@@ -1,0 +1,2 @@
+texture.format = ktx2
+texture.mode = uastc

@@ -1,0 +1,24 @@
+{
+  "title": "Localize your game",
+  "order": 50,
+  "summary": "Catalogs and PO files, plurals, switching the language at runtime, pseudo-locales, Arabic and Japanese text with fonts, larger text and captions, and tests that catch a missing translation.",
+  "template": "empty_2d",
+  "project": "project",
+  "frames": 240,
+  "input": "input.json",
+  "fields": ["game.coins", "game.locale", "game.visited", "text.hash", "text.untranslated", "text.glyphs_missing", "text.scale_pct",
+             "l10n.missing", "l10n.catalogs", "l10n.keys", "l10n.locale_hash", "l10n.font_fallbacks", "l10n.lookups"],
+  "expect": {
+    "game.coins": 3,
+    "game.locale": 2,
+    "game.visited": 5,
+    "text.hash": [443668265, -2131796030, -1377602793, -574626675, 1005248296],
+    "text.untranslated": 0,
+    "text.glyphs_missing": 0,
+    "text.scale_pct": 125,
+    "l10n.missing": 0
+  },
+  "control": { "env": { "LOCALIZE_TEST_FAULT": "missing_key" } },
+  "hosts": ["native", "romdev"],
+  "gate": null
+}

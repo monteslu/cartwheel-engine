@@ -1,0 +1,35 @@
+# Box3D's block allocator keeps its free list inside freed elements, storing
+# a pointer with *(void**)element. Manifold blocks are sized in multiples of
+# sizeof(b3Manifold), which is not always a multiple of 8, so the store is
+# misaligned (UBSan: store to misaligned address in b3FreeElement). memcpy
+# is the defined way; it compiles to the same instruction on x86 and wasm.
+
+diff --git a/src/block_allocator.c b/src/block_allocator.c
+index 4c1f154..efec22d 100644
+--- a/src/block_allocator.c
++++ b/src/block_allocator.c
+@@ -1,6 +1,7 @@
+ // SPDX-FileCopyrightText: 2026 Erin Catto
+ // SPDX-License-Identifier: MIT
+ 
++#include <string.h>
+ #include "block_allocator.h"
+ 
+ #include "core.h"
+@@ -51,7 +52,7 @@ void* b3AllocateElement( b3BlockAllocator* allocator )
+ 	if ( allocator->freeList != NULL )
+ 	{
+ 		void* element = allocator->freeList;
+-		allocator->freeList = *(void**)element;
++		memcpy( &allocator->freeList, element, sizeof( void* ) );
+ 		return element;
+ 	}
+ 
+@@ -85,6 +86,6 @@ void b3FreeElement( b3BlockAllocator* allocator, void* element )
+ 	allocator->allocationCount -= 1;
+ 
+ 	// Push onto free list
+-	*(void**)element = allocator->freeList;
++	memcpy( element, &allocator->freeList, sizeof( void* ) );
+ 	allocator->freeList = element;
+ }

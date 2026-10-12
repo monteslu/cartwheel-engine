@@ -1,0 +1,7 @@
+# unit_plugin fixture: disabled
+name = off
+version = 1.0.0
+engine_api = 1.0
+kind = runtime
+provides = OffThing
+enabled = false

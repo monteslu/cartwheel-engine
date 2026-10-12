@@ -1,0 +1,6 @@
+# unit_plugin fixture: written for an engine API this engine does not have (refused at build, never compiled)
+name = future
+version = 0.1.0
+engine_api = 2.0
+kind = runtime
+provides = FutureThing

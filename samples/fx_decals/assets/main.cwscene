@@ -1,0 +1,144 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.4, 0.5, 0.65, 1)
+ambient_energy = 0.15
+sky_color = color(0.6, 0.7, 0.9, 1)
+ground_color = color(0.35, 0.3, 0.25, 1)
+hemi_energy = 0.4
+
+[node name="Post" parent="." type="PostProcess"]
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+rotation = vec3(-0.85, 0.55, 0)
+energy = 2.5
+shadow = true
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 4.2, 7.6)
+rotation = vec3(-0.47, 0, 0)
+fov = 55
+near = 0.1
+far = 60
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.1, 0)
+size = vec3(14, 0.2, 10)
+color = color(0.62, 0.6, 0.56, 1)
+roughness = 0.9
+receive_shadow = true
+
+[node name="Step1" parent="." type="MeshInstance3D"]
+position = vec3(-3.2, 0.15, 0.6)
+size = vec3(2.4, 0.3, 0.8)
+color = color(0.55, 0.52, 0.5, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Step2" parent="." type="MeshInstance3D"]
+position = vec3(-3.2, 0.3, -0.2)
+size = vec3(2.4, 0.6, 0.8)
+color = color(0.55, 0.52, 0.5, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Step3" parent="." type="MeshInstance3D"]
+position = vec3(-3.2, 0.45, -1.0)
+size = vec3(2.4, 0.9, 0.8)
+color = color(0.55, 0.52, 0.5, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Ramp" parent="." type="MeshInstance3D"]
+position = vec3(-0.6, 0.3, 0.6)
+rotation = vec3(0.3, 0, 0)
+size = vec3(1.6, 0.12, 2.2)
+color = color(0.5, 0.55, 0.6, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Ball" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(2.5, 0.8, -1.0)
+size = vec3(1.6, 1.6, 1.6)
+color = color(0.7, 0.68, 0.62, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Pillar" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(4.4, 1.0, 0.4)
+size = vec3(0.9, 2.0, 0.9)
+color = color(0.66, 0.64, 0.6, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Wall" parent="." type="MeshInstance3D"]
+position = vec3(0.5, 1.5, -3.1)
+size = vec3(8, 3, 0.2)
+color = color(0.75, 0.74, 0.7, 1)
+receive_shadow = true
+
+[node name="WallSide" parent="." type="MeshInstance3D"]
+position = vec3(4.4, 1.5, -2.2)
+size = vec3(0.2, 3, 2)
+color = color(0.72, 0.7, 0.66, 1)
+receive_shadow = true
+
+[node name="Scorch" parent="." type="Decal3D"]
+position = vec3(-3.0, 1.2, -0.3)
+rotation = vec3(-1.5707963, 0, 0)
+size = vec3(2.2, 2.2, 2.4)
+texture = "decals/scorch.png"
+blend = MULTIPLY
+normal_fade = 0.0
+
+[node name="Arrow" parent="." type="Decal3D"]
+position = vec3(-0.6, 1.0, 0.8)
+rotation = vec3(-1.5707963, 0, 0)
+size = vec3(1.4, 1.4, 2.0)
+texture = "decals/arrow.png"
+blend = MIX
+
+[node name="Cracks" parent="." type="Decal3D"]
+position = vec3(2.4, 2.0, -0.8)
+rotation = vec3(-1.5707963, 0, 0)
+size = vec3(2.6, 2.6, 3.0)
+texture = "decals/cracks.png"
+blend = MULTIPLY
+normal_fade = 0.0
+
+[node name="PaintRed" parent="." type="Decal3D"]
+position = vec3(0.9, 0.6, 2.4)
+rotation = vec3(-1.5707963, 0, 0.4)
+size = vec3(1.2, 1.2, 1.4)
+texture = "decals/sheet.png"
+region = vec4(0, 0, 128, 128)
+blend = MIX
+
+[node name="PaintBlue" parent="." type="Decal3D"]
+position = vec3(0.8, 1.5, -2.6)
+size = vec3(1.5, 1.5, 1.2)
+texture = "decals/sheet.png"
+region = vec4(128, 0, 128, 128)
+blend = MIX
+
+[node name="Corner" parent="." type="Decal3D"]
+position = vec3(4.1, 1.2, -2.8)
+rotation = vec3(0, 0.785, 0)
+size = vec3(1.8, 1.8, 1.6)
+texture = "decals/scorch.png"
+blend = MULTIPLY
+normal_fade = 0.0
+priority = 1
+
+[node name="Glow" parent="." type="Decal3D"]
+position = vec3(-1.9, 1.0, 1.7)
+rotation = vec3(-1.5707963, 0, 0)
+size = vec3(1.6, 1.6, 2.4)
+texture = "decals/ring.png"
+blend = ADD
+energy = 3
+normal_fade = 0.0

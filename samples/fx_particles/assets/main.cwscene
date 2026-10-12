@@ -1,0 +1,217 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.03, 0.035, 0.05, 1)
+ambient_energy = 0.05
+sky_color = color(0.6, 0.7, 0.9, 1)
+ground_color = color(0.35, 0.3, 0.25, 1)
+hemi_energy = 0.25
+
+[node name="Post" parent="." type="PostProcess"]
+bloom = true
+bloom_intensity = 0.08
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+rotation = vec3(-0.9, 0.5, 0)
+energy = 2
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 4.2, 10.5)
+rotation = vec3(-0.33, 0, 0)
+fov = 55
+near = 0.1
+far = 100
+
+[node name="Ground" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.1, 0)
+size = vec3(16, 0.2, 12)
+color = color(0.18, 0.17, 0.16, 1)
+roughness = 0.9
+
+[node name="StepA" parent="." type="MeshInstance3D"]
+position = vec3(-3.4, 0.25, 0.6)
+size = vec3(1.6, 0.5, 1.6)
+color = color(0.55, 0.4, 0.3, 1)
+
+[node name="StepB" parent="." type="MeshInstance3D"]
+position = vec3(-2.4, 0.5, -0.2)
+rotation = vec3(0, 0.4, 0)
+size = vec3(1.2, 1.0, 1.2)
+color = color(0.5, 0.45, 0.35, 1)
+
+[node name="Ramp" parent="." type="MeshInstance3D"]
+position = vec3(-1.2, 0.35, 1.0)
+rotation = vec3(0, 0, 0.35)
+size = vec3(2.0, 0.15, 1.6)
+color = color(0.4, 0.5, 0.55, 1)
+
+[node name="Boulder" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(-4.6, 0.2, -0.8)
+size = vec3(1.4, 1.4, 1.4)
+color = color(0.5, 0.5, 0.5, 1)
+
+[node name="Fountain" parent="." type="GPUParticles3D"]
+position = vec3(-2.8, 0.2, 0.4)
+amount = 3000
+lifetime = 2.4
+emission_shape = SPHERE
+emission_radius = 0.08
+direction = vec3(0.25, 1, 0)
+spread = 10
+speed_min = 5.2
+speed_max = 6.4
+gravity = vec3(0, -9.8, 0)
+collide_depth = true
+depth_thickness = 0.6
+bounce = 0.45
+friction = 0.2
+collision_radius = 0.03
+size = 0.05
+color_ramp = "0 0.3 0.6 1 0, 0.05 0.5 0.8 1 1, 0.8 0.8 0.9 1 0.9, 1 1 1 1 0"
+energy = 1.0
+trail_length = 10
+trail_width = 0.025
+seed = 7
+gpu_stats = true
+
+[node name="Sparks" parent="." type="GPUParticles3D"]
+position = vec3(2.2, 1.6, 0.2)
+amount = 1500
+lifetime = 1.2
+explosiveness = 0.85
+emission_shape = POINT
+spread = 180
+speed_min = 3
+speed_max = 7
+gravity = vec3(0, -6, 0)
+damping = 0.6
+draw_mode = STRETCHED
+stretch = 0.06
+size = 0.035
+color_ramp = "0 1 0.9 0.6 1, 0.4 1 0.5 0.1 1, 1 0.6 0.1 0.05 0"
+energy = 5
+bounce = 0.6
+collision_radius = 0.02
+seed = 11
+gpu_stats = true
+
+[node name="SparkBall" parent="." type="ParticleCollider3D"]
+position = vec3(2.2, 0.4, 0.2)
+shape = SPHERE
+radius = 0.8
+
+[node name="SparkBallMesh" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(2.2, 0.4, 0.2)
+size = vec3(1.6, 1.6, 1.6)
+color = color(0.3, 0.32, 0.36, 1)
+metalness = 0.6
+roughness = 0.4
+
+[node name="Floor" parent="." type="ParticleCollider3D"]
+position = vec3(0, 0, 0)
+shape = PLANE
+
+[node name="Smoke" parent="." type="GPUParticles3D"]
+position = vec3(0.4, 0.3, -2.6)
+amount = 600
+lifetime = 4
+emission_shape = SPHERE
+emission_radius = 0.3
+spread = 20
+speed_min = 0.6
+speed_max = 1.0
+gravity = vec3(0, 0.25, 0)
+damping = 0.3
+turbulence = 1.6
+turbulence_scale = 0.35
+turbulence_speed = 0.3
+blend = ALPHA
+sort = true
+soft_distance = 0.5
+size = 0.9
+size_random = 0.3
+size_curve = "0 0.3, 0.3 0.8, 1 1.6"
+color_ramp = "0 0.5 0.5 0.55 0, 0.15 0.45 0.45 0.5 0.55, 1 0.3 0.3 0.32 0"
+spin = 0.4
+seed = 3
+gpu_stats = true
+
+[node name="Debris" parent="." type="GPUParticles3D"]
+position = vec3(4.6, 2.5, -1.2)
+amount = 160
+lifetime = 3
+emission_shape = BOX
+emission_extents = vec3(0.6, 0.2, 0.6)
+spread = 35
+speed_min = 1
+speed_max = 2.5
+gravity = vec3(0, -9.8, 0)
+bounce = 0.35
+friction = 0.4
+collision_radius = 0.1
+draw_mode = MESH
+mesh_primitive = BOX
+blend = OPAQUE
+size = 0.18
+color = color(0.8, 0.55, 0.3, 1)
+spin = 3
+seed = 5
+gpu_stats = true
+
+[node name="Swirl" parent="." type="GPUParticles3D"]
+position = vec3(0.6, 2.6, 1.8)
+amount = 2000
+lifetime = 3
+emission_shape = RING
+emission_radius = 1.4
+emission_inner_radius = 1.2
+spread = 180
+speed_min = 0.2
+speed_max = 0.6
+gravity = vec3(0, 0, 0)
+damping = 0.2
+size = 0.05
+color_ramp = "0 0.6 0.3 1 0, 0.2 0.7 0.4 1 1, 1 0.2 0.8 1 0"
+energy = 2
+seed = 21
+gpu_stats = true
+
+[node name="Pull" parent="." type="ParticleAttractor3D"]
+position = vec3(0.6, 2.6, 1.8)
+strength = 4
+radius = 3
+attenuation = 0.5
+
+[node name="Emitter" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(-0.4, 2.8, -1.4)
+size = vec3(0.8, 0.8, 0.8)
+color = color(0.2, 0.25, 0.3, 1)
+
+[node name="Skin" parent="." type="GPUParticles3D"]
+amount = 1200
+lifetime = 1.4
+emission_shape = MESH
+emission_mesh = "../Emitter"
+emission_normal_speed = 0.6
+speed_min = 0
+speed_max = 0
+gravity = vec3(0, 0.4, 0)
+size = 0.04
+color_ramp = "0 1 0.4 0.8 1, 1 0.3 0.2 1 0"
+energy = 2
+seed = 9
+gpu_stats = true
+
+[node name="Orbiter" parent="." type="Node3D"]
+position = vec3(0, 1.2, 3)
+
+[node name="Ribbon" parent="Orbiter" type="Trail3D"]
+length = 48
+width = 0.25
+color_ramp = "0 1 0.8 0.3 1, 1 1 0.2 0.1 0"
+energy = 2.5

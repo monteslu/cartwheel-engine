@@ -1,0 +1,107 @@
+[scene format=1]
+
+[node name="Level" type="Node2D"]
+
+[node name="Settings" parent="." type="CanvasSettings"]
+virtual_width = 320
+virtual_height = 180
+clear_color = color(0.08, 0.09, 0.12, 1)
+
+[node name="Counter" parent="." type="Counter"]
+
+[node name="OnBump" parent="Counter" type="Trigger"]
+signal = "bump"
+action = CALL
+member = "add"
+value = "10"
+
+[node name="Lamp" parent="." type="Polygon2D"]
+position = vec2(260, 40)
+polygon = "-14 -14, 14 -14, 14 14, -14 14"
+color = color(0.45, 0.08, 0.08, 1)
+
+[node name="Goal" parent="." type="Area2D"]
+position = vec2(100, 90)
+
+[node name="Shape" parent="Goal" type="CollisionShape2D"]
+size = vec2(140, 16)
+
+[node name="Band" parent="Goal" type="Polygon2D"]
+polygon = "-70 -8, 70 -8, 70 8, -70 8"
+color = color(0.2, 0.25, 0.4, 1)
+
+[node name="LightLamp" parent="Goal" type="Trigger"]
+signal = "body_entered"
+filter_group = "player"
+target = "../../Lamp"
+member = "color"
+value = "color(0.2, 1, 0.3, 1)"
+
+[node name="Count" parent="Goal" type="Trigger"]
+signal = "body_entered"
+action = CALL
+target = "../../Counter"
+member = "add"
+value = "1"
+
+[node name="Bump" parent="Goal" type="Trigger"]
+signal = "body_entered"
+filter_group = "player"
+action = EMIT
+target = "../../Counter"
+member = "bump"
+
+[node name="Spark" parent="Goal" type="Trigger"]
+signal = "body_entered"
+filter_group = "player"
+action = SPAWN
+target = "../../Lamp"
+member = "Spark"
+value = "spark.cwscene"
+once = true
+
+[node name="DropCrate" parent="Goal" type="Trigger"]
+signal = "body_entered"
+filter_group = "crates"
+action = FREE
+target = "../../Crate"
+
+[node name="Never" parent="Goal" type="Trigger"]
+enabled = false
+signal = "body_entered"
+target = "../../Lamp"
+member = "visible"
+value = "false"
+
+[node name="Ball" parent="." type="RigidBody2D" groups="player"]
+position = vec2(100, 10)
+
+[node name="Shape" parent="Ball" type="CollisionShape2D"]
+shape = CIRCLE
+radius = 6
+
+[node name="Look" parent="Ball" type="Polygon2D"]
+polygon = "-6 -6, 6 -6, 6 6, -6 6"
+color = color(0.95, 0.8, 0.2, 1)
+
+[node name="Crate" parent="." type="RigidBody2D" groups="crates"]
+position = vec2(130, -40)
+
+[node name="Shape" parent="Crate" type="CollisionShape2D"]
+size = vec2(12, 12)
+
+[node name="Look" parent="Crate" type="Polygon2D"]
+polygon = "-6 -6, 6 -6, 6 6, -6 6"
+color = color(0.6, 0.4, 0.2, 1)
+
+[node name="Exit" parent="." type="Area2D"]
+position = vec2(100, 165)
+
+[node name="Shape" parent="Exit" type="CollisionShape2D"]
+size = vec2(200, 10)
+
+[node name="Win" parent="Exit" type="Trigger"]
+signal = "body_entered"
+filter_group = "player"
+action = CHANGE_SCENE
+value = "won.cwscene"

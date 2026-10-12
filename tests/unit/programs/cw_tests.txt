@@ -1,0 +1,3 @@
+# r186 program states for cw_tests (cmake/programs.cmake; tools/programs.mjs adds what runs lack)
+standard+l0001
+standard+l1000

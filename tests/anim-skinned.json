@@ -1,0 +1,12 @@
+[
+  {"frame":20,"axes":{"ly":-0.5}},
+  {"frame":90,"axes":{"ly":-1,"lx":0.6}},
+  {"frame":130,"axes":{"ly":-1,"lx":-0.6}},
+  {"frame":170,"axes":{"ly":-0.5}},
+  {"frame":185},
+  {"frame":200,"buttons":["south"]},
+  {"frame":201},
+  {"frame":240,"axes":{"rx":0.9,"ry":-0.5}},
+  {"frame":300,"axes":{"rx":-0.6,"ry":0.4}},
+  {"frame":330}
+]

@@ -1,0 +1,27 @@
+# Android arm64 export: the game as libmain.so (SDL2's SDLActivity loads it),
+# GLES 3.0 from the NDK's libGLESv3, SDL2 built from deps/sdl2 into it.
+# The SDK/NDK: ANDROID_NDK_HOME, else ANDROID_HOME (or ANDROID_SDK_ROOT, else
+# ~/Android/Sdk) + the newest ndk/<version>. Gradle packs the APK (tools/cwexport).
+include(${CMAKE_CURRENT_LIST_DIR}/common.cmake)
+set(CW_EXPORT_TARGET android-arm64)
+if(DEFINED ENV{ANDROID_NDK_HOME} AND EXISTS "$ENV{ANDROID_NDK_HOME}")
+  set(_ndk $ENV{ANDROID_NDK_HOME})
+else()
+  if(DEFINED ENV{ANDROID_HOME})
+    set(_sdk $ENV{ANDROID_HOME})
+  elseif(DEFINED ENV{ANDROID_SDK_ROOT})
+    set(_sdk $ENV{ANDROID_SDK_ROOT})
+  else()
+    set(_sdk $ENV{HOME}/Android/Sdk)
+  endif()
+  file(GLOB _ndks LIST_DIRECTORIES true ${_sdk}/ndk/*)
+  list(SORT _ndks COMPARE NATURAL ORDER DESCENDING)
+  list(GET _ndks 0 _ndk)
+endif()
+if(NOT _ndk OR NOT EXISTS ${_ndk}/build/cmake/android.toolchain.cmake)
+  message(FATAL_ERROR "no Android NDK: set ANDROID_NDK_HOME (or ANDROID_HOME with an ndk/ inside)")
+endif()
+set(ANDROID_ABI arm64-v8a)
+set(ANDROID_PLATFORM android-24)
+set(ANDROID_STL c++_static)
+include(${_ndk}/build/cmake/android.toolchain.cmake)

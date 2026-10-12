@@ -1,0 +1,42 @@
+[scene format=1]
+
+[node name="Main" type="Node2D"]
+
+[node name="Settings" parent="." type="CanvasSettings"]
+virtual_width = 320
+virtual_height = 180
+scale_mode = INTEGER
+clear_color = color(0.12, 0.13, 0.17, 1)
+
+[node name="Camera" parent="." type="Camera2D"]
+position = vec2(160, 90)
+
+[node name="HUD" parent="." type="CanvasLayer"]
+
+[node name="Title" parent="HUD" type="Label"]
+offset_left = 10
+offset_top = 6
+offset_right = 630
+offset_bottom = 30
+text = "Rollback duel: two peers in one process"
+
+[node name="PeerA" parent="HUD" type="Label"]
+offset_left = 10
+offset_top = 36
+offset_right = 310
+offset_bottom = 60
+text = "Peer A (plays player 0)"
+
+[node name="PeerB" parent="HUD" type="Label"]
+offset_left = 330
+offset_top = 36
+offset_right = 630
+offset_bottom = 60
+text = "Peer B (plays player 1)"
+
+[node name="Status" parent="HUD" type="Label"]
+offset_left = 10
+offset_top = 294
+offset_right = 630
+offset_bottom = 354
+text = ""

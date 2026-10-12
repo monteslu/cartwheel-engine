@@ -1,0 +1,67 @@
+[scene format=1]
+[ext_scene id=1 path="coin.cwscene"]
+
+[node name="Level" type="Node2D"]
+
+[node name="Settings" parent="." type="CanvasSettings"]
+virtual_width = 320
+virtual_height = 180
+scale_mode = INTEGER
+clear_color = color(0.45, 0.65, 0.9, 1)
+
+[node name="Ground" parent="." type="StaticBody2D"]
+
+[node name="Floor" parent="Ground" type="CollisionShape2D"]
+position = vec2(320, 168)
+size = vec2(640, 24)
+
+[node name="FloorLook" parent="Ground" type="Polygon2D"]
+polygon = "0 156, 640 156, 640 180, 0 180"
+color = color(0.33, 0.55, 0.25, 1)
+
+[node name="Ledge" parent="Ground" type="CollisionShape2D"]
+position = vec2(200, 120)
+size = vec2(64, 12)
+
+[node name="LedgeLook" parent="Ground" type="Polygon2D"]
+polygon = "168 114, 232 114, 232 126, 168 126"
+color = color(0.47, 0.31, 0.18, 1)
+
+[node name="Coin1" parent="." instance=1]
+position = vec2(120, 140)
+
+[node name="Coin2" parent="." instance=1]
+position = vec2(200, 100)
+
+[node name="Coin3" parent="." instance=1]
+position = vec2(300, 140)
+
+[node name="Player" parent="." type="CharacterBody2D"]
+position = vec2(40, 140)
+collision_layer = 1
+collision_mask = 5
+
+[node name="Shape" parent="Player" type="CollisionShape2D"]
+shape = CAPSULE
+radius = 6
+height = 22
+
+[node name="Look" parent="Player" type="Polygon2D"]
+polygon = "-6 -11, 6 -11, 6 11, -6 11"
+color = color(0.9, 0.3, 0.25, 1)
+
+[node name="Camera" parent="Player" type="Camera2D"]
+smoothing = true
+limit_left = 0
+limit_top = 0
+limit_right = 640
+limit_bottom = 180
+
+[node name="HUD" parent="." type="CanvasLayer"]
+
+[node name="Coins" parent="HUD" type="Label"]
+offset_left = 8
+offset_top = 6
+offset_right = 200
+offset_bottom = 24
+text = "COINS 0"

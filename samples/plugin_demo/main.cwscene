@@ -1,0 +1,48 @@
+[scene format=1]
+
+[node name="Main" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.17064, 0.31855, 0.57048, 1)
+ambient_energy = 0.94248
+hemi_energy = 0.94248
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 3, 6)
+rotation = vec3(-0.45, 0, 0)
+fov = 55
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(3, 8, 4)
+rotation = vec3(-1, 0.5, 0)
+energy = 3.76991
+shadow = true
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.5, 0)
+size = vec3(10, 1, 10)
+color = color(0.10048, 0.14732, 0.10048, 1)
+receive_shadow = true
+
+[node name="Table" parent="." type="Turntable"]
+speed = 1.5
+radius = 1.4
+
+[node name="Disc" parent="Table" type="MeshInstance3D"]
+primitive = CYLINDER
+size = vec3(2.8, 0.1, 2.8)
+color = color(0.07324, 0.07324, 0.09463, 1)
+receive_shadow = true
+
+[node name="Box" parent="Table" type="MeshInstance3D"]
+position = vec3(1.1, 0.35, 0)
+size = vec3(0.5, 0.6, 0.5)
+color = color(0.69207, 0.17064, 0.0331, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Marker" parent="." type="MeshInstance3D"]
+position = vec3(-2.6, 0.4, 0)
+size = vec3(0.4, 0.8, 0.4)
+color = color(0.05088, 0.21404, 0.69207, 1)
+cast_shadow = true

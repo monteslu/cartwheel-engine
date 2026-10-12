@@ -1,0 +1,4122 @@
+[
+  {
+    "name": "hello-input",
+    "app": "hello",
+    "frames": 120,
+    "input": "hello-input.json",
+    "maxGt16": 0.0005
+  },
+  {
+    "name": "hello-still",
+    "webgpu": true,
+    "app": "hello",
+    "frames": 90,
+    "maxGt16": 0.0005
+  },
+  {
+    "name": "physics-determinism",
+    "app": "physics_spike",
+    "frames": 400,
+    "minColors": 1,
+    "controlFrames": 100,
+    "fields": [
+      "done",
+      "b3_hash",
+      "b3_sleep",
+      "b2_hash",
+      "b2_sleep",
+      "bench_hash",
+      "b2_bench_hash",
+      "small_hash",
+      "b3_expected_hash",
+      "b2_expected_hash"
+    ],
+    "note": "S0.2/S0.3: upstream Box3D/Box2D determinism scenes on the job pool, 1..5 workers; every host must reproduce upstream's 64-bit hashes"
+  },
+  {
+    "name": "physics-scaling",
+    "app": "physics_spike",
+    "frames": 400,
+    "minColors": 1,
+    "controlFrames": 100,
+    "fields": [
+      "done",
+      "scale_ok",
+      "small_ok"
+    ],
+    "expect": {
+      "done": 1,
+      "scale_ok": 1,
+      "small_ok": 1
+    },
+    "note": "Box3D's and Box2D's large pyramids step at least 1.25x faster on 8 job-pool workers than on 1, and a small world (8 boxes on a mesh, sized per step: cw_box3d_tasks_step) costs about the same on every pool thread as on one, on every host"
+  },
+  {
+    "name": "unit-core",
+    "app": "unit_core",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    }
+  },
+  {
+    "name": "unit-math",
+    "app": "unit_math",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    }
+  },
+  {
+    "name": "unit-scene",
+    "app": "unit_scene",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    }
+  },
+  {
+    "name": "scene3d",
+    "app": "scene3d",
+    "frames": 90,
+    "maxGt16": 0.002,
+    "fields": [
+      "tree.nodes",
+      "tree.tick",
+      "ball",
+      "crates"
+    ],
+    "expect": {
+      "crates": 2,
+      "tree.nodes": 11
+    }
+  },
+  {
+    "name": "timing-30",
+    "app": "unit_timing",
+    "frames": 1801,
+    "frameHz": 30,
+    "minColors": 1,
+    "fields": [
+      "ticks",
+      "pos",
+      "rng_hash"
+    ],
+    "expect": {
+      "ticks": 3601,
+      "rng_hash": 890103754
+    },
+    "controlFrames": 1800
+  },
+  {
+    "name": "timing-144",
+    "app": "unit_timing",
+    "frames": 8641,
+    "frameHz": 144,
+    "minColors": 1,
+    "fields": [
+      "ticks",
+      "pos",
+      "rng_hash"
+    ],
+    "expect": {
+      "ticks": 3601,
+      "rng_hash": 890103754
+    },
+    "controlFrames": 8640
+  },
+  {
+    "name": "input-pad",
+    "app": "input_demo",
+    "frames": 100,
+    "input": "input-pad.json",
+    "controlInput": "input-pad-control.json",
+    "maxGt16": 0.0005,
+    "expect": {
+      "sim.jump_jp": 3,
+      "sim.jump_jr": 3,
+      "sim.jump_ticks": 32,
+      "sim.fire_jp": 1,
+      "sim.fire_ticks": 2,
+      "sim.special_jp": 1,
+      "ui.jump_jp": 3,
+      "ui.jump_frames": 16,
+      "bind.special": 262145,
+      "replay.done": 1,
+      "replay.match": 1,
+      "replay.hash_match": 1,
+      "record.ticks": 179
+    },
+    "note": "M1.4: pad-driven actions at 120 Hz (two ticks per frame): a one-frame tap, a 10-frame hold, a trigger over/under its threshold, stick vectors in three deadzone modes, runtime rebinding by capture, and a record-then-replay whose re-simulated state must equal the live run"
+  },
+  {
+    "name": "input-keys",
+    "app": "input_demo",
+    "frames": 62,
+    "input": "input-keys.json",
+    "controlInput": "input-keys-control.json",
+    "maxGt16": 0.0005,
+    "skip": [
+      "romdev"
+    ],
+    "expect": {
+      "sim.jump_jp": 1,
+      "sim.jump_ticks": 2,
+      "sim.fire_jp": 2,
+      "sim.fire_ticks": 8,
+      "sim.special_jp": 1,
+      "bind.special": 65563,
+      "sim.axis_sum": 14,
+      "replay.match": 1,
+      "replay.hash_match": 1
+    },
+    "note": "M1.4: keyboard-driven actions (a one-frame tap, held keys, a user-override binding, capture-rebinding to key:x). romdev is skipped: its input tool cannot inject wasmcart keys"
+  },
+  {
+    "name": "input-pointer",
+    "app": "input_demo",
+    "frames": 62,
+    "input": "input-pointer.json",
+    "controlInput": "input-pointer-control.json",
+    "maxGt16": 0.0005,
+    "expect": {
+      "sim.jump_jp": 3,
+      "sim.jump_jr": 2,
+      "sim.jump_ticks": 20,
+      "sim.fire_ticks": 10,
+      "sim.zoom": 1,
+      "ui.touch_button": 9,
+      "replay.match": 1,
+      "replay.hash_match": 1
+    },
+    "note": "M1.4: mouse buttons, wheel notches and touch controls (an on-screen stick and button, wasmcart pointer slots 1-9) as actions"
+  },
+  {
+    "name": "unit-input",
+    "app": "unit_input",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    }
+  },
+  {
+    "name": "perf-nodes",
+    "app": "perf_nodes",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "peak_nodes",
+      "after_free",
+      "done"
+    ],
+    "expect": {
+      "peak_nodes": 100002,
+      "after_free": 1,
+      "done": 1
+    },
+    "controlFrames": 2,
+    "controlEnv": {
+      "CW_PERF_COUNT": "1000"
+    },
+    "note": "times are reported (spawn/process/free ms), only counts are compared"
+  },
+  {
+    "name": "audio-mix",
+    "app": "audio_mix",
+    "frames": 240,
+    "fields": [
+      "mix.hash",
+      "mix.peak",
+      "mix.rms",
+      "mix.seg_hash",
+      "mix.dec_hash",
+      "mix.dec_frames",
+      "mix.done",
+      "mix.loaded",
+      "mix.clock_ok",
+      "mix.steal_ok",
+      "mix.music_clock",
+      "mix.tune_clock",
+      "audio.mixed_frames",
+      "audio.underruns",
+      "audio.voices",
+      "audio.dropped_commands"
+    ],
+    "expect": {
+      "mix.done": 1,
+      "mix.loaded": 8,
+      "mix.clock_ok": 1,
+      "mix.steal_ok": 1,
+      "audio.underruns": 0,
+      "audio.dropped_commands": 0
+    },
+    "note": "M1.6: a 4 s scripted scene (streams: Vorbis, Opus, MOD; one-shots: WAV, FLAC, MP3; a 3D voice with doppler, cone, occlusion; bus fx + sends + solo; limiter) rendered offline; every host must reproduce the native samples bit for bit (hash) and the exact 32.32 music clock"
+  },
+  {
+    "name": "audio-play",
+    "app": "audio_play",
+    "frames": 120,
+    "fields": [
+      "play.device",
+      "play.mixing",
+      "play.audible",
+      "play.music_playing",
+      "play.clock_moves"
+    ],
+    "expect": {
+      "play.device": 1,
+      "play.mixing": 1,
+      "play.audible": 1,
+      "play.music_playing": 1,
+      "play.clock_moves": 1
+    },
+    "controlFrames": 120,
+    "controlEnv": {
+      "CW_PLAY_NO_AUDIO": "1"
+    },
+    "note": "M1.6: the real output path (SDL audio thread natively, the wasmcart ring pump in carts): a device is open, the mixer produces non-silent frames, the Vorbis stream decodes on the job pool and its clock advances. The control runs with audio off and must differ."
+  },
+  {
+    "name": "unit-audio",
+    "app": "unit_audio",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "M1.6 audio unit suite (offline mixer): scheduling to the sample, pan law, load resampling, loop clock, pitch, pause, fades, voice limits/priority/stealing, deferred sound free, buses (volume, mute, solo, sends, DAG rule), 3D attenuation models, cone, doppler, occlusion, every effect, stream == sample through the ring, queue overflow, no leaked audio memory"
+  },
+  {
+    "name": "unit-physics",
+    "app": "unit_physics",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "physics wrapper: 2D + 3D queries (ray closest/all/batch, shape cast, overlap, aabb), layers, sensors, filters, mesh/chain, joint break, events, interpolation, movers"
+  },
+  {
+    "name": "unit-vehicle3d",
+    "app": "unit_vehicle3d",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "cw_vehicle3d: settling on the springs, drive, brake, reverse, steering, the friction circle (slide and grip), handbrake lock and powerslide, a car on a wall along its own down, a car riding on another, wheel transforms, teleport and the ragdoll switch; one step worker and all of them give the same bits"
+  },
+  {
+    "name": "physics3d-stack",
+    "app": "physics3d_stack",
+    "frames": 240,
+    "fields": [
+      "phys.hash",
+      "phys.steps",
+      "phys.bodies",
+      "phys.awake",
+      "phys.contacts",
+      "ev.begin",
+      "ev.end",
+      "ev.hit",
+      "ev.hit_speed_max",
+      "ball.pos",
+      "ray.hits",
+      "ray.height_sum",
+      "lines.count"
+    ],
+    "note": "M1.5: Box3D pyramid knocked down by a ball; interpolated three.c sync, contact/hit events, batched rays, debug draw; the running state hash must match on every host"
+  },
+  {
+    "name": "physics2d-joints",
+    "app": "physics2d_joints",
+    "frames": 300,
+    "fields": [
+      "phys.hash",
+      "phys.steps",
+      "phys.bodies",
+      "phys.joints",
+      "ev.begin",
+      "ev.end",
+      "ev.hit",
+      "ev.sensor_enter",
+      "ev.sensor_exit",
+      "ev.joint_break",
+      "car.x",
+      "pendulum.len",
+      "piston.t",
+      "revolute.angle",
+      "mover.pos",
+      "mover.floor",
+      "crate.pos",
+      "lines.count"
+    ],
+    "expect": {
+      "ev.joint_break": 1,
+      "mover.floor": 1
+    },
+    "note": "M1.5: Box2D scene with every joint type, a breakable hinge, a sensor zone, a mouse drag and a mover riding a kinematic platform"
+  },
+  {
+    "name": "character3d-course",
+    "app": "character3d",
+    "frames": 900,
+    "input": "character3d-input.json",
+    "controlInput": "character3d-control.json",
+    "fields": [
+      "mover.pos",
+      "mover.vel",
+      "mover.floor",
+      "mover.wall",
+      "mover.ceiling",
+      "mover.max_y",
+      "count.steps",
+      "count.snaps",
+      "count.ceiling",
+      "count.jumps",
+      "count.coins",
+      "ride.dz",
+      "crate.pos",
+      "mover.hash",
+      "phys.hash"
+    ],
+    "expect": {
+      "mover.floor": 1,
+      "mover.wall": 1,
+      "count.coins": 5,
+      "count.jumps": 1
+    },
+    "note": "M1.5: cw_mover3d course from pad-0 input: stairs, drop, head bump, ramp, riding a kinematic platform, pushing a crate, refusing a 60 degree slope"
+  },
+  {
+    "name": "character3d-auto",
+    "app": "character3d_auto",
+    "frames": 900,
+    "fields": [
+      "mover.pos",
+      "mover.vel",
+      "mover.floor",
+      "mover.wall",
+      "mover.ceiling",
+      "mover.max_y",
+      "count.steps",
+      "count.snaps",
+      "count.ceiling",
+      "count.jumps",
+      "count.coins",
+      "ride.dz",
+      "crate.pos",
+      "mover.hash",
+      "phys.hash"
+    ],
+    "expect": {
+      "mover.floor": 1,
+      "mover.wall": 1,
+      "count.coins": 5,
+      "count.jumps": 1
+    },
+    "note": "the same course and script compiled in (input-free: runs on wasmcart-native too)"
+  },
+  {
+    "name": "r2d-sprites",
+    "webgpu": true,
+    "app": "r2d_sprites",
+    "frames": 90,
+    "assets": "samples/r2d_assets",
+    "maxGt16": 0.002,
+    "note": "M2.4: sprites (rotation, flips, alpha, tint, additive), nine-slice, shapes, multiply, arbitrary-UV quads (JPEG, repeat), clip, y-sort, render target as sprite"
+  },
+  {
+    "name": "r2d-tilemap",
+    "webgpu": true,
+    "app": "r2d_tilemap",
+    "frames": 120,
+    "assets": "samples/r2d_assets",
+    "maxGt16": 0.002,
+    "note": "M2.4: chunked tilemap, 3 layers, animated tiles (time uniform), 8 tile transforms, edit + rebuild, camera pan across chunks, culling"
+  },
+  {
+    "name": "r2d-text",
+    "webgpu": true,
+    "app": "r2d_text",
+    "frames": 60,
+    "assets": "samples/r2d_assets",
+    "maxGt16": 0.002,
+    "note": "M2.4: SDF text at 6 sizes with GPOS kerning, wrap + left/centre/right, bitmap pixel font 1-3x, rotated text; layout measurements must match exactly"
+  },
+  {
+    "name": "r2d-camera",
+    "app": "r2d_camera",
+    "frames": 150,
+    "assets": "samples/r2d_assets",
+    "maxGt16": 0.002,
+    "tol": 0,
+    "expect": {
+      "pixel_perfect.bad_blocks": 0,
+      "pixel_perfect.scale": 6
+    },
+    "note": "M2.4: 300x170 virtual canvas, integer scale + letterbox (readback: every canvas pixel a uniform 6x6 block in the 1920x1080 framebuffer, render scale 3; FIT scaling reads 4987 bad blocks), follow/limits/zoom/rotation camera, parallax layer, minimap viewport layer, HUD; camera math as state"
+  },
+  {
+    "name": "r2d-lights",
+    "webgpu": true,
+    "app": "r2d_lights",
+    "frames": 90,
+    "assets": "samples/r2d_assets",
+    "maxGt16": 0.002,
+    "expect": {
+      "normal_ok": 1,
+      "r2d.lights": 3
+    },
+    "note": "M2.4: lit layer (offscreen colour + normal MRT), normal-mapped bricks, 3 point lights with falloff, stencil shadows from occluder polygons, ambient, unlit HUD over it"
+  },
+  {
+    "name": "r2d-interop",
+    "app": "r2d_interop",
+    "frames": 90,
+    "assets": "samples/r2d_assets",
+    "maxGt16": 0.003,
+    "note": "M2.4: three.c renders into a 2D render target (with depth) and to the window; the 2D pass draws over the 3D frame and draws the target as a sprite; t3_renderer_reset_bindings after the 2D pass"
+  },
+  {
+    "name": "r2d-bench",
+    "app": "r2d_bench",
+    "frames": 150,
+    "assets": "samples/r2d_assets",
+    "maxGt16": 0.005,
+    "fields": [
+      "ticks",
+      "bench.variant",
+      "bench.frames",
+      "r2d.passes",
+      "r2d.draw_calls",
+      "r2d.batches",
+      "r2d.vertices",
+      "r2d.indices",
+      "r2d.commands",
+      "r2d.sorted"
+    ],
+    "expect": {
+      "r2d.draw_calls": 1,
+      "r2d.vertices": 400000
+    },
+    "note": "M2.4 perf: 100k animated sprites, 3 submission variants interleaved (bulk / per-sprite / y-sorted bulk); timings are bench.* fields (not gated); one draw call per frame"
+  },
+  {
+    "name": "spike-game",
+    "app": "spike_game",
+    "frames": 240,
+    "input": "spike-game-input.json",
+    "maxGt16": 0.003,
+    "fields": [
+      "score",
+      "time_left",
+      "game_over",
+      "player.pos",
+      "crate0.pos",
+      "ticks"
+    ],
+    "controlInput": "hello-input.json",
+    "note": "S0.4: the game a fresh agent built from the public headers alone"
+  },
+  {
+    "name": "unit-resource",
+    "app": "unit_resource",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "M1.7/M2.2 resource registry: types, paths, UIDs, refcounts, deferred free, async order, sub-resources, glTF instancing + LODs, reloads; assets packed by cwpack"
+  },
+  {
+    "name": "gltf-scene",
+    "app": "gltf_scene",
+    "frames": 90,
+    "fields": [
+      "ticks",
+      "res.ready",
+      "res.live",
+      "res.loaded_cb",
+      "res.versions",
+      "hash.man",
+      "hash.box",
+      "hash.bottle",
+      "instances",
+      "triangles",
+      "ktx2_textures",
+      "lod_levels",
+      "men_lod"
+    ],
+    "expect": {
+      "res.ready": 16,
+      "instances": 9,
+      "ktx2_textures": 5,
+      "lod_levels": 3
+    },
+    "maxGt16": 0.005,
+    "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "GLTF_SCENE_LINEAR_COLOR": "1" } }], "note": "the same textured glTF meshes on GL and WebGPU: colour maps (glTF baseColor / emissive, the sRGB KTX2 ground) decode sRGB on both; the control reads them as data on WebGPU (GL before the fix: 51% of pixels off)" }, "note": "M1.7/M2.2: Khronos models packed by cwpack (meshopt order + compression, LODs, KTX2), loaded async, instanced, LOD picked by screen-space error; res.kb is left out (GPU bytes depend on the transcode target the host GL picks)"
+  },
+  {
+    "name": "unit-hotreload",
+    "app": "unit_hotreload",
+    "frames": 2,
+    "minColors": 1,
+    "hosts": [
+      "native"
+    ],
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "M2.2 hot reload: edit sources on disk, the watcher reruns cwpack and reloads in place (native dev only)"
+  },
+  {
+    "name": "gpu-guard",
+    "script": "tests/gpu-guard.mjs",
+    "note": "the suites' GPU guards (tools/lib/gpu-guard.mjs): an injected kernel GPU error, the start and abort VRAM budgets, per-process fdinfo accounting and the leak signal, each with a must-fail control"
+  },
+  {
+    "name": "gpu-no-display",
+    "script": "tests/gpu-no-display.mjs",
+    "note": "no test run reaches the desktop: native and wcnative, GL and WebGPU, traced with strace -f through the GPU sandbox, connect no X or Wayland socket; control: the detector sees a process that does"
+  },
+  {
+    "name": "gpu-cleanup",
+    "script": "tests/gpu-cleanup.mjs",
+    "note": "a stopped run leaves nothing behind: SIGTERM to the outer or the sandboxed run-cart ends the player (bwrap does not take its child along); control: a run left alone keeps running"
+  },
+  {
+    "name": "cwpack",
+    "script": "tests/cwpack.mjs",
+    "note": "M2.2 import cache invalidation (changed / new source, changed setting, unchanged), deleted reference errors, byte-identical packs; each with a control"
+  },
+  {
+    "name": "unit-anim",
+    "app": "unit_anim",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "M2.7: interpolation, loop-edge key firing, speed/seek, cross-fade, queue, .cwscene animation round trips, tweens, AnimationTree blends/state machines, root motion, glTF skeletal sampling vs three.c mixer; sampled values fold into unit.checksum"
+  },
+  {
+    "name": "anim-props",
+    "app": "anim_props",
+    "frames": 270,
+    "maxGt16": 0.002,
+    "fields": [
+      "tree.tick",
+      "count",
+      "events",
+      "loops",
+      "changed",
+      "roundtrip",
+      "spin_y",
+      "ball_y",
+      "fader",
+      "sun",
+      "hash_win"
+    ],
+    "expect": {
+      "roundtrip": 1,
+      "changed": 2
+    },
+    "note": "M2.7: property tracks from a .cwscene on several nodes (rotation, cubic colour, sun energy, stepped lamp colour, a vec component, hermite scale), LOOP and PING_PONG, a method track calling a C callback, event keys, two 1 s cross-fades; hashes of every written value per 60-tick window"
+  },
+  {
+    "name": "anim-tween",
+    "app": "anim_tween",
+    "frames": 270,
+    "maxGt16": 0.002,
+    "fields": [
+      "tree.tick",
+      "box",
+      "ball_y",
+      "pillar_y",
+      "sun",
+      "box_cb",
+      "ball_done",
+      "ball_loops",
+      "tweens",
+      "pillar_alive",
+      "hash_win"
+    ],
+    "expect": {
+      "ball_done": 1,
+      "pillar_alive": 0,
+      "box_cb": 2
+    },
+    "note": "M2.7: tween sequences with parallel groups, delays, relative steps, easing, loops, callbacks, an UPDATE-phase tween, and a tween that dies with its bound node"
+  },
+  {
+    "name": "anim-skinned",
+    "app": "anim_skinned",
+    "frames": 290,
+    "input": "anim-skinned.json",
+    "controlInput": "anim-skinned-control.json",
+    "maxGt16": 0.003,
+    "fields": [
+      "tree.tick",
+      "state",
+      "waves",
+      "entered",
+      "params",
+      "mover",
+      "yaw",
+      "weights",
+      "root_motion",
+      "hash_win"
+    ],
+    "expect": {
+      "waves": 1,
+      "state": 1
+    },
+    "note": "M2.7: CesiumMan (glTF) through an AnimationTree: a state machine (travel to a one-shot wave, back at its end) over a 1D speed blend space, an additive bone-masked 2D look blend space, root motion moving the character; pad input; pose hashes per 60-tick window"
+  },
+  {
+    "name": "platformer2d",
+    "webgpu": true,
+    "app": "platformer2d",
+    "frames": 840,
+    "input": "platformer2d-input.json",
+    "controlInput": "platformer2d-control.json",
+    "maxGt16": 0.003,
+    "fields": [
+      "tree.nodes",
+      "player.pos",
+      "player.vel",
+      "player.floor",
+      "player.jumps",
+      "player.anim",
+      "coins",
+      "crate.pos",
+      "crate.contacts",
+      "feet.hit",
+      "bodies.hash",
+      "phys.hash"
+    ],
+    "expect": {
+      "coins": 6,
+      "player.jumps": 3,
+      "player.floor": 1
+    },
+    "note": "M2.4/M2.5 node layer: a 2D platformer from .cwscene files only: TileMap2D (2 layers, animated water), StaticBody2D with CHAIN/RECT/POLYGON colliders, CharacterBody2D player (pad 0) with AnimatedSprite2D, Area2D coins counted through body_entered, RigidBody2D crate pushed, Camera2D smoothing + limits, Light2D + occluder, parallax background, HUD label"
+  },
+  {
+    "name": "platformer2d-auto",
+    "webgpu": true,
+    "app": "platformer2d_auto",
+    "frames": 840,
+    "maxGt16": 0.003,
+    "fields": [
+      "tree.nodes",
+      "player.pos",
+      "player.vel",
+      "player.floor",
+      "player.jumps",
+      "player.anim",
+      "coins",
+      "crate.pos",
+      "crate.contacts",
+      "feet.hit",
+      "bodies.hash",
+      "phys.hash"
+    ],
+    "expect": {
+      "coins": 6,
+      "player.jumps": 3,
+      "player.floor": 1
+    },
+    "note": "the same level and script compiled in (input-free: runs on wasmcart-native too)",
+    "assets": "samples/platformer2d/assets"
+  },
+  {
+    "name": "physics3d-nodes",
+    "app": "physics3d_nodes",
+    "frames": 720,
+    "input": "physics3d-nodes-input.json",
+    "controlInput": "physics3d-nodes-control.json",
+    "maxGt16": 0.003,
+    "fields": [
+      "tree.nodes",
+      "walker.pos",
+      "walker.floor",
+      "walker.jumps",
+      "goal.entered",
+      "goal.exited",
+      "goal.inside",
+      "crates.hash",
+      "rider.pos",
+      "rock.pos",
+      "ray.hit",
+      "phys.hash"
+    ],
+    "expect": {
+      "goal.entered": 1,
+      "goal.exited": 1,
+      "walker.jumps": 1,
+      "walker.floor": 1,
+      "ray.hit": 1
+    },
+    "note": "M2.5 3D physics nodes from .cwscene files: StaticBody3D floor/block, TRIMESH ramp from a MeshInstance3D, RigidBody3D crate stack the CharacterBody3D (pad 0) barges through, CONVEX rock from a sphere mesh, KinematicBody3D lift carrying a crate, Area3D goal body_entered/body_exited, RayCast3D"
+  },
+  {
+    "name": "physics3d-nodes-auto",
+    "app": "physics3d_nodes_auto",
+    "frames": 720,
+    "assets": "samples/physics3d_nodes/assets",
+    "maxGt16": 0.003,
+    "fields": [
+      "tree.nodes",
+      "walker.pos",
+      "walker.floor",
+      "walker.jumps",
+      "goal.entered",
+      "goal.exited",
+      "goal.inside",
+      "crates.hash",
+      "rider.pos",
+      "rock.pos",
+      "ray.hit",
+      "phys.hash"
+    ],
+    "expect": {
+      "goal.entered": 1,
+      "goal.exited": 1,
+      "walker.jumps": 1,
+      "walker.floor": 1,
+      "ray.hit": 1
+    },
+    "note": "the same scene and script compiled in (input-free: runs on wasmcart-native too)"
+  },
+  {
+    "name": "joints-nodes",
+    "app": "joints_nodes",
+    "frames": 600,
+    "maxGt16": 0.003,
+    "fields": [
+      "door.angle",
+      "ball3.pos",
+      "piston.x",
+      "bob.y",
+      "weld.dist",
+      "arm.pos",
+      "rope.broken",
+      "bridge.mid_y",
+      "car.x",
+      "bouncer.y",
+      "shuttle.x",
+      "phys3d.hash",
+      "phys2d.hash",
+      "joints3d",
+      "joints2d"
+    ],
+    "expect": {
+      "rope.broken": 1,
+      "joints3d": 8,
+      "joints2d": 11
+    },
+    "note": "M2.5: every Joint3D (HINGE motor, PIN chain, SLIDER limits+motor, SPRING, WELD, CONE, breakable DISTANCE with its broken signal) and Joint2D (PIN bridge, WHEEL car with motor, SPRING, SLIDER) from one .cwscene; 2D drawn over 3D"
+  },
+  {
+    "name": "unit-physics-nodes",
+    "app": "unit_physics_nodes",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "M2.4/M2.5 node layer: body lifecycle (enter/exit/reparent/free mid-step), runtime property changes (shape size, mask, freeze, teleport, live velocity), area signal order and the frame order (signals after fixed_update, seen next tick), characters (floor, wall, proxy seen by areas and rays), joints (rebuild, drop, break), the 3D mirror (TRIMESH from a mesh, areas, kinematic, pin), canvas data paths (animation stepping, tile cells text, save/load round trip)"
+  },
+  {
+    "name": "ui-gallery",
+    "webgpu": true,
+    "app": "ui_gallery",
+    "frames": 60,
+    "assets": "samples/ui_assets",
+    "maxGt16": 0.002,
+    "fields": [
+      "rect.0",
+      "rect.1",
+      "rect.2",
+      "rect.3",
+      "rect.4",
+      "rect.5",
+      "ui.controls",
+      "ui.drawn",
+      "ui.draw_calls",
+      "ui.popups",
+      "gallery.ellipsized"
+    ],
+    "expect": {
+      "ui.controls": 63,
+      "ui.popups": 1,
+      "gallery.ellipsized": 1
+    },
+    "note": "M2.6: every widget from a .cwscene (dark theme) with a menu and submenu open; layout rects of six controls and the UI stats must match exactly",
+    "controlFrames": 29
+  },
+  {
+    "name": "ui-gallery-light",
+    "webgpu": true,
+    "app": "ui_gallery_light",
+    "frames": 60,
+    "assets": "samples/ui_assets",
+    "maxGt16": 0.002,
+    "fields": [
+      "rect.0",
+      "rect.1",
+      "rect.2",
+      "rect.3",
+      "rect.4",
+      "rect.5",
+      "ui.controls",
+      "ui.drawn",
+      "ui.draw_calls",
+      "ui.popups",
+      "gallery.ellipsized"
+    ],
+    "expect": {
+      "gallery.ellipsized": 1
+    },
+    "note": "M2.6: the gallery in the built-in light theme",
+    "controlFrames": 29
+  },
+  {
+    "name": "unit-ui",
+    "app": "unit_ui",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "M2.6 layout suite: anchors, presets, grow, box (stretch ratio, refit, alignment), grid, margin, center, split, scroll (ensure visible), flow, aspect, tabs, panel; content-derived sizes; dirty tracking counts; theme text round trip; controls in scene files"
+  },
+  {
+    "name": "ui-mouse",
+    "webgpu": true,
+    "app": "ui_interact",
+    "frames": 145,
+    "input": "ui-mouse.json",
+    "controlInput": "ui-mouse-control.json",
+    "assets": "samples/ui_assets",
+    "maxGt16": 0.002,
+    "fields": [
+      "pressed",
+      "toggled",
+      "check_on",
+      "slider_changes",
+      "text_changes",
+      "submits",
+      "option_sel",
+      "list_sel",
+      "list_activated",
+      "menu_id",
+      "menu_count",
+      "dialog_ok",
+      "dialog_cancel",
+      "focus_moves",
+      "tree_sel",
+      "tree_collapses",
+      "spin_changes",
+      "text_lines",
+      "edit_caret",
+      "dialog_pressed",
+      "scroll_y",
+      "split_x",
+      "unhandled",
+      "slider",
+      "spin",
+      "edit_hash",
+      "submitted_hash",
+      "focus_hash",
+      "text_hash",
+      "edit_len",
+      "probe",
+      "ui.controls",
+      "ui.popups",
+      "ui.draw_calls",
+      "meta_clicks",
+      "meta_hash"
+    ],
+    "expect": {
+      "pressed": 3,
+      "toggled": 1,
+      "slider": 50,
+      "option_sel": 2,
+      "menu_id": 12,
+      "list_sel": 9,
+      "list_activated": 1,
+      "tree_collapses": 1,
+      "tree_sel": 0,
+      "dialog_pressed": 1,
+      "dialog_cancel": 1,
+      "scroll_y": 80,
+      "split_x": 160,
+      "meta_clicks": 1
+    },
+    "note": "M2.6: mouse, wheel and touch: clicks, a checkbox, a slider drag, an option popup, File > Recent > Two through a submenu, list wheel + double click, touch-scrolling a ScrollContainer over buttons (no press), split drag, tree collapse, a modal dialog swallowing an outside click then Cancel, a RichTextLabel link, a tooltip"
+  },
+  {
+    "name": "ui-keys",
+    "webgpu": true,
+    "app": "ui_interact",
+    "frames": 80,
+    "input": "ui-keys.json",
+    "controlInput": "ui-keys-control.json",
+    "assets": "samples/ui_assets",
+    "maxGt16": 0.002,
+    "skip": [
+      "romdev"
+    ],
+    "fields": [
+      "pressed",
+      "toggled",
+      "check_on",
+      "slider_changes",
+      "text_changes",
+      "submits",
+      "option_sel",
+      "list_sel",
+      "list_activated",
+      "menu_id",
+      "menu_count",
+      "dialog_ok",
+      "dialog_cancel",
+      "focus_moves",
+      "tree_sel",
+      "tree_collapses",
+      "spin_changes",
+      "text_lines",
+      "edit_caret",
+      "dialog_pressed",
+      "scroll_y",
+      "split_x",
+      "unhandled",
+      "slider",
+      "spin",
+      "edit_hash",
+      "submitted_hash",
+      "focus_hash",
+      "text_hash",
+      "edit_len",
+      "probe",
+      "ui.controls",
+      "ui.popups",
+      "ui.draw_calls",
+      "meta_clicks",
+      "meta_hash"
+    ],
+    "expect": {
+      "submits": 1,
+      "edit_len": 12,
+      "text_lines": 3,
+      "spin": 42,
+      "dialog_ok": 1
+    },
+    "note": "M2.6: keyboard + text: typing into LineEdit, shift+arrow selection replaced by typing, Home/End, ctrl+a/c, backspace, Enter, Tab/Shift+Tab, TextEdit lines + paste + edit, SpinBox typed value, dialog by keys. romdev is skipped: it cannot inject keys or text"
+  },
+  {
+    "name": "ui-pad",
+    "webgpu": true,
+    "app": "ui_interact",
+    "frames": 120,
+    "input": "ui-pad.json",
+    "controlInput": "ui-pad-control.json",
+    "assets": "samples/ui_assets",
+    "maxGt16": 0.002,
+    "fields": [
+      "pressed",
+      "toggled",
+      "check_on",
+      "slider_changes",
+      "text_changes",
+      "submits",
+      "option_sel",
+      "list_sel",
+      "list_activated",
+      "menu_id",
+      "menu_count",
+      "dialog_ok",
+      "dialog_cancel",
+      "focus_moves",
+      "tree_sel",
+      "tree_collapses",
+      "spin_changes",
+      "text_lines",
+      "edit_caret",
+      "dialog_pressed",
+      "scroll_y",
+      "split_x",
+      "unhandled",
+      "slider",
+      "spin",
+      "edit_hash",
+      "submitted_hash",
+      "focus_hash",
+      "text_hash",
+      "edit_len",
+      "probe",
+      "ui.controls",
+      "ui.popups",
+      "ui.draw_calls",
+      "meta_clicks",
+      "meta_hash"
+    ],
+    "expect": {
+      "pressed": 2,
+      "toggled": 1,
+      "slider": 3,
+      "option_sel": 2,
+      "list_sel": 1,
+      "scroll_y": 132
+    },
+    "note": "M2.6: gamepad navigation only (ui_* actions): focus by geometry, accept, slider steps, an option popup driven by the d-pad, list selection, focus walking into a ScrollContainer scrolls it"
+  },
+  {
+    "name": "ui-editor",
+    "app": "ui_editor",
+    "frames": 30,
+    "assets": "samples/ui_assets",
+    "maxGt16": 0.002,
+    "fields": [
+      "editor.tree_rows",
+      "editor.inspector_rows",
+      "editor.inspected_props",
+      "editor.selected_hash",
+      "ui.controls",
+      "ui.drawn",
+      "ui.draw_calls",
+      "editor.selections"
+    ],
+    "note": "M2.6: an editor-shaped screen from a .cwscene + theme file: menu bar, toolbar, nested splits, two-column scene Tree of the UI itself, FileSystem list, C code view with line numbers and highlighting, a reflection-built inspector rebuilt on a tree selection at frame 15 (labels + SpinBox/CheckBox/LineEdit/OptionButton per property type)",
+    "controlFrames": 14,
+    "expect": {
+      "editor.selections": 2
+    }
+  },
+  {
+    "name": "ui-perf",
+    "app": "ui_perf",
+    "frames": 30,
+    "maxGt16": 0.003,
+    "fields": [
+      "perf.controls",
+      "perf.samples",
+      "perf.full_arranged",
+      "perf.incr_arranged",
+      "ui.drawn",
+      "ui.draw_calls"
+    ],
+    "expect": {
+      "perf.controls": 4957,
+      "perf.full_arranged": 4956
+    },
+    "note": "M2.6 perf: 4957 controls (4950 buttons in a scrolling grid); every frame a full relayout (all dirty) and an incremental one are timed; perf.*_ms fields are reported, not compared"
+  },
+  {
+    "name": "ui-hud",
+    "webgpu": true,
+    "app": "ui_hud",
+    "frames": 70,
+    "input": "ui-hud.json",
+    "controlInput": "ui-hud-control.json",
+    "maxGt16": 0.003,
+    "fields": [
+      "ticks",
+      "paused",
+      "menu_presses",
+      "game_clicks",
+      "ui_wants",
+      "ui.controls",
+      "ui.drawn"
+    ],
+    "expect": {
+      "ticks": 41,
+      "paused": 0,
+      "menu_presses": 1,
+      "game_clicks": 1
+    },
+    "note": "M2.6: UI scale 2 inside a 640x360 integer-scaled virtual canvas (cw_ui_draw in the game pass, own canvas layer above the game); clicks mapped back through the canvas toggle Pause (the simulation stops), press Menu, and an empty-HUD click falls through to the game"
+  },
+  {
+    "name": "ui-scene",
+    "webgpu": true,
+    "app": "ui_scene",
+    "frames": 30,
+    "assets": "samples/ui_assets",
+    "maxGt16": 0.002,
+    "fields": [
+      "ui.controls",
+      "ui.drawn",
+      "ui.draw_calls",
+      "tree.nodes"
+    ],
+    "controlFrames": 30,
+    "controlEnv": {
+      "CW_UI_SCENE_LIGHT": "1"
+    },
+    "note": "M2.6: the gallery .cwscene through cw_scene_app with no UI code: controls lay out and draw as the tree canvas overlay pass; the control run uses the light theme"
+  },
+  {
+    "name": "unit-pipeline",
+    "app": "unit_pipeline",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "M3.1 pass graph order and switches, POST ping-pong contract, pool reuse, persistent targets, mode defaults, light unit conversion, .cube parser"
+  },
+  {
+    "name": "post-base",
+    "app": "post_stack",
+    "frames": 20,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 378,
+    "note": "M3.1/M3.2 post_stack baseline: linear HDR RGBA16F, physical light units, AgX. Control: the ACES segment",
+    "expect": {
+      "post.seg": 0,
+      "post.passes": 1090,
+      "pipe.float": 1
+    }
+  },
+  {
+    "name": "post-bloom",
+    "app": "post_stack",
+    "frames": 40,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "dual-filter bloom (threshold 1.5, intensity 0.3). Control: bloom off (baseline)",
+    "expect": {
+      "post.seg": 1
+    }
+  },
+  {
+    "name": "post-ssao",
+    "app": "post_stack",
+    "frames": 60,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "GTAO half-res + depth-aware upsample. Control: AO off",
+    "expect": {
+      "post.seg": 2
+    }
+  },
+  {
+    "name": "post-tonemap-aces",
+    "app": "post_stack",
+    "frames": 80,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "ACESFilmic curve (three.js r186's) in the tonemap pass. Control: AgX",
+    "expect": {
+      "post.seg": 3
+    }
+  },
+  {
+    "name": "post-tonemap-neutral",
+    "app": "post_stack",
+    "frames": 100,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "Khronos PBR Neutral. Control: AgX",
+    "expect": {
+      "post.seg": 4
+    }
+  },
+  {
+    "name": "post-grade",
+    "app": "post_stack",
+    "frames": 120,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "3D LUT grade from a .cube (generated). Control: no grade",
+    "expect": {
+      "post.seg": 5
+    }
+  },
+  {
+    "name": "post-fxaa",
+    "app": "post_stack",
+    "frames": 140,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "FXAA 3.11. Control: no AA",
+    "expect": {
+      "post.seg": 6
+    }
+  },
+  {
+    "name": "post-smaa",
+    "app": "post_stack",
+    "frames": 160,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "SMAA 1x (orthogonal patterns, corner rounding). Control: no AA",
+    "expect": {
+      "post.seg": 7
+    }
+  },
+  {
+    "name": "post-vignette",
+    "app": "post_stack",
+    "frames": 180,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "vignette. Control: off",
+    "expect": {
+      "post.seg": 8
+    }
+  },
+  {
+    "name": "post-grain",
+    "app": "post_stack",
+    "frames": 200,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "film grain (integer hash, per frame). Control: off",
+    "expect": {
+      "post.seg": 9
+    }
+  },
+  {
+    "name": "post-ca",
+    "app": "post_stack",
+    "frames": 220,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "chromatic aberration. Control: off",
+    "expect": {
+      "post.seg": 10
+    }
+  },
+  {
+    "name": "post-msaa",
+    "app": "post_stack",
+    "frames": 240,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "4x MSAA on the RGBA16F scene pass. Control: no MSAA",
+    "expect": {
+      "post.seg": 11
+    }
+  },
+  {
+    "name": "post-taa",
+    "app": "post_stack",
+    "frames": 288,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "taa.converged"
+    ],
+    "controlFrames": 260,
+    "expect": {
+      "post.seg": 12,
+      "taa.converged": 1
+    },
+    "note": "TAA convergence on a static camera: 48 frames in, an edge crop repeats with the 8-frame jitter cycle (taa.converged: mean change < 0.1, max <= 4 levels). Control: frame 260, not yet converged"
+  },
+  {
+    "name": "post-full",
+    "app": "post_stack",
+    "frames": 318,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "full quality: MSAA 4x, TAA, GTAO, bloom, AgX, LUT, vignette, CA, grain. Control: baseline",
+    "expect": {
+      "post.seg": 13
+    }
+  },
+  {
+    "name": "post-prepass",
+    "app": "post_stack",
+    "frames": 338,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "depth prepass + bloom + GTAO. Control: baseline",
+    "expect": {
+      "post.seg": 14
+    }
+  },
+  {
+    "name": "post-exposure",
+    "app": "post_stack",
+    "frames": 358,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "+1 EV with Reinhard (three.js r186's) in the tonemap pass. Control: baseline",
+    "expect": {
+      "post.seg": 15
+    }
+  },
+  {
+    "name": "post-aces",
+    "app": "post_stack",
+    "frames": 378,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "ACES Filmic tone mapping (r186's curve, the sRGB transfer after it) instead of AgX. Control: the plain AgX segment",
+    "expect": {
+      "post.seg": 16
+    }
+  },
+  {
+    "name": "post-aces-post",
+    "app": "post_stack",
+    "frames": 398,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 378,
+    "note": "ACES Filmic + bloom + FXAA. Control: ACES without post",
+    "expect": {
+      "post.seg": 17
+    }
+  },
+  {
+    "name": "post-view-normals",
+    "app": "post_stack",
+    "frames": 408,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "debug view: normals rebuilt from the depth texture. Control: baseline image",
+    "expect": {
+      "post.seg": 18
+    }
+  },
+  {
+    "name": "post-view-depth",
+    "app": "post_stack",
+    "frames": 418,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "debug view: linear depth. Control: baseline image",
+    "expect": {
+      "post.seg": 19
+    }
+  },
+  {
+    "name": "post-view-ao",
+    "app": "post_stack",
+    "frames": 428,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "debug view: the GTAO visibility buffer. Control: baseline image",
+    "expect": {
+      "post.seg": 20
+    }
+  },
+  {
+    "name": "pipeline-perf",
+    "script": "tests/pipeline-perf.mjs",
+    "note": "per-pass GPU ms at 1280x720 full quality (reported, not compared); every running pass timed natively, idle passes untimed"
+  },
+  {
+    "name": "physical-materials",
+    "app": "physical_materials",
+    "frames": 90,
+    "maxGt16": 0.003,
+    "fields": [
+      "mat.tick",
+      "mat.physical"
+    ],
+    "expect": {
+      "mat.physical": 4
+    },
+    "controlFrames": 30,
+    "webgpu": true,
+    "note": "three.js r186's MeshPhysicalMaterial on MeshInstance3D: Standard paint, clearcoat car paint, sheen velvet, iridescent shell, anisotropic brushed metal, lit by the ProceduralSky's PMREM environment; four of the five switch to Physical. Control: frame 30 (the camera orbits)"
+  },
+  {
+    "name": "sky-noon",
+    "app": "sky_day",
+    "frames": 30,
+    "maxGt16": 0.003,
+    "fields": [
+      "sky.seg",
+      "sky.minutes",
+      "sky.elev",
+      "sky.light",
+      "sky.updates"
+    ],
+    "controlFrames": 60,
+    "expect": {
+      "sky.seg": 0,
+      "sky.minutes": 720,
+      "sky.elev": 6500
+    },
+    "note": "M3.5 procedural sky (Rayleigh + Mie single scattering) at noon: the background, the driven sun (CSM shadows) and the prefiltered environment on chrome to rough balls. Control: 16:30"
+  },
+  {
+    "name": "sky-afternoon",
+    "app": "sky_day",
+    "frames": 60,
+    "maxGt16": 0.003,
+    "fields": [
+      "sky.seg",
+      "sky.minutes",
+      "sky.elev",
+      "sky.light",
+      "sky.updates"
+    ],
+    "controlFrames": 30,
+    "expect": {
+      "sky.seg": 1
+    },
+    "note": "16:30: lower sun, longer shadows. Control: noon"
+  },
+  {
+    "name": "sky-sunset",
+    "app": "sky_day",
+    "frames": 90,
+    "maxGt16": 0.003,
+    "fields": [
+      "sky.seg",
+      "sky.minutes",
+      "sky.elev",
+      "sky.light",
+      "sky.updates"
+    ],
+    "controlFrames": 60,
+    "expect": {
+      "sky.seg": 2,
+      "sky.elev": 159
+    },
+    "note": "the sun 1.6 degrees up: reddened sunlight (transmittance through the air), red horizon. Control: 16:30"
+  },
+  {
+    "name": "sky-night",
+    "app": "sky_day",
+    "frames": 120,
+    "maxGt16": 0.003,
+    "fields": [
+      "sky.seg",
+      "sky.minutes",
+      "sky.elev",
+      "sky.light",
+      "sky.updates"
+    ],
+    "controlFrames": 90,
+    "expect": {
+      "sky.seg": 3,
+      "sky.light": 0
+    },
+    "note": "22:00: the sun light off, the night sky floor. Control: sunset"
+  },
+  {
+    "name": "sky-cycle",
+    "app": "sky_day",
+    "frames": 200,
+    "maxGt16": 0.003,
+    "fields": [
+      "sky.seg",
+      "sky.minutes",
+      "sky.elev",
+      "sky.light",
+      "sky.updates"
+    ],
+    "expect": {
+      "sky.seg": 4
+    },
+    "note": "the day / night cycle running at 2 hours a second from 05:12 (sunrise): the sun climbs, the cube and environment re-render whenever it moved 1 degree. Control: one frame early"
+  },
+  {
+    "name": "fog-height",
+    "app": "fog_valley",
+    "frames": 20,
+    "maxGt16": 0.003,
+    "fields": [
+      "fog.seg",
+      "fog.on"
+    ],
+    "controlFrames": 60,
+    "expect": {
+      "fog.seg": 0,
+      "fog.on": 1
+    },
+    "note": "M3.5 exponential height fog from depth (closed-form integral along each ray), coloured by the ProceduralSky's horizon, a Henyey-Greenstein sun lobe, the sky fogged at 600 m. Control: fog off"
+  },
+  {
+    "name": "fog-ground",
+    "app": "fog_valley",
+    "frames": 40,
+    "maxGt16": 0.003,
+    "fields": [
+      "fog.seg",
+      "fog.on"
+    ],
+    "controlFrames": 20,
+    "expect": {
+      "fog.seg": 1
+    },
+    "note": "dense ground fog: steep height falloff. Control: the analytic fog"
+  },
+  {
+    "name": "lightmap-bake",
+    "app": "lightmap_room",
+    "frames": 30,
+    "maxGt16": 0.003,
+    "fields": [],
+    "expect": {},
+    "note": "M3.5 baked lighting: generated uv2 charts, 64 rays a texel, 2 bounces, sky + sunlight bounced off the red and green walls, an SH probe grid lighting the rolling ball; baked twice on the first frame (lm.same: the bytes match) and the bake's FNV-1a fingerprint is equal on every host (deterministic across x86 and wasm, any thread count). Control: one frame early (the ball rolls)"
+  },
+  {
+    "name": "lightmap-tool",
+    "script": "tests/lightmap-tool.mjs",
+    "note": "M3.5 cwbake twice: identical bytes; the same fingerprint as the runtime bake; lightmap_room loading the .cwlm renders the same frame without baking; control: another seed differs"
+  },
+  {
+    "name": "fx-particles",
+    "app": "fx_particles",
+    "frames": 120,
+    "maxGt16": 0.002,
+    "tol": 0.0001,
+    "fields": [
+      "fx.Fountain.alive",
+      "fx.Fountain.gpu_alive",
+      "fx.Fountain.gpu_sum",
+      "fx.Sparks.alive",
+      "fx.Sparks.gpu_alive",
+      "fx.Sparks.gpu_sum",
+      "fx.Smoke.alive",
+      "fx.Smoke.gpu_alive",
+      "fx.Smoke.gpu_sum",
+      "fx.Debris.alive",
+      "fx.Debris.gpu_alive",
+      "fx.Debris.gpu_sum",
+      "fx.Swirl.alive",
+      "fx.Swirl.gpu_alive",
+      "fx.Swirl.gpu_sum",
+      "fx.Skin.alive",
+      "fx.Skin.gpu_alive",
+      "fx.Skin.gpu_sum",
+      "fx.systems",
+      "fx.alive",
+      "fx.draws",
+      "fx.sort_passes",
+      "fx.tick"
+    ],
+    "note": "M3.4 GPUParticles3D every mode (TF sim, depth collision + trails, stretched sparks on analytic colliders, sorted soft smoke with curl noise, instanced mesh debris, attractor, mesh-surface emission) and a Trail3D; alive counts exact (CPU emission function), GPU alive and position sums read back. Control: one frame early"
+  },
+  {
+    "name": "fx-particles-late",
+    "app": "fx_particles",
+    "frames": 260,
+    "maxGt16": 0.002,
+    "tol": 0.0001,
+    "fields": [
+      "fx.Fountain.alive",
+      "fx.Fountain.gpu_alive",
+      "fx.Fountain.gpu_sum",
+      "fx.Sparks.alive",
+      "fx.Sparks.gpu_alive",
+      "fx.Sparks.gpu_sum",
+      "fx.Smoke.alive",
+      "fx.Smoke.gpu_alive",
+      "fx.Smoke.gpu_sum",
+      "fx.Debris.alive",
+      "fx.Debris.gpu_alive",
+      "fx.Debris.gpu_sum",
+      "fx.Swirl.alive",
+      "fx.Swirl.gpu_alive",
+      "fx.Swirl.gpu_sum",
+      "fx.Skin.alive",
+      "fx.Skin.gpu_alive",
+      "fx.Skin.gpu_sum",
+      "fx.systems",
+      "fx.alive",
+      "fx.draws",
+      "fx.sort_passes",
+      "fx.tick"
+    ],
+    "note": "the same scene after the explosive burst has cycled twice and trails have filled. Control: one frame early"
+  },
+  {
+    "name": "fx-collide",
+    "app": "fx_collide",
+    "frames": 240,
+    "maxGt16": 0.002,
+    "tol": 0.0001,
+    "fields": [
+      "collide.alive",
+      "collide.gpu_alive",
+      "collide.mean_y_x1000",
+      "collide.on_top"
+    ],
+    "expect": {
+      "collide.on_top": 1
+    },
+    "controlFrames": 240,
+    "controlEnv": {
+      "FX_NO_COLLIDE": "1"
+    },
+    "note": "depth-buffer collision: rain comes to rest on a table top and a tilted box (mean height of alive particles read back from the GPU). Control: collision off (the rain falls through)"
+  },
+  {
+    "name": "fx-perf",
+    "app": "fx_perf",
+    "frames": 320,
+    "maxGt16": 0.003,
+    "fields": [
+      "perf.alive",
+      "perf.capacity",
+      "perf.draws",
+      "perf.sort_passes"
+    ],
+    "expect": {
+      "perf.alive": 100000,
+      "perf.capacity": 100000
+    },
+    "note": "M3.4 100k GPU particles at 1280x720 (depth collision, curl noise, 2^15-key bitonic sort every frame, attractor): frames and counts on every host (timings: fx-perf-report). Control: one frame early"
+  },
+  {
+    "name": "fx-perf-report",
+    "script": "tests/fx-perf.mjs",
+    "note": "100k-particle frame times natively, in Chromium and romdev (reported); every host 100000 alive; native and Chromium frame work within 16.7 ms; control: an impossible budget must fail"
+  },
+  {
+    "name": "fx-gpu",
+    "webgpu": true,
+    "app": "fx_gpu",
+    "frames": 120,
+    "maxGt16": 0.002,
+    "tol": 0.0001,
+    "fields": [
+      "fxg.Rain.alive",
+      "fxg.Rain.gpu_alive",
+      "fxg.Fountain.alive",
+      "fxg.Fountain.gpu_alive",
+      "fxg.Fountain.gpu_sum",
+      "fxg.Smoke.alive",
+      "fxg.Smoke.gpu_alive",
+      "fxg.Smoke.gpu_sum",
+      "fxg.Debris.alive",
+      "fxg.Debris.gpu_alive",
+      "fxg.Debris.gpu_sum",
+      "fxg.Swirl.alive",
+      "fxg.Swirl.gpu_alive",
+      "fxg.Swirl.gpu_sum",
+      "fxg.rain_mean_y",
+      "fxg.rain_on_top",
+      "fxg.sort_ok",
+      "fxg.sorts_checked_any",
+      "fxg.draws",
+      "fxg.sort_passes",
+      "fxg.tick",
+      "sky.face_mean",
+      "sky.cpu_ok",
+      "sky.done",
+      "vis.hidden_mask",
+      "vis.meshes",
+      "vis.queries_any",
+      "imp.draws",
+      "decal.decals",
+      "decal.visible",
+      "decal.draws",
+      "decal.atlas"
+    ],
+    "controlFrames": 60,
+    "expect": {
+      "fxg.sort_ok": 1,
+      "fxg.rain_on_top": 1,
+      "fxg.sorts_checked_any": 1,
+      "fxg.Rain.gpu_alive": 1112,
+      "sky.cpu_ok": 1,
+      "sky.done": 1,
+      "vis.hidden_mask": 3,
+      "imp.draws": 2,
+      "decal.visible": 4,
+      "decal.draws": 4
+    },
+    "note": "GPUParticles3D on both backends without the pipeline (the app draws its own boxes, depth and linear depth): GL transform feedback / fragment-pass sort / readPixels stats against WebGPU compute sim, compute bitonic sort, async stats; depth collision (the rain rests on the table), analytic colliders, attractor, curl noise, sorted alpha, mesh particles, trails, Trail3D. The tree freezes at tick 100 so async results catch up. Rain.gpu_sum is left out (depth reconstruction from linear vs window depth: within 0.2 units); rain_mean_y covers it. Control: frame 60. the ProceduralSky cube (6 passes into 2D layer views of a cube texture) read back: face means GL vs WebGPU, texels against the CPU model (cw_sky_radiance) within 1%; a VisibilityManager whose occlusion queries (WebGPU: an occlusion query set resolved and read back a frame or more late) hide exactly the two meshes behind the table and under the floor (vis.hidden_mask), and impostors drawn from an atlas the app generates (opaque and fading); Decal3D (MIX, MULTIPLY, ADD) box-projected from the linear depth on WebGPU, from the depth copy on GL"
+  },
+  {
+    "name": "fx-gpu-sort-control",
+    "gl": false,
+    "webgpu": {
+      "hosts": [
+        "native"
+      ]
+    },
+    "app": "fx_gpu",
+    "frames": 120,
+    "maxGt16": 0.002,
+    "tol": 0.0001,
+    "fields": [
+      "fxg.Rain.alive",
+      "fxg.Rain.gpu_alive",
+      "fxg.Fountain.alive",
+      "fxg.Fountain.gpu_alive",
+      "fxg.Fountain.gpu_sum",
+      "fxg.Smoke.alive",
+      "fxg.Smoke.gpu_alive",
+      "fxg.Smoke.gpu_sum",
+      "fxg.Debris.alive",
+      "fxg.Debris.gpu_alive",
+      "fxg.Debris.gpu_sum",
+      "fxg.Swirl.alive",
+      "fxg.Swirl.gpu_alive",
+      "fxg.Swirl.gpu_sum",
+      "fxg.rain_mean_y",
+      "fxg.rain_on_top",
+      "fxg.sort_ok",
+      "fxg.sorts_checked_any",
+      "fxg.draws",
+      "fxg.sort_passes",
+      "fxg.tick",
+      "sky.face_mean",
+      "sky.cpu_ok",
+      "sky.done",
+      "vis.hidden_mask",
+      "vis.meshes",
+      "vis.queries_any",
+      "imp.draws",
+      "decal.decals",
+      "decal.visible",
+      "decal.draws",
+      "decal.atlas"
+    ],
+    "controlFrames": 120,
+    "controlEnv": {
+      "CW_FXGPU_FAULT": "2"
+    },
+    "note": "must fail: the WebGPU bitonic sort compares in the wrong order (sort_ok 0, the smoke draws front to back)"
+  },
+  {
+    "name": "fx-gpu-collider-control",
+    "gl": false,
+    "webgpu": {
+      "hosts": [
+        "native"
+      ]
+    },
+    "app": "fx_gpu",
+    "frames": 120,
+    "maxGt16": 0.002,
+    "tol": 0.0001,
+    "fields": [
+      "fxg.Rain.alive",
+      "fxg.Rain.gpu_alive",
+      "fxg.Fountain.alive",
+      "fxg.Fountain.gpu_alive",
+      "fxg.Fountain.gpu_sum",
+      "fxg.Smoke.alive",
+      "fxg.Smoke.gpu_alive",
+      "fxg.Smoke.gpu_sum",
+      "fxg.Debris.alive",
+      "fxg.Debris.gpu_alive",
+      "fxg.Debris.gpu_sum",
+      "fxg.Swirl.alive",
+      "fxg.Swirl.gpu_alive",
+      "fxg.Swirl.gpu_sum",
+      "fxg.rain_mean_y",
+      "fxg.rain_on_top",
+      "fxg.sort_ok",
+      "fxg.sorts_checked_any",
+      "fxg.draws",
+      "fxg.sort_passes",
+      "fxg.tick",
+      "sky.face_mean",
+      "sky.cpu_ok",
+      "sky.done",
+      "vis.hidden_mask",
+      "vis.meshes",
+      "vis.queries_any",
+      "imp.draws",
+      "decal.decals",
+      "decal.visible",
+      "decal.draws",
+      "decal.atlas"
+    ],
+    "controlFrames": 120,
+    "controlEnv": {
+      "CW_FXGPU_FAULT": "3"
+    },
+    "note": "must fail: the WebGPU simulation drops the ParticleCollider3D nodes (the fountain falls through its ball and the floor)"
+  },
+  {
+    "name": "fx-gpu-report",
+    "script": "tests/fx-gpu.mjs",
+    "note": "a broken compute shader must fail the run (and the healthy run pass); 100k particles natively on GL vs WebGPU compute, both on the test GPU, interleaved, with the load average (out/perf/fx-gpu-report.txt); control: an impossible budget must fail"
+  },
+  {
+    "name": "fx-pipeline",
+    "webgpu": true,
+    "app": "fx_pipeline",
+    "frames": 120,
+    "maxGt16": 0.002,
+    "tol": 0.0001,
+    "fields": [
+      "fxp.Rain.alive",
+      "fxp.Rain.gpu_alive",
+      "fxp.Fountain.alive",
+      "fxp.Fountain.gpu_alive",
+      "fxp.Fountain.gpu_sum",
+      "fxp.Smoke.alive",
+      "fxp.Smoke.gpu_alive",
+      "fxp.Smoke.gpu_sum",
+      "fxp.Debris.alive",
+      "fxp.Debris.gpu_alive",
+      "fxp.Debris.gpu_sum",
+      "fxp.Swirl.alive",
+      "fxp.Swirl.gpu_alive",
+      "fxp.Swirl.gpu_sum",
+      "fxp.rain_mean_y",
+      "fxp.rain_on_top",
+      "fxp.draws",
+      "fxp.sort_passes",
+      "fxp.decals",
+      "fxp.tick"
+    ],
+    "controlFrames": 60,
+    "expect": {
+      "fxp.rain_on_top": 1,
+      "fxp.decals": 4,
+      "fxp.draws": 8
+    },
+    "note": "Through the render pipeline: an app OPAQUE pass (webgpu) draws three boxes, the pipeline copies depth (GL: depth copy; WebGPU: R32F linear depth) and runs the effects module's own EFFECTS passes: decals and particles (depth collision, colliders, sort, trails, Trail3D). Rain.gpu_sum left out (depth reconstruction: within 0.05%). Control: frame 60"
+  },
+  {
+    "name": "fx-pipeline-decals-control",
+    "gl": false,
+    "webgpu": {
+      "hosts": [
+        "native"
+      ]
+    },
+    "app": "fx_pipeline",
+    "frames": 120,
+    "maxGt16": 0.002,
+    "tol": 0.0001,
+    "fields": [
+      "fxp.Rain.alive",
+      "fxp.Rain.gpu_alive",
+      "fxp.Fountain.alive",
+      "fxp.Fountain.gpu_alive",
+      "fxp.Fountain.gpu_sum",
+      "fxp.Smoke.alive",
+      "fxp.Smoke.gpu_alive",
+      "fxp.Smoke.gpu_sum",
+      "fxp.Debris.alive",
+      "fxp.Debris.gpu_alive",
+      "fxp.Debris.gpu_sum",
+      "fxp.Swirl.alive",
+      "fxp.Swirl.gpu_alive",
+      "fxp.Swirl.gpu_sum",
+      "fxp.rain_mean_y",
+      "fxp.rain_on_top",
+      "fxp.draws",
+      "fxp.sort_passes",
+      "fxp.decals",
+      "fxp.tick"
+    ],
+    "controlFrames": 120,
+    "controlEnv": {
+      "FXP_NO_DECALS": "1"
+    },
+    "note": "must fail: the decals transparent"
+  },
+  {
+    "name": "fx-pipeline-collide-control",
+    "gl": false,
+    "webgpu": {
+      "hosts": [
+        "native"
+      ]
+    },
+    "app": "fx_pipeline",
+    "frames": 120,
+    "maxGt16": 0.002,
+    "tol": 0.0001,
+    "fields": [
+      "fxp.Rain.alive",
+      "fxp.Rain.gpu_alive",
+      "fxp.Fountain.alive",
+      "fxp.Fountain.gpu_alive",
+      "fxp.Fountain.gpu_sum",
+      "fxp.Smoke.alive",
+      "fxp.Smoke.gpu_alive",
+      "fxp.Smoke.gpu_sum",
+      "fxp.Debris.alive",
+      "fxp.Debris.gpu_alive",
+      "fxp.Debris.gpu_sum",
+      "fxp.Swirl.alive",
+      "fxp.Swirl.gpu_alive",
+      "fxp.Swirl.gpu_sum",
+      "fxp.rain_mean_y",
+      "fxp.rain_on_top",
+      "fxp.draws",
+      "fxp.sort_passes",
+      "fxp.decals",
+      "fxp.tick"
+    ],
+    "controlFrames": 120,
+    "controlEnv": {
+      "FXP_NO_COLLIDE": "1"
+    },
+    "note": "must fail: the rain without depth collision falls through the table (rain_on_top 0)"
+  },
+  {
+    "name": "fx-particles2d",
+    "webgpu": true,
+    "app": "fx_particles2d",
+    "frames": 140,
+    "maxGt16": 0.002,
+    "fields": [
+      "p2.Fire.alive",
+      "p2.Snow.alive",
+      "p2.Burst.alive",
+      "p2.Comet.alive",
+      "p2.tick",
+      "p2.draw_calls"
+    ],
+    "expect": {
+      "p2.Burst.alive": 400,
+      "p2.Comet.alive": 300
+    },
+    "note": "M3.4 GPUParticles2D: CPU sim on the job pool through render2d (additive fire, alpha snow, a re-armed one-shot burst, an orbiting emitter leaving world-space particles); one draw call. Control: one frame early"
+  },
+  {
+    "name": "fx-particles2d-late",
+    "app": "fx_particles2d",
+    "frames": 250,
+    "maxGt16": 0.002,
+    "fields": [
+      "p2.Fire.alive",
+      "p2.Snow.alive",
+      "p2.Burst.alive",
+      "p2.Comet.alive",
+      "p2.tick",
+      "p2.draw_calls"
+    ],
+    "note": "the same after the snow fills the screen and the burst re-armed twice. Control: one frame early"
+  },
+  {
+    "name": "fx-decals",
+    "app": "fx_decals",
+    "frames": 30,
+    "maxGt16": 0.002,
+    "fields": [
+      "decal.decals",
+      "decal.visible",
+      "decal.culled",
+      "decal.draws",
+      "decal.atlas",
+      "decal.red_ok",
+      "decal.tick"
+    ],
+    "expect": {
+      "decal.red_ok": 1,
+      "decal.decals": 247
+    },
+    "controlFrames": 30,
+    "controlEnv": {
+      "FX_NO_DECALS": "1"
+    },
+    "note": "M3.4 Decal3D on uneven geometry (steps, ramp, sphere, wall corner, floor): MIX / MULTIPLY / ADD from one atlas, a sheet with regions, 240 scattered splats (instanced, frustum culled); red_ok reads the red splat where its box meets the floor. Control: no decals"
+  },
+  {
+    "name": "fx-decals-spin",
+    "app": "fx_decals",
+    "frames": 90,
+    "maxGt16": 0.002,
+    "fields": [
+      "decal.decals",
+      "decal.visible",
+      "decal.culled",
+      "decal.draws",
+      "decal.atlas",
+      "decal.red_ok",
+      "decal.tick"
+    ],
+    "note": "the spinning ADD ring decal over the steps edge, 60 ticks later. Control: one frame early"
+  },
+  {
+    "name": "vis-impostor",
+    "app": "vis_impostor",
+    "frames": 480,
+    "maxGt16": 0.002,
+    "fields": [
+      "vimp.tick",
+      "vimp.max_jump",
+      "vimp.pop_free",
+      "vimp.impostors",
+      "vimp.fading",
+      "vimp.atlases",
+      "vimp.visible",
+      "vimp.lod"
+    ],
+    "expect": {
+      "vimp.pop_free": 1
+    },
+    "controlFrames": 480,
+    "controlEnv": {
+      "VIS_NO_FADE": "1"
+    },
+    "note": "M3.6 octahedral impostors (albedo + normal atlases, lit at draw time) for 49 generated glTF trees with cwpack LOD chains; impostor_distance sweeps 60 m to 6 m and back, every frame is diffed with the last: the crossfade never changes more than 60 pixels by >24 levels at once. Control: impostor_fade 0 (hard switches pop about a thousand pixels)"
+  },
+  {
+    "name": "vis-impostor-band",
+    "app": "vis_impostor",
+    "frames": 200,
+    "maxGt16": 0.002,
+    "fields": [
+      "vimp.tick",
+      "vimp.max_jump",
+      "vimp.pop_free",
+      "vimp.impostors",
+      "vimp.fading",
+      "vimp.atlases",
+      "vimp.visible",
+      "vimp.lod"
+    ],
+    "note": "mid sweep: trees as meshes, crossfading and impostors at once. Control: one frame early"
+  },
+  {
+    "name": "vis-city",
+    "app": "vis_city",
+    "frames": 240,
+    "maxGt16": 0.003,
+    "fields": [
+      "city.meshes",
+      "city.visible",
+      "city.frustum",
+      "city.occluded",
+      "city.portal",
+      "city.distance",
+      "city.queries",
+      "city.lod",
+      "city.impostors",
+      "city.rooms_visible",
+      "city.draws",
+      "city.static"
+    ],
+    "note": "M3.6 city of ~4500 meshes under a VisibilityManager, down a long street: BVH frustum culling, occlusion queries (occlusion_wait: the same counts on every host), visibility ranges, LOD (primitive tessellations and the tree glTF LOD chain), tree impostors; culled / drawn counts per reason and draw calls. Control: one frame early"
+  },
+  {
+    "name": "vis-city-house",
+    "app": "vis_city",
+    "frames": 450,
+    "maxGt16": 0.003,
+    "fields": [
+      "city.meshes",
+      "city.visible",
+      "city.frustum",
+      "city.occluded",
+      "city.portal",
+      "city.distance",
+      "city.queries",
+      "city.lod",
+      "city.impostors",
+      "city.rooms_visible",
+      "city.draws",
+      "city.static"
+    ],
+    "note": "inside a house: portal culling through the west door and the inner doorway (rooms_visible). Control: one frame early"
+  },
+  {
+    "name": "vis-city-check",
+    "app": "vis_city_check",
+    "frames": 720,
+    "maxGt16": 0.003,
+    "fields": [
+      "city.meshes",
+      "city.visible",
+      "city.frustum",
+      "city.occluded",
+      "city.portal",
+      "city.pop_free"
+    ],
+    "expect": {
+      "city.pop_free": 1
+    },
+    "controlFrames": 720,
+    "controlEnv": {
+      "VIS_MODE": "naive"
+    },
+    "note": "never pops: along the whole walk every frame of the culled city (frustum, occlusion, portals) is compared with the same city in a second tree drawn with no culling: no frame loses a mesh (pop_frames counts frames with more than 64 pixels off by >24). Control: occlusion_guard off (plain one-frame-late queries pop a dozen frames) (pop_frames itself is not compared: Chromium shows one isolated small frame in some runs)"
+  },
+  {
+    "name": "vis-perf-report",
+    "script": "tests/vis-perf.mjs",
+    "note": "city draw calls, meshes drawn, triangles, cull CPU, frame work and GPU ms, culled and unculled, natively, in Chromium and romdev (reported); culled frame work within 16.7 ms natively and in Chromium; fewer triangles than unculled on every host; control: an impossible budget must fail"
+  },
+  {
+    "name": "unit-fx",
+    "app": "unit_fx",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "M3.4/M3.6: visibility BVH against brute force over random boxes and frusta (no false negatives, before and after a refit), the box/frustum test with sweeps, curve parsing, the particle emission function (3D and 2D alive counts over start, steady state, stop and one-shot), MeshInstance3D LOD hooks and shared unit primitives"
+  },
+  {
+    "name": "showcase-morning",
+    "app": "showcase",
+    "maxGt16": 0.002,
+    "minColors": 2000,
+    "fields": [
+      "sc.tick",
+      "sc.seg",
+      "sc.minutes",
+      "sc.elev",
+      "sc.lamps",
+      "sc.lod",
+      "sc.trees",
+      "sc.ok",
+      "sc.walk",
+      "sc.particles",
+      "sc.decals",
+      "sc.vis"
+    ],
+    "frames": 60,
+    "controlFrames": 120,
+    "expect": {
+      "sc.seg": 0,
+      "sc.minutes": 570,
+      "sc.lamps": 0,
+      "sc.trees": 1400,
+      "sc.ok": 1
+    },
+    "note": "M3.7 the phase-3 showcase at 09:30: terrain LOD chunks, chimney smoke (GPU particles), decals, VisibilityManager culling, the instanced forest, the village, four skinned walkers, CSM sun shadows, height fog with half-resolution light shafts, GTAO, TAA, bloom, AgX, SMAA; no lamp lit (dark engine lights are not gathered). Control: golden hour"
+  },
+  {
+    "name": "showcase-golden",
+    "app": "showcase",
+    "maxGt16": 0.002,
+    "minColors": 2000,
+    "fields": [
+      "sc.tick",
+      "sc.seg",
+      "sc.minutes",
+      "sc.elev",
+      "sc.lamps",
+      "sc.lod",
+      "sc.trees",
+      "sc.ok",
+      "sc.walk",
+      "sc.particles",
+      "sc.decals",
+      "sc.vis"
+    ],
+    "frames": 120,
+    "controlFrames": 60,
+    "expect": {
+      "sc.seg": 1,
+      "sc.minutes": 1065,
+      "sc.lamps": 0,
+      "sc.ok": 1
+    },
+    "note": "M3.7 showcase at 17:45: low sun, long shadows, sky-coloured fog with the sun lobe, the campfire lit (its omni atlas shadow). Control: morning"
+  },
+  {
+    "name": "showcase-dusk",
+    "app": "showcase",
+    "maxGt16": 0.002,
+    "minColors": 2000,
+    "fields": [
+      "sc.tick",
+      "sc.seg",
+      "sc.minutes",
+      "sc.elev",
+      "sc.lamps",
+      "sc.lod",
+      "sc.trees",
+      "sc.ok",
+      "sc.walk",
+      "sc.particles",
+      "sc.decals",
+      "sc.vis"
+    ],
+    "frames": 150,
+    "controlFrames": 240,
+    "expect": {
+      "sc.seg": 2,
+      "sc.lamps": 20,
+      "sc.ok": 1
+    },
+    "note": "M3.7 showcase at dusk, mid-way: lamps, windows and fireflies coming on one by one as the sun sets (20 of 128 lamps fully on). Control: night"
+  },
+  {
+    "name": "showcase-night",
+    "app": "showcase",
+    "maxGt16": 0.002,
+    "minColors": 400,
+    "fields": [
+      "sc.tick",
+      "sc.seg",
+      "sc.minutes",
+      "sc.elev",
+      "sc.lamps",
+      "sc.lod",
+      "sc.trees",
+      "sc.ok",
+      "sc.walk",
+      "sc.particles",
+      "sc.decals",
+      "sc.vis"
+    ],
+    "frames": 240,
+    "controlFrames": 150,
+    "expect": {
+      "sc.seg": 3,
+      "sc.minutes": 1320,
+      "sc.lamps": 128,
+      "sc.ok": 1
+    },
+    "note": "M3.7 showcase at 22:00: 128 lamps and 64 fireflies glowing, 8 real point lights (three.c's cap: the shadowed campfire and the 7 lit lamps nearest the view), lit windows, bloom, the eye-adapted exposure; the sun below the horizon renders no cascades. Control: dusk"
+  },
+  {
+    "name": "showcase-cycle",
+    "app": "showcase",
+    "maxGt16": 0.002,
+    "minColors": 400,
+    "fields": [
+      "sc.tick",
+      "sc.seg",
+      "sc.minutes",
+      "sc.elev",
+      "sc.lamps",
+      "sc.lod",
+      "sc.trees",
+      "sc.ok",
+      "sc.walk",
+      "sc.particles",
+      "sc.decals",
+      "sc.vis"
+    ],
+    "frames": 300,
+    "controlFrames": 240,
+    "expect": {
+      "sc.seg": 4,
+      "sc.lamps": 128,
+      "sc.ok": 1
+    },
+    "note": "M3.7 showcase with the day / night cycle running (half an hour a second) and the camera still circling. Control: the night segment's end"
+  },
+  {
+    "name": "showcase-perf",
+    "script": "tests/showcase-perf.mjs",
+    "note": "M3.7 showcase_perf at 1920x1080 full quality (particles, decals and visibility included) through all five segments on native, romdev, Chromium and wasmcart-native: every segment's frame (GPU drained each frame) under 16.7 ms; per-pass GPU ms reported in out/perf/showcase-report.txt; control: an impossible 0.05 ms budget must fail"
+  },
+  {
+    "name": "unit-editor",
+    "app": "unit_editor",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "M4.0: every undoable editor command round-trips do/undo/redo/undo (examples are mandatory), demo scenes save byte for byte, merge, dirty, refusals, quoting, the ed/ed64 channel binding, panels, settings"
+  },
+  {
+    "name": "editor",
+    "app": "editor",
+    "frames": 30,
+    "maxGt16": 0.002,
+    "fields": [
+      "editor.docs",
+      "editor.nodes",
+      "editor.doc_hash",
+      "editor.doc_version",
+      "editor.active_hash",
+      "editor.undo",
+      "editor.redo",
+      "editor.dirty",
+      "editor.selection",
+      "editor.sel_hash",
+      "editor.layout_hash",
+      "editor.commands_run",
+      "editor.command_errors",
+      "editor.palette_open",
+      "editor.commands",
+      "editor.modules",
+      "ui.controls",
+      "ui.drawn",
+      "ui.popups"
+    ],
+    "expect": {
+      "editor.docs": 1,
+      "editor.nodes": 11,
+      "editor.modules": 18,
+      "editor.command_errors": 0
+    },
+    "controlFrames": 30,
+    "controlEnv": {
+      "CW_EDITOR_SETTINGS": "repo:editor/tests/control-settings.cfg"
+    },
+    "note": "M4.0: the editor shell at startup (demo project, main scene open); control = the same run with a light theme from a settings file"
+  },
+  {
+    "name": "editor-session",
+    "app": "editor_session",
+    "frames": 50,
+    "maxGt16": 0.002,
+    "fields": [
+      "editor.docs",
+      "editor.nodes",
+      "editor.doc_hash",
+      "editor.doc_version",
+      "editor.active_hash",
+      "editor.undo",
+      "editor.redo",
+      "editor.dirty",
+      "editor.selection",
+      "editor.sel_hash",
+      "editor.layout_hash",
+      "editor.commands_run",
+      "editor.command_errors",
+      "editor.palette_open",
+      "editor.commands",
+      "editor.modules",
+      "ui.controls",
+      "ui.drawn",
+      "ui.popups",
+      "session.done",
+      "session.failed",
+      "session.reply_hash"
+    ],
+    "expect": {
+      "session.done": 1,
+      "session.failed": 1,
+      "editor.docs": 2,
+      "editor.undo": 8,
+      "editor.palette_open": 1
+    },
+    "controlFrames": 30,
+    "note": "M4.0: a scripted editing session (editor/tests/session.inc): merged drag, add/rename/instance/delete, undo/redo, reparent, settings, panel move, save, a second scene, the palette; control = the session stopped at frame 30"
+  },
+  {
+    "name": "editor-mouse",
+    "app": "editor",
+    "frames": 34,
+    "input": "editor-mouse.json",
+    "controlInput": "editor-mouse-control.json",
+    "maxGt16": 0.002,
+    "fields": [
+      "editor.docs",
+      "editor.nodes",
+      "editor.doc_hash",
+      "editor.doc_version",
+      "editor.active_hash",
+      "editor.undo",
+      "editor.redo",
+      "editor.dirty",
+      "editor.selection",
+      "editor.sel_hash",
+      "editor.layout_hash",
+      "editor.commands_run",
+      "editor.command_errors",
+      "editor.palette_open",
+      "editor.commands",
+      "editor.modules",
+      "ui.controls",
+      "ui.drawn",
+      "ui.popups"
+    ],
+    "expect": {
+      "editor.selection": 1,
+      "editor.command_errors": 0
+    },
+    "note": "M4.0: by mouse: drag the History tab to another dock slot, select a node in the Scene tree, drag a dock separator, open the Edit menu; control = the same pointer moves without pressing"
+  },
+  {
+    "name": "editor-channel",
+    "script": "tests/editor-channel.mjs"
+  },
+  {
+    "name": "editor-scenes",
+    "script": "tests/editor-scenes.mjs"
+  },
+  {
+    "name": "play-demo",
+    "app": "play_demo",
+    "frames": 60,
+    "fields": [
+      "game.ball_y",
+      "game.ticks",
+      "game.respawns"
+    ],
+    "tol": 0.0001,
+    "expect": {
+      "game.ticks": 60,
+      "game.respawns": 0
+    },
+    "controlFrames": 59,
+    "note": "M4.3: the game the editor plays in editor-play (a falling ball, a crate, the HUD the game writes), the same on every host; control = one frame early"
+  },
+  {
+    "name": "editor-play",
+    "script": "tests/editor-play.mjs",
+    "note": "M4.3 play-in-editor, the editor side: the native editor plays samples/play_demo natively and in romdev, driven over ed and by pointer only (edit a live property, step, inspect, keep it in the scene, crash, relaunch), each with a control that must fail; the cart editor says Play is unavailable"
+  },
+  {
+    "name": "unit-net",
+    "app": "unit_net",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "M5.4: channels over a lossy simulated network (exactly-once in-order reliable, refused protocol), tree snapshots (structure, values, private state, host-stable hash), RPC + NetSynchronizer + NetSpawner, rollback with its own no-rollback control that must desync"
+  },
+  {
+    "name": "net-arena",
+    "app": "net_arena",
+    "frames": 800,
+    "maxGt16": 0.0005,
+    "fields": [
+      "net.a.hash",
+      "net.b.hash",
+      "net.match",
+      "net.done",
+      "net.a.desyncs",
+      "net.b.desyncs",
+      "net.a.checked",
+      "net.b.checked",
+      "net.a.rollbacks",
+      "net.b.rollbacks",
+      "net.a.resim",
+      "net.b.resim",
+      "net.a.mispredictions",
+      "net.a.max_depth",
+      "net.sim.sent",
+      "net.sim.dropped",
+      "arena.p0",
+      "arena.p1",
+      "arena.scores",
+      "arena.deaths",
+      "net.a.trace"
+    ],
+    "expect": {
+      "net.match": 1,
+      "net.done": 1,
+      "net.a.desyncs": 0,
+      "net.b.desyncs": 0
+    },
+    "controlFrames": 800,
+    "controlEnv": {
+      "CW_NET_NO_ROLLBACK": "1"
+    },
+    "note": "M5.4: two rollback peers in one process over the deterministic network simulator (80 ms latency, 40 ms jitter, 10% loss, 2% duplicates): both confirm the same state hash at tick 600 with every 10th tick compared in-band, identically on every host; control = the same run with rollback disabled (wrong predictions stay), which must diverge"
+  },
+  {
+    "name": "net",
+    "script": "tests/net.mjs",
+    "note": "M5.4: native<->native over UDP loopback (two processes) and cart<->cart over wasmcart peers through tools/cwrelay.mjs on romdev, wcnative and Chromium, under injected latency/jitter/loss; controls: an injected desync (every transport) and rollback disabled (UDP) must be caught; rollback cost per frame printed"
+  },
+  {
+    "name": "unit-project",
+    "app": "unit_project",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "M4.6: project.cwproj editing keeps every other line, typed reads, input map + render settings applied (cartwheel/project.h); child processes natively, refused in carts (cartwheel/process.h)"
+  },
+  {
+    "name": "project-templates",
+    "script": "tests/project-templates.mjs"
+  },
+  {
+    "name": "editor-import",
+    "script": "tests/editor-import.mjs",
+    "note": "M4.2 exit: drag a glTF in, see it imported, place it (in-app pointer session on native, romdev, chromium, wcnative; the same over the debug channel native vs romdev; controls: session stopped before the drag, hidden node covers 0 pixels, corrupt glTF errors, refused delete)"
+  },
+  {
+    "name": "triggers",
+    "app": "triggers_demo",
+    "frames": 28,
+    "maxGt16": 0.002,
+    "fields": [
+      "tick",
+      "hits",
+      "lamp_g",
+      "lamp_visible",
+      "spark",
+      "crate",
+      "won",
+      "tick_lamp",
+      "tick_won",
+      "disabled",
+      "fired"
+    ],
+    "expect": {
+      "hits": 11,
+      "lamp_g": 100,
+      "lamp_visible": 1,
+      "spark": 1,
+      "crate": 1,
+      "won": 0,
+      "tick_lamp": 22,
+      "fired": [
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        1
+      ]
+    },
+    "controlFrames": 28,
+    "controlEnv": {
+      "CW_TRIGGERS_OFF": "1"
+    },
+    "note": "M4.4: Trigger nodes from a scene file, no game code: a ball (group player) entering an Area2D SETs a lamp green, CALLs Counter.add(1), EMITs Counter.bump (whose own trigger CALLs add(10)), SPAWNs a scene once; a disabled rule never runs; control = every trigger disabled (CW_TRIGGERS_OFF)"
+  },
+  {
+    "name": "triggers-end",
+    "app": "triggers_demo",
+    "frames": 200,
+    "maxGt16": 0.002,
+    "fields": [
+      "tick",
+      "hits",
+      "lamp_g",
+      "lamp_visible",
+      "spark",
+      "crate",
+      "won",
+      "tick_lamp",
+      "tick_won",
+      "disabled",
+      "fired"
+    ],
+    "expect": {
+      "hits": 12,
+      "lamp_g": 100,
+      "lamp_visible": 1,
+      "spark": 1,
+      "crate": 0,
+      "won": 1,
+      "tick_won": 33,
+      "fired": [
+        1,
+        2,
+        1,
+        1,
+        1,
+        0,
+        1
+      ]
+    },
+    "controlFrames": 30,
+    "note": "M4.4: the rest of the triggers run: the crate (group crates) is counted and FREEd by its rule, the ball reaching the Exit area CHANGE_SCENEs to won.cwscene; control = frame 30, before the crate and the exit"
+  },
+  {
+    "name": "editor-agent-ui",
+    "app": "editor",
+    "frames": 60,
+    "input": "editor-agent-ui.json",
+    "controlInput": "editor-agent-ui-control.json",
+    "maxGt16": 0.002,
+    "fields": [
+      "editor.docs",
+      "editor.nodes",
+      "editor.doc_hash",
+      "editor.doc_version",
+      "editor.active_hash",
+      "editor.undo",
+      "editor.redo",
+      "editor.dirty",
+      "editor.selection",
+      "editor.sel_hash",
+      "editor.layout_hash",
+      "editor.commands_run",
+      "editor.command_errors",
+      "editor.palette_open",
+      "editor.commands",
+      "editor.modules",
+      "ui.controls",
+      "ui.drawn",
+      "ui.popups",
+      "agent.requests",
+      "agent.open",
+      "agent.hash",
+      "triggers.rules",
+      "triggers.hash"
+    ],
+    "expect": {
+      "agent.requests": 1,
+      "agent.open": 1,
+      "triggers.rules": 1,
+      "editor.docs": 2,
+      "editor.command_errors": 0
+    },
+    "note": "M4.4 by keyboard and mouse: type a request into the Agent panel and press Enter (agent.request), open ui/hud.cwscene from the palette, select the Pause button, and in the Triggers panel build the rule \"when pressed: set text = Paused! (once)\" with Add Rule, then select it from the rule list (the inspector shows the Trigger node); control = the same moves without the Enter and the Add Rule click",
+    "skip": [
+      "romdev"
+    ]
+  },
+  {
+    "name": "editor-agent",
+    "script": "tests/editor-agent.mjs"
+  },
+  {
+    "name": "l10n-en",
+    "app": "l10n_demo",
+    "frames": 50,
+    "maxGt16": 0.002,
+    "fields": [
+      "demo.locale",
+      "demo.text_hash",
+      "demo.a11y_nodes",
+      "demo.caption_hash",
+      "demo.glyphs_missing",
+      "demo.rtl",
+      "demo.option_selected",
+      "l10n.missing",
+      "l10n.locale_hash",
+      "l10n.font_fallbacks",
+      "l10n.catalogs",
+      "l10n.keys"
+    ],
+    "expect": {
+      "demo.locale": 0,
+      "demo.glyphs_missing": 0,
+      "l10n.missing": 0
+    },
+    "controlFrames": 50,
+    "controlEnv": {
+      "CW_L10N_FAULT": "missing_key"
+    },
+    "note": "M5.5: the demo UI in English from packed catalogs (plurals, number/date formats, captions, binding names); control: a typo'd catalog key must show and count as missing"
+  },
+  {
+    "name": "l10n-pseudo",
+    "app": "l10n_demo",
+    "frames": 110,
+    "maxGt16": 0.002,
+    "fields": [
+      "demo.locale",
+      "demo.text_hash",
+      "demo.a11y_nodes",
+      "demo.caption_hash",
+      "demo.glyphs_missing",
+      "demo.rtl",
+      "demo.option_selected",
+      "l10n.missing",
+      "l10n.locale_hash",
+      "l10n.font_fallbacks",
+      "l10n.catalogs",
+      "l10n.keys"
+    ],
+    "expect": {
+      "demo.locale": 1,
+      "demo.glyphs_missing": 0,
+      "l10n.missing": 0
+    },
+    "controlFrames": 110,
+    "controlEnv": {
+      "CW_L10N_FAULT": "missing_key"
+    },
+    "note": "M5.5: the en-XA pseudo-locale (accented, 40% longer, bracketed) over the same layout; control: a missing key"
+  },
+  {
+    "name": "l10n-ar",
+    "webgpu": true,
+    "app": "l10n_demo",
+    "frames": 170,
+    "maxGt16": 0.002,
+    "fields": [
+      "demo.locale",
+      "demo.text_hash",
+      "demo.a11y_nodes",
+      "demo.caption_hash",
+      "demo.glyphs_missing",
+      "demo.rtl",
+      "demo.option_selected",
+      "l10n.missing",
+      "l10n.locale_hash",
+      "l10n.font_fallbacks",
+      "l10n.catalogs",
+      "l10n.keys"
+    ],
+    "expect": {
+      "demo.locale": 2,
+      "demo.glyphs_missing": 0,
+      "l10n.missing": 0
+    },
+    "controlFrames": 170,
+    "controlEnv": {
+      "CW_L10N_FAULT": "no_fallback"
+    },
+    "note": "M5.5: Arabic, right to left: mirrored containers and anchors, kb_text_shape joining forms and bidi, Arabic-Indic digits, Noto Sans Arabic (subset by cwpack) as fallback font, per-locale banner; control: the fallback to English broken (a key only English has goes missing)"
+  },
+  {
+    "name": "l10n-ja",
+    "webgpu": true,
+    "app": "l10n_demo",
+    "frames": 230,
+    "maxGt16": 0.002,
+    "fields": [
+      "demo.locale",
+      "demo.text_hash",
+      "demo.a11y_nodes",
+      "demo.caption_hash",
+      "demo.glyphs_missing",
+      "demo.rtl",
+      "demo.option_selected",
+      "l10n.missing",
+      "l10n.locale_hash",
+      "l10n.font_fallbacks",
+      "l10n.catalogs",
+      "l10n.keys"
+    ],
+    "expect": {
+      "demo.locale": 3,
+      "demo.glyphs_missing": 0,
+      "l10n.missing": 0
+    },
+    "controlFrames": 230,
+    "controlEnv": {
+      "CW_L10N_FAULT": "no_font"
+    },
+    "note": "M5.5: Japanese from a PO source imported by cwpack, CJK glyphs from Noto Sans JP (subset), CJK line breaking with kinsoku; control: no fallback font (tofu, glyphs counted missing)"
+  },
+  {
+    "name": "l10n-xb",
+    "app": "l10n_demo",
+    "frames": 290,
+    "maxGt16": 0.002,
+    "fields": [
+      "demo.locale",
+      "demo.text_hash",
+      "demo.a11y_nodes",
+      "demo.caption_hash",
+      "demo.glyphs_missing",
+      "demo.rtl",
+      "demo.option_selected",
+      "l10n.missing",
+      "l10n.locale_hash",
+      "l10n.font_fallbacks",
+      "l10n.catalogs",
+      "l10n.keys"
+    ],
+    "expect": {
+      "demo.locale": 4,
+      "demo.glyphs_missing": 0,
+      "l10n.missing": 0
+    },
+    "controlFrames": 290,
+    "controlEnv": {
+      "CW_L10N_FAULT": "missing_key"
+    },
+    "note": "M5.5: the ar-XB pseudo-locale (English text, right-to-left paragraphs and mirrored layout); control: a missing key"
+  },
+  {
+    "name": "l10n-a11y",
+    "app": "l10n_demo",
+    "frames": 350,
+    "maxGt16": 0.002,
+    "fields": [
+      "demo.segment",
+      "demo.a11y_on",
+      "demo.text_scale_pct",
+      "demo.text_hash",
+      "demo.a11y_nodes",
+      "demo.glyphs_missing",
+      "l10n.missing",
+      "l10n.locale_hash"
+    ],
+    "expect": {
+      "demo.segment": 5,
+      "demo.a11y_on": 1,
+      "demo.text_scale_pct": 125,
+      "demo.glyphs_missing": 0,
+      "l10n.missing": 0
+    },
+    "controlFrames": 350,
+    "controlEnv": {
+      "CW_L10N_FAULT": "no_a11y"
+    },
+    "note": "M5.5: the accessibility settings on the English screen: high-contrast theme, text at 125% (layouts grow with it), reduced motion; control: the settings never applied"
+  },
+  {
+    "name": "l10n-nav",
+    "app": "l10n_nav",
+    "frames": 160,
+    "maxGt16": 0.002,
+    "fields": [
+      "demo.locale",
+      "demo.option_selected",
+      "demo.focus_hash",
+      "demo.remaps",
+      "demo.jump_hash",
+      "demo.captions_on",
+      "demo.text_hash",
+      "demo.glyphs_missing",
+      "l10n.missing"
+    ],
+    "expect": {
+      "demo.locale": 3,
+      "demo.option_selected": 3,
+      "demo.remaps": 1,
+      "demo.captions_on": 0,
+      "demo.glyphs_missing": 0,
+      "l10n.missing": 0
+    },
+    "controlFrames": 160,
+    "controlEnv": {
+      "CW_L10N_NAV_CONTROL": "1"
+    },
+    "note": "M5.5: a gamepad session in Arabic with the colorblind-friendly theme through the raw input filter (so every host runs it): focus the language box, open it, pick Japanese, focus comes back, move down (volume up, subtitles off), rebind jump to the west button on the gamepad RemapButton; control: the last press dropped"
+  },
+  {
+    "name": "unit-l10n",
+    "app": "unit_l10n",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    }
+  },
+  {
+    "name": "a11y-channel",
+    "script": "tests/a11y-channel.mjs",
+    "note": "M5.5: the accessibility tree, focus, event log and l10n state over the debug channel, native vs romdev cart, plus requests that must fail"
+  },
+  {
+    "name": "project-export",
+    "script": "tests/project-export.mjs",
+    "note": "M4.6 exit gate: new project -> export native + cart with one editor action (tools/cwexport.mjs), every export run and probed"
+  },
+  {
+    "name": "export",
+    "script": "tests/export.mjs",
+    "note": "M5.0 exporters: platformer2d + platformer3d exported for linux-x64/arm64, windows-x64 (Wine), android-arm64 (AVD), web (Chromium), wasc (romdev, wcnative), macos/ios (templates), and a CW_PROJECT_DIR project; each export run where possible and probed through the debug channel; controls: no .cwpak, broken asset path, no COOP/COEP, truncated cart"
+  },
+  {
+    "name": "unit-plugin",
+    "app": "unit_plugin",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done",
+      "plugins.loaded",
+      "plugins.refused",
+      "plugins.disabled"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1,
+      "plugins.refused": 2,
+      "plugins.disabled": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "M5.2: the build's plugin table on every host (plugin_fixtures: good compiled in, future refused by engine API 2.0, off disabled, needs_future refused by its dependency; none of the refused ones compiled), version rules, load-time refusal of code compiled for API 1.7, unload refused while nodes exist then load again, errors naming the plugin of an unknown type, manifest parsing; control: injected failure"
+  },
+  {
+    "name": "plugin-demo",
+    "app": "plugin_demo",
+    "frames": 120,
+    "input": "plugin-demo.json",
+    "controlInput": "plugin-demo-control.json",
+    "fields": [
+      "game.ticks",
+      "game.presses",
+      "table.found",
+      "table.angle",
+      "table.speed",
+      "table.turns",
+      "tree.nodes",
+      "plugins.loaded",
+      "plugins.refused",
+      "plugins.disabled"
+    ],
+    "tol": 0.0001,
+    "expect": {
+      "game.ticks": 120,
+      "game.presses": 1,
+      "table.found": 1,
+      "table.speed": -1.5,
+      "tree.nodes": 10,
+      "plugins.loaded": 1,
+      "plugins.refused": 0
+    },
+    "note": "M5.2: samples/plugin_demo, a project whose main scene uses the Turntable node type from its runtime plugin (plugins/turntable, compiled in by cw_add_app): the turntable turns on every host, pad south calls its reverse method; control: no press (speed and angle differ)"
+  },
+  {
+    "name": "plugins",
+    "script": "tests/plugins.mjs",
+    "note": "M5.2 exit: a project plugin (samples/plugin_demo/plugins/turntable, copied to a fresh project) used without editing the engine tree: built by tools/cwproject.mjs (plugin libraries + the game), the game with the plugin's node type and debug command natively and on wasmcart-native; the native editor loads it (panel, inspector plugin, gizmo, commands), pointer-only session (panel row, gizmo radius drag = one undo step, inspector slider + Reverse), hot reload of edited editor + runtime code built outside the editor (a failing build keeps the old code), disable (refused while dirty, everything withdrawn, the scene refused naming the plugin, file unchanged, the game without it names the plugin), version mismatch refused by editor and build, a stale library refused at load; the cart project editor on romdev with the plugin compiled in; controls: non-Turntable node, unbuilt edit, presses removed, engine_api 2.0, code compiled for 1.9, the stock editor cart"
+  },
+  {
+    "name": "docs",
+    "script": "tests/docs.mjs",
+    "note": "M5.3: gen-api --check (no new undocumented function, ratchet) + gen-docs --check (every include/region/link resolves, tutorials paste no code, every header has a guide, every template a tutorial) + the built site from file:// in Chromium (no page errors, search, theme, phone width, every relative link); controls: pasted code, broken include, broken link, nonsense search"
+  },
+  {
+    "name": "tutorials",
+    "script": "tests/tutorials.mjs",
+    "chromium": true,
+    "note": "M5.3: every tutorial final project (docs/tutorials/*/project) builds native + cart and does what the tutorial says on native and romdev (state equal, frames within tolerance); each with a control that must fail"
+  },
+  {
+    "name": "platform-boundary",
+    "script": "tests/platform-boundary.mjs",
+    "note": "only src/platform includes SDL (the l10n module read the system locale through SDL itself); control: a synthetic module including SDL must be caught"
+  },
+  {
+    "name": "wgpu-post-full",
+    "app": "post_synth",
+    "frames": 24,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 23,
+    "note": "post_synth (the app ray traces the scene on both backends): TAA, GTAO, bloom, AgX, LUT grade, vignette, chromatic aberration, grain, height fog together on a moving camera",
+    "expect": {
+      "post.seg": 0
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium",
+        "wcnative"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "taa"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "ssao"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "height_fog"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-base",
+    "app": "post_synth",
+    "frames": 28,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 27,
+    "note": "post_synth (the app ray traces the scene on both backends): AgX tone mapping only",
+    "expect": {
+      "post.seg": 1
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "tonemap"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "tonemap"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-neutral",
+    "app": "post_synth",
+    "frames": 32,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 31,
+    "note": "post_synth (the app ray traces the scene on both backends): Khronos PBR Neutral",
+    "expect": {
+      "post.seg": 2
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "tonemap"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "tonemap"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-aces",
+    "app": "post_synth",
+    "frames": 36,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 35,
+    "note": "post_synth (the app ray traces the scene on both backends): the ACESFilmic curve in the tonemap pass",
+    "expect": {
+      "post.seg": 3
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "tonemap"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-reinhard",
+    "app": "post_synth",
+    "frames": 40,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 39,
+    "note": "post_synth (the app ray traces the scene on both backends): Reinhard, exposure_ev 1",
+    "expect": {
+      "post.seg": 4
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "tonemap"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-cineon",
+    "app": "post_synth",
+    "frames": 44,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 43,
+    "note": "post_synth (the app ray traces the scene on both backends): OptimizedCineon (the sRGB transfer after it, as in r186)",
+    "expect": {
+      "post.seg": 5
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "tonemap"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-linear",
+    "app": "post_synth",
+    "frames": 48,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 47,
+    "note": "post_synth (the app ray traces the scene on both backends): Linear, exposure 0.7",
+    "expect": {
+      "post.seg": 6
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "tonemap"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-grade",
+    "app": "post_synth",
+    "frames": 52,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 51,
+    "note": "post_synth (the app ray traces the scene on both backends): 3D LUT grade (texture_3d on WebGPU)",
+    "expect": {
+      "post.seg": 7
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "grade"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "grade"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-bloom",
+    "app": "post_synth",
+    "frames": 56,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 55,
+    "note": "post_synth (the app ray traces the scene on both backends): dual-filter bloom, threshold 1, intensity 0.4",
+    "expect": {
+      "post.seg": 8
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "bloom.composite"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "bloom.down"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "bloom"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-fxaa",
+    "app": "post_synth",
+    "frames": 60,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 59,
+    "note": "post_synth (the app ray traces the scene on both backends): FXAA 3.11",
+    "expect": {
+      "post.seg": 9
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "fxaa"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "aa"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-smaa",
+    "app": "post_synth",
+    "frames": 64,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 63,
+    "note": "post_synth (the app ray traces the scene on both backends): SMAA 1x (area table uploaded as RG8)",
+    "expect": {
+      "post.seg": 10
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "smaa.weights"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "smaa.edges"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "aa"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-lens",
+    "app": "post_synth",
+    "frames": 68,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 67,
+    "note": "post_synth (the app ray traces the scene on both backends): vignette, chromatic aberration, integer-hash grain",
+    "expect": {
+      "post.seg": 11
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "lens"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "lens"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-ssao",
+    "app": "post_synth",
+    "frames": 72,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 71,
+    "note": "post_synth (the app ray traces the scene on both backends): GTAO half resolution + depth-aware upsample from the R32F linear depth",
+    "expect": {
+      "post.seg": 12
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "ssao"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "ssao.composite"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "depth_copy"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "ssao"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-taa",
+    "app": "post_synth",
+    "frames": 96,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 95,
+    "note": "post_synth (the app ray traces the scene on both backends): TAA: Halton jitter, velocity from depth, Catmull-Rom history, moving camera",
+    "expect": {
+      "post.seg": 13
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium",
+        "wcnative"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "taa"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "velocity"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "taa"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-msaa",
+    "app": "post_synth",
+    "frames": 100,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 99,
+    "note": "post_synth (the app ray traces the scene on both backends): 4x MSAA through resolveTarget (RGBA8 scene: compatibility mode cannot multisample RGBA16Float)",
+    "expect": {
+      "post.seg": 14
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "tonemap"
+          }
+        },
+        {
+          "env": {
+            "POST_SYNTH_EXTRA": "msaa=0"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-fog",
+    "app": "post_synth",
+    "frames": 104,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 103,
+    "note": "post_synth (the app ray traces the scene on both backends): HeightFog (analytic) in EFFECTS from the linear depth, premultiplied blend into the scene",
+    "expect": {
+      "post.seg": 15
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "fog"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "height_fog"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-view-depth",
+    "app": "post_synth",
+    "frames": 107,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 106,
+    "note": "post_synth (the app ray traces the scene on both backends): debug view: linear depth",
+    "expect": {
+      "post.seg": 16
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "debug_view"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "depth_copy"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-view-normals",
+    "app": "post_synth",
+    "frames": 110,
+    "maxGt16": 0.006,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 109,
+    "note": "post_synth (the app ray traces the scene on both backends): debug view: normals rebuilt from depth. Bound 0.6%: normals / AO rebuilt from depth differences amplify shader codegen differences between hosts (native Dawn vs emdawnwebgpu on WebGPU, Mesa vs ANGLE on GL)",
+    "expect": {
+      "post.seg": 17
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.008,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "debug_view"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "depth_copy"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-view-velocity",
+    "app": "post_synth",
+    "frames": 113,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 112,
+    "note": "post_synth (the app ray traces the scene on both backends): debug view: velocity",
+    "expect": {
+      "post.seg": 18
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "velocity"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "velocity"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-view-ao",
+    "app": "post_synth",
+    "frames": 116,
+    "maxGt16": 0.006,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 115,
+    "note": "post_synth (the app ray traces the scene on both backends): debug view: GTAO visibility. Bound 0.6%: normals / AO rebuilt from depth differences amplify shader codegen differences between hosts (native Dawn vs emdawnwebgpu on WebGPU, Mesa vs ANGLE on GL)",
+    "expect": {
+      "post.seg": 19
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.008,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "ssao"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "ssao"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-view-bloom",
+    "app": "post_synth",
+    "frames": 119,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 118,
+    "note": "post_synth (the app ray traces the scene on both backends): debug view: the bloom chain",
+    "expect": {
+      "post.seg": 20
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "bloom.up"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "bloom"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wgpu-post-ldr-post",
+    "app": "post_synth",
+    "frames": 123,
+    "maxGt16": 0.002,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float",
+      "cam.x",
+      "cam.z"
+    ],
+    "controlFrames": 122,
+    "note": "post_synth (the app ray traces the scene on both backends): an RGBA8 scene (hdr off), bloom + FXAA",
+    "expect": {
+      "post.seg": 21
+    },
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium"
+      ],
+      "vsGl": 0.002,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "bloom.composite"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "aa"
+          }
+        }
+      ]
+    }
+  }
+]

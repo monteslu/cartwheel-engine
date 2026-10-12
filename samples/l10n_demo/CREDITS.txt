@@ -1,0 +1,27 @@
+l10n_demo: asset sources and licenses
+
+Fonts (fetched into deps/fonts by scripts/fetch-deps.sh, pinned by commit and
+sha256 in scripts/deps.lock; never committed here). cwpack subsets them to
+the characters the catalogs use (font.subset = l10n), which makes the packed
+files Modified Versions under the SIL Open Font License 1.1; their names are
+unchanged and use no Reserved Font Name. Each ships beside its license text
+in the pack (fonts/*-OFL.txt).
+  Noto Sans Arabic: Copyright 2022 The Noto Project Authors
+    (https://github.com/notofonts/arabic). SIL Open Font License 1.1.
+    From https://github.com/google/fonts (ofl/notosansarabic).
+  Noto Sans JP: Copyright 2014-2021 Adobe (http://www.adobe.com/), with
+    Reserved Font Name 'Source'. SIL Open Font License 1.1.
+    From https://github.com/google/fonts (ofl/notosansjp).
+
+The UI's own fonts (Fira Sans, Fira Mono, SIL OFL 1.1) are embedded in the
+engine (src/ui/fonts/, licenses beside them).
+
+Banners (project/textures/banner.png and project/l10n/assets/*/textures/
+banner.png): CC0, generated from code by samples/l10n_demo/make-art.mjs in
+this repository.
+
+Catalogs, captions and the PO file: written for this repository (CC0).
+
+Shaping: kb_text_shape by Jimmy Lefevre, zlib license
+(https://github.com/JimmyLefevre/kb), compiled into the engine from deps/kb
+(src/third_party/kb_text_shape_impl.c).

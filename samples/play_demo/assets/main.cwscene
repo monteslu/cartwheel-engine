@@ -1,0 +1,54 @@
+[scene format=1]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.01341, 0.01739, 0.0331, 1)
+ambient_energy = 1.25664
+hemi_energy = 1.5708
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 3, 9)
+rotation = vec3(-0.25, 0, 0)
+fov = 55
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(3, 8, 5)
+rotation = vec3(-0.9, 0.4, 0)
+energy = 4.71239
+
+[node name="Floor" parent="." type="StaticBody3D"]
+position = vec3(0, -0.5, 0)
+
+[node name="Shape" parent="Floor" type="CollisionShape3D"]
+size = vec3(12, 1, 6)
+
+[node name="Mesh" parent="Floor" type="MeshInstance3D"]
+size = vec3(12, 1, 6)
+color = color(0.05088, 0.21404, 0.07324, 1)
+
+[node name="Ball" parent="." type="RigidBody3D"]
+position = vec3(-1.5, 4, 0)
+
+[node name="Shape" parent="Ball" type="CollisionShape3D"]
+shape = SPHERE
+
+[node name="Mesh" parent="Ball" type="MeshInstance3D"]
+primitive = SPHERE
+color = color(0.78741, 0.13287, 0.01961, 1)
+
+[node name="Crate" parent="." type="RigidBody3D"]
+position = vec3(1.5, 2, 0)
+density = 2
+
+[node name="Shape" parent="Crate" type="CollisionShape3D"]
+
+[node name="Mesh" parent="Crate" type="MeshInstance3D"]
+color = color(0.52252, 0.31855, 0.10048, 1)
+
+[node name="Hud" parent="." type="Label"]
+offset_left = 12
+offset_top = 8
+offset_right = 400
+offset_bottom = 40
+text = "play demo"

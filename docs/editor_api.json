@@ -1,0 +1,667 @@
+{
+ "generated_by": "tools/gen-api.mjs",
+ "headers": [
+  {
+   "header": "cwed/editor.h",
+   "summary": "cartwheel editor: the extension API (the ONE header editor modules use).\n\nThe editor is a cartwheel app built with the engine's own UI\n(cartwheel/ui.h). Its code is split into a small CORE (editor/core/: this\nAPI, documents, commands and history, selection, docking, the shell) and\nMODULES (editor/modules/<name>/: one directory per feature: a panel, a\nset of commands, inspector plugins, gizmos, a play backend). Modules never\ninclude each other's files and never include core internals: everything a\nmodule needs is here, so modules are built in parallel by different people\n(or agents) without touching each other's files.\n\n── Modules ──────────────────────────────────────────────────────────\nA module is a directory editor/modules/<name>/ whose .c files define\n\n    CWED_MODULE(name) = { .title = \"History\", .init = history_init };\n\nThe build finds every module directory and generates the registration\ntable (build/.../editor_modules.c, sorted by name), so adding a module\nedits no shared file. cwed_init calls each module's init in table order\nafter the core registered its own commands and panels; init registers\nthe module's panels, commands, menu items, settings, inspector plugins,\ngizmos and event subscriptions. Order between modules must not matter\n(use events, not init order).\n\n── Commands (every editor action) ───────────────────────────────────\nEvery action, from a menu, a shortcut, a panel, the command palette or\nan agent, is a named COMMAND run through cwed_run() with text arguments:\n\n    node.set path=Player/Mesh prop=color value=\"color(1, 0, 0, 1)\"\n    node.set Player/Mesh color \"color(1, 0, 0, 1)\"     (positional: same)\n\nA command line is the command name, then arguments by position or as\nkey=value (a key must be one of the command's parameter names); quote an\nargument containing spaces with \"...\" (\\\" and \\\\ escape inside quotes).\nArguments stay TEXT: the command parses them (cwed_arg_* helpers), so\nevery command is serializable as the exact line that runs it again.\nReplies are JSON: {\"ok\":true, ...} or {\"ok\":false,\"error\":\"...why, and the\ncall that fixes it\"}.\n\nUndoable commands (CWED_CMD_UNDO) record an entry in a HISTORY: scene\ncommands (CWED_CMD_SCENE) in the active document's own history, others in\nthe editor-wide one. Undo calls the command's undo; redo calls exec again\nwith the same arguments and the state the first run left (so a redo can\nreuse what undo kept, e.g. the very node that was deleted). Merging:\nrunning a command with the reserved argument merge=<key> folds it into the\nprevious history entry when that entry is the same command with the same\nkey and nothing was undone or sealed in between: one undo step for a whole\ndrag (cwed_history_seal ends the run).\n\nThe same commands answer over the debug channel (cartwheel/debug.h):\n    ed <command line>          run it (romdev: wasm({op:'command', text:'ed ...'}))\n    ed64 <base64 line>         the same, for lines with quotes or newlines\nplus `ed help`, `ed state`, `ed history`, `ed log` (`ed help` lists every command).\n\n── Documents ─────────────────────────────────────────────────────────\nA document is one open .cwscene: its own cw_tree (never processed: the\nedited scene does not run in the editor) holding the scene root under\n/root, its history, its selection and the path it saves to. Scenes load\nand save through cartwheel/vfs.h (natively a project directory, in a cart\nthe in-memory project layer) and round-trip byte for byte. Node paths in\ncommands are relative to the scene root: \".\" is the root, \"Player/Mesh\"\na descendant (the same form .cwscene parent= attributes use).\n\n── Panels and the dock ───────────────────────────────────────────────\nA panel is a Control subtree the dock places in a SLOT: left_top,\nleft_bottom, center, bottom, right_top, right_bottom. Slots are tab\ncontainers inside resizable splits; the user drags tabs between slots\n(panel.move) and the layout persists in the settings.\n\n── Threads ───────────────────────────────────────────────────────────\nEverything here is main thread only.\n\nNaming: editor API functions are cwed_*; command names are\n\"<area>.<verb>\" in lower case (scene.save, node.add, panel.move).",
+   "functions": [
+    {
+     "name": "cwed_owner_id",
+     "signature": "int cwed_owner_id(const char *name)",
+     "doc": "the owner id of a name (created on first use)",
+     "inline": false
+    },
+    {
+     "name": "cwed_owner_push",
+     "signature": "void cwed_owner_push(int id)",
+     "doc": "registrations made until the pop belong to id; asserts on deep nesting",
+     "inline": false
+    },
+    {
+     "name": "cwed_owner_pop",
+     "signature": "void cwed_owner_pop(void)",
+     "doc": "back to the previous owner; asserts without a push",
+     "inline": false
+    },
+    {
+     "name": "cwed_owner_current",
+     "signature": "int cwed_owner_current(void)",
+     "doc": "the owner new registrations get now (0 = the editor)",
+     "inline": false
+    },
+    {
+     "name": "cwed_owner_name",
+     "signature": "const char *cwed_owner_name(int id)",
+     "doc": "the name given to cwed_owner_id; NULL for an unknown id",
+     "inline": false
+    },
+    {
+     "name": "cwed_owner_contributions",
+     "signature": "cwed_owner_stats cwed_owner_contributions(int id)",
+     "doc": "counts of what id has registered now",
+     "inline": false
+    },
+    {
+     "name": "cwed_owner_remove",
+     "signature": "void cwed_owner_remove(int id)",
+     "doc": "withdraw everything id registered; no-op for id <= 0",
+     "inline": false
+    },
+    {
+     "name": "cwed_json_raw",
+     "signature": "void cwed_json_raw(cwed_json *j, const char *text)",
+     "doc": "appended verbatim",
+     "inline": false
+    },
+    {
+     "name": "cwed_json_printf",
+     "signature": "void cwed_json_printf(cwed_json *j, const char *fmt, ...)",
+     "doc": "Appended verbatim after formatting (any length); escape strings yourself or use cwed_json_str.",
+     "inline": false
+    },
+    {
+     "name": "cwed_json_str",
+     "signature": "void cwed_json_str(cwed_json *j, const char *s)",
+     "doc": "a quoted, escaped JSON string",
+     "inline": false
+    },
+    {
+     "name": "cwed_json_key",
+     "signature": "void cwed_json_key(cwed_json *j, const char *key)",
+     "doc": "\"key\": prefix with the comma handled: call between members of an object\nopened with cwed_json_raw(j, \"{\"); the first key of an object gets no comma.",
+     "inline": false
+    },
+    {
+     "name": "cwed_command_register",
+     "signature": "void cwed_command_register(const cwed_command_desc *d)",
+     "doc": "Register a command (desc copied; strings must be static). Re-registering a\nname replaces it (a module overriding a core command must say so in its\ndoc).",
+     "inline": false
+    },
+    {
+     "name": "cwed_command_find",
+     "signature": "const cwed_command_desc *cwed_command_find(const char *name)",
+     "doc": "NULL when unknown; linear scan",
+     "inline": false
+    },
+    {
+     "name": "cwed_command_count",
+     "signature": "int cwed_command_count(void)",
+     "doc": "registered commands",
+     "inline": false
+    },
+    {
+     "name": "cwed_command_at",
+     "signature": "const cwed_command_desc *cwed_command_at(int i)",
+     "doc": "registration order",
+     "inline": false
+    },
+    {
+     "name": "cwed_run",
+     "signature": "bool cwed_run(const char *line, char **json_out)",
+     "doc": "Run a command line. Returns the JSON reply (cw_alloc'd, cw_free it);\njson_out may be NULL to discard it. Returns whether it succeeded. Commands\nmay run other commands (a nested run joins no history: only the outermost\nundoable command is recorded, so composite commands record their own undo).",
+     "inline": false
+    },
+    {
+     "name": "cwed_runf",
+     "signature": "bool cwed_runf(const char *fmt, ...)",
+     "doc": "Runs a formatted line through cwed_run (cut at 4095 bytes); the reply is discarded.",
+     "inline": false
+    },
+    {
+     "name": "cwed_arg",
+     "signature": "const char *cwed_arg(cwed_call *c, const char *name)",
+     "doc": "Inside exec/undo/merge:\nthe text (default applied); \"\" when absent",
+     "inline": false
+    },
+    {
+     "name": "cwed_arg_given",
+     "signature": "bool cwed_arg_given(cwed_call *c, const char *name)",
+     "doc": "given explicitly (not the default)",
+     "inline": false
+    },
+    {
+     "name": "cwed_arg_int",
+     "signature": "int64_t cwed_arg_int(cwed_call *c, const char *name)",
+     "doc": "strtoll base 0 (0x.. ok); 0 when absent or not a number",
+     "inline": false
+    },
+    {
+     "name": "cwed_arg_float",
+     "signature": "double cwed_arg_float(cwed_call *c, const char *name)",
+     "doc": "strtod; 0 when absent or not a number",
+     "inline": false
+    },
+    {
+     "name": "cwed_arg_bool",
+     "signature": "bool cwed_arg_bool(cwed_call *c, const char *name)",
+     "doc": "true for true/1/on/yes; anything else is false",
+     "inline": false
+    },
+    {
+     "name": "cwed_arg_node",
+     "signature": "cw_node cwed_arg_node(cwed_call *c, const char *name)",
+     "doc": "CWED_ARG_PATH: the node in the call's document; null (and the call\nfailed with a message naming the path) when it does not exist.",
+     "inline": false
+    },
+    {
+     "name": "cwed_arg_value",
+     "signature": "bool cwed_arg_value(cwed_call *c, const char *name, cw_node n, const char *prop, cw_value *out)",
+     "doc": "CWED_ARG_VALUE: parse for a property of node n (enums by name, strings\nquoted or bare); false (call failed, message says what the property\nwants) when it does not parse.",
+     "inline": false
+    },
+    {
+     "name": "cwed_call_doc",
+     "signature": "struct cwed_doc *cwed_call_doc(cwed_call *c)",
+     "doc": "The document the call acts on (NULL for editor-wide commands).",
+     "inline": false
+    },
+    {
+     "name": "cwed_call_state",
+     "signature": "void *cwed_call_state(cwed_call *c)",
+     "doc": "State kept between exec, undo and redo (one per history entry).",
+     "inline": false
+    },
+    {
+     "name": "cwed_call_set_state",
+     "signature": "void cwed_call_set_state(cwed_call *c, void *state)",
+     "doc": "the call owns it from now on (freed via free_state)",
+     "inline": false
+    },
+    {
+     "name": "cwed_reply",
+     "signature": "cwed_json *cwed_reply(cwed_call *c)",
+     "doc": "Reply members of a successful call (JSON object members, key first).",
+     "inline": false
+    },
+    {
+     "name": "cwed_fail",
+     "signature": "bool cwed_fail(cwed_call *c, const char *fmt, ...)",
+     "doc": "Refuse: sets the error (say what to do instead) and returns false.",
+     "inline": false
+    },
+    {
+     "name": "cwed_call_line",
+     "signature": "const char *cwed_call_line(cwed_call *c)",
+     "doc": "The canonical line of a call (name + every given argument, quoted as\nneeded): what the history and the log store and what replays it.",
+     "inline": false
+    },
+    {
+     "name": "cwed_quote",
+     "signature": "const char *cwed_quote(const char *arg)",
+     "doc": "Quote one argument for a command line when needed (\"a b\" -> \"\\\"a b\\\"\");\nframe-arena string. Use it when building lines from user text.",
+     "inline": false
+    },
+    {
+     "name": "cwed_history",
+     "signature": "cwed_history_info cwed_history(struct cwed_doc *doc)",
+     "doc": "doc NULL = the editor-wide history.",
+     "inline": false
+    },
+    {
+     "name": "cwed_history_line",
+     "signature": "const char *cwed_history_line(struct cwed_doc *doc, int i, bool *is_done)",
+     "doc": "Entry i (0 = oldest) of the undo+redo list; *is_done false for redo entries.",
+     "inline": false
+    },
+    {
+     "name": "cwed_history_seal",
+     "signature": "void cwed_history_seal(void)",
+     "doc": "End merging: the next command starts a new entry even with the same key.",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_active",
+     "signature": "cwed_doc *cwed_doc_active(void)",
+     "doc": "NULL when no scene is open",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_count",
+     "signature": "int cwed_doc_count(void)",
+     "doc": "open documents",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_at",
+     "signature": "cwed_doc *cwed_doc_at(int i)",
+     "doc": "open order",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_index",
+     "signature": "int cwed_doc_index(cwed_doc *d)",
+     "doc": "position in open order; -1 when d is not open",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_root",
+     "signature": "cw_node cwed_doc_root(cwed_doc *d)",
+     "doc": "the scene's root node",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_tree",
+     "signature": "cw_tree *cwed_doc_tree(cwed_doc *d)",
+     "doc": "never processed; the root sits under its /root",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_path",
+     "signature": "const char *cwed_doc_path(cwed_doc *d)",
+     "doc": "project path (\"levels/one.cwscene\"); \"\" until first saved",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_title",
+     "signature": "const char *cwed_doc_title(cwed_doc *d)",
+     "doc": "file name, or \"untitled N\"",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_dirty",
+     "signature": "bool cwed_doc_dirty(cwed_doc *d)",
+     "doc": "history moved since the last save; false for NULL",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_version",
+     "signature": "uint32_t cwed_doc_version(cwed_doc *d)",
+     "doc": "bumps on every change (do, undo, redo)",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_node",
+     "signature": "cw_node cwed_doc_node(cwed_doc *d, const char *path)",
+     "doc": "Node by scene path (\".\" root); null when missing.",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_node_path",
+     "signature": "const char *cwed_doc_node_path(cwed_doc *d, cw_node n)",
+     "doc": "Scene path of n (\".\" for the root); frame-arena string; \"\" when n is not in d.",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_text",
+     "signature": "char *cwed_doc_text(cwed_doc *d)",
+     "doc": "The scene as .cwscene text now (cw_alloc'd).",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_enter",
+     "signature": "void cwed_doc_enter(cwed_doc *d)",
+     "doc": "Run fn with d's tree as the current tree (node(\"path\") values and the\nscene loader resolve against it); the core does this around scene\ncommands, so command code rarely needs it.",
+     "inline": false
+    },
+    {
+     "name": "cwed_doc_leave",
+     "signature": "void cwed_doc_leave(void)",
+     "doc": "undo the matching cwed_doc_enter (calls nest)",
+     "inline": false
+    },
+    {
+     "name": "cwed_selection_count",
+     "signature": "int cwed_selection_count(void)",
+     "doc": "── selection (per document; shared by every panel) ─────────────────────\nof the active document",
+     "inline": false
+    },
+    {
+     "name": "cwed_selection_get",
+     "signature": "cw_node cwed_selection_get(int i)",
+     "doc": "null when out of range or no document",
+     "inline": false
+    },
+    {
+     "name": "cwed_selection_has",
+     "signature": "bool cwed_selection_has(cw_node n)",
+     "doc": "n is selected in the active document",
+     "inline": false
+    },
+    {
+     "name": "cwed_selection_set",
+     "signature": "void cwed_selection_set(const cw_node *nodes, int count)",
+     "doc": "Change through the `select` commands (they log and notify); these are\nwhat those commands call.",
+     "inline": false
+    },
+    {
+     "name": "cwed_subscribe",
+     "signature": "void cwed_subscribe(uint32_t mask, cwed_event_fn fn, void *user)",
+     "doc": "Calls fn for events in mask (CWED_EV_*); there is no unsubscribe, so subscribe once.",
+     "inline": false
+    },
+    {
+     "name": "cwed_emit",
+     "signature": "void cwed_emit(const cwed_event *e)",
+     "doc": "the core emits all of the above; modules may emit LOG and FILES",
+     "inline": false
+    },
+    {
+     "name": "cwed_log",
+     "signature": "void cwed_log(cwed_log_kind kind, const char *fmt, ...)",
+     "doc": "Adds a line (cut at 1023 bytes) and emits CWED_EV_LOG.",
+     "inline": false
+    },
+    {
+     "name": "cwed_log_count",
+     "signature": "int cwed_log_count(void)",
+     "doc": "lines kept, at most 2000",
+     "inline": false
+    },
+    {
+     "name": "cwed_log_line",
+     "signature": "const char *cwed_log_line(int i, cwed_log_kind *kind)",
+     "doc": "0 = oldest kept (the last 2000)",
+     "inline": false
+    },
+    {
+     "name": "cwed_panel_register",
+     "signature": "void cwed_panel_register(const cwed_panel_desc *d)",
+     "doc": "Desc copied (strings must be static). Only from a module's init (asserts after the dock is placed);\nan unknown slot logs a warning and uses right_top.",
+     "inline": false
+    },
+    {
+     "name": "cwed_panel_content",
+     "signature": "cw_node cwed_panel_content(const char *id)",
+     "doc": "what create returned; null when unknown",
+     "inline": false
+    },
+    {
+     "name": "cwed_panel_visible",
+     "signature": "bool cwed_panel_visible(const char *id)",
+     "doc": "shown in a slot (it may be a background tab)",
+     "inline": false
+    },
+    {
+     "name": "cwed_slot_count",
+     "signature": "int cwed_slot_count(void)",
+     "doc": "Slot names and the panels in a slot, as the layout has them now.",
+     "inline": false
+    },
+    {
+     "name": "cwed_slot_name",
+     "signature": "const char *cwed_slot_name(int i)",
+     "doc": "static name; NULL out of range",
+     "inline": false
+    },
+    {
+     "name": "cwed_menu_add",
+     "signature": "void cwed_menu_add(const char *path, const char *command_line, int order)",
+     "doc": "── menus, toolbar, status bar ─────────────────────────────────────────\nMenu items run command lines. path = \"Menu/Item\" (\"File/Save Scene\");\norder sorts items inside a menu (separators where the hundreds digit\nchanges: 100, 110 | 200). The shortcut shown is the command's.",
+     "inline": false
+    },
+    {
+     "name": "cwed_toolbar_add",
+     "signature": "void cwed_toolbar_add(const char *id, const char *label, const char *command_line, int order)",
+     "doc": "A toolbar button (top bar, right side) running a command line.",
+     "inline": false
+    },
+    {
+     "name": "cwed_status_set",
+     "signature": "void cwed_status_set(const char *field, int order, const char *text)",
+     "doc": "Status bar text in a named field (fields sorted by order, left to right).",
+     "inline": false
+    },
+    {
+     "name": "cwed_setting_define",
+     "signature": "void cwed_setting_define(const cwed_setting_desc *d)",
+     "doc": "Desc copied (static strings); redefining keeps the current value.",
+     "inline": false
+    },
+    {
+     "name": "cwed_setting",
+     "signature": "const char *cwed_setting(const char *key)",
+     "doc": "text; NULL when undefined",
+     "inline": false
+    },
+    {
+     "name": "cwed_setting_float",
+     "signature": "double cwed_setting_float(const char *key)",
+     "doc": "strtod of the text; 0 when undefined",
+     "inline": false
+    },
+    {
+     "name": "cwed_setting_bool",
+     "signature": "bool cwed_setting_bool(const char *key)",
+     "doc": "true for true/1/on; false otherwise or undefined",
+     "inline": false
+    },
+    {
+     "name": "cwed_setting_put",
+     "signature": "void cwed_setting_put(const char *key, const char *value)",
+     "doc": "Set without a command (layout bookkeeping); persists and notifies.",
+     "inline": false
+    },
+    {
+     "name": "cwed_inspector_register",
+     "signature": "void cwed_inspector_register(const cwed_inspector_plugin *p)",
+     "doc": "keeps the pointer: p must stay valid (static)",
+     "inline": false
+    },
+    {
+     "name": "cwed_inspector_count",
+     "signature": "int cwed_inspector_count(void)",
+     "doc": "registered plugins",
+     "inline": false
+    },
+    {
+     "name": "cwed_inspector_at",
+     "signature": "const cwed_inspector_plugin *cwed_inspector_at(int i)",
+     "doc": "registration order; NULL out of range",
+     "inline": false
+    },
+    {
+     "name": "cwed_inspector_for",
+     "signature": "const cwed_inspector_plugin *cwed_inspector_for(cw_node n, const cw_prop *p)",
+     "doc": "The winner (rules above); NULL when none handles it.",
+     "inline": false
+    },
+    {
+     "name": "cwed_prop_commit",
+     "signature": "bool cwed_prop_commit(const char *prop, const char *value_text, bool final)",
+     "doc": "Commit a value from a property editor (value in scene-file text form).\nfinal = false while dragging (merged into one undo step), true on release.",
+     "inline": false
+    },
+    {
+     "name": "cwed_gizmo_register",
+     "signature": "void cwed_gizmo_register(const cwed_gizmo_desc *g)",
+     "doc": "keeps the pointer: g must stay valid (static)",
+     "inline": false
+    },
+    {
+     "name": "cwed_gizmo_count",
+     "signature": "int cwed_gizmo_count(void)",
+     "doc": "registered gizmos",
+     "inline": false
+    },
+    {
+     "name": "cwed_gizmo_at",
+     "signature": "const cwed_gizmo_desc *cwed_gizmo_at(int i)",
+     "doc": "registration order; NULL out of range",
+     "inline": false
+    },
+    {
+     "name": "cwed_play_register",
+     "signature": "void cwed_play_register(const cwed_play_backend *b)",
+     "doc": "One backend: replaces any previous one; b is kept by pointer (static).",
+     "inline": false
+    },
+    {
+     "name": "cwed_play_backend_get",
+     "signature": "const cwed_play_backend *cwed_play_backend_get(void)",
+     "doc": "NULL until one is registered",
+     "inline": false
+    },
+    {
+     "name": "cwed_project_name",
+     "signature": "const char *cwed_project_name(void)",
+     "doc": "The project's name and main scene (project.cwproj, key = value lines).",
+     "inline": false
+    },
+    {
+     "name": "cwed_project_main_scene",
+     "signature": "const char *cwed_project_main_scene(void)",
+     "doc": "project path; \"\" when none. Valid until the next project load",
+     "inline": false
+    },
+    {
+     "name": "cwed_project_dir",
+     "signature": "const char *cwed_project_dir(void)",
+     "doc": "Natively: the project directory (\"\" when the project lives in memory).",
+     "inline": false
+    },
+    {
+     "name": "cwed_project_key",
+     "signature": "const char *cwed_project_key(const char *key)",
+     "doc": "Any key of project.cwproj (`key = value` lines; quotes trimmed); NULL when\nthe project has no such key. Re-read when a project opens (CWED_EV_PROJECT).",
+     "inline": false
+    },
+    {
+     "name": "cwed_project_reload",
+     "signature": "void cwed_project_reload(void)",
+     "doc": "Re-read project.cwproj (name, main scene, scenes) after a module changed\nit, and emit CWED_EV_PROJECT (M4.6: project settings, rename).",
+     "inline": false
+    },
+    {
+     "name": "cwed_drop_add",
+     "signature": "void cwed_drop_add(cw_node target, const cwed_drop_desc *d)",
+     "doc": "Add a handler (desc copied; kind interned). Adding the same (target,\nkind, can_drop, user) again is a no-op. Entries of freed controls go away.",
+     "inline": false
+    },
+    {
+     "name": "cwed_ui_tree",
+     "signature": "cw_tree *cwed_ui_tree(void)",
+     "doc": "The editor's UI tree (the one the dock lives in).",
+     "inline": false
+    },
+    {
+     "name": "cwed_clear_children",
+     "signature": "void cwed_clear_children(cw_node n)",
+     "doc": "Remove and free every child of a Control.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cwed_module",
+     "doc": "── modules ────────────────────────────────────────────────────────────",
+     "decl": "typedef struct cwed_module {\n  const char *title;     /* human name (\"Scene Tree\") */\n  const char *milestone; /* the development milestone that added it (\"M4.1\") */\n  void (*init)(void);    /* register panels, commands, menus, settings, plugins */\n  void (*frame)(double dt); /* once per editor frame, after input (keep it cheap: refresh what an event marked dirty) */\n  void (*shutdown)(void);\n} cwed_module;"
+    },
+    {
+     "name": "cwed_owner_stats",
+     "doc": "Registration owners. Every registration below remembers the owner current\nwhen it was made: 0 = the editor (core and built-in modules), else the id\nof a plugin the plugin manager pushed around that plugin's init, frame and\nshutdown. cwed_owner_remove withdraws everything an owner registered\n(panels are freed, menus and the toolbar rebuilt). The plugin manager\nuses these; ordinary modules never need to.",
+     "decl": "typedef struct cwed_owner_stats {\n  int commands, panels, menu_items, toolbar_buttons, inspectors, gizmos, subscriptions;\n} cwed_owner_stats;"
+    },
+    {
+     "name": "cwed_json",
+     "doc": "── JSON replies ──────────────────────────────────────────────────────\nA small writer for command replies and queries (values, not pretty).",
+     "decl": "typedef struct cwed_json cwed_json;"
+    },
+    {
+     "name": "cwed_cmd_flags",
+     "doc": "── commands ───────────────────────────────────────────────────────────",
+     "decl": "typedef enum {\n  CWED_CMD_UNDO = 1 << 0,   /* records a history entry; needs undo */\n  CWED_CMD_SCENE = 1 << 1,  /* acts on the active document (refused when none); its history is the document's */\n  CWED_CMD_HIDDEN = 1 << 2, /* not listed in the command palette (queries, internal steps) */\n  CWED_CMD_QUERY = 1 << 3,  /* reads only: never logged as an action, never dirties anything */\n} cwed_cmd_flags;"
+    },
+    {
+     "name": "cwed_arg_type",
+     "doc": "",
+     "decl": "typedef enum {\n  CWED_ARG_STRING, /* any text */\n  CWED_ARG_INT,\n  CWED_ARG_FLOAT,\n  CWED_ARG_BOOL,   /* true/false/1/0/on/off */\n  CWED_ARG_PATH,   /* a node path in the active document (\".\" = scene root) */\n  CWED_ARG_VALUE,  /* a property value in scene-file form: vec3(0, 1, 0), \"text\", SPHERE */\n} cwed_arg_type;"
+    },
+    {
+     "name": "cwed_param",
+     "doc": "",
+     "decl": "typedef struct cwed_param {\n  const char *name;\n  cwed_arg_type type;\n  const char *def; /* default text; NULL = required */\n  const char *doc;\n} cwed_param;"
+    },
+    {
+     "name": "cwed_call",
+     "doc": "",
+     "decl": "typedef struct cwed_call cwed_call; /* one run of a command (and its history entry) */"
+    },
+    {
+     "name": "cwed_command_desc",
+     "doc": "",
+     "decl": "typedef struct cwed_command_desc {\n  const char *name;          /* \"node.set\" */\n  const char *title;         /* palette/menu label: \"Set Property\" */\n  const char *doc;           /* one or two sentences: what it does, what it returns */\n  const cwed_param *params;  /* NULL-name terminated; NULL = no arguments */\n  uint32_t flags;            /* cwed_cmd_flags */\n  const char *shortcut;      /* \"ctrl+shift+z\", \"f2\", \"delete\"; NULL = none */\n  /* A line the command tests run against the demo project (editor/tests):\n   * every CWED_CMD_UNDO command MUST have one, and its do/undo/redo round\n   * trip is checked automatically. May use \"{sel}\" for the first selected\n   * node's path ({sel2}: a second node). Several lines (separated by '\\n'):\n   * the first ones set the stage and only the last one is round-tripped (a\n   * node.disconnect needs a connection first). */\n  const char *example;\n  /* Run. First run: state is NULL; later runs (redo): the state the last\n   * exec/undo left. Write the reply's members with cwed_reply_* (the core\n   * wraps them in {\"ok\":true,...}). Return false with cwed_fail() to refuse;\n   * a refused command must have changed nothing. */\n  bool (*exec)(cwed_call *c);\n  /* Undo exactly what exec did (CWED_CMD_UNDO). */\n  void (*undo)(cwed_call *c);\n  /* Fold `next` (already executed) into `prev` (the history top, same\n   * command, same merge key): keep prev's undo data, take next's result.\n   * Return false to refuse (next becomes its own entry). NULL = never merge. */\n  bool (*merge)(cwed_call *prev, cwed_call *next);\n  /* Release the state (history entry dropped: redo stack cleared, document\n   * closed). NULL = cw_free(state) when non-NULL. */\n  void (*free_state)(cwed_call *c, void *state);\n  /* Menu items gray out when this returns false; NULL = always enabled. */\n  bool (*enabled)(void);\n} cwed_command_desc;"
+    },
+    {
+     "name": "cwed_history_info",
+     "doc": "── history ────────────────────────────────────────────────────────────",
+     "decl": "typedef struct cwed_history_info {\n  int undo_count, redo_count;\n  const char *undo_line, *redo_line; /* next undo / redo (NULL when none) */\n} cwed_history_info;"
+    },
+    {
+     "name": "cwed_doc",
+     "doc": "── documents ──────────────────────────────────────────────────────────",
+     "decl": "typedef struct cwed_doc cwed_doc;"
+    },
+    {
+     "name": "cwed_event_type",
+     "doc": "── events ─────────────────────────────────────────────────────────────\nPanels keep themselves current by subscribing instead of polling.",
+     "decl": "typedef enum {\n  CWED_EV_DOC_OPENED = 1 << 0,\n  CWED_EV_DOC_CLOSED = 1 << 1,\n  CWED_EV_DOC_ACTIVE = 1 << 2,   /* another document became active (or none) */\n  CWED_EV_DOC_CHANGED = 1 << 3,  /* the active document's scene changed (do/undo/redo); e.line says by what */\n  CWED_EV_DOC_SAVED = 1 << 4,\n  CWED_EV_SELECTION = 1 << 5,\n  CWED_EV_HISTORY = 1 << 6,      /* any history changed (also on dirty-flag changes) */\n  CWED_EV_SETTINGS = 1 << 7,     /* e.key says which setting */\n  CWED_EV_PROJECT = 1 << 8,      /* a project was opened */\n  CWED_EV_LOG = 1 << 9,          /* a line was added to the log (e.line) */\n  CWED_EV_COMMAND = 1 << 10,     /* any command ran (e.line, e.ok) */\n  CWED_EV_FILES = 1 << 11,       /* project files changed (written, moved, removed, imported, rescanned):\n                                  * e.line = the path, or NULL for \"several, rescan\"; modules emit it */\n  CWED_EV_PLUGINS = 1 << 13,     /* plugins loaded, unloaded or reloaded (e.line = the plugin): rebuild\n                                  * anything built from registrations (inspector editors, gizmo lists);\n                                  * also sent right BEFORE a plugin's node types are withdrawn: free any\n                                  * node you keep for yourself (a type's default values) now */\n  CWED_EV_ALL = 0x7fffffff\n} cwed_event_type;"
+    },
+    {
+     "name": "cwed_event",
+     "doc": "",
+     "decl": "typedef struct cwed_event {\n  cwed_event_type type;\n  cwed_doc *doc;\n  const char *line; /* DOC_CHANGED / LOG / COMMAND */\n  const char *key;  /* SETTINGS */\n  bool ok;          /* COMMAND */\n} cwed_event;"
+    },
+    {
+     "name": "cwed_event_fn",
+     "doc": "",
+     "decl": "typedef void (*cwed_event_fn)(const cwed_event *e, void *user);"
+    },
+    {
+     "name": "cwed_log_kind",
+     "doc": "── log (the Output panel shows it; `ed log` returns it) ─────────────────",
+     "decl": "typedef enum { CWED_LOG_INFO, CWED_LOG_WARN, CWED_LOG_ERROR, CWED_LOG_COMMAND } cwed_log_kind;"
+    },
+    {
+     "name": "cwed_panel_desc",
+     "doc": "── panels ─────────────────────────────────────────────────────────────",
+     "decl": "typedef struct cwed_panel_desc {\n  const char *id;           /* \"history\": unique, used by panel.move / panel.show */\n  const char *title;        /* tab title (\"History\") */\n  const char *slot;         /* default slot: left_top left_bottom center bottom right_top right_bottom */\n  int order;                /* position among the slot's default panels (lower first) */\n  /* Build the panel's content (a Control subtree, not yet in a tree). The\n   * dock wraps it in a page named after the title. Called once at startup. */\n  cw_node (*create)(void *user);\n  void *user;\n} cwed_panel_desc;"
+    },
+    {
+     "name": "cwed_setting_desc",
+     "doc": "── settings ─────────────────────────────────────────────────────────\nTyped key/value pairs with defaults, persisted natively in a file\n(CW_EDITOR_SETTINGS, else $XDG_CONFIG_HOME/cartwheel/editor.cfg, else\n~/.config/cartwheel/editor.cfg; test runs with CW_FRAMES persist only\nwith CW_EDITOR_SETTINGS set) and in a cart in the project layer at\n.cweditor/settings.cfg (exported with `vfs export`, decision D6). Change\nthem with the settings.set command (undoable, editor-wide history).",
+     "decl": "typedef struct cwed_setting_desc {\n  const char *key;      /* \"interface.scale\" */\n  cwed_arg_type type;   /* STRING INT FLOAT BOOL */\n  const char *def;      /* default as text */\n  const char *doc;\n  const char *choices;  /* STRING: \"dark|light\" (an option list in the dialog); NULL = free text */\n  double min, max;      /* INT/FLOAT range when min < max */\n  bool hidden;          /* not shown in the settings dialog (layout state) */\n} cwed_setting_desc;"
+    },
+    {
+     "name": "cwed_prop_ctx",
+     "doc": "── inspector plugins (property editors; the Inspector panel uses them) ──\nThe inspector asks every plugin whose handles() says yes and takes the one\nwith the highest priority (the built-in editors are priority 0, so a module\ntakes over a type or a single property with priority > 0; ties go to the\nfirst registered). Edits go through commands: cwed_prop_commit runs\nnode.set (one node selected) or node.set_many (several) with merge key\n\"inspector:<prop>\", so a drag is one undo step.",
+     "decl": "typedef struct cwed_prop_ctx {\n  cw_node node;          /* the node shown (the first selected) */\n  const cw_prop *prop;\n  cw_value value;        /* current value */\n} cwed_prop_ctx;"
+    },
+    {
+     "name": "cwed_inspector_plugin",
+     "doc": "",
+     "decl": "typedef struct cwed_inspector_plugin {\n  const char *name;\n  int priority;\n  bool (*handles)(cw_node n, const cw_prop *p);\n  /* Build the editor (a Control). Call cwed_prop_commit on edits; refresh\n   * is called with a new value when the property changed elsewhere. */\n  cw_node (*create)(const cwed_prop_ctx *ctx);\n  void (*refresh)(cw_node editor, const cwed_prop_ctx *ctx);\n} cwed_inspector_plugin;"
+    },
+    {
+     "name": "cwed_gizmo_ctx",
+     "doc": "── gizmos (viewports draw and drive them; M4.1) ─────────────────────────",
+     "decl": "typedef struct cwed_gizmo_ctx cwed_gizmo_ctx; /* defined by the viewport module (M4.1) */"
+    },
+    {
+     "name": "cwed_gizmo_desc",
+     "doc": "",
+     "decl": "typedef struct cwed_gizmo_desc {\n  const char *name;\n  const char *node_type;  /* applies to nodes of this type (or derived) */\n  bool is_3d;\n  void (*draw)(cw_node n, cwed_gizmo_ctx *ctx);\n  /* pointer pressed on the gizmo / dragged / released: edit through\n   * commands with a merge key so a drag is one undo step. */\n  bool (*input)(cw_node n, cwed_gizmo_ctx *ctx, const cw_ui_event *e);\n} cwed_gizmo_desc;"
+    },
+    {
+     "name": "cwed_play_backend",
+     "doc": "── play-in-editor backend (M4.3: the game in its own process) ───────────\nThe core owns the play.* commands, the toolbar's Play/Pause/Step/Stop and\ntheir state; the M4.3 module provides the backend, built on the remote\ngame client (cartwheel/remote.h): natively a crash-isolated child\nprocess, as a cart a peer cart through romdev/wasmcart. Until one is\nregistered, play.* commands fail with a message saying so.",
+     "decl": "typedef struct cwed_play_backend {\n  const char *name;\n  /* start the game at a scene (project path, saved first by the core) */\n  bool (*start)(const char *scene_path, char *err, int err_cap);\n  void (*stop)(void);\n  bool (*running)(void);\n  void (*set_paused)(bool paused);\n  void (*step)(int ticks);\n  /* forward one debug-channel request to the running game; the reply\n   * arrives through cb (possibly frames later). */\n  bool (*request)(const char *line, void (*cb)(const char *json, void *user), void *user);\n  /* called once per editor frame while registered */\n  void (*poll)(void);\n  /* whether the running game is paused by the debugger (the core toggles\n   * play.pause from this; NULL = the core tracks it itself) */\n  bool (*paused)(void);\n} cwed_play_backend;"
+    },
+    {
+     "name": "cwed_drop_desc",
+     "doc": "── drop targets shared between modules ────────────────────────────────\nThe engine keeps ONE drop target per control (cw_ui_set_drop_target), but\nseveral modules may accept drops on the same panel: a scene view takes\n\"file\" drags from the FileSystem and \"node\" drags from the scene tree.\nRegister per (control, kind) here instead: the core installs a single\nengine drop target on the control that offers each drag to the handlers\nof its kind, in registration order.",
+     "decl": "typedef struct cwed_drop_desc {\n  const char *kind; /* \"file\", \"node\", ...: only drags of this kind reach the handler */\n  bool (*can_drop)(cw_node target, const cw_ui_drag *d, cw_vec2 local, cw_rect *highlight, void *user);\n  void (*drop)(cw_node target, const cw_ui_drag *d, cw_vec2 local, void *user);\n  void *user;\n} cwed_drop_desc;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CWED_MODULE(name)",
+     "doc": ""
+    },
+    {
+     "name": "CWED_PLUGIN(name)",
+     "doc": "── plugins (M5.2): editor modules that live in a PROJECT ───────────────\nAn editor plugin is a module in <project>/plugins/<name>/ (manifest\nplugin.cwplugin, kind editor or both; cartwheel/plugin.h) instead of\neditor/modules/. It uses this same API and nothing else, and defines\n\n    CWED_PLUGIN(name) = { .title = \"Turntable tools\", .init = init, .frame = frame };\n\n(name = the manifest name). The macro records the API version the code\nwas compiled with (CW_ENGINE_API, cartwheel/plugin.h), checked when the\nplugin loads. The native editor builds it as a shared library from the\nproject and loads it (dlopen), unloads it and reloads it when it is\nrebuilt; a cart editor gets it compiled in by the project build (no\nruntime loading in a cart). Everything init registers (commands, panels,\nmenu items, toolbar buttons, inspector plugins, gizmos, subscriptions) is\nwithdrawn when the plugin unloads (registration owners, below), so:\n  - keep state in statics that init resets (init runs again on reload),\n  - panels may be registered any time (a plugin's panels are created and\n    docked when it loads, in their default slot or where the user's\n    saved layout put them),\n  - shutdown runs before an unload: free what is not a registration.\nA plugin's RUNTIME part also loads into the editor (its node types, so\nscenes using them open); like game types, they keep init/destroy and\ntheir properties, but their tree callbacks are cleared: the editor never\nruns game code on its documents."
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,33 @@
+// @TITLE@: SDL2's Java activity + the game's native library (libmain.so,
+// prebuilt by cartwheel's exporter into src/main/jniLibs) + its asset pack
+// (src/main/assets/game.cwpak).
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'org.cartwheel.runtime'
+    compileSdk 36
+    defaultConfig {
+        applicationId '@APP_ID@'
+        minSdk 24
+        targetSdk 36
+        versionCode @VERSION_CODE@
+        versionName '@VERSION@'
+        ndk { abiFilters 'arm64-v8a' }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+@RELEASE_SIGNING@
+        }
+    }
+@SIGNING_CONFIGS@
+    androidResources {
+        noCompress 'cwpak' // read in place (seekable) from the APK
+    }
+    packaging {
+        jniLibs { useLegacyPackaging false }
+    }
+    lint { abortOnError false }
+}

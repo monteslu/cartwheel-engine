@@ -1,0 +1,30 @@
+# cartwheel project settings (cartwheel/project.h)
+# #region name
+name = Crate Push
+app = crate_push
+# #endregion
+main_scene = main.cwscene
+sources = src
+# #region scenes
+scenes = main.cwscene
+# #endregion
+input.ui_accept = key:return, key:space, pad:south
+# #region input
+input.move_left = key:a, key:left, pad:left, axis:lx-
+input.move_right = key:d, key:right, pad:right, axis:lx+
+input.move_forward = key:w, key:up, pad:up, axis:ly-
+input.move_back = key:s, key:down, pad:down, axis:ly+
+# #endregion
+# #region physics
+layer_names_3d = "world, player, crates, goal"
+gravity_3d = vec3(0, -14, 0)
+substeps = 4
+# #endregion
+render.width = 960
+render.height = 540
+render.msaa = 4
+render.vsync = true
+export.native.platform = linux-x64
+export.native.output = exports/native
+export.cart.platform = wasc
+export.cart.output = exports/cart

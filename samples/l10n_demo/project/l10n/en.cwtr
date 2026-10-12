@@ -1,0 +1,39 @@
+@locale = en
+@name = English
+
+app.brand = cartwheel engine (working name)
+
+# Wraps to the width: translations may run longer
+app.paragraph = Every string on this screen comes from a translation catalog. Long text wraps between words in English, between characters in Japanese, and runs right to left in Arabic.
+app.title = Localization demo
+
+banner.alt = Banner for the current language
+
+caption.intro.1 = Welcome to the localization demo.
+caption.intro.2 = [soft chime]
+caption.speaker.guide = Guide
+
+form.jump = Jump (keyboard)
+form.jump_pad = Jump (gamepad)
+form.name = Player name
+form.name_hint = Type your name
+form.subtitles = Subtitles
+form.subtitles_on = Show subtitles
+form.volume = Volume
+
+input.key.space = Space
+input.pad.south = South Button
+input.pad.west = West Button
+
+menu.language = Language
+menu.play = Play
+menu.quit = Quit
+menu.settings = Settings
+
+# {n} is the number, formatted for the locale
+score.points[one] = {n} point
+score.points[other] = {n} points
+
+stats.line = Best score {score} on {date}
+
+tooltip.play = Start a new game

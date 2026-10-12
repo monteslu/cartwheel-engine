@@ -1,0 +1,23 @@
+[scene format=1]
+
+[node name="Walker" type="Walker"]
+collision_layer_name = "player"
+collision_mask_names = "world|props|triggers"
+push_mass = 80
+
+[node name="Shape" parent="." type="CollisionShape3D"]
+shape = CAPSULE
+radius = 0.3
+height = 1.8
+position = vec3(0, 0.9, 0)
+
+[node name="Body" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+size = vec3(0.6, 1.8, 0.6)
+position = vec3(0, 0.9, 0)
+color = color(0.05088, 0.17064, 0.69207, 1)
+cast_shadow = true
+
+[node name="Down" parent="." type="RayCast3D"]
+position = vec3(0, 0.5, 0)
+target_position = vec3(0, -2, 0)

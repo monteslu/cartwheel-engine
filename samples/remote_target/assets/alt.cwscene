@@ -1,0 +1,11 @@
+[scene format=1]
+
+[node name="AltLevel" type="Node2D"]
+
+[node name="Sky" parent="." type="Polygon2D"]
+polygon = "0 0, 320 0, 320 60, 0 60"
+color = color(0.3, 0.4, 0.9, 1)
+
+[node name="Mover" parent="." type="Mover"]
+position = vec2(160, 90)
+speed = -10

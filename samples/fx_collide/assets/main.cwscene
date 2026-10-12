@@ -1,0 +1,56 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.00394, 0.0049, 0.00719, 1)
+ambient_energy = 0.94248
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+rotation = vec3(-1.0, 0.6, 0)
+energy = 3.76991
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 3.6, 4.2)
+rotation = vec3(-0.62, 0, 0)
+fov = 50
+near = 0.1
+far = 50
+
+[node name="Ground" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.05, 0)
+size = vec3(10, 0.1, 10)
+color = color(0.07324, 0.07324, 0.08354, 1)
+
+[node name="Table" parent="." type="MeshInstance3D"]
+position = vec3(0, 0.5, 0)
+size = vec3(2, 1, 2)
+color = color(0.26327, 0.10048, 0.05088, 1)
+
+[node name="Bump" parent="." type="MeshInstance3D"]
+position = vec3(0.0, 1.1, -0.7)
+rotation = vec3(0.35, 0.6, 0.2)
+size = vec3(0.6, 0.25, 0.6)
+color = color(0.13287, 0.17064, 0.21404, 1)
+
+[node name="Rain" parent="." type="GPUParticles3D"]
+position = vec3(-0.2, 1.8, 0)
+amount = 2000
+lifetime = 3
+emission_shape = BOX
+emission_extents = vec3(0.6, 0.05, 0.6)
+spread = 0
+speed_min = 0
+speed_max = 0
+gravity = vec3(0, -9.8, 0)
+collide_depth = true
+depth_thickness = 0.4
+bounce = 0.25
+friction = 0.6
+collision_radius = 0.02
+size = 0.05
+color_ramp = "0 0.4 0.8 1 1, 1 0.9 0.9 1 1"
+trail_length = 8
+trail_width = 0.03
+seed = 4
+gpu_stats = true

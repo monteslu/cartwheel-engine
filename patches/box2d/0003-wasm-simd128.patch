@@ -1,0 +1,279 @@
+# WebAssembly SIMD for the solver and the SIMD math, under any wasm toolchain.
+# core.h only recognised wasm through __EMSCRIPTEN__ (and then took the SSE2
+# path through Emscripten's SSE emulation headers), so wasi-sdk carts
+# (wasm32-wasip1-threads -msimd128) got B2_SIMD_NONE: the scalar fallback.
+# Now __wasm__ with __wasm_simd128__ selects B2_SIMD_WASM, a wasm_simd128.h
+# implementation of the SSE2 functions. It is bit-identical to SSE2: the same
+# operations in the same order, multiply-adds as a multiply then an add (no
+# FMA), and min/max with SSE's operand semantics (_mm_min_ps(a, b) is
+# a < b ? a : b, which is wasm_f32x4_pmin(b, a); wasm_f32x4_min differs on
+# signed zeros and NaN). Native x86 (SSE2) and carts run the same solver.
+
+diff --git a/src/contact_solver.c b/src/contact_solver.c
+index 19fd46e..7881f22 100644
+--- a/src/contact_solver.c
++++ b/src/contact_solver.c
+@@ -556,6 +556,13 @@ typedef float32x4_t b2FloatW;
+ // wide float holds 4 numbers
+ typedef __m128 b2FloatW;
+ 
++#elif defined( B2_SIMD_WASM )
++
++#include <wasm_simd128.h>
++
++// wide float holds 4 numbers
++typedef v128_t b2FloatW;
++
+ #else
+ 
+ // scalar math
+@@ -922,6 +929,119 @@ static inline b2FloatW b2UnpackHiW( b2FloatW a, b2FloatW b )
+ 	return _mm_unpackhi_ps( a, b );
+ }
+ 
++#elif defined( B2_SIMD_WASM )
++
++// The SSE2 functions above in wasm_simd128.h, bit for bit: the same operations in
++// the same order (b2MulAddW/b2MulSubW multiply then add/subtract, never fused), and
++// SSE's min/max operand semantics: _mm_min_ps( a, b ) is wasm_f32x4_pmin( b, a ).
++
++static inline b2FloatW b2ZeroW( void )
++{
++	return wasm_f32x4_const_splat( 0.0f );
++}
++
++static inline b2FloatW b2SplatW( float scalar )
++{
++	return wasm_f32x4_splat( scalar );
++}
++
++static inline b2FloatW b2SetW( float a, float b, float c, float d )
++{
++	return wasm_f32x4_make( a, b, c, d );
++}
++
++static inline b2FloatW b2AddW( b2FloatW a, b2FloatW b )
++{
++	return wasm_f32x4_add( a, b );
++}
++
++static inline b2FloatW b2SubW( b2FloatW a, b2FloatW b )
++{
++	return wasm_f32x4_sub( a, b );
++}
++
++static inline b2FloatW b2MulW( b2FloatW a, b2FloatW b )
++{
++	return wasm_f32x4_mul( a, b );
++}
++
++static inline b2FloatW b2MulAddW( b2FloatW a, b2FloatW b, b2FloatW c )
++{
++	return wasm_f32x4_add( a, wasm_f32x4_mul( b, c ) );
++}
++
++static inline b2FloatW b2MulSubW( b2FloatW a, b2FloatW b, b2FloatW c )
++{
++	return wasm_f32x4_sub( a, wasm_f32x4_mul( b, c ) );
++}
++
++static inline b2FloatW b2MinW( b2FloatW a, b2FloatW b )
++{
++	return wasm_f32x4_pmin( b, a );
++}
++
++static inline b2FloatW b2MaxW( b2FloatW a, b2FloatW b )
++{
++	return wasm_f32x4_pmax( b, a );
++}
++
++// a = clamp(a, -b, b)
++static inline b2FloatW b2SymClampW( b2FloatW a, b2FloatW b )
++{
++	// flip the sign bit of each element of b
++	b2FloatW nb = wasm_v128_xor( b, wasm_f32x4_const_splat( -0.0f ) );
++
++	return b2MaxW( nb, b2MinW( a, b ) );
++}
++
++static inline b2FloatW b2OrW( b2FloatW a, b2FloatW b )
++{
++	return wasm_v128_or( a, b );
++}
++
++static inline b2FloatW b2GreaterThanW( b2FloatW a, b2FloatW b )
++{
++	return wasm_f32x4_gt( a, b );
++}
++
++static inline b2FloatW b2EqualsW( b2FloatW a, b2FloatW b )
++{
++	return wasm_f32x4_eq( a, b );
++}
++
++static inline bool b2AllZeroW( b2FloatW a )
++{
++	return wasm_i32x4_bitmask( wasm_f32x4_eq( a, wasm_f32x4_const_splat( 0.0f ) ) ) == 0xF;
++}
++
++// component-wise returns mask ? b : a
++static inline b2FloatW b2BlendW( b2FloatW a, b2FloatW b, b2FloatW mask )
++{
++	return wasm_v128_or( wasm_v128_and( mask, b ), wasm_v128_andnot( a, mask ) );
++}
++
++static inline b2FloatW b2LoadW( const float* data )
++{
++	return wasm_v128_load( data );
++}
++
++static inline void b2StoreW( float* data, b2FloatW a )
++{
++	wasm_v128_store( data, a );
++}
++
++// _mm_unpacklo_ps: [a0 b0 a1 b1]
++static inline b2FloatW b2UnpackLoW( b2FloatW a, b2FloatW b )
++{
++	return wasm_i32x4_shuffle( a, b, 0, 4, 1, 5 );
++}
++
++// _mm_unpackhi_ps: [a2 b2 a3 b3]
++static inline b2FloatW b2UnpackHiW( b2FloatW a, b2FloatW b )
++{
++	return wasm_i32x4_shuffle( a, b, 2, 6, 3, 7 );
++}
++
+ #else
+ 
+ static inline b2FloatW b2ZeroW( void )
+@@ -1430,6 +1550,101 @@ static void b2ScatterBodies( b2BodyState* B2_RESTRICT states, int* B2_RESTRICT i
+ #endif
+ }
+ 
++#elif defined( B2_SIMD_WASM )
++
++// The SSE2 load and transpose above in wasm_simd128.h
++static b2BodyStateW b2GatherBodies( const b2BodyState* B2_RESTRICT states, int* B2_RESTRICT indices )
++{
++	_Static_assert( sizeof( b2BodyState ) == 32, "b2BodyState not 32 bytes" );
++	B2_ASSERT( ( (uintptr_t)states & 0x1F ) == 0 );
++
++	// [vx vy w flags]
++	b2FloatW identityA = b2ZeroW();
++
++	// [dpx dpy dqc dqs]
++	b2FloatW identityB = b2SetW( 0.0f, 0.0f, 1.0f, 0.0f );
++
++	b2FloatW b1a = indices[0] == B2_NULL_INDEX ? identityA : b2LoadW( (float*)( states + indices[0] ) + 0 );
++	b2FloatW b1b = indices[0] == B2_NULL_INDEX ? identityB : b2LoadW( (float*)( states + indices[0] ) + 4 );
++	b2FloatW b2a = indices[1] == B2_NULL_INDEX ? identityA : b2LoadW( (float*)( states + indices[1] ) + 0 );
++	b2FloatW b2b = indices[1] == B2_NULL_INDEX ? identityB : b2LoadW( (float*)( states + indices[1] ) + 4 );
++	b2FloatW b3a = indices[2] == B2_NULL_INDEX ? identityA : b2LoadW( (float*)( states + indices[2] ) + 0 );
++	b2FloatW b3b = indices[2] == B2_NULL_INDEX ? identityB : b2LoadW( (float*)( states + indices[2] ) + 4 );
++	b2FloatW b4a = indices[3] == B2_NULL_INDEX ? identityA : b2LoadW( (float*)( states + indices[3] ) + 0 );
++	b2FloatW b4b = indices[3] == B2_NULL_INDEX ? identityB : b2LoadW( (float*)( states + indices[3] ) + 4 );
++
++	// [vx1 vx3 vy1 vy3]
++	b2FloatW t1a = b2UnpackLoW( b1a, b3a );
++
++	// [vx2 vx4 vy2 vy4]
++	b2FloatW t2a = b2UnpackLoW( b2a, b4a );
++
++	// [w1 w3 f1 f3]
++	b2FloatW t3a = b2UnpackHiW( b1a, b3a );
++
++	// [w2 w4 f2 f4]
++	b2FloatW t4a = b2UnpackHiW( b2a, b4a );
++
++	b2BodyStateW simdBody;
++	simdBody.v.X = b2UnpackLoW( t1a, t2a );
++	simdBody.v.Y = b2UnpackHiW( t1a, t2a );
++	simdBody.w = b2UnpackLoW( t3a, t4a );
++	simdBody.flags = b2UnpackHiW( t3a, t4a );
++
++	b2FloatW t1b = b2UnpackLoW( b1b, b3b );
++	b2FloatW t2b = b2UnpackLoW( b2b, b4b );
++	b2FloatW t3b = b2UnpackHiW( b1b, b3b );
++	b2FloatW t4b = b2UnpackHiW( b2b, b4b );
++
++	simdBody.dp.X = b2UnpackLoW( t1b, t2b );
++	simdBody.dp.Y = b2UnpackHiW( t1b, t2b );
++	simdBody.dq.C = b2UnpackLoW( t3b, t4b );
++	simdBody.dq.S = b2UnpackHiW( t3b, t4b );
++
++	return simdBody;
++}
++
++// This writes only the velocities back to the solver bodies
++static void b2ScatterBodies( b2BodyState* B2_RESTRICT states, int* B2_RESTRICT indices, const b2BodyStateW* B2_RESTRICT simdBody )
++{
++	_Static_assert( sizeof( b2BodyState ) == 32, "b2BodyState not 32 bytes" );
++	B2_ASSERT( ( (uintptr_t)states & 0x1F ) == 0 );
++
++	// [vx1 vy1 vx2 vy2]
++	b2FloatW t1 = b2UnpackLoW( simdBody->v.X, simdBody->v.Y );
++	// [vx3 vy3 vx4 vy4]
++	b2FloatW t2 = b2UnpackHiW( simdBody->v.X, simdBody->v.Y );
++	// [w1 f1 w2 f2]
++	b2FloatW t3 = b2UnpackLoW( simdBody->w, simdBody->flags );
++	// [w3 f3 w4 f4]
++	b2FloatW t4 = b2UnpackHiW( simdBody->w, simdBody->flags );
++
++	// I don't use any dummy body in the body array because this will lead to multithreaded cache coherence problems.
++	if ( indices[0] != B2_NULL_INDEX && ( states[indices[0]].flags & b2_dynamicFlag ) != 0 )
++	{
++		// [t1.x t1.y t3.x t3.y]
++		b2StoreW( (float*)( states + indices[0] ), wasm_i32x4_shuffle( t1, t3, 0, 1, 4, 5 ) );
++	}
++
++	if ( indices[1] != B2_NULL_INDEX && ( states[indices[1]].flags & b2_dynamicFlag ) != 0 )
++	{
++		// [t1.z t1.w t3.z t3.w]
++		b2StoreW( (float*)( states + indices[1] ), wasm_i32x4_shuffle( t1, t3, 2, 3, 6, 7 ) );
++	}
++
++	if ( indices[2] != B2_NULL_INDEX && ( states[indices[2]].flags & b2_dynamicFlag ) != 0 )
++	{
++		// [t2.x t2.y t4.x t4.y]
++		b2StoreW( (float*)( states + indices[2] ), wasm_i32x4_shuffle( t2, t4, 0, 1, 4, 5 ) );
++	}
++
++	if ( indices[3] != B2_NULL_INDEX && ( states[indices[3]].flags & b2_dynamicFlag ) != 0 )
++	{
++		// [t2.z t2.w t4.z t4.w]
++		b2StoreW( (float*)( states + indices[3] ), wasm_i32x4_shuffle( t2, t4, 2, 3, 6, 7 ) );
++	}
++}
++
+ #else
+ 
+ // This is a load and transpose
+diff --git a/src/core.h b/src/core.h
+index 45b5246..1e3c1d2 100644
+--- a/src/core.h
++++ b/src/core.h
+@@ -49,7 +49,7 @@
+ 	#define B2_CPU_X86_X64
+ #elif defined( __aarch64__ ) || defined( _M_ARM64 ) || defined( __arm__ ) || defined( _M_ARM )
+ 	#define B2_CPU_ARM
+-#elif defined( __EMSCRIPTEN__ )
++#elif defined( __EMSCRIPTEN__ ) || defined( __wasm__ )
+ 	#define B2_CPU_WASM
+ #else
+ 	#define B2_CPU_UNKNOWN
+@@ -72,9 +72,11 @@
+ 	#elif defined( B2_CPU_ARM )
+ 		#define B2_SIMD_NEON
+ 		#define B2_SIMD_WIDTH 4
+-	#elif defined( B2_CPU_WASM )
+-		#define B2_CPU_WASM
+-		#define B2_SIMD_SSE2
++	#elif defined( B2_CPU_WASM ) && defined( __wasm_simd128__ )
++		// WebAssembly SIMD (wasm_simd128.h), any toolchain: Emscripten or wasi-sdk.
++		// Bit-identical to the SSE2 path: the same operations in the same order,
++		// pmin/pmax with SSE's min/max operand semantics, and no fused multiply-add.
++		#define B2_SIMD_WASM
+ 		#define B2_SIMD_WIDTH 4
+ 	#else
+ 		#define B2_SIMD_NONE

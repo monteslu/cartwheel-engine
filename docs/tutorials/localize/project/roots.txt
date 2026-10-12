@@ -1,0 +1,16 @@
+# What the game ships (cwpack follows ext_scene references from these).
+project.cwproj
+main.cwscene
+# the localization project: cwpack follows it to every catalog, the fonts
+# the catalogs name (@font) and their per-locale assets
+l10n/project.cwl10n
+# Japanese arrives from the translator as a PO file; cwpack converts it
+l10n/ja.cwtr = po/ja.po
+# the fonts for Arabic and Japanese (SIL OFL 1.1), fetched into the engine's
+# deps/fonts by scripts/fetch-deps.sh; @engine/ is the engine checkout.
+# Subset to the catalogs' characters at pack time (fonts/*.cwimport).
+fonts/NotoSansArabic.ttf = @engine/deps/fonts/noto-sans-arabic.ttf
+fonts/NotoSansJP.ttf = @engine/deps/fonts/noto-sans-jp.ttf
+fonts/NotoSansArabic-OFL.txt = @engine/deps/fonts/noto-sans-arabic-OFL.txt
+fonts/NotoSansJP-OFL.txt = @engine/deps/fonts/noto-sans-jp-OFL.txt
+captions/intro.cwcap

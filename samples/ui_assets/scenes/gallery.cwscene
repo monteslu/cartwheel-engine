@@ -1,0 +1,227 @@
+[scene format=1]
+
+[node name="Gallery" type="Panel"]
+anchor_right = 1
+anchor_bottom = 1
+mouse_filter = 2
+
+[node name="Margin" parent="." type="MarginContainer"]
+anchor_right = 1
+anchor_bottom = 1
+theme_overrides = "margin_left = 14; margin_top = 10; margin_right = 14; margin_bottom = 14"
+
+[node name="Rows" parent="Margin" type="VBoxContainer"]
+theme_overrides = "separation = 10"
+
+[node name="Menu" parent="Margin/Rows" type="MenuBar"]
+
+[node name="File" parent="Margin/Rows/Menu" type="PopupMenu"]
+items = "New|1\nOpen...|2\nRecent>Recent\n-\n[x]Autosave|3\n!Export|4\n-\nQuit|9"
+
+[node name="Recent" parent="Margin/Rows/Menu/File" type="PopupMenu"]
+items = "level_01.cwscene|20\nlevel_02.cwscene|21\nplayer.cwscene|22"
+
+[node name="Edit" parent="Margin/Rows/Menu" type="PopupMenu"]
+items = "Undo|30\nRedo|31\n-\nCut|32\nCopy|33\nPaste|34"
+
+[node name="View" parent="Margin/Rows/Menu" type="PopupMenu"]
+items = "[x]Grid|40\n[ ]Rulers|41\n[x]Snap|42"
+
+[node name="Cols" parent="Margin/Rows" type="HBoxContainer"]
+size_flags_vertical = 3
+theme_overrides = "separation = 16"
+
+[node name="Left" parent="Margin/Rows/Cols" type="VBoxContainer"]
+size_flags_horizontal = 3
+theme_overrides = "separation = 9"
+
+[node name="Title" parent="Margin/Rows/Cols/Left" type="Label"]
+text = "Widget gallery"
+theme_overrides = "font_size = 24"
+
+[node name="Paragraph" parent="Margin/Rows/Cols/Left" type="Label"]
+text = "Every size here derives from text and theme: margins, separations and font sizes. Resize the window and the layout follows; this paragraph wraps at its width."
+autowrap = true
+
+[node name="Rich" parent="Margin/Rows/Cols/Left" type="RichTextLabel"]
+text = "[b]Rich text[/b] with [i]italics[/i], [color=#ff8a5c]colour[/color], [size=19]size[/size] and a [url=https://example.org]link[/url]."
+
+[node name="Ellipsis" parent="Margin/Rows/Cols/Left" type="Label"]
+text = "A label far too long for its box gets an ellipsis at the end of the line instead of running past it"
+ellipsis = true
+custom_minimum_size = vec2(0, 0)
+
+[node name="Buttons" parent="Margin/Rows/Cols/Left" type="HBoxContainer"]
+
+[node name="Normal" parent="Margin/Rows/Cols/Left/Buttons" type="Button"]
+text = "Button"
+tooltip_text = "A push button"
+
+[node name="Toggle" parent="Margin/Rows/Cols/Left/Buttons" type="Button"]
+text = "Toggled"
+toggle_mode = true
+button_pressed = true
+
+[node name="Disabled" parent="Margin/Rows/Cols/Left/Buttons" type="Button"]
+text = "Disabled"
+disabled = true
+
+[node name="Flat" parent="Margin/Rows/Cols/Left/Buttons" type="Button"]
+text = "Flat"
+flat = true
+
+[node name="Checks" parent="Margin/Rows/Cols/Left" type="HBoxContainer"]
+
+[node name="Check1" parent="Margin/Rows/Cols/Left/Checks" type="CheckBox"]
+text = "Check"
+
+[node name="Check2" parent="Margin/Rows/Cols/Left/Checks" type="CheckBox"]
+text = "Checked"
+button_pressed = true
+
+[node name="Switch1" parent="Margin/Rows/Cols/Left/Checks" type="CheckButton"]
+text = "Switch"
+
+[node name="Switch2" parent="Margin/Rows/Cols/Left/Checks" type="CheckButton"]
+text = "On"
+button_pressed = true
+
+[node name="Choice" parent="Margin/Rows/Cols/Left" type="HBoxContainer"]
+
+[node name="Option" parent="Margin/Rows/Cols/Left/Choice" type="OptionButton"]
+items = "Forward+\nMobile\nCompatibility"
+selected = 0
+
+[node name="Spin" parent="Margin/Rows/Cols/Left/Choice" type="SpinBox"]
+max_value = 500
+value = 120
+suffix = " px"
+
+[node name="Radio1" parent="Margin/Rows/Cols/Left/Choice" type="Button"]
+text = "A"
+toggle_mode = true
+button_group = "abc"
+button_pressed = true
+
+[node name="Radio2" parent="Margin/Rows/Cols/Left/Choice" type="Button"]
+text = "B"
+toggle_mode = true
+button_group = "abc"
+
+[node name="Slider" parent="Margin/Rows/Cols/Left" type="HSlider"]
+value = 40
+
+[node name="Progress" parent="Margin/Rows/Cols/Left" type="ProgressBar"]
+value = 65
+
+[node name="Fields" parent="Margin/Rows/Cols/Left" type="GridContainer"]
+columns = 2
+
+[node name="NameLabel" parent="Margin/Rows/Cols/Left/Fields" type="Label"]
+text = "Name"
+
+[node name="Name" parent="Margin/Rows/Cols/Left/Fields" type="LineEdit"]
+text = "Player One"
+size_flags_horizontal = 3
+
+[node name="SearchLabel" parent="Margin/Rows/Cols/Left/Fields" type="Label"]
+text = "Search"
+
+[node name="Search" parent="Margin/Rows/Cols/Left/Fields" type="LineEdit"]
+placeholder_text = "Type to filter..."
+size_flags_horizontal = 3
+
+[node name="PassLabel" parent="Margin/Rows/Cols/Left/Fields" type="Label"]
+text = "Password"
+
+[node name="Pass" parent="Margin/Rows/Cols/Left/Fields" type="LineEdit"]
+text = "hunter2"
+secret = true
+size_flags_horizontal = 3
+
+[node name="Flow" parent="Margin/Rows/Cols/Left" type="HFlowContainer"]
+
+[node name="T1" parent="Margin/Rows/Cols/Left/Flow" type="Button"]
+text = "flow"
+
+[node name="T2" parent="Margin/Rows/Cols/Left/Flow" type="Button"]
+text = "wraps"
+
+[node name="T3" parent="Margin/Rows/Cols/Left/Flow" type="Button"]
+text = "into"
+
+[node name="T4" parent="Margin/Rows/Cols/Left/Flow" type="Button"]
+text = "lines"
+
+[node name="T5" parent="Margin/Rows/Cols/Left/Flow" type="Button"]
+text = "when narrow"
+
+[node name="T6" parent="Margin/Rows/Cols/Left/Flow" type="Button"]
+text = "enough"
+
+[node name="Middle" parent="Margin/Rows/Cols" type="VBoxContainer"]
+size_flags_horizontal = 3
+theme_overrides = "separation = 10"
+
+[node name="Tabs" parent="Margin/Rows/Cols/Middle" type="TabContainer"]
+size_flags_vertical = 3
+
+[node name="Code" parent="Margin/Rows/Cols/Middle/Tabs" type="TextEdit"]
+show_line_numbers = true
+syntax_highlighting = 1
+text = "#include <stdio.h>\n\n/* the classic */\nint main(void) {\n    const char *who = \"world\";\n    for (int i = 0; i < 3; i++)\n        printf(\"hello, %s %d\\n\", who, i);\n    return 0;\n}"
+
+[node name="Notes" parent="Margin/Rows/Cols/Middle/Tabs" type="Label"]
+text = "Second page"
+
+[node name="Settings" parent="Margin/Rows/Cols/Middle/Tabs" type="Label"]
+text = "Third page"
+
+[node name="Split" parent="Margin/Rows/Cols/Middle" type="HSplitContainer"]
+size_flags_vertical = 3
+
+[node name="SceneTree" parent="Margin/Rows/Cols/Middle/Split" type="Tree"]
+size_flags_horizontal = 3
+items = "Level\n  Player\n    Camera\n    Sprite\n  Enemies\n    Goblin\n    Goblin2\n  HUD"
+
+[node name="Items" parent="Margin/Rows/Cols/Middle/Split" type="ItemList"]
+size_flags_horizontal = 3
+items = "grass.png\nstone.png\nwater.png\nlava.png\nsand.png\nsnow.png\nice.png\nmud.png"
+
+[node name="Right" parent="Margin/Rows/Cols" type="VBoxContainer"]
+theme_overrides = "separation = 10"
+
+[node name="Picker" parent="Margin/Rows/Cols/Right" type="ColorPicker"]
+color = color(0.30, 0.55, 1.0, 1)
+
+[node name="Images" parent="Margin/Rows/Cols/Right" type="HBoxContainer"]
+
+[node name="Critter" parent="Margin/Rows/Cols/Right/Images" type="TextureRect"]
+texture = "images/sheet.png"
+region_rect = vec4(0, 0, 32, 30)
+expand = true
+stretch_mode = 5
+custom_minimum_size = vec2(64, 64)
+
+[node name="Nine" parent="Margin/Rows/Cols/Right/Images" type="NinePatchRect"]
+texture = "images/sheet.png"
+region_rect = vec4(0, 32, 32, 32)
+patch_margin_left = 6
+patch_margin_top = 6
+patch_margin_right = 6
+patch_margin_bottom = 6
+custom_minimum_size = vec2(120, 64)
+
+[node name="VSlider" parent="Margin/Rows/Cols/Right/Images" type="VSlider"]
+value = 70
+
+[node name="Aspect" parent="Margin/Rows/Cols/Right" type="AspectRatioContainer"]
+ratio = 2
+size_flags_vertical = 3
+
+[node name="Card" parent="Margin/Rows/Cols/Right/Aspect" type="PanelContainer"]
+
+[node name="CardCenter" parent="Margin/Rows/Cols/Right/Aspect/Card" type="CenterContainer"]
+
+[node name="CardText" parent="Margin/Rows/Cols/Right/Aspect/Card/CardCenter" type="Label"]
+text = "2:1 card"

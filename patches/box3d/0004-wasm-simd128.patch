@@ -1,0 +1,382 @@
+# WebAssembly SIMD for the solver and the SIMD math, under any wasm toolchain.
+# core.h only recognised wasm through __EMSCRIPTEN__ (and then took the SSE2
+# path through Emscripten's SSE emulation headers), so wasi-sdk carts
+# (wasm32-wasip1-threads -msimd128) got B3_SIMD_NONE: the scalar fallback.
+# Now __wasm__ with __wasm_simd128__ selects B3_SIMD_WASM, a wasm_simd128.h
+# implementation of the SSE2 functions. It is bit-identical to SSE2: the same
+# operations in the same order, multiply-adds as a multiply then an add (no
+# FMA), and min/max with SSE's operand semantics (_mm_min_ps(a, b) is
+# a < b ? a : b, which is wasm_f32x4_pmin(b, a); wasm_f32x4_min differs on
+# signed zeros and NaN). Native x86 (SSE2) and carts run the same solver.
+
+diff --git a/src/contact_solver.c b/src/contact_solver.c
+index 501f858..5072cdc 100644
+--- a/src/contact_solver.c
++++ b/src/contact_solver.c
+@@ -788,6 +788,13 @@ typedef float32x4_t b3FloatW;
+ // wide float holds 4 numbers
+ typedef __m128 b3FloatW;
+ 
++#elif defined( B3_SIMD_WASM )
++
++#include <wasm_simd128.h>
++
++// wide float holds 4 numbers
++typedef v128_t b3FloatW;
++
+ #else
+ 
+ // scalar math
+@@ -1060,6 +1067,107 @@ static inline b3FloatW b3BlendW( b3FloatW a, b3FloatW b, b3FloatW mask )
+ 	return _mm_or_ps( _mm_and_ps( mask, b ), _mm_andnot_ps( mask, a ) );
+ }
+ 
++#elif defined( B3_SIMD_WASM )
++
++// The SSE2 functions above in wasm_simd128.h, bit for bit: the same operations in
++// the same order (b3MulAddW is a multiply then an add, never fused), and SSE's
++// min/max operand semantics: _mm_min_ps( a, b ) is wasm_f32x4_pmin( b, a ).
++
++static inline b3FloatW b3ZeroW( void )
++{
++	return wasm_f32x4_const_splat( 0.0f );
++}
++
++static inline b3FloatW b3SplatW( float scalar )
++{
++	return wasm_f32x4_splat( scalar );
++}
++
++static inline b3FloatW b3NegW( b3FloatW a )
++{
++	// flip the sign bit of each element
++	return wasm_v128_xor( a, wasm_f32x4_const_splat( -0.0f ) );
++}
++
++static inline b3FloatW b3SetW( float a, float b, float c, float d )
++{
++	return wasm_f32x4_make( a, b, c, d );
++}
++
++static inline b3FloatW b3AddW( b3FloatW a, b3FloatW b )
++{
++	return wasm_f32x4_add( a, b );
++}
++
++static inline b3FloatW b3SubW( b3FloatW a, b3FloatW b )
++{
++	return wasm_f32x4_sub( a, b );
++}
++
++static inline b3FloatW b3MulW( b3FloatW a, b3FloatW b )
++{
++	return wasm_f32x4_mul( a, b );
++}
++
++static inline b3FloatW b3DivW( b3FloatW a, b3FloatW b )
++{
++	return wasm_f32x4_div( a, b );
++}
++
++static inline b3FloatW b3SqrtW( b3FloatW a )
++{
++	return wasm_f32x4_sqrt( a );
++}
++
++static inline b3FloatW b3MulAddW( b3FloatW a, b3FloatW b, b3FloatW c )
++{
++	return wasm_f32x4_add( a, wasm_f32x4_mul( b, c ) );
++}
++
++static inline b3FloatW b3MinW( b3FloatW a, b3FloatW b )
++{
++	return wasm_f32x4_pmin( b, a );
++}
++
++static inline b3FloatW b3MaxW( b3FloatW a, b3FloatW b )
++{
++	return wasm_f32x4_pmax( b, a );
++}
++
++// clamp a to [-b, b]
++static inline b3FloatW b3SymClampW( b3FloatW a, b3FloatW b )
++{
++	b3FloatW nb = b3NegW( b );
++	b3FloatW c = b3MaxW( nb, a );
++	return b3MinW( c, b );
++}
++
++static inline b3FloatW b3OrW( b3FloatW a, b3FloatW b )
++{
++	return wasm_v128_or( a, b );
++}
++
++static inline b3FloatW b3GreaterThanW( b3FloatW a, b3FloatW b )
++{
++	return wasm_f32x4_gt( a, b );
++}
++
++static inline b3FloatW b3EqualsW( b3FloatW a, b3FloatW b )
++{
++	return wasm_f32x4_eq( a, b );
++}
++
++static inline bool b3AllZeroW( b3FloatW a )
++{
++	return wasm_i32x4_bitmask( wasm_f32x4_eq( a, wasm_f32x4_const_splat( 0.0f ) ) ) == 0xF;
++}
++
++// component-wise returns mask ? b : a
++static inline b3FloatW b3BlendW( b3FloatW a, b3FloatW b, b3FloatW mask )
++{
++	return wasm_v128_or( wasm_v128_and( mask, b ), wasm_v128_andnot( a, mask ) );
++}
++
+ #else
+ 
+ static inline b3FloatW b3ZeroW( void )
+@@ -1392,7 +1500,7 @@ typedef struct b3BodyStateW
+ 	b3QuatW dq;
+ } b3BodyStateW;
+ 
+-#if defined( B3_SIMD_SSE2 ) || defined( B3_SIMD_NEON )
++#if defined( B3_SIMD_SSE2 ) || defined( B3_SIMD_NEON ) || defined( B3_SIMD_WASM )
+ 
+ static b3BodyStateW b3GatherBodies( const b3BodyState* states, int* indices )
+ {
+diff --git a/src/core.h b/src/core.h
+index 34656a9..87940cc 100644
+--- a/src/core.h
++++ b/src/core.h
+@@ -40,7 +40,7 @@
+ 	#define B3_CPU_X86_X64
+ #elif defined( __aarch64__ ) || defined( _M_ARM64 ) || defined( __arm__ ) || defined( _M_ARM )
+ 	#define B3_CPU_ARM
+-#elif defined( __EMSCRIPTEN__ )
++#elif defined( __EMSCRIPTEN__ ) || defined( __wasm__ )
+ 	#define B3_CPU_WASM
+ #else
+ 	#define B3_CPU_UNKNOWN
+@@ -60,11 +60,13 @@
+ 		#define B3_SIMD_NEON
+ 		#define B3_SIMD_WIDTH 4
+ 		//#pragma message("B3_SIMD_NEON")
+-	#elif defined( B3_CPU_WASM )
+-		#define B3_CPU_WASM
+-		#define B3_SIMD_SSE2
++	#elif defined( B3_CPU_WASM ) && defined( __wasm_simd128__ )
++		// WebAssembly SIMD (wasm_simd128.h), any toolchain: Emscripten or wasi-sdk.
++		// Bit-identical to the SSE2 path: the same operations in the same order,
++		// pmin/pmax with SSE's min/max operand semantics, and no fused multiply-add.
++		#define B3_SIMD_WASM
+ 		#define B3_SIMD_WIDTH 4
+-		//#pragma message("B3_SIMD_SSE2")
++		//#pragma message("B3_SIMD_WASM")
+ 	#else
+ 		#define B3_SIMD_NONE
+ 		#define B3_SIMD_WIDTH 4
+diff --git a/src/simd.c b/src/simd.c
+index 6a9faac..30a5f5c 100644
+--- a/src/simd.c
++++ b/src/simd.c
+@@ -47,6 +47,48 @@ static inline b3V32 b3Dot3V( b3V32 a, b3V32 b )
+ 	return _mm_add_ps( _mm_add_ps( x, y ), z );
+ }
+ 
++#elif defined( B3_SIMD_WASM )
++
++// The SSE2 code above in wasm_simd128.h, lane for lane
++#define B3_TRANSPOSE3( C1, C2, C3 )                                                                                              \
++	{                                                                                                                            \
++		b3V32 T1 = wasm_i32x4_shuffle( ( C1 ), ( C2 ), 0, 4, 1, 5 );                                                             \
++		b3V32 T2 = wasm_i32x4_shuffle( ( C1 ), ( C2 ), 2, 6, 3, 7 );                                                             \
++		( C1 ) = wasm_i32x4_shuffle( ( T1 ), ( C3 ), 0, 1, 4, 4 );                                                               \
++		( C2 ) = wasm_i32x4_shuffle( ( T1 ), ( C3 ), 2, 3, 5, 5 );                                                               \
++		( C3 ) = wasm_i32x4_shuffle( ( T2 ), ( C3 ), 0, 1, 6, 6 );                                                               \
++	}
++
++static inline b3V32 b3SplatXV( b3V32 v )
++{
++	return wasm_i32x4_shuffle( v, v, 0, 0, 0, 0 );
++}
++
++static inline b3V32 b3SplatYV( b3V32 v )
++{
++	return wasm_i32x4_shuffle( v, v, 1, 1, 1, 1 );
++}
++
++static inline b3V32 b3SplatZV( b3V32 v )
++{
++	return wasm_i32x4_shuffle( v, v, 2, 2, 2, 2 );
++}
++
++static inline bool b3AnyGreaterEq3V( b3V32 a, b3V32 b )
++{
++	return ( wasm_i32x4_bitmask( wasm_f32x4_ge( a, b ) ) & 0x07 ) != 0;
++}
++
++static inline b3V32 b3Dot3V( b3V32 a, b3V32 b )
++{
++	b3V32 m = wasm_f32x4_mul( a, b );
++	b3V32 x = wasm_i32x4_shuffle( m, m, 0, 0, 0, 0 );
++	b3V32 y = wasm_i32x4_shuffle( m, m, 1, 1, 1, 1 );
++	b3V32 z = wasm_i32x4_shuffle( m, m, 2, 2, 2, 2 );
++
++	return wasm_f32x4_add( wasm_f32x4_add( x, y ), z );
++}
++
+ #else
+ 
+ #define B3_TRANSPOSE3( C1, C2, C3 )                                                                                              \
+diff --git a/src/simd.h b/src/simd.h
+index ac7e9e8..ad7417c 100644
+--- a/src/simd.h
++++ b/src/simd.h
+@@ -161,6 +161,147 @@ static inline bool b3AllLessEq3V( b3V32 a, b3V32 b )
+ 	return ( _mm_movemask_ps( v ) & 0x07 ) == 0x07;
+ }
+ 
++#elif defined( B3_SIMD_WASM )
++
++#include <wasm_simd128.h>
++
++// wide float holds 4 numbers. Every function matches its SSE2 counterpart above
++// bit for bit: _mm_min_ps( a, b ) is a < b ? a : b, which is wasm_f32x4_pmin( b, a )
++// (pmin( x, y ) is y < x ? y : x); likewise for max. wasm_f32x4_min/max would differ
++// on signed zeros and NaN.
++typedef v128_t b3V32;
++
++typedef union b3128
++{
++	b3V32 v;
++	float f[4];
++} b3128;
++
++static const b3V32 b3_zeroV = { 0 };
++#define b3_halfV wasm_f32x4_const_splat( 0.5f )
++#define b3_oneV wasm_f32x4_const_splat( 1.0f )
++
++static inline b3V32 b3AddV( b3V32 a, b3V32 b )
++{
++	return wasm_f32x4_add( a, b );
++}
++
++static inline b3V32 b3SubV( b3V32 a, b3V32 b )
++{
++	return wasm_f32x4_sub( a, b );
++}
++
++static inline b3V32 b3MulV( b3V32 a, b3V32 b )
++{
++	return wasm_f32x4_mul( a, b );
++}
++
++static inline b3V32 b3DivV( b3V32 a, b3V32 b )
++{
++	return wasm_f32x4_div( a, b );
++}
++
++static inline b3V32 b3NegV( b3V32 a )
++{
++	// 0 - a, as SSE2 does (not a sign flip: -(+0) is +0 here)
++	return wasm_f32x4_sub( wasm_f32x4_const_splat( 0.0f ), a );
++}
++
++static inline b3V32 b3LoadV( const float* src )
++{
++	// Loads exactly 12 bytes, lane 3 is zero: { src[0], src[1], src[2], 0.0f }
++	return wasm_f32x4_make( src[0], src[1], src[2], 0.0f );
++}
++
++static inline b3V32 b3ZeroV( void )
++{
++	return wasm_f32x4_const_splat( 0.0f );
++}
++
++static inline float b3GetXV( b3V32 a )
++{
++	return wasm_f32x4_extract_lane( a, 0 );
++}
++
++static inline float b3GetYV( b3V32 a )
++{
++	return wasm_f32x4_extract_lane( a, 1 );
++}
++
++static inline float b3GetZV( b3V32 a )
++{
++	return wasm_f32x4_extract_lane( a, 2 );
++}
++
++static inline float b3GetV( b3V32 a, int index )
++{
++	b3128 b;
++	b.v = a;
++	return b.f[index];
++}
++
++static inline b3V32 b3SplatV( float x )
++{
++	return wasm_f32x4_splat( x );
++}
++
++static inline b3V32 b3AbsV( b3V32 a )
++{
++	// Abs( V ) = Max( -V, V ), as SSE2
++	b3V32 zero = wasm_f32x4_const_splat( 0.0f );
++	return wasm_f32x4_pmax( a, wasm_f32x4_sub( zero, a ) );
++}
++
++static inline b3V32 b3MinV( b3V32 a, b3V32 b )
++{
++	return wasm_f32x4_pmin( b, a );
++}
++
++static inline b3V32 b3MaxV( b3V32 a, b3V32 b )
++{
++	return wasm_f32x4_pmax( b, a );
++}
++
++static inline b3V32 b3CrossV( b3V32 a, b3V32 b )
++{
++	b3V32 yzX1 = wasm_i32x4_shuffle( a, a, 1, 2, 0, 3 );
++	b3V32 zxY1 = wasm_i32x4_shuffle( a, a, 2, 0, 1, 3 );
++	b3V32 yzX2 = wasm_i32x4_shuffle( b, b, 1, 2, 0, 3 );
++	b3V32 zxY2 = wasm_i32x4_shuffle( b, b, 2, 0, 1, 3 );
++
++	return wasm_f32x4_sub( wasm_f32x4_mul( yzX1, zxY2 ), wasm_f32x4_mul( zxY1, yzX2 ) );
++}
++
++static inline b3V32 b3ModifiedCrossV( b3V32 a, b3V32 b )
++{
++	b3V32 yzX1 = wasm_i32x4_shuffle( a, a, 1, 2, 0, 3 );
++	b3V32 zxY1 = wasm_i32x4_shuffle( a, a, 2, 0, 1, 3 );
++	b3V32 yzX2 = wasm_i32x4_shuffle( b, b, 1, 2, 0, 3 );
++	b3V32 zxY2 = wasm_i32x4_shuffle( b, b, 2, 0, 1, 3 );
++
++	return wasm_f32x4_add( wasm_f32x4_mul( yzX1, zxY2 ), wasm_f32x4_mul( zxY1, yzX2 ) );
++}
++
++static inline bool b3AnyLess3V( b3V32 a, b3V32 b )
++{
++	return ( wasm_i32x4_bitmask( wasm_f32x4_lt( a, b ) ) & 0x07 ) != 0;
++}
++
++static inline bool b3AnyLessEq3V( b3V32 a, b3V32 b )
++{
++	return ( wasm_i32x4_bitmask( wasm_f32x4_le( a, b ) ) & 0x07 ) != 0;
++}
++
++static inline bool b3AnyGreater3V( b3V32 a, b3V32 b )
++{
++	return ( wasm_i32x4_bitmask( wasm_f32x4_gt( a, b ) ) & 0x07 ) != 0;
++}
++
++static inline bool b3AllLessEq3V( b3V32 a, b3V32 b )
++{
++	return ( wasm_i32x4_bitmask( wasm_f32x4_le( a, b ) ) & 0x07 ) == 0x07;
++}
++
+ #else
+ 
+ // I don't expect the use case of b3V32 to benefit from Neon code.

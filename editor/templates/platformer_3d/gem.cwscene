@@ -1,0 +1,16 @@
+[scene format=1]
+
+[node name="Gem" type="Area3D" groups="gems"]
+collision_layer = 2
+collision_mask = 2
+
+[node name="Shape" parent="." type="CollisionShape3D"]
+shape = SPHERE
+radius = 0.4
+
+[node name="Look" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+size = vec3(0.5, 0.5, 0.5)
+color = color(0.07324, 0.69207, 1, 1)
+emissive = color(0.01002, 0.07324, 0.13287, 1)
+cast_shadow = true

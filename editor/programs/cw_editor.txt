@@ -1,0 +1,8 @@
+# r186 program states for cw_editor (cmake/programs.cmake; tools/programs.mjs adds what runs lack)
+standard+shadow+l1001
+line+vcol
+standard+l1001
+standard+map+rep+emap+l1001
+basic+map+rep
+standard+map+rep+instbig+emap+l1001
+standard+instbig+shadow+l1001

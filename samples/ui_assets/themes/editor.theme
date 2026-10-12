@@ -1,0 +1,27 @@
+# The editor sample's theme: the built-in dark theme with a teal accent and
+# tighter controls. Every line is "Type.name = value" (see cartwheel/ui.h).
+extends = dark
+default_font_size = 14
+focus = style(bg=#00000000, border=2, border_color=#2bb5a0, radius=5, draw_center=0)
+Button.normal = style(bg=#2d323c, border=1, border_color=#3a404c, radius=4, margin=10 4)
+Button.hover = style(base=Button.normal, bg=#363c48, border_color=#4b5361)
+Button.pressed = style(base=Button.normal, bg=#22262e, border_color=#2bb5a0)
+Button.disabled = style(base=Button.normal, bg=#2a2f38, border_color=#30353f)
+Button.focus = style(bg=#00000000, border=2, border_color=#2bb5a0, radius=5, draw_center=0)
+LineEdit.normal = style(bg=#16191e, border=1, border_color=#3a404c, radius=4, margin=6 3)
+LineEdit.focus = style(bg=#00000000, border=2, border_color=#2bb5a0, radius=4, draw_center=0)
+LineEdit.selection_color = #2bb5a066
+Tree.selected = style(bg=#2bb5a04d, radius=3)
+ItemList.selected = style(bg=#2bb5a04d, radius=3)
+Slider.grabber_area = style(bg=#2bb5a0, radius=3, margin=0 3)
+Slider.grabber_border_color = #2bb5a0
+TabContainer.tab_selected = style(bg=#23272f, border=1 2 1 0, border_color=#2bb5a0, radius=5 5 0 0, margin=12 5)
+TabContainer.tab_unselected = style(bg=#2b3039, radius=5 5 0 0, margin=12 5)
+TabContainer.tab_hovered = style(bg=#3b4350, radius=5 5 0 0, margin=12 5)
+PopupMenu.hover = style(bg=#2bb5a0, radius=4)
+MenuBar.pressed = style(bg=#2bb5a0, radius=4, margin=10 4)
+CheckBox.box_checked = style(bg=#2bb5a0, border=1, border_color=#2bb5a0, radius=4)
+Inspector.header = style(bg=#2b3039, radius=4, margin=8 3)
+BoxContainer.separation = 4
+GridContainer.h_separation = 8
+GridContainer.v_separation = 4

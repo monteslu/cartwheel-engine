@@ -1,0 +1,183 @@
+# 3D rendering
+
+{{name}} draws 3D through three.c, three.js r186 in C, and wraps it in a per-tree pass graph that adds a linear HDR workflow, sky, fog, baked lighting, culling, particles and decals. This page explains how those pieces fit together, what each costs and which sample shows it.
+
+## The layers
+
+There are three layers, and you can work at any of them:
+
+- **three.c** is the renderer. Its names follow three.js: `new THREE.Mesh(geo, mat)` is `t3_mesh_new(geo, mat)`, `renderer.render(scene, camera)` is `t3_renderer_render`. Ownership is reference counting. It draws with the shader programs three.js r186's node renderer generates, so its materials, glTF, skinning, morph targets, `LOD`, `InstancedMesh` and render targets render what r186 renders. The programs come from program tables: three.c's core table for the renderer's own passes, and the app's tables for its materials (see [Program tables](#program-tables)).
+- **The scene tree** ([render3d.h](header:render3d.h)) owns one three.c scene and renderer per tree. Every `Node3D` drives a three.c object (a group by default; `cw_node3d_object` returns it, `cw_node3d_set_object` replaces it), so you can hang any three.c object under a node and the tree keeps its transform, interpolated between fixed ticks.
+- **The render pipeline** ([pipeline.h](header:pipeline.h)) is a small frame graph per tree. The scene runner (`cw_scene_app`) renders through it every frame; other apps call `cw_pipeline_render`. Modules add their work to it as passes.
+
+Coordinates are Y up, -Z forward. Cameras, lights and decals face their -Z (not the origin, as three.js's default light target does): aim them with rotation or `cw_node3d_look_at`.
+
+You do not need the tree to use three.c. The `hello` sample is a bare three.c scene in a platform app:
+
+@include samples/hello/main.c#three_scene
+
+`cw_render3d_window_renderer` is `t3_renderer_new` on whichever GPU API the run uses, and `cw_render3d_window_target` (in `render`, before `t3_renderer_render`) points it at this frame's window, so the same app draws on GL and on WebGPU. A dual cart may not call GL once the host has selected WebGPU, and a bare `t3_renderer_new` renderer is a GL renderer.
+
+Most games use nodes instead: `samples/scene3d` builds a level from `.cwscene` files only, and `samples/gltf_scene` loads packed glTF models through the resource system with LOD chains.
+
+## Program tables
+
+three.c draws every material with the program three.js r186 generates for its state: the material kind, its features (maps, skinning, instancing, clearcoat...), fog, shadows and the light counts, written like `standard+map+rep+shadow+l1001`. The programs are captured from three.js ahead of time and compiled in as tables. The engine links three.c's core table only (output pass, backgrounds, PMREM, shadow casters), so an app carries the programs it draws and no others: a cart's wasm went from about 36 MB with three.c's full table to 7.5 MB.
+
+A table is a manifest of states, `<name>.txt`, with the C generated from it beside it (`<name>_gl.c`, `<name>_wgpu.c`), all checked in: a build needs only a C compiler. An app gets its tables from `cw_add_app(... PROGRAMS path/to/<name>.txt)`, from `programs/<app>.txt` beside its CMakeLists.txt (what a new project uses), or from its directory's `CW_PROGRAMS` (the samples share `samples/programs/cw_samples.txt`). The engine and the editor register their own tables (`src/render/programs/cw_engine.txt`, `editor/programs/cw_editor.txt`).
+
+When an app draws a combination its tables lack:
+
+- a native development build builds the program on first use (`CW_THREE_BUILDER`, three.js r186 in an embedded QuickJS; a few hundred milliseconds), so nothing goes missing while you iterate;
+- a cart or an exported build skips the draw;
+- either way the state is reported: the pipeline's warning, `cw_pipeline_missing_states`, the debug fields `cw.three.missing` and `cw.three.missing_states`, and natively `CW_PROGRAMS_LOG_DIR` or `T3_MISSING_LOG`. Every gate fails on a reported state and prints it.
+
+To add the states, run the app through the tool, which merges what it lacked into the app's first table and regenerates:
+
+    node tools/programs.mjs <app> [--gates]      # the app's runs (and its gates' runs), GL and WebGPU
+    node tools/programs.mjs --projects <dir>     # a project outside the tree's build
+    ninja -C build/native <name>_programs        # regenerate one table from its manifest
+
+then commit the manifest and the generated C. Generating captures on three.c's mock GPU (byte-identical to a real one), so it needs Node but no GPU. The tool minimizes a manifest: a program captured for more lights of each kind (and the same shadow casters) also draws scenes with fewer, so `standard+fog+l1701` replaces `standard+fog+l1001`.
+
+## The 3D node types
+
+| Node | What it configures |
+|---|---|
+| `Camera3D` | fov, near, far; the first `current` camera renders |
+| `MeshInstance3D` | a primitive (BOX, SPHERE, PLANE, CYLINDER) scaled to `size`, or a `mesh` resource; material colour, metalness, roughness, emissive; shadows; visibility and baking properties |
+| `DirectionalLight3D`, `OmniLight3D`, `SpotLight3D` | colour, energy, range, decay, cone, shadows |
+| `WorldEnvironment` | background, ambient and hemisphere light, three.c fog |
+| `PostProcess` | the pipeline's mode and post settings |
+| `ProceduralSky`, `HeightFog` | sky and day cycle, height fog |
+| `LightmapGI` | baked indirect light |
+| `VisibilityManager`, `Room3D`, `Portal3D` | culling, LOD, impostors, portals |
+| `GPUParticles3D`, `Trail3D`, `ParticleAttractor3D`, `ParticleCollider3D` | particles and trails |
+| `Decal3D` | projected decals |
+
+Primitives are unit shapes shared per tree and scaled to `size`, and primitives with the same material properties share one material, so same-shaped, same-looking meshes draw as one instanced batch.
+
+three.c lights a surface with at most 8 lights of each kind (directional, point, spot, hemisphere); lights past that, in scene order, light nothing. The engine logs a `LIGHT CAP EXCEEDED` warning naming the count, once per kind. With many lamps, keep a few real lights on the ones nearest the view and show the rest as emissive (as `samples/showcase` does). Every property, with its type, default and range, is on the node's reference page, and a running app answers `props <node>` over the debug channel.
+
+## The pass graph
+
+A frame runs the tree's active passes phase by phase, and inside a phase by `order`:
+
+| Phase | Built-in and module passes |
+|---|---|
+| SHADOW | "sky_env" (100: sky cube), "visibility" (2000: culling, LOD, impostor bakes) |
+| PREPASS | "depth_prepass" when `depth_prepass` is on |
+| OPAQUE | "scene" (0: three.c renders the tree), "impostors" (100), "occlusion_queries" (900) |
+| SKY | "sky_sun" (0: the sun disk) |
+| EFFECTS | "decals" (100), "particles" (200), "height_fog" (300) |
+| POST | "velocity", "ssao" (100), "taa" (200), "bloom" (300), "tonemap" (500), "grade" (550), "aa" (600), "lens" (700), "debug_view" (10000) |
+| OVERLAY | "canvas" (-100: the tree's 2D and UI), "app" (0: your render callback), debug draw at 1000 by convention |
+| PRESENT | "visibility_restore" (1000), readbacks |
+
+Passes declare what they read and write (`CW_RES_COLOR`, `CW_RES_DEPTH`, `CW_RES_VELOCITY`), and the graph acts on it: reading depth moves the scene offscreen and makes a depth copy for SKY and EFFECTS, reading velocity schedules the velocity pass, and colour writers in POST join a ping-pong chain of pooled targets.
+
+A HUD on a scene app is the "app" overlay: draw with render2d in `base.render` and it lands after the 3D and the post chain. Adding a pass of your own is a descriptor and a callback. `samples/remote_target` adds a debug-draw overlay that outlines its movers:
+
+@include samples/remote_target/main.c#debug_pass_exec
+
+@include samples/remote_target/main.c#debug_pass_add
+
+The header's comment walks through an EFFECTS pass that samples depth, and lists the rules a pass follows: raw GL is fine, the pipeline resets three.c's cached GL state around its own three.c renders, scratch targets come from `cw_pass_rt` and are yours until the frame ends, persistent ones (history buffers) from `cw_pipeline_rt_persistent`. Register a pass once per tree, from a node's enter_tree, a tree hook or app init; `cw_pipeline_set_pass_enabled` switches any pass, built-ins included.
+
+Every pass can be timed on the GPU where the host has timer queries (natively; carts never use them). The timers are off until asked for, because reading them back costs the CPU every frame: `CW_GPU_TIMERS=1` turns them on from the start, and the debug command `pipeline`, which lists the passes, whether they ran and their GPU ms, turns them on from its first call. `cw_pipeline_pass_stats` gives the same in code (`gpu_ms` -1 while the timers are off).
+
+## The workflow
+
+Every tree renders the way three.js r186 does: colours are linear, lights are physical units (directional energy is lux-like illuminance, omni and spot energy is candela-like intensity with inverse-square falloff, windowed to 0 at `range` when it is set), the scene renders linear HDR into RGBA16F, and the "tonemap" pass applies exposure, the tone curve (AgX by default) and the sRGB transfer. With exposure 1 and AgX, sensible values are a sun of 3 to 5, room lamps of 10 to 50 a few metres away and ambient 0.05 to 0.3; real photometric values work with `exposure_ev` around -14.
+
+Pick colours darker than a colour picker suggests: they are linear, and the tone curve desaturates bright ones (`color(1, 0, 0)` shows as about (220, 90, 75) under AgX). A scene authored for the old r128 workflow (display colours, r128's legacy light units) converts once with `node tools/convert-r128-scene.mjs <file.cwscene>`.
+
+Each tree renders through its own pipeline; `cw_pipeline_set_output` sends it into a target instead of the screen, the pattern any render-to-texture or split-screen view uses.
+
+## The post stack
+
+The post settings are the fields of `cw_post_settings`, mirrored as PostProcess properties: MSAA, depth prepass, exposure (a multiplier and stops), tone curve (r186's: AGX by default, NEUTRAL, ACES_FILMIC, CINEON, REINHARD, LINEAR), energy-conserving bloom, GTAO at half resolution, TAA (Halton jitter, velocity reprojection, neighbourhood clip), FXAA or SMAA 1x, a 3D LUT grade loaded from a `.cube` file (`cw_lut_load_cube`), vignette, grain and chromatic aberration. `debug_view` shows depth, normals, AO, velocity or the bloom chain instead of the image. Nothing is lowered automatically: quality settings are the developer's.
+
+Two limits stated in the header: TAA reprojects camera motion only (moving objects rely on the neighbourhood clip), and SMAA has no diagonal pattern search yet.
+
+`samples/post_stack` steps one static room through every effect in turn, one schedule segment each (its gates are `post-bloom`, `post-ssao`, `post-taa` and so on, each against the plain AgX segment), and measures TAA convergence over one jitter cycle.
+
+## Lights and shadows
+
+Lights are three.c's: three.js r186's directional, omni (point), spot, ambient and hemisphere lights, with its shadow maps for every light that casts them (`shadow`, `shadow_size`, biases; a mesh needs `cast_shadow` and `receive_shadow`).
+
+Clustered lights, cascaded sun shadows and light probes come from three.js r186's `ClusteredLighting`, `CSMShadowNode` and `LightProbeGrid` as three.c adds them.
+
+## Quality presets
+
+[cartwheel/quality.h](api:cw_quality_get) has four presets, Low, Medium, High (the default) and Ultra. They change what a frame costs, never the resolution (`cw_app_desc.render_scale`) and never the simulation: High draws what the scene's PostProcess and lights ask for; Medium and Low turn GTAO down or off, shorten the bloom chain, cap shadow maps (Low also drops to hard PCF) and step SMAA down to FXAA or off; Ultra raises GTAO and shadow resolution and picks SMAA. GPU particle systems draw `cw_quality_scale("particles")` of their particles (all are still simulated). Games thin their own instancing (grass, crowds, scatter) by `cw_quality_density()` and re-thin from a `cw_quality_on_change` callback.
+
+The player picks the preset from a settings entry (`cw_quality_cycle`: Low, Medium, High, Ultra); keep it in the save with `cw_quality_saved` / `cw_quality_restore`. An automatic step-down exists but is off unless a game turns it on (`cw_quality_auto(true, budget_ms)`): while the game says it is in play (`cw_quality_auto_measure(true)` every frame), the engine averages the frame time and steps down one preset after a couple of seconds over budget (19 ms by default), never back up in that run, and a player's choice ends it. A deterministic run is always High, so every host draws the same frame; `CW_QUALITY=low` (native) fixes a preset to compare them, and the debug command `quality [low|medium|high|ultra|auto]` switches one live.
+
+## Sky and fog
+
+[environment.h](header:environment.h) adds three node types:
+
+- **ProceduralSky** ray-marches single scattering (Rayleigh and Mie) into a cube map on the GPU. The sun's position comes from `time_of_day`, `latitude` and `declination`; `day_speed` runs the day cycle on the fixed tick. It drives a DirectionalLight3D (`sun`): direction, colour (reddened at sunset) and energy (zero below the horizon). The cube is the background and, PMREM-filtered, the image-based light for Standard materials. It is re-rendered only when the sun moves more than `env_update_angle`.
+- **HeightFog** is exponential height fog integrated in closed form along each view ray, in the EFFECTS phase. It can take its colour from the sky's horizon and adds a glow toward the sun.
+
+The showcase's environment is all scene-file properties:
+
+@include samples/showcase/assets/main.cwscene#Env..Fog
+
+Samples: `samples/sky_day` (noon, afternoon, sunset, night, then the running cycle, over balls from mirror chrome to rough paint), `samples/fog_valley` (analytic fog with the sun lobe, dense ground fog, fog off). The debug command `environment` reports the sun, sky updates and fog.
+
+## Baked lighting
+
+[lightmap.h](header:lightmap.h) is an offline CPU lightmapper. MeshInstance3D nodes with `gi_mode` STATIC get a generated second UV set and a lightmap of their own holding the indirect light: occluded sky and `bounces` bounces of every light with `bake`. Direct light stays real time, so lights can still change and moving objects still cast shadows. The bake also stores a grid of L2 spherical-harmonic probes for moving objects and DYNAMIC meshes, for three.js r186's LightProbeGrid.
+
+The bake is deterministic: a BVH with median splits, per-texel random sequences seeded from (seed, mesh, texel), scalar IEEE math with the `cw_` trig functions. The same scene gives the same bytes on every host and any thread count, and `cw_lightmap_hash` is the fingerprint.
+
+The LightmapGI node bakes on its first frame or loads `data`, a `.cwlm` file. A bake is synchronous, so ship the file: `cwbake` loads a scene without a window or GL, bakes with its LightmapGI node's settings and writes the bytes the node would have baked.
+
+```sh
+build/native/cwbake samples/lightmap_room/assets/main.cwscene out/room.cwlm
+```
+
+```text
+{"hash":"a132d3c3d6f9077c","meshes":10,"triangles":120,"texels":52864,"probes":320,"invalid_probes":3,"rays":2711487}
+```
+
+`samples/lightmap_room` bakes the same room at runtime, twice, and publishes the hash as `lm.hash_hi` / `lm.hash_lo`; its gate (`lightmap-bake`) requires the same value on every host. A ball rolls through it.
+
+## Visibility: culling, LOD and impostors
+
+Without a VisibilityManager, three.c's per-object frustum test is all there is. Add one ([visibility.h](header:visibility.h)) and the "visibility" pass culls, picks LODs and bakes impostors before the scene draws; culled meshes are hidden for the frame and restored in PRESENT, so game code never sees the flags change.
+
+- **Frustum culling** walks a BVH over `static` meshes four boxes at a time, plus a flat SIMD pass over moving ones. Shadow casters outside the view are swept along the light so their shadows stay.
+- **Occlusion culling** queries each candidate's bounding box against the depth the scene just drew and uses the answer a frame later. Boxes are inflated by the camera's motion over that latency, and new or late objects count as visible, so nothing pops in. The guard behind that is conservative: while the camera is moving and within a few steps of a drawn static box, no queries are issued at all, so a fast camera skimming past props gets frustum, distance and portal culling only (see `occlusion_guard` in visibility.h).
+- **Portals**: Room3D boxes joined by Portal3D openings; from inside a room you see other rooms only through portals, each narrowing the view. A disabled portal is a shut door.
+- **LOD** picks the coarsest level whose simplification error stays under `lod_error_px` on screen: cwpack LOD chains for meshes and glTF, built-in tessellations for spheres and cylinders. `visibility_range` hides a mesh beyond a distance.
+- **Impostors**: past `impostor_distance` a mesh draws as an octahedral impostor (64 views baked into an atlas on first use, shared by identical instances), crossfaded over `impostor_fade` metres.
+
+Costs per frame: the BVH walk, one pass over moving meshes and one over visible ones, one query draw per queried mesh, one instanced draw per impostor atlas; the first use of an atlas renders the mesh 64 times.
+
+`samples/vis_city` is about 4500 meshes (buildings, lamps with visibility ranges, LOD'd trees with impostors, houses with portal doorways) walked by a camera; its `check` mode renders a second, unculled copy of the city and counts pixels that differ, so a cull that pops fails the gate. `samples/vis_impostor` sweeps the impostor distance across a grove and measures the largest frame-to-frame change. The showcase also uses three.c's own `LOD` objects directly for its terrain chunks (`samples/showcase/world.c`).
+
+## Particles and decals
+
+[particles.h](header:particles.h) simulates GPUParticles3D on the GPU with transform feedback, one step per fixed tick. Emission is a pure function of the particle index and sim time, with random values hashed from (seed, index, cycle), so the same seed and tick count give the same particles on every host. Shapes, velocity cones, gravity, damping, curl-noise turbulence, attractors, analytic colliders and collision with the depth buffer (only what the camera sees), billboards, stretched sprites or instanced meshes, flipbooks, colour and size curves, soft particles, a GPU bitonic sort for alpha blending, and per-particle trails. Particles draw unlit in the "particles" EFFECTS pass; `energy` above 1 blooms (the scene is HDR). Costs: one transform feedback draw per system per tick, one instanced draw per system per frame, plus the sort passes when `sort` is on. GPUParticles2D runs the same emission model on the CPU for 2D (see [2D rendering](guide:rendering-2d)).
+
+[decals.h](header:decals.h) projects Decal3D images along the node's -Z onto whatever the scene drew into depth: steps, slopes, spheres, props. MIX paints over the lit scene (signs, paint), MULTIPLY keeps lighting correct (dirt, scorch, cracks), ADD glows. All decal images share one 2048 x 2048 atlas, and `region` picks a cell of a sheet. Decals draw as instanced boxes; the GPU cost is the screen area those boxes cover. They land on anything in depth, including characters that walk through the box, so keep boxes shallow; they never land on transparent surfaces, particles or the sky.
+
+Samples: `samples/fx_particles` (a fountain colliding with depth, sparks, sorted smoke, mesh debris, an attracted ring, mesh-surface emission, a Trail3D ribbon), `samples/fx_collide` (particles coming to rest on a table they can see), `samples/fx_decals` (scorch over steps, an arrow over a ramp, cracks wrapping a sphere, sheet splats, 240 culled splats).
+
+## The showcase
+
+`samples/showcase` puts it all in one scene: a 480 m valley with terrain LOD, about 1400 instanced trees, a village, 128 lamp posts that come on one by one at dusk, glowing fireflies and a campfire (the campfire and the 7 lit lamps nearest the view are real lights: three.c lights with at most 8 point lights), four skinned walkers, the procedural sky through a day cycle, height fog, campfire and chimney particles, decals, a VisibilityManager, and the post stack (GTAO, TAA, bloom, AgX, SMAA, vignette). Its gates capture morning, golden hour, dusk, night and the running cycle on every host.
+
+```sh
+node tools/run-cart.mjs --host native --app showcase --frames 230 --state out/showcase.json --shot out/showcase.png
+```
+
+Frame 230 is 22:00: the sun is below the horizon, and the lamps, windows, fire and smoke carry the image. `out/showcase.json` holds the named debug state (`sc.lamps`, `sc.particles`, `sc.vis`) and per-pass GPU times.
+
+## Where to go next
+
+- [pipeline.h](header:pipeline.h) for the pass context and every post setting, [environment.h](header:environment.h), [lightmap.h](header:lightmap.h), [visibility.h](header:visibility.h), [particles.h](header:particles.h), [decals.h](header:decals.h) for each module's model and costs.
+- [2D rendering](guide:rendering-2d) for the 2D pass that the "canvas" overlay draws, and [Profiling](guide:profiling) for reading the per-pass GPU times.

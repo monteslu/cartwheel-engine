@@ -1,0 +1,120 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "cartwheel editor/tests/gen-assets.mjs (CC0)"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "name": "Lantern",
+   "mesh": 0
+  }
+ ],
+ "meshes": [
+  {
+   "name": "Lantern",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "name": "Painted",
+   "pbrMetallicRoughness": {
+    "metallicFactor": 0.1,
+    "roughnessFactor": 0.6
+   },
+   "emissiveFactor": [
+    0.35,
+    0.25,
+    0.05
+   ]
+  }
+ ],
+ "textures": [],
+ "images": [],
+ "buffers": [
+  {
+   "uri": "lantern.bin",
+   "byteLength": 6896
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 2208,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 2208,
+   "byteLength": 2208,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 4416,
+   "byteLength": 1472,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 5888,
+   "byteLength": 1008,
+   "target": 34963
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 9200,
+   "type": "VEC3",
+   "min": [
+    -0.42,
+    0,
+    -0.42
+   ],
+   "max": [
+    0.42,
+    1.5,
+    0.42
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 184,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 184,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 504,
+   "type": "SCALAR"
+  }
+ ]
+}

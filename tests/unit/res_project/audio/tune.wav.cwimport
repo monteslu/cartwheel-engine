@@ -1,0 +1,2 @@
+audio.format = opus
+audio.bitrate = 96000

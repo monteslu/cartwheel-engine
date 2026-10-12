@@ -1,0 +1,21 @@
+[scene format=1]
+
+[node name="Hud" type="Control"]
+anchor_right = 1
+anchor_bottom = 1
+mouse_filter = IGNORE
+
+[node name="Box" parent="." type="VBoxContainer"]
+offset_left = 16
+offset_top = 16
+offset_right = 260
+offset_bottom = 120
+
+[node name="Title" parent="Box" type="Label"]
+text = "Score 0"
+
+[node name="Health" parent="Box" type="ProgressBar"]
+value = 75
+
+[node name="Pause" parent="Box" type="Button"]
+text = "Pause"

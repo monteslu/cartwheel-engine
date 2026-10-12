@@ -1,0 +1,18 @@
+[
+  { "frame": 5, "mouse": { "x": 36, "y": 381 } },
+  { "frame": 6, "mouse": { "x": 36, "y": 381, "buttons": ["left"] } },
+  { "frame": 7, "mouse": { "x": 60, "y": 400, "buttons": ["left"] } },
+  { "frame": 8, "mouse": { "x": 700, "y": 300, "buttons": ["left"] } },
+  { "frame": 10, "mouse": { "x": 1100, "y": 300, "buttons": ["left"] } },
+  { "frame": 12, "mouse": { "x": 1100, "y": 300 } },
+  { "frame": 15, "mouse": { "x": 70, "y": 239 } },
+  { "frame": 16, "mouse": { "x": 70, "y": 239, "buttons": ["left"] } },
+  { "frame": 17, "mouse": { "x": 70, "y": 239 } },
+  { "frame": 20, "mouse": { "x": 307, "y": 300 } },
+  { "frame": 21, "mouse": { "x": 307, "y": 300, "buttons": ["left"] } },
+  { "frame": 22, "mouse": { "x": 360, "y": 300, "buttons": ["left"] } },
+  { "frame": 23, "mouse": { "x": 360, "y": 300 } },
+  { "frame": 26, "mouse": { "x": 70, "y": 17 } },
+  { "frame": 27, "mouse": { "x": 70, "y": 17, "buttons": ["left"] } },
+  { "frame": 28, "mouse": { "x": 70, "y": 17 } }
+]

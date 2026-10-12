@@ -1,0 +1,13 @@
+[scene format=1]
+
+[node name="Thorn" type="Area2D" groups="thorns"]
+collision_layer_name = "hazards"
+collision_mask_names = "player"
+
+[node name="Shape" parent="." type="CollisionShape2D"]
+shape = CIRCLE
+radius = 6
+
+[node name="Look" parent="." type="Polygon2D"]
+polygon = "0 -8, 2 -2, 8 0, 2 2, 0 8, -2 2, -8 0, -2 -2"
+color = color(0.95, 0.3, 0.35, 1)

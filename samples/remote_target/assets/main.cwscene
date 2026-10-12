@@ -1,0 +1,18 @@
+[scene format=1]
+
+[node name="Level" type="Node2D"]
+
+[node name="Ground" parent="." type="Polygon2D"]
+polygon = "0 140, 320 140, 320 180, 0 180"
+color = color(0.2, 0.6, 0.3, 1)
+
+[node name="Mover" parent="." type="Mover"]
+position = vec2(20, 100)
+speed = 33.7
+
+[node name="Body" parent="Mover" type="Polygon2D"]
+polygon = "-8 -8, 8 -8, 8 8, -8 8"
+color = color(0.9, 0.4, 0.1, 1)
+
+[node name="Hud" parent="." type="Label"]
+text = "remote target"

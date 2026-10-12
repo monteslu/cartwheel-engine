@@ -1,0 +1,8 @@
+[
+  { "frame": 20, "buttons": ["right"] },
+  { "frame": 50, "buttons": ["right", "down"] },
+  { "frame": 90, "buttons": ["up"] },
+  { "frame": 130, "axes": { "lx": -1 } },
+  { "frame": 170, "buttons": ["down"] },
+  { "frame": 200 }
+]

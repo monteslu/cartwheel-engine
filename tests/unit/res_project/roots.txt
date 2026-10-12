@@ -1,0 +1,24 @@
+# The resource suite's project: cwpack packs what these reach.
+set mesh.compress true
+text/hello.txt
+data/config.json
+data/bad.json
+textures/checker.png
+textures/checker_k.png
+textures/small.png
+models/quad.gltf
+models/box.glb = ../../../deps/three.c/test/assets/BoxTextured.glb
+models/man.glb = ../../../deps/three.c/test/assets/CesiumMan.glb
+audio/beep.wav
+order/a.ord
+order/b.ord
+order/c.ord
+order/d.ord
+order/e.ord
+order/f.ord
+order/g.ord
+order/h.ord
+audio/tune.wav
+levels/test.cwscene
+models/quad_clamp.gltf
+models/quad_data.gltf

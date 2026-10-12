@@ -1,0 +1,5 @@
+# What the game ships (cwpack follows ext_scene references from these).
+project.cwproj
+main.cwscene
+# the simulated world: each peer instances its own copy
+world.cwscene

@@ -1,0 +1,23 @@
+[scene format=1]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.00394, 0.00598, 0.01002, 1)
+ambient_energy = 1.25664
+hemi_energy = 1.88496
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 1.2, 4)
+rotation = vec3(-0.25, 0, 0)
+fov = 50
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(4, 8, 3)
+rotation = vec3(-1, 0.5, 0)
+energy = 6.28319
+
+[node name="Box" parent="." type="Spinner"]
+position = vec3(0, 0.3, 0)
+size = vec3(1.4, 1.4, 1.4)
+color = color(0.787, 0.214, 0.033, 1)

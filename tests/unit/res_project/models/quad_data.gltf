@@ -1,0 +1,126 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "cartwheel res suite gen.mjs"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "name": "Quad",
+   "mesh": 0
+  }
+ ],
+ "meshes": [
+  {
+   "name": "quad",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "name": "checker_ao",
+   "pbrMetallicRoughness": {
+    "metallicFactor": 0,
+    "roughnessFactor": 0.8
+   },
+   "occlusionTexture": {
+    "index": 0
+   }
+  }
+ ],
+ "textures": [
+  {
+   "source": 0
+  }
+ ],
+ "images": [
+  {
+   "uri": "../textures/checker.png"
+  }
+ ],
+ "buffers": [
+  {
+   "uri": "quad.bin",
+   "byteLength": 47136
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 13068,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 13068,
+   "byteLength": 13068,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 26136,
+   "byteLength": 8712,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 34848,
+   "byteLength": 12288,
+   "target": 34963
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 1089,
+   "type": "VEC3",
+   "min": [
+    -0.5,
+    -0.04987474903464317,
+    -0.5
+   ],
+   "max": [
+    0.5,
+    0.04987474903464317,
+    0.5
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 1089,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 1089,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 6144,
+   "type": "SCALAR"
+  }
+ ]
+}

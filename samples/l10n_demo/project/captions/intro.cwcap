@@ -1,0 +1,3 @@
+# start end [speaker] | text  (seconds; text and speaker are catalog keys)
+0.0 2.5 caption.speaker.guide | caption.intro.1
+2.5 4.0 | caption.intro.2

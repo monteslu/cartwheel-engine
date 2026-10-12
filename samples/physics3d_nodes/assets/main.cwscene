@@ -1,0 +1,128 @@
+[scene format=1]
+[ext_scene id=1 path="crate.cwscene"]
+[ext_scene id=2 path="walker.cwscene"]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.17064, 0.31855, 0.57048, 1)
+ambient_energy = 0.7854
+hemi_energy = 0.94248
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(6, 6, 13)
+rotation = vec3(-0.38, 0, 0)
+fov = 55
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(4, 10, 6)
+rotation = vec3(-1.0, 0.4, 0)
+energy = 3.45575
+shadow = true
+
+[node name="Floor" parent="." type="StaticBody3D"]
+collision_layer_name = "world"
+position = vec3(6, -0.5, 0)
+
+[node name="Shape" parent="Floor" type="CollisionShape3D"]
+shape = BOX
+size = vec3(30, 1, 12)
+
+[node name="Mesh" parent="Floor" type="MeshInstance3D"]
+size = vec3(30, 1, 12)
+color = color(0.10048, 0.14732, 0.10048, 1)
+receive_shadow = true
+
+[node name="Ramp" parent="." type="StaticBody3D"]
+collision_layer_name = "world"
+position = vec3(10, 0.5, 0)
+rotation = vec3(0, 0, 0.26)
+
+[node name="Mesh" parent="Ramp" type="MeshInstance3D"]
+size = vec3(4.5, 0.2, 3)
+color = color(0.26327, 0.26327, 0.31855, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Shape" parent="Ramp" type="CollisionShape3D"]
+shape = TRIMESH
+mesh = "../Mesh"
+
+[node name="Block" parent="." type="StaticBody3D"]
+collision_layer_name = "world"
+position = vec3(14.6, 0.55, 0)
+
+[node name="Shape" parent="Block" type="CollisionShape3D"]
+shape = BOX
+size = vec3(3, 1.1, 3)
+
+[node name="Mesh" parent="Block" type="MeshInstance3D"]
+size = vec3(3, 1.1, 3)
+color = color(0.21404, 0.21404, 0.2957, 1)
+receive_shadow = true
+cast_shadow = true
+
+[node name="Goal" parent="." type="Area3D"]
+collision_layer_name = "triggers"
+collision_mask_names = "player|props"
+position = vec3(14.6, 1.8, 0)
+
+[node name="Shape" parent="Goal" type="CollisionShape3D"]
+shape = BOX
+size = vec3(1.5, 1.4, 1.5)
+
+[node name="Marker" parent="Goal" type="MeshInstance3D"]
+primitive = CYLINDER
+size = vec3(1.4, 0.05, 1.4)
+position = vec3(0, -0.68, 0)
+color = color(0.78741, 0.60383, 0.0331, 1)
+emissive = color(0.07324, 0.05088, 0, 1)
+
+[node name="Lift" parent="." type="Oscillator"]
+collision_layer_name = "world"
+position = vec3(2, 0.1, -3)
+
+[node name="Shape" parent="Lift" type="CollisionShape3D"]
+shape = BOX
+size = vec3(2, 0.2, 2)
+
+[node name="Mesh" parent="Lift" type="MeshInstance3D"]
+size = vec3(2, 0.2, 2)
+color = color(0.07324, 0.31855, 0.44799, 1)
+receive_shadow = true
+
+[node name="Rider" parent="." instance=1]
+position = vec3(2, 0.65, -3)
+
+[node name="C1" parent="." instance=1]
+position = vec3(4, 0.4, -0.45)
+
+[node name="C2" parent="." instance=1]
+position = vec3(4, 0.4, 0.45)
+
+[node name="C3" parent="." instance=1]
+position = vec3(4, 1.2, 0)
+
+[node name="C4" parent="." instance=1]
+position = vec3(4, 2.0, 0)
+rotation = vec3(0, 0.4, 0)
+
+[node name="Rock" parent="." type="RigidBody3D" groups="rocks"]
+collision_layer_name = "props"
+collision_mask_names = "world|player|props"
+position = vec3(7, 3, 1.5)
+density = 200
+bounce = 0.3
+
+[node name="Mesh" parent="Rock" type="MeshInstance3D"]
+primitive = SPHERE
+size = vec3(0.7, 0.7, 0.7)
+color = color(0.21404, 0.17064, 0.13287, 1)
+cast_shadow = true
+
+[node name="Shape" parent="Rock" type="CollisionShape3D"]
+shape = CONVEX
+mesh = "../Mesh"
+
+[node name="Player" parent="." instance=2]
+position = vec3(0, 0, 0)

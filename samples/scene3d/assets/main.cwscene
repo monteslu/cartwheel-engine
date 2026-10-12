@@ -1,0 +1,44 @@
+[scene format=1]
+[ext_scene id=1 path="crate.cwscene"]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.00394, 0.00598, 0.01002, 1)
+ambient_energy = 0.94248
+hemi_energy = 1.88496
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 3, 8)
+rotation = vec3(-0.35, 0, 0)
+fov = 55
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(4, 8, 3)
+rotation = vec3(-1, 0.5, 0)
+energy = 6.28319
+shadow = true
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+primitive = PLANE
+size = vec3(20, 1, 20)
+color = color(0.07324, 0.10048, 0.07324, 1)
+receive_shadow = true
+
+[node name="CrateA" parent="." instance=1]
+position = vec3(-1.5, 0.5, 0)
+
+[node name="CrateB" parent="." instance=1]
+position = vec3(1.5, 0.5, 0)
+rotation = vec3(0, 0.6, 0)
+
+[node name="Box" parent="CrateB"]
+color = color(0.60383, 0.07324, 0.0331, 1)
+
+[node name="Ball" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 1.5, -1)
+color = color(0.78741, 0.78741, 1, 1)
+metalness = 0.6
+roughness = 0.3
+cast_shadow = true

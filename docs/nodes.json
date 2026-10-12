@@ -1,0 +1,7531 @@
+{
+ "generated_by": "tools/gen_nodes",
+ "types": [
+  {
+   "name": "Node",
+   "parent": "",
+   "doc": "Base of every node: a name in the tree, groups, signals, processing.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "name",
+     "type": "string",
+     "default": "\"Node\"",
+     "stored": false,
+     "readonly": false,
+     "doc": "Unique among siblings."
+    },
+    {
+     "name": "pause_mode",
+     "type": "enum",
+     "default": "INHERIT",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "INHERIT",
+      "PAUSABLE",
+      "WHEN_PAUSED",
+      "ALWAYS",
+      "DISABLED"
+     ],
+     "doc": "Whether the node processes while the tree is paused."
+    },
+    {
+     "name": "uid",
+     "type": "int",
+     "default": "1",
+     "stored": false,
+     "readonly": true,
+     "doc": "Stable id (scene files, saves)."
+    }
+   ]
+  },
+  {
+   "name": "Node3D",
+   "parent": "Node",
+   "doc": "A node with a 3D transform. Drives a three.c object for rendering.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "position",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Position relative to the parent Node3D."
+    },
+    {
+     "name": "rotation",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Euler angles XYZ, radians."
+    },
+    {
+     "name": "quaternion",
+     "type": "quat",
+     "default": "quat(0, 0, 0, 1)",
+     "stored": false,
+     "readonly": false,
+     "doc": "Rotation as a quaternion."
+    },
+    {
+     "name": "scale",
+     "type": "vec3",
+     "default": "vec3(1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Scale relative to the parent."
+    },
+    {
+     "name": "visible",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hidden nodes hide their children."
+    },
+    {
+     "name": "interpolate",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Render between the last two fixed ticks."
+    },
+    {
+     "name": "global_position",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "World position."
+    }
+   ]
+  },
+  {
+   "name": "Node2D",
+   "parent": "Node",
+   "doc": "A node with a 2D transform (pixels, y down).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "position",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Position relative to the parent Node2D, pixels."
+    },
+    {
+     "name": "rotation",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Radians, clockwise on screen (y down)."
+    },
+    {
+     "name": "scale",
+     "type": "vec2",
+     "default": "vec2(1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Scale relative to the parent."
+    },
+    {
+     "name": "skew",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Skew in radians."
+    },
+    {
+     "name": "z_index",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Draw order within the layer."
+    },
+    {
+     "name": "z_relative",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "z_index adds to the parent's."
+    },
+    {
+     "name": "visible",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hidden nodes hide their children."
+    },
+    {
+     "name": "interpolate",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Render between the last two fixed ticks."
+    },
+    {
+     "name": "modulate",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Tint multiplied into this node and its children."
+    },
+    {
+     "name": "self_modulate",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Tint multiplied into this node only."
+    },
+    {
+     "name": "global_position",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Canvas position."
+    }
+   ]
+  },
+  {
+   "name": "Camera3D",
+   "parent": "Node3D",
+   "doc": "A perspective camera.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "fov",
+     "type": "float",
+     "default": "70",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 179,
+     "doc": "Vertical field of view, degrees."
+    },
+    {
+     "name": "near",
+     "type": "float",
+     "default": "0.05",
+     "stored": true,
+     "readonly": false,
+     "min": 0.001,
+     "max": 1000,
+     "doc": "Near clip distance."
+    },
+    {
+     "name": "far",
+     "type": "float",
+     "default": "1000",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 10000000,
+     "doc": "Far clip distance."
+    },
+    {
+     "name": "current",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "The first current camera in tree order renders."
+    }
+   ]
+  },
+  {
+   "name": "MeshInstance3D",
+   "parent": "Node3D",
+   "doc": "Draws a mesh: a built-in primitive or a mesh resource.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "primitive",
+     "type": "enum",
+     "default": "BOX",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "NONE",
+      "BOX",
+      "SPHERE",
+      "PLANE",
+      "CYLINDER"
+     ],
+     "doc": "Built-in shape when no mesh resource is set."
+    },
+    {
+     "name": "size",
+     "type": "vec3",
+     "default": "vec3(1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Primitive size (sphere/cylinder: x = diameter)."
+    },
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(0.8, 0.8, 0.8, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Albedo (linear)."
+    },
+    {
+     "name": "metalness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "PBR metalness."
+    },
+    {
+     "name": "roughness",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "PBR roughness."
+    },
+    {
+     "name": "clearcoat",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Physical: a clear lacquer layer over the surface (0 = none)."
+    },
+    {
+     "name": "clearcoat_roughness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Physical: roughness of the clearcoat layer."
+    },
+    {
+     "name": "sheen",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Physical: a soft velvet / fabric / fur sheen (0 = none)."
+    },
+    {
+     "name": "sheen_color",
+     "type": "color",
+     "default": "color(0, 0, 0, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Physical: the sheen's colour (linear)."
+    },
+    {
+     "name": "sheen_roughness",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Physical: roughness of the sheen."
+    },
+    {
+     "name": "iridescence",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Physical: thin-film iridescence, soap bubble / beetle shell (0 = none)."
+    },
+    {
+     "name": "iridescence_ior",
+     "type": "float",
+     "default": "1.3",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 2.333,
+     "doc": "Physical: index of refraction of the iridescent film."
+    },
+    {
+     "name": "ior",
+     "type": "float",
+     "default": "1.5",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 2.333,
+     "doc": "Physical: index of refraction (1.5 = glass-like dielectric)."
+    },
+    {
+     "name": "specular_intensity",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Physical: strength of the dielectric specular reflection."
+    },
+    {
+     "name": "anisotropy",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Physical: stretched highlights, brushed metal (0 = none)."
+    },
+    {
+     "name": "emissive",
+     "type": "color",
+     "default": "color(0, 0, 0, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Emitted light colour."
+    },
+    {
+     "name": "cast_shadow",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Casts shadows."
+    },
+    {
+     "name": "receive_shadow",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Receives shadows."
+    },
+    {
+     "name": "mesh",
+     "type": "res",
+     "default": "res(0x0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Mesh resource (overrides the primitive)."
+    },
+    {
+     "name": "static",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Does not move: joins the visibility BVH (visibility.h)."
+    },
+    {
+     "name": "lod_bias",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 100,
+     "doc": "Scales the LOD error budget (2 = coarser sooner)."
+    },
+    {
+     "name": "visibility_range",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000,
+     "doc": "Hidden beyond this camera distance (0 = no limit)."
+    },
+    {
+     "name": "occlusion_cull",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "May be hidden by GPU occlusion queries."
+    },
+    {
+     "name": "impostor",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Beyond impostor_distance, draw an octahedral impostor instead of the mesh."
+    },
+    {
+     "name": "impostor_distance",
+     "type": "float",
+     "default": "50",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000,
+     "doc": "Camera distance where the impostor is fully in."
+    },
+    {
+     "name": "impostor_fade",
+     "type": "float",
+     "default": "5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000,
+     "doc": "Distance over which the impostor fades in over the mesh."
+    },
+    {
+     "name": "lod",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Level drawn last frame (-1 culled, 100 impostor; needs a VisibilityManager)."
+    },
+    {
+     "name": "gi_mode",
+     "type": "enum",
+     "default": "DYNAMIC",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "DYNAMIC",
+      "STATIC"
+     ],
+     "doc": "STATIC: baked geometry (a lightmap of its own; occludes and bounces light in the bake). DYNAMIC: lit by the baked probe grid (cartwheel/lightmap.h)."
+    },
+    {
+     "name": "lightmap_scale",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 100,
+     "doc": "Multiplier of LightmapGI.texel_density for this mesh."
+    }
+   ]
+  },
+  {
+   "name": "Light3D",
+   "parent": "Node3D",
+   "doc": "Base of the light types.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(0, 0, 0, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Light colour."
+    },
+    {
+     "name": "energy",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Intensity."
+    },
+    {
+     "name": "shadow",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Casts shadows."
+    },
+    {
+     "name": "shadow_size",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Shadow map resolution."
+    },
+    {
+     "name": "shadow_extent",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100000,
+     "doc": "Directional: half size of the square the shadow map covers, metres around the light's position (move the light with the action to keep its shadows sharp); 0 = 5."
+    },
+    {
+     "name": "shadow_far",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Directional: shadow camera depth along -Z from the light; 0 = 500."
+    },
+    {
+     "name": "shadow_bias",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": -1,
+     "max": 1,
+     "doc": "Depth bias of the shadow test (small negative values cure acne)."
+    },
+    {
+     "name": "shadow_normal_bias",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Offset along the surface normal for the shadow lookup (metres)."
+    },
+    {
+     "name": "range",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Omni/spot: distance where light reaches zero (0 = infinite)."
+    },
+    {
+     "name": "decay",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Omni/spot: falloff exponent."
+    },
+    {
+     "name": "angle",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1.5708,
+     "doc": "Spot: cone half-angle, radians."
+    },
+    {
+     "name": "penumbra",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Spot: soft edge fraction."
+    },
+    {
+     "name": "bake",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Contributes to baked lightmaps and ambient probes (LightmapGI)."
+    }
+   ]
+  },
+  {
+   "name": "DirectionalLight3D",
+   "parent": "Light3D",
+   "doc": "Sun-like light along -Z.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "OmniLight3D",
+   "parent": "Light3D",
+   "doc": "Point light.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "SpotLight3D",
+   "parent": "Light3D",
+   "doc": "Cone light along -Z.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "WorldEnvironment",
+   "parent": "Node",
+   "doc": "Background, ambient light and fog for the tree's 3D scene.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "background",
+     "type": "color",
+     "default": "color(0.1, 0.12, 0.15, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Clear colour behind the scene: a scene-linear HDR value like every lit pixel (exposure and the tone curve apply to it, so fogged objects fade exactly into it)."
+    },
+    {
+     "name": "use_background",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Clear to the background colour."
+    },
+    {
+     "name": "ambient_color",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Ambient light colour."
+    },
+    {
+     "name": "ambient_energy",
+     "type": "float",
+     "default": "0.2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Ambient light intensity."
+    },
+    {
+     "name": "sky_color",
+     "type": "color",
+     "default": "color(0.6, 0.7, 0.9, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hemisphere light: sky colour."
+    },
+    {
+     "name": "ground_color",
+     "type": "color",
+     "default": "color(0.3, 0.25, 0.2, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hemisphere light: ground colour."
+    },
+    {
+     "name": "hemi_energy",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Hemisphere light intensity."
+    },
+    {
+     "name": "fog_mode",
+     "type": "enum",
+     "default": "NONE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "NONE",
+      "LINEAR",
+      "EXP2"
+     ],
+     "doc": "Fog type."
+    },
+    {
+     "name": "fog_color",
+     "type": "color",
+     "default": "color(0.5, 0.6, 0.7, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Fog colour."
+    },
+    {
+     "name": "fog_near",
+     "type": "float",
+     "default": "10",
+     "stored": true,
+     "readonly": false,
+     "doc": "Linear fog start."
+    },
+    {
+     "name": "fog_far",
+     "type": "float",
+     "default": "100",
+     "stored": true,
+     "readonly": false,
+     "doc": "Linear fog end."
+    },
+    {
+     "name": "fog_density",
+     "type": "float",
+     "default": "0.02",
+     "stored": true,
+     "readonly": false,
+     "doc": "Exp2 fog density."
+    }
+   ]
+  },
+  {
+   "name": "PostProcess",
+   "parent": "Node",
+   "doc": "The render pipeline's settings for this tree (one per tree; the last in tree order wins): HDR, MSAA, exposure, tone curve, bloom, SSAO, TAA, FXAA/SMAA, LUT grading, vignette, grain, chromatic aberration.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "hdr",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Render the scene into RGBA16F (linear HDR; off: RGBA8, banding in the darks, for MSAA in WebGPU compatibility mode)."
+    },
+    {
+     "name": "msaa",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 8,
+     "doc": "MSAA samples on the scene pass (0 = off)."
+    },
+    {
+     "name": "depth_prepass",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Depth-only pass before the scene (early-z for heavy fragment shaders)."
+    },
+    {
+     "name": "exposure",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Linear exposure multiplier (toneMappingExposure)."
+    },
+    {
+     "name": "exposure_ev",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": -20,
+     "max": 20,
+     "doc": "Exposure in stops (multiplies by 2^ev)."
+    },
+    {
+     "name": "tonemap",
+     "type": "enum",
+     "default": "AGX",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "NONE",
+      "LINEAR",
+      "REINHARD",
+      "CINEON",
+      "ACES_FILMIC",
+      "AGX",
+      "NEUTRAL"
+     ],
+     "doc": "Tone curve (three.js r186's: AGX by default)."
+    },
+    {
+     "name": "bloom",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bloom (dual-filter, energy conserving)."
+    },
+    {
+     "name": "bloom_intensity",
+     "type": "float",
+     "default": "0.05",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Share of the bright energy spread by bloom."
+    },
+    {
+     "name": "bloom_threshold",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Scene-linear brightness where bloom starts (0 = all light)."
+    },
+    {
+     "name": "bloom_knee",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Soft transition around the threshold, as a fraction of it."
+    },
+    {
+     "name": "bloom_radius",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.1,
+     "max": 4,
+     "doc": "Upsample tent radius in texels of each level."
+    },
+    {
+     "name": "bloom_levels",
+     "type": "int",
+     "default": "6",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 10,
+     "doc": "Downsample levels (each halves the size)."
+    },
+    {
+     "name": "ssao",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Ground-truth ambient occlusion (half resolution, depth-aware upsample)."
+    },
+    {
+     "name": "ssao_radius",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 100,
+     "doc": "AO radius in world units."
+    },
+    {
+     "name": "ssao_intensity",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "AO strength."
+    },
+    {
+     "name": "ssao_power",
+     "type": "float",
+     "default": "1.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0.1,
+     "max": 8,
+     "doc": "Contrast curve on the visibility."
+    },
+    {
+     "name": "ssao_slices",
+     "type": "int",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 8,
+     "doc": "Directions per pixel."
+    },
+    {
+     "name": "ssao_steps",
+     "type": "int",
+     "default": "6",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 16,
+     "doc": "Horizon steps per direction side."
+    },
+    {
+     "name": "taa",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Temporal antialiasing (camera jitter, reprojection, history clipping)."
+    },
+    {
+     "name": "taa_feedback",
+     "type": "float",
+     "default": "0.9",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 0.98,
+     "doc": "History weight."
+    },
+    {
+     "name": "taa_samples",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 64,
+     "doc": "Jitter positions (Halton 2,3)."
+    },
+    {
+     "name": "aa",
+     "type": "enum",
+     "default": "NONE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "NONE",
+      "FXAA",
+      "SMAA"
+     ],
+     "doc": "Post antialiasing on display values."
+    },
+    {
+     "name": "grade",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Colour grading with the 3D LUT in `lut`."
+    },
+    {
+     "name": "grade_intensity",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Blend between the ungraded and graded image."
+    },
+    {
+     "name": "lut",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Asset path of a .cube 3D LUT."
+    },
+    {
+     "name": "vignette",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Darken toward the corners."
+    },
+    {
+     "name": "vignette_intensity",
+     "type": "float",
+     "default": "0.35",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Vignette strength."
+    },
+    {
+     "name": "vignette_smoothness",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 1,
+     "doc": "Vignette falloff width."
+    },
+    {
+     "name": "grain",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Film grain (integer hash noise, new every frame)."
+    },
+    {
+     "name": "grain_intensity",
+     "type": "float",
+     "default": "0.04",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Grain strength."
+    },
+    {
+     "name": "chromatic_aberration",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Radial red / blue channel offset."
+    },
+    {
+     "name": "ca_intensity",
+     "type": "float",
+     "default": "0.004",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 0.1,
+     "doc": "Channel offset at the corners (uv)."
+    },
+    {
+     "name": "debug_view",
+     "type": "enum",
+     "default": "NONE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "NONE",
+      "DEPTH",
+      "NORMALS",
+      "AO",
+      "VELOCITY",
+      "BLOOM"
+     ],
+     "doc": "Show an intermediate buffer instead of the image (depth, normals, AO, velocity, bloom)."
+    }
+   ]
+  },
+  {
+   "name": "ProceduralSky",
+   "parent": "Node",
+   "doc": "A physically based sky (Rayleigh + Mie single scattering) with a day / night cycle: it drives a DirectionalLight3D, is the background and (prefiltered) the scene's environment.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "time_of_day",
+     "type": "float",
+     "default": "10",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 24,
+     "doc": "Local solar time, hours (12 = noon)."
+    },
+    {
+     "name": "day_speed",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": -24,
+     "max": 24,
+     "doc": "Hours of the day per second of game time (the day / night cycle; 0 = still)."
+    },
+    {
+     "name": "latitude",
+     "type": "float",
+     "default": "35",
+     "stored": true,
+     "readonly": false,
+     "min": -90,
+     "max": 90,
+     "doc": "Degrees north."
+    },
+    {
+     "name": "declination",
+     "type": "float",
+     "default": "10",
+     "stored": true,
+     "readonly": false,
+     "min": -23.44,
+     "max": 23.44,
+     "doc": "The sun's declination in degrees (the season: +23.44 June solstice, -23.44 December)."
+    },
+    {
+     "name": "north",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": -360,
+     "max": 360,
+     "doc": "Where north is: degrees clockwise (seen from above) from -Z."
+    },
+    {
+     "name": "sun",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path to the DirectionalLight3D the sky drives (direction, colour, energy)."
+    },
+    {
+     "name": "sun_energy",
+     "type": "float",
+     "default": "4",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "The sun's illuminance before the atmosphere (physical units; the light gets this x transmittance)."
+    },
+    {
+     "name": "sky_energy",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Sky radiance multiplier (1 = physically scattered sunlight)."
+    },
+    {
+     "name": "rayleigh",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Air density multiplier (blue sky, red sunsets)."
+    },
+    {
+     "name": "mie",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Haze density multiplier (glow around the sun, washed-out horizon)."
+    },
+    {
+     "name": "mie_g",
+     "type": "float",
+     "default": "0.76",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 0.99,
+     "doc": "Haze forward scattering (Henyey-Greenstein g)."
+    },
+    {
+     "name": "sun_size",
+     "type": "float",
+     "default": "0.53",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Apparent diameter of the sun disk, degrees."
+    },
+    {
+     "name": "sun_disk_intensity",
+     "type": "float",
+     "default": "0.02",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Sun disk brightness as a share of the physical radiance (it is extreme: 1 = physical)."
+    },
+    {
+     "name": "ground_color",
+     "type": "color",
+     "default": "color(0.3, 0.27, 0.23, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Ground albedo below the horizon."
+    },
+    {
+     "name": "night_color",
+     "type": "color",
+     "default": "color(0.0004, 0.0006, 0.0012, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Radiance added everywhere (the night sky's floor)."
+    },
+    {
+     "name": "background",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Draw the sky as the scene's background."
+    },
+    {
+     "name": "environment",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Prefilter the sky into the scene's environment (image-based light)."
+    },
+    {
+     "name": "sun_disk",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Draw the sun disk."
+    },
+    {
+     "name": "env_update_angle",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 90,
+     "doc": "Re-render the sky cube and environment when the sun moved this many degrees."
+    },
+    {
+     "name": "resolution",
+     "type": "int",
+     "default": "128",
+     "stored": true,
+     "readonly": false,
+     "min": 16,
+     "max": 1024,
+     "doc": "Sky cube face size in texels."
+    },
+    {
+     "name": "sun_elevation",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Degrees above the horizon (read only)."
+    }
+   ]
+  },
+  {
+   "name": "HeightFog",
+   "parent": "Node",
+   "doc": "Exponential height fog in the post chain (from depth): sky-coloured, with a sun lobe.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "density",
+     "type": "float",
+     "default": "0.02",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Extinction per world unit at base_height."
+    },
+    {
+     "name": "height_falloff",
+     "type": "float",
+     "default": "0.15",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "How fast the density falls with height (per unit; 0 = uniform fog)."
+    },
+    {
+     "name": "base_height",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": -100000,
+     "max": 100000,
+     "doc": "World height where density is `density`."
+    },
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(0.5, 0.6, 0.7, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "In-scattered colour (linear radiance) when there is no sky or use_sky_color is off."
+    },
+    {
+     "name": "use_sky_color",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Take the colour from the ProceduralSky's horizon (when there is one)."
+    },
+    {
+     "name": "sun_scatter",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Share of sunlight the fog scatters toward the camera (the glow around the sun)."
+    },
+    {
+     "name": "sun_g",
+     "type": "float",
+     "default": "0.6",
+     "stored": true,
+     "readonly": false,
+     "min": -0.95,
+     "max": 0.95,
+     "doc": "Forward scattering of the sun lobe (Henyey-Greenstein g)."
+    },
+    {
+     "name": "max_opacity",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Fog never hides more than this."
+    },
+    {
+     "name": "start_distance",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "No fog closer than this to the camera."
+    },
+    {
+     "name": "sky_distance",
+     "type": "float",
+     "default": "400",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Distance the sky is fogged as (0 = the sky is never fogged)."
+    }
+   ]
+  },
+  {
+   "name": "LightmapGI",
+   "parent": "Node",
+   "doc": "Baked lighting for its parent's subtree: lightmaps (generated uv2) for STATIC meshes, an SH probe grid for the rest; bakes on the first frame or loads a .cwlm (cartwheel/lightmap.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "texel_density",
+     "type": "float",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 1000,
+     "doc": "Lightmap texels per world unit (times each mesh's lightmap_scale)."
+    },
+    {
+     "name": "min_size",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 4,
+     "max": 4096,
+     "doc": "Smallest lightmap side, texels."
+    },
+    {
+     "name": "max_size",
+     "type": "int",
+     "default": "1024",
+     "stored": true,
+     "readonly": false,
+     "min": 8,
+     "max": 8192,
+     "doc": "Largest lightmap side, texels (the density drops for a mesh that would not fit)."
+    },
+    {
+     "name": "padding",
+     "type": "int",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 16,
+     "doc": "Texels around each chart."
+    },
+    {
+     "name": "samples",
+     "type": "int",
+     "default": "64",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 65536,
+     "doc": "Hemisphere rays per texel per bounce."
+    },
+    {
+     "name": "bounces",
+     "type": "int",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 16,
+     "doc": "Light bounces."
+    },
+    {
+     "name": "seed",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Random sequence seed (the same seed and scene give the same bytes)."
+    },
+    {
+     "name": "probe_spacing",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "World units between ambient SH probes (0 = no probe grid)."
+    },
+    {
+     "name": "probe_samples",
+     "type": "int",
+     "default": "128",
+     "stored": true,
+     "readonly": false,
+     "min": 8,
+     "max": 65536,
+     "doc": "Rays per SH probe."
+    },
+    {
+     "name": "intensity",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Multiplier of the baked light."
+    },
+    {
+     "name": "denoise",
+     "type": "int",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 8,
+     "doc": "Edge-aware smoothing radius in texels (0 = the raw Monte Carlo result)."
+    },
+    {
+     "name": "data",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "A .cwlm asset to load (empty or missing: bake on the first frame)."
+    },
+    {
+     "name": "bake_twice",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bake a second time and compare the bytes (`reproducible`)."
+    },
+    {
+     "name": "hash",
+     "type": "string",
+     "default": "\"\"",
+     "stored": false,
+     "readonly": true,
+     "doc": "The bake's fingerprint (FNV-1a 64 of its bytes)."
+    },
+    {
+     "name": "texels",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Lightmap texels in the bake."
+    },
+    {
+     "name": "probes",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "SH probes in the bake."
+    },
+    {
+     "name": "bake_ms",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Wall time of the bake (report only)."
+    },
+    {
+     "name": "reproducible",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "With bake_twice: the second bake's bytes equal the first's."
+    }
+   ]
+  },
+  {
+   "name": "Sprite2D",
+   "parent": "Node2D",
+   "doc": "Draws a texture, a region of it or one cell of an atlas grid.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "texture",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Image asset path (PNG/JPEG)."
+    },
+    {
+     "name": "filter",
+     "type": "enum",
+     "default": "LINEAR",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "LINEAR",
+      "NEAREST"
+     ],
+     "doc": "Texture filtering (NEAREST for pixel art)."
+    },
+    {
+     "name": "centered",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "The node's origin is the sprite's centre (else its top-left)."
+    },
+    {
+     "name": "offset",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Drawing offset, pixels."
+    },
+    {
+     "name": "flip_h",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Mirror horizontally."
+    },
+    {
+     "name": "flip_v",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Mirror vertically."
+    },
+    {
+     "name": "region_enabled",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Draw only `region` of the texture."
+    },
+    {
+     "name": "region",
+     "type": "vec4",
+     "default": "vec4(0, 0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Source rect in texture pixels: x, y, w, h."
+    },
+    {
+     "name": "hframes",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Atlas grid columns."
+    },
+    {
+     "name": "vframes",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Atlas grid rows."
+    },
+    {
+     "name": "frame",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Atlas grid cell drawn (row-major)."
+    }
+   ]
+  },
+  {
+   "name": "AnimatedSprite2D",
+   "parent": "Node2D",
+   "doc": "Plays frame animations from an atlas grid or a rect list.",
+   "signals": [
+    "frame_changed",
+    "animation_finished"
+   ],
+   "properties": [
+    {
+     "name": "texture",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Atlas image asset path."
+    },
+    {
+     "name": "filter",
+     "type": "enum",
+     "default": "LINEAR",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "LINEAR",
+      "NEAREST"
+     ],
+     "doc": "Texture filtering."
+    },
+    {
+     "name": "hframes",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Atlas grid columns."
+    },
+    {
+     "name": "vframes",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Atlas grid rows."
+    },
+    {
+     "name": "regions",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Explicit frame rects \"x y w h, ...\" (replaces the grid)."
+    },
+    {
+     "name": "animations",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "\"name@fps:frames; ...\" frames as indices/ranges, '!' = once."
+    },
+    {
+     "name": "animation",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Current animation (restarts on change)."
+    },
+    {
+     "name": "fps",
+     "type": "float",
+     "default": "5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Frames per second for animations without @fps."
+    },
+    {
+     "name": "speed_scale",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Playback speed multiplier."
+    },
+    {
+     "name": "playing",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Advancing."
+    },
+    {
+     "name": "frame",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Frame index within the current animation."
+    },
+    {
+     "name": "process",
+     "type": "enum",
+     "default": "FIXED",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "FIXED",
+      "FRAME"
+     ],
+     "doc": "FIXED: advance by fixed ticks (deterministic); FRAME: by frame time."
+    },
+    {
+     "name": "centered",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Origin at the frame's centre."
+    },
+    {
+     "name": "offset",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Drawing offset."
+    },
+    {
+     "name": "flip_h",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Mirror horizontally."
+    },
+    {
+     "name": "flip_v",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Mirror vertically."
+    }
+   ]
+  },
+  {
+   "name": "NinePatch2D",
+   "parent": "Node2D",
+   "doc": "A nine-slice panel: corners keep their size.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "texture",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Image asset path."
+    },
+    {
+     "name": "filter",
+     "type": "enum",
+     "default": "LINEAR",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "LINEAR",
+      "NEAREST"
+     ],
+     "doc": "Texture filtering."
+    },
+    {
+     "name": "region",
+     "type": "vec4",
+     "default": "vec4(0, 0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Source rect x y w h (w 0 = whole texture)."
+    },
+    {
+     "name": "size",
+     "type": "vec2",
+     "default": "vec2(64, 64)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Drawn size, pixels."
+    },
+    {
+     "name": "patch_left",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "doc": "Left margin, texture pixels."
+    },
+    {
+     "name": "patch_top",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "doc": "Top margin."
+    },
+    {
+     "name": "patch_right",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "doc": "Right margin."
+    },
+    {
+     "name": "patch_bottom",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bottom margin."
+    },
+    {
+     "name": "margin_scale",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Margins' on-screen scale."
+    },
+    {
+     "name": "draw_center",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Fill the centre."
+    },
+    {
+     "name": "centered",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Origin at the centre (else the top-left)."
+    }
+   ]
+  },
+  {
+   "name": "Line2D",
+   "parent": "Node2D",
+   "doc": "A polyline with mitred joins.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "points",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Points \"x y, x y, ...\" (local pixels)."
+    },
+    {
+     "name": "width",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10000,
+     "doc": "Stroke width, pixels."
+    },
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Stroke colour."
+    },
+    {
+     "name": "closed",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Join the last point to the first."
+    }
+   ]
+  },
+  {
+   "name": "Polygon2D",
+   "parent": "Node2D",
+   "doc": "A filled (optionally textured) polygon.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "polygon",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Outline \"x y, x y, ...\" (simple polygon, any winding)."
+    },
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Fill colour (multiplies the texture)."
+    },
+    {
+     "name": "texture",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Optional texture; uv = point / texture size."
+    },
+    {
+     "name": "filter",
+     "type": "enum",
+     "default": "LINEAR",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "LINEAR",
+      "NEAREST"
+     ],
+     "doc": "Texture filtering."
+    },
+    {
+     "name": "offset",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Drawing offset."
+    }
+   ]
+  },
+  {
+   "name": "Label2D",
+   "parent": "Node2D",
+   "doc": "Text in the canvas.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "text",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "UTF-8 text ('\\n' breaks lines)."
+    },
+    {
+     "name": "font",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "TTF/OTF asset path."
+    },
+    {
+     "name": "font_mode",
+     "type": "enum",
+     "default": "SDF",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "SDF",
+      "BITMAP"
+     ],
+     "doc": "SDF (any size) or BITMAP (pixel fonts at bake_size multiples)."
+    },
+    {
+     "name": "bake_size",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 512,
+     "doc": "Bake size (0 = the mode's default)."
+    },
+    {
+     "name": "size",
+     "type": "float",
+     "default": "16",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 4096,
+     "doc": "Pixel size of the em."
+    },
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Text colour."
+    },
+    {
+     "name": "align",
+     "type": "enum",
+     "default": "LEFT",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "LEFT",
+      "CENTER",
+      "RIGHT"
+     ],
+     "doc": "Alignment within wrap_width (or the widest line)."
+    },
+    {
+     "name": "wrap_width",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Wrap at this width (0 = no wrapping)."
+    },
+    {
+     "name": "line_spacing",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Line height multiple (0 = 1)."
+    },
+    {
+     "name": "letter_spacing",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": -1000,
+     "max": 1000,
+     "doc": "Extra pixels after each glyph."
+    }
+   ]
+  },
+  {
+   "name": "Light2D",
+   "parent": "Node2D",
+   "doc": "A point light; its canvas is drawn lit.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "enabled",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "On."
+    },
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Light colour."
+    },
+    {
+     "name": "energy",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Intensity."
+    },
+    {
+     "name": "range",
+     "type": "float",
+     "default": "128",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Radius, pixels (light is 0 there)."
+    },
+    {
+     "name": "falloff",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 16,
+     "doc": "Exponent of (1 - d/range)."
+    },
+    {
+     "name": "height",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Height above the plane for normal maps (0 = range/4)."
+    },
+    {
+     "name": "shadow",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Cast shadows from LightOccluder2Ds."
+    }
+   ]
+  },
+  {
+   "name": "LightOccluder2D",
+   "parent": "Node2D",
+   "doc": "Casts shadows for Light2Ds with shadow on.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "polygon",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Occluder outline \"x y, ...\"."
+    },
+    {
+     "name": "closed",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Join the ends."
+    }
+   ]
+  },
+  {
+   "name": "Camera2D",
+   "parent": "Node2D",
+   "doc": "The view of the default canvas (and canvases that follow the viewport).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "current",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "The first current Camera2D in tree order is used."
+    },
+    {
+     "name": "zoom",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.001,
+     "max": 1000,
+     "doc": ">1 magnifies."
+    },
+    {
+     "name": "offset",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Screen offset (shake)."
+    },
+    {
+     "name": "anchor_top_left",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "The camera's position is the view's top-left (else its centre)."
+    },
+    {
+     "name": "smoothing",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Follow the node exponentially (fixed ticks)."
+    },
+    {
+     "name": "smoothing_speed",
+     "type": "float",
+     "default": "5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Smoothing rate, 1/s."
+    },
+    {
+     "name": "limit_left",
+     "type": "int",
+     "default": "-10000000",
+     "stored": true,
+     "readonly": false,
+     "doc": "The view never shows world x below this."
+    },
+    {
+     "name": "limit_top",
+     "type": "int",
+     "default": "-10000000",
+     "stored": true,
+     "readonly": false,
+     "doc": "... y above this."
+    },
+    {
+     "name": "limit_right",
+     "type": "int",
+     "default": "10000000",
+     "stored": true,
+     "readonly": false,
+     "doc": "... x past this."
+    },
+    {
+     "name": "limit_bottom",
+     "type": "int",
+     "default": "10000000",
+     "stored": true,
+     "readonly": false,
+     "doc": "... y past this."
+    },
+    {
+     "name": "rotating",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Follow the node's global rotation."
+    }
+   ]
+  },
+  {
+   "name": "CanvasLayer",
+   "parent": "Node",
+   "doc": "A separate canvas drawn in `layer` order (HUDs, backgrounds).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "layer",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Draw order; the default canvas is 0."
+    },
+    {
+     "name": "offset",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer offset, pixels."
+    },
+    {
+     "name": "rotation",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer rotation."
+    },
+    {
+     "name": "scale",
+     "type": "vec2",
+     "default": "vec2(1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer scale."
+    },
+    {
+     "name": "follow_viewport",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Use the Camera2D (else screen space: HUDs)."
+    },
+    {
+     "name": "visible",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hide the whole layer."
+    },
+    {
+     "name": "y_sort",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Within equal z, lower y draws first."
+    }
+   ]
+  },
+  {
+   "name": "ParallaxLayer",
+   "parent": "Node2D",
+   "doc": "Its children scroll at motion_scale of the camera.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "motion_scale",
+     "type": "vec2",
+     "default": "vec2(1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Camera motion factor (0.5 = half speed)."
+    },
+    {
+     "name": "motion_offset",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Extra offset, pixels."
+    }
+   ]
+  },
+  {
+   "name": "CanvasSettings",
+   "parent": "Node",
+   "doc": "Virtual resolution, scaling, clear colour and 2D ambient light.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "virtual_width",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Virtual canvas width (0 = window pixels)."
+    },
+    {
+     "name": "virtual_height",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Virtual canvas height."
+    },
+    {
+     "name": "scale_mode",
+     "type": "enum",
+     "default": "NONE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "NONE",
+      "INTEGER",
+      "FIT",
+      "STRETCH"
+     ],
+     "doc": "How the virtual canvas maps to the window."
+    },
+    {
+     "name": "clear_color",
+     "type": "color",
+     "default": "color(0, 0, 0, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Background (2D-only trees)."
+    },
+    {
+     "name": "letterbox",
+     "type": "color",
+     "default": "color(0, 0, 0, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bars around a scaled canvas."
+    },
+    {
+     "name": "ambient",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Light on lit canvases where no Light2D reaches."
+    },
+    {
+     "name": "pixel_snap",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Snap vertices to whole canvas pixels."
+    },
+    {
+     "name": "y_sort",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Y-sort the default canvas."
+    }
+   ]
+  },
+  {
+   "name": "TileMap2D",
+   "parent": "Node2D",
+   "doc": "A chunked tile grid with layers and animated tiles.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "tileset",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Tileset image asset path."
+    },
+    {
+     "name": "filter",
+     "type": "enum",
+     "default": "NEAREST",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "LINEAR",
+      "NEAREST"
+     ],
+     "doc": "Texture filtering (NEAREST default)."
+    },
+    {
+     "name": "tile_size",
+     "type": "vec2",
+     "default": "vec2(16, 16)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Tileset cell size, texture pixels."
+    },
+    {
+     "name": "cell_size",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "World size of a cell (0 = tile_size)."
+    },
+    {
+     "name": "margin",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Tileset border, pixels."
+    },
+    {
+     "name": "spacing",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Gap between tileset cells, pixels."
+    },
+    {
+     "name": "columns",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Tileset columns (0 = from the width)."
+    },
+    {
+     "name": "layers",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Map layers drawn, 1..8 (layer k at z + k)."
+    },
+    {
+     "name": "animations",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Animated tiles \"id:frames@fps; ...\"."
+    },
+    {
+     "name": "cells0",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 0 cells (text form)."
+    },
+    {
+     "name": "cells1",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 1 cells (text form)."
+    },
+    {
+     "name": "cells2",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 2 cells (text form)."
+    },
+    {
+     "name": "cells3",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 3 cells (text form)."
+    },
+    {
+     "name": "cells4",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 4 cells (text form)."
+    },
+    {
+     "name": "cells5",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 5 cells (text form)."
+    },
+    {
+     "name": "cells6",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 6 cells (text form)."
+    },
+    {
+     "name": "cells7",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 7 cells (text form)."
+    }
+   ]
+  },
+  {
+   "name": "Control",
+   "parent": "Node",
+   "doc": "Base UI node: a rect from anchors + offsets (or from its container), theme, focus, input.",
+   "signals": [
+    "focus_entered",
+    "focus_exited",
+    "mouse_entered",
+    "mouse_exited",
+    "resized"
+   ],
+   "properties": [
+    {
+     "name": "anchor_left",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Left edge anchor, 0..1 of the parent's width."
+    },
+    {
+     "name": "anchor_top",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Top edge anchor, 0..1 of the parent's height."
+    },
+    {
+     "name": "anchor_right",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Right edge anchor."
+    },
+    {
+     "name": "anchor_bottom",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bottom edge anchor."
+    },
+    {
+     "name": "offset_left",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Left edge offset from its anchor, UI units."
+    },
+    {
+     "name": "offset_top",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Top edge offset."
+    },
+    {
+     "name": "offset_right",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Right edge offset."
+    },
+    {
+     "name": "offset_bottom",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bottom edge offset."
+    },
+    {
+     "name": "grow_horizontal",
+     "type": "enum",
+     "default": "END",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "END",
+      "BEGIN",
+      "BOTH"
+     ],
+     "doc": "Which way the rect grows when smaller than the minimum size."
+    },
+    {
+     "name": "grow_vertical",
+     "type": "enum",
+     "default": "END",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "END",
+      "BEGIN",
+      "BOTH"
+     ],
+     "doc": "Which way the rect grows vertically."
+    },
+    {
+     "name": "size_flags_horizontal",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Inside a container: 1 FILL, 2 EXPAND, 4 SHRINK_CENTER, 8 SHRINK_END."
+    },
+    {
+     "name": "size_flags_vertical",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Vertical size flags."
+    },
+    {
+     "name": "size_flags_stretch_ratio",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Share of the expand space relative to expanding siblings."
+    },
+    {
+     "name": "custom_minimum_size",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Minimum size on top of the content's."
+    },
+    {
+     "name": "mouse_filter",
+     "type": "enum",
+     "default": "STOP",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "STOP",
+      "PASS",
+      "IGNORE"
+     ],
+     "doc": "STOP handles and stops pointer events, PASS bubbles them, IGNORE is click-through."
+    },
+    {
+     "name": "focus_mode",
+     "type": "enum",
+     "default": "NONE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "NONE",
+      "CLICK",
+      "ALL"
+     ],
+     "doc": "NONE, CLICK (pointer only) or ALL (pointer, Tab, gamepad)."
+    },
+    {
+     "name": "tooltip_text",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Shown after the pointer rests on the control."
+    },
+    {
+     "name": "visible",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hidden controls hide their children and take no space in containers."
+    },
+    {
+     "name": "clip_contents",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Clip drawing and hit tests of children to the rect."
+    },
+    {
+     "name": "modulate",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Colour multiplier for this control and its children."
+    },
+    {
+     "name": "self_modulate",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Colour multiplier for this control only."
+    },
+    {
+     "name": "theme",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Theme file (asset path) for this subtree."
+    },
+    {
+     "name": "theme_overrides",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Per-control theme items: 'font_color = #ff0000; font_size = 20'."
+    },
+    {
+     "name": "focus_neighbor_left",
+     "type": "node",
+     "default": "node(\"/root\")",
+     "stored": true,
+     "readonly": false,
+     "doc": "Explicit focus target for left."
+    },
+    {
+     "name": "focus_neighbor_top",
+     "type": "node",
+     "default": "node(\"/root\")",
+     "stored": true,
+     "readonly": false,
+     "doc": "Explicit focus target for up."
+    },
+    {
+     "name": "focus_neighbor_right",
+     "type": "node",
+     "default": "node(\"/root\")",
+     "stored": true,
+     "readonly": false,
+     "doc": "Explicit focus target for right."
+    },
+    {
+     "name": "focus_neighbor_bottom",
+     "type": "node",
+     "default": "node(\"/root\")",
+     "stored": true,
+     "readonly": false,
+     "doc": "Explicit focus target for down."
+    },
+    {
+     "name": "focus_next",
+     "type": "node",
+     "default": "node(\"/root\")",
+     "stored": true,
+     "readonly": false,
+     "doc": "Explicit Tab target."
+    },
+    {
+     "name": "focus_previous",
+     "type": "node",
+     "default": "node(\"/root\")",
+     "stored": true,
+     "readonly": false,
+     "doc": "Explicit Shift+Tab target."
+    },
+    {
+     "name": "auto_translate",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Shown text goes through the translation catalogs (text that is a key shows its translation)."
+    },
+    {
+     "name": "layout_direction",
+     "type": "enum",
+     "default": "INHERITED",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "INHERITED",
+      "LOCALE",
+      "LTR",
+      "RTL"
+     ],
+     "doc": "INHERITED (the parent's; the locale's at the top), LOCALE, LTR or RTL: RTL mirrors children."
+    },
+    {
+     "name": "accessibility_name",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "What assistive technology announces ('' = the control's text). Translated like text."
+    },
+    {
+     "name": "accessibility_description",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Longer help for assistive technology ('' = the tooltip)."
+    },
+    {
+     "name": "size",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Computed size."
+    },
+    {
+     "name": "position",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Computed position in the parent."
+    },
+    {
+     "name": "global_position",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Computed position on the canvas."
+    },
+    {
+     "name": "minimum_size",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Combined minimum size."
+    }
+   ]
+  },
+  {
+   "name": "Container",
+   "parent": "Control",
+   "doc": "Base for controls that place their children (anchors are ignored).",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "BoxContainer",
+   "parent": "Container",
+   "doc": "Children in a row or column with theme separation.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "alignment",
+     "type": "enum",
+     "default": "BEGIN",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "BEGIN",
+      "CENTER",
+      "END"
+     ],
+     "doc": "Where children sit when none expands."
+    }
+   ]
+  },
+  {
+   "name": "HBoxContainer",
+   "parent": "BoxContainer",
+   "doc": "Children left to right.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "VBoxContainer",
+   "parent": "BoxContainer",
+   "doc": "Children top to bottom.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "GridContainer",
+   "parent": "Container",
+   "doc": "Children in a grid of `columns`; a column/row expands when a child in it does.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "columns",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 1024,
+     "doc": "Children per row."
+    }
+   ]
+  },
+  {
+   "name": "MarginContainer",
+   "parent": "Container",
+   "doc": "Children inset by theme constants margin_left/top/right/bottom.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "CenterContainer",
+   "parent": "Container",
+   "doc": "Children at their minimum size, centred.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "use_top_left",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Centre children on the top-left corner."
+    }
+   ]
+  },
+  {
+   "name": "Panel",
+   "parent": "Control",
+   "doc": "Draws the theme's panel style; children by anchors.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "PanelContainer",
+   "parent": "Container",
+   "doc": "Draws the panel style; children fit inside its content margins.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "SplitContainer",
+   "parent": "Container",
+   "doc": "Two children with a draggable separator.",
+   "signals": [
+    "dragged"
+   ],
+   "properties": [
+    {
+     "name": "split_offset",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Separator offset from its natural spot, UI units."
+    },
+    {
+     "name": "collapsed",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "No separator; the first child keeps its natural size."
+    }
+   ]
+  },
+  {
+   "name": "HSplitContainer",
+   "parent": "SplitContainer",
+   "doc": "Side by side, vertical separator.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "VSplitContainer",
+   "parent": "SplitContainer",
+   "doc": "Stacked, horizontal separator.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "TabContainer",
+   "parent": "Container",
+   "doc": "One page per child, chosen by tabs.",
+   "signals": [
+    "tab_changed"
+   ],
+   "properties": [
+    {
+     "name": "current_tab",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Index of the shown page."
+    },
+    {
+     "name": "tab_titles",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Tab titles, one per line (empty = child name)."
+    },
+    {
+     "name": "drag_to_rearrange",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Dragging a tab starts a UI drag of kind \"tab\" (payload = tab index, text = title); drop targets decide where it goes."
+    }
+   ]
+  },
+  {
+   "name": "FlowContainer",
+   "parent": "Container",
+   "doc": "Children wrap into lines.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "HFlowContainer",
+   "parent": "FlowContainer",
+   "doc": "Rows that wrap at the width.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "VFlowContainer",
+   "parent": "FlowContainer",
+   "doc": "Columns that wrap at the height.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "AspectRatioContainer",
+   "parent": "Container",
+   "doc": "Children keep a width/height ratio.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "ratio",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Width / height of the children."
+    },
+    {
+     "name": "stretch_mode",
+     "type": "enum",
+     "default": "FIT",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "WIDTH_CONTROLS_HEIGHT",
+      "HEIGHT_CONTROLS_WIDTH",
+      "FIT",
+      "COVER"
+     ],
+     "doc": "How the ratio is kept."
+    },
+    {
+     "name": "alignment_horizontal",
+     "type": "enum",
+     "default": "CENTER",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "BEGIN",
+      "CENTER",
+      "END"
+     ],
+     "doc": "Horizontal placement."
+    },
+    {
+     "name": "alignment_vertical",
+     "type": "enum",
+     "default": "CENTER",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "BEGIN",
+      "CENTER",
+      "END"
+     ],
+     "doc": "Vertical placement."
+    }
+   ]
+  },
+  {
+   "name": "ScrollContainer",
+   "parent": "Container",
+   "doc": "Scrolls one content child.",
+   "signals": [
+    "scroll_changed"
+   ],
+   "properties": [
+    {
+     "name": "horizontal_scroll_mode",
+     "type": "enum",
+     "default": "AUTO",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "DISABLED",
+      "AUTO",
+      "ALWAYS"
+     ],
+     "doc": "Horizontal scrolling and bar."
+    },
+    {
+     "name": "vertical_scroll_mode",
+     "type": "enum",
+     "default": "AUTO",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "DISABLED",
+      "AUTO",
+      "ALWAYS"
+     ],
+     "doc": "Vertical scrolling and bar."
+    },
+    {
+     "name": "scroll_horizontal",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Horizontal scroll offset, UI units."
+    },
+    {
+     "name": "scroll_vertical",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Vertical scroll offset, UI units."
+    }
+   ]
+  },
+  {
+   "name": "Label",
+   "parent": "Control",
+   "doc": "Text; wraps, aligns, clips or ellipsizes.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "text",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The text ('\\n' breaks lines)."
+    },
+    {
+     "name": "horizontal_alignment",
+     "type": "enum",
+     "default": "LEFT",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "LEFT",
+      "CENTER",
+      "RIGHT",
+      "FILL"
+     ],
+     "doc": "Horizontal alignment."
+    },
+    {
+     "name": "vertical_alignment",
+     "type": "enum",
+     "default": "TOP",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "TOP",
+      "CENTER",
+      "BOTTOM",
+      "FILL"
+     ],
+     "doc": "Vertical alignment."
+    },
+    {
+     "name": "autowrap",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Wrap at the width; minimum width becomes 0."
+    },
+    {
+     "name": "clip_text",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Clip to the rect; minimum width becomes 0."
+    },
+    {
+     "name": "ellipsis",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Cut with an ellipsis to the width."
+    },
+    {
+     "name": "uppercase",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Draw in capitals."
+    }
+   ]
+  },
+  {
+   "name": "RichTextLabel",
+   "parent": "Control",
+   "doc": "Wrapped text with a small BBCode subset.",
+   "signals": [
+    "meta_clicked"
+   ],
+   "properties": [
+    {
+     "name": "text",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "BBCode: [b] [i] [color=#hex|name] [size=N] [url=meta]."
+    },
+    {
+     "name": "fit_content",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Minimum height = the laid-out text."
+    }
+   ]
+  },
+  {
+   "name": "Button",
+   "parent": "Control",
+   "doc": "A push or toggle button.",
+   "signals": [
+    "pressed",
+    "toggled"
+   ],
+   "properties": [
+    {
+     "name": "text",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Label."
+    },
+    {
+     "name": "disabled",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Ignores input and draws the disabled style."
+    },
+    {
+     "name": "toggle_mode",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Stays pressed until pressed again."
+    },
+    {
+     "name": "button_pressed",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Toggle state."
+    },
+    {
+     "name": "button_group",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Toggle buttons with the same group name are exclusive."
+    },
+    {
+     "name": "alignment",
+     "type": "enum",
+     "default": "LEFT",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "LEFT",
+      "CENTER",
+      "RIGHT",
+      "FILL"
+     ],
+     "doc": "Text alignment."
+    },
+    {
+     "name": "flat",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "No background until hovered or pressed."
+    }
+   ]
+  },
+  {
+   "name": "CheckBox",
+   "parent": "Button",
+   "doc": "A toggle drawn as a check box.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "CheckButton",
+   "parent": "Button",
+   "doc": "A toggle drawn as a switch.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "OptionButton",
+   "parent": "Button",
+   "doc": "A button that opens a list of choices.",
+   "signals": [
+    "item_selected"
+   ],
+   "properties": [
+    {
+     "name": "items",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Choices, one per line."
+    },
+    {
+     "name": "selected",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Index of the chosen item (-1 none)."
+    }
+   ]
+  },
+  {
+   "name": "Range",
+   "parent": "Control",
+   "doc": "A value in [min, max] with a step.",
+   "signals": [
+    "value_changed"
+   ],
+   "properties": [
+    {
+     "name": "min_value",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Lowest value."
+    },
+    {
+     "name": "max_value",
+     "type": "float",
+     "default": "100",
+     "stored": true,
+     "readonly": false,
+     "doc": "Highest value (value + page <= max)."
+    },
+    {
+     "name": "step",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Values snap to min + k*step (0 = continuous)."
+    },
+    {
+     "name": "page",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Page size (scrollbars)."
+    },
+    {
+     "name": "value",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Current value."
+    }
+   ]
+  },
+  {
+   "name": "Slider",
+   "parent": "Range",
+   "doc": "Base of HSlider/VSlider.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "HSlider",
+   "parent": "Slider",
+   "doc": "Horizontal slider.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "VSlider",
+   "parent": "Slider",
+   "doc": "Vertical slider.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "SpinBox",
+   "parent": "Range",
+   "doc": "A number field with step arrows; type to edit.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "prefix",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Text before the number."
+    },
+    {
+     "name": "suffix",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Text after the number."
+    }
+   ]
+  },
+  {
+   "name": "ProgressBar",
+   "parent": "Range",
+   "doc": "Shows how far value is between min and max.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "show_percentage",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Draw the percentage."
+    }
+   ]
+  },
+  {
+   "name": "LineEdit",
+   "parent": "Control",
+   "doc": "Single-line text input.",
+   "signals": [
+    "text_changed",
+    "text_submitted"
+   ],
+   "properties": [
+    {
+     "name": "text",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The text."
+    },
+    {
+     "name": "placeholder_text",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Shown dimmed while empty."
+    },
+    {
+     "name": "max_length",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Maximum characters (0 = no limit)."
+    },
+    {
+     "name": "secret",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Draw secret_character instead of the text."
+    },
+    {
+     "name": "secret_character",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Drawn per character in secret mode (default a bullet)."
+    },
+    {
+     "name": "editable",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "False = read-only (still selectable)."
+    }
+   ]
+  },
+  {
+   "name": "TextEdit",
+   "parent": "Control",
+   "doc": "Multi-line text editor (the editor's code view).",
+   "signals": [
+    "text_changed"
+   ],
+   "properties": [
+    {
+     "name": "text",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The text (lines joined with '\\n')."
+    },
+    {
+     "name": "editable",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "False = read-only (still selectable)."
+    },
+    {
+     "name": "show_line_numbers",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "A gutter with line numbers."
+    },
+    {
+     "name": "highlight_current_line",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Tint the caret's line while focused."
+    },
+    {
+     "name": "syntax_highlighting",
+     "type": "enum",
+     "default": "NONE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "NONE",
+      "C"
+     ],
+     "doc": "Built-in highlighter: NONE or C (cw_text_edit_set_highlighter overrides)."
+    }
+   ]
+  },
+  {
+   "name": "ItemList",
+   "parent": "Control",
+   "doc": "A scrolling list of selectable items.",
+   "signals": [
+    "item_selected",
+    "item_activated"
+   ],
+   "properties": [
+    {
+     "name": "items",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Item texts, one per line."
+    },
+    {
+     "name": "select_mode",
+     "type": "enum",
+     "default": "SINGLE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "SINGLE",
+      "MULTI"
+     ],
+     "doc": "SINGLE or MULTI (ctrl/shift click)."
+    }
+   ]
+  },
+  {
+   "name": "Tree",
+   "parent": "Control",
+   "doc": "Hierarchical rows with columns.",
+   "signals": [
+    "item_selected",
+    "item_activated",
+    "item_collapsed",
+    "multi_selected"
+   ],
+   "properties": [
+    {
+     "name": "columns",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 8,
+     "doc": "Column count."
+    },
+    {
+     "name": "hide_root",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Do not show the root item."
+    },
+    {
+     "name": "column_titles_visible",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Show the title row even without titles."
+    },
+    {
+     "name": "select_mode",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "0 single selection, 1 multiple (ctrl+click toggles, shift+click extends; multi_selected reports each change)."
+    },
+    {
+     "name": "drag_items",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Dragging a row starts a UI drag of kind \"tree_item\" (payload = the item's metadata, text = its first column)."
+    },
+    {
+     "name": "items",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Indented item text: two spaces per level, '|' between columns."
+    }
+   ]
+  },
+  {
+   "name": "Popup",
+   "parent": "Control",
+   "doc": "Base of controls shown above everything (menus, dialogs).",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "PopupPanel",
+   "parent": "Popup",
+   "doc": "A popup that draws a panel and fits its children inside it (cw_popup_show).",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "PopupMenu",
+   "parent": "Popup",
+   "doc": "A menu of items, checks, separators and submenus.",
+   "signals": [
+    "id_pressed"
+   ],
+   "properties": [
+    {
+     "name": "title",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Title in a MenuBar (default: the node name)."
+    },
+    {
+     "name": "items",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "One item per line: 'Label|id', '-' separator, '[x]'/'[ ]' check prefix, '!' disabled, 'Label>ChildMenu' submenu."
+    }
+   ]
+  },
+  {
+   "name": "MenuBar",
+   "parent": "Control",
+   "doc": "A row of menu titles; each child PopupMenu is a menu.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "AcceptDialog",
+   "parent": "Popup",
+   "doc": "A modal message with an OK button; children become its content.",
+   "signals": [
+    "confirmed",
+    "canceled"
+   ],
+   "properties": [
+    {
+     "name": "title",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Title line."
+    },
+    {
+     "name": "dialog_text",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Message (wrapped)."
+    },
+    {
+     "name": "ok_text",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "OK button label (default OK)."
+    },
+    {
+     "name": "cancel_text",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Cancel button label (ConfirmationDialog)."
+    }
+   ]
+  },
+  {
+   "name": "ConfirmationDialog",
+   "parent": "AcceptDialog",
+   "doc": "An AcceptDialog with OK and Cancel.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "ColorPicker",
+   "parent": "Control",
+   "doc": "HSV square, hue and alpha strips, swatch and hex.",
+   "signals": [
+    "color_changed"
+   ],
+   "properties": [
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The picked colour."
+    }
+   ]
+  },
+  {
+   "name": "TextureRect",
+   "parent": "Control",
+   "doc": "Draws an image.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "texture",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Image asset path."
+    },
+    {
+     "name": "region_rect",
+     "type": "vec4",
+     "default": "vec4(0, 0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Part of the image (x y w h, pixels); w 0 = all."
+    },
+    {
+     "name": "stretch_mode",
+     "type": "enum",
+     "default": "SCALE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "SCALE",
+      "TILE",
+      "KEEP",
+      "KEEP_CENTERED",
+      "KEEP_ASPECT",
+      "KEEP_ASPECT_CENTERED",
+      "KEEP_ASPECT_COVERED"
+     ],
+     "doc": "How the image fills the rect."
+    },
+    {
+     "name": "expand",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Minimum size 0 instead of the image size."
+    },
+    {
+     "name": "filter",
+     "type": "enum",
+     "default": "LINEAR",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "LINEAR",
+      "NEAREST"
+     ],
+     "doc": "Texture filtering of `texture` (NEAREST for pixel art)."
+    }
+   ]
+  },
+  {
+   "name": "NinePatchRect",
+   "parent": "Control",
+   "doc": "A nine-slice image.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "texture",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Image asset path."
+    },
+    {
+     "name": "region_rect",
+     "type": "vec4",
+     "default": "vec4(0, 0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Part of the image (x y w h, pixels); w 0 = all."
+    },
+    {
+     "name": "patch_margin_left",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Left border, texture pixels."
+    },
+    {
+     "name": "patch_margin_top",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Top border."
+    },
+    {
+     "name": "patch_margin_right",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Right border."
+    },
+    {
+     "name": "patch_margin_bottom",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bottom border."
+    },
+    {
+     "name": "draw_center",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Fill the middle."
+    },
+    {
+     "name": "filter",
+     "type": "enum",
+     "default": "LINEAR",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "LINEAR",
+      "NEAREST"
+     ],
+     "doc": "Texture filtering of `texture` (NEAREST for pixel art)."
+    }
+   ]
+  },
+  {
+   "name": "CaptionPanel",
+   "parent": "Control",
+   "doc": "Shows the active captions and subtitles (cw_captions_*), newest at the bottom.",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "RemapButton",
+   "parent": "Button",
+   "doc": "Shows an action's binding; press it, then press a key or button to rebind.",
+   "signals": [
+    "remapped"
+   ],
+   "properties": [
+    {
+     "name": "action",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The input action to rebind."
+    },
+    {
+     "name": "slot",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Which of the action's bindings (0 = the first)."
+    },
+    {
+     "name": "device",
+     "type": "enum",
+     "default": "KEYBOARD_MOUSE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "KEYBOARD_MOUSE",
+      "GAMEPAD"
+     ],
+     "doc": "Capture from the keyboard and mouse, or from the gamepad."
+    }
+   ]
+  },
+  {
+   "name": "CollisionObject2D",
+   "parent": "Node2D",
+   "doc": "Base of 2D bodies and areas: collision layer and mask.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "collision_layer",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 31,
+     "doc": "The layer its shapes sit on (0..31)."
+    },
+    {
+     "name": "collision_mask",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layers it collides with (bits; -1 = all)."
+    },
+    {
+     "name": "collision_layer_name",
+     "type": "string",
+     "default": "\"0\"",
+     "stored": false,
+     "readonly": false,
+     "doc": "The layer by project name."
+    },
+    {
+     "name": "collision_mask_names",
+     "type": "string",
+     "default": "\"all\"",
+     "stored": false,
+     "readonly": false,
+     "doc": "The mask by project names (\"world|enemy\", \"all\")."
+    },
+    {
+     "name": "body_id",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "The wrapper body handle (0 outside a tree)."
+    }
+   ]
+  },
+  {
+   "name": "PhysicsBody2D",
+   "parent": "CollisionObject2D",
+   "doc": "Base of 2D bodies: surface material.",
+   "signals": [
+    "body_entered",
+    "body_exited",
+    "body_hit"
+   ],
+   "properties": [
+    {
+     "name": "friction",
+     "type": "float",
+     "default": "0.6",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Friction (mixed sqrt(a*b))."
+    },
+    {
+     "name": "bounce",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Restitution (mixed max)."
+    },
+    {
+     "name": "rolling_resistance",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Rolling resistance (circles, capsules)."
+    },
+    {
+     "name": "tangent_speed",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Conveyor surface speed, px/s."
+    },
+    {
+     "name": "user_material",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Your material id (hits, queries)."
+    },
+    {
+     "name": "contact_monitor",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Emit body_entered/body_exited on contacts."
+    },
+    {
+     "name": "hit_events",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Emit body_hit(other, speed px/s) on impacts."
+    }
+   ]
+  },
+  {
+   "name": "StaticBody2D",
+   "parent": "PhysicsBody2D",
+   "doc": "A body that does not move by itself (moving the node teleports it).",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "KinematicBody2D",
+   "parent": "PhysicsBody2D",
+   "doc": "Follows its node's transform with velocity (pushes, carries).",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "RigidBody2D",
+   "parent": "PhysicsBody2D",
+   "doc": "A simulated body; its transform drives the node.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "density",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "kg per square meter (mass from shapes)."
+    },
+    {
+     "name": "mass",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000,
+     "doc": "kg; 0 = from density."
+    },
+    {
+     "name": "gravity_scale",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Gravity multiplier."
+    },
+    {
+     "name": "linear_damp",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Linear damping."
+    },
+    {
+     "name": "angular_damp",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Angular damping."
+    },
+    {
+     "name": "lock_rotation",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Never rotates."
+    },
+    {
+     "name": "bullet",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Continuous collision against other dynamic bodies."
+    },
+    {
+     "name": "can_sleep",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "May fall asleep when resting."
+    },
+    {
+     "name": "freeze",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Frozen: a static or kinematic body (freeze_mode)."
+    },
+    {
+     "name": "freeze_mode",
+     "type": "enum",
+     "default": "STATIC",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "STATIC",
+      "KINEMATIC"
+     ],
+     "doc": "What a frozen body becomes (KINEMATIC follows the node)."
+    },
+    {
+     "name": "linear_velocity",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "px/s (live)."
+    },
+    {
+     "name": "angular_velocity",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "rad/s clockwise (live)."
+    },
+    {
+     "name": "sleeping",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Asleep."
+    }
+   ]
+  },
+  {
+   "name": "CharacterBody2D",
+   "parent": "PhysicsBody2D",
+   "doc": "A move-and-slide character (cw_character2d_move_and_slide).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "velocity",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "px/s, y down; move_and_slide moves by it and clips it."
+    },
+    {
+     "name": "floor_max_angle",
+     "type": "float",
+     "default": "0.7853982",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 3.14159,
+     "doc": "Steepest walkable slope, radians."
+    },
+    {
+     "name": "floor_snap_length",
+     "type": "float",
+     "default": "4",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Snap down to a floor within this, pixels."
+    },
+    {
+     "name": "step_height",
+     "type": "float",
+     "default": "4",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Step up ledges this high, pixels."
+    },
+    {
+     "name": "max_slides",
+     "type": "int",
+     "default": "5",
+     "stored": true,
+     "readonly": false,
+     "doc": "Slide iterations per move."
+    },
+    {
+     "name": "push_mass",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000,
+     "doc": ">0: pushes rigid bodies as this mass."
+    },
+    {
+     "name": "ride_platforms",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Carried by the floor body's motion."
+    },
+    {
+     "name": "on_floor",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Touching a floor after the last move."
+    },
+    {
+     "name": "on_wall",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Touching a wall."
+    },
+    {
+     "name": "on_ceiling",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Touching a ceiling."
+    },
+    {
+     "name": "floor_normal",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Floor normal (y down)."
+    },
+    {
+     "name": "wall_normal",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Wall normal (y down)."
+    },
+    {
+     "name": "platform_velocity",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "The floor's velocity, px/s."
+    }
+   ]
+  },
+  {
+   "name": "Area2D",
+   "parent": "CollisionObject2D",
+   "doc": "A sensor region: enter/exit signals.",
+   "signals": [
+    "body_entered",
+    "body_exited",
+    "area_entered",
+    "area_exited"
+   ],
+   "properties": [
+    {
+     "name": "monitoring",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Report bodies and areas entering/exiting."
+    },
+    {
+     "name": "monitorable",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Other areas see this one."
+    },
+    {
+     "name": "overlap_count",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Bodies + areas inside now."
+    }
+   ]
+  },
+  {
+   "name": "CollisionShape2D",
+   "parent": "Node2D",
+   "doc": "A collider of its parent body or area.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "shape",
+     "type": "enum",
+     "default": "RECT",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "RECT",
+      "CIRCLE",
+      "CAPSULE",
+      "POLYGON",
+      "SEGMENT",
+      "CHAIN"
+     ],
+     "doc": "Collider kind."
+    },
+    {
+     "name": "size",
+     "type": "vec2",
+     "default": "vec2(16, 16)",
+     "stored": true,
+     "readonly": false,
+     "doc": "RECT: full size, pixels."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "CIRCLE / CAPSULE radius, pixels."
+    },
+    {
+     "name": "height",
+     "type": "float",
+     "default": "32",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "CAPSULE: total height (vertical), pixels."
+    },
+    {
+     "name": "points",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "POLYGON / SEGMENT / CHAIN points \"x y, ...\"."
+    },
+    {
+     "name": "loop",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "CHAIN: closed loop (solid inside)."
+    },
+    {
+     "name": "disabled",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Not built."
+    }
+   ]
+  },
+  {
+   "name": "Joint2D",
+   "parent": "Node2D",
+   "doc": "Connects two bodies at the joint's position.",
+   "signals": [
+    "broken"
+   ],
+   "properties": [
+    {
+     "name": "joint_type",
+     "type": "enum",
+     "default": "PIN",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "PIN",
+      "HINGE",
+      "SLIDER",
+      "DISTANCE",
+      "SPRING",
+      "WELD",
+      "WHEEL",
+      "MOTOR"
+     ],
+     "doc": "PIN/HINGE (revolute), SLIDER (prismatic), DISTANCE, SPRING, WELD, WHEEL, MOTOR."
+    },
+    {
+     "name": "node_a",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path to body A (relative to the joint; empty = the world)."
+    },
+    {
+     "name": "node_b",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path to body B."
+    },
+    {
+     "name": "collide_connected",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "The two bodies collide with each other."
+    },
+    {
+     "name": "break_force",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000000,
+     "doc": "Breaks above this force, N (0 = never)."
+    },
+    {
+     "name": "break_torque",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000000,
+     "doc": "Breaks above this torque, N*m (0 = never)."
+    },
+    {
+     "name": "limit_enabled",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Limit the angle (rad) or translation (px)."
+    },
+    {
+     "name": "lower",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Lower limit (rad, clockwise / px)."
+    },
+    {
+     "name": "upper",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Upper limit."
+    },
+    {
+     "name": "motor_enabled",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Drive at motor_speed."
+    },
+    {
+     "name": "motor_speed",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "rad/s clockwise or px/s."
+    },
+    {
+     "name": "max_motor",
+     "type": "float",
+     "default": "1000",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000000,
+     "doc": "Max motor torque / force."
+    },
+    {
+     "name": "stiffness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Spring frequency, Hz (SPRING, WHEEL, soft WELD)."
+    },
+    {
+     "name": "damping",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Spring damping ratio."
+    },
+    {
+     "name": "length",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000,
+     "doc": "DISTANCE/SPRING rest length, px (0 = current)."
+    }
+   ]
+  },
+  {
+   "name": "RayCast2D",
+   "parent": "Node2D",
+   "doc": "A ray refreshed after every physics step.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "enabled",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Query after every step."
+    },
+    {
+     "name": "target_position",
+     "type": "vec2",
+     "default": "vec2(0, 50)",
+     "stored": true,
+     "readonly": false,
+     "doc": "End point, local pixels."
+    },
+    {
+     "name": "collision_mask",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layers it hits (bits)."
+    },
+    {
+     "name": "collide_with_bodies",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hit bodies."
+    },
+    {
+     "name": "collide_with_areas",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hit areas."
+    },
+    {
+     "name": "exclude_parent",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Skip the parent body."
+    },
+    {
+     "name": "colliding",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Hit something."
+    },
+    {
+     "name": "collider",
+     "type": "node",
+     "default": "node(\"/root\")",
+     "stored": false,
+     "readonly": true,
+     "doc": "The node hit (closest)."
+    },
+    {
+     "name": "collision_point",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Global hit point, pixels."
+    },
+    {
+     "name": "collision_normal",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Hit normal (y down)."
+    },
+    {
+     "name": "collision_fraction",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "0..1 along the cast."
+    },
+    {
+     "name": "collision_count",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Hits (shape cast: up to max_results)."
+    }
+   ]
+  },
+  {
+   "name": "ShapeCast2D",
+   "parent": "Node2D",
+   "doc": "A shape swept after every physics step (target 0 = overlap).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "enabled",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Query after every step."
+    },
+    {
+     "name": "target_position",
+     "type": "vec2",
+     "default": "vec2(0, 50)",
+     "stored": true,
+     "readonly": false,
+     "doc": "End point, local pixels."
+    },
+    {
+     "name": "collision_mask",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layers it hits (bits)."
+    },
+    {
+     "name": "collide_with_bodies",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hit bodies."
+    },
+    {
+     "name": "collide_with_areas",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hit areas."
+    },
+    {
+     "name": "exclude_parent",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Skip the parent body."
+    },
+    {
+     "name": "colliding",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Hit something."
+    },
+    {
+     "name": "collider",
+     "type": "node",
+     "default": "node(\"/root\")",
+     "stored": false,
+     "readonly": true,
+     "doc": "The node hit (closest)."
+    },
+    {
+     "name": "collision_point",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Global hit point, pixels."
+    },
+    {
+     "name": "collision_normal",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Hit normal (y down)."
+    },
+    {
+     "name": "collision_fraction",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "0..1 along the cast."
+    },
+    {
+     "name": "collision_count",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Hits (shape cast: up to max_results)."
+    },
+    {
+     "name": "shape",
+     "type": "enum",
+     "default": "CIRCLE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "CIRCLE",
+      "RECT",
+      "CAPSULE"
+     ],
+     "doc": "Swept shape."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "CIRCLE / CAPSULE radius."
+    },
+    {
+     "name": "size",
+     "type": "vec2",
+     "default": "vec2(16, 16)",
+     "stored": true,
+     "readonly": false,
+     "doc": "RECT size."
+    },
+    {
+     "name": "height",
+     "type": "float",
+     "default": "32",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "CAPSULE height."
+    },
+    {
+     "name": "max_results",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hits kept (1..32)."
+    }
+   ]
+  },
+  {
+   "name": "CollisionObject3D",
+   "parent": "Node3D",
+   "doc": "Base of 3D bodies and areas: collision layer and mask.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "collision_layer",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 31,
+     "doc": "The layer its shapes sit on (0..31)."
+    },
+    {
+     "name": "collision_mask",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layers it collides with (bits; -1 = all)."
+    },
+    {
+     "name": "collision_layer_name",
+     "type": "string",
+     "default": "\"0\"",
+     "stored": false,
+     "readonly": false,
+     "doc": "The layer by project name."
+    },
+    {
+     "name": "collision_mask_names",
+     "type": "string",
+     "default": "\"all\"",
+     "stored": false,
+     "readonly": false,
+     "doc": "The mask by project names (\"world|enemy\", \"all\")."
+    },
+    {
+     "name": "body_id",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "The wrapper body handle (0 outside a tree)."
+    }
+   ]
+  },
+  {
+   "name": "PhysicsBody3D",
+   "parent": "CollisionObject3D",
+   "doc": "Base of 3D bodies: surface material.",
+   "signals": [
+    "body_entered",
+    "body_exited",
+    "body_hit"
+   ],
+   "properties": [
+    {
+     "name": "friction",
+     "type": "float",
+     "default": "0.6",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Friction (mixed sqrt(a*b))."
+    },
+    {
+     "name": "bounce",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Restitution (mixed max)."
+    },
+    {
+     "name": "rolling_resistance",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Rolling resistance (spheres, capsules)."
+    },
+    {
+     "name": "tangent_velocity",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Conveyor surface velocity, shape-local m/s."
+    },
+    {
+     "name": "user_material",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Your material id (hits, queries)."
+    },
+    {
+     "name": "contact_monitor",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Emit body_entered/body_exited on contacts."
+    },
+    {
+     "name": "hit_events",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Emit body_hit(other, speed) on impacts."
+    }
+   ]
+  },
+  {
+   "name": "StaticBody3D",
+   "parent": "PhysicsBody3D",
+   "doc": "A body that does not move by itself (moving the node teleports it).",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "KinematicBody3D",
+   "parent": "PhysicsBody3D",
+   "doc": "Follows its node's transform with velocity (pushes, carries).",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "RigidBody3D",
+   "parent": "PhysicsBody3D",
+   "doc": "A simulated body; its transform drives the node.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "density",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "kg per cubic meter (mass from shapes)."
+    },
+    {
+     "name": "mass",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000,
+     "doc": "kg; 0 = from density."
+    },
+    {
+     "name": "gravity_scale",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Gravity multiplier."
+    },
+    {
+     "name": "linear_damp",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Linear damping."
+    },
+    {
+     "name": "angular_damp",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Angular damping."
+    },
+    {
+     "name": "lock_rotation",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Never rotates."
+    },
+    {
+     "name": "bullet",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Continuous collision against other dynamic bodies."
+    },
+    {
+     "name": "can_sleep",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "May fall asleep when resting."
+    },
+    {
+     "name": "freeze",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Frozen: a static or kinematic body (freeze_mode)."
+    },
+    {
+     "name": "freeze_mode",
+     "type": "enum",
+     "default": "STATIC",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "STATIC",
+      "KINEMATIC"
+     ],
+     "doc": "What a frozen body becomes (KINEMATIC follows the node)."
+    },
+    {
+     "name": "linear_velocity",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "m/s (live)."
+    },
+    {
+     "name": "angular_velocity",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "rad/s (live)."
+    },
+    {
+     "name": "sleeping",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Asleep."
+    }
+   ]
+  },
+  {
+   "name": "CharacterBody3D",
+   "parent": "PhysicsBody3D",
+   "doc": "A move-and-slide character (cw_character3d_move_and_slide).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "velocity",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "m/s; move_and_slide moves by it and clips it."
+    },
+    {
+     "name": "floor_max_angle",
+     "type": "float",
+     "default": "0.7853982",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 3.14159,
+     "doc": "Steepest walkable slope, radians."
+    },
+    {
+     "name": "floor_snap_length",
+     "type": "float",
+     "default": "0.25",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Snap down to a floor within this, m."
+    },
+    {
+     "name": "step_height",
+     "type": "float",
+     "default": "0.3",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Step up ledges this high, m."
+    },
+    {
+     "name": "max_slides",
+     "type": "int",
+     "default": "5",
+     "stored": true,
+     "readonly": false,
+     "doc": "Slide iterations per move."
+    },
+    {
+     "name": "push_mass",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000,
+     "doc": ">0: pushes rigid bodies as this mass."
+    },
+    {
+     "name": "ride_platforms",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Carried by the floor body's motion."
+    },
+    {
+     "name": "on_floor",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Touching a floor after the last move."
+    },
+    {
+     "name": "on_wall",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Touching a wall."
+    },
+    {
+     "name": "on_ceiling",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Touching a ceiling."
+    },
+    {
+     "name": "floor_normal",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Floor normal."
+    },
+    {
+     "name": "wall_normal",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Wall normal."
+    },
+    {
+     "name": "platform_velocity",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "The floor's velocity."
+    }
+   ]
+  },
+  {
+   "name": "Area3D",
+   "parent": "CollisionObject3D",
+   "doc": "A sensor region: enter/exit signals.",
+   "signals": [
+    "body_entered",
+    "body_exited",
+    "area_entered",
+    "area_exited"
+   ],
+   "properties": [
+    {
+     "name": "monitoring",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Report bodies and areas entering/exiting."
+    },
+    {
+     "name": "monitorable",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Other areas see this one."
+    },
+    {
+     "name": "overlap_count",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Bodies + areas inside now."
+    }
+   ]
+  },
+  {
+   "name": "CollisionShape3D",
+   "parent": "Node3D",
+   "doc": "A collider of its parent body or area.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "shape",
+     "type": "enum",
+     "default": "BOX",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "BOX",
+      "SPHERE",
+      "CAPSULE",
+      "CONVEX",
+      "TRIMESH"
+     ],
+     "doc": "Collider kind."
+    },
+    {
+     "name": "size",
+     "type": "vec3",
+     "default": "vec3(1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "BOX: full size, m."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "SPHERE / CAPSULE radius."
+    },
+    {
+     "name": "height",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "CAPSULE total height (along y)."
+    },
+    {
+     "name": "points",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "CONVEX points \"x y z, ...\" (shape-local)."
+    },
+    {
+     "name": "mesh",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "CONVEX / TRIMESH: path to a MeshInstance3D (relative to this node)."
+    },
+    {
+     "name": "disabled",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Not built."
+    }
+   ]
+  },
+  {
+   "name": "Joint3D",
+   "parent": "Node3D",
+   "doc": "Connects two bodies at the joint's position.",
+   "signals": [
+    "broken"
+   ],
+   "properties": [
+    {
+     "name": "joint_type",
+     "type": "enum",
+     "default": "PIN",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "PIN",
+      "HINGE",
+      "SLIDER",
+      "DISTANCE",
+      "SPRING",
+      "WELD",
+      "CONE"
+     ],
+     "doc": "PIN (ball), HINGE (about z), SLIDER (along x), DISTANCE, SPRING, WELD, CONE."
+    },
+    {
+     "name": "node_a",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path to body A (relative to the joint; empty = the world)."
+    },
+    {
+     "name": "node_b",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path to body B."
+    },
+    {
+     "name": "collide_connected",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "The two bodies collide with each other."
+    },
+    {
+     "name": "break_force",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000000,
+     "doc": "Breaks above this force, N (0 = never)."
+    },
+    {
+     "name": "break_torque",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000000,
+     "doc": "Breaks above this torque, N*m (0 = never)."
+    },
+    {
+     "name": "limit_enabled",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Limit the angle / translation / length."
+    },
+    {
+     "name": "lower",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Lower limit."
+    },
+    {
+     "name": "upper",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Upper limit."
+    },
+    {
+     "name": "motor_enabled",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Drive at motor_speed."
+    },
+    {
+     "name": "motor_speed",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "rad/s or m/s."
+    },
+    {
+     "name": "max_motor",
+     "type": "float",
+     "default": "1000",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000000,
+     "doc": "Max motor torque / force."
+    },
+    {
+     "name": "stiffness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Spring frequency, Hz (SPRING, soft WELD)."
+    },
+    {
+     "name": "damping",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Spring damping ratio."
+    },
+    {
+     "name": "length",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000,
+     "doc": "DISTANCE/SPRING rest length (0 = current)."
+    },
+    {
+     "name": "cone_angle",
+     "type": "float",
+     "default": "0.7853982",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 3.14159,
+     "doc": "CONE: cone limit, radians."
+    }
+   ]
+  },
+  {
+   "name": "RayCast3D",
+   "parent": "Node3D",
+   "doc": "A ray refreshed after every physics step.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "enabled",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Query after every step."
+    },
+    {
+     "name": "target_position",
+     "type": "vec3",
+     "default": "vec3(0, -1, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "End point, local."
+    },
+    {
+     "name": "collision_mask",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layers it hits (bits)."
+    },
+    {
+     "name": "collide_with_bodies",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hit bodies."
+    },
+    {
+     "name": "collide_with_areas",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hit areas."
+    },
+    {
+     "name": "exclude_parent",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Skip the parent body."
+    },
+    {
+     "name": "colliding",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Hit something."
+    },
+    {
+     "name": "collider",
+     "type": "node",
+     "default": "node(\"/root\")",
+     "stored": false,
+     "readonly": true,
+     "doc": "The node hit (closest)."
+    },
+    {
+     "name": "collision_point",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Global hit point."
+    },
+    {
+     "name": "collision_normal",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Hit normal."
+    },
+    {
+     "name": "collision_fraction",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "0..1 along the cast."
+    },
+    {
+     "name": "collision_count",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Hits (shape cast: up to max_results)."
+    }
+   ]
+  },
+  {
+   "name": "ShapeCast3D",
+   "parent": "Node3D",
+   "doc": "A shape swept after every physics step (target 0 = overlap).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "enabled",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Query after every step."
+    },
+    {
+     "name": "target_position",
+     "type": "vec3",
+     "default": "vec3(0, -1, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "End point, local."
+    },
+    {
+     "name": "collision_mask",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layers it hits (bits)."
+    },
+    {
+     "name": "collide_with_bodies",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hit bodies."
+    },
+    {
+     "name": "collide_with_areas",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hit areas."
+    },
+    {
+     "name": "exclude_parent",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Skip the parent body."
+    },
+    {
+     "name": "colliding",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Hit something."
+    },
+    {
+     "name": "collider",
+     "type": "node",
+     "default": "node(\"/root\")",
+     "stored": false,
+     "readonly": true,
+     "doc": "The node hit (closest)."
+    },
+    {
+     "name": "collision_point",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Global hit point."
+    },
+    {
+     "name": "collision_normal",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Hit normal."
+    },
+    {
+     "name": "collision_fraction",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "0..1 along the cast."
+    },
+    {
+     "name": "collision_count",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Hits (shape cast: up to max_results)."
+    },
+    {
+     "name": "shape",
+     "type": "enum",
+     "default": "SPHERE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "SPHERE",
+      "BOX",
+      "CAPSULE"
+     ],
+     "doc": "Swept shape."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "0.25",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "SPHERE / CAPSULE radius."
+    },
+    {
+     "name": "size",
+     "type": "vec3",
+     "default": "vec3(0.5, 0.5, 0.5)",
+     "stored": true,
+     "readonly": false,
+     "doc": "BOX size."
+    },
+    {
+     "name": "height",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "CAPSULE height."
+    },
+    {
+     "name": "max_results",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hits kept (1..32)."
+    }
+   ]
+  },
+  {
+   "name": "AnimationPlayer",
+   "parent": "Node",
+   "doc": "Plays animations from its library on properties of the nodes under root_node.",
+   "signals": [
+    "animation_started",
+    "animation_finished",
+    "animation_changed",
+    "animation_looped",
+    "animation_event"
+   ],
+   "properties": [
+    {
+     "name": "root_node",
+     "type": "string",
+     "default": "\"..\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Track paths are relative to this node."
+    },
+    {
+     "name": "autoplay",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Played when the player is ready."
+    },
+    {
+     "name": "speed_scale",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Multiplies every playback speed."
+    },
+    {
+     "name": "default_blend",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Cross-fade seconds when play() passes blend < 0."
+    },
+    {
+     "name": "process",
+     "type": "enum",
+     "default": "FIXED",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "FIXED",
+      "UPDATE",
+      "MANUAL"
+     ],
+     "doc": "Which phase advances it (MANUAL: cw_anim_player_advance)."
+    },
+    {
+     "name": "current_animation",
+     "type": "string",
+     "default": "\"\"",
+     "stored": false,
+     "readonly": false,
+     "doc": "The playing animation; setting it plays that animation."
+    },
+    {
+     "name": "playing",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Advancing now."
+    },
+    {
+     "name": "position",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Time in the current animation."
+    },
+    {
+     "name": "root_motion_track",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Position track whose motion moves root_motion_target."
+    },
+    {
+     "name": "root_motion_target",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Node3D (path from the player) moved by root motion."
+    },
+    {
+     "name": "root_motion_lock",
+     "type": "int",
+     "default": "7",
+     "stored": true,
+     "readonly": false,
+     "doc": "Axes given to the target: bit 0 x, 1 y, 2 z."
+    }
+   ]
+  },
+  {
+   "name": "AnimationTree",
+   "parent": "Node",
+   "doc": "Blends a player's animations through a graph: state machines, blend spaces, additive layers.",
+   "signals": [
+    "state_changed",
+    "animation_event"
+   ],
+   "properties": [
+    {
+     "name": "player",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "AnimationPlayer (path from this node) whose library and root_node it uses."
+    },
+    {
+     "name": "active",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Evaluates the graph each tick."
+    },
+    {
+     "name": "process",
+     "type": "enum",
+     "default": "FIXED",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "FIXED",
+      "UPDATE",
+      "MANUAL"
+     ],
+     "doc": "Which phase advances it."
+    },
+    {
+     "name": "root_motion_track",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Position track whose motion moves root_motion_target."
+    },
+    {
+     "name": "root_motion_target",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Node3D (path from the tree) moved by root motion."
+    },
+    {
+     "name": "root_motion_lock",
+     "type": "int",
+     "default": "7",
+     "stored": true,
+     "readonly": false,
+     "doc": "Axes given to the target: bit 0 x, 1 y, 2 z."
+    }
+   ]
+  },
+  {
+   "name": "GPUParticles3D",
+   "parent": "Node3D",
+   "doc": "GPU particles: transform feedback simulation, instanced billboards / meshes, trails (particles.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "emitting",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Emitting new particles (turning it on starts a new emission window: alive particles die)."
+    },
+    {
+     "name": "amount",
+     "type": "int",
+     "default": "64",
+     "stored": true,
+     "readonly": false,
+     "doc": "Particle count (buffer size); emission rate = amount / lifetime."
+    },
+    {
+     "name": "lifetime",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.001,
+     "max": 1000000,
+     "doc": "Seconds each particle lives (the spawn cycle length)."
+    },
+    {
+     "name": "lifetime_random",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Each life is shortened by up to this fraction (hashed per particle)."
+    },
+    {
+     "name": "explosiveness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "0 = spawns spread over the lifetime, 1 = all at once."
+    },
+    {
+     "name": "one_shot",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Emit one cycle, then turn emitting off."
+    },
+    {
+     "name": "preprocess",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 600,
+     "doc": "Seconds simulated when emission starts (the effect starts mature)."
+    },
+    {
+     "name": "speed_scale",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 64,
+     "doc": "Sim seconds per tick second."
+    },
+    {
+     "name": "seed",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Random seed: same seed, same particles on every host."
+    },
+    {
+     "name": "local_coords",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Particles live in the emitter's space and follow it (forces too)."
+    },
+    {
+     "name": "emission_shape",
+     "type": "enum",
+     "default": "POINT",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "POINT",
+      "SPHERE",
+      "SPHERE_SURFACE",
+      "BOX",
+      "RING",
+      "MESH"
+     ],
+     "doc": "Where particles spawn (in the emitter's space; MESH: on emission_mesh's surface)."
+    },
+    {
+     "name": "emission_extents",
+     "type": "vec3",
+     "default": "vec3(1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "BOX: half sizes."
+    },
+    {
+     "name": "emission_radius",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "SPHERE / SPHERE_SURFACE / RING radius."
+    },
+    {
+     "name": "emission_inner_radius",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "RING: inner radius."
+    },
+    {
+     "name": "emission_mesh",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "MESH: path (from this node) to a MeshInstance3D whose surface emits (4096 points by area, with normals)."
+    },
+    {
+     "name": "emission_normal_speed",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Extra start speed along the surface normal (SPHERE_SURFACE, MESH)."
+    },
+    {
+     "name": "direction",
+     "type": "vec3",
+     "default": "vec3(0, 1, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Start direction (emitter space)."
+    },
+    {
+     "name": "spread",
+     "type": "float",
+     "default": "15",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 180,
+     "doc": "Cone half angle around direction, degrees."
+    },
+    {
+     "name": "speed_min",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Start speed range."
+    },
+    {
+     "name": "speed_max",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "doc": "Start speed range."
+    },
+    {
+     "name": "gravity",
+     "type": "vec3",
+     "default": "vec3(0, -9.8, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Acceleration (world space; emitter space with local_coords)."
+    },
+    {
+     "name": "damping",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Velocity damping per second."
+    },
+    {
+     "name": "turbulence",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Curl-noise acceleration strength (0 = off)."
+    },
+    {
+     "name": "turbulence_scale",
+     "type": "float",
+     "default": "0.25",
+     "stored": true,
+     "readonly": false,
+     "doc": "Noise frequency (noise cells per world unit)."
+    },
+    {
+     "name": "turbulence_speed",
+     "type": "float",
+     "default": "0.2",
+     "stored": true,
+     "readonly": false,
+     "doc": "Noise scroll speed (cells per second)."
+    },
+    {
+     "name": "collide_depth",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bounce off the scene depth buffer (screen space: only visible surfaces)."
+    },
+    {
+     "name": "depth_thickness",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Depth collision: how deep behind a visible surface still counts as solid."
+    },
+    {
+     "name": "bounce",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 2,
+     "doc": "Normal velocity kept after a collision."
+    },
+    {
+     "name": "friction",
+     "type": "float",
+     "default": "0.1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Tangential velocity lost at a collision."
+    },
+    {
+     "name": "collision_radius",
+     "type": "float",
+     "default": "0.02",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Particle radius for collisions."
+    },
+    {
+     "name": "draw_mode",
+     "type": "enum",
+     "default": "BILLBOARD",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "BILLBOARD",
+      "STRETCHED",
+      "MESH"
+     ],
+     "doc": "BILLBOARD quads, STRETCHED along velocity, or instanced MESH."
+    },
+    {
+     "name": "mesh_primitive",
+     "type": "enum",
+     "default": "BOX",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "BOX",
+      "SPHERE",
+      "TETRA",
+      "NODE"
+     ],
+     "doc": "MESH draw mode: BOX, SPHERE, TETRA or NODE (mesh_node's mesh)."
+    },
+    {
+     "name": "mesh_node",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "MESH + NODE: path (from this node) to the MeshInstance3D drawn per particle."
+    },
+    {
+     "name": "size",
+     "type": "float",
+     "default": "0.1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Particle size (world units) times size_curve."
+    },
+    {
+     "name": "size_random",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Size shrunk by up to this fraction per particle."
+    },
+    {
+     "name": "stretch",
+     "type": "float",
+     "default": "0.05",
+     "stored": true,
+     "readonly": false,
+     "doc": "STRETCHED: extra length per unit of speed."
+    },
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Tint (times color_ramp)."
+    },
+    {
+     "name": "energy",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Colour multiplier (HDR glow)."
+    },
+    {
+     "name": "color_ramp",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Colour over life: \"t r g b a, ...\" (empty = white)."
+    },
+    {
+     "name": "size_curve",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Size over life: \"t s, ...\" (empty = 1)."
+    },
+    {
+     "name": "texture",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Billboard image (asset path; empty = a soft dot)."
+    },
+    {
+     "name": "hframes",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Flipbook columns (frames play over life)."
+    },
+    {
+     "name": "vframes",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Flipbook rows."
+    },
+    {
+     "name": "spin",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Rotation speed, rad/s (random direction per particle)."
+    },
+    {
+     "name": "blend",
+     "type": "enum",
+     "default": "ADD",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "ADD",
+      "ALPHA",
+      "OPAQUE"
+     ],
+     "doc": "ADD (glow), ALPHA (premultiplied, sortable) or OPAQUE (alpha tested, writes depth)."
+    },
+    {
+     "name": "soft_distance",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Fade over this distance in front of geometry (0 = hard)."
+    },
+    {
+     "name": "sort",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "ALPHA: draw back to front (GPU bitonic sort)."
+    },
+    {
+     "name": "trail_length",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Trail samples per particle, one per tick (0 = none, max 64)."
+    },
+    {
+     "name": "trail_width",
+     "type": "float",
+     "default": "0.05",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Trail width at the particle (tapers to 0)."
+    },
+    {
+     "name": "alive",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Particles alive now (the CPU's evaluation of the emission function)."
+    },
+    {
+     "name": "gpu_stats",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Read the GPU's alive count and position sum back every frame (a stall: tests)."
+    },
+    {
+     "name": "gpu_alive",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "gpu_stats: alive particles counted on the GPU."
+    },
+    {
+     "name": "gpu_sum",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "gpu_stats: sum of alive particle positions."
+    }
+   ]
+  },
+  {
+   "name": "ParticleAttractor3D",
+   "parent": "Node3D",
+   "doc": "Pulls (or pushes) the tree's GPU particles; up to 8 act at once.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "strength",
+     "type": "float",
+     "default": "5",
+     "stored": true,
+     "readonly": false,
+     "doc": "Acceleration toward the centre (negative repels)."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Reach."
+    },
+    {
+     "name": "attenuation",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 16,
+     "doc": "Falloff exponent of (1 - d / radius)."
+    }
+   ]
+  },
+  {
+   "name": "ParticleCollider3D",
+   "parent": "Node3D",
+   "doc": "An analytic shape the tree's GPU particles bounce off; up to 8 act at once.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "shape",
+     "type": "enum",
+     "default": "PLANE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "PLANE",
+      "SPHERE",
+      "BOX"
+     ],
+     "doc": "PLANE (XZ, +Y up), SPHERE or BOX."
+    },
+    {
+     "name": "extents",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "BOX half sizes; PLANE x/z half sizes (0 = infinite)."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "SPHERE radius."
+    }
+   ]
+  },
+  {
+   "name": "GPUParticles2D",
+   "parent": "Node2D",
+   "doc": "2D particles: the GPUParticles3D emission model on the CPU, drawn through render2d.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "amount",
+     "type": "int",
+     "default": "64",
+     "stored": true,
+     "readonly": false,
+     "doc": "Particle count."
+    },
+    {
+     "name": "lifetime",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.001,
+     "max": 1000000,
+     "doc": "Seconds each particle lives."
+    },
+    {
+     "name": "lifetime_random",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Lives shortened by up to this fraction."
+    },
+    {
+     "name": "explosiveness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "0 = spread over the lifetime, 1 = all at once."
+    },
+    {
+     "name": "one_shot",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Emit one cycle, then stop."
+    },
+    {
+     "name": "emitting",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Emitting (on starts a new window)."
+    },
+    {
+     "name": "seed",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Random seed."
+    },
+    {
+     "name": "emission_shape",
+     "type": "enum",
+     "default": "POINT",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "POINT",
+      "CIRCLE",
+      "RECT"
+     ],
+     "doc": "POINT, CIRCLE (emission_radius) or RECT (emission_extents)."
+    },
+    {
+     "name": "emission_radius",
+     "type": "float",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "CIRCLE radius, pixels."
+    },
+    {
+     "name": "emission_extents",
+     "type": "vec2",
+     "default": "vec2(8, 8)",
+     "stored": true,
+     "readonly": false,
+     "doc": "RECT half sizes, pixels."
+    },
+    {
+     "name": "direction",
+     "type": "float",
+     "default": "-90",
+     "stored": true,
+     "readonly": false,
+     "doc": "Start direction, degrees clockwise from +x (-90 = up)."
+    },
+    {
+     "name": "spread",
+     "type": "float",
+     "default": "20",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 180,
+     "doc": "Half angle around direction, degrees."
+    },
+    {
+     "name": "speed_min",
+     "type": "float",
+     "default": "60",
+     "stored": true,
+     "readonly": false,
+     "doc": "Start speed range, pixels/s."
+    },
+    {
+     "name": "speed_max",
+     "type": "float",
+     "default": "120",
+     "stored": true,
+     "readonly": false,
+     "doc": "Start speed range, pixels/s."
+    },
+    {
+     "name": "gravity",
+     "type": "vec2",
+     "default": "vec2(0, 98)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Acceleration, pixels/s^2 (y down)."
+    },
+    {
+     "name": "damping",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Velocity damping per second."
+    },
+    {
+     "name": "size",
+     "type": "float",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Sprite size, pixels (times size_curve)."
+    },
+    {
+     "name": "size_random",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Size shrunk by up to this fraction."
+    },
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Tint (times color_ramp)."
+    },
+    {
+     "name": "color_ramp",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Colour over life: \"t r g b a, ...\"."
+    },
+    {
+     "name": "size_curve",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Size over life: \"t s, ...\"."
+    },
+    {
+     "name": "texture",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Sprite image (asset path; empty = a soft dot)."
+    },
+    {
+     "name": "blend",
+     "type": "enum",
+     "default": "ALPHA",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "ALPHA",
+      "ADD"
+     ],
+     "doc": "ALPHA or ADD."
+    },
+    {
+     "name": "spin",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Rotation speed, rad/s (random direction)."
+    },
+    {
+     "name": "local_coords",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Particles follow the node."
+    },
+    {
+     "name": "alive",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Particles alive now."
+    }
+   ]
+  },
+  {
+   "name": "Trail3D",
+   "parent": "Node3D",
+   "doc": "A ribbon following the node (swords, projectiles); drawn in the particles pass.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "length",
+     "type": "int",
+     "default": "32",
+     "stored": true,
+     "readonly": false,
+     "doc": "Samples (one per fixed tick), 2..1024."
+    },
+    {
+     "name": "width",
+     "type": "float",
+     "default": "0.2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Width at the head (tapers to 0 at the tail)."
+    },
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Tint."
+    },
+    {
+     "name": "color_ramp",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Colour along the trail, t = 0 at the head: \"t r g b a, ...\"."
+    },
+    {
+     "name": "energy",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Colour multiplier (HDR)."
+    },
+    {
+     "name": "blend",
+     "type": "enum",
+     "default": "ADD",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "ADD",
+      "ALPHA"
+     ],
+     "doc": "ADD or ALPHA (premultiplied)."
+    },
+    {
+     "name": "emitting",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Recording; off lets the tail shrink away."
+    }
+   ]
+  },
+  {
+   "name": "Decal3D",
+   "parent": "Node3D",
+   "doc": "A box-projected image on the scene's geometry (decals.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "size",
+     "type": "vec3",
+     "default": "vec3(1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Box size: x width, y height, z projection depth."
+    },
+    {
+     "name": "texture",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Image asset (empty = a soft round splat)."
+    },
+    {
+     "name": "region",
+     "type": "vec4",
+     "default": "vec4(0, 0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "x y w h in image pixels (0 = the whole image)."
+    },
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Tint; alpha = opacity."
+    },
+    {
+     "name": "energy",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "ADD: brightness."
+    },
+    {
+     "name": "blend",
+     "type": "enum",
+     "default": "MIX",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "MIX",
+      "MULTIPLY",
+      "ADD"
+     ],
+     "doc": "MIX (over, unlit), MULTIPLY (darkens, lit) or ADD (glow)."
+    },
+    {
+     "name": "normal_fade",
+     "type": "float",
+     "default": "0.2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Fade on surfaces turned away from the projection axis."
+    },
+    {
+     "name": "edge_fade",
+     "type": "float",
+     "default": "0.1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 0.5,
+     "doc": "Fraction of the depth fading out at the box ends."
+    },
+    {
+     "name": "priority",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Draw order (higher on top)."
+    }
+   ]
+  },
+  {
+   "name": "VisibilityManager",
+   "parent": "Node",
+   "doc": "Culling (BVH frustum, occlusion queries, portals), LOD and impostors for the tree's meshes (visibility.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "frustum_cull",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Frustum culling: a SIMD BVH4 over static meshes, a flat pass over the rest."
+    },
+    {
+     "name": "occlusion_cull",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "GPU occlusion queries on bounding boxes (one frame of latency, never pops)."
+    },
+    {
+     "name": "occlusion_wait",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Read every query result at the next frame, waiting if needed (same counts on every host)."
+    },
+    {
+     "name": "occlusion_margin",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Query boxes grow by this (plus 3 frames of camera motion)."
+    },
+    {
+     "name": "occlusion_interval",
+     "type": "int",
+     "default": "4",
+     "stored": true,
+     "readonly": false,
+     "doc": "Visible meshes are re-queried every this many frames (staggered)."
+    },
+    {
+     "name": "occlusion_requery_occluded",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Occluded meshes are re-queried every this many frames (1: every frame; more saves queries but shows disocclusion late)."
+    },
+    {
+     "name": "occlusion_guard",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Grow query boxes by the camera's motion and parallax over the latency, and trust no result while the camera brushes an occluder (off: plain one-frame-late queries, which pop)."
+    },
+    {
+     "name": "portals",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Room3D / Portal3D culling."
+    },
+    {
+     "name": "lod",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Pick LOD levels by screen-space error."
+    },
+    {
+     "name": "lod_error_px",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "LOD error budget in pixels."
+    },
+    {
+     "name": "impostors",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Draw far meshes with `impostor` set as octahedral impostors."
+    },
+    {
+     "name": "shadow_distance",
+     "type": "float",
+     "default": "50",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Shadow casters' boxes are swept this far along the light."
+    },
+    {
+     "name": "meshes",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "MeshInstance3D nodes considered last frame."
+    },
+    {
+     "name": "static_meshes",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Of those, static (in the BVH)."
+    },
+    {
+     "name": "visible",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Drawn (as a mesh or an impostor)."
+    },
+    {
+     "name": "frustum_culled",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Outside the view."
+    },
+    {
+     "name": "occlusion_culled",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Hidden behind what the scene drew."
+    },
+    {
+     "name": "portal_culled",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "In rooms the camera cannot see into."
+    },
+    {
+     "name": "distance_culled",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Past their visibility_range."
+    },
+    {
+     "name": "queries",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Occlusion queries issued."
+    },
+    {
+     "name": "query_latency",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Frames the last query result took."
+    },
+    {
+     "name": "lod_counts",
+     "type": "vec4",
+     "default": "vec4(0, 0, 0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "Meshes drawn at LOD 0, 1, 2, 3+."
+    },
+    {
+     "name": "impostors_drawn",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Meshes drawn as impostors only."
+    },
+    {
+     "name": "impostor_fading",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Impostors fading in over their mesh."
+    },
+    {
+     "name": "bvh_nodes",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "BVH nodes visited."
+    },
+    {
+     "name": "rooms_visible",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Rooms the camera sees into."
+    },
+    {
+     "name": "cull_ms",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "CPU milliseconds of the visibility pass."
+    }
+   ]
+  },
+  {
+   "name": "Room3D",
+   "parent": "Node3D",
+   "doc": "Interior space for portal culling: static meshes centred inside belong to it.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "extents",
+     "type": "vec3",
+     "default": "vec3(2, 2, 2)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Half sizes of the room's box."
+    }
+   ]
+  },
+  {
+   "name": "Portal3D",
+   "parent": "Node3D",
+   "doc": "An opening between two rooms (or a room and the outside).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "size",
+     "type": "vec2",
+     "default": "vec2(1, 2)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Opening width and height (the node's XY plane)."
+    },
+    {
+     "name": "enabled",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Open (false: a shut door blocks the view)."
+    }
+   ]
+  },
+  {
+   "name": "Trigger",
+   "parent": "Node",
+   "doc": "A data-driven rule: when `source` emits `signal`, do `action` on `target` (cartwheel/triggers.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "enabled",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "false = the rule never fires (another trigger may SET it true)."
+    },
+    {
+     "name": "source",
+     "type": "string",
+     "default": "\"..\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The node whose signal fires the rule, relative to the trigger (\"..\" = its parent)."
+    },
+    {
+     "name": "signal",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The source's signal (body_entered, pressed, animation_finished, ...)."
+    },
+    {
+     "name": "filter_group",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Fire only when the signal's first argument is a node in this group (empty = always)."
+    },
+    {
+     "name": "action",
+     "type": "enum",
+     "default": "SET",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "SET",
+      "CALL",
+      "EMIT",
+      "SPAWN",
+      "FREE",
+      "CHANGE_SCENE"
+     ],
+     "doc": "What happens: SET a property, CALL a method, EMIT a signal, SPAWN a scene, FREE the target, CHANGE_SCENE."
+    },
+    {
+     "name": "target",
+     "type": "string",
+     "default": "\"..\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The node acted on, relative to the trigger (\"..\" = its parent)."
+    },
+    {
+     "name": "member",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "SET: property; CALL: method; EMIT: signal; SPAWN: the new node's name (optional)."
+    },
+    {
+     "name": "value",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "SET: the value as scene text; CALL: one argument (empty = pass the signal's); SPAWN / CHANGE_SCENE: a scene path."
+    },
+    {
+     "name": "once",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Fire at most once."
+    },
+    {
+     "name": "fired",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "How many times the rule ran (not saved)."
+    }
+   ]
+  },
+  {
+   "name": "NetSynchronizer",
+   "parent": "Node",
+   "doc": "Replicates properties of root_path from its network authority to every other peer (cartwheel/net.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "root_path",
+     "type": "string",
+     "default": "\"..\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "path from this node to the node whose properties replicate"
+    },
+    {
+     "name": "properties",
+     "type": "string",
+     "default": "\"position\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "comma-separated property names"
+    },
+    {
+     "name": "interval",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "seconds between updates (0 = every poll)"
+    },
+    {
+     "name": "reliable",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "send on the reliable channel"
+    }
+   ]
+  },
+  {
+   "name": "NetSpawner",
+   "parent": "Node",
+   "doc": "Replicates creation and removal of spawn_path's children (listed scenes or types) from its authority (cartwheel/net.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "spawn_path",
+     "type": "string",
+     "default": "\"..\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "path from this node to the node whose children replicate"
+    },
+    {
+     "name": "spawnable",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "comma-separated scene paths (*.cwscene) or node type names"
+    },
+    {
+     "name": "spawn_properties",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "properties sent with each spawn"
+    }
+   ]
+  }
+ ]
+}

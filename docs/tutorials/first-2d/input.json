@@ -1,0 +1,13 @@
+[
+  { "frame": 10, "axes": { "ly": -1 } },
+  { "frame": 47, "axes": { "lx": 1 } },
+  { "frame": 107, "axes": { "lx": 1, "ly": 1 } },
+  { "frame": 122, "axes": { "lx": 1 } },
+  { "frame": 142, "axes": { "lx": 1, "ly": -1 } },
+  { "frame": 157, "axes": { "lx": 1 } },
+  { "frame": 218, "axes": { "ly": 1 } },
+  { "frame": 293, "axes": { "ly": -1 } },
+  { "frame": 307, "axes": { "lx": -1 } },
+  { "frame": 454, "axes": { "ly": 1 } },
+  { "frame": 470 }
+]

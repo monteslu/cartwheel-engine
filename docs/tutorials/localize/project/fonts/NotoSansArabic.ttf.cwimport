@@ -1,0 +1,2 @@
+# keep only the glyphs the catalogs use (cwpack)
+font.subset = l10n

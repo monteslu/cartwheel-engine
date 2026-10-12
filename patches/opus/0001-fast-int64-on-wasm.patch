@@ -1,0 +1,16 @@
+Opus: treat wasm as having native 64-bit integers (it does: i64 is a wasm
+value type). Without this, fixed-point Opus on wasm32 takes the 16x16-split
+multiply macros, which drop low-order terms and decode differently from
+every 64-bit native build; with it, carts decode bit-identically to native.
+
+--- a/celt/arch.h	2026-10-05 16:59:32.203041186 -0700
++++ b/celt/arch.h	2026-10-05 16:59:32.204050781 -0700
+@@ -109,7 +109,7 @@
+ /* Set this if opus_int64 is a native type of the CPU. */
+ /* Assume that all LP64 architectures have fast 64-bit types; also x86_64
+    (which can be ILP32 for x32) and Win64 (which is LLP64). */
+-#if defined(__x86_64__) || defined(__LP64__) || defined(_WIN64)
++#if defined(__x86_64__) || defined(__LP64__) || defined(_WIN64) || defined(__wasm__)
+ #define OPUS_FAST_INT64 1
+ #else
+ #define OPUS_FAST_INT64 0

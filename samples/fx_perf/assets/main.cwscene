@@ -1,0 +1,120 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.02, 0.025, 0.04, 1)
+ambient_energy = 0.05
+hemi_energy = 0.2
+
+[node name="Post" parent="." type="PostProcess"]
+bloom = true
+bloom_intensity = 0.06
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+rotation = vec3(-0.9, 0.5, 0)
+energy = 2
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 6, 15)
+rotation = vec3(-0.36, 0, 0)
+fov = 55
+near = 0.1
+far = 200
+
+[node name="Ground" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.1, 0)
+size = vec3(40, 0.2, 30)
+color = color(0.16, 0.15, 0.14, 1)
+
+[node name="Block" parent="." type="MeshInstance3D"]
+position = vec3(-4, 0.75, 0)
+size = vec3(3, 1.5, 3)
+color = color(0.45, 0.35, 0.3, 1)
+
+[node name="Dome" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(4, 0, -1)
+size = vec3(4, 4, 4)
+color = color(0.35, 0.4, 0.45, 1)
+
+[node name="Fountains" parent="." type="GPUParticles3D"]
+position = vec3(-4, 1.6, 0)
+amount = 40000
+lifetime = 3
+emission_shape = SPHERE
+emission_radius = 0.3
+spread = 25
+speed_min = 6
+speed_max = 9
+gravity = vec3(0, -9.8, 0)
+collide_depth = true
+depth_thickness = 0.8
+bounce = 0.4
+friction = 0.2
+size = 0.05
+color_ramp = "0 0.3 0.6 1 0, 0.05 0.4 0.7 1 1, 1 0.8 0.9 1 0"
+energy = 1.2
+seed = 1
+
+[node name="Sparks" parent="." type="GPUParticles3D"]
+position = vec3(4, 2.5, -1)
+amount = 30000
+lifetime = 1.5
+emission_shape = SPHERE_SURFACE
+emission_radius = 2.1
+emission_normal_speed = 4
+speed_min = 0
+speed_max = 1
+gravity = vec3(0, -4, 0)
+damping = 0.5
+turbulence = 3
+turbulence_scale = 0.4
+draw_mode = STRETCHED
+stretch = 0.04
+size = 0.03
+color_ramp = "0 1 0.9 0.6 1, 0.5 1 0.5 0.1 1, 1 0.5 0.1 0.05 0"
+energy = 4
+seed = 2
+
+[node name="Smoke" parent="." type="GPUParticles3D"]
+position = vec3(0, 0.5, -4)
+amount = 20000
+lifetime = 5
+emission_shape = BOX
+emission_extents = vec3(5, 0.2, 1)
+spread = 15
+speed_min = 0.5
+speed_max = 1
+gravity = vec3(0, 0.3, 0)
+turbulence = 1.5
+turbulence_scale = 0.3
+blend = ALPHA
+sort = true
+soft_distance = 0.5
+size = 0.6
+size_curve = "0 0.4, 1 1.5"
+color_ramp = "0 0.4 0.4 0.45 0, 0.2 0.35 0.35 0.4 0.25, 1 0.25 0.25 0.3 0"
+seed = 3
+
+[node name="Swarm" parent="." type="GPUParticles3D"]
+position = vec3(0, 4, 2)
+amount = 10000
+lifetime = 4
+emission_shape = SPHERE
+emission_radius = 3
+spread = 180
+speed_min = 0.5
+speed_max = 1.5
+gravity = vec3(0, 0, 0)
+damping = 0.1
+size = 0.04
+color_ramp = "0 1 0.5 1 0, 0.2 1 0.6 1 1, 1 0.4 0.3 1 0"
+energy = 3
+seed = 4
+
+[node name="Pull" parent="." type="ParticleAttractor3D"]
+position = vec3(0, 4, 2)
+strength = 3
+radius = 6
+attenuation = 0.5

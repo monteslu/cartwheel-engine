@@ -1,0 +1,175 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 3.4, 6.2)
+rotation = vec3(-0.5, 0, 0)
+fov = 55
+near = 0.1
+far = 60
+
+[node name="Rain" parent="." type="GPUParticles3D"]
+position = vec3(-0.2, 1.8, 0)
+amount = 2000
+lifetime = 3
+emission_shape = BOX
+emission_extents = vec3(0.6, 0.05, 0.6)
+spread = 0
+speed_min = 0
+speed_max = 0
+gravity = vec3(0, -9.8, 0)
+collide_depth = true
+depth_thickness = 0.4
+bounce = 0.25
+friction = 0.6
+collision_radius = 0.02
+size = 0.05
+color_ramp = "0 0.4 0.8 1 1, 1 0.9 0.9 1 1"
+trail_length = 8
+trail_width = 0.03
+seed = 4
+gpu_stats = true
+
+[node name="Fountain" parent="." type="GPUParticles3D"]
+position = vec3(-2.6, 0.2, 1.2)
+amount = 1500
+lifetime = 2
+emission_shape = SPHERE
+emission_radius = 0.15
+direction = vec3(0, 1, 0)
+spread = 20
+speed_min = 3.5
+speed_max = 4.5
+gravity = vec3(0, -9.8, 0)
+bounce = 0.5
+friction = 0.2
+collision_radius = 0.03
+size = 0.07
+color_ramp = "0 0.3 0.6 1 1, 1 0.1 0.3 0.9 0"
+trail_length = 10
+trail_width = 0.025
+seed = 11
+gpu_stats = true
+
+[node name="FountainBall" parent="." type="ParticleCollider3D"]
+position = vec3(-2.4, 2.0, 1.2)
+shape = SPHERE
+radius = 0.35
+
+[node name="Floor" parent="." type="ParticleCollider3D"]
+position = vec3(0, 0, 0)
+shape = PLANE
+
+[node name="Smoke" parent="." type="GPUParticles3D"]
+position = vec3(2.6, 0.2, 0.2)
+amount = 1000
+lifetime = 4
+emission_shape = SPHERE
+emission_radius = 0.3
+direction = vec3(0, 1, 0)
+spread = 25
+speed_min = 0.4
+speed_max = 0.8
+gravity = vec3(0, 0.15, 0)
+damping = 0.3
+turbulence = 1.2
+turbulence_scale = 0.6
+turbulence_speed = 0.3
+size = 0.6
+size_random = 0.3
+size_curve = "0 0.3, 0.3 1, 1 1.6"
+color = color(0.31855, 0.31855, 0.38006, 1)
+color_ramp = "0 1 1 1 0, 0.15 1 1 1 0.5, 1 1 1 1 0"
+blend = ALPHA
+sort = true
+soft_distance = 0.4
+spin = 0.5
+seed = 21
+gpu_stats = true
+
+[node name="Debris" parent="." type="GPUParticles3D"]
+position = vec3(1.6, 1.6, -1.6)
+amount = 300
+lifetime = 2.5
+explosiveness = 0.6
+emission_shape = POINT
+direction = vec3(0, 1, 0)
+spread = 60
+speed_min = 2
+speed_max = 4
+gravity = vec3(0, -9.8, 0)
+bounce = 0.4
+friction = 0.3
+collision_radius = 0.05
+draw_mode = MESH
+mesh_primitive = BOX
+size = 0.12
+spin = 4
+color = color(0.60383, 0.26327, 0.07324, 1)
+blend = OPAQUE
+seed = 31
+gpu_stats = true
+
+[node name="Swirl" parent="." type="GPUParticles3D"]
+position = vec3(-1.6, 1.2, -2.2)
+amount = 1200
+lifetime = 3
+emission_shape = RING
+emission_radius = 1.2
+emission_inner_radius = 1.0
+direction = vec3(0, 1, 0)
+spread = 10
+speed_min = 0.2
+speed_max = 0.4
+gravity = vec3(0, 0, 0)
+damping = 0.2
+draw_mode = STRETCHED
+stretch = 0.15
+size = 0.05
+color = color(1, 0.21404, 0.78741, 1)
+energy = 1.0
+seed = 41
+gpu_stats = true
+
+[node name="Pull" parent="." type="ParticleAttractor3D"]
+position = vec3(-1.6, 1.6, -2.2)
+strength = 6
+radius = 3
+attenuation = 1
+
+[node name="Orbiter" parent="." type="Node3D"]
+position = vec3(2.5, 1.2, 1.5)
+
+[node name="Ribbon" parent="Orbiter" type="Trail3D"]
+length = 40
+width = 0.15
+color_ramp = "0 1 0.9 0.4 1, 1 1 0.2 0.1 0"
+
+[node name="DecalTop" parent="." type="Decal3D"]
+position = vec3(0.4, 1.0, 0.5)
+rotation = vec3(-1.5708, 0, 0)
+size = vec3(1.0, 1.0, 0.6)
+color = color(0.78741, 0.0331, 0.0331, 1)
+blend = MIX
+
+[node name="DecalBump" parent="." type="Decal3D"]
+position = vec3(0.0, 1.1, -0.7)
+rotation = vec3(-1.5708, 0, 0)
+size = vec3(1.2, 1.2, 1.0)
+color = color(0.01002, 0.01002, 0.01002, 0.8)
+blend = MULTIPLY
+
+[node name="DecalFloor" parent="." type="Decal3D"]
+position = vec3(-1.4, 0.0, 2.0)
+rotation = vec3(-1.5708, 0, 0)
+size = vec3(1.6, 1.6, 0.5)
+color = color(0.07324, 0.60383, 1, 1)
+energy = 2
+blend = ADD
+
+[node name="DecalWall" parent="." type="Decal3D"]
+position = vec3(0, 0.5, 1.0)
+size = vec3(0.8, 0.6, 0.4)
+color = color(1, 0.78741, 0.0331, 1)
+blend = MIX

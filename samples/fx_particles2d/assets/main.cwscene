@@ -1,0 +1,84 @@
+[scene format=1]
+
+[node name="Stage" type="Node2D"]
+
+[node name="Settings" parent="." type="CanvasSettings"]
+clear_color = color(0.06, 0.07, 0.1, 1)
+
+[node name="Ground" parent="." type="Polygon2D"]
+polygon = "0 300, 640 300, 640 360, 0 360"
+color = color(0.2, 0.18, 0.16, 1)
+
+[node name="Fire" parent="." type="GPUParticles2D"]
+position = vec2(140, 296)
+amount = 900
+lifetime = 1.1
+lifetime_random = 0.4
+emission_shape = RECT
+emission_extents = vec2(26, 4)
+direction = -90
+spread = 12
+speed_min = 60
+speed_max = 130
+gravity = vec2(0, -60)
+damping = 0.5
+size = 26
+size_random = 0.4
+size_curve = "0 0.6, 0.4 1, 1 0.1"
+color_ramp = "0 1 0.9 0.5 0, 0.1 1 0.7 0.2 0.9, 0.6 0.9 0.25 0.05 0.6, 1 0.3 0.05 0.02 0"
+blend = ADD
+seed = 3
+
+[node name="Snow" parent="." type="GPUParticles2D"]
+position = vec2(320, -10)
+amount = 600
+lifetime = 6
+emission_shape = RECT
+emission_extents = vec2(340, 4)
+direction = 90
+spread = 15
+speed_min = 30
+speed_max = 60
+gravity = vec2(6, 4)
+size = 5
+size_random = 0.5
+color = color(0.9, 0.95, 1, 0.85)
+seed = 8
+
+[node name="Burst" parent="." type="GPUParticles2D"]
+position = vec2(470, 170)
+amount = 400
+lifetime = 1.6
+explosiveness = 1
+one_shot = true
+emission_shape = CIRCLE
+emission_radius = 6
+direction = 0
+spread = 180
+speed_min = 80
+speed_max = 220
+gravity = vec2(0, 160)
+damping = 0.8
+size = 6
+size_curve = "0 1, 1 0.2"
+color_ramp = "0 0.6 1 0.5 1, 1 0.2 0.5 1 0"
+blend = ADD
+spin = 3
+seed = 12
+
+[node name="Orbit" parent="." type="Node2D"]
+position = vec2(330, 160)
+
+[node name="Comet" parent="Orbit" type="GPUParticles2D"]
+amount = 300
+lifetime = 0.8
+emission_shape = POINT
+spread = 180
+speed_min = 5
+speed_max = 25
+gravity = vec2(0, 0)
+size = 10
+size_curve = "0 1, 1 0"
+color_ramp = "0 1 0.5 1 1, 1 0.3 0.4 1 0"
+blend = ADD
+seed = 5

@@ -1,0 +1,14 @@
+@locale = en
+@name = English
+
+caption.coin = [a coin chimes]
+caption.intro = Collect as many coins as you can.
+caption.speaker.narrator = Narrator
+
+# {n} is the number of coins, formatted for the locale
+hud.coins[one] = {n} coin
+hud.coins[other] = {n} coins
+hud.hint = South button: collect a coin. East button: change the language. North button: larger text.
+# {name} is the language's own name (English, العربية, 日本語)
+hud.language = Language: {name}
+hud.title = Coin Counter

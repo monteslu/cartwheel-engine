@@ -1,0 +1,10 @@
+/* generated from tests/platformer2d-input.json (keep in sync; see main.c) */
+  { 20, 0u, 1.0f, 0.0f },
+  { 100, 1u, 1.0f, 0.0f },
+  { 110, 0u, 1.0f, 0.0f },
+  { 262, 1u, 1.0f, 0.0f },
+  { 272, 0u, 1.0f, 0.0f },
+  { 720, 1u, 0.0f, 0.0f },
+  { 730, 0u, 0.0f, 0.0f },
+  { 760, 0u, -1.0f, 0.0f },
+  { 800, 0u, 0.0f, 0.0f },

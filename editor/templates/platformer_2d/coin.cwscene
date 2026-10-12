@@ -1,0 +1,13 @@
+[scene format=1]
+
+[node name="Coin" type="Area2D" groups="coins"]
+collision_layer = 2
+collision_mask = 2
+
+[node name="Shape" parent="." type="CollisionShape2D"]
+shape = CIRCLE
+radius = 6
+
+[node name="Look" parent="." type="Polygon2D"]
+polygon = "0 -6, 5 0, 0 6, -5 0"
+color = color(1, 0.84, 0.2, 1)

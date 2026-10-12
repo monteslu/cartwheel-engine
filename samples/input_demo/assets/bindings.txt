@@ -1,0 +1,13 @@
+# input_demo default bindings (cartwheel/input.h has the format).
+# touch:0 is the on-screen stick, touch:1 the on-screen button.
+jump = pad:south, key:space, mouse:left, touch:1
+fire = axis:rt+@0.5, pad:west, key:j, mouse:right
+left = axis:lx-, pad:left, key:a, key:left, touch:0.left
+right = axis:lx+, pad:right, key:d, key:right, touch:0.right
+up = axis:ly-, pad:up, key:w, key:up, touch:0.up
+down = axis:ly+, pad:down, key:s, key:down, touch:0.down
+zoom_in = wheel:up
+zoom_out = wheel:down
+verify = pad:start, key:return
+rebind = pad:north, key:tab
+special =

@@ -1,0 +1,5 @@
+[scene format=1]
+
+[node name="Spark" type="Polygon2D"]
+polygon = "-4 -20, 4 -20, 4 -28, -4 -28"
+color = color(1, 1, 0.5, 1)

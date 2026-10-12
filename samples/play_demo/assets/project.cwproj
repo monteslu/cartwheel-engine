@@ -1,0 +1,10 @@
+# play_demo: the project the editor's play-in-editor gate (tests/editor-play.mjs)
+# opens. Its scenes use engine node types only, so the editor opens them;
+# the game (samples/play_demo/main.c) adds the HUD logic.
+name = Play Demo
+main_scene = main.cwscene
+scenes = main.cwscene, tower.cwscene
+# the game the editor launches: a build target of this repository
+# (native: <build>/samples/play_demo, cart: <build>/carts/play_demo.wasc);
+# game_exe / game_cart name the files directly (relative to this directory)
+game_app = play_demo

@@ -1,0 +1,11 @@
+# A cartwheel plugin (cartwheel/plugin.h).
+name = turntable
+title = Turntable
+version = 1.0.0
+engine_api = 1.0
+kind = both
+runtime_sources = runtime
+editor_sources = editor
+provides = Turntable
+description = A Turntable node type that spins its children, a `turntables` debug command, and editor tools for it: a speed inspector, a radius gizmo and a Turntables panel.
+enabled = true

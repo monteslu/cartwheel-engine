@@ -1,0 +1,94 @@
+[scene format=1]
+
+[node name="Stage" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+ambient_energy = 0
+hemi_energy = 0
+
+[node name="Post" parent="." type="PostProcess"]
+tonemap = AGX
+bloom = true
+bloom_intensity = 0.04
+taa = true
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 16.5
+latitude = 40
+declination = 15
+north = 20
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+shadow_size = 2048
+shadow_extent = 10
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 2.6, 9)
+rotation = vec3(-0.16, 0, 0)
+fov = 50
+near = 0.1
+far = 300
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.1, 0)
+size = vec3(40, 0.2, 40)
+color = color(0.18, 0.17, 0.15, 1)
+roughness = 0.6
+receive_shadow = true
+
+[node name="Plain" parent="." type="MeshInstance3D"]
+position = vec3(-5, 1, 0)
+primitive = SPHERE
+size = vec3(1.8, 1.8, 1.8)
+color = color(0.55, 0.03, 0.02, 1)
+roughness = 0.45
+cast_shadow = true
+receive_shadow = true
+
+[node name="CarPaint" parent="." type="MeshInstance3D"]
+position = vec3(-2.5, 1, 0)
+primitive = SPHERE
+size = vec3(1.8, 1.8, 1.8)
+color = color(0.55, 0.03, 0.02, 1)
+roughness = 0.45
+clearcoat = 1
+clearcoat_roughness = 0.03
+cast_shadow = true
+receive_shadow = true
+
+[node name="Velvet" parent="." type="MeshInstance3D"]
+position = vec3(0, 1, 0)
+primitive = SPHERE
+size = vec3(1.8, 1.8, 1.8)
+color = color(0.05, 0.02, 0.12, 1)
+roughness = 0.9
+sheen = 1
+sheen_color = color(0.6, 0.35, 0.9, 1)
+sheen_roughness = 0.35
+cast_shadow = true
+receive_shadow = true
+
+[node name="Beetle" parent="." type="MeshInstance3D"]
+position = vec3(2.5, 1, 0)
+primitive = SPHERE
+size = vec3(1.8, 1.8, 1.8)
+color = color(0.02, 0.06, 0.03, 1)
+roughness = 0.2
+metalness = 0.6
+iridescence = 1
+iridescence_ior = 1.6
+cast_shadow = true
+receive_shadow = true
+
+[node name="Brushed" parent="." type="MeshInstance3D"]
+position = vec3(5, 1, 0)
+primitive = SPHERE
+size = vec3(1.8, 1.8, 1.8)
+color = color(0.9, 0.88, 0.85, 1)
+roughness = 0.3
+metalness = 1
+anisotropy = 0.8
+cast_shadow = true
+receive_shadow = true

@@ -1,0 +1,17 @@
+# B3_BLOCK_EXPONENT is overridable like B3_MAX_WORLDS: small-RAM targets want
+# finer allocator blocks.
+diff --git a/src/block_allocator.h b/src/block_allocator.h
+index e9922d0..1116332 100644
+--- a/src/block_allocator.h
++++ b/src/block_allocator.h
+@@ -7,7 +7,10 @@
+ 
+ #include "box3d/base.h"
+ 
++// Overridable like B3_MAX_WORLDS: small-RAM targets want finer blocks
++#ifndef B3_BLOCK_EXPONENT
+ #define B3_BLOCK_EXPONENT 8
++#endif
+ #define B3_BLOCK_SIZE ( 1 << B3_BLOCK_EXPONENT )
+ 
+ typedef struct b3Block

@@ -1,0 +1,17 @@
+@locale = ar
+@name = العربية
+@font = fonts/NotoSansArabic.ttf
+
+caption.coin = [رنين عملة]
+caption.intro = اجمع أكبر عدد ممكن من العملات.
+caption.speaker.narrator = الراوي
+
+hud.coins[zero] = لا عملات
+hud.coins[one] = عملة واحدة
+hud.coins[two] = عملتان
+hud.coins[few] = {n} عملات
+hud.coins[many] = {n} عملة
+hud.coins[other] = {n} عملة
+hud.hint = الزر السفلي: اجمع عملة. الزر الأيمن: غيّر اللغة. الزر العلوي: نص أكبر.
+hud.language = اللغة: {name}
+hud.title = عداد العملات

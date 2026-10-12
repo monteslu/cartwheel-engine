@@ -1,0 +1,36 @@
+Bidi: resolve paired brackets to the direction of the run they open in
+
+Two bugs made a closing bracket ignore its opening bracket in a right-to-left
+paragraph (UAX #9 N0), so "[a coin chimes]" after an RLM drew as
+"a coin chimes]]":
+
+1. kbts__DoBreak records the last direction break (position, direction) only
+   inside a branch guarded by that same record being non-zero, so it is
+   never recorded and no bracket is ever resolved from the breaks; a closing
+   bracket fell back to the direction of the last strong character (the
+   left-to-right text inside the brackets).
+2. kbts__BreakAddCodepoint maps the opening bracket's direction to a bidi
+   class (L or R) for the closing bracket, then overwrites it with
+   FoundBracket->Direction, a kbts_direction (DONT_KNOW 0, LTR 1, RTL 2)
+   read as a bidi class (NI 0, BN 1, L 2): RTL became L.
+
+--- a/kb_text_shape.h
++++ b/kb_text_shape.h
+@@ -29330,8 +29330,7 @@
+       State->LastScriptBreakScript = (kbts_u8)Script;
+     }
+ 
+-    if((Flags & KBTS_BREAK_FLAG_DIRECTION) &&
+-       (State->LastDirectionBreakDirection))
++    if(Flags & KBTS_BREAK_FLAG_DIRECTION)
+     {
+       kbts_un LastDirectionBreakPosition = State->LastDirectionBreakPosition;
+       kbts_u8 LastDirectionBreakDirection = State->LastDirectionBreakDirection;
+@@ -29652,7 +29651,6 @@
+           BidirectionalClass = KBTS_UNICODE_BIDIRECTIONAL_CLASS_R;
+         }
+ 
+-        BidirectionalClass = FoundBracket->Direction;
+         CodepointScriptCount = 1;
+         CodepointScriptOffset = BracketScript;
+ 

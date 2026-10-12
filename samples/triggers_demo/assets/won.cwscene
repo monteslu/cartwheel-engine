@@ -1,0 +1,12 @@
+[scene format=1]
+
+[node name="Won" type="Node2D"]
+
+[node name="Settings" parent="." type="CanvasSettings"]
+virtual_width = 320
+virtual_height = 180
+clear_color = color(0.1, 0.3, 0.15, 1)
+
+[node name="Banner" parent="." type="Polygon2D"]
+polygon = "60 70, 260 70, 260 110, 60 110"
+color = color(0.9, 0.95, 0.9, 1)

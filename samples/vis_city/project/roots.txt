@@ -1,0 +1,5 @@
+# vis_city / vis_impostor: what cwpack packs. The tree is generated (CC0) by
+# gen.mjs; cwpack simplifies it into LODs.
+set mesh.compress true
+set mesh.lods 0.5 0.25 0.1
+models/tree.glb

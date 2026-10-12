@@ -1,0 +1,84 @@
+/* State shared by the input module's files. */
+#ifndef CW_INPUT_INTERNAL_H
+#define CW_INPUT_INTERNAL_H
+
+#include "cartwheel/input.h"
+
+enum { CW__PRESSED = 1, CW__JUST_PRESSED = 2, CW__JUST_RELEASED = 4 };
+
+/* One action for one player in one snapshot: flags + raw strength in
+ * 1/32767 steps. Everything a query returns derives from these 3 bytes. */
+typedef struct cw__slot {
+  uint8_t flags;
+  int16_t raw;
+} cw__slot;
+typedef struct cw__snapshot {
+  cw__slot s[CW_INPUT_MAX_PLAYERS][CW_INPUT_MAX_ACTIONS];
+} cw__snapshot;
+
+typedef struct cw__action_def {
+  const char *name; /* interned */
+  float deadzone;
+  int16_t dz_q;
+  int nbind;
+  cw_binding bind[CW_INPUT_MAX_BINDINGS];
+} cw__action_def;
+
+typedef struct cw__touch_control {
+  bool stick, floating;
+  float x, y, w, h, radius;
+  /* frame state */
+  bool active, tapped;
+  cw_vec2 value, center;
+} cw__touch_control;
+
+typedef struct cw__input_state {
+  bool init;
+  cw__action_def actions[CW_INPUT_MAX_ACTIONS];
+  int count;
+  cw__action_def defaults[CW_INPUT_MAX_ACTIONS];
+  int default_count;
+  int pad[CW_INPUT_MAX_PLAYERS];
+  uint32_t devices[CW_INPUT_MAX_PLAYERS];
+  /* snapshots */
+  cw__snapshot frame, tick_live, tick_replay;
+  const cw__snapshot *tick; /* what tick-context queries read */
+  bool frame_held[CW_INPUT_MAX_PLAYERS][CW_INPUT_MAX_ACTIONS];
+  bool pend_jp[CW_INPUT_MAX_PLAYERS][CW_INPUT_MAX_ACTIONS]; /* a press since the last tick */
+  int16_t pend_peak[CW_INPUT_MAX_PLAYERS][CW_INPUT_MAX_ACTIONS];
+  cw_input_context ctx;
+  cw_raw_input prev_raw;
+  /* touch */
+  cw__touch_control controls[CW_INPUT_MAX_TOUCH_CONTROLS];
+  int ncontrols;
+  int8_t touch_owner[CW_MAX_TOUCHES];
+  bool touch_prev_active[CW_MAX_TOUCHES];
+  /* capture */
+  struct {
+    bool on, done, pad;
+    int player;
+    uint32_t devices;
+    cw_binding result;
+  } capture;
+  /* bindings changed */
+  cw_bindings_changed_fn changed_fn;
+  void *changed_user;
+  /* stream */
+  uint32_t stream_hash, stream_ticks;
+} cw__input_state;
+
+extern cw__input_state cw__in;
+
+void cw__input_ensure_init(void);
+void cw__input_changed(void);
+bool cw__action_bind_quiet(cw_action a, cw_binding b);
+int16_t cw__input_quant(float v);
+uint32_t cw__snapshot_hash(const cw__snapshot *s, int count, uint32_t h);
+
+/* replay.c */
+void cw__input_register_commands(void); /* the debug channel's record command */
+void cw__input_record_tick(const cw__snapshot *s);
+bool cw__input_replay_next(void); /* fills cw__in.tick_replay; false when no replay is running */
+void cw__input_replay_free(void);
+
+#endif

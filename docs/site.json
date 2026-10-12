@@ -1,0 +1,70 @@
+{
+  "name": "cartwheel",
+  "tagline": "A 2D + 3D game engine in C that agents build with and humans direct. Native everywhere, and a cart that runs in any browser.",
+  "note": "The name is a working name. It appears only here; pages write {{name}}.",
+  "sections": [
+    {
+      "title": "Start here",
+      "guides": [
+        "overview",
+        "getting-started",
+        "agent-workflow",
+        "architecture",
+        "templates"
+      ]
+    },
+    {
+      "title": "Engine modules",
+      "guides": [
+        "core",
+        "app-platform",
+        "scenes",
+        "resources",
+        "input",
+        "physics",
+        "rendering-3d",
+        "rendering-2d",
+        "ui",
+        "animation",
+        "audio",
+        "networking",
+        "l10n-a11y",
+        "triggers",
+        "debug-channel",
+        "plugins"
+      ]
+    },
+    {
+      "title": "Editor",
+      "guides": [
+        "editor"
+      ]
+    },
+    {
+      "title": "Shipping and testing",
+      "guides": [
+        "export",
+        "profiling",
+        "testing"
+      ]
+    },
+    {
+      "title": "Coming from elsewhere",
+      "guides": [
+        "porting-from-godot"
+      ]
+    },
+    {
+      "title": "Contributing",
+      "guides": [
+        "conventions",
+        "authoring"
+      ]
+    }
+  ],
+  "files": {
+    "export": "docs/export.md",
+    "conventions": "docs/CONVENTIONS.md",
+    "authoring": "docs/AUTHORING.md"
+  }
+}

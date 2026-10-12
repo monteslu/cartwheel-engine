@@ -1,0 +1,130 @@
+[scene format=1]
+
+[node name="Editor" type="Panel"]
+anchor_right = 1
+anchor_bottom = 1
+theme = "themes/editor.theme"
+
+[node name="Layout" parent="." type="VBoxContainer"]
+anchor_right = 1
+anchor_bottom = 1
+theme_overrides = "separation = 0"
+
+[node name="Top" parent="Layout" type="PanelContainer"]
+theme_overrides = "panel = style(bg=#23272f, border=0 0 0 1, border_color=#3a404c, margin=6 2)"
+
+[node name="TopRow" parent="Layout/Top" type="HBoxContainer"]
+
+[node name="Menu" parent="Layout/Top/TopRow" type="MenuBar"]
+
+[node name="Scene" parent="Layout/Top/TopRow/Menu" type="PopupMenu"]
+items = "New Scene|1\nOpen Scene...|2\nRecent>Recent\n-\nSave|3\nSave As...|4\n-\nQuit|9"
+
+[node name="Recent" parent="Layout/Top/TopRow/Menu/Scene" type="PopupMenu"]
+items = "editor.cwscene|20\ngallery.cwscene|21"
+
+[node name="Edit" parent="Layout/Top/TopRow/Menu" type="PopupMenu"]
+items = "Undo|30\nRedo|31\n-\nCut|32\nCopy|33\nPaste|34\n-\n[x]Snap|35"
+
+[node name="Project" parent="Layout/Top/TopRow/Menu" type="PopupMenu"]
+items = "Settings...|40\nExport...|41"
+
+[node name="Help" parent="Layout/Top/TopRow/Menu" type="PopupMenu"]
+items = "Docs|50\nAbout|51"
+
+[node name="Spacer" parent="Layout/Top/TopRow" type="Control"]
+size_flags_horizontal = 3
+
+[node name="Play" parent="Layout/Top/TopRow" type="Button"]
+text = "Play"
+tooltip_text = "Run the project (F5)"
+
+[node name="Pause" parent="Layout/Top/TopRow" type="Button"]
+text = "Pause"
+toggle_mode = true
+
+[node name="Stop" parent="Layout/Top/TopRow" type="Button"]
+text = "Stop"
+disabled = true
+
+[node name="Spacer2" parent="Layout/Top/TopRow" type="Control"]
+size_flags_horizontal = 3
+
+[node name="Renderer" parent="Layout/Top/TopRow" type="OptionButton"]
+items = "Forward+\nMobile\nCompatibility"
+selected = 0
+
+[node name="Body" parent="Layout" type="MarginContainer"]
+size_flags_vertical = 3
+theme_overrides = "margin_left = 6; margin_top = 6; margin_right = 6; margin_bottom = 6"
+
+[node name="Main" parent="Layout/Body" type="HSplitContainer"]
+size_flags_vertical = 3
+split_offset = 40
+
+[node name="Docks" parent="Layout/Body/Main" type="VSplitContainer"]
+custom_minimum_size = vec2(220, 0)
+
+[node name="ScenePanel" parent="Layout/Body/Main/Docks" type="VBoxContainer"]
+size_flags_vertical = 3
+
+[node name="SceneTitle" parent="Layout/Body/Main/Docks/ScenePanel" type="Label"]
+text = "Scene"
+theme_overrides = "font_color = #949cab"
+
+[node name="Filter" parent="Layout/Body/Main/Docks/ScenePanel" type="LineEdit"]
+placeholder_text = "Filter nodes"
+
+[node name="SceneTree" parent="Layout/Body/Main/Docks/ScenePanel" type="Tree"]
+size_flags_vertical = 3
+columns = 2
+hide_root = true
+
+[node name="FilesPanel" parent="Layout/Body/Main/Docks" type="VBoxContainer"]
+size_flags_vertical = 3
+
+[node name="FilesTitle" parent="Layout/Body/Main/Docks/FilesPanel" type="Label"]
+text = "FileSystem"
+theme_overrides = "font_color = #949cab"
+
+[node name="Files" parent="Layout/Body/Main/Docks/FilesPanel" type="ItemList"]
+size_flags_vertical = 3
+items = "res://\nscenes/editor.cwscene\nscenes/gallery.cwscene\nthemes/editor.theme\nimages/sheet.png\nfonts/FiraSans-Bold.ttf\nsrc/main.c\nsrc/player.c\nsrc/enemy.c"
+
+[node name="Right" parent="Layout/Body/Main" type="HSplitContainer"]
+size_flags_horizontal = 3
+split_offset = -30
+
+[node name="Center" parent="Layout/Body/Main/Right" type="TabContainer"]
+size_flags_horizontal = 3
+
+[node name="player.c" parent="Layout/Body/Main/Right/Center" type="TextEdit"]
+show_line_numbers = true
+syntax_highlighting = 1
+
+[node name="Viewport" parent="Layout/Body/Main/Right/Center" type="Panel"]
+
+[node name="Inspector" parent="Layout/Body/Main/Right" type="VBoxContainer"]
+custom_minimum_size = vec2(290, 0)
+
+[node name="InspectorTitle" parent="Layout/Body/Main/Right/Inspector" type="Label"]
+text = "Inspector"
+theme_overrides = "font_color = #949cab"
+
+[node name="Selected" parent="Layout/Body/Main/Right/Inspector" type="Label"]
+text = "(nothing selected)"
+ellipsis = true
+
+[node name="Scroll" parent="Layout/Body/Main/Right/Inspector" type="ScrollContainer"]
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Props" parent="Layout/Body/Main/Right/Inspector/Scroll" type="VBoxContainer"]
+size_flags_horizontal = 3
+
+[node name="Status" parent="Layout" type="PanelContainer"]
+theme_overrides = "panel = style(bg=#1b1e24, border=0 1 0 0, border_color=#3a404c, margin=8 3)"
+
+[node name="StatusText" parent="Layout/Status" type="Label"]
+text = "Ready"
+theme_overrides = "font_size = 12; font_color = #949cab"

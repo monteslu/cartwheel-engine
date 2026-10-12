@@ -1,0 +1,16 @@
+[scene format=1]
+
+[node name="Crate" type="RigidBody3D" groups="crates"]
+collision_layer_name = "props"
+collision_mask_names = "world|player|props"
+density = 50
+
+[node name="Shape" parent="." type="CollisionShape3D"]
+shape = BOX
+size = vec3(0.8, 0.8, 0.8)
+
+[node name="Mesh" parent="." type="MeshInstance3D"]
+size = vec3(0.8, 0.8, 0.8)
+color = color(0.52252, 0.21404, 0.05088, 1)
+cast_shadow = true
+receive_shadow = true

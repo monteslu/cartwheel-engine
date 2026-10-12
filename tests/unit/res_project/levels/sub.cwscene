@@ -1,0 +1,4 @@
+[scene format=1]
+
+[node name="Crate" type="MeshInstance3D"]
+mesh = res(0xf1d901580182c198)

@@ -1,0 +1,446 @@
+[scene format=1]
+
+[node name="Lab" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.0331, 0.03968, 0.06372, 1)
+ambient_energy = 0.94248
+hemi_energy = 0.94248
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 3, 12)
+rotation = vec3(-0.12, 0, 0)
+fov = 55
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(3, 8, 6)
+rotation = vec3(-0.9, 0.3, 0)
+energy = 3.76991
+
+[node name="Floor" parent="." type="StaticBody3D"]
+position = vec3(0, -0.5, 0)
+
+[node name="Shape" parent="Floor" type="CollisionShape3D"]
+size = vec3(30, 1, 10)
+
+[node name="Mesh" parent="Floor" type="MeshInstance3D"]
+size = vec3(30, 1, 10)
+color = color(0.07324, 0.08354, 0.10654, 1)
+
+[node name="Door" parent="." type="RigidBody3D"]
+position = vec3(-8, 1.1, 0)
+density = 5
+
+[node name="Shape" parent="Door" type="CollisionShape3D"]
+shape = BOX
+size = vec3(0.1, 2, 1.2)
+
+[node name="Mesh" parent="Door" type="MeshInstance3D"]
+primitive = BOX
+size = vec3(0.1, 2, 1.2)
+color = color(0.44799, 0.21404, 0.07324, 1)
+
+[node name="DoorHinge" parent="." type="Joint3D"]
+joint_type = HINGE
+position = vec3(-8, 1.1, -0.6)
+rotation = vec3(-1.5707963, 0, 0)
+node_a = ""
+node_b = "../Door"
+motor_enabled = true
+motor_speed = 1.5
+max_motor = 40
+
+[node name="Ball1" parent="." type="RigidBody3D"]
+position = vec3(-4, 4, 0)
+
+[node name="Shape" parent="Ball1" type="CollisionShape3D"]
+shape = SPHERE
+radius = 0.25
+
+[node name="Mesh" parent="Ball1" type="MeshInstance3D"]
+primitive = SPHERE
+size = vec3(0.5, 0.5, 0.5)
+color = color(0.60383, 0.07324, 0.07324, 1)
+
+[node name="Ball2" parent="." type="RigidBody3D"]
+position = vec3(-3, 4, 0)
+
+[node name="Shape" parent="Ball2" type="CollisionShape3D"]
+shape = SPHERE
+radius = 0.25
+
+[node name="Mesh" parent="Ball2" type="MeshInstance3D"]
+primitive = SPHERE
+size = vec3(0.5, 0.5, 0.5)
+color = color(0.60383, 0.21404, 0.07324, 1)
+
+[node name="Ball3" parent="." type="RigidBody3D"]
+position = vec3(-2, 4, 0)
+
+[node name="Shape" parent="Ball3" type="CollisionShape3D"]
+shape = SPHERE
+radius = 0.25
+
+[node name="Mesh" parent="Ball3" type="MeshInstance3D"]
+primitive = SPHERE
+size = vec3(0.5, 0.5, 0.5)
+color = color(0.60383, 0.60383, 0.07324, 1)
+
+[node name="Pin0" parent="." type="Joint3D"]
+joint_type = PIN
+position = vec3(-5, 4, 0)
+node_a = ""
+node_b = "../Ball1"
+
+[node name="Pin1" parent="." type="Joint3D"]
+joint_type = PIN
+position = vec3(-3.5, 4, 0)
+node_a = "../Ball1"
+node_b = "../Ball2"
+
+[node name="Pin2" parent="." type="Joint3D"]
+joint_type = PIN
+position = vec3(-2.5, 4, 0)
+node_a = "../Ball2"
+node_b = "../Ball3"
+
+[node name="Piston" parent="." type="RigidBody3D"]
+position = vec3(1, 0.3, 2)
+
+[node name="Shape" parent="Piston" type="CollisionShape3D"]
+shape = BOX
+size = vec3(0.8, 0.4, 0.8)
+
+[node name="Mesh" parent="Piston" type="MeshInstance3D"]
+primitive = BOX
+size = vec3(0.8, 0.4, 0.8)
+color = color(0.07324, 0.31855, 0.60383, 1)
+
+[node name="Slide" parent="." type="Joint3D"]
+joint_type = SLIDER
+position = vec3(1, 0.3, 2)
+node_a = ""
+node_b = "../Piston"
+limit_enabled = true
+lower = -1.5
+upper = 1.5
+motor_enabled = true
+motor_speed = 1
+max_motor = 500
+
+[node name="Bob" parent="." type="RigidBody3D"]
+position = vec3(3, 2, 0)
+
+[node name="Shape" parent="Bob" type="CollisionShape3D"]
+shape = BOX
+size = vec3(0.6, 0.6, 0.6)
+
+[node name="Mesh" parent="Bob" type="MeshInstance3D"]
+primitive = BOX
+size = vec3(0.6, 0.6, 0.6)
+color = color(0.13287, 0.60383, 0.13287, 1)
+
+[node name="Spring" parent="." type="Joint3D"]
+joint_type = SPRING
+position = vec3(3, 4.5, 0)
+node_a = ""
+node_b = "../Bob"
+stiffness = 2
+damping = 0.1
+length = 1.5
+
+[node name="WeldA" parent="." type="RigidBody3D"]
+position = vec3(5, 3, 0)
+
+[node name="Shape" parent="WeldA" type="CollisionShape3D"]
+shape = BOX
+size = vec3(0.6, 0.6, 0.6)
+
+[node name="Mesh" parent="WeldA" type="MeshInstance3D"]
+primitive = BOX
+size = vec3(0.6, 0.6, 0.6)
+color = color(0.31855, 0.13287, 0.60383, 1)
+
+[node name="WeldB" parent="." type="RigidBody3D"]
+position = vec3(5.6, 3.6, 0)
+
+[node name="Shape" parent="WeldB" type="CollisionShape3D"]
+shape = BOX
+size = vec3(0.6, 0.6, 0.6)
+
+[node name="Mesh" parent="WeldB" type="MeshInstance3D"]
+primitive = BOX
+size = vec3(0.6, 0.6, 0.6)
+color = color(0.31855, 0.13287, 0.60383, 1)
+
+[node name="Weld" parent="." type="Joint3D"]
+joint_type = WELD
+position = vec3(5.3, 3.3, 0)
+node_a = "../WeldA"
+node_b = "../WeldB"
+
+[node name="Arm" parent="." type="RigidBody3D"]
+position = vec3(7.5, 3, 0.5)
+
+[node name="Shape" parent="Arm" type="CollisionShape3D"]
+shape = BOX
+size = vec3(0.3, 1.6, 0.3)
+
+[node name="Mesh" parent="Arm" type="MeshInstance3D"]
+primitive = BOX
+size = vec3(0.3, 1.6, 0.3)
+color = color(0.78741, 0.78741, 0.78741, 1)
+
+[node name="Cone" parent="." type="Joint3D"]
+joint_type = CONE
+position = vec3(7.5, 3.8, 0)
+rotation = vec3(1.5707963, 0, 0)
+node_a = ""
+node_b = "../Arm"
+cone_angle = 0.5
+
+[node name="Heavy" parent="." type="RigidBody3D"]
+position = vec3(11.5, 5, 0)
+density = 400
+
+[node name="Shape" parent="Heavy" type="CollisionShape3D"]
+shape = SPHERE
+radius = 0.4
+
+[node name="Mesh" parent="Heavy" type="MeshInstance3D"]
+primitive = SPHERE
+size = vec3(0.8, 0.8, 0.8)
+color = color(0.0331, 0.0331, 0.0331, 1)
+
+[node name="Rope" parent="." type="Joint3D"]
+joint_type = DISTANCE
+position = vec3(9.5, 5, 0)
+node_a = ""
+node_b = "../Heavy"
+break_force = 2000
+
+[node name="Board" parent="." type="Node2D"]
+position = vec2(0, 0)
+
+[node name="Ground" parent="Board" type="StaticBody2D"]
+position = vec2(320, 350)
+
+[node name="Shape" parent="Board/Ground" type="CollisionShape2D"]
+size = vec2(640, 20)
+
+[node name="Wall" parent="Board/Ground" type="CollisionShape2D"]
+position = vec2(300, -40)
+size = vec2(20, 60)
+
+[node name="Look" parent="Board/Ground" type="Polygon2D"]
+polygon = "-320 -10, 290 -10, 290 -70, 310 -70, 310 -10, 320 -10, 320 10, -320 10"
+color = color(0.25, 0.3, 0.25, 1)
+
+[node name="Plank0" parent="Board" type="RigidBody2D"]
+position = vec2(52, 250)
+
+[node name="Shape" parent="Board/Plank0" type="CollisionShape2D"]
+size = vec2(22, 6)
+
+[node name="Look" parent="Board/Plank0" type="Polygon2D"]
+polygon = "-11 -3, 11 -3, 11 3, -11 3"
+color = color(0.6, 0.45, 0.3, 1)
+
+[node name="Plank1" parent="Board" type="RigidBody2D"]
+position = vec2(76, 250)
+
+[node name="Shape" parent="Board/Plank1" type="CollisionShape2D"]
+size = vec2(22, 6)
+
+[node name="Look" parent="Board/Plank1" type="Polygon2D"]
+polygon = "-11 -3, 11 -3, 11 3, -11 3"
+color = color(0.6, 0.45, 0.3, 1)
+
+[node name="Plank2" parent="Board" type="RigidBody2D"]
+position = vec2(100, 250)
+
+[node name="Shape" parent="Board/Plank2" type="CollisionShape2D"]
+size = vec2(22, 6)
+
+[node name="Look" parent="Board/Plank2" type="Polygon2D"]
+polygon = "-11 -3, 11 -3, 11 3, -11 3"
+color = color(0.6, 0.45, 0.3, 1)
+
+[node name="Plank3" parent="Board" type="RigidBody2D"]
+position = vec2(124, 250)
+
+[node name="Shape" parent="Board/Plank3" type="CollisionShape2D"]
+size = vec2(22, 6)
+
+[node name="Look" parent="Board/Plank3" type="Polygon2D"]
+polygon = "-11 -3, 11 -3, 11 3, -11 3"
+color = color(0.6, 0.45, 0.3, 1)
+
+[node name="Plank4" parent="Board" type="RigidBody2D"]
+position = vec2(148, 250)
+
+[node name="Shape" parent="Board/Plank4" type="CollisionShape2D"]
+size = vec2(22, 6)
+
+[node name="Look" parent="Board/Plank4" type="Polygon2D"]
+polygon = "-11 -3, 11 -3, 11 3, -11 3"
+color = color(0.6, 0.45, 0.3, 1)
+
+[node name="Plank5" parent="Board" type="RigidBody2D"]
+position = vec2(172, 250)
+
+[node name="Shape" parent="Board/Plank5" type="CollisionShape2D"]
+size = vec2(22, 6)
+
+[node name="Look" parent="Board/Plank5" type="Polygon2D"]
+polygon = "-11 -3, 11 -3, 11 3, -11 3"
+color = color(0.6, 0.45, 0.3, 1)
+
+[node name="BridgeL" parent="Board" type="Joint2D"]
+joint_type = PIN
+position = vec2(40, 250)
+node_a = ""
+node_b = "../Plank0"
+
+[node name="BridgeJ0" parent="Board" type="Joint2D"]
+joint_type = PIN
+position = vec2(64, 250)
+node_a = "../Plank0"
+node_b = "../Plank1"
+
+[node name="BridgeJ1" parent="Board" type="Joint2D"]
+joint_type = PIN
+position = vec2(88, 250)
+node_a = "../Plank1"
+node_b = "../Plank2"
+
+[node name="BridgeJ2" parent="Board" type="Joint2D"]
+joint_type = PIN
+position = vec2(112, 250)
+node_a = "../Plank2"
+node_b = "../Plank3"
+
+[node name="BridgeJ3" parent="Board" type="Joint2D"]
+joint_type = PIN
+position = vec2(136, 250)
+node_a = "../Plank3"
+node_b = "../Plank4"
+
+[node name="BridgeJ4" parent="Board" type="Joint2D"]
+joint_type = PIN
+position = vec2(160, 250)
+node_a = "../Plank4"
+node_b = "../Plank5"
+
+[node name="BridgeR" parent="Board" type="Joint2D"]
+joint_type = PIN
+position = vec2(184, 250)
+node_a = ""
+node_b = "../Plank5"
+
+[node name="Load" parent="Board" type="RigidBody2D"]
+position = vec2(112, 220)
+density = 3
+
+[node name="Shape" parent="Board/Load" type="CollisionShape2D"]
+size = vec2(14, 14)
+
+[node name="Look" parent="Board/Load" type="Polygon2D"]
+polygon = "-7 -7, 7 -7, 7 7, -7 7"
+color = color(0.9, 0.3, 0.3, 1)
+
+[node name="Chassis" parent="Board" type="RigidBody2D"]
+position = vec2(300, 320)
+
+[node name="Shape" parent="Board/Chassis" type="CollisionShape2D"]
+size = vec2(60, 12)
+
+[node name="Look" parent="Board/Chassis" type="Polygon2D"]
+polygon = "-30 -6, 30 -6, 30 6, -30 6"
+color = color(0.3, 0.5, 0.9, 1)
+
+[node name="WheelL" parent="Board" type="RigidBody2D"]
+position = vec2(280, 334)
+
+[node name="Shape" parent="Board/WheelL" type="CollisionShape2D"]
+shape = CIRCLE
+radius = 8
+
+[node name="Look" parent="Board/WheelL" type="Polygon2D"]
+polygon = "-8 0, -6 -6, 0 -8, 6 -6, 8 0, 6 6, 0 8, -6 6"
+color = color(0.15, 0.15, 0.15, 1)
+
+[node name="WheelR" parent="Board" type="RigidBody2D"]
+position = vec2(320, 334)
+
+[node name="Shape" parent="Board/WheelR" type="CollisionShape2D"]
+shape = CIRCLE
+radius = 8
+
+[node name="Look" parent="Board/WheelR" type="Polygon2D"]
+polygon = "-8 0, -6 -6, 0 -8, 6 -6, 8 0, 6 6, 0 8, -6 6"
+color = color(0.15, 0.15, 0.15, 1)
+
+[node name="AxleL" parent="Board" type="Joint2D"]
+joint_type = WHEEL
+position = vec2(280, 334)
+node_a = "../Chassis"
+node_b = "../WheelL"
+rotation = -1.5707963
+motor_enabled = true
+motor_speed = 6
+max_motor = 40
+stiffness = 5
+damping = 0.7
+
+[node name="AxleR" parent="Board" type="Joint2D"]
+joint_type = WHEEL
+position = vec2(320, 334)
+node_a = "../Chassis"
+node_b = "../WheelR"
+rotation = -1.5707963
+stiffness = 5
+damping = 0.7
+
+[node name="Bouncer" parent="Board" type="RigidBody2D"]
+position = vec2(500, 240)
+
+[node name="Shape" parent="Board/Bouncer" type="CollisionShape2D"]
+size = vec2(20, 20)
+
+[node name="Look" parent="Board/Bouncer" type="Polygon2D"]
+polygon = "-10 -10, 10 -10, 10 10, -10 10"
+color = color(0.4, 0.8, 0.4, 1)
+
+[node name="Spring2" parent="Board" type="Joint2D"]
+joint_type = SPRING
+position = vec2(500, 180)
+node_a = ""
+node_b = "../Bouncer"
+stiffness = 3
+damping = 0.05
+length = 50
+
+[node name="Shuttle" parent="Board" type="RigidBody2D"]
+position = vec2(580, 300)
+
+[node name="Shape" parent="Board/Shuttle" type="CollisionShape2D"]
+size = vec2(20, 10)
+
+[node name="Look" parent="Board/Shuttle" type="Polygon2D"]
+polygon = "-10 -5, 10 -5, 10 5, -10 5"
+color = color(0.8, 0.6, 0.2, 1)
+
+[node name="Rail" parent="Board" type="Joint2D"]
+joint_type = SLIDER
+position = vec2(580, 300)
+node_a = ""
+node_b = "../Shuttle"
+limit_enabled = true
+lower = -40
+upper = 40
+motor_enabled = true
+motor_speed = 30
+max_motor = 100
+
+[connection signal="broken" from="Rope" to="." method="count_break"]

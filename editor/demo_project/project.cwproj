@@ -1,0 +1,9 @@
+# The editor's demo project: what the editor opens when given no project
+# directory, and what its tests edit (natively and as a cart).
+name = Demo Project
+main_scene = main.cwscene
+scenes = main.cwscene, props/crate.cwscene, ui/hud.cwscene
+export.demo_native.platform = linux-x64
+export.demo_native.output = exports/native
+export.demo_cart.platform = wasc
+export.demo_cart.output = exports/cart

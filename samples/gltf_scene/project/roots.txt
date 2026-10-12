@@ -1,0 +1,11 @@
+# gltf_scene: what cwpack packs (only what these reach).
+# Khronos glTF sample models (CC-BY 4.0; their licenses ship beside them).
+set mesh.compress true
+set mesh.lods 0.5 0.2
+models/CesiumMan.glb = ../../../deps/three.c/test/assets/CesiumMan.glb
+models/CesiumMan.LICENSE.md = ../../../deps/three.c/test/assets/CesiumMan.LICENSE.md
+models/BoxTextured.glb = ../../../deps/three.c/test/assets/BoxTextured.glb
+models/BoxTextured.LICENSE.md = ../../../deps/three.c/test/assets/BoxTextured.LICENSE.md
+models/WaterBottle.glb = ../../../deps/three.c/test/assets/WaterBottle.glb
+models/WaterBottle.LICENSE.md = ../../../deps/three.c/test/assets/WaterBottle.LICENSE.md
+textures/ground.png

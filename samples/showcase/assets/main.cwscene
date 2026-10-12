@@ -1,0 +1,72 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+ambient_energy = 0
+hemi_energy = 0
+
+[node name="Post" parent="." type="PostProcess"]
+tonemap = AGX
+bloom = true
+bloom_intensity = 0.045
+ssao = true
+ssao_radius = 0.8
+taa = true
+aa = SMAA
+vignette = true
+vignette_intensity = 0.25
+
+[node name="Visibility" parent="." type="VisibilityManager"]
+occlusion_cull = true
+occlusion_wait = true
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 9.5
+latitude = 40
+declination = 15
+north = 25
+night_color = color(0.0025, 0.0035, 0.008, 1)
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+shadow_size = 2048
+
+[node name="Fog" parent="." type="HeightFog"]
+density = 0.006
+height_falloff = 0.08
+base_height = 0
+sun_scatter = 0.45
+sun_g = 0.7
+sky_distance = 520
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 12, 50)
+fov = 60
+near = 0.15
+far = 700
+
+[node name="W0" parent="." type="Node3D"]
+
+[node name="Model" parent="W0" type="Node3D"]
+
+[node name="Anim" parent="W0" type="AnimationPlayer"]
+
+[node name="W1" parent="." type="Node3D"]
+
+[node name="Model" parent="W1" type="Node3D"]
+
+[node name="Anim" parent="W1" type="AnimationPlayer"]
+
+[node name="W2" parent="." type="Node3D"]
+
+[node name="Model" parent="W2" type="Node3D"]
+
+[node name="Anim" parent="W2" type="AnimationPlayer"]
+
+[node name="W3" parent="." type="Node3D"]
+
+[node name="Model" parent="W3" type="Node3D"]
+
+[node name="Anim" parent="W3" type="AnimationPlayer"]

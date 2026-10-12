@@ -1,0 +1,110 @@
+[scene format=1]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.00394, 0.0049, 0.00854, 1)
+ambient_energy = 0.94248
+hemi_energy = 1.5708
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 3, 9)
+rotation = vec3(-0.3, 0, 0)
+fov = 55
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(4, 8, 3)
+rotation = vec3(-1, 0.5, 0)
+energy = 6.28319
+shadow = true
+
+[node name="Lamp" parent="." type="OmniLight3D"]
+position = vec3(0, 2.5, 2)
+energy = 21.20575
+range = 8
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+primitive = PLANE
+size = vec3(20, 1, 20)
+color = color(0.07324, 0.08354, 0.07324, 1)
+receive_shadow = true
+
+[node name="Spinner" parent="." type="MeshInstance3D"]
+position = vec3(-2.5, 1, 0)
+cast_shadow = true
+
+[node name="Bouncer" parent="." type="MeshInstance3D"]
+position = vec3(0, 0.5, 0)
+primitive = SPHERE
+color = color(0.78741, 0.69207, 0.07324, 1)
+cast_shadow = true
+
+[node name="Fader" parent="." type="MeshInstance3D"]
+position = vec3(2.5, 1, 0)
+primitive = CYLINDER
+color = color(0.13287, 0.44799, 1, 1)
+cast_shadow = true
+
+[node name="Counter" parent="." type="Node"]
+
+[node name="Show" parent="." type="AnimationPlayer"]
+autoplay = "show"
+
+[node name="Bounce" parent="." type="AnimationPlayer"]
+autoplay = "bounce"
+
+[node name="Blender" parent="." type="AnimationPlayer"]
+autoplay = "low"
+
+[animation name="show" player="Show" length=2 loop=LOOP]
+[track type=value path="Spinner:rotation"]
+0 = vec3(0, 0, 0)
+2 = vec3(0, 6.28318, 0)
+[track type=value path="Spinner:color" interp=CUBIC]
+0 = color(1, 0.2, 0.2, 1)
+0.7 = color(0.2, 1, 0.2, 1)
+1.4 = color(0.2, 0.2, 1, 1)
+2 = color(1, 0.2, 0.2, 1)
+[track type=value path="Sun:energy"]
+0 = 2
+1 = 0.4
+2 = 2
+[track type=value path="Lamp:color" interp=NEAREST]
+0 = color(1, 0.5, 0.2, 1)
+1 = color(0.3, 0.5, 1, 1)
+[track type=method path="Counter"]
+0 = count("start", 1)
+1 = count("half", 2)
+[track type=event]
+0.5 = "step"
+1.5 = "step"
+
+[animation name="bounce" player="Bounce" length=0.75 loop=PING_PONG]
+[track type=value path="Bouncer:position.y" interp=CUBIC]
+0 = 0.5
+0.5 = 1.8
+0.75 = 2
+[track type=value path="Bouncer:scale" interp=HERMITE]
+0 = vec3(1.2, 0.8, 1.2) in=vec3(0, 0, 0) out=vec3(-1, 1, -1)
+0.75 = vec3(0.9, 1.1, 0.9) in=vec3(0, 0, 0) out=vec3(0, 0, 0)
+[track type=method path="Counter"]
+0 = count("floor", 3)
+
+[animation name="low" player="Blender" length=1 loop=LOOP]
+[track type=value path="Fader:position"]
+0 = vec3(2.5, 0.6, 0)
+0.5 = vec3(2.5, 0.8, 0)
+1 = vec3(2.5, 0.6, 0)
+[track type=value path="Fader:color"]
+0 = color(0.4, 0.7, 1, 1)
+
+[animation name="high" player="Blender" length=1 loop=LOOP]
+[track type=value path="Fader:position"]
+0 = vec3(3.5, 2.4, -1)
+1 = vec3(3.5, 2.4, -1)
+[track type=value path="Fader:color"]
+0 = color(1, 0.4, 0.8, 1)
+[track type=value path="Fader:quaternion"]
+0 = quat(0, 0, 0, 1)
+0.5 = quat(0, 0, 0.7071068, 0.7071068)
+1 = quat(0, 0, 1, 0)

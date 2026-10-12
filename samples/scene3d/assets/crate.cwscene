@@ -1,0 +1,9 @@
+[scene format=1]
+
+[node name="Crate" type="Node3D"]
+
+[node name="Box" parent="." type="MeshInstance3D" groups="crates"]
+color = color(0.31855, 0.17064, 0.05088, 1)
+roughness = 0.8
+cast_shadow = true
+receive_shadow = true

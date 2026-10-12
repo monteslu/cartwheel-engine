@@ -1,0 +1,27 @@
+# cartwheel project settings (cartwheel/project.h)
+# #region name
+name = Gem Garden
+app = gem_garden
+# #endregion
+main_scene = main.cwscene
+sources = src
+# #region scenes
+scenes = main.cwscene, gem.cwscene, thorn.cwscene
+# #endregion
+input.ui_accept = key:return, key:space, pad:south
+# #region input
+input.move_left = key:a, key:left, pad:left, axis:lx-
+input.move_right = key:d, key:right, pad:right, axis:lx+
+input.move_up = key:w, key:up, pad:up, axis:ly-
+input.move_down = key:s, key:down, pad:down, axis:ly+
+# #endregion
+# #region layers
+layer_names_2d = "world, player, pickups, hazards"
+# #endregion
+render.width = 640
+render.height = 360
+render.vsync = true
+export.native.platform = linux-x64
+export.native.output = exports/native
+export.cart.platform = wasc
+export.cart.output = exports/cart

@@ -1,0 +1,19 @@
+[
+  {"frame":10,"keys":["d"]},
+  {"frame":15},
+  {"frame":20,"keys":["k"]},
+  {"frame":21},
+  {"frame":25,"keys":["j","k"]},
+  {"frame":28},
+  {"frame":30,"keys":["tab"]},
+  {"frame":31},
+  {"frame":32,"keys":["x"]},
+  {"frame":33},
+  {"frame":35,"keys":["x"]},
+  {"frame":37},
+  {"frame":40,"keys":["w","a"]},
+  {"frame":46},
+  {"frame":50,"keys":["return"]},
+  {"frame":51},
+  {"frame":55,"keys":["w","d"]}
+]

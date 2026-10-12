@@ -1,0 +1,9 @@
+[
+  { "frame": 20, "axes": { "lx": 1 } },
+  { "frame": 218, "buttons": ["south"], "axes": { "lx": 1 } },
+  { "frame": 228, "axes": { "lx": 1 } },
+  { "frame": 420, "axes": {} },
+  { "frame": 577, "axes": { "lx": 1 } },
+  { "frame": 760, "axes": { "ly": 1 } },
+  { "frame": 790, "axes": { "lx": 1 } }
+]

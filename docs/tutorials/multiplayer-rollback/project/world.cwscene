@@ -1,0 +1,24 @@
+[scene format=1]
+
+[node name="Arena" type="Node2D"]
+
+[node name="Floor" parent="." type="Polygon2D"]
+polygon = "0 0, 150 0, 150 110, 0 110"
+color = color(0.2, 0.23, 0.3, 1)
+
+[node name="Coin" parent="." type="Polygon2D"]
+position = vec2(75, 55)
+polygon = "0 -5, 5 0, 0 5, -5 0"
+color = color(1, 0.8, 0.2, 1)
+
+[node name="P0" parent="." type="Racer"]
+position = vec2(20, 20)
+polygon = "-5 -5, 5 -5, 5 5, -5 5"
+color = color(0.35, 0.6, 0.95, 1)
+player = 0
+
+[node name="P1" parent="." type="Racer"]
+position = vec2(130, 90)
+polygon = "-5 -5, 5 -5, 5 5, -5 5"
+color = color(1, 0.48, 0.16, 1)
+player = 1

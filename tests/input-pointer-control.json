@@ -1,0 +1,19 @@
+[
+  {"frame":3,"mouse":{"x":320,"y":180}},
+  {"frame":10,"mouse":{"x":330,"y":170,"buttons":["right"]}},
+  {"frame":15,"mouse":{"x":330,"y":170}},
+  {"frame":20,"mouse":{"x":330,"y":170},"wheel":1},
+  {"frame":21,"mouse":{"x":330,"y":170}},
+  {"frame":22,"mouse":{"x":330,"y":170},"wheel":{"x":0,"y":1}},
+  {"frame":23,"mouse":{"x":330,"y":170}},
+  {"frame":25,"mouse":{"x":330,"y":170},"wheel":-2},
+  {"frame":30},
+  {"frame":35,"touches":[{"id":1,"x":100,"y":280}]},
+  {"frame":37,"touches":[{"id":1,"x":140,"y":280}]},
+  {"frame":46},
+  {"frame":50,"touches":[{"id":2,"x":560,"y":300}]},
+  {"frame":51},
+  {"frame":55,"touches":[{"id":1,"x":100,"y":240},{"id":2,"x":560,"y":300}]},
+  {"frame":57,"buttons":["start"],"touches":[{"id":1,"x":100,"y":240},{"id":2,"x":560,"y":300}]},
+  {"frame":58,"touches":[{"id":1,"x":100,"y":240},{"id":2,"x":560,"y":300}]}
+]

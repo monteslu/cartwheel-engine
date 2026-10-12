@@ -1,0 +1,9 @@
+[scene format=1]
+[ext_scene id=1 path="levels/sub.cwscene"]
+
+[node name="Level" type="Node3D"]
+
+[node name="Quad" parent="." type="MeshInstance3D"]
+mesh = res(0x53e57a1595fc5fee)
+
+[node name="Sub" parent="." instance=1]

@@ -1,0 +1,41 @@
+@locale = ar
+@name = العربية
+@font = fonts/NotoSansArabic.ttf
+@months = يناير, فبراير, مارس, أبريل, مايو, يونيو, يوليو, أغسطس, سبتمبر, أكتوبر, نوفمبر, ديسمبر
+
+app.paragraph = كل نص في هذه الشاشة يأتي من كتالوج ترجمة. يلتف النص الطويل بين الكلمات في الإنجليزية، وبين الحروف في اليابانية، ويُكتب من اليمين إلى اليسار في العربية.
+app.title = عرض التوطين
+
+banner.alt = شعار اللغة الحالية
+
+caption.intro.1 = مرحبًا بك في عرض التوطين.
+caption.intro.2 = [رنين خافت]
+caption.speaker.guide = المرشد
+
+form.jump = القفز (لوحة المفاتيح)
+form.jump_pad = القفز (يد التحكم)
+form.name = اسم اللاعب
+form.name_hint = اكتب اسمك
+form.subtitles = الترجمة النصية
+form.subtitles_on = إظهار الترجمة
+form.volume = مستوى الصوت
+
+input.key.space = مفتاح المسافة
+input.pad.south = الزر السفلي
+input.pad.west = الزر الأيسر
+
+menu.language = اللغة
+menu.play = العب
+menu.quit = خروج
+menu.settings = الإعدادات
+
+score.points[zero] = لا نقاط
+score.points[one] = نقطة واحدة
+score.points[two] = نقطتان
+score.points[few] = {n} نقاط
+score.points[many] = {n} نقطة
+score.points[other] = {n} نقطة
+
+stats.line = أفضل نتيجة {score} في {date}
+
+tooltip.play = ابدأ لعبة جديدة

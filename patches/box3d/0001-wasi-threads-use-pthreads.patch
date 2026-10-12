@@ -1,0 +1,19 @@
+# Box2D/Box3D pick their mutex, semaphore and thread primitives by platform:
+# Linux and Emscripten get pthreads, anything unrecognised gets do-nothing
+# stubs. A wasm32-wasip1-threads build (wasi-sdk -pthread) fell through to
+# the stubs, so a threaded cart raced inside the library (Box3D's manifold
+# allocator lock was a no-op). Threaded WASI has real pthreads.
+
+diff --git a/src/timer.c b/src/timer.c
+index 826b149..13a4254 100644
+--- a/src/timer.c
++++ b/src/timer.c
+@@ -224,7 +224,7 @@ void b3JoinThread( b3Thread* t )
+ 	b3Free( t, sizeof( b3Thread ) );
+ }
+ 
+-#elif defined( __linux__ ) || defined( __EMSCRIPTEN__ )
++#elif defined( __linux__ ) || defined( __EMSCRIPTEN__ ) || ( defined( __wasi__ ) && defined( _REENTRANT ) )
+ 
+ #include <sched.h>
+ #include <time.h>

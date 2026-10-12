@@ -1,0 +1,95 @@
+[scene format=1]
+[ext_scene id=1 path="gem.cwscene"]
+[ext_scene id=2 path="thorn.cwscene"]
+
+[node name="Main" type="Node2D"]
+
+[node name="Settings" parent="." type="CanvasSettings"]
+virtual_width = 320
+virtual_height = 180
+scale_mode = INTEGER
+clear_color = color(0.4, 0.3, 0.22, 1)
+
+[node name="Camera" parent="." type="Camera2D"]
+position = vec2(160, 90)
+
+[node name="Walls" parent="." type="StaticBody2D"]
+collision_layer_name = "world"
+
+[node name="Top" parent="Walls" type="CollisionShape2D"]
+position = vec2(160, 4)
+size = vec2(320, 8)
+
+[node name="Bottom" parent="Walls" type="CollisionShape2D"]
+position = vec2(160, 176)
+size = vec2(320, 8)
+
+[node name="Left" parent="Walls" type="CollisionShape2D"]
+position = vec2(4, 90)
+size = vec2(8, 180)
+
+[node name="Right" parent="Walls" type="CollisionShape2D"]
+position = vec2(316, 90)
+size = vec2(8, 180)
+
+[node name="Block" parent="Walls" type="CollisionShape2D"]
+position = vec2(160, 90)
+size = vec2(80, 60)
+
+[node name="Grass" parent="Walls" type="Polygon2D"]
+polygon = "8 8, 312 8, 312 172, 8 172"
+color = color(0.16, 0.3, 0.2, 1)
+
+[node name="BlockLook" parent="Walls" type="Polygon2D"]
+polygon = "120 60, 200 60, 200 120, 120 120"
+color = color(0.4, 0.3, 0.22, 1)
+
+[node name="Gem1" parent="." instance=1]
+position = vec2(80, 34)
+
+[node name="Gem2" parent="." instance=1]
+position = vec2(240, 34)
+
+[node name="Gem3" parent="." instance=1]
+position = vec2(280, 146)
+
+[node name="Gem4" parent="." instance=1]
+position = vec2(60, 146)
+
+[node name="Thorn1" parent="." instance=2]
+position = vec2(160, 34)
+
+[node name="Thorn2" parent="." instance=2]
+position = vec2(100, 146)
+
+[node name="Player" parent="." type="CharacterBody2D"]
+position = vec2(36, 90)
+collision_layer_name = "player"
+collision_mask_names = "world|pickups|hazards"
+
+[node name="Shape" parent="Player" type="CollisionShape2D"]
+shape = CIRCLE
+radius = 6
+
+[node name="Look" parent="Player" type="Polygon2D"]
+polygon = "-3 -7, 3 -7, 7 -3, 7 3, 3 7, -3 7, -7 3, -7 -3"
+color = color(1, 0.85, 0.3, 1)
+
+[node name="HUD" parent="." type="CanvasLayer"]
+
+[node name="Gems" parent="HUD" type="Label"]
+offset_left = 12
+offset_top = 10
+offset_right = 200
+offset_bottom = 28
+text = "GEMS 0/4"
+
+[node name="Message" parent="HUD" type="Label"]
+anchor_right = 1
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_top = -12
+offset_bottom = 12
+horizontal_alignment = CENTER
+vertical_alignment = CENTER
+text = ""

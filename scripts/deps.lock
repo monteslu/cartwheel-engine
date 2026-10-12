@@ -1,0 +1,51 @@
+# Pinned dependency sources. fetch-deps.sh reads this file.
+# name        source (git URL, archive URL, or a ../sibling checkout)                 revision / version          sha256 (archives); a git
+# source pins "<commit>" or "<version tag> <full commit hash>"
+three.c       https://github.com/monteslu/three.c.git        v0.186.4                    bd2f28c72257ba022b4f61af9f905c69eeeac897
+box2d         https://github.com/erincatto/box2d.git         c05c48738fbe5c27625e36c5f0cfbdaddfc8359a
+box3d         https://github.com/erincatto/box3d.git         29bf523ce7bc4590aba9f17c9db791cdc5c4397e
+sdl2          https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.8.tar.gz   2.32.8   -
+wasi-sdk      https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-x86_64-linux.tar.gz   33.0   0ba8b5bfaeb2adf3f29bab5841d76cf5318ab8e1642ea195f88baba1abd47bce
+# Binaryen's wasm-opt: carts are optimized after the link (-O3, threads + SIMD; CW_WASM_OPT, CMakeLists.txt)
+binaryen      https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-x86_64-linux.tar.gz   123   e959f2170af4c20c552e9de3a0253704d6a9d2766e8fdb88e4d6ac4bae9388fe
+wasmcart      https://github.com/wasmcart/wasmcart.git       v0.34.1                     af3cf4e54a03ed00b85d26a62dd28848d2dde488
+# WebGPU tier (wasmcart v0.34.1, released): the hosts and wgpu-wasi/ kit
+# the dual (GL + WebGPU) cart build uses (build/cart-wgpu); the GL cart build keeps the wasmcart pin above
+wasmcart-wgpu https://github.com/wasmcart/wasmcart.git       v0.34.1                     af3cf4e54a03ed00b85d26a62dd28848d2dde488
+# Dawn's emdawnwebgpu port at the release the tier freezes its imports to (wasmcart scripts/wgpu/emdawnwebgpu.json):
+# wgpu-wasi compiles its webgpu.cpp into WebGPU carts
+emdawnwebgpu  https://github.com/google/dawn/releases/download/v20261002.154047/emdawnwebgpu_pkg-v20261002.154047.zip   v20261002.154047   6b14532b85c7f4d51154b6eeb6bd3fcf7735ad5c7cfd698d83985dd21a1c15c2
+# native-dawn C SDK (Dawn 1e975e28, webgpu.h + libwebgpu_dawn + CMake package dawn::webgpu_dawn), the native
+# WebGPU backend. NATIVE_DAWN_PREFIX (env) points at an existing prefix instead (`npx native-dawn prefix`).
+native-dawn   https://github.com/monteslu/native-dawn/releases/download/v0.1.0/native-dawn-v0.1.0-linux-x64.tar.gz   0.1.0   a4895cb5c3ed0e7bf86dc0ab197f7d9af84e077522a7ed428faced73959b2992
+wasmcart-sdl2 https://github.com/wasmcart/wasmcart-sdl2.git  c34f74f80a727bcae273b0411429642ec218c230
+stb           https://github.com/nothings/stb.git           2c980bb59875b0d32144a71867fbdebb2f77cd20
+miniaudio     https://github.com/mackron/miniaudio.git      9634bedb5b5a2ca38c1ee7108a9358a4e233f14d
+meshoptimizer https://github.com/zeux/meshoptimizer.git     9e1f07b159d3cb777f1c67ed31fc11fd117986f4
+wasmcart-libs https://github.com/wasmcart/wasmcart-libs.git  1208c5ac3071df05f46d1acafa58aab964b8094d
+basis_universal https://github.com/BinomialLLC/basis_universal.git 9bebe16726b3a61c8c213eeee3b7cffb462ef34e
+kb            https://github.com/JimmyLefevre/kb.git       cc63806775f615908ec9562653af4726d8b895d5
+# Fonts (single files into deps/fonts/<name>.<ext>, sha256-checked): Noto, SIL OFL 1.1,
+# from google/fonts at a pinned commit (the l10n sample packs subsets of them)
+font:noto-sans-jp.ttf       https://github.com/google/fonts/raw/7085eb89a950e85db5b166b7a58d414544b4140c/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf                  gf-7085eb89   c2f3b4d463500a2ddcd3849cded1fceeb9fd6d1c32e6cbecd568453ba50fc68f
+font:noto-sans-jp-OFL.txt   https://github.com/google/fonts/raw/7085eb89a950e85db5b166b7a58d414544b4140c/ofl/notosansjp/OFL.txt                                    gf-7085eb89   1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9
+font:noto-sans-arabic.ttf   https://github.com/google/fonts/raw/7085eb89a950e85db5b166b7a58d414544b4140c/ofl/notosansarabic/NotoSansArabic%5Bwdth,wght%5D.ttf      gf-7085eb89   63111b5b2e074dd48cc67692e0a2726d86ee94c1c37fe8598257b7b4e87e869e
+font:noto-sans-arabic-OFL.txt https://github.com/google/fonts/raw/7085eb89a950e85db5b166b7a58d414544b4140c/ofl/notosansarabic/OFL.txt                              gf-7085eb89   07fc70bfeb985cc1a87a8587d0a0c80bab11c86c9dc3fd95b6f0cb332f983e96
+# Exporters (tools/cwexport), fetched only by `fetch-deps.sh --export` into deps/export/:
+# llvm-mingw: clang + lld + mingw-w64 (UCRT) for Windows, and the clang/lld every cross build links with
+export/llvm-mingw https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64.tar.xz 20260922 bb7bb7654b33d5aa8712acb837c963b2e0c56352560c76105270a3268c665c21
+# Debian bullseye sysroots (glibc 2.31) as Chromium builds against them: the Linux exports' ABI floor
+export/sysroot-linux-x64 https://commondatastorage.googleapis.com/chrome-linux-sysroot/52d61d4446ffebfaa3dda2cd02da4ab4876ff237853f46d273e7f9b666652e1d bullseye-amd64 52d61d4446ffebfaa3dda2cd02da4ab4876ff237853f46d273e7f9b666652e1d
+export/sysroot-linux-arm64 https://commondatastorage.googleapis.com/chrome-linux-sysroot/c7176a4c7aacbf46bda58a029f39f79a68008d3dee6518f154dcf5161a5486d8 bullseye-arm64 c7176a4c7aacbf46bda58a029f39f79a68008d3dee6518f154dcf5161a5486d8
+# ANGLE (libEGL + libGLESv2, BSD-3-Clause). Windows: MSYS2's clang64 build (D3D11; needs libc++.dll +
+# libunwind.dll, which llvm-mingw ships, and zlib1.dll). Electron and Chrome no longer ship usable ANGLE DLLs.
+# macOS / iOS: kivy/angle-builder's Metal builds (staged into the Apple templates; nothing here links them).
+export/angle-win-x64 https://repo.msys2.org/mingw/clang64/mingw-w64-clang-x86_64-angleproject-2.1.r25748.890b5d8f-3-any.pkg.tar.zst r25748.890b5d8f-3 71c0daec0503735a15b441bd45cb55296715fd03b89e1ad3a7dc460eabbad56a
+export/zlib-win-x64 https://repo.msys2.org/mingw/clang64/mingw-w64-clang-x86_64-zlib-1.3.2-2-any.pkg.tar.zst 1.3.2-2 96d8db2f2bf24c0d4e82b899d50a3497d97536a8bd38ce275401d0f2b9580b5e
+export/angle-macos https://github.com/kivy/angle-builder/releases/download/chromium-7151_rev1/angle-macos-universal.tar.gz chromium-7151_rev1 b87f1d0144218a0699859340bfc9864949190d5f4b4d19d4265c3ab561fcd078
+export/angle-ios https://github.com/kivy/angle-builder/releases/download/chromium-7151_rev1/angle-iphoneall-universal.tar.gz chromium-7151_rev1 ac2b6bff844ce3463fc8386f28d05081ab529a297d7edfe2163a0aefb858a8e2
+# AppImage type 2 runtimes (the AppImage is runtime + a squashfs the system mksquashfs makes)
+export/appimage-runtime-x64 https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64 20251108 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+export/appimage-runtime-arm64 https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-aarch64 20251108 00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
+# Wine (Kron4ek's portable build), test only: runs the Windows export's smoke test on this Linux host
+export/wine https://github.com/Kron4ek/Wine-Builds/releases/download/11.19/wine-11.19-amd64-wow64.tar.xz 11.19 a1fe858b45d12c9b16b91c7601d9b934f68430f7b6b95e240212ab6e2a198d8a

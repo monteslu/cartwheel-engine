@@ -1,0 +1,39 @@
+[scene format=1]
+
+[node name="Player" type="Player"]
+collision_layer_name = "player"
+collision_mask_names = "world|coins|props"
+push_mass = 20
+floor_snap_length = 4
+step_height = 4
+
+[node name="Shape" parent="." type="CollisionShape2D"]
+shape = CAPSULE
+radius = 6
+height = 22
+position = vec2(0, 1)
+
+[node name="Sprite" parent="." type="AnimatedSprite2D"]
+texture = "images/player.png"
+filter = NEAREST
+hframes = 8
+animations = "idle@3:0-1; run@12:2-5; jump:6!; fall:7!"
+z_index = 2
+
+[node name="Camera" parent="." type="Camera2D"]
+smoothing = true
+smoothing_speed = 6
+limit_left = 0
+limit_top = 0
+limit_right = 1024
+limit_bottom = 192
+
+[node name="Lamp" parent="." type="Light2D"]
+color = color(1, 0.9, 0.7, 1)
+energy = 0.8
+range = 70
+shadow = true
+
+[node name="Feet" parent="." type="RayCast2D"]
+target_position = vec2(0, 24)
+collision_mask = 1

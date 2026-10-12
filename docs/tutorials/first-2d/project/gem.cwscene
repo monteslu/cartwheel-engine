@@ -1,0 +1,13 @@
+[scene format=1]
+
+[node name="Gem" type="Area2D" groups="gems"]
+collision_layer_name = "pickups"
+collision_mask_names = "player"
+
+[node name="Shape" parent="." type="CollisionShape2D"]
+shape = CIRCLE
+radius = 5
+
+[node name="Look" parent="." type="Polygon2D"]
+polygon = "0 -6, 5 0, 0 6, -5 0"
+color = color(0.35, 0.95, 0.85, 1)

@@ -1,0 +1,46 @@
+[scene format=1]
+
+[node name="Main" type="Node2D"]
+
+[node name="Settings" parent="." type="CanvasSettings"]
+virtual_width = 320
+virtual_height = 180
+scale_mode = INTEGER
+clear_color = color(0.12, 0.13, 0.17, 1)
+
+[node name="Camera" parent="." type="Camera2D"]
+position = vec2(160, 90)
+
+[node name="Coin" parent="." type="Polygon2D"]
+position = vec2(290, 150)
+polygon = "0 -12, 12 0, 0 12, -12 0"
+color = color(1, 0.8, 0.2, 1)
+
+[node name="HUD" parent="." type="CanvasLayer"]
+
+[node name="Panel" parent="HUD" type="VBoxContainer"]
+anchor_right = 1
+anchor_bottom = 1
+offset_left = 16
+offset_top = 12
+offset_right = -16
+offset_bottom = -12
+theme_overrides = "separation = 8"
+
+[node name="Title" parent="HUD/Panel" type="Label"]
+text = "hud.title"
+theme_overrides = "font_size = 28"
+
+[node name="Coins" parent="HUD/Panel" type="Label"]
+auto_translate = false
+
+[node name="Language" parent="HUD/Panel" type="Label"]
+auto_translate = false
+
+[node name="Hint" parent="HUD/Panel" type="Label"]
+text = "hud.hint"
+autowrap = true
+custom_minimum_size = vec2(480, 0)
+
+[node name="Captions" parent="HUD/Panel" type="CaptionPanel"]
+size_flags_vertical = 3

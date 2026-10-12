@@ -1,0 +1,12 @@
+# l10n_demo: cwpack follows the project to its catalogs, fonts and
+# per-locale assets. The Noto fonts come from deps/ (scripts/fetch-deps.sh,
+# SIL OFL 1.1) and are subset to the catalogs' characters at pack time
+# (fonts/*.cwimport: font.subset = l10n).
+l10n/project.cwl10n
+l10n/ja.cwtr = po/ja.po
+fonts/NotoSansArabic.ttf = @engine/deps/fonts/noto-sans-arabic.ttf
+fonts/NotoSansJP.ttf = @engine/deps/fonts/noto-sans-jp.ttf
+fonts/NotoSansArabic-OFL.txt = @engine/deps/fonts/noto-sans-arabic-OFL.txt
+fonts/NotoSansJP-OFL.txt = @engine/deps/fonts/noto-sans-jp-OFL.txt
+captions/intro.cwcap
+textures/banner.png

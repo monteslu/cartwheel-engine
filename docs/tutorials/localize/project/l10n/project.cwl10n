@@ -1,0 +1,8 @@
+# Coin Counter's localization project (cartwheel/l10n.h)
+source = en
+default = en
+catalog = l10n/en.cwtr
+catalog = l10n/ar.cwtr
+catalog = l10n/ja.cwtr
+pseudo = en-XA
+pseudo = ar-XB

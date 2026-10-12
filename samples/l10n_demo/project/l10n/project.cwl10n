@@ -1,0 +1,12 @@
+# The demo's localization project (cartwheel/l10n.h): cwpack packs every
+# catalog listed here, the fonts they name and the per-locale assets.
+source = en
+default = en
+catalog = l10n/en.cwtr
+catalog = l10n/ar.cwtr
+# Japanese comes from a translator's PO file (roots.txt maps it)
+catalog = l10n/ja.cwtr
+pseudo = en-XA
+pseudo = ar-XB
+asset_dir = l10n/assets
+asset = textures/banner.png

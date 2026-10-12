@@ -1,0 +1,2 @@
+# a sidecar: this file keeps its UID if it moves
+uid = 0x1234abcd5678ef00

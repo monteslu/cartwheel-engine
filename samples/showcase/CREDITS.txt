@@ -1,0 +1,19 @@
+showcase: asset sources and licenses
+
+CesiumMan.glb (the four walkers)
+  Khronos glTF Sample Models, "Cesium Man" by Cesium, licensed CC-BY-4.0
+  (https://creativecommons.org/licenses/by/4.0/); the license excludes the
+  Cesium logo and trademarks (see CesiumMan.LICENSE.md). Taken from
+  deps/three.c/test/assets/ and staged into the build's asset directory
+  with its license file (CesiumMan.LICENSE.md) by samples/CMakeLists.txt,
+  as anim_skinned does. Not modified.
+
+decals/scorch.png, decals/cracks.png
+  Generated from code by samples/fx_decals/make-art.mjs (CC0, made in this
+  repository); staged from samples/fx_decals/assets/decals/.
+
+Everything else is generated at startup by samples/showcase/world.c and
+needs no attribution: the terrain (value-noise heights, vertex colours),
+the trees (three.c cone and cylinder geometry), the houses, roofs, lamp
+posts, windows and fireflies (primitives), and every light. The sky, the
+fog and the post stack are the engine's own. No textures, no sounds.

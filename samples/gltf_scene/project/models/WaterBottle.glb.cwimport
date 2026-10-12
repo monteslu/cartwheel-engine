@@ -1,0 +1,3 @@
+texture.format = ktx2
+texture.mode = uastc
+texture.effort = 0

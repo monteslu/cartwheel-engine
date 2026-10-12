@@ -1,0 +1,41 @@
+[scene format=1]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.00598, 0.00394, 0.00719, 1)
+ambient_energy = 0.94248
+hemi_energy = 1.5708
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 3, 9)
+rotation = vec3(-0.3, 0, 0)
+fov = 55
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(4, 8, 3)
+rotation = vec3(-1, 0.5, 0)
+energy = 6.28319
+shadow = true
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+primitive = PLANE
+size = vec3(20, 1, 20)
+color = color(0.08354, 0.07324, 0.07324, 1)
+receive_shadow = true
+
+[node name="Box" parent="." type="MeshInstance3D"]
+position = vec3(-3, 0.5, 0)
+cast_shadow = true
+
+[node name="Ball" parent="." type="MeshInstance3D"]
+position = vec3(0, 3, 0)
+cast_shadow = true
+primitive = SPHERE
+color = color(0.07324, 0.78741, 0.21404, 1)
+
+[node name="Pillar" parent="." type="MeshInstance3D"]
+position = vec3(3, 0.5, 0)
+cast_shadow = true
+primitive = CYLINDER
+color = color(0.78741, 0.31855, 0.0331, 1)

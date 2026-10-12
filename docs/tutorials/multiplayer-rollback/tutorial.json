@@ -1,0 +1,15 @@
+{
+  "title": "Multiplayer with rollback",
+  "order": 40,
+  "summary": "Two peers kept in sync by rollback netcode over a simulated bad network, proven equal by their state hashes, then over UDP.",
+  "template": "empty_2d",
+  "project": "project",
+  "frames": 720,
+  "input": "input.json",
+  "fields": ["duel.ticks", "duel.hash_a", "duel.hash_b", "duel.match", "duel.desyncs", "duel.checked", "duel.rollbacks", "duel.resim", "duel.mispredictions", "duel.dropped", "duel.score"],
+  "expect": { "duel.match": 1, "duel.desyncs": 0 },
+  "atLeast": { "duel.rollbacks": 1, "duel.checked": 122 },
+  "control": { "env": { "DUEL_NO_ROLLBACK": "1" } },
+  "hosts": ["native", "romdev"],
+  "gate": null
+}

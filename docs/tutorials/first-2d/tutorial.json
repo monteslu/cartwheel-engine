@@ -1,0 +1,14 @@
+{
+  "title": "Your first 2D game",
+  "order": 10,
+  "summary": "Gem Garden, a top-down collect-and-avoid game: a CharacterBody2D player, walls, gems and thorns as Area2D scenes, a HUD and a win state, run natively and as a cart and tested by an input script.",
+  "template": "empty_2d",
+  "project": "project",
+  "frames": 520,
+  "input": "input.json",
+  "fields": ["game.ticks", "player.pos", "gems", "hits", "won", "tree.nodes"],
+  "expect": { "gems": 4, "won": 1, "hits": 0 },
+  "control": { "input": null },
+  "hosts": ["native", "romdev", "chromium"],
+  "gate": null
+}

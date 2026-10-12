@@ -1,0 +1,19 @@
+# cartwheel project settings (cartwheel/project.h)
+name = 2D Platformer
+app = platformer_2d
+main_scene = main.cwscene
+sources = src
+scenes = main.cwscene, coin.cwscene
+input.move_left = key:a, key:left, pad:left, axis:lx-
+input.move_right = key:d, key:right, pad:right, axis:lx+
+input.jump = key:space, key:w, key:up, pad:south
+layer_names_2d = "world, player, coins"
+gravity_2d = vec2(0, 900)
+pixels_per_meter = 32
+render.width = 640
+render.height = 360
+render.vsync = true
+export.native.platform = linux-x64
+export.native.output = exports/native
+export.cart.platform = wasc
+export.cart.output = exports/cart
