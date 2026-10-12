@@ -13,12 +13,17 @@ concurrency:
 env:
   CW_TEST_GPU: software # Mesa llvmpipe (GL) and lavapipe (WebGPU): see tests/ci.mjs
   CW_CART_LINK_JOBS: 2
+  CW_RUN_TIMEOUT_MS: 900000 # one native run; llvmpipe is far slower than a GPU
 
 jobs:
   native:
-    name: Native build, docs checks and gates
+    name: Native gates (${{ matrix.part }})
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [gl, webgpu]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,11 +46,12 @@ jobs:
           cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release
           ninja -C build/native
       - name: API and docs checks
+        if: matrix.part == 'gl'
         run: |
           node tools/gen-api.mjs --check
           node tools/gen-docs.mjs --check
       - name: Gates (native, software rendering)
-        run: node tests/ci.mjs
+        run: node tests/ci.mjs ${{ matrix.part }}
 
   carts:
     name: GL and dual GL + WebGPU carts

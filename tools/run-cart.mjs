@@ -182,8 +182,12 @@ async function runNative() {
   }
   // the build links each app's asset dir beside it (<exe>.assets); samples/<app>/assets otherwise
   env.CW_ASSETS = args.assets || (existsSync(nativeExe + '.assets') ? nativeExe + '.assets' : join(ROOT, 'samples', app, 'assets'));
-  const r = spawnSync(nativeExe, [], { env, encoding: 'utf8', timeout: 120000 });
-  if (r.status !== 0) throw new Error(`native exited ${r.status}: ${r.stderr}`);
+  // CW_RUN_TIMEOUT_MS: how long one native run may take (default 2 minutes; software rendering in CI is slower)
+  const timeout = +(process.env.CW_RUN_TIMEOUT_MS || 120000);
+  const r = spawnSync(nativeExe, [], { env, encoding: 'utf8', timeout });
+  // a run stopped by the timeout may still exit 0 (the engine quits cleanly on SIGTERM): that is a failure
+  if (r.error) throw new Error(`native: ${r.error.code === 'ETIMEDOUT' ? `timed out after ${timeout} ms (CW_RUN_TIMEOUT_MS)` : r.error.message}: ${r.stderr || ''}`);
+  if (r.status !== 0) throw new Error(`native exited ${r.status ?? r.signal}: ${r.stderr}`);
   if (gl) gl.check('native', r.stderr);
   if (pin) {
     const m = /WebGPU adapter: (.*)/.exec(r.stderr || '');

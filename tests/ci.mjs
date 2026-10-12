@@ -8,7 +8,7 @@
 // and anything that measures or guards real GPU hardware stay local: LOCAL_ONLY
 // says why for each, and docs/guides/testing.md lists them.
 //
-//   CW_TEST_GPU=software node tests/ci.mjs
+//   CW_TEST_GPU=software node tests/ci.mjs [gl | webgpu]   (both by default; CI runs them as two jobs)
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -54,10 +54,12 @@ const scripts = gates.filter((g) => g.script && !LOCAL_ONLY[g.name]).map((g) => 
 function gate(args) {
   return new Promise((res) => spawn('node', [join(ROOT, 'tests/gate.mjs'), ...args], { stdio: 'inherit' }).on('close', (c) => res(c ?? 1)));
 }
+const part = process.argv[2];
+if (part && !['gl', 'webgpu'].includes(part)) { console.error('usage: ci.mjs [gl | webgpu]'); process.exit(2); }
 const runs = [
   ['GL', [...gl, ...scripts, '--hosts', 'native']],
   ['WebGPU', [...wgpu, '--gpu', 'webgpu', '--hosts', 'native']],
-];
+].filter(([what]) => !part || what.toLowerCase() === part);
 let failed = 0;
 for (const [what, args] of runs) {
   console.log(`\n== ${what}: ${args.filter((a) => !a.startsWith('--') && !['native', 'webgpu'].includes(a)).length} gates`);
