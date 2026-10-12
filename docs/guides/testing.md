@@ -16,7 +16,7 @@ echo 7600 > ~/.config/cartwheel/wgpu-adapter           # a word of its device na
 
 ## Continuous integration
 
-CI (`.github/workflows/ci.yml`) runs on every push and pull request to main, on a GitHub runner with no GPU. It fetches the pinned dependencies, builds the native tree, the GL carts and the dual GL + WebGPU carts, runs `node tools/gen-api.mjs --check` and `node tools/gen-docs.mjs --check`, and runs `tests/ci.mjs` with `CW_TEST_GPU=software`: every app gate on the native host through Mesa's llvmpipe (GL), every gate with a `webgpu` entry through lavapipe (WebGPU), and the scripted gates that need no other host. In software mode nothing is pinned, sandboxed or guarded, and the renderer checks expect llvmpipe.
+CI (`.github/workflows/ci.yml`) runs on every push and pull request to main, on a GitHub runner with no GPU. It fetches the pinned dependencies, builds the native tree, the GL carts and the dual GL + WebGPU carts, runs `node tools/gen-api.mjs --check` and `node tools/gen-docs.mjs --check`, and runs `tests/ci.mjs` with `CW_TEST_GPU=software`: every app gate on the native host through Mesa's llvmpipe (GL), every gate with a `webgpu` entry through lavapipe (WebGPU), and the scripted gates that need no other host (the GL gates are split over three jobs, `node tests/ci.mjs gl-<k>of3`). In software mode nothing is pinned, sandboxed or guarded, and the renderer checks expect llvmpipe.
 
 Local only (they need GPU hardware or a host CI does not have; `LOCAL_ONLY` in `tests/ci.mjs` gives the reason for each):
 

@@ -19,11 +19,11 @@ jobs:
   native:
     name: Native gates (${{ matrix.part }})
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        part: [gl, webgpu]
+        part: [gl-1of3, gl-2of3, gl-3of3, webgpu]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,7 +46,7 @@ jobs:
           cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release
           ninja -C build/native
       - name: API and docs checks
-        if: matrix.part == 'gl'
+        if: matrix.part == 'gl-1of3'
         run: |
           node tools/gen-api.mjs --check
           node tools/gen-docs.mjs --check
