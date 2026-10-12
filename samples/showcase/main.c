@@ -1,4 +1,4 @@
-/* showcase: the phase-3 showcase (M3.7). An outdoor valley with a village,
+/* showcase: an outdoor valley with a village,
  * under the procedural sky through a day / night cycle:
  *
  *   terrain      480 m square, 12 x 12 chunks, three LOD levels each

@@ -1,4 +1,4 @@
-// S0.5 gate: edit a project inside a CART, carry it out, land it on DISK.
+// Gate: edit a project inside a CART, carry it out, land it on DISK.
 //   1. romdev runs the project_edit cart; over the debug channel we spawn a
 //      light, set a property, `project save` the level into the project layer
 //      and `vfs export` the changes (one base64 archive).

@@ -1,4 +1,4 @@
-/* cartwheel plugins (M5.2): runtime modules a PROJECT adds to the engine
+/* cartwheel plugins: runtime modules a PROJECT adds to the engine
  * without editing the cartwheel tree.
  *
  * ── What a plugin is ───────────────────────────────────────────────────

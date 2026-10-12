@@ -1,0 +1,28 @@
+[scene format=1]
+
+[node name="Bat" type="Bat" groups="enemies"]
+collision_layer_name = "enemies"
+collision_mask_names = "world|hitbox"
+floor_snap_length = 0
+step_height = 0
+hp = 1
+score = 150
+speed = 52
+radius = 6
+
+[node name="Shape" parent="." type="CollisionShape2D"]
+position = vec2(0, 3)
+shape = CIRCLE
+radius = 4
+
+[node name="Shadow" parent="." type="Polygon2D"]
+z_index = -1
+polygon = "4.0 9.0, 3.5 10.0, 2.0 10.6, 0.0 10.8, -2.0 10.6, -3.5 10.0, -4.0 9.0, -3.5 8.0, -2.0 7.4, 0.0 7.2, 2.0 7.4, 3.5 8.0"
+color = color(0, 0, 0, 0.25)
+
+[node name="Sprite" parent="." type="AnimatedSprite2D"]
+position = vec2(0, -4)
+texture = "images/bat.png"
+filter = NEAREST
+hframes = 4
+animations = "fly@12:0 1 2 1; hurt:3"

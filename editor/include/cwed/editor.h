@@ -7,7 +7,7 @@
  * set of commands, inspector plugins, gizmos, a play backend). Modules never
  * include each other's files and never include core internals: everything a
  * module needs is here, so modules are built in parallel by different people
- * (or agents) without touching each other's files.
+ * without touching each other's files.
  *
  * ── Modules ──────────────────────────────────────────────────────────
  * A module is a directory editor/modules/<name>/ whose .c files define
@@ -24,7 +24,7 @@
  *
  * ── Commands (every editor action) ───────────────────────────────────
  * Every action, from a menu, a shortcut, a panel, the command palette or
- * an agent, is a named COMMAND run through cwed_run() with text arguments:
+ * a tool, is a named COMMAND run through cwed_run() with text arguments:
  *
  *     node.set path=Player/Mesh prop=color value="color(1, 0, 0, 1)"
  *     node.set Player/Mesh color "color(1, 0, 0, 1)"     (positional: same)
@@ -88,14 +88,13 @@ extern "C" {
 
 typedef struct cwed_module {
   const char *title;     /* human name ("Scene Tree") */
-  const char *milestone; /* the development milestone that added it ("M4.1") */
   void (*init)(void);    /* register panels, commands, menus, settings, plugins */
   void (*frame)(double dt); /* once per editor frame, after input (keep it cheap: refresh what an event marked dirty) */
   void (*shutdown)(void);
 } cwed_module;
 #define CWED_MODULE(name) const cwed_module cwed_module_##name
 
-/* ── plugins (M5.2): editor modules that live in a PROJECT ───────────────
+/* ── plugins: editor modules that live in a PROJECT ───────────────
  * An editor plugin is a module in <project>/plugins/<name>/ (manifest
  * plugin.cwplugin, kind editor or both; cartwheel/plugin.h) instead of
  * editor/modules/. It uses this same API and nothing else, and defines
@@ -376,7 +375,7 @@ void cwed_status_set(const char *field, int order, const char *text);
  * (CW_EDITOR_SETTINGS, else $XDG_CONFIG_HOME/cartwheel/editor.cfg, else
  * ~/.config/cartwheel/editor.cfg; test runs with CW_FRAMES persist only
  * with CW_EDITOR_SETTINGS set) and in a cart in the project layer at
- * .cweditor/settings.cfg (exported with `vfs export`, decision D6). Change
+ * .cweditor/settings.cfg (exported with `vfs export`). Change
  * them with the settings.set command (undoable, editor-wide history). */
 typedef struct cwed_setting_desc {
   const char *key;      /* "interface.scale" */
@@ -425,8 +424,8 @@ const cwed_inspector_plugin *cwed_inspector_for(cw_node n, const cw_prop *p);
  * final = false while dragging (merged into one undo step), true on release. */
 bool cwed_prop_commit(const char *prop, const char *value_text, bool final);
 
-/* ── gizmos (viewports draw and drive them; M4.1) ───────────────────────── */
-typedef struct cwed_gizmo_ctx cwed_gizmo_ctx; /* defined by the viewport module (M4.1) */
+/* ── gizmos (viewports draw and drive them) ───────────────────────── */
+typedef struct cwed_gizmo_ctx cwed_gizmo_ctx; /* defined by the viewport module */
 typedef struct cwed_gizmo_desc {
   const char *name;
   const char *node_type;  /* applies to nodes of this type (or derived) */
@@ -440,9 +439,9 @@ void cwed_gizmo_register(const cwed_gizmo_desc *g); /* keeps the pointer: g must
 int cwed_gizmo_count(void); /* registered gizmos */
 const cwed_gizmo_desc *cwed_gizmo_at(int i); /* registration order; NULL out of range */
 
-/* ── play-in-editor backend (M4.3: the game in its own process) ───────────
+/* ── play-in-editor backend (the game in its own process) ───────────
  * The core owns the play.* commands, the toolbar's Play/Pause/Step/Stop and
- * their state; the M4.3 module provides the backend, built on the remote
+ * their state; the play module provides the backend, built on the remote
  * game client (cartwheel/remote.h): natively a crash-isolated child
  * process, as a cart a peer cart through romdev/wasmcart. Until one is
  * registered, play.* commands fail with a message saying so. */
@@ -477,7 +476,7 @@ const char *cwed_project_dir(void);
  * the project has no such key. Re-read when a project opens (CWED_EV_PROJECT). */
 const char *cwed_project_key(const char *key);
 /* Re-read project.cwproj (name, main scene, scenes) after a module changed
- * it, and emit CWED_EV_PROJECT (M4.6: project settings, rename). */
+ * it, and emit CWED_EV_PROJECT (project settings, rename). */
 void cwed_project_reload(void);
 
 /* ── drop targets shared between modules ────────────────────────────────

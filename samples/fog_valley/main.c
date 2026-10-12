@@ -1,4 +1,4 @@
-/* fog_valley: height fog (M3.5). A low morning sun behind a colonnade, a
+/* fog_valley: height fog. A low morning sun behind a colonnade, a
  * valley of far blocks, the ProceduralSky colouring the fog. The run is a
  * schedule of the HeightFog node's properties:
  *   seg 0   frames  1-20  analytic height fog (sky-coloured, the sun lobe)

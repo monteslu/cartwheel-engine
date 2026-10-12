@@ -41,7 +41,7 @@ default a generated one), `coi_shim = true` (web: ship a service worker that cro
 A project directory with a `CMakeLists.txt` (its `cw_add_app` calls) is built
 with the engine (`-DCW_PROJECT_DIR=<dir> -DCW_ENGINE_ONLY=ON`) in
 `<project>/.cwbuild/<platform>`. One without names an app this tree defines
-(`samples/platformer2d/assets` carries presets).
+(`games/platformer3d/assets` carries presets).
 
 ## Platforms
 
@@ -74,7 +74,7 @@ that becomes the game's environment, e.g. `CW_REMOTE=tcp:127.0.0.1:7400` with
 
 ## Tests
 
-`node tests/export.mjs [platform ...]` exports platformer2d
+`node tests/export.mjs [platform ...]` exports platformer3d
 for every platform, runs each export this machine can run, probes the running
 game through the debug channel, and runs must-fail controls (an export without
 its asset pack, a project with a broken asset path, a site without COOP/COEP, a

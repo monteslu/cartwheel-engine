@@ -1,4 +1,4 @@
-/* Game panel (M4.3): the play session at a glance and the game's frames.
+/* Game panel: the play session at a glance and the game's frames.
  *
  * Where the game's picture lives: a NATIVE game runs in its own window (its
  * own process and GL context: full frame rate, its own input, nothing copied

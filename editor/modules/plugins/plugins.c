@@ -1,4 +1,4 @@
-/* Plugin manager (M5.2): the project's plugins (plugins/<name>/plugin.cwplugin,
+/* Plugin manager: the project's plugins (plugins/<name>/plugin.cwplugin,
  * cartwheel/plugin.h) in the editor.
  *
  * Native editor: each enabled plugin's RUNTIME part (node types, ...) and
@@ -401,7 +401,7 @@ static void load_runtime(plug *p) {
 }
 
 /* The editor never runs game code on its documents (the same rule as the
- * game types M4.4 loads): a plugin's node types keep init/destroy (property
+ * game types the code view loads): a plugin's node types keep init/destroy (property
  * defaults) and their properties, their tree callbacks are cleared. */
 static void editor_safe_types(plug *p) {
   const cw_node_type *ts[32];
@@ -1204,4 +1204,4 @@ static void init(void) {
   fields_refresh();
 }
 
-CWED_MODULE(plugins) = { .title = "Plugins", .milestone = "M5.2", .init = init, .frame = frame, .shutdown = shutdown };
+CWED_MODULE(plugins) = { .title = "Plugins", .init = init, .frame = frame, .shutdown = shutdown };

@@ -1,4 +1,4 @@
-// GPU particle perf report (M3.4): fx_perf (100 000 particles at 1280x720,
+// GPU particle perf report: fx_perf (100 000 particles at 1280x720,
 // MODERN + bloom: depth collision, stretched sparks in curl noise, 20k alpha
 // smoke sorted every frame, an attractor swarm) for 300 frames on each host.
 // Reported: frame interval, CPU+GPU frame work (update start to a GPU sync

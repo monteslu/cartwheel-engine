@@ -113,7 +113,7 @@ void cwed__node_commands(void);
 void cwed__scene_commands(void);
 void cwed__editor_commands(void); /* help, editor.state, history.*, log.tail, settings.* */
 
-/* ── registration owners (owners.c, M5.2 plugins) ───────────────────── */
+/* ── registration owners (owners.c, plugins) ───────────────────── */
 extern int cwed__owner; /* who registers now: 0 = the editor, else a plugin (cwed_owner_push) */
 /* per registry: count what an owner registered / withdraw it */
 void cwed__commands_owned(int owner, cwed_owner_stats *s);

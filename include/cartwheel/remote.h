@@ -1,4 +1,4 @@
-/* cartwheel remote: the EDITOR side of play-in-editor (M4.3).
+/* cartwheel remote: the EDITOR side of play-in-editor.
  *
  * Launches a game under edit and talks to it over the debug channel
  * (cartwheel/debug.h), the same text requests and JSON replies romdev's
@@ -35,7 +35,7 @@
  * Use from a frame loop:
  *
  *   cw_remote *g = cw_remote_launch(&(cw_remote_desc){ .transport = CW_REMOTE_NATIVE,
- *                                                      .exe = "build/native/samples/platformer2d",
+ *                                                      .exe = "build/native/games/action2d",
  *                                                      .start_paused = true });
  *   cw_remote_send(g, "tree", 0, on_tree, ui);     // async; on_tree runs inside pump
  *   ... every frame: cw_remote_pump(g);
@@ -68,7 +68,7 @@ typedef struct cw_remote_desc {
   const char *const *args;       /* extra argv entries, NULL-terminated (may be NULL) */
   const char *const *env;        /* extra "NAME=value" entries, NULL-terminated (may be NULL) */
   const char *cwd;               /* working directory (NULL = the editor's) */
-  bool headless;                 /* SDL_VIDEODRIVER=offscreen, SDL_AUDIODRIVER=dummy (tests, agents) */
+  bool headless;                 /* SDL_VIDEODRIVER=offscreen, SDL_AUDIODRIVER=dummy (tests, tools) */
   /* romdev */
   const char *cart;              /* path of the .wasc */
   const char *romdev_url;        /* NULL = $ROMDEV_URL, else http://127.0.0.1:$ROMDEV_PORT (default 7331) */
@@ -145,7 +145,7 @@ int cw_remote_pump(cw_remote *r);
  * completed (successfully or not: the callback or cw_remote_take says). */
 bool cw_remote_wait(cw_remote *r, uint32_t id, int timeout_ms);
 
-/* Blocking convenience (tools, tests, agents): send, wait, return the reply
+/* Blocking convenience (tools, tests): send, wait, return the reply
  * JSON (malloc'd; free it) or NULL with the reason in *error_out (malloc'd,
  * may be NULL). A game-side {"error"} reply returns NULL with that text. */
 char *cw_remote_call(cw_remote *r, const char *request, int timeout_ms, char **error_out);

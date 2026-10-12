@@ -1,4 +1,4 @@
-// M4.4 exit criterion, end to end: a human asks for a change in the agent
+// End to end: a human asks for a change in the agent
 // panel; the agent edits C, builds, hot reloads, and the change shows in the
 // running game (play-in-editor) in under a few seconds.
 //

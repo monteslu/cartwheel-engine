@@ -1,11 +1,11 @@
-/* Play-in-editor exit criterion, scripted (M4.3, the editor side):
+/* Play-in-editor, scripted (the editor side):
  * "Edit a property in a running game; pause, step, inspect."
  *
  *   editor_play_test <native|romdev> <editor exe> <project dir> <out dir> [--control]
  *
  * Starts the native EDITOR (headless) on a copy of the play_demo project and
  * drives it only through its own debug channel with `ed <command>` requests,
- * as an agent would. The editor plays the project's game on the given
+ * as a script would. The editor plays the project's game on the given
  * transport (a native child process of the editor, or the game's cart in
  * romdev) and the test checks, through the editor:
  *   - Play starts the current scene paused at tick 1; the Remote panel syncs

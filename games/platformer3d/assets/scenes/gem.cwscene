@@ -1,0 +1,41 @@
+[scene format=1]
+
+[node name="Gem" type="Pickup" groups="gems"]
+collision_layer_name = "pickups"
+collision_mask_names = "player"
+value = 50
+kind = GEM
+
+[node name="Shape" parent="." type="CollisionShape3D"]
+shape = SPHERE
+radius = 0.6
+
+[node name="Spin" parent="." type="Node3D"]
+
+[node name="Mesh" parent="Spin" type="MeshInstance3D"]
+rotation = vec3(0.6155, 0, 0.7854)
+size = vec3(0.5, 0.5, 0.5)
+color = color(0.0154, 0.2684, 1, 1)
+emissive = color(0.0014, 0.0474, 0.4563, 1)
+metalness = 0.3
+roughness = 0.1
+cast_shadow = true
+
+[node name="Glow" parent="." type="OmniLight3D"]
+color = color(0.0707, 0.325, 1, 1)
+energy = 2.88634
+range = 3.5
+
+[node name="Anim" parent="." type="AnimationPlayer"]
+autoplay = "spin"
+
+[animation name="spin" player="Anim" length=2.4 loop=LOOP]
+[track type=value path="Spin:rotation"]
+0 = vec3(0, 0, 0)
+2.4 = vec3(0, 6.283185, 0)
+[track type=value path="Spin:position.y" interp=CUBIC]
+0 = 0
+1.2 = 0.2
+2.4 = 0
+
+[connection signal="body_entered" from="." to="." method="collect"]

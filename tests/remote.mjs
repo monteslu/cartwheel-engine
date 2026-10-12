@@ -1,4 +1,4 @@
-// Play-in-editor gate (M4.3): build/native/tests/remote_test drives
+// Play-in-editor gate: build/native/tests/remote_test drives
 // samples/remote_target through cartwheel/remote.h on each transport
 // (native child process, romdev cart): launch paused, edit while paused, step,
 // check the game's own state, call methods, follow the change log, layer

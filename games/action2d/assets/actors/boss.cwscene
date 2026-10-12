@@ -1,0 +1,33 @@
+[scene format=1]
+
+[node name="Boss" type="Boss" groups="enemies"]
+collision_layer_name = "enemies"
+collision_mask_names = "world|hitbox"
+floor_snap_length = 0
+step_height = 0
+hp = 12
+score = 2000
+speed = 34
+radius = 13
+
+[node name="Shape" parent="." type="CollisionShape2D"]
+position = vec2(0, 6)
+shape = CIRCLE
+radius = 10
+
+[node name="Shadow" parent="." type="Polygon2D"]
+z_index = -1
+polygon = "12.0 14.0, 10.4 16.0, 6.0 17.5, 0.0 18.0, -6.0 17.5, -10.4 16.0, -12.0 14.0, -10.4 12.0, -6.0 10.5, -0.0 10.0, 6.0 10.5, 10.4 12.0"
+color = color(0, 0, 0, 0.4)
+
+[node name="Sprite" parent="." type="AnimatedSprite2D"]
+texture = "images/boss.png"
+filter = NEAREST
+hframes = 5
+animations = "idle@3:0-1; charge:2; hurt:3; dead:4"
+
+[node name="Glow" parent="." type="Light2D"]
+position = vec2(0, -6)
+color = color(1, 0.35, 0.15, 1)
+energy = 0.8
+range = 70

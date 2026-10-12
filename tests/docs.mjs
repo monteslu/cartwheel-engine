@@ -1,4 +1,4 @@
-// M5.3 docs gate: the generated site is whole and works offline.
+// docs gate: the generated site is whole and works offline.
 //   1. tools/gen-api.mjs --check (references current, no new undocumented function)
 //   2. tools/gen-docs.mjs --check (every include, region and link resolves, no
 //      pasted code in tutorials, every header has a guide, every template a tutorial)

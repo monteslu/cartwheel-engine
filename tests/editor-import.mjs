@@ -1,4 +1,4 @@
-// M4.2 exit gate, "drag a glTF in, see it imported, place it", on every host.
+// End-to-end gate, "drag a glTF in, see it imported, place it", on every host.
 //
 // 1. The in-app session (editor/tests/import_app.c, app editor_import) on
 //    native, romdev, Chromium and wasmcart-native: a CC0 glTF is copied into
@@ -13,7 +13,7 @@
 //    Checks: the session's results (debug fields) on native/romdev/Chromium,
 //    the same fields on every host, frames within 0.2% (>16 levels) of
 //    native on all four, and natively the files on DISK.
-// 2. The same over the debug channel, as an agent works (D6 (d)): native
+// 2. The same over the debug channel, as a script would do it: native
 //    (CW_DEBUG_CMDS) and the editor cart in romdev get the files (`vfs write` / `vfs append` in pieces)
 //    and `ed fs.* / import.* / preview.*` requests and must reply alike; the
 //    cart's saved scene comes out of `vfs export`.
@@ -132,8 +132,8 @@ if (HOSTS.includes('native') && results.native.code === 0) {
 }
 // control 2: the pixel measurement can say zero (a hidden node), checked by EXPECT pixels_hidden = 0 above
 
-// ── 2. the same over the debug channel (agent workflow) ─────────────────
-// the files go in as an agent sends them: requests are capped at 4 KiB, so
+// ── 2. the same over the debug channel ─────────────────
+// the files go in as a tool sends them: requests are capped at 4 KiB, so
 // each file is written in base64 pieces (vfs write, then vfs append)
 const pushes = [];
 for (const n of ['lantern.gltf', 'lantern.bin', 'lantern_paint.png', 'broken.gltf']) {

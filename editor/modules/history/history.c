@@ -1,4 +1,4 @@
-/* History panel (M4.0): the active scene's undo history as command lines.
+/* History panel: the active scene's undo history as command lines.
  * Clicking an entry undoes or redoes up to it (history.goto). The scope
  * switch shows the editor-wide history (settings) instead. */
 #include <stdio.h>
@@ -79,4 +79,4 @@ static void init(void) {
   cwed_subscribe(CWED_EV_HISTORY | CWED_EV_DOC_ACTIVE | CWED_EV_DOC_CLOSED, on_event, NULL);
 }
 
-CWED_MODULE(history) = { .title = "History", .milestone = "M4.0", .init = init };
+CWED_MODULE(history) = { .title = "History", .init = init };

@@ -1,0 +1,50 @@
+[scene format=1]
+
+[node name="Saw" type="Hazard" groups="hazards"]
+collision_layer_name = "hazards"
+collision_mask_names = "player"
+
+[node name="Shape" parent="." type="CollisionShape3D"]
+shape = BOX
+size = vec3(1.3, 1.3, 0.3)
+
+[node name="Blade" parent="." type="Node3D"]
+
+[node name="Disc" parent="Blade" type="MeshInstance3D"]
+primitive = CYLINDER
+rotation = vec3(1.5708, 0, 0)
+size = vec3(1.3, 0.08, 0)
+color = color(0.531, 0.5627, 0.6462, 1)
+metalness = 0.9
+roughness = 0.25
+cast_shadow = true
+
+[node name="ToothA" parent="Blade" type="MeshInstance3D"]
+rotation = vec3(0, 0, 0.7854)
+size = vec3(1.5, 0.18, 0.06)
+color = color(0.6994, 0.0063, 0.0039, 1)
+metalness = 0.5
+cast_shadow = true
+
+[node name="ToothB" parent="Blade" type="MeshInstance3D"]
+rotation = vec3(0, 0, -0.7854)
+size = vec3(1.5, 0.18, 0.06)
+color = color(0.6994, 0.0063, 0.0039, 1)
+metalness = 0.5
+cast_shadow = true
+
+[node name="Hub" parent="Blade" type="MeshInstance3D"]
+primitive = CYLINDER
+rotation = vec3(1.5708, 0, 0)
+size = vec3(0.3, 0.16, 0)
+color = color(0.029, 0.029, 0.0433, 1)
+
+[node name="Anim" parent="." type="AnimationPlayer"]
+autoplay = "spin"
+
+[animation name="spin" player="Anim" length=0.5 loop=LOOP]
+[track type=value path="Blade:rotation"]
+0 = vec3(0, 0, 0)
+0.5 = vec3(0, 0, -6.283185)
+
+[connection signal="body_entered" from="." to="." method="hurt"]

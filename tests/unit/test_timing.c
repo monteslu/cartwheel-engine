@@ -1,4 +1,4 @@
-/* Fixed-step timing (M1.3): the simulation ticks at fixed_hz whatever the
+/* Fixed-step timing: the simulation ticks at fixed_hz whatever the
  * render rate, so after the same simulated time every host and every frame
  * rate has run the same number of ticks with the same state. Run by the gate
  * at 30, 60 and 144 Hz render rates for 60 simulated seconds. */

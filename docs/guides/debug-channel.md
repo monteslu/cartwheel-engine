@@ -16,11 +16,11 @@ A debug field is a named pointer to values the game already keeps: `cw_debug_i32
 
 and its `init` registers `x`, `angle` and `ticks`. In a cart the registry goes out through the wasmcart debug ABI and romdev reads it with `wasm({op:'debugState'})`; natively `CW_DEBUG_DUMP=file.json` writes every field when a `CW_FRAMES` run ends (`tools/run-cart.mjs --state` does both). The engine adds its own (`cw.frame`, `cw.tick`, `cw.pad0.*`, `tree.nodes`, `input.hash`, ...).
 
-Prefer a named value over a screenshot for any assertion about game state: the gates compare named fields exactly across hosts and pixels only with a tolerance. Publish what a test or an agent needs to know by name (`player.x`, `coins`, `phys.hash`), including hashes that fold many values into one.
+Prefer a named value over a screenshot for any assertion about game state: the gates compare named fields exactly across hosts and pixels only with a tolerance. Publish what a test needs to know by name (`player.x`, `coins`, `phys.hash`), including hashes that fold many values into one.
 
 ## Requests and replies
 
-A request is `name arg arg...` (quote an argument containing spaces with `""`); a reply is JSON. A refusal is exactly `{"error":"..."}` and names what to do instead. `help` lists a game's commands with their usage, so an agent never has to guess.
+A request is `name arg arg...` (quote an argument containing spaces with `""`); a reply is JSON. A refusal is exactly `{"error":"..."}` and names what to do instead. `help` lists a game's commands with their usage, so a caller never has to guess.
 
 Built in for every app:
 
@@ -97,7 +97,7 @@ Screenshots can take any combination of three layers: `world` (3D, effects, post
 
 ## Driving a game from another process: remote.h
 
-[cartwheel/remote.h](header:remote.h) is the controlling side, used by play-in-editor and by tests and agents. [cw_remote_launch](api:cw_remote_launch) starts a game on one of two transports with the same API and the same requests:
+[cartwheel/remote.h](header:remote.h) is the controlling side, used by play-in-editor, tests and tools. [cw_remote_launch](api:cw_remote_launch) starts a game on one of two transports with the same API and the same requests:
 
 - `CW_REMOTE_NATIVE`: the game executable as a child process. It inherits one end of a socketpair as `CW_REMOTE=fd:N`, which turns the channel on even without `.debug`. Frames on the socket carry an id, so any number of requests may be in flight. Exits and crashes are detected and reported with the signal; the child's output comes back as log lines; on Linux the child dies with its parent. (`CW_REMOTE=tcp:HOST:PORT` serves the same protocol on TCP.)
 - `CW_REMOTE_ROMDEV`: the game's `.wasc` loaded into romdev over HTTP, each request a `wasm({op:'command'})`; a worker keeps frames flowing at 60 a second while the game is not paused. A wasm trap is reported as a crash.

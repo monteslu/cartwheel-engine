@@ -522,9 +522,9 @@ page('nodes/index.html', 'Node types', [...new Set(roots)].map((r) => tree(r, '.
   const rel = '';
   const card = (href, title, text) => `<li><a href="${href}"><strong>${esc(title)}</strong><span>${esc(text)}</span></a></li>`;
   const body = `<ul class="cards">
-${card('guides/overview.html', 'Overview', 'What the engine is, the stack, and how agents and humans work on a game together.')}
+${card('guides/overview.html', 'Overview', 'What the engine is, the stack, and how a game is put together and tested.')}
 ${card('guides/getting-started.html', 'Getting started', 'Build the engine, run a sample on every host, make a project from a template.')}
-${card('guides/agent-workflow.html', 'The agent workflow', 'romdev, the debug channel, the editor\'s ed protocol and the agent panel inbox.')}
+${card('guides/debug-channel.html', 'The debug channel', 'Ask a running game questions and change it, natively and in a cart.')}
 ${card('api/index.html', 'C API reference', `${api.headers.length} headers, ${api.headers.reduce((a, h) => a + h.functions.length, 0)} functions, generated from the headers.`)}
 ${card('nodes/index.html', 'Node types', `${nodes.types.length} node types with every property and signal, from reflection.`)}
 </ul>

@@ -1,5 +1,5 @@
 /* play_demo: the game the editor's play-in-editor gate plays
- * (tests/editor-play.mjs, M4.3). Its project (assets/project.cwproj) is
+ * (tests/editor-play.mjs). Its project (assets/project.cwproj) is
  * what the editor opens; the scenes use engine node types only (so the
  * editor can open and save them) and this file adds the game's own logic:
  * every frame the HUD Label shows the ball's height and the game's tick

@@ -1,0 +1,19 @@
+; platformer3d project settings (cartwheel/physics_nodes.h)
+layer_names_3d = "world, player, props, pickups, hazards, triggers"
+gravity_3d = vec3(0, -14, 0)
+substeps = 4
+; the game the editor plays (play-in-editor: a build target of this repository)
+game_app = platformer3d
+
+; export presets (tools/cwexport.mjs --project games/platformer3d/assets --preset <name>)
+name = "Robo Hop"
+app = "platformer3d"
+export.linux.platform = "linux-x64"
+export.linux-arm64.platform = "linux-arm64"
+export.windows.platform = "windows-x64"
+export.macos.platform = "macos"
+export.ios.platform = "ios"
+export.android.platform = "android-arm64"
+export.web.platform = "web"
+export.cart.platform = "wasc"
+export.android.app_id = "org.cartwheel.robohop"

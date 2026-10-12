@@ -1,0 +1,24 @@
+[scene format=1]
+
+[node name="Crate" type="RigidBody3D" groups="props"]
+collision_layer_name = "props"
+collision_mask_names = "world|player|props"
+density = 40
+friction = 0.7
+
+[node name="Shape" parent="." type="CollisionShape3D"]
+shape = BOX
+size = vec3(0.9, 0.9, 0.9)
+
+[node name="Mesh" parent="." type="MeshInstance3D"]
+size = vec3(0.9, 0.9, 0.9)
+color = color(0.3494, 0.119, 0.0177, 1)
+roughness = 0.8
+cast_shadow = true
+receive_shadow = true
+
+[node name="Band" parent="." type="MeshInstance3D"]
+size = vec3(0.94, 0.16, 0.94)
+color = color(0.0707, 0.023, 0.0039, 1)
+roughness = 0.8
+cast_shadow = true

@@ -1,4 +1,4 @@
-// Phase-3 showcase performance report (M3.7): showcase_perf (the outdoor
+// Showcase performance report: showcase_perf (the outdoor
 // valley at 1920x1080, full quality: 193 lights, shadows, height fog,
 // GTAO, TAA, bloom, SMAA) through its five time-of-day segments of 150 frames
 // (morning, golden hour, dusk, night, the running cycle), on every host.

@@ -1,4 +1,4 @@
-/* perf_nodes (M2.0 gate): spawn 100k nodes into a tree, process a few
+/* perf_nodes (gate): spawn 100k nodes into a tree, process a few
  * phases, free them all. Node3D (with its three.c object) and plain Node
  * timings are debug fields; counts are checked, times are reported. */
 #include <stdlib.h>

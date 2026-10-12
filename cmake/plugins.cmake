@@ -1,4 +1,4 @@
-# Project plugins (M5.2, cartwheel/plugin.h): cw_add_app compiles the
+# Project plugins (cartwheel/plugin.h): cw_add_app compiles the
 # enabled RUNTIME plugins of <app source dir>/plugins/<name>/ into the app
 # and generates its plugin table; natively it also builds every plugin as
 # shared libraries the native editor loads:

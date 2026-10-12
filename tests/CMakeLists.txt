@@ -1,5 +1,5 @@
 add_subdirectory(unit)
-# M4.3 play-in-editor: the editor-side client (cartwheel/remote.h) driving
+# play-in-editor: the editor-side client (cartwheel/remote.h) driving
 # samples/remote_target natively and in romdev (tests/remote.mjs runs it)
 if(NOT CW_CART)
   add_executable(remote_test remote/remote_test.c)

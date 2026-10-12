@@ -19,7 +19,7 @@ for exe in "$B"/tests/unit/unit_* "$B"/samples/*; do
   [ -x "$exe" ] && [ -f "$exe" ] || continue
   case "$exe" in *.so|*.assets|*hot*) continue ;; esac
   name=$(basename "$exe")
-  frames=30; [ "$name" = physics_spike ] && frames=400
+  frames=30; [ "$name" = physics_determinism ] && frames=400
   assets="$ROOT/samples/$name/assets"; [ -d "$exe.assets" ] && assets="$exe.assets" # the build's asset root, as run-cart uses
   # A hang is a failure, not a stalled suite. SIGTERM alone cannot end one: SDL
   # turns SIGTERM into a quit event that a stuck frame never polls (and TSan

@@ -1,4 +1,4 @@
-/* Project settings (M4.6): project.set / project.get / project.settings and
+/* Project settings: project.set / project.get / project.settings and
  * the Project Settings panel (input map, physics layers, render settings).
  *
  * Every change is the undoable editor-wide command project.set, which

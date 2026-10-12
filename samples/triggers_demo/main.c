@@ -1,4 +1,4 @@
-/* triggers_demo (M4.4): data-driven "when X then Y" rules (Trigger nodes,
+/* triggers_demo: data-driven "when X then Y" rules (Trigger nodes,
  * cartwheel/triggers.h) with no game code behind them.
  *
  * A ball (group player) and a crate (group crates) fall through a Goal area

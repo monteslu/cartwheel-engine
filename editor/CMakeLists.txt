@@ -1,4 +1,4 @@
-# The cartwheel editor (phase 4): a cartwheel app built with the engine's UI.
+# The cartwheel editor: a cartwheel app built with the engine's UI.
 #   core/       the editor core (commands, history, documents, dock, shell)
 #   modules/X/  one directory per feature; every .c inside is compiled and the
 #               module registry is GENERATED from the directory list, so a new
@@ -48,7 +48,7 @@ cw_program_table(${CMAKE_CURRENT_SOURCE_DIR}/programs/cw_editor.txt _t)
 target_link_libraries(cartwheel_editor PUBLIC cwprog_cw_editor)
 
 set(CWED_DEMO ${CMAKE_CURRENT_SOURCE_DIR}/demo_project)
-# The editor's bundled files (M4.6): the demo project plus the project
+# The editor's bundled files: the demo project plus the project
 # templates under cwtemplates/ (what project.new copies in a cart), staged as
 # symlinks so edits show without a reconfigure, and cwtemplates.txt listing
 # every template file (a cart cannot list its assets).
@@ -72,7 +72,7 @@ if(NOT CW_CART)
 endif()
 set(CWED_DEMO ${CWED_ASSETS})
 set_property(GLOBAL PROPERTY CWED_ASSETS_DIR ${CWED_ASSETS}) # project editors (cmake/plugins.cmake) bundle its cwtemplates
-# a project build (M5.2) needs only the library: its <app>_editor is the app
+# a project build needs only the library: its <app>_editor is the app
 if(CWED_LIBRARY_ONLY)
   return()
 endif()
@@ -85,7 +85,7 @@ cw_add_app(unit_editor SOURCES tests/unit_editor.c ASSETS ${CWED_DEMO} GL_ONLY)
 target_link_libraries(unit_editor PRIVATE cartwheel_editor)
 target_include_directories(unit_editor PRIVATE core ${CMAKE_SOURCE_DIR}/tests/unit)
 
-# editor_import (M4.2 exit test, editor/tests/import_app.c): the editor with a
+# editor_import (editor/tests/import_app.c): the editor with a
 # scripted "drag a glTF in, see it imported, place it" session. The CC0 test
 # files in editor/tests/import (gen-assets.mjs) are compiled in, so the cart
 # brings them into its project the way an archive import does.
@@ -118,7 +118,7 @@ cw_add_app(editor_import SOURCES tests/import_app.c ${_imp_gen} ASSETS ${CWED_DE
 target_link_libraries(editor_import PRIVATE cartwheel_editor)
 target_include_directories(editor_import PRIVATE core)
 if(NOT CW_CART)
-  # M4.4 / M5.2: the native editor dlopens code built outside it (a game's
+  # the native editor dlopens code built outside it (a game's
   # node types, project plugins: runtime and editor parts), so like cwhot it
   # carries the whole engine and the whole editor and exports their symbols
   # for those libraries to link against.

@@ -4,12 +4,12 @@ set(CW_PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/programs/cw_samples.txt)
 
 cw_add_app(hello SOURCES hello/main.c)
 
-# M1.4: actions, tick/frame snapshots, rebinding, touch controls, record/replay (120 Hz).
+# actions, tick/frame snapshots, rebinding, touch controls, record/replay (120 Hz).
 cw_add_app(input_demo SOURCES input_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/input_demo/assets GL_ONLY)
 
-# S0.2 / S0.3: upstream's determinism scenes + Box3D's large pyramid on the job pool.
+# upstream's determinism scenes + Box3D's large pyramid on the job pool.
 # deps/<lib>/shared is upstream's sample support code, compiled as-is.
-cw_add_app(physics_spike SOURCES physics_spike/main.c
+cw_add_app(physics_determinism SOURCES physics_determinism/main.c
   ${DEPS}/box3d/shared/determinism.c ${DEPS}/box3d/shared/human.c ${DEPS}/box3d/shared/utils.c
   ${DEPS}/box3d/shared/benchmarks.c
   ${CMAKE_CURRENT_BINARY_DIR}/box2d_determinism.c GL_ONLY)
@@ -20,9 +20,9 @@ set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/box2d_determinism.c PROP
   INCLUDE_DIRECTORIES ${DEPS}/box2d/shared COMPILE_OPTIONS "-w")
 set_source_files_properties(${DEPS}/box3d/shared/determinism.c ${DEPS}/box3d/shared/human.c
   ${DEPS}/box3d/shared/utils.c ${DEPS}/box3d/shared/benchmarks.c PROPERTIES COMPILE_OPTIONS "-w")
-target_include_directories(physics_spike PRIVATE ${DEPS}/box3d/shared)
+target_include_directories(physics_determinism PRIVATE ${DEPS}/box3d/shared)
 
-# M1.5 physics module samples (cartwheel/physics.h)
+# physics module samples (cartwheel/physics.h)
 cw_add_app(physics3d_stack SOURCES physics3d_stack/main.c GL_ONLY)
 cw_add_app(physics2d_joints SOURCES physics2d_joints/main.c GL_ONLY)
 cw_add_app(character3d SOURCES character3d/main.c GL_ONLY)
@@ -30,11 +30,11 @@ cw_add_app(character3d_auto SOURCES character3d/main.c GL_ONLY)
 target_compile_definitions(character3d_auto PRIVATE CHARACTER_AUTOPILOT=1)
 cw_add_app(scene3d SOURCES scene3d/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/scene3d/assets)
 cw_add_app(perf_nodes SOURCES perf_nodes/main.c GL_ONLY)
-# M1.6 audio: an offline-rendered scripted mix (the cross-host hash gate) and
+# audio: an offline-rendered scripted mix (the cross-host hash gate) and
 # a sample that plays through the real device path.
 cw_add_app(audio_mix SOURCES audio_mix/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/audio_mix/assets GL_ONLY)
 cw_add_app(audio_play SOURCES audio_play/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/audio_play/assets GL_ONLY)
-# M2.7 animation: property tracks from a .cwscene (loop, ping-pong, method and
+# animation: property tracks from a .cwscene (loop, ping-pong, method and
 # event keys, cross-fades), tweens, and a skinned glTF character.
 cw_add_app(anim_props SOURCES anim_props/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/anim_props/assets)
 cw_add_app(anim_tween SOURCES anim_tween/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/anim_tween/assets)
@@ -47,9 +47,9 @@ configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.glb ${CW_SKINNED_ASSETS}/Ce
 configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.LICENSE.md ${CW_SKINNED_ASSETS}/CesiumMan.LICENSE.md COPYONLY)
 cw_add_app(anim_skinned SOURCES anim_skinned/main.c ASSETS ${CW_SKINNED_ASSETS})
 cw_add_app(project_edit SOURCES project_edit/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/scene3d/assets)
-# M4.3 play-in-editor: the game tests/remote.mjs drives through cartwheel/remote.h
+# play-in-editor: the game tests/remote.mjs drives through cartwheel/remote.h
 cw_add_app(remote_target SOURCES remote_target/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/remote_target/assets)
-# M4.3 play-in-editor, the editor side: the project + game tests/editor-play.mjs plays from the editor
+# play-in-editor, the editor side: the project + game tests/editor-play.mjs plays from the editor
 cw_add_app(play_demo SOURCES play_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/play_demo/assets)
 cw_add_app(hot_demo SOURCES hot_demo/main.c)
 if(NOT CW_CART)
@@ -67,7 +67,7 @@ if(NOT CW_CART)
   endif()
 endif()
 
-# M2.4: the 2D renderer. Shared test art + fonts in r2d_assets (make-art.mjs).
+# the 2D renderer. Shared test art + fonts in r2d_assets (make-art.mjs).
 set(R2D_ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/r2d_assets)
 cw_add_app(r2d_sprites SOURCES r2d_sprites/main.c ASSETS ${R2D_ASSETS})
 cw_add_app(r2d_tilemap SOURCES r2d_tilemap/main.c ASSETS ${R2D_ASSETS})
@@ -76,26 +76,21 @@ cw_add_app(r2d_camera SOURCES r2d_camera/main.c ASSETS ${R2D_ASSETS} GL_ONLY)
 cw_add_app(r2d_lights SOURCES r2d_lights/main.c ASSETS ${R2D_ASSETS})
 cw_add_app(r2d_interop SOURCES r2d_interop/main.c ASSETS ${R2D_ASSETS} GL_ONLY)
 cw_add_app(r2d_bench SOURCES r2d_bench/main.c ASSETS ${R2D_ASSETS} GL_ONLY)
-# M2.6: the retained UI system (cartwheel/ui.h). Shared scenes, themes and art in ui_assets.
+# the retained UI system (cartwheel/ui.h). Shared scenes, themes and art in ui_assets.
 set(UI_ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/ui_assets)
 cw_add_app(ui_gallery SOURCES ui_gallery/main.c ASSETS ${UI_ASSETS})
 cw_add_app(ui_gallery_light SOURCES ui_gallery/main.c ASSETS ${UI_ASSETS})
 target_compile_definitions(ui_gallery_light PRIVATE GALLERY_LIGHT=1)
-# M2.4/M2.5 node layer: a 2D platformer built only from .cwscene files
-# (2D canvas nodes + 2D physics nodes); _auto plays the input script itself.
-cw_add_app(platformer2d SOURCES platformer2d/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/platformer2d/assets)
-cw_add_app(platformer2d_auto SOURCES platformer2d/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/platformer2d/assets)
-target_compile_definitions(platformer2d_auto PRIVATE PLATFORMER_AUTOPILOT=1)
-# M2.5: the 3D physics nodes from .cwscene files; _auto plays the input script itself.
+# the 3D physics nodes from .cwscene files; _auto plays the input script itself.
 cw_add_app(physics3d_nodes SOURCES physics3d_nodes/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/physics3d_nodes/assets)
 cw_add_app(physics3d_nodes_auto SOURCES physics3d_nodes/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/physics3d_nodes/assets)
 target_compile_definitions(physics3d_nodes_auto PRIVATE NODES3D_AUTOPILOT=1)
-# M2.5: every Joint3D / Joint2D variant from one .cwscene.
+# every Joint3D / Joint2D variant from one .cwscene.
 cw_add_app(joints_nodes SOURCES joints_nodes/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/joints_nodes/assets)
 
-# spike: a small 3D arena game (spawn, move, collide, score)
-cw_add_app(spike_game SOURCES spike_game/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/spike_game/assets)
-# M1.7 / M2.2: glTF scenes instanced through the resource system, assets
+# a small 3D arena game (spawn, move, collide, score)
+cw_add_app(arena_game SOURCES arena_game/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/arena_game/assets)
+# glTF scenes instanced through the resource system, assets
 # imported and packed by cwpack (only what project/roots.txt reaches).
 cw_add_app(gltf_scene SOURCES gltf_scene/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/gltf_scene/project/roots.txt)
 cw_add_app(ui_interact SOURCES ui_interact/main.c ASSETS ${UI_ASSETS})
@@ -104,7 +99,7 @@ cw_add_app(ui_perf SOURCES ui_perf/main.c)
 cw_add_app(ui_hud SOURCES ui_hud/main.c)
 cw_add_app(ui_scene SOURCES ui_scene/main.c ASSETS ${UI_ASSETS})
 
-# M3.1 / M3.2: the render pipeline's post stack, every effect in a schedule
+# the render pipeline's post stack, every effect in a schedule
 # (post_stack), the same at 1280x720 full quality for the GPU timing report
 # (post_stack_perf).
 cw_add_app(post_stack SOURCES post_stack/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/post_stack/assets)
@@ -115,15 +110,15 @@ target_compile_definitions(post_stack_perf PRIVATE POST_PERF=1)
 cw_add_app(post_synth SOURCES post_synth/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/post_synth/assets)
 cw_add_app(post_synth_perf SOURCES post_synth/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/post_synth/assets)
 target_compile_definitions(post_synth_perf PRIVATE POST_PERF=1)
-# M3.4 effects: GPU particles (transform feedback) in every mode, trails, and
+# effects: GPU particles (transform feedback) in every mode, trails, and
 # the 100k-particle perf scene.
 cw_add_app(fx_particles SOURCES fx_particles/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_particles/assets)
 cw_add_app(fx_collide SOURCES fx_collide/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_collide/assets)
 cw_add_app(fx_perf SOURCES fx_perf/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_perf/assets GL_ONLY)
 cw_add_app(fx_particles2d SOURCES fx_particles2d/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_particles2d/assets)
-# M3.4 decals on uneven geometry (images generated by fx_decals/make-art.mjs)
+# decals on uneven geometry (images generated by fx_decals/make-art.mjs)
 cw_add_app(fx_decals SOURCES fx_decals/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_decals/assets GL_ONLY)
-# M3.6 visibility: impostor crossfade (no popping) on a grove of generated
+# visibility: impostor crossfade (no popping) on a grove of generated
 # trees, and the city (BVH frustum culling, occlusion queries, portals, LOD).
 cw_add_app(vis_impostor SOURCES vis_impostor/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt GL_ONLY)
 cw_add_app(vis_city SOURCES vis_city/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt GL_ONLY)
@@ -132,15 +127,15 @@ target_compile_definitions(vis_city_check PRIVATE VIS_DEFAULT_MODE="check")
 cw_add_app(vis_city_off SOURCES vis_city/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt GL_ONLY)
 target_compile_definitions(vis_city_off PRIVATE VIS_DEFAULT_MODE="off")
 
-# M3.5 the procedural sky, its sun and environment, the day / night cycle.
+# the procedural sky, its sun and environment, the day / night cycle.
 cw_add_app(sky_day SOURCES sky_day/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/sky_day/assets)
 # three.js r186's MeshPhysicalMaterial lobes on MeshInstance3D: clearcoat, sheen, iridescence, anisotropy.
 cw_add_app(physical_materials SOURCES physical_materials/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/physical_materials/assets)
-# M3.5 height fog: analytic, with the sun lobe; dense ground fog.
+# height fog: analytic, with the sun lobe; dense ground fog.
 cw_add_app(fog_valley SOURCES fog_valley/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fog_valley/assets)
-# M3.5 baked lighting: lightmaps with generated uv1 charts, an SH probe grid, a reproducible bake.
+# baked lighting: lightmaps with generated uv1 charts, an SH probe grid, a reproducible bake.
 cw_add_app(lightmap_room SOURCES lightmap_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/lightmap_room/assets)
-# M3.7 the phase-3 showcase: an outdoor valley through a day / night cycle
+# The showcase: an outdoor valley through a day / night cycle
 # (terrain LOD, a forest, a village with 193 lights, shadows, height
 # fog, skinned walkers, the modern post stack). The walkers are Khronos
 # CesiumMan (CC-BY-4.0), staged with its license as anim_skinned does;
@@ -157,7 +152,7 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/fx_decals/assets/decals/cracks.png ${
 cw_add_app(showcase SOURCES showcase/main.c showcase/world.c ASSETS ${CW_SHOWCASE_ASSETS})
 cw_add_app(showcase_perf SOURCES showcase/main.c showcase/world.c ASSETS ${CW_SHOWCASE_ASSETS} GL_ONLY)
 target_compile_definitions(showcase_perf PRIVATE SC_PERF=1)
-# M5.4 networking: a two-player arena on rollback netcode (cartwheel/net.h).
+# networking: a two-player arena on rollback netcode (cartwheel/net.h).
 # net_arena runs both peers in one process over the simulated network (every
 # host); net_arena_peer joins a tools/cwrelay.mjs room through the wasmcart
 # peer connection (its manifest grants localhost: a test build, never shipped).
@@ -167,9 +162,9 @@ target_compile_definitions(net_arena_peer PRIVATE NET_ARENA_JOIN="ws://localhost
 # the cart-side control: the same peer with a score miscounted once (tests/net.mjs)
 cw_add_app(net_arena_peer_desync SOURCES net_arena/main.c ASSETS ${R2D_ASSETS} NET localhost)
 target_compile_definitions(net_arena_peer_desync PRIVATE NET_ARENA_JOIN="ws://localhost:47731/arena" NET_ARENA_DESYNC=1)
-# M4.4: Trigger nodes ("when X then Y" rules in scene files, cartwheel/triggers.h)
+# Trigger nodes ("when X then Y" rules in scene files, cartwheel/triggers.h)
 cw_add_app(triggers_demo SOURCES triggers_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/triggers_demo/assets)
-# M5.5: localization and accessibility. One UI in English, the en-XA
+# localization and accessibility. One UI in English, the en-XA
 # pseudo-locale, Arabic and Japanese from packed catalogs (Noto fonts from
 # deps, subset by cwpack); l10n_nav plays a scripted gamepad session in
 # Arabic (focus navigation, popup focus restore, rebinding).
@@ -177,7 +172,7 @@ cw_add_app(l10n_demo SOURCES l10n_demo/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/l
 cw_add_app(l10n_nav SOURCES l10n_demo/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/l10n_demo/project/roots.txt)
 target_compile_definitions(l10n_nav PRIVATE L10N_NAV=1)
 
-# M5.2 plugins: a project (project.cwproj + plugins/turntable/) built in the
+# plugins: a project (project.cwproj + plugins/turntable/) built in the
 # repository tree too, so every host runs it; tools/cwproject.mjs builds the
 # same directory as a standalone project (the third-party path).
 add_subdirectory(plugin_demo)

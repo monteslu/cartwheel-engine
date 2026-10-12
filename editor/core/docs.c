@@ -274,7 +274,7 @@ static load_result load_scene(const char *path, cw_tree *into, bool keep) {
     snprintf(r.err, sizeof r.err,
              "%s uses node types this editor build does not have: %s (they are registered by the game's C code; "
              "opening it would lose those nodes)", path, unknown);
-    /* a type a project plugin provides: say which plugin and why it is not loaded (M5.2) */
+    /* a type a project plugin provides: say which plugin and why it is not loaded */
     char first[128];
     snprintf(first, sizeof first, "%.*s", (int)strcspn(unknown, ","), unknown);
     const char *hint = cw_plugin_type_hint(first);
@@ -719,8 +719,8 @@ static bool cmd_project_info(cwed_call *c) {
 
 static bool cmd_project_open(cwed_call *c) {
 #if CW_CART
-  return cwed_fail(c, "a cart's project is its bundled files plus the in-memory layer: bring files in with `vfs import <archive>` "
-                      "(decision D6 (b)/(d)); project.open with a directory works in the native editor");
+  return cwed_fail(c, "a cart's project is its bundled files plus the in-memory layer: bring files in with `vfs import <archive>`"
+                      "; project.open with a directory works in the native editor");
 #else
   for (int i = 0; i < docs.count; i++)
     if (cwed_doc_dirty(docs.data[i]))

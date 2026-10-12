@@ -1,0 +1,32 @@
+[scene format=1]
+
+[node name="Spitter" type="Spitter" groups="enemies"]
+collision_layer_name = "enemies"
+collision_mask_names = "world|hitbox"
+floor_snap_length = 0
+step_height = 0
+hp = 3
+score = 200
+radius = 7
+
+[node name="Shape" parent="." type="CollisionShape2D"]
+position = vec2(0, 3)
+shape = CIRCLE
+radius = 6
+
+[node name="Shadow" parent="." type="Polygon2D"]
+z_index = -1
+polygon = "6.0 7.5, 5.2 8.8, 3.0 9.7, 0.0 10.0, -3.0 9.7, -5.2 8.8, -6.0 7.5, -5.2 6.3, -3.0 5.3, -0.0 5.0, 3.0 5.3, 5.2 6.2"
+color = color(0, 0, 0, 0.3)
+
+[node name="Sprite" parent="." type="AnimatedSprite2D"]
+texture = "images/spitter.png"
+filter = NEAREST
+hframes = 4
+animations = "idle@2:0-1; charge:2; hurt:3"
+
+[node name="Eyes" parent="." type="Light2D"]
+position = vec2(0, -2)
+color = color(1, 0.5, 0.15, 1)
+energy = 0.35
+range = 34

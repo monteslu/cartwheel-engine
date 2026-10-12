@@ -24,7 +24,7 @@ scripts/build.sh
 
 | Tree | What it holds |
 |---|---|
-| `build/native` | samples in `build/native/samples/<app>`, unit suites in `build/native/tests/unit/`, tools (`cwhot`, `cwbake`) |
+| `build/native` | samples in `build/native/samples/<app>`, unit suites in `build/native/tests/unit/`, games in `build/native/games/`, tools (`cwhot`, `cwbake`) |
 | `build/cart` | every app as a cart in `build/cart/carts/<app>.wasc` |
 
 `BUILD_TYPE=Debug` and `TARGETS="native"` (or `"cart"`) narrow it. New `src/<module>/*.c` files are picked up by a glob, so re-run the script (it re-runs cmake) after adding one.
@@ -54,7 +54,7 @@ and the state is the same on every host that reports it:
 
 Frame N means "after N engine frames". `--input script.json` feeds an input script (the format is in the header of `tools/run-cart.mjs` and in [Testing](guide:testing)); `--exe` and `--cart` run a binary that is not under `build/`. `wcnative` takes no input and reports no state, only frames; it needs a display it is allowed to use (on a Wayland desktop, set `XAUTHORITY` to the session's Xwayland authority file if it hangs).
 
-To run a sample by hand, start the binary: `build/native/samples/platformer2d`. The environment variables `run-cart.mjs` uses work by hand too:
+To run a sample by hand, start the binary: `build/native/samples/scene3d`. The environment variables `run-cart.mjs` uses work by hand too:
 
 | Variable | Effect (native) |
 |---|---|
@@ -109,6 +109,6 @@ node tools/run-cart.mjs --host romdev --app my_game --cart ~/games/mygame/.cwbui
 
 ## Next
 
-- [The agent workflow](guide:agent-workflow): driving a running game through romdev and the debug channel.
+- [The debug channel](guide:debug-channel): inspecting and driving a running game.
 - [Architecture](guide:architecture): the loop, the node tree, resources and the render pipeline.
 - [Exporting](guide:export): shippable builds per platform.

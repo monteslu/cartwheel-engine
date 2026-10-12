@@ -1,4 +1,4 @@
-/* 2D Viewport panel (M4.1).
+/* 2D Viewport panel.
  *
  * Draws the active scene's 2D (cw_canvas_draw_view: the scene's canvas
  * items into a render target through the editor's own camera, whatever
@@ -975,4 +975,4 @@ static void init(void) {
   cwed_subscribe(CWED_EV_DOC_ACTIVE | CWED_EV_DOC_OPENED, on_doc_active, NULL);
 }
 
-CWED_MODULE(viewport2d) = { .title = "2D Viewport", .milestone = "M4.1", .init = init, .frame = frame, .shutdown = shutdown };
+CWED_MODULE(viewport2d) = { .title = "2D Viewport", .init = init, .frame = frame, .shutdown = shutdown };

@@ -263,7 +263,7 @@ void cw_control_fit_child(cw_node child, cw_rect r);
  * control's type, then its base types (CheckBox falls back to Button), then
  * the theme's base theme. Missing everywhere: 0 / transparent / empty style.
  *
- * Text format (one item per line, '#' comments; agents author these):
+ * Text format (one item per line, '#' comments):
  *
  *   extends = dark                  # dark | light | none (default dark)
  *   default_font = fonts/Inter.ttf  # asset path (SDF), or builtin:sans / builtin:mono

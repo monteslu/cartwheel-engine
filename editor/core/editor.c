@@ -1,5 +1,5 @@
 /* Editor lifecycle: init (core, modules, settings, window), the per-frame
- * work, debug fields for gates and agents. */
+ * work, debug fields for gates and tools. */
 #include "internal.h"
 #include "three.h"
 

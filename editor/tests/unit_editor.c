@@ -377,7 +377,7 @@ static void test_panels_and_settings(void) {
 }
 
 static void test_no_play_backend(void) {
-  /* the play backend (M4.3) is registered; the demo project names no game,
+  /* the play backend is registered; the demo project names no game,
    * so Play refuses and says how to name one (natively), or that the cart
    * editor has no transport at all */
   char *j;

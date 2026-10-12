@@ -5,7 +5,7 @@
 #include "cartwheel/gl.h"
 #include "../core/internal.h"
 
-/* An editor built for a game (the game's editor_types.c) registers the
+/* An editor built for a game (games/<game>/editor_types.c) registers the
  * game's node types first, so its scenes open: -DCWED_APP_TYPES=<fn>. */
 #ifdef CWED_APP_TYPES
 void CWED_APP_TYPES(void);

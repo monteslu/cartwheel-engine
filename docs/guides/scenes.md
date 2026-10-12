@@ -2,7 +2,7 @@
 
 A {{name}} game is a tree of nodes. Each node has a registered type that says what data it carries, which properties it exposes by name, which signals it emits and which lifecycle callbacks it runs; scenes are subtrees saved as text that diffs and merges in git.
 
-Headers: [cartwheel/scene.h](header:scene.h) (nodes, tree, groups, signals, methods, reflection), [cartwheel/scene_file.h](header:scene_file.h) (`.cwscene` and the scene runner), [cartwheel/scene2d.h](header:scene2d.h) (the 2D canvas types and pass). The node types themselves are listed in the node reference, starting at [Node](node:Node). Samples: `scene3d` (a level from scene files, instancing and an override), `platformer2d` (a whole game from scene files plus one custom node type), and the `unit-scene` suite.
+Headers: [cartwheel/scene.h](header:scene.h) (nodes, tree, groups, signals, methods, reflection), [cartwheel/scene_file.h](header:scene_file.h) (`.cwscene` and the scene runner), [cartwheel/scene2d.h](header:scene2d.h) (the 2D canvas types and pass). The node types themselves are listed in the node reference, starting at [Node](node:Node). Samples: `scene3d` (a level from scene files, instancing and an override), `games/action2d` (a whole game from scene files plus its own node types), and the `unit-scene` suite.
 
 ## Nodes and the tree
 
@@ -35,7 +35,7 @@ Each tree also has a seeded RNG ([cw_tree_rng](api:cw_tree_rng)) and per-module 
 
 ## Properties and values
 
-Every property of every node is reachable by name with a typed [cw_value](api:cw_value): [cw_node_set](api:cw_node_set) and [cw_node_get_prop](api:cw_node_get_prop). That one path serves the inspector, the scene format, animation tracks, triggers and the debug channel, so anything a scene file can say, code and agents can say too. Values have a text form: `3.5`, `true`, `vec3(1, 2, 3)`, `color(1, 0.5, 0, 1)`, `"text"`, `node("Path/To")`, `res(0x1234)`. Enums can be set by name with `cw_val_enum("SPHERE")`.
+Every property of every node is reachable by name with a typed [cw_value](api:cw_value): [cw_node_set](api:cw_node_set) and [cw_node_get_prop](api:cw_node_get_prop). That one path serves the inspector, the scene format, animation tracks, triggers and the debug channel, so anything a scene file can say, code and the debug channel can say too. Values have a text form: `3.5`, `true`, `vec3(1, 2, 3)`, `color(1, 0.5, 0, 1)`, `"text"`, `node("Path/To")`, `res(0x1234)`. Enums can be set by name with `cw_val_enum("SPHERE")`.
 
 `cw_node_set` checks the name and type, converts where it can, logs and returns false where it cannot, and notifies the owning type. It costs a lookup per call: fine for gameplay, but per-frame bulk updates of thousands of nodes should use the type's own setter (`cw_node3d_set_position`) or its data.
 
@@ -56,27 +56,25 @@ A group is a name a node belongs to (`groups="coins"` in a scene file, or [cw_no
 
 ## Signals and methods
 
-A signal is a named event a node emits (`body_entered`, `pressed`, `animation_finished`); the node reference lists each type's signals. [cw_connect](api:cw_connect) attaches a C function. The connection belongs to the target node and disappears when either node is freed; `CW_CONNECT_DEFERRED` queues the call to the end of the phase, `CW_CONNECT_ONESHOT` disconnects after the first call. From `platformer2d`:
+A signal is a named event a node emits (`body_entered`, `pressed`, `animation_finished`); the node reference lists each type's signals. [cw_connect](api:cw_connect) attaches a C function. The connection belongs to the target node and disappears when either node is freed; `CW_CONNECT_DEFERRED` queues the call to the end of the phase, `CW_CONNECT_ONESHOT` disconnects after the first call. From the [first 2D tutorial](tutorial:first-2d):
 
-@include samples/platformer2d/main.c#connect
+@include docs/tutorials/first-2d/project/src/main.c#init_signals
 
-Connections saved in scene files name a *method* instead of a function pointer. The game resolves names with a method resolver ([cw_set_method_resolver](api:cw_set_method_resolver)); the coin scene below connects `body_entered` to `collect`:
+Connections saved in scene files name a *method* instead of a function pointer. The game resolves names with a method resolver ([cw_set_method_resolver](api:cw_set_method_resolver)); `games/action2d` connects its scenes' signals this way.
 
-@include samples/platformer2d/main.c#collect
-
-Types can also expose named methods ([cw_node_type_add_method](api:cw_node_type_add_method)) that the editor and agents invoke with `call <node> <method> [args]`; [Triggers](guide:triggers) uses them as actions.
+Types can also expose named methods ([cw_node_type_add_method](api:cw_node_type_add_method)) that the editor and the debug channel invoke with `call <node> <method> [args]`; [Triggers](guide:triggers) uses them as actions.
 
 ## Custom node types
 
-Gameplay code is a node type: a data struct, a static [cw_node_type](api:cw_node_type) with callbacks, and properties declared with the `CW_PROP_FIELD` / `CW_PROP_ACCESSOR` macros so they show in the inspector and save in scenes. `platformer2d`'s player extends [CharacterBody2D](node:CharacterBody2D) and only adds a tick:
+Gameplay code is a node type: a data struct, a static [cw_node_type](api:cw_node_type) with callbacks, and properties declared with the `CW_PROP_FIELD` / `CW_PROP_ACCESSOR` macros so they show in the inspector and save in scenes. `hot_demo`'s Spinner extends a 3D node and turns it every tick:
 
-@include samples/platformer2d/main.c#player_data
-
-@include samples/platformer2d/main.c#player_type
+@include samples/hot_demo/main.c#node_type
 
 Register types in a function named `cw_game_register_types` and call it from `cw_main`. The editor calls the same function to open the game's scenes, and the hot-reload host calls it after new code loads; registering a name again takes the new callbacks and keeps the data layout (a changed `data_size` or parent is refused).
 
-@include samples/platformer2d/main.c#main
+@include samples/hot_demo/main.c#register_types
+
+@include samples/hot_demo/main.c#main
 
 Reflection is data: `docs/nodes.json` is generated from the registry, the `types` debug command lists every type with its properties, and `props <node>` returns each property's type, owner type, value and doc.
 
@@ -98,7 +96,7 @@ The parts that matter:
 - `[connection signal=... from=... to=... method=...]` lines restore signal connections by method name.
 - Modules add sections of their own (animations write `[animation]` with `[track]` sub-headers) through [cw_scene_register_section](api:cw_scene_register_section).
 
-From code: [cw_scene_instance_path](api:cw_scene_instance_path) makes a plain copy of a scene (to spawn rooms or enemies, say), [cw_scene_instance_linked](api:cw_scene_instance_linked) keeps the link so saving writes `instance=` plus the differences (the editor's "instance a scene"), and [cw_scene_save](api:cw_scene_save) writes any subtree back as text. Parsed scenes are cached by path; [cw_scene_cache_forget](api:cw_scene_cache_forget) drops one after rewriting it. Loads read the project layer first ([App and platform](guide:app-platform)), so a scene an agent or the editor just wrote is what loads.
+From code: [cw_scene_instance_path](api:cw_scene_instance_path) makes a plain copy of a scene (how `games/action2d` spawns rooms and enemies), [cw_scene_instance_linked](api:cw_scene_instance_linked) keeps the link so saving writes `instance=` plus the differences (the editor's "instance a scene"), and [cw_scene_save](api:cw_scene_save) writes any subtree back as text. Parsed scenes are cached by path; [cw_scene_cache_forget](api:cw_scene_cache_forget) drops one after rewriting it. Loads read the project layer first ([App and platform](guide:app-platform)), so a scene a tool or the editor just wrote is what loads.
 
 ## The scene runner
 

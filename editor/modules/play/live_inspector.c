@@ -1,4 +1,4 @@
-/* Live panel (M4.3): one node of the RUNNING game, inspected and edited live.
+/* Live panel: one node of the RUNNING game, inspected and edited live.
  *
  * Selecting a row in the Remote panel (or play.inspect) loads the node's
  * reflected properties (`node`, `props`); after that every play.poll_frames

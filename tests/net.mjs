@@ -1,4 +1,4 @@
-// M5.4 networking across processes and hosts (the cross-host in-process run
+// networking across processes and hosts (the cross-host in-process run
 // is the gates.json "net-arena" gate). Every check has a control that must
 // be caught:
 //   1. native pair, CW_NET_DESYNC=1: one peer miscounts a score once; the

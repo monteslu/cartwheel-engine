@@ -1,12 +1,12 @@
 # Coming from Godot
 
-{{name}}'s node model is shaped like Godot's on purpose, and most node names match. The big difference is who writes the game: here it is C against the public headers, usually written by an agent, with no scripting VM. This page maps Godot concepts to their equivalents and says plainly where there is none yet.
+{{name}}'s node model is shaped like Godot's on purpose, and most node names match. The big difference is who writes the game: here it is C against the public headers, with no scripting VM. This page maps Godot concepts to their equivalents and says plainly where there is none yet.
 
 ## The model
 
 | Godot | {{name}} | Notes |
 |---|---|---|
-| the Godot editor | none for now | the editor is paused; scenes, projects, input maps and themes are text files that agents (and humans) edit directly |
+| the Godot editor | none for now | the editor is paused; scenes, projects, input maps and themes are text files edited directly |
 | `Node`, `SceneTree` | `cw_node`, `cw_tree` | a node is a generational handle; a freed node's handle reads as null. Processing is tree order, depth first. See [Scenes and nodes](guide:scenes). |
 | `get_node("A/B")`, `$A/B`, `%Unique` | `cw_node_get(from, "A/B")` | also `"../Sibling"`, `"/root/Level/Player"` and `"%Unique"` |
 | `add_child`, `remove_child`, `reparent` | `cw_node_add_child`, `cw_node_remove_child`, `cw_node_reparent` | |
@@ -26,7 +26,7 @@
 
 | Godot | {{name}} | Notes |
 |---|---|---|
-| GDScript, C# | agent-written C | no scripting VM for now. Per-entity and per-frame logic is C; "when X then Y" rules a human tweaks are [triggers](guide:triggers). |
+| GDScript, C# | C | no scripting VM for now. Per-entity and per-frame logic is C; "when X then Y" rules a human tweaks are [triggers](guide:triggers). |
 | `_ready` | the type's `ready` callback | once, after its children are ready |
 | `_enter_tree`, `_exit_tree` | `enter_tree`, `exit_tree` | |
 | `_physics_process(delta)` | `fixed_update(dt)` | the fixed step (default 60 Hz, `render.fixed_hz`); put simulation here |
@@ -101,7 +101,7 @@ See [Animation](guide:animation), [Audio](guide:audio), [Networking](guide:netwo
 |---|---|
 | `project.godot` | `project.cwproj` (`key = value` lines, read with `cw_project_get`) |
 | export presets, `export_presets.cfg` | `export.<preset>.<key>` lines in `project.cwproj`, run by `tools/cwexport.mjs` ([Exporting](guide:export)) |
-| the remote scene tree and debugger | the debug channel: `tree`, `props`, `get`, `set`, `call`, `pause`, `step` ([The agent workflow](guide:agent-workflow)) |
+| the remote scene tree and debugger | the debug channel: `tree`, `props`, `get`, `set`, `call`, `pause`, `step` ([The debug channel](guide:debug-channel)) |
 | `user://` saves, `FileAccess` | no save-game API yet; `cartwheel/vfs.h` is the project file layer, and `cw_state_save` snapshots a tree for networking |
 
 ## Not there yet

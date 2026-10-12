@@ -2,7 +2,7 @@
 // frame split into its phases, GPU time where the host can time it, and the
 // frame-to-frame time of a real loop that never waits for the GPU.
 //
-//   node tools/perf-frame.mjs [--apps character3d_auto,platformer2d_auto] [--hosts native,chromium]
+//   node tools/perf-frame.mjs [--apps platformer3d_auto,action2d_auto] [--hosts native,chromium]
 //        [--gpus gl,webgpu] [--window 600] [--end N] [--runs 1]
 //        [--gpu-timers] [--profile] [--count] [--trace] [--build build] [--json out/perf-frame/report.json]
 //
@@ -72,7 +72,7 @@ mkdirSync(OUT, { recursive: true });
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf('--' + k); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : d; };
 const flag = (k) => argv.includes('--' + k);
-const GAMES = ['character3d_auto', 'physics3d_nodes_auto', 'platformer2d_auto'];
+const GAMES = ['platformer3d_auto', 'action2d_auto'];
 const APPS = opt('apps', GAMES.join(',')).split(',').map((a) => (a.endsWith('_auto') || !GAMES.includes(a + '_auto') ? a : a + '_auto'));
 const HOSTS = opt('hosts', 'native,chromium').split(',');
 const GPUS = opt('gpus', 'gl,webgpu').split(',');

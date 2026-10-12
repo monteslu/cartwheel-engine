@@ -1,0 +1,4 @@
+; action2d project settings (cartwheel/physics_nodes.h): top-down, no gravity
+layer_names_2d = "world, player, enemies, pickups, shots, hitbox"
+gravity_2d = vec2(0, 0)
+pixels_per_meter = 32

@@ -158,7 +158,7 @@ export async function hostCwpack(log) {
 /**
  * Build one app for one platform with that platform's toolchain file
  * (cmake/export/<platform>.cmake, or cmake/cart.cmake for carts).
- * Tree apps (samples) build in build/export/<platform> (carts: the dev
+ * Tree apps (samples, games) build in build/export/<platform> (carts: the dev
  * build/cart tree); projects in <project>/.cwbuild/<platform>.
  * @returns {Promise<{name: string, binary: string, pak: string, assets: string, manifest: string, buildDir: string}>}
  */

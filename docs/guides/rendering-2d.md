@@ -49,9 +49,9 @@ A window pass can draw at a fixed virtual size and scale the result to the windo
 
 The virtual canvas is nearest-filtered when scaled. `cw_r2d_window_to_canvas` undoes the scaling and letterboxing for pointer input, and `cw_r2d_canvas_rect` says where the canvas lands in the window. `samples/r2d_camera` draws a 300x170 canvas in a 640x360 window with `INTEGER`; it reads its own window back and the gate expects zero non-uniform 2x2 blocks.
 
-In a scene, the first `CanvasSettings` node in tree order sets the same things for the tree's 2D pass: `virtual_width`, `virtual_height`, `scale_mode`, `clear_color`, `letterbox`, the `ambient` light of lit canvases, `pixel_snap` and `y_sort` of the default canvas. This is the platformer sample's:
+In a scene, the first `CanvasSettings` node in tree order sets the same things for the tree's 2D pass: `virtual_width`, `virtual_height`, `scale_mode`, `clear_color`, `letterbox`, the `ambient` light of lit canvases, `pixel_snap` and `y_sort` of the default canvas. This is the first room of `games/action2d`:
 
-@include samples/platformer2d/assets/main.cwscene#Settings
+@include games/action2d/assets/rooms/room1.cwscene#Settings
 
 Without a `CanvasSettings` node the canvas is the window's pixels, cleared to black, with white ambient.
 
@@ -74,15 +74,13 @@ Every 2D type except `CanvasLayer` and `CanvasSettings` extends `Node2D` (positi
 - `Light2D` and `LightOccluder2D`: see lights below.
 - `GPUParticles2D` (from `cartwheel/particles.h`): CPU-simulated, deterministic particles drawn as one sprite batch; `samples/fx_particles2d` shows fire, snow, bursts and a world-space trail.
 
-The player scene of `samples/platformer2d` holds an `AnimatedSprite2D` and a smoothed, limited `Camera2D`:
+The hero scene of `games/action2d` holds an `AnimatedSprite2D`, a hitbox and a smoothed, limited `Camera2D`:
 
-@include samples/platformer2d/assets/player.cwscene#Sprite..Camera
+@include games/action2d/assets/actors/hero.cwscene#Sprite..Camera
 
-A parallax background and a screen-space HUD are two `CanvasLayer` nodes:
+A screen-space layer is a `CanvasLayer` node; action2d's fades and flashes sit on one:
 
-@include samples/platformer2d/assets/main.cwscene#Background..Background/Far/Hills
-
-@include samples/platformer2d/assets/main.cwscene#HUD
+@include games/action2d/assets/main.cwscene#Overlay
 
 ### How the tree draws
 
@@ -110,9 +108,9 @@ A tilemap stores up to 16 layers in 32x32-tile chunks. Each chunk is static geom
 
 A layer marked lit draws into an offscreen colour buffer (and a normal buffer when a normal-mapped texture was drawn), then composites as colour times light. The light buffer starts at the pass's ambient colour, and each light adds a radial falloff quad. Shadows are analytic: each occluder edge facing away from a light is extruded into the stencil buffer, which gives hard shadows exact at any resolution for two draws per shadowed light. The light buffer stores light at half intensity in RGBA8, so lights can overbright up to 2x. Normal maps attach to atlas textures with `cw_texture_set_normal_map`; without one a sprite is lit flat.
 
-`samples/r2d_lights` lights normal-mapped bricks and flat critters with three moving coloured lights (two shadowed) over a dim ambient, with an unlit HUD layer on top. In a scene, a canvas holding a `Light2D` is drawn lit, and `LightOccluder2D` polygons cast its shadows. The platformer's torch beside a block:
+`samples/r2d_lights` lights normal-mapped bricks and flat critters with three moving coloured lights (two shadowed) over a dim ambient, with an unlit HUD layer on top. In a scene, a canvas holding a `Light2D` is drawn lit, and `LightOccluder2D` polygons cast its shadows. Pillars and a torch in action2d's first room:
 
-@include samples/platformer2d/assets/main.cwscene#BlockShadow..Torch
+@include games/action2d/assets/rooms/room1.cwscene#Pillar1..Torch1
 
 ## Sharing GL with 3D
 
@@ -133,7 +131,6 @@ render2d needs a current GL context (call it from `init` onward) and sets every 
 | `r2d_lights` | lit layers, normal maps, shadows, ambient |
 | `r2d_interop` | three.c into a render target, 2D over 3D |
 | `r2d_bench` | 100,000 sprites, bulk vs single submission |
-| `platformer2d` | a whole game from `.cwscene` files: tilemap, parallax, camera, lights, HUD |
 | `fx_particles2d` | `GPUParticles2D` |
 
 The reference pages: [render2d.h](header:render2d.h), [scene2d.h](header:scene2d.h), and the node pages from `Node2D` down.

@@ -143,7 +143,7 @@ static void sum_chunk(int b, int e, int w, void *ctx) {
     partial[g] = s;
   }
 }
-/* M5.3 finding: chunk boundaries are the same on every host (not derived
+/* chunk boundaries are the same on every host (not derived
  * from the worker count) */
 static int chunk_len[5000];
 static void record_chunk(int b, int e, int w, void *ctx) {
@@ -167,7 +167,7 @@ static void test_job_chunks(void) {
   CHECK(chunks_are(1000, 100));
 }
 
-/* M5.3 finding: cw_log_remove_listener waits for a call running on another
+/* cw_log_remove_listener waits for a call running on another
  * thread (the caller may free the listener's data right after) */
 static int slow_entered, slow_finished;
 static void slow_listener(cw_log_level l, const char *msg, void *user) {
@@ -235,7 +235,7 @@ static void test_jobs(void) {
   CHECK(st.jobs >= 3);
 }
 
-/* M5.3 finding: the debug channel's argument splitting (key="a b") */
+/* the debug channel's argument splitting (key="a b") */
 static void echo_cmd(int argc, const char **argv, cw_reply *r) {
   cw_reply_raw(r, "[");
   for (int i = 1; i < argc; i++) {

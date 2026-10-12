@@ -126,7 +126,7 @@ const cwed_play_backend *cwed_play_backend_get(void) { return play; }
 static bool need_backend(cwed_call *c) {
   if (play) return true;
   return cwed_fail(c, "no play backend is registered: play-in-editor (the game in its own process, crash-isolated) "
-                      "comes from the M4.3 module through cwed_play_register");
+                      "comes from the play module through cwed_play_register");
 }
 
 static bool play_enabled(void) { return play != NULL; }
@@ -174,7 +174,7 @@ void cwed__play_commands(void) {
   static const cwed_param pause_p[] = { { "on", CWED_ARG_BOOL, "true", "pause (true) or resume (false); default toggles" }, { 0 } };
   static const cwed_param step_p[] = { { "ticks", CWED_ARG_INT, "1", "fixed ticks to advance while paused" }, { 0 } };
   cwed_command_register(&(cwed_command_desc){ .name = "play.start", .title = "Play Scene", .params = start_p, .shortcut = "f5",
-    .doc = "Run a scene as the game, in its own process (M4.3 backend).", .exec = cmd_start, .enabled = play_enabled });
+    .doc = "Run a scene as the game, in its own process (the play backend).", .exec = cmd_start, .enabled = play_enabled });
   cwed_command_register(&(cwed_command_desc){ .name = "play.stop", .title = "Stop Game", .shortcut = "f8",
     .doc = "Stop the running game.", .exec = cmd_stop, .enabled = play_enabled });
   cwed_command_register(&(cwed_command_desc){ .name = "play.pause", .title = "Pause Game", .params = pause_p, .shortcut = "f7",

@@ -1,0 +1,36 @@
+[scene format=1]
+
+[node name="Door" type="Door"]
+z_index = -5
+
+[node name="Sprite" parent="." type="Sprite2D"]
+texture = "images/tiles.png"
+filter = NEAREST
+region_enabled = true
+region = vec4(64, 32, 32, 16)
+
+[node name="Block" parent="." type="StaticBody2D"]
+collision_layer_name = "world"
+
+[node name="Shape" parent="Block" type="CollisionShape2D"]
+shape = RECT
+size = vec2(32, 16)
+
+[node name="Exit" parent="." type="Area2D"]
+collision_layer_name = "hitbox"
+collision_mask_names = "player"
+monitorable = false
+
+[node name="Shape" parent="Exit" type="CollisionShape2D"]
+position = vec2(0, 2)
+shape = RECT
+size = vec2(20, 10)
+
+[node name="Glow" parent="." type="Light2D"]
+position = vec2(0, 10)
+enabled = false
+color = color(0.55, 0.75, 1, 1)
+energy = 0.9
+range = 60
+
+[connection signal="body_entered" from="Exit" to="." method="door_enter"]

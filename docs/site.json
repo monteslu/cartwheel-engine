@@ -1,6 +1,6 @@
 {
   "name": "cartwheel",
-  "tagline": "A 2D + 3D game engine in C that agents build with and humans direct. Native everywhere, and a cart that runs in any browser.",
+  "tagline": "A 2D + 3D game engine in C. Native builds, and wasmcart carts that run in a browser, in Node, in a native player and in RetroArch.",
   "note": "The name is a working name. It appears only here; pages write {{name}}.",
   "sections": [
     {
@@ -8,7 +8,6 @@
       "guides": [
         "overview",
         "getting-started",
-        "agent-workflow",
         "architecture",
         "templates"
       ]

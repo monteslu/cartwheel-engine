@@ -1,22 +1,23 @@
-/* Agent panel (M4.4): the human-agent bridge.
+/* Agent panel: a change-request inbox between the editor and an external
+ * program that edits the project.
  *
- * A cartwheel game can be written by a coding agent (working in C and
- * through romdev) and directed by a human. The human types a request in
- * plain language here; the agent picks it up, changes the game and replies;
- * the panel shows what the agent did and the human approves or rejects it.
+ * A person types a request in plain language here; the external program
+ * (anything that watches the project's .cwagent/ directory or talks to the
+ * editor over the debug channel) picks it up, changes the game and replies;
+ * the panel shows what changed and the person approves or rejects it.
  * Nothing leaves the machine and there is no network service: the queue is
- * files in the project, plus editor commands for agents connected through the
- * debug channel (romdev `wasm({op:'command', text:'ed agent.inbox'})`).
+ * files in the project, plus editor commands over the debug channel
+ * (romdev `wasm({op:'command', text:'ed agent.inbox'})`).
  *
  * Files (natively; project directory, `.cwagent/`):
  *   requests/<id>.json   written by the editor: {"id","text","status",
  *                        "created"}; status pending -> working -> done |
  *                        failed -> approved | rejected
- *   replies/<id>.json    written by the AGENT (any time, overwritten):
+ *   replies/<id>.json    written by the external program (any time, overwritten):
  *                        {"status":"working|done|failed","summary":"...",
  *                         "notes":["..."],"probes":["..."]}
  *   ed/<name>.cmd        command lines for the editor, one per line, run as
- *                        if typed into `ed` (the file bridge for agents with
+ *                        if typed into `ed` (the file bridge for programs with
  *                        no debug channel); lines starting `game ` go to the
  *                        running game (play-in-editor) as debug-channel
  *                        requests (`game get Box color`). Answers land in
@@ -26,7 +27,7 @@
  *   snapshots/<id>/      the project's text files as they were when the
  *                        request was made (what reject restores)
  *
- * What the panel shows for a request: the text, the agent's status and
+ * What the panel shows for a request: the text, the program's status and
  * summary, its notes and probes (including every `game` request it sent
  * through the bridge), the editor commands run while it worked (COMMAND
  * events: through `ed`, the bridge or the UI), the build result
@@ -1256,4 +1257,4 @@ static void shutdown(void) {
   cw_array_free(&reqs);
 }
 
-CWED_MODULE(agent) = { .title = "Agent", .milestone = "M4.4", .init = init, .frame = frame, .shutdown = shutdown };
+CWED_MODULE(agent) = { .title = "Agent", .init = init, .frame = frame, .shutdown = shutdown };

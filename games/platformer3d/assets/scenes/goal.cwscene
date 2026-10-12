@@ -1,0 +1,95 @@
+[scene format=1]
+
+[node name="Goal" type="Goal" groups="goals"]
+collision_layer_name = "triggers"
+collision_mask_names = "player"
+
+[node name="Shape" parent="." type="CollisionShape3D"]
+shape = BOX
+size = vec3(2.2, 2.6, 2.2)
+position = vec3(0, 1.3, 0)
+
+[node name="Pad" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.08, 0)
+size = vec3(2.6, 0.16, 0)
+color = color(0.029, 0.0358, 0.0707, 1)
+metalness = 0.5
+roughness = 0.4
+receive_shadow = true
+
+[node name="Glow" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.17, 0)
+size = vec3(2.0, 0.04, 0)
+color = color(0.0707, 1, 0.325, 1)
+emissive = color(0.0154, 0.6121, 0.1332, 1)
+
+[node name="Beam" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 2.2, 0)
+size = vec3(0.12, 4.2, 0)
+color = color(0.1332, 1, 0.4563, 1)
+emissive = color(0.0707, 1, 0.325, 1)
+
+[node name="Ring" parent="." type="Node3D"]
+position = vec3(0, 1.4, 0)
+
+[node name="O1" parent="Ring" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(1.1, 0, 0)
+size = vec3(0.3, 0.3, 0.3)
+color = color(1, 0.6994, 0.029, 1)
+emissive = color(0.325, 0.1726, 0.0014, 1)
+
+[node name="O2" parent="Ring" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 0, 1.1)
+size = vec3(0.3, 0.3, 0.3)
+color = color(1, 0.6994, 0.029, 1)
+emissive = color(0.325, 0.1726, 0.0014, 1)
+
+[node name="O3" parent="Ring" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(-1.1, 0, 0)
+size = vec3(0.3, 0.3, 0.3)
+color = color(1, 0.6994, 0.029, 1)
+emissive = color(0.325, 0.1726, 0.0014, 1)
+
+[node name="O4" parent="Ring" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 0, -1.1)
+size = vec3(0.3, 0.3, 0.3)
+color = color(1, 0.6994, 0.029, 1)
+emissive = color(0.325, 0.1726, 0.0014, 1)
+
+[node name="Star" parent="." type="MeshInstance3D"]
+position = vec3(0, 4.5, 0)
+rotation = vec3(0.6155, 0, 0.7854)
+size = vec3(0.6, 0.6, 0.6)
+color = color(1, 0.7931, 0.0707, 1)
+emissive = color(0.7931, 0.4563, 0.0063, 1)
+cast_shadow = true
+
+[node name="Light" parent="." type="OmniLight3D"]
+position = vec3(0, 2.5, 0)
+color = color(0.1332, 1, 0.325, 1)
+energy = 5.58505
+range = 6
+
+[node name="Anim" parent="." type="AnimationPlayer"]
+autoplay = "turn"
+
+[animation name="turn" player="Anim" length=3 loop=LOOP]
+[track type=value path="Ring:rotation"]
+0 = vec3(0, 0, 0)
+3 = vec3(0, 6.283185, 0)
+[track type=value path="Ring:position.y" interp=CUBIC]
+0 = 1.0
+1.5 = 2.4
+3 = 1.0
+[track type=value path="Star:rotation"]
+0 = vec3(0.6155, 0, 0.7854)
+3 = vec3(0.6155, 6.283185, 0.7854)
+
+[connection signal="body_entered" from="." to="." method="finish"]

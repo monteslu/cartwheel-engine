@@ -15,7 +15,7 @@
 //                                        (android), orientation (android)
 // A project with a CMakeLists.txt (its cw_add_app calls) is built with the
 // engine (-DCW_PROJECT_DIR); one without names an app the cartwheel tree
-// itself defines (the samples).
+// itself defines (the samples and games).
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve, isAbsolute, relative } from 'node:path';
 import { parseCwproj, mkdirp, ExportError, ROOT } from './util.mjs';

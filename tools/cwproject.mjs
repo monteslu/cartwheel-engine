@@ -13,7 +13,7 @@
 //   cart    .cwbuild/cart/carts/<app>.wasc
 // After a successful build the paths go into project.cwproj as game_exe /
 // game_cart (relative to the project): what the editor's Play launches.
-// plugins: the project's plugins (plugins/<name>/plugin.cwplugin, M5.2) as
+// plugins: the project's plugins (plugins/<name>/plugin.cwplugin) as
 // the shared libraries the native editor loads, in the native tree:
 //   .cwbuild/native/plugins/<name>/<name>_runtime.so, <name>_editor.so
 // (native and cart builds compile enabled runtime plugins into the game).
@@ -91,7 +91,7 @@ const launcher = spawnSync('ccache', ['--version'], { stdio: 'ignore' }).status 
 
 /**
  * Run fn holding an exclusive lock on a build tree. Two builds of one project
- * at once (an editor's Build while a test or an agent builds, or a cart build
+ * at once (an editor's Build while a test or a script builds, or a cart build
  * that builds the native tree for its cwpack while a native build runs) would
  * otherwise run two ninjas in one tree: they race on the same outputs and a
  * link fails now and then. The lock is a directory (mkdir is atomic) holding

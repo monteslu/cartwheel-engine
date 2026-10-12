@@ -1,0 +1,32 @@
+[scene format=1]
+
+[node name="Gem" type="Pickup" groups="pickups"]
+collision_layer_name = "pickups"
+collision_mask_names = "player"
+kind = GEM
+amount = 50
+
+[node name="Shape" parent="." type="CollisionShape2D"]
+shape = CIRCLE
+radius = 6
+
+[node name="Shadow" parent="." type="Polygon2D"]
+z_index = -1
+polygon = "4.0 6.0, 3.5 7.0, 2.0 7.6, 0.0 7.8, -2.0 7.6, -3.5 7.0, -4.0 6.0, -3.5 5.0, -2.0 4.4, 0.0 4.2, 2.0 4.4, 3.5 5.0"
+color = color(0, 0, 0, 0.3)
+
+[node name="Sprite" parent="." type="AnimatedSprite2D"]
+texture = "images/pickups.png"
+filter = NEAREST
+hframes = 4
+animations = "spin@4:2-3"
+
+[node name="Bob" parent="." type="AnimationPlayer"]
+autoplay = "bob"
+
+[animation name="bob" player="Bob" length=0.6 loop=PING_PONG]
+[track type=value path="Sprite:position" interp=CUBIC]
+0 = vec2(0, 0)
+0.6 = vec2(0, -3)
+
+[connection signal="body_entered" from="." to="." method="collect"]

@@ -483,7 +483,7 @@ char *cw_theme_save(cw_theme h) {
 /* ── built-in themes ────────────────────────────────────────────────── */
 
 /* The template is the theme text format with {tokens} filled from a
- * palette, so the built-ins are exactly what an agent could write. */
+ * palette, so the built-ins are exactly what anyone could write. */
 static const char *TEMPLATE =
     "default_font = builtin:sans\n"
     "default_font_size = 15\n"

@@ -1,8 +1,8 @@
-/* Project manager (M4.6): create projects from templates, open, recent list,
+/* Project manager: create projects from templates, open, recent list,
  * rename, remove, build (native), and carry a project as one archive.
  *
  * A project is a directory (natively) or the in-memory project layer (in a
- * cart, decision D6 (b)+(d)) holding project.cwproj, the scenes, src/ (C) and
+ * cart) holding project.cwproj, the scenes, src/ (C) and
  * a CMakeLists.txt that builds it native and cart against the engine
  * (tools/cwproject.mjs: the engine tree configured with CW_PROJECT_DIR).
  * Templates live in editor/templates/<id>/ (template.cfg: title, description,
@@ -10,7 +10,7 @@
  *
  * Commands: project.templates, project.new, project.recent, project.rename,
  * project.remove, project.archive, project.import, project.build,
- * project.build_status, ui.rect (a test/agent helper: where a named widget
+ * project.build_status, ui.rect (a test helper: where a named widget
  * is on screen). Panel: Projects. */
 /* paths and messages are cut at their buffer on purpose (each limit is far above real use) */
 #if defined(__GNUC__) && !defined(__clang__)
@@ -957,7 +957,7 @@ static void build_frame(void) {
   panel_dirty = true;
 }
 
-/* ── ui.rect: where a named widget is (tests and agents drive the UI by pointer) ── */
+/* ── ui.rect: where a named widget is (tests drive the UI by pointer) ── */
 
 static cw_node find_named(cw_node n, const char *name, int depth) {
   if (!strcmp(cw_node_name(n), name)) return n;
@@ -1270,7 +1270,7 @@ static void init(void) {
   cwed_command_register(&(cwed_command_desc){ .name = "ui.rect", .title = "Widget Rect", .params = rect_p,
     .flags = CWED_CMD_QUERY | CWED_CMD_HIDDEN,
     .doc = "Where a named widget of the editor UI is (global rect, centre, visible, disabled; for a dock page also its tab): "
-           "what pointer-driven tests and agents click.",
+           "what pointer-driven tests click.",
     .exec = cmd_ui_rect });
 
   cwed_menu_add("File/New Project...", "panel.show projects", 190);
@@ -1294,4 +1294,4 @@ static void shutdown(void) {
   B.proc = NULL;
 }
 
-CWED_MODULE(project_manager) = { .title = "Project Manager", .milestone = "M4.6", .init = init, .frame = frame, .shutdown = shutdown };
+CWED_MODULE(project_manager) = { .title = "Project Manager", .init = init, .frame = frame, .shutdown = shutdown };

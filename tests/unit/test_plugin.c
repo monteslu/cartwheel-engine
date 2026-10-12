@@ -1,4 +1,4 @@
-/* Plugins (cartwheel/plugin.h, M5.2), on every host: the build's plugin
+/* Plugins (cartwheel/plugin.h), on every host: the build's plugin
  * table (cw_add_app compiled plugin_fixtures/good in, recorded future as
  * refused by API version, off as disabled, needs_future as refused by its
  * dependency), the API version rules, load-time refusal of code compiled

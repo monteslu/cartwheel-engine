@@ -1,4 +1,4 @@
-/* Inspector panel (M4.1): reflection-driven property editing.
+/* Inspector panel: reflection-driven property editing.
  *
  * Shows the editor-visible properties of the selection grouped by the type
  * that declares them. With several nodes selected it shows the properties
@@ -861,7 +861,7 @@ static void refresh_values(void) {
 
 static void on_event(const cwed_event *e, void *user) {
   (void)user;
-  if (e->type == CWED_EV_PLUGINS) { /* M5.2: a plugin (un)loads: drop the reference nodes now (they may be of its types) */
+  if (e->type == CWED_EV_PLUGINS) { /* a plugin (un)loads: drop the reference nodes now (they may be of its types) */
     refs_clear();
     rebuild_needed = true;
     return;
@@ -934,7 +934,7 @@ static cw_node create(void *user) {
 
 static void shutdown(void) { refs_clear(); }
 
-/* inspector.focus: scroll a property's row into view (agents, scripts) */
+/* inspector.focus: scroll a property's row into view (scripts) */
 static bool cmd_focus(cwed_call *c) {
   const char *p = cwed_arg(c, "prop");
   if (rebuild_needed || sel_hash() != shown_sel_hash) rebuild();
@@ -957,4 +957,4 @@ static void init(void) {
   cwed_subscribe(CWED_EV_DOC_CHANGED | CWED_EV_DOC_ACTIVE | CWED_EV_DOC_CLOSED | CWED_EV_SELECTION | CWED_EV_PLUGINS, on_event, NULL);
 }
 
-CWED_MODULE(inspector) = { .title = "Inspector", .milestone = "M4.1", .init = init, .frame = frame, .shutdown = shutdown };
+CWED_MODULE(inspector) = { .title = "Inspector", .init = init, .frame = frame, .shutdown = shutdown };

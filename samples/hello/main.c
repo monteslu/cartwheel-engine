@@ -1,4 +1,4 @@
-/* hello: spike S0.1. One SDL2 + GLES3 program, built natively and as a cart
+/* hello: one SDL2 + GLES3 program, built natively and as a cart
  * from the same source: a three.c cube that spins at a fixed rate, moves with
  * the left stick / arrow keys, and a 440 Hz tone while South / Space is held.
  * The cube's state is a pure function of the tick count and input, so native

@@ -1,0 +1,23 @@
+[scene format=1]
+[ext_scene id=1 path="scenes/hero_model.cwscene"]
+
+[node name="Player" type="Hero" groups="player"]
+collision_layer_name = "player"
+collision_mask_names = "world|props|pickups|hazards|triggers"
+push_mass = 60
+step_height = 0.25
+floor_snap_length = 0.3
+
+[node name="Shape" parent="." type="CollisionShape3D"]
+shape = CAPSULE
+radius = 0.32
+height = 1.5
+position = vec3(0, 0.75, 0)
+
+[node name="Model" parent="." instance=1]
+
+[node name="Anim" parent="Model"]
+autoplay = ""
+
+[node name="Tree" parent="." type="AnimationTree"]
+player = "../Model/Anim"

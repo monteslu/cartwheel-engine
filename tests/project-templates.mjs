@@ -1,4 +1,4 @@
-// M4.6 templates gate: every editor template (editor/templates/<id>) becomes
+// templates gate: every editor template (editor/templates/<id>) becomes
 // a project through the editor's project.new, builds native AND cart against
 // the engine (tools/cwproject.mjs: the engine tree with CW_PROJECT_DIR), and
 // runs the same pad script on every host:

@@ -1,10 +1,10 @@
-/* Code view, game build and C hot reload (M4.4).
+/* Code view, game build and C hot reload.
  *
- * cartwheel games are written in C (mostly by agents); the editor does not
+ * cartwheel games are written in C; the editor does not
  * edit C, it SHOWS it and closes the loop:
  *   - the Code panel lists the project's C sources (project.cwproj
  *     `sources`) and shows one, read-only, with line numbers and C
- *     highlighting; it follows edits made on disk (an agent's);
+ *     highlighting; it follows edits made on disk;
  *   - the Build panel runs the project's build (`build`, a shell command run
  *     in the project directory) without blocking the editor and lists the
  *     compiler's errors and warnings; clicking one opens file:line;
@@ -28,7 +28,7 @@
  *                                    can too): its node types load into the
  *                                    editor, cwhot runs it for play-in-editor
  * Natively only: a cart editor has no processes or dlopen (the commands say
- * so); its agent workflow builds through romdev instead. */
+ * so); a cart's project builds outside the editor instead. */
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -257,7 +257,7 @@ static bool open_file(const char *path, int line, char *err, int cap) {
   return true;
 }
 
-/* the open file changed on disk (an agent edited it): show the new text, same line */
+/* the open file changed on disk: show the new text, same line */
 static void follow_open_file(void) {
   if (!S.open_abs[0]) return;
   long long m = file_mtime(S.open_abs);
@@ -845,7 +845,7 @@ static bool cmd_build(cwed_call *c) {
   return true;
 }
 
-/* one line for panels and the agent view */
+/* one line for panels and the Agent panel */
 static const char *summary(void) {
   if (S.state == 1) return cw_frame_printf("build %d running (%.0f ms)", S.id, now_ms() - S.t_start);
   if (S.state == 0) return "no build yet";
@@ -970,7 +970,7 @@ static bool cmd_node_source(cwed_call *c) {
   for (const cw_node_type *t = cw_node_get_type(n); t; t = t->base) {
     if (k++) cwed_json_raw(j, ",");
     loc l = describe_type(j, t);
-    /* open the most derived GAME type (what the agent wrote); engine types
+    /* open the most derived GAME type (the game's own code); engine types
      * only when the node has no game type */
     bool game = false;
 #if !CW_CART
@@ -1165,7 +1165,7 @@ static void init(void) {
   cwed_command_register(&(cwed_command_desc){ .name = "code.open", .title = "Open Source File", .params = p_open,
     .doc = "Show a C source in the Code panel at a line (read-only; it follows edits made on disk).", .exec = cmd_open });
   cwed_command_register(&(cwed_command_desc){ .name = "code.read", .title = "Read Source Lines", .params = p_read,
-    .flags = CWED_CMD_QUERY | CWED_CMD_HIDDEN, .doc = "Lines of a source file as JSON strings (for agents).", .exec = cmd_read });
+    .flags = CWED_CMD_QUERY | CWED_CMD_HIDDEN, .doc = "Lines of a source file as JSON strings (for tools).", .exec = cmd_read });
   cwed_command_register(&(cwed_command_desc){ .name = "code.build", .title = "Build Game", .params = p_build, .shortcut = "f7",
     .doc = "Run the project's build (project.cwproj `build`) in the background; with reload (default) a good build is "
            "swapped into the running game and the editor. code.status follows it.", .exec = cmd_build });
@@ -1202,4 +1202,4 @@ static void shutdown(void) {
   S.out = NULL;
 }
 
-CWED_MODULE(code_view) = { .title = "Code", .milestone = "M4.4", .init = init, .frame = frame, .shutdown = shutdown };
+CWED_MODULE(code_view) = { .title = "Code", .init = init, .frame = frame, .shutdown = shutdown };

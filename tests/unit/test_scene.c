@@ -194,7 +194,7 @@ static void test_reflection(void) {
   cw_node_set(n, "quaternion", v);
   cw_node_get_prop(n, "rotation", &back);
   CHECK(fabsf(back.v[0] - 0.3f) < 1e-4f && fabsf(back.v[1] + 1.1f) < 1e-4f && fabsf(back.v[2] - 0.7f) < 1e-4f);
-  /* enums by name (S0.4 friction log #1) */
+  /* enums by name */
   cw_node m = cw_node_new("MeshInstance3D", "M");
   CHECK(cw_node_set(m, "primitive", cw_val_enum("SPHERE")));
   CHECK(cw_node_get_prop(m, "primitive", &v) && v.i == 2);
@@ -257,7 +257,7 @@ static void test_scene_roundtrip(void) {
   CHECK(cw_scene_parse("[node name=\"x\"]\n", "bad.cwscene") == NULL); /* root without type */
 }
 
-/* M2.1: every registered type, every property: get -> set(same) -> get is
+/* every registered type, every property: get -> set(same) -> get is
  * stable, and value_format -> value_parse reproduces it (the scene format
  * and the debug channel depend on both) */
 static void test_all_types_reflect(void) {
@@ -306,7 +306,7 @@ static void test_all_types_reflect(void) {
   FOLD(types_checked);
 }
 
-/* M4.1: a scene instancing a scene that itself holds an instance and a
+/* a scene instancing a scene that itself holds an instance and a
  * connection saves only what the outer scene adds: the nested instance is
  * the instanced scene's node (an override at most) and the inner scene's
  * own connection is not written again (both used to grow on every save). */
@@ -361,7 +361,7 @@ static void test_nested_instance_save(void) {
   cw_node_free(lvl), cw_node_free(lvl2);
 }
 
-/* M5.3 docs findings */
+/* found while writing the docs */
 static void test_look_at_rotated_parent(void) {
   setup();
   cw_tree *t = cw_tree_new();

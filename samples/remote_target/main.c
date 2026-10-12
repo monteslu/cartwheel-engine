@@ -1,5 +1,5 @@
 /* remote_target: the game tests/remote.mjs launches through
- * cartwheel/remote.h (play-in-editor, M4.3) on every transport.
+ * cartwheel/remote.h (play-in-editor) on every transport.
  *
  * A Mover node type moves right at `speed` pixels per second in its fixed
  * tick and counts its ticks, so an edit made while paused shows up as an

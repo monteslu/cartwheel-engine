@@ -58,7 +58,7 @@ void sc_world_tick(sc_world *w, uint64_t tick, float sun_elevation);
  * lamps nearest `focus` (a point ahead of the camera) */
 void sc_world_lamp_lights(sc_world *w, t3_vec3 focus);
 
-/* the M3.4 / M3.6 parts: GPU particles (the campfire's flames, sparks and
+/* the effects: GPU particles (the campfire's flames, sparks and
  * smoke, chimney smoke), decals (the fire's scorch, wear on the road) and a
  * VisibilityManager (frustum and occlusion culling, primitive LOD) for the
  * village's mesh nodes */

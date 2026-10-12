@@ -1,4 +1,4 @@
-// M4.6 exit gate: "New project -> export native + cart with one action".
+// "New project -> export native + cart with one action".
 //
 // Two sessions with the native editor, each over the debug channel's socket
 // (tools/lib/edsession.mjs), the editor running in real time (headless):
@@ -23,7 +23,7 @@
 //     pickups uncollected: the same check must fail.
 //
 //   node tests/project-export.mjs     (romdev on 127.0.0.1:7331; wcnative beside the checkout)
-// It needs the M5.0 exporter (tools/cwexport.mjs); tests/gates.json lists it
+// It needs the exporter (tools/cwexport.mjs); tests/gates.json lists it
 // once that is in main.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync, statSync, mkdtempSync } from 'node:fs';

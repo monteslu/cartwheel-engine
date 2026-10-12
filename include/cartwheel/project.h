@@ -1,7 +1,7 @@
 /* Project settings for games: project.cwproj, read through the project layer
  * (cartwheel/vfs.h), so a game sees the same file natively (its project
  * directory or packed assets) and in a cart (its bundled assets, or the
- * in-memory layer an editor or agent wrote).
+ * in-memory layer an editor or tool wrote).
  *
  * The file is `key = value` lines ('#' or ';' start a comment line; values
  * may be quoted). Keys the engine and editor use:
@@ -23,7 +23,7 @@
  * Editor and tool keys (the engine itself never reads them):
  *   scenes = levels/a.cwscene, ...     scenes the editor lists besides main_scene
  *   sources = src, game.c               C files and directories (the editor's
- *                                       code view and agent tools)
+ *                                       code view and other tools)
  *   build / game_module                 the editor's build command and hot module
  *   game_exe / game_cart                written by tools/cwproject.mjs after a
  *                                       build: what the editor's Play launches
@@ -48,7 +48,7 @@ bool cw_project_get_bool(const char *key, bool def); /* true/false/1/0/on/off */
 /* Number of keys, and key i (file order). */
 int cw_project_count(void);
 const char *cw_project_key(int i); /* interned; NULL when i is out of range */
-/* Re-read project.cwproj (after the editor or an agent changed it). */
+/* Re-read project.cwproj (after the editor or a tool changed it). */
 void cw_project_reload(void);
 /* Editing (the editor, tools): set a key to a value (written as is: quote
  * it yourself when it needs quotes), or remove the key (value NULL), in

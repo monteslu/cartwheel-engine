@@ -1,4 +1,4 @@
-// Play-in-editor gate (M4.3, the editor side). Exit criterion: "Edit a
+// Play-in-editor gate (the editor side): "Edit a
 // property in a running game; pause, step, inspect", on both game transports
 // from the native editor, scripted and by pointer, plus the cart editor's
 // clear "not available".

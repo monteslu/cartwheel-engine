@@ -36,7 +36,7 @@ The fields that matter most:
 - `ui_min_lines`: crisp UI, a choice an app offers its players (0, the default, offers none). Off, the UI is pixelated with the scene. On (`cw_crisp_ui_set(true)`, from a graphics menu), the 2D window passes (HUD, menus, text) draw at a resolution of at least this many lines while the scene keeps the render resolution: the frame is the smallest whole multiple k of the scene that reaches it, the scene is scaled up k times (still chunky) and the UI draws on top. A cart at 270p offering 540 hands its host a 540-line frame whether crisp UI is on or off, so the size never changes while it runs. "The UI" is every 2D window pass from the first one in a frame on, so draw the 3D scene first. Keep the choice in the save with `cw_crisp_ui_saved()` / `cw_crisp_ui_restore()` (one byte, as `cw_quality_saved` does). `CW_UI_MIN_LINES=N` offers N lines and turns it on natively; the `crisp_ui [1|0]` debug command turns it on or off on any host.
 - `cw_render_res_label()` (cartwheel/quality.h) is the render resolution as a graphics menu shows it, "540p" or "1080p": the scene's lines (`cw_render_size`). Show it beside the graphics preset; the host sets it.
 - `fixed_hz` (default 60) and `max_substeps` (default 5): the simulation rate and the catch-up cap per rendered frame.
-- `debug`: export the debug channel ([Debug channel](guide:debug-channel)). Gates and agents need it; set it in every sample and game.
+- `debug`: export the debug channel ([Debug channel](guide:debug-channel)). The gates need it; set it in every sample and game.
 - `deterministic` and `net`: cart manifest flags (deterministic replay, peer connections).
 - `workers`: job threads besides main, 0 = auto, below 0 = none.
 

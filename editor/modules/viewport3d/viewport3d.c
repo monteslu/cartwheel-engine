@@ -1,4 +1,4 @@
-/* 3D Viewport panel (M4.1).
+/* 3D Viewport panel.
  *
  * Renders the active scene's tree through its own render pipeline
  * (cartwheel/pipeline.h) into a render target the panel draws, with an
@@ -1024,4 +1024,4 @@ static void init(void) {
   cwed_subscribe(CWED_EV_DOC_ACTIVE | CWED_EV_DOC_OPENED, on_doc_active, NULL);
 }
 
-CWED_MODULE(viewport3d) = { .title = "3D Viewport", .milestone = "M4.1", .init = init, .frame = frame, .shutdown = shutdown };
+CWED_MODULE(viewport3d) = { .title = "3D Viewport", .init = init, .frame = frame, .shutdown = shutdown };

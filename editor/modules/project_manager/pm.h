@@ -1,4 +1,4 @@
-/* project_manager module (M4.6): shared between its files only. */
+/* project_manager module: shared between its files only. */
 #ifndef CWED_PM_H
 #define CWED_PM_H
 

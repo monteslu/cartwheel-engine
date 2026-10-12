@@ -9,8 +9,8 @@ Header: [cartwheel/triggers.h](header:triggers.h). Node type: [Trigger](node:Tri
 {{name}} has no script language and no VM. Game code comes in three layers:
 
 1. **Hot loops are threaded SIMD C**: anything per entity, per particle or per tile at scale runs as C functions over flat arrays on the job pool ([cw_parallel_for](api:cw_parallel_for), see [Core](guide:core)).
-2. **Gameplay is C** written against the node API: node types with lifecycle callbacks, signals, properties and methods ([Scenes](guide:scenes)). Agents write this layer; it has the same language, debugger and speed as the engine, and no binding layer.
-3. **Triggers** cover the handful of rules a human tweaks by hand: which door a switch opens, what a pickup does, where the exit leads. They are data, not code: nodes in a `.cwscene`, readable and writable as text, editable in the inspector, undoable like any edit, and visible to an agent through the debug channel.
+2. **Gameplay is C** written against the node API: node types with lifecycle callbacks, signals, properties and methods ([Scenes](guide:scenes)). It has the same language, debugger and speed as the engine, and no binding layer.
+3. **Triggers** cover the handful of rules a human tweaks by hand: which door a switch opens, what a pickup does, where the exit leads. They are data, not code: nodes in a `.cwscene`, readable and writable as text, editable in the inspector, undoable like any edit, and visible through the debug channel.
 
 So a trigger never replaces C. When a rule needs a loop, state, or anything per frame, it belongs in a node type; a trigger can then `CALL` a method that type exposes.
 
@@ -91,4 +91,4 @@ From C, [cw_trigger_fire](api:cw_trigger_fire) runs a trigger's action as if its
 
 ## Authoring
 
-Write triggers by hand in the scene text, set them with `set` over the debug channel, or use the editor's Triggers panel, which lists the active scene's rules as sentences and builds new ones for the selected node from the signals its type declares. All three produce the same nodes, so a rule an agent wrote opens in the editor and a rule a designer built reads as plain text in a diff.
+Write triggers by hand in the scene text, set them with `set` over the debug channel, or use the editor's Triggers panel, which lists the active scene's rules as sentences and builds new ones for the selected node from the signals its type declares. All three produce the same nodes, so a rule written as text opens in the editor and a rule a designer built reads as plain text in a diff.

@@ -1,4 +1,4 @@
-/* Export presets (M4.6): per-platform presets in project.cwproj, validation,
+/* Export presets: per-platform presets in project.cwproj, validation,
  * one-click export with progress, output in the Output panel.
  *
  * Presets are flat keys:
@@ -7,7 +7,7 @@
  *   export.<preset>.output   = exports/<preset>   (relative to the project)
  *   export.<preset>.<key>    = ... (whatever the platform's exporter reads)
  * The editor builds nothing itself: export.run starts the engine's exporter
- * (tools/cwexport.mjs, M5.0) as a child process, exactly as a shell would:
+ * (tools/cwexport.mjs) as a child process, exactly as a shell would:
  *   node <engine>/tools/cwexport.mjs --project <dir> --preset a,b [--validate]
  * and reads its `@progress <preset> <0..100> <stage>` and `@result {json}`
  * lines. So an export from the editor and one from the command line are the
@@ -309,7 +309,7 @@ static bool start_job(cwed_call *c, bool validate_only) {
   if (!dir[0]) return cwed_fail(c, "the project lives in memory: create one on disk (project.new) or open one (project.open) to export it");
   if (J.proc) return cwed_fail(c, "an export is running (export.status): wait for it or export.cancel");
   if (!tool_exists())
-    return cwed_fail(c, "the exporter %s is not in this engine checkout (M5.0 builds it): set CARTWHEEL_DIR to a checkout that has it",
+    return cwed_fail(c, "the exporter %s is not in this engine checkout: set CARTWHEEL_DIR to a checkout that has it",
                      tool_path());
   if (!validate_only)
     for (int i = 0; i < cwed_doc_count(); i++)
@@ -630,4 +630,4 @@ static void shutdown(void) {
   J.proc = NULL;
 }
 
-CWED_MODULE(export) = { .title = "Export", .milestone = "M4.6", .init = init, .frame = frame, .shutdown = shutdown };
+CWED_MODULE(export) = { .title = "Export", .init = init, .frame = frame, .shutdown = shutdown };

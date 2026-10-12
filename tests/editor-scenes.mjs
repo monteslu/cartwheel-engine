@@ -1,4 +1,4 @@
-// Editor gate: every .cwscene in the repository (samples, the editor's
+// Editor gate: every .cwscene in the repository (samples, games, the editor's
 // demo project) loads in the native editor and saves LOSSLESSLY
 // (`ed scene.check`: no load warnings, the saved text loads back to the same
 // nodes, types, groups and values, and saving is a fixed point). Canonical
@@ -29,11 +29,11 @@ function walk(dir, out = []) {
   return out;
 }
 // an asset root is the directory scenes' ext_scene paths are relative to:
-// samples/<x>/assets, samples/ui_assets, editor/demo_project
+// samples/<x>/assets, games/<x>/assets, samples/ui_assets, editor/demo_project
 const roots = new Map();
-for (const f of [...walk(join(ROOT, 'samples')), ...walk(join(ROOT, 'editor/demo_project'))]) {
+for (const f of [...walk(join(ROOT, 'samples')), ...walk(join(ROOT, 'games')), ...walk(join(ROOT, 'editor/demo_project'))]) {
   const r = relative(ROOT, f);
-  const m = r.match(/^(samples\/[^/]+\/assets|samples\/ui_assets|editor\/demo_project)\/(.*)$/);
+  const m = r.match(/^(samples\/[^/]+\/assets|games\/[^/]+\/assets|samples\/ui_assets|editor\/demo_project)\/(.*)$/);
   if (!m) { console.log('skip (no asset root):', r); continue; }
   if (!roots.has(m[1])) roots.set(m[1], []);
   roots.get(m[1]).push(m[2]);

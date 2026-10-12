@@ -1,4 +1,4 @@
-/* Play-in-editor (M4.3), the editor side: shared by this module's files only.
+/* Play-in-editor, the editor side: shared by this module's files only.
  *
  *   session.c          the play backend (cwed_play_register) on cartwheel/remote.h:
  *                      transport choice, launch/relaunch/stop, pause/step, the

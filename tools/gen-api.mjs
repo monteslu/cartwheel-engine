@@ -1,5 +1,5 @@
 // API docs as data: every public header's functions, types, macros and the
-// comment above each, as JSON (docs/api.json) for agents and the editor.
+// comment above each, as JSON (docs/api.json) for tools and the editor.
 // The headers are the documentation; this only makes them queryable.
 //
 //   node tools/gen-api.mjs            write docs/api.json

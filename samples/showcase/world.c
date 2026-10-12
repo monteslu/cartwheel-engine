@@ -465,7 +465,7 @@ static void instances_changed(t3_instanced_mesh *im) {
   if (im->instance_color) im->instance_color->version++;
 }
 
-/* ── particles, decals, visibility (M3.4 / M3.6) ────────────────────── */
+/* ── particles, decals, visibility ────────────────────── */
 
 static cw_node particles(cw_node parent, const char *name, t3_vec3 at) {
   cw_node n = cw_node_new("GPUParticles3D", name);

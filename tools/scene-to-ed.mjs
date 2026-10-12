@@ -2,7 +2,7 @@
 // (scene.new, node.add / node.instance, node.set, node.group, node.connect,
 // anim.new / anim.track_add / anim.key_add), so a scene can be rebuilt by
 // driving ONLY editor commands: over the debug channel (`ed64 <base64>`), in
-// a session, or by an agent. The lines are what a person clicking through
+// a session, or by a script. The lines are what a person clicking through
 // the editor produces; the editor's history replays them.
 //
 //   node tools/scene-to-ed.mjs <scene.cwscene> [--save <project path>] [--ed64] [--drop <node path>]...

@@ -1,4 +1,4 @@
-// Render pipeline GPU timing report (M3.1): post_stack_perf (the full-quality
+// Render pipeline GPU timing report: post_stack_perf (the full-quality
 // segment: MSAA 4x, TAA, GTAO, bloom, AgX, LUT grade, vignette, chromatic
 // aberration, grain) at 1280x720 for 240 frames, natively, and the per-pass
 // GPU ms each pass's GL_TIME_ELAPSED queries measured (16-frame average).

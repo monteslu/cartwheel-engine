@@ -1,4 +1,4 @@
-/* Resource registry suite (M1.7 / M2.2): types, paths, UIDs, reference
+/* Resource registry suite (): types, paths, UIDs, reference
  * counts, the deferred-free queue, async completion order, sub-resources,
  * glTF instancing and LODs, in-place reloads. Assets come from cwpack
  * (tests/unit/res_project/roots.txt), so this also proves the .cwpak reader

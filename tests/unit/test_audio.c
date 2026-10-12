@@ -388,7 +388,7 @@ static void test_queue_overflow(void) {
   stop();
 }
 
-/* M5.3 finding: closing the platform device forgets the fill callback on
+/* closing the platform device forgets the fill callback on
  * every host (native kept it), so nothing can call into a freed mixer */
 static void dev_fill(void *user, float *out, int frames) {
   (void)user;

@@ -1,4 +1,4 @@
-# A game project for the M4.4 agent loop (tests/editor-agent.mjs copies it
+# A game project for the Agent panel's loop (tests/editor-agent.mjs copies it
 # to out/ and builds it): one C file, one scene, the game as a hot module.
 name = Agent Demo
 main_scene = main.cwscene

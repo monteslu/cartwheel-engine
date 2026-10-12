@@ -1,4 +1,4 @@
-/* Baked lighting (M3.5): an offline CPU lightmapper and an ambient probe
+/* Baked lighting: an offline CPU lightmapper and an ambient probe
  * grid.
  *
  * What is baked. MeshInstance3D nodes with gi_mode STATIC are the baked

@@ -10,7 +10,7 @@ Header: [cartwheel/resource.h](header:resource.h). Tool: `tools/cwpack` (source 
 - A **path**, `res://models/duck.glb` or just `models/duck.glb`, relative to the asset root. A `#` addresses a sub-resource of a loaded file: `models/duck.glb#mesh/0/1` (mesh 0, primitive 1), `#material/2`, `#texture/0`.
 - A **UID**, a stable 64-bit id that survives renames. It comes from the file's `.cwimport` sidecar (`uid = 0x...`), else from the FNV-1a hash of its path ([cw_res_path_uid](api:cw_res_path_uid)). Scene files can reference resources by UID (`res(0x...)` values), so moving a file does not break the scenes that use it. `cwpack` writes a `res.index` of uid, type and path into every pack, and [cw_res_load_uid](api:cw_res_load_uid) resolves through it.
 
-Reads go through the project layer first ([App and platform](guide:app-platform)), so a file the editor or an agent just wrote loads without a repack.
+Reads go through the project layer first ([App and platform](guide:app-platform)), so a file the editor or a tool just wrote loads without a repack.
 
 ## Types
 

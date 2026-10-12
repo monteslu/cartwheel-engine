@@ -17,17 +17,17 @@ There is one control flow on every target: the engine owns the frame and calls t
 
 Rendering is GLES 3.0 / WebGL2 (ANGLE where a platform needs it) or WebGPU (Dawn natively; in a cart, the host's WebGPU). The GL path runs everywhere; WebGPU is used where it is available.
 
-## Agents build, humans direct
+## Design
 
-The engine is designed for a game written mostly by an agent, in C, directly against the public headers, and verified by running it. A human describes what they want, plays builds and approves. That choice shapes everything:
+A game is C written directly against the public headers, checked by running it. That shapes the rest:
 
 - **The C API is the authoring surface.** Every public function is documented in its header (what it does, what it costs, who owns what), and the headers are exported as data in `docs/api.json`. Node types and their properties are in `docs/nodes.json`.
-- **A running game answers questions.** With `.debug = true`, an app exposes named state (`cw_debug_f32("player.x", &x)`) and a text request/reply channel: `tree`, `props`, `get`, `set`, `call`, `pause`, `step`, `screenshot` and more. The same channel works natively and in a cart. See [The agent workflow](guide:agent-workflow) and [The debug channel](guide:debug-channel).
-- **Everything is text.** Scenes (`.cwscene`), project settings (`project.cwproj`), input maps, themes and trigger rules are line-based text that diffs in git, so an agent can author and review them without a GUI.
-- **No scripting VM.** Gameplay is agent-written C plus data-driven [triggers](guide:triggers) ("when X then Y" rules stored as nodes). There is no Lua or GDScript layer for now.
+- **A running game answers questions.** With `.debug = true`, an app exposes named state (`cw_debug_f32("player.x", &x)`) and a text request/reply channel: `tree`, `props`, `get`, `set`, `call`, `pause`, `step`, `screenshot` and more. The same channel works natively and in a cart. See [The debug channel](guide:debug-channel).
+- **Everything is text.** Scenes (`.cwscene`), project settings (`project.cwproj`), input maps, themes and trigger rules are line-based text that diffs in git and can be written and reviewed without a GUI.
+- **No scripting VM.** Gameplay is C plus data-driven [triggers](guide:triggers) ("when X then Y" rules stored as nodes). There is no Lua or GDScript layer for now.
 - **Verification is built in.** Fixed-step simulation is deterministic across hosts, so the same input script gives the same named state on every host. See [Testing](guide:testing).
 
-The editor is paused while the engine and tooling mature; scenes and projects are text files that agents and humans edit directly.
+The editor is paused while the engine and tooling mature; scenes and projects are text files edited directly.
 
 ## Hosts
 
@@ -50,6 +50,7 @@ Shipping builds (Linux, Windows, Android, web, macOS and iOS project kits) come 
 | `include/cartwheel/*.h` | the public API, one header per module; the comments are the documentation |
 | `src/<module>/` | the implementation |
 | `samples/<name>/` | small apps, one feature each; every one is a gate |
+| `games/` | the larger games that forced each phase (a 3D platformer, a 2D action game) |
 | `editor/templates/` | project skeletons to copy (see [Templates](guide:templates)) |
 | `tests/` | `gates.json`, the gate runner, unit suites (`tests/unit/`) and scripted gates |
 | `tools/` | `run-cart.mjs`, `cwproject.mjs` (build a project), `cwexport.mjs`, `cwpack` (assets), `cwhot` (C hot reload), `cwbake` (lightmaps), `gen-api.mjs`, `gen-docs.mjs` |
@@ -65,6 +66,6 @@ Every public header, with its one-line summary:
 - [Getting started](guide:getting-started): build, run a sample on every host, start a project.
 - [Your first 2D game](tutorial:first-2d) and [your first 3D game](tutorial:first-3d): a small game from an empty template.
 - [Multiplayer with rollback](tutorial:multiplayer-rollback) and [Localizing a game](tutorial:localize).
-- [The agent workflow](guide:agent-workflow): how an agent builds and verifies a game.
+- [The debug channel](guide:debug-channel): inspect and drive a running game.
 - [Coming from Godot](guide:porting-from-godot): the concept map.
 - [Working on {{name}}](guide:conventions): the rules for changing the engine itself.

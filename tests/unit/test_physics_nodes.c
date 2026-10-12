@@ -522,7 +522,7 @@ static void test_area_toggle2d(void) {
   cw_tree_free(t);
 }
 
-/* M5.3 docs findings: body -> node outside a tree update; asking a tree's
+/* found while writing the docs: body -> node outside a tree update; asking a tree's
  * pixels per meter creates no world */
 static void test_body_node_lookup(void) {
   cw_tree *t = cw_tree_new();
@@ -543,7 +543,7 @@ static void test_body_node_lookup(void) {
   cw_tree_free(t);
 }
 
-/* M5.3 finding: an unknown layer name is an error, not a warning */
+/* an unknown layer name is an error, not a warning */
 static int layer_errors;
 static void count_layer_errors(cw_log_level l, const char *msg, void *u) {
   (void)u;

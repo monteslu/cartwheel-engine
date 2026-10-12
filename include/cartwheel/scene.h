@@ -293,7 +293,7 @@ int cw_node_connections(cw_node n, bool incoming, cw_connection_info *out, int c
 
 /* ── methods ─────────────────────────────────────────────────────────
  * A method is a named C function a node type exposes BY NAME, so the
- * editor and agents can invoke it (debug channel: call <node> <method>
+ * editor and tools can invoke it (debug channel: call <node> <method>
  * [args...]). args is the signature as type names,
  * comma separated ("float,vec2"; NULL or "" = none; "..." = unchecked);
  * the debug channel parses and type-checks arguments against it. Return

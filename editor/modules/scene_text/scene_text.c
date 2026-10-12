@@ -1,6 +1,6 @@
-/* Scene Text panel (M4.0): the active scene exactly as it will save
- * (.cwscene text), refreshed on every change. The editor is agent-first:
- * whatever a human does here is visible as the text diff an agent reads. */
+/* Scene Text panel: the active scene exactly as it will save
+ * (.cwscene text), refreshed on every change. Whatever is done in the
+ * editor shows here as the text diff it makes. */
 #include <stdio.h>
 #include <string.h>
 
@@ -84,4 +84,4 @@ static void init(void) {
   cwed_subscribe(CWED_EV_DOC_CHANGED | CWED_EV_DOC_ACTIVE | CWED_EV_DOC_CLOSED | CWED_EV_DOC_SAVED | CWED_EV_HISTORY, on_event, NULL);
 }
 
-CWED_MODULE(scene_text) = { .title = "Scene Text", .milestone = "M4.0", .init = init, .frame = frame };
+CWED_MODULE(scene_text) = { .title = "Scene Text", .init = init, .frame = frame };

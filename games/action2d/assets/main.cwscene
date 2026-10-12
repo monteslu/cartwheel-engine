@@ -1,0 +1,352 @@
+[scene format=1]
+
+[node name="Game" type="Node"]
+
+[node name="World" parent="." type="Node2D"]
+
+[node name="Overlay" parent="." type="CanvasLayer"]
+layer = 20
+
+[node name="Fade" parent="Overlay" type="Polygon2D"]
+modulate = color(1, 1, 1, 0)
+polygon = "-8 -8, 328 -8, 328 188, -8 188"
+color = color(0.02, 0.01, 0.04, 1)
+
+[node name="Flash" parent="Overlay" type="Polygon2D"]
+modulate = color(1, 1, 1, 0)
+polygon = "-8 -8, 328 -8, 328 188, -8 188"
+
+[node name="ScreenFx" parent="." type="AnimationPlayer"]
+
+[node name="UI" parent="." type="Control"]
+anchor_right = 1
+anchor_bottom = 1
+mouse_filter = IGNORE
+theme = "ui/game.theme"
+pause_mode = ALWAYS
+
+[node name="Hud" parent="UI" type="Control"]
+anchor_right = 1
+anchor_bottom = 1
+mouse_filter = IGNORE
+visible = false
+
+[node name="Bar" parent="UI/Hud" type="Panel"]
+anchor_right = 1
+offset_bottom = 28
+mouse_filter = IGNORE
+theme_overrides = "panel = style(bg=#0a0612c8, border=0 0 0 1, border_color=#3a2a4a)"
+
+[node name="Hearts" parent="UI/Hud" type="HBoxContainer"]
+offset_left = 6
+offset_top = 5
+theme_overrides = "separation = 2"
+
+[node name="Heart1" parent="UI/Hud/Hearts" type="TextureRect"]
+texture = "images/hud_heart.png"
+region_rect = vec4(0, 0, 10, 9)
+filter = NEAREST
+
+[node name="Heart2" parent="UI/Hud/Hearts" type="TextureRect"]
+texture = "images/hud_heart.png"
+region_rect = vec4(0, 0, 10, 9)
+filter = NEAREST
+
+[node name="Heart3" parent="UI/Hud/Hearts" type="TextureRect"]
+texture = "images/hud_heart.png"
+region_rect = vec4(0, 0, 10, 9)
+filter = NEAREST
+
+[node name="Score" parent="UI/Hud" type="Label"]
+anchor_left = 1
+anchor_right = 1
+offset_left = -150
+offset_top = 6
+offset_right = -6
+text = "SCORE 0"
+horizontal_alignment = RIGHT
+theme_overrides = "font_color = #ffd96a"
+
+[node name="Foes" parent="UI/Hud" type="Label"]
+anchor_left = 1
+anchor_right = 1
+offset_left = -150
+offset_top = 17
+offset_right = -6
+text = "FOES 0"
+horizontal_alignment = RIGHT
+theme_overrides = "font_color = #b8a8cc"
+
+[node name="Banner" parent="UI/Hud" type="Label"]
+anchor_right = 1
+offset_top = 40
+modulate = color(1, 1, 1, 0)
+text = "THE HALL"
+horizontal_alignment = CENTER
+theme_overrides = "font_color = #ffd96a"
+
+[node name="Boss" parent="UI/Hud" type="VBoxContainer"]
+anchor_left = 0.5
+anchor_top = 1
+anchor_right = 0.5
+anchor_bottom = 1
+offset_left = -70
+offset_top = -24
+offset_right = 70
+offset_bottom = -6
+visible = false
+mouse_filter = IGNORE
+theme_overrides = "separation = 3"
+
+[node name="Name" parent="UI/Hud/Boss" type="Label"]
+text = "THE WARDEN"
+horizontal_alignment = CENTER
+theme_overrides = "font_color = #e89aff"
+
+[node name="Health" parent="UI/Hud/Boss" type="ProgressBar"]
+custom_minimum_size = vec2(140, 6)
+max_value = 12
+value = 12
+show_percentage = false
+
+[node name="Title" parent="UI" type="Control"]
+anchor_right = 1
+anchor_bottom = 1
+mouse_filter = IGNORE
+
+[node name="Shade" parent="UI/Title" type="Panel"]
+anchor_right = 1
+anchor_bottom = 1
+mouse_filter = IGNORE
+
+[node name="Logo" parent="UI/Title" type="Label"]
+anchor_right = 1
+offset_top = 26
+text = "CRYPT OF EMBERS"
+horizontal_alignment = CENTER
+theme_overrides = "font_size = 16; font_color = #ffc94a"
+
+[node name="Sub" parent="UI/Title" type="Label"]
+anchor_right = 1
+offset_top = 50
+text = "A CARTWHEEL ACTION GAME"
+horizontal_alignment = CENTER
+theme_overrides = "font_color = #a890c8"
+
+[node name="Menu" parent="UI/Title" type="VBoxContainer"]
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -52
+offset_top = 76
+offset_right = 52
+
+[node name="Start" parent="UI/Title/Menu" type="Button"]
+focus_mode = ALL
+text = "START"
+alignment = CENTER
+
+[node name="Options" parent="UI/Title/Menu" type="Button"]
+focus_mode = ALL
+text = "OPTIONS"
+alignment = CENTER
+
+[node name="Quit" parent="UI/Title/Menu" type="Button"]
+focus_mode = ALL
+text = "QUIT"
+alignment = CENTER
+
+[node name="Hint" parent="UI/Title" type="Label"]
+anchor_top = 1
+anchor_right = 1
+anchor_bottom = 1
+offset_top = -16
+text = "MOVE: ARROWS  ATTACK: J  PAUSE: ESC"
+horizontal_alignment = CENTER
+theme_overrides = "font_color = #7a6a90"
+
+[node name="Options" parent="UI" type="Control"]
+anchor_right = 1
+anchor_bottom = 1
+visible = false
+
+[node name="Shade" parent="UI/Options" type="Panel"]
+anchor_right = 1
+anchor_bottom = 1
+
+[node name="Box" parent="UI/Options" type="PanelContainer"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = BOTH
+grow_vertical = BOTH
+
+[node name="V" parent="UI/Options/Box" type="VBoxContainer"]
+theme_overrides = "separation = 7"
+
+[node name="Header" parent="UI/Options/Box/V" type="Label"]
+text = "OPTIONS"
+horizontal_alignment = CENTER
+theme_overrides = "font_color = #ffc94a"
+
+[node name="Grid" parent="UI/Options/Box/V" type="GridContainer"]
+columns = 2
+
+[node name="MusicLabel" parent="UI/Options/Box/V/Grid" type="Label"]
+text = "MUSIC"
+vertical_alignment = CENTER
+
+[node name="Music" parent="UI/Options/Box/V/Grid" type="HSlider"]
+custom_minimum_size = vec2(90, 10)
+focus_mode = ALL
+max_value = 10
+step = 1
+value = 7
+
+[node name="SoundLabel" parent="UI/Options/Box/V/Grid" type="Label"]
+text = "SOUND"
+vertical_alignment = CENTER
+
+[node name="Sound" parent="UI/Options/Box/V/Grid" type="HSlider"]
+custom_minimum_size = vec2(90, 10)
+focus_mode = ALL
+max_value = 10
+step = 1
+value = 8
+
+[node name="Rebind" parent="UI/Options/Box/V" type="Button"]
+focus_mode = ALL
+text = "ATTACK  J / X"
+alignment = CENTER
+
+[node name="Back" parent="UI/Options/Box/V" type="Button"]
+focus_mode = ALL
+text = "BACK"
+alignment = CENTER
+
+[node name="Pause" parent="UI" type="Control"]
+anchor_right = 1
+anchor_bottom = 1
+visible = false
+
+[node name="Shade" parent="UI/Pause" type="Panel"]
+anchor_right = 1
+anchor_bottom = 1
+
+[node name="Box" parent="UI/Pause" type="PanelContainer"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = BOTH
+grow_vertical = BOTH
+
+[node name="V" parent="UI/Pause/Box" type="VBoxContainer"]
+theme_overrides = "separation = 7"
+
+[node name="Header" parent="UI/Pause/Box/V" type="Label"]
+text = "PAUSED"
+horizontal_alignment = CENTER
+theme_overrides = "font_color = #ffc94a"
+
+[node name="Resume" parent="UI/Pause/Box/V" type="Button"]
+focus_mode = ALL
+text = "RESUME"
+alignment = CENTER
+
+[node name="Options" parent="UI/Pause/Box/V" type="Button"]
+focus_mode = ALL
+text = "OPTIONS"
+alignment = CENTER
+
+[node name="Quit" parent="UI/Pause/Box/V" type="Button"]
+focus_mode = ALL
+text = "QUIT TO TITLE"
+alignment = CENTER
+
+[node name="GameOver" parent="UI" type="Control"]
+anchor_right = 1
+anchor_bottom = 1
+visible = false
+
+[node name="Shade" parent="UI/GameOver" type="Panel"]
+anchor_right = 1
+anchor_bottom = 1
+
+[node name="Box" parent="UI/GameOver" type="PanelContainer"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = BOTH
+grow_vertical = BOTH
+
+[node name="V" parent="UI/GameOver/Box" type="VBoxContainer"]
+theme_overrides = "separation = 7"
+
+[node name="Header" parent="UI/GameOver/Box/V" type="Label"]
+text = "YOU HAVE FALLEN"
+horizontal_alignment = CENTER
+theme_overrides = "font_color = #ff5a5a"
+
+[node name="Info" parent="UI/GameOver/Box/V" type="Label"]
+text = "SCORE 0"
+horizontal_alignment = CENTER
+
+[node name="Retry" parent="UI/GameOver/Box/V" type="Button"]
+focus_mode = ALL
+text = "TRY AGAIN"
+alignment = CENTER
+
+[node name="Title" parent="UI/GameOver/Box/V" type="Button"]
+focus_mode = ALL
+text = "TITLE"
+alignment = CENTER
+
+[node name="Victory" parent="UI" type="Control"]
+anchor_right = 1
+anchor_bottom = 1
+visible = false
+
+[node name="Shade" parent="UI/Victory" type="Panel"]
+anchor_right = 1
+anchor_bottom = 1
+
+[node name="Box" parent="UI/Victory" type="PanelContainer"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = BOTH
+grow_vertical = BOTH
+
+[node name="V" parent="UI/Victory/Box" type="VBoxContainer"]
+theme_overrides = "separation = 7"
+
+[node name="Header" parent="UI/Victory/Box/V" type="Label"]
+text = "VICTORY!"
+horizontal_alignment = CENTER
+theme_overrides = "font_size = 16; font_color = #ffc94a"
+
+[node name="Info" parent="UI/Victory/Box/V" type="Label"]
+text = "SCORE 0"
+horizontal_alignment = CENTER
+
+[node name="Time" parent="UI/Victory/Box/V" type="Label"]
+text = "TIME 0:00"
+horizontal_alignment = CENTER
+theme_overrides = "font_color = #b8a8cc"
+
+[node name="Title" parent="UI/Victory/Box/V" type="Button"]
+focus_mode = ALL
+text = "BACK TO TITLE"
+alignment = CENTER
+
+[animation name="flash" player="ScreenFx" length=0.6]
+[track type=value path="Overlay/Flash:modulate"]
+0 = color(1, 1, 1, 0.95)
+0.6 = color(1, 1, 1, 0)
+[animation name="hurt" player="ScreenFx" length=0.3]
+[track type=value path="Overlay/Flash:modulate"]
+0 = color(1, 0.15, 0.1, 0.35)
+0.3 = color(1, 0.15, 0.1, 0)

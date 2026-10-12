@@ -13,7 +13,7 @@
  *   menu              Scene/Add Turntable
  *
  * Everything changes the scene through commands (node.set, node.set_each,
- * node.add), so undo, the log and agents see it. */
+ * node.add), so undo and the log see it. */
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -370,4 +370,4 @@ static void shutdown(void) {
   list = info = (cw_node){ 0 };
 }
 
-CWED_PLUGIN(turntable) = { .title = "Turntable tools", .milestone = "M5.2 sample", .init = init, .frame = frame, .shutdown = shutdown };
+CWED_PLUGIN(turntable) = { .title = "Turntable tools", .init = init, .frame = frame, .shutdown = shutdown };

@@ -45,7 +45,7 @@ Custom controls are node types with a `cw_ui_class`: callbacks for minimum size,
 
 ## Themes
 
-A theme holds items by theme type and name: styles (`Button.hover`), colours (`Label.font_color`), constants (`BoxContainer.separation`; font sizes are constants named `*font_size`) and fonts. Themes are text files, one item per line, which makes them easy for an agent or a person to write and diff. This is the `ui_editor` sample's theme, the built-in dark theme with a teal accent:
+A theme holds items by theme type and name: styles (`Button.hover`), colours (`Label.font_color`), constants (`BoxContainer.separation`; font sizes are constants named `*font_size`) and fonts. Themes are text files, one item per line, which makes them easy to write and diff. This is the `ui_editor` sample's theme, the built-in dark theme with a teal accent:
 
 @include samples/ui_assets/themes/editor.theme
 

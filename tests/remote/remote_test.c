@@ -1,4 +1,4 @@
-/* Play-in-editor gate (M4.3): drives samples/remote_target through
+/* Play-in-editor gate: drives samples/remote_target through
  * cartwheel/remote.h exactly as the editor will, on one transport:
  *
  *   remote_test native <game exe> [--control]
@@ -310,7 +310,7 @@ int main(int argc, char **argv) {
   free(rf);
 
   /* ── reload a resource: the game reacts ──────────────────────────── */
-  /* "config v2\n" pushed into the project layer, as an agent or the editor does */
+  /* "config v2\n" pushed into the project layer, as a tool or the editor does */
   free(must("vfs write data/config.txt Y29uZmlnIHYyCg=="));
   char *rl = must("reload data/config.txt");
   CHECK(strstr(rl, "\"version\":2"), "reload bumps the version: %s", rl);

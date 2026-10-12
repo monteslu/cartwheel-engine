@@ -540,7 +540,7 @@ int cw_native_main(int argc, char **argv, cw_app_desc (*app_fn)(int, char **)) {
     cw__perf_mark(CW_PERF_PRESENT);
     /* no spinning where nothing paces the loop: a frozen game (the
      * debugger's pause) and a game with no display (offscreen, under an
-     * editor or agent) run at most 60 frames a second; steps run flat out */
+     * editor or a tool) run at most 60 frames a second; steps run flat out */
     if (fixed_frames <= 0 && !cw_debug_steps_left() && (cw_debug_paused() || headless)) {
       Uint64 now_c = SDL_GetPerformanceCounter();
       double spent = (double)(now_c - last_present) / (double)freq;

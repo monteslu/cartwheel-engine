@@ -1,4 +1,4 @@
-/* editor_import: the M4.2 exit test, "drag a glTF in, see it imported,
+/* editor_import: the end-to-end import test, "drag a glTF in, see it imported,
  * place it", played inside the editor on every host (native, romdev,
  * Chromium, wasmcart-native) with no outside driver:
  *   - a CC0 glTF (editor/tests/import: lantern.gltf + .bin + .png, made by

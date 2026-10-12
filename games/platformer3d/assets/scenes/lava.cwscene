@@ -1,0 +1,36 @@
+[scene format=1]
+
+[node name="Lava" type="Hazard" groups="hazards"]
+collision_layer_name = "hazards"
+collision_mask_names = "player"
+
+[node name="Shape" parent="." type="CollisionShape3D"]
+shape = BOX
+size = vec3(4, 0.6, 4)
+position = vec3(0, 0.1, 0)
+
+[node name="Mesh" parent="." type="MeshInstance3D"]
+size = vec3(4, 0.12, 4)
+color = color(1, 0.0707, 0.0002, 1)
+emissive = color(0.7931, 0.029, 0, 1)
+roughness = 0.9
+receive_shadow = true
+
+[node name="Glow" parent="." type="OmniLight3D"]
+position = vec3(0, 0.8, 0)
+color = color(1, 0.1726, 0.0063, 1)
+energy = 8.37758
+range = 6
+
+[node name="Anim" parent="." type="AnimationPlayer"]
+autoplay = "bubble"
+
+[animation name="bubble" player="Anim" length=1.5 loop=PING_PONG]
+[track type=value path="Mesh:emissive" interp=CUBIC]
+0 = color(0.7931, 0.029, 0, 1)
+1.5 = color(1, 0.1726, 0.0014, 1)
+[track type=value path="Glow:energy" interp=CUBIC]
+0 = 1.2
+1.5 = 2
+
+[connection signal="body_entered" from="." to="." method="hurt"]

@@ -1,0 +1,6 @@
+[
+  {"frame": 40, "buttons": ["start"]},
+  {"frame": 46, "axes": {}},
+  {"frame": 60, "axes": {"ly": -1}},
+  {"frame": 190, "axes": {}}
+]

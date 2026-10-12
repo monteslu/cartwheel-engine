@@ -1,5 +1,5 @@
-// A stand-in AGENT for the editor's agent panel (M4.4), used by
-// tests/editor-agent.mjs. It does what a coding agent does with
+// A stand-in AGENT for the editor's agent panel, used by
+// tests/editor-agent.mjs. It does what an external editing program does with
 // the panel's file inbox, with keyword rules where a model would think:
 //   1. watch <project>/.cwagent/requests/ for a pending request
 //   2. take it (`agent.take` through the command bridge .cwagent/ed/*.cmd)

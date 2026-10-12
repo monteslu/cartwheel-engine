@@ -1,0 +1,24 @@
+[scene format=1]
+
+[node name="Orb" type="Projectile" groups="shots"]
+collision_layer_name = "shots"
+collision_mask_names = "player"
+monitorable = false
+z_index = 3
+
+[node name="Shape" parent="." type="CollisionShape2D"]
+shape = CIRCLE
+radius = 3
+
+[node name="Sprite" parent="." type="AnimatedSprite2D"]
+texture = "images/orb.png"
+filter = NEAREST
+hframes = 4
+animations = "enemy@10:0-1; boss@10:2-3"
+
+[node name="Glow" parent="." type="Light2D"]
+color = color(1, 0.55, 0.2, 1)
+energy = 0.6
+range = 28
+
+[connection signal="body_entered" from="." to="." method="orb_hit"]

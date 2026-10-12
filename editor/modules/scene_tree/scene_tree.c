@@ -1,4 +1,4 @@
-/* Scene Tree panel (M4.1).
+/* Scene Tree panel.
  *
  * The active scene's hierarchy: name, type and markers per row. Rows of an
  * instanced scene's own nodes (inherited: the parent scene can override
@@ -676,4 +676,4 @@ static void init(void) {
     .exec = disconnect_exec, .undo = conn_undo });
 }
 
-CWED_MODULE(scene_tree) = { .title = "Scene Tree", .milestone = "M4.1", .init = init, .frame = frame };
+CWED_MODULE(scene_tree) = { .title = "Scene Tree", .init = init, .frame = frame };

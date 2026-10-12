@@ -1,4 +1,4 @@
-/* cartwheel editor: the gizmo context (M4.1) and the gizmo toolkit.
+/* cartwheel editor: the gizmo context and the gizmo toolkit.
  *
  * cwed/editor.h declares the gizmo registry (cwed_gizmo_register) with an
  * opaque struct cwed_gizmo_ctx; this header defines it. It is the one

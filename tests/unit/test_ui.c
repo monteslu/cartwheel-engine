@@ -493,7 +493,7 @@ static void test_ranges(void) {
   CHECK_EQ_INT(resized, 1);
 }
 
-/* M5.3 docs findings: titles past 2 KB in total, NULL, a newline in a title */
+/* found while writing the docs: titles past 2 KB in total, NULL, a newline in a title */
 static void test_tab_titles(void) {
   reset();
   cw_node tabs = frame("TabContainer");

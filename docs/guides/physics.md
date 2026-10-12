@@ -2,7 +2,7 @@
 
 {{name}} simulates 2D physics with Box2D v3 and 3D physics with Box3D, through thin wrappers whose 2D and 3D APIs mirror each other name for name, and a layer of physics node types for the scene tree. Both libraries step on the engine's job pool and are deterministic across worker counts and hosts.
 
-Headers: [cartwheel/physics.h](header:physics.h) (what both dimensions share: layers, events, filters, stats, debug lines, joint types), [cartwheel/physics2d.h](header:physics2d.h), [cartwheel/physics3d.h](header:physics3d.h), [cartwheel/physics_nodes.h](header:physics_nodes.h) (the node types) and [cartwheel/physics_tasks.h](header:physics_tasks.h) (the job-pool glue, for code that creates raw library worlds). Samples: `physics3d_stack` and `physics2d_joints` (the wrapper API), `character3d` (the 3D mover), `physics3d_nodes`, `joints_nodes` and `platformer2d` (the node types), `physics_spike` (determinism).
+Headers: [cartwheel/physics.h](header:physics.h) (what both dimensions share: layers, events, filters, stats, debug lines, joint types), [cartwheel/physics2d.h](header:physics2d.h), [cartwheel/physics3d.h](header:physics3d.h), [cartwheel/physics_nodes.h](header:physics_nodes.h) (the node types) and [cartwheel/physics_tasks.h](header:physics_tasks.h) (the job-pool glue, for code that creates raw library worlds). Samples: `physics3d_stack` and `physics2d_joints` (the wrapper API), `character3d` (the 3D mover), `physics3d_nodes`, `joints_nodes` and `games/action2d` (the node types), `physics_determinism` (determinism).
 
 ## Two ways in
 
@@ -111,7 +111,7 @@ node tools/run-cart.mjs --host native --app physics3d_stack --frames 240 --state
 "phys.hash":63552413,"phys.steps":240,"phys.bodies":95,"phys.awake":88,"phys.contacts":361,"ev.begin":608,"ev.end":342,"ev.hit":82,...,"ray.hits":38
 ```
 
-The same command with `--host romdev` must print the same hash. `physics_spike` goes further: it runs upstream's own determinism scenes with 1 to 5 workers and checks upstream's published hashes on every host (`physics-determinism` gate), and `physics-scaling` holds both halves of the sizing: the large pyramids get faster with workers, the small world does not get slower.
+The same command with `--host romdev` must print the same hash. `physics_determinism` goes further: it runs upstream's own determinism scenes with 1 to 5 workers and checks upstream's published hashes on every host (`physics-determinism` gate), and `physics-scaling` holds both halves of the sizing: the large pyramids get faster with workers, the small world does not get slower.
 
 ## Debug draw and stats
 

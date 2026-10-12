@@ -32,9 +32,9 @@ Method and event keys fire when playback sweeps over them, in the direction of m
 
 ## Clips in scene files
 
-Animations live in the `.cwscene` file of the scene that owns the player, after its nodes. This is the bouncing box of the `anim_props` sample: a ping-pong clip with a cubic height track, a Hermite scale track and a method key:
+Animations live in the `.cwscene` file of the scene that owns the player, after its nodes. This is the spinning blade of the 3D platformer's saw hazard:
 
-@include samples/anim_props/assets/main.cwscene#bounce
+@include games/platformer3d/assets/scenes/saw.cwscene#Anim..spin
 
 One key per line, `time = value`, with values written the way the scene format writes properties. Defaults are omitted (`loop=NONE`, `interp=LINEAR`, `rot=SLERP`), so a clip saved from a loaded scene reproduces the file byte for byte; the `anim-props` gate checks exactly that. Clips imported from a glTF are not stored ([cw_anim_set_stored](api:cw_anim_set_stored)): they come from the model every load. The [scenes guide](guide:scenes) covers the file format as a whole.
 

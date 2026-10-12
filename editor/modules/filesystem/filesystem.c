@@ -1,4 +1,4 @@
-/* FileSystem panel (M4.2): the project's files over every layer
+/* FileSystem panel: the project's files over every layer
  * (cartwheel/vfs.h: the native project directory, the in-memory layer, the
  * bundled assets), with a folder/file tree, a thumbnail grid (previews from
  * the previews module through `preview.get`), filters, a dependency view
@@ -1274,7 +1274,7 @@ static bool filter_exec(cwed_call *c) {
   return true;
 }
 
-/* where a file's cell is on screen (UI units): for pointer-driven tests and agents */
+/* where a file's cell is on screen (UI units): for pointer-driven tests */
 static bool cell_exec(cwed_call *c) {
   if (view_dirty) rebuild_view();
   cw_ui_layout(cwed_ui_tree());
@@ -1483,4 +1483,4 @@ static void init(void) {
   cwed_menu_add("View/Rescan Project Files", "fs.refresh", 500);
 }
 
-CWED_MODULE(filesystem) = { .title = "FileSystem", .milestone = "M4.2", .init = init, .frame = frame };
+CWED_MODULE(filesystem) = { .title = "FileSystem", .init = init, .frame = frame };

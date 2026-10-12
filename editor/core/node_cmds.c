@@ -1,4 +1,4 @@
-/* node.* commands: every scene edit the editor (and an agent) can make,
+/* node.* commands: every scene edit the editor (or a tool) can make,
  * each with do/undo and serializable text arguments. */
 #include "internal.h"
 

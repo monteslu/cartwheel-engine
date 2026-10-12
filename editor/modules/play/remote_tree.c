@@ -1,4 +1,4 @@
-/* Remote panel (M4.3): the RUNNING game's scene tree, keyed by node uid.
+/* Remote panel: the RUNNING game's scene tree, keyed by node uid.
  *
  * One `tree` snapshot per launch, then `changes <revision>` every
  * play.poll_frames frames: removed / renamed / moved apply in place, an added

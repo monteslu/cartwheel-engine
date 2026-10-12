@@ -65,9 +65,9 @@ if(CW_SANITIZE AND NOT CW_CART)
   add_link_options(-fsanitize=${CW_SANITIZE})
 endif()
 
-# Project builds (M4.6): CW_PROJECT_DIR names a cartwheel project (a directory
+# Project builds: CW_PROJECT_DIR names a cartwheel project (a directory
 # whose CMakeLists.txt calls cw_add_app) built with this engine tree, under any
-# toolchain; CW_ENGINE_ONLY skips the repository's samples, editor and
+# toolchain; CW_ENGINE_ONLY skips the repository's samples, games, editor and
 # tests. tools/cwproject.mjs and the editor configure projects this way.
 set(CW_PROJECT_DIR "" CACHE PATH "a cartwheel project to build with the engine")
 option(CW_ENGINE_ONLY "build the engine and its tools only (project builds)" OFF)
@@ -169,7 +169,7 @@ include(cmake/plugins.cmake)
 # cart a build packs is listed in <build>/carts.txt. NET lists the
 # hosts the cart may dial with wc_peer_open (the manifest net.domains grant);
 # without NET, a project's `net.domains` key in project.cwproj gives them.
-# Plugins (M5.2, cmake/plugins.cmake): the runtime plugins of PLUGINS <dir>,
+# Plugins (cmake/plugins.cmake): the runtime plugins of PLUGINS <dir>,
 # default <the calling directory>/plugins when it exists, are compiled in.
 function(cw_add_app name)
   cmake_parse_arguments(A "NO_PLUGINS;QUIET_PLUGINS;NO_PROJECT_EDITOR;GL_ONLY" "ASSETS;PACK;PLUGINS" "SOURCES;NET;PROGRAMS" ${ARGN})
@@ -391,6 +391,7 @@ include(tools/cwpack/importers.cmake) # cwpack's importers as a library (the edi
 if(NOT CW_ENGINE_ONLY)
   enable_testing()
   add_subdirectory(samples)
+  add_subdirectory(games)
   add_subdirectory(editor)
   if(EXISTS ${CMAKE_SOURCE_DIR}/tests/CMakeLists.txt)
     add_subdirectory(tests)
@@ -408,7 +409,7 @@ if(CW_PROJECT_DIR)
   endif()
   add_subdirectory(${CW_PROJECT_DIR} project)
 endif()
-# M5.2: <app>_editor for every app built with a project's plugins (cmake/plugins.cmake)
+# <app>_editor for every app built with a project's plugins (cmake/plugins.cmake)
 cw__make_project_editors()
 # the carts this build packs (scripts/build.sh removes any other .wasc from
 # carts/; tests/wgpu-carts.mjs checks these)

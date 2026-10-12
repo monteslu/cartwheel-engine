@@ -1,4 +1,4 @@
-/* hot_demo: native C hot reload (M2.8). A Spinner node type turns at
+/* hot_demo: native C hot reload. A Spinner node type turns at
  * SPIN_SPEED radians per tick; the state (angle, ticks) lives in the node, so
  * swapping in code built with another SPIN_SPEED keeps it and changes only
  * the behaviour. tests/hot.mjs swaps at an exact frame under cwhot. */

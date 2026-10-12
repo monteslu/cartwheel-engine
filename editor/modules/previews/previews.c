@@ -1,4 +1,4 @@
-/* Resource previews (M4.2): thumbnails of models, glTF meshes and
+/* Resource previews: thumbnails of models, glTF meshes and
  * materials, textures and scenes, rendered off-screen through the engine's
  * own pipeline into a render target (pipeline.h cw_rt), read back and kept
  * as UI textures. Cached by CONTENT: the key hashes the file's bytes, the
@@ -743,4 +743,4 @@ static void init(void) {
     .exec = node_pixels_exec });
 }
 
-CWED_MODULE(previews) = { .title = "Previews", .milestone = "M4.2", .init = init, .frame = frame, .shutdown = shutdown };
+CWED_MODULE(previews) = { .title = "Previews", .init = init, .frame = frame, .shutdown = shutdown };

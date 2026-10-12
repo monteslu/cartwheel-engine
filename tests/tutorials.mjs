@@ -1,4 +1,4 @@
-// M5.3 tutorials gate: every tutorial's finished project (docs/tutorials/<slug>/project)
+// tutorials gate: every tutorial's finished project (docs/tutorials/<slug>/project)
 // builds native AND cart against this engine checkout and does what the
 // tutorial says, on every host in its tutorial.json, so the docs cannot rot.
 //

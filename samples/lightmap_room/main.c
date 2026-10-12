@@ -1,4 +1,4 @@
-/* lightmap_room: baked lighting (M3.5). A room open at the front with a
+/* lightmap_room: baked lighting. A room open at the front with a
  * window in its green right wall, a red left wall, two blocks; the sun comes
  * through the window, the hemisphere sky through the opening. LightmapGI
  * bakes the STATIC walls and blocks on the first frame (generated uv1, 64

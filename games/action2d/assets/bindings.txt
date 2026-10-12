@@ -1,0 +1,8 @@
+# action2d's default bindings (cartwheel/input.h has the format). The menus
+# use the UI's own ui_* pad actions and arrow / Enter / Escape keys.
+left = key:a, key:left, axis:lx-, pad:left
+right = key:d, key:right, axis:lx+, pad:right
+up = key:w, key:up, axis:ly-, pad:up
+down = key:s, key:down, axis:ly+, pad:down
+attack = key:j, key:space, pad:west
+pause = key:escape, key:p, pad:start

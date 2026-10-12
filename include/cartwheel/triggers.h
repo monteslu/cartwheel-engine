@@ -12,7 +12,7 @@
  * reads "when Goal emits body_entered with a node of group player, set
  * Lamp.color". Being a node, a trigger round-trips through .cwscene text,
  * shows in the editor's scene tree and inspector, undoes like any edit and
- * is readable and writable by an agent as plain text.
+ * is readable and writable as plain text.
  *
  * Semantics (deliberately small):
  *   - source (default "..", the trigger's parent): the node whose `signal`

@@ -1,4 +1,4 @@
-/* Play-in-editor (M4.3), the editor side: the play backend behind the core's
+/* Play-in-editor, the editor side: the play backend behind the core's
  * play.* commands, built on cartwheel/remote.h.
  *
  * The game never runs in the editor: Play starts the PROJECT'S GAME (its own
@@ -18,7 +18,7 @@
  * it to the scene being played (change_scene), then resumes unless
  * play.start_paused is set. Which game: play.game_exe / play.game_cart
  * (settings), else project.cwproj's game_exe / game_cart (paths relative to
- * the project), else its game_module run under cwhot (hot reload, M4.4),
+ * the project), else its game_module run under cwhot (hot reload),
  * else its game_app resolved in the editor's own build tree
  * (<build>/samples|games/<app>, <build>/../cart/carts/<app>.wasc). */
 #include <stdarg.h>
@@ -97,7 +97,7 @@ bool pl_available(void) { return !CW_CART; }
 const char *pl_unavailable_why(void) {
   return CW_CART ? "Play is not available in the cart editor: a cart cannot start a game, and no transport carries the "
                    "debug channel between two carts yet. Use the native editor to play, or run the game's cart in romdev beside "
-                   "this one and move the project with vfs export / vfs import. A peer transport (over the relay M5.4 uses, or a "
+                   "this one and move the project with vfs export / vfs import. A peer transport (over the relay networking uses, or a "
                    "romdev-side bridge) would need no ABI change; whether to add one has not been decided."
                  : NULL;
 }
@@ -296,7 +296,7 @@ static bool find_game(bool cart, char *out, size_t cap, char *why, size_t why_ca
     snprintf(why, why_cap, "project.cwproj %s = %s: no such file (%s)", cart ? "game_cart" : "game_exe", key, out);
     return false;
   }
-  /* the game as a hot-reloadable module (M4.4): cwhot, next to the editor's build, runs it */
+  /* the game as a hot-reloadable module: cwhot, next to the editor's build, runs it */
   if (!cart && *S.game_module) {
     char mod[1024];
     project_path(S.game_module, mod, sizeof mod);
@@ -952,7 +952,7 @@ static void apply_undo(cwed_call *c) {
   if (s && cw_node_valid(s->node)) cw_node_set(s->node, s->prop, s->old);
 }
 
-/* rects of the play UI (tests and agents that drive it by pointer) */
+/* rects of the play UI (tests that drive it by pointer) */
 static bool find_button(cw_node n, void *u) {
   void **a = u;
   if (cw_node_is(n, "Button") && !strcmp(cw_button_text(n), (const char *)a[0]) && CW_HANDLE_IS_NULL(*(cw_node *)a[1]) &&
@@ -1102,7 +1102,7 @@ static void init(void) {
     .example = "play.apply path={sel} prop=visible value=false", .exec = apply_exec, .undo = apply_undo });
   cwed_command_register(&(cwed_command_desc){ .name = "play.widgets", .title = "Play UI Rects", .flags = Q,
     .doc = "Where the play controls are on screen (toolbar buttons, panel tabs, Game buttons, Remote rows by uid, Live "
-           "rows by property): for tests and agents that drive the editor by pointer.",
+           "rows by property): for tests that drive the editor by pointer.",
     .exec = cmd_widgets });
   cwed_menu_add("Play/Play Main Scene", "play.main", 100);
   cwed_menu_add("Play/Relaunch", "play.relaunch", 104);
@@ -1127,4 +1127,4 @@ static void shutdown(void) {
   S.r = NULL;
 }
 
-CWED_MODULE(play) = { .title = "Play in Editor", .milestone = "M4.3", .init = init, .frame = frame, .shutdown = shutdown };
+CWED_MODULE(play) = { .title = "Play in Editor", .init = init, .frame = frame, .shutdown = shutdown };

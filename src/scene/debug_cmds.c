@@ -1,5 +1,5 @@
-/* Debug-channel commands for the scene tree: what an agent (romdev's
- * wasm({op:'command'})), the editor (cartwheel/remote.h) or a test asks a
+/* Debug-channel commands for the scene tree: what romdev
+ * (wasm({op:'command'})), the editor (cartwheel/remote.h) or a test asks a
  * running game.
  *
  * Addressing a node (every command that takes <node>):

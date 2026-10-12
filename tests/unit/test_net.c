@@ -235,7 +235,7 @@ static void test_replication(void) {
       CHECK(cw_node_valid(cm0));
       CHECK(cw_net_rpc(cm0, "hit", &(cw_value){ .type = CW_T_INT, .i = 7 }, 1));
       paint_refused = !cw_net_rpc(cm0, "paint", NULL, 0); /* the client is not M0's authority */
-      /* M5.3 finding: a call to a player that is not connected is not "sent" */
+      /* a call to a player that is not connected is not "sent" */
       CHECK(!cw_net_rpc_to(cm0, 3, "hit", &(cw_value){ .type = CW_T_INT, .i = 1 }, 1));
       cw_node_free(cw_node_get(hworld, "M1"));
     }
@@ -513,7 +513,7 @@ static void rollback_physics(bool three) {
 static void test_rollback_physics(void) { rollback_physics(false); }
 static void test_rollback_physics3d(void) { rollback_physics(true); }
 
-/* M5.3 finding: input_delay 0 means no delay (it used to mean 2) */
+/* input_delay 0 means no delay (it used to mean 2) */
 typedef struct rbp { int pad; } rbp;
 static uint8_t rbp_seen[8];
 static void rbp_fixed(cw_node n, void *data, double dt) {

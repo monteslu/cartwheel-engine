@@ -1,4 +1,4 @@
-// M5.0 export smoke test: export platformer2d through
+// Export smoke test: export platformer3d through
 // tools/cwexport (the library the CLI and the editor use) for every platform,
 // run each export wherever this machine can run it, and probe the running
 // game's state, with must-fail controls. Prints one status line per platform
@@ -19,11 +19,11 @@
 //                 over Winsock. NOT verified on real Windows.
 //   android-arm64 the APK on the AVD (arm64 via NDK translation, guest GLES on
 //                 SwiftShader): debug channel over adb reverse, a screenshot
-//                 through the channel; the game must run and render (adb
-//                 cannot drive an SDL gamepad, so input is not verified).
+//                 through the channel, real key events (adb input) changing
+//                 game state (platformer3d: start from the title).
 //   web           the static site served by its own serve.mjs in Chromium
 //                 (CW_CHROMIUM_GPU pin): crossOriginIsolated, frames run, real
-//                 gamepad input changes state via the page's debug
+//                 keyboard input changes state via the page's debug
 //                 channel. Control: the same site without COOP/COEP must show
 //                 the isolation error and not start.
 //   wasc          romdev wasm({op:'conformance'}), the input script on romdev
@@ -51,7 +51,7 @@ const ALL = ['linux-x64', 'linux-arm64', 'windows-x64', 'android-arm64', 'web', 
 const want = process.argv.slice(2).length ? process.argv.slice(2) : ALL;
 const gates = JSON.parse(readFileSync(join(ROOT, 'tests/gates.json'), 'utf8'));
 const GAMES = [
-  { game: 'platformer2d', project: join(ROOT, 'samples/platformer2d/assets'), gate: gates.find((g) => g.name === 'platformer2d') },
+  { game: 'platformer3d', project: join(ROOT, 'games/platformer3d/assets'), gate: gates.find((g) => g.name === 'platformer3d') },
 ];
 mkdirSync(OUT, { recursive: true });
 
@@ -253,16 +253,21 @@ async function androidArm64(g) {
     const shotFile = join(OUT, `${g.game}-android.png`);
     writeFileSync(shotFile, await ch.screenshot(120000));
     const colors = picture(shotFile);
-    // platformer2d reads pad 0 only, and adb cannot drive an SDL game
-    // controller (`input gamepad|joystick|keyboard keyevent BUTTON_A` all
-    // left the pad untouched, 2026-10-06): the game must run and render,
-    // input stays unverified on Android
-    const f1 = (await ch.call('status')).frame;
-    await sleep(5000);
-    const f2 = (await ch.call('status')).frame;
+    // real input through Android's input stack: the key the game binds
+    let before, after, key, field;
+    field = 'game.state';
+    before = (await ch.call(`fields ${field}`))[field];
+    key = 'KEYCODE_ENTER';
+    adb('shell', 'input', 'keyevent', key);
+    for (let i = 0; i < 60; i++) {
+      await sleep(1000);
+      after = (await ch.call(`fields ${field}`, 60000))[field];
+      if (after !== before) break;
+    }
     adb('shell', 'am', 'force-stop', pkg);
-    if (colors < 64 || !(f2 > f1)) return report('android-arm64', g.game, 'FAIL', `frames ${f1}->${f2}, screenshot ${colors} colours`);
-    return report('android-arm64', g.game, 'built+run (AVD), input not verified', `frames ${f1}->${f2}, screenshot ${colors} colours over the channel; pad-only game and adb cannot inject an SDL gamepad`);
+    if (colors < 64) return report('android-arm64', g.game, 'FAIL', `screenshot through the channel has ${colors} colours`);
+    if (after === before) return report('android-arm64', g.game, 'FAIL', `${key} did not change ${field} (${before})`);
+    report('android-arm64', g.game, 'built+run (AVD)', `x86_64 AVD running the arm64 APK via NDK translation, guest GLES on SwiftShader; channel over adb reverse; ${key} changed ${field} ${before}->${after}; screenshot ${colors} colours`);
   } finally {
     ch.close();
   }
@@ -321,12 +326,10 @@ async function web(g) {
     if (!st.ok || !st.coi) { s.p.kill(); return report('web', g.game, 'FAIL', `page did not run: ${JSON.stringify(st)} ${logs.slice(-5).join(' | ')}`); }
     step('web 7');
     let field, before, after, how;
-    field = 'player.jumps';
+    field = 'game.state';
     before = (await page.evaluate((f) => window.cwDebug.command(`fields ${f}`), field))[field];
-    await page.evaluate(() => { window.__pad.buttons[0] = { pressed: true, value: 1 }; });
-    await sleep(400);
-    await page.evaluate(() => { window.__pad.buttons[0] = { pressed: false, value: 0 }; });
-    how = 'gamepad A (standard mapping)';
+    await page.keyboard.down('Enter'); await sleep(300); await page.keyboard.up('Enter');
+    how = 'keyboard Enter';
     step('web 8');
     for (let i = 0; i < 40; i++) {
       await sleep(500);
@@ -434,12 +437,12 @@ async function project() {
   const dir = join(OUT, 'project');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'CMakeLists.txt'), `# a game project built with the engine (-DCW_PROJECT_DIR)
-cw_add_app(projgame SOURCES \${CMAKE_SOURCE_DIR}/samples/platformer2d/main.c ASSETS \${CMAKE_CURRENT_SOURCE_DIR}/assets)
+cw_add_app(projgame SOURCES \${CMAKE_SOURCE_DIR}/games/action2d/main.c \${CMAKE_SOURCE_DIR}/games/action2d/actors.c \${CMAKE_SOURCE_DIR}/games/action2d/bot.c ASSETS \${CMAKE_CURRENT_SOURCE_DIR}/assets)
 `);
   rmSync(join(dir, 'assets'), { recursive: true, force: true });
-  cpSync(join(ROOT, 'samples/platformer2d/assets'), join(dir, 'assets'), { recursive: true });
+  cpSync(join(ROOT, 'games/action2d/assets'), join(dir, 'assets'), { recursive: true });
   writeFileSync(join(dir, 'project.cwproj'), `name = "Project Game"\napp = "projgame"\nexport.linux.platform = "linux-x64"\nexport.linux.appimage = false\n`);
-  const g = { game: 'projgame', gate: GAMES[0].gate };
+  const g = { game: 'projgame', gate: gates.find((x) => x.name === 'action2d') };
   const [r] = await exportPresets({ project: dir, presets: ['linux'] });
   if (!r.ok) return report('project', 'projgame', 'FAIL', r.error);
   const exe = join(untar(join(dir, r.files.find((f) => f.endsWith('.tar.gz'))), join(OUT, 'project-run')), 'projgame');

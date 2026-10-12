@@ -1,4 +1,4 @@
-// M5.2 plugins gate: a project's plugin (samples/plugin_demo/plugins/turntable,
+// plugins gate: a project's plugin (samples/plugin_demo/plugins/turntable,
 // copied to a fresh project directory, i.e. a third party's tree) used
 // WITHOUT editing the cartwheel tree.
 //
@@ -338,7 +338,7 @@ async function lifecycle() {
     const unbuilt = await s.ed('turntable.list');
     control('an edited but unbuilt plugin is reloaded', unbuilt.rev === '2', JSON.stringify(unbuilt));
     const tb = Date.now();
-    const bres = cwproject('plugins'); // built OUTSIDE the editor (an agent, a terminal)
+    const bres = cwproject('plugins'); // built OUTSIDE the editor (a script, a terminal)
     check('hot reload: the edited plugin builds', bres.ok, bres.out.slice(-800));
     const built = Date.now();
     const seen = await until(async () => { const r = await s.ed('turntable.list'); return r.rev === '2' ? r : null; }, 30000, 'the reload').catch(() => null);

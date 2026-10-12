@@ -1,4 +1,4 @@
-/* Registration owners (M5.2 plugins): every registration (command, panel,
+/* Registration owners (plugins): every registration (command, panel,
  * menu item, toolbar button, inspector plugin, gizmo, event subscription)
  * remembers who made it, so a plugin unloaded or reloaded at runtime takes
  * exactly its own contributions with it. Owner 0 is the editor itself (the

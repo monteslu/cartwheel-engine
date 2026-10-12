@@ -1,4 +1,4 @@
-/* gltf_scene: M1.7 / M2.2. Khronos sample models and a generated ground
+/* gltf_scene: Khronos sample models and a generated ground
  * texture, imported and packed by cwpack (project/roots.txt: meshopt
  * ordering + EXT_meshopt_compression, simplified LODs, KTX2 textures), loaded
  * asynchronously through the resource system and instanced several times:
@@ -146,7 +146,7 @@ static void build(app_t *a) {
   a->lod_levels = man->lod_levels;
   a->instances = cw_gltf_instance_count(a->man) + cw_gltf_instance_count(a->box) + cw_gltf_instance_count(a->bottle);
   a->built = true;
-  cw_res_log_report(); /* load times and memory: M1.7's report */
+  cw_res_log_report(); /* load times and memory: the resource report */
 }
 
 static void refresh_stats(app_t *a) {

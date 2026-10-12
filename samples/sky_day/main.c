@@ -1,4 +1,4 @@
-/* sky_day: the procedural sky and the day / night cycle (M3.5). An outdoor
+/* sky_day: the procedural sky and the day / night cycle. An outdoor
  * scene under a ProceduralSky that drives the sun (direction, colour,
  * energy) and is the background and the image-based environment (the balls
  * range from mirror chrome to rough paint). The run visits fixed times of

@@ -1,4 +1,4 @@
-// The offline baker (tools/cwbake) against the runtime one (M3.5):
+// The offline baker (tools/cwbake) against the runtime one:
 //   1. cwbake bakes samples/lightmap_room twice: the two .cwlm files are the
 //      same bytes (a reproducible bake);
 //   2. their fingerprint equals the one lightmap_room's LightmapGI bakes at

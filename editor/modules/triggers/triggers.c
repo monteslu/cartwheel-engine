@@ -1,4 +1,4 @@
-/* Triggers panel (M4.4): "when X then Y" rules on nodes, without code.
+/* Triggers panel: "when X then Y" rules on nodes, without code.
  *
  * A rule is a Trigger node (engine: cartwheel/triggers.h): a child of the
  * node whose signal fires it, with an action on a target. Because it is a
@@ -414,4 +414,4 @@ static void init(void) {
   cwed_subscribe(CWED_EV_DOC_CHANGED | CWED_EV_DOC_ACTIVE | CWED_EV_DOC_CLOSED | CWED_EV_SELECTION | CWED_EV_DOC_OPENED, on_event, NULL);
 }
 
-CWED_MODULE(triggers) = { .title = "Triggers", .milestone = "M4.4", .init = init, .frame = frame };
+CWED_MODULE(triggers) = { .title = "Triggers", .init = init, .frame = frame };

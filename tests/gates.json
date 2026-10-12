@@ -15,7 +15,7 @@
   },
   {
     "name": "physics-determinism",
-    "app": "physics_spike",
+    "app": "physics_determinism",
     "frames": 400,
     "minColors": 1,
     "controlFrames": 100,
@@ -31,11 +31,11 @@
       "b3_expected_hash",
       "b2_expected_hash"
     ],
-    "note": "S0.2/S0.3: upstream Box3D/Box2D determinism scenes on the job pool, 1..5 workers; every host must reproduce upstream's 64-bit hashes"
+    "note": "upstream Box3D/Box2D determinism scenes on the job pool, 1..5 workers; every host must reproduce upstream's 64-bit hashes"
   },
   {
     "name": "physics-scaling",
-    "app": "physics_spike",
+    "app": "physics_determinism",
     "frames": 400,
     "minColors": 1,
     "controlFrames": 100,
@@ -183,7 +183,7 @@
       "replay.hash_match": 1,
       "record.ticks": 179
     },
-    "note": "M1.4: pad-driven actions at 120 Hz (two ticks per frame): a one-frame tap, a 10-frame hold, a trigger over/under its threshold, stick vectors in three deadzone modes, runtime rebinding by capture, and a record-then-replay whose re-simulated state must equal the live run"
+    "note": "pad-driven actions at 120 Hz (two ticks per frame): a one-frame tap, a 10-frame hold, a trigger over/under its threshold, stick vectors in three deadzone modes, runtime rebinding by capture, and a record-then-replay whose re-simulated state must equal the live run"
   },
   {
     "name": "input-keys",
@@ -206,7 +206,7 @@
       "replay.match": 1,
       "replay.hash_match": 1
     },
-    "note": "M1.4: keyboard-driven actions (a one-frame tap, held keys, a user-override binding, capture-rebinding to key:x). romdev is skipped: its input tool cannot inject wasmcart keys"
+    "note": "keyboard-driven actions (a one-frame tap, held keys, a user-override binding, capture-rebinding to key:x). romdev is skipped: its input tool cannot inject wasmcart keys"
   },
   {
     "name": "input-pointer",
@@ -225,7 +225,7 @@
       "replay.match": 1,
       "replay.hash_match": 1
     },
-    "note": "M1.4: mouse buttons, wheel notches and touch controls (an on-screen stick and button, wasmcart pointer slots 1-9) as actions"
+    "note": "mouse buttons, wheel notches and touch controls (an on-screen stick and button, wasmcart pointer slots 1-9) as actions"
   },
   {
     "name": "unit-input",
@@ -298,7 +298,7 @@
       "audio.underruns": 0,
       "audio.dropped_commands": 0
     },
-    "note": "M1.6: a 4 s scripted scene (streams: Vorbis, Opus, MOD; one-shots: WAV, FLAC, MP3; a 3D voice with doppler, cone, occlusion; bus fx + sends + solo; limiter) rendered offline; every host must reproduce the native samples bit for bit (hash) and the exact 32.32 music clock"
+    "note": "a 4 s scripted scene (streams: Vorbis, Opus, MOD; one-shots: WAV, FLAC, MP3; a 3D voice with doppler, cone, occlusion; bus fx + sends + solo; limiter) rendered offline; every host must reproduce the native samples bit for bit (hash) and the exact 32.32 music clock"
   },
   {
     "name": "audio-play",
@@ -322,7 +322,7 @@
     "controlEnv": {
       "CW_PLAY_NO_AUDIO": "1"
     },
-    "note": "M1.6: the real output path (SDL audio thread natively, the wasmcart ring pump in carts): a device is open, the mixer produces non-silent frames, the Vorbis stream decodes on the job pool and its clock advances. The control runs with audio off and must differ."
+    "note": "the real output path (SDL audio thread natively, the wasmcart ring pump in carts): a device is open, the mixer produces non-silent frames, the Vorbis stream decodes on the job pool and its clock advances. The control runs with audio off and must differ."
   },
   {
     "name": "unit-audio",
@@ -343,7 +343,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "M1.6 audio unit suite (offline mixer): scheduling to the sample, pan law, load resampling, loop clock, pitch, pause, fades, voice limits/priority/stealing, deferred sound free, buses (volume, mute, solo, sends, DAG rule), 3D attenuation models, cone, doppler, occlusion, every effect, stream == sample through the ring, queue overflow, no leaked audio memory"
+    "note": "audio unit suite (offline mixer): scheduling to the sample, pan law, load resampling, loop clock, pitch, pause, fades, voice limits/priority/stealing, deferred sound free, buses (volume, mute, solo, sends, DAG rule), 3D attenuation models, cone, doppler, occlusion, every effect, stream == sample through the ring, queue overflow, no leaked audio memory"
   },
   {
     "name": "unit-physics",
@@ -406,7 +406,7 @@
       "ray.height_sum",
       "lines.count"
     ],
-    "note": "M1.5: Box3D pyramid knocked down by a ball; interpolated three.c sync, contact/hit events, batched rays, debug draw; the running state hash must match on every host"
+    "note": "Box3D pyramid knocked down by a ball; interpolated three.c sync, contact/hit events, batched rays, debug draw; the running state hash must match on every host"
   },
   {
     "name": "physics2d-joints",
@@ -436,7 +436,7 @@
       "ev.joint_break": 1,
       "mover.floor": 1
     },
-    "note": "M1.5: Box2D scene with every joint type, a breakable hinge, a sensor zone, a mouse drag and a mover riding a kinematic platform"
+    "note": "Box2D scene with every joint type, a breakable hinge, a sensor zone, a mouse drag and a mover riding a kinematic platform"
   },
   {
     "name": "character3d-course",
@@ -467,7 +467,7 @@
       "count.coins": 5,
       "count.jumps": 1
     },
-    "note": "M1.5: cw_mover3d course from pad-0 input: stairs, drop, head bump, ramp, riding a kinematic platform, pushing a crate, refusing a 60 degree slope"
+    "note": "cw_mover3d course from pad-0 input: stairs, drop, head bump, ramp, riding a kinematic platform, pushing a crate, refusing a 60 degree slope"
   },
   {
     "name": "character3d-auto",
@@ -505,7 +505,7 @@
     "frames": 90,
     "assets": "samples/r2d_assets",
     "maxGt16": 0.002,
-    "note": "M2.4: sprites (rotation, flips, alpha, tint, additive), nine-slice, shapes, multiply, arbitrary-UV quads (JPEG, repeat), clip, y-sort, render target as sprite"
+    "note": "sprites (rotation, flips, alpha, tint, additive), nine-slice, shapes, multiply, arbitrary-UV quads (JPEG, repeat), clip, y-sort, render target as sprite"
   },
   {
     "name": "r2d-tilemap",
@@ -514,7 +514,7 @@
     "frames": 120,
     "assets": "samples/r2d_assets",
     "maxGt16": 0.002,
-    "note": "M2.4: chunked tilemap, 3 layers, animated tiles (time uniform), 8 tile transforms, edit + rebuild, camera pan across chunks, culling"
+    "note": "chunked tilemap, 3 layers, animated tiles (time uniform), 8 tile transforms, edit + rebuild, camera pan across chunks, culling"
   },
   {
     "name": "r2d-text",
@@ -523,7 +523,7 @@
     "frames": 60,
     "assets": "samples/r2d_assets",
     "maxGt16": 0.002,
-    "note": "M2.4: SDF text at 6 sizes with GPOS kerning, wrap + left/centre/right, bitmap pixel font 1-3x, rotated text; layout measurements must match exactly"
+    "note": "SDF text at 6 sizes with GPOS kerning, wrap + left/centre/right, bitmap pixel font 1-3x, rotated text; layout measurements must match exactly"
   },
   {
     "name": "r2d-camera",
@@ -536,7 +536,7 @@
       "pixel_perfect.bad_blocks": 0,
       "pixel_perfect.scale": 6
     },
-    "note": "M2.4: 300x170 virtual canvas, integer scale + letterbox (readback: every canvas pixel a uniform 6x6 block in the 1920x1080 framebuffer, render scale 3; FIT scaling reads 4987 bad blocks), follow/limits/zoom/rotation camera, parallax layer, minimap viewport layer, HUD; camera math as state"
+    "note": "300x170 virtual canvas, integer scale + letterbox (readback: every canvas pixel a uniform 6x6 block in the 1920x1080 framebuffer, render scale 3; FIT scaling reads 4987 bad blocks), follow/limits/zoom/rotation camera, parallax layer, minimap viewport layer, HUD; camera math as state"
   },
   {
     "name": "r2d-lights",
@@ -549,7 +549,7 @@
       "normal_ok": 1,
       "r2d.lights": 3
     },
-    "note": "M2.4: lit layer (offscreen colour + normal MRT), normal-mapped bricks, 3 point lights with falloff, stencil shadows from occluder polygons, ambient, unlit HUD over it"
+    "note": "lit layer (offscreen colour + normal MRT), normal-mapped bricks, 3 point lights with falloff, stencil shadows from occluder polygons, ambient, unlit HUD over it"
   },
   {
     "name": "r2d-interop",
@@ -557,7 +557,7 @@
     "frames": 90,
     "assets": "samples/r2d_assets",
     "maxGt16": 0.003,
-    "note": "M2.4: three.c renders into a 2D render target (with depth) and to the window; the 2D pass draws over the 3D frame and draws the target as a sprite; t3_renderer_reset_bindings after the 2D pass"
+    "note": "three.c renders into a 2D render target (with depth) and to the window; the 2D pass draws over the 3D frame and draws the target as a sprite; t3_renderer_reset_bindings after the 2D pass"
   },
   {
     "name": "r2d-bench",
@@ -581,13 +581,13 @@
       "r2d.draw_calls": 1,
       "r2d.vertices": 400000
     },
-    "note": "M2.4 perf: 100k animated sprites, 3 submission variants interleaved (bulk / per-sprite / y-sorted bulk); timings are bench.* fields (not gated); one draw call per frame"
+    "note": "perf: 100k animated sprites, 3 submission variants interleaved (bulk / per-sprite / y-sorted bulk); timings are bench.* fields (not gated); one draw call per frame"
   },
   {
-    "name": "spike-game",
-    "app": "spike_game",
+    "name": "arena-game",
+    "app": "arena_game",
     "frames": 240,
-    "input": "spike-game-input.json",
+    "input": "arena-game-input.json",
     "maxGt16": 0.003,
     "fields": [
       "score",
@@ -598,7 +598,7 @@
       "ticks"
     ],
     "controlInput": "hello-input.json",
-    "note": "S0.4: the game a fresh agent built from the public headers alone"
+    "note": "a small game written from the public headers alone"
   },
   {
     "name": "unit-resource",
@@ -619,7 +619,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "M1.7/M2.2 resource registry: types, paths, UIDs, refcounts, deferred free, async order, sub-resources, glTF instancing + LODs, reloads; assets packed by cwpack"
+    "note": "resource registry: types, paths, UIDs, refcounts, deferred free, async order, sub-resources, glTF instancing + LODs, reloads; assets packed by cwpack"
   },
   {
     "name": "gltf-scene",
@@ -647,7 +647,7 @@
       "lod_levels": 3
     },
     "maxGt16": 0.005,
-    "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "GLTF_SCENE_LINEAR_COLOR": "1" } }], "note": "the same textured glTF meshes on GL and WebGPU: colour maps (glTF baseColor / emissive, the sRGB KTX2 ground) decode sRGB on both; the control reads them as data on WebGPU (GL before the fix: 51% of pixels off)" }, "note": "M1.7/M2.2: Khronos models packed by cwpack (meshopt order + compression, LODs, KTX2), loaded async, instanced, LOD picked by screen-space error; res.kb is left out (GPU bytes depend on the transcode target the host GL picks)"
+    "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "GLTF_SCENE_LINEAR_COLOR": "1" } }], "note": "the same textured glTF meshes on GL and WebGPU: colour maps (glTF baseColor / emissive, the sRGB KTX2 ground) decode sRGB on both; the control reads them as data on WebGPU (GL before the fix: 51% of pixels off)" }, "note": "Khronos models packed by cwpack (meshopt order + compression, LODs, KTX2), loaded async, instanced, LOD picked by screen-space error; res.kb is left out (GPU bytes depend on the transcode target the host GL picks)"
   },
   {
     "name": "unit-hotreload",
@@ -671,7 +671,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "M2.2 hot reload: edit sources on disk, the watcher reruns cwpack and reloads in place (native dev only)"
+    "note": "hot reload: edit sources on disk, the watcher reruns cwpack and reloads in place (native dev only)"
   },
   {
     "name": "gpu-guard",
@@ -691,7 +691,7 @@
   {
     "name": "cwpack",
     "script": "tests/cwpack.mjs",
-    "note": "M2.2 import cache invalidation (changed / new source, changed setting, unchanged), deleted reference errors, byte-identical packs; each with a control"
+    "note": "import cache invalidation (changed / new source, changed setting, unchanged), deleted reference errors, byte-identical packs; each with a control"
   },
   {
     "name": "unit-anim",
@@ -712,7 +712,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "M2.7: interpolation, loop-edge key firing, speed/seek, cross-fade, queue, .cwscene animation round trips, tweens, AnimationTree blends/state machines, root motion, glTF skeletal sampling vs three.c mixer; sampled values fold into unit.checksum"
+    "note": "interpolation, loop-edge key firing, speed/seek, cross-fade, queue, .cwscene animation round trips, tweens, AnimationTree blends/state machines, root motion, glTF skeletal sampling vs three.c mixer; sampled values fold into unit.checksum"
   },
   {
     "name": "anim-props",
@@ -736,7 +736,7 @@
       "roundtrip": 1,
       "changed": 2
     },
-    "note": "M2.7: property tracks from a .cwscene on several nodes (rotation, cubic colour, sun energy, stepped lamp colour, a vec component, hermite scale), LOOP and PING_PONG, a method track calling a C callback, event keys, two 1 s cross-fades; hashes of every written value per 60-tick window"
+    "note": "property tracks from a .cwscene on several nodes (rotation, cubic colour, sun energy, stepped lamp colour, a vec component, hermite scale), LOOP and PING_PONG, a method track calling a C callback, event keys, two 1 s cross-fades; hashes of every written value per 60-tick window"
   },
   {
     "name": "anim-tween",
@@ -761,7 +761,7 @@
       "pillar_alive": 0,
       "box_cb": 2
     },
-    "note": "M2.7: tween sequences with parallel groups, delays, relative steps, easing, loops, callbacks, an UPDATE-phase tween, and a tween that dies with its bound node"
+    "note": "tween sequences with parallel groups, delays, relative steps, easing, loops, callbacks, an UPDATE-phase tween, and a tween that dies with its bound node"
   },
   {
     "name": "anim-skinned",
@@ -786,64 +786,7 @@
       "waves": 1,
       "state": 1
     },
-    "note": "M2.7: CesiumMan (glTF) through an AnimationTree: a state machine (travel to a one-shot wave, back at its end) over a 1D speed blend space, an additive bone-masked 2D look blend space, root motion moving the character; pad input; pose hashes per 60-tick window"
-  },
-  {
-    "name": "platformer2d",
-    "webgpu": true,
-    "app": "platformer2d",
-    "frames": 840,
-    "input": "platformer2d-input.json",
-    "controlInput": "platformer2d-control.json",
-    "maxGt16": 0.003,
-    "fields": [
-      "tree.nodes",
-      "player.pos",
-      "player.vel",
-      "player.floor",
-      "player.jumps",
-      "player.anim",
-      "coins",
-      "crate.pos",
-      "crate.contacts",
-      "feet.hit",
-      "bodies.hash",
-      "phys.hash"
-    ],
-    "expect": {
-      "coins": 6,
-      "player.jumps": 3,
-      "player.floor": 1
-    },
-    "note": "M2.4/M2.5 node layer: a 2D platformer from .cwscene files only: TileMap2D (2 layers, animated water), StaticBody2D with CHAIN/RECT/POLYGON colliders, CharacterBody2D player (pad 0) with AnimatedSprite2D, Area2D coins counted through body_entered, RigidBody2D crate pushed, Camera2D smoothing + limits, Light2D + occluder, parallax background, HUD label"
-  },
-  {
-    "name": "platformer2d-auto",
-    "webgpu": true,
-    "app": "platformer2d_auto",
-    "frames": 840,
-    "maxGt16": 0.003,
-    "fields": [
-      "tree.nodes",
-      "player.pos",
-      "player.vel",
-      "player.floor",
-      "player.jumps",
-      "player.anim",
-      "coins",
-      "crate.pos",
-      "crate.contacts",
-      "feet.hit",
-      "bodies.hash",
-      "phys.hash"
-    ],
-    "expect": {
-      "coins": 6,
-      "player.jumps": 3,
-      "player.floor": 1
-    },
-    "note": "the same level and script compiled in (input-free: runs on wasmcart-native too)",
-    "assets": "samples/platformer2d/assets"
+    "note": "CesiumMan (glTF) through an AnimationTree: a state machine (travel to a one-shot wave, back at its end) over a 1D speed blend space, an additive bone-masked 2D look blend space, root motion moving the character; pad input; pose hashes per 60-tick window"
   },
   {
     "name": "physics3d-nodes",
@@ -873,7 +816,7 @@
       "walker.floor": 1,
       "ray.hit": 1
     },
-    "note": "M2.5 3D physics nodes from .cwscene files: StaticBody3D floor/block, TRIMESH ramp from a MeshInstance3D, RigidBody3D crate stack the CharacterBody3D (pad 0) barges through, CONVEX rock from a sphere mesh, KinematicBody3D lift carrying a crate, Area3D goal body_entered/body_exited, RayCast3D"
+    "note": "3D physics nodes from .cwscene files: StaticBody3D floor/block, TRIMESH ramp from a MeshInstance3D, RigidBody3D crate stack the CharacterBody3D (pad 0) barges through, CONVEX rock from a sphere mesh, KinematicBody3D lift carrying a crate, Area3D goal body_entered/body_exited, RayCast3D"
   },
   {
     "name": "physics3d-nodes-auto",
@@ -931,7 +874,7 @@
       "joints3d": 8,
       "joints2d": 11
     },
-    "note": "M2.5: every Joint3D (HINGE motor, PIN chain, SLIDER limits+motor, SPRING, WELD, CONE, breakable DISTANCE with its broken signal) and Joint2D (PIN bridge, WHEEL car with motor, SPRING, SLIDER) from one .cwscene; 2D drawn over 3D"
+    "note": "every Joint3D (HINGE motor, PIN chain, SLIDER limits+motor, SPRING, WELD, CONE, breakable DISTANCE with its broken signal) and Joint2D (PIN bridge, WHEEL car with motor, SPRING, SLIDER) from one .cwscene; 2D drawn over 3D"
   },
   {
     "name": "unit-physics-nodes",
@@ -952,7 +895,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "M2.4/M2.5 node layer: body lifecycle (enter/exit/reparent/free mid-step), runtime property changes (shape size, mask, freeze, teleport, live velocity), area signal order and the frame order (signals after fixed_update, seen next tick), characters (floor, wall, proxy seen by areas and rays), joints (rebuild, drop, break), the 3D mirror (TRIMESH from a mesh, areas, kinematic, pin), canvas data paths (animation stepping, tile cells text, save/load round trip)"
+    "note": "node layer: body lifecycle (enter/exit/reparent/free mid-step), runtime property changes (shape size, mask, freeze, teleport, live velocity), area signal order and the frame order (signals after fixed_update, seen next tick), characters (floor, wall, proxy seen by areas and rays), joints (rebuild, drop, break), the 3D mirror (TRIMESH from a mesh, areas, kinematic, pin), canvas data paths (animation stepping, tile cells text, save/load round trip)"
   },
   {
     "name": "ui-gallery",
@@ -979,7 +922,7 @@
       "ui.popups": 1,
       "gallery.ellipsized": 1
     },
-    "note": "M2.6: every widget from a .cwscene (dark theme) with a menu and submenu open; layout rects of six controls and the UI stats must match exactly",
+    "note": "every widget from a .cwscene (dark theme) with a menu and submenu open; layout rects of six controls and the UI stats must match exactly",
     "controlFrames": 29
   },
   {
@@ -1005,7 +948,7 @@
     "expect": {
       "gallery.ellipsized": 1
     },
-    "note": "M2.6: the gallery in the built-in light theme",
+    "note": "the gallery in the built-in light theme",
     "controlFrames": 29
   },
   {
@@ -1027,7 +970,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "M2.6 layout suite: anchors, presets, grow, box (stretch ratio, refit, alignment), grid, margin, center, split, scroll (ensure visible), flow, aspect, tabs, panel; content-derived sizes; dirty tracking counts; theme text round trip; controls in scene files"
+    "note": "layout suite: anchors, presets, grow, box (stretch ratio, refit, alignment), grid, margin, center, split, scroll (ensure visible), flow, aspect, tabs, panel; content-derived sizes; dirty tracking counts; theme text round trip; controls in scene files"
   },
   {
     "name": "ui-mouse",
@@ -1092,7 +1035,7 @@
       "split_x": 160,
       "meta_clicks": 1
     },
-    "note": "M2.6: mouse, wheel and touch: clicks, a checkbox, a slider drag, an option popup, File > Recent > Two through a submenu, list wheel + double click, touch-scrolling a ScrollContainer over buttons (no press), split drag, tree collapse, a modal dialog swallowing an outside click then Cancel, a RichTextLabel link, a tooltip"
+    "note": "mouse, wheel and touch: clicks, a checkbox, a slider drag, an option popup, File > Recent > Two through a submenu, list wheel + double click, touch-scrolling a ScrollContainer over buttons (no press), split drag, tree collapse, a modal dialog swallowing an outside click then Cancel, a RichTextLabel link, a tooltip"
   },
   {
     "name": "ui-keys",
@@ -1151,7 +1094,7 @@
       "spin": 42,
       "dialog_ok": 1
     },
-    "note": "M2.6: keyboard + text: typing into LineEdit, shift+arrow selection replaced by typing, Home/End, ctrl+a/c, backspace, Enter, Tab/Shift+Tab, TextEdit lines + paste + edit, SpinBox typed value, dialog by keys. romdev is skipped: it cannot inject keys or text"
+    "note": "keyboard + text: typing into LineEdit, shift+arrow selection replaced by typing, Home/End, ctrl+a/c, backspace, Enter, Tab/Shift+Tab, TextEdit lines + paste + edit, SpinBox typed value, dialog by keys. romdev is skipped: it cannot inject keys or text"
   },
   {
     "name": "ui-pad",
@@ -1208,7 +1151,7 @@
       "list_sel": 1,
       "scroll_y": 132
     },
-    "note": "M2.6: gamepad navigation only (ui_* actions): focus by geometry, accept, slider steps, an option popup driven by the d-pad, list selection, focus walking into a ScrollContainer scrolls it"
+    "note": "gamepad navigation only (ui_* actions): focus by geometry, accept, slider steps, an option popup driven by the d-pad, list selection, focus walking into a ScrollContainer scrolls it"
   },
   {
     "name": "ui-editor",
@@ -1226,7 +1169,7 @@
       "ui.draw_calls",
       "editor.selections"
     ],
-    "note": "M2.6: an editor-shaped screen from a .cwscene + theme file: menu bar, toolbar, nested splits, two-column scene Tree of the UI itself, FileSystem list, C code view with line numbers and highlighting, a reflection-built inspector rebuilt on a tree selection at frame 15 (labels + SpinBox/CheckBox/LineEdit/OptionButton per property type)",
+    "note": "an editor-shaped screen from a .cwscene + theme file: menu bar, toolbar, nested splits, two-column scene Tree of the UI itself, FileSystem list, C code view with line numbers and highlighting, a reflection-built inspector rebuilt on a tree selection at frame 15 (labels + SpinBox/CheckBox/LineEdit/OptionButton per property type)",
     "controlFrames": 14,
     "expect": {
       "editor.selections": 2
@@ -1249,7 +1192,7 @@
       "perf.controls": 4957,
       "perf.full_arranged": 4956
     },
-    "note": "M2.6 perf: 4957 controls (4950 buttons in a scrolling grid); every frame a full relayout (all dirty) and an incremental one are timed; perf.*_ms fields are reported, not compared"
+    "note": "perf: 4957 controls (4950 buttons in a scrolling grid); every frame a full relayout (all dirty) and an incremental one are timed; perf.*_ms fields are reported, not compared"
   },
   {
     "name": "ui-hud",
@@ -1274,7 +1217,7 @@
       "menu_presses": 1,
       "game_clicks": 1
     },
-    "note": "M2.6: UI scale 2 inside a 640x360 integer-scaled virtual canvas (cw_ui_draw in the game pass, own canvas layer above the game); clicks mapped back through the canvas toggle Pause (the simulation stops), press Menu, and an empty-HUD click falls through to the game"
+    "note": "UI scale 2 inside a 640x360 integer-scaled virtual canvas (cw_ui_draw in the game pass, own canvas layer above the game); clicks mapped back through the canvas toggle Pause (the simulation stops), press Menu, and an empty-HUD click falls through to the game"
   },
   {
     "name": "ui-scene",
@@ -1293,7 +1236,7 @@
     "controlEnv": {
       "CW_UI_SCENE_LIGHT": "1"
     },
-    "note": "M2.6: the gallery .cwscene through cw_scene_app with no UI code: controls lay out and draw as the tree canvas overlay pass; the control run uses the light theme"
+    "note": "the gallery .cwscene through cw_scene_app with no UI code: controls lay out and draw as the tree canvas overlay pass; the control run uses the light theme"
   },
   {
     "name": "unit-pipeline",
@@ -1314,7 +1257,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "M3.1 pass graph order and switches, POST ping-pong contract, pool reuse, persistent targets, mode defaults, light unit conversion, .cube parser"
+    "note": "pass graph order and switches, POST ping-pong contract, pool reuse, persistent targets, mode defaults, light unit conversion, .cube parser"
   },
   {
     "name": "post-base",
@@ -1327,7 +1270,7 @@
       "pipe.float"
     ],
     "controlFrames": 378,
-    "note": "M3.1/M3.2 post_stack baseline: linear HDR RGBA16F, physical light units, AgX. Control: the ACES segment",
+    "note": "post_stack baseline: linear HDR RGBA16F, physical light units, AgX. Control: the ACES segment",
     "expect": {
       "post.seg": 0,
       "post.passes": 1090,
@@ -1695,7 +1638,7 @@
       "sky.minutes": 720,
       "sky.elev": 6500
     },
-    "note": "M3.5 procedural sky (Rayleigh + Mie single scattering) at noon: the background, the driven sun (CSM shadows) and the prefiltered environment on chrome to rough balls. Control: 16:30"
+    "note": "procedural sky (Rayleigh + Mie single scattering) at noon: the background, the driven sun (CSM shadows) and the prefiltered environment on chrome to rough balls. Control: 16:30"
   },
   {
     "name": "sky-afternoon",
@@ -1784,7 +1727,7 @@
       "fog.seg": 0,
       "fog.on": 1
     },
-    "note": "M3.5 exponential height fog from depth (closed-form integral along each ray), coloured by the ProceduralSky's horizon, a Henyey-Greenstein sun lobe, the sky fogged at 600 m. Control: fog off"
+    "note": "exponential height fog from depth (closed-form integral along each ray), coloured by the ProceduralSky's horizon, a Henyey-Greenstein sun lobe, the sky fogged at 600 m. Control: fog off"
   },
   {
     "name": "fog-ground",
@@ -1808,12 +1751,322 @@
     "maxGt16": 0.003,
     "fields": [],
     "expect": {},
-    "note": "M3.5 baked lighting: generated uv2 charts, 64 rays a texel, 2 bounces, sky + sunlight bounced off the red and green walls, an SH probe grid lighting the rolling ball; baked twice on the first frame (lm.same: the bytes match) and the bake's FNV-1a fingerprint is equal on every host (deterministic across x86 and wasm, any thread count). Control: one frame early (the ball rolls)"
+    "note": "baked lighting: generated uv2 charts, 64 rays a texel, 2 bounces, sky + sunlight bounced off the red and green walls, an SH probe grid lighting the rolling ball; baked twice on the first frame (lm.same: the bytes match) and the bake's FNV-1a fingerprint is equal on every host (deterministic across x86 and wasm, any thread count). Control: one frame early (the ball rolls)"
   },
   {
     "name": "lightmap-tool",
     "script": "tests/lightmap-tool.mjs",
-    "note": "M3.5 cwbake twice: identical bytes; the same fingerprint as the runtime bake; lightmap_room loading the .cwlm renders the same frame without baking; control: another seed differs"
+    "note": "cwbake twice: identical bytes; the same fingerprint as the runtime bake; lightmap_room loading the .cwlm renders the same frame without baking; control: another seed differs"
+  },
+  {
+    "name": "platformer3d",
+    "app": "platformer3d",
+    "frames": 2150,
+    "input": "platformer3d-input.json",
+    "controlInput": "platformer3d-fall.json",
+    "maxGt16": 0.003,
+    "fields": [
+      "tree.nodes",
+      "game.state",
+      "game.level",
+      "score",
+      "coins",
+      "gems",
+      "lives",
+      "deaths",
+      "checkpoint",
+      "timer",
+      "level.ticks",
+      "player.jumps",
+      "player.double_jumps",
+      "player.dashes",
+      "player.floor",
+      "anim.state",
+      "player.pos",
+      "player.vel",
+      "cam.pos",
+      "props.hash",
+      "phys.hash",
+      "state.hash",
+      "ticks"
+    ],
+    "expect": {
+      "game.state": 5,
+      "score": 350,
+      "coins": 20,
+      "gems": 3,
+      "lives": 3,
+      "deaths": 0,
+      "checkpoint": 2,
+      "player.double_jumps": 1,
+      "player.dashes": 1
+    },
+    "note": "The 3D platformer, played start to finish from pad input: title -> level 1 (pickups, crates, a ferry KinematicBody3D on AnimationPlayer tracks, checkpoint, a saw, stairs, goal) -> level 2 (spinning disc, double-jump wall, lift, dash gap, saw, goal) -> end screen with RigidBody3D confetti; every state field exact on every host. Control: the fall script (a different run)"
+  },
+  {
+    "name": "platformer3d-auto",
+    "app": "platformer3d_auto",
+    "frames": 2150,
+    "maxGt16": 0.003,
+    "fields": [
+      "tree.nodes",
+      "game.state",
+      "game.level",
+      "score",
+      "coins",
+      "gems",
+      "lives",
+      "deaths",
+      "checkpoint",
+      "timer",
+      "level.ticks",
+      "player.jumps",
+      "player.double_jumps",
+      "player.dashes",
+      "player.floor",
+      "anim.state",
+      "player.pos",
+      "player.vel",
+      "cam.pos",
+      "props.hash",
+      "phys.hash",
+      "state.hash",
+      "ticks"
+    ],
+    "expect": {
+      "game.state": 5,
+      "score": 350,
+      "coins": 20,
+      "gems": 3,
+      "lives": 3,
+      "deaths": 0,
+      "checkpoint": 2,
+      "player.double_jumps": 1,
+      "player.dashes": 1
+    },
+    "note": "the same run with the script compiled in (cw_set_raw_input_filter): input-free, so wasmcart-native plays the whole game too"
+  },
+  {
+    "name": "platformer3d-fall",
+    "app": "platformer3d",
+    "frames": 360,
+    "input": "platformer3d-fall.json",
+    "controlInput": "platformer3d-input.json",
+    "maxGt16": 0.003,
+    "fields": [
+      "tree.nodes",
+      "game.state",
+      "game.level",
+      "score",
+      "coins",
+      "gems",
+      "lives",
+      "deaths",
+      "checkpoint",
+      "timer",
+      "level.ticks",
+      "player.jumps",
+      "player.double_jumps",
+      "player.dashes",
+      "player.floor",
+      "anim.state",
+      "player.pos",
+      "player.vel",
+      "cam.pos",
+      "props.hash",
+      "phys.hash",
+      "state.hash",
+      "ticks"
+    ],
+    "expect": {
+      "game.state": 1,
+      "lives": 2,
+      "deaths": 1,
+      "checkpoint": 0
+    },
+    "note": "losing a life: run off the first ledge, fall below kill_y, lives 3 -> 2, respawn at the level start. Control: the play-through script, which jumps the gap"
+  },
+  {
+    "name": "platformer3d-replay",
+    "script": "tests/platformer3d-replay.mjs",
+    "note": "a full run recorded as the action stream (cw_input_record) replays with no devices to the exact end state; control: another run's recording ends elsewhere (native only: carts cannot write the recording)"
+  },
+  {
+    "name": "action2d",
+    "app": "action2d",
+    "frames": 3000,
+    "input": "action2d-pad.json",
+    "controlInput": "action2d-pad-control.json",
+    "maxGt16": 0.003,
+    "fields": [
+      "g.state",
+      "g.score",
+      "g.hp",
+      "g.room",
+      "g.enemies",
+      "g.kills",
+      "g.hits_taken",
+      "g.pickups",
+      "g.attacks",
+      "g.rebinds",
+      "g.boss_hp",
+      "g.pauses",
+      "g.deaths",
+      "g.doors",
+      "g.play_ticks",
+      "g.player",
+      "g.hash",
+      "g.music_vol",
+      "g.sfx_vol",
+      "g.focus_moves",
+      "g.menu_presses",
+      "tree.nodes"
+    ],
+    "expect": {
+      "g.state": 6,
+      "g.room": 3,
+      "g.boss_hp": 0,
+      "g.deaths": 0,
+      "g.rebinds": 1,
+      "g.pauses": 1,
+      "g.doors": 2,
+      "g.kills": 9,
+      "g.music_vol": 9,
+      "g.sfx_vol": 7
+    },
+    "note": "games/action2d, 'Crypt of Embers': a whole top-down action game from .cwscene files played start to finish: title menu (a mouse click on OPTIONS, volume sliders, attack rebound to pad Y through the capture API), three TileMap2D rooms with tile collision, sword hitbox Area2D, slimes / bats / orb spitters / boss as C node types, knockback and i-frames, hearts and gems, a pause, doors, torch Light2D + occluders, AnimationPlayer shake / flashes, UI tweens, music and effects, victory screen. Input recorded once by the game's authoring bot (bot.c, tests/action2d-script.mjs); the control drops the rebinding press so the hero never swings"
+  },
+  {
+    "name": "action2d-crypt",
+    "app": "action2d",
+    "frames": 1250,
+    "input": "action2d-pad.json",
+    "controlInput": "action2d-pad-control.json",
+    "maxGt16": 0.003,
+    "fields": [
+      "g.state",
+      "g.score",
+      "g.hp",
+      "g.room",
+      "g.enemies",
+      "g.kills",
+      "g.hits_taken",
+      "g.pickups",
+      "g.attacks",
+      "g.rebinds",
+      "g.boss_hp",
+      "g.pauses",
+      "g.deaths",
+      "g.doors",
+      "g.play_ticks",
+      "g.player",
+      "g.hash",
+      "g.music_vol",
+      "g.sfx_vol",
+      "g.focus_moves",
+      "g.menu_presses",
+      "tree.nodes"
+    ],
+    "expect": {
+      "g.room": 2,
+      "g.state": 2,
+      "g.rebinds": 1,
+      "g.pauses": 1,
+      "g.doors": 1
+    },
+    "note": "the pad playthrough stopped in the dark crypt (room 2): ambient 0.08, torch Light2Ds and the hero's lamp casting pillar shadows (LightOccluder2D), bats and an orb spitter"
+  },
+  {
+    "name": "action2d-keys",
+    "app": "action2d",
+    "frames": 3000,
+    "input": "action2d-keys.json",
+    "controlInput": "action2d-keys-control.json",
+    "maxGt16": 0.003,
+    "skip": [
+      "romdev"
+    ],
+    "fields": [
+      "g.state",
+      "g.score",
+      "g.hp",
+      "g.room",
+      "g.enemies",
+      "g.kills",
+      "g.hits_taken",
+      "g.pickups",
+      "g.attacks",
+      "g.rebinds",
+      "g.boss_hp",
+      "g.pauses",
+      "g.deaths",
+      "g.doors",
+      "g.play_ticks",
+      "g.player",
+      "g.hash",
+      "g.music_vol",
+      "g.sfx_vol",
+      "g.focus_moves",
+      "g.menu_presses",
+      "tree.nodes"
+    ],
+    "expect": {
+      "g.state": 6,
+      "g.room": 3,
+      "g.boss_hp": 0,
+      "g.deaths": 0,
+      "g.rebinds": 1,
+      "g.pauses": 1,
+      "g.doors": 2,
+      "g.kills": 9,
+      "g.music_vol": 9,
+      "g.sfx_vol": 7
+    },
+    "note": "the same playthrough on keyboard + mouse (WASD, K after rebinding, Enter / Escape / arrows in the menus): it must end in exactly the pad run's state. romdev is skipped: it cannot inject keys"
+  },
+  {
+    "name": "action2d-auto",
+    "app": "action2d_auto",
+    "frames": 3000,
+    "maxGt16": 0.003,
+    "fields": [
+      "g.state",
+      "g.score",
+      "g.hp",
+      "g.room",
+      "g.enemies",
+      "g.kills",
+      "g.hits_taken",
+      "g.pickups",
+      "g.attacks",
+      "g.rebinds",
+      "g.boss_hp",
+      "g.pauses",
+      "g.deaths",
+      "g.doors",
+      "g.play_ticks",
+      "g.player",
+      "g.hash",
+      "g.music_vol",
+      "g.sfx_vol",
+      "g.focus_moves",
+      "g.menu_presses",
+      "tree.nodes"
+    ],
+    "expect": {
+      "g.state": 6,
+      "g.room": 3,
+      "g.boss_hp": 0,
+      "g.deaths": 0,
+      "g.rebinds": 1,
+      "g.pauses": 1,
+      "g.doors": 2,
+      "g.kills": 9,
+      "g.music_vol": 9,
+      "g.sfx_vol": 7
+    },
+    "assets": "games/action2d/assets",
+    "note": "the pad playthrough compiled in (script.inc through cw_input_set_raw_filter, which drives the UI too): input-free, so wasmcart-native plays the whole game as well"
   },
   {
     "name": "fx-particles",
@@ -1846,7 +2099,7 @@
       "fx.sort_passes",
       "fx.tick"
     ],
-    "note": "M3.4 GPUParticles3D every mode (TF sim, depth collision + trails, stretched sparks on analytic colliders, sorted soft smoke with curl noise, instanced mesh debris, attractor, mesh-surface emission) and a Trail3D; alive counts exact (CPU emission function), GPU alive and position sums read back. Control: one frame early"
+    "note": "GPUParticles3D every mode (TF sim, depth collision + trails, stretched sparks on analytic colliders, sorted soft smoke with curl noise, instanced mesh debris, attractor, mesh-surface emission) and a Trail3D; alive counts exact (CPU emission function), GPU alive and position sums read back. Control: one frame early"
   },
   {
     "name": "fx-particles-late",
@@ -1917,7 +2170,7 @@
       "perf.alive": 100000,
       "perf.capacity": 100000
     },
-    "note": "M3.4 100k GPU particles at 1280x720 (depth collision, curl noise, 2^15-key bitonic sort every frame, attractor): frames and counts on every host (timings: fx-perf-report). Control: one frame early"
+    "note": "100k GPU particles at 1280x720 (depth collision, curl noise, 2^15-key bitonic sort every frame, attractor): frames and counts on every host (timings: fx-perf-report). Control: one frame early"
   },
   {
     "name": "fx-perf-report",
@@ -2224,7 +2477,7 @@
       "p2.Burst.alive": 400,
       "p2.Comet.alive": 300
     },
-    "note": "M3.4 GPUParticles2D: CPU sim on the job pool through render2d (additive fire, alpha snow, a re-armed one-shot burst, an orbiting emitter leaving world-space particles); one draw call. Control: one frame early"
+    "note": "GPUParticles2D: CPU sim on the job pool through render2d (additive fire, alpha snow, a re-armed one-shot burst, an orbiting emitter leaving world-space particles); one draw call. Control: one frame early"
   },
   {
     "name": "fx-particles2d-late",
@@ -2263,7 +2516,7 @@
     "controlEnv": {
       "FX_NO_DECALS": "1"
     },
-    "note": "M3.4 Decal3D on uneven geometry (steps, ramp, sphere, wall corner, floor): MIX / MULTIPLY / ADD from one atlas, a sheet with regions, 240 scattered splats (instanced, frustum culled); red_ok reads the red splat where its box meets the floor. Control: no decals"
+    "note": "Decal3D on uneven geometry (steps, ramp, sphere, wall corner, floor): MIX / MULTIPLY / ADD from one atlas, a sheet with regions, 240 scattered splats (instanced, frustum culled); red_ok reads the red splat where its box meets the floor. Control: no decals"
   },
   {
     "name": "fx-decals-spin",
@@ -2303,7 +2556,7 @@
     "controlEnv": {
       "VIS_NO_FADE": "1"
     },
-    "note": "M3.6 octahedral impostors (albedo + normal atlases, lit at draw time) for 49 generated glTF trees with cwpack LOD chains; impostor_distance sweeps 60 m to 6 m and back, every frame is diffed with the last: the crossfade never changes more than 60 pixels by >24 levels at once. Control: impostor_fade 0 (hard switches pop about a thousand pixels)"
+    "note": "octahedral impostors (albedo + normal atlases, lit at draw time) for 49 generated glTF trees with cwpack LOD chains; impostor_distance sweeps 60 m to 6 m and back, every frame is diffed with the last: the crossfade never changes more than 60 pixels by >24 levels at once. Control: impostor_fade 0 (hard switches pop about a thousand pixels)"
   },
   {
     "name": "vis-impostor-band",
@@ -2341,7 +2594,7 @@
       "city.draws",
       "city.static"
     ],
-    "note": "M3.6 city of ~4500 meshes under a VisibilityManager, down a long street: BVH frustum culling, occlusion queries (occlusion_wait: the same counts on every host), visibility ranges, LOD (primitive tessellations and the tree glTF LOD chain), tree impostors; culled / drawn counts per reason and draw calls. Control: one frame early"
+    "note": "city of ~4500 meshes under a VisibilityManager, down a long street: BVH frustum culling, occlusion queries (occlusion_wait: the same counts on every host), visibility ranges, LOD (primitive tessellations and the tree glTF LOD chain), tree impostors; culled / drawn counts per reason and draw calls. Control: one frame early"
   },
   {
     "name": "vis-city-house",
@@ -2410,7 +2663,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "M3.4/M3.6: visibility BVH against brute force over random boxes and frusta (no false negatives, before and after a refit), the box/frustum test with sweeps, curve parsing, the particle emission function (3D and 2D alive counts over start, steady state, stop and one-shot), MeshInstance3D LOD hooks and shared unit primitives"
+    "note": "visibility BVH against brute force over random boxes and frusta (no false negatives, before and after a refit), the box/frustum test with sweeps, curve parsing, the particle emission function (3D and 2D alive counts over start, steady state, stop and one-shot), MeshInstance3D LOD hooks and shared unit primitives"
   },
   {
     "name": "showcase-morning",
@@ -2440,7 +2693,7 @@
       "sc.trees": 1400,
       "sc.ok": 1
     },
-    "note": "M3.7 the phase-3 showcase at 09:30: terrain LOD chunks, chimney smoke (GPU particles), decals, VisibilityManager culling, the instanced forest, the village, four skinned walkers, CSM sun shadows, height fog with half-resolution light shafts, GTAO, TAA, bloom, AgX, SMAA; no lamp lit (dark engine lights are not gathered). Control: golden hour"
+    "note": "The showcase at 09:30: terrain LOD chunks, chimney smoke (GPU particles), decals, VisibilityManager culling, the instanced forest, the village, four skinned walkers, CSM sun shadows, height fog with half-resolution light shafts, GTAO, TAA, bloom, AgX, SMAA; no lamp lit (dark engine lights are not gathered). Control: golden hour"
   },
   {
     "name": "showcase-golden",
@@ -2469,7 +2722,7 @@
       "sc.lamps": 0,
       "sc.ok": 1
     },
-    "note": "M3.7 showcase at 17:45: low sun, long shadows, sky-coloured fog with the sun lobe, the campfire lit (its omni atlas shadow). Control: morning"
+    "note": "showcase at 17:45: low sun, long shadows, sky-coloured fog with the sun lobe, the campfire lit (its omni atlas shadow). Control: morning"
   },
   {
     "name": "showcase-dusk",
@@ -2497,7 +2750,7 @@
       "sc.lamps": 20,
       "sc.ok": 1
     },
-    "note": "M3.7 showcase at dusk, mid-way: lamps, windows and fireflies coming on one by one as the sun sets (20 of 128 lamps fully on). Control: night"
+    "note": "showcase at dusk, mid-way: lamps, windows and fireflies coming on one by one as the sun sets (20 of 128 lamps fully on). Control: night"
   },
   {
     "name": "showcase-night",
@@ -2526,7 +2779,7 @@
       "sc.lamps": 128,
       "sc.ok": 1
     },
-    "note": "M3.7 showcase at 22:00: 128 lamps and 64 fireflies glowing, 8 real point lights (three.c's cap: the shadowed campfire and the 7 lit lamps nearest the view), lit windows, bloom, the eye-adapted exposure; the sun below the horizon renders no cascades. Control: dusk"
+    "note": "showcase at 22:00: 128 lamps and 64 fireflies glowing, 8 real point lights (three.c's cap: the shadowed campfire and the 7 lit lamps nearest the view), lit windows, bloom, the eye-adapted exposure; the sun below the horizon renders no cascades. Control: dusk"
   },
   {
     "name": "showcase-cycle",
@@ -2554,12 +2807,12 @@
       "sc.lamps": 128,
       "sc.ok": 1
     },
-    "note": "M3.7 showcase with the day / night cycle running (half an hour a second) and the camera still circling. Control: the night segment's end"
+    "note": "showcase with the day / night cycle running (half an hour a second) and the camera still circling. Control: the night segment's end"
   },
   {
     "name": "showcase-perf",
     "script": "tests/showcase-perf.mjs",
-    "note": "M3.7 showcase_perf at 1920x1080 full quality (particles, decals and visibility included) through all five segments on native, romdev, Chromium and wasmcart-native: every segment's frame (GPU drained each frame) under 16.7 ms; per-pass GPU ms reported in out/perf/showcase-report.txt; control: an impossible 0.05 ms budget must fail"
+    "note": "showcase_perf at 1920x1080 full quality (particles, decals and visibility included) through all five segments on native, romdev, Chromium and wasmcart-native: every segment's frame (GPU drained each frame) under 16.7 ms; per-pass GPU ms reported in out/perf/showcase-report.txt; control: an impossible 0.05 ms budget must fail"
   },
   {
     "name": "unit-editor",
@@ -2580,7 +2833,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "M4.0: every undoable editor command round-trips do/undo/redo/undo (examples are mandatory), demo scenes save byte for byte, merge, dirty, refusals, quoting, the ed/ed64 channel binding, panels, settings"
+    "note": "every undoable editor command round-trips do/undo/redo/undo (examples are mandatory), demo scenes save byte for byte, merge, dirty, refusals, quoting, the ed/ed64 channel binding, panels, settings"
   },
   {
     "name": "editor",
@@ -2618,7 +2871,7 @@
     "controlEnv": {
       "CW_EDITOR_SETTINGS": "repo:editor/tests/control-settings.cfg"
     },
-    "note": "M4.0: the editor shell at startup (demo project, main scene open); control = the same run with a light theme from a settings file"
+    "note": "the editor shell at startup (demo project, main scene open); control = the same run with a light theme from a settings file"
   },
   {
     "name": "editor-session",
@@ -2657,7 +2910,7 @@
       "editor.palette_open": 1
     },
     "controlFrames": 30,
-    "note": "M4.0: a scripted editing session (editor/tests/session.inc): merged drag, add/rename/instance/delete, undo/redo, reparent, settings, panel move, save, a second scene, the palette; control = the session stopped at frame 30"
+    "note": "a scripted editing session (editor/tests/session.inc): merged drag, add/rename/instance/delete, undo/redo, reparent, settings, panel move, save, a second scene, the palette; control = the session stopped at frame 30"
   },
   {
     "name": "editor-mouse",
@@ -2691,7 +2944,7 @@
       "editor.selection": 1,
       "editor.command_errors": 0
     },
-    "note": "M4.0: by mouse: drag the History tab to another dock slot, select a node in the Scene tree, drag a dock separator, open the Edit menu; control = the same pointer moves without pressing"
+    "note": "by mouse: drag the History tab to another dock slot, select a node in the Scene tree, drag a dock separator, open the Edit menu; control = the same pointer moves without pressing"
   },
   {
     "name": "editor-channel",
@@ -2700,6 +2953,207 @@
   {
     "name": "editor-scenes",
     "script": "tests/editor-scenes.mjs"
+  },
+  {
+    "name": "editor-view3d",
+    "app": "platformer3d_editor_view3d",
+    "frames": 40,
+    "maxGt16": 0.003,
+    "fields": [
+      "editor.docs",
+      "editor.nodes",
+      "editor.doc_hash",
+      "editor.doc_version",
+      "editor.active_hash",
+      "editor.undo",
+      "editor.redo",
+      "editor.dirty",
+      "editor.selection",
+      "editor.sel_hash",
+      "editor.layout_hash",
+      "editor.commands_run",
+      "editor.command_errors",
+      "editor.palette_open",
+      "editor.commands",
+      "editor.modules",
+      "ui.controls",
+      "ui.drawn",
+      "ui.popups",
+      "session.done",
+      "session.failed",
+      "session.reply_hash"
+    ],
+    "expect": {
+      "session.done": 1,
+      "session.failed": 1,
+      "editor.undo": 5,
+      "editor.redo": 1,
+      "editor.selection": 2,
+      "editor.nodes": 253
+    },
+    "controlFrames": 22,
+    "note": "level 1 of platformer3d (scenes/level1.cwscene) in the 3D viewport of the editor with platformer3d's node types: rendered through its own pipeline into the viewport target from the editor camera, grid and visualizers (lights, camera, collision shapes) on the editor layer, selection boxes, the rotate gizmo on a multi-selection with local axes; edits through node.set (merged), node.set_each, node.set_many, node.connect/disconnect, node.group, reparent + undo, view3d.* commands; one line must fail. Control: the session stopped at frame 22"
+  },
+  {
+    "name": "editor-view2d",
+    "app": "platformer3d_editor_view2d",
+    "frames": 40,
+    "maxGt16": 0.003,
+    "fields": [
+      "editor.docs",
+      "editor.nodes",
+      "editor.doc_hash",
+      "editor.doc_version",
+      "editor.active_hash",
+      "editor.undo",
+      "editor.redo",
+      "editor.dirty",
+      "editor.selection",
+      "editor.sel_hash",
+      "editor.layout_hash",
+      "editor.commands_run",
+      "editor.command_errors",
+      "editor.palette_open",
+      "editor.commands",
+      "editor.modules",
+      "ui.controls",
+      "ui.drawn",
+      "ui.popups",
+      "session.done",
+      "session.failed",
+      "session.reply_hash"
+    ],
+    "expect": {
+      "session.done": 1,
+      "session.failed": 1,
+      "editor.undo": 20,
+      "editor.selection": 1,
+      "editor.nodes": 8
+    },
+    "controlFrames": 25,
+    "note": "a 2D scene built in the editor (CanvasSettings, a StaticBody2D with a polygon CollisionShape2D, Polygon2D, Line2D, Camera2D, Light2D) in the 2D viewport: the canvas drawn through the editor view (cw_canvas_draw_view), grid, rulers, guides (view2d.guide, undoable editor-wide), the game rect, shape/camera/light gizmos, polygon point handles and the move gizmo; one line must fail. Control: the session stopped at frame 25"
+  },
+  {
+    "name": "editor-gizmo",
+    "app": "platformer3d_editor_gizmo",
+    "frames": 130,
+    "input": "editor-gizmo.json",
+    "controlInput": "editor-gizmo-control.json",
+    "maxGt16": 0.003,
+    "fields": [
+      "editor.docs",
+      "editor.nodes",
+      "editor.doc_hash",
+      "editor.doc_version",
+      "editor.active_hash",
+      "editor.undo",
+      "editor.redo",
+      "editor.dirty",
+      "editor.selection",
+      "editor.sel_hash",
+      "editor.layout_hash",
+      "editor.commands_run",
+      "editor.command_errors",
+      "editor.palette_open",
+      "editor.commands",
+      "editor.modules",
+      "ui.controls",
+      "ui.drawn",
+      "ui.popups",
+      "session.done",
+      "session.failed",
+      "session.reply_hash"
+    ],
+    "expect": {
+      "session.done": 1,
+      "session.failed": 1,
+      "editor.undo": 4,
+      "editor.doc_hash": 881590069
+    },
+    "note": "level 1 with Coin1 deleted and instanced again at the origin; the POINTER drags the move gizmo's Y handle, then its Z handle, with snapping (0.5) until the coin sits at vec3(0, 1, -1): the document is then the hand-written level again (editor.doc_hash = the canonical level text's hash) with each drag one undo step. Control: the same pointer moves without pressing (the coin stays at the origin). The pointer scripts are aimed from the current dock layout: when new panels move the viewports or the tree, regenerate them with node tests/editor-pointer-scripts.mjs"
+  },
+  {
+    "name": "editor-pointer",
+    "app": "platformer3d_editor_pointer",
+    "frames": 170,
+    "input": "editor-pointer.json",
+    "controlInput": "editor-pointer-control.json",
+    "maxGt16": 0.003,
+    "fields": [
+      "editor.docs",
+      "editor.nodes",
+      "editor.doc_hash",
+      "editor.doc_version",
+      "editor.active_hash",
+      "editor.undo",
+      "editor.redo",
+      "editor.dirty",
+      "editor.selection",
+      "editor.sel_hash",
+      "editor.layout_hash",
+      "editor.commands_run",
+      "editor.command_errors",
+      "editor.palette_open",
+      "editor.commands",
+      "editor.modules",
+      "ui.controls",
+      "ui.drawn",
+      "ui.popups",
+      "session.done",
+      "session.failed",
+      "session.reply_hash"
+    ],
+    "expect": {
+      "session.done": 1,
+      "session.failed": 1,
+      "editor.undo": 19,
+      "editor.selection": 1,
+      "editor.doc_hash": 1777191047
+    },
+    "note": "a 2D scene built by commands, then edited by the POINTER only: a CollisionShape2D polygon point dragged in the 2D viewport and snapped to the 8 px grid (one undo step), a Scene tree row dragged onto another row (node.reparent), a click selecting a row. Control: the same moves without pressing. The pointer scripts are aimed from the current dock layout: when new panels move the viewports or the tree, regenerate them with node tests/editor-pointer-scripts.mjs"
+  },
+  {
+    "name": "editor-pointer-keys",
+    "app": "platformer3d_editor_pointer",
+    "frames": 170,
+    "input": "editor-pointer-keys.json",
+    "controlInput": "editor-pointer-keys-control.json",
+    "maxGt16": 0.003,
+    "fields": [
+      "editor.docs",
+      "editor.nodes",
+      "editor.doc_hash",
+      "editor.doc_version",
+      "editor.active_hash",
+      "editor.undo",
+      "editor.redo",
+      "editor.dirty",
+      "editor.selection",
+      "editor.sel_hash",
+      "editor.layout_hash",
+      "editor.commands_run",
+      "editor.command_errors",
+      "editor.palette_open",
+      "editor.commands",
+      "editor.modules",
+      "ui.controls",
+      "ui.drawn",
+      "ui.popups",
+      "session.done",
+      "session.failed",
+      "session.reply_hash"
+    ],
+    "expect": {
+      "session.done": 1,
+      "session.failed": 1,
+      "editor.undo": 19,
+      "editor.selection": 2,
+      "editor.doc_hash": 1777191047
+    },
+    "note": "the editor-pointer session, then multi-selection in the Scene tree: click, ctrl+click adds, shift+click selects the range from the last clicked row (romdev cannot inject keys). Control: the same moves without pressing. The pointer scripts are aimed from the current dock layout: when new panels move the viewports or the tree, regenerate them with node tests/editor-pointer-scripts.mjs",
+    "skip": [
+      "romdev"
+    ]
   },
   {
     "name": "play-demo",
@@ -2716,12 +3170,12 @@
       "game.respawns": 0
     },
     "controlFrames": 59,
-    "note": "M4.3: the game the editor plays in editor-play (a falling ball, a crate, the HUD the game writes), the same on every host; control = one frame early"
+    "note": "the game the editor plays in editor-play (a falling ball, a crate, the HUD the game writes), the same on every host; control = one frame early"
   },
   {
     "name": "editor-play",
     "script": "tests/editor-play.mjs",
-    "note": "M4.3 play-in-editor, the editor side: the native editor plays samples/play_demo natively and in romdev, driven over ed and by pointer only (edit a live property, step, inspect, keep it in the scene, crash, relaunch), each with a control that must fail; the cart editor says Play is unavailable"
+    "note": "play-in-editor, the editor side: the native editor plays samples/play_demo natively and in romdev, driven over ed and by pointer only (edit a live property, step, inspect, keep it in the scene, crash, relaunch), each with a control that must fail; the cart editor says Play is unavailable"
   },
   {
     "name": "unit-net",
@@ -2742,7 +3196,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "M5.4: channels over a lossy simulated network (exactly-once in-order reliable, refused protocol), tree snapshots (structure, values, private state, host-stable hash), RPC + NetSynchronizer + NetSpawner, rollback with its own no-rollback control that must desync"
+    "note": "channels over a lossy simulated network (exactly-once in-order reliable, refused protocol), tree snapshots (structure, values, private state, host-stable hash), RPC + NetSynchronizer + NetSpawner, rollback with its own no-rollback control that must desync"
   },
   {
     "name": "net-arena",
@@ -2782,12 +3236,12 @@
     "controlEnv": {
       "CW_NET_NO_ROLLBACK": "1"
     },
-    "note": "M5.4: two rollback peers in one process over the deterministic network simulator (80 ms latency, 40 ms jitter, 10% loss, 2% duplicates): both confirm the same state hash at tick 600 with every 10th tick compared in-band, identically on every host; control = the same run with rollback disabled (wrong predictions stay), which must diverge"
+    "note": "two rollback peers in one process over the deterministic network simulator (80 ms latency, 40 ms jitter, 10% loss, 2% duplicates): both confirm the same state hash at tick 600 with every 10th tick compared in-band, identically on every host; control = the same run with rollback disabled (wrong predictions stay), which must diverge"
   },
   {
     "name": "net",
     "script": "tests/net.mjs",
-    "note": "M5.4: native<->native over UDP loopback (two processes) and cart<->cart over wasmcart peers through tools/cwrelay.mjs on romdev, wcnative and Chromium, under injected latency/jitter/loss; controls: an injected desync (every transport) and rollback disabled (UDP) must be caught; rollback cost per frame printed"
+    "note": "native<->native over UDP loopback (two processes) and cart<->cart over wasmcart peers through tools/cwrelay.mjs on romdev, wcnative and Chromium, under injected latency/jitter/loss; controls: an injected desync (every transport) and rollback disabled (UDP) must be caught; rollback cost per frame printed"
   },
   {
     "name": "unit-project",
@@ -2808,7 +3262,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "M4.6: project.cwproj editing keeps every other line, typed reads, input map + render settings applied (cartwheel/project.h); child processes natively, refused in carts (cartwheel/process.h)"
+    "note": "project.cwproj editing keeps every other line, typed reads, input map + render settings applied (cartwheel/project.h); child processes natively, refused in carts (cartwheel/process.h)"
   },
   {
     "name": "project-templates",
@@ -2817,7 +3271,7 @@
   {
     "name": "editor-import",
     "script": "tests/editor-import.mjs",
-    "note": "M4.2 exit: drag a glTF in, see it imported, place it (in-app pointer session on native, romdev, chromium, wcnative; the same over the debug channel native vs romdev; controls: session stopped before the drag, hidden node covers 0 pixels, corrupt glTF errors, refused delete)"
+    "note": "drag a glTF in, see it imported, place it (in-app pointer session on native, romdev, chromium, wcnative; the same over the debug channel native vs romdev; controls: session stopped before the drag, hidden node covers 0 pixels, corrupt glTF errors, refused delete)"
   },
   {
     "name": "triggers",
@@ -2859,7 +3313,7 @@
     "controlEnv": {
       "CW_TRIGGERS_OFF": "1"
     },
-    "note": "M4.4: Trigger nodes from a scene file, no game code: a ball (group player) entering an Area2D SETs a lamp green, CALLs Counter.add(1), EMITs Counter.bump (whose own trigger CALLs add(10)), SPAWNs a scene once; a disabled rule never runs; control = every trigger disabled (CW_TRIGGERS_OFF)"
+    "note": "Trigger nodes from a scene file, no game code: a ball (group player) entering an Area2D SETs a lamp green, CALLs Counter.add(1), EMITs Counter.bump (whose own trigger CALLs add(10)), SPAWNs a scene once; a disabled rule never runs; control = every trigger disabled (CW_TRIGGERS_OFF)"
   },
   {
     "name": "triggers-end",
@@ -2898,7 +3352,11 @@
       ]
     },
     "controlFrames": 30,
-    "note": "M4.4: the rest of the triggers run: the crate (group crates) is counted and FREEd by its rule, the ball reaching the Exit area CHANGE_SCENEs to won.cwscene; control = frame 30, before the crate and the exit"
+    "note": "the rest of the triggers run: the crate (group crates) is counted and FREEd by its rule, the ball reaching the Exit area CHANGE_SCENEs to won.cwscene; control = frame 30, before the crate and the exit"
+  },
+  {
+    "name": "editor-gametypes",
+    "script": "tests/editor-gametypes.mjs"
   },
   {
     "name": "editor-agent-ui",
@@ -2940,7 +3398,7 @@
       "editor.docs": 2,
       "editor.command_errors": 0
     },
-    "note": "M4.4 by keyboard and mouse: type a request into the Agent panel and press Enter (agent.request), open ui/hud.cwscene from the palette, select the Pause button, and in the Triggers panel build the rule \"when pressed: set text = Paused! (once)\" with Add Rule, then select it from the rule list (the inspector shows the Trigger node); control = the same moves without the Enter and the Add Rule click",
+    "note": "by keyboard and mouse: type a request into the Agent panel and press Enter (agent.request), open ui/hud.cwscene from the palette, select the Pause button, and in the Triggers panel build the rule \"when pressed: set text = Paused! (once)\" with Add Rule, then select it from the rule list (the inspector shows the Trigger node); control = the same moves without the Enter and the Add Rule click",
     "skip": [
       "romdev"
     ]
@@ -2977,7 +3435,7 @@
     "controlEnv": {
       "CW_L10N_FAULT": "missing_key"
     },
-    "note": "M5.5: the demo UI in English from packed catalogs (plurals, number/date formats, captions, binding names); control: a typo'd catalog key must show and count as missing"
+    "note": "the demo UI in English from packed catalogs (plurals, number/date formats, captions, binding names); control: a typo'd catalog key must show and count as missing"
   },
   {
     "name": "l10n-pseudo",
@@ -3007,7 +3465,7 @@
     "controlEnv": {
       "CW_L10N_FAULT": "missing_key"
     },
-    "note": "M5.5: the en-XA pseudo-locale (accented, 40% longer, bracketed) over the same layout; control: a missing key"
+    "note": "the en-XA pseudo-locale (accented, 40% longer, bracketed) over the same layout; control: a missing key"
   },
   {
     "name": "l10n-ar",
@@ -3038,7 +3496,7 @@
     "controlEnv": {
       "CW_L10N_FAULT": "no_fallback"
     },
-    "note": "M5.5: Arabic, right to left: mirrored containers and anchors, kb_text_shape joining forms and bidi, Arabic-Indic digits, Noto Sans Arabic (subset by cwpack) as fallback font, per-locale banner; control: the fallback to English broken (a key only English has goes missing)"
+    "note": "Arabic, right to left: mirrored containers and anchors, kb_text_shape joining forms and bidi, Arabic-Indic digits, Noto Sans Arabic (subset by cwpack) as fallback font, per-locale banner; control: the fallback to English broken (a key only English has goes missing)"
   },
   {
     "name": "l10n-ja",
@@ -3069,7 +3527,7 @@
     "controlEnv": {
       "CW_L10N_FAULT": "no_font"
     },
-    "note": "M5.5: Japanese from a PO source imported by cwpack, CJK glyphs from Noto Sans JP (subset), CJK line breaking with kinsoku; control: no fallback font (tofu, glyphs counted missing)"
+    "note": "Japanese from a PO source imported by cwpack, CJK glyphs from Noto Sans JP (subset), CJK line breaking with kinsoku; control: no fallback font (tofu, glyphs counted missing)"
   },
   {
     "name": "l10n-xb",
@@ -3099,7 +3557,7 @@
     "controlEnv": {
       "CW_L10N_FAULT": "missing_key"
     },
-    "note": "M5.5: the ar-XB pseudo-locale (English text, right-to-left paragraphs and mirrored layout); control: a missing key"
+    "note": "the ar-XB pseudo-locale (English text, right-to-left paragraphs and mirrored layout); control: a missing key"
   },
   {
     "name": "l10n-a11y",
@@ -3127,7 +3585,7 @@
     "controlEnv": {
       "CW_L10N_FAULT": "no_a11y"
     },
-    "note": "M5.5: the accessibility settings on the English screen: high-contrast theme, text at 125% (layouts grow with it), reduced motion; control: the settings never applied"
+    "note": "the accessibility settings on the English screen: high-contrast theme, text at 125% (layouts grow with it), reduced motion; control: the settings never applied"
   },
   {
     "name": "l10n-nav",
@@ -3157,7 +3615,7 @@
     "controlEnv": {
       "CW_L10N_NAV_CONTROL": "1"
     },
-    "note": "M5.5: a gamepad session in Arabic with the colorblind-friendly theme through the raw input filter (so every host runs it): focus the language box, open it, pick Japanese, focus comes back, move down (volume up, subtitles off), rebind jump to the west button on the gamepad RemapButton; control: the last press dropped"
+    "note": "a gamepad session in Arabic with the colorblind-friendly theme through the raw input filter (so every host runs it): focus the language box, open it, pick Japanese, focus comes back, move down (volume up, subtitles off), rebind jump to the west button on the gamepad RemapButton; control: the last press dropped"
   },
   {
     "name": "unit-l10n",
@@ -3182,17 +3640,17 @@
   {
     "name": "a11y-channel",
     "script": "tests/a11y-channel.mjs",
-    "note": "M5.5: the accessibility tree, focus, event log and l10n state over the debug channel, native vs romdev cart, plus requests that must fail"
+    "note": "the accessibility tree, focus, event log and l10n state over the debug channel, native vs romdev cart, plus requests that must fail"
   },
   {
     "name": "project-export",
     "script": "tests/project-export.mjs",
-    "note": "M4.6 exit gate: new project -> export native + cart with one editor action (tools/cwexport.mjs), every export run and probed"
+    "note": "new project -> export native + cart with one editor action (tools/cwexport.mjs), every export run and probed"
   },
   {
     "name": "export",
     "script": "tests/export.mjs",
-    "note": "M5.0 exporters: platformer2d + platformer3d exported for linux-x64/arm64, windows-x64 (Wine), android-arm64 (AVD), web (Chromium), wasc (romdev, wcnative), macos/ios (templates), and a CW_PROJECT_DIR project; each export run where possible and probed through the debug channel; controls: no .cwpak, broken asset path, no COOP/COEP, truncated cart"
+    "note": "exporters: platformer3d exported for linux-x64/arm64, windows-x64 (Wine), android-arm64 (AVD), web (Chromium), wasc (romdev, wcnative), macos/ios (templates), and a CW_PROJECT_DIR project; each export run where possible and probed through the debug channel; controls: no .cwpak, broken asset path, no COOP/COEP, truncated cart"
   },
   {
     "name": "unit-plugin",
@@ -3218,7 +3676,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "M5.2: the build's plugin table on every host (plugin_fixtures: good compiled in, future refused by engine API 2.0, off disabled, needs_future refused by its dependency; none of the refused ones compiled), version rules, load-time refusal of code compiled for API 1.7, unload refused while nodes exist then load again, errors naming the plugin of an unknown type, manifest parsing; control: injected failure"
+    "note": "the build's plugin table on every host (plugin_fixtures: good compiled in, future refused by engine API 2.0, off disabled, needs_future refused by its dependency; none of the refused ones compiled), version rules, load-time refusal of code compiled for API 1.7, unload refused while nodes exist then load again, errors naming the plugin of an unknown type, manifest parsing; control: injected failure"
   },
   {
     "name": "plugin-demo",
@@ -3248,23 +3706,23 @@
       "plugins.loaded": 1,
       "plugins.refused": 0
     },
-    "note": "M5.2: samples/plugin_demo, a project whose main scene uses the Turntable node type from its runtime plugin (plugins/turntable, compiled in by cw_add_app): the turntable turns on every host, pad south calls its reverse method; control: no press (speed and angle differ)"
+    "note": "samples/plugin_demo, a project whose main scene uses the Turntable node type from its runtime plugin (plugins/turntable, compiled in by cw_add_app): the turntable turns on every host, pad south calls its reverse method; control: no press (speed and angle differ)"
   },
   {
     "name": "plugins",
     "script": "tests/plugins.mjs",
-    "note": "M5.2 exit: a project plugin (samples/plugin_demo/plugins/turntable, copied to a fresh project) used without editing the engine tree: built by tools/cwproject.mjs (plugin libraries + the game), the game with the plugin's node type and debug command natively and on wasmcart-native; the native editor loads it (panel, inspector plugin, gizmo, commands), pointer-only session (panel row, gizmo radius drag = one undo step, inspector slider + Reverse), hot reload of edited editor + runtime code built outside the editor (a failing build keeps the old code), disable (refused while dirty, everything withdrawn, the scene refused naming the plugin, file unchanged, the game without it names the plugin), version mismatch refused by editor and build, a stale library refused at load; the cart project editor on romdev with the plugin compiled in; controls: non-Turntable node, unbuilt edit, presses removed, engine_api 2.0, code compiled for 1.9, the stock editor cart"
+    "note": "a project plugin (samples/plugin_demo/plugins/turntable, copied to a fresh project) used without editing the engine tree: built by tools/cwproject.mjs (plugin libraries + the game), the game with the plugin's node type and debug command natively and on wasmcart-native; the native editor loads it (panel, inspector plugin, gizmo, commands), pointer-only session (panel row, gizmo radius drag = one undo step, inspector slider + Reverse), hot reload of edited editor + runtime code built outside the editor (a failing build keeps the old code), disable (refused while dirty, everything withdrawn, the scene refused naming the plugin, file unchanged, the game without it names the plugin), version mismatch refused by editor and build, a stale library refused at load; the cart project editor on romdev with the plugin compiled in; controls: non-Turntable node, unbuilt edit, presses removed, engine_api 2.0, code compiled for 1.9, the stock editor cart"
   },
   {
     "name": "docs",
     "script": "tests/docs.mjs",
-    "note": "M5.3: gen-api --check (no new undocumented function, ratchet) + gen-docs --check (every include/region/link resolves, tutorials paste no code, every header has a guide, every template a tutorial) + the built site from file:// in Chromium (no page errors, search, theme, phone width, every relative link); controls: pasted code, broken include, broken link, nonsense search"
+    "note": "gen-api --check (no new undocumented function, ratchet) + gen-docs --check (every include/region/link resolves, tutorials paste no code, every header has a guide, every template a tutorial) + the built site from file:// in Chromium (no page errors, search, theme, phone width, every relative link); controls: pasted code, broken include, broken link, nonsense search"
   },
   {
     "name": "tutorials",
     "script": "tests/tutorials.mjs",
     "chromium": true,
-    "note": "M5.3: every tutorial final project (docs/tutorials/*/project) builds native + cart and does what the tutorial says on native and romdev (state equal, frames within tolerance); each with a control that must fail"
+    "note": "every tutorial final project (docs/tutorials/*/project) builds native + cart and does what the tutorial says on native and romdev (state equal, frames within tolerance); each with a control that must fail"
   },
   {
     "name": "platform-boundary",

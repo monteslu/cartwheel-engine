@@ -2,6 +2,18 @@
 
 Every feature runs natively and as a cart, and a gate proves both agree. This page covers the gate file, the hosts, controls, unit suites, scripted gates, input scripts and how to name debug state so a gate can read it.
 
+## Before the first run
+
+Test runs are pinned to one GPU and cannot reach the desktop: every gate runs inside a bubblewrap (`bwrap`) mount namespace that shows only the test GPU, with SDL's offscreen driver and no display variables. Name the GPU once:
+
+```sh
+mkdir -p ~/.config/cartwheel
+echo 0000:03:00.0 > ~/.config/cartwheel/chromium-gpu   # the test GPU's PCI address (lspci -D)
+echo 7600 > ~/.config/cartwheel/wgpu-adapter           # a word of its device name, as WebGPU reports it
+```
+
+`CW_CHROMIUM_GPU` and `CW_WGPU_ADAPTER` override the files. A run without them refuses to start and says so.
+
 ## The gate
 
 ```sh
@@ -33,7 +45,7 @@ An array of gate objects. Every key `tests/gate.mjs` reads:
 | Key | Meaning |
 |---|---|
 | `name` | the gate's name (what you pass on the command line) |
-| `app` | the app target (`build/native/{samples,tests/unit,editor}/<app>`, `build/cart/carts/<app>.wasc`) |
+| `app` | the app target (`build/native/{samples,tests/unit,games,editor}/<app>`, `build/cart/carts/<app>.wasc`) |
 | `frames` | engine frames to run before capturing |
 | `frameHz` | the virtual render rate (default 60); fixed ticks stay at the app's own rate |
 | `input` | an input script in `tests/` |
@@ -56,10 +68,10 @@ An array of gate objects. Every key `tests/gate.mjs` reads:
 A typical gate, from `tests/gates.json`:
 
 ```text
-{"name":"platformer2d","app":"platformer2d","frames":840,"input":"platformer2d-input.json",
- "controlInput":"platformer2d-control.json","maxGt16":0.003,
- "fields":["tree.nodes","player.pos","player.vel","player.floor","player.jumps","player.anim","coins",...],
- "expect":{"coins":6,"player.jumps":3,"player.floor":1}}
+{"name":"action2d","app":"action2d","frames":3000,"input":"action2d-pad.json",
+ "controlInput":"action2d-pad-control.json","maxGt16":0.003,
+ "fields":["g.state","g.score","g.hp","g.room","g.enemies","g.kills",...,"tree.nodes"],
+ "expect":{"g.state":6,"g.room":3,"g.boss_hp":0,"g.deaths":0,"g.doors":2,"g.kills":9}}
 ```
 
 ## Controls that must fail

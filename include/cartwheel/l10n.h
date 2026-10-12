@@ -2,7 +2,7 @@
  * fallback, CLDR plural rules, tr(), number and date formatting,
  * pseudo-locales for testing, per-locale fonts and assets.
  *
- * ── Catalogs (.cwtr): one per locale, a line per entry, agents diff them ─
+ * ── Catalogs (.cwtr): one per locale, a line per entry, easy to diff ─
  *
  *   # comment lines right before an entry are its translator note
  *   @locale = ar                    # BCP 47 tag (required)

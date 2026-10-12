@@ -1,0 +1,29 @@
+# action2d's UI theme: a pixel font, dark violet panels, ember-gold focus.
+# One item per line (cartwheel/ui.h has the format).
+extends = dark
+default_font = fonts/PressStart2P-Regular.ttf
+default_font_size = 8
+font_color = #e8e0f0
+focus = style(bg=#00000000, border=1, border_color=#ffc94a, radius=2, draw_center=0)
+Label.font_color = #e8e0f0
+Panel.panel = style(bg=#06040cb0)
+PanelContainer.panel = style(bg=#1a1226f0, border=1, border_color=#7a5a9a, radius=3, margin=12 10, shadow=#000000a0, shadow_size=6, shadow_offset=0 2)
+Button.normal = style(bg=#2a1e3cf0, border=1, border_color=#5a4472, radius=2, margin=10 5)
+Button.hover = style(base=Button.normal, bg=#3a2a54, border_color=#ffc94a)
+Button.pressed = style(base=Button.normal, bg=#ffc94a, border_color=#fff0b0)
+Button.disabled = style(base=Button.normal, bg=#1a1424, border_color=#3a3046)
+Button.focus = style(bg=#00000000, border=1, border_color=#ffc94a, radius=2, draw_center=0)
+Button.font_color = #e8e0f0
+Button.font_hover_color = #ffd96a
+Button.font_pressed_color = #1a1020
+Button.font_disabled_color = #6a5a7a
+Slider.slider = style(bg=#0e0a16, border=1, border_color=#5a4472, radius=2, margin=0 3)
+Slider.grabber_area = style(bg=#e8743a, radius=2, margin=0 3)
+Slider.grabber_color = #ffd96a
+Slider.grabber_border_color = #1a1020
+Slider.grabber_radius = 4
+BoxContainer.separation = 5
+GridContainer.h_separation = 8
+GridContainer.v_separation = 6
+ProgressBar.background = style(bg=#0e0a16e0, border=1, border_color=#5a4472, radius=1)
+ProgressBar.fill = style(bg=#c04dff, radius=1)

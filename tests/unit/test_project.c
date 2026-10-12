@@ -1,4 +1,4 @@
-/* cartwheel/project.h and cartwheel/process.h (M4.6), natively and as a cart:
+/* cartwheel/project.h and cartwheel/process.h, natively and as a cart:
  * project.cwproj editing keeps every other line, typed reads, the input map
  * and render settings applied; child processes (natively: output lines, exit
  * codes, a missing program, kill; in a cart: refused with a reason). */

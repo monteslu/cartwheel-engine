@@ -1075,7 +1075,7 @@ void cw_res_log_report(void) {
   }
 }
 
-/* reload: what an editor does after it saved an asset, or an agent after it
+/* reload: what an editor does after it saved an asset, or a tool after it
  * pushed one into the project layer (vfs write/append) */
 static void reload_command(int argc, const char **argv, cw_reply *r) {
   if (argc < 2) {

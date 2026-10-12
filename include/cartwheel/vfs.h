@@ -7,10 +7,9 @@
  *   - in a cart (carts cannot write files: wasmcart has no write path), stay
  *     in memory, and the whole set of changes moves as ONE archive blob:
  *     cw_vfs_export / cw_vfs_import, reachable through the debug channel
- *     (`vfs export` / `vfs import <base64>`) so romdev, an agent or a
- *     companion process can carry a project in and out with no new ABI.
- *     That is decision D6 option (b)+(d) from the plan; option (c), a host
- *     "project directory" capability, would be an ABI addition.
+ *     (`vfs export` / `vfs import <base64>`) so romdev or a companion
+ *     process can carry a project in and out with no new ABI. (A host
+ *     "project directory" capability would be an ABI addition.)
  *
  * Layers, top first: the in-memory layer (every write lands here too, so a
  * native write is read back without touching the disk), the project

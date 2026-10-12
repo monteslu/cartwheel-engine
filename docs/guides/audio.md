@@ -71,7 +71,7 @@ and the sounds that feed it, each with a default bus:
 
 @include samples/audio_mix/main.c#sounds
 
-A common game layout is a music bus and an effects bus under the master, so the options menu can set each volume.
+A common game layout is a music bus and an effects bus under the master, so the options menu can set each volume; both games in `games/` do that.
 
 ## 3D sound
 
@@ -80,6 +80,8 @@ There is one listener ([cw_audio_set_listener](api:cw_audio_set_listener): posit
 The engine does not trace occlusion for you: cast a ray with the [physics](guide:physics) module between voice and listener and pass the result to [cw_voice_set_occlusion](api:cw_voice_set_occlusion). Moving voices need [cw_voice_set_position](api:cw_voice_set_position) every tick; the listener usually follows the camera. In `audio_mix`, an engine loop flies past the listener with a cone, doppler and occlusion switched on halfway:
 
 @include samples/audio_mix/main.c#voice3d
+
+`games/platformer3d` attaches looping 3D voices to level objects and moves the listener with the camera.
 
 ## Sample-exact across hosts
 

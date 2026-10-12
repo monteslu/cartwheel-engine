@@ -23,7 +23,7 @@ const cart = join(ROOT, 'build/cart/carts/editor.wasc');
 for (const f of [exe, cart]) if (!existsSync(f)) { console.error('missing', f); process.exit(1); }
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
 
-// Requests as an agent sends them. Lines never contain ';' (CW_DEBUG_CMDS
+// Requests as a tool sends them. Lines never contain ';' (CW_DEBUG_CMDS
 // separates on it). A key="value with spaces" form goes through ed64.
 const session = [
   'ed scene.list',
@@ -103,7 +103,7 @@ if (!text.includes('[node name="Tall Pillar" parent="Props" type="MeshInstance3D
 if (!text.includes('[node name="CrateA" parent="Props" instance=1]')) bad('undo of the delete did not bring CrateA back');
 if (!text.includes('[node name="CrateC" parent="Props" instance=1]')) bad('the instanced CrateC is missing');
 
-// D6 (b)+(d): the saved scene and the settings come out of the cart's project layer
+// the saved scene and the settings come out of the cart's project layer
 const exp = await cmd('vfs export');
 const archive = Buffer.from(exp?.base64 || '', 'base64');
 const files = {};

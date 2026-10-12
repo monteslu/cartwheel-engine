@@ -1,0 +1,293 @@
+[scene format=1]
+
+[node name="Model" type="Node3D"]
+
+[node name="Hips" parent="." type="Node3D"]
+position = vec3(0, 0.72, 0)
+
+[node name="Torso" parent="Hips" type="MeshInstance3D"]
+position = vec3(0, 0.3, 0)
+size = vec3(0.56, 0.52, 0.38)
+color = color(1, 0.0815, 0.0021, 1)
+roughness = 0.55
+cast_shadow = true
+receive_shadow = true
+
+[node name="Belt" parent="Hips" type="MeshInstance3D"]
+position = vec3(0, 0.06, 0)
+size = vec3(0.6, 0.1, 0.42)
+color = color(0.0063, 0.0078, 0.0132, 1)
+roughness = 0.7
+cast_shadow = true
+
+[node name="Badge" parent="Hips" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.34, 0.19)
+rotation = vec3(1.5708, 0, 0)
+size = vec3(0.18, 0.04, 0)
+color = color(1, 0.6994, 0.029, 1)
+emissive = color(0.0993, 0.0474, 0, 1)
+metalness = 0.6
+roughness = 0.3
+
+[node name="Head" parent="Hips" type="Node3D"]
+position = vec3(0, 0.56, 0)
+
+[node name="Skull" parent="Hips/Head" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 0.24, 0)
+size = vec3(0.56, 0.56, 0.56)
+color = color(0.7549, 0.7931, 0.8524, 1)
+roughness = 0.35
+cast_shadow = true
+receive_shadow = true
+
+[node name="Visor" parent="Hips/Head" type="MeshInstance3D"]
+position = vec3(0, 0.27, 0.2)
+size = vec3(0.42, 0.17, 0.2)
+color = color(0.0002, 0.0008, 0.0021, 1)
+emissive = color(0, 0.1726, 0.325, 1)
+roughness = 0.2
+metalness = 0.4
+
+[node name="EyeL" parent="Hips/Head" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0.09, 0.28, 0.3)
+size = vec3(0.07, 0.07, 0.07)
+color = color(0.325, 1, 1, 1)
+emissive = color(0.2176, 1, 1, 1)
+
+[node name="EyeR" parent="Hips/Head" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(-0.09, 0.28, 0.3)
+size = vec3(0.07, 0.07, 0.07)
+color = color(0.325, 1, 1, 1)
+emissive = color(0.2176, 1, 1, 1)
+
+[node name="Antenna" parent="Hips/Head" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.58, 0)
+size = vec3(0.04, 0.2, 0)
+color = color(0.0154, 0.0177, 0.029, 1)
+
+[node name="Bulb" parent="Hips/Head" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 0.7, 0)
+size = vec3(0.11, 0.11, 0.11)
+color = color(1, 0.029, 0.0154, 1)
+emissive = color(0.7931, 0.0063, 0.0014, 1)
+
+[node name="ArmL" parent="Hips" type="Node3D"]
+position = vec3(0.36, 0.48, 0)
+rotation = vec3(0, 0, 0.12)
+
+[node name="Upper" parent="Hips/ArmL" type="MeshInstance3D"]
+position = vec3(0, -0.19, 0)
+size = vec3(0.15, 0.4, 0.15)
+color = color(0.0132, 0.0154, 0.0259, 1)
+cast_shadow = true
+
+[node name="Hand" parent="Hips/ArmL" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, -0.42, 0)
+size = vec3(0.19, 0.19, 0.19)
+color = color(1, 0.0815, 0.0021, 1)
+roughness = 0.5
+cast_shadow = true
+
+[node name="ArmR" parent="Hips" type="Node3D"]
+position = vec3(-0.36, 0.48, 0)
+rotation = vec3(0, 0, -0.12)
+
+[node name="Upper" parent="Hips/ArmR" type="MeshInstance3D"]
+position = vec3(0, -0.19, 0)
+size = vec3(0.15, 0.4, 0.15)
+color = color(0.0132, 0.0154, 0.0259, 1)
+cast_shadow = true
+
+[node name="Hand" parent="Hips/ArmR" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, -0.42, 0)
+size = vec3(0.19, 0.19, 0.19)
+color = color(1, 0.0815, 0.0021, 1)
+roughness = 0.5
+cast_shadow = true
+
+[node name="LegL" parent="." type="Node3D"]
+position = vec3(0.15, 0.74, 0)
+
+[node name="Thigh" parent="LegL" type="MeshInstance3D"]
+position = vec3(0, -0.27, 0)
+size = vec3(0.19, 0.48, 0.21)
+color = color(0.0132, 0.0154, 0.0259, 1)
+cast_shadow = true
+
+[node name="Foot" parent="LegL" type="MeshInstance3D"]
+position = vec3(0, -0.6, 0.05)
+size = vec3(0.23, 0.15, 0.34)
+color = color(1, 0.0815, 0.0021, 1)
+roughness = 0.5
+cast_shadow = true
+
+[node name="LegR" parent="." type="Node3D"]
+position = vec3(-0.15, 0.74, 0)
+
+[node name="Thigh" parent="LegR" type="MeshInstance3D"]
+position = vec3(0, -0.27, 0)
+size = vec3(0.19, 0.48, 0.21)
+color = color(0.0132, 0.0154, 0.0259, 1)
+cast_shadow = true
+
+[node name="Foot" parent="LegR" type="MeshInstance3D"]
+position = vec3(0, -0.6, 0.05)
+size = vec3(0.23, 0.15, 0.34)
+color = color(1, 0.0815, 0.0021, 1)
+roughness = 0.5
+cast_shadow = true
+
+[node name="Anim" parent="." type="AnimationPlayer"]
+root_node = ".."
+autoplay = "idle"
+
+[animation name="idle" player="Anim" length=2 loop=LOOP]
+[track type=value path="Hips:position" interp=CUBIC]
+0 = vec3(0, 0.72, 0)
+1 = vec3(0, 0.69, 0)
+2 = vec3(0, 0.72, 0)
+[track type=value path="Hips:rotation"]
+0 = vec3(0, 0, 0)
+[track type=value path="Hips/Head:rotation" interp=CUBIC]
+0 = vec3(0, 0, 0)
+0.5 = vec3(0.05, 0.12, 0)
+1.5 = vec3(-0.03, -0.12, 0)
+2 = vec3(0, 0, 0)
+[track type=value path="Hips/ArmL:rotation" interp=CUBIC]
+0 = vec3(0, 0, 0.12)
+1 = vec3(0.05, 0, 0.18)
+2 = vec3(0, 0, 0.12)
+[track type=value path="Hips/ArmR:rotation" interp=CUBIC]
+0 = vec3(0, 0, -0.12)
+1 = vec3(0.05, 0, -0.18)
+2 = vec3(0, 0, -0.12)
+[track type=value path="LegL:rotation"]
+0 = vec3(0, 0, 0)
+[track type=value path="LegR:rotation"]
+0 = vec3(0, 0, 0)
+
+[animation name="run" player="Anim" length=0.5 loop=LOOP]
+[track type=value path="Hips:position" interp=CUBIC]
+0 = vec3(0, 0.7, 0)
+0.125 = vec3(0, 0.79, 0)
+0.25 = vec3(0, 0.7, 0)
+0.375 = vec3(0, 0.79, 0)
+0.5 = vec3(0, 0.7, 0)
+[track type=value path="Hips:rotation"]
+0 = vec3(0.18, 0.12, 0)
+0.25 = vec3(0.18, -0.12, 0)
+0.5 = vec3(0.18, 0.12, 0)
+[track type=value path="Hips/Head:rotation"]
+0 = vec3(-0.12, -0.1, 0)
+0.25 = vec3(-0.12, 0.1, 0)
+0.5 = vec3(-0.12, -0.1, 0)
+[track type=value path="Hips/ArmL:rotation" interp=CUBIC]
+0 = vec3(0.9, 0, 0.15)
+0.25 = vec3(-0.9, 0, 0.15)
+0.5 = vec3(0.9, 0, 0.15)
+[track type=value path="Hips/ArmR:rotation" interp=CUBIC]
+0 = vec3(-0.9, 0, -0.15)
+0.25 = vec3(0.9, 0, -0.15)
+0.5 = vec3(-0.9, 0, -0.15)
+[track type=value path="LegL:rotation" interp=CUBIC]
+0 = vec3(-0.85, 0, 0)
+0.25 = vec3(0.75, 0, 0)
+0.5 = vec3(-0.85, 0, 0)
+[track type=value path="LegR:rotation" interp=CUBIC]
+0 = vec3(0.75, 0, 0)
+0.25 = vec3(-0.85, 0, 0)
+0.5 = vec3(0.75, 0, 0)
+
+[animation name="jump" player="Anim" length=0.25]
+[track type=value path="Hips:position"]
+0 = vec3(0, 0.74, 0)
+[track type=value path="Hips:rotation"]
+0 = vec3(-0.1, 0, 0)
+[track type=value path="Hips/Head:rotation"]
+0 = vec3(-0.2, 0, 0)
+[track type=value path="Hips/ArmL:rotation"]
+0 = vec3(-0.4, 0, 0.6)
+0.25 = vec3(-0.3, 0, 2.6)
+[track type=value path="Hips/ArmR:rotation"]
+0 = vec3(-0.4, 0, -0.6)
+0.25 = vec3(-0.3, 0, -2.6)
+[track type=value path="LegL:rotation"]
+0 = vec3(0, 0, 0)
+0.25 = vec3(-1.1, 0, 0)
+[track type=value path="LegR:rotation"]
+0 = vec3(0, 0, 0)
+0.25 = vec3(0.35, 0, 0)
+
+[animation name="fall" player="Anim" length=0.6 loop=PING_PONG]
+[track type=value path="Hips:position"]
+0 = vec3(0, 0.74, 0)
+[track type=value path="Hips:rotation"]
+0 = vec3(0.05, 0, 0)
+[track type=value path="Hips/Head:rotation"]
+0 = vec3(0.25, 0, 0)
+[track type=value path="Hips/ArmL:rotation" interp=CUBIC]
+0 = vec3(0, 0, 1.5)
+0.6 = vec3(0.3, 0, 1.95)
+[track type=value path="Hips/ArmR:rotation" interp=CUBIC]
+0 = vec3(0.3, 0, -1.95)
+0.6 = vec3(0, 0, -1.5)
+[track type=value path="LegL:rotation" interp=CUBIC]
+0 = vec3(-0.35, 0, 0.1)
+0.6 = vec3(0.2, 0, 0.1)
+[track type=value path="LegR:rotation" interp=CUBIC]
+0 = vec3(0.2, 0, -0.1)
+0.6 = vec3(-0.35, 0, -0.1)
+
+[animation name="dash" player="Anim" length=0.2]
+[track type=value path="Hips:position"]
+0 = vec3(0, 0.66, 0)
+[track type=value path="Hips:rotation"]
+0 = vec3(0.6, 0, 0)
+[track type=value path="Hips/Head:rotation"]
+0 = vec3(-0.4, 0, 0)
+[track type=value path="Hips/ArmL:rotation"]
+0 = vec3(1.4, 0, 0.3)
+[track type=value path="Hips/ArmR:rotation"]
+0 = vec3(1.4, 0, -0.3)
+[track type=value path="LegL:rotation"]
+0 = vec3(0.9, 0, 0)
+[track type=value path="LegR:rotation"]
+0 = vec3(0.5, 0, 0)
+
+[animation name="cheer" player="Anim" length=0.8 loop=LOOP]
+[track type=value path="Hips:position" interp=CUBIC]
+0 = vec3(0, 0.72, 0)
+0.2 = vec3(0, 0.95, 0)
+0.4 = vec3(0, 0.72, 0)
+0.6 = vec3(0, 0.95, 0)
+0.8 = vec3(0, 0.72, 0)
+[track type=value path="Hips:rotation"]
+0 = vec3(0, 0, 0)
+[track type=value path="Hips/Head:rotation" interp=CUBIC]
+0 = vec3(-0.25, 0.2, 0)
+0.4 = vec3(-0.25, -0.2, 0)
+0.8 = vec3(-0.25, 0.2, 0)
+[track type=value path="Hips/ArmL:rotation" interp=CUBIC]
+0 = vec3(0, 0, 2.5)
+0.2 = vec3(0, 0, 2.9)
+0.4 = vec3(0, 0, 2.5)
+0.6 = vec3(0, 0, 2.9)
+0.8 = vec3(0, 0, 2.5)
+[track type=value path="Hips/ArmR:rotation" interp=CUBIC]
+0 = vec3(0, 0, -2.9)
+0.2 = vec3(0, 0, -2.5)
+0.4 = vec3(0, 0, -2.9)
+0.6 = vec3(0, 0, -2.5)
+0.8 = vec3(0, 0, -2.9)
+[track type=value path="LegL:rotation"]
+0 = vec3(0, 0, 0)
+[track type=value path="LegR:rotation"]
+0 = vec3(0, 0, 0)

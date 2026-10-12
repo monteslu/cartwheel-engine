@@ -1,0 +1,751 @@
+[scene format=1]
+[ext_scene id=1 path="scenes/player.cwscene"]
+[ext_scene id=2 path="scenes/coin.cwscene"]
+[ext_scene id=3 path="scenes/crate.cwscene"]
+[ext_scene id=4 path="scenes/gem.cwscene"]
+[ext_scene id=5 path="scenes/lava.cwscene"]
+[ext_scene id=6 path="scenes/checkpoint.cwscene"]
+[ext_scene id=7 path="scenes/ball.cwscene"]
+[ext_scene id=8 path="scenes/saw.cwscene"]
+[ext_scene id=9 path="scenes/goal.cwscene"]
+
+[node name="Level" type="LevelInfo"]
+title = "Meadow Run"
+next_scene = "scenes/level2.cwscene"
+music = "audio/music_level.opus"
+kill_y = -12
+index = 1
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.1473, 0.3931, 0.89, 1)
+ambient_energy = 0.7854
+hemi_energy = 1.885
+sky_color = color(0.3876, 0.6121, 1, 1)
+ground_color = color(0.0993, 0.0707, 0.029, 1)
+fog_mode = LINEAR
+fog_color = color(0.3424, 0.5705, 0.9114, 1)
+fog_near = 35
+fog_far = 110
+
+[node name="Post" parent="." type="PostProcess"]
+tonemap = ACES_FILMIC
+exposure = 1.1
+
+[node name="Player" parent="." instance=1]
+position = vec3(0, 0, 2)
+
+[node name="Sun" parent="Player" type="DirectionalLight3D"]
+position = vec3(6, 16, 8)
+rotation = vec3(-1.17, 0.33, 0)
+color = color(1, 0.9141, 0.7549, 1)
+energy = 3.6128
+shadow = true
+shadow_size = 2048
+shadow_extent = 16
+shadow_far = 60
+shadow_bias = -0.0006
+
+[node name="Camera" parent="." type="FollowCamera"]
+target = "../Player"
+fov = 55
+near = 0.2
+far = 300
+
+[node name="Start" parent="." type="StaticBody3D"]
+collision_layer_name = "world"
+position = vec3(0, -1.5, -3)
+
+[node name="Shape" parent="Start" type="CollisionShape3D"]
+shape = BOX
+size = vec3(8, 3, 14)
+
+[node name="Body" parent="Start" type="MeshInstance3D"]
+size = vec3(8, 3, 14)
+color = color(0.1056, 0.0323, 0.0063, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Top" parent="Start" type="MeshInstance3D"]
+position = vec3(0, 1.41, 0)
+size = vec3(8.12, 0.22, 14.12)
+color = color(0.0203, 0.1483, 0.0063, 1)
+roughness = 0.85
+receive_shadow = true
+cast_shadow = true
+
+[node name="Coin1" parent="." instance=2]
+position = vec3(0, 1, -1)
+
+[node name="Coin2" parent="." instance=2]
+position = vec3(0, 1, -3)
+
+[node name="Coin3" parent="." instance=2]
+position = vec3(0, 1, -5)
+
+[node name="Crate1" parent="." instance=3]
+position = vec3(2.4, 0.45, -4)
+
+[node name="Crate2" parent="." instance=3]
+position = vec3(2.4, 0.45, -5)
+
+[node name="Crate3" parent="." instance=3]
+position = vec3(2.4, 1.35, -4.5)
+rotation = vec3(0, 0.3, 0)
+
+[node name="Crate4" parent="." instance=3]
+position = vec3(0.85, 0.45, -7.6)
+rotation = vec3(0, 0.2, 0)
+
+[node name="Tree1" parent="." type="Node3D"]
+position = vec3(-3, 0, 1)
+
+[node name="Trunk" parent="Tree1" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.7, 0)
+size = vec3(0.35, 1.4, 0)
+color = color(0.1332, 0.0433, 0.0063, 1)
+cast_shadow = true
+
+[node name="Leaves" parent="Tree1" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 2, 0)
+size = vec3(1.9, 1.9, 1.9)
+color = color(0.0177, 0.2176, 0.0177, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Leaves2" parent="Tree1" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0.35, 2.7, 0.2)
+size = vec3(1.2, 1.2, 1.2)
+color = color(0.0433, 0.3494, 0.029, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="Tree2" parent="." type="Node3D"]
+position = vec3(3, 0, -8.6)
+scale = vec3(0.85, 0.85, 0.85)
+
+[node name="Trunk" parent="Tree2" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.7, 0)
+size = vec3(0.35, 1.4, 0)
+color = color(0.1332, 0.0433, 0.0063, 1)
+cast_shadow = true
+
+[node name="Leaves" parent="Tree2" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 2, 0)
+size = vec3(1.9, 1.9, 1.9)
+color = color(0.0177, 0.2176, 0.0177, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Leaves2" parent="Tree2" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0.35, 2.7, 0.2)
+size = vec3(1.2, 1.2, 1.2)
+color = color(0.0433, 0.3494, 0.029, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="Tree3" parent="." type="Node3D"]
+position = vec3(-3.1, 0, -7)
+scale = vec3(1.1, 1.1, 1.1)
+
+[node name="Trunk" parent="Tree3" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.7, 0)
+size = vec3(0.35, 1.4, 0)
+color = color(0.1332, 0.0433, 0.0063, 1)
+cast_shadow = true
+
+[node name="Leaves" parent="Tree3" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 2, 0)
+size = vec3(1.9, 1.9, 1.9)
+color = color(0.0177, 0.2176, 0.0177, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Leaves2" parent="Tree3" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0.35, 2.7, 0.2)
+size = vec3(1.2, 1.2, 1.2)
+color = color(0.0433, 0.3494, 0.029, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="Coin4" parent="." instance=2]
+position = vec3(0, 1.9, -11.5)
+
+[node name="Meadow" parent="." type="StaticBody3D"]
+collision_layer_name = "world"
+position = vec3(0, -1.5, -17.5)
+
+[node name="Shape" parent="Meadow" type="CollisionShape3D"]
+shape = BOX
+size = vec3(7, 3, 9)
+
+[node name="Body" parent="Meadow" type="MeshInstance3D"]
+size = vec3(7, 3, 9)
+color = color(0.1056, 0.0323, 0.0063, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Top" parent="Meadow" type="MeshInstance3D"]
+position = vec3(0, 1.41, 0)
+size = vec3(7.12, 0.22, 9.12)
+color = color(0.0203, 0.1483, 0.0063, 1)
+roughness = 0.85
+receive_shadow = true
+cast_shadow = true
+
+[node name="Step" parent="." type="StaticBody3D"]
+collision_layer_name = "world"
+position = vec3(0, 0.5, -17.75)
+
+[node name="Shape" parent="Step" type="CollisionShape3D"]
+shape = BOX
+size = vec3(3, 1, 2.5)
+
+[node name="Body" parent="Step" type="MeshInstance3D"]
+size = vec3(3, 1, 2.5)
+color = color(0.1332, 0.1332, 0.1726, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Top" parent="Step" type="MeshInstance3D"]
+position = vec3(0, 0.43, 0)
+size = vec3(3.12, 0.18, 2.62)
+color = color(0.3494, 0.3619, 0.4009, 1)
+roughness = 0.85
+receive_shadow = true
+cast_shadow = true
+
+[node name="Gem1" parent="." instance=4]
+position = vec3(0, 2.1, -17.75)
+
+[node name="Lava1" parent="." instance=5]
+position = vec3(2.6, 0.02, -20.4)
+scale = vec3(0.45, 1, 0.45)
+
+[node name="Tree4" parent="." type="Node3D"]
+position = vec3(-2.7, 0, -14.5)
+scale = vec3(0.9, 0.9, 0.9)
+
+[node name="Trunk" parent="Tree4" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.7, 0)
+size = vec3(0.35, 1.4, 0)
+color = color(0.1332, 0.0433, 0.0063, 1)
+cast_shadow = true
+
+[node name="Leaves" parent="Tree4" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 2, 0)
+size = vec3(1.9, 1.9, 1.9)
+color = color(0.0177, 0.2176, 0.0177, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Leaves2" parent="Tree4" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0.35, 2.7, 0.2)
+size = vec3(1.2, 1.2, 1.2)
+color = color(0.0433, 0.3494, 0.029, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="Coin5" parent="." instance=2]
+position = vec3(0, 1, -20.8)
+
+[node name="Ferry" parent="." type="KinematicBody3D" groups="machines"]
+collision_layer_name = "world"
+position = vec3(0, -0.2, -24)
+
+[node name="Shape" parent="Ferry" type="CollisionShape3D"]
+shape = BOX
+size = vec3(3, 0.4, 3)
+
+[node name="Body" parent="Ferry" type="MeshInstance3D"]
+size = vec3(3, 0.4, 3)
+color = color(0.2176, 0.076, 0.0132, 1)
+roughness = 0.7
+cast_shadow = true
+receive_shadow = true
+
+[node name="Top" parent="Ferry" type="MeshInstance3D"]
+position = vec3(0, 0.16, 0)
+size = vec3(3.08, 0.1, 3.08)
+color = color(0.4281, 0.1812, 0.0358, 1)
+roughness = 0.7
+receive_shadow = true
+
+[node name="Edge" parent="Ferry" type="MeshInstance3D"]
+position = vec3(0, -0.15, 0)
+size = vec3(3.1, 0.1, 3.1)
+color = color(1, 0.6121, 0.029, 1)
+emissive = color(0.0993, 0.0608, 0.0029, 1)
+
+[node name="Anim" parent="Ferry" type="AnimationPlayer"]
+root_node = ".."
+autoplay = "move"
+
+[node name="Coin6" parent="." instance=2]
+position = vec3(0, 1.2, -27)
+
+[node name="Far" parent="." type="StaticBody3D"]
+collision_layer_name = "world"
+position = vec3(0, -1.5, -39)
+
+[node name="Shape" parent="Far" type="CollisionShape3D"]
+shape = BOX
+size = vec3(8, 3, 14)
+
+[node name="Body" parent="Far" type="MeshInstance3D"]
+size = vec3(8, 3, 14)
+color = color(0.1056, 0.0323, 0.0063, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Top" parent="Far" type="MeshInstance3D"]
+position = vec3(0, 1.41, 0)
+size = vec3(8.12, 0.22, 14.12)
+color = color(0.0203, 0.1483, 0.0063, 1)
+roughness = 0.85
+receive_shadow = true
+cast_shadow = true
+
+[node name="Check1" parent="." instance=6]
+position = vec3(-1.4, 0, -34)
+
+[node name="Coin7" parent="." instance=2]
+position = vec3(0, 1, -35.5)
+
+[node name="Coin8" parent="." instance=2]
+position = vec3(0, 1, -37.5)
+
+[node name="Ball1" parent="." instance=7]
+position = vec3(1.5, 0.45, -37)
+
+[node name="Ball2" parent="." instance=7]
+position = vec3(2.45, 0.45, -37)
+
+[node name="Ball3" parent="." instance=7]
+position = vec3(3.4, 0.45, -37)
+
+[node name="Saw1" parent="." instance=8]
+position = vec3(-3, 0.75, -40.5)
+
+[node name="SawAnim" parent="." type="AnimationPlayer"]
+autoplay = "sweep"
+
+[node name="Stair1" parent="." type="StaticBody3D"]
+collision_layer_name = "world"
+position = vec3(0, 0.5, -43.75)
+
+[node name="Shape" parent="Stair1" type="CollisionShape3D"]
+shape = BOX
+size = vec3(4, 1, 1.5)
+
+[node name="Body" parent="Stair1" type="MeshInstance3D"]
+size = vec3(4, 1, 1.5)
+color = color(0.1332, 0.1332, 0.1726, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Top" parent="Stair1" type="MeshInstance3D"]
+position = vec3(0, 0.43, 0)
+size = vec3(4.12, 0.18, 1.62)
+color = color(0.3494, 0.3619, 0.4009, 1)
+roughness = 0.85
+receive_shadow = true
+cast_shadow = true
+
+[node name="Stair2" parent="." type="StaticBody3D"]
+collision_layer_name = "world"
+position = vec3(0, 1, -45.25)
+
+[node name="Shape" parent="Stair2" type="CollisionShape3D"]
+shape = BOX
+size = vec3(4, 2, 1.5)
+
+[node name="Body" parent="Stair2" type="MeshInstance3D"]
+size = vec3(4, 2, 1.5)
+color = color(0.1332, 0.1332, 0.1726, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Top" parent="Stair2" type="MeshInstance3D"]
+position = vec3(0, 0.93, 0)
+size = vec3(4.12, 0.18, 1.62)
+color = color(0.3494, 0.3619, 0.4009, 1)
+roughness = 0.85
+receive_shadow = true
+cast_shadow = true
+
+[node name="Summit" parent="." type="StaticBody3D"]
+collision_layer_name = "world"
+position = vec3(0, 1, -50)
+
+[node name="Shape" parent="Summit" type="CollisionShape3D"]
+shape = BOX
+size = vec3(6, 4, 8)
+
+[node name="Body" parent="Summit" type="MeshInstance3D"]
+size = vec3(6, 4, 8)
+color = color(0.1056, 0.0323, 0.0063, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Top" parent="Summit" type="MeshInstance3D"]
+position = vec3(0, 1.91, 0)
+size = vec3(6.12, 0.22, 8.12)
+color = color(0.0203, 0.1483, 0.0063, 1)
+roughness = 0.85
+receive_shadow = true
+cast_shadow = true
+
+[node name="Coin9" parent="." instance=2]
+position = vec3(0, 2, -43.75)
+
+[node name="Coin10" parent="." instance=2]
+position = vec3(0, 3, -45.25)
+
+[node name="Goal" parent="." instance=9]
+position = vec3(0, 3, -51)
+
+[node name="Tree5" parent="." type="Node3D"]
+position = vec3(3.2, 0, -33.5)
+
+[node name="Trunk" parent="Tree5" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.7, 0)
+size = vec3(0.35, 1.4, 0)
+color = color(0.1332, 0.0433, 0.0063, 1)
+cast_shadow = true
+
+[node name="Leaves" parent="Tree5" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 2, 0)
+size = vec3(1.9, 1.9, 1.9)
+color = color(0.0177, 0.2176, 0.0177, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Leaves2" parent="Tree5" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0.35, 2.7, 0.2)
+size = vec3(1.2, 1.2, 1.2)
+color = color(0.0433, 0.3494, 0.029, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="Tree6" parent="." type="Node3D"]
+position = vec3(-2.4, 3, -53)
+
+[node name="Trunk" parent="Tree6" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.7, 0)
+size = vec3(0.35, 1.4, 0)
+color = color(0.1332, 0.0433, 0.0063, 1)
+cast_shadow = true
+
+[node name="Leaves" parent="Tree6" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 2, 0)
+size = vec3(1.9, 1.9, 1.9)
+color = color(0.0177, 0.2176, 0.0177, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Leaves2" parent="Tree6" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0.35, 2.7, 0.2)
+size = vec3(1.2, 1.2, 1.2)
+color = color(0.0433, 0.3494, 0.029, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="Cloud1" parent="." type="Node3D"]
+position = vec3(-14, 4, -20)
+scale = vec3(1.4, 1.4, 1.4)
+
+[node name="Puff0" parent="Cloud1" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 0, 0)
+scale = vec3(1, 0.62, 1)
+size = vec3(3.2, 3.2, 3.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff1" parent="Cloud1" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(2.2, -0.3, 0.4)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.4, 2.4, 2.4)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff2" parent="Cloud1" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(-2.1, -0.4, -0.2)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.2, 2.2, 2.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff3" parent="Cloud1" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0.9, 0.9, -0.3)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.2, 2.2, 2.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Cloud2" parent="." type="Node3D"]
+position = vec3(16, 7, -38)
+scale = vec3(1.8, 1.8, 1.8)
+
+[node name="Puff0" parent="Cloud2" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 0, 0)
+scale = vec3(1, 0.62, 1)
+size = vec3(3.2, 3.2, 3.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff1" parent="Cloud2" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(2.2, -0.3, 0.4)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.4, 2.4, 2.4)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff2" parent="Cloud2" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(-2.1, -0.4, -0.2)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.2, 2.2, 2.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff3" parent="Cloud2" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0.9, 0.9, -0.3)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.2, 2.2, 2.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Cloud3" parent="." type="Node3D"]
+position = vec3(-10, -7, -45)
+scale = vec3(2.2, 2.2, 2.2)
+
+[node name="Puff0" parent="Cloud3" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 0, 0)
+scale = vec3(1, 0.62, 1)
+size = vec3(3.2, 3.2, 3.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff1" parent="Cloud3" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(2.2, -0.3, 0.4)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.4, 2.4, 2.4)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff2" parent="Cloud3" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(-2.1, -0.4, -0.2)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.2, 2.2, 2.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff3" parent="Cloud3" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0.9, 0.9, -0.3)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.2, 2.2, 2.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Cloud4" parent="." type="Node3D"]
+position = vec3(10, -5, -8)
+scale = vec3(1.6, 1.6, 1.6)
+
+[node name="Puff0" parent="Cloud4" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 0, 0)
+scale = vec3(1, 0.62, 1)
+size = vec3(3.2, 3.2, 3.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff1" parent="Cloud4" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(2.2, -0.3, 0.4)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.4, 2.4, 2.4)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff2" parent="Cloud4" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(-2.1, -0.4, -0.2)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.2, 2.2, 2.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff3" parent="Cloud4" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0.9, 0.9, -0.3)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.2, 2.2, 2.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Cloud5" parent="." type="Node3D"]
+position = vec3(-6, 12, -70)
+scale = vec3(2.5, 2.5, 2.5)
+
+[node name="Puff0" parent="Cloud5" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 0, 0)
+scale = vec3(1, 0.62, 1)
+size = vec3(3.2, 3.2, 3.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff1" parent="Cloud5" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(2.2, -0.3, 0.4)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.4, 2.4, 2.4)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff2" parent="Cloud5" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(-2.1, -0.4, -0.2)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.2, 2.2, 2.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Puff3" parent="Cloud5" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0.9, 0.9, -0.3)
+scale = vec3(1, 0.62, 1)
+size = vec3(2.2, 2.2, 2.2)
+color = color(1, 1, 1, 1)
+emissive = color(0.0993, 0.1122, 0.1483, 1)
+roughness = 1
+
+[node name="Isle1" parent="." type="Node3D"]
+position = vec3(-24, -4, -30)
+scale = vec3(2.2, 2.2, 2.2)
+
+[node name="Rock" parent="Isle1" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, -1.2, 0)
+scale = vec3(1, 0.8, 1)
+size = vec3(4, 4, 4)
+color = color(0.119, 0.0561, 0.029, 1)
+roughness = 1
+
+[node name="Top" parent="Isle1" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0, 0)
+size = vec3(4.2, 0.5, 0)
+color = color(0.0707, 0.3017, 0.0474, 1)
+roughness = 1
+
+[node name="Isle2" parent="." type="Node3D"]
+position = vec3(26, 0, -55)
+scale = vec3(2.8, 2.8, 2.8)
+
+[node name="Rock" parent="Isle2" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, -1.2, 0)
+scale = vec3(1, 0.8, 1)
+size = vec3(4, 4, 4)
+color = color(0.119, 0.0561, 0.029, 1)
+roughness = 1
+
+[node name="Top" parent="Isle2" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0, 0)
+size = vec3(4.2, 0.5, 0)
+color = color(0.0707, 0.3017, 0.0474, 1)
+roughness = 1
+
+[node name="Isle3" parent="." type="Node3D"]
+position = vec3(-18, 3, -80)
+scale = vec3(3.2, 3.2, 3.2)
+
+[node name="Rock" parent="Isle3" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, -1.2, 0)
+scale = vec3(1, 0.8, 1)
+size = vec3(4, 4, 4)
+color = color(0.119, 0.0561, 0.029, 1)
+roughness = 1
+
+[node name="Top" parent="Isle3" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0, 0)
+size = vec3(4.2, 0.5, 0)
+color = color(0.0707, 0.3017, 0.0474, 1)
+roughness = 1
+
+[animation name="move" player="Ferry/Anim" length=2.6 loop=PING_PONG]
+[track type=value path=":position" interp=HERMITE]
+0 = vec3(0, -0.2, -24) in=vec3(0, 0, 0) out=vec3(0, 0, 0)
+0.3 = vec3(0, -0.2, -24) in=vec3(0, 0, 0) out=vec3(0, 0, 0)
+2.3 = vec3(0, -0.2, -30) in=vec3(0, 0, 0) out=vec3(0, 0, 0)
+2.6 = vec3(0, -0.2, -30) in=vec3(0, 0, 0) out=vec3(0, 0, 0)
+
+[animation name="sweep" player="SawAnim" length=3 loop=PING_PONG]
+[track type=value path="Saw1:position" interp=HERMITE]
+0 = vec3(-3, 0.75, -40.5) in=vec3(0, 0, 0) out=vec3(0, 0, 0)
+3 = vec3(3, 0.75, -40.5) in=vec3(0, 0, 0) out=vec3(0, 0, 0)

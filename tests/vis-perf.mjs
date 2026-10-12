@@ -1,4 +1,4 @@
-// City perf report (M3.6): vis_city (about 4500 meshes, 960x540) along its
+// City perf report: vis_city (about 4500 meshes, 960x540) along its
 // 720-frame walk with the VisibilityManager (BVH frustum culling, occlusion
 // queries, portals, LOD, impostors) and vis_city_off (no culling at all: what
 // three.c's own per-object frustum test and instancing give), on each host.

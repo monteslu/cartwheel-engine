@@ -1,4 +1,4 @@
-/* Import dock (M4.2): every importable project file goes through cwpack's
+/* Import dock: every importable project file goes through cwpack's
  * own importers in process (tools/cwpack, library cw_importers), so what the
  * editor reports is what the build will pack:
  *   glTF / GLB      cwp_import_gltf (vertex-cache + overdraw + fetch
@@ -802,4 +802,4 @@ static void init(void) {
     .doc = "Run the file's importer again now (bypassing the import cache).", .exec = reimport_exec });
 }
 
-CWED_MODULE(import) = { .title = "Import", .milestone = "M4.2", .init = init, .frame = frame };
+CWED_MODULE(import) = { .title = "Import", .init = init, .frame = frame };

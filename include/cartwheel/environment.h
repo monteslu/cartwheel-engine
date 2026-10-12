@@ -1,4 +1,4 @@
-/* Sky and fog (M3.5). Node types, all reflected
+/* Sky and fog. Node types, all reflected
  * (docs/nodes.json) and .cwscene-authorable:
  *
  *   ProceduralSky     a physically based sky: single scattering of sunlight

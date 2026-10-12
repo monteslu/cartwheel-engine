@@ -558,7 +558,7 @@ static void test_contacts3(void) {
   cw_world3d_destroy(w);
 }
 
-/* M5.3 docs findings: wheel value = measured spin (as 3D), NULL joint defs,
+/* found while writing the docs: wheel value = measured spin (as 3D), NULL joint defs,
  * the 2D mover's skin default (as 3D) */
 static void test_findings2(void) {
   cw_world2d w = cw_world2d_create(NULL);

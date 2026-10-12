@@ -1,4 +1,4 @@
-/* Output panel (M4.0): the editor log (commands run, their errors, engine
+/* Output panel: the editor log (commands run, their errors, engine
  * warnings and errors), newest at the bottom. */
 #include <stdio.h>
 #include <string.h>
@@ -64,4 +64,4 @@ static void init(void) {
   cwed_subscribe(CWED_EV_LOG, on_log, NULL);
 }
 
-CWED_MODULE(output) = { .title = "Output", .milestone = "M4.0", .init = init, .frame = frame };
+CWED_MODULE(output) = { .title = "Output", .init = init, .frame = frame };

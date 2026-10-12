@@ -1,4 +1,4 @@
-/* project_edit: spike S0.5, an editor-as-cart round trip with no new ABI.
+/* project_edit: an editor-as-cart round trip with no new ABI.
  *
  * The cart runs scene3d's level. `project save <node path> <file>` writes a
  * subtree as .cwscene text into the writable project layer (cartwheel/vfs.h);

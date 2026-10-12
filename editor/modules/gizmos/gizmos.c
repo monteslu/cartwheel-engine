@@ -1,4 +1,4 @@
-/* Gizmos module (M4.1): the built-in gizmos the viewports draw and drive,
+/* Gizmos module: the built-in gizmos the viewports draw and drive,
  * and node.set_each (several nodes, each its own value, one undo step: a
  * multi-selection drag).
  *
@@ -439,4 +439,4 @@ static void init(void) {
     .undo = each_undo, .merge = each_merge });
 }
 
-CWED_MODULE(gizmos) = { .title = "Gizmos", .milestone = "M4.1", .init = init };
+CWED_MODULE(gizmos) = { .title = "Gizmos", .init = init };

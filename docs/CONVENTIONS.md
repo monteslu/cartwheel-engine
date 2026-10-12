@@ -23,7 +23,7 @@ and named debug state (exact) against the native run, and runs a CONTROL
 that must fail (one frame early, other input, or an injected failure). A
 gate whose control passes is a gate that cannot see anything.
 
-## Finding your way (what an agent should read first)
+## Finding your way
 
 - `docs/api.json`: every public function, type and macro with its comment
   (generated from the headers by `node tools/gen-api.mjs`).
@@ -99,7 +99,7 @@ engine (public headers), never in a module.
 
 - C17, `cw_` prefix for functions and types, `CW_` for macros and enums.
 - Headers say what a function does, what it costs, and who owns what. A
-  reader (often an agent) should never need the .c file to use an API.
+  reader should never need the .c file to use an API.
 - Memory: `cw_alloc`/`cw_free` with a `cw_mem_tag`; per-frame scratch with
   `cw_frame_alloc`. User-held objects are `cw_pool` entries addressed by
   generational handles, never raw pointers in public APIs.
@@ -129,23 +129,21 @@ engine (public headers), never in a module.
 - Seeded randomness from `tools/lib/rng.mjs` (`rng(seed)`: `r()`, `r.noise()`,
   `r.u32()`). JS numbers are doubles: `(seed * 1103515245 + 12345) >>> 0`
   overflows 2^53, drops low bits and collapses into a short cycle. One copy
-  of that line looped every 419 samples, so every "noise" sound in four
-  games was a 114.6 Hz buzz. 32-bit integer maths uses `Math.imul`.
+  of that line looped every 419 samples, so every "noise" sound it
+  made was a 114.6 Hz buzz. 32-bit integer maths uses `Math.imul`.
 - `tests/js-int-math.mjs` (in `tests/all.mjs`) fails on a large-constant
   multiplication truncated to 32 bits without `Math.imul`; a line that means
   it carries `int-math-ok: <reason>` on it or just above.
 
 ## Debug state
 
-Expose what a test or an agent needs BY NAME: `cw_debug_f32("player.x", &x)`
+Expose what a test needs BY NAME: `cw_debug_f32("player.x", &x)`
 (cartwheel/debug.h), and set `.debug = true` in the app desc. romdev reads it
 with `wasm({op:'debugState'})`; the gate compares it across hosts. Prefer a
 named value over a screenshot for any assertion about game state.
 
-## Commits and outside actions
+## Commits
 
-- Commit locally, small and often, messages that say why.
-- No AI attribution lines in commits.
-- Never push, publish, open a PR or file an issue on any repo.
-- Never put work in /tmp; scratch lives under out/ (gitignored).
-- No hardcoded /home/<user> paths in anything committed.
+- Small commits, with messages that say why.
+- Scratch output lives under out/ (gitignored).
+- No absolute paths to anyone's machine in anything committed.

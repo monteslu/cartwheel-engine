@@ -1,5 +1,5 @@
 // X authority for native hosts launched from a shell that has none (an
-// agent's or CI shell on a GNOME/Wayland desktop): without it an X client
+// script's or CI shell on a GNOME/Wayland desktop): without it an X client
 // such as wasmcart-run waits on the display instead of failing.
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
