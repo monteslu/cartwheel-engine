@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CW_TEST_GPU: software # Mesa llvmpipe (GL) and lavapipe (WebGPU): see tests/ci.mjs
+  CW_CART_LINK_JOBS: 2
+
+jobs:
+  native:
+    name: Native build, docs checks and gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build libsdl2-dev \
+            libegl-dev libgles-dev libegl-mesa0 libgl1-mesa-dri mesa-vulkan-drivers libvulkan1
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-${{ hashFiles('scripts/deps.lock', 'scripts/fetch-deps.sh', 'patches/**') }}
+      - name: Fetch dependencies
+        run: scripts/fetch-deps.sh
+      - name: Build native
+        run: |
+          cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release
+          ninja -C build/native
+      - name: API and docs checks
+        run: |
+          node tools/gen-api.mjs --check
+          node tools/gen-docs.mjs --check
+      - name: Gates (native, software rendering)
+        run: node tests/ci.mjs
+
+  carts:
+    name: GL and dual GL + WebGPU carts
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build libsdl2-dev libegl-dev libgles-dev
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-${{ hashFiles('scripts/deps.lock', 'scripts/fetch-deps.sh', 'patches/**') }}
+      - name: Fetch dependencies
+        run: scripts/fetch-deps.sh
+      - name: Build cwpack (packs the carts' assets)
+        run: |
+          cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release
+          ninja -C build/native cwpack
+      - name: Build GL carts
+        run: |
+          cmake -S . -B build/cart -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$PWD/cmake/cart.cmake
+          ninja -C build/cart
+      - name: Build dual GL + WebGPU carts
+        run: |
+          cmake -S . -B build/cart-wgpu -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$PWD/cmake/cart.cmake \
+            -DCW_WGPU=ON -DCW_CWPACK=$PWD/build/native/tools/cwpack/cwpack
+          ninja -C build/cart-wgpu
+      - name: Cart count
+        run: |
+          echo "GL carts: $(ls build/cart/carts/*.wasc | wc -l)"
+          echo "dual carts: $(ls build/cart-wgpu/carts/*.wasc | wc -l)"

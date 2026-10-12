@@ -14,6 +14,19 @@ echo 7600 > ~/.config/cartwheel/wgpu-adapter           # a word of its device na
 
 `CW_CHROMIUM_GPU` and `CW_WGPU_ADAPTER` override the files. A run without them refuses to start and says so.
 
+## Continuous integration
+
+CI (`.github/workflows/ci.yml`) runs on every push and pull request to main, on a GitHub runner with no GPU. It fetches the pinned dependencies, builds the native tree, the GL carts and the dual GL + WebGPU carts, runs `node tools/gen-api.mjs --check` and `node tools/gen-docs.mjs --check`, and runs `tests/ci.mjs` with `CW_TEST_GPU=software`: every app gate on the native host through Mesa's llvmpipe (GL), every gate with a `webgpu` entry through lavapipe (WebGPU), and the scripted gates that need no other host. In software mode nothing is pinned, sandboxed or guarded, and the renderer checks expect llvmpipe.
+
+Local only (they need GPU hardware or a host CI does not have; `LOCAL_ONLY` in `tests/ci.mjs` gives the reason for each):
+
+- the romdev, Chromium, wasmcart-native (`wcnative`) and wasmcart-libretro legs of every gate;
+- `gpu-guard`, `fx-gpu-report`, `pipeline-perf`, `fx-perf-report`, `vis-perf-report`, `showcase-perf`: GPU guards, timings and frame-time budgets;
+- `gpu-no-display`, `gpu-cleanup`, `editor-channel`, `editor-play`, `editor-import`, `a11y-channel`, `net`, `plugins`, `project-templates`, `tutorials`, `docs`: they drive romdev, Chromium or wasmcart-native;
+- `export`, `project-export`: the export toolchains, Wine and an Android emulator.
+
+Run `node tests/all.mjs` on a machine with a GPU and those hosts for the full set.
+
 ## The gate
 
 ```sh

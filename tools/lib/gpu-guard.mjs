@@ -153,6 +153,12 @@ const num = (f) => { try { return +readFileSync(f, 'utf8'); } catch { return NaN
  */
 export function armGuard(suite, opts = {}) {
   const gpu = testGpu();
+  // a software renderer (CW_TEST_GPU=software): no card, no VRAM and no kernel driver to watch
+  if (gpu.software) {
+    const none = () => null;
+    return { gate: none, end: none, finish: none, fatal: (why) => { console.error(`${suite}: ${why}`); killTree(); process.exit(EXIT_INFRA); },
+      pci: gpu.pci, readSys: () => ({ vram: 0, gtt: 0 }), total: 0, gates: [] };
+  }
   const dev = `/sys/bus/pci/devices/${gpu.pci}`;
   const MiB = 2 ** 20;
   const reserve = +(process.env.CW_GPU_GUARD_RESERVE_MB || 512) * MiB, need = +(process.env.CW_GPU_GUARD_NEED_MB || 1280) * MiB;

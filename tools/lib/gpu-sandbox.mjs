@@ -39,7 +39,7 @@ export function sandboxArgv(pci) {
 }
 
 /** true when this process is meant to run unsandboxed (an explicit opt-out) */
-export const sandboxOptOut = () => process.env.CW_TEST_GPU === 'desktop' || !!process.env.CW_TEST_WINDOW;
+export const sandboxOptOut = () => process.env.CW_TEST_GPU === 'desktop' || process.env.CW_TEST_GPU === 'software' || !!process.env.CW_TEST_WINDOW;
 
 /** the DRM nodes this process can open */
 export const visibleNodes = () => { try { return readdirSync('/dev/dri').filter((n) => /^(card|renderD)\d+$/.test(n)).sort(); } catch { return []; } };

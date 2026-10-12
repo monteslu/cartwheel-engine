@@ -42,7 +42,20 @@ const cfg = (name) => {
  * @returns {{ pci: string, vendor: string, device: string, match: string, discrete: boolean,
  *   power: 'high-performance' | 'low-power', card: string, vramTotal: number }}
  */
+/** CW_TEST_GPU=software: no GPU hardware (CI). GL runs on Mesa's llvmpipe, WebGPU on lavapipe;
+ * nothing is pinned, sandboxed or guarded, and the renderer checks expect llvmpipe. */
+export const softwareGpu = () => process.env.CW_TEST_GPU === 'software';
+
+/** Vulkan loader env that offers lavapipe only (Mesa's software Vulkan), when its ICD is installed */
+function lavapipe() {
+  const icd = ['/usr/share/vulkan/icd.d/lvp_icd.json', '/usr/share/vulkan/icd.d/lvp_icd.x86_64.json'].find(existsSync);
+  return icd ? { VK_DRIVER_FILES: icd, VK_ICD_FILENAMES: icd } : {};
+}
+
 export function testGpu() {
+  if (softwareGpu())
+    return { pci: 'software', vendor: '', device: '', match: (process.env.CW_WGPU_ADAPTER || 'llvmpipe').toLowerCase(),
+      discrete: false, power: 'low-power', card: '', vramTotal: 0, software: true };
   const pci = process.env.CW_CHROMIUM_GPU || process.env.CW_CHROMIUM_RENDER_NODE || cfg('chromium-gpu');
   const match = (process.env.CW_WGPU_ADAPTER || cfg('wgpu-adapter')).toLowerCase();
   if (!pci || pci === 'none' || pci.startsWith('/dev/') || !match)
@@ -75,9 +88,11 @@ export function wgpuPin() {
   return {
     pci: g.pci, vendor: g.vendor, device: g.device, match: g.match, power: g.power, discrete: g.discrete,
     // Vulkan (Dawn natively, webgpu-node in wcnative): only this GPU is enumerated
-    env: { MESA_VK_DEVICE_SELECT: `${g.vendor}:${g.device}`, MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE: '1',
-      WASMCART_WGPU_POWER: g.power, CW_WGPU_POWER: g.discrete ? 'high' : 'low', CW_WGPU_EXPECT_DEVICE: '0x' + g.device,
-      SDL_VIDEODRIVER: process.env.SDL_VIDEODRIVER || 'offscreen' },
+    env: g.software
+      ? { WASMCART_WGPU_POWER: g.power, CW_WGPU_POWER: 'low', SDL_VIDEODRIVER: process.env.SDL_VIDEODRIVER || 'offscreen', ...lavapipe() }
+      : { MESA_VK_DEVICE_SELECT: `${g.vendor}:${g.device}`, MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE: '1',
+        WASMCART_WGPU_POWER: g.power, CW_WGPU_POWER: g.discrete ? 'high' : 'low', CW_WGPU_EXPECT_DEVICE: '0x' + g.device,
+        SDL_VIDEODRIVER: process.env.SDL_VIDEODRIVER || 'offscreen' },
     check(where, name) {
       if (!name || !String(name).toLowerCase().includes(g.match))
         throw new Error(`${where}: WebGPU adapter is "${name}", not the test GPU (${g.match}): refusing`);
@@ -96,8 +111,10 @@ export function glPin() {
   return {
     // inside the GPU sandbox (gpu-sandbox.mjs) the pinned GPU is the only one visible and DRI_PRIME would
     // name a node by a PCI id Mesa can no longer match; outside it, DRI_PRIME pins what it can
-    env: { ...(process.env.CW_GPU_SANDBOXED ? {} : { DRI_PRIME: 'pci-' + g.pci.replace(/[:.]/g, '_') }),
-      SDL_VIDEODRIVER: process.env.SDL_VIDEODRIVER || 'offscreen' },
+    env: g.software
+      ? { LIBGL_ALWAYS_SOFTWARE: '1', SDL_VIDEODRIVER: process.env.SDL_VIDEODRIVER || 'offscreen' }
+      : { ...(process.env.CW_GPU_SANDBOXED ? {} : { DRI_PRIME: 'pci-' + g.pci.replace(/[:.]/g, '_') }),
+        SDL_VIDEODRIVER: process.env.SDL_VIDEODRIVER || 'offscreen' },
     check(where, log) {
       const m = /wasmcart: GL: (.*?) \(/.exec(log || '') || /GL: [^|\n]*\| ([^|]*) \|/.exec(log || '');
       if (!m) throw new Error(where + ': no GL renderer line in the log, so the GPU could not be checked');

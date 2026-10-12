@@ -1,5 +1,7 @@
 # cartwheel
 
+[![CI](https://github.com/monteslu/cartwheel-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/monteslu/cartwheel-engine/actions/workflows/ci.yml)
+
 A 2D and 3D game engine written in C. The same game source builds as a
 native executable and as a [wasmcart](https://github.com/wasmcart/wasmcart)
 cart (`.wasc`), a sandboxed WebAssembly game that runs in a browser, in Node,
@@ -138,6 +140,8 @@ Test runs are pinned to one GPU and run without access to the desktop. Before
 the first run, name the test GPU in `~/.config/cartwheel/chromium-gpu` (its
 PCI address, from `lspci -D`) and a word of its name in
 `~/.config/cartwheel/wgpu-adapter`; the sandbox needs bubblewrap (`bwrap`).
+Without GPU hardware, `CW_TEST_GPU=software node tests/ci.mjs` runs what CI
+runs, on Mesa's software renderers.
 [docs/guides/testing.md](docs/guides/testing.md) has the details.
 
 ## Docs and API reference
