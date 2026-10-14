@@ -42,6 +42,7 @@
 //              host gets them scaled to its framebuffer, cw.view, cw_app_desc.render_scale)
 //   "wheel":   1  or  { "x": 0, "y": -2 }   notches, +y up, THIS frame only
 //   "pad2":    { "buttons": ["south"], "axes": { "lx": 1 } }   pad 1 (a second player; absent: not connected)
+//   "pad3", "pad4": the same for pads 2 and 3 (the third and fourth players)
 //   "text":    "hello"   text typed THIS frame (CW_EVENT_TEXT; the cart must have
 //              text input started, as a focused text field does)
 // Absent keys/mouse/touches mean none held. Per host: native writes them into
@@ -188,7 +189,8 @@ async function runNative() {
       if (w) parts.push(`w=${w.x},${w.y}`);
       for (const t of s.touches || []) parts.push(`t${t.id}=${t.x},${t.y}`);
       if (s.text) parts.push('x=' + Buffer.from(s.text, 'utf8').toString('hex'));
-      if (s.pad2) parts.push(`p=${mask(s.pad2.buttons, CW_BITS)},${(s.pad2.axes || {}).lx || 0},${(s.pad2.axes || {}).ly || 0}`);
+      for (const [k, f] of [['pad2', 'p'], ['pad3', 'p2'], ['pad4', 'p3']])
+        if (s[k]) parts.push(`${f}=${mask(s[k].buttons, CW_BITS)},${(s[k].axes || {}).lx || 0},${(s[k].axes || {}).ly || 0}`);
       return parts.join(' ');
     };
     writeFileSync(f, script.map(line).join('\n') + '\n');
@@ -267,11 +269,15 @@ async function runRomdev() {
     const p = {};
     for (const b of s.buttons || []) p[b === 'back' ? 'select' : b === 'l' ? 'l' : b] = true;
     if (s.axes) p.axes = s.axes;
-    if (!s.pad2) return [p];
-    const q = {};
-    for (const b of s.pad2.buttons || []) q[b === 'back' ? 'select' : b] = true;
-    if (s.pad2.axes) q.axes = s.pad2.axes;
-    return [p, q];
+    const ports = [p];
+    for (const k of ['pad2', 'pad3', 'pad4']) {
+      if (!s[k]) break;
+      const q = {};
+      for (const b of s[k].buttons || []) q[b === 'back' ? 'select' : b] = true;
+      if (s[k].axes) q.axes = s[k].axes;
+      ports.push(q);
+    }
+    return ports;
   };
   if (script.some((s) => s.text))
     throw new Error('romdev: text input cannot be injected (no wasmcart text op); skip romdev for text gates');
@@ -405,9 +411,11 @@ window.run = async (cfg) => {
       if (s.text) host.textInput(s.text);
       const ax = s.axes || {};
       const st = (v) => Math.round(Math.max(-1, Math.min(1, v || 0)) * 32767);
-      const a2 = (s.pad2 && s.pad2.axes) || {};
-      pads[1] = s.pad2 ? { connected: true, buttons: s.mask2, leftX: st(a2.lx), leftY: st(a2.ly), rightX: 0, rightY: 0, leftTrigger: 0, rightTrigger: 0 }
-                       : { connected: false };
+      ['pad2', 'pad3', 'pad4'].forEach((k, i) => {
+        const a2 = (s[k] && s[k].axes) || {};
+        pads[i + 1] = s[k] ? { connected: true, buttons: s.masks[i], leftX: st(a2.lx), leftY: st(a2.ly), rightX: 0, rightY: 0, leftTrigger: 0, rightTrigger: 0 }
+                           : { connected: false };
+      });
       pads[0] = { connected: true, buttons: s.mask, leftX: st(ax.lx), leftY: st(ax.ly), rightX: st(ax.rx), rightY: st(ax.ry),
         leftTrigger: Math.round((ax.lt || 0) * 32767), rightTrigger: Math.round((ax.rt || 0) * 32767) };
     }
@@ -488,7 +496,7 @@ window.ready = true;
     await page.waitForFunction('window.ready === true');
     const pinned = await verify(page);
     if (pinned && args.verbose) console.error(`chromium pinned to ${process.env.CW_CHROMIUM_GPU || process.env.CW_CHROMIUM_RENDER_NODE}: ${pinned}`);
-    const cfg = { gpu, spread, startPlan, match: pin ? pin.match : '', power: pin ? pin.power : '', frames, frameHz, script: script.map((s) => ({ ...s, mask: mask(s.buttons, WC_BITS), mask2: s.pad2 ? mask(s.pad2.buttons, WC_BITS) : 0, scancodes: scancodes(s.keys),
+    const cfg = { gpu, spread, startPlan, match: pin ? pin.match : '', power: pin ? pin.power : '', frames, frameHz, script: script.map((s) => ({ ...s, mask: mask(s.buttons, WC_BITS), masks: ['pad2', 'pad3', 'pad4'].map((k) => (s[k] ? mask(s[k].buttons, WC_BITS) : 0)), scancodes: scancodes(s.keys),
       mouseMask: mouseMask(s.mouse), wheelXY: wheelOf(s.wheel) })) };
     const r = await page.evaluate((c) => window.run(c), cfg).catch((e) => { throw new Error(`${e.message}\n${logs.join('\n')}`); });
     if (!r.crossOriginIsolated) throw new Error('page is not cross-origin isolated: threads cannot run');

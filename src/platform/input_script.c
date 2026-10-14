@@ -12,7 +12,8 @@
  *   w  wheel notches for that frame only (+y up)
  *   t  touch slot id (0..9) down at x,y (absent: lifted)
  *   x  UTF-8 text typed on that frame only, as hex bytes (CW_EVENT_TEXT)
- *   p  pad 1 (a second player): p=<buttons>,<lx>,<ly> (absent: pad 1 not connected)
+ *   p  pad 1 (a second player): p=<buttons>,<lx>,<ly> (absent: pad 1 not connected);
+ *      p2= and p3= the same for pads 2 and 3 (the third and fourth players)
  * Old 8-number lines mean what they always did. tools/run-cart.mjs writes
  * these from its JSON input scripts. */
 #include <ctype.h>
@@ -33,13 +34,13 @@ typedef struct {
   float wheel_x, wheel_y;
   cw_touch_state touches[CW_MAX_TOUCHES];
   char text[128]; /* typed text delivered on that frame only (x=) */
-  cw_pad_state pad1; /* p=: pad 1 (connected when given) */
+  cw_pad_state more[3]; /* p= p2= p3=: pads 1-3 (each connected when given) */
   int text_len;
 } step;
 static step *steps;
 static int nsteps, cursor;
 /* the state applied on the previous frame, for the press edges */
-static uint32_t prev_pad[2], prev_mouse;
+static uint32_t prev_pad[4], prev_mouse;
 static uint8_t prev_keys[CW_KEY_COUNT];
 static bool loaded, active;
 static step current;
@@ -78,12 +79,13 @@ static void parse_extra(step *s, char *p) {
         s->text[s->text_len++] = (char)strtol(hx, NULL, 16);
         p += 2;
       }
-    } else if (p[0] == 'p' && p[1] == '=') {
-      p += 2;
-      s->pad1.connected = true;
-      s->pad1.buttons = (uint32_t)strtoul(p, &end, 0), p = end + (*end == ',');
-      s->pad1.axes[CW_AXIS_LX] = as_delivered(CW_AXIS_LX, strtof(p, &end)), p = end + (*end == ',');
-      s->pad1.axes[CW_AXIS_LY] = as_delivered(CW_AXIS_LY, strtof(p, &end)), p = end;
+    } else if (p[0] == 'p' && (p[1] == '=' || ((p[1] == '2' || p[1] == '3') && p[2] == '='))) {
+      cw_pad_state *pd = &s->more[p[1] == '=' ? 0 : p[1] - '1'];
+      p += p[1] == '=' ? 2 : 3;
+      pd->connected = true;
+      pd->buttons = (uint32_t)strtoul(p, &end, 0), p = end + (*end == ',');
+      pd->axes[CW_AXIS_LX] = as_delivered(CW_AXIS_LX, strtof(p, &end)), p = end + (*end == ',');
+      pd->axes[CW_AXIS_LY] = as_delivered(CW_AXIS_LY, strtof(p, &end)), p = end;
     } else if (p[0] == 't') {
       long id = strtol(p + 1, &end, 10);
       if (end == p + 1 || *end != '=' || id < 0 || id >= CW_MAX_TOUCHES) {
@@ -95,7 +97,7 @@ static void parse_extra(step *s, char *p) {
       s->touches[id].x = strtof(p, &end), p = end + (*end == ',');
       s->touches[id].y = strtof(p, &end), p = end;
     } else {
-      cw_error("CW_INPUT: unknown field '%s' (k= m= w= t<id>= x= p=)", p);
+      cw_error("CW_INPUT: unknown field '%s' (k= m= w= t<id>= x= p= p2= p3=)", p);
       return;
     }
   }
@@ -168,7 +170,8 @@ void cw__input_script_apply(cw_raw_input *in, uint64_t frame) {
   }
   neutral(in);
   in->pads[0] = current.pad;
-  if (current.pad1.connected) in->pads[1] = current.pad1;
+  for (int i = 0; i < 3; i++)
+    if (current.more[i].connected) in->pads[i + 1] = current.more[i];
   memcpy(in->keys, current.keys, sizeof in->keys);
   if (current.mouse) {
     in->mouse_present = true;
@@ -178,10 +181,10 @@ void cw__input_script_apply(cw_raw_input *in, uint64_t frame) {
   }
   /* the press edges SDL's events give a real run (sdl_common.c): a button,
    * key or mouse button down now and not on the previous frame */
-  for (int i = 0; i < 2; i++) in->pads[i].pressed = in->pads[i].buttons & ~prev_pad[i];
+  for (int i = 0; i < 4; i++) in->pads[i].pressed = in->pads[i].buttons & ~prev_pad[i];
   for (int k = 0; k < CW_KEY_COUNT; k++) in->keys_pressed[k] = in->keys[k] && !prev_keys[k];
   in->mouse_pressed = in->mouse_buttons & ~prev_mouse;
-  for (int i = 0; i < 2; i++) prev_pad[i] = in->pads[i].buttons;
+  for (int i = 0; i < 4; i++) prev_pad[i] = in->pads[i].buttons;
   memcpy(prev_keys, in->keys, sizeof prev_keys);
   prev_mouse = in->mouse_buttons;
   if (wheel_now && current.text_len) cw__platform_queue_text(current.text, current.text_len);
