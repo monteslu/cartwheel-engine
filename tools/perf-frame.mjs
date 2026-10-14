@@ -67,7 +67,10 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'])
   process.once(sig, () => { killTree(); process.exit(128 + ({ SIGHUP: 1, SIGINT: 2, SIGTERM: 15 })[sig]); });
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = join(ROOT, 'out', 'perf-frame');
+// CW_PROJECT_ROOT: measure the apps of another tree built with this engine (a games
+// repository: its build/, tests/gates.json and out/ sit where this checkout's do)
+const PROJ = process.env.CW_PROJECT_ROOT ? resolve(process.env.CW_PROJECT_ROOT) : ROOT;
+const OUT = join(PROJ, 'out', 'perf-frame');
 mkdirSync(OUT, { recursive: true });
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf('--' + k); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : d; };
@@ -84,11 +87,11 @@ const MODES = ['clean', ...['count', 'profile', 'trace'].filter(flag)];
 const VERBOSE = flag('verbose');
 // --builds a,b: the build trees to measure (default build; an A/B tree from scripts/build-ab.sh),
 // interleaved per app and backend so machine load hits both alike
-const BUILDS = opt('builds', opt('build', 'build')).split(',').map((b) => resolve(ROOT, b));
+const BUILDS = opt('builds', opt('build', 'build')).split(',').map((b) => resolve(PROJ, b));
 
 // the gate's length per app: the window ends there (gameplay, not menus)
 const gates = (() => {
-  const g = JSON.parse(readFileSync(join(ROOT, 'tests/gates.json'), 'utf8'));
+  const g = JSON.parse(readFileSync(join(PROJ, 'tests/gates.json'), 'utf8'));
   const arr = Array.isArray(g) ? g : g.gates || Object.values(g);
   return Object.fromEntries(arr.filter((x) => x.app && x.frames).map((x) => [x.app, x.frames]));
 })();
@@ -105,6 +108,10 @@ function nativeExe(app, BUILD) {
     const f = join(BUILD, 'native', d, app);
     if (existsSync(f) && statSync(f).isFile()) return f;
   }
+  try { /* a project's app: the build records where its binary went */
+    const f = JSON.parse(readFileSync(join(BUILD, 'native', 'apps', `${app}.json`), 'utf8')).binary;
+    if (f && existsSync(f)) return f;
+  } catch { /* not recorded */ }
   throw new Error(`no native build of ${app} (scripts/build.sh)`);
 }
 
