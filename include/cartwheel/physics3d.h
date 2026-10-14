@@ -65,6 +65,15 @@ bool cw_world3d_valid(cw_world3d w);
  * interpolation pairs of moved bodies and folds the step into the state
  * hash. Cost: the library step plus O(moved bodies + events). */
 void cw_world3d_step(cw_world3d w, float dt);
+/* For a world stepped more than once a fixed tick (shorter steps for fast
+ * bodies): call it at the start of every tick, before the tick's first step.
+ * Interpolation (cw_world3d_sync, cw_body3d_interpolated) then runs from each
+ * body's pose at the start of the tick to its pose after the tick's last
+ * step, the span the render callback's alpha measures. Without it the pair is
+ * the last step's alone: alpha would move a body over a fraction of the
+ * tick while everything interpolated per tick (a camera) moves over all of
+ * it, and the body would shift against them as alpha changes. */
+void cw_world3d_tick_begin(cw_world3d w);
 /* The last step's events (physics.h for order and meaning). Valid until the
  * next step or until the world is destroyed. */
 typedef struct cw_phys_event3d {
@@ -81,9 +90,10 @@ typedef struct cw_phys_event3d {
 const cw_phys_event3d *cw_world3d_events(cw_world3d w, int *count);
 
 /* Writes every bound body's transform, interpolated between the last two
- * steps by alpha (the render callback's), into its three.c object or plain
- * transform. Bodies that did not move in the last step are written once
- * and then skipped. */
+ * steps (the last tick's start and end with cw_world3d_tick_begin) by alpha
+ * (the render callback's), into its three.c object or plain transform.
+ * Bodies that did not move in the last step (tick) are written once and then
+ * skipped. */
 void cw_world3d_sync(cw_world3d w, float alpha);
 
 /* Counters, step count and state hash; all zero for an invalid world. Cheap. */

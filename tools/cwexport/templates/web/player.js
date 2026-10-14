@@ -534,6 +534,26 @@ function pollDebug() {
   }
 }
 
+// a game's buzz requests (cw_platform_vibrate: the debug field cw.vibrate,
+// a request count then ms) become navigator.vibrate where the browser has it
+let vibPtr = 0, vibSeq = 0, vibLook = 0;
+function pollVibrate() {
+  if (!navigator.vibrate) return;
+  if (!vibPtr) {
+    if (vibLook++ % 30) return; // the field appears once the game is up: look now and then
+    const d = debugFields(), f = d && d.f['cw.vibrate'];
+    if (!f) return;
+    vibPtr = f.ptr;
+    vibSeq = d.dv.getUint32(vibPtr, true);
+  }
+  const dv = new DataView((host.memory || host.instance.exports.memory).buffer);
+  const seq = dv.getUint32(vibPtr, true);
+  if (seq === vibSeq) return;
+  vibSeq = seq;
+  const ms = dv.getUint32(vibPtr + 4, true);
+  if (ms) try { navigator.vibrate(ms); } catch {}
+}
+
 window.cwStatus = { ok: true, frames: 0, width: info.width, height: info.height };
 let shown = false;
 enter('frame');
@@ -559,6 +579,7 @@ async function frame() {
     if (result.width !== canvas.width || result.height !== canvas.height) fit();
   }
   try {
+    pollVibrate();
     pollDebug();
   } catch (e) { // a tool's request must never stop the game
     const p = pending;

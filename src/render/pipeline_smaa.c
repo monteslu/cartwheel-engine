@@ -15,6 +15,7 @@
  * tabulates: the bilinear fetch is decoded back to its four edges and the
  * deltaLeft / deltaRight rules applied in the shader. */
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "pipeline_internal.h"
@@ -344,11 +345,45 @@ static const char *SMAA_BLEND_FS = S(
       color += blendingWeight.y * SMP(u_color, blendingCoord.zw);
       o = color;
     }
+    SMAA_FUSED_OUT
+  });
+
+/* the lens pass (vignette, grain; pipeline_post.c's LENS_FS) fused into the
+ * blend (GL): SMAA's result rounded as its RGBA8 target would (as AMD's colour
+ * export does: pipeline_post.c, FUSE_FS), then the lens on it, as the
+ * separate pass reads it */
+static const char *SMAA_LENS_FS = S(
+  uniform vec4 u_on;      /* ca (off when fused), vignette, grain, aspect */
+  uniform vec4 u_amt;     /* ca, vignette, vignette smoothness, grain */
+  uniform int u_frame;
+  float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+  uint hash_u(uvec3 v) {
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+    v ^= v >> 16u;
+    v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+    return v.x;
+  }
+  float hash01(uvec3 v) { return float(hash_u(v) >> 8u) / 16777216.0; }
+  vec4 fuse_lens(vec4 c) {
+    c = q8a(c);
+    vec2 d = v_uv - 0.5;
+    if (u_on.y > 0.5) {
+      float r = length(d * vec2(u_on.w, 1.0)) / length(vec2(0.5 * u_on.w, 0.5));
+      float f = smoothstep(1.0 - u_amt.z, 1.0 + u_amt.z * 0.25, r * (1.0 + 0.5 * u_amt.z));
+      c.rgb *= 1.0 - u_amt.y * f;
+    }
+    if (u_on.z > 0.5) {
+      float n = hash01(uvec3(uvec2(gl_FragCoord.xy), uint(u_frame))) - 0.5;
+      float l = luma(c.rgb);
+      c.rgb = max(c.rgb + n * u_amt.w * (1.0 - 0.5 * l), vec3(0.0));
+    }
+    return c;
   });
 
 /* ── the pass ───────────────────────────────────────────────────────── */
 
-static unsigned edge_prog, weight_prog, blend_prog;
+static unsigned edge_prog, weight_prog, blend_prog, blend_lens_prog;
 
 static unsigned program(const char *name, const char *body, const char *wgsl) {
   bool wg = cw_gpu_backend() == CW_GPU_WEBGPU;
@@ -365,13 +400,25 @@ static unsigned program(const char *name, const char *body, const char *wgsl) {
 
 void cw__smaa_exec(cw_pass_ctx *ctx);
 void cw__smaa_exec(cw_pass_ctx *ctx) {
+  bool lens = ctx->pipeline->fuse_lens;
   if (!edge_prog) {
     edge_prog = program("smaa.edges", SMAA_EDGE_FS, WGSL_SMAA_EDGE);
     weight_prog = program("smaa.weights", SMAA_WEIGHT_FS, WGSL_SMAA_WEIGHT);
-    blend_prog = program("smaa.blend", SMAA_BLEND_FS, WGSL_SMAA_BLEND);
+    char *plain = cw_alloc(strlen(SMAA_BLEND_FS) + 32, CW_MEM_RENDER);
+    sprintf(plain, "#define SMAA_FUSED_OUT\n%s", SMAA_BLEND_FS);
+    blend_prog = program("smaa.blend", plain, WGSL_SMAA_BLEND);
+    cw_free(plain);
     make_area_tex();
   }
-  if (!edge_prog || !weight_prog || !blend_prog) return;
+  if (lens && !blend_lens_prog) {
+    const char *round = cw__fuse_round_glsl();
+    char *body = cw_alloc(strlen(round) + strlen(SMAA_LENS_FS) + strlen(SMAA_BLEND_FS) + 96, CW_MEM_RENDER);
+    sprintf(body, "#define SMAA_FUSED_OUT o = fuse_lens(o);\n%s%s%s%s", cw__fusion_raw() ? "#define FUSE_RAW 1\n" : "", round,
+            SMAA_LENS_FS, SMAA_BLEND_FS);
+    blend_lens_prog = program("smaa.blend+lens", body, NULL);
+    cw_free(body);
+  }
+  if (!edge_prog || !weight_prog || !blend_prog || (lens && !blend_lens_prog)) return;
   float m[4] = { 1.0f / (float)ctx->width, 1.0f / (float)ctx->height, (float)ctx->width, (float)ctx->height };
   const cw_rt *edges = cw_pass_rt(ctx, ctx->width, ctx->height, CW_RT_RGBA8, false);
   const cw_rt *weights = cw_pass_rt(ctx, ctx->width, ctx->height, CW_RT_RGBA8, false);
@@ -395,12 +442,20 @@ void cw__smaa_exec(cw_pass_ctx *ctx) {
   cw_pass_fullscreen();
   /* neighbourhood blending into the chain's target */
   cw_pass_bind_target(ctx, ctx->dst);
-  cw_pass_use(blend_prog);
+  unsigned bp = lens ? blend_lens_prog : blend_prog;
+  cw_pass_use(bp);
   cw_pass_bind_texture(0, ctx->src->tex);
   cw_pass_bind_texture(1, weights->tex);
-  cw_pass_uniform1i(blend_prog, "u_color", 0);
-  cw_pass_uniform1i(blend_prog, "u_blend", 1);
-  cw_pass_uniform4f(blend_prog, "SMAA_RT_METRICS", m[0], m[1], m[2], m[3]);
+  cw_pass_uniform1i(bp, "u_color", 0);
+  cw_pass_uniform1i(bp, "u_blend", 1);
+  cw_pass_uniform4f(bp, "SMAA_RT_METRICS", m[0], m[1], m[2], m[3]);
+  if (lens) { /* lens_exec's uniforms (pipeline_post.c) */
+    const cw_post_settings *s = ctx->settings;
+    cw_pass_uniform4f(bp, "u_on", 0, s->vignette, s->grain, (float)ctx->width / (float)CW_MAX(ctx->height, 1));
+    cw_pass_uniform4f(bp, "u_amt", s->ca_intensity, s->vignette_intensity, CW_CLAMP(s->vignette_smoothness, 0.01f, 1.0f),
+                      s->grain_intensity);
+    cw_pass_uniform1i(bp, "u_frame", (int)(ctx->frame & 0x7fffffff));
+  }
   cw_pass_fullscreen();
   cw_pass_rt_release(ctx, edges);
   cw_pass_rt_release(ctx, weights);

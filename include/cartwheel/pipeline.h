@@ -519,6 +519,8 @@ typedef struct cw_pass_stat {
   const char *name;
   cw_pass_phase phase;
   bool ran;                 /* ran last frame */
+  bool fused;               /* ran inside another pass (GL post fusion: the grade in the tonemap
+                             * pass, the lens in SMAA's blend); its time is that pass's */
   float gpu_ms;             /* latest available GPU time (arrives 1-3 frames late); -1 = none
                              * (natively the timers run only when asked for: CW_GPU_TIMERS=1,
                              * or the "pipeline" debug command).

@@ -112,6 +112,12 @@ Add a suite with `cw_add_app(unit_x SOURCES test_x.c)` in `tests/unit/CMakeLists
 
 Some checks need more than one run: several processes, a tool, a timing report. A gate with `script` runs a node script that prints `ok ...` / `FAIL ...` lines, runs its own must-fail control, and exits 0 only on success. Examples: `tests/cwpack.mjs` (asset packing), `tests/net.mjs` (cart-to-cart sessions), `tests/project-templates.mjs` ([Templates](guide:templates)), `tests/export.mjs`, the `*-perf.mjs` reports ([Profiling](guide:profiling)), and `tests/docs.mjs` / `tests/tutorials.mjs` for this site.
 
+## Gates of another repository
+
+A repository of games built with this engine (configured as its project with `-DCW_PROJECT_DIR`) keeps its own `tests/gates.json`, input scripts, `build/` and `out/`, laid out as here. `CW_PROJECT_ROOT=<that repository>` points `tests/gate.mjs` and `tools/run-cart.mjs` at them: gates, inputs and scripts come from its `tests/`, apps from its `build/` (a project app is found through `build/native/apps/<app>.json`), and output goes to its `out/`. [cartwheel-examples](https://github.com/monteslu/cartwheel-examples) runs its games' gates this way.
+
+`tests/post-fusion.mjs` (GL post fusion draws what the separate passes draw) takes the apps to check as arguments, `app[:frame]`, and reads `CW_PROJECT_ROOT` the same way.
+
 ## Everything at once
 
 ```sh

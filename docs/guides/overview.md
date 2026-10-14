@@ -50,7 +50,7 @@ Shipping builds (Linux, Windows, Android, web, macOS and iOS project kits) come 
 | `include/cartwheel/*.h` | the public API, one header per module; the comments are the documentation |
 | `src/<module>/` | the implementation |
 | `samples/<name>/` | small apps, one feature each; every one is a gate |
-| `games/` | the larger games that forced each phase (a 3D platformer, a 2D action game) |
+| `games/` | two small games, a 3D platformer and a 2D action game; the full games are in [cartwheel-examples](https://github.com/monteslu/cartwheel-examples) |
 | `editor/templates/` | project skeletons to copy (see [Templates](guide:templates)) |
 | `tests/` | `gates.json`, the gate runner, unit suites (`tests/unit/`) and scripted gates |
 | `tools/` | `run-cart.mjs`, `cwproject.mjs` (build a project), `cwexport.mjs`, `cwpack` (assets), `cwhot` (C hot reload), `cwbake` (lightmaps), `gen-api.mjs`, `gen-docs.mjs` |

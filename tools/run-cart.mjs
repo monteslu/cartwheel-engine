@@ -67,6 +67,9 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'])
   process.once(sig, () => { killTree(); process.exit(128 + ({ SIGHUP: 1, SIGINT: 2, SIGTERM: 15 })[sig]); });
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// CW_PROJECT_ROOT: run the apps of another tree built with this engine (a games
+// repository: its build/ and out/ sit where this checkout's do); default this checkout
+const PROJ = process.env.CW_PROJECT_ROOT ? resolve(process.env.CW_PROJECT_ROOT) : ROOT;
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => {
   if (a.startsWith('--')) acc.push([a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true]);
   return acc;
@@ -74,8 +77,17 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) =>
 const host = args.host, app = args.app, frames = +args.frames || 60;
 // --start-cmds "a;b": debug-channel requests posted at load, request i answered at the
 // start of frame i + 2 on every host (a cart host runs frame 1 on load): how a test
-// says what a real host would (touch_primary 1 for a phone)
+// says what a real host would (touch_primary 1 for a phone). A request written
+// "@N cmd" is answered at the start of frame N instead (N >= 2; native, chromium,
+// wcnative): a mid-run change such as a graphics preset
 const startCmds = typeof args['start-cmds'] === 'string' ? args['start-cmds'].split(';').filter(Boolean) : [];
+// [k, text]: request posted before loop step k (0-based; answered at the start of frame k + 1)
+const startPlan = startCmds.map((c, i) => {
+  const m = /^@(\d+)\s*(.*)$/.exec(c);
+  if (m && +m[1] < 2) throw new Error(`--start-cmds: "${c}": a request runs at frame 2 or later`);
+  return m ? [+m[1] - 1, m[2]] : [i + 1, c];
+});
+const timedCmds = startCmds.some((c) => c.startsWith('@'));
 // --frame-hz: the virtual render rate (default 60); fixed ticks stay at the app's rate
 const frameHz = +args['frame-hz'] || 60;
 // --warmup-spread: the warm-up spread over frames under the loading screen, as a player gets it
@@ -89,14 +101,16 @@ if (spread && host === 'romdev') { console.error('--warmup-spread: romdev loads 
 if (!host || !app) { console.error('usage: run-cart.mjs --host <native|romdev|chromium|wcnative> --app <name> --frames N'); process.exit(2); }
 // (a project built in the tree, samples/<app>/ with its own CMakeLists.txt, has its executable inside that directory)
 const isFile = (p) => existsSync(p) && statSync(p).isFile();
-const nativeExe = args.exe ? resolve(args.exe) : ['samples', 'tests/unit', 'games', 'editor', `samples/${app}`].map((d) => join(ROOT, 'build/native', d, app)).find(isFile) ||
-  join(ROOT, 'build/native/samples', app);
+// (an app of a CW_PROJECT_DIR build sits under build/native/project/: its apps/<app>.json names it)
+const appBinary = () => { try { return JSON.parse(readFileSync(join(PROJ, 'build/native/apps', `${app}.json`), 'utf8')).binary; } catch { return null; } };
+const nativeExe = args.exe ? resolve(args.exe) : ['samples', 'tests/unit', 'games', 'editor', `samples/${app}`].map((d) => join(PROJ, 'build/native', d, app)).find(isFile) ||
+  appBinary() || join(PROJ, 'build/native/samples', app);
 // --dual-gl (romdev, --gpu gl): the DUAL cart of build/cart-wgpu, told to render with GL (loadMedia wgpu:false)
 const dualGl = !!args['dual-gl'];
 if (dualGl && (host !== 'romdev' || gpu !== 'gl')) { console.error('--dual-gl is a romdev --gpu gl run'); process.exit(2); }
-const cart = args.cart ? resolve(args.cart) : join(ROOT, gpu === 'webgpu' || dualGl ? 'build/cart-wgpu/carts' : 'build/cart/carts', `${app}.wasc`);
+const cart = args.cart ? resolve(args.cart) : join(PROJ, gpu === 'webgpu' || dualGl ? 'build/cart-wgpu/carts' : 'build/cart/carts', `${app}.wasc`);
 const script = args.input ? JSON.parse(readFileSync(args.input, 'utf8')) : [];
-const OUT = join(ROOT, 'out');
+const OUT = join(PROJ, 'out');
 
 // cw_pad_button bits (native) and wasmcart WC_BTN bits (cart hosts)
 const CW_BITS = { south: 0, east: 1, west: 2, north: 3, back: 4, guide: 5, start: 6, l3: 7, r3: 8, l: 9, r: 10, up: 11, down: 12, left: 13, right: 14 };
@@ -244,6 +258,7 @@ async function runRomdev() {
     if (Array.isArray(vv) && vv[0] > 0 && vv[1] > 0) { sx = vv[2] / vv[0]; sy = vv[3] / vv[1]; ox = vv[4] || 0; oy = vv[5] || 0; }
   }
   const fbx = (x) => Math.round(ox + x * sx), fby = (y) => Math.round(oy + y * sy);
+  if (timedCmds) throw new Error('romdev: --start-cmds "@N cmd" (a request at a frame) is not supported here; skip romdev for such gates');
   for (const text of startCmds) { /* answered at the start of the frame the request runs */
     await romdevCall('wasm', { op: 'command', text }, session);
     at++;
@@ -372,7 +387,7 @@ window.run = async (cfg) => {
     // a cart spreads its warm-up over frames (a loading screen) unless told otherwise:
     // a test does it all in frame 1, as native and romdev test runs do
     if (k === 0 && !cfg.spread && host.instance.exports.wc_debug_state) postCmd('warmup_spread 0');
-    if (k >= 1 && k - 1 < cfg.startCmds.length) postCmd(cfg.startCmds[k - 1]);
+    for (const [at, text] of cfg.startPlan) if (at === k) postCmd(text);
     while (si < cfg.script.length && cfg.script[si].frame - 1 <= k) {
       const s = cfg.script[si++];
       const nk = new Set(s.scancodes);
@@ -473,7 +488,7 @@ window.ready = true;
     await page.waitForFunction('window.ready === true');
     const pinned = await verify(page);
     if (pinned && args.verbose) console.error(`chromium pinned to ${process.env.CW_CHROMIUM_GPU || process.env.CW_CHROMIUM_RENDER_NODE}: ${pinned}`);
-    const cfg = { gpu, spread, startCmds, match: pin ? pin.match : '', power: pin ? pin.power : '', frames, frameHz, script: script.map((s) => ({ ...s, mask: mask(s.buttons, WC_BITS), mask2: s.pad2 ? mask(s.pad2.buttons, WC_BITS) : 0, scancodes: scancodes(s.keys),
+    const cfg = { gpu, spread, startPlan, match: pin ? pin.match : '', power: pin ? pin.power : '', frames, frameHz, script: script.map((s) => ({ ...s, mask: mask(s.buttons, WC_BITS), mask2: s.pad2 ? mask(s.pad2.buttons, WC_BITS) : 0, scancodes: scancodes(s.keys),
       mouseMask: mouseMask(s.mouse), wheelXY: wheelOf(s.wheel) })) };
     const r = await page.evaluate((c) => window.run(c), cfg).catch((e) => { throw new Error(`${e.message}\n${logs.join('\n')}`); });
     if (!r.crossOriginIsolated) throw new Error('page is not cross-origin isolated: threads cannot run');
@@ -531,7 +546,7 @@ async function runWcnative() {
   if (!process.env.CW_TEST_WINDOW) scrubDisplay(wenv);
   else delete wenv.SDL_VIDEODRIVER;
   // warmup_spread 0 before frame 1: the whole warm-up in that frame, as on the other test hosts
-  const cmdArgs = [...(spread ? [] : ['--debug-cmd', '0', 'warmup_spread 0']), ...startCmds.flatMap((c, i) => ['--debug-cmd', String(i + 1), c])];
+  const cmdArgs = [...(spread ? [] : ['--debug-cmd', '0', 'warmup_spread 0']), ...startPlan.flatMap(([k, c]) => ['--debug-cmd', String(k), c])];
   const child = spawn(player, [runCart, '--fixed-step', String(1000 / frameHz), '--shot', String(frames - 1), ppm, '--uncapped', ...cmdArgs],
     { env: wenv, stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = '';

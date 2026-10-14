@@ -139,6 +139,7 @@ void cw_world2d_step(cw_world2d wh, float dt) {
   cw_box2d_tasks_step(w->id, w->tasks);
   b2World_Step(w->id, dt, w->substeps);
   w->steps++;
+  if (!w->by_tick) w->span++;
   cw_array_clear(&w->events);
   cw_array_clear(&w->breaking);
   uint32_t h = cw__fold(w->hash, &w->steps, sizeof w->steps);
@@ -152,9 +153,9 @@ void cw_world2d_step(cw_world2d wh, float dt) {
     h = cw__fold(h, tf, sizeof tf);
     cw__body2 *r = m->userData;
     if (!r) continue;
-    r->prev = r->cur;
+    if (r->moved_span != w->span) r->prev = r->cur; /* the pose the span started from */
     r->cur = x2(m->transform);
-    r->moved_step = w->steps;
+    r->moved_span = w->span;
     r->settled = false;
   }
 
@@ -227,10 +228,17 @@ cw_phys_stats cw_world2d_stats(cw_world2d wh) {
   return s;
 }
 
+void cw_world2d_tick_begin(cw_world2d wh) {
+  cw__world2 *w = cw__w2(wh);
+  if (!w) return;
+  w->by_tick = true;
+  w->span++;
+}
+
 /* ── sync ────────────────────────────────────────────────────────────── */
 
 static cw_xform2 rec_at(const cw__world2 *w, const cw__body2 *r, float alpha) {
-  if (r->interpolate && r->moved_step == w->steps) return cw_xform2_lerp(r->prev, r->cur, alpha);
+  if (r->interpolate && r->moved_span == w->span) return cw_xform2_lerp(r->prev, r->cur, alpha);
   return r->cur;
 }
 
@@ -252,7 +260,7 @@ void cw_world2d_sync(cw_world2d wh, float alpha) {
   for (int i = 0; i < w->bodies.slot_count; i++) {
     cw__body2 *r = cw_pool_at(&w->bodies, i);
     if (!r || (!r->obj && !r->xf)) continue;
-    if (r->moved_step == w->steps) write_target(r, rec_at(w, r, alpha));
+    if (r->moved_span == w->span) write_target(r, rec_at(w, r, alpha));
     else if (!r->settled) {
       write_target(r, r->cur);
       r->settled = true;
@@ -296,7 +304,7 @@ cw_body2d cw_body2d_create(cw_world2d wh, const cw_body2d_def *def) {
   r->user = d.user;
   r->interpolate = d.interpolate;
   r->cur = r->prev = x2(b2Body_GetTransform(id));
-  r->moved_step = -1;
+  r->moved_span = -1;
   return (cw_body2d){ r->id };
 }
 

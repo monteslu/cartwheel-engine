@@ -73,6 +73,8 @@ void cw_world2d_destroy(cw_world2d w);
 bool cw_world2d_valid(cw_world2d w);
 /* One fixed step; see cw_world3d_step. */
 void cw_world2d_step(cw_world2d w, float dt);
+/* A world stepped more than once a tick; see cw_world3d_tick_begin. */
+void cw_world2d_tick_begin(cw_world2d w);
 
 typedef struct cw_phys_event2d {
   cw_phys_event_type type;

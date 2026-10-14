@@ -102,8 +102,9 @@ static void cmd_pipeline(int argc, const char **argv, cw_reply *r) {
                   cw__caps.timer_query ? "true" : "false", cw__caps.max_samples, p->gpu_total_ms);
   for (int i = 0; i < p->stats.count; i++) {
     const cw_pass_stat *st = &p->stats.data[i];
-    cw_reply_printf(r, "%s{\"name\":\"%s\",\"phase\":\"%s\",\"ran\":%s,\"gpu_ms\":%.4f,\"cpu_ms\":%.4f}", i ? "," : "",
-                    st->name, phases[st->phase], st->ran ? "true" : "false", st->gpu_ms_avg, st->cpu_ms_avg);
+    cw_reply_printf(r, "%s{\"name\":\"%s\",\"phase\":\"%s\",\"ran\":%s,\"fused\":%s,\"gpu_ms\":%.4f,\"cpu_ms\":%.4f}",
+                    i ? "," : "", st->name, phases[st->phase], st->ran ? "true" : "false", st->fused ? "true" : "false",
+                    st->gpu_ms_avg, st->cpu_ms_avg);
   }
   cw_reply_raw(r, "]");
   {
@@ -156,6 +157,62 @@ static pass_rec *find_pass(cw_pipeline *p, const char *name) {
   for (int i = 0; i < p->passes.count; i++)
     if (p->passes.data[i]->name == n) return p->passes.data[i];
   return NULL;
+}
+
+/* the index of an active pass (-1: none or inactive) */
+static int active_index(cw_pipeline *p, const char *name) {
+  const char *n = cw_intern(name);
+  for (int i = 0; i < p->passes.count; i++)
+    if (p->passes.data[i]->name == n) return p->passes.data[i]->active ? i : -1;
+  return -1;
+}
+/* passes a and b (indices, a < b) are neighbours in the POST chain: no active
+ * colour-writing POST pass runs between them */
+static bool post_adjacent(cw_pipeline *p, int a, int b) {
+  if (a < 0 || b < 0 || a >= b) return false;
+  for (int i = a + 1; i < b; i++) {
+    pass_rec *r = p->passes.data[i];
+    if (r->active && r->d.phase == CW_PHASE_POST && (r->d.writes & CW_RES_COLOR)) return false;
+  }
+  return true;
+}
+/* GL post fusion (pipeline_internal.h): only the built-in passes, next to
+ * each other in the chain, with nothing that needs the image in between */
+static bool test_no_fusion(void) { /* CW_TEST_NO_FUSION=1 (native): the passes run separately (A/B, gate controls) */
+#if CW_CART
+  return false;
+#else
+  static int v = -1;
+  if (v < 0) v = getenv("CW_TEST_NO_FUSION") && atoi(getenv("CW_TEST_NO_FUSION")) ? 1 : 0;
+  return v == 1;
+#endif
+}
+bool cw__fusion_raw(void) {
+#if CW_CART
+  return false;
+#else
+  static int v = -1;
+  if (v < 0) v = getenv("CW_TEST_FUSION_RAW") && atoi(getenv("CW_TEST_FUSION_RAW")) ? 1 : 0;
+  return v == 1;
+#endif
+}
+static void plan_fusion(cw_pipeline *p, const cw_post_settings *s, bool gl_post) {
+  p->fuse_bloom = p->fuse_grade = p->fuse_lens = false;
+  p->bloom_glow = NULL;
+  if (!gl_post || s->debug_view != CW_VIEW_NONE || test_no_fusion()) return;
+  int bl = active_index(p, "bloom"), tm = active_index(p, "tonemap"), gr = active_index(p, "grade");
+  int aa = active_index(p, "aa"), ln = active_index(p, "lens");
+  if (tm >= 0 && post_adjacent(p, bl, tm)) p->fuse_bloom = true;
+  if (tm >= 0 && post_adjacent(p, tm, gr)) {
+    p->fuse_grade = true;
+    p->passes.data[gr]->active = false;
+    p->passes.data[gr]->stat.ran = p->passes.data[gr]->stat.fused = true;
+  }
+  if (aa >= 0 && s->aa == CW_AA_SMAA && !s->chromatic_aberration && post_adjacent(p, aa, ln)) {
+    p->fuse_lens = true;
+    p->passes.data[ln]->active = false;
+    p->passes.data[ln]->stat.ran = p->passes.data[ln]->stat.fused = true;
+  }
 }
 
 bool cw_pipeline_add_pass(cw_pipeline *p, const cw_pass_desc *d) {
@@ -646,7 +703,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
   pass_rec *velocity = NULL;
   for (int i = 0; i < p->passes.count; i++) {
     pass_rec *r = p->passes.data[i];
-    r->stat.ran = false;
+    r->stat.ran = r->stat.fused = false;
     if (r->name == cw_intern("velocity")) {
       velocity = r;
       continue;
@@ -677,6 +734,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
    * depth */
   bool offscreen = has_scene && (wgpu || post_or_fx || s->hdr || s->msaa > 1 || any_prepass || (reads & (CW_RES_DEPTH | CW_RES_VELOCITY)));
   ctx.offscreen = offscreen;
+  plan_fusion(p, s, offscreen && !wgpu);
 
   /* TAA jitter + camera matrices (offscreen only: the direct path leaves the
    * camera exactly as three.c's own path does) */
@@ -860,6 +918,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
       case CW_PHASE_EFFECTS: bind_phase_target(&ctx, scene); break;
       case CW_PHASE_POST:
         ctx.src = chain;
+        if (p->fuse_bloom && r->name == cw_intern("bloom")) break; /* the glow only: the tonemap pass composites it */
         if (r->d.writes & CW_RES_COLOR) {
           if (i == last_writer) ctx.dst = output;
           else ctx.dst = cw_pass_rt(&ctx, w, h, r->d.ldr_output ? CW_RT_RGBA8 : chain->format, false);
@@ -874,7 +933,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
       if (ph == CW_PHASE_PREPASS) p->prepass_ran = true;
       /* any opaque pass drew the 3D picture (the overlays then keep it) */
       if (ph == CW_PHASE_OPAQUE) p->drew3d = true;
-      if (ph == CW_PHASE_POST && (r->d.writes & CW_RES_COLOR)) {
+      if (ph == CW_PHASE_POST && (r->d.writes & CW_RES_COLOR) && ctx.dst) {
         const cw_rt *prev = chain;
         chain = ctx.result ? ctx.result : ctx.dst;
         /* the image the chain moved past goes back to the pool */
@@ -904,7 +963,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
   for (int i = 0; i < p->passes.count; i++) {
     pass_rec *r = p->passes.data[i];
     cw_array_push(&p->stats, r->stat);
-    if (r->stat.ran && r->stat.gpu_ms > 0) p->gpu_total_ms += r->stat.gpu_ms;
+    if (r->stat.ran && !r->stat.fused && r->stat.gpu_ms > 0) p->gpu_total_ms += r->stat.gpu_ms;
   }
 
   if (wgpu) {

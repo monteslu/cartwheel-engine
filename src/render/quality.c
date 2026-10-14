@@ -170,7 +170,11 @@ static void cmd_quality(int argc, const char **argv, cw_reply *r) {
         cw_reply_error(r, "quality: low, medium, high, ultra or auto");
         return;
       }
-      cw_quality_set((cw_quality)q, true);
+      /* an explicit preset applies in a test run too (the same command on
+       * every host: the run stays deterministic); only the automatic choice
+       * and the player's saved preset are locked there */
+      Q.user = true;
+      change((cw_quality)q);
     }
   }
   cw_reply_printf(r, "{\"quality\":\"%s\",\"auto\":%s,\"locked\":%s,\"particles\":%g,\"density\":%g}", NAMES[Q.level],

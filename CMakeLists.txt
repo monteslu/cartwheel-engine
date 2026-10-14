@@ -372,13 +372,18 @@ function(cw_add_app name)
       set(_opt_cmd COMMAND ${CMAKE_COMMAND} -E env BINARYEN_CORES=${CW_CART_LINK_JOBS}
         ${CW_WASM_OPT} -O3 -g --enable-threads --enable-simd $<TARGET_FILE:${name}> -o $<TARGET_FILE:${name}>)
     endif()
+    # wasmcart keeps the archive open and reads assets on demand. Replacing the
+    # file in place can invalidate a running cart's ZIP offsets mid-ride.
+    set(_wasc ${CMAKE_BINARY_DIR}/carts/${name}.wasc)
+    set(_wasc_tmp ${_wasc}.tmp)
     add_custom_command(TARGET ${name} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/carts
       ${_opt_cmd}
       ${_stage_cmd}
       COMMAND node ${CMAKE_SOURCE_DIR}/tools/check-imports.mjs $<TARGET_FILE:${name}> ${_wgpu_check}
       COMMAND node ${_wc_pack} --wasm $<TARGET_FILE:${name}> --name ${name}
-              ${_assets} ${_files} --version 0.1.0 --output ${CMAKE_BINARY_DIR}/carts/${name}.wasc > /dev/null
+              ${_assets} ${_files} --version 0.1.0 --output ${_wasc_tmp} > /dev/null
+      COMMAND ${CMAKE_COMMAND} -E rename ${_wasc_tmp} ${_wasc}
       COMMENT "cart ${name}.wasc")
   endif()
 endfunction()

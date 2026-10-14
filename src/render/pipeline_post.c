@@ -571,6 +571,19 @@ static void bloom_exec(cw_pass_ctx *ctx, void *u) {
     cw_pass_uniform2f(bl_up_prog, "u_texel", 1.0f / (float)up[i + 1]->w, 1.0f / (float)up[i + 1]->h);
     cw_pass_fullscreen();
   }
+  if (ctx->pipeline->fuse_bloom) {
+    /* the tonemap pass composites the glow (pipeline_internal.h) */
+    cw_pipeline *pl = ctx->pipeline;
+    pl->bloom_glow = up[skip];
+    pl->bloom_texel[0] = 1.0f / (float)up[skip]->w;
+    pl->bloom_texel[1] = 1.0f / (float)up[skip]->h;
+    pl->bloom_norm = 1.0f / (float)(n - skip);
+    for (int i = 0; i < n; i++) {
+      if (down[i] != up[skip]) cw_pass_rt_release(ctx, down[i]);
+      if (up[i] && up[i] != down[i] && up[i] != up[skip]) cw_pass_rt_release(ctx, up[i]);
+    }
+    return;
+  }
   cw_pass_bind_target(ctx, ctx->dst);
   cw_pass_use(bl_comp_prog);
   cw_pass_bind_texture(0, ctx->src->tex);
@@ -595,7 +608,6 @@ static void bloom_exec(cw_pass_ctx *ctx, void *u) {
 
 /* ── tonemap: exposure, tone curve, sRGB transfer ────────────────────── */
 
-static unsigned tm_prog;
 static const char *TM_FS = S(
   uniform sampler2D u_src;
   uniform float toneMappingExposure;
@@ -676,9 +688,12 @@ static const char *TM_FS = S(
   /* r186's sRGBTransferOETF */
   vec3 LinearTosRGB(vec3 v) {
     return mix(pow(v, vec3(0.41666)) * 1.055 - vec3(0.055), v * 12.92, vec3(lessThanEqual(v, vec3(0.0031308))));
-  }
+  });
+/* the tonemap pass's main, also the fused pass's middle (FINAL_FS) */
+static const char *TM_MAIN = S(
   void main() {
     vec4 c = texture(u_src, v_uv);
+    TM_FUSED_IN
     vec3 x = max(c.rgb, vec3(0.0));
     if (u_curve == 0) x = clamp(x * toneMappingExposure, 0.0, 1.0);
     else if (u_curve == 1) x = clamp(LinearToneMapping(x), 0.0, 1.0);
@@ -689,7 +704,64 @@ static const char *TM_FS = S(
     else x = clamp(NeutralToneMapping(x), 0.0, 1.0);
     /* r186 applies the output transfer after every curve: Cineon's pow(2.2) returns it to linear first */
     x = LinearTosRGB(x);
+    TM_FUSED_OUT
     o = vec4(x, 1.0);
+  });
+
+/* ── fused tonemap (GL): bloom's composite before it, the grade after it ──
+ * The values are rounded where the separate passes' targets rounded them:
+ * the composite's RGBA16F, the tonemap's RGBA8 (the grade writes RGBA8 as
+ * the tonemap alone does). Both as AMD's colour export does it (radeonsi):
+ * a value goes to the target as a half float rounded toward zero
+ * (v_cvt_pkrtz), and an 8-bit unorm target then rounds that half to the
+ * nearest of 255 steps. Against the passes run separately
+ * (CW_TEST_NO_FUSION=1) a game's frame differs in under 0.01% of its pixels,
+ * by 1/255, on an AMD RDNA3 card (tests/post-fusion.mjs); a GPU that rounds
+ * otherwise stays within 1/255 at the rounding steps.
+ * CW_TEST_FUSION_RAW=1 (native, the test's control) leaves the rounding out. */
+/* (plain strings: the preprocessor lines must reach the GLSL compiler, not C's) */
+static const char *FUSE_ROUND =
+    "float h16(float v) {\n"
+    "  uint h = packHalf2x16(vec2(v, 0.0)) & 0xffffu;\n"
+    "  float r = unpackHalf2x16(h).x;\n"
+    "  if (abs(r) > abs(v) && (h & 0x7fffu) != 0u) r = unpackHalf2x16(h - 1u).x;\n"
+    "  return r;\n"
+    "}\n"
+    "#ifdef FUSE_RAW\n"
+    "vec3 q16(vec3 v) { return v; }\n"
+    "vec3 q8(vec3 v) { return v; }\n"
+    "vec4 q8a(vec4 v) { return v; }\n"
+    "#else\n"
+    "vec3 q16(vec3 v) { return vec3(h16(v.r), h16(v.g), h16(v.b)); }\n"
+    "vec3 q8(vec3 v) { return floor(q16(clamp(v, 0.0, 1.0)) * 255.0 + 0.5) / 255.0; }\n"
+    "vec4 q8a(vec4 v) { v = clamp(v, 0.0, 1.0); return floor(vec4(h16(v.r), h16(v.g), h16(v.b), h16(v.a)) * 255.0 + 0.5) / 255.0; }\n"
+    "#endif\n";
+const char *cw__fuse_round_glsl(void) { return FUSE_ROUND; }
+static const char *FUSE_FS = S(
+  uniform sampler2D u_bloom;
+  uniform vec2 u_texel;
+  uniform float u_radius;
+  uniform float u_k;
+  uniform float u_norm;
+  uniform sampler3D u_lut;
+  uniform vec4 u_scale;
+  uniform vec3 u_dmin;
+  uniform vec3 u_dinv;
+  vec4 fuse_bloom(vec4 c) {
+    vec2 t = u_texel * u_radius;
+    vec3 s = texture(u_bloom, v_uv).rgb * 4.0;
+    s += (texture(u_bloom, v_uv + vec2(-t.x, 0.0)).rgb + texture(u_bloom, v_uv + vec2(t.x, 0.0)).rgb +
+          texture(u_bloom, v_uv + vec2(0.0, -t.y)).rgb + texture(u_bloom, v_uv + vec2(0.0, t.y)).rgb) * 2.0;
+    s += texture(u_bloom, v_uv - t).rgb + texture(u_bloom, v_uv + t).rgb + texture(u_bloom, v_uv + vec2(-t.x, t.y)).rgb +
+         texture(u_bloom, v_uv + vec2(t.x, -t.y)).rgb;
+    vec3 bloom = s / 16.0 * u_norm;
+    return vec4(q16(max(c.rgb + u_k * (bloom - prefilter(c.rgb)), vec3(0.0))), c.a);
+  }
+  vec3 fuse_grade(vec3 c) {
+    c = q8(c);
+    vec3 t = clamp((c - u_dmin) * u_dinv, 0.0, 1.0);
+    vec3 g = texture(u_lut, t * u_scale.x + u_scale.y).rgb;
+    return mix(c, g, u_scale.z);
   });
 
 static bool tonemap_active(const cw_pass_ctx *ctx, void *u) {
@@ -698,22 +770,68 @@ static bool tonemap_active(const cw_pass_ctx *ctx, void *u) {
   return true; /* the scene is always linear HDR: this pass makes display values */
 }
 
+static unsigned grade_prog;
+static void grade_uniforms(cw_pass_ctx *ctx, unsigned prog, unsigned lut, int n, const float *dmin, const float *dmax, int unit) {
+  cw_pass_bind_texture_3d(unit, lut);
+  cw_pass_uniform1i(prog, "u_lut", unit);
+  cw_pass_uniform4f(prog, "u_scale", (float)(n - 1) / (float)n, 0.5f / (float)n, CW_CLAMP(ctx->settings->grade_intensity, 0.0f, 1.0f), 0);
+  cw_pass_uniform3f(prog, "u_dmin", dmin[0], dmin[1], dmin[2]);
+  cw_pass_uniform3f(prog, "u_dinv", 1 / (dmax[0] - dmin[0]), 1 / (dmax[1] - dmin[1]), 1 / (dmax[2] - dmin[2]));
+}
+
+/* the tonemap program: plain, or (GL) with bloom's composite and / or the grade fused in */
+static unsigned tm_variant(bool bloom, bool grade) {
+  static unsigned progs[4];
+  int k = (bloom ? 1 : 0) | (grade ? 2 : 0);
+  if (progs[k]) return progs[k];
+  if (!k) return progs[0] = prog_of("tonemap", "#define TM_FUSED_IN\n#define TM_FUSED_OUT\n", TM_FS, TM_MAIN, WGSL_TM, NULL, NULL);
+  static char buf[32768];
+  snprintf(buf, sizeof buf, "#define TM_FUSED_IN %s\n#define TM_FUSED_OUT %s\n%s%s%s%s%s%s%s", bloom ? "c = fuse_bloom(c);" : "",
+           grade ? "x = fuse_grade(x);" : "", cw__fusion_raw() ? "#define FUSE_RAW 1\n" : "", GLSL_COMMON, BL_PREFILTER, TM_FS,
+           FUSE_ROUND, FUSE_FS, TM_MAIN);
+  static const char *const names[4] = { "tonemap", "tonemap+bloom", "tonemap+grade", "tonemap+bloom+grade" };
+  return progs[k] = cw_pass_program(names[k], buf);
+}
+
 static void tonemap_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
   const cw_post_settings *s = ctx->settings;
-  if (!tm_prog) tm_prog = prog_of("tonemap", TM_FS, NULL, NULL, WGSL_TM, NULL, NULL);
-  if (!tm_prog) return;
-  cw_pass_use(tm_prog);
+  cw_pipeline *pl = ctx->pipeline;
+  bool bloom = pl->fuse_bloom && pl->bloom_glow, grade = pl->fuse_grade;
+  int n = 0;
+  float dmin[3], dmax[3];
+  unsigned lut = grade ? cw__lut_texture(s->grade_lut, &n, dmin, dmax) : 0;
+  if (grade && !lut) grade = false;
+  unsigned prog = tm_variant(bloom, grade);
+  if (!prog) return;
+  cw_pass_use(prog);
   cw_pass_bind_texture(0, ctx->src->tex);
-  cw_pass_uniform1i(tm_prog, "u_src", 0);
-  cw_pass_uniform1f(tm_prog, "toneMappingExposure", s->exposure * exp2f(s->exposure_ev));
-  cw_pass_uniform1i(tm_prog, "u_curve", (int)CW_CLAMP((int)s->tonemap, 0, CW_TONEMAP_COUNT - 1));
+  cw_pass_uniform1i(prog, "u_src", 0);
+  cw_pass_uniform1f(prog, "toneMappingExposure", s->exposure * exp2f(s->exposure_ev));
+  cw_pass_uniform1i(prog, "u_curve", (int)CW_CLAMP((int)s->tonemap, 0, CW_TONEMAP_COUNT - 1));
+  if (bloom) {
+    cw_pass_bind_texture(1, pl->bloom_glow->tex);
+    cw_pass_uniform1i(prog, "u_bloom", 1);
+    cw_pass_uniform2f(prog, "u_texel", pl->bloom_texel[0], pl->bloom_texel[1]);
+    cw_pass_uniform1f(prog, "u_radius", s->bloom_radius);
+    cw_pass_uniform1f(prog, "u_k", CW_CLAMP(s->bloom_intensity, 0.0f, 1.0f));
+    cw_pass_uniform1f(prog, "u_norm", pl->bloom_norm);
+    bloom_thresh(prog, s);
+  }
+  if (grade) grade_uniforms(ctx, prog, lut, n, dmin, dmax, 2);
   cw_pass_fullscreen();
+  if (grade) {
+    glBindTexture(GL_TEXTURE_3D, 0);
+    glActiveTexture(GL_TEXTURE0);
+  }
+  if (pl->bloom_glow) {
+    cw_pass_rt_release(ctx, pl->bloom_glow);
+    pl->bloom_glow = NULL;
+  }
 }
 
 /* ── grade: 3D LUT on display values ─────────────────────────────────── */
 
-static unsigned grade_prog;
 static const char *GRADE_FS = S(
   uniform sampler2D u_src;
   uniform sampler3D u_lut;

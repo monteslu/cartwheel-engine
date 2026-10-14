@@ -246,6 +246,63 @@ static void test_joints_events3(void) {
   cw_world3d_destroy(w);
 }
 
+/* cw_world{2,3}d_tick_begin: a world stepped several times a tick
+ * interpolates over the whole tick (the render's alpha), not its last step */
+static void test_tick_span2(void) {
+  cw_world2d w = cw_world2d_create(NULL);
+  cw_body2d_def bd = cw_body2d_default_def();
+  cw_shape2d_def sd = cw_shape2d_default_def();
+  bd.position = (cw_vec2){ 0, 10 };
+  bd.linear_velocity = (cw_vec2){ 6, 0 };
+  cw_body2d b = cw_body2d_create(w, &bd);
+  cw_shape2d_box(b, &sd, (cw_vec2){ 0.25f, 0.25f }, cw_xform2_identity());
+  cw_world2d_step(w, 1.0f / 180);
+  cw_vec2 before = cw_body2d_transform(b).p;
+  cw_world2d_step(w, 1.0f / 180);
+  CHECK(NEAR(cw_body2d_interpolated(b, 0).p.x, before.x, 0)); /* by default: the last step's pair */
+  for (int tick = 0; tick < 3; tick++) {
+    cw_world2d_tick_begin(w);
+    cw_vec2 start = cw_body2d_transform(b).p;
+    for (int i = 0; i < 3; i++) cw_world2d_step(w, 1.0f / 180);
+    cw_vec2 end = cw_body2d_transform(b).p, a = cw_body2d_interpolated(b, 0).p, m = cw_body2d_interpolated(b, 0.5f).p;
+    CHECK(NEAR(a.x, start.x, 0) && NEAR(a.y, start.y, 0));
+    CHECK(NEAR(cw_body2d_interpolated(b, 1).p.x, end.x, 0));
+    CHECK(NEAR(m.x, (start.x + end.x) * 0.5f, 1e-5f) && end.x - start.x > 0.09f);
+  }
+  /* a tick with no step: nothing moved, the body stands at its pose */
+  cw_world2d_tick_begin(w);
+  CHECK(NEAR(cw_body2d_interpolated(b, 0.3f).p.x, cw_body2d_transform(b).p.x, 0));
+  /* a teleport inside the tick: no interpolation from the old place */
+  cw_world2d_tick_begin(w);
+  cw_world2d_step(w, 1.0f / 180);
+  cw_body2d_set_transform(b, (cw_xform2){ { 50, 10 }, { 1, 0 } });
+  cw_world2d_step(w, 1.0f / 180);
+  CHECK(NEAR(cw_body2d_interpolated(b, 0).p.x, 50, 0));
+  cw_world2d_destroy(w);
+}
+
+static void test_tick_span3(void) {
+  cw_world3d w = cw_world3d_create(NULL);
+  cw_body3d_def bd = cw_body3d_default_def();
+  cw_shape3d_def sd = cw_shape3d_default_def();
+  bd.position = (t3_vec3){ 0, 10, 0 };
+  bd.linear_velocity = (t3_vec3){ 6, 0, 0 };
+  cw_body3d b = cw_body3d_create(w, &bd);
+  cw_shape3d_box(b, &sd, (t3_vec3){ 0.25f, 0.25f, 0.25f }, cw_xform3_identity());
+  for (int tick = 0; tick < 3; tick++) {
+    cw_world3d_tick_begin(w);
+    t3_vec3 start = cw_body3d_transform(b).p;
+    for (int i = 0; i < 3; i++) cw_world3d_step(w, 1.0f / 180);
+    t3_vec3 end = cw_body3d_transform(b).p, a = cw_body3d_interpolated(b, 0).p, m = cw_body3d_interpolated(b, 0.5f).p;
+    CHECK(NEAR(a.x, start.x, 0) && NEAR(a.y, start.y, 0));
+    CHECK(NEAR(cw_body3d_interpolated(b, 1).p.x, end.x, 0));
+    CHECK(NEAR(m.x, (start.x + end.x) * 0.5f, 1e-5f) && end.x - start.x > 0.09f);
+  }
+  cw_world3d_tick_begin(w);
+  CHECK(NEAR(cw_body3d_interpolated(b, 0.3f).p.x, cw_body3d_transform(b).p.x, 0));
+  cw_world3d_destroy(w);
+}
+
 static void test_mover3(void) {
   cw_world3d w = cw_world3d_create(NULL);
   cw_body3d_def bd = cw_body3d_default_def();
@@ -599,4 +656,5 @@ static void test_findings2(void) {
 CW_TEST_SUITE("physics", { "ray3", test_ray3 }, { "shapes3", test_shapes3 }, { "batch3", test_batch3 },
               { "joints_events3", test_joints_events3 }, { "mover3", test_mover3 }, { "contacts3", test_contacts3 }, { "ray2", test_ray2 },
               { "shapes2", test_shapes2 }, { "joints_events2", test_joints_events2 }, { "mover2", test_mover2 },
+              { "tick_span2", test_tick_span2 }, { "tick_span3", test_tick_span3 },
               { "findings2", test_findings2 })

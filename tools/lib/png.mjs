@@ -100,6 +100,37 @@ export function diffImages(a, b) {
   return { comparable: true, pixels: n, any: any / n, gt2: gt2 / n, gt16: gt16 / n, max, colorsA: uniqueColors(a), colorsB: uniqueColors(b) };
 }
 
+// The share of pixels inside a solid size x size block whose every pixel's
+// brightness differs by more than `level` between a and b: a shadow, a
+// surface or an object present in one frame and not in the other. Thin
+// differences (a grass blade or an edge a pixel apart across backends) never
+// fill a block, so this sees a wrong area that the per-pixel share hides
+// among them.
+export function diffAreas(a, b, { level = 35, size = 7 } = {}) {
+  if (a.w !== b.w || a.h !== b.h) return { comparable: false, reason: `size ${a.w}x${a.h} vs ${b.w}x${b.h}` };
+  const { w, h } = a;
+  const luma = (img, i) => 0.299 * img.rgba[4 * i] + 0.587 * img.rgba[4 * i + 1] + 0.114 * img.rgba[4 * i + 2];
+  // run[i]: how many pixels in a row, ending at i, differ
+  const run = new Uint16Array(w * h);
+  for (let y = 0; y < h; y++)
+    for (let x = 0, r = 0; x < w; x++) {
+      const i = y * w + x;
+      r = Math.abs(luma(a, i) - luma(b, i)) > level ? r + 1 : 0;
+      run[i] = r;
+    }
+  // a block ends at (x, y) where `size` rows in a row have runs of at least `size`; each pixel counts once
+  const hit = new Uint8Array(w * h);
+  let cnt = 0;
+  for (let x = size - 1; x < w; x++)
+    for (let y = 0, col = 0; y < h; y++) {
+      col = run[y * w + x] >= size ? col + 1 : 0;
+      if (col < size) continue;
+      for (let yy = y - size + 1; yy <= y; yy++)
+        for (let xx = x - size + 1; xx <= x; xx++) if (!hit[yy * w + xx]) { hit[yy * w + xx] = 1; cnt++; }
+    }
+  return { comparable: true, share: cnt / (w * h) };
+}
+
 export function uniqueColors(img) {
   const s = new Set();
   for (let i = 0; i < img.w * img.h; i++) s.add((img.rgba[4 * i] << 16) | (img.rgba[4 * i + 1] << 8) | img.rgba[4 * i + 2]);

@@ -411,21 +411,36 @@ static const char *save_file(void) {
 
 /* CW_START_CMDS="cmd1;cmd2": debug-channel requests a test host posts at load
  * (run-cart --start-cmds): request i runs at the start of frame i + 2, where
- * a cart host's mailbox delivers it (the host runs frame 1 on load) */
-static char *start_all, *start_list[16];
+ * a cart host's mailbox delivers it (the host runs frame 1 on load). A
+ * request written "@N cmd" runs at the start of frame N instead (N >= 2): a
+ * test that changes something mid-run (a graphics preset) */
+static char *start_all, *start_list[32];
+static uint64_t start_at[32];
 static int start_n;
 static void start_cmds_load(void) {
   const char *env = getenv("CW_START_CMDS");
   if (!env || !*env) return;
   start_all = strdup(env);
   char *save = NULL;
-  for (char *c = strtok_r(start_all, ";", &save); c && start_n < 16; c = strtok_r(NULL, ";", &save)) start_list[start_n++] = c;
+  for (char *c = strtok_r(start_all, ";", &save); c && start_n < 32; c = strtok_r(NULL, ";", &save)) {
+    uint64_t at = (uint64_t)start_n + 1;
+    if (c[0] == '@') {
+      char *end;
+      at = strtoull(c + 1, &end, 10) - 1;
+      while (*end == ' ') end++;
+      c = end;
+    }
+    start_at[start_n] = at;
+    start_list[start_n++] = c;
+  }
 }
 static void start_cmd(uint64_t frame) {
-  if (frame < 1 || frame > (uint64_t)start_n) return;
-  char *rep = cw_debug_run(start_list[frame - 1]);
-  fprintf(stderr, "start cmd: %s -> %s\n", start_list[frame - 1], rep);
-  cw_free(rep);
+  for (int i = 0; i < start_n; i++) {
+    if (start_at[i] != frame) continue;
+    char *rep = cw_debug_run(start_list[i]);
+    fprintf(stderr, "start cmd: %s -> %s\n", start_list[i], rep);
+    cw_free(rep);
+  }
 }
 
 /* before init: the app's save buffer from its file (zeros in a test run) */

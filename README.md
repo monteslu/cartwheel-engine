@@ -22,6 +22,17 @@ Games are written in C against the headers in `include/cartwheel/`, which
 double as the API documentation. Scenes, project settings, input maps and
 themes are plain text files.
 
+## Example games
+
+Two small games live here: `games/platformer3d`, a 3D platformer built
+from scene files, and `games/action2d`, a top-down 2D action game. The full
+games are in
+[cartwheel-examples](https://github.com/monteslu/cartwheel-examples):
+BikeMesa (downhill bikes), BomberDude (an arena bomber), derby (a demolition
+derby), pugball (soccer with jet-pack pugs) and spout (a spider climbing a
+rain spout). They build against a pinned version of this engine and have
+their own gates.
+
 cartwheel is MIT licensed (see [LICENSE](LICENSE)). Dependencies keep their
 own licenses; fonts and models used by the samples and games are listed with
 their licenses next to them (`CREDITS`, `CREDITS.txt`, `*-OFL.txt`).
@@ -48,7 +59,7 @@ for them, but they have not been built. Exports are covered in
 | `include/cartwheel/*.h` | the public API, one header per module; the header comments are the reference |
 | `src/<module>/` | the engine; `src/platform/` is the only code that touches SDL or wasmcart |
 | `samples/<name>/` | small apps, one feature each; each one has gates |
-| `games/<name>/` | complete example games, each with its own gates |
+| `games/<name>/` | two small games, platformer3d and action2d, each with its own gates (larger games are in [cartwheel-examples](https://github.com/monteslu/cartwheel-examples)) |
 | `editor/` | the editor, itself a cartwheel app (work on it is paused; its API is unstable) |
 | `editor/templates/` | project skeletons: empty 2D and 3D projects and two small platformers |
 | `tests/` | `gates.json` (every gate), `gate.mjs` (the gate runner), `unit/` (unit suites), scripted gates (`*.mjs`), input scripts (`*.json`) |
@@ -200,7 +211,13 @@ a `<name>_auto` build that plays its gate's input script itself for hosts
 that take no input. Generated art, audio and levels come from scripts in the
 game's `tools/`, committed next to their output.
 
-A game outside this repository starts from a template:
+A game outside this repository can be built the way
+[cartwheel-examples](https://github.com/monteslu/cartwheel-examples) builds
+its games: the engine pinned in its `scripts/deps.lock`, its own
+`CMakeLists.txt` of `cw_add_app` calls configured as the engine's project
+(`-DCW_PROJECT_DIR`), and its gates run by this repository's
+`tests/gate.mjs` with `CW_PROJECT_ROOT` set to it
+([docs/guides/testing.md](docs/guides/testing.md)). Or start from a template:
 
 ```sh
 cp -r editor/templates/empty_3d ~/games/mygame

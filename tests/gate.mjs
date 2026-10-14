@@ -13,7 +13,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync, mkdirSync, existsSync, copyFileSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readImage, diffImages, uniqueColors } from '../tools/lib/png.mjs';
+import { readImage, diffImages, diffAreas, uniqueColors } from '../tools/lib/png.mjs';
 import { takeSuiteLock } from '../tools/lib/suite-lock.mjs';
 import { armGuard } from '../tools/lib/gpu-guard.mjs';
 import { testEnv } from '../tools/lib/wgpu-pin.mjs';
@@ -26,7 +26,11 @@ await takeSuiteLock('gate.mjs');
 testEnv(process.env);
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = join(ROOT, 'out', 'gate');
+// CW_PROJECT_ROOT: the gates of another tree built with this engine (a games
+// repository with its own tests/gates.json, input scripts, build/ and out/);
+// default this checkout. run-cart.mjs reads the same variable.
+const PROJ = process.env.CW_PROJECT_ROOT ? resolve(process.env.CW_PROJECT_ROOT) : ROOT;
+const OUT = join(PROJ, 'out', 'gate');
 mkdirSync(OUT, { recursive: true });
 const argv = process.argv.slice(2);
 const hostsArg = argv.includes('--hosts') ? argv[argv.indexOf('--hosts') + 1].split(',') : null;
@@ -36,7 +40,7 @@ const noChromium = argv.includes('--no-chromium'), chromiumOnly = argv.includes(
 const only = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--hosts' && argv[i - 1] !== '--gpu');
 const guard = armGuard('gate.mjs', { outFile: join(OUT, 'gpu-mem.json') });
 const usesHosts = (hosts) => hosts.filter((h) => !(noChromium && h === 'chromium') && !(chromiumOnly && !['native', 'chromium'].includes(h)));
-const gates = JSON.parse(readFileSync(join(ROOT, 'tests', 'gates.json'), 'utf8')).filter((g) => !only.length || only.includes(g.name));
+const gates = JSON.parse(readFileSync(join(PROJ, 'tests', 'gates.json'), 'utf8')).filter((g) => !only.length || only.includes(g.name));
 
 function run(args, env = {}) {
   return new Promise((res) => {
@@ -100,6 +104,11 @@ function stateDiff(a, b, tol, fields) {
 //     webgpu.maxGt16 (default: the gate's own bound);
 //   - GL vs WebGPU: the native GL run against the native WebGPU run, state
 //     exact, frames under webgpu.vsGl (default 0.01);
+//   - webgpu.maxArea (when set): on every WebGPU host, the share of the
+//     frame in solid blocks (7 x 7 px, > 35 levels apart) that differs from
+//     native GL stays under it (tools/lib/png.mjs diffAreas): a shadow or a
+//     surface one backend draws and the other does not, which the per-pixel
+//     share hides among the thin edges and grass blades that always differ;
 //   - every run reports zero WebGPU errors (run-cart fails it otherwise);
 //   - the dual cart on romdev told to render with GL (loadMedia wgpu:false)
 //     against native GL: frames under the gate's bound, state exact;
@@ -113,7 +122,7 @@ function stateDiff(a, b, tol, fields) {
 //     not consulted): over the cross-host bound against the WebGPU
 //     reference and over vsGl against GL, so the frame tolerances are proven
 //     to see a broken or missing pass.
-// "webgpu": true | { "hosts": [...], "skip": [...], "maxGt16": n, "vsGl": n, "controls": [{ "env": {...} }] }
+// "webgpu": true | { "hosts": [...], "skip": [...], "maxGt16": n, "vsGl": n, "maxArea": n, "controls": [{ "env": {...} }] }
 // "gl": false keeps a gate off the GL axis (controls that inject WebGPU faults)
 async function wgpuGates(list) {
   let failedW = 0;
@@ -127,9 +136,9 @@ async function wgpuGates(list) {
     if (chromiumOnly && !hosts.includes('chromium')) continue;
     await guard.gate(g.name + ' [webgpu]');
     const common = ['--app', g.app, '--frames', String(g.frames), ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : [])];
-    if (g.input) common.push('--input', join(ROOT, 'tests', g.input));
+    if (g.input) common.push('--input', join(PROJ, 'tests', g.input));
     if (g.startCmds) common.push('--start-cmds', g.startCmds.join(';'));
-    if (g.assets) common.push('--assets', join(ROOT, g.assets));
+    if (g.assets) common.push('--assets', join(PROJ, g.assets));
     const p = (tag) => ({ shot: join(OUT, `${g.name}.wgpu.${tag}.png`), state: join(OUT, `${g.name}.wgpu.${tag}.json`) });
     const results = await Promise.all(hosts.map(async (h) => {
       const q = p(h);
@@ -172,6 +181,11 @@ async function wgpuGates(list) {
       const dg = diffImages(glImg, refImg);
       if (!dg.comparable) problems.push(`GL vs WebGPU: ${dg.reason}`);
       else if (dg.gt16 > vsGl) problems.push(`GL vs WebGPU: ${(dg.gt16 * 100).toFixed(3)}% pixels differ by >16 (bound ${vsGl * 100}%)`);
+      if (w.maxArea !== undefined)
+        for (const r of results) {
+          const da = diffAreas(glImg, r === ref ? refImg : readImage(r.shot));
+          if (da.comparable && da.share > w.maxArea) problems.push(`${r.h} WebGPU vs native GL: ${(da.share * 100).toFixed(3)}% of the frame in solid areas that differ (bound ${w.maxArea * 100}%)`);
+        }
       const sg = stateDiff(glState, refState, g.tol ?? 0, g.fields || Object.keys(glState).filter((k) => !/^(dbg|host|cw\.gpu)\./.test(k)));
       if (sg.length) problems.push(`GL vs WebGPU: state ${sg.slice(0, 4).join('; ')}`);
       if (dual) {
@@ -186,14 +200,14 @@ async function wgpuGates(list) {
       const ctlFrames = g.controlFrames ?? (g.controlInput ? g.frames : g.frames - 1);
       const ctlArgs = ['--host', 'native', '--gpu', 'webgpu', '--app', g.app, '--frames', String(ctlFrames), '--shot', ctl.shot, '--state', ctl.state,
         ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : [])];
-      if (g.assets) ctlArgs.push('--assets', join(ROOT, g.assets));
+      if (g.assets) ctlArgs.push('--assets', join(PROJ, g.assets));
       if (g.controlStartCmds) ctlArgs.push('--start-cmds', g.controlStartCmds.join(';'));
-      if (g.controlInput) ctlArgs.push('--input', join(ROOT, 'tests', g.controlInput));
-      else if (g.input) ctlArgs.push('--input', join(ROOT, 'tests', g.input));
+      if (g.controlInput) ctlArgs.push('--input', join(PROJ, 'tests', g.controlInput));
+      else if (g.input) ctlArgs.push('--input', join(PROJ, 'tests', g.input));
       const ctlEnv = Object.fromEntries(Object.entries(g.controlEnv || {}).map(([k, v]) => {
         if (typeof v !== 'string' || !v.startsWith('repo:')) return [k, v];
         const copy = join(OUT, g.name + '.wgpu.control.' + basename(v.slice(5)));
-        copyFileSync(join(ROOT, v.slice(5)), copy);
+        copyFileSync(join(PROJ, v.slice(5)), copy);
         return [k, copy];
       }));
       const c = await run(ctlArgs, ctlEnv);
@@ -236,14 +250,14 @@ for (const g of gates) {
   if (g.gl === false) continue; // a WebGPU-only gate (its controls are WebGPU faults)
   // tool gates that launch Chromium somewhere (its source names it): left out by --no-chromium, the only tool gates of --chromium-only
   // ("chromium": true in gates.json when the script reaches Chromium only through data, e.g. tutorial specs)
-  const chrome = g.script && (g.chromium === true || /chromium/i.test(readFileSync(join(ROOT, g.script), 'utf8')));
+  const chrome = g.script && (g.chromium === true || /chromium/i.test(readFileSync(join(PROJ, g.script), 'utf8')));
   if (g.script && chromiumOnly && !chrome) continue;
   if (g.script && noChromium && chrome) { console.log('skip ' + g.name + ' (has Chromium legs: --chromium-only)'); continue; }
   await guard.gate(g.name);
   // a tool gate: a node script that runs its own checks and controls (exit 0 = pass)
   if (g.script) {
     const r = await new Promise((res) => {
-      const p = spawn('node', [join(ROOT, g.script)], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const p = spawn('node', [join(PROJ, g.script)], { stdio: ['ignore', 'pipe', 'pipe'] });
       let out = '';
       p.stdout.on('data', (d) => (out += d));
       p.stderr.on('data', (d) => (out += d));
@@ -260,9 +274,9 @@ for (const g of gates) {
   const hosts = usesHosts((hostsArg ? hostsArg.filter((h) => eligible.includes(h)) : eligible).filter((h) => !(g.skip || []).includes(h)));
   if (chromiumOnly && !hosts.includes('chromium')) continue;
   const common = ['--app', g.app, '--frames', String(g.frames), ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : [])];
-  if (g.input) common.push('--input', join(ROOT, 'tests', g.input));
+  if (g.input) common.push('--input', join(PROJ, 'tests', g.input));
   if (g.startCmds) common.push('--start-cmds', g.startCmds.join(';'));
-  if (g.assets) common.push('--assets', join(ROOT, g.assets)); // native asset root when it is not samples/<app>/assets
+  if (g.assets) common.push('--assets', join(PROJ, g.assets)); // native asset root when it is not samples/<app>/assets
   const paths = (h) => ({ shot: join(OUT, `${g.name}.${h}.png`), state: join(OUT, `${g.name}.${h}.json`) });
   const results = await Promise.all(hosts.map(async (h) => {
     const p = paths(h);
@@ -294,17 +308,17 @@ for (const g of gates) {
     const ctl = { shot: join(OUT, `${g.name}.control.png`), state: join(OUT, `${g.name}.control.json`) };
     const ctlFrames = g.controlFrames ?? (g.controlInput ? g.frames : g.frames - 1);
     const ctlArgs = ['--host', 'native', '--app', g.app, '--frames', String(ctlFrames), '--shot', ctl.shot, '--state', ctl.state, ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : [])];
-    if (g.assets) ctlArgs.push('--assets', join(ROOT, g.assets));
+    if (g.assets) ctlArgs.push('--assets', join(PROJ, g.assets));
     if (g.controlStartCmds) ctlArgs.push('--start-cmds', g.controlStartCmds.join(';'));
-    if (g.controlInput) ctlArgs.push('--input', join(ROOT, 'tests', g.controlInput));
-    else if (g.input) ctlArgs.push('--input', join(ROOT, 'tests', g.input));
+    if (g.controlInput) ctlArgs.push('--input', join(PROJ, 'tests', g.controlInput));
+    else if (g.input) ctlArgs.push('--input', join(PROJ, 'tests', g.input));
     // controlEnv values "repo:<path>" name files in this repository; the run gets a
     // copy in out/ so an app that writes its input back (the editor saves its
     // settings on exit) never dirties the tree
     const ctlEnv = Object.fromEntries(Object.entries(g.controlEnv || {}).map(([k, v]) => {
       if (typeof v !== 'string' || !v.startsWith('repo:')) return [k, v];
       const copy = join(OUT, g.name + '.control.' + basename(v.slice(5)));
-      copyFileSync(join(ROOT, v.slice(5)), copy);
+      copyFileSync(join(PROJ, v.slice(5)), copy);
       return [k, copy];
     }));
     const c = await run(ctlArgs, ctlEnv);

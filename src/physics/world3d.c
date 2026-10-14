@@ -174,6 +174,7 @@ void cw_world3d_step(cw_world3d wh, float dt) {
   cw_box3d_tasks_step(w->id, w->tasks);
   b3World_Step(w->id, dt, w->substeps);
   w->steps++;
+  if (!w->by_tick) w->span++;
   cw_array_clear(&w->events);
   cw_array_clear(&w->breaking);
   uint32_t h = cw__fold(w->hash, &w->steps, sizeof w->steps);
@@ -189,9 +190,9 @@ void cw_world3d_step(cw_world3d wh, float dt) {
     h = cw__fold(h, tf, sizeof tf);
     cw__body3 *r = m->userData;
     if (!r) continue;
-    r->prev = r->cur;
+    if (r->moved_span != w->span) r->prev = r->cur; /* the pose the span started from */
     r->cur = (cw_xform3){ { tf[0], tf[1], tf[2] }, { tf[3], tf[4], tf[5], tf[6] } };
-    r->moved_step = w->steps;
+    r->moved_span = w->span;
     r->settled = false;
   }
 
@@ -264,10 +265,17 @@ cw_phys_stats cw_world3d_stats(cw_world3d wh) {
   return s;
 }
 
+void cw_world3d_tick_begin(cw_world3d wh) {
+  cw__world3 *w = cw__w3(wh);
+  if (!w) return;
+  w->by_tick = true;
+  w->span++;
+}
+
 /* ── sync ────────────────────────────────────────────────────────────── */
 
 static cw_xform3 rec_at(const cw__world3 *w, const cw__body3 *r, float alpha) {
-  if (r->interpolate && r->moved_step == w->steps) return cw_xform3_lerp(r->prev, r->cur, alpha);
+  if (r->interpolate && r->moved_span == w->span) return cw_xform3_lerp(r->prev, r->cur, alpha);
   return r->cur;
 }
 
@@ -286,7 +294,7 @@ void cw_world3d_sync(cw_world3d wh, float alpha) {
   for (int i = 0; i < w->bodies.slot_count; i++) {
     cw__body3 *r = cw_pool_at(&w->bodies, i);
     if (!r || (!r->obj && !r->xf)) continue;
-    if (r->moved_step == w->steps) write_target(r, rec_at(w, r, alpha));
+    if (r->moved_span == w->span) write_target(r, rec_at(w, r, alpha));
     else if (!r->settled) {
       write_target(r, r->cur);
       r->settled = true;
@@ -331,7 +339,7 @@ cw_body3d cw_body3d_create(cw_world3d wh, const cw_body3d_def *def) {
   r->interpolate = d.interpolate;
   b3WorldTransform t = b3Body_GetTransform(id);
   r->cur = r->prev = x3(t);
-  r->moved_step = -1;
+  r->moved_span = -1;
   return (cw_body3d){ r->id };
 }
 

@@ -79,8 +79,21 @@ struct cw_pipeline {
   cw_view views[CW_MAX_VIEWS]; /* cw_pipeline_set_views (nviews >= 2: splitscreen) */
   int nviews;
   int taa_frames;     /* frames accumulated in the TAA history */
+  /* GL post fusion this frame (pipeline.c decides, pipeline_post.c draws):
+   * bloom's composite and the LUT grade run inside the tonemap pass, the
+   * lens effects inside SMAA's blend; each fused step rounds its value as
+   * the target the separate pass wrote would (RGBA16F, RGBA8), so the
+   * picture is the same with two to three full-screen passes fewer */
+  bool fuse_bloom, fuse_grade, fuse_lens;
+  const cw_rt *bloom_glow;   /* fuse_bloom: bloom's glow, released by the tonemap pass */
+  float bloom_texel[2], bloom_norm;
 };
 
+/* CW_TEST_FUSION_RAW=1 (native test control): the fused post passes skip
+ * the rounding that keeps them equal to the separate passes */
+bool cw__fusion_raw(void);
+/* the fused passes' rounding helpers, GLSL (pipeline_post.c) */
+const char *cw__fuse_round_glsl(void);
 /* an engine-internal target format: R32F (the WebGPU linear depth) */
 #define CW__RT_R32F ((cw_rt_format)CW_RT_FORMAT_COUNT)
 

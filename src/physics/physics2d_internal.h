@@ -10,7 +10,7 @@ typedef struct cw__body2 {
   t3_object *obj;
   cw_xform2 *xf;
   cw_xform2 prev, cur;
-  int32_t moved_step;
+  int32_t moved_span; /* the interpolation span (cw__world2.span) that last set cur from a move event */
   bool interpolate, settled;
 } cw__body2;
 
@@ -28,6 +28,8 @@ typedef struct cw__world2 {
   void *tasks; /* cw_box2d_tasks context, released with the world */
   int substeps;
   int32_t steps;
+  int32_t span;  /* interpolation span: one per step, or one per tick once cw_world2d_tick_begin is called */
+  bool by_tick;
   uint32_t hash;
   cw_pool bodies, joints;
   CW_ARRAY(cw_phys_event2d) events;

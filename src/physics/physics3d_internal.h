@@ -10,7 +10,7 @@ typedef struct cw__body3 {
   t3_object *obj;     /* sync target, or */
   cw_xform3 *xf;      /* plain transform target */
   cw_xform3 prev, cur;
-  int32_t moved_step; /* step that last set cur from a move event */
+  int32_t moved_span; /* the interpolation span (cw__world3.span) that last set cur from a move event */
   bool interpolate, settled;
 } cw__body3;
 
@@ -28,6 +28,8 @@ typedef struct cw__world3 {
   void *tasks; /* cw_box3d_tasks context, released with the world */
   int substeps;
   int32_t steps;
+  int32_t span;  /* interpolation span: one per step, or one per tick once cw_world3d_tick_begin is called */
+  bool by_tick;
   uint32_t hash;
   cw_pool bodies, joints;
   CW_ARRAY(cw_phys_event3d) events;

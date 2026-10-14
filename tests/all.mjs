@@ -36,6 +36,8 @@ const runs = [['gate.mjs', ...flags], ...(wgpu ? [['gate.mjs', '--gpu', 'webgpu'
   // pixel_scale / crisp UI on each host and GPU API; carts at the host's preferred size through wasmcart-libretro
   ['pixel-scale.mjs', '--hosts', chromiumOnly ? 'chromium' : flags.includes('--no-chromium') ? 'native' : 'native,chromium', ...(wgpu ? [] : ['--gpus', 'gl'])],
   ...(chromiumOnly ? [] : [['host-resolution.mjs']]),
+  // GL post fusion draws what the separate passes draw (native)
+  ...(chromiumOnly ? [] : [['post-fusion.mjs']]),
   ...(chromiumOnly ? [] : [['channel.mjs'], ['vfs.mjs'], ['hot.mjs'], ['remote.mjs'], ['js-int-math.mjs']])];
 for (const [t, ...a] of runs) {
   await guard.gate(`${t} ${a.join(' ')}`.trim());

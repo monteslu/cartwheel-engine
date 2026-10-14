@@ -231,6 +231,11 @@ const cw_raw_input *cw_input_raw(void);
  * other hosts leave it false. Any pad button or stick turns it false for the
  * rest of the run. */
 bool cw_platform_touch_primary(void);
+/* A short buzz on a phone (feedback for a touch control's press), ms long.
+ * Presentation only. A cart publishes it as the debug field `cw.vibrate`
+ * (a request count, then ms) and the web export's player calls
+ * navigator.vibrate where the browser has it; other hosts ignore it. */
+void cw_platform_vibrate(int ms);
 
 /* ── loading progress (cw_app_desc.warmup) ─────────────────────────────
  * Published as the debug field cw.loading = [done, total, stage] (the web

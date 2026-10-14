@@ -99,6 +99,12 @@ static void cmd_touch_primary(int argc, const char **argv, cw_reply *r) {
   cw_reply_printf(r, "{\"touch_primary\":%s,\"hint\":%s,\"pad_used\":%s}", cw_platform_touch_primary() ? "true" : "false",
                   touch_primary_hint ? "true" : "false", pad_used ? "true" : "false");
 }
+/* cw_platform_vibrate: the request count and its length, read by the host */
+static uint32_t vibrate_req[2];
+void cw_platform_vibrate(int ms) {
+  vibrate_req[0]++;
+  vibrate_req[1] = ms > 0 ? (uint32_t)ms : 0;
+}
 /* any button or stick on any pad ends touch-primary (a pad merely present,
  * as test hosts and some browsers report one, does not) */
 static void note_pad_use(const cw_raw_input *in) {
@@ -420,6 +426,7 @@ bool cw__sdl_init(void) {
     cw_debug_u32("cw.pad0.buttons", &p->input.pads[0].buttons);
     cw_debug_f32_array("cw.pad0.axes", p->input.pads[0].axes, CW_AXIS_COUNT);
     cw_debug_field("cw.pad0.connected", &p->input.pads[0].connected, CW_DBG_U8, 1);
+    cw_debug_field("cw.vibrate", vibrate_req, CW_DBG_U32, 2);
     cw__gpu_debug_register();
   }
   return true;
