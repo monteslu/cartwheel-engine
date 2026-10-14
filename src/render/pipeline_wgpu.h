@@ -87,6 +87,13 @@ void cw__pw_probe_caps(cw_pipeline_caps *caps);
  * that arrived (1-3 frames late) */
 void cw__pw_timing_pass(cw_pipeline *p, const char *pass_name);
 void cw__pw_timing_poll(void);
+/* hold: the flushes keep the frame's timestamps unread (splitscreen's views
+ * submit one by one; the frame's last submit reads them all back) */
+void cw__pw_timing_hold(bool hold);
+/* a timed span round work recorded on enc by someone else (three.c's scene
+ * and shadow passes): an empty compute pass writes its start (end false),
+ * another its end; the span is the current pass's (cw__pw_timing_pass) */
+void cw__pw_timing_span(void *enc, bool end);
 void cw__pw_forget(cw_pipeline *p);
 /* pipeline.c: a timed pass's GPU milliseconds arrived */
 void cw__pipeline_gpu_time(cw_pipeline *p, const char *pass_name, float ms);

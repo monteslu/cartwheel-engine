@@ -354,7 +354,8 @@ void cw_pipeline_set_app_render(cw_pipeline *p, void (*render)(void *user, doubl
 /* A view: a Camera3D drawn into a rectangle of the output (fractions of
  * it, x / y from the top left). With two or more views the pipeline renders
  * the 3D scene once per view (each through its own camera, at its own size,
- * with the post chain minus TAA, whose history one camera owns), lays the
+ * with the post chain minus TAA, whose history one camera owns; the shadow
+ * maps are drawn once, for the first view, and the others reuse them), lays the
  * pictures into their rectangles, then runs the overlays (the app's HUD,
  * debug draw) once over the whole output: a HUD reads the rectangles back
  * with cw_pipeline_views. */

@@ -8,7 +8,7 @@
 #include "cartwheel/gl.h"
 #include "cartwheel/pipeline.h"
 
-#define CW__QUERY_RING 4
+#define CW__QUERY_RING 16 /* a pass's queries in flight: up to four views a frame, a few frames deep */
 
 /* GPU pass timers (GL timer queries, WebGPU timestamps) are issued and polled
  * only when someone reads them: CW_GPU_TIMERS=1, or after the debug channel's
@@ -27,7 +27,14 @@ typedef struct pass_rec {
   /* timing */
   unsigned q[CW__QUERY_RING];
   bool q_busy[CW__QUERY_RING];
+  uint64_t q_frame[CW__QUERY_RING]; /* the frame each query timed */
   bool q_init;
+  /* a frame's GPU time summed over its runs (splitscreen times a pass once
+   * per view): the frame being summed, and the sum so far */
+  uint64_t acc_frame, miss_frame; /* miss_frame: frame + 1 of a run left untimed (that frame is not published) */
+  float acc_ms;
+  bool acc_on;
+  float frame_cpu; /* this frame's CPU ms, every run */
   cw_pass_stat stat;
 } pass_rec;
 
@@ -64,6 +71,8 @@ struct cw_pipeline {
   void (*app_render)(void *user, double alpha);
   void *app_user;
   uint64_t frame;
+  int run; /* render runs so far this frame (splitscreen: one per view, then the overlays) */
+  float views_cpu_ms; /* splitscreen: the views' 3D CPU this frame (cw_render3d_stats.cpu_ms) */
   t3_mat4 prev_view_proj;
   bool have_prev;
   int prev_w, prev_h;

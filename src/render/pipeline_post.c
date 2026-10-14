@@ -10,6 +10,7 @@
 #include "cartwheel/platform.h"
 #include "cartwheel/scene2d.h"
 #include "pipeline_internal.h"
+#include "scene/render3d_internal.h"
 #if CW_WGPU
 #include "pipeline_wgpu.h"
 #endif
@@ -64,6 +65,7 @@ static void prepass_exec(cw_pass_ctx *ctx, void *u) {
   glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
   t3_renderer_render(r, ctx->scene3d, ctx->camera);
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+  cw__render3d_count(ctx->tree);
 }
 
 /* ── scene ──────────────────────────────────────────────────────────── */
@@ -92,8 +94,11 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
     };
     t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
     t3_renderer_set_external_target(r, &et);
+    cw__pw_timing_span((void *)pt->enc, false); /* three.c's passes: timed as one span */
     t3_renderer_render(r, ctx->scene3d, ctx->camera);
+    cw__pw_timing_span((void *)pt->enc, true);
     t3_renderer_set_external_target(r, NULL);
+    cw__render3d_count(ctx->tree);
     ctx->pipeline->drew3d = true;
     return;
   }
@@ -115,6 +120,7 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
   } else {
     t3_renderer_render(r, ctx->scene3d, ctx->camera);
   }
+  cw__render3d_count(ctx->tree);
   ctx->pipeline->drew3d = true;
 }
 

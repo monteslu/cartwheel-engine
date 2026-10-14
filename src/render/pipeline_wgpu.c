@@ -29,6 +29,8 @@ void cw__pw_flush(void) {}
 void cw__pw_probe_caps(cw_pipeline_caps *caps) { (void)caps; }
 void cw__pw_timing_pass(cw_pipeline *p, const char *n) { (void)p, (void)n; }
 void cw__pw_timing_poll(void) {}
+void cw__pw_timing_hold(bool hold) { (void)hold; }
+void cw__pw_timing_span(void *enc, bool end) { (void)enc, (void)end; }
 void cw__pw_forget(cw_pipeline *p) { (void)p; }
 unsigned cw__pw_program(const char *name, const char *wgsl) { (void)name, (void)wgsl; return 0; }
 void cw__pw_use(unsigned prog) { (void)prog; }
@@ -386,6 +388,8 @@ static struct {
   int slot_of[TS_MAX / 2]; /* render pass i -> slot */
   int nslots, cur;
   bool mapping;
+  bool hold;     /* cw__pw_timing_hold: no read back at a flush */
+  bool frame_ok; /* the frame began with the last read back done: every pass of it is timed */
   /* the frame being read back */
   ts_slot rslots[TS_MAX / 2];
   int rslot_of[TS_MAX / 2];
@@ -434,7 +438,7 @@ void cw__pw_forget(cw_pipeline *p) {
 }
 
 static bool timing_writes(WGPUPassTimestampWrites *tw) {
-  if (!T.on || T.mapping || T.cur < 0 || T.used + 2 > TS_MAX) return false;
+  if (!T.on || T.mapping || !T.frame_ok || T.cur < 0 || T.used + 2 > TS_MAX) return false;
   T.slot_of[T.used / 2] = T.cur;
   *tw = (WGPUPassTimestampWrites){ .querySet = T.qs, .beginningOfPassWriteIndex = (uint32_t)T.used,
                                    .endOfPassWriteIndex = (uint32_t)T.used + 1 };
@@ -453,6 +457,13 @@ static void on_ts_map(WGPUMapAsyncStatus st, WGPUStringView msg, void *u1, void 
       if (v[i * 2 + 1] >= v[i * 2]) ms[s] += (float)(v[i * 2 + 1] - v[i * 2]) / 1e6f;
       seen[s] = true;
     }
+    /* a pass timed more than once in the frame (splitscreen: once per view) adds up */
+    for (int s = 0; s < TS_MAX / 2; s++)
+      for (int e = 0; seen[s] && e < s; e++)
+        if (seen[e] && T.rslots[e].p == T.rslots[s].p && T.rslots[e].name == T.rslots[s].name) {
+          ms[e] += ms[s];
+          seen[s] = false;
+        }
     for (int s = 0; s < TS_MAX / 2; s++)
       if (seen[s] && T.rslots[s].p) cw__pipeline_gpu_time(T.rslots[s].p, T.rslots[s].name, ms[s]);
     wgpuBufferUnmap(T.readback);
@@ -460,7 +471,30 @@ static void on_ts_map(WGPUMapAsyncStatus st, WGPUStringView msg, void *u1, void 
   T.mapping = false;
 }
 
+void cw__pw_timing_hold(bool hold) { T.hold = hold; }
+
+void cw__pw_timing_span(void *enc, bool end) {
+  static int open = -1; /* the begin query of the span being written */
+  WGPUPassTimestampWrites tw = { .querySet = NULL, .beginningOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED,
+                                 .endOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED };
+  if (!end) {
+    open = -1;
+    if (!enc || !timing_writes(&tw)) return;
+    open = (int)tw.beginningOfPassWriteIndex;
+    tw.endOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED;
+  } else {
+    if (open < 0 || !enc) return;
+    tw = (WGPUPassTimestampWrites){ .querySet = T.qs, .beginningOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED,
+                                    .endOfPassWriteIndex = (uint32_t)open + 1 };
+    open = -1;
+  }
+  WGPUComputePassEncoder cp = wgpuCommandEncoderBeginComputePass((WGPUCommandEncoder)enc, &(WGPUComputePassDescriptor){ .timestampWrites = &tw });
+  wgpuComputePassEncoderEnd(cp);
+  wgpuComputePassEncoderRelease(cp);
+}
+
 static void timing_resolve(void) {
+  if (T.hold) return;
   if (!T.on || !T.used) {
     T.nslots = 0;
     return;
@@ -481,6 +515,7 @@ void cw__pw_timing_poll(void) {
    * map it now (results arrive while the instance processes events) */
   static bool requested;
   if (!T.on) return;
+  T.frame_ok = !T.mapping; /* a frame timed only in part would read short */
   if (T.mapping && !requested && !W.enc) {
     requested = true;
     wgpuBufferMapAsync(T.readback, WGPUMapMode_Read, 0, (size_t)T.rpairs * 16,

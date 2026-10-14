@@ -24,6 +24,11 @@ typedef struct render3d_state {
   t3_light *ambient, *hemi;
   int w, h;
   bool shadows_enabled;
+  bool shadows_keep; /* cw__render3d_keep_shadows: the next prepare reuses the maps */
+  /* the frame's draws over every pipeline render of the scene (splitscreen:
+   * each view's), cw__render3d_count; frame_counted: some were */
+  unsigned frame_calls, frame_triangles;
+  bool frame_counted;
   float cpu_ms;
   /* the unit primitives (MeshInstance3D) this tree's meshes share: per tree,
    * because three.c keeps one renderer's GL state in a geometry, so two
@@ -875,7 +880,9 @@ t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
     s->h = h;
   }
   if (s->shadows_enabled) t3_renderer_set_shadow_map(s->renderer, true, cw__quality_soft_shadows() ? T3_PCF_SOFT_SHADOW_MAP : T3_PCF_SHADOW_MAP);
-  t3_renderer_shadow_needs_update(s->renderer); /* this view's first render draws them */
+  /* this view's first render draws them; splitscreen's later views reuse the
+   * first view's (a light's shadow camera is its own, not the view's) */
+  if (!s->shadows_keep) t3_renderer_shadow_needs_update(s->renderer);
   c->cam->fov = c->fov;
   c->cam->near = c->near;
   c->cam->far = c->far;
@@ -883,6 +890,24 @@ t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
   t3_camera_update_projection_matrix(c->cam);
   check_light_cap(s, c->cam);
   return c->cam;
+}
+
+void cw__render3d_frame_begin(cw_tree *t) {
+  render3d_state *s = cw_tree_slot(t, "render3d");
+  if (s) s->frame_calls = s->frame_triangles = 0, s->frame_counted = false;
+}
+void cw__render3d_count(cw_tree *t) {
+  render3d_state *s = cw_tree_slot(t, "render3d");
+  if (!s || !s->renderer) return;
+  const t3_render_info *i = t3_renderer_info(s->renderer);
+  s->frame_calls += i->calls;
+  s->frame_triangles += i->triangles;
+  s->frame_counted = true;
+}
+
+void cw__render3d_keep_shadows(cw_tree *t, bool keep) {
+  render3d_state *s = cw_tree_slot(t, "render3d");
+  if (s) s->shadows_keep = keep;
 }
 
 /* the camera half of cw_render3d_prepare: matrices only, no t3_renderer
@@ -926,8 +951,9 @@ void cw_render3d_get_stats(cw_tree *t, cw_render3d_stats *out) {
   render3d_state *s = cw_tree_slot(t, "render3d");
   if (!s || !s->renderer) return;
   const t3_render_info *i = t3_renderer_info(s->renderer);
-  out->draw_calls = (int)i->calls;
-  out->triangles = (int)i->triangles;
+  /* the pipeline's frame (every view's renders), else the last render's */
+  out->draw_calls = (int)(s->frame_counted ? s->frame_calls : i->calls);
+  out->triangles = (int)(s->frame_counted ? s->frame_triangles : i->triangles);
   out->programs = (int)i->programs;
   out->cpu_ms = s->cpu_ms;
 }

@@ -34,6 +34,13 @@ const cw_node_type *cw__mesh3d_type(void);
  * report the CPU time their 3D phases took; no-op without 3D state. */
 void cw__render3d_set_cpu_ms(cw_tree *t, float ms);
 double cw__render3d_now_ms(void);
+/* keep: cw_render3d_prepare leaves the shadow maps drawn by the last view
+ * (splitscreen draws them once per frame, for the first view) */
+void cw__render3d_keep_shadows(cw_tree *t, bool keep);
+/* the frame's draw counts (cw_render3d_get_stats): start over, and add the
+ * render just made (the pipeline's scene and prepass renders, every view) */
+void cw__render3d_frame_begin(cw_tree *t);
+void cw__render3d_count(cw_tree *t);
 /* cw_render3d_prepare without the renderer: the camera's matrices only */
 t3_camera *cw__render3d_camera_prepare(cw_tree *t, int w, int h); /* monotonic clock, milliseconds */
 /* Fill info for a MeshInstance3D (builds what is pending first); false when

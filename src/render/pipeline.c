@@ -392,19 +392,38 @@ static unsigned msaa_fbo(cw_pipeline *p, int w, int h, cw_rt_format f, int sampl
 
 /* ── GPU timing ─────────────────────────────────────────────────────── */
 
+/* a frame's GPU time for a pass is the sum of its runs that frame (a pass
+ * runs once per splitscreen view): the sum is published when a later
+ * frame's result arrives */
+static void gpu_time_add(pass_rec *r, uint64_t frame, float ms) {
+  if (r->acc_on && frame < r->acc_frame) return; /* a frame already published (out of order) */
+  if (r->acc_on && frame != r->acc_frame) {
+    if (r->miss_frame != r->acc_frame + 1) { /* every run of that frame was timed */
+      r->stat.gpu_ms = r->acc_ms;
+      r->stat.gpu_ms_avg = r->stat.gpu_ms_avg < 0 ? r->acc_ms : r->stat.gpu_ms_avg + (r->acc_ms - r->stat.gpu_ms_avg) / 16.0f;
+    }
+    r->acc_ms = 0;
+  }
+  r->acc_on = true;
+  r->acc_frame = frame;
+  r->acc_ms += ms;
+}
+
 static void timer_poll(pass_rec *r, bool disjoint) {
-  for (int i = 0; i < CW__QUERY_RING; i++) {
-    if (!r->q_busy[i]) continue;
-    GLuint avail = 0;
-    glGetQueryObjectuiv(r->q[i], GL_QUERY_RESULT_AVAILABLE, &avail);
-    if (!avail) continue;
+  /* the available results, oldest frame first */
+  for (;;) {
+    int best = -1;
+    for (int i = 0; i < CW__QUERY_RING; i++) {
+      if (!r->q_busy[i] || (best >= 0 && r->q_frame[i] >= r->q_frame[best])) continue;
+      GLuint avail = 0;
+      glGetQueryObjectuiv(r->q[i], GL_QUERY_RESULT_AVAILABLE, &avail);
+      if (avail) best = i;
+    }
+    if (best < 0) return;
     GLuint ns = 0;
-    glGetQueryObjectuiv(r->q[i], GL_QUERY_RESULT, &ns);
-    r->q_busy[i] = false;
-    if (disjoint) continue;
-    float ms = (float)ns / 1e6f;
-    r->stat.gpu_ms = ms;
-    r->stat.gpu_ms_avg = r->stat.gpu_ms_avg < 0 ? ms : r->stat.gpu_ms_avg + (ms - r->stat.gpu_ms_avg) / 16.0f;
+    glGetQueryObjectuiv(r->q[best], GL_QUERY_RESULT, &ns);
+    r->q_busy[best] = false;
+    if (!disjoint) gpu_time_add(r, r->q_frame[best], (float)ns / 1e6f);
   }
 }
 
@@ -418,7 +437,7 @@ static void timer_poll(pass_rec *r, bool disjoint) {
  * includes them. */
 static bool timer_open;
 
-static int timer_begin(pass_rec *r) {
+static int timer_begin(pass_rec *r, uint64_t frame) {
   if (!cw__caps.timer_query || timer_open || cw_gpu_backend() == CW_GPU_WEBGPU || !cw__gpu_timing_wanted()) return -1;
   if (!r->q_init) {
     glGenQueries(CW__QUERY_RING, r->q);
@@ -428,9 +447,11 @@ static int timer_begin(pass_rec *r) {
     if (!r->q_busy[i]) {
       glBeginQuery(GL_TIME_ELAPSED_EXT, r->q[i]);
       r->q_busy[i] = true;
+      r->q_frame[i] = frame;
       timer_open = true;
       return i;
     }
+  r->miss_frame = frame + 1;
   return -1; /* every query still in flight: skip timing this frame */
 }
 
@@ -447,12 +468,30 @@ int cw_pipeline_pass_stats(cw_pipeline *p, const cw_pass_stat **out) {
 
 float cw_pipeline_gpu_ms(cw_pipeline *p) { return p->gpu_total_ms; }
 
-/* WebGPU timestamps of a pass arrived (pipeline_wgpu.c) */
+/* WebGPU timestamps of a pass arrived (pipeline_wgpu.c): one frame's, every
+ * run of the pass that frame summed */
 void cw__pipeline_gpu_time(cw_pipeline *p, const char *name, float ms) {
   pass_rec *r = find_pass(p, name);
   if (!r) return;
   r->stat.gpu_ms = ms;
   r->stat.gpu_ms_avg = r->stat.gpu_ms_avg < 0 ? ms : r->stat.gpu_ms_avg + (ms - r->stat.gpu_ms_avg) / 16.0f;
+}
+
+/* the frame's stats, once its last run is done (passes read the previous
+ * frame's during a frame) */
+static void frame_stats(cw_pipeline *p) {
+  cw_array_clear(&p->stats);
+  p->gpu_total_ms = 0;
+  for (int i = 0; i < p->passes.count; i++) {
+    pass_rec *r = p->passes.data[i];
+    if (r->stat.ran && !r->stat.fused) {
+      float ms = r->frame_cpu;
+      r->stat.cpu_ms = ms;
+      r->stat.cpu_ms_avg = r->stat.cpu_ms_avg < 0 ? ms : r->stat.cpu_ms_avg + (ms - r->stat.cpu_ms_avg) / 16.0f;
+    }
+    cw_array_push(&p->stats, r->stat);
+    if (r->stat.ran && !r->stat.fused && r->stat.gpu_ms > 0) p->gpu_total_ms += r->stat.gpu_ms;
+  }
 }
 
 /* ── the frame ──────────────────────────────────────────────────────── */
@@ -480,14 +519,12 @@ static float halton(int i, int b) {
 static void run_pass(cw_pipeline *p, pass_rec *r, cw_pass_ctx *ctx) {
   bool wgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
   cw__pass_state_reset();
-  int slot = timer_begin(r);
+  int slot = timer_begin(r, p->frame);
   if (wgpu) cw__pw_timing_pass(p, r->name);
   ctx->user = r->d.user;
   double t0 = cw__render3d_now_ms();
   r->d.execute(ctx, r->d.user);
-  float ms = (float)(cw__render3d_now_ms() - t0);
-  r->stat.cpu_ms = ms;
-  r->stat.cpu_ms_avg = r->stat.cpu_ms_avg < 0 ? ms : r->stat.cpu_ms_avg + (ms - r->stat.cpu_ms_avg) / 16.0f;
+  r->frame_cpu += (float)(cw__render3d_now_ms() - t0);
   if (wgpu) cw__pw_timing_pass(p, NULL);
   timer_end(slot);
   r->stat.ran = true;
@@ -626,8 +663,11 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
     qsort(p->passes.data, (size_t)p->passes.count, sizeof *p->passes.data, pass_cmp);
     p->order_dirty = false;
   }
+  p->run = 0;
+  cw__render3d_frame_begin(t); /* the frame's draw counts start over */
   if (p->nviews < 2) {
     render_run(t, p, w, h, alpha, RUN_FULL);
+    frame_stats(p);
     p->frame++;
     return;
   }
@@ -639,6 +679,7 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   cw_rt out_copy = *output;
   bool keep_taa = p->s.taa;
   p->s.taa = false;
+  if (wgpu) cw__pw_timing_hold(true);
   const cw_rt *rts[CW_MAX_VIEWS];
   int n = 0;
   for (int i = 0; i < p->nviews; i++) {
@@ -650,15 +691,20 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
     if (!rt || !cw_node_valid(v->camera)) continue;
     p->output_user = rt;
     cw_render3d_set_camera(t, v->camera);
+    cw__render3d_keep_shadows(t, n > 0); /* the shadow maps once a frame: the first view draws them */
     render_run(t, p, vw, vh, alpha, RUN_VIEW);
     rts[n++] = rt;
   }
+  cw__render3d_keep_shadows(t, false);
   cw_render3d_set_camera(t, (cw_node){ 0 });
   p->output_user = keep_out;
   p->s.taa = keep_taa;
   if (n) views_composite(p, t, &out_copy, rts, n);
-  /* the overlays once, over the whole output (the HUD reads cw_pipeline_views) */
+  /* the overlays once, over the whole output (the HUD reads cw_pipeline_views);
+   * WebGPU reads the frame's pass timestamps back after it, not per view */
+  if (wgpu) cw__pw_timing_hold(false);
   render_run(t, p, w, h, alpha, RUN_OVERLAY);
+  frame_stats(p);
   p->frame++;
 }
 
@@ -703,7 +749,10 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
   pass_rec *velocity = NULL;
   for (int i = 0; i < p->passes.count; i++) {
     pass_rec *r = p->passes.data[i];
-    r->stat.ran = r->stat.fused = false;
+    if (p->run == 0) { /* a frame's first run: its stats start over (the views' runs add up) */
+      r->stat.ran = r->stat.fused = false;
+      r->frame_cpu = 0;
+    }
     if (r->name == cw_intern("velocity")) {
       velocity = r;
       continue;
@@ -845,6 +894,10 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
     if (ph <= CW_PHASE_POST && !has_scene) continue;
     if (mode == RUN_VIEW && ph >= CW_PHASE_OVERLAY) { /* a view draws no overlays: just its picture into its target */
       if (ph == CW_PHASE_OVERLAY && offscreen && last_writer < 0) cw__pass_copy(&ctx, scene->tex, output);
+      if (ph == CW_PHASE_OVERLAY && has_scene) {
+        p->views_cpu_ms = (p->run ? p->views_cpu_ms : 0) + (float)(cw__render3d_now_ms() - t_start);
+        cw__render3d_set_cpu_ms(t, p->views_cpu_ms);
+      }
       continue;
     }
     if (offscreen && ph == CW_PHASE_SKY && wgpu) {
@@ -957,14 +1010,8 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
     }
   }
 
-  /* stats (passes read the previous frame's during a frame) */
-  cw_array_clear(&p->stats);
-  p->gpu_total_ms = 0;
-  for (int i = 0; i < p->passes.count; i++) {
-    pass_rec *r = p->passes.data[i];
-    cw_array_push(&p->stats, r->stat);
-    if (r->stat.ran && !r->stat.fused && r->stat.gpu_ms > 0) p->gpu_total_ms += r->stat.gpu_ms;
-  }
+  /* the frame's stats after its last run (cw_pipeline_render: frame_stats) */
+  p->run++;
 
   if (wgpu) {
     cw__pw_flush();
