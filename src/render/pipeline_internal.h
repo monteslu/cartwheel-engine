@@ -71,6 +71,8 @@ struct cw_pipeline {
   void (*app_render)(void *user, double alpha);
   void *app_user;
   uint64_t frame;
+  void (*view_hook)(int view, void *user); /* cw_pipeline_set_view_hook */
+  void *view_hook_user;
   int run; /* render runs so far this frame (splitscreen: one per view, then the overlays) */
   float views_cpu_ms; /* splitscreen: the views' 3D CPU this frame (cw_render3d_stats.cpu_ms) */
   t3_mat4 prev_view_proj;

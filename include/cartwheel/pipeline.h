@@ -373,6 +373,11 @@ int cw_pipeline_views(cw_pipeline *p, const cw_view **views);
  * the output is taller than wide), 3 and 4 as quadrants (3 leaves the last
  * quadrant to the HUD), cameras taken in order. Returns the count set. */
 int cw_pipeline_split(cw_pipeline *p, const cw_node *cameras, int n);
+/* Called before each view's 3D picture is drawn, with the view's index:
+ * something can be posed one way in one player's view and another way in
+ * the rest (a player's own replay, say). NULL: none. Shared work such as
+ * the shadow maps is drawn with the first view, as the hook left it. */
+void cw_pipeline_set_view_hook(cw_pipeline *p, void (*hook)(int view, void *user), void *user);
 
 /* ── targets ───────────────────────────────────────────────────────── */
 

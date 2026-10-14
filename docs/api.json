@@ -5158,6 +5158,12 @@
      "inline": false
     },
     {
+     "name": "cw_pipeline_set_view_hook",
+     "signature": "void cw_pipeline_set_view_hook(cw_pipeline *p, void (*hook)(int view, void *user), void *user)",
+     "doc": "Called before each view's 3D picture is drawn, with the view's index:\nsomething can be posed one way in one player's view and another way in\nthe rest (a player's own replay, say). NULL: none. Shared work such as\nthe shadow maps is drawn with the first view, as the hook left it.",
+     "inline": false
+    },
+    {
      "name": "cw_rt_new",
      "signature": "cw_rt *cw_rt_new(int w, int h, cw_rt_format f, bool with_depth)",
      "doc": "A target of your own (a sub-viewport, a render-to-texture output for\ncw_pipeline_set_output): colour of format f, plus a DEPTH_COMPONENT24\ntexture when with_depth. NULL (logged) when the host cannot render that\nformat. Needs the GL context.",
@@ -5419,7 +5425,7 @@
    "macros": [
     {
      "name": "CW_MAX_VIEWS",
-     "doc": "A view: a Camera3D drawn into a rectangle of the output (fractions of\nit, x / y from the top left). With two or more views the pipeline renders\nthe 3D scene once per view (each through its own camera, at its own size,\nwith the post chain minus TAA, whose history one camera owns), lays the\npictures into their rectangles, then runs the overlays (the app's HUD,\ndebug draw) once over the whole output: a HUD reads the rectangles back\nwith cw_pipeline_views."
+     "doc": "A view: a Camera3D drawn into a rectangle of the output (fractions of\nit, x / y from the top left). With two or more views the pipeline renders\nthe 3D scene once per view (each through its own camera, at its own size,\nwith the post chain minus TAA, whose history one camera owns; the shadow\nmaps are drawn once, for the first view, and the others reuse them), lays the\npictures into their rectangles, then runs the overlays (the app's HUD,\ndebug draw) once over the whole output: a HUD reads the rectangles back\nwith cw_pipeline_views."
     }
    ]
   },

@@ -574,6 +574,10 @@ int cw_pipeline_views(cw_pipeline *p, const cw_view **views) {
   if (views) *views = p->views;
   return p->nviews >= 2 ? p->nviews : 0;
 }
+void cw_pipeline_set_view_hook(cw_pipeline *p, void (*hook)(int view, void *user), void *user) {
+  p->view_hook = hook;
+  p->view_hook_user = user;
+}
 int cw_pipeline_split(cw_pipeline *p, const cw_node *cameras, int n) {
   cw_view v[CW_MAX_VIEWS];
   n = CW_CLAMP(n, 0, CW_MAX_VIEWS);
@@ -691,6 +695,7 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
     if (!rt || !cw_node_valid(v->camera)) continue;
     p->output_user = rt;
     cw_render3d_set_camera(t, v->camera);
+    if (p->view_hook) p->view_hook(i, p->view_hook_user);
     cw__render3d_keep_shadows(t, n > 0); /* the shadow maps once a frame: the first view draws them */
     render_run(t, p, vw, vh, alpha, RUN_VIEW);
     rts[n++] = rt;
