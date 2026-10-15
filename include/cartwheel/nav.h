@@ -74,7 +74,7 @@ void cw_nav_geom_add_tris(cw_nav_geom *g, const float *verts, int vert_count, co
                           const t3_mat4 *xf, uint8_t area);
 /* An axis-aligned box's 12 triangles (a quick blocker or floor). */
 void cw_nav_geom_add_box(cw_nav_geom *g, t3_vec3 center, t3_vec3 half, uint8_t area);
-/* Every mesh in a three.c object tree (skinned meshes excluded), placed by
+/* Every mesh in a three.c object tree (skinned and instanced meshes excluded), placed by
  * xf (NULL: the root's matrix_world), each child by its own local matrix. */
 void cw_nav_geom_add_object(cw_nav_geom *g, const t3_object *root, const t3_mat4 *xf, uint8_t area);
 /* The static bodies' shapes of a physics world (filter: their layers; NULL

@@ -99,11 +99,11 @@ The `unit-nav` and `nav-demo` gates pin their results (the suite's checksum, and
 
 | | native, 1 thread | native, 24 threads | Chromium, 1 thread | Chromium, 24 threads |
 |---|---|---|---|---|
-| build, 256 x 256 m world (324 tiles, 2666 polygons) | 245 ms | 32 ms | 231 ms | 103 ms |
-| the same, dynamic (tile cache) | 181 ms | 24 ms | 173 ms | 36 ms |
-| 64 obstacles applied | 5.0 ms | 1.5 ms | 6.5 ms | 2.1 ms |
-| 1000 batched paths | 68 ms | 6.5 ms | 83 ms | 19 ms |
-| crowd step, 500 agents | 1.17 ms | 0.24 ms | 1.21 ms | 0.31 ms |
-| crowd step, 2000 agents | 4.8 ms | 0.69 ms | 6.1 ms | 1.06 ms |
+| build, 256 x 256 m world (324 tiles, 2666 polygons) | 193 ms | 26 ms | 257 ms | 81 ms |
+| the same, dynamic (tile cache) | 140 ms | 19 ms | 163 ms | 24 ms |
+| 64 obstacles applied | 3.7 ms | 1.0 ms | 5.0 ms | 1.4 ms |
+| 1000 batched paths | 47 ms | 4.0 ms | 50 ms | 12 ms |
+| crowd step, 500 agents (median) | 0.93 ms | 0.24 ms | 0.95 ms | 0.32 ms |
+| crowd step, 2000 agents (median) | 3.8 ms | 0.58 ms | 5.5 ms | 0.89 ms |
 
 Tile parallelism is what makes builds fast. In the crowd, the expensive work per agent is the Detour corner and corridor queries, and they spread over the pool.
