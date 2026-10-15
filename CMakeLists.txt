@@ -9,6 +9,9 @@ project(cartwheel C CXX)
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+# C++17 for the C++ dependencies (basisu, meshoptimizer): what GCC and LLVM clang
+# default to, set for Apple clang, which defaults to older
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(DEPS ${CMAKE_SOURCE_DIR}/deps)
 # the engine's files (cmake/app.cmake): this checkout, or an installed SDK's prefix
