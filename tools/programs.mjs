@@ -54,6 +54,10 @@ function cmakeCache(key) {
     return m ? m[1] : null;
   } catch { return null; }
 }
+// cartwheel's own three.c generator extensions (states x<name>): src/*/extensions/<name>.mjs, each module
+// named as its extension (a file with an underscore is a helper they import, not an extension)
+const EXTENSIONS = readdirSync(join(ROOT, 'src'), { withFileTypes: true }).filter((d) => d.isDirectory())
+  .flatMap((d) => { const dir = join(ROOT, 'src', d.name, 'extensions'); return existsSync(dir) ? readdirSync(dir).filter((f) => /^[a-z0-9]+\.mjs$/.test(f)).map((f) => join(dir, f)) : []; });
 const statesOf = (f) => (existsSync(f) ? readFileSync(f, 'utf8').split('\n').map((l) => l.replace(/#.*/, '').trim()).filter(Boolean) : []);
 
 /** regenerate one table from its manifest (plus missing logs) */
@@ -66,7 +70,8 @@ function regenerate(manifest, logs = []) {
   }
   const cache = join(BUILD, 'programs-cache', name);
   const args = [GEN, '--name', name, '--out', dirname(manifest), '--states', manifest, '--cache', cache, '--minimize',
-    ...logs.flatMap((l) => ['--missing', l]), ...(argv.includes('--fast') ? [] : ['--check'])];
+    ...logs.flatMap((l) => ['--missing', l]), ...EXTENSIONS.flatMap((e) => ['--extend', e]),
+    ...(argv.includes('--fast') ? [] : ['--check'])];
   console.log(`${name}: regenerating (${dirname(manifest)})`);
   const r = spawnSync(process.execPath, args, { stdio: 'inherit' }); // the capture runs on three.c's mock GPU: no device
   if (r.status !== 0) throw new Error(`${name}: gen-project-table failed (${r.signal || 'exit ' + r.status})`);

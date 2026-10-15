@@ -5149,6 +5149,30 @@
      "inline": false
     },
     {
+     "name": "cw_heightfield3d_create",
+     "signature": "cw_heightfield3d cw_heightfield3d_create(const uint16_t *q, int nx, int nz, t3_vec3 scale, const uint8_t *materials)",
+     "doc": "Height fields (resources, like collision meshes): Box3D's grid of nx x nz\nsamples (x along columns, z along rows; sample (i, j) at local\n(i * scale.x, q[j * nx + i] * scale.y, j * scale.z)), stored as the uint16\nsteps given, exactly. Each quad splits along the diagonal from its\n(i, j + 1) corner to its (i + 1, j) corner. materials: (nx - 1) x (nz - 1)\ncell bytes (0xFF = a hole, no collision), NULL = all 0. Fields that share\na scale.y line up exactly along shared edges (cartwheel/terrain.h tiles\nthem). Null (logged) for fewer than 2 x 2 samples.",
+     "inline": false
+    },
+    {
+     "name": "cw_heightfield3d_destroy",
+     "signature": "void cw_heightfield3d_destroy(cw_heightfield3d h)",
+     "doc": "Frees the field; destroy every shape made from it first. No-op on an invalid handle.",
+     "inline": false
+    },
+    {
+     "name": "cw_heightfield3d_raw",
+     "signature": "const b3HeightFieldData *cw_heightfield3d_raw(cw_heightfield3d h)",
+     "doc": "Box3D's data, for its pure queries (b3RayCastHeightField); NULL when invalid.",
+     "inline": false
+    },
+    {
+     "name": "cw_shape3d_heightfield",
+     "signature": "cw_shape3d cw_shape3d_heightfield(cw_body3d b, const cw_shape3d_def *def, cw_heightfield3d field)",
+     "doc": "A height-field shape at the body's origin: STATIC bodies only, as meshes.\nThe field must outlive every shape made from it.",
+     "inline": false
+    },
+    {
      "name": "cw_joint3d_default_def",
      "signature": "cw_joint3d_def cw_joint3d_default_def(cw_joint_type type)",
      "doc": "Identity frames and per-type spring defaults (2 Hz / 0.5; motor and mouse 5 Hz / 0.7; weld rigid).",
@@ -9341,6 +9365,275 @@
     {
      "name": "CW_SHELL_GAME_SAVE_MAX",
      "doc": ""
+    }
+   ]
+  },
+  {
+   "header": "cartwheel/terrain.h",
+   "summary": "cartwheel terrain: heightmap terrain drawn with CDLOD, collided through\nBox3D's height field, painted with Terrain3D's control-map layout, and\ncovered with deterministic scatter (grass, rocks, trees).\n\n── data ───────────────────────────────────────────────────────────────\nA terrain is a grid of (size_x + 1) x (size_z + 1) height samples,\nvertex_spacing metres apart, its sample (0, 0) at `origin`. Heights are\nuint16 steps between min_height and max_height:\n  y = origin.y + min_height + q * (max_height - min_height) / 65535\nwhich is exactly how Box3D's height field stores them, so physics,\ngameplay (cw_terrain_height_at) and the drawn surface agree. Each sample\nalso carries a control word in Terrain3D's layout (bits 31..27 base layer,\n26..22 overlay layer, 21..14 blend, 13..10 uv rotation in 1/16 turns,\n9..7 uv scale step, bit 2 hole; cw_terrain_control below), so painted maps\nfrom Terrain3D's tools mean the same thing here.\n\nTriangles: every quad splits along the diagonal from its (x, z + 1)\ncorner to its (x + 1, z) corner, as Box3D's height field does.\n\n── drawing (CDLOD) ────────────────────────────────────────────────────\nThe terrain is a quadtree of patches. Each frame a camera selects the\npatches to draw (cw_terrain_update): a patch of level L covers\ngrid_quads << L quads and is drawn with the same grid_quads x grid_quads\ngrid, so its vertices are 2^L samples apart. Level L is used within\nlod0_range * lod_ratio^L metres of the camera (3D distance, so mountains\nget the detail they need) and its odd vertices morph vertically into the\nnext level's triangles before that range ends, so neighbouring levels meet\nwithout cracks or skirts. Selection runs on the job pool (one job per\nroot patch, results in root order), culls patches against the view\nfrustum four children at a time with SIMD, and sorts what it keeps front\nto back. Every selected patch is one instance of one InstancedMesh: the\nwhole near terrain is one draw, the far terrain another.\n\nShading is three.js r186's MeshStandardMaterial (lights, shadows, fog and\nenvironment are three.js's own) with a TSL extension of cartwheel's\n(src/terrain/extensions): the height fetch and morph in the vertex stage;\nin the fragment stage the splat of up to 8 layers by the control map,\ntriplanar on steep slopes, and past far_distance only a baked macro colour\nand the normal map (two texture reads). Patches wholly past far_distance\ndraw with a third program that reads only those two.\n\nQuality (cartwheel/quality.h, effects detail):\n  Low     nearest control texel (base + overlay: 2 layers), no triplanar,\n          far distance x0.5        (the Vega 8 class default)\n  Medium  nearest control texel, triplanar on steep slopes, far x0.75\n  High    4 control texels blended (up to 8 layer samples), height\n          blending, triplanar, far x1\n  Ultra   High, far x1.5 and patch ranges x1.25\nand the scatter's density follows cw_quality_scale(\"grass\") / (\"scatter\").\n\nShadows: the terrain receives shadows. It does not cast them yet: three.c\ndraws an extension material into shadow maps with its plain caster\nprogram, which would shadow from the flat patch grid.\n\n── physics ────────────────────────────────────────────────────────────\ncw_terrain_attach_physics makes one static body with one Box3D height\nfield per region (region_size quads square, regions share their edge\nsamples and one global height range, so they line up exactly). Holes\n(control bit 2) are holes for physics too. cw_shape3d_heightfield and\ncw_heightfield3d (physics3d.h) are the same height field on its own.\n\n── scatter ────────────────────────────────────────────────────────────\nScatter layers place copies of a mesh over the terrain in 32 m cells.\nPlacement is a pure function of (cell, layer seed) by integer hashing:\nthe same instances on every host, at any worker count, whatever the\ncamera did. A candidate is kept by the layer's density (per square\nmetre), its density map, the control layers it may stand on and the\nslope. Each cell is one InstancedMesh per mesh LOD with its own bounding\nsphere; cells are generated on the job pool when the camera comes within\nrange, frustum culled, and posed each frame on the job pool: instances\nshrink to nothing over the last `fade` metres of visible_range (no pop),\nand switch mesh LOD by distance.\n\n── threads ────────────────────────────────────────────────────────────\nMain thread, outside physics steps, like the rest of the scene. The\nfunctions spread their own work over cw_jobs.\n\n── node types (properties: docs/nodes.json) ───────────────────────────\n  Terrain3D         (Node3D) a terrain: heightmap (16-bit PNG or .r16),\n                    control (a Terrain3D control map as a PNG: RGBA = the\n                    word's bytes, big end in R) or splat (an RGBA weight\n                    image for layers 0..3), layer0_albedo .. layer7_*,\n                    sizes, heights, LOD settings, physics. Placing the\n                    node moves the terrain (translation only).\n  TerrainScatter3D  (Node) a scatter layer of its parent Terrain3D: mesh\n                    (a primitive or a glTF resource), density, density_map,\n                    layers (bit mask of the control layers it grows on),\n                    slope, scale range, visible_range, fade, LOD meshes,\n                    cast_shadow, seed.",
+   "functions": [
+    {
+     "name": "cw_terrain_default_def",
+     "signature": "cw_terrain_def cw_terrain_default_def(void)",
+     "doc": "The defaults noted above.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_create",
+     "signature": "cw_terrain *cw_terrain_create(const cw_terrain_def *def)",
+     "doc": "A flat terrain at min_height. NULL (logged) for sizes that are not\nmultiples of grid_quads or a region_size that is not a power of two.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_destroy",
+     "signature": "void cw_terrain_destroy(cw_terrain *t)",
+     "doc": "Frees the terrain, its scatter, its physics and its scene objects.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_get_def",
+     "signature": "const cw_terrain_def *cw_terrain_get_def(const cw_terrain *t)",
+     "doc": "The definition it was made with, the levels and ranges it settled on filled in.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_origin",
+     "signature": "void cw_terrain_set_origin(cw_terrain *t, t3_vec3 origin)",
+     "doc": "Moves the terrain (its sample (0, 0) to origin); physics bodies follow.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_heights",
+     "signature": "void cw_terrain_set_heights(cw_terrain *t, int x0, int z0, int w, int h, const uint16_t *q)",
+     "doc": "Sets a w x h rectangle of samples at (x0, z0) (clipped to the terrain)\nfrom row-major uint16 steps. Marks the normals, the GPU copies and the\nphysics regions it touches dirty (rebuilt on the next update).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_heights_m",
+     "signature": "void cw_terrain_set_heights_m(cw_terrain *t, int x0, int z0, int w, int h, const float *metres)",
+     "doc": "The same from metres (quantized with Box3D's rounding).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_heights",
+     "signature": "const uint16_t *cw_terrain_heights(const cw_terrain *t)",
+     "doc": "The sample array (size_x + 1) x (size_z + 1), row-major (z rows); read only.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_control",
+     "signature": "void cw_terrain_set_control(cw_terrain *t, int x0, int z0, int w, int h, const uint32_t *ctl)",
+     "doc": "Control words for a rectangle, as cw_terrain_set_heights.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_controls",
+     "signature": "const uint32_t *cw_terrain_controls(const cw_terrain *t)",
+     "doc": "The control words, laid out as cw_terrain_heights; read only.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_control",
+     "signature": "uint32_t cw_terrain_control(int base, int overlay, int blend, int uv_angle, int uv_scale, bool hole)",
+     "doc": "A control word from its fields (Terrain3D's layout). blend 0..255 is the\noverlay's share, uv_angle 0..15 sixteenths of a turn, uv_scale 0..7 (0 =\n1x, 1..4 = +20 % steps, 5..7 = -20 % steps).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_generate",
+     "signature": "void cw_terrain_generate(cw_terrain *t, uint32_t seed, float feature_m, int octaves, float amplitude)",
+     "doc": "fBm heights over the whole terrain (render-independent, deterministic):\noctaves of value noise from integer hashing; amplitude 0..1 of the range.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_import_heightmap",
+     "signature": "bool cw_terrain_import_heightmap(cw_terrain *t, const char *path)",
+     "doc": "A heightmap image into the samples (resized to fit by bilinear filtering\nwhen its size differs): a 16-bit grey PNG (8-bit works, coarsely), or a\nraw .r16 (little-endian uint16, square: width = sqrt(bytes / 2)). Values\nmap 0..65535 onto min_height..max_height. Paths go through the VFS.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_import_control",
+     "signature": "bool cw_terrain_import_control(cw_terrain *t, const char *path)",
+     "doc": "A Terrain3D control map exported as a PNG (each pixel's RGBA bytes are\nthe word, big end in R), nearest-resized to the samples.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_import_splat",
+     "signature": "bool cw_terrain_import_splat(cw_terrain *t, const char *path, int first_layer)",
+     "doc": "A splat (weight) image: R, G, B, A weigh layers first_layer .. +3. Each\nsample gets the two heaviest as base and overlay, blended by weight.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_layer",
+     "signature": "bool cw_terrain_set_layer(cw_terrain *t, int i, const char *albedo_height, const char *normal_rough, float uv_scale)",
+     "doc": "Layer i's textures, Terrain3D's packing: albedo RGB + height A, and\nnormal RGB (OpenGL convention, +Y) + roughness A. Either path may be NULL\n(flat grey, flat normal, roughness 0.9). The images are resized to the\nlayer tile size (512) into two atlases. uv_scale: repeats per metre.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_layer_pixels",
+     "signature": "void cw_terrain_set_layer_pixels(cw_terrain *t, int i, const uint8_t *albedo_height, const uint8_t *normal_rough, int w, int h, float uv_scale)",
+     "doc": "The same from RGBA8 pixels (w x h), e.g. generated textures.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_height_at",
+     "signature": "float cw_terrain_height_at(const cw_terrain *t, float x, float z)",
+     "doc": "Height at world (x, z) on the triangles physics collides with: the same\nvalue a downward ray cast against the terrain's physics finds. Outside the\nterrain, the nearest edge's height.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_normal_at",
+     "signature": "t3_vec3 cw_terrain_normal_at(const cw_terrain *t, float x, float z)",
+     "doc": "The triangle's normal there (unit, +Y up).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_raycast",
+     "signature": "bool cw_terrain_raycast(const cw_terrain *t, t3_vec3 o, t3_vec3 d, float maxd, cw_terrain_hit *out)",
+     "doc": "A ray from o along unit d, up to maxd metres, against the triangles\n(holes let it through).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_is_hole",
+     "signature": "bool cw_terrain_is_hole(const cw_terrain *t, float x, float z)",
+     "doc": "True when the sample nearest (x, z) is a hole.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_attach_physics",
+     "signature": "void cw_terrain_attach_physics(cw_terrain *t, cw_world3d w, const cw_shape3d_def *def)",
+     "doc": "Static height-field bodies in w (one per region) with def's layer, mask\nand material (NULL = defaults). Replaces earlier ones; edits rebuild the\nregions they touch on the next cw_terrain_update (or\ncw_terrain_sync_physics).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_detach_physics",
+     "signature": "void cw_terrain_detach_physics(cw_terrain *t)",
+     "doc": "Destroys the region bodies (the height fields stay: queries use them).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_sync_physics",
+     "signature": "void cw_terrain_sync_physics(cw_terrain *t)",
+     "doc": "Rebuilds the dirty regions now (one job per region).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_region_shape",
+     "signature": "cw_shape3d cw_terrain_region_shape(const cw_terrain *t, int rx, int rz)",
+     "doc": "Region (rx, rz)'s shape; null when there is none.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_add_to_scene",
+     "signature": "void cw_terrain_add_to_scene(cw_terrain *t, t3_scene *scene)",
+     "doc": "Adds the terrain's meshes to a three.c scene (one terrain draws in one\nscene). The tree's Terrain3D node does this itself.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_update",
+     "signature": "void cw_terrain_update(cw_terrain *t, t3_vec3 camera, const t3_mat4 *vp)",
+     "doc": "Uploads what changed, picks patches for the camera (vp: its view-\nprojection, for culling; NULL = no culling), poses the scatter. Call once\nper frame before rendering; the Terrain3D node does it in the pipeline's\nSHADOW phase.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_bind_renderer",
+     "signature": "void cw_terrain_bind_renderer(cw_terrain *t, t3_renderer *r)",
+     "doc": "Registers the terrain's shading hooks with a renderer (the node does\nthis). Needed once per renderer before the terrain draws.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_material",
+     "signature": "t3_material *cw_terrain_material(cw_terrain *t)",
+     "doc": "The near material (MeshStandardMaterial): its colour, roughness and\nmetalness scale the terrain's.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_quality",
+     "signature": "void cw_terrain_set_quality(cw_terrain *t, int quality)",
+     "doc": "Quality level for shading (CW_QUALITY_LOW .. ULTRA); -1 follows\ncw_quality_get() (the default).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_get_stats",
+     "signature": "void cw_terrain_get_stats(const cw_terrain *t, cw_terrain_stats *out)",
+     "doc": "The last update's numbers (zero for NULL).",
+     "inline": false
+    },
+    {
+     "name": "cw_scatter_default_def",
+     "signature": "cw_scatter_def cw_scatter_default_def(void)",
+     "doc": "The defaults noted above, no meshes.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_scatter_add",
+     "signature": "int cw_terrain_scatter_add(cw_terrain *t, const cw_scatter_def *def)",
+     "doc": "Adds a scatter layer; returns its index (-1 when 16 exist).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_scatter_remove",
+     "signature": "void cw_terrain_scatter_remove(cw_terrain *t, int layer)",
+     "doc": "Removes a scatter layer and its instances (its index is free again).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_scatter_invalidate",
+     "signature": "void cw_terrain_scatter_invalidate(cw_terrain *t)",
+     "doc": "Regenerates every cell (after a density map or the heights changed).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_scatter_cell",
+     "signature": "int cw_terrain_scatter_cell(cw_terrain *t, int layer, int cx, int cz, float *out, int cap)",
+     "doc": "Placement only (no GPU): the instances of cell (cx, cz) of a layer, as\nx, y, z, scale, yaw quintuples into out (up to cap). Returns the count.\nWhat a test hashes.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_of",
+     "signature": "cw_terrain *cw_terrain_of(cw_node terrain3d)",
+     "doc": "The Terrain3D node's terrain (NULL before it entered a tree or for\nanother node).",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_terrain",
+     "doc": "",
+     "decl": "typedef struct cw_terrain cw_terrain;"
+    },
+    {
+     "name": "cw_terrain_def",
+     "doc": "",
+     "decl": "typedef struct cw_terrain_def {\n  int size_x, size_z;       /* quads; multiples of grid_quads: 512 x 512 */\n  int region_size;          /* quads per physics region (power of two): 256 */\n  float vertex_spacing;     /* metres between samples: 1 */\n  float min_height, max_height; /* metres: 0, 100 */\n  t3_vec3 origin;           /* world position of sample (0, 0) at height 0 */\n  int grid_quads;           /* quads along a patch's side (power of two, 8..64): 32 */\n  int lod_count;            /* levels (0 = as many as the sizes allow, at most CW_TERRAIN_MAX_LODS) */\n  float lod0_range;         /* metres level 0 reaches; 0 = 2.5 patch widths (raised to that if smaller) */\n  float lod_ratio;          /* each level reaches this much farther: 2 */\n  float morph_start;        /* where morphing starts inside a level's band, 0..1: 0.66 */\n  float far_distance;       /* metres: past it only the macro colour is drawn (0 = 400) */\n  float far_fade;           /* metres over which splat fades into macro: 0 = far_distance / 4 */\n  float visible_range;      /* patches farther than this are not drawn: 0 = unlimited */\n} cw_terrain_def;"
+    },
+    {
+     "name": "cw_terrain_hit",
+     "doc": "",
+     "decl": "typedef struct cw_terrain_hit {\n  t3_vec3 point, normal;\n  float distance;\n  uint32_t control;         /* the control word of the nearest sample */\n} cw_terrain_hit;"
+    },
+    {
+     "name": "cw_terrain_stats",
+     "doc": "",
+     "decl": "typedef struct cw_terrain_stats {\n  int patches, patches_far;     /* instances drawn: near / far programs */\n  int patches_culled;           /* patches the frustum rejected */\n  int nodes_visited;\n  int levels[CW_TERRAIN_MAX_LODS]; /* patches per level */\n  int scatter_cells, scatter_cells_visible, scatter_instances, scatter_draws;\n  float select_ms, scatter_ms, upload_ms;\n  uint64_t selection_hash;      /* FNV-1a over the selected patches (tests) */\n} cw_terrain_stats;"
+    },
+    {
+     "name": "cw_scatter_def",
+     "doc": "",
+     "decl": "typedef struct cw_scatter_def {\n  t3_geometry *geometry[CW_SCATTER_LODS]; /* mesh LODs, finest first (NULL ends the list); retained */\n  t3_material *material[CW_SCATTER_LODS]; /* one per LOD (NULL = the previous LOD's); retained */\n  float lod_distance[CW_SCATTER_LODS];    /* metres where LOD i + 1 takes over */\n  float density;            /* instances per square metre at full density: 0.5 */\n  uint32_t layers;          /* control layers it grows on (bit i = layer i; on the base layer, or the\n                               overlay where the blend is over half): 0 = all */\n  const uint8_t *density_map; /* optional: dm_w x dm_h grey (0..255) over the whole terrain; copied */\n  int dm_w, dm_h;\n  float min_slope_cos;      /* only where the normal's y is at least this: 0 */\n  float scale_min, scale_max; /* uniform scale range: 0.8, 1.2 */\n  bool align_to_normal;     /* tilt with the ground (grass, rocks) instead of standing up (trees) */\n  float sink;               /* metres pushed into the ground: 0 */\n  float visible_range;      /* metres: 60 */\n  float fade;               /* metres at the end of visible_range over which instances shrink away: 10 */\n  bool cast_shadow;         /* LOD 0 casts (coarser LODs never do): false */\n  const char *density_knob; /* cw_quality_scale knob: \"grass\" (default) or \"scatter\" */\n  uint32_t seed;\n} cw_scatter_def;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_TERRAIN_LAYERS",
+     "doc": ""
+    },
+    {
+     "name": "CW_TERRAIN_MAX_LODS",
+     "doc": ""
+    },
+    {
+     "name": "CW_SCATTER_LODS",
+     "doc": "── scatter ────────────────────────────────────────────────────────────"
     }
    ]
   },

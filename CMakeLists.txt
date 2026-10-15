@@ -37,7 +37,7 @@ include(cmake/deps.cmake)
 
 # ── the engine ─────────────────────────────────────────────────────────
 file(GLOB_RECURSE CW_CORE_SRCS CONFIGURE_DEPENDS src/core/*.c src/jobs/*.c src/input/*.c src/physics/*.c
-     src/audio/*.c src/render/*.c src/render2d/*.c src/scene/*.c src/fx/*.c src/visibility/*.c src/anim/*.c src/ui/*.c src/l10n/*.c src/resource/*.c src/debug/*.c src/remote/*.c
+     src/audio/*.c src/render/*.c src/render2d/*.c src/scene/*.c src/fx/*.c src/visibility/*.c src/terrain/*.c src/anim/*.c src/ui/*.c src/l10n/*.c src/resource/*.c src/debug/*.c src/remote/*.c
      src/net/*.c src/shell/*.c src/nav/*.c)
 list(APPEND CW_CORE_SRCS src/resource/basis_glue.cpp) # the KTX2 transcoder's C side
 set_source_files_properties(src/resource/basis_glue.cpp PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-fno-rtti")

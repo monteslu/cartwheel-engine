@@ -498,6 +498,27 @@
     "note": "cw_vehicle3d: settling on the springs, drive, brake, reverse, steering, the friction circle (slide and grip), handbrake lock and powerslide, a car on a wall along its own down, a car riding on another, wheel transforms, teleport and the ragdoll switch; one step worker and all of them give the same bits"
   },
   {
+    "name": "unit-terrain",
+    "app": "unit_terrain",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "terrain: cw_terrain_height_at equals a cw_world3d ray cast on the Box3D height fields at 10 000 points, bit for bit; CDLOD from four cameras covers every quad once, neighbours differ by one level at most and meet fully morphed (no cracks); balls rolling on generated terrain give the same bits with one step worker and all; a cw_vehicle3d drives and a cw_mover3d walks on it; scatter placement is reproducible and respects density, layers and slope"
+  },
+  {
     "name": "physics3d-stack",
     "app": "physics3d_stack",
     "frames": 240,

@@ -33,6 +33,9 @@ cw_add_app(scene3d SOURCES scene3d/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/sce
 cw_add_app(nav_demo SOURCES nav_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/nav_demo/assets)
 # navigation timings (tests/nav-perf.mjs): navmesh builds, obstacle updates, batched paths, crowd steps
 cw_add_app(nav_perf SOURCES nav_perf/main.c GL_ONLY)
+# terrain (cartwheel/terrain.h): CDLOD, splat layers, scatter, a car on Box3D's height field
+cw_add_app(terrain_demo SOURCES terrain_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/terrain_demo/assets
+  PROGRAMS terrain_demo/programs/terrain_demo.txt)
 cw_add_app(perf_nodes SOURCES perf_nodes/main.c GL_ONLY)
 # audio: an offline-rendered scripted mix (the cross-host hash gate) and
 # a sample that plays through the real device path.
