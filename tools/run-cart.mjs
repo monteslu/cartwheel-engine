@@ -21,7 +21,8 @@
 //             <file> runs a page script before the cart (window.__cwDump is
 //             written to out/init-script-dump.json)
 //   wcnative  wasmcart-native's wasmcart-run --fixed-step --shot (no input, no state); XAUTHORITY
-//             is filled in from /run/user/<uid> when the shell has none (it would wait on the display)
+//             is filled in from /run/user/<uid> when the shell has none (it would wait on the display).
+//             CW_WORKERS gives its cart the job pool a native run gets (tools/lib/gpu-sandbox.mjs)
 //
 // --warmup-spread: the app's warm-up spread over frames under the loading screen, as a player
 // gets it (native, chromium, wcnative; test runs otherwise do it all in frame 1).
@@ -58,7 +59,7 @@ import { readImage, writePng } from './lib/png.mjs';
 import { launchChromium } from './lib/chromium.mjs';
 import { wgpuPin, glPin, scrubDisplay } from './lib/wgpu-pin.mjs';
 import { tempDir } from './lib/tmp.mjs';
-import { enterGpuSandbox } from './lib/gpu-sandbox.mjs';
+import { enterGpuSandbox, showCartWorkers } from './lib/gpu-sandbox.mjs';
 import { workersOverride } from './lib/workers.mjs';
 import { killTree } from './lib/gpu-guard.mjs';
 import { wcnativePlayer, wcnativeWgpuPlayer } from './lib/wcnative.mjs';
@@ -560,6 +561,7 @@ async function runWcnative() {
   else delete wenv.SDL_VIDEODRIVER;
   // warmup_spread 0 before frame 1: the whole warm-up in that frame, as on the other test hosts
   const cmdArgs = [...(spread ? [] : ['--debug-cmd', '0', 'warmup_spread 0']), ...startPlan.flatMap(([k, c]) => ['--debug-cmd', String(k), c])];
+  showCartWorkers(); // CW_WORKERS: the cart's job pool as natively (tools/lib/gpu-sandbox.mjs)
   const child = spawn(player, [runCart, '--fixed-step', String(1000 / frameHz), '--shot', String(frames - 1), ppm, '--uncapped', ...cmdArgs],
     { env: wenv, stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = '';

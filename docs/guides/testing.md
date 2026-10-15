@@ -21,8 +21,8 @@ CI (`.github/workflows/ci.yml`) runs on every push and pull request to main, on 
 Local only (they need GPU hardware or a host CI does not have; `LOCAL_ONLY` in `tests/ci.mjs` gives the reason for each):
 
 - the romdev, Chromium, wasmcart-native (`wcnative`) and wasmcart-libretro legs of every gate;
-- `gpu-guard`, `fx-gpu-report`, `pipeline-perf`, `fx-perf-report`, `vis-perf-report`, `showcase-perf`: GPU guards, timings and frame-time budgets;
-- `gpu-no-display`, `gpu-cleanup`, `wcnative-pads`, `editor-channel`, `editor-play`, `editor-import`, `a11y-channel`, `net`, `plugins`, `project-templates`, `tutorials`, `docs`: they drive romdev, Chromium or wasmcart-native;
+- `gpu-guard`, `fx-gpu-report`, `pipeline-perf`, `fx-perf-report`, `vis-perf-report`, `showcase-perf`, `nav-perf-report`: GPU guards, timings and frame-time budgets;
+- `gpu-no-display`, `gpu-cleanup`, `wcnative-pads`, `editor-channel`, `editor-play`, `editor-import`, `a11y-channel`, `net`, `plugins`, `project-templates`, `tutorials`, `docs`, `nav-determinism`: they drive romdev, Chromium or wasmcart-native;
 - `export`, `project-export`: the export toolchains, Wine and an Android emulator.
 
 Run `node tests/all.mjs` on a machine with a GPU and those hosts for the full set.
@@ -50,6 +50,8 @@ For each gate the runner starts `tools/run-cart.mjs` on every eligible host in p
 4. Runs the **control** natively, which must differ from the reference in frame or state. A gate whose control passes cannot see anything, and fails.
 
 Hosts by default: `native`, `romdev`, `chromium`, plus `wcnative` for gates without an input script (wasmcart-run takes no input and reports no state, so it is compared on frames only), plus `angle` when `CW_ANGLE_DIR` is set. Outputs land in `out/gate/<name>.<host>.png` and `.json`.
+
+`CW_WORKERS=n` runs every host with the same job pool (n workers besides the main thread). Native runs read it directly. A cart has no environment, so Chromium's page reports n + 1 as `navigator.hardwareConcurrency`, and the GPU sandbox shows wasmcart-run n + 1 online CPUs, the hardware threads it hands the cart. `tests/nav-determinism.mjs` runs gates this way at several pool sizes.
 
 ## `tests/gates.json`
 

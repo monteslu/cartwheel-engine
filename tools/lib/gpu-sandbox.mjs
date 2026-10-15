@@ -17,9 +17,25 @@
 // exits with its status); inside (CW_GPU_SANDBOXED) it checks the view and
 // returns. CW_TEST_GPU=desktop or CW_TEST_WINDOW=1 skips it.
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { testGpu } from './wgpu-pin.mjs';
 import { killTree } from './gpu-guard.mjs';
+
+const SYS_ONLINE = '/sys/devices/system/cpu/online';
+let onlineFile = ''; // this suite's online CPU list (removed when the suite ends)
+/** "0-<n>" for CW_WORKERS = n (n + 1 CPUs), or undefined when it is not set */
+const onlineList = (w) => (w === undefined || w === '' ? undefined : ((n) => (n > 1 ? `0-${n - 1}\n` : '0\n'))(Math.max(0, Math.min(63, parseInt(w, 10) || 0)) + 1));
+
+/**
+ * Inside the sandbox: show the processes started next (wasmcart-run) CW_WORKERS + 1 online CPUs, or the
+ * machine's list when CW_WORKERS is not set. Outside it (or opted out) it does nothing: wasmcart-run then
+ * reports the machine's threads.
+ */
+export function showCartWorkers() {
+  if (!process.env.CW_GPU_SANDBOXED || process.env.CW_CPU_ONLINE === undefined) return;
+  const want = onlineList(process.env.CW_WORKERS) ?? process.env.CW_CPU_ONLINE + '\n';
+  try { if (readFileSync(SYS_ONLINE, 'utf8') !== want) writeFileSync(SYS_ONLINE, want); } catch { /* not the suite's file */ }
+}
 
 /** the bwrap argv (without the command) that shows only the GPU at `pci` */
 export function sandboxArgv(pci) {
@@ -34,15 +50,17 @@ export function sandboxArgv(pci) {
   const masks = [];
   if (existsSync('/tmp/.X11-unix')) masks.push('--tmpfs', '/tmp/.X11-unix');
   try { for (const f of readdirSync(run).filter((n) => /^wayland-\d+(\.lock)?$/.test(n))) masks.push('--ro-bind', '/dev/null', `${run}/${f}`); } catch { /* no runtime dir */ }
-  // CW_WORKERS: the suite's processes see CW_WORKERS + 1 online CPUs, which is what wasmcart-run reports to a
-  // cart as its hardware threads (a cart's job pool is that minus one): carts in wcnative get the pool size
-  // native runs take from CW_WORKERS directly (Chromium's carts get it from tools/lib/workers.mjs)
+  // The online CPU list (what wasmcart-run reports to a cart as its hardware threads; a cart's job pool
+  // is that minus one) is a file of the suite's own, so a wcnative run can show its cart CW_WORKERS + 1
+  // CPUs: the pool size native runs take from CW_WORKERS (Chromium's carts get it from tools/lib/workers.mjs).
+  // It starts as CW_WORKERS says, or as the machine's list; showCartWorkers() sets it per run.
   const cpus = [];
-  if (process.env.CW_WORKERS !== undefined && process.env.CW_WORKERS !== '' && existsSync('/sys/devices/system/cpu/online')) {
-    const n = Math.max(0, Math.min(63, parseInt(process.env.CW_WORKERS, 10) || 0)) + 1;
-    const online = `${run}/cartwheel-cpu-online-${n}`;
-    writeFileSync(online, n > 1 ? `0-${n - 1}\n` : '0\n');
-    cpus.push('--ro-bind', online, '/sys/devices/system/cpu/online');
+  if (existsSync(SYS_ONLINE)) {
+    const real = readFileSync(SYS_ONLINE, 'utf8').trim();
+    onlineFile = `${run}/cartwheel-cpu-online-${process.pid}`;
+    writeFileSync(onlineFile, onlineList(process.env.CW_WORKERS) ?? real + '\n');
+    process.env.CW_CPU_ONLINE = real;
+    cpus.push('--bind', onlineFile, SYS_ONLINE);
   }
   return [bwrap, '--die-with-parent', '--dev-bind', '/', '/', '--tmpfs', '/dev/dri', ...nodes.flatMap((n) => ['--dev-bind', n, n]),
     ...(existsSync('/dev/kfd') ? ['--ro-bind', '/dev/null', '/dev/kfd'] : []), ...masks, ...cpus];
@@ -74,10 +92,11 @@ export async function enterGpuSandbox() {
     }
     return;
   }
-  const argv = sandboxArgv(gpu.pci);
+  const argv = sandboxArgv(gpu.pci); // (sets CW_CPU_ONLINE for the child)
   const child = spawn(argv[0], [...argv.slice(1), process.execPath, ...process.execArgv, ...process.argv.slice(1)],
     { stdio: 'inherit', env: { ...process.env, CW_GPU_SANDBOXED: gpu.pci } });
   for (const s of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(s, () => child.kill(s));
   const code = await new Promise((res) => child.on('close', (c, sig) => res(c ?? (sig ? 128 + ({ SIGINT: 2, SIGTERM: 15, SIGHUP: 1, SIGKILL: 9 }[sig] || 0) : 1))));
+  if (onlineFile) rmSync(onlineFile, { force: true });
   process.exit(code);
 }

@@ -467,6 +467,16 @@
     "note": "500 agents (NavigationAgent3D) for 15 s in a baked dynamic NavigationRegion3D, a gate (NavigationObstacle3D) closing a doorway at 10 s; every tick's crowd hash folded. The expected values are the same at every pool size (tests/nav-determinism.mjs runs this gate at CW_WORKERS 0, 1, 3 and the default)"
   },
   {
+    "name": "nav-determinism",
+    "script": "tests/nav-determinism.mjs",
+    "note": "unit-nav and nav-demo on native, Chromium and wcnative at CW_WORKERS 0, 1, 3 and the default: every host and pool size gives the pinned hashes"
+  },
+  {
+    "name": "nav-perf-report",
+    "script": "tests/nav-perf.mjs",
+    "note": "navmesh build (324 tiles, static and dynamic), 64 obstacles, 1000 batched paths and crowd steps for 500 and 2000 agents, on one thread and the default pool, natively and in Chromium (reported); equal result hashes in every run; budgets on the default pool; a 2x parallel build natively; control: impossible budgets must fail"
+  },
+  {
     "name": "unit-vehicle3d",
     "app": "unit_vehicle3d",
     "frames": 2,
