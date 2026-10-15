@@ -3090,7 +3090,7 @@
     {
      "name": "cw_nav_geom_add_object",
      "signature": "void cw_nav_geom_add_object(cw_nav_geom *g, const t3_object *root, const t3_mat4 *xf, uint8_t area)",
-     "doc": "Every mesh in a three.c object tree (skinned meshes excluded), placed by\nxf (NULL: the root's matrix_world), each child by its own local matrix.",
+     "doc": "Every mesh in a three.c object tree (skinned and instanced meshes excluded), placed by\nxf (NULL: the root's matrix_world), each child by its own local matrix.",
      "inline": false
     },
     {
