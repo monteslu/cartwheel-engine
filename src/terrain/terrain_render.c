@@ -11,19 +11,17 @@
  * stays finite). The objects are never frustum culled by
  * three.c: the selection culled the patches.
  *
- * Textures (all RGBA8):
- *   heights   (size + 1)^2, linear + mipmaps: the uint16 step, high byte
- *             in R, low in G (read with textureLoad, exact); the normal's
- *             x, z in B, A (0.5 = 0; sampled filtered)
- *   control   (size + 1)^2, nearest: the control word's bytes, big end in R
- *   macro     at most 1024^2, linear + mipmaps, sRGB data decoded in the
- *             shader: the layers' mean
- *             colours blended by the control map (the distant colour)
- *   layers    6 x 3 cells of TR_CELL: layer i's albedo + height (sRGB data,
- *             decoded in the shader) in cell (i % 3, i / 3), its normal +
- *             roughness three cells right; each tile with a wrapped gutter
- *             (so mipmaps and filtering repeat it). One texture for both
- *             keeps the program within three.c's eight per group. */
+ * Textures:
+ *   heights   (size + 1)^2 R32UI, nearest: the uint16 steps (read with
+ *             textureLoad: exact; r186 types only 32-bit textures as integer)
+ *   normals   (size + 1)^2 RGBA8, linear + mipmaps: normal x, z in R, G
+ *   control   (size + 1)^2 R32UI, nearest: the Terrain3D control words
+ *   macro     at most 1024^2 RGBA8, linear + mipmaps, sRGB data decoded in
+ *             the shader: the layers' mean colours blended by the control
+ *             map (the distant colour)
+ *   albedo, layer normals: RGBA8 array textures of 8 layers of TR_TILE^2,
+ *             linear + mipmaps, repeat-wrapped (albedo + height as sRGB
+ *             data decoded in the shader; normal + roughness). */
 #include <math.h>
 #include <string.h>
 
@@ -38,7 +36,7 @@ typedef struct tr_gpu {
   t3_material *mat_near, *mat_far;
   t3_instanced_mesh *im[2][2]; /* [far][half] */
   int cap[2][2];
-  t3_texture *heights, *control, *macro, *layers;
+  t3_texture *heights, *normals, *control, *macro, *albedo, *lnormal;
   int mw, mh, mdiv;
   int near_q;                  /* the quality the near material's program is for */
 } tr_gpu;
@@ -112,8 +110,7 @@ static void heights_rows(int begin, int end, int worker, void *u) {
   for (int z = j->z0 + begin; z < j->z0 + end; z++)
     for (int x = j->x0; x <= j->x1; x++) {
       uint16_t q = t->h[tr_idx(t, x, z)];
-      uint8_t *p = &g->heights->pixels[4 * (size_t)tr_idx(t, x, z)];
-      p[0] = (uint8_t)(q >> 8), p[1] = (uint8_t)q;
+      ((uint32_t *)g->heights->pixels)[tr_idx(t, x, z)] = q;
     }
 }
 
@@ -129,9 +126,10 @@ static void normal_rows(int begin, int end, int worker, void *u) {
       float dx = ((float)t->h[tr_idx(t, xb, z)] - (float)t->h[tr_idx(t, xa, z)]) * inv2 * 2.0f / (float)(xb - xa);
       float dz = ((float)t->h[tr_idx(t, x, zb)] - (float)t->h[tr_idx(t, x, za)]) * inv2 * 2.0f / (float)(zb - za);
       float l = sqrtf(dx * dx + 1 + dz * dz);
-      uint8_t *p = &g->heights->pixels[4 * (size_t)tr_idx(t, x, z)];
-      p[2] = (uint8_t)cw_clampf((-dx / l) * 127.5f + 127.5f + 0.5f, 0, 255);
-      p[3] = (uint8_t)cw_clampf((-dz / l) * 127.5f + 127.5f + 0.5f, 0, 255);
+      uint8_t *p = &g->normals->pixels[4 * (size_t)tr_idx(t, x, z)];
+      p[0] = (uint8_t)cw_clampf((-dx / l) * 127.5f + 127.5f + 0.5f, 0, 255);
+      p[1] = (uint8_t)cw_clampf((-dz / l) * 127.5f + 127.5f + 0.5f, 0, 255);
+      p[2] = 255, p[3] = 255;
     }
 }
 
@@ -142,9 +140,7 @@ static void control_rows(int begin, int end, int worker, void *u) {
   tr_gpu *g = t->gpu;
   for (int z = j->z0 + begin; z < j->z0 + end; z++)
     for (int x = j->x0; x <= j->x1; x++) {
-      uint32_t c = t->ctl[tr_idx(t, x, z)];
-      uint8_t *p = &g->control->pixels[4 * (size_t)tr_idx(t, x, z)];
-      p[0] = (uint8_t)(c >> 24), p[1] = (uint8_t)(c >> 16), p[2] = (uint8_t)(c >> 8), p[3] = (uint8_t)c;
+      ((uint32_t *)g->control->pixels)[tr_idx(t, x, z)] = t->ctl[tr_idx(t, x, z)];
     }
 }
 
@@ -177,21 +173,27 @@ static void macro_rows(int begin, int end, int worker, void *u) {
     }
 }
 
-static void build_atlas(cw_terrain *t, t3_texture *tex, bool normal) {
+/* the layers into an array texture, one layer each (a default where none is set) */
+static void build_layers(cw_terrain *t, t3_texture *tex, bool normal) {
   static const uint8_t def_albedo[4] = { 128, 128, 128, 128 }, def_normal[4] = { 128, 128, 255, 230 };
-  for (int i = 0; i < 9; i++) {
-    int cx = (i % TR_ATLAS_COLS + (normal ? TR_ATLAS_COLS : 0)) * TR_CELL, cy = (i / TR_ATLAS_COLS) * TR_CELL;
-    const uint8_t *src = i < CW_TERRAIN_LAYERS ? (normal ? t->layer[i].normal : t->layer[i].albedo) : NULL;
-    for (int y = 0; y < TR_CELL; y++) {
-      int sy = ((y - TR_GUTTER) % TR_TILE + TR_TILE) % TR_TILE;
-      uint8_t *row = &tex->pixels[4 * ((size_t)(cy + y) * TR_ATLAS_W + cx)];
-      for (int x = 0; x < TR_CELL; x++) {
-        int sx = ((x - TR_GUTTER) % TR_TILE + TR_TILE) % TR_TILE;
-        memcpy(row + 4 * x, src ? &src[4 * (sy * TR_TILE + sx)] : (normal ? def_normal : def_albedo), 4);
-      }
-    }
+  size_t n = (size_t)TR_TILE * TR_TILE;
+  for (int i = 0; i < CW_TERRAIN_LAYERS; i++) {
+    const uint8_t *src = normal ? t->layer[i].normal : t->layer[i].albedo;
+    uint8_t *dst = tex->pixels + 4 * n * (size_t)i;
+    if (src) memcpy(dst, src, 4 * n);
+    else
+      for (size_t k = 0; k < n; k++) memcpy(dst + 4 * k, normal ? def_normal : def_albedo, 4);
   }
   tex->version++;
+}
+
+static t3_texture *layer_array(void) {
+  t3_texture *x = t3_data_array_texture_new(TR_TILE, TR_TILE, CW_TERRAIN_LAYERS, NULL, T3_RGBA_FORMAT, T3_UNSIGNED_BYTE_TYPE);
+  x->mag_filter = T3_LINEAR;
+  x->min_filter = T3_LINEAR_MIPMAP_LINEAR;
+  x->generate_mipmaps = true;
+  x->wrap_s = x->wrap_t = T3_REPEAT;
+  return x;
 }
 
 /* ── meshes ─────────────────────────────────────────────────────────── */
@@ -266,14 +268,16 @@ static void ensure_gpu(cw_terrain *t) {
   g->mat_far->roughness = 1;
   g->mat_far->metalness = 0;
   t3_material_set_extension(g->mat_far, "terrainfar");
-  g->heights = data_tex(t->nx, t->nz, true, false);
-  g->control = data_tex(t->nx, t->nz, false, false);
+  g->heights = t3_data_texture_new_format(t->nx, t->nz, NULL, T3_RED_INTEGER_FORMAT, T3_UNSIGNED_INT_TYPE);
+  g->normals = data_tex(t->nx, t->nz, true, false);
+  g->control = t3_data_texture_new_format(t->nx, t->nz, NULL, T3_RED_INTEGER_FORMAT, T3_UNSIGNED_INT_TYPE);
   g->mdiv = 1;
   while ((t->nx - 1) / g->mdiv + 1 > 1025 || (t->nz - 1) / g->mdiv + 1 > 1025) g->mdiv *= 2;
   g->mw = (t->nx - 1) / g->mdiv + 1;
   g->mh = (t->nz - 1) / g->mdiv + 1;
   g->macro = data_tex(g->mw, g->mh, true, false);
-  g->layers = data_tex(TR_ATLAS_W, TR_ATLAS_H, true, false);
+  g->albedo = layer_array();
+  g->lnormal = layer_array();
   for (int f = 0; f < 2; f++)
     for (int h = 0; h < 2; h++) make_mesh(t, f, h, 256);
 }
@@ -288,7 +292,7 @@ void cw__terrain_gpu_free(cw_terrain *t) {
         if (g->scene) t3_object_remove(&g->scene->base, g->im[f][h]);
         t3_release(g->im[f][h]);
       }
-  t3_texture *tx[] = { g->heights, g->control, g->macro, g->layers };
+  t3_texture *tx[] = { g->heights, g->normals, g->control, g->macro, g->albedo, g->lnormal };
   for (int i = 0; i < (int)CW_ARRAY_LEN(tx); i++)
     if (tx[i]) t3_release(tx[i]);
   if (g->grid[0]) t3_release(g->grid[0]);
@@ -356,8 +360,8 @@ void cw__terrain_gpu_update(cw_terrain *t) {
     t->macro_dirty = false;
   }
   if (t->layers_dirty) {
-    build_atlas(t, g->layers, false);
-    build_atlas(t, g->layers, true);
+    build_layers(t, g->albedo, false);
+    build_layers(t, g->lnormal, true);
     t->layers_dirty = false;
   }
   int q = cw__terrain_quality(t);
@@ -428,19 +432,19 @@ static void fill(t3_extension_ctx *c, void *user) {
   t3_extension_set_uniform(c, "terrainLod", v, 4);
   v[0] = far - fade, v[1] = 1.0f / fade, v[2] = 0.12f, v[3] = q >= CW_QUALITY_HIGH ? 2.0f : q == CW_QUALITY_MEDIUM ? 1.0f : 0.0f;
   t3_extension_set_uniform(c, "terrainFar", v, 4);
-  v[0] = TR_ATLAS_COLS, v[1] = TR_ATLAS_COLS, v[2] = (float)TR_TILE / TR_CELL, v[3] = (float)TR_GUTTER / TR_CELL;
-  t3_extension_set_uniform(c, "terrainAtlas", v, 4);
   for (int k = 0; k < 4; k++) v[k] = t->layer[k].uv_scale;
   t3_extension_set_uniform(c, "terrainUv0", v, 4);
   for (int k = 0; k < 4; k++) v[k] = t->layer[4 + k].uv_scale;
   t3_extension_set_uniform(c, "terrainUv1", v, 4);
-  /* triplanar from normal.y 0.75 down over 0.2; gradients kept within the gutter's mip (cell units) */
-  v[0] = 0.75f, v[1] = 0.2f, v[2] = (float)TR_GUTTER / TR_CELL, v[3] = 0.15f;
+  /* triplanar from normal.y 0.75 down over 0.2; height-blend sharpness */
+  v[0] = 0.75f, v[1] = 0.2f, v[2] = 0, v[3] = 0.15f;
   t3_extension_set_uniform(c, "terrainSlope", v, 4);
   t3_extension_set_texture(c, "terrainHeights", g->heights);
   t3_extension_set_texture(c, "terrainMacro", g->macro);
   t3_extension_set_texture(c, "terrainControl", g->control);
-  t3_extension_set_texture(c, "terrainLayers", g->layers);
+  t3_extension_set_texture(c, "terrainNormals", g->normals);
+  t3_extension_set_texture(c, "terrainAlbedo", g->albedo);
+  t3_extension_set_texture(c, "terrainLayerNormals", g->lnormal);
 }
 
 void cw_terrain_bind_renderer(cw_terrain *t, t3_renderer *r) {

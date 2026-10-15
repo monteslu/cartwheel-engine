@@ -11,21 +11,22 @@
 // normal transform divide by zero, and the NaN geometry normal would poison
 // the roughness r186 derives from it.)
 //
-// Vertex stage: heights are uint16 in a nearest-filtered RGBA8 texture (high
-// byte in R, low in G), read with textureLoad at integer texel coordinates,
-// so every fetch is exact and equal on GL and WebGPU. Morphing is vertical:
+// Vertex stage: heights are the uint16 steps in an R32UI texture (r186's TSL
+// types only 32-bit textures as integer ones), read with textureLoad at
+// integer texel coordinates, so every fetch is exact and equal on GL and
+// WebGPU. Morphing is vertical:
 // a vertex on an odd row or column of its node moves toward the height of
 // the coarser level's triangle under it (the midpoint of the two even
 // neighbours along its row, column, or the quad diagonal Box3D's height
 // field uses), so it never moves sideways and the fully morphed patch is
 // exactly the next level's surface: no cracks between levels.
 //
-// Fragment stage: normals from the baked normals beside the heights; colour and roughness from
-// Terrain3D's control map layout (base and overlay layer ids and their blend
-// in a uint32 a texel, here the four bytes of an RGBA8 texel, big end in R)
-// over one layer atlas (each layer's albedo + height cell beside its normal +
-// roughness cell: Terrain3D's
-// packing), with triplanar sampling on steep slopes. Past the far distance
+// Fragment stage: normals from a baked normal map; colour and roughness from
+// Terrain3D's control map, a uint32 a sample in an R32UI texture (base and
+// overlay layer ids, their blend, uv rotation and scale, hole), over two
+// layer array textures (albedo + height, normal + roughness: Terrain3D's
+// packing; repeat-wrapped and mipmapped by the hardware), with triplanar
+// sampling on steep slopes. Past the far distance
 // only a baked macro colour and the normal map are read.
 //
 // Names after "ext." are what the C fill hook sets (terrain_render.c).
@@ -34,7 +35,7 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   const {
     Fn, If, uniform, texture, textureLoad, sharedUniformGroup, positionLocal, positionWorld, cameraViewMatrix,
     vec2, vec3, vec4, float, ivec2, clamp, fract, floor, round, exp2, mix, max, min, abs, sqrt, length, normalize,
-    smoothstep, dFdx, dFdy, dot, select, sin, cos, pow, property, materialColor, materialRoughness, materialMetalness, sRGBTransferEOTF,
+    smoothstep, dFdx, dFdy, dot, select, sin, cos, pow, property, uint, int, materialColor, materialRoughness, materialMetalness, sRGBTransferEOTF,
   } = TSL;
 
   // ── per-frame values: one shared group, uploaded when they change ──
@@ -53,6 +54,21 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   const far = v4('terrainFar');       // far start, 1 / fade length, macro variation, quality (0 low, 1 medium, 2 high)
 
   // textures: what the C side binds by these names
+  // the C side's textures must be made with these settings (r186 bakes filters and wrapping into the code)
+  const uintTex = (name) => {
+    const t = new THREE.DataTexture(new Uint32Array(4), 2, 2, THREE.RedIntegerFormat, THREE.UnsignedIntType);
+    t.name = 'ext.' + name;
+    t.needsUpdate = true;
+    return t;
+  };
+  const arrayTex = (name) => {
+    const t = new THREE.DataArrayTexture(new Uint8Array(2 * 2 * 4 * 2).fill(128), 2, 2, 2);
+    t.name = 'ext.' + name;
+    t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.needsUpdate = true;
+    return t;
+  };
   const dataTex = (name, linear, srgb) => {
     const t = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255, 128, 128, 128, 255, 128, 128, 128, 255, 128, 128, 128, 255]), 2, 2);
     t.name = 'ext.' + name;
@@ -66,16 +82,11 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     t.needsUpdate = true;
     return t;
   };
-  // heights in R, G (read with textureLoad: exact, the sampler's filtering never applies) and the
-  // normal's x, z in B, A (sampled with linear filtering and mipmaps): one texture for both keeps
-  // the object group within three.c's eight textures beside its own (shadow maps, environment, LUT)
-  const heightMap = dataTex('terrainHeights', true, false);
-  const heightTex = texture(heightMap); // one node, loaded and sampled from it
+  const heightMap = uintTex('terrainHeights');
 
   // ── vertex: CDLOD position ─────────────────────────────────────────
   const fetchH = (x, z) => {
-    const t = heightTex.load(ivec2(clamp(x, 0, hgt.z), clamp(z, 0, hgt.w)));
-    return round(t.r.mul(255)).mul(256).add(round(t.g.mul(255)));
+    return float(textureLoad(heightMap, ivec2(clamp(x, 0, hgt.z), clamp(z, 0, hgt.w))).r);
   };
   mat.positionNode = Fn(() => {
     const p = positionLocal;
@@ -106,7 +117,9 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   mat.metalnessNode = materialMetalness;
 
   // ── fragment ───────────────────────────────────────────────────────
-  // sRGB-encoded data in a linear texture, decoded here (as the layer atlas): the same on every backend
+  // normal x, z in R, G (0.5 = 0), linear filtered and mipmapped
+  const normalMap = dataTex('terrainNormals', true, false);
+  // sRGB-encoded data in a linear texture, decoded here (as the layers' albedo): the same on every backend
   const macroMap = dataTex('terrainMacro', true, false);
   const wp = positionWorld;
   // texel-centre uv over the height grid
@@ -115,7 +128,7 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     return t.add(0.5).div(vec2(hgt.z.add(1), hgt.w.add(1)));
   }).once()();
   const worldNormal = Fn(() => {
-    const e = heightTex.sample(gridUv).zw.mul(2).sub(1);
+    const e = texture(normalMap, gridUv).xy.mul(2).sub(1);
     return normalize(vec3(e.x, sqrt(max(float(1).sub(dot(e, e)), 0)), e.y));
   }).once()();
   const dist = length(wp.sub(cam.xyz));
@@ -135,15 +148,13 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     return;
   }
 
-  const ctlMap = dataTex('terrainControl', false, false);
-  // one atlas for both maps (a texture binding fewer: three.c's WebGPU groups hold eight): layer i's
-  // albedo + height in cell (i % cols, i / cols), its normal + roughness cols cells to the right. The
-  // albedo is sRGB-encoded data, decoded here (the atlas itself is linear)
-  const layerAtlas = dataTex('terrainLayers', true, false);
-  const atlas = v4('terrainAtlas');   // layer columns, rows, tile share of a cell, gutter share of a cell
+  const ctlMap = uintTex('terrainControl');
+  // the layers: albedo + height (sRGB-encoded data, decoded here) and normal + roughness, one array
+  // layer each
+  const albedoArr = arrayTex('terrainAlbedo'), normalArr = arrayTex('terrainLayerNormals');
   const uvs0 = v4('terrainUv0');      // uv scale of layers 0..3 (repeats per metre)
   const uvs1 = v4('terrainUv1');      // 4..7
-  const slope = v4('terrainSlope');   // triplanar from normal.y = x down to x - y; atlas max gradient; height blend sharpness
+  const slope = v4('terrainSlope');   // triplanar from normal.y = x down to x - y; (unused); height blend sharpness
 
   const layerScale = (id) => {
     const a = select(id.lessThan(0.5), uvs0.x, select(id.lessThan(1.5), uvs0.y, select(id.lessThan(2.5), uvs0.z, uvs0.w)));
@@ -151,36 +162,19 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     return select(id.lessThan(3.5), a, b);
   };
   // Terrain3D control bits from an RGBA8 texel (byte 0 = bits 31..24)
-  const decode = (c) => {
-    const R = round(c.r.mul(255)), G = round(c.g.mul(255)), B = round(c.b.mul(255)), A = round(c.a.mul(255));
-    const b5 = floor(R.div(8));
-    const o5 = R.sub(b5.mul(8)).mul(4).add(floor(G.div(64)));
-    const base = min(b5, 7), over = min(o5, 7); // (5-bit ids; the atlas holds 8 layers)
-    const blend = G.sub(floor(G.div(64)).mul(64)).mul(4).add(floor(B.div(64))).div(255);
-    const angle = floor(B.div(4)).sub(floor(B.div(64)).mul(16));
-    const scl = B.sub(floor(B.div(4)).mul(4)).mul(2).add(floor(A.div(128)));
-    return { base, over, blend, angle, scl };
+  const decode = (word) => {
+    const c = word.r; // the control word (uint)
+    const f = (shift, mask) => float(c.shiftRight(uint(shift)).bitAnd(uint(mask)));
+    const base = min(f(27, 31), 7), over = min(f(22, 31), 7); // (5-bit ids; 8 layers)
+    return { base, over, blend: f(14, 255).div(255), angle: f(10, 15), scl: f(7, 7) };
   };
+
   // Terrain3D's uv scale steps: 0 = 1x, then +20 % .. -60 %
   const scaleOf = (s) => select(s.lessThan(0.5), float(1), select(s.lessThan(4.5), float(1).add(s.mul(0.2)), float(1).sub(s.sub(4).mul(0.2))));
 
-  // one layer sample from an atlas, by explicit gradients (legal in non-uniform control flow on WebGPU)
-  const cells = vec2(atlas.x.mul(2), atlas.y);
-  const atlasUv = (id, uv, nrm) => {
-    const row = floor(id.div(atlas.x));
-    const col = id.sub(row.mul(atlas.x)).add(nrm ? atlas.x : 0);
-    return vec2(col, row).add(atlas.w).add(fract(uv).mul(atlas.z)).div(cells);
-  };
-  // gradients in cell units (cells are square in texels), kept under the gutter's mip, then to atlas uv
-  const clampGrad = (gx, gy) => {
-    const a = gx.mul(atlas.z), b = gy.mul(atlas.z);
-    const m = max(length(a), length(b));
-    const s = min(float(1), slope.z.div(max(m, 1e-8)));
-    return [a.mul(s).div(cells), b.mul(s).div(cells)];
-  };
+  // one layer sample, by explicit gradients (legal in non-uniform control flow on WebGPU)
   const sampleLayer = (nrm, id, uv, gx, gy) => {
-    const [cx, cy] = clampGrad(gx, gy);
-    const t = texture(layerAtlas, atlasUv(id, uv, nrm)).grad(cx, cy);
+    const t = texture(nrm ? normalArr : albedoArr, uv).depth(int(id)).grad(gx, gy);
     return nrm ? t : vec4(sRGBTransferEOTF(t.rgb), t.a);
   };
   const rot = (uv, angle) => {

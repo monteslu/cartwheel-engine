@@ -7,12 +7,7 @@
 #include "cartwheel/core.h"
 #include "cartwheel/terrain.h"
 
-#define TR_TILE 512                /* layer texture size in the atlases */
-#define TR_GUTTER (TR_TILE / 8)    /* wrapped border around each tile */
-#define TR_CELL (TR_TILE + 2 * TR_GUTTER)
-#define TR_ATLAS_COLS 3            /* 3 x 3 layer cells (8 used), albedo cells then normal cells */
-#define TR_ATLAS_W (TR_CELL * TR_ATLAS_COLS * 2)
-#define TR_ATLAS_H (TR_CELL * TR_ATLAS_COLS)
+#define TR_TILE 512                /* layer texture size: a layer of the array textures */
 #define TR_MAX_SCATTER 16
 #define TR_SCATTER_CELL 32.0f      /* metres */
 
