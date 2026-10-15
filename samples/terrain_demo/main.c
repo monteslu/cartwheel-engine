@@ -114,16 +114,16 @@ static void make_layer(const look *lk, uint32_t seed, uint8_t *alb, uint8_t *nrm
 
 static void paint(cw_terrain *t) {
   static const look looks[4] = {
-    { { 0.20f, 0.30f, 0.10f }, { 0.36f, 0.48f, 0.18f }, 8, 6, 0.85f, 6, 0 },     /* grass */
-    { { 0.32f, 0.30f, 0.28f }, { 0.58f, 0.55f, 0.50f }, 4, 7, 0.75f, 18, 0.6f }, /* rock */
-    { { 0.30f, 0.23f, 0.15f }, { 0.50f, 0.40f, 0.28f }, 6, 6, 0.9f, 8, 0 },      /* dirt */
-    { { 0.78f, 0.80f, 0.85f }, { 0.95f, 0.96f, 0.98f }, 4, 5, 0.6f, 3, 0 },      /* snow */
+    { { 0.20f, 0.30f, 0.10f }, { 0.34f, 0.46f, 0.17f }, 6, 5, 0.9f, 3, 0 },      /* grass */
+    { { 0.36f, 0.34f, 0.31f }, { 0.55f, 0.52f, 0.47f }, 3, 5, 0.85f, 6, 0.35f }, /* rock */
+    { { 0.30f, 0.23f, 0.15f }, { 0.48f, 0.38f, 0.27f }, 5, 5, 0.9f, 4, 0 },      /* dirt */
+    { { 0.80f, 0.82f, 0.86f }, { 0.94f, 0.95f, 0.97f }, 3, 4, 0.6f, 2, 0 },      /* snow */
   };
   uint8_t *a = malloc(TILE * TILE * 4), *n = malloc(TILE * TILE * 4);
   const cw_terrain_def *d = cw_terrain_get_def(t);
   for (int i = 0; i < 4; i++) {
     make_layer(&looks[i], 100 + (uint32_t)i, a, n);
-    static const float uv[4] = { 0.22f, 0.12f, 0.18f, 0.15f };
+    static const float uv[4] = { 0.2f, 0.08f, 0.15f, 0.1f };
     cw_terrain_set_layer_pixels(t, i, a, n, TILE, TILE, uv[i]);
   }
   free(a), free(n);
@@ -153,7 +153,7 @@ static void paint(cw_terrain *t) {
         if (k != b0 && w[k] > w[b1]) b1 = k;
       float s = w[b0] + w[b1];
       int blend = s > 0 ? (int)(w[b1] / s * 255) : 0;
-      ctl[z * nx + x] = cw_terrain_control(b0, b1, blend, (int)((x * 7 + z * 13) & 15), 0, false);
+      ctl[z * nx + x] = cw_terrain_control(b0, b1, blend, 0, 0, false);
     }
   cw_terrain_set_control(t, 0, 0, nx, nz, ctl);
   free(ctl);

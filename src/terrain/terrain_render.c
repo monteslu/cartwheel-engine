@@ -5,9 +5,10 @@
  *
  * Four instanced meshes: {near, far} x {full grid, half grid}. Each patch is
  * one instance; its matrix scales the unit grid (vertices at y = 1) to the
- * patch and carries the patch's level in its Y column, which the vertex
- * stage reads back from positionLocal.y (the grid's y is 1, so the level is
- * exactly what lands there). The objects are never frustum culled by
+ * patch and carries the patch's level plus one in its Y column, which the
+ * vertex stage reads back from positionLocal.y (the grid's y is 1, so that is
+ * exactly what lands there; never zero, so r186's instance normal transform
+ * stays finite). The objects are never frustum culled by
  * three.c: the selection culled the patches.
  *
  * Textures (all RGBA8):
@@ -15,7 +16,8 @@
  *             in R, low in G (read with textureLoad, exact); the normal's
  *             x, z in B, A (0.5 = 0; sampled filtered)
  *   control   (size + 1)^2, nearest: the control word's bytes, big end in R
- *   macro     at most 1024^2, linear + mipmaps, sRGB: the layers' mean
+ *   macro     at most 1024^2, linear + mipmaps, sRGB data decoded in the
+ *             shader: the layers' mean
  *             colours blended by the control map (the distant colour)
  *   layers    6 x 3 cells of TR_CELL: layer i's albedo + height (sRGB data,
  *             decoded in the shader) in cell (i % 3, i / 3), its normal +
@@ -234,7 +236,7 @@ static void make_mesh(cw_terrain *t, int far, int half, int cap) {
   im->count = 0;
   im->instance_matrix->usage = T3_DYNAMIC_DRAW;
   im->mesh.base.frustum_culled = false;
-  im->mesh.base.cast_shadow = false;
+  im->mesh.base.cast_shadow = !far && !t->def.no_shadow_cast;
   im->mesh.base.receive_shadow = true;
   im->mesh.base.visible = false;
   im->mesh.base.render_order = far ? 1 : 0;
@@ -270,7 +272,7 @@ static void ensure_gpu(cw_terrain *t) {
   while ((t->nx - 1) / g->mdiv + 1 > 1025 || (t->nz - 1) / g->mdiv + 1 > 1025) g->mdiv *= 2;
   g->mw = (t->nx - 1) / g->mdiv + 1;
   g->mh = (t->nz - 1) / g->mdiv + 1;
-  g->macro = data_tex(g->mw, g->mh, true, true);
+  g->macro = data_tex(g->mw, g->mh, true, false);
   g->layers = data_tex(TR_ATLAS_W, TR_ATLAS_H, true, false);
   for (int f = 0; f < 2; f++)
     for (int h = 0; h < 2; h++) make_mesh(t, f, h, 256);
@@ -385,9 +387,9 @@ void cw__terrain_gpu_draw_setup(cw_terrain *t) {
     t3_instanced_mesh *im = g->im[p->far][p->half];
     float *m = t3_attribute_f32(im->instance_matrix) + 16 * fill[p->far][p->half]++;
     float s = (float)p->size * sp;
-    /* column major: x scaled to the patch, Y column = the level, z scaled, translation to its corner */
+    /* column major: x scaled to the patch, Y column = the level + 1, z scaled, translation to its corner */
     m[0] = s, m[1] = 0, m[2] = 0, m[3] = 0;
-    m[4] = 0, m[5] = (float)p->lod, m[6] = 0, m[7] = 0;
+    m[4] = 0, m[5] = (float)p->lod + 1, m[6] = 0, m[7] = 0;
     m[8] = 0, m[9] = 0, m[10] = s, m[11] = 0;
     m[12] = t->def.origin.x + (float)p->x * sp, m[13] = 0, m[14] = t->def.origin.z + (float)p->z * sp, m[15] = 1;
   }

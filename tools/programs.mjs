@@ -32,6 +32,7 @@
 // GPU (byte-identical to a real device): Node only, no GPU. Running the apps
 // does use the test GPU, inside the GPU sandbox.
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +59,9 @@ function cmakeCache(key) {
 // named as its extension (a file with an underscore is a helper they import, not an extension)
 const EXTENSIONS = readdirSync(join(ROOT, 'src'), { withFileTypes: true }).filter((d) => d.isDirectory())
   .flatMap((d) => { const dir = join(ROOT, 'src', d.name, 'extensions'); return existsSync(dir) ? readdirSync(dir).filter((f) => /^[a-z0-9]+\.mjs$/.test(f)).map((f) => join(dir, f)) : []; });
+// and the helpers they import (their source is part of what a capture makes)
+const EXTENSION_HELPERS = EXTENSIONS.length ? [...new Set(EXTENSIONS.map((e) => dirname(e)))]
+  .flatMap((d) => readdirSync(d).filter((f) => f.endsWith('.mjs')).map((f) => join(d, f))).filter((f) => !EXTENSIONS.includes(f)) : [];
 const statesOf = (f) => (existsSync(f) ? readFileSync(f, 'utf8').split('\n').map((l) => l.replace(/#.*/, '').trim()).filter(Boolean) : []);
 
 /** regenerate one table from its manifest (plus missing logs) */
@@ -68,7 +72,10 @@ function regenerate(manifest, logs = []) {
     console.log(`${name}: no states, nothing to generate`);
     return;
   }
-  const cache = join(BUILD, 'programs-cache', name);
+  // the cache is keyed by state name only: captures made with other extension sources go to another one
+  const extHash = createHash('sha256');
+  for (const e of [...EXTENSIONS, ...EXTENSION_HELPERS].sort()) extHash.update(readFileSync(e));
+  const cache = join(BUILD, 'programs-cache', EXTENSIONS.length ? `${name}-${extHash.digest('hex').slice(0, 12)}` : name);
   const args = [GEN, '--name', name, '--out', dirname(manifest), '--states', manifest, '--cache', cache, '--minimize',
     ...logs.flatMap((l) => ['--missing', l]), ...EXTENSIONS.flatMap((e) => ['--extend', e]),
     ...(argv.includes('--fast') ? [] : ['--check'])];

@@ -48,9 +48,10 @@
  *   Ultra   High, far x1.5 and patch ranges x1.25
  * and the scatter's density follows cw_quality_scale("grass") / ("scatter").
  *
- * Shadows: the terrain receives shadows. It does not cast them yet: three.c
- * draws an extension material into shadow maps with its plain caster
- * program, which would shadow from the flat patch grid.
+ * Shadows: the terrain receives shadows and (cast_shadow) casts them: the
+ * shadow pass draws the near patches with the same extension's caster
+ * program (depth+instbig+xterrain), morphed for the viewing camera, so the
+ * shadow follows the drawn surface. Patches past far_distance never cast.
  *
  * ── physics ────────────────────────────────────────────────────────────
  * cw_terrain_attach_physics makes one static body with one Box3D height
@@ -116,6 +117,7 @@ typedef struct cw_terrain_def {
   float far_distance;       /* metres: past it only the macro colour is drawn (0 = 400) */
   float far_fade;           /* metres over which splat fades into macro: 0 = far_distance / 4 */
   float visible_range;      /* patches farther than this are not drawn: 0 = unlimited */
+  bool no_shadow_cast;      /* the near patches cast shadows unless this is set: false */
 } cw_terrain_def;
 /* The defaults noted above. */
 cw_terrain_def cw_terrain_default_def(void);
@@ -245,9 +247,12 @@ void cw_terrain_get_stats(const cw_terrain *t, cw_terrain_stats *out);
 /* ── scatter ──────────────────────────────────────────────────────────── */
 
 #define CW_SCATTER_LODS 3
+#define CW_SCATTER_PARTS 4
 typedef struct cw_scatter_def {
-  t3_geometry *geometry[CW_SCATTER_LODS]; /* mesh LODs, finest first (NULL ends the list); retained */
-  t3_material *material[CW_SCATTER_LODS]; /* one per LOD (NULL = the previous LOD's); retained */
+  /* mesh LODs, finest first (a LOD with no part 0 ends the list), each of up to CW_SCATTER_PARTS parts
+   * drawn with the same instances (a trunk and a crown: a glTF mesh's primitives); retained */
+  t3_geometry *geometry[CW_SCATTER_LODS][CW_SCATTER_PARTS];
+  t3_material *material[CW_SCATTER_LODS][CW_SCATTER_PARTS]; /* per part (NULL = the previous LOD's part) */
   float lod_distance[CW_SCATTER_LODS];    /* metres where LOD i + 1 takes over */
   float density;            /* instances per square metre at full density: 0.5 */
   uint32_t layers;          /* control layers it grows on (bit i = layer i; on the base layer, or the

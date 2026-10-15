@@ -73,12 +73,12 @@ cast_shadow = true
 seed = 2
 
 [node name="Trees" parent="Terrain" type="TerrainScatter3D"]
-shape = TREE
-density = 0.004
+mesh = "models/tree.glb"
+density = 0.006
 layers = 1
 min_slope = 25
-scale_min = 0.8
-scale_max = 1.6
+scale_min = 0.7
+scale_max = 1.3
 align = false
 sink = 0.2
 visible_range = 600

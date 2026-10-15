@@ -32,7 +32,7 @@ typedef struct sc_cell {
   bool generated, live;
   int n;                          /* instances */
   float *inst;                    /* n * INST_F */
-  t3_instanced_mesh *im[CW_SCATTER_LODS];
+  t3_instanced_mesh *im[CW_SCATTER_LODS][CW_SCATTER_PARTS]; /* parts share part 0's instance matrices */
   float sphere[4];
   float ymin, ymax;
   int posed_state;                /* -2 never; -1 dynamic; else the LOD it was posed whole at */
@@ -43,7 +43,7 @@ typedef struct sc_cell {
 struct tr_scatter {
   cw_scatter_def def;
   uint8_t *dm;
-  int nlod;
+  int nlod, nparts[CW_SCATTER_LODS];
   int cnx, cnz;
   sc_cell *cells;                 /* cnx * cnz, generated lazily */
   float radius;                   /* the finest mesh's bounding radius */
@@ -167,11 +167,12 @@ int cw_terrain_scatter_cell(cw_terrain *t, int layer, int cx, int cz, float *out
 
 static void cell_free_gpu(tr_scatter *s, sc_cell *c) {
   for (int l = 0; l < CW_SCATTER_LODS; l++)
-    if (c->im[l]) {
-      if (s->scene) t3_object_remove(&s->scene->base, c->im[l]);
-      t3_release(c->im[l]);
-      c->im[l] = NULL;
-    }
+    for (int p = 0; p < CW_SCATTER_PARTS; p++)
+      if (c->im[l][p]) {
+        if (s->scene) t3_object_remove(&s->scene->base, c->im[l][p]);
+        t3_release(c->im[l][p]);
+        c->im[l][p] = NULL;
+      }
 }
 
 static void cell_reset(tr_scatter *s, sc_cell *c) {
@@ -186,10 +187,11 @@ static void cell_reset(tr_scatter *s, sc_cell *c) {
 void cw__scatter_free(tr_scatter *s) {
   if (!s) return;
   for (int i = 0; i < s->cnx * s->cnz; i++) cell_reset(s, &s->cells[i]);
-  for (int l = 0; l < CW_SCATTER_LODS; l++) {
-    if (s->def.geometry[l]) t3_release(s->def.geometry[l]);
-    if (s->def.material[l]) t3_release(s->def.material[l]);
-  }
+  for (int l = 0; l < CW_SCATTER_LODS; l++)
+    for (int p = 0; p < CW_SCATTER_PARTS; p++) {
+      if (s->def.geometry[l][p]) t3_release(s->def.geometry[l][p]);
+      if (s->def.material[l][p]) t3_release(s->def.material[l][p]);
+    }
   cw_free(s->cells);
   cw_free(s->dm);
   cw_free(s);
@@ -203,7 +205,7 @@ void cw__scatter_attach(cw_terrain *t, tr_scatter *s) {
 }
 
 int cw_terrain_scatter_add(cw_terrain *t, const cw_scatter_def *def) {
-  if (!t || !def || !def->geometry[0] || !def->material[0]) {
+  if (!t || !def || !def->geometry[0][0] || !def->material[0][0]) {
     cw_error("terrain: a scatter layer needs a geometry and a material");
     return -1;
   }
@@ -228,18 +230,30 @@ int cw_terrain_scatter_add(cw_terrain *t, const cw_scatter_def *def) {
   }
   s->def.density_map = NULL;
   for (int l = 0; l < CW_SCATTER_LODS; l++) {
-    if (!s->def.geometry[l]) break;
-    if (!s->def.material[l]) s->def.material[l] = s->def.material[l - 1];
-    t3_retain(s->def.geometry[l]);
-    t3_retain(s->def.material[l]);
+    if (!s->def.geometry[l][0]) break;
+    int np = 0;
+    for (int p = 0; p < CW_SCATTER_PARTS && s->def.geometry[l][p]; p++) {
+      if (!s->def.material[l][p]) s->def.material[l][p] = l ? s->def.material[l - 1][p] : NULL;
+      if (!s->def.material[l][p]) break;
+      t3_retain(s->def.geometry[l][p]);
+      t3_retain(s->def.material[l][p]);
+      np = p + 1;
+    }
+    for (int p = np; p < CW_SCATTER_PARTS; p++) s->def.geometry[l][p] = NULL, s->def.material[l][p] = NULL;
+    s->nparts[l] = np;
     s->nlod = l + 1;
   }
-  for (int l = s->nlod; l < CW_SCATTER_LODS; l++) s->def.geometry[l] = NULL, s->def.material[l] = NULL;
-  t3_geometry *g0 = s->def.geometry[0];
-  if (!g0->has_bounding_sphere) t3_geometry_compute_bounding_sphere(g0);
-  s->radius = g0->bounding_sphere.radius + sqrtf(g0->bounding_sphere.center.x * g0->bounding_sphere.center.x +
-                                                 g0->bounding_sphere.center.y * g0->bounding_sphere.center.y +
-                                                 g0->bounding_sphere.center.z * g0->bounding_sphere.center.z);
+  for (int l = s->nlod; l < CW_SCATTER_LODS; l++)
+    for (int p = 0; p < CW_SCATTER_PARTS; p++) s->def.geometry[l][p] = NULL, s->def.material[l][p] = NULL;
+  /* the bounding radius over LOD 0's parts */
+  for (int p = 0; p < s->nparts[0]; p++) {
+    t3_geometry *g = s->def.geometry[0][p];
+    if (!g->has_bounding_sphere) t3_geometry_compute_bounding_sphere(g);
+    float r = g->bounding_sphere.radius + sqrtf(g->bounding_sphere.center.x * g->bounding_sphere.center.x +
+                                                g->bounding_sphere.center.y * g->bounding_sphere.center.y +
+                                                g->bounding_sphere.center.z * g->bounding_sphere.center.z);
+    s->radius = r > s->radius ? r : s->radius;
+  }
   float sp = t->def.vertex_spacing;
   s->cnx = (int)ceilf((float)t->def.size_x * sp / TR_SCATTER_CELL);
   s->cnz = (int)ceilf((float)t->def.size_z * sp / TR_SCATTER_CELL);
@@ -327,7 +341,7 @@ static void pose_cells(int begin, int end, int worker, void *u) {
     sc_cell *c = j->list[ci];
     float *dst[CW_SCATTER_LODS] = { 0 };
     int cnt[CW_SCATTER_LODS] = { 0 };
-    for (int l = 0; l < nl; l++) dst[l] = t3_attribute_f32(c->im[l]->instance_matrix);
+    for (int l = 0; l < nl; l++) dst[l] = t3_attribute_f32(c->im[l][0]->instance_matrix);
     tr_v4f cx = { j->cam[0], j->cam[0], j->cam[0], j->cam[0] }, cy = { j->cam[1], j->cam[1], j->cam[1], j->cam[1] },
            cz = { j->cam[2], j->cam[2], j->cam[2], j->cam[2] };
     for (int i = 0; i < c->n; i += 4) {
@@ -352,8 +366,7 @@ static void pose_cells(int begin, int end, int worker, void *u) {
     }
     int drawn = 0;
     for (int l = 0; l < nl; l++) {
-      t3_instanced_mesh *im = c->im[l];
-      im->count = cnt[l];
+      for (int p = 0; p < j->s->nparts[l]; p++) c->im[l][p]->count = cnt[l];
       drawn += cnt[l];
     }
     c->drawn = drawn;
@@ -423,24 +436,31 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
       }
       if (!c->live && vis) {
         /* GPU copies for a cell coming into view */
-        for (int l = 0; l < s->nlod; l++) {
-          t3_instanced_mesh *im = t3_instanced_mesh_new(d->geometry[l], d->material[l], c->n);
-          im->count = 0;
-          im->instance_matrix->usage = T3_DYNAMIC_DRAW;
-          im->mesh.base.cast_shadow = l == 0 && d->cast_shadow;
-          im->mesh.base.receive_shadow = true;
-          t3_sphere sph = { { (mn[0] + mx[0]) * 0.5f, (mn[1] + mx[1]) * 0.5f, (mn[2] + mx[2]) * 0.5f }, 0 };
-          float ex = (mx[0] - mn[0]) * 0.5f, ey = (mx[1] - mn[1]) * 0.5f, ez = (mx[2] - mn[2]) * 0.5f;
-          sph.radius = sqrtf(ex * ex + ey * ey + ez * ez);
-          t3_instanced_mesh_set_bounding_sphere(im, &sph);
-          c->im[l] = im;
-          if (s->scene) t3_object_add(&s->scene->base, im);
-        }
+        for (int l = 0; l < s->nlod; l++)
+          for (int p = 0; p < s->nparts[l]; p++) {
+            t3_instanced_mesh *im = t3_instanced_mesh_new(d->geometry[l][p], d->material[l][p], c->n);
+            im->count = 0;
+            if (p) {
+              /* the parts draw part 0's instances: one pose, one upload */
+              t3_release(im->instance_matrix);
+              im->instance_matrix = t3_retain(c->im[l][0]->instance_matrix);
+            }
+            im->instance_matrix->usage = T3_DYNAMIC_DRAW;
+            im->mesh.base.cast_shadow = l == 0 && d->cast_shadow;
+            im->mesh.base.receive_shadow = true;
+            t3_sphere sph = { { (mn[0] + mx[0]) * 0.5f, (mn[1] + mx[1]) * 0.5f, (mn[2] + mx[2]) * 0.5f }, 0 };
+            float ex = (mx[0] - mn[0]) * 0.5f, ey = (mx[1] - mn[1]) * 0.5f, ez = (mx[2] - mn[2]) * 0.5f;
+            sph.radius = sqrtf(ex * ex + ey * ey + ez * ez);
+            t3_instanced_mesh_set_bounding_sphere(im, &sph);
+            c->im[l][p] = im;
+            if (s->scene) t3_object_add(&s->scene->base, im);
+          }
         c->live = true;
         c->posed_state = -2;
       }
       if (!c->live) continue;
-      for (int l = 0; l < s->nlod; l++) c->im[l]->mesh.base.visible = vis;
+      for (int l = 0; l < s->nlod; l++)
+        for (int p = 0; p < s->nparts[l]; p++) c->im[l][p]->mesh.base.visible = vis;
       if (!vis) continue;
       /* a cell wholly in one LOD band, short of the fade, keeps its pose */
       float dmin = sqrtf(d2), dmax;
@@ -465,7 +485,7 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
     cw_parallel_for(np, 1, pose_cells, &pj);
     for (int i = 0; i < np; i++)
       for (int l = 0; l < s->nlod; l++) {
-        t3_instanced_mesh *im = pose[i]->im[l];
+        t3_instanced_mesh *im = pose[i]->im[l][0];
         if (im->count) {
           im->instance_matrix->version++;
           t3_attribute_add_update_range(im->instance_matrix, 0, im->count);
@@ -477,10 +497,10 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
       sc_cell *c = &s->cells[z * s->cnx + x];
       if (!c->live) continue;
       t->stats.scatter_cells++;
-      if (c->im[0] && c->im[0]->mesh.base.visible) {
+      if (c->im[0][0] && c->im[0][0]->mesh.base.visible) {
         t->stats.scatter_cells_visible++;
         t->stats.scatter_instances += c->drawn;
-        for (int l = 0; l < s->nlod; l++) t->stats.scatter_draws += c->im[l]->count > 0;
+        for (int l = 0; l < s->nlod; l++) t->stats.scatter_draws += (c->im[l][0]->count > 0) * s->nparts[l];
       }
     }
   cw_free(gen);

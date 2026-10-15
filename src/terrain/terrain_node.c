@@ -11,6 +11,7 @@
  * (GRASS, ROCK, TREE: generated with vertex colours, two LODs each) or a
  * mesh resource (a glTF sub-resource; its LOD chain gives the LODs). */
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "cartwheel/physics_nodes.h"
@@ -41,7 +42,7 @@ typedef struct scatter3d {
   /* runtime */
   int layer;                 /* in the parent's terrain, -1 none */
   bool dirty;
-  cw_res res;
+  cw_res res[CW_SCATTER_PARTS];
 } scatter3d;
 
 static const char *const shape_names[] = { "GRASS", "ROCK", "TREE", NULL };
@@ -167,8 +168,10 @@ static void scatter_remove(cw_terrain *t, scatter3d *s) {
 static void scatter_destroy(cw_node n, void *data) {
   (void)n;
   scatter3d *s = data;
-  if (s->res.id) cw_res_release(s->res);
-  s->res = (cw_res){ 0 };
+  for (int p = 0; p < CW_SCATTER_PARTS; p++) {
+    if (s->res[p].id) cw_res_release(s->res[p]);
+    s->res[p] = (cw_res){ 0 };
+  }
 }
 
 /* (re)add the layer to the parent's terrain */
@@ -177,22 +180,43 @@ static void scatter_apply(cw_node n, scatter3d *s, cw_terrain *t) {
   s->dirty = false;
   if (!t) return;
   cw_scatter_def d = cw_scatter_default_def();
-  t3_geometry *gs[CW_SCATTER_LODS] = { 0 };
-  t3_material *ms[CW_SCATTER_LODS] = { 0 };
+  t3_geometry *gs[CW_SCATTER_LODS][CW_SCATTER_PARTS] = { { 0 } };
+  t3_material *ms[CW_SCATTER_LODS][CW_SCATTER_PARTS] = { { 0 } };
   bool own = true;
   if (s->mesh && *s->mesh) {
-    if (!s->res.id) s->res = cw_res_load(s->mesh, CW_RES_MESH);
-    const cw_mesh *m = cw_res_mesh(s->res);
-    if (!m) {
-      cw_error("TerrainScatter3D %s: mesh %s did not load", cw_node_name(n), s->mesh);
-      return;
+    /* "file.glb#mesh/m/p": that primitive; "file.glb": mesh 0's primitives, each a part */
+    bool one = strchr(s->mesh, '#') != NULL;
+    int parts = 1;
+    if (!one) {
+      /* a one-mesh glTF: its primitives (cw_gltf.mesh_count counts them) */
+      cw_res file = cw_res_load(s->mesh, CW_RES_GLTF);
+      const cw_gltf *gl = cw_res_gltf(file);
+      parts = gl ? CW_CLAMP(gl->mesh_count, 1, CW_SCATTER_PARTS) : 1;
+      cw_res_release(file);
     }
-    for (int l = 0; l < CW_SCATTER_LODS && l < m->lod_count; l++) gs[l] = m->lod[l], ms[l] = m->material;
+    for (int p = 0; p < parts; p++) {
+      if (!s->res[p].id) {
+        char path[512];
+        if (one) snprintf(path, sizeof path, "%s", s->mesh);
+        else snprintf(path, sizeof path, "%s#mesh/0/%d", s->mesh, p);
+        s->res[p] = cw_res_load(path, CW_RES_MESH);
+      }
+      const cw_mesh *m = cw_res_mesh(s->res[p]);
+      if (!m) {
+        if (!p) {
+          cw_error("TerrainScatter3D %s: mesh %s did not load", cw_node_name(n), s->mesh);
+          return;
+        }
+        break;
+      }
+      for (int l = 0; l < CW_SCATTER_LODS && l < m->lod_count; l++) gs[l][p] = m->lod[l], ms[l][p] = m->material;
+    }
     own = false;
   } else {
-    for (int l = 0; l < 2; l++) builtin_mesh(s->shape, l, s->color, &gs[l], &ms[l]);
+    for (int l = 0; l < 2; l++) builtin_mesh(s->shape, l, s->color, &gs[l][0], &ms[l][0]);
   }
-  for (int l = 0; l < CW_SCATTER_LODS; l++) d.geometry[l] = gs[l], d.material[l] = ms[l];
+  for (int l = 0; l < CW_SCATTER_LODS; l++)
+    for (int p = 0; p < CW_SCATTER_PARTS; p++) d.geometry[l][p] = gs[l][p], d.material[l][p] = ms[l][p];
   for (int l = 0; l < CW_SCATTER_LODS; l++) d.lod_distance[l] = s->lod_distance * (float)(l + 1);
   d.density = s->density;
   d.layers = (uint32_t)s->layers;
@@ -224,16 +248,17 @@ static void scatter_apply(cw_node n, scatter3d *s, cw_terrain *t) {
     stbi_image_free(grey);
   }
   if (own)
-    for (int l = 0; l < CW_SCATTER_LODS; l++) {
-      if (gs[l]) t3_release(gs[l]);
-      if (ms[l]) t3_release(ms[l]);
-    }
+    for (int l = 0; l < CW_SCATTER_LODS; l++)
+      for (int p = 0; p < CW_SCATTER_PARTS; p++) {
+        if (gs[l][p]) t3_release(gs[l][p]);
+        if (ms[l][p]) t3_release(ms[l][p]);
+      }
 }
 
 static const cw_prop scatter_props[] = {
   { .name = "shape", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(scatter3d, shape), .size = sizeof(int),
     .enum_names = shape_names, .doc = "Built-in mesh when `mesh` is empty: GRASS (tufts), ROCK, TREE (two LODs each, vertex coloured)." },
-  CW_PROP_FIELD(scatter3d, mesh, CW_T_STRING, CW_PROP_DEFAULT, "A mesh resource (glTF sub-resource); its LOD chain gives the LODs."),
+  CW_PROP_FIELD(scatter3d, mesh, CW_T_STRING, CW_PROP_DEFAULT, "A glTF mesh: \"file.glb#mesh/m/p\" one primitive, or \"file.glb\" (one mesh) its primitives as parts (a trunk and a crown); its LOD chains give the LODs."),
   CW_PROP_FIELD(scatter3d, color, CW_T_COLOR, CW_PROP_DEFAULT, "Tint of the built-in meshes."),
   CW_PROP_FIELD_RANGE(scatter3d, density, CW_T_FLOAT, 0, 16, "Instances per square metre at full density."),
   CW_PROP_FIELD(scatter3d, density_map, CW_T_STRING, CW_PROP_DEFAULT, "Grey image over the whole terrain scaling the density (empty = 1)."),
@@ -272,7 +297,7 @@ typedef struct terrain3d {
   float uv_scale[CW_TERRAIN_LAYERS];
   float color[4];
   float roughness;
-  bool physics;
+  bool physics, cast_shadow;
   int quality;
   /* runtime */
   cw_terrain *t;
@@ -302,6 +327,7 @@ static void terrain_init(cw_node n, void *data) {
   d->color[0] = d->color[1] = d->color[2] = d->color[3] = 1;
   d->roughness = 1;
   d->physics = true;
+  d->cast_shadow = true;
   d->quality = -1;
   d->dirty = true;
 }
@@ -335,6 +361,7 @@ static void build(cw_node n, terrain3d *d) {
   def.lod_count = d->lod_count, def.vertex_spacing = d->vertex_spacing, def.min_height = d->min_height;
   def.max_height = d->max_height, def.lod0_range = d->lod0_range, def.far_distance = d->far_distance;
   def.visible_range = d->visible_range;
+  def.no_shadow_cast = !d->cast_shadow;
   def.origin = node_origin(n, d);
   cw_terrain *t = cw_terrain_create(&def);
   if (!t) return;
@@ -488,6 +515,7 @@ static const cw_prop terrain_props[] = {
   CW_PROP_FIELD(terrain3d, color, CW_T_COLOR, CW_PROP_DEFAULT, "Tint over the splat."),
   CW_PROP_FIELD_RANGE(terrain3d, roughness, CW_T_FLOAT, 0, 1, "Scales the layers' roughness."),
   CW_PROP_FIELD(terrain3d, physics, CW_T_BOOL, CW_PROP_DEFAULT, "Height-field bodies in the tree's 3D world."),
+  CW_PROP_FIELD(terrain3d, cast_shadow, CW_T_BOOL, CW_PROP_DEFAULT, "The near patches cast shadows (morphed as drawn)."),
   CW_PROP_FIELD_RANGE(terrain3d, quality, CW_T_INT, -1, 3, "Shading level 0..3 (Low..Ultra); -1 follows the graphics settings."),
   CW_PROP_END,
 };

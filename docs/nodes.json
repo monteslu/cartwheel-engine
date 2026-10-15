@@ -7534,7 +7534,7 @@
      "doc": "Generated octaves."
     },
     {
-     "name": "albedo[0]",
+     "name": "layer0_albedo",
      "type": "string",
      "default": "\"\"",
      "stored": true,
@@ -7542,25 +7542,23 @@
      "doc": "Layer 0: albedo RGB + height A image."
     },
     {
-     "name": "normal[0]",
+     "name": "layer0_normal",
      "type": "string",
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "Layer 0: normal RGB + roughness A image."
+     "doc": "Layer 0: normal RGB (+Y) + roughness A image."
     },
     {
-     "name": "uv_scale[0]",
+     "name": "layer0_uv_scale",
      "type": "float",
      "default": "0.25",
      "stored": true,
      "readonly": false,
-     "min": 0.0001,
-     "max": 100,
-     "doc": "Layer 0: repeats per metre."
+     "doc": "Layer 0: texture repeats per metre."
     },
     {
-     "name": "albedo[1]",
+     "name": "layer1_albedo",
      "type": "string",
      "default": "\"\"",
      "stored": true,
@@ -7568,25 +7566,23 @@
      "doc": "Layer 1: albedo RGB + height A image."
     },
     {
-     "name": "normal[1]",
+     "name": "layer1_normal",
      "type": "string",
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "Layer 1: normal RGB + roughness A image."
+     "doc": "Layer 1: normal RGB (+Y) + roughness A image."
     },
     {
-     "name": "uv_scale[1]",
+     "name": "layer1_uv_scale",
      "type": "float",
      "default": "0.25",
      "stored": true,
      "readonly": false,
-     "min": 0.0001,
-     "max": 100,
-     "doc": "Layer 1: repeats per metre."
+     "doc": "Layer 1: texture repeats per metre."
     },
     {
-     "name": "albedo[2]",
+     "name": "layer2_albedo",
      "type": "string",
      "default": "\"\"",
      "stored": true,
@@ -7594,25 +7590,23 @@
      "doc": "Layer 2: albedo RGB + height A image."
     },
     {
-     "name": "normal[2]",
+     "name": "layer2_normal",
      "type": "string",
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "Layer 2: normal RGB + roughness A image."
+     "doc": "Layer 2: normal RGB (+Y) + roughness A image."
     },
     {
-     "name": "uv_scale[2]",
+     "name": "layer2_uv_scale",
      "type": "float",
      "default": "0.25",
      "stored": true,
      "readonly": false,
-     "min": 0.0001,
-     "max": 100,
-     "doc": "Layer 2: repeats per metre."
+     "doc": "Layer 2: texture repeats per metre."
     },
     {
-     "name": "albedo[3]",
+     "name": "layer3_albedo",
      "type": "string",
      "default": "\"\"",
      "stored": true,
@@ -7620,25 +7614,23 @@
      "doc": "Layer 3: albedo RGB + height A image."
     },
     {
-     "name": "normal[3]",
+     "name": "layer3_normal",
      "type": "string",
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "Layer 3: normal RGB + roughness A image."
+     "doc": "Layer 3: normal RGB (+Y) + roughness A image."
     },
     {
-     "name": "uv_scale[3]",
+     "name": "layer3_uv_scale",
      "type": "float",
      "default": "0.25",
      "stored": true,
      "readonly": false,
-     "min": 0.0001,
-     "max": 100,
-     "doc": "Layer 3: repeats per metre."
+     "doc": "Layer 3: texture repeats per metre."
     },
     {
-     "name": "albedo[4]",
+     "name": "layer4_albedo",
      "type": "string",
      "default": "\"\"",
      "stored": true,
@@ -7646,25 +7638,23 @@
      "doc": "Layer 4: albedo RGB + height A image."
     },
     {
-     "name": "normal[4]",
+     "name": "layer4_normal",
      "type": "string",
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "Layer 4: normal RGB + roughness A image."
+     "doc": "Layer 4: normal RGB (+Y) + roughness A image."
     },
     {
-     "name": "uv_scale[4]",
+     "name": "layer4_uv_scale",
      "type": "float",
      "default": "0.25",
      "stored": true,
      "readonly": false,
-     "min": 0.0001,
-     "max": 100,
-     "doc": "Layer 4: repeats per metre."
+     "doc": "Layer 4: texture repeats per metre."
     },
     {
-     "name": "albedo[5]",
+     "name": "layer5_albedo",
      "type": "string",
      "default": "\"\"",
      "stored": true,
@@ -7672,25 +7662,23 @@
      "doc": "Layer 5: albedo RGB + height A image."
     },
     {
-     "name": "normal[5]",
+     "name": "layer5_normal",
      "type": "string",
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "Layer 5: normal RGB + roughness A image."
+     "doc": "Layer 5: normal RGB (+Y) + roughness A image."
     },
     {
-     "name": "uv_scale[5]",
+     "name": "layer5_uv_scale",
      "type": "float",
      "default": "0.25",
      "stored": true,
      "readonly": false,
-     "min": 0.0001,
-     "max": 100,
-     "doc": "Layer 5: repeats per metre."
+     "doc": "Layer 5: texture repeats per metre."
     },
     {
-     "name": "albedo[6]",
+     "name": "layer6_albedo",
      "type": "string",
      "default": "\"\"",
      "stored": true,
@@ -7698,25 +7686,23 @@
      "doc": "Layer 6: albedo RGB + height A image."
     },
     {
-     "name": "normal[6]",
+     "name": "layer6_normal",
      "type": "string",
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "Layer 6: normal RGB + roughness A image."
+     "doc": "Layer 6: normal RGB (+Y) + roughness A image."
     },
     {
-     "name": "uv_scale[6]",
+     "name": "layer6_uv_scale",
      "type": "float",
      "default": "0.25",
      "stored": true,
      "readonly": false,
-     "min": 0.0001,
-     "max": 100,
-     "doc": "Layer 6: repeats per metre."
+     "doc": "Layer 6: texture repeats per metre."
     },
     {
-     "name": "albedo[7]",
+     "name": "layer7_albedo",
      "type": "string",
      "default": "\"\"",
      "stored": true,
@@ -7724,22 +7710,20 @@
      "doc": "Layer 7: albedo RGB + height A image."
     },
     {
-     "name": "normal[7]",
+     "name": "layer7_normal",
      "type": "string",
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "Layer 7: normal RGB + roughness A image."
+     "doc": "Layer 7: normal RGB (+Y) + roughness A image."
     },
     {
-     "name": "uv_scale[7]",
+     "name": "layer7_uv_scale",
      "type": "float",
      "default": "0.25",
      "stored": true,
      "readonly": false,
-     "min": 0.0001,
-     "max": 100,
-     "doc": "Layer 7: repeats per metre."
+     "doc": "Layer 7: texture repeats per metre."
     },
     {
      "name": "color",
@@ -7766,6 +7750,14 @@
      "stored": true,
      "readonly": false,
      "doc": "Height-field bodies in the tree's 3D world."
+    },
+    {
+     "name": "cast_shadow",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "The near patches cast shadows (morphed as drawn)."
     },
     {
      "name": "quality",
@@ -7804,7 +7796,7 @@
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "A mesh resource (glTF sub-resource); its LOD chain gives the LODs."
+     "doc": "A glTF mesh: \"file.glb#mesh/m/p\" one primitive, or \"file.glb\" (one mesh) its primitives as parts (a trunk and a crown); its LOD chains give the LODs."
     },
     {
      "name": "color",

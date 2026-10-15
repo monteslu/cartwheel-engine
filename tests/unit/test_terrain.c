@@ -277,8 +277,8 @@ static void test_scatter(void) {
   t3_geometry *g = t3_box_geometry_new(1, 1, 1, 1, 1, 1);
   t3_material *m = t3_mesh_standard_material_new(0x808080);
   cw_scatter_def d = cw_scatter_default_def();
-  d.geometry[0] = g;
-  d.material[0] = m;
+  d.geometry[0][0] = g;
+  d.material[0][0] = m;
   d.density = 1;
   d.seed = 42;
   int a = cw_terrain_scatter_add(t, &d);

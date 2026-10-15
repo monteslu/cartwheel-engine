@@ -5,9 +5,11 @@
 // The mesh is a CDLOD patch: an InstancedMesh of one flat grid whose instance
 // matrices place each selected quadtree node (src/terrain/terrain_render.c).
 // The grid's vertices sit at y = 1 and the instance matrix's Y column carries
-// the node's LOD level, so after r186's instancing positionLocal is
-// (world x, lod, world z): everything the vertex stage needs, with no
-// attribute of its own.
+// the node's LOD level plus one, so after r186's instancing positionLocal is
+// (world x, lod + 1, world z): everything the vertex stage needs, with no
+// attribute of its own. (Plus one: a zero Y scale would make r186's instance
+// normal transform divide by zero, and the NaN geometry normal would poison
+// the roughness r186 derives from it.)
 //
 // Vertex stage: heights are uint16 in a nearest-filtered RGBA8 texture (high
 // byte in R, low in G), read with textureLoad at integer texel coordinates,
@@ -77,7 +79,7 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   };
   mat.positionNode = Fn(() => {
     const p = positionLocal;
-    const lod = p.y.toVar();
+    const lod = p.y.sub(1).toVar();
     const step = exp2(lod).toVar();
     const tx = round(p.x.sub(grid.x).mul(grid.z)).toVar();
     const tz = round(p.z.sub(grid.y).mul(grid.z)).toVar();
@@ -104,7 +106,8 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   mat.metalnessNode = materialMetalness;
 
   // ── fragment ───────────────────────────────────────────────────────
-  const macroMap = dataTex('terrainMacro', true, true);
+  // sRGB-encoded data in a linear texture, decoded here (as the layer atlas): the same on every backend
+  const macroMap = dataTex('terrainMacro', true, false);
   const wp = positionWorld;
   // texel-centre uv over the height grid
   const gridUv = Fn(() => {
@@ -122,7 +125,7 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     const n = sin(q.x.add(sin(q.y.mul(1.7)))).mul(sin(q.y.mul(1.3).add(sin(q.x.mul(0.9))))).mul(0.5).add(0.5);
     return mix(float(1).sub(far.z), float(1).add(far.z), n);
   });
-  const macroColor = Fn(() => texture(macroMap, gridUv).rgb.mul(variation())).once()();
+  const macroColor = Fn(() => sRGBTransferEOTF(texture(macroMap, gridUv).rgb).mul(variation())).once()();
   const viewNormal = (n) => normalize(cameraViewMatrix.mul(vec4(n, 0)).xyz);
 
   if (mode === 'far') {
@@ -249,15 +252,38 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
         pAlb.assign(mix(mix(s00.alb, s10.alb, f.x), mix(s01.alb, s11.alb, f.x), f.y));
         pNrm.assign(mix(mix(s00.nrm, s10.nrm, f.x), mix(s01.nrm, s11.nrm, f.x), f.y));
       } else {
-        // one control texel, picked around the point with a per-pixel jitter: transitions between
-        // texels dither instead of stepping (what the four-texel blend smooths at high quality)
-        const n = fract(sin(dot(wp.xz, vec2(12.9898, 78.233))).mul(43758.5453));
-        const n2 = fract(n.mul(17.13).add(0.31));
-        const i = floor(tcoord.add(0.5).add(vec2(n, n2).sub(0.5).mul(0.9)));
-        const c = textureLoad(ctlMap, ivec2(clamp(i.x, 0, hgt.z), clamp(i.y, 0, hgt.w)));
-        const s = blendTexel(c, g);
-        pAlb.assign(s.alb);
-        pNrm.assign(s.nrm);
+        // two layers, smoothly weighted: the four control texels around the point are read (point
+        // loads, no filtering), their bilinear weights summed per layer for the nearest texel's base
+        // layer (A) and the strongest other layer among the four (B), and A and B blended by height
+        // with that weight. Four layer reads, the same transitions as High's, cheaper.
+        const t = tcoord.sub(0.5);
+        const i0 = floor(t), f = fract(t);
+        const ld = (ix, iz) => {
+          const c = decode(textureLoad(ctlMap, ivec2(clamp(i0.x.add(ix), 0, hgt.z), clamp(i0.y.add(iz), 0, hgt.w))));
+          return { base: c.base.toVar(), over: c.over.toVar(), blend: c.blend.toVar(), angle: c.angle, scl: c.scl };
+        };
+        const taps = [ld(0, 0), ld(1, 0), ld(0, 1), ld(1, 1)];
+        const fx = f.x, fz = f.y, gx1 = float(1).sub(fx), gz1 = float(1).sub(fz);
+        const w = [gx1.mul(gz1), fx.mul(gz1), gx1.mul(fz), fx.mul(fz)];
+        // the nearest texel (the weights' largest)
+        const nx = fx.greaterThan(0.5), nz = fz.greaterThan(0.5);
+        const pick = (k) => select(nz, select(nx, k(taps[3]), k(taps[2])), select(nx, k(taps[1]), k(taps[0])));
+        const near = { base: pick((c) => c.base), over: pick((c) => c.over), angle: pick((c) => c.angle), scl: pick((c) => c.scl) };
+        const share = (c, L) => select(c.base.equal(L), float(1).sub(c.blend), float(0)).add(select(c.over.equal(L), c.blend, float(0)));
+        const weight = (L) => share(taps[0], L).mul(w[0]).add(share(taps[1], L).mul(w[1])).add(share(taps[2], L).mul(w[2])).add(share(taps[3], L).mul(w[3]));
+        const A = near.base.toVar();
+        const wA = weight(A).toVar();
+        const B = A.toVar(), wB = float(0).toVar();
+        for (const cand of [near.over, taps[0].base, taps[1].base, taps[2].base, taps[3].base, taps[0].over, taps[3].over]) {
+          const wc = weight(cand);
+          const better = cand.notEqual(A).and(wc.greaterThan(wB));
+          B.assign(select(better, cand, B));
+          wB.assign(select(better, wc, wB));
+        }
+        const a = layerAt(A, near, g), b = layerAt(B, near, g);
+        const tb = heightBlend(a, b, wB.div(max(wA.add(wB), 1e-4)));
+        pAlb.assign(mix(a.alb, b.alb, tb));
+        pNrm.assign(mix(a.nrm, b.nrm, tb));
       }
     });
     return fade;

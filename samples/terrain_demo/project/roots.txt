@@ -1,0 +1,7 @@
+# terrain_demo: what cwpack packs. The trees are the visibility samples'
+# generated tree (CC0, samples/vis_city/project/gen.mjs: a trunk and a crown,
+# two primitives the scatter draws as two parts), simplified into LODs.
+set mesh.compress true
+set mesh.lods 0.4 0.15
+main.cwscene
+models/tree.glb = @engine/samples/vis_city/project/models/tree.glb
