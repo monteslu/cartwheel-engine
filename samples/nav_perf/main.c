@@ -7,7 +7,8 @@
  *   - 64 obstacles added and applied (the touched tiles rebuild);
  *   - 1000 batched paths across the world;
  *   - crowd steps: 500 agents in the demo level and 2000 in the big world,
- *     walking to random points, mean and worst step over 600 steps after 60.
+ *     walking to random points: mean, median and worst step over 600 steps
+ *     after 60.
  *
  * Timings are debug fields; so are the results' hashes, which must be the
  * same at every worker count and on every host. */
@@ -21,7 +22,8 @@
 #include "cartwheel/nav.h"
 #include "cartwheel/platform.h"
 
-static float build_ms, build_dyn_ms, update_ms, paths_ms, step500_ms, step500_max, step2000_ms, step2000_max;
+static float build_ms, build_dyn_ms, update_ms, paths_ms, step500_ms, step500_max, step500_med, step2000_ms, step2000_max,
+  step2000_med;
 static int32_t threads, tiles, polys, done;
 static uint32_t mesh_hash, crowd500_hash, crowd2000_hash, paths_hash;
 
@@ -60,7 +62,12 @@ static float best_build(const cw_nav_config *c, const cw_nav_geom *g, uint32_t *
   return best;
 }
 
-static void run_crowd(cw_navmesh nm, int agents, float half, float *mean, float *worst, uint32_t *hash) {
+static int cmp_f(const void *a, const void *b) {
+  float x = *(const float *)a, y = *(const float *)b;
+  return x < y ? -1 : x > y;
+}
+
+static void run_crowd(cw_navmesh nm, int agents, float half, float *mean, float *median, float *worst, uint32_t *hash) {
   /* #region crowd */
   cw_crowd cr = cw_crowd_new(nm, agents);
   cw_crowd_set_plan_budget(cr, 32, 0);
@@ -73,7 +80,7 @@ static void run_crowd(cw_navmesh nm, int agents, float half, float *mean, float 
   }
   /* #endregion */
   double sum = 0;
-  float mx = 0;
+  float mx = 0, times[600];
   uint64_t x = 0;
   for (int t = 0; t < 660; t++) {
     /* agents that arrived go on to another point */
@@ -87,6 +94,7 @@ static void run_crowd(cw_navmesh nm, int agents, float half, float *mean, float 
     cw_crowd_step(cr, 1.0f / 60);
     float ms = (float)(now_ms() - t0);
     if (t >= 60) {
+      times[t - 60] = ms;
       sum += ms;
       mx = ms > mx ? ms : mx;
     }
@@ -94,6 +102,8 @@ static void run_crowd(cw_navmesh nm, int agents, float half, float *mean, float 
     x = cw_hash_bytes(&ch, sizeof ch, x);
   }
   *mean = (float)(sum / 600);
+  qsort(times, 600, sizeof times[0], cmp_f);
+  *median = (times[299] + times[300]) * 0.5f;
   *worst = mx;
   *hash = (uint32_t)x;
   cw_free(h);
@@ -119,8 +129,10 @@ static void init(void *u) {
   cw_debug_f32("perf.paths_ms", &paths_ms);
   cw_debug_f32("perf.step500_ms", &step500_ms);
   cw_debug_f32("perf.step500_max_ms", &step500_max);
+  cw_debug_f32("perf.step500_median_ms", &step500_med);
   cw_debug_f32("perf.step2000_ms", &step2000_ms);
   cw_debug_f32("perf.step2000_max_ms", &step2000_max);
+  cw_debug_f32("perf.step2000_median_ms", &step2000_med);
   cw_debug_u32("perf.mesh_hash", &mesh_hash);
   cw_debug_u32("perf.paths_hash", &paths_hash);
   cw_debug_u32("perf.crowd500_hash", &crowd500_hash);
@@ -178,10 +190,10 @@ static void bench(void) {
   cw_free(pts);
   cw_free(counts);
 
-  run_crowd(nm, 2000, 120, &step2000_ms, &step2000_max, &crowd2000_hash);
+  run_crowd(nm, 2000, 120, &step2000_ms, &step2000_med, &step2000_max, &crowd2000_hash);
   cw_navmesh_free(nm);
   cw_navmesh small_nm = cw_navmesh_build(&c, &small);
-  run_crowd(small_nm, 500, 29, &step500_ms, &step500_max, &crowd500_hash);
+  run_crowd(small_nm, 500, 29, &step500_ms, &step500_med, &step500_max, &crowd500_hash);
   cw_navmesh_free(small_nm);
   cw_nav_geom_free(&big);
   cw_nav_geom_free(&small);

@@ -2,7 +2,8 @@
 // job-pool thread (CW_WORKERS=0) and on the machine's default pool.
 // Reported: navmesh build of a 324-tile world (static and dynamic, best of 5),
 // 64 obstacles applied, 1000 batched paths, and the crowd step for 500 and
-// 2000 agents (mean and worst of 600 steps).
+// 2000 agents (mean, median and worst of 600 steps; the budget is on the
+// median, which another process's load on a shared machine moves least).
 // Checks:
 //   - every run's result hashes (navmesh bytes, paths, both crowds) are equal:
 //     the same work on every host and at every pool size;
@@ -30,8 +31,8 @@ const FRAMES = 40; // the benchmark runs on tick 30
 
 // ms, on each host's default pool
 const BUDGET = {
-  native: { 'perf.build_ms': 150, 'perf.build_dynamic_ms': 120, 'perf.step500_ms': 1, 'perf.step2000_ms': 3 },
-  chromium: { 'perf.build_ms': 400, 'perf.build_dynamic_ms': 300, 'perf.step500_ms': 2, 'perf.step2000_ms': 5 },
+  native: { 'perf.build_ms': 150, 'perf.build_dynamic_ms': 120, 'perf.step500_median_ms': 1, 'perf.step2000_median_ms': 3 },
+  chromium: { 'perf.build_ms': 400, 'perf.build_dynamic_ms': 300, 'perf.step500_median_ms': 2, 'perf.step2000_median_ms': 5 },
 };
 const HASHES = ['perf.mesh_hash', 'perf.paths_hash', 'perf.crowd500_hash', 'perf.crowd2000_hash', 'perf.tiles', 'perf.polys'];
 
@@ -59,8 +60,9 @@ const pad = (s, n) => String(s).padEnd(n);
 const num = (v, d = 2) => (typeof v === 'number' ? v.toFixed(d) : '-');
 const rows = [['pool threads', 'perf.threads', 0], ['tiles', 'perf.tiles', 0], ['polys', 'perf.polys', 0],
   ['build ms', 'perf.build_ms', 1], ['build dynamic ms', 'perf.build_dynamic_ms', 1], ['64 obstacles ms', 'perf.update_ms', 2],
-  ['1000 paths ms', 'perf.paths_ms', 2], ['step 500 ms', 'perf.step500_ms', 3], ['step 500 max', 'perf.step500_max_ms', 3],
-  ['step 2000 ms', 'perf.step2000_ms', 3], ['step 2000 max', 'perf.step2000_max_ms', 3]];
+  ['1000 paths ms', 'perf.paths_ms', 2], ['step 500 mean', 'perf.step500_ms', 3], ['step 500 median', 'perf.step500_median_ms', 3],
+  ['step 500 max', 'perf.step500_max_ms', 3], ['step 2000 mean', 'perf.step2000_ms', 3], ['step 2000 median', 'perf.step2000_median_ms', 3],
+  ['step 2000 max', 'perf.step2000_max_ms', 3]];
 const lines = ['nav_perf: 324-tile world (256 x 256 m), crowds of 500 and 2000 (600 steps at 60 Hz)', pad('', 18) + results.map((r) => pad(r.tag, 18)).join('')];
 for (const [label, key, d] of rows) lines.push(pad(label, 18) + results.map((r) => pad(r.error ? '(failed)' : num(r.state[key], d), 18)).join(''));
 console.log(lines.join('\n'));
@@ -85,6 +87,6 @@ if (one && many && many.state['perf.threads'] >= 4 && !(many.state['perf.build_m
   console.log(`FAIL native: ${many.state['perf.threads']} threads built in ${num(many.state['perf.build_ms'])} ms, one in ${num(one.state['perf.build_ms'])} ms (expected at least 2x faster)`);
 }
 // the control: impossible budgets must fail, or the check measures nothing
-if (many && !overBudget(many.state, { 'perf.step500_ms': 0.001, 'perf.build_ms': 0.001 }).length) { fail++; console.log('FAIL CONTROL: an impossible budget passed'); }
+if (many && !overBudget(many.state, { 'perf.step500_median_ms': 0.001, 'perf.build_ms': 0.001 }).length) { fail++; console.log('FAIL CONTROL: an impossible budget passed'); }
 console.log(fail ? `nav-perf: ${fail} failures` : `ok   nav-perf (same hashes on ${ok.map((r) => r.tag).join(', ')}; within budget)`);
 process.exit(fail ? 1 : 0);
