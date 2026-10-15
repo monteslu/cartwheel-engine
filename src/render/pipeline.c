@@ -410,16 +410,21 @@ static void gpu_time_add(pass_rec *r, uint64_t frame, float ms) {
 }
 
 static void timer_poll(pass_rec *r, bool disjoint) {
-  /* the available results, oldest frame first */
-  for (;;) {
+  /* each query in flight asked once (every ask is a driver round trip),
+   * the available results then taken oldest frame first */
+  bool ready[CW__QUERY_RING] = { false };
+  int n = 0;
+  for (int i = 0; i < CW__QUERY_RING; i++) {
+    if (!r->q_busy[i]) continue;
+    GLuint avail = 0;
+    glGetQueryObjectuiv(r->q[i], GL_QUERY_RESULT_AVAILABLE, &avail);
+    if (avail) ready[i] = true, n++;
+  }
+  while (n--) {
     int best = -1;
-    for (int i = 0; i < CW__QUERY_RING; i++) {
-      if (!r->q_busy[i] || (best >= 0 && r->q_frame[i] >= r->q_frame[best])) continue;
-      GLuint avail = 0;
-      glGetQueryObjectuiv(r->q[i], GL_QUERY_RESULT_AVAILABLE, &avail);
-      if (avail) best = i;
-    }
-    if (best < 0) return;
+    for (int i = 0; i < CW__QUERY_RING; i++)
+      if (ready[i] && (best < 0 || r->q_frame[i] < r->q_frame[best])) best = i;
+    ready[best] = false;
     GLuint ns = 0;
     glGetQueryObjectuiv(r->q[best], GL_QUERY_RESULT, &ns);
     r->q_busy[best] = false;
@@ -874,7 +879,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
   p->prepass_ran = false;
 
   /* the timers' results (once on they stay on, so every query issued is read) */
-  if (cw__caps.timer_query && !wgpu && cw__gpu_timing_wanted()) {
+  if (cw__caps.timer_query && !wgpu && cw__gpu_timing_wanted() && p->run == 0) { /* once a frame (splitscreen runs once per view) */
     GLint dj = 0;
     glGetIntegerv(GL_GPU_DISJOINT_EXT, &dj);
     for (int i = 0; i < p->passes.count; i++) timer_poll(p->passes.data[i], dj != 0);
