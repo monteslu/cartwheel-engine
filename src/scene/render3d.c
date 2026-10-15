@@ -883,6 +883,11 @@ t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
   /* this view's first render draws them; splitscreen's later views reuse the
    * first view's (a light's shadow camera is its own, not the view's) */
   if (!s->shadows_keep) t3_renderer_shadow_needs_update(s->renderer);
+  /* likewise the world matrices: the frame's first view brings the scene's up
+   * to date and the later views draw it as it stands (a view hook that moves
+   * something updates what it moved) */
+  t3_scene *sc = cw_render3d_scene(t);
+  if (sc) sc->auto_update = !s->shadows_keep;
   c->cam->fov = c->fov;
   c->cam->near = c->near;
   c->cam->far = c->far;
