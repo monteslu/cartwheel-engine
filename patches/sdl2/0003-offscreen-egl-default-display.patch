@@ -1,0 +1,30 @@
+--- a/src/video/SDL_egl.c
++++ b/src/video/SDL_egl.c
+@@ -577,9 +577,17 @@
+         return SDL_SetError("SDL_EGL_LoadLibraryOnly() has not been called or has failed.");
+     }
+ 
+-    /* Check for all extensions that are optional until used and fail if any is missing */
++    /* Without device enumeration (ANGLE on macOS), the default display:
++     * its pbuffers back an offscreen window just as well */
+     if (!_this->egl_data->eglQueryDevicesEXT) {
+-        return SDL_SetError("eglQueryDevicesEXT is missing (EXT_device_enumeration not supported by the drivers?)");
++        _this->egl_data->egl_display = _this->egl_data->eglGetDisplay(EGL_DEFAULT_DISPLAY);
++        if (_this->egl_data->egl_display == EGL_NO_DISPLAY) {
++            return SDL_SetError("eglQueryDevicesEXT is missing and the default EGL display is unavailable");
++        }
++        if (_this->egl_data->eglInitialize(_this->egl_data->egl_display, NULL, NULL) != EGL_TRUE) {
++            return SDL_SetError("Could not initialize EGL");
++        }
++        goto have_display;
+     }
+ 
+     if (!_this->egl_data->eglGetPlatformDisplayEXT) {
+@@ -637,6 +645,7 @@
+         }
+     }
+ 
++have_display:
+     /* Get the EGL version with a valid egl_display, for EGL <= 1.4 */
+     SDL_EGL_GetVersion(_this);
+ 
