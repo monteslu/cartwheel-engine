@@ -789,15 +789,15 @@ void cw_crowd_step(cw_crowd h, float dt) {
     waiting += a->status == CW_CROWD_WAITING;
   }
   build_grid(c);
-  cw_parallel_for(c->max, 16, neighbours_range, c);
+  cw_parallel_for(c->max, 64, neighbours_range, c);
   double t1 = cw__nav_now_ms();
   c->stats.phase_ms[1] = (float)(t1 - t);
   /* 3. steer and avoid */
-  cw_parallel_for(c->max, 8, steer_range, c);
+  cw_parallel_for(c->max, 32, steer_range, c);
   double t2 = cw__nav_now_ms();
   c->stats.phase_ms[2] = (float)(t2 - t1);
   /* 4. move */
-  cw_parallel_for(c->max, 8, move_range, c);
+  cw_parallel_for(c->max, 64, move_range, c);
   double t3 = cw__nav_now_ms();
   c->stats.phase_ms[3] = (float)(t3 - t2);
   int pairs = 0;
