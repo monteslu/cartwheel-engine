@@ -716,9 +716,12 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
     cw_render3d_set_camera(t, v->camera);
     if (p->view_hook) p->view_hook(i, p->view_hook_user);
     cw__render3d_keep_shadows(t, n > 0); /* the shadow maps once a frame: the first view draws them */
+    p->view_i = i;
+    p->view_pic = NULL;
     render_run(t, p, vw, vh, alpha, RUN_VIEW);
-    rts[n++] = rt;
+    rts[n++] = p->view_pic ? p->view_pic : rt;
   }
+  p->view_i = -1;
   cw__render3d_keep_shadows(t, false);
   cw_render3d_set_camera(t, (cw_node){ 0 });
   p->output_user = keep_out;
@@ -864,7 +867,11 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
   cw_rt msaa_gl;
   if (offscreen && !post_run) {
     cw_rt_format sf = ctx.hdr ? CW_RT_RGBA16F : CW_RT_RGBA8;
-    scene = persistent_depth(p, "scene", w, h, sf);
+    /* a shared post chain's views each keep their own scene target: it is
+     * the view's picture, laid out as it is */
+    char skey[24] = "scene";
+    if (mode == RUN_VIEW && p->view_post_split && p->view_i >= 0) snprintf(skey, sizeof skey, "scene.v%d", p->view_i);
+    scene = persistent_depth(p, skey, w, h, sf);
     if (!scene) offscreen = ctx.offscreen = false;
     else {
       scene_draw = scene;
@@ -925,7 +932,10 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
   for (int ph = 0; ph < CW_PHASE_COUNT; ph++) {
     if (ph <= CW_PHASE_POST && !has_scene && !(post_run && ph == CW_PHASE_POST)) continue;
     if (mode == RUN_VIEW && ph >= CW_PHASE_OVERLAY) { /* a view draws no overlays: just its picture into its target */
-      if (ph == CW_PHASE_OVERLAY && offscreen && last_writer < 0) cw__pass_copy(&ctx, scene->tex, output);
+      if (ph == CW_PHASE_OVERLAY && offscreen && last_writer < 0) {
+        if (p->view_post_split && p->view_i >= 0 && scene->format == output->format) p->view_pic = scene; /* (no copy) */
+        else cw__pass_copy(&ctx, scene->tex, output);
+      }
       if (ph == CW_PHASE_OVERLAY && has_scene) {
         p->views_cpu_ms = (p->run ? p->views_cpu_ms : 0) + (float)(cw__render3d_now_ms() - t_start);
         cw__render3d_set_cpu_ms(t, p->views_cpu_ms);

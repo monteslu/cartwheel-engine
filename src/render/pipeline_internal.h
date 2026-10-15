@@ -90,6 +90,8 @@ struct cw_pipeline {
   bool taa_reset;     /* drop the TAA history next frame */
   cw_view views[CW_MAX_VIEWS]; /* cw_pipeline_set_views (nviews >= 2: splitscreen) */
   int nviews;
+  int view_i;               /* splitscreen: the view being drawn (-1: none) */
+  const cw_rt *view_pic;    /* a shared post chain's view: its scene target is its picture (no copy) */
   bool views_shared_post; /* cw_pipeline_set_views_shared_post */
   bool view_post_split;   /* this frame: the views run the depth-reading post passes, the overlay run the rest */
   const cw_rt *post_src;  /* the overlay run's input: the views laid out (shared post) */
