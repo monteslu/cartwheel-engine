@@ -17,7 +17,7 @@
 // exits with its status); inside (CW_GPU_SANDBOXED) it checks the view and
 // returns. CW_TEST_GPU=desktop or CW_TEST_WINDOW=1 skips it.
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { testGpu } from './wgpu-pin.mjs';
 import { killTree } from './gpu-guard.mjs';
 
@@ -34,8 +34,18 @@ export function sandboxArgv(pci) {
   const masks = [];
   if (existsSync('/tmp/.X11-unix')) masks.push('--tmpfs', '/tmp/.X11-unix');
   try { for (const f of readdirSync(run).filter((n) => /^wayland-\d+(\.lock)?$/.test(n))) masks.push('--ro-bind', '/dev/null', `${run}/${f}`); } catch { /* no runtime dir */ }
+  // CW_WORKERS: the suite's processes see CW_WORKERS + 1 online CPUs, which is what wasmcart-run reports to a
+  // cart as its hardware threads (a cart's job pool is that minus one): carts in wcnative get the pool size
+  // native runs take from CW_WORKERS directly (Chromium's carts get it from tools/lib/workers.mjs)
+  const cpus = [];
+  if (process.env.CW_WORKERS !== undefined && process.env.CW_WORKERS !== '' && existsSync('/sys/devices/system/cpu/online')) {
+    const n = Math.max(0, Math.min(63, parseInt(process.env.CW_WORKERS, 10) || 0)) + 1;
+    const online = `${run}/cartwheel-cpu-online-${n}`;
+    writeFileSync(online, n > 1 ? `0-${n - 1}\n` : '0\n');
+    cpus.push('--ro-bind', online, '/sys/devices/system/cpu/online');
+  }
   return [bwrap, '--die-with-parent', '--dev-bind', '/', '/', '--tmpfs', '/dev/dri', ...nodes.flatMap((n) => ['--dev-bind', n, n]),
-    ...(existsSync('/dev/kfd') ? ['--ro-bind', '/dev/null', '/dev/kfd'] : []), ...masks];
+    ...(existsSync('/dev/kfd') ? ['--ro-bind', '/dev/null', '/dev/kfd'] : []), ...masks, ...cpus];
 }
 
 /** true when this process is meant to run unsandboxed (an explicit opt-out) */

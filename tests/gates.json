@@ -419,6 +419,54 @@
     "note": "physics wrapper: 2D + 3D queries (ray closest/all/batch, shape cast, overlap, aabb), layers, sensors, filters, mesh/chain, joint break, events, interpolation, movers"
   },
   {
+    "name": "unit-nav",
+    "app": "unit_nav",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.checksum": 703783090,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "(unit.passed is not compared: natively the suite reruns at four pool sizes, a cart at its own) navigation: navmesh bytes and crowd hashes equal at pool sizes 0, 1, 3 and 7 in one run; save/load, 1000 seeded queries, batched and budgeted paths, tile-cache obstacles, ORCA head-on and circle, crowd replanning"
+  },
+  {
+    "name": "nav-demo",
+    "app": "nav_demo",
+    "frames": 900,
+    "minColors": 8,
+    "maxGt16": 0.01,
+    "fields": [
+      "nav.hash",
+      "nav.hash_hi",
+      "nav.mesh_hash",
+      "nav.arrivals",
+      "nav.agents",
+      "nav.polys",
+      "nav.gate_changes"
+    ],
+    "controlFrames": 899,
+    "expect": {
+      "nav.hash": 1767719649,
+      "nav.hash_hi": 3661276748,
+      "nav.mesh_hash": 2133183940,
+      "nav.arrivals": 155,
+      "nav.agents": 500,
+      "nav.polys": 148,
+      "nav.gate_changes": 1
+    },
+    "note": "500 agents (NavigationAgent3D) for 15 s in a baked dynamic NavigationRegion3D, a gate (NavigationObstacle3D) closing a doorway at 10 s; every tick's crowd hash folded. The expected values are the same at every pool size (tests/nav-determinism.mjs runs this gate at CW_WORKERS 0, 1, 3 and the default)"
+  },
+  {
     "name": "unit-vehicle3d",
     "app": "unit_vehicle3d",
     "frames": 2,
