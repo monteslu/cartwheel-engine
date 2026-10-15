@@ -10,7 +10,8 @@
  * frame and compared with the one 8 frames (one jitter cycle) earlier.
  *
  * Debug state: post.seg (segment index), post.passes (bit i = the i-th of
- * pass_names ran last frame), pipe.float (RGBA16F renderable),
+ * pass_names ran last frame), post.fused (bit i = it ran inside another
+ * pass: post fusion; its GPU time is that pass's), pipe.float (RGBA16F renderable),
  * taa.delta (mean abs change per channel of the crop over one jitter cycle,
  * x1000), taa.max (largest change), taa.converged (mean < 0.1, max <= 4),
  * and gpu.<pass> (GPU ms, averaged; reported, never compared).
@@ -61,7 +62,7 @@ static const seg segs[] = {
 
 static const char *const pass_names[] = { "depth_prepass", "scene", "velocity", "ssao", "taa", "bloom", "tonemap", "grade",
                                           "aa", "lens", "app" };
-static int32_t seg_index = -1, passes_mask, float_ok, taa_delta, taa_max, taa_converged;
+static int32_t seg_index = -1, passes_mask, fused_mask, float_ok, taa_delta, taa_max, taa_converged;
 static uint32_t frame_no;
 static float gpu_ms[24];
 /* the last 9 crops: a converged history repeats with the 8-frame jitter
@@ -105,6 +106,7 @@ static void init(void *u) {
   (void)u;
   cw_debug_i32("post.seg", &seg_index);
   cw_debug_i32("post.passes", &passes_mask);
+  cw_debug_i32("post.fused", &fused_mask);
   cw_debug_i32("pipe.float", &float_ok);
   cw_debug_i32("taa.delta", &taa_delta);
   cw_debug_i32("taa.max", &taa_max);
@@ -147,12 +149,13 @@ static void render(void *u, double alpha) {
   const cw_pass_stat *st;
   int n = cw_pipeline_pass_stats(p, &st);
   /* by name: other modules add passes of their own */
-  passes_mask = 0;
+  passes_mask = fused_mask = 0;
   for (int k = 0; k < (int)CW_ARRAY_LEN(pass_names); k++) {
     gpu_ms[k] = -1;
     for (int i = 0; i < n; i++)
       if (!strcmp(st[i].name, pass_names[k])) {
         if (st[i].ran) passes_mask |= 1 << k;
+        if (st[i].fused) fused_mask |= 1 << k;
         gpu_ms[k] = st[i].gpu_ms_avg;
       }
   }

@@ -3,7 +3,8 @@
 // aberration, grain) at 1280x720 for 240 frames, natively, and the per-pass
 // GPU ms each pass's GL_TIME_ELAPSED queries measured (16-frame average).
 // Timings are reported, never compared. The checks: natively every pass the
-// segment runs has a timing (timer queries work and every pass is wrapped),
+// segment runs has a timing (timer queries work and every pass is wrapped;
+// a pass post fusion runs inside another has none of its own, and must not),
 // and a pass the segment does NOT run (FXAA/SMAA, the depth prepass) has
 // none, which is the control: a report that timed everything, or nothing,
 // fails. Other hosts are timed too when they can be (report only).
@@ -26,12 +27,17 @@ const hosts = argv.includes('--hosts') ? argv[argv.indexOf('--hosts') + 1].split
 const FRAMES = 240;
 const RUN = ['scene', 'velocity', 'ssao', 'taa', 'bloom', 'tonemap', 'grade', 'lens'];
 const NOT_RUN = ['depth_prepass', 'aa'];
+// samples/post_stack's pass_names: bit i of its post.passes / post.fused masks
+const PASS_NAMES = ['depth_prepass', 'scene', 'velocity', 'ssao', 'taa', 'bloom', 'tonemap', 'grade', 'aa', 'lens'];
+const bit = (mask, n) => ((mask ?? 0) >> PASS_NAMES.indexOf(n)) & 1;
 
 function run(host) {
   return new Promise((res) => {
     const state = join(OUT, `pipeline.${host}.json`);
+    // the pass timers run only once something reads them (src/render/pipeline_internal.h):
+    // the debug channel's "pipeline" command at load starts them on every host
     const p = spawn('node', [join(ROOT, 'tools', 'run-cart.mjs'), '--host', host, '--app', 'post_stack_perf', '--frames',
-      String(FRAMES), '--state', state, '--shot', join(OUT, `pipeline.${host}.png`)], { stdio: ['ignore', 'pipe', 'pipe'] });
+      String(FRAMES), '--state', state, '--shot', join(OUT, `pipeline.${host}.png`), '--start-cmds', 'pipeline'], { stdio: ['ignore', 'pipe', 'pipe'] });
     let err = '';
     p.stderr.on('data', (d) => (err += d));
     p.on('close', (code) => {
@@ -52,6 +58,7 @@ for (const name of rows) {
   lines.push(pad(name, 15) + results.map((r) => {
     if (r.error) return pad('(failed)', 12);
     const v = r.state['gpu.' + name];
+    if (!(v >= 0) && bit(r.state['post.fused'], name)) return pad('(fused)', 12);
     return pad(v >= 0 ? v.toFixed(3) : '-', 12);
   }).join(''));
 }
@@ -67,7 +74,12 @@ const native = results.find((r) => r.host === 'native');
 if (!native || native.error) { fail++; console.log('FAIL native run: ' + (native ? native.error : 'not run')); }
 else {
   if (native.state['pipe.float'] !== 1) { fail++; console.log('FAIL native: RGBA16F is not renderable'); }
-  for (const n of RUN) if (!(native.state['gpu.' + n] > 0)) { fail++; console.log(`FAIL native: pass ${n} has no GPU time`); }
+  // (a pass post fusion runs inside another has no GPU time of its own: the host pass's is its)
+  for (const n of RUN) {
+    if (!bit(native.state['post.passes'], n)) { fail++; console.log(`FAIL native: pass ${n} did not run`); }
+    else if (bit(native.state['post.fused'], n)) { if (native.state['gpu.' + n] > 0) { fail++; console.log(`FAIL native: pass ${n} ran fused but has a GPU time of its own`); } }
+    else if (!(native.state['gpu.' + n] > 0)) { fail++; console.log(`FAIL native: pass ${n} has no GPU time`); }
+  }
   for (const n of NOT_RUN) if (native.state['gpu.' + n] >= 0) { fail++; console.log(`FAIL native: pass ${n} did not run but has a GPU time (control)`); }
 }
 for (const r of results) if (r.error) console.log(`note ${r.host}: ${r.error}`);
