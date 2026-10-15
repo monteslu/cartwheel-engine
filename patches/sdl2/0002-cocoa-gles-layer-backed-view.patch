@@ -1,0 +1,13 @@
+--- a/src/video/cocoa/SDL_cocoaopengles.m
++++ b/src/video/cocoa/SDL_cocoaopengles.m
+@@ -129,6 +129,10 @@
+ 
+     /* Create the GLES window surface */
+     v = windowdata.nswindow.contentView;
++    /* ANGLE (the GLES on macOS) takes a CALayer: the content view needs one,
++     * at the display's backing scale, or the surface cannot be made */
++    [v setWantsLayer:YES];
++    v.layer.contentsScale = windowdata.nswindow.backingScaleFactor;
+     windowdata.egl_surface = SDL_EGL_CreateSurface(_this, (__bridge NativeWindowType)[v layer]);
+ 
+     if (windowdata.egl_surface == EGL_NO_SURFACE) {
