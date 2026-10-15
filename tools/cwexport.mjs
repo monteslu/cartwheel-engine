@@ -2,11 +2,12 @@
 // Export a cartwheel project with its project.cwproj presets (the editor's
 // export button runs exactly this).
 //
-//   node tools/cwexport.mjs --project <dir> [--preset a,b] [--validate] [--out <dir>] [--build <dir>] [--verbose] [--three-builder]
+//   node tools/cwexport.mjs --project <dir> [--preset a,b] [--validate] [--out <dir>] [--build <dir>] [--version <v>] [--verbose] [--three-builder]
 //
 // --build: an already configured and built tree for the preset's platform (a
 // game repository's own build of every app, e.g. build/windows-x64): only the
-// app's target is rebuilt there and packaged.
+// app's target is rebuilt there and packaged. --version overrides the
+// project's (a release's tag).
 //
 // --three-builder builds with three.c's runtime program builder (cmake
 // CW_THREE_BUILDER, its own build tree): states three.c's table lacks are
@@ -38,6 +39,7 @@ const results = await exportPresets({
   validate: flag('validate'),
   out: val('out'),
   build: val('build'),
+  version: val('version'),
   verbose: flag('verbose'),
   threeBuilder: flag('three-builder'),
   onLog: (l) => console.log(l),

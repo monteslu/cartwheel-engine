@@ -64,7 +64,7 @@ function makeCtx(proj, preset, opts) {
   const out = opts.out ? resolve(opts.out, preset) : resolve(proj.dir, p.output || join('exports', preset));
   return {
     preset, platform: p.platform, app, projectDir: proj.dir, isProject: proj.isProject, keys: proj.keys,
-    title: opt('title', proj.keys.name || app), version: opt('version', '0.1.0'), opt, outDir: out,
+    title: opt('title', proj.keys.name || app), version: opts.version || opt('version', '0.1.0'), opt, outDir: out,
     verbose: !!opts.verbose, threeBuilder: !!opts.threeBuilder, buildDir: opts.build || null, log: opts.onLog || (() => {}), progress: (pct, stage) => (opts.onProgress || (() => {}))(preset, pct, stage),
   };
 }
@@ -84,7 +84,7 @@ function check(proj, preset) {
 /**
  * Export presets of a project. Never throws for a failed preset: each gets a
  * result {preset, ok, platform, files} or {preset, ok:false, error}.
- * @param {{project: string, presets?: string[], validate?: boolean, out?: string, verbose?: boolean, threeBuilder?: boolean, build?: string,
+ * @param {{project: string, presets?: string[], validate?: boolean, out?: string, verbose?: boolean, threeBuilder?: boolean, build?: string, version?: string,
  *          onLog?: (line: string) => void, onProgress?: (preset: string, pct: number, stage: string) => void}} o
  * @returns {Promise<Array<{preset: string, ok: boolean, platform?: string, files?: string[], error?: string, what?: string}>>}
  */
