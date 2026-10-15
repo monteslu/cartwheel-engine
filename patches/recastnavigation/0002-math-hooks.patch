@@ -1,0 +1,78 @@
+# libm transcendentals round differently per C library: the walkable-slope threshold
+# (Recast.cpp) and the oriented-box obstacle rotation (DetourTileCache.cpp) go through
+# rcMathCosf / dtMathCosf / dtMathSinf, which an embedder may supply (RC_MATH_HEADER,
+# DT_MATH_HEADER) with deterministic implementations.
+diff --git a/Detour/Include/DetourMath.h b/Detour/Include/DetourMath.h
+index eec89ce..d40987f 100644
+--- a/Detour/Include/DetourMath.h
++++ b/Detour/Include/DetourMath.h
+@@ -13,9 +13,16 @@ inline float dtMathFabsf(float x) { return fabsf(x); }
+ inline float dtMathSqrtf(float x) { return sqrtf(x); }
+ inline float dtMathFloorf(float x) { return floorf(x); }
+ inline float dtMathCeilf(float x) { return ceilf(x); }
++// DT_MATH_HEADER names a header that defines dtMathCosf, dtMathSinf and
++// dtMathAtan2f: libm's transcendentals round differently per C library, so an
++// embedder that needs the same results on every host supplies its own.
++#ifdef DT_MATH_HEADER
++#include DT_MATH_HEADER
++#else
+ inline float dtMathCosf(float x) { return cosf(x); }
+ inline float dtMathSinf(float x) { return sinf(x); }
+ inline float dtMathAtan2f(float y, float x) { return atan2f(y, x); }
++#endif
+ inline bool dtMathIsfinite(float x)
+ {
+ #ifndef RC_FAST_MATH
+diff --git a/DetourTileCache/Source/DetourTileCache.cpp b/DetourTileCache/Source/DetourTileCache.cpp
+index 6f97ab5..08c4ed2 100644
+--- a/DetourTileCache/Source/DetourTileCache.cpp
++++ b/DetourTileCache/Source/DetourTileCache.cpp
+@@ -448,8 +448,8 @@ dtStatus dtTileCache::addBoxObstacle(const float* center, const float* halfExten
+ 	dtVcopy(ob->orientedBox.center, center);
+ 	dtVcopy(ob->orientedBox.halfExtents, halfExtents);
+ 
+-	float coshalf= cosf(0.5f*yRadians);
+-	float sinhalf = sinf(-0.5f*yRadians);
++	float coshalf= dtMathCosf(0.5f*yRadians);
++	float sinhalf = dtMathSinf(-0.5f*yRadians);
+ 	ob->orientedBox.rotAux[0] = coshalf*sinhalf;
+ 	ob->orientedBox.rotAux[1] = coshalf*coshalf - 0.5f;
+ 
+diff --git a/Recast/Source/Recast.cpp b/Recast/Source/Recast.cpp
+index d75a9f5..d7080ed 100644
+--- a/Recast/Source/Recast.cpp
++++ b/Recast/Source/Recast.cpp
+@@ -25,6 +25,15 @@
+ #include <stdio.h>
+ #include <stdarg.h>
+ 
++// RC_MATH_HEADER names a header that defines rcMathCosf: libm's cosf rounds
++// differently per C library, and the walkable-slope threshold decides which
++// triangles are walkable.
++#ifdef RC_MATH_HEADER
++#include RC_MATH_HEADER
++#else
++static inline float rcMathCosf(float x) { return cosf(x); }
++#endif
++
+ namespace
+ {
+ /// Allocates and constructs an object of the given type, returning a pointer.
+@@ -341,7 +350,7 @@ void rcMarkWalkableTriangles(rcContext* context, const float walkableSlopeAngle,
+ 	rcIgnoreUnused(context);
+ 	rcIgnoreUnused(numVerts);
+ 
+-	const float walkableThr = cosf(walkableSlopeAngle / 180.0f * RC_PI);
++	const float walkableThr = rcMathCosf(walkableSlopeAngle / 180.0f * RC_PI);
+ 
+ 	float norm[3];
+ 
+@@ -366,7 +375,7 @@ void rcClearUnwalkableTriangles(rcContext* context, const float walkableSlopeAng
+ 	rcIgnoreUnused(numVerts);
+ 
+ 	// The minimum Y value for a face normal of a triangle with a walkable slope.
+-	const float walkableLimitY = cosf(walkableSlopeAngle / 180.0f * RC_PI);
++	const float walkableLimitY = rcMathCosf(walkableSlopeAngle / 180.0f * RC_PI);
+ 
+ 	float faceNormal[3];
+ 	for (int i = 0; i < numTris; ++i)

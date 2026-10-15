@@ -92,7 +92,7 @@ void cw_mem_get_stats(cw_mem_stats *out) {
 
 const char *cw_mem_tag_name(cw_mem_tag tag) {
   static const char *names[] = { "general", "core", "scene", "render", "render2d", "physics", "audio",
-                                 "anim", "ui", "resource", "script", "game", "editor" };
+                                 "anim", "ui", "resource", "script", "game", "editor", "nav" };
   return tag < CW_MEM_TAG_COUNT ? names[tag] : "?";
 }
 

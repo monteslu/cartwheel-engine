@@ -1,0 +1,57 @@
+# The allocator: RC_ALLOC_HEADER / DT_ALLOC_HEADER let the embedder compile its own
+# allocator in as the default (thread-safe, zeroed, accounted), instead of setting the
+# function pointers at run time while worker threads may be reading them.
+diff --git a/Detour/Source/DetourAlloc.cpp b/Detour/Source/DetourAlloc.cpp
+index d9ad1fc..362d985 100644
+--- a/Detour/Source/DetourAlloc.cpp
++++ b/Detour/Source/DetourAlloc.cpp
+@@ -19,6 +19,14 @@
+ #include <stdlib.h>
+ #include "DetourAlloc.h"
+ 
++// DT_ALLOC_HEADER names a header that defines dtAllocDefault and dtFreeDefault: the
++// embedder's allocator from the first allocation on, so no allocation ever
++// reaches malloc, and nothing writes the function pointers below while tiles
++// build on several threads. An embedder that hashes or saves tile bytes can
++// also hand out zeroed memory there, so no uninitialized byte reaches them.
++#ifdef DT_ALLOC_HEADER
++#include DT_ALLOC_HEADER
++#else
+ static void *dtAllocDefault(size_t size, dtAllocHint)
+ {
+ 	return malloc(size);
+@@ -28,6 +36,7 @@ static void dtFreeDefault(void *ptr)
+ {
+ 	free(ptr);
+ }
++#endif
+ 
+ static dtAllocFunc* sAllocFunc = dtAllocDefault;
+ static dtFreeFunc* sFreeFunc = dtFreeDefault;
+diff --git a/Recast/Source/RecastAlloc.cpp b/Recast/Source/RecastAlloc.cpp
+index e919daf..4a2584f 100644
+--- a/Recast/Source/RecastAlloc.cpp
++++ b/Recast/Source/RecastAlloc.cpp
+@@ -18,6 +18,14 @@
+ 
+ #include "RecastAlloc.h"
+ 
++// RC_ALLOC_HEADER names a header that defines rcAllocDefault and rcFreeDefault: the
++// embedder's allocator from the first allocation on, so no allocation ever
++// reaches malloc, and nothing writes the function pointers below while tiles
++// build on several threads. An embedder that hashes or saves tile bytes can
++// also hand out zeroed memory there, so no uninitialized byte reaches them.
++#ifdef RC_ALLOC_HEADER
++#include RC_ALLOC_HEADER
++#else
+ static void* rcAllocDefault(size_t size, rcAllocHint)
+ {
+ 	return malloc(size);
+@@ -27,6 +35,7 @@ static void rcFreeDefault(void *ptr)
+ {
+ 	free(ptr);
+ }
++#endif
+ 
+ static rcAllocFunc* sRecastAllocFunc = rcAllocDefault;
+ static rcFreeFunc* sRecastFreeFunc = rcFreeDefault;

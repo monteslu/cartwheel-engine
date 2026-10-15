@@ -25,6 +25,8 @@ meshoptimizer https://github.com/zeux/meshoptimizer.git     9e1f07b159d3cb777f1c
 wasmcart-libs https://github.com/wasmcart/wasmcart-libs.git  1208c5ac3071df05f46d1acafa58aab964b8094d
 basis_universal https://github.com/BinomialLLC/basis_universal.git 9bebe16726b3a61c8c213eeee3b7cffb462ef34e
 kb            https://github.com/JimmyLefevre/kb.git       cc63806775f615908ec9562653af4726d8b895d5
+# Recast, Detour and DetourTileCache (zlib): navmesh build and queries (src/nav, patches/recastnavigation)
+recastnavigation https://github.com/recastnavigation/recastnavigation.git 9f4ce64458dfae86e1239c525ddc219c4e9e06f1
 # Fonts (single files into deps/fonts/<name>.<ext>, sha256-checked): Noto, SIL OFL 1.1,
 # from google/fonts at a pinned commit (the l10n sample packs subsets of them)
 font:noto-sans-jp.ttf       https://github.com/google/fonts/raw/7085eb89a950e85db5b166b7a58d414544b4140c/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf                  gf-7085eb89   c2f3b4d463500a2ddcd3849cded1fceeb9fd6d1c32e6cbecd568453ba50fc68f

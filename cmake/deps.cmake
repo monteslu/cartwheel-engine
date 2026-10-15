@@ -107,6 +107,22 @@ add_library(box3d STATIC ${_b3})
 target_include_directories(box3d PUBLIC ${DEPS}/box3d/include PRIVATE ${DEPS}/box3d/src)
 target_compile_options(box3d PRIVATE -O2 -w)
 
+# ── Recast / Detour / DetourTileCache (zlib): navmeshes (cartwheel/nav.h).
+#    Compiled into the engine library itself (CMakeLists.txt), not a library
+#    of their own: their math and allocator hooks (patches/recastnavigation,
+#    src/nav/recast_hooks.h) call the engine. DetourCrowd is not used: the
+#    crowd is the engine's (src/nav/crowd.c).
+set(CW_RECAST ${DEPS}/recastnavigation)
+if(NOT EXISTS ${CW_RECAST}/Detour/Source/DetourNavMesh.cpp)
+  message(FATAL_ERROR "recastnavigation is missing: run scripts/fetch-deps.sh")
+endif()
+file(GLOB CW_RECAST_SRCS ${CW_RECAST}/Recast/Source/*.cpp ${CW_RECAST}/Detour/Source/*.cpp
+     ${CW_RECAST}/DetourTileCache/Source/*.cpp)
+set(CW_RECAST_INCLUDES ${CW_RECAST}/Recast/Include ${CW_RECAST}/Detour/Include ${CW_RECAST}/DetourTileCache/Include
+    ${CMAKE_SOURCE_DIR}/src/nav)
+set(CW_RECAST_DEFS RC_MATH_HEADER="recast_hooks.h" DT_MATH_HEADER="recast_hooks.h" RC_ALLOC_HEADER="recast_hooks.h"
+    DT_ALLOC_HEADER="recast_hooks.h" DT_VIRTUAL_QUERYFILTER=1)
+
 # ── three.c ──────────────────────────────────────────────────────────
 # CW_THREE_DIR builds three.c from another checkout of the same API (a fix
 # being verified before deps/ is refetched at a new pin); deps/three.c by

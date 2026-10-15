@@ -1,0 +1,92 @@
+# qsort is not stable, and glibc, wasi-libc, MSVC and Bionic order equal keys differently:
+# contour holes, hole diagonals and BV-tree items with equal keys break the tie by index,
+# so tile bytes and poly refs are the same on every host.
+diff --git a/Detour/Source/DetourNavMeshBuilder.cpp b/Detour/Source/DetourNavMeshBuilder.cpp
+index 07ba863..d56b09a 100644
+--- a/Detour/Source/DetourNavMeshBuilder.cpp
++++ b/Detour/Source/DetourNavMeshBuilder.cpp
+@@ -45,6 +45,9 @@ static int compareItemX(const void* va, const void* vb)
+ 		return -1;
+ 	if (a->bmin[0] > b->bmin[0])
+ 		return 1;
++	// equal keys: by polygon index, so every C library's qsort gives one order
++	if (a->i != b->i)
++		return a->i < b->i ? -1 : 1;
+ 	return 0;
+ }
+ 
+@@ -56,6 +59,9 @@ static int compareItemY(const void* va, const void* vb)
+ 		return -1;
+ 	if (a->bmin[1] > b->bmin[1])
+ 		return 1;
++	// equal keys: by polygon index, so every C library's qsort gives one order
++	if (a->i != b->i)
++		return a->i < b->i ? -1 : 1;
+ 	return 0;
+ }
+ 
+@@ -67,6 +73,9 @@ static int compareItemZ(const void* va, const void* vb)
+ 		return -1;
+ 	if (a->bmin[2] > b->bmin[2])
+ 		return 1;
++	// equal keys: by polygon index, so every C library's qsort gives one order
++	if (a->i != b->i)
++		return a->i < b->i ? -1 : 1;
+ 	return 0;
+ }
+ 
+diff --git a/Recast/Source/RecastContour.cpp b/Recast/Source/RecastContour.cpp
+index ce50c78..af493de 100644
+--- a/Recast/Source/RecastContour.cpp
++++ b/Recast/Source/RecastContour.cpp
+@@ -675,24 +675,28 @@ static void findLeftMostVertex(rcContour* contour, int* minx, int* minz, int* le
+ 	}
+ }
+ 
++// Holes sorted left to right. qsort is not stable and C libraries order
++// equal keys differently, so ties (holes with the same leftmost vertex) are
++// broken by the contour's region and then its first vertex: every host sorts
++// them the same way.
+ static int compareHoles(const void* va, const void* vb)
+ {
+ 	const rcContourHole* a = (const rcContourHole*)va;
+ 	const rcContourHole* b = (const rcContourHole*)vb;
+-	if (a->minx == b->minx)
++	if (a->minx != b->minx)
++		return a->minx < b->minx ? -1 : 1;
++	if (a->minz != b->minz)
++		return a->minz < b->minz ? -1 : 1;
++	if (a->contour->reg != b->contour->reg)
++		return a->contour->reg < b->contour->reg ? -1 : 1;
++	for (int i = 0; i < 4; ++i)
+ 	{
+-		if (a->minz < b->minz)
+-			return -1;
+-		if (a->minz > b->minz)
+-			return 1;
+-	}
+-	else
+-	{
+-		if (a->minx < b->minx)
+-			return -1;
+-		if (a->minx > b->minx)
+-			return 1;
++		const int av = a->contour->verts[a->leftmost*4+i], bv = b->contour->verts[b->leftmost*4+i];
++		if (av != bv)
++			return av < bv ? -1 : 1;
+ 	}
++	if (a->contour->nverts != b->contour->nverts)
++		return a->contour->nverts < b->contour->nverts ? -1 : 1;
+ 	return 0;
+ }
+ 
+@@ -705,6 +709,9 @@ static int compareDiagDist(const void* va, const void* vb)
+ 		return -1;
+ 	if (a->dist > b->dist)
+ 		return 1;
++	// equal distances: the lower outline vertex first, the same on every C library
++	if (a->vert != b->vert)
++		return a->vert < b->vert ? -1 : 1;
+ 	return 0;
+ }
+ 

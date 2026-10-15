@@ -1,0 +1,452 @@
+# dtTileCache::update rebuilds one touched tile per call, on the calling thread. Split it
+# into processObstacleRequests (the pending tiles, ascending), a const buildNavMeshTileData
+# that any thread may run with its own allocator, and commitNavMeshTile, which swaps the
+# tile in and finishes the obstacle bookkeeping. Committing in the listed order gives the
+# same navmesh, refs and salts whether the builds ran on one thread or many. update() and
+# buildNavMeshTile() keep their behaviour, built on the same three parts.
+diff --git a/DetourTileCache/Include/DetourTileCache.h b/DetourTileCache/Include/DetourTileCache.h
+index 0d346f1..8338f6f 100644
+--- a/DetourTileCache/Include/DetourTileCache.h
++++ b/DetourTileCache/Include/DetourTileCache.h
+@@ -158,6 +158,26 @@ public:
+ 	dtStatus buildNavMeshTilesAt(const int tx, const int ty, class dtNavMesh* navmesh);
+ 	
+ 	dtStatus buildNavMeshTile(const dtCompressedTileRef ref, class dtNavMesh* navmesh);
++
++	/// update() split in three, so touched tiles can rebuild on several threads with
++	/// the same result as one:
++	///  1. processObstacleRequests (one thread): turns queued obstacle requests into
++	///     the pending tile list, returned in ascending ref order;
++	///  2. buildNavMeshTileData (any thread, any order): a pure build of one tile; it
++	///     reads the cache and changes nothing. The allocator is the caller's (one per
++	///     thread), and the compressor and mesh process must be safe to call from
++	///     several threads at once;
++	///  3. commitNavMeshTile (one thread, in the order step 1 returned): swaps the
++	///     built tile into the navmesh and finishes the obstacles' bookkeeping.
++	///  @param[out]	tiles		The pending tiles, ascending. [(dtCompressedTileRef) * @p maxTiles]
++	///  @param[out]	ntiles		The number of pending tiles (all of them, even past @p maxTiles).
++	dtStatus processObstacleRequests(dtCompressedTileRef* tiles, int* ntiles, const int maxTiles);
++	///  @param[out]	navData		The tile's navmesh data (dtAlloc'd), or 0 when it has no polygons.
++	dtStatus buildNavMeshTileData(const dtCompressedTileRef ref, struct dtTileCacheAlloc* talloc,
++								  unsigned char** navData, int* navDataSize) const;
++	///  Takes ownership of @p navData (0: the tile's location is left empty).
++	dtStatus commitNavMeshTile(const dtCompressedTileRef ref, unsigned char* navData, const int navDataSize,
++							   class dtNavMesh* navmesh);
+ 	
+ 	void calcTightTileBounds(const struct dtTileCacheLayerHeader* header, float* bmin, float* bmax) const;
+ 	
+@@ -206,6 +226,8 @@ public:
+ 	
+ 	
+ private:
++	void processRequests();
++	void finishTile(const dtCompressedTileRef ref);
+ 	// Explicitly disabled copy constructor and copy assignment operator.
+ 	dtTileCache(const dtTileCache&);
+ 	dtTileCache& operator=(const dtTileCache&);
+diff --git a/DetourTileCache/Source/DetourTileCache.cpp b/DetourTileCache/Source/DetourTileCache.cpp
+index 08c4ed2..c1710ad 100644
+--- a/DetourTileCache/Source/DetourTileCache.cpp
++++ b/DetourTileCache/Source/DetourTileCache.cpp
+@@ -520,116 +520,192 @@ dtStatus dtTileCache::queryTiles(const float* bmin, const float* bmax,
+ 	return DT_SUCCESS;
+ }
+ 
+-dtStatus dtTileCache::update(const float /*dt*/, dtNavMesh* navmesh,
+-							 bool* upToDate)
++void dtTileCache::processRequests()
+ {
+-	if (m_nupdate == 0)
++	// Process requests.
++	for (int i = 0; i < m_nreqs; ++i)
+ 	{
+-		// Process requests.
+-		for (int i = 0; i < m_nreqs; ++i)
++		ObstacleRequest* req = &m_reqs[i];
++		
++		unsigned int idx = decodeObstacleIdObstacle(req->ref);
++		if ((int)idx >= m_params.maxObstacles)
++			continue;
++		dtTileCacheObstacle* ob = &m_obstacles[idx];
++		unsigned int salt = decodeObstacleIdSalt(req->ref);
++		if (ob->salt != salt)
++			continue;
++		
++		if (req->action == REQUEST_ADD)
+ 		{
+-			ObstacleRequest* req = &m_reqs[i];
+-			
+-			unsigned int idx = decodeObstacleIdObstacle(req->ref);
+-			if ((int)idx >= m_params.maxObstacles)
+-				continue;
+-			dtTileCacheObstacle* ob = &m_obstacles[idx];
+-			unsigned int salt = decodeObstacleIdSalt(req->ref);
+-			if (ob->salt != salt)
+-				continue;
+-			
+-			if (req->action == REQUEST_ADD)
++			// Find touched tiles.
++			float bmin[3], bmax[3];
++			getObstacleBounds(ob, bmin, bmax);
++
++			int ntouched = 0;
++			queryTiles(bmin, bmax, ob->touched, &ntouched, DT_MAX_TOUCHED_TILES);
++			ob->ntouched = (unsigned char)ntouched;
++			// Add tiles to update list.
++			ob->npending = 0;
++			for (int j = 0; j < ob->ntouched; ++j)
+ 			{
+-				// Find touched tiles.
+-				float bmin[3], bmax[3];
+-				getObstacleBounds(ob, bmin, bmax);
+-
+-				int ntouched = 0;
+-				queryTiles(bmin, bmax, ob->touched, &ntouched, DT_MAX_TOUCHED_TILES);
+-				ob->ntouched = (unsigned char)ntouched;
+-				// Add tiles to update list.
+-				ob->npending = 0;
+-				for (int j = 0; j < ob->ntouched; ++j)
++				if (m_nupdate < MAX_UPDATE)
+ 				{
+-					if (m_nupdate < MAX_UPDATE)
+-					{
+-						if (!contains(m_update, m_nupdate, ob->touched[j]))
+-							m_update[m_nupdate++] = ob->touched[j];
+-						ob->pending[ob->npending++] = ob->touched[j];
+-					}
++					if (!contains(m_update, m_nupdate, ob->touched[j]))
++						m_update[m_nupdate++] = ob->touched[j];
++					ob->pending[ob->npending++] = ob->touched[j];
+ 				}
+ 			}
+-			else if (req->action == REQUEST_REMOVE)
++		}
++		else if (req->action == REQUEST_REMOVE)
++		{
++			// Prepare to remove obstacle.
++			ob->state = DT_OBSTACLE_REMOVING;
++			// Add tiles to update list.
++			ob->npending = 0;
++			for (int j = 0; j < ob->ntouched; ++j)
+ 			{
+-				// Prepare to remove obstacle.
+-				ob->state = DT_OBSTACLE_REMOVING;
+-				// Add tiles to update list.
+-				ob->npending = 0;
+-				for (int j = 0; j < ob->ntouched; ++j)
++				if (m_nupdate < MAX_UPDATE)
+ 				{
+-					if (m_nupdate < MAX_UPDATE)
+-					{
+-						if (!contains(m_update, m_nupdate, ob->touched[j]))
+-							m_update[m_nupdate++] = ob->touched[j];
+-						ob->pending[ob->npending++] = ob->touched[j];
+-					}
++					if (!contains(m_update, m_nupdate, ob->touched[j]))
++						m_update[m_nupdate++] = ob->touched[j];
++					ob->pending[ob->npending++] = ob->touched[j];
+ 				}
+ 			}
+ 		}
+-		
+-		m_nreqs = 0;
+ 	}
+ 	
+-	dtStatus status = DT_SUCCESS;
+-	// Process updates
+-	if (m_nupdate)
++	m_nreqs = 0;
++}
++
++dtStatus dtTileCache::processObstacleRequests(dtCompressedTileRef* tiles, int* ntiles, const int maxTiles)
++{
++	processRequests();
++	// ascending ref order (an insertion sort: at most MAX_UPDATE refs, all distinct)
++	for (int i = 1; i < m_nupdate; ++i)
+ 	{
+-		// Build mesh
+-		const dtCompressedTileRef ref = m_update[0];
+-		status = buildNavMeshTile(ref, navmesh);
+-		m_nupdate--;
+-		if (m_nupdate > 0)
+-			memmove(m_update, m_update+1, m_nupdate*sizeof(dtCompressedTileRef));
++		const dtCompressedTileRef r = m_update[i];
++		int j = i - 1;
++		while (j >= 0 && m_update[j] > r)
++		{
++			m_update[j+1] = m_update[j];
++			--j;
++		}
++		m_update[j+1] = r;
++	}
++	for (int i = 0; i < m_nupdate && i < maxTiles; ++i)
++		tiles[i] = m_update[i];
++	*ntiles = m_nupdate;
++	return DT_SUCCESS;
++}
++
++void dtTileCache::finishTile(const dtCompressedTileRef ref)
++{
++	// The tile is no longer pending.
++	for (int i = 0; i < m_nupdate; ++i)
++	{
++		if (m_update[i] == ref)
++		{
++			m_nupdate--;
++			memmove(m_update+i, m_update+i+1, (m_nupdate-i)*sizeof(dtCompressedTileRef));
++			break;
++		}
++	}
+ 
+-		// Update obstacle states.
+-		for (int i = 0; i < m_params.maxObstacles; ++i)
++	// Update obstacle states.
++	for (int i = 0; i < m_params.maxObstacles; ++i)
++	{
++		dtTileCacheObstacle* ob = &m_obstacles[i];
++		if (ob->state == DT_OBSTACLE_PROCESSING || ob->state == DT_OBSTACLE_REMOVING)
+ 		{
+-			dtTileCacheObstacle* ob = &m_obstacles[i];
+-			if (ob->state == DT_OBSTACLE_PROCESSING || ob->state == DT_OBSTACLE_REMOVING)
++			// Remove handled tile from pending list.
++			for (int j = 0; j < (int)ob->npending; j++)
+ 			{
+-				// Remove handled tile from pending list.
+-				for (int j = 0; j < (int)ob->npending; j++)
++				if (ob->pending[j] == ref)
+ 				{
+-					if (ob->pending[j] == ref)
+-					{
+-						ob->pending[j] = ob->pending[(int)ob->npending-1];
+-						ob->npending--;
+-						break;
+-					}
++					ob->pending[j] = ob->pending[(int)ob->npending-1];
++					ob->npending--;
++					break;
+ 				}
+-				
+-				// If all pending tiles processed, change state.
+-				if (ob->npending == 0)
++			}
++			
++			// If all pending tiles processed, change state.
++			if (ob->npending == 0)
++			{
++				if (ob->state == DT_OBSTACLE_PROCESSING)
+ 				{
+-					if (ob->state == DT_OBSTACLE_PROCESSING)
+-					{
+-						ob->state = DT_OBSTACLE_PROCESSED;
+-					}
+-					else if (ob->state == DT_OBSTACLE_REMOVING)
+-					{
+-						ob->state = DT_OBSTACLE_EMPTY;
+-						// Update salt, salt should never be zero.
+-						ob->salt = (ob->salt+1) & ((1<<16)-1);
+-						if (ob->salt == 0)
+-							ob->salt++;
+-						// Return obstacle to free list.
+-						ob->next = m_nextFreeObstacle;
+-						m_nextFreeObstacle = ob;
+-					}
++					ob->state = DT_OBSTACLE_PROCESSED;
++				}
++				else if (ob->state == DT_OBSTACLE_REMOVING)
++				{
++					ob->state = DT_OBSTACLE_EMPTY;
++					// Update salt, salt should never be zero.
++					ob->salt = (ob->salt+1) & ((1<<16)-1);
++					if (ob->salt == 0)
++						ob->salt++;
++					// Return obstacle to free list.
++					ob->next = m_nextFreeObstacle;
++					m_nextFreeObstacle = ob;
+ 				}
+ 			}
+ 		}
+ 	}
++}
++
++dtStatus dtTileCache::commitNavMeshTile(const dtCompressedTileRef ref, unsigned char* navData, const int navDataSize,
++										dtNavMesh* navmesh)
++{
++	dtStatus status = DT_SUCCESS;
++	const unsigned int idx = decodeTileIdTile(ref);
++	const dtCompressedTile* tile = idx < (unsigned int)m_params.maxTiles ? &m_tiles[idx] : 0;
++	if (!tile || tile->salt != decodeTileIdSalt(ref) || !tile->header)
++	{
++		if (navData)
++			dtFree(navData);
++		status = DT_FAILURE | DT_INVALID_PARAM;
++	}
++	else
++	{
++		// Remove existing tile.
++		navmesh->removeTile(navmesh->getTileRefAt(tile->header->tx,tile->header->ty,tile->header->tlayer),0,0);
++		// Add new tile, or leave the location empty.
++		if (navData)
++		{
++			// Let the navmesh own the data.
++			status = navmesh->addTile(navData,navDataSize,DT_TILE_FREE_DATA,0,0);
++			if (dtStatusFailed(status))
++				dtFree(navData);
++		}
++	}
++
++	finishTile(ref);
++	return status;
++}
++
++dtStatus dtTileCache::update(const float /*dt*/, dtNavMesh* navmesh,
++							 bool* upToDate)
++{
++	if (m_nupdate == 0)
++		processRequests();
++	
++	dtStatus status = DT_SUCCESS;
++	// Process updates
++	if (m_nupdate)
++	{
++		// Build mesh
++		const dtCompressedTileRef ref = m_update[0];
++		unsigned char* navData = 0;
++		int navDataSize = 0;
++		m_talloc->reset();
++		status = buildNavMeshTileData(ref, m_talloc, &navData, &navDataSize);
++		if (dtStatusFailed(status))
++			finishTile(ref); // as before the split: a failed build leaves the navmesh tile as it was
++		else
++		{
++			const dtStatus c = commitNavMeshTile(ref, navData, navDataSize, navmesh);
++			if (dtStatusFailed(c))
++				status = c;
++		}
++	}
+ 	
+ 	if (upToDate)
+ 		*upToDate = m_nupdate == 0 && m_nreqs == 0;
+@@ -655,9 +731,38 @@ dtStatus dtTileCache::buildNavMeshTilesAt(const int tx, const int ty, dtNavMesh*
+ }
+ 
+ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh* navmesh)
+-{	
++{
+ 	dtAssert(m_talloc);
++	unsigned char* navData = 0;
++	int navDataSize = 0;
++	m_talloc->reset();
++	dtStatus status = buildNavMeshTileData(ref, m_talloc, &navData, &navDataSize);
++	if (dtStatusFailed(status))
++		return status;
++	const dtCompressedTile* tile = &m_tiles[decodeTileIdTile(ref)];
++	// Remove existing tile.
++	navmesh->removeTile(navmesh->getTileRefAt(tile->header->tx,tile->header->ty,tile->header->tlayer),0,0);
++	// Add new tile, or leave the location empty.
++	if (navData)
++	{
++		// Let the navmesh own the data.
++		status = navmesh->addTile(navData,navDataSize,DT_TILE_FREE_DATA,0,0);
++		if (dtStatusFailed(status))
++		{
++			dtFree(navData);
++			return status;
++		}
++	}
++	return DT_SUCCESS;
++}
++
++dtStatus dtTileCache::buildNavMeshTileData(const dtCompressedTileRef ref, dtTileCacheAlloc* talloc,
++										   unsigned char** navData, int* navDataSize) const
++{	
++	dtAssert(talloc);
+ 	dtAssert(m_tcomp);
++	*navData = 0;
++	*navDataSize = 0;
+ 	
+ 	unsigned int idx = decodeTileIdTile(ref);
+ 	if (idx > (unsigned int)m_params.maxTiles)
+@@ -667,14 +772,12 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
+ 	if (tile->salt != salt)
+ 		return DT_FAILURE | DT_INVALID_PARAM;
+ 	
+-	m_talloc->reset();
+-	
+-	NavMeshTileBuildContext bc(m_talloc);
++	NavMeshTileBuildContext bc(talloc);
+ 	const int walkableClimbVx = (int)(m_params.walkableClimb / m_params.ch);
+ 	dtStatus status;
+ 	
+ 	// Decompress tile layer data. 
+-	status = dtDecompressTileCacheLayer(m_talloc, m_tcomp, tile->data, tile->dataSize, &bc.layer);
++	status = dtDecompressTileCacheLayer(talloc, m_tcomp, tile->data, tile->dataSize, &bc.layer);
+ 	if (dtStatusFailed(status))
+ 		return status;
+ 	
+@@ -705,32 +808,28 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
+ 	}
+ 	
+ 	// Build navmesh
+-	status = dtBuildTileCacheRegions(m_talloc, *bc.layer, walkableClimbVx);
++	status = dtBuildTileCacheRegions(talloc, *bc.layer, walkableClimbVx);
+ 	if (dtStatusFailed(status))
+ 		return status;
+ 	
+-	bc.lcset = dtAllocTileCacheContourSet(m_talloc);
++	bc.lcset = dtAllocTileCacheContourSet(talloc);
+ 	if (!bc.lcset)
+ 		return DT_FAILURE | DT_OUT_OF_MEMORY;
+-	status = dtBuildTileCacheContours(m_talloc, *bc.layer, walkableClimbVx,
++	status = dtBuildTileCacheContours(talloc, *bc.layer, walkableClimbVx,
+ 									  m_params.maxSimplificationError, *bc.lcset);
+ 	if (dtStatusFailed(status))
+ 		return status;
+ 	
+-	bc.lmesh = dtAllocTileCachePolyMesh(m_talloc);
++	bc.lmesh = dtAllocTileCachePolyMesh(talloc);
+ 	if (!bc.lmesh)
+ 		return DT_FAILURE | DT_OUT_OF_MEMORY;
+-	status = dtBuildTileCachePolyMesh(m_talloc, *bc.lcset, *bc.lmesh);
++	status = dtBuildTileCachePolyMesh(talloc, *bc.lcset, *bc.lmesh);
+ 	if (dtStatusFailed(status))
+ 		return status;
+ 	
+ 	// Early out if the mesh tile is empty.
+ 	if (!bc.lmesh->npolys)
+-	{
+-		// Remove existing tile.
+-		navmesh->removeTile(navmesh->getTileRefAt(tile->header->tx,tile->header->ty,tile->header->tlayer),0,0);
+-		return DT_SUCCESS;
+-	}
++		return DT_SUCCESS; // the caller removes the existing tile
+ 	
+ 	dtNavMeshCreateParams params;
+ 	memset(&params, 0, sizeof(params));
+@@ -758,26 +857,8 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
+ 		m_tmproc->process(&params, bc.lmesh->areas, bc.lmesh->flags);
+ 	}
+ 	
+-	unsigned char* navData = 0;
+-	int navDataSize = 0;
+-	if (!dtCreateNavMeshData(&params, &navData, &navDataSize))
++	if (!dtCreateNavMeshData(&params, navData, navDataSize))
+ 		return DT_FAILURE;
+-
+-	// Remove existing tile.
+-	navmesh->removeTile(navmesh->getTileRefAt(tile->header->tx,tile->header->ty,tile->header->tlayer),0,0);
+-
+-	// Add new tile, or leave the location empty.
+-	if (navData)
+-	{
+-		// Let the navmesh own the data.
+-		status = navmesh->addTile(navData,navDataSize,DT_TILE_FREE_DATA,0,0);
+-		if (dtStatusFailed(status))
+-		{
+-			dtFree(navData);
+-			return status;
+-		}
+-	}
+-	
+ 	return DT_SUCCESS;
+ }
+ 
