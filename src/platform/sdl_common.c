@@ -386,7 +386,8 @@ bool cw__sdl_init(void) {
     cw_error("SDL_Init: %s", SDL_GetError());
     return false;
   }
-  for (;;) { /* a second pass only when WebGPU falls back to GL */
+  bool no_msaa = false;
+  for (;;) { /* another pass when WebGPU falls back to GL, or GL to no multisampling */
     if (!wgpu) {
 #if !CW_CART && defined(__APPLE__) && !defined(SDL_VIDEO_DRIVER_UIKIT)
       /* macOS: GLES is ANGLE (Metal), linked through @rpath. SDL opens
@@ -412,7 +413,7 @@ bool cw__sdl_init(void) {
       SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
       SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
       SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-      if (p->app.msaa > 0) {
+      if (p->app.msaa > 0 && !no_msaa) {
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, p->app.msaa);
       }
@@ -437,6 +438,15 @@ bool cw__sdl_init(void) {
 #endif
     p->window = SDL_CreateWindow(p->app.title ? p->app.title : "cartwheel", SDL_WINDOWPOS_CENTERED,
                                  SDL_WINDOWPOS_CENTERED, p->px_w, p->px_h, wflags);
+    if (!p->window && !wgpu && p->app.msaa > 0 && !no_msaa) {
+      /* a multisampled window surface the GLES driver cannot make (ANGLE
+       * on some Macs): the same window without multisampling */
+      cw_warn("SDL_CreateWindow with %dx MSAA: %s; trying without multisampling", p->app.msaa, SDL_GetError());
+      SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
+      SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
+      no_msaa = true;
+      continue;
+    }
     if (!p->window) {
       cw_error("SDL_CreateWindow: %s", SDL_GetError());
       return false;
