@@ -8,10 +8,10 @@ sdl2          https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.8
 wasi-sdk      https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-x86_64-linux.tar.gz   33.0   0ba8b5bfaeb2adf3f29bab5841d76cf5318ab8e1642ea195f88baba1abd47bce
 # Binaryen's wasm-opt: carts are optimized after the link (-O3, threads + SIMD; CW_WASM_OPT, CMakeLists.txt)
 binaryen      https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-x86_64-linux.tar.gz   123   e959f2170af4c20c552e9de3a0253704d6a9d2766e8fdb88e4d6ac4bae9388fe
-wasmcart      https://github.com/wasmcart/wasmcart.git       v0.34.1                     af3cf4e54a03ed00b85d26a62dd28848d2dde488
-# WebGPU tier (wasmcart v0.34.1, released): the hosts and wgpu-wasi/ kit
+wasmcart      https://github.com/wasmcart/wasmcart.git       v0.34.3              cd233ea13c5656634898a925c214e3aea0558884
+# WebGPU tier (wasmcart v0.34.3, released): the hosts and wgpu-wasi/ kit
 # the dual (GL + WebGPU) cart build uses (build/cart-wgpu); the GL cart build keeps the wasmcart pin above
-wasmcart-wgpu https://github.com/wasmcart/wasmcart.git       v0.34.1                     af3cf4e54a03ed00b85d26a62dd28848d2dde488
+wasmcart-wgpu https://github.com/wasmcart/wasmcart.git       v0.34.3              cd233ea13c5656634898a925c214e3aea0558884
 # Dawn's emdawnwebgpu port at the release the tier freezes its imports to (wasmcart scripts/wgpu/emdawnwebgpu.json):
 # wgpu-wasi compiles its webgpu.cpp into WebGPU carts
 emdawnwebgpu  https://github.com/google/dawn/releases/download/v20261002.154047/emdawnwebgpu_pkg-v20261002.154047.zip   v20261002.154047   6b14532b85c7f4d51154b6eeb6bd3fcf7735ad5c7cfd698d83985dd21a1c15c2
