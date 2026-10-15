@@ -59,6 +59,7 @@ typedef struct pw_obj {
   WGPUTexture tex;
   WGPUTextureView view, attach;
   WGPUTextureFormat fmt;
+  WGPUTextureDimension dim; /* read once when made: unit_view checks it every binding */
   int samples;
   /* targets: ids of the attachments */
   unsigned color, depth, resolve;
@@ -94,6 +95,7 @@ unsigned cw__pw_register(WGPUTexture tex, WGPUTextureView view) {
   o->tex = tex;
   o->view = view;
   o->fmt = wgpuTextureGetFormat(tex);
+  o->dim = wgpuTextureGetDimension(tex);
   o->samples = (int)wgpuTextureGetSampleCount(tex);
   o->w = (int)wgpuTextureGetWidth(tex);
   o->h = (int)wgpuTextureGetHeight(tex);
@@ -103,9 +105,11 @@ unsigned cw__pw_register(WGPUTexture tex, WGPUTextureView view) {
 static uint32_t bg_epoch; /* bumped when a registered view goes: cached bind groups may name it */
 static void defer_texture(WGPUTexture t);
 
+static void close_open(void);
 void cw__pw_release(unsigned id) {
   pw_obj *o = obj(id);
   if (!o) return;
+  close_open(); /* an open pass must not outlive its target's id (ids are reused) */
   bg_epoch++;
   if (o->view) wgpuTextureViewRelease(o->view);
   if (o->attach) wgpuTextureViewRelease(o->attach);
@@ -135,6 +139,7 @@ static unsigned tex_new(const char *label, int w, int h, WGPUTextureFormat f, WG
   pw_obj *o = obj(id);
   o->tex = t;
   o->fmt = f;
+  o->dim = WGPUTextureDimension_2D;
   o->samples = samples;
   o->w = w;
   o->h = h;
@@ -238,10 +243,32 @@ static void init(void) {
                           WGPUTextureUsage_TextureBinding | WGPUTextureUsage_RenderAttachment, 1);
 }
 
-WGPUCommandEncoder cw__pw_encoder(void) {
+/* The engine's own draws into one target share a render pass: a pass stays
+ * open while the next draw (or clear) goes to the same target, and closes
+ * when the target changes or anything else records on the frame's encoder
+ * (cw__pw_encoder: three.c, particles' compute, copies, the submit). Each
+ * render pass costs the host several microseconds; the commands and their
+ * order are the same, so the picture is too. Not while pass timers run (each
+ * engine pass keeps its own timestamps). */
+static struct {
+  WGPURenderPassEncoder p;
+  unsigned target;
+} OP;
+static void end(WGPURenderPassEncoder p);
+static void close_open(void) {
+  if (!OP.p) return;
+  end(OP.p);
+  OP.p = NULL;
+  OP.target = 0;
+}
+static WGPUCommandEncoder raw_encoder(void) {
   init();
   if (!W.enc) W.enc = wgpuDeviceCreateCommandEncoder(W.dev, &(WGPUCommandEncoderDescriptor){ .label = SV("cw pipeline frame") });
   return W.enc;
+}
+WGPUCommandEncoder cw__pw_encoder(void) {
+  close_open();
+  return raw_encoder();
 }
 
 WGPUBuffer cw__pw_ubo(const void *data, size_t size, uint64_t *offset) {
@@ -278,6 +305,7 @@ static void timing_resolve(void);
 
 void cw__pw_flush(void) {
   if (!W.inited) return;
+  close_open();
   for (int i = 0; i < W.chunks.count; i++) {
     chunk *c = &W.chunks.data[i];
     if (c->used) wgpuQueueWriteBuffer(W.q, c->buf, 0, c->stage, c->used);
@@ -536,7 +564,7 @@ static WGPURenderPassEncoder begin(const att *a, const WGPUColor *clear, bool cl
   WGPUPassTimestampWrites tw;
   WGPURenderPassDescriptor rp = { .colorAttachmentCount = 1, .colorAttachments = &ca, .depthStencilAttachment = a->depth ? &da : NULL,
                                   .timestampWrites = timed && timing_writes(&tw) ? &tw : NULL };
-  return wgpuCommandEncoderBeginRenderPass(cw__pw_encoder(), &rp);
+  return wgpuCommandEncoderBeginRenderPass(raw_encoder(), &rp);
 }
 
 static void end(WGPURenderPassEncoder p) {
@@ -547,8 +575,25 @@ static void end(WGPURenderPassEncoder p) {
 static void clear_target(unsigned target, bool depth) {
   att a;
   if (!target_att(target, &a)) return;
+  close_open();
   WGPUColor c = { 0, 0, 0, 0 };
   end(begin(&a, &c, depth && a.depth, false));
+}
+
+/* a render pass for the next draw into the current target: the open one, or a new one */
+static bool keep_open(void) { return !T.on; }
+static WGPURenderPassEncoder pass_for(const att *a, const WGPUColor *clear, bool clear_depth, bool timed) {
+  if (!clear && !clear_depth && OP.p && OP.target == W.target) return OP.p;
+  close_open();
+  WGPURenderPassEncoder p = begin(a, clear, clear_depth, timed);
+  if (keep_open()) {
+    OP.p = p;
+    OP.target = W.target;
+  }
+  return p;
+}
+static void pass_done(WGPURenderPassEncoder p) {
+  if (p != OP.p) end(p);
 }
 
 /* ── programs ───────────────────────────────────────────────────────── */
@@ -949,7 +994,7 @@ static WGPUTextureView unit_view(const pw_bind *b, unsigned id) {
   bool ok = o && o->view && !o->target;
   if (ok) {
     bool depthfmt = o->fmt == WGPUTextureFormat_Depth32Float;
-    WGPUTextureDimension dim = wgpuTextureGetDimension(o->tex);
+    WGPUTextureDimension dim = o->dim;
     switch (b->kind) {
     case B_TEX3D: ok = dim == WGPUTextureDimension_3D; break;
     case B_DEPTH: ok = depthfmt && o->samples == 1; break;
@@ -1030,12 +1075,12 @@ static void draw(bool nocolor_depth_only, int vertices) {
     g1 = wgpuDeviceCreateBindGroup(W.dev, &(WGPUBindGroupDescriptor){ .layout = W.bgl_engine, .entryCount = 4, .entries = e1 });
     cw_array_push(&W.engine_bg, ((engine_bg){ tbuf, g1 }));
   }
-  WGPURenderPassEncoder p = begin(&a, NULL, false, true);
+  WGPURenderPassEncoder p = pass_for(&a, NULL, false, true);
   wgpuRenderPassEncoderSetPipeline(p, pipe);
   wgpuRenderPassEncoderSetBindGroup(p, 0, g0, (size_t)nd0, dyn0);
   wgpuRenderPassEncoderSetBindGroup(p, 1, g1, 1, dyn1);
   wgpuRenderPassEncoderDraw(p, (uint32_t)vertices, 1, 0, 0);
-  end(p);
+  pass_done(p);
 }
 
 void cw__pw_fullscreen(void) { draw(false, 3); }
@@ -1045,7 +1090,7 @@ void cw__pw_clear(float r, float g, float b, float a, bool depth) {
   att t;
   if (!target_att(W.target, &t)) return;
   WGPUColor c = { r, g, b, a };
-  end(begin(&t, &c, depth && t.depth, false));
+  pass_done(pass_for(&t, &c, depth && t.depth, false)); /* the next draws into this target go on in the same pass */
 }
 
 /* ── textures for LUTs and tables ───────────────────────────────────── */
