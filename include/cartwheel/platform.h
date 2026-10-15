@@ -168,7 +168,7 @@ typedef struct cw_app_desc {
   bool debug;              /* cart: export the debug channel (wc_debug_state) */
   bool net;                /* cart: declare WC_FLAG_NET_PEER (wasmcart peer connections, cartwheel/net.h) */
   int workers;             /* job threads besides main: 0 = auto, <0 = none */
-  cw_gpu_api gpu;          /* graphics API (cartwheel/gpu.h): AUTO = GL for now; CW_GPU in the environment wins (native) */
+  cw_gpu_api gpu;          /* graphics API (cartwheel/gpu.h): AUTO: see cw_gpu_api; CW_GPU in the environment wins (native) */
   /* The primary touch drives the mouse: the first finger down becomes the
    * left button at its position (press, drag, release) and stays the
    * pointer until it lifts; other fingers stay in touches[] (pinch). A tap

@@ -88,8 +88,8 @@ function(cw_program_table manifest out_name)
   if(TARGET programs)
     # tools/programs.mjs enters the GPU sandbox and runs three.c's generator
     add_custom_target(${tname}_programs
-      COMMAND node ${CMAKE_SOURCE_DIR}/tools/programs.mjs --table ${manifest} --build ${CMAKE_BINARY_DIR}
-      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} USES_TERMINAL
+      COMMAND node ${CW_ROOT}/tools/programs.mjs --table ${manifest} --build ${CMAKE_BINARY_DIR}
+      WORKING_DIRECTORY ${CW_ROOT} USES_TERMINAL
       COMMENT "three.c program table ${tname}")
     add_dependencies(programs ${tname}_programs)
   endif()
@@ -141,7 +141,3 @@ function(cw__app_programs name)
   set_property(TARGET ${name} PROPERTY CW_PROGRAMS_GEN "${_gen}")
   set_property(TARGET ${name} PROPERTY CW_PROGRAMS_LIBS "${_libs}")
 endfunction()
-
-# the engine's own table (impostor baking and the like), registered by src/render/programs.c
-cw_program_table(${CMAKE_SOURCE_DIR}/src/render/programs/cw_engine.txt _t)
-target_link_libraries(cartwheel PUBLIC cwprog_cw_engine)

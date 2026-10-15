@@ -1,22 +1,23 @@
-// macOS (universal) and iOS: what can be made without Apple's tools. Apple's
-// SDK, Xcode, code signing and notarization exist only on a Mac and need the
-// developer's Apple account, so these exports produce:
-//   macOS: the .app bundle with everything but the executable (Info.plist,
-//          icon, the .cwpak in Resources, ANGLE's universal Metal dylibs in
-//          Frameworks) and build-on-mac.sh, which builds the universal
-//          executable with cmake -G Xcode (cmake/export/macos.cmake), puts it
-//          in the bundle, signs it (CODESIGN_IDENTITY, ad hoc by default) and
-//          prints the notarization command.
+// macOS and iOS.
+//   macOS: built on a Mac (Xcode's clang, cmake/export/macos-arm64.cmake):
+//          an arm64 .app (the executable, Contents/Frameworks with Dawn's and
+//          ANGLE's dylibs, the .cwpak in Resources), signed ad hoc, zipped.
+//          Not notarized: distribution to other Macs needs signing with a
+//          Developer ID and Apple's notarization (your Apple account), else
+//          Gatekeeper asks the player to allow it (README.txt says how).
 //   iOS:   an Xcode project generator: Info.plist, the .cwpak, the icon and
 //          build-on-mac.sh (cmake -G Xcode with cmake/export/ios.cmake; the
 //          app bundle embeds ANGLE's xcframeworks). Signing team: DEVELOPMENT_TEAM.
-// Neither is built or run here.
-import { join, relative } from 'node:path';
-import { buildApp, packAssets, write, freshDir, copy, slug, needDep, EXPORT_DEPS, ExportError } from './util.mjs';
+import { join } from 'node:path';
+import { buildApp, packAssets, write, freshDir, copy, slug, needDep, run, strip, runtimeFiles, copyDawnLicenses, zipDir, ROOT, EXPORT_DEPS, ExportError } from './util.mjs';
+import { basename } from 'node:path';
 import { writeIcon } from './icon.mjs';
 import { readFileSync } from 'node:fs';
 
-export function validateMac(ctx) { needDep('angle-macos/libGLESv2.dylib', 'angle-macos/libEGL.dylib'); bundleId(ctx); }
+export function validateMac(ctx) {
+  if (process.platform !== 'darwin') throw new ExportError('the macOS export builds on a Mac (Xcode\'s clang and SDK exist only there)');
+  bundleId(ctx);
+}
 export function validateIos(ctx) { needDep('angle-ios/libGLESv2.xcframework', 'angle-ios/libEGL.xcframework'); bundleId(ctx); }
 
 function bundleId(ctx) {
@@ -81,53 +82,42 @@ function cmakeLine(ctx, toolchain, buildDir) {
 }
 
 export async function runMac(ctx) {
-  const name = slug(ctx.app), top = `${name}-${ctx.version}-macos`;
+  const app = await buildApp(ctx, 'macos');
+  const name = slug(ctx.app), top = `${name}-${ctx.version}-macos-arm64`;
   const dir = freshDir(join(ctx.outDir, top));
-  const app = join(dir, `${ctx.title.replace(/[/:]/g, '-')}.app`);
-  ctx.progress(30, 'pack');
-  await pack(ctx, join(app, 'Contents/Resources', `${name}.cwpak`));
-  ctx.progress(70, 'bundle');
-  write(join(app, 'Contents/Info.plist'), infoPlist(ctx, name, false));
+  const bundle = join(dir, `${ctx.title.replace(/[/:]/g, '-')}.app`);
+  ctx.progress(60, 'bundle');
+  const exe = join(bundle, 'Contents/MacOS', name);
+  copy(app.binary, exe);
+  const { chmodSync, rmSync } = await import('node:fs');
+  chmodSync(exe, 0o755);
+  await strip(exe, ctx.log);
+  const libs = runtimeFiles(app);
+  for (const f of libs) copy(f, join(bundle, 'Contents/Frameworks', basename(f)));
+  await packAssets(ctx, app, join(bundle, 'Contents/Resources', `${name}.cwpak`));
+  write(join(bundle, 'Contents/Info.plist'), infoPlist(ctx, name, false));
   writeIcon(ctx, join(dir, '.icon.png'));
-  write(join(app, 'Contents/Resources', `${name}.icns`), icns(readFileSync(join(dir, '.icon.png'))));
-  const { rmSync } = await import('node:fs');
+  write(join(bundle, 'Contents/Resources', `${name}.icns`), icns(readFileSync(join(dir, '.icon.png'))));
   rmSync(join(dir, '.icon.png'));
-  for (const f of ['libEGL.dylib', 'libGLESv2.dylib']) copy(join(EXPORT_DEPS, 'angle-macos', f), join(app, 'Contents/Frameworks', f));
-  copy(join(EXPORT_DEPS, 'angle-macos/LICENSE'), join(app, 'Contents/Resources/licenses/ANGLE.txt'));
-  write(join(app, 'Contents/MacOS/.placeholder'), 'build-on-mac.sh puts the executable here\n');
-  const appName = relative(dir, app);
-  write(join(dir, 'build-on-mac.sh'), `#!/bin/sh
-# Build ${ctx.title}'s universal (arm64 + x86_64) executable into the bundle,
-# then sign it. Needs a Mac with Xcode and CMake, and a cartwheel checkout
-# with deps fetched (scripts/fetch-deps.sh --only export/angle-macos).
-#   CARTWHEEL=/path/to/cartwheel CODESIGN_IDENTITY="Developer ID Application: ..." ./build-on-mac.sh
-set -eu
-here="$(cd "$(dirname "$0")" && pwd)"
-CARTWHEEL="\${CARTWHEEL:?set CARTWHEEL to the cartwheel checkout}"
-build="$CARTWHEEL/build/export/macos"
-${cmakeLine(ctx, 'macos.cmake', '$build')}
-cmake --build "$build" --config Release --target ${ctx.app}
-exe="$(find "$build" -path '*Release*' -name '${ctx.app}' -type f -perm -u+x | head -1)"
-app="$here/${appName}"
-cp "$exe" "$app/Contents/MacOS/${name}"
-rm -f "$app/Contents/MacOS/.placeholder"
-install_name_tool -add_rpath @executable_path/../Frameworks "$app/Contents/MacOS/${name}" 2>/dev/null || true
-codesign --force --options runtime --timestamp --sign "\${CODESIGN_IDENTITY:--}" "$app/Contents/Frameworks/"*.dylib
-codesign --force --options runtime --timestamp --sign "\${CODESIGN_IDENTITY:--}" "$app"
-echo "built $app"
-echo "notarize (needs your Apple account):"
-echo "  ditto -c -k --keepParent \\"$app\\" app.zip && xcrun notarytool submit app.zip --keychain-profile <profile> --wait && xcrun stapler staple \\"$app\\""
-`, 0o755);
-  write(join(dir, 'README.txt'), `${ctx.title} ${ctx.version} for macOS 11+ (universal: Apple silicon and Intel).
+  copy(join(ROOT, 'tools/cwexport/licenses/ANGLE.txt'), join(bundle, 'Contents/Resources/licenses/ANGLE.txt'));
+  copyDawnLicenses(libs, join(bundle, 'Contents/Resources/licenses/dawn'));
+  // ad hoc signatures (arm64 code must be signed to run): the dylibs, then the bundle
+  ctx.progress(75, 'sign');
+  for (const f of libs) await run('codesign', ['--force', '--sign', process.env.CODESIGN_IDENTITY || '-', join(bundle, 'Contents/Frameworks', basename(f))], { log: ctx.log });
+  await run('codesign', ['--force', '--sign', process.env.CODESIGN_IDENTITY || '-', bundle], { log: ctx.log });
+  write(join(dir, 'README.txt'), `${ctx.title} ${ctx.version} for macOS 11+ on Apple silicon (arm64).
 
-NOT BUILT: macOS executables need Apple's SDK (Xcode), which exists only on a
-Mac. This folder holds the finished app bundle minus its executable; on a Mac
-run ./build-on-mac.sh to build it, put it in the bundle and sign it.
-Distribution outside the App Store also needs notarization with your Apple
-account (the script prints the command). Rendering: OpenGL ES 3.0 through
-ANGLE on Metal (Contents/Frameworks).
+Open ${basename(bundle)}. It renders with WebGPU (Dawn on Metal) and falls back
+to OpenGL ES 3.0 through ANGLE on Metal when WebGPU does not start.
+
+This build is signed ad hoc, not with a Developer ID, and not notarized: the
+first time, macOS refuses to open it. Right-click the app, choose Open, then
+Open again (or System Settings > Privacy & Security > Open Anyway). From a
+terminal: xattr -dr com.apple.quarantine "${basename(bundle)}".
+Exported with cartwheel's tools/cwexport.
 `);
-  return [dir];
+  ctx.progress(85, 'zip');
+  return [await zipDir(dir, top, join(ctx.outDir, `${top}.zip`)), dir];
 }
 
 export async function runIos(ctx) {
@@ -142,15 +132,15 @@ export async function runIos(ctx) {
   write(join(dir, 'build-on-mac.sh'), `#!/bin/sh
 # Generate and build ${ctx.title}'s Xcode project for iOS devices (arm64).
 # Needs a Mac with Xcode, CMake and a cartwheel checkout with deps fetched
-# (scripts/fetch-deps.sh --only export/angle-ios --only export/angle-macos).
+# (scripts/fetch-deps.sh --only export/angle-ios,export/angle-gles-darwin-arm64,export/native-dawn-darwin-arm64).
 #   CARTWHEEL=/path/to/cartwheel DEVELOPMENT_TEAM=ABCDE12345 ./build-on-mac.sh
 # Then open the generated project in Xcode to run on a device or archive.
 set -eu
 here="$(cd "$(dirname "$0")" && pwd)"
 CARTWHEEL="\${CARTWHEEL:?set CARTWHEEL to the cartwheel checkout}"
 # cwpack (a host tool) from the macOS build first
-${cmakeLine(ctx, 'macos.cmake', '$CARTWHEEL/build/export/macos')}
-cmake --build "$CARTWHEEL/build/export/macos" --config Release --target cwpack
+cmake -S "$CARTWHEEL" -B "$CARTWHEEL/build/export/macos" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$CARTWHEEL/cmake/export/macos-arm64.cmake"
+cmake --build "$CARTWHEEL/build/export/macos" --target cwpack
 build="$CARTWHEEL/build/export/ios"
 ${cmakeLine(ctx, 'ios.cmake', '$build')} -DCW_APPLE_INFO_PLIST="$here/Info.plist" \\
   -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM="\${DEVELOPMENT_TEAM:-}" \\

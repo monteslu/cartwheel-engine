@@ -76,6 +76,9 @@ void cw__platform_queue_text(const char *utf8, int len); /* emitted as CW_EVENT_
 /* gpu.c: the GPU device module (cartwheel/gpu.h) */
 bool cw__gpu_select(cw_gpu_api want, bool host_wgpu); /* before cw__sdl_init */
 bool cw__wgpu_init(void);                  /* WebGPU device + surface (cw__sdl_init, after the window) */
+/* a native run that picked WebGPU itself (CW_GPU_AUTO) and could not start it:
+ * release what started and switch to GL; false when GL is no fallback */
+bool cw__gpu_fallback_to_gl(void);
 void cw__wgpu_frame_end(bool present);     /* end of a frame: present / hand back, rotate error scopes */
 bool cw__wgpu_readback(unsigned char **px, int *w, int *h); /* native: the frame, top-down RGBA8 */
 void cw__wgpu_shutdown(void);

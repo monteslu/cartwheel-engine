@@ -6,10 +6,29 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSyn
 import { join, dirname, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** The cartwheel checkout this tool lives in. */
+/** The cartwheel checkout this tool lives in, or the prebuilt SDK (docs/sdk.md) it ships in. */
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-/** Toolchains and runtimes fetched by `scripts/fetch-deps.sh --export`. */
+/** True when ROOT is a prebuilt SDK: apps build against the target's SDK, not the engine's sources. */
+export const IN_SDK = existsSync(join(ROOT, 'lib/cmake/cartwheel/cartwheelConfig.cmake'));
+/** Toolchains and runtimes fetched by `scripts/fetch-deps.sh --export` (in an SDK: --only export/NAME). */
 export const EXPORT_DEPS = join(ROOT, 'deps', 'export');
+/** export platform -> the SDK target that builds it */
+export const SDK_TARGET = { 'linux-x64': 'linux-x64', 'linux-arm64': 'linux-arm64', 'windows-x64': 'windows-x64', 'android-arm64': 'android-arm64',
+  macos: 'macos-arm64', cart: 'cart', 'cart-wgpu': 'cart-wgpu' };
+/**
+ * The SDK that builds a platform: SDKs unpack side by side, one directory per
+ * target (deps/cartwheel-sdk/<target>/ in a game repository), so the target's
+ * is this one's sibling. CW_SDK_<TARGET> (e.g. CW_SDK_WINDOWS_X64) names another.
+ */
+export function sdkFor(platform) {
+  const t = SDK_TARGET[platform];
+  if (!t) throw new ExportError(`${platform}: no SDK target builds it`);
+  const env = process.env[`CW_SDK_${t.toUpperCase().replace(/-/g, '_')}`];
+  const dir = env ? resolve(env) : join(dirname(ROOT), t);
+  if (!existsSync(join(dir, 'lib/cmake/cartwheel/cartwheelConfig.cmake')))
+    throw new ExportError(`no cartwheel SDK for ${t} at ${dir} (unpack cartwheel-sdk-<version>-${t}.tar.gz beside ${ROOT}, or set CW_SDK_${t.toUpperCase().replace(/-/g, '_')})`);
+  return dir;
+}
 /** 1980-01-02: the timestamp every archive member gets (zip cannot store earlier). */
 export const FIXED_TIME = new Date(Date.UTC(1980, 0, 2));
 
@@ -145,8 +164,13 @@ export function parseCwproj(text) {
   return keys;
 }
 
-/** The host's native cwpack (packs for every target), built on demand. */
+/** The host's native cwpack (packs for every target), built on demand (an SDK ships it). */
 export async function hostCwpack(log) {
+  if (IN_SDK) {
+    const f = join(ROOT, 'bin', process.platform === 'win32' ? 'cwpack.exe' : 'cwpack');
+    if (!existsSync(f)) throw new ExportError(`${ROOT} ships no cwpack: export from the SDK for this machine (linux-x64, windows-x64, macos-arm64)`);
+    return f;
+  }
   const exe = join(ROOT, 'build/native/tools/cwpack/cwpack');
   if (!existsSync(join(ROOT, 'build/native/CMakeCache.txt')))
     await run('cmake', ['-S', ROOT, '-B', join(ROOT, 'build/native'), '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release'], { log, quiet: true });
@@ -171,9 +195,24 @@ export async function buildApp(ctx, platform) {
    * while three.c's table catches up with new states; +4.7 MB, a hitch the
    * first time a state draws), in a tree of its own */
   const tag = ctx.threeBuilder ? '-builder' : '';
-  const buildDir = ctx.isProject ? join(ctx.projectDir, '.cwbuild', platform + tag)
+  // ctx.buildDir (--build): an already configured tree for the preset's own build
+  const own = platform === ctx.platform || (ctx.platform === 'wasc' && platform === 'cart-wgpu') || (ctx.platform === 'macos' && platform === 'macos');
+  const buildDir = ctx.buildDir && own ? resolve(ctx.buildDir) : ctx.isProject ? join(ctx.projectDir, '.cwbuild', platform + tag)
     : cart ? join(ROOT, 'build', platform + tag) : join(ROOT, 'build/export', platform + tag);
   const cwpack = await hostCwpack(ctx.log); // carts and cross builds pack with it
+  if (IN_SDK && !existsSync(join(buildDir, 'CMakeCache.txt'))) {
+    // the project against the target's SDK: a generated top-level CMakeLists
+    // that finds the package and adds the project, as the engine's own does
+    if (!ctx.isProject) throw new ExportError('an SDK exports projects (a directory with project.cwproj and CMakeLists.txt)');
+    if (ctx.threeBuilder) throw new ExportError('--three-builder needs the engine from source: an SDK ships program tables only');
+    const sdk = sdkFor(platform);
+    const top = join(buildDir, '.top');
+    write(join(top, 'CMakeLists.txt'), `cmake_minimum_required(VERSION 3.20)\nproject(${ctx.app} C CXX)\nfind_package(cartwheel REQUIRED CONFIG)\nadd_subdirectory("${ctx.projectDir.replace(/\\/g, '/')}" project)\n`);
+    ctx.progress(10, `configure ${platform}`);
+    const tc = cart ? join(sdk, 'cmake/cart.cmake') : platform === 'macos' ? join(sdk, 'cmake/export/macos-arm64.cmake') : join(sdk, 'cmake/export', `${platform}.cmake`);
+    await run('cmake', ['-S', top, '-B', buildDir, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', `-DCMAKE_TOOLCHAIN_FILE=${tc}`,
+      `-Dcartwheel_DIR=${join(sdk, 'lib/cmake/cartwheel')}`, `-DCW_CWPACK=${cwpack}`, `-DCW_EXPORT_DEPS=${EXPORT_DEPS}`], { log: ctx.log, quiet: true });
+  }
   if (!existsSync(join(buildDir, 'CMakeCache.txt'))) {
     ctx.progress(10, `configure ${platform}`);
     // a shipped build carries its program tables only, never three.c's runtime builder (cmake/deps.cmake)
@@ -207,6 +246,15 @@ export async function buildCart(ctx) {
   return dual ? { ...dual, dual: true } : { ...(await buildApp(ctx, 'cart')), dual: false };
 }
 async function buildDualOrNull(ctx) {
+  if (IN_SDK) {
+    // configure (and build) against the cart-wgpu SDK: carts.txt then says whether the app has a dual cart
+    const app = await buildApp(ctx, 'cart-wgpu').catch((e) => e);
+    if (!(app instanceof Error)) return app;
+    const dir = ctx.buildDir ? resolve(ctx.buildDir) : join(ctx.projectDir, '.cwbuild', 'cart-wgpu');
+    const listed = existsSync(join(dir, 'carts.txt')) && readFileSync(join(dir, 'carts.txt'), 'utf8').split('\n').includes(ctx.app);
+    if (listed) throw app;
+    return null;
+  }
   const tag = ctx.threeBuilder ? '-builder' : '';
   const dir = ctx.isProject ? join(ctx.projectDir, '.cwbuild', 'cart-wgpu' + tag) : join(ROOT, 'build/cart-wgpu' + tag);
   if (!existsSync(join(dir, 'CMakeCache.txt'))) {
@@ -238,9 +286,16 @@ export async function packAssets(ctx, app, dst) {
   return null;
 }
 
-/** Strip a binary with llvm-strip (llvm-mingw's handles ELF, PE and Mach-O). */
+/** Strip a binary with llvm-strip (llvm-mingw's handles ELF, PE and Mach-O; on a Mac, Xcode's strip). */
 export async function strip(file, log) {
-  await run(join(EXPORT_DEPS, 'llvm-mingw/bin/llvm-strip'), ['--strip-unneeded', file], { log });
+  if (process.platform === 'darwin' && !existsSync(join(EXPORT_DEPS, 'llvm-mingw/bin/llvm-strip'))) await run('strip', ['-x', file], { log });
+  else await run(join(EXPORT_DEPS, 'llvm-mingw/bin/llvm-strip'), ['--strip-unneeded', file], { log });
+}
+
+/** The shared libraries an app runs with (Dawn, ANGLE), as its build listed them (apps/<app>.json). */
+export function runtimeFiles(app) {
+  for (const f of app.runtime || []) if (!existsSync(f)) throw new ExportError(`missing runtime library ${f}`);
+  return app.runtime || [];
 }
 
 /** Write a file (creating its directory). */
@@ -261,3 +316,14 @@ export function needDep(...rel) {
 
 /** A filesystem-safe base name for the output files. */
 export function slug(s) { return String(s).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'game'; }
+
+/** native-dawn's NOTICE and third-party licenses (its prefix's share/native-dawn) into <dst>/, when the app ships Dawn. */
+export function copyDawnLicenses(libs, dst) {
+  const lib = libs.find((f) => /webgpu_dawn\.(dll|so|dylib)$/.test(f));
+  if (!lib) return false;
+  const share = join(dirname(dirname(lib)), 'share/native-dawn');
+  if (!existsSync(join(share, 'NOTICE'))) throw new ExportError(`native-dawn's licenses are missing (${share})`);
+  copy(join(share, 'NOTICE'), join(dst, 'NOTICE.txt'));
+  copyTree(join(share, 'licenses'), join(dst, 'licenses'));
+  return true;
+}

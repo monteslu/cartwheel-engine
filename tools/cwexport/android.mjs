@@ -10,11 +10,13 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
-import { buildApp, packAssets, strip, write, freshDir, copy, copyTree, run, slug, ROOT, ExportError, listFiles } from './util.mjs';
+import { buildApp, packAssets, strip, write, freshDir, copy, copyTree, run, slug, runtimeFiles, copyDawnLicenses, sdkFor, ROOT, IN_SDK, ExportError, listFiles } from './util.mjs';
+import { basename } from 'node:path';
 import { writeIcon } from './icon.mjs';
 
 const TEMPLATE = join(ROOT, 'tools/cwexport/templates/android');
-const SDL_ANDROID = join(ROOT, 'deps/sdl2/android-project');
+// SDL2's Java side, from the SDL the game links: this checkout's, or the Android SDK's
+const sdlAndroid = () => join(IN_SDK ? sdkFor('android-arm64') : ROOT, 'deps/sdl2/android-project');
 const GRADLE_VERSION = '8.14.3';
 
 /** The Android SDK: ANDROID_HOME, ANDROID_SDK_ROOT, else ~/Android/Sdk. */
@@ -28,7 +30,7 @@ export function validate(ctx) {
   if (!existsSync(join(sdk, 'platforms/android-36'))) throw new ExportError(`the Android SDK at ${sdk} lacks platforms/android-36 (sdkmanager "platforms;android-36")`);
   if (!process.env.ANDROID_NDK_HOME && !(existsSync(join(sdk, 'ndk')) && readdirSync(join(sdk, 'ndk')).length))
     throw new ExportError(`no Android NDK in ${sdk}/ndk: install one (sdkmanager "ndk;27.2.12479018") or set ANDROID_NDK_HOME`);
-  if (!existsSync(join(SDL_ANDROID, 'app/src/main/java/org/libsdl/app/SDLActivity.java'))) throw new ExportError('deps/sdl2 is missing: run scripts/fetch-deps.sh');
+  if (!existsSync(join(sdlAndroid(), 'app/src/main/java/org/libsdl/app/SDLActivity.java'))) throw new ExportError('deps/sdl2 is missing: run scripts/fetch-deps.sh');
   const id = appId(ctx);
   if (!/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(id)) throw new ExportError(`app_id "${id}" is not a Java package name (e.g. org.example.mygame)`);
   if (ctx.opt('keystore') && !ctx.opt('keystore_alias')) throw new ExportError('keystore is set without keystore_alias');
@@ -70,10 +72,10 @@ export async function runAndroid(ctx) {
     write(join(proj, f), t);
   }
   // SDL2's Java side (the same SDL version as the native library) and its Gradle wrapper
-  copyTree(join(SDL_ANDROID, 'app/src/main/java/org/libsdl'), join(proj, 'app/src/main/java/org/libsdl'));
-  copy(join(SDL_ANDROID, 'gradlew'), join(proj, 'gradlew'));
-  copy(join(SDL_ANDROID, 'gradlew.bat'), join(proj, 'gradlew.bat'));
-  copy(join(SDL_ANDROID, 'gradle/wrapper/gradle-wrapper.jar'), join(proj, 'gradle/wrapper/gradle-wrapper.jar'));
+  copyTree(join(sdlAndroid(), 'app/src/main/java/org/libsdl'), join(proj, 'app/src/main/java/org/libsdl'));
+  copy(join(sdlAndroid(), 'gradlew'), join(proj, 'gradlew'));
+  copy(join(sdlAndroid(), 'gradlew.bat'), join(proj, 'gradlew.bat'));
+  copy(join(sdlAndroid(), 'gradle/wrapper/gradle-wrapper.jar'), join(proj, 'gradle/wrapper/gradle-wrapper.jar'));
   write(join(proj, 'gradle/wrapper/gradle-wrapper.properties'), `distributionBase=GRADLE_USER_HOME
 distributionPath=wrapper/dists
 distributionUrl=https\\://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip
@@ -86,6 +88,10 @@ zipStorePath=wrapper/dists
   // the game
   copy(app.binary, join(proj, 'app/src/main/jniLibs/arm64-v8a/libmain.so'));
   await strip(join(proj, 'app/src/main/jniLibs/arm64-v8a/libmain.so'), ctx.log);
+  // Dawn (WebGPU on Vulkan): libmain.so needs it, the system linker finds it beside
+  const libs = runtimeFiles(app);
+  for (const f of libs) copy(f, join(proj, 'app/src/main/jniLibs/arm64-v8a', basename(f)));
+  copyDawnLicenses(libs, join(proj, 'app/src/main/assets/licenses/dawn'));
   const pak = await packAssets(ctx, app, join(proj, 'app/src/main/assets/game.cwpak'));
   if (!pak) write(join(proj, 'app/src/main/assets/.keep'), '');
   for (const [dir, px] of [['mdpi', 48], ['hdpi', 72], ['xhdpi', 96], ['xxhdpi', 144], ['xxxhdpi', 192]])

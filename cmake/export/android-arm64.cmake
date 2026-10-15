@@ -4,6 +4,7 @@
 # ~/Android/Sdk) + the newest ndk/<version>. Gradle packs the APK (tools/cwexport).
 include(${CMAKE_CURRENT_LIST_DIR}/common.cmake)
 set(CW_EXPORT_TARGET android-arm64)
+cw_export_dawn(android-arm64)
 if(DEFINED ENV{ANDROID_NDK_HOME} AND EXISTS "$ENV{ANDROID_NDK_HOME}")
   set(_ndk $ENV{ANDROID_NDK_HOME})
 else()

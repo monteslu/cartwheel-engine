@@ -33,7 +33,7 @@ export const PLATFORMS = {
   'android-arm64': { validate: android.validate, run: android.runAndroid, what: 'APK + Gradle project (built)' },
   web: { validate: web.validate, run: web.runWeb, what: 'static site + zip (built)' },
   wasc: { validate: web.validate, run: web.runCart, what: '.wasc cart (built)' },
-  macos: { validate: apple.validateMac, run: apple.runMac, what: 'app bundle without its executable + build-on-mac.sh (NOT built: needs a Mac)' },
+  macos: { validate: apple.validateMac, run: apple.runMac, what: 'arm64 .app zip, signed ad hoc (built on a Mac only)' },
   ios: { validate: apple.validateIos, run: apple.runIos, what: 'Xcode project generator + Info.plist + pack (NOT built: needs a Mac)' },
 };
 
@@ -65,7 +65,7 @@ function makeCtx(proj, preset, opts) {
   return {
     preset, platform: p.platform, app, projectDir: proj.dir, isProject: proj.isProject, keys: proj.keys,
     title: opt('title', proj.keys.name || app), version: opt('version', '0.1.0'), opt, outDir: out,
-    verbose: !!opts.verbose, threeBuilder: !!opts.threeBuilder, log: opts.onLog || (() => {}), progress: (pct, stage) => (opts.onProgress || (() => {}))(preset, pct, stage),
+    verbose: !!opts.verbose, threeBuilder: !!opts.threeBuilder, buildDir: opts.build || null, log: opts.onLog || (() => {}), progress: (pct, stage) => (opts.onProgress || (() => {}))(preset, pct, stage),
   };
 }
 
@@ -84,7 +84,7 @@ function check(proj, preset) {
 /**
  * Export presets of a project. Never throws for a failed preset: each gets a
  * result {preset, ok, platform, files} or {preset, ok:false, error}.
- * @param {{project: string, presets?: string[], validate?: boolean, out?: string, verbose?: boolean, threeBuilder?: boolean,
+ * @param {{project: string, presets?: string[], validate?: boolean, out?: string, verbose?: boolean, threeBuilder?: boolean, build?: string,
  *          onLog?: (line: string) => void, onProgress?: (preset: string, pct: number, stage: string) => void}} o
  * @returns {Promise<Array<{preset: string, ok: boolean, platform?: string, files?: string[], error?: string, what?: string}>>}
  */

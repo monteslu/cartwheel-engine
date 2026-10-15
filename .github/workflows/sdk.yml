@@ -1,0 +1,101 @@
+name: SDK
+
+# Prebuilt engine SDKs (docs/sdk.md): one tarball per target, attached to the
+# release of a v* tag. A game builds against the SDK for its engine version
+# and compiles only its own code.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: sdk-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CW_CART_LINK_JOBS: 2
+  BINARYEN_CORES: 4
+  # the libraries every native SDK compiles (the rest of the lock is for carts, tests and exports)
+  NATIVE_DEPS: three.c,box2d,box3d,sdl2,stb,miniaudio,meshoptimizer,wasmcart-libs,basis_universal,kb,font:*
+
+jobs:
+  sdk:
+    name: SDK ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x64, os: ubuntu-24.04, deps: 'export/llvm-mingw,export/sysroot-linux-x64,export/native-dawn-linux-x64' }
+          - { target: linux-arm64, os: ubuntu-24.04-arm, deps: 'export/llvm-mingw,export/sysroot-linux-arm64,export/native-dawn-linux-arm64' }
+          - { target: windows-x64, os: ubuntu-24.04, deps: 'export/llvm-mingw,export/native-dawn-win32-x64,export/angle-gles-win32-x64' }
+          - { target: android-arm64, os: ubuntu-24.04, deps: 'export/llvm-mingw,export/native-dawn-android-arm64' }
+          - { target: macos-arm64, os: macos-15, deps: 'export/native-dawn-darwin-arm64,export/angle-gles-darwin-arm64' }
+          - { target: cart, os: ubuntu-24.04, deps: '' }
+          - { target: cart-wgpu, os: ubuntu-24.04, deps: '' }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: System packages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build
+      - name: System packages (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja gnu-tar
+      - name: Android NDK
+        if: matrix.target == 'android-arm64'
+        run: |
+          ver=27.2.12479018
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$ver" >/dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ver" >> "$GITHUB_ENV"
+          echo "CW_SDK_NDK_VERSION=$ver" >> "$GITHUB_ENV"
+      - name: Fetch dependencies
+        run: |
+          case "${{ matrix.target }}" in
+            cart|cart-wgpu) scripts/fetch-deps.sh ;;
+            *) scripts/fetch-deps.sh --only "$NATIVE_DEPS,${{ matrix.deps }}" ;;
+          esac
+      - name: Version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then v="${GITHUB_REF_NAME#v}"; else v="$(git describe --tags --always)-$(date -u +%Y%m%d)"; fi
+          echo "CW_SDK_VERSION=$v" >> "$GITHUB_ENV"
+          [ "$RUNNER_OS" = macOS ] && echo "CW_SDK_XCODE_VERSION=$(xcodebuild -version | head -1 | cut -d' ' -f2)" >> "$GITHUB_ENV" || true
+      - name: Build the SDK (Release)
+        run: scripts/build-sdk.sh ${{ matrix.target }}
+      - name: Build the SDK (Debug)
+        if: matrix.target != 'cart' && matrix.target != 'cart-wgpu'
+        run: BUILD_TYPE=Debug scripts/build-sdk.sh ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sdk-${{ matrix.target }}
+          path: |
+            out/sdk/*.tar.gz
+            out/sdk/*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Release
+    needs: sdk
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: sdk
+          merge-multiple: true
+      - name: Attach the SDKs to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l sdk
+          gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --clobber sdk/*

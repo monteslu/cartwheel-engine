@@ -29,7 +29,8 @@
 //   wasc          romdev wasm({op:'conformance'}), the input script on romdev
 //                 (expected state), and a run on wcnative (frames render).
 //                 Control: a truncated cart must fail conformance.
-//   macos, ios    NOT built (no Apple SDK here): bundle / template structure,
+//   macos         built on a Mac only (an arm64 .app); elsewhere reported as not built
+//   ios           NOT built (no Apple SDK here): template structure,
 //                 universal ANGLE, pack identical, scripts parse.
 //   project       a game project outside the tree (CMakeLists.txt +
 //                 project.cwproj, CW_PROJECT_DIR) exported for linux-x64 and run.
@@ -200,7 +201,7 @@ function wineEnv() {
 async function windowsX64(g) {
   const files = await exportOne(g.project, 'windows', join(OUT, g.game));
   const dir = unzip(files.find((f) => f.endsWith('.zip')), join(OUT, g.game, 'windows-run'));
-  for (const f of [`${g.game}.exe`, `${g.game}.cwpak`, 'libEGL.dll', 'libGLESv2.dll', 'libc++.dll', 'libunwind.dll', 'zlib1.dll'])
+  for (const f of [`${g.game}.exe`, `${g.game}.cwpak`, 'libEGL.dll', 'libGLESv2.dll', 'd3dcompiler_47.dll', 'webgpu_dawn.dll', 'dxcompiler.dll', 'dxil.dll'])
     if (!existsSync(join(dir, f))) return report('windows-x64', g.game, 'FAIL', `the zip lacks ${f}`);
   if (!existsSync(WINE)) return report('windows-x64', g.game, 'built-only', 'no Wine: scripts/fetch-deps.sh --only export/wine to run it');
   if (!process.env.DISPLAY) return report('windows-x64', g.game, 'built-only', 'no DISPLAY for Wine');
@@ -405,23 +406,19 @@ async function wasc(g) {
   report('wasc', g.game, 'built+run', `romdev conformance ok (${conf.issues.length} warnings), expected state on romdev after the input script, wcnative renders (${colors} colours); control (truncated cart) fails`);
 }
 
-function machoUniversal(f) {
-  const b = readFileSync(f).subarray(0, 4);
-  return b.readUInt32BE(0) === 0xcafebabe;
-}
 async function macos(g) {
+  if (process.platform !== 'darwin') return report('macos', g.game, 'not built (needs a Mac)', 'the macOS export builds with Xcode\'s clang and SDK; CI builds it on a macOS runner');
   const files = await exportOne(g.project, 'macos', join(OUT, g.game));
-  const dir = files[0];
+  const dir = files[files.length - 1];
   const app = join(dir, readdirSync(dir).find((f) => f.endsWith('.app')));
   const plist = readFileSync(join(app, 'Contents/Info.plist'), 'utf8');
   const pak = join(app, 'Contents/Resources', `${g.game}.cwpak`);
   const okPlist = /<key>CFBundleExecutable<\/key><string>/.test(plist) && /CFBundleIdentifier/.test(plist);
-  const okAngle = ['libEGL.dylib', 'libGLESv2.dylib'].every((d) => machoUniversal(join(app, 'Contents/Frameworks', d)));
-  const sh = spawnSync('sh', ['-n', join(dir, 'build-on-mac.sh')]);
-  const x64pak = join(OUT, g.game, 'linux-run', `${g.game}.cwpak`);
-  if (!okPlist || !okAngle || sh.status !== 0 || !existsSync(pak) || (existsSync(x64pak) && !sameFile(pak, x64pak)))
-    return report('macos', g.game, 'FAIL', `plist=${okPlist} angle universal=${okAngle} script=${sh.status} pak=${existsSync(pak)}`);
-  report('macos', g.game, 'not built (needs a Mac)', 'bundle (Info.plist, icon, pack, universal ANGLE Metal dylibs) + build-on-mac.sh; Apple SDK/Xcode, signing and notarization (your Apple account) are not available here');
+  const okLibs = ['libEGL.dylib', 'libGLESv2.dylib'].every((d) => existsSync(join(app, 'Contents/Frameworks', d)));
+  const sig = spawnSync('codesign', ['--verify', '--deep', app]);
+  if (!okPlist || !okLibs || sig.status !== 0 || !existsSync(pak))
+    return report('macos', g.game, 'FAIL', `plist=${okPlist} angle=${okLibs} codesign=${sig.status} pak=${existsSync(pak)}`);
+  report('macos', g.game, 'built', 'arm64 .app (Info.plist, icon, pack, Dawn + ANGLE dylibs), signed ad hoc');
 }
 async function ios(g) {
   const files = await exportOne(g.project, 'ios', join(OUT, g.game));

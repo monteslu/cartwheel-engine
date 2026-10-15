@@ -199,6 +199,9 @@ target_include_directories(cw_miniaudio PUBLIC ${DEPS}/miniaudio)
 target_compile_definitions(cw_miniaudio PUBLIC MA_NO_DEVICE_IO MA_NO_THREADING
   PRIVATE MA_NO_SSE2 MA_NO_AVX2 MA_NO_NEON MA_DR_MP3_NO_SIMD MA_DR_FLAC_NO_SIMD)
 target_compile_options(cw_miniaudio PRIVATE -O2 -w)
+if(NOT CW_CART)
+  target_link_libraries(cw_miniaudio PUBLIC ${CMAKE_DL_LIBS}) # ma_dlopen (libdl before glibc 2.34)
+endif()
 
 # ── meshoptimizer: the EXT_meshopt_compression decoder at load time (both
 #    builds) and the mesh importer in cwpack (native) ──────────────────
@@ -307,8 +310,11 @@ target_compile_options(cw_kbts PRIVATE -O2 -w)
 if(CW_CART)
   option(CW_WGPU "dual GL + WebGPU carts (the wasmcart WebGPU tier)" OFF)
 else()
+  # native-dawn's prefix: deps/native-dawn for this machine, an export
+  # toolchain's own for its target (cmake/export/common.cmake)
+  set(CW_NATIVE_DAWN ${DEPS}/native-dawn CACHE PATH "native-dawn prefix (the native WebGPU backend)")
   set(_cw_wgpu_default OFF)
-  if(EXISTS ${DEPS}/native-dawn/lib/cmake/Dawn AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT CMAKE_CROSSCOMPILING)
+  if(EXISTS ${CW_NATIVE_DAWN}/lib/cmake/Dawn AND (CW_EXPORT_TARGET OR (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT CMAKE_CROSSCOMPILING)))
     set(_cw_wgpu_default ON)
   endif()
   option(CW_WGPU "the native WebGPU backend (native-dawn)" ${_cw_wgpu_default})
@@ -330,7 +336,7 @@ if(CW_WGPU)
     target_compile_options(cw_wgpu_cart PRIVATE -O2 -w)
     target_include_directories(cw_wgpu INTERFACE ${CW_WGPU_KIT}/include ${CW_EMDAWNWEBGPU}/webgpu/include)
   else()
-    find_package(Dawn REQUIRED CONFIG PATHS ${DEPS}/native-dawn NO_DEFAULT_PATH)
+    find_package(Dawn REQUIRED CONFIG PATHS ${CW_NATIVE_DAWN} NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
     target_link_libraries(cw_wgpu INTERFACE dawn::webgpu_dawn)
   endif()
   # three.c's WebGPU backend (three.js r186's generated WGSL): the scene pass

@@ -47,13 +47,13 @@ with the engine (`-DCW_PROJECT_DIR=<dir> -DCW_ENGINE_ONLY=ON`) in
 
 | platform | produces | how it is built | status on the build machine |
 |---|---|---|---|
-| `linux-x64` | `.tar.gz` (game, its `.cwpak`, `run.sh`, `.desktop`, icon) and an AppImage | clang + lld (llvm-mingw) against Debian bullseye's sysroot: glibc 2.31 floor; SDL2 static; links only libc, libm, libdl, libpthread, libstdc++, libgcc_s and libGLESv2 | built + run |
-| `linux-arm64` | the same for aarch64 | same, arm64 sysroot | built only (no arm64 machine or emulator) |
-| `windows-x64` | `.zip`: `.exe` (GUI subsystem), `.cwpak`, ANGLE `libEGL.dll` + `libGLESv2.dll` (D3D11) and what they link (`libc++.dll`, `libunwind.dll`, `zlib1.dll`), licenses | llvm-mingw (UCRT), C++ runtime and winpthreads static | built + run under Wine (wined3d); not run on real Windows |
-| `android-arm64` | APK (debug-signed without a keystore) + the Gradle project | the game as `libmain.so` (NDK, SDL2 static, GLES 3.0), SDL2's Java activity, Gradle 8.14 / AGP 8.11, minSdk 24 | built + run on the x86_64 AVD (NDK translation, SwiftShader GLES) |
+| `linux-x64` | `.tar.gz` (game, its `.cwpak`, `libwebgpu_dawn.so`, `run.sh`, `.desktop`, icon) and an AppImage | clang + lld (llvm-mingw) against Debian bullseye's sysroot; SDL2 static; WebGPU through native-dawn (Vulkan; needs glibc 2.34 and GCC 11's libstdc++), GL the system's libGLESv2 as the fallback | built + run |
+| `linux-arm64` | the same for aarch64 | same, arm64 sysroot | built; run in CI on an arm64 runner (cartwheel-examples) |
+| `windows-x64` | `.zip`: `.exe` (GUI subsystem), `.cwpak`, Dawn (`webgpu_dawn.dll`, `dxcompiler.dll`, `dxil.dll`: D3D12) and ANGLE (`libEGL.dll`, `libGLESv2.dll`, `d3dcompiler_47.dll`: D3D11), licenses; the Visual C++ runtime Dawn needs when `CW_VCRUNTIME_DIR` names it | llvm-mingw (UCRT), C++ runtime and winpthreads static | built; run in CI on a Windows runner (cartwheel-examples) |
+| `android-arm64` | APK (debug-signed without a keystore) + the Gradle project | the game as `libmain.so` (NDK, SDL2 static), `libwebgpu_dawn.so` beside it (Vulkan), the system's GLES 3.0 as the fallback, SDL2's Java activity, Gradle 8.14 / AGP 8.11, minSdk 24 | built + run on the x86_64 AVD (NDK translation, SwiftShader GLES) |
 | `web` | static site (`index.html`, `player.js`, `wasmcart/`, `game.wasm` + `game.wasc`, `_headers`, `serve.mjs`) + `.zip` | the dual cart (WebGPU where the browser has it, else WebGL 2) on wasmcart's web host; its wasm on its own (`game.wasm`, compiled while it downloads and kept compiled by the browser), the rest in `game.wasc` | built + run in Chromium |
 | `wasc` | the `.wasc` cart | `cmake/cart.cmake` (wasi-sdk), the dual cart (`CW_WGPU`: the host picks WebGPU or GL) | built + run on romdev and wasmcart-native |
-| `macos` | the `.app` bundle without its executable (Info.plist, icon, pack, ANGLE Metal dylibs) + `build-on-mac.sh` | on a Mac: `cmake -G Xcode` with `cmake/export/macos.cmake` (universal arm64 + x86_64), then codesign; notarization with your Apple account | not built (needs Apple's SDK) |
+| `macos` | arm64 `.app` in a `.zip`: the executable, Dawn's and ANGLE's dylibs in Contents/Frameworks, the `.cwpak` in Resources; signed ad hoc, not notarized | on a Mac: Xcode's clang + Ninja with `cmake/export/macos-arm64.cmake`; WebGPU through Dawn (Metal), GL through ANGLE (Metal) | built + run in CI on a macOS runner (cartwheel-examples) |
 | `ios` | Info.plist, pack, icon + `build-on-mac.sh` (generates and builds the Xcode project) | on a Mac: `cmake -G Xcode` with `cmake/export/ios.cmake` | not built (needs Apple's SDK and signing) |
 
 Both cart exports ship the dual cart (`build/cart-wgpu`): it imports GL and

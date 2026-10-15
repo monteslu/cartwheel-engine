@@ -17,7 +17,7 @@ wasmcart-wgpu https://github.com/wasmcart/wasmcart.git       v0.34.3            
 emdawnwebgpu  https://github.com/google/dawn/releases/download/v20261002.154047/emdawnwebgpu_pkg-v20261002.154047.zip   v20261002.154047   6b14532b85c7f4d51154b6eeb6bd3fcf7735ad5c7cfd698d83985dd21a1c15c2
 # native-dawn C SDK (Dawn 1e975e28, webgpu.h + libwebgpu_dawn + CMake package dawn::webgpu_dawn), the native
 # WebGPU backend. NATIVE_DAWN_PREFIX (env) points at an existing prefix instead (`npx native-dawn prefix`).
-native-dawn   https://github.com/monteslu/native-dawn/releases/download/v0.1.0/native-dawn-v0.1.0-linux-x64.tar.gz   0.1.0   a4895cb5c3ed0e7bf86dc0ab197f7d9af84e077522a7ed428faced73959b2992
+native-dawn   https://github.com/monteslu/native-dawn/releases/download/v0.1.5/native-dawn-v0.1.5-linux-x64.tar.gz   0.1.5   da3a98dafd01aede59c6e52055f78ca104182b62189d5f6eb3b58f2a8743e676
 wasmcart-sdl2 https://github.com/wasmcart/wasmcart-sdl2.git  c34f74f80a727bcae273b0411429642ec218c230
 stb           https://github.com/nothings/stb.git           2c980bb59875b0d32144a71867fbdebb2f77cd20
 miniaudio     https://github.com/mackron/miniaudio.git      9634bedb5b5a2ca38c1ee7108a9358a4e233f14d
@@ -34,15 +34,22 @@ font:noto-sans-arabic-OFL.txt https://github.com/google/fonts/raw/7085eb89a950e8
 # Exporters (tools/cwexport), fetched only by `fetch-deps.sh --export` into deps/export/:
 # llvm-mingw: clang + lld + mingw-w64 (UCRT) for Windows, and the clang/lld every cross build links with
 export/llvm-mingw https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64.tar.xz 20260922 bb7bb7654b33d5aa8712acb837c963b2e0c56352560c76105270a3268c665c21
+export/llvm-mingw@linux-aarch64 https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-ubuntu-22.04-aarch64.tar.xz 20260922 07d21263c56bfe9a713db6fdb3f7434bf4c121a005e40397d3b4c0170fb06769
 # Debian bullseye sysroots (glibc 2.31) as Chromium builds against them: the Linux exports' ABI floor
 export/sysroot-linux-x64 https://commondatastorage.googleapis.com/chrome-linux-sysroot/52d61d4446ffebfaa3dda2cd02da4ab4876ff237853f46d273e7f9b666652e1d bullseye-amd64 52d61d4446ffebfaa3dda2cd02da4ab4876ff237853f46d273e7f9b666652e1d
 export/sysroot-linux-arm64 https://commondatastorage.googleapis.com/chrome-linux-sysroot/c7176a4c7aacbf46bda58a029f39f79a68008d3dee6518f154dcf5161a5486d8 bullseye-arm64 c7176a4c7aacbf46bda58a029f39f79a68008d3dee6518f154dcf5161a5486d8
-# ANGLE (libEGL + libGLESv2, BSD-3-Clause). Windows: MSYS2's clang64 build (D3D11; needs libc++.dll +
-# libunwind.dll, which llvm-mingw ships, and zlib1.dll). Electron and Chrome no longer ship usable ANGLE DLLs.
-# macOS / iOS: kivy/angle-builder's Metal builds (staged into the Apple templates; nothing here links them).
-export/angle-win-x64 https://repo.msys2.org/mingw/clang64/mingw-w64-clang-x86_64-angleproject-2.1.r25748.890b5d8f-3-any.pkg.tar.zst r25748.890b5d8f-3 71c0daec0503735a15b441bd45cb55296715fd03b89e1ad3a7dc460eabbad56a
-export/zlib-win-x64 https://repo.msys2.org/mingw/clang64/mingw-w64-clang-x86_64-zlib-1.3.2-2-any.pkg.tar.zst 1.3.2-2 96d8db2f2bf24c0d4e82b899d50a3497d97536a8bd38ce275401d0f2b9580b5e
-export/angle-macos https://github.com/kivy/angle-builder/releases/download/chromium-7151_rev1/angle-macos-universal.tar.gz chromium-7151_rev1 b87f1d0144218a0699859340bfc9864949190d5f4b4d19d4265c3ab561fcd078
+# Native WebGPU for each export target: native-dawn's C SDK (Dawn 1e975e28: webgpu.h, the shared library,
+# its CMake package), the same release as the native-dawn line above
+export/native-dawn-linux-x64 https://github.com/monteslu/native-dawn/releases/download/v0.1.5/native-dawn-v0.1.5-linux-x64.tar.gz 0.1.5 da3a98dafd01aede59c6e52055f78ca104182b62189d5f6eb3b58f2a8743e676
+export/native-dawn-linux-arm64 https://github.com/monteslu/native-dawn/releases/download/v0.1.5/native-dawn-v0.1.5-linux-arm64.tar.gz 0.1.5 9cd6ec966b76ca6154cf527eb3aafc94dc67d70e0469852cbecd058c21c296f7
+export/native-dawn-win32-x64 https://github.com/monteslu/native-dawn/releases/download/v0.1.5/native-dawn-v0.1.5-win32-x64.tar.gz 0.1.5 11b90d6192141246203ead4f8562ec7119e8d5a164a042cfb6e6d3534925dfaf
+export/native-dawn-darwin-arm64 https://github.com/monteslu/native-dawn/releases/download/v0.1.5/native-dawn-v0.1.5-darwin-arm64.tar.gz 0.1.5 ef7752155832c6fcb71092a9c204e44d834ed0ed893a7fcb7875c7126028d289
+export/native-dawn-android-arm64 https://github.com/monteslu/native-dawn/releases/download/v0.1.5/native-dawn-v0.1.5-android-arm64.tar.gz 0.1.5 b2284b1f8bedbd3effdb92ce5285c3da8ca2e87ff3da52672341fbf0a474fc3f
+# ANGLE (libEGL + libGLESv2, BSD-3-Clause): GLES 3.0 where the platform has none of its own, from
+# native-gles' releases (include/ + lib/). Windows: D3D11, static CRT, import libraries for lld;
+# macOS: Metal. iOS: kivy/angle-builder's Metal xcframeworks (staged into the iOS template).
+export/angle-gles-win32-x64 https://github.com/monteslu/native-gles/releases/download/v0.7.2/angle-v0.7.2-win32-x64.tar.gz 0.7.2 ab436cf891bce0403f3bba49d78a4669c6504903e277e0a4824698349368302c
+export/angle-gles-darwin-arm64 https://github.com/monteslu/native-gles/releases/download/v0.7.2/angle-v0.7.2-darwin-arm64.tar.gz 0.7.2 b9b21777e92f0f413c18c53a9539e8358f0329be490807daaac8d73acc5bea84
 export/angle-ios https://github.com/kivy/angle-builder/releases/download/chromium-7151_rev1/angle-iphoneall-universal.tar.gz chromium-7151_rev1 ac2b6bff844ce3463fc8386f28d05081ab529a297d7edfe2163a0aefb858a8e2
 # AppImage type 2 runtimes (the AppImage is runtime + a squashfs the system mksquashfs makes)
 export/appimage-runtime-x64 https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64 20251108 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d

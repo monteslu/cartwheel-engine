@@ -15,6 +15,9 @@
 #include "render/quality_internal.h"
 #include "cartwheel/render2d.h"
 #include "cartwheel/ui.h"
+#if !CW_CART && defined(__APPLE__) && !defined(SDL_VIDEO_DRIVER_UIKIT)
+#include <dlfcn.h>
+#endif
 
 cw_platform cw__plat;
 /* set by the resource system when first used, so apps that never load a
@@ -359,6 +362,11 @@ bool cw__sdl_init(void) {
   cw_debug_command("crisp_ui", "crisp_ui [1|0]: the UI at the picture's resolution (cw_app_desc.ui_min_lines; a no-op unless the app offers it)", cmd_crisp_ui);
   cw_debug_command("touch_primary", "touch_primary [1|0]: the device is touch-first (cw_platform_touch_primary)", cmd_touch_primary);
   bool wgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
+#if !CW_CART && defined(__APPLE__)
+#define CW_WGPU_WINDOW_FLAGS SDL_WINDOW_METAL
+#else
+#define CW_WGPU_WINDOW_FLAGS 0
+#endif
   if (!wgpu) SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "1");
 #if defined(__ANDROID__) || (defined(__APPLE__) && defined(SDL_VIDEO_DRIVER_UIKIT))
   /* a resizable window would make SDL request any orientation (overriding
@@ -378,52 +386,83 @@ bool cw__sdl_init(void) {
     cw_error("SDL_Init: %s", SDL_GetError());
     return false;
   }
-  if (!wgpu) {
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-    if (p->app.msaa > 0) {
-      SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
-      SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, p->app.msaa);
-    }
-  }
-  /* WebGPU: no GL context (a dual cart's host traps every gl import) */
-  Uint32 wflags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE | (wgpu ? 0 : SDL_WINDOW_OPENGL);
-#if !CW_CART
-  { /* a desktop window larger than the display: lower the scale to fit (the
-     * logical size stays), never below 1 */
-    const char *drv = SDL_GetCurrentVideoDriver();
-    SDL_Rect r;
-    if (p->scale > 1 && drv && strcmp(drv, "offscreen") != 0 && SDL_GetDisplayUsableBounds(0, &r) == 0 && r.w > 0 && r.h > 0) {
-      float f = CW_MIN((float)r.w / (float)p->px_w, (float)(r.h - 40) / (float)p->px_h); /* room for a title bar */
-      if (f < 1) {
-        p->scale = CW_MAX(1.0f, p->scale * f);
-        p->px_w = (int)lroundf((float)p->app.width * p->scale);
-        p->px_h = (int)lroundf((float)p->app.height * p->scale);
+  for (;;) { /* a second pass only when WebGPU falls back to GL */
+    if (!wgpu) {
+#if !CW_CART && defined(__APPLE__) && !defined(SDL_VIDEO_DRIVER_UIKIT)
+      /* macOS: GLES is ANGLE (Metal), linked through @rpath. SDL opens
+       * libGLESv2 / libEGL by leaf name, which dyld does not look up through
+       * the app's rpath: give it the files beside the libGLESv2 this process
+       * linked (Contents/Frameworks in a bundle) */
+      Dl_info di;
+      if (!getenv("SDL_VIDEO_EGL_DRIVER") && dladdr((const void *)glGetString, &di) && di.dli_fname) {
+        char dir[1024], path[1100];
+        snprintf(dir, sizeof dir, "%s", di.dli_fname);
+        char *slash = strrchr(dir, '/');
+        if (slash) {
+          *slash = 0;
+          snprintf(path, sizeof path, "%s/libGLESv2.dylib", dir);
+          setenv("SDL_VIDEO_GL_DRIVER", path, 0);
+          snprintf(path, sizeof path, "%s/libEGL.dylib", dir);
+          setenv("SDL_VIDEO_EGL_DRIVER", path, 0);
+        }
+      }
+#endif
+      SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+      SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+      SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+      SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+      SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+      if (p->app.msaa > 0) {
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, p->app.msaa);
       }
     }
-  }
+    /* WebGPU: no GL context (a dual cart's host traps every gl import); on
+     * macOS a Metal view for Dawn's surface */
+    Uint32 wflags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE | (wgpu ? CW_WGPU_WINDOW_FLAGS : SDL_WINDOW_OPENGL);
+#if !CW_CART
+    { /* a desktop window larger than the display: lower the scale to fit (the
+       * logical size stays), never below 1 */
+      const char *drv = SDL_GetCurrentVideoDriver();
+      SDL_Rect r;
+      if (p->scale > 1 && drv && strcmp(drv, "offscreen") != 0 && SDL_GetDisplayUsableBounds(0, &r) == 0 && r.w > 0 && r.h > 0) {
+        float f = CW_MIN((float)r.w / (float)p->px_w, (float)(r.h - 40) / (float)p->px_h); /* room for a title bar */
+        if (f < 1) {
+          p->scale = CW_MAX(1.0f, p->scale * f);
+          p->px_w = (int)lroundf((float)p->app.width * p->scale);
+          p->px_h = (int)lroundf((float)p->app.height * p->scale);
+        }
+      }
+    }
 #endif
-  p->window = SDL_CreateWindow(p->app.title ? p->app.title : "cartwheel", SDL_WINDOWPOS_CENTERED,
-                               SDL_WINDOWPOS_CENTERED, p->px_w, p->px_h, wflags);
-  if (!p->window) {
-    cw_error("SDL_CreateWindow: %s", SDL_GetError());
-    return false;
-  }
-  if (wgpu) {
-    if (!cw__wgpu_init()) return false;
-  } else {
-    p->gl = SDL_GL_CreateContext(p->window);
-    if (!p->gl) {
-      cw_error("SDL_GL_CreateContext (GLES 3.0): %s", SDL_GetError());
+    p->window = SDL_CreateWindow(p->app.title ? p->app.title : "cartwheel", SDL_WINDOWPOS_CENTERED,
+                                 SDL_WINDOWPOS_CENTERED, p->px_w, p->px_h, wflags);
+    if (!p->window) {
+      cw_error("SDL_CreateWindow: %s", SDL_GetError());
       return false;
     }
-    SDL_GL_MakeCurrent(p->window, p->gl);
-    SDL_GL_SetSwapInterval(p->app.vsync_off ? 0 : 1);
-    cw_log(CW_LOG_INFO, "GL: %s | %s | %s", (const char *)glGetString(GL_VERSION), (const char *)glGetString(GL_RENDERER),
-           (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION));
+    if (wgpu) {
+      if (cw__wgpu_init()) break;
+      /* WebGPU the run picked itself and could not start (no adapter, no
+       * surface): a new window, on GL */
+      if (!cw__gpu_fallback_to_gl()) return false;
+      SDL_DestroyWindow(p->window);
+      p->window = NULL;
+      wgpu = false;
+      SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "1");
+      continue;
+    } else {
+      p->gl = SDL_GL_CreateContext(p->window);
+      if (!p->gl) {
+        cw_error("SDL_GL_CreateContext (GLES 3.0): %s", SDL_GetError());
+        return false;
+      }
+      SDL_GL_MakeCurrent(p->window, p->gl);
+      SDL_GL_SetSwapInterval(p->app.vsync_off ? 0 : 1);
+      cw_log(CW_LOG_INFO, "GL: %s | %s | %s", (const char *)glGetString(GL_VERSION), (const char *)glGetString(GL_RENDERER),
+             (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION));
+    }
+    break;
   }
   {
     int w, h;

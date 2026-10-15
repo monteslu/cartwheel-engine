@@ -1,27 +1,25 @@
 // Windows x64: a zip with the .exe (llvm-mingw, UCRT, C++ runtime and
-// winpthreads static), its .cwpak, and ANGLE (D3D11) beside it: libEGL.dll,
-// libGLESv2.dll and what they link (libc++.dll, libunwind.dll, zlib1.dll).
-// d3dcompiler_47.dll is part of Windows 10 and later.
-import { join } from 'node:path';
-import { buildApp, packAssets, strip, write, freshDir, copy, zipDir, needDep, slug, EXPORT_DEPS } from './util.mjs';
+// winpthreads static), its .cwpak, and beside it the shared libraries it runs
+// with: Dawn (webgpu_dawn.dll with dxcompiler.dll and dxil.dll: WebGPU on
+// Direct3D 12) and ANGLE (libEGL.dll, libGLESv2.dll, d3dcompiler_47.dll: GLES
+// 3.0 on Direct3D 11, the fallback when WebGPU does not start).
+// webgpu_dawn.dll is built with MSVC and needs Microsoft's Visual C++ runtime
+// (MSVCP140.dll, VCRUNTIME140.dll, VCRUNTIME140_1.dll,
+// MSVCP140_ATOMIC_WAIT.dll): the export ships it when CW_VCRUNTIME_DIR names
+// a folder holding them (Visual Studio's VC\Redist\MSVC\<version>\x64\Microsoft.VC143.CRT,
+// which may be redistributed beside an application); without it the player
+// needs the Visual C++ Redistributable installed.
+import { existsSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import { buildApp, packAssets, strip, write, freshDir, copy, zipDir, needDep, slug, runtimeFiles, copyDawnLicenses, ROOT, ExportError } from './util.mjs';
 import { writeIcon } from './icon.mjs';
 
-/** what ships beside the exe: [source under deps/export, name in the zip] */
-const RUNTIME = [
-  ['angle-win-x64/bin/libEGL.dll', 'libEGL.dll'],
-  ['angle-win-x64/bin/libGLESv2.dll', 'libGLESv2.dll'],
-  ['zlib-win-x64/bin/zlib1.dll', 'zlib1.dll'],
-  ['llvm-mingw/x86_64-w64-mingw32/bin/libc++.dll', 'libc++.dll'],
-  ['llvm-mingw/x86_64-w64-mingw32/bin/libunwind.dll', 'libunwind.dll'],
-];
-const LICENSES = [
-  ['angle-win-x64/share/licenses/angleproject/LICENSE', 'licenses/ANGLE.txt'],
-  ['zlib-win-x64/share/licenses/zlib/LICENSE', 'licenses/zlib.txt'],
-  ['llvm-mingw/LICENSE.TXT', 'licenses/llvm-mingw (libc++, libunwind).txt'],
-];
+const VCRUNTIME = ['msvcp140.dll', 'msvcp140_atomic_wait.dll', 'vcruntime140.dll', 'vcruntime140_1.dll'];
 
 export function validate(ctx) {
-  needDep('llvm-mingw/bin/x86_64-w64-mingw32-clang', ...RUNTIME.map((r) => r[0]), 'angle-macos/include/GLES3/gl3.h');
+  needDep('llvm-mingw/bin/x86_64-w64-mingw32-clang');
+  const vc = process.env.CW_VCRUNTIME_DIR;
+  if (vc) for (const f of VCRUNTIME) if (!existsSync(join(vc, f))) throw new ExportError(`CW_VCRUNTIME_DIR=${vc} has no ${f}`);
 }
 
 export async function run(ctx) {
@@ -32,13 +30,21 @@ export async function run(ctx) {
   copy(app.binary, join(stage, `${name}.exe`));
   await strip(join(stage, `${name}.exe`), ctx.log);
   await packAssets(ctx, app, join(stage, `${name}.cwpak`));
-  for (const [src, dst] of [...RUNTIME, ...LICENSES]) copy(join(EXPORT_DEPS, src), join(stage, dst));
+  const libs = runtimeFiles(app);
+  for (const f of libs) copy(f, join(stage, basename(f)));
+  const dawn = libs.some((f) => /webgpu_dawn\.dll$/i.test(f));
+  const vc = process.env.CW_VCRUNTIME_DIR;
+  if (dawn && vc) for (const f of VCRUNTIME) copy(join(vc, f), join(stage, f));
+  copy(join(ROOT, 'tools/cwexport/licenses/ANGLE.txt'), join(stage, 'licenses/ANGLE.txt'));
+  copyDawnLicenses(libs, join(stage, 'licenses/dawn'));
   writeIcon(ctx, join(stage, `${name}.png`));
   write(join(stage, 'README.txt'), `${ctx.title} ${ctx.version} for Windows x64 (Windows 10 or later).
 
-Run ${name}.exe. Rendering is OpenGL ES 3.0 through ANGLE on Direct3D 11
-(libEGL.dll, libGLESv2.dll beside the game). Keep every file in this folder
-together. Exported with cartwheel's tools/cwexport.
+Run ${name}.exe. ${dawn ? `Renders with WebGPU (Dawn on Direct3D 12) and falls back to
+OpenGL ES 3.0 through ANGLE on Direct3D 11 when WebGPU does not start; the
+environment variable CW_GPU=gl or CW_GPU=webgpu picks one.${vc ? '' : `
+Needs the Microsoft Visual C++ Redistributable (x64) for WebGPU.`}` : `Rendering is OpenGL ES 3.0 through ANGLE on Direct3D 11.`}
+Keep every file in this folder together. Exported with cartwheel's tools/cwexport.
 `.replace(/\n/g, '\r\n'));
   ctx.progress(80, 'zip');
   return [await zipDir(stage, top, join(ctx.outDir, `${top}.zip`)), stage];

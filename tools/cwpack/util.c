@@ -5,6 +5,10 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <direct.h> /* _mkdir; cwpack builds as a Windows host tool too (llvm-mingw) */
+#define mkdir(p, mode) _mkdir(p)
+#endif
 
 #include "cwpack.h"
 
@@ -122,7 +126,11 @@ bool cwp_write_file(const char *path, const void *data, size_t len) {
 
 void cwp_join(const char *dir, const char *rel, char *out, size_t cap) {
   char buf[CWP_PATH_MAX * 2];
-  if (rel[0] == '/') snprintf(buf, sizeof buf, "%s", rel);
+  bool rel_abs = rel[0] == '/';
+#ifdef _WIN32
+  rel_abs |= ((rel[0] | 32) >= 'a' && (rel[0] | 32) <= 'z' && rel[1] == ':'); /* C:/... */
+#endif
+  if (rel_abs) snprintf(buf, sizeof buf, "%s", rel);
   else snprintf(buf, sizeof buf, "%s%s%s", dir, dir[0] && dir[strlen(dir) - 1] != '/' ? "/" : "", rel);
   /* normalize segments */
   char *segs[512];
@@ -146,7 +154,15 @@ void cwp_join(const char *dir, const char *rel, char *out, size_t cap) {
 
 void cwp_absolute(const char *path, char *out, size_t cap) {
   char r[PATH_MAX];
+#ifdef _WIN32
+  if (_fullpath(r, path, sizeof r)) {
+    for (char *c = r; *c; c++) if (*c == '\\') *c = '/';
+    snprintf(out, cap, "%s", r);
+    return;
+  }
+#else
   if (realpath(path, r)) { snprintf(out, cap, "%s", r); return; }
+#endif
   char cwd[PATH_MAX];
   if (path[0] != '/' && getcwd(cwd, sizeof cwd)) cwp_join(cwd, path, out, cap);
   else snprintf(out, cap, "%s", path);

@@ -1,10 +1,13 @@
 // Linux x86_64 / arm64: a tarball (the executable, its .cwpak, a launcher, a
-// .desktop entry and icon) and an AppImage. Built with clang + lld against
-// the Debian bullseye sysroot (glibc 2.31 floor), SDL2 static; GL is the
-// player's libGLESv2 (Mesa or a vendor driver through libglvnd).
+// .desktop entry and icon, native-dawn's libwebgpu_dawn.so beside the
+// executable, found through its $ORIGIN rpath) and an AppImage. Built with
+// clang + lld against the Debian bullseye sysroot, SDL2 static; WebGPU is Dawn
+// on Vulkan, GL the player's libGLESv2 (Mesa or a vendor driver through
+// libglvnd), the fallback when WebGPU does not start.
 import { existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildApp, packAssets, strip, write, freshDir, copy, tarGz, needDep, slug, run, EXPORT_DEPS, ExportError } from './util.mjs';
+import { buildApp, packAssets, strip, write, freshDir, copy, tarGz, needDep, slug, run, runtimeFiles, copyDawnLicenses, EXPORT_DEPS, ExportError } from './util.mjs';
+import { basename } from 'node:path';
 import { writeIcon } from './icon.mjs';
 
 const ARCH = { 'linux-x64': 'x86_64', 'linux-arm64': 'aarch64' };
@@ -24,6 +27,9 @@ export async function run_(ctx) {
   ctx.progress(60, 'stage');
   copy(app.binary, join(stage, name));
   await strip(join(stage, name), ctx.log);
+  const libs = runtimeFiles(app);
+  for (const f of libs) copy(f, join(stage, basename(f)));
+  copyDawnLicenses(libs, join(stage, 'licenses/dawn'));
   const pak = await packAssets(ctx, app, join(stage, `${name}.cwpak`));
   writeIcon(ctx, join(stage, `${name}.png`));
   // the launcher: runs the game from wherever the folder was unpacked
@@ -35,8 +41,11 @@ exec "$here/${name}" "$@"
   write(join(stage, `${name}.desktop`), desktopEntry(ctx, name, `run.sh`));
   write(join(stage, 'README.txt'), `${ctx.title} ${ver} for Linux ${arch}.
 
-Run ./run.sh (or ./${name}). Needs OpenGL ES 3.0 (libGLESv2.so.2: Mesa or
-your GPU vendor's driver) and glibc 2.31 or newer; X11 or XWayland.
+Run ./run.sh (or ./${name}). ${libs.length ? `Renders with WebGPU (Dawn on Vulkan) and
+falls back to OpenGL ES 3.0 (libGLESv2.so.2: Mesa or your GPU vendor's driver)
+when WebGPU does not start; CW_GPU=gl or CW_GPU=webgpu picks one. Needs glibc
+2.34 and GCC 11's libstdc++ or newer (Dawn's floor); X11 or XWayland.` : `Needs OpenGL ES 3.0 (libGLESv2.so.2: Mesa or
+your GPU vendor's driver) and glibc 2.31 or newer; X11 or XWayland.`}
 Exported with cartwheel's tools/cwexport.
 `);
   const files = [];
@@ -44,7 +53,7 @@ Exported with cartwheel's tools/cwexport.
   files.push(await tarGz(stage, top, join(ctx.outDir, `${top}.tar.gz`)));
   if (ctx.opt('appimage', 'true') !== 'false') {
     ctx.progress(85, 'AppImage');
-    files.push(await appImage(ctx, name, stage, pak, join(ctx.outDir, `${top}.AppImage`)));
+    files.push(await appImage(ctx, name, stage, pak, join(ctx.outDir, `${top}.AppImage`), libs.map((f) => basename(f))));
   }
   files.push(stage);
   return files;
@@ -62,9 +71,10 @@ Terminal=false
 }
 
 /** runtime + a squashfs of the AppDir (what appimagetool does, without it) */
-async function appImage(ctx, name, stage, pak, out) {
+async function appImage(ctx, name, stage, pak, out, libs) {
   const appdir = freshDir(join(ctx.outDir, `.appdir-${name}-${ctx.platform}`));
   copy(join(stage, name), join(appdir, 'usr/bin', name));
+  for (const l of libs) copy(join(stage, l), join(appdir, 'usr/bin', l));
   if (pak) copy(pak, join(appdir, 'usr/bin', `${name}.cwpak`));
   copy(join(stage, `${name}.png`), join(appdir, `${name}.png`));
   copy(join(stage, `${name}.png`), join(appdir, 'usr/share/icons/hicolor/256x256/apps', `${name}.png`));

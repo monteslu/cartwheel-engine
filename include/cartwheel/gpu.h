@@ -51,7 +51,9 @@ extern "C" {
 #endif
 
 typedef enum cw_gpu_api {
-  CW_GPU_AUTO = 0, /* the platform default (GL for now) */
+  CW_GPU_AUTO = 0, /* the platform default: GL in a development build; an exported game (and one built
+                    * on a prebuilt SDK) runs WebGPU (Dawn), GL where WebGPU does not start; a dual
+                    * cart follows its host */
   CW_GPU_GL,
   CW_GPU_WEBGPU,
 } cw_gpu_api;

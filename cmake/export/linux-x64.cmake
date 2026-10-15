@@ -1,9 +1,11 @@
 # Linux x64 export: clang + lld (llvm-mingw's, which target every OS) against
-# the Debian bullseye sysroot (glibc 2.31: the ABI floor of the export).
+# the Debian bullseye sysroot (glibc 2.31: the ABI floor of the game's own
+# code; native WebGPU's Dawn needs glibc 2.34 and GCC 11's libstdc++).
 include(${CMAKE_CURRENT_LIST_DIR}/common.cmake)
 set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR x86_64)
 set(CW_EXPORT_TARGET linux-x64)
+cw_export_dawn(linux-x64)
 set(CMAKE_SYSROOT ${CW_EXPORT_DEPS}/sysroot-linux-x64)
 set(CMAKE_FIND_ROOT_PATH ${CMAKE_SYSROOT})
 set(CMAKE_C_COMPILER ${CW_LLVM}/clang)
@@ -16,7 +18,10 @@ set(CMAKE_STRIP ${CW_LLVM}/llvm-strip)
 # llvm-mingw's clang defaults to its own runtimes: use the sysroot's GCC ones
 set(CMAKE_C_FLAGS_INIT "")
 set(CMAKE_CXX_FLAGS_INIT "-stdlib=libstdc++")
-set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=lld --rtlib=libgcc --unwindlib=libgcc")
+# --allow-shlib-undefined: native-dawn's libwebgpu_dawn.so is built against a
+# newer glibc (2.34) and libstdc++ (GCC 11) than the sysroot's; the game's own
+# symbols keep the 2.31 floor, Dawn's set the floor of a WebGPU build
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=lld --rtlib=libgcc --unwindlib=libgcc -Wl,--allow-shlib-undefined")
 set(CMAKE_SHARED_LINKER_FLAGS_INIT "-fuse-ld=lld --rtlib=libgcc --unwindlib=libgcc")
 set(CMAKE_MODULE_LINKER_FLAGS_INIT "-fuse-ld=lld --rtlib=libgcc --unwindlib=libgcc")
 # pkg-config (SDL's dependency probes) answers from the sysroot, never the host

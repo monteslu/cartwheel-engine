@@ -15,7 +15,10 @@
 # needs them, so they are fetched only on request, into deps/export/<name>:
 #   scripts/fetch-deps.sh --export            everything, export deps included
 #   scripts/fetch-deps.sh --only export/NAME  one entry (any name in the lock)
-# Every export entry must carry a sha256.
+#   scripts/fetch-deps.sh --only 'a,b,font:*' several (comma separated, shell globs)
+# Every export entry must carry a sha256. NAME@<os>-<arch> lines (e.g.
+# export/llvm-mingw@linux-aarch64) replace NAME on that kind of host: the
+# toolchain built to run there.
 set -euo pipefail
 WANT_EXPORT=0 ONLY=""
 while [ $# -gt 0 ]; do
@@ -29,6 +32,20 @@ done
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEPS="$ROOT/deps"
 mkdir -p "$DEPS"
+HOST="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
+# sha256sum where there is one (Linux), shasum on macOS
+sha_check() { if command -v sha256sum >/dev/null; then sha256sum -c --quiet -; else shasum -a 256 -c --quiet -; fi; }
+# --only: is this lock name one of the requested (comma separated globs)?
+wanted() {
+  local pat IFS=,
+  for pat in $ONLY; do
+    # shellcheck disable=SC2053
+    [[ "$1" == $pat ]] && return 0
+  done
+  return 1
+}
+# names a NAME@<this host> line replaces
+OVERRIDDEN=" $(awk -v h="@$HOST" '$1 ~ h"$" { sub(h"$", "", $1); print $1 }' "$ROOT/scripts/deps.lock" | tr '\n' ' ')"
 
 # patches/<name>/*.patch are applied on top of the pinned commit (git deps);
 # the tree is reset first, so re-running is idempotent.
@@ -77,7 +94,7 @@ fetch_archive() { # name url version sha
   mkdir -p "$DEPS/.dl"
   [ -f "$tgz" ] || curl -fsSL "$url" -o "$tgz"
   if [ "$sha" != - ]; then
-    echo "$sha  $tgz" | sha256sum -c --quiet - || { echo "$name: sha256 mismatch" >&2; exit 1; }
+    echo "$sha  $tgz" | sha_check || { echo "$name: sha256 mismatch" >&2; exit 1; }
   fi
   rm -rf "$dst" && mkdir -p "$dst"
   case "$url" in
@@ -108,10 +125,11 @@ fetch_export() { # name url version sha
     curl -fsSL "$url" -o "$file.part" || { echo "$name: download failed: $url" >&2; exit 1; }
     mv -f "$file.part" "$file"
   fi
-  echo "$sha  $file" | sha256sum -c --quiet - || { echo "$name: sha256 mismatch ($file)" >&2; exit 1; }
+  echo "$sha  $file" | sha_check || { echo "$name: sha256 mismatch ($file)" >&2; exit 1; }
   rm -rf "$dst" && mkdir -p "$dst"
   case "$name" in
     export/sysroot-*) tar -xJf "$file" -C "$dst" ;;                      # Chromium sysroots: no top directory
+    export/native-dawn-*|export/angle-gles-*) tar -xzf "$file" -C "$dst" ;; # native-dawn / native-gles archives: a bare prefix
     *) case "$url" in
          *.tar.xz|*.tar.gz|*.tgz) tar -xf "$file" -C "$dst" --strip-components=1 ;;
          *.pkg.tar.zst) tar -xf "$file" -C "$dst" --strip-components=1 --exclude=".[A-Z]*" ;; # MSYS2 package: <prefix>/{bin,lib,include,share}
@@ -131,7 +149,7 @@ fetch_file() { # file url version sha
     echo "$1: $3"; return
   fi
   curl -fsSL "$2" -o "$dst.part"
-  echo "$4  $dst.part" | sha256sum -c --quiet - || { echo "$1: sha256 mismatch" >&2; rm -f "$dst.part"; exit 1; }
+  echo "$4  $dst.part" | sha_check || { echo "$1: sha256 mismatch" >&2; rm -f "$dst.part"; exit 1; }
   mv "$dst.part" "$dst"
   echo "$3" > "$dst.version"
   echo "$1: $3"
@@ -139,7 +157,12 @@ fetch_file() { # file url version sha
 
 while read -r name src rev sha; do
   [ -z "$name" ] || [ "${name#\#}" != "$name" ] && continue
-  if [ -n "$ONLY" ] && [ "$name" != "$ONLY" ]; then continue; fi
+  case "$name" in
+    *@"$HOST") name="${name%@*}" ;;          # this host's build of NAME
+    *@*) continue ;;                          # another host's
+    *) [[ "$OVERRIDDEN" == *" $name "* ]] && continue ;;
+  esac
+  if [ -n "$ONLY" ] && ! wanted "$name"; then continue; fi
   case "$name" in
     export/*)
       [ "$WANT_EXPORT" = 1 ] || [ -n "$ONLY" ] || continue
@@ -168,7 +191,9 @@ while read -r name src rev sha; do
 done < "$ROOT/scripts/deps.lock"
 
 # wasmcart's Node tooling (pack, the reference hosts) needs its packages
-[ -d "$DEPS/wasmcart/node_modules" ] || (cd "$DEPS/wasmcart" && npm ci --no-audit --no-fund >/dev/null)
+if [ -d "$DEPS/wasmcart" ] && [ ! -d "$DEPS/wasmcart/node_modules" ]; then
+  (cd "$DEPS/wasmcart" && npm ci --no-audit --no-fund >/dev/null)
+fi
 # the WebGPU tier's hosts (webgpu-node, playwright) for the dual-cart runs
 if [ -d "$DEPS/wasmcart-wgpu" ] && [ ! -d "$DEPS/wasmcart-wgpu/node_modules" ]; then
   (cd "$DEPS/wasmcart-wgpu" && npm ci --no-audit --no-fund >/dev/null)

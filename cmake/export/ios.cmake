@@ -12,6 +12,6 @@ set(CW_SDL2_FROM_SOURCE ON CACHE BOOL "" FORCE)
 set(CW_ANGLE_INCLUDE ${CW_EXPORT_DEPS}/angle-ios/include CACHE PATH "" FORCE)
 set(CW_ANGLE_GLESV2 ${CW_EXPORT_DEPS}/angle-ios/libGLESv2.xcframework CACHE FILEPATH "" FORCE)
 # cwpack runs on the Mac: build/export/macos's (build-on-mac.sh builds it first)
-set(CW_CWPACK ${_cw_root}/build/export/macos/tools/cwpack/Release/cwpack CACHE FILEPATH "host cwpack")
+set(CW_CWPACK ${_cw_root}/build/export/macos/tools/cwpack/cwpack CACHE FILEPATH "host cwpack")
 # cw_add_app makes each app an iOS bundle with this Info.plist
 set(CW_APPLE_BUNDLE ON CACHE BOOL "" FORCE)

@@ -37,6 +37,7 @@
 #include "cartwheel/jobs.h"
 
 static cw_gpu_api backend = CW_GPU_GL;
+static bool auto_pick __attribute__((unused)); /* the native run chose WebGPU itself (CW_GPU_AUTO): GL is its fallback */
 static cw_gpu_adapter adapter_info;
 static uint32_t gpu_errors;
 static uint32_t dbg_api; /* debug field: 1 GL, 2 WebGPU */
@@ -126,6 +127,7 @@ bool cw__gpu_select(cw_gpu_api want, bool host_wgpu) {
   backend = CW_GPU_GL;
   return true;
 }
+bool cw__gpu_fallback_to_gl(void) { return false; }
 bool cw__wgpu_init(void) { return false; }
 void cw__wgpu_frame_end(bool present) { (void)present; }
 bool cw__wgpu_readback(unsigned char **px, int *w, int *h) { (void)px, (void)w, (void)h; return false; }
@@ -245,10 +247,31 @@ bool cw__gpu_select(cw_gpu_api want, bool host_wgpu) {
 #else
   (void)host_wgpu;
   if (!native_want(&want)) return false;
-  backend = want == CW_GPU_WEBGPU ? CW_GPU_WEBGPU : CW_GPU_GL;
+  /* AUTO in an export build (CW_GPU_AUTO_WEBGPU: the export toolchains and
+   * the prebuilt SDKs): WebGPU (Dawn), and GL if WebGPU does not start on
+   * this machine (cw__gpu_fallback_to_gl); GL_ONLY apps draw with GL. A
+   * development build keeps GL. An explicit request (CW_GPU,
+   * cw_app_desc.gpu) gets that API or fails. */
+#ifndef CW_GPU_AUTO_WEBGPU
+#define CW_GPU_AUTO_WEBGPU 0
+#endif
+  auto_pick = CW_GPU_AUTO_WEBGPU && want == CW_GPU_AUTO && !cw__app_gl_only();
+  backend = want == CW_GPU_WEBGPU || auto_pick ? CW_GPU_WEBGPU : CW_GPU_GL;
 #endif
   return true;
 }
+
+#if !CW_CART
+bool cw__gpu_fallback_to_gl(void) {
+  if (!auto_pick || backend != CW_GPU_WEBGPU) return false;
+  cw__wgpu_shutdown();
+  backend = CW_GPU_GL;
+  cw_log(CW_LOG_WARN, "WebGPU did not start on this machine: rendering with GL (CW_GPU=webgpu makes that an error)");
+  return true;
+}
+#else
+bool cw__gpu_fallback_to_gl(void) { return false; }
+#endif
 
 /* ── frame target ─────────────────────────────────────────────────────── */
 
@@ -746,7 +769,16 @@ bool cw__wgpu_readback(unsigned char **out, int *ow, int *oh) {
 }
 
 void cw__wgpu_shutdown(void) {
-  if (!G.device) return;
+  if (!G.device) { /* an init that stopped part way (no adapter, no device) */
+#if !CW_CART
+    if (G.surface) wgpuSurfaceRelease(G.surface);
+    if (G.adapter) wgpuAdapterRelease(G.adapter);
+    if (G.instance) wgpuInstanceRelease(G.instance);
+    if (G.native_win.metalView) nativeDawnSDL2Release(&G.native_win);
+    memset(&G, 0, sizeof G);
+#endif
+    return;
+  }
   if (G.frame_view) wgpuTextureViewRelease(G.frame_view);
   if (G.frame_tex) wgpuTextureRelease(G.frame_tex);
   if (G.offscreen) wgpuTextureRelease(G.offscreen);

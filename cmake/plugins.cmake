@@ -9,8 +9,8 @@
 # or is disabled is NOT compiled: the table records why, and the game's
 # errors about its node types name it (cw_plugin_type_hint).
 
-file(STRINGS ${CMAKE_SOURCE_DIR}/include/cartwheel/plugin.h _cw_api_major REGEX "^#define CW_ENGINE_API_MAJOR ")
-file(STRINGS ${CMAKE_SOURCE_DIR}/include/cartwheel/plugin.h _cw_api_minor REGEX "^#define CW_ENGINE_API_MINOR ")
+file(STRINGS ${CW_ROOT}/include/cartwheel/plugin.h _cw_api_major REGEX "^#define CW_ENGINE_API_MAJOR ")
+file(STRINGS ${CW_ROOT}/include/cartwheel/plugin.h _cw_api_minor REGEX "^#define CW_ENGINE_API_MINOR ")
 string(REGEX REPLACE ".* ([0-9]+)$" "\\1" CW_ENGINE_API_MAJOR "${_cw_api_major}")
 string(REGEX REPLACE ".* ([0-9]+)$" "\\1" CW_ENGINE_API_MINOR "${_cw_api_minor}")
 if(NOT TARGET cwplugins_all)

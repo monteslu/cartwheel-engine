@@ -2026,7 +2026,7 @@
     {
      "name": "cw_gpu_api",
      "doc": "",
-     "decl": "typedef enum cw_gpu_api {\n  CW_GPU_AUTO = 0, /* the platform default (GL for now) */\n  CW_GPU_GL,\n  CW_GPU_WEBGPU,\n} cw_gpu_api;"
+     "decl": "typedef enum cw_gpu_api {\n  CW_GPU_AUTO = 0, /* the platform default: GL in a development build; an exported game (and one built\n                    * on a prebuilt SDK) runs WebGPU (Dawn), GL where WebGPU does not start; a dual\n                    * cart follows its host */\n  CW_GPU_GL,\n  CW_GPU_WEBGPU,\n} cw_gpu_api;"
     },
     {
      "name": "cw_gpu_adapter",

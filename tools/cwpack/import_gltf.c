@@ -20,6 +20,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h> /* GetSystemInfo */
+#endif
 
 #include "cwpack.h"
 #include "gltf_doc.h"
@@ -377,7 +380,13 @@ static void *img_thread(void *arg) {
 
 /* at most as many threads as cores at a time */
 static void run_jobs(img_job *jobs, int n) {
+#ifdef _WIN32
+  SYSTEM_INFO si;
+  GetSystemInfo(&si);
+  long cores = (long)si.dwNumberOfProcessors;
+#else
   long cores = sysconf(_SC_NPROCESSORS_ONLN);
+#endif
   int width = cores > 0 ? (int)cores : 1;
   if (getenv("CWPACK_THREADS")) width = CW_MAX(1, atoi(getenv("CWPACK_THREADS"))); /* 1 = serial (tests) */
   for (int b = 0; b < n; b += width) {
