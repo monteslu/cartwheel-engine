@@ -156,8 +156,21 @@ function(cw_add_app name)
     # binary in an export build, which looks for them there and nowhere else
     cw__runtime_files(_rt)
     if(_rt AND (CW_EXPORT_TARGET OR CW_FROM_SDK) AND NOT ANDROID)
-      add_custom_command(TARGET ${name} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_rt} $<TARGET_FILE_DIR:${name}>)
+      # once per output directory (the apps there share them; a copy per app
+      # raced when two apps linked at once)
+      get_target_property(_rtdir ${name} RUNTIME_OUTPUT_DIRECTORY)
+      if(NOT _rtdir)
+        set(_rtdir ${CMAKE_CURRENT_BINARY_DIR})
+      endif()
+      string(MD5 _rtkey "${_rtdir}")
+      if(NOT TARGET cw_runtime_${_rtkey})
+        add_custom_command(OUTPUT ${_rtdir}/.cw-runtime
+          COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_rt} ${_rtdir}
+          COMMAND ${CMAKE_COMMAND} -E touch ${_rtdir}/.cw-runtime
+          DEPENDS ${_rt} COMMENT "runtime libraries into ${_rtdir}")
+        add_custom_target(cw_runtime_${_rtkey} DEPENDS ${_rtdir}/.cw-runtime)
+      endif()
+      add_dependencies(${name} cw_runtime_${_rtkey})
       if(APPLE)
         set_target_properties(${name} PROPERTIES BUILD_WITH_INSTALL_RPATH ON
           INSTALL_RPATH "@executable_path/../Frameworks;@executable_path")
