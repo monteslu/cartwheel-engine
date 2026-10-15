@@ -22,6 +22,8 @@ const BUILD = resolve(arg('--build') || '');
 const TARGET = arg('--target');
 const OUT = resolve(arg('--out') || '');
 const TAR = arg('--tar');
+// a cart SDK's second build of the same libraries without ThinLTO (CW_CART_LTO=OFF): lib/nolto/, for dev carts
+const NOLTO = arg('--nolto-build');
 if (!arg('--build') || !TARGET || !arg('--out')) {
   console.error('usage: node tools/sdk-pack.mjs --build <dir> --target <name> --out <dir> [--tar <file.tar.gz>]');
   process.exit(2);
@@ -99,9 +101,10 @@ for (const t of T.targets) {
     // exports and --allow-undefined its kit adds to every cart
     const file = join('lib', basename(t.file));
     copyFile(t.file, join(OUT, file));
+    copyNolto(t.file);
     libs.push(file);
     targets += `add_library(cw_wgpu_cart INTERFACE IMPORTED)\n`;
-    props.push(['INTERFACE_LINK_LIBRARIES', cmakeList(['-Wl,--whole-archive', '${CW_ROOT}/' + file, '-Wl,--no-whole-archive'])]);
+    props.push(['INTERFACE_LINK_LIBRARIES', cmakeList(['-Wl,--whole-archive', '${CW_ROOT}/${CW_SDK_LIBDIR}/' + basename(t.file), '-Wl,--no-whole-archive'])]);
     props.push(['INTERFACE_LINK_OPTIONS', cmakeList(split(T.wgpu_cart_link_options))]);
     targets += setProps('cw_wgpu_cart', props);
     continue;
@@ -111,9 +114,10 @@ for (const t of T.targets) {
   } else {
     const file = join('lib', basename(t.file));
     copyFile(t.file, join(OUT, file));
+    copyNolto(t.file);
     libs.push(file);
     targets += `add_library(${name} STATIC IMPORTED)\n`;
-    props.push(['IMPORTED_LOCATION', '${CW_ROOT}/' + file.split(sep).join('/')]);
+    props.push(['IMPORTED_LOCATION', '${CW_ROOT}/${CW_SDK_LIBDIR}/' + basename(t.file)]);
     props.push(['IMPORTED_LINK_INTERFACE_LANGUAGES', 'C;CXX']);
   }
   if (includes.length) props.push(['INTERFACE_INCLUDE_DIRECTORIES', cmakeList(includes)]);
@@ -122,6 +126,13 @@ for (const t of T.targets) {
   if (linkOptions.length) props.push(['INTERFACE_LINK_OPTIONS', cmakeList(linkOptions)]);
   if (links.length) props.push(['INTERFACE_LINK_LIBRARIES', cmakeList(links)]);
   targets += setProps(name, props);
+}
+/** the same library from the --nolto-build tree, into lib/nolto/ */
+function copyNolto(file) {
+  if (!NOLTO) return;
+  const twin = join(resolve(NOLTO), relative(BIN, resolve(file)));
+  if (!existsSync(twin)) fail(`${twin}: the --nolto-build tree lacks ${relative(BIN, file)}`);
+  copyFile(twin, join(OUT, 'lib/nolto', basename(file)));
 }
 function setProps(name, props) {
   if (!props.length) return '';
@@ -221,7 +232,7 @@ else()
 endif()
 `);
 const info = {
-  CW_SDK_TARGET: TARGET, CW_SDK_VERSION: version, CW_SDK_COMMIT: commit, CW_SDK_CART: CART ? 'ON' : 'OFF', CW_SDK_WGPU: WGPU ? 'ON' : 'OFF',
+  CW_SDK_TARGET: TARGET, CW_SDK_NOLTO: NOLTO ? 'ON' : 'OFF', CW_SDK_VERSION: version, CW_SDK_COMMIT: commit, CW_SDK_CART: CART ? 'ON' : 'OFF', CW_SDK_WGPU: WGPU ? 'ON' : 'OFF',
   CW_SDK_ANGLE_GLESV2: T.angle ? mapPath(T.angle, 'file').replace('${CW_ROOT}/', '') : '',
   CW_SDK_SYSTEM: T.system, CW_SDK_PROCESSOR: T.processor, CW_SDK_C_COMPILER: T.c_compiler, CW_SDK_THREE_TABLE: T.three_table,
 };

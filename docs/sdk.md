@@ -71,6 +71,13 @@ cmake -S . -B build/cart-wgpu -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -Dcartwheel_DIR=<sdk>/cart-wgpu/lib/cmake/cartwheel -DCW_CWPACK=<sdk>/linux-x64/bin/cwpack
 ```
 
+Cart SDKs carry the libraries twice: ThinLTO bitcode (`lib/`, for release
+carts: whole-program inlining, then wasm-opt) and plain objects
+(`lib/nolto/`). `-DCW_CART_DEV=ON` links dev carts from the second, with no
+ThinLTO and no wasm-opt: a games-only cart builds in seconds instead of a
+minute, with the same simulation (BikeMesa's and Pugball's replays give the
+same state hashes as release carts); release builds leave it off.
+
 The package checks what it can: the build must target the SDK's system, a
 cart SDK's libraries (ThinLTO bitcode) need the exact clang that wrote them
 (the pinned wasi-sdk), and flags that would break the cross-platform

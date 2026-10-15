@@ -32,6 +32,13 @@ if(CW_CART)
   # ThinLTO: three.c, the physics libraries and the engine inline across their
   # archives into each cart (the determinism gates hold every host to native)
   option(CW_CART_LTO "carts: ThinLTO across the engine and its libraries" ON)
+  # CW_CART_DEV: carts for development, linked in seconds: no ThinLTO and no
+  # wasm-opt. The simulation is the same (the gates hold every build to
+  # native); the code is larger and slower than a release cart's.
+  option(CW_CART_DEV "carts for development: no ThinLTO, no wasm-opt" OFF)
+  if(CW_CART_DEV)
+    set(CW_CART_LTO OFF)
+  endif()
   if(CW_CART_LTO)
     add_compile_options(-flto=thin)
     # (not -flto at the link: clang would then link wasi-sdk's LTO libc, whose
@@ -40,6 +47,9 @@ if(CW_CART)
   endif()
   # Binaryen's wasm-opt over each linked cart (scripts/deps.lock: binaryen)
   set(CW_WASM_OPT ${CW_ROOT}/deps/binaryen/bin/wasm-opt CACHE FILEPATH "wasm-opt for carts (empty: none)")
+  if(CW_CART_DEV)
+    set(CW_WASM_OPT "")
+  endif()
   # A cart's link (ThinLTO's backends) and its wasm-opt each use several cores:
   # at most two carts link at once, and wasm-opt gets 4 threads (BINARYEN_CORES),
   # so a full build stays near the machine's core count instead of ninja's -j

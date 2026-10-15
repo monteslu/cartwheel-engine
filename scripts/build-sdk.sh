@@ -38,7 +38,14 @@ VER="${CW_SDK_VERSION:-$(git -C "$ROOT" describe --tags --always --dirty)}"
 VER="${VER#v}"
 NAME="cartwheel-sdk-$VER-$T$SUFFIX"
 mkdir -p "$ROOT/out/sdk"
-node "$ROOT/tools/sdk-pack.mjs" --build "$B" --target "$T" --out "$ROOT/out/sdk/$NAME" --tar "$ROOT/out/sdk/$NAME.tar.gz"
+PACK=(--build "$B" --target "$T" --out "$ROOT/out/sdk/$NAME" --tar "$ROOT/out/sdk/$NAME.tar.gz")
+case "$T" in
+  cart|cart-wgpu) # the same libraries without ThinLTO, for dev carts (CW_CART_DEV): lib/nolto/
+    cmake -S "$ROOT" -B "$B-nolto" "${ARGS[@]}" -DCW_CART_LTO=OFF >/dev/null
+    ninja -C "$B-nolto" cw_sdk
+    PACK+=(--nolto-build "$B-nolto") ;;
+esac
+node "$ROOT/tools/sdk-pack.mjs" "${PACK[@]}"
 if command -v sha256sum >/dev/null; then sum=(sha256sum); else sum=(shasum -a 256); fi
 (cd "$ROOT/out/sdk" && "${sum[@]}" "$NAME.tar.gz" > "$NAME.tar.gz.sha256")
 ls -l "$ROOT/out/sdk/$NAME.tar.gz"
