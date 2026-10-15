@@ -176,8 +176,18 @@ static bool post_adjacent(cw_pipeline *p, int a, int b) {
   }
   return true;
 }
-/* GL post fusion (pipeline_internal.h): only the built-in passes, next to
- * each other in the chain, with nothing that needs the image in between */
+/* a SKY / EFFECTS pass a and a POST pass b are neighbours: nothing active
+ * between them writes the colour */
+static bool fx_post_adjacent(cw_pipeline *p, int a, int b) {
+  if (a < 0 || b < 0 || a >= b) return false;
+  for (int i = a + 1; i < b; i++) {
+    pass_rec *r = p->passes.data[i];
+    if (r->active && r->d.phase >= CW_PHASE_SKY && r->d.phase <= CW_PHASE_POST && (r->d.writes & CW_RES_COLOR)) return false;
+  }
+  return true;
+}
+/* post fusion (pipeline_internal.h): only the built-in passes, next to each
+ * other in the chain, with nothing that needs the image in between */
 static bool test_no_fusion(void) { /* CW_TEST_NO_FUSION=1 (native): the passes run separately (A/B, gate controls) */
 #if CW_CART
   return false;
@@ -196,22 +206,51 @@ bool cw__fusion_raw(void) {
   return v == 1;
 #endif
 }
-static void plan_fusion(cw_pipeline *p, const cw_post_settings *s, bool gl_post) {
-  p->fuse_bloom = p->fuse_grade = p->fuse_lens = false;
+/* a fused program's name is its pass's program and its steps joined by '+'
+ * ("tonemap+bloom+grade", "ssao.composite+fog"): does it run `step` (a
+ * program name, "bloom.composite" for bloom's composite)? */
+bool cw__program_has_step(const char *program, const char *step) {
+  if (!strcmp(program, step)) return true;
+  const char *plus = strchr(program, '+');
+  if (!plus) return false;
+  if ((size_t)(plus - program) == strlen(step) && !strncmp(program, step, (size_t)(plus - program))) return true;
+  if (!strcmp(step, "bloom.composite")) step = "bloom";
+  size_t n = strlen(step);
+  for (const char *t = plus; t; t = strchr(t + 1, '+'))
+    if (!strncmp(t + 1, step, n) && (t[1 + n] == '+' || t[1 + n] == 0)) return true;
+  return false;
+}
+
+/* a pass that runs inside another this frame: reported as ran and fused */
+static void fuse_off(cw_pipeline *p, int i) {
+  pass_rec *r = p->passes.data[i];
+  r->active = false;
+  r->stat.ran = r->stat.fused = true;
+}
+static void plan_fusion(cw_pipeline *p, const cw_post_settings *s, bool post) {
+  p->fuse_fog = p->fuse_bloom = p->fuse_grade = p->fuse_lens = p->fuse_lens_tm = false;
   p->bloom_glow = NULL;
-  if (!gl_post || s->debug_view != CW_VIEW_NONE || test_no_fusion()) return;
+  if (!post || s->debug_view != CW_VIEW_NONE || test_no_fusion()) return;
   int bl = active_index(p, "bloom"), tm = active_index(p, "tonemap"), gr = active_index(p, "grade");
   int aa = active_index(p, "aa"), ln = active_index(p, "lens");
+  int fg = active_index(p, "height_fog"), ao = active_index(p, "ssao");
+  /* the fog over the scene, then the SSAO composite reading it: one pass.
+   * Not under TAA: its history and clipping carry a rounding step at one
+   * pixel on into many frames, where it grows past a step */
+  if (fg >= 0 && ao >= 0 && !s->taa && fx_post_adjacent(p, fg, ao)) {
+    p->fuse_fog = true;
+    fuse_off(p, fg);
+  }
   if (tm >= 0 && post_adjacent(p, bl, tm)) p->fuse_bloom = true;
   if (tm >= 0 && post_adjacent(p, tm, gr)) {
     p->fuse_grade = true;
-    p->passes.data[gr]->active = false;
-    p->passes.data[gr]->stat.ran = p->passes.data[gr]->stat.fused = true;
+    fuse_off(p, gr);
   }
-  if (aa >= 0 && s->aa == CW_AA_SMAA && !s->chromatic_aberration && post_adjacent(p, aa, ln)) {
-    p->fuse_lens = true;
-    p->passes.data[ln]->active = false;
-    p->passes.data[ln]->stat.ran = p->passes.data[ln]->stat.fused = true;
+  /* the lens reads only its own pixel unless chromatic aberration is on */
+  if (ln >= 0 && !s->chromatic_aberration) {
+    if (aa >= 0 && post_adjacent(p, aa, ln)) p->fuse_lens = true;
+    else if (aa < 0 && tm >= 0 && (gr < 0 || p->fuse_grade) && post_adjacent(p, tm, ln)) p->fuse_lens_tm = true;
+    if (p->fuse_lens || p->fuse_lens_tm) fuse_off(p, ln);
   }
 }
 
@@ -818,7 +857,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
   bool post_run = mode == RUN_OVERLAY && p->post_src;
   if (post_run) offscreen = true;
   ctx.offscreen = offscreen;
-  plan_fusion(p, s, offscreen && !wgpu);
+  plan_fusion(p, s, offscreen);
 
   /* TAA jitter + camera matrices (offscreen only: the direct path leaves the
    * camera exactly as three.c's own path does) */

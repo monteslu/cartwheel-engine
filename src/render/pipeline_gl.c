@@ -76,11 +76,12 @@ const cw_pipeline_caps *cw_pipeline_caps_get(void) {
 /* ── targets ────────────────────────────────────────────────────────── */
 
 static void rt_formats(cw_rt_format f, GLenum *ifmt, GLenum *fmt, GLenum *type) {
-  switch (f) {
+  switch ((int)f) {
   case CW_RT_RGBA16F: *ifmt = GL_RGBA16F; *fmt = GL_RGBA; *type = GL_HALF_FLOAT; break;
   case CW_RT_RG16F: *ifmt = GL_RG16F; *fmt = GL_RG; *type = GL_HALF_FLOAT; break;
   case CW_RT_R16F: *ifmt = GL_R16F; *fmt = GL_RED; *type = GL_HALF_FLOAT; break;
   case CW_RT_R8: *ifmt = GL_R8; *fmt = GL_RED; *type = GL_UNSIGNED_BYTE; break;
+  case CW__RT_RG8: *ifmt = GL_RG8; *fmt = GL_RG; *type = GL_UNSIGNED_BYTE; break;
   default: *ifmt = GL_RGBA8; *fmt = GL_RGBA; *type = GL_UNSIGNED_BYTE; break;
   }
 }

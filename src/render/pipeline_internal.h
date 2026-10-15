@@ -96,12 +96,14 @@ struct cw_pipeline {
   bool view_post_split;   /* this frame: the views run the depth-reading post passes, the overlay run the rest */
   const cw_rt *post_src;  /* the overlay run's input: the views laid out (shared post) */
   int taa_frames;     /* frames accumulated in the TAA history */
-  /* GL post fusion this frame (pipeline.c decides, pipeline_post.c draws):
-   * bloom's composite and the LUT grade run inside the tonemap pass, the
-   * lens effects inside SMAA's blend; each fused step rounds its value as
-   * the target the separate pass wrote would (RGBA16F, RGBA8), so the
-   * picture is the same with two to three full-screen passes fewer */
-  bool fuse_bloom, fuse_grade, fuse_lens;
+  /* post fusion this frame, GL and WebGPU (pipeline.c decides,
+   * pipeline_post.c draws): the height fog inside the SSAO composite (not
+   * under TAA), bloom's composite and the LUT grade inside the tonemap pass,
+   * the lens effects inside the anti-aliasing pass (SMAA's blend, FXAA) or, with no
+   * anti-aliasing, inside the tonemap pass; each fused step rounds its value
+   * as the target the separate pass wrote would (RGBA16F, RGBA8), so the
+   * picture is the same with up to five full-screen passes fewer */
+  bool fuse_fog, fuse_bloom, fuse_grade, fuse_lens, fuse_lens_tm;
   const cw_rt *bloom_glow;   /* fuse_bloom: bloom's glow, released by the tonemap pass */
   float bloom_texel[2], bloom_norm;
 };
@@ -109,10 +111,26 @@ struct cw_pipeline {
 /* CW_TEST_FUSION_RAW=1 (native test control): the fused post passes skip
  * the rounding that keeps them equal to the separate passes */
 bool cw__fusion_raw(void);
-/* the fused passes' rounding helpers, GLSL (pipeline_post.c) */
+/* the fused passes' rounding helpers and the lens step, GLSL and WGSL
+ * (pipeline_post.c); the lens step needs the common helpers (luma, hash01) */
 const char *cw__fuse_round_glsl(void);
-/* an engine-internal target format: R32F (the WebGPU linear depth) */
+const char *cw__fuse_round_wgsl(void);
+const char *cw__post_common_glsl(void);
+const char *cw__fuse_lens_glsl(void);
+const char *cw__fuse_lens_wgsl(void);
+/* the lens uniforms (u_on, u_amt, u_frame) into a program in use; ca: chromatic aberration on */
+void cw__lens_uniforms(cw_pass_ctx *ctx, unsigned prog, bool ca);
+/* break a fused program too: CW_TEST_BREAK_PROGRAM=<step> names a step that
+ * runs inside another pass's program (pipeline_wgpu.c) */
+bool cw__program_has_step(const char *program, const char *step);
+/* the height fog fused into the SSAO composite (fog.c): its uniform
+ * declarations and fog_eval(uv, depth) in GLSL, and its uniforms into the
+ * fused program in use */
+const char *cw__fog_glsl(void);
+void cw__fog_fused_uniforms(cw_pass_ctx *ctx, unsigned prog);
+/* engine-internal target formats: R32F (the WebGPU linear depth), RG8 (SMAA's edges) */
 #define CW__RT_R32F ((cw_rt_format)CW_RT_FORMAT_COUNT)
+#define CW__RT_RG8 ((cw_rt_format)(CW_RT_FORMAT_COUNT + 1))
 
 extern cw_pipeline_caps cw__caps;
 /* WebGPU side of the pass helpers (pipeline_wgpu.c; stubs without CW_WGPU) */

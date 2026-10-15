@@ -21,8 +21,10 @@ typedef struct fog_rt {
   bool present;             /* a HeightFog is in the tree (exit_tree clears it) */
 } fog_rt;
 
-static const char FOG_FS[] =
-    "uniform sampler2D u_depth;\n"
+/* the fog's uniforms (all but the depth) and its evaluation: the fog pass
+ * draws it over the scene, and the SSAO composite runs it fused (pipeline.c
+ * plan_fusion; pipeline_internal.h) */
+static const char FOG_DECL[] =
     "uniform mat4 u_inv_view_proj;\n"
     "uniform vec3 u_cam;\n"
     "uniform vec4 u_fog; /* density, falloff, base height, max opacity */\n"
@@ -30,37 +32,51 @@ static const char FOG_FS[] =
     "uniform vec3 u_color;\n"
     "uniform vec3 u_sun_dir; /* toward the sun */\n"
     "uniform vec3 u_sun_color; /* sunlight x sun_scatter */\n"
-    "uniform float u_g;\n"
-    "out vec4 o;\n"
+    "uniform float u_g;\n";
+/* fog_eval: (in-scattered light, opacity) premultiplied, or alpha -1 where
+ * there is no fog (the pass discards there) */
+static const char FOG_FN[] =
     /* the fog's optical depth from the camera along v for distance l */
     "float opticalDepth( vec3 v, float l ) {\n"
     "\tfloat a = u_fog.x * exp( -u_fog.y * ( u_cam.y - u_fog.z ) );\n"
     "\tfloat k = u_fog.y * v.y * l;\n"
     "\treturn a * l * ( abs( k ) > 1e-4 ? ( 1.0 - exp( -k ) ) / k : 1.0 - 0.5 * k );\n"
     "}\n"
-    "void main() {\n"
-    "\tfloat d = texture( u_depth, v_uv ).r;\n"
-    "\tvec4 a = u_inv_view_proj * vec4( v_uv * 2.0 - 1.0, -1.0, 1.0 );\n"
-    "\tvec4 b = u_inv_view_proj * vec4( v_uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0 );\n"
+    "vec4 fog_eval( vec2 uv, float d ) {\n"
+    "\tvec4 a = u_inv_view_proj * vec4( uv * 2.0 - 1.0, -1.0, 1.0 );\n"
+    "\tvec4 b = u_inv_view_proj * vec4( uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0 );\n"
     "\tvec3 p0 = a.xyz / a.w;\n"
     "\tvec3 ray = b.xyz / b.w - u_cam;\n"
     "\tfloat len = length( ray );\n"
     "\tvec3 v = ray / max( len, 1e-6 );\n"
     "\tif ( d >= 1.0 ) {\n"
-    "\t\tif ( u_dist.y <= 0.0 ) discard;\n"
+    "\t\tif ( u_dist.y <= 0.0 ) return vec4( -1.0 );\n"
     "\t\tv = normalize( b.xyz / b.w - p0 );\n"
     "\t\tlen = u_dist.y;\n"
     "\t}\n"
     "\tfloat l = max( len - u_dist.x, 0.0 );\n"
-    "\tif ( l <= 0.0 ) discard;\n"
+    "\tif ( l <= 0.0 ) return vec4( -1.0 );\n"
     "\tfloat tau = opticalDepth( v, l );\n"
     "\tfloat fog = min( 1.0 - exp( -tau ), u_fog.w );\n"
     "\tfloat mu = dot( v, u_sun_dir ), g = u_g, g2 = g * g;\n"
     "\tfloat hg = ( 1.0 - g2 ) / ( 4.0 * 3.14159265 * pow( max( 1.0 + g2 - 2.0 * g * mu, 1e-4 ), 1.5 ) );\n"
     "\tvec3 sun = u_sun_color * hg * 4.0 * 3.14159265;\n"
     "\tvec3 inscatter = ( u_color + sun ) * fog;\n"
-    "\to = vec4( inscatter, fog );\n"
+    "\treturn vec4( inscatter, fog );\n"
     "}\n";
+static const char FOG_MAIN[] =
+    "uniform sampler2D u_depth;\n"
+    "out vec4 o;\n"
+    "void main() {\n"
+    "\tvec4 f = fog_eval( v_uv, texture( u_depth, v_uv ).r );\n"
+    "\tif ( f.a < 0.0 ) discard;\n"
+    "\to = f;\n"
+    "}\n";
+const char *cw__fog_glsl(void) {
+  static char buf[4096];
+  if (!buf[0]) snprintf(buf, sizeof buf, "%s%s", FOG_DECL, FOG_FN);
+  return buf;
+}
 
 static void fog_rt_free(void *p) { cw_free(p); }
 
@@ -75,21 +91,20 @@ static unsigned fog_program(void) {
   if (!prog) {
     if (cw_gpu_backend() == CW_GPU_WEBGPU) {
       static char w[8192];
-      snprintf(w, sizeof w, "%s%s", WGSL_COMMON, WGSL_FOG);
+      snprintf(w, sizeof w, "%s%s%s", WGSL_COMMON, WGSL_FOG, WGSL_FOG_FN);
       prog = cw_pass_program_wgsl("fog", w);
     } else {
-      prog = cw_pass_program("fog", FOG_FS);
+      static char g[8192];
+      snprintf(g, sizeof g, "%s%s%s", FOG_DECL, FOG_FN, FOG_MAIN);
+      prog = cw_pass_program("fog", g);
     }
   }
   return prog;
 }
 
-/* the uniforms every variant shares */
+/* the fog's uniforms (not its depth) into a program in use: the fog pass's or the fused SSAO composite's */
 static void fog_uniforms(cw_pass_ctx *ctx, unsigned pr, const fog_node *p, t3_color color, t3_vec3 sun, t3_color sun_color) {
   t3_vec3 cam = t3_mat4_get_position(&ctx->camera->base.matrix_world);
-  cw_pass_use(pr);
-  cw_pass_bind_texture(0, ctx->depth_tex);
-  cw_pass_uniform1i(pr, "u_depth", 0);
   cw_pass_uniform_mat4(pr, "u_inv_view_proj", &ctx->inv_view_proj);
   const float *e = ctx->camera->projection_matrix.e;
   cw_pass_uniform4f(pr, "u_pz", e[10], e[14], e[11], e[15]);
@@ -113,10 +128,24 @@ static void fog_exec(cw_pass_ctx *ctx, void *user) {
   if (cw__sky_env(ctx->tree, NULL, &sun, &sun_color, &horizon) && p->use_sky_color) color = horizon;
   unsigned pr = fog_program();
   if (!pr) return;
+  cw_pass_use(pr);
+  cw_pass_bind_texture(0, ctx->depth_tex);
+  cw_pass_uniform1i(pr, "u_depth", 0);
   fog_uniforms(ctx, pr, p, color, sun, sun_color);
   cw_pass_set_blend(CW_PASS_BLEND_PREMUL);
   cw_pass_fullscreen();
   cw_pass_set_blend(CW_PASS_BLEND_NONE);
+}
+
+/* the fused SSAO composite (pipeline_post.c): the fog's uniforms into its program, in use */
+void cw__fog_fused_uniforms(cw_pass_ctx *ctx, unsigned prog) {
+  fog_rt *f = cw_tree_slot(ctx->tree, "fog");
+  if (!f) return;
+  const fog_node *p = &f->p;
+  t3_color color = p->color, sun_color = { 0, 0, 0 }, horizon;
+  t3_vec3 sun = { 0, 1, 0 };
+  if (cw__sky_env(ctx->tree, NULL, &sun, &sun_color, &horizon) && p->use_sky_color) color = horizon;
+  fog_uniforms(ctx, prog, p, color, sun, sun_color);
 }
 
 static fog_rt *fog_of(cw_tree *t) {

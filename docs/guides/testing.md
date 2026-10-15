@@ -116,7 +116,7 @@ Some checks need more than one run: several processes, a tool, a timing report. 
 
 A repository of games built with this engine (configured as its project with `-DCW_PROJECT_DIR`) keeps its own `tests/gates.json`, input scripts, `build/` and `out/`, laid out as here. `CW_PROJECT_ROOT=<that repository>` points `tests/gate.mjs` and `tools/run-cart.mjs` at them: gates, inputs and scripts come from its `tests/`, apps from its `build/` (a project app is found through `build/native/apps/<app>.json`), and output goes to its `out/`. [cartwheel-examples](https://github.com/monteslu/cartwheel-examples) runs its games' gates this way.
 
-`tests/post-fusion.mjs` (GL post fusion draws what the separate passes draw) takes the apps to check as arguments, `app[:frame]`, and reads `CW_PROJECT_ROOT` the same way.
+`tests/post-fusion.mjs` (post fusion draws what the separate passes draw, on GL and WebGPU) takes the apps to check as arguments, `app[:frame[:preset]]`, and reads `CW_PROJECT_ROOT` the same way.
 
 ## Everything at once
 

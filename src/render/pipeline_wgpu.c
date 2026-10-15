@@ -121,6 +121,7 @@ static WGPUTextureFormat rt_format(cw_rt_format f) {
   case CW_RT_R16F: return WGPUTextureFormat_R16Float;
   case CW_RT_R8: return WGPUTextureFormat_R8Unorm;
   case CW__RT_R32F: return WGPUTextureFormat_R32Float;
+  case CW__RT_RG8: return WGPUTextureFormat_RG8Unorm;
   default: return WGPUTextureFormat_RGBA8Unorm;
   }
 }
@@ -600,14 +601,15 @@ static const char *WGSL_HEADER =
     "}\n";
 
 /* a control for the gates (native test runs only): CW_TEST_BREAK_PROGRAM=name
- * compiles that program with a fragment entry that outputs magenta */
+ * compiles that program, and any fused program that runs it as a step, with
+ * a fragment entry that outputs magenta */
 static bool broken(const char *name) {
 #if CW_CART
   (void)name;
   return false;
 #else
   const char *b = getenv("CW_TEST_BREAK_PROGRAM");
-  return b && !strcmp(b, name);
+  return b && cw__program_has_step(name, b);
 #endif
 }
 

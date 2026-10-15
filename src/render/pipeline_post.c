@@ -165,7 +165,8 @@ static void velocity_exec(cw_pass_ctx *ctx, void *u) {
  * against the projected normal. Output: (visibility, view depth). The
  * composite does a 4x4 depth-aware filter (one period of the pattern) while
  * upsampling and multiplies the scene colour. */
-static unsigned ao_prog, ao_comp_prog;
+static unsigned ao_prog, ao_comp_prog, ao_fog_prog;
+static unsigned ao_fog_program(void);
 static const char *AO_FS = S(
   uniform sampler2D u_depth;
   uniform mat4 u_inv_proj;
@@ -262,6 +263,7 @@ static const char *AO_COMP_FS = S(
   void main() {
     float d = texture(u_depth, v_uv).r;
     vec4 c = texture(u_src, v_uv);
+    AO_FUSED_IN
     if (d >= 1.0) { o = c; return; }
     vec4 p = u_inv_proj * vec4(v_uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
     float z = -p.z / p.w;
@@ -294,9 +296,13 @@ static void ssao_exec(cw_pass_ctx *ctx, void *u) {
   const cw_post_settings *s = ctx->settings;
   if (!ao_prog) {
     ao_prog = prog_of("ssao", GLSL_COMMON, AO_FS, NULL, WGSL_COMMON, WGSL_AO, NULL);
-    ao_comp_prog = prog_of("ssao.composite", AO_COMP_FS, NULL, NULL, WGSL_COMMON, WGSL_AO_COMP, NULL);
+    ao_comp_prog = prog_of("ssao.composite", "#define AO_FUSED_IN\n", AO_COMP_FS, NULL, WGSL_COMMON, WGSL_AO_COMP_HEAD,
+                           WGSL_AO_COMP_BODY);
   }
-  if (!ao_prog || !ao_comp_prog) return;
+  bool fog = ctx->pipeline->fuse_fog;
+  if (fog && !ao_fog_prog) ao_fog_prog = ao_fog_program();
+  unsigned comp = fog ? ao_fog_prog : ao_comp_prog;
+  if (!ao_prog || !comp) return;
   int hw = (ctx->width + 1) / 2, hh = (ctx->height + 1) / 2;
   const cw_rt *ao = cw_pipeline_rt_persistent(ctx->pipeline, "ssao.ao", hw, hh, CW_RT_RG16F, NULL);
   if (!ao) return;
@@ -314,17 +320,18 @@ static void ssao_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_uniform1i(ao_prog, "u_frame", s->taa ? (int)(ctx->frame & 15) : 0);
   cw_pass_fullscreen();
   cw_pass_bind_target(ctx, ctx->dst);
-  cw_pass_use(ao_comp_prog);
-  set_pz(ao_comp_prog, ctx);
+  cw_pass_use(comp);
+  set_pz(comp, ctx);
   cw_pass_bind_texture(0, ctx->src->tex);
   cw_pass_bind_texture(1, ao->tex);
   cw_pass_bind_texture(2, ctx->depth_tex);
-  cw_pass_uniform1i(ao_comp_prog, "u_src", 0);
-  cw_pass_uniform1i(ao_comp_prog, "u_ao", 1);
-  cw_pass_uniform1i(ao_comp_prog, "u_depth", 2);
-  cw_pass_uniform_mat4(ao_comp_prog, "u_inv_proj", ip);
-  cw_pass_uniform2f(ao_comp_prog, "u_ao_size", (float)hw, (float)hh);
-  cw_pass_uniform1f(ao_comp_prog, "u_intensity", s->ssao_intensity);
+  cw_pass_uniform1i(comp, "u_src", 0);
+  cw_pass_uniform1i(comp, "u_ao", 1);
+  cw_pass_uniform1i(comp, "u_depth", 2);
+  cw_pass_uniform_mat4(comp, "u_inv_proj", ip);
+  cw_pass_uniform2f(comp, "u_ao_size", (float)hw, (float)hh);
+  cw_pass_uniform1f(comp, "u_intensity", s->ssao_intensity);
+  if (fog) cw__fog_fused_uniforms(ctx, comp); /* the fog pass's own uniforms (fog.c) */
   cw_pass_fullscreen();
 }
 
@@ -712,37 +719,47 @@ static const char *TM_MAIN = S(
     x = LinearTosRGB(x);
     TM_FUSED_OUT
     o = vec4(x, 1.0);
+    TM_FUSED_LENS
   });
 
-/* ── fused tonemap (GL): bloom's composite before it, the grade after it ──
- * The values are rounded where the separate passes' targets rounded them:
- * the composite's RGBA16F, the tonemap's RGBA8 (the grade writes RGBA8 as
- * the tonemap alone does). Both as AMD's colour export does it (radeonsi):
- * a value goes to the target as a half float rounded toward zero
- * (v_cvt_pkrtz), and an 8-bit unorm target then rounds that half to the
- * nearest of 255 steps. Against the passes run separately
- * (CW_TEST_NO_FUSION=1) a game's frame differs in under 0.01% of its pixels,
- * by 1/255, on an AMD RDNA3 card (tests/post-fusion.mjs); a GPU that rounds
- * otherwise stays within 1/255 at the rounding steps.
+/* ── post fusion: steps run inside another pass ────────────────────────
+ * pipeline.c plan_fusion decides, for GL and WebGPU alike: the height fog
+ * inside the SSAO composite (not under TAA), bloom's composite before the tone curve and the
+ * LUT grade after it inside the tonemap pass, the lens effects inside the
+ * anti-aliasing pass or, with none, inside the tonemap pass.
+ * Each value is rounded where the separate passes' targets rounded it: the
+ * fog pass's output and its blend into the RGBA16F scene, the composite's
+ * RGBA16F, the tonemap's and the anti-aliasing's RGBA8. Rounded as AMD's
+ * colour export does it (radeonsi, RADV): a value goes to the target as a
+ * half float rounded toward zero (v_cvt_pkrtz), an 8-bit unorm target then
+ * rounds that half to the nearest of 255 steps, and the blend unit's RGBA16F
+ * result is rounded toward zero too. Against the passes run separately
+ * (CW_TEST_NO_FUSION=1) a game's frame differs in under 0.05% of its pixels,
+ * by at most 2/255, on AMD GPUs (tests/post-fusion.mjs); a GPU that rounds
+ * otherwise stays within a step at the rounding points.
  * CW_TEST_FUSION_RAW=1 (native, the test's control) leaves the rounding out. */
 /* (plain strings: the preprocessor lines must reach the GLSL compiler, not C's) */
 static const char *FUSE_ROUND =
-    "float h16(float v) {\n"
+    "uint h16bits(float v) {\n"
     "  uint h = packHalf2x16(vec2(v, 0.0)) & 0xffffu;\n"
-    "  float r = unpackHalf2x16(h).x;\n"
-    "  if (abs(r) > abs(v) && (h & 0x7fffu) != 0u) r = unpackHalf2x16(h - 1u).x;\n"
-    "  return r;\n"
+    "  if (abs(unpackHalf2x16(h).x) > abs(v) && (h & 0x7fffu) != 0u) h -= 1u;\n"
+    "  return h;\n"
     "}\n"
+    "float h16(float v) { return unpackHalf2x16(h16bits(v)).x; }\n"
     "#ifdef FUSE_RAW\n"
     "vec3 q16(vec3 v) { return v; }\n"
+    "float r16(float v) { return v; }\n"
     "vec3 q8(vec3 v) { return v; }\n"
     "vec4 q8a(vec4 v) { return v; }\n"
     "#else\n"
     "vec3 q16(vec3 v) { return vec3(h16(v.r), h16(v.g), h16(v.b)); }\n"
+    "float r16(float v) { return h16(v); }\n"
     "vec3 q8(vec3 v) { return floor(q16(clamp(v, 0.0, 1.0)) * 255.0 + 0.5) / 255.0; }\n"
     "vec4 q8a(vec4 v) { v = clamp(v, 0.0, 1.0); return floor(vec4(h16(v.r), h16(v.g), h16(v.b), h16(v.a)) * 255.0 + 0.5) / 255.0; }\n"
     "#endif\n";
 const char *cw__fuse_round_glsl(void) { return FUSE_ROUND; }
+const char *cw__fuse_round_wgsl(void) { return cw__fusion_raw() ? WGSL_FUSE_ROUND_RAW : WGSL_FUSE_ROUND; }
+const char *cw__post_common_glsl(void) { return GLSL_COMMON; }
 static const char *FUSE_FS = S(
   uniform sampler2D u_bloom;
   uniform vec2 u_texel;
@@ -769,6 +786,50 @@ static const char *FUSE_FS = S(
     vec3 g = texture(u_lut, t * u_scale.x + u_scale.y).rgb;
     return mix(c, g, u_scale.z);
   });
+/* the lens pass (LENS_FS, chromatic aberration off) on the RGBA8 value the
+ * pass before it wrote (needs GLSL_COMMON's luma and hash01, FUSE_ROUND) */
+static const char *FUSE_LENS = S(
+  uniform vec4 u_on;      /* ca (off when fused), vignette, grain, aspect */
+  uniform vec4 u_amt;     /* ca, vignette, vignette smoothness, grain */
+  uniform int u_frame;
+  vec4 fuse_lens(vec4 c) {
+    c = q8a(c);
+    vec2 d = v_uv - 0.5;
+    if (u_on.y > 0.5) {
+      float r = length(d * vec2(u_on.w, 1.0)) / length(vec2(0.5 * u_on.w, 0.5));
+      float f = smoothstep(1.0 - u_amt.z, 1.0 + u_amt.z * 0.25, r * (1.0 + 0.5 * u_amt.z));
+      c.rgb *= 1.0 - u_amt.y * f;
+    }
+    if (u_on.z > 0.5) {
+      float n = hash01(uvec3(uvec2(gl_FragCoord.xy), uint(u_frame))) - 0.5;
+      float l = luma(c.rgb);
+      c.rgb = max(c.rgb + n * u_amt.w * (1.0 - 0.5 * l), vec3(0.0));
+    }
+    return c;
+  });
+const char *cw__fuse_lens_glsl(void) { return FUSE_LENS; }
+const char *cw__fuse_lens_wgsl(void) { return WGSL_FUSE_LENS; }
+/* the fog over the scene as the fog pass's blend leaves it: its output
+ * exported to RGBA16F, then dst' = src + dst (1 - src.a), the blend's result
+ * rounded toward zero too */
+static const char *FUSE_FOG = S(
+  vec4 fog_over(vec4 c, vec4 f) {
+    if (f.a < 0.0) return c;
+    vec4 s = vec4(q16(f.rgb), r16(f.a));
+    return vec4(q16(s.rgb + c.rgb * (1.0 - s.a)), r16(s.a + c.a * (1.0 - s.a)));
+  });
+
+static unsigned ao_fog_program(void) {
+  if (cw_gpu_backend() == CW_GPU_WEBGPU) {
+    static char w[24576];
+    snprintf(w, sizeof w, "%s%s%s%s%s%s%s", WGSL_COMMON, WGSL_AO_COMP_FOG_HEAD, cw__fuse_round_wgsl(), WGSL_FOG_FN, WGSL_FUSE_FOG,
+             WGSL_AO_COMP_FOG_IN, WGSL_AO_COMP_BODY);
+    return cw_pass_program_wgsl("ssao.composite+fog", w);
+  }
+  static char g[24576];
+  snprintf(g, sizeof g, "#define AO_FUSED_IN c = fog_over(c, fog_eval(v_uv, d));\n%s%s%s%s%s", cw__fusion_raw() ? "#define FUSE_RAW 1\n" : "", FUSE_ROUND, cw__fog_glsl(), FUSE_FOG, AO_COMP_FS);
+  return cw_pass_program("ssao.composite+fog", g);
+}
 
 static bool tonemap_active(const cw_pass_ctx *ctx, void *u) {
   (void)u;
@@ -785,17 +846,40 @@ static void grade_uniforms(cw_pass_ctx *ctx, unsigned prog, unsigned lut, int n,
   cw_pass_uniform3f(prog, "u_dinv", 1 / (dmax[0] - dmin[0]), 1 / (dmax[1] - dmin[1]), 1 / (dmax[2] - dmin[2]));
 }
 
-/* the tonemap program: plain, or (GL) with bloom's composite and / or the grade fused in */
-static unsigned tm_variant(bool bloom, bool grade) {
-  static unsigned progs[4];
-  int k = (bloom ? 1 : 0) | (grade ? 2 : 0);
+void cw__lens_uniforms(cw_pass_ctx *ctx, unsigned prog, bool ca) {
+  const cw_post_settings *s = ctx->settings;
+  cw_pass_uniform4f(prog, "u_on", ca ? s->chromatic_aberration : 0, s->vignette, s->grain,
+                    (float)ctx->width / (float)CW_MAX(ctx->height, 1));
+  cw_pass_uniform4f(prog, "u_amt", s->ca_intensity, s->vignette_intensity, CW_CLAMP(s->vignette_smoothness, 0.01f, 1.0f),
+                    s->grain_intensity);
+  cw_pass_uniform1i(prog, "u_frame", (int)(ctx->frame & 0x7fffffff));
+}
+
+/* the tonemap program: plain, or with bloom's composite, the grade and / or
+ * the lens fused in */
+static unsigned tm_variant(bool bloom, bool grade, bool lens) {
+  static unsigned progs[8];
+  int k = (bloom ? 1 : 0) | (grade ? 2 : 0) | (lens ? 4 : 0);
   if (progs[k]) return progs[k];
-  if (!k) return progs[0] = prog_of("tonemap", "#define TM_FUSED_IN\n#define TM_FUSED_OUT\n", TM_FS, TM_MAIN, WGSL_TM, NULL, NULL);
-  static char buf[32768];
-  snprintf(buf, sizeof buf, "#define TM_FUSED_IN %s\n#define TM_FUSED_OUT %s\n%s%s%s%s%s%s%s", bloom ? "c = fuse_bloom(c);" : "",
-           grade ? "x = fuse_grade(x);" : "", cw__fusion_raw() ? "#define FUSE_RAW 1\n" : "", GLSL_COMMON, BL_PREFILTER, TM_FS,
-           FUSE_ROUND, FUSE_FS, TM_MAIN);
-  static const char *const names[4] = { "tonemap", "tonemap+bloom", "tonemap+grade", "tonemap+bloom+grade" };
+  static const char *const names[8] = { "tonemap", "tonemap+bloom", "tonemap+grade", "tonemap+bloom+grade",
+                                        "tonemap+lens", "tonemap+bloom+lens", "tonemap+grade+lens", "tonemap+bloom+grade+lens" };
+  if (!k)
+    return progs[0] = prog_of("tonemap", "#define TM_FUSED_IN\n#define TM_FUSED_OUT\n#define TM_FUSED_LENS\n", TM_FS, TM_MAIN,
+                              WGSL_TM, NULL, NULL);
+  static char buf[49152];
+  if (cw_gpu_backend() == CW_GPU_WEBGPU) {
+    snprintf(buf, sizeof buf, "%s%s%s%s%s%s%s%s%s%s%s", WGSL_TM_FUSED_HEAD, WGSL_COMMON, WGSL_BL_PREFILTER, cw__fuse_round_wgsl(),
+             WGSL_FUSE_BLOOM_GRADE, WGSL_FUSE_LENS, WGSL_TM_FNS, WGSL_TM_FUSED_FS, bloom ? "c = fuse_bloom(c, uv);\n" : "",
+             WGSL_TM_FUSED_CURVES, "");
+    /* the steps after the curve */
+    size_t n = strlen(buf);
+    snprintf(buf + n, sizeof buf - n, "%s  var o = vec4f(x, 1.0);\n%s  return o;\n}\n", grade ? "x = fuse_grade(x);\n" : "",
+             lens ? "o = fuse_lens(o, uv, pos);\n" : "");
+    return progs[k] = cw_pass_program_wgsl(names[k], buf);
+  }
+  snprintf(buf, sizeof buf, "#define TM_FUSED_IN %s\n#define TM_FUSED_OUT %s\n#define TM_FUSED_LENS %s\n%s%s%s%s%s%s%s%s",
+           bloom ? "c = fuse_bloom(c);" : "", grade ? "x = fuse_grade(x);" : "", lens ? "o = fuse_lens(o);" : "",
+           cw__fusion_raw() ? "#define FUSE_RAW 1\n" : "", GLSL_COMMON, BL_PREFILTER, TM_FS, FUSE_ROUND, FUSE_FS, FUSE_LENS, TM_MAIN);
   return progs[k] = cw_pass_program(names[k], buf);
 }
 
@@ -803,12 +887,12 @@ static void tonemap_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
   const cw_post_settings *s = ctx->settings;
   cw_pipeline *pl = ctx->pipeline;
-  bool bloom = pl->fuse_bloom && pl->bloom_glow, grade = pl->fuse_grade;
+  bool bloom = pl->fuse_bloom && pl->bloom_glow, grade = pl->fuse_grade, lens = pl->fuse_lens_tm;
   int n = 0;
   float dmin[3], dmax[3];
   unsigned lut = grade ? cw__lut_texture(s->grade_lut, &n, dmin, dmax) : 0;
   if (grade && !lut) grade = false;
-  unsigned prog = tm_variant(bloom, grade);
+  unsigned prog = tm_variant(bloom, grade, lens);
   if (!prog) return;
   cw_pass_use(prog);
   cw_pass_bind_texture(0, ctx->src->tex);
@@ -825,8 +909,9 @@ static void tonemap_exec(cw_pass_ctx *ctx, void *u) {
     bloom_thresh(prog, s);
   }
   if (grade) grade_uniforms(ctx, prog, lut, n, dmin, dmax, 2);
+  if (lens) cw__lens_uniforms(ctx, prog, false);
   cw_pass_fullscreen();
-  if (grade) {
+  if (grade && cw_gpu_backend() != CW_GPU_WEBGPU) {
     glBindTexture(GL_TEXTURE_3D, 0);
     glActiveTexture(GL_TEXTURE0);
   }
@@ -882,13 +967,13 @@ static void grade_exec(cw_pass_ctx *ctx, void *u) {
 
 /* ── FXAA 3.11 (quality preset 12) ───────────────────────────────────── */
 
-static unsigned fxaa_prog;
+static unsigned fxaa_prog, fxaa_lens_prog;
 static const char *FXAA_FS = S(
   uniform sampler2D u_src;
   uniform vec2 u_rcp;
   out vec4 o;
   float L(vec2 p) { return dot(texture(u_src, p).rgb, vec3(0.299, 0.587, 0.114)); }
-  void main() {
+  vec4 fxaa() {
     vec2 posM = v_uv;
     vec4 rgbyM = texture(u_src, posM);
     float lumaM = dot(rgbyM.rgb, vec3(0.299, 0.587, 0.114));
@@ -899,7 +984,7 @@ static const char *FXAA_FS = S(
     float maxWN = max(lumaN, lumaW), minWN = min(lumaN, lumaW);
     float rangeMax = max(maxWN, maxESM), rangeMin = min(minWN, minESM);
     float range = rangeMax - rangeMin;
-    if (range < max(0.0312, rangeMax * 0.125)) { o = rgbyM; return; }
+    if (range < max(0.0312, rangeMax * 0.125)) return rgbyM;
     float lumaNW = L(posM + vec2(-1.0, -1.0) * u_rcp), lumaSE = L(posM + vec2(1.0, 1.0) * u_rcp);
     float lumaNE = L(posM + vec2(1.0, -1.0) * u_rcp), lumaSW = L(posM + vec2(-1.0, 1.0) * u_rcp);
     float lumaNS = lumaN + lumaS, lumaWE = lumaW + lumaE;
@@ -968,7 +1053,11 @@ static const char *FXAA_FS = S(
     float pixelOffsetSubpix = max(pixelOffsetGood, subpixH);
     if (!horzSpan) posM.x += pixelOffsetSubpix * lengthSign;
     if (horzSpan) posM.y += pixelOffsetSubpix * lengthSign;
-    o = vec4(texture(u_src, posM).rgb, rgbyM.a);
+    return vec4(texture(u_src, posM).rgb, rgbyM.a);
+  }
+  void main() {
+    o = fxaa();
+    FXAA_FUSED_OUT
   });
 
 /* SMAA lives in pipeline_smaa.c */
@@ -985,12 +1074,27 @@ static void aa_exec(cw_pass_ctx *ctx, void *u) {
     cw__smaa_exec(ctx);
     return;
   }
-  if (!fxaa_prog) fxaa_prog = prog_of("fxaa", FXAA_FS, NULL, NULL, WGSL_FXAA, NULL, NULL);
-  if (!fxaa_prog) return;
-  cw_pass_use(fxaa_prog);
+  bool lens = ctx->pipeline->fuse_lens;
+  if (!fxaa_prog) fxaa_prog = prog_of("fxaa", "#define FXAA_FUSED_OUT\n", FXAA_FS, NULL, WGSL_FXAA_HEAD, WGSL_FXAA, WGSL_FXAA_FS);
+  if (lens && !fxaa_lens_prog) {
+    static char b[32768];
+    if (cw_gpu_backend() == CW_GPU_WEBGPU) {
+      snprintf(b, sizeof b, "%s%s%s%s%s%s", WGSL_FXAA_LENS_HEAD, WGSL_COMMON, cw__fuse_round_wgsl(), WGSL_FUSE_LENS, WGSL_FXAA,
+               WGSL_FXAA_LENS_FS);
+      fxaa_lens_prog = cw_pass_program_wgsl("fxaa+lens", b);
+    } else {
+      snprintf(b, sizeof b, "#define FXAA_FUSED_OUT o = fuse_lens(o);\n%s%s%s%s%s", cw__fusion_raw() ? "#define FUSE_RAW 1\n" : "",
+               GLSL_COMMON, FUSE_ROUND, FUSE_LENS, FXAA_FS);
+      fxaa_lens_prog = cw_pass_program("fxaa+lens", b);
+    }
+  }
+  unsigned prog = lens ? fxaa_lens_prog : fxaa_prog;
+  if (!prog) return;
+  cw_pass_use(prog);
   cw_pass_bind_texture(0, ctx->src->tex);
-  cw_pass_uniform1i(fxaa_prog, "u_src", 0);
-  cw_pass_uniform2f(fxaa_prog, "u_rcp", 1.0f / (float)ctx->width, 1.0f / (float)ctx->height);
+  cw_pass_uniform1i(prog, "u_src", 0);
+  cw_pass_uniform2f(prog, "u_rcp", 1.0f / (float)ctx->width, 1.0f / (float)ctx->height);
+  if (lens) cw__lens_uniforms(ctx, prog, false);
   cw_pass_fullscreen();
 }
 
@@ -1032,17 +1136,12 @@ static bool lens_active(const cw_pass_ctx *ctx, void *u) {
 
 static void lens_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
-  const cw_post_settings *s = ctx->settings;
   if (!lens_prog) lens_prog = prog_of("lens", GLSL_COMMON, LENS_FS, NULL, WGSL_COMMON, WGSL_LENS, NULL);
   if (!lens_prog) return;
   cw_pass_use(lens_prog);
   cw_pass_bind_texture(0, ctx->src->tex);
   cw_pass_uniform1i(lens_prog, "u_src", 0);
-  cw_pass_uniform4f(lens_prog, "u_on", s->chromatic_aberration, s->vignette, s->grain,
-                    (float)ctx->width / (float)CW_MAX(ctx->height, 1));
-  cw_pass_uniform4f(lens_prog, "u_amt", s->ca_intensity, s->vignette_intensity, CW_CLAMP(s->vignette_smoothness, 0.01f, 1.0f),
-                    s->grain_intensity);
-  cw_pass_uniform1i(lens_prog, "u_frame", (int)(ctx->frame & 0x7fffffff));
+  cw__lens_uniforms(ctx, lens_prog, true);
   cw_pass_fullscreen();
 }
 

@@ -21,6 +21,10 @@
 #define S(...) #__VA_ARGS__ "\n"
 #endif
 
+/* the fog's uniform members (the fused SSAO composite's block takes them too) */
+#define WGSL_FOG_FIELDS "u_inv_view_proj: mat4x4f, u_cam: vec3f, u_fog: vec4f, u_dist: vec4f, u_color: vec3f, u_sun_dir: vec3f, " \
+                        "u_sun_color: vec3f, u_g: f32, "
+
 WGSL_DECL WGSL_COMMON =
     "const PI = 3.14159265358979;\n"
     "const HALF_PI = 1.5707963267949;\n"
@@ -39,6 +43,73 @@ WGSL_DECL WGSL_COMMON =
         let zv = -zl;
         return (pz.x * zv + pz.y) / (pz.z * zv + pz.w) * 0.5 + 0.5;
       });
+
+/* post fusion (pipeline_post.c FUSE_ROUND): a half rounded toward zero (the
+ * colour export and the blend), an RGBA8 unorm of a half; pack2x16float is
+ * defined only in the half's range, so values are held to it first (beyond
+ * it rounding toward zero gives the largest half too) */
+WGSL_DECL WGSL_FUSE_ROUND = S(
+  fn h16bits(v0: f32) -> u32 {
+    let v = clamp(v0, -65504.0, 65504.0);
+    var h = pack2x16float(vec2f(v, 0.0)) & 0xffffu;
+    if (abs(unpack2x16float(h).x) > abs(v) && (h & 0x7fffu) != 0u) { h = h - 1u; }
+    return h;
+  }
+  fn h16(v: f32) -> f32 { return unpack2x16float(h16bits(v)).x; }
+  fn q16(v: vec3f) -> vec3f { return vec3f(h16(v.r), h16(v.g), h16(v.b)); }
+  fn r16(v: f32) -> f32 { return h16(v); }
+  fn q8(v: vec3f) -> vec3f { return floor(q16(clamp(v, vec3f(0.0), vec3f(1.0))) * 255.0 + 0.5) / 255.0; }
+  fn q8a(v0: vec4f) -> vec4f {
+    let v = clamp(v0, vec4f(0.0), vec4f(1.0));
+    return floor(vec4f(h16(v.r), h16(v.g), h16(v.b), h16(v.a)) * 255.0 + 0.5) / 255.0;
+  });
+/* CW_TEST_FUSION_RAW=1: no rounding (the post-fusion test's control) */
+WGSL_DECL WGSL_FUSE_ROUND_RAW = S(
+  fn q16(v: vec3f) -> vec3f { return v; }
+  fn r16(v: f32) -> f32 { return v; }
+  fn q8(v: vec3f) -> vec3f { return v; }
+  fn q8a(v: vec4f) -> vec4f { return v; });
+/* the lens pass (WGSL_LENS, chromatic aberration off) on the RGBA8 value the pass before it wrote */
+WGSL_DECL WGSL_FUSE_LENS = S(
+  fn fuse_lens(c0: vec4f, uv: vec2f, pos: vec4f) -> vec4f {
+    var c = q8a(c0);
+    let d = uv - 0.5;
+    if (u.u_on.y > 0.5) {
+      let r = length(d * vec2f(u.u_on.w, 1.0)) / length(vec2f(0.5 * u.u_on.w, 0.5));
+      let f = smoothstep(1.0 - u.u_amt.z, 1.0 + u.u_amt.z * 0.25, r * (1.0 + 0.5 * u.u_amt.z));
+      c = vec4f(c.rgb * (1.0 - u.u_amt.y * f), c.a);
+    }
+    if (u.u_on.z > 0.5) {
+      let n = hash01(vec3u(vec2u(cw_frag_coord(pos)), u32(u.u_frame))) - 0.5;
+      let l = luma(c.rgb);
+      c = vec4f(max(c.rgb + n * u.u_amt.w * (1.0 - 0.5 * l), vec3f(0.0)), c.a);
+    }
+    return c;
+  });
+/* the fog over the scene as the fog pass's blend leaves it */
+WGSL_DECL WGSL_FUSE_FOG = S(
+  fn fog_over(c: vec4f, f: vec4f) -> vec4f {
+    if (f.a < 0.0) { return c; }
+    let s = vec4f(q16(f.rgb), r16(f.a));
+    return vec4f(q16(s.rgb + c.rgb * (1.0 - s.a)), r16(s.a + c.a * (1.0 - s.a)));
+  });
+/* bloom's composite before the tone curve, the grade after it */
+WGSL_DECL WGSL_FUSE_BLOOM_GRADE = S(
+  fn BG(p: vec2f) -> vec3f { return textureSampleLevel(u_bloom, cw_linear, p, 0.0).rgb; }
+  fn fuse_bloom(c: vec4f, uv: vec2f) -> vec4f {
+    let t = u.u_texel * u.u_radius;
+    var s = BG(uv) * 4.0;
+    s += (BG(uv + vec2f(-t.x, 0.0)) + BG(uv + vec2f(t.x, 0.0)) + BG(uv + vec2f(0.0, -t.y)) + BG(uv + vec2f(0.0, t.y))) * 2.0;
+    s += BG(uv - t) + BG(uv + t) + BG(uv + vec2f(-t.x, t.y)) + BG(uv + vec2f(t.x, -t.y));
+    let bloom = s / 16.0 * u.u_norm;
+    return vec4f(q16(max(c.rgb + u.u_k * (bloom - prefilter(c.rgb)), vec3f(0.0))), c.a);
+  }
+  fn fuse_grade(c0: vec3f) -> vec3f {
+    let c = q8(c0);
+    let t = clamp((c - u.u_dmin) * u.u_dinv, vec3f(0.0), vec3f(1.0));
+    let g = textureSampleLevel(u_lut, cw_linear, t * u.u_scale.x + u.u_scale.y, 0.0).rgb;
+    return mix(c, g, u.u_scale.z);
+  });
 
 WGSL_DECL WGSL_VEL = S(
   struct U { u_inv_vp_j: mat4x4f, u_vp: mat4x4f, u_prev_vp: mat4x4f, u_pz: vec4f };
@@ -134,15 +205,27 @@ WGSL_DECL WGSL_AO = S(
     return vec4f(pow(vis, u.u_params.y), -P.z, 0.0, 1.0);
   });
 
-WGSL_DECL WGSL_AO_COMP = S(
-  struct U { u_inv_proj: mat4x4f, u_ao_size: vec2f, u_intensity: f32, u_pz: vec4f };
-  @group(0) @binding(0) var<uniform> u: U;
-  @group(0) @binding(1) var u_src: texture_2d<f32>;
-  @group(0) @binding(2) var u_ao: texture_2d<f32>;
-  @group(0) @binding(3) var u_depth: texture_2d<f32>;
+#define WGSL_AO_COMP_BINDINGS \
+  S(@group(0) @binding(0) var<uniform> u: U; \
+    @group(0) @binding(1) var u_src: texture_2d<f32>; \
+    @group(0) @binding(2) var u_ao: texture_2d<f32>; \
+    @group(0) @binding(3) var u_depth: texture_2d<f32>;)
+WGSL_DECL WGSL_AO_COMP_HEAD = "struct U { u_inv_proj: mat4x4f, u_ao_size: vec2f, u_intensity: f32, u_pz: vec4f };\n"
+  WGSL_AO_COMP_BINDINGS S(
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
     let d = win_depth(cw_load(u_depth, uv).r, u.u_pz);
-    let c = textureSampleLevel(u_src, cw_linear, uv, 0.0);
+    return ao_composite(uv, textureSampleLevel(u_src, cw_linear, uv, 0.0), d);
+  });
+/* the composite with the height fog fused in (pipeline_post.c ao_fog_program) */
+WGSL_DECL WGSL_AO_COMP_FOG_HEAD = "struct U { u_inv_proj: mat4x4f, u_ao_size: vec2f, u_intensity: f32, " WGSL_FOG_FIELDS
+  "u_pz: vec4f };\n" WGSL_AO_COMP_BINDINGS;
+WGSL_DECL WGSL_AO_COMP_FOG_IN = S(
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    let d = win_depth(cw_load(u_depth, uv).r, u.u_pz);
+    return ao_composite(uv, fog_over(textureSampleLevel(u_src, cw_linear, uv, 0.0), fog_eval(uv, d)), d);
+  });
+WGSL_DECL WGSL_AO_COMP_BODY = S(
+  fn ao_composite(uv: vec2f, c: vec4f, d: f32) -> vec4f {
     if (d >= 1.0) { return c; }
     let p = u.u_inv_proj * vec4f(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
     let z = -p.z / p.w;
@@ -302,81 +385,84 @@ WGSL_DECL WGSL_BL_COMP = S(
     return vec4f(max(c.rgb + u.u_k * (bloom - prefilter(c.rgb)), vec3f(0.0)), c.a);
   });
 
+#define WGSL_TM_FNS_SRC S(\
+  fn LinearToneMapping(color: vec3f) -> vec3f { return u.toneMappingExposure * color; } \
+  fn ReinhardToneMapping(c0: vec3f) -> vec3f { \
+    let color = c0 * u.toneMappingExposure; \
+    return clamp(color / (vec3f(1.0) + color), vec3f(0.0), vec3f(1.0)); \
+  } \
+  fn OptimizedCineonToneMapping(c0: vec3f) -> vec3f { \
+    var color = c0 * u.toneMappingExposure; \
+    color = max(vec3f(0.0), color - 0.004); \
+    return pow((color * (6.2 * color + 0.5)) / (color * (6.2 * color + 1.7) + 0.06), vec3f(2.2)); \
+  } \
+  fn RRTAndODTFit(v: vec3f) -> vec3f { \
+    let a = v * (v + 0.0245786) - 0.000090537; \
+    let b = v * (0.983729 * v + 0.4329510) + 0.238081; \
+    return a / b; \
+  } \
+  fn ACESFilmicToneMapping(c0: vec3f) -> vec3f { \
+    let ACESInputMat = mat3x3f(vec3f(0.59719, 0.07600, 0.02840), vec3f(0.35458, 0.90834, 0.13383), vec3f(0.04823, 0.01566, 0.83777)); \
+    let ACESOutputMat = mat3x3f(vec3f(1.60475, -0.10208, -0.00327), vec3f(-0.53108, 1.10813, -0.07276), vec3f(-0.07367, -0.00605, 1.07602)); \
+    var color = c0 * (u.toneMappingExposure / 0.6); \
+    color = ACESInputMat * color; \
+    color = RRTAndODTFit(color); \
+    color = ACESOutputMat * color; \
+    return clamp(color, vec3f(0.0), vec3f(1.0)); \
+  } \
+  fn agxDefaultContrastApprox(x: vec3f) -> vec3f { \
+    let x2 = x * x; \
+    let x4 = x2 * x2; \
+    return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232; \
+  } \
+  fn AgXToneMapping(c0: vec3f) -> vec3f { \
+    let LINEAR_SRGB_TO_LINEAR_REC2020 = mat3x3f(vec3f(0.6274, 0.0691, 0.0164), vec3f(0.3293, 0.9195, 0.0880), vec3f(0.0433, 0.0113, 0.8956)); \
+    let LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3f(vec3f(1.6605, -0.1246, -0.0182), vec3f(-0.5876, 1.1329, -0.1006), vec3f(-0.0728, -0.0083, 1.1187)); \
+    let AgXInsetMatrix = mat3x3f(vec3f(0.856627153315983, 0.137318972929847, 0.11189821299995), \
+                                 vec3f(0.0951212405381588, 0.761241990602591, 0.0767994186031903), \
+                                 vec3f(0.0482516061458583, 0.101439036467562, 0.811302368396859)); \
+    let AgXOutsetMatrix = mat3x3f(vec3f(1.1271005818144368, -0.1413297634984383, -0.14132976349843826), \
+                                  vec3f(-0.11060664309660323, 1.157823702216272, -0.11060664309660294), \
+                                  vec3f(-0.016493938717834573, -0.016493938717834257, 1.2519364065950405)); \
+    let AgxMinEv = -12.47393; \
+    let AgxMaxEv = 4.026069; \
+    var color = c0 * u.toneMappingExposure; \
+    color = LINEAR_SRGB_TO_LINEAR_REC2020 * color; \
+    color = AgXInsetMatrix * color; \
+    color = max(color, vec3f(1e-10)); \
+    color = log2(color); \
+    color = (color - AgxMinEv) / (AgxMaxEv - AgxMinEv); \
+    color = clamp(color, vec3f(0.0), vec3f(1.0)); \
+    color = agxDefaultContrastApprox(color); \
+    color = AgXOutsetMatrix * color; \
+    color = pow(max(vec3f(0.0), color), vec3f(2.2)); \
+    color = LINEAR_REC2020_TO_LINEAR_SRGB * color; \
+    return clamp(color, vec3f(0.0), vec3f(1.0)); \
+  } \
+  fn NeutralToneMapping(c0: vec3f) -> vec3f { \
+    let StartCompression = 0.8 - 0.04; \
+    let Desaturation = 0.15; \
+    var color = c0 * u.toneMappingExposure; \
+    let x = min(color.r, min(color.g, color.b)); \
+    let offset = select(0.04, x - 6.25 * x * x, x < 0.08); \
+    color -= offset; \
+    let peak = max(color.r, max(color.g, color.b)); \
+    if (peak < StartCompression) { return color; } \
+    let d = 1.0 - StartCompression; \
+    let newPeak = 1.0 - d * d / (peak + d - StartCompression); \
+    color *= newPeak / peak; \
+    let g = 1.0 - 1.0 / (Desaturation * (peak - newPeak) + 1.0); \
+    return mix(color, vec3f(newPeak), g); \
+  } \
+  fn LinearTosRGB(v: vec3f) -> vec3f { \
+    return select(pow(v, vec3f(0.41666)) * 1.055 - vec3f(0.055), v * 12.92, v <= vec3f(0.0031308)); \
+  } \
+)
 WGSL_DECL WGSL_TM = S(
   struct U { toneMappingExposure: f32, u_curve: i32 };
   @group(0) @binding(0) var<uniform> u: U;
   @group(0) @binding(1) var u_src: texture_2d<f32>;
-  fn LinearToneMapping(color: vec3f) -> vec3f { return u.toneMappingExposure * color; }
-  fn ReinhardToneMapping(c0: vec3f) -> vec3f {
-    let color = c0 * u.toneMappingExposure;
-    return clamp(color / (vec3f(1.0) + color), vec3f(0.0), vec3f(1.0));
-  }
-  fn OptimizedCineonToneMapping(c0: vec3f) -> vec3f {
-    var color = c0 * u.toneMappingExposure;
-    color = max(vec3f(0.0), color - 0.004);
-    return pow((color * (6.2 * color + 0.5)) / (color * (6.2 * color + 1.7) + 0.06), vec3f(2.2));
-  }
-  fn RRTAndODTFit(v: vec3f) -> vec3f {
-    let a = v * (v + 0.0245786) - 0.000090537;
-    let b = v * (0.983729 * v + 0.4329510) + 0.238081;
-    return a / b;
-  }
-  fn ACESFilmicToneMapping(c0: vec3f) -> vec3f {
-    let ACESInputMat = mat3x3f(vec3f(0.59719, 0.07600, 0.02840), vec3f(0.35458, 0.90834, 0.13383), vec3f(0.04823, 0.01566, 0.83777));
-    let ACESOutputMat = mat3x3f(vec3f(1.60475, -0.10208, -0.00327), vec3f(-0.53108, 1.10813, -0.07276), vec3f(-0.07367, -0.00605, 1.07602));
-    var color = c0 * (u.toneMappingExposure / 0.6);
-    color = ACESInputMat * color;
-    color = RRTAndODTFit(color);
-    color = ACESOutputMat * color;
-    return clamp(color, vec3f(0.0), vec3f(1.0));
-  }
-  fn agxDefaultContrastApprox(x: vec3f) -> vec3f {
-    let x2 = x * x;
-    let x4 = x2 * x2;
-    return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232;
-  }
-  fn AgXToneMapping(c0: vec3f) -> vec3f {
-    let LINEAR_SRGB_TO_LINEAR_REC2020 = mat3x3f(vec3f(0.6274, 0.0691, 0.0164), vec3f(0.3293, 0.9195, 0.0880), vec3f(0.0433, 0.0113, 0.8956));
-    let LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3f(vec3f(1.6605, -0.1246, -0.0182), vec3f(-0.5876, 1.1329, -0.1006), vec3f(-0.0728, -0.0083, 1.1187));
-    let AgXInsetMatrix = mat3x3f(vec3f(0.856627153315983, 0.137318972929847, 0.11189821299995),
-                                 vec3f(0.0951212405381588, 0.761241990602591, 0.0767994186031903),
-                                 vec3f(0.0482516061458583, 0.101439036467562, 0.811302368396859));
-    let AgXOutsetMatrix = mat3x3f(vec3f(1.1271005818144368, -0.1413297634984383, -0.14132976349843826),
-                                  vec3f(-0.11060664309660323, 1.157823702216272, -0.11060664309660294),
-                                  vec3f(-0.016493938717834573, -0.016493938717834257, 1.2519364065950405));
-    let AgxMinEv = -12.47393;
-    let AgxMaxEv = 4.026069;
-    var color = c0 * u.toneMappingExposure;
-    color = LINEAR_SRGB_TO_LINEAR_REC2020 * color;
-    color = AgXInsetMatrix * color;
-    color = max(color, vec3f(1e-10));
-    color = log2(color);
-    color = (color - AgxMinEv) / (AgxMaxEv - AgxMinEv);
-    color = clamp(color, vec3f(0.0), vec3f(1.0));
-    color = agxDefaultContrastApprox(color);
-    color = AgXOutsetMatrix * color;
-    color = pow(max(vec3f(0.0), color), vec3f(2.2));
-    color = LINEAR_REC2020_TO_LINEAR_SRGB * color;
-    return clamp(color, vec3f(0.0), vec3f(1.0));
-  }
-  fn NeutralToneMapping(c0: vec3f) -> vec3f {
-    let StartCompression = 0.8 - 0.04;
-    let Desaturation = 0.15;
-    var color = c0 * u.toneMappingExposure;
-    let x = min(color.r, min(color.g, color.b));
-    let offset = select(0.04, x - 6.25 * x * x, x < 0.08);
-    color -= offset;
-    let peak = max(color.r, max(color.g, color.b));
-    if (peak < StartCompression) { return color; }
-    let d = 1.0 - StartCompression;
-    let newPeak = 1.0 - d * d / (peak + d - StartCompression);
-    color *= newPeak / peak;
-    let g = 1.0 - 1.0 / (Desaturation * (peak - newPeak) + 1.0);
-    return mix(color, vec3f(newPeak), g);
-  }
-  fn LinearTosRGB(v: vec3f) -> vec3f {
-    return select(pow(v, vec3f(0.41666)) * 1.055 - vec3f(0.055), v * 12.92, v <= vec3f(0.0031308));
-  }
+) WGSL_TM_FNS_SRC S(
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
     let c = textureSampleLevel(u_src, cw_linear, uv, 0.0);
     var x = max(c.rgb, vec3f(0.0));
@@ -391,6 +477,29 @@ WGSL_DECL WGSL_TM = S(
     x = LinearTosRGB(x); // r186: the output transfer after every curve (Cineon's pow 2.2 returns to linear first)
     return vec4f(x, 1.0);
   });
+WGSL_DECL WGSL_TM_FNS = WGSL_TM_FNS_SRC;
+/* the tonemap pass with bloom's composite, the grade and / or the lens fused in (pipeline_post.c tm_variant) */
+WGSL_DECL WGSL_TM_FUSED_HEAD = S(
+  struct U { toneMappingExposure: f32, u_curve: i32, u_thresh: vec4f, u_texel: vec2f, u_radius: f32, u_k: f32, u_norm: f32,
+             u_scale: vec4f, u_dmin: vec3f, u_dinv: vec3f, u_on: vec4f, u_amt: vec4f, u_frame: i32 };
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var u_src: texture_2d<f32>;
+  @group(0) @binding(2) var u_bloom: texture_2d<f32>;
+  @group(0) @binding(3) var u_lut: texture_3d<f32>;);
+WGSL_DECL WGSL_TM_FUSED_FS = S(
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    var c = textureSampleLevel(u_src, cw_linear, uv, 0.0););
+WGSL_DECL WGSL_TM_FUSED_CURVES = S(
+    var x = max(c.rgb, vec3f(0.0));
+    let k = u.u_curve;
+    if (k == 0) { x = clamp(x * u.toneMappingExposure, vec3f(0.0), vec3f(1.0)); }
+    else if (k == 1) { x = clamp(LinearToneMapping(x), vec3f(0.0), vec3f(1.0)); }
+    else if (k == 2) { x = ReinhardToneMapping(x); }
+    else if (k == 3) { x = OptimizedCineonToneMapping(x); }
+    else if (k == 4) { x = ACESFilmicToneMapping(x); }
+    else if (k == 5) { x = AgXToneMapping(x); }
+    else { x = clamp(NeutralToneMapping(x), vec3f(0.0), vec3f(1.0)); }
+    x = LinearTosRGB(x););
 
 WGSL_DECL WGSL_GRADE = S(
   struct U { u_scale: vec4f, u_dmin: vec3f, u_dinv: vec3f };
@@ -404,13 +513,26 @@ WGSL_DECL WGSL_GRADE = S(
     return vec4f(mix(c.rgb, g, u.u_scale.z), c.a);
   });
 
-WGSL_DECL WGSL_FXAA = S(
+/* FXAA: the program is a head (its uniforms), fxaa() and an entry point:
+ * plain, or with the lens fused in (pipeline_post.c aa_exec) */
+WGSL_DECL WGSL_FXAA_HEAD = S(
   struct U { u_rcp: vec2f };
   @group(0) @binding(0) var<uniform> u: U;
-  @group(0) @binding(1) var u_src: texture_2d<f32>;
+  @group(0) @binding(1) var u_src: texture_2d<f32>;);
+WGSL_DECL WGSL_FXAA_FS = S(
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f { return fxaa(uv); });
+WGSL_DECL WGSL_FXAA_LENS_HEAD = S(
+  struct U { u_rcp: vec2f, u_on: vec4f, u_amt: vec4f, u_frame: i32 };
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var u_src: texture_2d<f32>;);
+WGSL_DECL WGSL_FXAA_LENS_FS = S(
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    return fuse_lens(fxaa(uv), uv, pos);
+  });
+WGSL_DECL WGSL_FXAA = S(
   fn T(p: vec2f) -> vec4f { return textureSampleLevel(u_src, cw_linear, p, 0.0); }
   fn L(p: vec2f) -> f32 { return dot(T(p).rgb, vec3f(0.299, 0.587, 0.114)); }
-  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+  fn fxaa(uv: vec2f) -> vec4f {
     var posM = uv;
     let rgbyM = T(posM);
     let lumaM = dot(rgbyM.rgb, vec3f(0.299, 0.587, 0.114));
@@ -555,14 +677,16 @@ WGSL_DECL WGSL_VIEW = S(
 
 /* ── SMAA (pipeline_smaa.c) ─────────────────────────────────────────── */
 
+/* the SMAA programs' uniform block: plain, and the blend's with the lens fused in */
+WGSL_DECL WGSL_SMAA_U = S(struct U { SMAA_RT_METRICS: vec4f };);
+WGSL_DECL WGSL_SMAA_LENS_U = S(struct U { SMAA_RT_METRICS: vec4f, u_on: vec4f, u_amt: vec4f, u_frame: i32 };);
 WGSL_DECL WGSL_SMAA_COMMON =
     "const SMAA_THRESHOLD = 0.1;\n"
     "const SMAA_MAX_SEARCH_STEPS = 16;\n"
     "const SMAA_CORNER_ROUNDING_NORM = 0.25;\n"
     "const SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR = 2.0;\n"
     "const SMAA_AREATEX_MAX_DISTANCE = 16.0;\n"
-    S(struct U { SMAA_RT_METRICS: vec4f };
-      @group(0) @binding(0) var<uniform> u: U;
+    S(@group(0) @binding(0) var<uniform> u: U;
       fn FL(c: vec2f) -> vec2f { return vec2f(c.x, 1.0 - c.y); }
       fn SMP(t: texture_2d<f32>, c: vec2f) -> vec4f { return textureSampleLevel(t, cw_linear, FL(c), 0.0); }
       fn SMPO(t: texture_2d<f32>, c: vec2f, o: vec2f) -> vec4f { return textureSampleLevel(t, cw_linear, FL(c + o * u.SMAA_RT_METRICS.xy), 0.0); });
@@ -698,6 +822,7 @@ WGSL_DECL WGSL_SMAA_WEIGHT = S(
     let offset2 = M.xxyy * (vec4f(-2.0, 2.0, -2.0, 2.0) * f32(SMAA_MAX_SEARCH_STEPS)) + vec4f(offset0.xz, offset1.yw);
     var weights = vec4f(0.0);
     let e = SMP(u_edges, texcoord).rg;
+    if (e.r <= 0.0 && e.g <= 0.0) { discard; } /* no edge: the cleared target's zero weights */
     if (e.g > 0.0) {
       var coords: vec3f;
       coords.x = SMAASearchXLeft(offset0.xy, offset2.x);
@@ -737,10 +862,17 @@ WGSL_DECL WGSL_SMAA_WEIGHT = S(
     return weights;
   });
 
+WGSL_DECL WGSL_SMAA_BLEND_FS = S(
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f { return smaa_blend(uv); });
+/* the blend with the lens fused in (its block: WGSL_SMAA_LENS_U) */
+WGSL_DECL WGSL_SMAA_BLEND_LENS_FS = S(
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    return fuse_lens(smaa_blend(uv), uv, pos);
+  });
 WGSL_DECL WGSL_SMAA_BLEND = S(
   @group(0) @binding(1) var u_color: texture_2d<f32>;
   @group(0) @binding(2) var u_blend: texture_2d<f32>;
-  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+  fn smaa_blend(uv: vec2f) -> vec4f {
     let M = u.SMAA_RT_METRICS;
     let texcoord = FL(uv);
     let offset = M.xyxy * vec4f(1.0, 0.0, 0.0, 1.0) + texcoord.xyxy;
@@ -763,18 +895,14 @@ WGSL_DECL WGSL_SMAA_BLEND = S(
 
 /* ── height fog (fog.c) ─────────────────────────────────────────────── */
 
-WGSL_DECL WGSL_FOG = S(
-  struct U { u_inv_view_proj: mat4x4f, u_cam: vec3f, u_fog: vec4f, u_dist: vec4f, u_color: vec3f, u_sun_dir: vec3f,
-             u_sun_color: vec3f, u_g: f32, u_pz: vec4f };
-  @group(0) @binding(0) var<uniform> u: U;
-  @group(0) @binding(1) var u_depth: texture_2d<f32>;
+/* (in-scattered light, opacity) premultiplied, or alpha -1 where there is no fog */
+WGSL_DECL WGSL_FOG_FN = S(
   fn opticalDepth(v: vec3f, l: f32) -> f32 {
     let a = u.u_fog.x * exp(-u.u_fog.y * (u.u_cam.y - u.u_fog.z));
     let k = u.u_fog.y * v.y * l;
     return a * l * select(1.0 - 0.5 * k, (1.0 - exp(-k)) / k, abs(k) > 1e-4);
   }
-  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
-    let d = win_depth(cw_load(u_depth, uv).r, u.u_pz);
+  fn fog_eval(uv: vec2f, d: f32) -> vec4f {
     let a = u.u_inv_view_proj * vec4f(uv * 2.0 - 1.0, -1.0, 1.0);
     let b = u.u_inv_view_proj * vec4f(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
     let p0 = a.xyz / a.w;
@@ -782,12 +910,12 @@ WGSL_DECL WGSL_FOG = S(
     var len = length(ray);
     var v = ray / max(len, 1e-6);
     if (d >= 1.0) {
-      if (u.u_dist.y <= 0.0) { discard; }
+      if (u.u_dist.y <= 0.0) { return vec4f(-1.0); }
       v = normalize(b.xyz / b.w - p0);
       len = u.u_dist.y;
     }
     let l = max(len - u.u_dist.x, 0.0);
-    if (l <= 0.0) { discard; }
+    if (l <= 0.0) { return vec4f(-1.0); }
     let tau = opticalDepth(v, l);
     let fog = min(1.0 - exp(-tau), u.u_fog.w);
     let mu = dot(v, u.u_sun_dir);
@@ -797,6 +925,15 @@ WGSL_DECL WGSL_FOG = S(
     let sun = u.u_sun_color * hg * 4.0 * 3.14159265;
     let inscatter = (u.u_color + sun) * fog;
     return vec4f(inscatter, fog);
+  });
+
+WGSL_DECL WGSL_FOG = "struct U { " WGSL_FOG_FIELDS "u_pz: vec4f };\n" S(
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var u_depth: texture_2d<f32>;
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    let f = fog_eval(uv, win_depth(cw_load(u_depth, uv).r, u.u_pz));
+    if (f.a < 0.0) { discard; }
+    return f;
   });
 
 #endif
