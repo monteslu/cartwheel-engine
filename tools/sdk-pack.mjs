@@ -142,7 +142,7 @@ function setProps(name, props) {
 // ── the engine's own files a game build uses ──────────────────────────
 const engineFile = (rel) => copyFile(join(SRC, rel), join(OUT, rel));
 const engineTree = (rel, filter) => copyTree(join(SRC, rel), join(OUT, rel), filter);
-for (const f of ['cmake/flags.cmake', 'cmake/app.cmake', 'cmake/programs.cmake', 'cmake/plugins.cmake', 'LICENSE'])
+for (const f of ['cmake/flags.cmake', 'cmake/app.cmake', 'cmake/programs.cmake', 'cmake/plugins.cmake', 'LICENSE', 'NOTICE'])
   engineFile(f);
 engineTree('include');
 engineTree('docs', (r, dir) => dir ? !r.startsWith('tutorials') : /\.md$/.test(r) && !r.includes('/'));
@@ -261,7 +261,7 @@ const manifest = {
   system: T.system, processor: T.processor, cart: CART, wgpu: WGPU,
   determinism: { compile_options: ['-ffp-contract=off', '-fno-fast-math'], enforced_by: 'lib/cmake/cartwheel/cartwheelConfig.cmake' },
   toolchains,
-  dependencies: Object.fromEntries(['three.c', 'box2d', 'box3d', 'sdl2', 'miniaudio', 'meshoptimizer', 'basis_universal', 'wasmcart-libs', 'kb', 'stb']
+  dependencies: Object.fromEntries(['three.c', 'box2d', 'box3d', 'sdl2', 'miniaudio', 'meshoptimizer', 'basis_universal', 'wasmcart-libs', 'kb', 'stb', 'recastnavigation']
     .map((n) => [n, lockRev(n)]).filter(([, v]) => v)),
   native_dawn: dawn, angle: angleDir, runtime,
   libraries: libs.map((f) => f.split(sep).join('/')).sort(),

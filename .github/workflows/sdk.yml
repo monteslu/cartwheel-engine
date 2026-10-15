@@ -16,7 +16,7 @@ env:
   CW_CART_LINK_JOBS: 2
   BINARYEN_CORES: 4
   # the libraries every native SDK compiles (the rest of the lock is for carts, tests and exports)
-  NATIVE_DEPS: three.c,box2d,box3d,sdl2,stb,miniaudio,meshoptimizer,wasmcart-libs,basis_universal,kb,font:*
+  NATIVE_DEPS: three.c,box2d,box3d,sdl2,stb,miniaudio,meshoptimizer,wasmcart-libs,basis_universal,kb,recastnavigation,font:*
 
 jobs:
   sdk:
