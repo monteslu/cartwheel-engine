@@ -39,6 +39,15 @@ Inside each SDK:
   `runtime`: the shared libraries a game runs with, which exports copy beside
   the executable.
 
+## Versions
+
+An engine release's SDKs never change once published: the release workflow
+refuses to upload an SDK the release already has, so a fix is a new version
+(a new tag), never a replaced file. A game pins a version and each SDK's
+sha256 (cartwheel-examples' `scripts/deps.lock` does), and builds the same
+forever. Each SDK's `manifest.json` names the engine commit it was built
+from.
+
 ## Building a game against an SDK
 
 ```cmake

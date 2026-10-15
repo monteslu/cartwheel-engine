@@ -98,4 +98,13 @@ jobs:
           ls -l sdk
           gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
             gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
-          gh release upload "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --clobber sdk/*
+          # SDKs are immutable: once a release carries an SDK, it never changes
+          # (docs/sdk.md, "Versions"), so a game pinned to it builds the same forever
+          have="$(gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          for f in sdk/*; do
+            if grep -qxF "$(basename "$f")" <<< "$have"; then
+              echo "$GITHUB_REF_NAME already has $(basename "$f"): published SDKs are never replaced; tag a new version" >&2
+              exit 1
+            fi
+          done
+          gh release upload "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" sdk/*
