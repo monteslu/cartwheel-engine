@@ -26,6 +26,7 @@ CW_HANDLE_TYPE(cw_body3d);
 CW_HANDLE_TYPE(cw_shape3d);
 CW_HANDLE_TYPE(cw_joint3d);
 CW_HANDLE_TYPE(cw_mesh3d);
+CW_HANDLE_TYPE(cw_heightfield3d);
 
 typedef struct cw_xform3 {
   t3_vec3 p;
@@ -266,6 +267,23 @@ b3ShapeId cw_shape3d_raw(cw_shape3d s);
 cw_mesh3d cw_mesh3d_create(const t3_vec3 *vertices, int vertex_count, const int32_t *indices, int triangle_count);
 /* Frees the mesh; destroy every shape made from it first. No-op on an invalid handle. */
 void cw_mesh3d_destroy(cw_mesh3d m);
+
+/* Height fields (resources, like collision meshes): Box3D's grid of nx x nz
+ * samples (x along columns, z along rows; sample (i, j) at local
+ * (i * scale.x, q[j * nx + i] * scale.y, j * scale.z)), stored as the uint16
+ * steps given, exactly. Each quad splits along the diagonal from its
+ * (i, j + 1) corner to its (i + 1, j) corner. materials: (nx - 1) x (nz - 1)
+ * cell bytes (0xFF = a hole, no collision), NULL = all 0. Fields that share
+ * a scale.y line up exactly along shared edges (cartwheel/terrain.h tiles
+ * them). Null (logged) for fewer than 2 x 2 samples. */
+cw_heightfield3d cw_heightfield3d_create(const uint16_t *q, int nx, int nz, t3_vec3 scale, const uint8_t *materials);
+/* Frees the field; destroy every shape made from it first. No-op on an invalid handle. */
+void cw_heightfield3d_destroy(cw_heightfield3d h);
+/* Box3D's data, for its pure queries (b3RayCastHeightField); NULL when invalid. */
+const b3HeightFieldData *cw_heightfield3d_raw(cw_heightfield3d h);
+/* A height-field shape at the body's origin: STATIC bodies only, as meshes.
+ * The field must outlive every shape made from it. */
+cw_shape3d cw_shape3d_heightfield(cw_body3d b, const cw_shape3d_def *def, cw_heightfield3d field);
 
 /* ── joints ──────────────────────────────────────────────────────────── */
 

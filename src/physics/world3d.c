@@ -653,6 +653,69 @@ cw_shape3d cw_shape3d_mesh(cw_body3d b, const cw_shape3d_def *def, cw_mesh3d mes
   return (cw_shape3d){ b3StoreShapeId(b3CreateMeshShape(bid, &sd, d, v3(scale))) };
 }
 
+/* height fields: a global pool of b3HeightFieldData pointers */
+static cw_pool g_fields;
+static b3HeightFieldData *field_get(cw_heightfield3d h) {
+  b3HeightFieldData **p = g_fields.elem_size ? cw_pool_get(&g_fields, h.id) : NULL;
+  return p ? *p : NULL;
+}
+
+b3HeightFieldData *cw__heightfield3d_build(const uint16_t *q, int nx, int nz, t3_vec3 scale, const uint8_t *materials) {
+  if (!q || nx < 2 || nz < 2 || !(scale.x > 0) || !(scale.y > 0) || !(scale.z > 0)) {
+    cw_error("physics3d: height field needs 2 x 2 samples or more and a positive scale (got %d x %d)", nx, nz);
+    return NULL;
+  }
+  /* Box3D quantizes floats between a global min and max into uint16 steps
+   * of (max - min) / 65535; with the range 0..65535 a step is exactly 1, so
+   * the steps given are stored as they are and scale.y makes them metres */
+  float *h = cw_alloc(sizeof(float) * (size_t)nx * (size_t)nz, CW_MEM_PHYSICS);
+  for (int i = 0; i < nx * nz; i++) h[i] = (float)q[i];
+  b3HeightFieldDef d = { 0 };
+  d.heights = h;
+  d.materialIndices = (uint8_t *)materials;
+  d.scale = v3(scale);
+  d.countX = nx;
+  d.countZ = nz;
+  d.globalMinimumHeight = 0;
+  d.globalMaximumHeight = 65535;
+  b3HeightFieldData *data = b3CreateHeightField(&d);
+  cw_free(h);
+  if (!data) cw_error("physics3d: height field of %d x %d samples failed to build", nx, nz);
+  return data;
+}
+cw_heightfield3d cw__heightfield3d_adopt(b3HeightFieldData *data) {
+  if (!data) return (cw_heightfield3d){ 0 };
+  if (!g_fields.elem_size) cw_pool_init(&g_fields, sizeof(b3HeightFieldData *), CW_MEM_PHYSICS);
+  uint64_t id;
+  b3HeightFieldData **slot = cw_pool_alloc(&g_fields, &id);
+  *slot = data;
+  return (cw_heightfield3d){ id };
+}
+cw_heightfield3d cw_heightfield3d_create(const uint16_t *q, int nx, int nz, t3_vec3 scale, const uint8_t *materials) {
+  return cw__heightfield3d_adopt(cw__heightfield3d_build(q, nx, nz, scale, materials));
+}
+void cw_heightfield3d_destroy(cw_heightfield3d hf) {
+  b3HeightFieldData *d = field_get(hf);
+  if (!d) return;
+  b3DestroyHeightField(d);
+  cw_pool_release(&g_fields, hf.id);
+}
+const b3HeightFieldData *cw_heightfield3d_raw(cw_heightfield3d hf) { return field_get(hf); }
+cw_shape3d cw_shape3d_heightfield(cw_body3d b, const cw_shape3d_def *def, cw_heightfield3d field) {
+  SHAPE_BODY(b, (cw_shape3d){ 0 });
+  b3HeightFieldData *d = field_get(field);
+  if (!d) {
+    cw_warn("physics3d: height-field shape from a stale or null field");
+    return (cw_shape3d){ 0 };
+  }
+  if (b3Body_GetType(bid) != b3_staticBody) {
+    cw_error("physics3d: height-field shapes collide only on static bodies");
+    return (cw_shape3d){ 0 };
+  }
+  b3ShapeDef sd = shape_def(def);
+  return (cw_shape3d){ b3StoreShapeId(b3CreateHeightFieldShape(bid, &sd, d)) };
+}
+
 #define SHAPE_OR(s, ret) \
   b3ShapeId sid = b3LoadShapeId((s).id); \
   if (!(s).id || !b3Shape_IsValid(sid)) return ret;
@@ -1044,6 +1107,7 @@ typedef struct dbg_shape {
     b3Capsule capsule;
     const b3HullData *hull;
     b3Mesh mesh;
+    const b3HeightFieldData *field;
   };
 } dbg_shape;
 
@@ -1056,6 +1120,7 @@ static void *create_debug_shape(const b3DebugShape *s, void *ctx) {
   case b3_capsuleShape: d->capsule = *s->capsule; break;
   case b3_hullShape: d->hull = s->hull; break;
   case b3_meshShape: d->mesh = *s->mesh; break;
+  case b3_heightShape: d->field = s->heightField; break;
   default: break;
   }
   return d;
@@ -1139,6 +1204,31 @@ static bool draw_shape(void *user_shape, b3WorldTransform t, b3HexColor color, v
       cw_phys_lines_add(l, p[1], p[2], c);
       cw_phys_lines_add(l, p[2], p[0], c);
     }
+    break;
+  }
+  case b3_heightShape: {
+    /* a height field: its grid lines, at most 64 each way (a terrain region has thousands) */
+    const b3HeightFieldData *f = d->field;
+    const uint16_t *q = b3GetHeightFieldCompressedHeights(f);
+    int nx = f->columnCount, nz = f->rowCount;
+    int sx = (nx + 63) / 64, sz = (nz + 63) / 64;
+    b3Vec3 s = f->scale;
+#define HF_P(i, j, out) tp(t, (b3Vec3){ (float)(i) * s.x, (f->minHeight + f->heightScale * q[(j) * nx + (i)]) * s.y, (float)(j) * s.z }, out)
+    for (int j = 0; j < nz; j += sz)
+      for (int i = 0; i + 1 < nx; i++) {
+        float a[3], b[3];
+        HF_P(i, j, a);
+        HF_P(i + 1, j, b);
+        cw_phys_lines_add(l, a, b, c);
+      }
+    for (int i = 0; i < nx; i += sx)
+      for (int j = 0; j + 1 < nz; j++) {
+        float a[3], b[3];
+        HF_P(i, j, a);
+        HF_P(i, j + 1, b);
+        cw_phys_lines_add(l, a, b, c);
+      }
+#undef HF_P
     break;
   }
   default: break;

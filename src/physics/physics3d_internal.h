@@ -51,4 +51,9 @@ static inline b3Quat q3(t3_quat q) { return (b3Quat){ { q.x, q.y, q.z }, q.w }; 
 static inline t3_quat t3q(b3Quat q) { return (t3_quat){ q.v.x, q.v.y, q.v.z, q.s }; }
 static inline cw_xform3 x3(b3WorldTransform t) { return (cw_xform3){ t3p(t.p), t3q(t.q) }; }
 
+/* height fields in two steps: the build is pure (any thread: cartwheel/terrain.h builds regions on the
+ * job pool), the adoption registers it as a handle (main thread) */
+b3HeightFieldData *cw__heightfield3d_build(const uint16_t *q, int nx, int nz, t3_vec3 scale, const uint8_t *materials);
+cw_heightfield3d cw__heightfield3d_adopt(b3HeightFieldData *data);
+
 #endif
