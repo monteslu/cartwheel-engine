@@ -5160,7 +5160,13 @@
     {
      "name": "cw_pipeline_set_view_hook",
      "signature": "void cw_pipeline_set_view_hook(cw_pipeline *p, void (*hook)(int view, void *user), void *user)",
-     "doc": "Called before each view's 3D picture is drawn, with the view's index:\nsomething can be posed one way in one player's view and another way in\nthe rest (a player's own replay, say). NULL: none. Shared work such as\nthe shadow maps is drawn with the first view, as the hook left it.",
+     "doc": "Called before each view's 3D picture is drawn, with the view's index:\nsomething can be posed one way in one player's view and another way in\nthe rest (a player's own replay, say). NULL: none. Shared work is done\nwith the first view, as the hook left it: the shadow maps, and the\nscene's world matrices (what a hook moves for a later view, it updates\nitself, t3_object_update_world_matrix).",
+     "inline": false
+    },
+    {
+     "name": "cw_pipeline_set_views_shared_post",
+     "signature": "void cw_pipeline_set_views_shared_post(cw_pipeline *p, bool shared)",
+     "doc": "Splitscreen's post chain, shared: each view runs only the post passes that\nread its depth or motion (SSAO, say) and keeps its picture in HDR; the\nviews are laid out first and the rest of the chain (bloom, tone mapping,\nthe grade, anti-aliasing, lens effects) runs once over the whole output.\nA view then costs its 3D and those passes, not a whole chain (the CPU\nrecords each pass once a frame instead of once a view). The vignette and\nthe bloom are the screen's then, not each view's: a glow can cross a seam.\nOff by default.",
      "inline": false
     },
     {

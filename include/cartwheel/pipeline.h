@@ -375,9 +375,20 @@ int cw_pipeline_views(cw_pipeline *p, const cw_view **views);
 int cw_pipeline_split(cw_pipeline *p, const cw_node *cameras, int n);
 /* Called before each view's 3D picture is drawn, with the view's index:
  * something can be posed one way in one player's view and another way in
- * the rest (a player's own replay, say). NULL: none. Shared work such as
- * the shadow maps is drawn with the first view, as the hook left it. */
+ * the rest (a player's own replay, say). NULL: none. Shared work is done
+ * with the first view, as the hook left it: the shadow maps, and the
+ * scene's world matrices (what a hook moves for a later view, it updates
+ * itself, t3_object_update_world_matrix). */
 void cw_pipeline_set_view_hook(cw_pipeline *p, void (*hook)(int view, void *user), void *user);
+/* Splitscreen's post chain, shared: each view runs only the post passes that
+ * read its depth or motion (SSAO, say) and keeps its picture in HDR; the
+ * views are laid out first and the rest of the chain (bloom, tone mapping,
+ * the grade, anti-aliasing, lens effects) runs once over the whole output.
+ * A view then costs its 3D and those passes, not a whole chain (the CPU
+ * records each pass once a frame instead of once a view). The vignette and
+ * the bloom are the screen's then, not each view's: a glow can cross a seam.
+ * Off by default. */
+void cw_pipeline_set_views_shared_post(cw_pipeline *p, bool shared);
 
 /* ── targets ───────────────────────────────────────────────────────── */
 

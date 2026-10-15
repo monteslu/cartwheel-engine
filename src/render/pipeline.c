@@ -398,7 +398,9 @@ static unsigned msaa_fbo(cw_pipeline *p, int w, int h, cw_rt_format f, int sampl
 static void gpu_time_add(pass_rec *r, uint64_t frame, float ms) {
   if (r->acc_on && frame < r->acc_frame) return; /* a frame already published (out of order) */
   if (r->acc_on && frame != r->acc_frame) {
-    if (r->miss_frame != r->acc_frame + 1) { /* every run of that frame was timed */
+    bool whole = true; /* every run of that frame was timed */
+    for (int k = 0; k < 8; k++) whole &= r->missed[k] != r->acc_frame + 1;
+    if (whole) {
       r->stat.gpu_ms = r->acc_ms;
       r->stat.gpu_ms_avg = r->stat.gpu_ms_avg < 0 ? r->acc_ms : r->stat.gpu_ms_avg + (r->acc_ms - r->stat.gpu_ms_avg) / 16.0f;
     }
@@ -456,7 +458,7 @@ static int timer_begin(pass_rec *r, uint64_t frame) {
       timer_open = true;
       return i;
     }
-  r->miss_frame = frame + 1;
+  r->missed[frame % 8] = frame + 1;
   return -1; /* every query still in flight: skip timing this frame */
 }
 
@@ -575,6 +577,15 @@ void cw_pipeline_set_views(cw_pipeline *p, const cw_view *views, int n) {
   p->nviews = n;
   for (int i = 0; i < n; i++) p->views[i] = views[i];
 }
+void cw_pipeline_set_views_shared_post(cw_pipeline *p, bool shared) { p->views_shared_post = shared; }
+/* splitscreen with a shared post chain: a POST pass belongs to each view
+ * when it reads the view's depth or motion, else to the one run over the
+ * laid-out views */
+static bool post_in_run(const cw_pipeline *p, const pass_rec *r, int mode) {
+  if (!p->view_post_split || r->d.phase != CW_PHASE_POST) return true;
+  bool per_view = (r->d.reads & (CW_RES_DEPTH | CW_RES_VELOCITY)) != 0;
+  return mode == RUN_VIEW ? per_view : !per_view;
+}
 int cw_pipeline_views(cw_pipeline *p, const cw_view **views) {
   if (views) *views = p->views;
   return p->nviews >= 2 ? p->nviews : 0;
@@ -688,6 +699,9 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   cw_rt out_copy = *output;
   bool keep_taa = p->s.taa;
   p->s.taa = false;
+  /* a shared post chain: the views keep HDR pictures for it */
+  p->view_post_split = p->views_shared_post;
+  cw_rt_format vf = p->view_post_split && p->s.hdr && cw__caps.float_render ? CW_RT_RGBA16F : CW_RT_RGBA8;
   if (wgpu) cw__pw_timing_hold(true);
   const cw_rt *rts[CW_MAX_VIEWS];
   int n = 0;
@@ -696,7 +710,7 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
     int vw = CW_MAX(1, (int)(v->w * (float)out_copy.w + 0.5f)), vh = CW_MAX(1, (int)(v->h * (float)out_copy.h + 0.5f));
     char key[16];
     snprintf(key, sizeof key, "view%d", i);
-    const cw_rt *rt = cw_pipeline_rt_persistent(p, key, vw, vh, CW_RT_RGBA8, NULL);
+    const cw_rt *rt = cw_pipeline_rt_persistent(p, key, vw, vh, vf, NULL);
     if (!rt || !cw_node_valid(v->camera)) continue;
     p->output_user = rt;
     cw_render3d_set_camera(t, v->camera);
@@ -709,11 +723,16 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   cw_render3d_set_camera(t, (cw_node){ 0 });
   p->output_user = keep_out;
   p->s.taa = keep_taa;
-  if (n) views_composite(p, t, &out_copy, rts, n);
+  /* shared post: the views laid out into one HDR picture, the chain's input */
+  const cw_rt *laid = p->view_post_split && n ? cw_pipeline_rt_persistent(p, "views.post", out_copy.w, out_copy.h, vf, NULL) : NULL;
+  if (n) views_composite(p, t, laid ? laid : &out_copy, rts, n);
+  p->post_src = laid;
   /* the overlays once, over the whole output (the HUD reads cw_pipeline_views);
    * WebGPU reads the frame's pass timestamps back after it, not per view */
   if (wgpu) cw__pw_timing_hold(false);
   render_run(t, p, w, h, alpha, RUN_OVERLAY);
+  p->post_src = NULL;
+  p->view_post_split = false;
   frame_stats(p);
   p->frame++;
 }
@@ -792,13 +811,16 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
   /* WebGPU always renders the scene offscreen: the window texture has no
    * depth */
   bool offscreen = has_scene && (wgpu || post_or_fx || s->hdr || s->msaa > 1 || any_prepass || (reads & (CW_RES_DEPTH | CW_RES_VELOCITY)));
+  /* splitscreen's shared post: the overlay run starts from the laid-out views */
+  bool post_run = mode == RUN_OVERLAY && p->post_src;
+  if (post_run) offscreen = true;
   ctx.offscreen = offscreen;
   plan_fusion(p, s, offscreen && !wgpu);
 
   /* TAA jitter + camera matrices (offscreen only: the direct path leaves the
    * camera exactly as three.c's own path does) */
-  bool taa = offscreen && s->taa;
-  if (offscreen) {
+  bool taa = offscreen && s->taa && !post_run;
+  if (offscreen && !post_run) {
     mat4_from_camera(&ctx);
     if (!p->have_prev || p->prev_w != w || p->prev_h != h) ctx.prev_view_proj = ctx.view_proj;
     else ctx.prev_view_proj = p->prev_view_proj;
@@ -838,9 +860,9 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
     if (r->active && (r->d.phase == CW_PHASE_SKY || r->d.phase == CW_PHASE_EFFECTS)) fx_any = true;
   }
   /* the scene target */
-  const cw_rt *scene = NULL, *scene_draw = NULL;
+  const cw_rt *scene = post_run ? p->post_src : NULL, *scene_draw = NULL;
   cw_rt msaa_gl;
-  if (offscreen) {
+  if (offscreen && !post_run) {
     cw_rt_format sf = ctx.hdr ? CW_RT_RGBA16F : CW_RT_RGBA8;
     scene = persistent_depth(p, "scene", w, h, sf);
     if (!scene) offscreen = ctx.offscreen = false;
@@ -889,7 +911,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
   int last_writer = -1;
   for (int i = 0; i < p->passes.count; i++) {
     pass_rec *r = p->passes.data[i];
-    if (r->active && r->d.phase == CW_PHASE_POST && (r->d.writes & CW_RES_COLOR)) last_writer = i;
+    if (r->active && r->d.phase == CW_PHASE_POST && (r->d.writes & CW_RES_COLOR) && post_in_run(p, r, mode)) last_writer = i;
   }
   /* a depth copy for SKY / EFFECTS passes that sample depth */
   bool fx_reads_depth = false;
@@ -901,7 +923,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
 
   const cw_rt *chain = scene; /* POST: the current image */
   for (int ph = 0; ph < CW_PHASE_COUNT; ph++) {
-    if (ph <= CW_PHASE_POST && !has_scene) continue;
+    if (ph <= CW_PHASE_POST && !has_scene && !(post_run && ph == CW_PHASE_POST)) continue;
     if (mode == RUN_VIEW && ph >= CW_PHASE_OVERLAY) { /* a view draws no overlays: just its picture into its target */
       if (ph == CW_PHASE_OVERLAY && offscreen && last_writer < 0) cw__pass_copy(&ctx, scene->tex, output);
       if (ph == CW_PHASE_OVERLAY && has_scene) {
@@ -968,7 +990,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
       continue;
     for (int i = 0; i < p->passes.count; i++) {
       pass_rec *r = p->passes.data[i];
-      if (!r->active || (int)r->d.phase != ph) continue;
+      if (!r->active || (int)r->d.phase != ph || !post_in_run(p, r, mode)) continue;
       if (ph == CW_PHASE_OVERLAY) { /* layers: app = UI (HUDs), order >= 500 = DEBUG draw */
         if (r->d.order >= 500 ? !(layers & CW_LAYER_DEBUG) : !(layers & CW_LAYER_UI) && r->name == cw_intern("app")) continue;
       }

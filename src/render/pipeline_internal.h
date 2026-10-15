@@ -8,7 +8,7 @@
 #include "cartwheel/gl.h"
 #include "cartwheel/pipeline.h"
 
-#define CW__QUERY_RING 16 /* a pass's queries in flight: up to four views a frame, a few frames deep */
+#define CW__QUERY_RING 64 /* a pass's queries in flight: up to four views a frame, many frames deep (a run flat out queues a lot) */
 
 /* GPU pass timers (GL timer queries, WebGPU timestamps) are issued and polled
  * only when someone reads them: CW_GPU_TIMERS=1, or after the debug channel's
@@ -31,7 +31,8 @@ typedef struct pass_rec {
   bool q_init;
   /* a frame's GPU time summed over its runs (splitscreen times a pass once
    * per view): the frame being summed, and the sum so far */
-  uint64_t acc_frame, miss_frame; /* miss_frame: frame + 1 of a run left untimed (that frame is not published) */
+  uint64_t acc_frame;
+  uint64_t missed[8]; /* frame + 1 of recent frames with a run left untimed (never published) */
   float acc_ms;
   bool acc_on;
   float frame_cpu; /* this frame's CPU ms, every run */
@@ -89,6 +90,9 @@ struct cw_pipeline {
   bool taa_reset;     /* drop the TAA history next frame */
   cw_view views[CW_MAX_VIEWS]; /* cw_pipeline_set_views (nviews >= 2: splitscreen) */
   int nviews;
+  bool views_shared_post; /* cw_pipeline_set_views_shared_post */
+  bool view_post_split;   /* this frame: the views run the depth-reading post passes, the overlay run the rest */
+  const cw_rt *post_src;  /* the overlay run's input: the views laid out (shared post) */
   int taa_frames;     /* frames accumulated in the TAA history */
   /* GL post fusion this frame (pipeline.c decides, pipeline_post.c draws):
    * bloom's composite and the LUT grade run inside the tonemap pass, the
