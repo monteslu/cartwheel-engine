@@ -307,9 +307,13 @@ static void configure_surface(int w, int h) {
         break;
       }
   }
+  /* opaque where the surface offers it; Android's Vulkan surfaces may offer
+   * only inherit (Auto lets Dawn pick from what the surface supports) */
+  WGPUCompositeAlphaMode alpha = WGPUCompositeAlphaMode_Auto;
+  for (size_t i = 0; i < caps.alphaModeCount; i++)
+    if (caps.alphaModes[i] == WGPUCompositeAlphaMode_Opaque) alpha = WGPUCompositeAlphaMode_Opaque;
   WGPUSurfaceConfiguration cfg = { .device = G.device, .format = G.format, .usage = usage, .width = (uint32_t)w,
-                                   .height = (uint32_t)h, .alphaMode = WGPUCompositeAlphaMode_Opaque,
-                                   .presentMode = WGPUPresentMode_Fifo };
+                                   .height = (uint32_t)h, .alphaMode = alpha, .presentMode = WGPUPresentMode_Fifo };
 #if !CW_CART
   if (cw__plat.app.vsync_off)
     for (size_t i = 0; i < caps.presentModeCount; i++)
@@ -644,6 +648,15 @@ bool cw__wgpu_init(void) {
   G.queue = wgpuDeviceGetQueue(G.device);
   wgpuDeviceGetLimits(G.device, &G.limits);
   G.timestamps = nfeats > 0;
+  if (!G.headless) { /* a surface this adapter cannot present to: not started (GL takes over when it may) */
+    WGPUSurfaceCapabilities caps = { 0 };
+    bool ok = wgpuSurfaceGetCapabilities(G.surface, G.adapter, &caps) == WGPUStatus_Success && caps.formatCount > 0;
+    if (ok) wgpuSurfaceCapabilitiesFreeMembers(caps);
+    if (!ok) {
+      cw_error("WebGPU: the window's surface has no format this adapter can present");
+      return false;
+    }
+  }
   cw_info("WebGPU: Dawn validation %s", validate ? "on" : "off (skip_validation: a release run; CW_WGPU_VALIDATION=1 keeps it)");
   if (G.headless) G.format = WGPUTextureFormat_RGBA8Unorm;
 #endif

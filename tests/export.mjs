@@ -180,7 +180,7 @@ async function linuxArm64(g) {
   const files = await exportOne(g.project, 'linux-arm64', join(OUT, g.game));
   const dir = untar(files.find((f) => f.endsWith('.tar.gz')), join(OUT, g.game, 'arm64-check'));
   const e = elfInfo(join(dir, g.game));
-  const allowed = new Set(['libdl.so.2', 'libGLESv2.so.2', 'libm.so.6', 'libpthread.so.0', 'libstdc++.so.6', 'libgcc_s.so.1', 'libc.so.6', 'ld-linux-aarch64.so.1']);
+  const allowed = new Set(['libdl.so.2', 'libGLESv2.so.2', 'libwebgpu_dawn.so', 'libm.so.6', 'libpthread.so.0', 'libstdc++.so.6', 'libgcc_s.so.1', 'libc.so.6', 'ld-linux-aarch64.so.1']);
   const extra = e.needed.filter((n) => !allowed.has(n));
   const x64pak = join(OUT, g.game, 'linux-run', `${g.game}.cwpak`);
   const ai = files.find((f) => f.endsWith('.AppImage'));
