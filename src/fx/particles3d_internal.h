@@ -134,7 +134,11 @@ const float *cw__psys_emit_points(cw_node self, p3d *d, cw__psys *r, bool *chang
 void cw__psys_ensure_mesh(cw_node self, p3d *d, cw__psys *r);
 
 #if CW_WGPU
-void cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft);
+/* a system's frame on WebGPU: the compute work and copies on *cp (the
+ * pass's shared compute pass, opened and ended as needed; true = it has
+ * draws), then its draws into the pass's render pass */
+bool cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, WGPUComputePassEncoder *cp);
+void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft);
 void cw__psys_free_wgpu(cw__psys *r);
 void cw__psys_reset_wgpu(cw__psys *r);
 /* pos xyz + normal xyz per vertex, u32 indices */

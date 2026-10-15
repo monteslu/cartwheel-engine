@@ -76,6 +76,7 @@ void cw__fx_remove_node(void *arr, cw_node n); /* from one of the CW_ARRAY(cw_no
 void cw__fx_ensure_pass(cw_tree *t);
 
 /* particles3d.c / trail3d.c, called from the pass (fx_pass.c) */
+void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft); /* every GPUParticles3D's frame (the particles pass) */
 void cw__psys_frame(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft);
 void cw__trail3d_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft);
 

@@ -588,6 +588,9 @@ typedef struct pw {
   bool emit_ok;
   WGPUBuffer mesh_vb, mesh_ib;
   cw__wg_cache sim_bg, draw_bg; /* the same every frame unless a target or texture changes */
+  /* what cw__psys_frame_wgpu left for cw__psys_draw_wgpu this run */
+  t3_mat4 model;
+  bool did_sort, trail, particles;
 } pw;
 
 static void rel_buf(WGPUBuffer *b) {
@@ -789,21 +792,33 @@ WGPUBuffer cw__psys_wgpu_keys(cw_node n, int *count, int *amount);
 
 static void put_mat(float *dst, const t3_mat4 *m) { memcpy(dst, m->e, 64); }
 
-void cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft) {
+/* A system's frame in two halves, so the pass records every system's
+ * compute work in one compute pass and every system's draws in one render
+ * pass (a pass's attachments load and store once, not once per system).
+ * cw__psys_frame_wgpu: the simulation, the sort, the copies, on *cp (opened
+ * when needed, ended before a copy); true when there is something to draw. */
+static void end_cp(WGPUComputePassEncoder *cp) {
+  if (!*cp) return;
+  wgpuComputePassEncoderEnd(*cp);
+  wgpuComputePassEncoderRelease(*cp);
+  *cp = NULL;
+}
+
+bool cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, WGPUComputePassEncoder *shared_cp) {
   cw__psys *r = d->rt;
   if (r->idle && r->nsteps == 0 && !d->gpu_stats) { /* nothing alive, nothing to simulate (p3d_fixed) */
     ft->stats.systems++;
     ft->stats.capacity += d->amount;
-    return;
+    return false;
   }
   const cw__wgpu_pass_targets *tg = cw__fx_pass_targets(ctx);
   if (!tg || !tg->enc || !tg->color) {
     static bool warned;
     if (!warned) cw_error("GPUParticles3D: the pipeline gave this pass no WebGPU targets; particles are not drawn");
     warned = true;
-    return;
+    return false;
   }
-  if (!init_pipes()) return;
+  if (!init_pipes()) return false;
   pw *w = ensure(r, d->amount);
   if (r->need_reset) {
     upload_dead(r, w);
@@ -824,7 +839,7 @@ void cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft) {
   ft->stats.capacity += d->amount;
   ft->stats.alive += d->alive;
   WGPUCommandEncoder enc = tg->enc;
-  WGPUComputePassEncoder cp = NULL;
+  WGPUComputePassEncoder cp = *shared_cp;
   bool hist = d->trail_length >= 2 && ensure_hist(r, w, CW_MIN(d->trail_length, TRAIL_MAX));
 
   /* ── simulation ── */
@@ -927,7 +942,7 @@ void cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft) {
       { .view = depth ? tg->linear_depth : cw__fx_wg_dummy_r32f() },
     };
     WGPUBindGroup bg = cw__wg_group_cached(&w->sim_bg, G.sim_bgl, e, 8);
-    cp = wgpuCommandEncoderBeginComputePass(enc, &(WGPUComputePassDescriptor){ .label = SV("particles") });
+    if (!cp) cp = wgpuCommandEncoderBeginComputePass(enc, &(WGPUComputePassDescriptor){ .label = SV("particles") });
     wgpuComputePassEncoderSetPipeline(cp, G.sim);
     for (int s = 0; s < r->nsteps; s++) {
       uint32_t off = (uint32_t)(STEP_STRIDE * s);
@@ -991,17 +1006,15 @@ void cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft) {
     ft->stats.sort_passes += w->npass;
     sorted = w->npass > 0 || w->sort_n == 1;
   }
-  if (cp) {
-    wgpuComputePassEncoderEnd(cp);
-    wgpuComputePassEncoderRelease(cp);
-  }
+  *shared_cp = cp;
+  bool want_trail = d->trail_length >= 2 && w->hist && r->hist_count >= 2;
+  if (d->gpu_stats || want_trail) end_cp(shared_cp); /* copies run outside passes */
   if (d->gpu_stats) {
     if (!w->rb) w->rb = cw__wg_readback_new(32, 3, "particles stats readback");
     cw__wg_readback_request(w->rb, enc, w->part, (uint64_t)w->groups * 32, 0);
   }
 
   /* ── trails: state and history into textures ── */
-  bool want_trail = d->trail_length >= 2 && w->hist && r->hist_count >= 2;
   if (want_trail) {
     WGPUTexelCopyBufferInfo sb = { .layout = { .bytesPerRow = (uint32_t)w->tw * 32, .rowsPerImage = (uint32_t)w->trows },
                                    .buffer = w->state };
@@ -1015,11 +1028,24 @@ void cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft) {
     wgpuCommandEncoderCopyBufferToTexture(enc, &hb, &ht, &he);
   }
 
-  /* ── draw ── */
   bool mesh = d->draw_mode == DRAW_MESH;
   if (mesh) cw__psys_ensure_mesh(n, d, r);
-  bool draw_particles = !mesh || r->mesh_count;
-  if (!draw_particles && !want_trail) return;
+  w->model = model;
+  w->did_sort = sorted;
+  w->trail = want_trail;
+  w->particles = !mesh || r->mesh_count;
+  return w->particles || w->trail;
+}
+
+/* the second half: its draws, into the pass's one render pass */
+void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft) {
+  (void)n;
+  cw__psys *r = d->rt;
+  pw *w = r->wg;
+  const cw__wgpu_pass_targets *tg = cw__fx_pass_targets(ctx);
+  const t3_mat4 model = w->model;
+  bool sorted = w->did_sort, want_trail = w->trail, draw_particles = w->particles, mesh = d->draw_mode == DRAW_MESH;
+  /* ── draw ── */
   t3_vec3 campos = t3_mat4_get_position(&ctx->camera->base.matrix_world);
   float du[DRAW_SIZE / 4];
   uint32_t *dw = (uint32_t *)du;
@@ -1063,7 +1089,6 @@ void cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft) {
     { .view = w->htex_v ? w->htex_v : cw__fx_wg_dummy_rgba32f() },
   };
   WGPUBindGroup bg = cw__wg_group_cached(&w->draw_bg, G.draw_bgl, e, 7);
-  WGPURenderPassEncoder rp = cw__wg_scene_pass(tg, true, "particles");
   wgpuRenderPassEncoderSetBindGroup(rp, 0, bg, 0, NULL);
   if (want_trail) {
     wgpuRenderPassEncoderSetPipeline(rp, draw_pipe_for(V_TRAIL, d->blend == BLEND_OPAQUE ? BLEND_ALPHA : d->blend, tg));
@@ -1084,8 +1109,6 @@ void cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft) {
     }
     ft->stats.draw_calls++;
   }
-  wgpuRenderPassEncoderEnd(rp);
-  wgpuRenderPassEncoderRelease(rp);
 }
 
 /* tests: the keys buffer of a sorted system (n entries of key f32 + index

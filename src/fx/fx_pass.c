@@ -17,7 +17,7 @@ static void particles_exec(cw_pass_ctx *ctx, void *user) {
   (void)user;
   cw__fx_tree *ft = cw__fx_tree_of(ctx->tree);
   memset(&ft->stats, 0, sizeof ft->stats);
-  for (int i = 0; i < ft->systems.count; i++) cw__psys_frame(ft->systems.data[i], ctx, ft);
+  cw__psys_frames(ctx, ft);
   for (int i = 0; i < ft->trails.count; i++) cw__trail3d_draw(ft->trails.data[i], ctx, ft);
   ft->last_stats = ft->stats;
 #if CW_WGPU

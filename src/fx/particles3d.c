@@ -1198,15 +1198,40 @@ static void set_blend(int blend) {
   else glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
 }
 
-void cw__psys_frame(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
-  p3d *d = cw_node_data_t(n, p3d_t);
-  if (!d || !d->rt || d->amount <= 0 || d->lifetime <= 0) return;
+/* every system's frame. WebGPU: their compute work in one compute pass,
+ * then their draws in one render pass, in the systems' order (a render pass
+ * loads and stores the scene's targets: once a view, not once a system) */
+void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft) {
 #if CW_WGPU
   if (cw__wgpu_on()) {
-    cw__psys_frame_wgpu(n, d, ctx, ft);
+    int n = ft->systems.count;
+    bool *draws = cw_frame_alloc((size_t)(n ? n : 1));
+    WGPUComputePassEncoder cp = NULL;
+    bool any = false;
+    for (int i = 0; i < n; i++) {
+      p3d *d = cw_node_data_t(ft->systems.data[i], p3d_t);
+      draws[i] = d && d->rt && d->amount > 0 && d->lifetime > 0 && cw__psys_frame_wgpu(ft->systems.data[i], d, ctx, ft, &cp);
+      any |= draws[i];
+    }
+    if (cp) {
+      wgpuComputePassEncoderEnd(cp);
+      wgpuComputePassEncoderRelease(cp);
+    }
+    if (!any) return;
+    WGPURenderPassEncoder rp = cw__wg_scene_pass(cw__fx_pass_targets(ctx), true, "particles");
+    for (int i = 0; i < n; i++)
+      if (draws[i]) cw__psys_draw_wgpu(rp, ft->systems.data[i], cw_node_data_t(ft->systems.data[i], p3d_t), ctx, ft);
+    wgpuRenderPassEncoderEnd(rp);
+    wgpuRenderPassEncoderRelease(rp);
     return;
   }
 #endif
+  for (int i = 0; i < ft->systems.count; i++) cw__psys_frame(ft->systems.data[i], ctx, ft);
+}
+
+void cw__psys_frame(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
+  p3d *d = cw_node_data_t(n, p3d_t);
+  if (!d || !d->rt || d->amount <= 0 || d->lifetime <= 0) return;
   cw__psys *r = d->rt;
   if (r->idle && r->nsteps == 0 && !d->gpu_stats) { /* nothing alive, nothing to simulate (p3d_fixed) */
     ft->stats.systems++;
