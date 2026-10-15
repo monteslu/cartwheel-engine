@@ -85,7 +85,7 @@ int cw_nav_geom_add_world3d(cw_nav_geom *g, cw_world3d w, const cw_phys_filter *
 /* Bounds of every vertex; false when empty. */
 bool cw_nav_geom_bounds(const cw_nav_geom *g, t3_vec3 *bmin, t3_vec3 *bmax);
 void cw_nav_geom_clear(cw_nav_geom *g); /* empties it, keeps capacity */
-void cw_nav_geom_free(cw_nav_geom *g);
+void cw_nav_geom_free(cw_nav_geom *g); /* frees its arrays; it is empty and reusable afterwards */
 
 /* ── build ─────────────────────────────────────────────────────────────── */
 
@@ -120,7 +120,7 @@ typedef struct cw_nav_config {
   int max_search_nodes;    /* 2048: A* node pool per query (bounds a search's memory and work) */
   t3_vec3 bmin, bmax;      /* the area to build; all zero = the geometry's bounds */
 } cw_nav_config;
-cw_nav_config cw_nav_config_default(void);
+cw_nav_config cw_nav_config_default(void); /* the defaults noted in cw_nav_config above */
 
 /* Builds the navmesh: tiles in parallel on the job pool, added in (z, x)
  * order. Null (logged) on bad config, empty geometry or out of memory. */
@@ -130,7 +130,7 @@ cw_navmesh cw_navmesh_build(const cw_nav_config *config, const cw_nav_geom *geom
  * the original bounds are not added. Static navmeshes only. */
 bool cw_navmesh_rebuild_area(cw_navmesh nm, const cw_nav_geom *geom, t3_vec3 bmin, t3_vec3 bmax);
 void cw_navmesh_free(cw_navmesh nm); /* null or stale: no-op; frees its crowds too */
-bool cw_navmesh_valid(cw_navmesh nm);
+bool cw_navmesh_valid(cw_navmesh nm); /* false for a null, freed or failed navmesh */
 /* The navmesh as bytes (cw_alloc'd; free with cw_free): the config and every
  * tile, in tile order. Equal navmeshes give equal bytes on every host. A
  * dynamic navmesh saves its tile cache and its obstacles. NULL when invalid. */
@@ -148,7 +148,7 @@ typedef struct cw_navmesh_stats {
   int64_t bytes;             /* tile data */
   float build_ms;            /* the last build or update, wall time (never feeds state) */
 } cw_navmesh_stats;
-cw_navmesh_stats cw_navmesh_get_stats(cw_navmesh nm);
+cw_navmesh_stats cw_navmesh_get_stats(cw_navmesh nm); /* all zero for an invalid navmesh */
 
 /* ── queries ───────────────────────────────────────────────────────────
  * Points snap to the navmesh within the query extents (half sizes of a box
@@ -172,7 +172,7 @@ typedef struct cw_nav_hit {
   float t;
   t3_vec3 point, normal;
 } cw_nav_hit;
-bool cw_nav_raycast(cw_navmesh nm, t3_vec3 a, t3_vec3 b, const cw_nav_filter *filter, cw_nav_hit *out);
+bool cw_nav_raycast(cw_navmesh nm, t3_vec3 a, t3_vec3 b, const cw_nav_filter *filter, cw_nav_hit *out); /* see cw_nav_hit */
 /* A uniformly random navmesh point (area weighted), from rng. */
 bool cw_nav_random_point(cw_navmesh nm, const cw_nav_filter *filter, cw_rng *rng, t3_vec3 *out);
 /* A random point within radius of center, reachable from it. */
@@ -187,7 +187,7 @@ typedef struct cw_nav_path_req {
   const cw_nav_filter *filter; /* NULL = default */
 } cw_nav_path_req;
 void cw_nav_find_paths(cw_navmesh nm, const cw_nav_path_req *reqs, int count, t3_vec3 *pts, int max_points,
-                       int *counts);
+                       int *counts); /* see cw_nav_path_req */
 
 /* ── the per-tick query budget ─────────────────────────────────────────
  * Requests queue and are answered by cw_nav_tick: at most max_requests per
@@ -218,8 +218,8 @@ int cw_nav_pending_paths(cw_navmesh nm); /* requests not yet answered */
  * touched tiles rebuild in parallel and are committed in ascending tile
  * order. Ids are never 0; 0 means the obstacle could not be added. */
 uint32_t cw_nav_obstacle_add_cylinder(cw_navmesh nm, t3_vec3 base, float radius, float height);
-uint32_t cw_nav_obstacle_add_box(cw_navmesh nm, t3_vec3 center, t3_vec3 half, float y_rotation);
-bool cw_nav_obstacle_remove(cw_navmesh nm, uint32_t id);
+uint32_t cw_nav_obstacle_add_box(cw_navmesh nm, t3_vec3 center, t3_vec3 half, float y_rotation); /* half sizes; radians about y */
+bool cw_nav_obstacle_remove(cw_navmesh nm, uint32_t id); /* false for an unknown id or a full change queue */
 /* Applies queued obstacle changes; returns the tiles rebuilt. */
 int cw_nav_update(cw_navmesh nm);
 
@@ -251,7 +251,7 @@ typedef struct cw_crowd_agent_params {
                              * priority (equal priorities: half each; 0 makes the other avoid it all) */
 } cw_crowd_agent_params;
 #define CW_CROWD_MAX_NEIGHBORS 16
-cw_crowd_agent_params cw_crowd_agent_params_default(void);
+cw_crowd_agent_params cw_crowd_agent_params_default(void); /* the defaults noted in cw_crowd_agent_params above */
 
 typedef enum {
   CW_CROWD_IDLE,       /* no target */
@@ -274,17 +274,17 @@ typedef struct cw_crowd_agent_state {
 
 /* A crowd of up to max_agents agents on nm (null when nm is invalid). */
 cw_crowd cw_crowd_new(cw_navmesh nm, int max_agents);
-void cw_crowd_free(cw_crowd c);
-bool cw_crowd_valid(cw_crowd c);
+void cw_crowd_free(cw_crowd c); /* null or stale: no-op */
+bool cw_crowd_valid(cw_crowd c); /* false for a null or freed crowd (freeing its navmesh frees it) */
 /* Paths planned per step (oldest waiting agents first; 8) and search iterations each (0 = the node pool's limit). */
 void cw_crowd_set_plan_budget(cw_crowd c, int paths_per_step, int max_iters);
 void cw_crowd_set_filter(cw_crowd c, const cw_nav_filter *filter); /* NULL = default */
 /* Adds an agent at p (snapped to the navmesh); params NULL = defaults. Null
  * when the crowd is full or p is off the navmesh. */
 cw_crowd_agent cw_crowd_add(cw_crowd c, t3_vec3 p, const cw_crowd_agent_params *params);
-void cw_crowd_remove(cw_crowd c, cw_crowd_agent a);
-bool cw_crowd_agent_valid(cw_crowd c, cw_crowd_agent a);
-void cw_crowd_set_params(cw_crowd c, cw_crowd_agent a, const cw_crowd_agent_params *params);
+void cw_crowd_remove(cw_crowd c, cw_crowd_agent a); /* stale handle: no-op; the slot is reused lowest first */
+bool cw_crowd_agent_valid(cw_crowd c, cw_crowd_agent a); /* false once removed */
+void cw_crowd_set_params(cw_crowd c, cw_crowd_agent a, const cw_crowd_agent_params *params); /* NULL = defaults */
 /* Plans a path to target (snapped to the navmesh) at a coming step. */
 void cw_crowd_set_target(cw_crowd c, cw_crowd_agent a, t3_vec3 target);
 void cw_crowd_clear_target(cw_crowd c, cw_crowd_agent a); /* stops (IDLE) */
@@ -295,11 +295,11 @@ void cw_crowd_teleport(cw_crowd c, cw_crowd_agent a, t3_vec3 p); /* snapped; the
  * agent whose body something else moves (a character controller following
  * its velocity). Unlike a teleport, walls stop it. */
 void cw_crowd_set_position(cw_crowd c, cw_crowd_agent a, t3_vec3 p);
-bool cw_crowd_get_state(cw_crowd c, cw_crowd_agent a, cw_crowd_agent_state *out);
+bool cw_crowd_get_state(cw_crowd c, cw_crowd_agent a, cw_crowd_agent_state *out); /* false for an invalid agent */
 t3_vec3 cw_crowd_position(cw_crowd c, cw_crowd_agent a); /* zero when invalid */
 /* One fixed tick (dt in seconds; the same dt every tick for replays). */
 void cw_crowd_step(cw_crowd c, float dt);
-int cw_crowd_count(cw_crowd c);
+int cw_crowd_count(cw_crowd c); /* live agents */
 /* Live agents in index order (at most cap); returns the live count. */
 int cw_crowd_agents(cw_crowd c, cw_crowd_agent *out, int cap);
 /* A hash of every live agent's position, velocity and status, in index order. */
@@ -312,7 +312,7 @@ typedef struct cw_crowd_stats {
   float step_ms;          /* the last step, wall time (never feeds state) */
   float phase_ms[4];      /* paths, neighbours, steering, movement */
 } cw_crowd_stats;
-cw_crowd_stats cw_crowd_get_stats(cw_crowd c);
+cw_crowd_stats cw_crowd_get_stats(cw_crowd c); /* all zero for an invalid crowd */
 
 /* ── debug draw ────────────────────────────────────────────────────────
  * Appends line segments (physics.h's list; clear it between frames). */
@@ -326,8 +326,8 @@ enum {
   CW_NAV_DRAW_DEFAULT = CW_NAV_DRAW_POLYS | CW_NAV_DRAW_BOUNDARY | CW_NAV_DRAW_OBSTACLES | CW_NAV_DRAW_AGENTS |
                         CW_NAV_DRAW_PATHS,
 };
-void cw_nav_debug_draw(cw_navmesh nm, cw_phys_lines *out, uint32_t flags);
-void cw_crowd_debug_draw(cw_crowd c, cw_phys_lines *out, uint32_t flags);
+void cw_nav_debug_draw(cw_navmesh nm, cw_phys_lines *out, uint32_t flags); /* polygons, walls, tiles, obstacles */
+void cw_crowd_debug_draw(cw_crowd c, cw_phys_lines *out, uint32_t flags); /* agents and paths */
 /* A waypoint list as a polyline. */
 void cw_nav_debug_draw_path(cw_phys_lines *out, const t3_vec3 *pts, int count, uint32_t color);
 
@@ -343,7 +343,7 @@ void cw_nav_debug_draw_path(cw_phys_lines *out, const t3_vec3 *pts, int count, u
  * NavigationObstacle3D (Node3D): a cylinder or box carved out of a dynamic
  * region's navmesh while it is in the tree; moving it moves the hole. */
 cw_navmesh cw_nav_region_navmesh(cw_node region); /* null until baked or loaded */
-cw_crowd cw_nav_region_crowd(cw_node region);
+cw_crowd cw_nav_region_crowd(cw_node region); /* null until baked or loaded */
 /* Bakes now (replacing the navmesh; its agents are re-added). */
 bool cw_nav_region_bake(cw_node region);
 cw_crowd_agent cw_nav_agent_handle(cw_node agent); /* null while not in a crowd */

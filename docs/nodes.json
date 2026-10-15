@@ -7456,6 +7456,431 @@
    ]
   },
   {
+   "name": "NavigationRegion3D",
+   "parent": "Node3D",
+   "doc": "A navmesh baked from the meshes and static colliders under it (or loaded), and its crowd.",
+   "signals": [
+    "baked"
+   ],
+   "properties": [
+    {
+     "name": "cell_size",
+     "type": "float",
+     "default": "0.3",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 10,
+     "doc": "Voxel width, m."
+    },
+    {
+     "name": "cell_height",
+     "type": "float",
+     "default": "0.2",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 10,
+     "doc": "Voxel height, m."
+    },
+    {
+     "name": "agent_radius",
+     "type": "float",
+     "default": "0.6",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "The navmesh keeps this far from walls, m."
+    },
+    {
+     "name": "agent_height",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Headroom agents need, m."
+    },
+    {
+     "name": "agent_max_climb",
+     "type": "float",
+     "default": "0.9",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Steps agents walk up, m."
+    },
+    {
+     "name": "agent_max_slope",
+     "type": "float",
+     "default": "45",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 90,
+     "doc": "Steepest walkable slope, degrees."
+    },
+    {
+     "name": "tile_size",
+     "type": "int",
+     "default": "48",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 4096,
+     "doc": "Voxels per tile side (0 = one tile)."
+    },
+    {
+     "name": "dynamic",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Build through the tile cache, so NavigationObstacle3D nodes can carve it."
+    },
+    {
+     "name": "source",
+     "type": "enum",
+     "default": "BOTH",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "BOTH",
+      "MESHES",
+      "COLLIDERS"
+     ],
+     "doc": "What bakes: MeshInstance3D meshes, static colliders, or both."
+    },
+    {
+     "name": "collision_mask",
+     "type": "int",
+     "default": "4294967295",
+     "stored": true,
+     "readonly": false,
+     "doc": "Collider layers that bake (bits)."
+    },
+    {
+     "name": "navmesh_path",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Load this saved navmesh (cw_navmesh_save) instead of baking."
+    },
+    {
+     "name": "bake_on_ready",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bake on the first tick in the tree."
+    },
+    {
+     "name": "max_agents",
+     "type": "int",
+     "default": "512",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 65536,
+     "doc": "Crowd capacity (set before baking)."
+    },
+    {
+     "name": "paths_per_tick",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 4096,
+     "doc": "Agent paths planned per tick (oldest requests first)."
+    },
+    {
+     "name": "debug_draw",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Draw the navmesh, agents and paths."
+    },
+    {
+     "name": "polygon_count",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Navmesh polygons."
+    },
+    {
+     "name": "tile_count",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Navmesh tiles holding polygons."
+    },
+    {
+     "name": "agent_count",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Agents in the crowd."
+    },
+    {
+     "name": "build_ms",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "The last bake or obstacle update, ms."
+    },
+    {
+     "name": "crowd_step_ms",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "The last crowd step, ms."
+    }
+   ]
+  },
+  {
+   "name": "NavigationAgent3D",
+   "parent": "Node",
+   "doc": "A crowd agent that walks its parent Node3D along navmesh paths, avoiding other agents.",
+   "signals": [
+    "path_changed",
+    "target_reached",
+    "velocity_computed"
+   ],
+   "properties": [
+    {
+     "name": "target_position",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Where to go (world space); setting it plans a path."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 100,
+     "doc": "Avoidance radius, m."
+    },
+    {
+     "name": "height",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 100,
+     "doc": "Height, m (agents on other floors are not neighbours)."
+    },
+    {
+     "name": "max_speed",
+     "type": "float",
+     "default": "3.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "m/s."
+    },
+    {
+     "name": "max_accel",
+     "type": "float",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10000,
+     "doc": "m/s² (0 = no limit)."
+    },
+    {
+     "name": "neighbor_dist",
+     "type": "float",
+     "default": "6",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Neighbours within this distance are avoided, m."
+    },
+    {
+     "name": "max_neighbors",
+     "type": "int",
+     "default": "10",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 16,
+     "doc": "Neighbours avoided at most."
+    },
+    {
+     "name": "time_horizon",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 100,
+     "doc": "How far ahead other agents are avoided, s."
+    },
+    {
+     "name": "arrive_dist",
+     "type": "float",
+     "default": "0.3",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "The target counts as reached within this distance, m."
+    },
+    {
+     "name": "slowdown_dist",
+     "type": "float",
+     "default": "1.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Slows down within this distance of the target, m."
+    },
+    {
+     "name": "avoidance",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Avoid other agents (ORCA). Others avoid it either way."
+    },
+    {
+     "name": "avoidance_priority",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Higher: others give way more."
+    },
+    {
+     "name": "drive_parent",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Move the parent Node3D every tick. Off: the parent moves by velocity_computed and the agent follows it."
+    },
+    {
+     "name": "region",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path to its NavigationRegion3D (empty = the tree's first)."
+    },
+    {
+     "name": "status",
+     "type": "enum",
+     "default": "IDLE",
+     "stored": false,
+     "readonly": true,
+     "enum": [
+      "IDLE",
+      "WAITING",
+      "MOVING",
+      "ARRIVED",
+      "NO_PATH",
+      "VELOCITY"
+     ],
+     "doc": "IDLE, WAITING (for a path), MOVING, ARRIVED, NO_PATH or VELOCITY."
+    },
+    {
+     "name": "velocity",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "The velocity it moved with last tick."
+    },
+    {
+     "name": "is_navigation_finished",
+     "type": "bool",
+     "default": "true",
+     "stored": false,
+     "readonly": true,
+     "doc": "Arrived, unreachable or idle."
+    }
+   ]
+  },
+  {
+   "name": "NavigationObstacle3D",
+   "parent": "Node3D",
+   "doc": "A shape carved out of a dynamic NavigationRegion3D's navmesh while it is in the tree.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "shape",
+     "type": "enum",
+     "default": "CYLINDER",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "CYLINDER",
+      "BOX"
+     ],
+     "doc": "CYLINDER (standing on the node's origin) or BOX (centered on it, turned with it about y)."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "CYLINDER radius, m."
+    },
+    {
+     "name": "height",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "CYLINDER height, m."
+    },
+    {
+     "name": "size",
+     "type": "vec3",
+     "default": "vec3(1, 2, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "BOX full size, m."
+    },
+    {
+     "name": "region",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path to its NavigationRegion3D (empty = the tree's first)."
+    }
+   ]
+  },
+  {
    "name": "NetSynchronizer",
    "parent": "Node",
    "doc": "Replicates properties of root_path from its network authority to every other peer (cartwheel/net.h).",

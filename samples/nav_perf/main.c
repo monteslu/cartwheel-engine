@@ -61,6 +61,7 @@ static float best_build(const cw_nav_config *c, const cw_nav_geom *g, uint32_t *
 }
 
 static void run_crowd(cw_navmesh nm, int agents, float half, float *mean, float *worst, uint32_t *hash) {
+  /* #region crowd */
   cw_crowd cr = cw_crowd_new(nm, agents);
   cw_crowd_set_plan_budget(cr, 32, 0);
   cw_rng rng;
@@ -70,6 +71,7 @@ static void run_crowd(cw_navmesh nm, int agents, float half, float *mean, float 
     h[i] = cw_crowd_add(cr, (t3_vec3){ cw_rng_range(&rng, -half, half), 0, cw_rng_range(&rng, -half, half) }, NULL);
     cw_crowd_set_target(cr, h[i], (t3_vec3){ cw_rng_range(&rng, -half, half), 0, cw_rng_range(&rng, -half, half) });
   }
+  /* #endregion */
   double sum = 0;
   float mx = 0;
   uint64_t x = 0;
@@ -129,10 +131,12 @@ static void init(void *u) {
 static void bench(void) {
   threads = cw_jobs_thread_count();
 
+  /* #region build */
   cw_nav_geom big = { 0 }, small = { 0 };
   world_geom(&big, 4);
   world_geom(&small, 1);
   cw_nav_config c = cw_nav_config_default();
+  /* #endregion */
   build_ms = best_build(&c, &big, &mesh_hash);
   int static_tiles = tiles, static_polys = polys;
   cw_nav_config cd = c;
@@ -164,7 +168,9 @@ static void bench(void) {
     reqs[i].filter = NULL;
   }
   t0 = now_ms();
+  /* #region paths */
   cw_nav_find_paths(nm, reqs, NP, pts, MAXP, counts);
+  /* #endregion */
   paths_ms = (float)(now_ms() - t0);
   paths_hash = CW_HASH32_INIT;
   for (int i = 0; i < NP; i++) paths_hash = cw_hash32(&pts[i * MAXP], sizeof(t3_vec3) * (size_t)counts[i], paths_hash);

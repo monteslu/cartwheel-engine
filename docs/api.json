@@ -1535,7 +1535,7 @@
     {
      "name": "cw_mem_tag",
      "doc": "── tagged allocation ───────────────────────────────────────────────",
-     "decl": "typedef enum {\n  CW_MEM_GENERAL, CW_MEM_CORE, CW_MEM_SCENE, CW_MEM_RENDER, CW_MEM_RENDER2D, CW_MEM_PHYSICS, CW_MEM_AUDIO,\n  CW_MEM_ANIM, CW_MEM_UI, CW_MEM_RESOURCE, CW_MEM_SCRIPT, CW_MEM_GAME, CW_MEM_EDITOR, CW_MEM_TAG_COUNT\n} cw_mem_tag;"
+     "decl": "typedef enum {\n  CW_MEM_GENERAL, CW_MEM_CORE, CW_MEM_SCENE, CW_MEM_RENDER, CW_MEM_RENDER2D, CW_MEM_PHYSICS, CW_MEM_AUDIO,\n  CW_MEM_ANIM, CW_MEM_UI, CW_MEM_RESOURCE, CW_MEM_SCRIPT, CW_MEM_GAME, CW_MEM_EDITOR, CW_MEM_NAV, CW_MEM_TAG_COUNT\n} cw_mem_tag;"
     },
     {
      "name": "cw_mem_stats",
@@ -3061,6 +3061,476 @@
     },
     {
      "name": "CW_TAU",
+     "doc": ""
+    }
+   ]
+  },
+  {
+   "header": "cartwheel/nav.h",
+   "summary": "cartwheel navigation: navmeshes, path queries, obstacles and crowds.\n\n  build:    cw_nav_geom g = {0}; cw_nav_geom_add_world3d(&g, world, NULL, CW_NAV_AREA_WALK);\n            cw_nav_config c = cw_nav_config_default();\n            cw_navmesh nm = cw_navmesh_build(&c, &g);\n  query:    n = cw_nav_find_path(nm, from, to, NULL, pts, 64, NULL);\n  crowd:    cw_crowd cr = cw_crowd_new(nm, 500);\n            a = cw_crowd_add(cr, p, NULL); cw_crowd_set_target(cr, a, goal);\n            cw_crowd_step(cr, dt);  (every fixed tick)\n\nThe navmesh is Recast and Detour's (zlib; patches/recastnavigation):\ngeometry is voxelized per tile, tiles become convex polygons, and Detour\nanswers queries over them. The crowd is cartwheel's own C, with ORCA\navoidance ported from RVO2 (Apache-2.0, see NOTICE).\n\nDeterminism: a navmesh built from the same geometry and config has the same\nbytes (cw_navmesh_hash) and the same polygon refs on every host and at any\nworker count. Tiles build in parallel on the job pool and join the navmesh\nin (z, x) order; the Recast patches make sorting, trigonometry and memory\nidentical across C libraries. Queries, obstacle updates and crowd steps\ngive the same results everywhere too: the crowd's phases read the state\nof the step's start and write only their own agent, and budgets count\nrequests and search iterations, never time.\n\nThreads: build, update, tick and step from one thread at a time (the main\nthread, usually). The query calls (cw_nav_find_path, nearest, raycast,\nrandom point, poly height) are safe from job-pool threads while nothing\nchanges the navmesh: each pool thread has its own Detour query object.\n\nMemory: CW_MEM_NAV.",
+   "functions": [
+    {
+     "name": "cw_nav_filter_default",
+     "signature": "cw_nav_filter cw_nav_filter_default(void)",
+     "doc": "Every area allowed, every cost 1 (what NULL means for a filter argument).",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_geom_add_tris",
+     "signature": "void cw_nav_geom_add_tris(cw_nav_geom *g, const float *verts, int vert_count, const int32_t *idx, int tri_count, const t3_mat4 *xf, uint8_t area)",
+     "doc": "Appends triangles: verts (xyz per vertex), idx (3 per triangle; NULL =\nconsecutive triples), transformed by xf (NULL = identity), with one area.",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_geom_add_box",
+     "signature": "void cw_nav_geom_add_box(cw_nav_geom *g, t3_vec3 center, t3_vec3 half, uint8_t area)",
+     "doc": "An axis-aligned box's 12 triangles (a quick blocker or floor).",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_geom_add_object",
+     "signature": "void cw_nav_geom_add_object(cw_nav_geom *g, const t3_object *root, const t3_mat4 *xf, uint8_t area)",
+     "doc": "Every mesh in a three.c object tree (skinned meshes excluded), placed by\nxf (NULL: the root's matrix_world), each child by its own local matrix.",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_geom_add_world3d",
+     "signature": "int cw_nav_geom_add_world3d(cw_nav_geom *g, cw_world3d w, const cw_phys_filter *filter, uint8_t area)",
+     "doc": "The static bodies' shapes of a physics world (filter: their layers; NULL\n= every non-sensor shape), in body creation order: hulls and boxes by their\nfaces, meshes and height fields by their triangles, spheres and capsules\nas 8-sided prisms. Returns the triangles added.",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_geom_bounds",
+     "signature": "bool cw_nav_geom_bounds(const cw_nav_geom *g, t3_vec3 *bmin, t3_vec3 *bmax)",
+     "doc": "Bounds of every vertex; false when empty.",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_geom_clear",
+     "signature": "void cw_nav_geom_clear(cw_nav_geom *g)",
+     "doc": "empties it, keeps capacity",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_geom_free",
+     "signature": "void cw_nav_geom_free(cw_nav_geom *g)",
+     "doc": "frees its arrays; it is empty and reusable afterwards",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_config_default",
+     "signature": "cw_nav_config cw_nav_config_default(void)",
+     "doc": "the defaults noted in cw_nav_config above",
+     "inline": false
+    },
+    {
+     "name": "cw_navmesh_build",
+     "signature": "cw_navmesh cw_navmesh_build(const cw_nav_config *config, const cw_nav_geom *geom)",
+     "doc": "Builds the navmesh: tiles in parallel on the job pool, added in (z, x)\norder. Null (logged) on bad config, empty geometry or out of memory.",
+     "inline": false
+    },
+    {
+     "name": "cw_navmesh_rebuild_area",
+     "signature": "bool cw_navmesh_rebuild_area(cw_navmesh nm, const cw_nav_geom *geom, t3_vec3 bmin, t3_vec3 bmax)",
+     "doc": "Rebuilds the tiles that overlap [bmin, bmax] from new geometry (the whole\nscene's, or at least everything near the box), in parallel; tiles outside\nthe original bounds are not added. Static navmeshes only.",
+     "inline": false
+    },
+    {
+     "name": "cw_navmesh_free",
+     "signature": "void cw_navmesh_free(cw_navmesh nm)",
+     "doc": "null or stale: no-op; frees its crowds too",
+     "inline": false
+    },
+    {
+     "name": "cw_navmesh_valid",
+     "signature": "bool cw_navmesh_valid(cw_navmesh nm)",
+     "doc": "false for a null, freed or failed navmesh",
+     "inline": false
+    },
+    {
+     "name": "cw_navmesh_save",
+     "signature": "void *cw_navmesh_save(cw_navmesh nm, size_t *len)",
+     "doc": "The navmesh as bytes (cw_alloc'd; free with cw_free): the config and every\ntile, in tile order. Equal navmeshes give equal bytes on every host. A\ndynamic navmesh saves its tile cache and its obstacles. NULL when invalid.",
+     "inline": false
+    },
+    {
+     "name": "cw_navmesh_load",
+     "signature": "cw_navmesh cw_navmesh_load(const void *data, size_t len)",
+     "doc": "A navmesh from cw_navmesh_save's bytes; null (logged) on bad data.",
+     "inline": false
+    },
+    {
+     "name": "cw_navmesh_hash",
+     "signature": "uint64_t cw_navmesh_hash(cw_navmesh nm)",
+     "doc": "A hash of every tile's bytes in tile order: the cross-host determinism check.",
+     "inline": false
+    },
+    {
+     "name": "cw_navmesh_config",
+     "signature": "const cw_nav_config *cw_navmesh_config(cw_navmesh nm)",
+     "doc": "NULL when invalid",
+     "inline": false
+    },
+    {
+     "name": "cw_navmesh_get_stats",
+     "signature": "cw_navmesh_stats cw_navmesh_get_stats(cw_navmesh nm)",
+     "doc": "all zero for an invalid navmesh",
+     "inline": false
+    },
+    {
+     "name": "cw_navmesh_set_query_extents",
+     "signature": "void cw_navmesh_set_query_extents(cw_navmesh nm, t3_vec3 half_extents)",
+     "doc": "── queries ───────────────────────────────────────────────────────────\nPoints snap to the navmesh within the query extents (half sizes of a box\naround the point: 2, 4, 2 by default). filter NULL = cw_nav_filter_default.",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_nearest",
+     "signature": "bool cw_nav_nearest(cw_navmesh nm, t3_vec3 p, const cw_nav_filter *filter, t3_vec3 *out)",
+     "doc": "The nearest navmesh point to p; false when no polygon is within the extents.",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_height",
+     "signature": "bool cw_nav_height(cw_navmesh nm, t3_vec3 p, float *y)",
+     "doc": "The navmesh height under (or over) p: false off the navmesh.",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_find_path",
+     "signature": "int cw_nav_find_path(cw_navmesh nm, t3_vec3 a, t3_vec3 b, const cw_nav_filter *filter, t3_vec3 *pts, int max, bool *partial)",
+     "doc": "A path from a to b as straight-line waypoints (a first, b, or the reachable\npoint closest to it, last); returns the waypoint count (0: no path; at most\nmax). *partial (may be NULL): b is not reachable and the path ends near it.",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_raycast",
+     "signature": "bool cw_nav_raycast(cw_navmesh nm, t3_vec3 a, t3_vec3 b, const cw_nav_filter *filter, cw_nav_hit *out)",
+     "doc": "see cw_nav_hit",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_random_point",
+     "signature": "bool cw_nav_random_point(cw_navmesh nm, const cw_nav_filter *filter, cw_rng *rng, t3_vec3 *out)",
+     "doc": "A uniformly random navmesh point (area weighted), from rng.",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_random_point_near",
+     "signature": "bool cw_nav_random_point_near(cw_navmesh nm, t3_vec3 center, float radius, const cw_nav_filter *filter, cw_rng *rng, t3_vec3 *out)",
+     "doc": "A random point within radius of center, reachable from it.",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_find_paths",
+     "signature": "void cw_nav_find_paths(cw_navmesh nm, const cw_nav_path_req *reqs, int count, t3_vec3 *pts, int max_points, int *counts)",
+     "doc": "see cw_nav_path_req",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_request_path",
+     "signature": "uint32_t cw_nav_request_path(cw_navmesh nm, t3_vec3 from, t3_vec3 to, const cw_nav_filter *filter)",
+     "doc": "Queues a path; returns its ticket (never 0).",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_tick",
+     "signature": "void cw_nav_tick(cw_navmesh nm, int max_requests, int max_iters)",
+     "doc": "Answers up to max_requests queued requests (0 = all), each with at most max_iters iterations (0 = the node pool's limit).",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_take_path",
+     "signature": "cw_nav_path_status cw_nav_take_path(cw_navmesh nm, uint32_t ticket, t3_vec3 *pts, int max, int *count)",
+     "doc": "A request's status. Once answered (DONE, PARTIAL, FAILED) it copies up to\nmax waypoints into pts and their count into *count (both may be NULL) and\nforgets the ticket.",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_cancel_path",
+     "signature": "void cw_nav_cancel_path(cw_navmesh nm, uint32_t ticket)",
+     "doc": "forgets a queued or answered request",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_pending_paths",
+     "signature": "int cw_nav_pending_paths(cw_navmesh nm)",
+     "doc": "requests not yet answered",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_obstacle_add_cylinder",
+     "signature": "uint32_t cw_nav_obstacle_add_cylinder(cw_navmesh nm, t3_vec3 base, float radius, float height)",
+     "doc": "── obstacles (dynamic navmeshes) ─────────────────────────────────────\nAdding and removing queue a change; cw_nav_update applies the queue: the\ntouched tiles rebuild in parallel and are committed in ascending tile\norder. Ids are never 0; 0 means the obstacle could not be added.",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_obstacle_add_box",
+     "signature": "uint32_t cw_nav_obstacle_add_box(cw_navmesh nm, t3_vec3 center, t3_vec3 half, float y_rotation)",
+     "doc": "half sizes; radians about y",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_obstacle_remove",
+     "signature": "bool cw_nav_obstacle_remove(cw_navmesh nm, uint32_t id)",
+     "doc": "false for an unknown id or a full change queue",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_update",
+     "signature": "int cw_nav_update(cw_navmesh nm)",
+     "doc": "Applies queued obstacle changes; returns the tiles rebuilt.",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_agent_params_default",
+     "signature": "cw_crowd_agent_params cw_crowd_agent_params_default(void)",
+     "doc": "the defaults noted in cw_crowd_agent_params above",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_new",
+     "signature": "cw_crowd cw_crowd_new(cw_navmesh nm, int max_agents)",
+     "doc": "A crowd of up to max_agents agents on nm (null when nm is invalid).",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_free",
+     "signature": "void cw_crowd_free(cw_crowd c)",
+     "doc": "null or stale: no-op",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_valid",
+     "signature": "bool cw_crowd_valid(cw_crowd c)",
+     "doc": "false for a null or freed crowd (freeing its navmesh frees it)",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_set_plan_budget",
+     "signature": "void cw_crowd_set_plan_budget(cw_crowd c, int paths_per_step, int max_iters)",
+     "doc": "Paths planned per step (oldest waiting agents first; 8) and search iterations each (0 = the node pool's limit).",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_set_filter",
+     "signature": "void cw_crowd_set_filter(cw_crowd c, const cw_nav_filter *filter)",
+     "doc": "NULL = default",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_add",
+     "signature": "cw_crowd_agent cw_crowd_add(cw_crowd c, t3_vec3 p, const cw_crowd_agent_params *params)",
+     "doc": "Adds an agent at p (snapped to the navmesh); params NULL = defaults. Null\nwhen the crowd is full or p is off the navmesh.",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_remove",
+     "signature": "void cw_crowd_remove(cw_crowd c, cw_crowd_agent a)",
+     "doc": "stale handle: no-op; the slot is reused lowest first",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_agent_valid",
+     "signature": "bool cw_crowd_agent_valid(cw_crowd c, cw_crowd_agent a)",
+     "doc": "false once removed",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_set_params",
+     "signature": "void cw_crowd_set_params(cw_crowd c, cw_crowd_agent a, const cw_crowd_agent_params *params)",
+     "doc": "NULL = defaults",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_set_target",
+     "signature": "void cw_crowd_set_target(cw_crowd c, cw_crowd_agent a, t3_vec3 target)",
+     "doc": "Plans a path to target (snapped to the navmesh) at a coming step.",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_clear_target",
+     "signature": "void cw_crowd_clear_target(cw_crowd c, cw_crowd_agent a)",
+     "doc": "stops (IDLE)",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_set_velocity",
+     "signature": "void cw_crowd_set_velocity(cw_crowd c, cw_crowd_agent a, t3_vec3 v)",
+     "doc": "Moves at velocity v (xz; no path) while avoiding others, until a target is set.",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_teleport",
+     "signature": "void cw_crowd_teleport(cw_crowd c, cw_crowd_agent a, t3_vec3 p)",
+     "doc": "snapped; the path is replanned",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_set_position",
+     "signature": "void cw_crowd_set_position(cw_crowd c, cw_crowd_agent a, t3_vec3 p)",
+     "doc": "Moves the agent to p along the navmesh surface, keeping its path: for an\nagent whose body something else moves (a character controller following\nits velocity). Unlike a teleport, walls stop it.",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_get_state",
+     "signature": "bool cw_crowd_get_state(cw_crowd c, cw_crowd_agent a, cw_crowd_agent_state *out)",
+     "doc": "false for an invalid agent",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_position",
+     "signature": "t3_vec3 cw_crowd_position(cw_crowd c, cw_crowd_agent a)",
+     "doc": "zero when invalid",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_step",
+     "signature": "void cw_crowd_step(cw_crowd c, float dt)",
+     "doc": "One fixed tick (dt in seconds; the same dt every tick for replays).",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_count",
+     "signature": "int cw_crowd_count(cw_crowd c)",
+     "doc": "live agents",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_agents",
+     "signature": "int cw_crowd_agents(cw_crowd c, cw_crowd_agent *out, int cap)",
+     "doc": "Live agents in index order (at most cap); returns the live count.",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_hash",
+     "signature": "uint64_t cw_crowd_hash(cw_crowd c)",
+     "doc": "A hash of every live agent's position, velocity and status, in index order.",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_get_stats",
+     "signature": "cw_crowd_stats cw_crowd_get_stats(cw_crowd c)",
+     "doc": "all zero for an invalid crowd",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_debug_draw",
+     "signature": "void cw_nav_debug_draw(cw_navmesh nm, cw_phys_lines *out, uint32_t flags)",
+     "doc": "polygons, walls, tiles, obstacles",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_debug_draw",
+     "signature": "void cw_crowd_debug_draw(cw_crowd c, cw_phys_lines *out, uint32_t flags)",
+     "doc": "agents and paths",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_debug_draw_path",
+     "signature": "void cw_nav_debug_draw_path(cw_phys_lines *out, const t3_vec3 *pts, int count, uint32_t color)",
+     "doc": "A waypoint list as a polyline.",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_region_navmesh",
+     "signature": "cw_navmesh cw_nav_region_navmesh(cw_node region)",
+     "doc": "── scene nodes ───────────────────────────────────────────────────────\nNavigationRegion3D (Node3D): owns a navmesh and its crowd. It bakes from\nits subtree (MeshInstance3D meshes, StaticBody3D shapes when the tree has\na physics world) on ready or on cw_nav_region_bake, or loads one\n(`navmesh_path`). `debug_draw` shows the navmesh and its agents.\nNavigationAgent3D (Node): a crowd agent that moves its parent Node3D.\n`target_position` sets where it goes; signals path_changed, target_reached\nand velocity_computed (vec3). It joins the region named by `region` (a\nnode path), else the first region in the tree.\nNavigationObstacle3D (Node3D): a cylinder or box carved out of a dynamic\nregion's navmesh while it is in the tree; moving it moves the hole.\nnull until baked or loaded",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_region_crowd",
+     "signature": "cw_crowd cw_nav_region_crowd(cw_node region)",
+     "doc": "null until baked or loaded",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_region_bake",
+     "signature": "bool cw_nav_region_bake(cw_node region)",
+     "doc": "Bakes now (replacing the navmesh; its agents are re-added).",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_agent_handle",
+     "signature": "cw_crowd_agent cw_nav_agent_handle(cw_node agent)",
+     "doc": "null while not in a crowd",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_nav_filter",
+     "doc": "",
+     "decl": "typedef struct cw_nav_filter {\n  uint64_t exclude_areas;          /* bit n: never enter area n */\n  float area_cost[CW_NAV_AREAS];   /* multiplies distance through the area; must be >= 1 */\n} cw_nav_filter;"
+    },
+    {
+     "name": "cw_nav_geom",
+     "doc": "── input geometry ────────────────────────────────────────────────────\nA triangle soup in world space with an area per triangle. Fill it from\nany mix of sources; the build reads it and does not keep it.",
+     "decl": "typedef struct cw_nav_geom {\n  CW_ARRAY(float) verts;   /* x, y, z per vertex */\n  CW_ARRAY(int32_t) tris;  /* 3 vertex indices per triangle */\n  CW_ARRAY(uint8_t) areas; /* one per triangle */\n} cw_nav_geom;"
+    },
+    {
+     "name": "cw_nav_partition",
+     "doc": "── build ───────────────────────────────────────────────────────────────",
+     "decl": "typedef enum {\n  CW_NAV_PARTITION_WATERSHED, /* best polygons; the default */\n  CW_NAV_PARTITION_MONOTONE,  /* fastest; long thin polygons */\n  CW_NAV_PARTITION_LAYERS,    /* fast, no holes; good for tiles */\n} cw_nav_partition;"
+    },
+    {
+     "name": "cw_nav_config",
+     "doc": "",
+     "decl": "typedef struct cw_nav_config {\n  float cell_size;         /* 0.3: voxel width (world units) */\n  float cell_height;       /* 0.2: voxel height */\n  float agent_height;      /* 2.0: ceiling an agent needs */\n  float agent_radius;      /* 0.6: the navmesh keeps this far from walls */\n  float agent_max_climb;   /* 0.9: steps it walks up */\n  float agent_max_slope;   /* 45: degrees */\n  int tile_size;           /* 48: voxels per tile side; 0 = one tile over the whole bounds */\n  float region_min_size;   /* 8: smaller islands (in cells, sqrt of area) are dropped */\n  float region_merge_size; /* 20: smaller regions merge into neighbours */\n  float edge_max_len;      /* 12: longest polygon edge (world units; 0 = no limit) */\n  float edge_max_error;    /* 1.3: contour simplification (cells) */\n  int verts_per_poly;      /* 6: 3..6 */\n  float detail_sample_dist;      /* 6: height detail sampling (cells; 0 = no detail mesh) */\n  float detail_sample_max_error; /* 1: (cells) */\n  cw_nav_partition partition;    /* WATERSHED */\n  /* Dynamic navmeshes build through Detour's tile cache: obstacles can then\n   * be added and removed at run time (cw_nav_obstacle_*), each change\n   * rebuilding only the tiles it touches. They have no height detail mesh. */\n  bool dynamic;            /* false */\n  int max_obstacles;       /* 256 (dynamic only) */\n  int max_layers;          /* 8: stacked floors per tile (dynamic only) */\n  int max_search_nodes;    /* 2048: A* node pool per query (bounds a search's memory and work) */\n  t3_vec3 bmin, bmax;      /* the area to build; all zero = the geometry's bounds */\n} cw_nav_config;"
+    },
+    {
+     "name": "cw_navmesh_stats",
+     "doc": "",
+     "decl": "typedef struct cw_navmesh_stats {\n  int tiles, polys, verts;   /* tiles holding polygons; their polygons and vertices */\n  int tiles_x, tiles_z;      /* the tile grid */\n  int obstacles;             /* live obstacles (dynamic) */\n  int64_t bytes;             /* tile data */\n  float build_ms;            /* the last build or update, wall time (never feeds state) */\n} cw_navmesh_stats;"
+    },
+    {
+     "name": "cw_nav_hit",
+     "doc": "Walks the navmesh surface from a toward b: false when a is off the mesh.\nhit: a wall stops the ray; t in [0, 1] is how far (1 = reached b), normal\nthe wall's (xz) and point where it stopped.",
+     "decl": "typedef struct cw_nav_hit {\n  bool hit;\n  float t;\n  t3_vec3 point, normal;\n} cw_nav_hit;"
+    },
+    {
+     "name": "cw_nav_path_req",
+     "doc": "Many paths at once, in parallel on the job pool: request i writes up to\nmax_points waypoints at pts[i * max_points] and its count at counts[i]\n(the same answer as cw_nav_find_path).",
+     "decl": "typedef struct cw_nav_path_req {\n  t3_vec3 from, to;\n  const cw_nav_filter *filter; /* NULL = default */\n} cw_nav_path_req;"
+    },
+    {
+     "name": "cw_nav_path_status",
+     "doc": "── the per-tick query budget ─────────────────────────────────────────\nRequests queue and are answered by cw_nav_tick: at most max_requests per\ntick, oldest first, each searching at most max_iters A* iterations (a path\nthat runs out ends at the closest point found: partial). Which requests a\ntick answers, and their answers, depend only on the request order and the\nbudget: never on time or thread count. Answers run in parallel.",
+     "decl": "typedef enum {\n  CW_NAV_PATH_UNKNOWN,  /* no such ticket (never issued, or already taken) */\n  CW_NAV_PATH_PENDING,  /* queued */\n  CW_NAV_PATH_DONE,     /* a complete path */\n  CW_NAV_PATH_PARTIAL,  /* the best path the budget or the navmesh allowed */\n  CW_NAV_PATH_FAILED,   /* an end is off the navmesh */\n} cw_nav_path_status;"
+    },
+    {
+     "name": "cw_crowd_agent_params",
+     "doc": "── crowds ────────────────────────────────────────────────────────────\nAgents on a navmesh that steer along their paths and avoid each other\n(ORCA: optimal reciprocal collision avoidance). cw_crowd_step advances\nevery agent one fixed tick in four phases on the job pool:\n  1. paths: the oldest agents waiting for one get it (the plan budget),\n  2. neighbours: a grid by counting sort, then each agent's nearest\n     (distance, then index),\n  3. steering and avoidance: each agent's velocity from its path corners\n     and its neighbours' velocities at the step's start,\n  4. movement: each agent moves along the navmesh surface.\nAgent iteration is in index order and every phase writes only its own\nagent, so a step's result is the same at any worker count.",
+     "decl": "typedef struct cw_crowd_agent_params {\n  float radius;         /* 0.5 */\n  float height;         /* 2 */\n  float max_speed;      /* 3.5 (units/s) */\n  float max_accel;      /* 8 (units/s²) */\n  float neighbor_dist;  /* 6: neighbours within this distance are avoided */\n  int max_neighbors;    /* 10 (at most CW_CROWD_MAX_NEIGHBORS) */\n  float time_horizon;   /* 2 s: how far ahead other agents are avoided */\n  float arrive_dist;    /* 0.3: the target counts as reached within this distance */\n  float slowdown_dist;  /* 1.5: speed falls off within this distance of the target */\n  bool avoidance;       /* true: ORCA against other agents (others avoid this one either way) */\n  float avoidance_priority; /* 0.5: between two agents each avoids in proportion to the OTHER's\n                             * priority (equal priorities: half each; 0 makes the other avoid it all) */\n} cw_crowd_agent_params;"
+    },
+    {
+     "name": "cw_crowd_agent_status",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_CROWD_IDLE,       /* no target */\n  CW_CROWD_WAITING,    /* target set, its path not planned yet */\n  CW_CROWD_MOVING,\n  CW_CROWD_ARRIVED,    /* within arrive_dist of the target */\n  CW_CROWD_NO_PATH,    /* target unreachable (the agent stays put) */\n  CW_CROWD_VELOCITY,   /* moving by cw_crowd_set_velocity */\n} cw_crowd_agent_status;"
+    },
+    {
+     "name": "cw_crowd_agent_state",
+     "doc": "",
+     "decl": "typedef struct cw_crowd_agent_state {\n  t3_vec3 position, velocity;\n  t3_vec3 desired_velocity;  /* before avoidance */\n  t3_vec3 target, next_corner;\n  cw_crowd_agent_status status;\n  bool partial;              /* the path ends short of the target */\n  int path_polys;            /* corridor length */\n  uint32_t path_version;     /* bumped whenever a new path is taken */\n} cw_crowd_agent_state;"
+    },
+    {
+     "name": "cw_crowd_stats",
+     "doc": "",
+     "decl": "typedef struct cw_crowd_stats {\n  int agents, moving, waiting;\n  int paths_planned;      /* during the last step */\n  int neighbor_pairs;     /* neighbours found in the last step */\n  float step_ms;          /* the last step, wall time (never feeds state) */\n  float phase_ms[4];      /* paths, neighbours, steering, movement */\n} cw_crowd_stats;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_NAV_AREA_NONE",
+     "doc": "── areas and filters ─────────────────────────────────────────────────\nEvery triangle of the input carries an area id: 0 is not walkable, 1..63\nare walkable kinds of ground (CW_NAV_AREA_WALK is the default). Polygons\nkeep their area; filters exclude areas and weigh their cost."
+    },
+    {
+     "name": "CW_NAV_AREA_WALK",
+     "doc": ""
+    },
+    {
+     "name": "CW_NAV_AREAS",
+     "doc": ""
+    },
+    {
+     "name": "CW_CROWD_MAX_NEIGHBORS",
      "doc": ""
     }
    ]

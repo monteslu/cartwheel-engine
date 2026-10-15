@@ -60,8 +60,10 @@ See [Input](guide:input).
 | joints | `Joint2D`, `Joint3D` (`joint_type` selects the kind) | |
 | collision layers and masks | `collision_layer`, `collision_mask` on every collision object; names in `layer_names_2d` / `layer_names_3d` | |
 | `PhysicsDirectSpaceState.intersect_ray` | `cw_world2d_raycast`, `cw_world3d_raycast` and the batch and overlap queries | |
+| `NavigationRegion3D`, `NavigationAgent3D`, `NavigationObstacle3D` | same names | `target_position`, signals `path_changed`, `target_reached`, `velocity_computed`; avoidance is ORCA as in Godot; obstacles carve the navmesh of a `dynamic` region; no 2D navigation nodes yet |
+| `NavigationServer3D` map and path queries | `cw_nav_find_path`, `cw_nav_raycast`, `cw_nav_nearest`, crowds in C ([cartwheel/nav.h](header:nav.h)) | |
 
-See [Physics](guide:physics).
+See [Physics](guide:physics) and [Navigation](guide:navigation).
 
 ## 2D, 3D and UI
 
@@ -106,4 +108,4 @@ See [Animation](guide:animation), [Audio](guide:audio), [Networking](guide:netwo
 
 ## Not there yet
 
-No equivalent today: `Timer` nodes (count ticks in `fixed_update` or use a tween interval), `NavigationRegion` / `NavigationAgent`, `Skeleton3D` as a node (glTF bones are animated through bone tracks), `MultiMeshInstance3D`, `SubViewport` and render-to-texture nodes, `Path2D` / `Path3D` and `PathFollow`, audio player nodes, a save-game store, and any scripting language.
+No equivalent today: `Timer` nodes (count ticks in `fixed_update` or use a tween interval), 2D navigation nodes, `Skeleton3D` as a node (glTF bones are animated through bone tracks), `MultiMeshInstance3D`, `SubViewport` and render-to-texture nodes, `Path2D` / `Path3D` and `PathFollow`, audio player nodes, a save-game store, and any scripting language.

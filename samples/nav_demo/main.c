@@ -48,12 +48,14 @@ static t3_vec3 random_point(void) {
 }
 
 /* target_reached: off to another random point */
+/* #region reached */
 static void on_reached(cw_node agent, const cw_value *args, int argc, void *user) {
   (void)args, (void)argc, (void)user;
   G.arrivals++;
   t3_vec3 t = random_point();
   cw_node_set(agent, "target_position", cw_val_vec3(t.x, t.y, t.z));
 }
+/* #endregion */
 
 static void build_level(cw_node region) {
   nav_level_box b[64];
@@ -82,6 +84,7 @@ static void spawn_agents(cw_node parent) {
     cw_node_set(mesh, "size", cw_val_vec3(0.8f, 1.6f, 0.8f));
     cw_node3d_set_position(mesh, (t3_vec3){ 0, 0.8f, 0 });
     cw_node_set(mesh, "color", east ? cw_val_color(0.95f, 0.55f, 0.15f, 1) : cw_val_color(0.2f, 0.6f, 1.0f, 1));
+    /* #region agent */
     cw_node nav = cw_node_new("NavigationAgent3D", "Nav");
     cw_node_add_child(body, nav);
     cw_node_set(nav, "radius", cw_val_float(0.45));
@@ -89,6 +92,7 @@ static void spawn_agents(cw_node parent) {
     t3_vec3 t = random_point();
     cw_node_set(nav, "target_position", cw_val_vec3(t.x, t.y, t.z));
     cw_connect(nav, "target_reached", (cw_node){ 0 }, NULL, on_reached, NULL, 0);
+    /* #endregion */
   }
 }
 

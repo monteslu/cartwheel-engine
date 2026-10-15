@@ -21,6 +21,7 @@
         "resources",
         "input",
         "physics",
+        "navigation",
         "rendering-3d",
         "rendering-2d",
         "ui",
