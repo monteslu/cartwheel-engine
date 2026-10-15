@@ -42,8 +42,9 @@ export async function run(ctx) {
 
 Run ${name}.exe. ${dawn ? `Renders with WebGPU (Dawn on Direct3D 12) and falls back to
 OpenGL ES 3.0 through ANGLE on Direct3D 11 when WebGPU does not start; the
-environment variable CW_GPU=gl or CW_GPU=webgpu picks one.${vc ? '' : `
-Needs the Microsoft Visual C++ Redistributable (x64) for WebGPU.`}` : `Rendering is OpenGL ES 3.0 through ANGLE on Direct3D 11.`}
+environment variable CW_GPU=gl or CW_GPU=webgpu picks one. Dawn uses
+Microsoft's Visual C++ runtime: the msvcp140 / vcruntime140 DLLs beside the
+game when they are there, else the Visual C++ Redistributable (x64).` : `Rendering is OpenGL ES 3.0 through ANGLE on Direct3D 11.`}
 Keep every file in this folder together. Exported with cartwheel's tools/cwexport.
 `.replace(/\n/g, '\r\n'));
   ctx.progress(80, 'zip');
