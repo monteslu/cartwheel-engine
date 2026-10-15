@@ -425,6 +425,9 @@ bool cw__sdl_init(void) {
     const char *vdrv = SDL_GetCurrentVideoDriver();
     bool offscreen = vdrv && !strcmp(vdrv, "offscreen");
     Uint32 wflags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE | (wgpu ? (offscreen ? 0 : CW_WGPU_WINDOW_FLAGS) : SDL_WINDOW_OPENGL);
+    /* WebGPU: no graphics API of SDL's own on the window (on macOS SDL would
+     * otherwise give a flagless window GL, and load the GLES library) */
+    SDL_SetHint(SDL_HINT_VIDEO_EXTERNAL_CONTEXT, wgpu ? "1" : "0");
 #if !CW_CART
     { /* a desktop window larger than the display: lower the scale to fit (the
        * logical size stays), never below 1 */
