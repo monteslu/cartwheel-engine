@@ -8599,6 +8599,143 @@
    "macros": []
   },
   {
+   "header": "cartwheel/shell.h",
+   "summary": "cartwheel/shell.h: the plumbing around a game's play, so a game writes only\nits gameplay and art.\n\n  loading screen -> title (Play, Settings, Quit) -> join (1-4 players) ->\n  play <-> pause (Resume, Settings, Quit to title)\n\nSettings: the graphics preset (cartwheel/quality.h) with the resolution it\nrenders at, music and effects volume, and the controls (each action's\nbindings). They are saved, with the game's own save data, in one\nversioned, checksummed block the shell keeps in cw_app_desc.save.\n\n  static cw_app_desc desc = { ... };\n  desc.save = cw_shell_save_region();          // in cw_main\n  desc.save_size = cw_shell_save_region_size();\n\n  static void init(void) {\n    cw_shell_init(&(cw_shell_desc){ .title = \"My Game\", .max_players = 4,\n                                    .game_save_size = sizeof(my_save), .start = start_match });\n    my_save *s = cw_shell_game_save();         // zeroed when there was none\n  }\n  static void fixed_update(double dt) {\n    if (!cw_shell_update()) return;            // menus own this tick\n    ... gameplay for cw_shell_players() players ...\n  }\n  static void render(double alpha) {\n    ... the game's frame ...\n    cw_shell_draw();                           // menus and overlays on top\n  }\n\nInput: menus read the actions ui_up, ui_down, ui_left, ui_right,\nui_accept, ui_back and pause, which the shell defines (keyboard arrows and\nWASD, Enter / Space, Escape; pad d-pad and left stick, South, East,\nStart), and pointer taps (mouse or touch) on menu items. On the join\nscreen each pad joins with South and leaves with East, the keyboard joins\nwith Enter; players are assigned their pad and devices (cw_input_assign)\nin join order, so gameplay asks cw_action_* for players 0..n-1.\n\nSplit screen: cw_shell_split lays one view per player out with the\npipeline (cw_pipeline_split: two side by side, three and four in quadrants,\nthree leaving the fourth quadrant for a shared HUD); cw_shell_player_rect\nand cw_shell_shared_rect give the HUD where to draw.\n\nAudio: the shell starts the mixer (cw_audio_init) unless the game did,\nand then runs its per-frame update from cw_shell_draw. Two buses under the master, \"music\" and \"sfx\", follow the volume\nsettings; play the game's music and effects on them. The sound hook plays\nthe menus' sounds (move, select, back, join, pause), the screen hook starts\neach screen's music.\n\nA scene app's tree (cw_scene_app) is paused outside play, so its nodes\nhold still under the menus.\n\nDeterminism: menus run in fixed_update from the input snapshot, so a\nreplay drives them like gameplay. A test or an autopilot build skips them\nwith cw_shell_start. Debug fields: shell.screen, shell.players, shell.item.",
+   "functions": [
+    {
+     "name": "cw_shell_save_region",
+     "signature": "void *cw_shell_save_region(void)",
+     "doc": "The save region for cw_app_desc.save / save_size: the shell's settings and\nthe game's save data. Static, so cw_main can name it before init.",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_save_region_size",
+     "signature": "size_t cw_shell_save_region_size(void)",
+     "doc": "its size in bytes",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_init",
+     "signature": "void cw_shell_init(const cw_shell_desc *d)",
+     "doc": "Call once in init (the save is loaded by then): checks the save, applies\nthe saved settings, defines the ui actions and the audio buses.",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_game_save",
+     "signature": "void *cw_shell_game_save(void)",
+     "doc": "The game's save data: game_save_size bytes, zeroed when the save was\nmissing or from another version. Write it, then cw_shell_save_commit.",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_save_commit",
+     "signature": "void cw_shell_save_commit(void)",
+     "doc": "write the settings and the game's save data now",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_update",
+     "signature": "bool cw_shell_update(void)",
+     "doc": "fixed_update, first: runs the menus; true when gameplay runs this tick.",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_draw",
+     "signature": "void cw_shell_draw(void)",
+     "doc": "render, last: draws the current screen's menu or overlay (its own 2D pass).",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_screen_now",
+     "signature": "cw_shell_screen cw_shell_screen_now(void)",
+     "doc": "the screen showing",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_players",
+     "signature": "int cw_shell_players(void)",
+     "doc": "players in the match (1..max_players)",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_start",
+     "signature": "void cw_shell_start(int players)",
+     "doc": "Start a match now with n players (pads 0..n-1, player 0 also on the\nkeyboard, mouse and touch): an autopilot build or a test skips the menus.",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_to_title",
+     "signature": "void cw_shell_to_title(void)",
+     "doc": "end the match and show the title (every pad drives the menus again)",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_loading",
+     "signature": "void cw_shell_loading(float progress)",
+     "doc": "Loading: progress 0..1 shown on the loading screen; loaded goes on to the title.",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_loaded",
+     "signature": "void cw_shell_loaded(void)",
+     "doc": "loading done: on to the title",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_music_bus",
+     "signature": "cw_bus cw_shell_music_bus(void)",
+     "doc": "play music here: it follows the Music volume",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_sfx_bus",
+     "signature": "cw_bus cw_shell_sfx_bus(void)",
+     "doc": "play effects here: they follow the Effects volume",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_split",
+     "signature": "int cw_shell_split(cw_pipeline *p, const cw_node *cameras)",
+     "doc": "One view per player (cameras[0..players-1]) when there is more than one\nplayer; a single player's camera fills the output. p NULL: a scene app's\npipeline (cw_scene_app). Returns the views set.",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_player_rect",
+     "signature": "cw_rect cw_shell_player_rect(int player)",
+     "doc": "A player's part of the canvas (2D pass units): the whole canvas for one player.",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_shared_rect",
+     "signature": "cw_rect cw_shell_shared_rect(void)",
+     "doc": "Three players: the fourth quadrant, for a shared HUD (a map, the scores);\notherwise an empty rect.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_shell_screen",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_SHELL_LOADING,  /* the game is loading (cw_shell_loading / cw_shell_loaded) */\n  CW_SHELL_TITLE,\n  CW_SHELL_JOIN,     /* players join (max_players > 1) */\n  CW_SHELL_PLAY,     /* gameplay: cw_shell_update returns true */\n  CW_SHELL_PAUSE,\n  CW_SHELL_SETTINGS, /* from the title or the pause menu */\n} cw_shell_screen;"
+    },
+    {
+     "name": "cw_shell_sound",
+     "doc": "",
+     "decl": "typedef enum { CW_SHELL_SND_MOVE, CW_SHELL_SND_SELECT, CW_SHELL_SND_BACK, CW_SHELL_SND_JOIN, CW_SHELL_SND_PAUSE } cw_shell_sound;"
+    },
+    {
+     "name": "cw_shell_desc",
+     "doc": "",
+     "decl": "typedef struct cw_shell_desc {\n  const char *title;      /* the title screen's heading (default \"cartwheel\") */\n  const char *subtitle;   /* a line under it (optional) */\n  int max_players;        /* 1..4 (default 1); more than 1 adds the join screen */\n  bool loading;           /* start on the loading screen until cw_shell_loaded */\n  size_t game_save_size;  /* bytes of the game's own save data (cw_shell_game_save) */\n  uint16_t game_save_version; /* change it when that layout changes: an older save starts over */\n  void (*start)(int players, void *user);   /* Play: the players joined; set the match up */\n  void (*quit)(void *user);                 /* Quit to title, from the pause menu */\n  void (*sound)(cw_shell_sound s, void *user);\n  void (*screen_changed)(cw_shell_screen from, cw_shell_screen to, void *user);\n  cw_font font;           /* default: the built-in sans (cw_ui_font_sans) */\n  cw_color accent;        /* the selected item's colour (default a warm yellow) */\n  void *user;\n} cw_shell_desc;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_SHELL_GAME_SAVE_MAX",
+     "doc": ""
+    }
+   ]
+  },
+  {
    "header": "cartwheel/triggers.h",
    "summary": "Triggers: data-driven \"when X then Y\" rules stored in scenes (the tier-3\nlayer of SUBSYSTEMS 8.3 that needs no script VM). A Trigger is a node:\n\n  [node name=\"OnGoal\" type=\"Trigger\" parent=\"Goal\"]\n  signal = \"body_entered\"\n  filter_group = \"player\"\n  action = SET\n  target = \"../Lamp\"\n  member = \"color\"\n  value = \"color(0.2, 1, 0.3, 1)\"\n\nreads \"when Goal emits body_entered with a node of group player, set\nLamp.color\". Being a node, a trigger round-trips through .cwscene text,\nshows in the editor's scene tree and inspector, undoes like any edit and\nis readable and writable as plain text.\n\nSemantics (deliberately small):\n  - source (default \"..\", the trigger's parent): the node whose `signal`\n    fires the rule. Paths are relative to the Trigger node (\"..\",\n    \"../Lamp\", \"/root/Level/Door\", \"%Unique\").\n  - The rule connects when the trigger becomes ready (its source is\n    resolved then; a missing source or a signal the source's type does not\n    declare is a warning naming the fix) and disconnects when it leaves the\n    tree. Changing source/signal/enabled at runtime reconnects.\n  - Firing is DEFERRED: actions run at the end of the phase that emitted\n    the signal, in emission order, so a rule may free, spawn or change the\n    scene safely from a physics callback.\n  - filter_group: fire only when the signal's first argument is a node in\n    that group (body_entered from the player, not from a crate). Empty =\n    always.\n  - once: fire at most once per trigger life (a pickup, a cutscene).\n  - enabled: false = never fire (another trigger may SET it true).\n  - Several triggers on one signal fire in tree order; one trigger does one\n    action (chain more by adding triggers, or EMIT a signal another trigger\n    listens to).\n  - Actions (member and value are text; target defaults to \"..\"):\n      SET           target.member = value (parsed for the property: enums\n                    by name, \"color(1, 0, 0, 1)\", vec2(...), 3.5, true, text)\n      CALL          the method `member` of target (cw_node_type_add_method or\n                    the method resolver); with value empty the signal's\n                    arguments are passed, else value parsed as the method's\n                    first argument type\n      EMIT          target emits signal `member` with the signal's arguments\n      SPAWN         instance the scene file `value` as a child of target\n                    (member, when set, names the new node)\n      FREE          free target (and its subtree)\n      CHANGE_SCENE  the scene app's main scene becomes `value`\n  - fired (read-only, not saved): how many times the rule ran; the debug\n    channel reads it (`get <trigger> fired`).\nAnything per entity or per frame belongs in C (tier 1/2): triggers are for\nthe handful of \"when this happens, do that\" rules a human tweaks.",
    "functions": [

@@ -41,16 +41,30 @@ their licenses next to them (`CREDITS`, `CREDITS.txt`, `*-OFL.txt`).
 
 | Target | How it is built | State |
 |---|---|---|
-| Linux x64 | `scripts/build.sh`, or the `linux-x64` export (tarball and AppImage, glibc 2.31 floor) | built and run |
-| Linux arm64 | the `linux-arm64` export (cross-compiled) | builds; not run on arm64 hardware |
-| Windows x64 | the `windows-x64` export, cross-compiled from Linux with llvm-mingw, GLES through ANGLE (D3D11) | builds; run under Wine, not yet on real Windows |
-| Android arm64 | the `android-arm64` export (NDK, Gradle) | builds; run on the Android emulator |
+| Linux x64 | `scripts/build.sh`, or the `linux-x64` export (tarball and AppImage) | built and run |
+| Linux arm64 | the `linux-arm64` export, natively on an arm64 machine or cross-compiled | built and run (CI, arm64 runner) |
+| Windows x64 | the `windows-x64` export, cross-compiled from Linux with llvm-mingw | built; run in CI on a Windows runner |
+| macOS arm64 | the `macos` export, on a Mac with Xcode's clang | built; run in CI on a macOS runner; signed ad hoc, not notarized |
+| Android arm64 | the `android-arm64` export (NDK, Gradle) | built; run on the Android emulator |
 | Web | the `web` export: a static site around the wasmcart web player | built and run in Chromium |
 | wasmcart | `scripts/build.sh` (see below) | built and run on the wasmcart hosts listed below |
 
-macOS and iOS are not supported yet: the exporter writes Xcode project kits
-for them, but they have not been built. Exports are covered in
-[docs/export.md](docs/export.md).
+Native builds render with WebGPU through Dawn
+([native-dawn](https://github.com/monteslu/native-dawn): Vulkan on Linux and
+Android, Direct3D 12 on Windows, Metal on macOS) and fall back to OpenGL ES
+3.0 when WebGPU does not start: the system's GLES on Linux and Android, ANGLE
+on Windows (Direct3D 11) and macOS (Metal), from
+[native-gles](https://github.com/monteslu/native-gles)' releases. An exported
+game picks WebGPU itself; a development build renders with GL unless
+`CW_GPU=webgpu`. iOS is an Xcode project kit, not built yet. Exports are
+covered in [docs/export.md](docs/export.md).
+
+Each release also carries prebuilt SDKs, one per target: a game builds
+against the SDK and compiles only its own code
+([docs/sdk.md](docs/sdk.md)). [docs/shipping.md](docs/shipping.md) goes
+from a game repository to published builds for every platform, and
+[cartwheel-starter](https://github.com/monteslu/cartwheel-starter) is a
+template repository with all of it set up.
 
 ## Repository layout
 

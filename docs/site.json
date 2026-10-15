@@ -24,6 +24,7 @@
         "rendering-3d",
         "rendering-2d",
         "ui",
+        "game-shell",
         "animation",
         "audio",
         "networking",
@@ -42,6 +43,8 @@
     {
       "title": "Shipping and testing",
       "guides": [
+        "shipping",
+        "sdk",
         "export",
         "profiling",
         "testing"
@@ -64,6 +67,8 @@
   "files": {
     "export": "docs/export.md",
     "conventions": "docs/CONVENTIONS.md",
-    "authoring": "docs/AUTHORING.md"
+    "authoring": "docs/AUTHORING.md",
+    "shipping": "docs/shipping.md",
+    "sdk": "docs/sdk.md"
   }
 }
