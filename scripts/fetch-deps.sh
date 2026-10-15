@@ -190,11 +190,12 @@ while read -r name src rev sha; do
   esac
 done < "$ROOT/scripts/deps.lock"
 
-# wasmcart's Node tooling (pack, the reference hosts) needs its packages
-if [ -d "$DEPS/wasmcart" ] && [ ! -d "$DEPS/wasmcart/node_modules" ]; then
+# wasmcart's Node tooling (pack, the reference hosts) needs its packages (a
+# checkout: an SDK carries the few it uses, and no lockfile)
+if [ -f "$DEPS/wasmcart/package-lock.json" ] && [ ! -d "$DEPS/wasmcart/node_modules" ]; then
   (cd "$DEPS/wasmcart" && npm ci --no-audit --no-fund >/dev/null)
 fi
 # the WebGPU tier's hosts (webgpu-node, playwright) for the dual-cart runs
-if [ -d "$DEPS/wasmcart-wgpu" ] && [ ! -d "$DEPS/wasmcart-wgpu/node_modules" ]; then
+if [ -f "$DEPS/wasmcart-wgpu/package-lock.json" ] && [ ! -d "$DEPS/wasmcart-wgpu/node_modules" ]; then
   (cd "$DEPS/wasmcart-wgpu" && npm ci --no-audit --no-fund >/dev/null)
 fi

@@ -25,3 +25,12 @@ add_executable(cwpack main.c util.c import_gltf.c import_texture.c import_audio.
 target_include_directories(cwpack PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${DEPS}/meshoptimizer/extern)
 target_compile_options(cwpack PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers>)
 target_link_libraries(cwpack PRIVATE cw_toolcore cw_basisu_encoder three cw_opus cw_ogg cw_miniaudio m)
+# three links Dawn (its WebGPU backend), so cwpack loads it: in an SDK
+# (CW_SDK) it finds the SDK's own, deps/native-dawn/lib beside bin/
+if(CW_SDK AND CW_WGPU AND NOT WIN32 AND NOT CW_CART)
+  if(APPLE)
+    set_target_properties(cwpack PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "@executable_path/../deps/native-dawn/lib")
+  else()
+    set_target_properties(cwpack PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "$ORIGIN/../deps/native-dawn/lib")
+  endif()
+endif()
