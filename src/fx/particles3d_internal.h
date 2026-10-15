@@ -63,7 +63,7 @@ struct cw__psys {
   GLuint state_tex[2], state_fbo;
   /* sort */
   int sort_n, sw, sh;
-  GLuint key_tex[2], key_fbo[2];
+  GLuint key_tex[3], key_fbo[3]; /* the keys, ping-pong; [2] the ranks (a small sort) */
   int sorted; /* which key texture holds the result */
   /* trails */
   int hist_len;

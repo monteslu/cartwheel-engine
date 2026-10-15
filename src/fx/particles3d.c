@@ -426,6 +426,38 @@ static const char *const key_fs =
     "  }\n"
     "  o = vec4(key, float(idx), 0.0, 0.0);\n"
     "}\n";
+/* a small sort in two passes instead of one a bitonic step: each key's
+ * rank (how many keys order before it), then each slot fetches the key of
+ * its rank. Keys are distinct (the index breaks ties), so the order is the
+ * bitonic sort's exactly. */
+#define RANK_SORT_MAX 256
+static const char *const rank_fs =
+    "uniform sampler2D u_keys;\n"
+    "uniform int u_sw, u_n;\n"
+    "out vec4 o;\n"
+    "void main() {\n"
+    "  vec2 a = texelFetch(u_keys, ivec2(gl_FragCoord.xy), 0).xy;\n"
+    "  int rank = 0;\n"
+    "  for (int m = 0; m < u_n; m++) {\n"
+    "    vec2 b = texelFetch(u_keys, ivec2(m % u_sw, m / u_sw), 0).xy;\n"
+    "    if (b.x < a.x || (b.x == a.x && b.y < a.y)) rank++;\n"
+    "  }\n"
+    "  o = vec4(float(rank), 0.0, 0.0, 0.0);\n"
+    "}\n";
+static const char *const rank_select_fs =
+    "uniform sampler2D u_keys;\n"
+    "uniform sampler2D u_rank;\n"
+    "uniform int u_sw, u_n;\n"
+    "out vec4 o;\n"
+    "void main() {\n"
+    "  ivec2 c = ivec2(gl_FragCoord.xy); int slot = c.y * u_sw + c.x;\n"
+    "  vec2 k = vec2(0.0);\n"
+    "  for (int m = 0; m < u_n; m++) {\n"
+    "    ivec2 mc = ivec2(m % u_sw, m / u_sw);\n"
+    "    if (int(texelFetch(u_rank, mc, 0).x) == slot) { k = texelFetch(u_keys, mc, 0).xy; break; }\n"
+    "  }\n"
+    "  o = vec4(k, 0.0, 0.0);\n"
+    "}\n";
 static const char *const bitonic_fs =
     "uniform sampler2D u_keys;\n"
     "uniform int u_sw, u_j, u_k;\n"
@@ -530,7 +562,7 @@ static const char *const trail_fs =
 
 /* ── programs ───────────────────────────────────────────────────────── */
 
-static GLuint prog_sim, prog_draw[2], prog_scatter, prog_hist, prog_key, prog_bitonic, prog_reduce, prog_trail;
+static GLuint prog_sim, prog_draw[2], prog_scatter, prog_hist, prog_key, prog_bitonic, prog_rank, prog_rank_select, prog_reduce, prog_trail;
 static bool progs_failed;
 
 static char *cat3(const char *a, const char *b, const char *c) {
@@ -560,11 +592,13 @@ static bool build_programs(void) {
   cw_free(hfs);
   prog_key = cw_pass_program("particles.sort_key", key_fs);
   prog_bitonic = cw_pass_program("particles.bitonic", bitonic_fs);
+  prog_rank = cw_pass_program("particles.rank", rank_fs);
+  prog_rank_select = cw_pass_program("particles.rank_select", rank_select_fs);
   prog_reduce = cw_pass_program("particles.reduce", reduce_fs);
   char *tvs = cat3(glsl_common, trail_vs, "");
   prog_trail = cw__fx_program("particles.trail", tvs, trail_fs, NULL, 0);
   cw_free(tvs);
-  if (!prog_sim || !prog_draw[0] || !prog_draw[1] || !prog_scatter || !prog_hist || !prog_key || !prog_bitonic ||
+  if (!prog_sim || !prog_draw[0] || !prog_draw[1] || !prog_scatter || !prog_hist || !prog_key || !prog_bitonic || !prog_rank || !prog_rank_select ||
       !prog_reduce || !prog_trail) {
     progs_failed = true;
     prog_sim = 0;
@@ -586,8 +620,8 @@ static void free_fbo(GLuint *f) {
 }
 
 static void free_state(cw__psys *r) {
-  for (int i = 0; i < 2; i++) {
-    free_tex(&r->state_tex[i]);
+  for (int i = 0; i < 2; i++) free_tex(&r->state_tex[i]);
+  for (int i = 0; i < 3; i++) {
     free_tex(&r->key_tex[i]);
     free_fbo(&r->key_fbo[i]);
   }
@@ -891,11 +925,11 @@ static bool ensure_sort(cw__psys *r) {
   r->sort_n = n;
   r->sw = CW_MIN(n, 1024);
   r->sh = n / r->sw;
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < (n <= RANK_SORT_MAX ? 3 : 2); i++) {
     r->key_tex[i] = cw__fx_tex2d(r->sw, r->sh, GL_RG32F, GL_RG, GL_FLOAT, false, NULL);
     r->key_fbo[i] = cw__fx_fbo(r->key_tex[i], 0, 0);
   }
-  return r->key_fbo[0] && r->key_fbo[1];
+  return r->key_fbo[0] && r->key_fbo[1] && (n > RANK_SORT_MAX || r->key_fbo[2]);
 }
 
 static bool ensure_hist(cw__psys *r, int len) {
@@ -1133,6 +1167,29 @@ static int bitonic_sort(cw_pass_ctx *ctx, p3d *d, cw__psys *r, const t3_mat4 *mo
   cw__fx_u1i(prog_key, "u_sw", r->sw);
   cw__fx_mat4(prog_key, "u_mv", mv.e);
   cw_pass_fullscreen();
+  if (r->sort_n <= RANK_SORT_MAX) { /* two passes: the ranks, then each slot's key */
+    glBindFramebuffer(GL_FRAMEBUFFER, r->key_fbo[2]);
+    glUseProgram(prog_rank);
+    cw_pass_bind_texture(0, r->key_tex[0]);
+    cw__fx_u1i(prog_rank, "u_keys", 0);
+    cw__fx_u1i(prog_rank, "u_sw", r->sw);
+    cw__fx_u1i(prog_rank, "u_n", r->sort_n);
+    cw_pass_fullscreen();
+    glBindFramebuffer(GL_FRAMEBUFFER, r->key_fbo[1]);
+    glUseProgram(prog_rank_select);
+    cw_pass_bind_texture(0, r->key_tex[0]);
+    cw_pass_bind_texture(1, r->key_tex[2]);
+    cw__fx_u1i(prog_rank_select, "u_keys", 0);
+    cw__fx_u1i(prog_rank_select, "u_rank", 1);
+    cw__fx_u1i(prog_rank_select, "u_sw", r->sw);
+    cw__fx_u1i(prog_rank_select, "u_n", r->sort_n);
+    cw_pass_fullscreen();
+    r->sorted = 1;
+    int steps = 0; /* reported as the bitonic network's steps, as the WebGPU sort reports them */
+    for (int k = 2; k <= r->sort_n; k <<= 1)
+      for (int j = k >> 1; j > 0; j >>= 1) steps++;
+    return steps;
+  }
   int src = 0, passes = 0;
   glUseProgram(prog_bitonic);
   cw__fx_u1i(prog_bitonic, "u_keys", 0);

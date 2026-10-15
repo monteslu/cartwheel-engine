@@ -246,6 +246,29 @@ static const char WGSL_SORT[] =
     "  if (U.a.z == 1u) { swap = !swap; }\n" /* the must-fail control: the wrong order */
     "  if (swap) { keys[i] = b; keys[p] = a; }\n"
     "}\n"
+    /* the whole sort in one workgroup's memory (up to 1024 keys): the same
+     * compare-exchanges as the passes above, so the same order, in one
+     * dispatch instead of one a pass */
+    "var<workgroup> sk: array<K, 1024>;\n"
+    "@compute @workgroup_size(128) fn bitonic_local(@builtin(local_invocation_index) li: u32) {\n"
+    "  let n = U.a.y;\n"
+    "  for (var t = li; t < n; t += 128u) { sk[t] = keys[t]; }\n"
+    "  workgroupBarrier();\n"
+    "  for (var k = 2u; k <= n; k = k << 1u) {\n"
+    "    for (var j = k >> 1u; j > 0u; j = j >> 1u) {\n"
+    "      for (var t = li; t < n / 2u; t += 128u) {\n"
+    "        let i = 2u * j * (t / j) + (t % j); let p = i + j;\n"
+    "        let a = sk[i]; let b = sk[p];\n"
+    "        let asc = (i & k) == 0u;\n"
+    "        var swap = select(less(a, b), less(b, a), asc);\n"
+    "        if (U.a.z == 1u) { swap = !swap; }\n"
+    "        if (swap) { sk[i] = b; sk[p] = a; }\n"
+    "      }\n"
+    "      workgroupBarrier();\n"
+    "    }\n"
+    "  }\n"
+    "  for (var t = li; t < n; t += 128u) { keys[t] = sk[t]; }\n"
+    "}\n"
     "@compute @workgroup_size(64) fn gather(@builtin(global_invocation_id) gid: vec3u) {\n"
     "  let n = gid.x + gid.y * 2097152u;\n"
     "  if (n >= U.a.x) { return; }\n"
@@ -448,7 +471,7 @@ static struct {
   bool tried, ok;
   WGPUBindGroupLayout sim_bgl, sort_bgl, red_bgl, draw_bgl;
   WGPUPipelineLayout sim_pl, sort_pl, red_pl, draw_pl;
-  WGPUComputePipeline sim, key, bitonic, gather, red1, red2;
+  WGPUComputePipeline sim, key, bitonic, bitonic_local, gather, red1, red2;
   WGPUShaderModule draw_sm;
   CW_ARRAY(draw_pipe) pipes;
   WGPUBuffer quad, dummy_storage;
@@ -497,6 +520,7 @@ static bool init_pipes(void) {
   G.sim = cw__wg_compute("particles.sim", sm_sim, "sim", G.sim_pl);
   G.key = cw__wg_compute("particles.sort_key", sm_sort, "key", G.sort_pl);
   G.bitonic = cw__wg_compute("particles.bitonic", sm_sort, "bitonic", G.sort_pl);
+  G.bitonic_local = cw__wg_compute("particles.bitonic_local", sm_sort, "bitonic_local", G.sort_pl);
   G.gather = cw__wg_compute("particles.gather", sm_sort, "gather", G.sort_pl);
   G.red1 = cw__wg_compute("particles.reduce1", sm_red, "reduce1", G.red_pl);
   G.red2 = cw__wg_compute("particles.reduce2", sm_red, "reduce2", G.red_pl);
@@ -507,7 +531,7 @@ static bool init_pipes(void) {
   G.quad = cw__wg_buffer(sizeof q, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst, "particles quad");
   cw__wg_write(G.quad, 0, q, sizeof q);
   G.dummy_storage = cw__wg_buffer(64, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst, "particles dummy");
-  G.ok = G.sim && G.key && G.bitonic && G.gather && G.red1 && G.red2;
+  G.ok = G.sim && G.key && G.bitonic && G.bitonic_local && G.gather && G.red1 && G.red2;
   return G.ok;
 }
 
@@ -993,17 +1017,22 @@ bool cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, W
     wgpuComputePassEncoderSetBindGroup(cp, 0, bg, 1, &zero);
     wgpuComputePassEncoderSetPipeline(cp, G.key);
     cw__wg_dispatch(cp, (uint32_t)w->sort_n);
-    wgpuComputePassEncoderSetPipeline(cp, G.bitonic);
-    for (int i = 0; i < w->npass; i++) {
-      uint32_t off = (uint32_t)(PASS_STRIDE * i);
-      wgpuComputePassEncoderSetBindGroup(cp, 0, bg, 1, &off);
-      cw__wg_dispatch(cp, (uint32_t)w->sort_n / 2);
+    if (w->sort_n <= 1024) { /* the whole sort in one workgroup */
+      wgpuComputePassEncoderSetPipeline(cp, G.bitonic_local);
+      wgpuComputePassEncoderDispatchWorkgroups(cp, 1, 1, 1);
+    } else {
+      wgpuComputePassEncoderSetPipeline(cp, G.bitonic);
+      for (int i = 0; i < w->npass; i++) {
+        uint32_t off = (uint32_t)(PASS_STRIDE * i);
+        wgpuComputePassEncoderSetBindGroup(cp, 0, bg, 1, &off);
+        cw__wg_dispatch(cp, (uint32_t)w->sort_n / 2);
+      }
     }
     wgpuComputePassEncoderSetBindGroup(cp, 0, bg, 1, &zero);
     wgpuComputePassEncoderSetPipeline(cp, G.gather);
     cw__wg_dispatch(cp, (uint32_t)d->amount);
     wgpuBindGroupRelease(bg);
-    ft->stats.sort_passes += w->npass;
+    ft->stats.sort_passes += w->npass; /* the network's steps, however they ran (as on GL) */
     sorted = w->npass > 0 || w->sort_n == 1;
   }
   *shared_cp = cp;
