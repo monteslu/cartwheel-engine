@@ -909,6 +909,11 @@ static void tonemap_exec(cw_pass_ctx *ctx, void *u) {
     bloom_thresh(prog, s);
   }
   if (grade) grade_uniforms(ctx, prog, lut, n, dmin, dmax, 2);
+  /* WebGPU: every fused variant declares u_lut (binding 3, unit 2) and binds
+   * whatever that unit holds; without the grade it held an earlier pass's 2D
+   * texture, which a texture_3d binding rejects. The empty unit binds a
+   * dummy 3D texture the program never samples. */
+  else if (cw_gpu_backend() == CW_GPU_WEBGPU) cw_pass_bind_texture_3d(2, 0);
   if (lens) cw__lens_uniforms(ctx, prog, false);
   cw_pass_fullscreen();
   if (grade && cw_gpu_backend() != CW_GPU_WEBGPU) {
