@@ -1,5 +1,5 @@
 /* Terrain scatter (cartwheel/terrain.h): grass, rocks and trees placed
- * over the terrain in 32 m cells.
+ * over the terrain in square cells (32 m or more: see cartwheel/terrain.h).
  *
  * Placement is a pure function of (layer seed, cell): a jittered grid of
  * candidates over the cell (one per stratum, so instances never clump),
@@ -47,6 +47,7 @@ struct tr_scatter {
   int cnx, cnz;
   sc_cell *cells;                 /* cnx * cnz, generated lazily */
   float radius;                   /* the finest mesh's bounding radius */
+  float cell;                     /* cell size, metres: 32 x a power of two (TR_SCATTER_CELL) */
   t3_scene *scene;
 };
 
@@ -102,14 +103,14 @@ static void orient(float yaw, t3_vec3 n, bool align, float q[4]) {
 static int place(const cw_terrain *t, const tr_scatter *s, int cx, int cz, float *out, int cap) {
   const cw_scatter_def *d = &s->def;
   float sp = t->def.vertex_spacing;
-  float area = TR_SCATTER_CELL * TR_SCATTER_CELL;
+  float area = s->cell * s->cell;
   float want = d->density * area;
   if (!(want > 0)) return 0;
   int k = (int)ceilf(sqrtf(want));
   if (k * k > CELL_MAX) k = (int)sqrtf((float)CELL_MAX);
   float p = want / (float)(k * k); /* chance a stratum holds one */
-  float cell = TR_SCATTER_CELL / (float)k;
-  float x0 = (float)cx * TR_SCATTER_CELL, z0 = (float)cz * TR_SCATTER_CELL; /* terrain-local metres */
+  float cell = s->cell / (float)k;
+  float x0 = (float)cx * s->cell, z0 = (float)cz * s->cell; /* terrain-local metres */
   float wx = (float)t->def.size_x * sp, wz = (float)t->def.size_z * sp;
   int n = 0;
   for (int j = 0; j < k && n < cap; j++)
@@ -255,8 +256,12 @@ int cw_terrain_scatter_add(cw_terrain *t, const cw_scatter_def *def) {
     s->radius = r > s->radius ? r : s->radius;
   }
   float sp = t->def.vertex_spacing;
-  s->cnx = (int)ceilf((float)t->def.size_x * sp / TR_SCATTER_CELL);
-  s->cnz = (int)ceilf((float)t->def.size_z * sp / TR_SCATTER_CELL);
+  /* cells grow with the range (a quarter of it), so a long-range layer (trees) stays a few dozen
+   * draws, while a cell holds at most CELL_MAX candidates */
+  s->cell = TR_SCATTER_CELL;
+  while (s->cell * 2 <= s->def.visible_range * 0.25f && s->def.density * (s->cell * 2) * (s->cell * 2) <= CELL_MAX) s->cell *= 2;
+  s->cnx = (int)ceilf((float)t->def.size_x * sp / s->cell);
+  s->cnz = (int)ceilf((float)t->def.size_z * sp / s->cell);
   s->cells = cw_calloc((size_t)s->cnx * s->cnz, sizeof(sc_cell), CW_MEM_RENDER);
   for (int z = 0; z < s->cnz; z++)
     for (int x = 0; x < s->cnx; x++) {
@@ -366,7 +371,10 @@ static void pose_cells(int begin, int end, int worker, void *u) {
     }
     int drawn = 0;
     for (int l = 0; l < nl; l++) {
-      for (int p = 0; p < j->s->nparts[l]; p++) c->im[l][p]->count = cnt[l];
+      for (int p = 0; p < j->s->nparts[l]; p++) {
+        c->im[l][p]->count = cnt[l];
+        c->im[l][p]->mesh.base.visible = cnt[l] > 0; /* no draw for an empty LOD */
+      }
       drawn += cnt[l];
     }
     c->drawn = drawn;
@@ -388,8 +396,8 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
   float vr = d->visible_range;
   float camv[3] = { cam.x, cam.y, cam.z };
   float lx = cam.x - t->def.origin.x, lz = cam.z - t->def.origin.z;
-  int x0 = CW_MAX(0, (int)floorf((lx - vr) / TR_SCATTER_CELL)), x1 = CW_MIN(s->cnx - 1, (int)floorf((lx + vr) / TR_SCATTER_CELL));
-  int z0 = CW_MAX(0, (int)floorf((lz - vr) / TR_SCATTER_CELL)), z1 = CW_MIN(s->cnz - 1, (int)floorf((lz + vr) / TR_SCATTER_CELL));
+  int x0 = CW_MAX(0, (int)floorf((lx - vr) / s->cell)), x1 = CW_MIN(s->cnx - 1, (int)floorf((lx + vr) / s->cell));
+  int z0 = CW_MAX(0, (int)floorf((lz - vr) / s->cell)), z1 = CW_MIN(s->cnz - 1, (int)floorf((lz + vr) / s->cell));
   float density = cw_quality_scale(d->density_knob);
   /* cells that left the range drop their GPU copies (their placement stays: it is cheap to keep) */
   for (int i = 0; i < s->cnx * s->cnz; i++) {
@@ -408,8 +416,8 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
   for (int z = z0; z <= z1; z++)
     for (int x = x0; x <= x1; x++) {
       sc_cell *c = &s->cells[z * s->cnx + x];
-      float mn[3] = { t->def.origin.x + (float)x * TR_SCATTER_CELL, -1e30f, t->def.origin.z + (float)z * TR_SCATTER_CELL };
-      float mx[3] = { mn[0] + TR_SCATTER_CELL, 1e30f, mn[2] + TR_SCATTER_CELL };
+      float mn[3] = { t->def.origin.x + (float)x * s->cell, -1e30f, t->def.origin.z + (float)z * s->cell };
+      float mx[3] = { mn[0] + s->cell, 1e30f, mn[2] + s->cell };
       mn[1] = camv[1], mx[1] = camv[1]; /* height unknown before generation: horizontal distance */
       if (cell_dist2(camv, mn, mx) < vr * vr && !c->generated) gen[ng++] = c;
     }
@@ -422,8 +430,8 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
       sc_cell *c = &s->cells[z * s->cnx + x];
       if (!c->generated || !c->n) continue;
       float r = s->radius * d->scale_max;
-      float mn[3] = { t->def.origin.x + (float)x * TR_SCATTER_CELL - r, c->ymin - r, t->def.origin.z + (float)z * TR_SCATTER_CELL - r };
-      float mx[3] = { mn[0] + TR_SCATTER_CELL + 2 * r, c->ymax + r, mn[2] + TR_SCATTER_CELL + 2 * r };
+      float mn[3] = { t->def.origin.x + (float)x * s->cell - r, c->ymin - r, t->def.origin.z + (float)z * s->cell - r };
+      float mx[3] = { mn[0] + s->cell + 2 * r, c->ymax + r, mn[2] + s->cell + 2 * r };
       float d2 = cell_dist2(camv, mn, mx);
       bool vis = d2 < vr * vr;
       if (vis && fr) {
@@ -459,9 +467,13 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
         c->posed_state = -2;
       }
       if (!c->live) continue;
-      for (int l = 0; l < s->nlod; l++)
-        for (int p = 0; p < s->nparts[l]; p++) c->im[l][p]->mesh.base.visible = vis;
-      if (!vis) continue;
+      if (!vis) {
+        for (int l = 0; l < s->nlod; l++)
+          for (int p = 0; p < s->nparts[l]; p++) c->im[l][p]->mesh.base.visible = false;
+        c->drawn = 0;
+        c->posed_state = -2; /* posed again when it comes back into view */
+        continue;
+      }
       /* a cell wholly in one LOD band, short of the fade, keeps its pose */
       float dmin = sqrtf(d2), dmax;
       {
@@ -497,7 +509,7 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
       sc_cell *c = &s->cells[z * s->cnx + x];
       if (!c->live) continue;
       t->stats.scatter_cells++;
-      if (c->im[0][0] && c->im[0][0]->mesh.base.visible) {
+      if (c->drawn) {
         t->stats.scatter_cells_visible++;
         t->stats.scatter_instances += c->drawn;
         for (int l = 0; l < s->nlod; l++) t->stats.scatter_draws += (c->im[l][0]->count > 0) * s->nparts[l];

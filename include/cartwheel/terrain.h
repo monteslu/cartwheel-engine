@@ -61,7 +61,9 @@
  * cw_heightfield3d (physics3d.h) are the same height field on its own.
  *
  * ── scatter ────────────────────────────────────────────────────────────
- * Scatter layers place copies of a mesh over the terrain in 32 m cells.
+ * Scatter layers place copies of a mesh over the terrain in square cells:
+ * 32 m, doubled while that stays within a quarter of the layer's visible
+ * range (trees at 600 m use 128 m cells: a few dozen draws, not hundreds).
  * Placement is a pure function of (cell, layer seed) by integer hashing:
  * the same instances on every host, at any worker count, whatever the
  * camera did. A candidate is kept by the layer's density (per square
