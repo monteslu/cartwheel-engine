@@ -6029,18 +6029,18 @@
   },
   {
    "header": "cartwheel/quality.h",
-   "summary": "cartwheel/quality.h: graphics quality presets (Low, Medium, High, Ultra).\n\nA preset changes only what the frame costs, never the resolution (that is\ncw_app_desc.render_scale) and never the simulation:\n\n              Low       Medium    High (default)   Ultra\n  GTAO        off       1 slice,  as authored      3 slices, 8 steps\n                        4 steps\n  bloom       3 levels  5 levels  as authored      as authored\n  shadows     <= 1024,  <= 2048,  as authored      2x (<= 4096), soft\n              hard PCF  soft      (soft PCF)\n  antialias   off       FXAA      as authored      SMAA when any\n  particles   0.4       0.7       1                1\n  density     0.35      0.65      1                1   (grass, crowd, scatter)\n\n\"As authored\" is what the scene's PostProcess / lights ask for: High draws\nexactly what the game would without this module. Lower presets cap and\nthin it; Ultra raises the effects (never the instance counts, which the\ngame authors at their maximum).\n\nDensity: games read cw_quality_scale(\"grass\"), (\"crowd\"), (\"scatter\") or\nthe shorthand cw_quality_density() and thin their instancing; set a\nchange callback to re-thin when the preset changes. Particles: the engine\ndraws cw_quality_scale(\"particles\") of every GPU particle system's\nparticles (they are all still simulated, so counts and seeds agree).\n\nThe player picks the preset (cw_quality_cycle from a settings entry);\npersist the choice in the game's save data (cw_quality_saved /\ncw_quality_restore below).\n\nAutomatic choice (OFF unless the game turns it on with cw_quality_auto):\nwhile the game says it is in play (cw_quality_auto_measure(true)), the\nengine averages the frame time; after a couple of seconds over budget it\nsteps down one preset, and it never steps up again in that run. A preset\nthe player picked (user = true) turns it off.\n\nDeterminism: a deterministic run (a test) is always High, with automatic\nchoice off, so every host draws the same frame. Nothing here reaches the\nsimulation.",
+   "summary": "cartwheel/quality.h: graphics settings, the presets that set them, and\nthe automatic choice.\n\nEach setting is something the player can pick on its own; a preset picks\nthem all:\n\n                    Low       Medium    High (default)  Ultra\n  resolution        67%       75%       100%            100%\n  ambient occl.     off       on        on              on\n  shadows           Low       Medium    High            Ultra\n  anti-aliasing     FXAA      FXAA      SMAA            SMAA\n  effects detail    Low       Medium    High            Ultra\n\nResolution: the 3D scene (and its post) renders at that share of the\noutput's size and is scaled up with a filter (Catmull-Rom); the 2D window\npasses (HUD, menus, text) draw at the output's full size over it. It is the\nbiggest lever: GPU time of the scene and its post goes with its pixel\ncount. It applies on top of cw_app_desc.render_scale (the output size);\nan app with pixel_scale draws at its own size and ignores it.\n\nAmbient occlusion: GTAO as the scene's PostProcess asks for it (On) or\nnone (Off); its sample count follows effects detail.\n\nShadows: Low (maps of 1024 at most, hard PCF), Medium (1024 at most,\nsoft), High (as the lights ask, soft), Ultra (twice that, up to 4096,\nsoft).\n\nAnti-aliasing: Off, FXAA, or SMAA (as the PostProcess asks: a scene that\nasks for FXAA or none keeps it).\n\nEffects detail (Low, Medium, High, Ultra): the share of GPU particles\ndrawn (0.4, 0.7, 1, 1), the density games thin their instancing by (0.35,\n0.65, 1, 1: grass, crowd, scatter), the bloom chain (3, 5 levels, as\nauthored), GTAO's samples (1 slice of 4 steps, 1 of 4, as authored, 3\nslices of 8 steps) and the LOD error budget (x2, x1.5, x1, x1: coarser\nmeshes sooner).\n\n\"As authored\" is what the scene's PostProcess / lights ask for: High\ndraws exactly what the game would without this module.\n\nGame settings: a game adds its own render-only levers (cw_quality_lever_add:\na cheaper material at distance, say) with the value each preset picks;\nthey show in the graphics menu after the engine's, and are saved with them.\n\nDensity: games read cw_quality_scale(\"grass\"), (\"crowd\"), (\"scatter\") or\nthe shorthand cw_quality_density() and thin their instancing; set a change\ncallback to re-thin when a setting changes. Particles: the engine draws\ncw_quality_scale(\"particles\") of every GPU particle system's particles\n(they are all still simulated, so counts and seeds agree).\n\nThe player picks a preset, Auto, or each setting (the graphics menu,\ncartwheel/quality_menu.h, or the game shell's settings); changing one\nsetting shows the preset as \"Custom\". Persist the choice in the game's\nsave data (cw_quality_saved / cw_quality_restore below).\n\nAuto: the engine picks, and holds the frame's cost under a budget. While\nthe game says it is in play (cw_quality_auto_measure(true) every frame) it\naverages the cost: the GPU time of the frame's passes where the host\ntimes them cheaply (native WebGPU's timestamps), else the frame-to-frame\ntime (GL, a cart: a frame the GPU cannot finish in time arrives late). After a couple of\nseconds over budget it steps down one level of its ladder:\n\n  High 100%, High 85%, Medium 75%, Medium 67%, Low 67%, Low 60%, Low 50%\n\n(resolution first: it costs the picture least for what it saves). Where\nit measures GPU time it also steps back up when the cost has stayed well\nunder budget, never into a level that was over it in this run. A game\nmakes Auto the starting choice with cw_quality_auto(true, budget); the\nplayer can always pick it. The level it reached is saved, so the next run\nstarts there.\n\nDeterminism: a deterministic run (a test) starts at High whatever the\nsave holds, with Auto off, so every host draws the same frame; a choice\nmade in it (from the menus, by input every host replays alike) applies.\nNothing here reaches the simulation.",
    "functions": [
     {
      "name": "cw_quality_get",
      "signature": "cw_quality cw_quality_get(void)",
-     "doc": "The preset now.",
+     "doc": "The preset now: the one picked, Auto's current level, or (Custom) the\npreset the settings were last set from.",
      "inline": false
     },
     {
      "name": "cw_quality_set",
      "signature": "void cw_quality_set(cw_quality q, bool user)",
-     "doc": "Choose a preset. user = true: the player chose it (automatic choice stops\nfor good); false: the game or a tool did (automatic choice may still step\ndown from it). Ignored in a deterministic run. Calls the change callback.",
+     "doc": "Choose a preset (every setting). user = true: the player chose it (Auto\nstops); false: the game or a tool did (Auto, when on, may still change\nit). Calls the change callback.",
      "inline": false
     },
     {
@@ -6050,9 +6050,63 @@
      "inline": false
     },
     {
+     "name": "cw_gfx_count",
+     "signature": "int cw_gfx_count(void)",
+     "doc": "Settings shown: the engine's, then the game's levers (ids\nCW_GFX_ENGINE_COUNT + i, in the order they were added).",
+     "inline": false
+    },
+    {
+     "name": "cw_gfx_name",
+     "signature": "const char *cw_gfx_name(int s)",
+     "doc": "\"Resolution\", \"Ambient occlusion\", ... or the lever's name",
+     "inline": false
+    },
+    {
+     "name": "cw_gfx_value_count",
+     "signature": "int cw_gfx_value_count(int s)",
+     "doc": "how many values s has",
+     "inline": false
+    },
+    {
+     "name": "cw_gfx_get",
+     "signature": "int cw_gfx_get(int s)",
+     "doc": "its value now (an index)",
+     "inline": false
+    },
+    {
+     "name": "cw_gfx_value_label",
+     "signature": "const char *cw_gfx_value_label(int s)",
+     "doc": "its value as a menu shows it: \"75%  1440x810\", \"On\", \"SMAA\", ...",
+     "inline": false
+    },
+    {
+     "name": "cw_gfx_set",
+     "signature": "void cw_gfx_set(int s, int value)",
+     "doc": "The player sets one (value clamped): the preset becomes Custom unless the\nsettings now match one, and Auto stops.",
+     "inline": false
+    },
+    {
+     "name": "cw_gfx_step",
+     "signature": "void cw_gfx_step(int s, int dir)",
+     "doc": "dir +1 / -1: the next / previous value (wrapping)",
+     "inline": false
+    },
+    {
+     "name": "cw_gfx_render_scale",
+     "signature": "float cw_gfx_render_scale(void)",
+     "doc": "The resolution setting's share of the output (0.5 .. 1).",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_lever_add",
+     "signature": "int cw_quality_lever_add(const char *name, const char *const *values, int value_count, const uint8_t preset[CW_QUALITY_COUNT])",
+     "doc": "A game's own render-only setting (at most CW_GFX_MAX_LEVERS, each with up\nto CW_GFX_LEVER_MAX_VALUES values, cheapest first): its name, its values'\nlabels (kept by pointer: static strings) and the value each preset picks\n(preset[CW_QUALITY_LOW] ...). Call in init, before cw_quality_restore (the\nsaved value applies to it). Returns its setting id (for cw_gfx_get), -1\nwhen full.",
+     "inline": false
+    },
+    {
      "name": "cw_quality_scale",
      "signature": "float cw_quality_scale(const char *knob)",
-     "doc": "A preset's scale for a named knob: \"particles\", \"density\", \"grass\",\n\"crowd\", \"scatter\" (the last three are density), 1 for any other name.",
+     "doc": "A scale for a named knob, from effects detail: \"particles\", \"density\",\n\"grass\", \"crowd\", \"scatter\" (the last three are density), 1 for any other\nname.",
      "inline": false
     },
     {
@@ -6076,7 +6130,7 @@
     {
      "name": "cw_quality_auto",
      "signature": "void cw_quality_auto(bool on, float budget_ms)",
-     "doc": "Automatic choice: off by default (and always in a deterministic run). The game\nsays when the frame time means something (in play, not in a menu or a\nloading screen); budget_ms <= 0 keeps the default (19 ms: a 60 Hz display\nthat keeps missing frames).",
+     "doc": "on: Auto is the choice until the player picks something else (a save\nwith a choice in it wins). budget_ms <= 0 keeps the default: 19 ms of\nframe time (a 60 Hz display that keeps missing frames), or three quarters\nof it of GPU time where the GPU is timed. Off in a deterministic run.",
      "inline": false
     },
     {
@@ -6088,37 +6142,55 @@
     {
      "name": "cw_quality_is_auto",
      "signature": "bool cw_quality_is_auto(void)",
-     "doc": "still choosing by itself (no user choice, not a test run)",
+     "doc": "Auto is choosing (not a test run)",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_is_custom",
+     "signature": "bool cw_quality_is_custom(void)",
+     "doc": "the settings match no preset (and Auto is off)",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_auto_cost",
+     "signature": "float cw_quality_auto_cost(void)",
+     "doc": "Auto's measured cost in ms (averaged; GPU time or frame time, as above),\n0 before it has measured",
      "inline": false
     },
     {
      "name": "cw_quality_cycle",
      "signature": "void cw_quality_cycle(void)",
-     "doc": "A settings entry in one call: the next preset in Low, Medium, High,\nUltra, Low... (a player's choice). Render-only: call it from update or\nevent handling, never from the fixed-step simulation. The frame's raw\npresses (cw_input_raw: keys_pressed, pads[].pressed, mouse_pressed) hold\nfor the whole frame, so update sees them as the ticks do. A\ndeterministic run (a test, CW_FRAMES, a replaying host) keeps High: there\nthis is a no-op, so check it in a normal run.",
+     "doc": "The next choice in Low, Medium, High, Ultra, Auto, Low... (a player's\nchoice; from Custom, the preset after the one it came from).\nRender-only: call it from update or event handling, never from the\nfixed-step simulation. The frame's raw presses (cw_input_raw:\nkeys_pressed, pads[].pressed, mouse_pressed) hold for the whole frame, so\nupdate sees them as the ticks do.",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_cycle_back",
+     "signature": "void cw_quality_cycle_back(void)",
+     "doc": "the previous choice in that order",
      "inline": false
     },
     {
      "name": "cw_quality_label",
      "signature": "const char *cw_quality_label(void)",
-     "doc": "\"Low\", \"Medium\", \"High\" or \"Ultra\": what a settings entry shows",
+     "doc": "\"Low\", \"Medium\", \"High\", \"Ultra\", \"Auto\" or \"Custom\": what a settings entry shows",
      "inline": false
     },
     {
      "name": "cw_render_res_label",
      "signature": "const char *cw_render_res_label(void)",
-     "doc": "The render resolution as a graphics menu shows it: \"<lines>p\" of the\nscene's render size (cw_render_size), e.g. \"540p\", \"1080p\". The host sets\nit (RetroArch: Quick Menu > Core Options > Internal Resolution); a game\nshows it, it does not change it.",
+     "doc": "The render resolution as a graphics menu shows it: \"<lines>p\" of the\nscene's render size (cw_render_size, the resolution setting applied),\ne.g. \"720p\", \"1080p\". The output's size is the host's (RetroArch: Quick\nMenu > Core Options > Internal Resolution).",
      "inline": false
     },
     {
      "name": "cw_quality_saved",
-     "signature": "uint8_t cw_quality_saved(void)",
-     "doc": "Save data: one byte the game keeps in its save (0 = none chosen, 1..4 = the\nplayer's preset + 1). cw_quality_restore applies it (at init, after the\nsave loaded).",
+     "signature": "uint32_t cw_quality_saved(void)",
+     "doc": "Save data: a word the game keeps in its save (0 = none chosen). It holds\nthe choice (a preset, Auto and the level it reached, or every setting of a\nCustom choice, the game's levers too); cw_quality_restore applies it (at\ninit, after the save loaded and the levers were added; not in a\ndeterministic run). It fits in 13 bits\n(two bytes) for a game with no levers, 21 bits (three bytes) with four.\nA byte 1..4 from an older save is still a preset.",
      "inline": false
     },
     {
      "name": "cw_quality_restore",
-     "signature": "void cw_quality_restore(uint8_t saved)",
-     "doc": "apply a cw_quality_saved byte (0 = none chosen)",
+     "signature": "void cw_quality_restore(uint32_t saved)",
+     "doc": "apply a cw_quality_saved word (0 = none chosen)",
      "inline": false
     }
    ],
@@ -6129,9 +6201,76 @@
      "decl": "typedef enum { CW_QUALITY_LOW, CW_QUALITY_MEDIUM, CW_QUALITY_HIGH, CW_QUALITY_ULTRA, CW_QUALITY_COUNT } cw_quality;"
     },
     {
+     "name": "cw_gfx_setting",
+     "doc": "── the settings ────────────────────────────────────────────────────",
+     "decl": "typedef enum {\n  CW_GFX_RESOLUTION, /* 50%, 60%, 67%, 75%, 85%, 100% of the output */\n  CW_GFX_SSAO,       /* Off, On */\n  CW_GFX_SHADOWS,    /* Low, Medium, High, Ultra */\n  CW_GFX_AA,         /* Off, FXAA, SMAA */\n  CW_GFX_EFFECTS,    /* Low, Medium, High, Ultra */\n  CW_GFX_ENGINE_COUNT\n} cw_gfx_setting;"
+    },
+    {
      "name": "cw_quality_change_fn",
-     "doc": "Called after the preset changes (from cw_quality_set or an automatic step\ndown), on the main thread between frames. One callback; NULL removes it.",
+     "doc": "Called after any setting changes (a preset, a setting, an Auto step), on\nthe main thread between frames. One callback; NULL removes it. The\nargument is cw_quality_get().",
      "decl": "typedef void (*cw_quality_change_fn)(cw_quality q, void *user);"
+    }
+   ],
+   "macros": []
+  },
+  {
+   "header": "cartwheel/quality_menu.h",
+   "summary": "cartwheel/quality_menu.h: a graphics settings page a game opens from its\nown menus (the game shell, cartwheel/shell.h, opens it from Settings).\n\nOne row per choice: the preset (Low, Medium, High, Ultra, Auto, or Custom\nonce a setting was changed on its own), then every setting of\ncartwheel/quality.h (resolution with the pixel size it renders at,\nambient occlusion, shadows, anti-aliasing, effects detail), then the\ngame's own levers (cw_quality_lever_add), then Back.\n\n  // from the pause menu's \"Graphics\" entry (render-only: update, not the simulation)\n  cw_quality_menu_open();\n  // each frame, before the game's own menu reads input:\n  if (cw_quality_menu_update()) { ... the page used this frame's presses ... }\n  // in the frame's 2D pass, last:\n  cw_quality_menu_draw(&(cw_quality_menu_style){ .font = my_font });\n  // save when it closed after a change: cw_quality_menu_changed()\n\nInput (cw_quality_menu_update): up / down (arrows, W / S, d-pad, left\nstick) choose a row, left / right (A / D, d-pad, stick) change it, accept\n(Enter, Space, South) changes it forward or closes on Back, back (Escape,\nBackspace, East) closes; a tap (mouse or touch) on a row changes it. A game\nwith its own input mapping drives it with cw_quality_menu_input instead.\n\nEvery change applies at once (cw_quality_* settings); none reaches the\nsimulation.",
+   "functions": [
+    {
+     "name": "cw_quality_menu_open",
+     "signature": "void cw_quality_menu_open(void)",
+     "doc": "show it, the preset row highlighted",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_menu_close",
+     "signature": "void cw_quality_menu_close(void)",
+     "doc": "hide it (Back and the back press do too)",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_menu_is_open",
+     "signature": "bool cw_quality_menu_is_open(void)",
+     "doc": "it is showing",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_menu_update",
+     "signature": "bool cw_quality_menu_update(void)",
+     "doc": "Drive it from the frame's raw input (once a frame, however often it is\ncalled). True while it is open: the page owns this frame's presses, so the\ngame's own menu should not act on them.",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_menu_input",
+     "signature": "void cw_quality_menu_input(int dy, int dx, bool accept, bool back)",
+     "doc": "Drive it from the game's own mapping: dy -1 / +1 up / down, dx -1 / +1\nleft / right, accept, back.",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_menu_tap",
+     "signature": "bool cw_quality_menu_tap(cw_vec2 p)",
+     "doc": "A tap at a canvas point (cw_r2d_window_to_canvas): true when it hit a row.",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_menu_draw",
+     "signature": "void cw_quality_menu_draw(const cw_quality_menu_style *style)",
+     "doc": "Draw it (in the current 2D pass, over the whole canvas) when open.",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_menu_changed",
+     "signature": "bool cw_quality_menu_changed(void)",
+     "doc": "A setting changed since it was opened (save then: cw_quality_saved).",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_quality_menu_style",
+     "doc": "",
+     "decl": "typedef struct cw_quality_menu_style {\n  cw_font font;      /* default: the built-in sans (cw_ui_font_sans) */\n  cw_color accent;   /* the highlighted row (default a warm yellow) */\n  cw_color backdrop; /* drawn over the whole canvas first (default dark, 0.92 alpha; a = 0 with\n                      * set_backdrop draws none) */\n  bool set_backdrop;\n  float size;        /* text size in canvas units (default: the canvas height / 24) */\n  const char *title; /* default \"Graphics\" */\n} cw_quality_menu_style;"
     }
    ],
    "macros": []
@@ -8600,7 +8739,7 @@
   },
   {
    "header": "cartwheel/shell.h",
-   "summary": "cartwheel/shell.h: the plumbing around a game's play, so a game writes only\nits gameplay and art.\n\n  loading screen -> title (Play, Settings, Quit) -> join (1-4 players) ->\n  play <-> pause (Resume, Settings, Quit to title)\n\nSettings: the graphics preset (cartwheel/quality.h) with the resolution it\nrenders at, music and effects volume, and the controls (each action's\nbindings). They are saved, with the game's own save data, in one\nversioned, checksummed block the shell keeps in cw_app_desc.save.\n\n  static cw_app_desc desc = { ... };\n  desc.save = cw_shell_save_region();          // in cw_main\n  desc.save_size = cw_shell_save_region_size();\n\n  static void init(void) {\n    cw_shell_init(&(cw_shell_desc){ .title = \"My Game\", .max_players = 4,\n                                    .game_save_size = sizeof(my_save), .start = start_match });\n    my_save *s = cw_shell_game_save();         // zeroed when there was none\n  }\n  static void fixed_update(double dt) {\n    if (!cw_shell_update()) return;            // menus own this tick\n    ... gameplay for cw_shell_players() players ...\n  }\n  static void render(double alpha) {\n    ... the game's frame ...\n    cw_shell_draw();                           // menus and overlays on top\n  }\n\nInput: menus read the actions ui_up, ui_down, ui_left, ui_right,\nui_accept, ui_back and pause, which the shell defines (keyboard arrows and\nWASD, Enter / Space, Escape; pad d-pad and left stick, South, East,\nStart), and pointer taps (mouse or touch) on menu items. On the join\nscreen each pad joins with South and leaves with East, the keyboard joins\nwith Enter; players are assigned their pad and devices (cw_input_assign)\nin join order, so gameplay asks cw_action_* for players 0..n-1.\n\nSplit screen: cw_shell_split lays one view per player out with the\npipeline (cw_pipeline_split: two side by side, three and four in quadrants,\nthree leaving the fourth quadrant for a shared HUD); cw_shell_player_rect\nand cw_shell_shared_rect give the HUD where to draw.\n\nAudio: the shell starts the mixer (cw_audio_init) unless the game did,\nand then runs its per-frame update from cw_shell_draw. Two buses under the master, \"music\" and \"sfx\", follow the volume\nsettings; play the game's music and effects on them. The sound hook plays\nthe menus' sounds (move, select, back, join, pause), the screen hook starts\neach screen's music.\n\nA scene app's tree (cw_scene_app) is paused outside play, so its nodes\nhold still under the menus.\n\nDeterminism: menus run in fixed_update from the input snapshot, so a\nreplay drives them like gameplay. A test or an autopilot build skips them\nwith cw_shell_start. Debug fields: shell.screen, shell.players, shell.item.",
+   "summary": "cartwheel/shell.h: the plumbing around a game's play, so a game writes only\nits gameplay and art.\n\n  loading screen -> title (Play, Settings, Quit) -> join (1-4 players) ->\n  play <-> pause (Resume, Settings, Quit to title)\n\nSettings: graphics (cartwheel/quality.h; left / right step the preset,\naccept opens the graphics page of cartwheel/quality_menu.h with every\nsetting), music and effects volume, and the controls (each action's\nbindings). They are saved, with the game's own save data, in one\nversioned, checksummed block the shell keeps in cw_app_desc.save.\n\n  static cw_app_desc desc = { ... };\n  desc.save = cw_shell_save_region();          // in cw_main\n  desc.save_size = cw_shell_save_region_size();\n\n  static void init(void) {\n    cw_shell_init(&(cw_shell_desc){ .title = \"My Game\", .max_players = 4,\n                                    .game_save_size = sizeof(my_save), .start = start_match });\n    my_save *s = cw_shell_game_save();         // zeroed when there was none\n  }\n  static void fixed_update(double dt) {\n    if (!cw_shell_update()) return;            // menus own this tick\n    ... gameplay for cw_shell_players() players ...\n  }\n  static void render(double alpha) {\n    ... the game's frame ...\n    cw_shell_draw();                           // menus and overlays on top\n  }\n\nInput: menus read the actions ui_up, ui_down, ui_left, ui_right,\nui_accept, ui_back and pause, which the shell defines (keyboard arrows and\nWASD, Enter / Space, Escape; pad d-pad and left stick, South, East,\nStart), and pointer taps (mouse or touch) on menu items. On the join\nscreen each pad joins with South and leaves with East, the keyboard joins\nwith Enter; players are assigned their pad and devices (cw_input_assign)\nin join order, so gameplay asks cw_action_* for players 0..n-1.\n\nSplit screen: cw_shell_split lays one view per player out with the\npipeline (cw_pipeline_split: two side by side, three and four in quadrants,\nthree leaving the fourth quadrant for a shared HUD); cw_shell_player_rect\nand cw_shell_shared_rect give the HUD where to draw.\n\nAudio: the shell starts the mixer (cw_audio_init) unless the game did,\nand then runs its per-frame update from cw_shell_draw. Two buses under the master, \"music\" and \"sfx\", follow the volume\nsettings; play the game's music and effects on them. The sound hook plays\nthe menus' sounds (move, select, back, join, pause), the screen hook starts\neach screen's music.\n\nA scene app's tree (cw_scene_app) is paused outside play, so its nodes\nhold still under the menus.\n\nDeterminism: menus run in fixed_update from the input snapshot, so a\nreplay drives them like gameplay. A test or an autopilot build skips them\nwith cw_shell_start. Debug fields: shell.screen, shell.players, shell.item.",
    "functions": [
     {
      "name": "cw_shell_save_region",

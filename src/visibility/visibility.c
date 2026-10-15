@@ -10,6 +10,7 @@
 #include "cartwheel/render3d.h"
 #include "cartwheel/resource.h"
 #include "render/pipeline_internal.h"
+#include "render/quality_internal.h"
 #include "scene/scene_internal.h"
 #include "vis_internal.h"
 #if CW_WGPU
@@ -962,7 +963,7 @@ static void vis_exec(cw_pass_ctx *ctx, void *u) {
   float vh = (float)ctx->height;
   cc.viewport_h = vh;
   cc.proj_scale = ctx->camera->base.type == T3_PERSPECTIVE_CAMERA ? vh / (2 * tanf(fov * (CW_PI / 360))) : vh / 2;
-  cc.lod_budget = mg->lod_error_px;
+  cc.lod_budget = mg->lod_error_px * cw__quality_lod_bias(); /* cartwheel/quality.h: effects detail */
   cc.lod = mg->lod;
   cc.use_rooms = use_rooms;
   cc.shadows = shadows;
@@ -1040,7 +1041,7 @@ static void vis_exec(cw_pass_ctx *ctx, void *u) {
     }
     if (mg->lod && r->lod_levels > 1) {
       if (r->kind == CW__MESH_GLTF) {
-        cw_gltf_instance_auto_lod(r->obj, ctx->camera, (float)ctx->height, mg->lod_error_px * r->vis->lod_bias);
+        cw_gltf_instance_auto_lod(r->obj, ctx->camera, (float)ctx->height, mg->lod_error_px * cw__quality_lod_bias() * r->vis->lod_bias);
         r->lod = cw_gltf_instance_lod(r->obj);
       } else cw__mesh3d_set_lod(r->node, r->lod);
     }

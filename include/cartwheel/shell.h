@@ -4,8 +4,9 @@
  *   loading screen -> title (Play, Settings, Quit) -> join (1-4 players) ->
  *   play <-> pause (Resume, Settings, Quit to title)
  *
- * Settings: the graphics preset (cartwheel/quality.h) with the resolution it
- * renders at, music and effects volume, and the controls (each action's
+ * Settings: graphics (cartwheel/quality.h; left / right step the preset,
+ * accept opens the graphics page of cartwheel/quality_menu.h with every
+ * setting), music and effects volume, and the controls (each action's
  * bindings). They are saved, with the game's own save data, in one
  * versioned, checksummed block the shell keeps in cw_app_desc.save.
  *

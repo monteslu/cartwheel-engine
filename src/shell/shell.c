@@ -10,6 +10,7 @@
 #include "cartwheel/input.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/quality.h"
+#include "cartwheel/quality_menu.h"
 #include "cartwheel/scene.h"
 #include "cartwheel/scene_file.h"
 #include "cartwheel/ui.h"
@@ -23,10 +24,11 @@ typedef struct shell_save {
   uint16_t version, game_version;
   uint32_t game_size;
   uint32_t checksum; /* FNV-1a of everything after this field */
-  uint8_t quality;   /* cw_quality_saved */
+  uint8_t quality;   /* cw_quality_saved when it is a preset (1..4), else 0 (saves before gfx) */
   uint8_t music, sfx; /* volume steps 0..10 */
   uint8_t crisp;     /* cw_crisp_ui_saved */
-  uint8_t reserved[12];
+  uint8_t gfx[4];    /* cw_quality_saved, little-endian (0: none, or a save from before it) */
+  uint8_t reserved[8];
   uint8_t game[CW_SHELL_GAME_SAVE_MAX];
 } shell_save;
 static shell_save SAVE;
@@ -71,6 +73,7 @@ static void go(cw_shell_screen to) {
   cw_shell_screen from = S.screen;
   S.screen = to;
   S.item = 0;
+  if (to != CW_SHELL_SETTINGS) cw_quality_menu_close();
   S.dbg_screen = (int)to;
   /* a scene app's tree (cw_scene_app) holds still outside play */
   cw_tree *t = cw_scene_app_tree();
@@ -95,7 +98,9 @@ static void save_reset(void) {
 }
 
 void cw_shell_save_commit(void) {
-  SAVE.quality = cw_quality_saved();
+  uint32_t q = cw_quality_saved();
+  SAVE.quality = q <= CW_QUALITY_COUNT ? (uint8_t)q : 0;
+  for (int i = 0; i < 4; i++) SAVE.gfx[i] = (uint8_t)(q >> (8 * i));
   SAVE.crisp = cw_crisp_ui_saved();
   SAVE.checksum = save_sum();
   cw_save_commit();
@@ -121,7 +126,8 @@ void cw_shell_init(const cw_shell_desc *d) {
     if (SAVE.magic) cw_warn("shell: the save is from another version or damaged: starting with defaults");
     save_reset();
   }
-  cw_quality_restore(SAVE.quality);
+  uint32_t gfx = (uint32_t)SAVE.gfx[0] | (uint32_t)SAVE.gfx[1] << 8 | (uint32_t)SAVE.gfx[2] << 16 | (uint32_t)SAVE.gfx[3] << 24;
+  cw_quality_restore(gfx ? gfx : SAVE.quality);
   cw_crisp_ui_restore(SAVE.crisp);
   for (int i = 0; i < A_COUNT; i++) {
     S.act[i] = cw_action_add(ACTION_NAMES[i], 0.5f);
@@ -220,7 +226,7 @@ enum { SET_GRAPHICS, SET_MUSIC, SET_SFX, SET_CONTROLS, SET_BACK };
 static void settings_items(void) {
   n_items = 0;
   items[n_items] = (item){ "Graphics", "" };
-  snprintf(items[n_items++].value, sizeof items[0].value, "%s  (%s)", cw_quality_label(), cw_render_res_label());
+  snprintf(items[n_items++].value, sizeof items[0].value, "%s  (%s)  ...", cw_quality_label(), cw_render_res_label());
   items[n_items] = (item){ "Music", "" };
   snprintf(items[n_items++].value, sizeof items[0].value, "%d%%", SAVE.music * 10);
   items[n_items] = (item){ "Effects", "" };
@@ -257,7 +263,13 @@ static uint8_t step(uint8_t v, int dir) {
 static void settings_change(int dir) { /* dir -1 / +1: left / right; 0: accept */
   switch (S.item) {
   case SET_GRAPHICS:
-    for (int i = 0; i < (dir < 0 ? CW_QUALITY_COUNT - 1 : 1); i++) cw_quality_cycle();
+    if (!dir) { /* accept: the graphics page, every setting */
+      cw_quality_menu_open();
+      sound(CW_SHELL_SND_SELECT);
+      return;
+    }
+    if (dir < 0) cw_quality_cycle_back();
+    else cw_quality_cycle();
     break;
   case SET_MUSIC: SAVE.music = step(SAVE.music, dir); break;
   case SET_SFX: SAVE.sfx = step(SAVE.sfx, dir); break;
@@ -389,6 +401,19 @@ static void menu_tick(void) {
   case CW_SHELL_JOIN: join_update(); return;
   default: break;
   }
+  if (S.screen == CW_SHELL_SETTINGS && cw_quality_menu_is_open()) { /* the graphics page */
+    int dy = any_pressed(A_DOWN) - any_pressed(A_UP), dx = any_pressed(A_RIGHT) - any_pressed(A_LEFT);
+    bool acc = any_pressed(A_ACCEPT), bk = any_pressed(A_BACK);
+    const cw_raw_input *in = cw_input_raw();
+    bool tap = in && (in->mouse_pressed & 1) && cw_quality_menu_tap(cw_r2d_window_to_canvas(cw_v2(in->mouse_x, in->mouse_y)));
+    if (!tap) cw_quality_menu_input(dy, dx, acc, bk);
+    if (dy || dx || acc || tap) sound(CW_SHELL_SND_MOVE);
+    if (!cw_quality_menu_is_open()) {
+      sound(CW_SHELL_SND_BACK);
+      if (cw_quality_menu_changed()) cw_shell_save_commit();
+    }
+    return;
+  }
   build_items();
   if (any_pressed(A_UP)) { S.item = (S.item + n_items - 1) % n_items; sound(CW_SHELL_SND_MOVE); }
   if (any_pressed(A_DOWN)) { S.item = (S.item + 1) % n_items; sound(CW_SHELL_SND_MOVE); }
@@ -475,6 +500,10 @@ void cw_shell_draw(void) {
     draw_menu(cx, sz.y * 0.45f, u * 1.1f);
     break;
   case CW_SHELL_SETTINGS:
+    if (cw_quality_menu_is_open()) {
+      cw_quality_menu_draw(&(cw_quality_menu_style){ .font = S.d.font, .accent = S.d.accent, .set_backdrop = true });
+      break;
+    }
     text("Settings", cx, sz.y * 0.12f, u * 1.6f, cw_rgba(1, 1, 1, 1), 1);
     draw_menu(S.item == SET_CONTROLS ? sz.x * 0.3f : cx, sz.y * 0.32f, u);
     if (S.item == SET_CONTROLS) draw_controls(sz.x * 0.52f, sz.y * 0.32f, u);

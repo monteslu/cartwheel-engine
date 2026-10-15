@@ -18,7 +18,14 @@
  *
  * The upscale reads texels exactly (texelFetch / textureLoad at
  * (fragment - origin) / k): every output pixel of a k x k block is the same
- * scene pixel, with no filtering. */
+ * scene pixel, with no filtering.
+ *
+ * The render resolution setting (cartwheel/quality.h; k == 1, upscale) uses
+ * the same scene target at a share of the output (scene_w x scene_h, any
+ * size) and scales it up with a filter instead: Catmull-Rom (bicubic, five
+ * bilinear taps), which keeps edges and text in the world sharper than
+ * bilinear does. The UI always draws over it at the output's resolution, as
+ * crisp UI does, so the HUD and menus never lose resolution. */
 #include <stdlib.h>
 #include <string.h>
 
@@ -135,6 +142,90 @@ static bool gl_prog_ensure(void) {
   g_u_k = glGetUniformLocation(g_prog, "u_k");
   glGenVertexArrays(1, &g_vao);
   return true;
+}
+
+/* the filtered upscale (the render resolution setting): Catmull-Rom from
+ * five bilinear taps, clamped (no ringing past the display range) */
+#define CATMULL_ROM_GLSL \
+  "vec4 cr(highp sampler2D t, vec2 uv) {\n" \
+  "  vec2 ts = vec2(textureSize(t, 0));\n" \
+  "  vec2 sp = uv * ts;\n" \
+  "  vec2 t1 = floor(sp - 0.5) + 0.5;\n" \
+  "  vec2 f = sp - t1;\n" \
+  "  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));\n" \
+  "  vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);\n" \
+  "  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));\n" \
+  "  vec2 w3 = f * f * (-0.5 + 0.5 * f);\n" \
+  "  vec2 w12 = w1 + w2;\n" \
+  "  vec2 p0 = (t1 - 1.0) / ts, p3 = (t1 + 2.0) / ts, p12 = (t1 + w2 / w12) / ts;\n" \
+  "  vec4 c = texture(t, vec2(p12.x, p0.y)) * (w12.x * w0.y) + texture(t, vec2(p0.x, p12.y)) * (w0.x * w12.y)\n" \
+  "         + texture(t, p12) * (w12.x * w12.y) + texture(t, vec2(p3.x, p12.y)) * (w3.x * w12.y)\n" \
+  "         + texture(t, vec2(p12.x, p3.y)) * (w12.x * w3.y);\n" \
+  "  float ws = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;\n" \
+  "  return clamp(c / ws, 0.0, 1.0);\n" \
+  "}\n"
+
+static GLuint g_fprog;
+static GLint g_fu_tex, g_fu_origin, g_fu_size;
+static bool gl_fprog_ensure(void) {
+  if (g_fprog) return true;
+  if (!gl_prog_ensure()) return false; /* its VAO */
+  static const char *vs = "#version 300 es\n"
+                          "void main() {\n"
+                          "  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
+                          "  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
+                          "}\n";
+  static const char *fs = "#version 300 es\n"
+                          "precision highp float;\n"
+                          "uniform highp sampler2D u_tex;\n"
+                          "uniform vec2 u_origin, u_size;\n"
+                          "out vec4 o;\n" CATMULL_ROM_GLSL
+                          "void main() { o = cr(u_tex, (gl_FragCoord.xy - u_origin) / u_size); }\n";
+  GLuint v = gl_shader(GL_VERTEX_SHADER, vs), f = gl_shader(GL_FRAGMENT_SHADER, fs);
+  g_fprog = glCreateProgram();
+  glAttachShader(g_fprog, v);
+  glAttachShader(g_fprog, f);
+  glLinkProgram(g_fprog);
+  glDeleteShader(v);
+  glDeleteShader(f);
+  GLint ok = 0;
+  glGetProgramiv(g_fprog, GL_LINK_STATUS, &ok);
+  if (!ok) {
+    cw_error("render scale: the upscale program did not link");
+    glDeleteProgram(g_fprog);
+    g_fprog = 0;
+    return false;
+  }
+  g_fu_tex = glGetUniformLocation(g_fprog, "u_tex");
+  g_fu_origin = glGetUniformLocation(g_fprog, "u_origin");
+  g_fu_size = glGetUniformLocation(g_fprog, "u_size");
+  return true;
+}
+
+/* src filtered up to w x h, into framebuffer dst at (x, y_gl) */
+static void gl_draw_filtered(const gl_rt *src, GLuint dst, int x, int y_gl, int w, int h) {
+  if (!gl_fprog_ensure()) return;
+  glBindFramebuffer(GL_FRAMEBUFFER, dst);
+  glDisable(GL_SCISSOR_TEST);
+  glDisable(GL_BLEND);
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_STENCIL_TEST);
+  glDisable(GL_CULL_FACE);
+  glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+  glViewport(x, y_gl, w, h);
+  glUseProgram(g_fprog);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, src->tex);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glUniform1i(g_fu_tex, 0);
+  glUniform2f(g_fu_origin, (float)x, (float)y_gl);
+  glUniform2f(g_fu_size, (float)w, (float)h);
+  glBindVertexArray(g_vao);
+  glDrawArrays(GL_TRIANGLES, 0, 3);
+  glBindVertexArray(0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glUseProgram(0);
 }
 
 /* src's texels, k times, into framebuffer dst at (x, y_gl) (GL origin bottom-left),
@@ -271,6 +362,97 @@ static void wg_draw(const wg_rt *src, WGPUTextureView dst, int x, int y, int k) 
   wgpuBindGroupRelease(bg);
 }
 
+static WGPURenderPipeline w_fpipe;
+static WGPUBindGroupLayout w_fbgl;
+static WGPUSampler w_lin;
+static bool wg_fpipe_ensure(void) {
+  if (w_fpipe) return true;
+  if (!wg_pipe_ensure()) return false; /* its uniform buffers */
+  static const char *wgsl =
+    "struct U { origin: vec2f, size: vec2f };\n"
+    "@group(0) @binding(0) var t: texture_2d<f32>;\n"
+    "@group(0) @binding(1) var<uniform> u: U;\n"
+    "@group(0) @binding(2) var s: sampler;\n"
+    "@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n"
+    "  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));\n"
+    "  return vec4f(p * 2.0 - 1.0, 0.0, 1.0);\n"
+    "}\n"
+    "@fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n"
+    "  let ts = vec2f(textureDimensions(t));\n"
+    "  let sp = (pos.xy - u.origin) / u.size * ts;\n"
+    "  let t1 = floor(sp - 0.5) + 0.5;\n"
+    "  let f = sp - t1;\n"
+    "  let w0 = f * (-0.5 + f * (1.0 - 0.5 * f));\n"
+    "  let w1 = 1.0 + f * f * (-2.5 + 1.5 * f);\n"
+    "  let w2 = f * (0.5 + f * (2.0 - 1.5 * f));\n"
+    "  let w3 = f * f * (-0.5 + 0.5 * f);\n"
+    "  let w12 = w1 + w2;\n"
+    "  let p0 = (t1 - 1.0) / ts; let p3 = (t1 + 2.0) / ts; let p12 = (t1 + w2 / w12) / ts;\n"
+    "  let c = textureSampleLevel(t, s, vec2f(p12.x, p0.y), 0.0) * (w12.x * w0.y)\n"
+    "        + textureSampleLevel(t, s, vec2f(p0.x, p12.y), 0.0) * (w0.x * w12.y)\n"
+    "        + textureSampleLevel(t, s, p12, 0.0) * (w12.x * w12.y)\n"
+    "        + textureSampleLevel(t, s, vec2f(p3.x, p12.y), 0.0) * (w3.x * w12.y)\n"
+    "        + textureSampleLevel(t, s, vec2f(p12.x, p3.y), 0.0) * (w12.x * w3.y);\n"
+    "  let ws = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;\n"
+    "  return clamp(c / ws, vec4f(0.0), vec4f(1.0));\n"
+    "}\n";
+  WGPUShaderModule m = cw__wgpu_shader("cw render scale upscale", wgsl);
+  if (!m) return false;
+  WGPUBindGroupLayoutEntry e[3] = {
+    { .binding = 0, .visibility = WGPUShaderStage_Fragment,
+      .texture = { .sampleType = WGPUTextureSampleType_Float, .viewDimension = WGPUTextureViewDimension_2D } },
+    { .binding = 1, .visibility = WGPUShaderStage_Fragment, .buffer = { .type = WGPUBufferBindingType_Uniform, .minBindingSize = 16 } },
+    { .binding = 2, .visibility = WGPUShaderStage_Fragment, .sampler = { .type = WGPUSamplerBindingType_Filtering } },
+  };
+  WGPUBindGroupLayoutDescriptor bd = { .entryCount = 3, .entries = e };
+  w_fbgl = wgpuDeviceCreateBindGroupLayout(cw__wgpu_device(), &bd);
+  WGPUPipelineLayoutDescriptor pd = { .bindGroupLayoutCount = 1, .bindGroupLayouts = &w_fbgl };
+  WGPUPipelineLayout pl = wgpuDeviceCreatePipelineLayout(cw__wgpu_device(), &pd);
+  WGPUColorTargetState ct = { .format = cw__wgpu_frame_format(), .writeMask = WGPUColorWriteMask_All };
+  WGPUFragmentState fs = { .module = m, .entryPoint = CW_WGPU_SV("fs"), .targetCount = 1, .targets = &ct };
+  WGPURenderPipelineDescriptor rd = { .label = CW_WGPU_SV("cw render scale upscale"), .layout = pl,
+                                      .vertex = { .module = m, .entryPoint = CW_WGPU_SV("vs") },
+                                      .primitive = { .topology = WGPUPrimitiveTopology_TriangleList },
+                                      .multisample = { .count = 1, .mask = 0xFFFFFFFFu }, .fragment = &fs };
+  w_fpipe = wgpuDeviceCreateRenderPipeline(cw__wgpu_device(), &rd);
+  wgpuPipelineLayoutRelease(pl);
+  wgpuShaderModuleRelease(m);
+  WGPUSamplerDescriptor sd = { .addressModeU = WGPUAddressMode_ClampToEdge, .addressModeV = WGPUAddressMode_ClampToEdge,
+                               .addressModeW = WGPUAddressMode_ClampToEdge, .magFilter = WGPUFilterMode_Linear,
+                               .minFilter = WGPUFilterMode_Linear, .mipmapFilter = WGPUMipmapFilterMode_Nearest,
+                               .lodMinClamp = 0, .lodMaxClamp = 1, .maxAnisotropy = 1 };
+  w_lin = wgpuDeviceCreateSampler(cw__wgpu_device(), &sd);
+  return w_fpipe != NULL && w_lin != NULL;
+}
+
+/* src filtered up to w x h into view dst at (x, y) (top-left origin) */
+static void wg_draw_filtered(const wg_rt *src, WGPUTextureView dst, int x, int y, int w, int h) {
+  if (!dst || !wg_fpipe_ensure()) return;
+  WGPUBuffer ub = w_ubuf[w_ubuf_next++ & 1];
+  float u[4] = { (float)x, (float)y, (float)w, (float)h };
+  wgpuQueueWriteBuffer(cw__wgpu_queue(), ub, 0, u, sizeof u);
+  WGPUBindGroupEntry be[3] = { { .binding = 0, .textureView = src->view }, { .binding = 1, .buffer = ub, .size = 16 },
+                               { .binding = 2, .sampler = w_lin } };
+  WGPUBindGroupDescriptor bgd = { .layout = w_fbgl, .entryCount = 3, .entries = be };
+  WGPUBindGroup bg = wgpuDeviceCreateBindGroup(cw__wgpu_device(), &bgd);
+  WGPUCommandEncoder enc = wgpuDeviceCreateCommandEncoder(cw__wgpu_device(), NULL);
+  WGPURenderPassColorAttachment ca = { .view = dst, .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED, .loadOp = WGPULoadOp_Clear,
+                                       .storeOp = WGPUStoreOp_Store, .clearValue = { 0, 0, 0, 1 } };
+  WGPURenderPassDescriptor rp = { .colorAttachmentCount = 1, .colorAttachments = &ca };
+  WGPURenderPassEncoder p = wgpuCommandEncoderBeginRenderPass(enc, &rp);
+  wgpuRenderPassEncoderSetPipeline(p, w_fpipe);
+  wgpuRenderPassEncoderSetBindGroup(p, 0, bg, 0, NULL);
+  wgpuRenderPassEncoderSetViewport(p, (float)x, (float)y, (float)w, (float)h, 0, 1);
+  wgpuRenderPassEncoderDraw(p, 3, 1, 0, 0);
+  wgpuRenderPassEncoderEnd(p);
+  wgpuRenderPassEncoderRelease(p);
+  WGPUCommandBuffer cb = wgpuCommandEncoderFinish(enc, NULL);
+  wgpuQueueSubmit(cw__wgpu_queue(), 1, &cb);
+  wgpuCommandBufferRelease(cb);
+  wgpuCommandEncoderRelease(enc);
+  wgpuBindGroupRelease(bg);
+}
+
 /* the view standing in for the window while the scene or the UI target draws */
 WGPUTextureView cw__pixel_wgpu_view(void) {
   return target == T_SCENE ? w_scene.view : target == T_UI ? w_ui.view : NULL;
@@ -292,7 +474,7 @@ void cw__pixel_frame_begin(void) {
   target = T_OUT;
   scene_used = false;
   cw__gl_window_fbo = 0;
-  if (p->k <= 1) return;
+  if (p->k <= 1 && !p->upscale) return;
 #if CW_WGPU
   if (wgpu_on()) {
     /* the frame first: a cart's surface is configured (and its format, which
@@ -312,9 +494,15 @@ void cw__pixel_frame_begin(void) {
 
 void cw__pixel_ui_begin(void) {
   cw_platform *p = &cw__plat;
-  if (target != T_SCENE || !p->crisp_ui) return;
+  if (target != T_SCENE || !(p->crisp_ui || p->upscale)) return;
   bool b = bars();
 #if CW_WGPU
+  if (wgpu_on() && p->upscale) {
+    wg_draw_filtered(&w_scene, cw__wgpu_output_view(), 0, 0, p->px_w, p->px_h);
+    target = T_OUT;
+    scene_used = false;
+    return;
+  }
   if (wgpu_on()) {
     if (b) {
       if (!wg_rt_ensure(&w_ui, p->view_w, p->view_h)) return;
@@ -328,6 +516,13 @@ void cw__pixel_ui_begin(void) {
     return;
   }
 #endif
+  if (p->upscale) {
+    gl_draw_filtered(&g_scene, 0, 0, 0, p->px_w, p->px_h);
+    cw__gl_window_fbo = 0;
+    target = T_OUT;
+    scene_used = false;
+    return;
+  }
   if (b) {
     if (!gl_rt_ensure(&g_ui, p->view_w, p->view_h)) return;
     gl_draw(&g_scene, g_ui.fbo, p->view_w, p->view_h, 0, 0, p->k);
@@ -349,14 +544,16 @@ void cw__pixel_frame_end(void) {
   if (t == T_OUT && !scene_used) return;
 #if CW_WGPU
   if (wgpu_on()) {
-    if (t == T_SCENE) wg_draw(&w_scene, cw__wgpu_output_view(), p->view_x, p->view_y, p->k);
+    if (t == T_SCENE && p->upscale) wg_draw_filtered(&w_scene, cw__wgpu_output_view(), 0, 0, p->px_w, p->px_h);
+    else if (t == T_SCENE) wg_draw(&w_scene, cw__wgpu_output_view(), p->view_x, p->view_y, p->k);
     else if (t == T_UI) wg_draw(&w_ui, cw__wgpu_output_view(), p->view_x, p->view_y, 1);
     scene_used = false;
     return;
   }
 #endif
   int y_gl = p->px_h - p->view_y - p->view_h;
-  if (t == T_SCENE) gl_draw(&g_scene, 0, p->px_w, p->px_h, p->view_x, y_gl, p->k);
+  if (t == T_SCENE && p->upscale) gl_draw_filtered(&g_scene, 0, 0, 0, p->px_w, p->px_h);
+  else if (t == T_SCENE) gl_draw(&g_scene, 0, p->px_w, p->px_h, p->view_x, y_gl, p->k);
   else if (t == T_UI) gl_draw(&g_ui, 0, p->px_w, p->px_h, p->view_x, y_gl, 1);
   scene_used = false;
 }
@@ -372,6 +569,8 @@ void cw__pixel_shutdown(void) {
   gl_rt_free(&g_scene);
   gl_rt_free(&g_ui);
   if (g_prog) glDeleteProgram(g_prog);
+  if (g_fprog) glDeleteProgram(g_fprog);
+  g_fprog = 0;
   if (g_vao) glDeleteVertexArrays(1, &g_vao);
   g_prog = g_vao = 0;
 }

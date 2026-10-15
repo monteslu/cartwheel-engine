@@ -16,6 +16,7 @@
  * (Mesa's glthread), which cost a frame 1-3 ms of main-thread CPU when the
  * timers ran unconditionally. pipeline.c. */
 bool cw__gpu_timing_wanted(void);
+void cw__gpu_timing_request(void); /* turn them on (Auto quality measures the GPU: quality.c) */
 
 typedef struct pass_rec {
   cw_pass_desc d;

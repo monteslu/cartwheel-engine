@@ -8,5 +8,6 @@ void cw__quality_init(void);                  /* the platform, before the app's 
 void cw__quality_post(cw_post_settings *s);   /* the frame's post settings, capped / raised */
 int cw__quality_shadow_size(int authored);    /* a light's shadow map size */
 bool cw__quality_soft_shadows(void);          /* soft PCF (else plain PCF) */
+float cw__quality_lod_bias(void);             /* the LOD error budget's multiplier */
 
 #endif

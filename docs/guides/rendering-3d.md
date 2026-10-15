@@ -108,11 +108,33 @@ Lights are three.c's: three.js r186's directional, omni (point), spot, ambient a
 
 Clustered lights, cascaded sun shadows and light probes come from three.js r186's `ClusteredLighting`, `CSMShadowNode` and `LightProbeGrid` as three.c adds them.
 
-## Quality presets
+## Graphics settings and presets
 
-[cartwheel/quality.h](api:cw_quality_get) has four presets, Low, Medium, High (the default) and Ultra. They change what a frame costs, never the resolution (`cw_app_desc.render_scale`) and never the simulation: High draws what the scene's PostProcess and lights ask for; Medium and Low turn GTAO down or off, shorten the bloom chain, cap shadow maps (Low also drops to hard PCF) and step SMAA down to FXAA or off; Ultra raises GTAO and shadow resolution and picks SMAA. GPU particle systems draw `cw_quality_scale("particles")` of their particles (all are still simulated). Games thin their own instancing (grass, crowds, scatter) by `cw_quality_density()` and re-thin from a `cw_quality_on_change` callback.
+[cartwheel/quality.h](api:cw_quality_get) has five settings a player can pick one by one, and four presets that pick them all:
 
-The player picks the preset from a settings entry (`cw_quality_cycle`: Low, Medium, High, Ultra); keep it in the save with `cw_quality_saved` / `cw_quality_restore`. An automatic step-down exists but is off unless a game turns it on (`cw_quality_auto(true, budget_ms)`): while the game says it is in play (`cw_quality_auto_measure(true)` every frame), the engine averages the frame time and steps down one preset after a couple of seconds over budget (19 ms by default), never back up in that run, and a player's choice ends it. A deterministic run is always High, so every host draws the same frame; `CW_QUALITY=low` (native) fixes a preset to compare them, and the debug command `quality [low|medium|high|ultra|auto]` switches one live.
+| Setting | Low | Medium | High (default) | Ultra |
+|---|---|---|---|---|
+| Resolution | 67% | 75% | 100% | 100% |
+| Ambient occlusion | Off | On | On | On |
+| Shadows | Low | Medium | High | Ultra |
+| Anti-aliasing | FXAA | FXAA | SMAA | SMAA |
+| Effects detail | Low | Medium | High | Ultra |
+
+- **Resolution** (50%, 60%, 67%, 75%, 85%, 100%) is the biggest lever: the 3D scene and its post render at that share of the output and are scaled up with a Catmull-Rom filter, while the 2D window passes (HUD, menus, text) draw over it at the output's full size. A scene's GPU time goes with its pixel count, so 67% costs about 45% of 100%. It applies on top of `cw_app_desc.render_scale`; an app with `pixel_scale` keeps its own size. Draw the 3D scene before the first 2D window pass of a frame: that pass is where the scene is scaled up.
+- **Ambient occlusion**: GTAO as the PostProcess asks for it, or none.
+- **Shadows**: Low (maps of 1024 at most, hard PCF), Medium (1024 at most, soft), High (as the lights ask), Ultra (twice that, up to 4096).
+- **Anti-aliasing**: Off, FXAA, or SMAA (as the PostProcess asks).
+- **Effects detail**: the share of GPU particles drawn (`cw_quality_scale("particles")`; all are still simulated), the density games thin their instancing by (`cw_quality_density()`: grass, crowds, scatter), the bloom chain's length, GTAO's samples and the LOD error budget (Low and Medium pick coarser LODs sooner).
+
+High draws what the scene's PostProcess and lights ask for. Nothing here reaches the simulation.
+
+A game adds its own render-only settings with `cw_quality_lever_add` (a name, its values' labels, the value each preset picks); they show after the engine's, change with the presets and are saved with them. Re-apply them, and re-thin instancing, from a `cw_quality_on_change` callback.
+
+The player picks from the graphics page ([cartwheel/quality_menu.h](header:quality_menu.h)), which the game shell opens from its Settings and a game opens from its own pause menu: a row for the preset (Low, Medium, High, Ultra, Auto; Custom once a setting was changed on its own), one per setting with its value (the resolution with the pixel size it renders at), the game's own, and Back. Keep the choice in the save with `cw_quality_saved` / `cw_quality_restore` (13 bits for a game with no settings of its own, 21 with four).
+
+**Auto** holds the frame's cost under a budget. While the game says it is in play (`cw_quality_auto_measure(true)` every frame), the engine averages the cost: the GPU time of the frame's passes where the host times them cheaply (native WebGPU's timestamps), else the frame-to-frame time (GL's timer queries would cost the CPU a driver sync every frame; a cart has no GPU timers). After a couple of seconds over budget it steps down a ladder that gives up resolution first (High 100%, High 85%, Medium 75%, Medium 67%, Low 67%, Low 60%, Low 50%); where it measures GPU time it also steps back up when the cost stays well under budget, never into a level that was over it in this run. `cw_quality_auto(true, budget_ms)` makes Auto a game's starting choice (19 ms of frame time by default, three quarters of that of GPU time). The level it reached is saved with the choice.
+
+A deterministic run starts at High whatever the save holds, with Auto off, so every host draws the same frame; a choice made in it from the menus (input every host replays alike) applies. `CW_QUALITY=low` (native) fixes a preset to compare them; the debug command `quality [low|medium|high|ultra|auto]` switches one live and `quality set <setting> <value>` one setting (`resolution 0-5`, `ssao 0-1`, `shadows 0-3`, `aa 0-2`, `effects 0-3`, or a game setting's name); `quality_menu 1` opens the graphics page.
 
 ## Sky and fog
 

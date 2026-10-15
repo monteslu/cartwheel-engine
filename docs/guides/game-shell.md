@@ -9,10 +9,13 @@ writes only its gameplay and art:
 - screens: loading, title (Play, Settings, Quit), join (one to four players:
   a pad joins with South and leaves with East, the keyboard joins with
   Enter), play, pause (Resume, Settings, Quit to title) and settings;
-- settings: the graphics preset ((header:quality.h)) with the resolution the
-  game renders at, music and effects volume, and the controls (each action
-  and its bindings, from (header:input.h)); saved with the game's own save
-  data in one versioned, checksummed block;
+- settings: graphics ((header:quality.h): left and right step the preset,
+  accept opens the graphics page of (header:quality_menu.h) with every
+  setting, the render resolution with its pixel size, ambient occlusion,
+  shadows, anti-aliasing, effects detail, Auto, and the game's own settings
+  from `cw_quality_lever_add`), music and effects volume, and the controls
+  (each action and its bindings, from (header:input.h)); saved with the
+  game's own save data in one versioned, checksummed block;
 - input: menus answer pads, the keyboard and pointer taps (mouse or touch);
   joined players are assigned their pad and devices in join order, so
   gameplay asks `cw_action_*` for players 0 to n-1;

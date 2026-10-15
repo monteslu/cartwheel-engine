@@ -318,6 +318,24 @@ static void pixel_layout(int w, int h) {
   p->view_h = p->scene_h * p->k;
   p->view_x = (w - p->view_w) / 2;
   p->view_y = (h - p->view_h) / 2;
+  /* the render resolution setting (cartwheel/quality.h): with no pixel
+   * scale, the scene renders at a share of the output and is scaled up with
+   * a filter into all of it; the UI draws at the output's resolution */
+  p->upscale = p->k == 1 && p->res_scale > 0 && p->res_scale < 0.999f;
+  if (p->upscale) {
+    p->scene_w = CW_MAX(1, (int)lroundf((float)w * p->res_scale));
+    p->scene_h = CW_MAX(1, (int)lroundf((float)h * p->res_scale));
+    p->view_w = w;
+    p->view_h = h;
+    p->view_x = p->view_y = 0;
+  }
+}
+
+void cw__render_scale_apply(float s) {
+  cw_platform *p = &cw__plat;
+  if (s == p->res_scale) return;
+  p->res_scale = s;
+  if (p->px_w > 0 && p->px_h > 0) pixel_layout(p->px_w, p->px_h);
 }
 
 /* the SDL window's size changed (or is first known): logical = pixels / scale */
@@ -826,7 +844,7 @@ void cw_drawable_size(int *w, int *h) {
 }
 void cw_render_size(int *w, int *h) {
   cw_platform *p = &cw__plat;
-  if (p->k > 1) {
+  if (p->k > 1 || p->upscale) {
     if (w) *w = p->scene_w;
     if (h) *h = p->scene_h;
     return;
@@ -838,6 +856,12 @@ void cw_render_size(int *w, int *h) {
   }
   if (w) *w = dw;
   if (h) *h = dh;
+}
+/* the output's size in pixels (the render resolution setting's 100%: quality.c) */
+void cw__output_size(int *w, int *h);
+void cw__output_size(int *w, int *h) {
+  *w = cw__plat.px_w;
+  *h = cw__plat.px_h;
 }
 void cw_crisp_ui_set(bool on) {
   cw_platform *p = &cw__plat;

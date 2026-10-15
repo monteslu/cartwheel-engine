@@ -82,6 +82,7 @@ bool cw__gpu_timing_wanted(void) {
   }
   return gpu_timing > 0;
 }
+void cw__gpu_timing_request(void) { gpu_timing = 1; }
 
 /* debug channel: "pipeline" lists the passes, what ran, GPU ms, caps. The
  * first call starts the GPU timers (off until something reads them): pass

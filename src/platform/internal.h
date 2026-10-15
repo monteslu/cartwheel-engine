@@ -29,6 +29,11 @@ typedef struct cw_platform {
   bool pixel_host;       /* a cart whose host gave a size: the output is the picture, k fixed */
   int scene_w, scene_h, k;
   int view_x, view_y, view_w, view_h;
+  /* the render resolution setting (cartwheel/quality.h): k == 1 and a scale
+   * under 1 renders the scene at scene_w x scene_h and scales it up with a
+   * filter (upscale) into the whole output, the UI over it at full size */
+  float res_scale;       /* 1 (or 0) = the output's size */
+  bool upscale;
   cw_raw_input input;
   SDL_GameController *pads[CW_MAX_PADS];
   bool quit;
@@ -66,6 +71,7 @@ void cw__pixel_ui_begin(void);      /* the first 2D window pass: the UI's target
 void cw__pixel_frame_end(void);     /* end of a frame: the picture into the output */
 int cw__pixel_target(void);         /* what draws now: 0 output, 1 scene, 2 UI (view-sized) */
 void cw__pixel_shutdown(void);
+void cw__render_scale_apply(float s); /* sdl_common.c: the render resolution setting's scale (quality.c) */
 bool cw__sdl_init(void);            /* SDL_Init + window + GL context */
 void cw__sdl_poll(void);            /* events -> raw input + app events */
 void cw__frame(double now_seconds); /* one rendered frame: ticks, update, render */
