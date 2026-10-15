@@ -12,6 +12,7 @@
  * mesh resource (a glTF sub-resource; its LOD chain gives the LODs). */
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "cartwheel/physics_nodes.h"
@@ -238,7 +239,7 @@ static void scatter_apply(cw_node n, scatter3d *s, cw_terrain *t) {
     uint8_t *bytes = cw_vfs_read(s->density_map, &len);
     int w = 0, h = 0, c;
     grey = bytes ? stbi_load_from_memory(bytes, (int)len, &w, &h, &c, 1) : NULL;
-    cw_free(bytes);
+    free(bytes);
     if (!grey) cw_error("TerrainScatter3D %s: cannot read density map %s", cw_node_name(n), s->density_map);
     d.density_map = grey, d.dm_w = w, d.dm_h = h;
   }
@@ -333,9 +334,7 @@ static void terrain_init(cw_node n, void *data) {
 }
 
 static t3_vec3 node_origin(cw_node n, const terrain3d *d) {
-  t3_object *o = cw_node3d_object(n);
-  t3_vec3 p = { 0, 0, 0 };
-  if (o) p = (t3_vec3){ o->matrix_world.e[12], o->matrix_world.e[13], o->matrix_world.e[14] };
+  t3_vec3 p = cw_node3d_global_position(n);
   float sp = d->vertex_spacing > 0 ? d->vertex_spacing : 1;
   return (t3_vec3){ p.x - (float)d->size_x * sp * 0.5f, p.y, p.z - (float)d->size_z * sp * 0.5f };
 }

@@ -15,12 +15,18 @@
  *                    wheels and drives up a slope; a cw_mover3d walks on it;
  *   scatter          placement is the same for the same seed, differs for
  *                    another, respects density, slope and layers;
- *   import / control Terrain3D control words round trip, splat import picks
- *                    the two heaviest layers.
+ *   import / control Terrain3D control words round trip; a 16-bit PNG and the
+ *                    same heights as .r16 import exactly; a splat image picks
+ *                    the two heaviest layers; a control PNG gives its words;
+ *   scene file       a Terrain3D with a TerrainScatter3D child from .cwscene
+ *                    text: imported heights, physics in the tree's world,
+ *                    the scatter layer, and the properties saved back.
  * Every result folds into unit.checksum, compared across hosts. */
 #include <math.h>
 #include <string.h>
 
+#include "cartwheel/physics_nodes.h"
+#include "cartwheel/scene_file.h"
 #include "cartwheel/terrain.h"
 #include "cartwheel/vehicle3d.h"
 #include "terrain/terrain_internal.h"
@@ -339,5 +345,90 @@ static void test_control(void) {
   cw_terrain_destroy(t);
 }
 
+
+/* the fixtures (terrain_assets/, written by a script: see its README) are 65 x 65 */
+static uint16_t fixture_h(int x, int y) { return (uint16_t)((x * 1009 + y * 523 + ((x * y) % 97) * 13) % 65536); }
+
+static void test_import(void) {
+  cw_terrain_def d = cw_terrain_default_def();
+  d.size_x = d.size_z = 64;
+  d.grid_quads = 32;
+  d.region_size = 64;
+  int bad = 0;
+  for (int k = 0; k < 2; k++) {
+    cw_terrain *t = cw_terrain_create(&d);
+    CHECK(cw_terrain_import_heightmap(t, k ? "heights.r16" : "heights.png"));
+    const uint16_t *h = cw_terrain_heights(t);
+    for (int y = 0; y < 65; y++)
+      for (int x = 0; x < 65; x++) bad += h[y * 65 + x] != fixture_h(x, y);
+    cw_terrain_destroy(t);
+  }
+  CHECK_EQ_INT(bad, 0);
+  cw_terrain *t = cw_terrain_create(&d);
+  /* splat: R = 3x (layer 0), G = 3y (layer 1), B = 250 within 4 of x = 32 (layer 2), A = 0 */
+  CHECK(cw_terrain_import_splat(t, "splat.png", 0));
+  const uint32_t *c = cw_terrain_controls(t);
+  uint32_t a = c[10 * 65 + 60], b = c[50 * 65 + 5], m = c[20 * 65 + 32];
+  CHECK_EQ_INT(a >> 27, 0);           /* x 60 (R 180) over y 10 (G 30) */
+  CHECK_EQ_INT((a >> 22) & 31, 1);
+  CHECK_EQ_INT(b >> 27, 1);           /* y 50 (G 150) over x 5 (R 15) */
+  CHECK_EQ_INT(m >> 27, 2);           /* the band */
+  CHECK_EQ_INT((m >> 14) & 255, 96 * 255 / (250 + 96)); /* blend = the second's share (R 96 at x 32) */
+  FOLD(a), FOLD(b), FOLD(m);
+  /* control: (x & 7) << 27 | (y & 7) << 22 | 100 << 14 */
+  CHECK(cw_terrain_import_control(t, "control.png"));
+  c = cw_terrain_controls(t);
+  int badc = 0;
+  for (int y = 0; y < 65; y++)
+    for (int x = 0; x < 65; x++) badc += c[y * 65 + x] != (((uint32_t)(x & 7) << 27) | ((uint32_t)(y & 7) << 22) | (100u << 14));
+  CHECK_EQ_INT(badc, 0);
+  cw_terrain_destroy(t);
+}
+
+static const char scene_text[] =
+  "[scene format=1]\n\n"
+  "[node name=\"Root\" type=\"Node3D\"]\n\n"
+  "[node name=\"Ground\" parent=\".\" type=\"Terrain3D\"]\n"
+  "position = vec3(100, 5, -50)\n"
+  "size_x = 64\nsize_z = 64\nregion_size = 32\n"
+  "min_height = 0\nmax_height = 40\n"
+  "heightmap = \"heights.r16\"\ncontrol = \"control.png\"\n"
+  "layer1_uv_scale = 0.5\n\n"
+  "[node name=\"Stones\" parent=\"Ground\" type=\"TerrainScatter3D\"]\n"
+  "shape = ROCK\ndensity = 0.05\nseed = 7\n";
+
+static void test_scene_file(void) {
+  cw_packed_scene *ps = cw_scene_parse(scene_text, "terrain_test.cwscene");
+  CHECK(ps != NULL);
+  if (!ps) return;
+  cw_tree *tree = cw_tree_new();
+  cw_node root = cw_scene_instance(ps);
+  cw_node_add_child(cw_tree_root(tree), root);
+  cw_tree_fixed_update(tree, 1.0 / 60);
+  cw_node ground = cw_node_get(root, "Ground");
+  cw_terrain *t = cw_terrain_of(ground);
+  CHECK(t != NULL);
+  if (t) {
+    const cw_terrain_def *d = cw_terrain_get_def(t);
+    /* centred on the node */
+    CHECK(d->origin.x == 100 - 32 && d->origin.z == -50 - 32 && d->origin.y == 5);
+    CHECK_EQ_INT(cw_terrain_heights(t)[3 * 65 + 7], fixture_h(7, 3));
+    CHECK_EQ_INT(cw_terrain_controls(t)[2 * 65 + 9], ((9u & 7) << 27) | ((2u & 7) << 22) | (100u << 14));
+    /* physics in the tree's world: a ray straight down hits the sample's height */
+    float x = d->origin.x + 7, z = d->origin.z + 3;
+    cw_ray_hit3d hit;
+    CHECK(cw_world3d_raycast(cw_physics3d_world(tree), (t3_vec3){ x, 100, z }, (t3_vec3){ 0, -200, 0 }, NULL, &hit));
+    CHECK(fabsf(hit.point.y - cw_terrain_height_at(t, x, z)) < 1e-4f);
+    CHECK(t->scatter[0] != NULL); /* the Stones layer */
+    FOLD(hit.point.y);
+  }
+  char *text = cw_scene_save(root);
+  CHECK(text && strstr(text, "heightmap = \"heights.r16\"") && strstr(text, "type=\"TerrainScatter3D\"") &&
+        strstr(text, "layer1_uv_scale = 0.5"));
+  cw_free(text);
+  cw_tree_free(tree);
+}
+
 CW_TEST_SUITE("terrain", { "height_exact", test_height_exact }, { "cdlod", test_cdlod }, { "physics", test_physics },
-              { "vehicle", test_vehicle }, { "scatter", test_scatter }, { "control", test_control })
+              { "vehicle", test_vehicle }, { "scatter", test_scatter }, { "control", test_control },
+              { "import", test_import }, { "scene_file", test_scene_file })

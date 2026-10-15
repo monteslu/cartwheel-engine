@@ -6,6 +6,7 @@
  * cast on it, in the order a world ray cast does its arithmetic, so a query
  * and a physics ray agree to the bit. */
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "cartwheel/jobs.h"
@@ -302,7 +303,7 @@ bool cw_terrain_import_heightmap(cw_terrain *t, const char *path) {
     while ((s + 1) * (s + 1) <= n) s++;
     if (s * s != n || s < 2) {
       cw_error("terrain: %s is not a square r16 image (%zu bytes)", path, len);
-      cw_free(bytes);
+      free(bytes);
       return false;
     }
     src = cw_alloc(sizeof(uint16_t) * (size_t)n, CW_MEM_RENDER);
@@ -314,11 +315,11 @@ bool cw_terrain_import_heightmap(cw_terrain *t, const char *path) {
     src = stbi_load_16_from_memory(bytes, (int)len, &w, &h, &c, 1);
     if (!src) {
       cw_error("terrain: %s is not a PNG heightmap", path);
-      cw_free(bytes);
+      free(bytes);
       return false;
     }
   }
-  cw_free(bytes);
+  free(bytes);
   if (w == t->nx && h == t->nz) memcpy(t->h, src, sizeof(uint16_t) * (size_t)w * h);
   else resample16(src, w, h, t->h, t->nx, t->nz);
   if (own) cw_free(src);
@@ -336,7 +337,7 @@ static uint8_t *load_rgba(const char *path, int *w, int *h) {
   }
   int c;
   uint8_t *px = stbi_load_from_memory(bytes, (int)len, w, h, &c, 4);
-  cw_free(bytes);
+  free(bytes);
   if (!px) cw_error("terrain: %s is not a PNG or JPEG image", path);
   return px;
 }

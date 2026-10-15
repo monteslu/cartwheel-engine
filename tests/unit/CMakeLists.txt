@@ -6,7 +6,7 @@ cw_add_app(unit_math SOURCES test_math.c GL_ONLY)
 cw_add_app(unit_physics SOURCES test_physics.c GL_ONLY)
 cw_add_app(unit_vehicle3d SOURCES test_vehicle3d.c GL_ONLY)
 # terrain: Box3D-exact heights, CDLOD's crack-free selection, physics, vehicles and characters on it, scatter
-cw_add_app(unit_terrain SOURCES test_terrain.c GL_ONLY)
+cw_add_app(unit_terrain SOURCES test_terrain.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/terrain_assets GL_ONLY)
 target_include_directories(unit_terrain PRIVATE ${CMAKE_SOURCE_DIR}/src)
 cw_add_app(unit_scene SOURCES test_scene.c GL_ONLY)
 cw_add_app(unit_timing SOURCES test_timing.c GL_ONLY)
