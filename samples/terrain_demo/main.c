@@ -12,6 +12,7 @@
  * TERRAIN_MODE picks the run:
  *   fly    (default) the camera flies a fixed path: low over the grass,
  *          up over a ridge, across to the far mountains
+ * TERRAIN_QUALITY=low|medium|high|ultra picks the graphics preset.
  *   cracks a magenta clear colour, no sky, and the same flight: any crack
  *          between patches shows magenta below the horizon
  *          (terrain.magenta counts such pixels, natively)
@@ -24,11 +25,13 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "cartwheel/debug.h"
 #include "cartwheel/gl.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
+#include "cartwheel/quality.h"
 #include "cartwheel/render3d.h"
 #include "cartwheel/scene_file.h"
 #include "cartwheel/terrain.h"
@@ -179,6 +182,10 @@ static void init(void *u) {
   (void)u;
   const char *m = getenv("TERRAIN_MODE");
   cracks = m && !strcmp(m, "cracks");
+  /* TERRAIN_QUALITY=low|medium|high|ultra: the graphics preset (terrain shading, scatter density) */
+  const char *qs = getenv("TERRAIN_QUALITY");
+  for (int q = 0; qs && q < CW_QUALITY_COUNT; q++)
+    if (!strcasecmp(qs, cw_quality_name((cw_quality)q))) cw_quality_set((cw_quality)q, false);
   tree = cw_scene_app_tree();
   cw_node root = cw_tree_root(tree);
   cam = cw_node_get(root, "World/Camera");

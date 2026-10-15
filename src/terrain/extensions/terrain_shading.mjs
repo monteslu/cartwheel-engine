@@ -150,8 +150,9 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   // Terrain3D control bits from an RGBA8 texel (byte 0 = bits 31..24)
   const decode = (c) => {
     const R = round(c.r.mul(255)), G = round(c.g.mul(255)), B = round(c.b.mul(255)), A = round(c.a.mul(255));
-    const base = floor(R.div(8));
-    const over = R.sub(base.mul(8)).mul(4).add(floor(G.div(64)));
+    const b5 = floor(R.div(8));
+    const o5 = R.sub(b5.mul(8)).mul(4).add(floor(G.div(64)));
+    const base = min(b5, 7), over = min(o5, 7); // (5-bit ids; the atlas holds 8 layers)
     const blend = G.sub(floor(G.div(64)).mul(64)).mul(4).add(floor(B.div(64))).div(255);
     const angle = floor(B.div(4)).sub(floor(B.div(64)).mul(16));
     const scl = B.sub(floor(B.div(4)).mul(4)).mul(2).add(floor(A.div(128)));
@@ -248,8 +249,11 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
         pAlb.assign(mix(mix(s00.alb, s10.alb, f.x), mix(s01.alb, s11.alb, f.x), f.y));
         pNrm.assign(mix(mix(s00.nrm, s10.nrm, f.x), mix(s01.nrm, s11.nrm, f.x), f.y));
       } else {
-        // the nearest control texel
-        const i = floor(tcoord);
+        // one control texel, picked around the point with a per-pixel jitter: transitions between
+        // texels dither instead of stepping (what the four-texel blend smooths at high quality)
+        const n = fract(sin(dot(wp.xz, vec2(12.9898, 78.233))).mul(43758.5453));
+        const n2 = fract(n.mul(17.13).add(0.31));
+        const i = floor(tcoord.add(0.5).add(vec2(n, n2).sub(0.5).mul(0.9)));
         const c = textureLoad(ctlMap, ivec2(clamp(i.x, 0, hgt.z), clamp(i.y, 0, hgt.w)));
         const s = blendTexel(c, g);
         pAlb.assign(s.alb);

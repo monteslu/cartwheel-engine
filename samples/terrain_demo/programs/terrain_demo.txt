@@ -3,3 +3,4 @@ standard+instbig+shadow+senv+l1001+xterrain
 standard+vcol+instbig+shadow+senv+ds+l1001
 standard+vcol+instbig+shadow+senv+l1001
 standard+instbig+shadow+senv+l1001+xterrainfar
+standard+instbig+shadow+senv+l1001+xterrainlow
