@@ -1,0 +1,14 @@
+cartwheel
+Copyright (c) 2026 Luis Montes. MIT licensed (see LICENSE).
+
+This software includes code from the following projects.
+
+RVO2 Library (ORCA collision avoidance), ported to C in src/nav/third_party/rvo2/
+  Copyright 2008 University of North Carolina at Chapel Hill
+  Licensed under the Apache License, Version 2.0 (src/nav/third_party/rvo2/LICENSE)
+  https://gamma.cs.unc.edu/RVO2/
+
+Recast & Detour (navmesh generation and queries), built from scripts/deps.lock
+with the changes in patches/recastnavigation/
+  Copyright (c) 2009 Mikko Mononen memon@inside.org
+  zlib license (deps/recastnavigation/License.txt)

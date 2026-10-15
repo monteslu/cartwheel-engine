@@ -38,9 +38,15 @@ include(cmake/deps.cmake)
 # ── the engine ─────────────────────────────────────────────────────────
 file(GLOB_RECURSE CW_CORE_SRCS CONFIGURE_DEPENDS src/core/*.c src/jobs/*.c src/input/*.c src/physics/*.c
      src/audio/*.c src/render/*.c src/render2d/*.c src/scene/*.c src/fx/*.c src/visibility/*.c src/anim/*.c src/ui/*.c src/l10n/*.c src/resource/*.c src/debug/*.c src/remote/*.c
-     src/net/*.c src/shell/*.c)
+     src/net/*.c src/shell/*.c src/nav/*.c)
 list(APPEND CW_CORE_SRCS src/resource/basis_glue.cpp) # the KTX2 transcoder's C side
 set_source_files_properties(src/resource/basis_glue.cpp PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-fno-rtti")
+# navigation: Recast, Detour and DetourTileCache compiled into the engine (cmake/deps.cmake: CW_RECAST_SRCS)
+# with the navmesh shim; their math and allocator hooks are src/nav/recast_hooks.h, which calls the engine
+list(APPEND CW_CORE_SRCS src/nav/navmesh.cpp ${CW_RECAST_SRCS})
+set_source_files_properties(src/nav/navmesh.cpp ${CW_RECAST_SRCS} PROPERTIES
+  COMPILE_OPTIONS "-fno-exceptions;-fno-rtti" COMPILE_DEFINITIONS "${CW_RECAST_DEFS}")
+set_source_files_properties(${CW_RECAST_SRCS} PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-fno-rtti;-O2;-w")
 set(CW_PLATFORM_SRCS src/platform/sdl_common.c src/platform/gpu.c src/platform/pixel.c)
 if(CW_CART)
   list(APPEND CW_PLATFORM_SRCS src/platform/cart.c)
@@ -50,7 +56,8 @@ endif()
 # src/render/programs/ holds the engine's generated program table, built as its own library (cmake/programs.cmake)
 list(FILTER CW_CORE_SRCS EXCLUDE REGEX "/src/render/programs/")
 add_library(cartwheel STATIC ${CW_CORE_SRCS} ${CW_PLATFORM_SRCS})
-target_include_directories(cartwheel PUBLIC include ${CW_THREE_DIR}/include PRIVATE src src/resource ${DEPS}/stb ${CW_THREE_DIR}/third_party)
+target_include_directories(cartwheel PUBLIC include ${CW_THREE_DIR}/include PRIVATE src src/resource ${DEPS}/stb ${CW_THREE_DIR}/third_party
+  ${CW_RECAST_INCLUDES})
 target_compile_options(cartwheel PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
 # #embed (src/ui/fonts.c) needs clang 19+; an older compiler (the Android
 # NDK's) includes the same bytes generated as initializer lists
