@@ -9,6 +9,7 @@
 // (_headers does it on Netlify / Cloudflare Pages; serve.mjs locally; see
 // README.txt for other servers). Without them this page says so and stops.
 import { CartHostWeb } from './wasmcart/CartHostWeb.js';
+import { padReader } from './pads.js';
 
 const canvas = document.getElementById('screen');
 const CART = 'game.wasc';
@@ -163,21 +164,7 @@ for (let i = 1; i <= 9; i++) KEYS['Digit' + i] = 29 + i;
 KEYS.Digit0 = 39;
 for (let i = 1; i <= 12; i++) KEYS['F' + i] = 57 + i;
 
-// standard-mapping gamepad button index -> wasmcart pad bit
-const PAD_BITS = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 9: 6, 8: 7, 12: 8, 13: 9, 14: 10, 15: 11, 10: 12, 11: 13, 16: 14 };
-const axis = (v) => Math.round(Math.max(-1, Math.min(1, Math.abs(v) < 0.08 ? 0 : v)) * 32767);
-function readPads() {
-  const out = [];
-  for (const gp of (navigator.getGamepads ? navigator.getGamepads() : [])) {
-    if (!gp || !gp.connected || out.length >= 4) continue;
-    let buttons = 0;
-    gp.buttons.forEach((b, i) => { if (b.pressed && i in PAD_BITS) buttons |= 1 << PAD_BITS[i]; });
-    out.push({ connected: true, name: gp.id, buttons, leftX: axis(gp.axes[0] || 0), leftY: axis(gp.axes[1] || 0),
-      rightX: axis(gp.axes[2] || 0), rightY: axis(gp.axes[3] || 0),
-      leftTrigger: Math.round((gp.buttons[6]?.value || 0) * 32767), rightTrigger: Math.round((gp.buttons[7]?.value || 0) * 32767) });
-  }
-  return out;
-}
+const readPads = padReader(() => (navigator.getGamepads ? navigator.getGamepads() : []));
 
 // ── audio ──────────────────────────────────────────────────────────────
 // The game hands over a frame's worth of samples each frame. They go into a

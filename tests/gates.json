@@ -186,6 +186,58 @@
     "note": "pad-driven actions at 120 Hz (two ticks per frame): a one-frame tap, a 10-frame hold, a trigger over/under its threshold, stick vectors in three deadzone modes, runtime rebinding by capture, and a record-then-replay whose re-simulated state must equal the live run"
   },
   {
+    "name": "input-players",
+    "app": "input_demo",
+    "frames": 40,
+    "input": "input-players.json",
+    "controlInput": "input-players-control.json",
+    "maxGt16": 0.0005,
+    "expect": {
+      "players.jump_jp": [1, 3, 5, 6],
+      "players.jump_frames": [1, 3, 5, 6],
+      "players.axis": [0, -4, 0.799853503704071, 3],
+      "cw.pad1.connected": 1,
+      "cw.pad2.connected": 1,
+      "cw.pad3.connected": 1
+    },
+    "note": "four players on pads 0-3 (players 1-3 on pads 1-3 by default): each presses jump and pushes left/right on its own pad, pad 3 is plugged in at frame 8 and out over frames 20-23; every host must deliver each pad to its own player"
+  },
+  {
+    "name": "input-players-hotplug",
+    "app": "input_demo",
+    "frames": 40,
+    "input": "input-players-hotplug.json",
+    "controlInput": "input-players-control.json",
+    "maxGt16": 0.0005,
+    "expect": {
+      "players.jump_jp": [1, 3, 5, 6],
+      "players.jump_frames": [1, 3, 5, 6],
+      "players.axis": [0, -4, 0.799853503704071, 3],
+      "cw.pad1.connected": 1,
+      "cw.pad2.connected": 1,
+      "cw.pad3.connected": 1
+    },
+    "skip": [
+      "romdev"
+    ],
+    "note": "pads 1 and 2 unplugged at frame 20, pad 2 back first (24), pad 1 after (26): each comes back as its own player (a cart's pads arrive in the host's slots). romdev's input ports are always connected, so it cannot unplug a pad before a later one"
+  },
+  {
+    "name": "native-pads",
+    "script": "tests/native-pads.mjs",
+    "note": "four virtual controllers (uinput) through SDL to input_demo natively: each its own pad and player; two present at start take pads 0 and 1 only"
+  },
+  {
+    "name": "wcnative-pads",
+    "script": "tests/wcnative-pads.mjs",
+    "note": "four virtual controllers (uinput) through wasmcart-native to the input_demo cart, plugged in and out while it runs: each its own pad and player"
+  },
+  {
+    "name": "web-pads",
+    "script": "tests/web-pads.mjs",
+    "note": "the web export's gamepads: each keeps the pad slot it got when it appeared (the first free one); one going away leaves the others in place"
+  },
+  {
     "name": "input-keys",
     "app": "input_demo",
     "frames": 62,

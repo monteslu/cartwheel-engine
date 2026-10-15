@@ -11,7 +11,10 @@
  *   - touch: an on-screen stick (touch:0) and button (touch:1);
  *   - record/replay: the whole run is recorded from the first tick; pressing
  *     "verify" re-simulates it from the recording alone inside one frame and
- *     publishes whether the replayed state equals the live one.
+ *     publishes whether the replayed state equals the live one;
+ *   - four players: players 1-3 on pads 1-3 (the default assignment) press
+ *     "jump" and push "left"/"right" with the same bindings as player 0, and
+ *     each one's counts are its own (players.*, tests/gates.json input-players).
  * Everything a test needs is a named debug field. */
 #include <string.h>
 
@@ -47,6 +50,9 @@ typedef struct {
   /* record / replay */
   int32_t replay_done, replay_match, hash_match;
   uint32_t replay_ticks, record_ticks, record_bytes, record_hash, replay_hash;
+  /* per player (frame context): jump presses, frames held, the left/right axis summed */
+  int32_t pl_jump_jp[CW_INPUT_MAX_PLAYERS], pl_jump_frames[CW_INPUT_MAX_PLAYERS];
+  float pl_axis[CW_INPUT_MAX_PLAYERS];
 } demo;
 
 static demo app;
@@ -141,6 +147,9 @@ static void init(void *user) {
   cw_debug_u32("record.ticks", &d->record_ticks);
   cw_debug_u32("record.bytes", &d->record_bytes);
   cw_debug_u32("record.hash", &d->record_hash);
+  cw_debug_field("players.jump_jp", d->pl_jump_jp, CW_DBG_I32, CW_INPUT_MAX_PLAYERS);
+  cw_debug_field("players.jump_frames", d->pl_jump_frames, CW_DBG_I32, CW_INPUT_MAX_PLAYERS);
+  cw_debug_f32_array("players.axis", d->pl_axis, CW_INPUT_MAX_PLAYERS);
 }
 
 static void fixed_update(void *user, double dt) {
@@ -180,6 +189,11 @@ static void update(void *user, double dt) {
   if (cw_action_pressed(0, d->jump)) d->ui_jump_frames++;
   if (cw_action_just_pressed(0, d->fire)) d->ui_fire_jp++;
   if (cw_touch_control_active(1)) d->ui_touch_button++;
+  for (int p = 0; p < CW_INPUT_MAX_PLAYERS; p++) {
+    if (cw_action_just_pressed(p, d->jump)) d->pl_jump_jp[p]++;
+    if (cw_action_pressed(p, d->jump)) d->pl_jump_frames[p]++;
+    d->pl_axis[p] += cw_input_axis(p, d->left, d->right);
+  }
   cw_vec2 a = cw_input_vector(0, d->left, d->right, d->up, d->down, CW_DEADZONE_AXIAL, 0.2f);
   cw_vec2 r = cw_input_vector(0, d->left, d->right, d->up, d->down, CW_DEADZONE_RADIAL, 0.2f);
   cw_vec2 s = cw_input_vector(0, d->left, d->right, d->up, d->down, CW_DEADZONE_SCALED_RADIAL, 0.2f);

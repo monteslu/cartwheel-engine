@@ -211,10 +211,22 @@ static int pad_slot_of(SDL_JoystickID id) {
   return -1;
 }
 
+/* SDL reports every controller present at start twice: the device list read
+ * after init, and an SDL_CONTROLLERDEVICEADDED event queued by its init. Opening
+ * both gave one controller two slots (one pad was pad 0 and pad 1 at once, and
+ * a third controller found the slots full), so a device already open is
+ * skipped. */
 static void open_pad(int device_index) {
   if (!SDL_IsGameController(device_index)) return;
-  for (int i = 0; i < CW_MAX_PADS; i++) {
-    if (cw__plat.pads[i]) continue;
+  if (pad_slot_of(SDL_JoystickGetDeviceInstanceID(device_index)) >= 0) return;
+  /* the slot is the controller's player index when SDL has one and it is free
+   * (a wasmcart host's pad id, the XInput slot, the index SDL handed out at
+   * connect), so pads that come back in another order keep their players;
+   * otherwise the first free slot */
+  int want = SDL_JoystickGetDevicePlayerIndex(device_index);
+  for (int k = -1; k < CW_MAX_PADS; k++) {
+    int i = k < 0 ? want : k;
+    if (i < 0 || i >= CW_MAX_PADS || cw__plat.pads[i]) continue;
     cw__plat.pads[i] = SDL_GameControllerOpen(device_index);
     if (!cw__plat.pads[i]) { cw_warn("pad open: %s", SDL_GetError()); return; }
     cw_event e = { .type = CW_EVENT_PAD_ADDED, .pad = { i } };
@@ -423,9 +435,15 @@ bool cw__sdl_init(void) {
     cw__debug_channel_init();
     cw_debug_field("cw.frame", &p->frame, CW_DBG_U32, 1);
     cw_debug_field("cw.tick", &p->tick, CW_DBG_U32, 1);
-    cw_debug_u32("cw.pad0.buttons", &p->input.pads[0].buttons);
-    cw_debug_f32_array("cw.pad0.axes", p->input.pads[0].axes, CW_AXIS_COUNT);
-    cw_debug_field("cw.pad0.connected", &p->input.pads[0].connected, CW_DBG_U8, 1);
+    /* every pad the platform delivers (cw_pad_state, after the input script) */
+    static const char *const names[CW_MAX_PADS][3] = {
+      { "cw.pad0.buttons", "cw.pad0.axes", "cw.pad0.connected" }, { "cw.pad1.buttons", "cw.pad1.axes", "cw.pad1.connected" },
+      { "cw.pad2.buttons", "cw.pad2.axes", "cw.pad2.connected" }, { "cw.pad3.buttons", "cw.pad3.axes", "cw.pad3.connected" } };
+    for (int i = 0; i < CW_MAX_PADS; i++) {
+      cw_debug_u32(names[i][0], &p->input.pads[i].buttons);
+      cw_debug_f32_array(names[i][1], p->input.pads[i].axes, CW_AXIS_COUNT);
+      cw_debug_field(names[i][2], &p->input.pads[i].connected, CW_DBG_U8, 1);
+    }
     cw_debug_field("cw.vibrate", vibrate_req, CW_DBG_U32, 2);
     cw__gpu_debug_register();
   }

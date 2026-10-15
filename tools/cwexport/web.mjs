@@ -46,7 +46,7 @@ export async function runWeb(ctx) {
   const name = slug(ctx.app), top = `${name}-${ctx.version}-web`;
   const site = freshDir(join(ctx.outDir, top));
   ctx.progress(60, 'site');
-  for (const f of ['index.html', 'player.js', 'serve.mjs', '_headers', 'README.txt', ...(coiShim(ctx) ? ['coi-sw.js'] : [])])
+  for (const f of ['index.html', 'player.js', 'pads.js', 'serve.mjs', '_headers', 'README.txt', ...(coiShim(ctx) ? ['coi-sw.js'] : [])])
     write(join(site, f), fill(readFileSync(join(TEMPLATE, f), 'utf8'), ctx));
   // wasmcart's web host, with its one bare import ("fflate") made relative so
   // the page and its module workers need no import map

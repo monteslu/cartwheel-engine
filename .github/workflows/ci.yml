@@ -50,6 +50,13 @@ jobs:
         run: |
           node tools/gen-api.mjs --check
           node tools/gen-docs.mjs --check
+      - name: Virtual controllers (uinput, for tests/native-pads.mjs)
+        run: |
+          sudo modprobe uinput
+          printf '%s\n' 'KERNEL=="uinput", MODE="0666"' 'SUBSYSTEM=="input", MODE="0666"' | sudo tee /etc/udev/rules.d/99-cw-test-pads.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger
+          sudo chmod 0666 /dev/uinput
       - name: Gates (native, software rendering)
         run: node tests/ci.mjs ${{ matrix.part }}
 

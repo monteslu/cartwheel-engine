@@ -16,13 +16,13 @@ echo 7600 > ~/.config/cartwheel/wgpu-adapter           # a word of its device na
 
 ## Continuous integration
 
-CI (`.github/workflows/ci.yml`) runs on every push and pull request to main, on a GitHub runner with no GPU. It fetches the pinned dependencies, builds the native tree, the GL carts and the dual GL + WebGPU carts, runs `node tools/gen-api.mjs --check` and `node tools/gen-docs.mjs --check`, and runs `tests/ci.mjs` with `CW_TEST_GPU=software`: every app gate on the native host through Mesa's llvmpipe (GL), every gate with a `webgpu` entry through lavapipe (WebGPU), and the scripted gates that need no other host (the GL gates are split over three jobs, `node tests/ci.mjs gl-<k>of3`). In software mode nothing is pinned, sandboxed or guarded, and the renderer checks expect llvmpipe.
+CI (`.github/workflows/ci.yml`) runs on every push and pull request to main, on a GitHub runner with no GPU. It fetches the pinned dependencies, builds the native tree, the GL carts and the dual GL + WebGPU carts, runs `node tools/gen-api.mjs --check` and `node tools/gen-docs.mjs --check`, and runs `tests/ci.mjs` with `CW_TEST_GPU=software`: every app gate on the native host through Mesa's llvmpipe (GL), every gate with a `webgpu` entry through lavapipe (WebGPU), and the scripted gates that need no other host (the GL gates are split over three jobs, `node tests/ci.mjs gl-<k>of3`). In software mode nothing is pinned, sandboxed or guarded, and the renderer checks expect llvmpipe. `native-pads` plugs virtual controllers in through uinput (`tools/vpad.c`), so CI loads the `uinput` module and makes `/dev/uinput` and the input devices it creates usable by the runner's user; on a desktop the session already grants both.
 
 Local only (they need GPU hardware or a host CI does not have; `LOCAL_ONLY` in `tests/ci.mjs` gives the reason for each):
 
 - the romdev, Chromium, wasmcart-native (`wcnative`) and wasmcart-libretro legs of every gate;
 - `gpu-guard`, `fx-gpu-report`, `pipeline-perf`, `fx-perf-report`, `vis-perf-report`, `showcase-perf`: GPU guards, timings and frame-time budgets;
-- `gpu-no-display`, `gpu-cleanup`, `editor-channel`, `editor-play`, `editor-import`, `a11y-channel`, `net`, `plugins`, `project-templates`, `tutorials`, `docs`: they drive romdev, Chromium or wasmcart-native;
+- `gpu-no-display`, `gpu-cleanup`, `wcnative-pads`, `editor-channel`, `editor-play`, `editor-import`, `a11y-channel`, `net`, `plugins`, `project-templates`, `tutorials`, `docs`: they drive romdev, Chromium or wasmcart-native;
 - `export`, `project-export`: the export toolchains, Wine and an Android emulator.
 
 Run `node tests/all.mjs` on a machine with a GPU and those hosts for the full set.
@@ -153,8 +153,9 @@ An input script is JSON: a list of entries, each setting the WHOLE input state f
 | `touches` | `[{"id":1,"x":100,"y":280}]`, ids 1..9 |
 | `wheel` | notches this frame only: `1` or `{"x":0,"y":-2}` |
 | `text` | text typed this frame (needs text input started, as a focused text field does) |
+| `pad2`, `pad3`, `pad4` | pads 1, 2 and 3 (players 2, 3 and 4): `{"buttons":["south"],"axes":{"lx":-1}}`, the same names as pad 0's `buttons` and `axes`. A pad key absent from an entry means that pad is unplugged from that frame on |
 
-An entry without `keys`, `mouse` or `touches` means none held. romdev has no keyboard op, so gates with key scripts skip it. Natively the script travels in `CW_INPUT`; a game can also drive itself from `cw_set_raw_input_filter`, which runs at the same point on every host.
+An entry without `keys`, `mouse` or `touches` means none held. Pad 0 is always connected; a 4-player script names `pad2`..`pad4` on every entry where those players play (`tests/input-players.json`). romdev's input ports are all connected, so a script that unplugs a pad while a later one stays (`pad2` absent, `pad3` given) fails there (`input-players-hotplug` skips romdev). romdev has no keyboard op, so gates with key scripts skip it. Natively the script travels in `CW_INPUT`; a game can also drive itself from `cw_set_raw_input_filter`, which runs at the same point on every host.
 
 ## Naming debug state
 
@@ -163,7 +164,7 @@ Gates read state by name, so name it for the reader:
 - `area.thing` in lower case: `player.pos`, `player.on_floor`, `coins`, `game.ticks`, `tree.nodes`, `unit.failed`.
 - Expose what a test asserts, not internals that drift: counts, positions, flags, and hashes of larger state (`phys.hash`, `bodies.hash`).
 - Register in `init`; the pointers must stay valid for the app's lifetime.
-- The engine registers some fields itself: `cw.frame`, `cw.tick`, `cw.pad0.*` (platform), `tree.nodes`, `tree.tick`, `render.draw_calls` (scene runner), `input.hash`, `input.ticks` (input), `audio.*` (audio). A gate without `fields` compares all of them; list `fields` when some (timings, host-dependent counters) must not be compared. `dbg.*` fields are the debug channel's mailbox and are never compared.
+- The engine registers some fields itself: `cw.frame`, `cw.tick`, `cw.pad0.*` .. `cw.pad3.*` (platform: each pad's `buttons`, `axes`, `connected`), `tree.nodes`, `tree.tick`, `render.draw_calls` (scene runner), `input.hash`, `input.ticks` (input), `audio.*` (audio). A gate without `fields` compares all of them; list `fields` when some (timings, host-dependent counters) must not be compared. `dbg.*` fields are the debug channel's mailbox and are never compared.
 - Natively `CW_DEBUG_DUMP=file.json` writes every field at exit; romdev reads them with `wasm({op:'debugState'})`.
 
 @gates

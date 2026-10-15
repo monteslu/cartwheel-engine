@@ -27,6 +27,7 @@ if (process.env.CW_TEST_GPU !== 'software') {
 export const LOCAL_ONLY = {
   'gpu-guard': 'tests the GPU guards against a real card (VRAM, kernel log)',
   'gpu-no-display': 'runs wasmcart-native',
+  'wcnative-pads': 'runs wasmcart-native',
   'gpu-cleanup': 'runs wasmcart-native',
   'pipeline-perf': 'GPU timings, and romdev and Chromium legs',
   'fx-perf-report': 'GPU timings, and romdev and Chromium legs',

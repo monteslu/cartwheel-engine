@@ -1,5 +1,5 @@
 // Run one cartwheel app on one host for N frames on the fixed 1/60 s clock,
-// with an optional pad-0 input script, and capture the last frame and the
+// with an optional input script (pads 0-3, keys, pointer), and capture the last frame and the
 // named debug state. The same request on every host is how cartwheel proves
 // native and cart builds agree.
 //
@@ -271,7 +271,12 @@ async function runRomdev() {
     if (s.axes) p.axes = s.axes;
     const ports = [p];
     for (const k of ['pad2', 'pad3', 'pad4']) {
-      if (!s[k]) break;
+      if (!s[k]) {
+        // romdev's ports are all connected: a pad unplugged before a later one cannot be said
+        if (['pad2', 'pad3', 'pad4'].slice(ports.length).some((j) => s[j]))
+          throw new Error(`romdev: frame ${s.frame} unplugs ${k} while a later pad stays (its input ports are all connected); skip romdev for such gates`);
+        break;
+      }
       const q = {};
       for (const b of s[k].buttons || []) q[b === 'back' ? 'select' : b] = true;
       if (s[k].axes) q.axes = s[k].axes;

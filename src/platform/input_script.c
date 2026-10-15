@@ -146,7 +146,9 @@ static void load(void) {
 
 /* a test run (CW_FRAMES) sees only scripted input, never the machine's own
  * devices: a gamepad plugged into the build box must not change a golden.
- * Pad 0 present and neutral, as cart test hosts report it. */
+ * Pad 0 present and neutral, as cart test hosts report it. CW_TEST_PADS=1
+ * (without an input script) lets the machine's game controllers through: the
+ * test of the SDL pad path itself (tests/native-pads.mjs, virtual controllers). */
 static void neutral(cw_raw_input *in) {
   memset(in->pads, 0, sizeof in->pads);
   in->pads[0].connected = true;
@@ -160,7 +162,8 @@ static void neutral(cw_raw_input *in) {
 void cw__input_script_apply(cw_raw_input *in, uint64_t frame) {
   if (!loaded) load();
   if (!active) {
-    if (getenv("CW_FRAMES")) neutral(in);
+    const char *real = getenv("CW_TEST_PADS");
+    if (getenv("CW_FRAMES") && !(real && real[0] == '1')) neutral(in);
     return;
   }
   bool wheel_now = false;

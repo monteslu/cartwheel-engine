@@ -177,6 +177,7 @@ if (window.__cwPinClock) { let k = 0; const step = 1000 / 60;
   if (!player.includes(touch)) throw new Error('player.js changed: no touch_primary line');
   player = player.replace(touch, "window.cwDebug.command('warmup_spread 0').catch(() => {});\n" + touch);
   writeFileSync(join(site, 'player.js'), player);
+  writeFileSync(join(site, 'pads.js'), readFileSync(join(T, 'pads.js'), 'utf8'));
   // what the web export ships of wasmcart (the files CartHostWeb reaches), its fflate import made relative
   for (const f of wcFiles(WC)) {
     const fflate = posix.relative(posix.dirname(f), 'fflate.js').replace(/^(?!\.)/, './');
