@@ -491,8 +491,54 @@ static void test_geom(void) {
   cw_nav_geom_free(&g);
 }
 
+/* Building, querying, carving and crowding, then freeing everything, gives
+ * back every byte (CW_MEM_NAV): measured after one warm-up round, since the
+ * handle pools keep their chunks. */
+static void nav_round(void) {
+  cw_nav_geom g = level();
+  cw_nav_config c = cw_nav_config_default();
+  c.dynamic = true;
+  cw_navmesh nm = cw_navmesh_build(&c, &g);
+  t3_vec3 pts[32];
+  cw_nav_find_path(nm, (t3_vec3){ -25, 0, -25 }, (t3_vec3){ 25, 0, 0 }, NULL, pts, 32, NULL);
+  uint32_t t = cw_nav_request_path(nm, (t3_vec3){ -25, 0, -25 }, (t3_vec3){ 25, 0, 0 }, NULL);
+  cw_nav_tick(nm, 0, 0);
+  cw_nav_request_path(nm, (t3_vec3){ 0, 0, 0 }, (t3_vec3){ 5, 0, 5 }, NULL); /* left queued: freed with the navmesh */
+  cw_nav_take_path(nm, t, pts, 32, NULL);
+  cw_nav_obstacle_add_cylinder(nm, (t3_vec3){ 0, 0, 0 }, 2, 2);
+  cw_nav_update(nm);
+  size_t len;
+  void *bytes = cw_navmesh_save(nm, &len);
+  cw_navmesh nm2 = cw_navmesh_load(bytes, len);
+  cw_free(bytes);
+  cw_crowd cr = cw_crowd_new(nm, 32);
+  for (int i = 0; i < 32; i++) {
+    cw_crowd_agent a = cw_crowd_add(cr, (t3_vec3){ -20.0f + i, 0, -20 }, NULL);
+    cw_crowd_set_target(cr, a, (t3_vec3){ 20, 0, 20 });
+  }
+  for (int i = 0; i < 30; i++) cw_crowd_step(cr, 1.0f / 30);
+  cw_phys_lines lines = { 0 };
+  cw_nav_debug_draw(nm, &lines, CW_NAV_DRAW_DEFAULT | CW_NAV_DRAW_TILES);
+  cw_crowd_debug_draw(cr, &lines, CW_NAV_DRAW_DEFAULT);
+  CHECK(cw_phys_lines_count(&lines) > 100);
+  cw_phys_lines_free(&lines);
+  cw_navmesh_free(nm2);
+  cw_navmesh_free(nm); /* and the crowd */
+  cw_nav_geom_free(&g);
+}
+
+static void test_memory(void) {
+  nav_round();
+  cw_mem_stats a, b;
+  cw_mem_get_stats(&a);
+  nav_round();
+  cw_mem_get_stats(&b);
+  CHECK_EQ_INT(b.bytes[CW_MEM_NAV], a.bytes[CW_MEM_NAV]);
+  CHECK_EQ_INT(b.allocs[CW_MEM_NAV], a.allocs[CW_MEM_NAV]);
+}
+
 static void test_setup(void) { restore_workers = cw_jobs_thread_count() - 1; }
 
 CW_TEST_SUITE("nav", { "setup", test_setup }, { "geom", test_geom }, { "build", test_build },
               { "queries", test_queries }, { "obstacles", test_obstacles }, { "head_on", test_head_on }, { "circle", test_circle },
-              { "crowd", test_crowd }, { "crowd_obstacle", test_crowd_obstacle })
+              { "crowd", test_crowd }, { "crowd_obstacle", test_crowd_obstacle }, { "memory", test_memory })
