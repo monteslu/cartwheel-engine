@@ -51,8 +51,20 @@ int cw_jobs_worker_index(void);
 cw_job *cw_job_range(int count, int min_batch, cw_range_fn fn, void *ctx);
 /* Runs fn(ctx) once on some thread; same lifetime rules as cw_job_range. */
 cw_job *cw_job_single(cw_single_fn fn, void *ctx);
+/* A single job for background work that may take many milliseconds (a
+ * resource decode, a streamed cell's terrain build): workers run it, but the
+ * main thread never picks it up while it helps with other jobs, so waiting
+ * for this frame's parallel work never stalls a frame behind it. Waiting for
+ * this very job (cw_job_wait) still runs it on the waiter. With no workers
+ * it runs inline, like any job. Same lifetime rules as cw_job_range. */
+cw_job *cw_job_background(cw_single_fn fn, void *ctx);
 /* Blocks (helping) until the job is done, then frees it. */
 void cw_job_wait(cw_job *job);
+/* True once every chunk of the job ran (it must still be passed to
+ * cw_job_wait, which then returns at once). Polling never helps: a long
+ * background job (a streamed cell's terrain build) runs on a worker while the
+ * main thread goes on drawing. NULL counts as done. */
+bool cw_job_done(const cw_job *job);
 /* Range job + wait in one call: the usual parallel-for. */
 void cw_parallel_for(int count, int min_batch, cw_range_fn fn, void *ctx);
 

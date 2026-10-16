@@ -216,14 +216,16 @@ void cw_res_set_upload_budget(size_t bytes, double ms);
  * reads run on the job pool and this does nothing. */
 void cw_res_set_read_budget(int files, double ms);
 /* Decodes (and native reads) running on the job pool at once; more wait
- * their turn, started in finish order. Default (0): twice the job threads,
- * at least 2. */
+ * their turn, started in finish order. Default (0): half the job threads,
+ * 1 to 8, so each frame's own parallel work always finds free workers. The
+ * jobs are background jobs (cw_job_background): the main thread never runs
+ * a decode while it waits for other work. */
 void cw_res_set_max_in_flight(int n);
 /* The residency cache's size: released READY resources stay loaded while
- * their bytes (payload bytes, or file bytes for types that report none; in
- * a deterministic run always file bytes, which are the same on every host)
- * fit. 0 (default) = no cache: the last release frees after
- * CW_RES_FREE_DELAY_FRAMES. Lowering it evicts at the next cw_res_frame. */
+ * their bytes fit: payload bytes, or the file's (decompressed) bytes for
+ * types that report none and always in a deterministic run, where they are
+ * the same on every host. 0 (default) = no cache: the last release frees
+ * after CW_RES_FREE_DELAY_FRAMES. Lowering it evicts at the next cw_res_frame. */
 void cw_res_set_residency_budget(size_t bytes);
 
 typedef struct cw_res_stats {

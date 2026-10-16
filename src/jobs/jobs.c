@@ -53,6 +53,7 @@ struct cw_job {
   void *ctx;
   int count, batch, chunks;
   const char *zone; /* the profiler's name for its chunks ("<submitter>/job"), NULL when not profiling */
+  atomic_bool background; /* cw_job_background: the main thread never helps with it */
 };
 
 static cw_job pool[JOB_POOL];
@@ -204,6 +205,7 @@ static bool run_any(void) {
     if (!e) continue;
     cw_job *j = &pool[(e & 0xffffffffu) - 1];
     unsigned gen = (unsigned)(e >> 32);
+    if (worker_index == 0 && atomic_load_explicit(&j->background, memory_order_relaxed)) continue; /* the main thread keeps to frame work */
     atomic_fetch_add(&j->refs, 1);
     if (atomic_load(&j->gen) != gen) { /* the slot was refilled: a stale entry */
       atomic_fetch_sub(&j->refs, 1);
@@ -314,6 +316,7 @@ cw_job *cw_job_range(int count, int min_batch, cw_range_fn fn, void *ctx) {
   if (batch < min_batch) batch = min_batch;
   j->range = fn;
   j->single = NULL;
+  atomic_store_explicit(&j->background, false, memory_order_relaxed);
   j->ctx = ctx;
   j->count = count;
   j->batch = batch;
@@ -324,6 +327,7 @@ cw_job *cw_job_range(int count, int min_batch, cw_range_fn fn, void *ctx) {
 cw_job *cw_job_single(cw_single_fn fn, void *ctx) {
   cw_job *j = alloc_job();
   j->range = NULL;
+  atomic_store_explicit(&j->background, false, memory_order_relaxed);
   j->single = fn;
   j->ctx = ctx;
   j->count = 1;
@@ -384,4 +388,18 @@ void cw_jobs_get_stats(cw_jobs_stats *out) {
     out->chunks_by_thread[i] = atomic_load_explicit(&stats[i].chunks, memory_order_relaxed);
     out->chunks += out->chunks_by_thread[i];
   }
+}
+
+bool cw_job_done(const cw_job *j) { return !j || atomic_load(&((cw_job *)j)->done) >= j->chunks; }
+
+cw_job *cw_job_background(cw_single_fn fn, void *ctx) {
+  cw_job *j = alloc_job();
+  j->range = NULL;
+  j->single = fn;
+  j->ctx = ctx;
+  j->count = 1;
+  j->batch = 1;
+  j->chunks = 1;
+  atomic_store_explicit(&j->background, true, memory_order_relaxed);
+  return submit(j);
 }

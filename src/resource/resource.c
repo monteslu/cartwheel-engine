@@ -47,6 +47,7 @@ typedef struct res_slot {
   size_t cost;
   bool queued, cancelled;
   size_t packed_len;  /* bytes read (before decompression) */
+  size_t raw_len;     /* the file's bytes after decompression, at the last finish */
   bool unpacked;      /* got_file ran on the bytes in file */
   /* the background pipeline: finish-order key, and where the load stands */
   int32_t lane, priority;
@@ -529,8 +530,9 @@ static void waiting_remove(uint64_t id) {
 
 static int max_in_flight(void) {
   if (R.max_in_flight > 0) return R.max_in_flight;
-  int n = 2 * cw_jobs_thread_count();
-  return n < 2 ? 2 : n;
+  /* half the threads (at most 8): the rest stay free for each frame's own parallel work */
+  int n = cw_jobs_thread_count() / 2;
+  return CW_CLAMP(n, 1, 8);
 }
 
 /* Start waiting loads on the job pool, best key first, while fewer than
@@ -577,7 +579,7 @@ static void pump(bool from_frame) {
       continue;
     }
     atomic_fetch_add_explicit(&R.running, 1, memory_order_acq_rel);
-    best->job = cw_job_single(load_job, best);
+    best->job = cw_job_background(load_job, best);
   }
 }
 
@@ -717,6 +719,7 @@ static void finish_slot(uint64_t id, res_slot *s) {
   if (dec == (void *)s) dec = NULL; /* type without a decode step */
   double t0 = now_ms();
   s->file_bytes = s->packed_len;
+  s->raw_len = s->file_len;
   void *payload = d->finish(dec ? dec : (void *)s, mkres(id), s->deps, s->dep_count, d->type_user);
   s = cw_pool_get(&R.slots, id); /* finish may register sub-resources (pool growth) */
   s->finish_ms = now_ms() - t0;
@@ -745,7 +748,9 @@ const uint8_t *cw__res_slot_file(void *slot_as_decoded, size_t *len, bool take) 
 
 /* what the residency budget counts for a resource */
 static int64_t cache_size(const res_slot *s) {
-  if (cw_is_deterministic_run() || s->bytes <= 0) return (int64_t)s->file_bytes;
+  /* a deterministic run counts the file's bytes (decompressed): the same on every host, where the
+   * payload's size can depend on the GPU (a KTX2's transcode target) */
+  if (cw_is_deterministic_run() || s->bytes <= 0) return (int64_t)s->raw_len;
   return s->bytes;
 }
 
