@@ -247,7 +247,7 @@ static int mesh_points(cw_node body, cw_node shape_node, const char *path, t3_ve
   cw_node mn = path && *path ? cw_node_get(shape_node, path) : (cw_node){ 0 };
   t3_mesh *mesh = cw__mesh3d_t3(mn);
   if (!mesh || !mesh->geometry || !mesh->geometry->attributes[T3_ATTR_POSITION]) {
-    cw_warn("CollisionShape3D '%s': mesh '%s' is not a MeshInstance3D with geometry", cw_node_name(shape_node), path ? path : "");
+    cw_warn("CollisionShape3D '%s': mesh '%s' is not a MeshInstance3D with geometry or a baked CSG root", cw_node_name(shape_node), path ? path : "");
     return 0;
   }
   t3_attribute *pa = mesh->geometry->attributes[T3_ATTR_POSITION];
@@ -1217,7 +1217,7 @@ static const cw_prop shape_props[] = {
   CW_PROP_FIELD_RANGE(shape3d, radius, CW_T_FLOAT, 0, 1e6, "SPHERE / CAPSULE radius."),
   CW_PROP_FIELD_RANGE(shape3d, height, CW_T_FLOAT, 0, 1e6, "CAPSULE total height (along y)."),
   CW_PROP_FIELD(shape3d, points, CW_T_STRING, CW_PROP_DEFAULT, "CONVEX points \"x y z, ...\" (shape-local)."),
-  CW_PROP_FIELD(shape3d, mesh, CW_T_STRING, CW_PROP_DEFAULT, "CONVEX / TRIMESH: path to a MeshInstance3D (relative to this node)."),
+  CW_PROP_FIELD(shape3d, mesh, CW_T_STRING, CW_PROP_DEFAULT, "CONVEX / TRIMESH: path to a MeshInstance3D or a baked CSG root (relative to this node)."),
   CW_PROP_FIELD(shape3d, disabled, CW_T_BOOL, CW_PROP_DEFAULT, "Not built."),
   CW_PROP_END,
 };

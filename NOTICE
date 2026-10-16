@@ -75,3 +75,9 @@ LZ4 library (lib/ only: lz4, lz4frame, lz4hc, xxhash), built from scripts/deps.l
   Copyright (c) 2011-2020, Yann Collet. All rights reserved.
   BSD 2-Clause license (deps/lz4/lib/LICENSE)
   https://github.com/lz4/lz4
+
+Manifold (mesh booleans in the cwcsg tool, tools/cwcsg; native tool only,
+never linked into a game), built from scripts/deps.lock (v3.5.4)
+  Copyright 2021 The Manifold Authors
+  Licensed under the Apache License, Version 2.0 (deps/manifold/LICENSE)
+  https://github.com/elalish/manifold

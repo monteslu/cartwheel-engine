@@ -64,9 +64,9 @@
  *                         the winding.
  *   CollisionShape3D      shape (BOX|SPHERE|CAPSULE|CONVEX|TRIMESH), size,
  *                         radius, height, points ("x y z, ..."), mesh (path
- *                         to a MeshInstance3D whose geometry CONVEX/TRIMESH
- *                         use when points is empty), disabled. TRIMESH:
- *                         static bodies only.
+ *                         to a MeshInstance3D or a baked CSG root, whose
+ *                         geometry CONVEX/TRIMESH use when points is
+ *                         empty), disabled. TRIMESH: static bodies only.
  *   Joint2D/3D            joint_type (2D: PIN HINGE SLIDER DISTANCE SPRING
  *                         WELD WHEEL MOTOR; 3D adds CONE (ball and socket
  *                         with a cone limit)), node_a, node_b (paths relative

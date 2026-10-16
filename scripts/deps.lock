@@ -35,6 +35,8 @@ pl_mpeg       https://github.com/phoboslab/pl_mpeg.git      c871f2be022ece7ef4f6
 # lz4 (lib/ only, BSD-2; the rest of that repo is GPL and is never compiled): packed-resource compression,
 # the decoder in the engine, the encoders (lz4, lz4hc) in cwpack. zstd comes with basis_universal (zstd/)
 lz4           https://github.com/lz4/lz4.git                v1.10.0              ebb370ca83af193212df4dcbadcc5d87bc0de2f0
+# Manifold (Apache-2.0): robust mesh booleans for the CSG bake tool (tools/cwcsg, native only; carts never link it)
+manifold      https://github.com/elalish/manifold.git       v3.5.4                      ce50d78021d64507f89e8c9fc2c2e51018117857
 # Fonts (single files into deps/fonts/<name>.<ext>, sha256-checked): Noto, SIL OFL 1.1,
 # from google/fonts at a pinned commit (the l10n sample packs subsets of them)
 font:noto-sans-jp.ttf       https://github.com/google/fonts/raw/7085eb89a950e85db5b166b7a58d414544b4140c/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf                  gf-7085eb89   c2f3b4d463500a2ddcd3849cded1fceeb9fd6d1c32e6cbecd568453ba50fc68f

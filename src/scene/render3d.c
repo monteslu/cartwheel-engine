@@ -4,6 +4,7 @@
 
 #include "cartwheel/pipeline.h"
 #include "cartwheel/profile.h"
+#include "cartwheel/csg.h"
 #include "cartwheel/resource.h"
 #include "scene_internal.h"
 #include "render3d_internal.h"
@@ -1097,7 +1098,7 @@ void cw__world_env_bake(cw_tree *t, t3_color *ambient, t3_color *sky, t3_color *
 
 t3_mesh *cw__mesh3d_t3(cw_node n) {
   mesh3d *m = cw_node_data_t(n, mesh3d_t);
-  if (!m) return NULL;
+  if (!m) return cw_csg_baked_mesh(n); /* a baked CSG root (cartwheel/csg.h) serves too */
   mesh_rebuild(n, m);
   /* a mesh resource that is a single mesh serves too (a scene of several
    * meshes does not: give each its own MeshInstance3D) */
