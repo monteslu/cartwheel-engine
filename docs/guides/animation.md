@@ -120,6 +120,30 @@ Every tick starts again from the animated pose, never from the last tick's solut
 
 Every modifier has `active` and `influence` (0 to 1: the blend between the pose it was given and its result). Animate or tween `influence` to blend a modifier in and out. Bones are named as in the glTF, with the same sanitizing three.js applies (`UpperLeg.L` becomes `UpperLegL`). Targets are Node3D paths relative to the modifier, or a world position in `target_position`.
 
+`samples/anim_ik` walks four skinned robots back and forth over a flight of stairs and a slope, with feet planted, heads (and the front robot's neck) following a firefly, and the front robot's right hand grabbing a handle as it passes. The front robot's modifiers come from its scene file; the other three are built in code the same way:
+
+```text
+[node name="Feet" parent="Mover/Model" type="FootPlacement3D"]
+legs = "UpperLegL,LowerLegL,LowerLegL_end,FootL;UpperLegR,LowerLegR,LowerLegR_end,FootR"
+pelvis = "Body"
+
+[node name="Reach" parent="Mover/Model" type="TwoBoneIK3D"]
+root_bone = "UpperArmR"
+middle_bone = "LowerArmR"
+end_bone = "Palm2R"
+target = "../../../Handle/Grip"
+influence = 0
+
+[node name="LookHead" parent="Mover/Model" type="LookAtModifier3D"]
+bone = "Head"
+target = "../../../Firefly"
+limit_angle = 1.1
+```
+
+A leg is `"upper,lower,end[,foot]"`. The robot's rig keeps its foot bones outside the leg chain (it was rigged for IK in Blender), so FootPlacement3D carries a foot bone that is not below `end` along with the ankle. The app code only moves each robot along the course, sets its height from a ray at its centre, and blends the reach's `influence` by distance to the handle:
+
+@include samples/anim_ik/main.c#reach
+
 ### The solvers from C
 
 The nodes call plain functions that work on any `cw_pose`. You can use them directly, for example to pose a procedural rig or to bake a pose:
@@ -133,13 +157,25 @@ The nodes call plain functions that work on any `cw_pose`. You can use them dire
 
 ### Determinism, threads and cost
 
-Solvers use only arithmetic, `sqrt` and the `cartwheel/math.h` functions, with fixed iteration counts, so the same animated pose gives the same bones on every host. Each model keeps a running hash of every pose it flushes ([cw_skeleton_hash](api:cw_skeleton_hash)). Captures, target lookups and FootPlacement3D's rays (one `cw_world3d_raycast_batch` per node) run on the main thread. The solves then run one model per job through `cw_parallel_for`, so the result does not depend on the worker count.
+Solvers use only arithmetic, `sqrt` and the `cartwheel/math.h` functions, with fixed iteration counts, so the same animated pose gives the same bones on every host. Each model keeps a running hash of every pose it flushes ([cw_skeleton_hash](api:cw_skeleton_hash)). Captures, target lookups and FootPlacement3D's rays (one `cw_world3d_raycast_batch` per node) run on the main thread. The solves then run on the main thread, or for 8 models and more one model per job through `cw_parallel_for`; each touches only its own pose, so the result does not depend on the worker count.
 
-The `unit-ik` gate checks the solvers (reach accuracy, the pole plane, limits, FABRIK constraints), compares CCD against three.js r186 run in Node (`tools/gen-ccdik-fixture.mjs` writes the reference), runs the nodes in a tree (no accumulation across ticks, influence, foot placement on Box3D ground), and folds every solved pose into a checksum every host must match:
+Cost on the 890M laptop (Ryzen AI 9 HX 370), anim_ik's front robot: two feet (two rays, two legs, the pelvis), a hand, and a neck and head look-at on a 60-bone rig. The figure is the modifier phase's own wall clock divided by the four robots. It was taken on a shared machine (load average 78 to 103), so it reports both the mean and the quietest tick:
+
+| Host | Mean per character | Quietest tick per character | Four robots per frame |
+|---|---|---|---|
+| native | 16 to 27 us | 12.6 us | 0.06 to 0.11 ms |
+| cart (Chromium) | 40 to 52 us | 22.5 us | 0.16 to 0.21 ms |
+
+There is no GPU cost: modifiers only change bone transforms the skin already reads. The quality presets do not change IK, because it moves simulation state that must agree across machines. Below 8 models the solves run on the main thread, since waking the job pool costs more than a few models' solves; from 8 up, each model is one job. On a Vega 8 laptop (a Zen or Zen+ CPU, about half the per-core speed), expect roughly twice these figures: about 25 to 50 us per character native and 45 to 100 us in a cart, so a crowd of 40 such characters costs about 1 to 2 ms per tick natively before threading.
+
+The gates compare solver results against three.js r186. They plant the robot's feet on the stairs: the ankle's height above the ground under it must match its animated height above flat ground, within 1 cm through every stance (worst 3.8 mm). They keep the hand within 1 mm of the handle (0.1 mm), and they compare pose hashes across hosts and worker counts:
 
 ```sh
-node tests/gate.mjs unit-ik
+node tests/gate.mjs unit-ik anim-ik
+node tests/ik-determinism.mjs
 ```
+
+`unit-ik` checks the solvers (reach accuracy, the pole plane, limits, FABRIK constraints) and compares CCD against three.js r186 run in Node (`tools/gen-ccdik-fixture.mjs` writes the reference). It also runs the nodes in a tree (no accumulation across ticks, influence, foot placement on Box3D ground, a 12-rig crowd through the job pool).
 
 The debug command `ik <model path>` lists a model's modifiers with their last results (`reached`, `in_limit`, foot offsets, pelvis offset), the pose hash and the microseconds the last tick took.
 
