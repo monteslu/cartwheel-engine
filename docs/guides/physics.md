@@ -91,6 +91,12 @@ The node types do all of the above in a scene. [Cloth3D](node:Cloth3D) hangs a g
 
 @include samples/cloth_demo/assets/main.cwscene#Rope..Crate
 
+### Cost
+
+The work is the substeps times the particles and constraints: a grid has about five distance constraints per particle. On one thread of the reference machine (a Ryzen AI 9 HX 370, whose iGPU is the 890M), one step of a 64 x 64 cloth (4096 particles, 19 970 constraints) at 8 substeps took 1.8 to 2.4 ms. That is about 470 to 590 microseconds per 1000 particles, and it scales linearly with substeps. These numbers were measured with the machine's other cores busy, so an idle machine should do better. `unit-cloth` prints them every run (`cloth perf`). Cloths of 1024 particles or more split each substep into two phases of parallel jobs, so the pool divides the time when it has free cores. A Vega 8 machine (a Ryzen 3000 to 5000 APU) runs this about 1.5 to 2 times slower per core. Budget about 0.2 ms per 1000 particles there for a 4-substep cosmetic cloth.
+
+What that means in a scene: the `cloth_demo` flag (425 particles), cape (209) and rope (21) together took 0.4 to 0.6 ms per tick in the gate runs, natively and in carts alike (the `cloth.us` debug field). Keep cosmetic cloth around 32 x 32 or smaller and set `quality_scaled`, so the Low preset halves its substeps (and its cost). Self-collision roughly doubles the per-particle pass. Collision costs per particle per nearby shape, and only shapes whose bounds the cloth reaches are tested.
+
 ### Determinism and rollback
 
 Particles are cut into blocks of consecutive indices at creation. Each substep solves the constraints inside the pairs of blocks {0, 1}, {2, 3}, ... as one job each, then those across the other boundaries: the jobs of one phase share no particle, so they run in parallel on the job pool with no atomics, each a fixed-order sweep, and the result does not depend on the number of threads or the order jobs run in. A cloth under 1024 particles runs on the calling thread. Only `+ - * / sqrt` and `cartwheel/math.h` feed the state, so the same inputs give the same bits natively and in a cart ([cw_cloth_hash](api:cw_cloth_hash)); `unit-cloth` pins its checksum and `cloth-determinism` runs it at several pool sizes. [cw_cloth_save](api:cw_cloth_save) and [cw_cloth_load](api:cw_cloth_load) copy the state for rollback.

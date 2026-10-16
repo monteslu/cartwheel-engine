@@ -73,6 +73,10 @@ typedef struct cshape {
   float radius;
   const b3Plane *planes; /* hull planes (body local), owned by Box3D */
   int plane_count;
+  V bound_c;             /* bounding sphere (body local): centre and radius */
+  float bound_r;
+  cw_xform3 pose, prev;  /* this substep's pose and the last one's (set before the per-particle pass) */
+  V world_c;             /* bound_c at pose */
 } cshape;
 
 typedef struct attach {
@@ -981,7 +985,10 @@ static void post_range(int begin, int end, int worker, void *u) {
     if (!c->attached[i])
       for (int k = 0; k < c->shapes.count; k++) {
         const cshape *sh = &c->shapes.data[k];
-        cw_xform3 pose = shape_pose(sh, s->sub_t);
+        V dc = vsub(c->x[i], sh->world_c);
+        float reach = sh->bound_r + th;
+        if (vdot(dc, dc) > reach * reach) continue; /* outside its bounding sphere */
+        cw_xform3 pose = sh->pose;
         V q = xlocal(pose, c->x[i]);
         V n = { 0, 1, 0 };
         float dist = shape_sdf(sh, q, &n);
@@ -993,7 +1000,7 @@ static void post_range(int begin, int end, int worker, void *u) {
         /* friction against the surface's own motion over this substep */
         if (c->def.friction > 0 || sh->friction > 0) {
           float mu = c->def.friction < sh->friction ? c->def.friction : sh->friction;
-          V surf_prev = xpoint(shape_pose(sh, s->prev_t), q);
+          V surf_prev = xpoint(sh->prev, q);
           V surf_now = xpoint(pose, q);
           V rel = vsub(vsub(xn, c->p[i]), vsub(surf_now, surf_prev));
           V tan = vsub(rel, vmul(nw, vdot(rel, nw)));
@@ -1291,14 +1298,19 @@ static void gather_shapes(cw__cloth *c, float dt) {
     if (ty == b3_sphereShape) {
       b3Sphere s = b3Shape_GetSphere(sid);
       sh.kind = SH_SPHERE, sh.a = (V){ s.center.x, s.center.y, s.center.z }, sh.radius = s.radius;
+      sh.bound_c = sh.a, sh.bound_r = s.radius;
     } else if (ty == b3_capsuleShape) {
       b3Capsule s = b3Shape_GetCapsule(sid);
       sh.kind = SH_CAPSULE, sh.a = (V){ s.center1.x, s.center1.y, s.center1.z };
       sh.b = (V){ s.center2.x, s.center2.y, s.center2.z }, sh.radius = s.radius;
+      sh.bound_c = vmul(vadd(sh.a, sh.b), 0.5f), sh.bound_r = 0.5f * vlen(vsub(sh.b, sh.a)) + s.radius;
     } else if (ty == b3_hullShape) {
       const b3HullData *hd = b3Shape_GetHull(sid);
       if (!hd) continue;
       sh.kind = SH_HULL, sh.planes = b3GetHullPlanes(hd), sh.plane_count = hd->faceCount;
+      V lo = { hd->aabb.lowerBound.x, hd->aabb.lowerBound.y, hd->aabb.lowerBound.z };
+      V hi = { hd->aabb.upperBound.x, hd->aabb.upperBound.y, hd->aabb.upperBound.z };
+      sh.bound_c = vmul(vadd(lo, hi), 0.5f), sh.bound_r = 0.5f * vlen(vsub(hi, lo));
     } else continue; /* meshes, height fields, compounds: not yet */
     cw_body3d b = cw_shape3d_body(found[i]);
     bodyinfo bi = body_info(c->world, b);
@@ -1378,6 +1390,11 @@ void cw_cloth_step(cw_cloth h, float dt) {
     solve_group(c, c->na + c->nb);
     solve_anchor_tethers(c);
     for (int k = 0; k < c->nanchors; k++) c->xa[c->anchors[k]] = c->x[c->anchors[k]];
+    for (int k = 0; k < c->shapes.count; k++) { /* the shapes' poses for this substep, once */
+      cshape *sh = &c->shapes.data[k];
+      sh->pose = shape_pose(sh, s.sub_t), sh->prev = shape_pose(sh, s.prev_t);
+      sh->world_c = xpoint(sh->pose, sh->bound_c);
+    }
     run(c, c->nb, phase_b, &s);
     if (!s.fuse_post) {
       selfctx sc = { c, &sg };
