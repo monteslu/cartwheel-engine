@@ -134,8 +134,9 @@ int cw_quality_lever_add(const char *name, const char *const *values, int value_
 /* ── reading the settings ──────────────────────────────────────────── */
 
 /* A scale for a named knob, from effects detail: "particles", "density",
- * "grass", "crowd", "scatter" (the last three are density), 1 for any other
- * name. */
+ * "grass", "crowd", "scatter" (the last three are density), "hrtf_voices"
+ * (0.25, 0.5, 1, 1: the audio mixer's HRTF voice limit, cartwheel/audio.h),
+ * 1 for any other name. */
 float cw_quality_scale(const char *knob);
 float cw_quality_density(void); /* cw_quality_scale("density") */
 /* n scaled by a knob, at least 1 when n > 0 */

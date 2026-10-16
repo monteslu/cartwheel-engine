@@ -1,4 +1,4 @@
-/* Four float lanes for the crowd: SSE2 on x86, wasm SIMD128 in carts, NEON
+/* Four float lanes for the crowd and the audio mixer's HRTF filters: SSE2 on x86, wasm SIMD128 in carts, NEON
  * on 64-bit ARM, and plain C elsewhere. Only the operations IEEE 754 rounds
  * exactly (add, sub, mul, div, sqrt), compares and bitwise selects: every
  * path gives the same bits, lane for lane, as the plain C one (with
@@ -30,6 +30,7 @@ static inline v4m v4_not(v4m a) { return _mm_xor_ps(a, _mm_castsi128_ps(_mm_set1
 static inline v4 v4_sel(v4m m, v4 a, v4 b) { return _mm_or_ps(_mm_and_ps(m, a), _mm_andnot_ps(m, b)); }
 static inline int v4_bits(v4m m) { return _mm_movemask_ps(m); }
 static inline void v4_store(float *p, v4 a) { _mm_storeu_ps(p, a); }
+static inline v4 v4_load(const float *p) { return _mm_loadu_ps(p); }
 #elif defined(__wasm_simd128__)
 #include <wasm_simd128.h>
 #define V4_WASM 1
@@ -50,6 +51,7 @@ static inline v4m v4_not(v4m a) { return wasm_v128_not(a); }
 static inline v4 v4_sel(v4m m, v4 a, v4 b) { return wasm_v128_bitselect(a, b, m); }
 static inline int v4_bits(v4m m) { return (int)wasm_i32x4_bitmask(m); }
 static inline void v4_store(float *p, v4 a) { wasm_v128_store(p, a); }
+static inline v4 v4_load(const float *p) { return wasm_v128_load(p); }
 #elif defined(__aarch64__)
 #include <arm_neon.h>
 #define V4_NEON 1
@@ -76,6 +78,7 @@ static inline int v4_bits(v4m m) {
   return (int)vaddvq_u32(vshlq_u32(vshrq_n_u32(m, 31), vld1q_s32(sh)));
 }
 static inline void v4_store(float *p, v4 a) { vst1q_f32(p, a); }
+static inline v4 v4_load(const float *p) { return vld1q_f32(p); }
 #else
 #include <math.h>
 #define V4_SCALAR 1
@@ -109,6 +112,7 @@ static inline v4 v4_sel(v4m m, v4 a, v4 b) {
 }
 static inline int v4_bits(v4m m) { return (int)((m.u[0] >> 31) | (m.u[1] >> 31 << 1) | (m.u[2] >> 31 << 2) | (m.u[3] >> 31 << 3)); }
 static inline void v4_store(float *p, v4 a) { memcpy(p, a.f, 16); }
+static inline v4 v4_load(const float *p) { v4 r; memcpy(r.f, p, 16); return r; }
 #endif
 
 #endif

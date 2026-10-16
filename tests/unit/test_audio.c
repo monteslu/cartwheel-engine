@@ -253,6 +253,153 @@ static void test_3d(void) {
   stop();
 }
 
+/* a deterministic white noise sample */
+static cw_sound noise(int frames, float amp) {
+  static float pcm[R];
+  uint32_t x = 12345;
+  for (int i = 0; i < frames; i++) {
+    x = x * 1664525u + 1013904223u;
+    pcm[i] = amp * ((float)(x >> 8) * (1.0f / 8388608.0f) - 1.0f);
+  }
+  return cw_sound_from_pcm(pcm, frames, 1, R, NULL);
+}
+/* energy above ~6 kHz of channel ch (first difference: a crude high-pass) */
+static float hf_energy(int from, int to, int ch) {
+  double e = 0;
+  for (int i = from + 1; i < to; i++) {
+    double d = (double)buf[2 * i + ch] - buf[2 * (i - 1) + ch];
+    e += d * d;
+  }
+  return (float)e;
+}
+
+static void test_hrtf(void) {
+  /* the built-in table */
+  size_t len;
+  const void *data = cw__hrtf_builtin(&len);
+  cw__hrtf *h = cw__hrtf_parse(data, len, R);
+  CHECK(h && h->count == 711 && h->ntris == 1418);
+  if (!h) return;
+  /* every probe direction lands in a triangle with weights >= 0 summing to 1 */
+  int bad = 0;
+  for (int i = 0; i < 2000; i++) {
+    float sn, cs, se, ce;
+    cw_sincos((float)i * 2.39996f, &sn, &cs); /* golden-angle spiral over the sphere */
+    float y = 1.0f - 2.0f * ((float)i + 0.5f) / 2000.0f, r = sqrtf(1.0f - y * y);
+    (void)se, (void)ce;
+    float w[3];
+    int t = cw__hrtf_find(h, (t3_vec3){ r * cs, y, r * sn }, -1, w);
+    float lo = w[0] < w[1] ? (w[0] < w[2] ? w[0] : w[2]) : (w[1] < w[2] ? w[1] : w[2]);
+    if (t < 0 || lo < -1e-4f) bad++;
+  }
+  CHECK_EQ_INT(bad, 0);
+  /* the SIMD FIR gives the plain C loop's bits */
+  static float u[CW__HRTF_TAPS - 1 + 253], ya[253], yb[253];
+  uint32_t x = 7;
+  for (size_t i = 0; i < CW_ARRAY_LEN(u); i++) { x = x * 1664525u + 1013904223u; u[i] = (float)(int32_t)x * (1.0f / 2147483648.0f); }
+  const float *hr = h->taps + 100 * 2 * CW__HRTF_TAPS;
+  cw__hrtf_fir(hr, u, 253, ya);
+  cw__hrtf_fir_scalar(hr, u, 253, yb);
+  CHECK(!memcmp(ya, yb, sizeof ya));
+  FOLD(ya);
+  cw__hrtf_free(h);
+
+  start(8);
+  cw_audio_set_listener((t3_vec3){ 0, 0, 0 }, (t3_vec3){ 0 }, (t3_vec3){ 0, 0, -1 }, (t3_vec3){ 0, 1, 0 });
+  CHECK(cw_audio_get_output() == CW_AUDIO_SPEAKERS);
+  cw_audio_set_output(CW_AUDIO_HEADPHONES);
+  CHECK(cw_audio_get_output() == CW_AUDIO_HEADPHONES);
+  cw_sound n = noise(R, 0.5f);
+  /* straight ahead: both ears the same (the KEMAR set is symmetric at 0 degrees) */
+  cw_voice v = cw_audio_play(n, &(cw_play_desc){ .loop = true, .spatial = true, .space = { .position = { 0, 0, -2 } } });
+  render(4096);
+  float maxd = 0, peak = 0;
+  for (int i = 0; i < 4096; i++) {
+    maxd = fmaxf(maxd, fabsf(buf[2 * i] - buf[2 * i + 1]));
+    peak = fmaxf(peak, fabsf(buf[2 * i]));
+  }
+  if (maxd > 1e-6f) cw_error("hrtf front: L-R %g", (double)maxd);
+  CHECK(peak > 0.05f && maxd <= 1e-6f);
+  /* 90 degrees left: an impulse reaches the left ear first, by the dataset's ITD */
+  cw_voice_stop(v, 0);
+  cw_sound imp = dc(1.0f, 1, R);
+  cw_audio_play(imp, &(cw_play_desc){ .spatial = true, .start_frame = cw_audio_mixed_frames() + 512 + 100,
+                                     .space = { .position = { -2, 0, 0 } } });
+  render(2048);
+  int on[2] = { -1, -1 };
+  float pk[2] = { 0, 0 };
+  for (int c = 0; c < 2; c++)
+    for (int i = 0; i < 2048; i++) pk[c] = fmaxf(pk[c], fabsf(buf[2 * i + c]));
+  for (int c = 0; c < 2; c++)
+    for (int i = 0; i < 2048 && on[c] < 0; i++)
+      if (fabsf(buf[2 * i + c]) >= 0.2f * pk[c]) on[c] = i;
+  /* KEMAR at 270 degrees: an interaural delay of about 28 frames at 48 kHz
+   * (0.58 ms), plus a few frames of the far ear's duller (slower) filter; the
+   * left ear is far louder */
+  cw_info("hrtf left: onsets L %d R %d, peaks %g %g", on[0], on[1], (double)pk[0], (double)pk[1]);
+  CHECK(on[0] >= 0 && on[1] - on[0] >= 26 && on[1] - on[0] <= 36);
+  CHECK(pk[0] > 4 * pk[1]);
+  /* front vs behind: the pinna dulls sound from behind (less high-frequency energy) */
+  v = cw_audio_play(n, &(cw_play_desc){ .loop = true, .spatial = true, .space = { .position = { 0, 0, -2 } } });
+  render(8192);
+  float front = hf_energy(1024, 8192, 0) + hf_energy(1024, 8192, 1);
+  cw_voice_set_position(v, (t3_vec3){ 0, 0, 2 }, (t3_vec3){ 0 });
+  render(8192);
+  float back = hf_energy(1024, 8192, 0) + hf_energy(1024, 8192, 1);
+  cw_info("hrtf hf energy: front %g back %g", (double)front, (double)back);
+  CHECK(back < front * 0.8f);
+  /* a source circling fast stays smooth (the filters crossfade): no step
+   * bigger than the noise's own */
+  cw_sound tone = sine(440, R, 0.5f);
+  cw_voice_stop(v, 0);
+  v = cw_audio_play(tone, &(cw_play_desc){ .loop = true, .spatial = true, .space = { .position = { 0, 0, -2 } } });
+  float maxstep = 0;
+  for (int b = 0; b < 40; b++) {
+    float sn, cs;
+    cw_sincos((float)b * 0.6f, &sn, &cs);
+    cw_voice_set_position(v, (t3_vec3){ 2 * sn, 0, -2 * cs }, (t3_vec3){ 0 });
+    render(256);
+    for (int i = 1; i < 256; i++)
+      for (int c = 0; c < 2; c++) maxstep = fmaxf(maxstep, fabsf(buf[2 * i + c] - buf[2 * (i - 1) + c]));
+  }
+  cw_info("hrtf orbit: max step %g", (double)maxstep);
+  CHECK(maxstep < 0.12f); /* 440 Hz at 0.5 moves at most 0.029 per frame; filters raise it a few times */
+  cw_voice_stop(v, 0);
+  /* the voice limit: with 1, only the nearest of three is filtered */
+  cw_audio_set_hrtf_voice_limit(1);
+  cw_voice far1 = cw_audio_play(n, &(cw_play_desc){ .loop = true, .spatial = true, .space = { .position = { 5, 0, 0 } } });
+  cw_voice near1 = cw_audio_play(n, &(cw_play_desc){ .loop = true, .spatial = true, .space = { .position = { 0, 1, -1 } } });
+  cw_voice far2 = cw_audio_play(n, &(cw_play_desc){ .loop = true, .spatial = true, .space = { .position = { 0, 0, 9 } } });
+  render(512);
+  cw__mixer *m = &cw__au.mix;
+  int on_count = 0, on_slot = -1;
+  for (int s = 0; s < m->max_voices; s++)
+    if (m->hrtf_on[s]) on_count++, on_slot = s;
+  CHECK_EQ_INT(on_count, 1);
+  CHECK(on_slot >= 0 && m->voices[on_slot].sp.position.y == 1.0f);
+  /* speakers: nobody is filtered; the mix is the plain pan again */
+  cw_audio_set_output(CW_AUDIO_SPEAKERS);
+  render(512);
+  render(512);
+  on_count = 0;
+  for (int s = 0; s < m->max_voices; s++)
+    on_count += m->voices[s].state == CW__V_PLAYING && (m->hrtf_on[s] || m->hstate[s].mix > 0);
+  CHECK_EQ_INT(on_count, 0);
+  cw_voice_stop(far1, 0);
+  cw_voice_stop(near1, 0);
+  cw_voice_stop(far2, 0);
+  /* air absorption dulls a far source */
+  v = cw_audio_play(n, &(cw_play_desc){ .loop = true, .spatial = true, .space = { .position = { 0, 0, -40 }, .air_absorption = 0.1f } });
+  render(8192);
+  float dull = hf_energy(1024, 8192, 0) / (rms_ch(1024, 8192, 0) * rms_ch(1024, 8192, 0) + 1e-20f);
+  cw_voice_set_3d(v, &(cw_voice_3d){ .position = { 0, 0, -40 } });
+  render(8192);
+  float bright = hf_energy(1024, 8192, 0) / (rms_ch(1024, 8192, 0) * rms_ch(1024, 8192, 0) + 1e-20f);
+  cw_info("air absorption: hf/energy %g vs %g", (double)dull, (double)bright);
+  CHECK(dull < bright * 0.5f);
+  stop();
+}
+
 static void test_fx(void) {
   start(8);
   cw_bus b = cw_bus_create("fx", CW_AUDIO_MASTER);
@@ -405,6 +552,6 @@ static void test_device_close(void) {
 CW_TEST_SUITE("audio", { "spsc", test_spsc }, { "schedule_and_pan", test_schedule_and_pan },
               { "resample_loop_clock", test_resample_loop_clock }, { "one_shot_end", test_one_shot_end },
               { "limits_priority", test_limits_priority }, { "fades", test_fades }, { "buses", test_buses },
-              { "3d", test_3d }, { "fx", test_fx }, { "stream_equals_sample", test_stream_equals_sample },
+              { "3d", test_3d }, { "hrtf", test_hrtf }, { "fx", test_fx }, { "stream_equals_sample", test_stream_equals_sample },
               { "queue_overflow", test_queue_overflow },
               { "device_close", test_device_close })

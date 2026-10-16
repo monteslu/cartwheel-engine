@@ -34,3 +34,13 @@ Cloth and ropes (src/physics/cloth.c) follow published algorithms; no code was c
 Sample assets
   samples/anim_ik/assets/RobotExpressive.glb: model by Tomas Laulhe (Quaternius),
   modifications by Don McCurdy, from the three.js examples. CC0 1.0.
+
+MIT Media Lab KEMAR HRTF measurements (the built-in HRTF table,
+src/audio/hrtf/kemar.cwhrtf, made from the diffuse-field equalized set by
+tools/hrtf/import-kemar.mjs)
+  Bill Gardner and Keith Martin, "HRTF Measurements of a KEMAR Dummy-Head
+  Microphone", MIT Media Lab Perceptual Computing Technical Report #280, 1994
+  Copyright 1994 by the MIT Media Laboratory. Provided free with no
+  restrictions on use, provided the authors are cited when the data is used
+  in any research or commercial application.
+  https://sound.media.mit.edu/resources/KEMAR.html

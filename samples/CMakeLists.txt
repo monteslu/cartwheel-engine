@@ -41,6 +41,7 @@ cw_add_app(perf_nodes SOURCES perf_nodes/main.c GL_ONLY)
 # a sample that plays through the real device path.
 cw_add_app(audio_mix SOURCES audio_mix/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/audio_mix/assets GL_ONLY)
 cw_add_app(audio_play SOURCES audio_play/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/audio_play/assets GL_ONLY)
+cw_add_app(audio_3d SOURCES audio_3d/main.c GL_ONLY)
 # animation: property tracks from a .cwscene (loop, ping-pong, method and
 # event keys, cross-fades), tweens, and a skinned glTF character.
 cw_add_app(anim_props SOURCES anim_props/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/anim_props/assets)

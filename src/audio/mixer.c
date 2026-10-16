@@ -25,6 +25,11 @@ void cw__mixer_init(cw__mixer *m, int rate, int max_voices) {
   m->clock_gen = cw_calloc((size_t)max_voices, sizeof *m->clock_gen, CW_MEM_AUDIO);
   m->clock = cw_calloc((size_t)max_voices, sizeof *m->clock, CW_MEM_AUDIO);
   m->scratch = cw_calloc(CW_AUDIO_BLOCK * 2, sizeof(float), CW_MEM_AUDIO);
+  m->hstate = cw_calloc((size_t)max_voices, sizeof *m->hstate, CW_MEM_AUDIO);
+  m->mono = cw_calloc(CW_AUDIO_BLOCK * 2, sizeof(float), CW_MEM_AUDIO);
+  m->dist = cw_calloc((size_t)max_voices, sizeof *m->dist, CW_MEM_AUDIO);
+  m->hrtf_on = cw_calloc((size_t)max_voices, sizeof *m->hrtf_on, CW_MEM_AUDIO);
+  m->hrtf_limit = 16;
   for (int b = 0; b < CW_AUDIO_MAX_BUSES; b++) {
     m->buses[b].buf = cw_calloc(CW_AUDIO_BLOCK * 2, sizeof(float), CW_MEM_AUDIO);
     m->buses[b].volume = m->buses[b].cur_volume = 1.0f;
@@ -45,6 +50,10 @@ void cw__mixer_free(cw__mixer *m) {
   cw_free((void *)m->clock_gen);
   cw_free((void *)m->clock);
   cw_free(m->scratch);
+  cw_free(m->hstate);
+  cw_free(m->mono);
+  cw_free(m->dist);
+  cw_free(m->hrtf_on);
   for (int b = 0; b < CW_AUDIO_MAX_BUSES; b++) cw_free(m->buses[b].buf);
   memset(m, 0, sizeof *m);
 }
@@ -102,6 +111,7 @@ static void start_voice(const cw__cmd *c) {
   v->sp = p->d.space;
   v->start_frame = p->d.start_frame;
   v->priming = p->stream >= 0;
+  v->air = 1.0f;
   if (p->d.fade_in > 0) {
     v->fade = 0;
     v->fade_target = 1;
@@ -118,6 +128,7 @@ static void start_voice(const cw__cmd *c) {
   }
   atomic_store_explicit(&m->clock[c->slot], v->played, memory_order_release);
   atomic_store_explicit(&m->clock_gen[c->slot], v->gen, memory_order_release);
+  cw__hrtf_reset(&m->hstate[c->slot]);
 }
 
 static void apply(const cw__cmd *c) {
@@ -203,6 +214,16 @@ static void apply(const cw__cmd *c) {
     b->fx[--b->nfx] = NULL;
     break;
   }
+  case CW__CMD_HRTF:
+    if (m->hrtf) {
+      cw__event e = { .type = CW__EV_HRTF_FREED, .hrtf = m->hrtf };
+      cw__spsc_push(&cw__au.events, &e); /* room was checked before apply() */
+    }
+    m->hrtf = c->hrtf;
+    for (int s = 0; s < m->max_voices; s++) m->hstate[s].valid = false; /* the old table's filters are gone */
+    break;
+  case CW__CMD_OUTPUT: m->output = c->ival; break;
+  case CW__CMD_HRTF_LIMIT: m->hrtf_limit = c->ival; break;
   }
 }
 
@@ -218,11 +239,23 @@ static void drain_commands(void) {
 
 /* ── one voice ──────────────────────────────────────────────────────── */
 
+/* What voice_params found for a spatial voice besides the gains. */
+typedef struct {
+  float g;        /* gain before the pan */
+  float pl, pr;   /* equal-power pan gains */
+  float air;      /* distance low-pass cutoff factor (1 = none) */
+  t3_vec3 local;  /* direction to the voice in its listener's space (x right, y up, -z forward), unit */
+} vp_extra;
+
 /* Per-block gains and pitch (including the 3D model). */
-static void voice_params(cw__mixer *m, cw__mvoice *v, float fade_end, float *gl, float *gr, float *ratio) {
+static void voice_params_x(cw__mixer *m, cw__mvoice *v, float fade_end, float *gl, float *gr, float *ratio, vp_extra *x) {
   float g = v->volume * fade_end;
   float pan = v->pan;
   float dop = 1.0f;
+  if (x) {
+    x->air = 1.0f;
+    x->local = (t3_vec3){ 0, 0, -1 };
+  }
   if (v->spatial) {
     const cw_voice_3d *s = &v->sp;
     /* several listeners (splitscreen): each voice is heard by the nearest */
@@ -263,6 +296,19 @@ static void voice_params(cw__mixer *m, cw__mvoice *v, float fade_end, float *gl,
     t3_vec3 right = vcross(m->lfwd[li], m->lup[li]);
     float rl = vlen(right);
     pan = rl > 1e-6f ? cw_clampf(vdot(dn, right) / rl, -1, 1) : 0.0f;
+    if (x) {
+      if (s->air_absorption > 0) x->air = cw_pow(0.5f, s->air_absorption * (dc - ref));
+      float fl = vlen(m->lfwd[li]);
+      if (rl > 1e-6f && fl > 1e-6f && dist > 1e-6f) {
+        t3_vec3 r = vscale(right, 1.0f / rl), f = vscale(m->lfwd[li], 1.0f / fl);
+        t3_vec3 u = vcross(r, f); /* unit: r and f are orthonormal-ish; normalized below */
+        float ul = vlen(u);
+        if (ul > 1e-6f) u = vscale(u, 1.0f / ul);
+        t3_vec3 l = { vdot(dn, r), vdot(dn, u), -vdot(dn, f) };
+        float ll = vlen(l);
+        if (ll > 1e-6f) x->local = vscale(l, 1.0f / ll);
+      }
+    }
     /* doppler (OpenAL's formula): SL points from source to listener */
     if (s->doppler > 0 && dist > 1e-6f) {
       t3_vec3 sl = vscale(dn, -1.0f);
@@ -278,10 +324,15 @@ static void voice_params(cw__mixer *m, cw__mvoice *v, float fade_end, float *gl,
     cw_sincos((pan + 1.0f) * (CW_PI * 0.25f), &sn, &cs);
     *gl = g * cs;
     *gr = g * sn;
+    if (x) {
+      x->pl = cs;
+      x->pr = sn;
+    }
   } else { /* stereo balance */
     *gl = g * (pan > 0 ? 1.0f - pan : 1.0f);
     *gr = g * (pan < 0 ? 1.0f + pan : 1.0f);
   }
+  if (x) x->g = g;
   *ratio = cw_clampf(v->ratio * v->pitch * dop, 1.0f / 256.0f, 8.0f);
 }
 
@@ -296,10 +347,11 @@ static bool render_voice(cw__mixer *m, cw__mvoice *v, float *out, int n, float g
   bool mono_mix = v->spatial && ch == 2;
   float dgl = (gl1 - gl0) / (float)n, dgr = (gr1 - gr0) / (float)n;
   float gl = gl0, gr = gr0;
-  bool lp = v->occlusion > 0;
+  bool lp = v->occlusion > 0 || v->air < 1.0f;
   float lpa = 1.0f;
   if (lp) {
-    float fc = 20000.0f * cw_pow(0.015f, v->occlusion); /* 20 kHz .. 300 Hz */
+    float fc = 20000.0f * (v->occlusion > 0 ? cw_pow(0.015f, v->occlusion) : 1.0f); /* 20 kHz .. 300 Hz */
+    if (v->air < 1.0f) fc *= v->air;
     lpa = 1.0f - cw_exp(-CW_TAU * fc / (float)m->rate);
   }
   cw__stream *st = v->stream >= 0 ? &cw__au.streams[v->stream] : NULL;
@@ -376,6 +428,40 @@ static bool render_voice(cw__mixer *m, cw__mvoice *v, float *out, int n, float g
   return ended;
 }
 
+/* ── HRTF selection ─────────────────────────────────────────────────── */
+
+/* Headphones mode: the hrtf_limit spatial voices nearest their listener get
+ * the HRTF this block (ties: the lower slot). */
+static void select_hrtf(cw__mixer *m, uint64_t F, int n) {
+  memset(m->hrtf_on, 0, (size_t)m->max_voices);
+  if (m->output != CW_AUDIO_HEADPHONES || !m->hrtf || m->hrtf_limit <= 0) return;
+  int cands = 0;
+  for (int s = 0; s < m->max_voices; s++) {
+    const cw__mvoice *v = &m->voices[s];
+    m->dist[s] = -1;
+    bool live = v->state == CW__V_PLAYING || (v->state == CW__V_WAITING && v->start_frame < (int64_t)(F + (uint64_t)n));
+    if (!live || v->paused || !v->spatial || v->sp.mode == CW_SPATIAL_PAN) continue;
+    float best = 0;
+    for (int l = 0; l < m->nlisteners; l++) {
+      float d = vlen(vsub(v->sp.position, m->lpos[l]));
+      if (l == 0 || d < best) best = d;
+    }
+    m->dist[s] = best;
+    cands++;
+  }
+  if (cands <= m->hrtf_limit) {
+    for (int s = 0; s < m->max_voices; s++) m->hrtf_on[s] = m->dist[s] >= 0;
+    return;
+  }
+  for (int k = 0; k < m->hrtf_limit; k++) {
+    int pick = -1;
+    for (int s = 0; s < m->max_voices; s++)
+      if (m->dist[s] >= 0 && !m->hrtf_on[s] && (pick < 0 || m->dist[s] < m->dist[pick])) pick = s;
+    if (pick < 0) break;
+    m->hrtf_on[pick] = 1;
+  }
+}
+
 /* ── one block ──────────────────────────────────────────────────────── */
 
 static void mix_block(float *out, int n) {
@@ -384,7 +470,8 @@ static void mix_block(float *out, int n) {
   drain_commands();
   for (int b = 0; b < CW_AUDIO_MAX_BUSES; b++)
     if (m->buses[b].used) memset(m->buses[b].buf, 0, (size_t)n * 2 * sizeof(float));
-  int nvoices = 0, nstreams = 0;
+  int nvoices = 0, nstreams = 0, nhrtf = 0;
+  select_hrtf(m, F, n);
   for (int s = 0; s < m->max_voices; s++) {
     cw__mvoice *v = &m->voices[s];
     if (v->state == CW__V_ZOMBIE) { end_voice(s); continue; }
@@ -411,19 +498,61 @@ static void mix_block(float *out, int n) {
       fade_end = v->fade < v->fade_target ? CW_MIN(v->fade + d, v->fade_target) : CW_MAX(v->fade - d, v->fade_target);
     }
     float gl1, gr1, ratio;
-    voice_params(m, v, fade_end, &gl1, &gr1, &ratio);
+    vp_extra x1, x0;
+    voice_params_x(m, v, fade_end, &gl1, &gr1, &ratio, &x1);
     float gl0 = gl1, gr0 = gr1;
+    x0 = x1;
     if (v->gains_valid) {
       gl0 = v->gl;
       gr0 = v->gr;
+      x0.g = v->g;
+      x0.pl = v->pl;
+      x0.pr = v->pr;
     } else if (v->fade_step > 0 || fade_end != v->fade) { /* first block of a fade: ramp from the start level */
-      voice_params(m, v, v->fade, &gl0, &gr0, &ratio);
-      voice_params(m, v, fade_end, &gl1, &gr1, &ratio);
+      voice_params_x(m, v, v->fade, &gl0, &gr0, &ratio, &x0);
+      voice_params_x(m, v, fade_end, &gl1, &gr1, &ratio, &x1);
     }
+    v->air = x1.air;
     int bus = v->bus >= 0 && v->bus < CW_AUDIO_MAX_BUSES && m->buses[v->bus].used ? v->bus : 0;
-    bool ended = render_voice(m, v, m->buses[bus].buf + off * 2, cnt, gl0, gr0, gl1, gr1, ratio);
+    float *dst = m->buses[bus].buf + off * 2;
+    /* HRTF share: ramps toward 1 for a selected voice, 0 otherwise; a voice's
+     * first block starts at its target */
+    cw__hstate *hs = &m->hstate[s];
+    float h1 = v->spatial && m->hrtf_on[s] ? 1.0f : 0.0f;
+    float h0 = v->gains_valid ? hs->mix : h1;
+    bool ended;
+    if (h0 == 0 && h1 == 0) {
+      ended = render_voice(m, v, dst, cnt, gl0, gr0, gl1, gr1, ratio);
+    } else {
+      /* the gained mono signal, then the HRTF and (while crossfading) the pan */
+      float *mono = m->mono;
+      memset(mono, 0, (size_t)cnt * 2 * sizeof(float));
+      ended = render_voice(m, v, mono, cnt, x0.g, x0.g, x1.g, x1.g, ratio);
+      if (h0 == 0) { /* entering: the history is stale */
+        memset(hs->hist, 0, sizeof hs->hist);
+        hs->valid = false;
+      }
+      float *in = hs->hist + CW__HRTF_PRE;
+      for (int i = 0; i < cnt; i++) in[i] = mono[2 * i];
+      cw__hrtf_set_direction(m->hrtf, hs, x1.local);
+      cw__hrtf_render(hs, cnt, dst, h0, h1);
+      if (h0 < 1 || h1 < 1) {
+        float inv = 1.0f / (float)cnt;
+        for (int i = 0; i < cnt; i++) {
+          float t = (float)(i + 1) * inv;
+          float pan_share = 1.0f - (h0 + (h1 - h0) * t);
+          float pl = x0.pl + (x1.pl - x0.pl) * t, pr = x0.pr + (x1.pr - x0.pr) * t;
+          dst[2 * i] += mono[2 * i] * pl * pan_share;
+          dst[2 * i + 1] += mono[2 * i] * pr * pan_share;
+        }
+      }
+    }
+    hs->mix = h1;
     v->gl = gl1;
     v->gr = gr1;
+    v->g = x1.g;
+    v->pl = x1.pl;
+    v->pr = x1.pr;
     v->gains_valid = true;
     v->fade = fade_end;
     if (v->fade == v->fade_target) v->fade_step = 0;
@@ -435,6 +564,7 @@ static void mix_block(float *out, int n) {
     if (v->state != CW__V_WAITING && v->state != CW__V_PLAYING) continue;
     nvoices++;
     nstreams += v->stream >= 0;
+    nhrtf += m->hrtf_on[s];
   }
   /* buses: children were created after their parents, so reverse index
    * order processes every bus after everything that feeds it */
@@ -481,6 +611,7 @@ static void mix_block(float *out, int n) {
   atomic_store_explicit(&m->pub_peak_bits, pb, memory_order_relaxed);
   atomic_store_explicit(&m->pub_voices, nvoices, memory_order_relaxed);
   atomic_store_explicit(&m->pub_streams, nstreams, memory_order_relaxed);
+  atomic_store_explicit(&m->pub_hrtf, nhrtf, memory_order_relaxed);
   atomic_fetch_add_explicit(&m->pub_blocks, 1, memory_order_relaxed);
   atomic_store_explicit(&m->pub_mixed, m->mixed, memory_order_release);
 }

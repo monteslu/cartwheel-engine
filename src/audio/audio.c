@@ -517,6 +517,63 @@ void cw_audio_set_speed_of_sound(float units_per_second) {
   send(&c);
 }
 
+/* ── output mode and HRTF ───────────────────────────────────────────── */
+
+static bool send_hrtf(cw__hrtf *h) {
+  cw__cmd c = { .type = CW__CMD_HRTF };
+  c.hrtf = h;
+  if (!cw__spsc_push(&cw__au.cmds, &c)) { /* never leak the table */
+    cw__au.dropped++;
+    cw__hrtf_free(h);
+    return false;
+  }
+  cw__au.hrtf_loaded = true;
+  return true;
+}
+
+bool cw_audio_load_hrtf(const char *asset_path) {
+  if (!cw__au.ready) {
+    cw_error("audio: cw_audio_load_hrtf before cw_audio_init");
+    return false;
+  }
+  cw__hrtf *h;
+  if (!asset_path) {
+    size_t len;
+    const void *data = cw__hrtf_builtin(&len);
+    h = cw__hrtf_parse(data, len, cw__au.mix.rate);
+  } else {
+    size_t len;
+    void *data = cw_asset_load(asset_path, &len);
+    if (!data) {
+      cw_error("audio: HRTF table '%s' not found", asset_path);
+      return false;
+    }
+    h = cw__hrtf_parse(data, len, cw__au.mix.rate);
+    free(data);
+    if (!h) cw_error("audio: '%s' is not a usable .cwhrtf table; keeping the current one", asset_path);
+  }
+  return h && send_hrtf(h);
+}
+
+void cw_audio_set_output(cw_audio_output output) {
+  if (!cw__au.ready) return;
+  if (output == CW_AUDIO_HEADPHONES && !cw__au.hrtf_loaded) cw_audio_load_hrtf(NULL);
+  cw__au.output = output == CW_AUDIO_HEADPHONES ? CW_AUDIO_HEADPHONES : CW_AUDIO_SPEAKERS;
+  cw__cmd c = { .type = CW__CMD_OUTPUT };
+  c.ival = cw__au.output;
+  send(&c);
+}
+
+cw_audio_output cw_audio_get_output(void) { return (cw_audio_output)cw__au.output; }
+
+void cw_audio_set_hrtf_voice_limit(int voices) {
+  if (!cw__au.ready) return;
+  cw__au.hrtf_limit = CW_CLAMP(voices, 0, cw__au.desc.max_voices);
+  cw__cmd c = { .type = CW__CMD_HRTF_LIMIT };
+  c.ival = cw__au.hrtf_limit;
+  send(&c);
+}
+
 /* ── buses ──────────────────────────────────────────────────────────── */
 
 static bool bus_ok(cw_bus b) { return cw__au.ready && b >= 0 && b < CW_AUDIO_MAX_BUSES && cw__au.buses[b].used; }
@@ -702,6 +759,7 @@ bool cw_audio_init(const cw_audio_desc *desc) {
     atomic_store(&a->streams[i].end, UINT64_MAX);
   }
   a->buses[0] = (cw__gbus){ .name = cw_intern("master"), .used = true };
+  a->hrtf_limit = a->mix.hrtf_limit = CW_MIN(16, d.max_voices);
   a->ready = true;
   cw__audio_fence_hook = fence_commands;
   cw_debug_u32("audio.mixed_frames", &a->dbg_mixed);
@@ -730,11 +788,17 @@ void cw_audio_shutdown(void) {
   for (int b = 0; b < CW_AUDIO_MAX_BUSES; b++)
     for (int f = 0; f < a->mix.buses[b].nfx; f++) cw__fx_destroy(a->mix.buses[b].fx[f]);
   cw__event e;
-  while (cw__spsc_pop(&a->events, &e))
+  while (cw__spsc_pop(&a->events, &e)) {
     if (e.type == CW__EV_FX_FREED) cw__fx_destroy(e.fx);
-  cw__cmd c; /* commands never applied may own an effect */
-  while (cw__spsc_pop(&a->cmds, &c))
+    if (e.type == CW__EV_HRTF_FREED) cw__hrtf_free(e.hrtf);
+  }
+  cw__cmd c; /* commands never applied may own an effect or a table */
+  while (cw__spsc_pop(&a->cmds, &c)) {
     if (c.type == CW__CMD_FX_ADD) cw__fx_destroy(c.fx.fx);
+    if (c.type == CW__CMD_HRTF) cw__hrtf_free(c.hrtf);
+  }
+  cw__hrtf_free(a->mix.hrtf);
+  a->mix.hrtf = NULL;
   for (int i = 0; i < a->sounds.slot_count; i++) {
     cw__sound *s = cw_pool_at(&a->sounds, i);
     if (s) {
@@ -761,6 +825,10 @@ void cw_audio_update(void) {
       cw__fx_destroy(e.fx);
       continue;
     }
+    if (e.type == CW__EV_HRTF_FREED) {
+      cw__hrtf_free(e.hrtf);
+      continue;
+    }
     cw__gvoice *g = &a->gvoices[e.slot];
     cw__sound *snd = sound_by_id(e.sound_id);
     if (g->live && g->gen == e.gen) { /* ended on its own (or stopped), not stolen */
@@ -778,6 +846,7 @@ void cw_audio_update(void) {
   a->stats.underrun_frames = atomic_load_explicit(&m->pub_underrun_frames, memory_order_relaxed);
   a->stats.voices = atomic_load_explicit(&m->pub_voices, memory_order_relaxed);
   a->stats.streams = atomic_load_explicit(&m->pub_streams, memory_order_relaxed);
+  a->stats.hrtf_voices = atomic_load_explicit(&m->pub_hrtf, memory_order_relaxed);
   uint32_t pb = atomic_load_explicit(&m->pub_peak_bits, memory_order_relaxed);
   memcpy(&a->stats.peak, &pb, 4);
   a->stats.dropped_commands = a->dropped;

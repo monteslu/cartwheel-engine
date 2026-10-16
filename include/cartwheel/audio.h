@@ -51,8 +51,22 @@
  * position, velocity, direction (for its cone), a distance model, and an
  * occlusion amount the game sets (0 = clear, 1 = fully blocked: a low-pass,
  * e.g. from a physics ray cast between voice and listener). Doppler shifts
- * pitch from the radial velocities. Spatial sources are mixed to mono and
- * panned with an equal-power law from the listener-relative direction.
+ * pitch from the radial velocities. Spatial sources are mixed to mono, then
+ * placed by the output mode (cw_audio_set_output):
+ *   SPEAKERS (the default): an equal-power pan from the listener-relative
+ *     direction (left/right only: speakers cannot place above or behind).
+ *   HEADPHONES: head-related filtering (HRTF) for the nearest voices (up to
+ *     cw_audio_set_hrtf_voice_limit), so a sound is heard above, behind or
+ *     to the side: per ear, the interaural delay and a 64-tap filter blended
+ *     from the three nearest measured directions (the built-in table is the
+ *     MIT KEMAR dummy head; cw_audio_load_hrtf loads another). A voice that
+ *     moves keeps a smooth sound (old and new filters crossfade across each
+ *     block); one that enters or leaves the HRTF set crossfades with its
+ *     panned version over one block. Cost per voice per 256-frame block on a
+ *     Ryzen AI 9 HX 370 core: about 2 us panned, 5 us with the HRTF, 8 us
+ *     while it moves (docs/guides/audio.md).
+ * A distance low-pass (air_absorption) dulls far sources; it combines with
+ * the occlusion low-pass.
  *
  * ── Determinism ──────────────────────────────────────────────────────
  * The mixer uses only + - * / sqrt and cartwheel/math.h's deterministic
@@ -119,6 +133,7 @@ typedef struct cw_audio_stats {
   uint32_t dropped_commands; /* calls lost because the command queue was full */
   int32_t voices;            /* voices the mixer is playing */
   int32_t streams;           /* of those, streams */
+  int32_t hrtf_voices;       /* of those, filtered with the HRTF in the last block (headphones mode) */
   float peak;                /* master peak of the last block, 0..1+ */
   bool device;               /* a real output device is open */
 } cw_audio_stats;
@@ -169,6 +184,11 @@ typedef enum {
   CW_ATTEN_EXPONENTIAL, /* (d / ref) ^ -rolloff */
 } cw_atten_model;         /* d is clamped to [ref, max] first (OpenAL's _CLAMPED models) */
 
+typedef enum {
+  CW_SPATIAL_AUTO, /* HRTF in headphones mode (the nearest voices up to the limit), panned on speakers */
+  CW_SPATIAL_PAN,  /* always the equal-power pan (a voice whose direction does not matter) */
+} cw_spatial_mode;
+
 typedef struct cw_voice_3d {
   t3_vec3 position, velocity;
   t3_vec3 direction;           /* cone axis; zero = omnidirectional */
@@ -180,6 +200,9 @@ typedef struct cw_voice_3d {
   float cone_outer_deg;        /* full angle where outer_gain is reached; 0 = 360 */
   float cone_outer_gain;       /* gain outside the outer cone */
   float doppler;               /* doppler factor; 0 = none, 1 = physical */
+  cw_spatial_mode mode;        /* 0 = AUTO: HRTF in headphones mode (within the voice limit), else panned */
+  float air_absorption;        /* distance low-pass: the cutoff (from 20 kHz) halves every 1/air_absorption
+                                  units beyond ref_distance (0.02: halves every 50 units); 0 = none */
 } cw_voice_3d;
 
 typedef struct cw_play_desc {
@@ -239,6 +262,27 @@ void cw_audio_set_listener_at(int index, t3_vec3 position, t3_vec3 velocity, t3_
 void cw_audio_set_listener_count(int n);
 /* Speed of sound in world units per second (default 343) for doppler. */
 void cw_audio_set_speed_of_sound(float units_per_second);
+
+typedef enum {
+  CW_AUDIO_SPEAKERS,   /* spatial voices pan left/right (the default) */
+  CW_AUDIO_HEADPHONES, /* spatial voices use the HRTF (see 3D above) */
+} cw_audio_output;
+/* The player's output: offer it in the audio settings. Switching to
+ * HEADPHONES loads the built-in HRTF table first if none is loaded (about
+ * 360 KB, a few ms, on this thread). Takes effect at the next block, each
+ * voice crossfading over one block. */
+void cw_audio_set_output(cw_audio_output output);
+cw_audio_output cw_audio_get_output(void); /* the output set last (SPEAKERS until set) */
+/* Loads an HRTF table (.cwhrtf, tools/hrtf/import-kemar.mjs) from the asset
+ * bundle and uses it from the next block; NULL = the built-in KEMAR table.
+ * Returns false (logged, the current table kept) when the asset is missing
+ * or not a table. Its rate may differ from the mix rate (resampled here). */
+bool cw_audio_load_hrtf(const char *asset_path);
+/* The most voices filtered with the HRTF at once (default 16; 0 = none, all
+ * pan). The nearest spatial voices (to their listener; ties by voice slot)
+ * get it, the rest pan. Scale it with the quality preset if CPU is tight:
+ * cw_audio_set_hrtf_voice_limit(cw_quality_count(16, "hrtf_voices")). */
+void cw_audio_set_hrtf_voice_limit(int voices);
 
 /* ── buses ──────────────────────────────────────────────────────────── */
 

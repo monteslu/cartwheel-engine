@@ -794,7 +794,7 @@
   },
   {
    "header": "cartwheel/audio.h",
-   "summary": "cartwheel audio: mixer, buses, effects, one-shots, streams, 3D sound.\n\n── Threads ──────────────────────────────────────────────────────────\nEvery function here is called from the GAME thread (the one running the\napp callbacks). The mixer runs in the platform's audio fill callback\n(cw_audio_open): natively on SDL's audio thread, in carts on a job-pool\nthread while the frame renders (commands sent during the render wait for\nthe next frame's mix). The two sides talk through lock-free\nsingle-producer/single-consumer queues: calls here enqueue commands\n(applied at the start of the next mixed block, at most CW_AUDIO_BLOCK\nframes later), the mixer posts events back (voice finished, memory it no\nlonger touches). The fill callback never locks, allocates, frees or waits.\n\nCall cw_audio_update() once per rendered frame: it applies those events,\nrefreshes the stats and keeps streams decoding.\n\n── Sounds and voices ────────────────────────────────────────────────\nA cw_sound is audio data: either fully decoded PCM (a SAMPLE, for one-shots\nand short loops) or the encoded file kept in memory and decoded while it\nplays (a STREAM, for music and ambience). A cw_voice is one playing\ninstance of a sound. Both are generational handles: a voice handle goes\nstale when the voice ends, and every call on a stale handle is a no-op.\n\nFormats: WAV, FLAC, MP3 (miniaudio's decoders), Ogg Vorbis (stb_vorbis),\nOgg Opus (libopus), tracker modules MOD/XM/S3M/IT (libxmp-lite; always\nstreamed). Sources may be mono or stereo at any sample rate; more channels\nare reduced to the first two. Samples are resampled to the mix rate once at\nload (miniaudio's linear resampler); streams and pitch use per-voice linear\ninterpolation.\n\nStream decoding runs on the engine job pool (cartwheel/jobs.h) into a ring\nper playing stream; the mixer only reads the ring. When a ring is nearly\ndry (under 1/8 full) and its job is still out, cw_audio_update waits for it,\nrunning it on the game thread if no worker has started it. A ring that\nstill runs dry plays silence for that voice and counts an underrun\n(cw_audio_stats).\n\n── Buses ────────────────────────────────────────────────────────────\nBus 0 is the master (CW_AUDIO_MASTER). Every other bus outputs into a\nparent created before it and may send into up to CW_AUDIO_MAX_SENDS buses\ncreated before it (post-fader), so the bus graph is always a DAG processed\nin reverse creation order. Each bus has volume, mute, solo and up to\nCW_AUDIO_MAX_FX effects run in order. Solo: when any bus is soloed, only\nsoloed buses, their ancestors (so the signal reaches the master) and their\ndescendants stay audible.\n\n── 3D ───────────────────────────────────────────────────────────────\nA listener (position, velocity, forward, up); splitscreen games set one\nper view (cw_audio_set_listener_at / _count, up to CW_AUDIO_MAX_LISTENERS)\nand each spatial voice is heard by the nearest. A spatial voice has a\nposition, velocity, direction (for its cone), a distance model, and an\nocclusion amount the game sets (0 = clear, 1 = fully blocked: a low-pass,\ne.g. from a physics ray cast between voice and listener). Doppler shifts\npitch from the radial velocities. Spatial sources are mixed to mono and\npanned with an equal-power law from the listener-relative direction.\n\n── Determinism ──────────────────────────────────────────────────────\nThe mixer uses only + - * / sqrt and cartwheel/math.h's deterministic\nfunctions (never libm), so cw_audio_render in offline mode produces\nbit-identical samples on every host for the same calls. That is what the\ncross-host audio gate checks.",
+   "summary": "cartwheel audio: mixer, buses, effects, one-shots, streams, 3D sound.\n\n── Threads ──────────────────────────────────────────────────────────\nEvery function here is called from the GAME thread (the one running the\napp callbacks). The mixer runs in the platform's audio fill callback\n(cw_audio_open): natively on SDL's audio thread, in carts on a job-pool\nthread while the frame renders (commands sent during the render wait for\nthe next frame's mix). The two sides talk through lock-free\nsingle-producer/single-consumer queues: calls here enqueue commands\n(applied at the start of the next mixed block, at most CW_AUDIO_BLOCK\nframes later), the mixer posts events back (voice finished, memory it no\nlonger touches). The fill callback never locks, allocates, frees or waits.\n\nCall cw_audio_update() once per rendered frame: it applies those events,\nrefreshes the stats and keeps streams decoding.\n\n── Sounds and voices ────────────────────────────────────────────────\nA cw_sound is audio data: either fully decoded PCM (a SAMPLE, for one-shots\nand short loops) or the encoded file kept in memory and decoded while it\nplays (a STREAM, for music and ambience). A cw_voice is one playing\ninstance of a sound. Both are generational handles: a voice handle goes\nstale when the voice ends, and every call on a stale handle is a no-op.\n\nFormats: WAV, FLAC, MP3 (miniaudio's decoders), Ogg Vorbis (stb_vorbis),\nOgg Opus (libopus), tracker modules MOD/XM/S3M/IT (libxmp-lite; always\nstreamed). Sources may be mono or stereo at any sample rate; more channels\nare reduced to the first two. Samples are resampled to the mix rate once at\nload (miniaudio's linear resampler); streams and pitch use per-voice linear\ninterpolation.\n\nStream decoding runs on the engine job pool (cartwheel/jobs.h) into a ring\nper playing stream; the mixer only reads the ring. When a ring is nearly\ndry (under 1/8 full) and its job is still out, cw_audio_update waits for it,\nrunning it on the game thread if no worker has started it. A ring that\nstill runs dry plays silence for that voice and counts an underrun\n(cw_audio_stats).\n\n── Buses ────────────────────────────────────────────────────────────\nBus 0 is the master (CW_AUDIO_MASTER). Every other bus outputs into a\nparent created before it and may send into up to CW_AUDIO_MAX_SENDS buses\ncreated before it (post-fader), so the bus graph is always a DAG processed\nin reverse creation order. Each bus has volume, mute, solo and up to\nCW_AUDIO_MAX_FX effects run in order. Solo: when any bus is soloed, only\nsoloed buses, their ancestors (so the signal reaches the master) and their\ndescendants stay audible.\n\n── 3D ───────────────────────────────────────────────────────────────\nA listener (position, velocity, forward, up); splitscreen games set one\nper view (cw_audio_set_listener_at / _count, up to CW_AUDIO_MAX_LISTENERS)\nand each spatial voice is heard by the nearest. A spatial voice has a\nposition, velocity, direction (for its cone), a distance model, and an\nocclusion amount the game sets (0 = clear, 1 = fully blocked: a low-pass,\ne.g. from a physics ray cast between voice and listener). Doppler shifts\npitch from the radial velocities. Spatial sources are mixed to mono, then\nplaced by the output mode (cw_audio_set_output):\n  SPEAKERS (the default): an equal-power pan from the listener-relative\n    direction (left/right only: speakers cannot place above or behind).\n  HEADPHONES: head-related filtering (HRTF) for the nearest voices (up to\n    cw_audio_set_hrtf_voice_limit), so a sound is heard above, behind or\n    to the side: per ear, the interaural delay and a 64-tap filter blended\n    from the three nearest measured directions (the built-in table is the\n    MIT KEMAR dummy head; cw_audio_load_hrtf loads another). A voice that\n    moves keeps a smooth sound (old and new filters crossfade across each\n    block); one that enters or leaves the HRTF set crossfades with its\n    panned version over one block. Cost per voice per 256-frame block on a\n    Ryzen AI 9 HX 370 core: about 2 us panned, 5 us with the HRTF, 8 us\n    while it moves (docs/guides/audio.md).\nA distance low-pass (air_absorption) dulls far sources; it combines with\nthe occlusion low-pass.\n\n── Determinism ──────────────────────────────────────────────────────\nThe mixer uses only + - * / sqrt and cartwheel/math.h's deterministic\nfunctions (never libm), so cw_audio_render in offline mode produces\nbit-identical samples on every host for the same calls. That is what the\ncross-host audio gate checks.",
    "functions": [
     {
      "name": "cw_audio_init",
@@ -983,6 +983,30 @@
      "inline": false
     },
     {
+     "name": "cw_audio_set_output",
+     "signature": "void cw_audio_set_output(cw_audio_output output)",
+     "doc": "The player's output: offer it in the audio settings. Switching to\nHEADPHONES loads the built-in HRTF table first if none is loaded (about\n360 KB, a few ms, on this thread). Takes effect at the next block, each\nvoice crossfading over one block.",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_get_output",
+     "signature": "cw_audio_output cw_audio_get_output(void)",
+     "doc": "the output set last (SPEAKERS until set)",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_load_hrtf",
+     "signature": "bool cw_audio_load_hrtf(const char *asset_path)",
+     "doc": "Loads an HRTF table (.cwhrtf, tools/hrtf/import-kemar.mjs) from the asset\nbundle and uses it from the next block; NULL = the built-in KEMAR table.\nReturns false (logged, the current table kept) when the asset is missing\nor not a table. Its rate may differ from the mix rate (resampled here).",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_set_hrtf_voice_limit",
+     "signature": "void cw_audio_set_hrtf_voice_limit(int voices)",
+     "doc": "The most voices filtered with the HRTF at once (default 16; 0 = none, all\npan). The nearest spatial voices (to their listener; ties by voice slot)\nget it, the rest pan. Scale it with the quality preset if CPU is tight:\ncw_audio_set_hrtf_voice_limit(cw_quality_count(16, \"hrtf_voices\")).",
+     "inline": false
+    },
+    {
      "name": "cw_bus_create",
      "signature": "cw_bus cw_bus_create(const char *name, cw_bus parent)",
      "doc": "A new bus feeding `parent` (which must already exist). Returns -1 when all\nCW_AUDIO_MAX_BUSES are used. Names are for debugging/the editor.",
@@ -1069,7 +1093,7 @@
     {
      "name": "cw_audio_stats",
      "doc": "",
-     "decl": "typedef struct cw_audio_stats {\n  uint64_t mixed_frames;     /* frames the mixer has produced since init */\n  uint32_t blocks;           /* mixed blocks */\n  uint32_t underruns;        /* times a stream ring ran dry (silence inserted) */\n  uint32_t underrun_frames;  /* frames of silence those cost */\n  uint32_t dropped_commands; /* calls lost because the command queue was full */\n  int32_t voices;            /* voices the mixer is playing */\n  int32_t streams;           /* of those, streams */\n  float peak;                /* master peak of the last block, 0..1+ */\n  bool device;               /* a real output device is open */\n} cw_audio_stats;"
+     "decl": "typedef struct cw_audio_stats {\n  uint64_t mixed_frames;     /* frames the mixer has produced since init */\n  uint32_t blocks;           /* mixed blocks */\n  uint32_t underruns;        /* times a stream ring ran dry (silence inserted) */\n  uint32_t underrun_frames;  /* frames of silence those cost */\n  uint32_t dropped_commands; /* calls lost because the command queue was full */\n  int32_t voices;            /* voices the mixer is playing */\n  int32_t streams;           /* of those, streams */\n  int32_t hrtf_voices;       /* of those, filtered with the HRTF in the last block (headphones mode) */\n  float peak;                /* master peak of the last block, 0..1+ */\n  bool device;               /* a real output device is open */\n} cw_audio_stats;"
     },
     {
      "name": "cw_sound_mode",
@@ -1082,14 +1106,24 @@
      "decl": "typedef struct cw_sound_desc {\n  cw_sound_mode mode;\n  int max_voices;    /* simultaneous voices of this sound; 0 = unlimited.\n                        Playing past the limit steals this sound's oldest voice */\n  int priority;      /* default voice priority (higher wins a full mixer); 0 = 0 */\n  float volume;      /* default voice volume; 0 = 1 */\n  cw_bus bus;        /* default bus; 0 = master */\n} cw_sound_desc;"
     },
     {
+     "name": "cw_spatial_mode",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_SPATIAL_AUTO, /* HRTF in headphones mode (the nearest voices up to the limit), panned on speakers */\n  CW_SPATIAL_PAN,  /* always the equal-power pan (a voice whose direction does not matter) */\n} cw_spatial_mode;"
+    },
+    {
      "name": "cw_voice_3d",
      "doc": "",
-     "decl": "typedef struct cw_voice_3d {\n  t3_vec3 position, velocity;\n  t3_vec3 direction;           /* cone axis; zero = omnidirectional */\n  cw_atten_model model;        /* 0 = CW_ATTEN_NONE: set one (INVERSE is the usual) */\n  float ref_distance;          /* 0 = 1 */\n  float max_distance;          /* 0 = 1000 */\n  float rolloff;               /* 0 = 1 */\n  float cone_inner_deg;        /* full angle at full gain; 0 = 360 (no cone) */\n  float cone_outer_deg;        /* full angle where outer_gain is reached; 0 = 360 */\n  float cone_outer_gain;       /* gain outside the outer cone */\n  float doppler;               /* doppler factor; 0 = none, 1 = physical */\n} cw_voice_3d;"
+     "decl": "typedef struct cw_voice_3d {\n  t3_vec3 position, velocity;\n  t3_vec3 direction;           /* cone axis; zero = omnidirectional */\n  cw_atten_model model;        /* 0 = CW_ATTEN_NONE: set one (INVERSE is the usual) */\n  float ref_distance;          /* 0 = 1 */\n  float max_distance;          /* 0 = 1000 */\n  float rolloff;               /* 0 = 1 */\n  float cone_inner_deg;        /* full angle at full gain; 0 = 360 (no cone) */\n  float cone_outer_deg;        /* full angle where outer_gain is reached; 0 = 360 */\n  float cone_outer_gain;       /* gain outside the outer cone */\n  float doppler;               /* doppler factor; 0 = none, 1 = physical */\n  cw_spatial_mode mode;        /* 0 = AUTO: HRTF in headphones mode (within the voice limit), else panned */\n  float air_absorption;        /* distance low-pass: the cutoff (from 20 kHz) halves every 1/air_absorption\n                                  units beyond ref_distance (0.02: halves every 50 units); 0 = none */\n} cw_voice_3d;"
     },
     {
      "name": "cw_play_desc",
      "doc": "",
      "decl": "typedef struct cw_play_desc {\n  float volume;        /* 0 = the sound's default (use cw_voice_set_volume(v, 0) for silence) */\n  float pitch;         /* playback rate multiplier; 0 = 1 */\n  float pan;           /* -1 left .. 1 right (2D voices) */\n  bool loop;\n  int64_t loop_start, loop_end; /* samples only, source frames; loop_end 0 = end */\n  float fade_in;       /* seconds */\n  cw_bus bus;          /* 0 = the sound's default bus (master unless set) */\n  int priority;        /* 0 = the sound's default */\n  int64_t start_frame; /* absolute mixer frame to start on (sample-accurate scheduling,\n                          see cw_audio_mixed_frames); 0 = as soon as possible */\n  int64_t offset;      /* source frame to start from (samples and seekable streams) */\n  bool paused;         /* start paused */\n  bool spatial;        /* use `space` */\n  cw_voice_3d space;\n} cw_play_desc;"
+    },
+    {
+     "name": "cw_audio_output",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_AUDIO_SPEAKERS,   /* spatial voices pan left/right (the default) */\n  CW_AUDIO_HEADPHONES, /* spatial voices use the HRTF (see 3D above) */\n} cw_audio_output;"
     },
     {
      "name": "cw_fx_type",
@@ -7078,7 +7112,7 @@
     {
      "name": "cw_quality_scale",
      "signature": "float cw_quality_scale(const char *knob)",
-     "doc": "A scale for a named knob, from effects detail: \"particles\", \"density\",\n\"grass\", \"crowd\", \"scatter\" (the last three are density), 1 for any other\nname.",
+     "doc": "A scale for a named knob, from effects detail: \"particles\", \"density\",\n\"grass\", \"crowd\", \"scatter\" (the last three are density), \"hrtf_voices\"\n(0.25, 0.5, 1, 1: the audio mixer's HRTF voice limit, cartwheel/audio.h),\n1 for any other name.",
      "inline": false
     },
     {

@@ -83,6 +83,34 @@ The engine does not trace occlusion for you: cast a ray with the [physics](guide
 
 `games/platformer3d` attaches looping 3D voices to level objects and moves the listener with the camera.
 
+A far voice can also lose its highs with distance: `air_absorption` in `cw_voice_3d` halves the low-pass cutoff (from 20 kHz) every `1 / air_absorption` units beyond the reference distance (0.02 halves it every 50 units). It stacks with occlusion.
+
+## Headphones: sound from every direction
+
+Panning places a sound only between left and right. On headphones the mixer can do better: with [cw_audio_set_output](api:cw_audio_set_output)`(CW_AUDIO_HEADPHONES)` spatial voices are filtered with a head-related transfer function (HRTF), the way a head and ears colour sound arriving from each direction, so a source is heard in front, behind, above or below. Speakers (`CW_AUDIO_SPEAKERS`, the default) keep the equal-power pan: the filtering is meant for headphones and sounds wrong through speakers, so offer the choice in the game's audio settings.
+
+For each filtered voice and each 256-frame block:
+
+- the direction to the voice, in the listener's frame, picks a triangle of three measured directions and their blend weights;
+- each ear gets the voice delayed by its interaural delay (up to about 0.7 ms: the far ear hears it later) and a 64-tap filter blended from the three measurements;
+- when the voice or the listener moved, the old and new filters both run and crossfade across the block, so a source sweeping around the head stays smooth.
+
+The built-in table is the MIT Media Lab KEMAR dummy-head set (Bill Gardner and Keith Martin, 1994), diffuse-field equalized, 710 measured directions from 40 degrees below the horizon to straight up, plus one made-up direction straight down (the average of the lowest ring). Switching to headphones loads it (about 360 KB). [cw_audio_load_hrtf](api:cw_audio_load_hrtf) loads another `.cwhrtf` table from the bundle; `tools/hrtf/import-kemar.mjs` shows how one is made (resampling, minimum phase with the delay split out, 64 taps, a triangulation of the measurement grid).
+
+Filtering costs more than panning, so only the nearest voices get it: [cw_audio_set_hrtf_voice_limit](api:cw_audio_set_hrtf_voice_limit) (16 by default). The nearest voices to their listener are filtered and the rest pan; a voice that enters or leaves the set crossfades between the two over one block. A voice whose direction does not matter (a sound attached to the player, say) can opt out with `mode = CW_SPATIAL_PAN`. To scale the limit with the quality preset:
+
+```c
+cw_audio_set_hrtf_voice_limit(cw_quality_count(16, "hrtf_voices")); /* Low 4, Medium 8, High and Ultra 16 */
+```
+
+`samples/audio_3d` orbits a bell around the listener's head horizontally (front, right, behind, left) and a hum vertically (in front, overhead, behind, below), places a shaker behind and above, and scatters 24 crickets with an HRTF voice limit of 8:
+
+@include samples/audio_3d/main.c#setup
+
+The stats ([cw_audio_get_stats](api:cw_audio_get_stats)) report `hrtf_voices`, how many voices were filtered in the last block. Listen to the result natively (`CW_FRAMES=362 CW_AUDIO_3D_WAV=out/a3d.wav build/native/samples/audio_3d`) with headphones.
+
+**Cost**, measured by `audio_3d` (32 voices on one core of a Ryzen AI 9 HX 370; the sample logs its own numbers): per voice per 256-frame block, about 2 microseconds panned, 5 with the HRTF, and 8 when the voice or listener moves every block (both filters run for the crossfade). The wasm cart in Chromium measures about the same (2.2 and 5.5). A block is 5.3 ms of sound, so 16 moving HRTF voices cost about 130 microseconds per block, under 3% of one core; a four-core laptop chip of a few years ago (a Ryzen 3 with Vega 8 graphics, say) runs it at roughly half that speed, still a few percent. Every operation is plain float arithmetic in a fixed order (the filter runs four output samples at once with SSE2, wasm SIMD128 or NEON, and the plain C path gives the same bits), so the `audio-3d` gate requires every host to reproduce the native mix exactly.
+
 ## Sample-exact across hosts
 
 The mixer uses only arithmetic, `sqrt` and the deterministic functions in `cartwheel/math.h`, never libm. In offline mode (`offline = true`, no device) the game pulls samples with [cw_audio_render](api:cw_audio_render), which applies every queued command first and waits for stream decoding before each block, so the output depends only on the calls made, never on timing. `audio_mix` renders one 1/60 s slice per frame:

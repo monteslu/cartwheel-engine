@@ -94,13 +94,53 @@ void cw__fx_destroy(cw__fx *fx);                      /* [game] */
 void cw__fx_set(cw__fx *fx, const cw_fx_desc *d);     /* [mix]: no allocation */
 void cw__fx_process(cw__fx *fx, float *buf, int frames); /* [mix] stereo, in place */
 
+/* ── HRTF (hrtf.c) ────────────────────────────────────────────────────── */
+
+#define CW__HRTF_TAPS 64     /* FIR length the mixer runs (tables are resampled/truncated to it) */
+#define CW__HRTF_MAXDELAY 64 /* ear delays are clamped below this (frames) */
+#define CW__HRTF_PRE (CW__HRTF_TAPS - 1 + CW__HRTF_MAXDELAY + 1) /* input history kept per voice */
+
+typedef struct cw__hrtf {
+  int count, ntris;
+  float *taps;    /* count * 2 ears * CW__HRTF_TAPS, each FIR stored reversed */
+  float *delay;   /* count * 2: frames */
+  float *dirs;    /* count * 3: listener space (x right, y up, -z forward) */
+  uint16_t *tris; /* ntris * 3 */
+  float *inv;     /* ntris * 9: rows of each triangle's inverse (barycentric weights) */
+  int32_t *adj;   /* ntris * 3: the neighbour across the edge opposite each vertex (-1 = none) */
+} cw__hrtf;
+
+/* Per voice slot, mixer-owned (allocated with the mixer). */
+typedef struct cw__hstate {
+  float hist[CW__HRTF_PRE + CW_AUDIO_BLOCK]; /* mono input: history, then this block */
+  float taps[2][2][CW__HRTF_TAPS];           /* [filter][ear], reversed; filter cur is the newest */
+  float delay[2][2];
+  float w[3];
+  int cur, tri;
+  bool valid, changed; /* changed: crossfade from the other filter this block */
+  float mix;           /* HRTF share at the end of the last block (0 = panned, 1 = HRTF) */
+} cw__hstate;
+
+const void *cw__hrtf_builtin(size_t *len);
+cw__hrtf *cw__hrtf_parse(const void *data, size_t len, int mix_rate); /* [game]: allocates; NULL (logged) when bad */
+void cw__hrtf_free(cw__hrtf *h);
+int cw__hrtf_find(const cw__hrtf *h, t3_vec3 d, int hint, float w[3]);
+/* [mix] the filter for direction d (listener space, unit); keeps the last one for the crossfade */
+void cw__hrtf_set_direction(const cw__hrtf *h, cw__hstate *s, t3_vec3 d);
+/* [mix] filters the n frames in s->hist + CW__HRTF_PRE, adds them to stereo out at an HRTF share
+ * ramping m0 -> m1, then keeps the history */
+void cw__hrtf_render(cw__hstate *s, int n, float *out, float m0, float m1);
+void cw__hrtf_reset(cw__hstate *s);
+void cw__hrtf_fir(const float *hr, const float *u, int n, float *y);
+void cw__hrtf_fir_scalar(const float *hr, const float *u, int n, float *y);
+
 /* ── commands (game -> mixer) and events (mixer -> game) ─────────────── */
 
 typedef enum {
   CW__CMD_PLAY, CW__CMD_STOP, CW__CMD_PAUSE, CW__CMD_VOLUME, CW__CMD_PITCH, CW__CMD_PAN, CW__CMD_BUS,
   CW__CMD_FADE, CW__CMD_3D, CW__CMD_POSITION, CW__CMD_OCCLUSION, CW__CMD_LISTENER, CW__CMD_SPEED_OF_SOUND,
   CW__CMD_BUS_SETUP, CW__CMD_BUS_VOLUME, CW__CMD_BUS_AUDIBLE, CW__CMD_BUS_SEND, CW__CMD_FX_ADD,
-  CW__CMD_FX_SET, CW__CMD_FX_BYPASS, CW__CMD_FX_REMOVE,
+  CW__CMD_FX_SET, CW__CMD_FX_BYPASS, CW__CMD_FX_REMOVE, CW__CMD_HRTF, CW__CMD_OUTPUT, CW__CMD_HRTF_LIMIT,
 } cw__cmd_type;
 
 typedef struct cw__play {
@@ -126,10 +166,12 @@ typedef struct cw__cmd {
     struct { int parent; } bus;
     struct { int slot, target; float level; } send;
     struct { int slot; cw__fx *fx; cw_fx_desc desc; bool bypass; } fx;
+    cw__hrtf *hrtf;
+    int ival;
   };
 } cw__cmd;
 
-typedef enum { CW__EV_VOICE_ENDED, CW__EV_FX_FREED } cw__ev_type;
+typedef enum { CW__EV_VOICE_ENDED, CW__EV_FX_FREED, CW__EV_HRTF_FREED } cw__ev_type;
 typedef struct cw__event {
   uint8_t type;
   int16_t slot;
@@ -137,6 +179,7 @@ typedef struct cw__event {
   uint32_t gen;
   uint64_t sound_id;
   cw__fx *fx;
+  cw__hrtf *hrtf;
 } cw__event;
 
 /* ── the mixer (mixer.c) ─────────────────────────────────────────────── */
@@ -164,6 +207,8 @@ typedef struct cw__mvoice {
   cw_voice_3d sp;
   float occlusion, lp[2];
   float gl, gr;      /* gains applied at the end of the last block */
+  float g, pl, pr;   /* spatial: the same as gain before the pan, and the pan gains */
+  float air;         /* distance low-pass factor for this block (1 = none) */
   bool gains_valid;
   int64_t start_frame;
   uint64_t played;   /* the music clock */
@@ -189,11 +234,19 @@ typedef struct cw__mixer {
   t3_vec3 lpos[CW_AUDIO_MAX_LISTENERS], lvel[CW_AUDIO_MAX_LISTENERS], lfwd[CW_AUDIO_MAX_LISTENERS], lup[CW_AUDIO_MAX_LISTENERS];
   int nlisteners;
   float speed_of_sound;
+  /* HRTF: the table (NULL until loaded), per-slot filter state, output mode, voice limit */
+  cw__hrtf *hrtf;
+  cw__hstate *hstate;
+  int output;              /* cw_audio_output */
+  int hrtf_limit;
+  float *mono;             /* CW_AUDIO_BLOCK: a spatial voice's gained mono signal */
+  float *dist;             /* per slot: distance this block (HRTF selection), < 0 = not a candidate */
+  uint8_t *hrtf_on;        /* per slot: selected for HRTF this block */
   uint64_t mixed;          /* frames */
   /* published for the game thread */
   _Atomic uint64_t pub_mixed;
   _Atomic uint32_t pub_blocks, pub_underruns, pub_underrun_frames, pub_peak_bits;
-  _Atomic int32_t pub_voices, pub_streams;
+  _Atomic int32_t pub_voices, pub_streams, pub_hrtf;
   _Atomic uint32_t *clock_gen; /* per voice slot: generation the clock belongs to */
   _Atomic uint64_t *clock;     /* per voice slot: frames played */
 } cw__mixer;
@@ -245,6 +298,8 @@ typedef struct cw__audio {
    * past cmd_fence while fenced (cw__audio_fence_hook) */
   bool fenced;
   uint32_t cmd_fence;
+  bool hrtf_loaded;        /* [game] a table was sent to the mixer */
+  int output, hrtf_limit;  /* [game] mirrors */
   cw_audio_stats stats;
   /* debug-field mirrors */
   uint32_t dbg_mixed, dbg_underruns, dbg_dropped;
