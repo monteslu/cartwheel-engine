@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "anim_internal.h"
+#include "cartwheel/profile.h"
 #include "cartwheel/debug.h"
 #include "cartwheel/ik.h"
 #include "cartwheel/jobs.h"
@@ -600,6 +601,7 @@ static double now_us(void) {
 }
 
 static void phase_hook(cw_tree *tree, double dt, void *u) {
+  CW_PROFILE_SCOPE("anim.ik");
   (void)u;
   ikw *W = cw_tree_slot(tree, "ik");
   if (!W || !W->skels.count) return;

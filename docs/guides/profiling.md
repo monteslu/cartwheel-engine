@@ -13,7 +13,8 @@ What {{name}} measures and how to measure a change without fooling yourself. The
 | `fixed_update` | one fixed tick (one zone per tick) |
 | `tree.fixed_update`, `tree.update`, `tree.pre_render` | the scene tree's phases |
 | `physics2d.step`, `physics3d.step` | a physics world's step |
-| `anim.player`, `anim.tree` | an AnimationPlayer or AnimationTree advancing |
+| `anim.player`, `anim.tree`, `anim.ik` | an AnimationPlayer or AnimationTree advancing, the skeleton modifiers (IK) solving |
+| `cloth.step` | a cloth or rope's step |
 | `update`, `render` | the app's update and render |
 | `pipeline.render`, `render3d.prepare`, `render3d.draw` | the render pipeline, the 3D scene's preparation and draw submission |
 | `pass <name>` | each render pass (`pass scene`, `pass ssao`, `pass bloom`, ...) |

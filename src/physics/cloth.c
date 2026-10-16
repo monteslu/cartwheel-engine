@@ -18,6 +18,7 @@
 #include <time.h>
 
 #include "cartwheel/cloth.h"
+#include "cartwheel/profile.h"
 #include "cartwheel/jobs.h"
 #include "cartwheel/math.h"
 #include "cartwheel/platform.h"
@@ -1323,6 +1324,7 @@ static void normals_range(int begin, int end, int worker, void *u) {
 }
 
 void cw_cloth_step(cw_cloth h, float dt) {
+  CW_PROFILE_SCOPE("cloth.step");
   cw__cloth *c = rec(h);
   if (!c || dt <= 0) return;
   if (!cw_world3d_valid(c->world)) return;
