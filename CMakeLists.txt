@@ -137,8 +137,11 @@ if(NOT CW_CART AND NOT CMAKE_CROSSCOMPILING)
   # cwbake: bakes a scene's lightmaps and probe grid offline (cartwheel/lightmap.h)
   add_executable(cwbake tools/cwbake/main.c)
   target_link_libraries(cwbake PRIVATE cartwheel)
-  # cwcsg: bakes CSG shapes into meshes with Manifold (cartwheel/csg.h); C++, never in a game
-  include(tools/cwcsg/cwcsg.cmake)
+  # cwcsg: bakes CSG shapes into meshes with Manifold (cartwheel/csg.h); C++, never in a game.
+  # Only when deps/manifold is fetched (an SDK build that fetches a subset goes without the tool)
+  if(EXISTS ${DEPS}/manifold/src/manifold.cpp)
+    include(tools/cwcsg/cwcsg.cmake)
+  endif()
   # docs/nodes.json: node types and properties as data (tools/gen-api.mjs runs it)
   add_executable(gen_nodes tools/gen_nodes/main.c)
   target_link_libraries(gen_nodes PRIVATE cartwheel)
