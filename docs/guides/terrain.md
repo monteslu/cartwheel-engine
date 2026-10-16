@@ -25,6 +25,20 @@ Heights come from [cw_terrain_import_heightmap](api:cw_terrain_import_heightmap)
 
 @include samples/terrain_demo/main.c#cut
 
+### From Blender
+
+`tools/blender/export_terrain.py` exports a mesh from a `.blend` file, run headless, with no add-on to install. The mesh can be sculpted, displaced, or made with geometry nodes; modifiers are applied. The script samples it straight down on an N x N grid and writes three files:
+
+- `heights.r16`;
+- `splat.png`, from the mesh's colour attribute (RGBA = the weights of layers 0..3);
+- `terrain.txt`, the [Terrain3D](node:Terrain3D) properties that match (sizes, spacing, height range), to paste into a scene.
+
+```
+blender --background world.blend --factory-startup --python tools/blender/export_terrain.py -- out/ --samples 1025
+```
+
+Blender's X is the terrain's x and its -Y the terrain's z, so the file's top view is the terrain seen from above.
+
 ## Layers
 
 Up to 8 layers ([cw_terrain_set_layer](api:cw_terrain_set_layer) from images, [cw_terrain_set_layer_pixels](api:cw_terrain_set_layer_pixels) from memory), packed as Terrain3D packs them: albedo RGB with height in alpha, and normal RGB (OpenGL convention, +Y) with roughness in alpha. Each layer has its own uv scale in repeats per metre. The layers live in two array textures, mipmapped and repeat-wrapped by the GPU. The terrain's material ([cw_terrain_material](api:cw_terrain_material), a MeshStandardMaterial) scales the result: its colour, roughness and metalness.
