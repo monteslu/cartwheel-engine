@@ -1,0 +1,102 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.32, 0.4, 0.52, 1)
+ambient_energy = 0.3
+sky_color = color(0.6, 0.7, 0.9, 1)
+ground_color = color(0.35, 0.3, 0.25, 1)
+hemi_energy = 0.6
+
+[node name="Post" parent="." type="PostProcess"]
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+rotation = vec3(-0.8, 0.5, 0)
+energy = 2.5
+shadow = true
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0.4, 1.3, 3.6)
+rotation = vec3(-0.1, 0, 0)
+fov = 52
+near = 0.1
+far = 60
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.1, 0)
+size = vec3(14, 0.2, 10)
+color = color(0.5, 0.5, 0.48, 1)
+roughness = 0.9
+receive_shadow = true
+
+[node name="Wall" parent="." type="MeshInstance3D"]
+position = vec3(0.8, 1.5, -1.6)
+size = vec3(6, 3, 0.2)
+color = color(0.75, 0.74, 0.7, 1)
+receive_shadow = true
+
+# the character (CesiumMan, set up by main.c) walking in place
+[node name="Hero" parent="." type="Node3D"]
+position = vec3(-1.2, 0, 0.2)
+rotation = vec3(0, 0.5, 0)
+
+[node name="Model" parent="Hero" type="Node3D"]
+
+[node name="Anim" parent="." type="AnimationPlayer"]
+
+# a badge on the chest and paint on the legs: stuck to the character
+# (target), clipped from its pose at spawn, skinned to its skeleton
+[node name="Badge" parent="." type="Decal3D"]
+position = vec3(-1.12, 1.05, 0.6)
+size = vec3(0.3, 0.3, 0.8)
+texture = "decals/sheet.png"
+region = vec4(0, 0, 128, 128)
+blend = MIX
+mode = MESH
+target = "../Hero"
+
+[node name="Paint" parent="." type="Decal3D"]
+position = vec3(-1.3, 0.5, 0.6)
+size = vec3(0.4, 0.4, 1.0)
+texture = "decals/scorch.png"
+blend = MULTIPLY
+normal_fade = 0.0
+mode = MESH
+target = "../Hero"
+
+# a glass pane (main.c makes its material transparent) with a crack: the
+# screen-space pass never lands on glass, mesh mode does
+[node name="Glass" parent="." type="MeshInstance3D"]
+position = vec3(1.2, 1.1, 0.4)
+size = vec3(1.6, 1.4, 0.04)
+color = color(0.55, 0.75, 0.9, 1)
+roughness = 0.1
+
+[node name="Crack" parent="." type="Decal3D"]
+position = vec3(1.0, 1.25, 0.45)
+size = vec3(1.0, 1.0, 0.3)
+texture = "decals/cracks.png"
+color = color(0.05, 0.06, 0.08, 1)
+blend = MIX
+normal_fade = 0.0
+mode = MESH
+target = "../Glass"
+
+# a spinning crate: the glow ring was stamped once (no target: every mesh the
+# box overlaps) and turns with it
+[node name="Crate" parent="." type="MeshInstance3D"]
+position = vec3(2.1, 0.4, 0.9)
+size = vec3(0.8, 0.8, 0.8)
+color = color(0.45, 0.32, 0.2, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Ring" parent="." type="Decal3D"]
+position = vec3(2.1, 0.4, 1.4)
+size = vec3(0.7, 0.7, 0.4)
+texture = "decals/ring.png"
+energy = 3.0
+blend = ADD
+normal_fade = 0.0
+mode = MESH

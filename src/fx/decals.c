@@ -7,6 +7,7 @@
 
 #include "cartwheel/decals.h"
 #include "cartwheel/platform.h"
+#include "cartwheel/render3d.h"
 #include "fx_internal.h"
 #include "fx_wgpu.h"
 
@@ -16,6 +17,24 @@ void stbi_image_free(void *retval_from_stbi_load);
 
 enum { DB_MIX, DB_MULTIPLY, DB_ADD };
 static const char *const dblend_names[] = { "MIX", "MULTIPLY", "ADD", NULL };
+enum { DM_SCREEN, DM_MESH };
+static const char *const dmode_names[] = { "SCREEN", "MESH", NULL };
+
+/* mesh mode: what one decal built (the clipped pieces under their source
+ * meshes, one material for them all) and what it was built from */
+typedef struct mesh_decal {
+  CW_ARRAY(t3_object *) pieces; /* retained; each a child of its source mesh */
+  t3_material *mat;
+  bool built, dirty, in_order;
+  int tris, sources;
+  bool truncated;
+  uint32_t hash;
+  float build_ms;
+  uint64_t seq;
+  /* the decal transform it was built at (the node's own, not interpolated) */
+  t3_vec3 at_pos, at_scale;
+  t3_quat at_quat;
+} mesh_decal;
 
 typedef struct decal3d {
   t3_vec3 size;
@@ -26,6 +45,13 @@ typedef struct decal3d {
   int blend;
   float normal_fade, edge_fade;
   int priority;
+  /* mesh mode */
+  int mode;
+  const char *target;     /* node path from the decal; "" = every mesh the box overlaps */
+  int max_triangles;
+  float mesh_offset;
+  int max_mesh_decals;
+  mesh_decal mesh;
 } decal3d;
 
 static const cw_node_type *decal_t;
@@ -116,18 +142,14 @@ static void atlas_init(void) {
   glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-/* the image of a path (cached; "" = the built-in splat) */
-static const atlas_img *atlas_get(const char *path) {
-  atlas_init();
-  const char *ip = cw_intern(path ? path : "");
-  for (int i = 0; i < atlas.imgs.count; i++)
-    if (atlas.imgs.data[i].path == ip) return &atlas.imgs.data[i];
-  atlas_img e = { .path = ip };
+/* RGBA8 texels of an interned image path ("" = the built-in soft splat);
+ * NULL (logged) when missing. *stb: free with stbi_image_free, else cw_free */
+static uint8_t *decode_image(const char *ip, int *w, int *h, bool *stb) {
   uint8_t *px = NULL;
-  bool from_stb = false;
+  *stb = false;
   if (!*ip) {
     enum { S = 128 };
-    e.w = e.h = S;
+    *w = *h = S;
     px = cw_alloc(S * S * 4, CW_MEM_RENDER);
     for (int y = 0; y < S; y++)
       for (int x = 0; x < S; x++) {
@@ -144,12 +166,24 @@ static const atlas_img *atlas_get(const char *path) {
     if (!bytes) cw_error("Decal3D: texture '%s' not found in the assets", ip);
     else {
       int c = 0;
-      px = stbi_load_from_memory(bytes, (int)len, &e.w, &e.h, &c, 4);
+      px = stbi_load_from_memory(bytes, (int)len, w, h, &c, 4);
       free(bytes);
-      from_stb = px != NULL;
+      *stb = px != NULL;
       if (!px) cw_error("Decal3D: texture '%s' could not be decoded (PNG / JPEG expected)", ip);
     }
   }
+  return px;
+}
+
+/* the image of a path (cached; "" = the built-in splat) */
+static const atlas_img *atlas_get(const char *path) {
+  atlas_init();
+  const char *ip = cw_intern(path ? path : "");
+  for (int i = 0; i < atlas.imgs.count; i++)
+    if (atlas.imgs.data[i].path == ip) return &atlas.imgs.data[i];
+  atlas_img e = { .path = ip };
+  bool from_stb = false;
+  uint8_t *px = decode_image(ip, &e.w, &e.h, &from_stb);
   if (px) {
     if (atlas_alloc(e.w, e.h, &e.x, &e.y)) {
       atlas_upload(e.x, e.y, e.w, e.h, px);
@@ -271,10 +305,19 @@ static bool gl_init(void) {
 
 /* ── per tree ───────────────────────────────────────────────────────── */
 
+typedef struct mesh_tex { const char *path; t3_texture *tex; int w, h; } mesh_tex;
+
 typedef struct decal_tree {
   CW_ARRAY(cw_node) decals;
   bool pass_added;
   cw_decal_stats stats;
+  /* mesh mode */
+  bool hook_added;
+  CW_ARRAY(cw_node) mesh_order; /* mesh decals with geometry, oldest first */
+  CW_ARRAY(mesh_tex) mesh_texs; /* decal images as three.c textures (per tree, as its geometry) */
+  int mesh_limit;
+  uint64_t mesh_seq;
+  int mesh_recycled, mesh_builds;
 #if CW_WGPU
   WGPUBuffer winst, wu; /* this tree's instances and uniforms (one write a frame) */
   int winst_cap;
@@ -283,6 +326,9 @@ typedef struct decal_tree {
 
 static void dtree_free(void *p) {
   decal_tree *dt = p;
+  for (int i = 0; i < dt->mesh_texs.count; i++) t3_release(dt->mesh_texs.data[i].tex);
+  cw_array_free(&dt->mesh_texs);
+  cw_array_free(&dt->mesh_order);
 #if CW_WGPU
   if (dt->winst) wgpuBufferRelease(dt->winst);
   if (dt->wu) wgpuBufferRelease(dt->wu);
@@ -305,6 +351,20 @@ void cw_decals_get_stats(cw_tree *t, cw_decal_stats *out) {
   if (!dt) memset(out, 0, sizeof *out);
   else *out = dt->stats;
   out->atlas_images = atlas.imgs.count;
+  if (!dt) return;
+  /* mesh mode: what exists now, in the order the decals entered the tree */
+  out->mesh_recycled = dt->mesh_recycled;
+  out->mesh_builds = dt->mesh_builds;
+  uint32_t h = 2166136261u;
+  for (int i = 0; i < dt->decals.count; i++) {
+    const decal3d *d = cw_node_data_t(dt->decals.data[i], decal_t);
+    if (!d || d->mode != DM_MESH || !d->mesh.tris) continue;
+    out->mesh_decals++;
+    out->mesh_triangles += d->mesh.tris;
+    out->mesh_pieces += d->mesh.pieces.count;
+    h = (h ^ d->mesh.hash) * 16777619u;
+  }
+  out->mesh_hash = h;
 }
 
 typedef struct vis { cw_node n; decal3d *d; int order; t3_mat4 w; } vis;
@@ -469,7 +529,7 @@ static void decals_exec(cw_pass_ctx *ctx, void *user) {
   for (int i = 0; i < dt->decals.count; i++) {
     cw_node n = dt->decals.data[i];
     decal3d *d = cw_node_data_t(n, decal_t);
-    if (!d || d->color[3] <= 0) continue;
+    if (!d || d->color[3] <= 0 || d->mode == DM_MESH) continue;
     t3_object *o = cw_node3d_object(n);
     if (!o || !o->visible) continue;
     t3_object_update_world_matrix(o, true, false);
@@ -657,6 +717,440 @@ static void draw_wgpu(cw_pass_ctx *ctx, decal_tree *dt, const struct vis *list, 
 }
 #endif
 
+/* ── mesh mode ──────────────────────────────────────────────────────── */
+
+/* the pieces' name (by pointer): never a source of another decal */
+static const char DECAL_PIECE[] = "Decal3D mesh";
+double cw__render3d_now_ms(void); /* src/scene/render3d.c */
+
+static void mesh_fill(t3_extension_ctx *c, void *u) {
+  (void)c;
+  (void)u; /* the meshdecal program reads only the material and the geometry */
+}
+/* every renderer that may draw a tree's scene knows the meshdecal extension
+ * (src/scene/render3d.c calls this as it makes one) */
+void cw__decals_renderer_init(t3_renderer *r);
+void cw__decals_renderer_init(t3_renderer *r) {
+  if (r) t3_renderer_set_extension(r, "meshdecal", mesh_fill, NULL);
+}
+
+static void mesh_clear(decal3d *d) {
+  for (int i = 0; i < d->mesh.pieces.count; i++) {
+    t3_object *o = d->mesh.pieces.data[i];
+    if (o->parent) t3_object_remove(o->parent, o);
+    t3_release(o);
+  }
+  cw_array_clear(&d->mesh.pieces);
+  d->mesh.tris = d->mesh.sources = 0;
+  d->mesh.truncated = false;
+  d->mesh.hash = 0;
+  d->mesh.built = false;
+}
+
+static void order_remove(decal_tree *dt, cw_node n, decal3d *d) {
+  if (!d->mesh.in_order) return;
+  for (int i = 0; i < dt->mesh_order.count; i++)
+    if (dt->mesh_order.data[i].id == n.id) {
+      memmove(dt->mesh_order.data + i, dt->mesh_order.data + i + 1, sizeof(cw_node) * (size_t)(dt->mesh_order.count - i - 1));
+      dt->mesh_order.count--;
+      break;
+    }
+  d->mesh.in_order = false;
+}
+
+static mesh_tex *mesh_texture(decal_tree *dt, const char *path) {
+  const char *ip = cw_intern(path ? path : "");
+  for (int i = 0; i < dt->mesh_texs.count; i++)
+    if (dt->mesh_texs.data[i].path == ip) return &dt->mesh_texs.data[i];
+  mesh_tex e = { .path = ip };
+  bool stb = false;
+  uint8_t *px = decode_image(ip, &e.w, &e.h, &stb);
+  if (px) {
+    /* three.js Texture defaults: flipY, mipmaps, linear, clamp; sRGB like a colour map */
+    e.tex = t3_texture_new(e.w, e.h, px);
+    e.tex->color_space = T3_SRGB_COLOR_SPACE;
+    if (stb) stbi_image_free(px);
+    else cw_free(px);
+  }
+  cw_array_push(&dt->mesh_texs, e);
+  return &dt->mesh_texs.data[dt->mesh_texs.count - 1];
+}
+
+/* the screen-space pass's blends with the material's own factors: the
+ * program writes (rgb * a, a) (src/fx/extensions/meshdecal.mjs) and the
+ * target's alpha is kept */
+static void mesh_material_apply(decal3d *d) {
+  t3_material *m = d->mesh.mat;
+  if (!m) return;
+  float e = d->blend == DB_ADD ? d->energy : 1;
+  m->color = (t3_color){ d->color[0] * e, d->color[1] * e, d->color[2] * e };
+  m->opacity = d->color[3];
+  m->blending = T3_CUSTOM_BLENDING;
+  m->blend_equation = m->blend_equation_alpha = T3_ADD_EQUATION;
+  m->blend_src_alpha = T3_ZERO_FACTOR;
+  m->blend_dst_alpha = T3_ONE_FACTOR;
+  if (d->blend == DB_MULTIPLY) {
+    m->blend_src = T3_DST_COLOR_FACTOR; /* dst * (c * a) + dst * (1 - a) = dst * mix(1, c, a) */
+    m->blend_dst = T3_ONE_MINUS_SRC_ALPHA_FACTOR;
+  } else if (d->blend == DB_ADD) {
+    m->blend_src = T3_ONE_FACTOR;
+    m->blend_dst = T3_ONE_FACTOR;
+  } else {
+    m->blend_src = T3_ONE_FACTOR;
+    m->blend_dst = T3_ONE_MINUS_SRC_ALPHA_FACTOR;
+  }
+  m->version++;
+}
+
+typedef CW_ARRAY(t3_mesh *) mesh_list;
+
+static bool usable_source(const t3_mesh *m) {
+  if (m->base.type != T3_MESH && m->base.type != T3_SKINNED_MESH) return false;
+  const t3_geometry *g = m->geometry;
+  const t3_attribute *p = g ? g->attributes[T3_ATTR_POSITION] : NULL;
+  if (!p || p->type != T3_FLOAT32 || p->item_size != 3 || p->count < 3) return false;
+  if (g->index && g->index->type == T3_FLOAT32) return false;
+  if (!m->material_count || !m->materials[0]) return false;
+  const t3_material *mt = m->materials[0];
+  /* an extension program may move its vertices (terrain, water): the CPU
+   * cannot see that surface */
+  return !mt->extension && !mt->wireframe;
+}
+
+static void collect_sources(t3_object *o, mesh_list *out) {
+  if (o->name == DECAL_PIECE) return;
+  if ((o->type == T3_MESH || o->type == T3_SKINNED_MESH) && usable_source((t3_mesh *)o)) cw_array_push(out, (t3_mesh *)o);
+  for (int i = 0; i < o->child_count; i++) collect_sources(o->children[i], out);
+}
+
+static bool attr4(const t3_attribute *a, int count) {
+  return a && a->type == T3_FLOAT32 && a->item_size == 4 && a->count >= count;
+}
+
+static void mat_apply(const float *m, const float *v, float *o) {
+  o[0] = m[0] * v[0] + m[4] * v[1] + m[8] * v[2] + m[12];
+  o[1] = m[1] * v[0] + m[5] * v[1] + m[9] * v[2] + m[13];
+  o[2] = m[2] * v[0] + m[6] * v[1] + m[10] * v[2] + m[14];
+}
+static void mat_dir(const float *m, const float *v, float *o) {
+  o[0] = m[0] * v[0] + m[4] * v[1] + m[8] * v[2];
+  o[1] = m[1] * v[0] + m[5] * v[1] + m[9] * v[2];
+  o[2] = m[2] * v[0] + m[6] * v[1] + m[10] * v[2];
+}
+
+/* the source's vertices posed in world space: skinned as three.js r186's
+ * skinning node does (bindMatrixInverse * sum(w * bone.matrixWorld *
+ * boneInverse) * bindMatrix), then the mesh's matrixWorld */
+static void pose_source(t3_mesh *m, bool skinned, float *posed, float *posed_nrm) {
+  const t3_geometry *g = m->geometry;
+  const t3_attribute *pa = g->attributes[T3_ATTR_POSITION], *na = g->attributes[T3_ATTR_NORMAL];
+  const float *pos = pa->array, *nrm = na ? na->array : NULL;
+  int vc = pa->count;
+  t3_object_update_world_matrix(m, true, false);
+  if (!skinned) {
+    t3_mat3 nm;
+    t3_mat3_normal_matrix(&nm, &m->base.matrix_world);
+    for (int i = 0; i < vc; i++) {
+      mat_apply(m->base.matrix_world.e, pos + 3 * i, posed + 3 * i);
+      if (posed_nrm) {
+        const float *n = nrm + 3 * i;
+        float *o = posed_nrm + 3 * i;
+        o[0] = nm.e[0] * n[0] + nm.e[3] * n[1] + nm.e[6] * n[2];
+        o[1] = nm.e[1] * n[0] + nm.e[4] * n[1] + nm.e[7] * n[2];
+        o[2] = nm.e[2] * n[0] + nm.e[5] * n[1] + nm.e[8] * n[2];
+      }
+    }
+    return;
+  }
+  t3_skinned_mesh *sm = (t3_skinned_mesh *)m;
+  t3_skeleton *sk = sm->skeleton;
+  t3_mat4 *bm = cw_alloc(sizeof(t3_mat4) * (size_t)sk->bone_count, CW_MEM_RENDER);
+  for (int j = 0; j < sk->bone_count; j++) {
+    t3_object_update_world_matrix(sk->bones[j], true, false);
+    t3_mat4_multiply(&bm[j], &sk->bones[j]->matrix_world, &sk->bone_inverses[j]);
+  }
+  t3_mat4 a;
+  t3_mat4_multiply(&a, &m->base.matrix_world, &sm->bind_matrix_inverse);
+  const float *ji = g->attributes[T3_ATTR_SKIN_INDEX]->array, *wi = g->attributes[T3_ATTR_SKIN_WEIGHT]->array;
+  for (int i = 0; i < vc; i++) {
+    float bv[3], acc[3] = { 0, 0, 0 }, bn[3] = { 0, 0, 0 }, accn[3] = { 0, 0, 0 };
+    mat_apply(sm->bind_matrix.e, pos + 3 * i, bv);
+    if (nrm) mat_dir(sm->bind_matrix.e, nrm + 3 * i, bn);
+    for (int k = 0; k < 4; k++) {
+      float w = wi[4 * i + k];
+      int j = (int)ji[4 * i + k];
+      if (w == 0 || j < 0 || j >= sk->bone_count) continue;
+      float t[3];
+      mat_apply(bm[j].e, bv, t);
+      acc[0] += t[0] * w;
+      acc[1] += t[1] * w;
+      acc[2] += t[2] * w;
+      if (nrm) {
+        mat_dir(bm[j].e, bn, t);
+        accn[0] += t[0] * w;
+        accn[1] += t[1] * w;
+        accn[2] += t[2] * w;
+      }
+    }
+    mat_apply(a.e, acc, posed + 3 * i);
+    if (posed_nrm) mat_dir(a.e, accn, posed_nrm + 3 * i);
+  }
+  cw_free(bm);
+}
+
+/* a source box entirely outside one of the decal box's planes (rigid meshes) */
+static bool source_outside(t3_mesh *m, const t3_mat4 *world_to_box) {
+  t3_geometry *g = m->geometry;
+  if (!g->has_bounding_box) t3_geometry_compute_bounding_box(g);
+  t3_object_update_world_matrix(m, true, false);
+  t3_mat4 mb;
+  t3_mat4_multiply(&mb, world_to_box, &m->base.matrix_world);
+  uint8_t all = 0x3f;
+  for (int i = 0; i < 8; i++) {
+    float c[3] = { i & 1 ? g->bounding_box.max.x : g->bounding_box.min.x, i & 2 ? g->bounding_box.max.y : g->bounding_box.min.y,
+                   i & 4 ? g->bounding_box.max.z : g->bounding_box.min.z };
+    float l[3];
+    mat_apply(mb.e, c, l);
+    uint8_t code = 0;
+    for (int k = 0; k < 3; k++) {
+      if (l[k] > 0.5f) code |= (uint8_t)(1u << (2 * k));
+      if (l[k] < -0.5f) code |= (uint8_t)(2u << (2 * k));
+    }
+    all &= code;
+  }
+  return all != 0;
+}
+
+/* a new piece: the clipped slice [v0, v1) / [i0, i1) of out, under src */
+static void add_piece(decal3d *d, t3_mesh *src, bool skinned, const cw__decal_out *out, int v0, int i0) {
+  int nv = out->pos.count / 3 - v0, ni = out->index.count - i0;
+  t3_geometry *g = t3_geometry_new();
+  t3_attribute *a = t3_attribute_new(T3_FLOAT32, out->pos.data + 3 * v0, nv, 3);
+  t3_geometry_set_attribute(g, T3_ATTR_POSITION, a);
+  t3_release(a);
+  a = t3_attribute_new(T3_FLOAT32, out->uv.data + 2 * v0, nv, 2);
+  t3_geometry_set_attribute(g, T3_ATTR_UV, a);
+  t3_release(a);
+  a = t3_attribute_new(T3_FLOAT32, out->nrm.data + 3 * v0, nv, 3);
+  t3_geometry_set_attribute(g, T3_ATTR_NORMAL, a);
+  t3_release(a);
+  /* color.x: the fade the CPU baked (normal_fade, edge_fade); the material
+   * does not use vertex colours, the meshdecal program reads it itself */
+  float *f3 = cw_alloc(sizeof(float) * 3 * (size_t)nv, CW_MEM_RENDER);
+  for (int i = 0; i < nv; i++) {
+    f3[3 * i] = out->fade.data[v0 + i];
+    f3[3 * i + 1] = f3[3 * i + 2] = 0;
+  }
+  a = t3_attribute_new(T3_FLOAT32, f3, nv, 3);
+  cw_free(f3);
+  t3_geometry_set_attribute(g, T3_ATTR_COLOR, a);
+  t3_release(a);
+  if (skinned) {
+    a = t3_attribute_new(T3_FLOAT32, out->joints.data + 4 * v0, nv, 4);
+    t3_geometry_set_attribute(g, T3_ATTR_SKIN_INDEX, a);
+    t3_release(a);
+    a = t3_attribute_new(T3_FLOAT32, out->weights.data + 4 * v0, nv, 4);
+    t3_geometry_set_attribute(g, T3_ATTR_SKIN_WEIGHT, a);
+    t3_release(a);
+  }
+  uint32_t *ix = cw_alloc(sizeof(uint32_t) * (size_t)ni, CW_MEM_RENDER);
+  for (int i = 0; i < ni; i++) ix[i] = out->index.data[i0 + i] - (uint32_t)v0;
+  a = t3_attribute_new(T3_UINT32, ix, ni, 1);
+  cw_free(ix);
+  t3_geometry_set_index(g, a);
+  t3_release(a);
+  /* the source's bound: culled with it, and (origin and bound shared) sorted
+   * right after it among transparent draws, by id */
+  if (!src->geometry->has_bounding_sphere) t3_geometry_compute_bounding_sphere(src->geometry);
+  g->bounding_sphere = src->geometry->bounding_sphere;
+  g->has_bounding_sphere = true;
+  t3_mesh *pm;
+  if (skinned) {
+    t3_skinned_mesh *ss = (t3_skinned_mesh *)src;
+    t3_skinned_mesh *k = t3_skinned_mesh_new(g, d->mesh.mat);
+    k->bind_mode = ss->bind_mode;
+    t3_skinned_mesh_bind(k, ss->skeleton, &ss->bind_matrix);
+    pm = &k->mesh;
+  } else {
+    pm = t3_mesh_new(g, d->mesh.mat);
+  }
+  t3_release(g);
+  t3_object *po = &pm->base;
+  po->name = DECAL_PIECE;
+  po->cast_shadow = po->receive_shadow = false;
+  po->frustum_culled = src->base.frustum_culled;
+  po->render_order = d->priority;
+  if (po->layers != src->base.layers) t3_object_set_layers(po, src->base.layers);
+  t3_object_add(&src->base, po);
+  cw_array_push(&d->mesh.pieces, po); /* keeps the reference _new gave */
+}
+
+static void mesh_snapshot(cw_node n, decal3d *d) {
+  const cw_node3d *nd = cw_node_data(n, "Node3D");
+  if (!nd) return;
+  d->mesh.at_pos = nd->position;
+  d->mesh.at_quat = nd->quaternion;
+  d->mesh.at_scale = nd->scale;
+}
+
+static bool mesh_moved(cw_node n, const decal3d *d) {
+  const cw_node3d *nd = cw_node_data(n, "Node3D");
+  return nd && (memcmp(&nd->position, &d->mesh.at_pos, sizeof nd->position) ||
+                memcmp(&nd->quaternion, &d->mesh.at_quat, sizeof nd->quaternion) ||
+                memcmp(&nd->scale, &d->mesh.at_scale, sizeof nd->scale));
+}
+
+static void mesh_build(cw_tree *t, decal_tree *dt, cw_node n, decal3d *d) {
+  double t0 = cw__render3d_now_ms();
+  mesh_clear(d);
+  d->mesh.dirty = false;
+  d->mesh.built = true; /* (also when nothing comes of it: no retry every frame) */
+  d->mesh.build_ms = 0;
+  dt->mesh_builds++;
+  mesh_snapshot(n, d);
+  t3_object *o = cw_node3d_object(n);
+  if (!o) return;
+  t3_object_update_world_matrix(o, true, false);
+  t3_mat4 s, w, inv;
+  t3_mat4_identity(&s);
+  s.e[0] = d->size.x;
+  s.e[5] = d->size.y;
+  s.e[10] = d->size.z;
+  t3_mat4_multiply(&w, &o->matrix_world, &s);
+  if (!(d->size.x > 0 && d->size.y > 0 && d->size.z > 0)) return;
+  t3_mat4_invert(&inv, &w);
+  /* the sources */
+  mesh_list srcs = { 0 };
+  if (d->target && *d->target) {
+    cw_node tn = cw_node_get(n, d->target);
+    t3_object *to = cw_node_valid(tn) ? cw_node3d_object(tn) : NULL;
+    if (to) collect_sources(to, &srcs);
+    /* (a mesh resource still loading has nothing yet: try again next frame) */
+    if (!srcs.count) d->mesh.dirty = true;
+  } else {
+    collect_sources(&cw_render3d_scene(t)->base, &srcs);
+  }
+  /* the image and its region as uv (three.js textures flip Y: v = 1 is the
+   * image's top row, which lands at the box's +Y like the screen-space pass) */
+  mesh_tex *mt = mesh_texture(dt, d->texture);
+  if (!d->mesh.mat) {
+    d->mesh.mat = t3_mesh_basic_material_new(0xffffff);
+    d->mesh.mat->transparent = true;
+    d->mesh.mat->depth_write = false;
+    d->mesh.mat->fog = false;
+    t3_material_set_extension(d->mesh.mat, "meshdecal");
+  }
+  t3_material_set_map(d->mesh.mat, mt->tex);
+  mesh_material_apply(d);
+  float iw = mt->w > 0 ? (float)mt->w : 1, ih = mt->h > 0 ? (float)mt->h : 1;
+  float rx = 0, ry = 0, rw = iw, rh = ih;
+  if (d->region[2] > 0 && d->region[3] > 0) {
+    rx = d->region[0];
+    ry = d->region[1];
+    rw = d->region[2];
+    rh = d->region[3];
+  }
+  cw__decal_clip_params p = { .min_facing = 0, .normal_fade = CW_CLAMP(d->normal_fade, 0, 0.999f),
+                              .edge_fade = CW_CLAMP(d->edge_fade, 0, 0.5f), .max_tris = CW_MAX(d->max_triangles, 1),
+                              .uv_rect = { rx / iw, 1 - (ry + rh) / ih, (rx + rw) / iw, 1 - ry / ih } };
+  memcpy(p.world_to_box, inv.e, sizeof p.world_to_box);
+  float ax = w.e[8], ay = w.e[9], az = w.e[10], al = sqrtf(ax * ax + ay * ay + az * az);
+  if (al > 0) {
+    p.axis[0] = ax / al;
+    p.axis[1] = ay / al;
+    p.axis[2] = az / al;
+  }
+  cw__decal_out out = { 0 };
+  for (int i = 0; i < srcs.count && !out.truncated; i++) {
+    t3_mesh *m = srcs.data[i];
+    const t3_geometry *g = m->geometry;
+    int vc = g->attributes[T3_ATTR_POSITION]->count;
+    const t3_attribute *na = g->attributes[T3_ATTR_NORMAL];
+    if (na && (na->type != T3_FLOAT32 || na->item_size != 3 || na->count < vc)) na = NULL;
+    const t3_attribute *ja = g->attributes[T3_ATTR_SKIN_INDEX], *wa = g->attributes[T3_ATTR_SKIN_WEIGHT];
+    bool skinned = m->base.type == T3_SKINNED_MESH && ((t3_skinned_mesh *)m)->skeleton &&
+                   ((t3_skinned_mesh *)m)->skeleton->bone_count > 0 && attr4(ja, vc) && attr4(wa, vc);
+    if (!skinned && source_outside(m, &inv)) continue;
+    float *posed = cw_alloc(sizeof(float) * 3 * (size_t)vc, CW_MEM_RENDER);
+    float *posed_nrm = na ? cw_alloc(sizeof(float) * 3 * (size_t)vc, CW_MEM_RENDER) : NULL;
+    pose_source(m, skinned, posed, posed_nrm);
+    /* (the geometry's scale to world turns the offset into geometry units) */
+    t3_mat4 gw = m->base.matrix_world;
+    if (skinned) t3_mat4_multiply(&gw, &m->base.matrix_world, &((t3_skinned_mesh *)m)->bind_matrix);
+    p.offset = d->mesh_offset;
+    for (int c = 0; c < 3; c++)
+      for (int r = 0; r < 3; r++) p.geo_to_world[3 * c + r] = gw.e[4 * c + r];
+    cw__decal_src src = {
+      .pos = g->attributes[T3_ATTR_POSITION]->array, .nrm = na ? na->array : NULL,
+      .joints = skinned ? ja->array : NULL, .weights = skinned ? wa->array : NULL, .vertex_count = vc,
+      .index = g->index ? g->index->array : NULL, .index16 = g->index && g->index->type == T3_UINT16,
+      .index_count = g->index ? g->index->count : 0, .posed = posed, .posed_nrm = posed_nrm,
+    };
+    int v0 = out.pos.count / 3, i0 = out.index.count;
+    if (cw__decal_clip(&src, &p, &out) > 0) {
+      add_piece(d, m, skinned, &out, v0, i0);
+      d->mesh.sources++;
+    }
+    cw_free(posed);
+    cw_free(posed_nrm);
+  }
+  cw_array_free(&srcs);
+  if (out.truncated)
+    cw_warn("Decal3D '%s': clipped to max_triangles (%d); raise it or make the box smaller", cw_node_name(n),
+            d->max_triangles);
+  d->mesh.tris = out.tris;
+  d->mesh.truncated = out.truncated;
+  d->mesh.hash = cw__decal_out_hash(&out, 0);
+  cw__decal_out_free(&out);
+  d->mesh.build_ms = (float)(cw__render3d_now_ms() - t0);
+}
+
+/* pre_render, after every node's (order 1000): build what is new, changed or
+ * moved, then recycle the oldest past the tree's limit */
+static void mesh_hook(cw_tree *t, double unused, void *user) {
+  (void)unused;
+  (void)user;
+  decal_tree *dt = cw_tree_slot(t, "decals");
+  if (!dt) return;
+  for (int i = 0; i < dt->decals.count; i++) {
+    cw_node n = dt->decals.data[i];
+    decal3d *d = cw_node_data_t(n, decal_t);
+    if (!d) continue;
+    if (d->mode != DM_MESH) {
+      if (d->mesh.built) {
+        mesh_clear(d);
+        order_remove(dt, n, d);
+      }
+      continue;
+    }
+    if (!d->mesh.dirty && d->mesh.built && mesh_moved(n, d)) d->mesh.dirty = true;
+    if (!d->mesh.dirty && d->mesh.built) continue;
+    mesh_build(t, dt, n, d);
+    if (d->mesh.tris > 0 && d->max_mesh_decals > 0 && !d->mesh.in_order) {
+      cw_array_push(&dt->mesh_order, n);
+      d->mesh.in_order = true;
+      d->mesh.seq = ++dt->mesh_seq;
+      dt->mesh_limit = CW_MAX(d->max_mesh_decals, 1);
+    } else if (d->mesh.tris == 0 || d->max_mesh_decals <= 0) {
+      order_remove(dt, n, d);
+    }
+  }
+  /* oldest first: the decal node is freed (bullet holes, footprints) */
+  while (dt->mesh_order.count > dt->mesh_limit) {
+    cw_node old = dt->mesh_order.data[0];
+    decal3d *d = cw_node_data_t(old, decal_t);
+    if (d) {
+      order_remove(dt, old, d);
+      mesh_clear(d);
+    } else {
+      memmove(dt->mesh_order.data, dt->mesh_order.data + 1, sizeof(cw_node) * (size_t)(dt->mesh_order.count - 1));
+      dt->mesh_order.count--;
+    }
+    cw_node_free(old);
+    dt->mesh_recycled++;
+  }
+}
+
 /* ── the node ───────────────────────────────────────────────────────── */
 
 static void decal_init(cw_node n, void *data) {
@@ -668,13 +1162,22 @@ static void decal_init(cw_node n, void *data) {
   d->energy = 1;
   d->normal_fade = 0.2f;
   d->edge_fade = 0.1f;
+  d->target = cw_intern("");
+  d->max_triangles = 1024;
+  d->mesh_offset = 0.002f;
 }
 
 static void decal_enter(cw_node n, void *data) {
-  (void)data;
+  decal3d *d = data;
   cw_tree *t = cw_node_tree(n);
   decal_tree *dt = dtree(t);
   cw_array_push(&dt->decals, n);
+  d->mesh.dirty = true;
+  if (!dt->hook_added) {
+    cw_tree_add_hook(t, 2, 1000, mesh_hook, NULL);
+    dt->hook_added = true;
+    dt->mesh_limit = 128;
+  }
   if (!dt->pass_added) {
     cw_pipeline *p = cw_pipeline_of(t);
     if (!cw_pipeline_has_pass(p, "decals"))
@@ -686,9 +1189,63 @@ static void decal_enter(cw_node n, void *data) {
 }
 
 static void decal_exit(cw_node n, void *data) {
-  (void)data;
+  decal3d *d = data;
   cw_tree *t = cw_node_tree(n);
-  if (t) cw__fx_remove_node(&dtree(t)->decals, n);
+  mesh_clear(d);
+  if (t) {
+    order_remove(dtree(t), n, d);
+    cw__fx_remove_node(&dtree(t)->decals, n);
+  }
+}
+
+static void decal_destroy(cw_node n, void *data) {
+  (void)n;
+  decal3d *d = data;
+  mesh_clear(d);
+  cw_array_free(&d->mesh.pieces);
+  if (d->mesh.mat) t3_release(d->mesh.mat);
+  d->mesh.mat = NULL;
+}
+
+/* mesh mode: colour, energy and blend change the material; priority the
+ * draw order; anything else that shapes the geometry builds it again */
+static void decal_prop_changed(cw_node n, void *data, const cw_prop *p) {
+  decal3d *d = data;
+  if (!strcmp(p->name, "color") || !strcmp(p->name, "energy") || !strcmp(p->name, "blend")) {
+    mesh_material_apply(d);
+    return;
+  }
+  if (!strcmp(p->name, "priority")) {
+    for (int i = 0; i < d->mesh.pieces.count; i++) d->mesh.pieces.data[i]->render_order = d->priority;
+    return;
+  }
+  if (!strcmp(p->name, "max_mesh_decals")) {
+    if (d->max_mesh_decals <= 0 && d->mesh.in_order) {
+      cw_tree *t = cw_node_tree(n);
+      if (t) order_remove(dtree(t), n, d);
+    }
+    return;
+  }
+  d->mesh.dirty = true;
+}
+
+bool cw_decal_get_mesh_info(cw_node decal, cw_decal_mesh_info *out) {
+  memset(out, 0, sizeof *out);
+  decal3d *d = decal_t ? cw_node_data_t(decal, decal_t) : NULL;
+  if (!d || d->mode != DM_MESH) return false;
+  out->built = d->mesh.built;
+  out->triangles = d->mesh.tris;
+  out->pieces = d->mesh.pieces.count;
+  out->sources = d->mesh.sources;
+  out->truncated = d->mesh.truncated;
+  out->hash = d->mesh.hash;
+  out->build_ms = d->mesh.build_ms;
+  return true;
+}
+
+void cw_decal_restamp(cw_node decal) {
+  decal3d *d = decal_t ? cw_node_data_t(decal, decal_t) : NULL;
+  if (d) d->mesh.dirty = true;
 }
 
 static const cw_prop decal_props[] = {
@@ -702,13 +1259,26 @@ static const cw_prop decal_props[] = {
   CW_PROP_FIELD_RANGE(decal3d, normal_fade, CW_T_FLOAT, 0, 1, "Fade on surfaces turned away from the projection axis."),
   CW_PROP_FIELD_RANGE(decal3d, edge_fade, CW_T_FLOAT, 0, 0.5, "Fraction of the depth fading out at the box ends."),
   CW_PROP_FIELD(decal3d, priority, CW_T_INT, CW_PROP_DEFAULT, "Draw order (higher on top)."),
+  { .name = "mode", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(decal3d, mode), .size = sizeof(int),
+    .enum_names = dmode_names,
+    .doc = "SCREEN (projected on the scene's depth each frame) or MESH (clipped from the target meshes once: lands on "
+           "characters and transparent surfaces, follows them)." },
+  CW_PROP_FIELD(decal3d, target, CW_T_STRING, CW_PROP_DEFAULT,
+                "MESH: node path from the decal to the node to stick to (it and everything under it); empty = every mesh "
+                "the box overlaps."),
+  CW_PROP_FIELD_RANGE(decal3d, max_triangles, CW_T_INT, 1, 1000000, "MESH: the most triangles one decal keeps."),
+  CW_PROP_FIELD_RANGE(decal3d, mesh_offset, CW_T_FLOAT, 0, 1, "MESH: metres the decal floats off the surface."),
+  CW_PROP_FIELD_RANGE(decal3d, max_mesh_decals, CW_T_INT, 0, 1000000,
+                      "MESH: above 0 the decal joins the tree's pool, which keeps this many (the newest one's value "
+                      "counts) and frees the oldest past it; 0 = never recycled."),
   CW_PROP_END,
 };
 
 static cw_node_type decal_type = {
   .name = "Decal3D", .parent = "Node3D", .data_size = sizeof(decal3d), .props = decal_props,
-  .doc = "A box-projected image on the scene's geometry (decals.h).", .init = decal_init,
-  .enter_tree = decal_enter, .exit_tree = decal_exit,
+  .doc = "A box-projected image on the scene's geometry, or (mode MESH) clipped onto the meshes it lands on (decals.h).",
+  .init = decal_init,
+  .enter_tree = decal_enter, .exit_tree = decal_exit, .destroy = decal_destroy, .prop_changed = decal_prop_changed,
 };
 
 void cw__register_decal_types(void) {

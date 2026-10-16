@@ -3,3 +3,5 @@
 basic
 normal
 basic+xgiproj
+basic+map+trans+xmeshdecal
+basic+map+trans+skin+xmeshdecal

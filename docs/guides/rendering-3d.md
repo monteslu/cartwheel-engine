@@ -246,7 +246,21 @@ Costs per frame: the BVH walk, one pass over moving meshes and one over visible 
 
 [decals.h](header:decals.h) projects Decal3D images along the node's -Z onto whatever the scene drew into depth: steps, slopes, spheres, props. MIX paints over the lit scene (signs, paint), MULTIPLY keeps lighting correct (dirt, scorch, cracks), ADD glows. All decal images share one 2048 x 2048 atlas, and `region` picks a cell of a sheet. Decals draw as instanced boxes; the GPU cost is the screen area those boxes cover. They land on anything in depth, including characters that walk through the box, so keep boxes shallow; they never land on transparent surfaces, particles or the sky.
 
-Samples: `samples/fx_particles` (a fountain colliding with depth, sparks, sorted smoke, mesh debris, an attracted ring, mesh-surface emission, a Trail3D ribbon), `samples/fx_collide` (particles coming to rest on a table they can see), `samples/fx_decals` (scorch over steps, an arrow over a ramp, cracks wrapping a sphere, sheet splats, 240 culled splats).
+### Decals that stick: mesh mode
+
+Set a Decal3D's `mode` to MESH for decals that belong to an object rather than to the screen: bullet holes, stickers, a logo on a car, blood on a character, a crack in a window. When the decal spawns, the engine cuts the triangles of the meshes under its box out on the CPU and keeps them as a small mesh attached to each of those meshes, so the decal moves, turns and hides with them. On a skinned character the decal is cut from the pose of that moment and then bends with the skeleton: a sticker on an arm swings with the arm. Mesh decals also land on transparent surfaces such as glass, which the screen-space ones never reach. The blends look the same in both modes.
+
+Which meshes it lands on: give `target` a node path (`"../Hero"`) to stick to that node and everything under it, or leave it empty to use every mesh whose surface crosses the box. Instanced meshes (forests, particles), Terrain3D and lines are never used. Faces turned away from the projection are skipped, so a deep box through a character marks only the side it faces.
+
+The cut happens once, when the decal enters the tree, and again when you change its box (size, its own position, rotation or scale, the target, the image or the fades) or call `cw_decal_restamp`. After that a mesh decal costs nothing on the CPU and one small draw per mesh it landed on. `max_triangles` caps one decal (1024), and `mesh_offset` lifts it off the surface (2 mm) so it does not flicker against it.
+
+For bullet holes and footprints, spawn decals and forget them: give each a `max_mesh_decals` above 0 and the tree keeps that many, freeing the oldest when one more lands. Decals with `max_mesh_decals` 0 (the default) stay until you free them.
+
+@include samples/fx_mesh_decals/main.c#holes
+
+The cut is the same on every host, bit for bit, so a replay or a networked game shows every hole in the same place.
+
+Samples: `samples/fx_particles` (a fountain colliding with depth, sparks, sorted smoke, mesh debris, an attracted ring, mesh-surface emission, a Trail3D ribbon), `samples/fx_collide` (particles coming to rest on a table they can see), `samples/fx_decals` (scorch over steps, an arrow over a ramp, cracks wrapping a sphere, sheet splats, 240 culled splats), `samples/fx_mesh_decals` (mesh mode: a badge and paint on a walking character, a crack on a glass pane, a glow on a spinning crate, pooled bullet holes).
 
 ## The showcase
 

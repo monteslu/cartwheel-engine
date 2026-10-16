@@ -93,4 +93,46 @@ void cw__register_particles2d_types(void);
 void cw__register_trail3d_types(void);
 void cw__register_decal_types(void);
 
+/* ── mesh-mode decal geometry (decals_mesh.c) ─────────────────────── */
+
+/* One source mesh: its geometry-space (bind-pose) attributes and its posed
+ * world-space positions and normals (what the clip sees). */
+typedef struct cw__decal_src {
+  const float *pos;               /* 3 per vertex, geometry space */
+  const float *nrm;               /* 3 per vertex or NULL */
+  const float *joints, *weights;  /* 4 per vertex, both or neither */
+  int vertex_count;
+  const void *index;              /* NULL = non-indexed */
+  bool index16;                   /* index is uint16 (else uint32) */
+  int index_count;
+  const float *posed;             /* 3 per vertex, world */
+  const float *posed_nrm;         /* 3 per vertex, world, or NULL */
+} cw__decal_src;
+
+typedef struct cw__decal_clip_params {
+  float world_to_box[16];  /* world -> the unit box (-0.5..0.5 on each axis), column-major */
+  float axis[3];           /* the decal's +Z in world, normalised (it projects along -Z) */
+  float min_facing;        /* faces whose normal . axis is at most this are dropped (0) */
+  float normal_fade, edge_fade;
+  float offset;            /* push along the surface normal, metres */
+  float geo_to_world[9];   /* the source geometry's 3x3 to world (column-major), to turn offset into geometry units */
+  float uv_rect[4];        /* uv at box (-0.5, -0.5) and at (0.5, 0.5): u0 v0 u1 v1 */
+  int max_tris;            /* the cap over every source of one decal */
+} cw__decal_clip_params;
+
+typedef struct cw__decal_out {
+  CW_ARRAY(float) pos, nrm, uv, fade, joints, weights; /* nrm: the bind-pose normal, unit */
+  CW_ARRAY(uint32_t) index;
+  int tris;
+  bool truncated; /* the cap stopped it */
+} cw__decal_out;
+
+/* Clip s's triangles to the box and append them to o (indexed); returns the
+ * triangles added. Deterministic: the same input gives the same bits on every
+ * host. Cost: O(vertices + triangles), a few hundred ns per kept triangle. */
+int cw__decal_clip(const cw__decal_src *s, const cw__decal_clip_params *p, cw__decal_out *o);
+/* FNV-1a over everything o holds (h = 0 starts a new hash) */
+uint32_t cw__decal_out_hash(const cw__decal_out *o, uint32_t h);
+void cw__decal_out_free(cw__decal_out *o);
+
 #endif

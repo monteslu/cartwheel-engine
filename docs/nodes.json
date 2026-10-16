@@ -7499,7 +7499,7 @@
   {
    "name": "Decal3D",
    "parent": "Node3D",
-   "doc": "A box-projected image on the scene's geometry (decals.h).",
+   "doc": "A box-projected image on the scene's geometry, or (mode MESH) clipped onto the meshes it lands on (decals.h).",
    "signals": [],
    "properties": [
     {
@@ -7584,6 +7584,56 @@
      "stored": true,
      "readonly": false,
      "doc": "Draw order (higher on top)."
+    },
+    {
+     "name": "mode",
+     "type": "enum",
+     "default": "SCREEN",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "SCREEN",
+      "MESH"
+     ],
+     "doc": "SCREEN (projected on the scene's depth each frame) or MESH (clipped from the target meshes once: lands on characters and transparent surfaces, follows them)."
+    },
+    {
+     "name": "target",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "MESH: node path from the decal to the node to stick to (it and everything under it); empty = every mesh the box overlaps."
+    },
+    {
+     "name": "max_triangles",
+     "type": "int",
+     "default": "1024",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 1000000,
+     "doc": "MESH: the most triangles one decal keeps."
+    },
+    {
+     "name": "mesh_offset",
+     "type": "float",
+     "default": "0.002",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "MESH: metres the decal floats off the surface."
+    },
+    {
+     "name": "max_mesh_decals",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "MESH: above 0 the decal joins the tree's pool, which keeps this many (the newest one's value counts) and frees the oldest past it; 0 = never recycled."
     }
    ]
   },
