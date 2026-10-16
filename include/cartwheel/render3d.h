@@ -37,9 +37,11 @@
  * Effects node types live in particles.h (GPUParticles3D, GPUParticles2D,
  * ParticleAttractor3D, ParticleCollider3D, Trail3D) and decals.h (Decal3D).
  *
- * Which lights three.c draws and which the engine does: Light3D.path
- * (lighting.h; every light is three.c's while the engine path is rebuilt on
- * three.js r186's add-ons).
+ * Which lights three.c draws and which the engine clusters: the tree's
+ * lighting mode (cartwheel/lighting.h, a LightingSettings node). FORWARD,
+ * the default, leaves every light to three.c; CLUSTERED shades shadowless
+ * omni and spot lights through r186 ClusteredLighting's clusters, hundreds
+ * at a time.
  *
  * Drawing goes through the tree's render pipeline (pipeline.h), as three.js
  * r186 draws: linear colours, physical light units, linear HDR.

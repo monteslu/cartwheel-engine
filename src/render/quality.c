@@ -48,12 +48,13 @@ typedef struct {
   float hrtf; /* share of the HRTF voice limit (cartwheel/audio.h) */
   int bloom_levels; /* cap (0 = as authored) */
   int ssao;         /* 1 one slice of 4 steps, 2 as authored, 3 raised */
+  float lights;     /* clustered lights a cluster keeps (cartwheel/lighting.h max_per_cluster) */
 } effects;
 static const effects FX[CW_QUALITY_COUNT] = {
-  [CW_QUALITY_LOW] = { 0.4f, 0.35f, 2.0f, 0.25f, 3, 1 },
-  [CW_QUALITY_MEDIUM] = { 0.7f, 0.65f, 1.5f, 0.5f, 5, 1 },
-  [CW_QUALITY_HIGH] = { 1, 1, 1, 1, 0, 2 },
-  [CW_QUALITY_ULTRA] = { 1, 1, 1, 1, 0, 3 },
+  [CW_QUALITY_LOW] = { 0.4f, 0.35f, 2.0f, 0.25f, 3, 1, 0.375f },
+  [CW_QUALITY_MEDIUM] = { 0.7f, 0.65f, 1.5f, 0.5f, 5, 1, 0.5f },
+  [CW_QUALITY_HIGH] = { 1, 1, 1, 1, 0, 2, 1 },
+  [CW_QUALITY_ULTRA] = { 1, 1, 1, 1, 0, 3, 1 },
 };
 
 /* Auto's ladder, top first: a preset, its resolution replaced */
@@ -259,6 +260,7 @@ static const effects *fx(void) { return &FX[Q.v[CW_GFX_EFFECTS]]; }
 float cw_quality_scale(const char *knob) {
   if (!knob) return 1;
   if (!strcmp(knob, "particles")) return fx()->particles;
+  if (!strcmp(knob, "lights")) return fx()->lights;
   if (!strcmp(knob, "density") || !strcmp(knob, "grass") || !strcmp(knob, "crowd") || !strcmp(knob, "scatter")) return fx()->density;
   if (!strcmp(knob, "hrtf_voices")) return fx()->hrtf;
   return 1;

@@ -800,16 +800,20 @@ static cw_node_type env_type = {
 /* three.c (renderer.c's T3_MAX_LIGHTS) lights a surface with at most this
  * many lights of each kind; the rest, in scene order, are silently dropped */
 #define THREE_LIGHT_CAP 8
+int cw__lighting_cluster_kinds(cw_tree *t); /* src/render/lighting.c: 1 omni, 2 spot lights are clustered */
 enum { LK_DIR, LK_POINT, LK_SPOT, LK_HEMI, LK_COUNT };
 
 /* the lights three.c would collect: visible, under visible parents, on the
  * camera's layers. Per kind: the count, the lowest id of a plain light and
  * the highest id of a shadow caster. */
 typedef struct light_count { int n[LK_COUNT]; uint32_t plain_min[LK_COUNT], caster_max[LK_COUNT]; } light_count;
-static void count_lights(const t3_object *o, uint32_t layers, light_count *c) {
+static void count_lights(const t3_object *o, uint32_t layers, int clustered, light_count *c) {
   if (!o->visible) return;
   int k = o->type == T3_DIRECTIONAL_LIGHT ? LK_DIR : o->type == T3_POINT_LIGHT ? LK_POINT : o->type == T3_SPOT_LIGHT ? LK_SPOT
         : o->type == T3_HEMISPHERE_LIGHT ? LK_HEMI : -1;
+  /* clustered lights (cartwheel/lighting.h) leave three.c's list: shadowless omni (and spot) lights */
+  bool caster = (k == LK_POINT || k == LK_SPOT) && o->cast_shadow && ((const t3_light *)o)->shadow;
+  if (!caster && ((k == LK_POINT && (clustered & 1)) || (k == LK_SPOT && (clustered & 2)))) k = -1;
   if (k >= 0 && (o->layers & layers)) {
     c->n[k]++;
     if (o->cast_shadow && ((const t3_light *)o)->shadow) {
@@ -818,7 +822,7 @@ static void count_lights(const t3_object *o, uint32_t layers, light_count *c) {
       c->plain_min[k] = o->id;
     }
   }
-  for (int i = 0; i < o->child_count; i++) count_lights(o->children[i], layers, c);
+  for (int i = 0; i < o->child_count; i++) count_lights(o->children[i], layers, clustered, c);
 }
 
 /* Lights three.c cannot use fail silently: say so once per cause, the
@@ -827,12 +831,12 @@ static void count_lights(const t3_object *o, uint32_t layers, light_count *c) {
  * rest light nothing), and a shadow-casting light made after a plain light
  * of its kind (three.c orders a kind's lights by id and needs the casters
  * first: no lit material has a program, so nothing lit is drawn). */
-static void check_light_cap(render3d_state *s, const t3_camera *cam) {
+static void check_light_cap(cw_tree *t, render3d_state *s, const t3_camera *cam) {
   if (s->light_warned == (1u << (2 * LK_COUNT)) - 1 || s->light_check_frame++ % 60) return;
   light_count c;
   memset(&c, 0, sizeof c);
   for (int k = 0; k < LK_COUNT; k++) c.plain_min[k] = UINT32_MAX;
-  count_lights(&s->scene->base, cam->base.layers, &c);
+  count_lights(&s->scene->base, cam->base.layers, cw__lighting_cluster_kinds(t), &c);
   static const char *const names[LK_COUNT] = { "directional", "point (OmniLight3D)", "spot (SpotLight3D)", "hemisphere" };
   for (int k = 0; k < LK_COUNT; k++) {
     if (c.n[k] > THREE_LIGHT_CAP && !(s->light_warned & (1u << k))) {
@@ -893,7 +897,7 @@ t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
   c->cam->far = c->far;
   c->cam->aspect = h > 0 ? (float)w / (float)h : 1;
   t3_camera_update_projection_matrix(c->cam);
-  check_light_cap(s, c->cam);
+  check_light_cap(t, s, c->cam);
   return c->cam;
 }
 
@@ -985,6 +989,8 @@ void cw__register_node3d_types(void) {
   cw__register_fog_types();
   void cw__register_lightmap_types(void); /* src/render/lightmap.c */
   cw__register_lightmap_types();
+  void cw__register_lighting_types(void); /* src/render/lighting.c */
+  cw__register_lighting_types();
 }
 
 
