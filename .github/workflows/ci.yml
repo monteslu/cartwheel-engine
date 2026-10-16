@@ -44,6 +44,7 @@ jobs:
       - name: API and docs checks
         run: |
           node tools/gen-api.mjs --check
+          node tools/gen-noise-shaders.mjs --check
           node tools/gen-docs.mjs --check
       # a tar keeps the executable bits and the object files (gates that rebuild a
       # target, such as editor-agent and hot, find it up to date)

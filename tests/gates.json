@@ -90,7 +90,29 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     }
+  },  {
+    "name": "unit-noise",
+    "app": "unit_noise",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1,
+      "unit.checksum": 2482098873
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "cw_noise (FastNoiseLite): every pattern, fractal, cellular mode and domain warp, the job-pool fill, gen://noise textures; the checksum is pinned, so the noise is the same bits on every host and a library change shows"
   },
+
   {
     "name": "unit-scene",
     "app": "unit_scene",
@@ -1981,6 +2003,34 @@
       "sky.seg": 4
     },
     "note": "the day / night cycle running at 2 hours a second from 05:12 (sunrise): the sun climbs, the cube and environment re-render whenever it moved 1 degree. Control: one frame early"
+  },
+  {
+    "name": "noise-demo",
+    "app": "noise_demo",
+    "frames": 30,
+    "fields": [
+      "noise.tick",
+      "noise.hash"
+    ],
+    "expect": {
+      "noise.tick": 30,
+      "noise.hash": 3051441883
+    },
+    "note": "noise_demo: sixteen noise settings drawn by the GPU ports (GLSL / WGSL) over the CPU texels and their difference; the CPU bytes hash is pinned; control: one frame early (the noise scrolls)",
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium",
+        "wcnative"
+      ],
+      "vsGl": 0.002
+    }
+  },
+  {
+    "name": "noise-gpu",
+    "script": "tests/noise-gpu.mjs",
+    "note": "the GPU noise ports agree with cw_noise on every host and backend (difference rows of noise_demo); control: another seed on the GPU must fail"
   },
   {
     "name": "fog-height",

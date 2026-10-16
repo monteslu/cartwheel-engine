@@ -11,6 +11,7 @@ step() { echo "== $*"; "$@" || { echo "FAILED: $*"; fail=1; }; }
 step scripts/build.sh
 step node tools/gen-api.mjs
 step node tools/gen-api.mjs --check
+step node tools/gen-noise-shaders.mjs --check
 # the suites are GPU suites: lock, kernel-log and memory guards, no desktop (exit 3 = a guard fired)
 step node tests/all.mjs --no-chromium
 step node tests/all.mjs --chromium-only   # last and alone: the only thing that has ever faulted the GPU

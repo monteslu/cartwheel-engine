@@ -1,0 +1,6 @@
+[scene format=1]
+
+[node name="Root" type="Node3D"]
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 0, 5)
