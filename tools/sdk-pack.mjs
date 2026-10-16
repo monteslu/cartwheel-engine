@@ -184,9 +184,10 @@ if (CART) {
   for (const f of ['tools/programs.mjs', 'tools/cwexport.mjs']) engineFile(f);
   engineTree('tools/lib');
   engineTree('tools/cwexport');
-  // the engine's own three.c generator extensions (terrain, clustered lights): a game's table captures their states
+  // the engine's own three.c generator extensions (terrain, clustered lights, gi): a game's table captures their states
   engineTree('src/terrain/extensions');
   engineTree('src/render/extensions'); // the clustered lights' shading part
+  engineTree('src/gi/extensions');
   copyTree(join(three, 'tools'), join(OUT, 'deps/three.c/tools'));
   // SDL2's Android activity (Java) and Gradle wrapper: the Android export's project
   if (TARGET.startsWith('android')) engineTree('deps/sdl2/android-project');

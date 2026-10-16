@@ -51,6 +51,7 @@ then commit the manifest and the generated C. Generating captures on three.c's m
 | `PostProcess` | the pipeline's mode and post settings |
 | `ProceduralSky`, `HeightFog` | sky and day cycle, height fog |
 | `LightmapGI` | baked indirect light |
+| `ReflectionProbe3D`, `LightProbeGrid3D` | reflections of the surroundings, bounce light |
 | `VisibilityManager`, `Room3D`, `Portal3D` | culling, LOD, impostors, portals |
 | `GPUParticles3D`, `Trail3D`, `ParticleAttractor3D`, `ParticleCollider3D` | particles and trails |
 | `Decal3D` | projected decals |
@@ -136,6 +137,8 @@ The grid is public ([cartwheel/froxel.h](header:froxel.h)): `cw_lighting_froxels
 
 The lights are what costs: FORWARD draws the same street with 16 of its 218 lights (8 of a kind). On a Vega 8 (about half the 890M's shader rate) expect roughly twice the GPU column: High stays inside a 60 Hz frame on WebGPU and is tight on GL; Medium and Low leave room.
 
+Light probes, reflection probes and screen-space light are in [Reflections and bounce light](#reflections-and-bounce-light).
+
 ## Graphics settings and presets
 
 [cartwheel/quality.h](api:cw_quality_get) has five settings a player can pick one by one, and four presets that pick them all:
@@ -194,6 +197,34 @@ build/native/cwbake samples/lightmap_room/assets/main.cwscene out/room.cwlm
 ```
 
 `samples/lightmap_room` bakes the same room at runtime, twice, and publishes the hash as `lm.hash_hi` / `lm.hash_lo`; its gate (`lightmap-bake`) requires the same value on every host. A ball rolls through it.
+
+## Reflections and bounce light
+
+[gi.h](header:gi.h) adds two node types that make a scene light itself, both captured from the scene on the GPU, on GL and WebGPU, natively and in carts:
+
+- **ReflectionProbe3D**: shiny things reflect their real surroundings instead of the sky. A probe renders the scene around a point into a prefiltered radiance map, three.js r186's `PMREMGenerator.fromScene` with its `size`, `position` and `renderTarget` options, and every lit surface in its box reflects that. With `box_projection` on, reflections are traced to the box's faces (r186's `getParallaxCorrectNormal`), so a polished floor shows the wall where the wall is: use it in rooms and corridors and size the box to the room, a little larger so the floor and walls sit inside it. `origin_offset` moves the capture point off the box centre (out of a pillar, up from the floor) and the projection still lines up. Overlapping probes blend as Godot's do: inside its box a probe's weight falls to 0 over `blend_distance` at the faces, the probes' reflections are averaged by weight, and the sky fills the rest. Each object takes the two probes whose boxes reach it. `ambient` makes the probe the surface's diffuse ambient light too, in place of the sky's.
+- **LightProbeGrid3D**: bounce light, three.js r186's `LightProbeGrid`. A grid of probes over a box, each rendering the scene into six small faces (`cube_size`, 8 pixels by default) that are projected onto L2 spherical harmonics on the GPU. Every lit surface inside the box adds the grid's irradiance at its position: a red wall tints the floor and ceiling next to it, a lit floor lifts the underside of a table. The grid bakes at load (`bounces` extra sweeps, each one more bounce, since each sweep sees the light the last one stored); `update_mode = INCREMENTAL` then refreshes `probes_per_frame` probes every frame for lights that move. Like r186's it has no visibility term, so light leaks through walls thinner than the probe spacing: keep a grid inside one room, or keep the walls thick.
+
+The room in `samples/gi_room` has both:
+
+@include samples/gi_room/assets/main.cwscene#RoomProbe..Bounce
+
+How it fits together:
+
+- Captures run in the SHADOW phase ("reflection_probes", after the sky's environment is made), so this frame's scene draws with them. Each probe keeps two targets, drawn into one while the scene samples the other, and nothing is allocated after the first capture. `update_mode` picks when a probe captures: ONCE (its first frame, and again when the sky is re-rendered), ON_DEMAND (`cw_reflection_probe_update` or `call <probe> update`), or EVERY_N_FRAMES (`update_every`). A capture sees what `cull_mask` lets it see (three.c object layers): give a cheap stand-in of a level a layer the camera does not draw and the probe captures the stand-in.
+- The shading is r186 TSL in a three.c extension, the "gi" shading part ([shading.h](header:shading.h)): every Standard and Physical material in a tree with a probe or a grid carries it, and the app's program tables need its states (`standard+senv+l1101+xgi`; `tools/programs.mjs` adds them like any other). A material carries more than one engine part this way, composed by name (`xterrain_gi`). three.c never auto-instances a mesh whose material carries an extension, so each such mesh is a draw of its own.
+- One LightProbeGrid3D lights a tree (the first one). Probe boxes are axis aligned: a node's rotation is ignored, its scale applies.
+- Everything here is render only: nothing reaches the simulation, and `samples/gi_probe_check` and `tests/gi-probe.mjs` check the pictures against known answers (a mirror ball in a box of six coloured walls must show each wall where it is).
+
+Quality (effects detail):
+
+| | Low | Medium | High | Ultra |
+|---|---|---|---|---|
+| Probe capture size | half of `resolution` | half | as authored | twice (up to 512) |
+| EVERY_N_FRAMES probes refresh | a quarter as often | half as often | as authored | as authored |
+| Captures a frame | 1 | 1 | 2 | 4 |
+| Grid refresh (INCREMENTAL) | the bake only | half of `probes_per_frame` | as authored | twice |
+| Grid face size | at most 8 | as authored | as authored | as authored |
 
 ## Visibility: culling, LOD and impostors
 

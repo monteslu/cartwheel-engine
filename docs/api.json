@@ -2249,6 +2249,43 @@
    ]
   },
   {
+   "header": "cartwheel/gi.h",
+   "summary": "cartwheel/gi.h: reflections of the real surroundings (reflection probes)\nand bounce light (a light probe grid).\n\nReflectionProbe3D captures the scene around a point into a prefiltered\nradiance map (three.js r186's PMREMGenerator.fromScene with its size,\nposition and renderTarget options) and every lit surface in its box\nreflects that instead of the sky: a chrome ball shows the room's red\nwall, a polished floor the furniture standing on it.\n\n  size            the box the probe affects, world units (axis aligned:\n                  the node's rotation is ignored, its scale applies)\n  origin_offset   where the capture is taken, from the box centre (Godot's\n                  origin_offset: lift it off the floor, out of a pillar)\n  box_projection  reflections are traced to the box's faces (r186's\n                  getParallaxCorrectNormal) instead of being at infinity:\n                  right for rooms and corridors, where the walls are near;\n                  leave it off outdoors\n  blend_distance  inside the box the probe's weight falls from 1 to 0 over\n                  this distance at its faces, so overlapping probes and the\n                  sky outside fade into each other (Godot's blending)\n  intensity       multiplier of what it reflects\n  ambient         the probe also gives the diffuse ambient light (its\n                  blurriest level along the surface normal), in place of\n                  the sky's\n  resolution      the capture's face size in pixels (16 .. 1024, a power of\n                  two; 128). The quality preset scales it (below).\n  update_mode     ONCE (on its first frame, and again when the sky's\n                  environment is re-rendered), ON_DEMAND (after\n                  cw_reflection_probe_update / `call <probe> update`) or\n                  EVERY_N_FRAMES (every `update_every` frames)\n  near, far       the capture's clip range (0.1, 100)\n  cull_mask       what the capture sees: objects whose three.c layers\n                  share a bit with it (-1, all, by default). A probe can\n                  see a cheap stand-in of a scene by giving the stand-in a\n                  layer the view camera does not draw (t3_object_set_layers\n                  on the camera and the stand-in): the capture draws what\n                  the mask keeps whatever its layers.\n\nShading. Every Standard and Physical material in a tree that has a probe\ngets the \"gi\" shading part (cartwheel/shading.h): r186 TSL that samples up\nto two probes per object, box projected, weighted per pixel, over the sky.\nEach object takes the two probes whose boxes reach it (one containing its\ncentre first, then the smaller box). The app's program tables need the\nxgi states its materials draw with (tools/programs.mjs adds them).\n\nCaptures run in the pipeline's SHADOW phase (\"reflection_probes\", order\n150: after the sky's environment is made), at most a budget per frame (the quality preset's), the most overdue\nfirst, then the nearest to the camera, then by node id. A capture renders\nthe scene six times at `resolution` and runs PMREM's filter passes; each\nprobe keeps two targets (it is drawn into one while the scene samples the\nother), so nothing is allocated after its first capture. Render only:\nnothing here reaches the simulation.\n\nQuality (effects detail): Low captures at half `resolution` (at least 32),\nrefreshes EVERY_N_FRAMES probes a quarter as often, and makes one capture a\nframe; Medium at half resolution, half as often, one a frame; High as\nauthored, two a frame; Ultra at twice the resolution (up to 512), four a\nframe.\n\nLightProbeGrid3D is three.js r186's LightProbeGrid: bounce light. A grid of\nprobes over a box (size; probes along x, y, z, 2 .. 32 each, 0 = one a\nmetre plus one), each rendering the scene into six cube_size faces (8\npixels) that an extension material (\"giproj\") projects onto L2 spherical\nharmonics on the GPU (r186's LightProbeGenerator over the faces' texels,\nsolid-angle weighted), packed as r186 packs them (seven RGBA groups) into\na 2D atlas: three.c has no 3D textures, so probe (x, y, z)'s group g is\ntexel (z * nx + x, g * ny + y), read with bilinear filtering in x and y and\nmixed by hand across z (14 fetches a pixel where r186 makes 7). The gi\nshading part adds the irradiance at each lit surface (offset along the\nnormal by normal_offset probe spacings, r186's 0.5) to its light, as r186's\nLightProbeGridNode does. update_mode BAKED captures the grid at load, in\n1 + bounces sweeps (each sweep sees the light the previous one stored, so\neach adds a bounce; bake_per_frame spreads a sweep over frames, 0 = the\nwhole grid in one frame), and again when the sky's environment is\nre-rendered; INCREMENTAL then keeps refreshing probes_per_frame probes\nevery frame (moving lights, opening doors). cw_light_probe_grid_rebake\n(or `call <grid> rebake`) sweeps it again. Like r186's it has no\nvisibility term: light leaks through walls thinner than the probe spacing.\nOne grid lights a tree (the first in it). Cost per probe: six renders of\nthe scene at cube_size and seven one-texel draws. Quality: Low refreshes\nnothing after the bake and caps faces at 8 pixels; Medium refreshes half of\nprobes_per_frame, High as authored, Ultra twice.",
+   "functions": [
+    {
+     "name": "cw_reflection_probe_update",
+     "signature": "void cw_reflection_probe_update(cw_node probe)",
+     "doc": "Capture this probe again at the next opportunity (any update mode).",
+     "inline": false
+    },
+    {
+     "name": "cw_light_probe_grid_rebake",
+     "signature": "void cw_light_probe_grid_rebake(cw_node grid)",
+     "doc": "Capture every probe of a LightProbeGrid3D again (one sweep, at once).",
+     "inline": false
+    },
+    {
+     "name": "cw_gi_get_stats",
+     "signature": "void cw_gi_get_stats(cw_tree *t, cw_gi_stats *out)",
+     "doc": "The tree's GI counters (zeros for a tree without GI nodes).",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_probe_update",
+     "doc": "",
+     "decl": "typedef enum { CW_PROBE_UPDATE_ONCE, CW_PROBE_UPDATE_ON_DEMAND, CW_PROBE_UPDATE_EVERY_N_FRAMES } cw_probe_update;"
+    },
+    {
+     "name": "cw_gi_stats",
+     "doc": "",
+     "decl": "typedef struct cw_gi_stats {\n  int reflection_probes;   /* ReflectionProbe3D nodes in the tree */\n  int captures;            /* captures made in the last frame */\n  int captures_total;      /* since the tree started */\n  int materials;           /* materials carrying the gi part */\n  int probes_bound_max;    /* the most probes one draw had bound in the last frame (0..2) */\n  int grid_updates;        /* light probe grid probes captured in the last frame */\n} cw_gi_stats;"
+    }
+   ],
+   "macros": []
+  },
+  {
    "header": "cartwheel/gl.h",
    "summary": "The GL API cartwheel renders with: OpenGL ES 3.0 with WebGL2 semantics, the\nsingle feature level on every target. Native links libGLESv2 (Mesa, or\nANGLE on Windows/macOS/iOS); carts import the same entry points from the\nwasmcart \"gl\" module.",
    "functions": [
@@ -10327,6 +10364,50 @@
      "decl": "typedef struct cw_scene_section {\n  const char *name;               /* \"animation\" */\n  const char *const *subsections; /* NULL-terminated sub-header names it owns while open */\n  /* a new section's header line; returns its parsed state, NULL on error (logged) */\n  void *(*begin)(const char *header, const char *path, int lineno);\n  /* a body line or an owned sub-header (leading whitespace trimmed); false on error */\n  bool (*line)(void *state, const char *line, const char *path, int lineno);\n  /* the scene was instanced: root is the new subtree (not in a tree yet) */\n  void (*instance)(void *state, cw_node root, const char *path);\n  void (*free)(void *state);\n  /* append this extension's sections for the subtree under root */\n  void (*save)(cw_node root, void (*put)(void *ctx, const char *text), void *ctx);\n} cw_scene_section;"
     }
    ],
+   "macros": []
+  },
+  {
+   "header": "cartwheel/shading.h",
+   "summary": "cartwheel/shading.h: shading parts, three.c generator extensions that\nstack on one material.\n\nthree.c gives a material one generator extension (t3_material_set_extension,\nstate x<name>): r186 TSL captured into a program, filled at run time by a C\nhook. Several engine features change how every surface shades (terrain or\nwater decide the surface, clustered lights add direct light, the GI module\nadds reflections and bounce light), so one material often needs more than\none. A part is one such extension; a material carries a list of parts, and\nits extension is the composed name: the parts in the fixed order below,\njoined by '_' (\"terrain_gi\", \"cluster_gi\"). Nothing is written by hand per\ncombination:\n\n  - the generator side: a part is a module src/<module>/extensions/<part>.mjs\n    (export name, apply()), as any extension. tools/programs.mjs writes, for\n    every composed state a manifest names (standard+senv+xcluster_gi), a\n    module that applies the parts in that order to the capture's material,\n    and hands it to three.c's generator. Surface parts set colorNode,\n    normalNode, positionNode; lighting parts add an r186 LightingNode to the\n    material's lights; the GI part sets envNode (reflections) and adds a\n    LightingNode (the probe grid's irradiance). So parts compose without\n    knowing each other, as long as each names its uniforms and textures\n    \"ext.<unique name>\" and its shared uniform groups uniquely.\n  - the run-time side: each part registers its fill hook on a renderer\n    (cw_shading_part); a composed extension's hook calls every part's hook\n    in order on the same draw.\n\nOrder (fixed, global): surface parts (terrain, terrainlow, terrainfar,\nwater), then lighting (cluster), then indirect light (gi); any other part\nbetween lighting and indirect, by name.\n\nCost: none per part beyond its own hook. Note that three.c never\nauto-instances a mesh whose material carries an extension: each such mesh\nis its own draw.",
+   "functions": [
+    {
+     "name": "cw_shading_part",
+     "signature": "void cw_shading_part(t3_renderer *r, const char *name, t3_extension_fill fill, void *user)",
+     "doc": "The renderer's hook for part `name` ([a-z0-9], up to 15 characters): it\nfills that part's \"ext.\" values for each draw of any material carrying the\npart, alone or composed. fill NULL removes it. Also installs every composed\nextension that includes the part.",
+     "inline": false
+    },
+    {
+     "name": "cw_shading_forget",
+     "signature": "void cw_shading_forget(t3_renderer *r)",
+     "doc": "Forget a renderer (before t3_renderer_destroy).",
+     "inline": false
+    },
+    {
+     "name": "cw_shading_add",
+     "signature": "bool cw_shading_add(t3_material *m, const char *name)",
+     "doc": "Add part `name` to material m (no-op when it has it): m's extension becomes\nthe composed name. false when m would carry more than CW_SHADING_MAX_PARTS\nparts or the composed name would pass 31 characters.",
+     "inline": false
+    },
+    {
+     "name": "cw_shading_remove",
+     "signature": "void cw_shading_remove(t3_material *m, const char *name)",
+     "doc": "Remove part `name` from m (no-op when it lacks it).",
+     "inline": false
+    },
+    {
+     "name": "cw_shading_has",
+     "signature": "bool cw_shading_has(const t3_material *m, const char *name)",
+     "doc": "m carries part `name`.",
+     "inline": false
+    },
+    {
+     "name": "cw_shading_set",
+     "signature": "bool cw_shading_set(t3_material *m, const char *const *parts, int n)",
+     "doc": "Replace m's parts by the composed name of `parts` (n of them, any order):\nwhat cw_shading_add gives, from scratch.",
+     "inline": false
+    }
+   ],
+   "types": [],
    "macros": []
   },
   {

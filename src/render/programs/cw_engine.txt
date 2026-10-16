@@ -2,3 +2,4 @@
 # every app links this table. tools/programs.mjs regenerates it.
 basic
 normal
+basic+xgiproj

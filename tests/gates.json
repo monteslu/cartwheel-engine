@@ -1,5 +1,38 @@
 [
   {
+    "name": "gi-room",
+    "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "GI_PROBES": "0" } }] },
+    "app": "gi_room",
+    "frames": 60,
+    "maxGt16": 0.003,
+    "fields": ["gi.tick", "gi.probes", "gi.captures", "gi.bound", "gi.materials", "tree.nodes"],
+    "expect": { "gi.probes": 2, "gi.bound": 2, "gi.materials": 9 },
+    "controlFrames": 60,
+    "controlEnv": { "GI_PROBES": "0" },
+    "note": "reflection probes (box projected, blended) and the light probe grid's bounce light in a room, on every host; the control turns the probes off, and their reflections must change the frame"
+  },
+  {
+    "name": "gi-probe-check",
+    "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "GI_PROBE": "0" } }] },
+    "app": "gi_probe_check",
+    "frames": 10,
+    "fields": ["gi.captures", "gi.bound"],
+    "expect": { "gi.bound": 1 },
+    "controlFrames": 10,
+    "controlEnv": { "GI_PROBE": "0" },
+    "note": "a mirror ball at a reflection probe in a box of six glowing walls, the same picture on every host; the control turns the probe off (black reflections)"
+  },
+  {
+    "name": "gi-perf",
+    "script": "tests/gi-perf.mjs",
+    "note": "GPU ms of reflection probe captures and grid updates and of the whole frame at each quality preset (reported, never compared); the control without probes has no capture time"
+  },
+  {
+    "name": "gi-probe",
+    "script": "tests/gi-probe.mjs",
+    "note": "reflection probes and bounce light against known answers natively on GL and WebGPU: walls where a mirror ball must show them, box projection acting, the grid tinting the ceiling by the coloured walls; controls with the probe and the grid off must fail"
+  },
+  {
     "name": "hello-input",
     "app": "hello",
     "frames": 120,

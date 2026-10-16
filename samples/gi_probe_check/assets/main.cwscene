@@ -1,0 +1,88 @@
+[scene format=1]
+
+[node name="Box" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+ambient_energy = 0
+
+[node name="Lighting" parent="." type="LightingSettings"]
+mode = "CLUSTERED"
+
+[node name="Lamp" parent="." type="OmniLight3D"]
+position = vec3(0, 3, 2)
+color = color(1, 1, 1, 1)
+energy = 2
+range = 6
+
+[node name="Post" parent="." type="PostProcess"]
+tonemap = NEUTRAL
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 0, 3.4)
+fov = 50
+near = 0.05
+far = 30
+
+[node name="NegX" parent="." type="MeshInstance3D"]
+position = vec3(-4.1, 0, 0)
+size = vec3(0.2, 8.4, 8.4)
+color = color(0, 0, 0, 1)
+emissive = color(1, 0, 0, 1)
+roughness = 1
+
+[node name="PosX" parent="." type="MeshInstance3D"]
+position = vec3(4.1, 0, 0)
+size = vec3(0.2, 8.4, 8.4)
+color = color(0, 0, 0, 1)
+emissive = color(0, 1, 0, 1)
+roughness = 1
+
+[node name="NegZ" parent="." type="MeshInstance3D"]
+position = vec3(0, 0, -4.1)
+size = vec3(8.4, 8.4, 0.2)
+color = color(0, 0, 0, 1)
+emissive = color(0, 0, 1, 1)
+roughness = 1
+
+[node name="PosZ" parent="." type="MeshInstance3D"]
+position = vec3(0, 0, 4.1)
+size = vec3(8.4, 8.4, 0.2)
+color = color(0, 0, 0, 1)
+emissive = color(1, 1, 0, 1)
+roughness = 1
+
+[node name="PosY" parent="." type="MeshInstance3D"]
+position = vec3(0, 4.1, 0)
+size = vec3(8.4, 0.2, 8.4)
+color = color(0, 0, 0, 1)
+emissive = color(1, 1, 1, 1)
+roughness = 1
+
+[node name="NegY" parent="." type="MeshInstance3D"]
+position = vec3(0, -4.1, 0)
+size = vec3(8.4, 0.2, 8.4)
+color = color(0, 0, 0, 1)
+emissive = color(0, 1, 1, 1)
+roughness = 1
+
+[node name="Ball" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+size = vec3(1.6, 1.6, 1.6)
+color = color(1, 1, 1, 1)
+metalness = 1
+roughness = 0
+
+[node name="Mirror" parent="." type="MeshInstance3D"]
+position = vec3(1.9, -1.5, 0)
+size = vec3(1.6, 0.05, 1.6)
+color = color(1, 1, 1, 1)
+metalness = 1
+roughness = 0
+
+[node name="Probe" parent="." type="ReflectionProbe3D"]
+size = vec3(8, 8, 8)
+box_projection = true
+blend_distance = 0.01
+update_mode = ONCE
+resolution = 256
+cull_mask = 2

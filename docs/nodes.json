@@ -9617,6 +9617,275 @@
    ]
   },
   {
+   "name": "ReflectionProbe3D",
+   "parent": "Node3D",
+   "doc": "Reflections of the real surroundings inside a box: a live PMREM capture, box projected and blended (gi.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "size",
+     "type": "vec3",
+     "default": "vec3(10, 10, 10)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The box the probe affects (world units, axis aligned; the node's scale applies)."
+    },
+    {
+     "name": "origin_offset",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Where the capture is taken, from the box centre."
+    },
+    {
+     "name": "box_projection",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Trace reflections to the box's faces (rooms, corridors) instead of at infinity (outdoors)."
+    },
+    {
+     "name": "blend_distance",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Distance inside the box over which the probe fades out at its faces."
+    },
+    {
+     "name": "intensity",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Multiplier of what the probe reflects."
+    },
+    {
+     "name": "ambient",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "The probe also gives the diffuse ambient light, in place of the sky's."
+    },
+    {
+     "name": "resolution",
+     "type": "int",
+     "default": "128",
+     "stored": true,
+     "readonly": false,
+     "min": 16,
+     "max": 1024,
+     "doc": "Capture face size in pixels (a power of two; the quality preset scales it)."
+    },
+    {
+     "name": "update_mode",
+     "type": "enum",
+     "default": "ONCE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "ONCE",
+      "ON_DEMAND",
+      "EVERY_N_FRAMES"
+     ],
+     "doc": "ONCE (first frame), ON_DEMAND (the update method) or EVERY_N_FRAMES (update_every)."
+    },
+    {
+     "name": "update_every",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 100000,
+     "doc": "EVERY_N_FRAMES: frames between captures (the quality preset scales it)."
+    },
+    {
+     "name": "near",
+     "type": "float",
+     "default": "0.1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.001,
+     "max": 1000,
+     "doc": "Capture near clip."
+    },
+    {
+     "name": "far",
+     "type": "float",
+     "default": "100",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 100000,
+     "doc": "Capture far clip."
+    },
+    {
+     "name": "cull_mask",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layers the capture sees (three.c object layers; -1 = all)."
+    },
+    {
+     "name": "captures",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Captures made so far."
+    }
+   ]
+  },
+  {
+   "name": "LightProbeGrid3D",
+   "parent": "Node3D",
+   "doc": "Bounce light: a grid of L2 spherical-harmonic probes captured from the scene (three.js r186 LightProbeGrid; gi.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "size",
+     "type": "vec3",
+     "default": "vec3(8, 4, 8)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The grid's box (world units, axis aligned; the node's scale applies)."
+    },
+    {
+     "name": "probes",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Probes along x, y, z (2 .. 32 each; 0 = one a metre plus one, as r186)."
+    },
+    {
+     "name": "cube_size",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 4,
+     "max": 32,
+     "doc": "Each probe's capture face size in pixels (r186: 8)."
+    },
+    {
+     "name": "bounces",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 8,
+     "doc": "Extra sweeps of the bake, each adding a bounce."
+    },
+    {
+     "name": "update_mode",
+     "type": "enum",
+     "default": "BAKED",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "BAKED",
+      "INCREMENTAL"
+     ],
+     "doc": "BAKED (once, at load) or INCREMENTAL (then probes_per_frame probes every frame, for moving lights)."
+    },
+    {
+     "name": "probes_per_frame",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 4096,
+     "doc": "INCREMENTAL: probes refreshed a frame (the quality preset scales it)."
+    },
+    {
+     "name": "bake_per_frame",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1048580,
+     "doc": "Probes captured a frame while baking (0 = the whole grid in one frame)."
+    },
+    {
+     "name": "intensity",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Multiplier of the grid's light."
+    },
+    {
+     "name": "normal_offset",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 4,
+     "doc": "Sample offset along the surface normal, in probe spacings (r186: 0.5)."
+    },
+    {
+     "name": "near",
+     "type": "float",
+     "default": "0.05",
+     "stored": true,
+     "readonly": false,
+     "min": 0.001,
+     "max": 1000,
+     "doc": "Capture near clip."
+    },
+    {
+     "name": "far",
+     "type": "float",
+     "default": "100",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 100000,
+     "doc": "Capture far clip."
+    },
+    {
+     "name": "probe_count",
+     "type": "int",
+     "default": "405",
+     "stored": false,
+     "readonly": true,
+     "doc": "Probes in the grid."
+    },
+    {
+     "name": "updates",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Probe captures so far."
+    },
+    {
+     "name": "baked",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "The bake's sweeps are done."
+    }
+   ]
+  },
+  {
    "name": "NetSynchronizer",
    "parent": "Node",
    "doc": "Replicates properties of root_path from its network authority to every other peer (cartwheel/net.h).",

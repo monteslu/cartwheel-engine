@@ -157,6 +157,11 @@ target_compile_definitions(night_street_perf PRIVATE NS_PERF_BUILD=1)
 cw_add_app(noise_demo SOURCES noise_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/noise_demo/assets)
 # baked lighting: lightmaps with generated uv1 charts, an SH probe grid, a reproducible bake.
 cw_add_app(lightmap_room SOURCES lightmap_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/lightmap_room/assets)
+# reflection probes (cartwheel/gi.h): a room with coloured walls, a polished floor, chrome
+cw_add_app(gi_room SOURCES gi_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/gi_room/assets PROGRAMS gi_room/programs/gi_room.txt)
+cw_add_app(gi_room_perf SOURCES gi_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/gi_room/assets PROGRAMS gi_room/programs/gi_room.txt GL_ONLY)
+target_compile_definitions(gi_room_perf PRIVATE GI_PERF=1)
+cw_add_app(gi_probe_check SOURCES gi_probe_check/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/gi_probe_check/assets PROGRAMS gi_room/programs/gi_room.txt)
 # The showcase: an outdoor valley through a day / night cycle
 # (terrain LOD, a forest, a village with 193 lights, shadows, height
 # fog, skinned walkers, the modern post stack). The walkers are Khronos

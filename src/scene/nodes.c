@@ -465,4 +465,6 @@ void cw_scene_register_builtin_types(void) {
   cw__register_nav_types();
   void cw__register_audio_types(void); /* src/audio: ReverbZone3D */
   cw__register_audio_types();
+  void cw__register_gi_types(void); /* src/gi: reflection probes (cartwheel/gi.h) */
+  cw__register_gi_types();
 }
