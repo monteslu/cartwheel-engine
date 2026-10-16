@@ -551,3 +551,22 @@ void cw__register_terrain_types(void) {
   cw_node_type_register(&scatter_type);
   scatter_t = &scatter_type;
 }
+
+/* ── the built-in scatter meshes, for code that makes its own layers ── */
+void cw_scatter_def_builtin(cw_scatter_def *d, cw_scatter_shape shape, float r, float g, float b) {
+  if (!d) return;
+  float c[4] = { r, g, b, 1 };
+  int s = shape == CW_SCATTER_ROCK ? 1 : shape == CW_SCATTER_TREE ? 2 : 0;
+  for (int l = 0; l < 2; l++) builtin_mesh(s, l, c, &d->geometry[l][0], &d->material[l][0]);
+}
+
+void cw_scatter_def_release(cw_scatter_def *d) {
+  if (!d) return;
+  for (int l = 0; l < CW_SCATTER_LODS; l++)
+    for (int p = 0; p < CW_SCATTER_PARTS; p++) {
+      if (d->geometry[l][p]) t3_release(d->geometry[l][p]);
+      if (d->material[l][p]) t3_release(d->material[l][p]);
+      d->geometry[l][p] = NULL;
+      d->material[l][p] = NULL;
+    }
+}

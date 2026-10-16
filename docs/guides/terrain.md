@@ -124,6 +124,10 @@ A Vega 8 (8 GCN CUs at 1.1 to 2.0 GHz, dual-channel DDR4) has a fifth to a third
 
 Low and Medium hold 60 Hz with room for a game; High is a 30 to 60 Hz frame there.
 
+## Bigger than one grid
+
+A world too big for one height grid streams one terrain per cell: a terrain set ([cw_terrain_set_create](api:cw_terrain_set_create)) shares one template's layers ([cw_terrain_share_layers](api:cw_terrain_share_layers)) and scatter layers across every cell terrain, builds each cell's height fields, texels and quadtree in the background, and draws them all from one pass. [Big open worlds](guide:streaming) shows it with `open_world`, a 16.4 km world. Scatter you add yourself can use the built-in meshes through [cw_scatter_def_builtin](api:cw_scatter_def_builtin).
+
 ## Limits
 
 - Sizes are multiples of `grid_quads`, and at most 8192 quads a side.

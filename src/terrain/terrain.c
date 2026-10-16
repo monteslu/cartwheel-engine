@@ -77,6 +77,7 @@ cw_terrain *cw_terrain_create(const cw_terrain_def *def_in) {
 
 void cw_terrain_destroy(cw_terrain *t) {
   if (!t) return;
+  cw__terrain_build_finish(t, true);
   for (int i = 0; i < TR_MAX_SCATTER; i++)
     if (t->scatter[i]) cw__scatter_free(t->scatter[i]);
   cw_terrain_detach_physics(t);
@@ -104,6 +105,8 @@ static t3_vec3 region_pos(const cw_terrain *t, int rx, int rz) {
 void cw_terrain_set_origin(cw_terrain *t, t3_vec3 origin) {
   if (!t) return;
   if (t->def.origin.x == origin.x && t->def.origin.y == origin.y && t->def.origin.z == origin.z) return;
+  cw__scatter_sync(t);
+  t3_vec3 delta = { origin.x - t->def.origin.x, origin.y - t->def.origin.y, origin.z - t->def.origin.z };
   t->def.origin = origin;
   if (t->physics)
     for (int rz = 0; rz < t->rnz; rz++)
@@ -115,7 +118,7 @@ void cw_terrain_set_origin(cw_terrain *t, t3_vec3 origin) {
         }
       }
   cw__terrain_gpu_set_origin(t);
-  cw_terrain_scatter_invalidate(t);
+  cw__scatter_shift(t, delta); /* placement moves with the terrain: nothing is placed again */
 }
 
 /* ── edits ──────────────────────────────────────────────────────────── */
@@ -129,6 +132,7 @@ static void grow(int *r, int x0, int z0, int x1, int z1) {
 }
 
 void cw__terrain_mark(cw_terrain *t, int x0, int z0, int x1, int z1, bool heights, bool control) {
+  cw__scatter_sync(t);
   if (heights) {
     grow(t->dirty_h, x0, z0, x1, z1);
     t->tree_dirty = t->normals_dirty = true;
@@ -408,6 +412,10 @@ static float srgb_to_linear(float c) { return c <= 0.04045f ? c / 12.92f : powf(
 void cw_terrain_set_layer_pixels(cw_terrain *t, int i, const uint8_t *albedo, const uint8_t *normal, int w, int h,
                                  float uv_scale) {
   if (!t || i < 0 || i >= CW_TERRAIN_LAYERS) return;
+  if (t->layers_shared) {
+    cw_error("terrain: cw_terrain_set_layer on a terrain that shares another's layers: set them on that one");
+    return;
+  }
   cw_free(t->layer[i].albedo);
   cw_free(t->layer[i].normal);
   t->layer[i].albedo = albedo ? resize_tile(albedo, w, h) : NULL;
@@ -423,6 +431,22 @@ void cw_terrain_set_layer_pixels(cw_terrain *t, int i, const uint8_t *albedo, co
     for (int k = 0; k < 3; k++) t->layer[i].mean[k] = srgb_to_linear(0.5f);
   }
   t->layers_dirty = t->macro_dirty = true;
+}
+
+void cw_terrain_share_layers(cw_terrain *t, cw_terrain *src) {
+  if (!t || !src || t == src) return;
+  for (int i = 0; i < CW_TERRAIN_LAYERS; i++) {
+    cw_free(t->layer[i].albedo);
+    cw_free(t->layer[i].normal);
+    t->layer[i].albedo = t->layer[i].normal = NULL; /* the pixels stay with src */
+    t->layer[i].uv_scale = src->layer[i].uv_scale;
+    t->layer[i].set = src->layer[i].set;
+    memcpy(t->layer[i].mean, src->layer[i].mean, sizeof t->layer[i].mean);
+  }
+  cw__terrain_gpu_share_layers(t, src);
+  t->layers_shared = true;
+  t->layers_dirty = false;
+  t->macro_dirty = true;
 }
 
 bool cw_terrain_set_layer(cw_terrain *t, int i, const char *albedo_height, const char *normal_rough, float uv_scale) {
@@ -547,6 +571,8 @@ void cw_terrain_sync_physics(cw_terrain *t) {
 }
 
 static void sync_if_dirty(const cw_terrain *t) {
+  /* a background build owns the fields until it is adopted: queries use the samples meanwhile */
+  if (t->build) return;
   for (int i = 0; i < t->rnx * t->rnz; i++)
     if (t->regions[i].dirty || !t->regions[i].field.id) {
       cw_terrain_sync_physics((cw_terrain *)t);
@@ -556,6 +582,7 @@ static void sync_if_dirty(const cw_terrain *t) {
 
 void cw_terrain_attach_physics(cw_terrain *t, cw_world3d w, const cw_shape3d_def *def) {
   if (!t) return;
+  cw__terrain_build_finish(t, true);
   cw_terrain_detach_physics(t);
   t->world = w;
   t->shape_def = def ? *def : cw_shape3d_default_def();
@@ -691,4 +718,64 @@ void cw_terrain_get_stats(const cw_terrain *t, cw_terrain_stats *out) {
     return;
   }
   *out = t->stats;
+}
+
+/* ── a background build (terrain sets: a streamed cell's terrain) ─────────
+ * Everything a new terrain computes before its first draw, on one job: the
+ * height fields, the GPU textures' texels (heights, normals, control, macro)
+ * and the quadtree's min / max pyramid. The main thread must leave the
+ * terrain alone (no update, no edits) until cw__terrain_build_finish says it
+ * is done; reading its heights meanwhile is fine. */
+typedef struct tr_build {
+  cw_job *job;
+  int n;
+  int *list;
+  b3HeightFieldData **out;
+  double ms;
+} tr_build;
+
+static void build_job(void *u) {
+  cw_terrain *t = u;
+  tr_build *b = t->build;
+  double t0 = tr_now_ms();
+  region_job j = { t, b->list, b->out };
+  build_region(0, b->n, 0, &j);
+  cw__terrain_gpu_fill(t);
+  cw__terrain_tree_rebuild(t);
+  b->ms = tr_now_ms() - t0;
+}
+
+void cw__terrain_build_start(cw_terrain *t) {
+  if (t->build) return;
+  cw__terrain_gpu_prepare(t); /* the textures and their texel arrays (main thread) */
+  tr_build *b = cw_calloc(1, sizeof *b, CW_MEM_RENDER);
+  int n = t->rnx * t->rnz;
+  b->list = cw_alloc(sizeof(int) * (size_t)n, CW_MEM_RENDER);
+  b->out = cw_calloc((size_t)n, sizeof *b->out, CW_MEM_RENDER);
+  for (int i = 0; i < n; i++) b->list[b->n++] = i;
+  t->build = b;
+  b->job = cw_job_background(build_job, t);
+}
+
+bool cw__terrain_build_finish(cw_terrain *t, bool wait) {
+  tr_build *b = t->build;
+  if (!b) return true;
+  if (!wait && !cw_job_done(b->job)) return false;
+  cw_job_wait(b->job);
+  for (int k = 0; k < b->n; k++) {
+    tr_region *r = &t->regions[b->list[k]];
+    if (cw_shape3d_valid(r->shape)) cw_shape3d_destroy(r->shape);
+    r->shape = (cw_shape3d){ 0 };
+    cw_heightfield3d_destroy(r->field);
+    r->field = cw__heightfield3d_adopt(b->out[k]);
+    r->dirty = false;
+    make_body(t, b->list[k]);
+  }
+  cw__terrain_gpu_filled(t); /* texture versions up, the edits marked done */
+  t->build_ms = (float)b->ms;
+  cw_free(b->list);
+  cw_free(b->out);
+  cw_free(b);
+  t->build = NULL;
+  return true;
 }

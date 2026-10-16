@@ -49,6 +49,9 @@ struct cw_terrain {
   /* what edits made stale: GPU rectangles (samples, inclusive) and flags */
   int dirty_h[4], dirty_c[4]; /* x0, z0, x1, z1; x0 > x1 = clean */
   bool tree_dirty, normals_dirty, macro_dirty, layers_dirty;
+  bool layers_shared;      /* the layer textures are another terrain's (cw_terrain_share_layers) */
+  struct tr_build *build;  /* a background build in flight (cw__terrain_build_start) */
+  float build_ms;          /* how long the last one took on its worker */
 
   /* quadtree: per level, the min / max height step of each node */
   int lods;
@@ -102,6 +105,13 @@ void cw__terrain_gpu_free(cw_terrain *t);
 void cw__terrain_gpu_update(cw_terrain *t);
 void cw__terrain_gpu_draw_setup(cw_terrain *t);
 void cw__terrain_gpu_set_origin(cw_terrain *t);
+void cw__terrain_gpu_share_layers(cw_terrain *t, cw_terrain *src);
+void cw__terrain_gpu_prepare(cw_terrain *t);
+void cw__terrain_gpu_fill(cw_terrain *t);   /* any thread: texels only */
+void cw__terrain_gpu_filled(cw_terrain *t); /* main thread */
+/* a background build (terrain.c) */
+void cw__terrain_build_start(cw_terrain *t);
+bool cw__terrain_build_finish(cw_terrain *t, bool wait); /* true once done (and adopted) */
 int cw__terrain_quality(const cw_terrain *t);
 float cw__terrain_far(const cw_terrain *t);
 
@@ -109,6 +119,8 @@ float cw__terrain_far(const cw_terrain *t);
 void cw__scatter_free(tr_scatter *s);
 void cw__scatter_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp);
 void cw__scatter_attach(cw_terrain *t, tr_scatter *s);
+void cw__scatter_shift(cw_terrain *t, t3_vec3 d);
+void cw__scatter_sync(cw_terrain *t); /* placement in flight done (before heights, control or origin change) */
 
 /* ── SIMD (GCC / clang vector extensions: SSE natively, simd128 in carts) ── */
 typedef float tr_v4f __attribute__((vector_size(16)));

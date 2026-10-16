@@ -42,27 +42,21 @@ typedef struct tr_gpu {
   int near_q;                  /* the quality the near material's program is for */
 } tr_gpu;
 
-/* the instanced meshes of every terrain, for the fill hook to find its terrain by the drawn object */
-#define TR_MAX_TERRAINS 16
-static struct { const void *obj; cw_terrain *t; } g_objs[TR_MAX_TERRAINS * 4];
+/* the instanced meshes of every terrain, for the fill hook to find its terrain by the drawn object
+ * (any number of terrains: a streamed world has one per loaded cell) */
+static cw_map g_objs;
+static bool g_objs_init;
 
 static void reg_obj(const void *obj, cw_terrain *t) {
-  for (int i = 0; i < (int)CW_ARRAY_LEN(g_objs); i++)
-    if (!g_objs[i].obj || g_objs[i].obj == obj) {
-      g_objs[i].obj = obj;
-      g_objs[i].t = t;
-      return;
-    }
-  cw_error("terrain: more than %d terrains", TR_MAX_TERRAINS);
+  if (!g_objs_init) cw_map_init(&g_objs, CW_MEM_RENDER), g_objs_init = true;
+  cw_map_set(&g_objs, (uint64_t)(uintptr_t)obj, (uint64_t)(uintptr_t)t);
 }
 static void unreg_obj(const void *obj) {
-  for (int i = 0; i < (int)CW_ARRAY_LEN(g_objs); i++)
-    if (g_objs[i].obj == obj) g_objs[i].obj = NULL, g_objs[i].t = NULL;
+  if (g_objs_init) cw_map_remove(&g_objs, (uint64_t)(uintptr_t)obj);
 }
 static cw_terrain *terrain_of_obj(const void *obj) {
-  for (int i = 0; i < (int)CW_ARRAY_LEN(g_objs); i++)
-    if (g_objs[i].obj == obj) return g_objs[i].t;
-  return NULL;
+  uint64_t v;
+  return g_objs_init && cw_map_get(&g_objs, (uint64_t)(uintptr_t)obj, &v) ? (cw_terrain *)(uintptr_t)v : NULL;
 }
 
 static tr_gpu *gpu(cw_terrain *t) {
@@ -301,8 +295,8 @@ static void ensure_gpu(cw_terrain *t) {
   g->mw = (t->nx - 1) / g->mdiv + 1;
   g->mh = (t->nz - 1) / g->mdiv + 1;
   g->macro = data_tex(g->mw, g->mh, true, false);
-  g->albedo = layer_array();
-  g->lnormal = layer_array();
+  if (!g->albedo) g->albedo = layer_array();   /* (shared ones are set already) */
+  if (!g->lnormal) g->lnormal = layer_array();
   for (int f = 0; f < 2; f++)
     for (int h = 0; h < 2; h++) make_mesh(t, f, h, 256);
 }
@@ -351,6 +345,21 @@ t3_material *cw_terrain_material(cw_terrain *t) {
   return ((tr_gpu *)t->gpu)->mat_near;
 }
 
+void cw__terrain_gpu_share_layers(cw_terrain *t, cw_terrain *src) {
+  ensure_gpu(src);
+  tr_gpu *sg = src->gpu;
+  if (src->layers_dirty && !src->layers_shared) {
+    build_layers(src, sg->albedo, false);
+    build_layers(src, sg->lnormal, true);
+    src->layers_dirty = false;
+  }
+  tr_gpu *g = gpu(t);
+  if (g->albedo) t3_release(g->albedo);
+  if (g->lnormal) t3_release(g->lnormal);
+  g->albedo = t3_retain(sg->albedo);
+  g->lnormal = t3_retain(sg->lnormal);
+}
+
 void cw__terrain_gpu_set_origin(cw_terrain *t) { (void)t; /* the uniforms carry the origin */ }
 
 /* ── per frame ──────────────────────────────────────────────────────── */
@@ -384,6 +393,7 @@ void cw__terrain_gpu_update(cw_terrain *t) {
     g->macro->version++;
     t->macro_dirty = false;
   }
+  if (t->layers_dirty && t->layers_shared) t->layers_dirty = false;
   if (t->layers_dirty) {
     build_layers(t, g->albedo, false);
     build_layers(t, g->lnormal, true);
@@ -480,6 +490,7 @@ void cw_terrain_bind_renderer(cw_terrain *t, t3_renderer *r) {
 
 void cw_terrain_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp) {
   if (!t) return;
+  if (t->build && !cw__terrain_build_finish(t, false)) return; /* still building in the background: not drawn yet */
   t->camera = cam;
   for (int i = 0; i < t->rnx * t->rnz; i++)
     if (t->regions[i].dirty) {
@@ -496,4 +507,31 @@ void cw_terrain_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp) {
   cw__terrain_select(t, cam, vp);
   cw__terrain_gpu_draw_setup(t);
   cw__scatter_update(t, cam, vp);
+}
+
+/* ── the background build's GPU share (terrain.c: cw__terrain_build_start) ── */
+void cw__terrain_gpu_prepare(cw_terrain *t) { ensure_gpu(t); }
+
+/* worker: every texel the dirty flags ask for, without uploading anything */
+void cw__terrain_gpu_fill(cw_terrain *t) {
+  tr_gpu *g = t->gpu;
+  if (t->dirty_h[0] <= t->dirty_h[2]) {
+    rect_parallel(t, t->dirty_h, heights_rows);
+    int r[4] = { CW_MAX(t->dirty_h[0] - 1, 0), CW_MAX(t->dirty_h[1] - 1, 0), CW_MIN(t->dirty_h[2] + 1, t->nx - 1),
+                 CW_MIN(t->dirty_h[3] + 1, t->nz - 1) };
+    rect_parallel(t, r, normal_rows);
+  }
+  if (t->dirty_c[0] <= t->dirty_c[2]) rect_parallel(t, t->dirty_c, control_rows);
+  if (t->macro_dirty) cw_parallel_for(g->mh, 8, macro_rows, t);
+}
+
+/* main thread, after the fill: the textures upload at their next draw */
+void cw__terrain_gpu_filled(cw_terrain *t) {
+  tr_gpu *g = t->gpu;
+  if (t->dirty_h[0] <= t->dirty_h[2]) g->heights->version++, g->normals->version++;
+  if (t->dirty_c[0] <= t->dirty_c[2]) g->control->version++;
+  if (t->macro_dirty) g->macro->version++;
+  t->dirty_h[0] = 1, t->dirty_h[2] = 0;
+  t->dirty_c[0] = 1, t->dirty_c[2] = 0;
+  t->normals_dirty = t->macro_dirty = false;
 }

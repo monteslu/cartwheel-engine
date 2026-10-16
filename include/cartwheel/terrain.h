@@ -181,6 +181,14 @@ bool cw_terrain_set_layer(cw_terrain *t, int i, const char *albedo_height, const
 void cw_terrain_set_layer_pixels(cw_terrain *t, int i, const uint8_t *albedo_height, const uint8_t *normal_rough,
                                  int w, int h, float uv_scale);
 
+/* Use src's layers (its textures, uv scales and mean colours) instead of
+ * this terrain's own: what each cell's terrain of a streamed world does
+ * (cartwheel/stream.h), so the 2 x 8 layer atlases (about 11 MB of GPU
+ * memory with mips) exist once, not once per cell. The textures are
+ * reference counted: src may be destroyed first. Set src's layers before;
+ * this terrain's own cw_terrain_set_layer is refused afterwards. */
+void cw_terrain_share_layers(cw_terrain *t, cw_terrain *src);
+
 /* ── queries (deterministic: + - * / and Box3D) ───────────────────────── */
 
 /* Height at world (x, z) on the triangles physics collides with: the same
@@ -273,6 +281,14 @@ typedef struct cw_scatter_def {
 } cw_scatter_def;
 /* The defaults noted above, no meshes. */
 cw_scatter_def cw_scatter_default_def(void);
+/* The built-in meshes (what TerrainScatter3D's `shape` draws: vertex coloured, two
+ * LODs each, tinted by r, g, b) into d's geometry and material: NEW references,
+ * released with cw_scatter_def_release once the layer is added (the layer
+ * holds its own). */
+typedef enum { CW_SCATTER_GRASS, CW_SCATTER_ROCK, CW_SCATTER_TREE } cw_scatter_shape;
+void cw_scatter_def_builtin(cw_scatter_def *d, cw_scatter_shape shape, float r, float g, float b);
+/* Releases every geometry and material d holds and clears them. */
+void cw_scatter_def_release(cw_scatter_def *d);
 /* Adds a scatter layer; returns its index (-1 when 16 exist). */
 int cw_terrain_scatter_add(cw_terrain *t, const cw_scatter_def *def);
 /* Removes a scatter layer and its instances (its index is free again). */
@@ -283,6 +299,55 @@ void cw_terrain_scatter_invalidate(cw_terrain *t);
  * x, y, z, scale, yaw quintuples into out (up to cap). Returns the count.
  * What a test hashes. */
 int cw_terrain_scatter_cell(cw_terrain *t, int layer, int cx, int cz, float *out, int cap);
+
+/* ── terrain sets: terrain that streams with a world's cells ────────────
+ * A big world (cartwheel/stream.h) is too big for one height grid: a 16 km
+ * square at 2 m would be 67 M samples. A terrain set holds one small
+ * terrain per loaded cell instead, all with the same definition, sharing
+ * one template terrain's layer textures (cw_terrain_share_layers) and
+ * getting the same scatter layers (each cell its own seed). Neighbouring
+ * cells must repeat their shared edge samples; with equal definitions their
+ * LOD bands line up, so cells meet without cracks. The set draws every
+ * terrain from one SHADOW-phase pipeline pass ("terrainset") of its tree.
+ * Physics: each cell's height fields are built when it is added, and its
+ * static bodies are created only while it is active. Main thread. */
+typedef struct cw_terrain_set cw_terrain_set;
+#define CW_TERRAIN_SET_SCATTER 4
+typedef struct cw_terrain_set_desc {
+  cw_terrain_def def;       /* every cell's terrain (origin is per cell) */
+  cw_terrain *layers;       /* the template whose layers every cell shares (yours; set its layers first) */
+  cw_scatter_def scatter[CW_TERRAIN_SET_SCATTER]; /* each cell's scatter layers (seed ^ cell id * 0x9E3779B1); the set keeps its own references */
+  int scatter_count;
+  cw_world3d world;         /* physics while active (null: none) */
+  cw_shape3d_def shape;     /* the height-field shapes' settings */
+} cw_terrain_set_desc;
+/* One per tree. NULL (logged) without a tree or template. */
+cw_terrain_set *cw_terrain_set_create(cw_tree *tree, const cw_terrain_set_desc *d);
+/* Destroys every cell terrain (not the template). */
+void cw_terrain_set_destroy(cw_terrain_set *s);
+/* A cell's terrain from its samples ((size_x + 1) x (size_z + 1) height
+ * steps and control words, either may be NULL), its sample (0, 0) at
+ * origin. Builds its height fields (job pool). What on_load does. Cost: a
+ * 256 x 256 cell is about a millisecond plus the first frame's upload. */
+cw_terrain *cw_terrain_set_add(cw_terrain_set *s, int id, t3_vec3 origin, const uint16_t *q, const uint32_t *ctl);
+void cw_terrain_set_remove(cw_terrain_set *s, int id);
+/* Whether cell id's background build (height fields, texels, quadtree: started by
+ * cw_terrain_set_add) is done; with wait, finish it now. What a stream's
+ * cell_ready returns. True for a cell not in the set. */
+bool cw_terrain_set_ready(cw_terrain_set *s, int id, bool wait);
+/* Physics on (on_activate) or off (on_deactivate). */
+void cw_terrain_set_activate(cw_terrain_set *s, int id, bool on);
+/* A new origin for a cell's terrain (on_cell_rebase); its bodies follow. */
+void cw_terrain_set_move(cw_terrain_set *s, int id, t3_vec3 origin);
+cw_terrain *cw_terrain_set_get(const cw_terrain_set *s, int id); /* NULL when absent */
+/* The cell terrain under (x, z) in local coordinates, NULL off every cell. O(cells). */
+cw_terrain *cw_terrain_set_at(const cw_terrain_set *s, float x, float z);
+typedef struct cw_terrain_set_stats {
+  int terrains, terrains_drawn, patches, scatter_instances, scatter_draws;
+  float update_ms;          /* the pass's CPU time last frame (selection, scatter posing, uploads) */
+  float upload_ms;
+} cw_terrain_set_stats;
+void cw_terrain_set_get_stats(const cw_terrain_set *s, cw_terrain_set_stats *out);
 
 /* The Terrain3D node's terrain (NULL before it entered a tree or for
  * another node). */

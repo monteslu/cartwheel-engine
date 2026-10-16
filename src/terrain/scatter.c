@@ -30,6 +30,7 @@
 typedef struct sc_cell {
   int cx, cz;
   bool generated, live;
+  bool generating;                /* in the batch the job pool is placing */
   int n;                          /* instances */
   float *inst;                    /* n * INST_F */
   t3_instanced_mesh *im[CW_SCATTER_LODS][CW_SCATTER_PARTS]; /* parts share part 0's instance matrices */
@@ -49,7 +50,12 @@ struct tr_scatter {
   float radius;                   /* the finest mesh's bounding radius */
   float cell;                     /* cell size, metres: 32 x a power of two (TR_SCATTER_CELL) */
   t3_scene *scene;
+  /* cells being placed on the job pool (one batch at a time; the main thread never waits for it) */
+  cw_job *gen;
+  struct gen_job *gen_ctx;
 };
+
+static bool gen_collect(tr_scatter *s, bool wait);
 
 cw_scatter_def cw_scatter_default_def(void) {
   return (cw_scatter_def){ .density = 0.5f, .scale_min = 0.8f, .scale_max = 1.2f, .visible_range = 60, .fade = 10,
@@ -137,9 +143,9 @@ static int place(const cw_terrain *t, const tr_scatter *s, int cx, int cz, float
       float scale = d->scale_min + (d->scale_max - d->scale_min) * unit(h4);
       float yaw = unit(h5) * CW_TAU;
       float *o = &out[INST_F * n++];
-      o[0] = t->def.origin.x + lx;
+      o[0] = lx; /* x, z in the terrain's own frame (posing adds the origin): a moved terrain places nothing again */
       o[1] = cw__terrain_height_fast(t, fx, fz) - d->sink * scale;
-      o[2] = t->def.origin.z + lz;
+      o[2] = lz;
       o[3] = scale;
       orient(yaw, nrm, d->align_to_normal, &o[4]);
       o[8] = unit(mix32(h5 ^ 0x2545F491u)); /* rank */
@@ -153,9 +159,9 @@ int cw_terrain_scatter_cell(cw_terrain *t, int layer, int cx, int cz, float *out
   int n = place(t, t->scatter[layer], cx, cz, tmp, CELL_MAX);
   int m = CW_MIN(n, cap);
   for (int i = 0; i < m; i++) {
-    out[5 * i] = tmp[INST_F * i];
+    out[5 * i] = t->def.origin.x + tmp[INST_F * i];
     out[5 * i + 1] = tmp[INST_F * i + 1];
-    out[5 * i + 2] = tmp[INST_F * i + 2];
+    out[5 * i + 2] = t->def.origin.z + tmp[INST_F * i + 2];
     out[5 * i + 3] = tmp[INST_F * i + 3];
     /* the yaw back from the quaternion's y / w (cw_atan2: the same bits on every host) */
     out[5 * i + 4] = 2 * cw_atan2(tmp[INST_F * i + 5], tmp[INST_F * i + 7]);
@@ -187,6 +193,7 @@ static void cell_reset(tr_scatter *s, sc_cell *c) {
 
 void cw__scatter_free(tr_scatter *s) {
   if (!s) return;
+  gen_collect(s, true);
   for (int i = 0; i < s->cnx * s->cnz; i++) cell_reset(s, &s->cells[i]);
   for (int l = 0; l < CW_SCATTER_LODS; l++)
     for (int p = 0; p < CW_SCATTER_PARTS; p++) {
@@ -284,6 +291,7 @@ void cw_terrain_scatter_invalidate(cw_terrain *t) {
   for (int i = 0; i < TR_MAX_SCATTER; i++) {
     tr_scatter *s = t->scatter[i];
     if (!s) continue;
+    gen_collect(s, true);
     for (int k = 0; k < s->cnx * s->cnz; k++) cell_reset(s, &s->cells[k]);
   }
 }
@@ -294,7 +302,25 @@ typedef struct gen_job {
   cw_terrain *t;
   tr_scatter *s;
   sc_cell **list;
+  int n;
 } gen_job;
+
+/* the batch in flight: adopt it once placed (wait: now) */
+static bool gen_collect(tr_scatter *s, bool wait) {
+  if (!s->gen) return true;
+  if (!wait && !cw_job_done(s->gen)) return false;
+  cw_job_wait(s->gen);
+  s->gen = NULL;
+  for (int i = 0; i < s->gen_ctx->n; i++) {
+    sc_cell *c = s->gen_ctx->list[i];
+    c->generating = false;
+    c->generated = true;
+  }
+  cw_free(s->gen_ctx->list);
+  cw_free(s->gen_ctx);
+  s->gen_ctx = NULL;
+  return true;
+}
 
 static void gen_cells(int begin, int end, int worker, void *u) {
   (void)worker;
@@ -313,7 +339,6 @@ static void gen_cells(int begin, int end, int worker, void *u) {
     }
     c->ymin = n ? lo : 0;
     c->ymax = n ? hi : 0;
-    c->generated = true;
   }
   cw_free(tmp);
 }
@@ -323,17 +348,18 @@ typedef struct pose_job {
   tr_scatter *s;
   sc_cell **list;
   float cam[3];
+  float origin[2]; /* the terrain's x, z: instances are stored relative to it */
   float density;
 } pose_job;
 
 /* instance i's matrix (column major) at scale k */
-static void write_matrix(float *m, const float *in, float k) {
+static void write_matrix(float *m, const float *in, float k, float ox, float oz) {
   float x = in[4], y = in[5], z = in[6], w = in[7], s = in[3] * k;
   float xx = x * x, yy = y * y, zz = z * z, xy = x * y, xz = x * z, yz = y * z, wx = w * x, wy = w * y, wz = w * z;
   m[0] = (1 - 2 * (yy + zz)) * s, m[1] = 2 * (xy + wz) * s, m[2] = 2 * (xz - wy) * s, m[3] = 0;
   m[4] = 2 * (xy - wz) * s, m[5] = (1 - 2 * (xx + zz)) * s, m[6] = 2 * (yz + wx) * s, m[7] = 0;
   m[8] = 2 * (xz + wy) * s, m[9] = 2 * (yz - wx) * s, m[10] = (1 - 2 * (xx + yy)) * s, m[11] = 0;
-  m[12] = in[0], m[13] = in[1], m[14] = in[2], m[15] = 1;
+  m[12] = in[0] + ox, m[13] = in[1], m[14] = in[2] + oz, m[15] = 1;
 }
 
 static void pose_cells(int begin, int end, int worker, void *u) {
@@ -354,7 +380,7 @@ static void pose_cells(int begin, int end, int worker, void *u) {
       tr_v4f px, py, pz;
       for (int k = 0; k < 4; k++) {
         const float *in = &c->inst[INST_F * CW_MIN(i + k, c->n - 1)];
-        px[k] = in[0], py[k] = in[1], pz[k] = in[2];
+        px[k] = in[0] + j->origin[0], py[k] = in[1], pz[k] = in[2] + j->origin[1];
       }
       tr_v4f dx = px - cx, dy = py - cy, dz = pz - cz;
       tr_v4f d2 = dx * dx + dy * dy + dz * dz;
@@ -366,7 +392,7 @@ static void pose_cells(int begin, int end, int worker, void *u) {
         float f = dist > fs ? 1 - cw_smoothstep(fs, vr, dist) : 1;
         int l = 0;
         while (l + 1 < nl && dist >= d->lod_distance[l]) l++;
-        write_matrix(dst[l] + 16 * cnt[l]++, in, f);
+        write_matrix(dst[l] + 16 * cnt[l]++, in, f, j->origin[0], j->origin[1]);
       }
     }
     int drawn = 0;
@@ -419,11 +445,19 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
       float mn[3] = { t->def.origin.x + (float)x * s->cell, -1e30f, t->def.origin.z + (float)z * s->cell };
       float mx[3] = { mn[0] + s->cell, 1e30f, mn[2] + s->cell };
       mn[1] = camv[1], mx[1] = camv[1]; /* height unknown before generation: horizontal distance */
-      if (cell_dist2(camv, mn, mx) < vr * vr && !c->generated) gen[ng++] = c;
+      if (cell_dist2(camv, mn, mx) < vr * vr && !c->generated && !c->generating) gen[ng++] = c;
     }
-  if (ng) {
-    gen_job gj = { t, s, gen };
-    cw_parallel_for(ng, 1, gen_cells, &gj);
+  /* placement runs on the job pool without the frame waiting for it: a cell is placed a frame or two
+   * after it comes into range, where it is still faded to nothing (the last `fade` metres) */
+  gen_collect(s, false);
+  if (ng && !s->gen) {
+    gen_job *gj = cw_alloc(sizeof *gj, CW_MEM_RENDER);
+    gj->t = t, gj->s = s, gj->n = ng;
+    gj->list = cw_alloc(sizeof(sc_cell *) * (size_t)ng, CW_MEM_RENDER);
+    memcpy(gj->list, gen, sizeof(sc_cell *) * (size_t)ng);
+    for (int i = 0; i < ng; i++) gen[i]->generating = true;
+    s->gen_ctx = gj;
+    s->gen = cw_job_range(ng, 1, gen_cells, gj);
   }
   for (int z = z0; z <= z1; z++)
     for (int x = x0; x <= x1; x++) {
@@ -493,7 +527,7 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
       pose[np++] = c;
     }
   if (np) {
-    pose_job pj = { t, s, pose, { cam.x, cam.y, cam.z }, density };
+    pose_job pj = { t, s, pose, { cam.x, cam.y, cam.z }, { t->def.origin.x, t->def.origin.z }, density };
     cw_parallel_for(np, 1, pose_cells, &pj);
     for (int i = 0; i < np; i++)
       for (int l = 0; l < s->nlod; l++) {
@@ -531,4 +565,38 @@ void cw__scatter_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp) {
       scatter_one(t, t->scatter[i], cam, vp ? &fr : NULL);
     }
   t->stats.scatter_ms = (float)(tr_now_ms() - t0);
+}
+
+/* The terrain moved by d (cw_terrain_set_origin): placement is the same in
+ * the terrain's own frame, so the generated cells move with it instead of
+ * being placed again; live cells keep their GPU copies (bounds moved) and
+ * are posed again at the next update. */
+void cw__scatter_shift(cw_terrain *t, t3_vec3 d) {
+  for (int i = 0; i < TR_MAX_SCATTER; i++) {
+    tr_scatter *s = t->scatter[i];
+    if (!s) continue;
+    gen_collect(s, true); /* (cw__scatter_sync ran before the origin moved) */
+    for (int k = 0; k < s->cnx * s->cnz; k++) {
+      sc_cell *c = &s->cells[k];
+      if (!c->generated) continue;
+      if (d.y != 0)
+        for (int n = 0; n < c->n; n++) c->inst[INST_F * n + 1] += d.y; /* x, z are relative to the terrain already */
+      c->ymin += d.y, c->ymax += d.y;
+      for (int l = 0; l < CW_SCATTER_LODS; l++)
+        for (int p = 0; p < CW_SCATTER_PARTS; p++) {
+          t3_instanced_mesh *im = c->im[l][p];
+          if (!im) continue;
+          t3_sphere sph = { { im->_isph[0] + d.x, im->_isph[1] + d.y, im->_isph[2] + d.z }, im->_isph[3] };
+          t3_instanced_mesh_set_bounding_sphere(im, &sph);
+        }
+      c->posed_state = -2;
+    }
+  }
+}
+
+/* Wait for placement in flight: before the terrain's heights, control or
+ * origin change (the jobs read them). */
+void cw__scatter_sync(cw_terrain *t) {
+  for (int i = 0; i < TR_MAX_SCATTER; i++)
+    if (t->scatter[i]) gen_collect(t->scatter[i], true);
 }
