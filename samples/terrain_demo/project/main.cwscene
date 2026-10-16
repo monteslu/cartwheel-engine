@@ -38,7 +38,7 @@ grid_quads = 32
 far_distance = 450
 generate_seed = 1907
 generate_feature = 650
-generate_amplitude = 0.7
+generate_amplitude = 0.55
 generate_octaves = 7
 layer0_uv_scale = 0.22
 layer1_uv_scale = 0.12
@@ -60,7 +60,7 @@ seed = 1
 [node name="Rocks" parent="Terrain" type="TerrainScatter3D"]
 shape = ROCK
 density = 0.01
-layers = 6
+layers = 2
 min_slope = 60
 scale_min = 0.4
 scale_max = 1.8
@@ -87,3 +87,48 @@ lod_distance = 120
 knob = SCATTER
 cast_shadow = true
 seed = 3
+
+[node name="Car" parent="." type="MeshInstance3D"]
+primitive = BOX
+size = vec3(1.8, 0.7, 4.4)
+color = color(0.75, 0.08, 0.05, 1)
+metalness = 0.3
+roughness = 0.35
+cast_shadow = true
+
+[node name="WheelFL" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+size = vec3(0.76, 0.3, 0.76)
+color = color(0.05, 0.05, 0.05, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="WheelFR" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+size = vec3(0.76, 0.3, 0.76)
+color = color(0.05, 0.05, 0.05, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="WheelRL" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+size = vec3(0.76, 0.3, 0.76)
+color = color(0.05, 0.05, 0.05, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="WheelRR" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+size = vec3(0.76, 0.3, 0.76)
+color = color(0.05, 0.05, 0.05, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="Cabin" parent="Car" type="MeshInstance3D"]
+position = vec3(0, 0.6, -0.3)
+primitive = BOX
+size = vec3(1.6, 0.55, 2.2)
+color = color(0.1, 0.12, 0.15, 1)
+metalness = 0.1
+roughness = 0.2
+cast_shadow = true
