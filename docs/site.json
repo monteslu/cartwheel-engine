@@ -23,6 +23,7 @@
         "physics",
         "navigation",
         "rendering-3d",
+        "terrain",
         "rendering-2d",
         "ui",
         "game-shell",

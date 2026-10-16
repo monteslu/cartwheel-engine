@@ -17,7 +17,7 @@ A world is created from a def ([cw_world3d_default_def](api:cw_world3d_default_d
 
 @include samples/physics3d_stack/main.c#world_def
 
-Bodies are `STATIC`, `KINEMATIC` or `DYNAMIC` ([cw_body3d_create](api:cw_body3d_create)); shapes attach to bodies with a material (friction, restitution, rolling resistance, conveyor speed, and a `user_material` id reported in hits). 3D shapes: box, sphere, capsule, convex hull and static triangle mesh; 2D: box, circle, capsule, polygon, segment and chains (one-sided terrain). Units are meters, kilograms, seconds and radians. Handles are the libraries' own generational ids, so a destroyed body's handle reads as invalid, never as another body. The world's and bodies' user-data slots belong to the wrapper; use `cw_body3d_set_user` and the shape def's `user`.
+Bodies are `STATIC`, `KINEMATIC` or `DYNAMIC` ([cw_body3d_create](api:cw_body3d_create)); shapes attach to bodies with a material (friction, restitution, rolling resistance, conveyor speed, and a `user_material` id reported in hits). 3D shapes: box, sphere, capsule, convex hull, static triangle mesh and static height field ([cw_shape3d_heightfield](api:cw_shape3d_heightfield): uint16 steps stored exactly, holes, regions that line up; [terrain](guide:terrain) builds on it); 2D: box, circle, capsule, polygon, segment and chains (one-sided terrain). Units are meters, kilograms, seconds and radians. Handles are the libraries' own generational ids, so a destroyed body's handle reads as invalid, never as another body. The world's and bodies' user-data slots belong to the wrapper; use `cw_body3d_set_user` and the shape def's `user`.
 
 ## The typical frame
 
