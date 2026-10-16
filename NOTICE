@@ -91,3 +91,10 @@ temporal reprojection) followed in src/render/volumetric_fog.c; no code copied.
   https://github.com/godotengine/godot
   The method is from B. Wronski, "Volumetric fog" (SIGGRAPH 2014) and
   S. Hillaire, "Physically based and unified volumetric rendering in Frostbite" (SIGGRAPH 2015).
+
+Water (src/water/): ported from three.js r186's Water, Water2, WaterMesh, Water2Mesh,
+Reflector, Refractor and ReflectorNode (examples/jsm/objects, src/nodes/utils)
+  Copyright 2010-2026 three.js authors, MIT license. https://github.com/mrdoob/three.js
+  Gerstner waves after Mark Finch, "Effective Water Simulation from Physical Models",
+  GPU Gems (2004), chapter 1 (algorithm only); oblique near planes after Eric Lengyel,
+  "Oblique View Frustum Depth Projection and Clipping" (2005) (algorithm only).

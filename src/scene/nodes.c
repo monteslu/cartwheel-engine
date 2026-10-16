@@ -459,6 +459,8 @@ void cw_scene_register_builtin_types(void) {
   cw__register_terrain_types();
   void cw__register_cloth_types(void); /* src/scene/cloth_nodes.c: Cloth3D, Rope3D (cartwheel/cloth.h) */
   cw__register_cloth_types();
+  void cw__register_water_types(void); /* src/water: Water3D, Buoyancy3D (cartwheel/water.h) */
+  cw__register_water_types();
   void cw_triggers_register(void); /* src/scene/triggers.c: data-driven rules (cartwheel/triggers.h) */
   cw_triggers_register();
   void cw__register_nav_types(void); /* src/nav: regions, agents, obstacles (cartwheel/nav.h) */
