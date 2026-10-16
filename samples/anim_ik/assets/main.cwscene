@@ -1,0 +1,157 @@
+[scene format=1]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.0181, 0.0232, 0.0382, 1)
+ambient_energy = 0.7
+hemi_energy = 1.1
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(-4, 1.5, 4.2)
+rotation = vec3(-0.14, 0, 0)
+fov = 45
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(3, 7, 5)
+rotation = vec3(-0.95, 0.5, 0)
+energy = 4.0
+shadow = true
+
+[node name="Floor" parent="." type="StaticBody3D"]
+position = vec3(0, -0.5, -2.5)
+
+[node name="Shape" parent="Floor" type="CollisionShape3D"]
+shape = BOX
+size = vec3(24, 1, 14)
+
+[node name="Mesh" parent="Floor" type="MeshInstance3D"]
+size = vec3(24, 1, 14)
+color = color(0.0637, 0.0835, 0.0732, 1)
+receive_shadow = true
+
+[node name="Step1" parent="." type="StaticBody3D"]
+position = vec3(-0.6, 0.075, -2.6)
+
+[node name="Shape" parent="Step1" type="CollisionShape3D"]
+shape = BOX
+size = vec3(2.8, 0.15, 7.8)
+
+[node name="Mesh" parent="Step1" type="MeshInstance3D"]
+size = vec3(2.8, 0.15, 7.8)
+color = color(0.30, 0.27, 0.22, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Step2" parent="." type="StaticBody3D"]
+position = vec3(-0.375, 0.225, -2.6)
+
+[node name="Shape" parent="Step2" type="CollisionShape3D"]
+shape = BOX
+size = vec3(2.35, 0.15, 7.8)
+
+[node name="Mesh" parent="Step2" type="MeshInstance3D"]
+size = vec3(2.35, 0.15, 7.8)
+color = color(0.34, 0.30, 0.25, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Step3" parent="." type="StaticBody3D"]
+position = vec3(-0.15, 0.375, -2.6)
+
+[node name="Shape" parent="Step3" type="CollisionShape3D"]
+shape = BOX
+size = vec3(1.9, 0.15, 7.8)
+
+[node name="Mesh" parent="Step3" type="MeshInstance3D"]
+size = vec3(1.9, 0.15, 7.8)
+color = color(0.30, 0.27, 0.22, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Step4" parent="." type="StaticBody3D"]
+position = vec3(0.075, 0.525, -2.6)
+
+[node name="Shape" parent="Step4" type="CollisionShape3D"]
+shape = BOX
+size = vec3(1.45, 0.15, 7.8)
+
+[node name="Mesh" parent="Step4" type="MeshInstance3D"]
+size = vec3(1.45, 0.15, 7.8)
+color = color(0.34, 0.30, 0.25, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Slope" parent="." type="StaticBody3D"]
+position = vec3(2.3816, 0.2017, -2.6)
+rotation = vec3(0, 0, -0.18534)
+
+[node name="Shape" parent="Slope" type="CollisionShape3D"]
+shape = BOX
+size = vec3(3.5, 0.2, 7.8)
+
+[node name="Mesh" parent="Slope" type="MeshInstance3D"]
+size = vec3(3.5, 0.2, 7.8)
+color = color(0.22, 0.25, 0.30, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Post" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(-3.5, 0.5, 0.95)
+size = vec3(0.08, 1.0, 0.08)
+color = color(0.25, 0.25, 0.28, 1)
+cast_shadow = true
+
+[node name="Handle" parent="." type="MeshInstance3D"]
+primitive = BOX
+position = vec3(-3.5, 0.92, 0.8)
+size = vec3(0.05, 0.05, 0.3)
+color = color(0.80, 0.42, 0.08, 1)
+cast_shadow = true
+
+[node name="Grip" parent="Handle" type="Node3D"]
+position = vec3(0, 0, -0.13)
+
+[node name="Firefly" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 1.4, 1.5)
+size = vec3(0.12, 0.12, 0.12)
+color = color(1, 0.85, 0.3, 1)
+emissive = color(4, 3.2, 1.0, 1)
+
+[node name="Mover" parent="." type="Node3D"]
+position = vec3(-5, 0, 0)
+rotation = vec3(0, 1.5708, 0)
+
+[node name="Model" parent="Mover" type="Node3D"]
+scale = vec3(0.38, 0.38, 0.38)
+
+[node name="Feet" parent="Mover/Model" type="FootPlacement3D"]
+legs = "UpperLegL,LowerLegL,LowerLegL_end,FootL;UpperLegR,LowerLegR,LowerLegR_end,FootR"
+pelvis = "Body"
+ray_up = 0.45
+max_step_down = 0.4
+foot_height = 0.025
+max_slope = 0.5
+blend_speed = 14
+
+[node name="Reach" parent="Mover/Model" type="TwoBoneIK3D"]
+root_bone = "UpperArmR"
+middle_bone = "LowerArmR"
+end_bone = "Palm2R"
+target = "../../../Handle/Grip"
+influence = 0
+
+[node name="LookNeck" parent="Mover/Model" type="LookAtModifier3D"]
+bone = "Neck"
+target = "../../../Firefly"
+limit_angle = 0.6
+influence = 0.4
+
+[node name="LookHead" parent="Mover/Model" type="LookAtModifier3D"]
+bone = "Head"
+target = "../../../Firefly"
+limit_angle = 1.1
+
+[node name="Anim" parent="." type="AnimationPlayer"]

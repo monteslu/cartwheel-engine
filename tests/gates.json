@@ -989,6 +989,35 @@
     "note": "CesiumMan (glTF) through an AnimationTree: a state machine (travel to a one-shot wave, back at its end) over a 1D speed blend space, an additive bone-masked 2D look blend space, root motion moving the character; pad input; pose hashes per 60-tick window"
   },
   {
+    "name": "anim-ik",
+    "app": "anim_ik",
+    "frames": 480,
+    "controlInput": "anim-ik-control.json",
+    "maxGt16": 0.003,
+    "fields": [
+      "tree.tick",
+      "pos",
+      "turns",
+      "feet_on",
+      "feet_ok",
+      "stance_ticks",
+      "foot_err",
+      "pelvis_step",
+      "reach_ticks",
+      "reach_err",
+      "reach_ok",
+      "look_in",
+      "hash_win",
+      "crowd_win"
+    ],
+    "expect": {
+      "feet_ok": 1,
+      "reach_ok": 1,
+      "turns": 1
+    },
+    "note": "four skinned robots (RobotExpressive, CC0) walk over stairs and a slope with FootPlacement3D, a TwoBoneIK3D hand grabbing a handle and neck/head LookAtModifier3D following a firefly; the probe holds every planted ankle's height above the ground under it to its animated height above flat ground within 1 cm (feet_ok) and the hand within 1 mm of the handle (reach_ok); pose hashes per 60-tick window for the front robot and the crowd. The control turns foot placement off at frame 10. tests/ik-determinism.mjs runs it at CW_WORKERS 0, 3 and 7"
+  },
+  {
     "name": "physics3d-nodes",
     "app": "physics3d_nodes",
     "frames": 720,

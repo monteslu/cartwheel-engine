@@ -29,3 +29,5 @@ standard+map+rep+shadow+skin+senv+l1801+s110
 standard+instbig+shadow+senv+l1801+s110
 standard+vcol+shadow+senv+l1801+s110
 standard+instbig+shadow+senv+icol+l1801+s110
+standard+morph+l1001
+standard+skin+l1001

@@ -53,6 +53,8 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/anim_skinned/assets/main.cwscene ${CW
 configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.glb ${CW_SKINNED_ASSETS}/CesiumMan.glb COPYONLY)
 configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.LICENSE.md ${CW_SKINNED_ASSETS}/CesiumMan.LICENSE.md COPYONLY)
 cw_add_app(anim_skinned SOURCES anim_skinned/main.c ASSETS ${CW_SKINNED_ASSETS})
+# limbs that reach and plant (cartwheel/ik.h): RobotExpressive (CC0, committed with its license)
+cw_add_app(anim_ik SOURCES anim_ik/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/anim_ik/assets)
 cw_add_app(project_edit SOURCES project_edit/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/scene3d/assets)
 # play-in-editor: the game tests/remote.mjs drives through cartwheel/remote.h
 cw_add_app(remote_target SOURCES remote_target/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/remote_target/assets)

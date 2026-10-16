@@ -30,3 +30,7 @@ Cloth and ropes (src/physics/cloth.c) follow published algorithms; no code was c
   the solver's structure follows Ten Minute Physics (Matthias Mueller, MIT license,
   https://github.com/matthias-research/pages) and Jolt Physics' soft bodies (Jorrit Rouwe,
   MIT license, https://github.com/jrouwe/JoltPhysics).
+
+Sample assets
+  samples/anim_ik/assets/RobotExpressive.glb: model by Tomas Laulhe (Quaternius),
+  modifications by Don McCurdy, from the three.js examples. CC0 1.0.
