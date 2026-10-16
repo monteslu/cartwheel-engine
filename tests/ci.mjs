@@ -38,6 +38,7 @@ export const LOCAL_ONLY = {
   'nav-perf-report': 'timings, and Chromium legs',
   'nav-determinism': 'Chromium and wasmcart-native',
   'cloth-determinism': 'Chromium and wasmcart-native',
+  'ik-determinism': 'Chromium',
   'showcase-perf': 'GPU timings on romdev, Chromium and wasmcart-native',
   'editor-channel': 'romdev',
   'editor-play': 'romdev',

@@ -472,6 +472,11 @@
     "note": "unit-nav and nav-demo on native, Chromium and wcnative at CW_WORKERS 0, 1, 3 and the default: every host and pool size gives the pinned hashes"
   },
   {
+    "name": "ik-determinism",
+    "script": "tests/ik-determinism.mjs",
+    "note": "unit-ik and anim-ik on native and Chromium at CW_WORKERS 0, 3 and 7: every pool size gives the same checksum and pose hashes (the crowd solves one model per job)"
+  },
+  {
     "name": "nav-perf-report",
     "script": "tests/nav-perf.mjs",
     "note": "navmesh build (324 tiles, static and dynamic), 64 obstacles, 1000 batched paths and crowd steps for 500 and 2000 agents, on one thread and the default pool, natively and in Chromium (reported); equal result hashes in every run; budgets on the default pool; a 2x parallel build natively; control: impossible budgets must fail"
