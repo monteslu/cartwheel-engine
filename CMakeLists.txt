@@ -38,7 +38,7 @@ include(cmake/deps.cmake)
 # ── the engine ─────────────────────────────────────────────────────────
 file(GLOB_RECURSE CW_CORE_SRCS CONFIGURE_DEPENDS src/core/*.c src/jobs/*.c src/input/*.c src/physics/*.c
      src/audio/*.c src/render/*.c src/render2d/*.c src/scene/*.c src/fx/*.c src/visibility/*.c src/terrain/*.c src/anim/*.c src/ui/*.c src/l10n/*.c src/resource/*.c src/debug/*.c src/remote/*.c
-     src/net/*.c src/shell/*.c src/nav/*.c src/noise/*.c)
+     src/net/*.c src/shell/*.c src/nav/*.c src/noise/*.c src/video/*.c)
 # FastNoiseLite hashes with signed int overflow: -fwrapv defines it as the wrap it expects
 set_source_files_properties(src/noise/noise.c PROPERTIES COMPILE_OPTIONS "-fwrapv")
 list(APPEND CW_CORE_SRCS src/resource/basis_glue.cpp) # the KTX2 transcoder's C side
@@ -93,7 +93,7 @@ if(CW_EXPORT_TARGET AND CW_WGPU AND NOT CW_CART)
   target_compile_definitions(cartwheel PRIVATE CW_GPU_AUTO_WEBGPU=1)
 endif()
 target_link_libraries(cartwheel PUBLIC cw_sdl2 three box2d box3d cw_miniaudio cw_stb_vorbis cw_opus cw_ogg cw_xmp
-  meshoptimizer cw_basisu_transcoder cw_kbts cw_wgpu)
+  meshoptimizer cw_basisu_transcoder cw_kbts cw_plmpeg cw_wgpu)
 if(CW_CART)
   target_include_directories(cartwheel PUBLIC ${DEPS}/wasmcart/include)
 else()

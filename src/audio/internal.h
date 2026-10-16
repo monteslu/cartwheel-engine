@@ -15,7 +15,7 @@
 
 /* ── decoders (decode.c) ─────────────────────────────────────────────── */
 
-typedef enum { CW__DEC_NONE, CW__DEC_MA, CW__DEC_VORBIS, CW__DEC_OPUS, CW__DEC_XMP } cw__dec_kind;
+typedef enum { CW__DEC_NONE, CW__DEC_MA, CW__DEC_VORBIS, CW__DEC_OPUS, CW__DEC_XMP, CW__DEC_MPEG } cw__dec_kind;
 
 typedef struct cw__decoder {
   cw__dec_kind kind;

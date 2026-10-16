@@ -256,6 +256,11 @@ void r2d_wg_tilemap_begin(const float u[24], int array, bool lit);
 void r2d_wg_tilemap_chunk(void *vbuf, int quads);
 /* batch.c / light.c helpers the WebGPU backend shares */
 void r2d_ensure_rt(cw_texture *rt, int w, int h, cw_filter f, bool depth);
+void r2d_yuv_gl_shutdown(void); /* yuv.c: its GL program */
+/* video frames on WebGPU (yuv.c draws through these) */
+void *r2d_wg_yuv_new(const int pw[3], const int ph[3]);
+void r2d_wg_yuv_convert(void *y, const uint8_t *const planes[3], void *target_tex, int w, int h);
+void r2d_wg_yuv_free(void *y);
 int r2d_shadow_tris(int lo, int hi, cw_vec2 L, float reach, float **out);
 
 #endif

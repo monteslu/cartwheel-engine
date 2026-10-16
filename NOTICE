@@ -58,3 +58,9 @@ src/noise/noise.glsl and noise.wgsl are ports of its C code
   Copyright (c) 2020 Contributors
   MIT license (src/third_party/fastnoiselite/LICENSE)
   https://github.com/Auburn/FastNoiseLite
+
+pl_mpeg (MPEG-1 video and MP2 audio decoding, src/video and
+src/audio/decode.c), built from scripts/deps.lock
+  Copyright (c) Dominic Szablewski
+  MIT license (deps/pl_mpeg/pl_mpeg.h)
+  https://github.com/phoboslab/pl_mpeg

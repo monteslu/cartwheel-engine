@@ -23,9 +23,10 @@
  *
  * Formats: WAV, FLAC, MP3 (miniaudio's decoders), Ogg Vorbis (stb_vorbis),
  * Ogg Opus (libopus), tracker modules MOD/XM/S3M/IT (libxmp-lite; always
- * streamed). Sources may be mono or stereo at any sample rate; more channels
- * are reduced to the first two. Samples are resampled to the mix rate once at
- * load (miniaudio's linear resampler); streams and pitch use per-voice linear
+ * streamed), and the MP2 sound of an MPEG-1 program stream (.mpg, pl_mpeg;
+ * cartwheel/video.h plays the picture). Sources may be mono or stereo at any
+ * sample rate; more channels are reduced to the first two. Samples are
+ * resampled to the mix rate once at load (miniaudio's linear resampler); streams and pitch use per-voice linear
  * interpolation.
  *
  * Stream decoding runs on the engine job pool (cartwheel/jobs.h) into a ring

@@ -1,6 +1,6 @@
 /* Decoders behind one pull interface: miniaudio (WAV, FLAC, MP3),
  * stb_vorbis (Ogg Vorbis), libopus + libogg (Ogg Opus), libxmp-lite
- * (MOD, XM, S3M, IT). All decode from memory, output interleaved float with
+ * (MOD, XM, S3M, IT), pl_mpeg (the MP2 sound of an MPEG-1 video). All decode from memory, output interleaved float with
  * at most two channels, and run on whichever thread owns the decoder (the
  * game thread, or a stream's decode job). */
 #include <string.h>
@@ -14,6 +14,11 @@
 #include <ogg/ogg.h>
 #include <opus.h>
 #include <xmp.h>
+
+#include <stddef.h>
+#include <stdio.h>
+
+#include "pl_mpeg.h"
 
 /* ── detection ───────────────────────────────────────────────────────── */
 
@@ -36,6 +41,7 @@ cw__dec_kind cw__dec_detect(const void *data, size_t len) {
   if (!memcmp(p, "RIFF", 4) || !memcmp(p, "RIFX", 4) || !memcmp(p, "RF64", 4) || !memcmp(p, "fLaC", 4) ||
       !memcmp(p, "ID3", 3) || (p[0] == 0xff && (p[1] & 0xe0) == 0xe0))
     return CW__DEC_MA;
+  if (len >= 4 && p[0] == 0 && p[1] == 0 && p[2] == 1 && p[3] == 0xba) return CW__DEC_MPEG; /* MPEG-1 program stream */
   if (xmp_test_module_from_memory(data, (long)len, NULL) == 0) return CW__DEC_XMP;
   return CW__DEC_MA; /* let miniaudio try the rest */
 }
@@ -289,6 +295,63 @@ static void xmp_close(cw__decoder *d) {
   cw_free(x);
 }
 
+/* ── MPEG-1 program streams: the MP2 audio (pl_mpeg; video is src/video's) ── */
+
+typedef struct {
+  plm_t *plm;
+  float pcm[PLM_AUDIO_SAMPLES_PER_FRAME * 2];
+  int pos, len;
+} mpeg_dec;
+
+static bool mpeg_open(cw__decoder *d) {
+  plm_t *plm = plm_create_with_memory((uint8_t *)d->data, d->len, 0);
+  if (!plm) return false;
+  if (!plm_has_headers(plm) || plm_get_num_audio_streams(plm) < 1) {
+    plm_destroy(plm);
+    return false;
+  }
+  plm_set_video_enabled(plm, 0);
+  plm_set_audio_enabled(plm, 1);
+  plm_set_loop(plm, 0);
+  mpeg_dec *md = cw_calloc(1, sizeof *md, CW_MEM_AUDIO);
+  md->plm = plm;
+  d->impl = md;
+  d->channels = 2; /* pl_mpeg always outputs stereo (mono is duplicated) */
+  d->rate = plm_get_samplerate(plm);
+  d->length = -1;
+  return d->rate > 0;
+}
+
+static int mpeg_read(cw__decoder *d, float *out, int frames) {
+  mpeg_dec *md = d->impl;
+  int got = 0;
+  while (got < frames) {
+    if (md->pos == md->len) {
+      plm_samples_t *s = plm_decode_audio(md->plm);
+      if (!s) break;
+      memcpy(md->pcm, s->interleaved, sizeof(float) * 2 * s->count);
+      md->pos = 0;
+      md->len = (int)s->count;
+    }
+    int n = CW_MIN(frames - got, md->len - md->pos);
+    memcpy(out + got * 2, md->pcm + md->pos * 2, sizeof(float) * 2 * (size_t)n);
+    md->pos += n;
+    got += n;
+  }
+  return got;
+}
+
+static void mpeg_restart(mpeg_dec *md) {
+  plm_rewind(md->plm);
+  md->pos = md->len = 0;
+}
+
+static void mpeg_close(cw__decoder *d) {
+  mpeg_dec *md = d->impl;
+  plm_destroy(md->plm);
+  cw_free(md);
+}
+
 /* ── the interface ───────────────────────────────────────────────────── */
 
 bool cw__dec_open(cw__decoder *d, const void *data, size_t len) {
@@ -302,6 +365,7 @@ bool cw__dec_open(cw__decoder *d, const void *data, size_t len) {
   case CW__DEC_VORBIS: ok = vorbis_open(d); break;
   case CW__DEC_OPUS: ok = opus_open(d); break;
   case CW__DEC_XMP: ok = xmp_open(d); break;
+  case CW__DEC_MPEG: ok = mpeg_open(d); break;
   default: break;
   }
   if (!ok) d->kind = CW__DEC_NONE;
@@ -318,6 +382,7 @@ int cw__dec_read(cw__decoder *d, float *out, int frames) {
   case CW__DEC_VORBIS: return vorbis_read(d, out, frames);
   case CW__DEC_OPUS: return opus_read(d, out, frames);
   case CW__DEC_XMP: return xmp_read(d, out, frames);
+  case CW__DEC_MPEG: return mpeg_read(d, out, frames);
   default: return 0;
   }
 }
@@ -330,9 +395,11 @@ bool cw__dec_seek(cw__decoder *d, int64_t frame) {
     return frame == 0 ? stb_vorbis_seek_start(vd->v) != 0 : stb_vorbis_seek(vd->v, (unsigned)frame) != 0;
   }
   case CW__DEC_OPUS:
-  case CW__DEC_XMP: {
+  case CW__DEC_XMP:
+  case CW__DEC_MPEG: {
     /* no index: restart and decode forward */
     if (d->kind == CW__DEC_OPUS) opus_restart(d->impl);
+    else if (d->kind == CW__DEC_MPEG) mpeg_restart(d->impl);
     else if (!xmp_restart(d)) return false;
     float tmp[1024 * 2];
     while (frame > 0) {
@@ -357,6 +424,7 @@ void cw__dec_close(cw__decoder *d) {
   }
   case CW__DEC_OPUS: opus_close(d); break;
   case CW__DEC_XMP: xmp_close(d); break;
+  case CW__DEC_MPEG: mpeg_close(d); break;
   default: break;
   }
   memset(d, 0, sizeof *d);

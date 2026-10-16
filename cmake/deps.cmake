@@ -334,6 +334,14 @@ add_library(cw_stb_vorbis STATIC ${CMAKE_SOURCE_DIR}/src/third_party/stb_vorbis_
 target_include_directories(cw_stb_vorbis PUBLIC ${DEPS}/stb)
 target_compile_options(cw_stb_vorbis PRIVATE -O2 -w)
 
+# pl_mpeg (deps/pl_mpeg, MIT): MPEG-1 video and MP2 audio, one translation
+# unit; the engine decodes cutscene video with it (src/video) and plays the
+# sound as a stream (src/audio/decode.c). Integer IDCT; the MP2 synthesis is
+# + - * only (no libm), so frames and samples match on every host.
+add_library(cw_plmpeg STATIC ${CMAKE_SOURCE_DIR}/src/third_party/pl_mpeg_impl.c)
+target_include_directories(cw_plmpeg PUBLIC ${DEPS}/pl_mpeg)
+target_compile_options(cw_plmpeg PRIVATE -O2 -w)
+
 # kb_text_shape (deps/kb, zlib): OpenType shaping + bidi segmentation for
 # complex scripts (Arabic, Hebrew, Indic ...) in the 2D text renderer
 add_library(cw_kbts STATIC ${CMAKE_SOURCE_DIR}/src/third_party/kb_text_shape_impl.c)

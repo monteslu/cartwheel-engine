@@ -46,6 +46,8 @@ cw_add_app(audio_play SOURCES audio_play/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DI
 cw_add_app(audio_3d SOURCES audio_3d/main.c GL_ONLY)
 # the profiler: something in every engine phase (physics jobs, animation, audio, passes, a game zone)
 cw_add_app(profile_demo SOURCES profile_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/profile_demo/assets)
+# video: an MPEG-1 cutscene (pl_mpeg) drawn on GL or WebGPU, its sound mixed offline
+cw_add_app(video_cutscene SOURCES video_cutscene/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/video_cutscene/assets)
 # animation: property tracks from a .cwscene (loop, ping-pong, method and
 # event keys, cross-fades), tweens, and a skinned glTF character.
 cw_add_app(anim_props SOURCES anim_props/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/anim_props/assets)

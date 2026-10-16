@@ -97,6 +97,7 @@ void cw_r2d_shutdown(void) {
     r2d_program *ps[] = { &R.sprite, &R.sprite_lit, &R.tile, &R.tile_lit, &R.light, &R.shadow, &R.composite, &R.blit };
   for (size_t i = 0; i < CW_ARRAY_LEN(ps); i++)
     if (ps[i]->prog) glDeleteProgram(ps[i]->prog);
+  r2d_yuv_gl_shutdown();
   glDeleteBuffers(R2D_RING, R.vbo);
   glDeleteBuffers(R2D_RING, R.ibo);
   glDeleteVertexArrays(R2D_RING, R.vao);

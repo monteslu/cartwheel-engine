@@ -52,6 +52,11 @@ void *r2d_wg_buffer(void *old, const void *data, size_t bytes, bool index) { (vo
 void r2d_wg_buffer_release(void *buf) { (void)buf; }
 void r2d_wg_tilemap_begin(const float u[24], int array, bool lit) { (void)u, (void)array, (void)lit; }
 void r2d_wg_tilemap_chunk(void *vbuf, int quads) { (void)vbuf, (void)quads; }
+void *r2d_wg_yuv_new(const int pw[3], const int ph[3]) { (void)pw, (void)ph; return NULL; }
+void r2d_wg_yuv_convert(void *y, const uint8_t *const planes[3], void *target_tex, int w, int h) {
+  (void)y, (void)planes, (void)target_tex, (void)w, (void)h;
+}
+void r2d_wg_yuv_free(void *y) { (void)y; }
 #else
 
 #include "platform/wgpu.h"
@@ -543,7 +548,9 @@ bool r2d_wg_init(void) {
   return true;
 }
 
+static void yuv_shutdown(void);
 void r2d_wg_shutdown(void) {
+  yuv_shutdown();
   if (!W.inited) return;
   for (int i = 0; i < W.pipes.count; i++) wgpuRenderPipelineRelease(W.pipes.data[i].p);
   cw_array_free(&W.pipes);
@@ -964,5 +971,132 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
   cw_array_clear(&W.transient);
   for (int i = 0; i < transient_views.count; i++) wgpuTextureViewRelease(transient_views.data[i]);
   cw_array_clear(&transient_views);
+}
+/* ── video frames: YUV planes -> RGB target (yuv.c) ────────────────────── */
+
+static const char *WGSL_YUV =
+    "@group(0) @binding(0) var ty: texture_2d<f32>;\n"
+    "@group(0) @binding(1) var tcb: texture_2d<f32>;\n"
+    "@group(0) @binding(2) var tcr: texture_2d<f32>;\n"
+    "@group(0) @binding(3) var<uniform> u: vec4f;\n"
+    "@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n"
+    "  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));\n"
+    "  return vec4f(p * 2.0 - 1.0, 0.0, 1.0);\n"
+    "}\n"
+    /* the target's rows are bottom-up (as GL's): framebuffer row r holds video row h - 1 - r */
+    "@fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n"
+    "  let x = i32(pos.x);\n"
+    "  let y = i32(u.y) - 1 - i32(pos.y);\n"
+    "  let Y = textureLoad(ty, vec2i(x, y), 0).r;\n"
+    "  let cb = textureLoad(tcb, vec2i(x / 2, y / 2), 0).r - 0.5;\n"
+    "  let cr = textureLoad(tcr, vec2i(x / 2, y / 2), 0).r - 0.5;\n"
+    "  let l = (Y - 0.0627451) * 1.164383;\n"
+    "  return vec4f(clamp(vec3f(l + 1.596027 * cr, l - 0.391762 * cb - 0.812968 * cr, l + 2.017232 * cb), vec3f(0.0), vec3f(1.0)), 1.0);\n"
+    "}\n";
+
+typedef struct r2d_yuv_wg {
+  WGPUTexture plane[3];
+  WGPUTextureView view[3];
+  WGPUBuffer ubuf;
+  WGPUBindGroup bg;
+  int pw[3], ph[3];
+} r2d_yuv_wg;
+
+static struct {
+  WGPUBindGroupLayout bgl;
+  WGPURenderPipeline pipe;
+} Y;
+
+static bool yuv_pipeline(void) {
+  if (Y.pipe) return true;
+  WGPUShaderModule sm = cw__wgpu_shader("video yuv", WGSL_YUV);
+  if (!sm) return false;
+  WGPUBindGroupLayoutEntry e[4];
+  memset(e, 0, sizeof e);
+  for (int i = 0; i < 3; i++)
+    e[i] = (WGPUBindGroupLayoutEntry){ .binding = (uint32_t)i, .visibility = WGPUShaderStage_Fragment,
+                                       .texture = { .sampleType = WGPUTextureSampleType_Float, .viewDimension = WGPUTextureViewDimension_2D } };
+  e[3] = (WGPUBindGroupLayoutEntry){ .binding = 3, .visibility = WGPUShaderStage_Fragment,
+                                     .buffer = { .type = WGPUBufferBindingType_Uniform, .minBindingSize = 16 } };
+  Y.bgl = wgpuDeviceCreateBindGroupLayout(W.dev, &(WGPUBindGroupLayoutDescriptor){ .entryCount = 4, .entries = e });
+  WGPUPipelineLayout pl = wgpuDeviceCreatePipelineLayout(W.dev, &(WGPUPipelineLayoutDescriptor){ .bindGroupLayoutCount = 1, .bindGroupLayouts = &Y.bgl });
+  WGPUColorTargetState ct = { .format = WGPUTextureFormat_RGBA8Unorm, .writeMask = WGPUColorWriteMask_All };
+  WGPUFragmentState fs = { .module = sm, .entryPoint = SV("fs"), .targetCount = 1, .targets = &ct };
+  WGPURenderPipelineDescriptor d = { .label = SV("video yuv"), .layout = pl,
+                                     .vertex = { .module = sm, .entryPoint = SV("vs") },
+                                     .primitive = { .topology = WGPUPrimitiveTopology_TriangleList },
+                                     .multisample = { .count = 1, .mask = 0xffffffffu },
+                                     .fragment = &fs };
+  Y.pipe = wgpuDeviceCreateRenderPipeline(W.dev, &d);
+  wgpuPipelineLayoutRelease(pl);
+  wgpuShaderModuleRelease(sm);
+  return Y.pipe != NULL;
+}
+
+void *r2d_wg_yuv_new(const int pw[3], const int ph[3]) {
+  if (!yuv_pipeline()) return NULL;
+  r2d_yuv_wg *y = cw_calloc(1, sizeof *y, CW_MEM_RENDER2D);
+  WGPUBindGroupEntry be[4];
+  memset(be, 0, sizeof be);
+  for (int i = 0; i < 3; i++) {
+    y->pw[i] = pw[i];
+    y->ph[i] = ph[i];
+    WGPUTextureDescriptor td = { .label = SV("video plane"), .usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst,
+                                 .dimension = WGPUTextureDimension_2D, .size = { (uint32_t)pw[i], (uint32_t)ph[i], 1 },
+                                 .format = WGPUTextureFormat_R8Unorm, .mipLevelCount = 1, .sampleCount = 1 };
+    y->plane[i] = wgpuDeviceCreateTexture(W.dev, &td);
+    y->view[i] = wgpuTextureCreateView(y->plane[i], NULL);
+    be[i] = (WGPUBindGroupEntry){ .binding = (uint32_t)i, .textureView = y->view[i] };
+  }
+  y->ubuf = make_buffer(16, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst, "video yuv uniforms");
+  be[3] = (WGPUBindGroupEntry){ .binding = 3, .buffer = y->ubuf, .size = 16 };
+  y->bg = wgpuDeviceCreateBindGroup(W.dev, &(WGPUBindGroupDescriptor){ .layout = Y.bgl, .entryCount = 4, .entries = be });
+  return y;
+}
+
+void r2d_wg_yuv_convert(void *yp, const uint8_t *const planes[3], void *target_tex, int w, int h) {
+  r2d_yuv_wg *y = yp;
+  if (!y || !target_tex) return;
+  for (int i = 0; i < 3; i++) {
+    WGPUTexelCopyTextureInfo d = { .texture = y->plane[i], .aspect = WGPUTextureAspect_All };
+    WGPUTexelCopyBufferLayout l = { .bytesPerRow = (uint32_t)y->pw[i], .rowsPerImage = (uint32_t)y->ph[i] };
+    WGPUExtent3D e = { (uint32_t)y->pw[i], (uint32_t)y->ph[i], 1 };
+    wgpuQueueWriteTexture(W.q, &d, planes[i], (size_t)y->pw[i] * (size_t)y->ph[i], &l, &e);
+  }
+  float u[4] = { (float)w, (float)h, 0, 0 };
+  wgpuQueueWriteBuffer(W.q, y->ubuf, 0, u, sizeof u);
+  WGPUTextureView v = layer_view((WGPUTexture)target_tex, 0);
+  WGPUCommandEncoder enc = wgpuDeviceCreateCommandEncoder(W.dev, NULL);
+  WGPURenderPassColorAttachment ca = { .view = v, .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED, .loadOp = WGPULoadOp_Clear,
+                                       .storeOp = WGPUStoreOp_Store, .clearValue = { 0, 0, 0, 1 } };
+  WGPURenderPassDescriptor rp = { .colorAttachmentCount = 1, .colorAttachments = &ca };
+  WGPURenderPassEncoder p = wgpuCommandEncoderBeginRenderPass(enc, &rp);
+  wgpuRenderPassEncoderSetViewport(p, 0, 0, (float)w, (float)h, 0, 1);
+  wgpuRenderPassEncoderSetPipeline(p, Y.pipe);
+  wgpuRenderPassEncoderSetBindGroup(p, 0, y->bg, 0, NULL);
+  wgpuRenderPassEncoderDraw(p, 3, 1, 0, 0);
+  wgpuRenderPassEncoderEnd(p);
+  wgpuRenderPassEncoderRelease(p);
+  submit(enc);
+  wgpuTextureViewRelease(v);
+}
+
+void r2d_wg_yuv_free(void *yp) {
+  r2d_yuv_wg *y = yp;
+  if (!y) return;
+  wgpuBindGroupRelease(y->bg);
+  wgpuBufferRelease(y->ubuf);
+  for (int i = 0; i < 3; i++) {
+    wgpuTextureViewRelease(y->view[i]);
+    wgpuTextureRelease(y->plane[i]);
+  }
+  cw_free(y);
+}
+
+static void yuv_shutdown(void) {
+  if (Y.pipe) wgpuRenderPipelineRelease(Y.pipe);
+  if (Y.bgl) wgpuBindGroupLayoutRelease(Y.bgl);
+  Y.pipe = NULL;
+  Y.bgl = NULL;
 }
 #endif

@@ -412,6 +412,46 @@
     "note": "tools/hrtf/import-kemar.mjs rebuilds the embedded KEMAR table (src/audio/hrtf/kemar.cwhrtf) byte for byte from deps/kemar, twice; header and the 90 degree interaural delay checked; control: a 32-tap build must differ"
   },
   {
+    "name": "video-cutscene",
+    "webgpu": true,
+    "app": "video_cutscene",
+    "frames": 331,
+    "assets": "samples/video_cutscene/assets",
+    "maxGt16": 0.002,
+    "fields": [
+      "video.frame",
+      "video.frame_hash",
+      "video.frames_hash",
+      "video.ended",
+      "video.ended_seen",
+      "video.max_frame",
+      "video.width",
+      "video.height",
+      "video.frames",
+      "video.fps",
+      "video.has_audio",
+      "video.audio_hash",
+      "video.peak",
+      "video.voice_clock",
+      "video.done",
+      "audio.underruns",
+      "audio.dropped_commands"
+    ],
+    "expect": {
+      "video.done": 1,
+      "video.ended_seen": 1,
+      "video.max_frame": 118,
+      "video.frames": 119,
+      "video.width": 320,
+      "video.height": 180,
+      "video.has_audio": 1,
+      "audio.underruns": 0,
+      "audio.dropped_commands": 0
+    },
+    "controlFrames": 300,
+    "note": "an MPEG-1 cutscene (pl_mpeg; 320x180, 30 fps, MP2 sound) played from the tick count: to the end, held past it (ended), then a jump back to 1 s (rewind and decode forward). Frame picked from tick time, decoded planes hashed per tick, the YUV to RGB shader on GL and WebGPU drawn as a sprite (frames compared), its sound mixed offline through a stream voice (hash). Control: 31 frames early (mid playback after the rewind) must differ."
+  },
+  {
     "name": "audio-play",
     "app": "audio_play",
     "frames": 120,

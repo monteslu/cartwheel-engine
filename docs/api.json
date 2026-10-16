@@ -794,7 +794,7 @@
   },
   {
    "header": "cartwheel/audio.h",
-   "summary": "cartwheel audio: mixer, buses, effects, one-shots, streams, 3D sound.\n\n── Threads ──────────────────────────────────────────────────────────\nEvery function here is called from the GAME thread (the one running the\napp callbacks). The mixer runs in the platform's audio fill callback\n(cw_audio_open): natively on SDL's audio thread, in carts on a job-pool\nthread while the frame renders (commands sent during the render wait for\nthe next frame's mix). The two sides talk through lock-free\nsingle-producer/single-consumer queues: calls here enqueue commands\n(applied at the start of the next mixed block, at most CW_AUDIO_BLOCK\nframes later), the mixer posts events back (voice finished, memory it no\nlonger touches). The fill callback never locks, allocates, frees or waits.\n\nCall cw_audio_update() once per rendered frame: it applies those events,\nrefreshes the stats and keeps streams decoding.\n\n── Sounds and voices ────────────────────────────────────────────────\nA cw_sound is audio data: either fully decoded PCM (a SAMPLE, for one-shots\nand short loops) or the encoded file kept in memory and decoded while it\nplays (a STREAM, for music and ambience). A cw_voice is one playing\ninstance of a sound. Both are generational handles: a voice handle goes\nstale when the voice ends, and every call on a stale handle is a no-op.\n\nFormats: WAV, FLAC, MP3 (miniaudio's decoders), Ogg Vorbis (stb_vorbis),\nOgg Opus (libopus), tracker modules MOD/XM/S3M/IT (libxmp-lite; always\nstreamed). Sources may be mono or stereo at any sample rate; more channels\nare reduced to the first two. Samples are resampled to the mix rate once at\nload (miniaudio's linear resampler); streams and pitch use per-voice linear\ninterpolation.\n\nStream decoding runs on the engine job pool (cartwheel/jobs.h) into a ring\nper playing stream; the mixer only reads the ring. When a ring is nearly\ndry (under 1/8 full) and its job is still out, cw_audio_update waits for it,\nrunning it on the game thread if no worker has started it. A ring that\nstill runs dry plays silence for that voice and counts an underrun\n(cw_audio_stats).\n\n── Buses ────────────────────────────────────────────────────────────\nBus 0 is the master (CW_AUDIO_MASTER). Every other bus outputs into a\nparent created before it and may send into up to CW_AUDIO_MAX_SENDS buses\ncreated before it (post-fader), so the bus graph is always a DAG processed\nin reverse creation order. Each bus has volume, mute, solo and up to\nCW_AUDIO_MAX_FX effects run in order. Solo: when any bus is soloed, only\nsoloed buses, their ancestors (so the signal reaches the master) and their\ndescendants stay audible.\n\n── 3D ───────────────────────────────────────────────────────────────\nA listener (position, velocity, forward, up); splitscreen games set one\nper view (cw_audio_set_listener_at / _count, up to CW_AUDIO_MAX_LISTENERS)\nand each spatial voice is heard by the nearest. A spatial voice has a\nposition, velocity, direction (for its cone), a distance model, and an\nocclusion amount the game sets (0 = clear, 1 = fully blocked: a low-pass,\ne.g. from a physics ray cast between voice and listener). Doppler shifts\npitch from the radial velocities. Spatial sources are mixed to mono, then\nplaced by the output mode (cw_audio_set_output):\n  SPEAKERS (the default): an equal-power pan from the listener-relative\n    direction (left/right only: speakers cannot place above or behind).\n  HEADPHONES: head-related filtering (HRTF) for the nearest voices (up to\n    cw_audio_set_hrtf_voice_limit), so a sound is heard above, behind or\n    to the side: per ear, the interaural delay and a 64-tap filter blended\n    from the three nearest measured directions (the built-in table is the\n    MIT KEMAR dummy head; cw_audio_load_hrtf loads another). A voice that\n    moves keeps a smooth sound (old and new filters crossfade across each\n    block); one that enters or leaves the HRTF set crossfades with its\n    panned version over one block. Cost per voice per 256-frame block on a\n    Ryzen AI 9 HX 370 core: about 2 us panned, 5 us with the HRTF, 8 us\n    while it moves (docs/guides/audio.md).\nA distance low-pass (air_absorption) dulls far sources; it combines with\nthe occlusion low-pass.\n\n── Determinism ──────────────────────────────────────────────────────\nThe mixer uses only + - * / sqrt and cartwheel/math.h's deterministic\nfunctions (never libm), so cw_audio_render in offline mode produces\nbit-identical samples on every host for the same calls. That is what the\ncross-host audio gate checks.",
+   "summary": "cartwheel audio: mixer, buses, effects, one-shots, streams, 3D sound.\n\n── Threads ──────────────────────────────────────────────────────────\nEvery function here is called from the GAME thread (the one running the\napp callbacks). The mixer runs in the platform's audio fill callback\n(cw_audio_open): natively on SDL's audio thread, in carts on a job-pool\nthread while the frame renders (commands sent during the render wait for\nthe next frame's mix). The two sides talk through lock-free\nsingle-producer/single-consumer queues: calls here enqueue commands\n(applied at the start of the next mixed block, at most CW_AUDIO_BLOCK\nframes later), the mixer posts events back (voice finished, memory it no\nlonger touches). The fill callback never locks, allocates, frees or waits.\n\nCall cw_audio_update() once per rendered frame: it applies those events,\nrefreshes the stats and keeps streams decoding.\n\n── Sounds and voices ────────────────────────────────────────────────\nA cw_sound is audio data: either fully decoded PCM (a SAMPLE, for one-shots\nand short loops) or the encoded file kept in memory and decoded while it\nplays (a STREAM, for music and ambience). A cw_voice is one playing\ninstance of a sound. Both are generational handles: a voice handle goes\nstale when the voice ends, and every call on a stale handle is a no-op.\n\nFormats: WAV, FLAC, MP3 (miniaudio's decoders), Ogg Vorbis (stb_vorbis),\nOgg Opus (libopus), tracker modules MOD/XM/S3M/IT (libxmp-lite; always\nstreamed), and the MP2 sound of an MPEG-1 program stream (.mpg, pl_mpeg;\ncartwheel/video.h plays the picture). Sources may be mono or stereo at any\nsample rate; more channels are reduced to the first two. Samples are\nresampled to the mix rate once at load (miniaudio's linear resampler); streams and pitch use per-voice linear\ninterpolation.\n\nStream decoding runs on the engine job pool (cartwheel/jobs.h) into a ring\nper playing stream; the mixer only reads the ring. When a ring is nearly\ndry (under 1/8 full) and its job is still out, cw_audio_update waits for it,\nrunning it on the game thread if no worker has started it. A ring that\nstill runs dry plays silence for that voice and counts an underrun\n(cw_audio_stats).\n\n── Buses ────────────────────────────────────────────────────────────\nBus 0 is the master (CW_AUDIO_MASTER). Every other bus outputs into a\nparent created before it and may send into up to CW_AUDIO_MAX_SENDS buses\ncreated before it (post-fader), so the bus graph is always a DAG processed\nin reverse creation order. Each bus has volume, mute, solo and up to\nCW_AUDIO_MAX_FX effects run in order. Solo: when any bus is soloed, only\nsoloed buses, their ancestors (so the signal reaches the master) and their\ndescendants stay audible.\n\n── 3D ───────────────────────────────────────────────────────────────\nA listener (position, velocity, forward, up); splitscreen games set one\nper view (cw_audio_set_listener_at / _count, up to CW_AUDIO_MAX_LISTENERS)\nand each spatial voice is heard by the nearest. A spatial voice has a\nposition, velocity, direction (for its cone), a distance model, and an\nocclusion amount the game sets (0 = clear, 1 = fully blocked: a low-pass,\ne.g. from a physics ray cast between voice and listener). Doppler shifts\npitch from the radial velocities. Spatial sources are mixed to mono, then\nplaced by the output mode (cw_audio_set_output):\n  SPEAKERS (the default): an equal-power pan from the listener-relative\n    direction (left/right only: speakers cannot place above or behind).\n  HEADPHONES: head-related filtering (HRTF) for the nearest voices (up to\n    cw_audio_set_hrtf_voice_limit), so a sound is heard above, behind or\n    to the side: per ear, the interaural delay and a 64-tap filter blended\n    from the three nearest measured directions (the built-in table is the\n    MIT KEMAR dummy head; cw_audio_load_hrtf loads another). A voice that\n    moves keeps a smooth sound (old and new filters crossfade across each\n    block); one that enters or leaves the HRTF set crossfades with its\n    panned version over one block. Cost per voice per 256-frame block on a\n    Ryzen AI 9 HX 370 core: about 2 us panned, 5 us with the HRTF, 8 us\n    while it moves (docs/guides/audio.md).\nA distance low-pass (air_absorption) dulls far sources; it combines with\nthe occlusion low-pass.\n\n── Determinism ──────────────────────────────────────────────────────\nThe mixer uses only + - * / sqrt and cartwheel/math.h's deterministic\nfunctions (never libm), so cw_audio_render in offline mode produces\nbit-identical samples on every host for the same calls. That is what the\ncross-host audio gate checks.",
    "functions": [
     {
      "name": "cw_audio_init",
@@ -12345,6 +12345,73 @@
      "name": "cw_vfs_entry",
      "doc": "",
      "decl": "typedef struct cw_vfs_entry {\n  const char *name;   /* name inside the listed directory (interned) */\n  bool is_dir;\n  int64_t size;       /* bytes; -1 for a directory */\n  cw_vfs_layer layer; /* the layer a read is served from (a directory: the top layer holding anything under it) */\n} cw_vfs_entry;"
+    }
+   ],
+   "macros": []
+  },
+  {
+   "header": "cartwheel/video.h",
+   "summary": "cartwheel video: MPEG-1 playback for cutscenes (pl_mpeg).\n\nA cw_video plays an MPEG-1 program stream (.mpg: MPEG-1 video, MP2\naudio). Make one with ffmpeg, e.g.\n  ffmpeg -i in.mp4 -c:v mpeg1video -q:v 4 -c:a mp2 -b:a 128k -f mpeg out.mpg\n\n── Time ────────────────────────────────────────────────────────────\nThe game says which moment to show: cw_video_update(v, t) with t in\nseconds since the video started, taken from the fixed tick count (e.g.\n(cw_tick_index() - start_tick) * cw_fixed_dt()), never from a clock. The\nframe shown is floor(t * fps), so a replay, a slow machine and every host\nshow the same frame on the same tick. Decoding moves forward frame by\nframe; a t earlier than the current frame (or a loop) restarts from the\nbeginning. MPEG-1 decoding is integer, so frames are identical everywhere.\n\n── Picture ─────────────────────────────────────────────────────────\ncw_video_texture returns a render target (cartwheel/render2d.h) holding\nthe current frame as RGB: draw it as a sprite (cw_r2d_sprite), GL or\nWebGPU alike. The decoder produces Y, Cb and Cr planes; they are uploaded\nand converted to RGB by a shader on the GPU, only when a new frame was\ndecoded and only when the texture is asked for, so call cw_video_texture\nwhere you draw (render), not in update. On GL a conversion changes GL\nstate the way a 2D pass does (cartwheel/render2d.h): call it before your\n2D pass, or reset three.c's bindings after it (t3_renderer_reset_bindings).\n\n── Sound ───────────────────────────────────────────────────────────\nA file with audio plays it as a stream voice (cartwheel/audio.h) started\nby the first cw_video_update, on the bus and volume of the desc (needs\ncw_audio_init). Its MP2 frames are decoded on the audio job pool like\nany stream. The audio runs on the mixer's clock: over a long video it may\ndrift from the tick clock by the difference between the two (a few ms a\nminute), which a cutscene does not notice.\n\nCost: decoding is on the game thread, in cw_video_update: about 0.22 ms\nper 320x180 frame on a Ryzen AI 9 HX 370 core (about 0.9 ms at 640x360);\nthe GPU conversion is one triangle over the target.",
+   "functions": [
+    {
+     "name": "cw_video_open",
+     "signature": "cw_video cw_video_open(const char *asset_path, const cw_video_desc *desc)",
+     "doc": "Opens a video from the asset bundle (the file is read into memory and\nkept; the first frame is decoded here, nothing else). Logs and returns the null handle\nwhen the asset is missing or not an MPEG-1 program stream. Main thread.",
+     "inline": false
+    },
+    {
+     "name": "cw_video_close",
+     "signature": "void cw_video_close(cw_video v)",
+     "doc": "Stops its audio voice and frees everything. Stale handle: no-op.",
+     "inline": false
+    },
+    {
+     "name": "cw_video_update",
+     "signature": "int cw_video_update(cw_video v, double t)",
+     "doc": "Shows the frame for t seconds since the start (see Time). Returns the\nframe index now shown (the last one once a non-looping video has ended),\n-1 for a stale handle.",
+     "inline": false
+    },
+    {
+     "name": "cw_video_texture",
+     "signature": "cw_texture cw_video_texture(cw_video v)",
+     "doc": "The current frame as an RGB render target, converted on the GPU if a new\nframe was decoded since the last call (see Picture). Owned by the video.",
+     "inline": false
+    },
+    {
+     "name": "cw_video_get_info",
+     "signature": "bool cw_video_get_info(cw_video v, cw_video_info *out)",
+     "doc": "false for a stale handle",
+     "inline": false
+    },
+    {
+     "name": "cw_video_ended",
+     "signature": "bool cw_video_ended(cw_video v)",
+     "doc": "A non-looping video's t has reached its end.",
+     "inline": false
+    },
+    {
+     "name": "cw_video_voice",
+     "signature": "cw_voice cw_video_voice(cw_video v)",
+     "doc": "The audio voice (the null handle without sound or before the first update).",
+     "inline": false
+    },
+    {
+     "name": "cw_video_frame_hash",
+     "signature": "uint32_t cw_video_frame_hash(cw_video v)",
+     "doc": "FNV-1a over the current frame's Y, Cb and Cr planes (what the decoder\nproduced, before the GPU): what the cross-host tests compare.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_video_desc",
+     "doc": "",
+     "decl": "typedef struct cw_video_desc {\n  bool loop;     /* start over after the last frame (the audio loops too) */\n  bool mute;     /* no audio voice even when the file has sound */\n  float volume;  /* audio voice volume; 0 = 1 */\n  cw_bus bus;    /* audio bus; 0 = master */\n} cw_video_desc;"
+    },
+    {
+     "name": "cw_video_info",
+     "doc": "",
+     "decl": "typedef struct cw_video_info {\n  int width, height;  /* picture size in pixels */\n  double fps;\n  int frames;         /* frames in the file: from its time stamps, exact once decoding has reached the end */\n  double duration;    /* seconds: frames / fps */\n  bool has_audio;\n  int audio_rate;     /* Hz; 0 without audio */\n} cw_video_info;"
     }
    ],
    "macros": []
