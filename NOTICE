@@ -44,3 +44,9 @@ tools/hrtf/import-kemar.mjs)
   restrictions on use, provided the authors are cited when the data is used
   in any research or commercial application.
   https://sound.media.mit.edu/resources/KEMAR.html
+
+Filament's Froxelizer (clustered light binning on the CPU), the algorithm
+followed in src/render/froxel.c (no code copied)
+  Copyright (C) 2018 The Android Open Source Project
+  Licensed under the Apache License, Version 2.0
+  https://github.com/google/filament

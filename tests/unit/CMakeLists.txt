@@ -3,6 +3,7 @@ set(CW_PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/programs/cw_tests.txt)
 # Unit test suites: apps that run natively and as carts (see test.h).
 cw_add_app(unit_core SOURCES test_core.c GL_ONLY)
 cw_add_app(unit_math SOURCES test_math.c GL_ONLY)
+cw_add_app(unit_froxel SOURCES test_froxel.c GL_ONLY)
 cw_add_app(unit_physics SOURCES test_physics.c GL_ONLY)
 cw_add_app(unit_vehicle3d SOURCES test_vehicle3d.c GL_ONLY)
 # cloth and ropes: XPBD flags, drapes, tunnelling, ropes on bodies, skin, rollback, rigid chains (cartwheel/cloth.h)
