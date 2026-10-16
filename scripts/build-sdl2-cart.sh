@@ -26,7 +26,9 @@ source "$ROOT/scripts/lib/build-lock.sh"
 build_lock "$OUT"
 if [ -f "$OUT/libSDL2_wc.a" ] && [ "${FORCE:-0}" != 1 ]; then echo "sdl2 (cart): up to date"; exit 0; fi
 rm -rf "$OUT/src" "$OUT/obj" "$OUT/libSDL2_wc.a" && mkdir -p "$OUT/obj"
-cp -r "$ROOT/deps/sdl2" "$SRC"
+# deps/sdl2 may be a symlink to a shared checkout (a worktree linking its deps entry by
+# entry): copy its contents, never the link, or the patches below land on the shared tree
+mkdir -p "$SRC" && cp -r "$ROOT/deps/sdl2/." "$SRC"
 # A patch the source tree already carries (deps/sdl2 checked out with it
 # applied) is skipped: its reverse applies cleanly, so applying it again would
 # fail as "Reversed (or previously applied)".
