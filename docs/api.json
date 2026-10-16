@@ -12693,6 +12693,88 @@
     }
    ],
    "macros": []
+  },
+  {
+   "header": "cartwheel/water.h",
+   "summary": "Water: a wavy surface that reflects, refracts and flows, and things that\nfloat on it. A port of three.js r186's Water / Water2 / WaterMesh add-ons\n(planar reflection and refraction rendered from mirrored and clipped\ncameras, scrolling normal maps, flow maps) with Gerstner waves (GPU Gems\n1, chapter 1) moving the surface itself.\n\n── node types ─────────────────────────────────────────────────────────\n  Water3D      (Node3D) a rectangle of water of `size` (x by z metres)\n               in the node's XZ plane, its rest level at the node's y,\n               facing +Y. Properties:\n    size, subdivisions   the grid the waves move (quads along the longer\n                         side; quality scales it: Low 1/4, Medium 1/2)\n    wave_count, wave0..wave3   up to four Gerstner waves, each a vec4:\n                         direction (degrees, 0 = +X, 90 = +Z), wavelength\n                         (m), amplitude (m), steepness (0..1: 0 round\n                         swells, 1 sharp crests; the waves' steepness is\n                         shared so crests never loop over)\n    wave_speed, time_offset   multiplies deep-water speed (sqrt(g / k));\n                         seconds added to the waves' clock\n    color                tint of what is seen through the water (linear)\n    deep_color           the water body's colour where no refraction is\n                         drawn (Low, Medium)\n    detail, roughness    the normal map ripples' strength; the surface\n                         roughness the lights' glints see\n    reflectivity         Fresnel F0 (0.02, water)\n    distortion           how far the normal maps bend reflection and\n                         refraction\n    normal_map           a tangent-space normal map image (empty: a\n                         seamless gen://noise normal map), scrolled twice\n                         along the flow (Water2's two-phase flow)\n    normal_scale         normal map repeats per metre\n    flow_direction       vec2, the flow without a flow map\n    flow_speed           how fast the normal maps scroll (Water2's 0.03)\n    flow_map             optional image: RG = the flow direction at each\n                         point (Water2's flowMap, 0.5 = still), over the\n                         whole rectangle\n    reflection, refraction   draw them (quality may turn them down or off)\n    resolution_scale     of the reflection and refraction targets (0.5)\n    debug_view           NONE, or HEIGHT: the surface's height as colour\n                         (tests read it back: R, G = height's 16 bits\n                         over debug_range, B = 1)\n    debug_range          vec2 (min, max) heights for debug_view HEIGHT\n\n  Buoyancy3D   (Node3D) child of a RigidBody3D: pushes it up where its\n               probes are under the water and drags it where they are\n               wet. Properties:\n    water                the Water3D (empty = the tree's first)\n    probes               \"x y z, x y z, ...\" in the body's space (empty:\n                         the eight corners of its first BOX shape, or a\n                         sphere's / capsule's bounding box, at 90%)\n    volume               m^3 the body displaces when fully under (0: the\n                         box's volume); shared out equally over probes\n    probe_depth          metres over which a probe goes from dry to fully\n                         under (0: a quarter of the box's height)\n    fluid_density        1000 (kg/m^3)\n    linear_drag          N per m/s per fully wet probe, against the probe\n                         point's velocity relative to the water's\n    angular_drag         N*m per rad/s, scaled by the wet share\n    submerged            read-only: the wet share of the probes, 0..1\n\n── time and determinism ────────────────────────────────────────────────\nThe waves run on the tree's fixed clock: their time is cw_tree_tick x the\nfixed dt (plus time_offset), never a wall clock. Every wave phase is\nreduced into [0, 2 pi) in double precision (fmod is exact) and the sums\nuse cw_sin / cw_cos, so cw_water_height_at and Buoyancy3D are the same\nbits on every host. The GPU evaluates the same sums from the same reduced\nphases (native sin / cos, so to float rounding) at the grid's vertices;\nbetween vertices the drawn surface is flat, so it is within the grid's\nsag of cw_water_height_at (a few millimetres at the default grid).\n\nDrawing renders the scene twice more before the main pass, as r186's\nReflector and Refractor do: mirrored about the rest level (an oblique\nnear plane clips what is below it) and clipped to below it, each at\nresolution_scale, with the water hidden (Low draws neither: the\nenvironment's specular stands in for the reflection, deep_color for the\nrefraction; Medium draws the reflection only). Costs: the water guide;\non the 890M the water_boat frame is 1.0 ms (Low) to 2.1 ms (Ultra) of GPU\ntime on GL at 1080p, a height query 0.25 us on the CPU.",
+   "functions": [
+    {
+     "name": "cw_waves_displace",
+     "signature": "void cw_waves_displace(const cw_waves *w, float x0, float z0, double t, float out[3], float out_normal[3])",
+     "doc": "Where the surface point that rests at (x0, z0) is at time t: out[0..2] =\nits displaced local position (x, height, z). out_normal (may be NULL):\nthe surface's unit normal there. Deterministic (cw_sin / cw_cos, phases\nreduced in double).",
+     "inline": false
+    },
+    {
+     "name": "cw_waves_height",
+     "signature": "float cw_waves_height(const cw_waves *w, float x, float z, double t)",
+     "doc": "The surface's height above the rest level over the local point (x, z) at\ntime t. Gerstner waves move points sideways too, so this finds the rest\npoint that lands on (x, z) first (four fixed-point steps, converged to\nwell under a millimetre for steepness below 1). Deterministic.",
+     "inline": false
+    },
+    {
+     "name": "cw_water_find",
+     "signature": "cw_node cw_water_find(cw_tree *t)",
+     "doc": "The tree's first Water3D (null when it has none). O(1) after the first call per tree.",
+     "inline": false
+    },
+    {
+     "name": "cw_water_time",
+     "signature": "double cw_water_time(cw_node water)",
+     "doc": "The time the waves of a Water3D are at now, in seconds: its tree's fixed\nticks x the fixed dt + time_offset. 0 for a null node.",
+     "inline": false
+    },
+    {
+     "name": "cw_water_height_at",
+     "signature": "float cw_water_height_at(cw_node water, float x, float z, double t)",
+     "doc": "The surface's world height over world (x, z) at time t (cw_water_time\nfor now). Outside the rectangle the waves continue (open sea). The rest\nlevel when water is not a Water3D. Deterministic.",
+     "inline": false
+    },
+    {
+     "name": "cw_water_sample_at",
+     "signature": "bool cw_water_sample_at(cw_node water, float x, float z, double t, cw_water_sample *out)",
+     "doc": "Height, normal and water velocity at world (x, z), time t. False (out\nzeroed but for a flat normal) when water is not a Water3D. Deterministic.",
+     "inline": false
+    },
+    {
+     "name": "cw_water_get_waves",
+     "signature": "bool cw_water_get_waves(cw_node water, cw_waves *out)",
+     "doc": "The Water3D's waves, as cw_waves (for cw_waves_* in its local space).",
+     "inline": false
+    },
+    {
+     "name": "cw_water_get_stats",
+     "signature": "void cw_water_get_stats(cw_tree *t, cw_water_stats *out)",
+     "doc": "Zeroed when t is NULL or has no water.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_water_wave",
+     "doc": "One Gerstner wave (what Water3D's wave0..wave3 hold).",
+     "decl": "typedef struct cw_water_wave {\n  float direction_deg; /* 0 = +X, 90 = +Z */\n  float wavelength;    /* metres, > 0 */\n  float amplitude;     /* metres */\n  float steepness;     /* 0..1 */\n} cw_water_wave;"
+    },
+    {
+     "name": "cw_waves",
+     "doc": "A set of waves, the pure-function form of a Water3D's (local space: x, z\non the rest plane, y up from the rest level).",
+     "decl": "typedef struct cw_waves {\n  int count;\n  cw_water_wave wave[CW_WATER_MAX_WAVES];\n  float speed; /* multiplies the deep-water speed; 1 */\n} cw_waves;"
+    },
+    {
+     "name": "cw_water_sample",
+     "doc": "What the water is doing at a world point.",
+     "decl": "typedef struct cw_water_sample {\n  float height;      /* world y of the surface over (x, z) */\n  t3_vec3 normal;    /* world, unit */\n  t3_vec3 velocity;  /* the water's own velocity there (m/s, world): the wave orbit */\n} cw_water_sample;"
+    },
+    {
+     "name": "cw_water_stats",
+     "doc": "Last frame's numbers for a tree's water.",
+     "decl": "typedef struct cw_water_stats {\n  int surfaces;           /* Water3D nodes drawn */\n  int reflection_w, reflection_h; /* reflection target (0 when off) */\n  int refraction_w, refraction_h; /* refraction target (0 when off) */\n  int triangles;          /* of the surfaces' grids */\n  int buoyant;            /* Buoyancy3D nodes that pushed last tick */\n} cw_water_stats;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_WATER_MAX_WAVES",
+     "doc": ""
+    }
+   ]
   }
  ]
 }

@@ -25,6 +25,7 @@
         "rendering-3d",
         "terrain",
         "noise",
+        "water",
         "rendering-2d",
         "ui",
         "game-shell",
