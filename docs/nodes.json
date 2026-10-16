@@ -8508,6 +8508,14 @@
      "doc": "Path of the node the pins follow (a body node pulls on the body); empty = this node."
     },
     {
+     "name": "bone",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "A bone (three.c object name) under the attach_to node's model whose transform the pins follow instead."
+    },
+    {
      "name": "skin_distance",
      "type": "float",
      "default": "0",

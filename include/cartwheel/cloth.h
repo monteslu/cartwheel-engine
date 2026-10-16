@@ -271,7 +271,9 @@ int cw_chain3d_create(cw_world3d w, const cw_chain3d_def *def, cw_body3d *links,
  * pins follow `attach_to` (a node path; empty = the node itself): a body
  * node (RigidBody3D ...) is attached to, so a dynamic body feels the pull;
  * any other Node3D moves the pins with its global transform each tick (a
- * cape on a character, a flag on a moving pole). skin_distance keeps every
+ * cape on a character, a flag on a moving pole), or `bone` names a three.c
+ * object under that node's model (a skeleton's joint) whose transform they
+ * follow instead. skin_distance keeps every
  * particle near the rest shape riding that frame. Wind, pattern colours and
  * fabric sheen are properties.
  * Rope3D: a rope from the node to `end` (node space), XPBD particles or a

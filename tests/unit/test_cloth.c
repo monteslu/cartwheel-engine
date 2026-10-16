@@ -10,6 +10,7 @@
 #include <time.h>
 
 #include "cartwheel/cloth.h"
+#include "cartwheel/physics_nodes.h"
 #include "test.h"
 
 #define DT (1.0f / 60)
@@ -433,6 +434,83 @@ static void test_bad_input(void) {
   cw_world3d_destroy(w);
 }
 
+/* the node types: a Cloth3D pinned to a bone follows it (control: no bone, it stays); a Rope3D
+ * holds a RigidBody3D crate and reports its pull; a LINKS Rope3D holds a weight */
+static float bone_follow(bool use_bone) {
+  cw_scene_register_builtin_types();
+  cw_tree *t = cw_tree_new();
+  cw_node root = cw_tree_root(t);
+  cw_node model = cw_node_new("Node3D", "Model");
+  cw_node_add_child(root, model);
+  cw_node3d_set_position(model, (t3_vec3){ 0, 2, 0 });
+  t3_object *bone = t3_object_new();
+  bone->name = "spine";
+  t3_object_set_position(bone, 1, 0, 0);
+  t3_object_add(cw_node3d_object(model), bone);
+  cw_node cape = cw_node_new("Cloth3D", "Cape");
+  cw_node_add_child(root, cape);
+  cw_node3d_set_position(cape, (t3_vec3){ 1, 2, 0 });
+  cw_node_set(cape, "columns", cw_val_int(4));
+  cw_node_set(cape, "rows", cw_val_int(4));
+  cw_node_set(cape, "attach_to", cw_val_string("../Model"));
+  if (use_bone) cw_node_set(cape, "bone", cw_val_string("spine"));
+  for (int i = 0; i < 10; i++) cw_tree_fixed_update(t, DT);
+  t3_object_set_position(bone, 1, 0, 2); /* the bone moves 2 m along z */
+  for (int i = 0; i < 30; i++) cw_tree_fixed_update(t, DT);
+  int n;
+  const t3_vec3 *x = cw_cloth_positions(cw_cloth3d_get(cape), &n);
+  float z = n ? x[0].z : -1;
+  FOLD(z);
+  t3_release(bone);
+  cw_tree_free(t);
+  return z;
+}
+
+static void test_nodes(void) {
+  float z = bone_follow(true), z_ctl = bone_follow(false);
+  cw_info("Cloth3D on a bone: pin z %.3f (control without the bone %.3f)", z, z_ctl);
+  CHECK(fabsf(z - 2) < 1e-3f);
+  CHECK(fabsf(z_ctl) < 1e-3f);
+  /* Rope3D holding a crate, and a LINKS chain holding a weight */
+  cw_tree *t = cw_tree_new();
+  cw_node root = cw_tree_root(t);
+  const char *modes[2] = { "XPBD", "LINKS" };
+  cw_node bodies[2];
+  for (int i = 0; i < 2; i++) {
+    char rn[16], bn[16], path[24];
+    snprintf(rn, sizeof rn, "Rope%d", i), snprintf(bn, sizeof bn, "Crate%d", i), snprintf(path, sizeof path, "../Crate%d", i);
+    cw_node r = cw_node_new("Rope3D", rn);
+    cw_node_add_child(root, r);
+    cw_node3d_set_position(r, (t3_vec3){ (float)i * 3, 4, 0 });
+    cw_node_set(r, "end", cw_val_vec3(0, -2, 0));
+    cw_node_set(r, "mode", cw_val_enum(modes[i]));
+    cw_node_set(r, "segments", cw_val_int(10));
+    cw_node_set(r, "end_attach", cw_val_string(path));
+    cw_node b = cw_node_new("RigidBody3D", bn);
+    cw_node_add_child(root, b);
+    cw_node3d_set_position(b, (t3_vec3){ (float)i * 3, 1.75f, 0 });
+    cw_node_set(b, "mass", cw_val_float(10));
+    cw_node_set(b, "can_sleep", cw_val_bool(false));
+    cw_node s = cw_node_new("CollisionShape3D", "Shape");
+    cw_node_set(s, "size", cw_val_vec3(0.5f, 0.5f, 0.5f));
+    cw_node_add_child(b, s);
+    bodies[i] = b;
+  }
+  for (int i = 0; i < 180; i++) cw_tree_fixed_update(t, DT);
+  cw_value v;
+  CHECK(cw_node_get_prop(cw_node_get(root, "Rope0"), "tension", &v));
+  float tension = (float)v.f;
+  float y0 = cw_node3d_position(bodies[0]).y, y1 = cw_node3d_position(bodies[1]).y;
+  cw_info("Rope3D: crate at y %.3f pulled with %.1f N (weight 98 N); LINKS weight at y %.3f", y0, tension, y1);
+  CHECK(y0 > 1.6f && y0 < 1.8f);
+  CHECK(tension > 85 && tension < 110);
+  CHECK(y1 > 1.6f && y1 < 1.9f);
+  CHECK(cw_node_get_prop(cw_node_get(root, "Rope1"), "hash", &v) && v.i != 0);
+  FOLD(y0);
+  FOLD(y1);
+  cw_tree_free(t);
+}
+
 /* 64 x 64 at 8 substeps: microseconds per step (logged, not compared) */
 #ifndef CLOCK_THREAD_CPUTIME_ID /* wasi */
 #define CLOCK_THREAD_CPUTIME_ID CLOCK_MONOTONIC
@@ -463,4 +541,4 @@ static void test_perf(void) {
 CW_TEST_SUITE("cloth", { "flag", test_flag }, { "stretch", test_stretch }, { "sphere", test_sphere },
               { "tunnel", test_tunnel }, { "box", test_box }, { "rope_crate", test_rope_crate },
               { "rope_two_bodies", test_rope_two_bodies }, { "skin", test_skin }, { "rollback", test_rollback },
-              { "chain", test_chain }, { "bad_input", test_bad_input }, { "perf", test_perf })
+              { "chain", test_chain }, { "nodes", test_nodes }, { "bad_input", test_bad_input }, { "perf", test_perf })

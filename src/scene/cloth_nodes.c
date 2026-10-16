@@ -130,6 +130,7 @@ typedef struct cloth3d {
   int columns, rows;
   int pin;
   const char *attach_to;
+  const char *bone;
   float skin_distance;
   float mass, stretch_compliance, bend_compliance, tether_slack, damping, thickness, friction;
   int substeps;
@@ -162,6 +163,7 @@ static void cloth_init(cw_node n, void *data) {
   d->columns = 16, d->rows = 22;
   d->pin = PIN_TOP;
   d->attach_to = cw_intern("");
+  d->bone = cw_intern("");
   d->mass = 0.5f;
   d->stretch_compliance = def.stretch_compliance, d->bend_compliance = def.bend_compliance;
   d->tether_slack = def.tether_slack, d->damping = def.damping, d->thickness = def.thickness;
@@ -190,6 +192,20 @@ static void cloth_teardown(cloth3d *d) {
   cw_free(d->rest_local), cw_free(d->targets), cw_free(d->pinned);
   d->rest_local = d->targets = NULL;
   d->pinned = NULL;
+}
+
+/* the pins' frame: the frame node's global transform, or one of its model's bones (a three.c object
+ * found by name under the node's object, e.g. a glTF skeleton's joint) */
+static const t3_mat4 *frame_matrix(cloth3d *d) {
+  if (d->bone && *d->bone) {
+    t3_object *o = cw_node3d_object(d->fr.node);
+    t3_object *b = o ? t3_object_get_by_name(o, d->bone) : NULL;
+    if (b) {
+      t3_object_update_world_matrix(b, true, false);
+      return &b->matrix_world;
+    }
+  }
+  return cw_node3d_global_transform(d->fr.node);
 }
 
 static bool is_pinned(int pin, int i, int j, int nu, int nv) {
@@ -259,10 +275,11 @@ static void cloth_build(cw_node n, cloth3d *d) {
   int cnt;
   const V *x = cw_cloth_positions(d->cloth, &cnt);
   t3_mat4 inv_m;
-  t3_mat4_invert(&inv_m, cw_node3d_global_transform(d->fr.node));
+  t3_mat4_invert(&inv_m, frame_matrix(d));
   d->rest_local = cw_alloc(sizeof(V) * (size_t)cnt, CW_MEM_PHYSICS);
   d->targets = cw_alloc(sizeof(V) * (size_t)cnt, CW_MEM_PHYSICS);
   for (int k = 0; k < cnt; k++) d->rest_local[k] = mat_point(&inv_m, x[k]);
+  if (d->bone && *d->bone) d->fr.body = (cw_body3d){ 0 }; /* a bone: follow it, not the body */
   if (cw_body3d_valid(d->fr.body))
     for (int k = 0; k < cnt; k++)
       if (d->pinned[k]) cw_cloth_attach_body(d->cloth, k, d->fr.body, body_local(d->fr.body, x[k]));
@@ -295,7 +312,7 @@ static void cloth_tick(cw_node n, void *data, float dt) {
   /* the frame node's transform: a body node's is its body's, written after the world step */
   bool follow = !cw_body3d_valid(d->fr.body);
   if ((follow || d->skin_distance > 0) && cw_node_in_tree(d->fr.node)) {
-    const t3_mat4 *m = cw_node3d_global_transform(d->fr.node);
+    const t3_mat4 *m = frame_matrix(d);
     for (int k = 0; k < cnt; k++) {
       d->targets[k] = mat_point(m, d->rest_local[k]);
       if (follow && d->pinned[k]) cw_cloth_set_pin_target(d->cloth, k, d->targets[k]);
@@ -344,6 +361,8 @@ static const cw_prop cloth_props[] = {
     .enum_names = pin_names, .doc = "Which particles hold: the top edge (banner, cape), the left edge (flag on a pole), corners or none." },
   CW_PROP_FIELD(cloth3d, attach_to, CW_T_STRING, CW_PROP_DEFAULT,
                 "Path of the node the pins follow (a body node pulls on the body); empty = this node."),
+  CW_PROP_FIELD(cloth3d, bone, CW_T_STRING, CW_PROP_DEFAULT,
+                "A bone (three.c object name) under the attach_to node's model whose transform the pins follow instead."),
   CW_PROP_FIELD_RANGE(cloth3d, skin_distance, CW_T_FLOAT, 0, 100,
                       "> 0: particles stay within this many metres (at the far edge) of the rest shape riding the pins' frame."),
   CW_PROP_FIELD_RANGE(cloth3d, mass, CW_T_FLOAT, 0.001, 10000, "Kilograms of the whole cloth."),

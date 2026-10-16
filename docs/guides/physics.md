@@ -83,7 +83,7 @@ Reading: [cw_cloth_positions](api:cw_cloth_positions), [cw_cloth_stats_get](api:
 
 ### Cloth3D and Rope3D
 
-The node types do all of the above in a scene. [Cloth3D](node:Cloth3D) hangs a grid from its node (down its -y, along its +x), pinned along an edge or at corners, following `attach_to` (a body node is attached to, any other node moves the pins). [Rope3D](node:Rope3D) runs from its node to `end`, as particles or rigid links, each end hanging from a body node, following the node or free. They step right after the tree's 3D world. From `cloth_demo`, a flag on a pole, a hero whose cape follows and drapes over its capsule, a rope holding a crate and a chain holding a weight:
+The node types do all of the above in a scene. [Cloth3D](node:Cloth3D) hangs a grid from its node (down its -y, along its +x), pinned along an edge or at corners, following `attach_to` (a body node is attached to, any other node moves the pins, and `bone` follows a joint of that node's model). [Rope3D](node:Rope3D) runs from its node to `end`, as particles or rigid links, each end hanging from a body node, following the node or free. They step right after the tree's 3D world. From `cloth_demo`, a flag on a pole, a hero whose cape follows and drapes over its capsule, a rope holding a crate and a chain holding a weight:
 
 @include samples/cloth_demo/assets/main.cwscene#Flag
 
