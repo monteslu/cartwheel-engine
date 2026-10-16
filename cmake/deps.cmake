@@ -341,6 +341,16 @@ target_compile_options(cw_stb_vorbis PRIVATE -O2 -w)
 add_library(cw_plmpeg STATIC ${CMAKE_SOURCE_DIR}/src/third_party/pl_mpeg_impl.c)
 target_include_directories(cw_plmpeg PUBLIC ${DEPS}/pl_mpeg)
 target_compile_options(cw_plmpeg PRIVATE -O2 -w)
+# lz4 (deps/lz4/lib only: BSD-2): packed-resource decompression in the engine
+# (src/resource/compress.c), compression in cwpack. Its xxhash is namespaced
+# so it cannot meet another copy.
+if(NOT EXISTS ${DEPS}/lz4/lib/lz4.c)
+  message(FATAL_ERROR "lz4 is missing: run scripts/fetch-deps.sh")
+endif()
+add_library(cw_lz4 STATIC ${DEPS}/lz4/lib/lz4.c ${DEPS}/lz4/lib/lz4frame.c ${DEPS}/lz4/lib/lz4hc.c ${DEPS}/lz4/lib/xxhash.c)
+target_include_directories(cw_lz4 PUBLIC ${DEPS}/lz4/lib)
+target_compile_definitions(cw_lz4 PRIVATE XXH_NAMESPACE=CW_LZ4_)
+target_compile_options(cw_lz4 PRIVATE -O2 -w)
 
 # kb_text_shape (deps/kb, zlib): OpenType shaping + bidi segmentation for
 # complex scripts (Arabic, Hebrew, Indic ...) in the 2D text renderer

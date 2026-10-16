@@ -46,6 +46,8 @@ typedef struct res_slot {
   void *decoded;
   size_t cost;
   bool queued, cancelled;
+  size_t packed_len;  /* bytes read (before decompression) */
+  bool unpacked;      /* got_file ran on the bytes in file */
   /* the background pipeline: finish-order key, and where the load stands */
   int32_t lane, priority;
   uint64_t seq;
@@ -152,6 +154,12 @@ const char *cw_res_type_name(cw_res_type t) {
 
 static cw_res_type type_for_path(const char *path) {
   if (!strncmp(path, "gen:/noise", 10)) return CW_RES_TEXTURE; /* gen://noise?... (cartwheel/noise.h) */
+  /* "x.cell.zst" is a .cell: the compression suffix is not the type */
+  char bare[CW_RES_PATH_MAX];
+  if (cw_compression_of(path) != CW_COMPRESS_NONE) {
+    snprintf(bare, sizeof bare, "%.*s", (int)(strlen(path) - 4), path);
+    path = bare;
+  }
   const char *slash = strrchr(path, '/'), *dot = strrchr(path, '.');
   if (!dot || (slash && dot < slash)) return CW_RES_BINARY;
   char ext[16];
@@ -276,6 +284,7 @@ static void fire_cbs(uint64_t id, res_slot *s) {
 static void drop_load_data(res_slot *s) {
   if (!s->take_bytes) cw_free(s->file);
   s->file = NULL;
+  s->unpacked = false;
   s->take_bytes = false;
   for (int i = 0; i < s->extra_count; i++) { cw_free(s->extra_paths[i]); cw_free(s->extra_bytes[i]); }
   cw_free(s->extra_paths);
@@ -421,10 +430,30 @@ const uint8_t *cw_res_prepare_bytes(cw_res_prepare *p, size_t *len) {
 }
 const char *cw_res_prepare_path(cw_res_prepare *p) { return p->s->path; }
 
+/* The bytes just read (or handed over): remember their hash and packed size,
+ * then decompress a ".zst" / ".lz4" file in place. False when that fails
+ * (logged; any thread). */
+static bool got_file(res_slot *s) {
+  s->unpacked = true;
+  s->file_hash = cw_hash_bytes(s->file, s->file_len, 0);
+  s->packed_len = s->file_len;
+  cw_compression c = cw_compression_of(s->path);
+  if (c == CW_COMPRESS_NONE) return true;
+  size_t n;
+  uint8_t *raw = cw_decompress(c, s->file, s->file_len, &n);
+  if (!raw) {
+    cw_error("res://%s: does not decompress (%s): rebuild the file", s->path, c == CW_COMPRESS_ZSTD ? "zstd" : "lz4");
+    return false;
+  }
+  cw_free(s->file);
+  s->file = raw;
+  s->file_len = n;
+  return true;
+}
+
 static void decode_now(res_slot *s) {
   const cw_res_type_desc *d = type_desc(s->type);
   double t0 = now_ms();
-  s->file_hash = cw_hash_bytes(s->file, s->file_len, 0);
   bool take = false;
   cw_res_decode_args a = { s->path, s->file, s->file_len, s->extra_count, (const char *const *)s->extra_paths,
                            (const uint8_t *const *)s->extra_bytes, s->extra_lens, d->type_user, &take };
@@ -443,6 +472,7 @@ static void read_and_decode(res_slot *s) {
     s->read_ms = now_ms() - t0;
     if (!s->file) { s->read_failed = true; s->decoded = NULL; return; }
   }
+  if (!s->unpacked && !got_file(s)) { s->decoded = NULL; return; }
   decode_now(s);
 }
 
@@ -622,6 +652,7 @@ static void start_load(uint64_t id, bool async) {
   s->read_ms = s->decode_ms = s->finish_ms = 0;
   const cw_res_type_desc *d = type_desc(s->type);
   if (d->request) d->request(d->type_user);
+  if (s->file && !s->unpacked && d->prepare && !got_file(s)) { slot_fail(id, s, async); return; } /* handed bytes (cw_res_create) */
   s->read_in_job = false;
   if (!s->file) {
     cw_vfs_layer layer = layer_of(s->path);
@@ -637,6 +668,7 @@ static void start_load(uint64_t id, bool async) {
         slot_fail(id, s, async);
         return;
       }
+      if (!got_file(s)) { slot_fail(id, s, async); return; }
     }
   }
   if (d->prepare) {
@@ -654,7 +686,7 @@ static void start_load(uint64_t id, bool async) {
     queue_insert(id, s);
     pump(false);
   } else {
-    decode_now(s);
+    read_and_decode(s);
     finish_slot(id, s);
   }
 }
@@ -684,7 +716,7 @@ static void finish_slot(uint64_t id, res_slot *s) {
   if (!dec) { cw_error("res://%s: could not decode it as %s", s->path, d->name); slot_fail(id, s, false); return; }
   if (dec == (void *)s) dec = NULL; /* type without a decode step */
   double t0 = now_ms();
-  s->file_bytes = s->file_len;
+  s->file_bytes = s->packed_len;
   void *payload = d->finish(dec ? dec : (void *)s, mkres(id), s->deps, s->dep_count, d->type_user);
   s = cw_pool_get(&R.slots, id); /* finish may register sub-resources (pool growth) */
   s->finish_ms = now_ms() - t0;
@@ -1115,7 +1147,8 @@ bool cw_res_reload_from_memory(cw_res h, const void *bytes, size_t len) {
     if (c) c->sub_seen = false;
   }
   bool ok = true;
-  if (d->prepare) {
+  ok = got_file(s);
+  if (ok && d->prepare) {
     cw_res_prepare p = { h.id, s, false };
     ok = d->prepare(&p, d->type_user);
     s = slot_get(h);

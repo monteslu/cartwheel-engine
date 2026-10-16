@@ -60,6 +60,9 @@
 
 #define SDEFL_IMPLEMENTATION
 #include "sdefl.h"
+#include "lz4.h"
+#include "lz4hc.h"
+#include "zstd.h"
 
 #include "cartwheel/resource.h"
 #include "cwpack.h"
@@ -728,7 +731,11 @@ static bool write_if_changed(const char *path, const void *data, size_t len) {
   return same || cwp_write_file(path, data, len);
 }
 
-static bool write_pak(const char *path, bool deflate) {
+/* entry compression: pack.compress = zstd (default) | lz4 | deflate | none;
+ * pack.level is zstd's level (1..22, default 12) or lz4hc's (1..12, default 9).
+ * The older pack.deflate = false still means none. */
+enum { PK_NONE, PK_DEFLATE, PK_ZSTD, PK_LZ4 };
+static bool write_pak(const char *path, int mode, int level) {
   struct sdefl *z = cw_alloc(sizeof *z, CW_MEM_GENERAL);
   cwpak_entry *idx = cw_calloc((size_t)P.n + 1, sizeof *idx, CW_MEM_GENERAL);
   CW_ARRAY(uint8_t) out = { 0 };
@@ -743,11 +750,26 @@ static bool write_pak(const char *path, bool deflate) {
     size_t size = e->len;
     uint8_t *zb = NULL;
     uint32_t flags = 0;
-    if (deflate && e->len >= 256) {
-      zb = cw_alloc((size_t)sdefl_bound((int)e->len), CW_MEM_GENERAL);
-      memset(z, 0, sizeof *z);
-      int zn = sdeflate(z, zb, e->data, (int)e->len, 5);
-      if (zn > 0 && (size_t)zn < e->len - e->len / 10) { data = zb; size = (size_t)zn; flags = CWPAK_DEFLATE; }
+    if (mode != PK_NONE && e->len >= 256) {
+      size_t zn = 0;
+      uint32_t f = 0;
+      if (mode == PK_DEFLATE) {
+        zb = cw_alloc((size_t)sdefl_bound((int)e->len), CW_MEM_GENERAL);
+        memset(z, 0, sizeof *z);
+        int n = sdeflate(z, zb, e->data, (int)e->len, 5);
+        zn = n > 0 ? (size_t)n : 0, f = CWPAK_DEFLATE;
+      } else if (mode == PK_ZSTD) {
+        size_t cap = ZSTD_compressBound(e->len);
+        zb = cw_alloc(cap, CW_MEM_GENERAL);
+        size_t n = ZSTD_compress(zb, cap, e->data, e->len, level);
+        zn = ZSTD_isError(n) ? 0 : n, f = CWPAK_ZSTD;
+      } else if (e->len < 0x7e000000) {
+        int cap = LZ4_compressBound((int)e->len);
+        zb = cw_alloc((size_t)cap, CW_MEM_GENERAL);
+        int n = LZ4_compress_HC((const char *)e->data, (char *)zb, (int)e->len, cap, level);
+        zn = n > 0 ? (size_t)n : 0, f = CWPAK_LZ4;
+      }
+      if (zn > 0 && zn < e->len - e->len / 10) { data = zb; size = zn; flags = f; }
     }
     idx[i].uid = e->uid;
     idx[i].offset = (uint64_t)out.count;
@@ -788,6 +810,14 @@ static bool write_pak(const char *path, bool deflate) {
   cw_free(idx);
   cw_free(z);
   return ok;
+}
+
+static int pack_mode(const cwp_settings *s, int *level) {
+  const char *pc = cwp_settings_get(s, "pack.compress", cwp_settings_bool(s, "pack.deflate", true) ? "zstd" : "none");
+  int m = !strcmp(pc, "zstd") ? PK_ZSTD : !strcmp(pc, "lz4") ? PK_LZ4 : !strcmp(pc, "deflate") ? PK_DEFLATE : !strcmp(pc, "none") ? PK_NONE : -1;
+  if (m < 0) fprintf(stderr, "cwpack: pack.compress = %s: use zstd, lz4, deflate or none\n", pc);
+  *level = (int)cwp_settings_num(s, "pack.level", m == PK_LZ4 ? 9 : 12);
+  return m;
 }
 
 /* --raw-dir: every regular file under root/rel, verbatim */
@@ -918,7 +948,9 @@ int main(int argc, char **argv) {
     if (!raw_walk(raw_dir, "")) return 1;
     if (!P.n) { fprintf(stderr, "cwpack: %s holds no files\n", raw_dir); return 1; }
     qsort(P.e, (size_t)P.n, sizeof *P.e, cmp_entry);
-    if (!write_pak(pak, true)) { fprintf(stderr, "cwpack: cannot write %s\n", pak); return 1; }
+    int plevel, pmode = pack_mode(&cli, &plevel);
+    if (pmode < 0) return 1;
+    if (!write_pak(pak, pmode, plevel)) { fprintf(stderr, "cwpack: cannot write %s\n", pak); return 1; }
     return 0;
   }
   if (!manifest || !out) { usage(); return 2; }
@@ -1172,7 +1204,9 @@ int main(int argc, char **argv) {
   write_if_changed(p, js, jl);
   cw_free(js);
   cwj_free(man);
-  if (pak && !write_pak(pak, cwp_settings_bool(&P.project, "pack.deflate", true))) { fprintf(stderr, "cwpack: cannot write %s\n", pak); return 1; }
+  int plevel, pmode = pack_mode(&P.project, &plevel);
+  if (pmode < 0) return 1;
+  if (pak && !write_pak(pak, pmode, plevel)) { fprintf(stderr, "cwpack: cannot write %s\n", pak); return 1; }
   /* sources.txt and the depfile */
   qsort(P.sources.data, (size_t)P.sources.count, sizeof *P.sources.data, cmp_str);
   CW_ARRAY(char) sl = { 0 };

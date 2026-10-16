@@ -102,3 +102,18 @@ for (let i = 0; i < 8; i++) put(`order/${'abcdefgh'[i]}.ord`, String((8 - i) * 2
   put('levels/test.cwscene', `[scene format=1]\n[ext_scene id=1 path="levels/sub.cwscene"]\n\n[node name="Level" type="Node3D"]\n\n[node name="Quad" parent="." type="MeshInstance3D"]\nmesh = res(0x${fnv('models/quad.gltf#mesh/0/0')})\n\n[node name="Sub" parent="." instance=1]\n`);
   put('levels/sub.cwscene', `[scene format=1]\n\n[node name="Crate" type="MeshInstance3D"]\nmesh = res(0x${fnv('models/box.glb')})\n`);
 }
+
+// compressed files: a text and a JSON as zstd frames (with and without the
+// content size in the header), and a truncated one that must fail
+{
+  const { zstdCompressSync, constants } = await import('node:zlib');
+  const lines = [];
+  for (let i = 0; i < 2000; i++) lines.push(`line ${i}: ${'abcdefghij'.slice(i % 7)} ${(i * 2654435761) % 1000}`); // int-math-ok: < 2^53
+  const text = lines.join('\n') + '\n';
+  put('packed/lines.txt', text);
+  put('packed/lines.txt.zst', zstdCompressSync(Buffer.from(text), { params: { [constants.ZSTD_c_compressionLevel]: 9 } }));
+  const json = JSON.stringify({ cells: Array.from({ length: 300 }, (_, i) => ({ id: i, x: i % 17, z: (i / 17) | 0 })) });
+  put('packed/cells.json.zst', zstdCompressSync(Buffer.from(json), { params: { [constants.ZSTD_c_contentSizeFlag]: 0 } }));
+  const z = zstdCompressSync(Buffer.from(text));
+  put('packed/broken.txt.zst', z.subarray(0, z.length >> 1));
+}

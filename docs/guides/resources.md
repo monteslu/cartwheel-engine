@@ -35,7 +35,14 @@ Payload pointers (`cw_res_texture`, `cw_res_gltf`, ...) are owned by the resourc
 
 [cw_res_load](api:cw_res_load) returns with the resource ready or failed; a missing file fails with the asset root named in the log. Use it at startup or behind a loading screen.
 
-[cw_res_load_async](api:cw_res_load_async) reads the file on the main thread, decodes on the job pool (image decode, KTX2 transcode, meshopt decode) and finishes on the main thread at the start of a later frame, under a per-frame upload budget (32 MB and 4 ms by default, [cw_res_set_upload_budget](api:cw_res_set_upload_budget)). Async loads always **finish in request order**: a resource whose decode ended early waits for the ones requested before it. That keeps the frame a resource becomes ready, and every id three.c hands out, the same on every host. In a deterministic run the budget counts bytes only, so readiness never depends on thread timing.
+[cw_res_load_async](api:cw_res_load_async) loads in the background and finishes on the main thread at the start of a later frame, under a per-frame upload budget (32 MB and 4 ms by default, [cw_res_set_upload_budget](api:cw_res_set_upload_budget)):
+
+- **Read.** Natively the file is read on the job pool together with its decode, so a request costs the main thread only bookkeeping. In a cart the host's asset calls belong to the main thread (a lazily loaded web cart waits there while the bytes arrive), so each frame reads a few queued files ([cw_res_set_read_budget](api:cw_res_set_read_budget): 4 files and 2 ms by default). Files of the project layer and glTF files, whose prepare step finds their dependencies, are read when requested.
+- **Decode** runs on the job pool (image decode, KTX2 transcode, meshopt decode, decompression), at most [cw_res_set_max_in_flight](api:cw_res_set_max_in_flight) at once, started in finish order.
+- **Finish** happens in a fixed order: by lane (lower first), then priority (higher first), then request order. Plain `cw_res_load_async` is lane 0, priority 0, so loads finish in request order; [cw_res_load_async_ex](api:cw_res_load_async_ex) sets both, so a nearby cell asked for late does not wait behind far ones. A resource whose decode ended early waits for the ones before it. The order is a pure function of the requests, which keeps the frame a resource becomes ready, and every id three.c hands out, the same on every host. Take priorities from game state (distance in fixed-tick positions), never from timing. In a deterministic run the budget counts bytes only, so readiness never depends on thread timing.
+
+Releasing the last reference to a load in flight cancels it without waiting: work not started is dropped and a decode already running finishes on its worker, its output thrown away when it lands. With [cw_res_set_residency_budget](api:cw_res_set_residency_budget), released resources stay loaded in a cache (least recently released evicted first) while their bytes fit, so walking back to where you were is a cache hit. [cw_res_stats](api:cw_res_stats) reports what waits, runs, is cached and was evicted.
+
 
 `gltf_scene` requests four files in `init`:
 
@@ -96,19 +103,23 @@ Per-file settings live in a sidecar, `<file>.cwimport`, with `key = value` lines
 
 @include samples/gltf_scene/project/textures/ground.png.cwimport
 
-Settings the importers read: `texture.format` (`ktx2` or the source format), `texture.mode` (`etc1s` small, `uastc` high quality), `texture.quality`, `texture.effort`, `texture.mips`, `texture.color`; `mesh.optimize`, `mesh.compress` (EXT_meshopt_compression), `mesh.lods` (target ratios, e.g. `0.5 0.2`), `mesh.lod_error`; `audio.format`, `audio.bitrate`, `audio.complexity`; `font.subset`, `font.subset_chars`; `pack.deflate`.
+Settings the importers read: `texture.format` (`ktx2` or the source format), `texture.mode` (`etc1s` small, `uastc` high quality), `texture.quality`, `texture.effort`, `texture.mips`, `texture.color`; `mesh.optimize`, `mesh.compress` (EXT_meshopt_compression), `mesh.lods` (target ratios, e.g. `0.5 0.2`), `mesh.lod_error`; `audio.format`, `audio.bitrate`, `audio.complexity`; `font.subset`, `font.subset_chars`; `pack.compress` (pack entries: `zstd`, the default, `lz4`, `deflate` or `none`), `pack.level` (zstd 1..22, default 12; lz4 1..12, default 9).
 
 ### What the formats buy
 
 - **KTX2** (Basis Universal) textures are small on disk and transcode at load, on a worker, to the best compressed format the context has: ASTC 4x4, BC7, ETC2, BC3, else RGBA8. Compressed textures stay compressed on the GPU, typically a quarter of RGBA8's memory or less. [cw_res_texture_info](api:cw_res_texture_info) reports the result.
 - **meshopt** reorders vertices and indices for the GPU cache and compresses the buffers; decoding runs on the job pool. `mesh.lods` adds simplified index buffers that share the full mesh's vertices ([cw_mesh](api:cw_mesh)); [cw_gltf_instance_auto_lod](api:cw_gltf_instance_auto_lod) picks the coarsest level whose error stays under a pixel budget on screen.
 
+### Compressed files
+
+A file whose name ends in `.zst` (a zstd frame) or `.lz4` (an lz4 frame) loads as the file without that suffix: `cells/3_4.cell.zst` is a `.cell` resource. It is decompressed on the job pool with the decode (natively the read happens there too), so a cart can ship compressed files with no help from its host, and the stats count the packed bytes read. The zstd and lz4 command line tools, Node's `zlib.zstdCompressSync` and `cwpack` all write these. [cw_decompress](api:cw_decompress) and [cw_decompress_block](api:cw_decompress_block) decompress a buffer yourself, on any thread. zstd decodes at roughly 1 GB/s natively, lz4 several times faster; both decoders are BSD licensed (see `NOTICE`).
+
 ### Outputs
 
 Every output is byte-identical for identical input:
 
 - `DIR/assets/...`: the packed files plus `res.index`. This is a cart's asset directory.
-- `--pak FILE`: the native `.cwpak`, one file with a sorted index (binary search lookup), each entry raw or deflated, whichever is smaller. The native platform mounts `<executable>.cwpak` automatically.
+- `--pak FILE`: the native `.cwpak`, one file with a sorted index (binary search lookup), each entry raw or compressed whole (zstd by default), kept compressed only when that saves a tenth. Entries decompress outside the pack's lock, so background reads decompress in parallel. The native platform mounts `<executable>.cwpak` automatically.
 - `DIR/manifest.json`: the wasmcart cart-directory manifest, so a web cart can load files lazily over HTTP.
 - `DIR/sources.txt`: every file read (what hot reload watches); `--depfile` for the build system.
 

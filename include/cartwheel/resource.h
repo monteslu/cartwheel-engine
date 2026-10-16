@@ -274,6 +274,29 @@ bool cw_res_get_info(cw_res res, cw_res_info *out);
  * returns the same numbers as JSON. */
 void cw_res_log_report(void);
 
+/* ── compression ──────────────────────────────────────────────────────
+ * A file whose path ends in ".zst" (a zstd frame) or ".lz4" (an lz4 frame,
+ * what the zstd and lz4 tools and Node's zlib write) loads as the file
+ * without that suffix: "cells/3_4.cell.zst" is a ".cell" resource whose
+ * bytes are decompressed on the job pool with the decode (natively, the read
+ * too), so a cart can ship compressed files with no help from its host.
+ * Natively, cwpack also compresses pack entries (pack.compress). Both
+ * decoders are BSD licensed (NOTICE); zstd is the one KTX2 supercompression
+ * already uses. */
+typedef enum { CW_COMPRESS_NONE, CW_COMPRESS_ZSTD, CW_COMPRESS_LZ4 } cw_compression;
+/* The compression a path's suffix names (".zst", ".lz4"), else NONE. */
+cw_compression cw_compression_of(const char *path);
+/* A whole buffer decompressed: a zstd frame (with or without its content
+ * size) or an lz4 frame; NONE copies. cw_alloc'd (CW_MEM_RESOURCE) with a
+ * NUL after the *out_len bytes; NULL for corrupt or truncated input. Any
+ * thread. Cost: zstd decodes at roughly 1 GB/s, lz4 at several GB/s
+ * natively (a cart runs at about half that). */
+uint8_t *cw_decompress(cw_compression c, const void *src, size_t len, size_t *out_len);
+/* Into dst, whose size the caller knows (raw_len): a zstd frame, or a bare
+ * lz4 BLOCK (no frame: what a cwpak entry stores). False unless exactly
+ * raw_len bytes came out. Any thread. */
+bool cw_decompress_block(cw_compression c, const void *src, size_t len, void *dst, size_t raw_len);
+
 /* Free everything now (the platform calls it at shutdown, before the GL
  * context goes). Handles all go stale. */
 void cw_res_shutdown(void);

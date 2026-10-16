@@ -8,6 +8,8 @@
 #include "cartwheel/resource.h"
 #include "test.h"
 #include "three.h"
+#include "lz4.h"
+#include "lz4frame.h"
 #include "../../src/audio/internal.h" /* the audio module's decoder, to listen to an import */
 #include <math.h>
 
@@ -252,6 +254,61 @@ static void test_residency(void) {
   CHECK_EQ_INT(s1.cached_bytes, 0);
   cw_res_release(b2);
   flush_frees();
+}
+
+
+/* ".zst" / ".lz4" files load as the file without the suffix, decompressed with the decode */
+static void test_compressed(void) {
+  cw_res plain = cw_res_load("packed/lines.txt", 0);
+  cw_res z = cw_res_load("packed/lines.txt.zst", 0);
+  CHECK_EQ_INT(cw_res_type_of(z), CW_RES_TEXT);
+  const cw_blob *a = cw_res_blob(plain), *b = cw_res_blob(z);
+  CHECK(a && b && a->len == b->len && !memcmp(a->data, b->data, a->len) && b->data[b->len] == 0);
+  cw_res_info info;
+  cw_res_get_info(z, &info);
+  CHECK(info.file_bytes > 0 && info.file_bytes * 3 < (size_t)(b ? b->len : 0)); /* the packed size is what was read */
+  /* async, a zstd frame without its content size, JSON validated after decompression */
+  cw_res j = cw_res_load_async("packed/cells.json.zst", 0, NULL, NULL);
+  CHECK_EQ_INT(cw_res_wait(j), CW_RES_STATE_READY);
+  CHECK_EQ_INT(cw_res_type_of(j), CW_RES_JSON);
+  const cw_blob *jb = cw_res_blob(j);
+  CHECK(jb && jb->len > 1000 && jb->data[0] == '{' && strstr((const char *)jb->data, "\"id\":299"));
+  /* a truncated frame fails (and says so) */
+  cw_res bad = cw_res_load_async("packed/broken.txt.zst", 0, NULL, NULL);
+  CHECK_EQ_INT(cw_res_wait(bad), CW_RES_STATE_FAILED);
+  /* lz4: a frame made here, loaded from memory; and a bare block */
+  if (a) {
+    size_t cap = LZ4F_compressFrameBound(a->len, NULL);
+    uint8_t *f = cw_alloc(cap, CW_MEM_GAME);
+    size_t fn = LZ4F_compressFrame(f, cap, a->data, a->len, NULL);
+    CHECK(!LZ4F_isError(fn) && fn < a->len / 2);
+    cw_res l = cw_res_create("gen://lines.txt.lz4", 0, f, fn);
+    const cw_blob *lb = cw_res_blob(l);
+    CHECK_EQ_INT(cw_res_type_of(l), CW_RES_TEXT);
+    CHECK(lb && lb->len == a->len && !memcmp(lb->data, a->data, a->len));
+    size_t n = 0;
+    uint8_t *raw = cw_decompress(CW_COMPRESS_LZ4, f, fn - 1, &n); /* truncated */
+    CHECK(raw == NULL);
+    int bc = LZ4_compressBound((int)a->len);
+    char *blk = cw_alloc((size_t)bc, CW_MEM_GAME);
+    int bn = LZ4_compress_default((const char *)a->data, blk, (int)a->len, bc);
+    char *back = cw_alloc(a->len, CW_MEM_GAME);
+    CHECK(bn > 0 && cw_decompress_block(CW_COMPRESS_LZ4, blk, (size_t)bn, back, a->len) && !memcmp(back, a->data, a->len));
+    CHECK(!cw_decompress_block(CW_COMPRESS_LZ4, blk, (size_t)bn, back, a->len - 1)); /* wrong size */
+    uint32_t hsh = cw_hash32(lb ? lb->data : NULL, lb ? lb->len : 0, CW_HASH32_INIT);
+    FOLD(hsh);
+    cw_free(back);
+    cw_free(blk);
+    cw_free(f);
+    cw_res_release(l);
+  }
+  CHECK_EQ_INT(cw_compression_of("a/b.cell.zst"), CW_COMPRESS_ZSTD);
+  CHECK_EQ_INT(cw_compression_of("a/b.lz4"), CW_COMPRESS_LZ4);
+  CHECK_EQ_INT(cw_compression_of("a/zst"), CW_COMPRESS_NONE);
+  cw_res_release(bad);
+  cw_res_release(j);
+  cw_res_release(z);
+  cw_res_release(plain);
 }
 
 static void test_textures(void) {
@@ -537,6 +594,6 @@ static void test_audio_and_stats(void) {
 CW_TEST_SUITE("resource", { "types", test_types }, { "paths_uids", test_paths_and_uids },
               { "deferred_free", test_deferred_free }, { "failures", test_failures },
               { "async_order", test_async_order }, { "priorities", test_priorities },
-              { "cancel", test_cancel }, { "residency", test_residency }, { "textures", test_textures },
+              { "cancel", test_cancel }, { "residency", test_residency }, { "compressed", test_compressed }, { "textures", test_textures },
               { "gltf_external_lods", test_gltf_external_and_lods }, { "instances", test_instances },
               { "sub_async", test_sub_async }, { "reload", test_reload }, { "audio_opus", test_audio_opus }, { "preload", test_preload }, { "audio_stats", test_audio_and_stats })

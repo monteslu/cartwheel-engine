@@ -8774,7 +8774,7 @@
   },
   {
    "header": "cartwheel/resource.h",
-   "summary": "cartwheel resources: shared, immutable-at-runtime data (textures, meshes,\nmaterials, glTF scenes, audio clips, fonts, JSON/text blobs, and whatever\nother modules register) loaded once and shared by everyone who asks.\n\nAddressing. A resource has three names:\n  - a handle (cw_res): generational, what code holds; stale reads as NULL;\n  - a path: \"res://models/duck.glb\" or \"models/duck.glb\" (the same thing),\n    relative to the asset root (a .cwpak natively, the cart bundle in a\n    cart). Files read through the project layer first (cartwheel/vfs.h:\n    a native project directory, files written or imported into memory),\n    so an editor's project and a cart's imported files load too. A '#' addresses a sub-resource of a loaded file:\n      \"models/duck.glb#mesh/0/1\"   mesh 0, primitive 1 (a cw_mesh)\n      \"models/duck.glb#material/2\" glTF material 2 (a t3_material)\n      \"models/duck.glb#texture/0\"  glTF texture 0 (a t3_texture)\n  - a UID: a stable 64-bit id that survives renames. cwpack writes\n    \"res.index\" (uid, type, path per line) into every pack; a file's UID\n    comes from its .cwimport sidecar (uid=0x...), else the hash of its path\n    (cw_res_path_uid).\n\nLifetime. Every load returns a NEW reference (refcount + 1); release it with\ncw_res_release. Loading a path that is already loaded (or still loading)\nreturns the same resource. When the last reference goes, the resource is\nnot freed at once: it waits in a deferred-free queue for\nCW_RES_FREE_DELAY_FRAMES frame boundaries (the GPU may still be drawing\nwith it), and a load of the same path in that window revives it.\n\nLoading. cw_res_load is synchronous: it returns with the resource READY or\nFAILED. cw_res_load_async reads the file on the calling (main) thread,\ndecodes it on the job pool (image decode, KTX2 transcode, meshopt decode)\nand finishes it on the main thread in cw_res_frame (three.c objects, GL\nuploads) under a per-frame upload budget. Async loads FINISH IN REQUEST\nORDER, always: a resource whose decode ended early waits for the ones\nrequested before it, so the frame a resource becomes ready and every id\nthree.c hands out are the same on every host. In a deterministic run\n(cw_is_deterministic_run) the budget counts bytes only and cw_res_frame\nwaits for the next decode instead of skipping a frame, so readiness never\ndepends on thread timing; otherwise a millisecond budget applies too.\n\nThreading: every function here is main-thread only, except the type\ncallbacks documented as worker-safe.\n\nMemory: CW_MEM_RESOURCE (bookkeeping, decoded data). Payload sizes are in\ncw_res_stats.",
+   "summary": "cartwheel resources: shared, immutable-at-runtime data (textures, meshes,\nmaterials, glTF scenes, audio clips, fonts, JSON/text blobs, and whatever\nother modules register) loaded once and shared by everyone who asks.\n\nAddressing. A resource has three names:\n  - a handle (cw_res): generational, what code holds; stale reads as NULL;\n  - a path: \"res://models/duck.glb\" or \"models/duck.glb\" (the same thing),\n    relative to the asset root (a .cwpak natively, the cart bundle in a\n    cart). Files read through the project layer first (cartwheel/vfs.h:\n    a native project directory, files written or imported into memory),\n    so an editor's project and a cart's imported files load too. A '#' addresses a sub-resource of a loaded file:\n      \"models/duck.glb#mesh/0/1\"   mesh 0, primitive 1 (a cw_mesh)\n      \"models/duck.glb#material/2\" glTF material 2 (a t3_material)\n      \"models/duck.glb#texture/0\"  glTF texture 0 (a t3_texture)\n  - a UID: a stable 64-bit id that survives renames. cwpack writes\n    \"res.index\" (uid, type, path per line) into every pack; a file's UID\n    comes from its .cwimport sidecar (uid=0x...), else the hash of its path\n    (cw_res_path_uid).\n\nLifetime. Every load returns a NEW reference (refcount + 1); release it with\ncw_res_release. Loading a path that is already loaded (or still loading)\nreturns the same resource. When the last reference goes, the resource is\nnot freed at once: it waits in a deferred-free queue for\nCW_RES_FREE_DELAY_FRAMES frame boundaries (the GPU may still be drawing\nwith it), and a load of the same path in that window revives it.\n\nLoading. cw_res_load is synchronous: it returns with the resource READY or\nFAILED. cw_res_load_async reads and decodes the file in the background and\nfinishes it on the main thread in cw_res_frame (three.c objects, GL\nuploads) under a per-frame upload budget:\n  - read: natively on the job pool, together with the decode, so a\n    request costs the main thread nothing but bookkeeping. In a cart the\n    host's asset calls belong to the main thread (a lazily loaded web cart\n    suspends there while the bytes arrive), so cw_res_frame reads at most\n    a few queued files per frame (cw_res_set_read_budget). Files of the\n    project layer (cartwheel/vfs.h) and of types with a prepare step (glTF)\n    are read at request time, as before.\n  - decode: on the job pool, at most cw_res_set_max_in_flight at once,\n    started in finish order, so a late urgent request is not stuck behind\n    a hundred early ones.\n  - finish: in ORDER, always: by lane (lower first), then priority (higher\n    first), then request order (cw_res_load_async_ex). A resource whose\n    decode ended early waits for the ones before it, so the frame a\n    resource becomes ready and every id three.c hands out are the same on\n    every host (the order is a pure function of the requests). Plain\n    cw_res_load_async is lane 0, priority 0: request order.\nIn a deterministic run (cw_is_deterministic_run) the budget counts bytes\nonly and cw_res_frame waits for the next decode instead of skipping a\nframe, so readiness never depends on thread timing; otherwise a\nmillisecond budget applies too.\n\nCancelling. Releasing the last reference of a load in flight cancels it\nwithout waiting: work not started is dropped, a decode already running\nfinishes on its worker and its output is discarded when it lands.\n\nResidency. With cw_res_set_residency_budget, a resource whose last\nreference goes stays loaded (READY, 0 references) in an LRU cache while\nthe cache fits the budget; a load of its path revives it at once (a cache\nhit). The least recently released go first when the cache is over budget.\n\nThreading: every function here is main-thread only, except the type\ncallbacks documented as worker-safe.\n\nMemory: CW_MEM_RESOURCE (bookkeeping, decoded data). Payload sizes are in\ncw_res_stats.",
    "functions": [
     {
      "name": "cw_res_load",
@@ -8786,6 +8786,12 @@
      "name": "cw_res_load_async",
      "signature": "cw_res cw_res_load_async(const char *path, cw_res_type type, cw_res_done_fn done, void *user)",
      "doc": "Asynchronous load. done may be NULL. A '#' sub-resource path loads its file\nasynchronously and resolves the sub-resource when the file is ready.",
+     "inline": false
+    },
+    {
+     "name": "cw_res_load_async_ex",
+     "signature": "cw_res cw_res_load_async_ex(const char *path, cw_res_type type, const cw_res_load_opts *opts)",
+     "doc": "cw_res_load_async with a lane and priority (NULL opts = lane 0, priority\n0). Requesting a path already loading with a better (lane, priority)\nmoves it up; never down. A '#' sub-resource and the files a type's\nprepare step depends on load with the same lane and priority.",
      "inline": false
     },
     {
@@ -8963,6 +8969,24 @@
      "inline": false
     },
     {
+     "name": "cw_res_set_read_budget",
+     "signature": "void cw_res_set_read_budget(int files, double ms)",
+     "doc": "Cart reads per frame: at most `files` queued files (at least 1 per frame\nwhile any wait), and stop once `ms` is spent (ignored in deterministic\nruns, where exactly `files` are read). Defaults: 4 files, 2 ms. Natively\nreads run on the job pool and this does nothing.",
+     "inline": false
+    },
+    {
+     "name": "cw_res_set_max_in_flight",
+     "signature": "void cw_res_set_max_in_flight(int n)",
+     "doc": "Decodes (and native reads) running on the job pool at once; more wait\ntheir turn, started in finish order. Default (0): twice the job threads,\nat least 2.",
+     "inline": false
+    },
+    {
+     "name": "cw_res_set_residency_budget",
+     "signature": "void cw_res_set_residency_budget(size_t bytes)",
+     "doc": "The residency cache's size: released READY resources stay loaded while\ntheir bytes (payload bytes, or file bytes for types that report none; in\na deterministic run always file bytes, which are the same on every host)\nfit. 0 (default) = no cache: the last release frees after\nCW_RES_FREE_DELAY_FRAMES. Lowering it evicts at the next cw_res_frame.",
+     "inline": false
+    },
+    {
      "name": "cw_res_get_stats",
      "signature": "void cw_res_get_stats(cw_res_stats *out)",
      "doc": "walks every slot: O(live resources)",
@@ -8978,6 +9002,24 @@
      "name": "cw_res_log_report",
      "signature": "void cw_res_log_report(void)",
      "doc": "Log a load report: totals, then one line per loaded file (sizes, read /\ndecode / finish times, time and frames to ready). The \"res\" debug command\nreturns the same numbers as JSON.",
+     "inline": false
+    },
+    {
+     "name": "cw_compression_of",
+     "signature": "cw_compression cw_compression_of(const char *path)",
+     "doc": "The compression a path's suffix names (\".zst\", \".lz4\"), else NONE.",
+     "inline": false
+    },
+    {
+     "name": "cw_decompress",
+     "signature": "uint8_t *cw_decompress(cw_compression c, const void *src, size_t len, size_t *out_len)",
+     "doc": "A whole buffer decompressed: a zstd frame (with or without its content\nsize) or an lz4 frame; NONE copies. cw_alloc'd (CW_MEM_RESOURCE) with a\nNUL after the *out_len bytes; NULL for corrupt or truncated input. Any\nthread. Cost: zstd decodes at roughly 1 GB/s, lz4 at several GB/s\nnatively (a cart runs at about half that).",
+     "inline": false
+    },
+    {
+     "name": "cw_decompress_block",
+     "signature": "bool cw_decompress_block(cw_compression c, const void *src, size_t len, void *dst, size_t raw_len)",
+     "doc": "Into dst, whose size the caller knows (raw_len): a zstd frame, or a bare\nlz4 BLOCK (no frame: what a cwpak entry stores). False unless exactly\nraw_len bytes came out. Any thread.",
      "inline": false
     },
     {
@@ -9178,6 +9220,11 @@
      "decl": "typedef void (*cw_res_done_fn)(cw_res res, cw_res_state state, void *user);"
     },
     {
+     "name": "cw_res_load_opts",
+     "doc": "Where an async load stands in the finish order (see Loading above). The\norder must come from game state (distance from the player in fixed-tick\npositions, a level's needs), never from timing.",
+     "decl": "typedef struct cw_res_load_opts {\n  int lane;              /* lower lanes finish first (0 = default; e.g. 0 for what the sim needs, 1 for visuals) */\n  int priority;          /* within a lane, higher finishes first (0 = default) */\n  cw_res_done_fn done;   /* may be NULL */\n  void *user;\n} cw_res_load_opts;"
+    },
+    {
      "name": "cw_res_group",
      "doc": "── groups: loads started together (a level's preload, a loading screen) ──\nA group holds one reference to each resource added; freeing it releases\nthem (they stay cached while anything else holds them).",
      "decl": "typedef struct cw_res_group cw_res_group;"
@@ -9190,12 +9237,17 @@
     {
      "name": "cw_res_stats",
      "doc": "",
-     "decl": "typedef struct cw_res_stats {\n  int live;          /* slots in use (any state, pending free included) */\n  int ready, loading, failed, pending_free;\n  int64_t bytes;     /* payload bytes of READY resources (CPU + GPU estimate) */\n  uint64_t loads;    /* load calls, cache hits included */\n  uint64_t cache_hits;\n  uint64_t decoded;  /* files decoded (sync + async) */\n  uint64_t freed;\n  uint64_t uploaded_bytes_last_frame;\n  int finished_last_frame;\n  int by_type[32];   /* READY resources per type id (first 32 types) */\n  /* load cost so far (wall clock: for reports, never for game logic) */\n  double read_ms;    /* reading files (main thread; a lazily loaded web cart waits on the network here) */\n  double decode_ms;  /* decoding (job pool, summed over workers) */\n  double finish_ms;  /* finishing: three.c objects, GPU uploads (main thread) */\n  int64_t file_bytes; /* packed bytes read */\n  int64_t cpu_bytes; /* CW_MEM_RESOURCE now: bookkeeping, decoded data, kept files */\n} cw_res_stats;"
+     "decl": "typedef struct cw_res_stats {\n  int live;          /* slots in use (any state, pending free included) */\n  int ready, loading, failed, pending_free;\n  int64_t bytes;     /* payload bytes of READY resources (CPU + GPU estimate) */\n  uint64_t loads;    /* load calls, cache hits included */\n  uint64_t cache_hits;\n  uint64_t decoded;  /* files decoded (sync + async) */\n  uint64_t freed;\n  uint64_t uploaded_bytes_last_frame;\n  int finished_last_frame;\n  int by_type[32];   /* READY resources per type id (first 32 types) */\n  /* load cost so far (wall clock: for reports, never for game logic) */\n  double read_ms;    /* reading files (main thread; a lazily loaded web cart waits on the network here) */\n  double decode_ms;  /* decoding (job pool, summed over workers) */\n  double finish_ms;  /* finishing: three.c objects, GPU uploads (main thread) */\n  int64_t file_bytes; /* packed bytes read */\n  int64_t cpu_bytes; /* CW_MEM_RESOURCE now: bookkeeping, decoded data, kept files */\n  /* the background pipeline and the residency cache */\n  int waiting;       /* async loads not started yet (a cart: not read yet) */\n  int in_flight;     /* reads + decodes running on the job pool */\n  int cached;        /* READY with no references, kept by the residency budget */\n  int64_t cached_bytes; /* their size as the budget counts it */\n  uint64_t evicted;  /* cached resources freed to fit the budget */\n  uint64_t cancelled; /* async loads released before they finished */\n} cw_res_stats;"
     },
     {
      "name": "cw_res_info",
      "doc": "One resource's numbers. Times are wall clock (informational).",
      "decl": "typedef struct cw_res_info {\n  cw_res_type type;\n  cw_res_state state;\n  const char *path;\n  uint64_t uid;\n  uint32_t version;\n  int refs;\n  size_t file_bytes;           /* packed size read for the last (re)load */\n  int64_t bytes;               /* payload (CPU + GPU estimate) */\n  double read_ms, decode_ms, finish_ms;\n  double total_ms;             /* request to READY */\n  int frames_to_ready;         /* frame boundaries between request and READY */\n} cw_res_info;"
+    },
+    {
+     "name": "cw_compression",
+     "doc": "── compression ──────────────────────────────────────────────────────\nA file whose path ends in \".zst\" (a zstd frame) or \".lz4\" (an lz4 frame,\nwhat the zstd and lz4 tools and Node's zlib write) loads as the file\nwithout that suffix: \"cells/3_4.cell.zst\" is a \".cell\" resource whose\nbytes are decompressed on the job pool with the decode (natively, the read\ntoo), so a cart can ship compressed files with no help from its host.\nNatively, cwpack also compresses pack entries (pack.compress). Both\ndecoders are BSD licensed (NOTICE); zstd is the one KTX2 supercompression\nalready uses.",
+     "decl": "typedef enum { CW_COMPRESS_NONE, CW_COMPRESS_ZSTD, CW_COMPRESS_LZ4 } cw_compression;"
     },
     {
      "name": "cw_res_decode_args",
@@ -9210,7 +9262,7 @@
     {
      "name": "cw_res_type_desc",
      "doc": "",
-     "decl": "typedef struct cw_res_type_desc {\n  const char *name;        /* \"texture\"; unique */\n  const char *extensions;  /* \".png .jpg\" (lower case) for CW_RES_TYPE_AUTO */\n  /* main thread, optional: called with the file read, before decode; asks\n   * for dependencies / extra files. false = FAILED (log why). */\n  bool (*prepare)(cw_res_prepare *p, void *type_user);\n  /* WORKER-SAFE: bytes -> decoded intermediate. No GL, no three.c object\n   * creation (three.c ids must be handed out in order on one thread), no\n   * cw_res_* calls. NULL = FAILED (log why). *cost = payload bytes the\n   * finish step will upload (for the budget). */\n  void *(*decode)(const cw_res_decode_args *a, size_t *cost);\n  /* main thread: decoded -> payload (create three.c objects, upload). Owns\n   * decoded either way. deps[i] are the prepare dependencies, READY or\n   * FAILED. NULL = FAILED. */\n  void *(*finish)(void *decoded, cw_res self, const cw_res *deps, int dep_count, void *type_user);\n  /* main thread: free a payload. */\n  void (*unload)(void *payload, void *type_user);\n  /* main thread, optional: drop a decoded intermediate never finished\n   * (the load was released before it finished). */\n  void (*discard)(void *decoded, void *type_user);\n  /* main thread, optional: hot reload. Move fresh into payload IN PLACE so\n   * pointers others hold stay valid, then free what is left of fresh.\n   * Without it, the handle's payload pointer is swapped and fresh's old\n   * payload freed (holders re-read cw_res_get; cw_res_version tells). */\n  void (*reload)(void *payload, void *fresh, void *type_user);\n  /* optional: payload bytes for stats */\n  size_t (*size)(const void *payload, void *type_user);\n  void *type_user;\n} cw_res_type_desc;"
+     "decl": "typedef struct cw_res_type_desc {\n  const char *name;        /* \"texture\"; unique */\n  const char *extensions;  /* \".png .jpg\" (lower case) for CW_RES_TYPE_AUTO */\n  /* main thread, optional: called with the file read, before decode; asks\n   * for dependencies / extra files. false = FAILED (log why). */\n  bool (*prepare)(cw_res_prepare *p, void *type_user);\n  /* WORKER-SAFE: bytes -> decoded intermediate. No GL, no three.c object\n   * creation (three.c ids must be handed out in order on one thread), no\n   * cw_res_* calls. NULL = FAILED (log why). *cost = payload bytes the\n   * finish step will upload (for the budget). */\n  void *(*decode)(const cw_res_decode_args *a, size_t *cost);\n  /* main thread: decoded -> payload (create three.c objects, upload). Owns\n   * decoded either way. deps[i] are the prepare dependencies, READY or\n   * FAILED. NULL = FAILED. */\n  void *(*finish)(void *decoded, cw_res self, const cw_res *deps, int dep_count, void *type_user);\n  /* main thread: free a payload. */\n  void (*unload)(void *payload, void *type_user);\n  /* main thread, optional: drop a decoded intermediate never finished\n   * (the load was released before it finished). */\n  void (*discard)(void *decoded, void *type_user);\n  /* main thread, optional: hot reload. Move fresh into payload IN PLACE so\n   * pointers others hold stay valid, then free what is left of fresh.\n   * Without it, the handle's payload pointer is swapped and fresh's old\n   * payload freed (holders re-read cw_res_get; cw_res_version tells). */\n  void (*reload)(void *payload, void *fresh, void *type_user);\n  /* optional: payload bytes for stats */\n  size_t (*size)(const void *payload, void *type_user);\n  void *type_user;\n  /* main thread, optional: called at every load request of this type,\n   * before the file is read (on a worker, for an async load without a\n   * prepare step): set up what decode needs from the main thread (the\n   * texture type picks its KTX2 target here). A type with prepare has its\n   * fi ..."
     },
     {
      "name": "cw_blob",

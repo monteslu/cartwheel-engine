@@ -22,11 +22,11 @@ target_include_directories(cw_toolcore PUBLIC ${CMAKE_SOURCE_DIR}/include ${CMAK
 target_link_libraries(cw_toolcore PUBLIC meshoptimizer m pthread)
 
 add_executable(cwpack main.c util.c import_gltf.c import_texture.c import_audio.c import_font.c basis_enc.cpp)
-target_include_directories(cwpack PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${DEPS}/meshoptimizer/extern)
+target_include_directories(cwpack PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${DEPS}/meshoptimizer/extern ${_bu}/zstd)
 target_compile_options(cwpack PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers>)
 # three's archive itself, not its target: cwpack uses its loaders and math,
 # never its renderer, so neither GLES nor Dawn is linked or loaded (the tool
 # runs on machines and in SDKs without either)
-target_link_libraries(cwpack PRIVATE cw_toolcore cw_basisu_encoder $<TARGET_FILE:three> cw_opus cw_ogg cw_miniaudio m)
+target_link_libraries(cwpack PRIVATE cw_toolcore cw_lz4 cw_basisu_encoder $<TARGET_FILE:three> cw_opus cw_ogg cw_miniaudio m)
 target_include_directories(cwpack PRIVATE ${CW_THREE_DIR}/include)
 add_dependencies(cwpack three)

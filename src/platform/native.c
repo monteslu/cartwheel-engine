@@ -28,6 +28,7 @@
 #include "cartwheel/core.h"
 #include "cartwheel/debug.h"
 #include "cartwheel/vfs.h"
+#include "cartwheel/resource.h" /* cw_decompress_block */
 #include "resource/cwpak.h"
 
 #if !defined(_WIN32)
@@ -159,8 +160,9 @@ static bool pak_open(const char *path) {
   SDL_RWops *f = SDL_RWFromFile(path, "rb");
   if (!f) return false;
   cwpak_header h;
-  if (!rw_at(f, 0, &h, sizeof h) || memcmp(h.magic, CWPAK_MAGIC, 8) || h.version != CWPAK_VERSION) {
-    cw_error("%s is not a cwpak v%u: rebuild it with cwpack", path, CWPAK_VERSION);
+  if (!rw_at(f, 0, &h, sizeof h) || memcmp(h.magic, CWPAK_MAGIC, 8) || h.version < CWPAK_VERSION_MIN ||
+      h.version > CWPAK_VERSION) {
+    cw_error("%s is not a cwpak v%u..%u: rebuild it with cwpack", path, CWPAK_VERSION_MIN, CWPAK_VERSION);
     SDL_RWclose(f);
     return false;
   }
@@ -246,34 +248,46 @@ static const cwpak_entry *pak_find(const char *path) {
   return NULL;
 }
 
-/* -1 when not in the pack; else bytes copied (min(raw, cap)) */
+/* -2 when not in the pack (or no pack); -1 on a read or decode error; else
+ * bytes copied (min(raw, cap)). The lock covers the index lookup and the
+ * file read only: decompression runs outside it, so resource jobs reading
+ * several entries at once decompress in parallel. */
 static long pak_read(const char *path, void *dst, size_t cap, long *size_only) {
   pak_mount();
   if (!pak.f) return -2;
   SDL_LockMutex(pak.lock);
-  long r = -2;
   const cwpak_entry *e = pak.f ? pak_find(path) : NULL;
-  if (e) {
-    if (size_only) { *size_only = (long)e->raw_size; r = 0; }
-    else if (!(e->flags & CWPAK_DEFLATE)) {
-      size_t n = e->size < cap ? (size_t)e->size : cap;
-      r = rw_at(pak.f, e->offset, dst, n) ? (long)n : -1;
-    } else {
-      char *z = malloc((size_t)e->size + 1);
-      bool ok = z && rw_at(pak.f, e->offset, z, (size_t)e->size);
-      if (ok && cap >= e->raw_size) {
-        r = stbi_zlib_decode_noheader_buffer(dst, (int)e->raw_size, z, (int)e->size) == (int)e->raw_size ? (long)e->raw_size : -1;
-      } else if (ok) {
-        char *full = malloc((size_t)e->raw_size + 1);
-        r = full && stbi_zlib_decode_noheader_buffer(full, (int)e->raw_size, z, (int)e->size) == (int)e->raw_size ? (long)cap : -1;
-        if (r > 0) memcpy(dst, full, cap);
-        free(full);
-      }
-      free(z);
-      if (r < 0) cw_error("%s: entry %s does not inflate: the pack is corrupt, rebuild it", pak.path, path);
-    }
+  if (!e) { SDL_UnlockMutex(pak.lock); return -2; }
+  cwpak_entry ent = *e;
+  if (size_only) { *size_only = (long)ent.raw_size; SDL_UnlockMutex(pak.lock); return 0; }
+  if (!(ent.flags & (CWPAK_DEFLATE | CWPAK_ZSTD | CWPAK_LZ4))) {
+    size_t n = ent.size < cap ? (size_t)ent.size : cap;
+    long r = rw_at(pak.f, ent.offset, dst, n) ? (long)n : -1;
+    SDL_UnlockMutex(pak.lock);
+    return r;
   }
+  char *z = malloc((size_t)ent.size + 1);
+  bool ok = z && rw_at(pak.f, ent.offset, z, (size_t)ent.size);
   SDL_UnlockMutex(pak.lock);
+  long r = -1;
+  if (ok) {
+    /* straight into dst when it holds the whole entry, else through a copy */
+    char *out = cap >= ent.raw_size ? dst : malloc((size_t)ent.raw_size + 1);
+    bool dec = false;
+    if (!out) dec = false;
+    else if (ent.flags & CWPAK_DEFLATE)
+      dec = stbi_zlib_decode_noheader_buffer(out, (int)ent.raw_size, z, (int)ent.size) == (int)ent.raw_size;
+    else
+      dec = cw_decompress_block(ent.flags & CWPAK_ZSTD ? CW_COMPRESS_ZSTD : CW_COMPRESS_LZ4, z, (size_t)ent.size, out,
+                                (size_t)ent.raw_size);
+    if (dec) {
+      r = (long)(cap < ent.raw_size ? cap : ent.raw_size);
+      if (out != dst) memcpy(dst, out, (size_t)r);
+    }
+    if (out != dst) free(out);
+  }
+  free(z);
+  if (r < 0) cw_error("%s: entry %s does not decompress: the pack is corrupt, rebuild it", pak.path, path);
   return r;
 }
 

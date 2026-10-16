@@ -8,8 +8,10 @@
  *            lookup is a binary search
  *   strings  the paths, NUL-terminated, in index order
  *
- * An entry is stored raw or as one raw-deflate stream (flags & CWPAK_DEFLATE;
- * cwpack keeps whichever is smaller by its threshold). hash is FNV-1a 32 over
+ * An entry is stored raw or compressed whole, by its flags: one raw-deflate
+ * stream (CWPAK_DEFLATE, version 1 packs), one zstd frame (CWPAK_ZSTD) or one
+ * lz4 block (CWPAK_LZ4, raw_size bytes out); cwpack keeps the compressed
+ * form only when it saves at least a tenth. Readers take versions 1 and 2. hash is FNV-1a 32 over
  * the uncompressed bytes. Nothing in the file depends on time or on the
  * machine, so identical inputs give byte-identical packs. */
 #ifndef CW_RESOURCE_CWPAK_H
@@ -18,9 +20,12 @@
 #include <stdint.h>
 
 #define CWPAK_MAGIC "CWPAK\r\n\x1a"
-#define CWPAK_VERSION 1u
+#define CWPAK_VERSION 2u
+#define CWPAK_VERSION_MIN 1u
 #define CWPAK_ALIGN 64u
 #define CWPAK_DEFLATE 1u
+#define CWPAK_ZSTD 2u
+#define CWPAK_LZ4 4u
 
 typedef struct cwpak_header {
   char magic[8];

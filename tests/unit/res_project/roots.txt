@@ -22,3 +22,7 @@ audio/tune.wav
 levels/test.cwscene
 models/quad_clamp.gltf
 models/quad_data.gltf
+packed/lines.txt
+packed/lines.txt.zst
+packed/cells.json.zst
+packed/broken.txt.zst

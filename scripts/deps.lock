@@ -32,6 +32,9 @@ recastnavigation https://github.com/recastnavigation/recastnavigation.git 9f4ce6
 kemar         https://sound.media.mit.edu/resources/KEMAR/diffuse.zip   1994-diffuse   a48e73137390626ef1e45d1de6a4d98530c6aa570e71b40f7c4442241ed5fa22
 # pl_mpeg (MIT): MPEG-1 video + MP2 audio decoding for cutscenes (src/video, src/audio/decode.c)
 pl_mpeg       https://github.com/phoboslab/pl_mpeg.git      c871f2be022ece7ef4f64230b4fb8e1fb9eb6023
+# lz4 (lib/ only, BSD-2; the rest of that repo is GPL and is never compiled): packed-resource compression,
+# the decoder in the engine, the encoders (lz4, lz4hc) in cwpack. zstd comes with basis_universal (zstd/)
+lz4           https://github.com/lz4/lz4.git                v1.10.0              ebb370ca83af193212df4dcbadcc5d87bc0de2f0
 # Fonts (single files into deps/fonts/<name>.<ext>, sha256-checked): Noto, SIL OFL 1.1,
 # from google/fonts at a pinned commit (the l10n sample packs subsets of them)
 font:noto-sans-jp.ttf       https://github.com/google/fonts/raw/7085eb89a950e85db5b166b7a58d414544b4140c/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf                  gf-7085eb89   c2f3b4d463500a2ddcd3849cded1fceeb9fd6d1c32e6cbecd568453ba50fc68f
