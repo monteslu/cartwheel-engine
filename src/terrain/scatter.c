@@ -157,8 +157,8 @@ int cw_terrain_scatter_cell(cw_terrain *t, int layer, int cx, int cz, float *out
     out[5 * i + 1] = tmp[INST_F * i + 1];
     out[5 * i + 2] = tmp[INST_F * i + 2];
     out[5 * i + 3] = tmp[INST_F * i + 3];
-    /* yaw back from the quaternion's y / w (render use only: atan2f) */
-    out[5 * i + 4] = 2 * atan2f(tmp[INST_F * i + 5], tmp[INST_F * i + 7]);
+    /* the yaw back from the quaternion's y / w (cw_atan2: the same bits on every host) */
+    out[5 * i + 4] = 2 * cw_atan2(tmp[INST_F * i + 5], tmp[INST_F * i + 7]);
   }
   cw_free(tmp);
   return m;
