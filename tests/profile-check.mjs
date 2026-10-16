@@ -58,6 +58,13 @@ export function checkTrace(text, want) {
   return problems;
 }
 
+/** a copy of the trace text without the zones named `name` */
+export function dropZones(text, name) {
+  const t = JSON.parse(text);
+  t.traceEvents = t.traceEvents.filter((e) => !(e.ph === 'X' && e.name === name));
+  return JSON.stringify(t);
+}
+
 /** a copy of the trace text with one zone made to overlap its parent's end (the nesting control) */
 export function breakNesting(text) {
   const t = JSON.parse(text);

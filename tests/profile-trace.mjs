@@ -3,15 +3,19 @@
 // thread, its job zones on workers, the audio mixer and (where the GL driver
 // has timer queries) the GPU lane; profiling changes nothing the game
 // simulates; and the zones cost the main thread under 0.1 ms a frame.
+// The runs use SDL's dummy audio driver, as the other native gates do: it
+// needs no device, so the mixer runs on a machine without one (a CI runner)
+// too, and the demo's audio stats confirm it mixed.
 // Controls that must fail: a run that never records, a trace whose zones
-// overlap, a run one tick short (the state check), an impossible budget.
+// overlap, a trace without the mixer's zones, a run one tick short (the
+// state check), an impossible budget.
 //   node tests/profile-trace.mjs
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
-import { checkTrace, breakNesting } from './profile-check.mjs';
+import { checkTrace, breakNesting, dropZones } from './profile-check.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -26,7 +30,7 @@ const check = (what, ok, detail = '') => {
 };
 /** runs the demo; returns stdout lines as JSON (the CW_DEBUG_CMDS replies) */
 function run(env) {
-  const r = spawnSync(exe, [], { encoding: 'utf8', env: { ...process.env, ...env } });
+  const r = spawnSync(exe, [], { encoding: 'utf8', env: { ...process.env, SDL_AUDIODRIVER: 'dummy', ...env } });
   if (r.status !== 0) throw new Error(`profile_demo failed: ${r.stderr.trim().split('\n').slice(-3).join(' | ')}`);
   return r.stdout.trim().split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
 }
@@ -39,8 +43,9 @@ const state = (file) => {
 // the trace, the GPU lane asked for
 const trace = join(OUT, 'profile-trace.json');
 rmSync(trace, { force: true });
-const [pipe] = run({ CW_FRAMES: String(START + FRAMES + 5), CW_PROFILE_TRACE: trace, CW_PROFILE_TRACE_START: String(START),
-  CW_PROFILE_TRACE_FRAMES: String(FRAMES), CW_PROFILE_GPU: '1', CW_DEBUG_CMDS: 'pipeline' });
+const [pipe, au] = run({ CW_FRAMES: String(START + FRAMES + 5), CW_PROFILE_TRACE: trace, CW_PROFILE_TRACE_START: String(START),
+  CW_PROFILE_TRACE_FRAMES: String(FRAMES), CW_PROFILE_GPU: '1', CW_DEBUG_CMDS: 'pipeline;fields audio.mixed_frames' });
+check(`the mixer ran in the traced run (audio.mixed_frames ${au?.['audio.mixed_frames']})`, au?.['audio.mixed_frames'] > 0);
 const text = existsSync(trace) ? readFileSync(trace, 'utf8') : '';
 const timers = pipe?.timer_query === true;
 const problems = checkTrace(text, { frames: FRAMES, gpu: timers, jobs: ['physics3d.step/job', 'game.flock/job'], audio: true });
@@ -53,6 +58,9 @@ rmSync(none, { force: true });
 run({ CW_FRAMES: '20', CW_PROFILE_TRACE: none, CW_PROFILE_TRACE_START: '1000' });
 const offProblems = checkTrace(existsSync(none) ? readFileSync(none, 'utf8') : '', { frames: FRAMES });
 check('control: a run that never recorded fails the checks', offProblems.length > 0, offProblems[0] || 'CONTROL PASSED');
+// control: the mixer ran, but its zones are not in the trace
+const noMix = text ? checkTrace(dropZones(text, 'audio.mix'), { frames: FRAMES, gpu: timers, jobs: ['physics3d.step/job', 'game.flock/job'], audio: true }) : [];
+check('control: a trace without the mixer\'s zones fails the audio check', noMix.some((p) => p.includes('audio.mix')), noMix[0] || 'CONTROL PASSED');
 // control: zones that overlap their parent's end
 const broken = text ? checkTrace(breakNesting(text), { frames: FRAMES, gpu: timers, jobs: ['physics3d.step/job', 'game.flock/job'], audio: true }) : [];
 check('control: a trace with a zone overlapping its parent fails the nesting check', broken.some((p) => p.includes('overlaps')), broken[0] || 'CONTROL PASSED');
