@@ -259,6 +259,17 @@ The cost follows the **Effects detail** setting:
 | grid (cells across x slices) | 64 x 32 | 96 x 48 | 160 x 64 | 240 x 96 |
 | shadow map per light | 256, the sun only | 512 | 1024 | 1024 |
 
+Measured on an AMD Radeon 890M (integrated) with `fog_shafts_perf` (the sample's room, two shadowed lights and the mist, a 1920 x 1080 frame), the GPU time of the fog's own passes (building the grid, then applying it to the image), in ms per frame:
+
+| Effects detail | Low | Medium | High | Ultra |
+|---|---|---|---|---|
+| native, GL | 0.29 | 0.45 | 1.22 | 2.61 |
+| native, WebGPU | 0.15 | 0.28 | 0.64 | 1.83 |
+| Vega 8 estimate, GL | 0.7 to 0.9 | 1.1 to 1.4 | 3.0 to 3.7 | 6.5 to 8 |
+| Vega 8 estimate, WebGPU | 0.4 to 0.5 | 0.7 to 0.9 | 1.6 to 1.9 | 4.6 to 5.5 |
+
+The WebGPU rows leave out the fog's shadow maps for its lights, which draw the scene again from each shadowed light (a scene of a few dozen draws here). In Chromium on WebGPU, High costs about 0.7 ms more GPU time per frame than the same scene with the fog analytic and the mist hidden, shadow maps included. Chromium on GL has no GPU timers, so there is no column for it. The grid is mostly bound by memory and fill, so on a Vega 8 expect about 2.5 to 3 times the 890M's time, as in the estimate rows: Medium fits a 60 Hz frame with room to spare there, High is affordable on WebGPU, and Ultra is for faster GPUs.
+
 The number of cells down the screen follows its shape (90 at High on a 16:9 screen). Volumetric fog needs a perspective camera. `cw_volumetric_fog_get_state` reports what the fog did last frame: the grid, the lights, the shadowed lights and the volumes.
 
 A wall thinner than a cell can let a little of the light behind it into the cell in front of it. Keep sunlit air behind thin walls out of the grid's reach, or make the walls thicker than a cell is deep at that distance.

@@ -15,7 +15,8 @@
  * only, the camera slowly turning; publishes the passes' GPU ms (averaged)
  * as perf.grid_ms, perf.apply_ms, perf.scene_ms (CW_GPU_TIMERS=1; -1 where
  * the host has no timers) for the preset CW_QUALITY picks. fog_shafts_perf_off
- * (FOG_SHAFTS_OFF too): the same with the fog analytic, the A/B baseline. */
+ * (FOG_SHAFTS_OFF too): the same with the fog analytic and the mist hidden
+ * (no grid at all), the A/B baseline. */
 #include <string.h>
 
 #include "cartwheel/debug.h"
@@ -33,6 +34,7 @@ static cw_node node(const char *path) { return cw_node_get(cw_tree_root(cw_scene
 static void apply(int s) {
 #ifdef FOG_SHAFTS_OFF
   s = 1;
+  cw_node_set(node("Room/Mist"), "visible", cw_val_bool(false)); /* no volume either: no grid at all */
 #endif
   cw_node_set(node("Room/Fog"), "volumetric", cw_val_bool(s != 1));
   if (s == 2) cw_node3d_look_at(node("Room/Spot"), (t3_vec3){ -1, 0, -6 }, (t3_vec3){ 0, 0, -1 });
