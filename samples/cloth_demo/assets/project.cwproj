@@ -1,0 +1,3 @@
+; cloth_demo project settings (cartwheel/physics_nodes.h)
+layer_names_3d = "world, player, props"
+gravity_3d = vec3(0, -9.8, 0)

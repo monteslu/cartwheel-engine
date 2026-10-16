@@ -8439,6 +8439,541 @@
    ]
   },
   {
+   "name": "Cloth3D",
+   "parent": "Node3D",
+   "doc": "A rectangle of cloth (cloth.h): flags, banners, capes, curtains. Pinned to this node or attach_to.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "width",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 1000,
+     "doc": "Metres along the node's +x."
+    },
+    {
+     "name": "height",
+     "type": "float",
+     "default": "1.4",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 1000,
+     "doc": "Metres down the node's -y."
+    },
+    {
+     "name": "columns",
+     "type": "int",
+     "default": "16",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 255,
+     "doc": "Quads across (particles: columns + 1)."
+    },
+    {
+     "name": "rows",
+     "type": "int",
+     "default": "22",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 255,
+     "doc": "Quads down (particles: rows + 1)."
+    },
+    {
+     "name": "pin",
+     "type": "enum",
+     "default": "TOP",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "NONE",
+      "TOP",
+      "LEFT",
+      "TOP_CORNERS",
+      "LEFT_CORNERS"
+     ],
+     "doc": "Which particles hold: the top edge (banner, cape), the left edge (flag on a pole), corners or none."
+    },
+    {
+     "name": "attach_to",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path of the node the pins follow (a body node pulls on the body); empty = this node."
+    },
+    {
+     "name": "skin_distance",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "> 0: particles stay within this many metres (at the far edge) of the rest shape riding the pins' frame."
+    },
+    {
+     "name": "mass",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0.001,
+     "max": 10000,
+     "doc": "Kilograms of the whole cloth."
+    },
+    {
+     "name": "stretch_compliance",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "m/N of the edges (0 = as stiff as the substeps allow)."
+    },
+    {
+     "name": "bend_compliance",
+     "type": "float",
+     "default": "0.01",
+     "stored": true,
+     "readonly": false,
+     "min": -1,
+     "max": 100,
+     "doc": "m/N across neighbouring triangles (< 0 = no bending)."
+    },
+    {
+     "name": "tether_slack",
+     "type": "float",
+     "default": "1.02",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 2,
+     "doc": "Tethers hold particles within rest distance x this of the pins (0 = off)."
+    },
+    {
+     "name": "damping",
+     "type": "float",
+     "default": "0.1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Share of velocity lost per second."
+    },
+    {
+     "name": "thickness",
+     "type": "float",
+     "default": "0.02",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Metres kept from shapes (and itself)."
+    },
+    {
+     "name": "friction",
+     "type": "float",
+     "default": "0.4",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Against shapes."
+    },
+    {
+     "name": "substeps",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 64,
+     "doc": "Per tick, one iteration each."
+    },
+    {
+     "name": "collision_mask",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer bits it collides with (-1 = all, 0 = none)."
+    },
+    {
+     "name": "two_way",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Collisions push dynamic bodies back."
+    },
+    {
+     "name": "self_collision",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Particles keep thickness apart (costly)."
+    },
+    {
+     "name": "quality_scaled",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Cosmetic: Low graphics settings halve the substeps."
+    },
+    {
+     "name": "wind",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Air velocity, m/s (world)."
+    },
+    {
+     "name": "wind_drag",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Drag coefficient (1 looks like fabric)."
+    },
+    {
+     "name": "wind_lift",
+     "type": "float",
+     "default": "0.3",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Lift coefficient."
+    },
+    {
+     "name": "turbulence",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Gusts over the cloth and over time."
+    },
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(0.6, 0.08, 0.06, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Albedo (linear)."
+    },
+    {
+     "name": "color2",
+     "type": "color",
+     "default": "color(0.9, 0.85, 0.75, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The pattern's second colour."
+    },
+    {
+     "name": "pattern",
+     "type": "enum",
+     "default": "NONE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "NONE",
+      "STRIPES",
+      "CHECKER",
+      "CROSS"
+     ],
+     "doc": "Vertex-colour pattern of color and color2."
+    },
+    {
+     "name": "roughness",
+     "type": "float",
+     "default": "0.85",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "PBR roughness."
+    },
+    {
+     "name": "sheen",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Fabric sheen (MeshPhysicalMaterial; 0 = standard material)."
+    },
+    {
+     "name": "cast_shadow",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Casts shadows."
+    },
+    {
+     "name": "hash",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "The simulation's running hash (cw_cloth_hash)."
+    }
+   ]
+  },
+  {
+   "name": "Rope3D",
+   "parent": "Node3D",
+   "doc": "A rope or chain from this node to `end` (cloth.h): hangs, swings, carries and tows bodies.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "end",
+     "type": "vec3",
+     "default": "vec3(0, -2, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The far end at creation, in the node's space (the near end is the node)."
+    },
+    {
+     "name": "length",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10000,
+     "doc": "Rest length, m (0 = the distance to end; longer sags)."
+    },
+    {
+     "name": "segments",
+     "type": "int",
+     "default": "16",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 1000,
+     "doc": "Segments (LINKS: rigid links)."
+    },
+    {
+     "name": "mode",
+     "type": "enum",
+     "default": "XPBD",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "XPBD",
+      "LINKS"
+     ],
+     "doc": "XPBD: a particle rope; LINKS: a chain of Box3D capsule bodies on spherical joints."
+    },
+    {
+     "name": "start_attach",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path of a node the near end hangs from (a body node feels the pull)."
+    },
+    {
+     "name": "end_attach",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path of a node the far end holds (a body node feels the pull)."
+    },
+    {
+     "name": "pin_start",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Without start_attach: the near end follows this node."
+    },
+    {
+     "name": "pin_end",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Without end_attach: the far end follows this node."
+    },
+    {
+     "name": "mass",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.001,
+     "max": 10000,
+     "doc": "Kilograms (XPBD)."
+    },
+    {
+     "name": "stretch_compliance",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "m/N (XPBD)."
+    },
+    {
+     "name": "bend_compliance",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": -1,
+     "max": 100,
+     "doc": "m/N (XPBD; < 0 = no bending)."
+    },
+    {
+     "name": "damping",
+     "type": "float",
+     "default": "0.1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Share of velocity lost per second (XPBD)."
+    },
+    {
+     "name": "thickness",
+     "type": "float",
+     "default": "0.03",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Collision radius, m (XPBD)."
+    },
+    {
+     "name": "friction",
+     "type": "float",
+     "default": "0.4",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Against shapes (XPBD)."
+    },
+    {
+     "name": "substeps",
+     "type": "int",
+     "default": "16",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 64,
+     "doc": "Per tick (XPBD)."
+    },
+    {
+     "name": "collision_mask",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer bits it collides with (-1 = all, 0 = none)."
+    },
+    {
+     "name": "two_way",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Collisions push dynamic bodies back (XPBD)."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "0.025",
+     "stored": true,
+     "readonly": false,
+     "min": 0.001,
+     "max": 10,
+     "doc": "Drawn radius (LINKS: the links' radius)."
+    },
+    {
+     "name": "sides",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 3,
+     "max": 64,
+     "doc": "Sides of the drawn tube."
+    },
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(0.45, 0.33, 0.2, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Albedo (linear)."
+    },
+    {
+     "name": "roughness",
+     "type": "float",
+     "default": "0.9",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "PBR roughness."
+    },
+    {
+     "name": "metalness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "PBR metalness (a chain: 1)."
+    },
+    {
+     "name": "cast_shadow",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Casts shadows."
+    },
+    {
+     "name": "hash",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "The simulation's running hash."
+    },
+    {
+     "name": "tension",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "N: the pull on a dynamic body at the far end, last tick (XPBD)."
+    }
+   ]
+  },
+  {
    "name": "Trigger",
    "parent": "Node",
    "doc": "A data-driven rule: when `source` emits `signal`, do `action` on `target` (cartwheel/triggers.h).",

@@ -582,6 +582,27 @@
     "note": "cw_cloth: a flag in gusty wind (energy and stretch bounds; a gale is the energy control), tethers holding a hanging cloth to 2% (no tethers is the control), drapes on a sphere and a box, a 12 m/s ball through a curtain leaving no particle inside it (no collision is the control), a rope holding and swinging a 20 kg crate with a pull equal to its weight, a rope towing one body behind another, skin limits, save and load, a chain of rigid links. One worker and the pool give the same bits, and the checksum is pinned, so every host and pool size (tests/cloth-determinism.mjs) must reach it"
   },
   {
+    "name": "cloth-demo",
+    "app": "cloth_demo",
+    "frames": 300,
+    "maxGt16": 0.003,
+    "fields": [
+      "flag.hash",
+      "cape.hash",
+      "rope.hash",
+      "chain.hash",
+      "phys.hash",
+      "crate.pos",
+      "weight.pos",
+      "hero.pos",
+      "rope.tension",
+      "cape.min_gap"
+    ],
+    "controlFrames": 299,
+    "webgpu": true,
+    "note": "Cloth3D and Rope3D nodes: a flag in gusty wind on a pole, a cape on a kinematic hero walking a circle (it follows, stays near the back and out of the hero's capsule: cape.min_gap), a rope holding a 20 kg crate shoved into a swing, a chain of Box3D links holding a weight. Every node's simulation hash and the bodies' positions agree on every host, GL and WebGPU. Control: one frame early"
+  },
+  {
     "name": "cloth-determinism",
     "script": "tests/cloth-determinism.mjs",
     "note": "unit-cloth on native, Chromium and wcnative at CW_WORKERS 0, 1, 2, 4, 8 and the default: every host and pool size gives the pinned checksum"

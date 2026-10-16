@@ -26,7 +26,7 @@ for (const w of ['0', '1', '2', '4', '8', undefined]) {
   if (w === undefined) delete env.CW_WORKERS;
   else env.CW_WORKERS = w;
   console.log(`── CW_WORKERS=${w ?? '(default)'}`);
-  const code = await new Promise((res) => spawn('node', [join(ROOT, 'tests', 'gate.mjs'), 'unit-cloth',
+  const code = await new Promise((res) => spawn('node', [join(ROOT, 'tests', 'gate.mjs'), 'unit-cloth', 'cloth-demo',
     '--hosts', 'native,chromium,wcnative', ...extra], { stdio: 'inherit', env }).on('close', (c) => res(c ?? 1)));
   if (code !== 0) fail++;
 }

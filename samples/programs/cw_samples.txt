@@ -38,3 +38,5 @@ standard+instbig+l1001+xcluster
 standard+instbig+icol+l1001+xcluster
 standard+instbig+l1771
 standard+instbig+icol+l1771
+physical+vcol+shadow+ds+sheen+l1001
+physical+shadow+ds+sheen+l1001

@@ -1473,6 +1473,18 @@
      "signature": "int cw_chain3d_create(cw_world3d w, const cw_chain3d_def *def, cw_body3d *links, cw_joint3d *joints)",
      "doc": "Capsule links joined end to end by spherical joints: a chain of Box3D\nbodies (heavy chains, a wrecking ball). Writes up to `links` bodies and\nlinks + 1 joints (null where an end is free) and returns how many links\nit made. The bodies and joints are ordinary world objects: destroy them\nwith the world or one by one.",
      "inline": false
+    },
+    {
+     "name": "cw_cloth3d_get",
+     "signature": "cw_cloth cw_cloth3d_get(cw_node n)",
+     "doc": "The node's cloth (null before its first tick or for another type).",
+     "inline": false
+    },
+    {
+     "name": "cw_rope3d_get",
+     "signature": "cw_cloth cw_rope3d_get(cw_node n)",
+     "doc": "A Rope3D's rope (null before its first tick, in LINKS mode or for another type).",
+     "inline": false
     }
    ],
    "types": [

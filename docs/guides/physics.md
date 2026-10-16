@@ -2,7 +2,7 @@
 
 {{name}} simulates 2D physics with Box2D v3 and 3D physics with Box3D, through thin wrappers whose 2D and 3D APIs mirror each other name for name, and a layer of physics node types for the scene tree. Both libraries step on the engine's job pool and are deterministic across worker counts and hosts.
 
-Headers: [cartwheel/physics.h](header:physics.h) (what both dimensions share: layers, events, filters, stats, debug lines, joint types), [cartwheel/physics2d.h](header:physics2d.h), [cartwheel/physics3d.h](header:physics3d.h), [cartwheel/physics_nodes.h](header:physics_nodes.h) (the node types) and [cartwheel/physics_tasks.h](header:physics_tasks.h) (the job-pool glue, for code that creates raw library worlds). Samples: `physics3d_stack` and `physics2d_joints` (the wrapper API), `character3d` (the 3D mover), `physics3d_nodes`, `joints_nodes` and `games/action2d` (the node types), `physics_determinism` (determinism).
+Headers: [cartwheel/physics.h](header:physics.h) (what both dimensions share: layers, events, filters, stats, debug lines, joint types), [cartwheel/physics2d.h](header:physics2d.h), [cartwheel/physics3d.h](header:physics3d.h), [cartwheel/physics_nodes.h](header:physics_nodes.h) (the node types) and [cartwheel/physics_tasks.h](header:physics_tasks.h) (the job-pool glue, for code that creates raw library worlds). Samples: `physics3d_stack` and `physics2d_joints` (the wrapper API), `character3d` (the 3D mover), `physics3d_nodes`, `joints_nodes` and `games/action2d` (the node types), `physics_determinism` (determinism), `cloth_demo` (cloth and ropes).
 
 ## Two ways in
 
@@ -81,9 +81,19 @@ cw_cloth_step(cloth, dt);
 
 Reading: [cw_cloth_positions](api:cw_cloth_positions), [cw_cloth_stats_get](api:cw_cloth_stats_get) (stretch, energy, constraint and colour counts, step time). Drawing: [cw_cloth_geometry_new](api:cw_cloth_geometry_new) (or [cw_rope_geometry_new](api:cw_rope_geometry_new) for a tube) gives a three.c geometry, and [cw_cloth_update_geometry](api:cw_cloth_update_geometry) writes positions blended by the render alpha and rebuilds the normals each frame; it draws with any material on GL and WebGPU.
 
+### Cloth3D and Rope3D
+
+The node types do all of the above in a scene. [Cloth3D](node:Cloth3D) hangs a grid from its node (down its -y, along its +x), pinned along an edge or at corners, following `attach_to` (a body node is attached to, any other node moves the pins). [Rope3D](node:Rope3D) runs from its node to `end`, as particles or rigid links, each end hanging from a body node, following the node or free. They step right after the tree's 3D world. From `cloth_demo`, a flag on a pole, a hero whose cape follows and drapes over its capsule, a rope holding a crate and a chain holding a weight:
+
+@include samples/cloth_demo/assets/main.cwscene#Flag
+
+@include samples/cloth_demo/assets/main.cwscene#Cape
+
+@include samples/cloth_demo/assets/main.cwscene#Rope..Crate
+
 ### Determinism and rollback
 
-Constraints are coloured once at creation, each taking the lowest colour none of its particles has yet. A colour shares no particle, so its constraints are solved in parallel on the job pool with no atomics, and the result does not depend on the number of threads or the order chunks run in. Only `+ - * / sqrt` and `cartwheel/math.h` feed the state, so the same inputs give the same bits natively and in a cart ([cw_cloth_hash](api:cw_cloth_hash)); `unit-cloth` pins its checksum and `cloth-determinism` runs it at several pool sizes. [cw_cloth_save](api:cw_cloth_save) and [cw_cloth_load](api:cw_cloth_load) copy the state for rollback.
+Particles are cut into blocks of consecutive indices at creation. Each substep solves the constraints inside the pairs of blocks {0, 1}, {2, 3}, ... as one job each, then those across the other boundaries: the jobs of one phase share no particle, so they run in parallel on the job pool with no atomics, each a fixed-order sweep, and the result does not depend on the number of threads or the order jobs run in. A cloth under 1024 particles runs on the calling thread. Only `+ - * / sqrt` and `cartwheel/math.h` feed the state, so the same inputs give the same bits natively and in a cart ([cw_cloth_hash](api:cw_cloth_hash)); `unit-cloth` pins its checksum and `cloth-determinism` runs it at several pool sizes. [cw_cloth_save](api:cw_cloth_save) and [cw_cloth_load](api:cw_cloth_load) copy the state for rollback.
 
 A cloth marked `quality_scaled` is cosmetic: on the Low graphics preset it runs half the substeps and never self-collides. Leave it off for anything that touches game state; a deterministic run always simulates as High.
 

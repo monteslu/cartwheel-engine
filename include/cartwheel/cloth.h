@@ -64,6 +64,7 @@
 #define CW_CLOTH_H
 
 #include "physics3d.h"
+#include "scene.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -263,6 +264,29 @@ cw_chain3d_def cw_chain3d_default_def(void);
  * it made. The bodies and joints are ordinary world objects: destroy them
  * with the world or one by one. */
 int cw_chain3d_create(cw_world3d w, const cw_chain3d_def *def, cw_body3d *links, cw_joint3d *joints);
+
+/* ── nodes ──────────────────────────────────────────────────────────────
+ * Cloth3D: a rectangle of columns x rows quads hanging from the node down
+ * its -y and along its +x, pinned along an edge or at corners (`pin`). The
+ * pins follow `attach_to` (a node path; empty = the node itself): a body
+ * node (RigidBody3D ...) is attached to, so a dynamic body feels the pull;
+ * any other Node3D moves the pins with its global transform each tick (a
+ * cape on a character, a flag on a moving pole). skin_distance keeps every
+ * particle near the rest shape riding that frame. Wind, pattern colours and
+ * fabric sheen are properties.
+ * Rope3D: a rope from the node to `end` (node space), XPBD particles or a
+ * chain of rigid Box3D links (`mode`). Each end hangs from a body node
+ * (start_attach / end_attach), follows the node (pin_start / pin_end) or
+ * is free.
+ * Both build on the first tick in a tree (after the bodies they name
+ * exist), step right after the tree's 3D world, and draw through three.c in
+ * the tree's scene (GL and WebGPU). Their simulation hash is the read-only
+ * property `hash`. */
+
+/* The node's cloth (null before its first tick or for another type). */
+cw_cloth cw_cloth3d_get(cw_node n);
+/* A Rope3D's rope (null before its first tick, in LINKS mode or for another type). */
+cw_cloth cw_rope3d_get(cw_node n);
 
 #ifdef __cplusplus
 }
