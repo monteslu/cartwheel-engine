@@ -1,0 +1,33 @@
+[scene format=1]
+
+[node name="Street" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.35, 0.5, 0.75, 1)
+ambient_color = color(0.6, 0.7, 0.9, 1)
+ambient_energy = 0.15
+sky_color = color(0.5, 0.65, 0.95, 1)
+ground_color = color(0.25, 0.22, 0.18, 1)
+hemi_energy = 0.6
+
+[node name="Post" parent="." type="PostProcess"]
+bloom = true
+bloom_intensity = 0.02
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+rotation = vec3(-0.55, 1.25, 0)
+color = color(1, 0.95, 0.85, 1)
+energy = 4
+shadow = true
+shadow_size = 2048
+shadow_bias = -0.0003
+shadow_normal_bias = 0.02
+shadow_far = 600
+shadow_cascades = 4
+shadow_distance = 250
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 3, 15)
+fov = 60
+near = 0.1
+far = 400

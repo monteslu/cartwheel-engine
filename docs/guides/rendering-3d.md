@@ -117,7 +117,7 @@ CLUSTERED is three.js r186's `ClusteredLighting`, on GL and WebGPU alike:
 
 - Every frame the engine bins the shadowless omni and spot lights into a froxel grid over the view: 32 x 32 pixel tiles times 24 depth slices spaced exponentially between the camera's near and far, at most 64 lights a cell (r186's numbers, all settings of the node). The binning runs on the CPU on the job pool, so GLES3, which has no compute shaders, gets the same lists as WebGPU, and the lists are the same at any thread count.
 - Each lit material (Lambert, Phong, Standard, Physical) draws with the "cluster" shading part: a fragment finds its cell and loops that cell's lights with r186's own BRDF and falloff. With few lights, CLUSTERED and FORWARD draw the same image (the `cluster-parity` gate compares them on both backends).
-- Directional, hemisphere and ambient lights, and every light with `shadow` on, stay on three.c's path.
+- Directional, hemisphere and ambient lights stay on three.c's path; shadowed omni and spot lights are clustered too, with their shadows in an atlas (below).
 
 Three things go beyond r186. Spot lights are clustered too (r186 clusters only point lights), with a cone test when binning and r186's spot cone in the loop; `cluster_spot_lights` turns that off. A full cell keeps its nearest lights. And a light with `range` 0, which r186 would put in every cell, gets the range where its intensity over distance squared falls under `light_cutoff` (0.005), and fades out there as a range does: give lights a range for full control.
 
@@ -125,17 +125,54 @@ Costs: binning is O(cells each light reaches); the GPU pays a cell lookup per fr
 
 The grid is public ([cartwheel/froxel.h](header:froxel.h)): `cw_lighting_froxels` returns the tree's, and any pass can build its own and bin its own volumes (fog volumes, decals, probes) into the same cells.
 
-`samples/night_street` is a 240 m street at night: 58 street lamps, 96 neon signs, 48 shop-window spot lights and 12 muzzle flashes (214 clustered lights), with four shadowed floodlights on three.c's path. Measured on an AMD Radeon 890M (integrated) at 1920 x 1080 with `night_street_perf` (GL: the frame with the GPU drained each frame; WebGPU: the passes' GPU time from timestamps), in ms per frame:
+`samples/night_street` is a 240 m street at night: 58 street lamps, 96 neon signs, 48 shop-window spot lights, 12 muzzle flashes and four floodlights with shadows: 218 clustered lights, the floodlights' shadows in the atlas. Measured on an AMD Radeon 890M (integrated) at 1920 x 1080 with `night_street_perf` (GL: the frame with the GPU drained each frame; WebGPU: the passes' GPU time from timestamps), in ms per frame:
 
 | Preset | GL frame | GL GPU | WebGPU GPU | Binning (CPU) |
 |---|---|---|---|---|
-| Low | 6.4 | 3.8 | 2.1 | 0.5 |
-| Medium | 7.4 | 4.7 | 1.9 | 0.6 |
-| High | 10.1 | 7.5 | 3.5 | 0.5 |
-| Ultra | 10.2 | 7.6 | 3.7 | 0.5 |
-| High, FORWARD (8 lights of a kind) | 2.5 | 1.5 | 0.9 | 0 |
+| Low | 8.8 | 3.4 | 2.1 | 1.3 |
+| Medium | 9.1 | 4.2 | 2.2 | 0.9 |
+| High | 13.7 | 7.4 | 3.7 | 1.5 |
+| Ultra | 12.9 | 7.0 | 3.5 | 1.4 |
+| High, FORWARD (8 lights of a kind) | 3.3 | 1.5 | 1.0 | 0 |
 
-The lights are what costs: FORWARD draws the same street with 16 of its 218 lights (8 of a kind). On a Vega 8 (about half the 890M's shader rate) expect roughly twice the GPU column: High stays inside a 60 Hz frame on WebGPU and is tight on GL; Medium and Low leave room.
+The machine was shared while measuring (load average about 40), so the CPU side (the GL frame and the binning; binning alone takes about 0.4 ms on an idle machine) reads high. The lights are what costs: FORWARD draws the same street with 16 of its 218 lights (8 of a kind). A Vega 8 has roughly a third of the 890M's shader rate: expect 2.5 to 3 times the GPU column, so High is about 10 ms of GPU on WebGPU and over 20 ms on GL there; Medium and Low (24 and 32 lights a cluster, fewer pixels) are the presets for it.
+
+### Shadows for many lamps: the shadow atlas
+
+In CLUSTERED mode a shadowed omni or spot light is clustered too (`shadow_atlas`, on by default): instead of three.c's own shadow map, it gets a tile of one depth atlas, a spot light one tile and an omni light a 3 x 2 block of cube faces. A tile is as big as the light is on screen (its bounding sphere's size in pixels), at most the light's `shadow_size`, and the tiles are packed largest first; when the atlas (`shadow_atlas_size`, 4096 a side) is full, the least important lights get smaller tiles, and then none. A tile is redrawn only when its light moved or a shadow caster inside the light's range changed, and at most `shadow_updates_per_frame` faces (24) are redrawn a frame, the biggest lights first: a street of static lamps costs its shadows once. The light loop filters each light's tile with r186's PCF and the light's `shadow_bias`, `shadow_normal_bias` and shadow intensity. Turn `shadow_atlas` off to keep shadowed lights on three.c's path, as r186 does (8 of a kind at most).
+
+### Sun shadows that reach the horizon: cascades
+
+A DirectionalLight3D with `shadow` and `shadow_cascades` 1 to 4 draws its shadows as three.js r186's `CSMShadowNode`, in either lighting mode:
+
+@include samples/street_sun/assets/main.cwscene#Sun
+
+The view from the camera's near to `shadow_distance` (r186's `maxFar`; 0 is the camera's far) is split by r186's practical split. Each cascade is an orthographic map of `shadow_size` fitted around its slice of the view, with r186's width and texel snapping, so shadows do not shimmer as the camera moves; near shadows get the finest texels and the last cascade reaches the end of the view. Fragments pick their cascade by depth and cross-fade into the next (`cascade_fade`). A cascade is redrawn only when the camera moved it or a shadow caster changed.
+
+`samples/street_sun` is the night street by day: the sun alone, four cascades reaching 250 m down the street. Its `csm-parity` gate checks, on GL and on WebGPU, that the cascades put shadows where one big shadow map over the same ground puts them.
+
+### Quality and costs
+
+| Preset | Lights a cluster keeps | Sun cascades | Shadow maps | Atlas |
+|---|---|---|---|---|
+| Low | 24 | 2 | 1024 at most, hard | 2048 |
+| Medium | 32 | 3 | 1024 at most, soft | 2048 |
+| High | 64 | as authored | as authored | as set |
+| Ultra | 64 | as authored | twice, up to 4096 (a cascade at most 2048) | as set |
+
+`street_sun_perf` (1920 x 1080, the camera driving, so every cascade is redrawn every frame), ms per frame on the 890M:
+
+| Preset | Cascades | GL frame | GL GPU | WebGPU GPU |
+|---|---|---|---|---|
+| Low | 2 of 1024 | 1.2 | 0.8 | 0.7 |
+| Medium | 3 of 1024 | 1.5 | 1.1 | 0.9 |
+| High | 4 of 2048 | 3.6 | 2.9 | 1.8 |
+| Ultra | 4 of 2048 | 3.5 | 2.9 | 1.9 |
+| High, one shadow map | 1 of 2048 | 1.5 | 1.1 | 1.6 |
+
+Each cascade is at most 2048 (the four share one map twice that wide), so Ultra draws them as High does. A still camera redraws no cascade.
+
+A redrawn atlas tile or cascade is a shadow caster pass over the scene. On the GPU, a shadowed light costs 20 depth reads where its cell is drawn, the sun 10 compare samples per pixel. On WebGPU the atlas keeps an R32Float copy beside its depth (compatibility mode reads depth only through a comparison sampler, which the light loop cannot use), and a redrawn tile is copied into it.
 
 Light probes, reflection probes and screen-space light are in [Reflections and bounce light](#reflections-and-bounce-light).
 

@@ -167,6 +167,11 @@ cw_add_app(night_street_perf SOURCES night_street/main.c ASSETS ${CMAKE_CURRENT_
 target_compile_definitions(night_street_perf PRIVATE NS_PERF_BUILD=1)
 # noise: cw_noise on the CPU and its GLSL / WGSL ports side by side, with their difference
 cw_add_app(noise_demo SOURCES noise_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/noise_demo/assets)
+# cascaded sun shadows (DirectionalLight3D.shadow_cascades): the same street by day.
+cw_add_app(street_sun SOURCES night_street/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/street_sun/assets)
+target_compile_definitions(street_sun PRIVATE NS_DAY=1)
+cw_add_app(street_sun_perf SOURCES night_street/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/street_sun/assets)
+target_compile_definitions(street_sun_perf PRIVATE NS_DAY=1 NS_PERF_BUILD=1)
 # baked lighting: lightmaps with generated uv1 charts, an SH probe grid, a reproducible bake.
 cw_add_app(lightmap_room SOURCES lightmap_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/lightmap_room/assets)
 # reflection probes (cartwheel/gi.h): a room with coloured walls, a polished floor, chrome

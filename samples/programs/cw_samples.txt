@@ -40,3 +40,9 @@ standard+instbig+l1771
 standard+instbig+icol+l1771
 physical+vcol+shadow+ds+sheen+l1001
 physical+shadow+ds+sheen+l1001
+standard+instbig+l0001+xcsm
+standard+instbig+icol+l0001+xcsm
+depth+instbig+xcsm
+standard+instbig+shadow+icol+l1001
+standard+instbig+shadow+l1241+s024+xcluster
+standard+instbig+shadow+icol+l1241+s024+xcluster

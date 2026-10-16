@@ -1,8 +1,9 @@
 /* night_street: hundreds of lights through clustered shading
  * (cartwheel/lighting.h). A city street at night, 240 m long: 58 street
- * lamps, 96 neon signs, 48 shop-window spot lights and 12 muzzle flashes
- * down the road (214 clustered lights, flashing on and off by tick), four
- * shadowed floodlights over the road (three.c's shadow maps) and a dim moon.
+ * lamps, 96 neon signs, 48 shop-window spot lights, 12 muzzle flashes down
+ * the road (flashing on and off by tick) and four floodlights casting
+ * shadows over it: 218 clustered lights, the floodlights' shadows tiles of
+ * the shadow atlas. A dim moon.
  * The camera drives down the street at 15 m/s.
  *
  * LightingSettings.mode is CLUSTERED (the scene file); NS_FORWARD=1 (native,
@@ -11,9 +12,15 @@
  * NS_PERF=1 holds the camera still (night_street_perf renders 1920x1080).
  * NS_PARITY=1 keeps 7 omni and 7 spot lights, all shadowless (see light()).
  *
+ * street_sun (NS_DAY) is the same street by day: the sun alone, with four
+ * cascaded shadow maps (DirectionalLight3D.shadow_cascades) reaching 250 m;
+ * NS_NO_CASCADES=1 (its control) gives the sun one shadow map instead.
+ *
  * Debug state: ns.tick, ns.clustered, ns.spots, ns.forward, ns.refs,
  * ns.max_in_cluster, ns.overflow, ns.materials, ns.grid_hash (the binned
- * cells and lists, folded to 32 bits), ns.cam_z. */
+ * cells and lists, folded to 32 bits), ns.cam_z, ns.cascades,
+ * ns.cascades_rendered, ns.shadowed (lights with an atlas tile),
+ * ns.shadow_faces (atlas faces redrawn this frame). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,12 +45,16 @@
 #define STREET_Z0 20.0f
 #define STREET_LEN 240.0f
 
+static int32_t cascades, cascades_rendered, shadowed, shadow_faces;
 static int32_t tick, clustered, spots, forward, refs, max_in, overflow, materials, grid_hash;
 static float cam_z;
 static bool built;
 static cw_node flashes[FLASHES];
 
 /* night_street_perf: segments of PERF_SEG frames at each preset, then High in FORWARD mode */
+#ifndef NS_DAY
+#define NS_DAY 0
+#endif
 #ifndef NS_PERF_BUILD
 #define NS_PERF_BUILD 0
 #endif
@@ -52,7 +63,7 @@ static cw_node flashes[FLASHES];
 #define PERF_SEGS 5
 static const cw_quality perf_preset[PERF_SEGS] = { CW_QUALITY_LOW, CW_QUALITY_MEDIUM, CW_QUALITY_HIGH, CW_QUALITY_ULTRA,
                                                    CW_QUALITY_HIGH };
-static const char *const perf_label[PERF_SEGS] = { "low", "medium", "high", "ultra", "high-forward" };
+static const char *const perf_label[PERF_SEGS] = { "low", "medium", "high", "ultra", NS_DAY ? "high-one-map" : "high-forward" };
 static double perf_sum[PERF_SEGS], perf_cpu_sum[PERF_SEGS], perf_gpu_sum[PERF_SEGS], perf_bin_sum[PERF_SEGS];
 static float perf_max[PERF_SEGS];
 static int perf_n[PERF_SEGS], perf_lights[PERF_SEGS];
@@ -89,11 +100,18 @@ static t3_material *standard(float r, float g, float b, float rough, float metal
 
 /* NS_PARITY=1: at most 7 omni and 7 spot lights, all shadowless, so FORWARD
  * (three.c lights them all) and CLUSTERED must draw the same image;
- * NS_PARITY=2 leaves one omni light out (the parity check's control) */
+ * NS_PARITY=2 leaves one omni light out (the parity check's control).
+ * NS_PARITY=3 keeps only the four floodlights and two street lamps, all
+ * casting shadows (shadow_atlas against three.c's own shadow maps);
+ * NS_PARITY=4 the same lights without shadows (that check's control) */
 static int parity, n_omni, n_spot;
 
 static cw_node light(cw_node parent, const char *type, const char *name, t3_vec3 p, t3_color c, float energy, float range) {
-  if (parity) {
+  if (NS_DAY) return (cw_node){ 0 }; /* street_sun: the sun alone */
+  if (parity >= 3) {
+    /* the shadow check: the four floodlights and the first two street lamps, all casting */
+    if (strncmp(name, "Flood", 5) && strcmp(name, "Lamp0") && strcmp(name, "Lamp1")) return (cw_node){ 0 };
+  } else if (parity) {
     bool omni = !strcmp(type, "OmniLight3D");
     int *k = omni ? &n_omni : &n_spot;
     if (*k >= (omni && parity == 2 ? 6 : 7)) return (cw_node){ 0 };
@@ -117,7 +135,7 @@ static void build(cw_tree *t) {
 
   /* road, sidewalks, cars */
   t3_geometry *box = t3_box_geometry_new(1, 1, 1, 1, 1, 1);
-  t3_material *asphalt = standard(0.035f, 0.035f, 0.04f, 0.55f, 0);
+  t3_material *asphalt = NS_DAY ? standard(0.12f, 0.12f, 0.13f, 0.8f, 0) : standard(0.035f, 0.035f, 0.04f, 0.55f, 0);
   t3_instanced_mesh *road = instanced(parent, box, asphalt, 1, false);
   place(road, 0, (t3_vec3){ 0, -0.05f, zc }, (t3_vec3){ 60, 0.1f, STREET_LEN + 40 });
   t3_material *stone = standard(0.18f, 0.17f, 0.16f, 0.8f, 0);
@@ -132,13 +150,14 @@ static void build(cw_tree *t) {
                                                           cw_rng_range(&rng, 0.05f, 0.5f) });
   }
 
+  if (getenv("NS_SIMPLE")) { t3_release(box); t3_release(asphalt); t3_release(stone); t3_release(paint); return; }
   /* buildings: facades at |x| = 8 */
   t3_material *wall = standard(1, 1, 1, 0.85f, 0);
   t3_instanced_mesh *blocks = instanced(parent, box, wall, 2 * BUILDINGS_PER_SIDE, true);
   float bw = STREET_LEN / BUILDINGS_PER_SIDE;
   for (int s = 0; s < 2; s++)
     for (int i = 0; i < BUILDINGS_PER_SIDE; i++) {
-      float h = cw_rng_range(&rng, 8, 30), d = cw_rng_range(&rng, 10, 16);
+      float h = NS_DAY ? cw_rng_range(&rng, 3, 14) : cw_rng_range(&rng, 8, 30), d = cw_rng_range(&rng, 10, 16);
       float z = STREET_Z0 - bw * ((float)i + 0.5f);
       place(blocks, s * BUILDINGS_PER_SIDE + i, (t3_vec3){ (s ? 1 : -1) * (8 + d * 0.5f), h * 0.5f, z },
             (t3_vec3){ d, h, bw - 0.6f });
@@ -150,19 +169,32 @@ static void build(cw_tree *t) {
    * before its plain lights), then everything clustered */
   cw_node lights = cw_node_new("Node3D", "Lights");
   cw_node_add_child(root, lights);
-  for (int i = 0; i < (parity ? 0 : FLOODS); i++) {
+  for (int i = 0; i < (parity && parity < 3 ? 0 : FLOODS); i++) {
     char name[24];
     snprintf(name, sizeof name, "Flood%d", i);
     float z = STREET_Z0 - 30 - (float)i * 52;
     cw_node f = light(lights, "SpotLight3D", name, (t3_vec3){ (i & 1) ? 6 : -6, 9, z }, (t3_color){ 0.85f, 0.9f, 1 }, 220, 30);
+    if (!cw_node_valid(f)) continue;
     cw_node_set(f, "angle", cw_val_float(0.55f));
     cw_node_set(f, "penumbra", cw_val_float(0.4f));
-    cw_node_set(f, "shadow", cw_val_bool(true));
+    cw_node_set(f, "shadow", cw_val_bool(parity != 4));
     cw_node_set(f, "shadow_size", cw_val_int(1024));
     cw_node_set(f, "shadow_bias", cw_val_float(-0.0005f));
     cw_node3d_look_at(f, (t3_vec3){ 0, 0, z - 6 }, (t3_vec3){ 0, 1, 0 });
   }
 
+  if (parity >= 3) {
+    /* the shadow check: a crate in each floodlight's pool and one under each shadowed lamp */
+    t3_material *wood = standard(0.5f, 0.35f, 0.2f, 0.8f, 0);
+    t3_instanced_mesh *crates = instanced(parent, box, wood, FLOODS + 2, true);
+    for (int i = 0; i < FLOODS; i++) {
+      float z = STREET_Z0 - 30 - (float)i * 52;
+      place(crates, i, (t3_vec3){ (i & 1) ? 1.5f : -1.5f, 1, z - 4 }, (t3_vec3){ 2, 2, 2 });
+    }
+    for (int s2 = 0; s2 < 2; s2++)
+      place(crates, FLOODS + s2, (t3_vec3){ -5.2f, 0.6f, STREET_Z0 - 4 - (float)s2 * 8 - 1.5f }, (t3_vec3){ 1.2f, 1.2f, 1.2f });
+    t3_release(wood);
+  }
   /* street lamps: iron posts, glowing bulbs, warm omni lights */
   t3_geometry *pole = t3_cylinder_geometry_new(0.07f, 0.1f, 5.2f, 8, 1, false);
   t3_material *iron = standard(0.04f, 0.04f, 0.045f, 0.5f, 0.6f);
@@ -179,7 +211,12 @@ static void build(cw_tree *t) {
       place(bulbs, k, (t3_vec3){ x, 5.3f, z }, (t3_vec3){ 1, 1, 1 });
       char name[24];
       snprintf(name, sizeof name, "Lamp%d", k);
-      light(lights, "OmniLight3D", name, (t3_vec3){ x, 5.1f, z }, (t3_color){ 1, 0.68f, 0.38f }, 14, 11);
+      cw_node lamp = light(lights, "OmniLight3D", name, (t3_vec3){ x, 5.1f, z }, (t3_color){ 1, 0.68f, 0.38f }, 14, 11);
+      if (parity == 3 && cw_node_valid(lamp)) {
+        cw_node_set(lamp, "shadow", cw_val_bool(true));
+        cw_node_set(lamp, "shadow_size", cw_val_int(512));
+        cw_node_set(lamp, "shadow_bias", cw_val_float(-0.002f));
+      }
     }
 
   /* neon signs: two a building, glowing bars on the facade with a coloured light each */
@@ -238,8 +275,12 @@ static void init(void *u) {
   cw_debug_i32("ns.max_in_cluster", &max_in);
   cw_debug_i32("ns.overflow", &overflow);
   cw_debug_i32("ns.materials", &materials);
+  cw_debug_i32("ns.shadowed", &shadowed);
+  cw_debug_i32("ns.shadow_faces", &shadow_faces);
   cw_debug_i32("ns.grid_hash", &grid_hash);
   cw_debug_f32("ns.cam_z", &cam_z);
+  cw_debug_i32("ns.cascades", &cascades);
+  cw_debug_i32("ns.cascades_rendered", &cascades_rendered);
 }
 
 static bool perf_mode(void) {
@@ -257,20 +298,48 @@ static void fixed_update(void *u, double dt) {
     parity = pa ? atoi(pa) : 0;
     build(t);
     const char *f = getenv("NS_FORWARD");
+    /* street_sun's control: one shadow map around the sun instead of cascades */
+    const char *nc = getenv("NS_NO_CASCADES");
+    const char *na = getenv("NS_NO_ATLAS"); /* shadowed lights back on three.c's own maps */
+    if (na && *na == '1') cw_node_set(cw_node_get(cw_tree_root(t), "Street/Lighting"), "shadow_atlas", cw_val_bool(false));
+    const char *ns = getenv("NS_NO_SHADOW");
+    if (NS_DAY && ns && *ns == '1') cw_node_set(cw_node_get(cw_tree_root(t), "Street/Sun"), "shadow", cw_val_bool(false));
+    if (NS_DAY && nc && *nc == '1') {
+      cw_node sun = cw_node_get(cw_tree_root(t), "Street/Sun");
+      cw_node_set(sun, "shadow_cascades", cw_val_int(0));
+      cw_node_set(sun, "shadow_extent", cw_val_float(60));
+
+    }
     if (f && *f == '1') cw_node_set(cw_node_get(cw_tree_root(t), "Street/Lighting"), "mode", cw_val_enum("FORWARD"));
   }
   tick++;
+  if (NS_DAY && tick == 2 && getenv("NS_NO_CASCADES")) {
+    /* the control's sun 200 m up its light from (0, 0, -40), its map covering 120 m */
+    cw_node sun = cw_node_get(cw_tree_root(t), "Street/Sun");
+    const t3_mat4 *m = &cw_node3d_object(sun)->matrix_world;
+    t3_vec3 back = t3_vec3_normalize((t3_vec3){ m->e[8], m->e[9], m->e[10] });
+    cw_node3d_set_position(sun, t3_vec3_add((t3_vec3){ 0, 0, -40 }, t3_vec3_scale(back, 200)));
+  }
   if (NS_PERF_BUILD) {
     int seg = (tick - 1) / PERF_SEG;
     if (seg < PERF_SEGS && (tick - 1) % PERF_SEG == 0) {
       cw_quality_set(perf_preset[seg], false);
-      cw_node_set(cw_node_get(cw_tree_root(t), "Street/Lighting"), "mode",
-                  cw_val_enum(seg == PERF_SEGS - 1 ? "FORWARD" : "CLUSTERED"));
+      if (NS_DAY) /* street_sun: the last segment draws the sun with one shadow map */
+        cw_node_set(cw_node_get(cw_tree_root(t), "Street/Sun"), "shadow_cascades", cw_val_int(seg == PERF_SEGS - 1 ? 0 : 4));
+      else
+        cw_node_set(cw_node_get(cw_tree_root(t), "Street/Lighting"), "mode",
+                    cw_val_enum(seg == PERF_SEGS - 1 ? "FORWARD" : "CLUSTERED"));
     }
   }
   for (int i = 0; i < FLASHES && cw_node_valid(flashes[i]); i++) {
     bool on = (tick + i * 5) % 17 < 3;
     cw_node_set(flashes[i], "energy", cw_val_float(on ? 60.0f : 0.0f));
+  }
+  if (getenv("NS_SIMPLE") || getenv("NS_TOPCAM")) {
+    cw_node cam = cw_node_get(cw_tree_root(t), "Street/Camera");
+    cw_node3d_set_position(cam, getenv("NS_TOPCAM") ? (t3_vec3){ 0, 60, -20 } : (t3_vec3){ 12, 14, -10 });
+    cw_node3d_look_at(cam, (t3_vec3){ 0, 0, -40 }, (t3_vec3){ 0, 1, 0 });
+    return;
   }
   cam_z = perf_mode() || parity ? -20.0f : 15.0f - (float)tick * 0.25f;
   cw_node cam = cw_node_get(cw_tree_root(t), "Street/Camera");
@@ -291,6 +360,10 @@ static void render(void *u, double alpha) {
   max_in = s.grid.max_in_froxel;
   overflow = s.grid.dropped;
   materials = s.materials;
+  cascades = s.cascades;
+  shadowed = s.shadowed;
+  shadow_faces = s.shadow_faces_rendered;
+  cascades_rendered = s.cascades_rendered;
   cw_froxel_grid *g = cw_lighting_froxels(t);
   uint64_t h = g ? cw_froxel_grid_hash(g) : 0;
   grid_hash = (int32_t)(uint32_t)(h ^ (h >> 32));
@@ -325,7 +398,7 @@ static void render(void *u, double alpha) {
 cw_app_desc cw_main(int argc, char **argv) {
   (void)argc;
   (void)argv;
-  static cw_app_desc base = { .title = "night_street", .width = 960, .height = 540, .debug = true, .init = init,
+  static cw_app_desc base = { .title = NS_DAY ? "street_sun" : "night_street", .width = 960, .height = 540, .debug = true, .init = init,
                               .fixed_update = fixed_update, .render = render };
 #ifdef NS_PERF_BUILD
   base.width = 1920;

@@ -2220,22 +2220,24 @@
       "ns.max_in_cluster",
       "ns.overflow",
       "ns.materials",
+      "ns.shadowed",
       "ns.grid_hash",
       "ns.cam_z"
     ],
     "expect": {
-      "ns.clustered": 203,
-      "ns.spots": 48,
-      "ns.forward": 4,
-      "ns.refs": 182682,
-      "ns.grid_hash": 1739710209,
+      "ns.clustered": 207,
+      "ns.spots": 52,
+      "ns.forward": 0,
+      "ns.shadowed": 4,
+      "ns.refs": 195673,
+      "ns.grid_hash": -1334376855,
       "ns.overflow": 0
     },
     "controlEnv": {
       "NS_FORWARD": "1"
     },
     "webgpu": true,
-    "note": "clustered lighting (cartwheel/lighting.h): a night street with 58 street lamps, 96 neon signs, 48 shop spot lights and flickering muzzle flashes binned into r186 ClusteredLighting clusters on the CPU and shaded with r186 BRDF per cluster, beside 4 shadowed floodlights on three.c path; the binned lists hash equal on every host and backend. Control: FORWARD (three.c lights at most 8 of a kind: nothing clustered, the image differs)"
+    "note": "clustered lighting (cartwheel/lighting.h): a night street with 58 street lamps, 96 neon signs, 48 shop spot lights and flickering muzzle flashes binned into r186 ClusteredLighting clusters on the CPU and shaded with r186 BRDF per cluster, and 4 floodlights whose shadows are tiles of the shadow atlas; the binned lists hash equal on every host and backend. Control: FORWARD (three.c lights at most 8 of a kind: nothing clustered, the image differs)"
   },
   {
     "name": "cluster-parity",
@@ -2243,9 +2245,39 @@
     "note": "night_street with 7 omni and 7 spot lights (NS_PARITY): CLUSTERED and FORWARD (three.c own lights) draw the same image on GL and on WebGPU (no pixel off by more than 2 levels); control: FORWARD with one light fewer must differ"
   },
   {
+    "name": "atlas-parity",
+    "script": "tests/atlas-parity.mjs",
+    "note": "night_street from above with four floodlights and two street lamps casting shadows over crates: clustered with the shadow atlas and on three.c own shadow maps draw the same image on GL and WebGPU (no pixel off by more than 2 levels); control: the same lights without shadows must differ"
+  },
+  {
     "name": "froxel-determinism",
     "script": "tests/froxel-determinism.mjs",
     "note": "unit-froxel and night-street on native, Chromium and wcnative at CW_WORKERS 0, 1, 3 and the default: every host and pool size gives the pinned hashes"
+  },
+  {
+    "name": "street-sun",
+    "app": "street_sun",
+    "frames": 60,
+    "maxGt16": 0.003,
+    "minColors": 1000,
+    "fields": [
+      "ns.tick",
+      "ns.cascades",
+      "ns.cam_z"
+    ],
+    "expect": {
+      "ns.cascades": 4
+    },
+    "controlEnv": {
+      "NS_NO_SHADOW": "1"
+    },
+    "webgpu": true,
+    "note": "cascaded sun shadows (DirectionalLight3D.shadow_cascades, r186 CSMShadowNode): the street by day, four cascades fitted to the moving camera and reaching 250 m, rendered into one depth atlas and filtered with r186 PCF; the same picture on every host and backend. Control: the sun without shadows"
+  },
+  {
+    "name": "csm-parity",
+    "script": "tests/csm-parity.mjs",
+    "note": "street_sun from above on GL and WebGPU: four cascades against three.c single shadow map covering the same ground agree (at most 0.5% of pixels off by more than 16 levels); control: no shadows must differ"
   },
   {
     "name": "lightmap-bake",

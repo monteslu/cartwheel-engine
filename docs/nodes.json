@@ -656,6 +656,34 @@
      "stored": true,
      "readonly": false,
      "doc": "Contributes to baked lightmaps and ambient probes (LightmapGI)."
+    },
+    {
+     "name": "shadow_cascades",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 4,
+     "doc": "Directional: 0 = one shadow map around the light; 1-4 = cascaded shadow maps that follow the camera (r186 CSMShadowNode; shadow_size is each cascade's; cartwheel/lighting.h)."
+    },
+    {
+     "name": "shadow_distance",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Directional cascades: where the last ends (0 = the camera's far)."
+    },
+    {
+     "name": "cascade_fade",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Directional cascades: cross-fade between neighbours."
     }
    ]
   },
@@ -1692,6 +1720,42 @@
      "min": 0.000001,
      "max": 10,
      "doc": "A clustered light with range 0 ends where intensity / distance^2 falls under this."
+    },
+    {
+     "name": "shadow_atlas",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Shadowed omni and spot lights are clustered too, their shadows tiles of one atlas (else three.c draws them)."
+    },
+    {
+     "name": "shadow_atlas_size",
+     "type": "int",
+     "default": "4096",
+     "stored": true,
+     "readonly": false,
+     "min": 512,
+     "max": 16384,
+     "doc": "The shadow atlas, texels a side."
+    },
+    {
+     "name": "shadow_updates_per_frame",
+     "type": "int",
+     "default": "24",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10000,
+     "doc": "Atlas faces redrawn a frame at most (an omni light is 6; 0 = no limit)."
+    },
+    {
+     "name": "shadow_cache",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "A tile is redrawn only when its light or a shadow caster in its range changed."
     }
    ]
   },
