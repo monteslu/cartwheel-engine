@@ -20,6 +20,7 @@
 #include "cartwheel/froxel.h"
 #include "cartwheel/jobs.h"
 #include "cartwheel/math.h"
+#include "cartwheel/profile.h"
 #include "three.h"
 
 #define RECORDS_W 1024 /* texels a row of the records texture */
@@ -387,6 +388,7 @@ static void compact_slices(int begin, int end, int worker, void *ctx) {
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 void cw_froxel_grid_bin(cw_froxel_grid *g, const cw_froxel_volume *in, int n) {
+  CW_PROFILE_SCOPE("froxel.bin");
   double t0 = now_ms();
   memset(&g->stats, 0, sizeof g->stats);
   if (!g->ready) return;

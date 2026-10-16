@@ -14,20 +14,38 @@
 #include <time.h>
 
 #include "cartwheel/debug.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/shading.h"
 #include "cartwheel/lighting.h"
 #include "cartwheel/math.h"
+#include "cartwheel/profile.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/quality.h"
 #include "cartwheel/render3d.h"
+#include "lighting_internal.h"
+#include "quality_internal.h"
+#if CW_WGPU
+#include "pipeline_wgpu.h"
+#endif
 
-#define ROWS 4 /* texels a light (cluster_part.mjs LIGHT_ROWS) */
-#define PART "cluster"
+/* WebGPU: the shadow passes recorded on the frame's encoder, timed as the
+ * lights pass (GL times the pass itself) */
+static void shadow_span(bool end) {
+#if CW_WGPU
+  if (cw_gpu_backend() == CW_GPU_WEBGPU) cw__pw_timing_span((void *)cw__pw_encoder(), end);
+#else
+  (void)end;
+#endif
+}
+
+#define ROWS 10 /* texels a light (cluster_part.mjs LIGHT_ROWS) */
+#define PART "cluster" /* the clustered lights' shading part; the sun's is "csm" (cartwheel/shading.h) */
 
 typedef struct taken { t3_light *light; uint32_t layers; } taken;
 
 typedef struct cl_light {
   t3_light *l;
+  bool shadowed;  /* casts shadows: a tile of the atlas */
   float vz;       /* view z (sort key) */
   uint32_t id;    /* tie break */
 } cl_light;
@@ -46,6 +64,17 @@ typedef struct lighting {
   bool warned_max;
   float grid_u[4], depth_u[4];
   t3_texture *rec_tex, *item_tex;
+  /* the cascaded sun: the one its node registered this frame (render3d.c) */
+  t3_light *sun_next;
+  cw__csm_cfg cfg_next;
+  cw__csm *csm;
+  cw__atlas *atlas;
+  t3_texture *shadow_tex;
+  float atlas_px;
+  cw__shadow_req *reqs;
+  cw__shadow_out *outs;
+  int *req_light;
+  int reqs_cap;
   cw_lighting_stats stats;
 } lighting;
 
@@ -60,6 +89,11 @@ static void lighting_free(void *p) {
   cw_free(L->vols);
   if (L->light_tex) t3_release(L->light_tex);
   cw_froxel_grid_free(L->grid);
+  cw__csm_free(L->csm);
+  cw__atlas_free(L->atlas);
+  cw_free(L->reqs);
+  cw_free(L->outs);
+  cw_free(L->req_light);
   cw_free(L);
 }
 
@@ -73,7 +107,8 @@ static lighting *lighting_of(cw_tree *t) {
   L->tree = t;
   L->s = (cw_lighting_settings){ .mode = CW_LIGHTING_FORWARD, .max_lights = 1024, .tile_px = 32, .z_slices = 24,
                                  .max_per_cluster = 64, .cluster_spot_lights = true, .cluster_far = 0,
-                                 .light_cutoff = 0.005f };
+                                 .light_cutoff = 0.005f, .shadow_atlas = true,
+                                 .shadow_atlas_size = 4096, .shadow_updates_per_frame = 24, .shadow_cache = true };
   L->grid = cw_froxel_grid_new();
   cw_tree_set_slot(t, "lighting", L, lighting_free);
   cw_pipeline_add_pass(cw_pipeline_of(t), &(cw_pass_desc){ .name = "lights", .phase = CW_PHASE_SHADOW, .order = 0,
@@ -113,10 +148,10 @@ static void cmd_lighting(int argc, const char **argv, cw_reply *r) {
   cw_reply_printf(r,
                   "{\"mode\":\"%s\",\"clustered\":%d,\"clustered_spots\":%d,\"forward\":%d,\"dropped\":%d,"
                   "\"materials\":%d,\"grid\":[%d,%d,%d],\"references\":%d,\"max_in_cluster\":%d,"
-                  "\"overflowed\":%d,\"overflow_dropped\":%d,\"bin_ms\":%.3f}",
+                  "\"overflowed\":%d,\"overflow_dropped\":%d,\"bin_ms\":%.3f,\"cascades\":%d,\"cascades_rendered\":%d}",
                   L->s.mode == CW_LIGHTING_CLUSTERED ? "CLUSTERED" : "FORWARD", s->clustered, s->clustered_spots,
                   s->forward, s->dropped, s->materials, s->grid.nx, s->grid.ny, s->grid.nz, s->grid.references,
-                  s->grid.max_in_froxel, s->grid.overflowed, s->grid.dropped, s->grid.bin_ms);
+                  s->grid.max_in_froxel, s->grid.overflowed, s->grid.dropped, s->grid.bin_ms, s->cascades, s->cascades_rendered);
 }
 
 /* ── materials ──────────────────────────────────────────────────────── */
@@ -126,10 +161,11 @@ static bool lit_type(t3_material_type t) {
          t == T3_MESH_PHYSICAL_MATERIAL;
 }
 
-/* every lit material in the scene gets the part (on) or loses it (off),
- * composed with the parts it already has (cartwheel/shading.h); a material
- * with a surface extension of its own (terrain) keeps it alone */
-static int mark_materials(t3_object *o, bool on) {
+/* every lit material in the scene carries the parts that are on (cluster,
+ * csm) and not the others, composed with the parts it already has
+ * (cartwheel/shading.h); a material with a surface extension of its own
+ * (terrain) keeps it alone */
+static int mark_materials(t3_object *o, bool cluster, bool csm) {
   int n = 0;
   if (o->type == T3_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_SKINNED_MESH) {
     t3_mesh *m = (t3_mesh *)o;
@@ -137,28 +173,52 @@ static int mark_materials(t3_object *o, bool on) {
       t3_material *mt = m->materials[i];
       if (!mt || !lit_type(mt->type)) continue;
       const char *ext = t3_material_get_extension(mt);
-      if (on) {
-        if (!ext || cw_shading_has(mt, PART) || cw_shading_has(mt, "gi")) {
-          cw_shading_add(mt, PART);
-          n++;
-        }
-      } else
-        cw_shading_remove(mt, PART);
+      if (ext && !cw_shading_has(mt, PART) && !cw_shading_has(mt, "csm") && !cw_shading_has(mt, "gi")) continue;
+      if (cluster) cw_shading_add(mt, PART);
+      else cw_shading_remove(mt, PART);
+      if (csm) cw_shading_add(mt, "csm");
+      else cw_shading_remove(mt, "csm");
+      if (cluster || csm) n++;
     }
   }
-  for (int i = 0; i < o->child_count; i++) n += mark_materials(o->children[i], on);
+  for (int i = 0; i < o->child_count; i++) n += mark_materials(o->children[i], cluster, csm);
   return n;
+}
+
+static int mark_scene(t3_scene *sc, bool cluster, bool csm) {
+  CW_PROFILE_SCOPE("lighting.materials");
+  return mark_materials(&sc->base, cluster, csm);
 }
 
 /* ── the fill hook ──────────────────────────────────────────────────── */
 
-static void fill(t3_extension_ctx *c, void *user) {
+static void fill_cluster(t3_extension_ctx *c, void *user) {
   lighting *L = user;
   t3_extension_set_uniform(c, "clusterGrid", L->grid_u, 4);
   t3_extension_set_uniform(c, "clusterDepth", L->depth_u, 4);
   t3_extension_set_texture(c, "clusterLights", L->light_tex);
   t3_extension_set_texture(c, "clusterRecords", L->rec_tex);
   t3_extension_set_texture(c, "clusterItems", L->item_tex);
+  t3_extension_set_texture(c, "clusterShadows", L->shadow_tex);
+}
+static void fill_csm(t3_extension_ctx *c, void *user) {
+  lighting *L = user;
+  if (L->csm) cw__csm_fill(L->csm, c);
+}
+
+void cw__lighting_csm_light(cw_tree *t, t3_light *sun, const cw__csm_cfg *cfg) {
+  lighting *L = lighting_of(t);
+  if (L->sun_next) return;
+  L->sun_next = sun;
+  L->cfg_next = *cfg;
+}
+
+bool cw__lighting_takes(cw_tree *t, const t3_object *light) {
+  lighting *L = t ? cw_tree_slot(t, "lighting") : NULL;
+  if (!L) return false;
+  for (int i = 0; i < L->taken.count; i++)
+    if (&L->taken.data[i].light->base == light) return true;
+  return L->sun_next && &L->sun_next->base == light;
 }
 
 /* ── gathering ──────────────────────────────────────────────────────── */
@@ -171,14 +231,16 @@ static void give_back(lighting *L) {
   cw_array_clear(&L->taken);
 }
 
-/* the shadowless omni (and spot) lights three.c would draw for camera layers `layers` */
+/* the omni (and spot) lights three.c would draw for camera layers `layers`: the
+ * shadowless ones, and with shadow_atlas the shadowed ones too */
 static void gather(lighting *L, t3_object *o, uint32_t layers) {
   if (!o->visible) return;
   if ((o->type == T3_POINT_LIGHT || (o->type == T3_SPOT_LIGHT && L->s.cluster_spot_lights)) && (o->layers & layers)) {
     t3_light *l = (t3_light *)o;
-    if (!(o->cast_shadow && l->shadow)) {
+    bool casts = o->cast_shadow && l->shadow;
+    if (!casts || L->s.shadow_atlas) {
       if (l->intensity > 0 && (l->color.r > 0 || l->color.g > 0 || l->color.b > 0)) {
-        cl_light c = { l, 0, o->id };
+        cl_light c = { l, casts, 0, o->id };
         cw_array_push(&L->lights, c);
       }
       /* a dark light leaves three.c's list too: it would light nothing there either */
@@ -213,26 +275,59 @@ static double wall_ms(void) {
 }
 
 static void pass_lights(cw_pass_ctx *ctx, void *user) {
+  CW_PROFILE_SCOPE("lighting.pass");
   lighting *L = user;
   double t0 = wall_ms(), tg = 0, tb = 0, tt = 0;
   give_back(L);
+  if (getenv("CW_LIGHTING_TRACE") && ctx->renderer) { const char *e = t3_renderer_last_error(ctx->renderer); if (e && *e) cw_info("three.c: %s", e); }
   memset(&L->stats, 0, sizeof L->stats);
+  t3_light *sun = L->sun_next;
+  cw__csm_cfg cfg = L->cfg_next;
+  L->sun_next = NULL; /* (its node registers it again next frame) */
   if (!ctx->renderer || !ctx->camera || !ctx->scene3d) return;
-  if (L->s.mode != CW_LIGHTING_CLUSTERED) {
+  bool clustered = L->s.mode == CW_LIGHTING_CLUSTERED;
+  if (sun && !(sun->base.layers & ctx->camera->base.layers)) sun = NULL;
+  if (!clustered && !sun) {
     if (L->marked) {
-      mark_materials(&ctx->scene3d->base, false);
+      mark_scene(ctx->scene3d, false, false);
       L->marked = false;
     }
     return;
   }
   if (L->hooked != ctx->renderer) {
-    cw_shading_part(ctx->renderer, PART, fill, L);
+    cw_shading_part(ctx->renderer, PART, fill_cluster, L);
+    cw_shading_part(ctx->renderer, "csm", fill_csm, L);
     L->hooked = ctx->renderer;
   }
   if (ctx->scene3d->auto_update) t3_object_update_matrix_world(ctx->scene3d, false);
+  /* the cascaded sun: drawn by the csm part, so out of three.c's list */
+  bool csm = false;
+  if (sun) {
+    if (!L->csm) L->csm = cw__csm_new();
+    shadow_span(false);
+    csm = cw__csm_update(L->csm, ctx, sun, &cfg);
+    shadow_span(true);
+    if (csm) {
+      taken t = { sun, sun->base.layers };
+      t3_retain(sun);
+      cw_array_push(&L->taken, t);
+      sun->base.layers = 0;
+      cw__csm_info st;
+      cw__csm_stats(L->csm, &st);
+      L->stats.cascades = st.cascades;
+      L->stats.cascades_rendered = st.rendered;
+    }
+  }
+  if (!clustered) {
+    L->stats.materials = mark_scene(ctx->scene3d, false, csm);
+    L->marked = true;
+    L->stats.cpu_ms = (float)(wall_ms() - t0);
+    return;
+  }
   cw_array_clear(&L->lights);
+  int taken0 = L->taken.count;
   gather(L, &ctx->scene3d->base, ctx->camera->base.layers);
-  for (int i = 0; i < L->taken.count; i++) L->taken.data[i].light->base.layers = 0;
+  for (int i = taken0; i < L->taken.count; i++) L->taken.data[i].light->base.layers = 0;
   tg = wall_ms();
   int n = L->lights.count;
   if (n > L->s.max_lights) {
@@ -291,6 +386,63 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
       spots++;
     }
   }
+  /* the shadowed ones: a tile each in the atlas, sized by how big the light
+   * is on screen (at most its shadow_size, a power of two) */
+  if (L->reqs_cap < n) {
+    L->reqs_cap = n + 16;
+    L->reqs = cw_realloc(L->reqs, (size_t)L->reqs_cap * sizeof *L->reqs, CW_MEM_RENDER);
+    L->outs = cw_realloc(L->outs, (size_t)L->reqs_cap * sizeof *L->outs, CW_MEM_RENDER);
+    L->req_light = cw_realloc(L->req_light, (size_t)L->reqs_cap * sizeof *L->req_light, CW_MEM_RENDER);
+  }
+  int nreq = 0;
+  float focal = ctx->proj.e[5] * (float)ctx->height * 0.5f;
+  for (int i = 0; i < n; i++) {
+    if (!L->lights.data[i].shadowed) continue;
+    const t3_light *l = L->lights.data[i].l;
+    const float *t0 = px + 4 * (size_t)i;
+    float range = t0[3], dist = sqrtf(t0[0] * t0[0] + t0[1] * t0[1] + t0[2] * t0[2]);
+    /* the light's sphere on screen: its radius in pixels (inside it: as big as the screen) */
+    float rpx = dist > range * 1.001f ? range / sqrtf(dist * dist - range * range) * focal : (float)ctx->height;
+    int base = 64;
+    while (base * 2 <= CW_MAX(l->shadow->map_width, 64)) base *= 2;
+    int size = 64;
+    while (size < base && (float)size < 2 * rpx) size *= 2;
+    L->reqs[nreq] = (cw__shadow_req){ l, l->base.type == T3_POINT_LIGHT, size, rpx, range };
+    L->req_light[nreq++] = i;
+  }
+  if (!L->atlas) L->atlas = cw__atlas_new();
+  int asize = L->s.shadow_atlas_size;
+  if (cw__quality_shadow_level() <= 1) asize = CW_MIN(asize, 2048); /* Shadows Low / Medium */
+  shadow_span(false);
+  cw__atlas_update(L->atlas, ctx, L->reqs, nreq, asize, L->s.shadow_updates_per_frame, L->s.shadow_cache, L->outs);
+  shadow_span(true);
+  bool soft = cw__quality_soft_shadows();
+  for (int k = 0; k < nreq; k++) {
+    const cw__shadow_out *o = &L->outs[k];
+    if (!o->type) continue;
+    int i = L->req_light[k];
+    const t3_light_shadow *sh = L->reqs[k].light->shadow;
+    float *row[10];
+    for (int r = 0; r < 10; r++) row[r] = px + 4 * ((size_t)i + (size_t)r * w);
+    row[3][1] = (float)o->type, row[3][2] = sh->bias, row[3][3] = sh->normal_bias;
+    if (o->type == 1) memcpy(row[4], o->mat, 4 * sizeof(float)), memcpy(row[5], o->mat + 4, 4 * sizeof(float)),
+                      memcpy(row[6], o->mat + 8, 4 * sizeof(float)), memcpy(row[7], o->mat + 12, 4 * sizeof(float));
+    else {
+      row[4][0] = o->pos.x, row[4][1] = o->pos.y, row[4][2] = o->pos.z, row[4][3] = o->near;
+      row[5][0] = o->far;
+    }
+    row[8][0] = o->rect[0], row[8][1] = o->rect[1], row[8][2] = o->rect[2], row[8][3] = soft ? sh->radius : 0;
+    row[9][0] = sh->intensity;
+    L->stats.shadowed++;
+  }
+  {
+    cw__atlas_info ai;
+    cw__atlas_get_info(L->atlas, &ai);
+    L->stats.shadow_faces_rendered = ai.faces_rendered;
+    L->stats.shadow_faces_cached = ai.faces_cached;
+  }
+  L->shadow_tex = cw__atlas_texture(L->atlas);
+  L->atlas_px = (float)(L->shadow_tex ? L->shadow_tex->width : 1);
   L->light_tex->version++;
   /* the grid over this view (the unjittered projection) */
   /* effects detail keeps fewer lights a cluster on Low and Medium (cartwheel/quality.h) */
@@ -307,12 +459,12 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
   cw_froxel_grid_dims(L->grid, &nx, &ny, &nz, &zs, &zb);
   cw_froxel_grid_textures(L->grid, &L->rec_tex, &rw, &L->item_tex, &iw);
   L->grid_u[0] = (float)nx, L->grid_u[1] = (float)ny, L->grid_u[2] = (float)nz, L->grid_u[3] = (float)rw;
-  L->depth_u[0] = zs, L->depth_u[1] = zb, L->depth_u[2] = (float)iw, L->depth_u[3] = 0;
+  L->depth_u[0] = zs, L->depth_u[1] = zb, L->depth_u[2] = (float)iw, L->depth_u[3] = L->atlas_px;
   L->stats.clustered = n;
   L->stats.clustered_spots = spots;
   cw_froxel_grid_stats(L->grid, &L->stats.grid);
   double tm = wall_ms();
-  L->stats.materials = mark_materials(&ctx->scene3d->base, true);
+  L->stats.materials = mark_scene(ctx->scene3d, true, csm);
   L->marked = true;
   L->stats.cpu_ms = (float)(wall_ms() - t0);
   if (getenv("CW_LIGHTING_TRACE"))
@@ -329,7 +481,8 @@ static void ls_init(cw_node n, void *data) {
   cw_lighting_settings *s = data;
   *s = (cw_lighting_settings){ .mode = CW_LIGHTING_CLUSTERED, .max_lights = 1024, .tile_px = 32, .z_slices = 24,
                                .max_per_cluster = 64, .cluster_spot_lights = true, .cluster_far = 0,
-                               .light_cutoff = 0.005f };
+                               .light_cutoff = 0.005f, .shadow_atlas = true,
+                                 .shadow_atlas_size = 4096, .shadow_updates_per_frame = 24, .shadow_cache = true };
 }
 
 static void ls_pre_render(cw_node n, void *data, double alpha) {
@@ -359,6 +512,13 @@ static const cw_prop ls_props[] = {
   CW_PROP_FIELD_RANGE(cw_lighting_settings, cluster_far, CW_T_FLOAT, 0, 1e6, "Where the last slice ends; 0 = the camera's far."),
   CW_PROP_FIELD_RANGE(cw_lighting_settings, light_cutoff, CW_T_FLOAT, 1e-6, 10,
                       "A clustered light with range 0 ends where intensity / distance^2 falls under this."),
+  CW_PROP_FIELD(cw_lighting_settings, shadow_atlas, CW_T_BOOL, CW_PROP_DEFAULT,
+                "Shadowed omni and spot lights are clustered too, their shadows tiles of one atlas (else three.c draws them)."),
+  CW_PROP_FIELD_RANGE(cw_lighting_settings, shadow_atlas_size, CW_T_INT, 512, 16384, "The shadow atlas, texels a side."),
+  CW_PROP_FIELD_RANGE(cw_lighting_settings, shadow_updates_per_frame, CW_T_INT, 0, 10000,
+                      "Atlas faces redrawn a frame at most (an omni light is 6; 0 = no limit)."),
+  CW_PROP_FIELD(cw_lighting_settings, shadow_cache, CW_T_BOOL, CW_PROP_DEFAULT,
+                "A tile is redrawn only when its light or a shadow caster in its range changed."),
   CW_PROP_END,
 };
 
@@ -370,9 +530,8 @@ static cw_node_type ls_type = {
 
 void cw__register_lighting_types(void) { cw_node_type_register(&ls_type); }
 
-/* render3d.c's light cap check: the kinds the tree clusters (1 omni, 2 spot) */
 int cw__lighting_cluster_kinds(cw_tree *t) {
   lighting *L = t ? cw_tree_slot(t, "lighting") : NULL;
   if (!L || L->s.mode != CW_LIGHTING_CLUSTERED) return 0;
-  return 1 | (L->s.cluster_spot_lights ? 2 : 0);
+  return 1 | (L->s.cluster_spot_lights ? 2 : 0) | (L->s.shadow_atlas ? 4 : 0);
 }

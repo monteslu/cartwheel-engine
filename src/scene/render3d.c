@@ -7,6 +7,7 @@
 #include "cartwheel/resource.h"
 #include "scene_internal.h"
 #include "render3d_internal.h"
+#include "render/lighting_internal.h"
 #include "render/quality_internal.h"
 #include "cartwheel/render3d.h"
 #include "render/bake_internal.h"
@@ -610,6 +611,9 @@ typedef struct light3d {
   t3_light *light;
   int kind; /* 0 directional, 1 omni, 2 spot */
   bool bake;                /* contributes to baked lightmaps (LightmapGI) */
+  int shadow_cascades;      /* directional: 0 = one shadow map (three.c), 1-4 = cascades (r186 CSMShadowNode) */
+  float shadow_distance;    /* directional cascades: where the last ends (r186 maxFar; 0 = the camera's far) */
+  bool cascade_fade;        /* directional cascades: cross-fade between them (r186 CSMShadowNode.fade) */
 } light3d;
 static const cw_node_type *light3d_t;
 
@@ -625,6 +629,7 @@ static void light_common_init(cw_node n, light3d *l, int kind) {
   l->shadow_far = 500;
   l->kind = kind;
   l->bake = true;
+  l->cascade_fade = true;
   l->light = kind == 0 ? t3_directional_light_new(0xffffff, 1)
              : kind == 1 ? t3_point_light_new(0xffffff, 1, 0, 2)
                          : t3_spot_light_new(0xffffff, 1, 0, CW_PI / 4, 0.2f, 2);
@@ -675,6 +680,15 @@ static void light_pre_render(cw_node n, void *data, double alpha) {
   if (l->shadow && l->light->base.visible) {
     cw_tree *t = cw_node_tree(n);
     if (t) state(t)->shadows_enabled = true;
+    /* a cascaded sun (cartwheel/lighting.h): the lighting pass draws its
+     * shadows; the Shadows setting keeps 2 cascades on Low, 3 on Medium */
+    if (t && l->kind == 0 && l->shadow_cascades > 0) {
+      static const int cap[4] = { 2, 3, 4, 4 };
+      /* (each cascade at most 2048: the four share one map twice that wide) */
+      cw__csm_cfg cfg = { CW_MIN(CW_CLAMP(l->shadow_cascades, 1, 4), cap[cw__quality_shadow_level()]), l->shadow_distance,
+                          l->cascade_fade, CW_MIN(cw__quality_shadow_size(l->shadow_size), 2048) };
+      cw__lighting_csm_light(t, l->light, &cfg);
+    }
   }
 }
 
@@ -694,6 +708,11 @@ static const cw_prop light_props[] = {
   CW_PROP_FIELD_RANGE(light3d, angle, CW_T_FLOAT, 0, 1.5707963, "Spot: cone half-angle, radians."),
   CW_PROP_FIELD_RANGE(light3d, penumbra, CW_T_FLOAT, 0, 1, "Spot: soft edge fraction."),
   CW_PROP_FIELD(light3d, bake, CW_T_BOOL, CW_PROP_DEFAULT, "Contributes to baked lightmaps and ambient probes (LightmapGI)."),
+  CW_PROP_FIELD_RANGE(light3d, shadow_cascades, CW_T_INT, 0, 4,
+                      "Directional: 0 = one shadow map around the light; 1-4 = cascaded shadow maps that follow the camera "
+                      "(r186 CSMShadowNode; shadow_size is each cascade's; cartwheel/lighting.h)."),
+  CW_PROP_FIELD_RANGE(light3d, shadow_distance, CW_T_FLOAT, 0, 1e6, "Directional cascades: where the last ends (0 = the camera's far)."),
+  CW_PROP_FIELD(light3d, cascade_fade, CW_T_BOOL, CW_PROP_DEFAULT, "Directional cascades: cross-fade between neighbours."),
   CW_PROP_END,
 };
 
@@ -817,7 +836,7 @@ static void count_lights(const t3_object *o, uint32_t layers, int clustered, lig
         : o->type == T3_HEMISPHERE_LIGHT ? LK_HEMI : -1;
   /* clustered lights (cartwheel/lighting.h) leave three.c's list: shadowless omni (and spot) lights */
   bool caster = (k == LK_POINT || k == LK_SPOT) && o->cast_shadow && ((const t3_light *)o)->shadow;
-  if (!caster && ((k == LK_POINT && (clustered & 1)) || (k == LK_SPOT && (clustered & 2)))) k = -1;
+  if ((!caster || (clustered & 4)) && ((k == LK_POINT && (clustered & 1)) || (k == LK_SPOT && (clustered & 2)))) k = -1;
   if (k >= 0 && (o->layers & layers)) {
     c->n[k]++;
     if (o->cast_shadow && ((const t3_light *)o)->shadow) {

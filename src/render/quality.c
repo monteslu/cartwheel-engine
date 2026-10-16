@@ -506,4 +506,5 @@ int cw__quality_shadow_size(int authored) {
   return s < 256 ? (authored < 256 ? authored : 256) : s;
 }
 bool cw__quality_soft_shadows(void) { return Q.v[CW_GFX_SHADOWS] != SH_LOW; }
+int cw__quality_shadow_level(void) { return Q.v[CW_GFX_SHADOWS] == SH_LOW ? 0 : Q.v[CW_GFX_SHADOWS] == SH_MEDIUM ? 1 : Q.v[CW_GFX_SHADOWS] == SH_HIGH ? 2 : 3; }
 float cw__quality_lod_bias(void) { return fx()->lod_bias; }
