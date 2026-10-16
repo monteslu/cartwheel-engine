@@ -1255,6 +1255,8 @@ void cw__pipeline_add_builtin_passes(cw_pipeline *p) {
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "ssao", .phase = CW_PHASE_POST, .order = 100,
                                            .reads = CW_RES_COLOR | CW_RES_DEPTH, .writes = CW_RES_COLOR,
                                            .active = ssao_active, .execute = ssao_exec, .webgpu = true });
+  void cw__gi_add_post_passes(cw_pipeline *p); /* src/gi: the "gi" SHADOW pass, SSGI (120), SSR (150) */
+  cw__gi_add_post_passes(p);
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "taa", .phase = CW_PHASE_POST, .order = 200,
                                            .reads = CW_RES_COLOR | CW_RES_VELOCITY, .writes = CW_RES_COLOR,
                                            .active = taa_active, .execute = taa_exec, .webgpu = true });

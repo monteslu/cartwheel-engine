@@ -50,14 +50,16 @@ typedef struct gi_tree {
   t3_texture *dummy;
   const t3_texture *env_seen; /* scene.environment at the last frame */
   t3_renderer *hook_renderer;
-  bool pass_added;
+  /* the screen-space passes' G-buffer (ssr.c) and the mode the gi part draws in: 0 lit, 1 G-buffer */
+  cw_rt gbuf, albedo; /* the G-buffer: normal + roughness + metalness; diffuse colour (SSGI) */
+  bool gbuf_ok, albedo_ok; /* drawn this frame */
+  int mode;
   int bound_max;
   cw_gi_stats stats;
 } gi_tree;
 
 gi_tree *cw__gi_tree(cw_tree *t);
 void cw__gi_fill(t3_extension_ctx *c, void *user);
-void cw__gi_ensure_pass(cw_tree *t, gi_tree *g);
 void cw__register_reflection_probe(void);
 t3_texture *cw__gi_dummy(gi_tree *g);
 /* the light probe grid's values for a draw (probe_grid.c) */
@@ -66,5 +68,11 @@ void cw__gi_grids_exec(gi_tree *g, cw_pass_ctx *ctx);
 void cw__gi_grid_tree_free(gi_tree *g);
 void cw__gi_grids_sky_changed(gi_tree *g);
 void cw__register_probe_grid(void);
+/* give every Standard / Physical material under o the gi part */
+void cw__gi_tag(gi_tree *g, t3_object *o);
+void cw__gi_add_post_passes(cw_pipeline *p);
+void cw__gi_add_shadow_pass(cw_pipeline *p);
+bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, int w, int h, int mode);
+void cw__gi_add_ssgi_pass(cw_pipeline *p);
 
 #endif

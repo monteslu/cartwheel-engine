@@ -492,6 +492,15 @@ void cw__quality_post(cw_post_settings *s) {
       s->ssao_steps = s->ssao_steps < 8 ? 8 : s->ssao_steps;
     }
   }
+  /* SSR: off on Low, fewer march steps on Medium, more on Ultra */
+  if (s->ssr) {
+    int fxl = Q.v[CW_GFX_EFFECTS];
+    if (fxl == 0) s->ssr = false;
+    else if (fxl == 1) s->ssr_quality *= 0.5f;
+    else if (fxl == 3) s->ssr_quality = CW_MIN(1.0f, s->ssr_quality * 1.5f);
+  }
+  /* SSGI: Ultra only (several ms of an integrated GPU even at half resolution) */
+  if (s->ssgi && Q.v[CW_GFX_EFFECTS] < 3) s->ssgi = false;
   if (s->bloom && e->bloom_levels > 0 && s->bloom_levels > e->bloom_levels) s->bloom_levels = e->bloom_levels;
   int aa = Q.v[CW_GFX_AA];
   if (aa == AA_OFF) s->aa = CW_AA_NONE;

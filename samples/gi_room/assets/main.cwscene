@@ -17,6 +17,9 @@ ambient_energy = 0
 
 [node name="Post" parent="." type="PostProcess"]
 aa = FXAA
+ssr = true
+ssr_max_distance = 8
+ssgi = true
 
 [node name="Camera" parent="." type="Camera3D"]
 position = vec3(0, 1.9, 8.2)

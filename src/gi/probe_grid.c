@@ -301,7 +301,6 @@ static void grid_enter(cw_node n, void *data) {
   cw_tree *t = cw_node_tree(n);
   gi_tree *g = cw__gi_tree(t);
   cw_array_push(&g->grids, n);
-  cw__gi_ensure_pass(t, g);
 }
 
 static void grid_exit(cw_node n, void *data) {

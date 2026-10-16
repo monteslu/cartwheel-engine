@@ -32,6 +32,16 @@ static void settings_default(cw_post_settings *s) {
   s->ssao_power = 1.5f;
   s->ssao_slices = 2;
   s->ssao_steps = 6;
+  s->ssr_max_distance = 1;
+  s->ssr_thickness = 0.1f;
+  s->ssr_quality = 0.5f;
+  s->ssr_intensity = 1;
+  s->ssgi_radius = 12;
+  s->ssgi_intensity = 10;
+  s->ssgi_ao_intensity = 1;
+  s->ssgi_thickness = 1;
+  s->ssgi_slices = 2;
+  s->ssgi_steps = 8;
   s->taa_feedback = 0.9f;
   s->taa_samples = 8;
   s->grade_intensity = 1;

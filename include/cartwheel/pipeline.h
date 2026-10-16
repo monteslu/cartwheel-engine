@@ -241,6 +241,27 @@ typedef struct cw_post_settings {
   bool chromatic_aberration;
   float ca_intensity;       /* 0.004 (uv offset at the corners) */
   cw_debug_view debug_view; /* NONE */
+  /* screen-space reflections: three.js r186's SSRNode (one mirror ray a
+   * pixel, softened by roughness) at half resolution over a G-buffer of the
+   * surfaces carrying the GI shading part (cartwheel/gi.h: every Standard /
+   * Physical material of a tree with SSR, a probe or a grid); off on the Low
+   * effects preset */
+  bool ssr;
+  float ssr_max_distance;   /* 1: how far a reflection reaches (view units, r186's maxDistance) */
+  float ssr_thickness;      /* 0.1: how deep a surface counts as hit behind the depth */
+  float ssr_quality;        /* 0.5: march steps per pixel of the ray's screen length (0..1) */
+  float ssr_intensity;      /* 1 */
+  /* screen-space bounce light and AO: three.js r186's SSGINode (SSILVB) at
+   * half resolution over the same G-buffer plus the surfaces' diffuse
+   * colour; composited as r186's example does (colour x AO + diffuse x GI);
+   * the Ultra effects preset only */
+  bool ssgi;
+  float ssgi_radius;        /* 12: r186's radius (screen-space sampling) */
+  float ssgi_intensity;     /* 10: r186's giIntensity */
+  float ssgi_ao_intensity;  /* 1 */
+  float ssgi_thickness;     /* 1 */
+  int ssgi_slices;          /* 2 (r186's example) */
+  int ssgi_steps;           /* 8 (r186's example) */
 } cw_post_settings;
 
 /* ── the pass context ──────────────────────────────────────────────── */

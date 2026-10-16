@@ -33,6 +33,16 @@ static void post_init(cw_node n, void *data) {
   s->ssao_power = 1.5f;
   s->ssao_slices = 2;
   s->ssao_steps = 6;
+  s->ssr_max_distance = 1;
+  s->ssr_thickness = 0.1f;
+  s->ssr_quality = 0.5f;
+  s->ssr_intensity = 1;
+  s->ssgi_radius = 12;
+  s->ssgi_intensity = 10;
+  s->ssgi_ao_intensity = 1;
+  s->ssgi_thickness = 1;
+  s->ssgi_slices = 2;
+  s->ssgi_steps = 8;
   s->taa_feedback = 0.9f;
   s->taa_samples = 8;
   s->grade_intensity = 1;
@@ -99,6 +109,18 @@ static const cw_prop post_props[] = {
   FR(ssao_power, 0.1, 8, "Contrast curve on the visibility."),
   FI(ssao_slices, 1, 8, "Directions per pixel."),
   FI(ssao_steps, 1, 16, "Horizon steps per direction side."),
+  FB(ssr, "Screen-space reflections (half resolution) of surfaces with the GI shading part (gi.h)."),
+  FR(ssr_max_distance, 0.01, 1000, "How far a screen-space reflection reaches (view units)."),
+  FR(ssr_thickness, 0.001, 100, "How deep a surface counts as hit behind the depth."),
+  FR(ssr_quality, 0, 1, "March steps per pixel of the ray's screen length."),
+  FR(ssr_intensity, 0, 10, "Screen-space reflection strength."),
+  FB(ssgi, "Screen-space bounce light and AO (half resolution) of surfaces with the GI shading part (gi.h)."),
+  FR(ssgi_radius, 0.1, 100, "SSGI sampling radius (r186's, screen space)."),
+  FR(ssgi_intensity, 0, 100, "Bounce light strength."),
+  FR(ssgi_ao_intensity, 0, 10, "Its ambient occlusion strength."),
+  FR(ssgi_thickness, 0.01, 100, "How thick a surface is assumed behind the depth."),
+  FI(ssgi_slices, 1, 8, "Directions per pixel."),
+  FI(ssgi_steps, 1, 64, "Steps per direction side."),
   FB(taa, "Temporal antialiasing (camera jitter, reprojection, history clipping)."),
   FR(taa_feedback, 0, 0.98, "History weight."),
   FI(taa_samples, 1, 64, "Jitter positions (Halton 2,3)."),

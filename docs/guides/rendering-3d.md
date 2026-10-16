@@ -248,7 +248,7 @@ The room in `samples/gi_room` has both:
 
 How it fits together:
 
-- Captures run in the SHADOW phase ("reflection_probes", after the sky's environment is made), so this frame's scene draws with them. Each probe keeps two targets, drawn into one while the scene samples the other, and nothing is allocated after the first capture. `update_mode` picks when a probe captures: ONCE (its first frame, and again when the sky is re-rendered), ON_DEMAND (`cw_reflection_probe_update` or `call <probe> update`), or EVERY_N_FRAMES (`update_every`). A capture sees what `cull_mask` lets it see (three.c object layers): give a cheap stand-in of a level a layer the camera does not draw and the probe captures the stand-in.
+- Captures run in the SHADOW phase (the "gi" pass, after the sky's environment is made), so this frame's scene draws with them. Each probe keeps two targets, drawn into one while the scene samples the other, and nothing is allocated after the first capture. `update_mode` picks when a probe captures: ONCE (its first frame, and again when the sky is re-rendered), ON_DEMAND (`cw_reflection_probe_update` or `call <probe> update`), or EVERY_N_FRAMES (`update_every`). A capture sees what `cull_mask` lets it see (three.c object layers): give a cheap stand-in of a level a layer the camera does not draw and the probe captures the stand-in.
 - The shading is r186 TSL in a three.c extension, the "gi" shading part ([shading.h](header:shading.h)): every Standard and Physical material in a tree with a probe or a grid carries it, and the app's program tables need its states (`standard+senv+l1101+xgi`; `tools/programs.mjs` adds them like any other). A material carries more than one engine part this way, composed by name (`xterrain_gi`). three.c never auto-instances a mesh whose material carries an extension, so each such mesh is a draw of its own.
 - One LightProbeGrid3D lights a tree (the first one). Probe boxes are axis aligned: a node's rotation is ignored, its scale applies.
 - Everything here is render only: nothing reaches the simulation, and `samples/gi_probe_check` and `tests/gi-probe.mjs` check the pictures against known answers (a mirror ball in a box of six coloured walls must show each wall where it is).
@@ -262,6 +262,31 @@ Quality (effects detail):
 | Captures a frame | 1 | 1 | 2 | 4 |
 | Grid refresh (INCREMENTAL) | the bake only | half of `probes_per_frame` | as authored | twice |
 | Grid face size | at most 8 | as authored | as authored | as authored |
+
+Screen-space reflections and bounce light are PostProcess settings on top of the probes, three.js r186's `SSRNode` and `SSGINode` at half resolution:
+
+- **`ssr`**: one mirror ray a pixel is marched across the screen against the depth (r186's first-generation SSR, with its binary refinement), so a polished floor shows the chair standing on it, which a probe captured from elsewhere cannot. Metalness weights it, roughness blurs it, and it is added over the image as r186's example adds it. `ssr_max_distance` is how far a reflection reaches (view units, 1 by default: set it to the room's size), `ssr_thickness` how deep a surface counts as hit, `ssr_quality` the march steps per pixel of the ray. What is off screen cannot be reflected: the probes still cover it.
+- **`ssgi`**: r186's SSILVB (a port of SSRT3): per pixel, a few slices of the depth around it are walked and every newly occluded sector of each slice takes the light of the surface occluding it, giving bounce light and ambient occlusion from what is on screen. It is composited as r186's example does, colour x AO + diffuse colour x bounce light, and denoised over 5 x 5 trace texels with depth- and normal-aware weights (r186 relies on TRAA; with the pipeline's TAA on the slices also rotate frame to frame as r186's do).
+
+Both read a G-buffer the "gi" pass draws after the probes: the scene a second time at half resolution, the gi shading part writing the view normal, roughness and metalness instead of the lit colour (and, for SSGI, a third time for the diffuse colour). Only surfaces with the part (every Standard and Physical material of a tree with a probe, a grid, SSR or SSGI) are in it; anything else is not reflected and gets no bounce light.
+
+| | Low | Medium | High | Ultra |
+|---|---|---|---|---|
+| SSR | off | half the march steps | as authored | 1.5 x the steps |
+| SSGI | off | off | off | as authored |
+
+The cost, GPU ms per frame on an AMD Radeon 890M (integrated) at 1280 x 720, `samples/gi_room` through `tests/gi-perf.mjs` (GL, the probes' pass averaged over frames with and without a capture; the machine was shared with other GPU work, so read them as upper bounds):
+
+| Preset | gi pass (probes, grid, G-buffer) | SSR | SSGI | Whole frame |
+|---|---|---|---|---|
+| Low | 0.8 | off | off | 2.9 |
+| Medium | 1.7 | 0.6 | off | 3.7 |
+| High | 2.7 | 1.7 | off | 6.7 |
+| Ultra | 7.8 | 1.9 | 13.1 | 25.5 |
+| No probes, grid, SSR or SSGI (High) | | | | 1.4 |
+
+The gi pass on High is two 128-pixel probe captures every other frame and the half-resolution G-buffer; Ultra doubles the capture size and budget and draws the G-buffer twice (SSGI needs the diffuse colour). A Vega 8 has about half the 890M's shader rate: expect about twice these numbers, so Low to High fit a 60 Hz frame there and Ultra (SSGI above all) is for discrete GPUs.
+
 
 ## Visibility: culling, LOD and impostors
 

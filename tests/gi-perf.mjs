@@ -1,9 +1,10 @@
 // GI timing report: gi_room_perf (gi_room at 1280x720: two reflection probes,
 // one box projected and captured every other frame, a 5 x 3 x 5 light probe
 // grid) natively on GL at each quality preset, 240 frames, with the pass
-// timers on. Reports the GPU ms of the "reflection_probes" pass (captures and
-// grid updates, averaged over frames with and without a capture) and of the
-// whole frame, plus the frame with every probe and the grid removed. Timings
+// timers on. Reports the GPU ms of the "gi" pass (captures, grid updates and
+// the SSR / SSGI G-buffer, averaged over frames with and without a capture),
+// of the ssr and ssgi passes and of the whole frame, plus the frame with every
+// probe, the grid, SSR and SSGI removed. Timings
 // are reported, never compared; the checks: every preset's run has a capture
 // time and a frame time, and the control (the probes and grid removed) has no
 // capture time.
@@ -36,9 +37,9 @@ let fail = 0;
 for (const q of ['low', 'medium', 'high', 'ultra']) {
   const s = run(q, { CW_QUALITY: q });
   if (s.error) { fail++; rows.push(`${q.padEnd(8)} failed: ${s.error}`); continue; }
-  const cap = s['gi.ms_capture'], frame = s['gi.ms_frame'];
+  const cap = s['gi.ms_capture'], frame = s['gi.ms_frame'], ssr = s['gi.ms_ssr'], ssgi = s['gi.ms_ssgi'];
   if (!(cap > 0) || !(frame > 0)) { fail++; console.log(`FAIL ${q}: no timing (capture ${cap}, frame ${frame})`); }
-  rows.push(`${q.padEnd(8)} capture ${cap.toFixed(3).padStart(7)} ms   frame ${frame.toFixed(3).padStart(7)} ms`);
+  rows.push(`${q.padEnd(8)} gi pass ${cap.toFixed(3).padStart(7)}   ssr ${ssr.toFixed(3).padStart(6)}   ssgi ${ssgi.toFixed(3).padStart(6)}   frame ${frame.toFixed(3).padStart(7)} ms`);
 }
 const none = run('none', { CW_QUALITY: 'high', GI_NONE: '1' });
 if (none.error) { fail++; rows.push(`none     failed: ${none.error}`); }

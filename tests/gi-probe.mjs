@@ -11,7 +11,13 @@
 //   2. gi_room: the light probe grid's bounce light tints the ceiling red by
 //      the red wall and green by the green one; with the grid's intensity at
 //      0 (the control) the tint must be gone.
-//   3. GL and WebGPU draw the same gi_room (pixels over 16 levels apart < 0.5 %).
+//   3. Screen-space reflections: the plinth's warm light shows in the floor
+//      in front of it with SSR on, not with it off (the probe, captured
+//      from elsewhere, puts it somewhere else). Screen-space bounce light: with
+//      the grid off and the Ultra preset (SSGI runs only there), SSGI alone
+//      tints the ceiling by the coloured walls;
+//      off (the control) it does not.
+//   4. GL and WebGPU draw the same gi_room (pixels over 16 levels apart < 0.5 %).
 //
 //   node tests/gi-probe.mjs
 import { spawnSync } from 'node:child_process';
@@ -79,8 +85,8 @@ const tint = (img) => {
 };
 const rooms = {};
 for (const gpu of ['gl', 'webgpu']) {
-  const on = run('gi_room', gpu, 60, `room.${gpu}`);
-  const off = run('gi_room', gpu, 60, `room.nogrid.${gpu}`, {}, 'set Room/Bounce intensity 0');
+  const on = run('gi_room', gpu, 60, `room.${gpu}`, {}, 'set Room/Post ssgi false');
+  const off = run('gi_room', gpu, 60, `room.nogrid.${gpu}`, {}, 'set Room/Bounce intensity 0;set Room/Post ssgi false');
   if (on.err || off.err) { report(false, `gi_room ${gpu}: ${on.err || off.err}`); continue; }
   rooms[gpu] = on.img;
   const t = tint(on.img), t0 = tint(off.img);
@@ -88,7 +94,22 @@ for (const gpu of ['gl', 'webgpu']) {
   report(!(t0 > 15), `${gpu}: control (grid intensity 0) has no such tint (${t0})`);
 }
 
-// ── 3. GL against WebGPU ──
+// ── 3. SSR and SSGI ──
+for (const gpu of ['gl', 'webgpu']) {
+  const on = run('gi_room', gpu, 60, `room.ssr.${gpu}`, {}, 'set Room/Post ssgi false');
+  const off = run('gi_room', gpu, 60, `room.nossr.${gpu}`, {}, 'set Room/Post ssr false;set Room/Post ssgi false');
+  if (on.err || off.err) { report(false, `gi_room ssr ${gpu}: ${on.err || off.err}`); continue; }
+  const warm = (img) => { const p = px(img, 0.3672, 0.6389); return p[0] - p[2]; };
+  report(warm(on.img) > 45, `${gpu}: SSR shows the plinth in the floor in front of it (red - blue ${warm(on.img)})`);
+  report(!(warm(off.img) > 45), `${gpu}: control (SSR off) does not (${warm(off.img)})`);
+  const gi = run('gi_room', gpu, 60, `room.ssgi.${gpu}`, { GI_GRID: '0', CW_QUALITY: 'ultra' }, 'set Room/Post ssr false');
+  const gi0 = run('gi_room', gpu, 60, `room.nossgi.${gpu}`, { GI_GRID: '0', CW_QUALITY: 'ultra' }, 'set Room/Post ssr false;set Room/Post ssgi false');
+  if (gi.err || gi0.err) { report(false, `gi_room ssgi ${gpu}: ${gi.err || gi0.err}`); continue; }
+  report(tint(gi.img) > 25, `${gpu}: SSGI alone (grid off) tints the ceiling by the walls (${tint(gi.img)})`);
+  report(!(tint(gi0.img) > 25), `${gpu}: control (SSGI off too) has no tint (${tint(gi0.img)})`);
+}
+
+// ── 4. GL against WebGPU ──
 if (rooms.gl && rooms.webgpu) {
   const d = diffImages(rooms.gl, rooms.webgpu);
   report(d.comparable && d.gt16 < 0.005, `gi_room GL vs WebGPU: ${(d.gt16 * 100).toFixed(3)}% of pixels over 16 levels apart`);

@@ -12,6 +12,7 @@
 #include "cartwheel/render3d.h"
 #include "cartwheel/shading.h"
 #include "gi_internal.h"
+#include "render/pipeline_internal.h"
 
 static const char *const update_names[] = { "ONCE", "ON_DEMAND", "EVERY_N_FRAMES", NULL };
 
@@ -29,6 +30,8 @@ static void gtree_free(void *p) {
   cw_array_free(&g->probes);
   cw_array_free(&g->grids);
   cw__gi_grid_tree_free(g);
+  cw__rt_destroy(&g->gbuf);
+  cw__rt_destroy(&g->albedo);
   if (g->dummy) t3_release(g->dummy);
   if (g->pmrem) t3_pmrem_generator_destroy(g->pmrem);
   cw_free(g);
@@ -155,7 +158,7 @@ static int due_cmp(const void *a, const void *b) {
 }
 
 /* every Standard / Physical material of the scene carries the gi part */
-static void tag_walk(gi_tree *g, t3_object *o) {
+void cw__gi_tag(gi_tree *g, t3_object *o) {
   if (o->type == T3_MESH || o->type == T3_SKINNED_MESH || o->type == T3_INSTANCED_MESH) {
     t3_mesh *m = (t3_mesh *)o;
     for (int i = 0; i < m->material_count; i++) {
@@ -171,8 +174,10 @@ static void tag_walk(gi_tree *g, t3_object *o) {
       cw_array_push(&g->mats, mat);
     }
   }
-  for (int i = 0; i < o->child_count; i++) tag_walk(g, o->children[i]);
+  for (int i = 0; i < o->child_count; i++) cw__gi_tag(g, o->children[i]);
 }
+
+static void captures(gi_tree *g, cw_pass_ctx *ctx);
 
 static void probes_exec(cw_pass_ctx *ctx, void *user) {
   (void)user;
@@ -197,9 +202,18 @@ static void probes_exec(cw_pass_ctx *ctx, void *user) {
   }
   /* materials appear as nodes enter: tag what is new (cheap: a walk of the
    * scene's objects) */
-  tag_walk(g, &ctx->scene3d->base);
+  cw__gi_tag(g, &ctx->scene3d->base);
   /* the grid first: probes captured after it see its bounce light */
   cw__gi_grids_exec(g, ctx);
+  captures(g, ctx);
+  /* the screen-space passes' G-buffer, after this frame's captures (ssr.c) */
+  int hw = (ctx->width + 1) / 2, hh = (ctx->height + 1) / 2;
+  bool want = ctx->settings->ssr || ctx->settings->ssgi;
+  g->gbuf_ok = want && cw__gi_gbuffer(ctx, g, hw, hh, 1);
+  g->albedo_ok = ctx->settings->ssgi && g->gbuf_ok && cw__gi_gbuffer(ctx, g, hw, hh, 2);
+}
+
+static void captures(gi_tree *g, cw_pass_ctx *ctx) {
   if (!g->probes.count) return;
   t3_vec3 cam = ctx->camera ? t3_mat4_get_position(&ctx->camera->base.matrix_world) : (t3_vec3){ 0, 0, 0 };
   due list[64];
@@ -350,6 +364,8 @@ void cw__gi_fill(t3_extension_ctx *c, void *user) {
   set_slot(c, g, 'A', nb > 0 ? &best[0] : NULL);
   set_slot(c, g, 'B', nb > 1 ? &best[1] : NULL);
   cw__gi_fill_grid(c, g);
+  float m[4] = { (float)g->mode, 0, 0, 0 };
+  t3_extension_set_uniform(c, "giMode", m, 4);
 }
 
 /* ── the node ───────────────────────────────────────────────────────── */
@@ -389,7 +405,7 @@ static void probe_enter(cw_node n, void *data) {
   cw_tree *t = cw_node_tree(n);
   gi_tree *g = cw__gi_tree(t);
   cw_array_push(&g->probes, n);
-  cw__gi_ensure_pass(t, g);
+  (void)t;
 }
 
 static void probe_exit(cw_node n, void *data) {
@@ -445,14 +461,18 @@ void cw__register_reflection_probe(void) {
   cw_node_type_add_method("ReflectionProbe3D", "update", NULL, m_update, NULL, "Capture again at the next opportunity.");
 }
 
-/* the pass, once per tree */
-void cw__gi_ensure_pass(cw_tree *t, gi_tree *g) {
-  if (g->pass_added) return;
-  cw_pipeline *pl = cw_pipeline_of(t);
-  if (!cw_pipeline_has_pass(pl, "reflection_probes"))
-    cw_pipeline_add_pass(pl, &(cw_pass_desc){ .name = "reflection_probes", .phase = CW_PHASE_SHADOW, .order = 150,
-                                              .writes = CW_RES_SHADOW, .execute = probes_exec, .webgpu = true });
-  g->pass_added = true;
+/* the "gi" pass (every pipeline has it; it runs for a tree with a probe, a
+ * grid or SSR) */
+static bool gi_active(const cw_pass_ctx *ctx, void *user) {
+  (void)user;
+  if (ctx->settings->ssr || ctx->settings->ssgi) return true;
+  const gi_tree *g = cw_tree_slot(ctx->tree, "gi");
+  return g && (g->probes.count || g->grids.count);
+}
+
+void cw__gi_add_shadow_pass(cw_pipeline *p) {
+  cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "gi", .phase = CW_PHASE_SHADOW, .order = 150,
+                                           .writes = CW_RES_SHADOW, .active = gi_active, .execute = probes_exec, .webgpu = true });
 }
 
 void cw__register_gi_types(void);

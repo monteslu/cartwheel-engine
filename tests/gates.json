@@ -12,6 +12,19 @@
     "note": "reflection probes (box projected, blended) and the light probe grid's bounce light in a room, on every host; the control turns the probes off, and their reflections must change the frame"
   },
   {
+    "name": "gi-room-ultra",
+    "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "GI_PROBES": "0" } }] },
+    "app": "gi_room",
+    "frames": 60,
+    "maxGt16": 0.003,
+    "startCmds": ["quality ultra"],
+    "fields": ["gi.tick", "gi.probes", "gi.captures", "gi.bound", "gi.materials", "tree.nodes"],
+    "expect": { "gi.probes": 2, "gi.bound": 2 },
+    "controlFrames": 60,
+    "controlStartCmds": ["quality ultra", "set Room/Post ssgi false"],
+    "note": "gi_room at the Ultra preset: 256-pixel probe captures and screen-space bounce light (SSGI runs only on Ultra) on every host; the control turns SSGI off"
+  },
+  {
     "name": "gi-probe-check",
     "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "GI_PROBE": "0" } }] },
     "app": "gi_probe_check",

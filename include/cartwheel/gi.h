@@ -43,8 +43,9 @@
  * centre first, then the smaller box). The app's program tables need the
  * xgi states its materials draw with (tools/programs.mjs adds them).
  *
- * Captures run in the pipeline's SHADOW phase ("reflection_probes", order
- * 150: after the sky's environment is made), at most a budget per frame (the quality preset's), the most overdue
+ * Captures run in the pipeline's SHADOW phase (the "gi" pass, order 150:
+ * after the sky's environment is made; it also draws the G-buffer of SSR and
+ * SSGI, cartwheel/pipeline.h), at most a budget per frame (the quality preset's), the most overdue
  * first, then the nearest to the camera, then by node id. A capture renders
  * the scene six times at `resolution` and runs PMREM's filter passes; each
  * probe keeps two targets (it is drawn into one while the scene samples the

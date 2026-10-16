@@ -1007,6 +1007,122 @@
      "doc": "Horizon steps per direction side."
     },
     {
+     "name": "ssr",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Screen-space reflections (half resolution) of surfaces with the GI shading part (gi.h)."
+    },
+    {
+     "name": "ssr_max_distance",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 1000,
+     "doc": "How far a screen-space reflection reaches (view units)."
+    },
+    {
+     "name": "ssr_thickness",
+     "type": "float",
+     "default": "0.1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.001,
+     "max": 100,
+     "doc": "How deep a surface counts as hit behind the depth."
+    },
+    {
+     "name": "ssr_quality",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "March steps per pixel of the ray's screen length."
+    },
+    {
+     "name": "ssr_intensity",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Screen-space reflection strength."
+    },
+    {
+     "name": "ssgi",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Screen-space bounce light and AO (half resolution) of surfaces with the GI shading part (gi.h)."
+    },
+    {
+     "name": "ssgi_radius",
+     "type": "float",
+     "default": "12",
+     "stored": true,
+     "readonly": false,
+     "min": 0.1,
+     "max": 100,
+     "doc": "SSGI sampling radius (r186's, screen space)."
+    },
+    {
+     "name": "ssgi_intensity",
+     "type": "float",
+     "default": "10",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Bounce light strength."
+    },
+    {
+     "name": "ssgi_ao_intensity",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Its ambient occlusion strength."
+    },
+    {
+     "name": "ssgi_thickness",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 100,
+     "doc": "How thick a surface is assumed behind the depth."
+    },
+    {
+     "name": "ssgi_slices",
+     "type": "int",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 8,
+     "doc": "Directions per pixel."
+    },
+    {
+     "name": "ssgi_steps",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 64,
+     "doc": "Steps per direction side."
+    },
+    {
      "name": "taa",
      "type": "bool",
      "default": "false",
