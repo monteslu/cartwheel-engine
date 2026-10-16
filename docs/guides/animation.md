@@ -97,6 +97,52 @@ For the common case, [cw_tween_property](api:cw_tween_property) is one call that
 
 Ownership is simple: a finished tween frees itself and its handle reads as stale; a tween bound to a node dies with the node (no finished callback); tweens pause with the tree unless bound to a node that processes while paused, which is how a pause menu animates. Leftover time carries into the next step, so a sequence lands on the same tick on every host and at every frame rate. `samples/anim_tween` shows all of it, including an `UPDATE`-phase tween and a tween that dies when its node is freed; the 2D action game in `games/action2d` uses tweens for its UI banners.
 
+## Inverse kinematics
+
+Clips play as authored. Skeleton modifiers make them react to the world: feet that land on stairs and slopes, a hand that grabs a handle, a head that follows something moving. The module is `cartwheel/ik.h` ([reference](header:ik.h)).
+
+Modifiers are nodes, children of the Node3D that holds a skinned model, and they run in child order every fixed tick:
+
+1. The AnimationPlayer or AnimationTree writes the animated pose onto the bones, as usual.
+2. After every node's `fixed_update` and the physics step, the model's pose is captured into a `cw_pose`: local translation, rotation and scale per bone, parent indices and model-space transforms.
+3. Each active modifier adjusts the pose the previous one left.
+4. The pose is written back to the bones once, and the skin draws from it.
+
+Every tick starts again from the animated pose, never from the last tick's solution. A bone the animation does not write (a static model, a bone no track drives) gets its last animated value back first, so results never pile up. A bone that game code or an `UPDATE`-mode player writes keeps that value as its animated value. Your app's `fixed_update` runs after the modifiers, so a target it moves applies on the next tick.
+
+| Node | What it does |
+|---|---|
+| [TwoBoneIK3D](node:TwoBoneIK3D) | an arm or a leg (`root_bone`, `middle_bone`, `end_bone`) reaches a `target`. The middle joint bends toward a `pole` (`use_pole`), or keeps the animation's own bend plane. `soften` eases the last stretch so a straight limb does not snap. `use_target_rotation` gives the hand or foot the target's rotation (grip a handle, hold a wheel). `reached` reports whether the target was in reach |
+| [LookAtModifier3D](node:LookAtModifier3D) | turns a `bone` toward a target by the shortest rotation, at most `limit_angle` from where the animation points it. `forward_axis` is the way the bone faces at rest, in model space (`(0, 0, 1)` for a glTF character's head). Chain two, a neck at `influence = 0.4` and then the head, to spread the turn |
+| [CCDIK3D](node:CCDIK3D) | cyclic coordinate descent from `end_bone` up to `root_bone`, the same algorithm and limits as three.js r186's `CCDIKSolver`. Per-joint limits come from [cw_ccdik3d_set_joint](api:cw_ccdik3d_set_joint) |
+| [FABRIK3D](node:FABRIK3D) | FABRIK over a chain (tails, spines, cables), with cone and hinge limits per joint ([cw_fabrik3d_set_joint](api:cw_fabrik3d_set_joint)) |
+| [FootPlacement3D](node:FootPlacement3D) | plants feet on the physics ground. Each leg casts a ray down through its animated ankle, the ankle is lifted or lowered by the ground's height (keeping the animation's own swing), the pelvis drops when a foot has to reach down, each leg is solved as two-bone IK, and the foot turns onto the ground normal while it is near the ground |
+
+Every modifier has `active` and `influence` (0 to 1: the blend between the pose it was given and its result). Animate or tween `influence` to blend a modifier in and out. Bones are named as in the glTF, with the same sanitizing three.js applies (`UpperLeg.L` becomes `UpperLegL`). Targets are Node3D paths relative to the modifier, or a world position in `target_position`.
+
+### The solvers from C
+
+The nodes call plain functions that work on any `cw_pose`. You can use them directly, for example to pose a procedural rig or to bake a pose:
+
+- [cw_ik_two_bone](api:cw_ik_two_bone): no trigonometry at all. The law of cosines gives the middle joint, and each bone turns by the shortest rotation.
+- [cw_ik_aim](api:cw_ik_aim): an aim with an angle limit.
+- [cw_ccdik_solve](api:cw_ccdik_solve): r186's `CCDIKSolver.update`. It keeps its link order, the 1e-5 skip, min and max angles, the `limitation` axis projection, the Euler clamp, the early stop and the final slerp.
+- [cw_ik_fabrik](api:cw_ik_fabrik): FABRIK, which adds no roll.
+
+[cw_pose_bind](api:cw_pose_bind) binds a pose to a glTF scene's bones, and [cw_pose_init](api:cw_pose_init) makes a free-standing one. [cw_skeleton_pose](api:cw_skeleton_pose) and [cw_skeleton_bone_world](api:cw_skeleton_bone_world) read what the modifiers left this tick.
+
+### Determinism, threads and cost
+
+Solvers use only arithmetic, `sqrt` and the `cartwheel/math.h` functions, with fixed iteration counts, so the same animated pose gives the same bones on every host. Each model keeps a running hash of every pose it flushes ([cw_skeleton_hash](api:cw_skeleton_hash)). Captures, target lookups and FootPlacement3D's rays (one `cw_world3d_raycast_batch` per node) run on the main thread. The solves then run one model per job through `cw_parallel_for`, so the result does not depend on the worker count.
+
+The `unit-ik` gate checks the solvers (reach accuracy, the pole plane, limits, FABRIK constraints), compares CCD against three.js r186 run in Node (`tools/gen-ccdik-fixture.mjs` writes the reference), runs the nodes in a tree (no accumulation across ticks, influence, foot placement on Box3D ground), and folds every solved pose into a checksum every host must match:
+
+```sh
+node tests/gate.mjs unit-ik
+```
+
+The debug command `ik <model path>` lists a model's modifiers with their last results (`reached`, `in_limit`, foot offsets, pelvis offset), the pose hash and the microseconds the last tick took.
+
 ## Determinism and testing
 
 Animation that runs in the fixed step is bit-identical across hosts: time is a double advanced by the fixed `dt`, interpolation uses only arithmetic, `sqrt` and the `cartwheel/math.h` functions (three.c's own mixer calls libm, so {{name}} samples glTF clips itself and lets three.c only render the skin), blends accumulate in insertion order, and values are written through the reflection path. Players and trees keep a running hash of every value they write ([cw_anim_player_hash](api:cw_anim_player_hash), [cw_animtree_hash](api:cw_animtree_hash)); the samples publish one hash per 60-tick window as debug state, and the gates compare them across hosts:

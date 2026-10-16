@@ -6119,6 +6119,416 @@
    ]
   },
   {
+   "name": "SkeletonModifier3D",
+   "parent": "Node",
+   "doc": "Base of the skeleton modifiers: children of a skinned model's Node3D that adjust its animated pose each tick.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "active",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Runs each tick when true."
+    },
+    {
+     "name": "influence",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Blend of this modifier's result with the pose it was given."
+    }
+   ]
+  },
+  {
+   "name": "TwoBoneIK3D",
+   "parent": "SkeletonModifier3D",
+   "doc": "Two-bone IK: an arm or leg reaches a target, bending toward a pole.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "root_bone",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Upper bone (shoulder, hip)."
+    },
+    {
+     "name": "middle_bone",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Middle bone (elbow, knee)."
+    },
+    {
+     "name": "end_bone",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "End bone (wrist, ankle) placed at the target."
+    },
+    {
+     "name": "target",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Node3D (path from this node) the end reaches for."
+    },
+    {
+     "name": "target_position",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "World target when no target node is set."
+    },
+    {
+     "name": "pole",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Node3D the middle joint bends toward (use_pole)."
+    },
+    {
+     "name": "pole_position",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "World pole point when no pole node is set."
+    },
+    {
+     "name": "use_pole",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bend toward the pole; false keeps the animation's bend plane."
+    },
+    {
+     "name": "soften",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Reach eases off from this fraction of the chain's length (1 = off)."
+    },
+    {
+     "name": "use_target_rotation",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "End bone takes the target node's rotation (times the offset)."
+    },
+    {
+     "name": "target_rotation_offset",
+     "type": "quat",
+     "default": "quat(0, 0, 0, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Rotation in the target's frame applied to the end bone."
+    },
+    {
+     "name": "reached",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "The target was within reach last tick."
+    }
+   ]
+  },
+  {
+   "name": "LookAtModifier3D",
+   "parent": "SkeletonModifier3D",
+   "doc": "Turns a bone toward a target within an angle limit.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "bone",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bone that turns (head, eye, neck, turret)."
+    },
+    {
+     "name": "target",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Node3D (path from this node) to look at."
+    },
+    {
+     "name": "target_position",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "World target when no target node is set."
+    },
+    {
+     "name": "forward_axis",
+     "type": "vec3",
+     "default": "vec3(0, 0, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The way the bone faces at rest, in model space."
+    },
+    {
+     "name": "offset",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Aim origin offset from the joint at rest, model space (eyes)."
+    },
+    {
+     "name": "limit_angle",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 3.14159,
+     "doc": "Most the bone turns from its animated direction (radians, 0 = no limit)."
+    },
+    {
+     "name": "in_limit",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "The target was inside the limit last tick."
+    }
+   ]
+  },
+  {
+   "name": "CCDIK3D",
+   "parent": "SkeletonModifier3D",
+   "doc": "Cyclic coordinate descent over a chain, as three.js r186's CCDIKSolver.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "root_bone",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Top of the chain (the last link)."
+    },
+    {
+     "name": "end_bone",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Effector: the bone brought to the target."
+    },
+    {
+     "name": "target",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Node3D (path from this node) the effector reaches for."
+    },
+    {
+     "name": "target_position",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "World target when no target node is set."
+    },
+    {
+     "name": "max_iterations",
+     "type": "int",
+     "default": "4",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 64,
+     "doc": "CCD passes (r186 iteration); stops early when nothing turns."
+    },
+    {
+     "name": "min_angle",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 3.14159,
+     "doc": "Smallest step per link (radians, 0 = none)."
+    },
+    {
+     "name": "max_angle",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 3.14159,
+     "doc": "Largest step per link (radians, 0 = none)."
+    }
+   ]
+  },
+  {
+   "name": "FABRIK3D",
+   "parent": "SkeletonModifier3D",
+   "doc": "FABRIK over a chain (tails, spines, cables) with cone and hinge limits.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "root_bone",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Chain root (stays in place)."
+    },
+    {
+     "name": "end_bone",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Chain end brought to the target."
+    },
+    {
+     "name": "target",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Node3D (path from this node) the end reaches for."
+    },
+    {
+     "name": "target_position",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "World target when no target node is set."
+    },
+    {
+     "name": "max_iterations",
+     "type": "int",
+     "default": "4",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 64,
+     "doc": "Backward/forward passes."
+    },
+    {
+     "name": "min_distance",
+     "type": "float",
+     "default": "0.001",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Stop when the end is this close (metres)."
+    }
+   ]
+  },
+  {
+   "name": "FootPlacement3D",
+   "parent": "SkeletonModifier3D",
+   "doc": "Plants feet on the physics ground: raycasts, a lowered pelvis, two-bone legs, feet on the ground normal.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "legs",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "\"upper,lower,end[,foot]\" bone names per leg, legs separated by ';'."
+    },
+    {
+     "name": "pelvis",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bone lowered so the lowest foot reaches its ground."
+    },
+    {
+     "name": "ray_up",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Rays start this far above the animated ankle (m): the highest step."
+    },
+    {
+     "name": "max_step_down",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Lowest ground a foot reaches below the model's origin (m)."
+    },
+    {
+     "name": "foot_height",
+     "type": "float",
+     "default": "0.1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Ankle height above the sole (m): feet align below it."
+    },
+    {
+     "name": "max_slope",
+     "type": "float",
+     "default": "0.7",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1.5,
+     "doc": "Most a foot tilts onto the ground normal (radians)."
+    },
+    {
+     "name": "blend_speed",
+     "type": "float",
+     "default": "12",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "How fast offsets follow the ground (1/s; 0 = at once)."
+    },
+    {
+     "name": "collision_mask",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Physics layers the rays hit."
+    }
+   ]
+  },
+  {
    "name": "GPUParticles3D",
    "parent": "Node3D",
    "doc": "GPU particles: transform feedback simulation, instanced billboards / meshes, trails (particles.h).",

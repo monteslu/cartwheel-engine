@@ -141,6 +141,9 @@ void cw__register_tree_debug_commands(void);
 void cw__register_anim_scene_section(void);
 void cw__register_player_type(void);
 void cw__register_tree_type(void);
+void cw__register_ik_types(void); /* skeleton modifiers (ik_nodes.c) */
+struct cw_pose;
+void cw__pose_capture_locals(struct cw_pose *p); /* cw_pose_capture without the model transforms */
 /* the player's library and root for an AnimationTree */
 cw_anim cw__player_lookup(cw_node player, const char *name);
 cw_node cw__player_root(cw_node player);

@@ -2037,6 +2037,269 @@
    "macros": []
   },
   {
+   "header": "cartwheel/ik.h",
+   "summary": "cartwheel inverse kinematics: a pose layer between animation and\nskinning, deterministic solvers, and skeleton modifier nodes that adjust\nthe animated pose before it is drawn (limbs that reach and plant).\n\nPIPELINE (each fixed tick, for every model with modifier nodes):\n  1. AnimationPlayer / AnimationTree write the animated pose onto the\n     model's bones (cartwheel/anim.h), in the nodes' fixed_update.\n  2. The pose layer captures the bones' local translation, rotation and\n     scale into a cw_pose (the animated pose), after every node's\n     fixed_update and after the physics step.\n  3. The model's modifier nodes (its children: TwoBoneIK3D,\n     LookAtModifier3D, CCDIK3D, FABRIK3D, FootPlacement3D) run in child\n     order, each adjusting the pose the previous one left.\n  4. The pose is written back to the bones once; three.c skins from them.\nEvery tick starts again from the animated pose, never from the last\ntick's solution: a bone the animation did not write this tick (a static\nmodel, a bone no track drives) gets its last animated value back before\nthe modifiers run, so solutions never accumulate. A bone written by\nanything else after the last flush (a player in UPDATE mode, game code)\nkeeps that value as its animated value. The app's own fixed_update runs\nafter the modifiers: targets it moves apply on the next tick.\n\nMODEL SPACE. A pose works in its model's space: the space of the three.c\nobject the pose was bound to (a Node3D's object holding a glTF scene).\nBones whose parent is not a bone are placed by the objects between them\nand that root (a glTF armature node and its scale). Solvers take targets\nin model space; nodes convert world targets with the model's global\ntransform. Rotations are composed as quaternions, so scale along the chain\nmust be uniform (glTF armatures are).\n\nDETERMINISM. Solvers use + - * / and sqrt, cartwheel/math.h's cw_acos /\ncw_sincos where an angle is needed (r186 CCD, angle limits), fixed\niteration counts and exact 1/sqrt: the same input pose gives the same\noutput bits on every host. Each model's pose hash (cw_skeleton_hash)\nfolds every flushed value, so tests compare poses across hosts.\n\nTHREADING. Captures, target resolution and FootPlacement3D's raycasts\n(one cw_world3d_raycast_batch for every leg of every model) run on the\nmain thread; the solves run per model through cw_parallel_for. Each\nmodel's work touches only its own pose, so the result does not depend on\nthe worker count.\n\nCOST (890M laptop, native, one character with feet, a hand and a head\nlook-at): see docs/guides/animation.md \"Inverse kinematics\". A two-bone\nsolve is about 0.1 us; a pose capture and flush is O(bones).",
+   "functions": [
+    {
+     "name": "cw_pose_init",
+     "signature": "void cw_pose_init(cw_pose *p, int count)",
+     "doc": "A free-standing pose of `count` bones: parents -1, identity transforms,\nidentity bases (unit tests, procedural rigs). Set parent[], pos[], rot[],\nscl[] directly, then cw_pose_update_model. Parents must come first.",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_bind",
+     "signature": "bool cw_pose_bind(cw_pose *p, t3_object *root)",
+     "doc": "Bind to every bone (T3_BONE) under `root` and every non-mesh object\nhanging off a bone (glTF \"_end\" markers, sockets), depth first. Captures\nthe current transforms as both the pose and the rest pose. false (logged)\nwhen there are none.",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_free",
+     "signature": "void cw_pose_free(cw_pose *p)",
+     "doc": "frees the arrays; zeroes the struct",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_find",
+     "signature": "int cw_pose_find(const cw_pose *p, const char *name)",
+     "doc": "bone index by name, -1 when absent; O(bones)",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_capture",
+     "signature": "void cw_pose_capture(cw_pose *p)",
+     "doc": "bones -> pose (local TRS, and the bases of parentless bones); then model transforms",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_flush",
+     "signature": "void cw_pose_flush(const cw_pose *p)",
+     "doc": "pose -> bones (local TRS); no-op for a free pose",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_set_rest",
+     "signature": "void cw_pose_set_rest(cw_pose *p)",
+     "doc": "the current local transforms become the rest pose",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_update_model",
+     "signature": "void cw_pose_update_model(cw_pose *p)",
+     "doc": "Model transforms of every bone (O(bones)), or of `bone` and its\ndescendants (O(bones after it)). Solvers keep them current.",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_update_from",
+     "signature": "void cw_pose_update_from(cw_pose *p, int bone)",
+     "doc": "the bone and everything below it",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_model_position",
+     "signature": "t3_vec3 cw_pose_model_position(const cw_pose *p, int bone)",
+     "doc": "model-space origin of a bone (zero when out of range)",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_model_rotation",
+     "signature": "t3_quat cw_pose_model_rotation(const cw_pose *p, int bone)",
+     "doc": "model-space rotation (identity when out of range)",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_is_descendant",
+     "signature": "bool cw_pose_is_descendant(const cw_pose *p, int bone, int ancestor)",
+     "doc": "is `bone` `ancestor` or below it",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_rotate_model",
+     "signature": "void cw_pose_rotate_model(cw_pose *p, int bone, t3_quat delta)",
+     "doc": "Turn a bone by a model-space rotation about its own origin (its model\nrotation becomes delta * rotation); descendants follow.",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_set_model_rotation",
+     "signature": "void cw_pose_set_model_rotation(cw_pose *p, int bone, t3_quat q)",
+     "doc": "Give a bone this model-space rotation; descendants follow.",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_translate_model",
+     "signature": "void cw_pose_translate_model(cw_pose *p, int bone, t3_vec3 delta)",
+     "doc": "Move a bone by a model-space offset; descendants follow.",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_blend",
+     "signature": "void cw_pose_blend(cw_pose *p, const cw_pose *to, float w)",
+     "doc": "Blend each bone's local transform toward `to` (same skeleton) by w:\ntranslation and scale lerp, rotation slerps (deterministic).",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_copy_locals",
+     "signature": "void cw_pose_copy_locals(cw_pose *dst, const cw_pose *src)",
+     "doc": "Copy local transforms (same bone count)",
+     "inline": false
+    },
+    {
+     "name": "cw_pose_hash",
+     "signature": "uint32_t cw_pose_hash(const cw_pose *p, uint32_t h)",
+     "doc": "fold every local transform into h (FNV-1a over the float bits)",
+     "inline": false
+    },
+    {
+     "name": "cw_quat_from_to",
+     "signature": "t3_quat cw_quat_from_to(t3_vec3 from, t3_vec3 to)",
+     "doc": "Deterministic quaternion helpers the solvers use (exposed for game code\nthat builds targets): the shortest rotation taking unit vector `from` to\nunit vector `to` (no trig), and a rotation about a unit axis (cw_sincos).",
+     "inline": false
+    },
+    {
+     "name": "cw_quat_axis_angle_det",
+     "signature": "t3_quat cw_quat_axis_angle_det(t3_vec3 axis, float angle)",
+     "doc": "A rotation of `angle` radians about the unit `axis` (cw_sincos: deterministic).",
+     "inline": false
+    },
+    {
+     "name": "cw_ik_two_bone",
+     "signature": "bool cw_ik_two_bone(cw_pose *p, int a, int b, int c, t3_vec3 target, const cw_ik2_opts *o)",
+     "doc": "true when the target was in reach (within the chain's length). NULL o =\nCW_IK2_OPTS_DEFAULT.",
+     "inline": false
+    },
+    {
+     "name": "cw_ik_aim",
+     "signature": "bool cw_ik_aim(cw_pose *p, int bone, t3_vec3 target, const cw_aim_opts *o)",
+     "doc": "true when the target is within the limit (the bone points right at it)",
+     "inline": false
+    },
+    {
+     "name": "cw_ccdik_solve",
+     "signature": "void cw_ccdik_solve(cw_pose *p, const cw_ccdik *iks, int n, float blend)",
+     "doc": "r186 CCDIKSolver.update(blend): each chain in order.",
+     "inline": false
+    },
+    {
+     "name": "cw_ik_fabrik",
+     "signature": "int cw_ik_fabrik(cw_pose *p, const int *chain, int n, t3_vec3 target, const cw_chain_opts *o)",
+     "doc": "Returns the iterations run (0: already there). n from 2 to CW_IK_MAX_CHAIN.",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton_pose",
+     "signature": "const cw_pose *cw_skeleton_pose(cw_node model)",
+     "doc": "The pose the modifiers of `model` (a Node3D) left this tick, or NULL when\nit has none. Valid until the next fixed tick.",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton_hash",
+     "signature": "uint32_t cw_skeleton_hash(cw_node model)",
+     "doc": "Running hash of every pose the model's modifiers flushed (0 when none).",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton_bone_world",
+     "signature": "t3_vec3 cw_skeleton_bone_world(cw_node model, const char *bone)",
+     "doc": "World-space position of a bone in the model's current pose (zero when the\nmodel has no pose or the bone is unknown).",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton_last_us",
+     "signature": "float cw_skeleton_last_us(cw_node model)",
+     "doc": "Microseconds the modifier phase spent on the model's last tick (a\nprofiling figure from the host clock: never feed it into game state).",
+     "inline": false
+    },
+    {
+     "name": "cw_ccdik3d_set_joint",
+     "signature": "void cw_ccdik3d_set_joint(cw_node n, int joint, const cw_ccdik_link *limits)",
+     "doc": "Per-joint limits for CCDIK3D: joint 0 is the link nearest the end bone\n(r186 link order). Stored on the node (not in scene files).",
+     "inline": false
+    },
+    {
+     "name": "cw_fabrik3d_set_joint",
+     "signature": "void cw_fabrik3d_set_joint(cw_node n, int joint, const cw_ik_joint *j)",
+     "doc": "Per-joint constraints for FABRIK3D: joint 0 is root_bone.",
+     "inline": false
+    },
+    {
+     "name": "cw_foot_placement_leg",
+     "signature": "bool cw_foot_placement_leg(cw_node n, int leg, cw_foot_state *out)",
+     "doc": "One leg's results (see cw_foot_state); false past the last leg.",
+     "inline": false
+    },
+    {
+     "name": "cw_foot_placement_pelvis_offset",
+     "signature": "float cw_foot_placement_pelvis_offset(cw_node n)",
+     "doc": "FootPlacement3D: the pelvis offset applied last tick (metres, <= 0)",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_pose",
+     "doc": "A skeleton pose: per bone a parent index, local translation, rotation and\nscale (struct-of-arrays), the rest pose, and model-space transforms. Bones\nare ordered parents before children. The arrays are owned by the pose\n(cw_pose_free); a pose bound to three.c objects (cw_pose_bind) also points\nat them (not retained: keep the model alive while the pose is used).",
+     "decl": "typedef struct cw_pose {\n  int count;\n  int *parent;           /* parent bone index; -1: placed by base[i] */\n  const char **name;     /* bone names (the three.c objects' names; NULL in a free pose) */\n  t3_object **bone;      /* bound objects; NULL entries in a free pose */\n  t3_vec3 *pos;          /* local translation */\n  t3_quat *rot;          /* local rotation (unit) */\n  t3_vec3 *scl;          /* local scale */\n  t3_vec3 *rest_pos;     /* local transform at bind (cw_pose_bind / cw_pose_set_rest) */\n  t3_quat *rest_rot;\n  t3_vec3 *rest_scl;\n  t3_mat4 *base;         /* parent < 0: model space -> the bone's parent space (identity in a free pose) */\n  t3_quat *base_rot;     /* base's rotation */\n  t3_mat4 *model;        /* model-space matrix (cw_pose_update_model) */\n  t3_quat *mrot;         /* model-space rotation */\n  t3_object *root;       /* the object model space belongs to (NULL: free pose) */\n} cw_pose;"
+    },
+    {
+     "name": "cw_ik2_opts",
+     "doc": "Two-bone IK (arms, legs): bones a (upper), b (middle), c (end) with b\nbelow a and c below b. Places c at `target` (model space) when it is in\nreach, else stretches the chain toward it. The middle joint bends in the\nplane through a, the target and the pole. Trig-free: the middle joint's\nposition comes from the law of cosines, each bone turns by the shortest\nrotation onto its new direction.",
+     "decl": "typedef struct cw_ik2_opts {\n  t3_vec3 pole;          /* model-space point the middle joint bends toward (use_pole) */\n  bool use_pole;         /* false: keep the bend plane of the incoming pose */\n  float soften;          /* 0..1: reach eases off from soften * length to full length\n                          * (no snap at full extension); >= 1 or <= 0: off */\n  float weight;          /* blend with the incoming pose (1 = solved) */\n  bool use_end_rotation; /* give c the model rotation end_rotation */\n  t3_quat end_rotation;\n} cw_ik2_opts;"
+    },
+    {
+     "name": "cw_aim_opts",
+     "doc": "Aim (look-at): turn `bone` so its local `forward` axis points from the\nbone (plus `offset`) at `target` (model space), by the shortest rotation\n(no roll). The turn is limited to `limit_angle` radians away from the\nincoming pose's forward direction (a head that cannot look behind\nitself).",
+     "decl": "typedef struct cw_aim_opts {\n  t3_vec3 forward;       /* the bone's local forward axis (unit) */\n  t3_vec3 offset;        /* aim origin offset in the bone's local frame (eyes in front of the joint) */\n  float limit_angle;     /* radians; <= 0: unlimited */\n  float weight;          /* blend with the incoming pose */\n} cw_aim_opts;"
+    },
+    {
+     "name": "cw_ccdik_link",
+     "doc": "CCD, exactly three.js r186's CCDIKSolver.updateOne/update, on a pose:\n- the target is the target bone's model position (or target_position\n  when target < 0), read once per chain;\n- links run in array order (r186: effector side first); a disabled link\n  ends the pass;\n- the angle is acos(clamp(dot)), computed as atan2(|cross|, dot) (the\n  same angle; float acos near 1 would lose half its bits where three.js\n  has doubles); turns under 1e-5 are skipped;\n  min_angle / max_angle clamp the step; the rotation is about\n  cross(effector, target) in the link's own frame, applied as\n  link.quaternion * step;\n- `limitation` projects the rotation onto that axis keeping its sign,\n  then rotation_min / rotation_max clamp its XYZ Euler angles;\n- the iterations stop early when no link turned;\n- with a blend factor < 1 every link slerps from its incoming rotation.\nMapping from r186: ik.target -> target, ik.effector -> effector,\nik.links[j] -> links[j] (index, enabled: !disabled, limitation,\nrotationMin, rotationMax), ik.iteration, ik.minAngle, ik.maxAngle,\nik.blendFactor.",
+     "decl": "typedef struct cw_ccdik_link {\n  int index;\n  bool disabled;         /* r186 enabled === false */\n  bool has_limitation;\n  t3_vec3 limitation;    /* unit axis in the link's frame */\n  bool has_rotation_min, has_rotation_max;\n  t3_vec3 rotation_min, rotation_max; /* XYZ Euler radians */\n} cw_ccdik_link;"
+    },
+    {
+     "name": "cw_ccdik",
+     "doc": "",
+     "decl": "typedef struct cw_ccdik {\n  int target;            /* bone index; < 0: target_position */\n  t3_vec3 target_position;\n  int effector;\n  const cw_ccdik_link *links;\n  int link_count;\n  int iteration;         /* <= 0: 1 (r186 default) */\n  bool has_min_angle, has_max_angle;\n  float min_angle, max_angle;\n  bool has_blend_factor;\n  float blend_factor;    /* overrides the solve's blend for this chain */\n} cw_ccdik;"
+    },
+    {
+     "name": "cw_ik_joint_kind",
+     "doc": "FABRIK over a chain of bones (tails, spines, tentacles, cables): chain[0]\nis the root (its position stays), chain[n-1] the end; each is below the\nprevious. Joints keep their incoming lengths. Per-joint constraints\n(optional, n entries): a cone (the bone stays within half_angle of its\nparent's direction) or a hinge (the bone stays in the plane normal to\n`axis`, given in the incoming pose's frame of the joint's parent bone).\nPositions become rotations by the shortest turn per bone, so FABRIK adds\nno roll. Stops after max_iterations or when the end is within\nmin_distance.",
+     "decl": "typedef enum { CW_IK_JOINT_FREE, CW_IK_JOINT_CONE, CW_IK_JOINT_HINGE } cw_ik_joint_kind;"
+    },
+    {
+     "name": "cw_ik_joint",
+     "doc": "",
+     "decl": "typedef struct cw_ik_joint {\n  cw_ik_joint_kind kind;\n  t3_vec3 axis;          /* HINGE: axis in the parent bone's local frame */\n  float half_angle;      /* CONE: radians */\n} cw_ik_joint;"
+    },
+    {
+     "name": "cw_chain_opts",
+     "doc": "",
+     "decl": "typedef struct cw_chain_opts {\n  int max_iterations;    /* default 4 */\n  float min_distance;    /* model units; default 0.001 */\n  float weight;          /* blend with the incoming pose */\n  const cw_ik_joint *joints; /* n entries or NULL; joints[0] is the root's own */\n} cw_chain_opts;"
+    },
+    {
+     "name": "cw_foot_state",
+     "doc": "FootPlacement3D: per-leg results of the last tick (world-space ground\npoint and normal, the ankle's offset applied in metres, the animated\nankle's height above the model's ground plane, whether the ray hit).\nfalse past the last leg.",
+     "decl": "typedef struct cw_foot_state {\n  t3_vec3 ground;\n  t3_vec3 normal;\n  float offset;\n  float lift;\n  bool hit;\n} cw_foot_state;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_IK2_OPTS_DEFAULT",
+     "doc": ""
+    },
+    {
+     "name": "CW_AIM_OPTS_DEFAULT",
+     "doc": ""
+    },
+    {
+     "name": "CW_CHAIN_OPTS_DEFAULT",
+     "doc": ""
+    },
+    {
+     "name": "CW_IK_MAX_CHAIN",
+     "doc": ""
+    }
+   ]
+  },
+  {
    "header": "cartwheel/input.h",
    "summary": "cartwheel input: named actions on top of the platform's raw input.\n\nA game names what it wants (\"jump\", \"move_left\") and binds devices to it:\nkeys (SDL scancodes), mouse buttons, the wheel, pad buttons, pad axes with\na direction and threshold (triggers are just axes), and on-screen touch\ncontrols. Queries ask about an action for a player:\n\n  cw_action jump = cw_action_add(\"jump\", 0.5f);\n  cw_action_bind_text(jump, \"key:space, pad:south\");\n  ...\n  if (cw_action_just_pressed(0, jump)) ...\n  cw_vec2 mv = cw_input_vector(0, left, right, up, down, CW_DEADZONE_RADIAL, 0.2f);\n\n── Two contexts, one answer each ─────────────────────────────────────\nThe module keeps TWO snapshots of every action:\n  - the TICK snapshot, taken once per fixed tick right before\n    cw_app_desc.fixed_update. Queries made inside fixed_update read it.\n    This is what simulation reads, what gets recorded and replayed, and\n    what the stream hash covers.\n  - the FRAME snapshot, taken once per rendered frame right after the\n    platform polls events. Queries made anywhere else (update, render,\n    event, init) read it. This is what UI reads.\njust_pressed is correct in both:\n  - a press that starts and ends between two ticks (a one-frame tap while\n    the tick rate is below the frame rate, or a key released inside one\n    frame's event batch) is LATCHED: the next tick sees it pressed and\n    just_pressed, and the tick after sees just_released.\n  - when several ticks run in one frame, only the FIRST of them sees\n    just_pressed; the rest see it held.\nA press that begins and ends inside one frame's event batch is caught by\nthe platform's per-frame \"went down\" bits (cw_raw_input.keys_pressed,\nmouse_pressed, cw_pad_state.pressed, cw_touch_state.tapped).\n\n── Determinism ───────────────────────────────────────────────────────\nEvery analog value is quantized to int16 steps (1/32767, the wasmcart pad\nresolution) before it enters a snapshot, and every derived value\n(strength, axis, vector) is computed from the quantized value with IEEE\n+ - * / sqrt only. The same action stream therefore gives bit-identical\nanswers on every host, and a recording replays exactly.\n\nCosts: an action query is an array read. A frame or tick snapshot walks\nevery binding of every action for every player (a few hundred compares).\nLimits: CW_INPUT_MAX_ACTIONS actions, CW_INPUT_MAX_BINDINGS per action,\nCW_INPUT_MAX_TOUCH_CONTROLS touch controls. Main thread only.",
    "functions": [

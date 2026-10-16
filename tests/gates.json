@@ -867,6 +867,27 @@
     "note": "interpolation, loop-edge key firing, speed/seek, cross-fade, queue, .cwscene animation round trips, tweens, AnimationTree blends/state machines, root motion, glTF skeletal sampling vs three.c mixer; sampled values fold into unit.checksum"
   },
   {
+    "name": "unit-ik",
+    "app": "unit_ik",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "pose layer, two-bone reach / pole plane / soften / reached, aim limits, CCD against three.js r186 CCDIKSolver (tests/unit/ccdik_r186.h), FABRIK reach with cone and hinge limits, modifier nodes in a tree (no accumulation, influence), foot placement on Box3D ground; every solved pose folds into unit.checksum"
+  },
+  {
     "name": "anim-props",
     "app": "anim_props",
     "frames": 270,

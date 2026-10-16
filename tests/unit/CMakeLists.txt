@@ -31,6 +31,8 @@ file(MAKE_DIRECTORY ${CW_ANIM_TEST_ASSETS})
 configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.glb ${CW_ANIM_TEST_ASSETS}/CesiumMan.glb COPYONLY)
 configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.LICENSE.md ${CW_ANIM_TEST_ASSETS}/CesiumMan.LICENSE.md COPYONLY)
 cw_add_app(unit_anim SOURCES test_anim.c ASSETS ${CW_ANIM_TEST_ASSETS} GL_ONLY)
+# inverse kinematics: pose layer, solvers (CCD against three.js r186: ccdik_r186.h), modifier nodes
+cw_add_app(unit_ik SOURCES test_ik.c GL_ONLY)
 cw_add_app(unit_ui SOURCES test_ui.c GL_ONLY)
 # project.cwproj editing and settings (cartwheel/project.h), child processes (cartwheel/process.h)
 cw_add_app(unit_project SOURCES test_project.c GL_ONLY)

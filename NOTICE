@@ -12,3 +12,14 @@ Recast & Detour (navmesh generation and queries), built from scripts/deps.lock
 with the changes in patches/recastnavigation/
   Copyright (c) 2009 Mikko Mononen memon@inside.org
   zlib license (deps/recastnavigation/License.txt)
+
+Inverse kinematics (src/anim/ik.c): algorithms, re-implemented in C
+  - three.js r186 CCDIKSolver (examples/jsm/animation/CCDIKSolver.js), whose
+    semantics cw_ccdik_solve follows. Copyright 2010-2026 three.js authors, MIT license.
+    https://github.com/mrdoob/three.js
+  - ozz-animation IkTwoBoneJob / IkAimJob (two-bone soften, aim API shape).
+    Copyright (c) 2019 Guillaume Blanc, MIT license.
+    https://github.com/guillaumeblanc/ozz-animation
+  - FABRIK (Aristidou and Lasenby, 2011) with joint constraints as caliko
+    applies them. caliko: Copyright (c) 2016 Alastair Lansley / Federation
+    University Australia, MIT license. https://github.com/FedUni/caliko
