@@ -229,7 +229,8 @@ static void select_node(sel_ctx *s, sel_out *o, int l, int ix, int iz, bool insi
     if (cd2[k] <= r2) {
       if (defer && l - 1 <= s->split) {
         int32_t e[5] = { l - 1, cx[k], cz[k], in, 0 };
-        memcpy(&e[4], &cd2[k], sizeof(float));
+        float dk = cd2[k];
+        memcpy(&e[4], &dk, sizeof(float));
         for (int q = 0; q < 5; q++) cw_array_push(&((sel_ctx *)s)->frontier, e[q]);
       } else {
         select_node(s, o, l - 1, cx[k], cz[k], in, cd2[k], defer);

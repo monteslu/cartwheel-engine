@@ -120,7 +120,9 @@ static void cut_track(cw_terrain *t, uint32_t *ctl, int nx) {
         *c = cw_terrain_control((int)(*c >> 27), 2, b, 0, 0, false);
       }
     }
+  /* #region cut */
   cw_terrain_set_heights_m(t, x0, z0, w, h, m);
+  /* #endregion */
   free(m);
 }
 
@@ -161,6 +163,7 @@ static void make_car(cw_terrain *t) {
   sd.density = 1200.0f / (1.8f * 0.7f * 4.4f);
   sd.material.friction = 0.4f;
   cw_shape3d_box(chassis, &sd, (t3_vec3){ 0.9f, 0.35f, 2.2f }, cw_xform3_identity());
+  /* #region car */
   cw_vehicle3d_def vd = cw_vehicle3d_default_def();
   static const float wx[4] = { -0.85f, 0.85f, -0.85f, 0.85f }, wz[4] = { 1.4f, 1.4f, -1.4f, -1.4f };
   for (int i = 0; i < 4; i++) {
@@ -172,6 +175,7 @@ static void make_car(cw_terrain *t) {
   }
   vd.roll_influence = 0.4f;
   cw_vehicle3d_init(&car, chassis, &vd);
+  /* #endregion */
   chase = (t3_vec3){ x - dx * 5, bd.position.y + 4, z - dz * 5 };
 }
 
@@ -334,7 +338,9 @@ static void paint(cw_terrain *t) {
         if (k != b0 && w[k] > w[b1]) b1 = k;
       float s = w[b0] + w[b1];
       int blend = s > 0 ? (int)(w[b1] / s * 255) : 0;
+      /* #region control */
       ctl[z * nx + x] = cw_terrain_control(b0, b1, blend, 0, 0, false);
+      /* #endregion */
     }
   make_track(t);
   cut_track(t, ctl, nx);
