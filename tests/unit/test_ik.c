@@ -458,5 +458,50 @@ static void test_foot_placement(void) {
   cw_tree_free(t);
 }
 
-CW_TEST_SUITE("ik", { "pose", test_pose }, { "two_bone", test_two_bone }, { "aim", test_aim }, { "ccd_r186", test_ccd_r186 },
+/* a crowd of 12 rigs (past the job-pool threshold): every model solves as
+ * one job, and the poses must not depend on the worker count
+ * (tests/ik-determinism.mjs runs this suite at CW_WORKERS 0, 3 and 7) */
+static void test_crowd(void) {
+  cw_tree *t = cw_tree_new();
+  cw_node root = cw_tree_root(t);
+  cw_node models[12];
+  for (int i = 0; i < 12; i++) {
+    char name[16];
+    snprintf(name, sizeof name, "M%d", i);
+    models[i] = add(root, "Node3D", name);
+    cw_node3d_set_position(models[i], v3((float)i, 0, 0));
+    t3_object *rig = make_rig();
+    cw_node3d_set_object(models[i], rig);
+    t3_release(rig);
+    cw_node r = add(models[i], "TwoBoneIK3D", "Reach");
+    cw_node_set(r, "root_bone", cw_val_string("UpR"));
+    cw_node_set(r, "middle_bone", cw_val_string("LoR"));
+    cw_node_set(r, "end_bone", cw_val_string("AnkR"));
+    cw_node_set(r, "use_pole", cw_val_bool(true));
+    cw_node_set(r, "pole_position", cw_val_vec3((float)i, 0.5f, 2));
+    cw_node l = add(models[i], "LookAtModifier3D", "Look");
+    cw_node_set(l, "bone", cw_val_string("Hips"));
+    cw_node_set(l, "limit_angle", cw_val_float(0.4f + 0.05f * (float)i));
+  }
+  for (int k = 0; k < 20; k++) {
+    for (int i = 0; i < 12; i++) {
+      float s, c;
+      cw_sincos(0.3f * (float)k + (float)i, &s, &c);
+      cw_node_set(cw_node_get(models[i], "Reach"), "target_position", cw_val_vec3((float)i - 0.2f + 0.3f * s, 0.4f, 0.3f * c));
+      cw_node_set(cw_node_get(models[i], "Look"), "target_position", cw_val_vec3((float)i + 2 * s, 1, 2 * c));
+    }
+    cw_tree_fixed_update(t, DT);
+  }
+  int reached = 0;
+  for (int i = 0; i < 12; i++) {
+    uint32_t h = cw_skeleton_hash(models[i]);
+    FOLD(h);
+    cw_value rv;
+    if (cw_node_get_prop(cw_node_get(models[i], "Reach"), "reached", &rv) && rv.b) reached++;
+  }
+  CHECK_EQ_INT(reached, 12);
+  cw_tree_free(t);
+}
+
+CW_TEST_SUITE("ik", { "crowd", test_crowd }, { "pose", test_pose }, { "two_bone", test_two_bone }, { "aim", test_aim }, { "ccd_r186", test_ccd_r186 },
               { "fabrik", test_fabrik }, { "nodes", test_nodes }, { "foot_placement", test_foot_placement })

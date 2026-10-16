@@ -15,6 +15,7 @@
 
 #define MAX_LEGS 8
 #define MAX_MODS 32
+#define PARALLEL_MIN 8 /* models before the solves go to the job pool */
 
 /* ── small math ─────────────────────────────────────────────────────── */
 
@@ -644,7 +645,11 @@ static void phase_hook(cw_tree *tree, double dt, void *u) {
     if (nrun < 256) run[nrun++] = s;
     else solve_skel(s);
   }
-  cw_parallel_for(nrun, 1, solve_range, run);
+  /* a job per model only pays off for a crowd: waking the pool costs more
+   * than a few models' solves (measured: 4 robots in a cart, 44 us serial
+   * against 147 us through 7 workers). Same results either way. */
+  if (nrun >= PARALLEL_MIN) cw_parallel_for(nrun, 1, solve_range, run);
+  else solve_range(0, nrun, 0, run);
   float us = (float)(now_us() - t0);
   for (int i = 0; i < nrun; i++) run[i]->last_us = us / (float)nrun;
 }

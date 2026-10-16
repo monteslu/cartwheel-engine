@@ -51,7 +51,7 @@ static cw_action toggle_action;
 static float reach_w, clock_s;
 
 /* debug state */
-static float dbg_pos[3], foot_err[2], pelvis_step, pelvis_prev, reach_err, ik_us;
+static float dbg_pos[3], foot_err[2], pelvis_step, pelvis_prev, reach_err, ik_us, ik_us_min = 1e9f;
 static int32_t feet_on = 1, feet_ok, reach_ok, stance_ticks, reach_ticks, look_in, turns;
 static uint32_t hash_win[8], crowd_win[8];
 static double us_sum;
@@ -159,6 +159,7 @@ static void init(void *u) {
   cw_debug_field("hash_win", hash_win, CW_DBG_U32, 8);
   cw_debug_field("crowd_win", crowd_win, CW_DBG_U32, 8);
   cw_debug_f32("ik_us", &ik_us); /* host clock: never compared */
+  cw_debug_f32("ik_us_min", &ik_us_min); /* the quietest tick (a loaded machine inflates the mean) */
 }
 
 /* #region probe */
@@ -239,6 +240,8 @@ static void fixed(void *u, double dt) {
     us_sum += cw_skeleton_last_us(R[0].model);
     us_n++;
     ik_us = (float)(us_sum / us_n);
+    float now = cw_skeleton_last_us(R[0].model);
+    if (tick > 30 && now < ik_us_min) ik_us_min = now;
   }
 
   if (cw_action_just_pressed(0, toggle_action)) {
