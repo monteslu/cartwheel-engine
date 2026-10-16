@@ -203,6 +203,8 @@ typedef struct cw_voice_3d {
   cw_spatial_mode mode;        /* 0 = AUTO: HRTF in headphones mode (within the voice limit), else panned */
   float air_absorption;        /* distance low-pass: the cutoff (from 20 kHz) halves every 1/air_absorption
                                   units beyond ref_distance (0.02: halves every 50 units); 0 = none */
+  float reverb_send;           /* level into the reverb zones (after distance and occlusion);
+                                  0 = 1, negative = none */
 } cw_voice_3d;
 
 typedef struct cw_play_desc {
@@ -305,6 +307,7 @@ typedef enum {
   CW_FX_REVERB,     /* Freeverb: 8 combs + 4 allpasses per channel */
   CW_FX_COMPRESSOR, /* feed-forward peak compressor */
   CW_FX_LIMITER,    /* peak limiter: instant attack, exponential release, hard ceiling */
+  CW_FX_FDN_REVERB, /* feedback delay network: 8 lines, Hadamard feedback, set by decay time */
 } cw_fx_type;
 
 typedef struct cw_fx_desc {
@@ -315,6 +318,10 @@ typedef struct cw_fx_desc {
     struct { float room_size, damping, wet, dry, width; } reverb; /* 0..1 each */
     struct { float threshold_db, ratio, attack_s, release_s, makeup_db; } compressor;
     struct { float ceiling_db, release_s; } limiter;
+    /* decay_s: time to fall 60 dB (RT60); hf_damp_hz: highs above it die faster (0 = no damping);
+     * predelay_s (up to 0.5) and size (0..1: line lengths 18..75 ms) are fixed when it is made;
+     * wet, dry: output levels */
+    struct { float decay_s, hf_damp_hz, predelay_s, size, wet, dry; } fdn;
   };
 } cw_fx_desc;
 
@@ -327,6 +334,49 @@ void cw_bus_set_fx(cw_bus b, int slot, const cw_fx_desc *fx);
 void cw_bus_set_fx_bypass(cw_bus b, int slot, bool bypass);
 /* Removes it; later effects move up one slot. */
 void cw_bus_remove_fx(cw_bus b, int slot);
+
+/* ── reverb zones ───────────────────────────────────────────────────
+ * Places with their own reverb: a cave, a hall, a corridor. Each zone owns
+ * an FDN reverb (CW_FX_FDN_REVERB) fed by every spatial voice's reverb send
+ * (cw_voice_3d.reverb_send) and played into a bus. How much a zone hears is
+ * set by where listener 0 is: 1 inside the shape, fading to 0 over the blend distance
+ * units outside it. Where zones overlap the higher priority takes its share
+ * first and the rest is left to the others (a small cave inside a big valley
+ * zone: inside the cave you hear only the cave). Shares ramp across each
+ * block, and a zone keeps ringing after the listener leaves it (its input
+ * fades, not its tail), so walking from a cave into a hall sounds right.
+ * A zone whose input is silent and whose tail has died costs nothing.
+ *
+ * Cost: one FDN per zone that is audible or still ringing, about 11 us per
+ * 256-frame block on a Ryzen AI 9 HX 370 core (docs/guides/audio.md). */
+
+#define CW_AUDIO_MAX_REVERB_ZONES 8
+typedef enum { CW_ZONE_BOX, CW_ZONE_SPHERE } cw_zone_shape;
+typedef int cw_reverb_zone; /* index; -1 = none/failed */
+
+typedef struct cw_reverb_zone_desc {
+  cw_zone_shape shape;
+  t3_vec3 center;
+  t3_vec3 half_extents;  /* box: axis-aligned half sizes */
+  float radius;          /* sphere */
+  float blend;           /* units outside the shape over which the zone fades out; 0 = a hard edge */
+  int priority;          /* higher takes its share first where zones overlap */
+  float level;           /* input level; 0 = 1 */
+  cw_bus bus;            /* where the reverb plays; 0 = master */
+  float decay_s, hf_damp_hz, predelay_s, size; /* as CW_FX_FDN_REVERB; 0 decay = 1.5 s */
+} cw_reverb_zone_desc;
+
+/* Adds a zone (allocates its reverb here, on the game thread). Returns -1
+ * (logged) when CW_AUDIO_MAX_REVERB_ZONES exist. */
+cw_reverb_zone cw_audio_add_reverb_zone(const cw_reverb_zone_desc *desc);
+/* New shape, place, blend, priority, level, bus, decay and damping (size and
+ * pre-delay stay as made). A stale zone is ignored. */
+void cw_audio_set_reverb_zone(cw_reverb_zone zone, const cw_reverb_zone_desc *desc);
+/* Removes it at once (its tail stops). */
+void cw_audio_remove_reverb_zone(cw_reverb_zone zone);
+/* Its share of the reverb sends as of the last mixed block (0..1), for
+ * debugging and tests. */
+float cw_audio_reverb_zone_weight(cw_reverb_zone zone);
 
 /* ── test helpers ──────────────────────────────────────────────────── */
 

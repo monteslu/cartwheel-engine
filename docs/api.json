@@ -1067,6 +1067,30 @@
      "inline": false
     },
     {
+     "name": "cw_audio_add_reverb_zone",
+     "signature": "cw_reverb_zone cw_audio_add_reverb_zone(const cw_reverb_zone_desc *desc)",
+     "doc": "Adds a zone (allocates its reverb here, on the game thread). Returns -1\n(logged) when CW_AUDIO_MAX_REVERB_ZONES exist.",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_set_reverb_zone",
+     "signature": "void cw_audio_set_reverb_zone(cw_reverb_zone zone, const cw_reverb_zone_desc *desc)",
+     "doc": "New shape, place, blend, priority, level, bus, decay and damping (size and\npre-delay stay as made). A stale zone is ignored.",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_remove_reverb_zone",
+     "signature": "void cw_audio_remove_reverb_zone(cw_reverb_zone zone)",
+     "doc": "Removes it at once (its tail stops).",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_reverb_zone_weight",
+     "signature": "float cw_audio_reverb_zone_weight(cw_reverb_zone zone)",
+     "doc": "Its share of the reverb sends as of the last mixed block (0..1), for\ndebugging and tests.",
+     "inline": false
+    },
+    {
      "name": "cw_audio_analyze",
      "signature": "cw_audio_analysis cw_audio_analyze(const float *samples, size_t count)",
      "doc": "Count = floats (frames * channels); pure, any thread.",
@@ -1113,7 +1137,7 @@
     {
      "name": "cw_voice_3d",
      "doc": "",
-     "decl": "typedef struct cw_voice_3d {\n  t3_vec3 position, velocity;\n  t3_vec3 direction;           /* cone axis; zero = omnidirectional */\n  cw_atten_model model;        /* 0 = CW_ATTEN_NONE: set one (INVERSE is the usual) */\n  float ref_distance;          /* 0 = 1 */\n  float max_distance;          /* 0 = 1000 */\n  float rolloff;               /* 0 = 1 */\n  float cone_inner_deg;        /* full angle at full gain; 0 = 360 (no cone) */\n  float cone_outer_deg;        /* full angle where outer_gain is reached; 0 = 360 */\n  float cone_outer_gain;       /* gain outside the outer cone */\n  float doppler;               /* doppler factor; 0 = none, 1 = physical */\n  cw_spatial_mode mode;        /* 0 = AUTO: HRTF in headphones mode (within the voice limit), else panned */\n  float air_absorption;        /* distance low-pass: the cutoff (from 20 kHz) halves every 1/air_absorption\n                                  units beyond ref_distance (0.02: halves every 50 units); 0 = none */\n} cw_voice_3d;"
+     "decl": "typedef struct cw_voice_3d {\n  t3_vec3 position, velocity;\n  t3_vec3 direction;           /* cone axis; zero = omnidirectional */\n  cw_atten_model model;        /* 0 = CW_ATTEN_NONE: set one (INVERSE is the usual) */\n  float ref_distance;          /* 0 = 1 */\n  float max_distance;          /* 0 = 1000 */\n  float rolloff;               /* 0 = 1 */\n  float cone_inner_deg;        /* full angle at full gain; 0 = 360 (no cone) */\n  float cone_outer_deg;        /* full angle where outer_gain is reached; 0 = 360 */\n  float cone_outer_gain;       /* gain outside the outer cone */\n  float doppler;               /* doppler factor; 0 = none, 1 = physical */\n  cw_spatial_mode mode;        /* 0 = AUTO: HRTF in headphones mode (within the voice limit), else panned */\n  float air_absorption;        /* distance low-pass: the cutoff (from 20 kHz) halves every 1/air_absorption\n                                  units beyond ref_distance (0.02: halves every 50 units); 0 = none */\n  float reverb_send;           /* level into the reverb zones (after distance and occlusion);\n                                  0 = 1, negative = none */\n} cw_voice_3d;"
     },
     {
      "name": "cw_play_desc",
@@ -1128,12 +1152,27 @@
     {
      "name": "cw_fx_type",
      "doc": "",
-     "decl": "typedef enum {\n  CW_FX_NONE,\n  CW_FX_LOWPASS,    /* biquad (miniaudio), RBJ coefficients */\n  CW_FX_HIGHPASS,\n  CW_FX_DELAY,      /* feedback echo (miniaudio's ma_delay) */\n  CW_FX_REVERB,     /* Freeverb: 8 combs + 4 allpasses per channel */\n  CW_FX_COMPRESSOR, /* feed-forward peak compressor */\n  CW_FX_LIMITER,    /* peak limiter: instant attack, exponential release, hard ceiling */\n} cw_fx_type;"
+     "decl": "typedef enum {\n  CW_FX_NONE,\n  CW_FX_LOWPASS,    /* biquad (miniaudio), RBJ coefficients */\n  CW_FX_HIGHPASS,\n  CW_FX_DELAY,      /* feedback echo (miniaudio's ma_delay) */\n  CW_FX_REVERB,     /* Freeverb: 8 combs + 4 allpasses per channel */\n  CW_FX_COMPRESSOR, /* feed-forward peak compressor */\n  CW_FX_LIMITER,    /* peak limiter: instant attack, exponential release, hard ceiling */\n  CW_FX_FDN_REVERB, /* feedback delay network: 8 lines, Hadamard feedback, set by decay time */\n} cw_fx_type;"
     },
     {
      "name": "cw_fx_desc",
      "doc": "",
-     "decl": "typedef struct cw_fx_desc {\n  cw_fx_type type;\n  union {\n    struct { float cutoff_hz, q; } filter;                    /* q 0 = 0.7071 */\n    struct { float time_s, feedback, wet, dry; } delay;       /* time fixed at add */\n    struct { float room_size, damping, wet, dry, width; } reverb; /* 0..1 each */\n    struct { float threshold_db, ratio, attack_s, release_s, makeup_db; } compressor;\n    struct { float ceiling_db, release_s; } limiter;\n  };\n} cw_fx_desc;"
+     "decl": "typedef struct cw_fx_desc {\n  cw_fx_type type;\n  union {\n    struct { float cutoff_hz, q; } filter;                    /* q 0 = 0.7071 */\n    struct { float time_s, feedback, wet, dry; } delay;       /* time fixed at add */\n    struct { float room_size, damping, wet, dry, width; } reverb; /* 0..1 each */\n    struct { float threshold_db, ratio, attack_s, release_s, makeup_db; } compressor;\n    struct { float ceiling_db, release_s; } limiter;\n    /* decay_s: time to fall 60 dB (RT60); hf_damp_hz: highs above it die faster (0 = no damping);\n     * predelay_s (up to 0.5) and size (0..1: line lengths 18..75 ms) are fixed when it is made;\n     * wet, dry: output levels */\n    struct { float decay_s, hf_damp_hz, predelay_s, size, wet, dry; } fdn;\n  };\n} cw_fx_desc;"
+    },
+    {
+     "name": "cw_zone_shape",
+     "doc": "",
+     "decl": "typedef enum { CW_ZONE_BOX, CW_ZONE_SPHERE } cw_zone_shape;"
+    },
+    {
+     "name": "cw_reverb_zone",
+     "doc": "",
+     "decl": "typedef int cw_reverb_zone; /* index; -1 = none/failed */"
+    },
+    {
+     "name": "cw_reverb_zone_desc",
+     "doc": "",
+     "decl": "typedef struct cw_reverb_zone_desc {\n  cw_zone_shape shape;\n  t3_vec3 center;\n  t3_vec3 half_extents;  /* box: axis-aligned half sizes */\n  float radius;          /* sphere */\n  float blend;           /* units outside the shape over which the zone fades out; 0 = a hard edge */\n  int priority;          /* higher takes its share first where zones overlap */\n  float level;           /* input level; 0 = 1 */\n  cw_bus bus;            /* where the reverb plays; 0 = master */\n  float decay_s, hf_damp_hz, predelay_s, size; /* as CW_FX_FDN_REVERB; 0 decay = 1.5 s */\n} cw_reverb_zone_desc;"
     },
     {
      "name": "cw_audio_analysis",
@@ -1165,6 +1204,10 @@
     {
      "name": "CW_AUDIO_MAX_LISTENERS",
      "doc": ""
+    },
+    {
+     "name": "CW_AUDIO_MAX_REVERB_ZONES",
+     "doc": "── reverb zones ───────────────────────────────────────────────────\nPlaces with their own reverb: a cave, a hall, a corridor. Each zone owns\nan FDN reverb (CW_FX_FDN_REVERB) fed by every spatial voice's reverb send\n(cw_voice_3d.reverb_send) and played into a bus. How much a zone hears is\nset by where listener 0 is: 1 inside the shape, fading to 0 over the blend distance\nunits outside it. Where zones overlap the higher priority takes its share\nfirst and the rest is left to the others (a small cave inside a big valley\nzone: inside the cave you hear only the cave). Shares ramp across each\nblock, and a zone keeps ringing after the listener leaves it (its input\nfades, not its tail), so walking from a cave into a hall sounds right.\nA zone whose input is silent and whose tail has died costs nothing.\n\nCost: one FDN per zone that is audible or still ringing, about 11 us per\n256-frame block on a Ryzen AI 9 HX 370 core (docs/guides/audio.md)."
     }
    ]
   },

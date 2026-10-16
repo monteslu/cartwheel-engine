@@ -106,6 +106,10 @@ cw__fx *cw__fx_create(const cw_fx_desc *d, int rate) {
     break;
   case CW_FX_COMPRESSOR:
   case CW_FX_LIMITER: dyn_params(fx); break;
+  case CW_FX_FDN_REVERB:
+    cw__fdn_init(&fx->fdn, d->fdn.size, d->fdn.predelay_s, rate);
+    cw__fdn_set(&fx->fdn, d->fdn.decay_s, d->fdn.hf_damp_hz, d->fdn.wet, d->fdn.dry);
+    break;
   default: goto fail;
   }
   return fx;
@@ -127,6 +131,7 @@ void cw__fx_destroy(cw__fx *fx) {
       for (int i = 0; i < CW__RV_ALLPASSES; i++) cw_free(fx->rv.ap[ch][i]);
     }
     break;
+  case CW_FX_FDN_REVERB: cw__fdn_free(&fx->fdn); break;
   default: break;
   }
   cw_free(fx);
@@ -148,6 +153,7 @@ void cw__fx_set(cw__fx *fx, const cw_fx_desc *d) {
     ma_delay_set_decay(&fx->delay, cw_clampf(d->delay.feedback, 0, 0.98f));
     break;
   case CW_FX_REVERB: reverb_params(fx); break;
+  case CW_FX_FDN_REVERB: cw__fdn_set(&fx->fdn, d->fdn.decay_s, d->fdn.hf_damp_hz, d->fdn.wet, d->fdn.dry); break;
   default: dyn_params(fx); break;
   }
 }
@@ -240,6 +246,7 @@ void cw__fx_process(cw__fx *fx, float *buf, int frames) {
   case CW_FX_REVERB: reverb_process(fx, buf, frames); break;
   case CW_FX_COMPRESSOR: compressor_process(fx, buf, frames); break;
   case CW_FX_LIMITER: limiter_process(fx, buf, frames); break;
+  case CW_FX_FDN_REVERB: cw__fdn_process(&fx->fdn, buf, frames); break;
   default: break;
   }
 }

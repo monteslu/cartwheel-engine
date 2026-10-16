@@ -9495,6 +9495,120 @@
    ]
   },
   {
+   "name": "ReverbZone3D",
+   "parent": "Node3D",
+   "doc": "A place with its own reverb: spatial voices' reverb sends feed it while the listener is inside or near (cartwheel/audio.h, reverb zones).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "shape",
+     "type": "enum",
+     "default": "BOX",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "BOX",
+      "SPHERE"
+     ],
+     "doc": "BOX (axis-aligned, `size`) or SPHERE (`radius`)."
+    },
+    {
+     "name": "size",
+     "type": "vec3",
+     "default": "vec3(10, 5, 10)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Box: full size in world units (the node's rotation and scale are not applied)."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Sphere: radius in world units."
+    },
+    {
+     "name": "blend",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Units outside the shape over which the zone fades out (0 = a hard edge)."
+    },
+    {
+     "name": "priority",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Where zones overlap, higher takes its share first (a cave inside a valley)."
+    },
+    {
+     "name": "decay",
+     "type": "float",
+     "default": "1.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0.05,
+     "max": 60,
+     "doc": "Seconds for the reverb to fall 60 dB (RT60)."
+    },
+    {
+     "name": "damping_hz",
+     "type": "float",
+     "default": "6000",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 24000,
+     "doc": "High frequencies above this die faster (0 = no damping)."
+    },
+    {
+     "name": "predelay",
+     "type": "float",
+     "default": "0.02",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 0.5,
+     "doc": "Seconds before the reverb starts (a new reverb is made when it changes)."
+    },
+    {
+     "name": "room_size",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Delay line lengths, 0 small to 1 large (a new reverb is made when it changes)."
+    },
+    {
+     "name": "level",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "How much of the spatial voices' sends the zone takes in."
+    },
+    {
+     "name": "bus",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Audio bus the reverb plays into (0 = master)."
+    }
+   ]
+  },
+  {
    "name": "NetSynchronizer",
    "parent": "Node",
    "doc": "Replicates properties of root_path from its network authority to every other peer (cartwheel/net.h).",

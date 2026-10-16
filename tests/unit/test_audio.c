@@ -6,6 +6,7 @@
 
 #include "cartwheel/audio.h"
 #include "cartwheel/math.h"
+#include "cartwheel/scene.h"
 #include "test.h"
 #include "../../src/audio/internal.h"
 #include "../../src/platform/internal.h"
@@ -400,6 +401,149 @@ static void test_hrtf(void) {
   stop();
 }
 
+/* high-frequency share of the left channel over [from, to): first-difference energy / energy */
+static float hf_ratio(const float *ir, int from, int to) {
+  double e = 0, d = 0;
+  for (int i = from + 1; i < to; i++) {
+    double x = ir[2 * i], y = ir[2 * (i - 1)];
+    e += x * x;
+    d += (x - y) * (x - y);
+  }
+  return (float)(d / (e + 1e-30));
+}
+
+/* RT60 from a mono impulse response (Schroeder backward integration): the
+ * time from -5 dB to -35 dB, doubled */
+static float rt60(const float *ir, int n, int stride) {
+  static double e[R * 3];
+  double acc = 0;
+  for (int i = n - 1; i >= 0; i--) {
+    acc += (double)ir[i * stride] * ir[i * stride];
+    e[i] = acc;
+  }
+  int a = -1, b = -1;
+  for (int i = 0; i < n; i++) {
+    double db = 10.0 * log10(e[i] / e[0] + 1e-30);
+    if (a < 0 && db <= -5) a = i;
+    if (b < 0 && db <= -35) { b = i; break; }
+  }
+  return a >= 0 && b > a ? 2.0f * (float)(b - a) / (float)R : -1.0f;
+}
+
+/* the impulse response of an FDN on a bus: 3 s, stereo, into ir */
+static void fdn_ir(float *ir, float decay, float damp_hz, float size) {
+  start(8);
+  cw_bus b = cw_bus_create("fdn", CW_AUDIO_MASTER);
+  CHECK(cw_bus_add_fx(b, &(cw_fx_desc){ .type = CW_FX_FDN_REVERB,
+                                        .fdn = { .decay_s = decay, .hf_damp_hz = damp_hz, .size = size, .wet = 1 } }) == 0);
+  cw_audio_play(dc(1.0f, 1, R), &(cw_play_desc){ .bus = b });
+  memset(ir, 0, sizeof(float) * R * 3 * 2);
+  for (int off = 0; off < R * 3; off += 4096) cw_audio_render(ir + off * 2, CW_MIN(4096, R * 3 - off));
+  stop();
+}
+
+static void test_fdn(void) {
+  static float ir[R * 3 * 2];
+  /* the decay time is what was asked for (within 10%) */
+  const float decays[] = { 0.5f, 1.2f, 2.5f };
+  for (int i = 0; i < 3; i++) {
+    fdn_ir(ir, decays[i], 0, 0.6f);
+    uint32_t h = cw_audio_analyze(ir, (size_t)R * 3 * 2).hash;
+    FOLD(h);
+    float t = rt60(ir, R * 3, 2);
+    cw_info("fdn: RT60 %.3f s for decay %.1f s (ir hash %08x)", (double)t, (double)decays[i], h);
+    CHECK(t > decays[i] * 0.9f && t < decays[i] * 1.1f);
+  }
+  /* stereo: the two channels differ (decorrelated), and it is not silent */
+  fdn_ir(ir, 1.2f, 0, 0.6f);
+  float d = 0, pk = 0;
+  for (int i = 4800; i < 9600; i++) d = fmaxf(d, fabsf(ir[2 * i] - ir[2 * i + 1])), pk = fmaxf(pk, fabsf(ir[2 * i]));
+  CHECK(pk > 1e-3f && d > 1e-4f);
+  /* damping: the tail (0.3 s on) of a damped one holds less high-frequency energy for its level */
+  float open = hf_ratio(ir, R * 3 / 10, R);
+  fdn_ir(ir, 1.2f, 1500, 0.6f);
+  float damped = hf_ratio(ir, R * 3 / 10, R);
+  cw_info("fdn: tail hf share %.4f undamped, %.4f damped at 1.5 kHz", (double)open, (double)damped);
+  CHECK(damped < open * 0.5f);
+}
+
+static void test_reverb_zones(void) {
+  start(8);
+  cw_audio_set_listener((t3_vec3){ 0, 0, 0 }, (t3_vec3){ 0 }, (t3_vec3){ 0, 0, -1 }, (t3_vec3){ 0, 1, 0 });
+  /* a cave (sphere, priority 1) inside a hall (box) */
+  cw_reverb_zone cave = cw_audio_add_reverb_zone(&(cw_reverb_zone_desc){
+      .shape = CW_ZONE_SPHERE, .center = { 0, 0, 0 }, .radius = 4, .blend = 2, .priority = 1, .decay_s = 0.6f, .hf_damp_hz = 3000, .size = 0.2f });
+  cw_reverb_zone hall = cw_audio_add_reverb_zone(&(cw_reverb_zone_desc){
+      .shape = CW_ZONE_BOX, .center = { 0, 0, -20 }, .half_extents = { 30, 10, 30 }, .decay_s = 2.5f, .size = 1 });
+  CHECK(cave == 0 && hall == 1);
+  cw_sound n = noise(R, 0.5f);
+  cw_voice v = cw_audio_play(n, &(cw_play_desc){ .loop = true, .spatial = true, .space = { .position = { 0, 0, -2 } } });
+  render(1024);
+  CHECK(cw_audio_reverb_zone_weight(cave) == 1.0f && cw_audio_reverb_zone_weight(hall) == 0.0f);
+  /* in the blend band: the cave has 0.5, the hall the rest */
+  cw_audio_set_listener((t3_vec3){ 0, 0, -5 }, (t3_vec3){ 0 }, (t3_vec3){ 0, 0, -1 }, (t3_vec3){ 0, 1, 0 });
+  render(512);
+  CHECK(cw_audio_reverb_zone_weight(cave) == 0.5f && cw_audio_reverb_zone_weight(hall) == 0.5f);
+  /* deep in the hall */
+  cw_audio_set_listener((t3_vec3){ 0, 0, -20 }, (t3_vec3){ 0 }, (t3_vec3){ 0, 0, -1 }, (t3_vec3){ 0, 1, 0 });
+  render(512);
+  CHECK(cw_audio_reverb_zone_weight(cave) == 0.0f && cw_audio_reverb_zone_weight(hall) == 1.0f);
+  /* outside every zone: the hall's tail keeps ringing after its input fades */
+  cw_audio_set_listener((t3_vec3){ 0, 0, -100 }, (t3_vec3){ 0 }, (t3_vec3){ 0, 0, -1 }, (t3_vec3){ 0, 1, 0 });
+  cw_voice_stop(v, 0);
+  render(512);
+  render(4800);
+  float tail = rms_ch(0, 4800, 0);
+  CHECK(cw_audio_reverb_zone_weight(hall) == 0.0f && tail > 1e-3f);
+  /* a voice with reverb_send < 0 feeds nothing: dry only (removing the hall stops its tail at once) */
+  cw_audio_remove_reverb_zone(hall);
+  render(R * 2); /* the cave's tail dies */
+  cw_audio_set_listener((t3_vec3){ 0, 0, 0 }, (t3_vec3){ 0 }, (t3_vec3){ 0, 0, -1 }, (t3_vec3){ 0, 1, 0 });
+  cw_sound imp = dc(1.0f, 1, R);
+  cw_audio_play(imp, &(cw_play_desc){ .spatial = true, .space = { .position = { 0, 0, -1 }, .reverb_send = -1 } });
+  render(4096);
+  int nz = 0;
+  for (int i = 64; i < 4096; i++) nz += buf[2 * i] != 0;
+  CHECK_EQ_INT(nz, 0);
+  cw_audio_play(imp, &(cw_play_desc){ .spatial = true, .space = { .position = { 0, 0, -1 } } });
+  render(4096);
+  nz = 0;
+  for (int i = 64; i < 4096; i++) nz += buf[2 * i] != 0;
+  CHECK(nz > 1000);
+  FOLD(buf);
+  cw_audio_remove_reverb_zone(cave);
+  render(256);
+  CHECK(cw_audio_reverb_zone_weight(cave) == 0.0f);
+  stop();
+}
+
+/* ReverbZone3D: a node in a tree makes a zone that follows it */
+static void test_zone_node(void) {
+  start(8);
+  cw_scene_register_builtin_types();
+  cw_audio_set_listener((t3_vec3){ 0, 0, 0 }, (t3_vec3){ 0 }, (t3_vec3){ 0, 0, -1 }, (t3_vec3){ 0, 1, 0 });
+  cw_tree *t = cw_tree_new();
+  cw_node z = cw_node_new("ReverbZone3D", "cave");
+  CHECK(cw_node_valid(z));
+  cw_node_set(z, "shape", cw_val_enum("SPHERE"));
+  cw_node_set(z, "radius", cw_val_float(3));
+  cw_node_set(z, "blend", cw_val_float(2));
+  cw_node3d_set_position(z, (t3_vec3){ 0, 0, -10 });
+  cw_node_add_child(cw_tree_root(t), z);
+  cw_tree_fixed_update(t, 1.0 / 60.0);
+  render(256);
+  CHECK(cw_audio_reverb_zone_weight(0) == 0.0f); /* 10 units away: outside radius 3 + blend 2 */
+  cw_node3d_set_position(z, (t3_vec3){ 0, 0, -4 }); /* 1 unit outside: half */
+  cw_tree_fixed_update(t, 1.0 / 60.0);
+  render(256);
+  CHECK(cw_audio_reverb_zone_weight(0) == 0.5f);
+  cw_tree_free(t); /* leaving the tree removes the zone */
+  render(256);
+  cw_reverb_zone again = cw_audio_add_reverb_zone(&(cw_reverb_zone_desc){ .radius = 1, .shape = CW_ZONE_SPHERE });
+  CHECK_EQ_INT(again, 0); /* slot 0 was free again */
+  stop();
+}
+
 static void test_fx(void) {
   start(8);
   cw_bus b = cw_bus_create("fx", CW_AUDIO_MASTER);
@@ -552,6 +696,6 @@ static void test_device_close(void) {
 CW_TEST_SUITE("audio", { "spsc", test_spsc }, { "schedule_and_pan", test_schedule_and_pan },
               { "resample_loop_clock", test_resample_loop_clock }, { "one_shot_end", test_one_shot_end },
               { "limits_priority", test_limits_priority }, { "fades", test_fades }, { "buses", test_buses },
-              { "3d", test_3d }, { "hrtf", test_hrtf }, { "fx", test_fx }, { "stream_equals_sample", test_stream_equals_sample },
+              { "3d", test_3d }, { "hrtf", test_hrtf }, { "fdn", test_fdn }, { "reverb_zones", test_reverb_zones }, { "zone_node", test_zone_node }, { "fx", test_fx }, { "stream_equals_sample", test_stream_equals_sample },
               { "queue_overflow", test_queue_overflow },
               { "device_close", test_device_close })

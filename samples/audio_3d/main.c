@@ -1,6 +1,8 @@
-/* audio_3d: 3D sound for headphones, rendered offline one 1/60 s slice per
- * frame (6 seconds) so every host must reproduce it bit for bit.
+/* audio_3d: 3D sound for headphones and reverb that follows the place,
+ * rendered offline one 1/60 s slice per frame (12 seconds) so every host
+ * must reproduce it bit for bit.
  *
+ * Seconds 0 to 6, direction:
  *   - headphones mode: spatial voices are filtered with the HRTF (the
  *     built-in KEMAR table), so direction is heard above, behind and below,
  *     not only left and right;
@@ -12,12 +14,22 @@
  *   - seconds 3 to 4 switch to speakers (plain panning) and back: each voice
  *     crossfades over one block.
  *
- * When done it publishes a hash, peak and RMS of all 288000 stereo frames,
+ * Seconds 6 to 12, place: the listener walks out of a cave (a sphere reverb
+ * zone: short, dark decay) along a passage with no reverb and into a hall
+ * (a box zone: long, bright decay), with footsteps at their feet, water
+ * dripping in the cave behind them and an organ note at the far end of the
+ * hall. The zones' shares follow the listener; the cave's tail keeps
+ * ringing after they leave it.
+ *
+ * When done it publishes a hash, peak and RMS of all 576000 stereo frames,
  * per-second hashes and how many voices had the HRTF. It also times the
  * mixer (not compared across hosts): microseconds per voice per 256-frame
- * block panned and with the HRTF. The picture is a top-down radar
- * (listener yellow in the middle, the near voices bright in headphones mode
- * and dim on speakers, the crickets blue) and the hash bits. CW_AUDIO_3D_WAV=path (native) writes the mix as a float WAV. */
+ * block panned and with the HRTF, and one reverb zone per block. The
+ * picture: during the orbits a top-down radar (listener yellow in the
+ * middle, the near voices bright in headphones mode and dim on speakers,
+ * the crickets blue), during the walk a map of the cave and the hall lit by
+ * their shares; the hash bits under it. CW_AUDIO_3D_WAV=path (native)
+ * writes the mix as a float WAV. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,7 +44,8 @@
 
 #define RATE 48000
 #define FRAMES_PER_TICK (RATE / 60)
-#define TICKS 360
+#define TICKS 720
+#define WALK 360 /* the walk starts here */
 #define TOTAL (FRAMES_PER_TICK * TICKS)
 #define CRICKETS 24
 
@@ -43,10 +56,16 @@ typedef struct {
   cw_voice v_bell, v_hum, v_shaker, v_cricket[CRICKETS];
   t3_vec3 p_bell, p_hum, p_shaker, p_cricket[CRICKETS];
   /* published */
-  uint32_t hash, seg[6];
+  uint32_t hash, seg[12];
+  cw_sound step, drip, organ;
+  cw_voice v_step, v_drip, v_organ;
+  cw_reverb_zone cave, hall;
+  t3_vec3 listener;
+  float cave_w[3], hall_w[3]; /* zone shares at ticks 380, 440 and 700 */
+  float cave_now, hall_now;   /* for the picture */
   float peak, rms;
   int32_t done, hrtf_max, hrtf_speakers, voices;
-  float us_pan, us_hrtf, us_hrtf_moving; /* per voice per block (timing: never compared) */
+  float us_pan, us_hrtf, us_hrtf_moving, us_zone; /* per voice per block (timing: never compared) */
 } app3d;
 
 static app3d app;
@@ -83,6 +102,26 @@ static float shaker_fn(int i, uint32_t *r) {
   float t = (float)k / RATE;
   return 0.4f * white(r) * cw_exp(-t * 30.0f);
 }
+/* a footstep: a low thump and a scuff, twice a second */
+static float step_fn(int i, uint32_t *r) {
+  int k = i % (RATE / 2);
+  float t = (float)k / RATE;
+  return 0.6f * cw_exp(-t * 40.0f) * (cw_sin(CW_TAU * 90.0f * t) + 0.5f * white(r));
+}
+/* a water drop: a falling chirp every 0.7 s */
+static float drip_fn(int i, uint32_t *r) {
+  (void)r;
+  int k = i % (RATE * 7 / 10);
+  float t = (float)k / RATE;
+  return 0.5f * cw_exp(-t * 25.0f) * cw_sin(CW_TAU * (1400.0f - 6000.0f * t) * t);
+}
+/* an organ note: a few harmonics of 110 Hz */
+static float organ_fn(int i, uint32_t *r) {
+  (void)r;
+  float t = (float)i / RATE;
+  return 0.25f * (cw_sin(CW_TAU * 110.0f * t) + 0.5f * cw_sin(CW_TAU * 220.0f * t) + 0.3f * cw_sin(CW_TAU * 330.0f * t) +
+                  0.2f * cw_sin(CW_TAU * 660.0f * t));
+}
 /* cricket: a 4.5 kHz chirp train */
 static float cricket_fn(int i, uint32_t *r) {
   (void)r;
@@ -115,6 +154,10 @@ static void init(void *user) {
   a->hum = make(RATE, hum_fn);
   a->shaker = make(RATE / 4, shaker_fn);
   a->cricket = make(RATE, cricket_fn);
+  a->cave = a->hall = -1;
+  a->step = make(RATE / 2, step_fn);
+  a->drip = make(RATE * 7 / 10, drip_fn);
+  a->organ = make(RATE, organ_fn);
 
   /* #region setup */
   cw_audio_set_listener((t3_vec3){ 0, 0, 0 }, (t3_vec3){ 0 }, (t3_vec3){ 0, 0, -1 }, (t3_vec3){ 0, 1, 0 });
@@ -146,7 +189,9 @@ static void init(void *user) {
   cw_debug_u32("sp.hash", &a->hash);
   cw_debug_f32("sp.peak", &a->peak);
   cw_debug_f32("sp.rms", &a->rms);
-  cw_debug_field("sp.seg_hash", a->seg, CW_DBG_U32, 6);
+  cw_debug_field("sp.seg_hash", a->seg, CW_DBG_U32, 12);
+  cw_debug_field("sp.cave_w", a->cave_w, CW_DBG_F32, 3);
+  cw_debug_field("sp.hall_w", a->hall_w, CW_DBG_F32, 3);
   cw_debug_i32("sp.done", &a->done);
   cw_debug_i32("sp.hrtf_max", &a->hrtf_max);
   cw_debug_i32("sp.hrtf_speakers", &a->hrtf_speakers);
@@ -154,9 +199,51 @@ static void init(void *user) {
   cw_debug_f32("sp.us_pan", &a->us_pan);
   cw_debug_f32("sp.us_hrtf", &a->us_hrtf);
   cw_debug_f32("sp.us_hrtf_moving", &a->us_hrtf_moving);
+  cw_debug_f32("sp.us_zone", &a->us_zone);
 }
 
+/* #region walk */
+/* listener z: 0 (the cave's middle) to -36 (deep in the hall) over 5 s */
+static float walk_z(int t) { return t < WALK ? 0.0f : t > WALK + 300 ? -36.0f : -36.0f * (float)(t - WALK) / 300.0f; }
+
+static void walk(app3d *a, int t) {
+  if (t == WALK) {
+    /* the orbit scene ends */
+    cw_voice_stop(a->v_bell, 0.1f);
+    cw_voice_stop(a->v_hum, 0.1f);
+    cw_voice_stop(a->v_shaker, 0.1f);
+    for (int i = 0; i < CRICKETS; i++) cw_voice_stop(a->v_cricket[i], 0.1f);
+    cw_audio_set_hrtf_voice_limit(16);
+    /* a cave: a sphere, short and dark; inside the hall's blend it wins (priority) */
+    a->cave = cw_audio_add_reverb_zone(&(cw_reverb_zone_desc){
+        .shape = CW_ZONE_SPHERE, .center = { 0, 0, 0 }, .radius = 4, .blend = 3, .priority = 1,
+        .decay_s = 0.9f, .hf_damp_hz = 2500, .predelay_s = 0.005f, .size = 0.15f, .level = 0.8f });
+    /* a hall: a box from z = -15 to -45, long and bright, fading in over 6 units */
+    a->hall = cw_audio_add_reverb_zone(&(cw_reverb_zone_desc){
+        .shape = CW_ZONE_BOX, .center = { 0, 0, -30 }, .half_extents = { 20, 8, 15 }, .blend = 6,
+        .decay_s = 3.2f, .hf_damp_hz = 7000, .predelay_s = 0.03f, .size = 1, .level = 0.6f });
+    cw_voice_3d at = { .model = CW_ATTEN_INVERSE, .ref_distance = 1, .max_distance = 80 };
+    at.position = (t3_vec3){ 0, -1.5f, -0.3f };
+    a->v_step = cw_audio_play(a->step, &(cw_play_desc){ .loop = true, .spatial = true, .space = at });
+    at.position = (t3_vec3){ 1.5f, 1.0f, 1.0f };
+    a->v_drip = cw_audio_play(a->drip, &(cw_play_desc){ .loop = true, .spatial = true, .space = at });
+    at.position = (t3_vec3){ 0, 2, -42 };
+    at.air_absorption = 0.01f;
+    a->v_organ = cw_audio_play(a->organ, &(cw_play_desc){ .loop = true, .volume = 0.7f, .spatial = true, .space = at });
+  }
+  float z = walk_z(t);
+  a->listener = (t3_vec3){ 0, 0, z };
+  cw_audio_set_listener(a->listener, (t3_vec3){ 0 }, (t3_vec3){ 0, 0, -1 }, (t3_vec3){ 0, 1, 0 });
+  cw_voice_set_position(a->v_step, (t3_vec3){ 0, -1.5f, z - 0.3f }, (t3_vec3){ 0 });
+  if (t == WALK + 300) cw_voice_stop(a->v_step, 0.05f); /* stops walking */
+}
+/* #endregion */
+
 static void script(app3d *a, int t) {
+  if (t >= WALK) {
+    walk(a, t);
+    return;
+  }
   place(a, t);
   /* velocities feed doppler only; none is set here */
   cw_voice_set_position(a->v_bell, a->p_bell, (t3_vec3){ 0 });
@@ -209,8 +296,15 @@ static void bench(app3d *a) {
     else if (pass) a->us_hrtf = us;
     else a->us_pan = us;
   }
-  cw_info("audio_3d: %.2f us per voice per 256-frame block panned, %.2f with the HRTF, %.2f moving", (double)a->us_pan,
-          (double)a->us_hrtf, (double)a->us_hrtf_moving);
+  /* one reverb zone around the listener, every voice stopped: the zone alone (its tail keeps it running) */
+  for (int i = 0; i < 32; i++) cw_voice_stop(v[i], 0);
+  cw_audio_add_reverb_zone(&(cw_reverb_zone_desc){ .shape = CW_ZONE_SPHERE, .radius = 100, .decay_s = 30 });
+  cw_audio_render(out, 512);
+  double t0 = now_s();
+  for (int b = 0; b < blocks; b++) cw_audio_render(out, 256);
+  a->us_zone = (float)((now_s() - t0) * 1e6 / (double)blocks);
+  cw_info("audio_3d: %.2f us per voice per 256-frame block panned, %.2f with the HRTF, %.2f moving; a reverb zone %.2f us",
+          (double)a->us_pan, (double)a->us_hrtf, (double)a->us_hrtf_moving, (double)a->us_zone);
 }
 
 static void write_wav(const char *path, const float *buf, int frames) {
@@ -234,7 +328,7 @@ static void finish(app3d *a) {
   a->hash = r.hash;
   a->peak = r.peak;
   a->rms = r.rms;
-  for (int s = 0; s < 6; s++) a->seg[s] = cw_audio_analyze(a->buf + s * RATE * 2, RATE * 2).hash;
+  for (int s = 0; s < 12; s++) a->seg[s] = cw_audio_analyze(a->buf + s * RATE * 2, RATE * 2).hash;
   if (getenv("CW_AUDIO_3D_WAV")) write_wav(getenv("CW_AUDIO_3D_WAV"), a->buf, TOTAL);
   cw_info("audio_3d: hash %08x peak %.4f rms %.5f, %d voices, HRTF on %d (speakers: %d)", a->hash, a->peak, a->rms,
           a->voices, a->hrtf_max, a->hrtf_speakers);
@@ -251,8 +345,18 @@ static void update(void *user, double dt) {
   cw_audio_stats st;
   cw_audio_get_stats(&st);
   if (a->tick == 100) a->voices = st.voices;
-  if (a->tick < 180 || a->tick >= 250) a->hrtf_max = CW_MAX(a->hrtf_max, st.hrtf_voices);
+  if ((a->tick < 180 || a->tick >= 250) && a->tick < WALK) a->hrtf_max = CW_MAX(a->hrtf_max, st.hrtf_voices);
   if (a->tick == 200) a->hrtf_speakers = st.hrtf_voices;
+  if (a->tick >= WALK) {
+    a->cave_now = cw_audio_reverb_zone_weight(a->cave);
+    a->hall_now = cw_audio_reverb_zone_weight(a->hall);
+  }
+  const int at[3] = { 380, 440, 700 };
+  for (int i = 0; i < 3; i++)
+    if (a->tick == at[i]) {
+      a->cave_w[i] = cw_audio_reverb_zone_weight(a->cave);
+      a->hall_w[i] = cw_audio_reverb_zone_weight(a->hall);
+    }
   if (++a->tick == TICKS) finish(a);
 }
 
@@ -278,13 +382,25 @@ static void render(void *user, double alpha) {
   glClear(GL_COLOR_BUFFER_BIT);
   glEnable(GL_SCISSOR_TEST);
   float sx = (float)w / 480.0f, sy = (float)h / 270.0f;
-  bool hp = a->tick < 180 || a->tick >= 240;
-  float c = hp ? 1.0f : 0.4f;
-  dot(sx, sy, (t3_vec3){ 0, 0, 0 }, 1, 1.0f, 0.8f, 0.2f); /* the listener */
-  dot(sx, sy, a->p_bell, 20, c, c, 1.0f);
-  dot(sx, sy, a->p_hum, 20, c, 1.0f, c);
-  dot(sx, sy, a->p_shaker, 20, 1.0f, c, c);
-  for (int i = 0; i < CRICKETS; i++) dot(sx, sy, a->p_cricket[i], 5, 0.3f, 0.5f, 0.9f);
+  if (a->tick < WALK) {
+    bool hp = a->tick < 180 || a->tick >= 240;
+    float c = hp ? 1.0f : 0.4f;
+    dot(sx, sy, (t3_vec3){ 0, 0, 0 }, 1, 1.0f, 0.8f, 0.2f); /* the listener */
+    dot(sx, sy, a->p_bell, 20, c, c, 1.0f);
+    dot(sx, sy, a->p_hum, 20, c, 1.0f, c);
+    dot(sx, sy, a->p_shaker, 20, 1.0f, c, c);
+    for (int i = 0; i < CRICKETS; i++) dot(sx, sy, a->p_cricket[i], 5, 0.3f, 0.5f, 0.9f);
+  } else {
+    /* top-down map, 2.5 px per unit, the cave at the bottom: the zones' shares light them */
+    float cw = a->cave_now, hw = a->hall_now;
+    const float k = 2.5f, ox = 240, oy = 60; /* z = 0 at oy, -z up */
+    rect((int)((ox - 20 * k) * sx), (int)((oy + 15 * k) * sy), (int)(40 * k * sx), (int)(30 * k * sy), 0.15f + 0.5f * hw,
+         0.2f + 0.4f * hw, 0.3f);
+    rect((int)((ox - 4 * k) * sx), (int)((oy - 4 * k) * sy), (int)(8 * k * sx), (int)(8 * k * sy), 0.3f + 0.5f * cw, 0.25f,
+         0.15f + 0.3f * cw);
+    rect((int)((ox - 3) * sx), (int)((oy - a->listener.z * k - 3) * sy), (int)(6 * sx), (int)(6 * sy), 1.0f, 0.8f, 0.2f);
+    rect((int)((ox - 2) * sx), (int)((oy + 42 * k - 2) * sy), (int)(4 * sx), (int)(4 * sy), 0.9f, 0.9f, 1.0f); /* organ */
+  }
   for (int i = 0; i < 32; i++) {
     float v = (a->hash >> i) & 1 ? 1.0f : 0.2f;
     rect((int)((8 + i * 14) * sx), (int)(8 * sy), (int)(12 * sx), (int)(16 * sy), v, a->done ? v : 0.2f, v);

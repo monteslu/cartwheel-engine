@@ -28,6 +28,7 @@ void cw__mixer_init(cw__mixer *m, int rate, int max_voices) {
   m->scratch = cw_calloc(CW_AUDIO_BLOCK * 2, sizeof(float), CW_MEM_AUDIO);
   m->hstate = cw_calloc((size_t)max_voices, sizeof *m->hstate, CW_MEM_AUDIO);
   m->mono = cw_calloc(CW_AUDIO_BLOCK * 2, sizeof(float), CW_MEM_AUDIO);
+  m->zone_in = cw_calloc(CW_AUDIO_BLOCK, sizeof(float), CW_MEM_AUDIO);
   m->dist = cw_calloc((size_t)max_voices, sizeof *m->dist, CW_MEM_AUDIO);
   m->hrtf_on = cw_calloc((size_t)max_voices, sizeof *m->hrtf_on, CW_MEM_AUDIO);
   m->hrtf_limit = 16;
@@ -53,6 +54,7 @@ void cw__mixer_free(cw__mixer *m) {
   cw_free(m->scratch);
   cw_free(m->hstate);
   cw_free(m->mono);
+  cw_free(m->zone_in);
   cw_free(m->dist);
   cw_free(m->hrtf_on);
   for (int b = 0; b < CW_AUDIO_MAX_BUSES; b++) cw_free(m->buses[b].buf);
@@ -223,6 +225,27 @@ static void apply(const cw__cmd *c) {
     m->hrtf = c->hrtf;
     for (int s = 0; s < m->max_voices; s++) m->hstate[s].valid = false; /* the old table's filters are gone */
     break;
+  case CW__CMD_ZONE_ADD: {
+    cw__mzone *z = &m->zones[c->slot];
+    *z = (cw__mzone){ .used = true, .d = c->zone.desc, .fx = c->zone.fx };
+    break;
+  }
+  case CW__CMD_ZONE_SET: {
+    cw__mzone *z = &m->zones[c->slot];
+    if (!z->used) break;
+    z->d = c->zone.desc;
+    cw__fdn_set(&z->fx->fdn, z->d.decay_s, z->d.hf_damp_hz, 1, 0);
+    break;
+  }
+  case CW__CMD_ZONE_REMOVE: {
+    cw__mzone *z = &m->zones[c->slot];
+    if (!z->used) break;
+    cw__event e = { .type = CW__EV_FX_FREED, .fx = z->fx };
+    cw__spsc_push(&cw__au.events, &e); /* room was checked before apply() */
+    *z = (cw__mzone){ 0 };
+    atomic_store_explicit(&m->pub_zone_w[c->slot], 0, memory_order_relaxed);
+    break;
+  }
   case CW__CMD_OUTPUT: m->output = c->ival; break;
   case CW__CMD_HRTF_LIMIT: m->hrtf_limit = c->ival; break;
   }
@@ -463,6 +486,47 @@ static void select_hrtf(cw__mixer *m, uint64_t F, int n) {
   }
 }
 
+/* ── reverb zones ───────────────────────────────────────────────────── */
+
+/* How much listener 0 is in zone z (before priorities): 1 inside, fading to
+ * 0 over blend outside. */
+static float zone_presence(const cw__mixer *m, const cw_reverb_zone_desc *d) {
+  t3_vec3 p = vsub(m->lpos[0], d->center);
+  float out;
+  if (d->shape == CW_ZONE_SPHERE) {
+    out = vlen(p) - d->radius;
+  } else {
+    t3_vec3 q = { (p.x < 0 ? -p.x : p.x) - d->half_extents.x, (p.y < 0 ? -p.y : p.y) - d->half_extents.y,
+                  (p.z < 0 ? -p.z : p.z) - d->half_extents.z };
+    t3_vec3 o = { q.x > 0 ? q.x : 0, q.y > 0 ? q.y : 0, q.z > 0 ? q.z : 0 };
+    out = vlen(o);
+  }
+  if (out <= 0) return 1.0f;
+  return d->blend > 0 ? cw_clampf(1.0f - out / d->blend, 0, 1) : 0.0f;
+}
+
+/* Shares this block: higher priority first (ties: lower index), each taking
+ * its presence times what is left. */
+static void zone_weights(const cw__mixer *m, float *w) {
+  float left = 1.0f;
+  bool done[CW_AUDIO_MAX_REVERB_ZONES] = { 0 };
+  for (int k = 0; k < CW_AUDIO_MAX_REVERB_ZONES; k++) {
+    int pick = -1;
+    for (int z = 0; z < CW_AUDIO_MAX_REVERB_ZONES; z++)
+      if (m->zones[z].used && !done[z] && (pick < 0 || m->zones[z].d.priority > m->zones[pick].d.priority)) pick = z;
+    if (pick < 0) break;
+    done[pick] = true;
+    float s = zone_presence(m, &m->zones[pick].d) * left;
+    w[pick] = s;
+    left -= s;
+  }
+}
+
+static float voice_send(const cw__mvoice *v) {
+  if (!v->spatial || v->sp.reverb_send < 0) return 0.0f;
+  return v->sp.reverb_send > 0 ? v->sp.reverb_send : 1.0f;
+}
+
 /* ── one block ──────────────────────────────────────────────────────── */
 
 static void mix_block(float *out, int n) {
@@ -473,6 +537,12 @@ static void mix_block(float *out, int n) {
     if (m->buses[b].used) memset(m->buses[b].buf, 0, (size_t)n * 2 * sizeof(float));
   int nvoices = 0, nstreams = 0, nhrtf = 0;
   select_hrtf(m, F, n);
+  /* reverb zones: this block's shares; sends are gathered only when one listens */
+  float zw[CW_AUDIO_MAX_REVERB_ZONES] = { 0 };
+  zone_weights(m, zw);
+  bool zones_feed = false;
+  for (int z = 0; z < CW_AUDIO_MAX_REVERB_ZONES; z++) zones_feed |= m->zones[z].used && (zw[z] > 0 || m->zones[z].w > 0);
+  memset(m->zone_in, 0, (size_t)n * sizeof(float));
   for (int s = 0; s < m->max_voices; s++) {
     cw__mvoice *v = &m->voices[s];
     if (v->state == CW__V_ZOMBIE) { end_voice(s); continue; }
@@ -522,21 +592,28 @@ static void mix_block(float *out, int n) {
     float h1 = v->spatial && m->hrtf_on[s] ? 1.0f : 0.0f;
     float h0 = v->gains_valid ? hs->mix : h1;
     bool ended;
-    if (h0 == 0 && h1 == 0) {
+    float send = zones_feed ? voice_send(v) : 0.0f;
+    if (h0 == 0 && h1 == 0 && send == 0) {
       ended = render_voice(m, v, dst, cnt, gl0, gr0, gl1, gr1, ratio);
     } else {
       /* the gained mono signal, then the HRTF and (while crossfading) the pan */
       float *mono = m->mono;
       memset(mono, 0, (size_t)cnt * 2 * sizeof(float));
       ended = render_voice(m, v, mono, cnt, x0.g, x0.g, x1.g, x1.g, ratio);
-      if (h0 == 0) { /* entering: the history is stale */
-        memset(hs->hist, 0, sizeof hs->hist);
-        hs->valid = false;
+      if (send > 0) {
+        float *zi = m->zone_in + off;
+        for (int i = 0; i < cnt; i++) zi[i] += mono[2 * i] * send;
       }
-      float *in = hs->hist + CW__HRTF_PRE;
-      for (int i = 0; i < cnt; i++) in[i] = mono[2 * i];
-      cw__hrtf_set_direction(m->hrtf, hs, x1.local);
-      cw__hrtf_render(hs, cnt, dst, h0, h1);
+      if (h0 > 0 || h1 > 0) {
+        if (h0 == 0) { /* entering: the history is stale */
+          memset(hs->hist, 0, sizeof hs->hist);
+          hs->valid = false;
+        }
+        float *in = hs->hist + CW__HRTF_PRE;
+        for (int i = 0; i < cnt; i++) in[i] = mono[2 * i];
+        cw__hrtf_set_direction(m->hrtf, hs, x1.local);
+        cw__hrtf_render(hs, cnt, dst, h0, h1);
+      }
       if (h0 < 1 || h1 < 1) {
         float inv = 1.0f / (float)cnt;
         for (int i = 0; i < cnt; i++) {
@@ -566,6 +643,27 @@ static void mix_block(float *out, int n) {
     nvoices++;
     nstreams += v->stream >= 0;
     nhrtf += m->hrtf_on[s];
+  }
+  /* reverb zones play into their buses before the buses run */
+  for (int z = 0; z < CW_AUDIO_MAX_REVERB_ZONES; z++) {
+    cw__mzone *zn = &m->zones[z];
+    if (!zn->used) continue;
+    float w0 = zn->w, w1 = zw[z];
+    bool fed = zones_feed && (w0 > 0 || w1 > 0);
+    if (fed || zn->ringing) {
+      float level = zn->d.level > 0 ? zn->d.level : 1.0f;
+      int zb = zn->d.bus > 0 && zn->d.bus < CW_AUDIO_MAX_BUSES && m->buses[zn->d.bus].used ? zn->d.bus : 0;
+      /* not fed: input gains 0 (the tail alone) */
+      float pk = cw__fdn_process_mono(&zn->fx->fdn, m->zone_in, fed ? w0 * level : 0.0f, fed ? w1 * level : 0.0f, n, m->buses[zb].buf);
+      /* quiet for long enough to empty the pre-delay: stop running it */
+      zn->quiet = fed || pk > 1e-6f ? 0 : zn->quiet + n;
+      zn->ringing = zn->quiet <= zn->fx->fdn.pre_len + n;
+      if (!zn->ringing) cw__fdn_clear(&zn->fx->fdn);
+    }
+    zn->w = w1;
+    uint32_t wb;
+    memcpy(&wb, &w1, 4);
+    atomic_store_explicit(&m->pub_zone_w[z], wb, memory_order_relaxed);
   }
   /* buses: children were created after their parents, so reverse index
    * order processes every bus after everything that feeds it */

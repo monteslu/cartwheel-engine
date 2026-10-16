@@ -377,7 +377,7 @@
   {
     "name": "audio-3d",
     "app": "audio_3d",
-    "frames": 362,
+    "frames": 722,
     "fields": [
       "sp.hash",
       "sp.peak",
@@ -387,6 +387,8 @@
       "sp.hrtf_max",
       "sp.hrtf_speakers",
       "sp.voices",
+      "sp.cave_w",
+      "sp.hall_w",
       "audio.underruns",
       "audio.dropped_commands"
     ],
@@ -398,11 +400,11 @@
       "audio.underruns": 0,
       "audio.dropped_commands": 0
     },
-    "controlFrames": 362,
+    "controlFrames": 722,
     "controlEnv": {
       "CW_AUDIO_3D_SPEAKERS": "1"
     },
-    "note": "HRTF 3D sound rendered offline for 6 s (sources orbiting the listener horizontally and vertically, 24 far voices under an HRTF voice limit of 8, a switch to speakers and back): every host must reproduce the native samples bit for bit (SSE2 natively, wasm SIMD128 in carts). sp.us_pan / sp.us_hrtf are timings, never compared. The control stays on speakers and must differ."
+    "note": "12 s rendered offline. HRTF 3D sound: sources orbiting the listener horizontally and vertically, 24 far voices under an HRTF voice limit of 8, a switch to speakers and back. Reverb zones: the listener walks from a cave (sphere zone, priority 1) through a dry passage into a hall (box zone), zone shares sampled on the way (sp.cave_w / sp.hall_w). Every host must reproduce the native samples bit for bit (SSE2 natively, wasm SIMD128 in carts). sp.us_* are timings, never compared. The control stays on speakers and must differ."
   },
   {
     "name": "hrtf-tool",

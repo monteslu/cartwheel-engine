@@ -69,6 +69,27 @@ typedef struct cw__stream {
 /* Decode into the ring until it is full or the source ended. [prod] */
 void cw__stream_fill(cw__stream *st);
 
+/* ── FDN reverb (fdn.c) ──────────────────────────────────────────────── */
+
+#define CW__FDN_LINES 8
+typedef struct cw__fdn {
+  int rate;
+  float *line[CW__FDN_LINES];
+  int len[CW__FDN_LINES], pos[CW__FDN_LINES];
+  float g[CW__FDN_LINES], lp[CW__FDN_LINES];
+  float *pre;
+  int pre_len, pre_pos;
+  float damp, wet, dry;
+} cw__fdn;
+
+bool cw__fdn_init(cw__fdn *f, float size, float predelay_s, int rate); /* [game]: allocates */
+void cw__fdn_free(cw__fdn *f);
+void cw__fdn_set(cw__fdn *f, float decay_s, float hf_damp_hz, float wet, float dry); /* no allocation */
+void cw__fdn_clear(cw__fdn *f);
+void cw__fdn_process(cw__fdn *f, float *buf, int frames); /* stereo in place: dry + wet */
+/* mono in (gain ramping g0 -> g1), wet added to stereo out; returns the wet peak */
+float cw__fdn_process_mono(cw__fdn *f, const float *in, float g0, float g1, int frames, float *out);
+
 /* ── effects (fx.c) ──────────────────────────────────────────────────── */
 
 #define CW__RV_COMBS 8
@@ -87,6 +108,7 @@ typedef struct cw__fx {
     float feedback, damp1, damp2, wet1, wet2, dry, gain;
   } rv;
   struct { float env, att, rel, thr, slope, makeup, ceil; } dyn; /* compressor + limiter */
+  cw__fdn fdn;
 } cw__fx;
 
 cw__fx *cw__fx_create(const cw_fx_desc *d, int rate); /* [game]: allocates; NULL on bad desc */
@@ -141,6 +163,7 @@ typedef enum {
   CW__CMD_FADE, CW__CMD_3D, CW__CMD_POSITION, CW__CMD_OCCLUSION, CW__CMD_LISTENER, CW__CMD_SPEED_OF_SOUND,
   CW__CMD_BUS_SETUP, CW__CMD_BUS_VOLUME, CW__CMD_BUS_AUDIBLE, CW__CMD_BUS_SEND, CW__CMD_FX_ADD,
   CW__CMD_FX_SET, CW__CMD_FX_BYPASS, CW__CMD_FX_REMOVE, CW__CMD_HRTF, CW__CMD_OUTPUT, CW__CMD_HRTF_LIMIT,
+  CW__CMD_ZONE_ADD, CW__CMD_ZONE_SET, CW__CMD_ZONE_REMOVE,
 } cw__cmd_type;
 
 typedef struct cw__play {
@@ -168,6 +191,7 @@ typedef struct cw__cmd {
     struct { int slot; cw__fx *fx; cw_fx_desc desc; bool bypass; } fx;
     cw__hrtf *hrtf;
     int ival;
+    struct { cw__fx *fx; cw_reverb_zone_desc desc; } zone;
   };
 } cw__cmd;
 
@@ -224,6 +248,14 @@ typedef struct cw__mbus {
   float *buf; /* CW_AUDIO_BLOCK * 2 */
 } cw__mbus;
 
+typedef struct cw__mzone {
+  bool used, ringing;
+  cw_reverb_zone_desc d;
+  cw__fx *fx;    /* its FDN (type CW_FX_FDN_REVERB) */
+  float w;       /* share at the end of the last block */
+  int quiet;     /* frames since it last had input or audible output */
+} cw__mzone;
+
 typedef struct cw__mixer {
   int rate;
   int max_voices;
@@ -240,6 +272,9 @@ typedef struct cw__mixer {
   int output;              /* cw_audio_output */
   int hrtf_limit;
   float *mono;             /* CW_AUDIO_BLOCK: a spatial voice's gained mono signal */
+  float *zone_in;          /* CW_AUDIO_BLOCK: the reverb sends of this block */
+  cw__mzone zones[CW_AUDIO_MAX_REVERB_ZONES];
+  _Atomic uint32_t pub_zone_w[CW_AUDIO_MAX_REVERB_ZONES]; /* float bits */
   float *dist;             /* per slot: distance this block (HRTF selection), < 0 = not a candidate */
   uint8_t *hrtf_on;        /* per slot: selected for HRTF this block */
   uint64_t mixed;          /* frames */
@@ -299,6 +334,7 @@ typedef struct cw__audio {
   bool fenced;
   uint32_t cmd_fence;
   bool hrtf_loaded;        /* [game] a table was sent to the mixer */
+  bool zone_used[CW_AUDIO_MAX_REVERB_ZONES]; /* [game] */
   int output, hrtf_limit;  /* [game] mirrors */
   cw_audio_stats stats;
   /* debug-field mirrors */

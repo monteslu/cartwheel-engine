@@ -463,4 +463,6 @@ void cw_scene_register_builtin_types(void) {
   cw_triggers_register();
   void cw__register_nav_types(void); /* src/nav: regions, agents, obstacles (cartwheel/nav.h) */
   cw__register_nav_types();
+  void cw__register_audio_types(void); /* src/audio: ReverbZone3D */
+  cw__register_audio_types();
 }

@@ -574,6 +574,58 @@ void cw_audio_set_hrtf_voice_limit(int voices) {
   send(&c);
 }
 
+/* ── reverb zones ───────────────────────────────────────────────────── */
+
+static bool zone_ok(cw_reverb_zone z) { return cw__au.ready && z >= 0 && z < CW_AUDIO_MAX_REVERB_ZONES && cw__au.zone_used[z]; }
+
+cw_reverb_zone cw_audio_add_reverb_zone(const cw_reverb_zone_desc *desc) {
+  if (!cw__au.ready || !desc) return -1;
+  int z = 0;
+  while (z < CW_AUDIO_MAX_REVERB_ZONES && cw__au.zone_used[z]) z++;
+  if (z == CW_AUDIO_MAX_REVERB_ZONES) {
+    cw_error("audio: all %d reverb zones are in use (cw_audio_remove_reverb_zone one first)", CW_AUDIO_MAX_REVERB_ZONES);
+    return -1;
+  }
+  cw_reverb_zone_desc d = *desc;
+  if (d.decay_s <= 0) d.decay_s = 1.5f;
+  cw_fx_desc fd = { .type = CW_FX_FDN_REVERB, .fdn = { d.decay_s, d.hf_damp_hz, d.predelay_s, d.size, 1, 0 } };
+  cw__fx *fx = cw__fx_create(&fd, cw__au.mix.rate);
+  if (!fx) return -1;
+  cw__cmd c = { .type = CW__CMD_ZONE_ADD, .slot = (int16_t)z };
+  c.zone.fx = fx;
+  c.zone.desc = d;
+  if (!cw__spsc_push(&cw__au.cmds, &c)) {
+    cw__au.dropped++;
+    cw__fx_destroy(fx);
+    return -1;
+  }
+  cw__au.zone_used[z] = true;
+  return z;
+}
+
+void cw_audio_set_reverb_zone(cw_reverb_zone zone, const cw_reverb_zone_desc *desc) {
+  if (!zone_ok(zone) || !desc) return;
+  cw__cmd c = { .type = CW__CMD_ZONE_SET, .slot = (int16_t)zone };
+  c.zone.desc = *desc;
+  if (c.zone.desc.decay_s <= 0) c.zone.desc.decay_s = 1.5f;
+  send(&c);
+}
+
+void cw_audio_remove_reverb_zone(cw_reverb_zone zone) {
+  if (!zone_ok(zone)) return;
+  cw__cmd c = { .type = CW__CMD_ZONE_REMOVE, .slot = (int16_t)zone };
+  send(&c);
+  cw__au.zone_used[zone] = false;
+}
+
+float cw_audio_reverb_zone_weight(cw_reverb_zone zone) {
+  if (!zone_ok(zone)) return 0;
+  uint32_t b = atomic_load_explicit(&cw__au.mix.pub_zone_w[zone], memory_order_relaxed);
+  float w;
+  memcpy(&w, &b, 4);
+  return w;
+}
+
 /* ── buses ──────────────────────────────────────────────────────────── */
 
 static bool bus_ok(cw_bus b) { return cw__au.ready && b >= 0 && b < CW_AUDIO_MAX_BUSES && cw__au.buses[b].used; }
@@ -796,7 +848,10 @@ void cw_audio_shutdown(void) {
   while (cw__spsc_pop(&a->cmds, &c)) {
     if (c.type == CW__CMD_FX_ADD) cw__fx_destroy(c.fx.fx);
     if (c.type == CW__CMD_HRTF) cw__hrtf_free(c.hrtf);
+    if (c.type == CW__CMD_ZONE_ADD) cw__fx_destroy(c.zone.fx);
   }
+  for (int z = 0; z < CW_AUDIO_MAX_REVERB_ZONES; z++)
+    if (a->mix.zones[z].used) cw__fx_destroy(a->mix.zones[z].fx);
   cw__hrtf_free(a->mix.hrtf);
   a->mix.hrtf = NULL;
   for (int i = 0; i < a->sounds.slot_count; i++) {

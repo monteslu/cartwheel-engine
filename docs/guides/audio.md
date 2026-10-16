@@ -60,6 +60,7 @@ Bus 0 is the master. Every other bus outputs into a parent created before it and
 | `LOWPASS`, `HIGHPASS` | biquad, cutoff and Q |
 | `DELAY` | feedback echo; the delay time is fixed when the effect is added |
 | `REVERB` | Freeverb (8 combs and 4 allpasses per channel) |
+| `FDN_REVERB` | feedback delay network (8 lines, Hadamard feedback): set by decay time (RT60), high-frequency damping, pre-delay and room size; the reverb zones below use it |
 | `COMPRESSOR` | feed-forward peak compressor |
 | `LIMITER` | instant attack, hard ceiling; a good last stage on the master |
 
@@ -107,9 +108,25 @@ cw_audio_set_hrtf_voice_limit(cw_quality_count(16, "hrtf_voices")); /* Low 4, Me
 
 @include samples/audio_3d/main.c#setup
 
-The stats ([cw_audio_get_stats](api:cw_audio_get_stats)) report `hrtf_voices`, how many voices were filtered in the last block. Listen to the result natively (`CW_FRAMES=362 CW_AUDIO_3D_WAV=out/a3d.wav build/native/samples/audio_3d`) with headphones.
+The stats ([cw_audio_get_stats](api:cw_audio_get_stats)) report `hrtf_voices`, how many voices were filtered in the last block. Listen to the result natively (`CW_FRAMES=722 CW_AUDIO_3D_WAV=out/a3d.wav build/native/samples/audio_3d`) with headphones.
 
 **Cost**, measured by `audio_3d` (32 voices on one core of a Ryzen AI 9 HX 370; the sample logs its own numbers): per voice per 256-frame block, about 2 microseconds panned, 5 with the HRTF, and 8 when the voice or listener moves every block (both filters run for the crossfade). The wasm cart in Chromium measures about the same (2.2 and 5.5). A block is 5.3 ms of sound, so 16 moving HRTF voices cost about 130 microseconds per block, under 3% of one core; a four-core laptop chip of a few years ago (a Ryzen 3 with Vega 8 graphics, say) runs it at roughly half that speed, still a few percent. Every operation is plain float arithmetic in a fixed order (the filter runs four output samples at once with SSE2, wasm SIMD128 or NEON, and the plain C path gives the same bits), so the `audio-3d` gate requires every host to reproduce the native mix exactly.
+
+## Places: reverb zones
+
+A cave rings short and dark, a hall long and bright, a field hardly at all. A reverb zone is a place with its own reverb: an axis-aligned box or a sphere, a blend distance over which it fades out beyond its edge, a priority, and the reverb's decay time, high-frequency damping, pre-delay and room size ([cw_audio_add_reverb_zone](api:cw_audio_add_reverb_zone), up to 8). Every spatial voice feeds the zones through its `reverb_send` (`cw_voice_3d`; 1 by default, after distance attenuation and occlusion, negative for none), and each zone takes the share listener 0's position gives it:
+
+- inside the shape the share is 1, falling to 0 across the blend distance outside it;
+- where zones overlap, the highest priority takes its share first and leaves the rest to the others, so a cave inside a big valley zone sounds only like the cave once you are in it, and like a mix of both at its mouth;
+- shares ramp across each block, and a zone keeps ringing after the listener leaves it: the input fades, not the tail.
+
+The reverb is an FDN (feedback delay network, Jot and Chaigne): 8 delay lines with mutually prime lengths fed back through a Hadamard matrix, a gain per line that sets the decay time and a low-pass per line for damping. It is also an ordinary bus effect, `CW_FX_FDN_REVERB`. A zone whose input has been silent long enough for its tail to die costs nothing; one that is audible or still ringing costs about 11 microseconds per 256-frame block on one Ryzen AI 9 HX 370 core (0.2% of it; `audio_3d` measures it). Freeverb (`CW_FX_REVERB`) is unchanged.
+
+In `samples/audio_3d` the listener walks out of a cave, along a passage with no reverb, into a hall, with footsteps at their feet, water dripping behind them and an organ at the far end:
+
+@include samples/audio_3d/main.c#walk
+
+In a scene, a `ReverbZone3D` node does the same ([node reference](node:ReverbZone3D)): its world position is the zone's centre (rotation and scale are not applied), its properties are the zone's, and the zone exists while the node is in a tree and audio is running.
 
 ## Sample-exact across hosts
 
@@ -132,7 +149,7 @@ Real-time output is the same mix, but how many frames get mixed by a given game 
 
 ## Not available yet
 
-- No audio node types: a scene cannot declare a sound player, and the editor has no audio UI. Audio is set up from code.
+- The only audio node type is `ReverbZone3D`: a scene cannot declare a sound player, and the editor has no audio UI. Voices are started from code.
 - Effects are the six above; there is no per-voice effect chain (route a voice to a bus instead).
 - One listener; no split-screen listeners.
 - Microphone input and audio capture are not part of the API.
