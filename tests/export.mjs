@@ -19,8 +19,10 @@
 //                 over Winsock. NOT verified on real Windows.
 //   android-arm64 the APK on the AVD (arm64 via NDK translation, guest GLES on
 //                 SwiftShader): debug channel over adb reverse, a screenshot
-//                 through the channel, real key events (adb input) changing
-//                 game state (platformer3d: start from the title).
+//                 through the channel once loading is done, real key events
+//                 (adb input) changing game state (platformer3d: start from
+//                 the title, past its 20-tick guard). Control: Enter during
+//                 the loading screen must leave the state alone.
 //   web           the static site served by its own serve.mjs in Chromium
 //                 (CW_CHROMIUM_GPU pin): crossOriginIsolated, frames run, real
 //                 keyboard input changes state via the page's debug
@@ -250,26 +252,51 @@ async function androidArm64(g) {
     adb('shell', 'am', 'force-stop', pkg);
     adb('shell', 'am', 'start', '-n', `${pkg}/org.cartwheel.runtime.CartwheelActivity`, '--es', 'cw_env', `CW_REMOTE=tcp:127.0.0.1:${ch.port}`);
     await ch.hello(180000);
-    await sleep(4000);
+    // The AVD runs the game at a few frames a second. Its first seconds are
+    // the spread warm-up (the loading screen: events are read and dropped, no
+    // ticks run), then platformer3d's title ignores Start for 20 ticks
+    // (games/platformer3d/main.c). A key sent at a fixed time after launch
+    // landed in one or the other and was lost.
+    const field = 'game.state', key = 'KEYCODE_ENTER', TITLE_GUARD = 20;
+    const loadingDone = (l) => !l || !l[1] || l[0] >= l[1];
+    // control: Enter during the loading screen must not start the game
+    const st0 = await ch.call('status', 60000);
+    if (st0.tick !== 0) return report('android-arm64', g.game, 'FAIL', `control not run: the game was past its loading screen at hello (tick ${st0.tick})`);
+    adb('shell', 'input', 'keyevent', key);
+    for (const f0 = (await ch.call('status', 60000)).frame; ;) { // the press read by a later frame's poll
+      const st = await ch.call('status', 60000);
+      if (st.frame >= f0 + 2) {
+        if (st.tick !== 0) return report('android-arm64', g.game, 'FAIL', `control not run: loading ended before the early key was read (tick ${st.tick})`);
+        break;
+      }
+      await sleep(200);
+    }
+    // ready: loading finished and the title's guard passed
+    let ready = null;
+    for (let i = 0; i < 300 && !ready; i++) {
+      const l = (await ch.call('fields cw.loading', 60000))['cw.loading'], st = await ch.call('status', 60000);
+      if (loadingDone(l) && st.tick > TITLE_GUARD + 10) ready = st;
+      else await sleep(500);
+    }
+    if (!ready) return report('android-arm64', g.game, 'FAIL', 'the game never finished loading and ran its title (cw.loading, status.tick)');
+    const before = (await ch.call(`fields ${field}`, 60000))[field];
+    if (before !== 0) return report('android-arm64', g.game, 'FAIL', `CONTROL PASSED: ${key} during the loading screen changed ${field} to ${before}`);
     const shotFile = join(OUT, `${g.game}-android.png`);
     writeFileSync(shotFile, await ch.screenshot(120000));
     const colors = picture(shotFile);
     // real input through Android's input stack: the key the game binds
-    let before, after, key, field;
-    field = 'game.state';
-    before = (await ch.call(`fields ${field}`))[field];
-    key = 'KEYCODE_ENTER';
-    adb('shell', 'input', 'keyevent', key);
+    if (adb('shell', 'input', 'keyevent', key).status !== 0) return report('android-arm64', g.game, 'FAIL', `adb input keyevent ${key} failed`);
+    let after = before;
     for (let i = 0; i < 60; i++) {
       await sleep(1000);
       after = (await ch.call(`fields ${field}`, 60000))[field];
       if (after !== before) break;
     }
-    adb('shell', 'am', 'force-stop', pkg);
     if (colors < 64) return report('android-arm64', g.game, 'FAIL', `screenshot through the channel has ${colors} colours`);
-    if (after === before) return report('android-arm64', g.game, 'FAIL', `${key} did not change ${field} (${before})`);
-    report('android-arm64', g.game, 'built+run (AVD)', `x86_64 AVD running the arm64 APK via NDK translation, guest GLES on SwiftShader; channel over adb reverse; ${key} changed ${field} ${before}->${after}; screenshot ${colors} colours`);
+    if (after === before) return report('android-arm64', g.game, 'FAIL', `${key} at tick ${ready.tick} did not change ${field} (${before})`);
+    report('android-arm64', g.game, 'built+run (AVD)', `x86_64 AVD running the arm64 APK via NDK translation, guest GLES on SwiftShader; channel over adb reverse; ${key} at tick ${ready.tick} changed ${field} ${before}->${after}; screenshot of the title ${colors} colours; control (${key} during the loading screen) left ${field} at 0`);
   } finally {
+    adb('shell', 'am', 'force-stop', pkg);
     ch.close();
   }
 }
