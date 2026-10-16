@@ -6,6 +6,8 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SAN="${SAN:-address,undefined}"
 B="$ROOT/build/san-${SAN//,/-}"
+source "$ROOT/scripts/lib/build-lock.sh"   # one build of a tree at a time
+build_lock "$B"
 cmake -S "$ROOT" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCW_SANITIZE="$SAN" >/dev/null
 ninja -C "$B" >/dev/null || { echo "build failed"; exit 1; }
 export ASAN_OPTIONS=detect_leaks=0:abort_on_error=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 TSAN_OPTIONS="halt_on_error=1 suppressions=$ROOT/scripts/tsan.supp"

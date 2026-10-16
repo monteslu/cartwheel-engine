@@ -7,9 +7,12 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BT="${BUILD_TYPE:-Release}"
+# one build of a tree at a time (scripts/lib/build-lock.sh): another waits
+source "$ROOT/scripts/lib/build-lock.sh"
 DEFAULT="native cart"
 [ -d "$ROOT/deps/wasmcart-wgpu/wgpu-wasi" ] && [ -d "$ROOT/deps/emdawnwebgpu/webgpu" ] && DEFAULT="$DEFAULT cart-wgpu"
 for t in ${TARGETS:-$DEFAULT}; do
+  build_lock "$ROOT/build/$t"
   if [ "$t" = cart ]; then
     cmake -S "$ROOT" -B "$ROOT/build/cart" -G Ninja -DCMAKE_BUILD_TYPE="$BT" -DCMAKE_TOOLCHAIN_FILE="$ROOT/cmake/cart.cmake" >/dev/null
   elif [ "$t" = cart-wgpu ]; then
@@ -29,4 +32,5 @@ for t in ${TARGETS:-$DEFAULT}; do
       grep -qxF "$n" "$ROOT/build/$t/carts.txt" || { echo "removing stale cart $n.wasc ($t)"; rm -f "$f"; }
     done
   fi
+  build_unlock "$ROOT/build/$t"
 done

@@ -27,9 +27,10 @@
 // Exit status 0 only when every target built. The editor's project.build
 // runs exactly this.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withBuildLock } from './lib/build-lock.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const [cmd, dirArg, targetArg] = process.argv.slice(2);
@@ -89,37 +90,6 @@ function run(c, a, cwd) {
 const launcher = spawnSync('ccache', ['--version'], { stdio: 'ignore' }).status === 0
   ? ['-DCMAKE_C_COMPILER_LAUNCHER=ccache', '-DCMAKE_CXX_COMPILER_LAUNCHER=ccache'] : [];
 
-/**
- * Run fn holding an exclusive lock on a build tree. Two builds of one project
- * at once (an editor's Build while a test or a script builds, or a cart build
- * that builds the native tree for its cwpack while a native build runs) would
- * otherwise run two ninjas in one tree: they race on the same outputs and a
- * link fails now and then. The lock is a directory (mkdir is atomic) holding
- * the owner's pid; a lock whose owner is gone is taken over.
- * @template T @param {string} bdir @param {() => Promise<T>} fn @returns {Promise<T>}
- */
-async function withBuildLock(bdir, fn) {
-  const lock = `${bdir}.lock`;
-  mkdirSync(dirname(lock), { recursive: true });
-  let said = false;
-  for (;;) {
-    try {
-      mkdirSync(lock);
-      writeFileSync(join(lock, 'pid'), String(process.pid));
-      break;
-    } catch (e) {
-      if (e.code !== 'EEXIST') throw e;
-      let pid = 0;
-      try { pid = +readFileSync(join(lock, 'pid'), 'utf8'); } catch { /* being written */ }
-      let alive = true;
-      if (pid) try { process.kill(pid, 0); } catch (k) { alive = k.code === 'EPERM'; }
-      if (pid && !alive) { rmSync(lock, { recursive: true, force: true }); continue; }
-      if (!said) { console.log(`== waiting for another build of ${bdir} (pid ${pid || '?'})`); said = true; }
-      await new Promise((r) => setTimeout(r, 250));
-    }
-  }
-  try { return await fn(); } finally { rmSync(lock, { recursive: true, force: true }); }
-}
 
 /** @param {string} dir @param {'native'|'cart'} target @param {Record<string,string>} proj @param {string} [ninjaTarget] */
 async function buildTarget(dir, target, proj, ninjaTarget) {

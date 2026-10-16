@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSync, readdirSync, statSync, chmodSync, utimesSync } from 'node:fs';
 import { join, dirname, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withBuildLock } from '../lib/build-lock.mjs';
 
 /** The cartwheel checkout this tool lives in, or the prebuilt SDK (docs/sdk.md) it ships in. */
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -172,9 +173,12 @@ export async function hostCwpack(log) {
     return f;
   }
   const exe = join(ROOT, 'build/native/tools/cwpack/cwpack');
-  if (!existsSync(join(ROOT, 'build/native/CMakeCache.txt')))
-    await run('cmake', ['-S', ROOT, '-B', join(ROOT, 'build/native'), '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release'], { log, quiet: true });
-  await run('ninja', ['-C', join(ROOT, 'build/native'), 'cwpack'], { log, quiet: true });
+  // (the dev tree scripts/build.sh builds too: one build of it at a time)
+  await withBuildLock(join(ROOT, 'build/native'), async () => {
+    if (!existsSync(join(ROOT, 'build/native/CMakeCache.txt')))
+      await run('cmake', ['-S', ROOT, '-B', join(ROOT, 'build/native'), '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release'], { log, quiet: true });
+    await run('ninja', ['-C', join(ROOT, 'build/native'), 'cwpack'], { log, quiet: true });
+  });
   if (!existsSync(exe)) throw new ExportError(`cwpack did not build at ${exe}`);
   return exe;
 }
@@ -200,30 +204,34 @@ export async function buildApp(ctx, platform) {
   const buildDir = ctx.buildDir && own ? resolve(ctx.buildDir) : ctx.isProject ? join(ctx.projectDir, '.cwbuild', platform + tag)
     : cart ? join(ROOT, 'build', platform + tag) : join(ROOT, 'build/export', platform + tag);
   const cwpack = await hostCwpack(ctx.log); // carts and cross builds pack with it
-  if (IN_SDK && !existsSync(join(buildDir, 'CMakeCache.txt'))) {
-    // the project against the target's SDK: a generated top-level CMakeLists
-    // that finds the package and adds the project, as the engine's own does
-    if (!ctx.isProject) throw new ExportError('an SDK exports projects (a directory with project.cwproj and CMakeLists.txt)');
-    if (ctx.threeBuilder) throw new ExportError('--three-builder needs the engine from source: an SDK ships program tables only');
-    const sdk = sdkFor(platform);
-    const top = join(buildDir, '.top');
-    write(join(top, 'CMakeLists.txt'), `cmake_minimum_required(VERSION 3.20)\nproject(${ctx.app} C CXX)\nfind_package(cartwheel REQUIRED CONFIG)\nadd_subdirectory("${ctx.projectDir.replace(/\\/g, '/')}" project)\n`);
-    ctx.progress(10, `configure ${platform}`);
-    const tc = cart ? join(sdk, 'cmake/cart.cmake') : platform === 'macos' ? join(sdk, 'cmake/export/macos-arm64.cmake') : join(sdk, 'cmake/export', `${platform}.cmake`);
-    await run('cmake', ['-S', top, '-B', buildDir, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', `-DCMAKE_TOOLCHAIN_FILE=${tc}`,
-      `-Dcartwheel_DIR=${join(sdk, 'lib/cmake/cartwheel')}`, `-DCW_CWPACK=${cwpack}`, `-DCW_EXPORT_DEPS=${EXPORT_DEPS}`], { log: ctx.log, quiet: true });
-  }
-  if (!existsSync(join(buildDir, 'CMakeCache.txt'))) {
-    ctx.progress(10, `configure ${platform}`);
-    // a shipped build carries its program tables only, never three.c's runtime builder (cmake/deps.cmake)
-    const args = ['-S', ROOT, '-B', buildDir, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', `-DCMAKE_TOOLCHAIN_FILE=${toolchain}`, '-DCW_THREE_BUILDER=OFF'];
-    if (ctx.isProject) args.push(`-DCW_PROJECT_DIR=${ctx.projectDir}`, '-DCW_ENGINE_ONLY=ON');
-    if (ctx.threeBuilder) args.push('-DCW_THREE_BUILDER=ON');
-    if (dual) args.push('-DCW_WGPU=ON', `-DCW_CWPACK=${cwpack}`);
-    await run('cmake', args, { log: ctx.log, quiet: true });
-  }
-  ctx.progress(20, `build ${ctx.app} (${platform})`);
-  await run('ninja', ['-C', buildDir, ctx.app], { log: ctx.log, quiet: !ctx.verbose });
+  // one build of a tree at a time (tools/lib/build-lock.mjs): the dev cart tree
+  // is scripts/build.sh's too, and a project's is its editor's
+  await withBuildLock(buildDir, async () => {
+    if (IN_SDK && !existsSync(join(buildDir, 'CMakeCache.txt'))) {
+      // the project against the target's SDK: a generated top-level CMakeLists
+      // that finds the package and adds the project, as the engine's own does
+      if (!ctx.isProject) throw new ExportError('an SDK exports projects (a directory with project.cwproj and CMakeLists.txt)');
+      if (ctx.threeBuilder) throw new ExportError('--three-builder needs the engine from source: an SDK ships program tables only');
+      const sdk = sdkFor(platform);
+      const top = join(buildDir, '.top');
+      write(join(top, 'CMakeLists.txt'), `cmake_minimum_required(VERSION 3.20)\nproject(${ctx.app} C CXX)\nfind_package(cartwheel REQUIRED CONFIG)\nadd_subdirectory("${ctx.projectDir.replace(/\\/g, '/')}" project)\n`);
+      ctx.progress(10, `configure ${platform}`);
+      const tc = cart ? join(sdk, 'cmake/cart.cmake') : platform === 'macos' ? join(sdk, 'cmake/export/macos-arm64.cmake') : join(sdk, 'cmake/export', `${platform}.cmake`);
+      await run('cmake', ['-S', top, '-B', buildDir, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', `-DCMAKE_TOOLCHAIN_FILE=${tc}`,
+        `-Dcartwheel_DIR=${join(sdk, 'lib/cmake/cartwheel')}`, `-DCW_CWPACK=${cwpack}`, `-DCW_EXPORT_DEPS=${EXPORT_DEPS}`], { log: ctx.log, quiet: true });
+    }
+    if (!existsSync(join(buildDir, 'CMakeCache.txt'))) {
+      ctx.progress(10, `configure ${platform}`);
+      // a shipped build carries its program tables only, never three.c's runtime builder (cmake/deps.cmake)
+      const args = ['-S', ROOT, '-B', buildDir, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', `-DCMAKE_TOOLCHAIN_FILE=${toolchain}`, '-DCW_THREE_BUILDER=OFF'];
+      if (ctx.isProject) args.push(`-DCW_PROJECT_DIR=${ctx.projectDir}`, '-DCW_ENGINE_ONLY=ON');
+      if (ctx.threeBuilder) args.push('-DCW_THREE_BUILDER=ON');
+      if (dual) args.push('-DCW_WGPU=ON', `-DCW_CWPACK=${cwpack}`);
+      await run('cmake', args, { log: ctx.log, quiet: true });
+    }
+    ctx.progress(20, `build ${ctx.app} (${platform})`);
+    await run('ninja', ['-C', buildDir, ctx.app], { log: ctx.log, quiet: !ctx.verbose });
+  });
   if (cart) {
     const wasc = join(buildDir, 'carts', `${ctx.app}.wasc`);
     if (!existsSync(wasc)) throw new ExportError(`the cart build made no ${wasc}`);

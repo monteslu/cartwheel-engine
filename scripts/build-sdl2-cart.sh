@@ -19,8 +19,13 @@ SRC="$OUT/src"
 CC="$WASI/bin/clang"
 AR="$WASI/bin/llvm-ar"
 
+# every cart tree (build/cart, build/cart-wgpu, an SDK's) builds this one
+# output, maybe from ninjas running at once: one builds it, the others wait
+# and find it made
+source "$ROOT/scripts/lib/build-lock.sh"
+build_lock "$OUT"
 if [ -f "$OUT/libSDL2_wc.a" ] && [ "${FORCE:-0}" != 1 ]; then echo "sdl2 (cart): up to date"; exit 0; fi
-rm -rf "$OUT" && mkdir -p "$OUT/obj"
+rm -rf "$OUT/src" "$OUT/obj" "$OUT/libSDL2_wc.a" && mkdir -p "$OUT/obj"
 cp -r "$ROOT/deps/sdl2" "$SRC"
 # A patch the source tree already carries (deps/sdl2 checked out with it
 # applied) is skipped: its reverse applies cleanly, so applying it again would
