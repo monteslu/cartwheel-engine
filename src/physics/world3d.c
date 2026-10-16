@@ -1316,3 +1316,22 @@ void cw_world3d_debug_draw(cw_world3d wh, cw_phys_lines *out, uint32_t flags) {
   dd.context = out;
   b3World_Draw(w->id, &dd, UINT64_MAX);
 }
+
+/* ── floating origin ─────────────────────────────────────────────────── */
+void cw_world3d_shift_origin(cw_world3d wh, t3_vec3 shift) {
+  cw__world3 *w = cw__w3(wh);
+  if (!w || (shift.x == 0 && shift.y == 0 && shift.z == 0)) return;
+  for (int i = 0; i < w->bodies.slot_count; i++) {
+    cw__body3 *r = cw_pool_at(&w->bodies, i);
+    if (!r) continue;
+    b3BodyId bid = b3LoadBodyId(r->id);
+    if (!b3Body_IsValid(bid)) continue;
+    b3WorldTransform t = b3Body_GetTransform(bid);
+    t.p.x -= shift.x, t.p.y -= shift.y, t.p.z -= shift.z;
+    bool awake = b3Body_IsAwake(bid);
+    b3Body_SetTransform(bid, t.p, t.q);
+    if (b3Body_IsAwake(bid) != awake) b3Body_SetAwake(bid, awake); /* a shift is not a disturbance */
+    r->prev.p = t3_vec3_sub(r->prev.p, shift);
+    r->cur.p = t3_vec3_sub(r->cur.p, shift);
+  }
+}

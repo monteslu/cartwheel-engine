@@ -100,6 +100,14 @@ void cw_world3d_sync(cw_world3d w, float alpha);
 /* Counters, step count and state hash; all zero for an invalid world. Cheap. */
 cw_phys_stats cw_world3d_stats(cw_world3d w);
 /* m/s^2; ignored for an invalid world. */
+/* Floating origin (cartwheel/stream.h): move every body by -shift, in
+ * creation order, keeping velocities, sleep states and the interpolation
+ * (synced objects do not jump). Box3D has no origin shift of its own, so
+ * this sets each body's transform: O(bodies), for a rare event. Joint
+ * anchors on the world itself (cw_joint3d to no body, mouse targets) do not
+ * move: move them yourself. Deterministic: called on a tick the simulation
+ * picks, every host shifts the same bodies by the same amount. */
+void cw_world3d_shift_origin(cw_world3d w, t3_vec3 shift);
 void cw_world3d_set_gravity(cw_world3d w, t3_vec3 g);
 /* m/s^2; zero for an invalid world. */
 t3_vec3 cw_world3d_gravity(cw_world3d w);

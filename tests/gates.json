@@ -1023,6 +1023,27 @@
     "note": "resource registry: types, paths, UIDs, refcounts, deferred free, async order, sub-resources, glTF instancing + LODs, reloads; assets packed by cwpack"
   },
   {
+    "name": "unit-stream",
+    "app": "unit_stream",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "world streaming: cells load, activate and unload around a scripted path; the activation history (folded into unit.checksum) is the same with slow, reordered IO and on every host; hysteresis stops border thrashing; the floating origin moves in whole cells and shifts bodies"
+  },
+  {
     "name": "gltf-scene",
     "app": "gltf_scene",
     "frames": 90,

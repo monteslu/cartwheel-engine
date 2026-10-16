@@ -23,6 +23,7 @@ cw_add_app(unit_physics_nodes SOURCES test_physics_nodes.c GL_ONLY)
 # navigation: navmesh builds at several pool sizes, queries, obstacles, crowds (cartwheel/nav.h)
 cw_add_app(unit_nav SOURCES test_nav.c GL_ONLY)
 cw_add_app(unit_resource SOURCES test_resource.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/res_project/roots.txt GL_ONLY)
+cw_add_app(unit_stream SOURCES test_stream.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/stream_assets GL_ONLY)
 # the render pipeline (pass graph, POST chain, pool, LUT parser)
 cw_add_app(unit_pipeline SOURCES test_pipeline.c GL_ONLY)
 # Hot reload watches files and reruns cwpack: native dev builds only.
