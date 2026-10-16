@@ -14,7 +14,7 @@
  * cape.hash, rope.hash, chain.hash (the nodes' simulation hashes), crate.pos,
  * weight.pos, hero.pos, rope.tension (N), cape.min_gap (the closest a cape
  * particle came to the hero's capsule axis, mm), cloth.us (the three cloths'
- * step time, microseconds, not compared), phys.hash. */
+ * step time averaged over the run, microseconds, not compared), phys.hash. */
 #include <math.h>
 
 #include "cartwheel/cloth.h"
@@ -29,6 +29,7 @@ static struct {
   float tension;
   int32_t cape_gap_mm;
   float cloth_us;
+  double cloth_sum;
   int32_t tick;
 } G;
 
@@ -125,7 +126,8 @@ static void fixed(void *u, double dt) {
     cw_cloth c = i == 0 ? cw_cloth3d_get(cw_node_get(root, names[i])) : i == 1 ? cw_cloth3d_get(cape) : cw_rope3d_get(cw_node_get(root, names[i]));
     us += cw_cloth_stats_get(c).step_us;
   }
-  G.cloth_us = us;
+  G.cloth_sum += us;
+  G.cloth_us = (float)(G.cloth_sum / (G.tick + 1));
   G.phys_hash = cw_world3d_stats(cw_physics3d_world(t)).hash;
   G.tick++;
 }
