@@ -20,6 +20,8 @@
  *     color                tint of what is seen through the water (linear)
  *     deep_color           the water body's colour where no refraction is
  *                          drawn (Low, Medium)
+ *     murk                 share of the refraction lost into deep_color
+ *                          (0.7; 0 = clear as glass)
  *     detail, roughness    the normal map ripples' strength; the surface
  *                          roughness the lights' glints see
  *     reflectivity         Fresnel F0 (0.02, water)

@@ -132,7 +132,7 @@ static void water_init(cw_node n, void *data) {
   d->distortion = 0.03f;
   d->detail = 0.35f;
   d->roughness = 0.08f;
-  d->murk = 0.45f;
+  d->murk = 0.7f;
   d->normal_scale = 0.12f;
   d->flow_direction[0] = 1, d->flow_direction[1] = 0;
   d->flow_speed = 0.03f;
