@@ -24,6 +24,7 @@
         "navigation",
         "rendering-3d",
         "terrain",
+        "noise",
         "rendering-2d",
         "ui",
         "game-shell",

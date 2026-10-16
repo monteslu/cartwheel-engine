@@ -22,7 +22,7 @@ Local only (they need GPU hardware or a host CI does not have; `LOCAL_ONLY` in `
 
 - the romdev, Chromium, wasmcart-native (`wcnative`) and wasmcart-libretro legs of every gate;
 - `gpu-guard`, `fx-gpu-report`, `pipeline-perf`, `fx-perf-report`, `vis-perf-report`, `showcase-perf`, `nav-perf-report`: GPU guards, timings and frame-time budgets;
-- `gpu-no-display`, `gpu-cleanup`, `wcnative-pads`, `editor-channel`, `editor-play`, `editor-import`, `a11y-channel`, `net`, `plugins`, `project-templates`, `tutorials`, `docs`, `nav-determinism`: they drive romdev, Chromium or wasmcart-native;
+- `gpu-no-display`, `gpu-cleanup`, `wcnative-pads`, `editor-channel`, `editor-play`, `editor-import`, `a11y-channel`, `net`, `plugins`, `project-templates`, `tutorials`, `docs`, `nav-determinism`, `noise-gpu`: they drive romdev, Chromium or wasmcart-native;
 - `export`, `project-export`: the export toolchains, Wine and an Android emulator.
 
 Run `node tests/all.mjs` on a machine with a GPU and those hosts for the full set.

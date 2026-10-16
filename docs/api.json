@@ -4667,6 +4667,134 @@
    ]
   },
   {
+   "header": "cartwheel/noise.h",
+   "summary": "cartwheel noise: coherent random patterns for clouds, terrain, water,\nfog density and textures. FastNoiseLite 1.1.1 (MIT, Jordan Peck) wrapped\nas cw_noise_*, on the CPU (C) and on the GPU (GLSL and WGSL ports).\n\n  cw_noise n = cw_noise_default();      // OpenSimplex2, frequency 0.01\n  n.fractal = CW_NOISE_FRACTAL_FBM;\n  n.octaves = 5;\n  float h = cw_noise_2d(&n, x, z);       // about -1 .. 1\n\nPatterns (cw_noise_type): OpenSimplex2 (smooth, the general default),\nOpenSimplex2S (smoother, a little slower), Cellular (Voronoi cells,\ncracks, scales, stones), Perlin, ValueCubic and Value (blocky, cheap).\nFractals stack octaves: FBM (clouds, rolling terrain), Ridged (mountain\nridges, lightning, veins), PingPong (terraces, wood rings). Domain warp\nbends the input coordinates by another noise first (swirls, marble,\neroded-looking terrain): cw_noise_warp_2d / _3d.\n\nDeterminism. The C code uses only + - * /, integer hashing and float /\nint conversions (no libm at all, its square root included: FastNoiseLite\ncarries its own), so a given cw_noise and input return the same bits on\nevery host, native and wasm, under the engine's -ffp-contract=off.\nSimulation code may use it (terrain heights, spawn maps, buoyancy). The\nGPU ports follow the C code line for line; GPUs round differently (fused\nmultiply-add, division precision), so they agree with the CPU to about\n1e-4, not bit for bit: use the CPU result for anything the game state\ndepends on and the GPU one for pixels.\n\nCosts (one core of the 890M machine, Release): one octave of 2D noise\nis 25 ns (Perlin) to 110 ns (OpenSimplex2) a sample, 3D 90 to 160 ns,\ncellular 190 ns (2D) and 600 ns (3D); fractals multiply by the octave\ncount. cw_noise_fill_2d spreads rows over the job pool.\n\nThreading: every function is pure and thread safe.",
+   "functions": [
+    {
+     "name": "cw_noise_default",
+     "signature": "cw_noise cw_noise_default(void)",
+     "doc": "FastNoiseLite's defaults (above).",
+     "inline": false
+    },
+    {
+     "name": "cw_noise_2d",
+     "signature": "float cw_noise_2d(const cw_noise *n, float x, float y)",
+     "doc": "One 2D sample, about -1 .. 1 (cellular distances can leave that range; the\ntexture generator below remaps).",
+     "inline": false
+    },
+    {
+     "name": "cw_noise_3d",
+     "signature": "float cw_noise_3d(const cw_noise *n, float x, float y, float z)",
+     "doc": "One 3D sample, about -1 .. 1 (as cw_noise_2d).",
+     "inline": false
+    },
+    {
+     "name": "cw_noise_warp_2d",
+     "signature": "void cw_noise_warp_2d(const cw_noise *n, float *x, float *y)",
+     "doc": "Domain warp: move (x, y) by n.warp scaled by n.warp_amp, in place, then\nsample another (or the same) cw_noise there. A warp fractal\n(WARP_PROGRESSIVE / WARP_INDEPENDENT) runs `octaves` warps. Does nothing\nwhen n.warp is NONE.",
+     "inline": false
+    },
+    {
+     "name": "cw_noise_warp_3d",
+     "signature": "void cw_noise_warp_3d(const cw_noise *n, float *x, float *y, float *z)",
+     "doc": "The 3D domain warp: (x, y, z) in place, as cw_noise_warp_2d.",
+     "inline": false
+    },
+    {
+     "name": "cw_noise_fill_2d",
+     "signature": "void cw_noise_fill_2d(const cw_noise *n, const cw_noise *warp, float *out, int w, int h, float x0, float y0, float step)",
+     "doc": "A grid of samples: out[row * w + col] = noise at (x0 + col * step,\ny0 + row * step), after warp->warp when warp is non-NULL (a warp of its\nown settings, as FastNoiseLite's demo pairs two states). Rows are spread\nover the job pool (cw_parallel_for); every value is the same as the\nsingle-sample call, so the result does not depend on the worker count.",
+     "inline": false
+    },
+    {
+     "name": "cw_noise_fill_3d_slice",
+     "signature": "void cw_noise_fill_3d_slice(const cw_noise *n, const cw_noise *warp, float *out, int w, int h, float x0, float y0, float z, float step)",
+     "doc": "The 3D form: a slice at depth z (out is w x h), x/y as above.",
+     "inline": false
+    },
+    {
+     "name": "cw_noise_hash",
+     "signature": "uint64_t cw_noise_hash(const float *v, size_t count)",
+     "doc": "A FNV-1a 64 hash of a grid of samples' bits (for tests and caches).",
+     "inline": false
+    },
+    {
+     "name": "cw_noise_type_name",
+     "signature": "const char *cw_noise_type_name(cw_noise_type t)",
+     "doc": "\"opensimplex2\", \"opensimplex2s\", \"cellular\", \"perlin\", \"value_cubic\", \"value\"",
+     "inline": false
+    },
+    {
+     "name": "cw_noise_type_from_name",
+     "signature": "int cw_noise_type_from_name(const char *s)",
+     "doc": "-1 when unknown",
+     "inline": false
+    },
+    {
+     "name": "cw_noise_image",
+     "signature": "bool cw_noise_image(const char *query, uint8_t **rgba, int *w, int *h)",
+     "doc": "── generated textures: the gen://noise resource ─────────────────────\ncw_res_load(\"gen://noise?type=perlin&fractal=fbm&octaves=5&size=256\",\nCW_RES_TEXTURE) makes a texture of noise (cartwheel/resource.h); the path\nis its cache key, so the same path loads once and is shared. It is\ngenerated on a worker like an image decode (cw_res_load_async works), is\nlinear data (not sRGB), RGBA8, repeat-wrapped and mipmapped. Keys (any\norder, all optional):\n\n  size=256 | 512x256     texels (1..4096)\n  type=opensimplex2      the cw_noise_type name\n  seed=1337  freq=0.01   frequency in features per TEXEL (0.01: about 100 texels a feature)\n  fractal=none|fbm|ridged|pingpong   octaves=3 lacunarity=2 gain=0.5\n  weighted=0 pingpong=2  weighted strength, ping-pong strength\n  rotation=none|xy|xz    (with z=)\n  cell_dist=euclidean|euclidean_sq|manhattan|hybrid\n  cell_return=value|distance|distance2|distance2_add|distance2_sub|distance2_mul|distance2_div\n  jitter=1\n  warp=none|opensimplex2|opensimplex2_reduced|basic_grid  warp_amp=30 (texels)\n  warp_freq=0.005 warp_seed=(seed + 100) warp_fractal=none|progressive|independent warp_octaves=3\n  x=0 y=0                offset in texels;  z=   a slice of 3D noise at this depth\n  seamless=1             the texture tiles: four shifted copies blended by distance\n                         to the edges (the middle loses a little contrast)\n  out=gray               r = g = b = the noise, a = 255\n      rgba               four layers, seed, seed + 1, seed + 2, seed + 3, one per channel\n      normal             a tangent-space normal map of the noise as a height field\n                         (strength=2: height units per texel), b up, a = the height\n  min=-1 max=1           the noise range mapped to 0 .. 255 (clamped)\n\nExample: clouds \"gen://noise?size=512&fractal=fbm&octaves=6&freq=0.004&seamless=1\",\nwater ripples \"gen://noise?size=256&type=perlin&fractal=fbm&octaves=4&freq=0.03&out=normal&seamless=1\",\nstones \"gen://noise?type=cellular&cell_return=distance2_sub&freq=0.03\".\n\nGenerate the same pixels into memory (RGBA8, w x h x 4) without the GPU.\nReturns false (logged, naming the key) on a bad query; *w / *h get the\nsize. The bytes are cw_alloc'd (CW_MEM_RESOURCE): cw_free them.",
+     "inline": false
+    },
+    {
+     "name": "cw_noise_glsl",
+     "signature": "const char *cw_noise_glsl(void)",
+     "doc": "── the GPU ports ────────────────────────────────────────────────────\nShader source to paste in front of your own (cw_pass_program,\ncw_pass_program_wgsl). It defines, in GLSL ES 3.00 and in WGSL:\n\n  float cw_noise2(vec2 p, CwNoise n)       fn cw_noise2(p: vec2f, n: CwNoise) -> f32\n  float cw_noise3(vec3 p, CwNoise n)       fn cw_noise3(p: vec3f, n: CwNoise) -> f32\n  CwNoise cw_noise_make(int seed, float frequency, int type, int fractal, int octaves)\n                                           fn cw_noise_make(...) -> CwNoise\n  CwNoise cw_noise_unpack(vec4 a, vec4 b, vec4 c, vec4 d)\n                                           fn cw_noise_unpack(...) -> CwNoise\n\nCwNoise is a struct of the cw_noise fields above with enums as int / i32,\nin this order: seed, frequency, type (named ntype in WGSL, where type is\nreserved), rotation, fractal, octaves, lacunarity, gain,\nweighted_strength, ping_pong_strength, cellular_distance,\ncellular_return, cellular_jitter. cw_noise_make fills the rest with the\ndefaults; cw_noise_unpack takes four vec4 uniforms filled from a\ncw_noise by cw_noise_gpu_params. Every pattern and fractal of\ncw_noise_2d / _3d is there; domain warp is CPU only. Names starting with\ncwn_ / CWN_ are the port's own. The tables (gradients, cell offsets) make\neach source about 55 KB; a driver compiles it once per program, and\nunused functions cost nothing at run time. GPU cost on the 890M: 0.18 ms\na million pixels for one octave of OpenSimplex2, 0.8 ms for five (the\nnoise guide has the table).",
+     "inline": false
+    },
+    {
+     "name": "cw_noise_wgsl",
+     "signature": "const char *cw_noise_wgsl(void)",
+     "doc": "The WGSL port (as cw_noise_glsl).",
+     "inline": false
+    },
+    {
+     "name": "cw_noise_gpu_params",
+     "signature": "void cw_noise_gpu_params(const cw_noise *n, float out[16])",
+     "doc": "n as the 16 floats cw_noise_unpack takes (four vec4: out[0..3], [4..7],\n[8..11], [12..15]), the CwNoise fields in order, ints as exact floats,\nout[13..15] zero.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_noise_type",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_NOISE_OPENSIMPLEX2,\n  CW_NOISE_OPENSIMPLEX2S,\n  CW_NOISE_CELLULAR,\n  CW_NOISE_PERLIN,\n  CW_NOISE_VALUE_CUBIC,\n  CW_NOISE_VALUE,\n  CW_NOISE_TYPE_COUNT\n} cw_noise_type;"
+    },
+    {
+     "name": "cw_noise_rotation",
+     "doc": "3D only: rotates the lattice so 2D slices (XY or XZ planes) look better.\nXZ suits terrain sampled at (x, height, z).",
+     "decl": "typedef enum { CW_NOISE_ROTATION_NONE, CW_NOISE_ROTATION_XY, CW_NOISE_ROTATION_XZ } cw_noise_rotation;"
+    },
+    {
+     "name": "cw_noise_fractal",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_NOISE_FRACTAL_NONE,\n  CW_NOISE_FRACTAL_FBM,\n  CW_NOISE_FRACTAL_RIDGED,\n  CW_NOISE_FRACTAL_PINGPONG,\n  CW_NOISE_FRACTAL_WARP_PROGRESSIVE, /* domain warp only: each octave warps the result of the last */\n  CW_NOISE_FRACTAL_WARP_INDEPENDENT, /* domain warp only: every octave warps the input */\n  CW_NOISE_FRACTAL_COUNT\n} cw_noise_fractal;"
+    },
+    {
+     "name": "cw_noise_cellular_distance",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_NOISE_DIST_EUCLIDEAN,\n  CW_NOISE_DIST_EUCLIDEAN_SQ,\n  CW_NOISE_DIST_MANHATTAN,\n  CW_NOISE_DIST_HYBRID,\n  CW_NOISE_DIST_COUNT\n} cw_noise_cellular_distance;"
+    },
+    {
+     "name": "cw_noise_cellular_return",
+     "doc": "what a cellular sample returns: the nearest cell's random value, the\ndistance to the nearest point (distance), to the second nearest\n(distance2), or a mix of the two (cracks between cells: DISTANCE2_SUB)",
+     "decl": "typedef enum {\n  CW_NOISE_CELL_VALUE,\n  CW_NOISE_CELL_DISTANCE,\n  CW_NOISE_CELL_DISTANCE2,\n  CW_NOISE_CELL_DISTANCE2_ADD,\n  CW_NOISE_CELL_DISTANCE2_SUB,\n  CW_NOISE_CELL_DISTANCE2_MUL,\n  CW_NOISE_CELL_DISTANCE2_DIV,\n  CW_NOISE_CELL_RETURN_COUNT\n} cw_noise_cellular_return;"
+    },
+    {
+     "name": "cw_noise_warp",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_NOISE_WARP_NONE,\n  CW_NOISE_WARP_OPENSIMPLEX2,\n  CW_NOISE_WARP_OPENSIMPLEX2_REDUCED,\n  CW_NOISE_WARP_BASIC_GRID,\n  CW_NOISE_WARP_COUNT\n} cw_noise_warp;"
+    },
+    {
+     "name": "cw_noise",
+     "doc": "Every setting, FastNoiseLite's, with its default (cw_noise_default). A\nplain value: copy it, keep it in a component, hash it.",
+     "decl": "typedef struct cw_noise {\n  int32_t seed;                       /* 1337 */\n  float frequency;                    /* 0.01: features per input unit (1 / feature size) */\n  cw_noise_type type;                 /* OPENSIMPLEX2 */\n  cw_noise_rotation rotation;         /* NONE (3D only) */\n  cw_noise_fractal fractal;           /* NONE */\n  int32_t octaves;                    /* 3 (fractals) */\n  float lacunarity;                   /* 2: frequency multiplier per octave */\n  float gain;                         /* 0.5: amplitude multiplier per octave */\n  float weighted_strength;            /* 0: 0..1, octaves weighted by the one below (FBM, Ridged) */\n  float ping_pong_strength;           /* 2 */\n  cw_noise_cellular_distance cellular_distance; /* EUCLIDEAN_SQ */\n  cw_noise_cellular_return cellular_return;     /* DISTANCE */\n  float cellular_jitter;              /* 1: 0 = a regular grid of points */\n  cw_noise_warp warp;                 /* OPENSIMPLEX2: what cw_noise_warp_* use (NONE: no warp) */\n  float warp_amp;                     /* 30: warp distance in input units */\n} cw_noise;"
+    }
+   ],
+   "macros": []
+  },
+  {
    "header": "cartwheel/particles.h",
    "summary": "Particles and trails: GPU particles in 3D (transform feedback), CPU\nparticles in 2D (on the render2d batcher), ribbon trails.\n\n── node types (properties: docs/nodes.json, the debug channel's `props`) ──\n\n  GPUParticles3D       (Node3D) `amount` particles simulated on the GPU by\n                       transform feedback: per particle position, age,\n                       velocity and its spawn cycle, ping-ponged between two\n                       buffer pairs every fixed tick. Emission is a pure\n                       function of the particle index and sim time (Godot's\n                       model): particle i spawns at\n                         start + i / amount * lifetime * (1 - explosiveness)\n                       and again every `lifetime` seconds while emitting, with\n                       its random values hashed from (seed, i, cycle) by an\n                       integer hash. No clock is read: the sim advances by the\n                       tree's fixed step only, so the same seed and the same\n                       number of ticks give the same particles on every host.\n    emission           emission_shape POINT / SPHERE / SPHERE_SURFACE / BOX /\n                       RING / MESH, emission_extents (box half sizes),\n                       emission_radius (+ emission_inner_radius for RING),\n                       emission_mesh (a MeshInstance3D node: 4096 points spread\n                       over its surface by area, with normals, in that node's\n                       space at spawn time), emission_normal_speed (extra speed\n                       along the surface normal, SPHERE_SURFACE and MESH)\n    motion             direction (local), spread (cone half angle, degrees),\n                       speed_min / speed_max, gravity (world), damping,\n                       turbulence (strength), turbulence_scale (noise\n                       frequency), turbulence_speed (noise scroll): a curl\n                       noise field from a 32^3 tiling 3D texture\n                       ParticleAttractor3D nodes anywhere in the tree pull\n                       (strength > 0) or push every system (up to 8)\n    collision          collide_depth: bounce off the scene's depth buffer\n                       (screen space: only what the camera sees, surfaces\n                       thinner than depth_thickness are solid, normals rebuilt\n                       from depth); ParticleCollider3D nodes (PLANE, SPHERE,\n                       BOX; up to 8) are analytic; bounce, friction,\n                       collision_radius\n    look               draw_mode BILLBOARD / STRETCHED (along velocity,\n                       stretch x speed) / MESH (mesh_primitive BOX, SPHERE or\n                       a mesh_node's mesh, drawn instanced); size, size_random,\n                       color (tint), energy (x colour: HDR glow),\n                       color_ramp and size_curve (over life, strings below),\n                       texture (asset path; default a soft dot), hframes /\n                       vframes (flipbook played over life), spin (rad/s,\n                       random sign), blend ADD / ALPHA / OPAQUE, soft_distance\n                       (fade where particles meet geometry), sort (ALPHA:\n                       back to front with a bitonic sort in fragment passes)\n    trails             trail_length (history samples, 0 = off, max 64): each\n                       particle draws a camera-facing ribbon through its last\n                       positions (one sample per fixed tick, kept in a float\n                       texture ring on the GPU), trail_width (tapering to 0)\n    lifetime           emitting, amount, lifetime, lifetime_random,\n                       explosiveness, one_shot (emits one cycle, then\n                       emitting turns off), preprocess (seconds simulated when\n                       emission starts), speed_scale, seed, local_coords\n                       (particles follow the emitter)\n    stats              alive (read-only: particles alive now, computed on the\n                       CPU from the same emission function), gpu_stats (read\n                       the GPU's own count and position sum back every frame:\n                       a stall, for tests), gpu_alive, gpu_sum (read-only)\n  ParticleAttractor3D  (Node3D) strength (acceleration at the centre; < 0\n                       repels), radius, attenuation (falloff exponent)\n  ParticleCollider3D   (Node3D) shape PLANE (the node's XZ plane, normal +Y,\n                       extents.xz bounds it; 0 = infinite), SPHERE (radius),\n                       BOX (extents = half sizes, particles stay outside)\n  GPUParticles2D       (Node2D) the same emission model on the CPU (threaded\n                       on the job pool), drawn as sprites through render2d:\n                       amount, lifetime, lifetime_random, explosiveness,\n                       one_shot, emitting, seed, emission_shape (POINT,\n                       CIRCLE, RECT), emission_radius, emission_extents,\n                       direction (degrees, 0 = +x), spread, speed_min/max,\n                       gravity, damping, size, size_random, color,\n                       color_ramp, size_curve, texture, blend (ALPHA, ADD),\n                       spin, local_coords, alive (read-only)\n  Trail3D              (Node3D) a ribbon that follows the node: the last\n                       `length` positions (one per fixed tick) as a camera\n                       facing strip of `width`, color_ramp along its length\n                       (0 = head), blend\n\nCurves are strings of \"t value\" stops (t in 0..1, linear between stops):\n  size_curve  \"0 0.2, 0.15 1, 1 0\"\n  color_ramp  \"0 1 0.8 0.3 0, 0.1 1 0.6 0.2 1, 1 0.4 0.1 0.1 0\" (t r g b a)\nAn empty string is constant 1 (white, full size).\n\nRendering. Every GPUParticles3D (and Trail3D) of a tree draws in the\npipeline's \"particles\" EFFECTS pass (order 200): after the opaque scene and\nthe sky, depth tested against the scene, unlit (the colour is the light:\nthe scene is HDR, so energy > 1 blooms). The pass reads CW_RES_DEPTH (soft\nparticles and depth collision sample ctx->depth_tex), so a tree with\nparticles renders offscreen. The simulation runs in the same pass, one\ntransform feedback draw per pending fixed tick (no draw happens while the\ntree is paused). Costs: one TF draw per system per tick (amount vertices),\none instanced draw per system per frame (plus one for trails); sorting adds\nlog2(n)(log2(n)+1)/2 full-target passes over a 2^k texel key texture;\ngpu_stats adds a scatter, a reduction and a 1-pixel readback (a stall).\nOn WebGPU (cartwheel/gpu.h) the simulation, the sort and the gpu_stats\nreduction are compute passes and the draws read the particle buffers\ndirectly; gpu_alive / gpu_sum arrive asynchronously, never as a stall: a\nframe or more after the state they describe (between frames in carts).\nSame seed, same alive counts on both backends; position sums agree to\nfloat rounding.\nGPU capability: float colour targets (RGBA32F) for sort, trails and\ngpu_stats (every host cartwheel supports has them; their absence is logged\nand those features are refused, never silently swapped).\n\nGPUParticles2D simulates in fixed_update (CPU, deterministic: cw_rng-free\ninteger hashes, the deterministic math of cartwheel/math.h) and draws in\nthe 2D pass as one cw_r2d_sprites batch.",
    "functions": [
@@ -6423,6 +6551,18 @@
      "name": "cw_pass_bind_texture_3d",
      "signature": "void cw_pass_bind_texture_3d(int unit, unsigned tex)",
      "doc": "The same for a 3D texture (GL_TEXTURE_3D: a colour-grading LUT's).",
+     "inline": false
+    },
+    {
+     "name": "cw_pass_texture_new",
+     "signature": "unsigned cw_pass_texture_new(int w, int h, cw_rt_format f, const void *texels)",
+     "doc": "A texture of your own for pass programs (a lookup table, a noise image, a\nCPU-made mask): w x h texels of format f, uploaded once. RGBA8 and R8 take\nbytes, RGBA16F / RG16F / R16F take IEEE halves, packed rows (no padding),\nrow 0 first as glTexImage2D takes it (row 0 is v = 0, the bottom, in\nGLSL's texture() and in WGSL through the offscreen row order). Linear\nfiltered, clamped to the edge, no mips. Returns an id for\ncw_pass_bind_texture on GL and WebGPU alike, 0 (logged) on bad arguments.\nNeeds the GPU (init or later). Free it with cw_pass_texture_free.",
+     "inline": false
+    },
+    {
+     "name": "cw_pass_texture_free",
+     "signature": "void cw_pass_texture_free(unsigned tex)",
+     "doc": "Free a texture from cw_pass_texture_new (0 is fine).",
      "inline": false
     },
     {
