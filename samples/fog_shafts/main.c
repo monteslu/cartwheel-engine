@@ -1,0 +1,96 @@
+/* fog_shafts: volumetric fog. A dim room filled with thin haze: the sun
+ * falls through a cross-barred window (light shafts with the bars' shadows),
+ * a spot light draws its cone over a pillar (the pillar's shadow cuts it),
+ * and a FogVolume3D of noisy mist lies on the floor at the back. The run is
+ * a schedule:
+ *   seg 0   frames  1-40  volumetric fog (the HeightFog's volumetric mode)
+ *   seg 1   frames 41-60  the same fog analytic (volumetric off: no shafts)
+ *   seg 2   frames 61-80  volumetric again, the spot light swung toward the
+ *                         window (the grid follows a moving light)
+ *
+ * Debug state: fog.seg, vfog.active (the grid was built and applied last
+ * frame), vfog.grid_x / _y / _z, vfog.lights, vfog.shadowed, vfog.volumes.
+ *
+ * fog_shafts_perf (FOG_SHAFTS_PERF): the volumetric segment
+ * only, the camera slowly turning; publishes the passes' GPU ms (averaged)
+ * as perf.grid_ms, perf.apply_ms, perf.scene_ms (CW_GPU_TIMERS=1; -1 where
+ * the host has no timers) for the preset CW_QUALITY picks. */
+#include <string.h>
+
+#include "cartwheel/debug.h"
+#include "cartwheel/environment.h"
+#include "cartwheel/math.h"
+#include "cartwheel/pipeline.h"
+#include "cartwheel/platform.h"
+#include "cartwheel/scene_file.h"
+
+static int32_t tick, seg = -1, active, gx, gy, gz, lights, shadowed, volumes;
+static float grid_ms = -1, apply_ms = -1, scene_ms = -1;
+
+static cw_node node(const char *path) { return cw_node_get(cw_tree_root(cw_scene_app_tree()), path); }
+
+static void apply(int s) {
+  cw_node_set(node("Room/Fog"), "volumetric", cw_val_bool(s != 1));
+  if (s == 2) cw_node3d_look_at(node("Room/Spot"), (t3_vec3){ -1, 0, -6 }, (t3_vec3){ 0, 0, -1 });
+}
+
+static void init(void *u) {
+  (void)u;
+  cw_node3d_look_at(node("Room/Sun"), (t3_vec3){ -1, -2, -9 }, (t3_vec3){ 0, 1, 0 });
+  cw_node3d_look_at(node("Room/Spot"), (t3_vec3){ 3, 0, -6 }, (t3_vec3){ 0, 0, -1 });
+  cw_node3d_look_at(node("Room/Camera"), (t3_vec3){ -4, 2, -5 }, (t3_vec3){ 0, 1, 0 });
+  cw_debug_i32("fog.seg", &seg);
+  cw_debug_i32("vfog.active", &active);
+  cw_debug_i32("vfog.grid_x", &gx);
+  cw_debug_i32("vfog.grid_y", &gy);
+  cw_debug_i32("vfog.grid_z", &gz);
+  cw_debug_i32("vfog.lights", &lights);
+  cw_debug_i32("vfog.shadowed", &shadowed);
+  cw_debug_i32("vfog.volumes", &volumes);
+#ifdef FOG_SHAFTS_PERF
+  cw_debug_f32("perf.grid_ms", &grid_ms);
+  cw_debug_f32("perf.apply_ms", &apply_ms);
+  cw_debug_f32("perf.scene_ms", &scene_ms);
+#endif
+}
+
+static void fixed_update(void *u, double dt) {
+  (void)u;
+  (void)dt;
+  tick++;
+#ifdef FOG_SHAFTS_PERF
+  int s = 0;
+  float a = (float)tick * 0.002f;
+  cw_node3d_look_at(node("Room/Camera"), (t3_vec3){ -4 + 3 * cw_sin(a), 2, -5 }, (t3_vec3){ 0, 1, 0 });
+#else
+  int s = tick <= 40 ? 0 : tick <= 60 ? 1 : 2;
+#endif
+  if (s != seg) {
+    seg = s;
+    apply(s);
+  }
+}
+
+static void render(void *u, double alpha) {
+  (void)u;
+  (void)alpha;
+  cw_volumetric_fog_state st;
+  cw_volumetric_fog_get_state(cw_scene_app_tree(), &st);
+  active = st.active, gx = st.grid[0], gy = st.grid[1], gz = st.grid[2];
+  lights = st.lights, shadowed = st.shadowed_lights, volumes = st.volumes;
+  const cw_pass_stat *ps;
+  int n = cw_pipeline_pass_stats(cw_pipeline_of(cw_scene_app_tree()), &ps);
+  for (int i = 0; i < n; i++) {
+    if (!strcmp(ps[i].name, "volumetric_fog.grid")) grid_ms = ps[i].gpu_ms_avg;
+    if (!strcmp(ps[i].name, "volumetric_fog")) apply_ms = ps[i].gpu_ms_avg;
+    if (!strcmp(ps[i].name, "scene")) scene_ms = ps[i].gpu_ms_avg;
+  }
+}
+
+cw_app_desc cw_main(int argc, char **argv) {
+  (void)argc;
+  (void)argv;
+  static cw_app_desc base = { .title = "fog_shafts", .width = 640, .height = 360, .debug = true, .init = init,
+                              .fixed_update = fixed_update, .render = render };
+  return cw_scene_app("main.cwscene", &base);
+}

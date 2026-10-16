@@ -174,6 +174,10 @@ cw_add_app(street_sun SOURCES night_street/main.c ASSETS ${CMAKE_CURRENT_SOURCE_
 target_compile_definitions(street_sun PRIVATE NS_DAY=1)
 cw_add_app(street_sun_perf SOURCES night_street/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/street_sun/assets)
 target_compile_definitions(street_sun_perf PRIVATE NS_DAY=1 NS_PERF_BUILD=1)
+# volumetric fog: sun shafts through a window, a spot light cone, a FogVolume3D of mist.
+cw_add_app(fog_shafts SOURCES fog_shafts/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fog_shafts/assets)
+cw_add_app(fog_shafts_perf SOURCES fog_shafts/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fog_shafts/assets)
+target_compile_definitions(fog_shafts_perf PRIVATE FOG_SHAFTS_PERF=1)
 # baked lighting: lightmaps with generated uv1 charts, an SH probe grid, a reproducible bake.
 cw_add_app(lightmap_room SOURCES lightmap_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/lightmap_room/assets)
 # reflection probes (cartwheel/gi.h): a room with coloured walls, a polished floor, chrome

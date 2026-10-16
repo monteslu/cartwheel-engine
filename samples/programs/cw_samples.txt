@@ -53,3 +53,5 @@ standard+fog+trans+l0001+xcluster_csm
 standard+fog+instbig+l1001+xcluster
 standard+fog+l1001+xcluster
 standard+fog+trans+l1001+xcluster
+standard+instbig+shadow+l1011
+standard+shadow+l1011

@@ -33,9 +33,11 @@
  * 0.65, 1, 1: grass, crowd, scatter), the bloom chain (3, 5 levels, as
  * authored), GTAO's samples (1 slice of 4 steps, 1 of 4, as authored, 3
  * slices of 8 steps), the LOD error budget (x2, x1.5, x1, x1: coarser
- * meshes sooner) and the clustered lights one cluster keeps (x0.375, x0.5,
+ * meshes sooner), the clustered lights one cluster keeps (x0.375, x0.5,
  * x1, x1 of LightingSettings.max_per_cluster: 24, 32, 64, 64 by default;
- * cw_quality_scale("lights"), cartwheel/lighting.h).
+ * cw_quality_scale("lights"), cartwheel/lighting.h) and the volumetric fog
+ * grid (cartwheel/environment.h: 64 x 32, 96 x 48, 160 x 64, 240 x 96 cells
+ * across x slices).
  *
  * "As authored" is what the scene's PostProcess / lights ask for: High
  * draws exactly what the game would without this module.

@@ -615,6 +615,7 @@ typedef struct light3d {
   int shadow_cascades;      /* directional: 0 = one shadow map (three.c), 1-4 = cascades (r186 CSMShadowNode) */
   float shadow_distance;    /* directional cascades: where the last ends (r186 maxFar; 0 = the camera's far) */
   bool cascade_fade;        /* directional cascades: cross-fade between them (r186 CSMShadowNode.fade) */
+  float fog_energy;         /* strength in volumetric fog (src/render/volumetric_fog.c) */
 } light3d;
 static const cw_node_type *light3d_t;
 
@@ -631,6 +632,7 @@ static void light_common_init(cw_node n, light3d *l, int kind) {
   l->kind = kind;
   l->bake = true;
   l->cascade_fade = true;
+  l->fog_energy = 1;
   l->light = kind == 0 ? t3_directional_light_new(0xffffff, 1)
              : kind == 1 ? t3_point_light_new(0xffffff, 1, 0, 2)
                          : t3_spot_light_new(0xffffff, 1, 0, CW_PI / 4, 0.2f, 2);
@@ -691,6 +693,11 @@ static void light_pre_render(cw_node n, void *data, double alpha) {
       cw__lighting_csm_light(t, l->light, &cfg);
     }
   }
+  if (l->light->base.visible && l->fog_energy > 0) {
+    void cw__vfog_push_light(cw_tree *t, const t3_light *l, int kind, bool shadow, float fog_energy); /* src/render/volumetric_fog.c */
+    cw_tree *t = cw_node_tree(n);
+    if (t) cw__vfog_push_light(t, l->light, l->kind, l->shadow, l->fog_energy);
+  }
 }
 
 static const cw_prop light_props[] = {
@@ -714,6 +721,8 @@ static const cw_prop light_props[] = {
                       "(r186 CSMShadowNode; shadow_size is each cascade's; cartwheel/lighting.h)."),
   CW_PROP_FIELD_RANGE(light3d, shadow_distance, CW_T_FLOAT, 0, 1e6, "Directional cascades: where the last ends (0 = the camera's far)."),
   CW_PROP_FIELD(light3d, cascade_fade, CW_T_BOOL, CW_PROP_DEFAULT, "Directional cascades: cross-fade between neighbours."),
+  CW_PROP_FIELD_RANGE(light3d, fog_energy, CW_T_FLOAT, 0, 100,
+                      "Strength of this light in volumetric fog (HeightFog volumetric, FogVolume3D): its shafts and glow; 0 = none."),
   CW_PROP_END,
 };
 
@@ -1013,6 +1022,8 @@ void cw__register_node3d_types(void) {
   cw__register_sky_types();
   void cw__register_fog_types(void); /* src/render/fog.c */
   cw__register_fog_types();
+  void cw__register_fog_volume_types(void); /* src/render/volumetric_fog.c */
+  cw__register_fog_volume_types();
   void cw__register_lightmap_types(void); /* src/render/lightmap.c */
   cw__register_lightmap_types();
   void cw__register_lighting_types(void); /* src/render/lighting.c */

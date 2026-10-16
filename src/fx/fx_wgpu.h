@@ -43,6 +43,9 @@ WGPUTextureView cw__wg_view(WGPUTexture t, WGPUTextureViewDimension dim, int bas
 void cw__wg_tex_write(WGPUTexture t, int mip, int x, int y, int layer, int w, int h, int bpp, const void *px);
 /* linear: bilinear (+ linear mips when mips); repeat: wrap in u, v and w */
 WGPUSampler cw__wg_sampler(bool linear, bool repeat, bool mips);
+/* a comparison sampler (LessEqual, clamp to edge; linear: 2x2 filtered
+ * compares, hardware PCF) for depth textures */
+WGPUSampler cw__wg_sampler_compare(bool linear);
 
 /* bind group layout slots (binding = index) */
 enum {
@@ -54,12 +57,16 @@ enum {
   CW_WB_TEX_UNFILT,   /* unfilterable float texture (RGBA32F / R32F, textureLoad) */
   CW_WB_SAMPLER,      /* filtering sampler */
   CW_WB_SAMPLER_NF,   /* non-filtering sampler */
+  CW_WB_STORAGE_TEX,  /* write-only storage texture of slot.format and slot.dim (compute only) */
+  CW_WB_TEX_DEPTH,    /* depth texture (texture_depth_2d: comparison sampling) */
+  CW_WB_SAMPLER_CMP,  /* comparison sampler (sampler_comparison) */
 };
 typedef struct cw__wg_slot {
   int type;
   WGPUShaderStage vis;
   WGPUTextureViewDimension dim; /* textures: Undefined = 2D */
   uint64_t min_size;            /* buffers: minBindingSize (0 = any) */
+  WGPUTextureFormat format;     /* CW_WB_STORAGE_TEX: the texel format (rgba16float, ...) */
 } cw__wg_slot;
 WGPUBindGroupLayout cw__wg_layout(const cw__wg_slot *s, int n);
 WGPUPipelineLayout cw__wg_pipeline_layout(const WGPUBindGroupLayout *l, int n);

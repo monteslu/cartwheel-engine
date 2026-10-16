@@ -2293,6 +2293,75 @@
     "note": "street_sun from above on GL and WebGPU: four cascades against three.c single shadow map covering the same ground agree (at most 0.5% of pixels off by more than 16 levels); control: no shadows must differ"
   },
   {
+    "name": "fog-volumetric",
+    "app": "fog_shafts",
+    "frames": 40,
+    "maxGt16": 0.003,
+    "fields": [
+      "fog.seg",
+      "vfog.active",
+      "vfog.grid_x",
+      "vfog.grid_y",
+      "vfog.grid_z",
+      "vfog.lights",
+      "vfog.shadowed",
+      "vfog.volumes"
+    ],
+    "controlFrames": 60,
+    "expect": {
+      "fog.seg": 0,
+      "vfog.active": 1,
+      "vfog.grid_x": 160,
+      "vfog.grid_y": 90,
+      "vfog.grid_z": 64,
+      "vfog.lights": 2,
+      "vfog.shadowed": 2,
+      "vfog.volumes": 1
+    },
+    "webgpu": {
+      "vsGl": 0.003,
+      "controls": [
+        {
+          "env": {
+            "CW_TEST_SKIP_PASS": "volumetric_fog"
+          }
+        },
+        {
+          "env": {
+            "CW_TEST_BREAK_PROGRAM": "volumetric_fog"
+          }
+        }
+      ]
+    },
+    "note": "volumetric fog (froxels): sun shafts through a cross-barred window with the bars in them, a spot light cone cut by a pillar, a FogVolume3D of noisy mist; the grid built with its own shadow tiles, temporal reprojection. Control: the same fog analytic (no shafts)"
+  },
+  {
+    "name": "fog-volumetric-moving",
+    "app": "fog_shafts",
+    "frames": 80,
+    "maxGt16": 0.003,
+    "fields": [
+      "fog.seg",
+      "vfog.active",
+      "vfog.grid_x",
+      "vfog.grid_y",
+      "vfog.grid_z",
+      "vfog.lights",
+      "vfog.shadowed",
+      "vfog.volumes"
+    ],
+    "controlFrames": 40,
+    "expect": {
+      "fog.seg": 2,
+      "vfog.active": 1,
+      "vfog.shadowed": 2
+    },
+    "webgpu": {
+      "vsGl": 0.003
+    },
+    "note": "volumetric fog after the analytic segment: the spot light swung toward the window, the grid rebuilt from no history. Control: the first segment (the spot pointing down)"
+  },
+  {
     "name": "lightmap-bake",
     "app": "lightmap_room",
     "frames": 30,

@@ -18,12 +18,17 @@ static void cmd_environment(int argc, const char **argv, cw_reply *r) {
                   s.active ? "true" : "false", s.time_of_day, s.sun_direction.x, s.sun_direction.y, s.sun_direction.z,
                   s.sun_elevation, s.sun_color.r, s.sun_color.g, s.sun_color.b, s.sun_energy, s.horizon.r, s.horizon.g,
                   s.horizon.b, s.cube_updates);
-  cw_reply_printf(r, ",\"fog\":%s}", cw_tree_slot(t, "fog") ? "true" : "false");
+  cw_volumetric_fog_state v;
+  cw_volumetric_fog_get_state(t, &v);
+  cw_reply_printf(r, ",\"fog\":%s,\"volumetric\":{\"active\":%s,\"grid\":[%d,%d,%d],\"lights\":%d,\"shadowed\":%d,"
+                  "\"volumes\":%d,\"distance\":%.3f,\"shadow_map\":%d}}",
+                  cw_tree_slot(t, "fog") ? "true" : "false", v.active ? "true" : "false", v.grid[0], v.grid[1], v.grid[2],
+                  v.lights, v.shadowed_lights, v.volumes, v.distance, v.shadow_map);
 }
 
 void cw__environment_debug_init(void) {
   static bool done;
   if (done) return;
   done = true;
-  cw_debug_command("environment", "environment: the sky's sun and updates, fog", cmd_environment);
+  cw_debug_command("environment", "environment: the sky's sun and updates, fog, volumetric fog", cmd_environment);
 }

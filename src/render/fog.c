@@ -9,12 +9,7 @@
 #define S(...) #__VA_ARGS__ "\n"
 #include "pipeline_post_wgsl.h"
 
-typedef struct fog_node {
-  float density, height_falloff, base_height;
-  t3_color color;
-  bool use_sky_color;
-  float sun_scatter, sun_g, max_opacity, start_distance, sky_distance;
-} fog_node;
+typedef cw__height_fog fog_node;
 
 typedef struct fog_rt {
   fog_node p;
@@ -83,7 +78,13 @@ static void fog_rt_free(void *p) { cw_free(p); }
 static bool fog_active(const cw_pass_ctx *ctx, void *user) {
   fog_rt *f = user;
   (void)ctx;
-  return f->present && f->p.density > 0;
+  /* volumetric mode: the froxel pass draws this fog (volumetric_fog.c) */
+  return f->present && f->p.density > 0 && !(f->p.volumetric && cw__vfog_supported());
+}
+
+const cw__height_fog *cw__height_fog_of(cw_tree *t) {
+  fog_rt *f = cw_tree_slot(t, "fog");
+  return f && f->present ? &f->p : NULL;
 }
 
 static unsigned fog_program(void) {
@@ -171,6 +172,11 @@ static void fog_init(cw_node n, void *data) {
   f->sun_g = 0.6f;
   f->max_opacity = 1;
   f->sky_distance = 400;
+  f->volumetric_distance = 64;
+  f->volumetric_detail_spread = 2;
+  f->volumetric_temporal = 0.9f;
+  f->volumetric_ambient = 1;
+  f->volumetric_albedo = (t3_color){ 1, 1, 1 };
 }
 
 static void fog_pre_render(cw_node n, void *data, double alpha) {
@@ -180,6 +186,7 @@ static void fog_pre_render(cw_node n, void *data, double alpha) {
   fog_rt *f = fog_of(t);
   f->p = *(fog_node *)data;
   f->present = true;
+  if (f->p.volumetric) cw__vfog_touch(t);
 }
 
 static void fog_exit(cw_node n, void *data) {
@@ -205,6 +212,15 @@ static const cw_prop fog_props[] = {
   FF(max_opacity, 0, 1, "Fog never hides more than this."),
   FF(start_distance, 0, 1e6, "No fog closer than this to the camera."),
   FF(sky_distance, 0, 1e6, "Distance the sky is fogged as (0 = the sky is never fogged)."),
+  { .name = "volumetric", .type = CW_T_BOOL, .flags = CW_PROP_DEFAULT, .offset = (int)offsetof(fog_node, volumetric),
+    .size = (int)sizeof(bool),
+    .doc = "Volumetric fog: the fog near the camera is lit per cell of a 3D grid, with the lights' shadows (light shafts), "
+           "FogVolume3D nodes and each light's fog_energy; the analytic fog continues beyond volumetric_distance." },
+  FF(volumetric_distance, 1, 10000, "Volumetric: how far the grid reaches from the camera (world units)."),
+  FF(volumetric_detail_spread, 1, 4, "Volumetric: how the grid's slices crowd toward the camera (1 = even, 2 = finer near)."),
+  FF(volumetric_temporal, 0, 0.98, "Volumetric: share of the previous frames kept (hides the sampling noise; 0 = off)."),
+  FF(volumetric_ambient, 0, 100, "Volumetric: scale of the fog colour as light the fog scatters from everywhere."),
+  CW_PROP_FIELD(fog_node, volumetric_albedo, CW_T_COLOR, CW_PROP_DEFAULT, "Volumetric: share of the light the fog scatters (per channel)."),
   CW_PROP_END,
 };
 

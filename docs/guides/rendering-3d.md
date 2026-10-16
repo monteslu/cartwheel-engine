@@ -46,10 +46,10 @@ then commit the manifest and the generated C. Generating captures on three.c's m
 |---|---|
 | `Camera3D` | fov, near, far; the first `current` camera renders |
 | `MeshInstance3D` | a primitive (BOX, SPHERE, PLANE, CYLINDER) scaled to `size`, or a `mesh` resource; material colour, metalness, roughness, emissive; shadows; visibility and baking properties |
-| `DirectionalLight3D`, `OmniLight3D`, `SpotLight3D` | colour, energy, range, decay, cone, shadows |
+| `DirectionalLight3D`, `OmniLight3D`, `SpotLight3D` | colour, energy, range, decay, cone, shadows, strength in volumetric fog |
 | `WorldEnvironment` | background, ambient and hemisphere light, three.c fog |
 | `PostProcess` | the pipeline's mode and post settings |
-| `ProceduralSky`, `HeightFog` | sky and day cycle, height fog |
+| `ProceduralSky`, `HeightFog`, `FogVolume3D` | sky and day cycle, height fog, volumetric fog |
 | `LightmapGI` | baked indirect light |
 | `ReflectionProbe3D`, `LightProbeGrid3D` | reflections of the surroundings, bounce light |
 | `CSGBox3D`, `CSGCylinder3D`, `CSGSphere3D`, `CSGCombiner3D` | block-out shapes baked into one mesh (greyboxing) |
@@ -197,7 +197,7 @@ Light probes, reflection probes and screen-space light are in [Reflections and b
 - **Ambient occlusion**: GTAO as the PostProcess asks for it, or none.
 - **Shadows**: Low (maps of 1024 at most, hard PCF), Medium (1024 at most, soft), High (as the lights ask), Ultra (twice that, up to 4096).
 - **Anti-aliasing**: Off, FXAA, or SMAA (as the PostProcess asks).
-- **Effects detail**: the share of GPU particles drawn (`cw_quality_scale("particles")`; all are still simulated), the density games thin their instancing by (`cw_quality_density()`: grass, crowds, scatter), the bloom chain's length, GTAO's samples and the LOD error budget (Low and Medium pick coarser LODs sooner).
+- **Effects detail**: the share of GPU particles drawn (`cw_quality_scale("particles")`; all are still simulated), the density games thin their instancing by (`cw_quality_density()`: grass, crowds, scatter), the bloom chain's length, GTAO's samples, the LOD error budget (Low and Medium pick coarser LODs sooner) and the volumetric fog grid.
 
 High draws what the scene's PostProcess and lights ask for. Nothing here reaches the simulation.
 
@@ -211,7 +211,7 @@ A deterministic run starts at High whatever the save holds, with Auto off, so ev
 
 ## Sky and fog
 
-[environment.h](header:environment.h) adds three node types:
+[environment.h](header:environment.h) adds these node types (FogVolume3D under "Volumetric fog" below):
 
 - **ProceduralSky** ray-marches single scattering (Rayleigh and Mie) into a cube map on the GPU. The sun's position comes from `time_of_day`, `latitude` and `declination`; `day_speed` runs the day cycle on the fixed tick. It drives a DirectionalLight3D (`sun`): direction, colour (reddened at sunset) and energy (zero below the horizon). The cube is the background and, PMREM-filtered, the image-based light for Standard materials. It is re-rendered only when the sun moves more than `env_update_angle`.
 - **HeightFog** is exponential height fog integrated in closed form along each view ray, in the EFFECTS phase. It can take its colour from the sky's horizon and adds a glow toward the sun.
@@ -221,6 +221,49 @@ The showcase's environment is all scene-file properties:
 @include samples/showcase/assets/main.cwscene#Env..Fog
 
 Samples: `samples/sky_day` (noon, afternoon, sunset, night, then the running cycle, over balls from mirror chrome to rough paint), `samples/fog_valley` (analytic fog with the sun lobe, dense ground fog, fog off). The debug command `environment` reports the sun, sky updates and fog.
+
+### Volumetric fog
+
+Analytic fog is the same colour everywhere at a given depth: it cannot show a beam of light. Set `volumetric = true` on the HeightFog and the fog near the camera is lit for real: the engine divides the view into a 3D grid of cells that follows the camera (more slices close up), works out how much fog each cell holds and how much light reaches it, and adds up what each pixel sees through the cells in front of it. Each light reaches the fog through its own shadows, so sunlight through a window becomes a shaft with the window bars in it, and a spot light draws its cone with the shadows of whatever stands in it.
+
+- Which lights: every light with `fog_energy` above 0 (the default is 1; raise it for a stronger beam, set 0 to keep a light out of the fog), at most 8. The first shadowed directional light and up to three shadowed spot lights get shadow maps of their own, fitted to the part of the scene the grid covers; omni lights light the fog without shadows.
+- Light from everywhere else is the fog's colour (or the sky's horizon with `use_sky_color`) times `volumetric_ambient`. Indoors, set a dark colour so the beams stand out.
+- `volumetric_distance` (64) is how far the grid reaches. Past it the analytic fog carries on, lit to match, so there is no seam. A shorter reach puts the cells closer together: sharper beams.
+- `volumetric_albedo` tints the light the fog scatters; `sun_g` is how strongly it scatters forward (toward the camera when you look at a light). `sun_scatter` applies to the analytic fog only.
+- `volumetric_temporal` (0.9) blends each frame with the previous ones. Each frame samples its cells at slightly different points, so the blend smooths out the steps between cells. A fast-moving light leaves a short trail; 0 turns the blend off.
+
+**FogVolume3D** places fog in one region: a `BOX` or `ELLIPSOID` of `size` (moved, turned and scaled with the node), or `WORLD` for everywhere. It has its own `density`, `albedo` (its colour under white light), `emission` and `emission_energy` (it glows, lighting nothing else), `height_falloff` (thinner higher up), `edge_fade` (soft edges) and `noise`, `noise_scale` and `noise_wind` (wisps that drift). Volumes add to each other and to a volumetric HeightFog. They work without one, but then they only show where a light reaches them or they emit. At most 16 volumes count.
+
+```text
+[node name="Fog" parent="." type="HeightFog"]
+volumetric = true
+density = 0.1
+height_falloff = 0
+use_sky_color = false
+color = color(0.02, 0.025, 0.035, 1)
+volumetric_distance = 30
+
+[node name="Mist" parent="." type="FogVolume3D"]
+shape = ELLIPSOID
+position = vec3(-3, 0.4, -8.5)
+size = vec3(7, 1.6, 3)
+density = 0.5
+noise = 0.7
+noise_wind = vec3(0.4, 0, 0.1)
+```
+
+The cost follows the **Effects detail** setting:
+
+| Effects detail | Low | Medium | High | Ultra |
+|---|---|---|---|---|
+| grid (cells across x slices) | 64 x 32 | 96 x 48 | 160 x 64 | 240 x 96 |
+| shadow map per light | 256, the sun only | 512 | 1024 | 1024 |
+
+The number of cells down the screen follows its shape (90 at High on a 16:9 screen). Volumetric fog needs a perspective camera. `cw_volumetric_fog_get_state` reports what the fog did last frame: the grid, the lights, the shadowed lights and the volumes.
+
+A wall thinner than a cell can let a little of the light behind it into the cell in front of it. Keep sunlit air behind thin walls out of the grid's reach, or make the walls thicker than a cell is deep at that distance.
+
+Sample: `samples/fog_shafts` (a dim room: sunlight through a cross-barred window, a spot light over a pillar, a pool of mist; then the same fog analytic; then the spot light swung).
 
 ## Baked lighting
 

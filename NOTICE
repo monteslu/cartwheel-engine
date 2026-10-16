@@ -64,6 +64,7 @@ src/audio/decode.c), built from scripts/deps.lock
   Copyright (c) Dominic Szablewski
   MIT license (deps/pl_mpeg/pl_mpeg.h)
   https://github.com/phoboslab/pl_mpeg
+
 Zstandard (zstd) decoder and encoder, the copy basis_universal ships in its
 zstd/ directory (built from scripts/deps.lock; KTX2 supercompression and
 packed-resource decompression)
@@ -81,3 +82,12 @@ never linked into a game), built from scripts/deps.lock (v3.5.4)
   Copyright 2021 The Manifold Authors
   Licensed under the Apache License, Version 2.0 (deps/manifold/LICENSE)
   https://github.com/elalish/manifold
+
+Godot Engine volumetric fog (servers/rendering/renderer_rd/shaders/environment/volumetric_fog*.glsl):
+the froxel layout (exponential slice spread, inject, front-to-back integration,
+temporal reprojection) followed in src/render/volumetric_fog.c; no code copied.
+  Copyright (c) 2014-present Godot Engine contributors; (c) 2007-2014 Juan Linietsky, Ariel Manzur
+  MIT license
+  https://github.com/godotengine/godot
+  The method is from B. Wronski, "Volumetric fog" (SIGGRAPH 2014) and
+  S. Hillaire, "Physically based and unified volumetric rendering in Frostbite" (SIGGRAPH 2015).

@@ -106,6 +106,17 @@ WGPUSampler cw__wg_sampler(bool linear, bool repeat, bool mips) {
   return cache[k] = wgpuDeviceCreateSampler(cw__wgpu_device(), &d);
 }
 
+WGPUSampler cw__wg_sampler_compare(bool linear) {
+  static WGPUSampler cache[2];
+  if (cache[linear]) return cache[linear];
+  WGPUFilterMode f = linear ? WGPUFilterMode_Linear : WGPUFilterMode_Nearest;
+  WGPUSamplerDescriptor d = { .addressModeU = WGPUAddressMode_ClampToEdge, .addressModeV = WGPUAddressMode_ClampToEdge,
+                              .addressModeW = WGPUAddressMode_ClampToEdge, .magFilter = f, .minFilter = f,
+                              .mipmapFilter = WGPUMipmapFilterMode_Nearest, .lodMinClamp = 0, .lodMaxClamp = 0,
+                              .compare = WGPUCompareFunction_LessEqual, .maxAnisotropy = 1 };
+  return cache[linear] = wgpuDeviceCreateSampler(cw__wgpu_device(), &d);
+}
+
 WGPUBindGroupLayout cw__wg_layout(const cw__wg_slot *s, int n) {
   WGPUBindGroupLayoutEntry e[16];
   memset(e, 0, sizeof e);
@@ -137,6 +148,14 @@ WGPUBindGroupLayout cw__wg_layout(const cw__wg_slot *s, int n) {
       e[i].sampler = (WGPUSamplerBindingLayout){ .type = s[i].type == CW_WB_SAMPLER ? WGPUSamplerBindingType_Filtering
                                                                                      : WGPUSamplerBindingType_NonFiltering };
       break;
+    case CW_WB_STORAGE_TEX:
+      e[i].storageTexture = (WGPUStorageTextureBindingLayout){ .access = WGPUStorageTextureAccess_WriteOnly,
+                                                               .format = s[i].format, .viewDimension = dim };
+      break;
+    case CW_WB_TEX_DEPTH:
+      e[i].texture = (WGPUTextureBindingLayout){ .sampleType = WGPUTextureSampleType_Depth, .viewDimension = dim };
+      break;
+    case CW_WB_SAMPLER_CMP: e[i].sampler = (WGPUSamplerBindingLayout){ .type = WGPUSamplerBindingType_Comparison }; break;
     default: break;
     }
   }
