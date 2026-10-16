@@ -5785,7 +5785,7 @@
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "CONVEX / TRIMESH: path to a MeshInstance3D (relative to this node)."
+     "doc": "CONVEX / TRIMESH: path to a MeshInstance3D or a baked CSG root (relative to this node)."
     },
     {
      "name": "disabled",
@@ -10112,6 +10112,224 @@
      "stored": false,
      "readonly": true,
      "doc": "The bake's sweeps are done."
+    }
+   ]
+  },
+  {
+   "name": "CSGShape3D",
+   "parent": "Node3D",
+   "doc": "Base of the CSG block-out shapes: combines with its CSG parent by `operation`; the topmost one is the root and draws the baked result (cartwheel/csg.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "operation",
+     "type": "enum",
+     "default": "UNION",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "UNION",
+      "INTERSECTION",
+      "SUBTRACTION"
+     ],
+     "doc": "How this shape combines with what its CSG parent built so far (ignored on the root)."
+    },
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(0.8, 0.8, 0.8, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Surface colour (linear); faces this shape cuts take it."
+    },
+    {
+     "name": "bake_file",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Root: the baked mesh asset cwcsg writes (.cwcsg); empty or missing = the preview."
+    },
+    {
+     "name": "roughness",
+     "type": "float",
+     "default": "0.9",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Root: PBR roughness of the whole result."
+    },
+    {
+     "name": "metalness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Root: PBR metalness of the whole result."
+    },
+    {
+     "name": "cast_shadow",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Root: casts shadows."
+    },
+    {
+     "name": "receive_shadow",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Root: receives shadows."
+    },
+    {
+     "name": "ghosts",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Root, preview: draw subtracted (red) and intersected (blue) shapes see-through."
+    },
+    {
+     "name": "baked",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Root: drawing the bake file."
+    },
+    {
+     "name": "stale",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Root: the shapes changed since the bake file was baked."
+    },
+    {
+     "name": "triangles",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Root: triangles in the bake."
+    },
+    {
+     "name": "file_hash",
+     "type": "string",
+     "default": "\"\"",
+     "stored": false,
+     "readonly": true,
+     "doc": "Root: FNV-1a 64 of the bake file's bytes (hex)."
+    },
+    {
+     "name": "mesh_hash",
+     "type": "string",
+     "default": "\"\"",
+     "stored": false,
+     "readonly": true,
+     "doc": "Root: FNV-1a 64 of the loaded geometry's attributes and indices (hex)."
+    }
+   ]
+  },
+  {
+   "name": "CSGCombiner3D",
+   "parent": "CSGShape3D",
+   "doc": "A CSG node with no shape of its own: groups CSG children (cartwheel/csg.h).",
+   "signals": [],
+   "properties": []
+  },
+  {
+   "name": "CSGBox3D",
+   "parent": "CSGShape3D",
+   "doc": "A CSG box (cartwheel/csg.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "size",
+     "type": "vec3",
+     "default": "vec3(1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Extents along x, y and z, centred on the node."
+    }
+   ]
+  },
+  {
+   "name": "CSGCylinder3D",
+   "parent": "CSGShape3D",
+   "doc": "A CSG cylinder or cone along Y (cartwheel/csg.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0.0001,
+     "max": 1000000,
+     "doc": "Radius (at the bottom for a cone)."
+    },
+    {
+     "name": "height",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0.0001,
+     "max": 1000000,
+     "doc": "Height along Y, centred on the node."
+    },
+    {
+     "name": "sides",
+     "type": "int",
+     "default": "16",
+     "stored": true,
+     "readonly": false,
+     "min": 3,
+     "max": 256,
+     "doc": "Facets around."
+    },
+    {
+     "name": "cone",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "A cone: the top is a point."
+    }
+   ]
+  },
+  {
+   "name": "CSGSphere3D",
+   "parent": "CSGShape3D",
+   "doc": "A CSG sphere (cartwheel/csg.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0.0001,
+     "max": 1000000,
+     "doc": "Radius."
+    },
+    {
+     "name": "segments",
+     "type": "int",
+     "default": "16",
+     "stored": true,
+     "readonly": false,
+     "min": 4,
+     "max": 256,
+     "doc": "Facets around the equator (the bake rounds up to a multiple of 4)."
     }
    ]
   },
