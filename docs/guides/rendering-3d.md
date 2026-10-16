@@ -104,9 +104,37 @@ Two limits stated in the header: TAA reprojects camera motion only (moving objec
 
 ## Lights and shadows
 
-Lights are three.c's: three.js r186's directional, omni (point), spot, ambient and hemisphere lights, with its shadow maps for every light that casts them (`shadow`, `shadow_size`, biases; a mesh needs `cast_shadow` and `receive_shadow`).
+Lights are three.js r186 lights: directional, omni (point), spot, ambient and hemisphere, with r186 shadow maps for every light that casts them (`shadow`, `shadow_size`, biases; a mesh needs `cast_shadow` and `receive_shadow`). How many of them a surface sees depends on the tree's lighting mode ([cartwheel/lighting.h](header:lighting.h)).
 
-Clustered lights, cascaded sun shadows and light probes come from three.js r186's `ClusteredLighting`, `CSMShadowNode` and `LightProbeGrid` as three.c adds them.
+### Hundreds of lights: clustered lighting
+
+In the default FORWARD mode every light goes to three.c, which lights a surface with at most 8 lights of each kind (the rest light nothing, and the engine warns once). A street of lamps, a wall of neon signs or a firefight of muzzle flashes needs more. Add a LightingSettings node in CLUSTERED mode:
+
+@include samples/night_street/assets/main.cwscene#Lighting
+
+CLUSTERED is three.js r186's `ClusteredLighting`, on GL and WebGPU alike:
+
+- Every frame the engine bins the shadowless omni and spot lights into a froxel grid over the view: 32 x 32 pixel tiles times 24 depth slices spaced exponentially between the camera's near and far, at most 64 lights a cell (r186's numbers, all settings of the node). The binning runs on the CPU on the job pool, so GLES3, which has no compute shaders, gets the same lists as WebGPU, and the lists are the same at any thread count.
+- Each lit material (Lambert, Phong, Standard, Physical) draws with the "cluster" shading part: a fragment finds its cell and loops that cell's lights with r186's own BRDF and falloff. With few lights, CLUSTERED and FORWARD draw the same image (the `cluster-parity` gate compares them on both backends).
+- Directional, hemisphere and ambient lights, and every light with `shadow` on, stay on three.c's path.
+
+Three things go beyond r186. Spot lights are clustered too (r186 clusters only point lights), with a cone test when binning and r186's spot cone in the loop; `cluster_spot_lights` turns that off. A full cell keeps its nearest lights. And a light with `range` 0, which r186 would put in every cell, gets the range where its intensity over distance squared falls under `light_cutoff` (0.005), and fades out there as a range does: give lights a range for full control.
+
+Costs: binning is O(cells each light reaches); the GPU pays a cell lookup per fragment plus each light of the fragment's cell, so the cost follows how many lights overlap on screen, not how many exist. Each frame uploads 64 bytes a light, 4 bytes a cell and 2 bytes a light reference. A mesh whose material carries the cluster part is drawn on its own (three.c does not auto-instance it), and a material with an extension of its own (terrain) sees only three.c's lights. Effects detail keeps 24 lights a cell on Low and 32 on Medium (64 on High and Ultra). The debug command `lighting` reports the light counts, the grid and the binning time; `cw_lighting_get_stats` gives the same in code.
+
+The grid is public ([cartwheel/froxel.h](header:froxel.h)): `cw_lighting_froxels` returns the tree's, and any pass can build its own and bin its own volumes (fog volumes, decals, probes) into the same cells.
+
+`samples/night_street` is a 240 m street at night: 58 street lamps, 96 neon signs, 48 shop-window spot lights and 12 muzzle flashes (214 clustered lights), with four shadowed floodlights on three.c's path. Measured on an AMD Radeon 890M (integrated) at 1920 x 1080 with `night_street_perf` (GL: the frame with the GPU drained each frame; WebGPU: the passes' GPU time from timestamps), in ms per frame:
+
+| Preset | GL frame | GL GPU | WebGPU GPU | Binning (CPU) |
+|---|---|---|---|---|
+| Low | 6.4 | 3.8 | 2.1 | 0.5 |
+| Medium | 7.4 | 4.7 | 1.9 | 0.6 |
+| High | 10.1 | 7.5 | 3.5 | 0.5 |
+| Ultra | 10.2 | 7.6 | 3.7 | 0.5 |
+| High, FORWARD (8 lights of a kind) | 2.5 | 1.5 | 0.9 | 0 |
+
+The lights are what costs: FORWARD draws the same street with 16 of its 218 lights (8 of a kind). On a Vega 8 (about half the 890M's shader rate) expect roughly twice the GPU column: High stays inside a 60 Hz frame on WebGPU and is tight on GL; Medium and Low leave room.
 
 ## Graphics settings and presets
 

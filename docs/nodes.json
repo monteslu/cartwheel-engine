@@ -1608,6 +1608,94 @@
    ]
   },
   {
+   "name": "LightingSettings",
+   "parent": "Node",
+   "doc": "The tree's lighting mode and clustered-lighting settings (cartwheel/lighting.h); CLUSTERED by default.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "mode",
+     "type": "enum",
+     "default": "CLUSTERED",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "FORWARD",
+      "CLUSTERED"
+     ],
+     "doc": "FORWARD: every light is three.c's (8 of a kind at most). CLUSTERED: shadowless omni and spot lights are binned into clusters, hundreds at a time (r186 ClusteredLighting)."
+    },
+    {
+     "name": "max_lights",
+     "type": "int",
+     "default": "1024",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 65535,
+     "doc": "Clustered lights a frame at most."
+    },
+    {
+     "name": "tile_px",
+     "type": "int",
+     "default": "32",
+     "stored": true,
+     "readonly": false,
+     "min": 4,
+     "max": 1024,
+     "doc": "Cluster tile size in pixels."
+    },
+    {
+     "name": "z_slices",
+     "type": "int",
+     "default": "24",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 256,
+     "doc": "Exponential depth slices."
+    },
+    {
+     "name": "max_per_cluster",
+     "type": "int",
+     "default": "64",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 255,
+     "doc": "Lights one cluster keeps."
+    },
+    {
+     "name": "cluster_spot_lights",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Shadowless spot lights are clustered too (beyond r186, which clusters point lights only)."
+    },
+    {
+     "name": "cluster_far",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Where the last slice ends; 0 = the camera's far."
+    },
+    {
+     "name": "light_cutoff",
+     "type": "float",
+     "default": "0.005",
+     "stored": true,
+     "readonly": false,
+     "min": 0.000001,
+     "max": 10,
+     "doc": "A clustered light with range 0 ends where intensity / distance^2 falls under this."
+    }
+   ]
+  },
+  {
    "name": "Sprite2D",
    "parent": "Node2D",
    "doc": "Draws a texture, a region of it or one cell of an atlas grid.",

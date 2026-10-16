@@ -2082,6 +2082,118 @@
    "macros": []
   },
   {
+   "header": "cartwheel/froxel.h",
+   "summary": "Froxel grid: a camera's view frustum cut into a 3D grid of cells (screen\ntiles x depth slices), and the volumes (light spheres, spot cones) that\ntouch each cell, binned on the CPU on the job pool. Clustered lighting\n(lighting.h) uses one per tree; anything else that wants per-cell lists\n(fog volumes, decals, probes) can make its own grid, or read the lighting\none with cw_lighting_froxels.\n\nGrid (three.js r186 ClusteredLighting's): tiles of tile_px x tile_px\npixels, nx = ceil(w / tile_px), ny = ceil(h / tile_px), and z_slices\nslices spaced exponentially between near and far:\n  slice k covers view depth [near * (far / near)^(k / nz), near * (far / near)^((k + 1) / nz)].\nA view depth d (positive, -view z) is in slice floor(log(d) * zscale + zbias)\n(clamped to [0, nz - 1]). Tile x counts from the left edge of the image, y\nfrom its BOTTOM (NDC y = -1): tile (x, y) of a point at NDC (u, v) is\nfloor((u * 0.5 + 0.5) * nx), floor((v * 0.5 + 0.5) * ny). Cell (x, y, z)\nhas the linear index x + nx * (y + ny * z).\n\nBinning (Filament's Froxelizer, ported to C: Apache-2.0, see NOTICE): each\nvolume's screen rectangle and depth range bound the cells it can touch;\nevery candidate cell's view-space box is tested against the sphere (and a\ncone's angle test, Filament's coneVsSphere on the cell's bounding sphere).\nRows of cells (one y and z) are binned in parallel; each row lists its\nvolumes in the order they were given, so the result does not depend on the\nworker count. A cell keeps at most max_per_froxel volumes (the first in\ninput order); the rest are dropped and counted in the stats.\n\nResults: one record per cell, (first item << 8) | count (count <= 255),\ninto one item list of uint16 volume indices, cells in linear order. The\nGPU copies (cw_froxel_grid_textures) are R32UI DataTextures read with\ntextureLoad: the records one texel a cell (cell f at (f % width, f /\nwidth)), the items two to a texel (item k in texel k >> 1, the low 16 bits\nwhen k is even). src/render/extensions/cluster_part.mjs (froxelRecord) is\nthe TSL that finds a fragment's record.\n\nCost: O(cells a volume's bounds cover) box tests per volume, spread over\nthe pool once a frame has more than a few thousand tests; memory: 4 bytes\na cell, 2 bytes an item, plus max_per_froxel x 2 bytes a cell of scratch.\nRender-only: nothing here may feed the simulation.",
+   "functions": [
+    {
+     "name": "cw_froxel_grid_new",
+     "signature": "cw_froxel_grid *cw_froxel_grid_new(void)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw_froxel_grid_free",
+     "signature": "void cw_froxel_grid_free(cw_froxel_grid *g)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw_froxel_grid_setup",
+     "signature": "void cw_froxel_grid_setup(cw_froxel_grid *g, const cw_froxel_config *c, int w, int h, const float proj[16], float near, float far)",
+     "doc": "Fix the grid for a view of w x h pixels: proj is the camera's projection\n(16 floats column-major, three.js layout; perspective or orthographic),\nnear < far the depth range the slices cover (a camera's near and far).\nRebuilds the cells' boxes when anything changed (O(cells)).",
+     "inline": false
+    },
+    {
+     "name": "cw_froxel_grid_bin",
+     "signature": "void cw_froxel_grid_bin(cw_froxel_grid *g, const cw_froxel_volume *v, int n)",
+     "doc": "Bin n volumes (n <= 65535; more are dropped). Replaces the last result.",
+     "inline": false
+    },
+    {
+     "name": "cw_froxel_grid_dims",
+     "signature": "void cw_froxel_grid_dims(const cw_froxel_grid *g, int *nx, int *ny, int *nz, float *zscale, float *zbias)",
+     "doc": "the grid: cells per axis and the slice mapping (slice = floor(log(depth) * zscale + zbias))",
+     "inline": false
+    },
+    {
+     "name": "cw_froxel_slice_depth",
+     "signature": "float cw_froxel_slice_depth(const cw_froxel_grid *g, int k)",
+     "doc": "view depth where slice k starts (k = nz: where the last ends)",
+     "inline": false
+    },
+    {
+     "name": "cw_froxel_cell_of",
+     "signature": "int cw_froxel_cell_of(const cw_froxel_grid *g, float x, float y, float z)",
+     "doc": "the cell holding a view-space point, -1 outside the grid",
+     "inline": false
+    },
+    {
+     "name": "cw_froxel_cell_box",
+     "signature": "void cw_froxel_cell_box(const cw_froxel_grid *g, int cell, float mn[3], float mx[3])",
+     "doc": "a cell's view-space bounding box",
+     "inline": false
+    },
+    {
+     "name": "cw_froxel_records",
+     "signature": "const uint32_t *cw_froxel_records(const cw_froxel_grid *g, int *cells)",
+     "doc": "the last bin: per-cell records ((first << 8) | count, nx * ny * nz of them) and the item list",
+     "inline": false
+    },
+    {
+     "name": "cw_froxel_items",
+     "signature": "const uint16_t *cw_froxel_items(const cw_froxel_grid *g, int *count)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw_froxel_grid_stats",
+     "signature": "void cw_froxel_grid_stats(const cw_froxel_grid *g, cw_froxel_stats *out)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw_froxel_grid_hash",
+     "signature": "uint64_t cw_froxel_grid_hash(const cw_froxel_grid *g)",
+     "doc": "FNV-1a over the records and items (tests: the same everywhere at any worker count)",
+     "inline": false
+    },
+    {
+     "name": "cw_froxel_grid_textures",
+     "signature": "void cw_froxel_grid_textures(cw_froxel_grid *g, struct t3_texture **records, int *records_width, struct t3_texture **items, int *items_width)",
+     "doc": "",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_froxel_grid",
+     "doc": "",
+     "decl": "typedef struct cw_froxel_grid cw_froxel_grid;"
+    },
+    {
+     "name": "cw_froxel_config",
+     "doc": "",
+     "decl": "typedef struct cw_froxel_config {\n  int tile_px;         /* 32 (r186) */\n  int z_slices;        /* 24 (r186); at most 256 */\n  int max_per_froxel;  /* 64 (r186); at most 255 */\n} cw_froxel_config;"
+    },
+    {
+     "name": "cw_froxel_volume",
+     "doc": "A volume in the camera's view space (right-handed, the camera looks down\n-Z): a sphere, or a spot light's cone (apex at the centre, along dir,\ncos_angle / sin_angle of the half angle, as long as radius).",
+     "decl": "typedef struct cw_froxel_volume {\n  float x, y, z, radius;\n  float dir[3];        /* unit; ignored for a sphere */\n  float cos_angle;     /* <= -1: a sphere */\n  float sin_angle;\n} cw_froxel_volume;"
+    },
+    {
+     "name": "cw_froxel_stats",
+     "doc": "",
+     "decl": "typedef struct cw_froxel_stats {\n  int nx, ny, nz;\n  int volumes;         /* binned last time */\n  int references;      /* items in all cells */\n  int max_in_froxel;\n  int overflowed;      /* cells that hit max_per_froxel */\n  int dropped;         /* references they dropped */\n  float bin_ms;        /* CPU time of the last bin (report only) */\n} cw_froxel_stats;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_FROXEL_CONFIG_DEFAULT",
+     "doc": ""
+    }
+   ]
+  },
+  {
    "header": "cartwheel/gl.h",
    "summary": "The GL API cartwheel renders with: OpenGL ES 3.0 with WebGL2 semantics, the\nsingle feature level on every target. Native links libGLESv2 (Mesa, or\nANGLE on Windows/macOS/iOS); carts import the same entry points from the\nwasmcart \"gl\" module.",
    "functions": [
@@ -3305,6 +3417,48 @@
      "name": "cw_l10n_stats",
      "doc": "── stats and debugging ─────────────────────────────────────────────",
      "decl": "typedef struct cw_l10n_stats {\n  uint32_t catalogs, keys; /* loaded */\n  uint32_t lookups;        /* cw_tr* calls (all time) */\n  uint32_t missing;        /* distinct missing keys (all time) */\n  uint32_t fallback_hits;  /* lookups answered by a catalog after the first in the chain */\n  uint32_t locale_hash;    /* FNV-1a of the active locale tag */\n  uint32_t font_fallbacks; /* fonts in the active global fallback chain */\n} cw_l10n_stats;"
+    }
+   ],
+   "macros": []
+  },
+  {
+   "header": "cartwheel/lighting.h",
+   "summary": "Lighting modes for a tree's 3D scene: hundreds of omni and spot lights\nthrough clustered shading.\n\nFORWARD (the default): every Light3D is three.c's (three.js r186's lights,\nat most 8 of each kind light a surface; more are dropped with a warning).\n\nCLUSTERED: three.js r186's ClusteredLighting, on GLES3 and WebGPU alike.\nOmni lights without a shadow (and spot lights without one, unless\ncluster_spot_lights is off) leave three.c's per-material light list and\nare shaded through clusters instead:\n  - every frame the CPU bins them into a froxel grid over the view\n    (cartwheel/froxel.h: r186's grid, tile_px tiles x z_slices exponential\n    slices, at most max_per_cluster lights a cell), on the job pool;\n    lights are listed nearest first, so a full cell keeps its nearest\n    (effects detail keeps fewer a cell on Low and Medium: cartwheel/quality.h);\n  - each lit material (Lambert, Phong, Standard, Physical) draws with\n    the \"cluster\" shading part (src/render/extensions/cluster_part.mjs):\n    a fragment finds its cell and loops its lights with r186's own BRDF\n    and distance attenuation (r186 ClusteredLightsNode's loop).\nDirectional, hemisphere and ambient lights, and every shadow-casting\nlight, stay on three.c's path. Beyond r186: r186 clusters only point\nlights; spot lights here get SpotLightNode's cone in the same loop, and\nare binned with a cone test (Filament's Froxelizer). A light with range 0\n(r186: no cutoff, so in every cluster) gets the range where its intensity\nfalls under light_cutoff, and its falloff ends there as a range's does.\nA light whose energy or colour is zero costs nothing.\n\nCosts: binning is O(cells each light reaches) on the CPU (about 0.4 ms\nfor 200 street lights at 1080p on the job pool); the GPU pays a cell lookup\nper fragment plus each light of the fragment's cell. Uploads per frame: 64\nbytes a light, 4 bytes a cell, 2 bytes a light reference. Materials with\nan extension of their own (terrain) keep three.c's lights only. A mesh\nwhose material carries a shading part is drawn on its own (three.c does\nnot auto-instance it).\n\nThe froxel grid is binned for the tree's camera once a frame: other\nviews of the same tree in that frame see the first view's clusters.\n\nSettings live per tree: cw_lighting_settings_of, or a LightingSettings\nnode in the scene (its properties are these fields). The debug command\n`lighting` reports the stats.",
+   "functions": [
+    {
+     "name": "cw_lighting_settings_of",
+     "signature": "cw_lighting_settings *cw_lighting_settings_of(cw_tree *t)",
+     "doc": "The tree's settings (created with the defaults above on first call).",
+     "inline": false
+    },
+    {
+     "name": "cw_lighting_get_stats",
+     "signature": "void cw_lighting_get_stats(cw_tree *t, cw_lighting_stats *out)",
+     "doc": "Stats of the last frame the tree's pipeline rendered (zeros before).",
+     "inline": false
+    },
+    {
+     "name": "cw_lighting_froxels",
+     "signature": "cw_froxel_grid *cw_lighting_froxels(cw_tree *t)",
+     "doc": "The froxel grid the tree's clustered lights were binned into this frame\n(NULL in FORWARD mode or before the first frame): its dimensions and slice\nmapping for other passes that want the same cells (froxel.h).",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_lighting_mode",
+     "doc": "",
+     "decl": "typedef enum { CW_LIGHTING_FORWARD, CW_LIGHTING_CLUSTERED } cw_lighting_mode;"
+    },
+    {
+     "name": "cw_lighting_settings",
+     "doc": "",
+     "decl": "typedef struct cw_lighting_settings {\n  cw_lighting_mode mode;     /* FORWARD */\n  int max_lights;            /* 1024 (r186): clustered lights a frame; more are dropped (warned once) */\n  int tile_px;               /* 32 (r186) */\n  int z_slices;              /* 24 (r186) */\n  int max_per_cluster;       /* 64 (r186), at most 255 */\n  bool cluster_spot_lights;  /* true: shadowless spot lights are clustered too (beyond r186) */\n  float cluster_far;         /* where the last slice ends; 0 = the camera's far */\n  float light_cutoff;        /* 0.005: the intensity / distance^2 where a range-0 light ends */\n} cw_lighting_settings;"
+    },
+    {
+     "name": "cw_lighting_stats",
+     "doc": "",
+     "decl": "typedef struct cw_lighting_stats {\n  int clustered;             /* omni + spot lights shaded through clusters this frame */\n  int clustered_spots;       /* of which spot lights */\n  int forward;               /* omni / spot lights CLUSTERED mode left on three.c's path (shadowed ones) */\n  int dropped;               /* clustered lights over max_lights */\n  int materials;             /* materials drawing with the cluster part */\n  float cpu_ms;              /* CPU time of the frame's lighting pass: gathering, binning, uploads (report only) */\n  cw_froxel_stats grid;      /* cells, references, overflow, bin time */\n} cw_lighting_stats;"
     }
    ],
    "macros": []
@@ -7035,7 +7189,7 @@
   },
   {
    "header": "cartwheel/quality.h",
-   "summary": "cartwheel/quality.h: graphics settings, the presets that set them, and\nthe automatic choice.\n\nEach setting is something the player can pick on its own; a preset picks\nthem all:\n\n                    Low       Medium    High (default)  Ultra\n  resolution        67%       75%       100%            100%\n  ambient occl.     off       on        on              on\n  shadows           Low       Medium    High            Ultra\n  anti-aliasing     FXAA      FXAA      SMAA            SMAA\n  effects detail    Low       Medium    High            Ultra\n\nResolution: the 3D scene (and its post) renders at that share of the\noutput's size and is scaled up with a filter (Catmull-Rom); the 2D window\npasses (HUD, menus, text) draw at the output's full size over it. It is the\nbiggest lever: GPU time of the scene and its post goes with its pixel\ncount. It applies on top of cw_app_desc.render_scale (the output size);\nan app with pixel_scale draws at its own size and ignores it.\n\nAmbient occlusion: GTAO as the scene's PostProcess asks for it (On) or\nnone (Off); its sample count follows effects detail.\n\nShadows: Low (maps of 1024 at most, hard PCF), Medium (1024 at most,\nsoft), High (as the lights ask, soft), Ultra (twice that, up to 4096,\nsoft).\n\nAnti-aliasing: Off, FXAA, or SMAA (as the PostProcess asks: a scene that\nasks for FXAA or none keeps it).\n\nEffects detail (Low, Medium, High, Ultra): the share of GPU particles\ndrawn (0.4, 0.7, 1, 1), the density games thin their instancing by (0.35,\n0.65, 1, 1: grass, crowd, scatter), the bloom chain (3, 5 levels, as\nauthored), GTAO's samples (1 slice of 4 steps, 1 of 4, as authored, 3\nslices of 8 steps) and the LOD error budget (x2, x1.5, x1, x1: coarser\nmeshes sooner).\n\n\"As authored\" is what the scene's PostProcess / lights ask for: High\ndraws exactly what the game would without this module.\n\nGame settings: a game adds its own render-only levers (cw_quality_lever_add:\na cheaper material at distance, say) with the value each preset picks;\nthey show in the graphics menu after the engine's, and are saved with them.\n\nDensity: games read cw_quality_scale(\"grass\"), (\"crowd\"), (\"scatter\") or\nthe shorthand cw_quality_density() and thin their instancing; set a change\ncallback to re-thin when a setting changes. Particles: the engine draws\ncw_quality_scale(\"particles\") of every GPU particle system's particles\n(they are all still simulated, so counts and seeds agree).\n\nThe player picks a preset, Auto, or each setting (the graphics menu,\ncartwheel/quality_menu.h, or the game shell's settings); changing one\nsetting shows the preset as \"Custom\". Persist the choice in the game's\nsave data (cw_quality_saved / cw_quality_restore below).\n\nAuto: the engine picks, and holds the frame's cost under a budget. While\nthe game says it is in play (cw_quality_auto_measure(true) every frame) it\naverages the cost: the GPU time of the frame's passes where the host\ntimes them cheaply (native WebGPU's timestamps), else the frame-to-frame\ntime (GL, a cart: a frame the GPU cannot finish in time arrives late). After a couple of\nseconds over budget it steps down one level of its ladder:\n\n  High 100%, High 85%, Medium 75%, Medium 67%, Low 67%, Low 60%, Low 50%\n\n(resolution first: it costs the picture least for what it saves). Where\nit measures GPU time it also steps back up when the cost has stayed well\nunder budget, never into a level that was over it in this run. A game\nmakes Auto the starting choice with cw_quality_auto(true, budget); the\nplayer can always pick it. The level it reached is saved, so the next run\nstarts there.\n\nDeterminism: a deterministic run (a test) starts at High whatever the\nsave holds, with Auto off, so every host draws the same frame; a choice\nmade in it (from the menus, by input every host replays alike) applies.\nNothing here reaches the simulation.",
+   "summary": "cartwheel/quality.h: graphics settings, the presets that set them, and\nthe automatic choice.\n\nEach setting is something the player can pick on its own; a preset picks\nthem all:\n\n                    Low       Medium    High (default)  Ultra\n  resolution        67%       75%       100%            100%\n  ambient occl.     off       on        on              on\n  shadows           Low       Medium    High            Ultra\n  anti-aliasing     FXAA      FXAA      SMAA            SMAA\n  effects detail    Low       Medium    High            Ultra\n\nResolution: the 3D scene (and its post) renders at that share of the\noutput's size and is scaled up with a filter (Catmull-Rom); the 2D window\npasses (HUD, menus, text) draw at the output's full size over it. It is the\nbiggest lever: GPU time of the scene and its post goes with its pixel\ncount. It applies on top of cw_app_desc.render_scale (the output size);\nan app with pixel_scale draws at its own size and ignores it.\n\nAmbient occlusion: GTAO as the scene's PostProcess asks for it (On) or\nnone (Off); its sample count follows effects detail.\n\nShadows: Low (maps of 1024 at most, hard PCF), Medium (1024 at most,\nsoft), High (as the lights ask, soft), Ultra (twice that, up to 4096,\nsoft).\n\nAnti-aliasing: Off, FXAA, or SMAA (as the PostProcess asks: a scene that\nasks for FXAA or none keeps it).\n\nEffects detail (Low, Medium, High, Ultra): the share of GPU particles\ndrawn (0.4, 0.7, 1, 1), the density games thin their instancing by (0.35,\n0.65, 1, 1: grass, crowd, scatter), the bloom chain (3, 5 levels, as\nauthored), GTAO's samples (1 slice of 4 steps, 1 of 4, as authored, 3\nslices of 8 steps), the LOD error budget (x2, x1.5, x1, x1: coarser\nmeshes sooner) and the clustered lights one cluster keeps (x0.375, x0.5,\nx1, x1 of LightingSettings.max_per_cluster: 24, 32, 64, 64 by default;\ncw_quality_scale(\"lights\"), cartwheel/lighting.h).\n\n\"As authored\" is what the scene's PostProcess / lights ask for: High\ndraws exactly what the game would without this module.\n\nGame settings: a game adds its own render-only levers (cw_quality_lever_add:\na cheaper material at distance, say) with the value each preset picks;\nthey show in the graphics menu after the engine's, and are saved with them.\n\nDensity: games read cw_quality_scale(\"grass\"), (\"crowd\"), (\"scatter\") or\nthe shorthand cw_quality_density() and thin their instancing; set a change\ncallback to re-thin when a setting changes. Particles: the engine draws\ncw_quality_scale(\"particles\") of every GPU particle system's particles\n(they are all still simulated, so counts and seeds agree).\n\nThe player picks a preset, Auto, or each setting (the graphics menu,\ncartwheel/quality_menu.h, or the game shell's settings); changing one\nsetting shows the preset as \"Custom\". Persist the choice in the game's\nsave data (cw_quality_saved / cw_quality_restore below).\n\nAuto: the engine picks, and holds the frame's cost under a budget. While\nthe game says it is in play (cw_quality_auto_measure(true) every frame) it\naverages the cost: the GPU time of the frame's passes where the host\ntimes them cheaply (native WebGPU's timestamps), else the frame-to-frame\ntime (GL, a cart: a frame the GPU cannot finish in time arrives late). After a couple of\nseconds over budget it steps down one level of its ladder:\n\n  High 100%, High 85%, Medium 75%, Medium 67%, Low 67%, Low 60%, Low 50%\n\n(resolution first: it costs the picture least for what it saves). Where\nit measures GPU time it also steps back up when the cost has stayed well\nunder budget, never into a level that was over it in this run. A game\nmakes Auto the starting choice with cw_quality_auto(true, budget); the\nplayer can always pick it. The level it reached is saved, so the next run\nstarts there.\n\nDeterminism: a deterministic run (a test) starts at High whatever the\nsave holds, with Auto off, so every host draws the same frame; a choice\nmade in it (from the menus, by input every host replays alike) applies.\nNothing here reaches the simulation.",
    "functions": [
     {
      "name": "cw_quality_get",
@@ -8166,7 +8320,7 @@
   },
   {
    "header": "cartwheel/render3d.h",
-   "summary": "3D rendering for the scene tree: each tree owns a three.c scene and\nrenderer; Node3D objects attach under it, and the 3D render node types\n(Camera3D, MeshInstance3D, lights, WorldEnvironment) configure it.\n\nNode types registered here:\n  Camera3D          fov, near, far, current (the first current camera renders)\nEvery node type's properties (type, default, doc) are in docs/nodes.json and\nanswer to the debug channel: `types`, `props <path>`.\n\nConventions: Y is up, -Z is forward. Cameras look down their -Z. Lights\n(directional, spot) shine down their -Z, NOT at the origin as three.js's\ndefault target does: aim them with rotation or cw_node3d_look_at (which\npoints -Z at the target for every Node3D).\n\n  MeshInstance3D    primitive (NONE, BOX, SPHERE, PLANE, CYLINDER) with size:\n                    BOX x/y/z extents; SPHERE size.x = diameter; CYLINDER\n                    size.x = diameter along Y, size.y = height; PLANE x by z,\n                    facing +Y. Also color,\n                    metalness, roughness, emissive, cast_shadow, receive_shadow,\n                    mesh (a resource uid, when a mesh resource is set it wins)\n  DirectionalLight3D, OmniLight3D, SpotLight3D   color, energy, shadow, range...;\n                    a directional shadow covers shadow_extent metres around\n                    the light (move the light with the player for sharp\n                    shadows over a big level), shadow_bias / shadow_normal_bias\n  WorldEnvironment  background, ambient color/energy, fog (linear colours;\n                    tone curve + exposure live in PostProcess)\n  PostProcess       the render pipeline's settings (pipeline.h): HDR,\n                    MSAA, exposure, tone curve,\n                    bloom, SSAO, TAA, FXAA/SMAA, LUT, lens effects\n  ProceduralSky, HeightFog   sky / day-night, fog (environment.h)\n  LightmapGI        baked lightmaps and SH probes (lightmap.h)\n  MeshInstance3D also carries visibility properties (static, lod_bias,\n                    visibility_range, occlusion_cull, impostor...): see\n                    visibility.h (VisibilityManager, Room3D, Portal3D).\n                    Primitives are unit shapes shared per tree and scaled\n                    to `size`, so same-shaped meshes instance.\nEffects node types live in particles.h (GPUParticles3D, GPUParticles2D,\nParticleAttractor3D, ParticleCollider3D, Trail3D) and decals.h (Decal3D).\n\nWhich lights three.c draws and which the engine does: Light3D.path\n(lighting.h; every light is three.c's while the engine path is rebuilt on\nthree.js r186's add-ons).\n\nDrawing goes through the tree's render pipeline (pipeline.h), as three.js\nr186 draws: linear colours, physical light units, linear HDR.",
+   "summary": "3D rendering for the scene tree: each tree owns a three.c scene and\nrenderer; Node3D objects attach under it, and the 3D render node types\n(Camera3D, MeshInstance3D, lights, WorldEnvironment) configure it.\n\nNode types registered here:\n  Camera3D          fov, near, far, current (the first current camera renders)\nEvery node type's properties (type, default, doc) are in docs/nodes.json and\nanswer to the debug channel: `types`, `props <path>`.\n\nConventions: Y is up, -Z is forward. Cameras look down their -Z. Lights\n(directional, spot) shine down their -Z, NOT at the origin as three.js's\ndefault target does: aim them with rotation or cw_node3d_look_at (which\npoints -Z at the target for every Node3D).\n\n  MeshInstance3D    primitive (NONE, BOX, SPHERE, PLANE, CYLINDER) with size:\n                    BOX x/y/z extents; SPHERE size.x = diameter; CYLINDER\n                    size.x = diameter along Y, size.y = height; PLANE x by z,\n                    facing +Y. Also color,\n                    metalness, roughness, emissive, cast_shadow, receive_shadow,\n                    mesh (a resource uid, when a mesh resource is set it wins)\n  DirectionalLight3D, OmniLight3D, SpotLight3D   color, energy, shadow, range...;\n                    a directional shadow covers shadow_extent metres around\n                    the light (move the light with the player for sharp\n                    shadows over a big level), shadow_bias / shadow_normal_bias\n  WorldEnvironment  background, ambient color/energy, fog (linear colours;\n                    tone curve + exposure live in PostProcess)\n  PostProcess       the render pipeline's settings (pipeline.h): HDR,\n                    MSAA, exposure, tone curve,\n                    bloom, SSAO, TAA, FXAA/SMAA, LUT, lens effects\n  ProceduralSky, HeightFog   sky / day-night, fog (environment.h)\n  LightmapGI        baked lightmaps and SH probes (lightmap.h)\n  MeshInstance3D also carries visibility properties (static, lod_bias,\n                    visibility_range, occlusion_cull, impostor...): see\n                    visibility.h (VisibilityManager, Room3D, Portal3D).\n                    Primitives are unit shapes shared per tree and scaled\n                    to `size`, so same-shaped meshes instance.\nEffects node types live in particles.h (GPUParticles3D, GPUParticles2D,\nParticleAttractor3D, ParticleCollider3D, Trail3D) and decals.h (Decal3D).\n\nWhich lights three.c draws and which the engine clusters: the tree's\nlighting mode (cartwheel/lighting.h, a LightingSettings node). FORWARD,\nthe default, leaves every light to three.c; CLUSTERED shades shadowless\nomni and spot lights through r186 ClusteredLighting's clusters, hundreds\nat a time.\n\nDrawing goes through the tree's render pipeline (pipeline.h), as three.js\nr186 draws: linear colours, physical light units, linear HDR.",
    "functions": [
     {
      "name": "cw_render3d_scene",

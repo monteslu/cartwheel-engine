@@ -2014,6 +2014,69 @@
     "note": "dense ground fog: steep height falloff. Control: the analytic fog"
   },
   {
+    "name": "unit-froxel",
+    "app": "unit_froxel",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "the froxel grid (cartwheel/froxel.h): r186 ClusteredLighting dimensions and exponential slices, 256 lights and cones binned: lists in input order, no point inside a light misses it in its cell, cones reference fewer cells than their spheres, no more references than a brute-force sphere vs cell-box test, overflow keeps the first lights; the binned lists hash into unit.checksum, equal on every host (tests/froxel-determinism.mjs: every pool size)"
+  },
+  {
+    "name": "night-street",
+    "app": "night_street",
+    "frames": 90,
+    "maxGt16": 0.003,
+    "minColors": 2000,
+    "fields": [
+      "ns.tick",
+      "ns.clustered",
+      "ns.spots",
+      "ns.forward",
+      "ns.refs",
+      "ns.max_in_cluster",
+      "ns.overflow",
+      "ns.materials",
+      "ns.grid_hash",
+      "ns.cam_z"
+    ],
+    "expect": {
+      "ns.clustered": 203,
+      "ns.spots": 48,
+      "ns.forward": 4,
+      "ns.refs": 182682,
+      "ns.grid_hash": 1739710209,
+      "ns.overflow": 0
+    },
+    "controlEnv": {
+      "NS_FORWARD": "1"
+    },
+    "webgpu": true,
+    "note": "clustered lighting (cartwheel/lighting.h): a night street with 58 street lamps, 96 neon signs, 48 shop spot lights and flickering muzzle flashes binned into r186 ClusteredLighting clusters on the CPU and shaded with r186 BRDF per cluster, beside 4 shadowed floodlights on three.c path; the binned lists hash equal on every host and backend. Control: FORWARD (three.c lights at most 8 of a kind: nothing clustered, the image differs)"
+  },
+  {
+    "name": "cluster-parity",
+    "script": "tests/cluster-parity.mjs",
+    "note": "night_street with 7 omni and 7 spot lights (NS_PARITY): CLUSTERED and FORWARD (three.c own lights) draw the same image on GL and on WebGPU (no pixel off by more than 2 levels); control: FORWARD with one light fewer must differ"
+  },
+  {
+    "name": "froxel-determinism",
+    "script": "tests/froxel-determinism.mjs",
+    "note": "unit-froxel and night-street on native, Chromium and wcnative at CW_WORKERS 0, 1, 3 and the default: every host and pool size gives the pinned hashes"
+  },
+  {
     "name": "lightmap-bake",
     "app": "lightmap_room",
     "frames": 30,

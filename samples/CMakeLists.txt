@@ -143,6 +143,10 @@ cw_add_app(sky_day SOURCES sky_day/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/sky
 cw_add_app(physical_materials SOURCES physical_materials/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/physical_materials/assets)
 # height fog: analytic, with the sun lobe; dense ground fog.
 cw_add_app(fog_valley SOURCES fog_valley/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fog_valley/assets)
+# clustered lighting: a night street with 214 clustered lights and shadowed floodlights (cartwheel/lighting.h).
+cw_add_app(night_street SOURCES night_street/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/night_street/assets)
+cw_add_app(night_street_perf SOURCES night_street/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/night_street/assets)
+target_compile_definitions(night_street_perf PRIVATE NS_PERF_BUILD=1)
 # baked lighting: lightmaps with generated uv1 charts, an SH probe grid, a reproducible bake.
 cw_add_app(lightmap_room SOURCES lightmap_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/lightmap_room/assets)
 # The showcase: an outdoor valley through a day / night cycle
