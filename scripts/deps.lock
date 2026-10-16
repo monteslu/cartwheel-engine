@@ -1,7 +1,7 @@
 # Pinned dependency sources. fetch-deps.sh reads this file.
 # name        source (git URL, archive URL, or a ../sibling checkout)                 revision / version          sha256 (archives); a git
 # source pins "<commit>" or "<version tag> <full commit hash>"
-three.c       https://github.com/monteslu/three.c.git        v0.186.10                   cce6da31126cc4348ef3e5203057b76f27f5e2b0
+three.c       https://github.com/monteslu/three.c.git        v0.186.11                   8ac04b9f3d25444a68a6d4fdd855a8a3d8050acd
 box2d         https://github.com/erincatto/box2d.git         c05c48738fbe5c27625e36c5f0cfbdaddfc8359a
 box3d         https://github.com/erincatto/box3d.git         29bf523ce7bc4590aba9f17c9db791cdc5c4397e
 sdl2          https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.8.tar.gz   2.32.8   -
