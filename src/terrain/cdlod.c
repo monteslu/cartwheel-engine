@@ -119,7 +119,9 @@ void cw__terrain_ranges(cw_terrain *t) {
   float need = 1.05f * 2.0f * 1.41421356f * leaf / (ms * (ratio - 1));
   float r0 = t->def.lod0_range > need ? t->def.lod0_range : need;
   t->def.lod0_range = r0;
-  for (int l = 0; l < t->lods; l++) t->range[l] = r0 * t->range_scale * powf(ratio, (float)l);
+  /* (repeated products, not powf: the selection is compared across hosts, and libm's powf differs) */
+  float r = r0 * t->range_scale;
+  for (int l = 0; l < t->lods; l++, r *= ratio) t->range[l] = r;
 }
 
 /* ── selection ──────────────────────────────────────────────────────── */

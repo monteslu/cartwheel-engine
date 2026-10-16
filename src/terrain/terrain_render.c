@@ -198,8 +198,11 @@ static t3_texture *layer_array(void) {
 
 /* ── meshes ─────────────────────────────────────────────────────────── */
 
+/* the patch grid: (n + 1)^2 vertices at y = 1 over the unit square, plus a skirt: the border's 4n
+ * vertices again with uv.x + 2, which the vertex stage hangs below the edge, joined to it by a strip
+ * (it fills the rasterizer's pinholes at T-junctions between levels) */
 static t3_geometry *grid_geometry(int n) {
-  int nv = (n + 1) * (n + 1);
+  int nv0 = (n + 1) * (n + 1), nb = 4 * n, nv = nv0 + nb;
   float *pos = cw_alloc(sizeof(float) * 3 * (size_t)nv, CW_MEM_RENDER);
   float *nrm = cw_alloc(sizeof(float) * 3 * (size_t)nv, CW_MEM_RENDER);
   float *uv = cw_alloc(sizeof(float) * 2 * (size_t)nv, CW_MEM_RENDER);
@@ -210,20 +213,41 @@ static t3_geometry *grid_geometry(int n) {
       nrm[3 * v] = 0, nrm[3 * v + 1] = 1, nrm[3 * v + 2] = 0;
       uv[2 * v] = (float)i / (float)n, uv[2 * v + 1] = (float)j / (float)n;
     }
-  uint16_t *idx = cw_alloc(sizeof(uint16_t) * 6 * (size_t)n * n, CW_MEM_RENDER);
+  /* the border, counter-clockwise from above: (0,0) .. (n,0) .. (n,n) .. (0,n) */
+  int border[4 * 64];
+  int b = 0;
+  for (int i = 0; i < n; i++) border[b++] = i;                         /* z = 0, x rising */
+  for (int j = 0; j < n; j++) border[b++] = j * (n + 1) + n;           /* x = n, z rising */
+  for (int i = n; i > 0; i--) border[b++] = n * (n + 1) + i;           /* z = n, x falling */
+  for (int j = n; j > 0; j--) border[b++] = j * (n + 1);               /* x = 0, z falling */
+  for (int k = 0; k < nb; k++) {
+    int s = border[k], v = nv0 + k;
+    memcpy(&pos[3 * v], &pos[3 * s], 3 * sizeof(float));
+    memcpy(&nrm[3 * v], &nrm[3 * s], 3 * sizeof(float));
+    uv[2 * v] = uv[2 * s] + 2, uv[2 * v + 1] = uv[2 * s + 1];
+  }
+  int ni = 6 * n * n + 6 * nb;
+  uint16_t *idx = cw_alloc(sizeof(uint16_t) * (size_t)ni, CW_MEM_RENDER);
   int k = 0;
   for (int j = 0; j < n; j++)
     for (int i = 0; i < n; i++) {
-      uint16_t a = (uint16_t)(j * (n + 1) + i), b = (uint16_t)(a + 1), c = (uint16_t)(a + n + 1), d = (uint16_t)(c + 1);
+      uint16_t a = (uint16_t)(j * (n + 1) + i), bb = (uint16_t)(a + 1), c = (uint16_t)(a + n + 1), d = (uint16_t)(c + 1);
       /* Box3D's split: the diagonal from (x, z + 1) to (x + 1, z); counter-clockwise from above */
-      idx[k++] = a, idx[k++] = c, idx[k++] = b;
-      idx[k++] = c, idx[k++] = d, idx[k++] = b;
+      idx[k++] = a, idx[k++] = c, idx[k++] = bb;
+      idx[k++] = c, idx[k++] = d, idx[k++] = bb;
     }
+  for (int e = 0; e < nb; e++) {
+    /* a quad from border edge (p0, p1) down to its skirt (q0, q1), facing out of the patch */
+    uint16_t p0 = (uint16_t)border[e], p1 = (uint16_t)border[(e + 1) % nb];
+    uint16_t q0 = (uint16_t)(nv0 + e), q1 = (uint16_t)(nv0 + (e + 1) % nb);
+    idx[k++] = p0, idx[k++] = q0, idx[k++] = p1;
+    idx[k++] = p1, idx[k++] = q0, idx[k++] = q1;
+  }
   t3_geometry *g = t3_geometry_new();
   t3_geometry_set_attribute(g, T3_ATTR_POSITION, t3_attribute_new(T3_FLOAT32, pos, nv, 3));
   t3_geometry_set_attribute(g, T3_ATTR_NORMAL, t3_attribute_new(T3_FLOAT32, nrm, nv, 3));
   t3_geometry_set_attribute(g, T3_ATTR_UV, t3_attribute_new(T3_FLOAT32, uv, nv, 2));
-  t3_geometry_set_index(g, t3_attribute_new(T3_UINT16, idx, 6 * n * n, 1));
+  t3_geometry_set_index(g, t3_attribute_new(T3_UINT16, idx, ni, 1));
   cw_free(pos);
   cw_free(nrm);
   cw_free(uv);

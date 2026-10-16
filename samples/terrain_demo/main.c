@@ -392,9 +392,12 @@ static void init(void *u) {
   cw_debug_i32("car.lap", &car_lap);
   if (cracks) {
     cw_node_free(cw_node_get(root, "World/Sky"));
+    /* (no scatter: its silhouettes against the sky are not the terrain's) */
+    cw_node_free(cw_node_get(root, "World/Terrain/Grass"));
+    cw_node_free(cw_node_get(root, "World/Terrain/Rocks"));
+    cw_node_free(cw_node_get(root, "World/Terrain/Trees"));
     cw_node_set(cw_node_get(root, "World/Env"), "background", cw_val_color(1, 0, 1, 1));
     cw_node_set(cw_node_get(root, "World/Env"), "use_background", cw_val_bool(true));
-    cw_node_set(cw_node_get(root, "World/Terrain"), "far_distance", cw_val_float(100000));
   }
   cw_debug_i32("terrain.tick", &tick);
   cw_debug_i32("terrain.patches", &patches);

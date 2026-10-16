@@ -498,6 +498,27 @@
     "note": "cw_vehicle3d: settling on the springs, drive, brake, reverse, steering, the friction circle (slide and grip), handbrake lock and powerslide, a car on a wall along its own down, a car riding on another, wheel transforms, teleport and the ragdoll switch; one step worker and all of them give the same bits"
   },
   {
+    "name": "terrain-drive",
+    "app": "terrain_demo",
+    "frames": 600,
+    "maxGt16": 0.003,
+    "fields": [
+      "car.hash",
+      "car.contacts",
+      "car.lap",
+      "terrain.hash",
+      "terrain.patches",
+      "terrain.far",
+      "terrain.scatter"
+    ],
+    "controlFrames": 599,
+    "expect": {
+      "car.contacts": 4
+    },
+    "webgpu": true,
+    "note": "a cw_vehicle3d car drives a dirt track on a 2 km generated Terrain3D (CDLOD, splat layers, grass, rocks and glTF trees scattered, the sun's shadow following the car): the chassis transform's bits, the patch selection's hash and the scatter count agree on every host. Control: one frame early"
+  },
+  {
     "name": "unit-terrain",
     "app": "unit_terrain",
     "frames": 2,

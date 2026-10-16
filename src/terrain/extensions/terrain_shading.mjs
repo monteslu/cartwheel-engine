@@ -111,7 +111,11 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     const start = prev.add(end.sub(prev).mul(lodp.z));
     const k = clamp(d.sub(start).div(max(end.sub(start), 1e-3)), 0, 1);
     const h = mix(h0, ha.add(hb).mul(0.5), k);
-    return vec3(wx, hgt.x.add(h.mul(hgt.y)), wz);
+    // skirt vertices (the grid's border repeated with uv.x + 2) hang a quarter of a vertex step below
+    // their edge: levels meet exactly, but where a fine edge's midpoint meets a coarse edge (a
+    // T-junction) the rasterizer can leave a pinhole; the skirt behind it fills it
+    const skirt = select(TSL.uv().x.greaterThan(1.5), step.mul(grid.w).mul(0.25), float(0));
+    return vec3(wx, hgt.x.add(h.mul(hgt.y)).sub(skirt), wz);
   })();
   // the material's colour, roughness and metalness scale the terrain's own (white, 1 and 0 by default)
   mat.metalnessNode = materialMetalness;

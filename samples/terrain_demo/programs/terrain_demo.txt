@@ -9,3 +9,8 @@ depth+instbig+xterrain
 depth+instbig+xterrainlow
 standard+senv+l1001
 standard+instbig+senv+l1001
+standard+instbig+shadow+l1001+xterrain
+standard+vcol+instbig+shadow+ds+l1001
+standard+vcol+instbig+shadow+l1001
+standard+instbig+shadow+l1001
+standard+instbig+shadow+l1001+xterrainfar

@@ -20,7 +20,8 @@
  *                    the two heaviest layers; a control PNG gives its words;
  *   scene file       a Terrain3D with a TerrainScatter3D child from .cwscene
  *                    text: imported heights, physics in the tree's world,
- *                    the scatter layer, and the properties saved back.
+ *                    the scatter layer, the properties saved back, and the
+ *                    layer gone with its node.
  * Every result folds into unit.checksum, compared across hosts. */
 #include <math.h>
 #include <string.h>
@@ -118,14 +119,23 @@ static float morph_k(const cw_terrain *t, int lod, int tx, int tz, t3_vec3 cam) 
   return k < 0 ? 0 : k > 1 ? 1 : k;
 }
 
-static void test_cdlod(void) {
-  cw_terrain *t = make(1024, 3);
+/* the crack audit over the selections from four cameras; shrink < 1 scales the ranges past the
+ * crack-free bound (the control: the audit must then find cracks) */
+static void audit(cw_terrain *t, float shrink, int *bad_levels_out, int *bad_fine_out, int *bad_coarse_out,
+                  int *bad_cover_out, int *checked_out) {
   const t3_vec3 cams[] = { { 0, 60, 0 }, { -300, 45, 210 }, { 480, 120, -470 }, { 10, 5, 400 } };
   int bad_levels = 0, bad_fine = 0, bad_coarse = 0, bad_cover = 0, checked = 0;
   uint8_t *cover = cw_alloc((size_t)1024 * 1024, CW_MEM_GAME);
   for (int ci = 0; ci < (int)CW_ARRAY_LEN(cams); ci++) {
     t3_vec3 cam = cams[ci];
     cw_terrain_update(t, cam, NULL);
+    if (shrink < 1) {
+      /* the control: levels reaching less far than the bound, the selection redone */
+      t->range[0] *= shrink;
+      for (int l = 1; l < t->lods; l++) t->range[l] = t->range[l - 1] * t->def.lod_ratio;
+      t->def.lod0_range = t->range[0];
+      cw__terrain_select(t, cam, NULL);
+    }
     cw_terrain_stats st;
     cw_terrain_get_stats(t, &st);
     FOLD(st.selection_hash);
@@ -164,11 +174,28 @@ static void test_cdlod(void) {
       }
   }
   cw_free(cover);
+  *bad_levels_out = bad_levels, *bad_fine_out = bad_fine, *bad_coarse_out = bad_coarse;
+  *bad_cover_out = bad_cover, *checked_out = checked;
+}
+
+static void test_cdlod(void) {
+  cw_terrain *t = make(1024, 3);
+  int bad_levels, bad_fine, bad_coarse, bad_cover, checked;
+  audit(t, 1, &bad_levels, &bad_fine, &bad_coarse, &bad_cover, &checked);
   CHECK_EQ_INT(bad_cover, 0);
   CHECK_EQ_INT(bad_levels, 0);
   CHECK_EQ_INT(bad_fine, 0);
   CHECK_EQ_INT(bad_coarse, 0);
   CHECK(checked > 100);
+  /* the control: ranges a third of the bound must show cracks to the same audit */
+  {
+    cw_terrain *u = make(1024, 3);
+    int cl, cf, cc, cv, ck;
+    audit(u, 0.33f, &cl, &cf, &cc, &cv, &ck);
+    CHECK(cl + cf + cc > 0);
+    CHECK_EQ_INT(cv, 0); /* (still covered once: the cracks are between levels) */
+    cw_terrain_destroy(u);
+  }
   /* culling: the frustum keeps fewer patches */
   t3_camera *c = t3_perspective_camera_new(60, 16.0f / 9, 0.1f, 5000);
   c->base.position = (t3_vec3){ 0, 60, 0 };
@@ -426,6 +453,10 @@ static void test_scene_file(void) {
   CHECK(text && strstr(text, "heightmap = \"heights.r16\"") && strstr(text, "type=\"TerrainScatter3D\"") &&
         strstr(text, "layer1_uv_scale = 0.5"));
   cw_free(text);
+  /* a scatter node that leaves takes its layer with it */
+  cw_node_free(cw_node_get(root, "Ground/Stones"));
+  cw_tree_fixed_update(tree, 1.0 / 60);
+  CHECK(t && t->scatter[0] == NULL);
   cw_tree_free(tree);
 }
 

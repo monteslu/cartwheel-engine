@@ -24,6 +24,8 @@
 
 /* ── TerrainScatter3D ──────────────────────────────────────────────── */
 
+static cw_terrain *terrain_of_data(void *terrain3d_data); /* (Terrain3D's, below) */
+
 typedef struct scatter3d {
   int shape; /* GRASS, ROCK, TREE */
   const char *mesh;
@@ -256,6 +258,14 @@ static void scatter_apply(cw_node n, scatter3d *s, cw_terrain *t) {
       }
 }
 
+/* leaving the tree (or freed): the layer leaves the parent's terrain */
+static void scatter_exit(cw_node n, void *data) {
+  scatter3d *s = data;
+  cw_node parent = cw_node_parent(n);
+  cw_terrain *t = terrain_t ? terrain_of_data(cw_node_data_t(parent, terrain_t)) : NULL;
+  scatter_remove(t, s);
+}
+
 static const cw_prop scatter_props[] = {
   { .name = "shape", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(scatter3d, shape), .size = sizeof(int),
     .enum_names = shape_names, .doc = "Built-in mesh when `mesh` is empty: GRASS (tufts), ROCK, TREE (two LODs each, vertex coloured)." },
@@ -282,7 +292,7 @@ static const cw_prop scatter_props[] = {
 static cw_node_type scatter_type = {
   .name = "TerrainScatter3D", .parent = "Node", .data_size = sizeof(scatter3d), .props = scatter_props,
   .doc = "A scatter layer (grass, rocks, trees) of its parent Terrain3D (terrain.h).", .init = scatter_init,
-  .destroy = scatter_destroy, .prop_changed = scatter_changed,
+  .destroy = scatter_destroy, .exit_tree = scatter_exit, .prop_changed = scatter_changed,
 };
 
 /* ── Terrain3D ─────────────────────────────────────────────────────── */
@@ -525,6 +535,8 @@ static cw_node_type terrain_type = {
   .init = terrain_init, .destroy = terrain_destroy, .enter_tree = terrain_enter, .ready = terrain_ready,
   .exit_tree = terrain_exit, .fixed_update = terrain_fixed, .prop_changed = terrain_changed,
 };
+
+static cw_terrain *terrain_of_data(void *data) { return data ? ((terrain3d *)data)->t : NULL; }
 
 cw_terrain *cw_terrain_of(cw_node n) {
   terrain3d *d = terrain_t ? cw_node_data_t(n, terrain_t) : NULL;
