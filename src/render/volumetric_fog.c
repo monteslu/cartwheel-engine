@@ -624,7 +624,6 @@ static bool gl_resources(vf_gl *g, int w, int h, int d, int atlas, bool *ok) {
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, g->shadow_tex, 0);
     GLenum none = GL_NONE;
     glDrawBuffers(1, &none);
-    glReadBuffer(GL_NONE);
     if (!fbo_ok("shadow")) *ok = false;
   }
   glBindFramebuffer(GL_FRAMEBUFFER, 0);

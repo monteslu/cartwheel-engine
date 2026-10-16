@@ -50,6 +50,13 @@ CW_GL_IMPORT(glClearBufferfv) extern void glClearBufferfv(GLenum buffer, GLint d
 #ifndef GL_INTERLEAVED_ATTRIBS
 #define GL_INTERLEAVED_ATTRIBS 0x8C8C
 #endif
+/* uniform buffers (volumetric fog) */
+#ifndef GL_UNIFORM_BUFFER
+#define GL_UNIFORM_BUFFER 0x8A11
+#endif
+#ifndef GL_INVALID_INDEX
+#define GL_INVALID_INDEX 0xFFFFFFFFu
+#endif
 /* occlusion queries (culling) */
 #ifndef GL_ANY_SAMPLES_PASSED
 #define GL_ANY_SAMPLES_PASSED 0x8C2F

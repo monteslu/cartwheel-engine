@@ -111,6 +111,7 @@ typedef struct cw_volumetric_fog_state {
   float distance;           /* how far the grid reaches (world units) */
   int shadow_map;           /* pixels of a shadow tile (0 = none drawn) */
 } cw_volumetric_fog_state;
+/* The tree's volumetric fog last frame (zeroed when it has none). */
 void cw_volumetric_fog_get_state(cw_tree *t, cw_volumetric_fog_state *out);
 
 /* The single-scattering model on the CPU, for tools and tests: the sky

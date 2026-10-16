@@ -684,6 +684,16 @@
      "stored": true,
      "readonly": false,
      "doc": "Directional cascades: cross-fade between neighbours."
+    },
+    {
+     "name": "fog_energy",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Strength of this light in volumetric fog (HeightFog volumetric, FogVolume3D): its shafts and glow; 0 = none."
     }
    ]
   },
@@ -1576,6 +1586,175 @@
      "min": 0,
      "max": 1000000,
      "doc": "Distance the sky is fogged as (0 = the sky is never fogged)."
+    },
+    {
+     "name": "volumetric",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Volumetric fog: the fog near the camera is lit per cell of a 3D grid, with the lights' shadows (light shafts), FogVolume3D nodes and each light's fog_energy; the analytic fog continues beyond volumetric_distance."
+    },
+    {
+     "name": "volumetric_distance",
+     "type": "float",
+     "default": "64",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 10000,
+     "doc": "Volumetric: how far the grid reaches from the camera (world units)."
+    },
+    {
+     "name": "volumetric_detail_spread",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 4,
+     "doc": "Volumetric: how the grid's slices crowd toward the camera (1 = even, 2 = finer near)."
+    },
+    {
+     "name": "volumetric_temporal",
+     "type": "float",
+     "default": "0.9",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 0.98,
+     "doc": "Volumetric: share of the previous frames kept (hides the sampling noise; 0 = off)."
+    },
+    {
+     "name": "volumetric_ambient",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Volumetric: scale of the fog colour as light the fog scatters from everywhere."
+    },
+    {
+     "name": "volumetric_albedo",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Volumetric: share of the light the fog scatters (per channel)."
+    }
+   ]
+  },
+  {
+   "name": "FogVolume3D",
+   "parent": "Node3D",
+   "doc": "A region of volumetric fog (box, ellipsoid or everywhere), lit by the scene's lights with their shadows.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "shape",
+     "type": "enum",
+     "default": "BOX",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "BOX",
+      "ELLIPSOID",
+      "WORLD"
+     ],
+     "doc": "BOX or ELLIPSOID of `size` (the node's transform moves, turns and scales it), or WORLD: everywhere."
+    },
+    {
+     "name": "size",
+     "type": "vec3",
+     "default": "vec3(2, 2, 2)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Full size of the box or ellipsoid (world units before the node's scale)."
+    },
+    {
+     "name": "density",
+     "type": "float",
+     "default": "0.2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Extinction per world unit inside (how thick the fog is)."
+    },
+    {
+     "name": "albedo",
+     "type": "color",
+     "default": "color(1, 1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Share of the light the fog scatters (its colour under white light)."
+    },
+    {
+     "name": "emission",
+     "type": "color",
+     "default": "color(0, 0, 0, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Light the fog gives off itself (glowing mist; lights nothing else)."
+    },
+    {
+     "name": "emission_energy",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Scale of emission."
+    },
+    {
+     "name": "height_falloff",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "How fast the density falls with height above the volume's lowest point (0 = even)."
+    },
+    {
+     "name": "edge_fade",
+     "type": "float",
+     "default": "0.1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Share of the volume, from its surface inward, over which the density fades in (soft edges)."
+    },
+    {
+     "name": "noise",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "How much value noise breaks the density into wisps (0 = even)."
+    },
+    {
+     "name": "noise_scale",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Noise features per world unit."
+    },
+    {
+     "name": "noise_wind",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The noise drifts this many world units a second."
     }
    ]
   },

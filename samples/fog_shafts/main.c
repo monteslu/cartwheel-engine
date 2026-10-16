@@ -14,7 +14,8 @@
  * fog_shafts_perf (FOG_SHAFTS_PERF): the volumetric segment
  * only, the camera slowly turning; publishes the passes' GPU ms (averaged)
  * as perf.grid_ms, perf.apply_ms, perf.scene_ms (CW_GPU_TIMERS=1; -1 where
- * the host has no timers) for the preset CW_QUALITY picks. */
+ * the host has no timers) for the preset CW_QUALITY picks. fog_shafts_perf_off
+ * (FOG_SHAFTS_OFF too): the same with the fog analytic, the A/B baseline. */
 #include <string.h>
 
 #include "cartwheel/debug.h"
@@ -30,6 +31,9 @@ static float grid_ms = -1, apply_ms = -1, scene_ms = -1;
 static cw_node node(const char *path) { return cw_node_get(cw_tree_root(cw_scene_app_tree()), path); }
 
 static void apply(int s) {
+#ifdef FOG_SHAFTS_OFF
+  s = 1;
+#endif
   cw_node_set(node("Room/Fog"), "volumetric", cw_val_bool(s != 1));
   if (s == 2) cw_node3d_look_at(node("Room/Spot"), (t3_vec3){ -1, 0, -6 }, (t3_vec3){ 0, 0, -1 });
 }
