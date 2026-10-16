@@ -1251,6 +1251,221 @@
    ]
   },
   {
+   "header": "cartwheel/cloth.h",
+   "summary": "cartwheel cloth and ropes: XPBD particles that live next to a Box3D world\n(physics3d.h). Capes, flags, banners, curtains, hanging ropes, chains and\nrope bridges that swing, catch the wind, drape over bodies and pull on\nwhat they hang from.\n\nModel (extended position-based dynamics: Macklin, Mueller, Chentanez 2016,\n\"Small Steps\" 2019; long-range attachments: Kim et al. 2012; the shape of\nthe solver follows Jolt Physics' soft bodies and Ten Minute Physics, both\nMIT):\n  particles    position, previous position, velocity and inverse mass\n               (0 = pinned: moved only by you or by what it is attached to)\n  stretch      a distance constraint per mesh edge (rope segment)\n  bend         a distance constraint across each pair of triangles that\n               share an edge (rope: across every second particle)\n  tethers      long-range attachments: no particle drifts farther from its\n               nearest pinned particle than its rest distance along the\n               mesh (x tether_slack), which is what keeps a long cape or a\n               rope from stretching under its own weight at few iterations\n  skin         optional per-particle max distance from a target you move\n               (a cape stays near the back it is skinned to)\n  wind         per-particle drag and lift against the air's velocity, by\n               the particle's share of the surface\n  collision    against Box3D spheres, capsules, boxes and convex hulls\n               (static, kinematic and dynamic bodies), with friction;\n               optionally against itself (self_collision)\n\nOne cw_cloth_step, after cw_world3d_step each fixed tick: the shapes near\nthe cloth are gathered once (sorted by id), then `substeps` times: predict\n(gravity, wind), solve every constraint once, collide, update velocities.\nBody transforms are blended from their pose before the world step to the\npose after it across the substeps, so a moving body sweeps through the\ncloth instead of jumping.\n\nDeterminism: constraints are coloured once at creation (each takes the\nlowest colour none of its particles has yet, in index order). A colour\nshares no particle, so its constraints are solved in parallel on the job\npool without atomics and the result does not depend on the thread count or\nthe order chunks run in. Only + - * / sqrt and cartwheel/math.h feed the\nstate: the same def and inputs give the same bits natively and in a cart,\nwith any number of workers (cw_cloth_hash).\n\nCoupling with bodies: one-way by default (bodies push the cloth, the cloth\ndoes not push back). A particle attached to a dynamic body\n(cw_cloth_attach_body) always pulls on it: the attachment is solved with\nthe body's effective mass at that point, and the momentum it took is\napplied to the body as one impulse after the step (it acts in the world's\nnext step). two_way also hands collision impulses to dynamic bodies.\n\nRopes are cloths without triangles (cw_rope_create builds the chain);\nevery cw_cloth_* function works on them. Chains of rigid links are plain\nBox3D bodies and joints (cw_chain3d_create).\n\nThreads: main thread, outside a world step, like physics3d.h. The step\nfans out to the job pool itself.\n\nRendering: cw_cloth_geometry_new and cw_cloth_update_geometry (or\ncw_rope_geometry_new for a tube) give a three.c geometry whose positions\nare interpolated by the render alpha and whose normals are rebuilt every\nframe; draw it with any material (double-sided for cloth). The Cloth3D and\nRope3D node types (physics_nodes.h) do all of this.",
+   "functions": [
+    {
+     "name": "cw_cloth_default_def",
+     "signature": "cw_cloth_def cw_cloth_default_def(void)",
+     "doc": "The defaults noted in cw_cloth_def above (no mesh).",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_create",
+     "signature": "cw_cloth cw_cloth_create(cw_world3d w, const cw_cloth_def *def)",
+     "doc": "Creates a cloth beside world w (its shapes collide; its gravity applies).\nNull (logged) on an invalid world or mesh. Cost at creation: O(V + E log E)\n(edges, colouring, tethers by Dijkstra from the pinned vertices). Lives\nuntil destroyed or the world is.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_create_grid",
+     "signature": "cw_cloth cw_cloth_create_grid(cw_world3d w, const cw_cloth_def *def, int nu, int nv, t3_vec3 origin, t3_vec3 u, t3_vec3 v)",
+     "doc": "A rectangular grid of nu x nv vertices (at least 2 x 2) from `origin`\nalong `u` (the full width) and `v` (the full height), its quads split\nalong alternating diagonals; uvs (0,0)..(1,1). def's mesh fields are\nignored; its inv_mass, if given, has nu * nv entries (vertex i + j * nu).",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_destroy",
+     "signature": "void cw_cloth_destroy(cw_cloth c)",
+     "doc": "Frees the cloth (its geometry is yours: free it separately).",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_valid",
+     "signature": "bool cw_cloth_valid(cw_cloth c)",
+     "doc": "False for null, destroyed or stale handles.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_step",
+     "signature": "void cw_cloth_step(cw_cloth c, float dt)",
+     "doc": "One fixed step of dt seconds, after the world's step. Cost:\nsubsteps x (V + constraints) plus the shapes near the cloth; fans out to\nthe job pool for large cloths.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_pin",
+     "signature": "void cw_cloth_pin(cw_cloth c, int vertex, bool pinned, t3_vec3 target)",
+     "doc": "Pins (inverse mass 0) or frees a vertex. A pinned vertex moves to its\ntarget over the next step (blended across the substeps).",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_set_pin_target",
+     "signature": "void cw_cloth_set_pin_target(cw_cloth c, int vertex, t3_vec3 target)",
+     "doc": "Moves a pinned vertex's target (reached at the end of the next step).",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_attach_body",
+     "signature": "void cw_cloth_attach_body(cw_cloth c, int vertex, cw_body3d b, t3_vec3 local)",
+     "doc": "Ties vertex to the body-local point `local` of body b (pinned to it; a\nnull body frees the vertex). A dynamic body feels the pull.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_set_skin_targets",
+     "signature": "void cw_cloth_set_skin_targets(cw_cloth c, const t3_vec3 *targets)",
+     "doc": "The skin targets of every vertex (vertex_count entries, copied), reached\nat the end of the next step; vertices with max_distance >= 0 stay within\nit of their target. Typically the rest mesh moved by a bone each tick.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_teleport",
+     "signature": "void cw_cloth_teleport(cw_cloth c, cw_xform3 from, cw_xform3 to)",
+     "doc": "Moves every particle (positions and previous positions) by the rigid\ntransform `x` applied after `from` is undone: a teleport with no motion.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_set_wind",
+     "signature": "void cw_cloth_set_wind(cw_cloth c, t3_vec3 wind, float drag, float lift, float turbulence)",
+     "doc": "Air velocity (m/s), drag and lift coefficients (per m^2 of cloth at the\ndensity of air: drag 1 and lift 0.3 look like fabric). turbulence (0..1)\nvaries the wind smoothly over the cloth and over time (deterministic).",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_set_gravity_scale",
+     "signature": "void cw_cloth_set_gravity_scale(cw_cloth c, float scale)",
+     "doc": "Gravity scale (1 = the world's).",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_impulse",
+     "signature": "void cw_cloth_impulse(cw_cloth c, t3_vec3 center, float radius, t3_vec3 delta_v)",
+     "doc": "Adds a velocity change (m/s) to every free particle within radius of\ncenter, falling off linearly: a blast, a sword swipe.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_positions",
+     "signature": "const t3_vec3 *cw_cloth_positions(cw_cloth c, int *count)",
+     "doc": "Current particle positions (simulation values, not interpolated); NULL\n(count 0) for an invalid cloth. Valid until the next step.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_velocities",
+     "signature": "const t3_vec3 *cw_cloth_velocities(cw_cloth c, int *count)",
+     "doc": "Current particle velocities, as cw_cloth_positions.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_interpolated",
+     "signature": "void cw_cloth_interpolated(cw_cloth c, float alpha, t3_vec3 *out)",
+     "doc": "Positions blended between the last two steps by alpha (rendering only).",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_vertex_count",
+     "signature": "int cw_cloth_vertex_count(cw_cloth c)",
+     "doc": "vertex_count; 0 for an invalid cloth.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_hash",
+     "signature": "uint32_t cw_cloth_hash(cw_cloth c)",
+     "doc": "A running hash of every step's particle positions and velocities (bits).",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_stats_get",
+     "signature": "cw_cloth_stats cw_cloth_stats_get(cw_cloth c)",
+     "doc": "Counts, stretch and energy now (O(V + E)); all zero for an invalid cloth.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_attachment_force",
+     "signature": "float cw_cloth_attachment_force(cw_cloth c, int vertex)",
+     "doc": "The force (N) with which the cloth pulled the dynamic body attached at\n`vertex` over the last step (the impulse it applied over dt): a rope's\ntension at a crate. 0 when the vertex is not attached to a dynamic body.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_state_size",
+     "signature": "size_t cw_cloth_state_size(cw_cloth c)",
+     "doc": "Bytes cw_cloth_save writes: the particles, targets and running hash.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_save",
+     "signature": "bool cw_cloth_save(cw_cloth c, void *out)",
+     "doc": "Copies the state out (out holds cw_cloth_state_size bytes); false when invalid.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_load",
+     "signature": "bool cw_cloth_load(cw_cloth c, const void *state, size_t size)",
+     "doc": "Restores a state saved from this cloth (same mesh); false when the size differs.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_geometry_new",
+     "signature": "t3_geometry *cw_cloth_geometry_new(cw_cloth c)",
+     "doc": "A geometry with the cloth's triangles, uvs, positions and normals, its\nposition and normal attributes T3_DYNAMIC_DRAW. NULL for a cloth without\ntriangles (use cw_rope_geometry_new). The caller owns it.",
+     "inline": false
+    },
+    {
+     "name": "cw_cloth_update_geometry",
+     "signature": "void cw_cloth_update_geometry(cw_cloth c, t3_geometry *g, float alpha)",
+     "doc": "Writes the positions interpolated by alpha and rebuilds the normals\n(area-weighted, in a fixed order), bumps the attributes' versions and the\nbounding sphere. Works on cloth and rope geometries.",
+     "inline": false
+    },
+    {
+     "name": "cw_rope_default_def",
+     "signature": "cw_rope_def cw_rope_default_def(void)",
+     "doc": "The defaults noted in cw_rope_def above.",
+     "inline": false
+    },
+    {
+     "name": "cw_rope_create",
+     "signature": "cw_cloth cw_rope_create(cw_world3d w, const cw_rope_def *def)",
+     "doc": "A chain of segments + 1 particles laid along start..end (sagging below\nthe line when length is longer, as a catenary-like curve). Edge i joins\nparticles i and i + 1. Null (logged) on an invalid world or < 1 segment.",
+     "inline": false
+    },
+    {
+     "name": "cw_rope_geometry_new",
+     "signature": "t3_geometry *cw_rope_geometry_new(cw_cloth c, float radius, int sides)",
+     "doc": "A tube of `sides` around the rope's particles with this radius (the\ncaller owns it); update it with cw_cloth_update_geometry.",
+     "inline": false
+    },
+    {
+     "name": "cw_chain3d_default_def",
+     "signature": "cw_chain3d_def cw_chain3d_default_def(void)",
+     "doc": "The defaults noted in cw_chain3d_def above.",
+     "inline": false
+    },
+    {
+     "name": "cw_chain3d_create",
+     "signature": "int cw_chain3d_create(cw_world3d w, const cw_chain3d_def *def, cw_body3d *links, cw_joint3d *joints)",
+     "doc": "Capsule links joined end to end by spherical joints: a chain of Box3D\nbodies (heavy chains, a wrecking ball). Writes up to `links` bodies and\nlinks + 1 joints (null where an end is free) and returns how many links\nit made. The bodies and joints are ordinary world objects: destroy them\nwith the world or one by one.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_cloth_def",
+     "doc": "",
+     "decl": "typedef struct cw_cloth_def {\n  /* The mesh, in world space (copied). triangles: 3 indices each; ropes and\n   * other line meshes pass edges instead (2 indices each, used as well as\n   * the triangles' edges). */\n  const t3_vec3 *positions;\n  int vertex_count;\n  const uint32_t *triangles;\n  int triangle_count;\n  const uint32_t *edges;\n  int edge_count;\n  const t3_vec2 *uvs;          /* per vertex, for rendering (NULL = none) */\n  /* Per-vertex inverse mass scale: 0 pins the vertex, 1 = its share of\n   * `mass` (NULL = all 1). */\n  const float *inv_mass;\n  float mass;                  /* kg of the whole cloth, spread by area (ropes: evenly): 1 */\n  float stretch_compliance;    /* m/N of the edges: 0 = as stiff as the substeps allow */\n  float bend_compliance;       /* m/N across neighbouring triangles: 0.01 (< 0 = no bending constraints) */\n  float tether_slack;          /* tethers reach rest distance x this: 1.02 (0 = no tethers) */\n  float damping;               /* share of velocity lost per second: 0.1 */\n  float thickness;             /* m the cloth keeps from shapes (and itself): 0.02 */\n  float friction;              /* against shapes, 0..1: 0.4 */\n  int substeps;                /* per step, one iteration each: 8 */\n  /* Skin targets: max_distance[v] (m) is how far vertex v may move from its\n   * skin target (cw_cloth_set_skin_targets); NULL = no skin constraint, a\n   * negative entry = free. */\n  const float *max_distance;\n  /* Collision with the world's shapes (spheres, capsules, boxes, hulls) on\n   * these layers: all. 0 = none. */\n  uint32_t collide_mask;\n  bool two_way;                /* collisions push dynamic bodies back: false */\n  bool self_collision;         /* particles keep `thickness` apart: false (costly) */\n  float max_speed;             /* m/s, clamps runaway particles: 50 */\n  int workers;                 /* 0 = the job pool; 1 = the calling thread only (same bits) */\n  /* quality_scaled: a cosmetic cloth (it touches no game state: one-way, no\n ..."
+    },
+    {
+     "name": "cw_cloth_stats",
+     "doc": "",
+     "decl": "typedef struct cw_cloth_stats {\n  int32_t vertices, triangles, constraints, colours, tethers, shapes; /* shapes: gathered in the last step */\n  int32_t steps;\n  float max_stretch;           /* the most stretched edge: its length over its rest length, minus 1 (0.01 = 1%) */\n  float mean_stretch;          /* the same averaged over every edge (compressed edges count as 0) */\n  float kinetic_energy;        /* J, of the free particles */\n  float step_us;               /* the last step's wall time, microseconds (not simulation state) */\n} cw_cloth_stats;"
+    },
+    {
+     "name": "cw_rope_def",
+     "doc": "── ropes ──────────────────────────────────────────────────────────────",
+     "decl": "typedef struct cw_rope_def {\n  t3_vec3 start, end;          /* the first and last particle at creation */\n  int segments;                /* particles - 1: 16 */\n  float length;                /* rest length (m): 0 = |end - start| (a longer rope sags) */\n  float mass;                  /* kg: 1 */\n  float stretch_compliance;    /* m/N: 0 */\n  float bend_compliance;       /* m/N: 1 (ropes bend freely; < 0 = no bending constraints) */\n  float damping;               /* 0.1 */\n  float thickness;             /* m: the rope's radius for collision: 0.03 */\n  float friction;              /* 0.4 */\n  int substeps;                /* 16 */\n  bool pin_start, pin_end;     /* pinned where created: true, false */\n  uint32_t collide_mask;       /* all */\n  bool two_way;                /* false */\n  int workers;                 /* 0 */\n} cw_rope_def;"
+    },
+    {
+     "name": "cw_chain3d_def",
+     "doc": "── chains of rigid links ──────────────────────────────────────────────",
+     "decl": "typedef struct cw_chain3d_def {\n  t3_vec3 start, end;          /* the first link starts here, the last ends here */\n  int links;                   /* 12 */\n  float radius;                /* capsule radius: 0.05 */\n  float density;               /* kg/m^3: 1000 */\n  float damping;               /* the links' linear and angular damping: 0.1 */\n  cw_body3d attach_start, attach_end; /* joined to these bodies (null: start = the world, end = free) */\n  bool fix_start;              /* start joined to the world when attach_start is null: true */\n  int layer;                   /* the links' collision layer: 0 */\n  uint32_t mask;               /* all */\n  int group;                   /* < 0: links never collide with each other: -1 */\n} cw_chain3d_def;"
+    }
+   ],
+   "macros": []
+  },
+  {
    "header": "cartwheel/core.h",
    "summary": "cartwheel core: memory, containers, strings, random numbers, hashing.\n\nConventions every subsystem follows:\n  - Long-lived memory goes through cw_alloc/cw_free with a tag, so the\n    profiler, romdev and the editor can see bytes per subsystem.\n  - Per-frame scratch comes from the calling thread's frame arena\n    (cw_frame_alloc): no free, gone at the next frame.\n  - Objects a user holds are pool entries addressed by generational handles\n    (cw_pool): a stale handle reads as NULL instead of as another object.\n  - Iteration order is insertion order everywhere (maps included), so\n    simulation code that walks containers stays deterministic.",
    "functions": [

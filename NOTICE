@@ -23,3 +23,10 @@ Inverse kinematics (src/anim/ik.c): algorithms, re-implemented in C
   - FABRIK (Aristidou and Lasenby, 2011) with joint constraints as caliko
     applies them. caliko: Copyright (c) 2016 Alastair Lansley / Federation
     University Australia, MIT license. https://github.com/FedUni/caliko
+
+Cloth and ropes (src/physics/cloth.c) follow published algorithms; no code was copied:
+  XPBD (Macklin, Mueller, Chentanez, MIG 2016), "Small Steps in Physics Simulation"
+  (Macklin et al., SCA 2019), Long Range Attachments (Kim, Chentanez, Mueller, SCA 2012);
+  the solver's structure follows Ten Minute Physics (Matthias Mueller, MIT license,
+  https://github.com/matthias-research/pages) and Jolt Physics' soft bodies (Jorrit Rouwe,
+  MIT license, https://github.com/jrouwe/JoltPhysics).

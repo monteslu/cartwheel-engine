@@ -37,6 +37,7 @@ export const LOCAL_ONLY = {
   'vis-perf-report': 'GPU timings, and romdev and Chromium legs',
   'nav-perf-report': 'timings, and Chromium legs',
   'nav-determinism': 'Chromium and wasmcart-native',
+  'cloth-determinism': 'Chromium and wasmcart-native',
   'showcase-perf': 'GPU timings on romdev, Chromium and wasmcart-native',
   'editor-channel': 'romdev',
   'editor-play': 'romdev',

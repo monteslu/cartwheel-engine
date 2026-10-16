@@ -498,6 +498,33 @@
     "note": "cw_vehicle3d: settling on the springs, drive, brake, reverse, steering, the friction circle (slide and grip), handbrake lock and powerslide, a car on a wall along its own down, a car riding on another, wheel transforms, teleport and the ragdoll switch; one step worker and all of them give the same bits"
   },
   {
+    "name": "unit-cloth",
+    "app": "unit_cloth",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1,
+      "unit.checksum": 3328461373
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "cw_cloth: a flag in gusty wind (energy and stretch bounds; a gale is the energy control), tethers holding a hanging cloth to 2% (no tethers is the control), drapes on a sphere and a box, a 12 m/s ball through a curtain leaving no particle inside it (no collision is the control), a rope holding and swinging a 20 kg crate with a pull equal to its weight, a rope towing one body behind another, skin limits, save and load, a chain of rigid links. One worker and the pool give the same bits, and the checksum is pinned, so every host and pool size (tests/cloth-determinism.mjs) must reach it"
+  },
+  {
+    "name": "cloth-determinism",
+    "script": "tests/cloth-determinism.mjs",
+    "note": "unit-cloth on native, Chromium and wcnative at CW_WORKERS 0, 1, 2, 4, 8 and the default: every host and pool size gives the pinned checksum"
+  },
+  {
     "name": "terrain-drive",
     "app": "terrain_demo",
     "frames": 600,
