@@ -2088,13 +2088,13 @@
     {
      "name": "cw_froxel_grid_new",
      "signature": "cw_froxel_grid *cw_froxel_grid_new(void)",
-     "doc": "",
+     "doc": "an empty grid: set it up before binning",
      "inline": false
     },
     {
      "name": "cw_froxel_grid_free",
      "signature": "void cw_froxel_grid_free(cw_froxel_grid *g)",
-     "doc": "",
+     "doc": "the grid and its textures (NULL is fine)",
      "inline": false
     },
     {
@@ -2136,19 +2136,19 @@
     {
      "name": "cw_froxel_records",
      "signature": "const uint32_t *cw_froxel_records(const cw_froxel_grid *g, int *cells)",
-     "doc": "the last bin: per-cell records ((first << 8) | count, nx * ny * nz of them) and the item list",
+     "doc": "the last bin: per-cell records ((first << 8) | count, nx * ny * nz of them)",
      "inline": false
     },
     {
      "name": "cw_froxel_items",
      "signature": "const uint16_t *cw_froxel_items(const cw_froxel_grid *g, int *count)",
-     "doc": "",
+     "doc": "the item list the records index",
      "inline": false
     },
     {
      "name": "cw_froxel_grid_stats",
      "signature": "void cw_froxel_grid_stats(const cw_froxel_grid *g, cw_froxel_stats *out)",
-     "doc": "",
+     "doc": "the last bin's counts and time",
      "inline": false
     },
     {
@@ -2160,7 +2160,7 @@
     {
      "name": "cw_froxel_grid_textures",
      "signature": "void cw_froxel_grid_textures(cw_froxel_grid *g, struct t3_texture **records, int *records_width, struct t3_texture **items, int *items_width)",
-     "doc": "",
+     "doc": "(see above)",
      "inline": false
     }
    ],

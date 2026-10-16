@@ -74,8 +74,8 @@ typedef struct cw_froxel_stats {
   float bin_ms;        /* CPU time of the last bin (report only) */
 } cw_froxel_stats;
 
-cw_froxel_grid *cw_froxel_grid_new(void);
-void cw_froxel_grid_free(cw_froxel_grid *g);
+cw_froxel_grid *cw_froxel_grid_new(void); /* an empty grid: set it up before binning */
+void cw_froxel_grid_free(cw_froxel_grid *g); /* the grid and its textures (NULL is fine) */
 /* Fix the grid for a view of w x h pixels: proj is the camera's projection
  * (16 floats column-major, three.js layout; perspective or orthographic),
  * near < far the depth range the slices cover (a camera's near and far).
@@ -93,10 +93,10 @@ float cw_froxel_slice_depth(const cw_froxel_grid *g, int k);
 int cw_froxel_cell_of(const cw_froxel_grid *g, float x, float y, float z);
 /* a cell's view-space bounding box */
 void cw_froxel_cell_box(const cw_froxel_grid *g, int cell, float mn[3], float mx[3]);
-/* the last bin: per-cell records ((first << 8) | count, nx * ny * nz of them) and the item list */
+/* the last bin: per-cell records ((first << 8) | count, nx * ny * nz of them) */
 const uint32_t *cw_froxel_records(const cw_froxel_grid *g, int *cells);
-const uint16_t *cw_froxel_items(const cw_froxel_grid *g, int *count);
-void cw_froxel_grid_stats(const cw_froxel_grid *g, cw_froxel_stats *out);
+const uint16_t *cw_froxel_items(const cw_froxel_grid *g, int *count); /* the item list the records index */
+void cw_froxel_grid_stats(const cw_froxel_grid *g, cw_froxel_stats *out); /* the last bin's counts and time */
 /* FNV-1a over the records and items (tests: the same everywhere at any worker count) */
 uint64_t cw_froxel_grid_hash(const cw_froxel_grid *g);
 
@@ -104,6 +104,7 @@ uint64_t cw_froxel_grid_hash(const cw_froxel_grid *g);
  * re-uploaded on demand: a new bin makes them upload on their next use),
  * owned by the grid. Their widths, which the shader needs, come back too. */
 struct t3_texture;
+/* (see above) */
 void cw_froxel_grid_textures(cw_froxel_grid *g, struct t3_texture **records, int *records_width, struct t3_texture **items,
                              int *items_width);
 
