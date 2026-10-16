@@ -8,10 +8,12 @@
 // and anything that measures or guards real GPU hardware stay local: LOCAL_ONLY
 // says why for each, and docs/guides/testing.md lists them.
 //
-//   CW_TEST_GPU=software node tests/ci.mjs [gl | gl-<k>of<n> | webgpu]
+//   CW_TEST_GPU=software node tests/ci.mjs [gl | gl-<k>of<n> | webgpu | webgpu-<k>of<n>] [--list]
 //
-// Both runs by default. gl-<k>of<n> is the k-th of n shares of the GL run, balanced by the
-// rough CI times in SLOW (other gates count as SLOW_DEFAULT), so CI spreads it over n jobs.
+// Both runs by default. gl-<k>of<n> (webgpu-<k>of<n>) is the k-th of n shares of the GL
+// (WebGPU) run, balanced by each gate's measured CI time in tests/ci-times.json (gates
+// not in it count as DEFAULT_SECONDS), so CI spreads a run over n jobs. Refresh the times
+// with `node tools/ci-times.mjs` after gates are added or get slower.
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -49,12 +51,9 @@ export const LOCAL_ONLY = {
   tutorials: 'romdev and wasmcart-native',
 };
 
-/** rough seconds a gate takes in CI on llvmpipe, for the slow ones (balancing the GL shares) */
-const SLOW = {
-  'platformer3d-replay': 660, 'showcase-cycle': 400, 'vis-city-check': 350, platformer3d: 330, 'platformer3d-auto': 310,
-  'showcase-dusk': 290, 'showcase-night': 290, 'showcase-morning': 140, 'showcase-golden': 140, 'fx-perf': 130, 'post-aces-post': 110,
-};
-const SLOW_DEFAULT = 30;
+/** measured seconds per gate in CI on llvmpipe / lavapipe (tools/ci-times.mjs), for balancing the shares */
+const TIMES = JSON.parse(readFileSync(join(ROOT, 'tests/ci-times.json'), 'utf8'));
+const DEFAULT_SECONDS = 30;
 
 const gates = JSON.parse(readFileSync(join(ROOT, 'tests/gates.json'), 'utf8'));
 const unknown = Object.keys(LOCAL_ONLY).filter((n) => !gates.some((g) => g.name === n));
@@ -67,17 +66,19 @@ const scripts = gates.filter((g) => g.script && !LOCAL_ONLY[g.name]).map((g) => 
 function gate(args) {
   return new Promise((res) => spawn('node', [join(ROOT, 'tests/gate.mjs'), ...args], { stdio: 'inherit' }).on('close', (c) => res(c ?? 1)));
 }
-const part = process.argv[2] || '';
-const shard = /^gl-(\d+)of(\d+)$/.exec(part);
-if (part && part !== 'gl' && part !== 'webgpu' && !(shard && +shard[1] >= 1 && +shard[1] <= +shard[2])) {
-  console.error('usage: ci.mjs [gl | gl-<k>of<n> | webgpu]');
+const list = process.argv.includes('--list'); // print the share's gates and their measured seconds, run nothing
+const part = process.argv.slice(2).find((a) => a !== '--list') || '';
+const shard = /^(gl|webgpu)-(\d+)of(\d+)$/.exec(part);
+const kind = shard ? shard[1] : part;
+if (part && part !== 'gl' && part !== 'webgpu' && !(shard && +shard[2] >= 1 && +shard[2] <= +shard[3])) {
+  console.error('usage: ci.mjs [gl | gl-<k>of<n> | webgpu | webgpu-<k>of<n>]');
   process.exit(2);
 }
 const glAll = [...gl, ...scripts];
 /** the k-th (1-based) of n shares: longest first, each to the share with the least time so far */
-function share(names, k, n) {
+function share(names, times, k, n) {
   const load = new Array(n).fill(0), pick = new Set();
-  const order = names.map((name, i) => ({ name, i, t: SLOW[name] || SLOW_DEFAULT })).sort((a, b) => b.t - a.t || a.i - b.i);
+  const order = names.map((name, i) => ({ name, i, t: times[name] ?? DEFAULT_SECONDS })).sort((a, b) => b.t - a.t || a.i - b.i);
   for (const g of order) {
     const j = load.indexOf(Math.min(...load));
     load[j] += g.t;
@@ -85,11 +86,21 @@ function share(names, k, n) {
   }
   return names.filter((name) => pick.has(name));
 }
-const glNames = shard ? share(glAll, +shard[1], +shard[2]) : glAll;
+const glNames = shard && kind === 'gl' ? share(glAll, TIMES.gl, +shard[2], +shard[3]) : glAll;
+const wgpuNames = shard && kind === 'webgpu' ? share(wgpu, TIMES.webgpu, +shard[2], +shard[3]) : wgpu;
 const runs = [
   ['GL', [...glNames, '--hosts', 'native']],
-  ['WebGPU', [...wgpu, '--gpu', 'webgpu', '--hosts', 'native']],
-].filter(([what]) => !part || (what === 'GL' ? part.startsWith('gl') : part === 'webgpu'));
+  ['WebGPU', [...wgpuNames, '--gpu', 'webgpu', '--hosts', 'native']],
+].filter(([what]) => !part || (what === 'GL' ? kind === 'gl' : kind === 'webgpu'));
+if (list) {
+  for (const [what, args] of runs) {
+    const names = args.filter((a) => !a.startsWith('--') && !['native', 'webgpu'].includes(a));
+    const t = what === 'GL' ? TIMES.gl : TIMES.webgpu;
+    console.log(`${what}: ${names.length} gates, about ${names.reduce((a, n) => a + (t[n] ?? DEFAULT_SECONDS), 0)} s`);
+    for (const n of names) console.log(`  ${String(t[n] ?? DEFAULT_SECONDS).padStart(5)} s  ${n}`);
+  }
+  process.exit(0);
+}
 let failed = 0;
 for (const [what, args] of runs) {
   console.log(`\n== ${what}: ${args.filter((a) => !a.startsWith('--') && !['native', 'webgpu'].includes(a)).length} gates`);

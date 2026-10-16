@@ -16,24 +16,20 @@ env:
   CW_RUN_TIMEOUT_MS: 900000 # one native run; llvmpipe is far slower than a GPU
 
 jobs:
-  native:
-    name: Native gates (${{ matrix.part }})
+  # The native build, once: the test jobs below unpack it instead of each building it.
+  build:
+    name: Native build
     runs-on: ubuntu-latest
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        part: [gl-1of3, gl-2of3, gl-3of3, webgpu]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
       - name: System packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cmake ninja-build libsdl2-dev \
-            libegl-dev libgles-dev libegl-mesa0 libgl1-mesa-dri mesa-vulkan-drivers libvulkan1
+          sudo apt-get install -y --no-install-recommends cmake ninja-build libsdl2-dev libegl-dev libgles-dev
       - name: Cache dependencies
         uses: actions/cache@v6
         with:
@@ -46,10 +42,62 @@ jobs:
           cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release
           ninja -C build/native
       - name: API and docs checks
-        if: matrix.part == 'gl-1of3'
         run: |
           node tools/gen-api.mjs --check
           node tools/gen-docs.mjs --check
+      # a tar keeps the executable bits and the object files (gates that rebuild a
+      # target, such as editor-agent and hot, find it up to date)
+      - name: Pack the build
+        run: tar -cf - build/native | zstd -T0 -3 -o native-build.tar.zst
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-build
+          path: native-build.tar.zst
+          compression-level: 0
+          retention-days: 1
+
+  native:
+    name: Native gates (${{ matrix.part }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # shares balanced by measured CI time (tests/ci-times.json, tools/ci-times.mjs)
+        part: [gl-1of6, gl-2of6, gl-3of6, gl-4of6, gl-5of6, gl-6of6, webgpu-1of2, webgpu-2of2]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build libsdl2-dev \
+            libegl-dev libgles-dev libegl-mesa0 libgl1-mesa-dri mesa-vulkan-drivers libvulkan1
+      - name: Cache dependencies
+        uses: actions/cache@v6
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-${{ hashFiles('scripts/deps.lock', 'scripts/fetch-deps.sh', 'patches/**') }}
+      - name: Fetch dependencies
+        run: scripts/fetch-deps.sh
+      - uses: actions/download-artifact@v8
+        with:
+          name: native-build
+      # This checkout and the dependencies are newer than the build they made, so their
+      # files go back in time (the build's own timestamps must stay: ninja's deps log
+      # holds them). The build must then be up to date: rebuilding here would hide a
+      # broken hand-over and cost minutes per job.
+      - name: Unpack the build
+        run: |
+          zstd -dc native-build.tar.zst | tar -xf -
+          rm native-build.tar.zst
+          git ls-files -z | xargs -0 touch -h -d '2000-01-01 00:00:00'
+          find deps -exec touch -h -d '2000-01-01 00:00:00' {} +
+          ninja -C build/native | tee ninja.log
+          if grep -q 'Building\|Linking' ninja.log; then echo "the unpacked build was out of date"; exit 1; fi
       - name: Virtual controllers (uinput, for tests/native-pads.mjs)
         run: |
           sudo modprobe uinput
@@ -61,14 +109,21 @@ jobs:
         run: node tests/ci.mjs ${{ matrix.part }}
 
   carts:
-    name: GL and dual GL + WebGPU carts
+    name: Carts (${{ matrix.build }} ${{ matrix.share }})
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { build: gl, share: 1of2 }
+          - { build: gl, share: 2of2 }
+          - { build: dual, share: 1of1 }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
       - name: System packages
         run: |
           sudo apt-get update
@@ -84,16 +139,21 @@ jobs:
         run: |
           cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release
           ninja -C build/native cwpack
-      - name: Build GL carts
+      - name: Configure
         run: |
-          cmake -S . -B build/cart -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$PWD/cmake/cart.cmake
-          ninja -C build/cart
-      - name: Build dual GL + WebGPU carts
+          if [ ${{ matrix.build }} = gl ]; then
+            cmake -S . -B build/carts -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$PWD/cmake/cart.cmake
+          else
+            cmake -S . -B build/carts -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$PWD/cmake/cart.cmake \
+              -DCW_WGPU=ON -DCW_CWPACK=$PWD/build/native/tools/cwpack/cwpack
+          fi
+      # share k of n: every n-th cart of carts.txt, starting at the k-th
+      - name: Build carts
         run: |
-          cmake -S . -B build/cart-wgpu -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$PWD/cmake/cart.cmake \
-            -DCW_WGPU=ON -DCW_CWPACK=$PWD/build/native/tools/cwpack/cwpack
-          ninja -C build/cart-wgpu
-      - name: Cart count
-        run: |
-          echo "GL carts: $(ls build/cart/carts/*.wasc | wc -l)"
-          echo "dual carts: $(ls build/cart-wgpu/carts/*.wasc | wc -l)"
+          k=${{ matrix.share }}; n=${k#*of}; k=${k%of*}
+          awk -v k="$k" -v n="$n" '(NR - k) % n == 0' build/carts/carts.txt > share.txt
+          echo "$(wc -l < share.txt) of $(wc -l < build/carts/carts.txt) carts"
+          ninja -C build/carts $(cat share.txt)
+          missing=0
+          while read -r c; do [ -f "build/carts/carts/$c.wasc" ] || { echo "missing: $c.wasc"; missing=1; }; done < share.txt
+          exit $missing
