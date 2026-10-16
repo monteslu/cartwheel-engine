@@ -22,6 +22,7 @@
 
 #include "internal.h"
 #include "cartwheel/jobs.h"
+#include "cartwheel/profile.h"
 #include "cartwheel/plugin.h"
 #include "cartwheel/gl.h"
 #include "cartwheel/core.h"
@@ -50,8 +51,10 @@ int stbi_zlib_decode_noheader_buffer(char *obuffer, int olen, const char *ibuffe
 
 #include "stb_image_write.h" /* compiled once, in src/debug/png.c */
 
+void cw__profile_thread_name(const char *name); /* debug/profile.c */
 static void audio_cb(void *user, Uint8 *stream, int len) {
   (void)user;
+  cw__profile_thread_name("audio");
   cw_platform *p = &cw__plat;
   int frames = len / (int)(2 * sizeof(float));
   if (p->audio_fill) p->audio_fill(p->audio_user, (float *)stream, frames);
@@ -550,8 +553,10 @@ int cw_native_main(int argc, char **argv, cw_app_desc (*app_fn)(int, char **)) {
       if (shot) write_screenshot(shot);
       p->quit = true;
     }
+    CW_PROFILE_BEGIN("present");
     if (cw_gpu_backend() == CW_GPU_WEBGPU) cw__wgpu_frame_end(true);
     else SDL_GL_SwapWindow(p->window);
+    CW_PROFILE_END();
     cw__perf_mark(CW_PERF_PRESENT);
     /* no spinning where nothing paces the loop: a frozen game (the
      * debugger's pause) and a game with no display (offscreen, under an

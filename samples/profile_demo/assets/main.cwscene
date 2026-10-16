@@ -1,0 +1,530 @@
+[scene format=1]
+[ext_scene id=1 path="crate.cwscene"]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.00394, 0.00598, 0.01002, 1)
+ambient_energy = 0.94248
+hemi_energy = 1.88496
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 4, 10)
+rotation = vec3(-0.35, 0, 0)
+fov = 55
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(4, 8, 3)
+rotation = vec3(-1, 0.5, 0)
+energy = 6.28319
+shadow = true
+
+[node name="Floor" parent="." type="StaticBody3D"]
+collision_layer_name = "world"
+position = vec3(0, -0.5, 0)
+
+[node name="Shape" parent="Floor" type="CollisionShape3D"]
+shape = BOX
+size = vec3(20, 1, 20)
+
+[node name="Mesh" parent="Floor" type="MeshInstance3D"]
+size = vec3(20, 1, 20)
+color = color(0.07324, 0.10048, 0.07324, 1)
+receive_shadow = true
+
+[node name="Spinner" parent="." type="MeshInstance3D"]
+position = vec3(-3.5, 1, -2)
+color = color(0.2, 0.5, 1, 1)
+cast_shadow = true
+
+[node name="Spin" parent="." type="AnimationPlayer"]
+autoplay = "spin"
+
+[node name="C1" parent="." instance=1]
+position = vec3(-2.45, 2.30, -1.40)
+
+[node name="C2" parent="." instance=1]
+position = vec3(-2.45, 2.30, -0.70)
+
+[node name="C3" parent="." instance=1]
+position = vec3(-2.45, 2.30, 0.00)
+
+[node name="C4" parent="." instance=1]
+position = vec3(-2.45, 2.30, 0.70)
+
+[node name="C5" parent="." instance=1]
+position = vec3(-2.45, 2.30, 1.40)
+
+[node name="C6" parent="." instance=1]
+position = vec3(-1.75, 2.30, -1.40)
+
+[node name="C7" parent="." instance=1]
+position = vec3(-1.75, 2.30, -0.70)
+
+[node name="C8" parent="." instance=1]
+position = vec3(-1.75, 2.30, 0.00)
+
+[node name="C9" parent="." instance=1]
+position = vec3(-1.75, 2.30, 0.70)
+
+[node name="C10" parent="." instance=1]
+position = vec3(-1.75, 2.30, 1.40)
+
+[node name="C11" parent="." instance=1]
+position = vec3(-1.05, 2.30, -1.40)
+
+[node name="C12" parent="." instance=1]
+position = vec3(-1.05, 2.30, -0.70)
+
+[node name="C13" parent="." instance=1]
+position = vec3(-1.05, 2.30, 0.00)
+
+[node name="C14" parent="." instance=1]
+position = vec3(-1.05, 2.30, 0.70)
+
+[node name="C15" parent="." instance=1]
+position = vec3(-1.05, 2.30, 1.40)
+
+[node name="C16" parent="." instance=1]
+position = vec3(-0.35, 2.30, -1.40)
+
+[node name="C17" parent="." instance=1]
+position = vec3(-0.35, 2.30, -0.70)
+
+[node name="C18" parent="." instance=1]
+position = vec3(-0.35, 2.30, 0.00)
+
+[node name="C19" parent="." instance=1]
+position = vec3(-0.35, 2.30, 0.70)
+
+[node name="C20" parent="." instance=1]
+position = vec3(-0.35, 2.30, 1.40)
+
+[node name="C21" parent="." instance=1]
+position = vec3(0.35, 2.30, -1.40)
+
+[node name="C22" parent="." instance=1]
+position = vec3(0.35, 2.30, -0.70)
+
+[node name="C23" parent="." instance=1]
+position = vec3(0.35, 2.30, 0.00)
+
+[node name="C24" parent="." instance=1]
+position = vec3(0.35, 2.30, 0.70)
+
+[node name="C25" parent="." instance=1]
+position = vec3(0.35, 2.30, 1.40)
+
+[node name="C26" parent="." instance=1]
+position = vec3(1.05, 2.30, -1.40)
+
+[node name="C27" parent="." instance=1]
+position = vec3(1.05, 2.30, -0.70)
+
+[node name="C28" parent="." instance=1]
+position = vec3(1.05, 2.30, 0.00)
+
+[node name="C29" parent="." instance=1]
+position = vec3(1.05, 2.30, 0.70)
+
+[node name="C30" parent="." instance=1]
+position = vec3(1.05, 2.30, 1.40)
+
+[node name="C31" parent="." instance=1]
+position = vec3(1.75, 2.30, -1.40)
+
+[node name="C32" parent="." instance=1]
+position = vec3(1.75, 2.30, -0.70)
+
+[node name="C33" parent="." instance=1]
+position = vec3(1.75, 2.30, 0.00)
+
+[node name="C34" parent="." instance=1]
+position = vec3(1.75, 2.30, 0.70)
+
+[node name="C35" parent="." instance=1]
+position = vec3(1.75, 2.30, 1.40)
+
+[node name="C36" parent="." instance=1]
+position = vec3(2.45, 2.30, -1.40)
+
+[node name="C37" parent="." instance=1]
+position = vec3(2.45, 2.30, -0.70)
+
+[node name="C38" parent="." instance=1]
+position = vec3(2.45, 2.30, 0.00)
+
+[node name="C39" parent="." instance=1]
+position = vec3(2.45, 2.30, 0.70)
+
+[node name="C40" parent="." instance=1]
+position = vec3(2.45, 2.30, 1.40)
+
+[node name="C41" parent="." instance=1]
+position = vec3(-2.35, 2.95, -1.40)
+
+[node name="C42" parent="." instance=1]
+position = vec3(-2.35, 2.95, -0.70)
+
+[node name="C43" parent="." instance=1]
+position = vec3(-2.35, 2.95, 0.00)
+
+[node name="C44" parent="." instance=1]
+position = vec3(-2.35, 2.95, 0.70)
+
+[node name="C45" parent="." instance=1]
+position = vec3(-2.35, 2.95, 1.40)
+
+[node name="C46" parent="." instance=1]
+position = vec3(-1.65, 2.95, -1.40)
+
+[node name="C47" parent="." instance=1]
+position = vec3(-1.65, 2.95, -0.70)
+
+[node name="C48" parent="." instance=1]
+position = vec3(-1.65, 2.95, 0.00)
+
+[node name="C49" parent="." instance=1]
+position = vec3(-1.65, 2.95, 0.70)
+
+[node name="C50" parent="." instance=1]
+position = vec3(-1.65, 2.95, 1.40)
+
+[node name="C51" parent="." instance=1]
+position = vec3(-0.95, 2.95, -1.40)
+
+[node name="C52" parent="." instance=1]
+position = vec3(-0.95, 2.95, -0.70)
+
+[node name="C53" parent="." instance=1]
+position = vec3(-0.95, 2.95, 0.00)
+
+[node name="C54" parent="." instance=1]
+position = vec3(-0.95, 2.95, 0.70)
+
+[node name="C55" parent="." instance=1]
+position = vec3(-0.95, 2.95, 1.40)
+
+[node name="C56" parent="." instance=1]
+position = vec3(-0.25, 2.95, -1.40)
+
+[node name="C57" parent="." instance=1]
+position = vec3(-0.25, 2.95, -0.70)
+
+[node name="C58" parent="." instance=1]
+position = vec3(-0.25, 2.95, 0.00)
+
+[node name="C59" parent="." instance=1]
+position = vec3(-0.25, 2.95, 0.70)
+
+[node name="C60" parent="." instance=1]
+position = vec3(-0.25, 2.95, 1.40)
+
+[node name="C61" parent="." instance=1]
+position = vec3(0.45, 2.95, -1.40)
+
+[node name="C62" parent="." instance=1]
+position = vec3(0.45, 2.95, -0.70)
+
+[node name="C63" parent="." instance=1]
+position = vec3(0.45, 2.95, 0.00)
+
+[node name="C64" parent="." instance=1]
+position = vec3(0.45, 2.95, 0.70)
+
+[node name="C65" parent="." instance=1]
+position = vec3(0.45, 2.95, 1.40)
+
+[node name="C66" parent="." instance=1]
+position = vec3(1.15, 2.95, -1.40)
+
+[node name="C67" parent="." instance=1]
+position = vec3(1.15, 2.95, -0.70)
+
+[node name="C68" parent="." instance=1]
+position = vec3(1.15, 2.95, 0.00)
+
+[node name="C69" parent="." instance=1]
+position = vec3(1.15, 2.95, 0.70)
+
+[node name="C70" parent="." instance=1]
+position = vec3(1.15, 2.95, 1.40)
+
+[node name="C71" parent="." instance=1]
+position = vec3(1.85, 2.95, -1.40)
+
+[node name="C72" parent="." instance=1]
+position = vec3(1.85, 2.95, -0.70)
+
+[node name="C73" parent="." instance=1]
+position = vec3(1.85, 2.95, 0.00)
+
+[node name="C74" parent="." instance=1]
+position = vec3(1.85, 2.95, 0.70)
+
+[node name="C75" parent="." instance=1]
+position = vec3(1.85, 2.95, 1.40)
+
+[node name="C76" parent="." instance=1]
+position = vec3(2.55, 2.95, -1.40)
+
+[node name="C77" parent="." instance=1]
+position = vec3(2.55, 2.95, -0.70)
+
+[node name="C78" parent="." instance=1]
+position = vec3(2.55, 2.95, 0.00)
+
+[node name="C79" parent="." instance=1]
+position = vec3(2.55, 2.95, 0.70)
+
+[node name="C80" parent="." instance=1]
+position = vec3(2.55, 2.95, 1.40)
+
+[node name="C81" parent="." instance=1]
+position = vec3(-2.45, 3.60, -1.40)
+
+[node name="C82" parent="." instance=1]
+position = vec3(-2.45, 3.60, -0.70)
+
+[node name="C83" parent="." instance=1]
+position = vec3(-2.45, 3.60, 0.00)
+
+[node name="C84" parent="." instance=1]
+position = vec3(-2.45, 3.60, 0.70)
+
+[node name="C85" parent="." instance=1]
+position = vec3(-2.45, 3.60, 1.40)
+
+[node name="C86" parent="." instance=1]
+position = vec3(-1.75, 3.60, -1.40)
+
+[node name="C87" parent="." instance=1]
+position = vec3(-1.75, 3.60, -0.70)
+
+[node name="C88" parent="." instance=1]
+position = vec3(-1.75, 3.60, 0.00)
+
+[node name="C89" parent="." instance=1]
+position = vec3(-1.75, 3.60, 0.70)
+
+[node name="C90" parent="." instance=1]
+position = vec3(-1.75, 3.60, 1.40)
+
+[node name="C91" parent="." instance=1]
+position = vec3(-1.05, 3.60, -1.40)
+
+[node name="C92" parent="." instance=1]
+position = vec3(-1.05, 3.60, -0.70)
+
+[node name="C93" parent="." instance=1]
+position = vec3(-1.05, 3.60, 0.00)
+
+[node name="C94" parent="." instance=1]
+position = vec3(-1.05, 3.60, 0.70)
+
+[node name="C95" parent="." instance=1]
+position = vec3(-1.05, 3.60, 1.40)
+
+[node name="C96" parent="." instance=1]
+position = vec3(-0.35, 3.60, -1.40)
+
+[node name="C97" parent="." instance=1]
+position = vec3(-0.35, 3.60, -0.70)
+
+[node name="C98" parent="." instance=1]
+position = vec3(-0.35, 3.60, 0.00)
+
+[node name="C99" parent="." instance=1]
+position = vec3(-0.35, 3.60, 0.70)
+
+[node name="C100" parent="." instance=1]
+position = vec3(-0.35, 3.60, 1.40)
+
+[node name="C101" parent="." instance=1]
+position = vec3(0.35, 3.60, -1.40)
+
+[node name="C102" parent="." instance=1]
+position = vec3(0.35, 3.60, -0.70)
+
+[node name="C103" parent="." instance=1]
+position = vec3(0.35, 3.60, 0.00)
+
+[node name="C104" parent="." instance=1]
+position = vec3(0.35, 3.60, 0.70)
+
+[node name="C105" parent="." instance=1]
+position = vec3(0.35, 3.60, 1.40)
+
+[node name="C106" parent="." instance=1]
+position = vec3(1.05, 3.60, -1.40)
+
+[node name="C107" parent="." instance=1]
+position = vec3(1.05, 3.60, -0.70)
+
+[node name="C108" parent="." instance=1]
+position = vec3(1.05, 3.60, 0.00)
+
+[node name="C109" parent="." instance=1]
+position = vec3(1.05, 3.60, 0.70)
+
+[node name="C110" parent="." instance=1]
+position = vec3(1.05, 3.60, 1.40)
+
+[node name="C111" parent="." instance=1]
+position = vec3(1.75, 3.60, -1.40)
+
+[node name="C112" parent="." instance=1]
+position = vec3(1.75, 3.60, -0.70)
+
+[node name="C113" parent="." instance=1]
+position = vec3(1.75, 3.60, 0.00)
+
+[node name="C114" parent="." instance=1]
+position = vec3(1.75, 3.60, 0.70)
+
+[node name="C115" parent="." instance=1]
+position = vec3(1.75, 3.60, 1.40)
+
+[node name="C116" parent="." instance=1]
+position = vec3(2.45, 3.60, -1.40)
+
+[node name="C117" parent="." instance=1]
+position = vec3(2.45, 3.60, -0.70)
+
+[node name="C118" parent="." instance=1]
+position = vec3(2.45, 3.60, 0.00)
+
+[node name="C119" parent="." instance=1]
+position = vec3(2.45, 3.60, 0.70)
+
+[node name="C120" parent="." instance=1]
+position = vec3(2.45, 3.60, 1.40)
+
+[node name="C121" parent="." instance=1]
+position = vec3(-2.35, 4.25, -1.40)
+
+[node name="C122" parent="." instance=1]
+position = vec3(-2.35, 4.25, -0.70)
+
+[node name="C123" parent="." instance=1]
+position = vec3(-2.35, 4.25, 0.00)
+
+[node name="C124" parent="." instance=1]
+position = vec3(-2.35, 4.25, 0.70)
+
+[node name="C125" parent="." instance=1]
+position = vec3(-2.35, 4.25, 1.40)
+
+[node name="C126" parent="." instance=1]
+position = vec3(-1.65, 4.25, -1.40)
+
+[node name="C127" parent="." instance=1]
+position = vec3(-1.65, 4.25, -0.70)
+
+[node name="C128" parent="." instance=1]
+position = vec3(-1.65, 4.25, 0.00)
+
+[node name="C129" parent="." instance=1]
+position = vec3(-1.65, 4.25, 0.70)
+
+[node name="C130" parent="." instance=1]
+position = vec3(-1.65, 4.25, 1.40)
+
+[node name="C131" parent="." instance=1]
+position = vec3(-0.95, 4.25, -1.40)
+
+[node name="C132" parent="." instance=1]
+position = vec3(-0.95, 4.25, -0.70)
+
+[node name="C133" parent="." instance=1]
+position = vec3(-0.95, 4.25, 0.00)
+
+[node name="C134" parent="." instance=1]
+position = vec3(-0.95, 4.25, 0.70)
+
+[node name="C135" parent="." instance=1]
+position = vec3(-0.95, 4.25, 1.40)
+
+[node name="C136" parent="." instance=1]
+position = vec3(-0.25, 4.25, -1.40)
+
+[node name="C137" parent="." instance=1]
+position = vec3(-0.25, 4.25, -0.70)
+
+[node name="C138" parent="." instance=1]
+position = vec3(-0.25, 4.25, 0.00)
+
+[node name="C139" parent="." instance=1]
+position = vec3(-0.25, 4.25, 0.70)
+
+[node name="C140" parent="." instance=1]
+position = vec3(-0.25, 4.25, 1.40)
+
+[node name="C141" parent="." instance=1]
+position = vec3(0.45, 4.25, -1.40)
+
+[node name="C142" parent="." instance=1]
+position = vec3(0.45, 4.25, -0.70)
+
+[node name="C143" parent="." instance=1]
+position = vec3(0.45, 4.25, 0.00)
+
+[node name="C144" parent="." instance=1]
+position = vec3(0.45, 4.25, 0.70)
+
+[node name="C145" parent="." instance=1]
+position = vec3(0.45, 4.25, 1.40)
+
+[node name="C146" parent="." instance=1]
+position = vec3(1.15, 4.25, -1.40)
+
+[node name="C147" parent="." instance=1]
+position = vec3(1.15, 4.25, -0.70)
+
+[node name="C148" parent="." instance=1]
+position = vec3(1.15, 4.25, 0.00)
+
+[node name="C149" parent="." instance=1]
+position = vec3(1.15, 4.25, 0.70)
+
+[node name="C150" parent="." instance=1]
+position = vec3(1.15, 4.25, 1.40)
+
+[node name="C151" parent="." instance=1]
+position = vec3(1.85, 4.25, -1.40)
+
+[node name="C152" parent="." instance=1]
+position = vec3(1.85, 4.25, -0.70)
+
+[node name="C153" parent="." instance=1]
+position = vec3(1.85, 4.25, 0.00)
+
+[node name="C154" parent="." instance=1]
+position = vec3(1.85, 4.25, 0.70)
+
+[node name="C155" parent="." instance=1]
+position = vec3(1.85, 4.25, 1.40)
+
+[node name="C156" parent="." instance=1]
+position = vec3(2.55, 4.25, -1.40)
+
+[node name="C157" parent="." instance=1]
+position = vec3(2.55, 4.25, -0.70)
+
+[node name="C158" parent="." instance=1]
+position = vec3(2.55, 4.25, 0.00)
+
+[node name="C159" parent="." instance=1]
+position = vec3(2.55, 4.25, 0.70)
+
+[node name="C160" parent="." instance=1]
+position = vec3(2.55, 4.25, 1.40)
+
+[animation name="spin" player="Spin" length=2 loop=LOOP]
+[track type=value path="Spinner:rotation"]
+0 = vec3(0, 0, 0)
+2 = vec3(0, 6.28318, 0)
+[track type=value path="Spinner:position.y" interp=CUBIC]
+0 = 1
+1 = 2
+2 = 1

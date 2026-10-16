@@ -14,6 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cartwheel/platform.h"
+#include "cartwheel/profile.h"
 #include "pipeline_internal.h"
 #include "pipeline_wgpu.h"
 
@@ -421,6 +423,7 @@ static struct {
   bool hold;     /* cw__pw_timing_hold: no read back at a flush */
   bool frame_ok; /* the frame began with the last read back done: every pass of it is timed */
   /* the frame being read back */
+  uint64_t rframe; /* its engine frame index (cw_frame_index, for the profiler) */
   ts_slot rslots[TS_MAX / 2];
   int rslot_of[TS_MAX / 2];
   int rpairs;
@@ -495,7 +498,10 @@ static void on_ts_map(WGPUMapAsyncStatus st, WGPUStringView msg, void *u1, void 
           seen[s] = false;
         }
     for (int s = 0; s < TS_MAX / 2; s++)
-      if (seen[s] && T.rslots[s].p) cw__pipeline_gpu_time(T.rslots[s].p, T.rslots[s].name, ms[s]);
+      if (seen[s] && T.rslots[s].p) {
+        cw__pipeline_gpu_time(T.rslots[s].p, T.rslots[s].name, ms[s]);
+        if (CW_PROFILE_ON()) cw__profile_gpu(T.rslots[s].name, T.rframe, ms[s]);
+      }
     wgpuBufferUnmap(T.readback);
   }
   T.mapping = false;
@@ -534,6 +540,7 @@ static void timing_resolve(void) {
   memcpy(T.rslots, T.slots, sizeof T.slots);
   memcpy(T.rslot_of, T.slot_of, sizeof T.slot_of);
   T.rpairs = T.used / 2;
+  T.rframe = cw_frame_index();
   T.used = 0;
   T.nslots = 0;
   T.cur = -1;

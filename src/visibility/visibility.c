@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "cartwheel/jobs.h"
+#include "cartwheel/profile.h"
 #include "cartwheel/render3d.h"
 #include "cartwheel/resource.h"
 #include "render/pipeline_internal.h"
@@ -787,6 +788,7 @@ static bool box_on_edge(const vis_frustum *f, const vrec *r, float m) {
 
 static void vis_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
+  CW_PROFILE_SCOPE("visibility.cull");
   vis_state *s = vstate(ctx->tree);
   cw_node mn = { 0 };
   cw_node_walk(cw_tree_root(ctx->tree), find_manager, &mn);

@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "internal.h"
+#include "cartwheel/profile.h"
 #include "physics3d_internal.h"
 
 /* ── conversions ─────────────────────────────────────────────────────── */
@@ -165,6 +166,7 @@ static void mouse_drive(cw__world3 *w, float dt) {
 }
 
 void cw_world3d_step(cw_world3d wh, float dt) {
+  CW_PROFILE_SCOPE("physics3d.step");
   cw__world3 *w = cw__w3(wh);
   if (!w) {
     cw_warn("physics3d: step on a stale or null world");

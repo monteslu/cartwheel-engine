@@ -6737,7 +6737,7 @@
     {
      "name": "cw_pass_stat",
      "doc": "",
-     "decl": "typedef struct cw_pass_stat {\n  const char *name;\n  cw_pass_phase phase;\n  bool ran;                 /* ran last frame */\n  bool fused;               /* ran inside another pass (GL post fusion: the grade in the tonemap\n                             * pass, the lens in SMAA's blend); its time is that pass's */\n  float gpu_ms;             /* latest available GPU time (arrives 1-3 frames late); -1 = none\n                             * (natively the timers run only when asked for: CW_GPU_TIMERS=1,\n                             * or the \"pipeline\" debug command).\n                             * A pipeline rendered from inside another one's pass is not\n                             * timed (GL has one timer query open at a time): the\n                             * enclosing pass's time includes it */\n  float gpu_ms_avg;         /* exponential average (1/16) */\n  /* CPU time of the pass's execute (recording), last frame and averaged */\n  float cpu_ms, cpu_ms_avg;\n} cw_pass_stat;"
+     "decl": "typedef struct cw_pass_stat {\n  const char *name;\n  cw_pass_phase phase;\n  bool ran;                 /* ran last frame */\n  bool fused;               /* ran inside another pass (GL post fusion: the grade in the tonemap\n                             * pass, the lens in SMAA's blend); its time is that pass's */\n  float gpu_ms;             /* latest available GPU time (GL: read in a batch every 8 frames, 3 to 11 frames late; WebGPU: 1 to 3 frames late); -1 = none\n                             * (natively the timers run only when asked for: CW_GPU_TIMERS=1,\n                             * or the \"pipeline\" debug command).\n                             * A pipeline rendered from inside another one's pass is not\n                             * timed (GL has one timer query open at a time): the\n                             * enclosing pass's time includes it */\n  float gpu_ms_avg;         /* exponential average (1/16) */\n  /* CPU time of the pass's execute (recording), last frame and averaged */\n  float cpu_ms, cpu_ms_avg;\n} cw_pass_stat;"
     }
    ],
    "macros": [
@@ -7270,6 +7270,191 @@
     }
    ],
    "macros": []
+  },
+  {
+   "header": "cartwheel/profile.h",
+   "summary": "cartwheel profiler: named zones on every thread, frame boundaries, GPU pass\ntimes, counters, and Chrome / Perfetto trace files.\n\n  void physics_step(...) {\n    CW_PROFILE_SCOPE(\"physics3d.step\");   // a zone until the end of the block\n    ...\n  }\n  CW_PROFILE_COUNTER(\"render.draw_calls\", st.draw_calls); // a per-frame number\n\nCost. Compiled out (CMake -DCW_PROFILER=OFF, or `#define CW_PROFILE_ENABLED 0`\nbefore including this header): the macros expand to nothing. Compiled in\nbut off at run time (the default): one relaxed atomic load per zone. On:\ntwo monotonic clock reads and one 32-byte write into the thread's own ring.\n\nWhat is recorded. Each thread that records a zone (main, every job worker,\nthe native audio thread) gets its own ring of completed zones, written\nwithout locks. A job chunk run on any thread is a zone named after the zone\nthat submitted the job (\"physics3d.step/job\"), so worker time is attributed\nto the system that asked for it; chunks under one name that a thread runs\nback to back are one zone. Natively the render passes' GPU times\n(GL timer queries read back in a batch every 8 frames, WebGPU timestamp\nqueries) arrive several frames late and\nland in a \"GPU\" lane, laid end to end from the start of their frame's\nrender: the durations are measured, the positions are not. They are off\nunless asked for (cw_profile_gpu): the queries cost CPU time of their own.\nCarts never issue GPU timer queries, so a cart's trace has no GPU lane.\n\nTurning it on: cw_profile_set_enabled, `profile on` over the debug channel,\nCW_PROFILE=1, or a trace request (below). Profiling never changes what the\ngame simulates: it reads clocks and writes its own buffers only.\n\nTrace files (Chrome trace event JSON: open in ui.perfetto.dev,\nchrome://tracing or speedscope):\n  - natively, CW_PROFILE_TRACE=out.json [CW_PROFILE_TRACE_FRAMES=120]\n    [CW_PROFILE_TRACE_START=0] records frames START.. START+FRAMES-1 and writes\n    the file when the last one ends (or at exit, with what was recorded);\n  - from any host (carts through romdev too), the debug channel:\n    `profile trace <frames>` records that many frames and then answers with\n    the trace's size; `profile trace_get [offset]` returns it in pieces\n    (tools/cwtrace.mjs does both and writes the file);\n  - from code, cw_profile_trace_json.\nOther channel requests: profile on|off|status|clear, profile frames [n] (cpu\nand wall ms per recorded frame), profile top [frames] [n] (zones by\nexclusive time).",
+   "functions": [
+    {
+     "name": "cw_profile_now_ns",
+     "signature": "uint64_t cw_profile_now_ns(void)",
+     "doc": "Monotonic nanoseconds (the profiler's clock).",
+     "inline": false
+    },
+    {
+     "name": "cw_profile_set_enabled",
+     "signature": "void cw_profile_set_enabled(bool on)",
+     "doc": "Recording on/off at run time (main thread). The rings are allocated the\nfirst time a thread records while on.",
+     "inline": false
+    },
+    {
+     "name": "cw_profile_enabled",
+     "signature": "bool cw_profile_enabled(void)",
+     "doc": "recording now (any thread)",
+     "inline": false
+    },
+    {
+     "name": "cw_profile_gpu",
+     "signature": "void cw_profile_gpu(bool on)",
+     "doc": "GPU pass times into the trace's GPU lane (native only; once on, the timer\nqueries stay on). Off by default: reading the queries back costs CPU time\nof its own, up to a millisecond or more a frame, so a CPU trace leaves them\nout. CW_PROFILE_GPU=1 turns them on at start.",
+     "inline": false
+    },
+    {
+     "name": "cw_profile_compiled",
+     "signature": "bool cw_profile_compiled(void)",
+     "doc": "Whether the engine library itself was built with its zones (CW_PROFILER).",
+     "inline": false
+    },
+    {
+     "name": "cw_profile_counter",
+     "signature": "void cw_profile_counter(const char *name, double value)",
+     "doc": "A per-frame value (draw calls, bodies, contacts): the latest value set\nduring a frame is kept with it, and becomes a counter track in a trace.\nname must be a string literal (or interned). Main thread.",
+     "inline": false
+    },
+    {
+     "name": "cw_profile_begin",
+     "signature": "void cw_profile_begin(const char *name)",
+     "doc": "Zones by hand, for code that cannot use a block scope. Every begin needs\nits end on the same thread. name must outlive the profiler (a literal or\ncw_intern).",
+     "inline": false
+    },
+    {
+     "name": "cw_profile_end",
+     "signature": "void cw_profile_end(void)",
+     "doc": "ends this thread's innermost zone",
+     "inline": false
+    },
+    {
+     "name": "cw_profile_current",
+     "signature": "const char *cw_profile_current(void)",
+     "doc": "The innermost open zone on this thread (NULL when none or off).",
+     "inline": false
+    },
+    {
+     "name": "cw_profile_trace_json",
+     "signature": "char *cw_profile_trace_json(int frames, size_t *out_len)",
+     "doc": "The last `frames` finished frames (0 = every recorded one) as a Chrome trace\nevent JSON document, cw_alloc'd (cw_free it); *out_len gets its length.\nNULL when nothing was recorded. Main thread.",
+     "inline": false
+    },
+    {
+     "name": "cw__profile_frame_begin",
+     "signature": "void cw__profile_frame_begin(uint64_t frame, uint64_t tick)",
+     "doc": "── engine hooks ────────────────────────────────────────────────────\nplatform, start of a frame",
+     "inline": false
+    },
+    {
+     "name": "cw__profile_frame_render",
+     "signature": "void cw__profile_frame_render(void)",
+     "doc": "platform, the render phase starts",
+     "inline": false
+    },
+    {
+     "name": "cw__profile_frame_end",
+     "signature": "void cw__profile_frame_end(uint32_t ticks_run)",
+     "doc": "platform, the frame's work is done",
+     "inline": false
+    },
+    {
+     "name": "cw__profile_shutdown",
+     "signature": "void cw__profile_shutdown(void)",
+     "doc": "platform: a pending trace file is written",
+     "inline": false
+    },
+    {
+     "name": "cw__profile_job_name",
+     "signature": "const char *cw__profile_job_name(void)",
+     "doc": "\"<zone>/job\": the name a job submitted from inside the current zone runs\nunder (NULL when off or outside every zone). Any thread.",
+     "inline": false
+    },
+    {
+     "name": "cw__profile_push",
+     "signature": "void cw__profile_push(const char *name, uint64_t t0, uint64_t t1)",
+     "doc": "A finished zone, recorded after the fact (any thread; times from cw_profile_now_ns).",
+     "inline": false
+    },
+    {
+     "name": "cw__profile_gpu",
+     "signature": "void cw__profile_gpu(const char *pass, uint64_t frame, float ms)",
+     "doc": "A render pass's GPU time for engine frame `frame` (main thread).",
+     "inline": false
+    },
+    {
+     "name": "cw__profile_name2",
+     "signature": "const char *cw__profile_name2(const char *prefix, const char *name)",
+     "doc": "\"<prefix><name>\" interned for zone names (any thread; cached by both pointers).",
+     "inline": false
+    },
+    {
+     "name": "cw__profile_scope_begin",
+     "signature": "cw__profile_scope cw__profile_scope_begin(const char *name)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw__profile_scope_end",
+     "signature": "void cw__profile_scope_end(cw__profile_scope *s)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw__profile_scope_close",
+     "signature": "static inline void cw__profile_scope_close(cw__profile_scope *s)",
+     "doc": "",
+     "inline": true
+    }
+   ],
+   "types": [
+    {
+     "name": "cw__profile_scope",
+     "doc": "── the macros ─────────────────────────────────────────────────────",
+     "decl": "typedef struct cw__profile_scope { uint8_t open; } cw__profile_scope;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_PROFILE_ENABLED",
+     "doc": ""
+    },
+    {
+     "name": "CW_PROFILE_ON()",
+     "doc": ""
+    },
+    {
+     "name": "CW_PROFILE_SCOPE(name)",
+     "doc": ""
+    },
+    {
+     "name": "CW_PROFILE_COUNTER(name, value)",
+     "doc": ""
+    },
+    {
+     "name": "CW_PROFILE_BEGIN(name)",
+     "doc": ""
+    },
+    {
+     "name": "CW_PROFILE_END()",
+     "doc": ""
+    },
+    {
+     "name": "CW_PROFILE_ON()",
+     "doc": ""
+    },
+    {
+     "name": "CW_PROFILE_SCOPE(name)",
+     "doc": ""
+    },
+    {
+     "name": "CW_PROFILE_COUNTER(name, value)",
+     "doc": ""
+    },
+    {
+     "name": "CW_PROFILE_BEGIN(name)",
+     "doc": ""
+    },
+    {
+     "name": "CW_PROFILE_END()",
+     "doc": ""
+    }
+   ]
   },
   {
    "header": "cartwheel/project.h",

@@ -29,6 +29,7 @@
 #endif
 
 #include "cartwheel/jobs.h"
+#include "cartwheel/profile.h"
 
 #if CW_CART
 int cw__cart_hardware_threads(void); /* src/platform/cart.c */
@@ -51,6 +52,7 @@ struct cw_job {
   cw_single_fn single;
   void *ctx;
   int count, batch, chunks;
+  const char *zone; /* the profiler's name for its chunks ("<submitter>/job"), NULL when not profiling */
 };
 
 static cw_job pool[JOB_POOL];
@@ -140,13 +142,43 @@ static void publish(cw_job *j) {
   }
 }
 
+/* The profiler's zone for job chunks. Chunks under one zone name that a
+ * thread runs back to back (one job's chunks, or a physics step's tasks)
+ * become ONE zone, which saves a clock read per chunk (a cart's clock is a
+ * host call) and keeps traces small: the run's start is kept while the
+ * thread goes straight on to another chunk under the same name, and the
+ * zone is written when it turns to anything else (another name, idle, the
+ * end of a wait). */
+static _Thread_local struct { const char *zone; uint64_t t0, t1; } run_z;
+static void zone_flush(void) {
+  if (run_z.zone) cw__profile_push(run_z.zone, run_z.t0, run_z.t1);
+  run_z.zone = NULL;
+}
+
 static void run_chunk(cw_job *j, int c) {
+  const char *zone = j->zone;
+  uint64_t t0 = 0;
+  if (zone && CW_PROFILE_ON()) {
+    if (run_z.zone == zone) {
+      t0 = run_z.t0; /* the run goes on */
+      run_z.zone = NULL;
+    } else {
+      zone_flush();
+      t0 = cw_profile_now_ns();
+    }
+  } else {
+    zone = NULL;
+  }
   if (j->single) {
     j->single(j->ctx);
   } else {
     int b = c * j->batch, e = b + j->batch;
     if (e > j->count) e = j->count;
     j->range(b, e, worker_index, j->ctx);
+  }
+  if (zone) {
+    zone_flush(); /* a run that nested inside this chunk (it waited on a job) */
+    run_z.zone = zone, run_z.t0 = t0, run_z.t1 = cw_profile_now_ns();
   }
   atomic_fetch_add_explicit(&stats[worker_index].chunks, 1, memory_order_relaxed);
   if (atomic_fetch_add(&j->done, 1) + 1 == j->chunks && atomic_load(&done_sleepers)) {
@@ -198,6 +230,7 @@ static void *worker_main(void *arg) {
       empty = 0;
       continue;
     }
+    if (empty == 0) zone_flush(); /* idle: the run of chunks is over */
     if (++empty < SPIN_SCANS) {
       cpu_relax();
       continue;
@@ -257,6 +290,7 @@ void cw_jobs_shutdown(void) {
 }
 
 static cw_job *submit(cw_job *j) {
+  j->zone = CW_PROFILE_ON() ? cw__profile_job_name() : NULL;
   atomic_fetch_add_explicit(&stats[worker_index].jobs, 1, memory_order_relaxed);
   atomic_store_explicit(&j->done, 0, memory_order_relaxed);
   atomic_store_explicit(&j->next, 0, memory_order_release); /* the fields above go with it to a claimer */
@@ -309,6 +343,7 @@ void cw_job_wait(cw_job *j) {
       empty = 0;
       continue;
     }
+    if (empty == 0) zone_flush(); /* waiting: the run of chunks is over */
     if (++empty < SPIN_SCANS) {
       cpu_relax();
       continue;
@@ -323,6 +358,7 @@ void cw_job_wait(cw_job *j) {
     atomic_fetch_sub(&done_sleepers, 1);
     pthread_mutex_unlock(&sleep_lock);
   }
+  zone_flush();
   if (n_workers) unpublish(j, atomic_load_explicit(&j->gen, memory_order_relaxed));
   atomic_store_explicit(&j->in_use, 0, memory_order_release);
 }

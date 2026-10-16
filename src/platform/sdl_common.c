@@ -11,6 +11,7 @@
 #include "cartwheel/jobs.h"
 #include "cartwheel/debug.h"
 #include "cartwheel/core.h"
+#include "cartwheel/profile.h"
 #include "hooks.h"
 #include "render/quality_internal.h"
 #include "cartwheel/render2d.h"
@@ -680,7 +681,16 @@ void cw_set_raw_input_filter(cw_raw_input_filter fn, void *user) {
  * out of cw_time() so the game's clock stops with its simulation) */
 static struct { bool paused; uint32_t steps; double held; } dbg;
 
+static void frame_body(double now);
 void cw__frame(double now) {
+  cw_platform *p = &cw__plat;
+  uint64_t tick0 = p->tick;
+  cw__profile_frame_begin(p->frame, p->tick);
+  frame_body(now);
+  cw__profile_frame_end((uint32_t)(p->tick - tick0));
+}
+
+static void frame_body(double now) {
   cw_platform *p = &cw__plat;
   double raw = p->frame == 0 ? p->fixed_dt : now - p->last;
   double dt = raw;
@@ -697,8 +707,13 @@ void cw__frame(double now) {
   cw__perf_frame_begin();
   cw__pixel_frame_begin(); /* pixel_scale / crisp UI: the scene's target (pixel.c) */
   cw_frame_arena_begin(p->frame);
-  if (cw__res_frame_hook) cw__res_frame_hook(); /* deferred frees, async loads finishing under the budget */
+  if (cw__res_frame_hook) {
+    CW_PROFILE_SCOPE("resources.frame");
+    cw__res_frame_hook(); /* deferred frees, async loads finishing under the budget */
+  }
+  CW_PROFILE_BEGIN("debug.channel");
   cw__debug_channel_poll();
+  CW_PROFILE_END();
   if (!app_inited) {
     /* The app's init runs here, in the first frame, not at startup: with a
      * spread warm-up the first frame is only the loading screen (no app work,
@@ -718,7 +733,9 @@ void cw__frame(double now) {
       return;
     }
     app_inited = true;
+    CW_PROFILE_BEGIN("app.init");
     if (p->app.init) p->app.init(p->app.user);
+    CW_PROFILE_END();
     cw__debug_channel_app_ready();
   }
   if (dbg.paused) {
@@ -727,9 +744,14 @@ void cw__frame(double now) {
     bool step = dbg.steps > 0;
     dbg.held += step ? raw - p->fixed_dt : raw;
     p->now = now - dbg.held;
+    CW_PROFILE_BEGIN("input");
     cw__sdl_poll();
+    CW_PROFILE_END();
     if (!step) {
+      cw__profile_frame_render();
+      CW_PROFILE_BEGIN("render");
       if (p->app.render) p->app.render(p->app.user, p->accumulator / p->fixed_dt);
+      CW_PROFILE_END();
       p->frame++;
       cw__pixel_frame_end();
       cw__debug_frame_end();
@@ -740,14 +762,18 @@ void cw__frame(double now) {
     p->accumulator = 0;
   } else {
     p->now = now - dbg.held;
+    CW_PROFILE_BEGIN("input");
     cw__sdl_poll();
+    CW_PROFILE_END();
   }
   if (input_hooks.frame_begin) input_hooks.frame_begin(&p->input);
   if (p->app.warmup && !warmed) {
     /* one step per frame, the loading screen between them; a test does it
      * all in this frame (the same work, and frames line up with no warm-up) */
+    CW_PROFILE_BEGIN("app.warmup");
     do warmed = p->app.warmup(p->app.user);
     while (!warmed && !warmup_spread);
+    CW_PROFILE_END();
     if (!warmed) {
       /* the shader stage renders the app under the loading screen: its
        * first renders build the programs the scene needs (a scene app
@@ -774,6 +800,7 @@ void cw__frame(double now) {
    * 1/60 s frame on every host (native, romdev, browser) */
   const double eps = 1e-6;
   while (p->accumulator >= p->fixed_dt - eps && steps < max_sub) {
+    CW_PROFILE_SCOPE("fixed_update");
     if (input_hooks.tick_begin) input_hooks.tick_begin(); /* the per-tick action snapshot */
     if (p->app.fixed_update) p->app.fixed_update(p->app.user, p->fixed_dt);
     p->accumulator -= p->fixed_dt;
@@ -785,10 +812,15 @@ void cw__frame(double now) {
   if (p->accumulator < 0) p->accumulator = 0;
   if (input_hooks.ticks_end) input_hooks.ticks_end(); /* queries read the frame snapshot again */
   cw__perf_mark(CW_PERF_SIM);
+  CW_PROFILE_BEGIN("update");
   if (p->app.update) p->app.update(p->app.user, dt);
+  CW_PROFILE_END();
   cw__perf_mark(CW_PERF_UPDATE);
   if (cw__update_done_hook) cw__update_done_hook();
+  cw__profile_frame_render();
+  CW_PROFILE_BEGIN("render");
   if (p->app.render) p->app.render(p->app.user, p->accumulator / p->fixed_dt);
+  CW_PROFILE_END();
   cw__perf_mark(CW_PERF_RENDER);
   cw__host_debug_update();
   p->frame++;
@@ -810,6 +842,7 @@ uint32_t cw_debug_steps_left(void) { return dbg.steps; }
 
 void cw__shutdown(void) {
   cw_platform *p = &cw__plat;
+  cw__profile_shutdown(); /* a CW_PROFILE_TRACE run that quit early writes what it has */
   if (p->app.shutdown && app_inited) p->app.shutdown(p->app.user);
   if (cw__res_shutdown_hook) cw__res_shutdown_hook(); /* while the GL context is still current */
   cw_audio_close();

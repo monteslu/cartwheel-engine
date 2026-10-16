@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "anim_internal.h"
+#include "cartwheel/profile.h"
 
 #define MAX_FADES 4
 
@@ -287,6 +288,7 @@ static void dispatch(cw_node n, player *p, cw_anim a, const char *name, int coun
 }
 
 static void advance(cw_node n, player *p, double dt) {
+  CW_PROFILE_SCOPE("anim.player");
   if (!p->has_cur || !p->playing || dt == 0) return;
   configure_mixer(n, p);
   cw_array_clear(&p->fired);

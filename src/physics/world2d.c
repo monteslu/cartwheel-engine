@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "physics2d_internal.h"
+#include "cartwheel/profile.h"
 
 cw_xform2 cw_xform2_lerp(cw_xform2 a, cw_xform2 b, float t) {
   cw_xform2 r;
@@ -126,6 +127,7 @@ static cw_phys_event2d *push_event(cw__world2 *w, cw_phys_event_type type, b2Sha
 }
 
 void cw_world2d_step(cw_world2d wh, float dt) {
+  CW_PROFILE_SCOPE("physics2d.step");
   cw__world2 *w = cw__w2(wh);
   if (!w) {
     cw_warn("physics2d: step on a stale or null world");

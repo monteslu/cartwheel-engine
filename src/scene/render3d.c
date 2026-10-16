@@ -3,6 +3,7 @@
 #include <time.h>
 
 #include "cartwheel/pipeline.h"
+#include "cartwheel/profile.h"
 #include "cartwheel/resource.h"
 #include "scene_internal.h"
 #include "render3d_internal.h"
@@ -937,6 +938,7 @@ t3_camera *cw__render3d_camera_prepare(cw_tree *t, int w, int h) {
 bool cw_render3d_draw(cw_tree *t, int w, int h) {
   t3_camera *cam = cw_render3d_prepare(t, w, h);
   if (!cam) return false;
+  CW_PROFILE_SCOPE("render3d.draw");
   double t0 = cw__render3d_now_ms();
   render3d_state *s = state(t);
   t3_renderer_render(s->renderer, s->scene, cam);

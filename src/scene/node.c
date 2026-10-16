@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 #include "cartwheel/plugin.h"
+#include "cartwheel/profile.h"
 #include "scene_internal.h"
 
 /* ── type registry ──────────────────────────────────────────────────── */
@@ -850,6 +851,8 @@ static void run_hooks(cw_tree *t, int phase, bool before, double dt) {
 }
 
 static void run_phase(cw_tree *t, int phase, double dt) {
+  static const char *const zone[3] = { "tree.fixed_update", "tree.update", "tree.pre_render" };
+  CW_PROFILE_SCOPE(zone[phase]);
   run_hooks(t, phase, true, dt);
   cw__tree_order(t);
   t->processing = true;

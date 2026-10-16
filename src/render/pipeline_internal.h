@@ -29,6 +29,7 @@ typedef struct pass_rec {
   unsigned q[CW__QUERY_RING];
   bool q_busy[CW__QUERY_RING];
   uint64_t q_frame[CW__QUERY_RING]; /* the frame each query timed */
+  uint64_t q_eframe[CW__QUERY_RING]; /* the same as the engine's frame index (cw_frame_index, for the profiler) */
   bool q_init;
   /* a frame's GPU time summed over its runs (splitscreen times a pass once
    * per view): the frame being summed, and the sum so far */

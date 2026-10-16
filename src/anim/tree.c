@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "anim_internal.h"
+#include "cartwheel/profile.h"
 
 enum { BN_CLIP, BN_BLEND1D, BN_BLEND2D, BN_BLEND2, BN_ADD, BN_SM };
 enum { OP_TRUTHY, OP_FALSY, OP_EQ, OP_NE, OP_LT, OP_LE, OP_GT, OP_GE };
@@ -548,6 +549,7 @@ static void eval(atree *t, int id, float w, double dt, const cw_map *filter, boo
 }
 
 static void advance(cw_node n, atree *t, double dt) {
+  CW_PROFILE_SCOPE("anim.tree");
   if (!t->active || t->root < 0 || !t->nodes.count) return;
   t->player_node = t->player && *t->player ? cw_node_get(n, t->player) : (cw_node){ 0 };
   if (!cw_node_valid(t->player_node)) {

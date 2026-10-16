@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "internal.h"
+#include "cartwheel/profile.h"
 
 static inline cw__mixer *M(void) { return &cw__au.mix; }
 
@@ -617,6 +618,7 @@ static void mix_block(float *out, int n) {
 }
 
 void cw__mixer_mix(float *out, int frames) {
+  CW_PROFILE_SCOPE("audio.mix");
   for (int off = 0; off < frames; off += CW_AUDIO_BLOCK) {
     int n = CW_MIN(CW_AUDIO_BLOCK, frames - off);
     if (cw__au.offline) cw__offline_prepare_streams();

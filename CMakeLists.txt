@@ -61,6 +61,11 @@ add_library(cartwheel STATIC ${CW_CORE_SRCS} ${CW_PLATFORM_SRCS})
 target_include_directories(cartwheel PUBLIC include ${CW_THREE_DIR}/include PRIVATE src src/resource ${DEPS}/stb ${CW_THREE_DIR}/third_party
   ${CW_RECAST_INCLUDES})
 target_compile_options(cartwheel PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
+# the profiler's zones (cartwheel/profile.h): OFF compiles every CW_PROFILE_* macro out, the engine's and the game's
+option(CW_PROFILER "compile the profiler's zones in (off at run time until asked for)" ON)
+if(NOT CW_PROFILER)
+  target_compile_definitions(cartwheel PUBLIC CW_PROFILE_ENABLED=0 PRIVATE CW_PROFILER_OFF=1)
+endif()
 # #embed (src/ui/fonts.c) needs clang 19+; an older compiler (the Android
 # NDK's) includes the same bytes generated as initializer lists
 include(CheckCSourceCompiles)

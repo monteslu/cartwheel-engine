@@ -47,6 +47,7 @@ export const LOCAL_ONLY = {
   'project-templates': 'romdev, Chromium and wasmcart-native',
   'editor-import': 'romdev, Chromium and wasmcart-native',
   'a11y-channel': 'romdev',
+  'profile-cart': 'romdev',
   'project-export': 'romdev, wasmcart-native and the export toolchains',
   export: 'the export toolchains, an Android emulator, Wine, Chromium, romdev',
   plugins: 'romdev, Chromium and wasmcart-native',

@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "cartwheel/debug.h"
+#include "cartwheel/profile.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/render3d.h"
 #include "pipeline_internal.h"
@@ -86,7 +87,7 @@ void cw__gpu_timing_request(void) { gpu_timing = 1; }
 
 /* debug channel: "pipeline" lists the passes, what ran, GPU ms, caps. The
  * first call starts the GPU timers (off until something reads them): pass
- * GPU times show from the next call on, 1-3 frames after it. */
+ * GPU times show from a later call on, up to 11 frames after it (GL reads them back in a batch every 8 frames). */
 static void cmd_pipeline(int argc, const char **argv, cw_reply *r) {
   (void)argc;
   (void)argv;
@@ -451,26 +452,34 @@ static void gpu_time_add(pass_rec *r, uint64_t frame, float ms) {
   r->acc_ms += ms;
 }
 
-static void timer_poll(pass_rec *r, bool disjoint) {
-  /* each query in flight asked once (every ask is a driver round trip),
-   * the available results then taken oldest frame first */
-  bool ready[CW__QUERY_RING] = { false };
-  int n = 0;
-  for (int i = 0; i < CW__QUERY_RING; i++) {
-    if (!r->q_busy[i]) continue;
-    GLuint avail = 0;
-    glGetQueryObjectuiv(r->q[i], GL_QUERY_RESULT_AVAILABLE, &avail);
-    if (avail) ready[i] = true, n++;
-  }
-  while (n--) {
+/* Reading the timers back is the expensive part, not the queries. Any GL
+ * read waits for the driver: with Mesa's glthread (on by default) the first
+ * one waits until the driver thread has run every command queued so far,
+ * which serializes the game's thread with the driver's (6 ms a frame on the
+ * 890M in the showcase when it happened every frame), and each availability
+ * ask costs a round trip after that. So the results are read in a batch
+ * every TIMER_EVERY frames, only those at least TIMER_LAG frames old (the GPU
+ * is done with them), oldest first, and the first one not available ends a
+ * pass's poll. The ring holds (TIMER_EVERY + TIMER_LAG) frames of up to four
+ * views (CW__QUERY_RING). */
+#define TIMER_LAG 3
+#define TIMER_EVERY 8
+static void timer_poll(pass_rec *r, bool disjoint, uint64_t frame) {
+  for (;;) {
     int best = -1;
     for (int i = 0; i < CW__QUERY_RING; i++)
-      if (ready[i] && (best < 0 || r->q_frame[i] < r->q_frame[best])) best = i;
-    ready[best] = false;
+      if (r->q_busy[i] && (best < 0 || r->q_frame[i] < r->q_frame[best])) best = i;
+    if (best < 0 || r->q_frame[best] + TIMER_LAG > frame) return;
+    GLuint avail = 0;
+    glGetQueryObjectuiv(r->q[best], GL_QUERY_RESULT_AVAILABLE, &avail);
+    if (!avail) return; /* the GPU is further behind: next frame */
     GLuint ns = 0;
     glGetQueryObjectuiv(r->q[best], GL_QUERY_RESULT, &ns);
     r->q_busy[best] = false;
-    if (!disjoint) gpu_time_add(r, r->q_frame[best], (float)ns / 1e6f);
+    if (!disjoint) {
+      gpu_time_add(r, r->q_frame[best], (float)ns / 1e6f);
+      if (CW_PROFILE_ON()) cw__profile_gpu(r->name, r->q_eframe[best], (float)ns / 1e6f);
+    }
   }
 }
 
@@ -495,6 +504,7 @@ static int timer_begin(pass_rec *r, uint64_t frame) {
       glBeginQuery(GL_TIME_ELAPSED_EXT, r->q[i]);
       r->q_busy[i] = true;
       r->q_frame[i] = frame;
+      r->q_eframe[i] = cw_frame_index();
       timer_open = true;
       return i;
     }
@@ -566,6 +576,7 @@ static float halton(int i, int b) {
 static void run_pass(cw_pipeline *p, pass_rec *r, cw_pass_ctx *ctx) {
   bool wgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
   cw__pass_state_reset();
+  if (CW_PROFILE_ON()) cw_profile_begin(cw__profile_name2("pass ", r->name));
   int slot = timer_begin(r, p->frame);
   if (wgpu) cw__pw_timing_pass(p, r->name);
   ctx->user = r->d.user;
@@ -575,6 +586,7 @@ static void run_pass(cw_pipeline *p, pass_rec *r, cw_pass_ctx *ctx) {
   if (wgpu) cw__pw_timing_pass(p, NULL);
   timer_end(slot);
   r->stat.ran = true;
+  CW_PROFILE_END();
 }
 
 /* bind the target a phase draws into */
@@ -712,6 +724,7 @@ static void views_composite(cw_pipeline *p, cw_tree *t, const cw_rt *output, con
 }
 
 void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
+  CW_PROFILE_SCOPE("pipeline.render");
   cw_pipeline *p = cw_pipeline_of(t);
   bool wgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
   cw__pipeline_probe_caps();
@@ -807,7 +820,9 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
   /* a tree with no Camera3D (2D only) gets no three.c state at all. On
    * WebGPU three.c renders with its WebGPU backend (cw_render3d_prepare
    * made the renderer with t3_renderer_use_wgpu) */
+  CW_PROFILE_BEGIN("render3d.prepare");
   ctx.camera = mode == RUN_OVERLAY ? NULL : cw_render3d_prepare(t, w, h);
+  CW_PROFILE_END();
   if (ctx.camera) {
     ctx.scene3d = cw_render3d_scene(t);
     ctx.camera_node = cw_render3d_camera(t);
@@ -948,10 +963,11 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
   p->prepass_ran = false;
 
   /* the timers' results (once on they stay on, so every query issued is read) */
-  if (cw__caps.timer_query && !wgpu && cw__gpu_timing_wanted() && p->run == 0) { /* once a frame (splitscreen runs once per view) */
+  if (cw__caps.timer_query && !wgpu && cw__gpu_timing_wanted() && p->run == 0 && p->frame % TIMER_EVERY == 0) { /* once (splitscreen runs once per view) */
+    CW_PROFILE_SCOPE("pipeline.gpu_timers");
     GLint dj = 0;
     glGetIntegerv(GL_GPU_DISJOINT_EXT, &dj);
-    for (int i = 0; i < p->passes.count; i++) timer_poll(p->passes.data[i], dj != 0);
+    for (int i = 0; i < p->passes.count; i++) timer_poll(p->passes.data[i], dj != 0, p->frame);
   }
 
   /* POST chain: the writers, so the last one can target the output */

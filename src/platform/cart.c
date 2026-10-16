@@ -19,6 +19,7 @@
 
 #include "internal.h"
 #include "cartwheel/jobs.h"
+#include "cartwheel/profile.h"
 #include "cartwheel/plugin.h"
 
 /* wasmcart-sdl2's video backend */
@@ -300,9 +301,12 @@ void cw_audio_close(void) {
 __attribute__((export_name("wc_render"))) void wc_render(void) {
   cw_platform *p = &cw__plat;
   cw__frame(time_info.time_ms / 1000.0);
+  CW_PROFILE_BEGIN("present");
   cw__wgpu_frame_end(true);
+  CW_PROFILE_END();
   cw__perf_mark(CW_PERF_PRESENT);
   if (p->audio_fill) {
+    CW_PROFILE_SCOPE("audio.hand_off");
     audio_hand_off();
     cw__perf_mark(CW_PERF_AUDIO);
   }
