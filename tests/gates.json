@@ -157,7 +157,28 @@
       "CW_TEST_INJECT_FAIL": "1"
     },
     "note": "cw_noise (FastNoiseLite): every pattern, fractal, cellular mode and domain warp, the job-pool fill, gen://noise textures; the checksum is pinned, so the noise is the same bits on every host and a library change shows"
+  },  {
+    "name": "unit-water",
+    "app": "unit_water",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "Gerstner waves on the CPU: the height query inverts the sideways motion to 0.2 mm, phases stay exact an hour in; the checksum of heights over a minute is compared across hosts"
   },
+
 
   {
     "name": "unit-scene",
@@ -2165,7 +2186,37 @@
     "name": "noise-gpu",
     "script": "tests/noise-gpu.mjs",
     "note": "the GPU noise ports agree with cw_noise on every host and backend (difference rows of noise_demo); control: another seed on the GPU must fail"
+  },  {
+    "name": "water-boat",
+    "app": "water_boat",
+    "frames": 240,
+    "fields": [
+      "water.tick",
+      "bodies.hash",
+      "boat.y",
+      "boat.tilt"
+    ],
+    "expect": {
+      "water.tick": 240,
+      "bodies.hash": 1042058474
+    },
+    "note": "a boat and two crates floating on Gerstner waves (Buoyancy3D): the bodies' transform bits are pinned and equal on every host; planar reflection and refraction drawn; control: one frame early",
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium",
+        "wcnative"
+      ],
+      "vsGl": 0.002
+    }
   },
+  {
+    "name": "water-surface",
+    "script": "tests/water-surface.mjs",
+    "note": "the drawn water is where cw_water_height_at says, on every host and backend (debug_view HEIGHT read back at 48 probes, 1.5 cm); control: the water drawn 0.25 s late"
+  },
+
   {
     "name": "fog-height",
     "app": "fog_valley",

@@ -56,6 +56,7 @@ export const LOCAL_ONLY = {
   docs: 'Chromium',
   tutorials: 'romdev and wasmcart-native',
   'noise-gpu': 'romdev and Chromium legs',
+  'water-surface': 'romdev and Chromium legs',
 };
 
 /** measured seconds per gate in CI on llvmpipe / lavapipe (tools/ci-times.mjs), for balancing the shares */
