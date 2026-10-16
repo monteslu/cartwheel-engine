@@ -11,6 +11,7 @@
 #include "cartwheel/render3d.h"
 #include "render/bake_internal.h"
 #include "cartwheel/gpu.h"
+#include "cartwheel/shading.h"
 #include "cartwheel/gl.h"
 #if CW_WGPU
 #include "platform/wgpu.h"
@@ -59,7 +60,7 @@ static void state_free(void *p) {
       if (s->prim_cache[k][l]) t3_release(s->prim_cache[k][l]);
   for (int i = 0; i < s->look_count; i++) t3_release(s->looks[i].mat);
   cw_free(s->looks);
-  if (s->renderer) t3_renderer_destroy(s->renderer);
+  if (s->renderer) cw_shading_forget(s->renderer), t3_renderer_destroy(s->renderer);
   if (s->scene) t3_release(s->scene);
   cw_free(s);
 }

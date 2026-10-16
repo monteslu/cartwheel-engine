@@ -28,6 +28,7 @@
 #include "cartwheel/jobs.h"
 #include "cartwheel/math.h"
 #include "cartwheel/quality.h"
+#include "cartwheel/shading.h"
 #include "terrain_internal.h"
 
 typedef struct tr_gpu {
@@ -474,7 +475,7 @@ static void fill(t3_extension_ctx *c, void *user) {
 void cw_terrain_bind_renderer(cw_terrain *t, t3_renderer *r) {
   if (!r) return;
   static const char *names[] = { "terrain", "terrainlow", "terrainfar" };
-  for (int i = 0; i < 3; i++) t3_renderer_set_extension(r, names[i], fill, t);
+  for (int i = 0; i < 3; i++) cw_shading_part(r, names[i], fill, t); /* (parts: they compose with others, cartwheel/shading.h) */
 }
 
 void cw_terrain_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp) {

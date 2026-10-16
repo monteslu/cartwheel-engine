@@ -14,6 +14,7 @@
 #include <time.h>
 
 #include "cartwheel/debug.h"
+#include "cartwheel/shading.h"
 #include "cartwheel/lighting.h"
 #include "cartwheel/math.h"
 #include "cartwheel/pipeline.h"
@@ -125,8 +126,9 @@ static bool lit_type(t3_material_type t) {
          t == T3_MESH_PHYSICAL_MATERIAL;
 }
 
-/* every lit material in the scene gets the part (on) or loses it (off);
- * materials with another extension keep theirs */
+/* every lit material in the scene gets the part (on) or loses it (off),
+ * composed with the parts it already has (cartwheel/shading.h); a material
+ * with a surface extension of its own (terrain) keeps it alone */
 static int mark_materials(t3_object *o, bool on) {
   int n = 0;
   if (o->type == T3_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_SKINNED_MESH) {
@@ -136,10 +138,12 @@ static int mark_materials(t3_object *o, bool on) {
       if (!mt || !lit_type(mt->type)) continue;
       const char *ext = t3_material_get_extension(mt);
       if (on) {
-        if (!ext) t3_material_set_extension(mt, PART);
-        if (!ext || !strcmp(ext, PART)) n++;
-      } else if (ext && !strcmp(ext, PART))
-        t3_material_set_extension(mt, NULL);
+        if (!ext || cw_shading_has(mt, PART) || cw_shading_has(mt, "gi")) {
+          cw_shading_add(mt, PART);
+          n++;
+        }
+      } else
+        cw_shading_remove(mt, PART);
     }
   }
   for (int i = 0; i < o->child_count; i++) n += mark_materials(o->children[i], on);
@@ -222,7 +226,7 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
     return;
   }
   if (L->hooked != ctx->renderer) {
-    t3_renderer_set_extension(ctx->renderer, PART, fill, L);
+    cw_shading_part(ctx->renderer, PART, fill, L);
     L->hooked = ctx->renderer;
   }
   if (ctx->scene3d->auto_update) t3_object_update_matrix_world(ctx->scene3d, false);
