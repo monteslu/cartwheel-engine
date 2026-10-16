@@ -50,3 +50,11 @@ followed in src/render/froxel.c (no code copied)
   Copyright (C) 2018 The Android Open Source Project
   Licensed under the Apache License, Version 2.0
   https://github.com/google/filament
+
+FastNoiseLite 1.1.1 (procedural noise, cartwheel/noise.h), vendored unmodified in
+src/third_party/fastnoiselite/ (upstream commit 785f37a9ad76e283586a379675085f2063ae03f7);
+src/noise/noise.glsl and noise.wgsl are ports of its C code
+  Copyright (c) 2020 Jordan Peck (jordan.me2@gmail.com)
+  Copyright (c) 2020 Contributors
+  MIT license (src/third_party/fastnoiselite/LICENSE)
+  https://github.com/Auburn/FastNoiseLite

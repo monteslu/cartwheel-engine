@@ -8,6 +8,7 @@
 
 #include "cartwheel/gl.h"
 #include "cartwheel/gpu.h"
+#include "noise/noise_internal.h"
 #include "resource_internal.h"
 #include "three.h"
 
@@ -204,6 +205,21 @@ void cw__tex_cpu_free(cw_tex_cpu *t) {
 
 bool cw__tex_decode(const char *path, const uint8_t *bytes, size_t len, cw_tex_cpu *out) {
   memset(out, 0, sizeof *out);
+  if (!strncmp(path, "gen:/noise", 10)) { /* generated (cartwheel/noise.h); bytes are "noise?<query>" */
+    const char *q = strchr(path, '?');
+    uint8_t *px;
+    int w, h;
+    if (!cw__noise_image_query(q ? q + 1 : "", &px, &w, &h)) return false;
+    out->level[0].data = px;
+    out->level[0].size = (size_t)w * (size_t)h * 4;
+    out->level[0].w = out->width = w;
+    out->level[0].h = out->height = h;
+    out->levels = 1;
+    out->gl_format = GL_RGBA8;
+    out->gen_mips = true;
+    out->format = "rgba8";
+    return true;
+  }
   if (cw__ktx2_is(bytes, len)) {
     char err[200];
     int target = ktx2_target < 0 ? CW_KTX2_RGBA32 : ktx2_target;

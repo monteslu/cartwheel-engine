@@ -126,6 +126,7 @@ const char *cw_res_type_name(cw_res_type t) {
 }
 
 static cw_res_type type_for_path(const char *path) {
+  if (!strncmp(path, "gen:/noise", 10)) return CW_RES_TEXTURE; /* gen://noise?... (cartwheel/noise.h) */
   const char *slash = strrchr(path, '/'), *dot = strrchr(path, '.');
   if (!dot || (slash && dot < slash)) return CW_RES_BINARY;
   char ext[16];
@@ -310,6 +311,16 @@ static void free_slot(uint64_t id, res_slot *s) {
 
 /* ── loading ─────────────────────────────────────────────────────── */
 static uint8_t *read_file(const char *path, size_t *len) {
+  /* generated resources ("gen://noise?..."; canonical "gen:/noise?..."):
+   * the "file" is the generator's name and query, which the type's decode
+   * step turns into data (texture.c: gen:/noise) */
+  if (!strncmp(path, "gen:/", 5)) {
+    size_t n = strlen(path + 5);
+    uint8_t *b = cw_alloc(n + 1, CW_MEM_RESOURCE);
+    memcpy(b, path + 5, n + 1);
+    *len = n;
+    return b;
+  }
   /* the project layer first (an editor's project directory, files written
    * or imported into memory, removal marks), then the assets */
   cw_vfs_layer layer = cw_vfs_root() || cw_vfs_changed_count() ? cw_vfs_where(path) : CW_VFS_ASSET; /* a plain game: assets only */
