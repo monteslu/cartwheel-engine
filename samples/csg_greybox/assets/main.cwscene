@@ -1,0 +1,120 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.32, 0.42, 0.55, 1)
+sky_color = color(0.55, 0.7, 1.0, 1)
+ground_color = color(0.3, 0.25, 0.2, 1)
+hemi_energy = 1.4
+ambient_energy = 0.2
+
+[node name="Post" parent="." type="PostProcess"]
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(1.5, 9.5, 12)
+rotation = vec3(-0.66, 0.08, 0)
+fov = 55
+near = 0.1
+far = 80
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+rotation = vec3(-0.9, 0.55, 0)
+energy = 3.5
+color = color(1, 0.94, 0.85, 1)
+shadow = true
+shadow_size = 2048
+shadow_extent = 10
+
+[node name="Level" parent="." type="CSGCombiner3D"]
+bake_file = "level.cwcsg"
+roughness = 0.85
+
+[node name="Ground" parent="Level" type="CSGBox3D"]
+position = vec3(0, -0.2, 0)
+size = vec3(16, 0.4, 14)
+color = color(0.36, 0.38, 0.36, 1)
+
+[node name="Room" parent="Level" type="CSGBox3D"]
+position = vec3(0, 2, 0)
+size = vec3(8, 4, 8)
+color = color(0.75, 0.62, 0.45, 1)
+
+[node name="Inside" parent="Level/Room" type="CSGBox3D"]
+operation = SUBTRACTION
+position = vec3(0, 0.3, 0)
+size = vec3(7.4, 4, 7.4)
+color = color(0.82, 0.8, 0.74, 1)
+
+[node name="Door" parent="Level/Room" type="CSGBox3D"]
+operation = SUBTRACTION
+position = vec3(0, -0.5, 3.85)
+size = vec3(1.4, 2.4, 1)
+color = color(0.55, 0.3, 0.18, 1)
+
+[node name="Window" parent="Level/Room" type="CSGCylinder3D"]
+operation = SUBTRACTION
+position = vec3(-3.85, 0.2, 0)
+rotation = vec3(0, 0, 1.5708)
+radius = 0.6
+height = 1
+sides = 20
+color = color(0.55, 0.3, 0.18, 1)
+
+[node name="Pillar" parent="Level" type="CSGCylinder3D"]
+position = vec3(2, 2.15, -2)
+radius = 0.35
+height = 3.7
+sides = 12
+color = color(0.6, 0.6, 0.62, 1)
+
+[node name="Ornament" parent="Level" type="CSGCombiner3D"]
+position = vec3(-2, 0.9, -2)
+rotation = vec3(0, 0.6, 0)
+
+[node name="Cube" parent="Level/Ornament" type="CSGBox3D"]
+size = vec3(1.2, 1.2, 1.2)
+color = color(0.25, 0.45, 0.7, 1)
+
+[node name="Round" parent="Level/Ornament" type="CSGSphere3D"]
+operation = INTERSECTION
+radius = 0.8
+segments = 24
+color = color(0.25, 0.45, 0.7, 1)
+
+[node name="Collision" parent="." type="StaticBody3D"]
+
+[node name="Shape" parent="Collision" type="CollisionShape3D"]
+shape = TRIMESH
+mesh = "../../Level"
+
+[node name="Ball" parent="." type="RigidBody3D"]
+position = vec3(0.2, 3.5, -2.6)
+bounce = 0.2
+
+[node name="Shape" parent="Ball" type="CollisionShape3D"]
+shape = SPHERE
+radius = 0.35
+
+[node name="Mesh" parent="Ball" type="MeshInstance3D"]
+primitive = SPHERE
+size = vec3(0.7, 0.7, 0.7)
+color = color(0.85, 0.2, 0.15, 1)
+roughness = 0.4
+cast_shadow = true
+receive_shadow = true
+
+[node name="Sketch" parent="." type="CSGBox3D"]
+position = vec3(6.2, 0.75, 3.5)
+size = vec3(1.5, 1.5, 1.5)
+color = color(0.4, 0.6, 0.35, 1)
+
+[node name="Hole" parent="Sketch" type="CSGCylinder3D"]
+operation = SUBTRACTION
+radius = 0.45
+height = 3.4
+
+[node name="Cap" parent="Sketch" type="CSGSphere3D"]
+position = vec3(0, 0.9, 0)
+radius = 0.5
+color = color(0.4, 0.6, 0.35, 1)

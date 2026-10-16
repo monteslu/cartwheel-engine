@@ -46,3 +46,4 @@ depth+instbig+xcsm
 standard+instbig+shadow+icol+l1001
 standard+instbig+shadow+l1241+s024+xcluster
 standard+instbig+shadow+icol+l1241+s024+xcluster
+standard+vcol+shadow+l1001

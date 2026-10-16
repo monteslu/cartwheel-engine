@@ -2307,6 +2307,22 @@
     "note": "cwbake twice: identical bytes; the same fingerprint as the runtime bake; lightmap_room loading the .cwlm renders the same frame without baking; control: another seed differs"
   },
   {
+    "name": "csg-greybox",
+    "app": "csg_greybox",
+    "frames": 180,
+    "controlFrames": 30,
+    "maxGt16": 0.002,
+    "webgpu": true,
+    "fields": ["csg.tick", "csg.baked", "csg.stale", "csg.triangles", "csg.file_lo", "csg.file_hi", "csg.mesh_lo", "csg.mesh_hi", "csg.sketch_baked", "ball.y"],
+    "expect": { "csg.baked": 1, "csg.stale": 0, "csg.triangles": 568, "csg.sketch_baked": 0, "csg.file_lo": 2280093915, "csg.file_hi": 3074111819, "csg.mesh_lo": 580077122, "csg.mesh_hi": 269563446 },
+    "note": "CSG greyboxing: a level of box / cylinder / sphere booleans baked by cwcsg (level.cwcsg) and loaded as bytes: the file's and the loaded geometry's FNV-1a 64 are equal on every host, a ball lands on the baked floor through a TRIMESH shape that reads the baked mesh, and an unbaked root draws the preview (a red ghost for its subtracted cylinder). Control: frame 30 (the ball is still falling)"
+  },
+  {
+    "name": "csg-tool",
+    "script": "tests/csg-tool.mjs",
+    "note": "cwcsg twice: identical bytes, equal to the committed bake; the game reports that file's hash and lands the ball on it; controls: a changed operation bakes other bytes, fails --check, reads as stale with the old file and draws another frame; no bake file draws the preview and the ball falls through"
+  },
+  {
     "name": "platformer3d",
     "app": "platformer3d",
     "frames": 2150,

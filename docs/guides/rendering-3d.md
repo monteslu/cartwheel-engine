@@ -52,6 +52,7 @@ then commit the manifest and the generated C. Generating captures on three.c's m
 | `ProceduralSky`, `HeightFog` | sky and day cycle, height fog |
 | `LightmapGI` | baked indirect light |
 | `ReflectionProbe3D`, `LightProbeGrid3D` | reflections of the surroundings, bounce light |
+| `CSGBox3D`, `CSGCylinder3D`, `CSGSphere3D`, `CSGCombiner3D` | block-out shapes baked into one mesh (greyboxing) |
 | `VisibilityManager`, `Room3D`, `Portal3D` | culling, LOD, impostors, portals |
 | `GPUParticles3D`, `Trail3D`, `ParticleAttractor3D`, `ParticleCollider3D` | particles and trails |
 | `Decal3D` | projected decals |
@@ -262,6 +263,36 @@ Quality (effects detail):
 | Captures a frame | 1 | 1 | 2 | 4 |
 | Grid refresh (INCREMENTAL) | the bake only | half of `probes_per_frame` | as authored | twice |
 | Grid face size | at most 8 | as authored | as authored | as authored |
+## Blocking out levels with CSG
+
+[csg.h](header:csg.h) is for laying out a level before any art exists. You build rooms, doors, pillars and ramps out of boxes, cylinders and spheres that add to or cut from each other, then bake them into one mesh.
+
+The node types are `CSGBox3D`, `CSGCylinder3D`, `CSGSphere3D` and `CSGCombiner3D` (a group with no shape of its own). Each has an `operation`: UNION adds it, SUBTRACTION cuts it out, INTERSECTION keeps only the overlap. The topmost CSG node of a branch is the root. It starts from its own shape, then applies its CSG children in order, each with its own operation, and a child with CSG children of its own is built the same way first. A room is a box with a slightly smaller box subtracted; a door is one more subtracted box inside it:
+
+@include samples/csg_greybox/assets/main.cwscene#Level..Window
+
+Colours are per shape. A face that a subtracted shape cuts takes that shape's colour, so the inside of a door frame can differ from the wall. The root holds the surface settings for the whole result: `roughness`, `metalness`, `cast_shadow`, `receive_shadow`.
+
+The booleans never run in your game. The `cwcsg` tool loads the scene, runs every root through [Manifold](https://github.com/elalish/manifold) (robust booleans that always give a closed mesh) and writes the root's `bake_file`. The game just loads that file, so every host draws exactly the same triangles:
+
+```sh
+build/native/cwcsg samples/csg_greybox/assets/main.cwscene
+```
+
+```text
+{"root":"Level","file":"level.cwcsg","written":true,"shapes":10,"triangles":568,"vertices":1258,"bytes":62216,"hash":"b73b394b87e778db","input_hash":"e1cc582bc8a2a3a5","ms":3.96}
+{"root":"Sketch","skipped":"no bake_file"}
+```
+
+`--assets DIR` names the asset root `bake_file` is relative to (the scene's folder by default). `--watch` bakes again every time you save the scene. `--check` writes nothing and fails when a bake file is missing or out of date, which suits a build step or CI. The same scene always gives the same bytes: positions snap to 0.1 mm, faces are flat shaded, and triangles and vertices are written in a sorted order. Round shapes use exactly `sides` (cylinders) or `segments` (spheres) facets.
+
+While you lay out, you do not need to bake after every change. A root without a bake file draws a preview: each shape as it is, unioned shapes solid, subtracted shapes as red see-through ghosts and intersected shapes as blue ones. You see where the cuts go; the cuts themselves appear after a bake. Set `ghosts = false` on the root to hide them. If you change the shapes and forget to bake, the root keeps drawing the old file, reports `stale`, and logs a warning naming the fix.
+
+For collision, give a StaticBody3D a CollisionShape3D with `shape = TRIMESH` and `mesh` pointing at the root. It collides with the baked mesh (the preview has no collision):
+
+@include samples/csg_greybox/assets/main.cwscene#Collision
+
+Costs: a baked root is one mesh and one draw call. The preview is one draw per shape. `samples/csg_greybox` (the room above, a pillar, a box rounded by intersecting it with a sphere, a ball that lands on the baked floor, and one unbaked root showing the preview) bakes in about 4 ms and draws in 0.53 ms a frame on a Radeon 890M at 1920x1080, on GL and WebGPU alike (0.5 ms of it GPU); a Vega 8 should stay under 1.5 ms. CSG has nothing to scale, so the quality presets leave it alone. Its gates are `csg-greybox` (the file's and the loaded mesh's hashes are equal on every host) and `csg-tool` (two bakes are identical, and a changed operation bakes other bytes and reads as stale).
 
 Screen-space reflections and bounce light are PostProcess settings on top of the probes, three.js r186's `SSRNode` and `SSGINode` at half resolution:
 

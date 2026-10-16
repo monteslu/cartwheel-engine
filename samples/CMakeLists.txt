@@ -179,6 +179,9 @@ cw_add_app(gi_room SOURCES gi_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/gi_
 cw_add_app(gi_room_perf SOURCES gi_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/gi_room/assets PROGRAMS gi_room/programs/gi_room.txt GL_ONLY)
 target_compile_definitions(gi_room_perf PRIVATE GI_PERF=1)
 cw_add_app(gi_probe_check SOURCES gi_probe_check/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/gi_probe_check/assets PROGRAMS gi_room/programs/gi_room.txt)
+# CSG greyboxing: a level blocked out with box, cylinder and sphere booleans, baked by cwcsg (level.cwcsg);
+# a ball lands on the baked mesh through a TRIMESH collision shape; one root without a bake shows the preview.
+cw_add_app(csg_greybox SOURCES csg_greybox/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/csg_greybox/assets)
 # The showcase: an outdoor valley through a day / night cycle
 # (terrain LOD, a forest, a village with 193 lights, shadows, height
 # fog, skinned walkers, the modern post stack). The walkers are Khronos
