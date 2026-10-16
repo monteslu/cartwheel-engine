@@ -292,7 +292,7 @@ For collision, give a StaticBody3D a CollisionShape3D with `shape = TRIMESH` and
 
 @include samples/csg_greybox/assets/main.cwscene#Collision
 
-Costs: a baked root is one mesh and one draw call. The preview is one draw per shape. `samples/csg_greybox` (the room above, a pillar, a box rounded by intersecting it with a sphere, a ball that lands on the baked floor, and one unbaked root showing the preview) bakes in about 4 ms and draws in 0.53 ms a frame on a Radeon 890M at 1920x1080, on GL and WebGPU alike (0.5 ms of it GPU); a Vega 8 should stay under 1.5 ms. CSG has nothing to scale, so the quality presets leave it alone. Its gates are `csg-greybox` (the file's and the loaded mesh's hashes are equal on every host) and `csg-tool` (two bakes are identical, and a changed operation bakes other bytes and reads as stale).
+Costs: a baked root is one mesh and one draw call. The preview is one draw per shape. `samples/csg_greybox` (the room above, a pillar, a box rounded by intersecting it with a sphere, a ball that lands on the baked floor, and one unbaked root showing the preview) bakes in about 4 ms and costs about 0.4 ms a frame on a Radeon 890M at 1920x1080 (native: 0.38 ms on GL, 0.37 ms on WebGPU, almost all of it GPU; Chromium: 0.15 ms on GL, 0.41 ms on WebGPU). A Vega 8 should stay under 1.5 ms. CSG has nothing to scale, so the quality presets leave it alone. Its gates are `csg-greybox` (the file's and the loaded mesh's hashes are equal on every host) and `csg-tool` (two bakes are identical, and a changed operation bakes other bytes and reads as stale).
 
 Screen-space reflections and bounce light are PostProcess settings on top of the probes, three.js r186's `SSRNode` and `SSGINode` at half resolution:
 
