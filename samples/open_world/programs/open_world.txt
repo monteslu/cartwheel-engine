@@ -1,0 +1,16 @@
+# r186 program states open_world draws (cmake/programs.cmake, tools/programs.mjs)
+standard+instbig+shadow+senv+l1001+xterrain
+standard+vcol+instbig+shadow+senv+ds+l1001
+standard+vcol+instbig+shadow+senv+l1001
+standard+instbig+shadow+senv+l1001+xterrainfar
+standard+instbig+shadow+senv+l1001+xterrainlow
+standard+instbig+shadow+senv+l1001
+depth+instbig+xterrain
+depth+instbig+xterrainlow
+standard+senv+l1001
+standard+instbig+senv+l1001
+standard+instbig+shadow+l1001+xterrain
+standard+vcol+instbig+shadow+ds+l1001
+standard+vcol+instbig+shadow+l1001
+standard+instbig+shadow+l1001
+standard+instbig+shadow+l1001+xterrainfar

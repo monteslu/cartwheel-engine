@@ -3,6 +3,9 @@
  * Test hooks (environment):
  *   CW_FRAMES=N        run exactly N frames on a fixed 1/60 s clock (CW_FRAME_HZ), then exit
  *                      (the same virtual clock a deterministic cart run uses)
+ *   CW_PLAYER_TIMING=1 with CW_FRAMES: not a deterministic run (cw_is_deterministic_run false):
+ *                      loads finish when their decode is done, under the millisecond budget, as
+ *                      in a player's game, so frame times measure what a player gets
  *   CW_SCREENSHOT=f    with CW_FRAMES: write the last frame to f (PNG)
  *   CW_DEBUG_DUMP=f    write the debug fields as JSON at the end of a CW_FRAMES run,
  *                      or when the game quits (cw_quit)
@@ -527,7 +530,7 @@ int cw_native_main(int argc, char **argv, cw_app_desc (*app_fn)(int, char **)) {
   double frame_hz = getenv("CW_FRAME_HZ") ? strtod(getenv("CW_FRAME_HZ"), NULL) : 60.0;
   if (frame_hz <= 0) frame_hz = 60.0;
   if (fixed_frames > 0) {
-    p->deterministic_run = true;
+    p->deterministic_run = !getenv("CW_PLAYER_TIMING");
     p->app.vsync_off = true;
   }
   cw_jobs_init(p->app.workers == 0 ? -1 : p->app.workers < 0 ? 0 : p->app.workers);

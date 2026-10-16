@@ -3328,9 +3328,21 @@
      "inline": false
     },
     {
+     "name": "cw_job_background",
+     "signature": "cw_job *cw_job_background(cw_single_fn fn, void *ctx)",
+     "doc": "A single job for background work that may take many milliseconds (a\nresource decode, a streamed cell's terrain build): workers run it, but the\nmain thread never picks it up while it helps with other jobs, so waiting\nfor this frame's parallel work never stalls a frame behind it. Waiting for\nthis very job (cw_job_wait) still runs it on the waiter. With no workers\nit runs inline, like any job. Same lifetime rules as cw_job_range.",
+     "inline": false
+    },
+    {
      "name": "cw_job_wait",
      "signature": "void cw_job_wait(cw_job *job)",
      "doc": "Blocks (helping) until the job is done, then frees it.",
+     "inline": false
+    },
+    {
+     "name": "cw_job_done",
+     "signature": "bool cw_job_done(const cw_job *job)",
+     "doc": "True once every chunk of the job ran (it must still be passed to\ncw_job_wait, which then returns at once). Polling never helps: a long\nbackground job (a streamed cell's terrain build) runs on a worker while the\nmain thread goes on drawing. NULL counts as done.",
      "inline": false
     },
     {
@@ -5839,6 +5851,12 @@
      "name": "cw_world3d_stats",
      "signature": "cw_phys_stats cw_world3d_stats(cw_world3d w)",
      "doc": "Counters, step count and state hash; all zero for an invalid world. Cheap.",
+     "inline": false
+    },
+    {
+     "name": "cw_world3d_shift_origin",
+     "signature": "void cw_world3d_shift_origin(cw_world3d w, t3_vec3 shift)",
+     "doc": "Floating origin (cartwheel/stream.h): move every body by -shift, in\ncreation order, keeping velocities, sleep states and the interpolation\n(synced objects do not jump). Box3D has no origin shift of its own, so\nthis sets each body's transform: O(bodies), for a rare event. Joint\nanchors on the world itself (cw_joint3d to no body, mouse targets) do not\nmove: move them yourself. Deterministic: called on a tick the simulation\npicks, every host shifts the same bodies by the same amount.",
      "inline": false
     },
     {
@@ -9127,13 +9145,13 @@
     {
      "name": "cw_res_set_max_in_flight",
      "signature": "void cw_res_set_max_in_flight(int n)",
-     "doc": "Decodes (and native reads) running on the job pool at once; more wait\ntheir turn, started in finish order. Default (0): twice the job threads,\nat least 2.",
+     "doc": "Decodes (and native reads) running on the job pool at once; more wait\ntheir turn, started in finish order. Default (0): half the job threads,\n1 to 8, so each frame's own parallel work always finds free workers. The\njobs are background jobs (cw_job_background): the main thread never runs\na decode while it waits for other work.",
      "inline": false
     },
     {
      "name": "cw_res_set_residency_budget",
      "signature": "void cw_res_set_residency_budget(size_t bytes)",
-     "doc": "The residency cache's size: released READY resources stay loaded while\ntheir bytes (payload bytes, or file bytes for types that report none; in\na deterministic run always file bytes, which are the same on every host)\nfit. 0 (default) = no cache: the last release frees after\nCW_RES_FREE_DELAY_FRAMES. Lowering it evicts at the next cw_res_frame.",
+     "doc": "The residency cache's size: released READY resources stay loaded while\ntheir bytes fit: payload bytes, or the file's (decompressed) bytes for\ntypes that report none and always in a deterministic run, where they are\nthe same on every host. 0 (default) = no cache: the last release frees\nafter CW_RES_FREE_DELAY_FRAMES. Lowering it evicts at the next cw_res_frame.",
      "inline": false
     },
     {
@@ -10667,6 +10685,141 @@
    ]
   },
   {
+   "header": "cartwheel/stream.h",
+   "summary": "cartwheel world streaming: a big world cut into square cells that load,\nactivate, deactivate and unload around the player while the game runs,\nwith no loading screen.\n\n── cells ──────────────────────────────────────────────────────────────\nThe world is a cells_x x cells_z grid of cell_size metre squares on the XZ\nplane, cell (0, 0)'s min corner at `origin`. Cell (cx, cz) has id\ncz * cells_x + cx and, when path_format is set, one file of its own\n(snprintf(path, path_format, cx, cz)): one file per cell, so a lazily\nloaded web cart waits on one cell at most. A \".zst\" / \".lz4\" suffix\ndecompresses on the job pool (cartwheel/resource.h). Every cell needs its\nfile; an empty cell is a small file.\n\nA cell moves through:\n  NONE      not wanted\n  LOADING   its file is loading (cw_res_load_async_ex, nearest first)\n  LOADED    on_load ran (on the main thread, from cw_stream_frame, at\n            most prepare_per_frame cells a frame): what is only drawn\n            (meshes, terrain, scatter) exists and shows\n  ACTIVE    on_activate ran (from cw_stream_tick): what the simulation\n            sees (bodies, navmesh tiles, entities) exists\nand back down: on_deactivate (tick) then on_unload (tick), after which\nthe file is released (cw_res_set_residency_budget can keep it cached).\n\n── sources and radii ──────────────────────────────────────────────────\nSources (the player, the camera, a remote player) say where cells are\nneeded. A cell is wanted LOADED while its square comes within\nload_radius of a source (horizontal distance, the nearest point of the\nsquare), and ACTIVE within active_radius (<= load_radius). Hysteresis: a\ncell leaves a set only once it is farther than radius + hysteresis, so a\nplayer on a border does not make cells thrash. Loads start nearest first\n(source priority, then distance, then id), at most max_requests_per_tick\na tick.\n\n── determinism ────────────────────────────────────────────────────────\nWhat the simulation sees changes only in cw_stream_tick (call it from\nfixed_update), and only from the sources' positions: cells activate and\ndeactivate in cell id order on the tick their distance says, whatever the\ndisk, the network or the job pool did. When a cell must activate and its\nfile has not arrived (or on_load has not run), the tick waits for it: a\nSTALL, counted in the stats (stalls, stall_ms). That keeps every host\nidentical; size load_radius from your IO so stalls never happen\n(load_radius - active_radius is the distance the source travels while a\ncell loads). activation_hash folds every (tick, cell, on/off) event: equal\nhashes mean equal activation histories.\n\n── large worlds: the floating origin ──────────────────────────────────\nPositions far from the origin lose float precision (at 8 km a float\nsteps 1 mm; at 100 km, 8 mm, and the camera shakes). The stream keeps a\nLOCAL origin in double precision: everything the game simulates and draws\nlives in local float coordinates near it, and world positions are\ncw_dvec3. When the first source gets farther than rebase_distance from\nthe local origin (horizontally), cw_stream_tick moves the origin by whole\ncells toward it (shift = a whole number of cells, so a power-of-two\ncell_size keeps every shifted coordinate exact where precision allows),\nthen calls on_rebase with the shift: move your bodies\n(cw_world3d_shift_origin) and objects by -shift. Cells get on_cell_rebase\nwith their new local origin. It happens on a tick the sources decide, so\nit is deterministic. Rendering is camera-relative as a result: the camera\nand everything near it are near the local origin.\n\nThreads: main thread only. Callbacks run on the main thread.\nMemory: CW_MEM_GAME for the grid (cells_x * cells_z small records).",
+   "functions": [
+    {
+     "name": "cw_stream_default_desc",
+     "signature": "cw_stream_desc cw_stream_default_desc(void)",
+     "doc": "The defaults noted above (grid and callbacks empty).",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_create",
+     "signature": "cw_stream *cw_stream_create(const cw_stream_desc *d)",
+     "doc": "NULL (logged) for an empty or oversized grid or radii out of order.",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_destroy",
+     "signature": "void cw_stream_destroy(cw_stream *s)",
+     "doc": "Deactivates and unloads every cell (id order), releases their files.",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_source_add",
+     "signature": "int cw_stream_source_add(cw_stream *s, cw_dvec3 p, int priority)",
+     "doc": "A source at world position p; returns its index. Higher priority loads\nfirst. The first source added drives the origin. At most 8.",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_source_move",
+     "signature": "void cw_stream_source_move(cw_stream *s, int src, cw_dvec3 p)",
+     "doc": "Moves source src to world position p (call before cw_stream_tick).",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_source_move_local",
+     "signature": "void cw_stream_source_move_local(cw_stream *s, int src, t3_vec3 p)",
+     "doc": "The same from local coordinates (what physics and the scene use).",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_tick",
+     "signature": "void cw_stream_tick(cw_stream *s)",
+     "doc": "fixed_update: rebase when due, then decide the wanted sets from the\nsources, deactivate and unload what left them, start loads, and activate\n(in id order) what entered the active set, waiting for any cell not loaded\nyet. Cost: O(cells within the radii) plus the callbacks.",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_frame",
+     "signature": "void cw_stream_frame(cw_stream *s)",
+     "doc": "Every frame (before drawing): on_load for cells whose file is ready, at\nmost prepare_per_frame, nearest first.",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_cell_state",
+     "signature": "cw_cell_state cw_stream_cell_state(const cw_stream *s, int cx, int cz)",
+     "doc": "── queries ──────────────────────────────────────────────────────────\nNONE outside the grid",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_cell_data",
+     "signature": "void *cw_stream_cell_data(const cw_stream *s, int cx, int cz)",
+     "doc": "on_load's result, NULL when not LOADED",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_cell_at",
+     "signature": "bool cw_stream_cell_at(const cw_stream *s, cw_dvec3 p, int *cx, int *cz)",
+     "doc": "The cell containing a world position (false outside the grid).",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_get_desc",
+     "signature": "const cw_stream_desc *cw_stream_get_desc(const cw_stream *s)",
+     "doc": "The desc it was made with, defaults filled in (hysteresis, request and prepare limits).",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_origin",
+     "signature": "cw_dvec3 cw_stream_origin(const cw_stream *s)",
+     "doc": "── coordinates ──────────────────────────────────────────────────────\nworld position of local (0, 0, 0)",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_to_local",
+     "signature": "t3_vec3 cw_stream_to_local(const cw_stream *s, cw_dvec3 world)",
+     "doc": "World (double) to local (float, relative to the local origin): what physics and three.c use.",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_to_world",
+     "signature": "cw_dvec3 cw_stream_to_world(const cw_stream *s, t3_vec3 local)",
+     "doc": "Local to world: exact for every local float (a double holds the sum).",
+     "inline": false
+    },
+    {
+     "name": "cw_stream_get_stats",
+     "signature": "void cw_stream_get_stats(const cw_stream *s, cw_stream_stats *out)",
+     "doc": "The counters now (zero for NULL). Cost: O(live cells).",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_dvec3",
+     "doc": "",
+     "decl": "typedef struct cw_dvec3 { double x, y, z; } cw_dvec3;"
+    },
+    {
+     "name": "cw_stream",
+     "doc": "",
+     "decl": "typedef struct cw_stream cw_stream;"
+    },
+    {
+     "name": "cw_cell_state",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_CELL_NONE,\n  CW_CELL_LOADING,\n  CW_CELL_LOADED,\n  CW_CELL_ACTIVE,\n} cw_cell_state;"
+    },
+    {
+     "name": "cw_stream_cell",
+     "doc": "What a callback gets about a cell.",
+     "decl": "typedef struct cw_stream_cell {\n  int cx, cz;\n  int id;              /* cz * cells_x + cx */\n  cw_dvec3 origin;     /* world position of the cell's min corner (y = the stream's origin.y) */\n  t3_vec3 local;       /* the same in local coordinates (cw_stream_to_local) */\n  cw_res res;          /* its file: READY (or FAILED: the log says why); null without path_format */\n  void *data;          /* what on_load returned */\n} cw_stream_cell;"
+    },
+    {
+     "name": "cw_stream_desc",
+     "doc": "",
+     "decl": "typedef struct cw_stream_desc {\n  int cells_x, cells_z;      /* grid size (each at most 4096) */\n  double cell_size;          /* metres; a power of two keeps origin shifts exact: 512 */\n  cw_dvec3 origin;           /* world position of cell (0, 0)'s min corner */\n  const char *path_format;   /* \"world/c_%d_%d.cell.zst\" (cx, cz); NULL = cells without files */\n  cw_res_type cell_type;     /* 0 = from the path's extension */\n  float load_radius;         /* metres: 1500 */\n  float active_radius;       /* metres (<= load_radius): 600 */\n  float hysteresis;          /* metres: 0 = cell_size / 4 */\n  int max_requests_per_tick; /* 0 = 8 */\n  int prepare_per_frame;     /* on_load calls per cw_stream_frame: 0 = 1 */\n  int res_lane;              /* cw_res lane of cell files: 0 */\n  double rebase_distance;    /* metres: 0 = never move the origin */\n  /* callbacks (main thread; any may be NULL) */\n  void *(*on_load)(cw_stream *s, const cw_stream_cell *c, void *user);   /* returns the cell's data */\n  void (*on_unload)(cw_stream *s, const cw_stream_cell *c, void *user);\n  void (*on_activate)(cw_stream *s, const cw_stream_cell *c, void *user);\n  void (*on_deactivate)(cw_stream *s, const cw_stream_cell *c, void *user);\n  void (*on_rebase)(cw_stream *s, t3_vec3 shift, void *user);            /* before the cells' on_cell_rebase */\n  void (*on_cell_rebase)(cw_stream *s, const cw_stream_cell *c, void *user); /* every LOADED / ACTIVE cell, id order */\n  /* optional: is on_load's work done (a terrain set's background build: cw_terrain_set_ready)?\n   * With wait, finish it now and return true. A cell counts as LOADED only once this says so, and a\n   * cell that must activate while still preparing makes the tick wait (a stall). Polled each frame. */\n  bool (*cell_ready)(cw_stream *s, const cw_stream_cell *c, bool wait, void *user);\n  void *user;\n} cw_stream_desc;"
+    },
+    {
+     "name": "cw_stream_stats",
+     "doc": "",
+     "decl": "typedef struct cw_stream_stats {\n  int loading, loaded, active;      /* cells now (active cells are loaded too) */\n  uint64_t loads, activations, deactivations, unloads; /* so far */\n  int start_cells;                  /* cells the first tick activated (waiting for them: the start position's load) */\n  double start_ms;                  /* how long that took (wall clock) */\n  int stalls;                       /* later activations that had to wait for their cell (should stay 0) */\n  double stall_ms, stall_ms_max;    /* wall clock spent waiting (reported, never fed back) */\n  double prepare_ms_max;            /* the longest on_load so far (wall clock) */\n  int rebases;\n  uint64_t activation_hash;         /* FNV-1a 64 over (tick, cell id, on/off) events */\n  uint64_t ticks;\n} cw_stream_stats;"
+    }
+   ],
+   "macros": []
+  },
+  {
    "header": "cartwheel/terrain.h",
    "summary": "cartwheel terrain: heightmap terrain drawn with CDLOD, collided through\nBox3D's height field, painted with Terrain3D's control-map layout, and\ncovered with deterministic scatter (grass, rocks, trees).\n\n── data ───────────────────────────────────────────────────────────────\nA terrain is a grid of (size_x + 1) x (size_z + 1) height samples,\nvertex_spacing metres apart, its sample (0, 0) at `origin`. Heights are\nuint16 steps between min_height and max_height:\n  y = origin.y + min_height + q * (max_height - min_height) / 65535\nwhich is exactly how Box3D's height field stores them, so physics,\ngameplay (cw_terrain_height_at) and the drawn surface agree. Each sample\nalso carries a control word in Terrain3D's layout (bits 31..27 base layer,\n26..22 overlay layer, 21..14 blend, 13..10 uv rotation in 1/16 turns,\n9..7 uv scale step, bit 2 hole; cw_terrain_control below), so painted maps\nfrom Terrain3D's tools mean the same thing here.\n\nTriangles: every quad splits along the diagonal from its (x, z + 1)\ncorner to its (x + 1, z) corner, as Box3D's height field does.\n\n── drawing (CDLOD) ────────────────────────────────────────────────────\nThe terrain is a quadtree of patches. Each frame a camera selects the\npatches to draw (cw_terrain_update): a patch of level L covers\ngrid_quads << L quads and is drawn with the same grid_quads x grid_quads\ngrid, so its vertices are 2^L samples apart. Level L is used within\nlod0_range * lod_ratio^L metres of the camera (3D distance, so mountains\nget the detail they need) and its odd vertices morph vertically into the\nnext level's triangles before that range ends, so neighbouring levels meet\nwithout cracks or skirts. Selection runs on the job pool (one job per\nroot patch, results in root order), culls patches against the view\nfrustum four children at a time with SIMD, and sorts what it keeps front\nto back. Every selected patch is one instance of one InstancedMesh: the\nwhole near terrain is one draw, the far terrain another.\n\nShading is three.js r186's MeshStandardMaterial (lights, shadows, fog and\nenvironment are three.js's own) with a TSL extension of cartwheel's\n(src/terrain/extensions): the height fetch and morph in the vertex stage;\nin the fragment stage the splat of up to 8 layers by the control map,\ntriplanar on steep slopes, and past far_distance only a baked macro colour\nand the normal map (two texture reads). Patches wholly past far_distance\ndraw with a third program that reads only those two.\n\nQuality (cartwheel/quality.h, effects detail):\n  Low     nearest control texel (base + overlay: 2 layers), no triplanar,\n          far distance x0.5        (the Vega 8 class default)\n  Medium  nearest control texel, triplanar on steep slopes, far x0.75\n  High    4 control texels blended (up to 8 layer samples), height\n          blending, triplanar, far x1\n  Ultra   High, far x1.5 and patch ranges x1.25\nand the scatter's density follows cw_quality_scale(\"grass\") / (\"scatter\").\n\nShadows: the terrain receives shadows and (cast_shadow) casts them: the\nshadow pass draws the near patches with the same extension's caster\nprogram (depth+instbig+xterrain), morphed for the viewing camera, so the\nshadow follows the drawn surface. Patches past far_distance never cast.\n\n── physics ────────────────────────────────────────────────────────────\ncw_terrain_attach_physics makes one static body with one Box3D height\nfield per region (region_size quads square, regions share their edge\nsamples and one global height range, so they line up exactly). Holes\n(control bit 2) are holes for physics too. cw_shape3d_heightfield and\ncw_heightfield3d (physics3d.h) are the same height field on its own.\n\n── scatter ────────────────────────────────────────────────────────────\nScatter layers place copies of a mesh over the terrain in square cells:\n32 m, doubled while that stays within a quarter of the layer's visible\nrange (trees at 600 m use 128 m cells: a few dozen draws, not hundreds).\nPlacement is a pure function of (cell, layer seed) by integer hashing:\nthe same instances on every host, at any worker count, whatever the\ncamera did. A candidate is kept by the layer's density (per square\nmetre), its density map, the control layers it may stand on and the\nslope. Each cell is one InstancedMesh per mesh LOD with its own bounding\nsphere; cells are generated on the job pool when the camera comes within\nrange, frustum culled, and posed each frame on the job pool: instances\nshrink to nothing over the last `fade` metres of visible_range (no pop),\nand switch mesh LOD by distance.\n\n── threads ────────────────────────────────────────────────────────────\nMain thread, outside physics steps, like the rest of the scene. The\nfunctions spread their own work over cw_jobs.\n\n── node types (properties: docs/nodes.json) ───────────────────────────\n  Terrain3D         (Node3D) a terrain: heightmap (16-bit PNG or .r16),\n                    control (a Terrain3D control map as a PNG: RGBA = the\n                    word's bytes, big end in R) or splat (an RGBA weight\n                    image for layers 0..3), layer0_albedo .. layer7_*,\n                    sizes, heights, LOD settings, physics. Placing the\n                    node moves the terrain (translation only).\n  TerrainScatter3D  (Node) a scatter layer of its parent Terrain3D: mesh\n                    (a primitive or a glTF resource), density, density_map,\n                    layers (bit mask of the control layers it grows on),\n                    slope, scale range, visible_range, fade, LOD meshes,\n                    cast_shadow, seed.",
    "functions": [
@@ -10773,6 +10926,12 @@
      "inline": false
     },
     {
+     "name": "cw_terrain_share_layers",
+     "signature": "void cw_terrain_share_layers(cw_terrain *t, cw_terrain *src)",
+     "doc": "Use src's layers (its textures, uv scales and mean colours) instead of\nthis terrain's own: what each cell's terrain of a streamed world does\n(cartwheel/stream.h), so the 2 x 8 layer atlases (about 11 MB of GPU\nmemory with mips) exist once, not once per cell. The textures are\nreference counted: src may be destroyed first. Set src's layers before;\nthis terrain's own cw_terrain_set_layer is refused afterwards.",
+     "inline": false
+    },
+    {
      "name": "cw_terrain_height_at",
      "signature": "float cw_terrain_height_at(const cw_terrain *t, float x, float z)",
      "doc": "Height at world (x, z) on the triangles physics collides with: the same\nvalue a downward ray cast against the terrain's physics finds. Outside the\nterrain, the nearest edge's height.",
@@ -10863,6 +11022,18 @@
      "inline": false
     },
     {
+     "name": "cw_scatter_def_builtin",
+     "signature": "void cw_scatter_def_builtin(cw_scatter_def *d, cw_scatter_shape shape, float r, float g, float b)",
+     "doc": "The built-in meshes (what TerrainScatter3D's `shape` draws: vertex coloured, two\nLODs each, tinted by r, g, b) into d's geometry and material: NEW references,\nreleased with cw_scatter_def_release once the layer is added (the layer\nholds its own).",
+     "inline": false
+    },
+    {
+     "name": "cw_scatter_def_release",
+     "signature": "void cw_scatter_def_release(cw_scatter_def *d)",
+     "doc": "Releases every geometry and material d holds and clears them.",
+     "inline": false
+    },
+    {
      "name": "cw_terrain_scatter_add",
      "signature": "int cw_terrain_scatter_add(cw_terrain *t, const cw_scatter_def *def)",
      "doc": "Adds a scatter layer; returns its index (-1 when 16 exist).",
@@ -10884,6 +11055,66 @@
      "name": "cw_terrain_scatter_cell",
      "signature": "int cw_terrain_scatter_cell(cw_terrain *t, int layer, int cx, int cz, float *out, int cap)",
      "doc": "Placement only (no GPU): the instances of cell (cx, cz) of a layer, as\nx, y, z, scale, yaw quintuples into out (up to cap). Returns the count.\nWhat a test hashes.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_create",
+     "signature": "cw_terrain_set *cw_terrain_set_create(cw_tree *tree, const cw_terrain_set_desc *d)",
+     "doc": "One per tree. NULL (logged) without a tree or template.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_destroy",
+     "signature": "void cw_terrain_set_destroy(cw_terrain_set *s)",
+     "doc": "Destroys every cell terrain (not the template).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_add",
+     "signature": "cw_terrain *cw_terrain_set_add(cw_terrain_set *s, int id, t3_vec3 origin, const uint16_t *q, const uint32_t *ctl)",
+     "doc": "A cell's terrain from its samples ((size_x + 1) x (size_z + 1) height\nsteps and control words, either may be NULL), its sample (0, 0) at\norigin. Builds its height fields (job pool). What on_load does. Cost: a\n256 x 256 cell is about a millisecond plus the first frame's upload.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_remove",
+     "signature": "void cw_terrain_set_remove(cw_terrain_set *s, int id)",
+     "doc": "Destroys cell id's terrain (on_unload); no-op when absent.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_ready",
+     "signature": "bool cw_terrain_set_ready(cw_terrain_set *s, int id, bool wait)",
+     "doc": "Whether cell id's background build (height fields, texels, quadtree: started by\ncw_terrain_set_add) is done; with wait, finish it now. What a stream's\ncell_ready returns. True for a cell not in the set.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_activate",
+     "signature": "void cw_terrain_set_activate(cw_terrain_set *s, int id, bool on)",
+     "doc": "Physics on (on_activate) or off (on_deactivate).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_move",
+     "signature": "void cw_terrain_set_move(cw_terrain_set *s, int id, t3_vec3 origin)",
+     "doc": "A new origin for a cell's terrain (on_cell_rebase); its bodies follow.",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_get",
+     "signature": "cw_terrain *cw_terrain_set_get(const cw_terrain_set *s, int id)",
+     "doc": "NULL when absent",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_at",
+     "signature": "cw_terrain *cw_terrain_set_at(const cw_terrain_set *s, float x, float z)",
+     "doc": "The cell terrain under (x, z) in local coordinates, NULL off every cell. O(cells).",
+     "inline": false
+    },
+    {
+     "name": "cw_terrain_set_get_stats",
+     "signature": "void cw_terrain_set_get_stats(const cw_terrain_set *s, cw_terrain_set_stats *out)",
+     "doc": "The pass's numbers from the last frame (zero for NULL).",
      "inline": false
     },
     {
@@ -10918,6 +11149,26 @@
      "name": "cw_scatter_def",
      "doc": "",
      "decl": "typedef struct cw_scatter_def {\n  /* mesh LODs, finest first (a LOD with no part 0 ends the list), each of up to CW_SCATTER_PARTS parts\n   * drawn with the same instances (a trunk and a crown: a glTF mesh's primitives); retained */\n  t3_geometry *geometry[CW_SCATTER_LODS][CW_SCATTER_PARTS];\n  t3_material *material[CW_SCATTER_LODS][CW_SCATTER_PARTS]; /* per part (NULL = the previous LOD's part) */\n  float lod_distance[CW_SCATTER_LODS];    /* metres where LOD i + 1 takes over */\n  float density;            /* instances per square metre at full density: 0.5 */\n  uint32_t layers;          /* control layers it grows on (bit i = layer i; on the base layer, or the\n                               overlay where the blend is over half): 0 = all */\n  const uint8_t *density_map; /* optional: dm_w x dm_h grey (0..255) over the whole terrain; copied */\n  int dm_w, dm_h;\n  float min_slope_cos;      /* only where the normal's y is at least this: 0 */\n  float scale_min, scale_max; /* uniform scale range: 0.8, 1.2 */\n  bool align_to_normal;     /* tilt with the ground (grass, rocks) instead of standing up (trees) */\n  float sink;               /* metres pushed into the ground: 0 */\n  float visible_range;      /* metres: 60 */\n  float fade;               /* metres at the end of visible_range over which instances shrink away: 10 */\n  bool cast_shadow;         /* LOD 0 casts (coarser LODs never do): false */\n  const char *density_knob; /* cw_quality_scale knob: \"grass\" (default) or \"scatter\" */\n  uint32_t seed;\n} cw_scatter_def;"
+    },
+    {
+     "name": "cw_scatter_shape",
+     "doc": "The built-in scatter shapes (TerrainScatter3D's `shape`).",
+     "decl": "typedef enum { CW_SCATTER_GRASS, CW_SCATTER_ROCK, CW_SCATTER_TREE } cw_scatter_shape;"
+    },
+    {
+     "name": "cw_terrain_set",
+     "doc": "── terrain sets: terrain that streams with a world's cells ────────────\nA big world (cartwheel/stream.h) is too big for one height grid: a 16 km\nsquare at 2 m would be 67 M samples. A terrain set holds one small\nterrain per loaded cell instead, all with the same definition, sharing\none template terrain's layer textures (cw_terrain_share_layers) and\ngetting the same scatter layers (each cell its own seed). Neighbouring\ncells must repeat their shared edge samples; with equal definitions their\nLOD bands line up, so cells meet without cracks. The set draws every\nterrain from one SHADOW-phase pipeline pass (\"terrainset\") of its tree.\nPhysics: each cell's height fields are built when it is added, and its\nstatic bodies are created only while it is active. Main thread.",
+     "decl": "typedef struct cw_terrain_set cw_terrain_set;"
+    },
+    {
+     "name": "cw_terrain_set_desc",
+     "doc": "",
+     "decl": "typedef struct cw_terrain_set_desc {\n  cw_terrain_def def;       /* every cell's terrain (origin is per cell) */\n  cw_terrain *layers;       /* the template whose layers every cell shares (yours; set its layers first) */\n  cw_scatter_def scatter[CW_TERRAIN_SET_SCATTER]; /* each cell's scatter layers (seed ^ cell id * 0x9E3779B1); the set keeps its own references */\n  int scatter_count;\n  cw_world3d world;         /* physics while active (null: none) */\n  cw_shape3d_def shape;     /* the height-field shapes' settings */\n} cw_terrain_set_desc;"
+    },
+    {
+     "name": "cw_terrain_set_stats",
+     "doc": "",
+     "decl": "typedef struct cw_terrain_set_stats {\n  int terrains, terrains_drawn, patches, scatter_instances, scatter_draws;\n  float update_ms;          /* the pass's CPU time last frame (selection, scatter posing, uploads) */\n  float upload_ms;\n} cw_terrain_set_stats;"
     }
    ],
    "macros": [
@@ -10935,6 +11186,10 @@
     },
     {
      "name": "CW_SCATTER_PARTS",
+     "doc": ""
+    },
+    {
+     "name": "CW_TERRAIN_SET_SCATTER",
      "doc": ""
     }
    ]

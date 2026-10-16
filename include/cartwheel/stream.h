@@ -131,6 +131,7 @@ void cw_stream_destroy(cw_stream *s);
 /* A source at world position p; returns its index. Higher priority loads
  * first. The first source added drives the origin. At most 8. */
 int cw_stream_source_add(cw_stream *s, cw_dvec3 p, int priority);
+/* Moves source src to world position p (call before cw_stream_tick). */
 void cw_stream_source_move(cw_stream *s, int src, cw_dvec3 p);
 /* The same from local coordinates (what physics and the scene use). */
 void cw_stream_source_move_local(cw_stream *s, int src, t3_vec3 p);
@@ -150,11 +151,14 @@ cw_cell_state cw_stream_cell_state(const cw_stream *s, int cx, int cz); /* NONE 
 void *cw_stream_cell_data(const cw_stream *s, int cx, int cz);          /* on_load's result, NULL when not LOADED */
 /* The cell containing a world position (false outside the grid). */
 bool cw_stream_cell_at(const cw_stream *s, cw_dvec3 p, int *cx, int *cz);
+/* The desc it was made with, defaults filled in (hysteresis, request and prepare limits). */
 const cw_stream_desc *cw_stream_get_desc(const cw_stream *s);
 
 /* ── coordinates ────────────────────────────────────────────────────── */
 cw_dvec3 cw_stream_origin(const cw_stream *s); /* world position of local (0, 0, 0) */
+/* World (double) to local (float, relative to the local origin): what physics and three.c use. */
 t3_vec3 cw_stream_to_local(const cw_stream *s, cw_dvec3 world);
+/* Local to world: exact for every local float (a double holds the sum). */
 cw_dvec3 cw_stream_to_world(const cw_stream *s, t3_vec3 local);
 
 typedef struct cw_stream_stats {
@@ -169,6 +173,7 @@ typedef struct cw_stream_stats {
   uint64_t activation_hash;         /* FNV-1a 64 over (tick, cell id, on/off) events */
   uint64_t ticks;
 } cw_stream_stats;
+/* The counters now (zero for NULL). Cost: O(live cells). */
 void cw_stream_get_stats(const cw_stream *s, cw_stream_stats *out);
 
 #ifdef __cplusplus

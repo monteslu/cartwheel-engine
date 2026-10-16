@@ -38,6 +38,7 @@ export const LOCAL_ONLY = {
   'fx-gpu-report': 'GPU frame-time budgets (100k particles in two frames)',
   'vis-perf-report': 'GPU timings, and romdev and Chromium legs',
   'nav-perf-report': 'timings, and Chromium legs',
+  'stream-perf': 'frame times and memory on romdev and wasmcart-native',
   'nav-determinism': 'Chromium and wasmcart-native',
   'cloth-determinism': 'Chromium and wasmcart-native',
   'ik-determinism': 'Chromium',

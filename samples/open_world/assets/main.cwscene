@@ -1,0 +1,81 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+ambient_energy = 0.25
+hemi_energy = 0.6
+
+[node name="Post" parent="." type="PostProcess"]
+bloom = true
+bloom_intensity = 0.02
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 10
+latitude = 40
+declination = 15
+north = 30
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+shadow_extent = 80
+
+[node name="Fog" parent="." type="HeightFog"]
+density = 0.0011
+height_falloff = 0.003
+base_height = 0
+sun_scatter = 0.5
+sun_g = 0.7
+sky_distance = 2600
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 60, 0)
+fov = 60
+near = 0.3
+far = 2400
+
+[node name="Car" parent="." type="MeshInstance3D"]
+primitive = BOX
+size = vec3(1.8, 0.7, 4.4)
+color = color(0.75, 0.08, 0.05, 1)
+metalness = 0.3
+roughness = 0.35
+cast_shadow = true
+
+[node name="WheelFL" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+size = vec3(0.76, 0.3, 0.76)
+color = color(0.05, 0.05, 0.05, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="WheelFR" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+size = vec3(0.76, 0.3, 0.76)
+color = color(0.05, 0.05, 0.05, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="WheelRL" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+size = vec3(0.76, 0.3, 0.76)
+color = color(0.05, 0.05, 0.05, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="WheelRR" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+size = vec3(0.76, 0.3, 0.76)
+color = color(0.05, 0.05, 0.05, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="Cabin" parent="Car" type="MeshInstance3D"]
+position = vec3(0, 0.6, -0.3)
+primitive = BOX
+size = vec3(1.6, 0.55, 2.2)
+color = color(0.1, 0.12, 0.15, 1)
+metalness = 0.1
+roughness = 0.2
+cast_shadow = true

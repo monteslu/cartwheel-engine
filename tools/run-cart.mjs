@@ -27,6 +27,8 @@
 // --warmup-spread: the app's warm-up spread over frames under the loading screen, as a player
 // gets it (native, chromium, wcnative; test runs otherwise do it all in frame 1).
 //
+// --log FILE: the run's log (native: the app's stderr; wcnative: the player's), what a cart
+// that reports no state (wcnative) can still say. CW_RUN_TIMEOUT_MS bounds wcnative runs too.
 // --gpu gl|webgpu (default gl): the graphics backend (cartwheel/gpu.h). webgpu runs the native
 // build with CW_GPU=webgpu and the DUAL carts of build/cart-wgpu (gl + WebGPU imports), and holds
 // every host to the test GPU (tools/lib/wgpu-pin.mjs): a run that lands on another adapter fails
@@ -205,6 +207,7 @@ async function runNative() {
   // a run stopped by the timeout may still exit 0 (the engine quits cleanly on SIGTERM): that is a failure
   if (r.error) throw new Error(`native: ${r.error.code === 'ETIMEDOUT' ? `timed out after ${timeout} ms (CW_RUN_TIMEOUT_MS)` : r.error.message}: ${r.stderr || ''}`);
   if (r.status !== 0) throw new Error(`native exited ${r.status ?? r.signal}: ${r.stderr}`);
+  if (args.log) writeFileSync(resolve(args.log), r.stderr || '');
   if (gl) gl.check('native', r.stderr);
   if (pin) {
     const m = /WebGPU adapter: (.*)/.exec(r.stderr || '');
@@ -566,7 +569,7 @@ async function runWcnative() {
     { env: wenv, stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = '';
   child.stderr.on('data', (d) => (stderr += d));
-  const deadline = Date.now() + 120000;
+  const deadline = Date.now() + +(process.env.CW_RUN_TIMEOUT_MS || 120000);
   while (!existsSync(ppm) && child.exitCode === null && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
   await new Promise((r) => setTimeout(r, 300)); // let the writer finish the file
   child.kill('SIGTERM');
@@ -578,6 +581,7 @@ async function runWcnative() {
     if (/\[error\] WebGPU/.test(stderr)) throw new Error(`wcnative: WebGPU errors: ${stderr.split('\n').filter((l) => /\[error\] WebGPU/.test(l)).slice(0, 3).join(' | ')}`);
   }
   else if (glp) glp.check('wcnative', stderr);
+  if (args.log) writeFileSync(resolve(args.log), stderr);
   if (args.shot) { const img = readImage(ppm); writePng(resolve(args.shot), img.w, img.h, img.rgba); }
   rmSync(wdir, { recursive: true, force: true });
   result({ host, frames, shot: args.shot });

@@ -281,11 +281,12 @@ typedef struct cw_scatter_def {
 } cw_scatter_def;
 /* The defaults noted above, no meshes. */
 cw_scatter_def cw_scatter_default_def(void);
+/* The built-in scatter shapes (TerrainScatter3D's `shape`). */
+typedef enum { CW_SCATTER_GRASS, CW_SCATTER_ROCK, CW_SCATTER_TREE } cw_scatter_shape;
 /* The built-in meshes (what TerrainScatter3D's `shape` draws: vertex coloured, two
  * LODs each, tinted by r, g, b) into d's geometry and material: NEW references,
  * released with cw_scatter_def_release once the layer is added (the layer
  * holds its own). */
-typedef enum { CW_SCATTER_GRASS, CW_SCATTER_ROCK, CW_SCATTER_TREE } cw_scatter_shape;
 void cw_scatter_def_builtin(cw_scatter_def *d, cw_scatter_shape shape, float r, float g, float b);
 /* Releases every geometry and material d holds and clears them. */
 void cw_scatter_def_release(cw_scatter_def *d);
@@ -330,6 +331,7 @@ void cw_terrain_set_destroy(cw_terrain_set *s);
  * origin. Builds its height fields (job pool). What on_load does. Cost: a
  * 256 x 256 cell is about a millisecond plus the first frame's upload. */
 cw_terrain *cw_terrain_set_add(cw_terrain_set *s, int id, t3_vec3 origin, const uint16_t *q, const uint32_t *ctl);
+/* Destroys cell id's terrain (on_unload); no-op when absent. */
 void cw_terrain_set_remove(cw_terrain_set *s, int id);
 /* Whether cell id's background build (height fields, texels, quadtree: started by
  * cw_terrain_set_add) is done; with wait, finish it now. What a stream's
@@ -347,6 +349,7 @@ typedef struct cw_terrain_set_stats {
   float update_ms;          /* the pass's CPU time last frame (selection, scatter posing, uploads) */
   float upload_ms;
 } cw_terrain_set_stats;
+/* The pass's numbers from the last frame (zero for NULL). */
 void cw_terrain_set_get_stats(const cw_terrain_set *s, cw_terrain_set_stats *out);
 
 /* The Terrain3D node's terrain (NULL before it entered a tree or for

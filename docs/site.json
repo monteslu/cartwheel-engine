@@ -26,6 +26,7 @@
         "terrain",
         "noise",
         "water",
+        "streaming",
         "rendering-2d",
         "ui",
         "game-shell",

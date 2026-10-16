@@ -743,6 +743,66 @@
     "note": "the terrain covers the ground: terrain_demo's cracks flight (magenta clear colour) natively on GL and WebGPU, at most 0.5% of the frame's lower 40% magenta (terrain-drive compares hosts, so a terrain no host draws passes it: three.c 0.186.12-0.186.15 skipped every near patch, 88% magenta). Control: the terrain freed must fail"
   },
   {
+    "name": "open-world-drive",
+    "app": "open_world",
+    "frames": 1200,
+    "maxGt16": 0.003,
+    "skip": [
+      "wcnative"
+    ],
+    "fields": [
+      "world.tick",
+      "stream.hash",
+      "stream.active",
+      "stream.start_cells",
+      "stream.rebases",
+      "car.hash",
+      "car.km",
+      "origin.x",
+      "origin.z"
+    ],
+    "controlFrames": 1199,
+    "expect": {
+      "stream.start_cells": 6
+    },
+    "webgpu": true,
+    "note": "big open worlds: a car drives the road across open_world's 16.4 km world (512 m cells, zstd cell files decoded on the job pool, a terrain set, props whose bodies exist only in active cells, the floating origin): the activation history (stream.hash), the origin and the chassis bits agree on every host. wasmcart-native runs it in stream-perf. Control: one frame early"
+  },
+  {
+    "name": "open-world-fly",
+    "app": "open_world",
+    "frames": 1200,
+    "startCmds": [
+      "ow fly"
+    ],
+    "maxGt16": 0.003,
+    "skip": [
+      "wcnative"
+    ],
+    "fields": [
+      "world.tick",
+      "stream.hash",
+      "stream.active",
+      "stream.start_cells",
+      "stream.rebases",
+      "origin.x",
+      "origin.z"
+    ],
+    "controlFrames": 1200,
+    "controlStartCmds": [
+      "ow drive"
+    ],
+    "expect": {
+      "stream.rebases": 5
+    },
+    "note": "the camera flies 3 km across open_world at 150 m/s: cells load ahead and unload behind, the origin moves every kilometre (stream.rebases), and the activation history agrees on every host. Control: the drive instead of the flight"
+  },
+  {
+    "name": "stream-perf",
+    "script": "tests/stream-perf.mjs",
+    "note": "open_world flies 16 km on native, romdev and wasmcart-native: no stalls, memory flat, native and romdev agree on the activation history; reports worst and p99 frame times, main-thread CPU, GPU time and memory over time. Controls: a 620 m load radius must stall, a cache that never evicts must grow"
+  },
+  {
     "name": "unit-terrain",
     "app": "unit_terrain",
     "frames": 2,

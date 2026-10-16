@@ -39,6 +39,19 @@ cw_add_app(cloth_demo SOURCES cloth_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DI
 cw_add_app(terrain_demo SOURCES terrain_demo/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/terrain_demo/project/roots.txt
   PROGRAMS terrain_demo/programs/terrain_demo.txt)
 cw_add_app(perf_nodes SOURCES perf_nodes/main.c GL_ONLY)
+# big open worlds (cartwheel/stream.h): a 16.4 km world in 512 m cells, streamed in
+# around a car or a flight; the world (45 MB of zstd cell files) is generated
+# at build time by gen-world.mjs
+set(_ow ${CMAKE_BINARY_DIR}/gen/open_world)
+file(MAKE_DIRECTORY ${_ow})
+add_custom_command(OUTPUT ${_ow}/stamp
+  COMMAND node ${CMAKE_CURRENT_SOURCE_DIR}/open_world/gen-world.mjs ${_ow}
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/open_world/gen-world.mjs ${CMAKE_CURRENT_SOURCE_DIR}/open_world/assets/main.cwscene
+  COMMENT "open_world: generating the world")
+add_custom_target(open_world_world DEPENDS ${_ow}/stamp)
+cw_add_app(open_world SOURCES open_world/main.c ASSETS ${_ow} PROGRAMS open_world/programs/open_world.txt)
+add_dependencies(open_world open_world_world)
+set_property(TARGET open_world APPEND PROPERTY LINK_DEPENDS ${_ow}/stamp)
 # audio: an offline-rendered scripted mix (the cross-host hash gate) and
 # a sample that plays through the real device path.
 cw_add_app(audio_mix SOURCES audio_mix/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/audio_mix/assets GL_ONLY)
