@@ -98,16 +98,31 @@ A glTF mesh's primitives (a trunk and a crown) draw as parts that share one inst
 
 ## Performance
 
-`terrain_demo`'s drive, 1920 x 1080, native, on a Radeon 890M (GPU time of the whole frame, CPU of the render phase; `tools/perf-frame.mjs --gpu-timers`):
+`terrain_demo`'s drive (frames 600 to 1200), output 1920 x 1080, each preset's own render scale, on a Radeon 890M. Measured with `tools/perf-frame.mjs`:
 
-| preset | GL GPU ms | WebGPU GPU ms | GL render CPU ms | WebGPU render CPU ms |
-|---|---|---|---|---|
-| Low | 1.6 | 1.4 | 1.5 | 1.0 |
-| Medium | 2.0 | 1.6 | 2.0 | 1.0 |
-| High | 4.0 | 3.7 | 3.9 | 1.3 |
-| Ultra | 4.3 | 4.1 | 4.0 | 1.3 |
+- GPU is the frame's timed passes (`--gpu-timers`).
+- CPU is the engine's render phase. Native GL waits for the GPU inside it, so it tracks the GPU time. Native WebGPU does not; its present column is where it waits.
+- Chromium's CPU column is the main thread's time in the cart's frame.
 
-Patch selection costs about 0.02 ms and scatter posing about 0.1 ms. A Vega 8 has roughly a quarter of the 890M's shader throughput and half its memory bandwidth: expect three to five times the GPU time, so Low (its default) stays within a 60 Hz frame and High is about a 30 Hz frame.
+| preset | triangles | GL GPU ms | WebGPU GPU ms | GL render ms | WebGPU render ms |
+|---|---|---|---|---|---|
+| Low | 0.66 M | 1.5 | 1.4 | 1.6 | 1.0 |
+| Medium | 0.95 M | 2.2 | 1.8 | 2.1 | 1.1 |
+| High | 1.35 M | 4.0 | 3.9 | 4.0 | 1.2 |
+| Ultra | 1.50 M | 4.2 | 4.1 | 4.1 | 1.5 |
+
+Chromium at High: 4.1 ms GPU (WebGPU) and 3.5 to 3.8 ms of main-thread CPU on both backends. The terrain's own CPU share is small: patch selection about 0.02 ms and scatter posing about 0.1 ms on the job pool.
+
+A Vega 8 (8 GCN CUs at 1.1 to 2.0 GHz, dual-channel DDR4) has a fifth to a third of the 890M's shader throughput and under half its bandwidth. Expect three to five times the GPU time:
+
+| preset | Vega 8 GPU ms, estimated |
+|---|---|
+| Low (the engine's pick for that class) | 4 to 7 |
+| Medium | 5.5 to 9 |
+| High | 12 to 20 |
+| Ultra | 12 to 21 |
+
+Low and Medium hold 60 Hz with room for a game; High is a 30 to 60 Hz frame there.
 
 ## Limits
 
