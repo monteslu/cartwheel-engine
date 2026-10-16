@@ -44,6 +44,7 @@ void cw__pw_uniform(unsigned prog, const char *name, int kind, const float *f, i
 unsigned cw__pw_lut(int size, const uint16_t *half) { (void)size, (void)half; return 0; }
 void cw__pw_tex_free(unsigned id) { (void)id; }
 unsigned cw__pw_rg8(int w, int h, const uint8_t *rg) { (void)w, (void)h, (void)rg; return 0; }
+unsigned cw__pw_pass_texture(int w, int h, cw_rt_format f, const void *t) { (void)w, (void)h, (void)f, (void)t; return 0; }
 #else
 
 #define SV CW_WGPU_SV
@@ -1105,6 +1106,10 @@ unsigned cw__pw_texture_2d(int w, int h, WGPUTextureFormat f, const void *data, 
 }
 
 unsigned cw__pw_rg8(int w, int h, const uint8_t *rg) { return cw__pw_texture_2d(w, h, WGPUTextureFormat_RG8Unorm, rg, (uint32_t)w * 2); }
+unsigned cw__pw_pass_texture(int w, int h, cw_rt_format f, const void *t) {
+  int bpp = f == CW_RT_RGBA16F ? 8 : f == CW_RT_RG16F ? 4 : f == CW_RT_R16F ? 2 : f == CW_RT_R8 ? 1 : 4;
+  return cw__pw_texture_2d(w, h, rt_format(f), t, (uint32_t)(w * bpp));
+}
 
 unsigned cw__pw_texture_3d(int size, const uint16_t *half) {
   init();

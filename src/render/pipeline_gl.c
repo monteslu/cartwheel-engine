@@ -476,6 +476,34 @@ void cw_lut_free(uint64_t lut) {
   luts.data[lut - 1].live = false;
 }
 
+unsigned cw_pass_texture_new(int w, int h, cw_rt_format f, const void *texels) {
+  if (w < 1 || h < 1 || !texels || (unsigned)f >= CW_RT_FORMAT_COUNT) {
+    cw_error("cw_pass_texture_new: %dx%d, format %d: need a size of at least 1x1, texels and a cw_rt_format", w, h, (int)f);
+    return 0;
+  }
+  if (wg()) return cw__pw_pass_texture(w, h, f, texels);
+  GLenum ifmt, fmt, type;
+  rt_formats(f, &ifmt, &fmt, &type);
+  GLuint t;
+  glGenTextures(1, &t);
+  glBindTexture(GL_TEXTURE_2D, t);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glTexImage2D(GL_TEXTURE_2D, 0, (GLint)ifmt, w, h, 0, fmt, type, texels);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  return t;
+}
+
+void cw_pass_texture_free(unsigned tex) {
+  if (!tex) return;
+  if (wg()) cw__pw_tex_free(tex);
+  else glDeleteTextures(1, &tex);
+}
+
 uint64_t cw_lut_parse_cube(const char *text, size_t len, const char *who) {
   int size = 0, got = 0;
   float dmin[3] = { 0, 0, 0 }, dmax[3] = { 1, 1, 1 };

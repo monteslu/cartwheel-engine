@@ -147,6 +147,8 @@ void cw__pw_set_depth(bool test, bool write);
 void cw__pw_uniform(unsigned prog, const char *name, int n, const float *f, int iv);
 unsigned cw__pw_lut(int size, const uint16_t *half);
 unsigned cw__pw_rg8(int w, int h, const uint8_t *rg);
+/* cw_pass_texture_new on WebGPU: texels as glTexImage2D takes them */
+unsigned cw__pw_pass_texture(int w, int h, cw_rt_format f, const void *texels);
 void cw__pw_tex_free(unsigned id);
 /* a program for this run's backend: GLSL on GL, WGSL on WebGPU */
 unsigned cw__pass_program2(const char *name, const char *glsl, const char *wgsl);

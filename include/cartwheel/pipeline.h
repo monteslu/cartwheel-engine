@@ -480,6 +480,17 @@ unsigned cw_pass_program_vs(const char *name, const char *vs, const char *fs);
 void cw_pass_bind_texture(int unit, unsigned tex);
 /* The same for a 3D texture (GL_TEXTURE_3D: a colour-grading LUT's). */
 void cw_pass_bind_texture_3d(int unit, unsigned tex);
+/* A texture of your own for pass programs (a lookup table, a noise image, a
+ * CPU-made mask): w x h texels of format f, uploaded once. RGBA8 and R8 take
+ * bytes, RGBA16F / RG16F / R16F take IEEE halves, packed rows (no padding),
+ * row 0 first as glTexImage2D takes it (row 0 is v = 0, the bottom, in
+ * GLSL's texture() and in WGSL through the offscreen row order). Linear
+ * filtered, clamped to the edge, no mips. Returns an id for
+ * cw_pass_bind_texture on GL and WebGPU alike, 0 (logged) on bad arguments.
+ * Needs the GPU (init or later). Free it with cw_pass_texture_free. */
+unsigned cw_pass_texture_new(int w, int h, cw_rt_format f, const void *texels);
+/* Free a texture from cw_pass_texture_new (0 is fine). */
+void cw_pass_texture_free(unsigned tex);
 /* Bind and set the viewport to a target (NULL = the output). */
 void cw_pass_bind_target(cw_pass_ctx *ctx, const cw_rt *rt);
 /* (near, far, is_orthographic) of ctx->camera, for shaders that linearize
