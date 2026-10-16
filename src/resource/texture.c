@@ -363,11 +363,12 @@ void cw__tex_release(t3_texture *t) {
 /* ── the resource type ───────────────────────────────────────────── */
 typedef cw_tex_payload tex_payload;
 
-static bool tex_prepare(cw_res_prepare *p, void *u) {
-  size_t len;
-  const uint8_t *b = cw_res_prepare_bytes(p, &len);
-  if (cw__ktx2_is(b, len)) cw__tex_pick_ktx2_target();
-  return true;
+/* any texture may be KTX2 inside (a .png whose cwimport sidecar packs KTX2): the
+ * target needs the GL context, so it is picked on the main thread before the
+ * file is read on a worker */
+static void tex_request(void *u) {
+  (void)u;
+  cw__tex_pick_ktx2_target();
 }
 
 static void *tex_decode(const cw_res_decode_args *a, size_t *cost) {
@@ -453,8 +454,9 @@ static void tex_reload(void *payload, void *fresh, void *u) {
 static size_t tex_size(const void *payload, void *u) { return ((const tex_payload *)payload)->info.gpu_bytes; }
 
 const cw_res_type_desc cw__res_texture_type = {
-  .name = "texture", .extensions = ".png .jpg .jpeg .ktx2 .gif", .prepare = tex_prepare, .decode = tex_decode,
+  .name = "texture", .extensions = ".png .jpg .jpeg .ktx2 .gif", .decode = tex_decode,
   .finish = tex_finish, .unload = tex_unload, .discard = tex_discard, .reload = tex_reload, .size = tex_size,
+  .request = tex_request,
 };
 
 void *cw__res_get_typed(cw_res h, cw_res_type t);

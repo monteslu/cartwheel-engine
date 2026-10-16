@@ -150,6 +150,110 @@ static void test_async_order(void) {
   cw_res_set_upload_budget(32u << 20, 4);
 }
 
+
+static void flush_frees(void) {
+  for (int i = 0; i < CW_RES_FREE_DELAY_FRAMES + 2; i++) cw_res_frame();
+}
+
+/* lanes and priorities: finish order is (lane, -priority, request order),
+ * and a repeated request with a better key moves a load up */
+static void test_priorities(void) {
+  flush_frees();
+  cw_res_set_upload_budget(1, 0); /* one finish per frame */
+  static const int lane[8] = { 0, 0, 1, 0, 0, 1, 0, 0 }, prio[8] = { 0, 2, 5, 2, -1, 0, 9, 0 };
+  finish_n = cb_n = 0;
+  cw_res h[8];
+  char p[32];
+  for (int i = 0; i < 8; i++) {
+    snprintf(p, sizeof p, "order/%c.ord", 'a' + i);
+    h[i] = cw_res_load_async_ex(p, 0, &(cw_res_load_opts){ .lane = lane[i], .priority = prio[i], .done = ord_done });
+    CHECK_EQ_INT(cw_res_get_state(h[i]), CW_RES_STATE_LOADING);
+  }
+  /* e (lane 0, -1) asks again at 10: now first */
+  cw_res e2 = cw_res_load_async_ex("order/e.ord", 0, &(cw_res_load_opts){ .priority = 10 });
+  CHECK(e2.id == h[4].id);
+  /* f asks again lower: stays where it is */
+  cw_res f2 = cw_res_load_async_ex("order/f.ord", 0, &(cw_res_load_opts){ .lane = 3 });
+  int frames = 0;
+  while (finish_n < 8 && frames < 100000) cw_res_frame(), frames++;
+  static const int want[8] = { 4, 6, 1, 3, 0, 7, 2, 5 }; /* e g b d a h | c f */
+  bool ok = finish_n == 8;
+  for (int i = 0; i < 8 && ok; i++) ok &= finish_order[i] == want[i] && cb_order[i] == want[i];
+  if (!ok) cw_error("priority order: %d %d %d %d %d %d %d %d", finish_order[0], finish_order[1], finish_order[2],
+                    finish_order[3], finish_order[4], finish_order[5], finish_order[6], finish_order[7]);
+  CHECK(ok);
+  FOLD(finish_order);
+  cw_res_release(e2);
+  cw_res_release(f2);
+  for (int i = 0; i < 8; i++) cw_res_release(h[i]);
+  cw_res_set_upload_budget(32u << 20, 4);
+  flush_frees();
+}
+
+/* releasing a load in flight cancels it without waiting; requesting it again later loads it afresh */
+static void test_cancel(void) {
+  flush_frees();
+  finish_n = cb_n = 0;
+  cw_res_stats s0, s1;
+  cw_res_get_stats(&s0);
+  cw_res a = cw_res_load_async("order/a.ord", 0, ord_done, NULL); /* the slowest decode */
+  cw_res b = cw_res_load_async("order/h.ord", 0, ord_done, NULL);
+  cw_res_release(a);
+  int frames = 0;
+  while (cb_n < 1 && frames < 100000) cw_res_frame(), frames++;
+  CHECK_EQ_INT(cb_n, 1);
+  CHECK_EQ_INT(cb_order[0], 7); /* only h finished */
+  flush_frees();
+  for (int i = 0; i < 100000 && !CW_HANDLE_IS_NULL(cw_res_find("order/a.ord")); i++) cw_res_frame(); /* its decode lands, then it goes */
+  cw_res_get_stats(&s1);
+  CHECK_EQ_INT(s1.cancelled - s0.cancelled, 1);
+  CHECK(CW_HANDLE_IS_NULL(cw_res_find("order/a.ord"))); /* freed */
+  CHECK_EQ_INT(s1.in_flight, 0);
+  cw_res a2 = cw_res_load_async("order/a.ord", 0, ord_done, NULL);
+  CHECK_EQ_INT(cw_res_wait(a2), CW_RES_STATE_READY);
+  CHECK_EQ_INT(cb_n, 2);
+  cw_res_release(a2);
+  cw_res_release(b);
+  flush_frees();
+}
+
+/* the residency cache keeps released resources loaded within its budget, least recently released out first */
+static void test_residency(void) {
+  flush_frees();
+  cw_res_stats s0, s1;
+  cw_res a = cw_res_load("order/a.ord", 0), b = cw_res_load("order/b.ord", 0), c = cw_res_load("order/c.ord", 0);
+  cw_res_info ia;
+  CHECK(cw_res_get_info(a, &ia));
+  size_t each = ia.file_bytes; /* 7 bytes + newline: the same for every .ord file */
+  cw_res_set_residency_budget(each * 2);
+  cw_res_release(a);
+  cw_res_release(b);
+  cw_res_release(c);
+  cw_res_get_stats(&s0);
+  CHECK_EQ_INT(s0.cached, 3);
+  flush_frees();
+  cw_res_get_stats(&s1);
+  CHECK_EQ_INT(s1.cached, 2);
+  CHECK_EQ_INT(s1.evicted - s0.evicted, 1);
+  CHECK(CW_HANDLE_IS_NULL(cw_res_find("order/a.ord")));  /* the oldest went */
+  CHECK(cw_res_is_ready(cw_res_find("order/b.ord")));    /* still loaded, no references */
+  CHECK_EQ_INT(cw_res_ref_count(cw_res_find("order/c.ord")), 0);
+  uint64_t decoded = s1.decoded;
+  cw_res b2 = cw_res_load_async("order/b.ord", 0, NULL, NULL); /* a cache hit: no read, no decode */
+  CHECK(cw_res_is_ready(b2));
+  cw_res_get_stats(&s1);
+  CHECK_EQ_INT(s1.decoded, decoded);
+  CHECK_EQ_INT(s1.cached, 1);
+  cw_res_set_residency_budget(0); /* everything cached goes */
+  flush_frees();
+  CHECK(CW_HANDLE_IS_NULL(cw_res_find("order/c.ord")));
+  cw_res_get_stats(&s1);
+  CHECK_EQ_INT(s1.cached, 0);
+  CHECK_EQ_INT(s1.cached_bytes, 0);
+  cw_res_release(b2);
+  flush_frees();
+}
+
 static void test_textures(void) {
   cw_res t = cw_res_load("textures/checker.png", 0);
   t3_texture *tex = cw_res_texture(t);
@@ -432,6 +536,7 @@ static void test_audio_and_stats(void) {
 
 CW_TEST_SUITE("resource", { "types", test_types }, { "paths_uids", test_paths_and_uids },
               { "deferred_free", test_deferred_free }, { "failures", test_failures },
-              { "async_order", test_async_order }, { "textures", test_textures },
+              { "async_order", test_async_order }, { "priorities", test_priorities },
+              { "cancel", test_cancel }, { "residency", test_residency }, { "textures", test_textures },
               { "gltf_external_lods", test_gltf_external_and_lods }, { "instances", test_instances },
               { "sub_async", test_sub_async }, { "reload", test_reload }, { "audio_opus", test_audio_opus }, { "preload", test_preload }, { "audio_stats", test_audio_and_stats })

@@ -18,6 +18,9 @@
 typedef struct { cw_res_done_fn fn; void *user; } res_cb;
 typedef struct { uint64_t id; cw_res_done_fn fn; void *user; } res_notify;
 
+enum { ST_IDLE, ST_WAITING, ST_RUNNING, ST_DONE };
+typedef struct { uint64_t id, stamp; } cw_res_cache_ent;
+
 typedef struct res_slot {
   cw_res_type type;
   cw_res_state state;
@@ -43,6 +46,16 @@ typedef struct res_slot {
   void *decoded;
   size_t cost;
   bool queued, cancelled;
+  /* the background pipeline: finish-order key, and where the load stands */
+  int32_t lane, priority;
+  uint64_t seq;
+  uint8_t stage;      /* ST_* */
+  bool read_in_job;   /* the file is read with the decode (an asset, no prepare step) */
+  bool read_failed;   /* set by the job: the file was not there */
+  /* residency cache */
+  bool cached;
+  uint64_t cached_stamp, released_frame;
+  int64_t cached_size;
   /* load timing (wall clock: reported, never fed to game state) */
   double t_request, read_ms, decode_ms, finish_ms, total_ms;
   uint64_t frame_request;
@@ -83,6 +96,18 @@ static struct {
   double read_ms, decode_ms, finish_ms;
   int64_t file_bytes;
   int finished_last;
+  /* background pipeline */
+  CW_ARRAY(uint64_t) waiting;  /* loads not started (ST_WAITING), any order: the best goes first */
+  atomic_int running;          /* jobs not done yet */
+  int max_in_flight;
+  uint64_t seq;
+  int read_files;
+  double read_budget_ms;
+  /* residency cache */
+  size_t residency;
+  CW_ARRAY(cw_res_cache_ent) cache; /* release order; stale entries skipped */
+  int64_t cached_bytes;
+  uint64_t cache_stamp, evicted, cancelled_n;
 } R;
 
 static void ensure_init(void);
@@ -182,6 +207,8 @@ static void ensure_init(void) {
   cw_map_init(&R.index_path, CW_MEM_RESOURCE);
   R.budget_bytes = 32u << 20;
   R.budget_ms = 4;
+  R.read_files = 4;
+  R.read_budget_ms = 2;
   const cw_res_type_desc *builtin[] = { &cw__res_texture_type, &cw__res_mesh_type, &cw__res_material_type,
                                         &cw__res_gltf_type, &cw__res_audio_type, &cw__res_font_type,
                                         &cw__res_json_type, &cw__res_text_type, &cw__res_binary_type };
@@ -279,10 +306,9 @@ static void release_deps(cw_res *deps, int n) {
 static void free_slot(uint64_t id, res_slot *s) {
   const cw_res_type_desc *d = type_desc(s->type);
   if (s->job) { cw_job_wait(s->job); s->job = NULL; }
-  if (s->decoded && d) {
-    if (d->discard) d->discard(s->decoded, d->type_user);
-    s->decoded = NULL;
-  }
+  if (s->decoded && s->decoded != (void *)s && d && d->discard) d->discard(s->decoded, d->type_user);
+  s->decoded = NULL;
+  if (s->cached) { s->cached = false; R.cached_bytes -= s->cached_size; }
   /* owned sub-resources go with their parent (none can be referenced: a
    * referenced sub holds the parent) */
   for (int i = 0; i < s->sub_count; i++) {
@@ -310,6 +336,24 @@ static void free_slot(uint64_t id, res_slot *s) {
 }
 
 /* ── loading ─────────────────────────────────────────────────────── */
+/* Where a path's bytes come from: the project layer first (an editor's
+ * project directory, files written or imported into memory, removal marks),
+ * then the assets. */
+static cw_vfs_layer layer_of(const char *path) {
+  return cw_vfs_root() || cw_vfs_changed_count() ? cw_vfs_where(path) : CW_VFS_ASSET; /* a plain game: assets only */
+}
+
+/* An asset's bytes (+ NUL). Any thread natively; the main thread in a cart. */
+static uint8_t *read_asset(const char *path, size_t *len) {
+  long n = cw_asset_size(path);
+  if (n < 0) return NULL;
+  uint8_t *b = cw_alloc((size_t)n + 1, CW_MEM_RESOURCE);
+  if (cw_asset_read(path, b, (size_t)n) != n) { cw_free(b); return NULL; }
+  b[n] = 0;
+  *len = (size_t)n;
+  return b;
+}
+
 static uint8_t *read_file(const char *path, size_t *len) {
   /* generated resources ("gen://noise?..."; canonical "gen:/noise?..."):
    * the "file" is the generator's name and query, which the type's decode
@@ -321,9 +365,7 @@ static uint8_t *read_file(const char *path, size_t *len) {
     *len = n;
     return b;
   }
-  /* the project layer first (an editor's project directory, files written
-   * or imported into memory, removal marks), then the assets */
-  cw_vfs_layer layer = cw_vfs_root() || cw_vfs_changed_count() ? cw_vfs_where(path) : CW_VFS_ASSET; /* a plain game: assets only */
+  cw_vfs_layer layer = layer_of(path);
   if (layer == CW_VFS_NONE) return NULL;
   if (layer != CW_VFS_ASSET) {
     size_t n;
@@ -336,13 +378,7 @@ static uint8_t *read_file(const char *path, size_t *len) {
     *len = n;
     return b;
   }
-  long n = cw_asset_size(path);
-  if (n < 0) return NULL;
-  uint8_t *b = cw_alloc((size_t)n + 1, CW_MEM_RESOURCE);
-  if (cw_asset_read(path, b, (size_t)n) != n) { cw_free(b); return NULL; }
-  b[n] = 0;
-  *len = (size_t)n;
-  return b;
+  return read_asset(path, len);
 }
 
 struct cw_res_prepare {
@@ -351,8 +387,10 @@ struct cw_res_prepare {
   bool async;
 };
 
+static cw_res load_ex(const char *in, cw_res_type type, bool async, int lane, int priority, cw_res_done_fn done, void *user);
+
 cw_res cw_res_prepare_dep(cw_res_prepare *p, const char *path, cw_res_type type) {
-  cw_res d = p->async ? cw_res_load_async(path, type, NULL, NULL) : cw_res_load(path, type);
+  cw_res d = load_ex(path, type, p->async, p->s->lane, p->s->priority, NULL, NULL);
   res_slot *s = cw_pool_get(&R.slots, p->id); /* the pool may have grown: re-get */
   p->s = s;
   s->deps = cw_realloc(s->deps, (size_t)(s->dep_count + 1) * sizeof *s->deps, CW_MEM_RESOURCE);
@@ -397,32 +435,210 @@ static void decode_now(res_slot *s) {
   s->decode_ms = now_ms() - t0;
 }
 
-static void decode_job(void *ctx) {
-  res_slot *s = ctx;
+/* read (when the job owns the read) + decode: a worker, or inline */
+static void read_and_decode(res_slot *s) {
+  if (!s->file) {
+    double t0 = now_ms();
+    s->file = read_asset(s->path, &s->file_len);
+    s->read_ms = now_ms() - t0;
+    if (!s->file) { s->read_failed = true; s->decoded = NULL; return; }
+  }
   decode_now(s);
-  atomic_store_explicit(&s->decode_done, 1, memory_order_release);
 }
 
-/* Read + prepare (main thread), then decode inline or on the pool. */
+static void load_job(void *ctx) {
+  res_slot *s = ctx;
+  read_and_decode(s);
+  atomic_store_explicit(&s->decode_done, 1, memory_order_release);
+  atomic_fetch_sub_explicit(&R.running, 1, memory_order_release);
+}
+
+/* (lane, -priority, seq): the finish order */
+static bool key_before(const res_slot *a, const res_slot *b) {
+  if (a->lane != b->lane) return a->lane < b->lane;
+  if (a->priority != b->priority) return a->priority > b->priority;
+  return a->seq < b->seq;
+}
+
+/* queue entries whose slot is gone or no longer queued are garbage, skipped */
+static res_slot *queued_slot(uint64_t id) {
+  res_slot *s = cw_pool_get(&R.slots, id);
+  return s && s->queued ? s : NULL;
+}
+
+static void queue_remove(uint64_t id) {
+  int w = R.queue_head;
+  for (int i = R.queue_head; i < R.queue.count; i++)
+    if (R.queue.data[i] != id) R.queue.data[w++] = R.queue.data[i];
+  R.queue.count = w;
+}
+
+/* into the finish queue at its key's place (after every entry not after it) */
+static void queue_insert(uint64_t id, res_slot *s) {
+  queue_remove(id);
+  int at = R.queue.count;
+  while (at > R.queue_head) {
+    res_slot *q = queued_slot(R.queue.data[at - 1]);
+    if (q && !key_before(s, q)) break;
+    at--;
+  }
+  cw_array_push(&R.queue, 0);
+  memmove(R.queue.data + at + 1, R.queue.data + at, (size_t)(R.queue.count - 1 - at) * sizeof *R.queue.data);
+  R.queue.data[at] = id;
+  s->queued = true;
+}
+
+static void waiting_remove(uint64_t id) {
+  for (int i = 0; i < R.waiting.count; i++)
+    if (R.waiting.data[i] == id) {
+      memmove(R.waiting.data + i, R.waiting.data + i + 1, (size_t)(R.waiting.count - i - 1) * sizeof *R.waiting.data);
+      R.waiting.count--;
+      return;
+    }
+}
+
+static int max_in_flight(void) {
+  if (R.max_in_flight > 0) return R.max_in_flight;
+  int n = 2 * cw_jobs_thread_count();
+  return n < 2 ? 2 : n;
+}
+
+/* Start waiting loads on the job pool, best key first, while fewer than
+ * max_in_flight run. A cart reads their files here first (main thread),
+ * only from cw_res_frame (from_frame) and within the read budget. */
+static void pump(bool from_frame) {
+  int reads = 0;
+  double t0 = 0;
+  bool det = cw_is_deterministic_run();
+  while (R.waiting.count && atomic_load_explicit(&R.running, memory_order_acquire) < max_in_flight()) {
+    int bi = -1;
+    res_slot *best = NULL;
+    for (int i = 0; i < R.waiting.count; i++) {
+      res_slot *s = cw_pool_get(&R.slots, R.waiting.data[i]);
+      if (!s || s->stage != ST_WAITING) { /* garbage */
+        R.waiting.data[i--] = R.waiting.data[--R.waiting.count];
+        continue;
+      }
+      if (!best || key_before(s, best)) best = s, bi = i;
+    }
+    if (!best) break;
+#if CW_CART
+    if (!best->file) {
+      if (!from_frame || reads >= R.read_files) break;
+      if (reads && !det && R.read_budget_ms > 0 && now_ms() - t0 >= R.read_budget_ms) break;
+      if (!reads) t0 = now_ms();
+      double r0 = now_ms();
+      best->file = read_asset(best->path, &best->file_len);
+      best->read_ms = now_ms() - r0;
+      if (!best->file) best->read_failed = true;
+      reads++;
+    }
+#else
+    (void)from_frame, (void)reads, (void)t0, (void)det;
+#endif
+    uint64_t id = R.waiting.data[bi];
+    (void)id;
+    R.waiting.data[bi] = R.waiting.data[--R.waiting.count];
+    best->stage = ST_RUNNING;
+    atomic_store(&best->decode_done, 0);
+    if (best->read_failed) { /* nothing to run: finish reports it */
+      best->stage = ST_DONE;
+      atomic_store(&best->decode_done, 1);
+      continue;
+    }
+    atomic_fetch_add_explicit(&R.running, 1, memory_order_acq_rel);
+    best->job = cw_job_single(load_job, best);
+  }
+}
+
+/* Make s's decode done now (main thread): start it inline when it never
+ * started, else wait for its job. */
+static void complete_now(uint64_t id, res_slot *s) {
+  if (s->stage == ST_WAITING) {
+    waiting_remove(id);
+    read_and_decode(s);
+    s->stage = ST_DONE;
+    atomic_store(&s->decode_done, 1);
+  } else if (s->job) {
+    cw_job_wait(s->job);
+    s->job = NULL;
+    s->stage = ST_DONE;
+  }
+}
+
+static bool is_done(const res_slot *s) {
+  return s->sub_wait || (s->stage != ST_WAITING && atomic_load_explicit(&s->decode_done, memory_order_acquire));
+}
+
+static void discard_decoded(res_slot *s) {
+  const cw_res_type_desc *d = type_desc(s->type);
+  if (s->decoded && s->decoded != (void *)s && d && d->discard) d->discard(s->decoded, d->type_user);
+  s->decoded = NULL;
+}
+
+/* Drop a load in flight whose references are gone. False while its job
+ * still runs (never waits for it: called again later). */
+static bool cancel_load(uint64_t id, res_slot *s) {
+  if (s->sub_wait) {
+    s->sub_wait = false;
+    s->queued = false;
+    s->state = CW_RES_STATE_NONE;
+    s->cancelled = true;
+    return true;
+  }
+  if (s->stage == ST_WAITING) waiting_remove(id);
+  else if (s->job) {
+    if (!atomic_load_explicit(&s->decode_done, memory_order_acquire)) return false;
+    cw_job_wait(s->job);
+    s->job = NULL;
+  }
+  discard_decoded(s);
+  s->queued = false;
+  s->stage = ST_IDLE;
+  s->read_failed = false;
+  s->cb_count = 0; /* nobody waits for it any more */
+  s->state = CW_RES_STATE_NONE;
+  s->cancelled = true;
+  drop_load_data(s);
+  R.cancelled_n++;
+  return true;
+}
+
+/* Read + prepare (main thread, when they must happen there), then decode:
+ * inline (sync) or in the background (async). */
 static void start_load(uint64_t id, bool async) {
   res_slot *s = cw_pool_get(&R.slots, id);
+  if (s->job) { /* revived while a cancelled decode still ran: its output is stale */
+    cw_job_wait(s->job);
+    s->job = NULL;
+    discard_decoded(s);
+    drop_load_data(s);
+  }
   s->state = CW_RES_STATE_LOADING;
   s->cancelled = false;
+  s->read_failed = false;
   s->t_request = now_ms();
   s->frame_request = R.frame;
   s->read_ms = s->decode_ms = s->finish_ms = 0;
+  const cw_res_type_desc *d = type_desc(s->type);
+  if (d->request) d->request(d->type_user);
+  s->read_in_job = false;
   if (!s->file) {
-    s->file = read_file(s->path, &s->file_len);
-    s->read_ms = now_ms() - s->t_request;
-    if (!s->file) {
-      const char *pack = cw_asset_pack_path();
-      cw_error("res://%s: not found (%s%s)", s->path, pack ? "pack " : "cart bundle / asset root",
-               pack ? pack : "");
-      slot_fail(id, s, async);
-      return;
+    cw_vfs_layer layer = layer_of(s->path);
+    if (async && layer == CW_VFS_ASSET && !d->prepare && strncmp(s->path, "gen:/", 5)) { /* (generated: no file) */
+      s->read_in_job = true; /* read in the background (cart: by the read pump) */
+    } else {
+      s->file = layer == CW_VFS_NONE ? NULL : read_file(s->path, &s->file_len);
+      s->read_ms = now_ms() - s->t_request;
+      if (!s->file) {
+        const char *pack = cw_asset_pack_path();
+        cw_error("res://%s: not found (%s%s)", s->path, pack ? "pack " : "cart bundle / asset root",
+                 pack ? pack : "");
+        slot_fail(id, s, async);
+        return;
+      }
     }
   }
-  const cw_res_type_desc *d = type_desc(s->type);
   if (d->prepare) {
     cw_res_prepare p = { id, s, async };
     bool ok = d->prepare(&p, d->type_user);
@@ -431,21 +647,38 @@ static void start_load(uint64_t id, bool async) {
   }
   R.decoded++;
   if (async) {
+    s->seq = ++R.seq;
+    s->stage = ST_WAITING;
     atomic_store(&s->decode_done, 0);
-    s->queued = true;
-    cw_array_push(&R.queue, id);
-    s->job = d->decode ? cw_job_single(decode_job, s) : NULL;
-    if (!s->job) atomic_store(&s->decode_done, 1);
+    cw_array_push(&R.waiting, id);
+    queue_insert(id, s);
+    pump(false);
   } else {
     decode_now(s);
     finish_slot(id, s);
   }
 }
 
+static void finish_queued(uint64_t id, res_slot *s);
+
 static void finish_slot(uint64_t id, res_slot *s) {
   const cw_res_type_desc *d = type_desc(s->type);
-  if (s->job) { cw_job_wait(s->job); s->job = NULL; }
+  /* its prepare dependencies finish first, wherever they stand in the order */
+  for (int i = 0; i < s->dep_count; i++) {
+    res_slot *ds = slot_get(s->deps[i]);
+    if (ds && ds->queued) finish_queued(s->deps[i].id, ds);
+  }
+  s = cw_pool_get(&R.slots, id);
+  complete_now(id, s);
   s->queued = false;
+  s->stage = ST_IDLE;
+  if (s->read_failed) {
+    const char *pack = cw_asset_pack_path();
+    cw_error("res://%s: not found (%s%s)", s->path, pack ? "pack " : "cart bundle / asset root", pack ? pack : "");
+    s->read_failed = false;
+    slot_fail(id, s, false);
+    return;
+  }
   void *dec = s->decoded;
   s->decoded = NULL;
   if (!dec) { cw_error("res://%s: could not decode it as %s", s->path, d->name); slot_fail(id, s, false); return; }
@@ -478,15 +711,40 @@ const uint8_t *cw__res_slot_file(void *slot_as_decoded, size_t *len, bool take) 
   return s->file;
 }
 
+/* what the residency budget counts for a resource */
+static int64_t cache_size(const res_slot *s) {
+  if (cw_is_deterministic_run() || s->bytes <= 0) return (int64_t)s->file_bytes;
+  return s->bytes;
+}
+
+static void cache_drop(res_slot *s) {
+  if (!s->cached) return;
+  s->cached = false;
+  R.cached_bytes -= s->cached_size;
+}
+
 static void ref_slot(uint64_t id, res_slot *s) {
+  (void)id;
   s->refs++;
   if (s->pending_free) s->pending_free = false;
+  cache_drop(s);
   if (s->refs == 1 && !CW_HANDLE_IS_NULL(s->parent)) cw_res_add_ref(s->parent);
 }
 
-static cw_res load_sub(const char *path, cw_res_type type, bool async, cw_res_done_fn done, void *user);
+static cw_res load_sub(const char *path, cw_res_type type, bool async, int lane, int priority, cw_res_done_fn done,
+                       void *user);
 
-static cw_res load(const char *in, cw_res_type type, bool async, cw_res_done_fn done, void *user) {
+/* a better key for a load still waiting or queued moves it up */
+static void raise_key(uint64_t id, res_slot *s, int lane, int priority) {
+  if (!s->queued || s->sub_wait) return;
+  if (lane > s->lane || (lane == s->lane && priority <= s->priority)) return;
+  s->lane = lane;
+  s->priority = priority;
+  queue_insert(id, s);
+}
+
+static cw_res load_ex(const char *in, cw_res_type type, bool async, int lane, int priority, cw_res_done_fn done,
+                      void *user) {
   ensure_init();
   R.loads++;
   char c[CW_RES_PATH_MAX];
@@ -501,7 +759,7 @@ static cw_res load(const char *in, cw_res_type type, bool async, cw_res_done_fn 
     if (done) { if (async) cw_array_push(&R.notify, ((res_notify){ id, done, user })); else done(mkres(id), CW_RES_STATE_FAILED, user); }
     return mkres(id);
   }
-  if (strchr(c, '#')) return load_sub(c, type, async, done, user);
+  if (strchr(c, '#')) return load_sub(c, type, async, lane, priority, done, user);
   const char *p = cw_intern(c);
   uint64_t id = find_path(p);
   if (id) {
@@ -512,9 +770,16 @@ static cw_res load(const char *in, cw_res_type type, bool async, cw_res_done_fn 
     ref_slot(id, s);
     if (s->cancelled) {
       add_cb(s, done, user);
+      s->lane = lane, s->priority = priority;
       start_load(id, async);
     } else if (s->state == CW_RES_STATE_LOADING) {
       add_cb(s, done, user);
+      if (!s->queued && !s->sub_wait) { /* revived while its cancel waited for its job */
+        s->lane = lane, s->priority = priority;
+        queue_insert(id, s);
+      } else {
+        raise_key(id, s, lane, priority);
+      }
       if (!async) cw_res_wait(mkres(id));
     } else if (done) {
       if (async) cw_array_push(&R.notify, ((res_notify){ id, done, user }));
@@ -525,12 +790,18 @@ static cw_res load(const char *in, cw_res_type type, bool async, cw_res_done_fn 
   res_slot *s;
   id = new_slot(p, type ? type : type_for_path(p), &s);
   s->refs = 1;
+  s->lane = lane, s->priority = priority;
   add_cb(s, done, user);
   start_load(id, async);
   return mkres(id);
 }
 
-static cw_res load_sub(const char *c, cw_res_type type, bool async, cw_res_done_fn done, void *user) {
+static cw_res load(const char *in, cw_res_type type, bool async, cw_res_done_fn done, void *user) {
+  return load_ex(in, type, async, 0, 0, done, user);
+}
+
+static cw_res load_sub(const char *c, cw_res_type type, bool async, int lane, int priority, cw_res_done_fn done,
+                       void *user) {
   const char *p = cw_intern(c);
   uint64_t id = find_path(p);
   if (id) {
@@ -539,6 +810,10 @@ static cw_res load_sub(const char *c, cw_res_type type, bool async, cw_res_done_
     ref_slot(id, s);
     if (s->state == CW_RES_STATE_LOADING) {
       add_cb(s, done, user);
+      if (!CW_HANDLE_IS_NULL(s->parent)) {
+        res_slot *ps = slot_get(s->parent);
+        if (ps) raise_key(s->parent.id, ps, lane, priority);
+      }
       if (!async) cw_res_wait(mkres(id));
     } else if (done) {
       if (async) cw_array_push(&R.notify, ((res_notify){ id, done, user }));
@@ -549,7 +824,7 @@ static cw_res load_sub(const char *c, cw_res_type type, bool async, cw_res_done_
   const char *hash = strchr(c, '#');
   char parent_path[CW_RES_PATH_MAX];
   snprintf(parent_path, sizeof parent_path, "%.*s", (int)(hash - c), c);
-  cw_res parent = async ? cw_res_load_async(parent_path, 0, NULL, NULL) : cw_res_load(parent_path, 0);
+  cw_res parent = load_ex(parent_path, 0, async, lane, priority, NULL, NULL);
   /* the parent reference just taken becomes the sub-resource's */
   id = find_path(p);
   res_slot *s;
@@ -563,13 +838,14 @@ static cw_res load_sub(const char *c, cw_res_type type, bool async, cw_res_done_
   id = new_slot(p, type ? type : CW_RES_BINARY, &s);
   s->refs = 1;
   s->parent = parent;
+  s->lane = lane, s->priority = priority;
   add_cb(s, done, user);
   cw_res_state ps = cw_res_get_state(parent);
   if (ps == CW_RES_STATE_LOADING) {
     s->sub_wait = true;
-    s->queued = true;
+    s->seq = ++R.seq;
     atomic_store(&s->decode_done, 1);
-    cw_array_push(&R.queue, id);
+    queue_insert(id, s);
     return mkres(id);
   }
   cw_error("res://%s: %s", p, ps == CW_RES_STATE_FAILED ? "its file failed to load" : "no such sub-resource in that file");
@@ -580,6 +856,11 @@ static cw_res load_sub(const char *c, cw_res_type type, bool async, cw_res_done_
 cw_res cw_res_load(const char *path, cw_res_type type) { return load(path, type, false, NULL, NULL); }
 cw_res cw_res_load_async(const char *path, cw_res_type type, cw_res_done_fn done, void *user) {
   return load(path, type, true, done, user);
+}
+cw_res cw_res_load_async_ex(const char *path, cw_res_type type, const cw_res_load_opts *o) {
+  static const cw_res_load_opts none = { 0 };
+  if (!o) o = &none;
+  return load_ex(path, type, true, o->lane, o->priority, o->done, o->user);
 }
 
 void cw_res_index_set(uint64_t uid, const char *path) {
@@ -629,10 +910,13 @@ cw_res cw_res_create(const char *path, cw_res_type type, const void *bytes, size
   return mkres(id);
 }
 
-/* Finish queued loads in order up to and including `until` (0 = the head
- * only per budget rules: see cw_res_frame). */
+/* Finish one queued load now, out of turn (its dependants need it, or it
+ * reached the head). */
 static void finish_head(uint64_t id, res_slot *s) {
   if (s->sub_wait) {
+    res_slot *ps = slot_get(s->parent);
+    if (ps && ps->queued) finish_queued(s->parent.id, ps); /* its file first */
+    s = cw_pool_get(&R.slots, id);
     s->queued = false;
     s->sub_wait = false;
     if (s->state != CW_RES_STATE_READY) { /* the parent's finish did not register it */
@@ -643,18 +927,16 @@ static void finish_head(uint64_t id, res_slot *s) {
     }
     return;
   }
-  if (s->refs == 0) { /* released while loading: drop the work */
-    if (s->job) { cw_job_wait(s->job); s->job = NULL; }
-    const cw_res_type_desc *d = type_desc(s->type);
-    if (s->decoded && s->decoded != (void *)s && d->discard) d->discard(s->decoded, d->type_user);
-    s->decoded = NULL;
-    s->queued = false;
-    s->cancelled = true;
-    s->state = CW_RES_STATE_NONE;
-    drop_load_data(s);
+  if (s->refs == 0) { /* released while loading: drop the work (a running job is left to land) */
+    if (!cancel_load(id, s)) s->queued = false;
     return;
   }
   finish_slot(id, s);
+}
+
+static void finish_queued(uint64_t id, res_slot *s) {
+  queue_remove(id);
+  finish_head(id, s);
 }
 
 static void queue_compact(void) {
@@ -671,8 +953,8 @@ cw_res_state cw_res_wait(cw_res h) {
   if (!s) return CW_RES_STATE_NONE;
   while (s->queued && R.queue_head < R.queue.count) {
     uint64_t id = R.queue.data[R.queue_head++];
-    res_slot *q = cw_pool_get(&R.slots, id);
-    if (q && q->queued) finish_head(id, q);
+    res_slot *q = queued_slot(id);
+    if (q) finish_head(id, q);
     s = slot_get(h);
     if (!s) return CW_RES_STATE_NONE;
   }
@@ -684,8 +966,8 @@ void cw_res_wait_all(void) {
   ensure_init();
   while (R.queue_head < R.queue.count) {
     uint64_t id = R.queue.data[R.queue_head++];
-    res_slot *q = cw_pool_get(&R.slots, id);
-    if (q && q->queued) finish_head(id, q);
+    res_slot *q = queued_slot(id);
+    if (q) finish_head(id, q);
   }
   queue_compact();
 }
@@ -708,6 +990,17 @@ void cw_res_release(cw_res h) {
   /* a slot with a parent holds one parent reference while it has any */
   if (!CW_HANDLE_IS_NULL(s->parent)) cw_res_release(s->parent);
   if (s->owned_sub) return;
+  s->released_frame = R.frame;
+  if (s->state == CW_RES_STATE_LOADING) s->cb_count = 0; /* cancelled: its callbacks never run */
+  if (R.residency && s->state == CW_RES_STATE_READY && CW_HANDLE_IS_NULL(s->parent)) {
+    /* kept loaded in the residency cache until the budget needs the room */
+    s->cached = true;
+    s->cached_stamp = ++R.cache_stamp;
+    s->cached_size = cache_size(s);
+    R.cached_bytes += s->cached_size;
+    cw_array_push(&R.cache, ((cw_res_cache_ent){ h.id, s->cached_stamp }));
+    return;
+  }
   s->pending_free = true;
   s->free_at = R.frame + CW_RES_FREE_DELAY_FRAMES;
   cw_array_push(&R.frees, h.id);
@@ -887,20 +1180,64 @@ void cw_res_set_upload_budget(size_t bytes, double ms) {
   R.budget_ms = ms;
 }
 
+void cw_res_set_read_budget(int files, double ms) {
+  ensure_init();
+  R.read_files = files < 1 ? 1 : files;
+  R.read_budget_ms = ms;
+}
+
+void cw_res_set_max_in_flight(int n) {
+  ensure_init();
+  R.max_in_flight = n < 0 ? 0 : n;
+}
+
+void cw_res_set_residency_budget(size_t bytes) {
+  ensure_init();
+  R.residency = bytes;
+}
+
+/* Evict the least recently released cached resources until the cache fits. */
+static void cache_trim(void) {
+  int r = 0;
+  while (r < R.cache.count && R.cached_bytes > (int64_t)R.residency) {
+    cw_res_cache_ent e = R.cache.data[r++];
+    res_slot *s = cw_pool_get(&R.slots, e.id);
+    if (!s || !s->cached || s->cached_stamp != e.stamp) continue; /* revived or gone */
+    cache_drop(s);
+    s->pending_free = true;
+    /* the GPU may draw with it for a few frames after its release */
+    s->free_at = CW_MAX(R.frame, s->released_frame + CW_RES_FREE_DELAY_FRAMES);
+    cw_array_push(&R.frees, e.id);
+    R.evicted++;
+  }
+  /* drop consumed and stale entries */
+  int w = 0;
+  for (int i = r; i < R.cache.count; i++) {
+    cw_res_cache_ent e = R.cache.data[i];
+    res_slot *s = cw_pool_get(&R.slots, e.id);
+    if (s && s->cached && s->cached_stamp == e.stamp) R.cache.data[w++] = e;
+  }
+  R.cache.count = w;
+}
+
 void cw_res_frame(void) {
   if (!R.init) return;
   R.frame++;
-  /* deferred frees, in release order */
+  /* deferred frees, in release order; a load in flight is cancelled first,
+   * without waiting for a decode that still runs */
   int w = 0;
   for (int i = 0; i < R.frees.count; i++) {
     uint64_t id = R.frees.data[i];
     res_slot *s = cw_pool_get(&R.slots, id);
     if (!s || !s->pending_free) continue;
-    if (R.frame < s->free_at || (s->queued && !s->sub_wait) || s->job) { R.frees.data[w++] = id; continue; }
-    if (s->queued) s->queued = false;
+    if (s->state == CW_RES_STATE_LOADING && !cancel_load(id, s)) { R.frees.data[w++] = id; continue; }
+    if (s->job && !atomic_load_explicit(&s->decode_done, memory_order_acquire)) { R.frees.data[w++] = id; continue; }
+    if (R.frame < s->free_at) { R.frees.data[w++] = id; continue; }
+    s->queued = false;
     free_slot(id, s);
   }
   R.frees.count = w;
+  cache_trim();
   /* callbacks for cache hits and early failures, in request order */
   if (R.notify.count) {
     int n = R.notify.count;
@@ -913,18 +1250,20 @@ void cw_res_frame(void) {
     }
     cw_free(list);
   }
-  /* finish decoded loads in request order under the budget */
+  /* start waiting reads / decodes (a cart reads its share of files here) */
+  pump(true);
+  /* finish decoded loads in order under the budget */
   bool det = cw_is_deterministic_run();
   double t0 = now_ms();
   size_t spent = 0;
   int finished = 0;
   while (R.queue_head < R.queue.count) {
     uint64_t id = R.queue.data[R.queue_head];
-    res_slot *s = cw_pool_get(&R.slots, id);
-    if (!s || !s->queued) { R.queue_head++; continue; }
+    res_slot *s = queued_slot(id);
+    if (!s) { R.queue_head++; continue; }
     if (finished && R.budget_bytes && spent >= R.budget_bytes) break;
     if (finished && !det && R.budget_ms > 0 && now_ms() - t0 >= R.budget_ms) break;
-    if (!atomic_load_explicit(&s->decode_done, memory_order_acquire) && !det) {
+    if (!is_done(s) && s->refs > 0 && !det) {
       /* not decoded yet: skip this frame, unless it has been waiting a while
        * (a browser starts wasi-thread workers only when the page yields, so
        * a cart that loads during init may have none yet): then help */
@@ -932,11 +1271,15 @@ void cw_res_frame(void) {
       if (R.frame - R.head_since < 2) break;
     }
     R.queue_head++;
+    bool counts = s->refs > 0 && !s->sub_wait;
     finish_head(id, s);
-    spent += s->cost; /* written by the decode job: read it after the finish waited for it */
-    finished++;
+    if (counts) {
+      spent += s->cost; /* written by the decode job: read after the finish waited for it */
+      finished++;
+    }
   }
   queue_compact();
+  pump(false); /* finishing made room (a cart reads at the next frame) */
   R.uploaded_last = spent;
   R.finished_last = finished;
   cw__res_hotreload_tick();
@@ -950,13 +1293,15 @@ void cw_res_get_stats(cw_res_stats *o) {
     if (!s) continue;
     o->live++;
     if (s->pending_free) o->pending_free++;
+    if (s->cached) o->cached++;
     switch (s->state) {
     case CW_RES_STATE_READY:
       o->ready++;
       o->bytes += s->bytes;
       if (s->type < 32) o->by_type[s->type]++;
       break;
-    case CW_RES_STATE_LOADING: o->loading++; break;
+    case CW_RES_STATE_LOADING: o->loading++; if (s->stage == ST_WAITING) o->waiting++;
+      break;
     case CW_RES_STATE_FAILED: o->failed++; break;
     default: break;
     }
@@ -974,13 +1319,17 @@ void cw_res_get_stats(cw_res_stats *o) {
   cw_mem_stats ms;
   cw_mem_get_stats(&ms);
   o->cpu_bytes = ms.bytes[CW_MEM_RESOURCE];
+  o->in_flight = atomic_load(&R.running);
+  o->cached_bytes = R.cached_bytes;
+  o->evicted = R.evicted;
+  o->cancelled = R.cancelled_n;
 }
 
 void cw_res_shutdown(void) {
   if (!R.init) return;
   cw_res_hotreload_stop();
-  for (int i = R.queue_head; i < R.queue.count; i++) {
-    res_slot *s = cw_pool_get(&R.slots, R.queue.data[i]);
+  for (int i = 0; i < R.slots.slot_count; i++) { /* every job still running, queued or cancelled */
+    res_slot *s = cw_pool_at(&R.slots, i);
     if (s && s->job) { cw_job_wait(s->job); s->job = NULL; }
   }
   /* newest first, so what was loaded on top of something goes before it;
@@ -1000,6 +1349,8 @@ void cw_res_shutdown(void) {
   cw_array_free(&R.queue);
   cw_array_free(&R.notify);
   cw_array_free(&R.frees);
+  cw_array_free(&R.waiting);
+  cw_array_free(&R.cache);
   memset(&R, 0, sizeof R);
 }
 

@@ -25,16 +25,38 @@
  * with it), and a load of the same path in that window revives it.
  *
  * Loading. cw_res_load is synchronous: it returns with the resource READY or
- * FAILED. cw_res_load_async reads the file on the calling (main) thread,
- * decodes it on the job pool (image decode, KTX2 transcode, meshopt decode)
- * and finishes it on the main thread in cw_res_frame (three.c objects, GL
- * uploads) under a per-frame upload budget. Async loads FINISH IN REQUEST
- * ORDER, always: a resource whose decode ended early waits for the ones
- * requested before it, so the frame a resource becomes ready and every id
- * three.c hands out are the same on every host. In a deterministic run
- * (cw_is_deterministic_run) the budget counts bytes only and cw_res_frame
- * waits for the next decode instead of skipping a frame, so readiness never
- * depends on thread timing; otherwise a millisecond budget applies too.
+ * FAILED. cw_res_load_async reads and decodes the file in the background and
+ * finishes it on the main thread in cw_res_frame (three.c objects, GL
+ * uploads) under a per-frame upload budget:
+ *   - read: natively on the job pool, together with the decode, so a
+ *     request costs the main thread nothing but bookkeeping. In a cart the
+ *     host's asset calls belong to the main thread (a lazily loaded web cart
+ *     suspends there while the bytes arrive), so cw_res_frame reads at most
+ *     a few queued files per frame (cw_res_set_read_budget). Files of the
+ *     project layer (cartwheel/vfs.h) and of types with a prepare step (glTF)
+ *     are read at request time, as before.
+ *   - decode: on the job pool, at most cw_res_set_max_in_flight at once,
+ *     started in finish order, so a late urgent request is not stuck behind
+ *     a hundred early ones.
+ *   - finish: in ORDER, always: by lane (lower first), then priority (higher
+ *     first), then request order (cw_res_load_async_ex). A resource whose
+ *     decode ended early waits for the ones before it, so the frame a
+ *     resource becomes ready and every id three.c hands out are the same on
+ *     every host (the order is a pure function of the requests). Plain
+ *     cw_res_load_async is lane 0, priority 0: request order.
+ * In a deterministic run (cw_is_deterministic_run) the budget counts bytes
+ * only and cw_res_frame waits for the next decode instead of skipping a
+ * frame, so readiness never depends on thread timing; otherwise a
+ * millisecond budget applies too.
+ *
+ * Cancelling. Releasing the last reference of a load in flight cancels it
+ * without waiting: work not started is dropped, a decode already running
+ * finishes on its worker and its output is discarded when it lands.
+ *
+ * Residency. With cw_res_set_residency_budget, a resource whose last
+ * reference goes stays loaded (READY, 0 references) in an LRU cache while
+ * the cache fits the budget; a load of its path revives it at once (a cache
+ * hit). The least recently released go first when the cache is over budget.
  *
  * Threading: every function here is main-thread only, except the type
  * callbacks documented as worker-safe.
@@ -95,6 +117,21 @@ typedef void (*cw_res_done_fn)(cw_res res, cw_res_state state, void *user);
 /* Asynchronous load. done may be NULL. A '#' sub-resource path loads its file
  * asynchronously and resolves the sub-resource when the file is ready. */
 cw_res cw_res_load_async(const char *path, cw_res_type type, cw_res_done_fn done, void *user);
+
+/* Where an async load stands in the finish order (see Loading above). The
+ * order must come from game state (distance from the player in fixed-tick
+ * positions, a level's needs), never from timing. */
+typedef struct cw_res_load_opts {
+  int lane;              /* lower lanes finish first (0 = default; e.g. 0 for what the sim needs, 1 for visuals) */
+  int priority;          /* within a lane, higher finishes first (0 = default) */
+  cw_res_done_fn done;   /* may be NULL */
+  void *user;
+} cw_res_load_opts;
+/* cw_res_load_async with a lane and priority (NULL opts = lane 0, priority
+ * 0). Requesting a path already loading with a better (lane, priority)
+ * moves it up; never down. A '#' sub-resource and the files a type's
+ * prepare step depends on load with the same lane and priority. */
+cw_res cw_res_load_async_ex(const char *path, cw_res_type type, const cw_res_load_opts *opts);
 
 /* Load by UID through res.index. A UID the index does not know FAILS. */
 cw_res cw_res_load_uid(uint64_t uid, cw_res_type type);
@@ -173,6 +210,21 @@ void cw_res_frame(void);
  * (ignored in deterministic runs) is spent. At least one resource finishes
  * per frame whatever its size. Defaults: 32 MB, 4 ms. 0 = unlimited. */
 void cw_res_set_upload_budget(size_t bytes, double ms);
+/* Cart reads per frame: at most `files` queued files (at least 1 per frame
+ * while any wait), and stop once `ms` is spent (ignored in deterministic
+ * runs, where exactly `files` are read). Defaults: 4 files, 2 ms. Natively
+ * reads run on the job pool and this does nothing. */
+void cw_res_set_read_budget(int files, double ms);
+/* Decodes (and native reads) running on the job pool at once; more wait
+ * their turn, started in finish order. Default (0): twice the job threads,
+ * at least 2. */
+void cw_res_set_max_in_flight(int n);
+/* The residency cache's size: released READY resources stay loaded while
+ * their bytes (payload bytes, or file bytes for types that report none; in
+ * a deterministic run always file bytes, which are the same on every host)
+ * fit. 0 (default) = no cache: the last release frees after
+ * CW_RES_FREE_DELAY_FRAMES. Lowering it evicts at the next cw_res_frame. */
+void cw_res_set_residency_budget(size_t bytes);
 
 typedef struct cw_res_stats {
   int live;          /* slots in use (any state, pending free included) */
@@ -191,6 +243,13 @@ typedef struct cw_res_stats {
   double finish_ms;  /* finishing: three.c objects, GPU uploads (main thread) */
   int64_t file_bytes; /* packed bytes read */
   int64_t cpu_bytes; /* CW_MEM_RESOURCE now: bookkeeping, decoded data, kept files */
+  /* the background pipeline and the residency cache */
+  int waiting;       /* async loads not started yet (a cart: not read yet) */
+  int in_flight;     /* reads + decodes running on the job pool */
+  int cached;        /* READY with no references, kept by the residency budget */
+  int64_t cached_bytes; /* their size as the budget counts it */
+  uint64_t evicted;  /* cached resources freed to fit the budget */
+  uint64_t cancelled; /* async loads released before they finished */
 } cw_res_stats;
 void cw_res_get_stats(cw_res_stats *out); /* walks every slot: O(live resources) */
 
@@ -277,6 +336,12 @@ typedef struct cw_res_type_desc {
   /* optional: payload bytes for stats */
   size_t (*size)(const void *payload, void *type_user);
   void *type_user;
+  /* main thread, optional: called at every load request of this type,
+   * before the file is read (on a worker, for an async load without a
+   * prepare step): set up what decode needs from the main thread (the
+   * texture type picks its KTX2 target here). A type with prepare has its
+   * file read on the main thread at request time instead. */
+  void (*request)(void *type_user);
 } cw_res_type_desc;
 
 /* Register a type; returns its id. Registering a name twice returns the
