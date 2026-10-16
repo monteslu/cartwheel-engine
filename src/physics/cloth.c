@@ -5,11 +5,11 @@
  * "Small Steps in Physics Simulation", SCA 2019), long-range attachments
  * (Kim, Chentanez, Mueller: "Long Range Attachments", SCA 2012), distance
  * bending and the spatial hash for self-collision as in Ten Minute Physics
- * (Matthias Mueller, MIT), constraint colouring for a parallel solve as in
+ * (Matthias Mueller, MIT), a partition of the constraints for a parallel solve in the spirit of
  * Jolt Physics' soft bodies (Jorrit Rouwe, MIT) and Box2D v3's graph.
  *
  * Determinism: simulation values use only + - * / sqrt and cartwheel/math.h.
- * Every parallel pass writes per particle (or per constraint of one colour,
+ * Every parallel pass writes per particle (or per pair of particle blocks,
  * which share no particle), so results do not depend on the thread count.
  * Reductions (hash, stats, impulses on bodies) run serially in index order. */
 #include <math.h>
@@ -107,11 +107,16 @@ typedef struct cw__cloth {
   int *vt_start, *vt_tri; /* vertex -> triangles (CSR) */
   int *vv_start, *vv_n;  /* vertex -> edge neighbours (CSR, for tethers) */
   float *vv_len;
-  /* distance constraints, sorted by colour: [0, nedge) stretch then bend in creation order before sorting */
-  int ncon, ncol;
-  int *col_start;        /* ncol + 1 */
+  /* distance constraints, sorted by group (partition below); edge_slot maps edge -> slot */
+  int ncon, ncol;        /* ncol: groups (phase A pairs, phase B pairs, serial) */
+  int bs, na, nb;        /* particles per block, phase A and phase B group counts */
+  int *col_start;        /* ncol + 1: each group's constraints */
+  V *xa;                 /* tether anchors' positions, snapshot before phase B */
+  int32_t *anchors;      /* the distinct tether anchors */
+  int nanchors;
   int32_t *ci0, *ci1;
   float *crest, *ccomp;
+  float *cinv;           /* 1 / (w0 + w1 + compliance / h^2), set at each step's start */
   int32_t *edge_slot;    /* edge index -> constraint slot */
   /* tethers: free particle -> anchor (nearest by rest distance along the mesh) */
   int ntether;
@@ -200,44 +205,95 @@ static void cloth_free(cw__cloth *c) {
   void *ptrs[] = { c->x, c->p, c->v, c->xt, c->w, c->w0, c->mass, c->area, c->pinned, c->attached, c->taut,
                    c->pin_from, c->pin_to, c->offset, c->maxd, c->skin_from, c->skin_to, c->nrm, c->dx, c->coll,
                    c->coll_d, c->wv, c->tri, c->uv, c->vt_start, c->vt_tri, c->vv_start, c->vv_n, c->vv_len, c->col_start,
-                   c->ci0, c->ci1, c->crest, c->ccomp, c->edge_slot, c->tv, c->ta, c->tlen,
-                   c->tether_of, c->av, c->aa, c->alen };
+                   c->ci0, c->ci1, c->crest, c->ccomp, c->cinv, c->edge_slot, c->tv, c->ta, c->tlen,
+                   c->tether_of, c->av, c->aa, c->alen, c->xa, c->anchors };
   for (size_t i = 0; i < CW_ARRAY_LEN(ptrs); i++) cw_free(ptrs[i]);
   cw_array_free(&c->attachments);
   cw_array_free(&c->shapes);
 }
 
-/* greedy colouring in index order; then the constraints are reordered by colour (stable) */
-static void colour(cw__cloth *c, int32_t *i0, int32_t *i1, float *rest, float *comp, int count, int nedge) {
-  uint64_t *used = zalloc((size_t)c->n, sizeof(uint64_t));
-  int *col = zalloc((size_t)count, sizeof(int));
-  int ncol = 0;
+/* The parallel layout. Particles are cut into blocks of `bs` consecutive indices (bs at least the
+ * widest index span of any constraint, so a constraint touches at most two neighbouring blocks).
+ * Phase A runs pairs of blocks {2p, 2p+1}: each takes the constraints inside its pair. Phase B
+ * runs the pairs {2g-1, 2g}: the constraints across the odd boundaries. Pairs of one phase share
+ * no particle, so each pair is one job solved Gauss-Seidel in creation order, and the result does
+ * not depend on the thread count. Constraints spanning farther (unstructured meshes) run serially.
+ * Groups: [0, na) phase A, [na, na + nb) phase B, then the serial leftovers. */
+static void partition(cw__cloth *c, int32_t *i0, int32_t *i1, float *rest, float *comp, int count, int nedge) {
+  int span = 1;
   for (int k = 0; k < count; k++) {
-    uint64_t u = used[i0[k]] | used[i1[k]];
-    int cc = 0;
-    while (cc < 63 && (u >> cc & 1)) cc++;
-    /* colour 63 is the overflow: its constraints may share particles, so it runs serially */
-    col[k] = cc;
-    if (cc < 63) used[i0[k]] |= 1ull << cc, used[i1[k]] |= 1ull << cc;
-    if (cc + 1 > ncol) ncol = cc + 1;
+    int d = i0[k] > i1[k] ? i0[k] - i1[k] : i1[k] - i0[k];
+    if (d > span) span = d;
   }
-  c->ncol = ncol;
-  c->col_start = zalloc((size_t)ncol + 1, sizeof(int));
-  for (int k = 0; k < count; k++) c->col_start[col[k] + 1]++;
-  for (int i = 0; i < ncol; i++) c->col_start[i + 1] += c->col_start[i];
-  int *fill = zalloc((size_t)ncol, sizeof(int));
+  int bs = span < 128 ? 128 : span;
+  if (bs > 4096) bs = 4096; /* wider spans go serial */
+  int nblocks = (c->n + bs - 1) / bs;
+  int na = (nblocks + 1) / 2, nb = nblocks / 2 + 1;
+  int ng = na + nb + 1;
+  c->bs = bs, c->na = na, c->nb = nb, c->ncol = ng;
+  int *grp = zalloc((size_t)count, sizeof(int));
+  c->col_start = zalloc((size_t)ng + 1, sizeof(int));
+  for (int k = 0; k < count; k++) {
+    int ba = i0[k] / bs, bb = i1[k] / bs, lo = ba < bb ? ba : bb, hi = ba < bb ? bb : ba;
+    int g;
+    if (hi - lo > 1) g = na + nb;               /* serial */
+    else if (lo == hi || !(lo & 1)) g = lo / 2; /* inside an A pair */
+    else g = na + (lo + 1) / 2;                 /* across an odd boundary: B */
+    grp[k] = g;
+    c->col_start[g + 1]++;
+  }
+  for (int i = 0; i < ng; i++) c->col_start[i + 1] += c->col_start[i];
+  int *fill = zalloc((size_t)ng, sizeof(int));
   c->ci0 = zalloc((size_t)count, sizeof(int32_t));
   c->ci1 = zalloc((size_t)count, sizeof(int32_t));
   c->crest = zalloc((size_t)count, sizeof(float));
   c->ccomp = zalloc((size_t)count, sizeof(float));
+  c->cinv = zalloc((size_t)count, sizeof(float));
   c->edge_slot = zalloc((size_t)nedge, sizeof(int32_t));
   for (int k = 0; k < count; k++) {
-    int s = c->col_start[col[k]] + fill[col[k]]++;
+    int s = c->col_start[grp[k]] + fill[grp[k]]++;
     c->ci0[s] = i0[k], c->ci1[s] = i1[k], c->crest[s] = rest[k], c->ccomp[s] = comp[k];
     if (k < nedge) c->edge_slot[k] = s;
   }
+  /* inside each group: order the constraints by a greedy colouring (lowest colour neither particle
+   * has yet, in creation order), so neighbouring constraints in the loop share no particle and the
+   * CPU overlaps them instead of waiting on each one's result */
+  {
+    uint64_t *used = zalloc((size_t)c->n, sizeof(uint64_t));
+    int maxg = 0;
+    for (int g = 0; g < ng; g++)
+      if (c->col_start[g + 1] - c->col_start[g] > maxg) maxg = c->col_start[g + 1] - c->col_start[g];
+    int *colr = zalloc((size_t)maxg + 1, sizeof(int)), *order = zalloc((size_t)maxg + 1, sizeof(int));
+    int32_t *t0 = zalloc((size_t)maxg + 1, sizeof(int32_t)), *t1 = zalloc((size_t)maxg + 1, sizeof(int32_t));
+    float *tr = zalloc((size_t)maxg + 1, sizeof(float)), *tc = zalloc((size_t)maxg + 1, sizeof(float));
+    int *slot_of = zalloc((size_t)count, sizeof(int)); /* old slot -> new slot */
+    for (int g = 0; g < ng; g++) {
+      int b = c->col_start[g], m = c->col_start[g + 1] - b, nc = 0;
+      for (int k = 0; k < m; k++) used[c->ci0[b + k]] = used[c->ci1[b + k]] = 0;
+      for (int k = 0; k < m; k++) {
+        uint64_t u = used[c->ci0[b + k]] | used[c->ci1[b + k]];
+        int cc = 0;
+        while (cc < 63 && (u >> cc & 1)) cc++;
+        colr[k] = cc;
+        if (cc < 63) used[c->ci0[b + k]] |= 1ull << cc, used[c->ci1[b + k]] |= 1ull << cc;
+        if (cc + 1 > nc) nc = cc + 1;
+      }
+      int o = 0;
+      for (int cc = 0; cc < nc; cc++)
+        for (int k = 0; k < m; k++)
+          if (colr[k] == cc) order[o++] = k;
+      for (int k = 0; k < m; k++) t0[k] = c->ci0[b + k], t1[k] = c->ci1[b + k], tr[k] = c->crest[b + k], tc[k] = c->ccomp[b + k];
+      for (int k = 0; k < m; k++) {
+        int src = order[k];
+        c->ci0[b + k] = t0[src], c->ci1[b + k] = t1[src], c->crest[b + k] = tr[src], c->ccomp[b + k] = tc[src];
+        slot_of[b + src] = b + k;
+      }
+    }
+    for (int e = 0; e < nedge; e++) c->edge_slot[e] = slot_of[c->edge_slot[e]];
+    cw_free(used), cw_free(colr), cw_free(order), cw_free(t0), cw_free(t1), cw_free(tr), cw_free(tc), cw_free(slot_of);
+  }
   c->ncon = count;
-  cw_free(used), cw_free(col), cw_free(fill);
+  cw_free(grp), cw_free(fill);
 }
 
 /* tethers: Dijkstra over the edges from every anchor at once (ties by vertex index) */
@@ -295,7 +351,7 @@ static bool dynamic_anchor(const cw__cloth *c, int v) { return c->attached[v] &&
 
 static void build_tethers(cw__cloth *c) {
   c->tethers_dirty = false;
-  c->ntether = c->natether = 0;
+  c->ntether = c->natether = c->nanchors = 0;
   for (int v = 0; v < c->n; v++) c->tether_of[v] = -1;
   if (c->def.tether_slack <= 0) return;
   uint8_t *src = zalloc((size_t)c->n, 1);
@@ -315,6 +371,12 @@ static void build_tethers(cw__cloth *c) {
       c->tv[k] = v, c->ta[k] = from[v], c->tlen[k] = dist[v] * c->def.tether_slack;
       c->tether_of[v] = k;
     }
+    /* the distinct anchors, in index order (snapshotted each substep) */
+    uint8_t *seen = zalloc((size_t)c->n, 1);
+    for (int k = 0; k < c->ntether; k++) seen[c->ta[k]] = 1;
+    for (int v = 0; v < c->n; v++)
+      if (seen[v]) c->anchors[c->nanchors++] = v;
+    cw_free(seen);
     /* each dynamic attachment: a tether to the nearest other anchor */
     for (int a = 0; a < c->n && anchors > 1; a++) {
       if (!dynamic_anchor(c, a)) continue;
@@ -527,7 +589,7 @@ static cw_cloth create(cw_world3d w, const cw_cloth_def *d, const upair *bends_e
       c->area[edges[e].a] += a / 2, c->area[edges[e].b] += a / 2;
     }
 
-  /* constraints: stretch then bend, coloured */
+  /* constraints: stretch then bend, partitioned for the parallel solve */
   int nc = ne + nb;
   int32_t *i0 = zalloc((size_t)nc, sizeof(int32_t)), *i1 = zalloc((size_t)nc, sizeof(int32_t));
   float *rest = zalloc((size_t)nc, sizeof(float)), *comp = zalloc((size_t)nc, sizeof(float));
@@ -541,10 +603,11 @@ static cw_cloth create(cw_world3d w, const cw_cloth_def *d, const upair *bends_e
     rest[ne + b] = vlen(vsub(c->x[bends[b].a], c->x[bends[b].b]));
     comp[ne + b] = d->bend_compliance > 0 ? d->bend_compliance : 0;
   }
-  colour(c, i0, i1, rest, comp, nc, ne);
+  partition(c, i0, i1, rest, comp, nc, ne);
   cw_free(i0), cw_free(i1), cw_free(rest), cw_free(comp), cw_free(edges), cw_free(bends);
 
   c->tv = zalloc(N, sizeof(int32_t)), c->ta = zalloc(N, sizeof(int32_t)), c->tlen = zalloc(N, sizeof(float));
+  c->xa = zalloc(N, sizeof(V)), c->anchors = zalloc(N, sizeof(int32_t));
   build_tethers(c);
   if (c->ntri) compute_normals(c, c->x, c->nrm, 0, n);
   else compute_tangents(c, c->x, c->nrm);
@@ -761,13 +824,14 @@ typedef struct stepctx {
   float prev_t;              /* the substep's start as a share of the tick */
   V g;
   float damp;
-  int col;                   /* the colour being solved */
+  bool fuse_post;            /* phase B runs post on its particles too (no self-collision) */
 } stepctx;
 
-static void run(cw__cloth *c, int count, int min_batch, cw_range_fn fn, void *ctx) {
+/* small cloths (and workers == 1) run on the calling thread: fanning out costs more than it saves */
+static void run(cw__cloth *c, int count, cw_range_fn fn, void *ctx) {
   if (count <= 0) return;
-  if (c->def.workers == 1 || count <= min_batch) fn(0, count, 0, ctx);
-  else cw_parallel_for(count, min_batch, fn, ctx);
+  if (c->def.workers == 1 || c->n < 1024 || count == 1) fn(0, count, 0, ctx);
+  else cw_parallel_for(count, 1, fn, ctx);
 }
 
 /* the wind at a particle: the set wind, varied smoothly in space and time by turbulence */
@@ -783,27 +847,20 @@ static V wind_at(const cw__cloth *c, V x) {
   return wv;
 }
 
-static void predict_range(int begin, int end, int worker, void *u) {
+/* the air's push on each particle for this tick, from its velocity and normal at the tick's start
+ * (an acceleration, held over the substeps) */
+static void wind_range(int begin, int end, int worker, void *u) {
   (void)worker;
-  stepctx *s = u;
-  cw__cloth *c = s->c;
+  cw__cloth *c = ((stepctx *)u)->c;
   const float rho = 1.2f;
   for (int i = begin; i < end; i++) {
-    c->p[i] = c->x[i];
-    if (c->attached[i]) continue; /* placed by place_attached */
-    if (c->w[i] <= 0) {
-      c->x[i] = vlerp(c->pin_from[i], c->pin_to[i], s->sub_t);
-      continue;
-    }
-    V acc = s->g;
-    if ((c->drag != 0 || c->lift != 0) && c->area[i] > 0) {
-      V rel = vsub(c->wv[i], c->v[i]);
-      V f;
+    V f = { 0, 0, 0 };
+    if (c->w[i] > 0 && !c->attached[i] && c->area[i] > 0) {
+      V rel = vsub(wind_at(c, c->x[i]), c->v[i]);
       if (c->ntri) {
         /* drag along the flow and lift across it, both by the share of the flow the surface meets
          * (|cos|: none edge-on), lift by sin too (none face-on) */
         float s2 = vdot(rel, rel);
-        f = (V){ 0, 0, 0 };
         if (s2 > 1e-12f) {
           float sp = sqrtf(s2);
           V dir = vmul(rel, 1 / sp);
@@ -819,34 +876,41 @@ static void predict_range(int begin, int end, int worker, void *u) {
         V vp = vsub(rel, vmul(tg, vdot(rel, tg)));
         f = vmul(vp, 0.5f * rho * c->drag * vlen(vp));
       }
-      acc = vadd(acc, vmul(f, c->area[i] * c->w[i]));
+      f = vmul(f, c->area[i] * c->w[i]);
     }
-    V v = vmul(vadd(c->v[i], vmul(acc, s->h)), s->damp);
+    c->wv[i] = f;
+  }
+}
+
+static void predict_range(int begin, int end, int worker, void *u) {
+  (void)worker;
+  stepctx *s = u;
+  cw__cloth *c = s->c;
+  for (int i = begin; i < end; i++) {
+    c->p[i] = c->x[i];
+    if (c->attached[i]) continue; /* placed by place_attached */
+    if (c->w[i] <= 0) {
+      c->x[i] = vlerp(c->pin_from[i], c->pin_to[i], s->sub_t);
+      continue;
+    }
+    V v = vmul(vadd(c->v[i], vmul(vadd(s->g, c->wv[i]), s->h)), s->damp);
     c->v[i] = v;
     c->x[i] = vadd(c->x[i], vmul(v, s->h));
   }
 }
 
-static void solve_range(int begin, int end, int worker, void *u) {
-  (void)worker;
-  stepctx *s = u;
-  cw__cloth *c = s->c;
-  int base = c->col_start[s->col];
-  float ih2 = s->inv_h * s->inv_h;
-  for (int k = base + begin; k < base + end; k++) {
+/* Gauss-Seidel over one group's constraints, in creation order (one iteration: lambda starts at 0) */
+static void solve_group(cw__cloth *c, int g) {
+  for (int k = c->col_start[g]; k < c->col_start[g + 1]; k++) {
+    float inv = c->cinv[k];
+    if (inv <= 0) continue;
     int a = c->ci0[k], b = c->ci1[k];
-    float wa = c->w[a], wb = c->w[b];
-    float alpha = c->ccomp[k] * ih2;
-    float ws = wa + wb + alpha;
-    if (ws <= 0) continue;
     V d = vsub(c->x[a], c->x[b]);
-    float l = vlen(d);
+    float l = sqrtf(vdot(d, d));
     if (l < 1e-9f) continue;
-    float C = l - c->crest[k];
-    float lambda = -C / ws;
-    V n = vmul(d, 1 / l);
-    c->x[a] = vadd(c->x[a], vmul(n, lambda * wa));
-    c->x[b] = vsub(c->x[b], vmul(n, lambda * wb));
+    float f = (c->crest[k] - l) * inv / l; /* lambda / l */
+    c->x[a] = vadd(c->x[a], vmul(d, f * c->w[a]));
+    c->x[b] = vsub(c->x[b], vmul(d, f * c->w[b]));
   }
 }
 
@@ -898,10 +962,11 @@ static void post_range(int begin, int end, int worker, void *u) {
     /* long-range attachment: never farther from the anchor than the rest distance (x slack) */
     if (c->tether_of[i] >= 0) {
       int k = c->tether_of[i];
-      V d = vsub(c->x[i], c->x[c->ta[k]]);
-      float l = vlen(d);
+      V d = vsub(c->x[i], c->xa[c->ta[k]]);
+      float l2 = vdot(d, d), tl = c->tlen[k];
       c->taut[i] = 0;
-      if (l > c->tlen[k] && l > 1e-9f) {
+      if (l2 > tl * tl && l2 > 1e-18f) {
+        float l = sqrtf(l2);
         c->x[i] = vsub(c->x[i], vmul(d, (l - c->tlen[k]) / l));
         c->taut[i] = 1;
       }
@@ -947,10 +1012,37 @@ static void post_range(int begin, int end, int worker, void *u) {
     if (c->attached[i]) continue; /* its velocity is the body's; see finish_attached */
     {
       V v = vmul(vsub(c->x[i], c->p[i]), s->inv_h);
-      float sp = vlen(v);
-      if (sp > c->def.max_speed) v = vmul(v, c->def.max_speed / sp);
+      float s2 = vdot(v, v);
+      if (s2 > c->def.max_speed * c->def.max_speed) v = vmul(v, c->def.max_speed / sqrtf(s2));
       c->v[i] = v;
     }
+  }
+}
+
+/* phase A: each pair of blocks predicts its particles, then solves the constraints inside it */
+static void phase_a(int begin, int end, int worker, void *u) {
+  stepctx *s = u;
+  cw__cloth *c = s->c;
+  for (int p = begin; p < end; p++) {
+    int lo = 2 * p * c->bs, hi = (2 * p + 2) * c->bs;
+    if (hi > c->n) hi = c->n;
+    predict_range(lo, hi, worker, u);
+    solve_group(c, p);
+  }
+}
+
+/* phase B: the constraints across each odd block boundary, then (without self-collision) the
+ * per-particle pass for the two blocks it joins, which nothing else touches any more */
+static void phase_b(int begin, int end, int worker, void *u) {
+  stepctx *s = u;
+  cw__cloth *c = s->c;
+  for (int g = begin; g < end; g++) {
+    solve_group(c, c->na + g);
+    if (!s->fuse_post) continue;
+    int lo = (2 * g - 1) * c->bs, hi = (2 * g + 1) * c->bs;
+    if (lo < 0) lo = 0;
+    if (hi > c->n) hi = c->n;
+    if (lo < hi) post_range(lo, hi, worker, u);
   }
 }
 
@@ -1247,10 +1339,8 @@ void cw_cloth_step(cw_cloth h, float dt) {
   gather_shapes(c, dt);
   if (c->ntri) {
     normctx nc = { c };
-    run(c, c->n, 512, normals_range, &nc);
+    run(c, c->n, normals_range, &nc);
   } else compute_tangents(c, c->x, c->nrm);
-  if (c->drag != 0 || c->lift != 0)
-    for (int i = 0; i < c->n; i++) c->wv[i] = wind_at(c, c->x[i]);
   if (c->def.two_way)
     for (int i = 0; i < c->n; i++) c->coll[i] = -1, c->coll_d[i] = (V){ 0, 0, 0 };
   selfgrid sg = { 0 };
@@ -1266,25 +1356,33 @@ void cw_cloth_step(cw_cloth h, float dt) {
   t3_vec3 g = cw_world3d_gravity(c->world);
   s.g = vmul(g, c->gscale);
   s.damp = 1 - c->def.damping * s.h;
+  if (c->drag != 0 || c->lift != 0) run(c, c->n, wind_range, &s);
+  else memset(c->wv, 0, sizeof(V) * (size_t)c->n);
+  {
+    float ih2 = s.inv_h * s.inv_h;
+    for (int k = 0; k < c->ncon; k++) {
+      float ws = c->w[c->ci0[k]] + c->w[c->ci1[k]] + c->ccomp[k] * ih2;
+      c->cinv[k] = ws > 0 ? 1 / ws : 0;
+    }
+  }
   if (s.damp < 0) s.damp = 0;
   for (int sub = 0; sub < S; sub++) {
     s.prev_t = (float)sub / (float)S;
     s.sub_t = (float)(sub + 1) / (float)S;
-    run(c, c->n, 256, predict_range, &s);
+    s.fuse_post = sg.nb_start == NULL;
     place_attached(c, s.sub_t);
-    for (int col = 0; col < c->ncol; col++) {
-      s.col = col;
-      int cnt = c->col_start[col + 1] - c->col_start[col];
-      if (col == 63) solve_range(0, cnt, 0, &s); /* the overflow colour shares particles: serial */
-      else run(c, cnt, 256, solve_range, &s);
-    }
+    run(c, c->na, phase_a, &s);
+    /* the serial leftovers, then the tethers between body attachments */
+    solve_group(c, c->na + c->nb);
     solve_anchor_tethers(c);
-    if (sg.nb_start) {
+    for (int k = 0; k < c->nanchors; k++) c->xa[c->anchors[k]] = c->x[c->anchors[k]];
+    run(c, c->nb, phase_b, &s);
+    if (!s.fuse_post) {
       selfctx sc = { c, &sg };
-      run(c, c->n, 256, self_range, &sc);
-      run(c, c->n, 256, self_apply, &sc);
+      run(c, c->n, self_range, &sc);
+      run(c, c->n, self_apply, &sc);
+      run(c, c->n, post_range, &s);
     }
-    run(c, c->n, 256, post_range, &s);
     after_solve_attached(c, s.sub_t);
   }
   self_free(&sg);
@@ -1340,7 +1438,7 @@ cw_cloth_stats cw_cloth_stats_get(cw_cloth h) {
   cw_cloth_stats st = { 0 };
   cw__cloth *c = rec(h);
   if (!c) return st;
-  st.vertices = c->n, st.triangles = c->ntri, st.constraints = c->ncon, st.colours = c->ncol;
+  st.vertices = c->n, st.triangles = c->ntri, st.constraints = c->ncon, st.groups = c->ncol;
   st.tethers = c->ntether + c->natether, st.shapes = c->shapes.count, st.steps = c->steps;
   st.step_us = c->step_us;
   float ms = 0, sum = 0;

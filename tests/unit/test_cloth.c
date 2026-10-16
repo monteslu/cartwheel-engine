@@ -68,7 +68,7 @@ static void test_flag(void) {
     }
     cw_cloth_stats st = cw_cloth_stats_get(c);
     CHECK_EQ_INT(st.vertices, 32 * 32);
-    CHECK(st.colours > 1 && st.colours < 63);
+    CHECK(st.groups >= 3);
     CHECK_EQ_INT(st.steps, 600);
     /* the flag flies: its free corner is downwind of the pole */
     int n;
@@ -80,8 +80,8 @@ static void test_flag(void) {
     CHECK(max_ke > 0 && max_ke < 5);
     CHECK(mean_stretch < 0.02f);
     CHECK(max_stretch < 0.3f);
-    cw_info("cloth flag: stretch mean %.4f max %.4f, ke %.4f J, colours %d, %d constraints", mean_stretch, max_stretch,
-            max_ke, st.colours, st.constraints);
+    cw_info("cloth flag: stretch mean %.4f max %.4f, ke %.4f J, groups %d, %d constraints", mean_stretch, max_stretch,
+            max_ke, st.groups, st.constraints);
     hashes[k] = cw_cloth_hash(c);
     FOLD(hashes[k]);
     cw_world3d_destroy(w);
@@ -434,18 +434,24 @@ static void test_bad_input(void) {
 }
 
 /* 64 x 64 at 8 substeps: microseconds per step (logged, not compared) */
+#ifndef CLOCK_THREAD_CPUTIME_ID /* wasi */
+#define CLOCK_THREAD_CPUTIME_ID CLOCK_MONOTONIC
+#endif
 static void perf_run(int workers) {
   cw_world3d w = world();
   cw_cloth c = make_flag(w, workers, 1.02f, 64);
   step(w, c, 30);
-  struct timespec t0, t1;
+  struct timespec t0, t1, c0, c1;
   clock_gettime(CLOCK_MONOTONIC, &t0);
+  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &c0);
   step(w, c, 60);
+  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &c1);
   clock_gettime(CLOCK_MONOTONIC, &t1);
   double us = ((double)(t1.tv_sec - t0.tv_sec) + (double)(t1.tv_nsec - t0.tv_nsec) * 1e-9) * 1e6 / 60;
+  double cpu = ((double)(c1.tv_sec - c0.tv_sec) + (double)(c1.tv_nsec - c0.tv_nsec) * 1e-9) * 1e6 / 60;
   cw_cloth_stats st = cw_cloth_stats_get(c);
-  cw_info("cloth perf: 64x64 (%d particles, %d constraints, %d colours), 8 substeps, %s: %.0f us/step, %.0f us per 1000 particles",
-          st.vertices, st.constraints, st.colours, workers == 1 ? "1 thread" : "the job pool", us, us * 1000 / st.vertices);
+  cw_info("cloth perf: 64x64 (%d particles, %d constraints, %d groups), 8 substeps, %s: %.0f us/step wall, %.0f us on the calling thread's CPU",
+          st.vertices, st.constraints, st.groups, workers == 1 ? "1 thread" : "the job pool", us, cpu);
   CHECK(st.vertices == 4096);
   cw_world3d_destroy(w);
 }

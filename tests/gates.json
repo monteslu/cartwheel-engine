@@ -574,7 +574,7 @@
     "expect": {
       "unit.failed": 0,
       "unit.done": 1,
-      "unit.checksum": 3328461373
+      "unit.checksum": 2457053264
     },
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"

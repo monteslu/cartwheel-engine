@@ -31,11 +31,13 @@
  * pose after it across the substeps, so a moving body sweeps through the
  * cloth instead of jumping.
  *
- * Determinism: constraints are coloured once at creation (each takes the
- * lowest colour none of its particles has yet, in index order). A colour
- * shares no particle, so its constraints are solved in parallel on the job
- * pool without atomics and the result does not depend on the thread count or
- * the order chunks run in. Only + - * / sqrt and cartwheel/math.h feed the
+ * Determinism: particles are cut into blocks of consecutive indices at
+ * creation. Each substep solves the constraints inside pairs of blocks
+ * {0,1}, {2,3}, ... as one job each, then those across the other boundaries
+ * {1,2}, {3,4}, ...: the jobs of one phase share no particle, so they run in
+ * parallel on the job pool without atomics, each a Gauss-Seidel sweep in a
+ * fixed order, and the result does not depend on the thread count or the
+ * order jobs run in. A cloth under 1024 particles runs on the calling thread. Only + - * / sqrt and cartwheel/math.h feed the
  * state: the same def and inputs give the same bits natively and in a cart,
  * with any number of workers (cw_cloth_hash).
  *
@@ -177,7 +179,7 @@ int cw_cloth_vertex_count(cw_cloth c);
 uint32_t cw_cloth_hash(cw_cloth c);
 
 typedef struct cw_cloth_stats {
-  int32_t vertices, triangles, constraints, colours, tethers, shapes; /* shapes: gathered in the last step */
+  int32_t vertices, triangles, constraints, groups, tethers, shapes; /* shapes: gathered in the last step */
   int32_t steps;
   float max_stretch;           /* the most stretched edge: its length over its rest length, minus 1 (0.01 = 1%) */
   float mean_stretch;          /* the same averaged over every edge (compressed edges count as 0) */
