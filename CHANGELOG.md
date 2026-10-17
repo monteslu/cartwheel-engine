@@ -4,6 +4,22 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.13.0 (2026-10-17)
+
+### Added
+- Mesh decals are lit like the surface they sit on: a decal takes the same
+  lights, sun cascades and shadows, GI and fog, in FORWARD and CLUSTERED
+  lighting, on rigid and skinned meshes and on glass. Multiply and add decals,
+  and decals on unlit surfaces, are drawn as before. A `CW_DECAL_UNLIT=1`
+  debug variable forces the old unlit decal.
+
+### Changed
+- Changing a decal's `blend` rebuilds it, because a normal decal on a lit
+  surface now carries a different material.
+- An app whose lit decals use a program state missing from its table skips
+  those draws, like any lit material: regenerate its table with
+  `tools/programs.mjs`.
+
 ## v0.12.2 (2026-10-17)
 
 ### Fixed
