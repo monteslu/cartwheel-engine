@@ -19,6 +19,9 @@
  *                     metalness, roughness, emissive, cast_shadow, receive_shadow,
  *                     mesh (a resource uid, when a mesh resource is set it wins)
  *   DirectionalLight3D, OmniLight3D, SpotLight3D   color, energy, shadow, range...;
+ *                     energy is 0 to 100000 (the sun's real illuminance is
+ *                     about 100000 lux); a value outside is clamped, and the
+ *                     first clamp of a light logs a warning
  *                     a directional shadow covers shadow_extent metres around
  *                     the light (move the light with the player for sharp
  *                     shadows over a big level), shadow_bias / shadow_normal_bias

@@ -550,8 +550,8 @@
      "stored": true,
      "readonly": false,
      "min": 0,
-     "max": 1000,
-     "doc": "Intensity."
+     "max": 100000,
+     "doc": "Intensity, 0 to 100000 (a value outside is clamped, with a warning)."
     },
     {
      "name": "shadow",

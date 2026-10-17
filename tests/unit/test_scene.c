@@ -587,9 +587,41 @@ static void test_light_cap_warning(void) {
   cw_tree_free(t);
 }
 
+/* a light's energy runs to 100000: 9000 passes untouched; past the range it is
+ * clamped with one warning per light (the control: 2e6 must clamp and warn) */
+static int range_warnings;
+static void range_listener(cw_log_level level, const char *msg, void *user) {
+  (void)user;
+  if (level == CW_LOG_WARN && strstr(msg, "outside its range")) range_warnings++;
+}
+static void test_light_energy_range(void) {
+  cw_scene_register_builtin_types();
+  cw_tree *t = cw_tree_new();
+  cw_node l = cw_node_new("OmniLight3D", "Lamp");
+  cw_node_add_child(cw_tree_root(t), l);
+  int id = cw_log_add_listener(range_listener, NULL);
+  cw_value v;
+  cw_node_set(l, "energy", cw_val_float(9000));
+  CHECK(cw_node_get_prop(l, "energy", &v) && v.f == 9000);
+  CHECK(range_warnings == 0);
+  cw_node_set(l, "energy", cw_val_float(2e6f));
+  CHECK(cw_node_get_prop(l, "energy", &v) && v.f == 1e5f);
+  CHECK(range_warnings == 1);
+  cw_node_set(l, "energy", cw_val_float(3e6f));
+  CHECK(range_warnings == 1); /* once per light */
+  cw_node other = cw_node_new("OmniLight3D", "Other");
+  cw_node_add_child(cw_tree_root(t), other);
+  cw_node_set(other, "energy", cw_val_float(-5));
+  CHECK(cw_node_get_prop(other, "energy", &v) && v.f == 0);
+  CHECK(range_warnings == 2);
+  cw_log_remove_listener(id);
+  cw_tree_free(t);
+}
+
 CW_TEST_SUITE("scene", { "all_types_reflect", test_all_types_reflect }, { "lifecycle_and_paths", test_lifecycle_and_paths }, { "processing_and_deferred", test_processing_and_deferred },
               { "signals", test_signals }, { "reflection", test_reflection }, { "scene_roundtrip", test_scene_roundtrip },
               { "nested_instance_save", test_nested_instance_save },
               { "look_at_rotated_parent", test_look_at_rotated_parent }, { "null_tree", test_null_tree },
               { "scene_node_refs", test_scene_node_refs }, { "canvas_passes", test_canvas_passes },
-              { "mesh_materials_shared", test_mesh_materials_shared }, { "light_cap_warning", test_light_cap_warning })
+              { "mesh_materials_shared", test_mesh_materials_shared }, { "light_cap_warning", test_light_cap_warning },
+              { "light_energy_range", test_light_energy_range })

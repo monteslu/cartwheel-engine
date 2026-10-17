@@ -709,7 +709,7 @@ static void light_pre_render(cw_node n, void *data, double alpha) {
 
 static const cw_prop light_props[] = {
   CW_PROP_FIELD(light3d, color, CW_T_COLOR, CW_PROP_DEFAULT, "Light colour."),
-  CW_PROP_FIELD_RANGE(light3d, energy, CW_T_FLOAT, 0, 1000, "Intensity."),
+  CW_PROP_FIELD_RANGE(light3d, energy, CW_T_FLOAT, 0, 1e5, "Intensity, 0 to 100000 (a value outside is clamped, with a warning)."),
   CW_PROP_FIELD(light3d, shadow, CW_T_BOOL, CW_PROP_DEFAULT, "Casts shadows."),
   CW_PROP_FIELD(light3d, shadow_size, CW_T_INT, CW_PROP_DEFAULT, "Shadow map resolution."),
   CW_PROP_FIELD_RANGE(light3d, shadow_extent, CW_T_FLOAT, 0, 1e5,

@@ -216,6 +216,21 @@ bool cw_node_get_prop(cw_node n, const char *name, cw_value *out) {
   return true;
 }
 
+/* A float property set outside its range is clamped to it. Say so, once per
+ * node and property (a small table of the last 128: past that an old entry
+ * is forgotten and may warn again). */
+static void warn_clamped(cw_node n, const char *name, const cw_prop *p, float asked) {
+  static struct { uint64_t node; const cw_prop *prop; } seen[128];
+  static unsigned next;
+  for (unsigned i = 0; i < 128; i++)
+    if (seen[i].node == n.id && seen[i].prop == p) return;
+  seen[next % 128].node = n.id;
+  seen[next % 128].prop = p;
+  next++;
+  cw_warn("set: '%s.%s' = %g is outside its range [%g, %g]: clamped to %g", cw_node_name(n), name, (double)asked, p->min, p->max,
+          asked < p->min ? p->min : p->max);
+}
+
 bool cw_node_set(cw_node n, const char *name, cw_value v) {
   const cw_node_type *owner;
   const cw_prop *p = cw_node_find_prop(n, name, &owner);
@@ -245,7 +260,10 @@ bool cw_node_set(cw_node n, const char *name, cw_value v) {
     cw_warn("set: '%s.%s' wants %s, got %s", cw_node_name(n), name, cw_type_name(p->type), cw_type_name(v.type));
     return false;
   }
-  if (p->type == CW_T_FLOAT && (p->min != 0 || p->max != 0)) v.f = v.f < p->min ? p->min : v.f > p->max ? p->max : v.f;
+  if (p->type == CW_T_FLOAT && (p->min != 0 || p->max != 0) && (v.f < p->min || v.f > p->max)) {
+    warn_clamped(n, name, p, v.f);
+    v.f = v.f < p->min ? (float)p->min : (float)p->max;
+  }
   void *data = cw_node_data_t(n, owner);
   if (p->set) p->set(n, data, &v);
   else field_set(p, (uint8_t *)data + p->offset, &v);
