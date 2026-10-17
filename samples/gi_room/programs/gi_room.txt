@@ -5,3 +5,5 @@ standard+shadow+senv+l1101+xgi
 standard+l1101+xgi
 standard+senv+l1101+xgi
 standard+l0001+xcluster_gi
+standard+shadow+senv+l1101
+standard+senv+l1101

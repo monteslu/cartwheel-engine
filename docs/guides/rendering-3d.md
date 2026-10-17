@@ -370,15 +370,15 @@ Both read a G-buffer the "gi" pass draws after the probes: the scene a second ti
 | SSR | off | half the march steps | as authored | 1.5 x the steps |
 | SSGI | off | off | off | as authored |
 
-The cost, GPU ms per frame on an AMD Radeon 890M (integrated) at 1280 x 720, `samples/gi_room` through `tests/gi-perf.mjs` (GL, the probes' pass averaged over frames with and without a capture; the machine was shared with other GPU work, so read them as upper bounds):
+The cost, GPU ms per frame on an AMD Radeon 890M (integrated) at 1280 x 720, `samples/gi_room` through `tests/gi-perf.mjs` (GL, the probes' pass averaged over frames with and without a capture; measured on a quiet machine (load 3)):
 
 | Preset | gi pass (probes, grid, G-buffer) | SSR | SSGI | Whole frame |
 |---|---|---|---|---|
-| Low | 0.8 | off | off | 2.9 |
-| Medium | 1.7 | 0.6 | off | 3.7 |
-| High | 2.7 | 1.7 | off | 6.7 |
-| Ultra | 7.8 | 1.9 | 13.1 | 25.5 |
-| No probes, grid, SSR or SSGI (High) | | | | 1.4 |
+| Low | 0.4 | off | off | 1.7 |
+| Medium | 1.2 | 0.5 | off | 2.5 |
+| High | 1.9 | 1.2 | off | 4.5 |
+| Ultra | 5.7 | 1.4 | 9.3 | 18.3 |
+| No probes, grid, SSR or SSGI (High) | | | | 1.8 |
 
 The gi pass on High is two 128-pixel probe captures every other frame and the half-resolution G-buffer; Ultra doubles the capture size and budget and draws the G-buffer twice (SSGI needs the diffuse colour). A Vega 8 has about half the 890M's shader rate: expect about twice these numbers, so Low to High fit a 60 Hz frame there and Ultra (SSGI above all) is for discrete GPUs.
 
