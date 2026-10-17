@@ -42,6 +42,7 @@ export const LOCAL_ONLY = {
   'cloth-determinism': 'Chromium and wasmcart-native',
   'ik-determinism': 'Chromium',
   'froxel-determinism': 'Chromium and wasmcart-native',
+  'vis-city-batch': 'Chromium (the leg compares against the native run on one machine)',
   'showcase-perf': 'GPU timings on romdev, Chromium and wasmcart-native',
   'editor-channel': 'romdev',
   'editor-play': 'romdev',
