@@ -23,6 +23,17 @@
  *          ridge, across to the far mountains (the perf run)
  *   cracks the flight with a magenta clear colour and no sky: any crack
  *          between patches would show magenta below the horizon
+ *   lights `drive` at dusk under clustered lights (cartwheel/lighting.h): a
+ *          LightingSettings node (World/Lighting), seven lamps along the
+ *          track ahead of the car (World/Lamps) and the sun casting four
+ *          cascades, so the terrain's materials carry the cluster and csm
+ *          parts beside their own (terrain_cluster_csm). Natively,
+ *          TL_FORWARD=1 sets LightingSettings FORWARD (three.c shades the
+ *          lamps itself), TL_LAMPS=<n> makes n lamps (up to 7), TL_SUN=map
+ *          gives the sun three.c's one shadow map, 300 m wide, TL_SUN=none
+ *          no shadow, TERRAIN_TOPCAM=1 looks straight down on the car from
+ *          45 m (tests/terrain-lights.mjs). The terrain_lights build
+ *          defaults to it.
  * TERRAIN_QUALITY=low|medium|high|ultra picks the graphics preset.
  *
  * Debug state: terrain.tick, terrain.patches, terrain.far, terrain.hash
@@ -30,14 +41,19 @@
  * terrain.height (cw_terrain_height_at under the camera), car.hash (FNV-1a
  * of the chassis transform's bits), car.contacts, car.speed, car.lap (track
  * points passed), and timings (reported, never compared):
- * terrain.select_ms, terrain.scatter_ms, terrain.cpu_ms, terrain.gpu_ms. */
+ * terrain.select_ms, terrain.scatter_ms, terrain.cpu_ms, terrain.gpu_ms.
+ * The lights run adds terrain.lamps, terrain.clustered (lights shaded
+ * through clusters), terrain.lit_materials (materials carrying the cluster
+ * part) and terrain.cascades. */
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
 #include "cartwheel/debug.h"
 #include "cartwheel/gl.h"
+#include "cartwheel/lighting.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/quality.h"
@@ -54,7 +70,11 @@ static cw_node cam, terrain_node;
 static int32_t tick, patches, far_patches, scatter, cells;
 static uint32_t sel_hash;
 static float height, select_ms, scatter_ms, cpu_ms, gpu_ms;
-static bool cracks, fly;
+static bool cracks, fly, lights, topcam, sun_back;
+static int32_t lamps, clustered, lit_materials, cascades;
+#ifndef TERRAIN_DEFAULT_MODE
+#define TERRAIN_DEFAULT_MODE "drive"
+#endif
 
 /* ── the track ─────────────────────────────────────────────────────── */
 
@@ -209,7 +229,11 @@ static void draw_car(float alpha) {
   cw_xform3 x = cw_body3d_interpolated(chassis, alpha);
   cw_node3d_set_position(car_body, x.p);
   cw_node3d_set_quaternion(car_body, x.q);
-  cw_node3d_set_position(sun, x.p); /* the sun's shadow map covers shadow_extent metres around it */
+  /* the sun's shadow map covers shadow_extent metres around it; the lights run's wide reference map
+   * sits back along the light, so casters upstream of the car are in front of it */
+  t3_vec3 sp = x.p;
+  if (sun_back) sp = t3_vec3_sub(x.p, t3_vec3_scale(t3_vec3_apply_quat((t3_vec3){ 0, 0, -1 }, cw_node3d_quaternion(sun)), 250));
+  cw_node3d_set_position(sun, sp);
   /* the cylinders' axis is Y; wheels turn about the chassis X */
   float s = 0.70710678f;
   t3_quat to_x = { 0, 0, s, s };
@@ -228,6 +252,11 @@ static void draw_car(float alpha) {
   if (chase.y < gy) chase.y = gy;
   cw_node3d_set_position(cam, chase);
   cw_node3d_look_at(cam, (t3_vec3){ x.p.x + f.x * 4, x.p.y + 1, x.p.z + f.z * 4 }, (t3_vec3){ 0, 1, 0 });
+  if (topcam) {
+    /* straight down on the car, its forward up the screen */
+    cw_node3d_set_position(cam, (t3_vec3){ x.p.x, x.p.y + 45, x.p.z });
+    cw_node3d_look_at(cam, x.p, (t3_vec3){ f.x, 0, f.z });
+  }
 }
 
 /* ── tileable value noise for the layer textures ─────────────────────── */
@@ -368,9 +397,58 @@ static void pos_at(float tt, float out[3]) {
   out[2] = a[1] + (b[1] - a[1]) * s;
 }
 
+/* the lights run: dusk, lamps along the track ahead of the car, the sun's cascades */
+static void make_lights(cw_node root) {
+  cw_node world = cw_node_get(root, "World");
+  cw_node ls = cw_node_new("LightingSettings", "Lighting");
+#if !CW_CART
+  if (getenv("TL_FORWARD")) cw_node_set(ls, "mode", cw_val_enum("FORWARD"));
+  const char *sm = getenv("TL_SUN"), *nl = getenv("TL_LAMPS");
+#else
+  const char *sm = NULL, *nl = NULL;
+#endif
+  cw_node_add_child(world, ls);
+  if (!sm || !strcmp(sm, "cascades")) {
+    cw_node_set(sun, "shadow_cascades", cw_val_int(4));
+    cw_node_set(sun, "shadow_distance", cw_val_float(150));
+  } else if (!strcmp(sm, "none")) cw_node_set(sun, "shadow", cw_val_bool(false));
+  else if (!strcmp(sm, "map")) {
+    /* the reference: three.c's one map, wide enough for every caster whose shadow reaches the view */
+    cw_node_set(sun, "shadow_extent", cw_val_float(300));
+    cw_node_set(sun, "shadow_size", cw_val_int(4096)); /* (WebGPU's default limit) */
+    sun_back = true;
+  }
+  int n = nl ? CW_CLAMP(atoi(nl), 0, 7) : 7;
+  if (n) cw_node_set(cw_node_get(root, "World/Sky"), "time_of_day", cw_val_float(19.2)); /* dusk: the lamps show */
+  cw_node group = cw_node_new("Node3D", "Lamps");
+  cw_node_add_child(world, group);
+  cw_terrain *t = cw_terrain_of(terrain_node);
+  for (int k = 0; k < n; k++) {
+    const float *a = track[2 + 2 * k], *b = track[3 + 2 * k];
+    float dx = b[0] - a[0], dz = b[2] - a[2], l = sqrtf(dx * dx + dz * dz), side = (k & 1) ? 4.0f : -4.0f;
+    float x = a[0] - dz / l * side, z = a[2] + dx / l * side;
+    char name[16];
+    snprintf(name, sizeof name, "Lamp%d", k);
+    cw_node lamp = cw_node_new("OmniLight3D", name);
+    cw_node_set(lamp, "color", cw_val_color(1, 0.7f, 0.4f, 1));
+    cw_node_set(lamp, "energy", cw_val_float(60));
+    cw_node_set(lamp, "range", cw_val_float(18));
+    cw_node_add_child(group, lamp);
+    cw_node3d_set_position(lamp, (t3_vec3){ x, (t ? cw_terrain_height_at(t, x, z) : a[1]) + 3.5f, z });
+  }
+  lamps = n;
+  cw_debug_i32("terrain.lamps", &lamps);
+  cw_debug_i32("terrain.clustered", &clustered);
+  cw_debug_i32("terrain.lit_materials", &lit_materials);
+  cw_debug_i32("terrain.cascades", &cascades);
+}
+
 static void init(void *u) {
   (void)u;
   const char *m = getenv("TERRAIN_MODE");
+  m = m ? m : TERRAIN_DEFAULT_MODE;
+  lights = !strcmp(m, "lights");
+  topcam = getenv("TERRAIN_TOPCAM") != NULL;
   cracks = m && !strcmp(m, "cracks");
   fly = cracks || (m && !strcmp(m, "fly"));
   /* TERRAIN_QUALITY=low|medium|high|ultra: the graphics preset (terrain shading, scatter density) */
@@ -388,6 +466,7 @@ static void init(void *u) {
   static const char *wn[4] = { "World/WheelFL", "World/WheelFR", "World/WheelRL", "World/WheelRR" };
   for (int i = 0; i < 4; i++) car_wheel[i] = cw_node_get(root, wn[i]);
   if (t && !fly) make_car(t);
+  if (lights) make_lights(root);
   if (fly) {
     cw_node_set(car_body, "visible", cw_val_bool(false));
     for (int i = 0; i < 4; i++) cw_node_set(car_wheel[i], "visible", cw_val_bool(false));
@@ -456,6 +535,13 @@ static void render(void *u, double alpha) {
   cw_render3d_get_stats(tree, &rs);
   cpu_ms = rs.cpu_ms;
   gpu_ms = cw_pipeline_gpu_ms(cw_pipeline_of(tree));
+  if (lights) {
+    cw_lighting_stats ls;
+    cw_lighting_get_stats(tree, &ls);
+    clustered = ls.clustered;
+    lit_materials = ls.materials;
+    cascades = ls.cascades;
+  }
 }
 
 cw_app_desc cw_main(int argc, char **argv) {

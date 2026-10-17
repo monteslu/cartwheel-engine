@@ -38,6 +38,9 @@ cw_add_app(nav_perf SOURCES nav_perf/main.c GL_ONLY)
 cw_add_app(cloth_demo SOURCES cloth_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/cloth_demo/assets)
 cw_add_app(terrain_demo SOURCES terrain_demo/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/terrain_demo/project/roots.txt
   PROGRAMS terrain_demo/programs/terrain_demo.txt)
+cw_add_app(terrain_lights SOURCES terrain_demo/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/terrain_demo/project/roots.txt
+  PROGRAMS terrain_demo/programs/terrain_demo.txt)
+target_compile_definitions(terrain_lights PRIVATE TERRAIN_DEFAULT_MODE="lights")
 cw_add_app(perf_nodes SOURCES perf_nodes/main.c GL_ONLY)
 # big open worlds (cartwheel/stream.h): a 16.4 km world in 512 m cells, streamed in
 # around a car or a flight; the world (45 MB of zstd cell files) is generated

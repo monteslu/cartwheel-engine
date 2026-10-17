@@ -77,7 +77,7 @@ export async function apply(ctx, next) {
     int, uint, float, vec2, vec3, vec4, mat4, ivec2, smoothstep, dot, normalize, select, abs, floor, clamp, mix, min, max,
   } = TSL;
 
-  const frame = sharedUniformGroup('clusterFrame', 0, THREE.NodeUpdateType.RENDER);
+  const frame = sharedUniformGroup('lightingFrame', 0, THREE.NodeUpdateType.RENDER);
   const v4 = (name) => {
     const s = [sentinel(), sentinel(), sentinel(), sentinel()];
     const u = uniform(new THREE.Vector4(...s)).setName(name);

@@ -165,8 +165,23 @@ static bool lit_type(t3_material_type t) {
 
 /* every lit material in the scene carries the parts that are on (cluster,
  * csm) and not the others, composed with the parts it already has
- * (cartwheel/shading.h); a material with a surface extension of its own
- * (terrain) keeps it alone */
+ * (cartwheel/shading.h): terrain's surface parts and the GI parts compose
+ * with them; a material with any other extension of its own keeps it alone */
+static bool composes(const char *ext) {
+  static const char *const ok[] = { "terrain", "terrainlow", "terrainfar", PART, "csm", "gi" };
+  if (!ext) return true;
+  for (const char *p = ext; *p;) {
+    const char *e = strchr(p, '_');
+    size_t len = e ? (size_t)(e - p) : strlen(p);
+    bool known = false;
+    for (size_t i = 0; i < sizeof ok / sizeof ok[0] && !known; i++) known = strlen(ok[i]) == len && !strncmp(ok[i], p, len);
+    if (!known) return false;
+    if (!e) break;
+    p = e + 1;
+  }
+  return true;
+}
+
 /* What marking does to a material is a function of its extension and the
  * parts that are on, so it is remembered: from extension id (with the parts
  * on) to the id it ends with, and whether it counts. A city's thousands of
@@ -182,7 +197,7 @@ static int mark_one(t3_material *mt, bool cluster, bool csm) {
   uint16_t from = mt->extension;
   int counts = 0;
   const char *ext = t3_material_get_extension(mt);
-  if (!ext || cw_shading_has(mt, PART) || cw_shading_has(mt, "csm") || cw_shading_has(mt, "gi")) {
+  if (composes(ext)) {
     if (cluster) cw_shading_add(mt, PART);
     else cw_shading_remove(mt, PART);
     if (csm) cw_shading_add(mt, "csm");

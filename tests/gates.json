@@ -803,6 +803,33 @@
     "note": "open_world flies 16 km on native, romdev and wasmcart-native: no stalls, memory flat, native and romdev agree on the activation history; reports worst and p99 frame times, main-thread CPU, GPU time and memory over time. Controls: a 620 m load radius must stall, a cache that never evicts must grow"
   },
   {
+    "name": "terrain-lights",
+    "app": "terrain_lights",
+    "frames": 120,
+    "maxGt16": 0.003,
+    "fields": [
+      "terrain.lamps",
+      "terrain.clustered",
+      "terrain.cascades",
+      "terrain.lit_materials",
+      "terrain.hash",
+      "car.hash"
+    ],
+    "expect": {
+      "terrain.lamps": 7,
+      "terrain.clustered": 7,
+      "terrain.cascades": 4
+    },
+    "controlStartCmds": ["set /root/World/Lighting mode FORWARD"],
+    "webgpu": true,
+    "note": "the car at dusk under seven clustered lamps and the sun's four cascades: the terrain's materials carry terrain_cluster_csm; the same picture and counts on every host and backend. Control: LightingSettings FORWARD (no lamp clustered)"
+  },
+  {
+    "name": "terrain-lights-parity",
+    "script": "tests/terrain-lights.mjs",
+    "note": "lamps and cascades on the terrain natively on GL and WebGPU: clustered lamps against three.c's own (max 2 levels off on 0.1%), four cascades against one wide shadow map (0.5% off by >16). Controls: the nearest lamp missing, and no shadow, must fail"
+  },
+  {
     "name": "unit-terrain",
     "app": "unit_terrain",
     "frames": 2,

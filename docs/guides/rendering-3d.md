@@ -152,6 +152,12 @@ The view from the camera's near to `shadow_distance` (r186's `maxFar`; 0 is the 
 
 `samples/street_sun` is the night street by day: the sun alone, four cascades reaching 250 m down the street. Its `csm-parity` gate checks, on GL and on WebGPU, that the cascades put shadows where one big shadow map over the same ground puts them.
 
+### Terrain under lamps and cascades
+
+A Terrain3D's materials carry their own surface part (`terrain`, `terrainlow`, `terrainfar`), and the cluster and csm parts compose with it (`terrain_cluster_csm`), so lamps light the ground and the sun's cascades fall on it. The terrain also casts into the cascades with its own vertex displacement. Any other extension a material carries keeps it alone, unlit by the parts. `terrain_lights` (terrain_demo's `lights` run) drives the car at dusk past seven clustered lamps with the sun casting four cascades. Its `terrain-lights-parity` gate checks on GL and WebGPU that the clustered lamps light the ground exactly as three.c's own lights do, and that the cascades put the terrain's shadows where one wide shadow map puts them.
+
+The two parts share one uniform group (`lightingFrame`), so a terrain under both still fits WebGPU's four bind groups.
+
 ### Quality and costs
 
 | Preset | Lights a cluster keeps | Sun cascades | Shadow maps | Atlas |
