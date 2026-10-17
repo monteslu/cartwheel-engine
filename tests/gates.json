@@ -811,7 +811,6 @@
       "terrain.lamps",
       "terrain.clustered",
       "terrain.cascades",
-      "terrain.lit_materials",
       "terrain.hash",
       "car.hash"
     ],
