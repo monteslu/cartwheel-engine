@@ -29,6 +29,10 @@
 //
 // --log FILE: the run's log (native: the app's stderr; wcnative: the player's), what a cart
 // that reports no state (wcnative) can still say. CW_RUN_TIMEOUT_MS bounds wcnative runs too.
+//
+// --allow-skipped: a run where three.c skipped draws (debug field render.skipped) does not fail
+// (every run fails on one otherwise: a test that skips on purpose says so).
+//
 // --gpu gl|webgpu (default gl): the graphics backend (cartwheel/gpu.h). webgpu runs the native
 // build with CW_GPU=webgpu and the DUAL carts of build/cart-wgpu (gl + WebGPU imports), and holds
 // every host to the test GPU (tools/lib/wgpu-pin.mjs): a run that lands on another adapter fails
@@ -152,8 +156,14 @@ for (const s of script) {
 function result(obj) { console.log(JSON.stringify({ ...obj, gpu, ...(adapterSeen ? { adapter: adapterSeen } : {}) })); }
 let adapterSeen = null;
 
-// a WebGPU run's own report: the backend it used and the errors it counted
+// a run's own report: draws three.c could not make (render.skipped: a state the
+// program table lacks, a program refused as incomplete, an extension with no
+// hook) fail it on every host and backend, since every host skipping the same
+// draws agrees with itself (--allow-skipped: a test that skips on purpose);
+// for WebGPU, the backend it used and the errors it counted
 function checkWgpuState(where, state) {
+  if (state && state['render.skipped'] && !args['allow-skipped'])
+    throw new Error(`${where}: three.c skipped ${state['render.skipped']} draw(s) (see the log: render3d names the reason)`);
   if (!pin || !state) return;
   if (state['cw.gpu.api'] !== undefined && state['cw.gpu.api'] !== 2) throw new Error(`${where}: ran on ${state['cw.gpu.api'] === 1 ? 'GL' : 'no GPU API'}, not WebGPU`);
   if (state['cw.gpu.errors']) throw new Error(`${where}: ${state['cw.gpu.errors']} WebGPU error(s) (see the log)`);
@@ -212,8 +222,8 @@ async function runNative() {
   if (pin) {
     const m = /WebGPU adapter: (.*)/.exec(r.stderr || '');
     adapterSeen = pin.check('native', m && m[1]);
-    if (args.state) checkWgpuState('native', JSON.parse(readFileSync(resolve(args.state), 'utf8')));
   }
+  if (args.state) checkWgpuState('native', JSON.parse(readFileSync(resolve(args.state), 'utf8')));
   result({ host, frames, shot: args.shot, state: args.state });
 }
 
@@ -519,10 +529,10 @@ window.ready = true;
         await verify(page);
         adapterSeen = `${r.adapter.vendor} ${r.adapter.architecture} (name withheld; DRM pinned to ${pin.pci})`;
       }
-      checkWgpuState('chromium', r.state);
     }
     if (args.shot) writePng(resolve(args.shot), r.w, r.h, new Uint8Array(Buffer.from(r.px64, 'base64')), { flipY: !r.topDown });
     if (args.state) writeFileSync(resolve(args.state), JSON.stringify(r.state) + '\n');
+    checkWgpuState('chromium', r.state);
     if (args.verbose) console.error(logs.join('\n'));
     if (args['init-script']) {
       const dump = await page.evaluate(() => window.__cwDump || null);

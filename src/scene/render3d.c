@@ -1,7 +1,9 @@
 /* The tree's 3D scene and the 3D render node types. */
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
+#include "cartwheel/debug.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/profile.h"
 #include "cartwheel/csg.h"
@@ -34,6 +36,11 @@ typedef struct render3d_state {
    * each view's), cw__render3d_count; frame_counted: some were */
   unsigned frame_calls, frame_triangles;
   bool frame_counted;
+  /* draws three.c could not make (a state the program table lacks, a program
+   * refused as incomplete, an extension with no hook), since the tree began;
+   * the first of each reason is logged */
+  unsigned skipped_total;
+  char skipped_said[160];
   float cpu_ms;
   /* the unit primitives (MeshInstance3D) this tree's meshes share: per tree,
    * because three.c keeps one renderer's GL state in a geometry, so two
@@ -939,6 +946,23 @@ void cw__render3d_frame_begin(cw_tree *t) {
   render3d_state *s = cw_tree_slot(t, "render3d");
   if (s) s->frame_calls = s->frame_triangles = 0, s->frame_counted = false;
 }
+/* every tree's skipped draws, the debug field render.skipped: tools/run-cart.mjs
+ * fails a run where it is not 0 (every host skipping the same draws would
+ * agree with itself) */
+static int32_t skipped_all;
+static void note_skipped(render3d_state *s, const t3_render_info *i) {
+  static bool registered;
+  if (!registered) registered = true, cw_debug_i32("render.skipped", &skipped_all);
+  if (!i->skipped) return;
+  s->skipped_total += i->skipped;
+  skipped_all += (int32_t)i->skipped;
+  const char *e = t3_renderer_last_error(s->renderer);
+  if (!e) e = "";
+  if (strncmp(s->skipped_said, e, sizeof s->skipped_said - 1)) {
+    snprintf(s->skipped_said, sizeof s->skipped_said, "%s", e);
+    cw_warn("render3d: three.c skipped %u draw(s): %s", i->skipped, e);
+  }
+}
 void cw__render3d_count(cw_tree *t) {
   render3d_state *s = cw_tree_slot(t, "render3d");
   if (!s || !s->renderer) return;
@@ -946,6 +970,7 @@ void cw__render3d_count(cw_tree *t) {
   s->frame_calls += i->calls;
   s->frame_triangles += i->triangles;
   s->frame_counted = true;
+  note_skipped(s, i);
 }
 
 void cw__render3d_keep_shadows(cw_tree *t, bool keep) {
@@ -976,6 +1001,7 @@ bool cw_render3d_draw(cw_tree *t, int w, int h) {
   render3d_state *s = state(t);
   t3_renderer_render(s->renderer, s->scene, cam);
   s->cpu_ms = (float)(cw__render3d_now_ms() - t0);
+  note_skipped(s, t3_renderer_info(s->renderer));
   return true;
 }
 
@@ -1000,6 +1026,7 @@ void cw_render3d_get_stats(cw_tree *t, cw_render3d_stats *out) {
   out->triangles = (int)(s->frame_counted ? s->frame_triangles : i->triangles);
   out->programs = (int)i->programs;
   out->cpu_ms = s->cpu_ms;
+  out->skipped = (int)s->skipped_total;
 }
 
 void cw__register_node3d_types(void) {
