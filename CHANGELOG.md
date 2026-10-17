@@ -4,17 +4,6 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## Unreleased
-
-### Added
-- `cw_cloth_step_many`: steps a scene's cloths as one job each, and the
-  physics guide's cloth cost table.
-
-### Changed
-- The GPU guard test scales to the pinned card (an integrated GPU's VRAM
-  carve-out and GTT read together), and the network test runs wasmcart-native
-  players paced instead of uncapped.
-
 ## v0.11.1 (2026-10-16)
 
 ### Fixed
