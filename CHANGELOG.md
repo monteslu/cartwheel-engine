@@ -19,6 +19,11 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - The GPU guard test scales to the GPU it is pinned to, and the network test
   runs wasmcart-native players paced instead of uncapped.
 
+### Fixed
+- A reflection probe capture no longer leaves the sun's shadow maps drawn
+  without the objects it hides from its capture: the GI pass redraws them
+  after its renders, so a capture frame keeps every shadow.
+
 ## v0.11.1 (2026-10-16)
 
 ### Fixed
