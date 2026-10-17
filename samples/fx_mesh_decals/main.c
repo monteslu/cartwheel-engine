@@ -21,7 +21,13 @@
  * to screen space (no mesh geometry, and the glass loses its crack).
  * FX_MESH_BENCH=1 clips the character's decals again every frame and reports
  * the mean CPU ms of one clip (md.clip_ms) and the character's triangles
- * (md.hero_src_tris). */
+ * (md.hero_src_tris).
+ *
+ * The app fx_mesh_decals_lit is this file built with MESH_DECALS_CLUSTERED:
+ * the scene is lit with CLUSTERED lighting (a lamp by the wall, two sun
+ * cascades), so every lit surface carries the cluster and csm shading parts,
+ * and the decals must land on those surfaces exactly as in FORWARD lighting
+ * (the same md.* state). */
 #include <stdlib.h>
 #include <string.h>
 
@@ -63,6 +69,21 @@ static void init(void *u) {
   bench = e && *e == '1';
   cw_rng_seed(&rng, 77);
   cw_node w = world();
+#ifdef MESH_DECALS_CLUSTERED
+  {
+    /* clustered lights and a cascaded sun: every lit material carries the
+     * "cluster" and "csm" shading parts, the decals must still land on them */
+    cw_node lighting = cw_node_new("LightingSettings", "Lighting");
+    cw_node_set(lighting, "mode", cw_val_enum("CLUSTERED"));
+    cw_node_add_child(w, lighting);
+    cw_node lamp = cw_node_new("OmniLight3D", "Lamp");
+    cw_node3d_set_position(lamp, (t3_vec3){ 0.6f, 2.2f, 1.2f });
+    cw_node_set(lamp, "energy", cw_val_float(30));
+    cw_node_set(lamp, "range", cw_val_float(8));
+    cw_node_add_child(w, lamp);
+    cw_node_set(cw_node_get(w, "Sun"), "shadow_cascades", cw_val_int(2));
+  }
+#endif
   /* the character: the glTF scene as the Model node's object, its walk on loop */
   size_t len;
   void *glb = cw_asset_load("CesiumMan.glb", &len);
@@ -194,7 +215,12 @@ static void shutdown(void *u) {
 cw_app_desc cw_main(int argc, char **argv) {
   (void)argc;
   (void)argv;
-  static cw_app_desc base = { .title = "fx_mesh_decals", .width = 640, .height = 360, .debug = true, .init = init,
+#ifdef MESH_DECALS_CLUSTERED
+#define APP_TITLE "fx_mesh_decals_lit"
+#else
+#define APP_TITLE "fx_mesh_decals"
+#endif
+  static cw_app_desc base = { .title = APP_TITLE, .width = 640, .height = 360, .debug = true, .init = init,
                               .fixed_update = fixed, .render = render, .shutdown = shutdown };
   return cw_scene_app("main.cwscene", &base);
 }

@@ -3376,6 +3376,51 @@
     "note": "Decal3D mode MESH: a badge and paint clipped from a walking skinned character (drawn skinned on its skeleton), a crack on a transparent glass pane, an ADD ring stamped on a spinning crate (no target), bullet holes pooled at 12 (8 recycled). md.hash is FNV over every mesh decal's vertex bits: the clip must agree bit for bit on every host. Control: every decal 0.2 m to the right (other geometry, other hashes); WebGPU control: the decals back in screen space (no crack on the glass, nothing stuck to the character)"
   },
   {
+    "name": "fx-mesh-decals-lit",
+    "app": "fx_mesh_decals_lit",
+    "frames": 120,
+    "maxGt16": 0.002,
+    "minColors": 40,
+    "fields": [
+      "md.tick",
+      "md.decals",
+      "md.tris",
+      "md.pieces",
+      "md.recycled",
+      "md.builds",
+      "md.hash",
+      "md.hero_hash",
+      "md.hero_tris",
+      "md.glass_tris",
+      "md.ring_tris",
+      "md.holes"
+    ],
+    "expect": {
+      "md.holes": 20,
+      "md.recycled": 8,
+      "md.decals": 16,
+      "md.hero_tris": 653,
+      "md.glass_tris": 4,
+      "md.ring_tris": 4,
+      "md.tris": 685
+    },
+    "controlFrames": 120,
+    "controlEnv": {
+      "FX_MESH_SHIFT": "1"
+    },
+    "webgpu": {
+      "vsGl": 0.004,
+      "controls": [
+        {
+          "env": {
+            "FX_MESH_OFF": "1"
+          }
+        }
+      ]
+    },
+    "note": "fx-mesh-decals under CLUSTERED lighting (a lamp, two sun cascades): every lit surface carries the cluster and csm shading parts, and the decals must still be clipped from them (the same triangle counts and hashes as FORWARD) and drawn the same on GL and WebGPU. Before the fix every surface was skipped as a source (md.pieces 0). Control: every decal 0.2 m to the right; WebGPU control: the decals back in screen space"
+  },
+  {
     "name": "vis-impostor",
     "app": "vis_impostor",
     "frames": 480,

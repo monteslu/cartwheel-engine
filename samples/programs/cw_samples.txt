@@ -60,3 +60,7 @@ standard+senv+l1000
 standard+shadow+senv+l1000+xwater
 standard+instbig+shadow+l1881+s004
 standard+instbig+shadow+icol+l1881+s004
+standard+l0001+xcluster_csm
+standard+map+rep+skin+l0001+xcluster_csm
+depth+xcluster_csm
+standard+trans+l0001+xcluster_csm

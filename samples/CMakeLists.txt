@@ -162,6 +162,9 @@ foreach(img sheet scorch cracks ring)
   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/fx_decals/assets/decals/${img}.png ${CW_MESH_DECALS_ASSETS}/decals/${img}.png COPYONLY)
 endforeach()
 cw_add_app(fx_mesh_decals SOURCES fx_mesh_decals/main.c ASSETS ${CW_MESH_DECALS_ASSETS})
+# the same scene under CLUSTERED lighting: decals on surfaces that carry the cluster and csm shading parts
+cw_add_app(fx_mesh_decals_lit SOURCES fx_mesh_decals/main.c ASSETS ${CW_MESH_DECALS_ASSETS})
+target_compile_definitions(fx_mesh_decals_lit PRIVATE MESH_DECALS_CLUSTERED=1)
 # visibility: impostor crossfade (no popping) on a grove of generated
 # trees, and the city (BVH frustum culling, occlusion queries, portals, LOD).
 cw_add_app(vis_impostor SOURCES vis_impostor/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt GL_ONLY)

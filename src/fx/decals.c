@@ -804,6 +804,25 @@ static void mesh_material_apply(decal3d *d) {
 
 typedef CW_ARRAY(t3_mesh *) mesh_list;
 
+/* a material's extension that only shades (the clustered lights, the sun's
+ * cascades, GI: cartwheel/shading.h) leaves its vertices where the geometry
+ * has them; terrain's and water's move them. Clustered lighting puts one of
+ * those on every lit material, so a lit surface must still take a decal. */
+static bool extension_keeps_vertices(const t3_material *mt) {
+  const char *ext = t3_material_get_extension(mt);
+  if (!ext) return true;
+  for (const char *p = ext; *p;) {
+    const char *e = strchr(p, '_');
+    size_t len = e ? (size_t)(e - p) : strlen(p);
+    bool shading = (len == 7 && !strncmp(p, "cluster", len)) || (len == 3 && !strncmp(p, "csm", len)) ||
+                   (len == 2 && !strncmp(p, "gi", len));
+    if (!shading) return false;
+    if (!e) break;
+    p = e + 1;
+  }
+  return true;
+}
+
 static bool usable_source(const t3_mesh *m) {
   if (m->base.type != T3_MESH && m->base.type != T3_SKINNED_MESH) return false;
   const t3_geometry *g = m->geometry;
@@ -813,8 +832,8 @@ static bool usable_source(const t3_mesh *m) {
   if (!m->material_count || !m->materials[0]) return false;
   const t3_material *mt = m->materials[0];
   /* an extension program may move its vertices (terrain, water): the CPU
-   * cannot see that surface */
-  return !mt->extension && !mt->wireframe;
+   * cannot see that surface (shading parts do not) */
+  return extension_keeps_vertices(mt) && !mt->wireframe;
 }
 
 static void collect_sources(t3_object *o, mesh_list *out) {
