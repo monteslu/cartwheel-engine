@@ -1,0 +1,4 @@
+# r186 program states gi_shadow draws (cmake/programs.cmake, tools/programs.mjs)
+depth+xgi
+standard+shadow+l1001+xgi
+standard+l1001+xgi

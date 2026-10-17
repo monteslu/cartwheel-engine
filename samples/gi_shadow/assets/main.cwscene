@@ -1,0 +1,45 @@
+[scene format=1]
+
+[node name="Scene" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+ambient_energy = 0.3
+
+[node name="Post" parent="." type="PostProcess"]
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 6, 7)
+rotation = vec3(-0.7, 0, 0)
+fov = 55
+near = 0.1
+far = 60
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+rotation = vec3(-0.9, -1.2, 0)
+energy = 4
+shadow = true
+shadow_size = 1024
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.1, 0)
+size = vec3(14, 0.2, 14)
+color = color(0.7, 0.7, 0.7, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Crate" parent="." type="MeshInstance3D"]
+position = vec3(0, 1, 0)
+size = vec3(2, 2, 2)
+color = color(0.8, 0.3, 0.2, 1)
+roughness = 0.8
+cast_shadow = true
+receive_shadow = true
+
+[node name="Probe" parent="." type="ReflectionProbe3D"]
+position = vec3(0, 3, 0)
+size = vec3(12, 6, 12)
+update_mode = EVERY_N_FRAMES
+update_every = 2
+cull_mask = 2
+resolution = 32

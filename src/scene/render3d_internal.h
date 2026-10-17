@@ -38,6 +38,8 @@ double cw__render3d_now_ms(void);
  * and the scene's world matrices as the last view updated them (splitscreen
  * draws the maps and updates the matrices once per frame, for the first view) */
 void cw__render3d_keep_shadows(cw_tree *t, bool keep);
+/* true while the shadow maps are being kept (a later view of a split screen: it draws no maps of its own) */
+bool cw__render3d_shadows_kept(cw_tree *t);
 /* the frame's draw counts (cw_render3d_get_stats): start over, and add the
  * render just made (the pipeline's scene and prepass renders, every view) */
 void cw__render3d_frame_begin(cw_tree *t);

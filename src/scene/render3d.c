@@ -973,6 +973,11 @@ void cw__render3d_count(cw_tree *t) {
   note_skipped(s, i);
 }
 
+bool cw__render3d_shadows_kept(cw_tree *t) {
+  render3d_state *s = cw_tree_slot(t, "render3d");
+  return s && s->shadows_keep;
+}
+
 void cw__render3d_keep_shadows(cw_tree *t, bool keep) {
   render3d_state *s = cw_tree_slot(t, "render3d");
   if (s) s->shadows_keep = keep;

@@ -41,6 +41,11 @@
     "note": "GPU ms of reflection probe captures and grid updates and of the whole frame at each quality preset (reported, never compared); the control without probes has no capture time"
   },
   {
+    "name": "gi-shadow",
+    "script": "tests/gi-shadow.mjs",
+    "note": "a reflection probe that hides an object from its capture (cull_mask) must not take the object's shadow from the frame: the sun's shadow of a crate is on the floor on a capture frame as on the next one, natively on GL and WebGPU; the control (sun shadow off) must lose it"
+  },
+  {
     "name": "gi-probe",
     "script": "tests/gi-probe.mjs",
     "note": "reflection probes and bounce light against known answers natively on GL and WebGPU: walls where a mirror ball must show them, box projection acting, the grid tinting the ceiling by the coloured walls; controls with the probe and the grid off must fail"
