@@ -58,3 +58,5 @@ standard+shadow+l1011
 standard+instbig+senv+l1000
 standard+senv+l1000
 standard+shadow+senv+l1000+xwater
+standard+instbig+shadow+l1881+s004
+standard+instbig+shadow+icol+l1881+s004
