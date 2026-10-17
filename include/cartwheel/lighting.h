@@ -94,6 +94,13 @@ typedef struct cw_lighting_settings {
   int shadow_atlas_size;     /* 4096: the atlas's texels a side (Shadows Low and Medium: at most 2048) */
   int shadow_updates_per_frame; /* 24: atlas faces redrawn a frame at most (an omni light is 6) */
   bool shadow_cache;         /* true: a tile is redrawn only when its light or a caster in its range changed */
+  bool batching;             /* false: one draw a mesh (front to back). true: meshes that share geometry and
+                              * material are one instanced draw under the cluster and csm parts
+                              * (cw_shading_part_batching): far fewer draws, but the instances lose the
+                              * front-to-back order, so the clustered shading runs on more hidden pixels.
+                              * On the 890M (vis_city_lights, 1080p) 892 draws become 19, draw submission
+                              * costs about the same and the scene pass 0.9 ms more GPU: on for a
+                              * CPU-bound frame with many small meshes, off otherwise */
 } cw_lighting_settings;
 
 /* The tree's settings (created with the defaults above on first call). */

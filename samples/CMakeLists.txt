@@ -154,6 +154,8 @@ cw_add_app(vis_city_check SOURCES vis_city/main.c PACK ${CMAKE_CURRENT_SOURCE_DI
 target_compile_definitions(vis_city_check PRIVATE VIS_DEFAULT_MODE="check")
 cw_add_app(vis_city_off SOURCES vis_city/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt GL_ONLY)
 target_compile_definitions(vis_city_off PRIVATE VIS_DEFAULT_MODE="off")
+cw_add_app(vis_city_lights SOURCES vis_city/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt GL_ONLY)
+target_compile_definitions(vis_city_lights PRIVATE VIS_DEFAULT_MODE="lights")
 
 # the procedural sky, its sun and environment, the day / night cycle.
 cw_add_app(sky_day SOURCES sky_day/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/sky_day/assets)

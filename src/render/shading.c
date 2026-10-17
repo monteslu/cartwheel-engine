@@ -50,6 +50,7 @@ typedef struct part_reg {
   char name[PART_MAX_];
   t3_extension_fill fill;
   void *user;
+  bool batching; /* cw_shading_part_batching: the hook reads nothing of the object */
 } part_reg;
 
 typedef struct composite {
@@ -100,39 +101,41 @@ static void install(t3_renderer *r, const char *name) {
     S.comps[S.ncomps++] = k;
   }
   k->n = n;
-  bool any = false;
+  bool any = false, batching = true;
   for (int i = 0; i < n; i++) {
     const part_reg *p = find_part(r, parts[i]);
     k->fill[i] = p ? p->fill : NULL;
     k->user[i] = p ? p->user : NULL;
-    any |= p != NULL;
+    any |= p != NULL && p->fill;
+    batching &= p != NULL && p->batching;
   }
+  /* a composed draw batches when every part's hook allows it */
+  t3_renderer_set_extension_batching(r, name, batching);
   /* a composed draw with a part nobody fills on this renderer still draws:
    * that part's values keep their last (or zero) values */
   t3_renderer_set_extension(r, name, any ? composite_fill : NULL, any ? k : NULL);
 }
 
-void cw_shading_part(t3_renderer *r, const char *name, t3_extension_fill fill, void *user) {
-  if (!r || !name || !name[0] || strlen(name) >= PART_MAX_ || strchr(name, '_')) {
-    cw_warn("cw_shading_part: '%s' is not a part name ([a-z0-9], under %d characters)", name ? name : "(null)", PART_MAX_);
-    return;
+static bool part_name_ok(const char *fn, const char *name) {
+  if (name && name[0] && strlen(name) < PART_MAX_ && !strchr(name, '_')) return true;
+  cw_warn("%s: '%s' is not a part name ([a-z0-9], under %d characters)", fn, name ? name : "(null)", PART_MAX_);
+  return false;
+}
+
+static part_reg *add_part(t3_renderer *r, const char *name) {
+  if (S.nparts == S.cap_parts) {
+    S.cap_parts = S.cap_parts ? S.cap_parts * 2 : 8;
+    S.parts = realloc(S.parts, sizeof *S.parts * (size_t)S.cap_parts);
   }
-  part_reg *p = (part_reg *)find_part(r, name);
-  if (!p && fill) {
-    if (S.nparts == S.cap_parts) {
-      S.cap_parts = S.cap_parts ? S.cap_parts * 2 : 8;
-      S.parts = realloc(S.parts, sizeof *S.parts * (size_t)S.cap_parts);
-    }
-    p = &S.parts[S.nparts++];
-    memset(p, 0, sizeof *p);
-    p->r = r;
-    snprintf(p->name, sizeof p->name, "%s", name);
-  }
-  if (p) {
-    p->fill = fill;
-    p->user = user;
-  }
-  t3_renderer_set_extension(r, name, fill, user);
+  part_reg *p = &S.parts[S.nparts++];
+  memset(p, 0, sizeof *p);
+  p->r = r;
+  snprintf(p->name, sizeof p->name, "%s", name);
+  return p;
+}
+
+/* re-install every composed name that includes part `name` */
+static void reinstall(t3_renderer *r, const char *name) {
   for (int i = 0; i < S.nnames; i++) {
     char parts[CW_SHADING_MAX_PARTS + 1][PART_MAX_];
     int n = split(S.names[i], parts);
@@ -142,6 +145,33 @@ void cw_shading_part(t3_renderer *r, const char *name, t3_extension_fill fill, v
         break;
       }
   }
+}
+
+void cw_shading_part_batching(t3_renderer *r, const char *name, bool on) {
+  if (!r || !part_name_ok("cw_shading_part_batching", name)) return;
+  part_reg *p = (part_reg *)find_part(r, name);
+  if (!p) p = add_part(r, name);
+  p->batching = on;
+  t3_renderer_set_extension_batching(r, name, on);
+  reinstall(r, name);
+}
+
+void cw_shading_part(t3_renderer *r, const char *name, t3_extension_fill fill, void *user) {
+  if (!r || !part_name_ok("cw_shading_part", name)) return;
+  part_reg *p = (part_reg *)find_part(r, name);
+  if (!p && fill) {
+    if (S.nparts == S.cap_parts) {
+      S.cap_parts = S.cap_parts ? S.cap_parts * 2 : 8;
+      S.parts = realloc(S.parts, sizeof *S.parts * (size_t)S.cap_parts);
+    }
+    p = add_part(r, name);
+  }
+  if (p) {
+    p->fill = fill;
+    p->user = user;
+  }
+  t3_renderer_set_extension(r, name, fill, user);
+  reinstall(r, name);
 }
 
 void cw_shading_forget(t3_renderer *r) {

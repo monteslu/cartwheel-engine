@@ -3244,6 +3244,11 @@
     "note": "never pops: along the whole walk every frame of the culled city (frustum, occlusion, portals) is compared with the same city in a second tree drawn with no culling: no frame loses a mesh (pop_frames counts frames with more than 64 pixels off by >24). Control: occlusion_guard off (plain one-frame-late queries pop a dozen frames) (pop_frames itself is not compared: Chromium shows one isolated small frame in some runs)"
   },
   {
+    "name": "vis-city-batch",
+    "script": "tests/vis-city-batch.mjs",
+    "note": "the city under 64 clustered lamps and four sun cascades, LightingSettings.batching off and on, natively and in Chromium: the same picture (at most 0.05% of pixels off by >16), batched a tenth of the draws or fewer; draws, frame work and GPU ms reported. Controls: the draw check between two unbatched runs and the picture check against a later frame must fail"
+  },
+  {
     "name": "vis-perf-report",
     "script": "tests/vis-perf.mjs",
     "note": "city draw calls, meshes drawn, triangles, cull CPU, frame work and GPU ms, culled and unculled, natively, in Chromium and romdev (reported); culled frame work within 16.7 ms natively and in Chromium; fewer triangles than unculled on every host; control: an impossible budget must fail"
