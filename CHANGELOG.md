@@ -11,6 +11,11 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   cost table in the physics guide.
 
 ### Changed
+- GI is cheaper for the same picture: the G-buffer draws use a program of
+  their own instead of the full lit one, and SSGI traces a half-resolution
+  colour copy and a two-channel normal copy. On the 890M at 1280x720 (GL), a
+  frame at Medium goes from 2.6 to 2.3 ms, at High from 4.5 to 4.2 ms, and at
+  Ultra from 18.2 to 14.2 ms.
 - The GPU guard test scales to the GPU it is pinned to, and the network test
   runs wasmcart-native players paced instead of uncapped.
 
