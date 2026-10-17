@@ -66,7 +66,7 @@ jobs:
       fail-fast: false
       matrix:
         # shares balanced by measured CI time (tests/ci-times.json, tools/ci-times.mjs)
-        part: [gl-1of7, gl-2of7, gl-3of7, gl-4of7, gl-5of7, gl-6of7, gl-7of7, webgpu-1of3, webgpu-2of3, webgpu-3of3]
+        part: [gl-1of7, gl-2of7, gl-3of7, gl-4of7, gl-5of7, gl-6of7, gl-7of7, webgpu-1of6, webgpu-2of6, webgpu-3of6, webgpu-4of6, webgpu-5of6, webgpu-6of6]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

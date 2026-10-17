@@ -4,6 +4,17 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.12.1 (2026-10-17)
+
+### Fixed
+- The SDKs ship every module's generator extensions (`src/*/extensions`). The
+  v0.12.0 SDK left out the water module's, so `tools/programs.mjs` could not
+  capture Water3D program states against a prebuilt SDK.
+
+### Changed
+- CI runs the WebGPU tests in six shares, balanced by freshly measured test
+  times (`tests/ci-times.json`); a run had grown to about an hour.
+
 ## v0.12.0 (2026-10-17)
 
 ### Added
