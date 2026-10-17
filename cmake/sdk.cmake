@@ -10,7 +10,7 @@ if(NOT CW_SDK)
 endif()
 
 set(_cw_sdk_libs cartwheel three box2d box3d cw_miniaudio cw_stb_vorbis cw_opus cw_ogg cw_xmp meshoptimizer
-    cw_basisu_transcoder cw_kbts cw_lz4 cwprog_cw_engine)
+    cw_basisu_transcoder cw_kbts cw_plmpeg cw_lz4 cwprog_cw_engine)
 set(_cw_sdk_ifaces cw_sdl2 cw_gles cw_wgpu)
 if(NOT CW_CART)
   list(APPEND _cw_sdk_libs cartwheel_main)
