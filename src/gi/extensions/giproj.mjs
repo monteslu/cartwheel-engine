@@ -76,8 +76,10 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
         });
       });
     });
-    const norm = float(4 * Math.PI).div(wsum.max(1e-6));
-    const C = c.map((v) => v.mul(norm));
+    // (vars, evaluated here: a node first built inside one branch of the group chain below is declared only there, and
+    // the other branches read it unset: NaN on llvmpipe, zero elsewhere, for groups 2 to 6)
+    const norm = float(4 * Math.PI).div(wsum.max(1e-6)).toVar();
+    const C = c.map((v) => v.mul(norm).toVar());
     const g = proj.y;
     const P = [
       vec4(C[0], C[1].x), vec4(C[1].yz, C[2].xy), vec4(C[2].z, C[3]), vec4(C[4], C[5].x),
