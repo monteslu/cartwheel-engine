@@ -10,6 +10,7 @@
 #include "cartwheel/render3d.h"
 #include "fx_internal.h"
 #include "fx_wgpu.h"
+#include "cartwheel/shading.h"
 
 unsigned char *stbi_load_from_memory(const unsigned char *buffer, int len, int *x, int *y, int *channels_in_file,
                                      int desired_channels);
@@ -24,7 +25,8 @@ static const char *const dmode_names[] = { "SCREEN", "MESH", NULL };
  * meshes, one material for them all) and what it was built from */
 typedef struct mesh_decal {
   CW_ARRAY(t3_object *) pieces; /* retained; each a child of its source mesh */
-  t3_material *mat;
+  t3_material *mat; /* unlit: premultiplied output (MULTIPLY, ADD, and decals on unlit surfaces) */
+  t3_material *lit; /* lit: a MIX decal on a surface with a lighting model; straight alpha */
   bool built, dirty, in_order;
   int tris, sources;
   bool truncated;
@@ -731,7 +733,8 @@ static void mesh_fill(t3_extension_ctx *c, void *u) {
  * (src/scene/render3d.c calls this as it makes one) */
 void cw__decals_renderer_init(t3_renderer *r);
 void cw__decals_renderer_init(t3_renderer *r) {
-  if (r) t3_renderer_set_extension(r, "meshdecal", mesh_fill, NULL);
+  /* a shading part (cartwheel/shading.h): a lit decal composes it with the cluster, csm and gi parts */
+  if (r) cw_shading_part(r, "meshdecal", mesh_fill, NULL);
 }
 
 static void mesh_clear(decal3d *d) {
@@ -779,8 +782,7 @@ static mesh_tex *mesh_texture(decal_tree *dt, const char *path) {
 /* the screen-space pass's blends with the material's own factors: the
  * program writes (rgb * a, a) (src/fx/extensions/meshdecal.mjs) and the
  * target's alpha is kept */
-static void mesh_material_apply(decal3d *d) {
-  t3_material *m = d->mesh.mat;
+static void mesh_material_apply_one(decal3d *d, t3_material *m, bool lit) {
   if (!m) return;
   float e = d->blend == DB_ADD ? d->energy : 1;
   m->color = (t3_color){ d->color[0] * e, d->color[1] * e, d->color[2] * e };
@@ -796,10 +798,33 @@ static void mesh_material_apply(decal3d *d) {
     m->blend_src = T3_ONE_FACTOR;
     m->blend_dst = T3_ONE_FACTOR;
   } else {
-    m->blend_src = T3_ONE_FACTOR;
+    /* (the lit program writes straight alpha, the unlit one premultiplied) */
+    m->blend_src = lit ? T3_SRC_ALPHA_FACTOR : T3_ONE_FACTOR;
     m->blend_dst = T3_ONE_MINUS_SRC_ALPHA_FACTOR;
   }
   m->version++;
+}
+static void mesh_material_apply(decal3d *d) {
+  mesh_material_apply_one(d, d->mesh.mat, false);
+  mesh_material_apply_one(d, d->mesh.lit, true);
+}
+
+/* a source whose material has a lighting model: a MIX decal on it is lit.
+ * MULTIPLY already tracks the surface's light (it scales what is there) and
+ * ADD is a glow, so neither is shaded; an unlit surface (basic) keeps an
+ * unlit decal. */
+static bool source_is_lit(const t3_mesh *m) {
+  /* CW_DECAL_UNLIT=1: every decal unlit as before lit decals (the tests' control) */
+  static int unlit = -1;
+  if (unlit < 0) {
+    const char *e = getenv("CW_DECAL_UNLIT");
+    unlit = e && *e == '1';
+  }
+  if (unlit) return false;
+  if (!m->material_count || !m->materials[0]) return false;
+  t3_material_type t = m->materials[0]->type;
+  return t == T3_MESH_LAMBERT_MATERIAL || t == T3_MESH_PHONG_MATERIAL || t == T3_MESH_STANDARD_MATERIAL ||
+         t == T3_MESH_PHYSICAL_MATERIAL;
 }
 
 typedef CW_ARRAY(t3_mesh *) mesh_list;
@@ -815,7 +840,7 @@ static bool extension_keeps_vertices(const t3_material *mt) {
     const char *e = strchr(p, '_');
     size_t len = e ? (size_t)(e - p) : strlen(p);
     bool shading = (len == 7 && !strncmp(p, "cluster", len)) || (len == 3 && !strncmp(p, "csm", len)) ||
-                   (len == 2 && !strncmp(p, "gi", len));
+                   (len == 2 && !strncmp(p, "gi", len)) || (len == 9 && !strncmp(p, "meshdecal", len));
     if (!shading) return false;
     if (!e) break;
     p = e + 1;
@@ -984,19 +1009,23 @@ static void add_piece(decal3d *d, t3_mesh *src, bool skinned, const cw__decal_ou
   g->bounding_sphere = src->geometry->bounding_sphere;
   g->has_bounding_sphere = true;
   t3_mesh *pm;
+  bool lit = d->blend == DB_MIX && d->mesh.lit && source_is_lit(src);
+  t3_material *pmat = lit ? d->mesh.lit : d->mesh.mat;
   if (skinned) {
     t3_skinned_mesh *ss = (t3_skinned_mesh *)src;
-    t3_skinned_mesh *k = t3_skinned_mesh_new(g, d->mesh.mat);
+    t3_skinned_mesh *k = t3_skinned_mesh_new(g, pmat);
     k->bind_mode = ss->bind_mode;
     t3_skinned_mesh_bind(k, ss->skeleton, &ss->bind_matrix);
     pm = &k->mesh;
   } else {
-    pm = t3_mesh_new(g, d->mesh.mat);
+    pm = t3_mesh_new(g, pmat);
   }
   t3_release(g);
   t3_object *po = &pm->base;
   po->name = DECAL_PIECE;
-  po->cast_shadow = po->receive_shadow = false;
+  /* a lit decal takes the sun's and the lights' shadows as its surface does */
+  po->cast_shadow = false;
+  po->receive_shadow = lit && src->base.receive_shadow;
   po->frustum_culled = src->base.frustum_culled;
   po->render_order = d->priority;
   if (po->layers != src->base.layers) t3_object_set_layers(po, src->base.layers);
@@ -1060,6 +1089,18 @@ static void mesh_build(cw_tree *t, decal_tree *dt, cw_node n, decal3d *d) {
     t3_material_set_extension(d->mesh.mat, "meshdecal");
   }
   t3_material_set_map(d->mesh.mat, mt->tex);
+  if (!d->mesh.lit) {
+    /* the same decal on a lit surface: a standard material with no shine, shaded by the
+     * lights (and the cluster, csm and gi parts they compose with) and fogged like the surface */
+    d->mesh.lit = t3_mesh_standard_material_new(0xffffff);
+    d->mesh.lit->roughness = 1;
+    d->mesh.lit->metalness = 0;
+    d->mesh.lit->transparent = true;
+    d->mesh.lit->depth_write = false;
+    d->mesh.lit->fog = true;
+    t3_material_set_extension(d->mesh.lit, "meshdecal");
+  }
+  t3_material_set_map(d->mesh.lit, mt->tex);
   mesh_material_apply(d);
   float iw = mt->w > 0 ? (float)mt->w : 1, ih = mt->h > 0 ? (float)mt->h : 1;
   float rx = 0, ry = 0, rw = iw, rh = ih;
@@ -1224,14 +1265,22 @@ static void decal_destroy(cw_node n, void *data) {
   cw_array_free(&d->mesh.pieces);
   if (d->mesh.mat) t3_release(d->mesh.mat);
   d->mesh.mat = NULL;
+  if (d->mesh.lit) t3_release(d->mesh.lit);
+  d->mesh.lit = NULL;
 }
 
 /* mesh mode: colour, energy and blend change the material; priority the
  * draw order; anything else that shapes the geometry builds it again */
 static void decal_prop_changed(cw_node n, void *data, const cw_prop *p) {
   decal3d *d = data;
-  if (!strcmp(p->name, "color") || !strcmp(p->name, "energy") || !strcmp(p->name, "blend")) {
+  if (!strcmp(p->name, "color") || !strcmp(p->name, "energy")) {
     mesh_material_apply(d);
+    return;
+  }
+  if (!strcmp(p->name, "blend")) {
+    /* (MIX pieces on lit surfaces carry the lit material: build them again) */
+    mesh_material_apply(d);
+    d->mesh.dirty = true;
     return;
   }
   if (!strcmp(p->name, "priority")) {

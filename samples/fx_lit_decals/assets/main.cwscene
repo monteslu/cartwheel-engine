@@ -1,0 +1,108 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.1, 0.1, 0.12, 1)
+ambient_energy = 0.15
+sky_color = color(0.6, 0.7, 0.9, 1)
+ground_color = color(0.35, 0.3, 0.25, 1)
+hemi_energy = 0.3
+
+# the sun comes from the left, over the roof: the wall left of x = 1.3 is in its shadow
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(-10.3, 8.7, 8.2)
+rotation = vec3(-0.5, -0.9, 0)
+energy = 3.0
+shadow = true
+shadow_extent = 14
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 1.5, 6)
+fov = 40
+near = 0.1
+far = 60
+
+[node name="Wall" parent="." type="MeshInstance3D"]
+position = vec3(0, 1.5, -0.1)
+size = vec3(12, 3, 0.2)
+color = color(0.4, 0.4, 0.4, 1)
+roughness = 1.0
+receive_shadow = true
+
+# a roof slab shades the left half of the wall from the sun
+[node name="Roof" parent="." type="MeshInstance3D"]
+position = vec3(-4.3, 3.2, 2.2)
+size = vec3(8, 0.2, 7)
+color = color(0.3, 0.3, 0.3, 1)
+cast_shadow = true
+
+[node name="Lamp" parent="." type="OmniLight3D"]
+position = vec3(0, 1.6, 1.8)
+energy = 16
+range = 2.4
+
+# three stickers: in the dark, under the lamp, in the sun
+[node name="DecalDark" parent="." type="Decal3D"]
+position = vec3(-1.9, 1.5, 0)
+size = vec3(0.5, 0.5, 0.6)
+texture = "decals/white.png"
+color = color(0.55, 0.4, 0.25, 1)
+blend = MIX
+normal_fade = 0.0
+edge_fade = 0.0
+mode = MESH
+
+[node name="DecalLamp" parent="." type="Decal3D"]
+position = vec3(0, 1.5, 0)
+size = vec3(0.5, 0.5, 0.6)
+texture = "decals/white.png"
+color = color(0.55, 0.4, 0.25, 1)
+blend = MIX
+normal_fade = 0.0
+edge_fade = 0.0
+mode = MESH
+
+[node name="DecalSun" parent="." type="Decal3D"]
+position = vec3(2.8, 2.6, 0)
+size = vec3(0.5, 0.5, 0.6)
+texture = "decals/white.png"
+color = color(0.55, 0.4, 0.25, 1)
+blend = MIX
+normal_fade = 0.0
+edge_fade = 0.0
+mode = MESH
+
+# a character (the glTF scene main.c puts in each Model node) twice, in the dark and under the
+# lamp, each with a badge clipped onto its chest and skinned to its skeleton
+[node name="HeroDark" parent="." type="Node3D"]
+position = vec3(-2.75, 0, 1.2)
+
+[node name="Model" parent="HeroDark" type="Node3D"]
+
+[node name="HeroLamp" parent="." type="Node3D"]
+position = vec3(0.9, 0, 1.2)
+
+[node name="Model" parent="HeroLamp" type="Node3D"]
+
+[node name="BadgeDark" parent="." type="Decal3D"]
+position = vec3(-2.75, 1.05, 1.6)
+size = vec3(0.3, 0.3, 0.8)
+texture = "decals/white.png"
+color = color(0.55, 0.4, 0.25, 1)
+blend = MIX
+normal_fade = 0.0
+edge_fade = 0.0
+mode = MESH
+target = "../HeroDark"
+
+[node name="BadgeLamp" parent="." type="Decal3D"]
+position = vec3(0.9, 1.05, 1.6)
+size = vec3(0.3, 0.3, 0.8)
+texture = "decals/white.png"
+color = color(0.55, 0.4, 0.25, 1)
+blend = MIX
+normal_fade = 0.0
+edge_fade = 0.0
+mode = MESH
+target = "../HeroLamp"

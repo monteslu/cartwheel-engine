@@ -167,9 +167,9 @@ void cw__gi_tag(gi_tree *g, t3_object *o) {
       if (!mat || (mat->type != T3_MESH_STANDARD_MATERIAL && mat->type != T3_MESH_PHYSICAL_MATERIAL)) continue;
       if (cw_shading_has(mat, "gi")) continue;
       /* a surface extension of its own (terrain) stays alone: only bare
-       * materials and the lighting part compose with gi */
+       * materials, the lighting part and a lit mesh decal compose with gi */
       const char *ext = t3_material_get_extension(mat);
-      if (ext && !cw_shading_has(mat, "cluster")) continue;
+      if (ext && !cw_shading_has(mat, "cluster") && !cw_shading_has(mat, "meshdecal")) continue;
       if (!cw_shading_add(mat, "gi")) continue;
       t3_retain(mat);
       cw_array_push(&g->mats, mat);

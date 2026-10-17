@@ -168,7 +168,7 @@ static bool lit_type(t3_material_type t) {
  * (cartwheel/shading.h): terrain's surface parts and the GI parts compose
  * with them; a material with any other extension of its own keeps it alone */
 static bool composes(const char *ext) {
-  static const char *const ok[] = { "terrain", "terrainlow", "terrainfar", PART, "csm", "gi" };
+  static const char *const ok[] = { "terrain", "terrainlow", "terrainfar", PART, "csm", "gi", "meshdecal" };
   if (!ext) return true;
   for (const char *p = ext; *p;) {
     const char *e = strchr(p, '_');

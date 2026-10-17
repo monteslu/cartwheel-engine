@@ -69,8 +69,10 @@
  * dropped; normal_fade and edge_fade are baked per vertex. The pieces draw
  * with the transparent objects, right after their surface (depth test on,
  * no depth write), so they also land on glass and other transparent meshes;
- * blends match the screen-space ones (MIX unlit over, MULTIPLY, ADD with
- * energy). The decal does not follow later changes of the surface itself
+ * blends match the screen-space ones (MULTIPLY, ADD with energy), except
+ * that a MIX decal on a lit surface is lit like it (its lights, sun and
+ * shadows, GI and fog; MULTIPLY follows the light as it scales the lit
+ * picture, ADD is a glow and stays unlit). The decal does not follow later changes of the surface itself
  * (morph targets, a mesh edited after the stamp, a different LOD level is
  * drawn as is). Not sources: instanced meshes (forests, particles), lines
  * and points, meshes drawn with an extension program (Terrain3D), other

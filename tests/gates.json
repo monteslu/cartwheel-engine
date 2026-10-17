@@ -3376,6 +3376,11 @@
     "note": "Decal3D mode MESH: a badge and paint clipped from a walking skinned character (drawn skinned on its skeleton), a crack on a transparent glass pane, an ADD ring stamped on a spinning crate (no target), bullet holes pooled at 12 (8 recycled). md.hash is FNV over every mesh decal's vertex bits: the clip must agree bit for bit on every host. Control: every decal 0.2 m to the right (other geometry, other hashes); WebGPU control: the decals back in screen space (no crack on the glass, nothing stuck to the character)"
   },
   {
+    "name": "fx-lit-decals",
+    "script": "tests/lit-decals.mjs",
+    "note": "mesh decals take the light of their surface: three stickers (dark, under a lamp, in the sun) and two skinned badges are compared with the wall around them, in CLUSTERED and FORWARD lighting, on GL and WebGPU (and the cart hosts with --hosts). Control: CW_DECAL_UNLIT=1 draws them unlit and must be caught"
+  },
+  {
     "name": "fx-mesh-decals-lit",
     "app": "fx_mesh_decals_lit",
     "frames": 120,

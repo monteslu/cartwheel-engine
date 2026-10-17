@@ -165,6 +165,14 @@ cw_add_app(fx_mesh_decals SOURCES fx_mesh_decals/main.c ASSETS ${CW_MESH_DECALS_
 # the same scene under CLUSTERED lighting: decals on surfaces that carry the cluster and csm shading parts
 cw_add_app(fx_mesh_decals_lit SOURCES fx_mesh_decals/main.c ASSETS ${CW_MESH_DECALS_ASSETS})
 target_compile_definitions(fx_mesh_decals_lit PRIVATE MESH_DECALS_CLUSTERED=1)
+# mesh decals take the light of their surface (tests/lit-decals.mjs reads the pixels)
+set(CW_LIT_DECALS_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/fx_lit_decals_assets)
+file(MAKE_DIRECTORY ${CW_LIT_DECALS_ASSETS}/decals)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/fx_lit_decals/assets/main.cwscene ${CW_LIT_DECALS_ASSETS}/main.cwscene COPYONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/fx_lit_decals/assets/decals/white.png ${CW_LIT_DECALS_ASSETS}/decals/white.png COPYONLY)
+configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.glb ${CW_LIT_DECALS_ASSETS}/CesiumMan.glb COPYONLY)
+configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.LICENSE.md ${CW_LIT_DECALS_ASSETS}/CesiumMan.LICENSE.md COPYONLY)
+cw_add_app(fx_lit_decals SOURCES fx_lit_decals/main.c ASSETS ${CW_LIT_DECALS_ASSETS})
 # visibility: impostor crossfade (no popping) on a grove of generated
 # trees, and the city (BVH frustum culling, occlusion queries, portals, LOD).
 cw_add_app(vis_impostor SOURCES vis_impostor/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt GL_ONLY)

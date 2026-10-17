@@ -64,3 +64,15 @@ standard+l0001+xcluster_csm
 standard+map+rep+skin+l0001+xcluster_csm
 depth+xcluster_csm
 standard+trans+l0001+xcluster_csm
+standard+map+trans+skin+l1001+xmeshdecal
+standard+map+trans+l1001+xmeshdecal
+standard+map+trans+skin+l0001+xcluster_csm_meshdecal
+standard+map+trans+l0001+xcluster_csm_meshdecal
+standard+map+trans+shadow+l1101+s100+xmeshdecal
+standard+map+rep+shadow+skin+l1101+s100
+standard+map+trans+shadow+skin+l1101+s100+xmeshdecal
+standard+l0001+xcluster_csm_gi
+standard+map+rep+skin+l0001+xcluster_csm_gi
+standard+map+trans+skin+l0001+xcluster_csm_meshdecal_gi
+standard+map+trans+l0001+xcluster_csm_meshdecal_gi
+depth+xcluster_csm_gi
