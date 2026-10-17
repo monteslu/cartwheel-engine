@@ -49,7 +49,7 @@ typedef struct gi_tree {
   t3_pmrem_generator *pmrem;
   t3_texture *dummy;
   const t3_texture *env_seen; /* scene.environment at the last frame */
-  t3_renderer *hook_renderer;
+  t3_renderer *hook_renderer, *gbuf_hook;
   /* the screen-space passes' G-buffer (ssr.c) and the mode the gi part draws in: 0 lit, 1 G-buffer */
   cw_rt gbuf, albedo; /* the G-buffer: normal + roughness + metalness; diffuse colour (SSGI) */
   bool gbuf_ok, albedo_ok; /* drawn this frame */
@@ -60,6 +60,7 @@ typedef struct gi_tree {
 
 gi_tree *cw__gi_tree(cw_tree *t);
 void cw__gi_fill(t3_extension_ctx *c, void *user);
+void cw__gi_fill_gbuf(t3_extension_ctx *c, void *user);
 void cw__register_reflection_probe(void);
 t3_texture *cw__gi_dummy(gi_tree *g);
 /* the light probe grid's values for a draw (probe_grid.c) */

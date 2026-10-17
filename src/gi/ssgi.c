@@ -7,8 +7,12 @@
  *   1. The GI G-buffer (ssr.c) gives view normals; a second G-buffer draw
  *      gives the diffuse colour (r186's example takes both from MRT).
  *   2. Trace (half resolution): r186's slices and steps over the full
- *      resolution depth and the lit scene (the frame before post), giving
- *      bounce light (rgb) and ambient occlusion (a).
+ *      resolution depth and the lit scene (the frame before post, read from a
+ *      half-resolution copy: a quarter of the bytes at the scattered taps of
+ *      the trace, which is where its time goes), giving bounce light (rgb) and
+ *      ambient occlusion (a). The slice and step counts are compile-time
+ *      constants of the trace program (one per pair in use), and the normals
+ *      come from a two-channel copy of the G-buffer.
  *   3. Denoise (half resolution) over 5 x 5 trace texels with depth-,
  *      normal- and brightness-aware weights, then composite as r186's
  *      example does, colour x AO + diffuse colour x GI, upsampled with
@@ -72,9 +76,7 @@ static const char *TRACE_GLSL =
         vec2 uvdir = right ? vec2(1.0, 1.0) : vec2(-1.0, -1.0);
         float sdir = right ? 1.0 : -1.0;
         vec3 color = vec3(0.0);
-        int steps = int(u_counts.y);
-        for (int i = 0; i < 64; i++) {
-          if (i >= steps) break;
+        for (int i = 0; i < STEPS; i++) {
           float off = pow(abs(step_r * (float(i) + init_step) / radius_vs), 2.0) * radius_vs;
           vec2 uvo = slide * max(off, float(i) + 1.0);
           vec2 suv = uv + uvo * uvdir;
@@ -119,14 +121,13 @@ static const char *TRACE_GLSL =
         float spatial = 0.25 * float((q.y - q.x) & 3);
         float dir_noise = fract(52.9829189 * fract(dot(vec2(q), vec2(0.06711056, 0.00583715))));
         float init_step = fract(spatial + u_counts.w) + fract(sin(dot((uv + u_counts.z * 0.02) * 2.0 - 1.0, vec2(12.9898, 78.233))) * 43758.5453);
-        int slices = int(u_counts.x);
+        const int slices = SLICES;
         float step_r = u_params.x * (u_size.z / 2.0) / 16.0;
         step_r /= u_counts.y + 1.0;
         float radius_vs = max(1.0, u_counts.y - 1.0) * step_r;
         float ao = 0.0;
         vec3 color = vec3(0.0);
-        for (int s = 0; s < 8; s++) {
-          if (s >= slices) break;
+        for (int s = 0; s < SLICES; s++) {
           float a = (float(s) + dir_noise + u_counts.z) * (PI / float(slices));
           vec3 sd = vec3(cos(a), sin(a), 0.0);
           vec2 slide = sd.xy / u_size.zw;
@@ -151,6 +152,21 @@ static const char *TRACE_GLSL =
 /* the denoise, at the trace's resolution: 5 x 5 trace texels, weighted by
  * depth, normal and (Karis-style) brightness, so lone bright samples do not
  * sparkle */
+/* the lit colour at half resolution (each texel the mean of its 2 x 2 pixels, one bilinear
+ * tap at their shared corner): the trace reads it at scattered positions, and a quarter of
+ * the bytes at that scatter is what its light fetches cost */
+static const char *DOWN_GLSL = S(
+  uniform sampler2D u_src;
+  out vec4 o;
+  void main() { o = vec4(texture(u_src, v_uv).rgb, 1.0); });
+
+/* the G-buffer's normals alone, in a two-channel half-float target (4 bytes a texel, the same
+ * values): the trace and the denoise read them at scattered positions */
+static const char *NORM_GLSL = S(
+  uniform sampler2D u_src;
+  out vec4 o;
+  void main() { o = vec4(texelFetch(u_src, ivec2(gl_FragCoord.xy), 0).rg, 0.0, 1.0); });
+
 static const char *DENOISE_GLSL = S(
   uniform sampler2D u_gi;
   uniform sampler2D u_gbuf;
@@ -256,9 +272,7 @@ static const char *TRACE_WGSL =
         let uvdir = select(vec2f(-1.0, -1.0), vec2f(1.0, 1.0), right);
         let sdir = select(-1.0, 1.0, right);
         var color = vec3f(0.0);
-        let steps = i32(u.u_counts.y);
-        for (var i = 0; i < 64; i++) {
-          if (i >= steps) { break; }
+        for (var i = 0; i < STEPS; i++) {
           let off = pow(abs(step_r * (f32(i) + init_step) / radius_vs), 2.0) * radius_vs;
           let uvo = slide * max(off, f32(i) + 1.0);
           let suv = uv + uvo * uvdir;
@@ -304,14 +318,13 @@ static const char *TRACE_WGSL =
         let spatial = 0.25 * f32((q.y - q.x) & 3);
         let dir_noise = fract(52.9829189 * fract(dot(vec2f(q), vec2f(0.06711056, 0.00583715))));
         let init_step = fract(spatial + u.u_counts.w) + fract(sin(dot((uv + u.u_counts.z * 0.02) * 2.0 - 1.0, vec2f(12.9898, 78.233))) * 43758.5453);
-        let slices = i32(u.u_counts.x);
+        let slices = SLICES;
         var step_r = u.u_params.x * (u.u_size.z / 2.0) / 16.0;
         step_r = step_r / (u.u_counts.y + 1.0);
         let radius_vs = max(1.0, u.u_counts.y - 1.0) * step_r;
         var ao = 0.0;
         var color = vec3f(0.0);
-        for (var s = 0; s < 8; s++) {
-          if (s >= slices) { break; }
+        for (var s = 0; s < SLICES; s++) {
           let a = (f32(s) + dir_noise + u.u_counts.z) * (PI / f32(slices));
           let sd = vec3f(cos(a), sin(a), 0.0);
           let slide = sd.xy / u.u_size.zw;
@@ -332,6 +345,22 @@ static const char *TRACE_WGSL =
         if (l > 7.0) { color = color * (7.0 / l); }
         return vec4f(color, ao);
       });
+
+static const char *DOWN_WGSL = S(
+  struct U { u_pad: vec4f };
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var u_src: texture_2d<f32>;
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    return vec4f(textureSampleLevel(u_src, cw_linear, uv, 0.0).rgb, 1.0);
+  });
+
+static const char *NORM_WGSL = S(
+  struct U { u_pad: vec4f };
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var u_src: texture_2d<f32>;
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    return vec4f(textureLoad(u_src, vec2i(cw_frag_coord(pos)), 0).rg, 0.0, 1.0);
+  });
 
 static const char *DENOISE_WGSL = S(
   struct U { u_size: vec4f, u_cam: vec4f };
@@ -393,7 +422,36 @@ static const char *COMP_WGSL = S(
   });
 #endif
 
-static unsigned trace_prog, denoise_prog, comp_prog;
+/* the trace's slice and step counts are compile-time constants (its loops unroll, so the
+ * depth fetches of all steps issue together): one program per pair in use */
+static struct { int slices, steps; unsigned prog; } trace_progs[6];
+static unsigned trace_prog, down_prog, norm_prog, denoise_prog, comp_prog;
+
+static unsigned trace_for(bool wg, int slices, int steps) {
+  for (int i = 0; i < 6; i++)
+    if (trace_progs[i].prog && trace_progs[i].slices == slices && trace_progs[i].steps == steps) return trace_progs[i].prog;
+  static char buf[24576];
+  char name[48];
+  snprintf(name, sizeof name, "ssgi.trace.%dx%d", slices, steps);
+  unsigned p = 0;
+#if CW_WGPU
+  if (wg) {
+    snprintf(buf, sizeof buf, "const SLICES: i32 = %d;\nconst STEPS: i32 = %d;\n%s%s", slices, steps, WGSL_COMMON, TRACE_WGSL);
+    p = cw_pass_program_wgsl(name, buf);
+  } else
+#endif
+  {
+    (void)wg;
+    snprintf(buf, sizeof buf, "#define SLICES %d\n#define STEPS %d\n%s", slices, steps, TRACE_GLSL);
+    p = cw_pass_program(name, buf);
+  }
+  for (int i = 0; i < 6; i++)
+    if (!trace_progs[i].prog) {
+      trace_progs[i].slices = slices, trace_progs[i].steps = steps, trace_progs[i].prog = p;
+      break;
+    }
+  return p;
+}
 
 static bool ssgi_active(const cw_pass_ctx *ctx, void *u) {
   (void)u;
@@ -404,39 +462,52 @@ static void ssgi_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
   const cw_post_settings *s = ctx->settings;
   bool wg = cw_gpu_backend() == CW_GPU_WEBGPU;
-  if (!trace_prog) {
+  if (!denoise_prog) {
 #if CW_WGPU
     if (wg) {
-      static char buf[24576];
-      snprintf(buf, sizeof buf, "%s%s", WGSL_COMMON, TRACE_WGSL);
-      trace_prog = cw_pass_program_wgsl("ssgi.trace", buf);
+      down_prog = cw_pass_program_wgsl("ssgi.down", DOWN_WGSL);
+      norm_prog = cw_pass_program_wgsl("ssgi.norm", NORM_WGSL);
       denoise_prog = cw_pass_program_wgsl("ssgi.denoise", DENOISE_WGSL);
       comp_prog = cw_pass_program_wgsl("ssgi.composite", COMP_WGSL);
     } else
 #endif
     {
-      trace_prog = cw_pass_program("ssgi.trace", TRACE_GLSL);
+      down_prog = cw_pass_program("ssgi.down", DOWN_GLSL);
+      norm_prog = cw_pass_program("ssgi.norm", NORM_GLSL);
       denoise_prog = cw_pass_program("ssgi.denoise", DENOISE_GLSL);
       comp_prog = cw_pass_program("ssgi.composite", COMP_GLSL);
     }
   }
-  if (!trace_prog || !denoise_prog || !comp_prog || !ctx->depth_tex) return;
+  trace_prog = trace_for(wg, CW_CLAMP(s->ssgi_slices, 1, 8), CW_CLAMP(s->ssgi_steps, 1, 64));
+  if (!trace_prog || !down_prog || !norm_prog || !denoise_prog || !comp_prog || !ctx->depth_tex) return;
   gi_tree *g = cw__gi_tree(ctx->tree);
   int hw = (ctx->width + 1) / 2, hh = (ctx->height + 1) / 2;
   if (!g->gbuf_ok || !g->albedo_ok || g->gbuf.w != hw || g->gbuf.h != hh) return; /* (drawn by the gi pass) */
   const cw_rt *tr = cw_pipeline_rt_persistent(ctx->pipeline, "ssgi.trace", hw, hh, CW_RT_RGBA16F, NULL);
   const cw_rt *dn = cw_pipeline_rt_persistent(ctx->pipeline, "ssgi.denoised", hw, hh, CW_RT_RGBA16F, NULL);
-  if (!tr || !dn) return;
+  const cw_rt *lt = cw_pipeline_rt_persistent(ctx->pipeline, "ssgi.light", hw, hh, CW_RT_RGBA16F, NULL);
+  const cw_rt *nm = cw_pipeline_rt_persistent(ctx->pipeline, "ssgi.normal", hw, hh, CW_RT_RG16F, NULL);
+  if (!tr || !dn || !lt || !nm) return;
   const t3_camera *cam = ctx->camera;
   /* r186's temporal sequence (rotation, offset) when the pipeline's TAA accumulates */
   static const float ROT[6] = { 60, 300, 180, 240, 120, 0 }, OFF[4] = { 0, 0.5f, 0.25f, 0.75f };
   float tdir = s->taa ? ROT[ctx->frame % 6] / 360.0f : 0, toff = s->taa ? OFF[(ctx->frame / 6) % 4] : 0;
+  cw_pass_bind_target(ctx, lt);
+  cw_pass_use(down_prog);
+  cw_pass_bind_texture(0, ctx->src->tex);
+  if (!wg) cw_pass_uniform1i(down_prog, "u_src", 0);
+  cw_pass_fullscreen();
+  cw_pass_bind_target(ctx, nm);
+  cw_pass_use(norm_prog);
+  cw_pass_bind_texture(0, g->gbuf.tex);
+  if (!wg) cw_pass_uniform1i(norm_prog, "u_src", 0);
+  cw_pass_fullscreen();
   cw_pass_bind_target(ctx, tr);
   cw_pass_use(trace_prog);
   cw_pass_bind_texture(0, ctx->depth_tex);
-  cw_pass_bind_texture(1, g->gbuf.tex);
+  cw_pass_bind_texture(1, nm->tex);
   cw_pass_bind_texture(2, g->albedo.tex);
-  cw_pass_bind_texture(3, ctx->src->tex);
+  cw_pass_bind_texture(3, lt->tex);
   if (!wg) {
     cw_pass_uniform1i(trace_prog, "u_depth", 0);
     cw_pass_uniform1i(trace_prog, "u_gbuf", 1);
@@ -455,7 +526,7 @@ static void ssgi_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_bind_target(ctx, dn);
   cw_pass_use(denoise_prog);
   cw_pass_bind_texture(0, tr->tex);
-  cw_pass_bind_texture(1, g->gbuf.tex);
+  cw_pass_bind_texture(1, nm->tex);
   cw_pass_bind_texture(2, ctx->depth_tex);
   if (!wg) {
     cw_pass_uniform1i(denoise_prog, "u_gi", 0);

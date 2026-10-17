@@ -113,38 +113,6 @@ export function giShading({ TSL, THREE, mat, props, sentinel }) {
   })();
 
   gridShading({ TSL, THREE, mat, props, sentinel });
-  gbufferOutput({ TSL, THREE, mat, props, sentinel });
-}
-
-// The screen-space passes' G-buffer (src/gi/ssr.c): the same programs draw
-// the scene a second time into a half-resolution target with giMode.x = 1,
-// and then write what r186's SSR and SSGI examples take from their MRT
-// attachments instead of the lit colour: the view-space normal (after normal
-// maps) octahedral-encoded in r and g, roughness in b, metalness in a; with
-// giMode.x = 2 the diffuse colour times 1 - metalness (SSGI's albedo; alpha 1
-// marks a surface). giMode.x = 0 is the normal
-// draw.
-function gbufferOutput({ TSL, THREE, mat, props, sentinel }) {
-  const { Fn, If, uniform, vec2, vec4, abs, sign, select, float, output, normalView, roughness, metalness, diffuseColor } = TSL;
-  const s = [sentinel(), sentinel(), sentinel(), sentinel()];
-  const mode = uniform(new THREE.Vector4(...s)).setName('giMode');
-  props['ext.giMode'] = { kind: 'vec4', value: s };
-  const before = mat.outputNode; // (a part applied earlier may have set one)
-  mat.outputNode = Fn(() => {
-    const o = vec4(before ?? output).toVar();
-    const m = mode.x.toVar();
-    If(m.greaterThan(0.5), () => {
-      If(m.lessThan(1.5), () => {
-        const n = normalView.normalize().toVar();
-        const p = n.xy.div(abs(n.x).add(abs(n.y)).add(abs(n.z))).toVar();
-        const q = select(n.z.lessThan(0), vec2(float(1).sub(abs(p.y)), float(1).sub(abs(p.x))).mul(vec2(sign(p.x), sign(p.y))), p);
-        o.assign(vec4(q, roughness, metalness));
-      }).Else(() => {
-        o.assign(vec4(diffuseColor.rgb.mul(float(1).sub(metalness)), 1));
-      });
-    });
-    return o;
-  })();
 }
 
 // The light probe grid (LightProbeGrid3D): r186's LightProbeGridNode, which

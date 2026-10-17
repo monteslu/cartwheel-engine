@@ -364,6 +364,11 @@ void cw__gi_fill(t3_extension_ctx *c, void *user) {
   set_slot(c, g, 'A', nb > 0 ? &best[0] : NULL);
   set_slot(c, g, 'B', nb > 1 ? &best[1] : NULL);
   cw__gi_fill_grid(c, g);
+}
+
+/* the G-buffer program's only value (ssr.c) */
+void cw__gi_fill_gbuf(t3_extension_ctx *c, void *user) {
+  gi_tree *g = user;
   float m[4] = { (float)g->mode, 0, 0, 0 };
   t3_extension_set_uniform(c, "giMode", m, 4);
 }

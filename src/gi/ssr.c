@@ -378,9 +378,21 @@ bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, int w, int h, int mode) {
     cw_shading_part(r, "gi", cw__gi_fill, g);
     g->hook_renderer = r;
   }
+  if (g->gbuf_hook != r) {
+    t3_renderer_set_extension(r, "gibuf", cw__gi_fill_gbuf, g);
+    g->gbuf_hook = r;
+  }
   cw__gi_tag(g, &ctx->scene3d->base);
   gb_list hidden = { 0 };
   gb_walk(&ctx->scene3d->base, &hidden);
+  /* every material of the G-buffer draws the lighting-free "gibuf" program (gibuf.mjs); their own
+   * extensions are put back after */
+  char (*saved)[32] = g->mats.count ? cw_alloc((size_t)g->mats.count * 32, CW_MEM_RENDER) : NULL;
+  for (int i = 0; i < g->mats.count; i++) {
+    const char *e = t3_material_get_extension(g->mats.data[i]);
+    snprintf(saved[i], 32, "%s", e ? e : "");
+    t3_material_set_extension(g->mats.data[i], "gibuf");
+  }
   t3_scene *sc = ctx->scene3d;
   t3_texture *bg = sc->background_texture;
   bool had_bg = sc->has_background;
@@ -431,6 +443,8 @@ bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, int w, int h, int mode) {
     t3_renderer_reset_bindings(r);
   }
   g->mode = 0;
+  for (int i = 0; i < g->mats.count; i++) t3_material_set_extension(g->mats.data[i], saved[i][0] ? saved[i] : NULL);
+  cw_free(saved);
   sc->has_background = had_bg;
   if (bg) t3_scene_set_background_texture(sc, bg), t3_release(bg);
   for (int i = 0; i < hidden.count; i++) hidden.data[i].o->visible = true;

@@ -7,3 +7,7 @@ standard+senv+l1101+xgi
 standard+l0001+xcluster_gi
 standard+shadow+senv+l1101
 standard+senv+l1101
+standard+shadow+senv+l1101+xgibuf
+standard+senv+l1101+xgibuf
+standard+l0001+xgibuf
+depth+xgibuf

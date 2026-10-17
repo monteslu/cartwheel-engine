@@ -363,7 +363,7 @@ Screen-space reflections and bounce light are PostProcess settings on top of the
 - **`ssr`**: one mirror ray a pixel is marched across the screen against the depth (r186's first-generation SSR, with its binary refinement), so a polished floor shows the chair standing on it, which a probe captured from elsewhere cannot. Metalness weights it, roughness blurs it, and it is added over the image as r186's example adds it. `ssr_max_distance` is how far a reflection reaches (view units, 1 by default: set it to the room's size), `ssr_thickness` how deep a surface counts as hit, `ssr_quality` the march steps per pixel of the ray. What is off screen cannot be reflected: the probes still cover it.
 - **`ssgi`**: r186's SSILVB (a port of SSRT3): per pixel, a few slices of the depth around it are walked and every newly occluded sector of each slice takes the light of the surface occluding it, giving bounce light and ambient occlusion from what is on screen. It is composited as r186's example does, colour x AO + diffuse colour x bounce light, and denoised over 5 x 5 trace texels with depth- and normal-aware weights (r186 relies on TRAA; with the pipeline's TAA on the slices also rotate frame to frame as r186's do).
 
-Both read a G-buffer the "gi" pass draws after the probes: the scene a second time at half resolution, the gi shading part writing the view normal, roughness and metalness instead of the lit colour (and, for SSGI, a third time for the diffuse colour). Only surfaces with the part (every Standard and Physical material of a tree with a probe, a grid, SSR or SSGI) are in it; anything else is not reflected and gets no bounce light.
+Both read a G-buffer the "gi" pass draws after the probes: the scene a second time at half resolution with a program of its own (the "gibuf" shading part) that writes the view normal, roughness and metalness instead of the lit colour and does no lighting (and, for SSGI, a third time for the diffuse colour). Only surfaces with the part (every Standard and Physical material of a tree with a probe, a grid, SSR or SSGI) are in it; anything else is not reflected and gets no bounce light.
 
 | | Low | Medium | High | Ultra |
 |---|---|---|---|---|
@@ -374,13 +374,13 @@ The cost, GPU ms per frame on an AMD Radeon 890M (integrated) at 1280 x 720, `sa
 
 | Preset | gi pass (probes, grid, G-buffer) | SSR | SSGI | Whole frame |
 |---|---|---|---|---|
-| Low | 0.4 | off | off | 1.7 |
-| Medium | 1.2 | 0.5 | off | 2.5 |
-| High | 1.9 | 1.2 | off | 4.5 |
-| Ultra | 5.7 | 1.4 | 9.3 | 18.3 |
+| Low | 0.3 | off | off | 1.6 |
+| Medium | 0.7 | 0.5 | off | 2.3 |
+| High | 1.4 | 1.2 | off | 4.2 |
+| Ultra | 3.7 | 1.4 | 6.5 | 14.2 |
 | No probes, grid, SSR or SSGI (High) | | | | 1.8 |
 
-The gi pass on High is two 128-pixel probe captures every other frame and the half-resolution G-buffer; Ultra doubles the capture size and budget and draws the G-buffer twice (SSGI needs the diffuse colour). A Vega 8 has about half the 890M's shader rate: expect about twice these numbers, so Low to High fit a 60 Hz frame there and Ultra (SSGI above all) is for discrete GPUs.
+The gi pass on High is two 128-pixel probe captures every other frame and the half-resolution G-buffer; Ultra doubles the capture size and budget and draws the G-buffer twice (SSGI needs the diffuse colour). Most of SSGI's time is the trace's fetches of the lit colour and the normal at the scattered steps, so it reads the colour from a half-resolution copy and the normals from a two-channel one, and its loops have fixed counts the compiler unrolls. A Vega 8 has about half the 890M's shader rate: expect about twice these numbers, so Low to High fit a 60 Hz frame there and Ultra (SSGI above all) is for discrete GPUs.
 
 
 ## Visibility: culling, LOD and impostors
