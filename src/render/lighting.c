@@ -60,6 +60,7 @@ typedef struct lighting {
   int vols_cap;
   t3_texture *light_tex;
   t3_renderer *hooked;
+  int batching; /* the batching last handed to the hooked renderer (-1: none yet) */
   bool marked;            /* materials carry the part */
   bool warned_max;
   float grid_u[4], depth_u[4];
@@ -108,7 +109,8 @@ static lighting *lighting_of(cw_tree *t) {
   L->s = (cw_lighting_settings){ .mode = CW_LIGHTING_FORWARD, .max_lights = 1024, .tile_px = 32, .z_slices = 24,
                                  .max_per_cluster = 64, .cluster_spot_lights = true, .cluster_far = 0,
                                  .light_cutoff = 0.005f, .shadow_atlas = true,
-                                 .shadow_atlas_size = 4096, .shadow_updates_per_frame = 24, .shadow_cache = true };
+                                 .shadow_atlas_size = 4096, .shadow_updates_per_frame = 24, .shadow_cache = true,
+                                 .batching = false };
   L->grid = cw_froxel_grid_new();
   cw_tree_set_slot(t, "lighting", L, lighting_free);
   cw_pipeline_add_pass(cw_pipeline_of(t), &(cw_pass_desc){ .name = "lights", .phase = CW_PHASE_SHADOW, .order = 0,
@@ -165,20 +167,41 @@ static bool lit_type(t3_material_type t) {
  * csm) and not the others, composed with the parts it already has
  * (cartwheel/shading.h); a material with a surface extension of its own
  * (terrain) keeps it alone */
+/* What marking does to a material is a function of its extension and the
+ * parts that are on, so it is remembered: from extension id (with the parts
+ * on) to the id it ends with, and whether it counts. A city's thousands of
+ * materials then cost a lookup each a frame, not a composed name each. */
+typedef struct mark_memo { uint16_t from, to; uint8_t on, counts; } mark_memo;
+static mark_memo memo[64];
+static int memo_n;
+
+static int mark_one(t3_material *mt, bool cluster, bool csm) {
+  uint8_t on = (uint8_t)(cluster | csm << 1);
+  for (int k = 0; k < memo_n; k++)
+    if (memo[k].from == mt->extension && memo[k].on == on && memo[k].to == mt->extension) return memo[k].counts;
+  uint16_t from = mt->extension;
+  int counts = 0;
+  const char *ext = t3_material_get_extension(mt);
+  if (!ext || cw_shading_has(mt, PART) || cw_shading_has(mt, "csm") || cw_shading_has(mt, "gi")) {
+    if (cluster) cw_shading_add(mt, PART);
+    else cw_shading_remove(mt, PART);
+    if (csm) cw_shading_add(mt, "csm");
+    else cw_shading_remove(mt, "csm");
+    counts = cluster || csm;
+  }
+  /* (only a fixed point is remembered: one that marking leaves as it is) */
+  if (mt->extension == from && memo_n < (int)(sizeof memo / sizeof memo[0]))
+    memo[memo_n++] = (mark_memo){ from, from, on, (uint8_t)counts };
+  return counts;
+}
+
 static int mark_materials(t3_object *o, bool cluster, bool csm) {
   int n = 0;
   if (o->type == T3_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_SKINNED_MESH) {
     t3_mesh *m = (t3_mesh *)o;
     for (int i = 0; i < m->material_count; i++) {
       t3_material *mt = m->materials[i];
-      if (!mt || !lit_type(mt->type)) continue;
-      const char *ext = t3_material_get_extension(mt);
-      if (ext && !cw_shading_has(mt, PART) && !cw_shading_has(mt, "csm") && !cw_shading_has(mt, "gi")) continue;
-      if (cluster) cw_shading_add(mt, PART);
-      else cw_shading_remove(mt, PART);
-      if (csm) cw_shading_add(mt, "csm");
-      else cw_shading_remove(mt, "csm");
-      if (cluster || csm) n++;
+      if (mt && lit_type(mt->type)) n += mark_one(mt, cluster, csm);
     }
   }
   for (int i = 0; i < o->child_count; i++) n += mark_materials(o->children[i], cluster, csm);
@@ -298,6 +321,13 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
     cw_shading_part(ctx->renderer, PART, fill_cluster, L);
     cw_shading_part(ctx->renderer, "csm", fill_csm, L);
     L->hooked = ctx->renderer;
+    L->batching = -1;
+  }
+  if (L->batching != (int)L->s.batching) {
+    /* neither hook reads the object beyond receive_shadow, which a batch shares */
+    cw_shading_part_batching(ctx->renderer, PART, L->s.batching);
+    cw_shading_part_batching(ctx->renderer, "csm", L->s.batching);
+    L->batching = L->s.batching;
   }
   if (ctx->scene3d->auto_update) t3_object_update_matrix_world(ctx->scene3d, false);
   /* the cascaded sun: drawn by the csm part, so out of three.c's list */
@@ -482,7 +512,8 @@ static void ls_init(cw_node n, void *data) {
   *s = (cw_lighting_settings){ .mode = CW_LIGHTING_CLUSTERED, .max_lights = 1024, .tile_px = 32, .z_slices = 24,
                                .max_per_cluster = 64, .cluster_spot_lights = true, .cluster_far = 0,
                                .light_cutoff = 0.005f, .shadow_atlas = true,
-                                 .shadow_atlas_size = 4096, .shadow_updates_per_frame = 24, .shadow_cache = true };
+                                 .shadow_atlas_size = 4096, .shadow_updates_per_frame = 24, .shadow_cache = true,
+                                 .batching = false };
 }
 
 static void ls_pre_render(cw_node n, void *data, double alpha) {
@@ -519,6 +550,9 @@ static const cw_prop ls_props[] = {
                       "Atlas faces redrawn a frame at most (an omni light is 6; 0 = no limit)."),
   CW_PROP_FIELD(cw_lighting_settings, shadow_cache, CW_T_BOOL, CW_PROP_DEFAULT,
                 "A tile is redrawn only when its light or a shadow caster in its range changed."),
+  CW_PROP_FIELD(cw_lighting_settings, batching, CW_T_BOOL, CW_PROP_DEFAULT,
+                "Meshes sharing geometry and material are one instanced draw under clustered lights and cascades "
+                "(off, the default: one draw a mesh, front to back, as three.c draws any extension material)."),
   CW_PROP_END,
 };
 

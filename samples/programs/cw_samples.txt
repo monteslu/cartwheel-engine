@@ -47,3 +47,9 @@ standard+instbig+shadow+icol+l1001
 standard+instbig+shadow+l1241+s024+xcluster
 standard+instbig+shadow+icol+l1241+s024+xcluster
 standard+vcol+shadow+l1001
+standard+fog+instbig+l0001+xcluster_csm
+standard+fog+l0001+xcluster_csm
+standard+fog+trans+l0001+xcluster_csm
+standard+fog+instbig+l1001+xcluster
+standard+fog+l1001+xcluster
+standard+fog+trans+l1001+xcluster

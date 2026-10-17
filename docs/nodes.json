@@ -1872,6 +1872,14 @@
      "stored": true,
      "readonly": false,
      "doc": "A tile is redrawn only when its light or a shadow caster in its range changed."
+    },
+    {
+     "name": "batching",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Meshes sharing geometry and material are one instanced draw under clustered lights and cascades (off, the default: one draw a mesh, front to back, as three.c draws any extension material)."
     }
    ]
   },

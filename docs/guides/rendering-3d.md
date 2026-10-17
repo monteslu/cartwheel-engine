@@ -175,6 +175,10 @@ Each cascade is at most 2048 (the four share one map twice that wide), so Ultra 
 
 A redrawn atlas tile or cascade is a shadow caster pass over the scene. On the GPU, a shadowed light costs 20 depth reads where its cell is drawn, the sun 10 compare samples per pixel. On WebGPU the atlas keeps an R32Float copy beside its depth (compatibility mode reads depth only through a comparison sampler, which the light loop cannot use), and a redrawn tile is copied into it.
 
+A mesh whose material carries the cluster or csm part is its own draw by default, so three.c's auto-instancing (same geometry, same material) stops for it. `LightingSettings.batching` turns it back on: both parts' hooks fill only per-frame values (`cw_shading_part_batching`, cartwheel/shading.h), so one instanced draw can carry a whole batch. It is off by default because, measured, it does not pay here. In `vis_city_lights` (about 4500 meshes, 64 clustered lamps and four cascades, 1080p, `tests/vis-city-batch.mjs`), batching gives the same picture with 19 draws instead of 891. Submitting the draws costs about the same CPU either way (three.c's GL draws are cheap). The scene pass costs 0.9 ms more GPU because instances lose the front-to-back order and the clustered shading runs on hidden pixels. Native frame time went from 18.3 to 22.1 ms, and Chromium from 34.2 to 39.3 ms. Turn batching on for a frame bound by draw submission, with many small meshes and cheap overdraw.
+
+The same city shows where a clustered frame's CPU time goes. Cascades the moving camera redraws every frame are caster passes over every mesh (`lighting.csm`, 8 to 14 ms a frame on the 890M under load). Binning the lamps takes about 1 ms (`froxel.bin`). Keeping every material's parts current takes 0.5 to 1 ms for 4500 meshes (`lighting.materials`), now a lookup per material.
+
 Light probes, reflection probes and screen-space light are in [Reflections and bounce light](#reflections-and-bounce-light).
 
 ## Graphics settings and presets

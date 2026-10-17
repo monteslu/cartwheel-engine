@@ -29,9 +29,11 @@
  * water), then lighting (cluster), then indirect light (gi); any other part
  * between lighting and indirect, by name.
  *
- * Cost: none per part beyond its own hook. Note that three.c never
- * auto-instances a mesh whose material carries an extension: each such mesh
- * is its own draw. */
+ * Cost: none per part beyond its own hook. three.c does not auto-instance a
+ * mesh whose material carries an extension (each such mesh is its own draw)
+ * unless every part of it says its hook reads nothing of the object
+ * (cw_shading_part_batching): then meshes sharing geometry and material are
+ * one instanced draw, as plain ones are. */
 #ifndef CW_SHADING_H
 #define CW_SHADING_H
 
@@ -49,6 +51,11 @@ enum { CW_SHADING_MAX_PARTS = 4 };
  * part, alone or composed. fill NULL removes it. Also installs every composed
  * extension that includes the part. */
 void cw_shading_part(t3_renderer *r, const char *name, t3_extension_fill fill, void *user);
+/* Part `name`'s hook on r reads nothing of the object it fills for (only
+ * per-frame values, or ones a batch keeps equal: receive_shadow, render
+ * order), so meshes whose material carries it may be auto-instanced. A
+ * composed extension batches when all of its parts do. Off by default. */
+void cw_shading_part_batching(t3_renderer *r, const char *name, bool on);
 /* Forget a renderer (before t3_renderer_destroy). */
 void cw_shading_forget(t3_renderer *r);
 

@@ -29,6 +29,14 @@
  *   naive  `check` with occlusion_guard off: plain one-frame-late queries,
  *          which pop when the camera turns or passes doorways (the gate's
  *          control)
+ *   lights `full` under clustered lights and cascades (cartwheel/lighting.h):
+ *          a LightingSettings node (World/Lighting), an omni light in each
+ *          street lamp along the walk's street (city.lights of them) and the
+ *          sun casting four cascades, so every material carries the cluster
+ *          and csm parts. Each mesh is its own draw (LightingSettings.batching
+ *          is off by default); `set /root/World/Lighting batching true`
+ *          instances the city's shared boxes as they are without lights
+ *          (tests/vis-city-batch.mjs)
  * VIS_NO_OCC / VIS_NO_PORTALS / VIS_NO_FRUSTUM switch one culler off (to
  * bisect a pop); VIS_LOG prints the frames that differ; natively
  * VIS_DUMP=<tick> writes both images to out/vis_a.ppm and out/vis_b.ppm.
@@ -41,8 +49,9 @@
  * city.tick, and timings (reported, never compared): city.frame_ms,
  * city.cpu_ms (update start to a GPU sync after the frame), city.cull_ms,
  * city.draws_avg, city.visible_avg (after 60 warm-up frames), city.tris_k,
- * city.gpu_ms (the pipeline's timed passes). The vis_city_check and
- * vis_city_off builds default to VIS_MODE=check and off. */
+ * city.gpu_ms (the pipeline's timed passes). The vis_city_check,
+ * vis_city_off and vis_city_lights builds default to VIS_MODE=check, off and
+ * lights. */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -75,7 +84,8 @@ static float frame_ms, cpu_ms, cull_ms, draws_avg, visible_avg, tris_k, gpu_ms;
 static double sum_draws, sum_visible;
 static double t_update, t_last, sum_frame, sum_cpu;
 static int timed;
-static bool check, no_ranges;
+static bool check, no_ranges, lights;
+static int32_t n_lights;
 static cw_tree *ref_tree;
 static cw_node ref_cam;
 static cw_rt *ref_rt;
@@ -201,6 +211,18 @@ static void build_city(void) {
         cw_node_set(bulb, "emissive", cw_val_color(1, 0.78741f, 0.31855f, 1));
         if (!no_ranges) cw_node_set(pole, "visibility_range", cw_val_float(150));
         if (!no_ranges) cw_node_set(bulb, "visibility_range", cw_val_float(150));
+        if (lights && fabsf(lx) < STREET) {
+          /* the walk's street: a lamp's light (clustered) */
+          char nm[16];
+          snprintf(nm, sizeof nm, "Lamp%d", (int)n_lights);
+          cw_node l = cw_node_new("OmniLight3D", nm);
+          cw_node_set(l, "color", cw_val_color(1, 0.78741f, 0.31855f, 1));
+          cw_node_set(l, "energy", cw_val_float(12));
+          cw_node_set(l, "range", cw_val_float(14));
+          cw_node_add_child(world, l);
+          cw_node3d_set_position(l, (t3_vec3){ lx, 4.6f, lz });
+          n_lights++;
+        }
       }
       /* trees along the block's west street */
       for (int k = 0; k < 3; k++) {
@@ -262,6 +284,13 @@ static cw_node build_world(cw_tree *t, cw_node *cam_out, bool ranges) {
   cw_node sun = cw_node_new("DirectionalLight3D", "Sun");
   cw_node3d_set_rotation(sun, (t3_vec3){ -0.9f, 0.7f, 0 });
   cw_node_set(sun, "energy", cw_val_float(4.39823));
+  if (lights) {
+    cw_node_set(sun, "shadow", cw_val_bool(true));
+    cw_node_set(sun, "shadow_cascades", cw_val_int(4));
+    cw_node_set(sun, "shadow_distance", cw_val_float(200));
+    cw_node ls = cw_node_new("LightingSettings", "Lighting");
+    cw_node_add_child(world, ls);
+  }
   cw_node_add_child(world, sun);
   cw_node c = cw_node_new("Camera3D", "Camera");
   cw_node_set(c, "fov", cw_val_float(65));
@@ -310,8 +339,10 @@ static void init(void *u) {
   cw_debug_f32("city.visible_avg", &visible_avg);
   cw_debug_f32("city.tris_k", &tris_k);
   cw_debug_f32("city.gpu_ms", &gpu_ms);
+  cw_debug_i32("city.lights", &n_lights);
   const char *m = getenv("VIS_MODE");
   m = m ? m : VIS_DEFAULT_MODE;
+  lights = !strcmp(m, "lights");
   bool off = !strcmp(m, "off");
   check = !strcmp(m, "check") || !strcmp(m, "naive");
   bool cull = !strcmp(m, "cull") || check;
