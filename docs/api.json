@@ -1368,6 +1368,12 @@
      "inline": false
     },
     {
+     "name": "cw_cloth_step_many",
+     "signature": "void cw_cloth_step_many(const cw_cloth *cloths, int count, float dt)",
+     "doc": "Steps several cloths and ropes of one world as calling cw_cloth_step for each, in this order, would,\nwith the same bits, but the pool shares the work: one job per cloth, each running its substeps on\none thread, instead of each cloth fanning out alone. A scene of flags, capes and banners (each a\nfew thousand particles at most) wants this; one big cloth is no faster. Impulses on dynamic\nbodies (attachments, two_way) are applied afterwards, in list order. The Cloth3D and Rope3D\nnodes of a tree already step through it.",
+     "inline": false
+    },
+    {
      "name": "cw_cloth_pin",
      "signature": "void cw_cloth_pin(cw_cloth c, int vertex, bool pinned, t3_vec3 target)",
      "doc": "Pins (inverse mass 0) or frees a vertex. A pinned vertex moves to its\ntarget over the next step (blended across the substeps).",
@@ -1539,7 +1545,7 @@
     {
      "name": "cw_cloth_stats",
      "doc": "",
-     "decl": "typedef struct cw_cloth_stats {\n  int32_t vertices, triangles, constraints, groups, tethers, shapes; /* shapes: gathered in the last step */\n  int32_t steps;\n  float max_stretch;           /* the most stretched edge: its length over its rest length, minus 1 (0.01 = 1%) */\n  float mean_stretch;          /* the same averaged over every edge (compressed edges count as 0) */\n  float kinetic_energy;        /* J, of the free particles */\n  float step_us;               /* the last step's wall time, microseconds (not simulation state) */\n} cw_cloth_stats;"
+     "decl": "typedef struct cw_cloth_stats {\n  int32_t vertices, triangles, constraints, groups, tethers, shapes; /* shapes: gathered in the last step */\n  int32_t steps;\n  float max_stretch;           /* the most stretched edge: its length over its rest length, minus 1 (0.01 = 1%) */\n  float mean_stretch;          /* the same averaged over every edge (compressed edges count as 0) */\n  float kinetic_energy;        /* J, of the free particles */\n  float step_us;               /* the time the last step's own work took (all its threads' share), microseconds; not simulation state */\n} cw_cloth_stats;"
     },
     {
      "name": "cw_rope_def",

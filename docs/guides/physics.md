@@ -72,6 +72,8 @@ cw_world3d_step(w, dt);
 cw_cloth_step(cloth, dt);
 ```
 
+A scene with several cloths and ropes steps them together with [cw_cloth_step_many](api:cw_cloth_step_many): the same bits as stepping each in turn, but the job pool takes one cloth per job instead of each cloth fanning out on its own. The `Cloth3D` and `Rope3D` nodes of a tree always do this.
+
 - **Pins.** A vertex with inverse mass 0 is pinned ([cw_cloth_pin](api:cw_cloth_pin)); [cw_cloth_set_pin_target](api:cw_cloth_set_pin_target) moves it, blended across the next step's substeps, so a flag on a moving pole or a cape on a running character follows smoothly.
 - **Bodies.** [cw_cloth_attach_body](api:cw_cloth_attach_body) ties a vertex to a point on a body. A dynamic body feels the pull: after the step the cloth applies one impulse that brings the body back toward where the rope wants it and, while the rope is taut, takes out the body's speed away from it. A 20 kg crate hangs from a rope with a pull equal to its weight ([cw_cloth_attachment_force](api:cw_cloth_attachment_force)) and swings when shoved; a rope between two bodies tows one behind the other at the rope's length.
 - **Skin.** With `max_distance` in the def, [cw_cloth_set_skin_targets](api:cw_cloth_set_skin_targets) gives each vertex a target (the rest shape moved by a bone or node each tick) it may not stray farther from: a cape stays near the back it is worn on.
@@ -93,9 +95,24 @@ The node types do all of the above in a scene. [Cloth3D](node:Cloth3D) hangs a g
 
 ### Cost
 
-The work is the substeps times the particles and constraints: a grid has about five distance constraints per particle. The reference machine is a Ryzen AI 9 HX 370, whose iGPU is the 890M, measured nearly idle. One step of a 64 x 64 cloth (4096 particles, 19 970 constraints) at 8 substeps took 1.1 to 1.35 ms on one thread, which is about 270 to 330 microseconds per 1000 particles, and 0.5 to 0.8 ms on the job pool. The cost scales linearly with substeps. `unit-cloth` prints these numbers every run (`cloth perf`). Cloths of 1024 particles or more split each substep into two phases of parallel jobs; smaller ones run on the calling thread. A Vega 8 machine (a Ryzen 3000 to 5000 APU) is about 1.5 to 2 times slower per core: plan on about 0.5 ms per 1000 particles per step on one thread there.
+Microseconds per fixed tick at 8 substeps, wind on, measured natively on the reference machine (Ryzen AI 9 HX 370, the 890M's host, 24 threads) at a load average of about 10, so an idle machine is a little faster. `unit-cloth` prints them every run (`cloth cost`). Each is the median of three runs, each run the best of three blocks of 60 ticks.
 
-What that means in a scene: the `cloth_demo` flag (425 particles), cape (209) and rope (21) together cost about 0.35 ms per tick natively and 0.5 to 0.7 ms in a cart on romdev, averaged over 300 ticks (the `cloth.us` debug field). Keep cosmetic cloth around 32 x 32 or smaller and set `quality_scaled`: the Low preset halves its substeps, and its cost with them. Self-collision roughly doubles the per-particle pass. Collision costs per particle for each shape the cloth's bounds reach, and a particle skips any shape whose bounding sphere it is outside.
+| Cloths | Particles each | One thread | Pool, each stepped alone | Pool, `cw_cloth_step_many` |
+|---|---|---|---|---|
+| 1 | 16 x 16 (256) | 68 | 68 | 68 |
+| 8 | 16 x 16 | 540 | 540 | 190 |
+| 1 | 32 x 32 (1024) | 290 | 290 | 300 |
+| 8 | 32 x 32 | 2400 | 2480 | 760 |
+| 1 | 64 x 64 (4096) | 1220 | 540 | 560 |
+| 8 | 64 x 64 | 9700 | 4600 | 2700 |
+
+What this says:
+
+- One cloth costs about 280 microseconds per 1000 particles at 8 substeps on one thread, and the cost scales with substeps and particles. Under 1024 particles the pool is not used at all; a single cloth gains from it only from 64 x 64 up (1220 to 540).
+- Stepping eight cloths one at a time on the pool is no faster than one thread, because each is too small to split. Giving the pool one cloth per job brings eight 32 x 32 flags from 2400 to 760 microseconds, about 2.5 times the cost of one. That is the pool's wake-up cost, not the solver's.
+- **What a game should budget:** a scene with a flag, a cape and a few banners (eight cloths of 16 x 16 to 32 x 32) takes 0.2 to 0.8 ms of a 16.7 ms tick on this machine, spread over the pool. A single 64 x 64 curtain takes about 0.55 ms. Size cosmetic cloth to what it shows: a 16 x 16 cape is plenty on a character seen from a few metres. Halve the substeps (4) for background cloth; mark it `quality_scaled` and the Low preset does it for you.
+- On a Vega 8 machine (4 cores, each about 1.5 to 2 times slower per core), expect the one-thread column times 1.5 to 2, divided by about 3 for a batch of eight: roughly 0.4 ms for eight 16 x 16 cloths and 1.5 ms for eight 32 x 32. Budget two or three flags and a cape there, or lower the substeps.
+- Self-collision roughly doubles a cloth's per-particle pass. Collision costs per particle for each shape the cloth's bounds reach, and a particle outside a shape's bounding sphere skips it. The nodes' `cloth.us` readings in `cloth_demo` (flag 425 particles, cape 209, rope 21) are the cloths' own work: 0.3 to 0.4 ms per tick in total, natively and in carts.
 
 ### Determinism and rollback
 

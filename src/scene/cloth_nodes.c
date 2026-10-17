@@ -47,8 +47,12 @@ typedef struct cloth_tree {
 } cloth_tree;
 
 static const cw_node_type *cloth_t, *rope_t;
-static void cloth_tick(cw_node n, void *d, float dt);
-static void rope_tick(cw_node n, void *d, float dt);
+/* each node's tick has two halves around one shared step: before (build, pins, skin targets; returns
+ * the cloth to step, or null) and after (hashes and readings) */
+static cw_cloth cloth_before(cw_node n, void *d, float dt);
+static void cloth_after(void *d);
+static cw_cloth rope_before(cw_node n, void *d, float dt);
+static void rope_after(void *d);
 
 static void ctree_free(void *p) {
   cloth_tree *ct = p;
@@ -61,12 +65,32 @@ static void hook(cw_tree *t, double dt, void *u) {
   if (cw_tree_paused(t)) return;
   cloth_tree *ct = cw_tree_slot(t, "cloth");
   if (!ct) return;
-  for (int i = 0; i < ct->nodes.count; i++) {
+  /* every cloth and rope of the tree steps in one fan-out (cw_cloth_step_many) */
+  int count = ct->nodes.count;
+  if (count <= 0) return;
+  cw_cloth *cloths = cw_alloc(sizeof(cw_cloth) * (size_t)count, CW_MEM_PHYSICS);
+  void **datas = cw_alloc(sizeof(void *) * (size_t)count, CW_MEM_PHYSICS);
+  uint8_t *kind = cw_calloc((size_t)count, 1, CW_MEM_PHYSICS);
+  int m = 0;
+  for (int i = 0; i < count; i++) {
     cw_node n = ct->nodes.data[i];
     void *d;
-    if ((d = cw_node_data_t(n, cloth_t))) cloth_tick(n, d, (float)dt);
-    else if ((d = cw_node_data_t(n, rope_t))) rope_tick(n, d, (float)dt);
+    cw_cloth c = { 0 };
+    if ((d = cw_node_data_t(n, cloth_t))) c = cloth_before(n, d, (float)dt), kind[m] = 1;
+    else if ((d = cw_node_data_t(n, rope_t))) c = rope_before(n, d, (float)dt), kind[m] = 2;
+    else continue;
+    datas[m] = d;
+    cloths[m++] = c;
   }
+  int k = 0;
+  for (int i = 0; i < m; i++)
+    if (cw_cloth_valid(cloths[i])) cloths[k++] = cloths[i];
+  cw_cloth_step_many(cloths, k, (float)dt);
+  for (int i = 0; i < m; i++) {
+    if (kind[i] == 1) cloth_after(datas[i]);
+    else rope_after(datas[i]);
+  }
+  cw_free(cloths), cw_free(datas), cw_free(kind);
 }
 
 static void tree_add(cw_node n) {
@@ -304,10 +328,11 @@ static void cloth_build(cw_node n, cloth3d *d) {
   t3_object_add(&cw_render3d_scene(t)->base, d->mesh);
 }
 
-static void cloth_tick(cw_node n, void *data, float dt) {
+static cw_cloth cloth_before(cw_node n, void *data, float dt) {
+  (void)dt;
   cloth3d *d = data;
   if (d->dirty || !cw_cloth_valid(d->cloth)) cloth_build(n, d);
-  if (!cw_cloth_valid(d->cloth)) return;
+  if (!cw_cloth_valid(d->cloth)) return (cw_cloth){ 0 };
   int cnt = cw_cloth_vertex_count(d->cloth);
   /* the frame node's transform: a body node's is its body's, written after the world step */
   bool follow = !cw_body3d_valid(d->fr.body);
@@ -319,8 +344,12 @@ static void cloth_tick(cw_node n, void *data, float dt) {
     }
     if (d->skin_distance > 0) cw_cloth_set_skin_targets(d->cloth, d->targets);
   }
-  cw_cloth_step(d->cloth, dt);
-  d->hash = (int32_t)cw_cloth_hash(d->cloth);
+  return d->cloth;
+}
+
+static void cloth_after(void *data) {
+  cloth3d *d = data;
+  if (cw_cloth_valid(d->cloth)) d->hash = (int32_t)cw_cloth_hash(d->cloth);
 }
 
 static void cloth_pre_render(cw_node n, void *data, double alpha) {
@@ -560,7 +589,8 @@ static void rope_build(cw_node n, rope3d *d) {
   t3_object_add(&cw_render3d_scene(t)->base, d->mesh);
 }
 
-static void rope_tick(cw_node n, void *data, float dt) {
+static cw_cloth rope_before(cw_node n, void *data, float dt) {
+  (void)dt;
   rope3d *d = data;
   bool built = d->mode == MODE_LINKS ? d->nlinks > 0 : cw_cloth_valid(d->rope);
   if (d->dirty || !built) rope_build(n, d);
@@ -571,18 +601,23 @@ static void rope_tick(cw_node n, void *data, float dt) {
       h = cw_hash32(&x, sizeof x, h);
     }
     d->hash = (int32_t)h;
-    return;
+    return (cw_cloth){ 0 };
   }
-  if (!cw_cloth_valid(d->rope)) return;
+  if (!cw_cloth_valid(d->rope)) return (cw_cloth){ 0 };
   int cnt = cw_cloth_vertex_count(d->rope);
   bool sa = d->start_attach && *d->start_attach, ea = d->end_attach && *d->end_attach;
   if (!cw_body3d_valid(d->fs.body) && (sa || d->pin_start))
     cw_cloth_set_pin_target(d->rope, 0, mat_point(cw_node3d_global_transform(d->fs.node), d->start_local));
   if (!cw_body3d_valid(d->fe.body) && (ea || d->pin_end))
     cw_cloth_set_pin_target(d->rope, cnt - 1, mat_point(cw_node3d_global_transform(d->fe.node), d->end_local));
-  cw_cloth_step(d->rope, dt);
+  return d->rope;
+}
+
+static void rope_after(void *data) {
+  rope3d *d = data;
+  if (d->mode == MODE_LINKS || !cw_cloth_valid(d->rope)) return;
   d->hash = (int32_t)cw_cloth_hash(d->rope);
-  d->tension = cw_cloth_attachment_force(d->rope, cnt - 1);
+  d->tension = cw_cloth_attachment_force(d->rope, cw_cloth_vertex_count(d->rope) - 1);
 }
 
 static void rope_pre_render(cw_node n, void *data, double alpha) {

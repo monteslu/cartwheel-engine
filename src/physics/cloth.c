@@ -129,6 +129,8 @@ typedef struct cw__cloth {
   float *tlen;
   int *tether_of;        /* per particle, its tether, -1 */
   bool tethers_dirty;
+  bool in_batch;           /* listed in the cw_cloth_step_many call under way */
+  bool inline_run;         /* steps on one thread: its cloth is one job of a batch */
   /* anchor-to-anchor tethers between body attachments (solved serially) */
   int natether;
   int32_t *av, *aa;
@@ -835,7 +837,7 @@ typedef struct stepctx {
 /* small cloths (and workers == 1) run on the calling thread: fanning out costs more than it saves */
 static void run(cw__cloth *c, int count, cw_range_fn fn, void *ctx) {
   if (count <= 0) return;
-  if (c->def.workers == 1 || c->n < 1024 || count == 1) fn(0, count, 0, ctx);
+  if (c->def.workers == 1 || c->inline_run || c->n < 1024 || count == 1) fn(0, count, 0, ctx);
   else cw_parallel_for(count, 1, fn, ctx);
 }
 
@@ -1335,11 +1337,26 @@ static void normals_range(int begin, int end, int worker, void *u) {
   compute_normals(c, c->x, c->nrm, begin, end);
 }
 
-void cw_cloth_step(cw_cloth h, float dt) {
-  CW_PROFILE_SCOPE("cloth.step");
-  cw__cloth *c = rec(h);
-  if (!c || dt <= 0) return;
-  if (!cw_world3d_valid(c->world)) return;
+/* One step in four pieces, so a scene's cloths can share the pool (cw_cloth_step_many):
+ *   prepare  serial: tethers, quality, the shapes near the cloth (a world query)
+ *   body     touches only this cloth and reads body poses: any thread, any order
+ *   finish   serial, in cloth order: impulses on dynamic bodies (they read and change velocities)
+ *   tail     this cloth only: reached targets and the hash
+ * Run in this order for each cloth in turn (cw_cloth_step), or each piece across all of them, the
+ * bits are the same: no piece reads what another cloth's piece writes. */
+typedef struct stepjob {
+  cw__cloth *c;
+  stepctx s;
+  float dt;
+  int S;
+  bool self;
+  double work; /* seconds this cloth's own pieces took (not the batch's wall time) */
+} stepjob;
+
+static bool step_prepare(cw__cloth *c, float dt, stepjob *j) {
+  if (!c || dt <= 0) return false;
+  if (!cw_world3d_valid(c->world)) return false;
+  j->c = c, j->dt = dt;
   double t0 = now_s();
   if (c->tethers_dirty) build_tethers(c);
   int S = c->def.substeps;
@@ -1348,9 +1365,25 @@ void cw_cloth_step(cw_cloth h, float dt) {
     S = S > 1 ? S / 2 : 1;
     self = false;
   }
+  j->S = S, j->self = self;
   memcpy(c->xt, c->x, sizeof(V) * (size_t)c->n);
   /* the shapes near the cloth, sorted by id (the query sorts) */
   gather_shapes(c, dt);
+  j->s = (stepctx){ .c = c, .h = dt / (float)S, .inv_h = (float)S / dt };
+  t3_vec3 g = cw_world3d_gravity(c->world);
+  j->s.g = vmul(g, c->gscale);
+  j->s.damp = 1 - c->def.damping * j->s.h;
+  if (j->s.damp < 0) j->s.damp = 0;
+  j->work = now_s() - t0;
+  return true;
+}
+
+static void step_body(stepjob *j) {
+  double t0 = now_s();
+  cw__cloth *c = j->c;
+  stepctx s = j->s;
+  float dt = j->dt;
+  int S = j->S;
   if (c->ntri) {
     normctx nc = { c };
     run(c, c->n, normals_range, &nc);
@@ -1358,7 +1391,7 @@ void cw_cloth_step(cw_cloth h, float dt) {
   if (c->def.two_way)
     for (int i = 0; i < c->n; i++) c->coll[i] = -1, c->coll_d[i] = (V){ 0, 0, 0 };
   selfgrid sg = { 0 };
-  if (self && c->def.thickness > 0) {
+  if (j->self && c->def.thickness > 0) {
     float vmax = 0;
     for (int i = 0; i < c->n; i++) {
       float s2 = vdot(c->v[i], c->v[i]);
@@ -1366,10 +1399,6 @@ void cw_cloth_step(cw_cloth h, float dt) {
     }
     self_build(c, &sg, 2 * c->def.thickness + sqrtf(vmax) * dt);
   }
-  stepctx s = { .c = c, .h = dt / (float)S, .inv_h = (float)S / dt };
-  t3_vec3 g = cw_world3d_gravity(c->world);
-  s.g = vmul(g, c->gscale);
-  s.damp = 1 - c->def.damping * s.h;
   if (c->drag != 0 || c->lift != 0) run(c, c->n, wind_range, &s);
   else memset(c->wv, 0, sizeof(V) * (size_t)c->n);
   {
@@ -1379,7 +1408,6 @@ void cw_cloth_step(cw_cloth h, float dt) {
       c->cinv[k] = ws > 0 ? 1 / ws : 0;
     }
   }
-  if (s.damp < 0) s.damp = 0;
   for (int sub = 0; sub < S; sub++) {
     s.prev_t = (float)sub / (float)S;
     s.sub_t = (float)(sub + 1) / (float)S;
@@ -1405,6 +1433,13 @@ void cw_cloth_step(cw_cloth h, float dt) {
     after_solve_attached(c, s.sub_t);
   }
   self_free(&sg);
+  j->work += now_s() - t0;
+}
+
+static void step_finish(stepjob *j) {
+  double t0 = now_s();
+  cw__cloth *c = j->c;
+  float dt = j->dt;
   finish_attached(c, dt);
   /* collisions pushed dynamic bodies: one impulse per particle, in particle order */
   if (c->def.two_way)
@@ -1415,16 +1450,90 @@ void cw_cloth_step(cw_cloth h, float dt) {
       b3Vec3 jb = { J.x, J.y, J.z };
       b3Body_ApplyLinearImpulse(sh->body, jb, (b3Pos){ c->x[i].x, c->x[i].y, c->x[i].z }, true);
     }
+  j->work += now_s() - t0;
+}
+
+static void step_tail(stepjob *j) {
+  double t0 = now_s();
+  cw__cloth *c = j->c;
   /* targets reached: the next step starts from them */
   memcpy(c->pin_from, c->pin_to, sizeof(V) * (size_t)c->n);
   if (c->skin_set) memcpy(c->skin_from, c->skin_to, sizeof(V) * (size_t)c->n);
   c->steps++;
-  c->time = (float)c->steps * dt;
+  c->time = (float)c->steps * j->dt;
   uint32_t hh = c->hash;
   hh = fold(hh, c->x, (size_t)c->n * 3);
   hh = fold(hh, c->v, (size_t)c->n * 3);
   c->hash = hh;
-  c->step_us = (float)((now_s() - t0) * 1e6);
+  c->step_us = (float)((j->work + now_s() - t0) * 1e6);
+}
+
+void cw_cloth_step(cw_cloth h, float dt) {
+  CW_PROFILE_SCOPE("cloth.step");
+  stepjob j;
+  if (!step_prepare(rec(h), dt, &j)) return;
+  step_body(&j);
+  step_finish(&j);
+  step_tail(&j);
+}
+
+typedef struct batch {
+  stepjob *jobs;
+} batch;
+
+static void batch_range(int begin, int end, int worker, void *u) {
+  (void)worker;
+  batch *b = u;
+  for (int i = begin; i < end; i++) {
+    stepjob *j = &b->jobs[i];
+    CW_PROFILE_SCOPE("cloth.step");
+    step_body(j);
+  }
+}
+
+void cw_cloth_step_many(const cw_cloth *cloths, int count, float dt) {
+  if (!cloths || count <= 0) return;
+  if (count == 1) {
+    cw_cloth_step(cloths[0], dt);
+    return;
+  }
+  stepjob *jobs = cw_alloc(sizeof(stepjob) * (size_t)count, CW_MEM_PHYSICS);
+  int n = 0, particles = 0;
+  bool pool_ok = true; /* a cloth made with workers = 1 keeps the whole batch on this thread */
+  bool dup = false;
+  for (int i = 0; i < count && !dup; i++) {
+    cw__cloth *c = rec(cloths[i]);
+    if (!c) continue;
+    if (c->in_batch) dup = true;
+    c->in_batch = true;
+  }
+  for (int i = 0; i < count; i++) {
+    cw__cloth *c = rec(cloths[i]);
+    if (c) c->in_batch = false;
+  }
+  if (dup) { /* a cloth listed twice steps twice, in order: one at a time */
+    cw_free(jobs);
+    for (int i = 0; i < count; i++) cw_cloth_step(cloths[i], dt);
+    return;
+  }
+  for (int i = 0; i < count; i++) {
+    cw__cloth *c = rec(cloths[i]);
+    if (!step_prepare(c, dt, &jobs[n])) continue;
+    particles += c->n;
+    if (c->def.workers == 1) pool_ok = false;
+    n++;
+  }
+  /* one job per cloth: each runs its own substeps on one thread (a cloth's own fan-out is off
+   * while the batch runs). Too little work to hand out runs here, in order. */
+  bool fan = pool_ok && n > 1 && particles >= 256 && cw_jobs_thread_count() > 1;
+  for (int i = 0; i < n; i++) jobs[i].c->inline_run = fan;
+  batch b = { jobs };
+  if (fan) cw_parallel_for(n, 1, batch_range, &b);
+  else batch_range(0, n, 0, &b);
+  for (int i = 0; i < n; i++) step_finish(&jobs[i]);
+  for (int i = 0; i < n; i++) step_tail(&jobs[i]); /* a hash each: too little to hand out */
+  for (int i = 0; i < n; i++) jobs[i].c->inline_run = false;
+  cw_free(jobs);
 }
 
 /* ── reading ──────────────────────────────────────────────────────────── */

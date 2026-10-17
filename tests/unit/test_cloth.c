@@ -511,34 +511,119 @@ static void test_nodes(void) {
   cw_tree_free(t);
 }
 
-/* 64 x 64 at 8 substeps: microseconds per step (logged, not compared) */
-#ifndef CLOCK_THREAD_CPUTIME_ID /* wasi */
-#define CLOCK_THREAD_CPUTIME_ID CLOCK_MONOTONIC
-#endif
-static void perf_run(int workers) {
+/* cw_cloth_step_many steps what a loop of cw_cloth_step steps, bit for bit: a flag, a rope holding a
+ * crate, a rope towing a second crate through the first's cloth-pushed ground, and a two-way cloth
+ * on a falling ball (impulses on dynamic bodies are applied in list order either way).
+ * Control: one tick fewer must change the hashes. Nothing here folds into unit.checksum. */
+static void scene_hashes(bool many, int ticks, uint32_t *out, int *nout, float *bodies) {
   cw_world3d w = world();
-  cw_cloth c = make_flag(w, workers, 1.02f, 64);
-  step(w, c, 30);
-  struct timespec t0, t1, c0, c1;
-  clock_gettime(CLOCK_MONOTONIC, &t0);
-  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &c0);
-  step(w, c, 60);
-  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &c1);
-  clock_gettime(CLOCK_MONOTONIC, &t1);
-  double us = ((double)(t1.tv_sec - t0.tv_sec) + (double)(t1.tv_nsec - t0.tv_nsec) * 1e-9) * 1e6 / 60;
-  double cpu = ((double)(c1.tv_sec - c0.tv_sec) + (double)(c1.tv_nsec - c0.tv_nsec) * 1e-9) * 1e6 / 60;
-  cw_cloth_stats st = cw_cloth_stats_get(c);
-  cw_info("cloth perf: 64x64 (%d particles, %d constraints, %d groups), 8 substeps, %s: %.0f us/step wall, %.0f us on the calling thread's CPU",
-          st.vertices, st.constraints, st.groups, workers == 1 ? "1 thread" : "the job pool", us, cpu);
-  CHECK(st.vertices == 4096);
+  static_box(w, (t3_vec3){ 0, -10.5f, 0 }, (t3_vec3){ 20, 0.5f, 5 });
+  cw_cloth cl[4];
+  cl[0] = make_flag(w, 0, 1.02f, 32);
+  cw_rope_def rd = cw_rope_default_def();
+  rd.start = (t3_vec3){ 4, 5, 0 }, rd.end = (t3_vec3){ 4, 2, 0 }, rd.segments = 16, rd.mass = 0.5f;
+  cl[1] = cw_rope_create(w, &rd);
+  cw_body3d b1 = crate(w, (t3_vec3){ 4, 1.75f, 0 }, 20);
+  cw_cloth_attach_body(cl[1], 16, b1, (t3_vec3){ 0, 0.25f, 0 });
+  rd.start = (t3_vec3){ 6, 5, 0 }, rd.end = (t3_vec3){ 6, 2, 0 };
+  cl[2] = cw_rope_create(w, &rd);
+  cw_body3d b2 = crate(w, (t3_vec3){ 6, 1.75f, 0 }, 10);
+  cw_cloth_attach_body(cl[2], 16, b2, (t3_vec3){ 0, 0.25f, 0 });
+  cw_cloth_def d = cw_cloth_default_def();
+  d.two_way = true;
+  d.mass = 0.5f;
+  cl[3] = cw_cloth_create_grid(w, &d, 24, 24, (t3_vec3){ 7, 3, -1 }, (t3_vec3){ 2, 0, 0 }, (t3_vec3){ 0, 0, 2 });
+  cw_body3d_def bd = cw_body3d_default_def();
+  bd.position = (t3_vec3){ 8, 5, 0 };
+  cw_body3d ball = cw_body3d_create(w, &bd);
+  cw_shape3d_def sd = cw_shape3d_default_def();
+  cw_shape3d_sphere(ball, &sd, (t3_vec3){ 0, 0, 0 }, 0.3f);
+  for (int t = 0; t < ticks; t++) {
+    if (t == 90) cw_body3d_set_velocity(b1, (t3_vec3){ 3, 0, 1 });
+    cw_world3d_step(w, DT);
+    if (many) cw_cloth_step_many(cl, 4, DT);
+    else for (int i = 0; i < 4; i++) cw_cloth_step(cl[i], DT);
+  }
+  *nout = 4;
+  for (int i = 0; i < 4; i++) out[i] = cw_cloth_hash(cl[i]);
+  t3_vec3 p1 = cw_body3d_transform(b1).p, p2 = cw_body3d_transform(b2).p, p3 = cw_body3d_transform(ball).p;
+  bodies[0] = p1.x, bodies[1] = p1.y, bodies[2] = p2.y, bodies[3] = p3.y, bodies[4] = p3.x;
   cw_world3d_destroy(w);
 }
+
+static void test_step_many(void) {
+  uint32_t a[4], b[4], c[4];
+  float ba[5], bb[5], bc[5];
+  int n;
+  scene_hashes(false, 240, a, &n, ba);
+  scene_hashes(true, 240, b, &n, bb);
+  scene_hashes(true, 239, c, &n, bc);
+  for (int i = 0; i < 4; i++) CHECK_EQ_INT(a[i], b[i]);
+  CHECK(memcmp(ba, bb, sizeof ba) == 0);
+  bool differs = false;
+  for (int i = 0; i < 4; i++) differs |= a[i] != c[i];
+  CHECK(differs); /* control: a tick fewer is a different state */
+  CHECK(fabsf(ba[0] - 4) > 0.5f); /* the shoved crate swung */
+  CHECK(cw_cloth_hash((cw_cloth){ 0 }) == 0);
+  cw_cloth_step_many(NULL, 0, DT);
+  cw_cloth dup[2];
+  cw_world3d w = world();
+  dup[0] = dup[1] = make_flag(w, 0, 1.02f, 16);
+  cw_cloth_step_many(dup, 2, DT); /* listed twice: steps twice */
+  CHECK_EQ_INT(cw_cloth_stats_get(dup[0]).steps, 2);
+  cw_world3d_destroy(w);
+}
+
+/* microseconds per tick of `count` flags of n x n particles at 8 substeps, wind and two pinned
+ * corners: each stepped alone (cw_cloth_step in a loop), or all in one cw_cloth_step_many. workers = 1
+ * keeps a cloth (and a batch of them) on the calling thread. Logged, not compared. */
+static double perf_scene(int n, int count, int workers, bool many) {
+  cw_world3d w = world();
+  cw_cloth cl[8];
+  for (int k = 0; k < count; k++) {
+    cl[k] = make_flag(w, workers, 1.02f, n);
+    cw_cloth_set_wind(cl[k], (t3_vec3){ 6, 0, 1.5f }, 1, 0.3f, 0.6f);
+  }
+  const int WARM = 20, RUN = 60;
+  double best = 1e30;
+  for (int rep = 0; rep < 3; rep++) { /* the best of three runs: the least disturbed */
+    for (int i = 0; i < (rep ? 0 : WARM); i++) {
+      cw_world3d_step(w, DT);
+      if (many) cw_cloth_step_many(cl, count, DT);
+      else for (int k = 0; k < count; k++) cw_cloth_step(cl[k], DT);
+    }
+    double total = 0;
+    for (int i = 0; i < RUN; i++) {
+      cw_world3d_step(w, DT);
+      struct timespec t0, t1;
+      clock_gettime(CLOCK_MONOTONIC, &t0);
+      if (many) cw_cloth_step_many(cl, count, DT);
+      else for (int k = 0; k < count; k++) cw_cloth_step(cl[k], DT);
+      clock_gettime(CLOCK_MONOTONIC, &t1);
+      total += ((double)(t1.tv_sec - t0.tv_sec) + (double)(t1.tv_nsec - t0.tv_nsec) * 1e-9) * 1e6;
+    }
+    if (total / RUN < best) best = total / RUN;
+  }
+  uint32_t hh = 0;
+  for (int k = 0; k < count; k++) hh ^= cw_cloth_hash(cl[k]);
+  (void)hh;
+  cw_world3d_destroy(w);
+  return best;
+}
+
 static void test_perf(void) {
-  perf_run(1);
-  perf_run(0);
+  static const int sizes[] = { 16, 32, 64 };
+  cw_info("cloth cost, microseconds per tick (8 substeps; best of 3 runs of 60 ticks; cloths x particles):");
+  for (int s = 0; s < 3; s++)
+    for (int cnt = 1; cnt <= 8; cnt *= 8) {
+      int n = sizes[s];
+      double one = perf_scene(n, cnt, 1, false), pool = perf_scene(n, cnt, 0, false), many = perf_scene(n, cnt, 0, true);
+      cw_info("cloth cost: %d x %dx%d: one thread %.0f, pool %.0f, pool with cw_cloth_step_many %.0f", cnt, n, n, one, pool, many);
+    }
+  CHECK(1);
 }
 
 CW_TEST_SUITE("cloth", { "flag", test_flag }, { "stretch", test_stretch }, { "sphere", test_sphere },
               { "tunnel", test_tunnel }, { "box", test_box }, { "rope_crate", test_rope_crate },
               { "rope_two_bodies", test_rope_two_bodies }, { "skin", test_skin }, { "rollback", test_rollback },
-              { "chain", test_chain }, { "nodes", test_nodes }, { "bad_input", test_bad_input }, { "perf", test_perf })
+              { "chain", test_chain }, { "nodes", test_nodes }, { "step_many", test_step_many }, { "bad_input", test_bad_input }, { "perf", test_perf })

@@ -134,6 +134,13 @@ bool cw_cloth_valid(cw_cloth c);
  * substeps x (V + constraints) plus the shapes near the cloth; fans out to
  * the job pool for large cloths. */
 void cw_cloth_step(cw_cloth c, float dt);
+/* Steps several cloths and ropes of one world as calling cw_cloth_step for each, in this order, would,
+ * with the same bits, but the pool shares the work: one job per cloth, each running its substeps on
+ * one thread, instead of each cloth fanning out alone. A scene of flags, capes and banners (each a
+ * few thousand particles at most) wants this; one big cloth is no faster. Impulses on dynamic
+ * bodies (attachments, two_way) are applied afterwards, in list order. The Cloth3D and Rope3D
+ * nodes of a tree already step through it. */
+void cw_cloth_step_many(const cw_cloth *cloths, int count, float dt);
 
 /* ── pins, attachments, skin ──────────────────────────────────────────── */
 
@@ -185,7 +192,7 @@ typedef struct cw_cloth_stats {
   float max_stretch;           /* the most stretched edge: its length over its rest length, minus 1 (0.01 = 1%) */
   float mean_stretch;          /* the same averaged over every edge (compressed edges count as 0) */
   float kinetic_energy;        /* J, of the free particles */
-  float step_us;               /* the last step's wall time, microseconds (not simulation state) */
+  float step_us;               /* the time the last step's own work took (all its threads' share), microseconds; not simulation state */
 } cw_cloth_stats;
 /* Counts, stretch and energy now (O(V + E)); all zero for an invalid cloth. */
 cw_cloth_stats cw_cloth_stats_get(cw_cloth c);

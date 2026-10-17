@@ -14,7 +14,7 @@
  * cape.hash, rope.hash, chain.hash (the nodes' simulation hashes), crate.pos,
  * weight.pos, hero.pos, rope.tension (N), cape.min_gap (the closest a cape
  * particle came to the hero's capsule axis, mm), cloth.us (the three cloths'
- * step time averaged over the run, microseconds, not compared), phys.hash. */
+ * work time (its own pieces, summed over threads) averaged over the run, microseconds, not compared), phys.hash. */
 #include <math.h>
 
 #include "cartwheel/cloth.h"
