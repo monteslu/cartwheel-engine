@@ -4,6 +4,17 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.12.2 (2026-10-17)
+
+### Fixed
+- Mesh decals land on surfaces lit by clustered lights, cascades and GI.
+  Decal3D mesh mode used to skip any mesh whose material carried a shading
+  part, which is every lit material in CLUSTERED lighting. The decal itself is
+  still drawn unlit, as in FORWARD lighting.
+- Light3D energy runs to 100000 (it was clamped to 1000 with no sign), and a
+  ranged property set outside its range now logs one warning per node and
+  property.
+
 ## v0.12.1 (2026-10-17)
 
 ### Fixed
