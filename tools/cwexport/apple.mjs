@@ -6,7 +6,7 @@
 //          Developer ID and Apple's notarization (your Apple account), else
 //          Gatekeeper asks the player to allow it (README.txt says how).
 //   iOS:   an Xcode project generator: Info.plist, the .cwpak, the icon and
-//          build-on-mac.sh (cmake -G Xcode with cmake/export/ios.cmake; the
+//          build-on-mac.sh (cmake -G Xcode with cmake/export/ios-arm64.cmake; the
 //          app bundle embeds ANGLE's xcframeworks). Signing team: DEVELOPMENT_TEAM.
 import { join } from 'node:path';
 import { buildApp, packAssets, write, freshDir, copy, slug, needDep, run, strip, runtimeFiles, copyDawnLicenses, zipDir, ROOT, EXPORT_DEPS, ExportError } from './util.mjs';
@@ -142,7 +142,7 @@ CARTWHEEL="\${CARTWHEEL:?set CARTWHEEL to the cartwheel checkout}"
 cmake -S "$CARTWHEEL" -B "$CARTWHEEL/build/export/macos" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$CARTWHEEL/cmake/export/macos-arm64.cmake"
 cmake --build "$CARTWHEEL/build/export/macos" --target cwpack
 build="$CARTWHEEL/build/export/ios"
-${cmakeLine(ctx, 'ios.cmake', '$build')} -DCW_APPLE_INFO_PLIST="$here/Info.plist" \\
+${cmakeLine(ctx, 'ios-arm64.cmake', '$build')} -DCW_APPLE_INFO_PLIST="$here/Info.plist" \\
   -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM="\${DEVELOPMENT_TEAM:-}" \\
   -DCMAKE_XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER=${bundleId(ctx)}
 cmake --build "$build" --config Release --target ${ctx.app} -- -allowProvisioningUpdates

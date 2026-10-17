@@ -73,6 +73,12 @@ int cw__pixel_target(void);         /* what draws now: 0 output, 1 scene, 2 UI (
 void cw__pixel_shutdown(void);
 void cw__render_scale_apply(float s); /* sdl_common.c: the render resolution setting's scale (quality.c) */
 bool cw__sdl_init(void);            /* SDL_Init + window + GL context */
+/* The GL context on the window: SDL's own GL everywhere but iOS, where SDL2
+ * has no EGL and ANGLE renders into the window's Metal layer (egl_uikit.c).
+ * The loop owners and the size queries go through these so the switch is in
+ * one place; on every other platform they are SDL_GL_* and nothing else. */
+void cw__gl_swap(SDL_Window *win);                   /* present the frame (GL runs) */
+void cw__gl_drawable_size(SDL_Window *win, int *w, int *h); /* the window's pixels */
 void cw__sdl_poll(void);            /* events -> raw input + app events */
 void cw__frame(double now_seconds); /* one rendered frame: ticks, update, render */
 void cw__shutdown(void);

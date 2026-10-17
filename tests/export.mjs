@@ -453,7 +453,7 @@ async function ios(g) {
   const okPlist = /LSRequiresIPhoneOS/.test(readFileSync(join(dir, 'Info.plist'), 'utf8'));
   const sh = spawnSync('sh', ['-n', join(dir, 'build-on-mac.sh')]);
   if (!okPlist || sh.status !== 0 || !existsSync(join(dir, 'Resources', `${g.game}.cwpak`))) return report('ios', g.game, 'FAIL', `plist=${okPlist} script=${sh.status}`);
-  report('ios', g.game, 'not built (needs a Mac)', 'Xcode project generator (cmake -G Xcode, cmake/export/ios.cmake) + Info.plist + pack; Apple SDK/Xcode and signing (your Apple account) are not available here');
+  report('ios', g.game, 'not built (needs a Mac)', 'Xcode project generator (cmake -G Xcode, cmake/export/ios-arm64.cmake) + Info.plist + pack; Apple SDK/Xcode and signing (your Apple account) are not available here');
 }
 
 /** a game project outside the tree: CMakeLists.txt + project.cwproj + assets */

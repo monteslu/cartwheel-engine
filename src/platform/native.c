@@ -207,7 +207,10 @@ static void pak_mount(void) {
   const char *name = strrchr(exe_path, '/');
   if (base && name) {
     snprintf(p, sizeof p, "%s%s.cwpak", base, name + 1);
-    pak_open(p);
+    if (!pak_open(p)) { /* a bundle CMake laid out itself keeps a Resources/ (Xcode flattens it) */
+      snprintf(p, sizeof p, "%sResources/%s.cwpak", base, name + 1);
+      pak_open(p);
+    }
   }
   SDL_free(base);
 #endif
@@ -572,7 +575,7 @@ int cw_native_main(int argc, char **argv, cw_app_desc (*app_fn)(int, char **)) {
     }
     CW_PROFILE_BEGIN("present");
     if (cw_gpu_backend() == CW_GPU_WEBGPU) cw__wgpu_frame_end(true);
-    else SDL_GL_SwapWindow(p->window);
+    else cw__gl_swap(p->window);
     CW_PROFILE_END();
     cw__perf_mark(CW_PERF_PRESENT);
     /* no spinning where nothing paces the loop: a frozen game (the

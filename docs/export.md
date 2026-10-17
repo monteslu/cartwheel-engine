@@ -54,7 +54,7 @@ with the engine (`-DCW_PROJECT_DIR=<dir> -DCW_ENGINE_ONLY=ON`) in
 | `web` | static site (`index.html`, `player.js`, `wasmcart/`, `game.wasm` + `game.wasc`, `_headers`, `serve.mjs`) + `.zip` | the dual cart (WebGPU where the browser has it, else WebGL 2) on wasmcart's web host; its wasm on its own (`game.wasm`, compiled while it downloads and kept compiled by the browser), the rest in `game.wasc` | built + run in Chromium |
 | `wasc` | the `.wasc` cart | `cmake/cart.cmake` (wasi-sdk), the dual cart (`CW_WGPU`: the host picks WebGPU or GL) | built + run on romdev and wasmcart-native |
 | `macos` | arm64 `.app` in a `.zip`: the executable, Dawn's and ANGLE's dylibs in Contents/Frameworks, the `.cwpak` in Resources; signed ad hoc, not notarized | on a Mac: Xcode's clang + Ninja with `cmake/export/macos-arm64.cmake`; WebGPU through Dawn (Metal), GL through ANGLE (Metal) | built + run in CI on a macOS runner (cartwheel-examples) |
-| `ios` | Info.plist, pack, icon + `build-on-mac.sh` (generates and builds the Xcode project) | on a Mac: `cmake -G Xcode` with `cmake/export/ios.cmake` | not built (needs Apple's SDK and signing) |
+| `ios` | Info.plist, pack, icon + `build-on-mac.sh` (generates and builds the Xcode project) | on a Mac: `cmake -G Xcode` with `cmake/export/ios-arm64.cmake` | not built (needs Apple's SDK and signing) |
 
 Both cart exports ship the dual cart (`build/cart-wgpu`): it imports GL and
 WebGPU and runs on WebGPU where the host has it. An app built `GL_ONLY` (it

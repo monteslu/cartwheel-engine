@@ -41,16 +41,29 @@ function(cw_add_app name)
       set_target_properties(${name} PROPERTIES WIN32_EXECUTABLE ON) # no console window (SDL2main supplies WinMain)
     endif()
     if(CW_APPLE_BUNDLE)
-      # iOS exports (cmake/export/ios.cmake, built on a Mac): an app bundle
-      # embedding ANGLE; CW_APPLE_INFO_PLIST from the exported Xcode template
+      # iOS (cmake/export/ios-arm64.cmake, built on a Mac): an app bundle
+      # embedding ANGLE's frameworks (the slice the toolchain picked), with
+      # the Info.plist, the resources and the asset catalog the exporter
+      # names (tools/cwexport/apple.mjs); a plain build gets CMake's plist
       set(CW_APPLE_INFO_PLIST "" CACHE FILEPATH "Info.plist for app bundles")
-      get_filename_component(_angle_dir ${CW_ANGLE_GLESV2} DIRECTORY)
+      set(CW_APPLE_RESOURCES "" CACHE STRING "files copied into every app bundle (; separated)")
+      set(CW_APPLE_ASSET_CATALOG "" CACHE PATH "an Assets.xcassets with the AppIcon set, compiled into every app bundle")
       set_target_properties(${name} PROPERTIES MACOSX_BUNDLE ON
-        XCODE_EMBED_FRAMEWORKS "${CW_ANGLE_GLESV2};${_angle_dir}/libEGL.xcframework"
+        XCODE_EMBED_FRAMEWORKS "${CW_ANGLE_GLESV2};${CW_ANGLE_EGL}"
         XCODE_EMBED_FRAMEWORKS_CODE_SIGN_ON_COPY ON
+        XCODE_EMBED_FRAMEWORKS_REMOVE_HEADERS_ON_COPY ON
         XCODE_ATTRIBUTE_LD_RUNPATH_SEARCH_PATHS "@executable_path/Frameworks")
       if(CW_APPLE_INFO_PLIST)
         set_target_properties(${name} PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CW_APPLE_INFO_PLIST})
+      endif()
+      foreach(_r ${CW_APPLE_RESOURCES})
+        target_sources(${name} PRIVATE ${_r})
+        set_source_files_properties(${_r} PROPERTIES MACOSX_PACKAGE_LOCATION Resources HEADER_FILE_ONLY ON)
+      endforeach()
+      if(CW_APPLE_ASSET_CATALOG)
+        target_sources(${name} PRIVATE ${CW_APPLE_ASSET_CATALOG})
+        set_source_files_properties(${CW_APPLE_ASSET_CATALOG} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+        set_target_properties(${name} PROPERTIES XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME AppIcon)
       endif()
     endif()
   endif()
@@ -127,6 +140,15 @@ function(cw_add_app name)
       DEPENDS ${_deps} DEPFILE ${_out}.d COMMENT "cwpack ${name}")
     add_custom_target(${name}_pack DEPENDS ${_out}/stamp)
     add_dependencies(${name} ${name}_pack)
+    if(CW_APPLE_BUNDLE AND NOT CW_CART)
+      # an iOS app carries its pack as a bundle resource (<app>.cwpak at the
+      # bundle root, where src/platform/native.c looks), so the bundle is
+      # complete when Xcode signs and archives it
+      set(_pak_file ${CMAKE_CURRENT_BINARY_DIR}/${name}.cwpak)
+      add_custom_command(OUTPUT ${_pak_file} DEPENDS ${_out}/stamp COMMAND ${CMAKE_COMMAND} -E true)
+      target_sources(${name} PRIVATE ${_pak_file})
+      set_source_files_properties(${_pak_file} PROPERTIES MACOSX_PACKAGE_LOCATION Resources GENERATED ON HEADER_FILE_ONLY ON)
+    endif()
     if(CW_CART)
       set(A_ASSETS ${_out}/assets)
       set(_files --files)

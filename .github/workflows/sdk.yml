@@ -32,6 +32,9 @@ jobs:
           - { target: windows-x64, os: ubuntu-24.04, deps: 'export/llvm-mingw,export/native-dawn-win32-x64,export/angle-gles-win32-x64' }
           - { target: android-arm64, os: ubuntu-24.04, deps: 'export/llvm-mingw,export/native-dawn-android-arm64' }
           - { target: macos-arm64, os: macos-15, deps: 'export/native-dawn-darwin-arm64,export/angle-gles-darwin-arm64' }
+          # iOS: ANGLE's xcframeworks for the device, and the macOS deps for the cwpack the build packs with
+          - { target: ios-arm64, os: macos-15, deps: 'export/angle-ios,export/native-dawn-darwin-arm64,export/angle-gles-darwin-arm64' }
+          - { target: ios-arm64-simulator, os: macos-15, deps: 'export/angle-ios,export/native-dawn-darwin-arm64,export/angle-gles-darwin-arm64' }
           - { target: cart, os: ubuntu-24.04, deps: '' }
           - { target: cart-wgpu, os: ubuntu-24.04, deps: '' }
     steps:

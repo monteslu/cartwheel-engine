@@ -21,6 +21,63 @@
 #endif
 
 cw_platform cw__plat;
+
+/* ── the GL context on the window (internal.h: cw__gl_*) ──────────────
+ * SDL's GL on every platform but iOS. There SDL2's UIKit driver has no EGL
+ * (its own GL is Apple's deprecated EAGL, not the ANGLE the engine links),
+ * so the window is a Metal window and egl_uikit.c drives ANGLE's EGL on its
+ * CAMetalLayer. Everywhere else these are SDL_GL_* calls and nothing more. */
+#if CW_EGL_UIKIT
+bool cw__egl_uikit_create(SDL_Window *win, int msaa, int depth, int stencil, void **ctx);
+void cw__egl_uikit_swap(void);
+void cw__egl_uikit_swap_interval(int interval);
+void cw__egl_uikit_drawable_size(SDL_Window *win, int *w, int *h);
+void cw__egl_uikit_destroy(void);
+#define CW_GL_WINDOW_FLAGS SDL_WINDOW_METAL
+#else
+#define CW_GL_WINDOW_FLAGS SDL_WINDOW_OPENGL
+#endif
+/* an ES 3.0 context on win, current, with the app's multisampling (none
+ * when no_msaa) and swap interval; p->gl holds it */
+static bool gl_context_create(cw_platform *p, bool no_msaa) {
+#if CW_EGL_UIKIT
+  if (!cw__egl_uikit_create(p->window, no_msaa ? 0 : p->app.msaa, 24, 8, &p->gl)) return false;
+  cw__egl_uikit_swap_interval(p->app.vsync_off ? 0 : 1);
+#else
+  (void)no_msaa; /* SDL took the attributes before the window was made */
+  p->gl = SDL_GL_CreateContext(p->window);
+  if (!p->gl) {
+    cw_error("SDL_GL_CreateContext (GLES 3.0): %s", SDL_GetError());
+    return false;
+  }
+  SDL_GL_MakeCurrent(p->window, p->gl);
+  SDL_GL_SetSwapInterval(p->app.vsync_off ? 0 : 1);
+#endif
+  return true;
+}
+static void gl_context_destroy(cw_platform *p) {
+#if CW_EGL_UIKIT
+  cw__egl_uikit_destroy();
+#else
+  SDL_GL_DeleteContext(p->gl);
+#endif
+  p->gl = NULL;
+}
+void cw__gl_swap(SDL_Window *win) {
+#if CW_EGL_UIKIT
+  (void)win;
+  cw__egl_uikit_swap();
+#else
+  SDL_GL_SwapWindow(win);
+#endif
+}
+void cw__gl_drawable_size(SDL_Window *win, int *w, int *h) {
+#if CW_EGL_UIKIT
+  cw__egl_uikit_drawable_size(win, w, h);
+#else
+  SDL_GL_GetDrawableSize(win, w, h);
+#endif
+}
 /* set by the resource system when first used, so apps that never load a
  * resource do not link it (and its decoders) */
 void (*cw__res_frame_hook)(void);
@@ -443,10 +500,11 @@ bool cw__sdl_init(void) {
      * draws into a texture there) */
     const char *vdrv = SDL_GetCurrentVideoDriver();
     bool offscreen = vdrv && !strcmp(vdrv, "offscreen");
-    Uint32 wflags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE | (wgpu ? (offscreen ? 0 : CW_WGPU_WINDOW_FLAGS) : SDL_WINDOW_OPENGL);
-    /* WebGPU: no graphics API of SDL's own on the window (on macOS SDL would
-     * otherwise give a flagless window GL, and load the GLES library) */
-    SDL_SetHint(SDL_HINT_VIDEO_EXTERNAL_CONTEXT, wgpu ? "1" : "0");
+    Uint32 wflags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE | (wgpu ? (offscreen ? 0 : CW_WGPU_WINDOW_FLAGS) : CW_GL_WINDOW_FLAGS);
+    /* WebGPU, and GL on iOS (ANGLE on the Metal layer): no graphics API of
+     * SDL's own on the window (on macOS SDL would otherwise give a flagless
+     * window GL, and load the GLES library) */
+    SDL_SetHint(SDL_HINT_VIDEO_EXTERNAL_CONTEXT, wgpu || CW_GL_WINDOW_FLAGS == SDL_WINDOW_METAL ? "1" : "0");
 #if !CW_CART
     { /* a desktop window larger than the display: lower the scale to fit (the
        * logical size stays), never below 1 */
@@ -488,13 +546,7 @@ bool cw__sdl_init(void) {
       SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "1");
       continue;
     } else {
-      p->gl = SDL_GL_CreateContext(p->window);
-      if (!p->gl) {
-        cw_error("SDL_GL_CreateContext (GLES 3.0): %s", SDL_GetError());
-        return false;
-      }
-      SDL_GL_MakeCurrent(p->window, p->gl);
-      SDL_GL_SetSwapInterval(p->app.vsync_off ? 0 : 1);
+      if (!gl_context_create(p, no_msaa)) return false;
       cw_log(CW_LOG_INFO, "GL: %s | %s | %s", (const char *)glGetString(GL_VERSION), (const char *)glGetString(GL_RENDERER),
              (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION));
     }
@@ -851,7 +903,7 @@ void cw__shutdown(void) {
   cw__wgpu_shutdown();
   for (int i = 0; i < CW_MAX_PADS; i++)
     if (p->pads[i]) SDL_GameControllerClose(p->pads[i]);
-  if (p->gl) SDL_GL_DeleteContext(p->gl);
+  if (p->gl) gl_context_destroy(p);
   if (p->window) SDL_DestroyWindow(p->window);
   SDL_Quit();
 }
@@ -873,7 +925,7 @@ void cw_drawable_size(int *w, int *h) {
     *w = p->view_w;
     *h = p->view_h;
   } else if (cw_gpu_backend() == CW_GPU_WEBGPU) cw__wgpu_drawable_size(w, h);
-  else SDL_GL_GetDrawableSize(p->window, w, h);
+  else cw__gl_drawable_size(p->window, w, h);
 }
 void cw_render_size(int *w, int *h) {
   cw_platform *p = &cw__plat;
@@ -885,7 +937,7 @@ void cw_render_size(int *w, int *h) {
   int dw = 0, dh = 0;
   if (p->window) {
     if (cw_gpu_backend() == CW_GPU_WEBGPU) cw__wgpu_drawable_size(&dw, &dh);
-    else SDL_GL_GetDrawableSize(p->window, &dw, &dh);
+    else cw__gl_drawable_size(p->window, &dw, &dh);
   }
   if (w) *w = dw;
   if (h) *h = dh;
