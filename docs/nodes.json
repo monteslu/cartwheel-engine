@@ -9399,6 +9399,330 @@
    ]
   },
   {
+   "name": "Water3D",
+   "parent": "Node3D",
+   "doc": "Gerstner-wave water with planar reflection, refraction and flow (water.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "size",
+     "type": "vec2",
+     "default": "vec2(40, 40)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Rectangle, x by z metres, centred on the node."
+    },
+    {
+     "name": "subdivisions",
+     "type": "int",
+     "default": "160",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 2048,
+     "doc": "Grid quads along the longer side (quality: Low 1/4, Medium 1/2)."
+    },
+    {
+     "name": "wave_count",
+     "type": "int",
+     "default": "3",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 4,
+     "doc": "Waves in use (wave0 ..)."
+    },
+    {
+     "name": "wave0",
+     "type": "vec4",
+     "default": "vec4(20, 12, 0.35, 0.5)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Gerstner wave: direction (degrees, 0 = +X, 90 = +Z), wavelength (m), amplitude (m), steepness (0..1)."
+    },
+    {
+     "name": "wave1",
+     "type": "vec4",
+     "default": "vec4(75, 7, 0.18, 0.5)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Gerstner wave: direction (degrees, 0 = +X, 90 = +Z), wavelength (m), amplitude (m), steepness (0..1)."
+    },
+    {
+     "name": "wave2",
+     "type": "vec4",
+     "default": "vec4(-40, 3.5, 0.06, 0.4)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Gerstner wave: direction (degrees, 0 = +X, 90 = +Z), wavelength (m), amplitude (m), steepness (0..1)."
+    },
+    {
+     "name": "wave3",
+     "type": "vec4",
+     "default": "vec4(140, 2, 0.03, 0.3)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Gerstner wave: direction (degrees, 0 = +X, 90 = +Z), wavelength (m), amplitude (m), steepness (0..1)."
+    },
+    {
+     "name": "wave_speed",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Multiplies the deep-water wave speed."
+    },
+    {
+     "name": "time_offset",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Seconds added to the waves' clock."
+    },
+    {
+     "name": "color",
+     "type": "color",
+     "default": "color(0.75, 0.9, 0.92, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Tint of what is seen through the water (linear)."
+    },
+    {
+     "name": "deep_color",
+     "type": "color",
+     "default": "color(0.01, 0.05, 0.07, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The water body's colour when no refraction is drawn (linear)."
+    },
+    {
+     "name": "murk",
+     "type": "float",
+     "default": "0.7",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Share of the refraction lost into deep_color (0: clear as glass)."
+    },
+    {
+     "name": "reflectivity",
+     "type": "float",
+     "default": "0.02",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Fresnel F0 (0.02: water)."
+    },
+    {
+     "name": "distortion",
+     "type": "float",
+     "default": "0.03",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "How far the surface bends reflection and refraction."
+    },
+    {
+     "name": "detail",
+     "type": "float",
+     "default": "0.35",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 4,
+     "doc": "Strength of the normal map ripples on the waves."
+    },
+    {
+     "name": "roughness",
+     "type": "float",
+     "default": "0.08",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Surface roughness for the lights' glints."
+    },
+    {
+     "name": "normal_map",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Normal map image (empty: a seamless gen://noise normal map)."
+    },
+    {
+     "name": "normal_scale",
+     "type": "float",
+     "default": "0.12",
+     "stored": true,
+     "readonly": false,
+     "min": 0.0001,
+     "max": 1000,
+     "doc": "Normal map repeats per metre."
+    },
+    {
+     "name": "flow_direction",
+     "type": "vec2",
+     "default": "vec2(1, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Flow (x, z) without a flow map."
+    },
+    {
+     "name": "flow_speed",
+     "type": "float",
+     "default": "0.03",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "How fast the normal maps scroll along the flow."
+    },
+    {
+     "name": "flow_map",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Optional image: RG = flow direction (0.5 = still) over the rectangle."
+    },
+    {
+     "name": "reflection",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Planar reflection (Medium and up)."
+    },
+    {
+     "name": "refraction",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Planar refraction (High and up)."
+    },
+    {
+     "name": "resolution_scale",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0.05,
+     "max": 1,
+     "doc": "Reflection / refraction targets' share of the view."
+    },
+    {
+     "name": "debug_view",
+     "type": "enum",
+     "default": "NONE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "NONE",
+      "HEIGHT"
+     ],
+     "doc": "HEIGHT: the surface height as colour (tests)."
+    },
+    {
+     "name": "debug_range",
+     "type": "vec2",
+     "default": "vec2(-2, 2)",
+     "stored": true,
+     "readonly": false,
+     "doc": "debug_view HEIGHT: heights mapped to 0 .. 1."
+    }
+   ]
+  },
+  {
+   "name": "Buoyancy3D",
+   "parent": "Node3D",
+   "doc": "Floats its parent RigidBody3D on a Water3D (water.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "water",
+     "type": "node",
+     "default": "node(\"/root\")",
+     "stored": true,
+     "readonly": false,
+     "doc": "The Water3D (empty: the tree's first)."
+    },
+    {
+     "name": "probes",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "\"x y z, ...\" in the body's space (empty: its box's corners)."
+    },
+    {
+     "name": "volume",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000,
+     "doc": "m^3 displaced when fully under (0: the box's volume)."
+    },
+    {
+     "name": "probe_depth",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Metres from dry to fully under, per probe (0: a quarter of the box's height)."
+    },
+    {
+     "name": "fluid_density",
+     "type": "float",
+     "default": "1000",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "kg/m^3 (1000: water)."
+    },
+    {
+     "name": "linear_drag",
+     "type": "float",
+     "default": "60",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000,
+     "doc": "N per m/s per fully wet probe, against the motion through the water."
+    },
+    {
+     "name": "angular_drag",
+     "type": "float",
+     "default": "40",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000,
+     "doc": "N*m per rad/s, times the wet share."
+    },
+    {
+     "name": "submerged",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "The probes' wet share last tick, 0..1."
+    }
+   ]
+  },
+  {
    "name": "Trigger",
    "parent": "Node",
    "doc": "A data-driven rule: when `source` emits `signal`, do `action` on `target` (cartwheel/triggers.h).",
