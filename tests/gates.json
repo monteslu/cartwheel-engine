@@ -738,6 +738,11 @@
     "note": "a cw_vehicle3d car drives a dirt track on a 2 km generated Terrain3D (CDLOD, splat layers, grass, rocks and glTF trees scattered, the sun's shadow following the car): the chassis transform's bits, the patch selection's hash and the scatter count agree on every host. Control: one frame early"
   },
   {
+    "name": "terrain-coverage",
+    "script": "tests/terrain-coverage.mjs",
+    "note": "the terrain covers the ground: terrain_demo's cracks flight (magenta clear colour) natively on GL and WebGPU, at most 0.5% of the frame's lower 40% magenta (terrain-drive compares hosts, so a terrain no host draws passes it: three.c 0.186.12-0.186.15 skipped every near patch, 88% magenta). Control: the terrain freed must fail"
+  },
+  {
     "name": "unit-terrain",
     "app": "unit_terrain",
     "frames": 2,
