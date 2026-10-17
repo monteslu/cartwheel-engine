@@ -169,7 +169,12 @@ async function wcnativePair(tag, carts) {
     for (let i = 0; i < carts.length; i++) {
       const shot = join(OUT, `wcn-${tag}-${i}.ppm`);
       rmSync(shot, { force: true });
-      const p = spawn(exe, [cartPath(carts[i]), '--fixed-step', String(1000 / 60), '--shot', '1300', shot, '--uncapped'],
+      // Paced at the real frame rate (NOT --uncapped): the session's timeouts and join handshakes run on the
+      // cart's clock, and --fixed-step makes that clock frame * step. An uncapped player that boots first runs
+      // thousands of frames (and 20+ virtual seconds) before the second one has even joined, then spins virtual
+      // time while stalled on its peer's input, so the 5 s peer timeout fires within milliseconds of wall time
+      // ("player 1 left (timed out)"), and which frames each side saw depends on how fast the player is.
+      const p = spawn(exe, [cartPath(carts[i]), '--fixed-step', String(1000 / 60), '--shot', '1300', shot],
         { env: testEnv({ ...process.env, SDL_AUDIODRIVER: 'dummy' }), stdio: ['ignore', 'pipe', 'pipe'] });
       p.log = '';
       p.stdout.on('data', (x) => (p.log += x));
