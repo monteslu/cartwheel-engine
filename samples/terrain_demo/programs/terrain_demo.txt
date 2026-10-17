@@ -41,3 +41,12 @@ depth+instbig+xcluster
 standard+instbig+shadow+senv+l1001+xcluster
 standard+vcol+instbig+shadow+senv+ds+l1001+xcluster
 standard+vcol+instbig+shadow+senv+l1001+xcluster
+standard+senv+l0701+xcsm
+standard+instbig+senv+l0701+xterrain_csm
+standard+instbig+senv+l0701+xcsm
+standard+vcol+instbig+senv+ds+l0701+xcsm
+standard+vcol+instbig+senv+l0701+xcsm
+standard+instbig+senv+l0701+xterrainfar_csm
+depth+instbig+xterrain_csm
+depth+instbig+xcsm
+depth+xcsm
