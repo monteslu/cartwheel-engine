@@ -18,6 +18,30 @@ The stack:
   pthreads natively, wasi-threads in a cart.
 - stb_truetype and kb_text_shape for text, shaping and bidi.
 
+What it does, beyond the basics of scenes, nodes, input, audio, text and UI
+(each in a guide under `docs/guides/`):
+
+- 3D lighting: hundreds of clustered omni and spot lights, a shadow atlas,
+  cascaded sun shadows, lightmaps.
+- Global illumination: reflection probes, a light probe grid, screen-space
+  reflections and bounce light.
+- Volumetric fog and light shafts, height fog, sky, post effects, GPU
+  particles, decals on surfaces and meshes.
+- Terrain (CDLOD, splat layers, scatter, collision), water with waves,
+  reflection, refraction and floating bodies, and world streaming for big
+  open worlds.
+- Animation with skinning, tweens and inverse kinematics; cloth and ropes.
+- Navigation: navmeshes, paths, obstacles and crowds (Recast and Detour).
+- CSG block-out shapes for greyboxing levels.
+- 3D audio with HRTF and reverb zones; MPEG-1 video cutscenes.
+- Noise on the CPU and GPU, background jobs and streamed, compressed
+  resources.
+- Rollback networking, localization and accessibility, a profiler with
+  Perfetto traces, graphics presets with an Auto mode that holds a budget,
+  and a game shell (title, player join, settings, pause).
+
+What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
+
 Games are written in C against the headers in `include/cartwheel/`, which
 double as the API documentation. Scenes, project settings, input maps and
 themes are plain text files.
