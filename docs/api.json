@@ -8935,7 +8935,7 @@
     {
      "name": "cw_render3d_stats",
      "doc": "",
-     "decl": "typedef struct cw_render3d_stats { int draw_calls, triangles, programs; float cpu_ms; } cw_render3d_stats;"
+     "decl": "typedef struct cw_render3d_stats {\n  int draw_calls, triangles, programs;\n  float cpu_ms;\n  int skipped; /* draws three.c could not make since the tree began (each reason logged once): should be 0 */\n} cw_render3d_stats;"
     }
    ],
    "macros": []

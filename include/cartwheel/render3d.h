@@ -83,7 +83,11 @@ cw_node cw_render3d_camera(cw_tree *t);
 void cw_render3d_set_camera(cw_tree *t, cw_node camera);
 t3_camera *cw_camera3d_t3(cw_node camera); /* owned by the node; NULL when not a Camera3D */
 
-typedef struct cw_render3d_stats { int draw_calls, triangles, programs; float cpu_ms; } cw_render3d_stats;
+typedef struct cw_render3d_stats {
+  int draw_calls, triangles, programs;
+  float cpu_ms;
+  int skipped; /* draws three.c could not make since the tree began (each reason logged once): should be 0 */
+} cw_render3d_stats;
 /* renderer counters from the last draw; zeroed before the first render.
  * cpu_ms: CPU milliseconds the last frame spent issuing its 3D (the render
  * pipeline from its start to the overlay phase, or cw_render3d_draw):
