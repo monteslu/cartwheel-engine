@@ -184,11 +184,12 @@ if (CART) {
   for (const f of ['tools/programs.mjs', 'tools/cwexport.mjs']) engineFile(f);
   engineTree('tools/lib');
   engineTree('tools/cwexport');
-  // the engine's own three.c generator extensions (terrain, clustered lights, gi, mesh decals): a game's table captures their states
-  engineTree('src/terrain/extensions');
-  engineTree('src/render/extensions'); // the clustered lights' shading part
-  engineTree('src/gi/extensions');
-  engineTree('src/fx/extensions');
+  // the engine's own three.c generator extensions (terrain, clustered lights, gi, mesh decals, water, ...): a
+  // game's table captures their states. Every src/<module>/extensions directory ships, so a new module cannot
+  // be left out of the SDK (the water module was in v0.11.1)
+  for (const m of readdirSync(join(ROOT, 'src'), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort()) {
+    if (existsSync(join(ROOT, 'src', m, 'extensions'))) engineTree(`src/${m}/extensions`);
+  }
   copyTree(join(three, 'tools'), join(OUT, 'deps/three.c/tools'));
   // SDL2's Android activity (Java) and Gradle wrapper: the Android export's project
   if (TARGET.startsWith('android')) engineTree('deps/sdl2/android-project');
