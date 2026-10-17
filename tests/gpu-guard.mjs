@@ -83,6 +83,22 @@ function child(mode, env = {}, during) {
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const kfile = join(W, 'kernel.log'), vfile = join(W, 'vram');
 const total = gpu.vramTotal || 8 * 2 ** 30;
+const gfile = join(W, 'gtt');
+const gttTotal = (() => { try { return +readFileSync(`/sys/bus/pci/devices/${gpu.pci}/mem_info_gtt_total`, 'utf8'); } catch { return 0; } })();
+const MIB = 2 ** 20;
+// The guard's budget is the memory the card can still allocate: free VRAM, plus on an integrated GPU (a
+// 1 GiB carve-out on the 890M, so under every start budget by itself) the GTT it can still map. A fake that
+// only moves the VRAM reading leaves GBs of real GTT headroom on such a card, so the fakes set BOTH readings
+// to leave exactly `mib` free: VRAM first, the remainder (if the carve-out is too small) as GTT headroom.
+// On a discrete card the guard ignores the GTT file.
+const fakeFree = (mib) => {
+  const want = mib * MIB, vramFree = Math.min(want, total);
+  writeFileSync(vfile, String(Math.floor(total - vramFree)));
+  writeFileSync(gfile, String(Math.floor(gttTotal - (want - vramFree))));
+};
+// plenty free (the gate can start); a later fakeFree() squeezes it
+const fakePlenty = () => { writeFileSync(vfile, String(Math.floor(total * 0.1))); rmSync(gfile, { force: true }); };
+const GENV = { CW_GPU_GUARD_FAKE_VRAM_FILE: vfile, CW_GPU_GUARD_FAKE_GTT_FILE: gfile };
 
 // kernel: an injected page fault on the pinned card
 {
@@ -115,33 +131,32 @@ const total = gpu.vramTotal || 8 * 2 ** 30;
 
 // start budget
 {
-  // the budget is free VRAM: 512 MiB reserve + 1280 MiB need = 1792 MiB free to start
-  const freeOf = (mib) => String(Math.floor(total - mib * 2 ** 20));
-  writeFileSync(vfile, freeOf(1700));
-  const r = await child('gate', { CW_GPU_GUARD_FAKE_VRAM_FILE: vfile, CW_GPU_GUARD_WAIT_MS: '800' });
+  // the budget is free memory (VRAM, plus GTT on an integrated GPU): 512 MiB reserve + 1280 MiB need = 1792 MiB free to start
+  fakeFree(1700);
+  const r = await child('gate', { ...GENV, CW_GPU_GUARD_WAIT_MS: '800' });
   check('start budget: 1700 MiB free never starts the gate and exits 3', r.code === 3 && !r.out.includes('GATE STARTED'), `exit ${r.code}: ${r.out.slice(-300)}`);
   // a desktop at ~75% of an 8 GiB card still leaves room: the old 60% share budget never started here
-  writeFileSync(vfile, freeOf(1900));
-  const c = await child('gate', { CW_GPU_GUARD_FAKE_VRAM_FILE: vfile, CW_GPU_GUARD_WAIT_MS: '800', GUARD_HOLD_MS: '800' });
+  fakeFree(1900);
+  const c = await child('gate', { ...GENV, CW_GPU_GUARD_WAIT_MS: '800', GUARD_HOLD_MS: '800' });
   check('start budget control: 1900 MiB free starts the gate', c.code === 0 && c.out.includes('GATE STARTED'), `exit ${c.code}: ${c.out.slice(-300)}`);
   // a card that frees up while the gate waits is picked up
-  writeFileSync(vfile, freeOf(1000));
-  const w = await child('gate', { CW_GPU_GUARD_FAKE_VRAM_FILE: vfile, CW_GPU_GUARD_WAIT_MS: '20000', GUARD_HOLD_MS: '500' },
-    { fn: () => setTimeout(() => writeFileSync(vfile, freeOf(3000)), 700) });
+  fakeFree(1000);
+  const w = await child('gate', { ...GENV, CW_GPU_GUARD_WAIT_MS: '20000', GUARD_HOLD_MS: '500' },
+    { fn: () => setTimeout(() => fakeFree(3000), 700) });
   check('start budget: a gate waits for the card to free up and then runs', w.code === 0 && w.out.includes('GATE STARTED'), `exit ${w.code}: ${w.out.slice(-300)}`);
 }
 
 // abort budget during a gate
 {
-  writeFileSync(vfile, String(Math.floor(total * 0.1)));
-  const r = await child('gate', { CW_GPU_GUARD_FAKE_VRAM_FILE: vfile, GUARD_HOLD_MS: '15000' },
-    { fn: () => setTimeout(() => writeFileSync(vfile, String(Math.floor(total - 400 * 2 ** 20))), 1000) });
+  fakePlenty();
+  const r = await child('gate', { ...GENV, GUARD_HOLD_MS: '15000' },
+    { fn: () => setTimeout(() => fakeFree(400), 1000) });
   check('abort budget: free VRAM under the 512 MiB reserve during a gate exits 3', r.code === 3 && !r.out.includes('COMPLETED') && r.ms < 14000, `exit ${r.code} after ${r.ms} ms: ${r.out.slice(-300)}`);
   check('abort budget: the suite lock was released', !r.lock, 'lock directory remained');
   // control: 600 MiB free is tight but above the reserve, and a gate that started there finishes
-  writeFileSync(vfile, String(Math.floor(total * 0.1)));
-  const c = await child('gate', { CW_GPU_GUARD_FAKE_VRAM_FILE: vfile, GUARD_HOLD_MS: '2000' },
-    { fn: () => setTimeout(() => writeFileSync(vfile, String(Math.floor(total - 600 * 2 ** 20))), 500) });
+  fakePlenty();
+  const c = await child('gate', { ...GENV, GUARD_HOLD_MS: '2000' },
+    { fn: () => setTimeout(() => fakeFree(600), 500) });
   check('abort budget control: 600 MiB free (above the reserve) finishes the gate', c.code === 0 && c.out.includes('COMPLETED'), `exit ${c.code}: ${c.out.slice(-300)}`);
 }
 

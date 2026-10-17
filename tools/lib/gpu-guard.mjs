@@ -31,6 +31,8 @@
 //   CW_GPU_GUARD_FAKE_KERNEL_FILE=<file>  lines appended to it are treated as kernel log lines
 //   CW_GPU_GUARD_FAKE_VRAM_FILE=<file>    a byte count in it replaces the VRAM-used reading
 //                                         (and the suite's own VRAM, unless the next one is set)
+//   CW_GPU_GUARD_FAKE_GTT_FILE=<file>     a byte count in it replaces the GTT-used reading (only an integrated
+//                                         GPU's budget counts GTT; a 1 GiB carve-out has GBs of GTT headroom)
 //   CW_GPU_GUARD_FAKE_OWN_FILE=<file>     a byte count in it replaces the suite's own VRAM
 //   CW_GPU_GUARD_WAIT_MS=<ms>             the start-of-gate wait (default 10 minutes)
 //   CW_GPU_GUARD_RESERVE_MB=<MiB>         free VRAM the desktop always keeps (default 512)
@@ -164,6 +166,7 @@ export function armGuard(suite, opts = {}) {
   const reserve = +(process.env.CW_GPU_GUARD_RESERVE_MB || 512) * MiB, need = +(process.env.CW_GPU_GUARD_NEED_MB || 1280) * MiB;
   const waitMs = +(process.env.CW_GPU_GUARD_WAIT_MS || 10 * 60 * 1000);
   const fakeVram = process.env.CW_GPU_GUARD_FAKE_VRAM_FILE;
+  const fakeGtt = process.env.CW_GPU_GUARD_FAKE_GTT_FILE;
   const total = num(`${dev}/mem_info_vram_total`);
   const gttTotal = num(`${dev}/mem_info_gtt_total`);
   /** memory the GPU can still allocate: VRAM, plus GTT on an integrated GPU */
@@ -218,7 +221,9 @@ export function armGuard(suite, opts = {}) {
   const readSys = () => {
     let vram = num(`${dev}/mem_info_vram_used`);
     if (fakeVram && existsSync(fakeVram)) { const v = parseFloat(readFileSync(fakeVram, 'utf8')); if (Number.isFinite(v)) vram = v; }
-    return { vram, gtt: num(`${dev}/mem_info_gtt_used`) };
+    let gtt = num(`${dev}/mem_info_gtt_used`);
+    if (fakeGtt && existsSync(fakeGtt)) { const v = parseFloat(readFileSync(fakeGtt, 'utf8')); if (Number.isFinite(v)) gtt = v; }
+    return { vram, gtt };
   };
   /* VRAM held by the suite's own process tree (players, browsers, runners it
    * spawned): the leak signal's measure. The card-wide figure also counts the
