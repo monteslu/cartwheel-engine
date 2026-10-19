@@ -562,6 +562,211 @@ static void test_large_world2(void) {
   cw_world2d_destroy(w);
 }
 
+/* Box2D v3.2 snapshots: restore puts the world back, user pointers and records survive, later bodies are gone */
+static void test_snapshot2(void) {
+  cw_world2d w = cw_world2d_create(NULL);
+  cw_body2d_def bd = cw_body2d_default_def();
+  bd.type = CW_BODY_STATIC;
+  cw_body2d ground = cw_body2d_create(w, &bd);
+  cw_shape2d_def sd = cw_shape2d_default_def();
+  int tag_shape = 7, tag_body = 9;
+  sd.user = &tag_shape;
+  cw_shape2d gs = cw_shape2d_box(ground, &sd, (cw_vec2){ 20, 0.5f }, cw_xform2_at(0, -0.5f));
+  cw_body2d boxes[6];
+  for (int i = 0; i < 6; i++) {
+    bd = cw_body2d_default_def();
+    bd.position = (cw_pos2){ 0.3 * i, 1 + 1.2 * i };
+    boxes[i] = cw_body2d_create(w, &bd);
+    cw_shape2d_box(boxes[i], &sd, (cw_vec2){ 0.5f, 0.5f }, cw_xform2_identity());
+  }
+  cw_body2d_set_user(boxes[2], &tag_body);
+  for (int i = 0; i < 40; i++) cw_world2d_step(w, 1.0f / 60);
+  int size = cw_world2d_snapshot_size(w);
+  CHECK(size > 0);
+  uint8_t *image = malloc((size_t)size);
+  CHECK_EQ_INT(cw_world2d_snapshot(w, image, size), size);
+  uint64_t hash0 = cw_world2d_state_hash(w);
+  cw_phys_stats st0 = cw_world2d_stats(w);
+  for (int i = 0; i < 80; i++) cw_world2d_step(w, 1.0f / 60);
+  uint64_t hash_a = cw_world2d_state_hash(w);
+  cw_pos2 pa = cw_body2d_position(boxes[5]);
+  /* a body made after the snapshot, then the restore */
+  bd = cw_body2d_default_def();
+  cw_body2d late = cw_body2d_create(w, &bd);
+  CHECK(cw_world2d_restore(w, image, size));
+  CHECK(!cw_body2d_valid(late));
+  CHECK(cw_world2d_state_hash(w) == hash0);
+  CHECK(cw_world2d_stats(w).hash == st0.hash && cw_world2d_stats(w).steps == st0.steps);
+  CHECK(cw_body2d_user(boxes[2]) == &tag_body && cw_shape2d_user(gs) == &tag_shape);
+  for (int i = 0; i < 80; i++) cw_world2d_step(w, 1.0f / 60);
+  CHECK(cw_world2d_state_hash(w) == hash_a); /* the same simulation, warm-start caches and all */
+  cw_pos2 pb = cw_body2d_position(boxes[5]);
+  CHECK(pa.x == pb.x && pa.y == pb.y);
+  CHECK(!cw_world2d_restore(w, image, size - 1)); /* a short image is refused */
+  FOLD(hash_a);
+  free(image);
+  cw_world2d_destroy(w);
+}
+
+/* Box2D v3.2 recording and replay */
+static void test_recording2(void) {
+  cw_world2d w = cw_world2d_create(NULL);
+  cw_recording2d *rec = cw_world2d_record_start(w);
+  CHECK(rec != NULL && cw_world2d_record_start(w) == NULL);
+  cw_body2d_def bd = cw_body2d_default_def();
+  bd.type = CW_BODY_STATIC;
+  cw_body2d ground = cw_body2d_create(w, &bd);
+  cw_shape2d_def sd = cw_shape2d_default_def();
+  cw_shape2d_box(ground, &sd, (cw_vec2){ 20, 0.5f }, cw_xform2_at(0, -0.5f));
+  for (int i = 0; i < 4; i++) {
+    bd = cw_body2d_default_def();
+    bd.position = (cw_pos2){ 0.2 * i, 1 + 1.1 * i };
+    cw_shape2d_box(cw_body2d_create(w, &bd), &sd, (cw_vec2){ 0.5f, 0.5f }, cw_xform2_identity());
+  }
+  for (int i = 0; i < 90; i++) cw_world2d_step(w, 1.0f / 60);
+  cw_world2d_record_stop(w);
+  int size = 0;
+  const uint8_t *data = cw_recording2d_data(rec, &size);
+  CHECK(data != NULL && size > 0);
+  CHECK(cw_recording2d_validate(data, size));
+  cw_replay2d *rp = cw_replay2d_open(data, size);
+  CHECK(rp != NULL);
+  cw_replay2d_info info = cw_replay2d_get_info(rp);
+  CHECK_EQ_INT(info.frames, 90);
+  int steps = 0;
+  while (cw_replay2d_step(rp)) steps++;
+  CHECK(steps == 90 && cw_replay2d_at_end(rp) && !cw_replay2d_diverged(rp) && cw_replay2d_diverge_frame(rp) == -1);
+  cw_replay2d_seek(rp, 30);
+  CHECK_EQ_INT(cw_replay2d_frame(rp), 30);
+  CHECK(cw_replay2d_body_count(rp) >= 5 && b2Body_IsValid(cw_replay2d_body(rp, 1)));
+  cw_phys_lines lines = { 0 };
+  cw_replay2d_debug_draw(rp, &lines, CW_PHYS_DRAW_SHAPES);
+  CHECK(cw_phys_lines_count(&lines) > 0);
+  cw_phys_lines_free(&lines);
+  cw_replay2d_close(rp);
+  cw_recording2d_destroy(rec);
+  cw_world2d_destroy(w);
+}
+
+/* Box2D v3.2 additions: mover and pogo joints, body / shape / chain / world accessors */
+static void test_v32_extras2(void) {
+  cw_world2d w = cw_world2d_create(NULL);
+  cw_body2d_def bd = cw_body2d_default_def();
+  bd.type = CW_BODY_STATIC;
+  cw_body2d ground = cw_body2d_create(w, &bd);
+  cw_shape2d_def sd = cw_shape2d_default_def();
+  sd.debug_color = 0x112233;
+  cw_shape2d gs = cw_shape2d_box(ground, &sd, (cw_vec2){ 30, 0.5f }, cw_xform2_at(0, -0.5f));
+  CHECK(cw_shape2d_test_point(gs, (cw_pos2){ 0, -0.2 }) && !cw_shape2d_test_point(gs, (cw_pos2){ 0, 0.2 }));
+  cw_pos2 cp = cw_shape2d_closest_point(gs, (cw_pos2){ 3, 2 });
+  CHECK(fabs(cp.x - 3) < 1e-4 && fabs(cp.y - 0) < 1e-4);
+  cw_ray_hit2d h;
+  CHECK(cw_shape2d_raycast(gs, (cw_pos2){ 1, 5 }, (cw_vec2){ 0, -10 }, &h) && h.shape.id == gs.id && fabs(h.point.y) < 1e-4);
+  CHECK(!cw_shape2d_raycast(gs, (cw_pos2){ 1, 5 }, (cw_vec2){ 0, 10 }, &h));
+  cw_aabb2 gb = cw_shape2d_bounds(gs);
+  CHECK(gb.lo.x < -29 && gb.hi.x > 29);
+  CHECK(cw_world2d_bounds(w).hi.x > 29);
+  /* a rounded box is bigger than its box by the radius */
+  bd = cw_body2d_default_def();
+  bd.position = (cw_pos2){ 0, 5 };
+  cw_body2d rb = cw_body2d_create(w, &bd);
+  cw_shape2d rs = cw_shape2d_rounded_box(rb, &sd, (cw_vec2){ 0.5f, 0.5f }, 0.25f, cw_xform2_identity());
+  CHECK(rs.id != 0 && NEAR(cw_body2d_max_extent_from_origin(rb), 0.7071f + 0.25f, 0.03f));
+  CHECK(cw_body2d_min_extent(rb) > 0 && cw_body2d_max_extent(rb) >= cw_body2d_min_extent(rb));
+  CHECK(cw_body2d_bounds(rb).hi.x > 0.7f);
+  cw_vec2 lc = cw_body2d_local_center(rb);
+  cw_pos2 wc = cw_body2d_world_center(rb);
+  CHECK(fabsf(lc.x) < 1e-4f && fabs(wc.y - 5) < 1e-4);
+  /* body toggles */
+  cw_body2d_set_sleep_enabled(rb, false);
+  CHECK(!cw_body2d_sleep_enabled(rb));
+  cw_body2d_set_sleep_enabled(rb, true);
+  CHECK(cw_body2d_sleep_enabled(rb));
+  cw_body2d_set_contact_recycling(rb, false);
+  CHECK(!cw_body2d_contact_recycling(rb));
+  cw_body2d_set_safety_factor(rb, 0.25f);
+  CHECK(NEAR(cw_body2d_safety_factor(rb), 0.25f, 1e-6f));
+  cw_body2d_update_mass(rb);
+  CHECK(cw_body2d_mass(rb) > 0);
+  /* world tuning */
+  cw_world2d_set_max_linear_speed(w, 123);
+  CHECK(NEAR(cw_world2d_max_linear_speed(w), 123, 1e-4f));
+  cw_world2d_set_contact_recycle_distance(w, 0.02f);
+  CHECK(NEAR(cw_world2d_contact_recycle_distance(w), 0.02f, 1e-6f));
+  cw_world2d_set_restitution_iterations(w, 3);
+  CHECK_EQ_INT(cw_world2d_restitution_iterations(w), 3);
+  cw_world2d_set_restitution_propagation(w, true);
+  CHECK(cw_world2d_restitution_propagation(w));
+  float th, td, tp;
+  cw_world2d_set_contact_tuning(w, 25, 2, 2.5f);
+  cw_world2d_contact_tuning(w, &th, &td, &tp);
+  CHECK(NEAR(th, 25, 1e-4f) && NEAR(td, 2, 1e-4f) && NEAR(tp, 2.5f, 1e-4f));
+  cw_world2d_set_workers(w, 2);
+  CHECK(cw_world2d_workers(w) >= 1);
+  cw_world2d_set_narrow_solver(w, true);
+  /* a loose chain segment and the chain materials */
+  bd = cw_body2d_default_def();
+  bd.type = CW_BODY_STATIC;
+  cw_body2d cb = cw_body2d_create(w, &bd);
+  cw_shape2d seg = cw_shape2d_chain_segment(cb, NULL, (cw_vec2){ -6, 1 }, (cw_vec2){ -4, 0 }, (cw_vec2){ -2, 0 }, (cw_vec2){ 0, 1 });
+  CHECK(seg.id != 0);
+  cw_shape2d_set_chain_segment(seg, (cw_vec2){ -6, 1 }, (cw_vec2){ -4, 0.5f }, (cw_vec2){ -2, 0.5f }, (cw_vec2){ 0, 1 });
+  cw_vec2 pts[5] = { { 12, 1 }, { 10, 0 }, { 8, 0 }, { 6, 0 }, { 4, 1 } };
+  cw_chain2d ch = cw_chain2d_create(cb, NULL, pts, 5, false);
+  cw_phys_material mm = cw_phys_material_default();
+  mm.friction = 0.2f;
+  mm.user_material = 77;
+  cw_chain2d_set_material(ch, &mm);
+  CHECK(NEAR(cw_chain2d_material(ch, 0).friction, 0.2f, 1e-6f) && cw_chain2d_material(ch, 1).user_material == 77);
+  CHECK(cw_chain2d_material(ch, 99).user_material == 0);
+  /* a mover joint drives a dynamic body */
+  bd = cw_body2d_default_def();
+  bd.position = (cw_pos2){ -20, 0.5 };
+  bd.lock_rotation = true;
+  cw_body2d walker = cw_body2d_create(w, &bd);
+  cw_shape2d_box(walker, &sd, (cw_vec2){ 0.4f, 0.5f }, cw_xform2_identity());
+  cw_joint2d_def jd = cw_joint2d_default_def(CW_JOINT_MOVER);
+  jd.a = ground;
+  jd.b = walker;
+  jd.linear_velocity = (cw_vec2){ 3, 0 };
+  jd.max_velocity_force = (cw_vec2){ 1000, 0 };
+  cw_joint2d mj = cw_joint2d_create(w, &jd);
+  CHECK(mj.id != 0 && cw_joint2d_type(mj) == CW_JOINT_MOVER);
+  for (int i = 0; i < 60; i++) cw_world2d_step(w, 1.0f / 60);
+  CHECK(cw_body2d_velocity(walker).x > 2.5f);
+  cw_joint2d_set_mover(mj, (cw_vec2){ -3, 0 }, (cw_vec2){ 1000, 0 });
+  for (int i = 0; i < 90; i++) cw_world2d_step(w, 1.0f / 60);
+  CHECK(cw_body2d_velocity(walker).x < -2.5f);
+  FOLD(walker);
+  /* a pogo joint holds a body off the ground against gravity */
+  bd = cw_body2d_default_def();
+  bd.position = (cw_pos2){ 20, 2 };
+  cw_body2d hopper = cw_body2d_create(w, &bd);
+  cw_shape2d_box(hopper, &sd, (cw_vec2){ 0.4f, 0.5f }, cw_xform2_identity());
+  cw_joint2d_def pd = cw_joint2d_default_def(CW_JOINT_POGO);
+  pd.a = ground;
+  pd.b = hopper;
+  pd.frame_a = cw_xform2_at(20, 0); /* the spring runs along +y of frame b, from frame a's point to frame b's */
+  pd.normal = (cw_vec2){ 0, 1 };      /* the ground normal the pogo pushes against, in the world */
+  pd.length = 1.5f;
+  pd.hertz = 4;
+  pd.damping_ratio = 0.8f;
+  pd.max_tension_force = 10;
+  pd.max_compression_force = 40;
+  cw_joint2d pj = cw_joint2d_create(w, &pd);
+  CHECK(pj.id != 0 && cw_joint2d_type(pj) == CW_JOINT_POGO);
+  CHECK(NEAR(cw_joint2d_rest_length(pj), 1.5f, 1e-5f));
+  cw_joint2d_set_rest_length(pj, 1.25f);
+  CHECK(NEAR(cw_joint2d_rest_length(pj), 1.25f, 1e-5f));
+  for (int i = 0; i < 120; i++) cw_world2d_step(w, 1.0f / 60);
+  CHECK(cw_body2d_position(hopper).y > 0.9 && cw_body2d_position(hopper).y < 3);
+  CHECK(isfinite(cw_joint2d_speed(pj)) && isfinite(cw_joint2d_spring_force(pj)) && isfinite(cw_joint2d_linear_separation(pj)) &&
+        isfinite(cw_joint2d_angular_separation(pj)) && isfinite(cw_joint2d_motor_force(pj)));
+  FOLD(hopper);
+  cw_world2d_destroy(w);
+  CHECK(cw_physics2d_avx2_available() || !cw_physics2d_avx2_available());
+}
+
 static void test_mover2(void) {
   cw_world2d w = cw_world2d_create(NULL);
   cw_body2d_def bd = cw_body2d_default_def();
@@ -701,6 +906,7 @@ static void test_findings2(void) {
 
 CW_TEST_SUITE("physics", { "ray3", test_ray3 }, { "shapes3", test_shapes3 }, { "batch3", test_batch3 },
               { "joints_events3", test_joints_events3 }, { "mover3", test_mover3 }, { "contacts3", test_contacts3 }, { "ray2", test_ray2 },
-              { "shapes2", test_shapes2 }, { "joints_events2", test_joints_events2 }, { "mover2", test_mover2 }, { "large_world2", test_large_world2 },
+              { "shapes2", test_shapes2 }, { "joints_events2", test_joints_events2 }, { "mover2", test_mover2 }, { "large_world2", test_large_world2 }, { "snapshot2", test_snapshot2 },
+              { "recording2", test_recording2 }, { "v32_extras2", test_v32_extras2 },
               { "tick_span2", test_tick_span2 }, { "tick_span3", test_tick_span3 },
               { "findings2", test_findings2 })

@@ -158,10 +158,14 @@ enum {
  *         internal kinematic body named "cw_mouse", moved to the target
  *         each step: drag with a pointer)
  *   3D only: SPHERICAL (ball and socket, cone + twist limits), PARALLEL
- *         (keeps z axes aligned: keep a body upright) */
+ *         (keeps z axes aligned: keep a body upright)
+ *   2D only: MOVER (Box2D v3.2's dynamic character mover: a velocity command on a dynamic body, x and y
+ *         separately, limited by a force; no rotation), POGO (a spring along a normal that holds a dynamic
+ *         character off the ground, with a tension and a compression limit) */
 typedef enum {
   CW_JOINT_DISTANCE, CW_JOINT_FILTER, CW_JOINT_MOTOR, CW_JOINT_PRISMATIC, CW_JOINT_REVOLUTE, CW_JOINT_WELD,
-  CW_JOINT_WHEEL, CW_JOINT_MOUSE, CW_JOINT_SPHERICAL, CW_JOINT_PARALLEL, CW_JOINT_TYPE_COUNT
+  CW_JOINT_WHEEL, CW_JOINT_MOUSE, CW_JOINT_SPHERICAL, CW_JOINT_PARALLEL, CW_JOINT_MOVER, CW_JOINT_POGO,
+  CW_JOINT_TYPE_COUNT
 } cw_joint_type;
 
 #ifdef __cplusplus

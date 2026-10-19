@@ -36,18 +36,14 @@ static cw__joint2 *jrec(cw_joint2d j) {
   return b2Joint_GetUserData(id);
 }
 
-#define BODY_OR(b, ret) \
-  b2BodyId bid = b2LoadBodyId((b).id); \
-  if (!(b).id || !b2Body_IsValid(bid)) { \
-    cw_warn("physics2d: %s on a stale or null body", __func__); \
-    return ret; \
-  }
-
 /* ── worlds ──────────────────────────────────────────────────────────── */
 
 cw_world2d_def cw_world2d_default_def(void) {
+  b2WorldDef b = b2DefaultWorldDef();
   return (cw_world2d_def){ .gravity = { 0, -10 }, .substeps = 4, .hit_speed = 1, .restitution_threshold = 1,
-                           .sleep = true, .continuous = true };
+                           .restitution_iterations = b.restitutionIterations,
+                           .restitution_propagation = b.enableRestitutionPropagation,
+                           .max_linear_speed = b.maximumLinearSpeed, .sleep = true, .continuous = true };
 }
 
 cw_world2d cw_world2d_create(const cw_world2d_def *def) {
@@ -58,6 +54,11 @@ cw_world2d cw_world2d_create(const cw_world2d_def *def) {
   wd.restitutionThreshold = d.restitution_threshold;
   wd.enableSleep = d.sleep;
   wd.enableContinuous = d.continuous;
+  if (d.restitution_iterations > 0) wd.restitutionIterations = d.restitution_iterations;
+  wd.enableRestitutionPropagation = d.restitution_propagation;
+  if (d.max_linear_speed > 0) wd.maximumLinearSpeed = d.max_linear_speed;
+  wd.capacity = (b2Capacity){ d.capacity.static_shapes, d.capacity.dynamic_shapes, d.capacity.static_bodies,
+                              d.capacity.dynamic_bodies, d.capacity.contacts, d.capacity.arena_bytes };
   cw_box2d_tasks(&wd, d.workers);
   cw__world2 *w = cw_calloc(1, sizeof *w, CW_MEM_PHYSICS);
   wd.userData = w;
@@ -80,6 +81,7 @@ cw_world2d cw_world2d_create(const cw_world2d_def *def) {
 void cw_world2d_destroy(cw_world2d wh) {
   cw__world2 *w = cw__w2(wh);
   if (!w) return;
+  if (w->recording) cw_world2d_record_stop(wh); /* the recording outlives the world: its owner destroys it */
   b2DestroyWorld(w->id);
   cw_box2d_tasks_release(w->tasks); /* only after the world: its steps used it */
   cw_pool_free_all(&w->bodies);
@@ -277,8 +279,11 @@ void cw_world2d_sync(cw_world2d wh, float alpha) {
 /* ── bodies ──────────────────────────────────────────────────────────── */
 
 cw_body2d_def cw_body2d_default_def(void) {
+  b2BodyDef b = b2DefaultBodyDef();
   return (cw_body2d_def){ .type = CW_BODY_DYNAMIC, .rotation = { 1, 0 }, .gravity_scale = 1, .awake = true,
-                          .sleep = true, .interpolate = true };
+                          .sleep = true, .interpolate = true, .safety_factor = b.safetyFactor,
+                          .allow_fast_rotation = b.allowFastRotation, .contact_recycling = b.enableContactRecycling,
+                          .enabled = true };
 }
 
 cw_body2d cw_body2d_create(cw_world2d wh, const cw_body2d_def *def) {
@@ -303,6 +308,10 @@ cw_body2d cw_body2d_create(cw_world2d wh, const cw_body2d_def *def) {
   bd.isBullet = d.bullet;
   bd.isAwake = d.awake;
   bd.enableSleep = d.sleep;
+  if (d.safety_factor > 0) bd.safetyFactor = d.safety_factor;
+  bd.allowFastRotation = d.allow_fast_rotation;
+  bd.enableContactRecycling = d.contact_recycling;
+  bd.isEnabled = d.enabled;
   bd.name = d.name;
   bd.userData = r;
   b2BodyId id = b2CreateBody(w->id, &bd);
@@ -479,6 +488,7 @@ static b2ShapeDef shape_def(const cw_shape2d_def *def) {
   sd.enableSensorEvents = d.sensor_events;
   sd.enableContactEvents = d.contact_events;
   sd.enableHitEvents = d.hit_events;
+  sd.material.customColor = d.debug_color;
   sd.userData = d.user;
   return sd;
 }
@@ -524,10 +534,6 @@ cw_shape2d cw_shape2d_segment(cw_body2d b, const cw_shape2d_def *def, cw_vec2 a,
   return (cw_shape2d){ b2StoreShapeId(b2CreateSegmentShape(bid, &sd, &s)) };
 }
 
-#define SHAPE_OR(s, ret) \
-  b2ShapeId sid = b2LoadShapeId((s).id); \
-  if (!(s).id || !b2Shape_IsValid(sid)) return ret;
-
 void cw_shape2d_destroy(cw_shape2d s) {
   SHAPE_OR(s, );
   b2DestroyShape(sid, true);
@@ -548,6 +554,7 @@ bool cw_shape2d_is_sensor(cw_shape2d s) {
 void cw_shape2d_set_material(cw_shape2d s, const cw_phys_material *m) {
   SHAPE_OR(s, );
   b2SurfaceMaterial sm = surface(m);
+  sm.customColor = b2Shape_GetSurfaceMaterial(sid).customColor; /* the shape's wireframe colour is not a material */
   b2Shape_SetSurfaceMaterial(sid, &sm);
 }
 cw_phys_material cw_shape2d_material(cw_shape2d s) {
@@ -614,6 +621,22 @@ cw_joint2d_def cw_joint2d_default_def(cw_joint_type type) {
   case CW_JOINT_WELD: break;
   case CW_JOINT_MOTOR:
   case CW_JOINT_MOUSE: d.hertz = 5; d.damping_ratio = 0.7f; break;
+  case CW_JOINT_MOVER: {
+    b2MoverJointDef b = b2DefaultMoverJointDef();
+    d.linear_velocity = cwv(b.linearVelocity);
+    d.max_velocity_force = cwv(b.maxVelocityForce);
+    break;
+  }
+  case CW_JOINT_POGO: {
+    b2PogoJointDef b = b2DefaultPogoJointDef();
+    d.normal = cwv(b.normal);
+    d.hertz = b.hertz;
+    d.damping_ratio = b.dampingRatio;
+    d.length = b.restLength;
+    d.max_tension_force = b.maxTensionForce;
+    d.max_compression_force = b.maxCompressionForce;
+    break;
+  }
   default: d.hertz = 2; d.damping_ratio = 0.5f; break;
   }
   return d;
@@ -758,6 +781,28 @@ cw_joint2d cw_joint2d_create(cw_world2d wh, const cw_joint2d_def *d) {
     id = b2CreateRevoluteJoint(w->id, &jd);
     break;
   }
+  case CW_JOINT_MOVER: {
+    b2MoverJointDef jd = b2DefaultMoverJointDef();
+    BASE(jd);
+    jd.linearVelocity = v2(d->linear_velocity);
+    jd.maxVelocityForce = v2(d->max_velocity_force);
+    id = b2CreateMoverJoint(w->id, &jd);
+    break;
+  }
+  case CW_JOINT_POGO: {
+    b2PogoJointDef jd = b2DefaultPogoJointDef();
+    BASE(jd);
+    jd.normal = v2(d->normal);
+    jd.hertz = d->hertz;
+    jd.dampingRatio = d->damping_ratio;
+    jd.restLength = d->length;
+    jd.maxTensionForce = d->max_tension_force;
+    jd.maxCompressionForce = d->max_compression_force;
+    jd.impulse = d->pogo_impulse;
+    jd.velocity = d->pogo_velocity;
+    id = b2CreatePogoJoint(w->id, &jd);
+    break;
+  }
   case CW_JOINT_WELD: {
     b2WeldJointDef jd = b2DefaultWeldJointDef();
     BASE(jd);
@@ -818,12 +863,6 @@ cw_joint2d cw_joint2d_create(cw_world2d wh, const cw_joint2d_def *d) {
   r->id = b2StoreJointId(id);
   return (cw_joint2d){ r->id };
 }
-
-#define JOINT_OR(j, ret) \
-  b2JointId jid = b2LoadJointId((j).id); \
-  if (!(j).id || !b2Joint_IsValid(jid)) return ret; \
-  cw__joint2 *jr = b2Joint_GetUserData(jid); \
-  (void)jr;
 
 void cw_joint2d_destroy(cw_joint2d j) {
   JOINT_OR(j, );
@@ -946,9 +985,7 @@ static void draw_string(b2Pos p, const char *s, b2HexColor color, void *ctx) {
   (void)ctx;
 }
 
-void cw_world2d_debug_draw(cw_world2d wh, cw_phys_lines *out, uint32_t flags) {
-  cw__world2 *w = cw__w2(wh);
-  if (!w) return;
+void cw__world2_draw(b2WorldId id, cw_phys_lines *out, uint32_t flags) {
   b2DebugDraw dd = b2DefaultDebugDraw();
   dd.DrawPolygonFcn = draw_polygon;
   dd.DrawSolidPolygonFcn = draw_solid_polygon;
@@ -967,5 +1004,10 @@ void cw_world2d_debug_draw(cw_world2d wh, cw_phys_lines *out, uint32_t flags) {
   dd.drawContactNormals = flags & CW_PHYS_DRAW_CONTACTS;
   dd.drawMass = flags & CW_PHYS_DRAW_MASS;
   dd.context = out;
-  b2World_Draw(w->id, &dd);
+  b2World_Draw(id, &dd);
+}
+
+void cw_world2d_debug_draw(cw_world2d wh, cw_phys_lines *out, uint32_t flags) {
+  cw__world2 *w = cw__w2(wh);
+  if (w) cw__world2_draw(w->id, out, flags);
 }

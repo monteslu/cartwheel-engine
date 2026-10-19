@@ -826,6 +826,10 @@ cw_joint3d cw_joint3d_create(cw_world3d wh, const cw_joint3d_def *def) {
     return (cw_joint3d){ 0 };
   }
   const cw_joint3d_def *d = def;
+  if (d->type == CW_JOINT_MOVER || d->type == CW_JOINT_POGO) {
+    cw_error("physics3d: mover and pogo joints are 2D only (Box2D v3.2)");
+    return (cw_joint3d){ 0 };
+  }
   b3BodyId a = d->a.id ? b3LoadBodyId(d->a.id) : ground_body(w);
   b3BodyId b = b3LoadBodyId(d->b.id);
   if (!b3Body_IsValid(b) || (d->type != CW_JOINT_MOUSE && !b3Body_IsValid(a))) {

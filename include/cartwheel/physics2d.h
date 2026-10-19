@@ -70,12 +70,21 @@ cw_xform2 cw_xform2_lerp(cw_xform2 a, cw_xform2 b, float t);
 
 /* ── worlds ──────────────────────────────────────────────────────────── */
 
+/* What a world is sized for (b2World_GetMaxCapacity reports what it grew to; feed that back to skip the growth). */
+typedef struct cw_phys_capacity2d {
+  int static_shapes, dynamic_shapes, static_bodies, dynamic_bodies, contacts, arena_bytes;
+} cw_phys_capacity2d;
+
 typedef struct cw_world2d_def {
   cw_vec2 gravity;             /* (0, -10) */
   int substeps;                /* 4 */
   int workers;                 /* job-pool threads the step may use: 0 = all */
   float hit_speed;             /* 1 m/s */
   float restitution_threshold; /* 1 m/s */
+  int restitution_iterations;  /* 0 = Box2D's default */
+  bool restitution_propagation; /* false = Box2D's default */
+  float max_linear_speed;      /* m/s, 0 = Box2D's default */
+  cw_phys_capacity2d capacity; /* expected counts, to size the world once (all zero: grow as needed) */
   bool sleep, continuous;      /* true, true */
   const char *layers[CW_PHYS_LAYERS];
 } cw_world2d_def;
@@ -125,6 +134,104 @@ void cw_world2d_debug_draw(cw_world2d w, cw_phys_lines *out, uint32_t flags);
 /* The Box2D world id (null id for a null handle). Do not destroy it or set its user data. */
 b2WorldId cw_world2d_raw(cw_world2d w);
 
+/* ── world tuning (Box2D v3.2) ────────────────────────────────────────── */
+
+typedef struct cw_aabb2 {
+  cw_vec2 lo, hi; /* floats: exact within a few km of the origin */
+} cw_aabb2;
+/* The union of every shape's bounds; zero for an invalid world. */
+cw_aabb2 cw_world2d_bounds(cw_world2d w);
+/* Box2D's hash of the world's simulation state (what rollback compares); 0 for an invalid world. */
+uint64_t cw_world2d_state_hash(cw_world2d w);
+/* Fastest a body may move, m/s. */
+void cw_world2d_set_max_linear_speed(cw_world2d w, float speed);
+float cw_world2d_max_linear_speed(cw_world2d w);
+/* Contact points are reused while the shapes move less than this, m; 0 turns recycling off for new contacts. */
+void cw_world2d_set_contact_recycle_distance(cw_world2d w, float meters);
+float cw_world2d_contact_recycle_distance(cw_world2d w);
+/* Contact softness: stiffness (Hz), damping ratio, and the fastest push-out speed (m/s). */
+void cw_world2d_set_contact_tuning(cw_world2d w, float hertz, float damping_ratio, float push_speed);
+void cw_world2d_contact_tuning(cw_world2d w, float *hertz, float *damping_ratio, float *push_speed);
+/* Bounce solver passes, and whether a bounce carries through a stack (b2WorldDef::enableRestitutionPropagation). */
+void cw_world2d_set_restitution_iterations(cw_world2d w, int iterations);
+int cw_world2d_restitution_iterations(cw_world2d w);
+void cw_world2d_set_restitution_propagation(cw_world2d w, bool on);
+bool cw_world2d_restitution_propagation(cw_world2d w);
+/* Hit events fire above this approach speed, m/s. */
+void cw_world2d_set_hit_speed(cw_world2d w, float speed);
+/* Threads the step uses (1..32, and the job pool's size at most). */
+void cw_world2d_set_workers(cw_world2d w, int workers);
+int cw_world2d_workers(cw_world2d w);
+/* What the world has grown to; pass it as def.capacity next time. */
+cw_phys_capacity2d cw_world2d_capacity(cw_world2d w);
+/* Run the 4-wide solver even where the 8-wide AVX2 one is available (same bits; for testing). */
+void cw_world2d_set_narrow_solver(cw_world2d w, bool on);
+/* True when this CPU can run Box2D's 8-wide AVX2 contact solver. */
+bool cw_physics2d_avx2_available(void);
+
+/* ── snapshots (Box2D v3.2): the whole simulation state as bytes ─────────
+ * Call between steps. A restore puts the world back to that instant, warm-start caches and sleeping islands
+ * included, which is what rollback needs (the tree snapshot of cartwheel/net.h carries one per 2D world). Bodies,
+ * shapes and joints made after the snapshot are gone after a restore; their handles go stale. Your user pointers
+ * (cw_body2d_set_user...) and the wrapper's own records survive, event lists are cleared. Experimental in
+ * Box2D: the image format changes between versions, so do not keep images across engine updates. */
+/* Bytes a snapshot needs; 0 for an invalid world. */
+int cw_world2d_snapshot_size(cw_world2d w);
+/* Writes the snapshot to out (cap >= cw_world2d_snapshot_size); returns its size, or 0 (logged) when it does not fit. */
+int cw_world2d_snapshot(cw_world2d w, uint8_t *out, int cap);
+/* Restores a snapshot of this world. False (logged) when it is rejected; the world is then unchanged unless the
+ * payload turns out corrupt, in which case destroy it. */
+bool cw_world2d_restore(cw_world2d w, const uint8_t *image, int size);
+
+/* ── recording and replay (Box2D v3.2) ───────────────────────────────────
+ * A recording is the world at the start plus every call that changed it and the state hash of every step: attach it
+ * to a bug report and the replay shows the same simulation. */
+typedef struct cw_recording2d cw_recording2d;
+/* Starts recording world w from now (call between steps; before the first step records the whole session).
+ * NULL (logged) if it is already recording. Stop it with cw_world2d_record_stop. */
+cw_recording2d *cw_world2d_record_start(cw_world2d w);
+void cw_world2d_record_stop(cw_world2d w);
+/* The recorded bytes so far; valid until the next recording call or cw_recording2d_destroy. */
+const uint8_t *cw_recording2d_data(const cw_recording2d *r, int *size);
+bool cw_recording2d_save(const cw_recording2d *r, const char *path);
+/* Reads a recording file (an OS path); NULL if it cannot be read. */
+cw_recording2d *cw_recording2d_load(const char *path);
+/* A recording must not be destroyed while its world is still recording. */
+void cw_recording2d_destroy(cw_recording2d *r);
+/* Re-runs a recording from bytes and checks every recorded state hash; false on the first mismatch. */
+bool cw_recording2d_validate(const void *data, int size);
+
+typedef struct cw_replay2d cw_replay2d;
+typedef struct cw_replay2d_info {
+  int frames;       /* recorded steps */
+  float dt;         /* the recorded step */
+  int substeps;
+  cw_aabb2 bounds;  /* the world bounds over the recording */
+} cw_replay2d_info;
+/* Opens a recording (the bytes are copied) in a world of its own, at its first step. NULL (logged) if malformed. */
+cw_replay2d *cw_replay2d_open(const void *data, int size);
+void cw_replay2d_close(cw_replay2d *p);
+/* Advances one recorded step; false at the end. */
+bool cw_replay2d_step(cw_replay2d *p);
+/* Jumps to a recorded step (backwards re-runs from the nearest keyframe); clamped. */
+void cw_replay2d_seek(cw_replay2d *p, int frame);
+void cw_replay2d_restart(cw_replay2d *p);
+int cw_replay2d_frame(const cw_replay2d *p);
+bool cw_replay2d_at_end(const cw_replay2d *p);
+cw_replay2d_info cw_replay2d_get_info(const cw_replay2d *p);
+/* True when a recorded state hash failed to reproduce (this engine simulates it differently); the first such step is
+ * cw_replay2d_diverge_frame, -1 otherwise. */
+bool cw_replay2d_diverged(const cw_replay2d *p);
+int cw_replay2d_diverge_frame(const cw_replay2d *p);
+/* Memory for backwards seeking: keyframes at least min_interval steps apart within budget_bytes. */
+void cw_replay2d_set_keyframes(cw_replay2d *p, size_t budget_bytes, int min_interval);
+/* The replayed world as a wrapper handle is not offered (it is Box2D's own): its bodies, by creation order, and the
+ * Box2D world id, for the raw API; and its wireframes, as cw_world2d_debug_draw. */
+b2WorldId cw_replay2d_world(const cw_replay2d *p);
+int cw_replay2d_body_count(const cw_replay2d *p);
+b2BodyId cw_replay2d_body(const cw_replay2d *p, int index);
+void cw_replay2d_debug_draw(cw_replay2d *p, cw_phys_lines *out, uint32_t flags);
+
 /* ── bodies ──────────────────────────────────────────────────────────── */
 
 typedef struct cw_body2d_def {
@@ -136,6 +243,10 @@ typedef struct cw_body2d_def {
   float linear_damping, angular_damping, gravity_scale; /* 0, 0, 1 */
   bool lock_rotation, bullet;
   bool awake, sleep, interpolate; /* true, true, true */
+  float safety_factor;         /* continuous collision, 0.01..0.5: Box2D's default (smaller is safer, can hitch) */
+  bool allow_fast_rotation;    /* false */
+  bool contact_recycling;      /* true: reuse contact points while the shapes barely move */
+  bool enabled;                /* true; false = created disabled (no collision, no step) */
   const char *name;
   void *user;
 } cw_body2d_def;
@@ -168,6 +279,24 @@ cw_xform2 cw_body2d_transform(cw_body2d b);
 void cw_body2d_set_transform(cw_body2d b, cw_xform2 x);
 /* cw_body2d_set_world_target from a float transform. */
 void cw_body2d_set_target(cw_body2d b, cw_xform2 target, float dt);
+/* Centre of mass: world (double) and body-local. */
+cw_pos2 cw_body2d_world_center(cw_body2d b);
+cw_vec2 cw_body2d_local_center(cw_body2d b);
+/* The world box of the body's shapes (empty and centred on the origin when it has none). */
+cw_aabb2 cw_body2d_bounds(cw_body2d b);
+/* Distances from the shapes: min and max to the centre of mass, max to the body origin (conservative). */
+float cw_body2d_min_extent(cw_body2d b);
+float cw_body2d_max_extent(cw_body2d b);
+float cw_body2d_max_extent_from_origin(cw_body2d b);
+/* Recomputes the mass from the shapes (after you overrode it or changed shapes without updating). */
+void cw_body2d_update_mass(cw_body2d b);
+void cw_body2d_set_sleep_enabled(cw_body2d b, bool enabled);
+bool cw_body2d_sleep_enabled(cw_body2d b);
+/* Contacts made after the call use the new value. */
+void cw_body2d_set_contact_recycling(cw_body2d b, bool enabled);
+bool cw_body2d_contact_recycling(cw_body2d b);
+void cw_body2d_set_safety_factor(cw_body2d b, float factor);
+float cw_body2d_safety_factor(cw_body2d b);
 /* m/s; zero (logged) for an invalid body. */
 cw_vec2 cw_body2d_velocity(cw_body2d b);
 /* m/s. */
@@ -212,6 +341,7 @@ typedef struct cw_shape2d_def {
   uint32_t mask;
   int group;
   bool sensor, contact_events, sensor_events, hit_events; /* false, true, true, false */
+  uint32_t debug_color;        /* 0xRRGGBB for this shape's wireframe; 0 = by body state */
   void *user;
 } cw_shape2d_def;
 /* The defaults noted in cw_shape2d_def above. */
@@ -228,6 +358,22 @@ cw_shape2d cw_shape2d_capsule(cw_body2d b, const cw_shape2d_def *def, cw_vec2 a,
 cw_shape2d cw_shape2d_polygon(cw_body2d b, const cw_shape2d_def *def, const cw_vec2 *points, int count, float radius);
 /* Two-sided line segment a..c (body-local); adds no mass. Null (logged) for an invalid body. */
 cw_shape2d cw_shape2d_segment(cw_body2d b, const cw_shape2d_def *def, cw_vec2 a, cw_vec2 c);
+/* Box with half extents, rounded by radius (the corners and the edges grow by radius), placed by local. */
+cw_shape2d cw_shape2d_rounded_box(cw_body2d b, const cw_shape2d_def *def, cw_vec2 half, float radius, cw_xform2 local);
+/* A loose one-sided chain segment p1..p2 with ghost end vertices (Box2D v3.2): the building block of a chain that
+ * you grow or move segment by segment; collision on the right walking p1 to p2. Prefer cw_chain2d_create unless
+ * you need to change segments at run time. Null (logged) when too short. */
+cw_shape2d cw_shape2d_chain_segment(cw_body2d b, const cw_shape2d_def *def, cw_vec2 ghost1, cw_vec2 p1, cw_vec2 p2,
+                                    cw_vec2 ghost2);
+/* Turns the shape into (or updates) a loose chain segment; the shape must not belong to a cw_chain2d. Does not
+ * change the mass. */
+void cw_shape2d_set_chain_segment(cw_shape2d s, cw_vec2 ghost1, cw_vec2 p1, cw_vec2 p2, cw_vec2 ghost2);
+/* The shape's world box; zero for an invalid shape. */
+cw_aabb2 cw_shape2d_bounds(cw_shape2d s);
+/* Does the world point lie inside the shape? */
+bool cw_shape2d_test_point(cw_shape2d s, cw_pos2 point);
+/* The closest point of the shape to target (world positions). */
+cw_pos2 cw_shape2d_closest_point(cw_shape2d s, cw_pos2 target);
 /* Updates the body's mass; no-op on an invalid handle. */
 void cw_shape2d_destroy(cw_shape2d s);
 /* False for null, destroyed or stale handles. */
@@ -255,6 +401,12 @@ b2ShapeId cw_shape2d_raw(cw_shape2d s);
 cw_chain2d cw_chain2d_create(cw_body2d b, const cw_shape2d_def *def, const cw_vec2 *points, int count, bool loop);
 /* Destroys the chain and its segments; no-op on an invalid handle. */
 void cw_chain2d_destroy(cw_chain2d c);
+/* The material of every segment of a chain (Box2D v3.2 can also give each segment its own). */
+void cw_chain2d_set_material(cw_chain2d c, const cw_phys_material *m);
+/* One segment's material (no-op for an invalid chain or segment index). */
+void cw_chain2d_set_segment_material(cw_chain2d c, int segment, const cw_phys_material *m);
+/* One segment's material; all zero for an invalid chain or segment index. */
+cw_phys_material cw_chain2d_material(cw_chain2d c, int segment);
 /* The Box2D chain id. */
 b2ChainId cw_chain2d_raw(cw_chain2d c);
 
@@ -277,6 +429,15 @@ typedef struct cw_joint2d_def {
   float length;
   float max_force;
   cw_pos2 target;
+  /* MOVER: the commanded velocity (m/s) and the most force that may chase it, x and y separately (N). */
+  cw_vec2 linear_velocity, max_velocity_force;
+  /* POGO: a spring between frame_a's point (on body a) and frame_b's point (on body b), measured along +y of
+   * frame_b (hertz, damping_ratio and length are its spring and rest length); it pushes on the bodies along
+   * `normal` (the world normal of the ground it stands on), at most max_tension_force pulling and
+   * max_compression_force pushing; pogo_impulse / pogo_velocity carry its state across a recreation (the pogo is
+   * usually made again every frame). */
+  cw_vec2 normal;
+  float max_tension_force, max_compression_force, pogo_impulse, pogo_velocity;
   void *user;
 } cw_joint2d_def;
 /* Identity frames and per-type spring defaults; see cw_joint3d_default_def. */
@@ -301,6 +462,20 @@ void cw_joint2d_set_motor(cw_joint2d j, bool on, float speed, float max);
 void cw_joint2d_set_limits(cw_joint2d j, bool on, float lower, float upper);
 /* Revolute, prismatic, wheel, distance; weld / motor take hertz and damping (on ignored). */
 void cw_joint2d_set_spring(cw_joint2d j, bool on, float hertz, float damping_ratio);
+/* MOVER: the commanded velocity (m/s) and the force limits (N); ignored for other joints. */
+void cw_joint2d_set_mover(cw_joint2d j, cw_vec2 velocity, cw_vec2 max_force);
+/* Distance and pogo: the spring's rest length. */
+void cw_joint2d_set_rest_length(cw_joint2d j, float length);
+float cw_joint2d_rest_length(cw_joint2d j);
+/* Revolute, prismatic: the speed the joint is moving at (rad/s, m/s); pogo: its extension speed; others 0. */
+float cw_joint2d_speed(cw_joint2d j);
+/* The force (N) or torque (N*m) the motor is applying now (revolute, prismatic, wheel, distance); others 0. */
+float cw_joint2d_motor_force(cw_joint2d j);
+/* Distance: the spring's force now; pogo: its impulse; others 0. */
+float cw_joint2d_spring_force(cw_joint2d j);
+/* How far the joint is pulled apart: metres and radians. */
+float cw_joint2d_linear_separation(cw_joint2d j);
+float cw_joint2d_angular_separation(cw_joint2d j);
 /* MOUSE only: the world point the grab point is pulled toward. */
 void cw_joint2d_set_target(cw_joint2d j, cw_pos2 world_target);
 /* Revolute: angle; prismatic: translation; distance: length; wheel: measured
@@ -327,6 +502,8 @@ bool cw_world2d_raycast(cw_world2d w, cw_pos2 origin, cw_vec2 translation, const
 /* The cap closest hits, sorted; returns how many. */
 int cw_world2d_raycast_all(cw_world2d w, cw_pos2 origin, cw_vec2 translation, const cw_phys_filter *filter,
                            cw_ray_hit2d *hits, int cap);
+/* Casts a ray at this one shape; false (hit zeroed) on a miss. hit->shape / body are filled. */
+bool cw_shape2d_raycast(cw_shape2d s, cw_pos2 origin, cw_vec2 translation, cw_ray_hit2d *hit);
 typedef struct cw_ray2d {
   cw_pos2 origin;
   cw_vec2 translation;

@@ -36,11 +36,32 @@ typedef struct cw__world2 {
   CW_ARRAY(b2JointId) breaking;
   cw__layers layers;
   b2BodyId ground;
+  struct cw_recording2d *recording;
 } cw__world2;
 
 cw__world2 *cw__w2(cw_world2d w);
 cw__body2 *cw__b2(cw_body2d b);
 void cw__joint2_destroy(cw__world2 *w, b2JointId jid);
+/* debug wireframes of any Box2D world (the wrapper's own, or a replay's) */
+void cw__world2_draw(b2WorldId id, cw_phys_lines *out, uint32_t flags);
+/* the recording a world is writing into, if any (record2d.c) */
+struct cw_recording2d;
+
+/* handle -> Box2D id, with an early return for a stale or null handle (declares bid / sid / jid) */
+#define BODY_OR(b, ret) \
+  b2BodyId bid = b2LoadBodyId((b).id); \
+  if (!(b).id || !b2Body_IsValid(bid)) { \
+    cw_warn("physics2d: %s on a stale or null body", __func__); \
+    return ret; \
+  }
+#define SHAPE_OR(s, ret) \
+  b2ShapeId sid = b2LoadShapeId((s).id); \
+  if (!(s).id || !b2Shape_IsValid(sid)) return ret;
+#define JOINT_OR(j, ret) \
+  b2JointId jid = b2LoadJointId((j).id); \
+  if (!(j).id || !b2Joint_IsValid(jid)) return ret; \
+  cw__joint2 *jr = b2Joint_GetUserData(jid); \
+  (void)jr;
 
 static inline b2Vec2 v2(cw_vec2 v) { return (b2Vec2){ v.x, v.y }; }
 static inline b2Pos bp(cw_pos2 p) { return (b2Pos){ p.x, p.y }; }
