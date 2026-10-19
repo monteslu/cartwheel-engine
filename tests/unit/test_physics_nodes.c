@@ -330,6 +330,49 @@ static void test_joints2d(void) {
   cw_tree_free(t);
 }
 
+/* Box2D v3.2 joints as nodes: MOVER (a velocity command on a dynamic body) and POGO (a spring holding it up) */
+static void test_mover_pogo2d(void) {
+  cw_tree *t = cw_tree_new();
+  cw_node root = cw_tree_root(t);
+  ground2(root);
+  cw_node w = box2(root, "Walker", 100, 170);
+  cw_node_set(w, "lock_rotation", cw_val_bool(true));
+  cw_node m = cw_node_new("Joint2D", "Mover");
+  cw_value mt = { CW_T_ENUM };
+  mt.i = 8; /* MOVER */
+  cw_node_set(m, "joint_type", mt);
+  cw_node_set(m, "node_b", cw_val_string("../Walker"));
+  cw_node_set(m, "mover_velocity", cw_val_vec2(90, 0));
+  cw_node_set(m, "mover_max_force", cw_val_vec2(1000, 0));
+  cw_node_add_child(root, m);
+  step(t, 60);
+  cw_vec2 p1 = cw_node2d_position(w);
+  CHECK(p1.x > 160 && fabsf(p1.y - 185) < 1.0f); /* about 90 px along, standing on the ground */
+  cw_node_set(m, "mover_velocity", cw_val_vec2(-90, 0)); /* changes in place */
+  step(t, 60);
+  CHECK(cw_node2d_position(w).x < p1.x - 60);
+  FOLD(p1);
+  /* a pogo holds a box 40 px above its anchor against gravity */
+  cw_node h = box2(root, "Hopper", 300, 100);
+  cw_node_set(h, "lock_rotation", cw_val_bool(true));
+  cw_node p = cw_node_new("Joint2D", "Pogo");
+  cw_value pt = { CW_T_ENUM };
+  pt.i = 9; /* POGO */
+  cw_node_set(p, "joint_type", pt);
+  cw_node2d_set_position(p, cw_v2(300, 190));
+  cw_node_set(p, "node_b", cw_val_string("../Hopper"));
+  cw_node_set(p, "length", cw_val_float(40));
+  cw_node_set(p, "stiffness", cw_val_float(4));
+  cw_node_set(p, "pogo_tension", cw_val_float(20));
+  cw_node_set(p, "pogo_compression", cw_val_float(20));
+  cw_node_add_child(root, p);
+  step(t, 240);
+  cw_vec2 ph = cw_node2d_position(h);
+  CHECK(ph.y > 140 && ph.y < 158 && fabsf(ph.x - 300) < 2); /* settled near anchor y - 40 */
+  FOLD(ph);
+  cw_tree_free(t);
+}
+
 /* ── 3D ─────────────────────────────────────────────────────────────── */
 
 static cw_node shape3(cw_node body, int kind, t3_vec3 size) {
@@ -576,11 +619,12 @@ static void t_props2d(void) { setup_all(); test_property_changes2d(); }
 static void t_signals2d(void) { setup_all(); test_signals2d(); }
 static void t_char2d(void) { setup_all(); test_character2d(); }
 static void t_joints2d(void) { setup_all(); test_joints2d(); }
+static void t_mover_pogo2d(void) { setup_all(); test_mover_pogo2d(); }
 static void t_3d(void) { setup_all(); test_physics3d(); }
 static void t_canvas(void) { setup_all(); test_canvas_nodes(); }
 
 CW_TEST_SUITE("physics_nodes", { "lifecycle2d", t_lifecycle2d }, { "property_changes2d", t_props2d },
-              { "signals2d", t_signals2d }, { "area_toggle2d", t_area_toggle2d }, { "character2d", t_char2d }, { "joints2d", t_joints2d },
+              { "signals2d", t_signals2d }, { "area_toggle2d", t_area_toggle2d }, { "character2d", t_char2d }, { "joints2d", t_joints2d }, { "mover_pogo2d", t_mover_pogo2d },
               { "physics3d", t_3d }, { "canvas_nodes", t_canvas },
               { "body_node_lookup", t_body_node },
               { "unknown_layer_name", t_unknown_layer })

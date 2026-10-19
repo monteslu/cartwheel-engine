@@ -120,6 +120,22 @@ Particles are cut into blocks of consecutive indices at creation. Each substep s
 
 A cloth marked `quality_scaled` is cosmetic: on the Low graphics preset it runs half the substeps and never self-collides. Leave it off for anything that touches game state; a deterministic run always simulates as High.
 
+## What Box2D v3.2 gives the 2D wrapper
+
+The engine builds Box2D v3.2 and exposes all of it that belongs to a world, a body, a shape or a joint. The plain geometry functions (`b2CollideCircles`, `b2ComputeShapeDistance` and the like) work on data and need no wrapper: call them directly, the headers are on the include path.
+
+**Large worlds.** Box2D keeps world positions as doubles (about 1000 km of world instead of 16 km) and does the solver math in floats. The wrapper follows: [cw_pos2](api:cw_pos2) is a double position, and body positions ([cw_body2d_world_transform](api:cw_body2d_world_transform)), ray and hit points, query origins, joint anchors and the character mover's feet all use it. A query shape carries an origin ([cw_qshape2d_at](api:cw_qshape2d_at)), so its points stay precise relative to it. The float calls (`cw_body2d_transform`, `cw_body2d_set_transform`) still work and round a far position to floats. A mover works in floats relative to where its feet started, so it is as exact 500 km out as at the origin. Scene nodes are still floats in pixels, so a node far from the origin has a float position even though its body does not: use the wrapper API for a world that big. The determinism gate checks upstream's double-precision hash on every host.
+
+**Snapshots and rollback.** [cw_world2d_snapshot](api:cw_world2d_snapshot) and [cw_world2d_restore](api:cw_world2d_restore) save and put back the whole simulation, including the contact warm-start caches and sleeping islands, which is what a deterministic rollback needs. A tree snapshot (`cartwheel/net.h`) carries the 2D world this way, so a pile of `RigidBody2D` and the `Area2D` overlaps re-simulate bit for bit after a rollback; `unit-net` proves it and runs the same game without the image as the control that must fail. A snapshot holds your user pointers, so it is process-local: do not send it to another machine. [cw_world2d_state_hash](api:cw_world2d_state_hash) is Box2D's own host-stable hash of the state.
+
+**Recording and replay.** [cw_world2d_record_start](api:cw_world2d_record_start) writes the world as it is then and every call that changes it, with the state hash of every step. [cw_recording2d_save](api:cw_recording2d_save) writes the file and [cw_replay2d_open](api:cw_replay2d_open) plays it back: step, seek back and forth, wireframes with [cw_replay2d_debug_draw](api:cw_replay2d_debug_draw), and `cw_replay2d_diverged` when this engine simulates it differently. Attach a recording to a bug report.
+
+**The dynamic character mover and the pogo.** `CW_JOINT_MOVER` commands a velocity on a dynamic body (x and y separately, each limited by a force) and `CW_JOINT_POGO` is a spring that holds a dynamic character off the ground, limited in how hard it pulls and pushes. Both are 2D only. The `Joint2D` node has them as `MOVER` and `POGO` (`mover_velocity`, `mover_max_force`, `pogo_normal`, `pogo_tension`, `pogo_compression`).
+
+**New controls and queries.** Per world: [cw_world2d_set_max_linear_speed](api:cw_world2d_set_max_linear_speed), the contact recycle distance (contact points are reused while the shapes barely move), contact tuning, restitution iterations and propagation, workers, capacity, bounds, and a switch to the 4-wide solver for testing. Per body: sleep, contact recycling and continuous-collision safety factor toggles, extents, bounds, centre of mass and a mass update. Per shape: bounds, a point test, the closest point, a ray cast at one shape, rounded boxes, loose chain segments ([cw_shape2d_chain_segment](api:cw_shape2d_chain_segment)) and a debug colour. Chains take a material per segment or one for all. Joints report their rest length, speed, motor force, spring force and separation.
+
+The 8-wide contact solver (for CPUs with the AVX2 vector instructions) is picked at run time and gives the same bits as the 4-wide one. The cart build runs the 4-wide solver with WebAssembly SIMD, bit for bit the same as native.
+
 ## Physics nodes
 
 [cartwheel/physics_nodes.h](header:physics_nodes.h) maps the wrappers to node types, in matching 2D and 3D sets:

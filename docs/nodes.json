@@ -5107,9 +5107,11 @@
       "SPRING",
       "WELD",
       "WHEEL",
-      "MOTOR"
+      "MOTOR",
+      "MOVER",
+      "POGO"
      ],
-     "doc": "PIN/HINGE (revolute), SLIDER (prismatic), DISTANCE, SPRING, WELD, WHEEL, MOTOR."
+     "doc": "PIN/HINGE (revolute), SLIDER (prismatic), DISTANCE, SPRING, WELD, WHEEL, MOTOR, MOVER (a velocity command on a dynamic character body, x and y separately, limited by a force: Box2D v3.2's dynamic mover), POGO (a spring along the joint's up that holds a dynamic character off the ground: Box2D v3.2)."
     },
     {
      "name": "node_a",
@@ -5233,7 +5235,51 @@
      "readonly": false,
      "min": 0,
      "max": 1000000000,
-     "doc": "DISTANCE/SPRING rest length, px (0 = current)."
+     "doc": "DISTANCE/SPRING/POGO rest length, px (0 = current)."
+    },
+    {
+     "name": "mover_velocity",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "MOVER: the commanded velocity, px/s (y down)."
+    },
+    {
+     "name": "mover_max_force",
+     "type": "vec2",
+     "default": "vec2(1e+06, 1e+06)",
+     "stored": true,
+     "readonly": false,
+     "doc": "MOVER: the most force (N) that chases the velocity, x and y."
+    },
+    {
+     "name": "pogo_normal",
+     "type": "vec2",
+     "default": "vec2(0, -1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "POGO: the ground normal it pushes against, node space (y down: (0, -1) is up)."
+    },
+    {
+     "name": "pogo_tension",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000000,
+     "doc": "POGO: the most it pulls, N (0 = unlimited): how sticky it is to the ground."
+    },
+    {
+     "name": "pogo_compression",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000000,
+     "doc": "POGO: the most it pushes, N (0 = unlimited): how hard it lifts the character."
     }
    ]
   },

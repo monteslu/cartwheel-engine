@@ -4426,7 +4426,7 @@
   },
   {
    "header": "cartwheel/net.h",
-   "summary": "cartwheel networking: transports, sessions, channels, RPC, replication,\ntree snapshots and rollback netcode.\n\nLayers, bottom up:\n\n  transport   moves datagrams over LINKS (one link per remote endpoint):\n              UDP sockets (native), the wasmcart peer connection\n              (wc_peer_*, carts), an in-process loopback hub (tests, local\n              split-screen), a room relay on top of any of them, and a\n              deterministic network simulator wrapping any of them\n              (latency, jitter, loss, duplication).\n  session     players by SLOT (0..CW_NET_MAX_PEERS-1) instead of links: a\n              handshake, reliable-ordered and unreliable channels, acks,\n              resends, RTT, timeouts. Games send typed messages.\n  scene       RPC on nodes (methods called by name on every peer),\n              authority per node, NetSynchronizer (replicates reflected\n              properties) and NetSpawner (replicates node creation and\n              removal): the Godot MultiplayerSynchronizer / Spawner model.\n  state       a snapshot of a whole tree through reflection (structure,\n              every writable property, the tree's tick and random state),\n              restorable in place, with a host-stable hash.\n  rollback    GGPO-style netcode on the deterministic fixed step: input\n              delay, prediction (repeat the last input), rollback +\n              re-simulation from a tree snapshot when a prediction was\n              wrong, time sync, and in-band desync detection by hashing\n              confirmed states.\n\nThe wire format is engine-defined and the same on every host, so a native\nbuild and a cart talk to each other wherever a transport reaches both.\nEverything here runs on the main thread. Times are seconds on whatever\nclock the caller passes to cw_net_poll (a test passes a virtual clock, so\na simulated network is reproducible bit for bit).\n\nPhysics: Box2D and Box3D expose no world snapshot, so rollback restores\nthe tree and re-simulates from it. The physics nodes put back what they\nkeep beside the properties: a CharacterBody2D/3D's mover state and its\non_floor / normals outputs travel in the snapshot as private state, and\nevery body is moved back to its node's pose after a restore. So\ncharacters (move_and_slide) against static and kinematic bodies, and the\nengine's own math, re-simulate bit-exactly (tests/unit/test_net.c proves\n2D and 3D characters). Two things do not, because the library keeps their\nstate where no restore reaches: DYNAMIC rigid bodies (contact warm-start\ncaches: a restored pile diverges from one that never rolled back) and\nArea overlap signals (begin/end come from the library's sensor state). A\nrollback game keeps its simulated objects out of dynamic rigid bodies and\ndetects overlaps with queries or its own math; cosmetic debris outside the\nrolled-back tree is fine.",
+   "summary": "cartwheel networking: transports, sessions, channels, RPC, replication,\ntree snapshots and rollback netcode.\n\nLayers, bottom up:\n\n  transport   moves datagrams over LINKS (one link per remote endpoint):\n              UDP sockets (native), the wasmcart peer connection\n              (wc_peer_*, carts), an in-process loopback hub (tests, local\n              split-screen), a room relay on top of any of them, and a\n              deterministic network simulator wrapping any of them\n              (latency, jitter, loss, duplication).\n  session     players by SLOT (0..CW_NET_MAX_PEERS-1) instead of links: a\n              handshake, reliable-ordered and unreliable channels, acks,\n              resends, RTT, timeouts. Games send typed messages.\n  scene       RPC on nodes (methods called by name on every peer),\n              authority per node, NetSynchronizer (replicates reflected\n              properties) and NetSpawner (replicates node creation and\n              removal): the Godot MultiplayerSynchronizer / Spawner model.\n  state       a snapshot of a whole tree through reflection (structure,\n              every writable property, the tree's tick and random state),\n              restorable in place, with a host-stable hash.\n  rollback    GGPO-style netcode on the deterministic fixed step: input\n              delay, prediction (repeat the last input), rollback +\n              re-simulation from a tree snapshot when a prediction was\n              wrong, time sync, and in-band desync detection by hashing\n              confirmed states.\n\nThe wire format is engine-defined and the same on every host, so a native\nbuild and a cart talk to each other wherever a transport reaches both.\nEverything here runs on the main thread. Times are seconds on whatever\nclock the caller passes to cw_net_poll (a test passes a virtual clock, so\na simulated network is reproducible bit for bit).\n\nPhysics: a tree snapshot carries each physics world. A 2D world is Box2D's own image of it (v3.2 snapshots):\ndynamic bodies come back with their velocities, contact warm-start caches and sleeping islands, and Area2D overlaps\nwith their sensor state, so a restored pile re-simulates bit for bit like one that never rolled back (tests/unit/\ntest_net.c proves it, and fails the same run when the image is left out). The desync hash folds in Box2D's own\nhost-stable state hash of the world. Box3D has no snapshot: a 3D world is restored through the tree, the physics\nnodes put back what they keep beside the properties (a CharacterBody3D's mover state and its on_floor / normals\noutputs travel in the snapshot as private state, every body is moved back to its node's pose), so 3D characters\n(move_and_slide) against static and kinematic bodies, and the engine's own math, re-simulate bit-exactly, and\ntwo things do not, because the library keeps their state where no restore reaches: DYNAMIC rigid bodies (contact\nwarm-start caches: a restored pile diverges from one that never rolled back) and Area3D overlap signals. A 3D\nrollback game keeps its simulated objects out of dynamic rigid bodies and detects overlaps with queries or its own\nmath; cosmetic debris outside the rolled-back tree is fine.",
    "functions": [
     {
      "name": "cw_net_transport_destroy",
@@ -5130,8 +5130,8 @@
     },
     {
      "name": "cw_joint_type",
-     "doc": "── joints: one type enum for both dimensions ────────────────────────\nWhich exist where (the libraries' own set):\n  both: DISTANCE, FILTER (no collision between two bodies), MOTOR,\n        PRISMATIC, REVOLUTE, WELD, WHEEL, MOUSE (a motor joint from an\n        internal kinematic body named \"cw_mouse\", moved to the target\n        each step: drag with a pointer)\n  3D only: SPHERICAL (ball and socket, cone + twist limits), PARALLEL\n        (keeps z axes aligned: keep a body upright)",
-     "decl": "typedef enum {\n  CW_JOINT_DISTANCE, CW_JOINT_FILTER, CW_JOINT_MOTOR, CW_JOINT_PRISMATIC, CW_JOINT_REVOLUTE, CW_JOINT_WELD,\n  CW_JOINT_WHEEL, CW_JOINT_MOUSE, CW_JOINT_SPHERICAL, CW_JOINT_PARALLEL, CW_JOINT_TYPE_COUNT\n} cw_joint_type;"
+     "doc": "── joints: one type enum for both dimensions ────────────────────────\nWhich exist where (the libraries' own set):\n  both: DISTANCE, FILTER (no collision between two bodies), MOTOR,\n        PRISMATIC, REVOLUTE, WELD, WHEEL, MOUSE (a motor joint from an\n        internal kinematic body named \"cw_mouse\", moved to the target\n        each step: drag with a pointer)\n  3D only: SPHERICAL (ball and socket, cone + twist limits), PARALLEL\n        (keeps z axes aligned: keep a body upright)\n  2D only: MOVER (Box2D v3.2's dynamic character mover: a velocity command on a dynamic body, x and y\n        separately, limited by a force; no rotation), POGO (a spring along a normal that holds a dynamic\n        character off the ground, with a tension and a compression limit)",
+     "decl": "typedef enum {\n  CW_JOINT_DISTANCE, CW_JOINT_FILTER, CW_JOINT_MOTOR, CW_JOINT_PRISMATIC, CW_JOINT_REVOLUTE, CW_JOINT_WELD,\n  CW_JOINT_WHEEL, CW_JOINT_MOUSE, CW_JOINT_SPHERICAL, CW_JOINT_PARALLEL, CW_JOINT_MOVER, CW_JOINT_POGO,\n  CW_JOINT_TYPE_COUNT\n} cw_joint_type;"
     }
    ],
    "macros": [
@@ -5149,6 +5149,42 @@
    "header": "cartwheel/physics2d.h",
    "summary": "cartwheel 2D physics: Box2D v3 (deps/box2d), mirrored name for name by\nphysics3d.h. Read physics.h first: layers, events, filters, stats, debug\nlines and the handle/ownership rules are shared and documented there.\n\nTypical frame:\n  init:          w = cw_world2d_create(&def); bodies, shapes, joints\n  fixed_update:  movers / forces / kinematic targets, cw_world2d_step(w, dt),\n                 then read cw_world2d_events(w, &n)\n  render:        cw_world2d_sync(w, alpha) writes bound objects\n\nVectors are cw_vec2 (same layout as b2Vec2). Rotations are a unit\n(cos, sin) pair, Box2D's b2Rot: no trig in the simulation path; use\ncw_rot2_angle / cw_rot2_from_angle (cartwheel/math.h, deterministic) to\nconvert. Units: meters, kilograms, seconds, radians. y is up.",
    "functions": [
+    {
+     "name": "cw_pos2_from",
+     "signature": "static inline cw_pos2 cw_pos2_from(cw_vec2 v)",
+     "doc": "A float vector as a double position.",
+     "inline": true
+    },
+    {
+     "name": "cw_pos2_to_vec",
+     "signature": "static inline cw_vec2 cw_pos2_to_vec(cw_pos2 p)",
+     "doc": "The position as floats: exact near the origin, rounded far from it.",
+     "inline": true
+    },
+    {
+     "name": "cw_pos2_add",
+     "signature": "static inline cw_pos2 cw_pos2_add(cw_pos2 p, cw_vec2 d)",
+     "doc": "The position moved by a float offset.",
+     "inline": true
+    },
+    {
+     "name": "cw_pos2_sub",
+     "signature": "static inline cw_vec2 cw_pos2_sub(cw_pos2 a, cw_pos2 b)",
+     "doc": "a - b as a float vector (exact when a and b are close, however far they are from the origin).",
+     "inline": true
+    },
+    {
+     "name": "cw_wxform2_from",
+     "signature": "static inline cw_wxform2 cw_wxform2_from(cw_xform2 t)",
+     "doc": "A float transform as a double-position one.",
+     "inline": true
+    },
+    {
+     "name": "cw_wxform2_to_xform",
+     "signature": "static inline cw_xform2 cw_wxform2_to_xform(cw_wxform2 t)",
+     "doc": "A double-position transform rounded to floats.",
+     "inline": true
+    },
     {
      "name": "cw_xform2_identity",
      "signature": "static inline cw_xform2 cw_xform2_identity(void)",
@@ -5270,6 +5306,264 @@
      "inline": false
     },
     {
+     "name": "cw_world2d_bounds",
+     "signature": "cw_aabb2 cw_world2d_bounds(cw_world2d w)",
+     "doc": "The union of every shape's bounds; zero for an invalid world.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_state_hash",
+     "signature": "uint64_t cw_world2d_state_hash(cw_world2d w)",
+     "doc": "Box2D's hash of the world's simulation state (what rollback compares); 0 for an invalid world.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_set_max_linear_speed",
+     "signature": "void cw_world2d_set_max_linear_speed(cw_world2d w, float speed)",
+     "doc": "Fastest a body may move, m/s.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_max_linear_speed",
+     "signature": "float cw_world2d_max_linear_speed(cw_world2d w)",
+     "doc": "The fastest a body may move, m/s (cw_world2d_set_max_linear_speed).",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_set_contact_recycle_distance",
+     "signature": "void cw_world2d_set_contact_recycle_distance(cw_world2d w, float meters)",
+     "doc": "Contact points are reused while the shapes move less than this, m; 0 turns recycling off for new contacts.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_contact_recycle_distance",
+     "signature": "float cw_world2d_contact_recycle_distance(cw_world2d w)",
+     "doc": "The contact recycle distance, m (cw_world2d_set_contact_recycle_distance).",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_set_contact_tuning",
+     "signature": "void cw_world2d_set_contact_tuning(cw_world2d w, float hertz, float damping_ratio, float push_speed)",
+     "doc": "Contact softness: stiffness (Hz), damping ratio, and the fastest push-out speed (m/s).",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_contact_tuning",
+     "signature": "void cw_world2d_contact_tuning(cw_world2d w, float *hertz, float *damping_ratio, float *push_speed)",
+     "doc": "The contact softness; any pointer may be NULL (cw_world2d_set_contact_tuning).",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_set_restitution_iterations",
+     "signature": "void cw_world2d_set_restitution_iterations(cw_world2d w, int iterations)",
+     "doc": "Bounce solver passes, and whether a bounce carries through a stack (b2WorldDef::enableRestitutionPropagation).",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_restitution_iterations",
+     "signature": "int cw_world2d_restitution_iterations(cw_world2d w)",
+     "doc": "The bounce solver passes (cw_world2d_set_restitution_iterations).",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_set_restitution_propagation",
+     "signature": "void cw_world2d_set_restitution_propagation(cw_world2d w, bool on)",
+     "doc": "Whether a bounce carries through a stack.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_restitution_propagation",
+     "signature": "bool cw_world2d_restitution_propagation(cw_world2d w)",
+     "doc": "Whether a bounce carries through a stack.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_set_hit_speed",
+     "signature": "void cw_world2d_set_hit_speed(cw_world2d w, float speed)",
+     "doc": "Hit events fire above this approach speed, m/s.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_set_workers",
+     "signature": "void cw_world2d_set_workers(cw_world2d w, int workers)",
+     "doc": "Threads the step uses (1..32, and the job pool's size at most).",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_workers",
+     "signature": "int cw_world2d_workers(cw_world2d w)",
+     "doc": "Threads the step uses.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_capacity",
+     "signature": "cw_phys_capacity2d cw_world2d_capacity(cw_world2d w)",
+     "doc": "What the world has grown to; pass it as def.capacity next time.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_set_narrow_solver",
+     "signature": "void cw_world2d_set_narrow_solver(cw_world2d w, bool on)",
+     "doc": "Run the 4-wide solver even where the 8-wide AVX2 one is available (same bits; for testing).",
+     "inline": false
+    },
+    {
+     "name": "cw_physics2d_avx2_available",
+     "signature": "bool cw_physics2d_avx2_available(void)",
+     "doc": "True when this CPU can run Box2D's 8-wide AVX2 contact solver.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_snapshot_size",
+     "signature": "int cw_world2d_snapshot_size(cw_world2d w)",
+     "doc": "Bytes a snapshot needs; 0 for an invalid world.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_snapshot",
+     "signature": "int cw_world2d_snapshot(cw_world2d w, uint8_t *out, int cap)",
+     "doc": "Writes the snapshot to out (cap >= cw_world2d_snapshot_size); returns its size, or 0 (logged) when it does not fit.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_restore",
+     "signature": "bool cw_world2d_restore(cw_world2d w, const uint8_t *image, int size)",
+     "doc": "Restores a snapshot of this world. False (logged) when it is rejected; the world is then unchanged unless the\npayload turns out corrupt, in which case destroy it.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_record_start",
+     "signature": "cw_recording2d *cw_world2d_record_start(cw_world2d w)",
+     "doc": "Starts recording world w from now (call between steps; before the first step records the whole session).\nNULL (logged) if it is already recording. Stop it with cw_world2d_record_stop.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_record_stop",
+     "signature": "void cw_world2d_record_stop(cw_world2d w)",
+     "doc": "Ends the recording of the world; the cw_recording2d keeps its bytes. No-op when not recording.",
+     "inline": false
+    },
+    {
+     "name": "cw_recording2d_data",
+     "signature": "const uint8_t *cw_recording2d_data(const cw_recording2d *r, int *size)",
+     "doc": "The recorded bytes so far; valid until the next recording call or cw_recording2d_destroy.",
+     "inline": false
+    },
+    {
+     "name": "cw_recording2d_save",
+     "signature": "bool cw_recording2d_save(const cw_recording2d *r, const char *path)",
+     "doc": "Writes the recording to a file (an OS path); false if it could not be written.",
+     "inline": false
+    },
+    {
+     "name": "cw_recording2d_load",
+     "signature": "cw_recording2d *cw_recording2d_load(const char *path)",
+     "doc": "Reads a recording file (an OS path); NULL if it cannot be read.",
+     "inline": false
+    },
+    {
+     "name": "cw_recording2d_destroy",
+     "signature": "void cw_recording2d_destroy(cw_recording2d *r)",
+     "doc": "A recording must not be destroyed while its world is still recording.",
+     "inline": false
+    },
+    {
+     "name": "cw_recording2d_validate",
+     "signature": "bool cw_recording2d_validate(const void *data, int size)",
+     "doc": "Re-runs a recording from bytes and checks every recorded state hash; false on the first mismatch.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_open",
+     "signature": "cw_replay2d *cw_replay2d_open(const void *data, int size)",
+     "doc": "Opens a recording (the bytes are copied) in a world of its own, at its first step. NULL (logged) if malformed.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_close",
+     "signature": "void cw_replay2d_close(cw_replay2d *p)",
+     "doc": "Closes the replay and frees its world.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_step",
+     "signature": "bool cw_replay2d_step(cw_replay2d *p)",
+     "doc": "Advances one recorded step; false at the end.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_seek",
+     "signature": "void cw_replay2d_seek(cw_replay2d *p, int frame)",
+     "doc": "Jumps to a recorded step (backwards re-runs from the nearest keyframe); clamped.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_restart",
+     "signature": "void cw_replay2d_restart(cw_replay2d *p)",
+     "doc": "Goes back to the first step.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_frame",
+     "signature": "int cw_replay2d_frame(const cw_replay2d *p)",
+     "doc": "Steps replayed so far.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_at_end",
+     "signature": "bool cw_replay2d_at_end(const cw_replay2d *p)",
+     "doc": "True once the last recorded step has run.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_get_info",
+     "signature": "cw_replay2d_info cw_replay2d_get_info(const cw_replay2d *p)",
+     "doc": "Frame count, step, substeps and world bounds of the recording; zero for NULL.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_diverged",
+     "signature": "bool cw_replay2d_diverged(const cw_replay2d *p)",
+     "doc": "True when a recorded state hash failed to reproduce (this engine simulates it differently); the first such step is\ncw_replay2d_diverge_frame, -1 otherwise.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_diverge_frame",
+     "signature": "int cw_replay2d_diverge_frame(const cw_replay2d *p)",
+     "doc": "The first step whose hash did not reproduce, -1 if none.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_set_keyframes",
+     "signature": "void cw_replay2d_set_keyframes(cw_replay2d *p, size_t budget_bytes, int min_interval)",
+     "doc": "Memory for backwards seeking: keyframes at least min_interval steps apart within budget_bytes.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_world",
+     "signature": "b2WorldId cw_replay2d_world(const cw_replay2d *p)",
+     "doc": "The replayed world as a wrapper handle is not offered (it is Box2D's own): its bodies, by creation order, and the\nBox2D world id, for the raw API; and its wireframes, as cw_world2d_debug_draw.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_body_count",
+     "signature": "int cw_replay2d_body_count(const cw_replay2d *p)",
+     "doc": "Body slots by creation order (holes for destroyed bodies; it only grows as the replay advances).",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_body",
+     "signature": "b2BodyId cw_replay2d_body(const cw_replay2d *p, int index)",
+     "doc": "The Box2D body at a creation ordinal; null id for a destroyed or not yet created one.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_debug_draw",
+     "signature": "void cw_replay2d_debug_draw(cw_replay2d *p, cw_phys_lines *out, uint32_t flags)",
+     "doc": "Appends the replayed world's wireframes as cw_world2d_debug_draw does.",
+     "inline": false
+    },
+    {
      "name": "cw_body2d_default_def",
      "signature": "cw_body2d_def cw_body2d_default_def(void)",
      "doc": "The defaults noted in cw_body2d_def above.",
@@ -5312,21 +5606,123 @@
      "inline": false
     },
     {
+     "name": "cw_body2d_world_transform",
+     "signature": "cw_wxform2 cw_body2d_world_transform(cw_body2d b)",
+     "doc": "Current transform (last step, not interpolated) with a double position; identity for an invalid body.",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_position",
+     "signature": "cw_pos2 cw_body2d_position(cw_body2d b)",
+     "doc": "The double position of the body origin; zero for an invalid body.",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_set_world_transform",
+     "signature": "void cw_body2d_set_world_transform(cw_body2d b, cw_wxform2 x)",
+     "doc": "Teleport: no interpolation from the old place. Wakes the body.",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_set_world_target",
+     "signature": "void cw_body2d_set_world_target(cw_body2d b, cw_wxform2 target, float dt)",
+     "doc": "Velocity that reaches target in dt; see cw_body3d_set_target.",
+     "inline": false
+    },
+    {
      "name": "cw_body2d_transform",
      "signature": "cw_xform2 cw_body2d_transform(cw_body2d b)",
-     "doc": "Current transform (last step, not interpolated); identity for an invalid body.",
+     "doc": "cw_body2d_world_transform rounded to floats (exact within a few km of the origin).",
      "inline": false
     },
     {
      "name": "cw_body2d_set_transform",
      "signature": "void cw_body2d_set_transform(cw_body2d b, cw_xform2 x)",
-     "doc": "Teleport: no interpolation from the old place. Wakes the body.",
+     "doc": "cw_body2d_set_world_transform from a float transform.",
      "inline": false
     },
     {
      "name": "cw_body2d_set_target",
      "signature": "void cw_body2d_set_target(cw_body2d b, cw_xform2 target, float dt)",
-     "doc": "Velocity that reaches target in dt; see cw_body3d_set_target.",
+     "doc": "cw_body2d_set_world_target from a float transform.",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_world_center",
+     "signature": "cw_pos2 cw_body2d_world_center(cw_body2d b)",
+     "doc": "Centre of mass: world (double) and body-local.",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_local_center",
+     "signature": "cw_vec2 cw_body2d_local_center(cw_body2d b)",
+     "doc": "Centre of mass in the body frame (see cw_body2d_world_center).",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_bounds",
+     "signature": "cw_aabb2 cw_body2d_bounds(cw_body2d b)",
+     "doc": "The world box of the body's shapes (empty and centred on the origin when it has none).",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_min_extent",
+     "signature": "float cw_body2d_min_extent(cw_body2d b)",
+     "doc": "Distances from the shapes: min and max to the centre of mass, max to the body origin (conservative).",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_max_extent",
+     "signature": "float cw_body2d_max_extent(cw_body2d b)",
+     "doc": "Largest distance from the centre of mass to the shapes.",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_max_extent_from_origin",
+     "signature": "float cw_body2d_max_extent_from_origin(cw_body2d b)",
+     "doc": "Largest distance from the body origin to the shapes (conservative).",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_update_mass",
+     "signature": "void cw_body2d_update_mass(cw_body2d b)",
+     "doc": "Recomputes the mass from the shapes (after you overrode it or changed shapes without updating).",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_set_sleep_enabled",
+     "signature": "void cw_body2d_set_sleep_enabled(cw_body2d b, bool enabled)",
+     "doc": "Lets the body fall asleep (or not); a sleeping body is woken when disabled.",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_sleep_enabled",
+     "signature": "bool cw_body2d_sleep_enabled(cw_body2d b)",
+     "doc": "Whether the body may fall asleep.",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_set_contact_recycling",
+     "signature": "void cw_body2d_set_contact_recycling(cw_body2d b, bool enabled)",
+     "doc": "Contacts made after the call use the new value.",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_contact_recycling",
+     "signature": "bool cw_body2d_contact_recycling(cw_body2d b)",
+     "doc": "Whether new contacts of the body reuse contact points (cw_body2d_set_contact_recycling).",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_set_safety_factor",
+     "signature": "void cw_body2d_set_safety_factor(cw_body2d b, float factor)",
+     "doc": "Continuous collision safety, 0.01..0.5: smaller is safer but can hitch.",
+     "inline": false
+    },
+    {
+     "name": "cw_body2d_safety_factor",
+     "signature": "float cw_body2d_safety_factor(cw_body2d b)",
+     "doc": "The continuous collision safety factor.",
      "inline": false
     },
     {
@@ -5355,13 +5751,13 @@
     },
     {
      "name": "cw_body2d_apply_force",
-     "signature": "void cw_body2d_apply_force(cw_body2d b, cw_vec2 force, const cw_vec2 *point)",
+     "signature": "void cw_body2d_apply_force(cw_body2d b, cw_vec2 force, const cw_pos2 *point)",
      "doc": "N at a world point (NULL = center of mass), for the next step. Wakes the body.",
      "inline": false
     },
     {
      "name": "cw_body2d_apply_impulse",
-     "signature": "void cw_body2d_apply_impulse(cw_body2d b, cw_vec2 impulse, const cw_vec2 *point)",
+     "signature": "void cw_body2d_apply_impulse(cw_body2d b, cw_vec2 impulse, const cw_pos2 *point)",
      "doc": "N*s at a world point (NULL = center of mass). Wakes the body.",
      "inline": false
     },
@@ -5468,6 +5864,42 @@
      "inline": false
     },
     {
+     "name": "cw_shape2d_rounded_box",
+     "signature": "cw_shape2d cw_shape2d_rounded_box(cw_body2d b, const cw_shape2d_def *def, cw_vec2 half, float radius, cw_xform2 local)",
+     "doc": "Box with half extents, rounded by radius (the corners and the edges grow by radius), placed by local.",
+     "inline": false
+    },
+    {
+     "name": "cw_shape2d_chain_segment",
+     "signature": "cw_shape2d cw_shape2d_chain_segment(cw_body2d b, const cw_shape2d_def *def, cw_vec2 ghost1, cw_vec2 p1, cw_vec2 p2, cw_vec2 ghost2)",
+     "doc": "A loose one-sided chain segment p1..p2 with ghost end vertices (Box2D v3.2): the building block of a chain that\nyou grow or move segment by segment; collision on the right walking p1 to p2. Prefer cw_chain2d_create unless\nyou need to change segments at run time. Null (logged) when too short.",
+     "inline": false
+    },
+    {
+     "name": "cw_shape2d_set_chain_segment",
+     "signature": "void cw_shape2d_set_chain_segment(cw_shape2d s, cw_vec2 ghost1, cw_vec2 p1, cw_vec2 p2, cw_vec2 ghost2)",
+     "doc": "Turns the shape into (or updates) a loose chain segment; the shape must not belong to a cw_chain2d. Does not\nchange the mass.",
+     "inline": false
+    },
+    {
+     "name": "cw_shape2d_bounds",
+     "signature": "cw_aabb2 cw_shape2d_bounds(cw_shape2d s)",
+     "doc": "The shape's world box; zero for an invalid shape.",
+     "inline": false
+    },
+    {
+     "name": "cw_shape2d_test_point",
+     "signature": "bool cw_shape2d_test_point(cw_shape2d s, cw_pos2 point)",
+     "doc": "Does the world point lie inside the shape?",
+     "inline": false
+    },
+    {
+     "name": "cw_shape2d_closest_point",
+     "signature": "cw_pos2 cw_shape2d_closest_point(cw_shape2d s, cw_pos2 target)",
+     "doc": "The closest point of the shape to target (world positions).",
+     "inline": false
+    },
+    {
      "name": "cw_shape2d_destroy",
      "signature": "void cw_shape2d_destroy(cw_shape2d s)",
      "doc": "Updates the body's mass; no-op on an invalid handle.",
@@ -5534,6 +5966,24 @@
      "inline": false
     },
     {
+     "name": "cw_chain2d_set_material",
+     "signature": "void cw_chain2d_set_material(cw_chain2d c, const cw_phys_material *m)",
+     "doc": "The material of every segment of a chain (Box2D v3.2 can also give each segment its own).",
+     "inline": false
+    },
+    {
+     "name": "cw_chain2d_set_segment_material",
+     "signature": "void cw_chain2d_set_segment_material(cw_chain2d c, int segment, const cw_phys_material *m)",
+     "doc": "One segment's material (no-op for an invalid chain or segment index).",
+     "inline": false
+    },
+    {
+     "name": "cw_chain2d_material",
+     "signature": "cw_phys_material cw_chain2d_material(cw_chain2d c, int segment)",
+     "doc": "One segment's material; all zero for an invalid chain or segment index.",
+     "inline": false
+    },
+    {
      "name": "cw_chain2d_raw",
      "signature": "b2ChainId cw_chain2d_raw(cw_chain2d c)",
      "doc": "The Box2D chain id.",
@@ -5547,7 +5997,7 @@
     },
     {
      "name": "cw_joint2d_def_anchor",
-     "signature": "void cw_joint2d_def_anchor(cw_joint2d_def *def, cw_vec2 world_anchor, cw_vec2 world_axis)",
+     "signature": "void cw_joint2d_def_anchor(cw_joint2d_def *def, cw_pos2 world_anchor, cw_vec2 world_axis)",
      "doc": "Fill frame_a/frame_b from a world anchor; frame x maps to world_axis (zero = +x).",
      "inline": false
     },
@@ -5606,8 +6056,56 @@
      "inline": false
     },
     {
+     "name": "cw_joint2d_set_mover",
+     "signature": "void cw_joint2d_set_mover(cw_joint2d j, cw_vec2 velocity, cw_vec2 max_force)",
+     "doc": "MOVER: the commanded velocity (m/s) and the force limits (N); ignored for other joints.",
+     "inline": false
+    },
+    {
+     "name": "cw_joint2d_set_rest_length",
+     "signature": "void cw_joint2d_set_rest_length(cw_joint2d j, float length)",
+     "doc": "Distance and pogo: the spring's rest length.",
+     "inline": false
+    },
+    {
+     "name": "cw_joint2d_rest_length",
+     "signature": "float cw_joint2d_rest_length(cw_joint2d j)",
+     "doc": "The spring rest length of a distance or pogo joint; 0 for others.",
+     "inline": false
+    },
+    {
+     "name": "cw_joint2d_speed",
+     "signature": "float cw_joint2d_speed(cw_joint2d j)",
+     "doc": "Revolute, prismatic: the speed the joint is moving at (rad/s, m/s); pogo: its extension speed; others 0.",
+     "inline": false
+    },
+    {
+     "name": "cw_joint2d_motor_force",
+     "signature": "float cw_joint2d_motor_force(cw_joint2d j)",
+     "doc": "The force (N) or torque (N*m) the motor is applying now (revolute, prismatic, wheel, distance); others 0.",
+     "inline": false
+    },
+    {
+     "name": "cw_joint2d_spring_force",
+     "signature": "float cw_joint2d_spring_force(cw_joint2d j)",
+     "doc": "Distance: the spring's force now; pogo: its impulse; others 0.",
+     "inline": false
+    },
+    {
+     "name": "cw_joint2d_linear_separation",
+     "signature": "float cw_joint2d_linear_separation(cw_joint2d j)",
+     "doc": "How far the joint is pulled apart: metres and radians.",
+     "inline": false
+    },
+    {
+     "name": "cw_joint2d_angular_separation",
+     "signature": "float cw_joint2d_angular_separation(cw_joint2d j)",
+     "doc": "How far the joint is pulled apart in rotation, radians.",
+     "inline": false
+    },
+    {
      "name": "cw_joint2d_set_target",
-     "signature": "void cw_joint2d_set_target(cw_joint2d j, cw_vec2 world_target)",
+     "signature": "void cw_joint2d_set_target(cw_joint2d j, cw_pos2 world_target)",
      "doc": "MOUSE only: the world point the grab point is pulled toward.",
      "inline": false
     },
@@ -5625,14 +6123,20 @@
     },
     {
      "name": "cw_world2d_raycast",
-     "signature": "bool cw_world2d_raycast(cw_world2d w, cw_vec2 origin, cw_vec2 translation, const cw_phys_filter *filter, cw_ray_hit2d *hit)",
+     "signature": "bool cw_world2d_raycast(cw_world2d w, cw_pos2 origin, cw_vec2 translation, const cw_phys_filter *filter, cw_ray_hit2d *hit)",
      "doc": "Closest hit along origin..origin+translation; false (hit zeroed) on a miss.",
      "inline": false
     },
     {
      "name": "cw_world2d_raycast_all",
-     "signature": "int cw_world2d_raycast_all(cw_world2d w, cw_vec2 origin, cw_vec2 translation, const cw_phys_filter *filter, cw_ray_hit2d *hits, int cap)",
+     "signature": "int cw_world2d_raycast_all(cw_world2d w, cw_pos2 origin, cw_vec2 translation, const cw_phys_filter *filter, cw_ray_hit2d *hits, int cap)",
      "doc": "The cap closest hits, sorted; returns how many.",
+     "inline": false
+    },
+    {
+     "name": "cw_shape2d_raycast",
+     "signature": "bool cw_shape2d_raycast(cw_shape2d s, cw_pos2 origin, cw_vec2 translation, cw_ray_hit2d *hit)",
+     "doc": "Casts a ray at this one shape; false (hit zeroed) on a miss. hit->shape / body are filled.",
      "inline": false
     },
     {
@@ -5640,6 +6144,12 @@
      "signature": "int cw_world2d_raycast_batch(cw_world2d w, const cw_ray2d *rays, int count, const cw_phys_filter *filter, cw_ray_hit2d *hits)",
      "doc": "hits[i] answers rays[i] on the job pool; returns the hit count. Not during a step.",
      "inline": false
+    },
+    {
+     "name": "cw_qshape2d_at",
+     "signature": "static inline cw_qshape2d cw_qshape2d_at(cw_qshape2d s, cw_pos2 origin)",
+     "doc": "The shape with its points taken relative to a world position.",
+     "inline": true
     },
     {
      "name": "cw_qshape2d_circle",
@@ -5679,7 +6189,7 @@
     },
     {
      "name": "cw_world2d_overlap_aabb",
-     "signature": "int cw_world2d_overlap_aabb(cw_world2d w, cw_vec2 lo, cw_vec2 hi, const cw_phys_filter *filter, cw_shape2d *out, int cap)",
+     "signature": "int cw_world2d_overlap_aabb(cw_world2d w, cw_pos2 lo, cw_pos2 hi, const cw_phys_filter *filter, cw_shape2d *out, int cap)",
      "doc": "Shapes whose fattened bounding boxes overlap lo..hi, up to cap, sorted by id.",
      "inline": false
     },
@@ -5691,7 +6201,7 @@
     },
     {
      "name": "cw_mover2d_init",
-     "signature": "void cw_mover2d_init(cw_mover2d *m, cw_world2d w, const cw_mover2d_def *def, cw_vec2 feet)",
+     "signature": "void cw_mover2d_init(cw_mover2d *m, cw_world2d w, const cw_mover2d_def *def, cw_pos2 feet)",
      "doc": "Clears m, copies def (NULL = defaults; height >= 2 * radius) and places the feet.",
      "inline": false
     },
@@ -5703,13 +6213,13 @@
     },
     {
      "name": "cw_mover2d_teleport",
-     "signature": "void cw_mover2d_teleport(cw_mover2d *m, cw_vec2 feet)",
+     "signature": "void cw_mover2d_teleport(cw_mover2d *m, cw_pos2 feet)",
      "doc": "Moves the feet with no interpolation and clears the contact state (velocity is kept).",
      "inline": false
     },
     {
      "name": "cw_mover2d_interpolated",
-     "signature": "cw_vec2 cw_mover2d_interpolated(const cw_mover2d *m, float alpha)",
+     "signature": "cw_pos2 cw_mover2d_interpolated(const cw_mover2d *m, float alpha)",
      "doc": "Feet position lerped between prev_position and position by alpha (rendering).",
      "inline": false
     }
@@ -5726,44 +6236,79 @@
      "decl": "typedef struct cw_xform2 {\n  cw_vec2 p;\n  cw_rot2 q;\n} cw_xform2;"
     },
     {
+     "name": "cw_pos2",
+     "doc": "World positions are doubles (Box2D v3.2 large worlds: about 1000 km of world, the solver stays in floats), so a body\nfar from the origin keeps its millimetres. Vectors, velocities, local frames and sizes stay cw_vec2 / float.",
+     "decl": "typedef struct cw_pos2 {\n  double x, y;\n} cw_pos2;"
+    },
+    {
+     "name": "cw_wxform2",
+     "doc": "",
+     "decl": "typedef struct cw_wxform2 {\n  cw_pos2 p;\n  cw_rot2 q;\n} cw_wxform2;"
+    },
+    {
+     "name": "cw_phys_capacity2d",
+     "doc": "What a world is sized for (b2World_GetMaxCapacity reports what it grew to; feed that back to skip the growth).",
+     "decl": "typedef struct cw_phys_capacity2d {\n  int static_shapes, dynamic_shapes, static_bodies, dynamic_bodies, contacts, arena_bytes;\n} cw_phys_capacity2d;"
+    },
+    {
      "name": "cw_world2d_def",
-     "doc": "── worlds ────────────────────────────────────────────────────────────",
-     "decl": "typedef struct cw_world2d_def {\n  cw_vec2 gravity;             /* (0, -10) */\n  int substeps;                /* 4 */\n  int workers;                 /* job-pool threads the step may use: 0 = all */\n  float hit_speed;             /* 1 m/s */\n  float restitution_threshold; /* 1 m/s */\n  bool sleep, continuous;      /* true, true */\n  const char *layers[CW_PHYS_LAYERS];\n} cw_world2d_def;"
+     "doc": "",
+     "decl": "typedef struct cw_world2d_def {\n  cw_vec2 gravity;             /* (0, -10) */\n  int substeps;                /* 4 */\n  int workers;                 /* job-pool threads the step may use: 0 = all */\n  float hit_speed;             /* 1 m/s */\n  float restitution_threshold; /* 1 m/s */\n  int restitution_iterations;  /* 0 = Box2D's default */\n  bool restitution_propagation; /* false = Box2D's default */\n  float max_linear_speed;      /* m/s, 0 = Box2D's default */\n  cw_phys_capacity2d capacity; /* expected counts, to size the world once (all zero: grow as needed) */\n  bool sleep, continuous;      /* true, true */\n  const char *layers[CW_PHYS_LAYERS];\n} cw_world2d_def;"
     },
     {
      "name": "cw_phys_event2d",
      "doc": "",
-     "decl": "typedef struct cw_phys_event2d {\n  cw_phys_event_type type;\n  cw_shape2d shape_a, shape_b;\n  cw_body2d body_a, body_b;\n  cw_joint2d joint;\n  cw_vec2 point, normal;\n  float speed;\n  uint64_t material_a, material_b;\n  void *user;\n} cw_phys_event2d;"
+     "decl": "typedef struct cw_phys_event2d {\n  cw_phys_event_type type;\n  cw_shape2d shape_a, shape_b;\n  cw_body2d body_a, body_b;\n  cw_joint2d joint;\n  cw_pos2 point;\n  cw_vec2 normal;\n  float speed;\n  uint64_t material_a, material_b;\n  void *user;\n} cw_phys_event2d;"
+    },
+    {
+     "name": "cw_aabb2",
+     "doc": "── world tuning (Box2D v3.2) ──────────────────────────────────────────",
+     "decl": "typedef struct cw_aabb2 {\n  cw_vec2 lo, hi; /* floats: exact within a few km of the origin */\n} cw_aabb2;"
+    },
+    {
+     "name": "cw_recording2d",
+     "doc": "── recording and replay (Box2D v3.2) ───────────────────────────────────\nA recording is the world at the start plus every call that changed it and the state hash of every step: attach it\nto a bug report and the replay shows the same simulation.",
+     "decl": "typedef struct cw_recording2d cw_recording2d;"
+    },
+    {
+     "name": "cw_replay2d",
+     "doc": "",
+     "decl": "typedef struct cw_replay2d cw_replay2d;"
+    },
+    {
+     "name": "cw_replay2d_info",
+     "doc": "",
+     "decl": "typedef struct cw_replay2d_info {\n  int frames;       /* recorded steps */\n  float dt;         /* the recorded step */\n  int substeps;\n  cw_aabb2 bounds;  /* the world bounds over the recording */\n} cw_replay2d_info;"
     },
     {
      "name": "cw_body2d_def",
      "doc": "── bodies ────────────────────────────────────────────────────────────",
-     "decl": "typedef struct cw_body2d_def {\n  cw_body_type type;           /* CW_BODY_DYNAMIC */\n  cw_vec2 position;\n  cw_rot2 rotation;            /* (1, 0) */\n  cw_vec2 linear_velocity;\n  float angular_velocity;\n  float linear_damping, angular_damping, gravity_scale; /* 0, 0, 1 */\n  bool lock_rotation, bullet;\n  bool awake, sleep, interpolate; /* true, true, true */\n  const char *name;\n  void *user;\n} cw_body2d_def;"
+     "decl": "typedef struct cw_body2d_def {\n  cw_body_type type;           /* CW_BODY_DYNAMIC */\n  cw_pos2 position;\n  cw_rot2 rotation;            /* (1, 0) */\n  cw_vec2 linear_velocity;\n  float angular_velocity;\n  float linear_damping, angular_damping, gravity_scale; /* 0, 0, 1 */\n  bool lock_rotation, bullet;\n  bool awake, sleep, interpolate; /* true, true, true */\n  float safety_factor;         /* continuous collision, 0.01..0.5: Box2D's default (smaller is safer, can hitch) */\n  bool allow_fast_rotation;    /* false */\n  bool contact_recycling;      /* true: reuse contact points while the shapes barely move */\n  bool enabled;                /* true; false = created disabled (no collision, no step) */\n  const char *name;\n  void *user;\n} cw_body2d_def;"
     },
     {
      "name": "cw_shape2d_def",
      "doc": "── shapes ────────────────────────────────────────────────────────────",
-     "decl": "typedef struct cw_shape2d_def {\n  cw_phys_material material;\n  float density;               /* kg/m^2: 1 */\n  int layer;\n  uint32_t mask;\n  int group;\n  bool sensor, contact_events, sensor_events, hit_events; /* false, true, true, false */\n  void *user;\n} cw_shape2d_def;"
+     "decl": "typedef struct cw_shape2d_def {\n  cw_phys_material material;\n  float density;               /* kg/m^2: 1 */\n  int layer;\n  uint32_t mask;\n  int group;\n  bool sensor, contact_events, sensor_events, hit_events; /* false, true, true, false */\n  uint32_t debug_color;        /* 0xRRGGBB for this shape's wireframe; 0 = by body state */\n  void *user;\n} cw_shape2d_def;"
     },
     {
      "name": "cw_joint2d_def",
      "doc": "── joints (cw_joint_type, physics.h; SPHERICAL/PARALLEL are 3D only) ──",
-     "decl": "typedef struct cw_joint2d_def {\n  cw_joint_type type;\n  cw_body2d a, b;\n  /* Local frames. PRISMATIC / WHEEL travel along x of frame a; REVOLUTE\n   * turns about the frames' origin. */\n  cw_xform2 frame_a, frame_b;\n  bool collide_connected;\n  float break_force, break_torque;\n  bool spring;\n  float hertz, damping_ratio;\n  bool limit;\n  float lower, upper;\n  bool motor;\n  float motor_speed, max_motor;\n  float length;\n  float max_force;\n  cw_vec2 target;\n  void *user;\n} cw_joint2d_def;"
+     "decl": "typedef struct cw_joint2d_def {\n  cw_joint_type type;\n  cw_body2d a, b;\n  /* Local frames. PRISMATIC / WHEEL travel along x of frame a; REVOLUTE\n   * turns about the frames' origin. */\n  cw_xform2 frame_a, frame_b;\n  bool collide_connected;\n  float break_force, break_torque;\n  bool spring;\n  float hertz, damping_ratio;\n  bool limit;\n  float lower, upper;\n  bool motor;\n  float motor_speed, max_motor;\n  float length;\n  float max_force;\n  cw_pos2 target;\n  /* MOVER: the commanded velocity (m/s) and the most force that may chase it, x and y separately (N). */\n  cw_vec2 linear_velocity, max_velocity_force;\n  /* POGO: a spring between frame_a's point (on body a) and frame_b's point (on body b), measured along +y of\n   * frame_b (hertz, damping_ratio and length are its spring and rest length); it pushes on the bodies along\n   * `normal` (the world normal of the ground it stands on), at most max_tension_force pulling and\n   * max_compression_force pushing; pogo_impulse / pogo_velocity carry its state across a recreation (the pogo is\n   * usually made again every frame). */\n  cw_vec2 normal;\n  float max_tension_force, max_compression_force, pogo_impulse, pogo_velocity;\n  void *user;\n} cw_joint2d_def;"
     },
     {
      "name": "cw_ray_hit2d",
      "doc": "── queries (see physics3d.h; same contracts) ──────────────────────────",
-     "decl": "typedef struct cw_ray_hit2d {\n  cw_shape2d shape;\n  cw_body2d body;\n  cw_vec2 point, normal;\n  float fraction;\n  uint64_t material;\n  int triangle;                /* always -1 in 2D (kept for parity) */\n} cw_ray_hit2d;"
+     "decl": "typedef struct cw_ray_hit2d {\n  cw_shape2d shape;\n  cw_body2d body;\n  cw_pos2 point;\n  cw_vec2 normal;\n  float fraction;\n  uint64_t material;\n  int triangle;                /* always -1 in 2D (kept for parity) */\n} cw_ray_hit2d;"
     },
     {
      "name": "cw_ray2d",
      "doc": "",
-     "decl": "typedef struct cw_ray2d {\n  cw_vec2 origin, translation;\n} cw_ray2d;"
+     "decl": "typedef struct cw_ray2d {\n  cw_pos2 origin;\n  cw_vec2 translation;\n} cw_ray2d;"
     },
     {
      "name": "cw_qshape2d",
      "doc": "",
-     "decl": "typedef struct cw_qshape2d {\n  cw_vec2 points[CW_QSHAPE2D_POINTS];\n  int count;\n  float radius;\n} cw_qshape2d;"
+     "decl": "typedef struct cw_qshape2d {\n  cw_vec2 points[CW_QSHAPE2D_POINTS]; /* relative to origin */\n  int count;\n  float radius;\n  cw_pos2 origin; /* zero from the constructors; cw_qshape2d_at moves the shape (the points keep their precision) */\n} cw_qshape2d;"
     },
     {
      "name": "cw_mover2d_def",
@@ -5773,7 +6318,7 @@
     {
      "name": "cw_mover2d",
      "doc": "",
-     "decl": "typedef struct cw_mover2d {\n  cw_world2d world;\n  cw_mover2d_def def;\n  cw_vec2 position, prev_position, velocity;\n  bool on_floor, on_wall, on_ceiling, stepped, snapped;\n  cw_vec2 floor_normal, wall_normal;\n  cw_body2d floor_body;\n  cw_vec2 platform_velocity;\n  float floor_cos;\n} cw_mover2d;"
+     "decl": "typedef struct cw_mover2d {\n  cw_world2d world;\n  cw_mover2d_def def;\n  cw_pos2 position, prev_position;\n  cw_vec2 velocity;\n  bool on_floor, on_wall, on_ceiling, stepped, snapped;\n  cw_vec2 floor_normal, wall_normal;\n  cw_body2d floor_body;\n  cw_vec2 platform_velocity;\n  float floor_cos;\n} cw_mover2d;"
     }
    ],
    "macros": [
@@ -6550,7 +7095,7 @@
     {
      "name": "cw_box2d_tasks",
      "signature": "void cw_box2d_tasks(b2WorldDef *def, int workers)",
-     "doc": "Sets def->workerCount and the task callbacks; allocates a per-world slot allocator in def->userTaskContext (free\nit with cw_box2d_tasks_release). Workers capped at 64.",
+     "doc": "Sets def->workerCount and the task callbacks (one pool job per Box2D task); allocates a small per-world context in\ndef->userTaskContext (free it with cw_box2d_tasks_release, after b2DestroyWorld). Workers capped at B2_MAX_WORKERS\n(32).",
      "inline": false
     },
     {

@@ -912,6 +912,7 @@ void cw_joint2d_set_spring(cw_joint2d j, bool on, float hertz, float damping) {
   case b2_wheelJoint: b2WheelJoint_EnableSpring(jid, on); b2WheelJoint_SetSpringHertz(jid, hertz); b2WheelJoint_SetSpringDampingRatio(jid, damping); break;
   case b2_distanceJoint: b2DistanceJoint_EnableSpring(jid, on); b2DistanceJoint_SetSpringHertz(jid, hertz); b2DistanceJoint_SetSpringDampingRatio(jid, damping); break;
   case b2_weldJoint: b2WeldJoint_SetLinearHertz(jid, hertz); b2WeldJoint_SetAngularHertz(jid, hertz); b2WeldJoint_SetLinearDampingRatio(jid, damping); b2WeldJoint_SetAngularDampingRatio(jid, damping); break;
+  case b2_pogoJoint: b2PogoJoint_SetSpringHertz(jid, hertz); b2PogoJoint_SetSpringDampingRatio(jid, damping); break;
   case b2_motorJoint: b2MotorJoint_SetLinearHertz(jid, hertz); b2MotorJoint_SetLinearDampingRatio(jid, damping); if (!jr || jr->type != CW_JOINT_MOUSE) { b2MotorJoint_SetAngularHertz(jid, hertz); b2MotorJoint_SetAngularDampingRatio(jid, damping); } break;
   default: break;
   }

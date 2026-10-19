@@ -611,8 +611,8 @@ bool cw_character2d_move_and_slide(cw_node n, float dt) {
 
 /* ── joints ─────────────────────────────────────────────────────────── */
 
-enum { J_PIN, J_HINGE, J_SLIDER, J_DISTANCE, J_SPRING, J_WELD, J_WHEEL, J_MOTOR };
-static const char *const joint_names[] = { "PIN", "HINGE", "SLIDER", "DISTANCE", "SPRING", "WELD", "WHEEL", "MOTOR", NULL };
+enum { J_PIN, J_HINGE, J_SLIDER, J_DISTANCE, J_SPRING, J_WELD, J_WHEEL, J_MOTOR, J_MOVER, J_POGO };
+static const char *const joint_names[] = { "PIN", "HINGE", "SLIDER", "DISTANCE", "SPRING", "WELD", "WHEEL", "MOTOR", "MOVER", "POGO", NULL };
 
 typedef struct joint2d {
   int joint_type;
@@ -625,6 +625,11 @@ typedef struct joint2d {
   float motor_speed, max_motor;
   float stiffness, damping;
   float length;
+  /* MOVER: the commanded velocity (px/s, y down) and the force that may chase it (N, x and y). POGO: the ground
+   * normal it pushes against (node space, y down: (0, -1) is straight up the screen) and its tension and
+   * compression limits (N); stiffness, damping and length are its spring and rest length. */
+  cw_vec2 mover_velocity, mover_max_force, pogo_normal;
+  float pogo_tension, pogo_compression;
   /* runtime */
   cw_joint2d joint;
   uint32_t struct_hash, live_hash;
@@ -647,6 +652,10 @@ static uint32_t joint_struct_hash(cw_node n, joint2d *j, cw_body2d a, cw_body2d 
   h = cw_hash32(&j->collide_connected, sizeof j->collide_connected, h);
   h = cw_hash32(&j->break_force, sizeof(float) * 2, h);
   h = cw_hash32(&j->length, sizeof j->length, h);
+  if (j->joint_type == J_POGO) { /* Box2D remakes a pogo to change it: its fields are structure */
+    h = cw_hash32(&j->pogo_normal, sizeof j->pogo_normal, h);
+    h = cw_hash32(&j->pogo_tension, sizeof(float) * 2, h);
+  }
   cw_node2d *d = cw_node_data_t(n, node2d_t);
   h = cw_hash32(&d->position, sizeof d->position, h);
   h = cw_hash32(&d->rotation, sizeof d->rotation, h);
@@ -657,10 +666,22 @@ static uint32_t joint_live_hash(joint2d *j) {
   h = cw_hash32(&j->lower, sizeof(float) * 2, h);
   h = cw_hash32(&j->motor_enabled, sizeof j->motor_enabled, h);
   h = cw_hash32(&j->motor_speed, sizeof(float) * 4, h);
+  h = cw_hash32(&j->mover_velocity, sizeof(cw_vec2) * 2, h);
   return h;
 }
 
 static void joint_apply_live(p2w *W, joint2d *j) {
+  if (j->joint_type == J_MOVER) { /* a velocity command: no limits, motor or spring */
+    cw_joint2d_set_mover(j->joint, cw_v2(j->mover_velocity.x / W->ppm, -j->mover_velocity.y / W->ppm),
+                         cw_v2(j->mover_max_force.x, j->mover_max_force.y));
+    j->live_hash = joint_live_hash(j);
+    return;
+  }
+  if (j->joint_type == J_POGO) {
+    cw_joint2d_set_spring(j->joint, true, j->stiffness > 0 ? j->stiffness : 4, j->damping);
+    j->live_hash = joint_live_hash(j);
+    return;
+  }
   bool lin = j->joint_type == J_SLIDER || j->joint_type == J_WHEEL || j->joint_type == J_DISTANCE || j->joint_type == J_SPRING;
   float k = lin ? 1.0f / W->ppm : 1;
   cw_joint2d_set_limits(j->joint, j->limit_enabled, lin ? j->lower * k : -j->upper, lin ? j->upper * k : -j->lower);
@@ -698,7 +719,8 @@ static void joint_sync(p2w *W, cw_node n, joint2d *j) {
     cw_joint2d_destroy(j->joint);
   }
   static const cw_joint_type map[] = { CW_JOINT_REVOLUTE, CW_JOINT_REVOLUTE, CW_JOINT_PRISMATIC, CW_JOINT_DISTANCE,
-                                       CW_JOINT_DISTANCE, CW_JOINT_WELD, CW_JOINT_WHEEL, CW_JOINT_MOTOR };
+                                       CW_JOINT_DISTANCE, CW_JOINT_WELD, CW_JOINT_WHEEL, CW_JOINT_MOTOR, CW_JOINT_MOVER,
+                                       CW_JOINT_POGO };
   cw_joint2d_def jd = cw_joint2d_default_def(map[j->joint_type]);
   jd.a = a;
   jd.b = b;
@@ -733,6 +755,22 @@ static void joint_sync(p2w *W, cw_node n, joint2d *j) {
   } else if (j->joint_type == J_WELD) {
     jd.hertz = j->stiffness;
     jd.damping_ratio = j->damping;
+  } else if (j->joint_type == J_MOVER) {
+    jd.linear_velocity = cw_v2(j->mover_velocity.x / W->ppm, -j->mover_velocity.y / W->ppm);
+    jd.max_velocity_force = cw_v2(j->mover_max_force.x, j->mover_max_force.y);
+  } else if (j->joint_type == J_POGO) {
+    /* the spring runs along the joint's own up (its +y, which is up the screen at rotation 0), from the anchor on A
+     * to the origin of B */
+    jd.frame_b.p = cw_v2(0, 0);
+    cw_xform2 xb = cw_body2d_transform(b);
+    cw_vec2 up = cw_v2(-axis.y, axis.x);
+    jd.length = j->length > 0 ? j->length / W->ppm : cw_v2_dot(cw_v2_sub(xb.p, anchor), up);
+    jd.hertz = j->stiffness > 0 ? j->stiffness : 4;
+    jd.damping_ratio = j->damping;
+    cw_vec2 nrm = cw_v2_normalize(cw_v2(j->pogo_normal.x, -j->pogo_normal.y));
+    jd.normal = cw_v2_length(nrm) > 0 ? nrm : up;
+    jd.max_tension_force = j->pogo_tension > 0 ? j->pogo_tension : 1e9f;
+    jd.max_compression_force = j->pogo_compression > 0 ? j->pogo_compression : 1e9f;
   }
   jd.motor = j->motor_enabled;
   jd.max_motor = j->max_motor;
@@ -766,6 +804,8 @@ static void joint_init(cw_node n, void *d) {
   joint2d *j = d;
   j->damping = 0.5f;
   j->max_motor = 1000;
+  j->pogo_normal = cw_v2(0, -1);
+  j->mover_max_force = cw_v2(1e6f, 1e6f);
 }
 
 /* ── casts ──────────────────────────────────────────────────────────── */
@@ -1254,7 +1294,7 @@ static cw_node_type shape_type = { .name = "CollisionShape2D", .parent = "Node2D
 static const char *const joint_signals[] = { "broken", NULL };
 static const cw_prop joint_props[] = {
   { .name = "joint_type", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(joint2d, joint_type), .size = sizeof(int),
-    .enum_names = joint_names, .doc = "PIN/HINGE (revolute), SLIDER (prismatic), DISTANCE, SPRING, WELD, WHEEL, MOTOR." },
+    .enum_names = joint_names, .doc = "PIN/HINGE (revolute), SLIDER (prismatic), DISTANCE, SPRING, WELD, WHEEL, MOTOR, MOVER (a velocity command on a dynamic character body, x and y separately, limited by a force: Box2D v3.2's dynamic mover), POGO (a spring along the joint's up that holds a dynamic character off the ground: Box2D v3.2)." },
   CW_PROP_FIELD(joint2d, node_a, CW_T_STRING, CW_PROP_DEFAULT, "Path to body A (relative to the joint; empty = the world)."),
   CW_PROP_FIELD(joint2d, node_b, CW_T_STRING, CW_PROP_DEFAULT, "Path to body B."),
   CW_PROP_FIELD(joint2d, collide_connected, CW_T_BOOL, CW_PROP_DEFAULT, "The two bodies collide with each other."),
@@ -1268,7 +1308,12 @@ static const cw_prop joint_props[] = {
   CW_PROP_FIELD_RANGE(joint2d, max_motor, CW_T_FLOAT, 0, 1e12, "Max motor torque / force."),
   CW_PROP_FIELD_RANGE(joint2d, stiffness, CW_T_FLOAT, 0, 1000, "Spring frequency, Hz (SPRING, WHEEL, soft WELD)."),
   CW_PROP_FIELD_RANGE(joint2d, damping, CW_T_FLOAT, 0, 100, "Spring damping ratio."),
-  CW_PROP_FIELD_RANGE(joint2d, length, CW_T_FLOAT, 0, 1e9, "DISTANCE/SPRING rest length, px (0 = current)."),
+  CW_PROP_FIELD_RANGE(joint2d, length, CW_T_FLOAT, 0, 1e9, "DISTANCE/SPRING/POGO rest length, px (0 = current)."),
+  CW_PROP_FIELD(joint2d, mover_velocity, CW_T_VEC2, CW_PROP_DEFAULT, "MOVER: the commanded velocity, px/s (y down)."),
+  CW_PROP_FIELD(joint2d, mover_max_force, CW_T_VEC2, CW_PROP_DEFAULT, "MOVER: the most force (N) that chases the velocity, x and y."),
+  CW_PROP_FIELD(joint2d, pogo_normal, CW_T_VEC2, CW_PROP_DEFAULT, "POGO: the ground normal it pushes against, node space (y down: (0, -1) is up)."),
+  CW_PROP_FIELD_RANGE(joint2d, pogo_tension, CW_T_FLOAT, 0, 1e12, "POGO: the most it pulls, N (0 = unlimited): how sticky it is to the ground."),
+  CW_PROP_FIELD_RANGE(joint2d, pogo_compression, CW_T_FLOAT, 0, 1e12, "POGO: the most it pushes, N (0 = unlimited): how hard it lifts the character."),
   CW_PROP_END,
 };
 static cw_node_type joint_type = { .name = "Joint2D", .parent = "Node2D", .data_size = sizeof(joint2d), .props = joint_props,
