@@ -623,7 +623,11 @@ static void test_recording2(void) {
     bd.position = (cw_pos2){ 0.2 * i, 1 + 1.1 * i };
     cw_shape2d_box(cw_body2d_create(w, &bd), &sd, (cw_vec2){ 0.5f, 0.5f }, cw_xform2_identity());
   }
-  for (int i = 0; i < 90; i++) cw_world2d_step(w, 1.0f / 60);
+  for (int i = 0; i < 90; i++) {
+    cw_world2d_step(w, 1.0f / 60);
+    cw_ray_hit2d rh;
+    if (i == 29) cw_world2d_raycast(w, (cw_pos2){ 0.3, 10 }, (cw_vec2){ 0, -20 }, NULL, &rh);
+  }
   cw_world2d_record_stop(w);
   int size = 0;
   const uint8_t *data = cw_recording2d_data(rec, &size);
@@ -638,10 +642,27 @@ static void test_recording2(void) {
   CHECK(steps == 90 && cw_replay2d_at_end(rp) && !cw_replay2d_diverged(rp) && cw_replay2d_diverge_frame(rp) == -1);
   cw_replay2d_seek(rp, 30);
   CHECK_EQ_INT(cw_replay2d_frame(rp), 30);
+  CHECK(cw_replay2d_keyframe_interval(rp) > 0 && cw_replay2d_keyframe_budget(rp) > 0 && cw_replay2d_keyframe_bytes(rp) > 0);
+  /* the one ray cast the recording made shows up in exactly one replayed step */
+  int total = 0, qframe = -1;
+  for (int fr = 25; fr <= 35; fr++) {
+    cw_replay2d_seek(rp, fr);
+    int n = cw_replay2d_query_count(rp);
+    total += n;
+    if (n) qframe = fr;
+  }
+  CHECK_EQ_INT(total, 1);
+  cw_replay2d_seek(rp, qframe);
+  cw_replay2d_query rq = cw_replay2d_get_query(rp, 0);
+  CHECK(rq.type == CW_REPLAY2D_CAST_RAY_CLOSEST && fabs(rq.origin.y - 10) < 1e-6 && rq.hit_count >= 0);
+  CHECK(cw_replay2d_get_query(rp, 5).hit_count == 0 && cw_replay2d_get_hit(rp, 0, 99).fraction == 0);
   CHECK(cw_replay2d_body_count(rp) >= 5 && b2Body_IsValid(cw_replay2d_body(rp, 1)));
   cw_phys_lines lines = { 0 };
   cw_replay2d_debug_draw(rp, &lines, CW_PHYS_DRAW_SHAPES);
   CHECK(cw_phys_lines_count(&lines) > 0);
+  cw_phys_lines_clear(&lines);
+  cw_replay2d_debug_draw_queries(rp, &lines, -1);
+  CHECK(cw_phys_lines_count(&lines) > 0); /* the ray */
   cw_phys_lines_free(&lines);
   cw_replay2d_close(rp);
   cw_recording2d_destroy(rec);
@@ -763,6 +784,19 @@ static void test_v32_extras2(void) {
   CHECK(isfinite(cw_joint2d_speed(pj)) && isfinite(cw_joint2d_spring_force(pj)) && isfinite(cw_joint2d_linear_separation(pj)) &&
         isfinite(cw_joint2d_angular_separation(pj)) && isfinite(cw_joint2d_motor_force(pj)));
   FOLD(hopper);
+  /* counters, profile, memory, and the debug draw modes Box2D v3.2 added (bounds had no callback until now) */
+  cw_world2d_counters cn = cw_world2d_counters_get(w);
+  CHECK(cn.bodies >= 5 && cn.shapes >= 6 && cn.byte_count > 0 && cn.islands >= 0);
+  CHECK(cw_world2d_profile_get(w).step >= 0 && cw_physics2d_memory_bytes() > 0);
+  cw_phys_lines dl = { 0 };
+  cw_world2d_debug_draw(w, &dl, CW_PHYS_DRAW_BOUNDS);
+  int bounds_lines = cw_phys_lines_count(&dl);
+  CHECK(bounds_lines >= 4 * 5);
+  cw_phys_lines_clear(&dl);
+  cw_world2d_debug_draw(w, &dl, CW_PHYS_DRAW_SHAPES | CW_PHYS_DRAW_JOINTS | CW_PHYS_DRAW_JOINT_EXTRAS | CW_PHYS_DRAW_CHAIN_NORMALS |
+                                    CW_PHYS_DRAW_ISLANDS);
+  CHECK(cw_phys_lines_count(&dl) > 0);
+  cw_phys_lines_free(&dl);
   cw_world2d_destroy(w);
   CHECK(cw_physics2d_avx2_available() || !cw_physics2d_avx2_available());
 }

@@ -42,8 +42,11 @@ typedef struct cw__world2 {
 cw__world2 *cw__w2(cw_world2d w);
 cw__body2 *cw__b2(cw_body2d b);
 void cw__joint2_destroy(cw__world2 *w, b2JointId jid);
+/* routes Box2D's log and assertions into the engine's (once; world2d_v32.c) */
+void cw__box2d_hooks(void);
 /* debug wireframes of any Box2D world (the wrapper's own, or a replay's) */
 void cw__world2_draw(b2WorldId id, cw_phys_lines *out, uint32_t flags);
+b2DebugDraw cw__debug_draw2(cw_phys_lines *out, uint32_t flags);
 /* the recording a world is writing into, if any (record2d.c) */
 struct cw_recording2d;
 

@@ -179,6 +179,26 @@ cw_phys_capacity2d cw_world2d_capacity(cw_world2d w);
 void cw_world2d_set_narrow_solver(cw_world2d w, bool on);
 /* True when this CPU can run Box2D's 8-wide AVX2 contact solver. */
 bool cw_physics2d_avx2_available(void);
+/* Bytes Box2D has allocated, all worlds together. */
+size_t cw_physics2d_memory_bytes(void);
+
+/* What the last step cost, milliseconds, by phase (Box2D v3.2 splits them further than cw_world2d_stats.step_ms). */
+typedef struct cw_world2d_profile {
+  float step, pairs, collide, solve, solver_setup, constraints, prepare_constraints, integrate_velocities, warm_start,
+      solve_impulses, integrate_positions, relax_impulses, restitution, store_impulses, split_islands, transforms,
+      sensor_hits, joint_events, hit_events, refit, bullets, sleep_islands, sensors;
+} cw_world2d_profile;
+/* The last step's cost by phase, ms; zero for an invalid world. */
+cw_world2d_profile cw_world2d_profile_get(cw_world2d w);
+/* Box2D's counters: what the world holds and how the solver's graph is filled. */
+typedef struct cw_world2d_counters {
+  size_t byte_count;
+  int bodies, shapes, contacts, awake_contacts, recycled_contacts, joints, islands, stack_used, static_tree_height,
+      tree_height, tasks;
+  int color_counts[24]; /* constraints per solver graph colour */
+} cw_world2d_counters;
+/* Box2D's counters for the world; zero for an invalid world. */
+cw_world2d_counters cw_world2d_counters_get(cw_world2d w);
 
 /* ── snapshots (Box2D v3.2): the whole simulation state as bytes ─────────
  * Call between steps. A restore puts the world back to that instant, warm-start caches and sleeping islands
@@ -244,6 +264,39 @@ bool cw_replay2d_diverged(const cw_replay2d *p);
 int cw_replay2d_diverge_frame(const cw_replay2d *p);
 /* Memory for backwards seeking: keyframes at least min_interval steps apart within budget_bytes. */
 void cw_replay2d_set_keyframes(cw_replay2d *p, size_t budget_bytes, int min_interval);
+/* The spatial queries (ray casts, shape casts, overlaps, mover casts) the game made during the most recently replayed
+ * step, so a bug report shows what the game asked as well as what the world did. */
+typedef enum cw_replay2d_query_type {
+  CW_REPLAY2D_OVERLAP_AABB, CW_REPLAY2D_OVERLAP_SHAPE, CW_REPLAY2D_CAST_RAY, CW_REPLAY2D_CAST_SHAPE,
+  CW_REPLAY2D_COLLIDE_MOVER, CW_REPLAY2D_CAST_RAY_CLOSEST, CW_REPLAY2D_CAST_MOVER
+} cw_replay2d_query_type;
+typedef struct cw_replay2d_query {
+  cw_replay2d_query_type type;
+  cw_pos2 origin;       /* where the query started (the box and shape points are relative to it) */
+  cw_aabb2 aabb;        /* the box of an AABB overlap, relative to origin */
+  cw_vec2 translation;  /* rays and casts */
+  int hit_count;
+} cw_replay2d_query;
+typedef struct cw_replay2d_hit {
+  b2ShapeId shape;
+  cw_pos2 point;
+  cw_vec2 normal;
+  float fraction;
+} cw_replay2d_hit;
+/* How many queries the last replayed step made. */
+int cw_replay2d_query_count(const cw_replay2d *p);
+/* Query index of the last replayed step (zeroed when out of range). */
+cw_replay2d_query cw_replay2d_get_query(const cw_replay2d *p, int index);
+/* One result of a query (zeroed when out of range). */
+cw_replay2d_hit cw_replay2d_get_hit(const cw_replay2d *p, int query, int hit);
+/* Draws the last step's queries as wireframes (one query, or -1 for all of them), on top of cw_replay2d_debug_draw. */
+void cw_replay2d_debug_draw_queries(cw_replay2d *p, cw_phys_lines *out, int query);
+/* Memory held by the keyframes that make seeking backwards fast, its budget, and their current spacing in steps. */
+size_t cw_replay2d_keyframe_bytes(const cw_replay2d *p);
+/* The keyframe memory budget, bytes. */
+size_t cw_replay2d_keyframe_budget(const cw_replay2d *p);
+/* The current keyframe spacing in steps (it doubles as keyframes are evicted to fit the budget). */
+int cw_replay2d_keyframe_interval(const cw_replay2d *p);
 /* The replayed world as a wrapper handle is not offered (it is Box2D's own): its bodies, by creation order, and the
  * Box2D world id, for the raw API; and its wireframes, as cw_world2d_debug_draw. */
 b2WorldId cw_replay2d_world(const cw_replay2d *p);

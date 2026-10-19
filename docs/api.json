@@ -5414,6 +5414,24 @@
      "inline": false
     },
     {
+     "name": "cw_physics2d_memory_bytes",
+     "signature": "size_t cw_physics2d_memory_bytes(void)",
+     "doc": "Bytes Box2D has allocated, all worlds together.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_profile_get",
+     "signature": "cw_world2d_profile cw_world2d_profile_get(cw_world2d w)",
+     "doc": "The last step's cost by phase, ms; zero for an invalid world.",
+     "inline": false
+    },
+    {
+     "name": "cw_world2d_counters_get",
+     "signature": "cw_world2d_counters cw_world2d_counters_get(cw_world2d w)",
+     "doc": "Box2D's counters for the world; zero for an invalid world.",
+     "inline": false
+    },
+    {
      "name": "cw_world2d_snapshot_size",
      "signature": "int cw_world2d_snapshot_size(cw_world2d w)",
      "doc": "Bytes a snapshot needs; 0 for an invalid world.",
@@ -5537,6 +5555,48 @@
      "name": "cw_replay2d_set_keyframes",
      "signature": "void cw_replay2d_set_keyframes(cw_replay2d *p, size_t budget_bytes, int min_interval)",
      "doc": "Memory for backwards seeking: keyframes at least min_interval steps apart within budget_bytes.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_query_count",
+     "signature": "int cw_replay2d_query_count(const cw_replay2d *p)",
+     "doc": "How many queries the last replayed step made.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_get_query",
+     "signature": "cw_replay2d_query cw_replay2d_get_query(const cw_replay2d *p, int index)",
+     "doc": "Query index of the last replayed step (zeroed when out of range).",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_get_hit",
+     "signature": "cw_replay2d_hit cw_replay2d_get_hit(const cw_replay2d *p, int query, int hit)",
+     "doc": "One result of a query (zeroed when out of range).",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_debug_draw_queries",
+     "signature": "void cw_replay2d_debug_draw_queries(cw_replay2d *p, cw_phys_lines *out, int query)",
+     "doc": "Draws the last step's queries as wireframes (one query, or -1 for all of them), on top of cw_replay2d_debug_draw.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_keyframe_bytes",
+     "signature": "size_t cw_replay2d_keyframe_bytes(const cw_replay2d *p)",
+     "doc": "Memory held by the keyframes that make seeking backwards fast, its budget, and their current spacing in steps.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_keyframe_budget",
+     "signature": "size_t cw_replay2d_keyframe_budget(const cw_replay2d *p)",
+     "doc": "The keyframe memory budget, bytes.",
+     "inline": false
+    },
+    {
+     "name": "cw_replay2d_keyframe_interval",
+     "signature": "int cw_replay2d_keyframe_interval(const cw_replay2d *p)",
+     "doc": "The current keyframe spacing in steps (it doubles as keyframes are evicted to fit the budget).",
      "inline": false
     },
     {
@@ -6266,6 +6326,16 @@
      "decl": "typedef struct cw_aabb2 {\n  cw_vec2 lo, hi; /* floats: exact within a few km of the origin */\n} cw_aabb2;"
     },
     {
+     "name": "cw_world2d_profile",
+     "doc": "What the last step cost, milliseconds, by phase (Box2D v3.2 splits them further than cw_world2d_stats.step_ms).",
+     "decl": "typedef struct cw_world2d_profile {\n  float step, pairs, collide, solve, solver_setup, constraints, prepare_constraints, integrate_velocities, warm_start,\n      solve_impulses, integrate_positions, relax_impulses, restitution, store_impulses, split_islands, transforms,\n      sensor_hits, joint_events, hit_events, refit, bullets, sleep_islands, sensors;\n} cw_world2d_profile;"
+    },
+    {
+     "name": "cw_world2d_counters",
+     "doc": "Box2D's counters: what the world holds and how the solver's graph is filled.",
+     "decl": "typedef struct cw_world2d_counters {\n  size_t byte_count;\n  int bodies, shapes, contacts, awake_contacts, recycled_contacts, joints, islands, stack_used, static_tree_height,\n      tree_height, tasks;\n  int color_counts[24]; /* constraints per solver graph colour */\n} cw_world2d_counters;"
+    },
+    {
      "name": "cw_recording2d",
      "doc": "── recording and replay (Box2D v3.2) ───────────────────────────────────\nA recording is the world at the start plus every call that changed it and the state hash of every step: attach it\nto a bug report and the replay shows the same simulation.",
      "decl": "typedef struct cw_recording2d cw_recording2d;"
@@ -6279,6 +6349,21 @@
      "name": "cw_replay2d_info",
      "doc": "",
      "decl": "typedef struct cw_replay2d_info {\n  int frames;       /* recorded steps */\n  float dt;         /* the recorded step */\n  int substeps;\n  cw_aabb2 bounds;  /* the world bounds over the recording */\n} cw_replay2d_info;"
+    },
+    {
+     "name": "cw_replay2d_query_type",
+     "doc": "The spatial queries (ray casts, shape casts, overlaps, mover casts) the game made during the most recently replayed\nstep, so a bug report shows what the game asked as well as what the world did.",
+     "decl": "typedef enum cw_replay2d_query_type {\n  CW_REPLAY2D_OVERLAP_AABB, CW_REPLAY2D_OVERLAP_SHAPE, CW_REPLAY2D_CAST_RAY, CW_REPLAY2D_CAST_SHAPE,\n  CW_REPLAY2D_COLLIDE_MOVER, CW_REPLAY2D_CAST_RAY_CLOSEST, CW_REPLAY2D_CAST_MOVER\n} cw_replay2d_query_type;"
+    },
+    {
+     "name": "cw_replay2d_query",
+     "doc": "",
+     "decl": "typedef struct cw_replay2d_query {\n  cw_replay2d_query_type type;\n  cw_pos2 origin;       /* where the query started (the box and shape points are relative to it) */\n  cw_aabb2 aabb;        /* the box of an AABB overlap, relative to origin */\n  cw_vec2 translation;  /* rays and casts */\n  int hit_count;\n} cw_replay2d_query;"
+    },
+    {
+     "name": "cw_replay2d_hit",
+     "doc": "",
+     "decl": "typedef struct cw_replay2d_hit {\n  b2ShapeId shape;\n  cw_pos2 point;\n  cw_vec2 normal;\n  float fraction;\n} cw_replay2d_hit;"
     },
     {
      "name": "cw_body2d_def",

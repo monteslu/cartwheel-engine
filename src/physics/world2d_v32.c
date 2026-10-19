@@ -89,6 +89,53 @@ void cw_world2d_set_narrow_solver(cw_world2d wh, bool on) {
   if (w) b2World_EnableSSE2Fallback(w->id, on);
 }
 bool cw_physics2d_avx2_available(void) { return b2IsAVX2Available(); }
+size_t cw_physics2d_memory_bytes(void) { return b2GetByteCount(); }
+
+cw_world2d_profile cw_world2d_profile_get(cw_world2d wh) {
+  cw_world2d_profile r = { 0 };
+  cw__world2 *w = cw__w2(wh);
+  if (!w) return r;
+  b2Profile p = b2World_GetProfile(w->id);
+  r = (cw_world2d_profile){ p.step, p.pairs, p.collide, p.solve, p.solverSetup, p.constraints, p.prepareConstraints,
+                            p.integrateVelocities, p.warmStart, p.solveImpulses, p.integratePositions, p.relaxImpulses,
+                            p.restitution, p.storeImpulses, p.splitIslands, p.transforms, p.sensorHits, p.jointEvents,
+                            p.hitEvents, p.refit, p.bullets, p.sleepIslands, p.sensors };
+  return r;
+}
+cw_world2d_counters cw_world2d_counters_get(cw_world2d wh) {
+  cw_world2d_counters r = { 0 };
+  cw__world2 *w = cw__w2(wh);
+  if (!w) return r;
+  b2Counters c = b2World_GetCounters(w->id);
+  r.byte_count = c.byteCount;
+  r.bodies = c.bodyCount;
+  r.shapes = c.shapeCount;
+  r.contacts = c.contactCount;
+  r.awake_contacts = c.awakeContactCount;
+  r.recycled_contacts = c.recycledContactCount;
+  r.joints = c.jointCount;
+  r.islands = c.islandCount;
+  r.stack_used = c.stackUsed;
+  r.static_tree_height = c.staticTreeHeight;
+  r.tree_height = c.treeHeight;
+  r.tasks = c.taskCount;
+  memcpy(r.color_counts, c.colorCounts, sizeof r.color_counts);
+  return r;
+}
+
+/* Box2D's own log lines and failed assertions go through the engine's log (fail fast: an assertion stops here). */
+static void b2_log(const char *message) { cw_warn("Box2D: %s", message); }
+static int b2_assert(const char *condition, const char *file, int line) {
+  cw_error("Box2D assertion failed: %s (%s:%d)", condition, file, line);
+  return 1;
+}
+void cw__box2d_hooks(void) {
+  static bool done;
+  if (done) return;
+  done = true;
+  b2SetLogCallback(b2_log);
+  b2SetAssertCallback(b2_assert);
+}
 
 /* ── bodies ──────────────────────────────────────────────────────────── */
 
@@ -585,6 +632,38 @@ void cw_replay2d_set_keyframes(cw_replay2d *r, size_t budget_bytes, int min_inte
 b2WorldId cw_replay2d_world(const cw_replay2d *r) { return r ? b2Replay_GetWorldId(r->p) : b2_nullWorldId; }
 int cw_replay2d_body_count(const cw_replay2d *r) { return r ? b2Replay_GetBodyCount(r->p) : 0; }
 b2BodyId cw_replay2d_body(const cw_replay2d *r, int index) { return r ? b2Replay_GetBodyId(r->p, index) : b2_nullBodyId; }
+int cw_replay2d_query_count(const cw_replay2d *r) { return r ? b2Replay_GetFrameQueryCount(r->p) : 0; }
+cw_replay2d_query cw_replay2d_get_query(const cw_replay2d *r, int index) {
+  cw_replay2d_query q = { 0 };
+  if (!r || index < 0 || index >= b2Replay_GetFrameQueryCount(r->p)) return q;
+  b2ReplayQueryInfo i = b2Replay_GetFrameQuery(r->p, index);
+  q.type = (cw_replay2d_query_type)i.type;
+  q.origin = cwp(i.origin);
+  q.aabb = aabb2(i.aabb);
+  q.translation = cwv(i.translation);
+  q.hit_count = i.hitCount;
+  return q;
+}
+cw_replay2d_hit cw_replay2d_get_hit(const cw_replay2d *r, int query, int hit) {
+  cw_replay2d_hit h = { b2_nullShapeId };
+  if (!r || query < 0 || query >= b2Replay_GetFrameQueryCount(r->p) || hit < 0 ||
+      hit >= b2Replay_GetFrameQuery(r->p, query).hitCount)
+    return h;
+  b2ReplayQueryHit b = b2Replay_GetFrameQueryHit(r->p, query, hit);
+  h.shape = b.shapeId;
+  h.point = cwp(b.point);
+  h.normal = cwv(b.normal);
+  h.fraction = b.fraction;
+  return h;
+}
+void cw_replay2d_debug_draw_queries(cw_replay2d *r, cw_phys_lines *out, int query) {
+  if (!r) return;
+  b2DebugDraw dd = cw__debug_draw2(out, CW_PHYS_DRAW_SHAPES);
+  b2Replay_DrawFrameQueries(r->p, &dd, query);
+}
+size_t cw_replay2d_keyframe_bytes(const cw_replay2d *r) { return r ? b2Replay_GetKeyframeBytes(r->p) : 0; }
+size_t cw_replay2d_keyframe_budget(const cw_replay2d *r) { return r ? b2Replay_GetKeyframeBudget(r->p) : 0; }
+int cw_replay2d_keyframe_interval(const cw_replay2d *r) { return r ? b2Replay_GetKeyframeInterval(r->p) : 0; }
 void cw_replay2d_debug_draw(cw_replay2d *r, cw_phys_lines *out, uint32_t flags) {
   if (r) cw__world2_draw(b2Replay_GetWorldId(r->p), out, flags);
 }

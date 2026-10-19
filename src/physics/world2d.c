@@ -47,6 +47,7 @@ cw_world2d_def cw_world2d_default_def(void) {
 }
 
 cw_world2d cw_world2d_create(const cw_world2d_def *def) {
+  cw__box2d_hooks();
   cw_world2d_def d = def ? *def : cw_world2d_default_def();
   b2WorldDef wd = b2DefaultWorldDef();
   wd.gravity = v2(d.gravity);
@@ -979,6 +980,11 @@ static void draw_point(b2Pos p, float size, b2HexColor color, void *ctx) {
   line2(ctx, b2OffsetPos(p, (b2Vec2){ -h, 0 }), b2OffsetPos(p, (b2Vec2){ h, 0 }), (uint32_t)color);
   line2(ctx, b2OffsetPos(p, (b2Vec2){ 0, -h }), b2OffsetPos(p, (b2Vec2){ 0, h }), (uint32_t)color);
 }
+static void draw_bounds(b2AABB b, b2HexColor color, void *ctx) {
+  b2Pos p[4] = { { b.lowerBound.x, b.lowerBound.y }, { b.upperBound.x, b.lowerBound.y },
+                 { b.upperBound.x, b.upperBound.y }, { b.lowerBound.x, b.upperBound.y } };
+  for (int i = 0; i < 4; i++) line2(ctx, p[i], p[(i + 1) % 4], (uint32_t)color);
+}
 static void draw_string(b2Pos p, const char *s, b2HexColor color, void *ctx) {
   (void)p;
   (void)s;
@@ -986,7 +992,7 @@ static void draw_string(b2Pos p, const char *s, b2HexColor color, void *ctx) {
   (void)ctx;
 }
 
-void cw__world2_draw(b2WorldId id, cw_phys_lines *out, uint32_t flags) {
+b2DebugDraw cw__debug_draw2(cw_phys_lines *out, uint32_t flags) {
   b2DebugDraw dd = b2DefaultDebugDraw();
   dd.DrawPolygonFcn = draw_polygon;
   dd.DrawSolidPolygonFcn = draw_solid_polygon;
@@ -997,6 +1003,7 @@ void cw__world2_draw(b2WorldId id, cw_phys_lines *out, uint32_t flags) {
   dd.DrawTransformFcn = draw_transform;
   dd.DrawPointFcn = draw_point;
   dd.DrawStringFcn = draw_string;
+  dd.DrawBoundsFcn = draw_bounds;
   dd.drawingBounds = (b2AABB){ { -1e9f, -1e9f }, { 1e9f, 1e9f } };
   dd.drawShapes = flags & CW_PHYS_DRAW_SHAPES;
   dd.drawJoints = flags & CW_PHYS_DRAW_JOINTS;
@@ -1004,7 +1011,19 @@ void cw__world2_draw(b2WorldId id, cw_phys_lines *out, uint32_t flags) {
   dd.drawContacts = flags & CW_PHYS_DRAW_CONTACTS;
   dd.drawContactNormals = flags & CW_PHYS_DRAW_CONTACTS;
   dd.drawMass = flags & CW_PHYS_DRAW_MASS;
+  dd.drawJointExtras = flags & CW_PHYS_DRAW_JOINT_EXTRAS;
+  dd.drawAnchorA = flags & CW_PHYS_DRAW_ANCHOR_A;
+  dd.drawChainNormals = flags & CW_PHYS_DRAW_CHAIN_NORMALS;
+  dd.drawContactForces = flags & CW_PHYS_DRAW_CONTACT_FORCES;
+  dd.drawFrictionForces = flags & CW_PHYS_DRAW_FRICTION_FORCES;
+  dd.drawIslands = flags & CW_PHYS_DRAW_ISLANDS;
+  dd.drawGraphColors = flags & CW_PHYS_DRAW_GRAPH_COLORS;
   dd.context = out;
+  return dd;
+}
+
+void cw__world2_draw(b2WorldId id, cw_phys_lines *out, uint32_t flags) {
+  b2DebugDraw dd = cw__debug_draw2(out, flags);
   b2World_Draw(id, &dd);
 }
 

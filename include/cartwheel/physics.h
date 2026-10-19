@@ -148,6 +148,14 @@ enum {
   CW_PHYS_DRAW_BOUNDS = 1 << 2,
   CW_PHYS_DRAW_CONTACTS = 1 << 3, /* points and normals */
   CW_PHYS_DRAW_MASS = 1 << 4,
+  /* 2D only (Box2D v3.2; 3D ignores them): */
+  CW_PHYS_DRAW_JOINT_EXTRAS = 1 << 5,    /* limits, springs and the like on joints */
+  CW_PHYS_DRAW_ANCHOR_A = 1 << 6,        /* contact points on anchor A instead of B */
+  CW_PHYS_DRAW_CHAIN_NORMALS = 1 << 7,   /* which side of a chain is solid */
+  CW_PHYS_DRAW_CONTACT_FORCES = 1 << 8,
+  CW_PHYS_DRAW_FRICTION_FORCES = 1 << 9,
+  CW_PHYS_DRAW_ISLANDS = 1 << 10,        /* the boxes around groups of touching bodies that sleep together */
+  CW_PHYS_DRAW_GRAPH_COLORS = 1 << 11,   /* contacts tinted by the solver's graph colour */
   CW_PHYS_DRAW_DEFAULT = CW_PHYS_DRAW_SHAPES | CW_PHYS_DRAW_JOINTS,
 };
 
