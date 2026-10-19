@@ -139,7 +139,7 @@ int cw_world2d_shapecast(cw_world2d wh, const cw_qshape2d *shape, cw_vec2 transl
   if (!w || cap <= 0) return 0;
   b2ShapeProxy p = proxy(shape);
   cast_ctx c = { filter, hits, 0, cap, cap == 1 };
-  b2World_CastShape(w->id, &p, v2(translation), qfilter(filter), cast_fn, &c);
+  b2World_CastShape(w->id, b2ToPos((b2Vec2){ 0, 0 }), &p, v2(translation), qfilter(filter), cast_fn, &c);
   return c.count;
 }
 
@@ -170,7 +170,7 @@ int cw_world2d_overlap(cw_world2d wh, const cw_qshape2d *shape, const cw_phys_fi
   if (!w || cap <= 0) return 0;
   b2ShapeProxy p = proxy(shape);
   overlap_ctx c = { filter, out, 0, cap };
-  b2World_OverlapShape(w->id, &p, qfilter(filter), overlap_fn, &c);
+  b2World_OverlapShape(w->id, b2ToPos((b2Vec2){ 0, 0 }), &p, qfilter(filter), overlap_fn, &c);
   return c.count;
 }
 
@@ -179,6 +179,6 @@ int cw_world2d_overlap_aabb(cw_world2d wh, cw_vec2 lo, cw_vec2 hi, const cw_phys
   cw__world2 *w = cw__w2(wh);
   if (!w || cap <= 0) return 0;
   overlap_ctx c = { filter, out, 0, cap };
-  b2World_OverlapAABB(w->id, (b2AABB){ v2(lo), v2(hi) }, qfilter(filter), overlap_fn, &c);
+  b2World_OverlapAABB(w->id, b2ToPos((b2Vec2){ 0, 0 }), (b2AABB){ v2(lo), v2(hi) }, qfilter(filter), overlap_fn, &c);
   return c.count;
 }

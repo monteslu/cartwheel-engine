@@ -8,15 +8,13 @@
 # starve forever: a TSan build hung about 1 run in 100 under load, every
 # hang with the orchestrator parked in __tsan_atomic32_store.
 
-diff --git a/src/atomic.h b/src/atomic.h
-index 2b14921..d89688e 100644
---- a/src/atomic.h
-+++ b/src/atomic.h
-@@ -78,3 +78,31 @@ static inline uint32_t b2AtomicLoadU32( b2AtomicU32* a )
- #error "Unsupported platform"
+diff --git a/src/platform.h b/src/platform.h
+--- a/src/platform.h
++++ b/src/platform.h
+@@ -141,6 +141,34 @@
  #endif
  }
-+
+ 
 +// Relaxed loads for spin-wait polling. A spinner polls with these and then
 +// takes the value with a full (acquire) load once it has changed. On x86 the
 +// code is the same, but ThreadSanitizer serves every acquire load of a
@@ -44,16 +42,21 @@ index 2b14921..d89688e 100644
 +#error "Unsupported platform"
 +#endif
 +}
++
+ static inline uint32_t b2AtomicLoadU32( b2AtomicU32* a )
+ {
+ #if defined( _MSC_VER ) && !defined( __clang__ )
 diff --git a/src/solver.c b/src/solver.c
-index 5da0760..5f1f71c 100644
 --- a/src/solver.c
 +++ b/src/solver.c
-@@ -1025,10 +1025,12 @@ static void b2ExecuteMainStage( b2SolverStage* stage, b2StepContext* context, ui
+@@ -1004,11 +1004,13 @@
+ 
  		b2ExecuteStage( stage, context, previousSyncIndex, syncIndex, workerIndex );
  
- 		// todo consider using the cycle counter as well
+-		// Spin waiting for thieves to finish
 -		while ( b2AtomicLoadInt( &stage->completionCount ) != blockCount )
-+		// Poll relaxed, then acquire the finished blocks with a full load (see b2AtomicLoadRelaxedInt)
++		// Spin waiting for thieves to finish. Poll relaxed, then acquire the finished blocks
++		// with a full load (see b2AtomicLoadRelaxedInt)
 +		while ( b2AtomicLoadRelaxedInt( &stage->completionCount ) != blockCount )
  		{
  			b2Pause();
@@ -62,8 +65,8 @@ index 5da0760..5f1f71c 100644
  
  		b2AtomicStoreInt( &stage->completionCount, 0 );
  	}
-@@ -1224,7 +1226,7 @@ static void b2SolverTask( int startIndex, int endIndex, uint32_t threadIndexIgno
- 		// parallel simulation with graph coloring.
+@@ -1220,7 +1222,7 @@
+ 		// todo improve this spinner
  		uint32_t syncBits;
  		int spinCount = 0;
 -		while ( ( syncBits = b2AtomicLoadU32( &context->atomicSyncBits ) ) == lastSyncBits )
@@ -71,7 +74,7 @@ index 5da0760..5f1f71c 100644
  		{
  			if ( spinCount > 5 )
  			{
-@@ -1248,6 +1250,10 @@ static void b2SolverTask( int startIndex, int endIndex, uint32_t threadIndexIgno
+@@ -1245,6 +1247,10 @@
  			}
  		}
  

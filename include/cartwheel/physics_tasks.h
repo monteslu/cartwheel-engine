@@ -17,8 +17,9 @@
 extern "C" {
 #endif
 
-/* Sets def->workerCount and the task callbacks; allocates a per-world slot allocator in def->userTaskContext (free
- * it with cw_box2d_tasks_release). Workers capped at 64. */
+/* Sets def->workerCount and the task callbacks (one pool job per Box2D task); allocates a small per-world context in
+ * def->userTaskContext (free it with cw_box2d_tasks_release, after b2DestroyWorld). Workers capped at B2_MAX_WORKERS
+ * (32). */
 void cw_box2d_tasks(b2WorldDef *def, int workers);
 /* Free what cw_box2d_tasks allocated (def.userTaskContext), after b2DestroyWorld. */
 void cw_box2d_tasks_release(void *userTaskContext);

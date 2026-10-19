@@ -87,19 +87,10 @@ file(GLOB _b2 ${DEPS}/box2d/src/*.c)
 add_library(box2d STATIC ${_b2})
 target_include_directories(box2d PUBLIC ${DEPS}/box2d/include PRIVATE ${DEPS}/box2d/src)
 target_compile_options(box2d PRIVATE -O2 -w)
-# Box2D's 8-wide AVX2 contact solver, on a native build for the machine it is
-# built on when that CPU has AVX2 (Linux, not an export: exports and carts keep
-# the 4-wide SSE2 / wasm SIMD solver). A wider solver gives the same bits (a
+# Box2D 3.2 picks its 8-wide AVX2 contact solver at run time (CPUID), per
+# function, so no compile flag is needed. A wider solver gives the same bits (a
 # graph color's constraints share no body); physics-determinism holds native
 # to every cart's hashes.
-if(NOT CW_CART AND NOT CW_EXPORT_TARGET AND NOT CMAKE_CROSSCOMPILING AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
-   AND EXISTS /proc/cpuinfo)
-  file(STRINGS /proc/cpuinfo _cw_avx2 REGEX "^flags.* avx2( |$)" LIMIT_COUNT 1)
-  if(_cw_avx2)
-    target_compile_definitions(box2d PRIVATE BOX2D_AVX2)
-    target_compile_options(box2d PRIVATE -mavx2)
-  endif()
-endif()
 
 # ── Box3D ────────────────────────────────────────────────────────────
 file(GLOB _b3 ${DEPS}/box3d/src/*.c)

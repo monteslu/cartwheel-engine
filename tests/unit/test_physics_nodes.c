@@ -68,7 +68,7 @@ static void test_lifecycle2d(void) {
   step(t, 90);
   cw_vec2 p = cw_node2d_position(b);
   CHECK(fabsf(p.y - 185) < 0.5f);
-  CHECK(fabsf(p.x) < 0.01f);
+  CHECK(fabsf(p.x) < 0.1f); /* Box2D v3.2 lands a flat box with about 0.04 px of sideways drift (v3.1: under 0.01) */
   FOLD(p);
   /* reparent under an offset Node2D: a new body where the node now is */
   cw_body2d old = cw_collision_object2d_body(b);
@@ -77,7 +77,7 @@ static void test_lifecycle2d(void) {
   cw_node_reparent(b, holder);
   cw_body2d nb = cw_collision_object2d_body(b);
   CHECK(!cw_body2d_valid(old) && cw_body2d_valid(nb));
-  CHECK(fabsf(cw_body2d_transform(nb).p.x * ppm(t) - 100) < 0.01f);
+  CHECK(fabsf(cw_body2d_transform(nb).p.x * ppm(t) - 100) < 0.1f); /* the box's drift above carries over */
   CHECK_EQ_INT(cw_world2d_stats(w).bodies, 2);
   /* exit (no free) and enter again */
   cw_node_remove_child(holder, b);

@@ -313,7 +313,8 @@ cw_body2d cw_body2d_create(cw_world2d wh, const cw_body2d_def *def) {
 void cw__joint2_destroy(cw__world2 *w, b2JointId jid) {
   cw__joint2 *j = b2Joint_GetUserData(jid);
   b2BodyId mouse = j ? j->mouse_body : b2_nullBodyId;
-  b2DestroyJoint(jid, true);
+  b2Joint_WakeBodies(jid);
+  b2DestroyJoint(jid);
   if (j) cw_pool_release(&w->joints, cw_pool_id_of(&w->joints, j));
   if (B2_IS_NON_NULL(mouse) && b2Body_IsValid(mouse)) b2DestroyBody(mouse);
 }
@@ -567,8 +568,17 @@ cw_chain2d cw_chain2d_create(cw_body2d b, const cw_shape2d_def *def, const cw_ve
   cw_shape2d_def d = def ? *def : cw_shape2d_default_def();
   b2SurfaceMaterial mat = surface(&d.material);
   b2ChainDef cd = b2DefaultChainDef();
-  cd.points = (const b2Vec2 *)points;
-  cd.count = count;
+  /* the caller's end points of an open chain are its ghost vertices (v3.1 took them in the point list; v3.2 takes them apart) */
+  const b2Vec2 *pts = (const b2Vec2 *)points;
+  if (loop) {
+    cd.points = pts;
+    cd.pointCount = count;
+  } else {
+    cd.ghost1 = pts[0];
+    cd.ghost2 = pts[count - 1];
+    cd.points = pts + 1;
+    cd.pointCount = count - 2;
+  }
   cd.materials = &mat;
   cd.materialCount = 1;
   cd.filter.categoryBits = cw__shape_category(d.layer);
@@ -823,10 +833,10 @@ void *cw_joint2d_user(cw_joint2d j) {
 void cw_joint2d_set_motor(cw_joint2d j, bool on, float speed, float max) {
   JOINT_OR(j, );
   switch (b2Joint_GetType(jid)) {
-  case b2_revoluteJoint: b2RevoluteJoint_EnableMotor(jid, on); b2RevoluteJoint_SetMotorSpeed(jid, speed); b2RevoluteJoint_SetMaxMotorTorque(jid, max); break;
-  case b2_prismaticJoint: b2PrismaticJoint_EnableMotor(jid, on); b2PrismaticJoint_SetMotorSpeed(jid, speed); b2PrismaticJoint_SetMaxMotorForce(jid, max); break;
-  case b2_wheelJoint: b2WheelJoint_EnableMotor(jid, on); b2WheelJoint_SetMotorSpeed(jid, speed); b2WheelJoint_SetMaxMotorTorque(jid, max); break;
-  case b2_distanceJoint: b2DistanceJoint_EnableMotor(jid, on); b2DistanceJoint_SetMotorSpeed(jid, speed); b2DistanceJoint_SetMaxMotorForce(jid, max); break;
+  case b2_revoluteJoint: b2RevoluteJoint_EnableMotor(jid, on); b2RevoluteJoint_SetTargetMotorSpeed(jid, speed); b2RevoluteJoint_SetMaxMotorTorque(jid, max); break;
+  case b2_prismaticJoint: b2PrismaticJoint_EnableMotor(jid, on); b2PrismaticJoint_SetTargetMotorSpeed(jid, speed); b2PrismaticJoint_SetMaxMotorForce(jid, max); break;
+  case b2_wheelJoint: b2WheelJoint_EnableMotor(jid, on); b2WheelJoint_SetTargetMotorSpeed(jid, speed); b2WheelJoint_SetMaxMotorTorque(jid, max); break;
+  case b2_distanceJoint: b2DistanceJoint_EnableMotor(jid, on); b2DistanceJoint_SetTargetMotorSpeed(jid, speed); b2DistanceJoint_SetMaxMotorForce(jid, max); break;
   default: break;
   }
   b2Joint_WakeBodies(jid);
@@ -837,7 +847,7 @@ void cw_joint2d_set_limits(cw_joint2d j, bool on, float lower, float upper) {
   case b2_revoluteJoint: b2RevoluteJoint_EnableLimit(jid, on); b2RevoluteJoint_SetLimits(jid, lower, upper); break;
   case b2_prismaticJoint: b2PrismaticJoint_EnableLimit(jid, on); b2PrismaticJoint_SetLimits(jid, lower, upper); break;
   case b2_wheelJoint: b2WheelJoint_EnableLimit(jid, on); b2WheelJoint_SetLimits(jid, lower, upper); break;
-  case b2_distanceJoint: b2DistanceJoint_EnableLimit(jid, on); b2DistanceJoint_SetLengthRange(jid, lower, upper); break;
+  case b2_distanceJoint: b2DistanceJoint_EnableLimit(jid, on); b2DistanceJoint_SetLimits(jid, lower, upper); break;
   default: break;
   }
   b2Joint_WakeBodies(jid);
@@ -862,8 +872,8 @@ void cw_joint2d_set_target(cw_joint2d j, cw_vec2 target) {
 float cw_joint2d_value(cw_joint2d j) {
   JOINT_OR(j, 0);
   switch (b2Joint_GetType(jid)) {
-  case b2_revoluteJoint: return b2RevoluteJoint_GetAngle(jid);
-  case b2_prismaticJoint: return b2PrismaticJoint_GetTranslation(jid);
+  case b2_revoluteJoint: return b2RevoluteJoint_GetCurrentAngle(jid);
+  case b2_prismaticJoint: return b2PrismaticJoint_GetCurrentTranslation(jid);
   case b2_distanceJoint: return b2DistanceJoint_GetCurrentLength(jid);
   case b2_wheelJoint: /* measured spin (rad/s), like Box3D's b3WheelJoint_GetSpinSpeed */
     return b2Body_GetAngularVelocity(b2Joint_GetBodyB(jid)) - b2Body_GetAngularVelocity(b2Joint_GetBodyA(jid));
@@ -881,17 +891,18 @@ static void circle2(cw_phys_lines *l, b2Vec2 c, float r, uint32_t color) {
   float cc[3] = { c.x, c.y, 0 }, ax[3] = { 1, 0, 0 }, ay[3] = { 0, 1, 0 };
   cw__lines_circle(l, cc, ax, ay, r, color, 20);
 }
-static void draw_polygon(const b2Vec2 *v, int n, b2HexColor color, void *ctx) {
-  for (int i = 0; i < n; i++) line2(ctx, v[i], v[(i + 1) % n], (uint32_t)color);
+static void draw_polygon(b2Transform t, const b2Vec2 *v, int n, b2HexColor color, void *ctx) {
+  for (int i = 0; i < n; i++) line2(ctx, b2TransformPoint(t, v[i]), b2TransformPoint(t, v[(i + 1) % n]), (uint32_t)color);
 }
 static void draw_solid_polygon(b2Transform t, const b2Vec2 *v, int n, float radius, b2HexColor color, void *ctx) {
   (void)radius;
   for (int i = 0; i < n; i++) line2(ctx, b2TransformPoint(t, v[i]), b2TransformPoint(t, v[(i + 1) % n]), (uint32_t)color);
 }
 static void draw_circle(b2Vec2 c, float r, b2HexColor color, void *ctx) { circle2(ctx, c, r, (uint32_t)color); }
-static void draw_solid_circle(b2Transform t, float r, b2HexColor color, void *ctx) {
-  circle2(ctx, t.p, r, (uint32_t)color);
-  line2(ctx, t.p, b2TransformPoint(t, (b2Vec2){ r, 0 }), (uint32_t)color); /* shows rotation */
+static void draw_solid_circle(b2Transform t, b2Vec2 center, float r, b2HexColor color, void *ctx) {
+  b2Vec2 c = b2TransformPoint(t, center);
+  circle2(ctx, c, r, (uint32_t)color);
+  line2(ctx, c, b2TransformPoint(t, b2Add(center, (b2Vec2){ r, 0 })), (uint32_t)color); /* shows rotation */
 }
 static void draw_solid_capsule(b2Vec2 p1, b2Vec2 p2, float r, b2HexColor color, void *ctx) {
   circle2(ctx, p1, r, (uint32_t)color);
@@ -937,7 +948,7 @@ void cw_world2d_debug_draw(cw_world2d wh, cw_phys_lines *out, uint32_t flags) {
   dd.drawShapes = flags & CW_PHYS_DRAW_SHAPES;
   dd.drawJoints = flags & CW_PHYS_DRAW_JOINTS;
   dd.drawBounds = flags & CW_PHYS_DRAW_BOUNDS;
-  dd.drawContactPoints = flags & CW_PHYS_DRAW_CONTACTS;
+  dd.drawContacts = flags & CW_PHYS_DRAW_CONTACTS;
   dd.drawContactNormals = flags & CW_PHYS_DRAW_CONTACTS;
   dd.drawMass = flags & CW_PHYS_DRAW_MASS;
   dd.context = out;

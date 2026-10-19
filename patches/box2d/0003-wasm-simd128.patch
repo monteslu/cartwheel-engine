@@ -9,11 +9,37 @@
 # a < b ? a : b, which is wasm_f32x4_pmin(b, a); wasm_f32x4_min differs on
 # signed zeros and NaN). Native x86 (SSE2) and carts run the same solver.
 
-diff --git a/src/contact_solver.c b/src/contact_solver.c
-index 19fd46e..7881f22 100644
---- a/src/contact_solver.c
-+++ b/src/contact_solver.c
-@@ -556,6 +556,13 @@ typedef float32x4_t b2FloatW;
+diff --git a/src/core.h b/src/core.h
+--- a/src/core.h
++++ b/src/core.h
+@@ -41,7 +41,7 @@
+ 	#define B2_CPU_X86_X64
+ #elif defined( __aarch64__ ) || defined( _M_ARM64 ) || defined( __arm__ ) || defined( _M_ARM )
+ 	#define B2_CPU_ARM
+-#elif defined( __EMSCRIPTEN__ )
++#elif defined( __EMSCRIPTEN__ ) || defined( __wasm__ )
+ 	#define B2_CPU_WASM
+ #else
+ 	#define B2_CPU_UNKNOWN
+@@ -65,9 +65,11 @@
+ 			// and unverifiable performance.
+ 			#define B2_SIMD_NONE
+ 		#endif
+-	#elif defined( B2_CPU_WASM )
+-		#define B2_CPU_WASM
+-		#define B2_SIMD_SSE2
++	#elif defined( B2_CPU_WASM ) && defined( __wasm_simd128__ )
++		// WebAssembly SIMD (wasm_simd128.h), any toolchain: Emscripten or wasi-sdk.
++		// Bit-identical to the SSE2 path: the same operations in the same order,
++		// pmin/pmax with SSE min/max operand semantics, and no fused multiply-add.
++		#define B2_SIMD_WASM
+ 	#else
+ 		#define B2_SIMD_NONE
+ 	#endif
+diff --git a/src/contact_solver_wide.inl b/src/contact_solver_wide.inl
+--- a/src/contact_solver_wide.inl
++++ b/src/contact_solver_wide.inl
+@@ -49,6 +49,13 @@
  // wide float holds 4 numbers
  typedef __m128 b2FloatW;
  
@@ -27,8 +53,8 @@ index 19fd46e..7881f22 100644
  #else
  
  // scalar math
-@@ -922,6 +929,119 @@ static inline b2FloatW b2UnpackHiW( b2FloatW a, b2FloatW b )
- 	return _mm_unpackhi_ps( a, b );
+@@ -489,6 +496,142 @@
+ 	return _mm_castsi128_ps( _mm_or_si128( a, b ) );
  }
  
 +#elif defined( B2_SIMD_WASM )
@@ -52,6 +78,11 @@ index 19fd46e..7881f22 100644
 +	return wasm_f32x4_make( a, b, c, d );
 +}
 +
++static inline b2FloatW b2NegW( b2FloatW a )
++{
++	return wasm_v128_xor( a, wasm_f32x4_const_splat( -0.0f ) );
++}
++
 +static inline b2FloatW b2AddW( b2FloatW a, b2FloatW b )
 +{
 +	return wasm_f32x4_add( a, b );
@@ -65,6 +96,11 @@ index 19fd46e..7881f22 100644
 +static inline b2FloatW b2MulW( b2FloatW a, b2FloatW b )
 +{
 +	return wasm_f32x4_mul( a, b );
++}
++
++static inline b2FloatW b2DivW( b2FloatW a, b2FloatW b )
++{
++	return wasm_f32x4_div( a, b );
 +}
 +
 +static inline b2FloatW b2MulAddW( b2FloatW a, b2FloatW b, b2FloatW c )
@@ -96,9 +132,9 @@ index 19fd46e..7881f22 100644
 +	return b2MaxW( nb, b2MinW( a, b ) );
 +}
 +
-+static inline b2FloatW b2OrW( b2FloatW a, b2FloatW b )
++static inline b2FloatW b2AndW( b2FloatW a, b2FloatW b )
 +{
-+	return wasm_v128_or( a, b );
++	return wasm_v128_and( a, b );
 +}
 +
 +static inline b2FloatW b2GreaterThanW( b2FloatW a, b2FloatW b )
@@ -106,9 +142,14 @@ index 19fd46e..7881f22 100644
 +	return wasm_f32x4_gt( a, b );
 +}
 +
-+static inline b2FloatW b2EqualsW( b2FloatW a, b2FloatW b )
++static inline b2FloatW b2LessThanW( b2FloatW a, b2FloatW b )
 +{
-+	return wasm_f32x4_eq( a, b );
++	return wasm_f32x4_lt( a, b );
++}
++
++static inline bool b2AnyTrueW( b2FloatW mask )
++{
++	return wasm_i32x4_bitmask( mask ) != 0;
 +}
 +
 +static inline bool b2AllZeroW( b2FloatW a )
@@ -122,7 +163,7 @@ index 19fd46e..7881f22 100644
 +	return wasm_v128_or( wasm_v128_and( mask, b ), wasm_v128_andnot( a, mask ) );
 +}
 +
-+static inline b2FloatW b2LoadW( const float* data )
++static inline b2FloatW b2LoadU( const float* data )
 +{
 +	return wasm_v128_load( data );
 +}
@@ -144,20 +185,29 @@ index 19fd46e..7881f22 100644
 +	return wasm_i32x4_shuffle( a, b, 2, 6, 3, 7 );
 +}
 +
++static inline b2FloatW b2SoftMaskW( const int* indexA, const int* indexB )
++{
++	v128_t zero = wasm_i32x4_const_splat( 0 );
++	v128_t a = wasm_i32x4_eq( wasm_v128_load( indexA ), zero );
++	v128_t b = wasm_i32x4_eq( wasm_v128_load( indexB ), zero );
++	return wasm_v128_or( a, b );
++}
++
  #else
  
  static inline b2FloatW b2ZeroW( void )
-@@ -1430,6 +1550,101 @@ static void b2ScatterBodies( b2BodyState* B2_RESTRICT states, int* B2_RESTRICT i
- #endif
+@@ -1112,6 +1255,119 @@
+ 	}
  }
  
 +#elif defined( B2_SIMD_WASM )
 +
 +// The SSE2 load and transpose above in wasm_simd128.h
-+static b2BodyStateW b2GatherBodies( const b2BodyState* B2_RESTRICT states, int* B2_RESTRICT indices )
++B2_FORCE_INLINE b2BodyStateW b2GatherBodies( const b2BodyState* B2_RESTRICT states, int* B2_RESTRICT indices )
 +{
 +	_Static_assert( sizeof( b2BodyState ) == 32, "b2BodyState not 32 bytes" );
 +	B2_ASSERT( ( (uintptr_t)states & 0x1F ) == 0 );
++	B2_VALIDATE( indices[0] >= 0 && indices[1] >= 0 && indices[2] >= 0 && indices[3] >= 0 );
 +
 +	// [vx vy w flags]
 +	b2FloatW identityA = b2ZeroW();
@@ -165,14 +215,20 @@ index 19fd46e..7881f22 100644
 +	// [dpx dpy dqc dqs]
 +	b2FloatW identityB = b2SetW( 0.0f, 0.0f, 1.0f, 0.0f );
 +
-+	b2FloatW b1a = indices[0] == B2_NULL_INDEX ? identityA : b2LoadW( (float*)( states + indices[0] ) + 0 );
-+	b2FloatW b1b = indices[0] == B2_NULL_INDEX ? identityB : b2LoadW( (float*)( states + indices[0] ) + 4 );
-+	b2FloatW b2a = indices[1] == B2_NULL_INDEX ? identityA : b2LoadW( (float*)( states + indices[1] ) + 0 );
-+	b2FloatW b2b = indices[1] == B2_NULL_INDEX ? identityB : b2LoadW( (float*)( states + indices[1] ) + 4 );
-+	b2FloatW b3a = indices[2] == B2_NULL_INDEX ? identityA : b2LoadW( (float*)( states + indices[2] ) + 0 );
-+	b2FloatW b3b = indices[2] == B2_NULL_INDEX ? identityB : b2LoadW( (float*)( states + indices[2] ) + 4 );
-+	b2FloatW b4a = indices[3] == B2_NULL_INDEX ? identityA : b2LoadW( (float*)( states + indices[3] ) + 0 );
-+	b2FloatW b4b = indices[3] == B2_NULL_INDEX ? identityB : b2LoadW( (float*)( states + indices[3] ) + 4 );
++	// zero means null
++	int i1 = indices[0] - 1;
++	int i2 = indices[1] - 1;
++	int i3 = indices[2] - 1;
++	int i4 = indices[3] - 1;
++
++	b2FloatW b1a = i1 == B2_NULL_INDEX ? identityA : wasm_v128_load( (float*)( states + i1 ) + 0 );
++	b2FloatW b1b = i1 == B2_NULL_INDEX ? identityB : wasm_v128_load( (float*)( states + i1 ) + 4 );
++	b2FloatW b2a = i2 == B2_NULL_INDEX ? identityA : wasm_v128_load( (float*)( states + i2 ) + 0 );
++	b2FloatW b2b = i2 == B2_NULL_INDEX ? identityB : wasm_v128_load( (float*)( states + i2 ) + 4 );
++	b2FloatW b3a = i3 == B2_NULL_INDEX ? identityA : wasm_v128_load( (float*)( states + i3 ) + 0 );
++	b2FloatW b3b = i3 == B2_NULL_INDEX ? identityB : wasm_v128_load( (float*)( states + i3 ) + 4 );
++	b2FloatW b4a = i4 == B2_NULL_INDEX ? identityA : wasm_v128_load( (float*)( states + i4 ) + 0 );
++	b2FloatW b4b = i4 == B2_NULL_INDEX ? identityB : wasm_v128_load( (float*)( states + i4 ) + 4 );
 +
 +	// [vx1 vx3 vy1 vy3]
 +	b2FloatW t1a = b2UnpackLoW( b1a, b3a );
@@ -206,10 +262,12 @@ index 19fd46e..7881f22 100644
 +}
 +
 +// This writes only the velocities back to the solver bodies
-+static void b2ScatterBodies( b2BodyState* B2_RESTRICT states, int* B2_RESTRICT indices, const b2BodyStateW* B2_RESTRICT simdBody )
++B2_FORCE_INLINE void b2ScatterBodies( b2BodyState* B2_RESTRICT states, int* B2_RESTRICT indices,
++									  const b2BodyStateW* B2_RESTRICT simdBody )
 +{
 +	_Static_assert( sizeof( b2BodyState ) == 32, "b2BodyState not 32 bytes" );
 +	B2_ASSERT( ( (uintptr_t)states & 0x1F ) == 0 );
++	B2_VALIDATE( indices[0] >= 0 && indices[1] >= 0 && indices[2] >= 0 && indices[3] >= 0 );
 +
 +	// [vx1 vy1 vx2 vy2]
 +	b2FloatW t1 = b2UnpackLoW( simdBody->v.X, simdBody->v.Y );
@@ -220,60 +278,41 @@ index 19fd46e..7881f22 100644
 +	// [w3 f3 w4 f4]
 +	b2FloatW t4 = b2UnpackHiW( simdBody->w, simdBody->flags );
 +
++	_Static_assert( b2_dynamicFlag == ( 1 << 9 ), "dynamic flag must be bit 9" );
++	int dynamicMask = wasm_i32x4_bitmask( wasm_i32x4_shl( simdBody->flags, 31 - 9 ) );
++
++	// zero means null
++	int i1 = indices[0] - 1;
++	int i2 = indices[1] - 1;
++	int i3 = indices[2] - 1;
++	int i4 = indices[3] - 1;
++
 +	// I don't use any dummy body in the body array because this will lead to multithreaded cache coherence problems.
-+	if ( indices[0] != B2_NULL_INDEX && ( states[indices[0]].flags & b2_dynamicFlag ) != 0 )
++	if ( dynamicMask & 1 )
 +	{
 +		// [t1.x t1.y t3.x t3.y]
-+		b2StoreW( (float*)( states + indices[0] ), wasm_i32x4_shuffle( t1, t3, 0, 1, 4, 5 ) );
++		b2StoreW( (float*)( states + i1 ), wasm_i32x4_shuffle( t1, t3, 0, 1, 4, 5 ) );
 +	}
 +
-+	if ( indices[1] != B2_NULL_INDEX && ( states[indices[1]].flags & b2_dynamicFlag ) != 0 )
++	if ( dynamicMask & 2 )
 +	{
 +		// [t1.z t1.w t3.z t3.w]
-+		b2StoreW( (float*)( states + indices[1] ), wasm_i32x4_shuffle( t1, t3, 2, 3, 6, 7 ) );
++		b2StoreW( (float*)( states + i2 ), wasm_i32x4_shuffle( t1, t3, 2, 3, 6, 7 ) );
 +	}
 +
-+	if ( indices[2] != B2_NULL_INDEX && ( states[indices[2]].flags & b2_dynamicFlag ) != 0 )
++	if ( dynamicMask & 4 )
 +	{
 +		// [t2.x t2.y t4.x t4.y]
-+		b2StoreW( (float*)( states + indices[2] ), wasm_i32x4_shuffle( t2, t4, 0, 1, 4, 5 ) );
++		b2StoreW( (float*)( states + i3 ), wasm_i32x4_shuffle( t2, t4, 0, 1, 4, 5 ) );
 +	}
 +
-+	if ( indices[3] != B2_NULL_INDEX && ( states[indices[3]].flags & b2_dynamicFlag ) != 0 )
++	if ( dynamicMask & 8 )
 +	{
 +		// [t2.z t2.w t4.z t4.w]
-+		b2StoreW( (float*)( states + indices[3] ), wasm_i32x4_shuffle( t2, t4, 2, 3, 6, 7 ) );
++		b2StoreW( (float*)( states + i4 ), wasm_i32x4_shuffle( t2, t4, 2, 3, 6, 7 ) );
 +	}
 +}
 +
  #else
  
  // This is a load and transpose
-diff --git a/src/core.h b/src/core.h
-index 45b5246..1e3c1d2 100644
---- a/src/core.h
-+++ b/src/core.h
-@@ -49,7 +49,7 @@
- 	#define B2_CPU_X86_X64
- #elif defined( __aarch64__ ) || defined( _M_ARM64 ) || defined( __arm__ ) || defined( _M_ARM )
- 	#define B2_CPU_ARM
--#elif defined( __EMSCRIPTEN__ )
-+#elif defined( __EMSCRIPTEN__ ) || defined( __wasm__ )
- 	#define B2_CPU_WASM
- #else
- 	#define B2_CPU_UNKNOWN
-@@ -72,9 +72,11 @@
- 	#elif defined( B2_CPU_ARM )
- 		#define B2_SIMD_NEON
- 		#define B2_SIMD_WIDTH 4
--	#elif defined( B2_CPU_WASM )
--		#define B2_CPU_WASM
--		#define B2_SIMD_SSE2
-+	#elif defined( B2_CPU_WASM ) && defined( __wasm_simd128__ )
-+		// WebAssembly SIMD (wasm_simd128.h), any toolchain: Emscripten or wasi-sdk.
-+		// Bit-identical to the SSE2 path: the same operations in the same order,
-+		// pmin/pmax with SSE's min/max operand semantics, and no fused multiply-add.
-+		#define B2_SIMD_WASM
- 		#define B2_SIMD_WIDTH 4
- 	#else
- 		#define B2_SIMD_NONE

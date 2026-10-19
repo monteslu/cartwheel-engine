@@ -52,9 +52,10 @@ static const int bench_workers[] = { 1, 2, 4, 8 };
 #define BENCH_RUNS 4
 #define BENCH_STEPS 60
 
-/* upstream expectations (box3d/test/test_determinism.c, box2d/test/test_determinism.c) */
-static uint32_t b3_expected_hash = 0x50313037, b2_expected_hash = 0xD4F49FD3;
-static int32_t b3_expected_sleep = 269, b2_expected_sleep = 300;
+/* upstream expectations (box3d/test/test_determinism.c; Box2D's are EXPECTED_HASH / EXPECTED_SLEEP_STEP in its
+ * shared/determinism.h, single precision) */
+static uint32_t b3_expected_hash = 0x50313037, b2_expected_hash = 0x465F3DF4;
+static int32_t b3_expected_sleep = 269, b2_expected_sleep = 299;
 
 static uint32_t b3_hash[DET_RUNS], b2_hash[DET_RUNS];
 static int32_t b3_sleep[DET_RUNS], b2_sleep[DET_RUNS];

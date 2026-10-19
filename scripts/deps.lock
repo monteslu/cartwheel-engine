@@ -2,7 +2,7 @@
 # name        source (git URL, archive URL, or a ../sibling checkout)                 revision / version          sha256 (archives); a git
 # source pins "<commit>" or "<version tag> <full commit hash>"
 three.c       https://github.com/monteslu/three.c.git        v0.186.17                   782e1e8e91c57973c2ed2e80f7b9f19e0b93dc9c
-box2d         https://github.com/erincatto/box2d.git         c05c48738fbe5c27625e36c5f0cfbdaddfc8359a
+box2d         https://github.com/erincatto/box2d.git         v3.2.0                      178495ba35695aefe9c321e569d2277f06db3b90
 box3d         https://github.com/erincatto/box3d.git         29bf523ce7bc4590aba9f17c9db791cdc5c4397e
 sdl2          https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.8.tar.gz   2.32.8   -
 wasi-sdk      https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-x86_64-linux.tar.gz   33.0   0ba8b5bfaeb2adf3f29bab5841d76cf5318ab8e1642ea195f88baba1abd47bce

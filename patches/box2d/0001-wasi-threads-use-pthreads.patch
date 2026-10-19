@@ -5,11 +5,10 @@
 # allocator lock was a no-op). Threaded WASI has real pthreads.
 
 diff --git a/src/timer.c b/src/timer.c
-index 7e2e87c..4a3b814 100644
 --- a/src/timer.c
 +++ b/src/timer.c
-@@ -96,7 +96,7 @@ void b2UnlockMutex( b2Mutex* m )
- 	LeaveCriticalSection( &m->cs );
+@@ -245,7 +245,7 @@
+ 	b2Free( t, sizeof( b2Thread ) );
  }
  
 -#elif defined( __linux__ ) || defined( __EMSCRIPTEN__ )

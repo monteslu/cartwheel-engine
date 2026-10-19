@@ -90,7 +90,7 @@ static void collide(mover *mv, b2Vec2 pos, plane_set *ps) {
   ps->count = 0;
   mv->ps = ps;
   b2Capsule c = capsule(mv, pos, mv->m->def.skin);
-  b2World_CollideMover(mv->world, &c, mv->filter, plane_fn, mv);
+  b2World_CollideMover(mv->world, b2ToPos((b2Vec2){ 0, 0 }), &c, mv->filter, plane_fn, mv);
   float fc = mv->m->floor_cos;
   float edge_height = CW_MIN(mv->m->def.radius, mv->m->def.step_height + mv->m->def.skin);
   for (int i = 0; i < ps->count; i++) {
@@ -107,7 +107,7 @@ static void collide(mover *mv, b2Vec2 pos, plane_set *ps) {
 static float cast(mover *mv, b2Vec2 pos, b2Vec2 d) {
   if (d.x == 0 && d.y == 0) return 1;
   b2Capsule c = capsule(mv, pos, 0);
-  return b2World_CastMover(mv->world, &c, d, mv->filter);
+  return b2World_CastMover(mv->world, b2ToPos((b2Vec2){ 0, 0 }), &c, d, mv->filter);
 }
 
 static void wall_planes_vertical(mover *mv, plane_set *ps) {
@@ -126,7 +126,7 @@ static b2Vec2 slide(mover *mv, b2Vec2 pos, b2Vec2 delta, bool grounded) {
     collide(mv, pos, &ps);
     if (grounded) wall_planes_vertical(mv, &ps);
     b2PlaneSolverResult r = b2SolvePlanes(b2Sub(target, pos), ps.planes, ps.count);
-    b2Vec2 d = r.translation;
+    b2Vec2 d = r.delta;
     if (b2Dot(d, d) < 1e-12f) break;
     float f = cast(mv, pos, d);
     b2Vec2 moved = b2MulSV(f, d);
@@ -236,7 +236,7 @@ void cw_mover2d_move(cw_mover2d *m, float dt) {
       if (b2Body_GetType(body) != b2_dynamicBody) continue;
       b2Vec2 point = ci.ps.points[i];
       b2Vec2 n = b2Neg(ci.ps.planes[i].plane.normal);
-      b2Vec2 rb = b2Sub(point, b2Body_GetWorldCenterOfMass(body));
+      b2Vec2 rb = b2Sub(point, b2ToVec2(b2Body_GetWorldCenter(body)));
       float rn = b2Cross(rb, n);
       float inv_i = b2Body_GetRotationalInertia(body);
       inv_i = inv_i > 0 ? 1 / inv_i : 0;
