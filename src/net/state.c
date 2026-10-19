@@ -20,6 +20,9 @@ struct cw_state {
   CW_ARRAY(st_node) nodes;
   CW_ARRAY(cw_value) vals;
   CW_ARRAY(uint8_t) blob;
+  uint8_t *phys2d; /* the 2D physics layer's image (scene/phys2d_nodes.c), process-local: pointers inside */
+  int phys2d_len;
+  uint64_t phys2d_hash; /* Box2D's state hash of that world: what the desync check hashes instead of the image */
   cw_map by_uid; /* uid -> record index + 1 */
   uint64_t tick;
   cw_rng rng;
@@ -157,11 +160,13 @@ void cw_state_free(cw_state *st) {
   cw_array_free(&st->nodes);
   cw_array_free(&st->vals);
   cw_array_free(&st->blob);
+  cw_free(st->phys2d);
   cw_map_free(&st->by_uid);
   cw_free(st);
 }
 size_t cw_state_bytes(const cw_state *st) {
-  return (size_t)st->nodes.cap * sizeof(st_node) + (size_t)st->vals.cap * sizeof(cw_value) + (size_t)st->blob.cap;
+  return (size_t)st->nodes.cap * sizeof(st_node) + (size_t)st->vals.cap * sizeof(cw_value) + (size_t)st->blob.cap +
+         (size_t)st->phys2d_len;
 }
 int cw_state_node_count(const cw_state *st) { return st->nodes.count; }
 
@@ -206,6 +211,8 @@ void cw_state_save(cw_state *st, cw_tree *t) {
   cw_map_free(&st->by_uid);
   cw_map_init(&st->by_uid, CW_MEM_CORE);
   save_node(st, t->root, -1, 0);
+  cw_free(st->phys2d);
+  st->phys2d = cw__phys2d_snapshot_save(t, &st->phys2d_len, &st->phys2d_hash);
   st->tick = t->tick;
   st->rng = t->rng;
   st->valid = true;
@@ -299,6 +306,9 @@ void cw_state_load(const cw_state *st, cw_tree *t) {
       b += 4 + len;
     }
   }
+  /* the 2D world back to the instant, warm-start caches included, then the pose push for anything it could not
+   * restore (a world made after the snapshot, a snapshot Box2D rejected) */
+  if (st->phys2d) cw__phys2d_snapshot_load(t, st->phys2d, st->phys2d_len);
   cw__phys2d_state_restored(t);
   cw__phys3d_state_restored(t);
   cw__tree_apply_deferred(t);
@@ -350,6 +360,7 @@ uint32_t cw_state_hash(const cw_state *st) {
       }
     }
   }
+  if (st->phys2d) h = cw_hash32(&st->phys2d_hash, sizeof st->phys2d_hash, h); /* the world's own host-stable hash */
   return h;
 }
 

@@ -117,6 +117,11 @@ void cw__char2d_state_load(cw_node n, void *data, const uint8_t *in, int len);
 int cw__char3d_state_save(cw_node n, void *data, uint8_t *out, int cap);
 void cw__char3d_state_load(cw_node n, void *data, const uint8_t *in, int len);
 void cw__phys2d_state_restored(cw_tree *t);
+/* The 2D physics layer's share of a tree snapshot (net/state.c): Box2D's own image of the world (v3.2 snapshots)
+ * and the node layer's handles into it. save returns a cw_alloc'd buffer (NULL: no 2D world), hash the world's
+ * Box2D state hash (host-stable); load restores it and reports whether it did (false: the old pose-push path). */
+uint8_t *cw__phys2d_snapshot_save(cw_tree *t, int *len, uint64_t *hash);
+bool cw__phys2d_snapshot_load(cw_tree *t, const uint8_t *img, int len);
 void cw__phys3d_state_restored(cw_tree *t);
 
 #endif

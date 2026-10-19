@@ -386,7 +386,7 @@ static cw_node rb_shape(cw_node body, int kind, float w, float h) {
   cw_node_add_child(body, s);
   return s;
 }
-static cw_tree *phys_world(void) {
+static cw_tree *phys_world(bool pile) {
   cw_tree *t = cw_tree_new();
   cw_node root = cw_tree_root(t);
   const float walls[3][4] = { { 200, 200, 1000, 20 }, { -60, 120, 20, 200 }, { 460, 120, 20, 200 } };
@@ -404,6 +404,20 @@ static cw_tree *phys_world(void) {
     cw_node2d_set_position(c, cw_v2(p ? 300.0f : 100.0f, 150));
     rb_shape(c, 1, 16, 16); /* circles */
     cw_node_add_child(root, c);
+  }
+  if (pile) { /* dynamic bodies: a pile the walkers push, which is what Box2D v3.2 snapshots made rollback-safe */
+    for (int i = 0; i < 7; i++) {
+      char name[8];
+      snprintf(name, sizeof name, "C%d", i);
+      cw_node c = cw_node_new("RigidBody2D", name);
+      cw_node2d_set_position(c, cw_v2(180.0f + 7.0f * (float)(i % 3) + 24.0f * (float)(i / 4), 160.0f - 18.0f * (float)(i % 4)));
+      rb_shape(c, 0, 16, 16);
+      cw_node_add_child(root, c);
+    }
+    cw_node a = cw_node_new("Area2D", "Zone");
+    cw_node2d_set_position(a, cw_v2(260, 170));
+    rb_shape(a, 0, 40, 40);
+    cw_node_add_child(root, a);
   }
   return t;
 }
@@ -459,7 +473,7 @@ static cw_tree *phys_world3(void) {
   }
   return t;
 }
-static rb_run run_phys(bool no_rollback, bool three) {
+static rb_run run_phys(bool no_rollback, bool three, bool pile) {
   if (!cw_node_type_find("TestRBWalker")) cw_node_type_register(&rbw_type);
   if (!cw_node_type_find("TestRBWalker3")) cw_node_type_register(&rbw3_type);
   cw_net_loopback *hub = cw_net_loopback_new();
@@ -469,7 +483,7 @@ static rb_run run_phys(bool no_rollback, bool three) {
   for (int i = 0; i < 2; i++) {
     cw_net_sim_desc sd = { .latency = 0.07, .jitter = 0.03, .loss = 0.1f, .seed = 20u + (uint64_t)i };
     s[i] = cw_net_session_new(&(cw_net_session_desc){ cw_net_sim_new(cw_net_loopback_endpoint(hub, i ? "p1" : "p0"), &sd), i, 0xAC, 0 });
-    t[i] = three ? phys_world3() : phys_world();
+    t[i] = three ? phys_world3() : phys_world(pile);
     rb[i] = cw_rollback_new(&(cw_rollback_desc){ .session = s[i], .tree = t[i], .players = 2, .input_size = 1, .input_delay = 2,
                                                  .max_prediction = 8, .hash_interval = 5, .dt = DT, .sample_input = rbw_sample,
                                                  .no_rollback = no_rollback });
@@ -498,20 +512,30 @@ static rb_run run_phys(bool no_rollback, bool three) {
   cw_net_loopback_free(hub);
   return r;
 }
-static void rollback_physics(bool three) {
-  rb_run ok = run_phys(false, three);
+static void rollback_physics(bool three, bool pile) {
+  rb_run ok = run_phys(false, three, pile);
   CHECK(ok.hash_a != 0);
   CHECK_EQ_INT(ok.hash_a, ok.hash_b);
   CHECK_EQ_INT(ok.desyncs, 0);
   CHECK(ok.rollbacks > 10);
-  rb_run bad = run_phys(true, three);
+  rb_run bad = run_phys(true, three, pile);
   CHECK(bad.desyncs > 0);
-  cw_info("net rollback (CharacterBody%s): %u rollbacks, %u ticks re-simulated, %u hashes compared, %u desyncs; without rollback %u",
-          three ? "3D" : "2D", ok.rollbacks, ok.resim, ok.checked, ok.desyncs, bad.desyncs);
+  cw_info("net rollback (CharacterBody%s%s): %u rollbacks, %u ticks re-simulated, %u hashes compared, %u desyncs; without rollback %u",
+          three ? "3D" : "2D", pile ? " and a pile of RigidBody2D" : "", ok.rollbacks, ok.resim, ok.checked, ok.desyncs, bad.desyncs);
   FOLD(ok);
 }
-static void test_rollback_physics(void) { rollback_physics(false); }
-static void test_rollback_physics3d(void) { rollback_physics(true); }
+static void test_rollback_physics(void) { rollback_physics(false, false); }
+static void test_rollback_physics3d(void) { rollback_physics(true, false); }
+static void test_rollback_physics2d_dynamic(void) {
+  rollback_physics(false, true);
+  /* the control that must fail: the same run restoring only the nodes (what rollback did before Box2D v3.2 snapshots):
+   * a restored pile diverges from one that never rolled back */
+  setenv("CW_TEST_NO_PHYS2D_IMAGE", "1", 1);
+  rb_run old = run_phys(false, false, true);
+  unsetenv("CW_TEST_NO_PHYS2D_IMAGE");
+  CHECK(old.desyncs > 0 || old.hash_a != old.hash_b);
+  cw_info("net rollback, pile without the Box2D image: %u desyncs (hash %s)", old.desyncs, old.hash_a == old.hash_b ? "equal" : "differs");
+}
 
 /* input_delay 0 means no delay (it used to mean 2) */
 typedef struct rbp { int pad; } rbp;
@@ -549,5 +573,5 @@ static void test_rollback_delay(void) {
 
 CW_TEST_SUITE("net", { "channels", test_channels }, { "state", test_state }, { "replication", test_replication },
               { "rollback", test_rollback }, { "rollback_physics", test_rollback_physics },
-              { "rollback_physics3d", test_rollback_physics3d },
+              { "rollback_physics3d", test_rollback_physics3d }, { "rollback_physics2d_dynamic", test_rollback_physics2d_dynamic },
               { "rollback_delay", test_rollback_delay })

@@ -33,6 +33,7 @@ typedef struct p2w {
   CW_ARRAY(dead_shape) dead;
   cw__psig_list sigs;
   cw_body2d ground;          /* static body for joints with no node_a */
+  bool image_restored;       /* the last state load put the Box2D world back: the poses are already right */
   int32_t steps;
   struct p2w *next_live; /* every tree's world, for cw_physics2d_body_node */
 } p2w;
@@ -1428,15 +1429,203 @@ void cw__char2d_state_load(cw_node n, void *data, const uint8_t *in, int len) {
 void cw__phys2d_state_restored(cw_tree *t) {
   p2w *W = cw_tree_slot(t, "physics2d");
   if (!W) return;
+  bool image = W->image_restored;
+  W->image_restored = false;
   for (int i = 0; i < W->objects.count; i++) {
     cw_node n = W->objects.data[i];
     co2d *c = cw_node_data_t(n, co_t);
     if (!c) continue;
     if (CW_HANDLE_IS_NULL(c->body) || !cw_body2d_valid(c->body)) create_body(W, n, c);
     if (c->dirty || config_hash(n, c) != c->cfg_hash) build_shapes(W, n, c);
+    if (image) continue; /* the Box2D image has every body exactly where it was, velocities and caches too */
     /* every body at its node's pose now (the mover state came with the snapshot) */
     cw_body2d_set_transform(c->body, node_xform(W, n));
     record_synced(n, c);
   }
+}
+
+/* ── tree snapshots (net/state.c): Box2D's image of the world and the handles the nodes hold into it ─────────
+ * Box2D v3.2 can snapshot a whole world: dynamic bodies come back with their velocities, contact warm-start caches
+ * and sleeping islands, and the sensor overlaps (which rollback needs to re-simulate bit for bit). The nodes keep
+ * handles into the world (a body, its shapes, a joint) and maps from those to nodes, which are rebuilt here; the
+ * nodes themselves are matched by uid (a node freed after the snapshot and recreated by the restore has a new
+ * handle but the same uid). The image holds user pointers (Box2D user data and the wrapper's records): it is
+ * process-local, like the rest of cw_state. */
+#define P2SNAP_MAGIC 0x50324e53u
+
+typedef struct p2snap_hdr {
+  uint32_t magic;
+  int32_t steps, objects, joints, deads, world_len;
+  uint64_t ground;
+} p2snap_hdr;
+typedef struct p2snap_obj {
+  uint64_t uid, body;
+  uint32_t cfg_hash;
+  uint8_t dirty, pad[3];
+  int32_t overlap_count, nshapes, nchains, npairs;
+  cw_vec2 synced_pos;
+  float synced_rot, synced_g[6];
+} p2snap_obj;
+typedef struct p2snap_joint {
+  uint64_t uid, joint, built_a, built_b;
+  uint32_t struct_hash, live_hash;
+  uint8_t broken, pad[7];
+} p2snap_joint;
+typedef struct p2snap_pair {
+  uint64_t uid;
+  uint64_t count;
+} p2snap_pair;
+
+typedef struct bytes {
+  uint8_t *data;
+  size_t len, cap;
+} bytes;
+static void put(bytes *b, const void *p, size_t n) {
+  if (b->len + n > b->cap) {
+    size_t nc = b->cap ? b->cap * 2 : 4096;
+    while (nc < b->len + n) nc *= 2;
+    b->data = cw_realloc(b->data, nc, CW_MEM_PHYSICS);
+    b->cap = nc;
+  }
+  memcpy(b->data + b->len, p, n);
+  b->len += n;
+}
+
+uint8_t *cw__phys2d_snapshot_save(cw_tree *t, int *len, uint64_t *hash) {
+  *len = 0;
+  *hash = 0;
+  p2w *W = cw_tree_slot(t, "physics2d");
+  if (!W || !cw_world2d_valid(W->world)) return NULL;
+  if (getenv("CW_TEST_NO_PHYS2D_IMAGE")) return NULL; /* the control of tests/unit/test_net.c: the pose-push path alone */
+  int wsize = cw_world2d_snapshot_size(W->world);
+  if (wsize <= 0) return NULL;
+  bytes b = { 0 };
+  p2snap_hdr h = { P2SNAP_MAGIC, W->steps, W->objects.count, W->joints.count, W->dead.count, wsize, W->ground.id };
+  put(&b, &h, sizeof h);
+  uint8_t *tmp = cw_alloc((size_t)wsize, CW_MEM_PHYSICS);
+  if (cw_world2d_snapshot(W->world, tmp, wsize) != wsize) {
+    cw_free(tmp);
+    cw_free(b.data);
+    return NULL;
+  }
+  put(&b, tmp, (size_t)wsize);
+  cw_free(tmp);
+  for (int i = 0; i < W->objects.count; i++) {
+    cw_node n = W->objects.data[i];
+    co2d *c = cw_node_data_t(n, co_t);
+    p2snap_obj o = { .uid = cw_node_uid(n), .body = c->body.id, .cfg_hash = c->cfg_hash, .dirty = c->dirty,
+                     .overlap_count = c->overlap_count, .nshapes = c->shapes.count, .nchains = c->chains.count,
+                     .npairs = c->pairs.slot_cap ? (int32_t)cw_map_size(&c->pairs) : 0, .synced_pos = c->synced_pos,
+                     .synced_rot = c->synced_rot };
+    memcpy(o.synced_g, c->synced_g, sizeof o.synced_g);
+    put(&b, &o, sizeof o);
+    if (c->shapes.count) put(&b, c->shapes.data, sizeof(uint64_t) * (size_t)c->shapes.count);
+    if (c->chains.count) put(&b, c->chains.data, sizeof(uint64_t) * (size_t)c->chains.count);
+    if (o.npairs)
+      for (int k = 0; k < c->pairs.count; k++)
+        if (cw_map_live(&c->pairs, k)) {
+          p2snap_pair pr = { cw_node_uid(node_by_id(c->pairs.keys[k])), c->pairs.vals[k] };
+          put(&b, &pr, sizeof pr);
+        }
+  }
+  for (int i = 0; i < W->joints.count; i++) {
+    cw_node n = W->joints.data[i];
+    joint2d *j = cw_node_data_t(n, joint_t);
+    p2snap_joint s = { .uid = cw_node_uid(n), .joint = j->joint.id, .built_a = j->built_a.id, .built_b = j->built_b.id,
+                       .struct_hash = j->struct_hash, .live_hash = j->live_hash, .broken = j->broken };
+    put(&b, &s, sizeof s);
+  }
+  if (W->dead.count) put(&b, W->dead.data, sizeof(dead_shape) * (size_t)W->dead.count);
+  *len = (int)b.len;
+  *hash = cw_world2d_state_hash(W->world);
+  return b.data;
+}
+
+bool cw__phys2d_snapshot_load(cw_tree *t, const uint8_t *img, int len) {
+  p2w *W = cw_tree_slot(t, "physics2d");
+  p2snap_hdr h;
+  if (!W || !cw_world2d_valid(W->world) || len < (int)sizeof h) return false;
+  memcpy(&h, img, sizeof h);
+  if (h.magic != P2SNAP_MAGIC) return false;
+  const uint8_t *p = img + sizeof h;
+  if (!cw_world2d_restore(W->world, p, h.world_len)) return false;
+  p += h.world_len;
+  /* rebuild what the nodes hold, in the snapshot's order */
+  cw_map_free(&W->shape_owner);
+  cw_map_free(&W->body_owner);
+  cw_map_free(&W->joint_owner);
+  cw_array_clear(&W->objects);
+  cw_array_clear(&W->joints);
+  cw_array_clear(&W->dead);
+  W->steps = h.steps;
+  W->ground = (cw_body2d){ h.ground };
+  for (int i = 0; i < h.objects; i++) {
+    p2snap_obj o;
+    memcpy(&o, p, sizeof o);
+    p += sizeof o;
+    const uint64_t *shapes = (const uint64_t *)(const void *)p;
+    p += sizeof(uint64_t) * (size_t)o.nshapes;
+    const uint64_t *chains = (const uint64_t *)(const void *)p;
+    p += sizeof(uint64_t) * (size_t)o.nchains;
+    const uint8_t *pairs = p;
+    p += sizeof(p2snap_pair) * (size_t)o.npairs;
+    cw_node n = cw_node_by_uid(t, o.uid);
+    co2d *c = cw_node_valid(n) ? cw_node_data_t(n, co_t) : NULL;
+    if (!c) continue;
+    cw_array_push(&W->objects, n);
+    c->body = (cw_body2d){ o.body };
+    cw_map_set(&W->body_owner, o.body, n.id);
+    cw_array_clear(&c->shapes);
+    cw_array_clear(&c->chains);
+    for (int k = 0; k < o.nshapes; k++) {
+      uint64_t s;
+      memcpy(&s, shapes + k, sizeof s);
+      cw_array_push(&c->shapes, s);
+      cw_map_set(&W->shape_owner, s, n.id);
+    }
+    for (int k = 0; k < o.nchains; k++) {
+      uint64_t s;
+      memcpy(&s, chains + k, sizeof s);
+      cw_array_push(&c->chains, s);
+    }
+    c->cfg_hash = o.cfg_hash;
+    c->dirty = o.dirty != 0;
+    c->overlap_count = o.overlap_count;
+    c->synced_pos = o.synced_pos;
+    c->synced_rot = o.synced_rot;
+    memcpy(c->synced_g, o.synced_g, sizeof c->synced_g);
+    cw_map_free(&c->pairs);
+    for (int k = 0; k < o.npairs; k++) {
+      p2snap_pair pr;
+      memcpy(&pr, pairs + sizeof pr * (size_t)k, sizeof pr);
+      cw_node other = cw_node_by_uid(t, pr.uid);
+      if (cw_node_valid(other)) cw_map_set(&c->pairs, other.id, pr.count);
+    }
+  }
+  for (int i = 0; i < h.joints; i++) {
+    p2snap_joint s;
+    memcpy(&s, p, sizeof s);
+    p += sizeof s;
+    cw_node n = cw_node_by_uid(t, s.uid);
+    joint2d *j = cw_node_valid(n) ? cw_node_data_t(n, joint_t) : NULL;
+    if (!j) continue;
+    cw_array_push(&W->joints, n);
+    j->joint = (cw_joint2d){ s.joint };
+    j->built_a = (cw_body2d){ s.built_a };
+    j->built_b = (cw_body2d){ s.built_b };
+    j->struct_hash = s.struct_hash;
+    j->live_hash = s.live_hash;
+    j->broken = s.broken != 0;
+    if (s.joint) cw_map_set(&W->joint_owner, s.joint, n.id);
+  }
+  for (int i = 0; i < h.deads; i++) {
+    dead_shape d;
+    memcpy(&d, p, sizeof d);
+    p += sizeof d;
+    cw_array_push(&W->dead, d);
+  }
+  W->sigs.count = 0;
+  W->image_restored = true;
+  return true;
 }
 CW_STATIC_ASSERT(sizeof(char2d_snap) - offsetof(char2d_snap, m_floor_body) == CW__CHAR_STATE_NOHASH, "the handle is the unhashed tail");

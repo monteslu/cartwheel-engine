@@ -31,20 +31,18 @@
  * clock the caller passes to cw_net_poll (a test passes a virtual clock, so
  * a simulated network is reproducible bit for bit).
  *
- * Physics: Box2D and Box3D expose no world snapshot, so rollback restores
- * the tree and re-simulates from it. The physics nodes put back what they
- * keep beside the properties: a CharacterBody2D/3D's mover state and its
- * on_floor / normals outputs travel in the snapshot as private state, and
- * every body is moved back to its node's pose after a restore. So
- * characters (move_and_slide) against static and kinematic bodies, and the
- * engine's own math, re-simulate bit-exactly (tests/unit/test_net.c proves
- * 2D and 3D characters). Two things do not, because the library keeps their
- * state where no restore reaches: DYNAMIC rigid bodies (contact warm-start
- * caches: a restored pile diverges from one that never rolled back) and
- * Area overlap signals (begin/end come from the library's sensor state). A
- * rollback game keeps its simulated objects out of dynamic rigid bodies and
- * detects overlaps with queries or its own math; cosmetic debris outside the
- * rolled-back tree is fine. */
+ * Physics: a tree snapshot carries each physics world. A 2D world is Box2D's own image of it (v3.2 snapshots):
+ * dynamic bodies come back with their velocities, contact warm-start caches and sleeping islands, and Area2D overlaps
+ * with their sensor state, so a restored pile re-simulates bit for bit like one that never rolled back (tests/unit/
+ * test_net.c proves it, and fails the same run when the image is left out). The desync hash folds in Box2D's own
+ * host-stable state hash of the world. Box3D has no snapshot: a 3D world is restored through the tree, the physics
+ * nodes put back what they keep beside the properties (a CharacterBody3D's mover state and its on_floor / normals
+ * outputs travel in the snapshot as private state, every body is moved back to its node's pose), so 3D characters
+ * (move_and_slide) against static and kinematic bodies, and the engine's own math, re-simulate bit-exactly, and
+ * two things do not, because the library keeps their state where no restore reaches: DYNAMIC rigid bodies (contact
+ * warm-start caches: a restored pile diverges from one that never rolled back) and Area3D overlap signals. A 3D
+ * rollback game keeps its simulated objects out of dynamic rigid bodies and detects overlaps with queries or its own
+ * math; cosmetic debris outside the rolled-back tree is fine. */
 #ifndef CW_NET_H
 #define CW_NET_H
 
