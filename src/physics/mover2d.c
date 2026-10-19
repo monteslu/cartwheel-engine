@@ -1,5 +1,7 @@
 /* CharacterBody2D-style move-and-slide on Box2D's mover API; mirrors
- * mover3d.c step for step (up is +y). Simulation code: + - * / sqrt only. */
+ * mover3d.c step for step (up is +y). Simulation code: + - * / sqrt only.
+ * The feet are a double position (a large world); a move works in floats relative to where the feet started
+ * (mover.org), which is what Box2D's mover queries take, so it is as precise at 500 km as at the origin. */
 #include <string.h>
 
 #include "physics2d_internal.h"
@@ -10,7 +12,7 @@ enum { K_FLOOR, K_WALL, K_CEILING };
 typedef struct plane_set {
   b2CollisionPlane planes[MAX_PLANES];
   b2ShapeId shapes[MAX_PLANES];
-  b2Vec2 points[MAX_PLANES];  /* world */
+  b2Vec2 points[MAX_PLANES];  /* relative to the move's origin */
   b2Vec2 surface[MAX_PLANES]; /* the walkable surface normal for floors */
   uint8_t kind[MAX_PLANES];
   int count;
@@ -29,7 +31,7 @@ cw_mover2d_def cw_mover2d_default_def(void) {
                            .ride_platforms = true };
 }
 
-void cw_mover2d_init(cw_mover2d *m, cw_world2d w, const cw_mover2d_def *def, cw_vec2 feet) {
+void cw_mover2d_init(cw_mover2d *m, cw_world2d w, const cw_mover2d_def *def, cw_pos2 feet) {
   memset(m, 0, sizeof *m);
   m->world = w;
   m->def = def ? *def : cw_mover2d_default_def();
@@ -40,20 +42,24 @@ void cw_mover2d_init(cw_mover2d *m, cw_world2d w, const cw_mover2d_def *def, cw_
   m->position = m->prev_position = feet;
 }
 
-void cw_mover2d_teleport(cw_mover2d *m, cw_vec2 feet) {
+void cw_mover2d_teleport(cw_mover2d *m, cw_pos2 feet) {
   m->position = m->prev_position = feet;
   m->on_floor = m->on_wall = m->on_ceiling = false;
   m->floor_body = (cw_body2d){ 0 };
   m->platform_velocity = (cw_vec2){ 0, 0 };
 }
 
-cw_vec2 cw_mover2d_interpolated(const cw_mover2d *m, float alpha) { return cw_v2_lerp(m->prev_position, m->position, alpha); }
+cw_pos2 cw_mover2d_interpolated(const cw_mover2d *m, float alpha) {
+  /* the step between the two is small: lerp it as a float offset from prev_position */
+  return cw_pos2_add(m->prev_position, cw_v2_scale(cw_pos2_sub(m->position, m->prev_position), alpha));
+}
 
 typedef struct mover {
   cw_mover2d *m;
   b2WorldId world;
   b2QueryFilter filter;
   plane_set *ps;
+  b2Pos org; /* where the feet were when the move began: every position below is relative to it */
 } mover;
 
 static b2Capsule capsule(const mover *mv, b2Vec2 pos, float extra) {
@@ -70,8 +76,8 @@ static bool plane_fn(b2ShapeId s, const b2PlaneResult *pl, void *ctx) {
   ps->planes[ps->count] = (b2CollisionPlane){ .plane = p, .pushLimit = FLT_MAX, .push = 0, .clipVelocity = true };
   ps->shapes[ps->count] = s;
   /* Box2D leaves the plane point in the shape's body frame (only the normal
-   * is rotated to world): move it to world here */
-  ps->points[ps->count] = b2TransformPoint(b2Body_GetTransform(b2Shape_GetBody(s)), pl->point);
+   * is rotated to world): move it to the move's origin frame here */
+  ps->points[ps->count] = b2TransformPoint(b2ToRelativeTransform(b2Body_GetTransform(b2Shape_GetBody(s)), mv->org), pl->point);
   ps->count++;
   return true;
 }
@@ -79,7 +85,8 @@ static bool plane_fn(b2ShapeId s, const b2PlaneResult *pl, void *ctx) {
 static bool probe_floor(mover *mv, b2Vec2 point, b2Vec2 n, b2Vec2 *normal) {
   float skin = mv->m->def.skin;
   b2Vec2 o = { point.x + (n.x > 0 ? -0.02f : 0.02f), point.y + 2 * skin }; /* across the edge, onto the face */
-  b2RayResult r = b2World_CastRayClosest(mv->world, o, (b2Vec2){ 0, -4 * skin }, mv->filter);
+  b2RayResult r = b2World_CastRayClosest(mv->world, b2OffsetPos(mv->org, o), (b2Vec2){ 0, -4 * skin }, mv->filter);
+  /* (the ray hit is a world position; only its normal is used) */
   if (!r.hit || r.normal.y < mv->m->floor_cos) return false;
   *normal = r.normal;
   return true;
@@ -90,7 +97,7 @@ static void collide(mover *mv, b2Vec2 pos, plane_set *ps) {
   ps->count = 0;
   mv->ps = ps;
   b2Capsule c = capsule(mv, pos, mv->m->def.skin);
-  b2World_CollideMover(mv->world, b2ToPos((b2Vec2){ 0, 0 }), &c, mv->filter, plane_fn, mv);
+  b2World_CollideMover(mv->world, mv->org, &c, mv->filter, plane_fn, mv);
   float fc = mv->m->floor_cos;
   float edge_height = CW_MIN(mv->m->def.radius, mv->m->def.step_height + mv->m->def.skin);
   for (int i = 0; i < ps->count; i++) {
@@ -107,7 +114,7 @@ static void collide(mover *mv, b2Vec2 pos, plane_set *ps) {
 static float cast(mover *mv, b2Vec2 pos, b2Vec2 d) {
   if (d.x == 0 && d.y == 0) return 1;
   b2Capsule c = capsule(mv, pos, 0);
-  return b2World_CastMover(mv->world, b2ToPos((b2Vec2){ 0, 0 }), &c, d, mv->filter);
+  return b2World_CastMover(mv->world, mv->org, &c, d, mv->filter);
 }
 
 static void wall_planes_vertical(mover *mv, plane_set *ps) {
@@ -169,13 +176,13 @@ void cw_mover2d_move(cw_mover2d *m, float dt) {
     return;
   }
   const cw_mover2d_def *def = &m->def;
-  mover mv = { .m = m, .world = w->id };
+  mover mv = { .m = m, .world = w->id, .org = bp(m->position) };
   mv.filter = b2DefaultQueryFilter();
   mv.filter.categoryBits = CW__QUERY_BIT;
   mv.filter.maskBits = def->mask;
 
   m->prev_position = m->position;
-  b2Vec2 start = v2(m->position);
+  b2Vec2 start = { 0, 0 };
   b2Vec2 v = v2(m->velocity);
   bool was_floor = m->on_floor;
   bool rising = v.y > 1e-4f;
@@ -184,7 +191,7 @@ void cw_mover2d_move(cw_mover2d *m, float dt) {
   b2BodyId floor_body = b2LoadBodyId(m->floor_body.id);
   if (was_floor && def->ride_platforms && m->floor_body.id && b2Body_IsValid(floor_body) &&
       b2Body_GetType(floor_body) != b2_staticBody)
-    pv = b2Body_GetWorldPointVelocity(floor_body, start);
+    pv = b2Body_GetWorldPointVelocity(floor_body, mv.org);
 
   b2Vec2 vm = v;
   if (was_floor && !rising) vm.y = 0;
@@ -236,7 +243,7 @@ void cw_mover2d_move(cw_mover2d *m, float dt) {
       if (b2Body_GetType(body) != b2_dynamicBody) continue;
       b2Vec2 point = ci.ps.points[i];
       b2Vec2 n = b2Neg(ci.ps.planes[i].plane.normal);
-      b2Vec2 rb = b2Sub(point, b2ToVec2(b2Body_GetWorldCenter(body)));
+      b2Vec2 rb = b2Sub(point, b2SubPos(b2Body_GetWorldCenter(body), mv.org));
       float rn = b2Cross(rb, n);
       float inv_i = b2Body_GetRotationalInertia(body);
       inv_i = inv_i > 0 ? 1 / inv_i : 0;
@@ -248,7 +255,7 @@ void cw_mover2d_move(cw_mover2d *m, float dt) {
       if (impulse <= 0) continue;
       b2Vec2 P = b2MulSV(impulse, n);
       v = b2MulSub(v, inv_mass, P);
-      b2Body_ApplyLinearImpulse(body, P, point, true);
+      b2Body_ApplyLinearImpulse(body, P, b2OffsetPos(mv.org, point), true);
     }
   }
 
@@ -265,7 +272,7 @@ void cw_mover2d_move(cw_mover2d *m, float dt) {
 
   if (was_floor && !ci.on_floor) v = b2Add(v, pv);
 
-  m->position = cwv(pos);
+  m->position = cw_pos2_add(m->position, cwv(pos));
   m->velocity = cwv(v);
   m->on_floor = ci.on_floor;
   m->on_wall = ci.on_wall;

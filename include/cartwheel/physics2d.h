@@ -36,6 +36,23 @@ typedef struct cw_xform2 {
   cw_vec2 p;
   cw_rot2 q;
 } cw_xform2;
+/* World positions are doubles (Box2D v3.2 large worlds: about 1000 km of world, the solver stays in floats), so a body
+ * far from the origin keeps its millimetres. Vectors, velocities, local frames and sizes stay cw_vec2 / float. */
+typedef struct cw_pos2 {
+  double x, y;
+} cw_pos2;
+typedef struct cw_wxform2 {
+  cw_pos2 p;
+  cw_rot2 q;
+} cw_wxform2;
+static inline cw_pos2 cw_pos2_from(cw_vec2 v) { return (cw_pos2){ v.x, v.y }; }
+/* The position as floats: exact near the origin, rounded far from it. */
+static inline cw_vec2 cw_pos2_to_vec(cw_pos2 p) { return (cw_vec2){ (float)p.x, (float)p.y }; }
+static inline cw_pos2 cw_pos2_add(cw_pos2 p, cw_vec2 d) { return (cw_pos2){ p.x + d.x, p.y + d.y }; }
+/* a - b as a float vector (exact when a and b are close, however far they are from the origin). */
+static inline cw_vec2 cw_pos2_sub(cw_pos2 a, cw_pos2 b) { return (cw_vec2){ (float)(a.x - b.x), (float)(a.y - b.y) }; }
+static inline cw_wxform2 cw_wxform2_from(cw_xform2 t) { return (cw_wxform2){ cw_pos2_from(t.p), t.q }; }
+static inline cw_xform2 cw_wxform2_to_xform(cw_wxform2 t) { return (cw_xform2){ cw_pos2_to_vec(t.p), t.q }; }
 /* Origin, rotation (1, 0). */
 static inline cw_xform2 cw_xform2_identity(void) { return (cw_xform2){ { 0, 0 }, { 1, 0 } }; }
 /* Position (x, y), no rotation. */
@@ -81,7 +98,8 @@ typedef struct cw_phys_event2d {
   cw_shape2d shape_a, shape_b;
   cw_body2d body_a, body_b;
   cw_joint2d joint;
-  cw_vec2 point, normal;
+  cw_pos2 point;
+  cw_vec2 normal;
   float speed;
   uint64_t material_a, material_b;
   void *user;
@@ -111,7 +129,7 @@ b2WorldId cw_world2d_raw(cw_world2d w);
 
 typedef struct cw_body2d_def {
   cw_body_type type;           /* CW_BODY_DYNAMIC */
-  cw_vec2 position;
+  cw_pos2 position;
   cw_rot2 rotation;            /* (1, 0) */
   cw_vec2 linear_velocity;
   float angular_velocity;
@@ -136,11 +154,19 @@ cw_world2d cw_body2d_world(cw_body2d b);
 cw_body_type cw_body2d_type(cw_body2d b);
 /* Switches static / kinematic / dynamic at run time. */
 void cw_body2d_set_type(cw_body2d b, cw_body_type type);
-/* Current transform (last step, not interpolated); identity for an invalid body. */
-cw_xform2 cw_body2d_transform(cw_body2d b);
+/* Current transform (last step, not interpolated) with a double position; identity for an invalid body. */
+cw_wxform2 cw_body2d_world_transform(cw_body2d b);
+/* The double position of the body origin; zero for an invalid body. */
+cw_pos2 cw_body2d_position(cw_body2d b);
 /* Teleport: no interpolation from the old place. Wakes the body. */
-void cw_body2d_set_transform(cw_body2d b, cw_xform2 x);
+void cw_body2d_set_world_transform(cw_body2d b, cw_wxform2 x);
 /* Velocity that reaches target in dt; see cw_body3d_set_target. */
+void cw_body2d_set_world_target(cw_body2d b, cw_wxform2 target, float dt);
+/* cw_body2d_world_transform rounded to floats (exact within a few km of the origin). */
+cw_xform2 cw_body2d_transform(cw_body2d b);
+/* cw_body2d_set_world_transform from a float transform. */
+void cw_body2d_set_transform(cw_body2d b, cw_xform2 x);
+/* cw_body2d_set_world_target from a float transform. */
 void cw_body2d_set_target(cw_body2d b, cw_xform2 target, float dt);
 /* m/s; zero (logged) for an invalid body. */
 cw_vec2 cw_body2d_velocity(cw_body2d b);
@@ -151,9 +177,9 @@ float cw_body2d_angular_velocity(cw_body2d b);
 /* rad/s, counter-clockwise positive. */
 void cw_body2d_set_angular_velocity(cw_body2d b, float w);
 /* N at a world point (NULL = center of mass), for the next step. Wakes the body. */
-void cw_body2d_apply_force(cw_body2d b, cw_vec2 force, const cw_vec2 *point);
+void cw_body2d_apply_force(cw_body2d b, cw_vec2 force, const cw_pos2 *point);
 /* N*s at a world point (NULL = center of mass). Wakes the body. */
-void cw_body2d_apply_impulse(cw_body2d b, cw_vec2 impulse, const cw_vec2 *point);
+void cw_body2d_apply_impulse(cw_body2d b, cw_vec2 impulse, const cw_pos2 *point);
 /* N*m for the next step. Wakes the body. */
 void cw_body2d_apply_torque(cw_body2d b, float torque);
 /* N*m*s. Wakes the body. */
@@ -250,13 +276,13 @@ typedef struct cw_joint2d_def {
   float motor_speed, max_motor;
   float length;
   float max_force;
-  cw_vec2 target;
+  cw_pos2 target;
   void *user;
 } cw_joint2d_def;
 /* Identity frames and per-type spring defaults; see cw_joint3d_default_def. */
 cw_joint2d_def cw_joint2d_default_def(cw_joint_type type);
 /* Fill frame_a/frame_b from a world anchor; frame x maps to world_axis (zero = +x). */
-void cw_joint2d_def_anchor(cw_joint2d_def *def, cw_vec2 world_anchor, cw_vec2 world_axis);
+void cw_joint2d_def_anchor(cw_joint2d_def *def, cw_pos2 world_anchor, cw_vec2 world_axis);
 /* a null = a static world body. Null (logged) for a NULL def, SPHERICAL/PARALLEL or bad bodies. */
 cw_joint2d cw_joint2d_create(cw_world2d w, const cw_joint2d_def *def);
 /* Also frees a MOUSE joint's internal body. No-op on an invalid handle; no break event. */
@@ -276,7 +302,7 @@ void cw_joint2d_set_limits(cw_joint2d j, bool on, float lower, float upper);
 /* Revolute, prismatic, wheel, distance; weld / motor take hertz and damping (on ignored). */
 void cw_joint2d_set_spring(cw_joint2d j, bool on, float hertz, float damping_ratio);
 /* MOUSE only: the world point the grab point is pulled toward. */
-void cw_joint2d_set_target(cw_joint2d j, cw_vec2 world_target);
+void cw_joint2d_set_target(cw_joint2d j, cw_pos2 world_target);
 /* Revolute: angle; prismatic: translation; distance: length; wheel: measured
  * spin speed (rad/s, b's angular velocity minus a's; as cw_joint3d_value); others 0. */
 float cw_joint2d_value(cw_joint2d j);
@@ -288,20 +314,22 @@ b2JointId cw_joint2d_raw(cw_joint2d j);
 typedef struct cw_ray_hit2d {
   cw_shape2d shape;
   cw_body2d body;
-  cw_vec2 point, normal;
+  cw_pos2 point;
+  cw_vec2 normal;
   float fraction;
   uint64_t material;
   int triangle;                /* always -1 in 2D (kept for parity) */
 } cw_ray_hit2d;
 
 /* Closest hit along origin..origin+translation; false (hit zeroed) on a miss. */
-bool cw_world2d_raycast(cw_world2d w, cw_vec2 origin, cw_vec2 translation, const cw_phys_filter *filter,
+bool cw_world2d_raycast(cw_world2d w, cw_pos2 origin, cw_vec2 translation, const cw_phys_filter *filter,
                         cw_ray_hit2d *hit);
 /* The cap closest hits, sorted; returns how many. */
-int cw_world2d_raycast_all(cw_world2d w, cw_vec2 origin, cw_vec2 translation, const cw_phys_filter *filter,
+int cw_world2d_raycast_all(cw_world2d w, cw_pos2 origin, cw_vec2 translation, const cw_phys_filter *filter,
                            cw_ray_hit2d *hits, int cap);
 typedef struct cw_ray2d {
-  cw_vec2 origin, translation;
+  cw_pos2 origin;
+  cw_vec2 translation;
 } cw_ray2d;
 /* hits[i] answers rays[i] on the job pool; returns the hit count. Not during a step. */
 int cw_world2d_raycast_batch(cw_world2d w, const cw_ray2d *rays, int count, const cw_phys_filter *filter,
@@ -309,10 +337,16 @@ int cw_world2d_raycast_batch(cw_world2d w, const cw_ray2d *rays, int count, cons
 
 #define CW_QSHAPE2D_POINTS 8
 typedef struct cw_qshape2d {
-  cw_vec2 points[CW_QSHAPE2D_POINTS];
+  cw_vec2 points[CW_QSHAPE2D_POINTS]; /* relative to origin */
   int count;
   float radius;
+  cw_pos2 origin; /* zero from the constructors; cw_qshape2d_at moves the shape (the points keep their precision) */
 } cw_qshape2d;
+/* The shape with its points taken relative to a world position. */
+static inline cw_qshape2d cw_qshape2d_at(cw_qshape2d s, cw_pos2 origin) {
+  s.origin = origin;
+  return s;
+}
 /* One point plus radius. */
 cw_qshape2d cw_qshape2d_circle(cw_vec2 center, float radius);
 /* Two points plus radius. */
@@ -328,7 +362,7 @@ int cw_world2d_shapecast(cw_world2d w, const cw_qshape2d *shape, cw_vec2 transla
 /* Shapes overlapping the query shape, up to cap, sorted by id; returns how many. */
 int cw_world2d_overlap(cw_world2d w, const cw_qshape2d *shape, const cw_phys_filter *filter, cw_shape2d *out, int cap);
 /* Shapes whose fattened bounding boxes overlap lo..hi, up to cap, sorted by id. */
-int cw_world2d_overlap_aabb(cw_world2d w, cw_vec2 lo, cw_vec2 hi, const cw_phys_filter *filter, cw_shape2d *out,
+int cw_world2d_overlap_aabb(cw_world2d w, cw_pos2 lo, cw_pos2 hi, const cw_phys_filter *filter, cw_shape2d *out,
                             int cap);
 
 /* ── character mover (Box2D's mover API; see cw_mover3d for the contract).
@@ -350,7 +384,8 @@ cw_mover2d_def cw_mover2d_default_def(void);
 typedef struct cw_mover2d {
   cw_world2d world;
   cw_mover2d_def def;
-  cw_vec2 position, prev_position, velocity;
+  cw_pos2 position, prev_position;
+  cw_vec2 velocity;
   bool on_floor, on_wall, on_ceiling, stepped, snapped;
   cw_vec2 floor_normal, wall_normal;
   cw_body2d floor_body;
@@ -359,13 +394,13 @@ typedef struct cw_mover2d {
 } cw_mover2d;
 
 /* Clears m, copies def (NULL = defaults; height >= 2 * radius) and places the feet. */
-void cw_mover2d_init(cw_mover2d *m, cw_world2d w, const cw_mover2d_def *def, cw_vec2 feet);
+void cw_mover2d_init(cw_mover2d *m, cw_world2d w, const cw_mover2d_def *def, cw_pos2 feet);
 /* Move-and-slide by velocity * dt; see cw_mover3d_move. Once per fixed step. */
 void cw_mover2d_move(cw_mover2d *m, float dt);
 /* Moves the feet with no interpolation and clears the contact state (velocity is kept). */
-void cw_mover2d_teleport(cw_mover2d *m, cw_vec2 feet);
+void cw_mover2d_teleport(cw_mover2d *m, cw_pos2 feet);
 /* Feet position lerped between prev_position and position by alpha (rendering). */
-cw_vec2 cw_mover2d_interpolated(const cw_mover2d *m, float alpha);
+cw_pos2 cw_mover2d_interpolated(const cw_mover2d *m, float alpha);
 
 #ifdef __cplusplus
 }

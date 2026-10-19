@@ -136,7 +136,7 @@ void cw_world2d_step(cw_world2d wh, float dt) {
   for (int i = 0; i < w->joints.slot_count; i++) {
     cw__joint2 *j = cw_pool_at(&w->joints, i);
     if (j && j->type == CW_JOINT_MOUSE && b2Body_IsValid(j->mouse_body))
-      b2Body_SetTargetTransform(j->mouse_body, (b2Transform){ v2(j->target), b2Rot_identity }, dt, true);
+      b2Body_SetTargetTransform(j->mouse_body, (b2WorldTransform){ bp(j->target), b2Rot_identity }, dt, true);
   }
   cw_box2d_tasks_step(w->id, w->tasks);
   b2World_Step(w->id, dt, w->substeps);
@@ -150,13 +150,15 @@ void cw_world2d_step(cw_world2d wh, float dt) {
   for (int i = 0; i < be.moveCount; i++) {
     const b2BodyMoveEvent *m = &be.moveEvents[i];
     uint64_t id = b2StoreBodyId(m->bodyId);
-    float tf[4] = { m->transform.p.x, m->transform.p.y, m->transform.q.c, m->transform.q.s };
+    double tp[2] = { m->transform.p.x, m->transform.p.y };
+    float tq[2] = { m->transform.q.c, m->transform.q.s };
     h = cw__fold(h, &id, sizeof id);
-    h = cw__fold(h, tf, sizeof tf);
+    h = cw__fold(h, tp, sizeof tp);
+    h = cw__fold(h, tq, sizeof tq);
     cw__body2 *r = m->userData;
     if (!r) continue;
     if (r->moved_span != w->span) r->prev = r->cur; /* the pose the span started from */
-    r->cur = x2(m->transform);
+    r->cur = xf2(m->transform);
     r->moved_span = w->span;
     r->settled = false;
   }
@@ -169,7 +171,7 @@ void cw_world2d_step(cw_world2d wh, float dt) {
   for (int i = 0; i < ce.hitCount; i++) {
     const b2ContactHitEvent *hv = &ce.hitEvents[i];
     cw_phys_event2d *e = push_event(w, CW_PHYS_HIT, hv->shapeIdA, hv->shapeIdB);
-    e->point = cwv(hv->point);
+    e->point = cwp(hv->point);
     e->normal = cwv(hv->normal);
     e->speed = hv->approachSpeed;
     /* Box2D's hit event carries no materials: read them from the shapes */
@@ -200,7 +202,9 @@ void cw_world2d_step(cw_world2d wh, float dt) {
     uint64_t k[4] = { (uint64_t)e->type, e->shape_a.id, e->shape_b.id, e->joint.id };
     h = cw__fold(h, k, sizeof k);
     if (e->type == CW_PHYS_HIT) {
-      float f[5] = { e->point.x, e->point.y, e->normal.x, e->normal.y, e->speed };
+      double pt[2] = { e->point.x, e->point.y };
+      float f[3] = { e->normal.x, e->normal.y, e->speed };
+      h = cw__fold(h, pt, sizeof pt);
       h = cw__fold(h, f, sizeof f);
     }
   }
@@ -288,7 +292,7 @@ cw_body2d cw_body2d_create(cw_world2d wh, const cw_body2d_def *def) {
   cw__body2 *r = cw_pool_alloc(&w->bodies, &rid);
   b2BodyDef bd = b2DefaultBodyDef();
   bd.type = (b2BodyType)d.type;
-  bd.position = v2(d.position);
+  bd.position = bp(d.position);
   bd.rotation = r2(d.rotation);
   bd.linearVelocity = v2(d.linear_velocity);
   bd.angularVelocity = d.angular_velocity;
@@ -305,7 +309,7 @@ cw_body2d cw_body2d_create(cw_world2d wh, const cw_body2d_def *def) {
   r->id = b2StoreBodyId(id);
   r->user = d.user;
   r->interpolate = d.interpolate;
-  r->cur = r->prev = x2(b2Body_GetTransform(id));
+  r->cur = r->prev = xf2(b2Body_GetTransform(id));
   r->moved_span = -1;
   return (cw_body2d){ r->id };
 }
@@ -347,24 +351,31 @@ void cw_body2d_set_type(cw_body2d b, cw_body_type t) {
   BODY_OR(b, );
   b2Body_SetType(bid, (b2BodyType)t);
 }
-cw_xform2 cw_body2d_transform(cw_body2d b) {
-  BODY_OR(b, cw_xform2_identity());
-  return x2(b2Body_GetTransform(bid));
+cw_wxform2 cw_body2d_world_transform(cw_body2d b) {
+  BODY_OR(b, cw_wxform2_from(cw_xform2_identity()));
+  return wx2(b2Body_GetTransform(bid));
 }
-void cw_body2d_set_transform(cw_body2d b, cw_xform2 x) {
+cw_pos2 cw_body2d_position(cw_body2d b) {
+  BODY_OR(b, ((cw_pos2){ 0, 0 }));
+  return cwp(b2Body_GetPosition(bid));
+}
+cw_xform2 cw_body2d_transform(cw_body2d b) { return cw_wxform2_to_xform(cw_body2d_world_transform(b)); }
+void cw_body2d_set_world_transform(cw_body2d b, cw_wxform2 x) {
   BODY_OR(b, );
-  b2Body_SetTransform(bid, v2(x.p), r2(x.q));
+  b2Body_SetTransform(bid, bp(x.p), r2(x.q));
   b2Body_SetAwake(bid, true);
   cw__body2 *r = b2Body_GetUserData(bid);
   if (r) {
-    r->prev = r->cur = x2(b2Body_GetTransform(bid));
+    r->prev = r->cur = xf2(b2Body_GetTransform(bid));
     r->settled = false;
   }
 }
-void cw_body2d_set_target(cw_body2d b, cw_xform2 target, float dt) {
+void cw_body2d_set_transform(cw_body2d b, cw_xform2 x) { cw_body2d_set_world_transform(b, cw_wxform2_from(x)); }
+void cw_body2d_set_world_target(cw_body2d b, cw_wxform2 target, float dt) {
   BODY_OR(b, );
-  b2Body_SetTargetTransform(bid, bx2(target), dt, true);
+  b2Body_SetTargetTransform(bid, bwx2(target), dt, true);
 }
+void cw_body2d_set_target(cw_body2d b, cw_xform2 target, float dt) { cw_body2d_set_world_target(b, cw_wxform2_from(target), dt); }
 cw_vec2 cw_body2d_velocity(cw_body2d b) {
   BODY_OR(b, (cw_vec2){ 0 });
   return cwv(b2Body_GetLinearVelocity(bid));
@@ -381,14 +392,14 @@ void cw_body2d_set_angular_velocity(cw_body2d b, float v) {
   BODY_OR(b, );
   b2Body_SetAngularVelocity(bid, v);
 }
-void cw_body2d_apply_force(cw_body2d b, cw_vec2 f, const cw_vec2 *point) {
+void cw_body2d_apply_force(cw_body2d b, cw_vec2 f, const cw_pos2 *point) {
   BODY_OR(b, );
-  if (point) b2Body_ApplyForce(bid, v2(f), v2(*point), true);
+  if (point) b2Body_ApplyForce(bid, v2(f), bp(*point), true);
   else b2Body_ApplyForceToCenter(bid, v2(f), true);
 }
-void cw_body2d_apply_impulse(cw_body2d b, cw_vec2 j, const cw_vec2 *point) {
+void cw_body2d_apply_impulse(cw_body2d b, cw_vec2 j, const cw_pos2 *point) {
   BODY_OR(b, );
-  if (point) b2Body_ApplyLinearImpulse(bid, v2(j), v2(*point), true);
+  if (point) b2Body_ApplyLinearImpulse(bid, v2(j), bp(*point), true);
   else b2Body_ApplyLinearImpulseToCenter(bid, v2(j), true);
 }
 void cw_body2d_apply_torque(cw_body2d b, float t) {
@@ -617,17 +628,19 @@ static b2BodyId ground_body(cw__world2 *w) {
   return w->ground;
 }
 
-static b2Transform local_frame(b2BodyId body, b2Vec2 anchor, b2Rot q) {
-  if (B2_IS_NULL(body) || !b2Body_IsValid(body)) return (b2Transform){ anchor, q };
-  b2Transform t = b2Body_GetTransform(body);
-  return (b2Transform){ b2InvTransformPoint(t, anchor), b2InvMulRot(t.q, q) };
+/* the frame of a world anchor in a body (a null body is the world: the anchor itself, which needs the world origin
+ * near enough for a float; a joint to the world far from the origin should use a static body there) */
+static b2Transform local_frame(b2BodyId body, b2Pos anchor, b2Rot q) {
+  if (B2_IS_NULL(body) || !b2Body_IsValid(body)) return (b2Transform){ b2ToVec2(anchor), q };
+  b2WorldTransform t = b2Body_GetTransform(body);
+  return (b2Transform){ b2InvTransformWorldPoint(t, anchor), b2InvMulRot(t.q, q) };
 }
 
-void cw_joint2d_def_anchor(cw_joint2d_def *def, cw_vec2 world_anchor, cw_vec2 world_axis) {
+void cw_joint2d_def_anchor(cw_joint2d_def *def, cw_pos2 world_anchor, cw_vec2 world_axis) {
   float l = sqrtf(world_axis.x * world_axis.x + world_axis.y * world_axis.y);
   b2Rot q = l > 0 ? (b2Rot){ world_axis.x / l, world_axis.y / l } : b2Rot_identity; /* x axis onto world_axis */
-  def->frame_a = x2(local_frame(b2LoadBodyId(def->a.id), v2(world_anchor), q));
-  def->frame_b = x2(local_frame(b2LoadBodyId(def->b.id), v2(world_anchor), q));
+  def->frame_a = x2(local_frame(b2LoadBodyId(def->a.id), bp(world_anchor), q));
+  def->frame_b = x2(local_frame(b2LoadBodyId(def->b.id), bp(world_anchor), q));
 }
 
 cw_joint2d cw_joint2d_create(cw_world2d wh, const cw_joint2d_def *d) {
@@ -679,9 +692,9 @@ cw_joint2d cw_joint2d_create(cw_world2d wh, const cw_joint2d_def *d) {
     BASE(jd);
     float len = d->length;
     if (len <= 0) {
-      b2Vec2 pa = b2TransformPoint(b2Body_GetTransform(a), base.localFrameA.p);
-      b2Vec2 pb = b2TransformPoint(b2Body_GetTransform(b), base.localFrameB.p);
-      len = b2Length(b2Sub(pb, pa));
+      b2Pos pa = b2TransformWorldPoint(b2Body_GetTransform(a), base.localFrameA.p);
+      b2Pos pb = b2TransformWorldPoint(b2Body_GetTransform(b), base.localFrameB.p);
+      len = b2Length(b2SubPos(pb, pa));
     }
     jd.length = len;
     jd.enableSpring = d->spring;
@@ -771,7 +784,7 @@ cw_joint2d cw_joint2d_create(cw_world2d wh, const cw_joint2d_def *d) {
   case CW_JOINT_MOUSE: {
     b2BodyDef bd = b2DefaultBodyDef();
     bd.type = b2_kinematicBody;
-    bd.position = v2(d->target);
+    bd.position = bp(d->target);
     bd.enableSleep = false;
     bd.name = "cw_mouse";
     r->mouse_body = b2CreateBody(w->id, &bd);
@@ -780,7 +793,7 @@ cw_joint2d cw_joint2d_create(cw_world2d wh, const cw_joint2d_def *d) {
     BASE(jd);
     jd.base.bodyIdA = r->mouse_body;
     jd.base.localFrameA = b2Transform_identity;
-    jd.base.localFrameB = (b2Transform){ b2Body_GetLocalPoint(b, v2(d->target)), b2Rot_identity };
+    jd.base.localFrameB = (b2Transform){ b2Body_GetLocalPoint(b, bp(d->target)), b2Rot_identity };
     jd.linearHertz = d->hertz;
     jd.linearDampingRatio = d->damping_ratio;
     jd.angularHertz = 0;
@@ -865,7 +878,7 @@ void cw_joint2d_set_spring(cw_joint2d j, bool on, float hertz, float damping) {
   }
   b2Joint_WakeBodies(jid);
 }
-void cw_joint2d_set_target(cw_joint2d j, cw_vec2 target) {
+void cw_joint2d_set_target(cw_joint2d j, cw_pos2 target) {
   JOINT_OR(j, );
   if (jr && jr->type == CW_JOINT_MOUSE) jr->target = target;
 }
@@ -883,48 +896,50 @@ float cw_joint2d_value(cw_joint2d j) {
 
 /* ── debug draw ──────────────────────────────────────────────────────── */
 
-static void line2(cw_phys_lines *l, b2Vec2 a, b2Vec2 b, uint32_t c) {
-  float p[3] = { a.x, a.y, 0 }, q[3] = { b.x, b.y, 0 };
+/* the line list is floats: a world drawn far from the origin loses its sub-metre detail here, not in the world */
+static void line2(cw_phys_lines *l, b2Pos a, b2Pos b, uint32_t c) {
+  float p[3] = { (float)a.x, (float)a.y, 0 }, q[3] = { (float)b.x, (float)b.y, 0 };
   cw_phys_lines_add(l, p, q, c);
 }
-static void circle2(cw_phys_lines *l, b2Vec2 c, float r, uint32_t color) {
-  float cc[3] = { c.x, c.y, 0 }, ax[3] = { 1, 0, 0 }, ay[3] = { 0, 1, 0 };
+static void circle2(cw_phys_lines *l, b2Pos c, float r, uint32_t color) {
+  float cc[3] = { (float)c.x, (float)c.y, 0 }, ax[3] = { 1, 0, 0 }, ay[3] = { 0, 1, 0 };
   cw__lines_circle(l, cc, ax, ay, r, color, 20);
 }
-static void draw_polygon(b2Transform t, const b2Vec2 *v, int n, b2HexColor color, void *ctx) {
-  for (int i = 0; i < n; i++) line2(ctx, b2TransformPoint(t, v[i]), b2TransformPoint(t, v[(i + 1) % n]), (uint32_t)color);
+static void draw_polygon(b2WorldTransform t, const b2Vec2 *v, int n, b2HexColor color, void *ctx) {
+  for (int i = 0; i < n; i++)
+    line2(ctx, b2TransformWorldPoint(t, v[i]), b2TransformWorldPoint(t, v[(i + 1) % n]), (uint32_t)color);
 }
-static void draw_solid_polygon(b2Transform t, const b2Vec2 *v, int n, float radius, b2HexColor color, void *ctx) {
+static void draw_solid_polygon(b2WorldTransform t, const b2Vec2 *v, int n, float radius, b2HexColor color, void *ctx) {
   (void)radius;
-  for (int i = 0; i < n; i++) line2(ctx, b2TransformPoint(t, v[i]), b2TransformPoint(t, v[(i + 1) % n]), (uint32_t)color);
+  draw_polygon(t, v, n, color, ctx);
 }
-static void draw_circle(b2Vec2 c, float r, b2HexColor color, void *ctx) { circle2(ctx, c, r, (uint32_t)color); }
-static void draw_solid_circle(b2Transform t, b2Vec2 center, float r, b2HexColor color, void *ctx) {
-  b2Vec2 c = b2TransformPoint(t, center);
+static void draw_circle(b2Pos c, float r, b2HexColor color, void *ctx) { circle2(ctx, c, r, (uint32_t)color); }
+static void draw_solid_circle(b2WorldTransform t, b2Vec2 center, float r, b2HexColor color, void *ctx) {
+  b2Pos c = b2TransformWorldPoint(t, center);
   circle2(ctx, c, r, (uint32_t)color);
-  line2(ctx, c, b2TransformPoint(t, b2Add(center, (b2Vec2){ r, 0 })), (uint32_t)color); /* shows rotation */
+  line2(ctx, c, b2TransformWorldPoint(t, b2Add(center, (b2Vec2){ r, 0 })), (uint32_t)color); /* shows rotation */
 }
-static void draw_solid_capsule(b2Vec2 p1, b2Vec2 p2, float r, b2HexColor color, void *ctx) {
+static void draw_solid_capsule(b2Pos p1, b2Pos p2, float r, b2HexColor color, void *ctx) {
   circle2(ctx, p1, r, (uint32_t)color);
   circle2(ctx, p2, r, (uint32_t)color);
-  b2Vec2 d = b2Sub(p2, p1);
+  b2Vec2 d = b2SubPos(p2, p1);
   float l = b2Length(d);
   b2Vec2 n = l > 0 ? (b2Vec2){ -d.y / l * r, d.x / l * r } : (b2Vec2){ 0, r };
-  line2(ctx, b2Add(p1, n), b2Add(p2, n), (uint32_t)color);
-  line2(ctx, b2Sub(p1, n), b2Sub(p2, n), (uint32_t)color);
+  line2(ctx, b2OffsetPos(p1, n), b2OffsetPos(p2, n), (uint32_t)color);
+  line2(ctx, b2OffsetPos(p1, b2Neg(n)), b2OffsetPos(p2, b2Neg(n)), (uint32_t)color);
 }
-static void draw_line(b2Vec2 a, b2Vec2 b, b2HexColor color, void *ctx) { line2(ctx, a, b, (uint32_t)color); }
-static void draw_transform(b2Transform t, void *ctx) {
-  line2(ctx, t.p, b2TransformPoint(t, (b2Vec2){ 0.25f, 0 }), 0xff0000);
-  line2(ctx, t.p, b2TransformPoint(t, (b2Vec2){ 0, 0.25f }), 0x00ff00);
+static void draw_line(b2Pos a, b2Pos b, b2HexColor color, void *ctx) { line2(ctx, a, b, (uint32_t)color); }
+static void draw_transform(b2WorldTransform t, void *ctx) {
+  line2(ctx, t.p, b2TransformWorldPoint(t, (b2Vec2){ 0.25f, 0 }), 0xff0000);
+  line2(ctx, t.p, b2TransformWorldPoint(t, (b2Vec2){ 0, 0.25f }), 0x00ff00);
 }
-static void draw_point(b2Vec2 p, float size, b2HexColor color, void *ctx) {
+static void draw_point(b2Pos p, float size, b2HexColor color, void *ctx) {
   (void)size;
   const float h = 0.05f;
-  line2(ctx, (b2Vec2){ p.x - h, p.y }, (b2Vec2){ p.x + h, p.y }, (uint32_t)color);
-  line2(ctx, (b2Vec2){ p.x, p.y - h }, (b2Vec2){ p.x, p.y + h }, (uint32_t)color);
+  line2(ctx, b2OffsetPos(p, (b2Vec2){ -h, 0 }), b2OffsetPos(p, (b2Vec2){ h, 0 }), (uint32_t)color);
+  line2(ctx, b2OffsetPos(p, (b2Vec2){ 0, -h }), b2OffsetPos(p, (b2Vec2){ 0, h }), (uint32_t)color);
 }
-static void draw_string(b2Vec2 p, const char *s, b2HexColor color, void *ctx) {
+static void draw_string(b2Pos p, const char *s, b2HexColor color, void *ctx) {
   (void)p;
   (void)s;
   (void)color;

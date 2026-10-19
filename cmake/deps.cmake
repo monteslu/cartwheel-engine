@@ -87,6 +87,9 @@ file(GLOB _b2 ${DEPS}/box2d/src/*.c)
 add_library(box2d STATIC ${_b2})
 target_include_directories(box2d PUBLIC ${DEPS}/box2d/include PRIVATE ${DEPS}/box2d/src)
 target_compile_options(box2d PRIVATE -O2 -w)
+# Large worlds: body positions are doubles (about 1000 km of world instead of 16 km), the solver stays in
+# floats. PUBLIC: everything that includes the headers must see the same b2Pos.
+target_compile_definitions(box2d PUBLIC BOX2D_DOUBLE_PRECISION)
 # Box2D 3.2 picks its 8-wide AVX2 contact solver at run time (CPUID), per
 # function, so no compile flag is needed. A wider solver gives the same bits (a
 # graph color's constraints share no body); physics-determinism holds native

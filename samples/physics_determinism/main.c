@@ -53,9 +53,9 @@ static const int bench_workers[] = { 1, 2, 4, 8 };
 #define BENCH_STEPS 60
 
 /* upstream expectations (box3d/test/test_determinism.c; Box2D's are EXPECTED_HASH / EXPECTED_SLEEP_STEP in its
- * shared/determinism.h, single precision) */
-static uint32_t b3_expected_hash = 0x50313037, b2_expected_hash = 0x465F3DF4;
-static int32_t b3_expected_sleep = 269, b2_expected_sleep = 299;
+ * shared/determinism.h: the double-precision pair, the engine builds Box2D with large worlds) */
+static uint32_t b3_expected_hash = 0x50313037, b2_expected_hash = 0x7FCA93B8;
+static int32_t b3_expected_sleep = 269, b2_expected_sleep = 337;
 
 static uint32_t b3_hash[DET_RUNS], b2_hash[DET_RUNS];
 static int32_t b3_sleep[DET_RUNS], b2_sleep[DET_RUNS];
@@ -140,7 +140,7 @@ static void create_large_pyramid2(b2WorldId w) {
   b2World_EnableSleeping(w, false);
   const int base_count = 100;
   b2BodyDef bd = b2DefaultBodyDef();
-  bd.position = (b2Vec2){ 0.0f, -1.0f };
+  bd.position = (b2Pos){ 0.0f, -1.0f };
   b2BodyId ground = b2CreateBody(w, &bd);
   b2ShapeDef sd = b2DefaultShapeDef();
   b2Polygon ground_box = b2MakeBox(100.0f, 1.0f);
@@ -155,7 +155,7 @@ static void create_large_pyramid2(b2WorldId w) {
     float y = (2.0f * i + 1.0f) * shift;
     for (int j = i; j < base_count; ++j) {
       float x = (i + 1.0f) * shift + 2.0f * (j - i) * shift - a * base_count;
-      bd.position = (b2Vec2){ x, y };
+      bd.position = (b2Pos){ x, y };
       b2CreatePolygonShape(b2CreateBody(w, &bd), &sd, &box);
     }
   }

@@ -252,7 +252,7 @@ static void test_tick_span2(void) {
   cw_world2d w = cw_world2d_create(NULL);
   cw_body2d_def bd = cw_body2d_default_def();
   cw_shape2d_def sd = cw_shape2d_default_def();
-  bd.position = (cw_vec2){ 0, 10 };
+  bd.position = (cw_pos2){ 0, 10 };
   bd.linear_velocity = (cw_vec2){ 6, 0 };
   cw_body2d b = cw_body2d_create(w, &bd);
   cw_shape2d_box(b, &sd, (cw_vec2){ 0.25f, 0.25f }, cw_xform2_identity());
@@ -374,27 +374,27 @@ static scene2 make2(void) {
   cw_body2d_def bd = cw_body2d_default_def();
   cw_shape2d_def sd = cw_shape2d_default_def();
   bd.type = CW_BODY_STATIC;
-  bd.position = (cw_vec2){ 0, -0.5f };
+  bd.position = (cw_pos2){ 0, -0.5f };
   s.ground = cw_body2d_create(s.w, &bd);
   sd.layer = cw_world2d_layer(s.w, "world");
   sd.material.user_material = 7;
   s.ground_s = cw_shape2d_box(s.ground, &sd, (cw_vec2){ 20, 0.5f }, cw_xform2_identity());
   /* a chain (terrain) up at y = 5 over x 10..12 */
   static const cw_vec2 pts[4] = { { 13, 5 }, { 12, 5 }, { 10, 5 }, { 9, 5 } };
-  bd.position = (cw_vec2){ 0, 0 };
+  bd.position = (cw_pos2){ 0, 0 };
   s.chain = cw_chain2d_create(cw_body2d_create(s.w, &bd), &sd, pts, 4, false);
 
   bd.type = CW_BODY_DYNAMIC;
-  bd.position = (cw_vec2){ 0, 2 };
+  bd.position = (cw_pos2){ 0, 2 };
   s.box = cw_body2d_create(s.w, &bd);
   sd.layer = cw_world2d_layer(s.w, "props");
   sd.material.user_material = 11;
   s.box_s = cw_shape2d_box(s.box, &sd, (cw_vec2){ 0.5f, 0.5f }, cw_xform2_identity());
-  bd.position = (cw_vec2){ 3, 1 };
+  bd.position = (cw_pos2){ 3, 1 };
   s.ball = cw_body2d_create(s.w, &bd);
   s.ball_s = cw_shape2d_circle(s.ball, &sd, (cw_vec2){ 0, 0 }, 0.5f);
   bd.type = CW_BODY_STATIC;
-  bd.position = (cw_vec2){ -3, 1 };
+  bd.position = (cw_pos2){ -3, 1 };
   s.trigger = cw_body2d_create(s.w, &bd);
   cw_shape2d_def trig = sd;
   trig.sensor = true;
@@ -407,28 +407,28 @@ static scene2 make2(void) {
 static void test_ray2(void) {
   scene2 s = make2();
   cw_ray_hit2d h;
-  CHECK(cw_world2d_raycast(s.w, (cw_vec2){ 0, 10 }, (cw_vec2){ 0, -20 }, NULL, &h));
+  CHECK(cw_world2d_raycast(s.w, (cw_pos2){ 0, 10 }, (cw_vec2){ 0, -20 }, NULL, &h));
   CHECK(h.shape.id == s.box_s.id && h.body.id == s.box.id && NEAR(h.fraction, 0.375f, 1e-4f) && NEAR(h.normal.y, 1, 1e-5f));
   CHECK_EQ_INT(h.material, 11);
   fold_hit2(&h);
   cw_ray_hit2d all[8];
-  int n = cw_world2d_raycast_all(s.w, (cw_vec2){ 0, 10 }, (cw_vec2){ 0, -20 }, NULL, all, 8);
+  int n = cw_world2d_raycast_all(s.w, (cw_pos2){ 0, 10 }, (cw_vec2){ 0, -20 }, NULL, all, 8);
   CHECK_EQ_INT(n, 2);
   CHECK(all[0].shape.id == s.box_s.id && all[1].shape.id == s.ground_s.id && NEAR(all[1].fraction, 0.5f, 1e-4f));
   for (int i = 0; i < n; i++) fold_hit2(&all[i]);
   cw_phys_filter f = cw_phys_filter_layers(cw_world2d_layer_bits(s.w, "world"));
-  CHECK(cw_world2d_raycast(s.w, (cw_vec2){ 0, 10 }, (cw_vec2){ 0, -20 }, &f, &h) && h.shape.id == s.ground_s.id);
+  CHECK(cw_world2d_raycast(s.w, (cw_pos2){ 0, 10 }, (cw_vec2){ 0, -20 }, &f, &h) && h.shape.id == s.ground_s.id);
   f = cw_phys_filter_all();
   f.ignore_body = s.box.id;
-  CHECK(cw_world2d_raycast(s.w, (cw_vec2){ 0, 10 }, (cw_vec2){ 0, -20 }, &f, &h) && h.shape.id == s.ground_s.id);
-  CHECK(cw_world2d_raycast(s.w, (cw_vec2){ -3, 10 }, (cw_vec2){ 0, -20 }, NULL, &h) && h.shape.id == s.ground_s.id);
+  CHECK(cw_world2d_raycast(s.w, (cw_pos2){ 0, 10 }, (cw_vec2){ 0, -20 }, &f, &h) && h.shape.id == s.ground_s.id);
+  CHECK(cw_world2d_raycast(s.w, (cw_pos2){ -3, 10 }, (cw_vec2){ 0, -20 }, NULL, &h) && h.shape.id == s.ground_s.id);
   f = cw_phys_filter_all();
   f.sensors = true;
-  CHECK(cw_world2d_raycast(s.w, (cw_vec2){ -3, 10 }, (cw_vec2){ 0, -20 }, &f, &h) && h.shape.id == s.trigger_s.id);
+  CHECK(cw_world2d_raycast(s.w, (cw_pos2){ -3, 10 }, (cw_vec2){ 0, -20 }, &f, &h) && h.shape.id == s.trigger_s.id);
   CHECK(NEAR(h.fraction, 0.425f, 1e-4f));
   fold_hit2(&h);
   /* chain: solid from above (points run right to left) */
-  CHECK(cw_world2d_raycast(s.w, (cw_vec2){ 11, 8 }, (cw_vec2){ 0, -6 }, NULL, &h) && NEAR(h.fraction, 0.5f, 1e-4f));
+  CHECK(cw_world2d_raycast(s.w, (cw_pos2){ 11, 8 }, (cw_vec2){ 0, -6 }, NULL, &h) && NEAR(h.fraction, 0.5f, 1e-4f));
   CHECK(h.body.id != s.ground.id && h.body.id != 0 && NEAR(h.normal.y, 1, 1e-5f));
   fold_hit2(&h);
   cw_world2d_destroy(s.w);
@@ -455,7 +455,7 @@ static void test_shapes2(void) {
   cw_phys_filter f = cw_phys_filter_all();
   f.sensors = true;
   CHECK_EQ_INT(cw_world2d_overlap(s.w, &os, &f, out, 8), 1);
-  n = cw_world2d_overlap_aabb(s.w, (cw_vec2){ -50, -50 }, (cw_vec2){ 50, 50 }, NULL, out, 8);
+  n = cw_world2d_overlap_aabb(s.w, (cw_pos2){ -50, -50 }, (cw_pos2){ 50, 50 }, NULL, out, 8);
   CHECK_EQ_INT(n, 4); /* ground, the chain's one real segment (the end points are ghosts), box, ball */
   for (int i = 1; i < n; i++) CHECK(out[i - 1].id < out[i].id);
   for (int i = 0; i < n; i++) FOLD(out[i].id);
@@ -485,12 +485,12 @@ static void test_joints_events2(void) {
   cw_body2d ground = cw_body2d_create(w, &bd);
   cw_shape2d_box(ground, &sd, (cw_vec2){ 10, 0.5f }, cw_xform2_identity());
   bd.type = CW_BODY_DYNAMIC;
-  bd.position = (cw_vec2){ 0, 3 };
+  bd.position = (cw_pos2){ 0, 3 };
   cw_body2d hang = cw_body2d_create(w, &bd);
   cw_shape2d_box(hang, &sd, (cw_vec2){ 0.25f, 0.25f }, cw_xform2_identity());
   cw_joint2d_def jd = cw_joint2d_default_def(CW_JOINT_REVOLUTE);
   jd.b = hang;
-  cw_joint2d_def_anchor(&jd, (cw_vec2){ 0, 3.5f }, (cw_vec2){ 1, 0 });
+  cw_joint2d_def_anchor(&jd, (cw_pos2){ 0, 3.5f }, (cw_vec2){ 1, 0 });
   jd.break_force = 0.5f;
   cw_joint2d j = cw_joint2d_create(w, &jd);
   CHECK(cw_joint2d_valid(j));
@@ -516,6 +516,52 @@ static void test_joints_events2(void) {
   cw_world2d_destroy(w);
 }
 
+/* Box2D v3.2 large worlds: positions are doubles, so a scene 524 km out behaves as one at the origin (a float
+ * position there has 6 cm steps; the checks below are millimetres) */
+static void test_large_world2(void) {
+  const double X = 524288.3;
+  CHECK(b2IsDoublePrecision());
+  cw_world2d w = cw_world2d_create(NULL);
+  cw_body2d_def bd = cw_body2d_default_def();
+  bd.type = CW_BODY_STATIC;
+  bd.position = (cw_pos2){ X, 0 };
+  cw_body2d ground = cw_body2d_create(w, &bd);
+  cw_shape2d_def sd = cw_shape2d_default_def();
+  cw_shape2d_box(ground, &sd, (cw_vec2){ 20, 0.5f }, cw_xform2_at(0, -0.5f));
+  bd = cw_body2d_default_def();
+  bd.position = (cw_pos2){ X, 3 };
+  cw_body2d box = cw_body2d_create(w, &bd);
+  cw_shape2d_box(box, &sd, (cw_vec2){ 0.5f, 0.5f }, cw_xform2_identity());
+  CHECK(cw_body2d_position(box).x == X); /* a float would hold 524288.3125 */
+  for (int i = 0; i < 180; i++) cw_world2d_step(w, 1.0f / 60);
+  cw_pos2 p = cw_body2d_position(box);
+  CHECK(fabs(p.x - X) < 0.02 && fabs(p.y - 0.5) < 0.02); /* 3.2 lands a flat box with a little sideways drift */
+  FOLD(p.y);
+  cw_ray_hit2d h;
+  CHECK(cw_world2d_raycast(w, (cw_pos2){ X, 10 }, (cw_vec2){ 0, -20 }, NULL, &h) && h.body.id == box.id);
+  CHECK(fabs(h.point.x - X) < 1e-3 && fabs(h.point.y - 1.0) < 0.02);
+  cw_shape2d out[4];
+  CHECK_EQ_INT(cw_world2d_overlap_aabb(w, (cw_pos2){ X - 5, -1 }, (cw_pos2){ X + 5, 5 }, NULL, out, 4), 2);
+  cw_qshape2d q = cw_qshape2d_at(cw_qshape2d_circle((cw_vec2){ 0, 0.5f }, 0.1f), (cw_pos2){ X, 0 });
+  CHECK_EQ_INT(cw_world2d_overlap(w, &q, NULL, out, 4), 1);
+  /* a mover stands and walks 3 m out there */
+  cw_mover2d m;
+  cw_mover2d_init(&m, w, NULL, (cw_pos2){ X - 8, 0.5f });
+  for (int i = 0; i < 60; i++) {
+    m.velocity.y -= 10.0f / 60;
+    cw_mover2d_move(&m, 1.0f / 60);
+  }
+  CHECK(m.on_floor && fabs(m.position.y) < 1e-3 && fabs(m.position.x - (X - 8)) < 1e-9);
+  for (int i = 0; i < 60; i++) {
+    m.velocity.x = 3;
+    m.velocity.y -= 10.0f / 60;
+    cw_mover2d_move(&m, 1.0f / 60);
+  }
+  CHECK(m.on_floor && fabs(m.position.x - (X - 8 + 3)) < 0.01);
+  FOLD(m.position.x);
+  cw_world2d_destroy(w);
+}
+
 static void test_mover2(void) {
   cw_world2d w = cw_world2d_create(NULL);
   cw_body2d_def bd = cw_body2d_default_def();
@@ -533,7 +579,7 @@ static void test_mover2(void) {
   cw_mover2d m;
   cw_mover2d_def md = cw_mover2d_default_def();
   md.step_height = 0.4f;
-  cw_mover2d_init(&m, w, &md, (cw_vec2){ 0, 0.5f });
+  cw_mover2d_init(&m, w, &md, (cw_pos2){ 0, 0.5f });
   for (int i = 0; i < 60; i++) {
     m.velocity.y -= 10.0f / 60;
     cw_mover2d_move(&m, 1.0f / 60);
@@ -625,13 +671,13 @@ static void test_findings2(void) {
   cw_body2d car = cw_body2d_create(w, &bd);
   cw_shape2d_def sd = cw_shape2d_default_def();
   cw_shape2d_box(car, &sd, (cw_vec2){ 1, 0.25f }, cw_xform2_identity());
-  bd.position = (cw_vec2){ 0, -1 };
+  bd.position = (cw_pos2){ 0, -1 };
   cw_body2d wheel = cw_body2d_create(w, &bd);
   cw_shape2d_circle(wheel, &sd, (cw_vec2){ 0, 0 }, 0.4f);
   cw_joint2d_def jd = cw_joint2d_default_def(CW_JOINT_WHEEL);
   jd.a = car;
   jd.b = wheel;
-  cw_joint2d_def_anchor(&jd, (cw_vec2){ 0, -1 }, (cw_vec2){ 0, 1 });
+  cw_joint2d_def_anchor(&jd, (cw_pos2){ 0, -1 }, (cw_vec2){ 0, 1 });
   jd.motor = false;
   jd.motor_speed = 7; /* a setting, not what the wheel does */
   cw_joint2d j = cw_joint2d_create(w, &jd);
@@ -645,7 +691,7 @@ static void test_findings2(void) {
   cw_mover2d m;
   cw_mover2d_def md = cw_mover2d_default_def();
   md.skin = 0;
-  cw_mover2d_init(&m, w, &md, (cw_vec2){ 0, 5 });
+  cw_mover2d_init(&m, w, &md, (cw_pos2){ 0, 5 });
   CHECK(m.def.skin == 0.02f);
   cw_world2d_destroy(w);
   cw_world3d w3 = cw_world3d_create(NULL);
@@ -655,6 +701,6 @@ static void test_findings2(void) {
 
 CW_TEST_SUITE("physics", { "ray3", test_ray3 }, { "shapes3", test_shapes3 }, { "batch3", test_batch3 },
               { "joints_events3", test_joints_events3 }, { "mover3", test_mover3 }, { "contacts3", test_contacts3 }, { "ray2", test_ray2 },
-              { "shapes2", test_shapes2 }, { "joints_events2", test_joints_events2 }, { "mover2", test_mover2 },
+              { "shapes2", test_shapes2 }, { "joints_events2", test_joints_events2 }, { "mover2", test_mover2 }, { "large_world2", test_large_world2 },
               { "tick_span2", test_tick_span2 }, { "tick_span3", test_tick_span3 },
               { "findings2", test_findings2 })

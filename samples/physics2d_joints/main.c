@@ -66,7 +66,7 @@ static cw_body2d box_body(cw_body_type type, float x, float y, float hx, float h
                           t3_material *m) {
   cw_body2d_def bd = cw_body2d_default_def();
   bd.type = type;
-  bd.position = (cw_vec2){ x, y };
+  bd.position = (cw_pos2){ x, y };
   cw_body2d b = cw_body2d_create(A.world, &bd);
   cw_shape2d_box(b, sd, (cw_vec2){ hx, hy }, cw_xform2_identity());
   if (m) cw_body2d_bind_object(b, (t3_object *)mesh_box(hx, hy, m));
@@ -105,7 +105,7 @@ static void build(void) {
     jd.a = prev; /* null = the world at the left post */
     jd.b = i < planks ? cur : prev;
     if (i == planks) jd.a = (cw_body2d){ 0 };
-    cw_joint2d_def_anchor(&jd, (cw_vec2){ x0 + plank * i, 4 }, (cw_vec2){ 1, 0 });
+    cw_joint2d_def_anchor(&jd, (cw_pos2){ x0 + plank * i, 4 }, (cw_vec2){ 1, 0 });
     cw_joint2d j = cw_joint2d_create(A.world, &jd);
     if (i == 0) A.bridge_first = j;
     prev = cur;
@@ -117,7 +117,7 @@ static void build(void) {
   A.chassis = box_body(CW_BODY_DYNAMIC, -1, 1.2f, 1.1f, 0.3f, &props, A.mat_car);
   for (int s = -1; s <= 1; s += 2) {
     cw_body2d_def bd = cw_body2d_default_def();
-    bd.position = (cw_vec2){ -1 + 0.75f * s, 0.6f };
+    bd.position = (cw_pos2){ -1 + 0.75f * s, 0.6f };
     cw_body2d wheel = cw_body2d_create(A.world, &bd);
     cw_shape2d_def ws = props;
     ws.material.friction = 0.9f;
@@ -143,7 +143,7 @@ static void build(void) {
   /* sensor zone on the car's path */
   cw_body2d_def zd = cw_body2d_default_def();
   zd.type = CW_BODY_STATIC;
-  zd.position = (cw_vec2){ 11, 1 };
+  zd.position = (cw_pos2){ 11, 1 };
   cw_body2d zone = cw_body2d_create(A.world, &zd);
   cw_shape2d_def ss = sd;
   ss.sensor = true;
@@ -153,7 +153,7 @@ static void build(void) {
 
   /* pendulum: a distance joint from the world */
   cw_body2d_def pd = cw_body2d_default_def();
-  pd.position = (cw_vec2){ 6.5f, 13 }; /* pulled aside: it swings */
+  pd.position = (cw_pos2){ 6.5f, 13 }; /* pulled aside: it swings */
   A.pend_ball = cw_body2d_create(A.world, &pd);
   cw_shape2d_circle(A.pend_ball, &props, (cw_vec2){ 0, 0 }, 0.35f);
   cw_body2d_bind_object(A.pend_ball, (t3_object *)mesh_disc(0.35f, A.mat_dyn));
@@ -167,7 +167,7 @@ static void build(void) {
   cw_body2d piston = box_body(CW_BODY_DYNAMIC, 13, 0.4f, 0.4f, 0.3f, &props, A.mat_car);
   cw_joint2d_def pj = cw_joint2d_default_def(CW_JOINT_PRISMATIC);
   pj.b = piston;
-  cw_joint2d_def_anchor(&pj, (cw_vec2){ 13, 0.4f }, (cw_vec2){ -1, 0 });
+  cw_joint2d_def_anchor(&pj, (cw_pos2){ 13, 0.4f }, (cw_vec2){ -1, 0 });
   pj.limit = true;
   pj.lower = 0;
   pj.upper = 2.5f;
@@ -183,7 +183,7 @@ static void build(void) {
   cw_joint2d_def wj = cw_joint2d_default_def(CW_JOINT_WELD);
   wj.a = l1;
   wj.b = l2;
-  cw_joint2d_def_anchor(&wj, (cw_vec2){ 7.65f, 8 }, (cw_vec2){ 1, 0 });
+  cw_joint2d_def_anchor(&wj, (cw_pos2){ 7.65f, 8 }, (cw_vec2){ 1, 0 });
   cw_joint2d_create(A.world, &wj);
   /* filter joint: the L passes through this box */
   cw_body2d ghost = box_body(CW_BODY_DYNAMIC, 7.2f, 5, 0.5f, 0.5f, &props, A.mat_sensor);
@@ -204,7 +204,7 @@ static void build(void) {
   A.weight = box_body(CW_BODY_DYNAMIC, -11, 8, 0.4f, 0.4f, &props, A.mat_dyn);
   cw_joint2d_def hj = cw_joint2d_default_def(CW_JOINT_REVOLUTE);
   hj.b = A.weight;
-  cw_joint2d_def_anchor(&hj, (cw_vec2){ -11, 8.6f }, (cw_vec2){ 1, 0 });
+  cw_joint2d_def_anchor(&hj, (cw_pos2){ -11, 8.6f }, (cw_vec2){ 1, 0 });
   hj.break_force = 3 * cw_body2d_mass(A.weight) * 10;
   hj.user = &A.weight;
   A.hinge = cw_joint2d_create(A.world, &hj);
@@ -217,7 +217,7 @@ static void build(void) {
   cw_mover2d_def md = cw_mover2d_default_def();
   md.radius = 0.25f;
   md.height = 1;
-  cw_mover2d_init(&A.mover, A.world, &md, (cw_vec2){ -6, 11.25f });
+  cw_mover2d_init(&A.mover, A.world, &md, (cw_pos2){ -6, 11.25f });
   A.mover_mesh = mesh_box(0.25f, 0.5f, A.mat_car);
 }
 
@@ -265,12 +265,12 @@ static void fixed_update(void *user, double dt) {
   if (t == 30) {
     cw_joint2d_def md = cw_joint2d_default_def(CW_JOINT_MOUSE);
     md.b = A.crate;
-    md.target = cw_body2d_transform(A.crate).p;
+    md.target = cw_body2d_position(A.crate);
     A.mouse = cw_joint2d_create(A.world, &md);
   }
   if (t > 30 && t < 150) {
     float s = (float)(t - 30) / 120.0f;
-    cw_joint2d_set_target(A.mouse, (cw_vec2){ -6 + 4 * s, 0.5f + 3 * cw_sin(s * CW_PI) });
+    cw_joint2d_set_target(A.mouse, (cw_pos2){ -6 + 4 * s, 0.5f + 3 * cw_sin(s * CW_PI) });
   }
   if (t == 150) cw_joint2d_destroy(A.mouse);
   if (t == 120) cw_body2d_apply_impulse(A.weight, (cw_vec2){ 0, -40 }, NULL);
@@ -314,7 +314,7 @@ static void fixed_update(void *user, double dt) {
 static void render(void *user, double alpha) {
   (void)user;
   cw_world2d_sync(A.world, (float)alpha);
-  cw_vec2 mp = cw_mover2d_interpolated(&A.mover, (float)alpha);
+  cw_pos2 mp = cw_mover2d_interpolated(&A.mover, (float)alpha);
   t3_object_set_position(A.mover_mesh, mp.x, mp.y + 0.5f, 0);
   cw_phys_lines_clear(&A.lines);
   cw_world2d_debug_draw(A.world, &A.lines, CW_PHYS_DRAW_SHAPES | CW_PHYS_DRAW_JOINTS);

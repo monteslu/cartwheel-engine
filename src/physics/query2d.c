@@ -19,8 +19,8 @@ static bool keep_shape(const cw_phys_filter *f, b2ShapeId s) {
 }
 static bool needs_callback(const cw_phys_filter *f) { return f && (f->ignore_body || f->fn); }
 
-static cw_ray_hit2d make_hit(b2ShapeId s, b2Vec2 p, b2Vec2 n, float fraction) {
-  return (cw_ray_hit2d){ { b2StoreShapeId(s) }, { b2StoreBodyId(b2Shape_GetBody(s)) }, cwv(p), cwv(n), fraction,
+static cw_ray_hit2d make_hit(b2ShapeId s, b2Pos p, b2Vec2 n, float fraction) {
+  return (cw_ray_hit2d){ { b2StoreShapeId(s) }, { b2StoreBodyId(b2Shape_GetBody(s)) }, cwp(p), cwv(n), fraction,
                          b2Shape_GetSurfaceMaterial(s).userMaterialId, -1 };
 }
 
@@ -43,28 +43,28 @@ typedef struct cast_ctx {
   bool closest;
 } cast_ctx;
 
-static float cast_fn(b2ShapeId s, b2Vec2 p, b2Vec2 n, float fraction, void *ctx) {
+static float cast_fn(b2ShapeId s, b2Pos p, b2Vec2 n, float fraction, void *ctx) {
   cast_ctx *c = ctx;
   if (!keep_shape(c->filter, s)) return -1;
   insert_hit(c->hits, &c->count, c->cap, make_hit(s, p, n, fraction));
   return c->closest ? fraction : 1;
 }
 
-static bool ray_closest(b2WorldId id, cw_vec2 origin, cw_vec2 translation, const cw_phys_filter *f, cw_ray_hit2d *hit) {
+static bool ray_closest(b2WorldId id, cw_pos2 origin, cw_vec2 translation, const cw_phys_filter *f, cw_ray_hit2d *hit) {
   memset(hit, 0, sizeof *hit);
   hit->triangle = -1;
   if (!needs_callback(f)) {
-    b2RayResult r = b2World_CastRayClosest(id, v2(origin), v2(translation), qfilter(f));
+    b2RayResult r = b2World_CastRayClosest(id, bp(origin), v2(translation), qfilter(f));
     if (!r.hit) return false;
     *hit = make_hit(r.shapeId, r.point, r.normal, r.fraction);
     return true;
   }
   cast_ctx c = { f, hit, 0, 1, true };
-  b2World_CastRay(id, v2(origin), v2(translation), qfilter(f), cast_fn, &c);
+  b2World_CastRay(id, bp(origin), v2(translation), qfilter(f), cast_fn, &c);
   return c.count > 0;
 }
 
-bool cw_world2d_raycast(cw_world2d wh, cw_vec2 origin, cw_vec2 translation, const cw_phys_filter *filter,
+bool cw_world2d_raycast(cw_world2d wh, cw_pos2 origin, cw_vec2 translation, const cw_phys_filter *filter,
                         cw_ray_hit2d *hit) {
   cw__world2 *w = cw__w2(wh);
   if (!w) {
@@ -74,12 +74,12 @@ bool cw_world2d_raycast(cw_world2d wh, cw_vec2 origin, cw_vec2 translation, cons
   return ray_closest(w->id, origin, translation, filter, hit);
 }
 
-int cw_world2d_raycast_all(cw_world2d wh, cw_vec2 origin, cw_vec2 translation, const cw_phys_filter *filter,
+int cw_world2d_raycast_all(cw_world2d wh, cw_pos2 origin, cw_vec2 translation, const cw_phys_filter *filter,
                            cw_ray_hit2d *hits, int cap) {
   cw__world2 *w = cw__w2(wh);
   if (!w || cap <= 0) return 0;
   cast_ctx c = { filter, hits, 0, cap, false };
-  b2World_CastRay(w->id, v2(origin), v2(translation), qfilter(filter), cast_fn, &c);
+  b2World_CastRay(w->id, bp(origin), v2(translation), qfilter(filter), cast_fn, &c);
   return c.count;
 }
 
@@ -139,7 +139,7 @@ int cw_world2d_shapecast(cw_world2d wh, const cw_qshape2d *shape, cw_vec2 transl
   if (!w || cap <= 0) return 0;
   b2ShapeProxy p = proxy(shape);
   cast_ctx c = { filter, hits, 0, cap, cap == 1 };
-  b2World_CastShape(w->id, b2ToPos((b2Vec2){ 0, 0 }), &p, v2(translation), qfilter(filter), cast_fn, &c);
+  b2World_CastShape(w->id, bp(shape->origin), &p, v2(translation), qfilter(filter), cast_fn, &c);
   return c.count;
 }
 
@@ -170,15 +170,16 @@ int cw_world2d_overlap(cw_world2d wh, const cw_qshape2d *shape, const cw_phys_fi
   if (!w || cap <= 0) return 0;
   b2ShapeProxy p = proxy(shape);
   overlap_ctx c = { filter, out, 0, cap };
-  b2World_OverlapShape(w->id, b2ToPos((b2Vec2){ 0, 0 }), &p, qfilter(filter), overlap_fn, &c);
+  b2World_OverlapShape(w->id, bp(shape->origin), &p, qfilter(filter), overlap_fn, &c);
   return c.count;
 }
 
-int cw_world2d_overlap_aabb(cw_world2d wh, cw_vec2 lo, cw_vec2 hi, const cw_phys_filter *filter, cw_shape2d *out,
+int cw_world2d_overlap_aabb(cw_world2d wh, cw_pos2 lo, cw_pos2 hi, const cw_phys_filter *filter, cw_shape2d *out,
                             int cap) {
   cw__world2 *w = cw__w2(wh);
   if (!w || cap <= 0) return 0;
   overlap_ctx c = { filter, out, 0, cap };
-  b2World_OverlapAABB(w->id, b2ToPos((b2Vec2){ 0, 0 }), (b2AABB){ v2(lo), v2(hi) }, qfilter(filter), overlap_fn, &c);
+  /* relative to lo, so the box keeps its precision far from the origin */
+  b2World_OverlapAABB(w->id, bp(lo), (b2AABB){ { 0, 0 }, v2(cw_pos2_sub(hi, lo)) }, qfilter(filter), overlap_fn, &c);
   return c.count;
 }

@@ -404,7 +404,7 @@ static void create_body(p2w *W, cw_node n, co2d *c) {
   cw_body2d_def bd = cw_body2d_default_def();
   bd.type = body_type_for(n, c);
   cw_xform2 x = node_xform(W, n);
-  bd.position = x.p;
+  bd.position = cw_pos2_from(x.p);
   bd.rotation = x.q;
   bd.name = cw_node_name(n);
   bd.interpolate = false; /* the node interpolates */
@@ -490,7 +490,7 @@ static void sync_in(p2w *W, cw_node n, co2d *c, float dt) {
       char2d *ch = cw_node_data_t(n, char_t);
       if (ch && ch->mover_ready) {
         cw_xform2 x = node_xform(W, n);
-        cw_mover2d_teleport(&ch->mover, cw_v2_add(x.p, to_m(W, ch->feet)));
+        cw_mover2d_teleport(&ch->mover, cw_pos2_from(cw_v2_add(x.p, to_m(W, ch->feet))));
       }
       record_synced(n, c);
     }
@@ -567,9 +567,10 @@ static void ensure_mover(p2w *W, cw_node n, co2d *c, char2d *ch) {
   if (ch->mover_ready && h == ch->mover_hash) return;
   ch->feet = feet;
   cw_xform2 x = node_xform(W, n);
-  cw_vec2 at = cw_v2_add(x.p, to_m(W, feet));
+  cw_pos2 at = cw_pos2_from(cw_v2_add(x.p, to_m(W, feet)));
   if (ch->mover_ready) {
-    cw_vec2 keep = ch->mover.position, v = ch->mover.velocity;
+    cw_pos2 keep = ch->mover.position;
+    cw_vec2 v = ch->mover.velocity;
     cw_mover2d_init(&ch->mover, W->world, &md, keep);
     ch->mover.velocity = v;
   } else {
@@ -591,10 +592,10 @@ bool cw_character2d_move_and_slide(cw_node n, float dt) {
   cw_xform2 home = cw_body2d_transform(c->body);
   cw_body2d_set_transform(c->body, (cw_xform2){ cw_v2(home.p.x, home.p.y - 100000.0f), home.q });
   cw_mover2d_move(m, dt);
-  cw_vec2 origin = cw_v2_sub(m->position, to_m(W, ch->feet));
-  cw_body2d_set_transform(c->body, (cw_xform2){ origin, home.q });
+  cw_pos2 origin = cw_pos2_add(m->position, cw_v2_scale(to_m(W, ch->feet), -1));
+  cw_body2d_set_world_transform(c->body, (cw_wxform2){ origin, home.q });
   cw_node2d *d = cw_node_data_t(n, node2d_t);
-  cw_node2d_set_global(n, to_px(W, origin), d->rotation);
+  cw_node2d_set_global(n, to_px(W, cw_pos2_to_vec(origin)), d->rotation);
   /* keep the node's own rotation: characters do not rotate */
   record_synced(n, c);
   ch->velocity = cw_v2(m->velocity.x * W->ppm, -m->velocity.y * W->ppm);
@@ -704,7 +705,7 @@ static void joint_sync(p2w *W, cw_node n, joint2d *j) {
   cw_vec2 anchor = to_m(W, cw_v2(g[4], g[5]));
   float len = sqrtf(g[0] * g[0] + g[1] * g[1]);
   cw_vec2 axis = len > 0 ? cw_v2(g[0] / len, -g[1] / len) : cw_v2(1, 0);
-  cw_joint2d_def_anchor(&jd, anchor, axis);
+  cw_joint2d_def_anchor(&jd, cw_pos2_from(anchor), axis);
   if (j->joint_type == J_DISTANCE || j->joint_type == J_SPRING) {
     jd.frame_b.p = cw_v2(0, 0); /* anchor on B: its origin */
     cw_xform2 xb = cw_body2d_transform(b);
@@ -817,11 +818,11 @@ static void cast_update(p2w *W, cw_node n, cast2d *c, bool is_shape) {
   }
   cw_ray_hit2d hit;
   if (!is_shape) {
-    if (cw_world2d_raycast(W->world, o, tr, &f, &hit)) {
+    if (cw_world2d_raycast(W->world, cw_pos2_from(o), tr, &f, &hit)) {
       c->colliding = true;
       c->collision_count = 1;
       c->collider = owner_of_shape(W, hit.shape);
-      c->collision_point = to_px(W, hit.point);
+      c->collision_point = to_px(W, cw_pos2_to_vec(hit.point));
       c->collision_normal = cw_v2(hit.normal.x, -hit.normal.y);
       c->collision_fraction = hit.fraction;
     }
@@ -855,7 +856,7 @@ static void cast_update(p2w *W, cw_node n, cast2d *c, bool is_shape) {
       c->colliding = true;
       c->collision_count = k;
       c->collider = owner_of_shape(W, hits[0].shape);
-      c->collision_point = to_px(W, hits[0].point);
+      c->collision_point = to_px(W, cw_pos2_to_vec(hits[0].point));
       c->collision_normal = cw_v2(hits[0].normal.x, -hits[0].normal.y);
       c->collision_fraction = hits[0].fraction;
     }
@@ -1354,7 +1355,8 @@ cw_node cw_physics2d_body_node(cw_body2d b) {
  * world (a restored tree must not query bodies at their future poses). */
 typedef struct char2d_snap {
   uint8_t ready, on_floor, on_wall, on_ceiling, m_floor, m_wall, m_ceiling, m_stepped, m_snapped, pad[7];
-  cw_vec2 floor_normal, wall_normal, platform_velocity, m_pos, m_prev, m_vel, m_floor_n, m_wall_n, m_platform_v;
+  cw_vec2 floor_normal, wall_normal, platform_velocity, m_vel, m_floor_n, m_wall_n, m_platform_v;
+  cw_pos2 m_pos, m_prev;
   uint64_t m_floor_body;
 } char2d_snap;
 int cw__char2d_state_save(cw_node n, void *data, uint8_t *out, int cap) {

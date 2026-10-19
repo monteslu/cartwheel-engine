@@ -20,7 +20,7 @@ typedef struct cw__joint2 {
   cw_joint_type type;
   bool breakable;
   b2BodyId mouse_body;
-  cw_vec2 target;
+  cw_pos2 target;
 } cw__joint2;
 
 typedef struct cw__world2 {
@@ -43,9 +43,16 @@ cw__body2 *cw__b2(cw_body2d b);
 void cw__joint2_destroy(cw__world2 *w, b2JointId jid);
 
 static inline b2Vec2 v2(cw_vec2 v) { return (b2Vec2){ v.x, v.y }; }
+static inline b2Pos bp(cw_pos2 p) { return (b2Pos){ p.x, p.y }; }
+static inline cw_pos2 cwp(b2Pos p) { return (cw_pos2){ p.x, p.y }; }
+/* a world-transform pose as the floats the render sync uses (rounded far from the origin) */
+static inline cw_xform2 xf2(b2WorldTransform t) { return (cw_xform2){ { (float)t.p.x, (float)t.p.y }, { t.q.c, t.q.s } }; }
+static inline cw_wxform2 wx2(b2WorldTransform t) { return (cw_wxform2){ cwp(t.p), { t.q.c, t.q.s } }; }
+static inline b2WorldTransform bwx2(cw_wxform2 t) { return (b2WorldTransform){ bp(t.p), { t.q.c, t.q.s } }; }
 static inline cw_vec2 cwv(b2Vec2 v) { return (cw_vec2){ v.x, v.y }; }
 static inline b2Rot r2(cw_rot2 r) { return (b2Rot){ r.c, r.s }; }
 static inline cw_rot2 cwr(b2Rot r) { return (cw_rot2){ r.c, r.s }; }
+/* a LOCAL transform (shape and joint frames): floats */
 static inline cw_xform2 x2(b2Transform t) { return (cw_xform2){ cwv(t.p), cwr(t.q) }; }
 static inline b2Transform bx2(cw_xform2 t) { return (b2Transform){ v2(t.p), r2(t.q) }; }
 

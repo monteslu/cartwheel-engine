@@ -55,7 +55,7 @@ static int step_box2d(void) {
     for (int c = 0; c < rows - r; c++) {
       b2BodyDef bd = b2DefaultBodyDef();
       bd.type = b2_dynamicBody;
-      bd.position = (b2Vec2){ (float)c - (rows - r) * 0.5f, 0.5f + r * 1.0f };
+      bd.position = (b2Pos){ (float)c - (rows - r) * 0.5f, 0.5f + r * 1.0f };
       b2CreatePolygonShape(b2CreateBody(w, &bd), &sd, &box);
       bodies++;
     }
