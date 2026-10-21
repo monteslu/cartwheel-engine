@@ -66,10 +66,11 @@ The full list is in [the conventions](repo:docs/CONVENTIONS.md) (Determinism
 rules): randomness from `cw_rng` only, time from the fixed `dt` only, trig
 and friends from `cartwheel/math.h` (`cw_sin`, `cw_atan2`) because libm
 differs between platforms, iteration in insertion order, no `-ffast-math`.
-Physics has one limit, written at the top of [net.h](header:net.h): dynamic
-rigid bodies and Area overlap signals do not re-simulate exactly, so a
-rollback game moves characters with `move_and_slide` or its own math, as
-this one does.
+Physics is covered at the top of [net.h](header:net.h): a snapshot carries
+the 2D physics world whole, so 2D rigid bodies and Area2D overlaps
+re-simulate exactly. 3D has one limit: dynamic rigid bodies and Area3D
+overlap signals do not, so a 3D rollback game moves characters with
+`move_and_slide` or its own math. This game uses its own math.
 
 ## A peer: a tree, a session and a rollback
 

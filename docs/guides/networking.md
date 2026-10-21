@@ -67,7 +67,7 @@ This is the same model as Godot's MultiplayerSynchronizer and MultiplayerSpawner
 
 A [cw_state](api:cw_state) is the whole tree through reflection: every node's type, name, parent and child index, every writable reflected property, the tree's tick and its random state. [cw_state_load](api:cw_state_load) frees nodes the snapshot does not have, recreates the ones it has, and writes a property only when it differs, so restoring an unchanged tree costs reads only. Node identity is the node uid, and node-valued properties are remapped.
 
-[cw_state_hash](api:cw_state_hash) covers types, structure and values (not uids, names or pointers), so it is equal on every host for equal state. Leave derived or cosmetic properties out of snapshots and hashes with [cw_state_skip_prop](api:cw_state_skip_prop), and save state a type keeps outside its reflected properties with [cw_state_type_hook](api:cw_state_type_hook). The physics nodes use that hook: a `CharacterBody2D` or `CharacterBody3D` carries its mover state and its floor outputs in the snapshot, and every body is moved back to its node's pose after a restore.
+[cw_state_hash](api:cw_state_hash) covers types, structure and values (not uids, names or pointers), so it is equal on every host for equal state. Leave derived or cosmetic properties out of snapshots and hashes with [cw_state_skip_prop](api:cw_state_skip_prop), and save state a type keeps outside its reflected properties with [cw_state_type_hook](api:cw_state_type_hook). The physics nodes use that hook: a `CharacterBody2D` or `CharacterBody3D` carries its mover state and its floor outputs in the snapshot, and every body is moved back to its node's pose after a restore. A snapshot also carries the tree's 2D physics world as Box2D's own image of it ([cw_world2d_snapshot](api:cw_world2d_snapshot)), and the hash folds in Box2D's host-stable state hash of that world instead of the image's bytes. The image holds pointers, so a snapshot stays in the process that made it.
 
 When two peers disagree, [cw_state_dump](api:cw_state_dump) writes a snapshot as text, one line per node and per value, so you can diff the two.
 
@@ -99,7 +99,11 @@ Rollback costs one snapshot per tick and, after a misprediction, a restore plus 
 
 ### What re-simulates exactly
 
-Character bodies (`move_and_slide`) against static and kinematic bodies, and the engine's own math, re-simulate bit-exactly in 2D and 3D. Two things do not, because the physics libraries keep their state where no restore reaches: **dynamic rigid bodies** (contact warm-start caches make a restored pile diverge) and **Area overlap signals** (begin and end events come from the library's sensor state). A rollback game keeps simulated objects out of dynamic rigid bodies and detects overlaps with queries or its own math; cosmetic debris outside the rolled-back tree is fine. See [Physics](guide:physics).
+Character bodies (`move_and_slide`) against static and kinematic bodies, and the engine's own math, re-simulate bit-exactly in 2D and 3D.
+
+In 2D everything else does too: the snapshot restores the Box2D world itself, so dynamic `RigidBody2D` piles come back with their velocities, contact warm-start caches and sleeping islands, and `Area2D` overlap signals with their sensor state. `unit-net` rolls a pile back 44 times with 0 desyncs, and the same run without the world image is the control that must desync.
+
+In 3D two things do not, because Box3D has no snapshot and keeps their state where no restore reaches: **dynamic rigid bodies** (contact warm-start caches make a restored pile diverge) and **Area3D overlap signals** (begin and end events come from the library's sensor state). A 3D rollback game keeps simulated objects out of dynamic rigid bodies and detects overlaps with queries or its own math; cosmetic debris outside the rolled-back tree is fine. See [Physics](guide:physics).
 
 ## The net_arena sample
 
@@ -147,7 +151,7 @@ See [Testing](guide:testing) for how gates and controls work.
 
 - **Native to cart**: a native build has UDP but no WebSocket client, and a cart has only the peer connection, so they do not reach each other yet. Native to native and cart to cart both work.
 - **No fragmentation**: one message is at most 1100 bytes. Large state (a level, a join-in-progress snapshot) is split by the game.
-- **Rollback and physics**: dynamic rigid bodies and Area signals do not re-simulate exactly (see above).
+- **Rollback and 3D physics**: 3D dynamic rigid bodies and Area3D signals do not re-simulate exactly (see above); 2D ones do.
 - **IPv4 only** on the UDP transport; no NAT traversal, encryption or authentication. Use a relay to reach peers behind NAT.
 - **No replicated authority changes**: `cw_net_set_authority` after a spawn is local to the peer that calls it.
 - **No sample for RPC and replication** beyond the unit suite.

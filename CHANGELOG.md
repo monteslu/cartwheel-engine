@@ -4,6 +4,103 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.14.0 (2026-10-21)
+
+Box2D v3.2 under the 2D physics, with rollback that restores 2D worlds whole.
+
+### Added
+- **Large 2D worlds**: Box2D keeps world positions as doubles (about 1000 km
+  of world instead of 16 km). `cw_pos2` and `cw_wxform2` carry body
+  positions, ray and hit points, query origins, joint anchors and the
+  character mover's feet; `cw_body2d_world_transform`,
+  `cw_body2d_set_world_transform`, `cw_body2d_set_world_target` and
+  `cw_body2d_position` read and write them, and `cw_qshape2d_at` gives a
+  query shape an origin. The float calls still work. Scene nodes stay floats
+  in pixels.
+- **2D snapshots**: `cw_world2d_snapshot` / `cw_world2d_restore` save and put
+  back a whole world, warm-start caches and sleeping islands included, and
+  `cw_world2d_state_hash` is Box2D's host-stable hash of it.
+- **2D recording and replay**: `cw_world2d_record_start` / `_stop`,
+  `cw_recording2d_*` (save, load, validate) and `cw_replay2d_*` (open, step,
+  seek, diverged, debug draw), plus the queries the game made each step
+  (`cw_replay2d_query_count`, `_get_query`, `_get_hit`,
+  `_debug_draw_queries`) and keyframe control and statistics for seeking
+  backwards.
+- **Mover and pogo joints** (2D only): `CW_JOINT_MOVER` commands a velocity
+  on a dynamic body, limited by a force; `CW_JOINT_POGO` is a spring that
+  holds a dynamic character off the ground. The `Joint2D` node has them as
+  `MOVER` and `POGO` (`mover_velocity`, `mover_max_force`, `pogo_normal`,
+  `pogo_tension`, `pogo_compression`).
+- 2D world, body, shape, chain and joint controls from Box2D v3.2: maximum
+  linear speed, contact recycle distance, contact tuning, restitution
+  iterations and propagation, workers, capacity, bounds, a 4-wide solver
+  switch; body sleep, contact recycling, safety factor, extents, bounds,
+  centre and mass update; shape bounds, point test, closest point, ray cast,
+  rounded boxes, loose chain segments and debug colour; per-segment chain
+  materials; joint rest length, speed, motor and spring force, separations.
+- 2D stats: `cw_world2d_profile_get` (the last step's milliseconds by phase),
+  `cw_world2d_counters_get` (Box2D's counters, constraints per solver
+  colour) and `cw_physics2d_memory_bytes`.
+- 2D debug draw modes: `CW_PHYS_DRAW_JOINT_EXTRAS`, `_ANCHOR_A`,
+  `_CHAIN_NORMALS`, `_CONTACT_FORCES`, `_FRICTION_FORCES`, `_ISLANDS` and
+  `_GRAPH_COLORS`.
+- `cw_font_preload_range` and `cw_font_preload_text` bake glyphs during
+  loading instead of on first draw; the text call also prepares fallback and
+  contextually shaped glyphs for localized strings.
+- `cw_mesh3d_set_procedural` puts a `t3_mesh` built in code on a
+  MeshInstance3D, so the VisibilityManager culls it like any other mesh.
+- Profiler zones `r2d.flush`, `r2d.sort_batch`, `r2d.upload` (the end of a
+  2D pass) and `text.glyph_bake`.
+
+### Changed
+- The 2D wrapper API takes and returns `cw_pos2` (double) wherever a world
+  position goes: ray cast and overlap origins and bounds, hit and event
+  points, force and impulse points, joint anchors and targets, and the
+  `cw_mover2d` feet and positions; a query shape's points are now floats
+  relative to its origin (`cw_qshape2d_at`). Code that held these in
+  `cw_vec2` changes type; `cw_body2d_transform` and
+  `cw_body2d_set_transform` still take floats.
+- three.c v0.186.18 replaces v0.186.17: the prepass and bounds sorting below
+  come from it, an InstancedMesh's changed instance data goes into new
+  buffer storage on GLES (the upload no longer waits on the previous frame),
+  and a new light never inherits a destroyed light's shadow map.
+- Box2D v3.2.0 replaces the earlier v3.1 pin. The engine's patches are ported (WebAssembly
+  SIMD in the shared 4-wide solver, relaxed spin polls, wasi threads); the
+  8-wide AVX2 solver is picked at run time, so the `BOX2D_AVX2` compile flag
+  is gone. Box2D task workers are capped at 32 (was 64). The
+  `physics-determinism` gate checks upstream's v3.2 double-precision hashes.
+- Rollback restores 2D physics worlds through Box2D snapshots: a tree
+  snapshot carries each 2D world, so dynamic `RigidBody2D` piles and
+  `Area2D` overlap signals re-simulate bit for bit, and the desync hash folds
+  in Box2D's state hash. 3D is unchanged: Box3D has no snapshot, so 3D
+  dynamic rigid bodies and Area3D signals still do not re-simulate exactly.
+- Box2D's log lines go to the engine log as warnings, and a failed Box2D
+  assertion is logged as an engine error.
+- The depth prepass draws through three.c's `t3_renderer_render_prepass`:
+  transparent and transmissive surfaces no longer write depth there (they
+  hid what was behind them), while alpha-tested cutouts still discard.
+- Opaque meshes sort front to back by the centre of their world bounds
+  instead of their origin, which orders merged and instanced scenery
+  correctly. `CW_SORT_ORIGINS=1` restores origin sorting for comparison.
+- Clustered lighting's spot light cone test rejects cells along the axis
+  before the square root, so binning is cheaper.
+- `tools/run-cart.mjs` asks romdev for the requested backend explicitly, so a
+  GL gate on a cart that can run both never lands on WebGPU.
+
+### Fixed
+- Split-screen views restore the VisibilityManager's culled meshes after
+  each view, so one view's culling no longer hides meshes from the next
+  view's shadows, GI or culling. The restore also runs on the first frame.
+- Screen-space decals in split screen: each viewport uploads its decals into
+  fresh buffer storage instead of overwriting what the previous view was
+  still drawing from.
+- A mesh decal created after the frame's 3D poses were updated stamps at
+  the decal's real position instead of the origin.
+- A GPUParticles3D whose `preprocess` (prewarm) reaches back before the
+  scene started reports its live particles and keeps simulating once
+  emission stops; its negative emission start read as never emitted.
+- Clustered lighting no longer copies from an empty cell's storage.
+
 ## v0.13.0 (2026-10-17)
 
 ### Added

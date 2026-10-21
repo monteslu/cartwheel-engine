@@ -19,6 +19,8 @@ What {{name}} measures and how to measure a change without fooling yourself. The
 | `pipeline.render`, `render3d.prepare`, `render3d.draw` | the render pipeline, the 3D scene's preparation and draw submission |
 | `pass <name>` | each render pass (`pass scene`, `pass ssao`, `pass bloom`, ...) |
 | `visibility.cull` | the visibility pass's culling |
+| `r2d.flush`, `r2d.sort_batch`, `r2d.upload` | a 2D pass ending (`cw_r2d_end`): the whole flush, sorting the commands into batches, and on GL uploading the vertex and index streams |
+| `text.glyph_bake` | one glyph baked into a font's cache (move these to loading with `cw_font_preload_range` / `cw_font_preload_text`) |
 | `audio.mix`, `audio.hand_off` | the audio mixer (natively on SDL's audio thread, in a cart on the job pool), and a cart handing its frames to the host |
 | `present` | the swap (natively) or a WebGPU frame's hand-back |
 | `<zone>/job` | job chunks on any thread, named after the zone that submitted the job (`physics3d.step/job`) |
