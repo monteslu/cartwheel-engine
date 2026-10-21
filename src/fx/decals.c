@@ -593,10 +593,10 @@ static void decals_exec(cw_pass_ctx *ctx, void *user) {
     atlas.dirty = false;
   }
   glBindBuffer(GL_ARRAY_BUFFER, inst_vbo);
-  if (inst_cap < nv) {
-    inst_cap = nv + 64;
-    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(sizeof(float) * stride * (size_t)inst_cap), NULL, GL_DYNAMIC_DRAW);
-  }
+  if (inst_cap < nv) inst_cap = nv + 64;
+  /* Each viewport can still be consuming the previous instance stream.
+   * Orphan its storage before uploading the next view's visible decals. */
+  glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(sizeof(float) * stride * (size_t)inst_cap), NULL, GL_STREAM_DRAW);
   glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(sizeof(float) * stride * (size_t)nv), buf);
 
   cw_pass_bind_target(ctx, ctx->scene);
@@ -1064,7 +1064,11 @@ static void mesh_build(cw_tree *t, decal_tree *dt, cw_node n, decal3d *d) {
   s.e[0] = d->size.x;
   s.e[5] = d->size.y;
   s.e[10] = d->size.z;
-  t3_mat4_multiply(&w, &o->matrix_world, &s);
+  /* A decal can be created after Node3D pre_render already ran. Its
+   * render object still has the old pose then; snapshot and clip from the
+   * same authored transform so the first permanent stamp is not at origin. */
+  const t3_mat4 *projector=cw_node3d_global_transform(n);
+  t3_mat4_multiply(&w, projector?projector:&o->matrix_world, &s);
   if (!(d->size.x > 0 && d->size.y > 0 && d->size.z > 0)) return;
   t3_mat4_invert(&inv, &w);
   /* the sources */

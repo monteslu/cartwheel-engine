@@ -49,6 +49,8 @@ t3_camera *cw__render3d_camera_prepare(cw_tree *t, int w, int h); /* monotonic c
 /* Fill info for a MeshInstance3D (builds what is pending first); false when
  * n is not one. */
 bool cw__mesh3d_info(cw_node n, cw__mesh_info *out);
+/* Restore transient visibility after one split-screen view. */
+void cw__visibility_end_view(cw_tree *t);
 /* The object-space error of a level (mesh units before the node's scale; 0
  * for level 0). glTF scenes answer per mesh: use cw_gltf_instance_auto_lod. */
 float cw__mesh3d_lod_error(cw_node n, int level);

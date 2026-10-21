@@ -307,11 +307,13 @@ static bool axis_range(const plane *p, int n, float x, float y, float z, float r
  * Filament's Froxelizer uses) */
 static bool cone_hits(const vol *v, const float *s) {
   float vx = s[0] - v->px, vy = s[1] - v->py, vz = s[2] - v->pz;
-  float v2 = vx * vx + vy * vy + vz * vz;
   float v1 = vx * v->ax + vy * v->ay + vz * v->az;
+  /* Axial rejection needs no square root. Preserve the exact side test
+   * for cells that remain, including tangent/rounding cases. */
+  if (v1 < -s[3] || v1 > v->len + s[3]) return false;
+  float v2 = vx * vx + vy * vy + vz * vz;
   float perp = sqrtf(CW_MAX(v2 - v1 * v1, 0.0f));
   if (v->cosa * perp - v1 * v->sina > s[3]) return false;
-  if (v1 < -s[3] || v1 > v->len + s[3]) return false;
   return true;
 }
 
@@ -379,7 +381,8 @@ static void compact_slices(int begin, int end, int worker, void *ctx) {
     for (size_t c = (size_t)k * per; c < (size_t)(k + 1) * per; c++) {
       int cnt = CW_MIN((int)g->count[c], mpc);
       g->records[c] = (uint32_t)at << 8 | (uint32_t)cnt;
-      memcpy(g->items + at, g->scratch + c * mpc, (size_t)cnt * sizeof(uint16_t));
+      /* Empty cells still get a record, but have no item storage to copy. */
+      if (cnt) memcpy(g->items + at, g->scratch + c * mpc, (size_t)cnt * sizeof(uint16_t));
       at += cnt;
     }
   }

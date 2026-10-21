@@ -37,7 +37,7 @@ struct cw__psys {
   bool gl_ready;
   /* emission window, sim seconds */
   double sim_time, emit_start, emit_end; /* emit_end < 0 = open */
-  bool was_emitting;
+  bool was_emitting, has_emitted; /* prewarm can make a valid emit_start negative */
   t3_mat4 last_m;
   bool have_last_m;
   step_rec *steps;

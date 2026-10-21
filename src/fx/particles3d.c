@@ -66,7 +66,7 @@ static void alive_range(int begin, int end, int worker, void *ctx) {
 static int cpu_alive(const p3d *d) {
   const cw__psys *r = d->rt;
   if (!r || d->amount <= 0 || d->lifetime <= 0) return 0;
-  if (r->emit_start < 0) return 0;
+  if (!r->has_emitted) return 0;
   alive_job j = { .d = d, .t = (float)(r->sim_time - r->emit_start),
                   .emit_end = r->emit_end < 0 ? -1.0f : (float)r->emit_end };
   j.chunk = CW_MAX(1024, (d->amount + 255) / 256);
@@ -1558,6 +1558,7 @@ static void p3d_fixed(cw_node n, void *data, double dt) {
     /* a new emission window: everything alive dies, cycles restart */
     double pre = d->preprocess > 0 ? d->preprocess : 0;
     r->emit_start = r->sim_time - pre;
+    r->has_emitted = true;
     r->emit_end = d->one_shot ? (double)d->lifetime : -1;
     r->need_reset = true;
     r->nsteps = 0;
@@ -1576,7 +1577,7 @@ static void p3d_fixed(cw_node n, void *data, double dt) {
     r->emit_end = r->sim_time - r->emit_start;
   }
   r->was_emitting = d->emitting;
-  if (r->emit_start < 0 && !d->emitting) {
+  if (!r->has_emitted) {
     r->sim_time += step;
     r->last_m = m;
     r->idle = true;

@@ -9207,6 +9207,18 @@
      "inline": false
     },
     {
+     "name": "cw_font_preload_range",
+     "signature": "void cw_font_preload_range(cw_font f, uint32_t first, uint32_t last)",
+     "doc": "Prepare glyphs during init/warmup, on the main rendering thread. These\npopulate the same font/atlas caches as drawing; they submit no draw commands.\nRepeated calls reuse cached glyphs. Work and atlas memory move to loading;\npreload only the repertoire needed by the game/current locale.\nSDF caches serve every display size. Bitmap caches use the font's bake size.\nCall again after changing fallback fonts/locales. Null/stale fonts are no-ops.\nRange is inclusive, limited to Unicode scalar values (surrogates skipped).\nReversed ranges or first > U+10FFFF are no-ops; last is clamped to U+10FFFF.\nEnglish UI: cw_font_preload_range(font, 32, 126).\nUse text for localized strings: it also prepares contextual shaped glyphs;\na range alone cannot anticipate all ligatures/contextual forms. NULL text\nis a no-op. Layout at draw time still honors the requested style.",
+     "inline": false
+    },
+    {
+     "name": "cw_font_preload_text",
+     "signature": "void cw_font_preload_text(cw_font f, const char *utf8)",
+     "doc": "Prepare a UTF-8 string, including fallback and contextual shaped glyphs.\nSame loading/thread/cache rules as cw_font_preload_range; NULL is a no-op.",
+     "inline": false
+    },
+    {
      "name": "cw_font_measure",
      "signature": "cw_text_metrics cw_font_measure(cw_font f, const char *utf8, const cw_text_style *style)",
      "doc": "Measure without drawing. O(length).",
@@ -9506,6 +9518,12 @@
    "header": "cartwheel/render3d.h",
    "summary": "3D rendering for the scene tree: each tree owns a three.c scene and\nrenderer; Node3D objects attach under it, and the 3D render node types\n(Camera3D, MeshInstance3D, lights, WorldEnvironment) configure it.\n\nNode types registered here:\n  Camera3D          fov, near, far, current (the first current camera renders)\nEvery node type's properties (type, default, doc) are in docs/nodes.json and\nanswer to the debug channel: `types`, `props <path>`.\n\nConventions: Y is up, -Z is forward. Cameras look down their -Z. Lights\n(directional, spot) shine down their -Z, NOT at the origin as three.js's\ndefault target does: aim them with rotation or cw_node3d_look_at (which\npoints -Z at the target for every Node3D).\n\n  MeshInstance3D    primitive (NONE, BOX, SPHERE, PLANE, CYLINDER) with size:\n                    BOX x/y/z extents; SPHERE size.x = diameter; CYLINDER\n                    size.x = diameter along Y, size.y = height; PLANE x by z,\n                    facing +Y. Also color,\n                    metalness, roughness, emissive, cast_shadow, receive_shadow,\n                    mesh (a resource uid, when a mesh resource is set it wins)\n  DirectionalLight3D, OmniLight3D, SpotLight3D   color, energy, shadow, range...;\n                    energy is 0 to 100000 (the sun's real illuminance is\n                    about 100000 lux); a value outside is clamped, and the\n                    first clamp of a light logs a warning\n                    a directional shadow covers shadow_extent metres around\n                    the light (move the light with the player for sharp\n                    shadows over a big level), shadow_bias / shadow_normal_bias\n  WorldEnvironment  background, ambient color/energy, fog (linear colours;\n                    tone curve + exposure live in PostProcess)\n  PostProcess       the render pipeline's settings (pipeline.h): HDR,\n                    MSAA, exposure, tone curve,\n                    bloom, SSAO, TAA, FXAA/SMAA, LUT, lens effects\n  ProceduralSky, HeightFog   sky / day-night, fog (environment.h)\n  LightmapGI        baked lightmaps and SH probes (lightmap.h)\n  MeshInstance3D also carries visibility properties (static, lod_bias,\n                    visibility_range, occlusion_cull, impostor...): see\n                    visibility.h (VisibilityManager, Room3D, Portal3D).\n                    Primitives are unit shapes shared per tree and scaled\n                    to `size`, so same-shaped meshes instance.\nEffects node types live in particles.h (GPUParticles3D, GPUParticles2D,\nParticleAttractor3D, ParticleCollider3D, Trail3D) and decals.h (Decal3D).\n\nWhich lights three.c draws and which the engine clusters: the tree's\nlighting mode (cartwheel/lighting.h, a LightingSettings node). FORWARD,\nthe default, leaves every light to three.c; CLUSTERED shades shadowless\nomni and spot lights through r186 ClusteredLighting's clusters, hundreds\nat a time.\n\nDrawing goes through the tree's render pipeline (pipeline.h), as three.js\nr186 draws: linear colours, physical light units, linear HDR.",
    "functions": [
+    {
+     "name": "cw_mesh3d_set_procedural",
+     "signature": "bool cw_mesh3d_set_procedural(cw_node node, t3_mesh *mesh)",
+     "doc": "Attach a procedural mesh to a MeshInstance3D for visibility/BVH support.\nRetains mesh as a child of the node; preserves its local transform, materials\nand shadow flags. While attached, primitive/resource/look properties are\nignored. NULL restores property-driven geometry. No automatic LOD chain is\ninferred. Returns false for another node type or an already-parented mesh.",
+     "inline": false
+    },
     {
      "name": "cw_render3d_scene",
      "signature": "t3_scene *cw_render3d_scene(cw_tree *t)",

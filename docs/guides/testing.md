@@ -49,7 +49,7 @@ For each gate the runner starts `tools/run-cart.mjs` on every eligible host in p
 3. Compares every other host against native: the share of pixels differing by more than 16 levels must stay under `maxGt16`, and the named state must be equal (within `tol` for numbers) on every host that reports state.
 4. Runs the **control** natively, which must differ from the reference in frame or state. A gate whose control passes cannot see anything, and fails.
 
-Hosts by default: `native`, `romdev`, `chromium`, plus `wcnative` for gates without an input script (wasmcart-run takes no input and reports no state, so it is compared on frames only), plus `angle` when `CW_ANGLE_DIR` is set. Outputs land in `out/gate/<name>.<host>.png` and `.json`.
+Hosts by default: `native`, `romdev`, `chromium`, plus `wcnative` for gates without an input script (wasmcart-run takes no input and reports no state, so it is compared on frames only), plus `angle` when `CW_ANGLE_DIR` is set. Outputs land in `out/gate/<name>.<host>.png` and `.json`. The romdev launcher explicitly selects the requested backend even for dual-capable carts; a GL gate must not rely on automatic backend selection.
 
 `CW_WORKERS=n` runs every host with the same job pool (n workers besides the main thread). Native runs read it directly. A cart has no environment, so Chromium's page reports n + 1 as `navigator.hardwareConcurrency`, and the GPU sandbox shows wasmcart-run n + 1 online CPUs, the hardware threads it hands the cart. `tests/nav-determinism.mjs` runs gates this way at several pool sizes.
 

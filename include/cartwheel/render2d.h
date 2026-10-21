@@ -423,6 +423,23 @@ typedef struct cw_text_metrics {
   float ascent, descent, line_height; /* at this size; descent is negative */
 } cw_text_metrics;
 
+/* Prepare glyphs during init/warmup, on the main rendering thread. These
+ * populate the same font/atlas caches as drawing; they submit no draw commands.
+ * Repeated calls reuse cached glyphs. Work and atlas memory move to loading;
+ * preload only the repertoire needed by the game/current locale.
+ * SDF caches serve every display size. Bitmap caches use the font's bake size.
+ * Call again after changing fallback fonts/locales. Null/stale fonts are no-ops.
+ * Range is inclusive, limited to Unicode scalar values (surrogates skipped).
+ * Reversed ranges or first > U+10FFFF are no-ops; last is clamped to U+10FFFF.
+ * English UI: cw_font_preload_range(font, 32, 126).
+ * Use text for localized strings: it also prepares contextual shaped glyphs;
+ * a range alone cannot anticipate all ligatures/contextual forms. NULL text
+ * is a no-op. Layout at draw time still honors the requested style. */
+void cw_font_preload_range(cw_font f, uint32_t first, uint32_t last);
+/* Prepare a UTF-8 string, including fallback and contextual shaped glyphs.
+ * Same loading/thread/cache rules as cw_font_preload_range; NULL is a no-op. */
+void cw_font_preload_text(cw_font f, const char *utf8);
+
 /* Measure without drawing. O(length). */
 cw_text_metrics cw_font_measure(cw_font f, const char *utf8, const cw_text_style *style);
 /* Advance of one codepoint (no kerning) at size px. */

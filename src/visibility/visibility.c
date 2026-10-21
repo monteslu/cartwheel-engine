@@ -1379,6 +1379,8 @@ static void queries_exec_wgpu(cw_pass_ctx *ctx, vis_state *s) {
  * culling pass, 1 the occlusion queries, 2 the restore) */
 static bool restore_active(const cw_pass_ctx *ctx, void *u);
 static void restore_exec(cw_pass_ctx *ctx, void *u);
+bool cw__vis_test_restore_active(cw_pass_ctx *ctx);
+bool cw__vis_test_restore_active(cw_pass_ctx *ctx) { return restore_active(ctx, NULL); }
 void cw__vis_test_exec(cw_pass_ctx *ctx, int phase);
 void cw__vis_test_exec(cw_pass_ctx *ctx, int phase) {
   vis_state *s = cw_tree_slot(ctx->tree, "visibility");
@@ -1405,7 +1407,9 @@ static void imp_exec(cw_pass_ctx *ctx, void *u) {
 static bool restore_active(const cw_pass_ctx *ctx, void *u) {
   (void)u;
   vis_state *s = cw_tree_slot(ctx->tree, "visibility");
-  return s && (s->hidden.count || s->ran);
+  /* The pipeline snapshots active predicates before culling executes.
+   * Schedule restoration even on the first frame, before hidden is filled. */
+  return s != NULL;
 }
 
 static void restore_exec(cw_pass_ctx *ctx, void *u) {
@@ -1433,6 +1437,14 @@ static void restore_exec(cw_pass_ctx *ctx, void *u) {
   m->bvh_nodes = st->bvh_nodes;
   m->rooms_visible = st->rooms_visible;
   m->cull_ms = st->cull_ms;
+}
+
+/* A split-screen view omits PRESENT; restore before the next view's GI,
+ * shadow and visibility passes inspect the shared scene. */
+void cw__visibility_end_view(cw_tree *t);
+void cw__visibility_end_view(cw_tree *t) {
+  cw_pass_ctx ctx={0};ctx.tree=t;
+  if(restore_active(&ctx,NULL))restore_exec(&ctx,NULL);
 }
 
 void cw_visibility_get_stats(cw_tree *t, cw_visibility_stats *out) {

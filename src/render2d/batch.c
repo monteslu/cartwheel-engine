@@ -6,6 +6,7 @@
 #include "cartwheel/debug.h"
 #include "cartwheel/jobs.h"
 #include "cartwheel/platform.h"
+#include "cartwheel/profile.h"
 
 r2d_state R = { .atlas_array = { -1, -1 } };
 
@@ -676,6 +677,7 @@ static void gather_range(int begin, int end, int worker, void *ctx) {
 }
 
 void cw_r2d_end(void) {
+  CW_PROFILE_SCOPE("r2d.flush");
   if (!R.inited) return;
   CW_ASSERT(R.in_pass, "cw_r2d_end without cw_r2d_begin");
   R.in_pass = false;
@@ -684,6 +686,7 @@ void cw_r2d_end(void) {
   R.stats.vertices += (uint32_t)R.verts.count;
   R.stats.indices += (uint32_t)R.idx.count;
 
+  CW_PROFILE_BEGIN("r2d.sort_batch");
   bool sorted = sort_commands();
   if (sorted) R.stats.sorted++;
   const uint32_t *out = R.idx.data;
@@ -728,6 +731,7 @@ void cw_r2d_end(void) {
     cw_array_push(&batches, ((r2d_batch){ st, c->ifirst, c->icount, c->payload, layer, lit }));
   }
 
+  CW_PROFILE_END();
   if (r2d_wg()) { /* WebGPU: same batches, its own submission */
     r2d_wg_end(batches.data, batches.count, out);
     return;
@@ -735,6 +739,7 @@ void cw_r2d_end(void) {
 
   /* upload the streams: glBufferData with the data orphans and fills in one
    * call (WebGL would zero-fill a NULL glBufferData first) */
+  CW_PROFILE_BEGIN("r2d.upload");
   R.ring = (R.ring + 1) % R2D_RING;
   int ring = R.ring;
   glBindVertexArray(R.vao[ring]);
@@ -745,6 +750,7 @@ void cw_r2d_end(void) {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)sizeof(uint32_t) * R.idx.count, out, GL_STREAM_DRAW);
   }
   glBindVertexArray(0);
+  CW_PROFILE_END();
 
   /* target */
   GLuint canvas = canvas_fbo();

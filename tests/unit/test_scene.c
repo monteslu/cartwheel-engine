@@ -9,6 +9,8 @@
 #include "cartwheel/scene_file.h"
 #include "cartwheel/vfs.h"
 #include "test.h"
+#include "../../src/scene/render3d_internal.h"
+void cw__mesh3d_set_lightmap(cw_node n, t3_geometry *g, t3_texture *lm, float intensity);
 #include <string.h>
 void cw__scene_cache_put(const char *path, cw_packed_scene *ps); /* engine internal (scene_file.c) */
 t3_mesh *cw__mesh3d_t3(cw_node n);                                 /* engine internal (render3d.c) */
@@ -618,10 +620,54 @@ static void test_light_energy_range(void) {
   cw_tree_free(t);
 }
 
+static void test_procedural_mesh(void) {
+  cw_scene_register_builtin_types();
+  cw_tree *t=cw_tree_new();
+  cw_node n=cw_node_new("MeshInstance3D","Procedural");
+  cw_node other=cw_node_new("MeshInstance3D","Other");
+  cw_node_add_child(cw_tree_root(t),n);
+  cw_node_add_child(cw_tree_root(t),other);
+  t3_geometry *g=t3_box_geometry_new(2,3,4,1,1,1);
+  t3_material *mat=t3_mesh_standard_material_new(0xff3366);
+  t3_mesh *mesh=t3_mesh_new(g,mat);
+  mesh->base.position=(t3_vec3){12,3,-4};
+  mesh->base.cast_shadow=true;
+  /* Replacing a baked primitive must release its bake and restore LODs
+   * when returning from procedural geometry to a normal primitive. */
+  cw_node_set(n,"primitive",cw_val_enum("SPHERE"));
+  cw_tree_pre_render(t,0);
+  t3_mesh *primitive=cw__mesh3d_t3(n);
+  unsigned char pixel[4]={255,255,255,255};
+  t3_texture *lm=t3_texture_new(1,1,pixel);
+  cw__mesh3d_set_lightmap(n,primitive->geometry,lm,1);
+  CHECK_EQ_INT(lm->_refs,2);
+  CHECK(!cw_mesh3d_set_procedural(cw_tree_root(t),mesh));
+  CHECK(cw_mesh3d_set_procedural(n,mesh));
+  CHECK_EQ_INT(lm->_refs,1);
+  CHECK(cw_mesh3d_set_procedural(n,mesh));
+  CHECK(!cw_mesh3d_set_procedural(other,mesh));
+  cw_node_set(n,"color",cw_val_color(0,1,0,1));
+  cw_tree_pre_render(t,0);
+  CHECK(cw__mesh3d_t3(n)==mesh && mesh->materials[0]==mat);
+  CHECK(mesh->base.position.x==12 && mesh->base.cast_shadow);
+  CHECK(cw_mesh3d_set_procedural(n,NULL));
+  CHECK(mesh->base.parent==NULL);
+  cw_tree_pre_render(t,0);
+  CHECK(cw__mesh3d_t3(n)!=mesh && cw__mesh3d_t3(n)!=NULL);
+  cw__mesh_info info;
+  CHECK(cw__mesh3d_info(n,&info));
+  CHECK_EQ_INT(info.lod_levels,4);
+  t3_release(lm);
+  CHECK(cw_mesh3d_set_procedural(other,mesh));
+  cw_tree_free(t);
+  CHECK(mesh->base.parent==NULL);
+  t3_release(mesh);t3_release(mat);t3_release(g);
+}
+
 CW_TEST_SUITE("scene", { "all_types_reflect", test_all_types_reflect }, { "lifecycle_and_paths", test_lifecycle_and_paths }, { "processing_and_deferred", test_processing_and_deferred },
               { "signals", test_signals }, { "reflection", test_reflection }, { "scene_roundtrip", test_scene_roundtrip },
               { "nested_instance_save", test_nested_instance_save },
               { "look_at_rotated_parent", test_look_at_rotated_parent }, { "null_tree", test_null_tree },
               { "scene_node_refs", test_scene_node_refs }, { "canvas_passes", test_canvas_passes },
               { "mesh_materials_shared", test_mesh_materials_shared }, { "light_cap_warning", test_light_cap_warning },
-              { "light_energy_range", test_light_energy_range })
+              { "light_energy_range", test_light_energy_range }, { "procedural_mesh", test_procedural_mesh })

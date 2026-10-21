@@ -1,5 +1,6 @@
 /* The tree's 3D scene and the 3D render node types. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -95,6 +96,7 @@ void cw_render3d_set_camera(cw_tree *t, cw_node c) { state(t)->camera = c; }
 t3_renderer *cw_render3d_window_renderer(int w, int h) {
   cw__programs_register();
   t3_renderer *r = t3_renderer_new(w, h);
+  t3_renderer_set_sort_bounds(r, !getenv("CW_SORT_ORIGINS"));
   cw__decals_renderer_init(r);
 #if CW_WGPU
   if (r && cw_gpu_backend() == CW_GPU_WEBGPU)
@@ -190,6 +192,7 @@ typedef struct mesh3d {
   uint64_t mesh; /* resource uid (resource.h); 0 = use the primitive */
   cw__mesh_vis vis; /* culling, LOD, impostors (visibility.h) */
   /* built */
+  bool procedural; /* caller-owned geometry/materials, retained by node group */
   int built_primitive;
   t3_mesh *t3;
   t3_material *mat;
@@ -404,6 +407,7 @@ static void mesh_set_look(cw_node n, mesh3d *m, const mesh_look *k) {
 }
 
 static void mesh_rebuild(cw_node n, mesh3d *m) {
+  if (m->procedural) return;
   if (mesh_res_rebuild(n, m)) return;
   if (m->built_primitive != m->primitive) {
     m->built_primitive = m->primitive;
@@ -438,6 +442,7 @@ static bool mesh_physical(const mesh3d *m) {
 static void mesh_pre_render(cw_node n, void *data, double alpha) {
   (void)alpha;
   mesh3d *m = data;
+  if (m->procedural) return;
   mesh_rebuild(n, m);
   if (m->mat) {
     mesh_look k = look_of(m);
@@ -521,6 +526,29 @@ static cw_node_type mesh3d_type = {
 
 const cw_node_type *cw__mesh3d_type(void) { return mesh3d_t; }
 
+bool cw_mesh3d_set_procedural(cw_node n, t3_mesh *mesh) {
+  mesh3d *m = cw_node_data_t(n, mesh3d_t);
+  if (!m) return false;
+  if (m->procedural && m->t3 == mesh) return true;
+  if (mesh && mesh->base.parent) return false;
+  t3_object *group = cw_node3d_object(n);
+  if (m->t3) { t3_object_remove(group, m->t3); m->t3 = NULL; }
+  if (m->res_obj) { t3_object_remove(group, m->res_obj); m->res_obj = NULL; }
+  cw_res_release(m->res); m->res = (cw_res){0};
+  /* The previous geometry's bake does not belong to its replacement.
+   * Release the node's private material reference and restore normal LOD
+   * selection when the caller later clears the procedural mesh. */
+  if (m->lm_mat) t3_release(m->lm_mat);
+  m->lm_mat = NULL;
+  m->lightmapped = false;
+  m->built_mesh = 0; m->built_version = 0;
+  m->built_primitive = -1; m->lod = 0;
+  m->procedural = mesh != NULL;
+  if (mesh) { t3_object_add(group, mesh); m->t3 = mesh; }
+  return true;
+}
+
+
 static uint64_t mix_key(uint64_t h, uint64_t v) {
   h ^= v + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2);
   return h * 0xBF58476D1CE4E5B9ull;
@@ -539,6 +567,14 @@ bool cw__mesh3d_info(cw_node n, cw__mesh_info *out) {
   out->vis = &m->vis;
   out->cast_shadow = m->cast_shadow;
   uint64_t k = 1469598103934665603ull;
+  if (m->procedural && m->t3) {
+    out->obj = &m->t3->base;
+    out->cast_shadow = m->t3->base.cast_shadow;
+    out->kind = CW__MESH_PRIMITIVE;
+    out->lod_levels = 1;
+    out->look_key = m->t3->base.id;
+    return true;
+  }
   if (m->res_obj) {
     out->obj = m->res_obj;
     const cw_mesh *cm = cw_res_mesh(m->res);
@@ -570,7 +606,7 @@ bool cw__mesh3d_info(cw_node n, cw__mesh_info *out) {
 
 float cw__mesh3d_lod_error(cw_node n, int level) {
   mesh3d *m = cw_node_data_t(n, mesh3d_t);
-  if (!m || level <= 0) return 0;
+  if (!m || m->procedural || level <= 0) return 0;
   if (m->res_obj) {
     const cw_mesh *cm = cw_res_mesh(m->res);
     if (!cm || level >= cm->lod_count) return 0;
@@ -581,7 +617,7 @@ float cw__mesh3d_lod_error(cw_node n, int level) {
 
 void cw__mesh3d_set_lod(cw_node n, int level) {
   mesh3d *m = cw_node_data_t(n, mesh3d_t);
-  if (!m || m->lightmapped) return;
+  if (!m || m->procedural || m->lightmapped) return;
   if (m->res_obj) {
     const cw_mesh *cm = cw_res_mesh(m->res);
     if (cm && m->res_obj->type == T3_MESH) {
@@ -907,6 +943,7 @@ t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
   if (!s->renderer) {
     cw__programs_register();
     s->renderer = t3_renderer_new(w, h);
+    t3_renderer_set_sort_bounds(s->renderer, !getenv("CW_SORT_ORIGINS"));
     cw__decals_renderer_init(s->renderer);
 #if CW_WGPU
     /* a WebGPU frame: three.c's WebGPU backend, drawing into the pipeline's

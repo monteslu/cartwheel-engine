@@ -703,6 +703,18 @@ static void test_text(void) {
   cw_l10n_set_locale("ja");
   CHECK(cw_font_covers(sans, 0x65E5)); /* 日 from the Noto Sans JP subset */
   uint32_t missing0 = cw_r2d_get_stats()->glyphs_missing;
+  /* Loading-time preparation must not submit UI or turn invalid Unicode
+   * ranges into replacement-glyph requests. Fallback text uses the locale. */
+  uint32_t commands0 = cw_r2d_get_stats()->commands;
+  cw_font_preload_range(sans, 126, 32);
+  cw_font_preload_range(sans, 0xd800, 0xdfff);
+  cw_font_preload_range(sans, UINT32_MAX, UINT32_MAX);
+  cw_font_preload_text(sans, NULL);
+  CHECK_EQ_INT(cw_r2d_get_stats()->glyphs_missing, missing0);
+  cw_font_preload_range(sans, 32, 126);
+  cw_font_preload_text(sans, "ローカライズのデモ");
+  CHECK_EQ_INT(cw_r2d_get_stats()->commands, commands0);
+
   cw_text_metrics m = cw_font_measure(sans, "ローカライズのデモ", &(cw_text_style){ .size = 20 });
   CHECK(m.width > 100 && m.lines == 1);
   CHECK_EQ_INT(cw_r2d_get_stats()->glyphs_missing, missing0);
@@ -716,6 +728,11 @@ static void test_text(void) {
   CHECK(joined > 0);
   float isolated = 3 * cw_font_measure(sans, "ب", &(cw_text_style){ .size = 30 }).width;
   CHECK(joined < isolated); /* initial/medial forms are narrower than three isolated ones */
+  commands0 = cw_r2d_get_stats()->commands;
+  cw_font_preload_text(sans, "ببب");
+  CHECK_EQ_INT(cw_r2d_get_stats()->commands, commands0);
+  CHECK(cw_font_measure(sans, "ببب", &(cw_text_style){ .size = 30 }).width == joined);
+
   CHECK(cw_r2d_get_stats()->shaped_runs > 0);
   /* a paragraph laid out again from the shape cache still counts its runs
    * (shaped_runs read 0 for cached text), and counts as a cache hit */

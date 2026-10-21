@@ -62,9 +62,9 @@ static void prepass_exec(cw_pass_ctx *ctx, void *u) {
   t3_renderer *r = ctx->renderer;
   t3_renderer_reset_bindings(r);
   t3_renderer_set_framebuffer(r, ctx->pipeline->bound_fbo);
-  glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-  t3_renderer_render(r, ctx->scene3d, ctx->camera);
-  glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+  /* Blended/transmissive surfaces must not occlude their backgrounds before
+   * the colour pass. Opaque alpha-tested cutouts retain their normal discard. */
+  t3_renderer_render_prepass(r, ctx->scene3d, ctx->camera);
   cw__render3d_count(ctx->tree);
 }
 

@@ -58,6 +58,13 @@
 extern "C" {
 #endif
 
+/* Attach a procedural mesh to a MeshInstance3D for visibility/BVH support.
+ * Retains mesh as a child of the node; preserves its local transform, materials
+ * and shadow flags. While attached, primitive/resource/look properties are
+ * ignored. NULL restores property-driven geometry. No automatic LOD chain is
+ * inferred. Returns false for another node type or an already-parented mesh. */
+bool cw_mesh3d_set_procedural(cw_node node, t3_mesh *mesh);
+
 /* The tree's three.c scene, created on first use and owned by the tree (freed with it). */
 t3_scene *cw_render3d_scene(cw_tree *t);
 t3_renderer *cw_render3d_renderer(cw_tree *t); /* NULL before the first draw */

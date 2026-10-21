@@ -196,6 +196,39 @@ static void test_overflow(void) {
   cw_froxel_grid_free(g);
 }
 
+/* Empty views must work before item storage exists and after old lists
+ * have been populated. Records must not retain previous light references. */
+static void test_empty(void) {
+  make_proj();
+  cw_froxel_grid *g = cw_froxel_grid_new();
+  cw_froxel_config c = CW_FROXEL_CONFIG_DEFAULT;
+  cw_froxel_grid_setup(g, &c, W, H, proj, near_, far_);
+  for (int pass = 0; pass < 2; pass++) {
+    if (pass) {
+      cw_froxel_volume light = { 0, 0, -20, 8, { 0, 0, 0 }, -2, 0 };
+      cw_froxel_grid_bin(g, &light, 1);
+      int count;
+      cw_froxel_items(g, &count);
+      CHECK(count > 0);
+    }
+    cw_froxel_grid_bin(g, NULL, 0);
+    int cells, count;
+    const uint32_t *records = cw_froxel_records(g, &cells);
+    cw_froxel_items(g, &count);
+    CHECK(cells > 0);
+    CHECK_EQ_INT(count, 0);
+    bool empty = true;
+    for (int i = 0; i < cells; i++) empty &= records[i] == 0;
+    CHECK(empty);
+    cw_froxel_stats stats;
+    cw_froxel_grid_stats(g, &stats);
+    CHECK_EQ_INT(stats.references, 0);
+    CHECK_EQ_INT(stats.overflowed, 0);
+    CHECK_EQ_INT(stats.dropped, 0);
+  }
+  cw_froxel_grid_free(g);
+}
+
 static double now_ms(void) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -222,4 +255,4 @@ static void test_bench(void) {
 }
 
 CW_TEST_SUITE("froxel", { "grid", test_grid }, { "bin", test_bin }, { "overflow", test_overflow },
-              { "bench", test_bench })
+              { "empty", test_empty }, { "bench", test_bench })

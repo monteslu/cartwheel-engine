@@ -6,6 +6,8 @@
 #include <string.h>
 
 #include "cartwheel/particles.h"
+#include "cartwheel/pipeline.h"
+#include "cartwheel/render3d.h"
 #include "scene/render3d_internal.h"
 #include "test.h"
 #include "visibility/vis_internal.h"
@@ -147,6 +149,32 @@ static void test_emission(void) {
   cw_tree_free(t);
 }
 
+static void test_prewarmed_emission(void) {
+  cw_scene_register_builtin_types();
+  cw_tree *t = cw_tree_new();
+  cw_node p = cw_node_new("GPUParticles3D", "Prewarmed");
+  cw_node_set(p, "amount", cw_val_int(120));
+  cw_node_set(p, "lifetime", cw_val_float(1));
+  cw_node_set(p, "preprocess", cw_val_float(3));
+  cw_node_set(p, "emitting", cw_val_bool(false));
+  cw_node_add_child(cw_tree_root(t), p);
+  cw_tree_fixed_update(t, 1.0 / 60);
+  CHECK_EQ_INT(cw_particles_alive(p), 0);
+  cw_node_set(p, "emitting", cw_val_bool(true));
+  cw_tree_fixed_update(t, 1.0 / 60);
+  CHECK_EQ_INT(cw_particles_alive(p), 120);
+  cw_node_set(p, "emitting", cw_val_bool(false));
+  for (int i = 0; i < 30; i++) cw_tree_fixed_update(t, 1.0 / 60);
+  int draining = cw_particles_alive(p);
+  CHECK(draining >= 59 && draining <= 61);
+  for (int i = 0; i < 100; i++) cw_tree_fixed_update(t, 1.0 / 60);
+  CHECK_EQ_INT(cw_particles_alive(p), 0);
+  cw_particles_restart(p);
+  cw_tree_fixed_update(t, 1.0 / 60);
+  CHECK_EQ_INT(cw_particles_alive(p), 120);
+  cw_tree_free(t);
+}
+
 static void test_lod_hooks(void) {
   cw_scene_register_builtin_types();
   cw_tree *t = cw_tree_new();
@@ -180,5 +208,41 @@ static void test_lod_hooks(void) {
   cw_tree_free(t);
 }
 
+bool cw__vis_test_restore_active(cw_pass_ctx *ctx);
+void cw__vis_test_exec(cw_pass_ctx *ctx,int phase);
+static void test_split_visibility_restore(void) {
+  cw_scene_register_builtin_types();
+  cw_tree *t=cw_tree_new();
+  cw_node mgr=cw_node_new("VisibilityManager","Visibility");
+  cw_node_set(mgr,"occlusion_cull",cw_val_bool(false));
+  cw_node_set(mgr,"impostors",cw_val_bool(false));
+  cw_node_add_child(cw_tree_root(t),mgr);
+  cw_node nodes[2];t3_mesh *meshes[2];
+  for(int i=0;i<2;i++) {
+    nodes[i]=cw_node_new("MeshInstance3D",NULL);
+    cw_node_set(nodes[i],"position",cw_val_vec3(i*100,0,-10));
+    cw_node_set(nodes[i],"static",cw_val_bool(true));
+    cw_node_add_child(cw_tree_root(t),nodes[i]);
+  }
+  cw_tree_pre_render(t,0);
+  for(int i=0;i<2;i++){cw__mesh_info info;cw__mesh3d_info(nodes[i],&info);meshes[i]=(t3_mesh *)info.obj;}
+  t3_camera *cam=t3_perspective_camera_new(60,1,.1f,50);
+  cw_pass_ctx ctx={.tree=t,.scene3d=cw_render3d_scene(t),.camera=cam,.width=64,.height=64};
+  for(int frame=0;frame<3;frame++)for(int view=0;view<2;view++) {
+    cam->base.position.x=view*100;
+    /* Pipeline activity is evaluated before visibility executes, including
+     * the first frame when no mesh has been hidden yet. */
+    bool restore = cw__vis_test_restore_active(&ctx);
+    CHECK(restore);
+    cw__vis_test_exec(&ctx,0);
+    CHECK(meshes[view]->base.visible);
+    CHECK(!meshes[1-view]->base.visible);
+    if (frame & 1) cw__visibility_end_view(t);
+    else if (restore) cw__vis_test_exec(&ctx,2);
+    CHECK(meshes[0]->base.visible && meshes[1]->base.visible);
+  }
+  t3_release(cam);cw_tree_free(t);
+}
+
 CW_TEST_SUITE("fx", { "bvh", test_bvh }, { "box_test", test_box_test }, { "curves", test_curves },
-              { "emission", test_emission }, { "lod_hooks", test_lod_hooks })
+              { "emission", test_emission }, { "prewarmed_emission", test_prewarmed_emission }, { "lod_hooks", test_lod_hooks }, { "split_visibility_restore", test_split_visibility_restore })

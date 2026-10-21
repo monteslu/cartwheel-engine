@@ -7,6 +7,7 @@
 
 #include "internal.h"
 #include "cartwheel/platform.h"
+#include "cartwheel/profile.h"
 
 #define STBTT_STATIC
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -427,6 +428,7 @@ void r2d_fonts_shutdown(void) {
 
 /* bake glyph `gi` of source slot `slot` (sized to f's em) into f's cache */
 static int bake(r2d_font *f, int slot, int gi, uint64_t key) {
+  CW_PROFILE_SCOPE("text.glyph_bake");
   r2d_font *sf = eff_font(f, slot);
   r2d_glyph g = { 0 };
   g.index = gi;
@@ -1024,6 +1026,21 @@ cw_text_metrics cw_font_measure(cw_font h, const char *text, const cw_text_style
     e->runs = shaped_now;
   }
   return m;
+}
+
+void cw_font_preload_range(cw_font h, uint32_t first, uint32_t last) {
+  r2d_font *f = font_get(h);
+  if (!f || first > last || first > 0x10ffff) return;
+  if (last > 0x10ffff) last = 0x10ffff;
+  font_sync(f, h.id);
+  for (uint32_t cp = first; cp <= last; cp++) {
+    if (cp >= 0xd800 && cp <= 0xdfff) continue;
+    (void)glyph(f, cp);
+  }
+}
+
+void cw_font_preload_text(cw_font h, const char *utf8) {
+  (void)cw_font_measure(h, utf8, NULL);
 }
 
 float cw_font_advance(cw_font h, uint32_t cp, float size) {

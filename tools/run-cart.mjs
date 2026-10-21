@@ -248,10 +248,10 @@ async function romdevCall(tool, a, session) {
 async function runRomdev() {
   const session = `cartwheel-run-${app}-${process.pid}`;
   const loaded = await romdevCall('loadMedia', { platform: 'wasmcart', path: cart, deterministicSeed: +(args.seed || 1), deterministicStepMs: 1000 / frameHz,
-    ...(pin ? { gpuPower: pin.power } : {}), ...(dualGl ? { wgpu: false } : {}) }, session);
-  if (dualGl && loaded && loaded.gpu !== 'gl') {
+    ...(pin ? { gpuPower: pin.power } : {}), wgpu: gpu === 'webgpu' }, session);
+  if (gpu === 'gl' && loaded && loaded.gpu !== 'gl') {
     await romdevCall('host', { op: 'shutdown' }, session).catch(() => {});
-    throw new Error(`romdev: the dual cart runs on ${loaded && loaded.gpu}, not GL (loadMedia wgpu:false needs romdev 65237621+)`);
+    throw new Error(`romdev: requested GL but the cart runs on ${loaded && loaded.gpu} (loadMedia wgpu:false needs romdev 65237621+)`);
   }
   if (pin) { /* before any frame beyond the load's: the adapter, then the API */
     const ga = loaded && loaded.gpuAdapter;

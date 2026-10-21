@@ -782,6 +782,7 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
     p->view_i = i;
     p->view_pic = NULL;
     render_run(t, p, vw, vh, alpha, RUN_VIEW);
+    cw__visibility_end_view(t);
     rts[n++] = p->view_pic ? p->view_pic : rt;
   }
   p->view_i = -1;
