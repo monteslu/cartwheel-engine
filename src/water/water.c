@@ -232,7 +232,17 @@ void cw_water_get_stats(cw_tree *t, cw_water_stats *out) {
 /* ── the mesh ────────────────────────────────────────────────────────── */
 
 /* the grid: nx x nz quads over the rectangle, in the node's XZ plane */
-static t3_geometry *grid(float sx, float sz, int nx, int nz) {
+/* Preserve a uniform central grid; stretch only the outer fifth to the
+ * horizon. One connected surface and material means no overlapping sea,
+ * depth fighting or change of reflection at the edge of a local patch. */
+static float ocean_coordinate(float t, float size, float horizon) {
+  if (horizon <= size * 0.5f) return t * size * 0.5f;
+  float a = fabsf(t), inner = size * 0.5f;
+  float x = a <= 0.8f ? a * inner / 0.8f
+    : inner * expf(logf(horizon / inner) * (a - 0.8f) / 0.2f);
+  return copysignf(x, t);
+}
+static t3_geometry *grid(float sx, float sz, int nx, int nz, float horizon) {
   int vx = nx + 1, vz = nz + 1, nv = vx * vz;
   float *pos = cw_alloc((size_t)nv * 3 * sizeof(float), CW_MEM_RENDER);
   float *nrm = cw_alloc((size_t)nv * 3 * sizeof(float), CW_MEM_RENDER);
@@ -240,9 +250,9 @@ static t3_geometry *grid(float sx, float sz, int nx, int nz) {
   for (int j = 0; j < vz; j++)
     for (int i = 0; i < vx; i++) {
       int k = j * vx + i;
-      pos[k * 3] = -sx * 0.5f + sx * (float)i / (float)nx;
+      pos[k * 3] = ocean_coordinate(2.0f * (float)i / (float)nx - 1.0f, sx, horizon);
       pos[k * 3 + 1] = 0;
-      pos[k * 3 + 2] = -sz * 0.5f + sz * (float)j / (float)nz;
+      pos[k * 3 + 2] = ocean_coordinate(2.0f * (float)j / (float)nz - 1.0f, sz, horizon);
       nrm[k * 3] = 0, nrm[k * 3 + 1] = 1, nrm[k * 3 + 2] = 0;
       uv[k * 2] = (float)i / (float)nx;
       uv[k * 2 + 1] = (float)j / (float)nz;
@@ -280,7 +290,7 @@ static void build(cw_node n, water3d *d) {
   float amp = 0;
   cw_waves w = cw__water_waves(d);
   for (int i = 0; i < w.count; i++) amp += fabsf(w.wave[i].amplitude) * 2;
-  if (d->mesh && d->built_sub == sub && d->built_size[0] == sx && d->built_size[1] == sz && d->built_amp == amp) return;
+  if (d->mesh && d->built_sub == sub && d->built_size[0] == sx && d->built_size[1] == sz && d->built_amp == amp && d->built_horizon == d->horizon_distance) return;
   t3_object *group = cw_node3d_object(n);
   if (d->mesh) {
     t3_object_remove(group, d->mesh);
@@ -290,7 +300,7 @@ static void build(cw_node n, water3d *d) {
   int nx = sx >= sz ? sub : (int)ceilf((float)sub * sx / sz), nz = sz >= sx ? sub : (int)ceilf((float)sub * sz / sx);
   if (nx < 1) nx = 1;
   if (nz < 1) nz = 1;
-  t3_geometry *g = grid(sx, sz, nx, nz);
+  t3_geometry *g = grid(sx, sz, nx, nz, d->horizon_distance);
   /* the waves lift and move the surface: bounds that hold every crest */
   t3_geometry_compute_bounding_sphere(g);
   g->bounding_sphere.radius += amp;
@@ -310,6 +320,7 @@ static void build(cw_node n, water3d *d) {
   d->built_sub = sub;
   d->built_size[0] = sx, d->built_size[1] = sz;
   d->built_amp = amp;
+  d->built_horizon = d->horizon_distance;
   d->triangles = nx * nz * 2;
 }
 
@@ -597,6 +608,7 @@ static void water_exit(cw_node n, void *data) {
 #define WAVE_DOC "Gerstner wave: direction (degrees, 0 = +X, 90 = +Z), wavelength (m), amplitude (m), steepness (0..1)."
 static const cw_prop water_props[] = {
   CW_PROP_FIELD(water3d, size, CW_T_VEC2, CW_PROP_DEFAULT, "Rectangle, x by z metres, centred on the node."),
+  CW_PROP_FIELD_RANGE(water3d, horizon_distance, CW_T_FLOAT, 0, 1e7, "Optional outer grid extent; keeps the central size densely sampled."),
   CW_PROP_FIELD_RANGE(water3d, subdivisions, CW_T_INT, 1, 2048, "Grid quads along the longer side (quality: Low 1/4, Medium 1/2)."),
   CW_PROP_FIELD_RANGE(water3d, wave_count, CW_T_INT, 0, 4, "Waves in use (wave0 ..)."),
   CW_PROP_FIELD(water3d, wave0, CW_T_VEC4, CW_PROP_DEFAULT, WAVE_DOC),

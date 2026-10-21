@@ -147,3 +147,10 @@ named value over a screenshot for any assertion about game state.
 - Small commits, with messages that say why.
 - Scratch output lives under out/ (gitignored).
 - No absolute paths to anyone's machine in anything committed.
+
+Project shader extensions can remain in the game repository. Pass each module
+with `node tools/programs.mjs --table /path/to/game/programs/game.txt
+--extend /path/to/game/shaders/foliage.mjs --build build/native`. Module filenames
+must match their extension names. Project parts compose with engine parts
+(for example `xfoliage_csm`) and contribute to the capture cache source hash.
+Duplicate names are rejected rather than overriding an engine extension.

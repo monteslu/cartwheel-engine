@@ -15,6 +15,7 @@ typedef struct wave_eval {
 typedef struct water3d {
   /* properties */
   float size[2];
+  float horizon_distance;
   int subdivisions;
   int wave_count;
   float wave0[4], wave1[4], wave2[4], wave3[4];
@@ -38,7 +39,7 @@ typedef struct water3d {
   cw_res normal_res, flow_res;
   const char *loaded_normal, *loaded_flow;
   int built_sub, triangles;
-  float built_size[2], built_amp;
+  float built_size[2], built_amp, built_horizon;
   bool refl_on, refr_on;
   wave_eval ev;      /* this frame's waves, as drawn */
   float flow_off[3]; /* Water2's flow offsets 0, 1 and the half cycle */

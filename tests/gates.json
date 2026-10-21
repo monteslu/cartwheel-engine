@@ -1,4 +1,6 @@
 [
+  { "name": "cart-audio-ring", "script": "tests/cart-audio-ring.mjs", "note": "Cart audio ring allocation and real 100 ms host burst capacity" },
+  { "name": "program-extensions", "script": "tests/program-extensions.mjs", "note": "Project extension modules compose with GL/WebGPU sun-shadow variants and reject invalid modules" },
   {
     "name": "gi-room",
     "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "GI_PROBES": "0" } }] },

@@ -23,7 +23,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const {
     Fn, uniform, texture, sharedUniformGroup, positionLocal, positionWorld, cameraViewMatrix,
     modelWorldMatrix, screenUV, vec2, vec3, vec4, float, normalize, dot, max, min, mix, pow, abs, sin, cos, clamp,
-    floor, varying, output, sRGBTransferEOTF, materialColor, materialEmissive,
+    floor, length, smoothstep, varying, output, sRGBTransferEOTF, materialColor, materialEmissive,
   } = TSL;
 
   const frame = sharedUniformGroup('waterFrame', 0, THREE.NodeUpdateType.RENDER);
@@ -83,7 +83,10 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const waveNormalLocal = varying(nrm, 'vWaterNormal');
 
   // ── fragment ───────────────────────────────────────────────────────
-  const wn = normalize(modelWorldMatrix.mul(vec4(waveNormalLocal, 0)).xyz);
+  // Broad wave normals also need filtering once waves are smaller than a
+  // pixel. Avoid far-grid triangle glints stretching toward the horizon.
+  const swellWeight = float(1).sub(smoothstep(2000, 12000, length(cam.xyz.sub(positionWorld))));
+  const wn = normalize(mix(vec3(0, 1, 0), normalize(modelWorldMatrix.mul(vec4(waveNormalLocal, 0)).xyz), swellWeight));
   const toEye = normalize(cam.xyz.sub(positionWorld));
   // Water2's two-phase flow over the normal maps
   const rest = positionWorld.xz;
@@ -97,7 +100,10 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const nc = mix(n0, n1, lerpF);
   // tangent-space map, +Z out of the surface (gen://noise out=normal): x along +x, y along -z
   const d = vec3(nc.r.mul(2).sub(1), nc.b.mul(2).sub(1), nc.g.mul(2).sub(1).negate());
-  const n = normalize(vec3(wn.x.add(d.x.mul(look.z)), wn.y, wn.z.add(d.z.mul(look.z))));
+  // Tiny repeating ripples alias at flight distances; keep the broad swell
+  // and fade the detail before its repetitions become a visible grid.
+  const detailWeight = float(1).sub(smoothstep(150, 900, length(cam.xyz.sub(positionWorld)))).mul(look.z);
+  const n = normalize(vec3(wn.x.add(d.x.mul(detailWeight)), wn.y, wn.z.add(d.z.mul(detailWeight))));
   const theta = max(dot(toEye, n), 0);
   const fres = pow(float(1).sub(theta), 5).mul(float(1).sub(look.x)).add(look.x);
   const offset = n.xz.mul(look.y);

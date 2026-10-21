@@ -568,6 +568,9 @@ bool cw__mesh3d_info(cw_node n, cw__mesh_info *out) {
   out->cast_shadow = m->cast_shadow;
   uint64_t k = 1469598103934665603ull;
   if (m->procedural && m->t3) {
+    /* Cached mission scenery is parented into raw three.c groups. Do not
+     * classify or report a procedural cell whose authored ancestors hide it. */
+    for (t3_object *p = m->t3->base.parent; p; p = p->parent) if (!p->visible) return false;
     out->obj = &m->t3->base;
     out->cast_shadow = m->t3->base.cast_shadow;
     out->kind = CW__MESH_PRIMITIVE;

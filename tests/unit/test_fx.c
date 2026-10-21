@@ -244,5 +244,45 @@ static void test_split_visibility_restore(void) {
   t3_release(cam);cw_tree_free(t);
 }
 
-CW_TEST_SUITE("fx", { "bvh", test_bvh }, { "box_test", test_box_test }, { "curves", test_curves },
+/* The manager must use every placement's fixed bound, even when the
+ * currently active LOD subset is empty or far outside the view. */
+static void test_fixed_instance_bounds(void) {
+  cw_scene_register_builtin_types();
+  cw_tree *t = cw_tree_new();
+  cw_node mgr = cw_node_new("VisibilityManager", NULL);
+  cw_node_set(mgr, "occlusion_cull", cw_val_bool(false));
+  cw_node_set(mgr, "impostors", cw_val_bool(false));
+  cw_node_add_child(cw_tree_root(t), mgr);
+  cw_node n = cw_node_new("MeshInstance3D", NULL);
+  cw_node_set(n, "static", cw_val_bool(true));
+  cw_node_add_child(cw_tree_root(t), n);
+  t3_geometry *g = t3_box_geometry_new(1,1,1,1,1,1);
+  t3_material *mat = t3_mesh_standard_material_new(0xffffff);
+  t3_mesh *root = t3_mesh_new(g,mat);
+  t3_instanced_mesh *im = t3_instanced_mesh_new(g,mat,1);
+  im->count = 0;
+  t3_sphere bound = { .center = {100,0,-10}, .radius = 3 };
+  t3_instanced_mesh_set_bounding_sphere(im,&bound);
+  t3_object_add(&root->base,&im->mesh.base);
+  CHECK(cw_mesh3d_set_procedural(n,root));
+  cw_tree_pre_render(t,0);
+  t3_camera *cam = t3_perspective_camera_new(60,1,.1f,50);
+  cw_pass_ctx ctx = {.tree=t,.scene3d=cw_render3d_scene(t),.camera=cam,.width=64,.height=64};
+  for(int frame=0;frame<2;frame++) {
+    cam->base.position.x=100;
+    cw__vis_test_exec(&ctx,0);
+    CHECK(root->base.visible);
+    cw__visibility_end_view(t);
+    cam->base.position.x=300;
+    cw__vis_test_exec(&ctx,0);
+    CHECK(!root->base.visible);
+    cw__visibility_end_view(t);
+    /* Changing the active subset does not shrink the cached sphere. */
+    im->count=1;
+  }
+  t3_release(cam); cw_tree_free(t);
+  t3_release(im);t3_release(root);t3_release(mat);t3_release(g);
+}
+
+CW_TEST_SUITE("fx", { "fixed_instance_bounds", test_fixed_instance_bounds }, { "bvh", test_bvh }, { "box_test", test_box_test }, { "curves", test_curves },
               { "emission", test_emission }, { "prewarmed_emission", test_prewarmed_emission }, { "lod_hooks", test_lod_hooks }, { "split_visibility_restore", test_split_visibility_restore })

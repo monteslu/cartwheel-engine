@@ -7,9 +7,20 @@
 #include "cartwheel/core.h"
 #include "cartwheel/terrain.h"
 
-#define TR_TILE 512                /* layer texture size: a layer of the array textures */
+#define TR_TILE 1024                /* layer texture size: a layer of the array textures */
 #define TR_MAX_SCATTER 16
 #define TR_SCATTER_CELL 32.0f      /* metres */
+
+typedef struct tr_gpu {
+  t3_scene *scene;
+  t3_geometry *grid[2];
+  t3_material *mat_near, *mat_far;
+  t3_instanced_mesh *im[2][2]; /* [far][half] */
+  int cap[2][2];
+  t3_texture *heights, *normals, *control, *macro, *albedo, *lnormal;
+  int mw, mh, mdiv;
+  int near_q;                  /* the quality the near material's program is for */
+} tr_gpu;
 
 typedef struct tr_region {
   cw_heightfield3d field;

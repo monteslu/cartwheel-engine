@@ -261,6 +261,24 @@ static bool refresh_info(vrec *r) {
 typedef struct box_acc { float mn[3], mx[3]; t3_mat4 inv_root; bool any; } box_acc;
 static void acc_mesh(t3_object *o, void *u) {
   box_acc *a = u;
+  if (o->type == T3_INSTANCED_MESH) {
+    /* Project forest cells provide a conservative, immutable sphere covering
+     * all placements and both LODs; never cache the current LOD subset. */
+    t3_instanced_mesh *im = (t3_instanced_mesh *)o;
+    if (!im->_isph_fixed) return;
+    t3_mat4 rel;
+    t3_mat4_multiply(&rel, &a->inv_root, &o->matrix_world);
+    for (int c = 0; c < 8; c++) {
+      t3_vec3 p = { im->_isph[0] + (c & 1 ? 1 : -1) * im->_isph[3],
+                    im->_isph[1] + (c & 2 ? 1 : -1) * im->_isph[3],
+                    im->_isph[2] + (c & 4 ? 1 : -1) * im->_isph[3] };
+      p = t3_vec3_apply_mat4(p, &rel);
+      float v[3] = { p.x, p.y, p.z };
+      for (int k = 0; k < 3; k++) { a->mn[k] = fminf(a->mn[k],v[k]); a->mx[k] = fmaxf(a->mx[k],v[k]); }
+    }
+    a->any = true;
+    return;
+  }
   if (o->type != T3_MESH && o->type != T3_SKINNED_MESH) return;
   t3_geometry *g = ((t3_mesh *)o)->geometry;
   if (!g || !g->attributes[T3_ATTR_POSITION]) return;

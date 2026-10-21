@@ -59,7 +59,7 @@ static const char VF_WGSL_INJECT[] = S(
       var d = a.x * select(1.0, clamp((1.0 - r) / a.z, 0.0, 1.0), a.z > 0.0);
       if (a.w > 0.0) { d *= exp(min(-a.w * (p.y - u.vols[i].wind.w), 10.0)); }
       if (u.vols[i].albedo.w > 0.0) {
-        let n = vf_noise(p * u.vols[i].emission.w + u.vols[i].wind.xyz * u.jitter.w);
+        let n = vf_noise((p - u.vols[i].wind.xyz * u.jitter.w) * u.vols[i].emission.w);
         d *= mix(1.0, clamp(n * 2.0 - 0.5, 0.0, 1.0), u.vols[i].albedo.w);
       }
       ext += d;

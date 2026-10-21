@@ -37,12 +37,33 @@ void *wc_gl4es_GetProcAddress(const char *p) { (void)p; return NULL; }
 /* software SDL surfaces blitted to GL: never used (cartwheel draws with GL) */
 void wc_sdl_gl_blit(const void *pixels, int w, int h) { (void)pixels; (void)w; (void)h; }
 
-#define AUDIO_CAP 4096
+/* A slow rendered frame can publish up to 8192 samples at once. The ABI
+ * ring must hold that entire burst without overwriting its own beginning. */
+#define AUDIO_CAP 16384
+#define AUDIO_MAX_FRAME 8192
+_Static_assert((AUDIO_CAP & (AUDIO_CAP - 1)) == 0, "audio ring must be a power of two");
+_Static_assert(AUDIO_CAP > AUDIO_MAX_FRAME, "audio ring must hold the largest frame burst");
 static uint32_t fb_dummy[4]; /* GL cart: the host presents the GL surface */
 static float audio_ring[AUDIO_CAP * 2];
 static uint32_t audio_write_cursor;
 static wc_pad_t pads[4];
 static wc_pad_t no_pads[4]; /* always neutral: see wc_init */
+/* wasmcart-sdl2 exposes eight buttons and a d-pad hat. ABI v4 stick
+ * clicks and Guide must also reach Cartwheel's SDL-shaped action snapshot. */
+void cw__cart_pad_extras(cw_raw_input *in) {
+  static uint32_t previous[4];
+  for(int i=0;i<4;i++) {
+    uint32_t buttons=0;
+    if(pads[i].connected) {
+      if(pads[i].buttons&WC_BTN_L3)buttons|=1u<<CW_PAD_LSTICK;
+      if(pads[i].buttons&WC_BTN_R3)buttons|=1u<<CW_PAD_RSTICK;
+      if(pads[i].buttons&WC_BTN_GUIDE)buttons|=1u<<CW_PAD_GUIDE;
+    }
+    in->pads[i].buttons|=buttons;
+    in->pads[i].pressed|=buttons&~previous[i];
+    previous[i]=buttons;
+  }
+}
 static uint8_t keys[32];
 static wc_pointer_t pointers[10];
 static wc_wheel_t wheel;
@@ -208,7 +229,7 @@ static void audio_plan(void) {
   uint32_t ms = (uint32_t)owed;
   uint64_t frames = (uint64_t)(uint32_t)p->audio_rate * ms / 1000;
   audio.owed = owed - ms;
-  audio.frames = frames > 8192 ? 8192 : (uint32_t)frames;
+  audio.frames = frames > AUDIO_MAX_FRAME ? AUDIO_MAX_FRAME : (uint32_t)frames;
   audio.cursor = audio_write_cursor;
   audio.fill = p->audio_fill;
   audio.user = p->audio_user;

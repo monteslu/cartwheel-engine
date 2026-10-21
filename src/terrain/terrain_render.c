@@ -31,16 +31,7 @@
 #include "cartwheel/shading.h"
 #include "terrain_internal.h"
 
-typedef struct tr_gpu {
-  t3_scene *scene;
-  t3_geometry *grid[2];
-  t3_material *mat_near, *mat_far;
-  t3_instanced_mesh *im[2][2]; /* [far][half] */
-  int cap[2][2];
-  t3_texture *heights, *normals, *control, *macro, *albedo, *lnormal;
-  int mw, mh, mdiv;
-  int near_q;                  /* the quality the near material's program is for */
-} tr_gpu;
+
 
 /* the instanced meshes of every terrain, for the fill hook to find its terrain by the drawn object
  * (any number of terrains: a streamed world has one per loaded cell) */
@@ -187,6 +178,7 @@ static t3_texture *layer_array(void) {
   x->mag_filter = T3_LINEAR;
   x->min_filter = T3_LINEAR_MIPMAP_LINEAR;
   x->generate_mipmaps = true;
+  x->anisotropy = 8;
   x->wrap_s = x->wrap_t = T3_REPEAT;
   return x;
 }
@@ -379,7 +371,7 @@ void cw__terrain_gpu_update(cw_terrain *t) {
     int r[4] = { CW_MAX(t->dirty_h[0] - 1, 0), CW_MAX(t->dirty_h[1] - 1, 0), CW_MIN(t->dirty_h[2] + 1, t->nx - 1),
                  CW_MIN(t->dirty_h[3] + 1, t->nz - 1) };
     rect_parallel(t, r, normal_rows);
-    g->heights->version++;
+    g->heights->version++, g->normals->version++;
     t->dirty_h[0] = 1, t->dirty_h[2] = 0;
     t->normals_dirty = false;
   }

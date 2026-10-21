@@ -3,7 +3,7 @@
 // regenerate the C with three.c's tools/gen-project-table.mjs.
 //
 //   node tools/programs.mjs [app ...] [--gates] [--frames N] [--gl-only] [--logs <dir> ...] [--no-run]
-//        [--build <dir>] [--check]
+//        [--build <dir>] [--check] [--extend <module.mjs> ...]
 //       runs every native app (or the named ones) for N frames (default 120)
 //       on GL and on WebGPU with CW_PROGRAMS_LOG_DIR set, so each writes the
 //       states it could not draw to <logs>/<app>.log; --gates also runs every
@@ -24,6 +24,10 @@
 //   node tools/programs.mjs --all-tables
 //       regenerates every table the build knows (`ninja programs`)
 //
+// --extend adds project-owned extensions, including composed x<project>_csm
+// states, without copying project code into the engine. The module filename
+// must match its exported extension name. Duplicate names are rejected.
+//
 // Regenerating minimizes the manifest (states another listed state covers
 // are dropped: more lights of each kind, the same casters), captures what the
 // capture cache (<build>/programs-cache/<table>) lacks twice to check it
@@ -43,7 +47,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 const one = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const all = (k) => argv.flatMap((a, i) => (a === k ? [argv[i + 1]] : []));
-const VALUED = new Set(['--frames', '--logs', '--build', '--table', '--missing']);
+const VALUED = new Set(['--frames', '--logs', '--build', '--table', '--missing', '--extend']);
 const names = argv.filter((a, i) => !a.startsWith('--') && !VALUED.has(argv[i - 1]));
 const BUILD = resolve(one('--build') || join(ROOT, 'build', 'native'));
 const THREE = resolve(process.env.CW_THREE_DIR || cmakeCache('CW_THREE_DIR') || join(ROOT, 'deps', 'three.c'));
@@ -59,6 +63,16 @@ function cmakeCache(key) {
 // named as its extension (a file with an underscore is a helper they import, not an extension)
 const EXTENSIONS = readdirSync(join(ROOT, 'src'), { withFileTypes: true }).filter((d) => d.isDirectory())
   .flatMap((d) => { const dir = join(ROOT, 'src', d.name, 'extensions'); return existsSync(dir) ? readdirSync(dir).filter((f) => /^[a-z0-9]+\.mjs$/.test(f)).map((f) => join(dir, f)) : []; });
+// Project parts participate in composition and source-keyed capture caches.
+for (const file of all('--extend')) {
+  if (!file) throw new Error('--extend requires a module path');
+  const path = resolve(file);
+  if (!existsSync(path)) throw new Error(`extension module not found: ${path}`);
+  if (!/^[a-z0-9]+\.mjs$/.test(basename(path))) throw new Error(`extension filename must be <name>.mjs: ${path}`);
+  const previous = EXTENSIONS.find((e) => basename(e) === basename(path));
+  if (previous && previous !== path) throw new Error(`duplicate extension ${basename(path)}: ${previous} and ${path}`);
+  if (!previous) EXTENSIONS.push(path);
+}
 // and the helpers they import (their source is part of what a capture makes)
 const EXTENSION_HELPERS = EXTENSIONS.length ? [...new Set(EXTENSIONS.map((e) => dirname(e)))]
   .flatMap((d) => readdirSync(d).filter((f) => f.endsWith('.mjs')).map((f) => join(d, f))).filter((f) => !EXTENSIONS.includes(f)) : [];
@@ -73,7 +87,7 @@ function composedModules(stateFiles) {
   return [...names].sort().map((n) => {
     const parts = n.split('_').map((p) => {
       const m = EXTENSIONS.find((e) => basename(e) === p + '.mjs');
-      if (!m) throw new Error(`composed extension ${n}: no part ${p} (src/<module>/extensions/${p}.mjs)`);
+      if (!m) throw new Error(`composed extension ${n}: no part ${p} (src/<module>/extensions/${p}.mjs or --extend ${p}.mjs)`);
       return m;
     });
     const file = join(dir, n + '.mjs');

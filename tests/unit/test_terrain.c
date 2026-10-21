@@ -460,6 +460,34 @@ static void test_scene_file(void) {
   cw_tree_free(tree);
 }
 
-CW_TEST_SUITE("terrain", { "height_exact", test_height_exact }, { "cdlod", test_cdlod }, { "physics", test_physics },
+/* Editing one height changes neighboring surface normals. Both texture
+ * uploads must be invalidated, while unrelated control data stays cached. */
+static void test_height_texture_invalidation(void) {
+  cw_terrain *t = make(64, 7);
+  cw__terrain_gpu_update(t);
+  tr_gpu *g = t->gpu;
+  uint32_t hv = g->heights->version, nv = g->normals->version, cv = g->control->version;
+  size_t bytes = (size_t)t->nx * t->nz * 4;
+  unsigned char *before = cw_alloc(bytes, CW_MEM_RENDER);
+  memcpy(before, g->normals->pixels, bytes);
+  uint16_t h = cw_terrain_heights(t)[32 * t->nx + 32] > 32767 ? 0 : 65535;
+  cw_terrain_set_heights(t, 32, 32, 1, 1, &h);
+  cw__terrain_gpu_update(t);
+  CHECK(g->heights->version > hv);
+  CHECK(g->normals->version > nv);
+  CHECK_EQ_INT(g->control->version, cv);
+  CHECK(memcmp(before, g->normals->pixels, bytes) != 0);
+  /* The adjacent sample uses the edited height in its central difference. */
+  CHECK(memcmp(before + (32 * t->nx + 31) * 4,
+               (unsigned char *)g->normals->pixels + (32 * t->nx + 31) * 4, 4) != 0);
+  hv = g->heights->version; nv = g->normals->version;
+  cw__terrain_gpu_update(t);
+  CHECK_EQ_INT(g->heights->version, hv);
+  CHECK_EQ_INT(g->normals->version, nv);
+  cw_free(before);
+  cw_terrain_destroy(t);
+}
+
+CW_TEST_SUITE("terrain", { "height_texture_invalidation", test_height_texture_invalidation }, { "height_exact", test_height_exact }, { "cdlod", test_cdlod }, { "physics", test_physics },
               { "vehicle", test_vehicle }, { "scatter", test_scatter }, { "control", test_control },
               { "import", test_import }, { "scene_file", test_scene_file })

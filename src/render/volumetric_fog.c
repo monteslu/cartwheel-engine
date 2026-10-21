@@ -176,7 +176,7 @@ void cw_volumetric_fog_get_state(cw_tree *t, cw_volumetric_fog_state *out) {
 typedef struct vf_preset { int gw, d, tile; bool spot_shadows; } vf_preset;
 static const vf_preset PRESETS[CW_QUALITY_COUNT] = {
   { 64, 32, 256, false },  /* Low */
-  { 96, 48, 512, true },   /* Medium */
+  { 128, 64, 512, true },   /* Medium */
   { 160, 64, 1024, true }, /* High */
   { 240, 96, 1024, true }, /* Ultra */
 };
@@ -263,7 +263,7 @@ static const char VF_GLSL_INJECT[] = S(
       float d = a.x * (a.z > 0.0 ? clamp((1.0 - r) / a.z, 0.0, 1.0) : 1.0);
       if (a.w > 0.0) d *= exp(min(-a.w * (p.y - u.vols[i].wind.w), 10.0));
       if (u.vols[i].albedo.w > 0.0) {
-        float n = vf_noise(p * u.vols[i].emission.w + u.vols[i].wind.xyz * u.jitter.w);
+        float n = vf_noise((p - u.vols[i].wind.xyz * u.jitter.w) * u.vols[i].emission.w);
         d *= mix(1.0, clamp(n * 2.0 - 0.5, 0.0, 1.0), u.vols[i].albedo.w);
       }
       ext += d;
@@ -344,6 +344,20 @@ static const char VF_GLSL_APPLY[] = S(
     float g2 = g * g;
     return (1.0 - g2) / (12.5663706 * pow(max(1.0 + g2 - 2.0 * g * mu, 1e-4), 1.5));
   }
+
+  vec4 vf_smooth_volume(vec3 uvw) {
+    vec2 size = vec2(textureSize(u_vol, 0).xy);
+    vec2 p = uvw.xy * size - 0.5;
+    vec2 cell = floor(p), f = fract(p), f2 = f*f, f3 = f2*f;
+    vec2 w0 = (1.0-f)*(1.0-f)*(1.0-f)/6.0;
+    vec2 w1 = (3.0*f3-6.0*f2+4.0)/6.0;
+    vec2 w2 = (-3.0*f3+3.0*f2+3.0*f+1.0)/6.0;
+    vec2 w3 = f3/6.0, g0 = w0+w1, g1 = w2+w3;
+    vec2 h0 = (cell-1.0+w1/g0+0.5)/size;
+    vec2 h1 = (cell+1.0+w3/g1+0.5)/size;
+    return mix(mix(texture(u_vol,vec3(h0,uvw.z)), texture(u_vol,vec3(h1.x,h0.y,uvw.z)),g1.x),
+               mix(texture(u_vol,vec3(h0.x,h1.y,uvw.z)), texture(u_vol,vec3(h1,uvw.z)),g1.x),g1.y);
+  }
   void main() {
     float d = texture(u_depth, v_uv).r;
     vec4 a = u_inv_view_proj * vec4(v_uv * 2.0 - 1.0, -1.0, 1.0);
@@ -354,7 +368,7 @@ static const char VF_GLSL_APPLY[] = S(
     float dist = sky ? 1e30 : -((u_pz.y - z * u_pz.w) / (z * u_pz.z - u_pz.x));
     /* a slice nearer than the depth: the cell that holds a surface also holds air behind it (lit outside a wall) */
     float c = max(u_grid.x * pow(clamp(dist / u_grid.y, 1e-10, 1.0), u_grid.z) - 1.0, 0.0);
-    vec4 vol = texture(u_vol, vec3(v_uv, (c - 0.5) / u_grid.x));
+    vec4 vol = vf_smooth_volume(vec3(v_uv, (c - 0.5) / u_grid.x));
     float k = clamp(c, 0.0, 1.0);
     vec3 rgb = vol.rgb * k;
     float tr = mix(1.0, vol.a, k);
@@ -433,6 +447,20 @@ static const char VF_WGSL_APPLY[] =
         let g2 = g * g;
         return (1.0 - g2) / (12.5663706 * pow(max(1.0 + g2 - 2.0 * g * mu, 1e-4), 1.5));
       }
+
+      fn vf_smooth_volume(uvw: vec3f) -> vec4f {
+        let size = vec2f(textureDimensions(u_vol).xy);
+        let p = uvw.xy * size - 0.5;
+        let cell = floor(p); let f = fract(p); let f2 = f*f; let f3 = f2*f;
+        let w0 = (1.0-f)*(1.0-f)*(1.0-f)/6.0;
+        let w1 = (3.0*f3-6.0*f2+4.0)/6.0;
+        let w2 = (-3.0*f3+3.0*f2+3.0*f+1.0)/6.0;
+        let w3 = f3/6.0; let g0 = w0+w1; let g1 = w2+w3;
+        let h0 = (cell-1.0+w1/g0+0.5)/size;
+        let h1 = (cell+1.0+w3/g1+0.5)/size;
+        return mix(mix(textureSampleLevel(u_vol,cw_linear,vec3f(h0,uvw.z),0.0),textureSampleLevel(u_vol,cw_linear,vec3f(h1.x,h0.y,uvw.z),0.0),g1.x),
+                   mix(textureSampleLevel(u_vol,cw_linear,vec3f(h0.x,h1.y,uvw.z),0.0),textureSampleLevel(u_vol,cw_linear,vec3f(h1,uvw.z),0.0),g1.x),g1.y);
+      }
       @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
         let zl = cw_load(u_depth, uv).r;
         let a = u.u_inv_view_proj * vec4f(uv * 2.0 - 1.0, -1.0, 1.0);
@@ -441,7 +469,7 @@ static const char VF_WGSL_APPLY[] =
         let sky = zl > 1e30;
         let dist = select(zl, 1e30, sky);
         let c = max(u.u_grid.x * pow(clamp(dist / u.u_grid.y, 1e-10, 1.0), u.u_grid.z) - 1.0, 0.0);
-        let vol = textureSampleLevel(u_vol, cw_linear, vec3f(uv, (c - 0.5) / u.u_grid.x), 0.0);
+        let vol = vf_smooth_volume(vec3f(uv, (c - 0.5) / u.u_grid.x));
         let k = clamp(c, 0.0, 1.0);
         var rgb = vol.rgb * k;
         var tr = mix(1.0, vol.a, k);

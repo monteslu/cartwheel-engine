@@ -650,6 +650,23 @@ static void test_procedural_mesh(void) {
   cw_tree_pre_render(t,0);
   CHECK(cw__mesh3d_t3(n)==mesh && mesh->materials[0]==mat);
   CHECK(mesh->base.position.x==12 && mesh->base.cast_shadow);
+  /* Raw three.c parent visibility participates in scene mesh discovery. */
+  t3_object *old_parent = mesh->base.parent;
+  t3_object *outer = t3_group_new(), *inner = t3_group_new();
+  t3_object_add(old_parent, outer);
+  t3_object_add(outer, inner);
+  t3_object_add(inner, &mesh->base);
+  cw__mesh_info nested_info;
+  CHECK(cw__mesh3d_info(n, &nested_info));
+  outer->visible = false;
+  CHECK(!cw__mesh3d_info(n, &nested_info));
+  outer->visible = true; inner->visible = false;
+  CHECK(!cw__mesh3d_info(n, &nested_info));
+  inner->visible = true;
+  CHECK(cw__mesh3d_info(n, &nested_info));
+  t3_object_add(old_parent, &mesh->base);
+  t3_object_remove(old_parent, outer);
+  t3_release(inner); t3_release(outer);
   CHECK(cw_mesh3d_set_procedural(n,NULL));
   CHECK(mesh->base.parent==NULL);
   cw_tree_pre_render(t,0);

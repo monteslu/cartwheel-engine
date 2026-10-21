@@ -332,11 +332,14 @@ static void pixel_layout(int w, int h) {
   }
 }
 
+static bool render_scale_pending;
 void cw__render_scale_apply(float s) {
   cw_platform *p = &cw__plat;
   if (s == p->res_scale) return;
   p->res_scale = s;
-  if (p->px_w > 0 && p->px_h > 0) pixel_layout(p->px_w, p->px_h);
+  /* Graphics settings may change after this frame's scene target was
+   * acquired. Keep its dimensions stable until the next frame begins. */
+  render_scale_pending = true;
 }
 
 /* the SDL window's size changed (or is first known): logical = pixels / scale */
@@ -660,6 +663,10 @@ void cw__sdl_poll(void) {
 #if !CW_CART
   cw__input_script_apply(in, p->frame);
 #endif
+#if CW_CART
+  extern void cw__cart_pad_extras(cw_raw_input *in);
+  cw__cart_pad_extras(in);
+#endif
   /* text that arrived outside SDL (cart wc_on_text, the native input script) */
   for (int i = 0; i < pending_text_n; i++) {
     cw_event e = { .type = CW_EVENT_TEXT };
@@ -705,6 +712,10 @@ static void frame_body(double now) {
   p->last = now;
   p->now = now - dbg.held;
   cw__perf_frame_begin();
+  if (render_scale_pending) {
+    if (p->px_w > 0 && p->px_h > 0) pixel_layout(p->px_w, p->px_h);
+    render_scale_pending = false;
+  }
   cw__pixel_frame_begin(); /* pixel_scale / crisp UI: the scene's target (pixel.c) */
   cw_frame_arena_begin(p->frame);
   if (cw__res_frame_hook) {

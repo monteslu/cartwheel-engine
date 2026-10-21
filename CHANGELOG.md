@@ -4,6 +4,47 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.14.1 (2026-10-21)
+
+Cart audio and controller fixes, safer visibility and terrain updates, and
+smoother terrain, ocean and volumetric cloud rendering on GL and WebGPU.
+
+### Added
+- Water3D `horizon_distance` stretches the outer grid into one connected
+  ocean surface while preserving dense sampling in the central `size`.
+- `tools/programs.mjs --extend <module>` includes project shader extensions
+  alongside engine extensions, including composed sun-shadow variants.
+
+### Fixed
+- Cart audio now reserves 16,384 stereo frames instead of 4,096. A valid
+  100 ms host frame generates 4,800 samples at 48 kHz and previously overwrote
+  unread samples in its own block. The maximum generated block remains
+  8,192 frames; compile-time capacity and power-of-two checks protect it.
+- Cart L3, R3 and Guide buttons reach the SDL input snapshot.
+- Render-scale changes apply at the next frame boundary instead of resizing
+  a render target while a frame is using it.
+- Terrain height edits invalidate both height and normal textures, so edited
+  slopes receive updated lighting on the GPU.
+- VisibilityManager respects hidden raw three.c ancestors of procedural
+  meshes and uses fixed InstancedMesh spheres for conservative cached bounds,
+  independent of the active LOD subset.
+- Volumetric noise wind uses world units per second regardless of noise scale.
+- Project foliage shader extensions compose with directional and cascaded
+  sun shadows while retaining their material/decal entry points.
+
+### Changed
+- Terrain uses smooth macro noise and stochastic triangular layer blending
+  to reduce repeating surface patterns. Layer textures grow from 512 to
+  1,024 pixels per side: four times the texel storage; anisotropic filtering
+  is enabled for terrain layers.
+- Medium volumetric fog grows from 96 × 48 to 128 columns and 64 depth slices;
+  screen-height resolution also follows column count. At the same aspect
+  ratio, storage and volume work grow by about 137%. Bicubic XY reconstruction on both
+  backends smooths cloud silhouettes; the larger preset costs more memory
+  and rendering time.
+- Distant ocean wave normals fade toward a flat surface between 2 and 12 km
+  to reduce subpixel glints toward the horizon.
+
 ## v0.14.0 (2026-10-21)
 
 Box2D v3.2 under the 2D physics, with rollback that restores 2D worlds whole.

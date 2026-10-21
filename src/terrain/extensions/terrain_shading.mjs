@@ -136,10 +136,18 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     return normalize(vec3(e.x, sqrt(max(float(1).sub(dot(e, e)), 0)), e.y));
   }).once()();
   const dist = length(wp.sub(cam.xyz));
-  // cheap variation over the macro colour: two octaves of value-ish noise from sines (render only)
+  // Smooth hash noise avoids the periodic crosshatch of multiplied sines.
+  const hash2 = (p) => fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453));
+  const valueNoise = (p) => {
+    const cell = floor(p), f = fract(p);
+    const u = f.mul(f).mul(float(3).sub(f.mul(2)));
+    return mix(mix(hash2(cell), hash2(cell.add(vec2(1, 0))), u.x),
+      mix(hash2(cell.add(vec2(0, 1))), hash2(cell.add(vec2(1, 1))), u.x), u.y);
+  };
   const variation = Fn(() => {
-    const q = wp.xz.mul(0.071);
-    const n = sin(q.x.add(sin(q.y.mul(1.7)))).mul(sin(q.y.mul(1.3).add(sin(q.x.mul(0.9))))).mul(0.5).add(0.5);
+    const q = wp.xz.mul(0.008);
+    const oblique = vec2(q.x.mul(0.8).sub(q.y.mul(0.6)), q.x.mul(0.6).add(q.y.mul(0.8)));
+    const n = valueNoise(q).mul(0.65).add(valueNoise(oblique.mul(2.13).add(vec2(19.3, 7.1))).mul(0.35));
     return mix(float(1).sub(far.z), float(1).add(far.z), n);
   });
   const macroColor = Fn(() => sRGBTransferEOTF(texture(macroMap, gridUv).rgb).mul(variation())).once()();
@@ -177,10 +185,24 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   const scaleOf = (s) => select(s.lessThan(0.5), float(1), select(s.lessThan(4.5), float(1).add(s.mul(0.2)), float(1).sub(s.sub(4).mul(0.2))));
 
   // one layer sample, by explicit gradients (legal in non-uniform control flow on WebGPU)
+  // Triangular stochastic blending: adjacent cells share the same three
+  // random offsets, so scanned material detail stays continuous without a
+  // square grid of identical repeated landmarks.
   const sampleLayer = (nrm, id, uv, gx, gy) => {
-    const t = texture(nrm ? normalArr : albedoArr, uv).depth(int(id)).grad(gx, gy);
+    const skew = vec2(uv.x.sub(uv.y.mul(0.57735027)), uv.y.mul(1.15470054));
+    const cell = floor(skew), f = fract(skew), upper = f.x.add(f.y).greaterThan(1);
+    const a = select(upper, cell.add(vec2(1, 1)), cell);
+    const b = select(upper, cell.add(vec2(0, 1)), cell.add(vec2(1, 0)));
+    const c = select(upper, cell.add(vec2(1, 0)), cell.add(vec2(0, 1)));
+    const w = select(upper, vec3(f.x.add(f.y).sub(1), float(1).sub(f.x), float(1).sub(f.y)),
+      vec3(float(1).sub(f.x).sub(f.y), f.x, f.y));
+    const offset = (p) => fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))).mul(43758.5453));
+    const image = nrm ? normalArr : albedoArr;
+    const tex = (p) => texture(image, uv.add(offset(p))).depth(int(id)).grad(gx, gy);
+    const t = tex(a).mul(w.x).add(tex(b).mul(w.y)).add(tex(c).mul(w.z));
     return nrm ? t : vec4(sRGBTransferEOTF(t.rgb), t.a);
   };
+
   const rot = (uv, angle) => {
     const a = angle.mul(Math.PI * 2 / 16);
     const c = cos(a), s = sin(a);
