@@ -2932,7 +2932,8 @@
       "NONE",
       "INTEGER",
       "FIT",
-      "STRETCH"
+      "STRETCH",
+      "EXPAND"
      ],
      "doc": "How the virtual canvas maps to the window."
     },
@@ -9457,6 +9458,16 @@
      "stored": true,
      "readonly": false,
      "doc": "Rectangle, x by z metres, centred on the node."
+    },
+    {
+     "name": "horizon_distance",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10000000,
+     "doc": "Optional outer grid extent; keeps the central size densely sampled."
     },
     {
      "name": "subdivisions",
