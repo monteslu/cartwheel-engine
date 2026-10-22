@@ -99,9 +99,39 @@ typedef struct cw_event {
 
 /* ── the app ────────────────────────────────────────────────────────── */
 
+/* How the logical size meets a screen of another aspect (cw_app_desc.fit). */
+typedef enum {
+  CW_FIT_LETTERBOX = 0, /* the logical size is fixed; a screen of another aspect shows bars */
+  CW_FIT_HEIGHT,        /* Hor+: the height is the design height, the width follows the screen's aspect */
+  CW_FIT_WIDTH,         /* Vert+: the width is the design width, the height follows the screen's aspect */
+} cw_fit_mode;
+
 typedef struct cw_app_desc {
   const char *title;
   int width, height;       /* logical size: the coordinate space of input, the 2D canvas and UI */
+  /* How that size meets a screen of another aspect: a host's preferred size
+   * (RetroArch's Internal Resolution, a handheld's 640x480 or 1280x800
+   * panel; CW_HOST_PREF=WxH pretends to be one natively).
+   * LETTERBOX (the default): width x height is the logical size everywhere
+   * and the frame is the largest of that aspect that fits, so a 16:9 game
+   * on a 4:3 handheld shows bars.
+   * FIT_HEIGHT: the height stays the design height and the logical width
+   * follows the screen's aspect (Hor+): a 960x540 game is 720x540 on 4:3,
+   * 864x540 on 16:10, 960x540 on 16:9 and 1280x540 on 21:9. The 3D camera
+   * sees more or less to the sides at the same vertical field of view, a
+   * plain 2D canvas is the wider or narrower logical size, UI anchored to
+   * the edges stays at the edges, and there are no bars for any aspect
+   * between aspect_min and aspect_max (0 = 4:3 and 2.4, the 21:9 screens);
+   * beyond them the width is clamped and the host shows bars.
+   * FIT_WIDTH is the same with the axes swapped (Vert+): a vertical shooter
+   * keeps its width and gains lines on a 4:3 screen.
+   * The size the run settled on is cw_window_size (ask every frame: a
+   * native window also resizes); the design size is cw_design_size, so a
+   * HUD scales by height / design height without a literal; and
+   * cw_fit_logical_size answers the size for any screen without running,
+   * for tests and tools. */
+  cw_fit_mode fit;
+  float aspect_min, aspect_max;
   /* Framebuffer pixels per logical unit. The 3D scene, post and the 2D
    * batcher all render at the framebuffer's resolution while game code keeps
    * its logical coordinates (cw_window_size, cw_r2d_canvas_size, pointer
@@ -251,6 +281,12 @@ void cw_loading_get(int *done, int *total, cw_load_stage *stage);
 /* True from start-up until a warm-up (if any) has finished. */
 bool cw_loading_active(void);
 void cw_window_size(int *w, int *h);   /* logical */
+void cw_design_size(int *w, int *h);   /* cw_app_desc width x height: what the game was laid out for */
+/* The logical size the app settles on for a screen of screen_w x screen_h
+ * pixels (cw_app_desc.fit and aspect bounds): what cw_window_size answers
+ * under that host preference. Pure, for tests and tools; 0 x 0 = no
+ * preference, the design size. */
+void cw_fit_logical_size(const cw_app_desc *app, int screen_w, int screen_h, int *w, int *h);
 /* Pixels of what is being drawn right now: the window's, or with
  * pixel_scale / crisp UI the scene's while the scene draws and the UI's once
  * the first 2D window pass of the frame began. Outside a frame, the output's. */

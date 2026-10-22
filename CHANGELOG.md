@@ -4,9 +4,29 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## Unreleased
+## v0.15.0 (2026-10-22)
+
+Screens of other aspects: a game declares how it meets a 4:3 handheld or a
+16:10 Steam Deck and gets the whole screen instead of bars. Retina windows
+draw the whole window again.
 
 ### Added
+- `cw_app_desc.fit` with `aspect_min` / `aspect_max` (cartwheel/platform.h):
+  how a game meets a screen of another aspect. `CW_FIT_HEIGHT` keeps the
+  design height and lets the logical width follow the host's preferred size
+  (Hor+: a 960x540 game is 720x540 on a 640x480 handheld, 864x540 on a
+  1280x800 Steam Deck, 1280x540 on 21:9) between the aspect bounds (default
+  4:3 to 2.4), so the frame is the whole screen instead of bars; the 3D
+  camera and a plain 2D canvas follow, as they already did natively on a
+  window resize. `CW_FIT_WIDTH` is Vert+. `CW_FIT_LETTERBOX` (0) is the
+  behaviour so far. `cw_design_size` is the declared size, for HUD scale
+  factors; `cw_fit_logical_size` is the pure fit, for tests and tools.
+  Natively `CW_HOST_PREF=WxH` behaves as a cart on a host preferring that
+  frame, so a handheld's picture is one environment variable away.
+- `CW_SCALE_EXPAND` (cartwheel/render2d.h; `EXPAND` in CanvasSettings):
+  a virtual canvas at `FIT`'s scale over the whole window, so a pixel-art
+  game shows more world on a wider screen instead of bars; Camera2D limits
+  still hold.
 - three.c c5f840b: `t3_material.alpha_to_coverage` (material.alphaToCoverage):
   on a multisampled scene pass (PostProcess `msaa`) an alpha-tested card's
   alpha becomes its sample coverage, so foliage edges are soft. GL only.

@@ -724,7 +724,7 @@ static const cw_prop pl_props[] = {
 static cw_node_type pl_type = { .name = "ParallaxLayer", .parent = "Node2D", .data_size = sizeof(cw__parallax_layer),
                                 .props = pl_props, .doc = "Its children scroll at motion_scale of the camera.", .init = pl_init };
 
-static const char *const scale_names[] = { "NONE", "INTEGER", "FIT", "STRETCH", NULL };
+static const char *const scale_names[] = { "NONE", "INTEGER", "FIT", "STRETCH", "EXPAND", NULL };
 static void cs_init(cw_node n, void *d) {
   (void)n;
   cw__canvas_settings *s = d;

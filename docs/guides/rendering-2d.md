@@ -46,6 +46,7 @@ A window pass can draw at a fixed virtual size and scale the result to the windo
 | `INTEGER` | the largest whole factor that fits, centred, letterboxed (pixel-perfect) |
 | `FIT` | scaled to fit keeping the aspect ratio, centred, letterboxed |
 | `STRETCH` | stretched over the whole window |
+| `EXPAND` | `FIT`'s scale over the whole window: the canvas grows to the window's aspect instead of bars (a 320x180 canvas is 240x180 on a 4:3 screen, 432x180 on 21:9; `cw_r2d_canvas_size` says). Camera2D limits still hold, so a level's edge is never shown past |
 
 The virtual canvas is nearest-filtered when scaled. `cw_r2d_window_to_canvas` undoes the scaling and letterboxing for pointer input, and `cw_r2d_canvas_rect` says where the canvas lands in the window. `samples/r2d_camera` draws a 300x170 canvas in a 640x360 window with `INTEGER`; it reads its own window back and the gate expects zero non-uniform 2x2 blocks.
 

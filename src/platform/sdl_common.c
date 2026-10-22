@@ -252,18 +252,24 @@ void cw__resolve_scale(void) {
   const char *env = getenv("CW_RENDER_SCALE");
   if (env && *env) s = strtof(env, NULL);
 #endif
+  /* the logical size: the design size, or under cw_app_desc.fit the host
+   * preference's aspect within the app's bounds */
+  cw_fit_logical_size(&p->app, p->host_pref_w, p->host_pref_h, &p->fit_w, &p->fit_h);
+  const int lw = p->fit_w, lh = p->fit_h;
   /* auto with a host preference (a cart, cw_app_desc.render_scale): the
    * largest scale whose frame fits the preferred size, so the host's 540, 720
    * or 1080 lines are the frame's lines for a game of the host's aspect, and a
    * game of another aspect fits inside it (16:9 in a 640x480 preference is
-   * 640x360) and never declares a frame larger than the host asked for */
+   * 640x360; under a fit mode the logical size took the host's aspect and
+   * the frame IS the preference) and never declares a frame larger than the
+   * host asked for */
   bool fit = !(s > 0) && (p->host_pref_w > 0 || p->host_pref_h > 0);
   if (fit) {
-    float sw = p->host_pref_w > 0 ? (float)p->host_pref_w / (float)p->app.width : 1e9f;
-    float sh = p->host_pref_h > 0 ? (float)p->host_pref_h / (float)p->app.height : 1e9f;
+    float sw = p->host_pref_w > 0 ? (float)p->host_pref_w / (float)lw : 1e9f;
+    float sh = p->host_pref_h > 0 ? (float)p->host_pref_h / (float)lh : 1e9f;
     s = CW_MIN(sw, sh);
   }
-  if (!(s > 0)) s = p->app.height < 1080 ? 1080.0f / (float)p->app.height : 1.0f;
+  if (!(s > 0)) s = lh < 1080 ? 1080.0f / (float)lh : 1.0f;
 #if defined(__ANDROID__) || (defined(__APPLE__) && defined(SDL_VIDEO_DRIVER_UIKIT))
   s = 1; /* a phone's window is the screen: its density is the scale */
 #endif
@@ -271,8 +277,8 @@ void cw__resolve_scale(void) {
   p->scale = s;
   p->scale_pts = s;
   p->dpi = 1;
-  p->px_w = CW_MAX(1, (int)lroundf((float)p->app.width * s));
-  p->px_h = CW_MAX(1, (int)lroundf((float)p->app.height * s));
+  p->px_w = CW_MAX(1, (int)lroundf((float)lw * s));
+  p->px_h = CW_MAX(1, (int)lroundf((float)lh * s));
   if (fit) { /* rounding never takes a side past the preference */
     if (p->host_pref_w > 0) p->px_w = CW_MIN(p->px_w, p->host_pref_w);
     if (p->host_pref_h > 0) p->px_h = CW_MIN(p->px_h, p->host_pref_h);
@@ -302,9 +308,29 @@ void cw__resolve_scale(void) {
     p->k = k;
     p->px_w = sw * k;
     p->px_h = sh * k;
-    p->scale = (float)p->px_h / (float)p->app.height;
+    p->scale = (float)p->px_h / (float)lh;
     p->scale_pts = p->scale;
   }
+}
+
+/* cw_app_desc.fit: the logical size for a screen of sw x sh. Pure (no
+ * platform state): cw__resolve_scale sizes the run with it, tests and tools
+ * ask it directly. */
+void cw_fit_logical_size(const cw_app_desc *a, int sw, int sh, int *w, int *h) {
+  int dw = a->width > 0 ? a->width : 1280, dh = a->height > 0 ? a->height : 720;
+  *w = dw;
+  *h = dh;
+  if (a->fit == CW_FIT_LETTERBOX || sw <= 0 || sh <= 0) return;
+  float lo = a->aspect_min > 0 ? a->aspect_min : 4.0f / 3.0f;
+  float hi = a->aspect_max > 0 ? a->aspect_max : 2.4f; /* 2560x1080, 3440x1440: the "21:9" screens */
+  if (hi < lo) {
+    float t = lo;
+    lo = hi;
+    hi = t;
+  }
+  float aspect = CW_CLAMP((float)sw / (float)sh, lo, hi);
+  if (a->fit == CW_FIT_HEIGHT) *w = CW_MAX(1, (int)lroundf((float)dh * aspect));
+  else *h = CW_MAX(1, (int)lroundf((float)dw / aspect));
 }
 
 /* the scene and the picture for an output of w x h (cw_app_desc.pixel_scale) */
@@ -475,8 +501,8 @@ bool cw__sdl_init(void) {
         if (f < 1) {
           p->scale = CW_MAX(1.0f, p->scale * f);
           p->scale_pts = p->scale;
-          p->px_w = (int)lroundf((float)p->app.width * p->scale);
-          p->px_h = (int)lroundf((float)p->app.height * p->scale);
+          p->px_w = (int)lroundf((float)p->fit_w * p->scale);
+          p->px_h = (int)lroundf((float)p->fit_h * p->scale);
         }
       }
     }
@@ -889,6 +915,10 @@ const cw_raw_input *cw_input_raw(void) { return &cw__plat.input; }
 void cw_window_size(int *w, int *h) {
   if (w) *w = cw__plat.win_w;
   if (h) *h = cw__plat.win_h;
+}
+void cw_design_size(int *w, int *h) {
+  if (w) *w = cw__plat.app.width;
+  if (h) *h = cw__plat.app.height;
 }
 void cw_drawable_size(int *w, int *h) {
   cw_platform *p = &cw__plat;
