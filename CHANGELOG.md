@@ -6,6 +6,11 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
 ## Unreleased
 
+### Added
+- three.c 50c09a3: `t3_material.alpha_to_coverage` (material.alphaToCoverage):
+  on a multisampled scene pass (PostProcess `msaa`) an alpha-tested card's
+  alpha becomes its sample coverage, so foliage edges are soft. GL only.
+
 ### Fixed
 - three.c ba2dadc (after v0.186.18): an extension texture may be sampled up
   to 128 times in one program (was 64). The terrain extension's Medium and
