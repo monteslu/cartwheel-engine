@@ -417,6 +417,12 @@ void cw_r2d_begin(const cw_r2d_pass_desc *desc) {
       w = (float)R.canvas_w;
       h = (float)R.canvas_h;
     }
+    if (R.pass.scale == CW_SCALE_EXPAND) { /* FIT's scale, the whole target: more canvas, no bars */
+      R.canvas_w = CW_MAX(1, (int)lroundf((float)R.target_w / s));
+      R.canvas_h = CW_MAX(1, (int)lroundf((float)R.target_h / s));
+      w = (float)R.target_w;
+      h = (float)R.target_h;
+    }
     R.canvas_rect = (cw_rect){ (float)(int)(((float)R.target_w - w) * 0.5f), (float)(int)(((float)R.target_h - h) * 0.5f), w, h };
   } else {
     R.canvas_w = R.target_w;

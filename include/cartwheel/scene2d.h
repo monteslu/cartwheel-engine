@@ -62,7 +62,7 @@
  *   LightOccluder2D   polygon, closed (casts shadows for lights with shadow)
  *   CanvasSettings    (a Node; the first one in tree order counts)
  *                     virtual_width/virtual_height (0 = window pixels),
- *                     scale_mode (NONE|INTEGER|FIT|STRETCH), clear_color,
+ *                     scale_mode (NONE|INTEGER|FIT|STRETCH|EXPAND), clear_color,
  *                     letterbox, ambient (light where no Light2D reaches on
  *                     lit canvases), pixel_snap, y_sort (default canvas).
  *                     Defaults: no virtual canvas, scale_mode NONE, clear

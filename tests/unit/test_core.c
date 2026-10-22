@@ -253,8 +253,51 @@ static void test_channel_split(void) {
   cw_free(rep);
 }
 
+/* cw_app_desc.fit: the logical size for a screen of another aspect (pure:
+ * cw_fit_logical_size, what cw__resolve_scale sizes a run with) */
+static void test_fit(void) {
+  cw_app_desc a = { .width = 960, .height = 540 };
+  int w, h;
+  cw_fit_logical_size(&a, 640, 480, &w, &h); /* LETTERBOX: the design size everywhere */
+  CHECK_EQ_INT(w, 960);
+  CHECK_EQ_INT(h, 540);
+  a.fit = CW_FIT_HEIGHT;
+  cw_fit_logical_size(&a, 640, 480, &w, &h); /* 4:3 handheld */
+  CHECK_EQ_INT(w, 720);
+  CHECK_EQ_INT(h, 540);
+  cw_fit_logical_size(&a, 1280, 800, &w, &h); /* 16:10 (Steam Deck) */
+  CHECK_EQ_INT(w, 864);
+  CHECK_EQ_INT(h, 540);
+  cw_fit_logical_size(&a, 1920, 1080, &w, &h); /* the design aspect: unchanged */
+  CHECK_EQ_INT(w, 960);
+  CHECK_EQ_INT(h, 540);
+  cw_fit_logical_size(&a, 2560, 1080, &w, &h); /* 2.37, within the 2.4 bound */
+  CHECK_EQ_INT(w, 1280);
+  cw_fit_logical_size(&a, 1280, 1024, &w, &h); /* 5:4 is below 4:3: clamped (the host shows bars) */
+  CHECK_EQ_INT(w, 720);
+  cw_fit_logical_size(&a, 3000, 1000, &w, &h); /* 3:1 clamps to 2.4 */
+  CHECK_EQ_INT(w, 1296);
+  cw_fit_logical_size(&a, 0, 0, &w, &h); /* no preference: the design size */
+  CHECK_EQ_INT(w, 960);
+  CHECK_EQ_INT(h, 540);
+  a.aspect_min = a.aspect_max = 1.0f; /* an app's own bounds */
+  cw_fit_logical_size(&a, 640, 480, &w, &h);
+  CHECK_EQ_INT(w, 540);
+  a.aspect_min = a.aspect_max = 0;
+  a.fit = CW_FIT_WIDTH;
+  cw_fit_logical_size(&a, 640, 480, &w, &h); /* Vert+: lines gained */
+  CHECK_EQ_INT(w, 960);
+  CHECK_EQ_INT(h, 720);
+  cw_fit_logical_size(&a, 1280, 800, &w, &h);
+  CHECK_EQ_INT(h, 600);
+  cw_fit_logical_size(&a, 2560, 1080, &w, &h);
+  CHECK_EQ_INT(h, 405);
+  FOLD(w);
+  FOLD(h);
+}
+
 CW_TEST_SUITE("core", { "pool", test_pool }, { "map", test_map }, { "array_arena_intern", test_array_arena_intern },
               { "rng_hash", test_rng_hash }, { "mem_stats", test_mem_stats }, { "jobs", test_jobs },
               { "channel_split", test_channel_split },
               { "job_chunks", test_job_chunks },
-              { "log_remove_waits", test_log_remove_waits })
+              { "log_remove_waits", test_log_remove_waits }, { "fit", test_fit })

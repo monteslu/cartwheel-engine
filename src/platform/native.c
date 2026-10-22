@@ -522,6 +522,16 @@ int cw_native_main(int argc, char **argv, cw_app_desc (*app_fn)(int, char **)) {
   p->app = app_fn(argc, argv);
   if (p->app.width <= 0) p->app.width = 1280;
   if (p->app.height <= 0) p->app.height = 720;
+  { /* CW_HOST_PREF=WxH: be a host that prefers that frame (a handheld's 640x480,
+     * a Steam Deck's 1280x800): the window opens at the frame the cart would
+     * hand such a host, the logical size under cw_app_desc.fit included */
+    const char *pref = getenv("CW_HOST_PREF");
+    int pw = 0, ph = 0;
+    if (pref && sscanf(pref, "%dx%d", &pw, &ph) == 2 && pw > 0 && ph > 0) {
+      p->host_pref_w = pw;
+      p->host_pref_h = ph;
+    }
+  }
   cw__resolve_scale();
   p->fixed_dt = 1.0 / (p->app.fixed_hz > 0 ? p->app.fixed_hz : 60);
   long fixed_frames = getenv("CW_FRAMES") ? strtol(getenv("CW_FRAMES"), NULL, 0) : 0;

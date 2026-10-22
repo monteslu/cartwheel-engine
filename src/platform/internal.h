@@ -21,6 +21,10 @@ typedef struct cw_platform {
    * read at wc_init): an auto render scale fits the logical size into it.
    * 0 = no preference; never set in a deterministic run, or natively. */
   int host_pref_w, host_pref_h;
+  /* the logical size the run was sized with (cw__resolve_scale): the design
+   * size, or under cw_app_desc.fit the host preference's aspect within the
+   * app's bounds (cw_fit_logical_size) */
+  int fit_w, fit_h;
   /* pixel_scale / crisp UI (src/platform/pixel.c). The output is px_w x
    * px_h; the scene renders at scene_w x scene_h and is scaled up k times
    * (nearest) into the view rect of the output (centred, black bars around

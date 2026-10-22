@@ -185,6 +185,9 @@ typedef enum {
   CW_SCALE_INTEGER, /* virtual canvas, scaled by the largest whole factor that fits, centred (pixel-perfect) */
   CW_SCALE_FIT,     /* virtual canvas, scaled to fit keeping aspect, centred */
   CW_SCALE_STRETCH, /* virtual canvas stretched over the whole window */
+  CW_SCALE_EXPAND,  /* FIT's scale over the whole window: the canvas grows to the window's aspect
+                     * instead of bars (a 320x180 canvas is 240x180 on 4:3, 432x180 on 21:9;
+                     * cw_r2d_canvas_size says); Camera2D limits still hold */
 } cw_scale_mode;
 
 typedef struct cw_r2d_pass_desc {
