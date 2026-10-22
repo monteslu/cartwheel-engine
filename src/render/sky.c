@@ -563,8 +563,10 @@ static void pass_sky_env(cw_pass_ctx *ctx, void *user) {
     built(s, key);
   }
   /* the scene's background and environment follow the node's switches */
-  t3_texture *bg = k->background ? s->cube_tex : NULL;
-  if (sc->background_texture != bg) t3_scene_set_background_texture(sc, bg);
+  /* its cube as the background while `background` is on; off, it only lets go of
+   * its own cube (an app's background texture of its own stays) */
+  if (k->background) { if (sc->background_texture != s->cube_tex) t3_scene_set_background_texture(sc, s->cube_tex); }
+  else if (sc->background_texture == s->cube_tex) t3_scene_set_background_texture(sc, NULL);
   t3_texture *env = k->environment && s->env ? s->env->texture : NULL;
   if (sc->environment != env && (env || (s->env && sc->environment == s->env->texture))) t3_scene_set_environment(sc, env);
 }

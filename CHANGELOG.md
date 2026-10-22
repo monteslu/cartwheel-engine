@@ -4,6 +4,19 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## Unreleased
+
+### Fixed
+- three.c ba2dadc (after v0.186.18): an extension texture may be sampled up
+  to 128 times in one program (was 64). The terrain extension's Medium and
+  High tiers sample the layer-normals array 72 times, so every near terrain
+  draw was skipped with "sampled too many times" in a game whose program
+  table was generated from a fresh project (the samples' table hid it).
+- ProceduralSky with `background` off no longer sets the scene's background
+  texture to NULL every frame: it only lets go of its own cube, so an app can
+  keep a background cube of its own (a skybox) while the physical sky lights
+  the scene.
+
 ## v0.14.1 (2026-10-21)
 
 Cart audio and controller fixes, safer visibility and terrain updates, and
