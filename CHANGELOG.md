@@ -7,7 +7,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 ## Unreleased
 
 ### Added
-- three.c 50c09a3: `t3_material.alpha_to_coverage` (material.alphaToCoverage):
+- three.c c5f840b: `t3_material.alpha_to_coverage` (material.alphaToCoverage):
   on a multisampled scene pass (PostProcess `msaa`) an alpha-tested card's
   alpha becomes its sample coverage, so foliage edges are soft. GL only.
 
