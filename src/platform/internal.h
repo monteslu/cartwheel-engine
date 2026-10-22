@@ -11,8 +11,12 @@ typedef struct cw_platform {
   SDL_Window *window;
   SDL_GLContext gl;
   int win_w, win_h;      /* logical: the SDL window's size / scale */
-  int px_w, px_h;        /* the SDL window's own size (scaled; a cart's framebuffer) */
-  float scale;           /* cw_app_desc.render_scale resolved (cw__resolve_scale) */
+  int px_w, px_h;        /* the output in GPU pixels: the SDL window's drawable (a HiDPI
+                          * display gives dpi pixels per window point), a cart's framebuffer */
+  float scale;           /* pixels per logical unit: cw_app_desc.render_scale resolved
+                          * (cw__resolve_scale, in window points) times dpi once a window exists */
+  float scale_pts;       /* the resolved scale in window points (what the window was sized with) */
+  float dpi;             /* drawable pixels per window point (1 without a window or HiDPI) */
   /* A cart host's preferred frame size (wc_host_info_t preferred_width/height,
    * read at wc_init): an auto render scale fits the logical size into it.
    * 0 = no preference; never set in a deterministic run, or natively. */

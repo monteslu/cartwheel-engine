@@ -17,6 +17,11 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   High tiers sample the layer-normals array 72 times, so every near terrain
   draw was skipped with "sampled too many times" in a game whose program
   table was generated from a fresh project (the samples' table hid it).
+- HiDPI windows (macOS retina): the output is now sized in the window's
+  drawable pixels, not its points. The render resolution setting below 100%,
+  `pixel_scale` and the crisp-UI floor drew the scene into the lower-left
+  quarter of the window (the viewport was in points on a 2x drawable) and the
+  2D passes over it clipped. Mouse events (points) map through the ratio.
 - ProceduralSky with `background` off no longer sets the scene's background
   texture to NULL every frame: it only lets go of its own cube, so an app can
   keep a background cube of its own (a skybox) while the physical sky lights

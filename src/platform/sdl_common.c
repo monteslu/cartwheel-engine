@@ -269,6 +269,8 @@ void cw__resolve_scale(void) {
 #endif
   if (s > 8) s = 8;
   p->scale = s;
+  p->scale_pts = s;
+  p->dpi = 1;
   p->px_w = CW_MAX(1, (int)lroundf((float)p->app.width * s));
   p->px_h = CW_MAX(1, (int)lroundf((float)p->app.height * s));
   if (fit) { /* rounding never takes a side past the preference */
@@ -301,6 +303,7 @@ void cw__resolve_scale(void) {
     p->px_w = sw * k;
     p->px_h = sh * k;
     p->scale = (float)p->px_h / (float)p->app.height;
+    p->scale_pts = p->scale;
   }
 }
 
@@ -342,12 +345,24 @@ void cw__render_scale_apply(float s) {
   render_scale_pending = true;
 }
 
-/* the SDL window's size changed (or is first known): logical = pixels / scale */
+/* the SDL window's size changed (or is first known), w x h in window points:
+ * the output is its drawable, in pixels (a HiDPI display, macOS retina, has
+ * dpi pixels per point: the scene, the view rect and the upscale are sized in
+ * pixels or they fill a corner of the window); logical = pixels / scale */
 static void set_window_px(int w, int h) {
   cw_platform *p = &cw__plat;
-  p->px_w = w;
-  p->px_h = h;
-  pixel_layout(w, h);
+  int pw = w, ph = h;
+  if (p->window) {
+    if (cw_gpu_backend() == CW_GPU_WEBGPU) SDL_GetWindowSizeInPixels(p->window, &pw, &ph);
+    else SDL_GL_GetDrawableSize(p->window, &pw, &ph);
+    if (pw <= 0 || ph <= 0) pw = w, ph = h;
+  }
+  if (!(p->scale_pts > 0)) p->scale_pts = p->scale;
+  p->dpi = w > 0 && h > 0 ? (float)ph / (float)h : 1.0f;
+  p->scale = p->scale_pts * p->dpi;
+  p->px_w = pw;
+  p->px_h = ph;
+  pixel_layout(pw, ph);
   /* logical = the picture's pixels / scale (the whole output unless pixel_scale left bars) */
   p->win_w = CW_MAX(1, (int)lroundf((float)p->view_w / p->scale));
   p->win_h = CW_MAX(1, (int)lroundf((float)p->view_h / p->scale));
@@ -459,6 +474,7 @@ bool cw__sdl_init(void) {
         float f = CW_MIN((float)r.w / (float)p->px_w, (float)(r.h - 40) / (float)p->px_h); /* room for a title bar */
         if (f < 1) {
           p->scale = CW_MAX(1.0f, p->scale * f);
+          p->scale_pts = p->scale;
           p->px_w = (int)lroundf((float)p->app.width * p->scale);
           p->px_h = (int)lroundf((float)p->app.height * p->scale);
         }
@@ -578,8 +594,8 @@ void cw__sdl_poll(void) {
     case SDL_MOUSEMOTION:
       if (ev.motion.which == SDL_TOUCH_MOUSEID) break;
       in->mouse_present = true;
-      in->mouse_x = (float)(ev.motion.x - p->view_x) / p->scale; /* window pixels -> logical (the picture's origin) */
-      in->mouse_y = (float)(ev.motion.y - p->view_y) / p->scale;
+      in->mouse_x = ((float)ev.motion.x * p->dpi - (float)p->view_x) / p->scale; /* window points -> pixels -> logical (the picture's origin) */
+      in->mouse_y = ((float)ev.motion.y * p->dpi - (float)p->view_y) / p->scale;
       e.type = CW_EVENT_MOUSE_MOVE;
       e.mouse.x = in->mouse_x;
       e.mouse.y = in->mouse_y;
@@ -598,8 +614,8 @@ void cw__sdl_poll(void) {
       }
       e.type = ev.type == SDL_MOUSEBUTTONDOWN ? CW_EVENT_MOUSE_DOWN : CW_EVENT_MOUSE_UP;
       e.mouse.button = b;
-      e.mouse.x = (float)(ev.button.x - p->view_x) / p->scale;
-      e.mouse.y = (float)(ev.button.y - p->view_y) / p->scale;
+      e.mouse.x = ((float)ev.button.x * p->dpi - (float)p->view_x) / p->scale;
+      e.mouse.y = ((float)ev.button.y * p->dpi - (float)p->view_y) / p->scale;
       break;
     }
     case SDL_MOUSEWHEEL:
