@@ -6,6 +6,7 @@
  * cast on it, in the order a world ray cast does its arithmetic, so a query
  * and a physics ray agree to the bit. */
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -388,25 +389,48 @@ bool cw_terrain_import_splat(cw_terrain *t, const char *path, int first_layer) {
 
 /* ── layers ─────────────────────────────────────────────────────────── */
 
-static uint8_t *resize_tile(const uint8_t *src, int w, int h) {
-  uint8_t *dst = cw_alloc((size_t)TR_TILE * TR_TILE * 4, CW_MEM_RENDER);
-  for (int y = 0; y < TR_TILE; y++)
+/* A layer's pixels resampled to the TR_TILE square: a job's rows at a time
+ * (a 256-square game texture is 6 M bilinear taps a layer; this took 55 ms
+ * a layer on one thread in a cart), in 16.16 fixed point, wrapping (the
+ * layers repeat). */
+typedef struct resize_job { const uint8_t *src; uint8_t *dst; int w, h; } resize_job;
+static void resize_rows(int begin, int end, int worker, void *ctx) {
+  (void)worker;
+  const resize_job *j = ctx;
+  const uint8_t *src = j->src;
+  int w = j->w, h = j->h;
+  /* source coordinate of a destination pixel centre, in 16.16, wrapped positive */
+  for (int y = begin; y < end; y++) {
+    int64_t fy = ((int64_t)(2 * y + 1) * h << 15) / TR_TILE - (1 << 15);
+    int y0 = (int)(fy >> 16), vy = (int)(fy & 0xffff);
+    int ya = ((y0 % h) + h) % h, yb = (ya + 1) % h;
+    const uint8_t *ra = src + 4 * ya * w, *rb = src + 4 * yb * w;
+    uint8_t *out = j->dst + 4 * (size_t)y * TR_TILE;
     for (int x = 0; x < TR_TILE; x++) {
-      /* bilinear, wrapping (the layers repeat) */
-      float fx = ((float)x + 0.5f) * (float)w / TR_TILE - 0.5f, fy = ((float)y + 0.5f) * (float)h / TR_TILE - 0.5f;
-      int x0 = (int)floorf(fx), y0 = (int)floorf(fy);
-      float u = fx - (float)x0, v = fy - (float)y0;
-      int xa = ((x0 % w) + w) % w, xb = (xa + 1) % w, ya = ((y0 % h) + h) % h, yb = (ya + 1) % h;
+      int64_t fx = ((int64_t)(2 * x + 1) * w << 15) / TR_TILE - (1 << 15);
+      int x0 = (int)(fx >> 16), u = (int)(fx & 0xffff);
+      int xa = ((x0 % w) + w) % w, xb = (xa + 1) % w;
+      const uint8_t *a = ra + 4 * xa, *b = ra + 4 * xb, *c = rb + 4 * xa, *d = rb + 4 * xb;
       for (int k = 0; k < 4; k++) {
-        float a = src[4 * (ya * w + xa) + k], b = src[4 * (ya * w + xb) + k], c = src[4 * (yb * w + xa) + k],
-              d = src[4 * (yb * w + xb) + k];
-        float s = (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
-        dst[4 * (y * TR_TILE + x) + k] = (uint8_t)(s + 0.5f);
+        /* two lerps in 16.16: (a + (b - a) u) (1 - v) + (c + (d - c) u) v */
+        int64_t top = ((int64_t)a[k] << 16) + (int64_t)(b[k] - a[k]) * u;
+        int64_t bot = ((int64_t)c[k] << 16) + (int64_t)(d[k] - c[k]) * u;
+        int64_t s = (top * (65536 - vy) + bot * vy) >> 16; /* 16.16 */
+        out[4 * x + k] = (uint8_t)((s + (1 << 15)) >> 16);
       }
     }
+  }
+}
+static uint8_t *resize_tile(const uint8_t *src, int w, int h) {
+  uint8_t *dst = cw_alloc((size_t)TR_TILE * TR_TILE * 4, CW_MEM_RENDER);
+  if (w == TR_TILE && h == TR_TILE) {
+    memcpy(dst, src, (size_t)TR_TILE * TR_TILE * 4);
+    return dst;
+  }
+  resize_job j = { src, dst, w, h };
+  cw_parallel_for(TR_TILE, 16, resize_rows, &j);
   return dst;
 }
-
 static float srgb_to_linear(float c) { return c <= 0.04045f ? c / 12.92f : powf((c + 0.055f) / 1.055f, 2.4f); }
 
 void cw_terrain_set_layer_pixels(cw_terrain *t, int i, const uint8_t *albedo, const uint8_t *normal, int w, int h,
@@ -424,8 +448,17 @@ void cw_terrain_set_layer_pixels(cw_terrain *t, int i, const uint8_t *albedo, co
   t->layer[i].set = true;
   double s[3] = { 0, 0, 0 };
   if (t->layer[i].albedo) {
+    /* the layer's mean colour in linear light: a byte has 256 values, so a
+     * table stands in for a million powf calls (the tile is 1 M pixels) */
+    static float lut[256];
+    static bool lut_ready;
+    if (!lut_ready) {
+      for (int v = 0; v < 256; v++) lut[v] = srgb_to_linear((float)v / 255.0f);
+      lut_ready = true;
+    }
+    const uint8_t *px = t->layer[i].albedo;
     for (int p = 0; p < TR_TILE * TR_TILE; p++)
-      for (int k = 0; k < 3; k++) s[k] += srgb_to_linear(t->layer[i].albedo[4 * p + k] / 255.0f);
+      for (int k = 0; k < 3; k++) s[k] += lut[px[4 * p + k]];
     for (int k = 0; k < 3; k++) t->layer[i].mean[k] = (float)(s[k] / (TR_TILE * TR_TILE));
   } else {
     for (int k = 0; k < 3; k++) t->layer[i].mean[k] = srgb_to_linear(0.5f);
