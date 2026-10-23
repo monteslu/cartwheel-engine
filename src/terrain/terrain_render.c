@@ -393,8 +393,10 @@ void cw__terrain_gpu_update(cw_terrain *t) {
   }
   int q = cw__terrain_quality(t);
   if (q != g->near_q) {
+    /* swap the surface part only: parts a game added (cartwheel/shading.h) and the lighting's stay */
+    cw_shading_remove(g->mat_near, near_ext(g->near_q));
     g->near_q = q;
-    t3_material_set_extension(g->mat_near, near_ext(q));
+    cw_shading_add(g->mat_near, near_ext(q));
   }
   t->stats.upload_ms = (float)(tr_now_ms() - t0);
 }

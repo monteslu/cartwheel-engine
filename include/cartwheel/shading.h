@@ -56,6 +56,9 @@ void cw_shading_part(t3_renderer *r, const char *name, t3_extension_fill fill, v
  * order), so meshes whose material carries it may be auto-instanced. A
  * composed extension batches when all of its parts do. Off by default. */
 void cw_shading_part_batching(t3_renderer *r, const char *name, bool on);
+/* A part named `name` was registered (cw_shading_part) on some renderer: the
+ * engine's lighting composes its own parts (cluster, csm) with it. */
+bool cw_shading_part_known(const char *name);
 /* Forget a renderer (before t3_renderer_destroy). */
 void cw_shading_forget(t3_renderer *r);
 

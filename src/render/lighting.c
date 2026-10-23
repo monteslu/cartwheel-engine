@@ -175,6 +175,12 @@ static bool composes(const char *ext) {
     size_t len = e ? (size_t)(e - p) : strlen(p);
     bool known = false;
     for (size_t i = 0; i < sizeof ok / sizeof ok[0] && !known; i++) known = strlen(ok[i]) == len && !strncmp(ok[i], p, len);
+    if (!known && len < 16) { /* a project part (cartwheel/shading.h) registered with the renderer composes too */
+      char part[16];
+      memcpy(part, p, len);
+      part[len] = 0;
+      known = cw_shading_part_known(part);
+    }
     if (!known) return false;
     if (!e) break;
     p = e + 1;
