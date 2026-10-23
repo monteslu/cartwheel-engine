@@ -4,7 +4,12 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## Unreleased
+## v0.15.1 (2026-10-23)
+
+Loading without the stalls: the loading screen's shader phase compiles one
+program per material rather than one per mesh, terrain layer uploads cost
+milliseconds instead of tens, and a game's own shading parts keep the engine's
+shadows and lights.
 
 ### Changed
 - The scene app's warm-up (the shader phase under the loading screen)
