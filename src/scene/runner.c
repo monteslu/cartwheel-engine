@@ -1,5 +1,7 @@
 /* The scene runner: an app that runs a tree with a main scene. */
+#include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include "scene_internal.h"
@@ -199,6 +201,52 @@ static void warm_collect(t3_object *o, void *ctx) {
   }
 }
 
+/* A program comes from a material on a kind of object with a set of
+ * geometry attributes, not from a mesh: a scene of a thousand meshes over
+ * thirty materials (a game that builds every bike and rider once, so their
+ * programs compile under the loading screen) needs thirty reveals, not a
+ * thousand. The objects are reordered so the first of each (materials,
+ * type, attributes, morphs) key comes first, in drawing order; once those
+ * are shown the rest come all at once. Returns the count of those firsts. */
+static uint64_t warm_key(const t3_object *o) {
+  const t3_mesh *m = (const t3_mesh *)o; /* lines, points and sprites share the mesh layout */
+  uint64_t h = 1469598103934665603ull ^ (uint64_t)o->type;
+  for (int i = 0; i < m->material_count; i++) h = (h ^ (uint64_t)(uintptr_t)m->materials[i]) * 1099511628211ull;
+  if (m->geometry) {
+    uint64_t attrs = 0;
+    for (int a = 0; a < T3_ATTR_COUNT; a++) attrs |= (uint64_t)(m->geometry->attributes[a] != NULL) << a;
+    attrs |= (uint64_t)(m->geometry->morph_position != NULL) << 40 | (uint64_t)(m->geometry->morph_normal != NULL) << 41;
+    h = (h ^ attrs) * 1099511628211ull;
+  }
+  return h ? h : 1;
+}
+static int warm_order(void) {
+  int n = warm.n;
+  if (n < 2) return n;
+  int cap = 1;
+  while (cap < n * 2) cap *= 2;
+  uint64_t *seen = calloc((size_t)cap, sizeof *seen);
+  t3_object **firsts = malloc(sizeof *firsts * (size_t)n), **rest = malloc(sizeof *rest * (size_t)n);
+  int nf = 0, nr = 0;
+  for (int i = 0; i < n; i++) {
+    uint64_t k = warm_key(warm.objs[i]);
+    size_t at = (size_t)(k & (uint64_t)(cap - 1));
+    bool is_new = true;
+    while (seen[at]) {
+      if (seen[at] == k) { is_new = false; break; }
+      at = (at + 1) & (size_t)(cap - 1);
+    }
+    if (is_new) seen[at] = k, firsts[nf++] = warm.objs[i];
+    else rest[nr++] = warm.objs[i];
+  }
+  memcpy(warm.objs, firsts, sizeof *firsts * (size_t)nf);
+  memcpy(warm.objs + nf, rest, sizeof *rest * (size_t)nr);
+  free(seen);
+  free(firsts);
+  free(rest);
+  return nf;
+}
+
 static bool r_warmup(void *u) {
   (void)u;
   if (!warm.app_done) {
@@ -249,6 +297,9 @@ static void warm_slice(int w, int h) {
   t3_scene *sc = cw_render3d_scene(run.tree);
   warm.n = 0;
   if (sc) t3_object_traverse(sc, warm_collect, NULL);
+  int reps = warm_order();
+  /* every program has had its first object: the rest can add none */
+  if (!last && warm.shown >= reps) warm.shown = warm.n;
   int show = last ? warm.n : warm.shown;
   if (show >= warm.n) warm.shown = warm.n, warm.all_shown = true;
   bool *was = malloc(sizeof *was * (size_t)(warm.n ? warm.n : 1));

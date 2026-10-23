@@ -7,6 +7,12 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 ## Unreleased
 
 ### Changed
+- The scene app's warm-up (the shader phase under the loading screen)
+  reveals one object per distinct material, object kind and attribute set,
+  then the rest at once: a game that builds every character and vehicle once
+  at init so their programs compile under the loading screen (BikeMesa's
+  seven bikes and three riders: a thousand meshes over thirty materials)
+  costs thirty slices, not a thousand.
 - `cw_terrain_set_layer_pixels` resamples a layer to the tile size on the job
   pool in fixed point and takes the layer's mean colour through a 256-entry
   table instead of a `powf` per texel: a 256-square layer cost 55 ms on one
