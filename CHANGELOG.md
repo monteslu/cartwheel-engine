@@ -4,6 +4,18 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## Unreleased
+
+### Changed
+- Shading parts a game registers (`cw_shading_part`) now compose with the
+  engine's lighting: the sun's cascaded shadows and clustered lights are added
+  to a material carrying a project part (before, only the engine's own part
+  names composed and such a material lost its shadows). `cw_shading_part_known`
+  asks whether a part is registered.
+- Terrain3D keeps the shading parts a game added to its material across a
+  quality switch (it swaps only its own surface part), so a project part on
+  the terrain survives the graphics menu.
+
 ## v0.15.0 (2026-10-22)
 
 Screens of other aspects: a game declares how it meets a 4:3 handheld or a

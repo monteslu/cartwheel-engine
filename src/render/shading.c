@@ -174,6 +174,13 @@ void cw_shading_part(t3_renderer *r, const char *name, t3_extension_fill fill, v
   reinstall(r, name);
 }
 
+bool cw_shading_part_known(const char *name) {
+  if (!name || !name[0]) return false;
+  for (int i = 0; i < S.nparts; i++)
+    if (!strcmp(S.parts[i].name, name)) return true;
+  return false;
+}
+
 void cw_shading_forget(t3_renderer *r) {
   int w = 0;
   for (int i = 0; i < S.nparts; i++)
