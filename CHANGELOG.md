@@ -7,6 +7,11 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 ## Unreleased
 
 ### Changed
+- `cw_terrain_set_layer_pixels` resamples a layer to the tile size on the job
+  pool in fixed point and takes the layer's mean colour through a 256-entry
+  table instead of a `powf` per texel: a 256-square layer cost 55 ms on one
+  thread in a cart (BikeMesa's backdrop set three per track load), now about
+  3 ms. The resampled pixels are the same.
 - Shading parts a game registers (`cw_shading_part`) now compose with the
   engine's lighting: the sun's cascaded shadows and clustered lights are added
   to a material carrying a project part (before, only the engine's own part
