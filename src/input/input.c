@@ -205,6 +205,23 @@ uint32_t cw_input_player_devices(int player) {
   return I.init && player >= 0 && player < CW_INPUT_MAX_PLAYERS ? I.devices[player] : 0;
 }
 
+/* ── rumble ────────────────────────────────────────────────────────── */
+
+uint32_t cw__rumble_req[5]; /* count, pad, low and high in thousandths, ms: the debug field cw.rumble */
+
+static float rumble_unit(float v) { return v > 0 ? (v < 1 ? v : 1) : 0; } /* clamps, and NaN is 0 */
+
+bool cw_input_has_rumble(int player) { return cw__platform_pad_has_rumble(cw_input_player_pad(player)); }
+void cw_input_rumble(int player, float low, float high, int ms) {
+  int pad = cw_input_player_pad(player);
+  low = rumble_unit(low), high = rumble_unit(high);
+  ms = ms < 0 ? 0 : ms > 5000 ? 5000 : ms;
+  cw__rumble_req[0]++, cw__rumble_req[1] = pad < 0 ? 0xffffffffu : (uint32_t)pad;
+  cw__rumble_req[2] = (uint32_t)(low * 1000.0f + 0.5f), cw__rumble_req[3] = (uint32_t)(high * 1000.0f + 0.5f), cw__rumble_req[4] = (uint32_t)ms;
+  cw__platform_pad_rumble(pad, low, high, ms);
+}
+void cw_input_rumble_stop(int player) { cw_input_rumble(player, 0, 0, 0); }
+
 /* ── queries ───────────────────────────────────────────────────────── */
 
 static const cw__slot *slot_of(int player, cw_action a) {

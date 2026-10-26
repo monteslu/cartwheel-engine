@@ -99,6 +99,17 @@ node tools/run-cart.mjs --host native --app input_demo --frames 100 --input test
 
 179 ticks of input took 317 bytes. Every app with actions also publishes `input.hash` and `input.ticks` as debug fields (the hash of every tick snapshot so far), and the `record start|stop|status|fetch|replay` debug command records and replays from outside the game, which is how a bug report carries its exact input.
 
+## Rumble
+
+A game drives a player's pad motors with [cw_input_rumble](api:cw_input_rumble): `low` is the heavy motor, `high` the light one (both 0 to 1, out of range clamps), `ms` how long (at most 5000). A new call replaces the one running and [cw_input_rumble_stop](api:cw_input_rumble_stop) ends it. The player's pad is the one [cw_input_assign](api:cw_input_assign) gave them, so a split-screen game buzzes only the pad of the player who was hit.
+
+```c
+if (hard_landing) cw_input_rumble(player, 0.6f, 0.2f, 140);
+if (boosting)     cw_input_rumble(player, 0.15f, 0.35f, 100); /* re-issued each few ticks while it lasts */
+```
+
+Every call is safe on any setup: no pad, a pad without motors, keyboard only, or a host without hardware all do nothing. Ask [cw_input_has_rumble](api:cw_input_has_rumble) only to offer the player an on/off setting. Natively it is SDL's controller rumble; in a cart it reaches the host through wasmcart's `wc_pad_rumble`, which a browser plays as a dual-rumble effect. Rumble is presentation only: it never feeds into input or the simulation, so it is fine to call from `fixed_update` (and a replay or a rollback re-simulation should not call it again for ticks it re-runs). The debug field `cw.rumble` (request count, pad, low and high in thousandths, ms) shows the last request to tests; the `input-pad` gate checks it on every host.
+
 ## Raw input
 
 [cw_input_raw](api:cw_input_raw) (in [cartwheel/platform.h](header:platform.h)) is the per-frame device snapshot the actions are built from: keys by scancode, mouse, wheel, ten touches, four pads. [cw_set_raw_input_filter](api:cw_set_raw_input_filter) rewrites it before actions are built, at the same point on every host, which is how an autopilot or demo player feeds an input-free host. Text entry (typed, composed text for text fields) arrives as events, not actions; see [UI](guide:ui).
