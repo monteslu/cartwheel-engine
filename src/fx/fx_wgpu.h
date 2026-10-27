@@ -102,7 +102,7 @@ WGPUComputePipeline cw__wg_compute(const char *label, WGPUShaderModule m, const 
 void cw__wg_dispatch(WGPUComputePassEncoder p, uint32_t threads);
 
 /* blend presets for render pipelines */
-enum { CW_WG_BLEND_NONE, CW_WG_BLEND_ADD, CW_WG_BLEND_PREMUL, CW_WG_BLEND_MULTIPLY };
+enum { CW_WG_BLEND_NONE, CW_WG_BLEND_ADD, CW_WG_BLEND_PREMUL, CW_WG_BLEND_MULTIPLY, CW_WG_BLEND_ADD_ALL /* every channel adds (the distortion buffer) */ };
 const WGPUBlendState *cw__wg_blend(int preset);
 
 /* begin a render pass on the targets (load + store; with the depth

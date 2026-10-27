@@ -15,7 +15,7 @@ t3_mesh *cw__mesh3d_t3(cw_node n); /* src/scene/render3d.c */
 static const char *const shape_names[] = { "POINT", "SPHERE", "SPHERE_SURFACE", "BOX", "RING", "MESH", NULL };
 static const char *const draw_names[] = { "BILLBOARD", "STRETCHED", "MESH", NULL };
 static const char *const mprim_names[] = { "BOX", "SPHERE", "TETRA", "NODE", NULL };
-static const char *const blend_names[] = { "ADD", "ALPHA", "OPAQUE", NULL };
+static const char *const blend_names[] = { "ADD", "ALPHA", "OPAQUE", "DISTORT", "REFRACT", NULL };
 
 static const cw_node_type *p3d_t;
 
@@ -288,6 +288,7 @@ static const char *const draw_vs =
     "uniform int u_mode;\n"
     "out vec4 v_color;\n"
     "out vec2 v_uv;\n"
+    "out float v_t, v_id;\n"
     "out float v_vz;\n"
     "out vec3 v_n;\n"
     "vec4 curve(float t, int row) {\n"
@@ -353,6 +354,7 @@ static const char *const draw_vs =
     "  }\n"
     "  vec4 vp = u_view * vec4(world, 1.0);\n"
     "  v_vz = -vp.z;\n"
+    "  v_t = t; v_id = float(i);\n"
     "  v_color = col;\n"
     "  gl_Position = u_proj * vp;\n"
     "}\n";
@@ -361,6 +363,9 @@ static const char *const draw_fs =
     "in vec4 v_color;\n"
     "in vec2 v_uv;\n"
     "in float v_vz;\n"
+    "in float v_t, v_id;\n"
+    "uniform vec4 u_dstr;\n" /* distort strength, custom texture, proj00 / 2, proj11 / 2 */
+    "uniform sampler2D u_scene;\n"
     "in vec3 v_n;\n"
     "uniform sampler2D u_tex;\n"
     "uniform sampler2D u_depth;\n"
@@ -376,6 +381,24 @@ static const char *const draw_fs =
     "  if (u_soft.x > 0.0) {\n"
     "    float zs = lin(texture(u_depth, gl_FragCoord.xy * u_inv_size).r);\n"
     "    c.a *= clamp((zs - v_vz) / u_soft.x, 0.0, 1.0);\n"
+    "  }\n"
+    "  if (u_blend >= 3) {\n"
+    "    vec2 uv0 = gl_FragCoord.xy * u_inv_size;\n"
+    "    float zd = lin(texture(u_depth, uv0).r);\n"
+    "    vec2 n;\n"
+    "    if (u_dstr.y > 0.5) n = texture(u_tex, v_uv).rg * 2.0 - 1.0;\n"
+    "    else if (u_blend == 3) n = vec2(sin(v_uv.y * 11.0 + v_t * 7.0 + v_id * 1.37), cos(v_uv.x * 9.0 - v_t * 6.0 + v_id * 2.11));\n"
+    "    else n = vec2(v_uv.x - 0.5, 0.5 - v_uv.y) * 2.0;\n"
+    "    vec2 off = n * c.a * u_dstr.x * u_dstr.zw / v_vz;\n"
+    "    if (u_blend == 3) {\n"
+    "      if (zd < v_vz - 0.02) discard;\n"
+    "      frag = vec4(off, v_vz * c.a, c.a);\n"
+    "      return;\n"
+    "    }\n"
+    "    vec2 uv2 = uv0 + off;\n"
+    "    if (lin(texture(u_depth, uv2).r) < v_vz - 0.02) uv2 = uv0;\n"
+    "    frag = vec4(texture(u_scene, uv2).rgb * v_color.rgb * c.a, c.a);\n"
+    "    return;\n"
     "  }\n"
     "  if (u_blend == 2) { if (c.a < 0.5) discard; frag = vec4(c.rgb, 1.0); return; }\n"
     "  frag = vec4(c.rgb * c.a, u_blend == 1 ? c.a : 0.0);\n"
@@ -1244,6 +1267,12 @@ static void gpu_stats(p3d *d, cw__psys *r) {
 }
 
 static void set_blend(int blend) {
+  if (blend == BLEND_DISTORT) { /* into the distortion buffer: every channel adds */
+    glEnable(GL_BLEND);
+    glDepthMask(GL_FALSE);
+    glBlendFunc(GL_ONE, GL_ONE);
+    return;
+  }
   if (blend == BLEND_OPAQUE) {
     glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);
@@ -1258,7 +1287,22 @@ static void set_blend(int blend) {
 /* every system's frame. WebGPU: their compute work in one compute pass,
  * then their draws in one render pass, in the systems' order (a render pass
  * loads and stores the scene's targets: once a view, not once a system) */
+bool cw__psys_distort_active(cw_node n) {
+  p3d *d = cw_node_data_t(n, p3d_t);
+  return d && d->blend == BLEND_DISTORT && d->rt && d->amount > 0 && d->lifetime > 0 && d->alive > 0 && d->distort_strength > 0;
+}
+bool cw__psys_refract_active(cw_node n) {
+  p3d *d = cw_node_data_t(n, p3d_t);
+  return d && d->blend == BLEND_REFRACT && d->rt && d->amount > 0 && d->lifetime > 0 && d->alive > 0;
+}
+
 void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft) {
+  ft->copy = NULL;
+  for (int i = 0; i < ft->systems.count; i++)
+    if (cw__psys_refract_active(ft->systems.data[i])) {
+      cw__fx_scene_copy(ctx, ft); /* once, before any particle draws: refraction shows the scene without particles */
+      break;
+    }
 #if CW_WGPU
   if (cw__wgpu_on()) {
     int n = ft->systems.count;
@@ -1275,11 +1319,43 @@ void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft) {
       wgpuComputePassEncoderRelease(cp);
     }
     if (!any) return;
-    WGPURenderPassEncoder rp = cw__wg_scene_pass(cw__fx_pass_targets(ctx), true, "particles");
-    for (int i = 0; i < n; i++)
-      if (draws[i]) cw__psys_draw_wgpu(rp, ft->systems.data[i], cw_node_data_t(ft->systems.data[i], p3d_t), ctx, ft);
-    wgpuRenderPassEncoderEnd(rp);
-    wgpuRenderPassEncoderRelease(rp);
+    const cw__wgpu_pass_targets *base = cw__fx_pass_targets(ctx);
+    bool main_any = false, dist_any = false;
+    for (int i = 0; i < n; i++) {
+      p3d *d = cw_node_data_t(ft->systems.data[i], p3d_t);
+      if (draws[i] && d->blend == BLEND_REFRACT && !ft->copy) draws[i] = false;
+      if (draws[i] && d->blend == BLEND_DISTORT && !ft->dist) draws[i] = false;
+      if (draws[i]) {
+        if (d->blend == BLEND_DISTORT) dist_any = true;
+        else main_any = true;
+      }
+    }
+    if (main_any) {
+      WGPURenderPassEncoder rp = cw__wg_scene_pass(base, true, "particles");
+      for (int i = 0; i < n; i++) {
+        p3d *d = cw_node_data_t(ft->systems.data[i], p3d_t);
+        if (draws[i] && d->blend != BLEND_DISTORT) cw__psys_draw_wgpu(rp, ft->systems.data[i], d, ctx, ft, base);
+      }
+      wgpuRenderPassEncoderEnd(rp);
+      wgpuRenderPassEncoderRelease(rp);
+    }
+    if (dist_any) { /* DISTORT systems draw into the distortion buffer (no depth: the shader tests it) */
+      cw__wgpu_pass_targets dt = *base;
+      dt.color = cw__pw_attach(ft->dist->tex);
+      dt.color_format = cw__pw_format(ft->dist->tex);
+      dt.depth = NULL;
+      dt.w = ft->dist->w;
+      dt.h = ft->dist->h;
+      dt.samples = 1;
+      dt.resolve = NULL;
+      WGPURenderPassEncoder rp = cw__wg_scene_pass(&dt, false, "particles.distort");
+      for (int i = 0; i < n; i++) {
+        p3d *d = cw_node_data_t(ft->systems.data[i], p3d_t);
+        if (draws[i] && d->blend == BLEND_DISTORT) cw__psys_draw_wgpu(rp, ft->systems.data[i], d, ctx, ft, &dt);
+      }
+      wgpuRenderPassEncoderEnd(rp);
+      wgpuRenderPassEncoderRelease(rp);
+    }
     return;
   }
 #endif
@@ -1315,7 +1391,7 @@ void cw__psys_frame(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
   } else t3_mat4_identity(&model);
 
   bool want_sort = d->sort && d->blend == BLEND_ALPHA;
-  bool want_trail = d->trail_length >= 2 && r->hist_fbo && r->hist_count >= 2;
+  bool want_trail = d->trail_length >= 2 && r->hist_fbo && r->hist_count >= 2 && d->blend < BLEND_DISTORT;
   bool have_state = false;
   if (want_sort || want_trail || d->gpu_stats) have_state = scatter_state(d, r);
   if (d->gpu_stats && have_state) gpu_stats(d, r);
@@ -1326,9 +1402,16 @@ void cw__psys_frame(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
     sorted = np > 0 || r->sort_n == 1;
   }
 
-  /* draw into the scene target */
-  cw_pass_bind_target(ctx, ctx->scene);
+  const cw_rt *dist = NULL;
+  if (d->blend == BLEND_DISTORT) {
+    dist = cw__fx_distort_target(ft);
+    if (!dist) return; /* nothing made a distortion buffer this frame */
+  }
+  if (d->blend == BLEND_REFRACT && !ft->copy) return;
+  /* draw into the scene target (DISTORT: the distortion buffer, depth tested in the shader) */
+  cw_pass_bind_target(ctx, dist ? dist : ctx->scene);
   glEnable(GL_DEPTH_TEST);
+  if (dist) glDisable(GL_DEPTH_TEST);
   glDepthFunc(GL_LEQUAL);
   glDisable(GL_CULL_FACE);
   set_blend(d->blend);
@@ -1383,6 +1466,12 @@ void cw__psys_frame(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
   cw__fx_u2f(dp, "u_frames", (float)CW_MAX(d->hframes, 1), (float)CW_MAX(d->vframes, 1));
   cw__fx_u1i(dp, "u_mode", d->draw_mode);
   cw__fx_u1i(dp, "u_blend", d->blend);
+  {
+    const float *pm = ctx->camera->projection_matrix.e;
+    cw__fx_u4f(dp, "u_dstr", d->distort_strength, d->texture && *d->texture ? 1.0f : 0.0f, pm[0] * 0.5f, pm[5] * 0.5f);
+    cw__fx_bind_tex(6, GL_TEXTURE_2D, ft->copy ? ft->copy->tex : cw__fx_dot_texture());
+    cw__fx_u1i(dp, "u_scene", 6);
+  }
   GLuint tex = d->texture && *d->texture ? cw__fx_texture_asset(d->texture, NULL, NULL) : 0;
   if (!tex) tex = cw__fx_dot_texture();
   cw__fx_bind_tex(0, GL_TEXTURE_2D, tex);
@@ -1392,7 +1481,7 @@ void cw__psys_frame(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
   cw__fx_u1i(dp, "u_depth", 1);
   cw__fx_u1i(dp, "u_curve", 2);
   cw__fx_u4f(dp, "u_soft", ctx->depth_tex ? d->soft_distance : 0, lp[0], lp[1], lp[2]);
-  cw__fx_u2f(dp, "u_inv_size", 1.0f / (float)ctx->width, 1.0f / (float)ctx->height);
+  cw__fx_u2f(dp, "u_inv_size", 1.0f / (float)(dist ? dist->w : ctx->width), 1.0f / (float)(dist ? dist->h : ctx->height));
   if (sorted) {
     cw__fx_bind_tex(3, GL_TEXTURE_2D, r->state_tex[0]);
     cw__fx_bind_tex(4, GL_TEXTURE_2D, r->state_tex[1]);
@@ -1491,6 +1580,7 @@ static void p3d_init(cw_node n, void *data) {
   d->mesh_node = cw_intern("");
   d->hframes = d->vframes = 1;
   d->blend = BLEND_ADD;
+  d->distort_strength = 0.3f;
   d->trail_width = 0.05f;
   d->rt = cw_calloc(1, sizeof *d->rt, CW_MEM_RENDER);
   d->rt->steps = cw_alloc(sizeof(step_rec) * MAX_STEPS, CW_MEM_RENDER);
@@ -1688,8 +1778,9 @@ static const cw_prop p3d_props[] = {
   F(hframes, CW_T_INT, "Flipbook columns (frames play over life)."),
   F(vframes, CW_T_INT, "Flipbook rows."),
   F(spin, CW_T_FLOAT, "Rotation speed, rad/s (random direction per particle)."),
-  E(blend, blend_names, "ADD (glow), ALPHA (premultiplied, sortable) or OPAQUE (alpha tested, writes depth)."),
+  E(blend, blend_names, "ADD (glow), ALPHA (premultiplied, sortable), OPAQUE (alpha tested, writes depth), DISTORT (bends the picture behind it, draws no colour: heat haze) or REFRACT (shows the scene through it: glass, drops; explosions.h)."),
   R(soft_distance, CW_T_FLOAT, 0, 1e6, "Fade over this distance in front of geometry (0 = hard)."),
+  R(distort_strength, CW_T_FLOAT, 0, 1e3, "DISTORT / REFRACT: how far the picture behind a particle is shifted at its centre (world units at its distance), times its alpha over life."),
   F(sort, CW_T_BOOL, "ALPHA: draw back to front (GPU bitonic sort)."),
   F(trail_length, CW_T_INT, "Trail samples per particle, one per tick (0 = none, max 64)."),
   R(trail_width, CW_T_FLOAT, 0, 1e6, "Trail width at the particle (tapers to 0)."),

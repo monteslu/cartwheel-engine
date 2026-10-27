@@ -47,6 +47,7 @@ void cw__fx_ensure_pass(cw_tree *t) {
   cw__fx_tree *ft = cw__fx_tree_of(t);
   if (ft->pass_added) return;
   cw_pipeline *p = cw_pipeline_of(t);
+  cw__fx_ensure_distort(t);
   if (!cw_pipeline_has_pass(p, "particles"))
     cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "particles", .phase = CW_PHASE_EFFECTS, .order = 200,
                                              .reads = CW_RES_DEPTH, .writes = CW_RES_COLOR,
@@ -65,4 +66,5 @@ void cw__register_fx_types(void) {
   cw__register_particles2d_types();
   cw__register_trail3d_types();
   cw__register_decal_types();
+  cw__register_distort_types();
 }
