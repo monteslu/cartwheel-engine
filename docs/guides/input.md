@@ -81,6 +81,27 @@ Projects from editor templates keep their actions in `project.cwproj`, one `inpu
 
 @include editor/templates/platformer_2d/project.cwproj
 
+## Aiming with a stick
+
+A raw stick is a poor aim control: a dead zone you notice, a response too touchy near the middle and too slow at the edge. [cw_aim_step](api:cw_aim_step) ([cartwheel/aim.h](header:aim.h)) turns the stick vector into the radians to turn this tick:
+
+- a radial dead zone, rescaled so the response starts at zero (no jump at the edge of the zone),
+- a response curve, `power`: above 1 gives fine control near the middle and full speed at the edge, below 1 is twitchy,
+- a top turn rate for each axis (pitch is usually slower than yaw),
+- acceleration: holding the stick at its edge ramps the turn rate up over `ramp_seconds` to `1 + ramp_gain` times, so a flick turns fast and small corrections stay precise,
+- an assist: while `on_target` is set (the crosshair sits on something to aim at) the turn is slowed by up to `assist`.
+
+```c
+static cw_aim_state aim[4];                          // one per player
+cw_aim_curve curve = cw_aim_curve_default();
+cw_vec2 stick = cw_input_vector(p, look_l, look_r, look_u, look_d, CW_DEADZONE_RADIAL, 0);
+cw_vec2 turn = cw_aim_step(&aim[p], &curve, stick, 1.0f / 60, crosshair_on_enemy ? 1 : 0);
+yaw -= turn.x;
+pitch -= turn.y;
+```
+
+It uses only + - * / and `cw_pow`, so a replay turns the same on every host. The `unit-input` gate checks the dead zone, the curve, the ramp and the assist.
+
 ## Record and replay
 
 A recording is the tick snapshot of every action of every player, delta-encoded: an idle tick costs well under a byte. It carries the action names, so it replays into any build that defines them. While a replay is active every tick takes its snapshot from the recording instead of devices; [cw_input_replay_step](api:cw_input_replay_step) advances it immediately, so a game can re-simulate a whole run inside one frame. `input_demo` records from its first tick and, on "verify", replays the recording into a fresh state and compares:
