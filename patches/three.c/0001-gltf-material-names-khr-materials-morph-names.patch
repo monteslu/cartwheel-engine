@@ -1,0 +1,439 @@
+From 13b510cdf82c00ea062c9cacdce201d73a9b26cd Mon Sep 17 00:00:00 2001
+From: Luis Montes <monteslu@gmail.com>
+Date: Tue, 27 Oct 2026 15:45:56 -0700
+Subject: [PATCH] GLTFLoader: material names, KHR_materials_* factors (sheen,
+ clearcoat, specular, ior, transmission, volume, emissive strength,
+ iridescence, anisotropy) into MeshPhysicalMaterial as r186, morph target
+ names from extras.targetNames (t3_mesh_get_morph_target_index);
+ test_gltf_materials with a control that renames the extensions
+
+---
+ README.md                  |   5 +-
+ include/three.h            |  11 ++++
+ src/core.c                 |   7 ++
+ src/gltf.c                 | 100 +++++++++++++++++++++++++++-
+ test/run.sh                |   4 ++
+ test/test_gltf_materials.c | 130 +++++++++++++++++++++++++++++++++++++
+ 6 files changed, 253 insertions(+), 4 deletions(-)
+ create mode 100644 test/test_gltf_materials.c
+
+diff --git a/README.md b/README.md
+index ead67ab..11bfe67 100644
+--- a/README.md
++++ b/README.md
+@@ -69,7 +69,10 @@ fromEquirectangular, fromScene with its size, position and renderTarget
+ options, each able to draw into a target it made before, as a reflection
+ probe refreshed every few frames does), scene backgrounds and scene.environment,
+ Sprite and Points, Line, LOD, Raycaster, curves, AnimationMixer, a glTF 2.0
+-loader (cgltf + stb_image: PBR materials, skins, morph targets, animations)
++loader (cgltf + stb_image: PBR materials with their names and the factors of
++KHR_materials_sheen / clearcoat / specular / ior / transmission / volume /
++emissive_strength / iridescence / anisotropy, skins, morph targets with
++their names (morphTargetDictionary), animations)
+ and BufferGeometryLoader. Header-only bridges to Box2D v3 (`three_box2d.h`)
+ and Box3D (`three_box3d.h`).
+ 
+diff --git a/include/three.h b/include/three.h
+index 1645533..2794220 100644
+--- a/include/three.h
++++ b/include/three.h
+@@ -485,6 +485,9 @@ typedef struct t3_material {
+   /* the generator extension the material's program carries (an id from
+    * t3_material_set_extension; 0 = none) */
+   uint16_t extension;
++  /* material.name (not owned; GLTFLoader sets the glTF material's name, owned
++   * by the t3_gltf; Material.clone keeps it) */
++  const char *name;
+ } t3_material;
+ enum { T3_MULTIPLY_OPERATION = 0, T3_MIX_OPERATION = 1, T3_ADD_OPERATION = 2 };
+ 
+@@ -595,6 +598,10 @@ typedef struct t3_mesh {
+   t3_material **materials; int material_count; /* retained; one, or one per group */
+   float *morph_influences;        /* mesh.morphTargetInfluences (t3_mesh_update_morph_targets) */
+   int morph_influence_count;
++  /* mesh.morphTargetDictionary as an array: the name of each morph target, by
++   * index (GLTFLoader: the glTF mesh's extras.targetNames; owned by the
++   * t3_gltf), or NULL. t3_mesh_get_morph_target_index looks one up. */
++  const char *const *morph_target_names;
+ } t3_mesh;
+ 
+ /* Skeleton: bones (retained) with their inverse bind matrices; the bone
+@@ -726,6 +733,9 @@ t3_skeleton *t3_skeleton_new(t3_object *const *bones, int count, const t3_mat4 *
+ void t3_skeleton_update(t3_skeleton *sk);
+ /* Mesh.updateMorphTargets: one influence per morph target of the geometry */
+ void t3_mesh_update_morph_targets(t3_mesh *m);
++/* mesh.morphTargetDictionary[name]: the morph target's index, or -1 when the
++ * mesh has no target of that name */
++int t3_mesh_get_morph_target_index(const t3_mesh *m, const char *name);
+ /* Object3D.getObjectByName, depth first */
+ t3_object *t3_object_get_by_name(t3_object *root, const char *name);
+ void t3_instanced_mesh_set_matrix_at(t3_instanced_mesh *im, int i, const t3_mat4 *m);
+@@ -833,6 +843,7 @@ typedef struct t3_gltf {
+   struct t3_animation_clip **animations;
+   int animation_count;
+   char **names; int name_count;
++  void **_owned; int _owned_count;   /* material names, morph target name lists */
+ } t3_gltf;
+ t3_gltf *t3_gltf_parse(const void *data, size_t len, t3_gltf_read_fn read, void *ctx);
+ 
+diff --git a/src/core.c b/src/core.c
+index fd98069..b044a07 100644
+--- a/src/core.c
++++ b/src/core.c
+@@ -819,6 +819,13 @@ void t3_mesh_update_morph_targets(t3_mesh *m) {
+   m->morph_influence_count = n;
+ }
+ 
++int t3_mesh_get_morph_target_index(const t3_mesh *m, const char *name) {
++  if (!m || !name || !m->morph_target_names) return -1;
++  for (int i = 0; i < m->morph_influence_count; i++)
++    if (m->morph_target_names[i] && !strcmp(m->morph_target_names[i], name)) return i;
++  return -1;
++}
++
+ t3_object *t3_object_get_by_name(t3_object *o, const char *name) {
+   if (o->name && !strcmp(o->name, name)) return o;
+   for (int i = 0; i < o->child_count; i++) {
+diff --git a/src/gltf.c b/src/gltf.c
+index 4812f5f..6222e87 100644
+--- a/src/gltf.c
++++ b/src/gltf.c
+@@ -48,6 +48,10 @@ typedef struct {
+   t3_object **mesh_objects;  /* first instance of each mesh */
+   /* every name handed out, owned by the t3_gltf */
+   char **names; int name_n, name_cap;
++  /* other allocations the t3_gltf owns (material names, morph target name lists) */
++  void **owned; int owned_n, owned_cap;
++  /* per glTF mesh: its extras.targetNames, NULL when it has none */
++  const char ***target_names;
+   t3_material *default_material;
+   /* assignFinalMaterial's clone cache: (material, variant bits) -> clone */
+   struct { t3_material *src; int bits; t3_material *clone; } *clones;
+@@ -68,6 +72,22 @@ static const char *keep_name(loader *L, const char *s) {
+   L->names[L->name_n++] = c;
+   return c;
+ }
++static void *keep_owned(loader *L, void *p) {
++  if (L->owned_n == L->owned_cap) {
++    L->owned_cap = L->owned_cap ? L->owned_cap * 2 : 16;
++    L->owned = realloc(L->owned, (size_t)L->owned_cap * sizeof *L->owned);
++    T3_CHECK_ALLOC(L->owned);
++  }
++  L->owned[L->owned_n++] = p;
++  return p;
++}
++static const char *keep_string(loader *L, const char *s) {
++  size_t n = strlen(s) + 1;
++  char *c = malloc(n);
++  T3_CHECK_ALLOC(c);
++  memcpy(c, s, n);
++  return keep_owned(L, c);
++}
+ static bool name_used(loader *L, const char *s) {
+   for (int i = 0; i < L->name_n; i++)
+     if (!strcmp(L->names[i], s)) return true;
+@@ -282,14 +302,66 @@ static t3_texture *load_texture(loader *L, const cgltf_texture *tx) {
+ }
+ 
+ /* ── materials ───────────────────────────────────────────────────── */
++/* r186 GLTFLoader's material extensions: KHR_materials_emissive_strength,
++ * clearcoat, sheen, transmission, volume, ior, specular, iridescence and
++ * anisotropy. Their factors (and the clearcoat normal texture) are read; the
++ * extensions' other textures are not (t3_material has no slot for them). */
++static void load_physical(loader *L, const cgltf_material *md, t3_material *m) {
++  if (md->has_emissive_strength) m->emissive_intensity = md->emissive_strength.emissive_strength;
++  if (m->type != T3_MESH_PHYSICAL_MATERIAL) return;
++  if (md->has_clearcoat) {
++    const cgltf_clearcoat *e = &md->clearcoat;
++    m->clearcoat = e->clearcoat_factor;
++    m->clearcoat_roughness = e->clearcoat_roughness_factor;
++    if (e->clearcoat_normal_texture.texture) {
++      t3_material_set_texture(m, T3_CLEARCOAT_NORMAL_MAP, load_texture(L, e->clearcoat_normal_texture.texture));
++      m->clearcoat_normal_scale.x = m->clearcoat_normal_scale.y = e->clearcoat_normal_texture.scale;
++    }
++  }
++  if (md->has_sheen) {
++    const cgltf_sheen *e = &md->sheen;
++    /* GLTFMaterialsSheenExtension: sheen 1, the colour and roughness from the factors */
++    m->sheen = 1;
++    m->sheen_color = (t3_color){ e->sheen_color_factor[0], e->sheen_color_factor[1], e->sheen_color_factor[2] };
++    m->sheen_roughness = e->sheen_roughness_factor;
++  }
++  if (md->has_transmission) m->transmission = md->transmission.transmission_factor;
++  if (md->has_volume) {
++    const cgltf_volume *e = &md->volume;
++    m->thickness = e->thickness_factor;
++    m->attenuation_distance = e->attenuation_distance > 0 ? e->attenuation_distance : INFINITY;
++    m->attenuation_color = (t3_color){ e->attenuation_color[0], e->attenuation_color[1], e->attenuation_color[2] };
++  }
++  if (md->has_ior) m->ior = md->ior.ior;
++  if (md->has_specular) {
++    const cgltf_specular *e = &md->specular;
++    m->specular_intensity = e->specular_factor;
++    m->specular_color = (t3_color){ e->specular_color_factor[0], e->specular_color_factor[1], e->specular_color_factor[2] };
++  }
++  if (md->has_iridescence) {
++    const cgltf_iridescence *e = &md->iridescence;
++    m->iridescence = e->iridescence_factor;
++    m->iridescence_ior = e->iridescence_ior;
++    m->iridescence_thickness_range[0] = e->iridescence_thickness_min;
++    m->iridescence_thickness_range[1] = e->iridescence_thickness_max;
++  }
++  if (md->has_anisotropy) {
++    m->anisotropy = md->anisotropy.anisotropy_strength;
++    m->anisotropy_rotation = md->anisotropy.anisotropy_rotation;
++  }
++}
++
+ static t3_material *load_material(loader *L, const cgltf_material *md) {
+   cgltf_size mi = cgltf_material_index(L->d, md);
+   if (L->materials[mi]) return L->materials[mi];
+   t3_material *m;
++  /* GLTFLoader.getMaterialType: the extensions MeshPhysicalMaterial reads */
++  bool physical = md->has_clearcoat || md->has_sheen || md->has_transmission || md->has_volume || md->has_ior ||
++                  md->has_specular || md->has_iridescence || md->has_anisotropy;
+   if (md->unlit) {
+     m = t3_material_new(T3_MESH_BASIC_MATERIAL);
+   } else {
+-    m = t3_material_new(T3_MESH_STANDARD_MATERIAL);
++    m = t3_material_new(physical ? T3_MESH_PHYSICAL_MATERIAL : T3_MESH_STANDARD_MATERIAL);
+     m->metalness = 1;
+     m->roughness = 1;
+   }
+@@ -334,6 +406,8 @@ static t3_material *load_material(loader *L, const cgltf_material *md) {
+     m->emissive.b = md->emissive_factor[2];
+     if (md->emissive_texture.texture) t3_material_set_texture(m, T3_EMISSIVE_MAP, load_texture(L, md->emissive_texture.texture));
+   }
++  if (!md->unlit) load_physical(L, md, m);
++  if (md->name) m->name = keep_string(L, md->name);
+   /* baseColorTexture and emissiveTexture are sRGB */
+   if (m->map) m->map->color_space = T3_SRGB_COLOR_SPACE;
+   if (m->emissive_map) m->emissive_map->color_space = T3_SRGB_COLOR_SPACE;
+@@ -356,7 +430,7 @@ static t3_material *final_material(loader *L, t3_mesh *mesh, t3_material *m) {
+   t3_material *c = t3_material_clone(m);
+   if (colors) c->vertex_colors = true;
+   if (flat) c->flat_shading = true;
+-  if (derivative) c->normal_scale.y *= -1;
++  if (derivative) { c->normal_scale.y *= -1; c->clearcoat_normal_scale.y *= -1; }
+   if (L->clone_n == L->clone_cap) {
+     L->clone_cap = L->clone_cap ? L->clone_cap * 2 : 16;
+     L->clones = realloc(L->clones, (size_t)L->clone_cap * sizeof *L->clones);
+@@ -382,6 +456,19 @@ static void normalize_skin_weights(t3_geometry *g) {
+   w->version++;
+ }
+ 
++/* GLTFLoader updateMorphTargets: mesh.morphTargetDictionary from the mesh's
++ * extras.targetNames (when it names every target) */
++static const char *const *mesh_target_names(loader *L, const cgltf_mesh *md, int mesh_index, int count) {
++  if (!md->target_names_count || (int)md->target_names_count != count) return NULL;
++  if (!L->target_names[mesh_index]) {
++    const char **a = keep_owned(L, malloc((size_t)count * sizeof *a));
++    T3_CHECK_ALLOC(a);
++    for (int i = 0; i < count; i++) a[i] = md->target_names[i] ? keep_string(L, md->target_names[i]) : "";
++    L->target_names[mesh_index] = a;
++  }
++  return L->target_names[mesh_index];
++}
++
+ /* loadMesh: one Mesh per primitive (SkinnedMesh when a skinned node uses the
+  * mesh); several primitives make a Group */
+ static t3_object *load_mesh(loader *L, const cgltf_mesh *md, int mesh_index) {
+@@ -409,6 +496,7 @@ static t3_object *load_mesh(loader *L, const cgltf_mesh *md, int mesh_index) {
+       t3_mesh_update_morph_targets(mesh);
+       for (cgltf_size w = 0; w < md->weights_count && (int)w < mesh->morph_influence_count; w++)
+         mesh->morph_influences[w] = md->weights[w];
++      mesh->morph_target_names = mesh_target_names(L, md, mesh_index, mesh->morph_influence_count);
+     }
+     char def[32];
+     snprintf(def, sizeof def, "mesh_%d", mesh_index);
+@@ -442,6 +530,7 @@ static t3_object *clone_mesh_object(loader *L, t3_object *src) {
+     if (sm->morph_influence_count) {
+       t3_mesh_update_morph_targets(m);
+       memcpy(m->morph_influences, sm->morph_influences, (size_t)sm->morph_influence_count * sizeof(float));
++      m->morph_target_names = sm->morph_target_names;
+     }
+     o = &m->base;
+   } else {
+@@ -619,6 +708,8 @@ static void gltf_destroy(void *p) {
+   free(g->animations);
+   for (int i = 0; i < g->name_count; i++) free(g->names[i]);
+   free(g->names);
++  for (int i = 0; i < g->_owned_count; i++) free(g->_owned[i]);
++  free(g->_owned);
+ }
+ 
+ t3_gltf *t3_gltf_parse(const void *data, size_t len, t3_gltf_read_fn read, void *ctx) {
+@@ -653,6 +744,7 @@ t3_gltf *t3_gltf_parse(const void *data, size_t len, t3_gltf_read_fn read, void
+   L.mesh_skinned = calloc(d->meshes_count + 1, sizeof *L.mesh_skinned);
+   L.mesh_uses = calloc(d->meshes_count + 1, sizeof *L.mesh_uses);
+   L.mesh_objects = calloc(d->meshes_count + 1, sizeof *L.mesh_objects);
++  L.target_names = calloc(d->meshes_count + 1, sizeof *L.target_names);
+   /* createDefaultMaterial */
+   L.default_material = t3_mesh_standard_material_new(0xffffff);
+   L.default_material->metalness = 1;
+@@ -686,8 +778,10 @@ t3_gltf *t3_gltf_parse(const void *data, size_t len, t3_gltf_read_fn read, void
+   for (cgltf_size i = 0; i < d->nodes_count; i++) t3_release(L.nodes[i]);
+   g->names = L.names;
+   g->name_count = L.name_n;
++  g->_owned = L.owned;
++  g->_owned_count = L.owned_n;
+   free(L.textures); free(L.texture_tried); free(L.materials); free(L.nodes); free(L.is_bone);
+-  free(L.mesh_skinned); free(L.mesh_uses); free(L.mesh_objects); free(L.clones);
++  free(L.mesh_skinned); free(L.mesh_uses); free(L.mesh_objects); free(L.clones); free(L.target_names);
+   cgltf_free(d);
+   return g;
+ }
+diff --git a/test/run.sh b/test/run.sh
+index 85f236f..79e08e9 100755
+--- a/test/run.sh
++++ b/test/run.sh
+@@ -24,6 +24,10 @@ run test_scene_sort ./build/test/test_scene_sort
+ run test_attr_locations ./build/test/test_attr_locations
+ "$CC" -std=c99 -O2 -D_POSIX_C_SOURCE=200809L -I include test/test_no_gl.c build/native/libthree.a -lz -lm -o build/test/test_no_gl
+ run test_no_gl ./build/test/test_no_gl
++# GLTFLoader material names, KHR_materials_* and morph target names; the control renames the extensions (must fail)
++"$CC" -std=c99 -O2 -D_POSIX_C_SOURCE=200809L -I include test/test_gltf_materials.c build/native/libthree.a -lz -lm -o build/test/test_gltf_materials
++run test_gltf_materials ./build/test/test_gltf_materials
++run test_gltf_materials_control sh -c "! T3_TEST_CONTROL=1 ./build/test/test_gltf_materials 2>/dev/null"
+ "$CC" -std=c99 -g -fsanitize=address -D_POSIX_C_SOURCE=200809L -I include -I src test/test_free.c \
+   src/{math,core,geometry,curves,animation,raycaster,loaders,gltf,renderer,backend_gles,gen_program}.c \
+   src/gen/programs_gl.c src/gen/programs_dfg.c -w -lGLESv2 -lm -o build/test/test_free
+diff --git a/test/test_gltf_materials.c b/test/test_gltf_materials.c
+new file mode 100644
+index 0000000..f0d526b
+--- /dev/null
++++ b/test/test_gltf_materials.c
+@@ -0,0 +1,130 @@
++/* GLTFLoader material names, KHR_materials_* extensions and morph target
++ * names (no GPU): a small glTF parsed from memory, its materials and meshes
++ * checked against what r186's GLTFLoader builds from the same file.
++ * T3_TEST_CONTROL=1 parses the same file with its extensions renamed (an
++ * unknown extension is ignored): the checks must then fail. */
++#include <math.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include "three.h"
++
++static int fails;
++#define CHECK(c) do { if (!(c)) { fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
++#define NEAR(a, b) (fabsf((float)(a) - (float)(b)) < 1e-5f)
++
++static const char *b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
++static void base64(const unsigned char *in, int n, char *out) {
++  int o = 0;
++  for (int i = 0; i < n; i += 3) {
++    unsigned v = in[i] << 16 | (i + 1 < n ? in[i + 1] << 8 : 0) | (i + 2 < n ? in[i + 2] : 0);
++    out[o++] = b64[v >> 18 & 63];
++    out[o++] = b64[v >> 12 & 63];
++    out[o++] = i + 1 < n ? b64[v >> 6 & 63] : '=';
++    out[o++] = i + 2 < n ? b64[v & 63] : '=';
++  }
++  out[o] = 0;
++}
++
++static t3_material *find_material(t3_object *o, const char *mesh_name) {
++  t3_object *m = t3_object_get_by_name(o, mesh_name);
++  return m && (m->type == T3_MESH || m->type == T3_SKINNED_MESH) ? ((t3_mesh *)m)->materials[0] : NULL;
++}
++
++int main(void) {
++  bool control = getenv("T3_TEST_CONTROL") && *getenv("T3_TEST_CONTROL") == '1';
++  /* positions (3 x vec3), morph target 0 and 1 (3 x vec3 each) */
++  float data[27] = { 0, 0, 0, 1, 0, 0, 0, 1, 0,
++                     0, 0, 0, 0, 0.5f, 0, 0, 0, 0,
++                     0, 0, 0, 0, 0, 0, 0.25f, 0, 0 };
++  char enc[200];
++  base64((const unsigned char *)data, sizeof data, enc);
++  const char *K = control ? "XKHR" : "KHR";
++  char json[8192];
++  snprintf(json, sizeof json,
++    "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0,1,2,3,4]}],"
++    "\"nodes\":[{\"name\":\"Face\",\"mesh\":0},{\"name\":\"Skin\",\"mesh\":1},{\"name\":\"Coat\",\"mesh\":2},"
++    "{\"name\":\"Glass\",\"mesh\":3},{\"name\":\"Plain\",\"mesh\":4}],"
++    "\"meshes\":["
++    "{\"name\":\"FaceMesh\",\"extras\":{\"targetNames\":[\"smile\",\"blink\"]},\"weights\":[0.5,0],"
++    "\"primitives\":[{\"attributes\":{\"POSITION\":0},\"targets\":[{\"POSITION\":1},{\"POSITION\":2}],\"material\":0}]},"
++    "{\"name\":\"SkinMesh\",\"primitives\":[{\"attributes\":{\"POSITION\":0},\"material\":0}]},"
++    "{\"name\":\"CoatMesh\",\"primitives\":[{\"attributes\":{\"POSITION\":0},\"material\":1}]},"
++    "{\"name\":\"GlassMesh\",\"primitives\":[{\"attributes\":{\"POSITION\":0},\"material\":2}]},"
++    "{\"name\":\"PlainMesh\",\"primitives\":[{\"attributes\":{\"POSITION\":0},\"material\":3}]}],"
++    "\"materials\":["
++    "{\"name\":\"Skin\",\"pbrMetallicRoughness\":{\"roughnessFactor\":0.6,\"metallicFactor\":0},"
++    "\"extensions\":{\"%s_materials_sheen\":{\"sheenColorFactor\":[0.8,0.3,0.2],\"sheenRoughnessFactor\":0.7},"
++    "\"%s_materials_specular\":{\"specularFactor\":0.4,\"specularColorFactor\":[1,0.9,0.8]},"
++    "\"%s_materials_ior\":{\"ior\":1.4}}},"
++    "{\"name\":\"Coat Paint\",\"emissiveFactor\":[1,0.5,0],"
++    "\"extensions\":{\"%s_materials_clearcoat\":{\"clearcoatFactor\":0.9,\"clearcoatRoughnessFactor\":0.1},"
++    "\"%s_materials_emissive_strength\":{\"emissiveStrength\":4}}},"
++    "{\"name\":\"Glass\",\"extensions\":{\"%s_materials_transmission\":{\"transmissionFactor\":0.95},"
++    "\"%s_materials_volume\":{\"thicknessFactor\":0.02,\"attenuationColor\":[0.9,1,0.95],\"attenuationDistance\":0.5}}},"
++    "{\"name\":\"Plain\"}],"
++    "\"buffers\":[{\"byteLength\":108,\"uri\":\"data:application/octet-stream;base64,%s\"}],"
++    "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36},"
++    "{\"buffer\":0,\"byteOffset\":72,\"byteLength\":36}],"
++    "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[0,0,0],\"max\":[1,1,0]},"
++    "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[0,0,0],\"max\":[0,0.5,0]},"
++    "{\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[0,0,0],\"max\":[0.25,0,0]}]}",
++    K, K, K, K, K, K, K, enc);
++  t3_gltf *g = t3_gltf_parse(json, strlen(json), NULL, NULL);
++  CHECK(g != NULL);
++  if (!g) return 1;
++
++  /* material names, kept on the material (and on the variant clones) */
++  t3_material *skin = find_material(g->scene, "Skin");
++  t3_material *coat = find_material(g->scene, "Coat");
++  t3_material *glass = find_material(g->scene, "Glass");
++  t3_material *plain = find_material(g->scene, "Plain");
++  CHECK(skin && coat && glass && plain);
++  if (!skin || !coat || !glass || !plain) return 1;
++  CHECK(skin->name && !strcmp(skin->name, "Skin"));
++  CHECK(coat->name && !strcmp(coat->name, "Coat Paint")); /* as written: material names are not sanitized */
++  CHECK(plain->name && !strcmp(plain->name, "Plain"));
++  t3_material *cl = t3_material_clone(skin);
++  CHECK(cl->name == skin->name);
++  t3_release(cl);
++  /* a material named like a node does not rename the node */
++  CHECK(t3_object_get_by_name(g->scene, "Skin") != NULL);
++  CHECK(t3_object_get_by_name(g->scene, "Skin_1") == NULL);
++
++  /* KHR_materials_sheen / specular / ior: a MeshPhysicalMaterial */
++  CHECK(skin->type == T3_MESH_PHYSICAL_MATERIAL);
++  CHECK(NEAR(skin->sheen, 1) && NEAR(skin->sheen_roughness, 0.7f));
++  CHECK(NEAR(skin->sheen_color.r, 0.8f) && NEAR(skin->sheen_color.g, 0.3f) && NEAR(skin->sheen_color.b, 0.2f));
++  CHECK(NEAR(skin->specular_intensity, 0.4f) && NEAR(skin->specular_color.b, 0.8f));
++  CHECK(NEAR(skin->ior, 1.4f));
++  CHECK(NEAR(skin->roughness, 0.6f) && NEAR(skin->metalness, 0));
++  /* clearcoat + emissive strength */
++  CHECK(coat->type == T3_MESH_PHYSICAL_MATERIAL);
++  CHECK(NEAR(coat->clearcoat, 0.9f) && NEAR(coat->clearcoat_roughness, 0.1f));
++  CHECK(NEAR(coat->emissive_intensity, 4) && NEAR(coat->emissive.g, 0.5f));
++  /* transmission + volume */
++  CHECK(glass->type == T3_MESH_PHYSICAL_MATERIAL);
++  CHECK(NEAR(glass->transmission, 0.95f) && NEAR(glass->thickness, 0.02f));
++  CHECK(NEAR(glass->attenuation_distance, 0.5f) && NEAR(glass->attenuation_color.g, 1));
++  /* no extension: MeshStandardMaterial, defaults */
++  CHECK(plain->type == T3_MESH_STANDARD_MATERIAL);
++  CHECK(NEAR(plain->emissive_intensity, 1) && NEAR(plain->ior, 1.5f) && NEAR(plain->sheen, 0));
++
++  /* morph targets: influences from the mesh weights, names from extras.targetNames */
++  t3_mesh *face = (t3_mesh *)t3_object_get_by_name(g->scene, "Face");
++  CHECK(face && face->morph_influence_count == 2);
++  if (face && face->morph_influence_count == 2) {
++    CHECK(NEAR(face->morph_influences[0], 0.5f));
++    CHECK(t3_mesh_get_morph_target_index(face, "smile") == 0);
++    CHECK(t3_mesh_get_morph_target_index(face, "blink") == 1);
++    CHECK(t3_mesh_get_morph_target_index(face, "frown") == -1);
++  }
++  t3_mesh *sk = (t3_mesh *)t3_object_get_by_name(g->scene, "Skin");
++  CHECK(sk && t3_mesh_get_morph_target_index(sk, "smile") == -1); /* no targets */
++
++  t3_release(g);
++  if (fails) { fprintf(stderr, "test_gltf_materials: %d failed%s\n", fails, control ? " (control)" : ""); return 1; }
++  printf("test_gltf_materials: ok\n");
++  return 0;
++}
+-- 
+2.53.0
+

@@ -24,6 +24,8 @@
 
 void cw__programs_register(void); /* src/render/programs.c */
 void cw__decals_renderer_init(t3_renderer *r); /* src/fx/decals.c: mesh decals' extension hook */
+void cw__skin_shading_renderer_init(t3_renderer *r); /* src/render/skin_shading.c: the skin part's hook */
+void cw__skin_shading_frame(void);                   /* follow the quality setting */
 
 typedef struct render3d_state {
   t3_scene *scene;
@@ -98,6 +100,7 @@ t3_renderer *cw_render3d_window_renderer(int w, int h) {
   t3_renderer *r = t3_renderer_new(w, h);
   t3_renderer_set_sort_bounds(r, !getenv("CW_SORT_ORIGINS"));
   cw__decals_renderer_init(r);
+  cw__skin_shading_renderer_init(r);
 #if CW_WGPU
   if (r && cw_gpu_backend() == CW_GPU_WEBGPU)
     t3_renderer_use_wgpu(r, cw__wgpu_device(), cw__wgpu_queue(), (int)cw__wgpu_frame_format());
@@ -106,6 +109,7 @@ t3_renderer *cw_render3d_window_renderer(int w, int h) {
 }
 
 void cw_render3d_window_target(t3_renderer *r) {
+  cw__skin_shading_frame();
 #if CW_WGPU
   if (r && cw_gpu_backend() == CW_GPU_WEBGPU) {
     t3_renderer_wgpu_set_output(r, cw__wgpu_frame_view(), (int)cw__wgpu_frame_format());
@@ -984,6 +988,7 @@ t3_camera *cw__render3d_viewmodel_camera(cw_tree *t) {
 t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
   render3d_state *s = cw_tree_slot(t, "render3d");
   if (!s) return NULL; /* no Node3D ever entered this tree */
+  cw__skin_shading_frame(); /* skin materials follow the quality setting */
   cw_node cam = cw_render3d_camera(t);
   camera3d *c = cw_node_data_t(cam, camera3d_t);
   if (!c) return NULL;
@@ -992,6 +997,7 @@ t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
     s->renderer = t3_renderer_new(w, h);
     t3_renderer_set_sort_bounds(s->renderer, !getenv("CW_SORT_ORIGINS"));
     cw__decals_renderer_init(s->renderer);
+    cw__skin_shading_renderer_init(s->renderer);
 #if CW_WGPU
     /* a WebGPU frame: three.c's WebGPU backend, drawing into the pipeline's
      * scene target on its frame encoder (the scene pass) */

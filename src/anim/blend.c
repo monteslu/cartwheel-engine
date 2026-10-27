@@ -49,7 +49,49 @@ static uint64_t bkey(int kind, uint64_t a, const void *b, int c) {
   return cw_hash_bytes(&k, sizeof k, 0x616e696d);
 }
 
+/* a morph target binding's meshes: the object itself when it is a mesh with
+ * that target, else its child meshes (a glTF mesh of several primitives is a
+ * Group of them), as three.js binds a node's morphTargetInfluences track */
+static t3_mesh *morph_mesh(t3_object *o, int i, int idx) {
+  int k = 0;
+  if ((o->type == T3_MESH || o->type == T3_SKINNED_MESH) && ((t3_mesh *)o)->morph_influence_count > idx)
+    return i == 0 ? (t3_mesh *)o : NULL;
+  for (int c = 0; c < o->child_count; c++) {
+    t3_object *ch = o->children[c];
+    if ((ch->type == T3_MESH || ch->type == T3_SKINNED_MESH) && ((t3_mesh *)ch)->morph_influence_count > idx && k++ == i)
+      return (t3_mesh *)ch;
+  }
+  return NULL;
+}
+/* "morphTargetInfluences[3]" or "morphTargetInfluences[smile]": the target's
+ * index on o (by name through the meshes' morph target names), -1 if none */
+static int morph_index(t3_object *o, const char *prop) {
+  static const char pre[] = "morphTargetInfluences[";
+  size_t n = strlen(prop);
+  if (strncmp(prop, pre, sizeof pre - 1) || n <= sizeof pre || prop[n - 1] != ']') return -1;
+  char key[96];
+  size_t kl = n - sizeof pre; /* between the brackets */
+  if (kl >= sizeof key) return -1;
+  memcpy(key, prop + sizeof pre - 1, kl);
+  key[kl] = 0;
+  char *end;
+  long v = strtol(key, &end, 10);
+  if (*key && !*end) return v >= 0 && morph_mesh(o, 0, (int)v) ? (int)v : -1;
+  for (int i = 0; i < 64; i++) {
+    t3_mesh *m = morph_mesh(o, i, 0);
+    if (!m) break;
+    int k = t3_mesh_get_morph_target_index(m, key);
+    if (k >= 0) return k;
+  }
+  return -1;
+}
+
 static void read_binding(mix_binding *b, cw_value *out) {
+  if (b->kind == 1 && b->bprop == 3) {
+    t3_mesh *m = morph_mesh(b->obj, 0, b->comp);
+    *out = cw_val_float(m ? m->morph_influences[b->comp] : 0);
+    return;
+  }
   if (b->kind == 1) {
     t3_object *o = b->obj;
     if (b->bprop == 1) { *out = (cw_value){ CW_T_QUAT }; memcpy(out->v, &o->quaternion, 16); }
@@ -83,13 +125,22 @@ static int bind_track(cw__amix *m, const anim_track *t, const char *anim_name) {
     b.kind = 1;
     b.obj = bone;
     b.bprop = !strcmp(t->prop, "position") ? 0 : !strcmp(t->prop, "quaternion") ? 1 : !strcmp(t->prop, "scale") ? 2 : -1;
+    b.comp = -1;
+    if (b.bprop < 0 && !strncmp(t->prop, "morphTargetInfluences[", 22)) {
+      /* a morph target weight (blend shape) of a mesh in the model */
+      b.comp = morph_index(bone, t->prop);
+      if (b.comp < 0) {
+        cw_warn("animation '%s': track '%s': '%s' has no such morph target", anim_name, t->path, t->bone);
+        return -1;
+      }
+      b.bprop = 3;
+    }
     if (b.bprop < 0) {
-      cw_warn("animation '%s': bone track '%s': bones animate position, quaternion or scale", anim_name, t->path);
+      cw_warn("animation '%s': bone track '%s': bones animate position, quaternion, scale or morphTargetInfluences[i]", anim_name, t->path);
       return -1;
     }
-    b.type = b.bprop == 1 ? CW_T_QUAT : CW_T_VEC3;
-    b.comp = -1;
-    key = bkey(1, 0, bone, b.bprop);
+    b.type = b.bprop == 1 ? CW_T_QUAT : b.bprop == 3 ? CW_T_FLOAT : CW_T_VEC3;
+    key = bkey(1, b.bprop == 3 ? (uint64_t)b.comp : 0, bone, b.bprop);
   } else {
     const cw_prop *p = cw_node_find_prop(node, t->prop, NULL);
     b.comp = -1;
@@ -257,6 +308,14 @@ static void hash_value(cw__amix *m, const cw_value *v) {
 }
 
 static void write_binding(mix_binding *b, const cw_value *v) {
+  if (b->kind == 1 && b->bprop == 3) {
+    for (int i = 0; i < 64; i++) {
+      t3_mesh *m = morph_mesh(b->obj, i, b->comp);
+      if (!m) break;
+      m->morph_influences[b->comp] = (float)v->f;
+    }
+    return;
+  }
   if (b->kind == 1) {
     t3_object *o = b->obj;
     if (b->bprop == 0) o->position = (t3_vec3){ v->v[0], v->v[1], v->v[2] };
