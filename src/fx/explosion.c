@@ -256,7 +256,7 @@ static void explosions_hook(cw_tree *t, double dt, void *user) {
             c->dark_alpha = 0.9f;
             e->scorch_slot = s;
             e->scorch_stamp = c->stamp;
-            t3_vec3 pos = { e->fire_pos.x, e->fire_pos.y + e->scorch_offset + e->scorch_depth * 0.5f, e->fire_pos.z };
+            t3_vec3 pos = { e->fire_pos.x, e->fire_pos.y + e->scorch_offset, e->fire_pos.z }; /* the box straddles the ground */
             /* a different mark each time: one of the sheet's four shapes, turned about the vertical, stretched a little */
             uint32_t h = cw_particle_hash((uint32_t)c->stamp * 2654435761u + (uint32_t)n.id);
             int variant = (int)(h & 3u);
@@ -360,7 +360,7 @@ static const cw_prop explo_props[] = {
   ER(scorch_time, 0.1, 3600, "Seconds the mark takes to cool from glowing to dark."),
   ER(scorch_life, 0.1, 36000, "Seconds the mark stays before it fades away (at least scorch_time)."),
   ER(scorch_glow, 0, 100, "Peak glow of the mark (HDR energy)."),
-  ER(scorch_depth, 0.1, 100, "How far above and below the node's height the mark lands on geometry."),
+  ER(scorch_depth, 0.1, 100, "Height of the mark's box, centred on the node's height: geometry within half of it above or below lands the mark."),
   CW_PROP_FIELD(explo, scorch_offset, CW_T_FLOAT, CW_PROP_DEFAULT, "Move the mark's box up (+) or down (-) from the node's height."),
   ER(shake_amount, 0, 100, "Camera shake at the blast (1 = a strong shake); read with cw_explosion_shake."),
   ER(shake_radius, 0.1, 1e5, "Shake fades to nothing at this distance."),
