@@ -124,6 +124,61 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
   ctx->pipeline->drew3d = true;
 }
 
+/* ── viewmodel (a first person weapon: its own lens, over the scene) ──────
+ * Camera3D viewmodel_layers are drawn after the scene by a second camera at the
+ * same pose with viewmodel_fov, into the same colour and depth. The pass uses
+ * the near end of the depth range (0 to VIEWMODEL_DEPTH): the weapon always
+ * lands in front of the world and sorts against itself, and the scene's depth
+ * stays right everywhere else for the passes that read it (AO, decals, particles). */
+#define VIEWMODEL_DEPTH 0.02f
+
+static bool viewmodel_active(const cw_pass_ctx *ctx, void *u) {
+  (void)u;
+  return ctx->camera && ctx->scene3d && cw__render3d_viewmodel_camera(ctx->tree) != NULL;
+}
+
+static void viewmodel_exec(cw_pass_ctx *ctx, void *u) {
+  (void)u;
+  t3_renderer *r = ctx->renderer;
+  t3_camera *vc = cw__render3d_viewmodel_camera(ctx->tree);
+  if (!vc || !r) return;
+  /* the scene's background is a far-plane draw: squeezed into the near depth range it would cover the picture */
+  bool had_bg = ctx->scene3d->has_background;
+  ctx->scene3d->has_background = false;
+#if CW_WGPU
+  if (cw_gpu_backend() == CW_GPU_WEBGPU) {
+    const cw__wgpu_pass_targets *pt = cw__pass_wgpu_targets(ctx);
+    if (!pt || !pt->color) return;
+    t3_external_target et = {
+      .color = (uintptr_t)pt->color, .color_resolve = (uintptr_t)pt->resolve, .depth = (uintptr_t)pt->depth,
+      .color_format = (int)pt->color_format, .depth_format = (int)pt->depth_format, .samples = pt->samples,
+      .load_color = true, .load_depth = true, .clear_depth = 1,
+      .x = 0, .y = 0, .w = pt->w, .h = pt->h, .flip_y = pt->flip_y,
+      .depth_min = 0, .depth_max = VIEWMODEL_DEPTH,
+    };
+    t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
+    t3_renderer_set_external_target(r, &et);
+    cw__pw_timing_span((void *)pt->enc, false);
+    t3_renderer_render(r, ctx->scene3d, vc);
+    cw__pw_timing_span((void *)pt->enc, true);
+    t3_renderer_set_external_target(r, NULL);
+    ctx->scene3d->has_background = had_bg;
+    cw__render3d_count(ctx->tree);
+    return;
+  }
+#endif
+  t3_renderer_reset_bindings(r);
+  t3_renderer_set_framebuffer(r, ctx->pipeline->bound_fbo);
+  bool auto_clear = t3_renderer_get_auto_clear(r);
+  t3_renderer_set_auto_clear(r, false); /* keep the picture and the depth */
+  glDepthRangef(0, VIEWMODEL_DEPTH);
+  t3_renderer_render(r, ctx->scene3d, vc);
+  glDepthRangef(0, 1);
+  ctx->scene3d->has_background = had_bg;
+  t3_renderer_set_auto_clear(r, auto_clear);
+  cw__render3d_count(ctx->tree);
+}
+
 /* ── velocity (camera motion from depth) ────────────────────────────── */
 
 static unsigned vel_prog;
@@ -1250,6 +1305,9 @@ void cw__pipeline_add_builtin_passes(cw_pipeline *p) {
                                            .active = prepass_active, .execute = prepass_exec });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "scene", .phase = CW_PHASE_OPAQUE, .order = 0,
                                            .writes = CW_RES_COLOR | CW_RES_DEPTH, .execute = scene_exec, .webgpu = true });
+  cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "viewmodel", .phase = CW_PHASE_OPAQUE, .order = 10,
+                                           .writes = CW_RES_COLOR | CW_RES_DEPTH,
+                                           .active = viewmodel_active, .execute = viewmodel_exec, .webgpu = true });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "velocity", .phase = CW_PHASE_POST, .order = 0,
                                            .reads = CW_RES_DEPTH, .writes = CW_RES_VELOCITY, .execute = velocity_exec, .webgpu = true });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "ssao", .phase = CW_PHASE_POST, .order = 100,

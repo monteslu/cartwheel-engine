@@ -120,7 +120,11 @@ void cw_render3d_window_target(t3_renderer *r) {
 typedef struct camera3d {
   float fov, near, far;
   bool current;
+  int32_t cull_layers;      /* the layers the camera's main picture draws (1) */
+  int32_t viewmodel_layers; /* layers drawn after it, on top, with viewmodel_fov (0 = none) */
+  float viewmodel_fov;
   t3_camera *cam;
+  t3_camera *vm;            /* the viewmodel pass's camera: this one's pose, its own lens */
 } camera3d;
 static const cw_node_type *camera3d_t;
 
@@ -130,9 +134,18 @@ static void camera_init(cw_node n, void *data) {
   c->near = 0.05f;
   c->far = 1000;
   c->current = true;
+  c->cull_layers = 1;
+  c->viewmodel_fov = 55;
   c->cam = t3_perspective_camera_new(c->fov, 16.0f / 9.0f, c->near, c->far);
   cw_node3d_set_object(n, &c->cam->base);
   t3_release(c->cam); /* the node's Node3D holds it */
+}
+
+static void camera_destroy(cw_node n, void *data) {
+  (void)n;
+  camera3d *c = data;
+  if (c->vm) t3_release(c->vm);
+  c->vm = NULL;
 }
 
 static const cw_prop camera_props[] = {
@@ -140,12 +153,15 @@ static const cw_prop camera_props[] = {
   CW_PROP_FIELD_RANGE(camera3d, near, CW_T_FLOAT, 0.001, 1000, "Near clip distance."),
   CW_PROP_FIELD_RANGE(camera3d, far, CW_T_FLOAT, 0.01, 1e7, "Far clip distance."),
   CW_PROP_FIELD(camera3d, current, CW_T_BOOL, CW_PROP_DEFAULT, "The first current camera in tree order renders."),
+  CW_PROP_FIELD(camera3d, cull_layers, CW_T_INT, CW_PROP_DEFAULT, "Layers (Node3D layers) the camera's main picture draws; 1 = the default layer."),
+  CW_PROP_FIELD(camera3d, viewmodel_layers, CW_T_INT, CW_PROP_DEFAULT, "Layers drawn after the main picture on top of it, depth cleared, with viewmodel_fov (a first person weapon: it neither clips into walls nor stretches at a wide field of view). 0 = none."),
+  CW_PROP_FIELD_RANGE(camera3d, viewmodel_fov, CW_T_FLOAT, 1, 179, "Vertical field of view of the viewmodel layers, degrees."),
   CW_PROP_END,
 };
 
 static cw_node_type camera3d_type = {
   .name = "Camera3D", .parent = "Node3D", .data_size = sizeof(camera3d), .props = camera_props,
-  .doc = "A perspective camera.", .init = camera_init,
+  .doc = "A perspective camera.", .init = camera_init, .destroy = camera_destroy,
 };
 
 t3_camera *cw_camera3d_t3(cw_node n) {
@@ -783,9 +799,14 @@ static cw_node_type spot_type = { .name = "SpotLight3D", .parent = "Light3D", .d
 
 /* The light kind is picked by the leaf type; Light3D's data is shared, so the
  * leaf's init (run after Light3D's) creates the right three.c light. */
-static void dir_leaf_init(cw_node n, void *d) { (void)d; dir_init(n, cw_node_data_t(n, light3d_t)); }
-static void omni_leaf_init(cw_node n, void *d) { (void)d; omni_init(n, cw_node_data_t(n, light3d_t)); }
-static void spot_leaf_init(cw_node n, void *d) { (void)d; spot_init(n, cw_node_data_t(n, light3d_t)); }
+/* lights shine on every layer: a camera's layers pick what it draws, not what is lit */
+static void light_all_layers(cw_node n) {
+  cw_node3d *d3 = cw_node_data(n, "Node3D");
+  if (d3) d3->layers = -1;
+}
+static void dir_leaf_init(cw_node n, void *d) { (void)d; light_all_layers(n); dir_init(n, cw_node_data_t(n, light3d_t)); }
+static void omni_leaf_init(cw_node n, void *d) { (void)d; light_all_layers(n); omni_init(n, cw_node_data_t(n, light3d_t)); }
+static void spot_leaf_init(cw_node n, void *d) { (void)d; light_all_layers(n); spot_init(n, cw_node_data_t(n, light3d_t)); }
 
 /* ── WorldEnvironment ───────────────────────────────────────────────── */
 
@@ -937,6 +958,29 @@ static void check_light_cap(cw_tree *t, render3d_state *s, const t3_camera *cam)
 
 /* ── drawing ────────────────────────────────────────────────────────── */
 
+/* The camera of the viewmodel pass, posed as the main camera with its own field of view, or NULL when the
+ * current camera has no viewmodel layers. Call after cw_render3d_prepare (the main camera's matrices). */
+t3_camera *cw__render3d_viewmodel_camera(cw_tree *t) {
+  cw_node cam = cw_render3d_camera(t);
+  camera3d *c = cw_node_data_t(cam, camera3d_t);
+  if (!c || !c->viewmodel_layers) return NULL;
+  if (!c->vm) c->vm = t3_perspective_camera_new(c->viewmodel_fov, 1, c->near, c->far);
+  t3_camera *m = c->cam, *v = c->vm;
+  v->base.matrix_world = m->base.matrix_world;
+  v->base.matrix_world_needs_update = false;
+  v->matrix_world_inverse = m->matrix_world_inverse;
+  memcpy(v->_mwid, m->_mwid, sizeof v->_mwid);
+  v->base.position = m->base.position;
+  v->base.quaternion = m->base.quaternion;
+  v->fov = c->viewmodel_fov;
+  v->near = c->near;
+  v->far = c->far;
+  v->aspect = m->aspect;
+  v->base.layers = (uint32_t)c->viewmodel_layers;
+  t3_camera_update_projection_matrix(v);
+  return v;
+}
+
 t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
   render3d_state *s = cw_tree_slot(t, "render3d");
   if (!s) return NULL; /* no Node3D ever entered this tree */
@@ -977,6 +1021,7 @@ t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
   c->cam->near = c->near;
   c->cam->far = c->far;
   c->cam->aspect = h > 0 ? (float)w / (float)h : 1;
+  c->cam->base.layers = (uint32_t)c->cull_layers;
   t3_camera_update_projection_matrix(c->cam);
   check_light_cap(t, s, c->cam);
   return c->cam;

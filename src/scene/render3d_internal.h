@@ -44,6 +44,8 @@ bool cw__render3d_shadows_kept(cw_tree *t);
  * render just made (the pipeline's scene and prepass renders, every view) */
 void cw__render3d_frame_begin(cw_tree *t);
 void cw__render3d_count(cw_tree *t);
+/* the viewmodel pass's camera (see Camera3D viewmodel_layers); NULL when none. After cw_render3d_prepare. */
+t3_camera *cw__render3d_viewmodel_camera(cw_tree *t);
 /* cw_render3d_prepare without the renderer: the camera's matrices only */
 t3_camera *cw__render3d_camera_prepare(cw_tree *t, int w, int h); /* monotonic clock, milliseconds */
 /* Fill info for a MeshInstance3D (builds what is pending first); false when

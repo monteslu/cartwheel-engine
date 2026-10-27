@@ -364,6 +364,7 @@ typedef struct cw_node3d {
   t3_quat quaternion;
   t3_vec3 scale;
   bool visible;
+  int32_t layers;      /* render layers, bit n = layer n (default 1); -1 = every layer (lights). See Camera3D layers. */
   /* engine-owned */
   t3_object *object;   /* the three.c object this node drives (a t3_group by default) */
   bool interpolate;    /* render between the last two fixed ticks (physics bodies set it) */
