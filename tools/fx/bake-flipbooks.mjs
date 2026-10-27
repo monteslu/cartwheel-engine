@@ -79,7 +79,7 @@ for (const kind of ['fire', 'smoke']) {
       const dl = dens[y * F + Math.max(0, x - 1)], dr = dens[y * F + Math.min(F - 1, x + 1)], du = dens[Math.max(0, y - 1) * F + x], dd = dens[Math.min(F - 1, y + 1) * F + x];
       let r, g, b, a;
       if (kind === 'fire') {
-        const heat = clamp(d * (0.95 - 0.5 * u) + 0.08 * fbm(qx * 14, qy * 14, 60, 2));
+        const heat = clamp(d * (0.78 - 0.45 * u) + 0.08 * fbm(qx * 14, qy * 14, 60, 2));
         [r, g, b] = fireColor(heat);
         a = smooth(0.03, 0.45, d);
       } else {
