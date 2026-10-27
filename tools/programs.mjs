@@ -21,6 +21,10 @@
 //       reports (debug field cw.three.missing_states) and merges them into the app's table like a native
 //       survey; --gates also runs each gate's input scripts. Carts are named by their file, which is
 //       the app's name (the cart must be built: scripts/build.sh).
+//   --scenes NAME=a,b,c   runs each app once per value with environment NAME set to it (on GL and on WebGPU), for a
+//       game that picks its scene from the environment or runs a different scene per level: the table gets the
+//       union of every scene's states (a runtime-created light or particle needs its state in the table, and a
+//       scene the run never visits is a skipped draw later)
 //   node tools/programs.mjs ... --dry
 //       only reports each app's missing states (out/programs-survey.json)
 //   node tools/programs.mjs --projects [project dir ...]
@@ -55,7 +59,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 const one = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const all = (k) => argv.flatMap((a, i) => (a === k ? [argv[i + 1]] : []));
-const VALUED = new Set(['--frames', '--logs', '--build', '--table', '--missing', '--extend']);
+const VALUED = new Set(['--scenes', '--frames', '--logs', '--build', '--table', '--missing', '--extend']);
 const names = argv.filter((a, i) => !a.startsWith('--') && !VALUED.has(argv[i - 1]));
 const BUILD = resolve(one('--build') || join(ROOT, 'build', 'native'));
 const THREE = resolve(process.env.CW_THREE_DIR || cmakeCache('CW_THREE_DIR') || join(ROOT, 'deps', 'three.c'));
@@ -237,13 +241,18 @@ if (!CARTS && !argv.includes('--no-run')) {
   mkdirSync(runDir, { recursive: true });
   const legs = [['gl', {}]];
   if (wgpu && !argv.includes('--gl-only')) legs.push(['webgpu', { CW_GPU: 'webgpu', ...wgpuPin().env }]);
+  const sc = one('--scenes');
+  if (sc && !/^[A-Za-z_][A-Za-z0-9_]*=[^,]+(,[^,]+)*$/.test(sc)) throw new Error('--scenes wants NAME=a,b,c');
+  const sceneEnvs = sc ? sc.slice(sc.indexOf('=') + 1).split(',').map((v) => ({ [sc.slice(0, sc.indexOf('='))]: v })) : [{}];
   for (const a of list) {
     for (const [leg, extra] of legs) {
-      const r = spawnSync(a.binary, [], {
-        cwd: dirname(a.binary), encoding: 'utf8', timeout: 180000,
-        env: testEnv({ ...process.env, ...extra, CW_FRAMES: frames, SDL_AUDIODRIVER: 'dummy', CW_PROGRAMS_LOG_DIR: runDir }),
-      });
-      if (r.status !== 0) console.log(`${a.name} (${leg}): ${r.signal || 'exit ' + r.status}`);
+      for (const scene of sceneEnvs) {
+        const r = spawnSync(a.binary, [], {
+          cwd: dirname(a.binary), encoding: 'utf8', timeout: 180000,
+          env: testEnv({ ...process.env, ...extra, ...scene, CW_FRAMES: frames, SDL_AUDIODRIVER: 'dummy', CW_PROGRAMS_LOG_DIR: runDir }),
+        });
+        if (r.status !== 0) console.log(`${a.name} (${leg}${sc ? ' ' + Object.values(scene)[0] : ''}): ${r.signal || 'exit ' + r.status}`);
+      }
     }
   }
   // --gates: also every gate's native runs (its input, assets and control variant), where most states show up

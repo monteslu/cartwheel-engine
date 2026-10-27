@@ -36,6 +36,7 @@ To add the states, run the app through the tool, which merges what it lacked int
 
     node tools/programs.mjs <app> [--gates]      # the app's runs (and its gates' runs), GL and WebGPU
     node tools/programs.mjs --projects <dir>     # a project outside the tree's build
+    node tools/programs.mjs <app> --scenes LEVEL=a,b,c   # an app that picks its scene from the environment: one run per scene, the union of their states
     ninja -C build/native <name>_programs        # regenerate one table from its manifest
 
 then commit the manifest and the generated C. A cart is asked for states a native run is not (the host's quality and capabilities differ, so a native survey can miss them and the shipped cart shows the red banner): survey the dual cart that ships with `node tools/programs.mjs --carts <app> [--gates]`, which runs `build/cart-wgpu/carts/<app>.wasc` on a GL host (romdev's dual cart told to render with GL, `run-cart.mjs --dual-gl`) and on a WebGPU host, reads the states the cart reports and merges them into the app's table (`tests/programs-carts.mjs` checks it, with a fully covered cart as the control). Generating captures on three.c's mock GPU (byte-identical to a real one), so it needs Node but no GPU. The tool minimizes a manifest: a program captured for more lights of each kind (and the same shadow casters) also draws scenes with fewer, so `standard+fog+l1701` replaces `standard+fog+l1001`.
