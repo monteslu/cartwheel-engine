@@ -36,6 +36,7 @@ Run `node tests/all.mjs` on a machine with a GPU and those hosts for the full se
 ```sh
 node tests/gate.mjs                                  # every gate in tests/gates.json, on every host it can run on
 node tests/gate.mjs hello-input unit-scene           # some gates
+node tests/gate.mjs --cpu platformer2d               # CPU only: no GPU, no suite lock (see below)
 node tests/gate.mjs --gates-file mygame-gates.json   # another file in tests/ (comma separated for several; env CW_GATES_FILE)
 node tests/gate.mjs unit-scene --hosts native,romdev # narrow the hosts (never adds one a gate cannot run on)
 ```
@@ -176,3 +177,10 @@ Gates read state by name, so name it for the reader:
 - Natively `CW_DEBUG_DUMP=file.json` writes every field at exit; romdev reads them with `wasm({op:'debugState'})`.
 
 @gates
+
+
+### State-only gates without the GPU lock
+
+`node tests/gate.mjs --cpu [gate ...]` runs the native host on Mesa's software renderer, takes no GPU suite lock and never touches a GPU, so it does not queue behind other suites. It runs only gates with an `expect` block (their named state is the check; frames are not compared across hosts), each with its control that must fail; gates without `expect` are listed as skipped. Use it for simulation checks (a controller, a physics course, a soak's state). A rendering gate still needs the GPU legs.
+
+A new 3D app with no program table draws nothing for the states it lacks: the engine logs an error naming `node tools/programs.mjs <app>`, and `CW_PROGRAMS_STRICT=1` makes the app exit with status 4 on the first one (`tests/programs-loud.mjs`). A build whose `deps/` is off `scripts/deps.lock` stops before compiling and names the fix (`scripts/lib/check-deps.sh`; `CW_SKIP_DEPS_CHECK=1` skips it).

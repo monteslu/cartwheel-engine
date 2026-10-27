@@ -61,6 +61,8 @@ function liveTickets() {
 
 export async function takeSuiteLock(name) {
   if (process.env.CW_SUITE_LOCK_HELD) return;
+  // CW_TEST_GPU=software (CI, `tests/gate.mjs --cpu`): no GPU is touched, so there is nothing to lock
+  if (process.env.CW_TEST_GPU === 'software') return;
   const d = dir();
   let said = false;
   mkdirSync(queueDir(), { recursive: true });
