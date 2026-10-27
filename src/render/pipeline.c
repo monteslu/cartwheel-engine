@@ -961,7 +961,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
           p->msaa_color = scene->tex;
         }
         scene_draw = &p->msaa_rt;
-      } else if (s->msaa > 1) {
+      } else if (s->msaa > 1 && !wgpu) { /* GL only: a WebGPU host has no GL context, and a dual cart traps on any GL call */
         unsigned m = msaa_fbo(p, w, h, sf, s->msaa);
         if (m) {
           msaa_gl = (cw_rt){ .fbo = m, .w = w, .h = h, .format = sf };
