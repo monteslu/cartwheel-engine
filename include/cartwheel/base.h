@@ -72,6 +72,11 @@ void cw_fatal(const char *file, int line, const char *fmt, ...) __attribute__((f
 #define CW_HANDLE_GEN(h) ((uint32_t)((h).id >> 32))
 #define CW_HANDLE_MAKE(T, index, gen) ((T){ ((uint64_t)(gen) << 32) | (uint32_t)(index) })
 #define CW_HANDLE_IS_NULL(h) ((h).id == 0)
+/* A live handle's generation is never 0, so a non-null handle whose top half is 0 was cut to 32 bits somewhere
+ * (a handle kept in a uint32_t or an int). Every lookup that sees one reports it (cw_handle_report_truncated)
+ * instead of answering as if the handle were merely stale. Keep the handle struct itself, never its .id cast
+ * down; for an array index use the module's own slot accessor (cw_crowd_agent_slot) or CW_HANDLE_INDEX. */
+#define CW_HANDLE_IS_TRUNCATED(h) ((h).id != 0 && ((h).id >> 32) == 0)
 
 #ifdef __cplusplus
 }

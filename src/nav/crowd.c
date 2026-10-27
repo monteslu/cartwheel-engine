@@ -79,9 +79,11 @@ static bool g_init;
 static crowd *get(cw_crowd h) { return g_init ? cw_pool_get(&g_crowds, h.id) : NULL; }
 
 static agent *agent_of(crowd *c, cw_crowd_agent a) {
+  /* the handle's index is the slot + 1, so that a handle cut to 32 bits (index only) is never the null handle */
   uint32_t i = CW_HANDLE_INDEX(a), g = CW_HANDLE_GEN(a);
-  if (!c || !a.id || i >= (uint32_t)c->max) return NULL;
-  agent *ag = &c->agents[i];
+  if (CW_HANDLE_IS_TRUNCATED(a)) cw_handle_report_truncated(a.id, "cw_crowd_*");
+  if (!c || !a.id || !i || i > (uint32_t)c->max) return NULL;
+  agent *ag = &c->agents[i - 1];
   return (ag->gen & 1) && ag->gen == g ? ag : NULL;
 }
 
@@ -209,7 +211,7 @@ cw_crowd_agent cw_crowd_add(cw_crowd h, t3_vec3 p, const cw_crowd_agent_params *
   a->npath = 1;
   corridor(c, a)[0] = ref;
   c->live++;
-  return CW_HANDLE_MAKE(cw_crowd_agent, (uint32_t)i, gen);
+  return CW_HANDLE_MAKE(cw_crowd_agent, (uint32_t)i + 1, gen);
 }
 
 void cw_crowd_remove(cw_crowd h, cw_crowd_agent ah) {
@@ -228,6 +230,10 @@ void cw_crowd_remove(cw_crowd h, cw_crowd_agent ah) {
   }
 }
 
+int cw_crowd_agent_slot(cw_crowd h, cw_crowd_agent a) {
+  crowd *c = get(h);
+  return agent_of(c, a) ? (int)CW_HANDLE_INDEX(a) - 1 : -1;
+}
 bool cw_crowd_agent_valid(cw_crowd h, cw_crowd_agent a) { return agent_of(get(h), a) != NULL; }
 
 void cw_crowd_set_params(cw_crowd h, cw_crowd_agent ah, const cw_crowd_agent_params *p) {
@@ -339,7 +345,7 @@ int cw_crowd_agents(cw_crowd h, cw_crowd_agent *out, int cap) {
   for (int i = 0; i < c->max; i++) {
     agent *a = &c->agents[i];
     if (!(a->gen & 1)) continue;
-    if (out && n < cap) out[n] = CW_HANDLE_MAKE(cw_crowd_agent, (uint32_t)i, a->gen);
+    if (out && n < cap) out[n] = CW_HANDLE_MAKE(cw_crowd_agent, (uint32_t)i + 1, a->gen);
     n++;
   }
   return n;

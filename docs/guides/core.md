@@ -41,7 +41,7 @@ Arenas you own ([cw_arena](api:cw_arena)) work the same way with a reset you con
 
 Objects a user holds are entries in a [cw_pool](api:cw_pool): fixed-size elements in chunks (addresses are stable), addressed by a 64-bit handle that packs `{index, generation}`. Freeing an element bumps its slot's generation, so an old handle reads as `NULL` from [cw_pool_get](api:cw_pool_get) instead of silently pointing at whatever reused the slot. Handle 0 is never issued.
 
-Public APIs never return raw pointers to pooled objects. Each kind of handle is its own struct type (`CW_HANDLE_TYPE`), so a node handle does not compile where a body handle is expected. Nodes (`cw_node`), resources and physics bodies are all handles of this shape. `CW_HANDLE_IS_NULL` is the null check; a stale handle is not null, it simply resolves to nothing.
+Public APIs never return raw pointers to pooled objects. Each kind of handle is its own struct type (`CW_HANDLE_TYPE`), so a node handle does not compile where a body handle is expected. Nodes (`cw_node`), resources and physics bodies are all handles of this shape. `CW_HANDLE_IS_NULL` is the null check; a stale handle is not null, it simply resolves to nothing. A live handle always has a nonzero generation, so a handle cut to 32 bits (kept in a `uint32_t`) is recognisable: `CW_HANDLE_IS_TRUNCATED` tests for it and [cw_pool_get](api:cw_pool_get) logs an error naming the fix (keep the handle struct, or use the module's slot accessor) instead of answering as for a stale handle.
 
 Iteration is by slot (`cw_pool_at`), which is deterministic for a deterministic sequence of allocations and frees.
 

@@ -50,6 +50,8 @@ A crowd ([cw_crowd_new](api:cw_crowd_new)) holds up to `max_agents` agents on on
 
 @include samples/nav_perf/main.c#crowd
 
+An agent's handle (`cw_crowd_agent`) is 64 bits: the slot in the low half and a generation in the high half, so a removed agent's handle stops being valid when its slot is reused. Keep the handle itself in the game's own data. A handle cut to 32 bits (kept in a `uint32_t` or an `int`) can never be valid; every `cw_crowd_*` call that receives one logs an error naming the cause and the fix, instead of quietly answering with a zero position, and [cw_handle_truncated_count](api:cw_handle_truncated_count) counts them for a test. For a small number to index the game's own per-agent array, use [cw_crowd_agent_slot](api:cw_crowd_agent_slot) (0 to `max_agents - 1`; -1 for an invalid handle). The same check runs in every pool lookup, so a cut node or resource handle is reported too.
+
 [cw_crowd_step](api:cw_crowd_step) runs four phases, each a range job over the agents, and each agent's work reads only the state the step started with and writes only its own slot:
 
 1. **Plan.** The oldest agents waiting for a path (in the order their targets were set; 8 per step by default, [cw_crowd_set_plan_budget](api:cw_crowd_set_plan_budget)) get a corridor, the polygon list to their target.
