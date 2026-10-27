@@ -284,6 +284,11 @@ void cw_crowd_set_filter(cw_crowd c, const cw_nav_filter *filter); /* NULL = def
 cw_crowd_agent cw_crowd_add(cw_crowd c, t3_vec3 p, const cw_crowd_agent_params *params);
 void cw_crowd_remove(cw_crowd c, cw_crowd_agent a); /* stale handle: no-op; the slot is reused lowest first */
 bool cw_crowd_agent_valid(cw_crowd c, cw_crowd_agent a); /* false once removed */
+/* The agent's slot, 0..max_agents-1: small, stable while the agent lives, and what a game's own per-agent array
+ * is indexed by (a slot is reused after a removal, so keep the handle too and check cw_crowd_agent_valid).
+ * -1 for an invalid handle. Never keep an agent's handle in 32 bits: it is 64 (generation in the top half), a
+ * cut one is never valid, and every cw_crowd_* call that gets one logs an error naming this fix. */
+int cw_crowd_agent_slot(cw_crowd c, cw_crowd_agent a);
 void cw_crowd_set_params(cw_crowd c, cw_crowd_agent a, const cw_crowd_agent_params *params); /* NULL = defaults */
 /* Plans a path to target (snapped to the navmesh) at a coming step. */
 void cw_crowd_set_target(cw_crowd c, cw_crowd_agent a, t3_vec3 target);

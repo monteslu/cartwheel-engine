@@ -100,7 +100,11 @@ void cw_pool_init(cw_pool *p, size_t elem_size, cw_mem_tag tag); /* elem_size ro
 void cw_pool_free_all(cw_pool *p); /* frees every chunk; the pool stays initialized and reusable */
 /* Returns the new element (zeroed); its handle in *id. */
 void *cw_pool_alloc(cw_pool *p, uint64_t *id);
-void *cw_pool_get(const cw_pool *p, uint64_t id); /* NULL when stale/null */
+void *cw_pool_get(const cw_pool *p, uint64_t id); /* NULL when stale/null; a truncated 32 bit handle is logged as an error */
+/* A handle that was cut to 32 bits (CW_HANDLE_IS_TRUNCATED) reached the function `fn`: logs an error that names the
+ * cause and the fix (the first few times), and counts it. Every pool lookup and cw_crowd_* call does this. */
+void cw_handle_report_truncated(uint64_t id, const char *fn);
+uint32_t cw_handle_truncated_count(void); /* how many truncated handles lookups have seen (a test reads it) */
 bool cw_pool_release(cw_pool *p, uint64_t id);     /* false when stale */
 /* Handle of a live element pointer; 0 when not in the pool or freed. O(chunks). */
 uint64_t cw_pool_id_of(const cw_pool *p, const void *elem);

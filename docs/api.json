@@ -1355,6 +1355,10 @@
     {
      "name": "CW_HANDLE_IS_NULL(h)",
      "doc": ""
+    },
+    {
+     "name": "CW_HANDLE_IS_TRUNCATED(h)",
+     "doc": "A live handle's generation is never 0, so a non-null handle whose top half is 0 was cut to 32 bits somewhere\n(a handle kept in a uint32_t or an int). Every lookup that sees one reports it (cw_handle_report_truncated)\ninstead of answering as if the handle were merely stale. Keep the handle struct itself, never its .id cast\ndown; for an array index use the module's own slot accessor (cw_crowd_agent_slot) or CW_HANDLE_INDEX."
     }
    ]
   },
@@ -1718,7 +1722,19 @@
     {
      "name": "cw_pool_get",
      "signature": "void *cw_pool_get(const cw_pool *p, uint64_t id)",
-     "doc": "NULL when stale/null",
+     "doc": "NULL when stale/null; a truncated 32 bit handle is logged as an error",
+     "inline": false
+    },
+    {
+     "name": "cw_handle_report_truncated",
+     "signature": "void cw_handle_report_truncated(uint64_t id, const char *fn)",
+     "doc": "A handle that was cut to 32 bits (CW_HANDLE_IS_TRUNCATED) reached the function `fn`: logs an error that names the\ncause and the fix (the first few times), and counts it. Every pool lookup and cw_crowd_* call does this.",
+     "inline": false
+    },
+    {
+     "name": "cw_handle_truncated_count",
+     "signature": "uint32_t cw_handle_truncated_count(void)",
+     "doc": "how many truncated handles lookups have seen (a test reads it)",
      "inline": false
     },
     {
@@ -4439,6 +4455,12 @@
      "name": "cw_crowd_agent_valid",
      "signature": "bool cw_crowd_agent_valid(cw_crowd c, cw_crowd_agent a)",
      "doc": "false once removed",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd_agent_slot",
+     "signature": "int cw_crowd_agent_slot(cw_crowd c, cw_crowd_agent a)",
+     "doc": "The agent's slot, 0..max_agents-1: small, stable while the agent lives, and what a game's own per-agent array\nis indexed by (a slot is reused after a removal, so keep the handle too and check cw_crowd_agent_valid).\n-1 for an invalid handle. Never keep an agent's handle in 32 bits: it is 64 (generation in the top half), a\ncut one is never valid, and every cw_crowd_* call that gets one logs an error naming this fix.",
      "inline": false
     },
     {
@@ -11570,7 +11592,7 @@
     {
      "name": "cw_shell_desc",
      "doc": "",
-     "decl": "typedef struct cw_shell_desc {\n  const char *title;      /* the title screen's heading (default \"cartwheel\") */\n  const char *subtitle;   /* a line under it (optional) */\n  int max_players;        /* 1..4 (default 1); more than 1 adds the join screen */\n  bool loading;           /* start on the loading screen until cw_shell_loaded */\n  size_t game_save_size;  /* bytes of the game's own save data (cw_shell_game_save) */\n  uint16_t game_save_version; /* change it when that layout changes: an older save starts over */\n  void (*start)(int players, void *user);   /* Play: the players joined; set the match up */\n  void (*quit)(void *user);                 /* Quit to title, from the pause menu */\n  void (*sound)(cw_shell_sound s, void *user);\n  void (*screen_changed)(cw_shell_screen from, cw_shell_screen to, void *user);\n  /* Draws behind the title, join, settings and loading screens and the pause menu (in the shell's own 2D pass,\n   * canvas units): the game's backdrop, so these screens are not a dark panel. The shell then dims it lightly\n   * and draws the menu over it. NULL: the dark panel. */\n  void (*draw_background)(cw_shell_screen screen, cw_vec2 canvas, void *user);\n  cw_font font;           /* default: the built-in sans (cw_ui_font_sans) */\n  cw_color accent;        /* the selected item's colour (default a warm yellow) */\n  void *user;\n} cw_shell_desc;"
+     "decl": "typedef struct cw_shell_desc {\n  const char *title;      /* the title screen's heading (default \"cartwheel\") */\n  const char *subtitle;   /* a line under it (optional) */\n  int max_players;        /* 1..4 (default 1); more than 1 adds the join screen */\n  bool shared_screen;     /* every player plays in one shared view (one camera, a scrolling brawler or a co-op\n                           * platformer): cw_shell_split draws a single view and cw_shell_player_rect gives each\n                           * player the whole canvas */\n  bool loading;           /* start on the loading screen until cw_shell_loaded */\n  size_t game_save_size;  /* bytes of the game's own save data (cw_shell_game_save) */\n  uint16_t game_save_version; /* change it when that layout changes: an older save starts over */\n  void (*start)(int players, void *user);   /* Play: the players joined; set the match up */\n  void (*quit)(void *user);                 /* Quit to title, from the pause menu */\n  void (*sound)(cw_shell_sound s, void *user);\n  void (*screen_changed)(cw_shell_screen from, cw_shell_screen to, void *user);\n  /* Draws behind the title, join, settings and loading screens and the pause menu (in the shell's own 2D pass,\n   * canvas units): the game's backdrop, so these screens are not a dark panel. The shell then dims it lightly\n   * and draws the menu over it. NULL: the dark panel. */\n  void (*draw_background)(cw_shell_screen screen, cw_vec2 canvas, void *user);\n  cw_font font;           /* default: the built-in sans (cw_ui_font_sans) */\n  cw_color accent;        /* the selected item's colour (default a warm yellow) */\n  void *user;\n} cw_shell_desc;"
     }
    ],
    "macros": [

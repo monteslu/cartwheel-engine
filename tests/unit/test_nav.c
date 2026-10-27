@@ -425,6 +425,41 @@ static void test_crowd(void) {
   cw_nav_geom_free(&g);
 }
 
+/* A crowd agent handle is 64 bits (generation on top). One kept in 32 bits is never valid: it must be reported
+ * loudly by every call, not quietly answered with a zero position; the full handle must not trip the report, and
+ * the slot accessor is the safe small number. */
+static void test_handles(void) {
+  cw_nav_geom g = level();
+  cw_nav_config c = cw_nav_config_default();
+  cw_navmesh nm = cw_navmesh_build(&c, &g);
+  cw_crowd cr = cw_crowd_new(nm, 4);
+  cw_crowd_agent a = cw_crowd_add(cr, (t3_vec3){ -25, 0, -25 }, NULL);
+  cw_crowd_agent b = cw_crowd_add(cr, (t3_vec3){ -20, 0, -25 }, NULL);
+  CHECK(!CW_HANDLE_IS_NULL(a) && !CW_HANDLE_IS_TRUNCATED(a)); /* a live handle always has a generation */
+  uint32_t before = cw_handle_truncated_count();
+  t3_vec3 p = cw_crowd_position(cr, a);
+  CHECK(p.x < -24 && p.x > -26); /* control: the full handle answers and reports nothing */
+  CHECK(cw_crowd_agent_valid(cr, a));
+  CHECK_EQ_INT(cw_handle_truncated_count(), before);
+  CHECK_EQ_INT(cw_crowd_agent_slot(cr, a), 0);
+  CHECK_EQ_INT(cw_crowd_agent_slot(cr, b), 1);
+  uint32_t cut = (uint32_t)a.id; /* the mistake: the handle kept in 32 bits */
+  cw_crowd_agent bad = { cut };
+  CHECK(CW_HANDLE_IS_TRUNCATED(bad));
+  p = cw_crowd_position(cr, bad);
+  CHECK(p.x == 0 && p.z == 0); /* still invalid ... */
+  CHECK_EQ_INT(cw_handle_truncated_count(), before + 1); /* ... but no longer silent */
+  CHECK(!cw_crowd_agent_valid(cr, bad));
+  CHECK_EQ_INT(cw_crowd_agent_slot(cr, bad), -1);
+  CHECK_EQ_INT(cw_handle_truncated_count(), before + 3);
+  cw_crowd_remove(cr, bad); /* and a cut handle cannot remove anything */
+  CHECK(cw_crowd_agent_valid(cr, a));
+  CHECK(!CW_HANDLE_IS_TRUNCATED((cw_crowd_agent){ 0 })); /* null is just null */
+  cw_crowd_free(cr);
+  cw_navmesh_free(nm);
+  cw_nav_geom_free(&g);
+}
+
 /* The crowd replans around an obstacle dropped on its path. */
 static void test_crowd_obstacle(void) {
   cw_nav_geom g = level();
@@ -541,4 +576,4 @@ static void test_setup(void) { restore_workers = cw_jobs_thread_count() - 1; }
 
 CW_TEST_SUITE("nav", { "setup", test_setup }, { "geom", test_geom }, { "build", test_build },
               { "queries", test_queries }, { "obstacles", test_obstacles }, { "head_on", test_head_on }, { "circle", test_circle },
-              { "crowd", test_crowd }, { "crowd_obstacle", test_crowd_obstacle }, { "memory", test_memory })
+              { "crowd", test_crowd }, { "handles", test_handles }, { "crowd_obstacle", test_crowd_obstacle }, { "memory", test_memory })

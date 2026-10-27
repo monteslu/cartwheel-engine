@@ -49,8 +49,18 @@ void *cw_pool_alloc(cw_pool *p, uint64_t *id) {
   return e;
 }
 
+static uint32_t g_truncated;
+uint32_t cw_handle_truncated_count(void) { return g_truncated; }
+void cw_handle_report_truncated(uint64_t id, const char *fn) {
+  if (g_truncated++ < 4)
+    cw_error("%s: handle 0x%llx has no generation: it was cut to 32 bits (stored in a uint32_t or an int) and can never "
+             "be valid. Keep the handle struct (the 64 bit value) itself; for an array index use the module's slot "
+             "accessor (cw_crowd_agent_slot) or CW_HANDLE_INDEX(h)", fn ? fn : "a handle lookup", (unsigned long long)id);
+}
+
 void *cw_pool_get(const cw_pool *p, uint64_t id) {
   uint32_t slot1 = (uint32_t)id, gen = (uint32_t)(id >> 32);
+  if (!gen && slot1) cw_handle_report_truncated(id, "cw_pool_get");
   if (!slot1 || (int)slot1 > p->slot_count) return NULL;
   if (p->gens[slot1 - 1] != gen || !(gen & 1)) return NULL;
   return slot_ptr(p, (int)slot1 - 1);
