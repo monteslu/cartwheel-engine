@@ -276,10 +276,12 @@ async function runRomdev() {
   }
   const fbx = (x) => Math.round(ox + x * sx), fby = (y) => Math.round(oy + y * sy);
   if (timedCmds) throw new Error('romdev: --start-cmds "@N cmd" (a request at a frame) is not supported here; skip romdev for such gates');
+  const cmdReplies = [];
   for (const text of startCmds) { /* answered at the start of the frame the request runs */
-    await romdevCall('wasm', { op: 'command', text }, session);
+    cmdReplies.push({ text, reply: await romdevCall('wasm', { op: 'command', text }, session) });
     at++;
   }
+  if (args['cmd-out']) writeFileSync(resolve(args['cmd-out']), JSON.stringify(cmdReplies, null, 1));
   const romdevPad = (s) => {
     const p = {};
     for (const b of s.buttons || []) p[b === 'back' ? 'select' : b === 'l' ? 'l' : b] = true;
@@ -330,6 +332,12 @@ async function runRomdev() {
   // maps, error scopes) arrive between frames as on every other host; stepping
   // one frame per call for that cost thousands of calls a run
   if (frames > at) await romdevCall('frame', { op: 'step', frames: frames - at }, session);
+  // --cmd-end "cmd" (romdev): one debug-channel request after the last frame, its reply to --cmd-out (the survey of
+  // tools/programs.mjs --carts asks "pipeline" there: the states the cart's last frames lacked a program for)
+  if (typeof args['cmd-end'] === 'string') {
+    cmdReplies.push({ text: args['cmd-end'], reply: await romdevCall('wasm', { op: 'command', text: args['cmd-end'] }, session) });
+    if (args['cmd-out']) writeFileSync(resolve(args['cmd-out']), JSON.stringify(cmdReplies, null, 1));
+  }
   if (args.shot) await romdevCall('frame', { op: 'screenshot', path: resolve(args.shot) }, session);
   if (args.state) {
     const st = await romdevCall('wasm', { op: 'debugState' }, session);

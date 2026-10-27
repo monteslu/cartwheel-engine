@@ -198,10 +198,11 @@ if (names.length && list.length !== names.length)
   throw new Error(`not built: ${names.filter((n) => !list.some((a) => a.name === n)).join(' ')}`);
 
 /** the states a cart run reported (its debug state file), one per line */
-const cartStates = (stateFile) => {
+const cartStates = (replyFile) => { // the "pipeline" reply of a run (run-cart --cmd-end pipeline --cmd-out)
   try {
-    const st = JSON.parse(readFileSync(stateFile, 'utf8'));
-    return Buffer.from(String(st['cw.three.missing_states'] || ''), 'hex').toString('latin1').replace(/\0.*$/s, '').split('\n').filter(Boolean);
+    const j = JSON.parse(readFileSync(replyFile, 'utf8'));
+    const rep = j.at(-1)?.reply?.reply ?? j.at(-1)?.reply ?? {};
+    return String(rep.missing_states || '').split('\n').map((l) => l.trim()).filter(Boolean);
   } catch { return []; }
 };
 if (CARTS && !argv.includes('--no-run')) {
@@ -220,8 +221,8 @@ if (CARTS && !argv.includes('--no-run')) {
       runs.push({ tag: g.name, args: ['--frames', String(g.frames), ...(g.input ? ['--input', join(ROOT, 'tests', g.input)] : [])] });
     const seen = new Set();
     for (const run of runs) for (const [leg, legArgs] of legs) {
-      const stateFile = join(runDir, `${run.tag}.${leg}.json`);
-      const r = spawnSync(process.execPath, [join(ROOT, 'tools', 'run-cart.mjs'), '--host', 'romdev', '--app', app, ...run.args, ...legArgs, '--state', stateFile],
+      const stateFile = join(runDir, `${run.tag}.${leg}.cmd.json`);
+      const r = spawnSync(process.execPath, [join(ROOT, 'tools', 'run-cart.mjs'), '--host', 'romdev', '--app', app, ...run.args, ...legArgs, '--cmd-end', 'pipeline', '--cmd-out', stateFile],
         { encoding: 'utf8', timeout: 600000, env: testEnv({ ...process.env }) });
       if (r.status !== 0) console.log(`cart ${run.tag} (${leg}): run failed: ${(r.stderr || r.stdout || '').trim().split('\n').slice(-1)[0]}`);
       for (const st of cartStates(stateFile)) seen.add(st);
