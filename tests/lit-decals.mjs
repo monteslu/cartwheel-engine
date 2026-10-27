@@ -14,8 +14,9 @@
 // Control: CW_DECAL_UNLIT=1 draws the decals unlit as before; the ratios then differ by far more
 // than 20 % and checks 2 and 3 must FAIL.
 // Runs natively on GL and WebGPU, in CLUSTERED lighting (the cluster and csm shading parts) and
-// FORWARD lighting (FX_LIT_FORWARD=1), and with --hosts also on the cart hosts (default lighting
-// only; their ratios must match the native GL ones within 10 %).
+// FORWARD lighting (FX_LIT_FORWARD=1), and on the cart hosts named by --hosts (default lighting
+// only; their ratios must match the native GL ones within 10 %). With no --hosts the cart hosts
+// run too, except in software CI (CW_TEST_GPU=software), which has neither romdev nor Chromium.
 //
 //   node tests/lit-decals.mjs [--hosts native,chromium,romdev]
 import { spawnSync } from 'node:child_process';
@@ -30,7 +31,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'out', 'lit-decals');
 mkdirSync(OUT, { recursive: true });
 const argv = process.argv.slice(2);
-const hosts = argv.includes('--hosts') ? argv[argv.indexOf('--hosts') + 1].split(',') : ['native', 'romdev', 'chromium'];
+const hosts = argv.includes('--hosts') ? argv[argv.indexOf('--hosts') + 1].split(',')
+  : process.env.CW_TEST_GPU === 'software' ? ['native'] : ['native', 'romdev', 'chromium'];
 let failed = false;
 const report = (ok, what) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed = true; };
 
