@@ -1,5 +1,7 @@
 # Motion inputs and camera framing
 
+Sample: `motion_demo`. Gate: `unit-motion`, `unit-framing`, `motion-demo`.
+
 Two small pieces for games that read joystick motions or keep several things in view: a command buffer with a motion matcher ([cartwheel/motion.h](header:motion.h)) and a framing camera ([cartwheel/framing.h](header:framing.h)). Both are integer or fixed-step float math only, so they are identical on every host and replay exactly.
 
 ## Command buffer
