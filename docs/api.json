@@ -155,6 +155,37 @@
    "macros": []
   },
   {
+   "header": "cartwheel/aim.h",
+   "summary": "cartwheel/aim.h: stick aiming that feels right, for first and third person\ncameras. Turns a raw stick vector into a turn for this tick:\n\n  - a radial dead zone, rescaled so the response starts at zero,\n  - a response curve (power): below 1 is twitchy, above 1 gives fine\n    control near the middle and full speed at the edge,\n  - a top turn rate in radians a second per axis (pitch is usually slower),\n  - acceleration: holding the stick near its edge ramps the turn rate up\n    over ramp_seconds to (1 + ramp_gain) times, so a flick turns fast and\n    small corrections stay precise,\n  - an optional slow-down while the aim sits on a target (assist).\n\nEverything is + - * / sqrt and cartwheel/math.h's cw_pow, so the same\ninput gives the same turn on every host (replays and tests agree).\n\n  static cw_aim_state aim;                                  // one per player\n  cw_aim_curve c = cw_aim_curve_default();\n  cw_vec2 stick = cw_input_vector(p, look_l, look_r, look_u, look_d, CW_DEADZONE_RADIAL, 0);\n  cw_vec2 turn = cw_aim_step(&aim, &c, stick, 1.0f / 60);   // radians this tick\n  yaw -= turn.x;  pitch -= turn.y;",
+   "functions": [
+    {
+     "name": "cw_aim_curve_default",
+     "signature": "cw_aim_curve cw_aim_curve_default(void)",
+     "doc": "the values noted above",
+     "inline": false
+    },
+    {
+     "name": "cw_aim_step",
+     "signature": "cw_vec2 cw_aim_step(cw_aim_state *s, const cw_aim_curve *c, cw_vec2 stick, float dt, float on_target)",
+     "doc": "One tick: stick is x right, y down (as cw_input_vector gives it); the\nresult is radians to turn this tick, x to the right, y down. on_target\n(0..1) is how much the crosshair sits on something to aim at (0 = none).",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_aim_curve",
+     "doc": "",
+     "decl": "typedef struct cw_aim_curve {\n  float deadzone;      /* 0.15: radial, of the stick's reach */\n  float power;         /* 1.8: response curve exponent after the dead zone */\n  float yaw_rate;      /* 3.4: radians a second at full stick, horizontally */\n  float pitch_rate;    /* 2.4: the same vertically */\n  float ramp_seconds;  /* 0.35: how long a held edge takes to reach the full boost (0 = no boost) */\n  float ramp_gain;     /* 0.6: the boost: the turn rate grows by up to this share */\n  float ramp_edge;     /* 0.9: stick length at or above which the boost builds */\n  float assist;        /* 0: 0..1: slows the turn by up to this share while `on_target` is set */\n} cw_aim_curve;"
+    },
+    {
+     "name": "cw_aim_state",
+     "doc": "",
+     "decl": "typedef struct cw_aim_state {\n  float held; /* seconds the stick has been at its edge (the boost ramp) */\n} cw_aim_state;"
+    }
+   ],
+   "macros": []
+  },
+  {
    "header": "cartwheel/anim.h",
    "summary": "cartwheel animation: Animation resources, the AnimationPlayer and\nAnimationTree node types, skeletal clips from glTF, root motion, tweens.\n\nDETERMINISM. Everything here that runs in fixed_update (the default) is\nbit-identical on every host: times are doubles advanced by the fixed dt,\ninterpolation uses only + - * / sqrt and cartwheel/math.h (slerp uses\ncw_atan2/cw_sin, never libm), blending accumulates in insertion order, and\nvalues are written through the reflection path (cw_node_set). Players and\ntrees keep a running FNV hash of every value they write\n(cw_anim_player_hash / cw_animtree_hash) so a test can compare sampled\nposes across hosts. three.c's own AnimationMixer is NOT used for sampling:\nits slerp calls libm's sinf/atan2f. cartwheel samples three.c's keyframe\ntracks itself and writes the bones; three.c's SkinnedMesh/Skeleton render.\n\n── Animation (resource) ─────────────────────────────────────────────\nA named clip: a length, a loop mode and tracks.\n  value track   a node property by path relative to the player's root\n                node: \"Arm:rotation\", \"Sun:energy\", \":position\" (the root\n                itself), \"Arm:position.y\" (one component of a vector or\n                colour: .x .y .z .w / .r .g .b .a). Any reflected property:\n                float, int, bool, vec2/3/4, quat, color, enum, string, node,\n                res. float/int/vec/quat/color interpolate; the rest step.\n  bone track    \"Model@bone_name:position|quaternion|scale\": a three.c\n                object (a glTF bone) found by name under the Node3D\n                \"Model\"'s three.c object.\n  method track  \"Counter\": at each key, call a method on that node: the C\n                callback registered under the method's name\n                (cw_anim_register_method), else emit the node's signal of\n                that name with the key's arguments.\n  event track   keys carry a name; the player emits\n                animation_event(name, animation).\nInterpolation (value and bone tracks): NEAREST holds each key until the\nnext (a step), LINEAR, CUBIC (uniform Catmull-Rom through the neighbour\nkeys), HERMITE (explicit in/out tangents per key, glTF CUBICSPLINE\nsemantics). Quaternions slerp (default) or nlerp; CUBIC/HERMITE quaternions\nare interpolated per component and normalized. ints interpolate and round\nhalf up; bool/string/node/res/enum always step.\n\nKey firing (method / event): a sweep from the old time to the new one fires\nkeys in (old, new] in the direction of motion, so every key fires exactly\nonce per pass. A play() from a stopped player also fires keys exactly at the\nstart time. LOOP: reaching the end fires keys at `length`, then wraps and\nfires keys at 0 (both, at the same instant, every cycle). PING_PONG: keys at\nthe turning points fire once per turn. seek() never fires keys.\nTime exactly at the loop end: LOOP wraps to 0, PING_PONG turns around,\nNONE stops there and finishes.\n\n── Scene files ──────────────────────────────────────────────────────\nAnimations of the players in a scene are stored after its nodes:\n\n  [animation name=\"bob\" player=\"Anim\" length=2 loop=PING_PONG]\n  [track type=value path=\"Cube:position\" interp=CUBIC]\n  0 = vec3(0, 1, 0)\n  1 = vec3(0, 2, 0)\n  [track type=value path=\"Cube:quaternion\" rot=NLERP]\n  0 = quat(0, 0, 0, 1)\n  [track type=value path=\"Cube:scale\" interp=HERMITE]\n  0 = vec3(1, 1, 1) in=vec3(0, 0, 0) out=vec3(1, 0, 0)\n  [track type=method path=\"Counter\"]\n  0.5 = count(1, \"a\")\n  [track type=event]\n  0.25 = \"step\"\n\nOne key per line: `time = value` (values as cw_value_format writes them;\nenums as integers). `player` is the AnimationPlayer's path from the scene\nroot (\".\" = the root). Defaults are omitted: loop=NONE, interp=LINEAR,\nrot=SLERP, enabled=true. Animations of players inside an instanced\nsub-scene belong to that scene's file; animations made from glTF clips are\nnot stored (cw_anim_set_stored). Saving a loaded scene reproduces the file\nbyte for byte.",
    "functions": [
