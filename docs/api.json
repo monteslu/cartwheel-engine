@@ -3107,19 +3107,19 @@
     {
      "name": "cw_input_has_rumble",
      "signature": "bool cw_input_has_rumble(int player)",
-     "doc": "",
+     "doc": "Whether that player's pad has motors the host can drive (false with no pad).",
      "inline": false
     },
     {
      "name": "cw_input_rumble",
      "signature": "void cw_input_rumble(int player, float low, float high, int ms)",
-     "doc": "",
+     "doc": "Run that player's pad motors: low (heavy) and high (light) 0..1 for ms (at most 5000), replacing the one running.",
      "inline": false
     },
     {
      "name": "cw_input_rumble_stop",
      "signature": "void cw_input_rumble_stop(int player)",
-     "doc": "",
+     "doc": "Stop that player's pad motors now.",
      "inline": false
     },
     {
