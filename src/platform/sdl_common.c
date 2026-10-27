@@ -592,6 +592,7 @@ bool cw__sdl_init(void) {
     cw__debug_channel_init();
     cw_debug_field("cw.frame", &p->frame, CW_DBG_U32, 1);
     cw_debug_field("cw.tick", &p->tick, CW_DBG_U32, 1);
+    cw_debug_field("cw.frame_dt", &p->frame_dt, CW_DBG_F64, 1);
     /* every pad the platform delivers (cw_pad_state, after the input script) */
     static const char *const names[CW_MAX_PADS][3] = {
       { "cw.pad0.buttons", "cw.pad0.axes", "cw.pad0.connected" }, { "cw.pad1.buttons", "cw.pad1.axes", "cw.pad1.connected" },
@@ -790,6 +791,7 @@ static void frame_body(double now) {
    * between hosts. Snap it: every host passes the same dt bit for bit. */
   if (fabs(dt - p->fixed_dt) < p->fixed_dt * 1e-6) dt = p->fixed_dt;
   p->last = now;
+  p->frame_dt = dt;
   p->now = now - dbg.held;
   cw__perf_frame_begin();
   if (render_scale_pending) {
@@ -1010,6 +1012,7 @@ float cw_pixel_ratio(void) {
   return cw__plat.win_w > 0 && dw > 0 ? (float)dw / (float)cw__plat.win_w : 1.0f;
 }
 double cw_time(void) { return cw__plat.now; }
+double cw_frame_dt(void) { return cw__plat.frame_dt; }
 uint64_t cw_frame_index(void) { return cw__plat.frame; }
 uint64_t cw_tick_index(void) { return cw__plat.tick; }
 double cw_fixed_dt(void) { return cw__plat.fixed_dt; }

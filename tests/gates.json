@@ -80,6 +80,15 @@
     "note": "one-press join: one player starts, then a pad with no seat presses A during play and holds seat 2 at once, no join screen. Control: that pad presses B instead, so nobody joins"
   },
   {
+    "name": "frame-dt",
+    "app": "hello",
+    "frames": 30,
+    "maxGt16": 0.0005,
+    "fields": ["cw.frame", "cw.frame_dt"],
+    "expect": { "cw.frame_dt": 0.016666666666666666 },
+    "note": "cw_frame_dt() reads exactly one fixed step (1/60 s) on every host in a deterministic run; the control stops a frame short and must differ"
+  },
+  {
     "name": "hello-still",
     "webgpu": true,
     "app": "hello",

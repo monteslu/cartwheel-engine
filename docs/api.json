@@ -8019,6 +8019,12 @@
      "inline": false
     },
     {
+     "name": "cw_frame_dt",
+     "signature": "double cw_frame_dt(void)",
+     "doc": "Seconds from the previous rendered frame to this one (what the frame loop measured, a stall clamped to\n0.25 s, snapped to exactly cw_fixed_dt() when it is one fixed step so every host answers the same\nvalue). For a render callback that animates backdrops, particles or fades by wall time instead of\ndifferencing cw_time() itself; simulation keeps using the fixed step. Render-only: it must not feed\nanything the simulation reads. The first frame answers cw_fixed_dt().",
+     "inline": false
+    },
+    {
      "name": "cw_tick_index",
      "signature": "uint64_t cw_tick_index(void)",
      "doc": "fixed ticks since start",
