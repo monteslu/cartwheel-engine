@@ -3501,18 +3501,20 @@
       "vm.on",
       "vm.layers",
       "vm.fov",
-      "vm.tick"
+      "vm.tick",
+      "vm.wall_ok"
     ],
     "expect": {
       "vm.on": 1,
       "vm.layers": 2,
-      "vm.fov": 50
+      "vm.fov": 50,
+      "vm.wall_ok": 1
     },
     "controlFrames": 30,
     "controlEnv": {
       "VIEWMODEL_OFF": "1"
     },
-    "note": "a first person weapon on its own render layer: a long barrel under a wide-lens camera, longer than the distance to the wall, drawn by the viewmodel pass with its own 50 degree lens (whole, in front, lit by the scene). GL and WebGPU (and the carts) draw the same frame. Control: the gun on the default layer sinks into the wall and the frame differs"
+    "note": "a first person weapon on its own render layer: a long barrel under a wide-lens camera, longer than the distance to the wall, drawn by the viewmodel pass with its own 50 degree lens (whole, in front, lit by the scene) over a ProceduralSky that the pass must not draw again: vm.wall_ok reads the low wall left of the gun (a pass that redrew the sky read 141 131 115 there and failed it). GL and WebGPU (and the carts) draw the same frame. Control: the gun on the default layer sinks into the wall and the frame differs"
   },
   {
     "name": "fx-decals",
