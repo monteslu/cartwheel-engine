@@ -12,6 +12,7 @@ cw_platformer2d_def cw_platformer2d_default_def(void) {
     .air_jump_scale = 0.9f, .wall_jump = false, .wall_slide_speed = 3, .wall_jump_speed_x = 8,
     .wall_jump_speed_y = 14.5f, .wall_jump_lock = 0.16f, .dash_speed = 0, .dash_time = 0.16f,
     .dash_cooldown = 0.35f, .swim_speed = 4.5f, .swim_accel = 18, .swim_stroke = 7, .water_gravity = 0.18f,
+    .corner_correction = 0.25f,
   };
 }
 
@@ -19,6 +20,7 @@ void cw_platformer2d_init(cw_platformer2d *p, cw_world2d w, const cw_platformer2
   memset(p, 0, sizeof *p);
   p->def = def ? *def : cw_platformer2d_default_def();
   if (!def) p->def.mover = cw_mover2d_default_def();
+  p->def.mover.corner_correction = p->def.corner_correction;
   cw_mover2d_init(&p->body, w, &p->def.mover, feet);
   p->facing = 1;
   p->max_air_jumps = p->def.air_jumps;

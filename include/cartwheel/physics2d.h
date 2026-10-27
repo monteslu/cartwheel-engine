@@ -643,6 +643,11 @@ typedef struct cw_mover2d_def {
    * walks across their top faces, rises through them from below and passes them sideways; it stays inside one
    * (feet below the top) until clear. 0 = none. Put the shapes on a layer in this mask. */
   uint32_t one_way_mask;
+  /* Corner correction, metres (0 = off, the default): when a rising body would hit the edge of a ceiling block
+   * with that much of its width, it is nudged sideways around the corner and keeps rising (the smallest nudge that
+   * clears wins; deeper clips still bump). Ledge forgiveness needs no setting: the capsule's round feet roll up a
+   * lip of up to about 0.85 * radius, so a fall that just misses a ledge top lands on it. */
+  float corner_correction;
 } cw_mover2d_def;
 /* The defaults noted in cw_mover2d_def above. */
 cw_mover2d_def cw_mover2d_default_def(void);

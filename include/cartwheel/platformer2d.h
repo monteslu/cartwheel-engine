@@ -1,7 +1,7 @@
 /* cartwheel platformer controller: the feel of a side-view platformer on top of cw_mover2d.
  *
  * What it adds to the mover: acceleration and braking on the ground and in the air, gravity that is heavier when
- * falling and when a jump is let go early (variable jump height), coyote time (a jump still works for a moment
+ * falling and when a jump is let go early (variable jump height), corner correction (a head that clips a ceiling corner is carried round it), coyote time (a jump still works for a moment
  * after walking off a ledge), jump buffering (a press just before landing jumps on landing), air jumps, wall
  * slide and wall jump (with a grace window after leaving the wall), a dash, dropping through one-way platforms
  * (down + jump) and swimming (the game says how deep the character is and which way a current pushes).
@@ -47,6 +47,7 @@ typedef struct cw_platformer2d_def {
   float swim_accel;       /* 18 */
   float swim_stroke;      /* upward speed of a jump press in water: 7 */
   float water_gravity;    /* gravity scale when fully submerged: 0.18 */
+  float corner_correction; /* metres a rising head that clips a ceiling corner is nudged around it: 0.25 (0 = off). Copied to mover.corner_correction */
 } cw_platformer2d_def;
 cw_platformer2d_def cw_platformer2d_default_def(void);
 
