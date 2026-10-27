@@ -482,7 +482,8 @@ void cw_shell_draw(void) {
   cw_vec2 sz = cw_r2d_canvas_size();
   float u = sz.y / 20.0f; /* the menus scale with the canvas height */
   float cx = sz.x * 0.5f;
-  cw_r2d_rect(cw_rect_make(0, 0, sz.x, sz.y), cw_rgba(0.02f, 0.02f, 0.05f, S.screen == CW_SHELL_PAUSE ? 0.55f : 0.85f));
+  if (S.d.draw_background) S.d.draw_background(S.screen, sz, S.d.user);
+  cw_r2d_rect(cw_rect_make(0, 0, sz.x, sz.y), cw_rgba(0.02f, 0.02f, 0.05f, S.d.draw_background ? 0.3f : S.screen == CW_SHELL_PAUSE ? 0.55f : 0.85f));
   build_items();
   switch (S.screen) {
   case CW_SHELL_LOADING:
