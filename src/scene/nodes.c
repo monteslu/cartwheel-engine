@@ -78,6 +78,7 @@ static void node3d_init(cw_node n, void *data) {
   d->scale = (t3_vec3){ 1, 1, 1 };
   d->quaternion = (t3_quat){ 0, 0, 0, 1 };
   d->visible = true;
+  d->layers = 1;
   d->object = t3_group_new();
   d->object->user_data = (void *)(uintptr_t)n.id;
   d->prev_quaternion = d->quaternion;
@@ -121,6 +122,13 @@ static void node3d_exit(cw_node n, void *data) {
   if (d->object && d->object->parent) t3_object_remove(d->object->parent, d->object);
 }
 
+/* a node on other layers than the default puts its whole three.c subtree on them (its meshes are
+ * children of its object, and nodes under it follow unless they set their own) */
+static void apply_layers(t3_object *o, uint32_t mask) {
+  o->layers = mask;
+  for (int i = 0; i < o->child_count; i++) apply_layers(o->children[i], mask);
+}
+
 static void write_object(cw_node3d *d, double alpha) {
   t3_object *o = d->object;
   if (!o) return;
@@ -135,6 +143,8 @@ static void write_object(cw_node3d *d, double alpha) {
   o->scale = d->scale;
   t3_object_set_quaternion(o, q);
   o->visible = d->visible;
+  uint32_t want = d->layers != 1 ? (uint32_t)d->layers : o->parent ? o->parent->layers : 1u; /* own layers, else the parent's */
+  if (want != 1 || o->layers != 1) apply_layers(o, want);
 }
 
 static void node3d_pre_render(cw_node n, void *data, double alpha) {
@@ -185,6 +195,7 @@ static const cw_prop node3d_props[] = {
   CW_PROP_FIELD(cw_node3d, scale, CW_T_VEC3, CW_PROP_DEFAULT, "Scale relative to the parent."),
   CW_PROP_FIELD(cw_node3d, visible, CW_T_BOOL, CW_PROP_DEFAULT, "Hidden nodes hide their children."),
   CW_PROP_FIELD(cw_node3d, interpolate, CW_T_BOOL, CW_PROP_DEFAULT, "Render between the last two fixed ticks."),
+  CW_PROP_FIELD(cw_node3d, layers, CW_T_INT, CW_PROP_DEFAULT, "Render layers (bit n = layer n; 1 = the default layer; -1 = all). A camera draws the layers in its `cull_layers`; its `viewmodel_layers` are drawn after, on top, with `viewmodel_fov`. Applies to the node and everything below it."),
   CW_PROP_ACCESSOR("global_position", CW_T_VEC3, CW_PROP_READONLY | CW_PROP_EDITOR, gpos_get, NULL, "World position."),
   CW_PROP_END,
 };
