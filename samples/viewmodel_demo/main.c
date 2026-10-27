@@ -7,7 +7,9 @@
  * to the wall in front of the camera: drawn with the scene it would sink into
  * the wall and stretch at the screen's edge; on its own layer it is whole,
  * always in front, and shaped by its own lens. The scene's lights and shadow
- * still shade it.
+ * still shade it. A ProceduralSky draws the background: the viewmodel pass must
+ * not draw it again (a sky cube drawn without a depth test would cover the
+ * whole picture the scene pass drew, leaving only the gun over the sky).
  *
  * VIEWMODEL_OFF=1 puts the gun on the default layer and removes the camera's
  * viewmodel layers (the gate's control: the frame differs).
