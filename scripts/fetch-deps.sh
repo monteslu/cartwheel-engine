@@ -92,7 +92,7 @@ fetch_git() { # name src rev
     # never move a shared checkout: copy it (alternates, no object duplication) and work on the copy
     local shared; shared="$(readlink -f "$dst")"
     rm -f "$dst"
-    git clone -q --shared --no-checkout "$shared" "$dst"
+    git clone -q --shared "$shared" "$dst" # checked out: when the copy is already at the pin nothing below checks it out
     echo "$name: was a symlink to $shared, now a private copy"
   fi
   if [ -d "$dst/.git" ] && [ "${FORCE:-0}" != 1 ]; then

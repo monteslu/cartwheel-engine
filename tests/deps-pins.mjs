@@ -50,5 +50,15 @@ check('file content is the pinned one', readFileSync(join(fx, 'deps', 'libx', 'f
 check('build guard passes at the pin', guard().status === 0);
 r = run('--verify');
 check('verify is clean after the fetch', r.status === 0, r.stdout + r.stderr);
+// a shared checkout that is already AT the pin: the private copy must still hold the files (a copy made without a
+// checkout and already at the pin was left empty, and the build then found no sources)
+rmSync(join(fx, 'deps', 'libx'), { recursive: true, force: true });
+const atpin = join(fx, 'atpin'); git(fx, 'clone', '-q', up, atpin); git(atpin, '-c', 'advice.detachedHead=false', 'checkout', '-q', pin);
+symlinkSync(atpin, join(fx, 'deps', 'libx'));
+r = run();
+check('fetch succeeds from a shared checkout at the pin', r.status === 0, r.stdout + r.stderr);
+let content = '';
+try { content = readFileSync(join(fx, 'deps', 'libx', 'f'), 'utf8'); } catch {}
+check('the private copy of a checkout at the pin has its files', content === '1', JSON.stringify(content));
 rmSync(fx, { recursive: true, force: true });
 process.exit(bad ? 1 : 0);
