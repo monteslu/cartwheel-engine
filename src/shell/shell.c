@@ -59,6 +59,9 @@ static struct {
   int item;            /* the highlighted menu item */
   int players;
   int joined_pad[4];   /* join screen: each slot's pad (-1 none, CW_MAX_PADS = the keyboard) */
+  int seat_pad[4];     /* the pads the players hold in a running match, in player order (-1 none, CW_MAX_PADS = the keyboard) */
+  bool mid_join;       /* the join screen was opened during play (cw_shell_join_open) */
+  bool seat_seen[4];   /* the seat's pad has been seen connected (an unplugged pad frees its seat; one never seen is not "gone") */
   float progress;
   cw_action act[A_COUNT];
   cw_bus music, sfx;
@@ -73,6 +76,7 @@ static void go(cw_shell_screen to) {
   cw_shell_screen from = S.screen;
   S.screen = to;
   S.item = 0;
+  if (to != CW_SHELL_JOIN) S.mid_join = false;
   if (to != CW_SHELL_SETTINGS) cw_quality_menu_close();
   S.dbg_screen = (int)to;
   /* a scene app's tree (cw_scene_app) holds still outside play */
@@ -171,8 +175,11 @@ void cw_shell_loaded(void) {
 
 /* players: pads 0..n-1 in order, player 0 also on the keyboard, mouse and touch */
 static void assign_default(int n) {
-  for (int p = 0; p < 4; p++)
+  for (int p = 0; p < 4; p++) {
     cw_input_assign(p, p < n ? p : -1, p == 0 ? CW_DEVICE_KEYBOARD | CW_DEVICE_MOUSE | CW_DEVICE_TOUCH : 0);
+    S.seat_pad[p] = p < n ? p : -1;
+    S.seat_seen[p] = false;
+  }
 }
 
 static void begin_match(int n) {
@@ -185,6 +192,33 @@ static void begin_match(int n) {
 void cw_shell_start(int players) {
   assign_default(players);
   begin_match(players);
+}
+
+bool cw_shell_join_open(void) {
+  if (!S.inited || S.screen != CW_SHELL_PLAY || S.d.max_players < 2) return false;
+  for (int i = 0; i < 4; i++) S.joined_pad[i] = i < S.players ? S.seat_pad[i] : -1;
+  S.mid_join = true;
+  go(CW_SHELL_JOIN);
+  return true;
+}
+
+bool cw_shell_seat_taken(int seat) {
+  return S.inited && seat >= 0 && seat < S.players && S.seat_pad[seat] >= 0;
+}
+
+bool cw_shell_join_requested(void) {
+  if (!S.inited || S.screen != CW_SHELL_PLAY || S.d.max_players < 2) return false;
+  const cw_raw_input *in = cw_input_raw();
+  if (!in) return false;
+  for (int pad = 0; pad <= CW_MAX_PADS; pad++) {
+    bool seated = false;
+    for (int p = 0; p < S.players; p++) seated |= S.seat_pad[p] == pad;
+    bool kb = pad == CW_MAX_PADS;
+    if (seated) continue;
+    if (kb ? (in->keys_pressed[40] || in->keys_pressed[44])
+           : (in->pads[pad].connected && (in->pads[pad].pressed & ((1u << CW_PAD_SOUTH) | (1u << CW_PAD_START))))) return true;
+  }
+  return false;
 }
 
 void cw_shell_to_title(void) {
@@ -342,25 +376,57 @@ static void join_update(void) {
           break;
         }
     } else if (slot >= 0 && east) {
+      if (S.mid_join && n <= 1) continue; /* the match keeps at least one player */
       S.joined_pad[slot] = -1;
       sound(CW_SHELL_SND_BACK);
+    } else if (slot < 0 && east && S.mid_join) { /* cancel: the match goes on as it was */
+      S.mid_join = false;
+      sound(CW_SHELL_SND_BACK);
+      go(CW_SHELL_PLAY);
+      S.just_resumed = true;
+      return;
     } else if (slot < 0 && east && n == 0) {
       sound(CW_SHELL_SND_BACK);
       go(CW_SHELL_TITLE);
       return;
     } else if (slot >= 0 && (start || (south && slot == 0 && kb))) {
-      /* go: players in slot order, each on its pad; the keyboard, mouse and
-       * touch belong to the keyboard's player, else to player 1 */
-      int p = 0, kb_slot = -1;
-      for (int s = 0; s < 4; s++)
+      /* go. At the start of a match players take the pads in slot order (a gap closes); in the middle of one
+       * every seat keeps its number, a seat nobody holds reads no input. The keyboard, mouse and touch belong
+       * to the keyboard's player, else to the first player */
+      int p = 0, kb_slot = -1, first = -1, last = -1;
+      for (int s = 0; s < 4; s++) {
         if (S.joined_pad[s] == CW_MAX_PADS) kb_slot = s;
+        if (S.joined_pad[s] >= 0) {
+          if (first < 0) first = s;
+          last = s;
+        }
+      }
+      if (S.mid_join) {
+        for (int s = 0; s < 4; s++) {
+          S.seat_pad[s] = S.joined_pad[s];
+          S.seat_seen[s] = false;
+          bool k = S.joined_pad[s] == CW_MAX_PADS;
+          bool devices = S.joined_pad[s] >= 0 && (k || (kb_slot < 0 && s == first));
+          cw_input_assign(s, S.joined_pad[s] < 0 || k ? -1 : S.joined_pad[s], devices ? CW_DEVICE_KEYBOARD | CW_DEVICE_MOUSE | CW_DEVICE_TOUCH : 0);
+        }
+        sound(CW_SHELL_SND_SELECT);
+        S.mid_join = false;
+        S.players = last + 1;
+        S.dbg_players = S.players;
+        go(CW_SHELL_PLAY);
+        S.just_resumed = true; /* the Start that confirmed is not a new pause */
+        if (S.d.players_changed) S.d.players_changed(S.players, S.d.user);
+        return;
+      }
       for (int s = 0; s < 4; s++) {
         if (S.joined_pad[s] < 0) continue;
         bool k = S.joined_pad[s] == CW_MAX_PADS;
         bool devices = k || (kb_slot < 0 && p == 0);
+        S.seat_pad[p] = S.joined_pad[s];
+        S.seat_seen[p] = false;
         cw_input_assign(p++, k ? -1 : S.joined_pad[s], devices ? CW_DEVICE_KEYBOARD | CW_DEVICE_MOUSE | CW_DEVICE_TOUCH : 0);
       }
-      for (int q = p; q < 4; q++) cw_input_assign(q, -1, 0);
+      for (int q = p; q < 4; q++) cw_input_assign(q, -1, 0), S.seat_pad[q] = -1;
       sound(CW_SHELL_SND_SELECT);
       begin_match(p);
       return;
@@ -390,7 +456,40 @@ bool cw_shell_update(void) {
 static void menu_tick(void) {
   switch (S.screen) {
   case CW_SHELL_LOADING: return;
-  case CW_SHELL_PLAY:
+  case CW_SHELL_PLAY: {
+    /* a pad that goes away (unplugged, out of battery) frees its seat: the match goes on with the others, and the
+     * game hears players_changed; when every pad that was held is gone the pause menu opens instead */
+    const cw_raw_input *raw = cw_input_raw();
+    if (raw && S.d.max_players > 1) {
+      int held = 0, gone = 0;
+      for (int p = 0; p < S.players; p++) {
+        int pd = S.seat_pad[p];
+        if (pd < 0 || pd >= CW_MAX_PADS) { held += pd >= 0; continue; }
+        held++;
+        if (raw->pads[pd].connected) S.seat_seen[p] = true;
+        else if (S.seat_seen[p]) gone++;
+      }
+      if (gone && gone >= held) {
+        sound(CW_SHELL_SND_PAUSE);
+        go(CW_SHELL_PAUSE);
+        return;
+      }
+      if (gone) {
+        int last = -1;
+        for (int p = 0; p < S.players; p++) {
+          int pd = S.seat_pad[p];
+          if (pd >= 0 && pd < CW_MAX_PADS && !raw->pads[pd].connected && S.seat_seen[p]) {
+            S.seat_pad[p] = -1;
+            S.seat_seen[p] = false;
+            cw_input_assign(p, -1, 0);
+          }
+          if (S.seat_pad[p] >= 0) last = p;
+        }
+        S.players = last + 1;
+        S.dbg_players = S.players;
+        if (S.d.players_changed) S.d.players_changed(S.players, S.d.user);
+      }
+    }
     for (int p = 0; p < S.players; p++)
       if (cw_action_just_pressed(p, S.act[A_PAUSE])) {
         sound(CW_SHELL_SND_PAUSE);
@@ -398,6 +497,7 @@ static void menu_tick(void) {
         return;
       }
     return;
+  }
   case CW_SHELL_JOIN: join_update(); return;
   default: break;
   }
@@ -527,7 +627,7 @@ void cw_shell_draw(void) {
       else snprintf(dev, sizeof dev, "pad %d", S.joined_pad[s] + 1);
       text(dev, x, sz.y * 0.5f, u * 0.8f, cw_rgba(1, 1, 1, in ? 0.9f : 0.5f), 1);
     }
-    text("A or Enter: join    B or Esc: leave    Start or Enter: play", cx, sz.y - u * 2.2f, u * 0.75f, cw_rgba(1, 1, 1, 0.7f), 1);
+    text(S.mid_join ? "A or Enter: join    B or Esc: leave    Start or Enter: back to the game" : "A or Enter: join    B or Esc: leave    Start or Enter: play", cx, sz.y - u * 2.2f, u * 0.75f, cw_rgba(1, 1, 1, 0.7f), 1);
     break;
   }
   default: break;

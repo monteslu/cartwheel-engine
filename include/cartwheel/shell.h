@@ -94,6 +94,10 @@ typedef struct cw_shell_desc {
    * canvas units): the game's backdrop, so these screens are not a dark panel. The shell then dims it lightly
    * and draws the menu over it. NULL: the dark panel. */
   void (*draw_background)(cw_shell_screen screen, cw_vec2 canvas, void *user);
+  /* The join screen was opened during play (cw_shell_join_open) and confirmed: the match now has this many
+   * players (the highest seat held plus one; see cw_shell_seat_taken for which seats are held). The game adapts
+   * its roster; it is not started again. Not called when the screen is cancelled. */
+  void (*players_changed)(int players, void *user);
   cw_font font;           /* default: the built-in sans (cw_ui_font_sans) */
   cw_color accent;        /* the selected item's colour (default a warm yellow) */
   void *user;
@@ -123,6 +127,20 @@ int cw_shell_players(void); /* players in the match (1..max_players) */
 /* Start a match now with n players (pads 0..n-1, player 0 also on the
  * keyboard, mouse and touch): an autopilot build or a test skips the menus. */
 void cw_shell_start(int players);
+/* Join and leave during play: opens the join screen over the running match (play pauses, exactly as for the pause
+ * menu) with the current players on their seats. A pad presses A to take a free seat, B to leave its own seat;
+ * Start or Enter confirms (at least one player stays) and play resumes with players_changed; B on a pad that
+ * has no seat cancels and leaves everything as it was. Seats keep their numbers: a leaver's seat reads no
+ * input (cw_shell_seat_taken says which are held), a newcomer takes the first free seat, and the match's
+ * player count is the highest seat held plus one. Returns false (and does nothing) outside play or in a one
+ * player game. */
+bool cw_shell_join_open(void);
+/* Is this player seat held by a pad or the keyboard (0 .. cw_shell_players() - 1)? Right after a start every
+ * seat below the player count is; after cw_shell_join_open a seat can be empty. */
+bool cw_shell_seat_taken(int seat);
+/* True on the tick a pad or the keyboard that has no seat presses A (Enter) or Start: the cue for a game to
+ * offer cw_shell_join_open, say between rounds. Poll it in fixed_update after cw_shell_update. */
+bool cw_shell_join_requested(void);
 void cw_shell_to_title(void); /* end the match and show the title (every pad drives the menus again) */
 /* Loading: progress 0..1 shown on the loading screen; loaded goes on to the title. */
 void cw_shell_loading(float progress);

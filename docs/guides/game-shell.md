@@ -34,6 +34,8 @@ writes only its gameplay and art:
 
 A game that wants its own picture behind the title, join, settings and pause screens sets `draw_background` in `cw_shell_desc`: the shell calls it inside its own 2D pass with the canvas size, then dims the result lightly and draws the menu over it (without the hook the screens sit on a dark panel).
 
+A pad that appears in the middle of a match, or a player who wants out, does not need a restart: `cw_shell_join_open()` shows the join screen over the running match (play pauses as it does for the pause menu) with the current players seated. A pad presses A to take a free seat, a seated pad presses B to leave, Start or Enter confirms (one player always stays) and play resumes after the `players_changed` hook of `cw_shell_desc` told the game its new roster; B on a pad without a seat cancels. Seats keep their numbers (a player who stays is still player 2 after player 1 left, and the shell reports it as an empty seat 1: `cw_shell_seat_taken(1)` is false, its actions read nothing); the player count is the highest seat held plus one. `cw_shell_join_requested()` is true on the tick a pad that has no seat presses A or Start: call it between rounds and open the screen when it is true. The `shell_join` sample shows both.
+
 The calls a game makes:
 
 ```c
