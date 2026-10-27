@@ -199,6 +199,10 @@ if(NOT CW_CART AND NOT CMAKE_CROSSCOMPILING AND NOT CW_ENGINE_ONLY AND CW_NODE A
    AND EXISTS ${_t3_pkg}/build/three.webgpu.js AND EXISTS ${CW_THREE_DIR}/src/builder.c)
   set(_t3_bld_default ON)
 endif()
+if(NOT _t3_bld_default AND NOT CW_CART AND NOT CMAKE_CROSSCOMPILING AND NOT CW_ENGINE_ONLY)
+  # a development build without the builder draws nothing for a state its tables lack, which a new 3D game meets at once
+  message(WARNING "three.c's runtime program builder is OFF (missing: node, or QuickJS and three.js under ${CW_THREE_DIR}/third_party). A 3D app whose program tables lack a state will skip those draws. Fix: run ${CW_THREE_DIR}/tools/fetch-builder-deps.sh and re-run cmake, or add the states with node tools/programs.mjs <app>.")
+endif()
 option(CW_THREE_BUILDER "three.c's runtime program builder (development: missing program states are built, not skipped)" ${_t3_bld_default})
 if(CW_THREE_BUILDER)
   if(NOT EXISTS ${_t3_qjs}/quickjs.c OR NOT EXISTS ${_t3_pkg}/build/three.webgpu.js)
