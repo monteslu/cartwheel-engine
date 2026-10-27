@@ -100,9 +100,16 @@ if (argv[0] === '--one') {
     if (shot) px = new Uint8Array(shot.data.buffer || shot.data);
     else {
       const gl = host.getGlContext();
-      px = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      // the frame the cart drew is in the host's redirect target (the default framebuffer
+      // holds nothing readable after a present)
+      const read = (w, h) => {
+        px = new Uint8Array(w * h * 4);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      };
+      if (!host.withRenderedFrame(read)) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        read(gl.drawingBufferWidth, gl.drawingBufferHeight);
+      }
     }
     const colours = new Set();
     for (let i = 0; i < px.length && colours.size < 2; i += 4) colours.add(px[i] | (px[i + 1] << 8) | (px[i + 2] << 16));

@@ -46,6 +46,12 @@ const gpuArg = argv.includes('--gpu') ? argv[argv.indexOf('--gpu') + 1] : 'gl';
 const noChromium = argv.includes('--no-chromium'), chromiumOnly = argv.includes('--chromium-only');
 const only = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--hosts' && argv[i - 1] !== '--gpu' && argv[i - 1] !== '--gates-file');
 const guard = armGuard('gate.mjs', { outFile: join(OUT, 'gpu-mem.json') });
+// a host --hosts asked for that a gate's hosts / skip list leaves out: said loudly, never
+// dropped in silence (a gate pinned to native looks like a passing romdev leg otherwise)
+const warnDropped = (name, hosts) => {
+  const miss = hostsArg ? hostsArg.filter((h) => !hosts.includes(h)) : [];
+  if (miss.length) console.log(`WARN ${name}: --hosts asked for ${miss.join(', ')}, but this gate's hosts / skip list leaves them out: those legs did NOT run`);
+};
 const usesHosts = (hosts) => hosts.filter((h) => !(noChromium && h === 'chromium') && !(chromiumOnly && !['native', 'chromium'].includes(h)));
 // There is one cart per game: the dual GL + WebGPU one (build/cart-wgpu). Without a GL-only cart tree (build/cart) the GL
 // leg of a cart is the dual cart told to render with GL on romdev (run-cart --dual-gl, implied there); Chromium and
@@ -153,6 +159,7 @@ async function wgpuGates(list) {
     const hosts = usesHosts((hostsArg ? hostsArg.filter((h) => eligible.includes(h)) : eligible).filter((h) => !(w.skip || g.skip || []).includes(h)));
     if (!hosts.includes('native')) hosts.unshift('native');
     if (chromiumOnly && !hosts.includes('chromium')) continue;
+    warnDropped(g.name + ' [webgpu]', hosts);
     await guard.gate(g.name + ' [webgpu]');
     gateEnv = g.env || {};
     const common = ['--app', g.app, '--frames', String(g.frames), ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : [])];
@@ -302,6 +309,7 @@ for (const g of gates) {
   const eligible = g.hosts || defaults; // --hosts narrows the set; it never adds a host a gate cannot run on
   const hosts = glHosts((hostsArg ? hostsArg.filter((h) => eligible.includes(h)) : eligible).filter((h) => !(g.skip || []).includes(h)));
   if (chromiumOnly && !hosts.includes('chromium')) continue;
+  warnDropped(g.name, hosts);
   const common = ['--app', g.app, '--frames', String(g.frames), ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : [])];
   if (g.input) common.push('--input', join(PROJ, 'tests', g.input));
   if (g.startCmds) common.push('--start-cmds', g.startCmds.join(';'));

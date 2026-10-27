@@ -24,6 +24,7 @@
 
 #include "cartwheel/debug.h"
 #include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/scene_file.h"
@@ -159,7 +160,8 @@ static void render(void *u, double alpha) {
         gpu_ms[k] = st[i].gpu_ms_avg;
       }
   }
-  if (strcmp(segs[seg_index].name, "taa") == 0) {
+  /* (GL only: a readback of its own; on WebGPU there is no GL to read with) */
+  if (strcmp(segs[seg_index].name, "taa") == 0 && cw_gpu_backend() == CW_GPU_GL) {
     int w, h;
     cw_drawable_size(&w, &h);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);

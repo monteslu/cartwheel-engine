@@ -2604,6 +2604,24 @@
    "summary": "The GL API cartwheel renders with: OpenGL ES 3.0 with WebGL2 semantics, the\nsingle feature level on every target. Native links libGLESv2 (Mesa, or\nANGLE on Windows/macOS/iOS); carts import the same entry points from the\nwasmcart \"gl\" module.",
    "functions": [
     {
+     "name": "cw__gl_trap",
+     "signature": "void cw__gl_trap(const char *fn, const char *file, int line)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw__gl_guard",
+     "signature": "static inline void cw__gl_guard(const char *fn, const char *file, int line)",
+     "doc": "",
+     "inline": true
+    },
+    {
+     "name": "cw__gl_bind_framebuffer_at",
+     "signature": "static inline void cw__gl_bind_framebuffer_at(GLenum target, GLuint fb, const char *file, int line)",
+     "doc": "",
+     "inline": true
+    },
+    {
      "name": "cw__gl_bind_framebuffer",
      "signature": "static inline void cw__gl_bind_framebuffer(GLenum target, GLuint fb)",
      "doc": "",
@@ -2754,6 +2772,10 @@
     },
     {
      "name": "GL_GPU_DISJOINT_EXT",
+     "doc": ""
+    },
+    {
+     "name": "glBindFramebuffer(target, fb)",
      "doc": ""
     },
     {
