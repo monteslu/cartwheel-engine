@@ -2488,7 +2488,7 @@
   },
   {
     "name": "fx-sub-emitters",
-    "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "FXS_OFF": "1" } }] },
+    "webgpu": { "vsGl": 0.005 },
     "app": "fx_sub_emitters",
     "frames": 150,
     "maxGt16": 0.003,
