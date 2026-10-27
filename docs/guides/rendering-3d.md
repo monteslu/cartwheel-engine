@@ -409,9 +409,18 @@ Turn it on from code with [cw_skin_shading_apply](api:cw_skin_shading_apply) on 
 
 **Faces** use morph targets on the skinned head: see [Animation](guide:animation), "Faces: morph targets". **Many characters** share one load: [cw_gltf_instantiate](api:cw_gltf_instantiate) gives each its own skeleton, animation and morph weights over the same geometry, materials and textures.
 
-Cost on the 890M (native, 960 x 540, ms per frame of GPU time, the sample's scene: two lights, one with shadows):
+Cost on a Radeon 890M (native, the sample at 960 x 540 drawn at 1920 x 1080, two directional lights, one with shadows; GPU ms per frame, six runs each, skin on and off interleaved):
 
-COST_TABLE
+| Scene | GL | WebGPU |
+|---|---|---|
+| one face filling the frame, skin shading | 0.54 | 0.41 |
+| the same, plain PBR | 0.52 | 0.43 |
+| 6 characters (67 draws) | 0.52 | 0.40 |
+| 20 characters (197 draws, 243k triangles, morphed faces), skin shading | 0.75 | 0.63 |
+| the same, plain PBR | 0.70 | 0.62 |
+| 20 characters, Low preset | 0.41 | 0.39 |
+
+Skin shading costs less than the run-to-run noise (under 0.05 ms) even with a face filling the screen. A slower integrated GPU (a Vega 8 is about a quarter of an 890M) should stay under 0.2 ms for it. The 20 characters cost about 0.9 ms of CPU per frame on GL (skinning matrices and draw submission).
 
 ## Visibility: culling, LOD and impostors
 
