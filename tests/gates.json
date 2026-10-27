@@ -67,6 +67,25 @@
     "maxGt16": 0.0005
   },
   {
+    "name": "vertex-colors",
+    "webgpu": true,
+    "app": "vertex_colors",
+    "frames": 3,
+    "minColors": 8,
+    "fields": [
+      "calls",
+      "skipped"
+    ],
+    "expect": {
+      "calls": 3,
+      "skipped": 0
+    },
+    "controlEnv": {
+      "CW_VCOL_CONTROL": "1"
+    },
+    "note": "vertex colours as rgb and rgba attributes: both quads draw the same gradient (alpha unused). The control gives the right quad a two float colour attribute, which three.c refuses: its draw is skipped"
+  },
+  {
     "name": "physics-determinism",
     "app": "physics_determinism",
     "frames": 400,
