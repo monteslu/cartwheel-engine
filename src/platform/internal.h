@@ -47,6 +47,7 @@ typedef struct cw_platform {
   bool quit;
   /* time */
   double now, last;      /* seconds */
+  double frame_dt;       /* seconds the frame being drawn follows the previous one (cw_frame_dt) */
   double accumulator;
   double fixed_dt;
   uint64_t frame, tick;

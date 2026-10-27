@@ -308,6 +308,12 @@ void cw_crisp_ui_restore(uint8_t saved); /* apply a cw_crisp_ui_saved byte (at i
 float cw_pixel_ratio(void);
 double cw_time(void);                  /* seconds since start (host clock in carts) */
 uint64_t cw_frame_index(void);         /* rendered frames since start */
+/* Seconds from the previous rendered frame to this one (what the frame loop measured, a stall clamped to
+ * 0.25 s, snapped to exactly cw_fixed_dt() when it is one fixed step so every host answers the same
+ * value). For a render callback that animates backdrops, particles or fades by wall time instead of
+ * differencing cw_time() itself; simulation keeps using the fixed step. Render-only: it must not feed
+ * anything the simulation reads. The first frame answers cw_fixed_dt(). */
+double cw_frame_dt(void);
 uint64_t cw_tick_index(void);          /* fixed ticks since start */
 double cw_fixed_dt(void); /* seconds per fixed tick (1 / fixed_hz) */
 bool cw_is_deterministic_run(void);    /* cart: host requested a replay run */

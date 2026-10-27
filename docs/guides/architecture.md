@@ -28,6 +28,8 @@ A game provides `cw_main`, which returns a `cw_app_desc` (title, logical size, `
 
 `cw_tick_index` counts fixed ticks and `cw_frame_index` rendered frames. Simulation belongs in `fixed_update`: it is the part that runs the same number of times with the same `dt` on every host, at any display rate.
 
+`cw_frame_dt()` is the seconds from the previous rendered frame to this one, for a `render` callback that animates something by wall time (a scrolling backdrop, a particle trail, a fade) without differencing `cw_time()` by hand. It is the same value on every host (a frame that lasted one fixed step reads exactly `cw_fixed_dt()`, a stall is clamped to a quarter second). It is render-only: nothing the simulation reads may depend on it.
+
 Apps built on the node model use `cw_scene_app(main_scene, &base)`, which supplies those callbacks: `fixed_update` runs the tree's fixed phase (module hooks, then nodes in tree order) and then `base.fixed_update`; `update` runs the tree's update phase; `render` runs `pre_render` and the tree's render pipeline, with `base.render` as its last overlay pass (a HUD drawn there lands on top).
 
 @include samples/hot_demo/main.c#main
