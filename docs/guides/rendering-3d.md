@@ -392,6 +392,27 @@ The cost, GPU ms per frame on an AMD Radeon 890M (integrated) at 1280 x 720, `sa
 The gi pass on High is two 128-pixel probe captures every other frame and the half-resolution G-buffer; Ultra doubles the capture size and budget and draws the G-buffer twice (SSGI needs the diffuse colour). Most of SSGI's time is the trace's fetches of the lit colour and the normal at the scattered steps, so it reads the colour from a half-resolution copy and the normals from a two-channel one, and its loops have fixed counts the compiler unrolls. A Vega 8 has about half the 890M's shader rate: expect about twice these numbers, so Low to High fit a 60 Hz frame there and Ultra (SSGI above all) is for discrete GPUs.
 
 
+## Characters: skin, glTF materials, faces
+
+Three pieces make characters look like people rather than painted plastic. `samples/character_skin` shows all of them on six instances of one generated glTF.
+
+**Skin shading** ([skin_shading.h](header:skin_shading.h)) is a cheap subsurface look. It adds two terms to a MeshStandardMaterial or MeshPhysicalMaterial for every light that reaches it (the scene's lights, clustered lights, the cascaded sun), and keeps the rest of the material: sheen, clear coat, maps.
+
+- **Wrap**: diffuse light reaches past the line where the surface turns from the light, red furthest, so the shadow side of a face goes soft and warm instead of grey. `scatter` is the colour that travels furthest; `wrap` how far (0 to 1).
+- **Translucency**: light from behind shows through thin parts (ears, nostrils, fingers) as a warm glow, strongest when looking toward a light past an edge (three.js r186 MeshSSSNodeMaterial's term). `translucency` sets its strength, `distortion` how much the surface bends it, `power` how tightly it gathers.
+
+There is no screen-space pass, no extra target and no texture: a few instructions per light per skin pixel. A light's shadow darkens both terms like the rest of its light, so the glow through an ear needs a light the head does not shadow (a rim light behind the character).
+
+Turn it on from code with [cw_skin_shading_apply](api:cw_skin_shading_apply) on a material (or [cw_skin_shading_apply_named](api:cw_skin_shading_apply_named) for every material of that name under a model), or from the file: a glTF material with `KHR_materials_diffuse_transmission` (its factor becomes the translucency, its colour the scatter colour) or with `"extras": {"skin_shading": true}` (or an object with `scatter`, `wrap`, `translucency`, `distortion`, `power`, `ambient`) gets it when it loads through the resource system. The Low preset draws skin as plain PBR (`cw_quality_scale("skin")` is 0 there) and pays nothing; Medium and up draw it.
+
+**glTF materials** load as r186's GLTFLoader builds them: each keeps its name (`t3_material.name`), and the factors of `KHR_materials_sheen`, `clearcoat`, `specular`, `ior`, `transmission`, `volume`, `emissive_strength`, `iridescence` and `anisotropy` make a MeshPhysicalMaterial (the clear coat normal texture too; the other extension textures are not read yet). A model generator can put cloth sheen, leather clear coat or eye gloss in the file and the game finds a material by name, with no node naming tricks.
+
+**Faces** use morph targets on the skinned head: see [Animation](guide:animation), "Faces: morph targets". **Many characters** share one load: [cw_gltf_instantiate](api:cw_gltf_instantiate) gives each its own skeleton, animation and morph weights over the same geometry, materials and textures.
+
+Cost on the 890M (native, 960 x 540, ms per frame of GPU time, the sample's scene: two lights, one with shadows):
+
+COST_TABLE
+
 ## Visibility: culling, LOD and impostors
 
 Without a VisibilityManager, three.c's per-object frustum test is all there is. Add one ([visibility.h](header:visibility.h)) and the "visibility" pass culls, picks LODs and bakes impostors before the scene draws; culled meshes are hidden for the frame and restored in PRESENT (and after each view of a split screen, so one player's culling never hides meshes from the next view's shadows, GI or culling), so game code never sees the flags change.

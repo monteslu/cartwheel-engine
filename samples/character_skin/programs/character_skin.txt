@@ -1,0 +1,19 @@
+# r186 program states character_skin draws (cmake/programs.cmake, tools/programs.mjs)
+physical+skin+morph+l2001+xskinshade
+standard+skin+morph+l2001
+physical+skin+morph+cc+l2001
+physical+skin+sheen+l2001
+physical+skin+l2001+xskinshade
+physical+skin+cc+l2001
+standard+shadow+l2001+s100
+physical+skin+morph+l2001
+physical+skin+l2001
+depth+skin+xskinshade
+physical+shadow+skin+morph+l2001+s100+xskinshade
+standard+shadow+skin+morph+l2001+s100
+physical+shadow+skin+morph+cc+l2001+s100
+physical+shadow+skin+sheen+l2001+s100
+physical+shadow+skin+l2001+s100+xskinshade
+physical+shadow+skin+cc+l2001+s100
+physical+shadow+skin+morph+l2001+s100
+physical+shadow+skin+l2001+s100

@@ -116,6 +116,36 @@
     "note": "vertex colours as rgb and rgba attributes: both quads draw the same gradient (alpha unused). The control gives the right quad a two float colour attribute, which three.c refuses: its draw is skipped"
   },
   {
+    "name": "character-skin",
+    "webgpu": true,
+    "app": "character_skin",
+    "frames": 150,
+    "maxGt16": 0.003,
+    "fields": [
+      "skin.materials",
+      "skin.enabled",
+      "chars",
+      "instances",
+      "mat.named",
+      "mat.vals",
+      "morph.names",
+      "morph.meshes",
+      "morph.weights"
+    ],
+    "expect": {
+      "skin.materials": 1,
+      "skin.enabled": 1,
+      "chars": 6,
+      "instances": 6,
+      "morph.names": 4,
+      "morph.meshes": 12
+    },
+    "controlEnv": {
+      "CHARACTER_NO_SKIN": "1"
+    },
+    "note": "six instances of one skinned glTF: skin shading from the file (face, ears, hands), sheen knit and hair, clear coat eyes and belt (KHR_materials_*), a talk clip opening the jaw through morph weights, smiles and blinks set by name from code. The control removes the skin shading: the state (skin.materials 0) and the picture differ"
+  },
+  {
     "name": "physics-determinism",
     "app": "physics_determinism",
     "frames": 400,
@@ -1350,6 +1380,27 @@
       "CW_TEST_INJECT_FAIL": "1"
     },
     "note": "interpolation, loop-edge key firing, speed/seek, cross-fade, queue, .cwscene animation round trips, tweens, AnimationTree blends/state machines, root motion, glTF skeletal sampling vs three.c mixer; sampled values fold into unit.checksum"
+  },
+  {
+    "name": "unit-character",
+    "app": "unit_character",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "glTF material names and KHR_materials_* values, skin shading from the file and from code with the Low preset switching it off, morph targets by name on two instances of one skinned glTF, morph weight tracks from a glTF weights channel and a by-name track in an AnimationPlayer"
   },
   {
     "name": "unit-ik",
