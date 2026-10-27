@@ -1,0 +1,276 @@
+[scene format=1]
+
+[node name="Root" type="Node3D"]
+
+[node name="Post" parent="." type="PostProcess"]
+bloom = true
+bloom_intensity = 0.06
+ssao = true
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 16.5
+latitude = 40
+declination = 15
+north = 60
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+shadow_extent = 40
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 6.5, 17)
+rotation = vec3(-0.33, 0, 0)
+fov = 55
+far = 400
+
+[node name="Water" parent="." type="Water3D"]
+size = vec2(120, 120)
+subdivisions = 400
+
+[node name="Pier" parent="." type="StaticBody3D"]
+position = vec3(-7, 0, -4)
+
+[node name="Shape" parent="Pier" type="CollisionShape3D"]
+shape = BOX
+size = vec3(3, 4, 14)
+
+[node name="Deck" parent="Pier" type="MeshInstance3D"]
+position = vec3(0, 1.6, 0)
+size = vec3(3, 0.3, 14)
+color = color(0.33, 0.2, 0.1, 1)
+roughness = 0.8
+cast_shadow = true
+receive_shadow = true
+
+[node name="Post1" parent="Pier" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(-1.2, -1, -6)
+size = vec3(0.4, 5.5, 0.4)
+color = color(0.25, 0.15, 0.08, 1)
+cast_shadow = true
+
+[node name="Post2" parent="Pier" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(1.2, -1, -2)
+size = vec3(0.4, 5.5, 0.4)
+color = color(0.25, 0.15, 0.08, 1)
+cast_shadow = true
+
+[node name="Post3" parent="Pier" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(-1.2, -1, 2)
+size = vec3(0.4, 5.5, 0.4)
+color = color(0.25, 0.15, 0.08, 1)
+cast_shadow = true
+
+[node name="Post4" parent="Pier" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(1.2, -1, 6)
+size = vec3(0.4, 5.5, 0.4)
+color = color(0.25, 0.15, 0.08, 1)
+cast_shadow = true
+
+[node name="Seabed" parent="." type="MeshInstance3D"]
+position = vec3(0, -4, 0)
+size = vec3(120, 0.5, 120)
+color = color(0.45, 0.38, 0.22, 1)
+receive_shadow = true
+
+[node name="Boat" parent="." type="RigidBody3D"]
+position = vec3(1, 1, 2)
+rotation = vec3(0, 0.5, 0)
+density = 350
+
+[node name="Shape" parent="Boat" type="CollisionShape3D"]
+shape = BOX
+size = vec3(1.6, 0.8, 4)
+
+[node name="Hull" parent="Boat" type="MeshInstance3D"]
+size = vec3(1.6, 0.8, 4)
+color = color(0.75, 0.1, 0.06, 1)
+roughness = 0.5
+cast_shadow = true
+receive_shadow = true
+
+[node name="Cabin" parent="Boat" type="MeshInstance3D"]
+position = vec3(0, 0.7, -0.4)
+size = vec3(1.1, 0.6, 1.4)
+color = color(0.9, 0.9, 0.85, 1)
+roughness = 0.4
+cast_shadow = true
+
+[node name="Float" parent="Boat" type="Buoyancy3D"]
+
+[node name="Crate1" parent="." type="RigidBody3D"]
+position = vec3(4.5, 1.5, -2)
+density = 450
+
+[node name="Shape" parent="Crate1" type="CollisionShape3D"]
+shape = BOX
+size = vec3(0.9, 0.9, 0.9)
+
+[node name="Mesh" parent="Crate1" type="MeshInstance3D"]
+size = vec3(0.9, 0.9, 0.9)
+color = color(0.52, 0.32, 0.12, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Float" parent="Crate1" type="Buoyancy3D"]
+
+[node name="Crate2" parent="." type="RigidBody3D"]
+position = vec3(-2.5, 2, 5)
+rotation = vec3(0.3, 0.2, 0.4)
+density = 600
+
+[node name="Shape" parent="Crate2" type="CollisionShape3D"]
+shape = BOX
+size = vec3(0.7, 0.7, 0.7)
+
+[node name="Mesh" parent="Crate2" type="MeshInstance3D"]
+size = vec3(0.7, 0.7, 0.7)
+color = color(0.2, 0.35, 0.6, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Float" parent="Crate2" type="Buoyancy3D"]
+
+[node name="Island" parent="." type="MeshInstance3D"]
+position = vec3(14, -1.2, -16)
+rotation = vec3(0.05, 0.3, 0.12)
+size = vec3(34, 2.4, 22)
+color = color(0.7, 0.62, 0.42, 1)
+roughness = 0.95
+receive_shadow = true
+
+[node name="Rock" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(8, 0.1, -12)
+size = vec3(3, 2.4, 3)
+color = color(0.35, 0.34, 0.33, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="Cam1" parent="." type="Camera3D"]
+position = vec3(-9, 4.5, 8)
+rotation = vec3(-0.2, -0.6, 0)
+fov = 55
+far = 400
+
+[node name="Cam2" parent="." type="Camera3D"]
+position = vec3(12, 4, 6)
+rotation = vec3(-0.2, 0.7, 0)
+fov = 55
+far = 400
+
+[node name="Cam3" parent="." type="Camera3D"]
+position = vec3(2, 3.5, -2)
+rotation = vec3(-0.12, 0.1, 0)
+fov = 55
+far = 400
+
+[node name="Boom" parent="." type="Node3D"]
+position = vec3(5, 1.0, -8)
+
+[node name="Fireball" parent="Boom" type="GPUParticles3D"]
+amount = 90
+lifetime = 2.5
+explosiveness = 1
+emission_shape = SPHERE
+emission_radius = 0.5
+spread = 180
+speed_min = 1.2
+speed_max = 3.2
+gravity = vec3(0, 0.6, 0)
+damping = 1.6
+size = 2.6
+size_random = 0.3
+size_curve = "0 0.4, 0.25 1, 1 1.5"
+color_ramp = "0 1 0.95 0.6 1, 0.15 1 0.55 0.12 0.9, 0.6 0.5 0.12 0.03 0.4, 1 0.2 0.04 0.02 0"
+energy = 5
+spin = 0.8
+seed = 21
+
+[node name="Smoke" parent="Boom" type="GPUParticles3D"]
+amount = 140
+lifetime = 2.5
+explosiveness = 0.9
+emission_shape = SPHERE
+emission_radius = 0.7
+spread = 180
+speed_min = 0.8
+speed_max = 2.6
+gravity = vec3(0, 0.9, 0)
+damping = 1.2
+turbulence = 1.4
+turbulence_scale = 0.3
+blend = ALPHA
+sort = true
+soft_distance = 0.6
+size = 2.2
+size_random = 0.3
+size_curve = "0 0.4, 0.4 1, 1 1.8"
+color_ramp = "0 0.25 0.22 0.2 0, 0.15 0.22 0.2 0.19 0.8, 1 0.35 0.35 0.37 0"
+spin = 0.4
+seed = 22
+
+[node name="Sparks" parent="Boom" type="GPUParticles3D"]
+amount = 600
+lifetime = 2.5
+explosiveness = 1
+emission_shape = POINT
+spread = 180
+speed_min = 4
+speed_max = 11
+gravity = vec3(0, -9.8, 0)
+draw_mode = STRETCHED
+stretch = 0.05
+size = 0.04
+color_ramp = "0 1 0.95 0.6 1, 0.4 1 0.5 0.1 1, 1 0.6 0.1 0.05 0"
+energy = 6
+seed = 23
+
+[node name="Debris" parent="Boom" type="GPUParticles3D"]
+amount = 48
+lifetime = 2.5
+explosiveness = 1
+emission_shape = POINT
+spread = 70
+direction = vec3(0, 1, 0)
+speed_min = 5
+speed_max = 9
+gravity = vec3(0, -9.8, 0)
+draw_mode = MESH
+mesh_primitive = BOX
+blend = OPAQUE
+size = 0.18
+size_random = 0.6
+color = color(0.25, 0.2, 0.17, 1)
+spin = 5
+seed = 24
+
+[node name="Haze" parent="Boom" type="GPUParticles3D"]
+amount = 120
+lifetime = 2.5
+explosiveness = 0.5
+emission_shape = SPHERE
+emission_radius = 0.8
+direction = vec3(0, 1, 0)
+spread = 40
+speed_min = 0.8
+speed_max = 1.6
+gravity = vec3(0, 0, 0)
+turbulence = 0.8
+blend = DISTORT
+distort_strength = 0.12
+size = 3
+size_curve = "0 0.6, 1 1.6"
+color_ramp = "0 1 1 1 0, 0.2 1 1 1 1, 1 1 1 1 0"
+seed = 25
+
+[node name="Wave" parent="Boom" type="Shockwave3D"]
+max_radius = 7
+duration = 2.5
+thickness = 0.9
+strength = 0.8
+loop = true

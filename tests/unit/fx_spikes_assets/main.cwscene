@@ -1,0 +1,7 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 2, 6)
+fov = 55

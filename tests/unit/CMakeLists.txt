@@ -71,6 +71,9 @@ cw_add_app(unit_plugin SOURCES test_plugin.c PLUGINS ${CMAKE_CURRENT_SOURCE_DIR}
 # without the render pipeline (its own boxes, depth and pass context)
 cw_add_app(fx_gpu SOURCES fx_gpu.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_gpu_assets)
 target_include_directories(fx_gpu PRIVATE ${CMAKE_SOURCE_DIR}/src)
+# Phase 0 spikes: what an FFT ocean, a ripple grid, a fire volume and a particle liquid cost on WebGPU (tests/boom-perf.mjs, tests/spikes.mjs)
+cw_add_app(fx_spikes SOURCES fx_spikes.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_spikes_assets)
+target_include_directories(fx_spikes PRIVATE ${CMAKE_SOURCE_DIR}/src)
 # cw_app_desc.pixel_scale and crisp UI (tests/pixel-scale.mjs, tests/host-resolution.mjs):
 # one source, four apps (pixel_scale.c says what each is for): name:N:render_scale:ui_min_lines
 foreach(_px n2:2:3.125f:540 n3:3:3.125f:540 auto3:3:0:540 auto3_low:3:0:0)
