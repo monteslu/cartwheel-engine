@@ -24,6 +24,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
     Fn, uniform, texture, sharedUniformGroup, positionLocal, positionWorld, cameraViewMatrix,
     modelWorldMatrix, screenUV, vec2, vec3, vec4, float, normalize, dot, max, min, mix, pow, abs, sin, cos, clamp,
     floor, length, smoothstep, varying, step, exp, sqrt, output, sRGBTransferEOTF, materialColor, materialEmissive,
+    textureLoad, ivec2, int,
   } = TSL;
 
   const frame = sharedUniformGroup('waterFrame', 0, THREE.NodeUpdateType.RENDER);
@@ -52,6 +53,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const rip = v4('waterRipple');    // x: ripple normal strength (0: no grid); y, z: the grid's size (m); w: glint
   const ripR = v4('waterRippleRect'); // x, y: the grid's centre (water-local x, z); z, w: 1 / cells along x, z
   const refrInfo = v4('waterRefr'); // x: the refraction's depth is valid (1); y: caustic strength; z: 1 / caustic tile (m); w: camera under the water (the refraction target holds the view up through the surface)
+  const refrSize = v4('waterRefrSize'); // x, y: the refraction depth texture's size in texels
   const cam = v4('waterCam');       // xyz: the camera's world position (three.c fills no cameraPosition); w: 1 when the view is drawn rows bottom-up (cartwheel's WebGPU scene target) but the planar targets top-down
 
   const m4 = (n) => {
@@ -82,8 +84,11 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const floorMap = tex('waterFloorMap', true, false, true);
   const rippleMap = tex('waterRippleMap', true, false, true);
   const causticMap = tex('waterCaustic', true, true, false);
-  const refrDepth = new THREE.DepthTexture(2, 2);
+  // the refraction's window depth, read texel by texel: a float texture (compatibility-mode WebGPU reads a depth
+  // texture only through comparisons, so there the engine copies it into R32Float; GL binds the depth texture)
+  const refrDepth = new THREE.DataTexture(new Float32Array(4), 2, 2, THREE.RedFormat, THREE.FloatType);
   refrDepth.name = 'ext.waterRefractionDepth';
+  refrDepth.needsUpdate = true;
 
   // ── vertex: Gerstner ───────────────────────────────────────────────
   // plain node expressions (no Fn: the shadow pass rebuilds the vertex stage from positionNode alone)
@@ -147,7 +152,9 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
     wn.z.add(d.z.mul(detailWeight)).add(df.y.mul(fineWeight)).sub(rslope.y)));
   const theta = max(dot(toEye, n), 0);
   const fres = pow(float(1).sub(theta), 5).mul(float(1).sub(look.x)).add(look.x);
-  const offset = n.xz.mul(look.y);
+  // the swell's own tilt moves the planar views less than the ripples do (a steep wave face would otherwise reach
+  // past the mirrored horizon into the ground)
+  const offset = n.xz.sub(wn.xz.mul(0.6)).mul(look.y);
   const suv = vec2(screenUV.x, mix(screenUV.y, float(1).sub(screenUV.y), cam.w));
   const refl = texture(reflectMap, vec2(float(1).sub(suv.x), suv.y).add(offset)).rgb.mul(tint.w);
   // depth over the baked floor (a map outside its rectangle, or none: deep)
@@ -158,10 +165,14 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   // the refraction's own depth: the water between the surface and whatever is under it, along the view ray, then
   // taken to a vertical depth. The clip depth (d or 2d - 1) and the row direction are what the host's targets use.
   const uvS = suv.add(offset);
-  const dz = texture(refrDepth, uvS).r;
+  // texel rows: GL's depth texture bottom row first, WebGPU's copy top row first
+  const dSize = refrSize.xy;
+  const dRow = mix(float(1).sub(uvS.y), uvS.y, cam.w);
+  const dTc = clamp(floor(vec2(uvS.x, dRow).mul(dSize)), vec2(0), dSize.sub(1));
+  const dz = textureLoad(refrDepth, ivec2(int(dTc.x), int(dTc.y))).x;
   // the planar targets' depth is GL's window depth on both backends (three.c remaps WebGPU's clip z), and suv
   // reads them top row first
-  const zClip = dz.mul(2).sub(1);
+  const zClip = min(dz, 1).mul(2).sub(1); // (the WebGPU copy holds 3e38 where nothing was drawn)
   const yClip = float(1).sub(uvS.y.mul(2));
   const vp = refrInv.mul(vec4(uvS.x.mul(2).sub(1), yClip, zClip, 1));
   const scenePos = vp.xyz.div(vp.w);
@@ -195,10 +206,12 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const below = positionWorld.y.sub(sceneW.y);
   const cq = sceneW.xz.add(toSun0.xz.div(max(toSun0.y, 0.3)).mul(below).mul(0.75)).mul(refrInfo.z);
   const ct = shallow.w;
-  const k1 = texture(causticMap, cq.add(vec2(0.013, 0.007).mul(ct))).r;
-  const k2 = texture(causticMap, cq.mul(1.31).add(vec2(0.41, 0.17)).sub(vec2(0.006, 0.011).mul(ct))).r;
-  const kc = min(k1, k2).mul(4);
-  const cfade = smoothstep(0.02, 0.5, below).mul(exp(below.negate().mul(shore.z).mul(0.6))).mul(smoothstep(0, 0.25, toSun0.y))
+  // (red: the sharp web; green: a soft copy that takes over deeper down, where the lines spread)
+  const k1 = texture(causticMap, cq.add(vec2(0.013, 0.007).mul(ct))).rg;
+  const k2 = texture(causticMap, cq.mul(1.31).add(vec2(0.41, 0.17)).sub(vec2(0.006, 0.011).mul(ct))).rg;
+  const cSoft = smoothstep(0.5, 4, below);
+  const kc = dot(min(k1, k2), vec2(float(1).sub(cSoft), cSoft)).mul(4);
+  const cfade = smoothstep(0.02, 0.5, below).mul(exp(below.negate().mul(shore.z).mul(1.6))).mul(smoothstep(0, 0.25, toSun0.y))
     .mul(hit).mul(useZ).mul(hasSun);
   const caus = float(1).add(refrInfo.y.mul(cfade).mul(kc.mul(2.2).sub(1)));
   const seen = texture(refractMap, uvS).rgb.mul(tint.rgb).mul(trans).mul(caus).add(body.mul(inscatter));
@@ -225,7 +238,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   // thinner lines of foam sliding in over the shallows
   const lines = smoothstep(0.62, 0.8, sin(depth.mul(7.0 / 1).sub(shallow.w.mul(1.6)).add(noise.mul(5))).mul(0.5).add(0.5))
     .mul(float(1).sub(smoothstep(sw.mul(0.8), sw.mul(3.2), depth))).mul(shoreOn).mul(0.55);
-  const thr = float(0.62).sub(shore.w.mul(0.5));
+  const thr = float(0.75).sub(shore.w.mul(0.5));
   const farFade = float(1).sub(smoothstep(200, 700, dist));
   const crestFoam = smoothstep(thr, thr.add(0.12), float(1).sub(vBunch).add(noise.sub(0.5).mul(0.25))).mul(step(0.001, shore.w)).mul(lumpy).mul(farFade);
   const splashFoam = smoothstep(0.08, 0.5, rfoam.mul(mix(0.55, 1.2, noise2)));
@@ -234,7 +247,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   // foam keeps only its brightest knots, thick foam fills the cells (far away, where the lace would alias, it evens out)
   const lace0 = texture(causticMap, rest.mul(0.29).add(f.mul(flow.x).mul(0.4))).r.mul(4);
   const lace1 = texture(causticMap, rest.mul(0.71).add(vec2(0.37, 0.61)).sub(f.mul(flow.y).mul(0.6))).r.mul(4);
-  const lace = mix(clamp(max(lace0, lace1.mul(0.8)).mul(0.4), 0, 1), float(0.55), smoothstep(25, 120, dist));
+  const lace = mix(clamp(max(lace0, lace1.mul(0.8)).mul(0.4), 0, 1), float(0.55), smoothstep(60, 250, dist));
   const foam = clamp(foamRaw.mul(1.7).sub(float(1).sub(lace).mul(1.25)), 0, 1).mul(mix(0.82, 1, noise2));
   const emitAbove = mix(refr, refl, fres).add(sss.mul(float(1).sub(fres))).add(gl);
   // seen from under the water: the world above shows through a window of light (Snell's), bent and dimmed by the

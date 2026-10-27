@@ -58,13 +58,21 @@ The grid is a look, not a gameplay height: bodies float on the Gerstner waves al
 
 ## The look
 
-Out of the box the water is tuned to read as water, not as a blue sheet: the body is lit by the sun (it dims and reddens toward dusk instead of staying one colour), the shallow colour fades to the deep one red first as the depth grows, the sun sends a turquoise glow through the crests that face it (`scatter`, with a ProceduralSky), a narrow glitter runs along the fine chop where the sun reflects (`glint`), and three octaves of ripple normals plus foam at two scales break up the highlights and the white. Set `scatter` and `glint` to 0 for a plainer look.
+Out of the box the water is tuned to read as water, not as a blue sheet:
+
+- What is seen through the surface loses its light on the way down to it and back up along the view, per colour: red goes first, then green, so sand under a metre of water turns turquoise and under ten metres is gone into blue (`clarity`, 5 m by default, is how far the light carries; `murk` is how much of the water's own colour scatters in over the same path). With the refraction drawn (High and Ultra) that path is measured per pixel from the refraction's depth, so the boat's hull, a pier post and the floor each fade by their own distance.
+- The body is lit by the sun: it dims and reddens toward dusk instead of staying one colour.
+- The sun sends a turquoise glow through the crests that face it (`scatter`, with a ProceduralSky), and a narrow glitter runs along the fine chop where it reflects (`glint`).
+- Three octaves of ripple normals break up the highlights; the swell's own tilt moves the reflection less than the ripples do, so a steep wave face does not reach past the mirrored horizon.
+- Foam is lace, not cotton: its bubbles follow the caustic pattern's web of lines (below), thin foam keeping only the brightest knots and thick foam filling the cells; far away, where the lace would shimmer, it evens out.
+
+Set `scatter` and `glint` to 0 for a plainer look.
 
 ## Caustics and the view from under the water
 
 Sunlight that passes through a rippled surface is bent into a moving web of bright lines on whatever lies under it. The water draws that web (`caustics`, the strength, 1 by default; `caustic_size`, the metres one tile of the pattern covers) on the floor it shows through its refraction, shifted along the sun's path through the water and fading with depth, so the lines are sharp in the shallows and gone a few metres down. The pattern is traced once when the game starts: a rippled surface bends a grid of light rays and they are gathered where they land, so it has the cusps and bright knots of real caustics, and it is the same image on every host. It needs a sky (ProceduralSky) for the sun's direction and the refraction's depth (High and Ultra) to know where the floor is.
 
-A camera under the surface sees through the water (`underwater`, on by default): light fades with distance, red first, into the water's own colour, which darkens the deeper the camera is; the floor carries the caustics; and the surface seen from below shows the world above only inside a circle of light (the window that refraction leaves; past it the surface mirrors the water). Where the surface crosses the lens a thin dark line marks the waterline, and each pixel decides for itself whether it is above or below, so a camera bobbing at the surface splits the picture along the real wave. One full-screen pass does it, and only while the camera is under or near the water of its view, so it costs nothing on a dry frame.
+A camera under the surface sees through the water (`underwater`, on by default): light fades with distance, red first, into the water's own colour, which darkens the deeper the camera is; whatever faces up (the floor, a rock's top, not a hull's underside) carries the caustics, and the same pattern met along each view ray draws soft shafts of light slanting down from the sun; and the surface seen from below shows the world above only inside a circle of light (the window that refraction leaves; past it the surface mirrors the water). Where the surface crosses the lens a thin dark line marks the waterline, and each pixel decides for itself whether it is above or below, so a camera bobbing at the surface splits the picture along the real wave. One full-screen pass does it, and only while the camera is under or near the water of its view, so it costs nothing on a dry frame.
 
 The `water-under` gate puts the beach sample's camera under the surface and checks that the frame was drawn from under the water ([cw_water_get_stats](api:cw_water_get_stats), `underwater`), on every host and backend.
 
