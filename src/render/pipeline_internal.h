@@ -8,6 +8,10 @@
 #include "cartwheel/gl.h"
 #include "cartwheel/pipeline.h"
 
+/* program states no table had (src/render/programs.c) */
+extern int32_t cw__missing_programs;
+const char *cw__programs_fix_command(void);
+
 #define CW__QUERY_RING 64 /* a pass's queries in flight: up to four views a frame, many frames deep (a run flat out queues a lot) */
 
 /* GPU pass timers (GL timer queries, WebGPU timestamps) are issued and polled
