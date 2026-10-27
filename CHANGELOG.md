@@ -4,6 +4,77 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.17.0 (2026-10-27)
+
+Fighting and shooting controls (motion inputs, a framing camera, aim curves,
+first person viewmodels), heat haze and shockwaves, shore and depth shading
+on water, animation events, and three.c v0.186.19.
+
+### Added
+- Motion inputs (`cartwheel/motion.h`): a per-player command buffer
+  (`cw_cmd_push`, `cw_cmd_dir`, `cw_cmd_pressed_ago`, `cw_cmd_released_ago`,
+  `cw_cmd_held_now`, `cw_cmd_consume`, `cw_cmd_clear`) and a motion matcher
+  (`cw_motion_parse`, `cw_motion_match`, `cw_special_match`) with leniency,
+  charges, exact steps (`!6!6`, so a dash is not read out of a quarter circle,
+  and the last step of a motion is always exact) and buffered buttons. See the
+  motion input guide and `samples/motion_demo`.
+- A framing camera (`cartwheel/framing.h`): `cw_frame_fit` finds where a
+  camera has to be to keep a set of points in view with a margin, and
+  `cw_frame_follow` eases it there.
+- Aim curves (`cartwheel/aim.h`): `cw_aim_step` turns a look stick into yaw
+  and pitch with a dead zone, a response curve, turn rates, a boost that
+  builds while the stick is held at its edge, and aim assist;
+  `cw_aim_curve_default` gives the tuned defaults.
+- Render layers and first person viewmodels: Node3D `layers`, and Camera3D
+  `cull_layers`, `viewmodel_layers` and `viewmodel_fov`. The viewmodel layers
+  are drawn after the scene with their own field of view, over the kept depth,
+  so a weapon never clips into a wall (GL and WebGPU). See
+  `samples/viewmodel_demo` and the render layers section of the 3D rendering
+  guide.
+- A distortion buffer and a copy of the scene colour: heat haze (GPUParticles3D
+  blend `DISTORT`), refracting particles (`REFRACT`) and `Shockwave3D`
+  (`cw_shockwave_fire`, `cw_shockwave_active`, `cw_shockwave_radius`), on GL
+  and WebGPU, wired into the effects quality presets (`distortion`,
+  `dispersion` and `flash_lights` in `cw_quality_scale`).
+- Water: a baked floor depth map from the static physics shapes, a shallow to
+  deep colour, shore foam and crest foam (`floor_map_size`, `floor_range`,
+  `shallow_color`, `clarity`, `shore_foam`, `crest_foam`;
+  `cw_water_floor_depth_at`, `cw_water_rebake_floor`).
+- Animation events for gameplay (`cw_anim_add_event`,
+  `cw_anim_player_on_event`, `cw_animtree_on_event`, `cw_anim_event_count`,
+  `cw_anim_event_time`) and an update divisor for far characters
+  (`cw_anim_player_set_update_divisor`, `cw_anim_player_update_divisor`,
+  `cw_anim_lod_divisor`).
+- Game shell: a `draw_background` hook draws the game's own picture behind
+  the title, join, settings and pause screens, and `shared_screen` gives every
+  player one shared view instead of a split screen.
+- Handles cut to 32 bits are caught: every pool lookup and `cw_crowd_*` call
+  reports one with an error naming the fix (`cw_handle_report_truncated`,
+  `cw_handle_truncated_count`, `CW_HANDLE_IS_TRUNCATED`), and
+  `cw_crowd_agent_slot` gives a small, safe index for a game's own arrays.
+- Program tables: a draw whose program state no table has is loud: an error
+  naming the command that adds it (`node tools/programs.mjs <app>`), a banner
+  on the picture while any state is missing, and `CW_PROGRAMS_STRICT=1` stops
+  a native run with status 4. `tools/programs.mjs --carts` surveys the dual
+  cart on a GL host and a WebGPU host and merges the states it is asked for.
+- `scripts/fetch-deps.sh --verify` lists dependencies that are off their pin.
+- The GPU suite lock has a hold limit (`CW_SUITE_MAX_MINUTES`, default 15).
+
+### Changed
+- three.c v0.186.19 (was c5f840b with a local patch): rgba vertex colours
+  (a glTF exporter's default `COLOR_0`) draw with their alpha ignored instead
+  of the draw being skipped, the WebGPU viewport depth range the viewmodel
+  pass uses, and three.c's own GL program tables with every flipY flag of a
+  texture sampled at several places filled.
+
+### Fixed
+- A WebGPU host that cannot multisample the scene (HDR, sky, effects) renders
+  it single-sampled instead of asking GL for a multisampled framebuffer, which
+  stopped every dual cart whose PostProcess set `msaa`.
+- `alpha_to_coverage`, listed in v0.15.0 as softening alpha-tested foliage
+  edges, does not do that yet: an opaque alpha-tested material draws the same
+  picture with it on or off (see three.c v0.186.19's notes).
+
 ## v0.16.0 (2026-10-27)
 
 Pad rumble: a game drives each player's pad motors, natively and in carts.
