@@ -28,9 +28,11 @@ try {
   const r = spawnSync('node', [join(ROOT, 'tests', 'gate.mjs'), '--cpu', GATE], { env, encoding: 'utf8', timeout: 120000 });
   check('--cpu runs while another suite holds the lock', r.status === 0 && new RegExp(`ok\\s+${GATE} \\(native\\)`).test(r.stdout) && !/waiting for the GPU suite lock/.test(r.stderr),
     `status ${r.status} ${r.stdout}${r.stderr}`);
-  // CONTROL: the plain gate queues behind the held lock
+  // CONTROL: the plain gate queues behind the held lock. CW_TEST_GPU=desktop skips the GPU sandbox, which needs a
+  // pinned test GPU (CI has none) and comes before the lock; the gate it is given does not exist, so even a run
+  // that got past the lock would draw nothing on any GPU.
   const waiting = await new Promise((res) => {
-    const p = spawn('node', [join(ROOT, 'tests', 'gate.mjs'), GATE], { env, stdio: ['ignore', 'ignore', 'pipe'] });
+    const p = spawn('node', [join(ROOT, 'tests', 'gate.mjs'), 'gate-cpu-no-such-gate'], { env: { ...env, CW_TEST_GPU: 'desktop' }, stdio: ['ignore', 'ignore', 'pipe'] });
     let err = '';
     p.stderr.on('data', (d) => { err += d; if (/waiting for the GPU suite lock/.test(err)) { p.kill('SIGKILL'); res(true); } });
     p.on('close', () => res(/waiting for the GPU suite lock/.test(err)));
