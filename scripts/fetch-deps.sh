@@ -3,6 +3,13 @@
 #
 #   scripts/fetch-deps.sh          fetch what is missing
 #   FORCE=1 scripts/fetch-deps.sh  refetch everything
+#   scripts/fetch-deps.sh --verify  change nothing: list every dependency whose checkout is not the
+#                                   pinned commit or version (exit 1 on drift), so a worktree whose
+#                                   deps/ was symlinked to, or shared with, another checkout that
+#                                   has moved on is caught before the build fails in a confusing way
+#
+# A git dependency is never changed through a symlink: a deps/NAME that links to a shared checkout is
+# replaced by a private copy (sharing the objects, so it costs almost no disk) before it is moved to the pin.
 #
 # Git deps are fetched from the source in the lock (a git URL, or a ../NAME
 # sibling checkout when the lock names one) and checked out at the pinned
@@ -20,11 +27,12 @@
 # export/llvm-mingw@linux-aarch64) replace NAME on that kind of host: the
 # toolchain built to run there.
 set -euo pipefail
-WANT_EXPORT=0 ONLY=""
+WANT_EXPORT=0 ONLY="" VERIFY=0 DRIFT=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --export) WANT_EXPORT=1 ;;
     --only) ONLY="$2"; shift ;;
+    --verify) VERIFY=1 ;;
     *) echo "usage: fetch-deps.sh [--export] [--only NAME]" >&2; exit 2 ;;
   esac
   shift
@@ -72,6 +80,21 @@ sibling() { # ../name
 fetch_git() { # name src rev
   local name=$1 src=$2 rev=$3 dst="$DEPS/$1"
   case "$src" in ../*) src="$(sibling "$src")" ;; esac
+  if [ "$VERIFY" = 1 ]; then
+    local have=missing
+    [ -d "$dst/.git" ] || [ -f "$dst/.git" ] && have="$(git -C "$dst" rev-parse HEAD 2>/dev/null || echo unreadable)"
+    if [ "$have" != "$rev" ]; then echo "DRIFT $name: have $have, pinned $rev"; DRIFT=1
+    elif [ -L "$dst" ]; then echo "SHARED $name: symlink to $(readlink -f "$dst") (at the pin now, but another checkout can move it)"; DRIFT=1
+    else echo "$name: $rev"; fi
+    return
+  fi
+  if [ -L "$dst" ]; then
+    # never move a shared checkout: copy it (alternates, no object duplication) and work on the copy
+    local shared; shared="$(readlink -f "$dst")"
+    rm -f "$dst"
+    git clone -q --shared --no-checkout "$shared" "$dst"
+    echo "$name: was a symlink to $shared, now a private copy"
+  fi
   if [ -d "$dst/.git" ] && [ "${FORCE:-0}" != 1 ]; then
     if [ "$(git -C "$dst" rev-parse HEAD)" = "$rev" ]; then apply_patches "$name" "$dst"; echo "$name: $rev"; return; fi
     git -C "$dst" fetch -q "$src" "$rev" 2>/dev/null || git -C "$dst" fetch -q "$src" "+refs/heads/*:refs/remotes/src/*" "+refs/tags/*:refs/tags/*"
@@ -87,6 +110,10 @@ fetch_git() { # name src rev
 
 fetch_archive() { # name url version sha
   local name=$1 url=$2 ver=$3 sha=$4 dst="$DEPS/$1"
+  if [ "$VERIFY" = 1 ]; then
+    if [ -f "$dst/.version" ] && [ "$(cat "$dst/.version")" = "$ver" ]; then echo "$name: $ver"; else echo "DRIFT $name: have $(cat "$dst/.version" 2>/dev/null || echo missing), pinned $ver"; DRIFT=1; fi
+    return
+  fi
   if [ -f "$dst/.version" ] && [ "$(cat "$dst/.version")" = "$ver" ] && [ "${FORCE:-0}" != 1 ]; then
     echo "$name: $ver"; return
   fi
@@ -189,6 +216,11 @@ while read -r name src rev sha; do
       esac ;;
   esac
 done < "$ROOT/scripts/deps.lock"
+
+if [ "$VERIFY" = 1 ]; then
+  [ "$DRIFT" = 0 ] && echo "deps: every dependency is at its pin" || { echo "deps: drift found (run scripts/fetch-deps.sh to fix)" >&2; exit 1; }
+  exit 0
+fi
 
 # wasmcart's Node tooling (pack, the reference hosts) needs its packages (a
 # checkout: an SDK carries the few it uses, and no lockfile)

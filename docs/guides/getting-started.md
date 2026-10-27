@@ -20,6 +20,8 @@ scripts/build.sh
 
 `scripts/fetch-deps.sh` reads `scripts/deps.lock` and fetches every pinned dependency into `deps/`: git dependencies at a pinned commit (three.c, Box2D, Box3D and the wasmcart pieces, from their GitHub repositories), archives checked by sha256, then the patches in `patches/<dep>/` applied on top. It only fetches what is missing; `FORCE=1` refetches everything. The exporters' toolchains are large and fetched only with `--export` (see [Exporting](guide:export)).
 
+`scripts/fetch-deps.sh --verify` changes nothing and lists every dependency that is not at its pin (exit status 1 on drift). Do not symlink a worktree's `deps/NAME` to another checkout: a branch there can move it, and your build then fails far from the cause. A git dependency that is a symlink is never moved through the link; the next fetch replaces it with a private copy that shares the objects (almost no disk).
+
 `scripts/build.sh` configures and builds two trees with ninja:
 
 | Tree | What it holds |
