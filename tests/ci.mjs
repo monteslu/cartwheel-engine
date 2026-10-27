@@ -62,6 +62,7 @@ export const LOCAL_ONLY = {
   'water-surface': 'romdev and Chromium legs',
   'boom-perf': 'GPU timing reports (GL and WebGPU on the test GPU)',
   spikes: 'WebGPU timestamp queries on the test GPU',
+  'fx-explosion-kit': 'the pinned GPU sandbox (renders on GL and WebGPU and diffs them)',
   'fx-distort-regions': 'the pinned GPU sandbox (renders on GL and WebGPU and diffs them)',
 };
 

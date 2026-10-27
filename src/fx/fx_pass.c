@@ -75,4 +75,5 @@ void cw__register_fx_types(void) {
   cw__register_trail3d_types();
   cw__register_decal_types();
   cw__register_distort_types();
+  cw__register_explosion_types();
 }

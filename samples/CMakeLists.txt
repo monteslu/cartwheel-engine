@@ -153,6 +153,8 @@ target_compile_definitions(post_synth_perf PRIVATE POST_PERF=1)
 # the 100k-particle perf scene.
 cw_add_app(fx_particles SOURCES fx_particles/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_particles/assets)
 cw_add_app(fx_distort SOURCES fx_distort/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_distort/assets)
+cw_add_app(fx_explosion SOURCES fx_explosion/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_explosion/assets)
+cw_add_app(fx_sub_emitters SOURCES fx_sub_emitters/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_sub_emitters/assets)
 cw_add_app(fx_boom_water SOURCES fx_boom_water/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_boom_water/assets)
 cw_add_app(fx_collide SOURCES fx_collide/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_collide/assets)
 cw_add_app(fx_perf SOURCES fx_perf/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_perf/assets GL_ONLY)

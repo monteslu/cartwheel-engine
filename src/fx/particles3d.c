@@ -12,7 +12,7 @@
 
 t3_mesh *cw__mesh3d_t3(cw_node n); /* src/scene/render3d.c */
 
-static const char *const shape_names[] = { "POINT", "SPHERE", "SPHERE_SURFACE", "BOX", "RING", "MESH", NULL };
+static const char *const shape_names[] = { "POINT", "SPHERE", "SPHERE_SURFACE", "BOX", "RING", "MESH", "PARENT", NULL };
 static const char *const draw_names[] = { "BILLBOARD", "STRETCHED", "MESH", NULL };
 static const char *const mprim_names[] = { "BOX", "SPHERE", "TETRA", "NODE", NULL };
 static const char *const blend_names[] = { "ADD", "ALPHA", "OPAQUE", "DISTORT", "REFRACT", NULL };
@@ -23,6 +23,7 @@ cw__psys *cw__psys_of(cw_node n) {
   p3d *d = cw_node_data_t(n, p3d_t);
   return d ? d->rt : NULL;
 }
+p3d *cw__psys_data(cw_node n) { return cw_node_data_t(n, p3d_t); }
 
 /* ── the emission function on the CPU (alive counts) ───────────────── */
 
@@ -121,6 +122,10 @@ static const char *const sim_vs =
     "uniform float u_thick;\n"
     "uniform vec3 u_campos;\n"
     "uniform sampler2D u_emit;\n"
+    "uniform sampler2D u_p0, u_p1;\n"
+    "uniform int u_ptw, u_pn;\n"
+    "uniform float u_inherit;\n"
+    "bool g_par = false; vec3 g_ppos = vec3(0.0); vec3 g_pvel = vec3(0.0);\n"
     "void emit_shape(inout uint s, out vec3 p, out vec3 n) {\n"
     "  p = vec3(0.0); n = vec3(0.0);\n"
     "  if (u_shape == 1 || u_shape == 2) {\n"
@@ -136,6 +141,12 @@ static const char *const sim_vs =
     "    int j = min(int(prnd(s) * 4096.0), 4095);\n"
     "    p = texelFetch(u_emit, ivec2(j % 64, j / 64), 0).xyz;\n"
     "    n = texelFetch(u_emit, ivec2(j % 64, 64 + j / 64), 0).xyz;\n"
+    "  } else if (u_shape == 6 && u_pn > 0) {\n"
+    "    for (int q = 0; q < 6; q++) {\n"
+    "      int j = min(int(prnd(s) * float(u_pn)), u_pn - 1);\n"
+    "      vec4 a = texelFetch(u_p0, ivec2(j % u_ptw, j / u_ptw), 0);\n"
+    "      if (a.w >= 0.0) { g_par = true; g_ppos = a.xyz; g_pvel = texelFetch(u_p1, ivec2(j % u_ptw, j / u_ptw), 0).xyz * u_inherit; break; }\n"
+    "    }\n"
     "  }\n"
     "}\n"
     "vec3 cone(inout uint s) {\n"
@@ -243,9 +254,9 @@ static const char *const sim_vs =
     "    vec3 lp, ln; emit_shape(s, lp, ln);\n"
     "    vec3 d = cone(s);\n"
     "    float sp = mix(u_speed.x, u_speed.y, prnd(s));\n"
-    "    vec3 p = (M * vec4(lp, 1.0)).xyz;\n"
+    "    vec3 p = g_par ? g_ppos : (M * vec4(lp, 1.0)).xyz;\n"
     "    vec3 wd = mat3(M) * d;\n"
-    "    vec3 v = (dot(wd, wd) > 0.0 ? normalize(wd) : wd) * sp;\n"
+    "    vec3 v = (dot(wd, wd) > 0.0 ? normalize(wd) : wd) * sp + (g_par ? g_pvel : vec3(0.0));\n"
     "    vec3 wn = mat3(M) * ln;\n"
     "    if (dot(wn, wn) > 0.0) v += normalize(wn) * u_nspeed;\n"
     "    v += u_gravity * age;\n"
@@ -289,6 +300,7 @@ static const char *const draw_vs =
     "out vec4 v_color;\n"
     "out vec2 v_uv;\n"
     "out float v_t, v_id;\n"
+    "out vec2 v_luv, v_fr;\n"
     "out float v_vz;\n"
     "out vec3 v_n;\n"
     "vec4 curve(float t, int row) {\n"
@@ -326,6 +338,7 @@ static const char *const draw_vs =
     "  vec3 right = vec3(u_view[0][0], u_view[1][0], u_view[2][0]);\n"
     "  vec3 up = vec3(u_view[0][1], u_view[1][1], u_view[2][1]);\n"
     "  vec3 world; v_n = vec3(0.0, 0.0, 1.0);\n"
+    "  v_luv = vec2(0.0); v_fr = vec2(0.0);\n"
     "  if (u_mode == 2) {\n"
     "    vec3 ax = normalize(vec3(r1 - 0.5, r2 - 0.5, r3 - 0.5) + vec3(1e-3));\n"
     "    world = wp + rot(a_vert, ax, ang) * sz;\n"
@@ -347,7 +360,8 @@ static const char *const draw_vs =
     "    vec2 uv = vec2(a_vert.x * 0.5 + 0.5, 0.5 - a_vert.y * 0.5);\n"
     "    float nf = u_frames.x * u_frames.y;\n"
     "    if (nf > 1.0) {\n"
-    "      float f = min(floor(t * nf), nf - 1.0);\n"
+    "      float ft = t * nf; float f = min(floor(ft), nf - 1.0);\n"
+    "      v_luv = uv; v_fr = vec2(f, ft - f);\n"
     "      uv = (uv + vec2(mod(f, u_frames.x), floor(f / u_frames.x))) / u_frames;\n"
     "    }\n"
     "    v_uv = uv;\n"
@@ -364,6 +378,10 @@ static const char *const draw_fs =
     "in vec2 v_uv;\n"
     "in float v_vz;\n"
     "in float v_t, v_id;\n"
+    "in vec2 v_luv, v_fr;\n"
+    "uniform sampler2D u_mvtex;\n"
+    "uniform vec3 u_mv; /* enabled, strength, unused */\n"
+    "uniform vec2 u_frames;\n"
     "uniform vec4 u_dstr;\n" /* distort strength, custom texture, proj00 / 2, proj11 / 2 */
     "uniform sampler2D u_scene;\n"
     "in vec3 v_n;\n"
@@ -377,6 +395,15 @@ static const char *const draw_fs =
     "void main() {\n"
     "  vec4 c = v_color;\n"
     "  if (u_mode == 2) c.rgb *= 0.55 + 0.45 * max(dot(normalize(v_n), vec3(0.3, 0.8, 0.5196)), 0.0);\n"
+    "  else if (u_mv.x > 0.5 && u_frames.x * u_frames.y > 1.0) {\n"
+    "    vec2 cell = 1.0 / u_frames; float nf = u_frames.x * u_frames.y;\n"
+    "    float f0 = v_fr.x, f1 = min(f0 + 1.0, nf - 1.0), fr = v_fr.y;\n"
+    "    vec2 c0 = vec2(mod(f0, u_frames.x), floor(f0 / u_frames.x)), c1 = vec2(mod(f1, u_frames.x), floor(f1 / u_frames.x));\n"
+    "    vec2 mA = (texture(u_mvtex, (v_luv + c0) * cell).rg * 2.0 - 1.0) * (0.12 * u_mv.y);\n"
+    "    vec2 mB = (texture(u_mvtex, (v_luv + c1) * cell).rg * 2.0 - 1.0) * (0.12 * u_mv.y);\n"
+    "    vec2 la = clamp(v_luv - mA * fr, 0.002, 0.998), lb = clamp(v_luv + mB * (1.0 - fr), 0.002, 0.998);\n"
+    "    c *= mix(texture(u_tex, (la + c0) * cell), texture(u_tex, (lb + c1) * cell), fr);\n"
+    "  }\n"
     "  else c *= texture(u_tex, v_uv);\n"
     "  if (u_soft.x > 0.0) {\n"
     "    float zs = lin(texture(u_depth, gl_FragCoord.xy * u_inv_size).r);\n"
@@ -1068,6 +1095,7 @@ int cw__psys_colliders(const cw__fx_tree *ft, float cinv[MAX_COLL * 16], float c
   return nc;
 }
 
+static bool scatter_state(p3d *d, cw__psys *r);
 static void run_steps(cw_node n, p3d *d, cw__psys *r, cw_pass_ctx *ctx, cw__fx_tree *ft) {
   if (r->nsteps == 0) return;
   GLuint p = prog_sim;
@@ -1113,6 +1141,23 @@ static void run_steps(cw_node n, p3d *d, cw__psys *r, cw_pass_ctx *ctx, cw__fx_t
     cw__fx_u1f(p, "u_thick", d->depth_thickness);
     t3_vec3 cp3 = t3_mat4_get_position(&ctx->camera->base.matrix_world);
     cw__fx_u3f(p, "u_campos", cp3.x, cp3.y, cp3.z);
+  }
+  cw__fx_u1i(p, "u_p0", 3);
+  cw__fx_u1i(p, "u_p1", 4);
+  cw__fx_u1f(p, "u_inherit", d->inherit_velocity);
+  cw__fx_u1i(p, "u_ptw", 1);
+  cw__fx_u1i(p, "u_pn", 0);
+  if (d->emission_shape == SHAPE_PARENT) {
+    cw_node pn = cw__psys_ref_node(n, d->parent);
+    p3d *pd = cw_node_valid(pn) ? cw__psys_data(pn) : NULL;
+    if (pd && pd != d && pd->rt && pd->rt->gl_ready && pd->amount > 0 && scatter_state(pd, pd->rt)) {
+      /* the parent's state, as its steps left it this frame, into its state textures (before the rasterizer discard) */
+      glUseProgram(p);
+      cw__fx_u1i(p, "u_ptw", pd->rt->tw);
+      cw__fx_u1i(p, "u_pn", pd->amount);
+      cw__fx_bind_tex(3, GL_TEXTURE_2D, pd->rt->state_tex[0]);
+      cw__fx_bind_tex(4, GL_TEXTURE_2D, pd->rt->state_tex[1]);
+    } else cw__fx_u1i(p, "u_shape", SHAPE_POINT);
   }
   cw__fx_u1i(p, "u_emit", 2);
   if (d->emission_shape == SHAPE_MESH) ensure_emit_mesh(n, d, r);
@@ -1471,6 +1516,10 @@ void cw__psys_frame(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
     cw__fx_u4f(dp, "u_dstr", d->distort_strength, d->texture && *d->texture ? 1.0f : 0.0f, pm[0] * 0.5f, pm[5] * 0.5f);
     cw__fx_bind_tex(6, GL_TEXTURE_2D, ft->copy ? ft->copy->tex : cw__fx_dot_texture());
     cw__fx_u1i(dp, "u_scene", 6);
+    GLuint mvt = d->motion_texture && *d->motion_texture ? cw__fx_texture_asset(d->motion_texture, NULL, NULL) : 0;
+    cw__fx_u3f(dp, "u_mv", mvt ? 1.0f : 0.0f, d->motion_strength, 0);
+    cw__fx_bind_tex(7, GL_TEXTURE_2D, mvt ? mvt : cw__fx_dot_texture());
+    cw__fx_u1i(dp, "u_mvtex", 7);
   }
   GLuint tex = d->texture && *d->texture ? cw__fx_texture_asset(d->texture, NULL, NULL) : 0;
   if (!tex) tex = cw__fx_dot_texture();
@@ -1577,6 +1626,9 @@ static void p3d_init(cw_node n, void *data) {
   d->size_curve = cw_intern("");
   d->texture = cw_intern("");
   d->emission_mesh = cw_intern("");
+  d->parent = cw_intern("");
+  d->motion_texture = cw_intern("");
+  d->motion_strength = 1;
   d->mesh_node = cw_intern("");
   d->hframes = d->vframes = 1;
   d->blend = BLEND_ADD;
@@ -1744,7 +1796,9 @@ static const cw_prop p3d_props[] = {
   R(speed_scale, CW_T_FLOAT, 0, 64, "Sim seconds per tick second."),
   F(seed, CW_T_INT, "Random seed: same seed, same particles on every host."),
   F(local_coords, CW_T_BOOL, "Particles live in the emitter's space and follow it (forces too)."),
-  E(emission_shape, shape_names, "Where particles spawn (in the emitter's space; MESH: on emission_mesh's surface)."),
+  E(emission_shape, shape_names, "Where particles spawn (in the emitter's space; MESH: on emission_mesh's surface; PARENT: at a living particle of the GPUParticles3D named by `parent`, a sub-emitter: debris that trails smoke)."),
+  F(parent, CW_T_STRING, "PARENT: path (from this node) to the GPUParticles3D whose particles this one spawns from. List the parent before this node in the tree. The parent's particles are read in world space."),
+  F(inherit_velocity, CW_T_FLOAT, "PARENT: share of the parent particle's velocity added to the start velocity (0 = none, 1 = all)."),
   F(emission_extents, CW_T_VEC3, "BOX: half sizes."),
   R(emission_radius, CW_T_FLOAT, 0, 1e6, "SPHERE / SPHERE_SURFACE / RING radius."),
   R(emission_inner_radius, CW_T_FLOAT, 0, 1e6, "RING: inner radius."),
@@ -1781,6 +1835,8 @@ static const cw_prop p3d_props[] = {
   E(blend, blend_names, "ADD (glow), ALPHA (premultiplied, sortable), OPAQUE (alpha tested, writes depth), DISTORT (bends the picture behind it, draws no colour: heat haze) or REFRACT (shows the scene through it: glass, drops; explosions.h)."),
   R(soft_distance, CW_T_FLOAT, 0, 1e6, "Fade over this distance in front of geometry (0 = hard)."),
   R(distort_strength, CW_T_FLOAT, 0, 1e3, "DISTORT / REFRACT: how far the picture behind a particle is shifted at its centre (world units at its distance), times its alpha over life."),
+  F(motion_texture, CW_T_STRING, "Flipbook motion vectors: an image the size of `texture` whose red and green say how each pixel moves into the next frame (tools/fx/bake-flipbooks.mjs writes them). The frame in between is drawn by blending two frames along the motion: 16 frames look like 60. Empty = frames just step."),
+  R(motion_strength, CW_T_FLOAT, 0, 16, "Scale of the motion vectors (1 = as baked)."),
   F(sort, CW_T_BOOL, "ALPHA: draw back to front (GPU bitonic sort)."),
   F(trail_length, CW_T_INT, "Trail samples per particle, one per tick (0 = none, max 64)."),
   R(trail_width, CW_T_FLOAT, 0, 1e6, "Trail width at the particle (tapers to 0)."),

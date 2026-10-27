@@ -1,7 +1,8 @@
 /* fx_boom_water: the explosion and water measurement scene. A pier, a boat
  * and two crates on Gerstner water, a shoreline, a rock, and a looping hero
- * explosion over the water (fireball, smoke, sparks, debris, heat haze and a
- * shockwave ring). It is the scene the perf gate (tests/boom-perf.mjs) times
+ * explosion over the water, an Explosion3D of the whole kit (fireball and flames
+ * from flipbooks, smoke, sparks, debris with a smoke trail sub-emitter, heat haze,
+ * two shockwave rings, a pooled flash light) that fires again every 4.5 seconds. It is the scene the perf gate (tests/boom-perf.mjs) times
  * at every quality preset, with one view and with four (split screen).
  *
  * Environment (a test run has no other way to say these):
@@ -51,17 +52,15 @@ static void init(void *u) {
       if (!strcmp(p, cw_quality_name(q)) || (p[0] && (p[0] | 32) == (cw_quality_name(q)[0] | 32))) cw_quality_set((cw_quality)q, true);
   }
   const char *fx = getenv("BOOM_FX");
-  static const char *const parts[] = { "Fireball", "Smoke", "Sparks", "Debris", "Haze" };
   bool none = fx && !strcmp(fx, "none"), nodist = fx && !strcmp(fx, "nodistort");
-  for (int i = 0; i < 5; i++) {
-    char path[48];
-    snprintf(path, sizeof path, "Boom/%s", parts[i]);
-    bool off = none || (nodist && i == 4);
-    if (off) cw_node_set(node(path), "emitting", cw_val_bool(false));
+  if (none) {
+    cw_node_set(node("Boom"), "autostart", cw_val_bool(false));
+    cw_node_set(node("Boom"), "loop", cw_val_bool(false));
   }
-  if (none || nodist) {
-    cw_node_set(node("Boom/Wave"), "autostart", cw_val_bool(false));
-    cw_node_set(node("Boom/Wave"), "playing", cw_val_bool(false));
+  if (nodist) {
+    cw_node_set(node("Boom/Haze"), "distort_strength", cw_val_float(0));
+    cw_node_set(node("Boom/Wave"), "strength", cw_val_float(0));
+    cw_node_set(node("Boom/WaveAir"), "strength", cw_val_float(0));
   }
   const char *v = getenv("BOOM_VIEWS");
   int nv = v ? atoi(v) : 1;

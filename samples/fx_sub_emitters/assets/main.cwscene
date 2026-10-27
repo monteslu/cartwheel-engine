@@ -1,0 +1,51 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.03, 0.035, 0.05, 1)
+ambient_energy = 0.1
+hemi_energy = 0.3
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 1.5, 8)
+rotation = vec3(-0.1, 0, 0)
+fov = 55
+
+[node name="Parent" parent="." type="GPUParticles3D"]
+position = vec3(2, 1, 0)
+amount = 50
+lifetime = 2
+emission_shape = POINT
+spread = 0
+speed_min = 0
+speed_max = 0
+gravity = vec3(0, 0, 0)
+size = 0.25
+color = color(1, 0.4, 0.2, 1)
+energy = 3
+gpu_stats = true
+seed = 3
+
+[node name="Child" parent="." type="GPUParticles3D"]
+position = vec3(-3, 0.5, 0)
+amount = 200
+lifetime = 1
+emission_shape = PARENT
+parent = "../Parent"
+inherit_velocity = 0
+spread = 0
+speed_min = 0
+speed_max = 0
+gravity = vec3(0, 0, 0)
+size = 0.15
+color = color(0.4, 0.8, 1, 1)
+energy = 3
+gpu_stats = true
+seed = 4
+
+[node name="Origin" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(-3, 0.5, 0)
+size = vec3(0.1, 0.1, 0.1)
+color = color(0.8, 0.8, 0.8, 1)
