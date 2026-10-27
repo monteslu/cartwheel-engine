@@ -406,6 +406,22 @@ Costs per frame: the BVH walk, one pass over moving meshes and one over visible 
 
 `samples/vis_city` is about 4500 meshes (buildings, lamps with visibility ranges, LOD'd trees with impostors, houses with portal doorways) walked by a camera; its `check` mode renders a second, unculled copy of the city and counts pixels that differ, so a cull that pops fails the gate. `samples/vis_impostor` sweeps the impostor distance across a grove and measures the largest frame-to-frame change. The showcase also uses three.c's own `LOD` objects directly for its terrain chunks (`samples/showcase/world.c`).
 
+## Render layers and a first person weapon
+
+Every `Node3D` has `layers`: a bit mask, bit n = layer n, 1 by default, -1 for every layer (lights are on every layer: a camera's layers pick what it draws, never what is lit). Setting it applies to the node and everything under it, including nodes added later, unless they set their own. A `Camera3D` draws the layers in its `cull_layers` (1 by default).
+
+A first person weapon needs two things a plain camera cannot give: its own field of view (at 90 degrees a gun held with the world's lens stretches into the screen's corner) and no clipping into walls. Put the weapon on layer 2 and give the camera `viewmodel_layers = 2` and a `viewmodel_fov` (50 to 60 reads well):
+
+```c
+cw_node_set(gun, "layers", cw_val_int(2));
+cw_node_set(camera, "viewmodel_layers", cw_val_int(2));
+cw_node_set(camera, "viewmodel_fov", cw_val_float(52));
+```
+
+After the scene, the `viewmodel` pass draws those layers with a second camera at the same pose and the viewmodel lens, over the same colour and depth. It draws in the near end of the depth range, so the weapon always lands in front of the world and sorts against itself, while the scene's depth stays right everywhere else for the passes that read it (ambient occlusion, decals, particles). The weapon is lit by the scene's lights and shadows, and costs one more scene submission of the few objects on those layers (a split screen pays it once per view). The pass runs on GL and on WebGPU. The background is not redrawn.
+
+In a split screen, hide the other players' weapons for each view with the pipeline's view hook (`cw_pipeline_set_view_hook`): each view draws every object on its layers.
+
 ## Particles and decals
 
 [particles.h](header:particles.h) simulates GPUParticles3D on the GPU with transform feedback, one step per fixed tick. Emission is a pure function of the particle index and sim time, with random values hashed from (seed, index, cycle), so the same seed and tick count give the same particles on every host. Shapes, velocity cones, gravity, damping, curl-noise turbulence, attractors, analytic colliders and collision with the depth buffer (only what the camera sees), billboards, stretched sprites or instanced meshes, flipbooks, colour and size curves, soft particles, a GPU bitonic sort for alpha blending, and per-particle trails. Particles draw unlit in the "particles" EFFECTS pass; `energy` above 1 blooms (the scene is HDR). Costs: one transform feedback draw per system per tick, one instanced draw per system per frame, plus the sort passes when `sort` is on. GPUParticles2D runs the same emission model on the CPU for 2D (see [2D rendering](guide:rendering-2d)).
