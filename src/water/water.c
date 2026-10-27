@@ -473,6 +473,7 @@ static void water_destroy(cw_node n, void *data) {
   cw_res_release(d->flow_res);
   if (d->floor_tex) t3_release(d->floor_tex);
   if (d->caus_tex) t3_release(d->caus_tex);
+  cw__water_refr_wgpu_free(d);
   cw__ripples_free(d);
   cw_free(d->floor_depth);
   memset(&d->mesh, 0, sizeof *d - offsetof(water3d, mesh));
@@ -492,7 +493,9 @@ static void textures(water3d *d) {
     const uint8_t *c = cw__water_caustics();
     const int n = CW_WATER_CAUSTIC_N;
     uint8_t *px = cw_alloc((size_t)n * (size_t)n * 4, CW_MEM_RENDER);
-    for (int k = 0; k < n * n; k++) px[k * 4] = px[k * 4 + 1] = px[k * 4 + 2] = c[k], px[k * 4 + 3] = 255;
+    const uint8_t *soft = cw__water_caustics_soft();
+    /* red: the sharp web, green: the soft copy */
+    for (int k = 0; k < n * n; k++) px[k * 4] = c[k], px[k * 4 + 1] = soft[k], px[k * 4 + 2] = 0, px[k * 4 + 3] = 255;
     d->caus_tex = t3_data_texture_new(n, n, px);
     cw_free(px);
     d->caus_tex->wrap_s = d->caus_tex->wrap_t = T3_REPEAT;
@@ -606,6 +609,24 @@ static void render_into(cw_pass_ctx *ctx, water_tree *wt, t3_render_target *rt, 
   }
 }
 
+/* the refraction: three.c's render target on GL; on WebGPU a target of the engine's own whose depth is copied for
+ * the surface to read (refraction_wgpu.c). cam NULL: cleared, 1 x 1 */
+static void render_refr(cw_pass_ctx *ctx, water_tree *wt, water3d *d, t3_camera *cam, int w, int h) {
+  if (cw__wgpu_on()) {
+    for (int i = 0; i < wt->nodes.count; i++) {
+      water3d *o = cw_node_data_t(wt->nodes.data[i], water_t);
+      if (o && o->mesh) o->mesh->base.visible = false;
+    }
+    cw__water_refr_wgpu(ctx, d, cam, cam ? w : 1, cam ? h : 1);
+    for (int i = 0; i < wt->nodes.count; i++) {
+      water3d *o = cw_node_data_t(wt->nodes.data[i], water_t);
+      if (o && o->mesh) o->mesh->base.visible = true;
+    }
+    return;
+  }
+  render_into(ctx, wt, d->refr, cam);
+}
+
 static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   int q = cw__water_quality();
   /* Low: neither (the environment and deep_color stand in); Medium: the
@@ -625,7 +646,7 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   bool first = !d->refl;
   d->refl = target(d->refl, d->refl_on ? w : 1, d->refl_on ? h : 1);
   /* always with a depth texture (1 x 1 when off): the surface's program samples one in every state */
-  d->refr = refr_target(d->refr, d->refr_on ? w : 1, d->refr_on ? h : 1, true);
+  if (!cw__wgpu_on()) d->refr = refr_target(d->refr, d->refr_on ? w : 1, d->refr_on ? h : 1, true);
   d->refr_depth_ok = false;
   d->refr_above = false;
   if (!d->vcam) d->vcam = t3_perspective_camera_new(cam->fov, cam->aspect, cam->near, cam->far);
@@ -656,25 +677,25 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
     t3_mat4_invert(&vi, &cam->base.matrix_world);
     oblique(&v->projection_matrix, &vi, v3neg(up), wpos);
     t3_mat4_invert(&v->projection_matrix_inverse, &v->projection_matrix);
-    render_into(ctx, wt, d->refr, v);
+    render_refr(ctx, wt, d, v, w, h);
     memcpy(d->refr_inv, v->projection_matrix_inverse.e, sizeof d->refr_inv);
-    d->refr_depth_ok = d->refr->depth_texture != NULL;
+    d->refr_depth_ok = cw__wgpu_on() ? d->wg_dep_tex != NULL : d->refr->depth_texture != NULL;
     v->base.matrix_world_external = false;
   } else if (below && (d->refr_on || d->refl_on)) {
     /* under the water: the refraction target holds the view up through the surface (the scene above the rest
      * level), which the surface shows inside its window of light */
-    d->refr = refr_target(d->refr, w, h, true);
+    if (!cw__wgpu_on()) d->refr = refr_target(d->refr, w, h, true);
     t3_object_set_matrix_world(v, &cam->base.matrix_world);
     v->projection_matrix = ctx->proj;
     t3_mat4 vi;
     t3_mat4_invert(&vi, &cam->base.matrix_world);
     oblique(&v->projection_matrix, &vi, up, wpos);
     t3_mat4_invert(&v->projection_matrix_inverse, &v->projection_matrix);
-    render_into(ctx, wt, d->refr, v);
+    render_refr(ctx, wt, d, v, w, h);
     d->refr_above = true;
     v->base.matrix_world_external = false;
   } else if (first || d->refr_on) {
-    render_into(ctx, wt, d->refr, NULL);
+    render_refr(ctx, wt, d, NULL, 1, 1);
   }
   wt->stats.reflection_w = d->refl_on ? w : 0;
   wt->stats.reflection_h = d->refl_on ? h : 0;
@@ -736,7 +757,11 @@ static void fill(t3_extension_ctx *c, void *user) {
   t3_extension_set_texture(c, "waterNormal", nm);
   t3_extension_set_texture(c, "waterFlowMap", flow ? flow : nm);
   if (d->refl) t3_extension_set_texture(c, "waterReflection", d->refl->texture);
-  if (d->refr) t3_extension_set_texture(c, "waterRefraction", d->refr->texture);
+  if (cw__wgpu_on()) {
+    if (d->wg_col_tex) t3_extension_set_texture(c, "waterRefraction", d->wg_col_tex);
+  } else if (d->refr) {
+    t3_extension_set_texture(c, "waterRefraction", d->refr->texture);
+  }
   {
     /* x: the refraction depth is valid; y: caustic strength (Medium and up); z: 1 / the caustic tile (m); w: the
      * camera is under the water (the refraction target holds the view up through the surface) */
@@ -745,7 +770,19 @@ static void fill(t3_extension_ctx *c, void *user) {
     v[2] = 1.0f / cs, v[3] = d->refr_above ? 1.0f : 0.0f;
     t3_extension_set_uniform(c, "waterRefr", v, 4);
     t3_extension_set_uniform(c, "waterRefrInv", d->refr_inv, 16);
-    if (d->refr && d->refr->depth_texture) t3_extension_set_texture(c, "waterRefractionDepth", d->refr->depth_texture);
+    {
+      int tw = 1, th = 1;
+      if (cw__wgpu_on() && d->wg_dep) tw = d->wg_dep->w, th = d->wg_dep->h;
+      else if (!cw__wgpu_on() && d->refr) tw = d->refr->width, th = d->refr->height;
+      float sz[4] = { (float)tw, (float)th, 0, 0 };
+      t3_extension_set_uniform(c, "waterRefrSize", sz, 4);
+    }
+    /* the window depth under each pixel: GL's depth texture itself, WebGPU's R32Float copy (refraction_wgpu.c) */
+    if (cw__wgpu_on()) {
+      if (d->wg_dep_tex) t3_extension_set_texture(c, "waterRefractionDepth", d->wg_dep_tex);
+    } else if (d->refr && d->refr->depth_texture) {
+      t3_extension_set_texture(c, "waterRefractionDepth", d->refr->depth_texture);
+    }
     t3_extension_set_texture(c, "waterCaustic", d->caus_tex ? d->caus_tex : nm0);
   }
 }

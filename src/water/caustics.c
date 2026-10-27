@@ -6,7 +6,9 @@
  * 3 x 3 points per texel moved by the surface's slope (the refraction, to
  * first order) and splatted where it lands, then a small tent blur and a
  * scale to a mean of 1. The shaders scroll two copies of it against each
- * other and keep the smaller, which makes the moving web.
+ * other and keep the smaller, which makes the moving web. A soft copy (blurred
+ * over a few texels, cw__water_caustics_soft) stands in deeper down, where the
+ * lines spread out, and for the light shafts seen from under the water.
  *
  * The sines are cw_sin / cw_cos and the order of the sums is fixed, so the
  * texture is the same bytes on every host. */
@@ -27,7 +29,7 @@ static uint32_t hash(uint32_t v) {
 }
 static float unit(uint32_t h) { return (float)(h >> 8) * (1.0f / 16777216.0f); }
 
-static uint8_t g_tex[CW_WATER_CAUSTIC_N * CW_WATER_CAUSTIC_N];
+static uint8_t g_tex[CW_WATER_CAUSTIC_N * CW_WATER_CAUSTIC_N], g_soft[CW_WATER_CAUSTIC_N * CW_WATER_CAUSTIC_N];
 static bool g_done;
 
 const uint8_t *cw__water_caustics(void) {
@@ -97,8 +99,31 @@ const uint8_t *cw__water_caustics(void) {
     float v = blur[k] / mean * (255.0f / 4.0f) + 0.5f;
     g_tex[k] = (uint8_t)(v > 255.0f ? 255.0f : v);
   }
+  /* the soft copy: a box of 9 texels along x then y, twice (close to a Gaussian of 5 texels), wrapping */
+  /* img <- blur, then x: img -> blur, y: blur -> img, x, y: the result in img */
+  for (int k = 0; k < n * n; k++) img[k] = blur[k];
+  for (int pass = 0; pass < 4; pass++) {
+    const float *src = (pass & 1) ? blur : img;
+    float *dst = (pass & 1) ? img : blur;
+    bool along_x = (pass & 1) == 0;
+    for (int j = 0; j < n; j++)
+      for (int i = 0; i < n; i++) {
+        float s = 0;
+        for (int d = -4; d <= 4; d++) s += along_x ? src[j * n + (i + d + n) % n] : src[((j + d + n) % n) * n + i];
+        dst[j * n + i] = s / 9.0f;
+      }
+  }
+  for (int k = 0; k < n * n; k++) {
+    float v = img[k] / mean * (255.0f / 4.0f) + 0.5f;
+    g_soft[k] = (uint8_t)(v > 255.0f ? 255.0f : v);
+  }
   cw_free(sx);
   cw_free(img);
   g_done = true;
   return g_tex;
+}
+
+const uint8_t *cw__water_caustics_soft(void) {
+  cw__water_caustics();
+  return g_soft;
 }

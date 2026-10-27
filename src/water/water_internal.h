@@ -2,6 +2,7 @@
 #ifndef CW_WATER_INTERNAL_H
 #define CW_WATER_INTERNAL_H
 
+#include "cartwheel/pipeline.h"
 #include "cartwheel/resource.h"
 #include "cartwheel/water.h"
 #include "three.h"
@@ -76,6 +77,9 @@ typedef struct water3d {
   bool refr_above;      /* the camera is under the water: the refraction target holds the view up through the surface */
   bool under_drawn;     /* the full-screen pass drew this view as seen from under the water */
   t3_texture *caus_tex; /* the caustic tile for the surface (caustics.c) */
+  cw_rt *wg_col, *wg_dep; /* WebGPU: the refraction's colour + depth target and its depth's R32Float copy (refraction_wgpu.c) */
+  t3_texture *wg_col_tex, *wg_dep_tex;
+  bool wg_fresh;
 } water3d;
 
 /* the waves at time t, phases reduced (water.c) */
@@ -91,8 +95,12 @@ int cw__water_quality(void);
 cw_node cw__water_at(cw_tree *t, int i);
 /* underwater.c, caustics.c */
 #define CW_WATER_CAUSTIC_N 256
-const uint8_t *cw__water_caustics(void);
+const uint8_t *cw__water_caustics(void);      /* CW_WATER_CAUSTIC_N^2 bytes, intensity / 4 */
+const uint8_t *cw__water_caustics_soft(void); /* the same, blurred over a few texels */
 void cw__water_add_under_pass(cw_tree *t);
+/* refraction_wgpu.c: WebGPU's refraction render into d->wg_col and the depth copy into d->wg_dep (cam NULL: cleared) */
+bool cw__water_refr_wgpu(cw_pass_ctx *ctx, water3d *d, t3_camera *cam, int w, int h);
+void cw__water_refr_wgpu_free(water3d *d);
 /* buoyancy.c */
 void cw__register_buoyancy_type(void);
 int cw__buoyancy_count(cw_tree *t);
