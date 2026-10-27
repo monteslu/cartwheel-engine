@@ -60,12 +60,14 @@ typedef struct cw_cmd_buf {
   uint16_t prev;      /* buttons held on the previous frame */
 } cw_cmd_buf;
 
+/* Forget every pushed frame (a new round, a new match). */
 void cw_cmd_clear(cw_cmd_buf *b);
 /* One frame of input. facing: +1 right, -1 left (0 counts as right). */
 void cw_cmd_push(cw_cmd_buf *b, bool left, bool right, bool up, bool down, int facing, uint16_t buttons);
 /* The relative direction (1..9) for raw states; what cw_cmd_push stores. */
 int cw_cmd_dir(bool left, bool right, bool up, bool down, int facing);
 int cw_cmd_dir_now(const cw_cmd_buf *b); /* 5 before any push */
+/* The buttons held on the newest frame, as the mask that was pushed (0 before any push). */
 uint16_t cw_cmd_held_now(const cw_cmd_buf *b);
 /* Frames since the button (any bit of mask) last went down, within `within`
  * frames; -1 when it did not. 0 = went down this frame. */
