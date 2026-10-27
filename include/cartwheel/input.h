@@ -166,6 +166,24 @@ void cw_input_assign(int player, int pad, uint32_t devices);
 int cw_input_player_pad(int player); /* -1 when none or player out of range */
 uint32_t cw_input_player_devices(int player); /* CW_DEVICE_* mask; 0 when player out of range */
 
+/* ── rumble ────────────────────────────────────────────────────────────
+ * The game drives a player's pad motors: `low` is the heavy (low-frequency)
+ * motor, `high` the light one, both 0..1 (out of range is clamped, NaN is 0),
+ * for `ms` milliseconds (capped at 5000). A new call replaces the one running;
+ * cw_input_rumble_stop ends it early. A player with no pad, a pad without
+ * motors, a keyboard-only setup and a host with no hardware all make these
+ * silent no-ops, so a game can call them unconditionally and ask
+ * cw_input_has_rumble only to offer the player a toggle. Natively this is
+ * SDL_GameControllerRumble; in a cart it is wasmcart's wc_pad_rumble (the
+ * browser's dual-rumble effect, a native player's SDL). Presentation only:
+ * rumble never feeds back into input or the simulation, so it is safe to call
+ * from fixed_update or update. The debug field `cw.rumble` (request count,
+ * pad, low and high in thousandths, ms) shows the last request to tests. */
+#define CW_HAVE_INPUT_RUMBLE 1 /* for games that also build against an older SDK */
+bool cw_input_has_rumble(int player);
+void cw_input_rumble(int player, float low, float high, int ms);
+void cw_input_rumble_stop(int player);
+
 /* ── binding sets as text ──────────────────────────────────────────────
  * One action per line, '#' starts a comment:
  *   jump = key:space, pad:south, mouse:left

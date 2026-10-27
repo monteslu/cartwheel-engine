@@ -273,6 +273,7 @@
       "sim.special_jp": 1,
       "ui.jump_jp": 3,
       "ui.jump_frames": 16,
+      "cw.rumble": [1, 0, 500, 250, 120],
       "bind.special": 262145,
       "replay.done": 1,
       "replay.match": 1,
