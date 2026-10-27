@@ -31,6 +31,7 @@ typedef struct explo {
   bool autostart, loop;
   float duration;
   float flash_energy, flash_color[4], flash_range, flash_duration;
+  const char *scorch_texture;
   float scorch_size, scorch_time, scorch_life, scorch_glow, scorch_depth, scorch_offset;
   float shake_amount, shake_radius, shake_time;
   bool playing, started;
@@ -256,10 +257,23 @@ static void explosions_hook(cw_tree *t, double dt, void *user) {
             e->scorch_slot = s;
             e->scorch_stamp = c->stamp;
             t3_vec3 pos = { e->fire_pos.x, e->fire_pos.y + e->scorch_offset + e->scorch_depth * 0.5f, e->fire_pos.z };
+            /* a different mark each time: one of the sheet's four shapes, turned about the vertical, stretched a little */
+            uint32_t h = cw_particle_hash((uint32_t)c->stamp * 2654435761u + (uint32_t)n.id);
+            int variant = (int)(h & 3u);
+            float turn = (float)(cw_particle_hash(h + 1u) >> 8) / 16777216.0f * 2.0f * CW_PI;
+            float sx = 0.85f + 0.35f * ((float)(cw_particle_hash(h + 2u) >> 8) / 16777216.0f);
+            float sy = 0.85f + 0.35f * ((float)(cw_particle_hash(h + 3u) >> 8) / 16777216.0f);
+            cw_value region = { CW_T_VEC4 };
+            region.v[0] = e->scorch_texture && *e->scorch_texture ? (float)(variant % 2) * 256.0f : 0;
+            region.v[1] = e->scorch_texture && *e->scorch_texture ? (float)(variant / 2) * 256.0f : 0;
+            region.v[2] = region.v[3] = e->scorch_texture && *e->scorch_texture ? 256.0f : 0;
             cw_node ds[2] = { c->dark, c->glow };
             for (int k = 0; k < 2; k++) {
               cw_node3d_set_position(ds[k], pos);
-              cw_node_set(ds[k], "size", cw_val_vec3(e->scorch_size * (k ? 0.8f : 1.0f), e->scorch_size * (k ? 0.8f : 1.0f), e->scorch_depth));
+              cw_node3d_set_rotation(ds[k], (t3_vec3){ -CW_PI * 0.5f, 0, turn });
+              cw_node_set(ds[k], "size", cw_val_vec3(e->scorch_size * sx * (k ? 0.8f : 1.0f), e->scorch_size * sy * (k ? 0.8f : 1.0f), e->scorch_depth));
+              cw_node_set(ds[k], "texture", cw_val_string(e->scorch_texture ? e->scorch_texture : ""));
+              cw_node_set(ds[k], "region", region);
             }
           }
         }
@@ -302,6 +316,7 @@ static void explo_init(cw_node n, void *data) {
   e->flash_color[3] = 1;
   e->flash_range = 14;
   e->flash_duration = 0.45f;
+  e->scorch_texture = cw_intern("scorch.png");
   e->scorch_size = 4;
   e->scorch_time = 7;
   e->scorch_life = 40;
@@ -340,6 +355,7 @@ static const cw_prop explo_props[] = {
   CW_PROP_FIELD(explo, flash_color, CW_T_COLOR, CW_PROP_DEFAULT, "Flash colour (linear)."),
   ER(flash_range, 0, 1e4, "Reach of the flash light, world units."),
   ER(flash_duration, 0.01, 60, "Seconds the flash takes to die away (fast at first)."),
+  EF(scorch_texture, CW_T_STRING, "Image of the scorch marks: a 2 x 2 sheet of four 256 pixel shapes (tools/fx/bake-flipbooks.mjs writes scorch.png). Each mark picks one, turns it and stretches it. Empty: a plain round mark."),
   ER(scorch_size, 0, 1e3, "Width of the scorch mark on the ground under the node (0 = no mark). The node stands at ground level."),
   ER(scorch_time, 0.1, 3600, "Seconds the mark takes to cool from glowing to dark."),
   ER(scorch_life, 0.1, 36000, "Seconds the mark stays before it fades away (at least scorch_time)."),
