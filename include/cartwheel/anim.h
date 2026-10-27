@@ -121,6 +121,14 @@ void cw_anim_add_key(cw_anim a, int track, float time, cw_value v);
 void cw_anim_add_key_hermite(cw_anim a, int track, float time, cw_value v, cw_value in_tangent, cw_value out_tangent);
 void cw_anim_add_method_key(cw_anim a, int track, float time, const char *method, const cw_value *args, int argc); /* up to CW_ANIM_MAX_ARGS arguments (copied) */
 void cw_anim_add_event_key(cw_anim a, int track, float time, const char *name); /* an event with that name */
+/* Gameplay events on any clip, a glTF one included (hit windows, footsteps, a sound cue): a key named `name` at
+ * `time`, on the animation's event track (made on first use). Returns the track index, -1 for a bad handle.
+ * Register a callback with cw_anim_player_on_event / cw_animtree_on_event to receive them. */
+int cw_anim_add_event(cw_anim a, float time, const char *name);
+int cw_anim_event_count(cw_anim a, const char *name); /* keys of that event name over the event tracks */
+/* The key time (seconds) of the nth (0 first, in time order) event of that name; -1 when there is none. A game
+ * can read a hit window's start and end from the clip instead of keeping a table of tick counts. */
+float cw_anim_event_time(cw_anim a, const char *name, int nth);
 
 /* The value of a value/bone track at `time` (clamped to its keys), in the
  * type of its keys. false for an empty or non-value track. Deterministic. */
@@ -196,6 +204,24 @@ void cw_anim_player_clear_queue(cw_node player); /* drops queued animations */
 void cw_anim_player_set_blend(cw_node player, const char *from, const char *to, float seconds);
 /* Advance by dt seconds now (any process mode). */
 void cw_anim_player_advance(cw_node player, double dt);
+/* Event callback (C): called for every event key the player crosses, in time order, just before the
+ * animation_event signal, with the event's name, the animation's name and the key's time in the clip. It runs
+ * inside the tick (fixed_update by default), so a hit window opened by a key is open for the same tick's
+ * gameplay. Fading-out animations fire none. One callback per player; NULL removes it. The callback may free
+ * the player. */
+typedef void (*cw_anim_event_fn)(cw_node player, const char *event, const char *animation, float key_time, void *user);
+void cw_anim_player_on_event(cw_node player, cw_anim_event_fn fn, void *user);
+/* Animation level of detail for characters far from the camera: the player samples its clip (and writes
+ * the bones) only on every divisor-th advance, with all the time since the last sample, so the pose steps
+ * and an event key fires up to divisor-1 ticks late, but the clip's time, loop count and the number of events
+ * come out exactly as at full rate. 1 (default) is every
+ * tick; at most 64. Players are spread over the ticks by their slot, so a crowd does not sample in
+ * lock step. Deterministic. Cross-fades see the coarser steps too. */
+void cw_anim_player_set_update_divisor(cw_node player, int divisor);
+int cw_anim_player_update_divisor(cw_node player); /* 1 when at full rate */
+/* The divisor for a character `distance` from the camera: 1 up to full_rate_distance, then 2, 4, 8 each time the
+ * distance doubles (never more than 8). */
+int cw_anim_lod_divisor(float distance, float full_rate_distance);
 const char *cw_anim_player_current(cw_node player); /* NULL when none */
 bool cw_anim_player_is_playing(cw_node player); /* advancing now */
 double cw_anim_player_position(cw_node player); /* seconds into the current animation */
@@ -240,6 +266,9 @@ cw_blend_id cw_animtree_add(cw_node tree, cw_blend_id base, cw_blend_id additive
  * match by bone name, value tracks by their node path. */
 void cw_animtree_set_filter(cw_node tree, cw_blend_id node, const char *const *names, int count);
 void cw_animtree_set_root(cw_node tree, cw_blend_id node); /* default: the first node created, or what adopted it */
+
+/* Event callback of a tree (as cw_anim_player_on_event): the event keys of the clips it plays. */
+void cw_animtree_on_event(cw_node tree, cw_anim_event_fn fn, void *user);
 
 /* State machines */
 typedef enum { CW_ADVANCE_AUTO, CW_ADVANCE_ENABLED, CW_ADVANCE_DISABLED } cw_advance_mode;

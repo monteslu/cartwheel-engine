@@ -437,6 +437,19 @@ static void test_instances(void) {
   }
   CHECK(mono && prev == 2);
   FOLD(prev);
+  /* a crowd: 40 more skinned characters cost no new geometry and no new parse; each has its own skeleton */
+  t3_object *crowd[40];
+  int shared = 0, own_skeleton = 0;
+  for (int i = 0; i < 40; i++) {
+    crowd[i] = cw_gltf_instantiate(man);
+    t3_skinned_mesh *sm = find_skinned(crowd[i]);
+    shared += sm && sm->mesh.geometry == sa->mesh.geometry;
+    own_skeleton += sm && sm->skeleton && sm->skeleton != sa->skeleton && under(sm->skeleton->bones[0], crowd[i]);
+  }
+  CHECK_EQ_INT(shared, 40);
+  CHECK_EQ_INT(own_skeleton, 40);
+  CHECK_EQ_INT(cw_gltf_instance_count(man), 43);
+  for (int i = 0; i < 40; i++) t3_release(crowd[i]);
   t3_release(cam);
   t3_release(c);
   CHECK_EQ_INT(cw_gltf_instance_count(man), 2);
