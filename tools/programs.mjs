@@ -13,14 +13,15 @@
 //       PROGRAMS, or <its dir>/programs/<app>.txt, created when the app has
 //       none: re-run cmake to pick a new one up). The changed tables are
 //       regenerated.
-//   node tools/programs.mjs --carts [app ...] [--gates] [--frames N] [--gl-only]
+//   node tools/programs.mjs --carts [app ...] [--gates] [--frames N] [--gl-only | --webgpu-only]
 //       the same survey on the app's DUAL cart (build/cart-wgpu/carts/<app>.wasc), the one that ships: a cart is
 //       asked for states a native run is not (the host's quality and capabilities differ: no cascaded sun
 //       shadows, say), so a game that surveys only natively can ship a red "no program" banner. Runs the cart on a GL
 //       host (romdev's dual cart told to render with GL) and on a WebGPU host, headless, reads the states the cart
 //       reports (debug field cw.three.missing_states) and merges them into the app's table like a native
 //       survey; --gates also runs each gate's input scripts. Carts are named by their file, which is
-//       the app's name (the cart must be built: scripts/build.sh).
+//       the app's name (the cart must be built: scripts/build.sh). --webgpu-only skips the GL host leg (a cart
+//       that cannot be loaded on romdev's GL path is still surveyed where it ships on WebGPU).
 //   --scenes NAME=a,b,c   runs each app once per value with environment NAME set to it (on GL and on WebGPU), for a
 //       game that picks its scene from the environment or runs a different scene per level: the table gets the
 //       union of every scene's states (a runtime-created light or particle needs its state in the table, and a
@@ -62,6 +63,8 @@ const all = (k) => argv.flatMap((a, i) => (a === k ? [argv[i + 1]] : []));
 const VALUED = new Set(['--scenes', '--frames', '--logs', '--build', '--table', '--missing', '--extend']);
 const names = argv.filter((a, i) => !a.startsWith('--') && !VALUED.has(argv[i - 1]));
 const BUILD = resolve(one('--build') || join(ROOT, 'build', 'native'));
+// CW_PROJECT_ROOT (as tools/run-cart.mjs reads it): --carts surveys that tree's carts and gates
+const PROJ = process.env.CW_PROJECT_ROOT ? resolve(process.env.CW_PROJECT_ROOT) : ROOT;
 const THREE = resolve(process.env.CW_THREE_DIR || cmakeCache('CW_THREE_DIR') || join(ROOT, 'deps', 'three.c'));
 const GEN = join(THREE, 'tools', 'gen-project-table.mjs');
 
@@ -212,17 +215,18 @@ const cartStates = (replyFile) => { // the "pipeline" reply of a run (run-cart -
 if (CARTS && !argv.includes('--no-run')) {
   rmSync(runDir, { recursive: true, force: true });
   mkdirSync(runDir, { recursive: true });
-  const cartDir = join(ROOT, 'build', 'cart-wgpu', 'carts');
+  const cartDir = join(PROJ, 'build', 'cart-wgpu', 'carts');
   const have = existsSync(cartDir) ? readdirSync(cartDir).filter((f) => f.endsWith('.wasc')).map((f) => f.slice(0, -5)) : [];
   const todo = names.length ? names : have;
   for (const n of todo) if (!have.includes(n)) throw new Error(`no dual cart ${n} in ${cartDir} (build it: scripts/build.sh)`);
-  const legs = [['gl', ['--gpu', 'gl', '--dual-gl']]];
+  if (argv.includes('--gl-only') && argv.includes('--webgpu-only')) throw new Error('--gl-only and --webgpu-only leave no host');
+  const legs = argv.includes('--webgpu-only') ? [] : [['gl', ['--gpu', 'gl', '--dual-gl']]];
   if (!argv.includes('--gl-only')) legs.push(['webgpu', ['--gpu', 'webgpu']]);
-  const gates = argv.includes('--gates') ? JSON.parse(readFileSync(join(ROOT, 'tests', 'gates.json'), 'utf8')).filter((g) => g.app && !g.script) : [];
+  const gates = argv.includes('--gates') ? JSON.parse(readFileSync(join(PROJ, 'tests', 'gates.json'), 'utf8')).filter((g) => g.app && !g.script) : [];
   for (const app of todo) {
     const runs = [{ tag: app, args: ['--frames', frames] }];
     for (const g of gates.filter((x) => x.app === app))
-      runs.push({ tag: g.name, args: ['--frames', String(g.frames), ...(g.input ? ['--input', join(ROOT, 'tests', g.input)] : [])] });
+      runs.push({ tag: g.name, args: ['--frames', String(g.frames), ...(g.input ? ['--input', join(PROJ, 'tests', g.input)] : [])] });
     const seen = new Set();
     for (const run of runs) for (const [leg, legArgs] of legs) {
       const stateFile = join(runDir, `${run.tag}.${leg}.cmd.json`);
