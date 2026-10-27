@@ -2248,6 +2248,47 @@
    "macros": []
   },
   {
+   "header": "cartwheel/framing.h",
+   "summary": "cartwheel framing: a camera that keeps a set of things in view (two\nfighters, a party of players, a boss and its arena) with a margin, from a\nfixed viewing direction, and glides to the new framing instead of jumping.\n\n  cw_frame_params p = { .yaw = 0, .pitch = -0.15f, .fov_y = 0.7f, .aspect = 16.f / 9,\n                        .margin = 0.12f, .min_dist = 4, .max_dist = 14 };\n  cw_frame_fit(&p, pts, n, &fit);            // where the camera has to be\n  cw_frame_follow(&state, &fit, dt, 6.0f);   // eased toward it, in fixed_update\n\nThe fit is exact: with the margin at 0.1 the extreme points land 10 percent\nof the half-view inside the frame edges (tests/unit/test_framing.c projects\nthem to check). Points are world positions; give each a radius to keep a\nbody, not just its pivot, in view. Everything is + - * / sqrt and cartwheel\nmath (cw_sincos), so a smoothed camera is the same on every host and may be\nused by simulation-visible code; it is normally render-only.\n\nDirection: yaw turns about +Y (0 looks along -Z), pitch tilts (negative\nlooks down). The result is a position and a look-at point; pass them to\nthe camera's position and lookAt.",
+   "functions": [
+    {
+     "name": "cw_frame_fit",
+     "signature": "bool cw_frame_fit(const cw_frame_params *p, const cw_frame_point *pts, int n, cw_frame_result *out)",
+     "doc": "Fit n points (n >= 1). Returns false for n < 1 or bad parameters.",
+     "inline": false
+    },
+    {
+     "name": "cw_frame_follow",
+     "signature": "void cw_frame_follow(cw_frame_state *s, const cw_frame_params *p, const cw_frame_result *fit, float dt, float speed, cw_frame_result *out)",
+     "doc": "Moves `s` toward `fit` over dt seconds; speed is the spring's rate (6 is a\nsettle in about half a second; 0 or less snaps). The first call snaps.\nWrites the camera position for the state's framing through `p`'s direction.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_frame_point",
+     "doc": "",
+     "decl": "typedef struct cw_frame_point { float x, y, z, radius; } cw_frame_point;"
+    },
+    {
+     "name": "cw_frame_params",
+     "doc": "",
+     "decl": "typedef struct cw_frame_params {\n  float yaw, pitch;       /* viewing direction, radians */\n  float fov_y;            /* vertical field of view, radians */\n  float aspect;           /* width / height of the view being framed */\n  float margin;           /* 0..0.9: share of the half-view kept free at the edges */\n  float min_dist, max_dist; /* the camera's distance from the look-at point (max 0 = no limit) */\n} cw_frame_params;"
+    },
+    {
+     "name": "cw_frame_result",
+     "doc": "",
+     "decl": "typedef struct cw_frame_result {\n  float pos[3];    /* camera position */\n  float target[3]; /* look-at point (the middle of the points in the view plane) */\n  float dist;      /* distance between them, after the limits */\n  bool clamped;    /* a limit stopped the points from fitting */\n} cw_frame_result;"
+    },
+    {
+     "name": "cw_frame_state",
+     "doc": "Smoothing: critically damped spring on the target and the distance.",
+     "decl": "typedef struct cw_frame_state {\n  float target[3], dist;\n  float vel[3], dist_vel;\n  bool init;\n} cw_frame_state;"
+    }
+   ],
+   "macros": []
+  },
+  {
    "header": "cartwheel/froxel.h",
    "summary": "Froxel grid: a camera's view frustum cut into a 3D grid of cells (screen\ntiles x depth slices), and the volumes (light spheres, spot cones) that\ntouch each cell, binned on the CPU on the job pool. Clustered lighting\n(lighting.h) uses one per tree; anything else that wants per-cell lists\n(fog volumes, decals, probes) can make its own grid, or read the lighting\none with cw_lighting_froxels.\n\nGrid (three.js r186 ClusteredLighting's): tiles of tile_px x tile_px\npixels, nx = ceil(w / tile_px), ny = ceil(h / tile_px), and z_slices\nslices spaced exponentially between near and far:\n  slice k covers view depth [near * (far / near)^(k / nz), near * (far / near)^((k + 1) / nz)].\nA view depth d (positive, -view z) is in slice floor(log(d) * zscale + zbias)\n(clamped to [0, nz - 1]). Tile x counts from the left edge of the image, y\nfrom its BOTTOM (NDC y = -1): tile (x, y) of a point at NDC (u, v) is\nfloor((u * 0.5 + 0.5) * nx), floor((v * 0.5 + 0.5) * ny). Cell (x, y, z)\nhas the linear index x + nx * (y + ny * z).\n\nBinning (Filament's Froxelizer, ported to C: Apache-2.0, see NOTICE): each\nvolume's screen rectangle and depth range bound the cells it can touch;\nevery candidate cell's view-space box is tested against the sphere (and a\ncone's angle test, Filament's coneVsSphere on the cell's bounding sphere).\nRows of cells (one y and z) are binned in parallel; each row lists its\nvolumes in the order they were given, so the result does not depend on the\nworker count. A cell keeps at most max_per_froxel volumes (the first in\ninput order); the rest are dropped and counted in the stats.\n\nResults: one record per cell, (first item << 8) | count (count <= 255),\ninto one item list of uint16 volume indices, cells in linear order. The\nGPU copies (cw_froxel_grid_textures) are R32UI DataTextures read with\ntextureLoad: the records one texel a cell (cell f at (f % width, f /\nwidth)), the items two to a texel (item k in texel k >> 1, the low 16 bits\nwhen k is even). src/render/extensions/cluster_part.mjs (froxelRecord) is\nthe TSL that finds a fragment's record.\n\nCost: O(cells a volume's bounds cover) box tests per volume, spread over\nthe pool once a frame has more than a few thousand tests; memory: 4 bytes\na cell, 2 bytes an item, plus max_per_froxel x 2 bytes a cell of scratch.\nRender-only: nothing here may feed the simulation.",
    "functions": [
@@ -3950,6 +3991,105 @@
     },
     {
      "name": "CW_TAU",
+     "doc": ""
+    }
+   ]
+  },
+  {
+   "header": "cartwheel/motion.h",
+   "summary": "cartwheel motion: a command buffer and motion-input matcher for games that\nread joystick motions and button taps (fighting games, brawlers, anything\nwith \"quarter circle then punch\").\n\nThe game pushes ONE frame of input per fixed tick (cw_cmd_push) and asks\nafter each push whether a motion has just been done. Everything is integer\nand runs inside fixed_update, so results are identical on every host and\nreplay exactly.\n\nDirections use numpad notation RELATIVE TO FACING:\n    7 8 9        8 = up   2 = down   4 = back   6 = forward   5 = neutral\n    4 5 6\n    1 2 3\ncw_cmd_push takes the raw left/right/up/down state and the facing (+1 =\nfacing right, -1 = facing left) and stores the relative direction. Left and\nright together cancel; up and down together count as up.\n\nMotion text (cw_motion_parse):\n  \"236\"     quarter circle forward: down, down-forward, forward\n  \"623\"     forward, down, down-forward (rising uppercut)\n  \"214\"  \"41236\"  \"236236\"  \"22\"  \"66\"   any run of up to 8 digits\n  \"[4]6\"    charge: back held for charge frames, then forward\n  \"[2]8\"    charge down, then up\nRules (documented so a design can rely on them):\n  - a step matches a frame when the frame's direction CONTAINS the step\n    (step 6 matches 3, 6 and 9; step 2 matches 1, 2 and 3; step 5 only 5);\n  - a diagonal step (1 3 7 9) is optional: \"236\" also accepts 2 then 6;\n  - each step needs a frame strictly later than the one before it, and two\n    equal steps in a row (\"66\", \"22\") need a frame in between that does not\n    match, so a held direction is not a double tap;\n  - the whole motion must finish inside `window` frames of its first step.\nButtons are a bit mask the game defines (bit i = button i).\n\nMatch functions return how many frames ago the motion/command completed\n(0 = this frame) or -1. Call cw_cmd_consume after a move starts so the same\ninput is not read twice.",
+   "functions": [
+    {
+     "name": "cw_cmd_clear",
+     "signature": "void cw_cmd_clear(cw_cmd_buf *b)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw_cmd_push",
+     "signature": "void cw_cmd_push(cw_cmd_buf *b, bool left, bool right, bool up, bool down, int facing, uint16_t buttons)",
+     "doc": "One frame of input. facing: +1 right, -1 left (0 counts as right).",
+     "inline": false
+    },
+    {
+     "name": "cw_cmd_dir",
+     "signature": "int cw_cmd_dir(bool left, bool right, bool up, bool down, int facing)",
+     "doc": "The relative direction (1..9) for raw states; what cw_cmd_push stores.",
+     "inline": false
+    },
+    {
+     "name": "cw_cmd_dir_now",
+     "signature": "int cw_cmd_dir_now(const cw_cmd_buf *b)",
+     "doc": "5 before any push",
+     "inline": false
+    },
+    {
+     "name": "cw_cmd_held_now",
+     "signature": "uint16_t cw_cmd_held_now(const cw_cmd_buf *b)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw_cmd_pressed_ago",
+     "signature": "int cw_cmd_pressed_ago(const cw_cmd_buf *b, uint16_t mask, int within)",
+     "doc": "Frames since the button (any bit of mask) last went down, within `within`\nframes; -1 when it did not. 0 = went down this frame.",
+     "inline": false
+    },
+    {
+     "name": "cw_cmd_released_ago",
+     "signature": "int cw_cmd_released_ago(const cw_cmd_buf *b, uint16_t mask, int within)",
+     "doc": "Frames since the button went up, within `within` frames; -1 otherwise.",
+     "inline": false
+    },
+    {
+     "name": "cw_cmd_consume",
+     "signature": "void cw_cmd_consume(cw_cmd_buf *b)",
+     "doc": "Forget everything pushed so far for matching (a move was taken).",
+     "inline": false
+    },
+    {
+     "name": "cw_motion_parse",
+     "signature": "bool cw_motion_parse(const char *text, cw_motion *out)",
+     "doc": "false (and *out untouched) on a typo: empty, digit 0, more than 8 steps,\nunbalanced brackets, a charge with no following step.",
+     "inline": false
+    },
+    {
+     "name": "cw_motion_match",
+     "signature": "int cw_motion_match(const cw_cmd_buf *b, const cw_motion *m, int window)",
+     "doc": "Frames ago the motion's last step was done, with the whole motion inside\n`window` frames; -1 when it was not done.",
+     "inline": false
+    },
+    {
+     "name": "cw_special_match",
+     "signature": "int cw_special_match(const cw_cmd_buf *b, const cw_motion *m, uint16_t mask, int window, int buffer)",
+     "doc": "A special move: the motion plus a button of `mask` pressed within `buffer`\nframes (0 = this frame only). The motion may finish up to 2 frames after\nthe button went down (pressing the button first is common) and up to\n`window` frames before it. Returns frames ago of the button press or -1.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_cmd_frame",
+     "doc": "",
+     "decl": "typedef struct cw_cmd_frame {\n  uint8_t dir;       /* 1..9, 5 = neutral (relative to facing) */\n  uint8_t pad_;\n  uint16_t buttons;  /* held mask */\n} cw_cmd_frame;"
+    },
+    {
+     "name": "cw_cmd_buf",
+     "doc": "",
+     "decl": "typedef struct cw_cmd_buf {\n  cw_cmd_frame f[CW_CMD_HISTORY];\n  uint32_t count;     /* frames pushed since clear */\n  uint32_t consumed;  /* frames before this index are ignored by matching */\n  uint16_t prev;      /* buttons held on the previous frame */\n} cw_cmd_buf;"
+    },
+    {
+     "name": "cw_motion",
+     "doc": "",
+     "decl": "typedef struct cw_motion {\n  uint8_t steps[CW_MOTION_MAX_STEPS];\n  uint8_t count;\n  uint8_t charge; /* the first step is a charge */\n  uint16_t charge_frames; /* frames the charge direction must be held (default 30) */\n} cw_motion;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_CMD_HISTORY",
+     "doc": ""
+    },
+    {
+     "name": "CW_MOTION_MAX_STEPS",
      "doc": ""
     }
    ]
@@ -11182,6 +11322,12 @@
      "name": "cw_shading_part_batching",
      "signature": "void cw_shading_part_batching(t3_renderer *r, const char *name, bool on)",
      "doc": "Part `name`'s hook on r reads nothing of the object it fills for (only\nper-frame values, or ones a batch keeps equal: receive_shadow, render\norder), so meshes whose material carries it may be auto-instanced. A\ncomposed extension batches when all of its parts do. Off by default.",
+     "inline": false
+    },
+    {
+     "name": "cw_shading_part_known",
+     "signature": "bool cw_shading_part_known(const char *name)",
+     "doc": "A part named `name` was registered (cw_shading_part) on some renderer: the\nengine's lighting composes its own parts (cluster, csm) with it.",
      "inline": false
     },
     {

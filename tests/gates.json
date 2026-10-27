@@ -396,6 +396,26 @@
     }
   },
   {
+    "name": "unit-motion",
+    "app": "unit_motion",
+    "frames": 2,
+    "minColors": 1,
+    "fields": ["unit.passed", "unit.failed", "unit.checksum", "unit.done"],
+    "controlFrames": 2,
+    "expect": { "unit.failed": 0, "unit.done": 1 },
+    "controlEnv": { "CW_TEST_INJECT_FAIL": "1" }
+  },
+  {
+    "name": "unit-framing",
+    "app": "unit_framing",
+    "frames": 2,
+    "minColors": 1,
+    "fields": ["unit.passed", "unit.failed", "unit.checksum", "unit.done"],
+    "controlFrames": 2,
+    "expect": { "unit.failed": 0, "unit.done": 1 },
+    "controlEnv": { "CW_TEST_INJECT_FAIL": "1" }
+  },
+  {
     "name": "perf-nodes",
     "app": "perf_nodes",
     "frames": 2,
