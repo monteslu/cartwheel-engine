@@ -27,6 +27,8 @@ writes only its gameplay and art:
   quadrant for a shared HUD), and `cw_shell_player_rect` and
   `cw_shell_shared_rect` tell the HUD where to draw.
 
+A game that wants its own picture behind the title, join, settings and pause screens sets `draw_background` in `cw_shell_desc`: the shell calls it inside its own 2D pass with the canvas size, then dims the result lightly and draws the menu over it (without the hook the screens sit on a dark panel).
+
 The calls a game makes:
 
 ```c

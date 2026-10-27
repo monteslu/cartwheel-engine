@@ -87,6 +87,10 @@ typedef struct cw_shell_desc {
   void (*quit)(void *user);                 /* Quit to title, from the pause menu */
   void (*sound)(cw_shell_sound s, void *user);
   void (*screen_changed)(cw_shell_screen from, cw_shell_screen to, void *user);
+  /* Draws behind the title, join, settings and loading screens and the pause menu (in the shell's own 2D pass,
+   * canvas units): the game's backdrop, so these screens are not a dark panel. The shell then dims it lightly
+   * and draws the menu over it. NULL: the dark panel. */
+  void (*draw_background)(cw_shell_screen screen, cw_vec2 canvas, void *user);
   cw_font font;           /* default: the built-in sans (cw_ui_font_sans) */
   cw_color accent;        /* the selected item's colour (default a warm yellow) */
   void *user;
