@@ -1153,7 +1153,11 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
                  "(a new material, light count or shadow combination needs its program). Fix: from the engine checkout run\n"
                  "    %s\nthen commit the changed programs/ manifest and generated C and rebuild (a project outside the tree: "
                  "node tools/programs.mjs --projects <dir>). Missing:\n%s", (int)n, cw__programs_fix_command(), p->missing_states);
-        if (getenv("CW_PROGRAMS_STRICT")) CW_FATAL("CW_PROGRAMS_STRICT is set and a program state is missing (see the error above)");
+        const char *strict = getenv("CW_PROGRAMS_STRICT");
+        if (strict && *strict && atoi(strict)) { /* CI and authors: an incomplete table is an exit (4), not a blank screen */
+          fprintf(stderr, "CW_PROGRAMS_STRICT: exiting, the program table is incomplete\n");
+          exit(4);
+        }
       }
       missing_count = n;
       memset(missing_text, 0, sizeof missing_text);
