@@ -42,7 +42,7 @@ Games that ask for many paths at once spread them over ticks with [cw_nav_reques
 
 ## Obstacles
 
-On a dynamic navmesh, [cw_nav_obstacle_add_cylinder](api:cw_nav_obstacle_add_cylinder) and [cw_nav_obstacle_add_box](api:cw_nav_obstacle_add_box) (an axis box, or a box turned about y) queue a change, and so does [cw_nav_obstacle_remove](api:cw_nav_obstacle_remove). [cw_nav_update](api:cw_nav_update) applies the queue. The touched tiles rebuild in parallel and are committed in ascending tile order, which is why Detour's tile cache is patched (below). Crowds notice the change and replan agents whose paths crossed a polygon that is gone.
+On a dynamic navmesh, [cw_nav_obstacle_add_cylinder](api:cw_nav_obstacle_add_cylinder) and [cw_nav_obstacle_add_box](api:cw_nav_obstacle_add_box) (an axis box, or a box turned about y) queue a change, and so does [cw_nav_obstacle_remove](api:cw_nav_obstacle_remove). [cw_nav_update](api:cw_nav_update) applies the queue. The queue holds 64 changes; when it is full, the next add or remove applies it first, so a level can add hundreds of obstacles (or a game destroy dozens of crates in one tick) without calling update in between. The touched tiles rebuild in parallel and are committed in ascending tile order, which is why Detour's tile cache is patched (below). Crowds notice the change and replan agents whose paths crossed a polygon that is gone.
 
 ## Crowds
 

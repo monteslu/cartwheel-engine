@@ -216,7 +216,10 @@ int cw_nav_pending_paths(cw_navmesh nm); /* requests not yet answered */
 /* ── obstacles (dynamic navmeshes) ─────────────────────────────────────
  * Adding and removing queue a change; cw_nav_update applies the queue: the
  * touched tiles rebuild in parallel and are committed in ascending tile
- * order. Ids are never 0; 0 means the obstacle could not be added. */
+ * order. Ids are never 0; 0 means the obstacle could not be added (max_obstacles
+ * reached). The queue holds 64 changes: when it is full, the next add or
+ * remove applies it (an implicit cw_nav_update) and then queues its own, so a
+ * level can add hundreds of obstacles in a row. */
 uint32_t cw_nav_obstacle_add_cylinder(cw_navmesh nm, t3_vec3 base, float radius, float height);
 uint32_t cw_nav_obstacle_add_box(cw_navmesh nm, t3_vec3 center, t3_vec3 half, float y_rotation); /* half sizes; radians about y */
 bool cw_nav_obstacle_remove(cw_navmesh nm, uint32_t id); /* false for an unknown id or a full change queue */

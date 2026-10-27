@@ -1263,21 +1263,30 @@ uint32_t cw_nav_obstacle_add_cylinder(cw_navmesh h, t3_vec3 base, float radius, 
   const float p[3] = { base.x, base.y, base.z };
   dtObstacleRef ref = 0;
   const float v[7] = { base.x, base.y, base.z, radius, height, 0, 0 };
-  return add_obstacle(n, n->cache->addObstacle(p, radius, height, &ref), ref, 0, v);
+  dtStatus st = n->cache->addObstacle(p, radius, height, &ref);
+  if (dtStatusDetail(st, DT_BUFFER_TOO_SMALL)) { /* the request queue is full: apply it, then queue this one */
+    cw_nav_update(h);
+    st = n->cache->addObstacle(p, radius, height, &ref);
+  }
+  return add_obstacle(n, st, ref, 0, v);
 }
 
 uint32_t cw_nav_obstacle_add_box(cw_navmesh h, t3_vec3 center, t3_vec3 half, float y_rotation) {
   NavMesh *n = dyn(h);
   if (!n) return 0;
   dtObstacleRef ref = 0;
-  dtStatus st;
-  if (y_rotation == 0) {
-    const float mn[3] = { center.x - half.x, center.y - half.y, center.z - half.z };
-    const float mx[3] = { center.x + half.x, center.y + half.y, center.z + half.z };
-    st = n->cache->addBoxObstacle(mn, mx, &ref);
-  } else {
-    const float c[3] = { center.x, center.y, center.z }, e[3] = { half.x, half.y, half.z };
-    st = n->cache->addBoxObstacle(c, e, y_rotation, &ref);
+  dtStatus st = DT_FAILURE;
+  for (int attempt = 0; attempt < 2; attempt++) {
+    if (y_rotation == 0) {
+      const float mn[3] = { center.x - half.x, center.y - half.y, center.z - half.z };
+      const float mx[3] = { center.x + half.x, center.y + half.y, center.z + half.z };
+      st = n->cache->addBoxObstacle(mn, mx, &ref);
+    } else {
+      const float c[3] = { center.x, center.y, center.z }, e[3] = { half.x, half.y, half.z };
+      st = n->cache->addBoxObstacle(c, e, y_rotation, &ref);
+    }
+    if (!dtStatusDetail(st, DT_BUFFER_TOO_SMALL)) break;
+    cw_nav_update(h); /* the request queue is full: apply it, then queue this one */
   }
   const float v[7] = { center.x, center.y, center.z, half.x, half.y, half.z, y_rotation };
   return add_obstacle(n, st, ref, 1, v);
@@ -1288,8 +1297,13 @@ bool cw_nav_obstacle_remove(cw_navmesh h, uint32_t id) {
   if (!n) return false;
   for (int i = 0; i < n->obstacles.count; i++) {
     if (n->obstacles.data[i].id != id) continue;
-    if (dtStatusFailed(n->cache->removeObstacle(n->obstacles.data[i].ref))) {
-      cw_warn("nav: obstacle not removed (too many queued changes: call cw_nav_update)");
+    dtStatus st = n->cache->removeObstacle(n->obstacles.data[i].ref);
+    if (dtStatusDetail(st, DT_BUFFER_TOO_SMALL)) { /* the request queue is full: apply it, then queue this one */
+      cw_nav_update(h);
+      st = n->cache->removeObstacle(n->obstacles.data[i].ref);
+    }
+    if (dtStatusFailed(st)) {
+      cw_warn("nav: obstacle not removed");
       return false;
     }
     memmove(&n->obstacles.data[i], &n->obstacles.data[i + 1], sizeof(Obstacle) * (size_t)(n->obstacles.count - i - 1));

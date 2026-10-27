@@ -203,6 +203,29 @@ static void test_queries(void) {
   cw_nav_geom_free(&g);
 }
 
+/* the tile cache queues 64 changes: more in a row apply the queue on their own */
+static void test_obstacle_queue(void) {
+  cw_nav_geom g = level();
+  cw_nav_config c = cw_nav_config_default();
+  c.dynamic = true;
+  c.max_obstacles = 300;
+  cw_navmesh nm = cw_navmesh_build(&c, &g);
+  CHECK(cw_navmesh_valid(nm));
+  uint32_t ids[200];
+  int added = 0;
+  for (int i = 0; i < 200; i++) {
+    ids[i] = cw_nav_obstacle_add_cylinder(nm, (t3_vec3){ -40.0f + (float)(i % 20) * 4.0f, 0, 30.0f + (float)(i / 20) * 2.0f }, 0.5f, 2);
+    added += ids[i] != 0;
+  }
+  CHECK(added == 200);
+  int removed = 0;
+  for (int i = 0; i < 150; i++) removed += cw_nav_obstacle_remove(nm, ids[i]);
+  CHECK(removed == 150);
+  cw_nav_update(nm);
+  CHECK(cw_navmesh_get_stats(nm).obstacles == 50);
+  cw_navmesh_free(nm);
+}
+
 static void test_obstacles(void) {
   cw_nav_geom g = level();
   cw_nav_config c = cw_nav_config_default();
@@ -575,5 +598,5 @@ static void test_memory(void) {
 static void test_setup(void) { restore_workers = cw_jobs_thread_count() - 1; }
 
 CW_TEST_SUITE("nav", { "setup", test_setup }, { "geom", test_geom }, { "build", test_build },
-              { "queries", test_queries }, { "obstacles", test_obstacles }, { "head_on", test_head_on }, { "circle", test_circle },
+              { "queries", test_queries }, { "obstacles", test_obstacles }, { "obstacle_queue", test_obstacle_queue }, { "head_on", test_head_on }, { "circle", test_circle },
               { "crowd", test_crowd }, { "handles", test_handles }, { "crowd_obstacle", test_crowd_obstacle }, { "memory", test_memory })
