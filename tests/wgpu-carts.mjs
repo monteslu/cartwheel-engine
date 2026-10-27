@@ -12,8 +12,10 @@
 // but this host selected WebGPU"). It also fails when the host did not run the
 // cart on WebGPU, on WebGPU errors the engine counted (cw.gpu.errors) or a
 // lost device. A GL run fails when the cart did not draw with GL. Both fail
-// on a trap, a debug field cw.gpu.api other than the backend asked for, and a
-// last frame of one flat colour.
+// on a trap, a debug field cw.gpu.api other than the backend asked for, and,
+// for an app with a frame gate, a last frame with fewer colours than the
+// gate's minColors (default 2; an app with no frame gate, a measurement app
+// such as fx_spikes, gets no picture check).
 //
 // The control must fail: post_stack is run on WebGPU with the pipeline's old
 // defect put back (debug command `pipeline_test gl_msaa_on_webgpu`: a scene
@@ -44,14 +46,15 @@ const BUILD = join(PROJ, 'build', 'cart-wgpu');
 const argv = process.argv.slice(2);
 const opt = (k, d) => (argv.includes(k) ? argv[argv.indexOf(k) + 1] : d);
 const minFrames = +opt('--frames', 30);
-const VALUED = ['--frames', '-j', '--gpu', '--cmd'];
+const VALUED = ['--frames', '-j', '--gpu', '--cmd', '--min-colors'];
 
 // ── one cart on one backend (a child process: a trap or a crash stays its own) ──
 if (argv[0] === '--one') {
   const file = argv[1];
   const gpu = opt('--gpu', 'webgpu');
   const frames = +opt('--frames', 30);
-  const cmd = opt('--cmd', ''); // "@frame text": a debug-channel request posted before that frame (0-based)
+  const cmd = opt('--cmd', '');
+  const minColors = +opt('--min-colors', 0); // the picture check (0: the app has no frame gate, e.g. a measurement app) // "@frame text": a debug-channel request posted before that frame (0-based)
   const { CartHost } = await import(pathToFileURL(join(ROOT, 'deps', 'wasmcart-wgpu', 'index.js')).href);
   const pin = JSON.parse(process.env.CW_WGPU_CARTS_PIN);
   const host = new CartHost();
@@ -112,8 +115,8 @@ if (argv[0] === '--one') {
       }
     }
     const colours = new Set();
-    for (let i = 0; i < px.length && colours.size < 2; i += 4) colours.add(px[i] | (px[i + 1] << 8) | (px[i + 2] << 16));
-    if (colours.size < 2) throw new Error(`the last frame is one flat colour on ${gpu}`);
+    for (let i = 0; i < px.length && colours.size < minColors; i += 4) colours.add(px[i] | (px[i + 1] << 8) | (px[i + 2] << 16));
+    if (colours.size < minColors) throw new Error(`the last frame has ${colours.size} colour(s) on ${gpu}, its gate wants ${minColors}`);
   } catch (e) {
     console.log(`RESULT ${String(e && e.message ? e.message : e).split('\n')[0]}`);
     code = 1;
@@ -139,10 +142,13 @@ if (missing.length) {
   process.exit(2);
 }
 // frames per cart: its app's longest gate
-const gateFrames = {};
+const gateFrames = {}, gateColors = {};
 try {
   for (const g of JSON.parse(readFileSync(join(PROJ, 'tests', 'gates.json'), 'utf8')))
-    if (g.app && g.frames) gateFrames[g.app] = Math.max(gateFrames[g.app] || 0, g.frames);
+    if (g.app && g.frames) {
+      gateFrames[g.app] = Math.max(gateFrames[g.app] || 0, g.frames);
+      gateColors[g.app] = Math.max(gateColors[g.app] || 0, g.minColors ?? 2);
+    }
 } catch { /* no gates file: --frames for every cart */ }
 const framesOf = (name) => Math.max(minFrames, gateFrames[name] || 0);
 const gpus = argv.includes('--gpu') ? [opt('--gpu')] : ['webgpu', 'gl'];
@@ -156,7 +162,7 @@ function check(name, gpu, extra = []) {
   return new Promise((res) => {
     const frames = framesOf(name);
     const p = spawn(process.execPath, [fileURLToPath(import.meta.url), '--one', join(BUILD, 'carts', `${name}.wasc`), '--frames', String(frames),
-      '--gpu', gpu, ...extra], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+      '--gpu', gpu, '--min-colors', String(gateColors[name] || 0), ...extra], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', log = '';
     p.stdout.on('data', (d) => (out += d));
     p.stderr.on('data', (d) => (log += d)); // the cart's own logging
