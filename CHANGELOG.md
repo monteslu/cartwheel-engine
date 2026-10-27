@@ -7,8 +7,8 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 ## v0.17.0 (2026-10-27)
 
 Fighting, shooting and platforming controls (motion inputs, a framing camera,
-aim curves, first person viewmodels, a 2D platformer controller), heat haze
-and shockwaves, shore and depth shading on water, animation events, joining a
+aim curves, first person viewmodels, a 2D platformer controller), an
+explosion kit with heat haze and shockwaves, shore and depth shading on water, animation events, joining a
 match while it runs, quality scopes, and three.c v0.186.19.
 
 ### Added
@@ -44,6 +44,23 @@ match while it runs, quality scopes, and three.c v0.186.19.
   (`cw_shockwave_fire`, `cw_shockwave_active`, `cw_shockwave_radius`), on GL
   and WebGPU, wired into the effects quality presets (`distortion`,
   `dispersion` and `flash_lights` in `cw_quality_scale`).
+- An explosion kit (`cartwheel/explosions.h`, the explosions guide):
+  - `Explosion3D` conducts a blast: a flash from a pooled light
+    (`flash_energy`, `flash_color`, `flash_range`, `flash_duration`), a
+    cooling scorch mark (`scorch_size`, `scorch_time`, `scorch_life`,
+    `scorch_glow`, `scorch_depth`, `scorch_offset`; four baked shapes,
+    each turned and stretched at random) and camera shake (`shake_amount`,
+    `shake_radius`, `shake_time`), with `autostart`, `loop` and
+    `duration`. `cw_explosion_fire`, `cw_explosion_playing`,
+    `cw_explosion_shake`, `cw_shake_offset` and `cw_explosion_get_stats`
+    (`cw_explosion_stats`). The engine pools the lights and decals under the
+    tree's root (`ExplosionFlash`, up to 8 by quality; `ScorchDark` and
+    `ScorchGlow`, 12 pairs).
+  - GPUParticles3D sub-emitters (`emission_shape = PARENT`, `parent`,
+    `inherit_velocity`) and motion-vector flipbooks (`motion_texture`,
+    `motion_strength`); `tools/fx/bake-flipbooks.mjs` bakes fire and smoke
+    sheets with their motion sheets.
+  - Samples `fx_explosion` and `fx_sub_emitters`.
 - Water: a baked floor depth map from the static physics shapes, a shallow to
   deep colour, shore foam and crest foam (`floor_map_size`, `floor_range`,
   `shallow_color`, `clarity`, `shore_foam`, `crest_foam`;
