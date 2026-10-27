@@ -417,6 +417,16 @@
     "controlEnv": { "CW_TEST_INJECT_FAIL": "1" }
   },
   {
+    "name": "motion-demo",
+    "app": "motion_demo",
+    "frames": 95,
+    "input": "motion-demo.json",
+    "controlInput": "motion-demo-control.json",
+    "fields": ["demo.fireballs", "demo.uppercuts", "demo.dashes", "demo.ticks", "demo.fit_dist", "demo.fit_x"],
+    "expect": { "demo.fireballs": 1, "demo.uppercuts": 1, "demo.dashes": 1 },
+    "note": "a quarter circle + J, a rising strike + J and a dash, typed on a pad stick: each fires once, and the framing fit is the same on every host. The control presses nothing."
+  },
+  {
     "name": "perf-nodes",
     "app": "perf_nodes",
     "frames": 2,

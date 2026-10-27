@@ -6,6 +6,8 @@ cw_add_app(hello SOURCES hello/main.c)
 
 # actions, tick/frame snapshots, rebinding, touch controls, record/replay (120 Hz).
 cw_add_app(input_demo SOURCES input_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/input_demo/assets GL_ONLY)
+# motion inputs and the framing camera: a command buffer reading a quarter circle, a rising strike and a dash; a fit for two moving points
+cw_add_app(motion_demo SOURCES motion_demo/main.c GL_ONLY)
 
 # upstream's determinism scenes + Box3D's large pyramid on the job pool.
 # deps/<lib>/shared is upstream's sample support code, compiled as-is.
