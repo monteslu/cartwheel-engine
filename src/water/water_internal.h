@@ -35,6 +35,14 @@ typedef struct water3d {
   int floor_map_size;
   float floor_range, clarity, shore_foam, crest_foam;
   float shallow_color[4];
+  /* the look */
+  float scatter, glint;
+  /* the interactive ripple layer (ripples.c) */
+  int ripple_cells;
+  float ripple_size[2], ripple_center[2], ripple_speed, ripple_damping, ripple_strength, foam_fade;
+  float rain, rain_size, rain_strength;
+  const char *splash_fx;
+  float splash_fx_min;
   /* runtime (cleared on destroy from here on) */
   t3_mesh *mesh;
   t3_material *mat;
@@ -53,12 +61,25 @@ typedef struct water3d {
   int floor_n;
   bool floor_dirty, floor_done;
   float foam_time;
+  float *rip_h, *rip_v, *rip_f; /* ripple height, velocity, foam: rip_nx x rip_nz, row z, col x */
+  int rip_nx, rip_nz, rip_cells_built, rip_quality;
+  float rip_ax, rip_az, rain_acc;
+  bool rip_awake, rip_upload;
+  uint32_t fx_next;
+  t3_texture *rip_tex;
+  float sun[4], sun_col[4];
+  float refr_inv[16]; /* the refraction camera's inverse projection (its depth texture reads back to view space) */
+  bool refr_depth_ok;
 } water3d;
 
 /* the waves at time t, phases reduced (water.c) */
 void cw__waves_prepare(const cw_waves *w, double t, wave_eval *e);
 cw_waves cw__water_waves(const water3d *d);
 const cw_node_type *cw__water_type(void);
+water3d *cw__water_data(cw_node n);
+void cw__ripples_free(water3d *d);
+void cw__ripples_step(cw_node n, water3d *d, uint32_t tick);
+void cw__ripples_upload(water3d *d);
 int cw__water_quality(void);
 /* buoyancy.c */
 void cw__register_buoyancy_type(void);

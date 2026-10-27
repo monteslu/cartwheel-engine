@@ -59,6 +59,13 @@
  *     crest_foam           0..1: foam on the wave crests where the surface
  *                          bunches up (0.35; 0 = none)
  *
+ *     scatter, glint       the turquoise light the sun sends through crests
+ *                          toward the eye (needs a ProceduralSky); the fine
+ *                          sparkle of the sun on small ripples
+ *     ripple_cells, ripple_size, ripple_center, ripple_speed, ripple_damping,
+ *     ripple_strength, foam_fade, rain, rain_size, rain_strength, splash_fx,
+ *     splash_fx_min        the interactive ripple layer (see cw_water_splash)
+ *
  *   Buoyancy3D   (Node3D) child of a RigidBody3D: pushes it up where its
  *                probes are under the water and drags it where they are
  *                wet. Properties:
@@ -74,6 +81,8 @@
  *     linear_drag          N per m/s per fully wet probe, against the probe
  *                          point's velocity relative to the water's
  *     angular_drag         N*m per rad/s, scaled by the wet share
+ *     splash, wake         how much of a splash entering the water and of a
+ *                          wake moving through it the body makes (1; 0: none)
  *     submerged            read-only: the wet share of the probes, 0..1
  *
  * ── time and determinism ────────────────────────────────────────────────
@@ -164,6 +173,25 @@ float cw_water_floor_depth_at(cw_node water, float x, float z);
 /* Bake the floor map again (the static shapes changed). Done on the next
  * frame. */
 void cw_water_rebake_floor(cw_node water);
+
+/* ── interactive ripples ──────────────────────────────────────────────────
+ * Water3D keeps a height field of small ripples (ripple_cells, ripple_size,
+ * ripple_center) that is drawn as a bent normal and foam. A splash, a wake or
+ * rain writes into it, it spreads and fades on the fixed clock. All + - * and
+ * integer hashes in a fixed order: the same bits on every host. It is a look,
+ * not a gameplay height: bodies float on the Gerstner waves alone. */
+/* A round dent of "depth" metres at the centre and "radius" metres wide at
+ * world (x, z), with "foam" (0..1) left on it; it spreads out as a ring. A
+ * deep enough one (splash_fx_min) also restarts the next particle emitter of
+ * the splash_fx pool at the surface. No-op without a ripple grid. */
+void cw_water_splash(cw_node water, float x, float z, float radius, float depth, float foam);
+/* A body moving through the water at (vx, vz): call once per fixed tick; it
+ * leaves a trough and foam along its path. */
+void cw_water_wake(cw_node water, float x, float z, float vx, float vz, float radius, float depth, float foam);
+/* The ripple height in metres over world (x, z) (0 outside the grid). */
+float cw_water_ripple_at(cw_node water, float x, float z);
+/* A hash of the ripple field (heights and foam): the cross-host test. 0 without a grid. */
+uint32_t cw_water_ripple_hash(cw_node water);
 
 /* Last frame's numbers for a tree's water. */
 typedef struct cw_water_stats {

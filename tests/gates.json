@@ -2622,6 +2622,32 @@
     }
   },
   {
+    "name": "water-ripples",
+    "app": "water_ripples",
+    "frames": 260,
+    "fields": [
+      "tick",
+      "rip.hash",
+      "bodies.hash",
+      "rip.h",
+      "boat.pos"
+    ],
+    "tol": 0.001,
+    "controlEnv": {
+      "WATER_RIPPLES_OFF": "1"
+    },
+    "note": "splashes, a wake and spray on the ripple layer: crates dropped in, a boat circling, one splash by hand; the ripple field's hash and its heights at three points are the same bits on every host and both backends; control: the layer off (no hash, no rings)",
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium",
+        "wcnative"
+      ],
+      "vsGl": 0.002
+    }
+  },
+  {
     "name": "water-surface",
     "script": "tests/water-surface.mjs",
     "note": "the drawn water is where cw_water_height_at says, on every host and backend (debug_view HEIGHT read back at 48 probes, 1.5 cm); control: the water drawn 0.25 s late"

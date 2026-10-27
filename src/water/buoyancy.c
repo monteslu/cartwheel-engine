@@ -21,6 +21,8 @@ typedef struct buoy3d {
   const char *probes;
   float volume, probe_depth, fluid_density, linear_drag, angular_drag;
   float submerged; /* read-only */
+  float splash, wake;  /* how much of a splash and a wake the body makes (1; 0: none) */
+  float prev_wet;
   /* runtime: the probes as parsed / derived */
   const char *parsed;
   int count;
@@ -37,6 +39,8 @@ static void buoy_init(cw_node n, void *data) {
   b->fluid_density = 1000;
   b->linear_drag = 60;
   b->angular_drag = 40;
+  b->splash = 1;
+  b->wake = 1;
 }
 
 /* the body's first CollisionShape3D: its bounding box in body space */
@@ -109,6 +113,7 @@ static t3_vec3 qrot(t3_quat q, t3_vec3 v) {
 static void buoy_fixed(cw_node n, void *data, double dt) {
   (void)dt;
   buoy3d *b = data;
+  float was = b->submerged;
   b->submerged = 0;
   cw_node body_node = cw_node_parent(n);
   cw_body3d body = cw_collision_object3d_body(body_node);
@@ -146,6 +151,24 @@ static void buoy_fixed(cw_node n, void *data, double dt) {
     float k = b->angular_drag * b->submerged;
     cw_body3d_apply_torque(body, (t3_vec3){ -w.x * k, -w.y * k, -w.z * k });
   }
+  /* the ripple layer: a splash where the body enters, a wake while it moves through */
+  if (b->splash > 0 || b->wake > 0) {
+    t3_vec3 c = { x.p.x, x.p.y, x.p.z };
+    float hs = sqrtf(v.x * v.x + v.z * v.z), vs = -v.y;
+    float extent = sqrtf(b->vol) * 0.8f;
+    if (extent < 0.2f) extent = 0.2f;
+    if (b->splash > 0 && was < 0.02f && b->submerged >= 0.02f && (vs > 1.0f || hs > 3.0f)) {
+      float sp = vs > hs ? vs : hs;
+      float depth = b->splash * 0.05f * sp * (extent > 1.5f ? 1.5f : extent);
+      if (depth > 0.9f) depth = 0.9f;
+      cw_water_splash(water, c.x, c.z, extent * 1.2f + 0.3f, depth, 1.0f);
+    }
+    if (b->wake > 0 && b->submerged > 0.05f && hs > 0.4f) {
+      float depth = b->wake * 0.012f * hs * b->submerged;
+      if (depth > 0.25f) depth = 0.25f;
+      cw_water_wake(water, c.x, c.z, v.x, v.z, extent * 0.9f + 0.2f, depth, hs > 1.5f ? 0.8f : 0.4f);
+    }
+  }
 }
 
 static void buoy_prop_changed(cw_node n, void *data, const cw_prop *p) {
@@ -161,6 +184,8 @@ static const cw_prop buoy_props[] = {
   CW_PROP_FIELD_RANGE(buoy3d, fluid_density, CW_T_FLOAT, 0, 1e6, "kg/m^3 (1000: water)."),
   CW_PROP_FIELD_RANGE(buoy3d, linear_drag, CW_T_FLOAT, 0, 1e9, "N per m/s per fully wet probe, against the motion through the water."),
   CW_PROP_FIELD_RANGE(buoy3d, angular_drag, CW_T_FLOAT, 0, 1e9, "N*m per rad/s, times the wet share."),
+  CW_PROP_FIELD_RANGE(buoy3d, splash, CW_T_FLOAT, 0, 20, "How much of a splash the body makes entering the water (0: none)."),
+  CW_PROP_FIELD_RANGE(buoy3d, wake, CW_T_FLOAT, 0, 20, "How much of a wake and foam trail the body leaves moving through the water (0: none)."),
   { .name = "submerged", .type = CW_T_FLOAT, .flags = CW_PROP_EDITOR | CW_PROP_READONLY, .offset = offsetof(buoy3d, submerged),
     .size = sizeof(float), .doc = "The probes' wet share last tick, 0..1." },
   CW_PROP_END,

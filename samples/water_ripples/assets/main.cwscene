@@ -1,0 +1,177 @@
+[scene format=1]
+
+[node name="Root" type="Node3D"]
+
+[node name="Post" parent="." type="PostProcess"]
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 15.5
+latitude = 40
+declination = 15
+north = 60
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+shadow_extent = 30
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 5.5, 15)
+rotation = vec3(-0.3, 0, 0)
+fov = 55
+far = 400
+
+[node name="Water" parent="." type="Water3D"]
+size = vec2(90, 90)
+subdivisions = 300
+ripple_cells = 200
+ripple_size = vec2(50, 50)
+ripple_center = vec2(0, -2)
+splash_fx = "Root/Splash"
+floor_map_size = 0
+
+[node name="Splash" parent="." type="Node3D"]
+
+[node name="Spray1" parent="Splash" type="GPUParticles3D"]
+amount = 160
+lifetime = 1.4
+explosiveness = 1
+one_shot = true
+emitting = false
+emission_shape = SPHERE
+emission_radius = 0.3
+direction = vec3(0, 1, 0)
+spread = 35
+speed_min = 2.5
+speed_max = 6
+gravity = vec3(0, -9.8, 0)
+draw_mode = STRETCHED
+stretch = 0.04
+size = 0.05
+size_random = 0.5
+color_ramp = "0 0.9 0.96 1 1, 0.7 0.8 0.9 1 0.8, 1 0.8 0.9 1 0"
+energy = 1.6
+seed = 31
+
+[node name="Mist1" parent="Splash" type="GPUParticles3D"]
+amount = 30
+lifetime = 1.6
+explosiveness = 1
+one_shot = true
+emitting = false
+emission_shape = SPHERE
+emission_radius = 0.3
+direction = vec3(0, 1, 0)
+spread = 60
+speed_min = 0.6
+speed_max = 1.8
+gravity = vec3(0, -1.2, 0)
+damping = 1.2
+blend = ALPHA
+sort = true
+soft_distance = 0.5
+size = 0.9
+size_random = 0.4
+size_curve = "0 0.4, 0.5 1, 1 1.5"
+color_ramp = "0 0.9 0.95 1 0, 0.15 0.9 0.95 1 0.45, 1 0.9 0.95 1 0"
+seed = 32
+
+[node name="Spray2" parent="Splash" type="GPUParticles3D"]
+amount = 160
+lifetime = 1.4
+explosiveness = 1
+one_shot = true
+emitting = false
+emission_shape = SPHERE
+emission_radius = 0.3
+direction = vec3(0, 1, 0)
+spread = 35
+speed_min = 2.5
+speed_max = 6
+gravity = vec3(0, -9.8, 0)
+draw_mode = STRETCHED
+stretch = 0.04
+size = 0.05
+size_random = 0.5
+color_ramp = "0 0.9 0.96 1 1, 0.7 0.8 0.9 1 0.8, 1 0.8 0.9 1 0"
+energy = 1.6
+seed = 33
+
+[node name="Mist2" parent="Splash" type="GPUParticles3D"]
+amount = 30
+lifetime = 1.6
+explosiveness = 1
+one_shot = true
+emitting = false
+emission_shape = SPHERE
+emission_radius = 0.3
+direction = vec3(0, 1, 0)
+spread = 60
+speed_min = 0.6
+speed_max = 1.8
+gravity = vec3(0, -1.2, 0)
+damping = 1.2
+blend = ALPHA
+sort = true
+soft_distance = 0.5
+size = 0.9
+size_random = 0.4
+size_curve = "0 0.4, 0.5 1, 1 1.5"
+color_ramp = "0 0.9 0.95 1 0, 0.15 0.9 0.95 1 0.45, 1 0.9 0.95 1 0"
+seed = 34
+
+[node name="Boat" parent="." type="RigidBody3D"]
+position = vec3(5, 0.6, -2)
+density = 350
+
+[node name="Shape" parent="Boat" type="CollisionShape3D"]
+shape = BOX
+size = vec3(1.6, 0.8, 4)
+
+[node name="Hull" parent="Boat" type="MeshInstance3D"]
+size = vec3(1.6, 0.8, 4)
+color = color(0.75, 0.1, 0.06, 1)
+roughness = 0.5
+cast_shadow = true
+receive_shadow = true
+
+[node name="Cabin" parent="Boat" type="MeshInstance3D"]
+position = vec3(0, 0.7, -0.4)
+size = vec3(1.1, 0.6, 1.4)
+color = color(0.9, 0.9, 0.85, 1)
+roughness = 0.4
+cast_shadow = true
+
+[node name="Float" parent="Boat" type="Buoyancy3D"]
+
+[node name="Crate1" parent="." type="RigidBody3D"]
+position = vec3(-4, 9, -3)
+density = 450
+
+[node name="Shape" parent="Crate1" type="CollisionShape3D"]
+shape = BOX
+size = vec3(1.1, 1.1, 1.1)
+
+[node name="Mesh" parent="Crate1" type="MeshInstance3D"]
+size = vec3(1.1, 1.1, 1.1)
+color = color(0.52, 0.32, 0.12, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Float" parent="Crate1" type="Buoyancy3D"]
+
+[node name="Crate2" parent="." type="RigidBody3D"]
+position = vec3(1.5, 12, -6)
+density = 600
+
+[node name="Shape" parent="Crate2" type="CollisionShape3D"]
+shape = BOX
+size = vec3(0.8, 0.8, 0.8)
+
+[node name="Mesh" parent="Crate2" type="MeshInstance3D"]
+size = vec3(0.8, 0.8, 0.8)
+color = color(0.2, 0.35, 0.6, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Float" parent="Crate2" type="Buoyancy3D"]

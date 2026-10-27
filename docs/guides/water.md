@@ -39,7 +39,26 @@ The depth comes from a floor map the water bakes once, from the tree's static ph
 - `shore_foam` is the width in metres of the foam band where the water meets the floor. It ebbs and flows and is broken up by the same noise as the ripples.
 - `crest_foam` is how much of the crest foams: the surface bunches up on a crest, and where it bunches enough the water whitens. The foam is lit by the scene's lights, so it darkens at dusk with everything else.
 
-What the map cannot see: moving bodies. A boat gets no foam ring from this; the interactive ripples (see the plan in the water notes) are the tool for that.
+What the map cannot see: moving bodies. A boat gets its foam and rings from the ripple layer below.
+
+## Splashes, wakes and rain
+
+Water that only waves never reacts. A [Water3D](node:Water3D) also keeps a grid of small ripples: a height field that splashes, wakes and rain write into, that spreads out as rings, fades, and is drawn as a bent surface normal plus foam. It lives on the CPU and reaches the picture as a half-float texture, so GL and WebGPU draw the same thing and nothing needs compute shaders.
+
+@include samples/water_ripples/assets/main.cwscene#Water
+
+- `ripple_cells` is the grid's resolution along its longer side (128 by default; 0 turns the layer off). `ripple_size` and `ripple_center` choose the rectangle it covers (empty: the whole water): a 50 m grid of 200 cells has 25 cm cells, the size of a footstep's ring, so cover the play area, not an ocean. Outside the grid the water is plain. The effects detail setting scales the cell count (Low half, Medium three quarters).
+- `ripple_speed`, `ripple_damping`, `ripple_strength` and `foam_fade` set how fast rings travel, how fast they die, how strongly they bend the light, and how long foam stays.
+- [cw_water_splash](api:cw_water_splash) makes a round dent (a depth in metres, a radius, an amount of foam) that spreads into rings. [cw_water_wake](api:cw_water_wake) is for a body moving through the water: call it once a tick and it leaves a trough and a foam trail.
+- A [Buoyancy3D](node:Buoyancy3D) does both by itself: a splash where its body enters the water (bigger the faster it falls) and a wake while it moves; its `splash` and `wake` properties scale them or switch them off.
+- `rain` is raindrops per second over the grid; `rain_size` and `rain_strength` shape each ring.
+- `splash_fx` names a node whose [GPUParticles3D](node:GPUParticles3D) children (one-shot, not emitting) are a pool of spray emitters: a splash deeper than `splash_fx_min` moves the next one to the surface and restarts it. Give the pool node an identity transform. The sample's pool is two spray and mist pairs.
+
+The grid is a look, not a gameplay height: bodies float on the Gerstner waves alone, so floating never depends on the grid's resolution or the quality setting. The grid itself is simulated with the engine's own arithmetic and integer hashes in a fixed order, on the fixed clock, so its bits are the same on every host: [cw_water_ripple_hash](api:cw_water_ripple_hash) is pinned by the `water-ripples` gate, and [cw_water_ripple_at](api:cw_water_ripple_at) reads the height for gameplay that wants to know (a fishing float that bobs when something lands near it). A field that has gone flat stops being stepped and uploaded.
+
+## The look
+
+Out of the box the water is tuned to read as water, not as a blue sheet: the body is lit by the sun (it dims and reddens toward dusk instead of staying one colour), the shallow colour fades to the deep one red first as the depth grows, the sun sends a turquoise glow through the crests that face it (`scatter`, with a ProceduralSky), a narrow glitter runs along the fine chop where the sun reflects (`glint`), and three octaves of ripple normals plus foam at two scales break up the highlights and the white. Set `scatter` and `glint` to 0 for a plainer look.
 
 ## Things that float
 
