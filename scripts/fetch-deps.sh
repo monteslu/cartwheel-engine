@@ -57,12 +57,29 @@ OVERRIDDEN=" $(awk -v h="@$HOST" '$1 ~ h"$" { sub(h"$", "", $1); print $1 }' "$R
 
 # patches/<name>/*.patch are applied on top of the pinned commit (git deps);
 # the tree is reset first, so re-running is idempotent.
-apply_patches() { # name dst
-  local p
-  git -C "$2" checkout -q -- .
+# unpatch: put back every tracked file a patch (this run's or an older one,
+# since dropped from patches/) changed, and remove the untracked files the
+# current patches create, so the checkout can move to another pin and the
+# patches apply again. Other untracked files (a builder's third_party/) stay.
+unpatch() { # name dst
+  local p f
+  git -C "$2" checkout -q -- . 2>/dev/null || true
   for p in "$ROOT"/patches/"$1"/*.patch; do
     [ -f "$p" ] || continue
-    git -C "$2" apply "$p" || { echo "$1: patch failed: $p" >&2; exit 1; }
+    git -C "$2" apply --summary "$p" | sed -n 's/^ create mode [0-7]* //p' | while read -r f; do
+      [ -n "$f" ] && ! git -C "$2" ls-files --error-unmatch -- "$f" >/dev/null 2>&1 && rm -f "$2/$f"
+    done
+  done
+}
+apply_patches() { # name dst
+  local p
+  unpatch "$1" "$2"
+  for p in "$ROOT"/patches/"$1"/*.patch; do
+    [ -f "$p" ] || continue
+    if git -C "$2" apply --check "$p" 2>/dev/null; then git -C "$2" apply "$p"
+    elif git -C "$2" apply -R --check "$p" 2>/dev/null; then echo "$1: already applied: $(basename "$p")"
+    else git -C "$2" apply "$p" || { echo "$1: patch failed: $p" >&2; exit 1; }
+    fi
   done
 }
 
@@ -92,11 +109,13 @@ fetch_git() { # name src rev
     # never move a shared checkout: copy it (alternates, no object duplication) and work on the copy
     local shared; shared="$(readlink -f "$dst")"
     rm -f "$dst"
-    git clone -q --shared "$shared" "$dst" # checked out: when the copy is already at the pin nothing below checks it out
+    git -c advice.detachedHead=false clone -q --shared "$shared" "$dst" # checked out: when the copy is already at the pin nothing below checks it out
     echo "$name: was a symlink to $shared, now a private copy"
   fi
   if [ -d "$dst/.git" ] && [ "${FORCE:-0}" != 1 ]; then
     if [ "$(git -C "$dst" rev-parse HEAD)" = "$rev" ]; then apply_patches "$name" "$dst"; echo "$name: $rev"; return; fi
+    # moving the pin: undo what the patches changed first (checkout refuses to overwrite it)
+    unpatch "$name" "$dst"
     git -C "$dst" fetch -q "$src" "$rev" 2>/dev/null || git -C "$dst" fetch -q "$src" "+refs/heads/*:refs/remotes/src/*" "+refs/tags/*:refs/tags/*"
   else
     # only the pinned commit when the server allows it (GitHub does), else the whole history
