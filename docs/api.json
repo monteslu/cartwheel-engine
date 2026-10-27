@@ -8241,7 +8241,7 @@
     {
      "name": "cw_platformer2d_default_def",
      "signature": "cw_platformer2d_def cw_platformer2d_default_def(void)",
-     "doc": "",
+     "doc": "the tuned values noted on each field above",
      "inline": false
     },
     {

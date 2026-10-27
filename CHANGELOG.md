@@ -6,9 +6,10 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
 ## v0.17.0 (2026-10-27)
 
-Fighting and shooting controls (motion inputs, a framing camera, aim curves,
-first person viewmodels), heat haze and shockwaves, shore and depth shading
-on water, animation events, and three.c v0.186.19.
+Fighting, shooting and platforming controls (motion inputs, a framing camera,
+aim curves, first person viewmodels, a 2D platformer controller), heat haze
+and shockwaves, shore and depth shading on water, animation events, joining a
+match while it runs, quality scopes, and three.c v0.186.19.
 
 ### Added
 - Motion inputs (`cartwheel/motion.h`): a per-player command buffer
@@ -30,7 +31,14 @@ on water, animation events, and three.c v0.186.19.
   are drawn after the scene with their own field of view, over the kept depth,
   so a weapon never clips into a wall (GL and WebGPU). See
   `samples/viewmodel_demo` and the render layers section of the 3D rendering
-  guide.
+  guide. The viewmodel pass never draws the scene's background again (a
+  ProceduralSky would cover the picture), and the gate reads the scene behind
+  the gun to prove it.
+- A 2D platformer controller (`cartwheel/platformer2d.h`:
+  `cw_platformer2d_init`, `cw_platformer2d_step`, `cw_platformer2d_teleport`,
+  `cw_platformer2d_default_def`): coyote time, jump buffer, variable jump,
+  wall jump, dash and swimming, with corner correction and one-way platforms
+  (`one_way_mask`) in the 2D mover. See `samples/platformer2d`.
 - A distortion buffer and a copy of the scene colour: heat haze (GPUParticles3D
   blend `DISTORT`), refracting particles (`REFRACT`) and `Shockwave3D`
   (`cw_shockwave_fire`, `cw_shockwave_active`, `cw_shockwave_radius`), on GL
@@ -47,7 +55,17 @@ on water, animation events, and three.c v0.186.19.
   `cw_anim_lod_divisor`).
 - Game shell: a `draw_background` hook draws the game's own picture behind
   the title, join, settings and pause screens, and `shared_screen` gives every
-  player one shared view instead of a split screen.
+  player one shared view instead of a split screen. Players join and leave
+  during play: `cw_shell_join_open` shows the join screen over the running
+  match (seats keep their numbers), `cw_shell_join_press` seats a pad the
+  moment it presses A, `cw_shell_join_requested` cues the game, an unplugged
+  pad frees its seat, and `players_changed` tells the game. See
+  `samples/shell_join`.
+- Quality scopes: `cw_quality_scope_push` / `cw_quality_scope_pop` cap
+  settings for one scene or mode (never raising what the player chose), and
+  `cw_gfx_effective` gives the value in force.
+- `cw_frame_dt()`: seconds since the previous rendered frame, the same value
+  on every host (debug field `cw.frame_dt`).
 - Handles cut to 32 bits are caught: every pool lookup and `cw_crowd_*` call
   reports one with an error naming the fix (`cw_handle_report_truncated`,
   `cw_handle_truncated_count`, `CW_HANDLE_IS_TRUNCATED`), and
@@ -57,7 +75,13 @@ on water, animation events, and three.c v0.186.19.
   on the picture while any state is missing, and `CW_PROGRAMS_STRICT=1` stops
   a native run with status 4. `tools/programs.mjs --carts` surveys the dual
   cart on a GL host and a WebGPU host and merges the states it is asked for.
-- `scripts/fetch-deps.sh --verify` lists dependencies that are off their pin.
+- `scripts/fetch-deps.sh --verify` lists dependencies that are off their pin,
+  and the build stops before compiling when `deps/` is off its pins, naming
+  the fix.
+- `tools/programs.mjs --scenes NAME=a,b,c` surveys an app once per scene, so
+  a game that switches scenes gets the union of their program states.
+- Gate runner: `--cpu` runs state-only gates on the software renderer with
+  no GPU suite lock, and a gate's `env` applies to every native run of it.
 - The GPU suite lock has a hold limit (`CW_SUITE_MAX_MINUTES`, default 15).
 
 ### Changed
@@ -68,6 +92,13 @@ on water, animation events, and three.c v0.186.19.
   texture sampled at several places filled.
 
 ### Fixed
+- Romdev loads always pass the test GPU's power preference (`gpuPower`), GL
+  loads included, so tests never land on a machine's display GPU.
+- Navigation: a full obstacle queue is applied by the next add or remove
+  instead of refusing it.
+- Skipped draws say once, at error level, how to regenerate the program table.
+- CI: open_world's long runs get the time llvmpipe needs, and the lit decals
+  test runs only its native legs there.
 - A WebGPU host that cannot multisample the scene (HDR, sky, effects) renders
   it single-sampled instead of asking GL for a multisampled framebuffer, which
   stopped every dual cart whose PostProcess set `msaa`.

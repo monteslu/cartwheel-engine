@@ -49,7 +49,7 @@ typedef struct cw_platformer2d_def {
   float water_gravity;    /* gravity scale when fully submerged: 0.18 */
   float corner_correction; /* metres a rising head that clips a ceiling corner is nudged around it: 0.25 (0 = off). Copied to mover.corner_correction */
 } cw_platformer2d_def;
-cw_platformer2d_def cw_platformer2d_default_def(void);
+cw_platformer2d_def cw_platformer2d_default_def(void); /* the tuned values noted on each field above */
 
 typedef struct cw_platformer2d_input {
   float move_x;           /* -1..1 */
