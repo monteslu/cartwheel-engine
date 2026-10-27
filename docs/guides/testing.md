@@ -81,6 +81,7 @@ An array of gate objects. Every key `tests/gate.mjs` reads:
 | `controlInput` | a different input script for the control |
 | `startCmds` | debug-channel requests every host posts at load (`run-cart --start-cmds`), request i answered at the start of frame i + 2: how a test says what a real host would, e.g. `["touch_primary 1"]` for a phone |
 | `controlStartCmds` | the control run's start requests (default: none, so a `startCmds` gate's control runs without them) |
+| `env` | environment for every native run of the gate, controls too (a control's `controlEnv` wins): how a game picks one mode for a gate, a mini-game or a skill level, say. A cart has no environment, so such a gate is for `"hosts": ["native"]` |
 | `controlEnv` | environment for the control run; a value `"repo:<path>"` names a repository file that is copied into `out/` first |
 | `script` | instead of all the above: a node script that runs its own checks and controls (exit 0 = pass) |
 | `note` | what the gate proves, for humans; not read by the runner |
