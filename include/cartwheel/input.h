@@ -180,8 +180,11 @@ uint32_t cw_input_player_devices(int player); /* CW_DEVICE_* mask; 0 when player
  * from fixed_update or update. The debug field `cw.rumble` (request count,
  * pad, low and high in thousandths, ms) shows the last request to tests. */
 #define CW_HAVE_INPUT_RUMBLE 1 /* for games that also build against an older SDK */
+/* Whether that player's pad has motors the host can drive (false with no pad). */
 bool cw_input_has_rumble(int player);
+/* Run that player's pad motors: low (heavy) and high (light) 0..1 for ms (at most 5000), replacing the one running. */
 void cw_input_rumble(int player, float low, float high, int ms);
+/* Stop that player's pad motors now. */
 void cw_input_rumble_stop(int player);
 
 /* ── binding sets as text ──────────────────────────────────────────────

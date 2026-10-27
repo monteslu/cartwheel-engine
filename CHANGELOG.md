@@ -4,6 +4,25 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.16.0 (2026-10-27)
+
+Pad rumble: a game drives each player's pad motors, natively and in carts.
+
+### Added
+- `cw_input_rumble(player, low, high, ms)` runs a player's pad motors: `low`
+  the heavy motor, `high` the light one (0 to 1), for up to 5000 ms, replacing
+  the rumble running; `cw_input_rumble_stop` ends it and
+  `cw_input_has_rumble` says whether the player's pad has motors. A player with
+  no pad, a pad without motors or a host without hardware make these silent
+  no-ops, so a game calls them unconditionally. Natively it is SDL's
+  controller rumble; in a cart it is wasmcart's existing `wc_pad_rumble` (no
+  new imports). `CW_HAVE_INPUT_RUMBLE` lets a game also build against an older
+  SDK, and the debug field `cw.rumble` shows the last request to tests. See the
+  input guide.
+- The gate runner takes `--gates-file` / `CW_GATES_FILE` to name another gate
+  file in the project's `tests/`, so a repository of several games keeps one
+  file per game.
+
 ## v0.15.1 (2026-10-23)
 
 Loading without the stalls: the loading screen's shader phase compiles one
