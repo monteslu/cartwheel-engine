@@ -40,8 +40,9 @@
  * across x slices), the distortion buffer (cartwheel/explosions.h: half the
  * frame on Low and Medium, the whole frame on High and Ultra;
  * cw_quality_scale("distortion")), colour fringing on bent edges (High and
- * Ultra: "dispersion") and the share of the explosion light pool in use
- * (0.25, 0.5, 1, 1: "flash_lights").
+ * Ultra: "dispersion"), the share of the explosion light pool in use
+ * (0.25, 0.5, 1, 1: "flash_lights") and skin shading (Medium and up:
+ * "skin", cartwheel/skin_shading.h; Low draws skin as plain PBR).
  *
  * "As authored" is what the scene's PostProcess / lights ask for: High
  * draws exactly what the game would without this module.

@@ -52,12 +52,13 @@ typedef struct {
   float distortion; /* share of the frame size the distortion buffer is drawn at (heat haze, shockwaves) */
   float dispersion; /* distortion: colour fringing at the edges (0 = off) */
   float flash_lights; /* share of the explosion flash light pool used */
+  float skin;         /* skin shading (cartwheel/skin_shading.h): 0 = plain PBR */
 } effects;
 static const effects FX[CW_QUALITY_COUNT] = {
-  [CW_QUALITY_LOW] = { 0.4f, 0.35f, 2.0f, 0.25f, 3, 1, 0.375f, 0.5f, 0, 0.25f },
-  [CW_QUALITY_MEDIUM] = { 0.7f, 0.65f, 1.5f, 0.5f, 5, 1, 0.5f, 0.5f, 0, 0.5f },
-  [CW_QUALITY_HIGH] = { 1, 1, 1, 1, 0, 2, 1, 1, 1, 1 },
-  [CW_QUALITY_ULTRA] = { 1, 1, 1, 1, 0, 3, 1, 1, 1, 1 },
+  [CW_QUALITY_LOW] = { 0.4f, 0.35f, 2.0f, 0.25f, 3, 1, 0.375f, 0.5f, 0, 0.25f, 0 },
+  [CW_QUALITY_MEDIUM] = { 0.7f, 0.65f, 1.5f, 0.5f, 5, 1, 0.5f, 0.5f, 0, 0.5f, 1 },
+  [CW_QUALITY_HIGH] = { 1, 1, 1, 1, 0, 2, 1, 1, 1, 1, 1 },
+  [CW_QUALITY_ULTRA] = { 1, 1, 1, 1, 0, 3, 1, 1, 1, 1, 1 },
 };
 
 /* Auto's ladder, top first: a preset, its resolution replaced */
@@ -283,6 +284,7 @@ float cw_quality_scale(const char *knob) {
   if (!strcmp(knob, "distortion")) return fx()->distortion;
   if (!strcmp(knob, "dispersion")) return fx()->dispersion;
   if (!strcmp(knob, "flash_lights")) return fx()->flash_lights;
+  if (!strcmp(knob, "skin")) return fx()->skin;
   return 1;
 }
 float cw_quality_density(void) { return fx()->density; }

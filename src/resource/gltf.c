@@ -14,6 +14,7 @@
 #include <stdlib.h>
 
 #include "cartwheel/gl.h"
+#include "cartwheel/skin_shading.h"
 #include "cgltf.h"
 #include "gltf_doc.h"
 #include "resource_internal.h"
@@ -47,6 +48,8 @@ typedef struct gltf_dec {
   prim_rec *prims;
   int prim_count;
   int material_count, mesh_count;
+  cw_skin_shading_desc *skin; /* per glTF material: its skin shading (cartwheel/skin_shading.h) */
+  bool *has_skin;
 } gltf_dec;
 
 typedef struct gltf_payload {
@@ -56,6 +59,7 @@ typedef struct gltf_payload {
   char **mesh_names;
   int mesh_n;
   t3_material **materials; /* per glTF material (NULL: unused) */
+  CW_ARRAY(t3_material *) skin_mats; /* materials the file shades as skin (retained) */
   int material_n;
   cw_tex_payload **textures; /* per glTF texture (NULL: unused) */
   int texture_n;
@@ -215,7 +219,41 @@ static void dec_free(gltf_dec *d) {
   for (int i = 0; i < d->prim_count; i++)
     for (int l = 0; l < CW_MESH_MAX_LODS; l++) cw_free(d->prims[i].lod_idx[l]);
   cw_free(d->prims);
+  cw_free(d->skin);
+  cw_free(d->has_skin);
   cw_free(d);
+}
+
+/* a material's skin shading, from KHR_materials_diffuse_transmission and
+ * extras "skin_shading" (cartwheel/skin_shading.h) */
+static bool skin_of(const cwj *mat, cw_skin_shading_desc *out) {
+  bool any = false;
+  *out = cw_skin_shading_default();
+  const cwj *dt = cwj_get(cwj_get(mat, "extensions"), "KHR_materials_diffuse_transmission");
+  if (dt) {
+    any = true;
+    out->translucency = (float)cwj_num_or(cwj_get(dt, "diffuseTransmissionFactor"), 0);
+    const cwj *c = cwj_get(dt, "diffuseTransmissionColorFactor");
+    if (c && c->count == 3) out->scatter = (t3_color){ (float)cwj_num_or(c->items[0], 1), (float)cwj_num_or(c->items[1], 1), (float)cwj_num_or(c->items[2], 1) };
+    else out->scatter = (t3_color){ 1, 1, 1 };
+  }
+  const cwj *ex = cwj_get(mat, "extras");
+  const cwj *s = NULL;
+  if (ex && ex->type == CWJ_OBJ)
+    for (int i = 0; i < ex->count; i++)
+      if (!strcmp(ex->keys[i], "skin_shading")) s = ex->items[i];
+  if (s && s->type == CWJ_BOOL) any |= s->b;
+  if (s && s->type == CWJ_OBJ) {
+    any = true;
+    const cwj *c = cwj_get(s, "scatter");
+    if (c && c->count == 3) out->scatter = (t3_color){ (float)cwj_num_or(c->items[0], 1), (float)cwj_num_or(c->items[1], 0.35), (float)cwj_num_or(c->items[2], 0.22) };
+    out->wrap = (float)cwj_num_or(cwj_get(s, "wrap"), out->wrap);
+    out->translucency = (float)cwj_num_or(cwj_get(s, "translucency"), out->translucency);
+    out->distortion = (float)cwj_num_or(cwj_get(s, "distortion"), out->distortion);
+    out->power = (float)cwj_num_or(cwj_get(s, "power"), out->power);
+    out->ambient = (float)cwj_num_or(cwj_get(s, "ambient"), out->ambient);
+  }
+  return any;
 }
 
 static uint8_t *b64(const char *s, size_t *n) {
@@ -325,6 +363,9 @@ static void *gltf_decode(const cw_res_decode_args *a, size_t *cost) {
   cwj *meshes = cwj_get(root, "meshes");
   d->mesh_count = meshes ? meshes->count : 0;
   d->material_count = (int)(cwj_get(root, "materials") ? cwj_get(root, "materials")->count : 0);
+  d->skin = cw_calloc((size_t)d->material_count + 1, sizeof *d->skin, CW_MEM_RESOURCE);
+  d->has_skin = cw_calloc((size_t)d->material_count + 1, sizeof *d->has_skin, CW_MEM_RESOURCE);
+  for (int i = 0; i < d->material_count; i++) d->has_skin[i] = skin_of(cwj_get(root, "materials")->items[i], &d->skin[i]);
   for (int m = 0; m < d->mesh_count; m++) {
     cwj *prims = cwj_get(meshes->items[m], "primitives");
     d->prim_count += prims ? prims->count : 0;
@@ -610,6 +651,11 @@ static void *gltf_finish(void *decoded, cw_res self, const cw_res *deps, int dep
       }
       if (r->material >= 0 && r->material < p->material_n && !p->materials[r->material])
         p->materials[r->material] = t3_retain(m->materials[0]);
+      /* skin shading the file asks for, on the material this mesh draws (a
+       * variant clone of the glTF material, or the material itself) */
+      if (r->material >= 0 && r->material < d->material_count && d->has_skin[r->material] &&
+          !cw_skin_shading_get(m->materials[0], NULL) && cw_skin_shading_apply(m->materials[0], &d->skin[r->material]))
+        cw_array_push(&p->skin_mats, t3_retain(m->materials[0]));
       snprintf(nm, sizeof nm, "mesh/%d/%d", r->mesh, r->prim);
     } else {
       snprintf(nm, sizeof nm, "mesh/x%d", p->mesh_n); /* a geometry three.c made that no primitive matches */
@@ -653,6 +699,11 @@ static void payload_free_internals(gltf_payload *p) {
   cw_free(p->mesh_names);
   for (int i = 0; i < p->material_n; i++) t3_release(p->materials[i]);
   cw_free(p->materials);
+  for (int i = 0; i < p->skin_mats.count; i++) {
+    cw_skin_shading_remove(p->skin_mats.data[i]);
+    t3_release(p->skin_mats.data[i]);
+  }
+  cw_array_free(&p->skin_mats);
   for (int i = 0; i < p->texture_n; i++)
     if (p->textures[i]) { cw__tex_release(p->textures[i]->tex); cw_free(p->textures[i]); }
   cw_free(p->textures);
@@ -711,6 +762,7 @@ static t3_object *clone_rec(const t3_object *s, cw_map *pairs) {
       t3_mesh_update_morph_targets(m);
       int n = CW_MIN(m->morph_influence_count, sm->morph_influence_count);
       memcpy(m->morph_influences, sm->morph_influences, (size_t)n * sizeof(float));
+      m->morph_target_names = sm->morph_target_names; /* owned by the template's t3_gltf */
     }
     o = &m->base;
   } else if (s->type == T3_BONE) {

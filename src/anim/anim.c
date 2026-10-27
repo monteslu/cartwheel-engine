@@ -572,8 +572,28 @@ cw_anim cw_anim_from_t3_clip(const t3_animation_clip *clip, const char *model_pa
     const char *dot = strrchr(k->name, '.');
     if (!dot) continue;
     const char *prop = dot + 1;
+    if (!strcmp(prop, "morphTargetInfluences")) {
+      /* morph target weights (glTF "weights" channels): one float track per
+       * target, "model@Node:morphTargetInfluences[i]" */
+      int n = k->value_size;
+      bool cubic = k->interpolation == T3_INTERPOLATE_CUBIC_SPLINE_GLTF;
+      cw_interp mi = k->interpolation == T3_INTERPOLATE_DISCRETE ? CW_INTERP_NEAREST : cubic ? CW_INTERP_HERMITE : CW_INTERP_LINEAR;
+      for (int t = 0; t < n; t++) {
+        char mp[512];
+        snprintf(mp, sizeof mp, "%s@%.*s:morphTargetInfluences[%d]", model_path, (int)(dot - k->name), k->name, t);
+        int ti = cw_anim_add_value_track(a, mp, mi);
+        for (int j = 0; j < k->count; j++) {
+          const float *row = k->values + (size_t)j * (cubic ? 3 : 1) * (size_t)n;
+          if (cubic)
+            cw_anim_add_key_hermite(a, ti, k->times[j], cw_val_float(row[n + t]), cw_val_float(row[t]), cw_val_float(row[2 * n + t]));
+          else
+            cw_anim_add_key(a, ti, k->times[j], cw_val_float(row[t]));
+        }
+      }
+      continue;
+    }
     if (strcmp(prop, "position") && strcmp(prop, "quaternion") && strcmp(prop, "scale")) {
-      cw_warn("glTF clip '%s': track '%s' skipped (only position/quaternion/scale tracks are sampled)", clip->name, k->name);
+      cw_warn("glTF clip '%s': track '%s' skipped (only position/quaternion/scale/morphTargetInfluences tracks are sampled)", clip->name, k->name);
       continue;
     }
     char path[512];
