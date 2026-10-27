@@ -4,6 +4,7 @@
  * tick), deadzones, vectors, text bindings, capture, touch and replay. */
 #include <string.h>
 
+#include "cartwheel/aim.h"
 #include "cartwheel/input.h"
 #include "cartwheel/math.h"
 #include "test.h"
@@ -398,6 +399,37 @@ static void test_record_replay(void) {
   CHECK(!cw_input_replay_begin(junk, sizeof junk));
 }
 
+static void test_aim(void) {
+  cw_aim_curve c = cw_aim_curve_default();
+  cw_aim_state st = { 0 };
+  /* inside the dead zone: nothing */
+  cw_vec2 t = cw_aim_step(&st, &c, (cw_vec2){ 0.1f, 0 }, 1.0f / 60, 0);
+  CHECK(t.x == 0 && t.y == 0);
+  /* half stick turns less than half the full rate (the power curve) */
+  cw_aim_state a = { 0 }, b = { 0 };
+  float half = cw_aim_step(&a, &c, (cw_vec2){ 0.5f, 0 }, 1.0f / 60, 0).x;
+  float full = cw_aim_step(&b, &c, (cw_vec2){ 1, 0 }, 1.0f / 60, 0).x;
+  CHECK(half > 0 && half < full * 0.5f);
+  CHECK(full > c.yaw_rate / 60 * 0.99f && full < c.yaw_rate / 60 * 1.01f);
+  /* holding the edge ramps the turn up to (1 + gain) times, and releasing drains it */
+  float last = full;
+  for (int i = 0; i < 40; i++) last = cw_aim_step(&b, &c, (cw_vec2){ 1, 0 }, 1.0f / 60, 0).x;
+  CHECK(last > full * (1 + c.ramp_gain) * 0.99f);
+  cw_aim_step(&b, &c, (cw_vec2){ 0, 0 }, 1.0f / 3, 0);
+  CHECK(b.held == 0);
+  /* pitch is slower, the direction is kept, and assist slows the turn on a target */
+  cw_aim_state d = { 0 };
+  cw_vec2 diag = cw_aim_step(&d, &c, (cw_vec2){ 0.7f, 0.7f }, 1.0f / 60, 0);
+  CHECK(diag.x > 0 && diag.y > 0 && diag.y < diag.x);
+  c.assist = 0.5f;
+  cw_aim_state e = { 0 };
+  float on = cw_aim_step(&e, &c, (cw_vec2){ 1, 0 }, 1.0f / 60, 1).x;
+  CHECK(on > full * 0.49f && on < full * 0.51f);
+  /* the control: a stick past 1 is clamped, never faster than full */
+  cw_aim_state f = { 0 };
+  CHECK(cw_aim_step(&f, &c, (cw_vec2){ 5, 0 }, 1.0f / 60, 0).x <= full * 1.001f);
+}
+
 CW_TEST_SUITE("input", { "tick_latch", test_tick_latch }, { "strength_vector", test_strength_and_vector },
               { "players", test_players }, { "text", test_text }, { "capture", test_capture },
-              { "touch", test_touch }, { "record_replay", test_record_replay })
+              { "touch", test_touch }, { "record_replay", test_record_replay }, { "aim", test_aim })
