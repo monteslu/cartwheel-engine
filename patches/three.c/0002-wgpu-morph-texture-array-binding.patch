@@ -1,0 +1,31 @@
+From 8e80cf9c60d61f6d5fd305a4c5af124d7c4c86f9 Mon Sep 17 00:00:00 2001
+From: Luis Montes <monteslu@gmail.com>
+Date: Tue, 27 Oct 2026 16:19:12 -0700
+Subject: [PATCH] WebGPU: a morph texture names its 2D-array binding at
+ creation, so a mesh with one morph target draws in compatibility mode (its
+ one-layer array defaulted to a 2D binding: validation error, nothing drawn)
+
+---
+ src/gen_wgpu.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/gen_wgpu.c b/src/gen_wgpu.c
+index 8b0d75e..b3ee340 100644
+--- a/src/gen_wgpu.c
++++ b/src/gen_wgpu.c
+@@ -1090,7 +1090,11 @@ WGPUTextureView t3_wgpu_array_texture(t3_wgpu *w, void **slot, uint32_t version,
+   if (x && x->version == version && x->w == width && x->h == height) return x->sample;
+   if (x) { wgpuTextureViewRelease(x->sample); wgpuTextureRelease(x->t); view_epoch++; }
+   else { x = calloc(1, sizeof *x); T3_CHECK_ALLOC(x); *slot = x; }
+-  WGPUTextureDescriptor d = { .usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst, .dimension = WGPUTextureDimension_2D,
++  /* compatibility mode binds a texture with the view dimension named at creation: a one-layer
++   * array (a mesh with one morph target) would default to 2D and fail its 2D-array binding */
++  WGPUTextureBindingViewDimension bvd = { .chain = { .sType = WGPUSType_TextureBindingViewDimension },
++                                          .textureBindingViewDimension = WGPUTextureViewDimension_2DArray };
++  WGPUTextureDescriptor d = { .nextInChain = &bvd.chain, .usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst, .dimension = WGPUTextureDimension_2D,
+     .size = { (uint32_t)width, (uint32_t)height, (uint32_t)layers }, .format = WGPUTextureFormat_RGBA32Float, .mipLevelCount = 1, .sampleCount = 1 };
+   x->t = wgpuDeviceCreateTexture(w->dev, &d);
+   WGPUTextureViewDescriptor v = { .format = WGPUTextureFormat_RGBA32Float, .dimension = WGPUTextureViewDimension_2DArray,
+-- 
+2.53.0
+
