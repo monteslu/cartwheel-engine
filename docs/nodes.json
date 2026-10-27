@@ -8362,7 +8362,7 @@
      "readonly": false,
      "min": 0.1,
      "max": 100,
-     "doc": "How far above and below the node's height the mark lands on geometry."
+     "doc": "Height of the mark's box, centred on the node's height: geometry within half of it above or below lands the mark."
     },
     {
      "name": "scorch_offset",
