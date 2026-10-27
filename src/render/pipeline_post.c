@@ -142,13 +142,20 @@ static void viewmodel_exec(cw_pass_ctx *ctx, void *u) {
   t3_renderer *r = ctx->renderer;
   t3_camera *vc = cw__render3d_viewmodel_camera(ctx->tree);
   if (!vc || !r) return;
-  /* the scene's background is a far-plane draw: squeezed into the near depth range it would cover the picture */
+  /* the scene's background (a clear colour, or a sky cube / texture drawn without a depth test) would cover the
+   * whole picture the scene pass drew: the viewmodel pass draws none of it */
   bool had_bg = ctx->scene3d->has_background;
+  struct t3_texture *bg_tex = ctx->scene3d->background_texture;
   ctx->scene3d->has_background = false;
+  ctx->scene3d->background_texture = NULL;
 #if CW_WGPU
   if (cw_gpu_backend() == CW_GPU_WEBGPU) {
     const cw__wgpu_pass_targets *pt = cw__pass_wgpu_targets(ctx);
-    if (!pt || !pt->color) return;
+    if (!pt || !pt->color) {
+      ctx->scene3d->has_background = had_bg;
+      ctx->scene3d->background_texture = bg_tex;
+      return;
+    }
     t3_external_target et = {
       .color = (uintptr_t)pt->color, .color_resolve = (uintptr_t)pt->resolve, .depth = (uintptr_t)pt->depth,
       .color_format = (int)pt->color_format, .depth_format = (int)pt->depth_format, .samples = pt->samples,
@@ -163,6 +170,7 @@ static void viewmodel_exec(cw_pass_ctx *ctx, void *u) {
     cw__pw_timing_span((void *)pt->enc, true);
     t3_renderer_set_external_target(r, NULL);
     ctx->scene3d->has_background = had_bg;
+    ctx->scene3d->background_texture = bg_tex;
     cw__render3d_count(ctx->tree);
     return;
   }
@@ -175,6 +183,7 @@ static void viewmodel_exec(cw_pass_ctx *ctx, void *u) {
   t3_renderer_render(r, ctx->scene3d, vc);
   glDepthRangef(0, 1);
   ctx->scene3d->has_background = had_bg;
+  ctx->scene3d->background_texture = bg_tex;
   t3_renderer_set_auto_clear(r, auto_clear);
   cw__render3d_count(ctx->tree);
 }

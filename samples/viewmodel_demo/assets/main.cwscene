@@ -17,6 +17,10 @@ energy = 3.5
 shadow = true
 shadow_extent = 12
 
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 15
+
 [node name="Floor" parent="." type="MeshInstance3D"]
 primitive = BOX
 size = vec3(24, 0.2, 24)

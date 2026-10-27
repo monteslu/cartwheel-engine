@@ -56,7 +56,6 @@ standard+fog+trans+l1001+xcluster
 standard+instbig+shadow+l1011
 standard+shadow+l1011
 standard+instbig+senv+l1000
-standard+senv+l1000
 standard+shadow+senv+l1000+xwater
 standard+instbig+shadow+l1881+s004
 standard+instbig+shadow+icol+l1881+s004
@@ -77,3 +76,4 @@ standard+map+trans+skin+l0001+xcluster_csm_meshdecal_gi
 standard+map+trans+l0001+xcluster_csm_meshdecal_gi
 depth+xcluster_csm_gi
 basic+vcol
+standard+senv+l1001
