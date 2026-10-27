@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
-import { testGpu } from '../tools/lib/wgpu-pin.mjs';
+import { testGpu, wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 import { checkTrace } from './profile-check.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
@@ -47,7 +47,7 @@ const command = async (text, s, maxFrames = 4) => {
   return typeof rep === 'string' ? JSON.parse(rep) : rep;
 };
 const fields = ['demo.tick', 'demo.crates', 'demo.flock', 'phys.hash'];
-const load = (s) => romdev('loadMedia', { platform: 'wasmcart', path: cart, deterministicSeed: 1, deterministicStepMs: 1000 / 60, gpuPower: testGpu().power }, s);
+const load = (s) => romdev('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: cart, deterministicSeed: 1, deterministicStepMs: 1000 / 60, gpuPower: testGpu().power }, s);
 /** the cart's state after `frames` frames, with profiling on from frame 1 or not */
 async function cartState(frames, profile) {
   const s = `cw-profile-state-${process.pid}-${frames}-${profile ? 1 : 0}`;

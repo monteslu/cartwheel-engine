@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
+import { wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -74,7 +75,7 @@ const cmd = async (text) => (await call('wasm', { op: 'command', text })).reply;
 
 let fail = 0;
 const bad = (m) => { fail++; console.log('FAIL ' + m); };
-await call('loadMedia', { platform: 'wasmcart', path: cart, deterministicSeed: 1 });
+await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: cart, deterministicSeed: 1 });
 await call('frame', { op: 'step', frames: 29 });
 const cartReplies = [];
 for (const q of all) cartReplies.push(await cmd(q));
@@ -119,7 +120,7 @@ writeFileSync(join(OUT, 'project.cwvfs'), archive);
 await call('host', { op: 'shutdown' });
 
 // a fresh cart: import the archive, reload settings, they persist; without the import they do not
-await call('loadMedia', { platform: 'wasmcart', path: cart, deterministicSeed: 1 });
+await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: cart, deterministicSeed: 1 });
 await call('frame', { op: 'step', frames: 5 });
 const before = await cmd('ed settings.get interface.accent');
 const imp = await cmd(`vfs import ${exp.base64}`);

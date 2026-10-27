@@ -13,6 +13,7 @@
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { wgpuPin } from './lib/wgpu-pin.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (name, def) => {
@@ -87,7 +88,7 @@ if (session) {
   text = await traceRomdev(session, frames);
 } else if (target.endsWith('.wasc')) {
   const s = `cwtrace-${process.pid}`;
-  await romdev('loadMedia', { platform: 'wasmcart', path: resolve(target), deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, s);
+  await romdev('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: resolve(target), deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, s);
   try {
     if (start > 1) await romdev('frame', { op: 'step', frames: start - 1 }, s);
     text = await traceRomdev(s, frames);

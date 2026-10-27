@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { wcnativePlayer } from '../tools/lib/wcnative.mjs';
 import { launchChromium } from '../tools/lib/chromium.mjs';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
-import { testEnv } from '../tools/lib/wgpu-pin.mjs';
+import { testEnv, wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 testEnv(process.env); // what it starts renders offscreen and cannot reach the desktop
 
@@ -96,7 +96,7 @@ async function romdevCall(tool, a, session) {
 async function runRomdev() {
   const session = `cartwheel-showcase-perf-${process.pid}`;
   try {
-    await romdevCall('loadMedia', { platform: 'wasmcart', path: cart, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
+    await romdevCall('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: cart, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
     // load ran frame 1; step each segment's remainder and time it
     const outside = {};
     let at = 1;
