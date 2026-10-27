@@ -260,6 +260,13 @@ async function wgpuGates(list) {
   return failedW;
 }
 if (gpuArg === 'webgpu') {
+  // a gate named on the command line that has no "webgpu" entry would be skipped in silence, and a run of nothing but
+  // such gates would pass: say which, and fail when none of the named gates has a WebGPU leg
+  if (only.length) {
+    const none = gates.filter((g) => !g.webgpu && !g.script).map((g) => g.name);
+    for (const n of none) console.log(`SKIP ${n} [webgpu]: no "webgpu" entry in its gate file`);
+    if (none.length === gates.length) { console.log('FAIL no named gate has a "webgpu" entry: --gpu webgpu ran nothing'); guard.finish(); process.exit(1); }
+  }
   const f = await wgpuGates(gates);
   guard.finish();
   process.exit(f ? 1 : 0);
