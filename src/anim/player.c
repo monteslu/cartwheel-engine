@@ -39,6 +39,11 @@ typedef struct player {
   CW_ARRAY(blend_pair) blends;
   cw__amix *mix;
   anim_fired_list fired;
+  anim_event_hook hook;
+  /* update rate (cw_anim_player_set_update_divisor): sample every divisor-th advance with the time since */
+  int divisor, offset;
+  uint32_t ticks;
+  double pending;
 } player;
 
 static const cw_node_type *player_t;
@@ -264,6 +269,9 @@ static void dispatch(cw_node n, player *p, cw_anim a, const char *name, int coun
       anim_mkey *k = &t->mkeys.data[f.key];
       if (t->kind == CW_TRACK_METHOD) cw__fire_method_key(root, t, k);
       else {
+        if (p->hook.fn) p->hook.fn(n, k->name, name, t->times.data[f.key], p->hook.user);
+        p = cw_node_data_t(n, player_t); /* the hook may have freed the player */
+        if (!p) break;
         cw_value args[2] = { cw_val_string(k->name), s };
         cw_emit(n, "animation_event", args, 2);
       }
@@ -290,6 +298,12 @@ static void dispatch(cw_node n, player *p, cw_anim a, const char *name, int coun
 static void advance(cw_node n, player *p, double dt) {
   CW_PROFILE_SCOPE("anim.player");
   if (!p->has_cur || !p->playing || dt == 0) return;
+  if (p->divisor > 1) { /* a far character: sample every divisor-th advance, with all the time it missed */
+    p->pending += dt;
+    if ((int)(p->ticks++ % (uint32_t)p->divisor) != p->offset) return;
+    dt = p->pending;
+    p->pending = 0;
+  }
   configure_mixer(n, p);
   cw_array_clear(&p->fired);
   anim_rec *r = cw__anim(p->cur.anim);
@@ -317,6 +331,32 @@ static void advance(cw_node n, player *p, double dt) {
   cw__amix_sample(p->mix, p->cur.anim, (float)p->cur.cur.time, w, NULL, false, &p->cur.cur);
   cw__amix_apply(p->mix);
   dispatch(n, p, p->cur.anim, p->cur.name, p->fired.count);
+}
+
+void cw_anim_player_on_event(cw_node n, cw_anim_event_fn fn, void *user) {
+  player *p = P(n, "cw_anim_player_on_event");
+  if (p) p->hook = (anim_event_hook){ fn, user };
+}
+
+void cw_anim_player_set_update_divisor(cw_node n, int divisor) {
+  player *p = P(n, "cw_anim_player_set_update_divisor");
+  if (!p) return;
+  if (divisor < 1) divisor = 1;
+  if (divisor > 64) divisor = 64;
+  if (divisor == p->divisor || (divisor == 1 && p->divisor == 0)) return;
+  /* keep what was owed, and spread players over the ticks by their slot so they do not all sample together */
+  p->divisor = divisor;
+  p->offset = (int)(CW_HANDLE_INDEX(n) % (uint32_t)divisor);
+  p->ticks = 0;
+}
+int cw_anim_player_update_divisor(cw_node n) { player *p = P(n, NULL); return p && p->divisor > 1 ? p->divisor : 1; }
+
+int cw_anim_lod_divisor(float distance, float full_rate_distance) {
+  if (!(full_rate_distance > 0) || distance <= full_rate_distance) return 1;
+  int d = 1;
+  float r = full_rate_distance;
+  while (d < 8 && distance > r) { r *= 2; d *= 2; }
+  return d;
 }
 
 void cw_anim_player_advance(cw_node n, double dt) {

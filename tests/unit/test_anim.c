@@ -838,6 +838,100 @@ static void test_skeletal(void) {
    * path (object_free falls through into fields a SkinnedMesh does not have) */
 }
 
+/* gameplay event callbacks and the update divisor */
+typedef struct { char names[8][16]; float times[8]; int ticks[8]; int n; int tick; } ev_log;
+static void ev_cb(cw_node player, const char *event, const char *animation, float key_time, void *user) {
+  ev_log *l = user;
+  CHECK(player.id == anim.id);
+  CHECK(!strcmp(animation, "punch"));
+  if (l->n < 8) {
+    snprintf(l->names[l->n], 16, "%s", event);
+    l->times[l->n] = key_time;
+    l->ticks[l->n] = l->tick;
+    l->n++;
+  }
+}
+static cw_anim punch_clip(void) {
+  cw_anim a = cw_anim_new("punch", 1, CW_LOOP_LINEAR);
+  int pos = cw_anim_add_value_track(a, "Box:position", CW_INTERP_LINEAR);
+  cw_anim_add_key(a, pos, 0, cw_val_vec3(0, 0, 0));
+  cw_anim_add_key(a, pos, 1, cw_val_vec3(6, 0, 0));
+  CHECK_EQ_INT(cw_anim_add_event(a, 0.25f, "hit_on"), 1);
+  CHECK_EQ_INT(cw_anim_add_event(a, 0.5f, "hit_off"), 1); /* the same event track */
+  return a;
+}
+static void test_events_and_lod(void) {
+  make_scene();
+  cw_node_set(anim, "process", cw_val_int(CW_ANIM_PROCESS_MANUAL));
+  cw_anim a = punch_clip();
+  CHECK_EQ_INT(cw_anim_event_count(a, "hit_on"), 1);
+  CHECK_EQ_INT(cw_anim_event_count(a, "nope"), 0);
+  NEAR(cw_anim_event_time(a, "hit_on", 0), 0.25, 1e-6);
+  NEAR(cw_anim_event_time(a, "hit_off", 0), 0.5, 1e-6);
+  CHECK(cw_anim_event_time(a, "hit_on", 1) < 0); /* only one */
+  cw_anim_player_add(anim, "punch", a);
+  cw_anim_release(a);
+
+  /* the callback gets each key in time order, with the key's time, on the tick that crosses it */
+  ev_log log = { 0 };
+  cw_anim_player_on_event(anim, ev_cb, &log);
+  cw_anim_player_play(anim, "punch", 0);
+  for (log.tick = 1; log.tick <= 48; log.tick++) cw_anim_player_advance(anim, 1.0 / 64); /* 1/64: exact in binary */
+  CHECK_EQ_INT(log.n, 2);
+  CHECK(!strcmp(log.names[0], "hit_on") && !strcmp(log.names[1], "hit_off"));
+  NEAR(log.times[0], 0.25, 1e-6);
+  NEAR(log.times[1], 0.5, 1e-6);
+  CHECK_EQ_INT(log.ticks[0], 16); /* 16 ticks of 1/64 s reach 0.25 s */
+  CHECK_EQ_INT(log.ticks[1], 32);
+  /* control: no callback registered, nothing is delivered (and the signal path is untouched) */
+  cw_anim_player_on_event(anim, NULL, NULL);
+  cw_anim_player_seek(anim, 0, false);
+  log.n = 0;
+  for (log.tick = 1; log.tick <= 32; log.tick++) cw_anim_player_advance(anim, 1.0 / 64);
+  CHECK_EQ_INT(log.n, 0);
+
+  /* update divisor: a far player samples every 4th advance; the clip time and event count agree with full rate */
+  cw_anim_player_on_event(anim, ev_cb, &log);
+  cw_anim_player_stop(anim, false);
+  cw_anim_player_play(anim, "punch", 0);
+  log.n = 0;
+  CHECK_EQ_INT(cw_anim_player_update_divisor(anim), 1);
+  cw_anim_player_set_update_divisor(anim, 4);
+  CHECK_EQ_INT(cw_anim_player_update_divisor(anim), 4);
+  int moved = 0;
+  float last_x = -1;
+  for (log.tick = 1; log.tick <= 128; log.tick++) { /* two loops of the 1 s clip */
+    cw_anim_player_advance(anim, 1.0 / 64);
+    float x = cw_node3d_position(box).x;
+    if (x != last_x) moved++;
+    last_x = x;
+  }
+  CHECK(moved <= 33 && moved >= 31); /* about every 4th advance changed the pose */
+  CHECK_EQ_INT(log.n, 4); /* hit_on and hit_off, twice: none lost */
+  CHECK(log.ticks[0] >= 16 && log.ticks[0] <= 19); /* late by at most divisor - 1 */
+  /* control: at divisor 1 the pose changes on every advance */
+  cw_anim_player_set_update_divisor(anim, 1);
+  cw_anim_player_stop(anim, false);
+  cw_anim_player_play(anim, "punch", 0);
+  moved = 0;
+  last_x = -1;
+  for (log.tick = 1; log.tick <= 128; log.tick++) {
+    cw_anim_player_advance(anim, 1.0 / 64);
+    float x = cw_node3d_position(box).x;
+    if (x != last_x) moved++;
+    last_x = x;
+  }
+  CHECK_EQ_INT(moved, 128);
+  CHECK_EQ_INT(cw_anim_lod_divisor(5, 10), 1);
+  CHECK_EQ_INT(cw_anim_lod_divisor(15, 10), 2);
+  CHECK_EQ_INT(cw_anim_lod_divisor(30, 10), 4);
+  CHECK_EQ_INT(cw_anim_lod_divisor(1000, 10), 8);
+  uint32_t h = cw_anim_player_hash(anim);
+  FOLD(h);
+  free_scene();
+}
+
 CW_TEST_SUITE("anim", { "interpolation", test_interpolation }, { "loop_edges", test_loop_edges },
               { "player_values", test_player_values }, { "scene_format", test_scene_format }, { "tweens", test_tweens },
-              { "tree", test_tree }, { "root_motion", test_root_motion }, { "skeletal", test_skeletal })
+              { "tree", test_tree }, { "root_motion", test_root_motion }, { "skeletal", test_skeletal },
+              { "events_and_lod", test_events_and_lod })

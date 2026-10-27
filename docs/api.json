@@ -340,6 +340,24 @@
      "inline": false
     },
     {
+     "name": "cw_anim_add_event",
+     "signature": "int cw_anim_add_event(cw_anim a, float time, const char *name)",
+     "doc": "Gameplay events on any clip, a glTF one included (hit windows, footsteps, a sound cue): a key named `name` at\n`time`, on the animation's event track (made on first use). Returns the track index, -1 for a bad handle.\nRegister a callback with cw_anim_player_on_event / cw_animtree_on_event to receive them.",
+     "inline": false
+    },
+    {
+     "name": "cw_anim_event_count",
+     "signature": "int cw_anim_event_count(cw_anim a, const char *name)",
+     "doc": "keys of that event name over the event tracks",
+     "inline": false
+    },
+    {
+     "name": "cw_anim_event_time",
+     "signature": "float cw_anim_event_time(cw_anim a, const char *name, int nth)",
+     "doc": "The key time (seconds) of the nth (0 first, in time order) event of that name; -1 when there is none. A game\ncan read a hit window's start and end from the clip instead of keeping a table of tick counts.",
+     "inline": false
+    },
+    {
      "name": "cw_anim_sample",
      "signature": "bool cw_anim_sample(cw_anim a, int track, float time, cw_value *out)",
      "doc": "The value of a value/bone track at `time` (clamped to its keys), in the\ntype of its keys. false for an empty or non-value track. Deterministic.",
@@ -460,6 +478,30 @@
      "inline": false
     },
     {
+     "name": "cw_anim_player_on_event",
+     "signature": "void cw_anim_player_on_event(cw_node player, cw_anim_event_fn fn, void *user)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw_anim_player_set_update_divisor",
+     "signature": "void cw_anim_player_set_update_divisor(cw_node player, int divisor)",
+     "doc": "Animation level of detail for characters far from the camera: the player samples its clip (and writes\nthe bones) only on every divisor-th advance, with all the time since the last sample, so the pose steps\nand an event key fires up to divisor-1 ticks late, but the clip's time, loop count and the number of events\ncome out exactly as at full rate. 1 (default) is every\ntick; at most 64. Players are spread over the ticks by their slot, so a crowd does not sample in\nlock step. Deterministic. Cross-fades see the coarser steps too.",
+     "inline": false
+    },
+    {
+     "name": "cw_anim_player_update_divisor",
+     "signature": "int cw_anim_player_update_divisor(cw_node player)",
+     "doc": "1 when at full rate",
+     "inline": false
+    },
+    {
+     "name": "cw_anim_lod_divisor",
+     "signature": "int cw_anim_lod_divisor(float distance, float full_rate_distance)",
+     "doc": "The divisor for a character `distance` from the camera: 1 up to full_rate_distance, then 2, 4, 8 each time the\ndistance doubles (never more than 8).",
+     "inline": false
+    },
+    {
      "name": "cw_anim_player_current",
      "signature": "const char *cw_anim_player_current(cw_node player)",
      "doc": "NULL when none",
@@ -547,6 +589,12 @@
      "name": "cw_animtree_set_root",
      "signature": "void cw_animtree_set_root(cw_node tree, cw_blend_id node)",
      "doc": "default: the first node created, or what adopted it",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_on_event",
+     "signature": "void cw_animtree_on_event(cw_node tree, cw_anim_event_fn fn, void *user)",
+     "doc": "Event callback of a tree (as cw_anim_player_on_event): the event keys of the clips it plays.",
      "inline": false
     },
     {
@@ -784,6 +832,11 @@
      "name": "cw_anim_process",
      "doc": "── AnimationPlayer (node type) ───────────────────────────────────────\nProperties:\n  root_node (string, \"..\")    track paths are relative to this node\n  autoplay (string)           played when the player becomes ready\n  speed_scale (float, 1)      multiplies every playback speed (may be < 0)\n  default_blend (float, 0)    cross-fade time when play() passes blend < 0\n  process (enum FIXED|UPDATE|MANUAL, FIXED)  which phase advances it;\n                              MANUAL: only cw_anim_player_advance\n  current_animation (string)  setting it plays that animation (not stored)\n  playing (bool, read-only), position (float, read-only)\n  root_motion_track (string)  a bone or Node3D position track whose motion\n                              moves root_motion_target instead of the bone\n  root_motion_target (string) a Node3D path relative to the player\n  root_motion_lock (int, 7)   axes (bit 0 x, 1 y, 2 z, in the track's parent\n                              space) taken out of the track and given to\n                              the target; the rest stays on the bone\nSignals: animation_started(name), animation_finished(name),\n  animation_changed(old_name, new_name) (play/queue switched the current\n  animation), animation_looped(name), animation_event(event, animation).\nOrder within a tick: advance times, write blended values, then fire the\nmethod/event keys crossed and the signals, in that order. Fading-out\nanimations keep advancing but fire no keys.",
      "decl": "typedef enum { CW_ANIM_PROCESS_FIXED, CW_ANIM_PROCESS_UPDATE, CW_ANIM_PROCESS_MANUAL } cw_anim_process;"
+    },
+    {
+     "name": "cw_anim_event_fn",
+     "doc": "Event callback (C): called for every event key the player crosses, in time order, just before the\nanimation_event signal, with the event's name, the animation's name and the key's time in the clip. It runs\ninside the tick (fixed_update by default), so a hit window opened by a key is open for the same tick's\ngameplay. Fading-out animations fire none. One callback per player; NULL removes it. The callback may free\nthe player.",
+     "decl": "typedef void (*cw_anim_event_fn)(cw_node player, const char *event, const char *animation, float key_time, void *user);"
     },
     {
      "name": "cw_blend_id",

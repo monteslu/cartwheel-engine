@@ -20,7 +20,7 @@ A clip is a name, a length in seconds, a loop mode (`NONE`, `LOOP`/`LINEAR`, `PI
 - **Value tracks** write a node property by path, relative to the player's `root_node`: `"Arm:rotation"`, `":position"` (the root itself), `"Arm:position.y"` (one component of a vector or colour). Any reflected property works. Floats, ints, vectors, quaternions and colours interpolate; bools, strings, enums, node and resource references step.
 - **Bone tracks** are value tracks on a glTF bone: `"Model@bone_name:quaternion"` finds the three.c object named `bone_name` under the Node3D `Model`. Only position, quaternion and scale animate.
 - **Method tracks** call a method on a node at each key: a C callback registered with [cw_anim_register_method](api:cw_anim_register_method), else the node's signal of that name, with up to four arguments.
-- **Event tracks** carry names; the player emits `animation_event(name, animation)`.
+- **Event tracks** carry names; the player emits `animation_event(name, animation)` and calls its C event callback (see below).
 
 Interpolation is per track: `NEAREST` (a step), `LINEAR`, `CUBIC` (Catmull-Rom through the neighbour keys) and `HERMITE` (explicit in and out tangents per key, the glTF CUBICSPLINE convention). Quaternions slerp by default or nlerp per track.
 
@@ -51,6 +51,14 @@ A player holds a library of named clips and plays one at a time, with cross-fade
 [cw_anim_player_play](api:cw_anim_player_play) starts a clip with a blend time (a negative blend uses the pair's time from [cw_anim_player_set_blend](api:cw_anim_player_set_blend), else `default_blend`). [cw_anim_player_queue](api:cw_anim_player_queue) plays the next clip when a non-looping one finishes. A clip that is fading out keeps advancing but fires no keys. Signals: `animation_started`, `animation_finished`, `animation_changed`, `animation_looped`, `animation_event`.
 
 A value that only part of the active weight touches is mixed toward its *rest value*: the value the property had when the player first animated it (for a glTF bone, its bind pose). That is what makes a half-faded clip settle toward the original pose instead of toward zero.
+
+### Gameplay events: hit windows, footsteps, sound cues
+
+A clip can carry named events that the game reads, so a hit window or a footstep sits on the clip's own timeline instead of in a table of tick counts kept in step by hand. [cw_anim_add_event](api:cw_anim_add_event) puts a named key on any clip, a glTF one included (it makes the clip's event track on first use). [cw_anim_player_on_event](api:cw_anim_player_on_event) (or [cw_animtree_on_event](api:cw_animtree_on_event) for a tree) registers one C callback that gets the event name, the clip's name and the key's time, in time order, on the fixed tick that crosses the key, just before the `animation_event` signal. A hit window is two events, `hit_on` and `hit_off`; [cw_anim_event_time](api:cw_anim_event_time) reads a key's time when the game wants it up front (for example to line up an attack's telegraph). `samples/anim_skinned` puts a footstep on each foot's contact of the walk and counts them in the debug field `footsteps`; `unit_anim` checks the order, the key times and the tick on which each fires, with a run without a callback as the control.
+
+### Many characters: cheap clones and animation detail
+
+A crowd of skinned characters does not need one glTF parse each. Load the model once as a resource and make each character with [cw_gltf_instantiate](api:cw_gltf_instantiate): every instance shares the geometry and materials and gets its own skeleton, and [cw_gltf_instance_auto_lod](api:cw_gltf_instance_auto_lod) picks a coarser mesh for a far one (see Resources). Animation has a matching knob: [cw_anim_player_set_update_divisor](api:cw_anim_player_set_update_divisor) makes a far character sample its clip and write its bones on every 2nd, 4th or 8th tick only, with all the time since the last sample, so the clip's time, loops and event count are exactly those of full rate while the pose steps; characters are spread over the ticks by their slot so they do not all sample together. [cw_anim_lod_divisor](api:cw_anim_lod_divisor) turns a distance into the divisor (full rate within a distance, then half, a quarter, an eighth as the distance doubles).
 
 ## AnimationTree
 

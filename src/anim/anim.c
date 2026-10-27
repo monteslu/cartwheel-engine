@@ -189,6 +189,52 @@ static void insert_mkey(cw_anim a, int i, float time, const char *name, const cw
 void cw_anim_add_method_key(cw_anim a, int i, float time, const char *method, const cw_value *args, int argc) {
   insert_mkey(a, i, time, method, args, argc, "cw_anim_add_method_key");
 }
+int cw_anim_add_event(cw_anim a, float time, const char *name) {
+  anim_rec *r = cw__anim(a);
+  if (!r) return -1;
+  int track = -1;
+  for (int i = 0; i < r->tracks.count; i++)
+    if (r->tracks.data[i].kind == CW_TRACK_EVENT) { track = i; break; }
+  if (track < 0) track = cw_anim_add_event_track(a);
+  cw_anim_add_event_key(a, track, time, name);
+  return track;
+}
+
+int cw_anim_event_count(cw_anim a, const char *name) {
+  anim_rec *r = cw__anim(a);
+  if (!r) return 0;
+  const char *in = cw_intern(name);
+  int n = 0;
+  for (int i = 0; i < r->tracks.count; i++)
+    if (r->tracks.data[i].kind == CW_TRACK_EVENT)
+      for (int k = 0; k < r->tracks.data[i].mkeys.count; k++) n += r->tracks.data[i].mkeys.data[k].name == in;
+  return n;
+}
+
+float cw_anim_event_time(cw_anim a, const char *name, int nth) {
+  anim_rec *r = cw__anim(a);
+  if (!r) return -1;
+  const char *in = cw_intern(name);
+  float best = -1;
+  int seen = 0;
+  /* in time order across the event tracks: repeated passes pick the smallest time above the last one */
+  float last = -1e30f;
+  for (;;) {
+    float next = 1e30f;
+    bool found = false;
+    for (int i = 0; i < r->tracks.count; i++) {
+      const anim_track *t = &r->tracks.data[i];
+      if (t->kind != CW_TRACK_EVENT) continue;
+      for (int k = 0; k < t->mkeys.count; k++)
+        if (t->mkeys.data[k].name == in && t->times.data[k] > last && t->times.data[k] < next) { next = t->times.data[k]; found = true; }
+    }
+    if (!found) return -1;
+    if (seen++ == nth) { best = next; break; }
+    last = next;
+  }
+  return best;
+}
+
 void cw_anim_add_event_key(cw_anim a, int i, float time, const char *name) { insert_mkey(a, i, time, name, NULL, 0, "cw_anim_add_event_key"); }
 
 /* ── value math ─────────────────────────────────────────────────────── */

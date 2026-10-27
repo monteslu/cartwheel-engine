@@ -27,7 +27,7 @@
 static cw_node level, mover, tree;
 static cw_blend_id sm, clips[8];
 static t3_gltf *gltf;
-static int32_t state, waves, entered;
+static int32_t state, waves, entered, footsteps;
 static float params[5], mover_pos[3], mover_yaw, weights[3], rm_total;
 static uint32_t hash_win[8];
 
@@ -116,6 +116,11 @@ static void on_state(cw_node e, const cw_value *a, int n, void *u) {
   if (n && !strcmp(a[0].s, "wave")) waves++;
 }
 
+static void on_event(cw_node t, const char *event, const char *animation, float key_time, void *u) {
+  (void)t; (void)animation; (void)key_time; (void)u;
+  if (!strcmp(event, "footstep")) footsteps++;
+}
+
 static cw_action wave_action; /* pad South: just_pressed keeps a tap shorter than a tick */
 
 static void init(void *u) {
@@ -175,6 +180,10 @@ static void init(void *u) {
       cw_anim_add_key(look[i], k, 0, vquat(qmul(o->quaternion, qaxis(local_axis(neck[b], look_axis[i]), look_angle[i] * 0.5f))));
     }
   }
+  /* gameplay events on a glTF clip: a footstep at each foot's contact (a sound, a dust puff, a game's own
+   * hit window), delivered to a C callback below */
+  cw_anim_add_event(walk, 0.25f * wl, "footstep");
+  cw_anim_add_event(walk, 0.75f * wl, "footstep");
   cw_anim_player_add(anim, "walk", walk);
   cw_anim_player_add(anim, "idle", idle);
   cw_anim_player_add(anim, "wave", wave);
@@ -205,10 +214,12 @@ static void init(void *u) {
   cw_animtree_set_root(tree, cw_animtree_add(tree, sm, lookbs, "look_amount"));
   cw_animtree_set_param(tree, "look_amount", 1);
   /* #endregion */
+  cw_animtree_on_event(tree, on_event, NULL);
   cw_connect(tree, "state_changed", (cw_node){ 0 }, NULL, on_state, NULL, 0);
 
   cw_debug_i32("state", &state);
   cw_debug_i32("waves", &waves);
+  cw_debug_i32("footsteps", &footsteps);
   cw_debug_i32("entered", &entered);
   cw_debug_f32_array("params", params, 5);
   cw_debug_f32_array("mover", mover_pos, 3);

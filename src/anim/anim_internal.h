@@ -53,6 +53,8 @@ typedef struct anim_fired {
   const char *a, *b;
 } anim_fired;
 typedef CW_ARRAY(anim_fired) anim_fired_list;
+/* the C event callback an AnimationPlayer or AnimationTree carries (cw_anim_player_on_event) */
+typedef struct anim_event_hook { cw_anim_event_fn fn; void *user; } anim_event_hook;
 
 /* A playback cursor: time, ping-pong direction, and whether keys at the
  * current time are still to fire. */

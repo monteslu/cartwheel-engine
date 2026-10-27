@@ -56,6 +56,7 @@ typedef struct atree {
   cw__amix *mix;
   cw_node player_node;
   anim_fired_list fired;
+  anim_event_hook hook;
   CW_ARRAY(fired_span) spans;
   CW_ARRAY(const char *) entered;
 } atree;
@@ -579,6 +580,8 @@ static void advance(cw_node n, atree *t, double dt) {
       anim_mkey *k = &tr->mkeys.data[f.key];
       if (tr->kind == CW_TRACK_METHOD) cw__fire_method_key(root, tr, k);
       else {
+        if (t->hook.fn) t->hook.fn(n, k->name, r->name, tr->times.data[f.key], t->hook.user);
+        if (!T(n, NULL)) return;
         cw_value args[2] = { cw_val_string(k->name), cw_val_string(r->name) };
         cw_emit(n, "animation_event", args, 2);
       }
@@ -595,6 +598,11 @@ static void advance(cw_node n, atree *t, double dt) {
     if (!t) return;
   }
   cw_array_clear(&t->entered);
+}
+
+void cw_animtree_on_event(cw_node n, cw_anim_event_fn fn, void *user) {
+  atree *t = T(n, "cw_animtree_on_event");
+  if (t) t->hook = (anim_event_hook){ fn, user };
 }
 
 void cw_animtree_advance(cw_node n, double dt) {
