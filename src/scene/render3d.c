@@ -1002,6 +1002,11 @@ static void note_skipped(render3d_state *s, const t3_render_info *i) {
     snprintf(s->skipped_said, sizeof s->skipped_said, "%s", e);
     cw_warn("render3d: three.c skipped %u draw(s): %s", i->skipped, e);
   }
+  static bool said_how;
+  if (!said_how) { /* once per run, at error level: a scene that draws nothing looks like an empty scene */
+    said_how = true;
+    cw_error("render3d: draws are being skipped because this app's program table lacks a state it needs. Regenerate it with: node tools/programs.mjs <app>  (see docs/guides/rendering-3d.md, program tables)");
+  }
 }
 void cw__render3d_count(cw_tree *t) {
   render3d_state *s = cw_tree_slot(t, "render3d");
