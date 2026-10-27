@@ -38,7 +38,7 @@ const runs = [['gate.mjs', ...flags], ...(wgpu ? [['gate.mjs', '--gpu', 'webgpu'
   ...(chromiumOnly ? [] : [['host-resolution.mjs']]),
   // GL post fusion draws what the separate passes draw (native)
   ...(chromiumOnly ? [] : [['post-fusion.mjs']]),
-  ...(chromiumOnly ? [] : [['deps-pins.mjs'], ['channel.mjs'], ['vfs.mjs'], ['hot.mjs'], ['remote.mjs'], ['js-int-math.mjs']])];
+  ...(chromiumOnly ? [] : [['deps-pins.mjs'], ['suite-lock.mjs'], ['channel.mjs'], ['vfs.mjs'], ['hot.mjs'], ['remote.mjs'], ['js-int-math.mjs']])];
 for (const [t, ...a] of runs) {
   await guard.gate(`${t} ${a.join(' ')}`.trim());
   const code = await new Promise((res) => spawn('node', [join(ROOT, 'tests', t), ...a], { stdio: 'inherit' }).on('close', (c) => res(c)));
