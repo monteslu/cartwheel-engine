@@ -152,11 +152,11 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
     wn.z.add(d.z.mul(detailWeight)).add(df.y.mul(fineWeight)).sub(rslope.y)));
   const theta = max(dot(toEye, n), 0);
   const fres = pow(float(1).sub(theta), 5).mul(float(1).sub(look.x)).add(look.x);
-  // the swell's own tilt moves the planar views less than the ripples do (a steep wave face would otherwise reach
-  // past the mirrored horizon into the ground)
+  // the swell's own tilt moves the refraction less than the ripples do
   const offset = n.xz.sub(wn.xz.mul(0.6)).mul(look.y);
   const suv = vec2(screenUV.x, mix(screenUV.y, float(1).sub(screenUV.y), cam.w));
-  const refl = texture(reflectMap, vec2(float(1).sub(suv.x), suv.y).add(offset)).rgb.mul(tint.w);
+  // (the reflection is moved by the ripples only: the swell bending it reaches the ground under the mirrored horizon)
+  const refl = texture(reflectMap, vec2(float(1).sub(suv.x), suv.y).add(n.xz.sub(wn.xz).mul(look.y))).rgb.mul(tint.w);
   // depth over the baked floor (a map outside its rectangle, or none: deep)
   const uvF = vRest.div(floorRect.xy).add(0.5);
   const outside = step(0.5, max(abs(uvF.x.sub(0.5)), abs(uvF.y.sub(0.5))));
@@ -165,10 +165,9 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   // the refraction's own depth: the water between the surface and whatever is under it, along the view ray, then
   // taken to a vertical depth. The clip depth (d or 2d - 1) and the row direction are what the host's targets use.
   const uvS = suv.add(offset);
-  // texel rows: GL's depth texture bottom row first, WebGPU's copy top row first
+  // texel rows top row first on both backends (three.c's GL targets and the WebGPU copy alike)
   const dSize = refrSize.xy;
-  const dRow = mix(float(1).sub(uvS.y), uvS.y, cam.w);
-  const dTc = clamp(floor(vec2(uvS.x, dRow).mul(dSize)), vec2(0), dSize.sub(1));
+  const dTc = clamp(floor(uvS.mul(dSize)), vec2(0), dSize.sub(1));
   const dz = textureLoad(refrDepth, ivec2(int(dTc.x), int(dTc.y))).x;
   // the planar targets' depth is GL's window depth on both backends (three.c remaps WebGPU's clip z), and suv
   // reads them top row first
@@ -209,7 +208,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   // (red: the sharp web; green: a soft copy that takes over deeper down, where the lines spread)
   const k1 = texture(causticMap, cq.add(vec2(0.013, 0.007).mul(ct))).rg;
   const k2 = texture(causticMap, cq.mul(1.31).add(vec2(0.41, 0.17)).sub(vec2(0.006, 0.011).mul(ct))).rg;
-  const cSoft = smoothstep(0.5, 4, below);
+  const cSoft = max(smoothstep(0.5, 4, below), smoothstep(12, 40, dist));
   const kc = dot(min(k1, k2), vec2(float(1).sub(cSoft), cSoft)).mul(4);
   const cfade = smoothstep(0.02, 0.5, below).mul(exp(below.negate().mul(shore.z).mul(1.6))).mul(smoothstep(0, 0.25, toSun0.y))
     .mul(hit).mul(useZ).mul(hasSun);

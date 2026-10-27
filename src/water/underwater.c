@@ -57,7 +57,7 @@ static const char UW_GLSL[] =
     "  vec2 q = (p.xz + ts.xz / max(ts.y, 0.3) * below * 0.75) * u_sun_col.w;\n"
     "  float t = u_shallow.w;\n"
     "  vec2 a = tile(q + vec2(0.013, 0.007) * t), b = tile(q * 1.31 + vec2(0.41, 0.17) - vec2(0.006, 0.011) * t);\n"
-    "  float soft = smoothstep(0.5, 4.0, below);\n"
+    "  float soft = max(smoothstep(0.5, 4.0, below), smoothstep(10.0, 35.0, length(p - u_cam)));\n"
     "  return mix(min(a.x, b.x), min(a.y, b.y), soft);\n"
     "}\n"
     "void main() {\n"
@@ -143,7 +143,7 @@ static const char UW_WGSL[] =
     "  let t = u.u_shallow.w;\n"
     "  let a = tile(q + vec2f(0.013, 0.007) * t);\n"
     "  let b = tile(q * 1.31 + vec2f(0.41, 0.17) - vec2f(0.006, 0.011) * t);\n"
-    "  let soft = smoothstep(0.5, 4.0, below);\n"
+    "  let soft = max(smoothstep(0.5, 4.0, below), smoothstep(10.0, 35.0, length(p - u.u_cam)));\n"
     "  return mix(min(a.x, b.x), min(a.y, b.y), soft);\n"
     "}\n"
     "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
@@ -260,7 +260,15 @@ static void uw_exec(cw_pass_ctx *ctx, void *user) {
   water3d *d;
   bool caus, under;
   if (!pick(ctx, &n, &d, &caus, &under) || !ctx->depth_tex) return;
-  if (!prog) prog = wg() ? cw_pass_program_wgsl("water_under", UW_WGSL) : cw_pass_program("water_under", UW_GLSL);
+  if (!prog) {
+    if (wg()) {
+      static char w[sizeof UW_WGSL + 2048];
+      snprintf(w, sizeof w, "%s%s", WGSL_COMMON, UW_WGSL);
+      prog = cw_pass_program_wgsl("water_under", w);
+    } else {
+      prog = cw_pass_program("water_under", UW_GLSL);
+    }
+  }
   if (!tex) {
     const int nn = CW_WATER_CAUSTIC_N * CW_WATER_CAUSTIC_N;
     const uint8_t *c = cw__water_caustics(), *soft = cw__water_caustics_soft();
