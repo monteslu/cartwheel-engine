@@ -3,6 +3,8 @@
 set(CW_PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/programs/cw_samples.txt)
 
 cw_add_app(hello SOURCES hello/main.c)
+# vertex colours as rgb and as rgba attributes (glTF writes four floats): both draw, alpha is not used
+cw_add_app(vertex_colors SOURCES vertex_colors/main.c)
 
 # actions, tick/frame snapshots, rebinding, touch controls, record/replay (120 Hz).
 cw_add_app(input_demo SOURCES input_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/input_demo/assets GL_ONLY)

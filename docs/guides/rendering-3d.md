@@ -40,6 +40,8 @@ To add the states, run the app through the tool, which merges what it lacked int
 
 then commit the manifest and the generated C. Generating captures on three.c's mock GPU (byte-identical to a real one), so it needs Node but no GPU. The tool minimizes a manifest: a program captured for more lights of each kind (and the same shadow casters) also draws scenes with fewer, so `standard+fog+l1701` replaces `standard+fog+l1001`.
 
+Vertex colours (`vertex_colors` on a material) take an rgb or an rgba attribute; a glTF exporter's default `COLOR_0` is rgba and draws, with its alpha ignored (the generated programs read the colour only). A colour attribute of any other width is refused and the draw is reported as skipped. `samples/vertex_colors` draws both and its gate (`vertex-colors`, GL and WebGPU) has a control with a refused attribute.
+
 ## The 3D node types
 
 | Node | What it configures |

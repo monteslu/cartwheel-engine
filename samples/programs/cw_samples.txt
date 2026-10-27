@@ -76,3 +76,4 @@ standard+map+rep+skin+l0001+xcluster_csm_gi
 standard+map+trans+skin+l0001+xcluster_csm_meshdecal_gi
 standard+map+trans+l0001+xcluster_csm_meshdecal_gi
 depth+xcluster_csm_gi
+basic+vcol
