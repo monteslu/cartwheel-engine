@@ -6,8 +6,10 @@
  * level, before the scene pass. */
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "cartwheel/environment.h"
 #include "cartwheel/gpu.h"
 #include "cartwheel/math.h"
 #include "cartwheel/physics3d.h"
@@ -112,7 +114,7 @@ float cw_waves_height(const cw_waves *w, float x, float z, double t) {
 
 /* ── the node ────────────────────────────────────────────────────────── */
 
-static const char *const debug_names[] = { "NONE", "HEIGHT", NULL };
+static const char *const debug_names[] = { "NONE", "HEIGHT", "REFRACTION_DEPTH", NULL };
 static const cw_node_type *water_t;
 
 const cw_node_type *cw__water_type(void) { return water_t; }
@@ -147,7 +149,19 @@ static void water_init(cw_node n, void *data) {
   d->shore_foam = 0.7f;
   d->crest_foam = 0.35f;
   d->shallow_color[0] = 0.05f, d->shallow_color[1] = 0.34f, d->shallow_color[2] = 0.38f, d->shallow_color[3] = 1;
+  d->scatter = 0.6f;
+  d->glint = 1.0f;
+  d->ripple_cells = 128;
+  d->ripple_speed = 2.2f;
+  d->ripple_damping = 1.5f;
+  d->ripple_strength = 1.0f;
+  d->foam_fade = 0.9f;
+  d->rain_size = 0.5f;
+  d->rain_strength = 0.03f;
+  d->splash_fx_min = 0.15f;
 }
+
+water3d *cw__water_data(cw_node n) { return cw_node_data_t(n, water_t); }
 
 cw_waves cw__water_waves(const water3d *d) {
   cw_waves w = { .count = d->wave_count < 0 ? 0 : d->wave_count > 4 ? 4 : d->wave_count, .speed = d->wave_speed };
@@ -444,6 +458,7 @@ static void water_destroy(cw_node n, void *data) {
   cw_res_release(d->normal_res);
   cw_res_release(d->flow_res);
   if (d->floor_tex) t3_release(d->floor_tex);
+  cw__ripples_free(d);
   cw_free(d->floor_depth);
   memset(&d->mesh, 0, sizeof *d - offsetof(water3d, mesh));
 }
@@ -476,6 +491,25 @@ static t3_render_target *target(t3_render_target *rt, int w, int h) {
     rt = t3_render_target_new(w, h, &o);
   } else if (rt->width != w || rt->height != h) {
     t3_render_target_set_size(rt, w, h);
+  }
+  return rt;
+}
+
+/* the refraction target: with a depth texture, so the surface can measure the water over what lies under it */
+static t3_render_target *refr_target(t3_render_target *rt, int w, int h, bool depth) {
+  if (w < 1) w = 1;
+  if (h < 1) h = 1;
+  if (rt && (rt->width != w || rt->height != h || (depth && !rt->depth_texture))) {
+    t3_release(rt);
+    rt = NULL;
+  }
+  if (!rt) {
+    t3_render_target_options o = t3_render_target_options_default();
+    o.type = T3_HALF_FLOAT_TYPE;
+    t3_texture *dt = depth ? t3_depth_texture_new(w, h, 0) : NULL;
+    o.depth_texture = dt;
+    rt = t3_render_target_new(w, h, &o);
+    if (dt) t3_release(dt);
   }
   return rt;
 }
@@ -561,7 +595,8 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   bool below = v3dot(v3sub(wpos, cpos), up) > 0;
   bool first = !d->refl;
   d->refl = target(d->refl, d->refl_on ? w : 1, d->refl_on ? h : 1);
-  d->refr = target(d->refr, d->refr_on ? w : 1, d->refr_on ? h : 1);
+  d->refr = refr_target(d->refr, d->refr_on ? w : 1, d->refr_on ? h : 1, d->refr_on);
+  d->refr_depth_ok = false;
   if (!d->vcam) d->vcam = t3_perspective_camera_new(cam->fov, cam->aspect, cam->near, cam->far);
   t3_camera *v = d->vcam;
   v->fov = cam->fov, v->aspect = cam->aspect, v->near = cam->near, v->far = cam->far, v->zoom = cam->zoom;
@@ -591,6 +626,8 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
     oblique(&v->projection_matrix, &vi, v3neg(up), wpos);
     t3_mat4_invert(&v->projection_matrix_inverse, &v->projection_matrix);
     render_into(ctx, wt, d->refr, v);
+    memcpy(d->refr_inv, v->projection_matrix_inverse.e, sizeof d->refr_inv);
+    d->refr_depth_ok = d->refr->depth_texture != NULL;
     v->base.matrix_world_external = false;
   } else if (first || d->refr_on) {
     render_into(ctx, wt, d->refr, NULL);
@@ -638,11 +675,29 @@ static void fill(t3_extension_ctx *c, void *user) {
   v[0] = d->size[0], v[1] = d->size[1], v[2] = 0, v[3] = 0;
   t3_extension_set_uniform(c, "waterFloorRect", v, 4);
   if (d->floor_tex) t3_extension_set_texture(c, "waterFloorMap", d->floor_tex);
+  t3_extension_set_uniform(c, "waterSun", d->sun, 4);
+  t3_extension_set_uniform(c, "waterSunCol", d->sun_col, 4);
+  {
+    bool on = d->rip_tex && d->rip_nx > 0;
+    v[0] = on ? d->ripple_strength : 0.0f, v[1] = d->rip_ax, v[2] = d->rip_az, v[3] = d->glint;
+    t3_extension_set_uniform(c, "waterRipple", v, 4);
+    v[0] = d->ripple_center[0], v[1] = d->ripple_center[1], v[2] = on ? 1.0f / (float)d->rip_nx : 1.0f, v[3] = on ? 1.0f / (float)d->rip_nz : 1.0f;
+    t3_extension_set_uniform(c, "waterRippleRect", v, 4);
+    if (on) t3_extension_set_texture(c, "waterRippleMap", d->rip_tex);
+  }
   t3_texture *nm = cw_res_texture(d->normal_res);
   t3_extension_set_texture(c, "waterNormal", nm);
   t3_extension_set_texture(c, "waterFlowMap", flow ? flow : nm);
   if (d->refl) t3_extension_set_texture(c, "waterReflection", d->refl->texture);
   if (d->refr) t3_extension_set_texture(c, "waterRefraction", d->refr->texture);
+  {
+    static int conv = -1;
+    if (conv < 0) conv = getenv("WATER_DEPTH_CONV") ? atoi(getenv("WATER_DEPTH_CONV")) : 0;
+    v[0] = d->refr_depth_ok ? 1.0f : 0.0f, v[1] = (float)(conv & 1), v[2] = (float)((conv >> 1) & 1), v[3] = 0;
+    t3_extension_set_uniform(c, "waterRefr", v, 4);
+    t3_extension_set_uniform(c, "waterRefrInv", d->refr_inv, 16);
+    if (d->refr && d->refr->depth_texture) t3_extension_set_texture(c, "waterRefractionDepth", d->refr->depth_texture);
+  }
 }
 
 /* ── the pass (SHADOW phase: before the scene) ─────────────────────── */
@@ -684,6 +739,17 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     /* the WebGPU scene pass draws rows bottom-up (GL's order, pipeline_wgpu.h), three.c's own
      * targets top-down: the planar targets are read flipped there */
     d->cam[3] = cw_gpu_backend() == CW_GPU_WEBGPU ? 1.0f : 0.0f;
+    cw__ripples_upload(d);
+    {
+      cw_sky_state sk;
+      cw_sky_get_state(ctx->tree, &sk);
+      float amp = 0;
+      for (int k = 0; k < 4; k++) amp += fabsf(d->ev.a[k]);
+      d->sun[0] = sk.sun_direction.x, d->sun[1] = sk.sun_direction.y, d->sun[2] = sk.sun_direction.z, d->sun[3] = amp;
+      float on = sk.active ? 1.0f : 0.0f;
+      d->sun_col[0] = sk.sun_color.r * sk.sun_energy * on, d->sun_col[1] = sk.sun_color.g * sk.sun_energy * on;
+      d->sun_col[2] = sk.sun_color.b * sk.sun_energy * on, d->sun_col[3] = d->scatter;
+    }
     d->mat->roughness = d->roughness;
     /* the environment's specular is the reflection when no planar one is drawn */
     planar(ctx, wt, n, d);
@@ -692,6 +758,12 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     wt->stats.surfaces++;
   }
   wt->stats.triangles = tri;
+}
+
+static void water_fixed(cw_node n, void *data, double dt) {
+  (void)dt;
+  water3d *d = data;
+  cw__ripples_step(n, d, cw_tree_tick(cw_node_tree(n)));
 }
 
 static void water_enter(cw_node n, void *data) {
@@ -762,6 +834,20 @@ static const cw_prop water_props[] = {
   CW_PROP_FIELD_RANGE(water3d, clarity, CW_T_FLOAT, 0.01, 1000, "Metres of water over which the shallow colour has become deep_color."),
   CW_PROP_FIELD_RANGE(water3d, shore_foam, CW_T_FLOAT, 0, 20, "Width in metres of the foam where the water meets the floor (0: none)."),
   CW_PROP_FIELD_RANGE(water3d, crest_foam, CW_T_FLOAT, 0, 1, "Foam on crests where the surface bunches up (0: none)."),
+  CW_PROP_FIELD_RANGE(water3d, scatter, CW_T_FLOAT, 0, 4, "Light the sun sends through wave crests toward the eye (the turquoise glow; needs a ProceduralSky)."),
+  CW_PROP_FIELD_RANGE(water3d, glint, CW_T_FLOAT, 0, 8, "Strength of the fine sparkle the sun makes on the small ripples."),
+  CW_PROP_FIELD_RANGE(water3d, ripple_cells, CW_T_INT, 0, 512, "Cells along the longer side of the interactive ripple grid (0: no ripples; quality scales it)."),
+  CW_PROP_FIELD(water3d, ripple_size, CW_T_VEC2, CW_PROP_DEFAULT, "The rectangle the ripple grid covers, metres (0: the whole water)."),
+  CW_PROP_FIELD(water3d, ripple_center, CW_T_VEC2, CW_PROP_DEFAULT, "Where that rectangle is centred, in the water node's x, z."),
+  CW_PROP_FIELD_RANGE(water3d, ripple_speed, CW_T_FLOAT, 0, 50, "How fast ripples travel, m/s."),
+  CW_PROP_FIELD_RANGE(water3d, ripple_damping, CW_T_FLOAT, 0, 60, "How fast ripples die, per second."),
+  CW_PROP_FIELD_RANGE(water3d, ripple_strength, CW_T_FLOAT, 0, 8, "How much the ripples bend the surface normal."),
+  CW_PROP_FIELD_RANGE(water3d, foam_fade, CW_T_FLOAT, 0, 60, "How fast the foam of splashes and wakes fades, per second."),
+  CW_PROP_FIELD_RANGE(water3d, rain, CW_T_FLOAT, 0, 20000, "Raindrops per second over the ripple area (0: dry)."),
+  CW_PROP_FIELD_RANGE(water3d, rain_size, CW_T_FLOAT, 0.01, 20, "Radius of a raindrop ring, metres."),
+  CW_PROP_FIELD_RANGE(water3d, rain_strength, CW_T_FLOAT, 0, 5, "Depth of a raindrop dent, metres."),
+  CW_PROP_FIELD(water3d, splash_fx, CW_T_STRING, CW_PROP_DEFAULT, "Path of a node whose GPUParticles3D children are restarted at each big splash (a pool, used in turn)."),
+  CW_PROP_FIELD_RANGE(water3d, splash_fx_min, CW_T_FLOAT, 0, 100, "The splash depth (m) from which splash_fx fires."),
   CW_PROP_FIELD(water3d, debug_range, CW_T_VEC2, CW_PROP_DEFAULT, "debug_view HEIGHT: heights mapped to 0 .. 1."),
   CW_PROP_END,
 };
@@ -769,7 +855,7 @@ static const cw_prop water_props[] = {
 static cw_node_type water_type = {
   .name = "Water3D", .parent = "Node3D", .data_size = sizeof(water3d), .props = water_props,
   .doc = "Gerstner-wave water with planar reflection, refraction and flow (water.h).",
-  .init = water_init, .destroy = water_destroy, .enter_tree = water_enter, .exit_tree = water_exit,
+  .init = water_init, .fixed_update = water_fixed, .destroy = water_destroy, .enter_tree = water_enter, .exit_tree = water_exit,
 };
 
 void cw__register_water_types(void) {

@@ -10100,7 +10100,8 @@
      "readonly": false,
      "enum": [
       "NONE",
-      "HEIGHT"
+      "HEIGHT",
+      "REFRACTION_DEPTH"
      ],
      "doc": "HEIGHT: the surface height as colour (tests)."
     },
@@ -10161,6 +10162,140 @@
      "min": 0,
      "max": 1,
      "doc": "Foam on crests where the surface bunches up (0: none)."
+    },
+    {
+     "name": "scatter",
+     "type": "float",
+     "default": "0.6",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 4,
+     "doc": "Light the sun sends through wave crests toward the eye (the turquoise glow; needs a ProceduralSky)."
+    },
+    {
+     "name": "glint",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 8,
+     "doc": "Strength of the fine sparkle the sun makes on the small ripples."
+    },
+    {
+     "name": "ripple_cells",
+     "type": "int",
+     "default": "128",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 512,
+     "doc": "Cells along the longer side of the interactive ripple grid (0: no ripples; quality scales it)."
+    },
+    {
+     "name": "ripple_size",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The rectangle the ripple grid covers, metres (0: the whole water)."
+    },
+    {
+     "name": "ripple_center",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Where that rectangle is centred, in the water node's x, z."
+    },
+    {
+     "name": "ripple_speed",
+     "type": "float",
+     "default": "2.2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 50,
+     "doc": "How fast ripples travel, m/s."
+    },
+    {
+     "name": "ripple_damping",
+     "type": "float",
+     "default": "1.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 60,
+     "doc": "How fast ripples die, per second."
+    },
+    {
+     "name": "ripple_strength",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 8,
+     "doc": "How much the ripples bend the surface normal."
+    },
+    {
+     "name": "foam_fade",
+     "type": "float",
+     "default": "0.9",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 60,
+     "doc": "How fast the foam of splashes and wakes fades, per second."
+    },
+    {
+     "name": "rain",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 20000,
+     "doc": "Raindrops per second over the ripple area (0: dry)."
+    },
+    {
+     "name": "rain_size",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 20,
+     "doc": "Radius of a raindrop ring, metres."
+    },
+    {
+     "name": "rain_strength",
+     "type": "float",
+     "default": "0.03",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 5,
+     "doc": "Depth of a raindrop dent, metres."
+    },
+    {
+     "name": "splash_fx",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path of a node whose GPUParticles3D children are restarted at each big splash (a pool, used in turn)."
+    },
+    {
+     "name": "splash_fx_min",
+     "type": "float",
+     "default": "0.15",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "The splash depth (m) from which splash_fx fires."
     },
     {
      "name": "debug_range",
@@ -10243,6 +10378,26 @@
      "min": 0,
      "max": 1000000000,
      "doc": "N*m per rad/s, times the wet share."
+    },
+    {
+     "name": "splash",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 20,
+     "doc": "How much of a splash the body makes entering the water (0: none)."
+    },
+    {
+     "name": "wake",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 20,
+     "doc": "How much of a wake and foam trail the body leaves moving through the water (0: none)."
     },
     {
      "name": "submerged",
