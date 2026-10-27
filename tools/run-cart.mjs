@@ -114,7 +114,8 @@ const appBinary = () => { try { return JSON.parse(readFileSync(join(PROJ, 'build
 const nativeExe = args.exe ? resolve(args.exe) : ['samples', 'tests/unit', 'games', 'editor', `samples/${app}`].map((d) => join(PROJ, 'build/native', d, app)).find(isFile) ||
   appBinary() || join(PROJ, 'build/native/samples', app);
 // --dual-gl (romdev, --gpu gl): the DUAL cart of build/cart-wgpu, told to render with GL (loadMedia wgpu:false)
-const dualGl = !!args['dual-gl'];
+// (no GL-only cart tree any more, build/cart: a romdev GL run of a cart is then the dual cart told to render with GL)
+const dualGl = !!args['dual-gl'] || (host === 'romdev' && gpu === 'gl' && !args.cart && !existsSync(join(PROJ, 'build/cart/carts', `${app}.wasc`)) && existsSync(join(PROJ, 'build/cart-wgpu/carts', `${app}.wasc`)));
 if (dualGl && (host !== 'romdev' || gpu !== 'gl')) { console.error('--dual-gl is a romdev --gpu gl run'); process.exit(2); }
 const cart = args.cart ? resolve(args.cart) : join(PROJ, gpu === 'webgpu' || dualGl ? 'build/cart-wgpu/carts' : 'build/cart/carts', `${app}.wasc`);
 const script = args.input ? JSON.parse(readFileSync(args.input, 'utf8')) : [];

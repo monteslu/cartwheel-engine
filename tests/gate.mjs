@@ -40,6 +40,11 @@ const noChromium = argv.includes('--no-chromium'), chromiumOnly = argv.includes(
 const only = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--hosts' && argv[i - 1] !== '--gpu' && argv[i - 1] !== '--gates-file');
 const guard = armGuard('gate.mjs', { outFile: join(OUT, 'gpu-mem.json') });
 const usesHosts = (hosts) => hosts.filter((h) => !(noChromium && h === 'chromium') && !(chromiumOnly && !['native', 'chromium'].includes(h)));
+// There is one cart per game: the dual GL + WebGPU one (build/cart-wgpu). Without a GL-only cart tree (build/cart) the GL
+// leg of a cart is the dual cart told to render with GL on romdev (run-cart --dual-gl, implied there); Chromium and
+// wasmcart-native then run only the WebGPU axis (--gpu webgpu), their GL host would be the GL-only cart that no longer exists.
+const glCarts = existsSync(join(PROJ, 'build', 'cart', 'carts'));
+const glHosts = (hosts) => usesHosts(hosts).filter((h) => glCarts || !['chromium', 'wcnative'].includes(h));
 // --gates-file a.json,b.json (or CW_GATES_FILE): gate files in the project's tests/ in place of gates.json, so a
 // repository of several games keeps one file per game and they never collide
 const gatesArg = argv.includes('--gates-file') ? argv[argv.indexOf('--gates-file') + 1] : process.env.CW_GATES_FILE || 'gates.json';
@@ -274,7 +279,7 @@ for (const g of gates) {
   const defaults = g.input ? ['native', 'romdev', 'chromium'] : ['native', 'romdev', 'chromium', 'wcnative'];
   if (process.env.CW_ANGLE_DIR) defaults.push('angle'); // the Windows/macOS/iOS GL stack, on this machine
   const eligible = g.hosts || defaults; // --hosts narrows the set; it never adds a host a gate cannot run on
-  const hosts = usesHosts((hostsArg ? hostsArg.filter((h) => eligible.includes(h)) : eligible).filter((h) => !(g.skip || []).includes(h)));
+  const hosts = glHosts((hostsArg ? hostsArg.filter((h) => eligible.includes(h)) : eligible).filter((h) => !(g.skip || []).includes(h)));
   if (chromiumOnly && !hosts.includes('chromium')) continue;
   const common = ['--app', g.app, '--frames', String(g.frames), ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : [])];
   if (g.input) common.push('--input', join(PROJ, 'tests', g.input));
