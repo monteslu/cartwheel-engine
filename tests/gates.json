@@ -1941,6 +1941,29 @@
     }
   },
   {
+    "name": "quality-scope-ssao",
+    "app": "post_stack",
+    "frames": 60,
+    "maxGt16": 0.002,
+    "startCmds": ["quality scope push ssao=0"],
+    "controlFrames": 60,
+    "fields": ["post.seg", "cw.quality_scopes"],
+    "expect": { "post.seg": 2, "cw.quality_scopes": 1 },
+    "note": "a quality scope that caps ambient occlusion at Off draws the ambient occlusion segment without it, on every host; the control opens no scope and its frame (ambient occlusion on) must differ"
+  },
+  {
+    "name": "quality-scope-resolution",
+    "app": "post_stack",
+    "frames": 60,
+    "maxGt16": 0.01,
+    "startCmds": ["quality scope push resolution=0", "quality scope push resolution=3"],
+    "controlStartCmds": ["quality scope push resolution=3"],
+    "controlFrames": 60,
+    "fields": ["post.seg", "cw.quality_scopes"],
+    "expect": { "cw.quality_scopes": 2 },
+    "note": "nested scopes: the lowest cap wins (50% resolution, not 75%); the control opens only the 75% scope and its frame must differ"
+  },
+  {
     "name": "post-ssao",
     "app": "post_stack",
     "frames": 60,

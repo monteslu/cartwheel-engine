@@ -8749,7 +8749,31 @@
     {
      "name": "cw_gfx_render_scale",
      "signature": "float cw_gfx_render_scale(void)",
-     "doc": "The resolution setting's share of the output (0.5 .. 1).",
+     "doc": "The resolution setting's share of the output (0.5 .. 1), as drawn now (a scope may lower it).",
+     "inline": false
+    },
+    {
+     "name": "cw_gfx_effective",
+     "signature": "int cw_gfx_effective(int s)",
+     "doc": "A setting as it is drawn now: cw_gfx_get lowered by the open scopes (below); the same for a game lever.",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_scope_push",
+     "signature": "bool cw_quality_scope_push(const char *name, const int8_t caps[CW_GFX_ENGINE_COUNT])",
+     "doc": "A scene or mode that does not need everything (a 2D mini-game, a scene with no use for ambient occlusion) caps\nsettings for as long as it is on screen: caps[CW_GFX_RESOLUTION ... CW_GFX_EFFECTS] each hold the highest value\nallowed (-1 leaves that setting alone). A scope only ever LOWERS what the player chose, so a player on Low\nstays on Low and the menu still shows the player's choice. Scopes nest (four at most); the lowest cap wins.\nRender-only, like the rest of this header: call between frames. Returns false when it is not opened.",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_scope_pop",
+     "signature": "void cw_quality_scope_pop(void)",
+     "doc": "closes the innermost scope",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_scope_count",
+     "signature": "int cw_quality_scope_count(void)",
+     "doc": "how many are open",
      "inline": false
     },
     {
@@ -11583,6 +11607,24 @@
      "inline": false
     },
     {
+     "name": "cw_shell_join_open",
+     "signature": "bool cw_shell_join_open(void)",
+     "doc": "Join and leave during play: opens the join screen over the running match (play pauses, exactly as for the pause\nmenu) with the current players on their seats. A pad presses A to take a free seat, B to leave its own seat;\nStart or Enter confirms (at least one player stays) and play resumes with players_changed; B on a pad that\nhas no seat cancels and leaves everything as it was. Seats keep their numbers: a leaver's seat reads no\ninput (cw_shell_seat_taken says which are held), a newcomer takes the first free seat, and the match's\nplayer count is the highest seat held plus one. Returns false (and does nothing) outside play or in a one\nplayer game.",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_seat_taken",
+     "signature": "bool cw_shell_seat_taken(int seat)",
+     "doc": "Is this player seat held by a pad or the keyboard (0 .. cw_shell_players() - 1)? Right after a start every\nseat below the player count is; after cw_shell_join_open a seat can be empty.",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_join_requested",
+     "signature": "bool cw_shell_join_requested(void)",
+     "doc": "True on the tick a pad or the keyboard that has no seat presses A (Enter) or Start: the cue for a game to\noffer cw_shell_join_open, say between rounds. Poll it in fixed_update after cw_shell_update.",
+     "inline": false
+    },
+    {
      "name": "cw_shell_to_title",
      "signature": "void cw_shell_to_title(void)",
      "doc": "end the match and show the title (every pad drives the menus again)",
@@ -11645,7 +11687,7 @@
     {
      "name": "cw_shell_desc",
      "doc": "",
-     "decl": "typedef struct cw_shell_desc {\n  const char *title;      /* the title screen's heading (default \"cartwheel\") */\n  const char *subtitle;   /* a line under it (optional) */\n  int max_players;        /* 1..4 (default 1); more than 1 adds the join screen */\n  bool shared_screen;     /* every player plays in one shared view (one camera, a scrolling brawler or a co-op\n                           * platformer): cw_shell_split draws a single view and cw_shell_player_rect gives each\n                           * player the whole canvas */\n  bool loading;           /* start on the loading screen until cw_shell_loaded */\n  size_t game_save_size;  /* bytes of the game's own save data (cw_shell_game_save) */\n  uint16_t game_save_version; /* change it when that layout changes: an older save starts over */\n  void (*start)(int players, void *user);   /* Play: the players joined; set the match up */\n  void (*quit)(void *user);                 /* Quit to title, from the pause menu */\n  void (*sound)(cw_shell_sound s, void *user);\n  void (*screen_changed)(cw_shell_screen from, cw_shell_screen to, void *user);\n  /* Draws behind the title, join, settings and loading screens and the pause menu (in the shell's own 2D pass,\n   * canvas units): the game's backdrop, so these screens are not a dark panel. The shell then dims it lightly\n   * and draws the menu over it. NULL: the dark panel. */\n  void (*draw_background)(cw_shell_screen screen, cw_vec2 canvas, void *user);\n  cw_font font;           /* default: the built-in sans (cw_ui_font_sans) */\n  cw_color accent;        /* the selected item's colour (default a warm yellow) */\n  void *user;\n} cw_shell_desc;"
+     "decl": "typedef struct cw_shell_desc {\n  const char *title;      /* the title screen's heading (default \"cartwheel\") */\n  const char *subtitle;   /* a line under it (optional) */\n  int max_players;        /* 1..4 (default 1); more than 1 adds the join screen */\n  bool shared_screen;     /* every player plays in one shared view (one camera, a scrolling brawler or a co-op\n                           * platformer): cw_shell_split draws a single view and cw_shell_player_rect gives each\n                           * player the whole canvas */\n  bool loading;           /* start on the loading screen until cw_shell_loaded */\n  size_t game_save_size;  /* bytes of the game's own save data (cw_shell_game_save) */\n  uint16_t game_save_version; /* change it when that layout changes: an older save starts over */\n  void (*start)(int players, void *user);   /* Play: the players joined; set the match up */\n  void (*quit)(void *user);                 /* Quit to title, from the pause menu */\n  void (*sound)(cw_shell_sound s, void *user);\n  void (*screen_changed)(cw_shell_screen from, cw_shell_screen to, void *user);\n  /* Draws behind the title, join, settings and loading screens and the pause menu (in the shell's own 2D pass,\n   * canvas units): the game's backdrop, so these screens are not a dark panel. The shell then dims it lightly\n   * and draws the menu over it. NULL: the dark panel. */\n  void (*draw_background)(cw_shell_screen screen, cw_vec2 canvas, void *user);\n  /* The join screen was opened during play (cw_shell_join_open) and confirmed: the match now has this many\n   * players (the highest seat held plus one; see cw_shell_seat_taken for which seats are held). The game adapts\n   * its roster; it is not started again. Not called when the screen is cancelled. */\n  void (*players_changed)(int players, void *user);\n  cw_font font;           /* default: the built-in sans (cw_ui_font_sans) */\n  cw_color accent;        /* the selected item's colour (default a warm yellow) */\n  void *user;\n} ..."
     }
    ],
    "macros": [

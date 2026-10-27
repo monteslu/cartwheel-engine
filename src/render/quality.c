@@ -96,6 +96,18 @@ static struct {
 } Q = { .level = CW_QUALITY_HIGH, .budget = 19, .fail_rung = -1,
         .v = { RES_100, 1, SH_HIGH, AA_SMAA, CW_QUALITY_HIGH } };
 
+/* scopes (cw_quality_scope_push): caps on top of the player's settings, innermost last */
+enum { SCOPE_MAX = 4 };
+static struct { char name[24]; int8_t cap[CW_GFX_ENGINE_COUNT]; } SCOPES[SCOPE_MAX];
+static int n_scopes;
+/* a setting as drawn: the player's value, lowered by every scope that caps it */
+static int ev(int s) {
+  int v = Q.v[s];
+  for (int i = 0; i < n_scopes; i++)
+    if (SCOPES[i].cap[s] >= 0 && v > SCOPES[i].cap[s]) v = SCOPES[i].cap[s];
+  return v;
+}
+
 static void cmd_quality(int argc, const char **argv, cw_reply *r);
 static bool forced; /* CW_QUALITY (native): this preset whatever else asks */
 
@@ -104,8 +116,9 @@ static void init_once(void) {
   Q.inited = true;
   cw_debug_field("cw.quality", &Q.level, CW_DBG_I32, 1);
   cw_debug_field("cw.quality_mode", &Q.mode, CW_DBG_I32, 1);
+  cw_debug_field("cw.quality_scopes", &n_scopes, CW_DBG_I32, 1);
   cw_debug_command("quality",
-                   "quality [low|medium|high|ultra|auto | set <setting> <value>]: the graphics settings (cartwheel/quality.h); "
+                   "quality [low|medium|high|ultra|auto | set <setting> <value> | scope push <setting>=<cap>... | scope pop]: the graphics settings (cartwheel/quality.h); "
                    "settings: resolution 0-5, ssao 0-1, shadows 0-3, aa 0-2, effects 0-3, or a game setting's name (spaces as _)",
                    cmd_quality);
   cw__quality_menu_register();
@@ -118,7 +131,7 @@ static bool locked(void) { return forced || cw_is_deterministic_run(); }
 
 /* the settings took effect: the platform's scene size, the game's callback */
 static void changed(void) {
-  cw__render_scale_apply(RES[Q.v[CW_GFX_RESOLUTION]]);
+  cw__render_scale_apply(RES[ev(CW_GFX_RESOLUTION)]);
   Q.frames = 0;
   Q.avg = 0;
   if (Q.fn) Q.fn((cw_quality)Q.level, Q.fn_user);
@@ -163,7 +176,7 @@ void cw__quality_init(void) {
       forced = true;
     }
 #endif
-  cw__render_scale_apply(RES[Q.v[CW_GFX_RESOLUTION]]);
+  cw__render_scale_apply(RES[ev(CW_GFX_RESOLUTION)]);
 }
 
 cw_quality cw_quality_get(void) { return (cw_quality)Q.level; }
@@ -200,7 +213,8 @@ int cw_gfx_value_count(int s) {
   return s < CW_GFX_ENGINE_COUNT ? VALUES[s] : Q.levers[s - CW_GFX_ENGINE_COUNT].count;
 }
 int cw_gfx_get(int s) { return valid(s) ? Q.v[s] : 0; }
-float cw_gfx_render_scale(void) { return RES[Q.v[CW_GFX_RESOLUTION]]; }
+float cw_gfx_render_scale(void) { return RES[ev(CW_GFX_RESOLUTION)]; }
+int cw_gfx_effective(int s) { return valid(s) ? (s < CW_GFX_ENGINE_COUNT ? ev(s) : Q.v[s]) : 0; }
 
 const char *cw_gfx_value_label(int s) {
   static char buf[48];
@@ -259,7 +273,7 @@ int cw_quality_lever_add(const char *name, const char *const *values, int value_
 
 /* ── reading them ──────────────────────────────────────────────────── */
 
-static const effects *fx(void) { return &FX[Q.v[CW_GFX_EFFECTS]]; }
+static const effects *fx(void) { return &FX[ev(CW_GFX_EFFECTS)]; }
 float cw_quality_scale(const char *knob) {
   if (!knob) return 1;
   if (!strcmp(knob, "particles")) return fx()->particles;
@@ -452,6 +466,31 @@ static void cmd_quality(int argc, const char **argv, cw_reply *r) {
         Q.chosen = true;
         auto_start(0);
       }
+    } else if (!strcasecmp(argv[1], "scope")) { /* scope push <setting>=<cap> ... | scope pop */
+      if (argc > 2 && !strcasecmp(argv[2], "pop")) cw_quality_scope_pop();
+      else if (argc > 3 && !strcasecmp(argv[2], "push")) {
+        int8_t caps[CW_GFX_ENGINE_COUNT];
+        memset(caps, -1, sizeof caps);
+        for (int i = 3; i < argc; i++) {
+          char nm[24];
+          const char *eq = strchr(argv[i], '=');
+          int s = -1;
+          if (eq && eq - argv[i] < (int)sizeof nm) {
+            memcpy(nm, argv[i], (size_t)(eq - argv[i]));
+            nm[eq - argv[i]] = 0;
+            s = setting_by_name(nm);
+          }
+          if (s < 0 || s >= CW_GFX_ENGINE_COUNT) {
+            cw_reply_error(r, "quality scope push <resolution|ssao|shadows|aa|effects>=<highest value> ...");
+            return;
+          }
+          caps[s] = (int8_t)atoi(eq + 1);
+        }
+        cw_quality_scope_push("debug", caps);
+      } else {
+        cw_reply_error(r, "quality scope push <setting>=<cap> ... | quality scope pop");
+        return;
+      }
     } else if (!strcasecmp(argv[1], "set")) {
       int s = argc > 3 ? setting_by_name(argv[2]) : -1;
       if (s < 0) {
@@ -484,12 +523,32 @@ static void cmd_quality(int argc, const char **argv, cw_reply *r) {
   cw_reply_printf(r, "},\"particles\":%g,\"density\":%g}", (double)fx()->particles, (double)fx()->density);
 }
 
+/* ── scopes ───────────────────────────────────────────────────────── */
+
+bool cw_quality_scope_push(const char *name, const int8_t caps[CW_GFX_ENGINE_COUNT]) {
+  if (n_scopes >= SCOPE_MAX || !caps) {
+    cw_warn("quality scope \"%s\": %s", name ? name : "", caps ? "too many open scopes" : "no caps");
+    return false;
+  }
+  snprintf(SCOPES[n_scopes].name, sizeof SCOPES[n_scopes].name, "%s", name ? name : "");
+  for (int i = 0; i < CW_GFX_ENGINE_COUNT; i++) SCOPES[n_scopes].cap[i] = caps[i] < 0 ? (int8_t)-1 : caps[i];
+  n_scopes++;
+  changed();
+  return true;
+}
+void cw_quality_scope_pop(void) {
+  if (n_scopes <= 0) return;
+  n_scopes--;
+  changed();
+}
+int cw_quality_scope_count(void) { return n_scopes; }
+
 /* ── what the renderer asks ───────────────────────────────────────── */
 
 void cw__quality_post(cw_post_settings *s) {
   const effects *e = fx();
   if (s->ssao) {
-    if (!Q.v[CW_GFX_SSAO]) s->ssao = false;
+    if (!ev(CW_GFX_SSAO)) s->ssao = false;
     else if (e->ssao <= 1) {
       s->ssao_slices = 1;
       s->ssao_steps = s->ssao_steps > 4 ? 4 : s->ssao_steps;
@@ -500,26 +559,26 @@ void cw__quality_post(cw_post_settings *s) {
   }
   /* SSR: off on Low, fewer march steps on Medium, more on Ultra */
   if (s->ssr) {
-    int fxl = Q.v[CW_GFX_EFFECTS];
+    int fxl = ev(CW_GFX_EFFECTS);
     if (fxl == 0) s->ssr = false;
     else if (fxl == 1) s->ssr_quality *= 0.5f;
     else if (fxl == 3) s->ssr_quality = CW_MIN(1.0f, s->ssr_quality * 1.5f);
   }
   /* SSGI: Ultra only (several ms of an integrated GPU even at half resolution) */
-  if (s->ssgi && Q.v[CW_GFX_EFFECTS] < 3) s->ssgi = false;
+  if (s->ssgi && ev(CW_GFX_EFFECTS) < 3) s->ssgi = false;
   if (s->bloom && e->bloom_levels > 0 && s->bloom_levels > e->bloom_levels) s->bloom_levels = e->bloom_levels;
-  int aa = Q.v[CW_GFX_AA];
+  int aa = ev(CW_GFX_AA);
   if (aa == AA_OFF) s->aa = CW_AA_NONE;
   else if (aa == AA_FXAA && s->aa == CW_AA_SMAA) s->aa = CW_AA_FXAA;
 }
 
 int cw__quality_shadow_size(int authored) {
-  int sh = Q.v[CW_GFX_SHADOWS];
+  int sh = ev(CW_GFX_SHADOWS);
   int s = authored;
   if (sh == SH_ULTRA) s = CW_MIN(authored * 2, 4096);
   else if (sh == SH_LOW || sh == SH_MEDIUM) s = CW_MIN(authored, 1024);
   return s < 256 ? (authored < 256 ? authored : 256) : s;
 }
-bool cw__quality_soft_shadows(void) { return Q.v[CW_GFX_SHADOWS] != SH_LOW; }
-int cw__quality_shadow_level(void) { return Q.v[CW_GFX_SHADOWS] == SH_LOW ? 0 : Q.v[CW_GFX_SHADOWS] == SH_MEDIUM ? 1 : Q.v[CW_GFX_SHADOWS] == SH_HIGH ? 2 : 3; }
+bool cw__quality_soft_shadows(void) { return ev(CW_GFX_SHADOWS) != SH_LOW; }
+int cw__quality_shadow_level(void) { int sh = ev(CW_GFX_SHADOWS); return sh == SH_LOW ? 0 : sh == SH_MEDIUM ? 1 : sh == SH_HIGH ? 2 : 3; }
 float cw__quality_lod_bias(void) { return fx()->lod_bias; }

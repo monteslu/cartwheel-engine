@@ -127,8 +127,22 @@ const char *cw_gfx_value_label(int s);
 void cw_gfx_set(int s, int value);
 /* dir +1 / -1: the next / previous value (wrapping) */
 void cw_gfx_step(int s, int dir);
-/* The resolution setting's share of the output (0.5 .. 1). */
+/* The resolution setting's share of the output (0.5 .. 1), as drawn now (a scope may lower it). */
 float cw_gfx_render_scale(void);
+
+/* A setting as it is drawn now: cw_gfx_get lowered by the open scopes (below); the same for a game lever. */
+int cw_gfx_effective(int s);
+
+/* ── scopes: one scene asks for less ────────────────────────────────── */
+
+/* A scene or mode that does not need everything (a 2D mini-game, a scene with no use for ambient occlusion) caps
+ * settings for as long as it is on screen: caps[CW_GFX_RESOLUTION ... CW_GFX_EFFECTS] each hold the highest value
+ * allowed (-1 leaves that setting alone). A scope only ever LOWERS what the player chose, so a player on Low
+ * stays on Low and the menu still shows the player's choice. Scopes nest (four at most); the lowest cap wins.
+ * Render-only, like the rest of this header: call between frames. Returns false when it is not opened. */
+bool cw_quality_scope_push(const char *name, const int8_t caps[CW_GFX_ENGINE_COUNT]);
+void cw_quality_scope_pop(void); /* closes the innermost scope */
+int cw_quality_scope_count(void); /* how many are open */
 
 /* A game's own render-only setting (at most CW_GFX_MAX_LEVERS, each with up
  * to CW_GFX_LEVER_MAX_VALUES values, cheapest first): its name, its values'
