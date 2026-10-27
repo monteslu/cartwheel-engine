@@ -135,7 +135,7 @@ static void water_init(cw_node n, void *data) {
   d->reflectivity = 0.02f;
   d->distortion = 0.03f;
   d->detail = 0.35f;
-  d->roughness = 0.08f;
+  d->roughness = 0.04f; /* a crisp sun path: broader reads as a smear on the far chop */
   d->murk = 0.7f;
   d->normal_scale = 0.12f;
   d->flow_direction[0] = 1, d->flow_direction[1] = 0;
@@ -684,14 +684,15 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   } else if (below && (d->refr_on || d->refl_on)) {
     /* under the water: the refraction target holds the view up through the surface (the scene above the rest
      * level), which the surface shows inside its window of light */
-    if (!cw__wgpu_on()) d->refr = refr_target(d->refr, w, h, true);
+    /* (three.c's own target on both backends: it draws the sky behind the scene, and no depth is read from below) */
+    d->refr = refr_target(d->refr, w, h, true);
     t3_object_set_matrix_world(v, &cam->base.matrix_world);
     v->projection_matrix = ctx->proj;
     t3_mat4 vi;
     t3_mat4_invert(&vi, &cam->base.matrix_world);
     oblique(&v->projection_matrix, &vi, up, wpos);
     t3_mat4_invert(&v->projection_matrix_inverse, &v->projection_matrix);
-    render_refr(ctx, wt, d, v, w, h);
+    render_into(ctx, wt, d->refr, v);
     d->refr_above = true;
     v->base.matrix_world_external = false;
   } else if (first || d->refr_on) {
@@ -757,7 +758,7 @@ static void fill(t3_extension_ctx *c, void *user) {
   t3_extension_set_texture(c, "waterNormal", nm);
   t3_extension_set_texture(c, "waterFlowMap", flow ? flow : nm);
   if (d->refl) t3_extension_set_texture(c, "waterReflection", d->refl->texture);
-  if (cw__wgpu_on()) {
+  if (cw__wgpu_on() && !d->refr_above) {
     if (d->wg_col_tex) t3_extension_set_texture(c, "waterRefraction", d->wg_col_tex);
   } else if (d->refr) {
     t3_extension_set_texture(c, "waterRefraction", d->refr->texture);

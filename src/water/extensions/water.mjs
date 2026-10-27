@@ -171,13 +171,15 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const dz = textureLoad(refrDepth, ivec2(int(dTc.x), int(dTc.y))).x;
   // the planar targets' depth is GL's window depth on both backends (three.c remaps WebGPU's clip z), and suv
   // reads them top row first
-  const zClip = min(dz, 1).mul(2).sub(1); // (the WebGPU copy holds 3e38 where nothing was drawn)
+  // (clamped under 1: the WebGPU copy holds 3e38 where nothing was drawn, and the oblique projection's far plane
+  // may send window depth 1 to infinity; a NaN there survives every mix by 0 on some drivers)
+  const zClip = min(dz, 0.999).mul(2).sub(1);
   const yClip = float(1).sub(uvS.y.mul(2));
   const vp = refrInv.mul(vec4(uvS.x.mul(2).sub(1), yClip, zClip, 1));
   const scenePos = vp.xyz.div(vp.w);
   const surfPos = cameraViewMatrix.mul(vec4(positionWorld, 1)).xyz;
   const hit = float(1).sub(step(0.99999, dz));
-  const ray = max(length(scenePos).sub(length(surfPos)), 0);
+  const ray = clamp(length(scenePos).sub(length(surfPos)), 0, 1000);
   const zDepth = mix(float(100), ray.mul(max(toEye.y, 0.15)), hit);
   const useZ = refrInfo.x.mul(deep.w);
   const depth = mix(bakedDepth, zDepth, useZ);
@@ -188,8 +190,10 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   // the sun lights the water's body: nothing under a low sun, the sun's own colour (dusk is red) under a high one
   const hasSun = step(0.0001, sunCol.r.add(sunCol.g).add(sunCol.b));
   const sunUp = max(sun.y, 0);
-  const lit = mix(vec3(1), max(vec3(0.16).add(sunCol.rgb.mul(sunUp).mul(0.42)), vec3(0.1)), hasSun);
-  const body = mix(shallow.rgb, deep.rgb, ab3).mul(lit);
+  const lit = mix(vec3(1), max(vec3(0.14).add(sunCol.rgb.mul(sunUp).mul(0.32)), vec3(0.1)), hasSun);
+  // a crest holds less water between the eye and the deep than a trough: lighter crests, darker troughs
+  const hBody = clamp(vSurf.div(max(sun.w, 0.05)).mul(0.5).add(0.5), 0, 1);
+  const body = mix(shallow.rgb, deep.rgb, ab3).mul(lit).mul(mix(0.75, 1.3, hBody));
   // what is seen through the water lost its light on the way down to it and back up along the view, per colour (pure
   // water eats red ten times faster than green, green twice as fast as blue: clarity 5 m is clear sea water), and the
   // water's own lit colour scattered in over the same path (murk: how much)
@@ -237,7 +241,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   // thinner lines of foam sliding in over the shallows
   const lines = smoothstep(0.62, 0.8, sin(depth.mul(7.0 / 1).sub(shallow.w.mul(1.6)).add(noise.mul(5))).mul(0.5).add(0.5))
     .mul(float(1).sub(smoothstep(sw.mul(0.8), sw.mul(3.2), depth))).mul(shoreOn).mul(0.55);
-  const thr = float(0.75).sub(shore.w.mul(0.5));
+  const thr = float(0.95).sub(shore.w.mul(0.4));
   const farFade = float(1).sub(smoothstep(200, 700, dist));
   const crestFoam = smoothstep(thr, thr.add(0.12), float(1).sub(vBunch).add(noise.sub(0.5).mul(0.25))).mul(step(0.001, shore.w)).mul(lumpy).mul(farFade);
   const splashFoam = smoothstep(0.08, 0.5, rfoam.mul(mix(0.55, 1.2, noise2)));
@@ -247,7 +251,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const lace0 = texture(causticMap, rest.mul(0.29).add(f.mul(flow.x).mul(0.4))).r.mul(4);
   const lace1 = texture(causticMap, rest.mul(0.71).add(vec2(0.37, 0.61)).sub(f.mul(flow.y).mul(0.6))).r.mul(4);
   const lace = mix(clamp(max(lace0, lace1.mul(0.8)).mul(0.4), 0, 1), float(0.55), smoothstep(60, 250, dist));
-  const foam = clamp(foamRaw.mul(1.7).sub(float(1).sub(lace).mul(1.25)), 0, 1).mul(mix(0.82, 1, noise2));
+  const foam = clamp(foamRaw.mul(1.45).sub(float(1).sub(lace).mul(1.4)), 0, 1).mul(mix(0.82, 1, noise2));
   const emitAbove = mix(refr, refl, fres).add(sss.mul(float(1).sub(fres))).add(gl);
   // seen from under the water: the world above shows through a window of light (Snell's), bent and dimmed by the
   // Fresnel term from water into air; outside it the surface mirrors the water itself (total internal reflection)

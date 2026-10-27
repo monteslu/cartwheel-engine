@@ -10015,7 +10015,7 @@
     {
      "name": "roughness",
      "type": "float",
-     "default": "0.08",
+     "default": "0.04",
      "stored": true,
      "readonly": false,
      "min": 0,

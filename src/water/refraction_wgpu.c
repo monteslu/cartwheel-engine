@@ -64,12 +64,12 @@ bool cw__water_refr_wgpu(cw_pass_ctx *ctx, water3d *d, t3_camera *cam, int w, in
     return true;
   }
   t3_renderer *r = ctx->renderer;
-  float a = 1;
-  t3_color cc = t3_renderer_get_clear_color(r, &a);
+  /* cleared to black: where nothing is under the water the surface shows its own colour (an engine target gets no
+   * sky, and the renderer's clear colour is not the scene's background) */
   t3_external_target et = {
     .color = (uintptr_t)cw__pw_attach(c->tex), .depth = (uintptr_t)cw__pw_attach(c->depth_tex),
     .color_format = (int)cw__pw_format(c->tex), .depth_format = (int)cw__pw_format(c->depth_tex), .samples = 1,
-    .load_color = false, .load_depth = false, .clear_rgba = { cc.r, cc.g, cc.b, a }, .clear_depth = 1,
+    .load_color = false, .load_depth = false, .clear_rgba = { 0, 0, 0, 1 }, .clear_depth = 1,
     .x = 0, .y = 0, .w = w, .h = h, .flip_y = false,
   };
   t3_renderer_set_external_encoder(r, (uintptr_t)cw__pw_encoder());
