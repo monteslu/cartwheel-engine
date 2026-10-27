@@ -6,7 +6,12 @@
 // native run one frame early (or with the control input) compared against
 // the reference must differ, or the gate cannot detect anything.
 //
-//   node tests/gate.mjs [gate-name ...] [--hosts native,romdev,chromium] [--gpu gl|webgpu]
+//   node tests/gate.mjs [gate-name ...] [--hosts native,romdev,chromium] [--gpu gl|webgpu] [--cpu]
+//
+// --cpu: the CPU-only mode for state checks. No GPU is used and no GPU suite lock is taken (so it never queues
+// behind other suites): the native host runs on Mesa's software renderer (CW_TEST_GPU=software), only gates with
+// an `expect` block run (their named state is the check; frames are not compared across hosts), and each still
+// runs its control, which must fail. Gates without `expect` are listed as skipped, never counted as passing.
 //
 // --gpu webgpu runs the gates that have a "webgpu" entry on the WebGPU backend instead (see wgpuGates).
 import { spawn } from 'node:child_process';
@@ -18,6 +23,7 @@ import { takeSuiteLock } from '../tools/lib/suite-lock.mjs';
 import { armGuard } from '../tools/lib/gpu-guard.mjs';
 import { testEnv } from '../tools/lib/wgpu-pin.mjs';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
+if (process.argv.includes('--cpu')) process.env.CW_TEST_GPU = 'software'; // see the header
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
 await takeSuiteLock('gate.mjs');
@@ -33,7 +39,8 @@ const PROJ = process.env.CW_PROJECT_ROOT ? resolve(process.env.CW_PROJECT_ROOT) 
 const OUT = join(PROJ, 'out', 'gate');
 mkdirSync(OUT, { recursive: true });
 const argv = process.argv.slice(2);
-const hostsArg = argv.includes('--hosts') ? argv[argv.indexOf('--hosts') + 1].split(',') : null;
+const cpuMode = argv.includes('--cpu');
+const hostsArg = cpuMode ? ['native'] : argv.includes('--hosts') ? argv[argv.indexOf('--hosts') + 1].split(',') : null;
 const gpuArg = argv.includes('--gpu') ? argv[argv.indexOf('--gpu') + 1] : 'gl';
 // --no-chromium drops the Chromium leg from every gate; --chromium-only runs only the gates' Chromium leg (with the native reference)
 const noChromium = argv.includes('--no-chromium'), chromiumOnly = argv.includes('--chromium-only');
@@ -261,6 +268,7 @@ if (gpuArg === 'webgpu') {
 let failed = 0;
 for (const g of gates) {
   if (g.gl === false) continue; // a WebGPU-only gate (its controls are WebGPU faults)
+  if (cpuMode && (g.script || !g.expect)) { console.log(`skip ${g.name} (--cpu runs only gates with an expect block)`); continue; }
   // tool gates that launch Chromium somewhere (its source names it): left out by --no-chromium, the only tool gates of --chromium-only
   // ("chromium": true in gates.json when the script reaches Chromium only through data, e.g. tutorial specs)
   const chrome = g.script && (g.chromium === true || /chromium/i.test(readFileSync(join(PROJ, g.script), 'utf8')));
