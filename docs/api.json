@@ -2368,9 +2368,45 @@
      "signature": "bool cw_shockwave_active(cw_node n)",
      "doc": "The ring is expanding now.",
      "inline": false
+    },
+    {
+     "name": "cw_explosion_fire",
+     "signature": "void cw_explosion_fire(cw_node n)",
+     "doc": "Fire an Explosion3D now (restarts its particles and shockwave, takes a flash\nlight and a scorch mark, records the shake).",
+     "inline": false
+    },
+    {
+     "name": "cw_explosion_playing",
+     "signature": "bool cw_explosion_playing(cw_node n)",
+     "doc": "The explosion is playing (fired and not past its duration).",
+     "inline": false
+    },
+    {
+     "name": "cw_explosion_shake",
+     "signature": "float cw_explosion_shake(cw_tree *t, t3_vec3 at)",
+     "doc": "Camera shake at a world position from every explosion playing in the tree:\neach adds shake_amount x (1 - distance / shake_radius)^2 x (1 - age /\nshake_time)^2; 0 when none is near, at most 4.",
+     "inline": false
+    },
+    {
+     "name": "cw_shake_offset",
+     "signature": "static inline t3_vec3 cw_shake_offset(float shake, uint32_t tick, float max_offset)",
+     "doc": "A deterministic camera offset for a shake value: three numbers hashed from\nthe tick, each in [-max_offset, max_offset] x min(shake, 1). Add it to the\ncamera's position (and scale it to its rotation if you like); the same\ntick gives the same offset on every host.",
+     "inline": true
+    },
+    {
+     "name": "cw_explosion_get_stats",
+     "signature": "void cw_explosion_get_stats(cw_tree *t, cw_explosion_stats *out)",
+     "doc": "The pools' counts now; zeroed when the tree has no Explosion3D.",
+     "inline": false
     }
    ],
-   "types": [],
+   "types": [
+    {
+     "name": "cw_explosion_stats",
+     "doc": "What the pools hold now (tests, profilers).",
+     "decl": "typedef struct cw_explosion_stats {\n  int flash_pool;       /* flash lights made */\n  int flashes_active;   /* of them borrowed by an explosion now */\n  int lights_lit;       /* of them with energy above 0 now */\n  int scorch_pool;      /* scorch marks (dark + glow decal pairs) made */\n  int scorches_active;  /* of them in use */\n} cw_explosion_stats;"
+    }
+   ],
    "macros": []
   },
   {

@@ -1,0 +1,317 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Post" parent="." type="PostProcess"]
+bloom = true
+bloom_intensity = 0.08
+ssao = true
+vignette = true
+vignette_intensity = 0.3
+chromatic_aberration = true
+ca_intensity = 0.002
+
+[node name="Lighting" parent="." type="LightingSettings"]
+mode = "CLUSTERED"
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 18.4
+latitude = 40
+declination = 15
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+shadow_extent = 40
+energy = 3
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(-2.5, 1.5, 11)
+rotation = vec3(-0.03, -0.1, 0)
+fov = 55
+far = 300
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.15, 0)
+size = vec3(60, 0.3, 60)
+color = color(0.33, 0.31, 0.29, 1)
+roughness = 0.95
+receive_shadow = true
+
+[node name="WallBack" parent="." type="MeshInstance3D"]
+position = vec3(0, 3, -9)
+size = vec3(30, 6, 0.8)
+color = color(0.42, 0.36, 0.3, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="WallLeft" parent="." type="MeshInstance3D"]
+position = vec3(-9, 2, -3)
+size = vec3(0.8, 4, 10)
+color = color(0.38, 0.34, 0.3, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true
+
+[node name="Pillar" parent="." type="MeshInstance3D"]
+position = vec3(5.5, 2, -5)
+size = vec3(1.4, 4, 1.4)
+color = color(0.5, 0.45, 0.4, 1)
+roughness = 0.85
+cast_shadow = true
+receive_shadow = true
+
+[node name="Crate1" parent="." type="MeshInstance3D"]
+position = vec3(3.2, 0.5, 1.8)
+rotation = vec3(0, 0.4, 0)
+size = vec3(1, 1, 1)
+color = color(0.5, 0.33, 0.14, 1)
+roughness = 0.8
+cast_shadow = true
+receive_shadow = true
+
+[node name="Crate2" parent="." type="MeshInstance3D"]
+position = vec3(-4.2, 0.5, -1.5)
+rotation = vec3(0, 0.9, 0)
+size = vec3(1.2, 1, 1.2)
+color = color(0.45, 0.3, 0.13, 1)
+roughness = 0.8
+cast_shadow = true
+receive_shadow = true
+
+[node name="Pole" parent="." type="MeshInstance3D"]
+position = vec3(-1.2, 1.4, 6)
+size = vec3(0.3, 2.8, 0.3)
+color = color(0.2, 0.22, 0.25, 1)
+metalness = 0.7
+roughness = 0.4
+cast_shadow = true
+
+[node name="Barrel1" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(-2.2, 0.55, 3.2)
+size = vec3(0.7, 1.1, 0.7)
+color = color(0.7, 0.12, 0.08, 1)
+metalness = 0.6
+roughness = 0.45
+cast_shadow = true
+receive_shadow = true
+
+[node name="Barrel2" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(2.2, 0.55, -3.2)
+size = vec3(0.7, 1.1, 0.7)
+color = color(0.15, 0.3, 0.6, 1)
+metalness = 0.6
+roughness = 0.45
+cast_shadow = true
+receive_shadow = true
+
+[node name="Barrel3" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(-6, 0.55, 1)
+size = vec3(0.7, 1.1, 0.7)
+color = color(0.55, 0.5, 0.1, 1)
+metalness = 0.6
+roughness = 0.45
+cast_shadow = true
+receive_shadow = true
+
+[node name="Floor" parent="." type="ParticleCollider3D"]
+shape = PLANE
+
+[node name="Boom" parent="." type="Explosion3D"]
+position = vec3(0, 0, 0)
+duration = 4.5
+flash_energy = 160
+flash_range = 16
+scorch_size = 5
+
+[node name="Fire" parent="Boom" type="GPUParticles3D"]
+emitting = false
+one_shot = true
+amount = 9
+lifetime = 1.5
+explosiveness = 1
+emission_shape = SPHERE
+emission_radius = 0.7
+direction = vec3(0, 1, 0)
+spread = 180
+speed_min = 0.4
+speed_max = 1.8
+gravity = vec3(0, 1.4, 0)
+damping = 2.2
+size = 5
+size_random = 0.35
+size_curve = "0 0.55, 0.3 1, 1 1.25"
+color_ramp = "0 1 1 1 0, 0.06 1 1 1 1, 0.8 1 0.85 0.8 0.9, 1 1 0.7 0.6 0"
+energy = 3.2
+texture = "fire.png"
+motion_texture = "fire_mv.png"
+hframes = 8
+vframes = 8
+spin = 0.25
+soft_distance = 0.8
+seed = 40
+
+[node name="Flames" parent="Boom" type="GPUParticles3D"]
+emitting = false
+one_shot = true
+amount = 16
+lifetime = 1.1
+explosiveness = 0.8
+emission_shape = SPHERE
+emission_radius = 0.5
+direction = vec3(0, 1, 0)
+spread = 90
+speed_min = 2.5
+speed_max = 6
+gravity = vec3(0, 2, 0)
+damping = 1.6
+size = 2.4
+size_random = 0.5
+size_curve = "0 0.5, 0.35 1, 1 0.8"
+color_ramp = "0 1 1 1 0, 0.08 1 1 1 1, 1 1 0.8 0.7 0"
+energy = 2.6
+texture = "fire.png"
+motion_texture = "fire_mv.png"
+hframes = 8
+vframes = 8
+spin = 0.6
+soft_distance = 0.5
+seed = 41
+
+[node name="Smoke" parent="Boom" type="GPUParticles3D"]
+emitting = false
+one_shot = true
+amount = 22
+lifetime = 4.2
+explosiveness = 0.75
+emission_shape = SPHERE
+emission_radius = 0.9
+direction = vec3(0, 1, 0)
+spread = 120
+speed_min = 1
+speed_max = 4.2
+gravity = vec3(0, 0.9, 0)
+damping = 1.1
+turbulence = 1.1
+turbulence_scale = 0.3
+blend = ALPHA
+sort = true
+soft_distance = 0.9
+size = 5.2
+size_random = 0.3
+size_curve = "0 0.45, 0.3 1, 1 1.55"
+color_ramp = "0 1 0.9 0.8 0, 0.08 0.75 0.7 0.64 0.95, 0.45 0.38 0.36 0.35 0.75, 1 0.3 0.3 0.31 0"
+energy = 1
+texture = "smoke.png"
+motion_texture = "smoke_mv.png"
+hframes = 8
+vframes = 8
+spin = 0.18
+seed = 42
+
+[node name="Sparks" parent="Boom" type="GPUParticles3D"]
+emitting = false
+one_shot = true
+amount = 420
+lifetime = 1.8
+explosiveness = 0.95
+emission_shape = POINT
+spread = 180
+speed_min = 5
+speed_max = 17
+gravity = vec3(0, -9.8, 0)
+damping = 0.5
+draw_mode = STRETCHED
+stretch = 0.045
+size = 0.05
+color_ramp = "0 1 0.95 0.7 1, 0.5 1 0.5 0.12 1, 1 0.6 0.1 0.05 0"
+energy = 7
+bounce = 0.5
+seed = 43
+
+[node name="Debris" parent="Boom" type="GPUParticles3D"]
+emitting = false
+one_shot = true
+amount = 36
+lifetime = 2.2
+explosiveness = 1
+emission_shape = SPHERE
+emission_radius = 0.3
+direction = vec3(0, 1, 0)
+spread = 65
+speed_min = 6
+speed_max = 13
+gravity = vec3(0, -9.8, 0)
+draw_mode = MESH
+mesh_primitive = BOX
+blend = OPAQUE
+size = 0.22
+size_random = 0.6
+color = color(0.22, 0.19, 0.17, 1)
+spin = 6
+bounce = 0.35
+seed = 44
+
+[node name="DebrisTrail" parent="Boom" type="GPUParticles3D"]
+emitting = false
+one_shot = true
+amount = 360
+lifetime = 1.4
+emission_shape = PARENT
+parent = "../Debris"
+inherit_velocity = 0.05
+spread = 180
+speed_min = 0.1
+speed_max = 0.5
+gravity = vec3(0, 0.6, 0)
+blend = ALPHA
+soft_distance = 0.4
+size = 0.9
+size_curve = "0 0.4, 1 1.4"
+color_ramp = "0 0.8 0.75 0.7 0, 0.15 0.55 0.52 0.5 0.55, 1 0.35 0.35 0.35 0"
+texture = "smoke.png"
+hframes = 8
+vframes = 8
+spin = 0.4
+seed = 45
+
+[node name="Haze" parent="Boom" type="GPUParticles3D"]
+emitting = false
+one_shot = true
+amount = 40
+lifetime = 2.4
+explosiveness = 0.35
+emission_shape = SPHERE
+emission_radius = 1.2
+direction = vec3(0, 1, 0)
+spread = 50
+speed_min = 0.8
+speed_max = 2.2
+gravity = vec3(0, 0, 0)
+turbulence = 0.7
+blend = DISTORT
+distort_strength = 0.12
+size = 4.5
+size_curve = "0 0.6, 1 1.6"
+color_ramp = "0 1 1 1 0, 0.15 1 1 1 1, 1 1 1 1 0"
+seed = 46
+
+[node name="Wave" parent="Boom" type="Shockwave3D"]
+autostart = false
+ground = true
+max_radius = 10
+duration = 0.9
+thickness = 1.3
+strength = 0.55
+
+[node name="WaveAir" parent="Boom" type="Shockwave3D"]
+position = vec3(0, 1.2, 0)
+autostart = false
+max_radius = 6
+duration = 0.55
+thickness = 0.9
+strength = 0.9

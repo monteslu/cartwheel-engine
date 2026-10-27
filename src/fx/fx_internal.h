@@ -72,6 +72,8 @@ typedef struct cw__fx_tree {
   const cw_rt *dist;            /* this view's distortion buffer (made by the "distort_sources" pass, used by the particles and "distort") */
   const cw_rt *copy;            /* this view's scene colour copy, when something asked for it */
   bool distort_added;
+  CW_ARRAY(cw_node) explosions; /* Explosion3D (explosion.c) */
+  bool explosion_hook;
   cw_particles_stats stats, last_stats;
 } cw__fx_tree;
 
@@ -102,6 +104,7 @@ const cw_rt *cw__fx_scene_copy(cw_pass_ctx *ctx, cw__fx_tree *ft);
 bool cw__psys_distort_active(cw_node n);
 bool cw__psys_refract_active(cw_node n);
 void cw__register_distort_types(void);
+void cw__register_explosion_types(void);
 
 void cw__register_particles3d_types(void);
 void cw__register_particles2d_types(void);

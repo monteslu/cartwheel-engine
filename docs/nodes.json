@@ -7172,9 +7172,26 @@
       "SPHERE_SURFACE",
       "BOX",
       "RING",
-      "MESH"
+      "MESH",
+      "PARENT"
      ],
-     "doc": "Where particles spawn (in the emitter's space; MESH: on emission_mesh's surface)."
+     "doc": "Where particles spawn (in the emitter's space; MESH: on emission_mesh's surface; PARENT: at a living particle of the GPUParticles3D named by `parent`, a sub-emitter: debris that trails smoke)."
+    },
+    {
+     "name": "parent",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "PARENT: path (from this node) to the GPUParticles3D whose particles this one spawns from. List the parent before this node in the tree. The parent's particles are read in world space."
+    },
+    {
+     "name": "inherit_velocity",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "PARENT: share of the parent particle's velocity added to the start velocity (0 = none, 1 = all)."
     },
     {
      "name": "emission_extents",
@@ -7507,6 +7524,24 @@
      "min": 0,
      "max": 1000,
      "doc": "DISTORT / REFRACT: how far the picture behind a particle is shifted at its centre (world units at its distance), times its alpha over life."
+    },
+    {
+     "name": "motion_texture",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Flipbook motion vectors: an image the size of `texture` whose red and green say how each pixel moves into the next frame (tools/fx/bake-flipbooks.mjs writes them). The frame in between is drawn by blending two frames along the motion: 16 frames look like 60. Empty = frames just step."
+    },
+    {
+     "name": "motion_strength",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 16,
+     "doc": "Scale of the motion vectors (1 = as baked)."
     },
     {
      "name": "sort",
@@ -8198,6 +8233,182 @@
      "stored": false,
      "readonly": true,
      "doc": "The ring's strength now, 0 to 1 of `strength`."
+    }
+   ]
+  },
+  {
+   "name": "Explosion3D",
+   "parent": "Node3D",
+   "doc": "Fires a whole explosion: restarts the particle systems and shockwave under it, flashes a pooled light, stamps a cooling scorch mark, records a camera shake (explosions.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "autostart",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Fire once when the node enters the tree."
+    },
+    {
+     "name": "loop",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Fire again every `duration` seconds."
+    },
+    {
+     "name": "duration",
+     "type": "float",
+     "default": "3",
+     "stored": true,
+     "readonly": false,
+     "min": 0.05,
+     "max": 3600,
+     "doc": "Seconds the explosion plays (the light, the particles' one shot and the shake all fit inside it); loop fires again then."
+    },
+    {
+     "name": "flash_energy",
+     "type": "float",
+     "default": "120",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100000,
+     "doc": "Peak light of the flash (0 = no flash light)."
+    },
+    {
+     "name": "flash_color",
+     "type": "color",
+     "default": "color(1, 0.62, 0.28, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Flash colour (linear)."
+    },
+    {
+     "name": "flash_range",
+     "type": "float",
+     "default": "14",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10000,
+     "doc": "Reach of the flash light, world units."
+    },
+    {
+     "name": "flash_duration",
+     "type": "float",
+     "default": "0.45",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 60,
+     "doc": "Seconds the flash takes to die away (fast at first)."
+    },
+    {
+     "name": "scorch_size",
+     "type": "float",
+     "default": "4",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Width of the scorch mark on the ground under the node (0 = no mark). The node stands at ground level."
+    },
+    {
+     "name": "scorch_time",
+     "type": "float",
+     "default": "7",
+     "stored": true,
+     "readonly": false,
+     "min": 0.1,
+     "max": 3600,
+     "doc": "Seconds the mark takes to cool from glowing to dark."
+    },
+    {
+     "name": "scorch_life",
+     "type": "float",
+     "default": "40",
+     "stored": true,
+     "readonly": false,
+     "min": 0.1,
+     "max": 36000,
+     "doc": "Seconds the mark stays before it fades away (at least scorch_time)."
+    },
+    {
+     "name": "scorch_glow",
+     "type": "float",
+     "default": "3",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Peak glow of the mark (HDR energy)."
+    },
+    {
+     "name": "scorch_depth",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0.1,
+     "max": 100,
+     "doc": "How far above and below the node's height the mark lands on geometry."
+    },
+    {
+     "name": "scorch_offset",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Move the mark's box up (+) or down (-) from the node's height."
+    },
+    {
+     "name": "shake_amount",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Camera shake at the blast (1 = a strong shake); read with cw_explosion_shake."
+    },
+    {
+     "name": "shake_radius",
+     "type": "float",
+     "default": "25",
+     "stored": true,
+     "readonly": false,
+     "min": 0.1,
+     "max": 100000,
+     "doc": "Shake fades to nothing at this distance."
+    },
+    {
+     "name": "shake_time",
+     "type": "float",
+     "default": "0.9",
+     "stored": true,
+     "readonly": false,
+     "min": 0.05,
+     "max": 60,
+     "doc": "Seconds the shake lasts."
+    },
+    {
+     "name": "playing",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Playing now."
+    },
+    {
+     "name": "age",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Seconds since it fired."
     }
    ]
   },

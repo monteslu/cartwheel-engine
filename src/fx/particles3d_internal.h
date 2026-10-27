@@ -9,7 +9,7 @@
 #include "fx_wgpu.h"
 #endif
 
-enum { SHAPE_POINT, SHAPE_SPHERE, SHAPE_SPHERE_SURFACE, SHAPE_BOX, SHAPE_RING, SHAPE_MESH };
+enum { SHAPE_POINT, SHAPE_SPHERE, SHAPE_SPHERE_SURFACE, SHAPE_BOX, SHAPE_RING, SHAPE_MESH, SHAPE_PARENT };
 enum { DRAW_BILLBOARD, DRAW_STRETCHED, DRAW_MESH };
 enum { MP_BOX, MP_SPHERE, MP_TETRA, MP_NODE };
 enum { BLEND_ADD, BLEND_ALPHA, BLEND_OPAQUE, BLEND_DISTORT, BLEND_REFRACT };
@@ -87,6 +87,8 @@ typedef struct p3d {
   float emission_radius, emission_inner_radius;
   const char *emission_mesh; /* node path, relative to the emitter */
   float emission_normal_speed;
+  const char *parent;        /* PARENT: node path of the GPUParticles3D whose particles this one spawns from */
+  float inherit_velocity;    /* PARENT: share of the parent particle's velocity the child starts with */
   t3_vec3 direction;
   float spread, speed_min, speed_max;
   t3_vec3 gravity;
@@ -104,6 +106,8 @@ typedef struct p3d {
   int blend;
   float soft_distance;
   float distort_strength; /* DISTORT / REFRACT: how far the picture is shifted (world units at the particle) */
+  const char *motion_texture; /* flipbook: motion vector sheet (red, green = motion to the next frame), frames are blended along it */
+  float motion_strength;        /* its scale (1 = as the baker wrote it) */
   bool sort;
   int trail_length;
   float trail_width;
@@ -117,6 +121,8 @@ typedef struct p3d {
 
 /* the runtime of a GPUParticles3D node (NULL for any other node) */
 cw__psys *cw__psys_of(cw_node n);
+/* the GPUParticles3D data of a node (NULL for any other node) */
+p3d *cw__psys_data(cw_node n);
 /* particles3d.c helpers the WebGPU path uses */
 /* the tree's attractors (pos xyz, radius, strength, attenuation, 0, 0 each)
  * and colliders (inverse, world matrix, shape params), as the shaders read them */

@@ -41,6 +41,7 @@
 #ifndef CW_EXPLOSIONS_H
 #define CW_EXPLOSIONS_H
 
+#include "particles.h"
 #include "scene.h"
 
 #ifdef __cplusplus
@@ -54,6 +55,69 @@ void cw_shockwave_fire(cw_node n);
 float cw_shockwave_radius(cw_node n);
 /* The ring is expanding now. */
 bool cw_shockwave_active(cw_node n);
+
+
+/* ── the explosion kit ───────────────────────────────────────────────────
+ *   Explosion3D (Node3D)   fires a whole explosion from its children and a
+ *                          few pooled helpers. Author the children like any
+ *                          scene: GPUParticles3D parts (fire, smoke, sparks,
+ *                          debris; emitting off, one_shot on), a Shockwave3D
+ *                          (autostart off). The node's properties:
+ *     autostart, loop, duration    fires when it enters the tree; loop fires
+ *                                  again every `duration` seconds
+ *     flash_energy, flash_color,   a light that flashes at the blast and dies
+ *     flash_range, flash_duration  away fast. The lights come from a pool the
+ *                                  effects preset sizes (cw_quality_scale
+ *                                  "flash_lights": 2, 4, 8, 8 lights); a
+ *                                  busy scene takes the oldest flash back, so
+ *                                  blasts in a row or in four split-screen
+ *                                  views never grow the light count
+ *     scorch_size, scorch_time,    a scorch mark on the ground under the node
+ *     scorch_life, scorch_glow,    (it stands at ground level): a dark layer
+ *     scorch_depth, scorch_offset  that fades after scorch_life and a glow
+ *                                  that cools from orange to nothing over
+ *                                  scorch_time (12 marks pooled, the oldest
+ *                                  recycled)
+ *     shake_amount, shake_radius,  camera shake: cw_explosion_shake gives the
+ *     shake_time                   shake at a place; cw_shake_offset turns it
+ *                                  into a camera offset
+ * Sub-emitters: a GPUParticles3D with emission_shape PARENT spawns at the
+ * living particles of another GPUParticles3D (particles.h).
+ * Flipbooks: GPUParticles3D motion_texture blends flipbook frames along
+ * baked motion vectors (tools/fx/bake-flipbooks.mjs bakes fire and smoke).
+ * Everything runs on the fixed step: the same ticks give the same flash,
+ * scorch and shake on every host. */
+
+/* Fire an Explosion3D now (restarts its particles and shockwave, takes a flash
+ * light and a scorch mark, records the shake). */
+void cw_explosion_fire(cw_node n);
+/* The explosion is playing (fired and not past its duration). */
+bool cw_explosion_playing(cw_node n);
+/* Camera shake at a world position from every explosion playing in the tree:
+ * each adds shake_amount x (1 - distance / shake_radius)^2 x (1 - age /
+ * shake_time)^2; 0 when none is near, at most 4. */
+float cw_explosion_shake(cw_tree *t, t3_vec3 at);
+/* A deterministic camera offset for a shake value: three numbers hashed from
+ * the tick, each in [-max_offset, max_offset] x min(shake, 1). Add it to the
+ * camera's position (and scale it to its rotation if you like); the same
+ * tick gives the same offset on every host. */
+static inline t3_vec3 cw_shake_offset(float shake, uint32_t tick, float max_offset) {
+  float k = (shake < 1 ? shake : 1) * max_offset;
+  return (t3_vec3){ ((float)(cw_particle_hash(tick * 3u + 1u) >> 8) / 8388608.0f - 1.0f) * k,
+                    ((float)(cw_particle_hash(tick * 3u + 2u) >> 8) / 8388608.0f - 1.0f) * k,
+                    ((float)(cw_particle_hash(tick * 3u + 3u) >> 8) / 8388608.0f - 1.0f) * k };
+}
+
+/* What the pools hold now (tests, profilers). */
+typedef struct cw_explosion_stats {
+  int flash_pool;       /* flash lights made */
+  int flashes_active;   /* of them borrowed by an explosion now */
+  int lights_lit;       /* of them with energy above 0 now */
+  int scorch_pool;      /* scorch marks (dark + glow decal pairs) made */
+  int scorches_active;  /* of them in use */
+} cw_explosion_stats;
+/* The pools' counts now; zeroed when the tree has no Explosion3D. */
+void cw_explosion_get_stats(cw_tree *t, cw_explosion_stats *out);
 
 #ifdef __cplusplus
 }

@@ -2487,6 +2487,19 @@
     "note": "WebGPU compute spikes: FFT ocean, ripple grid, fire step and march, particle liquid, GPU ms each; report out/perf/spikes-report.txt"
   },
   {
+    "name": "fx-sub-emitters",
+    "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "FXS_OFF": "1" } }] },
+    "app": "fx_sub_emitters",
+    "frames": 150,
+    "maxGt16": 0.003,
+    "tol": 0.0001,
+    "fields": ["fxs.child.alive", "fxs.child.gpu_alive", "fxs.child.mean", "fxs.parent.alive", "tree.nodes"],
+    "expect": { "fxs.child.alive": 200, "fxs.child.gpu_alive": 200 },
+    "controlFrames": 150,
+    "controlEnv": { "FXS_OFF": "1" },
+    "note": "sub-emitter: every child particle is born at a parent particle (mean position = the parent's, not the child node's), GPU alive counts and means on every host and both backends; the control makes the child a point emitter and its mean moves"
+  },
+  {
     "name": "fx-distort",
     "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "FXD_OFF": "1" } }] },
     "app": "fx_distort",
@@ -2497,6 +2510,11 @@
     "controlFrames": 90,
     "controlEnv": { "FXD_OFF": "1" },
     "note": "heat haze (blend DISTORT), a Shockwave3D ring and refracting lens particles (blend REFRACT) bend the stripes behind them, on every host and both backends; the control zeroes every strength and the frame must change"
+  },
+  {
+    "name": "fx-explosion-kit",
+    "script": "tests/explosion.mjs",
+    "note": "Explosion3D on GL and WebGPU: pooled flash light (pool size per preset), scorch mark, shake, particles; after its life the frame equals the never-fired frame (control: early it differs); GL and WebGPU agree"
   },
   {
     "name": "fx-distort-regions",
