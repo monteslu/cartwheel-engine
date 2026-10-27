@@ -14,12 +14,12 @@ cw_vec2 cw_aim_step(cw_aim_state *s, const cw_aim_curve *c, cw_vec2 stick, float
   }
   float r = (len - c->deadzone) / (1 - c->deadzone); /* 0..1 past the dead zone */
   float k = c->power == 1 ? r : cw_pow(r, c->power);
-  /* the boost builds while the stick stays at its edge and drains when it leaves */
+  /* the boost this tick is what the stick has held so far; it builds while the stick stays at its edge and drains when it leaves */
+  float boost = 1;
+  if (c->ramp_seconds > 0) boost += c->ramp_gain * cw_clampf(s->held / c->ramp_seconds, 0, 1);
   if (c->ramp_seconds > 0 && len >= c->ramp_edge) s->held += dt;
   else s->held -= dt * 2;
   if (s->held < 0) s->held = 0;
-  float boost = 1;
-  if (c->ramp_seconds > 0) boost += c->ramp_gain * cw_clampf(s->held / c->ramp_seconds, 0, 1);
   float slow = 1 - cw_clampf(c->assist, 0, 1) * cw_clampf(on_target, 0, 1);
   float m = k * boost * slow * dt / len; /* the direction is stick / len */
   return (cw_vec2){ stick.x * m * c->yaw_rate, stick.y * m * c->pitch_rate };
