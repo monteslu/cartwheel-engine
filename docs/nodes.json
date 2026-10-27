@@ -8307,6 +8307,14 @@
      "doc": "Seconds the flash takes to die away (fast at first)."
     },
     {
+     "name": "scorch_texture",
+     "type": "string",
+     "default": "\"scorch.png\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Image of the scorch marks: a 2 x 2 sheet of four 256 pixel shapes (tools/fx/bake-flipbooks.mjs writes scorch.png). Each mark picks one, turns it and stretches it. Empty: a plain round mark."
+    },
+    {
      "name": "scorch_size",
      "type": "float",
      "default": "4",

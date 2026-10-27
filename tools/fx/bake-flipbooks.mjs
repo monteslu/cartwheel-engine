@@ -102,3 +102,27 @@ for (const kind of ['fire', 'smoke']) {
   writePng(join(out, `${kind}_mv.png`), W, W, mv);
   console.log(`${kind}.png, ${kind}_mv.png (${W}x${W}, ${FRAMES} frames)`);
 }
+
+// scorch marks: four irregular blast marks (2 x 2 of 256 pixels) for Explosion3D's decals: a dark, ragged
+// core with streaks thrown outward, alpha fading to nothing at the edge. Different shapes, so a yard of
+// scorch marks does not repeat (the decal also turns and stretches each one).
+{
+  const S = 512, C = 256, col = new Uint8Array(S * S * 4);
+  for (let v = 0; v < 4; v++) {
+    const ox = (v % 2) * C, oy = Math.floor(v / 2) * C;
+    const rays = 7 + v * 2, seed = 100 + v * 17;
+    for (let y = 0; y < C; y++) for (let x = 0; x < C; x++) {
+      const qx = (x + 0.5) / C * 2 - 1, qy = (y + 0.5) / C * 2 - 1, r = Math.hypot(qx, qy), a = Math.atan2(qy, qx);
+      const warp = fbm(Math.cos(a) * 1.7 + 5 + v * 3, Math.sin(a) * 1.7 + 9, seed, 3);
+      const ray = Math.pow(Math.abs(Math.sin(a * rays * 0.5 + warp * 6)), 6) * fbm(a * 2 + v, 1.3, seed + 1, 2);
+      const edge = 0.45 + 0.35 * warp + 0.25 * ray;
+      const grit = fbm(qx * 7 + v, qy * 7, seed + 2, 4);
+      let m = 1 - smooth(edge * 0.55, edge * 1.05, r);
+      m *= 0.75 + 0.35 * grit;
+      const i = ((oy + y) * S + ox + x) * 4, g = Math.round(clamp(0.3 + 0.7 * (1 - m * 0.85)) * 255);
+      col[i] = g; col[i + 1] = g; col[i + 2] = g; col[i + 3] = Math.round(clamp(m * 1.1) * 255);
+    }
+  }
+  writePng(join(out, 'scorch.png'), S, S, col);
+  console.log('scorch.png (512x512, 4 variants)');
+}
