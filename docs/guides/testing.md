@@ -32,6 +32,7 @@ Run `node tests/all.mjs` on a machine with a GPU and those hosts for the full se
 ```sh
 node tests/gate.mjs                                  # every gate in tests/gates.json, on every host it can run on
 node tests/gate.mjs hello-input unit-scene           # some gates
+node tests/gate.mjs --gates-file mygame-gates.json   # another file in tests/ (comma separated for several; env CW_GATES_FILE)
 node tests/gate.mjs unit-scene --hosts native,romdev # narrow the hosts (never adds one a gate cannot run on)
 ```
 
