@@ -80,6 +80,9 @@ typedef struct cw_shell_desc {
   const char *title;      /* the title screen's heading (default "cartwheel") */
   const char *subtitle;   /* a line under it (optional) */
   int max_players;        /* 1..4 (default 1); more than 1 adds the join screen */
+  bool shared_screen;     /* every player plays in one shared view (one camera, a scrolling brawler or a co-op
+                           * platformer): cw_shell_split draws a single view and cw_shell_player_rect gives each
+                           * player the whole canvas */
   bool loading;           /* start on the loading screen until cw_shell_loaded */
   size_t game_save_size;  /* bytes of the game's own save data (cw_shell_game_save) */
   uint16_t game_save_version; /* change it when that layout changes: an older save starts over */
