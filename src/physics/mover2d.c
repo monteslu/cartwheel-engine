@@ -238,6 +238,27 @@ void cw_mover2d_move(cw_mover2d *m, float dt) {
     }
   }
 
+  /* corner correction: a rising body that clips the corner of a ceiling block is nudged around it */
+  if (def->corner_correction > 0 && rising && ci.on_ceiling && delta.y > 1e-5f && pos.y - start.y < delta.y * 0.9f) {
+    const int steps = 5;
+    float step = def->corner_correction / (float)steps;
+    float first = v.x < 0 ? -1.0f : 1.0f; /* the side the body is moving toward is tried first */
+    bool done = false;
+    for (int k = 1; k <= steps && !done; k++)
+      for (int si = 0; si < 2 && !done; si++) {
+        float sgn = si == 0 ? first : -first;
+        b2Vec2 off = { sgn * step * (float)k, 0 };
+        if (cast(&mv, start, off) < 1) continue; /* a wall that way */
+        b2Vec2 q = b2Add(start, off);
+        b2Vec2 p2 = slide(&mv, q, delta, false);
+        if (p2.y - q.y >= delta.y * 0.95f) {
+          pos = p2;
+          classify(&mv, pos, &ci);
+          done = true;
+        }
+      }
+  }
+
   m->snapped = false;
   if (!ci.on_floor && was_floor && !rising && !m->stepped && def->snap_length > 0) {
     b2Vec2 drop = { 0, -def->snap_length };
