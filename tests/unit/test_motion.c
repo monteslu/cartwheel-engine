@@ -91,10 +91,10 @@ static void test_exact(void) {
   cw_cmd_buf b; cw_motion dash = mo("!6!6");
   cw_cmd_clear(&b); push_dirs(&b, "656", 2, 0);
   CHECK(cw_motion_match(&b, &dash, 12) >= 0);
-  /* down-forward counts as forward for "66" but not for "!6!6": a quarter circle is not a dash */
+  /* the last step of any motion is exact, so a rising-strike motion never ends a dash or a quarter circle */
   cw_motion loose = mo("66");
   cw_cmd_clear(&b); push_dirs(&b, "623", 2, 0);
-  CHECK(cw_motion_match(&b, &loose, 12) >= 0);
+  CHECK(cw_motion_match(&b, &loose, 12) < 0); /* the last step is exact: down-forward is not forward */
   CHECK(cw_motion_match(&b, &dash, 12) < 0);
 }
 

@@ -107,7 +107,10 @@ static inline bool has(int s, int d) {
   if (dy && sy != dy) return false;
   return true;
 }
-static inline bool stepm(const cw_motion *m, int i, int s) { return (m->exact >> i & 1) ? s == m->steps[i] : has(s, m->steps[i]); }
+static inline bool stepm(const cw_motion *m, int i, int s) {
+  /* the last step must be exactly its direction (a quarter circle ends on forward, not down-forward), so 623 is not read as 236 */
+  return ((m->exact >> i & 1) || i == m->count - 1) ? s == m->steps[i] : has(s, m->steps[i]);
+}
 static inline bool diagonal(int d) { return d == 1 || d == 3 || d == 7 || d == 9; }
 
 /* Match steps [0..last] ending at or before age `from` (the newest frame the
