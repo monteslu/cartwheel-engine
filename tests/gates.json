@@ -3492,6 +3492,29 @@
     "note": "the same after the snow fills the screen and the burst re-armed twice. Control: one frame early"
   },
   {
+    "name": "viewmodel",
+    "app": "viewmodel_demo",
+    "frames": 30,
+    "minColors": 100,
+    "maxGt16": 0.002,
+    "fields": [
+      "vm.on",
+      "vm.layers",
+      "vm.fov",
+      "vm.tick"
+    ],
+    "expect": {
+      "vm.on": 1,
+      "vm.layers": 2,
+      "vm.fov": 50
+    },
+    "controlFrames": 30,
+    "controlEnv": {
+      "VIEWMODEL_OFF": "1"
+    },
+    "note": "a first person weapon on its own render layer: a long barrel under a wide-lens camera, longer than the distance to the wall, drawn by the viewmodel pass with its own 50 degree lens (whole, in front, lit by the scene). GL and WebGPU (and the carts) draw the same frame. Control: the gun on the default layer sinks into the wall and the frame differs"
+  },
+  {
     "name": "fx-decals",
     "app": "fx_decals",
     "frames": 30,
