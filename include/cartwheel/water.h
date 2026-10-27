@@ -43,6 +43,22 @@
  *                          over debug_range, B = 1)
  *     debug_range          vec2 (min, max) heights for debug_view HEIGHT
  *
+ *     floor_map_size       cells along the longer side of the baked floor depth
+ *                          map (128; 0 = no map, no shore shading). The map is
+ *                          made once, from the tree's static physics shapes: a
+ *                          static shape holding the point at the rest level is
+ *                          land (depth 0); else the highest static hit of a ray
+ *                          down from the rest level is the floor, a miss is deep
+ *     floor_range          metres under the rest level the rays probe (40)
+ *     shallow_color        colour of the water over a shallow floor (linear);
+ *                          it blends to deep_color as the depth grows
+ *     clarity              metres of water over which the shallow colour has
+ *                          become deep_color (5)
+ *     shore_foam           width in metres of the foam where the water meets
+ *                          the floor (0.7; 0 = none)
+ *     crest_foam           0..1: foam on the wave crests where the surface
+ *                          bunches up (0.35; 0 = none)
+ *
  *   Buoyancy3D   (Node3D) child of a RigidBody3D: pushes it up where its
  *                probes are under the water and drags it where they are
  *                wet. Properties:
@@ -138,6 +154,16 @@ float cw_water_height_at(cw_node water, float x, float z, double t);
 bool cw_water_sample_at(cw_node water, float x, float z, double t, cw_water_sample *out);
 /* The Water3D's waves, as cw_waves (for cw_waves_* in its local space). */
 bool cw_water_get_waves(cw_node water, cw_waves *out);
+
+/* The water's baked floor: metres of water over the floor at world (x, z)
+ * at rest (0 where the floor is land or above the rest level; a large value
+ * where the map has no floor or the point is outside it). Deterministic: it
+ * comes from physics ray casts, never from the GPU. 1e6 for a null or
+ * unbaked water. */
+float cw_water_floor_depth_at(cw_node water, float x, float z);
+/* Bake the floor map again (the static shapes changed). Done on the next
+ * frame. */
+void cw_water_rebake_floor(cw_node water);
 
 /* Last frame's numbers for a tree's water. */
 typedef struct cw_water_stats {

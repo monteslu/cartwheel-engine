@@ -213,6 +213,7 @@ cw_add_app(fog_shafts_perf_off SOURCES fog_shafts/main.c ASSETS ${CMAKE_CURRENT_
 target_compile_definitions(fog_shafts_perf_off PRIVATE FOG_SHAFTS_PERF=1 FOG_SHAFTS_OFF=1)
 # water: Gerstner waves with planar reflection and refraction, and bodies floating on them (Buoyancy3D)
 cw_add_app(water_boat SOURCES water_boat/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/water_boat/assets)
+cw_add_app(water_shore SOURCES water_shore/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/water_shore/assets)
 # baked lighting: lightmaps with generated uv1 charts, an SH probe grid, a reproducible bake.
 cw_add_app(lightmap_room SOURCES lightmap_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/lightmap_room/assets)
 # reflection probes (cartwheel/gi.h): a room with coloured walls, a polished floor, chrome

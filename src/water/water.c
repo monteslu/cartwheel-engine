@@ -10,6 +10,8 @@
 
 #include "cartwheel/gpu.h"
 #include "cartwheel/math.h"
+#include "cartwheel/physics3d.h"
+#include "cartwheel/physics_nodes.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/quality.h"
@@ -139,6 +141,12 @@ static void water_init(cw_node n, void *data) {
   d->reflection = d->refraction = true;
   d->resolution_scale = 0.5f;
   d->debug_range[0] = -2, d->debug_range[1] = 2;
+  d->floor_map_size = 128;
+  d->floor_range = 40;
+  d->clarity = 5;
+  d->shore_foam = 0.7f;
+  d->crest_foam = 0.35f;
+  d->shallow_color[0] = 0.05f, d->shallow_color[1] = 0.34f, d->shallow_color[2] = 0.38f, d->shallow_color[3] = 1;
 }
 
 cw_waves cw__water_waves(const water3d *d) {
@@ -227,6 +235,107 @@ void cw_water_get_stats(cw_tree *t, cw_water_stats *out) {
   water_tree *wt = t ? cw_tree_slot(t, "water") : NULL;
   if (wt) *out = wt->stats;
   if (t) out->buoyant = cw__buoyancy_count(t);
+}
+
+/* ── the floor map ─────────────────────────────────────────────────────── */
+
+static uint16_t to_half(float f) {
+  uint32_t x;
+  memcpy(&x, &f, 4);
+  uint32_t mant = x & 0x7fffffu;
+  int e = (int)((x >> 23) & 0xffu) - 127 + 15;
+  if (f <= 0) return 0;
+  if (e >= 31) return 0x7bffu;
+  if (e <= 0) {
+    if (e < -10) return 0;
+    mant |= 0x800000u;
+    return (uint16_t)(mant >> (14 - e));
+  }
+  uint32_t h = ((uint32_t)e << 10) | (mant >> 13), rem = mant & 0x1fffu;
+  if (rem > 0x1000u || (rem == 0x1000u && (h & 1))) h++;
+  return (uint16_t)h;
+}
+
+static bool floor_dims(const water3d *d, int *nx, int *nz) {
+  int n = d->floor_map_size;
+  if (n < 2) return false;
+  if (n > 512) n = 512;
+  float sx = d->size[0] > 0.01f ? d->size[0] : 0.01f, sz = d->size[1] > 0.01f ? d->size[1] : 0.01f;
+  *nx = sx >= sz ? n : (int)ceilf((float)n * sx / sz);
+  *nz = sz >= sx ? n : (int)ceilf((float)n * sz / sx);
+  if (*nx < 2) *nx = 2;
+  if (*nz < 2) *nz = 2;
+  return true;
+}
+
+/* Bake the water depth under every cell: a ray down from 20 m over the rest
+ * level through the tree's static shapes. The highest static hit under the
+ * rest level is the floor; only hits above it mean land; none means deep. */
+static void bake_floor(cw_node n, water3d *d) {
+  int nx, nz;
+  cw_world3d w = cw_physics3d_world(cw_node_tree(n));
+  if (!floor_dims(d, &nx, &nz) || !cw_world3d_valid(w)) return;
+  const t3_mat4 *m = cw_node3d_global_transform(n);
+  float sx = d->size[0] > 0.01f ? d->size[0] : 0.01f, sz = d->size[1] > 0.01f ? d->size[1] : 0.01f;
+  float range = d->floor_range > 1 ? d->floor_range : 1;
+  float *depth = cw_alloc((size_t)nx * (size_t)nz * sizeof(float), CW_MEM_RENDER);
+  uint16_t *tex = cw_alloc((size_t)nx * (size_t)nz * 4 * sizeof(uint16_t), CW_MEM_RENDER);
+  for (int j = 0; j < nz; j++)
+    for (int i = 0; i < nx; i++) {
+      float lx = ((float)i + 0.5f) / (float)nx * sx - sx * 0.5f, lz = ((float)j + 0.5f) / (float)nz * sz - sz * 0.5f;
+      t3_vec3 p = t3_vec3_apply_mat4((t3_vec3){ lx, 0, lz }, m);
+      float v = range;
+      /* a static shape holding the point at the rest level: land (and a post's foot) */
+      cw_qshape3d q = cw_qshape3d_sphere(p, 0.05f);
+      cw_shape3d inside[4];
+      int ni = cw_world3d_overlap(w, &q, NULL, inside, 4), land = 0;
+      for (int k = 0; k < ni && !land; k++) land = cw_body3d_type(cw_shape3d_body(inside[k])) == CW_BODY_STATIC;
+      if (land) v = 0;
+      else {
+        /* the highest static hit under the rest level is the floor */
+        cw_ray_hit3d hits[6];
+        int c = cw_world3d_raycast_all(w, p, (t3_vec3){ 0, -range, 0 }, NULL, hits, 6);
+        for (int k = 0; k < c; k++)
+          if (cw_body3d_type(hits[k].body) == CW_BODY_STATIC) {
+            float under = p.y - hits[k].point.y;
+            v = under < range ? under : range;
+            break;
+          }
+      }
+      depth[j * nx + i] = v;
+      uint16_t h = to_half(v);
+      tex[(j * nx + i) * 4] = h, tex[(j * nx + i) * 4 + 1] = h, tex[(j * nx + i) * 4 + 2] = h, tex[(j * nx + i) * 4 + 3] = 0x3c00;
+    }
+  if (d->floor_tex) t3_release(d->floor_tex);
+  d->floor_tex = t3_data_texture_new_typed(nx, nz, tex, T3_HALF_FLOAT_TYPE);
+  d->floor_tex->mag_filter = T3_LINEAR;
+  d->floor_tex->min_filter = T3_LINEAR;
+  d->floor_tex->wrap_s = d->floor_tex->wrap_t = T3_CLAMP_TO_EDGE;
+  d->floor_tex->version++;
+  cw_free(tex);
+  cw_free(d->floor_depth);
+  d->floor_depth = depth;
+  d->floor_n = nx;
+  d->floor_done = true;
+  d->floor_dirty = false;
+}
+
+float cw_water_floor_depth_at(cw_node water, float x, float z) {
+  water3d *d = cw_node_data_t(water, water_t);
+  int nx, nz;
+  if (!d || !d->floor_depth || !floor_dims(d, &nx, &nz)) return 1e6f;
+  t3_mat4 inv;
+  const t3_mat4 *m = cw_node3d_global_transform(water);
+  t3_mat4_invert(&inv, m);
+  t3_vec3 p = t3_vec3_apply_mat4((t3_vec3){ x, 0, z }, &inv);
+  float u = p.x / (d->size[0] > 0.01f ? d->size[0] : 0.01f) + 0.5f, v = p.z / (d->size[1] > 0.01f ? d->size[1] : 0.01f) + 0.5f;
+  if (u < 0 || u >= 1 || v < 0 || v >= 1) return 1e6f;
+  return d->floor_depth[(int)(v * (float)nz) * nx + (int)(u * (float)nx)];
+}
+
+void cw_water_rebake_floor(cw_node water) {
+  water3d *d = cw_node_data_t(water, water_t);
+  if (d) d->floor_dirty = true;
 }
 
 /* ── the mesh ────────────────────────────────────────────────────────── */
@@ -334,6 +443,8 @@ static void water_destroy(cw_node n, void *data) {
   if (d->vcam) t3_release(d->vcam);
   cw_res_release(d->normal_res);
   cw_res_release(d->flow_res);
+  if (d->floor_tex) t3_release(d->floor_tex);
+  cw_free(d->floor_depth);
   memset(&d->mesh, 0, sizeof *d - offsetof(water3d, mesh));
 }
 
@@ -519,6 +630,14 @@ static void fill(t3_extension_ctx *c, void *user) {
   v[0] = (float)d->debug_view, v[1] = d->debug_range[0], v[2] = d->debug_range[1], v[3] = d->murk;
   t3_extension_set_uniform(c, "waterDebug", v, 4);
   t3_extension_set_uniform(c, "waterCam", d->cam, 4);
+  /* shore: floor map on, foam width, 1 / clarity, crest foam; shallow colour; the map's rectangle; foam clock */
+  v[0] = d->floor_tex ? 1.0f : 0.0f, v[1] = d->shore_foam, v[2] = 1.0f / (d->clarity > 0.01f ? d->clarity : 0.01f), v[3] = d->crest_foam;
+  t3_extension_set_uniform(c, "waterShore", v, 4);
+  v[0] = d->shallow_color[0], v[1] = d->shallow_color[1], v[2] = d->shallow_color[2], v[3] = d->foam_time;
+  t3_extension_set_uniform(c, "waterShallow", v, 4);
+  v[0] = d->size[0], v[1] = d->size[1], v[2] = 0, v[3] = 0;
+  t3_extension_set_uniform(c, "waterFloorRect", v, 4);
+  if (d->floor_tex) t3_extension_set_texture(c, "waterFloorMap", d->floor_tex);
   t3_texture *nm = cw_res_texture(d->normal_res);
   t3_extension_set_texture(c, "waterNormal", nm);
   t3_extension_set_texture(c, "waterFlowMap", flow ? flow : nm);
@@ -545,6 +664,8 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     if (!d) continue;
     build(n, d);
     textures(d);
+    if (d->floor_dirty || (!d->floor_done && cw_tree_tick(ctx->tree) >= 1 && d->floor_map_size >= 2)) bake_floor(n, d);
+    if (d->floor_dirty && d->floor_map_size < 2) d->floor_dirty = false;
     if (!d->mesh) continue;
     /* the waves drawn as the bodies are: between the last two ticks, at alpha */
     double dt = cw_fixed_dt();
@@ -556,6 +677,7 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     const double cycle = 0.15, half = cycle * 0.5;
     double o0 = fmod((double)d->flow_speed * t, cycle);
     double o1 = fmod(o0 + half, cycle);
+    d->foam_time = (float)fmod(t, 1000.0);
     d->flow_off[0] = (float)o0, d->flow_off[1] = (float)o1, d->flow_off[2] = (float)half;
     const float *cw = ctx->camera->base.matrix_world.e;
     d->cam[0] = cw[12], d->cam[1] = cw[13], d->cam[2] = cw[14];
@@ -634,6 +756,12 @@ static const cw_prop water_props[] = {
   CW_PROP_FIELD_RANGE(water3d, resolution_scale, CW_T_FLOAT, 0.05, 1, "Reflection / refraction targets' share of the view."),
   { .name = "debug_view", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(water3d, debug_view),
     .size = sizeof(int), .enum_names = debug_names, .doc = "HEIGHT: the surface height as colour (tests)." },
+  CW_PROP_FIELD_RANGE(water3d, floor_map_size, CW_T_INT, 0, 512, "Cells along the longer side of the baked floor depth map (0: no shore shading)."),
+  CW_PROP_FIELD_RANGE(water3d, floor_range, CW_T_FLOAT, 1, 1000, "Metres under the rest level the floor rays probe."),
+  CW_PROP_FIELD(water3d, shallow_color, CW_T_COLOR, CW_PROP_DEFAULT, "Colour of the water over a shallow floor (linear)."),
+  CW_PROP_FIELD_RANGE(water3d, clarity, CW_T_FLOAT, 0.01, 1000, "Metres of water over which the shallow colour has become deep_color."),
+  CW_PROP_FIELD_RANGE(water3d, shore_foam, CW_T_FLOAT, 0, 20, "Width in metres of the foam where the water meets the floor (0: none)."),
+  CW_PROP_FIELD_RANGE(water3d, crest_foam, CW_T_FLOAT, 0, 1, "Foam on crests where the surface bunches up (0: none)."),
   CW_PROP_FIELD(water3d, debug_range, CW_T_VEC2, CW_PROP_DEFAULT, "debug_view HEIGHT: heights mapped to 0 .. 1."),
   CW_PROP_END,
 };
