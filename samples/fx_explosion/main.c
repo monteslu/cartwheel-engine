@@ -27,6 +27,7 @@
 #include <stdlib.h>
 
 #include "cartwheel/debug.h"
+#include "cartwheel/decals.h"
 #include "cartwheel/explosions.h"
 #include "cartwheel/particles.h"
 #include "cartwheel/platform.h"
@@ -36,6 +37,8 @@
 
 static uint32_t tick;
 static int32_t lit, pool, scorch, shake_x1000, alive, playing;
+static float dark_alpha, glow_energy;
+static int32_t decal_visible, decal_total, decal_culled;
 static t3_vec3 cam_home;
 static bool apply_shake, no_refire;
 
@@ -50,6 +53,11 @@ static void init(void *u) {
   cw_debug_i32("fxe.shake", &shake_x1000);
   cw_debug_i32("fxe.alive", &alive);
   cw_debug_i32("fxe.playing", &playing);
+  cw_debug_f32("fxe.dark_alpha", &dark_alpha);
+  cw_debug_f32("fxe.glow_energy", &glow_energy);
+  cw_debug_i32("fxe.decal_visible", &decal_visible);
+  cw_debug_i32("fxe.decal_total", &decal_total);
+  cw_debug_i32("fxe.decal_culled", &decal_culled);
   const char *pr = getenv("FXE_PRESET");
   if (pr)
     for (int q = 0; q < CW_QUALITY_COUNT; q++)
@@ -104,6 +112,11 @@ static void render(void *u, double a) {
   pool = st.flash_pool;
   scorch = st.scorches_active;
   playing = cw_explosion_playing(node("World/Boom"));
+  { cw_decal_stats ds; cw_decals_get_stats(cw_scene_app_tree(), &ds); decal_visible = ds.visible; decal_total = ds.decals; decal_culled = ds.culled; }
+  cw_node dk = node("ScorchDark"), gl = node("ScorchGlow");
+  cw_value v;
+  if (cw_node_valid(dk) && cw_node_get_prop(dk, "color", &v)) dark_alpha = v.v[3];
+  if (cw_node_valid(gl) && cw_node_get_prop(gl, "energy", &v)) glow_energy = (float)v.f;
 }
 
 cw_app_desc cw_main(int argc, char **argv) {

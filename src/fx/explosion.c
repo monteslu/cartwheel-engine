@@ -147,7 +147,7 @@ static void make_pool_nodes(cw_tree *t, pool *p, bool want_scorch) {
       cw_node d = cw_node_new("Decal3D", k ? "ScorchGlow" : "ScorchDark");
       cw_node_add_child(root, d);
       cw_node_set(d, "blend", cw_val_enum(k ? "ADD" : "MULTIPLY"));
-      cw_node_set(d, "color", cw_val_color(k ? 1 : 0.15f, k ? 0.45f : 0.12f, k ? 0.1f : 0.1f, 0));
+      cw_node_set(d, "color", cw_val_color(k ? 1 : 0.05f, k ? 0.45f : 0.04f, k ? 0.1f : 0.035f, 0));
       cw_node_set(d, "normal_fade", cw_val_float(0.4));
       cw_node3d_set_rotation(d, (t3_vec3){ -CW_PI * 0.5f, 0, 0 });
       cw_node_set(d, "priority", cw_val_int(k));
@@ -196,12 +196,12 @@ static void drive_scorch(pool *p, explo *e) {
   float fade = e->age <= fade_from ? 0.0f : smoothstep01((e->age - fade_from) / CW_MAX(s->life - fade_from, 1e-3f));
   float glow = s->glow_energy * (1 - cool) * (1 - cool) * (1 - fade);
   float dark = s->dark_alpha * smoothstep01(e->age / 0.15f) * (1 - fade);
-  cw_node_set(s->dark, "color", cw_val_color(0.15f, 0.12f, 0.1f, dark));
+  cw_node_set(s->dark, "color", cw_val_color(0.05f, 0.04f, 0.035f, dark));
   /* the glow's colour cools from white-orange to red as its energy falls */
   cw_node_set(s->glow, "color", cw_val_color(1, 0.35f + 0.35f * (1 - cool), 0.08f + 0.2f * (1 - cool), glow > 0.002f ? 1 : 0));
   set_f(s->glow, "energy", glow);
   if (e->age >= s->life) {
-    cw_node_set(s->dark, "color", cw_val_color(0.15f, 0.12f, 0.1f, 0));
+    cw_node_set(s->dark, "color", cw_val_color(0.05f, 0.04f, 0.035f, 0));
     cw_node_set(s->glow, "color", cw_val_color(1, 0.35f, 0.08f, 0));
     s->busy = false;
     e->scorch_slot = -1;
@@ -296,6 +296,8 @@ static void explosions_hook(cw_tree *t, double dt, void *user) {
         else e->playing = false;
       }
     } else {
+      /* the blast is over but its scorch mark goes on cooling and fading: the age keeps counting */
+      if (e->started) e->age += (float)dt;
       drive_flash(p, e, (float)dt);
       drive_scorch(p, e);
     }
