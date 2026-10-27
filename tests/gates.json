@@ -1,4 +1,5 @@
 [
+  { "name": "gate-cpu", "script": "tests/gate-cpu.mjs", "note": "gate.mjs --cpu runs without the GPU suite lock (control: the plain gate queues on the same held lock)" },
   { "name": "cart-audio-ring", "script": "tests/cart-audio-ring.mjs", "note": "Cart audio ring allocation and real 100 ms host burst capacity" },
   { "name": "program-extensions", "script": "tests/program-extensions.mjs", "note": "Project extension modules compose with GL/WebGPU sun-shadow variants and reject invalid modules" },
   {
@@ -690,6 +691,27 @@
       "CW_TEST_INJECT_FAIL": "1"
     },
     "note": "physics wrapper: 2D + 3D queries (ray closest/all/batch, shape cast, overlap, aabb), layers, sensors, filters, mesh/chain, joint break, events, interpolation, movers"
+  },
+  {
+    "name": "unit-platformer2d",
+    "app": "unit_platformer2d",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "platformer controller feel by replay: coyote window, jump buffer, tap vs held jump, fall cap, acceleration, corner correction and ledge forgiveness (each with its forgiveness-off control inside)"
   },
   {
     "name": "unit-nav",
