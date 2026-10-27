@@ -9,6 +9,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BT="${BUILD_TYPE:-Release}"
 # one build of a tree at a time (scripts/lib/build-lock.sh): another waits
 source "$ROOT/scripts/lib/build-lock.sh"
+"$ROOT/scripts/lib/check-deps.sh" "$ROOT" || exit 1 # deps/ older than the pins: stop with the fix named, not a compile error
 DEFAULT="native cart"
 [ -d "$ROOT/deps/wasmcart-wgpu/wgpu-wasi" ] && [ -d "$ROOT/deps/emdawnwebgpu/webgpu" ] && DEFAULT="$DEFAULT cart-wgpu"
 for t in ${TARGETS:-$DEFAULT}; do

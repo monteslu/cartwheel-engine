@@ -13,6 +13,8 @@ const fx = join(ROOT, 'out', 'deps-pins');
 rmSync(fx, { recursive: true, force: true });
 mkdirSync(join(fx, 'scripts'), { recursive: true });
 cpSync(join(ROOT, 'scripts', 'fetch-deps.sh'), join(fx, 'scripts', 'fetch-deps.sh'));
+mkdirSync(join(fx, 'scripts', 'lib'));
+cpSync(join(ROOT, 'scripts', 'lib', 'check-deps.sh'), join(fx, 'scripts', 'lib', 'check-deps.sh'));
 const git = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd, encoding: 'utf8' }).trim();
 
 // an upstream with two commits, and the "shared checkout" another branch moved to the second one
@@ -32,6 +34,12 @@ const check = (name, ok, extra = '') => { console.log(`${ok ? 'ok  ' : 'FAIL'} $
 // control: the drifted symlink MUST be reported (this is the check that has to be able to fail)
 let r = run('--verify');
 check('verify flags the drifted shared symlink (control)', r.status === 1 && /DRIFT libx/.test(r.stdout), r.stdout + r.stderr);
+// the build's guard: a dep OFF its pin stops it and names the fix; a shared symlink at its pin does not
+const guard = () => spawnSync('bash', [join(fx, 'scripts', 'lib', 'check-deps.sh'), fx], { cwd: fx, encoding: 'utf8' });
+r = guard();
+check('build guard stops on a dependency off its pin and names the fix (control)', r.status === 1 && /DRIFT libx/.test(r.stderr) && /fetch-deps\.sh/.test(r.stderr), r.stdout + r.stderr);
+r = spawnSync('bash', [join(fx, 'scripts', 'lib', 'check-deps.sh'), fx], { cwd: fx, encoding: 'utf8', env: { ...process.env, CW_SKIP_DEPS_CHECK: '1' } });
+check('CW_SKIP_DEPS_CHECK=1 skips the guard', r.status === 0);
 // heal
 r = run();
 check('fetch succeeds', r.status === 0, r.stdout + r.stderr);
@@ -39,6 +47,7 @@ check('deps/libx is a private directory now', !lstatSync(join(fx, 'deps', 'libx'
 check('deps/libx is at the pin', git(join(fx, 'deps', 'libx'), 'rev-parse', 'HEAD') === pin);
 check('the shared checkout was not moved', git(shared, 'rev-parse', 'HEAD') === moved);
 check('file content is the pinned one', readFileSync(join(fx, 'deps', 'libx', 'f'), 'utf8') === '1');
+check('build guard passes at the pin', guard().status === 0);
 r = run('--verify');
 check('verify is clean after the fetch', r.status === 0, r.stdout + r.stderr);
 rmSync(fx, { recursive: true, force: true });
