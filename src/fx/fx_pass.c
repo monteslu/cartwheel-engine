@@ -5,6 +5,7 @@
 #include "fx_internal.h"
 #if CW_WGPU
 #include "platform/wgpu.h"
+#include "render/pipeline_wgpu.h"
 #endif
 
 static bool particles_active(const cw_pass_ctx *ctx, void *user) {
@@ -17,11 +18,18 @@ static void particles_exec(cw_pass_ctx *ctx, void *user) {
   (void)user;
   cw__fx_tree *ft = cw__fx_tree_of(ctx->tree);
   memset(&ft->stats, 0, sizeof ft->stats);
+#if CW_WGPU
+  /* the particles pass records its own compute and render passes: time them as one span */
+  if (cw__wgpu_on()) cw__pw_timing_span((void *)cw__pw_encoder(), false);
+#endif
   cw__psys_frames(ctx, ft);
   for (int i = 0; i < ft->trails.count; i++) cw__trail3d_draw(ft->trails.data[i], ctx, ft);
   ft->last_stats = ft->stats;
 #if CW_WGPU
-  if (cw__wgpu_on()) return;
+  if (cw__wgpu_on()) {
+    cw__pw_timing_span((void *)cw__pw_encoder(), true);
+    return;
+  }
 #endif
   glBindVertexArray(0);
   glBindFramebuffer(GL_FRAMEBUFFER, ctx->scene ? ctx->scene->fbo : 0);

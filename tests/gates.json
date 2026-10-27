@@ -2352,6 +2352,16 @@
     }
   },
   {
+    "name": "boom-perf",
+    "script": "tests/boom-perf.mjs",
+    "note": "explosion and water GPU ms per frame (fx_boom_water) at every preset, 1 and 4 views, GL and WebGPU; report out/perf/boom-report.txt; control: an impossible budget must fail"
+  },
+  {
+    "name": "spikes",
+    "script": "tests/spikes.mjs",
+    "note": "WebGPU compute spikes: FFT ocean, ripple grid, fire step and march, particle liquid, GPU ms each; report out/perf/spikes-report.txt"
+  },
+  {
     "name": "fx-distort",
     "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "FXD_OFF": "1" } }] },
     "app": "fx_distort",
