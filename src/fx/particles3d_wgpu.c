@@ -32,7 +32,7 @@
 #define SV CW_WGPU_SV
 #define SYS_SIZE 1792
 #define STEP_STRIDE 256
-#define DRAW_SIZE 320
+#define DRAW_SIZE 336
 #define PASS_STRIDE 256
 
 /* ── WGSL ─────────────────────────────────────────────────────────────── */
@@ -314,7 +314,7 @@ static const char WGSL_REDUCE[] =
 static const char WGSL_DRAW[] =
     "struct Draw {\n"
     "  view: mat4x4f, proj: mat4x4f, model: mat4x4f,\n"
-    "  campos: vec4f, color: vec4f, p0: vec4f, p1: vec4f, p2: vec4f, life: vec4f, ia: vec4u, ib: vec4u,\n"
+    "  campos: vec4f, color: vec4f, p0: vec4f, p1: vec4f, p2: vec4f, life: vec4f, ia: vec4u, ib: vec4u, p3: vec4f,\n"
     "}\n"
     "@group(0) @binding(0) var<uniform> D: Draw;\n"
     "@group(0) @binding(1) var curve: texture_2d<f32>;\n"
@@ -323,8 +323,9 @@ static const char WGSL_DRAW[] =
     "@group(0) @binding(4) var depth: texture_2d<f32>;\n"
     "@group(0) @binding(5) var stex: texture_2d<f32>;\n"
     "@group(0) @binding(6) var htex: texture_2d<f32>;\n"
+    "@group(0) @binding(7) var scene: texture_2d<f32>;\n"
     "struct VO { @builtin(position) pos: vec4f, @location(0) color: vec4f, @location(1) uv: vec2f,\n"
-    "  @location(2) vz: f32, @location(3) n: vec3f }\n"
+    "  @location(2) vz: f32, @location(3) n: vec3f, @location(4) t: f32, @location(5) id: f32 }\n"
     "fn curve_at(t: f32, row: i32) -> vec4f {\n"
     "  let x = t * 255.0; let i0 = i32(floor(x)); let i1 = min(i0 + 1, 255);\n"
     "  return mix(textureLoad(curve, vec2i(i0, row), 0), textureLoad(curve, vec2i(i1, row), 0), x - f32(i0));\n"
@@ -380,6 +381,7 @@ static const char WGSL_DRAW[] =
     "  }\n"
     "  let vp = D.view * vec4f(world, 1.0);\n"
     "  o.vz = -vp.z;\n"
+    "  o.t = t; o.id = f32(i);\n"
     "  o.color = col;\n"
     "  o.pos = cw_clip(D.proj * vp, D.p2.y);\n"
     "  return o;\n"
@@ -407,6 +409,22 @@ static const char WGSL_DRAW[] =
     "    c.a *= clamp((zs - in.vz) / D.p2.x, 0.0, 1.0);\n"
     "  }\n"
     "  let blend = i32(D.p1.w);\n"
+    "  if (blend >= 3) {\n"
+    "    let uv0 = in.pos.xy * D.p2.zw;\n"
+    "    let zd = textureLoad(depth, vec2i(uv0 * vec2f(textureDimensions(depth))), 0).r;\n"
+    "    var n: vec2f;\n"
+    "    if (D.p3.y > 0.5) { n = tx.rg * 2.0 - 1.0; }\n"
+    "    else if (blend == 3) { n = vec2f(sin(in.uv.y * 11.0 + in.t * 7.0 + in.id * 1.37), cos(in.uv.x * 9.0 - in.t * 6.0 + in.id * 2.11)); }\n"
+    "    else { n = vec2f(in.uv.x - 0.5, 0.5 - in.uv.y) * 2.0; }\n"
+    "    let off = n * c.a * D.p3.x * D.p3.zw / in.vz;\n"
+    "    if (blend == 3) {\n"
+    "      if (zd < in.vz - 0.02) { discard; }\n"
+    "      return vec4f(off, in.vz * c.a, c.a);\n"
+    "    }\n"
+    "    var uv2 = uv0 + off;\n"
+    "    if (textureLoad(depth, vec2i(uv2 * vec2f(textureDimensions(depth))), 0).r < in.vz - 0.02) { uv2 = uv0; }\n"
+    "    return vec4f(textureSampleLevel(scene, samp, uv2, 0.0).rgb * in.color.rgb * c.a, c.a);\n"
+    "  }\n"
     "  if (blend == 2) { if (c.a < 0.5) { discard; } return vec4f(c.rgb, 1.0); }\n"
     "  return vec4f(c.rgb * c.a, select(0.0, c.a, blend == 1));\n"
     "}\n"
@@ -493,14 +511,14 @@ static bool init_pipes(void) {
   const cw__wg_slot sort[5] = { { CW_WB_UNIFORM, C, 0, 80 }, { CW_WB_UNIFORM_DYN, C, 0, 16 }, { CW_WB_STORAGE, C, 0, 0 },
                                 { CW_WB_STORAGE_RO, C, 0, 0 }, { CW_WB_STORAGE, C, 0, 0 } };
   const cw__wg_slot red[3] = { { CW_WB_UNIFORM, C, 0, 16 }, { CW_WB_STORAGE_RO, C, 0, 0 }, { CW_WB_STORAGE, C, 0, 0 } };
-  const cw__wg_slot draw[7] = { { CW_WB_UNIFORM, VF, 0, DRAW_SIZE }, { CW_WB_TEX_UNFILT, VF, 0, 0 },
+  const cw__wg_slot draw[8] = { { CW_WB_UNIFORM, VF, 0, DRAW_SIZE }, { CW_WB_TEX_UNFILT, VF, 0, 0 },
                                 { CW_WB_TEX, WGPUShaderStage_Fragment, 0, 0 }, { CW_WB_SAMPLER, WGPUShaderStage_Fragment, 0, 0 },
                                 { CW_WB_TEX_UNFILT, WGPUShaderStage_Fragment, 0, 0 }, { CW_WB_TEX_UNFILT, WGPUShaderStage_Vertex, 0, 0 },
-                                { CW_WB_TEX_UNFILT, WGPUShaderStage_Vertex, 0, 0 } };
+                                { CW_WB_TEX_UNFILT, WGPUShaderStage_Vertex, 0, 0 }, { CW_WB_TEX, WGPUShaderStage_Fragment, 0, 0 } };
   G.sim_bgl = cw__wg_layout(sim, 8);
   G.sort_bgl = cw__wg_layout(sort, 5);
   G.red_bgl = cw__wg_layout(red, 3);
-  G.draw_bgl = cw__wg_layout(draw, 7);
+  G.draw_bgl = cw__wg_layout(draw, 8);
   G.sim_pl = cw__wg_pipeline_layout(&G.sim_bgl, 1);
   G.sort_pl = cw__wg_pipeline_layout(&G.sort_bgl, 1);
   G.red_pl = cw__wg_pipeline_layout(&G.red_bgl, 1);
@@ -538,7 +556,7 @@ static bool init_pipes(void) {
 enum { V_QUAD, V_QUAD_SORTED, V_MESH, V_MESH_SORTED, V_TRAIL };
 
 static WGPURenderPipeline draw_pipe_for(int variant, int blend, const cw__wgpu_pass_targets *t) {
-  uint32_t key = (uint32_t)variant | (uint32_t)blend << 3 | (uint32_t)t->flip_y << 5 | (uint32_t)(t->samples > 1) << 6 |
+  uint32_t key = (uint32_t)variant | (uint32_t)blend << 3 | (uint32_t)t->flip_y << 6 | (uint32_t)(t->samples > 1) << 7 |
                  (uint32_t)t->color_format << 8 | (uint32_t)t->depth_format << 20;
   for (int i = 0; i < G.pipes.count; i++)
     if (G.pipes.data[i].key == key) return G.pipes.data[i].p;
@@ -560,6 +578,7 @@ static WGPURenderPipeline draw_pipe_for(int variant, int blend, const cw__wgpu_p
   };
   int bp = variant == V_TRAIL ? (blend == BLEND_ADD ? CW_WG_BLEND_ADD : CW_WG_BLEND_PREMUL)
            : blend == BLEND_OPAQUE ? CW_WG_BLEND_NONE
+           : blend == BLEND_DISTORT ? CW_WG_BLEND_ADD_ALL
            : blend == BLEND_ADD    ? CW_WG_BLEND_ADD
                                    : CW_WG_BLEND_PREMUL;
   WGPUColorTargetState ct = { .format = t->color_format, .blend = cw__wg_blend(bp), .writeMask = WGPUColorWriteMask_All };
@@ -1036,7 +1055,7 @@ bool cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, W
     sorted = w->npass > 0 || w->sort_n == 1;
   }
   *shared_cp = cp;
-  bool want_trail = d->trail_length >= 2 && w->hist && r->hist_count >= 2;
+  bool want_trail = d->trail_length >= 2 && w->hist && r->hist_count >= 2 && d->blend < BLEND_DISTORT;
   if (d->gpu_stats || want_trail) end_cp(shared_cp); /* copies run outside passes */
   if (d->gpu_stats) {
     if (!w->rb) w->rb = cw__wg_readback_new(32, 3, "particles stats readback");
@@ -1067,11 +1086,10 @@ bool cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, W
 }
 
 /* the second half: its draws, into the pass's one render pass */
-void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft) {
+void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, const cw__wgpu_pass_targets *tg) {
   (void)n;
   cw__psys *r = d->rt;
   pw *w = r->wg;
-  const cw__wgpu_pass_targets *tg = cw__fx_pass_targets(ctx);
   const t3_mat4 model = w->model;
   bool sorted = w->did_sort, want_trail = w->trail, draw_particles = w->particles, mesh = d->draw_mode == DRAW_MESH;
   /* ── draw ── */
@@ -1097,6 +1115,12 @@ void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx
   du[63] = (float)d->blend;
   du[64] = tg->linear_depth ? d->soft_distance : 0;
   du[65] = tg->flip_y ? -1.0f : 1.0f;
+  du[66] = 1.0f / (float)tg->w;
+  du[67] = 1.0f / (float)tg->h;
+  du[80] = d->distort_strength;
+  du[81] = d->texture && *d->texture ? 1.0f : 0.0f;
+  du[82] = ctx->camera->projection_matrix.e[0] * 0.5f;
+  du[83] = ctx->camera->projection_matrix.e[5] * 0.5f;
   du[68] = d->lifetime;
   du[69] = CW_CLAMP(d->lifetime_random, 0, 1);
   du[70] = d->trail_width;
@@ -1111,13 +1135,14 @@ void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx
   cw__wg_write(w->draw_u, 0, du, sizeof du);
   WGPUTextureView tex = d->texture && *d->texture ? cw__fx_wg_texture_asset(d->texture) : NULL;
   if (!tex) tex = cw__fx_wg_dot();
-  cw__wg_entry e[7] = {
+  cw__wg_entry e[8] = {
     { .buffer = w->draw_u }, { .view = w->curve_v }, { .view = tex }, { .sampler = cw__wg_sampler(true, false, true) },
     { .view = tg->linear_depth ? tg->linear_depth : cw__fx_wg_dummy_r32f() },
     { .view = w->stex_v ? w->stex_v : cw__fx_wg_dummy_rgba32f() },
     { .view = w->htex_v ? w->htex_v : cw__fx_wg_dummy_rgba32f() },
+    { .view = ft->copy ? cw__pw_view(ft->copy->tex) : cw__fx_wg_dot() },
   };
-  WGPUBindGroup bg = cw__wg_group_cached(&w->draw_bg, G.draw_bgl, e, 7);
+  WGPUBindGroup bg = cw__wg_group_cached(&w->draw_bg, G.draw_bgl, e, 8);
   wgpuRenderPassEncoderSetBindGroup(rp, 0, bg, 0, NULL);
   if (want_trail) {
     wgpuRenderPassEncoderSetPipeline(rp, draw_pipe_for(V_TRAIL, d->blend == BLEND_OPAQUE ? BLEND_ALPHA : d->blend, tg));

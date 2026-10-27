@@ -37,7 +37,11 @@
  * x1, x1 of LightingSettings.max_per_cluster: 24, 32, 64, 64 by default;
  * cw_quality_scale("lights"), cartwheel/lighting.h) and the volumetric fog
  * grid (cartwheel/environment.h: 64 x 32, 96 x 48, 160 x 64, 240 x 96 cells
- * across x slices).
+ * across x slices), the distortion buffer (cartwheel/explosions.h: half the
+ * frame on Low and Medium, the whole frame on High and Ultra;
+ * cw_quality_scale("distortion")), colour fringing on bent edges (High and
+ * Ultra: "dispersion") and the share of the explosion light pool in use
+ * (0.25, 0.5, 1, 1: "flash_lights").
  *
  * "As authored" is what the scene's PostProcess / lights ask for: High
  * draws exactly what the game would without this module.

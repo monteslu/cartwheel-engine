@@ -247,8 +247,11 @@ const WGPUBlendState *cw__wg_blend(int preset) {
     { WGPUBlendOperation_Add, WGPUBlendFactor_Zero, WGPUBlendFactor_One } };
   static const WGPUBlendState mul = { { WGPUBlendOperation_Add, WGPUBlendFactor_Dst, WGPUBlendFactor_Zero },
                                       { WGPUBlendOperation_Add, WGPUBlendFactor_Zero, WGPUBlendFactor_One } };
+  static const WGPUBlendState add_all = { { WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_One },
+                                          { WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_One } };
   switch (preset) {
   case CW_WG_BLEND_ADD: return &add;
+  case CW_WG_BLEND_ADD_ALL: return &add_all;
   case CW_WG_BLEND_PREMUL: return &premul;
   case CW_WG_BLEND_MULTIPLY: return &mul;
   default: return NULL;

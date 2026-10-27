@@ -7448,9 +7448,11 @@
      "enum": [
       "ADD",
       "ALPHA",
-      "OPAQUE"
+      "OPAQUE",
+      "DISTORT",
+      "REFRACT"
      ],
-     "doc": "ADD (glow), ALPHA (premultiplied, sortable) or OPAQUE (alpha tested, writes depth)."
+     "doc": "ADD (glow), ALPHA (premultiplied, sortable), OPAQUE (alpha tested, writes depth), DISTORT (bends the picture behind it, draws no colour: heat haze) or REFRACT (shows the scene through it: glass, drops; explosions.h)."
     },
     {
      "name": "soft_distance",
@@ -7461,6 +7463,16 @@
      "min": 0,
      "max": 1000000,
      "doc": "Fade over this distance in front of geometry (0 = hard)."
+    },
+    {
+     "name": "distort_strength",
+     "type": "float",
+     "default": "0.3",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "DISTORT / REFRACT: how far the picture behind a particle is shifted at its centre (world units at its distance), times its alpha over life."
     },
     {
      "name": "sort",
@@ -8048,6 +8060,110 @@
      "min": 0,
      "max": 1000000,
      "doc": "MESH: above 0 the decal joins the tree's pool, which keeps this many (the newest one's value counts) and frees the oldest past it; 0 = never recycled."
+    }
+   ]
+  },
+  {
+   "name": "Shockwave3D",
+   "parent": "Node3D",
+   "doc": "An expanding ring that bends the picture (a shockwave): needs no texture, depth aware (explosions.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "playing",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "The ring is expanding now (cw_shockwave_fire restarts it)."
+    },
+    {
+     "name": "loop",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Start again when it ends."
+    },
+    {
+     "name": "autostart",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Fire once when the node enters the tree."
+    },
+    {
+     "name": "ground",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "A ring lying in the node's XZ plane (a blast spreading along the ground); off: a ring facing the camera (a blast in the air)."
+    },
+    {
+     "name": "max_radius",
+     "type": "float",
+     "default": "6",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 100000,
+     "doc": "Radius the ring reaches at the end (world units); it slows as it grows."
+    },
+    {
+     "name": "duration",
+     "type": "float",
+     "default": "0.9",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 60,
+     "doc": "Seconds from the start to the end."
+    },
+    {
+     "name": "thickness",
+     "type": "float",
+     "default": "0.7",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 10000,
+     "doc": "Width of the bent band (world units)."
+    },
+    {
+     "name": "strength",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "How far the picture is pushed at the band's centre at the start (world units at the ring's distance)."
+    },
+    {
+     "name": "age",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Seconds into the ring's life."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "The ring's radius now."
+    },
+    {
+     "name": "amplitude",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "The ring's strength now, 0 to 1 of `strength`."
     }
    ]
   },

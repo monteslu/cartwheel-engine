@@ -2352,6 +2352,23 @@
     }
   },
   {
+    "name": "fx-distort",
+    "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "FXD_OFF": "1" } }] },
+    "app": "fx_distort",
+    "frames": 90,
+    "maxGt16": 0.003,
+    "fields": ["fxd.tick", "fxd.haze_alive", "fxd.wave_active", "fxd.wave_radius", "tree.nodes"],
+    "expect": { "fxd.wave_active": 1, "fxd.haze_alive": 151 },
+    "controlFrames": 90,
+    "controlEnv": { "FXD_OFF": "1" },
+    "note": "heat haze (blend DISTORT), a Shockwave3D ring and refracting lens particles (blend REFRACT) bend the stripes behind them, on every host and both backends; the control zeroes every strength and the frame must change"
+  },
+  {
+    "name": "fx-distort-regions",
+    "script": "tests/distort.mjs",
+    "note": "distortion footprints: the haze, ring and lens change the picture, nothing leaks outside, a pole in front of the haze stays sharp (control: behind it, it bends), GL and WebGPU agree"
+  },
+  {
     "name": "water-surface",
     "script": "tests/water-surface.mjs",
     "note": "the drawn water is where cw_water_height_at says, on every host and backend (debug_view HEIGHT read back at 48 probes, 1.5 cm); control: the water drawn 0.25 s late"

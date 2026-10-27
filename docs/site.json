@@ -27,6 +27,7 @@
         "terrain",
         "noise",
         "water",
+        "explosions",
         "streaming",
         "rendering-2d",
         "ui",

@@ -12,7 +12,7 @@
 enum { SHAPE_POINT, SHAPE_SPHERE, SHAPE_SPHERE_SURFACE, SHAPE_BOX, SHAPE_RING, SHAPE_MESH };
 enum { DRAW_BILLBOARD, DRAW_STRETCHED, DRAW_MESH };
 enum { MP_BOX, MP_SPHERE, MP_TETRA, MP_NODE };
-enum { BLEND_ADD, BLEND_ALPHA, BLEND_OPAQUE };
+enum { BLEND_ADD, BLEND_ALPHA, BLEND_OPAQUE, BLEND_DISTORT, BLEND_REFRACT };
 
 #define CURVE_N 256
 #define EMIT_W 64
@@ -103,6 +103,7 @@ typedef struct p3d {
   float spin;
   int blend;
   float soft_distance;
+  float distort_strength; /* DISTORT / REFRACT: how far the picture is shifted (world units at the particle) */
   bool sort;
   int trail_length;
   float trail_width;
@@ -138,7 +139,7 @@ void cw__psys_ensure_mesh(cw_node self, p3d *d, cw__psys *r);
  * pass's shared compute pass, opened and ended as needed; true = it has
  * draws), then its draws into the pass's render pass */
 bool cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, WGPUComputePassEncoder *cp);
-void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft);
+void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, const cw__wgpu_pass_targets *tg);
 void cw__psys_free_wgpu(cw__psys *r);
 void cw__psys_reset_wgpu(cw__psys *r);
 /* pos xyz + normal xyz per vertex, u32 indices */
