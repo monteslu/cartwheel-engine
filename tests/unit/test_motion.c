@@ -83,6 +83,21 @@ static void test_double_tap(void) {
   CHECK(cw_motion_match(&b, &dash, 12) < 0);
 }
 
+static void test_exact(void) {
+  cw_motion m;
+  CHECK(cw_motion_parse("!6!6", &m) && m.exact == 3 && m.count == 2);
+  CHECK(!cw_motion_parse("!!6", &m));
+  CHECK(!cw_motion_parse("66!", &m));
+  cw_cmd_buf b; cw_motion dash = mo("!6!6");
+  cw_cmd_clear(&b); push_dirs(&b, "656", 2, 0);
+  CHECK(cw_motion_match(&b, &dash, 12) >= 0);
+  /* down-forward counts as forward for "66" but not for "!6!6": a quarter circle is not a dash */
+  cw_motion loose = mo("66");
+  cw_cmd_clear(&b); push_dirs(&b, "623", 2, 0);
+  CHECK(cw_motion_match(&b, &loose, 12) >= 0);
+  CHECK(cw_motion_match(&b, &dash, 12) < 0);
+}
+
 static void test_charge(void) {
   cw_cmd_buf b; cw_motion ch = mo("[4]6");
   cw_cmd_clear(&b); push_dirs(&b, "4", 35, 0); push_dirs(&b, "6", 2, 0);
@@ -141,5 +156,5 @@ static void test_consume_facing(void) {
 }
 
 CW_TEST_SUITE("motion", { "parse", test_parse }, { "quarter_circle", test_quarter_circle }, { "dp_super", test_dp_and_super },
-              { "double_tap", test_double_tap }, { "charge", test_charge }, { "buttons", test_buttons_and_buffer },
+              { "double_tap", test_double_tap }, { "exact", test_exact }, { "charge", test_charge }, { "buttons", test_buttons_and_buffer },
               { "consume_facing", test_consume_facing })

@@ -19,7 +19,7 @@ if (cw_special_match(&buf, &qcf, BTN_PUNCH, 14, 5) >= 0) { start_fireball(); cw_
 
 Directions are numpad notation relative to facing (6 forward, 4 back, 2 down, 8 up). Text forms: `236`, `623`, `41236`, `236236`, `22`, and charges `[4]6` (hold back, then forward). The rules:
 
-- a step is satisfied by a direction that contains it (step 6 accepts 3, 6, 9);
+- a step is satisfied by a direction that contains it (step 6 accepts 3, 6, 9); write `!6` for exactly 6 (a dash is `!6!6`, so a quarter circle does not dash);
 - diagonal steps are optional, so `236` also accepts down then forward;
 - every step needs a later frame than the one before, and holding a diagonal is not two steps;
 - equal steps in a row (`66`) need a frame between them, so a held direction is not a double tap;

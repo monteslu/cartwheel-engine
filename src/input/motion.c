@@ -70,9 +70,10 @@ bool cw_motion_parse(const char *text, cw_motion *out) {
   memset(&m, 0, sizeof m);
   m.charge_frames = 30;
   if (!text) return false;
-  bool in_br = false;
+  bool in_br = false, bang = false;
   for (const char *p = text; *p; p++) {
     if (*p == ' ') continue;
+    if (*p == '!') { if (bang) return false; bang = true; continue; }
     if (*p == '[') {
       if (in_br || m.count != 0) return false;
       in_br = true;
@@ -86,9 +87,11 @@ bool cw_motion_parse(const char *text, cw_motion *out) {
     }
     if (*p < '1' || *p > '9') return false;
     if (m.count >= CW_MOTION_MAX_STEPS) return false;
+    if (bang) m.exact |= (uint8_t)(1u << m.count);
+    bang = false;
     m.steps[m.count++] = (uint8_t)(*p - '0');
   }
-  if (in_br || m.count == 0 || (m.charge && m.count < 2)) return false;
+  if (bang || in_br || m.count == 0 || (m.charge && m.count < 2)) return false;
   *out = m;
   return true;
 }
@@ -104,6 +107,7 @@ static inline bool has(int s, int d) {
   if (dy && sy != dy) return false;
   return true;
 }
+static inline bool stepm(const cw_motion *m, int i, int s) { return (m->exact >> i & 1) ? s == m->steps[i] : has(s, m->steps[i]); }
 static inline bool diagonal(int d) { return d == 1 || d == 3 || d == 7 || d == 9; }
 
 /* Match steps [0..last] ending at or before age `from` (the newest frame the
@@ -124,7 +128,7 @@ static int match_from(const cw_cmd_buf *b, const cw_motion *m, int window, int f
       if (end_age < 0 && a > max_end) break;
       if (end_age >= 0 && a - end_age >= window) break;
       if (prev_dir && f->dir == prev_dir && !(i + 1 < m->count && m->steps[i + 1] == d)) continue; /* a held diagonal is not two steps */
-      if (has(f->dir, d)) { found = a; prev_dir = f->dir; break; }
+      if (stepm(m, i, f->dir)) { found = a; prev_dir = f->dir; break; }
     }
     if (found < 0) {
       if (diagonal(d) && i != m->count - 1 && i != first) continue; /* optional */
@@ -136,13 +140,12 @@ static int match_from(const cw_cmd_buf *b, const cw_motion *m, int window, int f
     if (i > first && m->steps[i - 1] == d) {
       while (1) {
         const cw_cmd_frame *f = at(b, cur);
-        if (!f || !has(f->dir, d)) break;
+        if (!f || !stepm(m, i, f->dir)) break;
         cur++;
       }
     }
   }
   if (m->charge) {
-    int d = m->steps[0];
     /* a run of frames containing d, at least charge_frames long, whose newest
      * frame is at age >= cur, inside the window */
     int run = 0, newest = -1;
@@ -150,7 +153,7 @@ static int match_from(const cw_cmd_buf *b, const cw_motion *m, int window, int f
       const cw_cmd_frame *f = at(b, a);
       if (!f) break;
       if (end_age >= 0 && a - end_age >= window) break;
-      if (has(f->dir, d)) {
+      if (stepm(m, 0, f->dir)) {
         if (run == 0) newest = a;
         run++;
         if (run >= m->charge_frames) return last_age;

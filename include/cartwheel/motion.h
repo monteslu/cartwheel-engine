@@ -19,6 +19,7 @@
  *   "236"     quarter circle forward: down, down-forward, forward
  *   "623"     forward, down, down-forward (rising uppercut)
  *   "214"  "41236"  "236236"  "22"  "66"   any run of up to 8 digits
+ *   "!6!6"    exact steps: the direction must be exactly 6 (3 and 9 do not count): a dash
  *   "[4]6"    charge: back held for charge frames, then forward
  *   "[2]8"    charge down, then up
  * Rules (documented so a design can rely on them):
@@ -78,6 +79,7 @@ typedef struct cw_motion {
   uint8_t steps[CW_MOTION_MAX_STEPS];
   uint8_t count;
   uint8_t charge; /* the first step is a charge */
+  uint8_t exact;  /* bit i: step i must be exactly that direction (written "!6") */
   uint16_t charge_frames; /* frames the charge direction must be held (default 30) */
 } cw_motion;
 
