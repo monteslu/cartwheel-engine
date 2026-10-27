@@ -88,6 +88,18 @@ export async function takeSuiteLock(name) {
       // a stopped suite takes its tests with it (this handler runs before the guards' and exits)
       for (const s of ['SIGINT', 'SIGTERM', 'SIGHUP'])
         process.on(s, () => { killTree(); release(); process.exit(128 + (s === 'SIGINT' ? 2 : s === 'SIGTERM' ? 15 : 1)); });
+      // a hold limit: one long suite must not starve the queue behind it (2026-10-27: a 2 hour suite held 16 others).
+      // CW_SUITE_MAX_MINUTES (default 15, 0 = none, fractions allowed): the holder's tests are killed, the lock released
+      // and the process exits 124 with a message that says why; split the work into suites that fit
+      const maxMin = Number(process.env.CW_SUITE_MAX_MINUTES ?? 15);
+      if (maxMin > 0) {
+        const limit = setTimeout(() => {
+          console.error(`GPU suite '${name}' held the lock for ${maxMin} minute(s) (CW_SUITE_MAX_MINUTES): stopping it and releasing the lock so the ` +
+            'suites waiting behind it run. Split the work into suites that finish inside the limit (one gate or a few per call).');
+          killTree(); release(); process.exit(124);
+        }, maxMin * 60000);
+        limit.unref();
+      }
       return;
     } catch (e) {
       if (e.code !== 'EEXIST') throw new Error(`GPU suite lock ${d}: ${e.message}`);
