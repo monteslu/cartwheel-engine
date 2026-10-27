@@ -5,8 +5,8 @@
   "39009586883"
  ],
  "gl": {
-  "open-world-drive": 988,
-  "open-world-fly": 916,
+  "open-world-drive": 1900,
+  "open-world-fly": 1900,
   "terrain-drive": 602,
   "platformer3d-replay": 487,
   "showcase-cycle": 333,
@@ -217,7 +217,7 @@
   "web-pads": 0
  },
  "webgpu": {
-  "open-world-drive": 1774,
+  "open-world-drive": 1900,
   "terrain-drive": 996,
   "terrain-lights": 279,
   "gi-room-ultra": 267,
