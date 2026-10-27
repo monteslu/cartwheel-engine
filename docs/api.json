@@ -11625,6 +11625,12 @@
      "inline": false
     },
     {
+     "name": "cw_shell_join_press",
+     "signature": "bool cw_shell_join_press(void)",
+     "doc": "One-press join during play: if a pad that has no seat pressed A this tick, it takes\nthe first free seat at once, with no join screen, players_changed tells the game, and this returns true (the\nseat number, like every seat, never changes while the match runs). False outside play, in a one player game,\nwhen no seat is free, or when nobody without a seat pressed A. Call it in fixed_update after cw_shell_update;\ncw_shell_join_open stays the way to leave a seat or rearrange. Pads only: the keyboard already drives a player.",
+     "inline": false
+    },
+    {
      "name": "cw_shell_to_title",
      "signature": "void cw_shell_to_title(void)",
      "doc": "end the match and show the title (every pad drives the menus again)",
