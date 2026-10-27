@@ -43,6 +43,9 @@ typedef struct water3d {
   float rain, rain_size, rain_strength;
   const char *splash_fx;
   float splash_fx_min;
+  /* caustics and the view from under the water (underwater.c) */
+  float caustics, caustic_size;
+  bool underwater;
   /* runtime (cleared on destroy from here on) */
   t3_mesh *mesh;
   t3_material *mat;
@@ -70,6 +73,9 @@ typedef struct water3d {
   float sun[4], sun_col[4];
   float refr_inv[16]; /* the refraction camera's inverse projection (its depth texture reads back to view space) */
   bool refr_depth_ok;
+  bool refr_above;      /* the camera is under the water: the refraction target holds the view up through the surface */
+  bool under_drawn;     /* the full-screen pass drew this view as seen from under the water */
+  t3_texture *caus_tex; /* the caustic tile for the surface (caustics.c) */
 } water3d;
 
 /* the waves at time t, phases reduced (water.c) */
@@ -81,6 +87,12 @@ void cw__ripples_free(water3d *d);
 void cw__ripples_step(cw_node n, water3d *d, uint32_t tick);
 void cw__ripples_upload(water3d *d);
 int cw__water_quality(void);
+/* the tree's i-th Water3D (an invalid node past the last) */
+cw_node cw__water_at(cw_tree *t, int i);
+/* underwater.c, caustics.c */
+#define CW_WATER_CAUSTIC_N 256
+const uint8_t *cw__water_caustics(void);
+void cw__water_add_under_pass(cw_tree *t);
 /* buoyancy.c */
 void cw__register_buoyancy_type(void);
 int cw__buoyancy_count(cw_tree *t);

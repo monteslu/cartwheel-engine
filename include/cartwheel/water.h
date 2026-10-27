@@ -200,6 +200,7 @@ typedef struct cw_water_stats {
   int refraction_w, refraction_h; /* refraction target (0 when off) */
   int triangles;          /* of the surfaces' grids */
   int buoyant;            /* Buoyancy3D nodes that pushed last tick */
+  int underwater;         /* 1 when the last frame was drawn from under a Water3D's surface (its fog, caustics, waterline) */
 } cw_water_stats;
 /* Zeroed when t is NULL or has no water. */
 void cw_water_get_stats(cw_tree *t, cw_water_stats *out);

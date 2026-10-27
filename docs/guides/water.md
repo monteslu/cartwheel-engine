@@ -60,6 +60,14 @@ The grid is a look, not a gameplay height: bodies float on the Gerstner waves al
 
 Out of the box the water is tuned to read as water, not as a blue sheet: the body is lit by the sun (it dims and reddens toward dusk instead of staying one colour), the shallow colour fades to the deep one red first as the depth grows, the sun sends a turquoise glow through the crests that face it (`scatter`, with a ProceduralSky), a narrow glitter runs along the fine chop where the sun reflects (`glint`), and three octaves of ripple normals plus foam at two scales break up the highlights and the white. Set `scatter` and `glint` to 0 for a plainer look.
 
+## Caustics and the view from under the water
+
+Sunlight that passes through a rippled surface is bent into a moving web of bright lines on whatever lies under it. The water draws that web (`caustics`, the strength, 1 by default; `caustic_size`, the metres one tile of the pattern covers) on the floor it shows through its refraction, shifted along the sun's path through the water and fading with depth, so the lines are sharp in the shallows and gone a few metres down. The pattern is traced once when the game starts: a rippled surface bends a grid of light rays and they are gathered where they land, so it has the cusps and bright knots of real caustics, and it is the same image on every host. It needs a sky (ProceduralSky) for the sun's direction and the refraction's depth (High and Ultra) to know where the floor is.
+
+A camera under the surface sees through the water (`underwater`, on by default): light fades with distance, red first, into the water's own colour, which darkens the deeper the camera is; the floor carries the caustics; and the surface seen from below shows the world above only inside a circle of light (the window that refraction leaves; past it the surface mirrors the water). Where the surface crosses the lens a thin dark line marks the waterline, and each pixel decides for itself whether it is above or below, so a camera bobbing at the surface splits the picture along the real wave. One full-screen pass does it, and only while the camera is under or near the water of its view, so it costs nothing on a dry frame.
+
+The `water-under` gate puts the beach sample's camera under the surface and checks that the frame was drawn from under the water ([cw_water_get_stats](api:cw_water_get_stats), `underwater`), on every host and backend.
+
 ## Things that float
 
 Give a [RigidBody3D](node:RigidBody3D) a [Buoyancy3D](node:Buoyancy3D) child and it floats:
@@ -80,12 +88,14 @@ Gerstner waves move the water sideways as well as up and down, so "the height at
 
 Water follows the effects detail setting of the graphics settings ([cartwheel/quality.h](header:quality.h)):
 
-| Effects detail | Grid | Reflection | Refraction |
-|---|---|---|---|
-| Low | a quarter of `subdivisions` | none: the sky's environment light stands in | none: `deep_color` stands in |
-| Medium | half | at half of `resolution_scale` | none |
-| High | as set | at `resolution_scale` | at `resolution_scale` |
-| Ultra | as set | at 1.5 x `resolution_scale` (at most full size) | likewise |
+| Effects detail | Grid | Reflection | Refraction | Ripple grid | Caustics |
+|---|---|---|---|---|---|
+| Low | a quarter of `subdivisions` | none: the sky's environment light stands in | none: `deep_color` stands in | half of `ripple_cells` | none |
+| Medium | half | at half of `resolution_scale` | none | three quarters | under the water only |
+| High | as set | at `resolution_scale` | at `resolution_scale`, with its depth (depth through the refraction, caustics seen from above) | as set | yes |
+| Ultra | as set | at 1.5 x `resolution_scale` (at most full size) | likewise | as set | yes |
+
+The view from under the water (its fog and waterline) is the same on every preset: it is one cheap full-screen pass, and it keeps what a player can see the same.
 
 Each planar view is one more render of the scene at that size, so its cost is the scene's cost times the share of pixels.
 

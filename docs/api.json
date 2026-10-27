@@ -14439,7 +14439,7 @@
     {
      "name": "cw_water_stats",
      "doc": "Last frame's numbers for a tree's water.",
-     "decl": "typedef struct cw_water_stats {\n  int surfaces;           /* Water3D nodes drawn */\n  int reflection_w, reflection_h; /* reflection target (0 when off) */\n  int refraction_w, refraction_h; /* refraction target (0 when off) */\n  int triangles;          /* of the surfaces' grids */\n  int buoyant;            /* Buoyancy3D nodes that pushed last tick */\n} cw_water_stats;"
+     "decl": "typedef struct cw_water_stats {\n  int surfaces;           /* Water3D nodes drawn */\n  int reflection_w, reflection_h; /* reflection target (0 when off) */\n  int refraction_w, refraction_h; /* refraction target (0 when off) */\n  int triangles;          /* of the surfaces' grids */\n  int buoyant;            /* Buoyancy3D nodes that pushed last tick */\n  int underwater;         /* 1 when the last frame was drawn from under a Water3D's surface (its fog, caustics, waterline) */\n} cw_water_stats;"
     }
    ],
    "macros": [

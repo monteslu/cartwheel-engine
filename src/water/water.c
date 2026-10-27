@@ -159,6 +159,9 @@ static void water_init(cw_node n, void *data) {
   d->rain_size = 0.5f;
   d->rain_strength = 0.03f;
   d->splash_fx_min = 0.15f;
+  d->caustics = 1.0f;
+  d->caustic_size = 5.0f;
+  d->underwater = true;
 }
 
 water3d *cw__water_data(cw_node n) { return cw_node_data_t(n, water_t); }
@@ -181,6 +184,11 @@ static void wtree_free(void *p) {
   water_tree *wt = p;
   cw_array_free(&wt->nodes);
   cw_free(wt);
+}
+
+cw_node cw__water_at(cw_tree *t, int i) {
+  water_tree *wt = t ? cw_tree_slot(t, "water") : NULL;
+  return wt && i >= 0 && i < wt->nodes.count ? wt->nodes.data[i] : (cw_node){ 0 };
 }
 
 cw_node cw_water_find(cw_tree *t) {
@@ -249,6 +257,11 @@ void cw_water_get_stats(cw_tree *t, cw_water_stats *out) {
   water_tree *wt = t ? cw_tree_slot(t, "water") : NULL;
   if (wt) *out = wt->stats;
   if (t) out->buoyant = cw__buoyancy_count(t);
+  if (wt)
+    for (int i = 0; i < wt->nodes.count; i++) {
+      water3d *d = cw_node_data_t(wt->nodes.data[i], water_t);
+      if (d && d->under_drawn) out->underwater = 1;
+    }
 }
 
 /* ── the floor map ─────────────────────────────────────────────────────── */
@@ -431,6 +444,7 @@ static void build(cw_node n, water3d *d) {
     d->mat = t3_mesh_standard_material_new(0x000000);
     d->mat->metalness = 0;
     d->mat->emissive = (t3_color){ 1, 1, 1 }; /* the extension multiplies its light by it (white: as computed) */
+    d->mat->side = T3_DOUBLE_SIDE;           /* seen from under the water too */
     t3_material_set_extension(d->mat, "water");
   }
   d->mat->roughness = d->roughness;
@@ -458,6 +472,7 @@ static void water_destroy(cw_node n, void *data) {
   cw_res_release(d->normal_res);
   cw_res_release(d->flow_res);
   if (d->floor_tex) t3_release(d->floor_tex);
+  if (d->caus_tex) t3_release(d->caus_tex);
   cw__ripples_free(d);
   cw_free(d->floor_depth);
   memset(&d->mesh, 0, sizeof *d - offsetof(water3d, mesh));
@@ -471,6 +486,20 @@ static void textures(water3d *d) {
     cw_res_release(d->normal_res);
     d->normal_res = cw_res_load(nm, CW_RES_TEXTURE);
     d->loaded_normal = nm;
+  }
+  if (!d->caus_tex) {
+    /* the caustic tile (caustics.c) as RGBA8, repeating, mipmapped */
+    const uint8_t *c = cw__water_caustics();
+    const int n = CW_WATER_CAUSTIC_N;
+    uint8_t *px = cw_alloc((size_t)n * (size_t)n * 4, CW_MEM_RENDER);
+    for (int k = 0; k < n * n; k++) px[k * 4] = px[k * 4 + 1] = px[k * 4 + 2] = c[k], px[k * 4 + 3] = 255;
+    d->caus_tex = t3_data_texture_new(n, n, px);
+    cw_free(px);
+    d->caus_tex->wrap_s = d->caus_tex->wrap_t = T3_REPEAT;
+    d->caus_tex->mag_filter = T3_LINEAR;
+    d->caus_tex->min_filter = T3_LINEAR_MIPMAP_LINEAR;
+    d->caus_tex->generate_mipmaps = true;
+    d->caus_tex->version++;
   }
   const char *fm = d->flow_map && *d->flow_map ? d->flow_map : NULL;
   if (fm != d->loaded_flow) {
@@ -595,8 +624,10 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   bool below = v3dot(v3sub(wpos, cpos), up) > 0;
   bool first = !d->refl;
   d->refl = target(d->refl, d->refl_on ? w : 1, d->refl_on ? h : 1);
-  d->refr = refr_target(d->refr, d->refr_on ? w : 1, d->refr_on ? h : 1, d->refr_on);
+  /* always with a depth texture (1 x 1 when off): the surface's program samples one in every state */
+  d->refr = refr_target(d->refr, d->refr_on ? w : 1, d->refr_on ? h : 1, true);
   d->refr_depth_ok = false;
+  d->refr_above = false;
   if (!d->vcam) d->vcam = t3_perspective_camera_new(cam->fov, cam->aspect, cam->near, cam->far);
   t3_camera *v = d->vcam;
   v->fov = cam->fov, v->aspect = cam->aspect, v->near = cam->near, v->far = cam->far, v->zoom = cam->zoom;
@@ -628,6 +659,19 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
     render_into(ctx, wt, d->refr, v);
     memcpy(d->refr_inv, v->projection_matrix_inverse.e, sizeof d->refr_inv);
     d->refr_depth_ok = d->refr->depth_texture != NULL;
+    v->base.matrix_world_external = false;
+  } else if (below && (d->refr_on || d->refl_on)) {
+    /* under the water: the refraction target holds the view up through the surface (the scene above the rest
+     * level), which the surface shows inside its window of light */
+    d->refr = refr_target(d->refr, w, h, true);
+    t3_object_set_matrix_world(v, &cam->base.matrix_world);
+    v->projection_matrix = ctx->proj;
+    t3_mat4 vi;
+    t3_mat4_invert(&vi, &cam->base.matrix_world);
+    oblique(&v->projection_matrix, &vi, up, wpos);
+    t3_mat4_invert(&v->projection_matrix_inverse, &v->projection_matrix);
+    render_into(ctx, wt, d->refr, v);
+    d->refr_above = true;
     v->base.matrix_world_external = false;
   } else if (first || d->refr_on) {
     render_into(ctx, wt, d->refr, NULL);
@@ -674,7 +718,10 @@ static void fill(t3_extension_ctx *c, void *user) {
   t3_extension_set_uniform(c, "waterShallow", v, 4);
   v[0] = d->size[0], v[1] = d->size[1], v[2] = 0, v[3] = 0;
   t3_extension_set_uniform(c, "waterFloorRect", v, 4);
-  if (d->floor_tex) t3_extension_set_texture(c, "waterFloorMap", d->floor_tex);
+  /* every texture the program declares is bound in every state (a draw with one unset is skipped): the
+   * normal map stands in for maps a feature that is off never reads */
+  t3_texture *nm0 = cw_res_texture(d->normal_res);
+  t3_extension_set_texture(c, "waterFloorMap", d->floor_tex ? d->floor_tex : nm0);
   t3_extension_set_uniform(c, "waterSun", d->sun, 4);
   t3_extension_set_uniform(c, "waterSunCol", d->sun_col, 4);
   {
@@ -683,7 +730,7 @@ static void fill(t3_extension_ctx *c, void *user) {
     t3_extension_set_uniform(c, "waterRipple", v, 4);
     v[0] = d->ripple_center[0], v[1] = d->ripple_center[1], v[2] = on ? 1.0f / (float)d->rip_nx : 1.0f, v[3] = on ? 1.0f / (float)d->rip_nz : 1.0f;
     t3_extension_set_uniform(c, "waterRippleRect", v, 4);
-    if (on) t3_extension_set_texture(c, "waterRippleMap", d->rip_tex);
+    t3_extension_set_texture(c, "waterRippleMap", on ? d->rip_tex : nm0);
   }
   t3_texture *nm = cw_res_texture(d->normal_res);
   t3_extension_set_texture(c, "waterNormal", nm);
@@ -691,12 +738,15 @@ static void fill(t3_extension_ctx *c, void *user) {
   if (d->refl) t3_extension_set_texture(c, "waterReflection", d->refl->texture);
   if (d->refr) t3_extension_set_texture(c, "waterRefraction", d->refr->texture);
   {
-    static int conv = -1;
-    if (conv < 0) conv = getenv("WATER_DEPTH_CONV") ? atoi(getenv("WATER_DEPTH_CONV")) : 0;
-    v[0] = d->refr_depth_ok ? 1.0f : 0.0f, v[1] = (float)(conv & 1), v[2] = (float)((conv >> 1) & 1), v[3] = 0;
+    /* x: the refraction depth is valid; y: caustic strength (Medium and up); z: 1 / the caustic tile (m); w: the
+     * camera is under the water (the refraction target holds the view up through the surface) */
+    float cs = d->caustic_size > 0.05f ? d->caustic_size : 0.05f;
+    v[0] = d->refr_depth_ok ? 1.0f : 0.0f, v[1] = cw__water_quality() >= CW_QUALITY_MEDIUM ? d->caustics : 0.0f;
+    v[2] = 1.0f / cs, v[3] = d->refr_above ? 1.0f : 0.0f;
     t3_extension_set_uniform(c, "waterRefr", v, 4);
     t3_extension_set_uniform(c, "waterRefrInv", d->refr_inv, 16);
     if (d->refr && d->refr->depth_texture) t3_extension_set_texture(c, "waterRefractionDepth", d->refr->depth_texture);
+    t3_extension_set_texture(c, "waterCaustic", d->caus_tex ? d->caus_tex : nm0);
   }
 }
 
@@ -717,6 +767,7 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     cw_node n = wt->nodes.data[i];
     water3d *d = cw_node_data_t(n, water_t);
     if (!d) continue;
+    d->under_drawn = false; /* the full-screen pass (POST) sets it again when it draws this frame from under the water */
     build(n, d);
     textures(d);
     if (d->floor_dirty || (!d->floor_done && cw_tree_tick(ctx->tree) >= 1 && d->floor_map_size >= 2)) bake_floor(n, d);
@@ -775,6 +826,7 @@ static void water_enter(cw_node n, void *data) {
     cw_tree_set_slot(t, "water", wt, wtree_free);
   }
   cw_array_push(&wt->nodes, n);
+  cw__water_add_under_pass(t);
   cw_pipeline *p = cw_pipeline_of(t);
   if (!cw_pipeline_has_pass(p, "water"))
     cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "water", .phase = CW_PHASE_SHADOW, .order = 1600,
@@ -848,6 +900,9 @@ static const cw_prop water_props[] = {
   CW_PROP_FIELD_RANGE(water3d, rain_strength, CW_T_FLOAT, 0, 5, "Depth of a raindrop dent, metres."),
   CW_PROP_FIELD(water3d, splash_fx, CW_T_STRING, CW_PROP_DEFAULT, "Path of a node whose GPUParticles3D children are restarted at each big splash (a pool, used in turn)."),
   CW_PROP_FIELD_RANGE(water3d, splash_fx_min, CW_T_FLOAT, 0, 100, "The splash depth (m) from which splash_fx fires."),
+  CW_PROP_FIELD_RANGE(water3d, caustics, CW_T_FLOAT, 0, 4, "Strength of the moving light patterns the sun makes through the waves on what lies under the water (0: none; Medium and up)."),
+  CW_PROP_FIELD_RANGE(water3d, caustic_size, CW_T_FLOAT, 0.05, 1000, "Size in metres of one tile of the caustic pattern."),
+  CW_PROP_FIELD(water3d, underwater, CW_T_BOOL, CW_PROP_DEFAULT, "A camera under the surface sees through the water: colour and murk over distance, the surface from below, the waterline."),
   CW_PROP_FIELD(water3d, debug_range, CW_T_VEC2, CW_PROP_DEFAULT, "debug_view HEIGHT: heights mapped to 0 .. 1."),
   CW_PROP_END,
 };

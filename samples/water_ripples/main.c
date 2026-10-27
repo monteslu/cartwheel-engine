@@ -17,6 +17,7 @@
 #include <stdlib.h>
 
 #include "cartwheel/debug.h"
+#include "cartwheel/math.h"
 #include "cartwheel/physics_nodes.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
@@ -55,10 +56,10 @@ static void update(void *u, double dt) {
   cw_body3d boat = cw_collision_object3d_body(node("Boat"));
   if (cw_body3d_valid(boat)) {
     cw_xform3 x = cw_body3d_transform(boat);
-    float a = atan2f(x.p.z + 2.0f, x.p.x);
+    float a = cw_atan2(x.p.z + 2.0f, x.p.x);
     t3_vec3 v = cw_body3d_velocity(boat);
     const float speed = 4.5f;
-    cw_body3d_set_velocity(boat, (t3_vec3){ -sinf(a) * speed, v.y, cosf(a) * speed });
+    cw_body3d_set_velocity(boat, (t3_vec3){ -cw_sin(a) * speed, v.y, cw_cos(a) * speed });
     boat_pos[0] = x.p.x, boat_pos[1] = x.p.z;
   }
   /* a splash by hand, then the crates are let go by gravity alone */

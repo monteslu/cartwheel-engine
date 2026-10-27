@@ -10298,6 +10298,34 @@
      "doc": "The splash depth (m) from which splash_fx fires."
     },
     {
+     "name": "caustics",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 4,
+     "doc": "Strength of the moving light patterns the sun makes through the waves on what lies under the water (0: none; Medium and up)."
+    },
+    {
+     "name": "caustic_size",
+     "type": "float",
+     "default": "5",
+     "stored": true,
+     "readonly": false,
+     "min": 0.05,
+     "max": 1000,
+     "doc": "Size in metres of one tile of the caustic pattern."
+    },
+    {
+     "name": "underwater",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "A camera under the surface sees through the water: colour and murk over distance, the surface from below, the waterline."
+    },
+    {
      "name": "debug_range",
      "type": "vec2",
      "default": "vec2(-2, 2)",

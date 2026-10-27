@@ -17,7 +17,8 @@
 
 static uint32_t tick, bodies_hash;
 static float floor_depth[4];
-static float frame_ms; /* the pipeline's GPU ms per frame (0 where the host cannot time it) */
+static float frame_ms;
+static uint32_t under; /* the frame was drawn from under the water (cw_water_stats.underwater) */ /* the pipeline's GPU ms per frame (0 where the host cannot time it) */
 
 static cw_node node(const char *path) {
   char p[96];
@@ -31,9 +32,12 @@ static void init(void *u) {
   cw_debug_u32("bodies.hash", &bodies_hash);
   cw_debug_f32_array("floor.depth", floor_depth, 4);
   cw_debug_f32("water.gpu_ms", &frame_ms);
+  cw_debug_u32("water.under", &under);
 }
 
-/* WATER_SHORE_OFF=1: the shore and foam features off (the cost's baseline) */
+/* WATER_SHORE_OFF=1: the shore and foam features off (the cost's baseline);
+ * WATER_DEBUG=<n>: the water's debug_view (2: the refraction's depth as colour). The underwater gate moves the
+ * camera under the surface with debug commands ("set Root/Camera position ..."). */
 static void render(void *u, double alpha) {
   (void)u;
   (void)alpha;
@@ -45,7 +49,15 @@ static void render(void *u, double alpha) {
     cw_node_set(w, "crest_foam", cw_val_float(0));
     off_done = true;
   }
+  static bool env_done;
+  if (!env_done) {
+    env_done = true;
+    if (getenv("WATER_DEBUG")) cw_node_set(node("Water"), "debug_view", cw_val_int(atoi(getenv("WATER_DEBUG"))));
+  }
   frame_ms = cw_pipeline_gpu_ms(cw_pipeline_of(cw_scene_app_tree()));
+  cw_water_stats st;
+  cw_water_get_stats(cw_scene_app_tree(), &st);
+  under = (uint32_t)st.underwater;
 }
 
 static void update(void *u, double dt) {
