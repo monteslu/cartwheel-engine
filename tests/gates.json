@@ -70,6 +70,16 @@
     "note": "the join screen opened during play: a third pad takes seat 3, then the pad on seat 2 leaves and Start confirms (seats 1 and 3 held, numbers do not shift), then the third pad is unplugged and its seat frees by itself: one seat left. Control: the third pad never presses A, so its unplugging changes nothing and the match sees one change fewer"
   },
   {
+    "name": "shell-join-press",
+    "app": "shell_join",
+    "frames": 90,
+    "input": "shell-join-press.json",
+    "controlInput": "shell-join-press-control.json",
+    "fields": ["shell.screen", "shell.players", "game.players", "game.seats", "game.changes", "game.opened", "game.pressed", "game.ticks"],
+    "expect": { "shell.screen": 3, "shell.players": 2, "game.players": 2, "game.seats": 3, "game.changes": 1, "game.opened": 0, "game.pressed": 1 },
+    "note": "one-press join: one player starts, then a pad with no seat presses A during play and holds seat 2 at once, no join screen. Control: that pad presses B instead, so nobody joins"
+  },
+  {
     "name": "hello-still",
     "webgpu": true,
     "app": "hello",

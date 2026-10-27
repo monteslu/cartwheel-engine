@@ -221,6 +221,31 @@ bool cw_shell_join_requested(void) {
   return false;
 }
 
+bool cw_shell_join_press(void) {
+  if (!S.inited || S.screen != CW_SHELL_PLAY || S.d.max_players < 2) return false;
+  const cw_raw_input *in = cw_input_raw();
+  if (!in) return false;
+  /* pads only: the keyboard usually drives a seated player already (Enter there is that player's own key) */
+  for (int pad = 0; pad < CW_MAX_PADS; pad++) {
+    bool seated = false;
+    for (int p = 0; p < S.players; p++) seated |= S.seat_pad[p] == pad;
+    if (seated || !in->pads[pad].connected || !(in->pads[pad].pressed & (1u << CW_PAD_SOUTH))) continue;
+    int seat = -1;
+    for (int s = 0; s < S.d.max_players && s < 4; s++)
+      if (s >= S.players || S.seat_pad[s] < 0) { seat = s; break; }
+    if (seat < 0) return false;
+    S.seat_pad[seat] = pad;
+    S.seat_seen[seat] = false;
+    cw_input_assign(seat, pad, 0);
+    if (seat + 1 > S.players) S.players = seat + 1;
+    S.dbg_players = S.players;
+    sound(CW_SHELL_SND_JOIN);
+    if (S.d.players_changed) S.d.players_changed(S.players, S.d.user);
+    return true;
+  }
+  return false;
+}
+
 void cw_shell_to_title(void) {
   assign_default(4); /* menus answer every pad again */
   for (int i = 0; i < 4; i++) S.joined_pad[i] = -1;

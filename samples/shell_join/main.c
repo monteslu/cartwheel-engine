@@ -1,7 +1,7 @@
 /* shell_join: the game shell's join screen opened in the middle of a match.
  *
- * Two players start; West (X) on any seated pad, or a pad that has no seat pressing A or Start, opens the
- * join screen over the running match: a third and fourth pad take a seat with A, a seated pad leaves with B,
+ * Two players start. A pad that has no seat pressing A takes a seat at once (cw_shell_join_press, one press).
+ * West (X) on any seated pad, or a pad that has no seat pressing Start, opens the join screen over the running match: a third and fourth pad take a seat with A, a seated pad leaves with B,
  * Start confirms and play carries on with the new seating (every seat keeps its number). The game only answers players_changed. */
 #include <stdio.h>
 #include <string.h>
@@ -18,6 +18,7 @@ static struct {
   int32_t changes;      /* how many times players_changed answered */
   int32_t ticks;        /* play ticks (they stop under the join screen) */
   int32_t opened;       /* how many times the join screen was opened */
+  int32_t pressed;      /* how many pads joined with one press */
   float x[4];           /* each player's square, moved by its stick */
   cw_action left, right, open;
 } G;
@@ -52,12 +53,14 @@ static void init(void *user) {
   cw_debug_i32("game.changes", &G.changes);
   cw_debug_i32("game.ticks", &G.ticks);
   cw_debug_i32("game.opened", &G.opened);
+  cw_debug_i32("game.pressed", &G.pressed);
 }
 
 static void fixed_update(void *user, double dt) {
   (void)user;
   if (!cw_shell_update()) return; /* a menu, or the join screen, owns this tick */
-  bool ask = cw_shell_join_requested();
+  if (cw_shell_join_press()) G.pressed++; /* a pad without a seat pressed A: seated already */
+  bool ask = cw_shell_join_requested();   /* Start on a pad without a seat: offer the join screen */
   for (int p = 0; p < G.players; p++) {
     if (!((G.seats >> p) & 1)) continue; /* an empty seat */
     G.x[p] += cw_input_axis(p, G.left, G.right) * 200.0f * (float)dt;

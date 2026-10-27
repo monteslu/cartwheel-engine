@@ -141,6 +141,12 @@ bool cw_shell_seat_taken(int seat);
 /* True on the tick a pad or the keyboard that has no seat presses A (Enter) or Start: the cue for a game to
  * offer cw_shell_join_open, say between rounds. Poll it in fixed_update after cw_shell_update. */
 bool cw_shell_join_requested(void);
+/* One-press join during play: if a pad that has no seat pressed A this tick, it takes
+ * the first free seat at once, with no join screen, players_changed tells the game, and this returns true (the
+ * seat number, like every seat, never changes while the match runs). False outside play, in a one player game,
+ * when no seat is free, or when nobody without a seat pressed A. Call it in fixed_update after cw_shell_update;
+ * cw_shell_join_open stays the way to leave a seat or rearrange. Pads only: the keyboard already drives a player. */
+bool cw_shell_join_press(void);
 void cw_shell_to_title(void); /* end the match and show the title (every pad drives the menus again) */
 /* Loading: progress 0..1 shown on the loading screen; loaded goes on to the title. */
 void cw_shell_loading(float progress);
