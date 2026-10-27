@@ -25,7 +25,12 @@ writes only its gameplay and art:
 - split screen: `cw_shell_split` gives each player a view with the pipeline's
   layout (two side by side, three or four in quadrants, three leaving a
   quadrant for a shared HUD), and `cw_shell_player_rect` and
-  `cw_shell_shared_rect` tell the HUD where to draw.
+  `cw_shell_shared_rect` tell the HUD where to draw;
+- shared screen: a scrolling brawler or a co-op platformer has several players in
+  one view. Set `shared_screen` in `cw_shell_desc`: `cw_shell_split` then keeps the
+  single camera, `cw_shell_player_rect` gives every player the whole canvas and
+  `cw_shell_shared_rect` is empty. The game draws one HUD with a card per player.
+  The `unit-shell` gate checks both layouts.
 
 A game that wants its own picture behind the title, join, settings and pause screens sets `draw_background` in `cw_shell_desc`: the shell calls it inside its own 2D pass with the canvas size, then dims the result lightly and draws the menu over it (without the hook the screens sit on a dark panel).
 

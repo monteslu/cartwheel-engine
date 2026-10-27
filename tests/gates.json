@@ -427,6 +427,27 @@
     "note": "a quarter circle + J, a rising strike + J and a dash, typed on a pad stick: each fires once, and the framing fit is the same on every host. The control presses nothing."
   },
   {
+    "name": "unit-shell",
+    "app": "unit_shell",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_NO_SHARED": "1"
+    },
+    "note": "shell shared_screen: one view and the whole canvas for every player, against the same call without the option (the control leaves the option off, so the shared checks fail)"
+  },
+  {
     "name": "perf-nodes",
     "app": "perf_nodes",
     "frames": 2,
