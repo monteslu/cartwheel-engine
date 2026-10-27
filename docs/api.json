@@ -4435,7 +4435,7 @@
     {
      "name": "cw_nav_obstacle_add_cylinder",
      "signature": "uint32_t cw_nav_obstacle_add_cylinder(cw_navmesh nm, t3_vec3 base, float radius, float height)",
-     "doc": "── obstacles (dynamic navmeshes) ─────────────────────────────────────\nAdding and removing queue a change; cw_nav_update applies the queue: the\ntouched tiles rebuild in parallel and are committed in ascending tile\norder. Ids are never 0; 0 means the obstacle could not be added.",
+     "doc": "── obstacles (dynamic navmeshes) ─────────────────────────────────────\nAdding and removing queue a change; cw_nav_update applies the queue: the\ntouched tiles rebuild in parallel and are committed in ascending tile\norder. Ids are never 0; 0 means the obstacle could not be added (max_obstacles\nreached). The queue holds 64 changes: when it is full, the next add or\nremove applies it (an implicit cw_nav_update) and then queues its own, so a\nlevel can add hundreds of obstacles in a row.",
      "inline": false
     },
     {
