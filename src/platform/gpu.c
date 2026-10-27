@@ -144,6 +144,22 @@ void cw_gpu_clear_window(float r, float g, float b, float a) {
 #else
 
 #include "wgpu.h"
+
+/* GL on a WebGPU run (cartwheel/gl.h checks every GL entry point): stop with
+ * the GL function, the call site and the feature, instead of the host's bare
+ * import trap (a cart) or a GL call with no context (native) */
+bool cw__gl_banned;
+const char *cw__gl_feature;
+void cw__gl_trap(const char *fn, const char *file, int line) {
+  cw_fatal(file, line,
+           "'%s' called GL (%s) on a WebGPU run: this path has no WebGPU implementation, and a dual cart traps on any GL "
+           "call while the host selected WebGPU",
+           cw__gl_feature && *cw__gl_feature ? cw__gl_feature : "engine or game code", fn);
+}
+static void set_backend(cw_gpu_api b) {
+  backend = b;
+  cw__gl_banned = b == CW_GPU_WEBGPU;
+}
 #if !CW_CART
 #include <SDL_syswm.h>
 #include "native_dawn/sdl2.h"
@@ -243,7 +259,7 @@ static void log_adapter(void) {
 bool cw__gpu_select(cw_gpu_api want, bool host_wgpu) {
 #if CW_CART
   (void)want;
-  backend = host_wgpu ? CW_GPU_WEBGPU : CW_GPU_GL; /* a dual cart follows the host */
+  set_backend(host_wgpu ? CW_GPU_WEBGPU : CW_GPU_GL); /* a dual cart follows the host */
 #else
   (void)host_wgpu;
   if (!native_want(&want)) return false;
@@ -256,7 +272,7 @@ bool cw__gpu_select(cw_gpu_api want, bool host_wgpu) {
 #define CW_GPU_AUTO_WEBGPU 0
 #endif
   auto_pick = CW_GPU_AUTO_WEBGPU && want == CW_GPU_AUTO && !cw__app_gl_only();
-  backend = want == CW_GPU_WEBGPU || auto_pick ? CW_GPU_WEBGPU : CW_GPU_GL;
+  set_backend(want == CW_GPU_WEBGPU || auto_pick ? CW_GPU_WEBGPU : CW_GPU_GL);
 #endif
   return true;
 }
@@ -265,7 +281,7 @@ bool cw__gpu_select(cw_gpu_api want, bool host_wgpu) {
 bool cw__gpu_fallback_to_gl(void) {
   if (!auto_pick || backend != CW_GPU_WEBGPU) return false;
   cw__wgpu_shutdown();
-  backend = CW_GPU_GL;
+  set_backend(CW_GPU_GL);
   cw_log(CW_LOG_WARN, "WebGPU did not start on this machine: rendering with GL (CW_GPU=webgpu makes that an error)");
   return true;
 }
