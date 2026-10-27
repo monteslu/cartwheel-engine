@@ -98,6 +98,25 @@ void cw__gpu_timing_request(void) { gpu_timing = 1; }
 /* debug channel: "pipeline" lists the passes, what ran, GPU ms, caps. The
  * first call starts the GPU timers (off until something reads them): pass
  * GPU times show from a later call on, up to 11 frames after it (GL reads them back in a batch every 8 frames). */
+/* the feature a GL call on a WebGPU run is reported under (cartwheel/gl.h) */
+#if CW_WGPU
+#define GL_FEATURE(label) (cw__gl_feature = (label))
+#else
+#define GL_FEATURE(label) ((void)0)
+#endif
+
+/* pipeline_test gl_msaa_on_webgpu: the defect the dual-cart check
+ * (tests/wgpu-carts.mjs) must catch, put back on purpose: a WebGPU run that
+ * cannot multisample its scene asks GL for an MSAA framebuffer, as it did
+ * before WebGPU fell back to single-sampled. Its control only. */
+static bool test_gl_msaa_on_webgpu;
+static void cmd_pipeline_test(int argc, const char **argv, cw_reply *r) {
+  if (argc == 2 && !strcmp(argv[1], "gl_msaa_on_webgpu")) {
+    test_gl_msaa_on_webgpu = true;
+    cw_reply_raw(r, "{\"ok\":true}");
+  } else cw_reply_error(r, "usage: pipeline_test gl_msaa_on_webgpu");
+}
+
 static void cmd_pipeline(int argc, const char **argv, cw_reply *r) {
   (void)argc;
   (void)argv;
@@ -144,6 +163,8 @@ cw_pipeline *cw_pipeline_of(cw_tree *t) {
   if (!cmd_done) {
     cmd_done = true;
     cw_debug_command("pipeline", "pipeline: render passes (phase, ran, GPU ms), HDR format, timer support, missing three.c states", cmd_pipeline);
+    cw_debug_command("pipeline_test", "pipeline_test gl_msaa_on_webgpu: a test control: puts back a GL call on WebGPU runs that the dual-cart check must catch",
+                     cmd_pipeline_test);
   }
   return p;
 }
@@ -591,7 +612,9 @@ static void run_pass(cw_pipeline *p, pass_rec *r, cw_pass_ctx *ctx) {
   if (wgpu) cw__pw_timing_pass(p, r->name);
   ctx->user = r->d.user;
   double t0 = cw__render3d_now_ms();
+  GL_FEATURE(r->name);
   r->d.execute(ctx, r->d.user);
+  GL_FEATURE(NULL);
   r->frame_cpu += (float)(cw__render3d_now_ms() - t0);
   if (wgpu) cw__pw_timing_pass(p, NULL);
   timer_end(slot);
@@ -961,8 +984,10 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
           p->msaa_color = scene->tex;
         }
         scene_draw = &p->msaa_rt;
-      } else if (s->msaa > 1 && !wgpu) { /* GL only: a WebGPU host has no GL context, and a dual cart traps on any GL call */
+      } else if (s->msaa > 1 && (!wgpu || test_gl_msaa_on_webgpu)) { /* GL only: a WebGPU run has no GL context */
+        GL_FEATURE("PostProcess msaa (the GL multisampled scene framebuffer)");
         unsigned m = msaa_fbo(p, w, h, sf, s->msaa);
+        GL_FEATURE(NULL);
         if (m) {
           msaa_gl = (cw_rt){ .fbo = m, .w = w, .h = h, .format = sf };
           scene_draw = &msaa_gl;
