@@ -3038,6 +3038,24 @@
      "inline": false
     },
     {
+     "name": "cw_input_has_rumble",
+     "signature": "bool cw_input_has_rumble(int player)",
+     "doc": "Whether that player's pad has motors the host can drive (false with no pad).",
+     "inline": false
+    },
+    {
+     "name": "cw_input_rumble",
+     "signature": "void cw_input_rumble(int player, float low, float high, int ms)",
+     "doc": "Run that player's pad motors: low (heavy) and high (light) 0..1 for ms (at most 5000), replacing the one running.",
+     "inline": false
+    },
+    {
+     "name": "cw_input_rumble_stop",
+     "signature": "void cw_input_rumble_stop(int player)",
+     "doc": "Stop that player's pad motors now.",
+     "inline": false
+    },
+    {
      "name": "cw_input_load_bindings",
      "signature": "bool cw_input_load_bindings(const char *text, size_t len)",
      "doc": "── binding sets as text ──────────────────────────────────────────────\nOne action per line, '#' starts a comment:\n  jump = key:space, pad:south, mouse:left\n  move_left = key:a, key:left, pad:left, axis:lx-\n  fire = axis:rt+@0.5, key:j, deadzone:0.3\n  special =                       # explicitly unbound\nA line REPLACES that action's bindings (creating the action, deadzone 0.5\nunless given). Errors are logged with the line number; valid lines still\napply; returns false when any line failed. Loading does not call the\nbindings-changed callback.",
@@ -3290,6 +3308,10 @@
     {
      "name": "CW_INPUT_MAX_TOUCH_CONTROLS",
      "doc": ""
+    },
+    {
+     "name": "CW_HAVE_INPUT_RUMBLE",
+     "doc": "── rumble ────────────────────────────────────────────────────────────\nThe game drives a player's pad motors: `low` is the heavy (low-frequency)\nmotor, `high` the light one, both 0..1 (out of range is clamped, NaN is 0),\nfor `ms` milliseconds (capped at 5000). A new call replaces the one running;\ncw_input_rumble_stop ends it early. A player with no pad, a pad without\nmotors, a keyboard-only setup and a host with no hardware all make these\nsilent no-ops, so a game can call them unconditionally and ask\ncw_input_has_rumble only to offer the player a toggle. Natively this is\nSDL_GameControllerRumble; in a cart it is wasmcart's wc_pad_rumble (the\nbrowser's dual-rumble effect, a native player's SDL). Presentation only:\nrumble never feeds back into input or the simulation, so it is safe to call\nfrom fixed_update or update. The debug field `cw.rumble` (request count,\npad, low and high in thousandths, ms) shows the last request to tests."
     }
    ]
   },
@@ -11182,6 +11204,12 @@
      "name": "cw_shading_part_batching",
      "signature": "void cw_shading_part_batching(t3_renderer *r, const char *name, bool on)",
      "doc": "Part `name`'s hook on r reads nothing of the object it fills for (only\nper-frame values, or ones a batch keeps equal: receive_shadow, render\norder), so meshes whose material carries it may be auto-instanced. A\ncomposed extension batches when all of its parts do. Off by default.",
+     "inline": false
+    },
+    {
+     "name": "cw_shading_part_known",
+     "signature": "bool cw_shading_part_known(const char *name)",
+     "doc": "A part named `name` was registered (cw_shading_part) on some renderer: the\nengine's lighting composes its own parts (cluster, csm) with it.",
      "inline": false
     },
     {
