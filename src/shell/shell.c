@@ -540,7 +540,7 @@ void cw_shell_draw(void) {
 int cw_shell_split(cw_pipeline *p, const cw_node *cameras) {
   if (!p && cw_scene_app_tree()) p = cw_pipeline_of(cw_scene_app_tree());
   if (!p) return 0;
-  if (S.players <= 1) {
+  if (S.players <= 1 || S.d.shared_screen) {
     cw_pipeline_set_views(p, NULL, 0);
     return 0;
   }
@@ -553,7 +553,7 @@ static cw_rect quadrant(int i, cw_vec2 sz) {
 }
 cw_rect cw_shell_player_rect(int player) {
   cw_vec2 sz = cw_r2d_canvas_size();
-  if (S.players <= 1 || player < 0 || player >= S.players) return cw_rect_make(0, 0, sz.x, sz.y);
+  if (S.players <= 1 || S.d.shared_screen || player < 0 || player >= S.players) return cw_rect_make(0, 0, sz.x, sz.y);
   if (S.players == 2) {
     if (sz.y > sz.x) return cw_rect_make(0, player * sz.y * 0.5f, sz.x, sz.y * 0.5f);
     return cw_rect_make(player * sz.x * 0.5f, 0, sz.x * 0.5f, sz.y);
@@ -561,6 +561,6 @@ cw_rect cw_shell_player_rect(int player) {
   return quadrant(player, sz);
 }
 cw_rect cw_shell_shared_rect(void) {
-  if (S.players != 3) return cw_rect_make(0, 0, 0, 0);
+  if (S.players != 3 || S.d.shared_screen) return cw_rect_make(0, 0, 0, 0);
   return quadrant(3, cw_r2d_canvas_size());
 }
