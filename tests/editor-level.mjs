@@ -32,6 +32,7 @@ import { fileURLToPath } from 'node:url';
 import { sceneToEd } from '../tools/scene-to-ed.mjs';
 import { readImage, diffImages } from '../tools/lib/png.mjs';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
+import { wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -123,7 +124,7 @@ const call = async (tool, a) => {
 const cmd = async (text) => (await call('wasm', { op: 'command', text })).reply;
 let cartText = null;
 if (HOSTS.includes('romdev')) {
-  await call('loadMedia', { platform: 'wasmcart', path: editorCart, deterministicSeed: 1 });
+  await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: editorCart, deterministicSeed: 1 });
   await call('frame', { op: 'step', frames: 3 });
   let n = 0;
   for (const l of lines) {

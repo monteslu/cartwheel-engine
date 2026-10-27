@@ -10,6 +10,7 @@ import { mkdtempSync, readFileSync, mkdirSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
+import { wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -24,7 +25,7 @@ const cmd = async (text) => {
   if (!r.reply || r.reply.error) throw new Error(`${text}: ${JSON.stringify(r)}`);
   return r.reply;
 };
-await call('loadMedia', { platform: 'wasmcart', path: join(ROOT, 'build/cart/carts/project_edit.wasc'), deterministicSeed: 1 });
+await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: join(ROOT, 'build/cart/carts/project_edit.wasc'), deterministicSeed: 1 });
 await cmd('pause 1');
 await cmd('spawn OmniLight3D /root/Level Lamp');
 await cmd('set /root/Level/Lamp position vec3(0, 4, 0)');

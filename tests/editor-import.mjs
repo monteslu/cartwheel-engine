@@ -28,6 +28,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readImage, diffImages, uniqueColors } from '../tools/lib/png.mjs';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
+import { wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -178,7 +179,7 @@ if (HOSTS.includes('romdev')) {
     try { return JSON.parse(t); } catch { return { raw: t }; }
   };
   const cmd = async (text) => (await call('wasm', { op: 'command', text })).reply;
-  await call('loadMedia', { platform: 'wasmcart', path: join(ROOT, 'build/cart/carts/editor.wasc'), deterministicSeed: 1 });
+  await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: join(ROOT, 'build/cart/carts/editor.wasc'), deterministicSeed: 1 });
   await call('frame', { op: 'step', frames: 29 });
   for (const q of all) cartReplies.push(await cmd(q));
   // the saved scene comes out of the cart's project layer

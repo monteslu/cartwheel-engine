@@ -31,7 +31,7 @@ import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wcnativePlayer } from '../tools/lib/wcnative.mjs';
 import { launchApp, until } from '../tools/lib/edsession.mjs';
-import { testEnv } from '../tools/lib/wgpu-pin.mjs';
+import { testEnv, wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
@@ -119,7 +119,7 @@ async function romdev(tool, a, session) {
 async function runRomdev(wasc, frames, input, cmds) {
   const session = `cw-project-export-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
   try {
-    await romdev('loadMedia', { platform: 'wasmcart', path: wasc, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
+    await romdev('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: wasc, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
     let at = 1;
     for (const s of input || []) {
       if (s.frame - 1 > at) { await romdev('frame', { op: 'step', frames: s.frame - 1 - at }, session); at = s.frame - 1; }

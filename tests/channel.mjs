@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
+import { wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -28,7 +29,7 @@ const call = async (tool, a) => {
 };
 const cart = join(ROOT, 'build/cart/carts', `${app}.wasc`);
 if (!existsSync(cart)) { console.error('no cart', cart); process.exit(1); }
-await call('loadMedia', { platform: 'wasmcart', path: cart, deterministicSeed: 1 });
+await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: cart, deterministicSeed: 1 });
 // romdev's load ran frame 1; the native run answered after `frames` frames,
 // and every command here runs one more frame: pause first so the tree holds still
 await call('frame', { op: 'step', frames: frames - 1 });

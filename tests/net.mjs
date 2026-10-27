@@ -22,7 +22,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wcnativePlayer } from '../tools/lib/wcnative.mjs';
 import { startRelay } from '../tools/cwrelay.mjs';
-import { testEnv } from '../tools/lib/wgpu-pin.mjs';
+import { testEnv, wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
@@ -130,7 +130,7 @@ async function romdevPair(tag, carts) {
   try {
     // one after the other: the first takes slot 0, the second slot 1
     for (let i = 0; i < carts.length; i++) {
-      await romdevCall('loadMedia', { platform: 'wasmcart', path: cartPath(carts[i]), deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, sessions[i]);
+      await romdevCall('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: cartPath(carts[i]), deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, sessions[i]);
       await sleep(100);
     }
     let out = [];

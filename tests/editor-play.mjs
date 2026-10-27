@@ -22,6 +22,7 @@ import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } fr
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
+import { wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -231,7 +232,7 @@ if (which.includes('romdev')) {
     try { return JSON.parse(txt); } catch { return { raw: txt }; }
   };
   const cmd = async (text) => (await call('wasm', { op: 'command', text })).reply;
-  await call('loadMedia', { platform: 'wasmcart', path: editorCart, deterministicSeed: 1 });
+  await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: editorCart, deterministicSeed: 1 });
   await call('frame', { op: 'step', frames: 5 });
   const start = await cmd('ed play.start');
   const status = await cmd('ed play.status');

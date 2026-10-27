@@ -46,6 +46,7 @@ import { exportPresets } from '../tools/cwexport/index.mjs';
 import { listenChannel } from './export/channel-server.mjs';
 import { readImage, uniqueColors } from '../tools/lib/png.mjs';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
+import { wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -403,7 +404,7 @@ async function wasc(g) {
   };
   let conf;
   try {
-    await call('loadMedia', { platform: 'wasmcart', path: cart, deterministicSeed: 1 });
+    await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: cart, deterministicSeed: 1 });
     conf = await call('wasm', { op: 'conformance' });
     await call('host', { op: 'shutdown' });
   } catch (e) {
@@ -413,7 +414,7 @@ async function wasc(g) {
   // control: a truncated cart must not conform (or load)
   const broken = join(OUT, `${g.game}-truncated.wasc`);
   writeFileSync(broken, readFileSync(cart).subarray(0, 4096));
-  const lc = await call('loadMedia', { platform: 'wasmcart', path: broken, deterministicSeed: 1 });
+  const lc = await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: broken, deterministicSeed: 1 });
   const cc = lc.error || lc.isError ? { conforms: false } : await call('wasm', { op: 'conformance' });
   await call('host', { op: 'shutdown' }).catch(() => {});
   if (cc.conforms) return report('wasc', g.game, 'FAIL', 'CONTROL PASSED: a truncated cart conforms');

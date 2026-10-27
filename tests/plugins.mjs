@@ -41,7 +41,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wcnativePlayer } from '../tools/lib/wcnative.mjs';
 import { launchApp, until } from '../tools/lib/edsession.mjs';
-import { testEnv } from '../tools/lib/wgpu-pin.mjs';
+import { testEnv, wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
@@ -141,7 +141,7 @@ async function romdev(tool, a, session) {
 async function romdevEditor(wasc, fn) {
   const session = `cw-plugins-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
   try {
-    await romdev('loadMedia', { platform: 'wasmcart', path: wasc, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
+    await romdev('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: wasc, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
     await romdev('frame', { op: 'step', frames: 30 }, session);
     const req = async (text) => {
       const r = await romdev('wasm', { op: 'command', text, maxFrames: 120 }, session);
@@ -434,7 +434,7 @@ try {
   check('project build: the game as a cart (runtime plugin compiled in)', cg.ok && existsSync(gameCart), cg.out.slice(-800));
   const session = `cw-plugins-game-${process.pid}`;
   try {
-    await romdev('loadMedia', { platform: 'wasmcart', path: gameCart, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
+    await romdev('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: gameCart, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
     await romdev('frame', { op: 'step', frames: 60 }, session);
     const st = await romdev('wasm', { op: 'debugState' }, session);
     const state = {};
