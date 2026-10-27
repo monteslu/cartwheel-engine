@@ -187,7 +187,10 @@ static void update(void *user, double dt) {
   if (cw_action_just_pressed(0, d->jump)) d->ui_jump_jp++;
   if (cw_action_just_released(0, d->jump)) d->ui_jump_jr++;
   if (cw_action_pressed(0, d->jump)) d->ui_jump_frames++;
-  if (cw_action_just_pressed(0, d->fire)) d->ui_fire_jp++;
+  if (cw_action_just_pressed(0, d->fire)) {
+    d->ui_fire_jp++;
+    cw_input_rumble(0, 0.5f, 0.25f, 120); /* the gate reads cw.rumble: the heavy motor at half, the light at a quarter, 120 ms */
+  }
   if (cw_touch_control_active(1)) d->ui_touch_button++;
   for (int p = 0; p < CW_INPUT_MAX_PLAYERS; p++) {
     if (cw_action_just_pressed(p, d->jump)) d->pl_jump_jp[p]++;

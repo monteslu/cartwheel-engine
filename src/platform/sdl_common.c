@@ -109,6 +109,24 @@ void cw_platform_vibrate(int ms) {
   vibrate_req[0]++;
   vibrate_req[1] = ms > 0 ? (uint32_t)ms : 0;
 }
+/* cw_input_rumble's hardware half: SDL's controller rumble (a cart's SDL is wasmcart-sdl2, which forwards it to the host's wc_pad_rumble) */
+bool cw__platform_pad_has_rumble(int pad) {
+  if (pad < 0 || pad >= CW_MAX_PADS || !cw__plat.pads[pad]) return false;
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+  return SDL_GameControllerHasRumble(cw__plat.pads[pad]) == SDL_TRUE;
+#else
+  return true;
+#endif
+}
+void cw__platform_pad_rumble(int pad, float low, float high, int ms) {
+  if (pad < 0 || pad >= CW_MAX_PADS || !cw__plat.pads[pad]) return;
+#if SDL_VERSION_ATLEAST(2, 0, 9)
+  /* ms 0 stops: SDL ends the effect when the duration is 0 and both motors are 0 */
+  SDL_GameControllerRumble(cw__plat.pads[pad], (Uint16)(low * 65535.0f + 0.5f), (Uint16)(high * 65535.0f + 0.5f), (Uint32)ms);
+#else
+  (void)low, (void)high, (void)ms;
+#endif
+}
 /* any button or stick on any pad ends touch-primary (a pad merely present,
  * as test hosts and some browsers report one, does not) */
 static void note_pad_use(const cw_raw_input *in) {
@@ -565,6 +583,7 @@ bool cw__sdl_init(void) {
       cw_debug_field(names[i][2], &p->input.pads[i].connected, CW_DBG_U8, 1);
     }
     cw_debug_field("cw.vibrate", vibrate_req, CW_DBG_U32, 2);
+    cw_debug_field("cw.rumble", cw__rumble_req, CW_DBG_U32, 5);
     cw__gpu_debug_register();
   }
   return true;

@@ -30,4 +30,8 @@ void cw__platform_hook_ui(const cw__ui_hooks *h);
  * always ""). The l10n module reads it through here, never SDL itself. */
 void cw__platform_system_locale(char *out, size_t cap);
 
+bool cw__platform_pad_has_rumble(int pad);                    /* sdl_common.c: cw_input_has_rumble's hardware half */
+void cw__platform_pad_rumble(int pad, float low, float high, int ms); /* ms 0 stops */
+extern uint32_t cw__rumble_req[5];                                  /* input.c: the debug field cw.rumble */
+
 #endif
