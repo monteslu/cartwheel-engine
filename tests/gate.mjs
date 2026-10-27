@@ -37,10 +37,13 @@ const hostsArg = argv.includes('--hosts') ? argv[argv.indexOf('--hosts') + 1].sp
 const gpuArg = argv.includes('--gpu') ? argv[argv.indexOf('--gpu') + 1] : 'gl';
 // --no-chromium drops the Chromium leg from every gate; --chromium-only runs only the gates' Chromium leg (with the native reference)
 const noChromium = argv.includes('--no-chromium'), chromiumOnly = argv.includes('--chromium-only');
-const only = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--hosts' && argv[i - 1] !== '--gpu');
+const only = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--hosts' && argv[i - 1] !== '--gpu' && argv[i - 1] !== '--gates-file');
 const guard = armGuard('gate.mjs', { outFile: join(OUT, 'gpu-mem.json') });
 const usesHosts = (hosts) => hosts.filter((h) => !(noChromium && h === 'chromium') && !(chromiumOnly && !['native', 'chromium'].includes(h)));
-const gates = JSON.parse(readFileSync(join(PROJ, 'tests', 'gates.json'), 'utf8')).filter((g) => !only.length || only.includes(g.name));
+// --gates-file a.json,b.json (or CW_GATES_FILE): gate files in the project's tests/ in place of gates.json, so a
+// repository of several games keeps one file per game and they never collide
+const gatesArg = argv.includes('--gates-file') ? argv[argv.indexOf('--gates-file') + 1] : process.env.CW_GATES_FILE || 'gates.json';
+const gates = gatesArg.split(',').flatMap((f) => JSON.parse(readFileSync(join(PROJ, 'tests', f.trim()), 'utf8'))).filter((g) => !only.length || only.includes(g.name));
 
 function run(args, env = {}) {
   return new Promise((res) => {
