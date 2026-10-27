@@ -2621,6 +2621,7 @@
       "vsGl": 0.002
     }
   },
+  {"name":"water-under","app":"water_shore","frames":150,"startCmds":["set Root/Camera position vec3(0, -1.2, 10)","set Root/Camera rotation vec3(0.12, 0, 0)"],"fields":["water.tick","water.under","bodies.hash"],"expect":{"water.under":1},"controlFrames":150,"controlStartCmds":["set Root/Camera position vec3(0, -1.2, 10)","set Root/Camera rotation vec3(0.12, 0, 0)","set Root/Water underwater false"],"note":"the camera under the surface of the beach scene: the water's colour and murk over distance, caustics on the floor, the surface seen from below with its window of light; water.under says the frame was drawn from under the water; control: the Water3D's underwater view off","webgpu":{"hosts":["native","romdev","chromium","wcnative"],"vsGl":0.002}},
   {
     "name": "water-ripples",
     "app": "water_ripples",

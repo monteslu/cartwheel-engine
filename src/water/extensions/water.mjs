@@ -51,7 +51,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const sunCol = v4('waterSunCol'); // rgb: the sun's colour x energy (0 without a sky); w: scatter strength
   const rip = v4('waterRipple');    // x: ripple normal strength (0: no grid); y, z: the grid's size (m); w: glint
   const ripR = v4('waterRippleRect'); // x, y: the grid's centre (water-local x, z); z, w: 1 / cells along x, z
-  const refrInfo = v4('waterRefr'); // x: the refraction's depth is valid (1); y, z: depth conventions under test (z of the clip = d or 2d - 1; y flipped)
+  const refrInfo = v4('waterRefr'); // x: the refraction's depth is valid (1); y: caustic strength; z: 1 / caustic tile (m); w: camera under the water (the refraction target holds the view up through the surface)
   const cam = v4('waterCam');       // xyz: the camera's world position (three.c fills no cameraPosition); w: 1 when the view is drawn rows bottom-up (cartwheel's WebGPU scene target) but the planar targets top-down
 
   const m4 = (n) => {
@@ -81,6 +81,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const refractMap = tex('waterRefraction', true, false, true);
   const floorMap = tex('waterFloorMap', true, false, true);
   const rippleMap = tex('waterRippleMap', true, false, true);
+  const causticMap = tex('waterCaustic', true, true, false);
   const refrDepth = new THREE.DepthTexture(2, 2);
   refrDepth.name = 'ext.waterRefractionDepth';
 
@@ -158,8 +159,10 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   // taken to a vertical depth. The clip depth (d or 2d - 1) and the row direction are what the host's targets use.
   const uvS = suv.add(offset);
   const dz = texture(refrDepth, uvS).r;
-  const zClip = mix(dz.mul(2).sub(1), dz, refrInfo.y);
-  const yClip = mix(uvS.y.mul(2).sub(1), float(1).sub(uvS.y.mul(2)), refrInfo.z);
+  // the planar targets' depth is GL's window depth on both backends (three.c remaps WebGPU's clip z), and suv
+  // reads them top row first
+  const zClip = dz.mul(2).sub(1);
+  const yClip = float(1).sub(uvS.y.mul(2));
   const vp = refrInv.mul(vec4(uvS.x.mul(2).sub(1), yClip, zClip, 1));
   const scenePos = vp.xyz.div(vp.w);
   const surfPos = cameraViewMatrix.mul(vec4(positionWorld, 1)).xyz;
@@ -177,9 +180,28 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const sunUp = max(sun.y, 0);
   const lit = mix(vec3(1), max(vec3(0.16).add(sunCol.rgb.mul(sunUp).mul(0.42)), vec3(0.1)), hasSun);
   const body = mix(shallow.rgb, deep.rgb, ab3).mul(lit);
-  // what is seen through the water, tinted, dimmed by the depth it went through, then lost into the body colour by murk
-  const trans = mix(vec3(1), vec3(1).sub(ab3.mul(0.9)), dOn);
-  const seen = mix(texture(refractMap, suv.add(offset)).rgb.mul(tint.rgb).mul(trans), body, dbg.w.mul(absorb));
+  // what is seen through the water lost its light on the way down to it and back up along the view, per colour (pure
+  // water eats red ten times faster than green, green twice as fast as blue: clarity 5 m is clear sea water), and the
+  // water's own lit colour scattered in over the same path (murk: how much)
+  const viewPath = mix(depth.div(max(toEye.y, 0.15)), ray, useZ.mul(hit));
+  const path = mix(float(4), depth.add(viewPath), dOn);
+  const sig = vec3(0.45, 0.065, 0.035).mul(shore.z).mul(5);
+  const trans = exp(sig.mul(path).negate());
+  const inscatter = float(1).sub(exp(path.mul(shore.z).mul(dbg.w).mul(0.5).negate()));
+  // caustics: the sun's light gathered by the waves into moving lines on what is seen under the water (where the
+  // refraction's depth says where that is); two copies of the tile scrolled against each other, the smaller kept
+  const toSun0 = normalize(sun.xyz);
+  const sceneW = cam.xyz.sub(toEye.mul(length(scenePos)));
+  const below = positionWorld.y.sub(sceneW.y);
+  const cq = sceneW.xz.add(toSun0.xz.div(max(toSun0.y, 0.3)).mul(below).mul(0.75)).mul(refrInfo.z);
+  const ct = shallow.w;
+  const k1 = texture(causticMap, cq.add(vec2(0.013, 0.007).mul(ct))).r;
+  const k2 = texture(causticMap, cq.mul(1.31).add(vec2(0.41, 0.17)).sub(vec2(0.006, 0.011).mul(ct))).r;
+  const kc = min(k1, k2).mul(4);
+  const cfade = smoothstep(0.02, 0.5, below).mul(exp(below.negate().mul(shore.z).mul(0.6))).mul(smoothstep(0, 0.25, toSun0.y))
+    .mul(hit).mul(useZ).mul(hasSun);
+  const caus = float(1).add(refrInfo.y.mul(cfade).mul(kc.mul(2.2).sub(1)));
+  const seen = texture(refractMap, uvS).rgb.mul(tint.rgb).mul(trans).mul(caus).add(body.mul(inscatter));
   const refr = mix(body, seen, deep.w);
   // light through the crests toward the eye: the turquoise glow of a wave against the sun
   const toSun = normalize(sun.xyz);
@@ -199,7 +221,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const wob = sin(shallow.w.mul(1.4).add(noise.mul(6.283))).mul(0.5).add(0.5);
   const sw = max(shore.y, 0.001);
   const shoreOn = dOn.mul(step(0.001, shore.y));
-  const shoreFoam = float(1).sub(smoothstep(0, sw, depth.add(noise.sub(0.5).mul(sw).mul(0.9)).sub(wob.mul(sw).mul(0.35)))).mul(shoreOn);
+  const shoreFoam = float(1).sub(smoothstep(0, sw.mul(0.45), depth.add(noise.sub(0.5).mul(sw).mul(0.6)).sub(wob.mul(sw).mul(0.3)))).mul(shoreOn);
   // thinner lines of foam sliding in over the shallows
   const lines = smoothstep(0.62, 0.8, sin(depth.mul(7.0 / 1).sub(shallow.w.mul(1.6)).add(noise.mul(5))).mul(0.5).add(0.5))
     .mul(float(1).sub(smoothstep(sw.mul(0.8), sw.mul(3.2), depth))).mul(shoreOn).mul(0.55);
@@ -208,12 +230,30 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const crestFoam = smoothstep(thr, thr.add(0.12), float(1).sub(vBunch).add(noise.sub(0.5).mul(0.25))).mul(step(0.001, shore.w)).mul(lumpy).mul(farFade);
   const splashFoam = smoothstep(0.08, 0.5, rfoam.mul(mix(0.55, 1.2, noise2)));
   const foamRaw = max(max(shoreFoam.mul(mix(0.55, 1, lumpy)), lines.mul(noise2)), max(crestFoam, splashFoam));
-  const foam = clamp(foamRaw.mul(mix(0.78, 1, noise2)), 0, 1);
-  const emit = mix(refr, refl, fres).add(sss.mul(float(1).sub(fres))).add(gl);
+  // foam is lace, not cotton: the caustic tile's web of lines, scrolled with the flow, is the bubbles' pattern; thin
+  // foam keeps only its brightest knots, thick foam fills the cells (far away, where the lace would alias, it evens out)
+  const lace0 = texture(causticMap, rest.mul(0.29).add(f.mul(flow.x).mul(0.4))).r.mul(4);
+  const lace1 = texture(causticMap, rest.mul(0.71).add(vec2(0.37, 0.61)).sub(f.mul(flow.y).mul(0.6))).r.mul(4);
+  const lace = mix(clamp(max(lace0, lace1.mul(0.8)).mul(0.4), 0, 1), float(0.55), smoothstep(25, 120, dist));
+  const foam = clamp(foamRaw.mul(1.7).sub(float(1).sub(lace).mul(1.25)), 0, 1).mul(mix(0.82, 1, noise2));
+  const emitAbove = mix(refr, refl, fres).add(sss.mul(float(1).sub(fres))).add(gl);
+  // seen from under the water: the world above shows through a window of light (Snell's), bent and dimmed by the
+  // Fresnel term from water into air; outside it the surface mirrors the water itself (total internal reflection)
+  const under = step(cam.y, positionWorld.y);
+  const nb = n.negate();
+  const cosI = max(dot(toEye, nb), 0);
+  const sinT2 = float(1).sub(cosI.mul(cosI)).mul(1.777);
+  const cosT = sqrt(max(float(1).sub(sinT2), 0));
+  const trU = float(1).sub(pow(float(1).sub(cosT), 5).mul(0.98).add(0.02)).mul(float(1).sub(step(1, sinT2)));
+  const skyGuess = mix(vec3(0.5, 0.7, 0.9), sunCol.rgb.mul(0.3).add(vec3(0.1, 0.2, 0.35)), hasSun);
+  const above = mix(skyGuess, texture(refractMap, suv.add(nb.xz.mul(look.y).mul(3))).rgb, refrInfo.w);
+  const bodyU = mix(shallow.rgb, deep.rgb, 0.5).mul(lit).mul(0.6);
+  const emit = mix(emitAbove, mix(bodyU, above, trU), under);
+  const foamV = foam.mul(float(1).sub(under.mul(0.6)));
   // the material colour (black: no diffuse; the C side keeps it so) and emissive (white) stay inputs
-  mat.colorNode = vec4(materialColor.rgb.add(vec3(0.9, 0.92, 0.95).mul(foam)), 1);
-  mat.normalNode = normalize(cameraViewMatrix.mul(vec4(n, 0)).xyz);
-  mat.emissiveNode = emit.mul(materialEmissive).mul(float(1).sub(foam));
+  mat.colorNode = vec4(materialColor.rgb.add(vec3(0.9, 0.92, 0.95).mul(foamV)), 1);
+  mat.normalNode = normalize(cameraViewMatrix.mul(vec4(mix(n, nb, under), 0)).xyz);
+  mat.emissiveNode = emit.mul(materialEmissive).mul(float(1).sub(foamV));
   // debug view HEIGHT: the world height over the range as 16 bits in R and G, pre-decoded so
   // that the sRGB output transfer (tone mapping NONE) lands each on its exact byte
   const hn = clamp(positionWorld.y.sub(dbg.y).div(dbg.z.sub(dbg.y)), 0, 1).mul(65535);
