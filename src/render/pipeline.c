@@ -1147,8 +1147,14 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
       int32_t n = 0;
       for (const char *c = p->missing_states; *c; c++)
         if (*c == '\n' || !c[1]) n++;
-      if (n) cw_warn("render pipeline: three.c skipped draws: %d program state(s) in none of the app's program tables "
-                     "(add them to its manifest: tools/programs.mjs, cmake/programs.cmake):\n%s", (int)n, p->missing_states);
+      cw__missing_programs = n;
+      if (n) {
+        cw_error("render pipeline: %d draw state(s) are in none of the app's program tables, so those draws are NOT DRAWN "
+                 "(a new material, light count or shadow combination needs its program). Fix: from the engine checkout run\n"
+                 "    %s\nthen commit the changed programs/ manifest and generated C and rebuild (a project outside the tree: "
+                 "node tools/programs.mjs --projects <dir>). Missing:\n%s", (int)n, cw__programs_fix_command(), p->missing_states);
+        if (getenv("CW_PROGRAMS_STRICT")) CW_FATAL("CW_PROGRAMS_STRICT is set and a program state is missing (see the error above)");
+      }
       missing_count = n;
       memset(missing_text, 0, sizeof missing_text);
       snprintf(missing_text, sizeof missing_text, "%s", p->missing_states);

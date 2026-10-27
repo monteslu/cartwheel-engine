@@ -29,7 +29,7 @@ A table is a manifest of states, `<name>.txt`, with the C generated from it besi
 When an app draws a combination its tables lack:
 
 - a native development build builds the program on first use (`CW_THREE_BUILDER`, three.js r186 in an embedded QuickJS; a few hundred milliseconds), so nothing goes missing while you iterate;
-- a cart or an exported build skips the draw;
+- a cart or an exported build skips the draw, and says so loudly: an error in the log that names the exact command to run (`node tools/programs.mjs <your app>`), a red banner across the top of the picture with the same command while any state is missing (so an empty screen is never a mystery), and with `CW_PROGRAMS_STRICT=1` in the environment (a native run) the run stops at the first missing state;
 - either way the state is reported: the pipeline's warning, `cw_pipeline_missing_states`, the debug fields `cw.three.missing` and `cw.three.missing_states`, and natively `CW_PROGRAMS_LOG_DIR` or `T3_MISSING_LOG`. Every gate fails on a reported state and prints it.
 
 To add the states, run the app through the tool, which merges what it lacked into the app's first table and regenerates:

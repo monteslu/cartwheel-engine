@@ -14,6 +14,8 @@
  * cw.three.missing; T3_MISSING_LOG=<file> natively). tools/programs.mjs adds
  * them to the app's manifest and regenerates. */
 #include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
 
 #include "three.h"
 
@@ -29,6 +31,18 @@ extern const struct t3_gen_table cw_engine_wgpu;
 
 void cw__app_programs(void);
 __attribute__((weak)) void cw__app_programs(void) {}
+/* the app's target name (its generated <app>_programs.c), for the message that names the fix */
+const char *cw__app_target_name(void);
+__attribute__((weak)) const char *cw__app_target_name(void) { return "<app>"; }
+
+/* states no table has, as the last frame left it: 0 when none. Set by the pipeline; the platform draws the banner. */
+int32_t cw__missing_programs;
+const char *cw__programs_fix_command(void);
+const char *cw__programs_fix_command(void) {
+  static char buf[160];
+  snprintf(buf, sizeof buf, "node tools/programs.mjs %s", cw__app_target_name());
+  return buf;
+}
 
 /* Before the first renderer: once, from the platform entry (and from the 3D
  * pipeline for hosts that create renderers without it). */

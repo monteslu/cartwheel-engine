@@ -194,6 +194,42 @@ static void test_render3d_stats_background(void) {
   cw_rt_free(out);
 }
 
+/* A draw whose program no table has must never fail quietly: the pipeline reports the state, the exact fix names the
+ * app, and the platform's banner flag (cw__missing_programs) is set. Where three.c's runtime builder is compiled in
+ * (native development) the state is built instead, so nothing is missing; both outcomes are checked. */
+extern int32_t cw__missing_programs;
+const char *cw__programs_fix_command(void);
+static void test_missing_states_are_loud(void) {
+  /* control: a plain scene is fully covered, nothing is reported */
+  cw_tree *plain = make_tree(true);
+  cw_pipeline_render(plain, 32, 32, 0);
+  CHECK(cw_pipeline_missing_states(plain)[0] == 0);
+  CHECK_EQ_INT(cw__missing_programs, 0);
+  cw_tree_free(plain);
+  /* the fix command names this app's target */
+  CHECK(strstr(cw__programs_fix_command(), "node tools/programs.mjs unit_pipeline") != NULL);
+  /* three kinds of light at once: a light vector the app's table lacks */
+  cw_tree *t = make_tree(true);
+  cw_node_add_child(cw_tree_root(t), cw_node_new("DirectionalLight3D", "Sun"));
+  cw_node_add_child(cw_tree_root(t), cw_node_new("OmniLight3D", "Lamp"));
+  cw_node_add_child(cw_tree_root(t), cw_node_new("SpotLight3D", "Spot"));
+  cw_pipeline_render(t, 32, 32, 0);
+  const char *m = cw_pipeline_missing_states(t);
+  if (m[0]) {
+    CHECK(strstr(m, "standard") != NULL); /* names the state */
+    CHECK(cw__missing_programs > 0);      /* and the banner has something to say */
+  } else {
+    CHECK_EQ_INT(cw__missing_programs, 0); /* built at run time by the development builder */
+  }
+  cw_tree_free(t);
+  /* leave the report clean for the gate that reads it */
+  plain = make_tree(true);
+  cw_pipeline_render(plain, 32, 32, 0);
+  CHECK_EQ_INT(cw__missing_programs, 0);
+  cw_tree_free(plain);
+}
+
 CW_TEST_SUITE("pipeline", { "order", test_order }, { "post_chain", test_post_chain }, { "persistent", test_persistent },
               { "cube", test_cube },
-              { "render3d_stats_background", test_render3d_stats_background })
+              { "render3d_stats_background", test_render3d_stats_background },
+              { "missing_states_are_loud", test_missing_states_are_loud })

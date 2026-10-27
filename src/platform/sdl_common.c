@@ -83,6 +83,25 @@ static void loading_screen(void) {
   cw_r2d_end();
 }
 
+/* A program state no table has makes its draws vanish; the pipeline logs the exact fix, and while any is missing
+ * this banner says it on the picture too, so an empty screen is never a mystery (src/render/programs.c). */
+extern int32_t cw__missing_programs;
+const char *cw__programs_fix_command(void);
+static void missing_programs_banner(void) {
+  if (cw__missing_programs <= 0) return;
+  cw_r2d_begin(NULL);
+  cw_vec2 cs = cw_r2d_canvas_size();
+  float s = cs.y / 540.0f, h = 44 * s;
+  cw_r2d_rect(cw_rect_make(0, 0, cs.x, h), cw_rgba(0.55f, 0.04f, 0.04f, 0.92f));
+  char line[256];
+  snprintf(line, sizeof line, "%d draw state(s) have no program and are not drawn. Run: %s", (int)cw__missing_programs,
+           cw__programs_fix_command());
+  cw_r2d_text(cw_ui_font_sans(), line, cw_v2(10 * s, 8 * s), &(cw_text_style){ .size = 15 * s, .color = cw_rgba(1, 1, 1, 1) });
+  cw_r2d_text(cw_ui_font_sans(), "(then commit the manifest and generated C; the full list is in the log)", cw_v2(10 * s, 26 * s),
+              &(cw_text_style){ .size = 11 * s, .color = cw_rgba(1, 0.85f, 0.85f, 1) });
+  cw_r2d_end();
+}
+
 /* cw_platform_touch_primary: a phone or tablet with no pad in use. Natively
  * Android / iOS say so; CW_TOUCH_PRIMARY=1|0 overrides (desktops default to
  * false: SDL2 cannot tell whether a mouse is attached). A cart has no way to
@@ -892,6 +911,7 @@ static void frame_body(double now) {
   cw__profile_frame_render();
   CW_PROFILE_BEGIN("render");
   if (p->app.render) p->app.render(p->app.user, p->accumulator / p->fixed_dt);
+  missing_programs_banner();
   CW_PROFILE_END();
   cw__perf_mark(CW_PERF_RENDER);
   cw__host_debug_update();
