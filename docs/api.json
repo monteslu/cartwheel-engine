@@ -4180,6 +4180,38 @@
    ]
   },
   {
+   "header": "cartwheel/morph.h",
+   "summary": "cartwheel/morph.h: morph targets (blend shapes) by name.\n\nA glTF mesh's morph targets load with it (positions and normals, on plain\nand skinned meshes, GL and WebGPU); their names come from the mesh's\nextras.targetNames (what Blender and most exporters write), and\nt3_mesh.morph_influences holds each target's weight. These calls set and\nread weights by name over a whole model (every mesh under a root that has\na target of that name: a face split into several primitives moves as\none), so game code drives expressions without knowing the mesh layout:\n\n  cw_morph_set(fighter, \"smile\", 0.8f);\n  cw_morph_set(fighter, \"blink\", blink);\n\nAnimation clips drive the same weights: a glTF animation's \"weights\"\nchannel becomes one float track per target in cw_anim_from_t3_clip\n(\"model@Mesh:morphTargetInfluences[i]\"), and a hand-made track may name\nthe target instead of its index (\"model@Mesh:morphTargetInfluences[smile]\"),\nso an AnimationPlayer or AnimationTree blends faces with the body.\nCode and clips write the same weights: whichever runs last in the frame\nwins.\n\nInstances of one glTF (cw_gltf_instantiate) share geometry, so the morph\ntarget data (one texture per geometry on the GPU) is stored once; each\ninstance has its own weights.\n\nCost: a morphed mesh is drawn on its own (never auto-instanced) and its\nvertex shader reads every target's offset per vertex: about one texture\nfetch per target per vertex (two with normals). Keep face targets on the\nhead mesh, not the whole body.",
+   "functions": [
+    {
+     "name": "cw_morph_set",
+     "signature": "int cw_morph_set(t3_object *root, const char *name, float weight)",
+     "doc": "Set target `name`'s weight (0 to 1 usually; any value is allowed) on\nevery mesh under root (root included) that has it. Returns how many meshes\nchanged; 0 when no mesh has a target of that name.",
+     "inline": false
+    },
+    {
+     "name": "cw_morph_get",
+     "signature": "float cw_morph_get(const t3_object *root, const char *name)",
+     "doc": "The weight of target `name` on the first mesh under root that has it\n(depth first), 0 when none does.",
+     "inline": false
+    },
+    {
+     "name": "cw_morph_reset",
+     "signature": "int cw_morph_reset(t3_object *root)",
+     "doc": "Every weight of every morphed mesh under root to 0. Returns the meshes.",
+     "inline": false
+    },
+    {
+     "name": "cw_morph_names",
+     "signature": "int cw_morph_names(const t3_object *root, const char **out, int cap)",
+     "doc": "The distinct target names under root (up to 256), in mesh order (out may\nbe NULL to count); returns the count (which may exceed cap). Names are owned by the\nglTF (keep it loaded).",
+     "inline": false
+    }
+   ],
+   "types": [],
+   "macros": []
+  },
+  {
    "header": "cartwheel/motion.h",
    "summary": "cartwheel motion: a command buffer and motion-input matcher for games that\nread joystick motions and button taps (fighting games, brawlers, anything\nwith \"quarter circle then punch\").\n\nThe game pushes ONE frame of input per fixed tick (cw_cmd_push) and asks\nafter each push whether a motion has just been done. Everything is integer\nand runs inside fixed_update, so results are identical on every host and\nreplay exactly.\n\nDirections use numpad notation RELATIVE TO FACING:\n    7 8 9        8 = up   2 = down   4 = back   6 = forward   5 = neutral\n    4 5 6\n    1 2 3\ncw_cmd_push takes the raw left/right/up/down state and the facing (+1 =\nfacing right, -1 = facing left) and stores the relative direction. Left and\nright together cancel; up and down together count as up.\n\nMotion text (cw_motion_parse):\n  \"236\"     quarter circle forward: down, down-forward, forward\n  \"623\"     forward, down, down-forward (rising uppercut)\n  \"214\"  \"41236\"  \"236236\"  \"22\"  \"66\"   any run of up to 8 digits\n  \"!6!6\"    exact steps: the direction must be exactly 6 (3 and 9 do not count): a dash\n  \"[4]6\"    charge: back held for charge frames, then forward\n  \"[2]8\"    charge down, then up\nRules (documented so a design can rely on them):\n  - a step matches a frame when the frame's direction CONTAINS the step\n    (step 6 matches 3, 6 and 9; step 2 matches 1, 2 and 3; step 5 only 5);\n  - a diagonal step (1 3 7 9) is optional: \"236\" also accepts 2 then 6;\n  - each step needs a frame strictly later than the one before it, and two\n    equal steps in a row (\"66\", \"22\") need a frame in between that does not\n    match, so a held direction is not a double tap;\n  - the whole motion must finish inside `window` frames of its first step.\nButtons are a bit mask the game defines (bit i = button i).\n\nMatch functions return how many frames ago the motion/command completed\n(0 = this frame) or -1. Call cw_cmd_consume after a move starts so the same\ninput is not read twice.",
    "functions": [
@@ -8774,7 +8806,7 @@
   },
   {
    "header": "cartwheel/quality.h",
-   "summary": "cartwheel/quality.h: graphics settings, the presets that set them, and\nthe automatic choice.\n\nEach setting is something the player can pick on its own; a preset picks\nthem all:\n\n                    Low       Medium    High (default)  Ultra\n  resolution        67%       75%       100%            100%\n  ambient occl.     off       on        on              on\n  shadows           Low       Medium    High            Ultra\n  anti-aliasing     FXAA      FXAA      SMAA            SMAA\n  effects detail    Low       Medium    High            Ultra\n\nResolution: the 3D scene (and its post) renders at that share of the\noutput's size and is scaled up with a filter (Catmull-Rom); the 2D window\npasses (HUD, menus, text) draw at the output's full size over it. It is the\nbiggest lever: GPU time of the scene and its post goes with its pixel\ncount. It applies on top of cw_app_desc.render_scale (the output size);\nan app with pixel_scale draws at its own size and ignores it.\n\nAmbient occlusion: GTAO as the scene's PostProcess asks for it (On) or\nnone (Off); its sample count follows effects detail.\n\nShadows: Low (maps of 1024 at most, hard PCF), Medium (1024 at most,\nsoft), High (as the lights ask, soft), Ultra (twice that, up to 4096,\nsoft).\n\nAnti-aliasing: Off, FXAA, or SMAA (as the PostProcess asks: a scene that\nasks for FXAA or none keeps it).\n\nEffects detail (Low, Medium, High, Ultra): the share of GPU particles\ndrawn (0.4, 0.7, 1, 1), the density games thin their instancing by (0.35,\n0.65, 1, 1: grass, crowd, scatter), the bloom chain (3, 5 levels, as\nauthored), GTAO's samples (1 slice of 4 steps, 1 of 4, as authored, 3\nslices of 8 steps), the LOD error budget (x2, x1.5, x1, x1: coarser\nmeshes sooner), the clustered lights one cluster keeps (x0.375, x0.5,\nx1, x1 of LightingSettings.max_per_cluster: 24, 32, 64, 64 by default;\ncw_quality_scale(\"lights\"), cartwheel/lighting.h) and the volumetric fog\ngrid (cartwheel/environment.h: 64 x 32, 96 x 48, 160 x 64, 240 x 96 cells\nacross x slices), the distortion buffer (cartwheel/explosions.h: half the\nframe on Low and Medium, the whole frame on High and Ultra;\ncw_quality_scale(\"distortion\")), colour fringing on bent edges (High and\nUltra: \"dispersion\") and the share of the explosion light pool in use\n(0.25, 0.5, 1, 1: \"flash_lights\").\n\n\"As authored\" is what the scene's PostProcess / lights ask for: High\ndraws exactly what the game would without this module.\n\nGame settings: a game adds its own render-only levers (cw_quality_lever_add:\na cheaper material at distance, say) with the value each preset picks;\nthey show in the graphics menu after the engine's, and are saved with them.\n\nDensity: games read cw_quality_scale(\"grass\"), (\"crowd\"), (\"scatter\") or\nthe shorthand cw_quality_density() and thin their instancing; set a change\ncallback to re-thin when a setting changes. Particles: the engine draws\ncw_quality_scale(\"particles\") of every GPU particle system's particles\n(they are all still simulated, so counts and seeds agree).\n\nThe player picks a preset, Auto, or each setting (the graphics menu,\ncartwheel/quality_menu.h, or the game shell's settings); changing one\nsetting shows the preset as \"Custom\". Persist the choice in the game's\nsave data (cw_quality_saved / cw_quality_restore below).\n\nAuto: the engine picks, and holds the frame's cost under a budget. While\nthe game says it is in play (cw_quality_auto_measure(true) every frame) it\naverages the cost: the GPU time of the frame's passes where the host\ntimes them cheaply (native WebGPU's timestamps), else the frame-to-frame\ntime (GL, a cart: a frame the GPU cannot finish in time arrives late). After a couple of\nseconds over budget it steps down one level of its ladder:\n\n  High 100%, High 85%, Medium 75%, Medium 67%, Low 67%, Low 60%, Low 50%\n\n(resolution first: it costs the picture least for what it saves). Where\nit measures GPU time it also steps back up when the cost has stayed well\nunder budget, never into a level that was over it in this run. A game\nmakes Auto the starting choice with cw_quality_auto(true, budget); the\nplayer can always pick it. The level it reached is saved, so the next run\nstarts there.\n\nDeterminism: a deterministic run (a test) starts at High whatever the\nsave holds, with Auto off, so every host draws the same frame; a choice\nmade in it (from the menus, by input every host replays alike) applies.\nNothing here reaches the simulation.",
+   "summary": "cartwheel/quality.h: graphics settings, the presets that set them, and\nthe automatic choice.\n\nEach setting is something the player can pick on its own; a preset picks\nthem all:\n\n                    Low       Medium    High (default)  Ultra\n  resolution        67%       75%       100%            100%\n  ambient occl.     off       on        on              on\n  shadows           Low       Medium    High            Ultra\n  anti-aliasing     FXAA      FXAA      SMAA            SMAA\n  effects detail    Low       Medium    High            Ultra\n\nResolution: the 3D scene (and its post) renders at that share of the\noutput's size and is scaled up with a filter (Catmull-Rom); the 2D window\npasses (HUD, menus, text) draw at the output's full size over it. It is the\nbiggest lever: GPU time of the scene and its post goes with its pixel\ncount. It applies on top of cw_app_desc.render_scale (the output size);\nan app with pixel_scale draws at its own size and ignores it.\n\nAmbient occlusion: GTAO as the scene's PostProcess asks for it (On) or\nnone (Off); its sample count follows effects detail.\n\nShadows: Low (maps of 1024 at most, hard PCF), Medium (1024 at most,\nsoft), High (as the lights ask, soft), Ultra (twice that, up to 4096,\nsoft).\n\nAnti-aliasing: Off, FXAA, or SMAA (as the PostProcess asks: a scene that\nasks for FXAA or none keeps it).\n\nEffects detail (Low, Medium, High, Ultra): the share of GPU particles\ndrawn (0.4, 0.7, 1, 1), the density games thin their instancing by (0.35,\n0.65, 1, 1: grass, crowd, scatter), the bloom chain (3, 5 levels, as\nauthored), GTAO's samples (1 slice of 4 steps, 1 of 4, as authored, 3\nslices of 8 steps), the LOD error budget (x2, x1.5, x1, x1: coarser\nmeshes sooner), the clustered lights one cluster keeps (x0.375, x0.5,\nx1, x1 of LightingSettings.max_per_cluster: 24, 32, 64, 64 by default;\ncw_quality_scale(\"lights\"), cartwheel/lighting.h) and the volumetric fog\ngrid (cartwheel/environment.h: 64 x 32, 96 x 48, 160 x 64, 240 x 96 cells\nacross x slices), the distortion buffer (cartwheel/explosions.h: half the\nframe on Low and Medium, the whole frame on High and Ultra;\ncw_quality_scale(\"distortion\")), colour fringing on bent edges (High and\nUltra: \"dispersion\"), the share of the explosion light pool in use\n(0.25, 0.5, 1, 1: \"flash_lights\") and skin shading (Medium and up:\n\"skin\", cartwheel/skin_shading.h; Low draws skin as plain PBR).\n\n\"As authored\" is what the scene's PostProcess / lights ask for: High\ndraws exactly what the game would without this module.\n\nGame settings: a game adds its own render-only levers (cw_quality_lever_add:\na cheaper material at distance, say) with the value each preset picks;\nthey show in the graphics menu after the engine's, and are saved with them.\n\nDensity: games read cw_quality_scale(\"grass\"), (\"crowd\"), (\"scatter\") or\nthe shorthand cw_quality_density() and thin their instancing; set a change\ncallback to re-thin when a setting changes. Particles: the engine draws\ncw_quality_scale(\"particles\") of every GPU particle system's particles\n(they are all still simulated, so counts and seeds agree).\n\nThe player picks a preset, Auto, or each setting (the graphics menu,\ncartwheel/quality_menu.h, or the game shell's settings); changing one\nsetting shows the preset as \"Custom\". Persist the choice in the game's\nsave data (cw_quality_saved / cw_quality_restore below).\n\nAuto: the engine picks, and holds the frame's cost under a budget. While\nthe game says it is in play (cw_quality_auto_measure(true) every frame) it\naverages the cost: the GPU time of the frame's passes where the host\ntimes them cheaply (native WebGPU's timestamps), else the frame-to-frame\ntime (GL, a cart: a frame the GPU cannot finish in time arrives late). After a couple of\nseconds over budget it steps down one level of its ladder:\n\n  High 100%, High 85%, Medium 75%, Medium 67%, Low 67%, Low 60%, Low 50%\n\n(resolution first: it costs the picture least for what it saves). Where\nit measures GPU time it also steps back up when the cost has stayed well\nunder budget, never into a level that was over it in this run. A game\nmakes Auto the starting choice with cw_quality_auto(true, budget); the\nplayer can always pick it. The level it reached is saved, so the next run\nstarts there.\n\nDeterminism: a deterministic run (a test) starts at High whatever the\nsave holds, with Auto off, so every host draws the same frame; a choice\nmade in it (from the menus, by input every host replays alike) applies.\nNothing here reaches the simulation.",
    "functions": [
     {
      "name": "cw_quality_get",
@@ -11792,6 +11824,62 @@
      "doc": ""
     }
    ]
+  },
+  {
+   "header": "cartwheel/skin_shading.h",
+   "summary": "cartwheel/skin_shading.h: skin shading, a cheap subsurface look for\ncharacters (a shading part, cartwheel/shading.h).\n\nReal skin scatters light under its surface: the shadow side of a face goes\nsoft and warm instead of dark grey, and thin parts (ears, nostrils, finger\nwebs) glow when lit from behind. Plain PBR shades skin like painted\nplastic. This part adds two cheap terms to the material's own lighting\n(MeshStandardMaterial or MeshPhysicalMaterial, so sheen, clear coat and\nthe rest still apply), for every light that reaches it (the scene's own\nlights, clustered lights, the cascaded sun):\n\n  - wrap: diffuse light reaches past the line where the surface turns away\n    from the light, each colour channel by `wrap` times its `scatter`\n    component, so red bleeds furthest (a warm, soft terminator). The lit\n    side is unchanged; the extra light is (N.L + w) / (1 + w) - N.L.\n  - translucency: light from behind the surface, seen through it: strongest\n    looking toward a light past a thin edge. r186's MeshSSSNodeMaterial\n    term (fast translucency): pow(saturate(V . -(L + N * distortion)),\n    power) + ambient, times `translucency`, the scatter colour, the\n    surface's diffuse colour and the light's colour.\n\nNo screen-space pass, no extra render targets, no textures: a few ALU\noperations per light per skin pixel. A light's shadow darkens both terms\nas it darkens the rest of the light, so translucency needs the light not\nto be blocked by the body itself (a rim light behind a head, say).\n\nQuality: on Low (cw_quality_scale(\"skin\") is 0) every skin material draws\nas its plain PBR material (the part is removed, so Low pays nothing); the\nother presets draw it. The engine switches when the setting changes.\n\nFrom glTF: a material loaded through the resource system (CW_RES_GLTF)\ngets skin shading when the file asks for it:\n  - KHR_materials_diffuse_transmission: translucency = its\n    diffuseTransmissionFactor, scatter = its diffuseTransmissionColorFactor\n    (the rest as cw_skin_shading_default);\n  - extras \"skin_shading\": true (the defaults) or an object with any of\n    \"scatter\" [r, g, b], \"wrap\", \"translucency\", \"distortion\", \"power\",\n    \"ambient\" (over the defaults, or over what the extension gave).\nOr by material name after loading: cw_skin_shading_apply_named.\n\nCost: see docs/guides/rendering-3d.md, \"Characters\".",
+   "functions": [
+    {
+     "name": "cw_skin_shading_default",
+     "signature": "cw_skin_shading_desc cw_skin_shading_default(void)",
+     "doc": "the defaults above (a light-skinned human; darker skin wants a deeper\nscatter, e.g. 0.9, 0.3, 0.2, and less translucency)",
+     "inline": false
+    },
+    {
+     "name": "cw_skin_shading_apply",
+     "signature": "bool cw_skin_shading_apply(t3_material *m, const cw_skin_shading_desc *d)",
+     "doc": "Shade material m as skin (d NULL: the defaults). m must be a\nMeshStandardMaterial or MeshPhysicalMaterial; false otherwise, or when m\nalready carries CW_SHADING_MAX_PARTS parts. Applying again replaces the\nvalues. The material is retained until cw_skin_shading_remove. Every mesh\ndrawing m is affected (glTF instances share their file's materials: clone\na material for a per-character tint).",
+     "inline": false
+    },
+    {
+     "name": "cw_skin_shading_remove",
+     "signature": "void cw_skin_shading_remove(t3_material *m)",
+     "doc": "Back to plain PBR (no-op when m is not skin).",
+     "inline": false
+    },
+    {
+     "name": "cw_skin_shading_get",
+     "signature": "bool cw_skin_shading_get(const t3_material *m, cw_skin_shading_desc *out)",
+     "doc": "m is skin; its values into *out when out is not NULL.",
+     "inline": false
+    },
+    {
+     "name": "cw_skin_shading_apply_named",
+     "signature": "int cw_skin_shading_apply_named(t3_object *root, const char *material_name, const cw_skin_shading_desc *d)",
+     "doc": "Every material named `material_name` (t3_material.name: the glTF\nmaterial's name) on the meshes under root gets skin shading. Returns how\nmany materials (each counted once).",
+     "inline": false
+    },
+    {
+     "name": "cw_skin_shading_count",
+     "signature": "int cw_skin_shading_count(void)",
+     "doc": "Materials shaded as skin now.",
+     "inline": false
+    },
+    {
+     "name": "cw_skin_shading_enabled",
+     "signature": "bool cw_skin_shading_enabled(void)",
+     "doc": "The quality setting draws skin shading (false on Low: skin materials draw\nas plain PBR).",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_skin_shading_desc",
+     "doc": "",
+     "decl": "typedef struct cw_skin_shading_desc {\n  t3_color scatter;    /* colour that scatters furthest under the skin (linear; 1, 0.35, 0.22) */\n  float wrap;          /* how far light wraps past the terminator, 0 to 1 (0.55) */\n  float translucency;  /* strength of light seen through thin parts from behind, 0 = off (0.35) */\n  float distortion;    /* how much the surface normal bends the light seen through (0.25) */\n  float power;         /* how tightly the glow gathers toward the light (3) */\n  float ambient;       /* translucency that reaches every lit pixel, a softening term (0) */\n} cw_skin_shading_desc;"
+    }
+   ],
+   "macros": []
   },
   {
    "header": "cartwheel/stream.h",
