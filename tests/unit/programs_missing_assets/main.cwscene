@@ -1,0 +1,18 @@
+[scene format=1]
+
+[node name="Level" type="Node3D"]
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 1, 5)
+
+[node name="Box" parent="." type="MeshInstance3D"]
+primitive = BOX
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+rotation = vec3(-1, 0.5, 0)
+
+[node name="Lamp" parent="." type="OmniLight3D"]
+position = vec3(2, 2, 2)
+
+[node name="Spot" parent="." type="SpotLight3D"]
+position = vec3(-2, 3, 2)
