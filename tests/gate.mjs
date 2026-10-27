@@ -50,9 +50,13 @@ const glHosts = (hosts) => usesHosts(hosts).filter((h) => glCarts || !['chromium
 const gatesArg = argv.includes('--gates-file') ? argv[argv.indexOf('--gates-file') + 1] : process.env.CW_GATES_FILE || 'gates.json';
 const gates = gatesArg.split(',').flatMap((f) => JSON.parse(readFileSync(join(PROJ, 'tests', f.trim()), 'utf8'))).filter((g) => !only.length || only.includes(g.name));
 
+// the current gate's "env" (every native run of it, controls too; a control's controlEnv wins): how a game picks one
+// mode for a gate (a game, a skill level) without a build of its own. Carts have no environment, so such a gate
+// is for "hosts": ["native"].
+let gateEnv = {};
 function run(args, env = {}) {
   return new Promise((res) => {
-    const p = spawn('node', [join(ROOT, 'tools', 'run-cart.mjs'), ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } });
+    const p = spawn('node', [join(ROOT, 'tools', 'run-cart.mjs'), ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...gateEnv, ...env } });
     let out = '', err = '';
     p.stdout.on('data', (d) => (out += d));
     p.stderr.on('data', (d) => (err += d));
@@ -143,6 +147,7 @@ async function wgpuGates(list) {
     if (!hosts.includes('native')) hosts.unshift('native');
     if (chromiumOnly && !hosts.includes('chromium')) continue;
     await guard.gate(g.name + ' [webgpu]');
+    gateEnv = g.env || {};
     const common = ['--app', g.app, '--frames', String(g.frames), ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : [])];
     if (g.input) common.push('--input', join(PROJ, 'tests', g.input));
     if (g.startCmds) common.push('--start-cmds', g.startCmds.join(';'));
@@ -262,6 +267,7 @@ for (const g of gates) {
   if (g.script && chromiumOnly && !chrome) continue;
   if (g.script && noChromium && chrome) { console.log('skip ' + g.name + ' (has Chromium legs: --chromium-only)'); continue; }
   await guard.gate(g.name);
+  gateEnv = g.env || {};
   // a tool gate: a node script that runs its own checks and controls (exit 0 = pass)
   if (g.script) {
     const r = await new Promise((res) => {
