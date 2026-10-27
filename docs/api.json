@@ -480,7 +480,7 @@
     {
      "name": "cw_anim_player_on_event",
      "signature": "void cw_anim_player_on_event(cw_node player, cw_anim_event_fn fn, void *user)",
-     "doc": "",
+     "doc": "Set the player's event callback (cw_anim_event_fn above) and the `user` pointer it gets; NULL removes it.",
      "inline": false
     },
     {
@@ -11252,7 +11252,7 @@
     {
      "name": "cw_node3d",
      "doc": "── Node3D (transform in 3D; owns an optional three.c object) ───────────",
-     "decl": "typedef struct cw_node3d {\n  t3_vec3 position;\n  t3_vec3 rotation; /* euler XYZ, radians (editor convenience; kept in sync with quaternion) */\n  t3_quat quaternion;\n  t3_vec3 scale;\n  bool visible;\n  /* engine-owned */\n  t3_object *object;   /* the three.c object this node drives (a t3_group by default) */\n  bool interpolate;    /* render between the last two fixed ticks (physics bodies set it) */\n  t3_vec3 prev_position;\n  t3_quat prev_quaternion;\n  t3_mat4 world;       /* last computed world matrix */\n} cw_node3d;"
+     "decl": "typedef struct cw_node3d {\n  t3_vec3 position;\n  t3_vec3 rotation; /* euler XYZ, radians (editor convenience; kept in sync with quaternion) */\n  t3_quat quaternion;\n  t3_vec3 scale;\n  bool visible;\n  int32_t layers;      /* render layers, bit n = layer n (default 1); -1 = every layer (lights). See Camera3D layers. */\n  /* engine-owned */\n  t3_object *object;   /* the three.c object this node drives (a t3_group by default) */\n  bool interpolate;    /* render between the last two fixed ticks (physics bodies set it) */\n  t3_vec3 prev_position;\n  t3_quat prev_quaternion;\n  t3_mat4 world;       /* last computed world matrix */\n} cw_node3d;"
     },
     {
      "name": "cw_node2d",

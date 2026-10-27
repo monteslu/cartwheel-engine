@@ -210,6 +210,7 @@ void cw_anim_player_advance(cw_node player, double dt);
  * gameplay. Fading-out animations fire none. One callback per player; NULL removes it. The callback may free
  * the player. */
 typedef void (*cw_anim_event_fn)(cw_node player, const char *event, const char *animation, float key_time, void *user);
+/* Set the player's event callback (cw_anim_event_fn above) and the `user` pointer it gets; NULL removes it. */
 void cw_anim_player_on_event(cw_node player, cw_anim_event_fn fn, void *user);
 /* Animation level of detail for characters far from the camera: the player samples its clip (and writes
  * the bones) only on every divisor-th advance, with all the time since the last sample, so the pose steps

@@ -95,6 +95,14 @@
      "doc": "Render between the last two fixed ticks."
     },
     {
+     "name": "layers",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Render layers (bit n = layer n; 1 = the default layer; -1 = all). A camera draws the layers in its `cull_layers`; its `viewmodel_layers` are drawn after, on top, with `viewmodel_fov`. Applies to the node and everything below it."
+    },
+    {
      "name": "global_position",
      "type": "vec3",
      "default": "vec3(0, 0, 0)",
@@ -243,6 +251,32 @@
      "stored": true,
      "readonly": false,
      "doc": "The first current camera in tree order renders."
+    },
+    {
+     "name": "cull_layers",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layers (Node3D layers) the camera's main picture draws; 1 = the default layer."
+    },
+    {
+     "name": "viewmodel_layers",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layers drawn after the main picture on top of it, depth cleared, with viewmodel_fov (a first person weapon: it neither clips into walls nor stretches at a wide field of view). 0 = none."
+    },
+    {
+     "name": "viewmodel_fov",
+     "type": "float",
+     "default": "55",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 179,
+     "doc": "Vertical field of view of the viewmodel layers, degrees."
     }
    ]
   },
