@@ -72,7 +72,7 @@ standard+shadow+l1011
 standard+shadow+l1101+s100
 standard+shadow+lmap+l1001
 standard+shadow+senv+l1000+xcluster
-standard+shadow+senv+l1000+xwater
+standard+shadow+senv+ds+l1000+xwater
 standard+shadow+senv+l1001
 standard+shadow+senv+l1801+s110
 standard+skin+l1001
