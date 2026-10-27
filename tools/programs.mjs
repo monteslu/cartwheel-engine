@@ -13,6 +13,14 @@
 //       PROGRAMS, or <its dir>/programs/<app>.txt, created when the app has
 //       none: re-run cmake to pick a new one up). The changed tables are
 //       regenerated.
+//   node tools/programs.mjs --carts [app ...] [--gates] [--frames N] [--gl-only]
+//       the same survey on the app's DUAL cart (build/cart-wgpu/carts/<app>.wasc), the one that ships: a cart is
+//       asked for states a native run is not (the host's quality and capabilities differ: no cascaded sun
+//       shadows, say), so a game that surveys only natively can ship a red "no program" banner. Runs the cart on a GL
+//       host (romdev's dual cart told to render with GL) and on a WebGPU host, headless, reads the states the cart
+//       reports (debug field cw.three.missing_states) and merges them into the app's table like a native
+//       survey; --gates also runs each gate's input scripts. Carts are named by their file, which is
+//       the app's name (the cart must be built: scripts/build.sh).
 //   node tools/programs.mjs ... --dry
 //       only reports each app's missing states (out/programs-survey.json)
 //   node tools/programs.mjs --projects [project dir ...]
@@ -182,13 +190,48 @@ if (argv.includes('--projects')) {
 if (!argv.includes('--no-run')) await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 const frames = one('--frames') || '120';
 const runDir = join(BUILD, 'programs-logs');
+const CARTS = argv.includes('--carts');
 const logDirs = all('--logs').map((d) => resolve(d));
 const wgpu = /^CW_WGPU:BOOL=ON$/m.test(existsSync(join(BUILD, 'CMakeCache.txt')) ? readFileSync(join(BUILD, 'CMakeCache.txt'), 'utf8') : '');
 const list = apps().filter((a) => !names.length || names.includes(a.name)).filter((a) => existsSync(a.binary));
 if (names.length && list.length !== names.length)
   throw new Error(`not built: ${names.filter((n) => !list.some((a) => a.name === n)).join(' ')}`);
 
-if (!argv.includes('--no-run')) {
+/** the states a cart run reported (its debug state file), one per line */
+const cartStates = (stateFile) => {
+  try {
+    const st = JSON.parse(readFileSync(stateFile, 'utf8'));
+    return Buffer.from(String(st['cw.three.missing_states'] || ''), 'hex').toString('latin1').replace(/\0.*$/s, '').split('\n').filter(Boolean);
+  } catch { return []; }
+};
+if (CARTS && !argv.includes('--no-run')) {
+  rmSync(runDir, { recursive: true, force: true });
+  mkdirSync(runDir, { recursive: true });
+  const cartDir = join(ROOT, 'build', 'cart-wgpu', 'carts');
+  const have = existsSync(cartDir) ? readdirSync(cartDir).filter((f) => f.endsWith('.wasc')).map((f) => f.slice(0, -5)) : [];
+  const todo = names.length ? names : have;
+  for (const n of todo) if (!have.includes(n)) throw new Error(`no dual cart ${n} in ${cartDir} (build it: scripts/build.sh)`);
+  const legs = [['gl', ['--gpu', 'gl', '--dual-gl']]];
+  if (!argv.includes('--gl-only')) legs.push(['webgpu', ['--gpu', 'webgpu']]);
+  const gates = argv.includes('--gates') ? JSON.parse(readFileSync(join(ROOT, 'tests', 'gates.json'), 'utf8')).filter((g) => g.app && !g.script) : [];
+  for (const app of todo) {
+    const runs = [{ tag: app, args: ['--frames', frames] }];
+    for (const g of gates.filter((x) => x.app === app))
+      runs.push({ tag: g.name, args: ['--frames', String(g.frames), ...(g.input ? ['--input', join(ROOT, 'tests', g.input)] : [])] });
+    const seen = new Set();
+    for (const run of runs) for (const [leg, legArgs] of legs) {
+      const stateFile = join(runDir, `${run.tag}.${leg}.json`);
+      const r = spawnSync(process.execPath, [join(ROOT, 'tools', 'run-cart.mjs'), '--host', 'romdev', '--app', app, ...run.args, ...legArgs, '--state', stateFile],
+        { encoding: 'utf8', timeout: 600000, env: testEnv({ ...process.env }) });
+      if (r.status !== 0) console.log(`cart ${run.tag} (${leg}): run failed: ${(r.stderr || r.stdout || '').trim().split('\n').slice(-1)[0]}`);
+      for (const st of cartStates(stateFile)) seen.add(st);
+    }
+    if (seen.size) writeFileSync(join(runDir, `${app}.log`), [...seen].join('\n') + '\n');
+    console.log(`cart ${app}: ${seen.size} state(s) no table has`);
+  }
+  logDirs.push(runDir);
+}
+if (!CARTS && !argv.includes('--no-run')) {
   rmSync(runDir, { recursive: true, force: true });
   mkdirSync(runDir, { recursive: true });
   const legs = [['gl', {}]];
