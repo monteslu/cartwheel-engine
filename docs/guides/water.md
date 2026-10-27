@@ -27,6 +27,20 @@ The surface is drawn with the scene's lights: the sun's glints and the shadows o
 
 both bent by the surface's normal (`distortion`). The water itself is hidden while they render.
 
+## Shore, depth and foam
+
+Water that is the same colour everywhere looks like a sheet of glass. Give it a floor to measure against and it shades by depth: pale turquoise where it is shallow, deep colour further out, foam where it meets the shore and white caps on the crests.
+
+@include samples/water_shore/assets/main.cwscene#Water
+
+The depth comes from a floor map the water bakes once, from the tree's static physics shapes: for each cell of a grid over the rectangle (`floor_map_size` cells along the longer side, 128 by default, 0 turns the whole feature off) it asks the physics world what is there. A static shape holding the point at the rest level is land (depth 0, also where a pier post stands in the water); otherwise the highest static shape under the rest level is the floor, and no shape within `floor_range` metres means deep. Nothing is read back from the GPU, so the map, [cw_water_floor_depth_at](api:cw_water_floor_depth_at) (a wading character, a fishing spot) and the picture all agree on every host. Call [cw_water_rebake_floor](api:cw_water_rebake_floor) after moving static shapes. Floors that are only meshes, with no static shape, have no depth: give them a collision shape.
+
+- `shallow_color` is the water over a shallow floor; it turns into `deep_color` as the depth grows, over `clarity` metres (a Beer-Lambert style falloff, so the first metres change fastest). With the refraction drawn, `murk` only acts as the water deepens, so the floor shows through the shallows.
+- `shore_foam` is the width in metres of the foam band where the water meets the floor. It ebbs and flows and is broken up by the same noise as the ripples.
+- `crest_foam` is how much of the crest foams: the surface bunches up on a crest, and where it bunches enough the water whitens. The foam is lit by the scene's lights, so it darkens at dusk with everything else.
+
+What the map cannot see: moving bodies. A boat gets no foam ring from this; the interactive ripples (see the plan in the water notes) are the tool for that.
+
 ## Things that float
 
 Give a [RigidBody3D](node:RigidBody3D) a [Buoyancy3D](node:Buoyancy3D) child and it floats:

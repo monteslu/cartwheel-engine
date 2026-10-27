@@ -31,6 +31,10 @@ typedef struct water3d {
   float resolution_scale;
   int debug_view;
   float debug_range[2];
+  /* shore and depth shading, foam */
+  int floor_map_size;
+  float floor_range, clarity, shore_foam, crest_foam;
+  float shallow_color[4];
   /* runtime (cleared on destroy from here on) */
   t3_mesh *mesh;
   t3_material *mat;
@@ -44,6 +48,11 @@ typedef struct water3d {
   wave_eval ev;      /* this frame's waves, as drawn */
   float flow_off[3]; /* Water2's flow offsets 0, 1 and the half cycle */
   float cam[4];      /* the camera world position this frame */
+  t3_texture *floor_tex;
+  float *floor_depth; /* floor_n x floor_n metres below the rest level (0: land), row z, col x */
+  int floor_n;
+  bool floor_dirty, floor_done;
+  float foam_time;
 } water3d;
 
 /* the waves at time t, phases reduced (water.c) */

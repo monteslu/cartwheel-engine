@@ -2389,6 +2389,27 @@
     "note": "distortion footprints: the haze, ring and lens change the picture, nothing leaks outside, a pole in front of the haze stays sharp (control: behind it, it bends), GL and WebGPU agree"
   },
   {
+    "name": "water-shore",
+    "app": "water_shore",
+    "frames": 240,
+    "fields": [
+      "water.tick",
+      "bodies.hash",
+      "floor.depth"
+    ],
+    "tol": 0.001,
+    "note": "water over a beach: the baked floor depth map (physics ray casts) gives the same depths at four points on every host (open water 3 m, the slope, near the shore, land 0); the boat and crates float as in water-boat; control: one frame early",
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev",
+        "chromium",
+        "wcnative"
+      ],
+      "vsGl": 0.002
+    }
+  },
+  {
     "name": "water-surface",
     "script": "tests/water-surface.mjs",
     "note": "the drawn water is where cw_water_height_at says, on every host and backend (debug_view HEIGHT read back at 48 probes, 1.5 cm); control: the water drawn 0.25 s late"

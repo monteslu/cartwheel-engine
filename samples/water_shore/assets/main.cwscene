@@ -1,0 +1,120 @@
+[scene format=1]
+
+[node name="Root" type="Node3D"]
+
+[node name="Post" parent="." type="PostProcess"]
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 16.5
+latitude = 40
+declination = 15
+north = 60
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+shadow_extent = 40
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 4.5, 18)
+rotation = vec3(-0.2, 0, 0)
+fov = 55
+far = 400
+
+[node name="Water" parent="." type="Water3D"]
+size = vec2(120, 120)
+subdivisions = 400
+floor_map_size = 256
+
+[node name="Floor" parent="." type="StaticBody3D"]
+position = vec3(0, -3.25, 0)
+
+[node name="Shape" parent="Floor" type="CollisionShape3D"]
+shape = BOX
+size = vec3(120, 0.5, 120)
+
+[node name="Mesh" parent="Floor" type="MeshInstance3D"]
+size = vec3(120, 0.5, 120)
+color = color(0.5, 0.42, 0.26, 1)
+receive_shadow = true
+
+[node name="Beach" parent="." type="StaticBody3D"]
+position = vec3(0, 0.9, -24)
+rotation = vec3(0.14, 0, 0)
+
+[node name="Shape" parent="Beach" type="CollisionShape3D"]
+shape = BOX
+size = vec3(80, 1, 80)
+
+[node name="Mesh" parent="Beach" type="MeshInstance3D"]
+size = vec3(80, 1, 80)
+color = color(0.62, 0.54, 0.36, 1)
+roughness = 0.95
+receive_shadow = true
+cast_shadow = true
+
+[node name="Rock" parent="Beach" type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(-6, 3.4, 12)
+size = vec3(3, 2, 2.6)
+color = color(0.3, 0.3, 0.32, 1)
+roughness = 0.9
+cast_shadow = true
+
+[node name="Boat" parent="." type="RigidBody3D"]
+position = vec3(3, 1, 6)
+rotation = vec3(0, 0.5, 0)
+density = 350
+
+[node name="Shape" parent="Boat" type="CollisionShape3D"]
+shape = BOX
+size = vec3(1.6, 0.8, 4)
+
+[node name="Hull" parent="Boat" type="MeshInstance3D"]
+size = vec3(1.6, 0.8, 4)
+color = color(0.75, 0.1, 0.06, 1)
+roughness = 0.5
+cast_shadow = true
+receive_shadow = true
+
+[node name="Cabin" parent="Boat" type="MeshInstance3D"]
+position = vec3(0, 0.7, -0.4)
+size = vec3(1.1, 0.6, 1.4)
+color = color(0.9, 0.9, 0.85, 1)
+roughness = 0.4
+cast_shadow = true
+
+[node name="Float" parent="Boat" type="Buoyancy3D"]
+
+[node name="Crate1" parent="." type="RigidBody3D"]
+position = vec3(4.5, 1.5, -2)
+density = 450
+
+[node name="Shape" parent="Crate1" type="CollisionShape3D"]
+shape = BOX
+size = vec3(0.9, 0.9, 0.9)
+
+[node name="Mesh" parent="Crate1" type="MeshInstance3D"]
+size = vec3(0.9, 0.9, 0.9)
+color = color(0.52, 0.32, 0.12, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Float" parent="Crate1" type="Buoyancy3D"]
+
+[node name="Crate2" parent="." type="RigidBody3D"]
+position = vec3(-2.5, 2, 5)
+rotation = vec3(0.3, 0.2, 0.4)
+density = 600
+
+[node name="Shape" parent="Crate2" type="CollisionShape3D"]
+shape = BOX
+size = vec3(0.7, 0.7, 0.7)
+
+[node name="Mesh" parent="Crate2" type="MeshInstance3D"]
+size = vec3(0.7, 0.7, 0.7)
+color = color(0.2, 0.35, 0.6, 1)
+cast_shadow = true
+receive_shadow = true
+
+[node name="Float" parent="Crate2" type="Buoyancy3D"]

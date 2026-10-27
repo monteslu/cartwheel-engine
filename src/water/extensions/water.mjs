@@ -23,7 +23,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const {
     Fn, uniform, texture, sharedUniformGroup, positionLocal, positionWorld, cameraViewMatrix,
     modelWorldMatrix, screenUV, vec2, vec3, vec4, float, normalize, dot, max, min, mix, pow, abs, sin, cos, clamp,
-    floor, length, smoothstep, varying, output, sRGBTransferEOTF, materialColor, materialEmissive,
+    floor, length, smoothstep, varying, step, exp, output, sRGBTransferEOTF, materialColor, materialEmissive,
   } = TSL;
 
   const frame = sharedUniformGroup('waterFrame', 0, THREE.NodeUpdateType.RENDER);
@@ -44,6 +44,9 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const flow = v4('waterFlow');     // flow offset 0, offset 1, half cycle, flow map on (1) / off (0)
   const flowDir = v4('waterFlowDir'); // flow x, flow z (without a map), rectangle size x, size z
   const dbg = v4('waterDebug');     // x: debug view (1 = height); y, z: height range; w: murk
+  const shore = v4('waterShore');   // x: floor map on (1) / off (0); y: shore foam width (m); z: 1 / clarity (1 / m); w: crest foam amount
+  const shallow = v4('waterShallow'); // rgb: shallow colour; w: the foam clock (s, mod 1000)
+  const floorRect = v4('waterFloorRect'); // x, y: the rectangle the floor map covers (m)
   const cam = v4('waterCam');       // xyz: the camera's world position (three.c fills no cameraPosition); w: 1 when the view is drawn rows bottom-up (cartwheel's WebGPU scene target) but the planar targets top-down
 
   const tex = (n, linear, repeat, half) => {
@@ -62,6 +65,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   // the planar targets: half float, linear, clamped, no mips (a RenderTarget's texture)
   const reflectMap = tex('waterReflection', true, false, true);
   const refractMap = tex('waterRefraction', true, false, true);
+  const floorMap = tex('waterFloorMap', true, false, true);
 
   // ── vertex: Gerstner ───────────────────────────────────────────────
   // plain node expressions (no Fn: the shadow pass rebuilds the vertex stage from positionNode alone)
@@ -81,6 +85,9 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   }
   mat.positionNode = pos;
   const waveNormalLocal = varying(nrm, 'vWaterNormal');
+  const vRest = varying(vec2(p0.x, p0.z), 'vWaterRest');   // where the surface point rests (the floor map's coordinates)
+  const vSurf = varying(pos.y, 'vWaterSurf');                // its height over the rest level
+  const vBunch = varying(nrm.y, 'vWaterBunch');              // the wave normal's y: small where the surface bunches up (crests)
 
   // ── fragment ───────────────────────────────────────────────────────
   // Broad wave normals also need filtering once waves are smaller than a
@@ -110,13 +117,31 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const suv = vec2(screenUV.x, mix(screenUV.y, float(1).sub(screenUV.y), cam.w));
   const refl = texture(reflectMap, vec2(float(1).sub(suv.x), suv.y).add(offset)).rgb.mul(tint.w);
   // what is seen through the water, tinted, then lost into the deep colour by murk (no refraction: all deep colour)
-  const seen = mix(texture(refractMap, suv.add(offset)).rgb.mul(tint.rgb), deep.rgb, dbg.w);
-  const refr = mix(deep.rgb, seen, deep.w);
+  // depth over the baked floor (a map outside its rectangle, or none: deep)
+  const uvF = vRest.div(floorRect.xy).add(0.5);
+  const outside = step(0.5, max(abs(uvF.x.sub(0.5)), abs(uvF.y.sub(0.5))));
+  const mapOn = shore.x.mul(float(1).sub(outside));
+  const depth = mix(float(100), max(texture(floorMap, uvF).r.add(vSurf), 0), mapOn);
+  // Beer-Lambert style: the shallow colour turns into the deep one with depth; murk acts only as the water deepens
+  const absorb = mix(float(1), float(1).sub(exp(depth.negate().mul(shore.z))), mapOn);
+  const body = mix(shallow.rgb, deep.rgb, absorb);
+  const seen = mix(texture(refractMap, suv.add(offset)).rgb.mul(tint.rgb), body, dbg.w.mul(absorb));
+  const refr = mix(body, seen, deep.w);
+  // foam: where the water meets the floor, and on crests (the wave normal's bunching), broken up by the map's height noise
+  const noise = texture(normalMap, uvs.mul(0.6).add(f.mul(flow.x))).a;
+  const lumpy = smoothstep(0.3, 0.7, noise);
+  const wob = sin(shallow.w.mul(1.4).add(noise.mul(6.283))).mul(0.5).add(0.5);
+  const sw = max(shore.y, 0.001);
+  const shoreFoam = float(1).sub(smoothstep(0, sw, depth.add(noise.sub(0.5).mul(sw).mul(0.9)).sub(wob.mul(sw).mul(0.35)))).mul(mapOn).mul(step(0.001, shore.y));
+  const thr = float(0.62).sub(shore.w.mul(0.5));
+  const farFade = float(1).sub(smoothstep(200, 700, length(cam.xyz.sub(positionWorld))));
+  const crestFoam = smoothstep(thr, thr.add(0.12), float(1).sub(vBunch).add(noise.sub(0.5).mul(0.25))).mul(step(0.001, shore.w)).mul(lumpy).mul(farFade);
+  const foam = clamp(max(shoreFoam.mul(mix(0.55, 1, lumpy)), crestFoam), 0, 1);
   const emit = mix(refr, refl, fres);
   // the material colour (black: no diffuse; the C side keeps it so) and emissive (white) stay inputs
-  mat.colorNode = vec4(materialColor.rgb, 1);
+  mat.colorNode = vec4(materialColor.rgb.add(vec3(0.9, 0.92, 0.95).mul(foam)), 1);
   mat.normalNode = normalize(cameraViewMatrix.mul(vec4(n, 0)).xyz);
-  mat.emissiveNode = emit.mul(materialEmissive);
+  mat.emissiveNode = emit.mul(materialEmissive).mul(float(1).sub(foam));
   // debug view HEIGHT: the world height over the range as 16 bits in R and G, pre-decoded so
   // that the sRGB output transfer (tone mapping NONE) lands each on its exact byte
   const hn = clamp(positionWorld.y.sub(dbg.y).div(dbg.z.sub(dbg.y)), 0, 1).mul(65535);
