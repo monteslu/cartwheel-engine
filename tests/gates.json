@@ -5646,5 +5646,38 @@
         }
       ]
     }
+  },
+  {
+    "name": "platformer2d",
+    "app": "platformer2d",
+    "frames": 780,
+    "fields": [
+      "pf.hash",
+      "pf.pos",
+      "pf.vel",
+      "pf.floor",
+      "pf.one_way",
+      "pf.jumps",
+      "pf.air_jumps",
+      "pf.wall_jumps",
+      "pf.dashes",
+      "pf.lands",
+      "pf.drops",
+      "pf.strokes",
+      "pf.part",
+      "pf.top_y",
+      "pf.wall_best_y"
+    ],
+    "expect": {
+      "pf.jumps": 3,
+      "pf.wall_jumps": 3,
+      "pf.dashes": 1,
+      "pf.drops": 1,
+      "pf.strokes": 1,
+      "pf.lands": 5,
+      "pf.part": 5,
+      "pf.top_y": 3.2516860961914062
+    },
+    "note": "platformer2d: the controller on a scripted course (one-way platform up and drop, wall jumps, dash, swim stroke); every counter and the final state must agree on every host"
   }
 ]

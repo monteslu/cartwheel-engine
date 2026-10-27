@@ -111,6 +111,22 @@ static void collide(mover *mv, b2Vec2 pos, plane_set *ps) {
   }
 }
 
+/* One-way platforms count this move only when the feet start on or above their top: not while rising, not while
+ * dropping through, and not while any contact with them is above the feet (the body is inside, or below). */
+static bool one_way_solid(mover *mv, uint32_t one_way) {
+  const cw_mover2d *m = mv->m;
+  if (m->drop_through || m->velocity.y > 1e-3f) return false;
+  b2QueryFilter saved = mv->filter;
+  mv->filter.maskBits = one_way;
+  plane_set ps;
+  collide(mv, (b2Vec2){ 0, 0 }, &ps);
+  mv->filter = saved;
+  float tol = m->def.skin + 0.05f;
+  for (int i = 0; i < ps.count; i++)
+    if (ps.points[i].y > tol) return false;
+  return true;
+}
+
 static float cast(mover *mv, b2Vec2 pos, b2Vec2 d) {
   if (d.x == 0 && d.y == 0) return 1;
   b2Capsule c = capsule(mv, pos, 0);
@@ -179,11 +195,13 @@ void cw_mover2d_move(cw_mover2d *m, float dt) {
   mover mv = { .m = m, .world = w->id, .org = bp(m->position) };
   mv.filter = b2DefaultQueryFilter();
   mv.filter.categoryBits = CW__QUERY_BIT;
-  mv.filter.maskBits = def->mask;
+  uint32_t one_way = def->one_way_mask & def->mask;
+  mv.filter.maskBits = def->mask & ~one_way;
 
   m->prev_position = m->position;
   b2Vec2 start = { 0, 0 };
   b2Vec2 v = v2(m->velocity);
+  if (one_way && one_way_solid(&mv, one_way)) mv.filter.maskBits |= one_way;
   bool was_floor = m->on_floor;
   bool rising = v.y > 1e-4f;
 
@@ -280,5 +298,6 @@ void cw_mover2d_move(cw_mover2d *m, float dt) {
   m->floor_normal = ci.on_floor ? cwv(ci.floor_normal) : (cw_vec2){ 0, 0 };
   m->wall_normal = ci.on_wall ? cwv(ci.wall_normal) : (cw_vec2){ 0, 0 };
   m->floor_body = ci.on_floor ? (cw_body2d){ b2StoreBodyId(b2Shape_GetBody(ci.floor_shape)) } : (cw_body2d){ 0 };
+  m->on_one_way = ci.on_floor && one_way && (b2Shape_GetFilter(ci.floor_shape).categoryBits & one_way) != 0;
   m->platform_velocity = cwv(pv);
 }

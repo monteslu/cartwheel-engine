@@ -639,6 +639,10 @@ typedef struct cw_mover2d_def {
   uint32_t mask;
   float push_mass;
   bool ride_platforms;
+  /* Layers (bits, as mask) whose shapes are one-way platforms: solid only from above. The mover lands on and
+   * walks across their top faces, rises through them from below and passes them sideways; it stays inside one
+   * (feet below the top) until clear. 0 = none. Put the shapes on a layer in this mask. */
+  uint32_t one_way_mask;
 } cw_mover2d_def;
 /* The defaults noted in cw_mover2d_def above. */
 cw_mover2d_def cw_mover2d_default_def(void);
@@ -653,6 +657,10 @@ typedef struct cw_mover2d {
   cw_body2d floor_body;
   cw_vec2 platform_velocity;
   float floor_cos;
+  /* Set by the game before a move to fall through the one-way platform it stands on (a down + jump press). */
+  bool drop_through;
+  /* The floor is a one-way platform (so down + jump may drop through it). */
+  bool on_one_way;
 } cw_mover2d;
 
 /* Clears m, copies def (NULL = defaults; height >= 2 * radius) and places the feet. */

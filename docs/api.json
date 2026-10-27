@@ -6692,12 +6692,12 @@
     {
      "name": "cw_mover2d_def",
      "doc": "── character mover (Box2D's mover API; see cw_mover3d for the contract).\nThe capsule stands along +y; position is the feet. Box2D's mover cast\ncannot skip shapes by callback, so sensors are kept out by the query\nbits physics.h describes (never put sensors in a raw filter's way).",
-     "decl": "typedef struct cw_mover2d_def {\n  float radius, height;        /* 0.3, 1.8 */\n  float max_floor_angle;       /* 45 degrees */\n  float step_height, snap_length, skin; /* 0.3, 0.25, 0.02 (skin <= 0 becomes 0.02) */\n  int max_iterations;          /* 5 */\n  uint32_t mask;\n  float push_mass;\n  bool ride_platforms;\n} cw_mover2d_def;"
+     "decl": "typedef struct cw_mover2d_def {\n  float radius, height;        /* 0.3, 1.8 */\n  float max_floor_angle;       /* 45 degrees */\n  float step_height, snap_length, skin; /* 0.3, 0.25, 0.02 (skin <= 0 becomes 0.02) */\n  int max_iterations;          /* 5 */\n  uint32_t mask;\n  float push_mass;\n  bool ride_platforms;\n  /* Layers (bits, as mask) whose shapes are one-way platforms: solid only from above. The mover lands on and\n   * walks across their top faces, rises through them from below and passes them sideways; it stays inside one\n   * (feet below the top) until clear. 0 = none. Put the shapes on a layer in this mask. */\n  uint32_t one_way_mask;\n} cw_mover2d_def;"
     },
     {
      "name": "cw_mover2d",
      "doc": "",
-     "decl": "typedef struct cw_mover2d {\n  cw_world2d world;\n  cw_mover2d_def def;\n  cw_pos2 position, prev_position;\n  cw_vec2 velocity;\n  bool on_floor, on_wall, on_ceiling, stepped, snapped;\n  cw_vec2 floor_normal, wall_normal;\n  cw_body2d floor_body;\n  cw_vec2 platform_velocity;\n  float floor_cos;\n} cw_mover2d;"
+     "decl": "typedef struct cw_mover2d {\n  cw_world2d world;\n  cw_mover2d_def def;\n  cw_pos2 position, prev_position;\n  cw_vec2 velocity;\n  bool on_floor, on_wall, on_ceiling, stepped, snapped;\n  cw_vec2 floor_normal, wall_normal;\n  cw_body2d floor_body;\n  cw_vec2 platform_velocity;\n  float floor_cos;\n  /* Set by the game before a move to fall through the one-way platform it stands on (a down + jump press). */\n  bool drop_through;\n  /* The floor is a one-way platform (so down + jump may drop through it). */\n  bool on_one_way;\n} cw_mover2d;"
     }
    ],
    "macros": [
@@ -8233,6 +8233,54 @@
      "doc": ""
     }
    ]
+  },
+  {
+   "header": "cartwheel/platformer2d.h",
+   "summary": "cartwheel platformer controller: the feel of a side-view platformer on top of cw_mover2d.\n\nWhat it adds to the mover: acceleration and braking on the ground and in the air, gravity that is heavier when\nfalling and when a jump is let go early (variable jump height), coyote time (a jump still works for a moment\nafter walking off a ledge), jump buffering (a press just before landing jumps on landing), air jumps, wall\nslide and wall jump (with a grace window after leaving the wall), a dash, dropping through one-way platforms\n(down + jump) and swimming (the game says how deep the character is and which way a current pushes).\n\n  cw_platformer2d p;\n  cw_platformer2d_init(&p, world, NULL, feet);\n  fixed_update:  cw_platformer2d_step(&p, &(cw_platformer2d_input){ .move_x = ax, .jump_held = held,\n                                      .jump_pressed = pressed }, dt);\n  then read p.events (CW_PF_*) for sounds and particles, p.body.position for the feet.\n\nThe step is simulation code: + - * / and sqrt only, the same bits on every host.",
+   "functions": [
+    {
+     "name": "cw_platformer2d_default_def",
+     "signature": "cw_platformer2d_def cw_platformer2d_default_def(void)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw_platformer2d_init",
+     "signature": "void cw_platformer2d_init(cw_platformer2d *p, cw_world2d w, const cw_platformer2d_def *def, cw_pos2 feet)",
+     "doc": "def NULL = defaults.",
+     "inline": false
+    },
+    {
+     "name": "cw_platformer2d_step",
+     "signature": "void cw_platformer2d_step(cw_platformer2d *p, const cw_platformer2d_input *in, float dt)",
+     "doc": "One fixed step: input, forces, then cw_mover2d_move.",
+     "inline": false
+    },
+    {
+     "name": "cw_platformer2d_teleport",
+     "signature": "void cw_platformer2d_teleport(cw_platformer2d *p, cw_pos2 feet)",
+     "doc": "Teleport (a respawn): clears timers and velocity.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_platformer2d_def",
+     "doc": "",
+     "decl": "typedef struct cw_platformer2d_def {\n  cw_mover2d_def mover;   /* the body (defaults: 0.3 radius, 1.8 tall; a game sets its own size and one_way_mask) */\n  float run_speed;        /* m/s: 8 */\n  float ground_accel, ground_brake; /* m/s^2 speeding up / slowing down on the ground: 70, 90 */\n  float air_accel, air_brake;       /* 45, 25 */\n  float gravity;          /* m/s^2: 38 */\n  float fall_gravity;     /* multiplier while falling: 1.4 */\n  float jump_cut_gravity; /* multiplier while rising with the button up: 3 */\n  float apex_gravity;     /* multiplier near the top of a held jump (|vy| < apex_speed): 0.55 */\n  float apex_speed;       /* 1.5 */\n  float max_fall;         /* m/s: 22 */\n  float jump_height;      /* metres of a full held jump: 3.2 */\n  float coyote_time, jump_buffer; /* seconds: 0.1, 0.12 */\n  int air_jumps;          /* extra jumps in the air: 0 */\n  float air_jump_scale;   /* their strength relative to a ground jump: 0.9 */\n  bool wall_jump;         /* wall slide + wall jump: false */\n  float wall_slide_speed; /* max fall speed while sliding: 3 */\n  float wall_jump_speed_x, wall_jump_speed_y; /* 8, 14.5 */\n  float wall_jump_lock;   /* seconds the push away is not fought by the stick: 0.16 */\n  float dash_speed;       /* 0 = no dash; m/s: 0 */\n  float dash_time, dash_cooldown; /* 0.16, 0.35 */\n  float swim_speed;       /* m/s on a stick: 4.5 */\n  float swim_accel;       /* 18 */\n  float swim_stroke;      /* upward speed of a jump press in water: 7 */\n  float water_gravity;    /* gravity scale when fully submerged: 0.18 */\n} cw_platformer2d_def;"
+    },
+    {
+     "name": "cw_platformer2d_input",
+     "doc": "",
+     "decl": "typedef struct cw_platformer2d_input {\n  float move_x;           /* -1..1 */\n  float move_y;           /* -1..1, +1 up: swimming */\n  bool jump_pressed;      /* went down this tick */\n  bool jump_held;\n  bool dash_pressed;\n  bool down_held;         /* with jump_pressed on a one-way platform: drop through */\n} cw_platformer2d_input;"
+    },
+    {
+     "name": "cw_platformer2d",
+     "doc": "",
+     "decl": "typedef struct cw_platformer2d {\n  cw_mover2d body;        /* feet position, velocity, on_floor ... */\n  cw_platformer2d_def def;\n  uint32_t events;        /* CW_PF_* of the last step */\n  int facing;             /* -1 or +1 */\n  float coyote, buffer, wall_coyote, wall_lock, dash_t, dash_cd, drop_t;\n  int wall_side;          /* +1 wall on the right, -1 on the left, 0 none (remembered for the grace window) */\n  int air_jumps_left;\n  bool dash_ready, was_wet;\n  float land_speed;       /* downward speed at the last landing */\n  /* set by the game before each step */\n  float submerged;        /* 0 = dry .. 1 = fully under water */\n  cw_vec2 current;        /* m/s the water carries the character */\n  /* abilities the game can grant or take away at any time */\n  bool can_dash, can_wall_jump;\n  int max_air_jumps;\n} cw_platformer2d;"
+    }
+   ],
+   "macros": []
   },
   {
    "header": "cartwheel/plugin.h",
