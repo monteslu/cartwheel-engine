@@ -66,6 +66,8 @@ The file is Chrome trace event JSON. Open it in [ui.perfetto.dev](https://ui.per
 
 Natively, `CW_PROFILE_GPU=1` (or `profile on gpu`, `profile trace <frames> gpu`) adds a "GPU" track with each render pass's GPU time, from the timer queries below. The durations are measured; their positions are not: each frame's passes are laid end to end from the start of that frame's render (or from where the previous frame's GPU work ended). The results arrive several frames late, so the last few frames of a trace have none. The track is off unless asked for because the timer queries cost some CPU time of their own (below). Carts never have it.
 
+In split screen each view's run of a pass is its own entry, named for its view (`scene@v0` ... `scene@v3`, `ssao@v2`), so a pass that costs more in one view than the others shows, and the pipeline's own GPU work between passes is timed as steps: `views` (the views laid into the frame) and `resolve` (the multisampled scene resolved, and the depth copies the sky, effect and post passes sample). On WebGPU each pass is timed whole, from its first command to its last on the frame's encoder, so the renders three.c records for it (shadow maps, the screen-space G-buffer, probe captures, the volumetric fog's shadow tiles) count in its time.
+
 ### Other profile requests
 
 | Request | Reply |

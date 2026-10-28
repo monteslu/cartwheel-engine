@@ -4,6 +4,7 @@
  * derivatives (hosts disagree on them) and integer noise (bit-identical on
  * every GPU). */
 #include <math.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -57,14 +58,53 @@ static bool prepass_active(const cw_pass_ctx *ctx, void *u) {
   return ctx->settings->depth_prepass;
 }
 
+/* CW_TEST_PREPASS_SHIFT=1 (native test runs): the prepass writes its depth squeezed into 0..0.5, so the colour pass
+ * fails its depth test where the prepass drew (the control of tests/split-gpu-share.mjs: the picture must change) */
+static bool prepass_shift(void) {
+#if CW_CART
+  return false;
+#else
+  static int v = -1;
+  if (v < 0) v = getenv("CW_TEST_PREPASS_SHIFT") && atoi(getenv("CW_TEST_PREPASS_SHIFT")) ? 1 : 0;
+  return v == 1;
+#endif
+}
+
 static void prepass_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
   t3_renderer *r = ctx->renderer;
+#if CW_WGPU && defined(T3_WGPU_DEPTH_PREPASS)
+  if (cw_gpu_backend() == CW_GPU_WEBGPU) {
+    /* the scene target's depth (multisampled with MSAA), cleared here and drawn by the colour programs with no colour
+     * written; the colour is cleared too and never resolved (the scene pass clears it again and loads this depth) */
+    const cw__wgpu_pass_targets *pt = cw__pass_wgpu_targets(ctx);
+    if (!pt || !pt->color) return;
+    float a = 1;
+    t3_color c = t3_renderer_get_clear_color(r, &a);
+    t3_external_target et = {
+      .color = (uintptr_t)pt->color, .color_resolve = (uintptr_t)pt->resolve, .depth = (uintptr_t)pt->depth,
+      .color_format = (int)pt->color_format, .depth_format = (int)pt->depth_format, .samples = pt->samples,
+      .load_color = false, .load_depth = false, .clear_rgba = { c.r, c.g, c.b, a }, .clear_depth = 1,
+      .x = 0, .y = 0, .w = pt->w, .h = pt->h, .flip_y = pt->flip_y, .keep_multisampled = true,
+    };
+    if (prepass_shift()) et.depth_min = 0, et.depth_max = 0.5f;
+    t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
+    t3_renderer_set_external_target(r, &et);
+    cw__pw_timing_span((void *)pt->enc, false);
+    t3_renderer_render_prepass(r, ctx->scene3d, ctx->camera);
+    cw__pw_timing_span((void *)pt->enc, true);
+    t3_renderer_set_external_target(r, NULL);
+    cw__render3d_count(ctx->tree);
+    return;
+  }
+#endif
   t3_renderer_reset_bindings(r);
   t3_renderer_set_framebuffer(r, ctx->pipeline->bound_fbo);
   /* Blended/transmissive surfaces must not occlude their backgrounds before
    * the colour pass. Opaque alpha-tested cutouts retain their normal discard. */
+  if (prepass_shift()) glDepthRangef(0, 0.5f);
   t3_renderer_render_prepass(r, ctx->scene3d, ctx->camera);
+  if (prepass_shift()) glDepthRangef(0, 1);
   cw__render3d_count(ctx->tree);
 }
 
@@ -89,8 +129,12 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
     t3_external_target et = {
       .color = (uintptr_t)pt->color, .color_resolve = (uintptr_t)pt->resolve, .depth = (uintptr_t)pt->depth,
       .color_format = (int)pt->color_format, .depth_format = (int)pt->depth_format, .samples = pt->samples,
-      .load_color = false, .load_depth = false, .clear_rgba = { c.r, c.g, c.b, a }, .clear_depth = 1,
+      .load_color = false, .load_depth = ctx->pipeline->prepass_ran, /* a depth prepass drew it */
+      .clear_rgba = { c.r, c.g, c.b, a }, .clear_depth = 1,
       .x = 0, .y = 0, .w = pt->w, .h = pt->h, .flip_y = pt->flip_y,
+#ifdef T3_EXTERNAL_TARGET_KEEP_MULTISAMPLED
+      .keep_multisampled = ctx->pipeline->msaa_keep, /* the viewmodel pass resolves (pipeline.c) */
+#endif
     };
     t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
     t3_renderer_set_external_target(r, &et);
@@ -1381,7 +1425,11 @@ static void app_exec(cw_pass_ctx *ctx, void *u) {
 
 void cw__pipeline_add_builtin_passes(cw_pipeline *p) {
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "depth_prepass", .phase = CW_PHASE_PREPASS, .order = 0,
-                                           .active = prepass_active, .execute = prepass_exec });
+                                           .active = prepass_active, .execute = prepass_exec,
+#if defined(T3_WGPU_DEPTH_PREPASS)
+                                           .webgpu = true
+#endif
+                                         });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "scene", .phase = CW_PHASE_OPAQUE, .order = 0,
                                            .writes = CW_RES_COLOR | CW_RES_DEPTH, .execute = scene_exec, .webgpu = true });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "viewmodel", .phase = CW_PHASE_OPAQUE, .order = 10,

@@ -575,6 +575,13 @@ void cw__pipeline_gpu_time(cw_pipeline *p, const char *name, float ms) {
 /* the frame's stats, once its last run is done (passes read the previous
  * frame's during a frame) */
 static void frame_stats(cw_pipeline *p) {
+  static bool field;
+  static int32_t resolves;
+  if (!field) {
+    field = true;
+    cw_debug_i32("cw.msaa_resolves", &resolves); /* WebGPU: the multisampled scene colour's resolves last frame, every view */
+  }
+  p->msaa_resolves_frame = resolves = p->msaa_resolves;
   cw_array_clear(&p->stats);
   p->gpu_total_ms = 0;
   for (int i = 0; i < p->passes.count; i++) {
@@ -819,6 +826,7 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
     p->order_dirty = false;
   }
   p->run = 0;
+  p->msaa_resolves = 0;
   cw__render3d_frame_begin(t); /* the frame's draw counts start over */
   if (p->nviews < 2) {
     render_run(t, p, w, h, alpha, RUN_FULL);
@@ -1061,6 +1069,32 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
   }
   ctx.scene = scene;
   p->prepass_ran = false;
+  /* WebGPU MSAA: every render pass into the multisampled scene resolves its colour at its end. When the viewmodel
+   * pass draws into it after the scene pass (the last opaque pass), the scene pass stores the samples only and the
+   * viewmodel pass's resolve is the one (the same picture: the resolve after the last draw; three.c resolves first
+   * for a transmission copy inside the scene). CW_TEST_WGPU_RESOLVE_TWICE=1 (native): both resolve, as before (the
+   * gate's control). */
+  p->msaa_keep = false;
+  if (wgpu && scene_draw && scene_draw != scene && !post_run) {
+    pass_rec *sc = NULL, *last = NULL;
+    for (int i = 0; i < p->passes.count; i++) {
+      pass_rec *r = p->passes.data[i];
+      if (!r->active || r->d.phase != CW_PHASE_OPAQUE) continue;
+      if (r->name == cw_intern("scene")) sc = r;
+      last = r;
+    }
+    bool vm_last = last && last != sc && last->name == cw_intern("viewmodel");
+    int opaque_n = 0;
+    for (int i = 0; i < p->passes.count; i++) opaque_n += p->passes.data[i]->active && p->passes.data[i]->d.phase == CW_PHASE_OPAQUE;
+#if defined(T3_EXTERNAL_TARGET_KEEP_MULTISAMPLED) && !CW_CART
+    static int twice = -1;
+    if (twice < 0) twice = getenv("CW_TEST_WGPU_RESOLVE_TWICE") && atoi(getenv("CW_TEST_WGPU_RESOLVE_TWICE")) ? 1 : 0;
+    p->msaa_keep = sc && vm_last && opaque_n == 2 && !twice;
+#elif defined(T3_EXTERNAL_TARGET_KEEP_MULTISAMPLED)
+    p->msaa_keep = sc && vm_last && opaque_n == 2;
+#endif
+    p->msaa_resolves += (sc && !p->msaa_keep) + (vm_last ? 1 : 0);
+  }
 
   /* the timers' results (once on they stay on, so every query issued is read) */
   if (cw__caps.timer_query && !wgpu && cw__gpu_timing_wanted() && p->run == 0 && p->frame % TIMER_EVERY == 0) { /* once (splitscreen runs once per view) */
