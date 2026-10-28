@@ -150,6 +150,10 @@ void cw_anim_register_method(const char *name, cw_anim_method_fn fn, void *user)
 
 /* The scene-format text of one animation (see above); cw_alloc'd. */
 char *cw_anim_to_text(cw_anim a, const char *player_path);
+/* The other way: one [animation] section (with its [track]s and keys) into a new
+ * animation, stored in scene files (the caller holds its reference). Null, logged,
+ * on a parse error. The header's player= is not used (cw_anim_player_add places it). */
+cw_anim cw_anim_from_text(const char *text);
 
 /* ── AnimationPlayer (node type) ───────────────────────────────────────
  * Properties:
