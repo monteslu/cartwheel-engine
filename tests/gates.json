@@ -793,6 +793,7 @@
   },
   {
     "name": "unit-nav",
+    "webgpu": true,
     "app": "unit_nav",
     "frames": 2,
     "minColors": 1,
@@ -814,6 +815,7 @@
   },
   {
     "name": "nav-demo",
+    "webgpu": true,
     "app": "nav_demo",
     "frames": 900,
     "minColors": 8,
