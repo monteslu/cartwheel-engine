@@ -50,6 +50,13 @@ sha256 (cartwheel-examples' `scripts/deps.lock` does), and builds the same
 forever. Each SDK's `manifest.json` names the engine commit it was built
 from.
 
+Unpack a new SDK into a fresh directory (remove the old one first), as
+cartwheel-examples' `scripts/fetch-deps.sh` does. The package then re-runs
+the game's configure and, since the SDK's identity is in every compile line,
+recompiles every object built against the old one, even though the archive
+keeps file times older than those objects. Games on SDKs up to v0.18.0 need a
+clean build after an SDK bump.
+
 ## Building a game against an SDK
 
 ```cmake
