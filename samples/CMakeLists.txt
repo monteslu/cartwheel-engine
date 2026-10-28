@@ -175,6 +175,13 @@ cw_add_app(fx_particles2d SOURCES fx_particles2d/main.c ASSETS ${CMAKE_CURRENT_S
 # a first person weapon on its own render layer and lens (Node3D layers, Camera3D viewmodel_layers)
 cw_add_app(viewmodel_demo SOURCES viewmodel_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/viewmodel_demo/assets)
 cw_add_app(fx_decals SOURCES fx_decals/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_decals/assets GL_ONLY)
+# about two hundred MULTIPLY decals from a sheet on the faces of a side-on cliff, through the full pipeline: GL and
+# WebGPU must draw the same picture (gate decal-walls)
+set(CW_DECAL_WALLS_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/decal_walls_assets)
+file(MAKE_DIRECTORY ${CW_DECAL_WALLS_ASSETS}/decals)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/decal_walls/assets/main.cwscene ${CW_DECAL_WALLS_ASSETS}/main.cwscene COPYONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/fx_decals/assets/decals/sheet.png ${CW_DECAL_WALLS_ASSETS}/decals/sheet.png COPYONLY)
+cw_add_app(decal_walls SOURCES decal_walls/main.c ASSETS ${CW_DECAL_WALLS_ASSETS})
 # mesh-mode decals: clipped onto a skinned character (CesiumMan, CC-BY-4.0,
 # staged with its license as anim_skinned does), a glass pane, a spinning
 # crate and pooled bullet holes; the images are fx_decals' generated CC0 art

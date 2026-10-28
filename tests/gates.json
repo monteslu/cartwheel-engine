@@ -3714,6 +3714,33 @@
     "note": "the spinning ADD ring decal over the steps edge, 60 ticks later. Control: one frame early"
   },
   {
+    "name": "decal-walls",
+    "webgpu": {
+      "vsGl": 0.001,
+      "maxArea": 0.0005,
+      "controls": [{ "env": { "DW_CONTROL_WGPU": "1" } }]
+    },
+    "app": "decal_walls",
+    "frames": 5,
+    "maxGt16": 0.002,
+    "minColors": 200,
+    "fields": [
+      "dw.decals",
+      "dw.visible",
+      "dw.draws"
+    ],
+    "expect": {
+      "dw.decals": 227,
+      "dw.visible": 185,
+      "dw.draws": 1
+    },
+    "controlFrames": 5,
+    "controlEnv": {
+      "DW_NO_DECALS": "1"
+    },
+    "note": "about two hundred MULTIPLY decals from regions of a non-square sheet on the faces and tops of a side-on cliff (boxes 0.7 deep around the face, edge_fade 0.3, normal_fade 0.5, spun), through the full pipeline (HDR, ambient occlusion, bloom, tone mapping): GL and WebGPU draw the same picture. Controls: no decals; and on WebGPU alone every decal without its fades (DW_CONTROL_WGPU), which must fail the GL-vs-WebGPU bound"
+  },
+  {
     "name": "fx-mesh-decals",
     "app": "fx_mesh_decals",
     "frames": 120,
