@@ -24,7 +24,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
     Fn, uniform, texture, sharedUniformGroup, positionLocal, positionWorld, cameraViewMatrix,
     modelWorldMatrix, screenUV, vec2, vec3, vec4, float, normalize, dot, max, min, mix, pow, abs, sin, cos, clamp,
     floor, length, smoothstep, varying, step, exp, sqrt, output, sRGBTransferEOTF, materialColor, materialEmissive,
-    textureLoad, ivec2, int,
+    textureLoad, ivec2, int, select,
   } = TSL;
 
   const frame = sharedUniformGroup('waterFrame', 0, THREE.NodeUpdateType.RENDER);
@@ -47,7 +47,8 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const dbg = v4('waterDebug');     // x: debug view (1 = height); y, z: height range; w: murk
   const shore = v4('waterShore');   // x: floor map on (1) / off (0); y: shore foam width (m); z: 1 / clarity (1 / m); w: crest foam amount
   const shallow = v4('waterShallow'); // rgb: shallow colour; w: the foam clock (s, mod 1000)
-  const floorRect = v4('waterFloorRect'); // x, y: the rectangle the floor map covers (m)
+  const floorRect = v4('waterFloorRect'); // x, y: the rectangle the floor map covers (m); z: the camera is under the surface (1)
+  const deepRgb = deep.rgb;
   const sun = v4('waterSun');       // xyz: the direction toward the sun (world); w: the waves' summed amplitude
   const sunCol = v4('waterSunCol'); // rgb: the sun's colour x energy (0 without a sky); w: scatter strength
   const rip = v4('waterRipple');    // x: ripple normal strength (0: no grid); y, z: the grid's size (m); w: glint
@@ -176,7 +177,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const zClip = min(dz, 0.999).mul(2).sub(1);
   const yClip = float(1).sub(uvS.y.mul(2));
   const vp = refrInv.mul(vec4(uvS.x.mul(2).sub(1), yClip, zClip, 1));
-  const scenePos = vp.xyz.div(vp.w);
+  const scenePos = vp.xyz.div(max(vp.w, 1e-6)); // (never 0 / 0: a NaN here would reach the picture through every mix by 0)
   const surfPos = cameraViewMatrix.mul(vec4(positionWorld, 1)).xyz;
   const hit = float(1).sub(step(0.99999, dz));
   const ray = clamp(length(scenePos).sub(length(surfPos)), 0, 1000);
@@ -193,7 +194,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const lit = mix(vec3(1), max(vec3(0.14).add(sunCol.rgb.mul(sunUp).mul(0.32)), vec3(0.1)), hasSun);
   // a crest holds less water between the eye and the deep than a trough: lighter crests, darker troughs
   const hBody = clamp(vSurf.div(max(sun.w, 0.05)).mul(0.5).add(0.5), 0, 1);
-  const body = mix(shallow.rgb, deep.rgb, ab3).mul(lit).mul(mix(0.75, 1.3, hBody));
+  const body = mix(shallow.rgb, deepRgb, ab3).mul(lit).mul(mix(0.75, 1.3, hBody));
   // what is seen through the water lost its light on the way down to it and back up along the view, per colour (pure
   // water eats red ten times faster than green, green twice as fast as blue: clarity 5 m is clear sea water), and the
   // water's own lit colour scattered in over the same path (murk: how much)
@@ -255,16 +256,18 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const emitAbove = mix(refr, refl, fres).add(sss.mul(float(1).sub(fres))).add(gl);
   // seen from under the water: the world above shows through a window of light (Snell's), bent and dimmed by the
   // Fresnel term from water into air; outside it the surface mirrors the water itself (total internal reflection)
-  const under = step(cam.y, positionWorld.y);
+  // (decided on the CPU from the drawn waves at the camera: one answer for the whole surface)
+  const under = clamp(floorRect.z, 0, 1);
   const nb = n.negate();
   const cosI = max(dot(toEye, nb), 0);
   const sinT2 = float(1).sub(cosI.mul(cosI)).mul(1.777);
   const cosT = sqrt(max(float(1).sub(sinT2), 0));
   const trU = float(1).sub(pow(float(1).sub(cosT), 5).mul(0.98).add(0.02)).mul(float(1).sub(step(1, sinT2)));
   const skyGuess = mix(vec3(0.5, 0.7, 0.9), sunCol.rgb.mul(0.3).add(vec3(0.1, 0.2, 0.35)), hasSun);
-  const above = mix(skyGuess, texture(refractMap, suv.add(nb.xz.mul(look.y).mul(3))).rgb, refrInfo.w);
-  const bodyU = mix(shallow.rgb, deep.rgb, 0.5).mul(lit).mul(0.6);
-  const emit = mix(emitAbove, mix(bodyU, above, trU), under);
+  const above = mix(skyGuess, min(texture(refractMap, suv.add(nb.xz.mul(look.y).mul(3))).rgb, vec3(1e4)), refrInfo.w);
+  const bodyU = shallow.rgb.add(deepRgb).mul(0.5).mul(lit).mul(0.6);
+  // (select, not mix: whatever the side not shown computes, a NaN or an inf there must not reach the picture)
+  const emit = select(under.greaterThan(0.5), mix(bodyU, above, trU), emitAbove);
   const foamV = foam.mul(float(1).sub(under.mul(0.6)));
   // the material colour (black: no diffuse; the C side keeps it so) and emissive (white) stay inputs
   mat.colorNode = vec4(materialColor.rgb.add(vec3(0.9, 0.92, 0.95).mul(foamV)), 1);
@@ -277,5 +280,10 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const enc = sRGBTransferEOTF(vec3(hi.div(255), lo.div(255), 1));
   // debug view REFRACTION_DEPTH: R = the vertical depth over 20 m, G = the raw depth texel, B = hit
   const encZ = sRGBTransferEOTF(vec3(clamp(zDepth.div(20), 0, 1), dz, hit));
-  mat.outputNode = mix(output, vec4(mix(enc, encZ, step(1.5, dbg.x)), 1), min(dbg.x, 1));
+  // from under the water the surface is drawn as computed here, unlit: the scene's lights and environment shading a
+  // surface from its back side are not what the eye sees through it (and the environment's lower half is not water)
+  const belowOut = vec4(mix(bodyU, above, trU).mul(float(1).sub(foamV)).add(vec3(0.5, 0.6, 0.6).mul(lit).mul(foamV)), 1);
+  // (alpha 1: the post chain reads the scene target's alpha, and the lit output's is not 1 on every backend)
+  const shaded = mix(output, belowOut, under);
+  mat.outputNode = mix(shaded, vec4(mix(enc, encZ, step(1.5, dbg.x)), 1), step(0.5, dbg.x));
 }
