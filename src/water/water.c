@@ -23,6 +23,8 @@
 #include "water_internal.h"
 #if CW_WGPU
 #include "platform/wgpu.h"
+#else
+bool cw__wgpu_on(void); /* src/platform/gpu.c: always false in a GL-only build */
 #endif
 
 #define TWO_PI 6.283185307179586
