@@ -67,6 +67,8 @@ static void pipeline_free(void *ptr) {
   cw_pipeline *p = ptr;
   for (int i = 0; i < p->passes.count; i++) pass_free(p->passes.data[i]);
   cw_array_free(&p->passes);
+  for (int i = 0; i < p->steps.count; i++) pass_free(p->steps.data[i]);
+  cw_array_free(&p->steps);
   for (int i = 0; i < p->pool.count; i++) {
     cw__rt_destroy(&p->pool.data[i]->rt);
     cw_free(p->pool.data[i]);
@@ -513,7 +515,7 @@ static void timer_poll(pass_rec *r, bool disjoint, uint64_t frame) {
     r->q_busy[best] = false;
     if (!disjoint) {
       gpu_time_add(r, r->q_frame[best], (float)ns / 1e6f);
-      if (CW_PROFILE_ON()) cw__profile_gpu(r->name, r->q_eframe[best], (float)ns / 1e6f);
+      if (CW_PROFILE_ON()) cw__profile_gpu(r->q_pname[best] ? r->q_pname[best] : r->name, r->q_eframe[best], (float)ns / 1e6f);
     }
   }
 }
@@ -528,7 +530,7 @@ static void timer_poll(pass_rec *r, bool disjoint, uint64_t frame) {
  * includes them. */
 static bool timer_open;
 
-static int timer_begin(pass_rec *r, uint64_t frame) {
+static int timer_begin(pass_rec *r, uint64_t frame, const char *pname) {
   if (!cw__caps.timer_query || timer_open || cw_gpu_backend() == CW_GPU_WEBGPU || !cw__gpu_timing_wanted()) return -1;
   if (!r->q_init) {
     glGenQueries(CW__QUERY_RING, r->q);
@@ -540,6 +542,7 @@ static int timer_begin(pass_rec *r, uint64_t frame) {
       r->q_busy[i] = true;
       r->q_frame[i] = frame;
       r->q_eframe[i] = cw_frame_index();
+      r->q_pname[i] = pname;
       timer_open = true;
       return i;
     }
@@ -608,19 +611,59 @@ static float halton(int i, int b) {
   return r;
 }
 
+/* the profiler's GPU lane names a split-screen view's run of a pass apart ("ssao@v1") */
+static const char *gpu_lane_name(const cw_pipeline *p, const pass_rec *r) {
+  static const char *const SUF[CW_MAX_VIEWS] = { "@v0", "@v1", "@v2", "@v3" };
+  if (p->nviews < 2 || p->view_i < 0 || p->view_i >= CW_MAX_VIEWS) return r->name;
+  return cw__profile_name2(r->name, SUF[p->view_i]);
+}
+
+/* GPU work the pipeline itself does between passes (the views laid out, the MSAA resolve, the depth copies) is
+ * timed under a step's name ("views", "resolve") in the profiler's GPU lane; steps are not passes (never listed,
+ * never run by name) */
+static pass_rec *step_rec(cw_pipeline *p, const char *name) {
+  const char *n = cw_intern(name);
+  for (int i = 0; i < p->steps.count; i++)
+    if (p->steps.data[i]->name == n) return p->steps.data[i];
+  pass_rec *r = cw_calloc(1, sizeof *r, CW_MEM_RENDER);
+  r->name = n;
+  r->d.name = n;
+  r->stat.name = n;
+  cw_array_push(&p->steps, r);
+  return r;
+}
+static int step_begin(cw_pipeline *p, const char *name) {
+  if (!CW_PROFILE_ON() || !cw__gpu_timing_wanted()) return -2;
+  pass_rec *r = step_rec(p, name);
+  const char *lane = gpu_lane_name(p, r);
+  if (cw_gpu_backend() == CW_GPU_WEBGPU) {
+    cw__pw_timing_pass(p, r->name, lane);
+    return -1;
+  }
+  return timer_begin(r, p->frame, lane);
+}
+static void step_end(int slot) {
+  if (slot == -2) return;
+  if (cw_gpu_backend() == CW_GPU_WEBGPU) cw__pw_timing_pass(NULL, NULL, NULL);
+  else timer_end(slot);
+}
+
 static void run_pass(cw_pipeline *p, pass_rec *r, cw_pass_ctx *ctx) {
   bool wgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
   cw__pass_state_reset();
   if (CW_PROFILE_ON()) cw_profile_begin(cw__profile_name2("pass ", r->name));
-  int slot = timer_begin(r, p->frame);
-  if (wgpu) cw__pw_timing_pass(p, r->name);
+  const char *lane = CW_PROFILE_ON() ? gpu_lane_name(p, r) : r->name;
+  int slot = timer_begin(r, p->frame, lane);
+  if (wgpu) cw__pw_timing_pass(p, r->name, lane);
+  if (wgpu && CW_PROFILE_ON()) cw__pw_timing_whole(false); /* the profiler: three.c's renders for the pass too */
   ctx->user = r->d.user;
   double t0 = cw__render3d_now_ms();
   GL_FEATURE(r->name);
   r->d.execute(ctx, r->d.user);
   GL_FEATURE(NULL);
   r->frame_cpu += (float)(cw__render3d_now_ms() - t0);
-  if (wgpu) cw__pw_timing_pass(p, NULL);
+  if (wgpu && CW_PROFILE_ON()) cw__pw_timing_whole(true);
+  if (wgpu) cw__pw_timing_pass(p, NULL, NULL);
   timer_end(slot);
   r->stat.ran = true;
   CW_PROFILE_END();
@@ -757,7 +800,9 @@ static void views_composite(cw_pipeline *p, cw_tree *t, const cw_rt *output, con
     cw_pass_uniform4f(views_prog, R[i], v->x, 1 - v->y - v->h, v->w, v->h);
   }
   cw_pass_uniform4f(views_prog, "u_misc", (float)output->w, (float)output->h, (float)n, 1.5f);
+  int ts = step_begin(p, "views");
   cw_pass_fullscreen();
+  step_end(ts);
 }
 
 void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
@@ -1023,6 +1068,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
     GLint dj = 0;
     glGetIntegerv(GL_GPU_DISJOINT_EXT, &dj);
     for (int i = 0; i < p->passes.count; i++) timer_poll(p->passes.data[i], dj != 0, p->frame);
+    for (int i = 0; i < p->steps.count; i++) timer_poll(p->steps.data[i], dj != 0, p->frame);
   }
 
   /* POST chain: the writers, so the last one can target the output */
@@ -1064,6 +1110,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
        * test against a scene depth nothing wrote) */
       if (getenv("CW_TEST_WGPU_NO_DEPTH_RESOLVE") && atoi(getenv("CW_TEST_WGPU_NO_DEPTH_RESOLVE"))) resolve_depth = false;
 #endif
+      int ts = step_begin(p, "resolve");
       if (resolve_depth) cw__pw_depth_resolve(scene_draw, scene);
       if (wgpu_depth) {
         const cw_rt *lin = cw_pipeline_rt_persistent(p, "scene.depth_linear", w, h, CW__RT_R32F, NULL);
@@ -1074,8 +1121,10 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
           ctx.depth_tex = lin->tex;
         }
       }
+      step_end(ts);
     } else if (offscreen && ph == CW_PHASE_SKY) {
       /* leaving the opaque phase: resolve MSAA, copy depth for effects */
+      int ts = step_begin(p, "resolve");
       if (scene_draw != scene) {
         unsigned scene_draw_fbo = scene_draw->fbo;
         glBindFramebuffer(GL_READ_FRAMEBUFFER, scene_draw_fbo);
@@ -1091,6 +1140,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
           ctx.depth_tex = dc->depth_tex;
         }
       }
+      step_end(ts);
       glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
     if (offscreen && ph == CW_PHASE_POST && !wgpu) ctx.depth_tex = scene->depth_tex;

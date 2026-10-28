@@ -29,7 +29,7 @@ void cw__gpu_timing_request(void); /* render/pipeline.c: start the GPU pass time
 #define MAX_COUNTERS 24
 #define MAX_DEPTH 64
 #define GPU_TID 1000
-#define MAX_GPU 48 /* GPU pass times kept per frame */
+#define MAX_GPU 128 /* GPU pass times kept per frame (split screen: each view's passes apart) */
 
 typedef struct {
   const char *name;
