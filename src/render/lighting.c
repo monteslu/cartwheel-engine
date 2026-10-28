@@ -495,7 +495,9 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
     L->sun_next = NULL;
     return;
   }
-  if (L->frame_done != ctx->frame + 1 || L->frame_pipe != ctx->pipeline || L->frame_scene != ctx->scene3d) {
+  static int each_view = -1; /* CW_TEST_LIGHTS_EACH_VIEW=1 (a perf check's control): the frame's work again each view */
+  if (each_view < 0) each_view = getenv("CW_TEST_LIGHTS_EACH_VIEW") != NULL;
+  if (L->frame_done != ctx->frame + 1 || L->frame_pipe != ctx->pipeline || L->frame_scene != ctx->scene3d || each_view) {
     frame_part(L, ctx);
     L->frame_done = ctx->frame + 1;
     L->frame_pipe = ctx->pipeline;

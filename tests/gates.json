@@ -1174,6 +1174,11 @@
     "note": "profile_demo natively writes a Chrome trace (CW_PROFILE_TRACE) that parses, nests per thread and holds every engine phase, job zones on workers, the audio mixer and the GPU lane where GL has timer queries; the mixer runs (SDL dummy audio driver: no device needed) and is traced; the state is the same with profiling off, on and on with GPU timing; main-thread zones cost under 0.1 ms a frame. Controls: a run that never recorded, overlapping zones, a trace without the mixer zones, a run one tick short, an impossible budget"
   },
   {
+    "name": "profile-lighting",
+    "script": "tests/profile-lighting.mjs",
+    "note": "the clustered lighting pass in split screen, from the profile trace (lighting_changes LC_STRESS=40: 1600 boxes with a material each, 64 lights a game added, a cascaded sun), GL and WebGPU: with four views the scene index and the material marking run once a frame, and the pass costs under 2.5 times one view. Controls: CW_TEST_LIGHTS_EACH_VIEW=1 (the scene work each view, as before) fails the once-a-frame check; an impossible ratio fails the cost check"
+  },
+  {
     "name": "profile-cart",
     "script": "tests/profile-cart.mjs",
     "note": "the profile_demo cart on romdev records a trace over the debug channel (profile trace, read back in pieces by tools/cwtrace.mjs) with every engine phase, job zones on workers and no GPU lane; the state with profiling off and on equals native; zones cost the cart's main thread under 0.1 ms a frame. Controls: trace_get before a trace, a run one tick short, an impossible budget"

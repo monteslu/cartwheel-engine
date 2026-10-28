@@ -41,6 +41,10 @@ struct cw__csm {
   uint64_t key[4];
   bool valid[4];
   int rendered;
+  /* the shadow casters' key, once a frame (split screen fits the cascades once a
+   * view; the casters are the same for every view) */
+  uint64_t casters, casters_frame;
+  const void *casters_pipe;
 };
 
 cw__csm *cw__csm_new(void) {
@@ -296,7 +300,12 @@ bool cw__csm_update(cw__csm *c, cw_pass_ctx *ctx, t3_light *sun, const cw__csm_c
   t3_mat4_multiply(&cam_to_light, &orient_inv, &cam->base.matrix_world);
   float bias = ls ? ls->bias : 0, nbias = ls ? ls->normal_bias : 0;
   float snear = ls && ls->camera ? ls->camera->near : 0.5f, sfar = ls && ls->camera ? ls->camera->far : 500;
-  uint64_t ck = casters_key(&ctx->scene3d->base, 1469598103934665603ull);
+  if (c->casters_frame != ctx->frame + 1 || c->casters_pipe != ctx->pipeline) {
+    c->casters = casters_key(&ctx->scene3d->base, 1469598103934665603ull);
+    c->casters_frame = ctx->frame + 1;
+    c->casters_pipe = ctx->pipeline;
+  }
+  uint64_t ck = c->casters;
   bool webgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
   for (int i = 0; i < n; i++) {
     /* r186 _updateShadowBounds: the slice's longest diagonal, widened by the fade margin */
