@@ -50,18 +50,45 @@ typedef struct cl_light {
   uint32_t id;    /* tie break */
 } cl_light;
 
+/* a mesh of the scene index: its material slots as last marked (a swapped
+ * material or a changed extension changes the sum) */
+typedef struct ix_mesh {
+  t3_mesh *m;
+  uint64_t sum;
+  int counts; /* its slots that draw with a part */
+} ix_mesh;
+
 typedef struct lighting {
   cw_tree *tree;
   cw_lighting_settings s;
   cw_froxel_grid *grid;
+  /* the omni and spot lights out of three.c's list this frame (layers 0 until
+   * given back), with their own layers */
   CW_ARRAY(taken) taken;
   CW_ARRAY(cl_light) lights;
+  /* The scene index: every omni and spot light and every mesh under the
+   * scene, from one walk, so a pass reads arrays instead of walking the
+   * scene. Built once a frame, not once a view. */
+  t3_scene *ix_scene;
+  CW_ARRAY(t3_light *) ix_lights;  /* in scene order */
+  CW_ARRAY(ix_mesh) ix_meshes;
+  int ix_on;                       /* the parts the meshes are marked with (cluster | csm << 1), -1 unmarked */
+  /* the frame part ran for this pipeline frame (frames + 1; 0 none) */
+  uint64_t frame_done;
+  const cw_pipeline *frame_pipe;
+  const t3_scene *frame_scene;
+  /* this frame's cascaded sun, its own layers, and whether it is out of three.c's list */
+  t3_light *sun;
+  uint32_t sun_layers;
+  bool sun_taken;
+  cw__csm_cfg cfg;
+  int materials;                   /* lit material slots marked this frame */
   cw_froxel_volume *vols;
   int vols_cap;
   t3_texture *light_tex;
   t3_renderer *hooked;
   int batching; /* the batching last handed to the hooked renderer (-1: none yet) */
-  bool marked;            /* materials carry the part */
+  bool marked;  /* materials may carry the parts */
   bool warned_max;
   float grid_u[4], depth_u[4];
   t3_texture *rec_tex, *item_tex;
@@ -86,7 +113,14 @@ static void lighting_free(void *p) {
     t3_release(L->taken.data[i].light);
   }
   cw_array_free(&L->taken);
+  if (L->sun_taken) {
+    L->sun->base.layers = L->sun_layers;
+    t3_release(L->sun);
+  }
   cw_array_free(&L->lights);
+  for (int i = 0; i < L->ix_lights.count; i++) t3_release(L->ix_lights.data[i]);
+  cw_array_free(&L->ix_lights);
+  cw_array_free(&L->ix_meshes);
   cw_free(L->vols);
   if (L->light_tex) t3_release(L->light_tex);
   cw_froxel_grid_free(L->grid);
@@ -112,6 +146,7 @@ static lighting *lighting_of(cw_tree *t) {
                                  .shadow_atlas_size = 4096, .shadow_updates_per_frame = 24, .shadow_cache = true,
                                  .batching = false };
   L->grid = cw_froxel_grid_new();
+  L->ix_on = -1;
   cw_tree_set_slot(t, "lighting", L, lighting_free);
   cw_pipeline_add_pass(cw_pipeline_of(t), &(cw_pass_desc){ .name = "lights", .phase = CW_PHASE_SHADOW, .order = 0,
                                                            .execute = pass_lights, .user = L, .webgpu = true });
@@ -189,18 +224,19 @@ static bool composes(const char *ext) {
 }
 
 /* What marking does to a material is a function of its extension and the
- * parts that are on, so it is remembered: from extension id (with the parts
- * on) to the id it ends with, and whether it counts. A city's thousands of
- * materials then cost a lookup each a frame, not a composed name each. */
-typedef struct mark_memo { uint16_t from, to; uint8_t on, counts; } mark_memo;
-static mark_memo memo[64];
-static int memo_n;
+ * parts that are on, so it is remembered: an extension id that marking (with
+ * these parts on) leaves as it is, and whether it counts, indexed by the id.
+ * A city's thousands of materials then cost an array read each, not a
+ * composed name each. (Extension ids are small: three.c numbers them as
+ * they are first named.) */
+typedef struct mark_memo { uint8_t known, counts; } mark_memo; /* known, counts: bit `on` (cluster | csm << 1) */
+static mark_memo *memo;
+static int memo_cap;
 
 static int mark_one(t3_material *mt, bool cluster, bool csm) {
   uint8_t on = (uint8_t)(cluster | csm << 1);
-  for (int k = 0; k < memo_n; k++)
-    if (memo[k].from == mt->extension && memo[k].on == on && memo[k].to == mt->extension) return memo[k].counts;
   uint16_t from = mt->extension;
+  if (from < memo_cap && memo[from].known >> on & 1) return memo[from].counts >> on & 1;
   int counts = 0;
   const char *ext = t3_material_get_extension(mt);
   if (composes(ext)) {
@@ -211,27 +247,17 @@ static int mark_one(t3_material *mt, bool cluster, bool csm) {
     counts = cluster || csm;
   }
   /* (only a fixed point is remembered: one that marking leaves as it is) */
-  if (mt->extension == from && memo_n < (int)(sizeof memo / sizeof memo[0]))
-    memo[memo_n++] = (mark_memo){ from, from, on, (uint8_t)counts };
-  return counts;
-}
-
-static int mark_materials(t3_object *o, bool cluster, bool csm) {
-  int n = 0;
-  if (o->type == T3_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_SKINNED_MESH) {
-    t3_mesh *m = (t3_mesh *)o;
-    for (int i = 0; i < m->material_count; i++) {
-      t3_material *mt = m->materials[i];
-      if (mt && lit_type(mt->type)) n += mark_one(mt, cluster, csm);
+  if (mt->extension == from) {
+    if (from >= memo_cap) {
+      int cap = CW_MAX(64, from * 2 + 1);
+      memo = cw_realloc(memo, (size_t)cap * sizeof *memo, CW_MEM_RENDER);
+      memset(memo + memo_cap, 0, (size_t)(cap - memo_cap) * sizeof *memo);
+      memo_cap = cap;
     }
+    memo[from].known |= (uint8_t)(1u << on);
+    memo[from].counts |= (uint8_t)((unsigned)counts << on);
   }
-  for (int i = 0; i < o->child_count; i++) n += mark_materials(o->children[i], cluster, csm);
-  return n;
-}
-
-static int mark_scene(t3_scene *sc, bool cluster, bool csm) {
-  CW_PROFILE_SCOPE("lighting.materials");
-  return mark_materials(&sc->base, cluster, csm);
+  return counts;
 }
 
 /* ── the fill hook ──────────────────────────────────────────────────── */
@@ -262,40 +288,128 @@ bool cw__lighting_takes(cw_tree *t, const t3_object *light) {
   if (!L) return false;
   for (int i = 0; i < L->taken.count; i++)
     if (&L->taken.data[i].light->base == light) return true;
+  if (L->sun_taken && &L->sun->base == light) return true;
   return L->sun_next && &L->sun_next->base == light;
 }
 
-/* ── gathering ──────────────────────────────────────────────────────── */
+/* ── the scene index ────────────────────────────────────────────────── */
 
+/* the taken lights back on their layers (a light whose layers the game set
+ * while it was out keeps the game's) */
 static void give_back(lighting *L) {
   for (int i = 0; i < L->taken.count; i++) {
-    L->taken.data[i].light->base.layers = L->taken.data[i].layers;
+    t3_object *o = &L->taken.data[i].light->base;
+    if (!o->layers) o->layers = L->taken.data[i].layers;
     t3_release(L->taken.data[i].light);
   }
   cw_array_clear(&L->taken);
+  if (L->sun_taken) {
+    if (!L->sun->base.layers) L->sun->base.layers = L->sun_layers;
+    t3_release(L->sun);
+    L->sun_taken = false;
+  }
 }
 
-/* the omni (and spot) lights three.c would draw for camera layers `layers`: the
- * shadowless ones, and with shadow_atlas the shadowed ones too */
-static void gather(lighting *L, t3_object *o, uint32_t layers) {
-  if (!o->visible) return;
-  if ((o->type == T3_POINT_LIGHT || (o->type == T3_SPOT_LIGHT && L->s.cluster_spot_lights)) && (o->layers & layers)) {
-    t3_light *l = (t3_light *)o;
-    bool casts = o->cast_shadow && l->shadow;
-    if (!casts || L->s.shadow_atlas) {
-      if (l->intensity > 0 && (l->color.r > 0 || l->color.g > 0 || l->color.b > 0)) {
-        cl_light c = { l, casts, 0, o->id };
-        cw_array_push(&L->lights, c);
-      }
-      /* a dark light leaves three.c's list too: it would light nothing there either */
-      taken t = { l, o->layers };
-      t3_retain(l);
-      cw_array_push(&L->taken, t);
-    } else
-      L->stats.forward++;
-  } else if ((o->type == T3_POINT_LIGHT || o->type == T3_SPOT_LIGHT) && (o->layers & layers))
-    L->stats.forward++;
-  for (int i = 0; i < o->child_count; i++) gather(L, o->children[i], layers);
+static bool mesh_kind(const t3_object *o) {
+  return o->type == T3_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_SKINNED_MESH;
+}
+
+/* what a mesh's slots are now: their materials and extensions */
+static uint64_t slots_sum(const t3_mesh *m) {
+  uint64_t h = (uint64_t)m->material_count * 0x9E3779B97F4A7C15ull;
+  for (int i = 0; i < m->material_count; i++) {
+    const t3_material *mt = m->materials[i];
+    h = (h ^ (uint64_t)(uintptr_t)mt) * 0xBF58476D1CE4E5B9ull;
+    h = (h ^ (mt ? (uint64_t)mt->extension << 1 | 1 : 0)) * 0x94D049BB133111EBull;
+  }
+  return h;
+}
+
+static int mark_mesh(t3_mesh *m, bool cluster, bool csm) {
+  int n = 0;
+  for (int i = 0; i < m->material_count; i++) {
+    t3_material *mt = m->materials[i];
+    if (mt && lit_type(mt->type)) n += mark_one(mt, cluster, csm);
+  }
+  return n;
+}
+
+/* every omni and spot light and every mesh, in scene order (invisible ones
+ * too: a view's visibility is read when the view draws) */
+static void index_walk(lighting *L, t3_object *o) {
+  if (o->type == T3_POINT_LIGHT || o->type == T3_SPOT_LIGHT) {
+    t3_retain(o); /* (read again by each view: one a view hook removes stays alive) */
+    cw_array_push(&L->ix_lights, (t3_light *)o);
+  }
+  else if (mesh_kind(o)) cw_array_push(&L->ix_meshes, ((ix_mesh){ (t3_mesh *)o, 0, -1 }));
+  for (int i = 0; i < o->child_count; i++) index_walk(L, o->children[i]);
+}
+static void index_build(lighting *L, t3_scene *sc) {
+  CW_PROFILE_SCOPE("lighting.index");
+  for (int i = 0; i < L->ix_lights.count; i++) t3_release(L->ix_lights.data[i]);
+  cw_array_clear(&L->ix_lights);
+  cw_array_clear(&L->ix_meshes);
+  index_walk(L, &sc->base);
+  L->ix_scene = sc;
+}
+
+/* every lit material of the index carries the parts that are on: a mesh is
+ * looked at again only when its slots changed (a material swapped, an
+ * extension changed) or the parts did. The count of lit slots that draw
+ * with a part. */
+static int index_mark(lighting *L, bool cluster, bool csm) {
+  CW_PROFILE_SCOPE("lighting.materials");
+  int on = cluster | csm << 1, n = 0;
+  bool all = on != L->ix_on;
+  static int once = -1; /* CW_TEST_NO_REMARK=1 (a test control): materials are marked the first frame only */
+  if (once < 0) once = getenv("CW_TEST_NO_REMARK") != NULL;
+  if (once && L->marked && on == L->ix_on) return L->materials;
+  for (int i = 0; i < L->ix_meshes.count; i++) {
+    ix_mesh *x = &L->ix_meshes.data[i];
+    uint64_t sum = slots_sum(x->m);
+    if (all || x->counts < 0 || sum != x->sum) {
+      x->counts = mark_mesh(x->m, cluster, csm);
+      x->sum = slots_sum(x->m); /* (marking changed the extensions) */
+    }
+    n += x->counts;
+  }
+  L->ix_on = on;
+  return n;
+}
+
+/* the same, walking the scene: for a view whose parts differ from the
+ * frame's (a sun on other layers), where the index may be out of date */
+static int mark_walk(t3_object *o, bool cluster, bool csm) {
+  int n = mesh_kind(o) ? mark_mesh((t3_mesh *)o, cluster, csm) : 0;
+  for (int i = 0; i < o->child_count; i++) n += mark_walk(o->children[i], cluster, csm);
+  return n;
+}
+
+/* the light is under the scene with every ancestor visible */
+static bool shown_in(const t3_object *o, const t3_scene *sc) {
+  for (; o; o = o->parent) {
+    if (!o->visible) return false;
+    if (o == &sc->base) return true;
+  }
+  return false;
+}
+
+/* the clustered lights leave three.c's list for the frame: the shadowless
+ * omni (and spot) lights, and with shadow_atlas the shadowed ones too; the
+ * rest stay three.c's (forward) */
+static bool clusters(const lighting *L, const t3_light *l) {
+  if (l->base.type == T3_SPOT_LIGHT && !L->s.cluster_spot_lights) return false;
+  return !(l->base.cast_shadow && l->shadow) || L->s.shadow_atlas;
+}
+static void take_lights(lighting *L) {
+  for (int i = 0; i < L->ix_lights.count; i++) {
+    t3_light *l = L->ix_lights.data[i];
+    if (!clusters(L, l)) continue;
+    taken t = { l, l->base.layers };
+    t3_retain(l);
+    cw_array_push(&L->taken, t);
+    l->base.layers = 0;
+  }
 }
 
 static int cmp_light(const void *a, const void *b) {
@@ -318,26 +432,79 @@ static double wall_ms(void) {
   return (double)ts.tv_sec * 1e3 + (double)ts.tv_nsec * 1e-6;
 }
 
+/* What does not depend on the view, once a frame (split screen runs the
+ * pass once per view): the lights given back and taken again, the scene
+ * index and the materials' parts. False: nothing to do this frame. */
+static void frame_part(lighting *L, cw_pass_ctx *ctx) {
+  CW_PROFILE_SCOPE("lighting.frame");
+  give_back(L);
+  L->sun = L->sun_next;
+  L->cfg = L->cfg_next;
+  L->sun_layers = L->sun ? L->sun->base.layers : 0;
+  L->sun_next = NULL; /* (its node registers it again next frame) */
+  bool clustered = L->s.mode == CW_LIGHTING_CLUSTERED;
+  if (!clustered && !L->sun) {
+    if (L->marked) mark_walk(&ctx->scene3d->base, false, false);
+    L->marked = false;
+    L->ix_on = -1;
+    L->ix_scene = NULL;
+    return;
+  }
+  if (ctx->scene3d->auto_update) t3_object_update_matrix_world(ctx->scene3d, false);
+  if (L->ix_scene != ctx->scene3d) L->ix_on = -1;
+  static int stale = -1; /* CW_TEST_LIGHTS_STALE=1 (a test control): the first index is kept */
+  if (stale < 0) stale = getenv("CW_TEST_LIGHTS_STALE") != NULL;
+  if (!stale || L->ix_scene != ctx->scene3d) index_build(L, ctx->scene3d);
+  /* the parts as most views want them: cluster, and csm with a sun (a view
+   * whose sun is on other layers, or whose cascades cannot be made, marks
+   * again for itself) */
+  L->materials = index_mark(L, clustered, L->sun != NULL);
+  L->marked = true;
+  if (clustered) take_lights(L);
+}
+
+/* The cluster part's textures before this view's are made: the materials are marked
+ * before the shadow draws now, so the casters' programs carry the part, and its
+ * hook leaving a texture unset skips the draw (the first frame's cascades and
+ * tiles were drawn with no casters, then kept as unchanged) */
+static void first_inputs(lighting *L, cw_pass_ctx *ctx) {
+  if (!L->light_tex) {
+    L->light_tex = t3_data_texture_new_typed(16, ROWS, NULL, T3_FLOAT_TYPE);
+    memset(L->light_tex->pixels, 0, (size_t)16 * ROWS * 4 * sizeof(float));
+  }
+  if (!L->rec_tex || !L->item_tex) {
+    int rw, iw;
+    cw_froxel_grid_textures(L->grid, &L->rec_tex, &rw, &L->item_tex, &iw);
+  }
+  if (!L->shadow_tex) {
+    if (!L->atlas) L->atlas = cw__atlas_new();
+    cw__atlas_update(L->atlas, ctx, NULL, 0, L->s.shadow_atlas_size, 0, true, NULL);
+    L->shadow_tex = cw__atlas_texture(L->atlas);
+    L->atlas_px = (float)(L->shadow_tex ? L->shadow_tex->width : 1);
+  }
+}
+
 static void pass_lights(cw_pass_ctx *ctx, void *user) {
   CW_PROFILE_SCOPE("lighting.pass");
   lighting *L = user;
   double t0 = wall_ms(), tg = 0, tb = 0, tt = 0;
-  give_back(L);
   if (getenv("CW_LIGHTING_TRACE") && ctx->renderer) { const char *e = t3_renderer_last_error(ctx->renderer); if (e && *e) cw_info("three.c: %s", e); }
   memset(&L->stats, 0, sizeof L->stats);
-  t3_light *sun = L->sun_next;
-  cw__csm_cfg cfg = L->cfg_next;
-  L->sun_next = NULL; /* (its node registers it again next frame) */
-  if (!ctx->renderer || !ctx->camera || !ctx->scene3d) return;
-  bool clustered = L->s.mode == CW_LIGHTING_CLUSTERED;
-  if (sun && !(sun->base.layers & ctx->camera->base.layers)) sun = NULL;
-  if (!clustered && !sun) {
-    if (L->marked) {
-      mark_scene(ctx->scene3d, false, false);
-      L->marked = false;
-    }
+  if (!ctx->renderer || !ctx->camera || !ctx->scene3d) {
+    give_back(L);
+    L->sun_next = NULL;
     return;
   }
+  if (L->frame_done != ctx->frame + 1 || L->frame_pipe != ctx->pipeline || L->frame_scene != ctx->scene3d) {
+    frame_part(L, ctx);
+    L->frame_done = ctx->frame + 1;
+    L->frame_pipe = ctx->pipeline;
+    L->frame_scene = ctx->scene3d;
+  }
+  bool clustered = L->s.mode == CW_LIGHTING_CLUSTERED;
+  t3_light *sun = L->sun;
+  if (sun && !(L->sun_layers & ctx->camera->base.layers)) sun = NULL;
+  if (!clustered && !L->sun) return;
   if (L->hooked != ctx->renderer) {
     cw_shading_part(ctx->renderer, PART, fill_cluster, L);
     cw_shading_part(ctx->renderer, "csm", fill_csm, L);
@@ -350,35 +517,68 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
     cw_shading_part_batching(ctx->renderer, "csm", L->s.batching);
     L->batching = L->s.batching;
   }
-  if (ctx->scene3d->auto_update) t3_object_update_matrix_world(ctx->scene3d, false);
-  /* the cascaded sun: drawn by the csm part, so out of three.c's list */
+  /* the cascaded sun: drawn by the csm part, so out of three.c's list (it
+   * stays out for the frame's other views; a view without cascades gives it
+   * back) */
   bool csm = false;
+  /* GL: the engine's own passes ran since three.c last drew (in split screen the
+   * previous view's post chain): three.c's idea of what is bound (its vertex
+   * array, programs, textures) is stale before the cascades and the atlas draw.
+   * The cascades of a second view drew with another pass's vertex array (no
+   * index buffer: a crash in the driver). */
+  if (cw_gpu_backend() != CW_GPU_WEBGPU) t3_renderer_reset_bindings(ctx->renderer);
+  if (clustered) first_inputs(L, ctx);
   if (sun) {
     if (!L->csm) L->csm = cw__csm_new();
     shadow_span(false);
-    csm = cw__csm_update(L->csm, ctx, sun, &cfg);
+    csm = cw__csm_update(L->csm, ctx, sun, &L->cfg);
     shadow_span(true);
     if (csm) {
-      taken t = { sun, sun->base.layers };
-      t3_retain(sun);
-      cw_array_push(&L->taken, t);
-      sun->base.layers = 0;
+      if (!L->sun_taken) {
+        t3_retain(sun);
+        sun->base.layers = 0;
+        L->sun_taken = true;
+      }
       cw__csm_info st;
       cw__csm_stats(L->csm, &st);
       L->stats.cascades = st.cascades;
       L->stats.cascades_rendered = st.rendered;
     }
   }
+  if (!csm && L->sun_taken) {
+    L->sun->base.layers = L->sun_layers;
+    t3_release(L->sun);
+    L->sun_taken = false;
+  }
+  int on = clustered | csm << 1;
+  if (on != L->ix_on) {
+    /* this view's parts differ from the frame's: every material again (the
+     * index may be out of date: a walk) */
+    L->stats.materials = mark_walk(&ctx->scene3d->base, clustered, csm);
+    L->ix_on = -1;
+  } else
+    L->stats.materials = L->materials;
   if (!clustered) {
-    L->stats.materials = mark_scene(ctx->scene3d, false, csm);
-    L->marked = true;
     L->stats.cpu_ms = (float)(wall_ms() - t0);
     return;
   }
+  /* this view's clustered lights: the taken ones shown here, on its layers;
+   * the forward ones only counted */
   cw_array_clear(&L->lights);
-  int taken0 = L->taken.count;
-  gather(L, &ctx->scene3d->base, ctx->camera->base.layers);
-  for (int i = taken0; i < L->taken.count; i++) L->taken.data[i].light->base.layers = 0;
+  uint32_t cam_layers = ctx->camera->base.layers;
+  for (int i = 0; i < L->taken.count; i++) {
+    const taken *tk = &L->taken.data[i];
+    t3_light *l = tk->light;
+    if (!(tk->layers & cam_layers) || !shown_in(&l->base, ctx->scene3d)) continue;
+    /* a dark light lights nothing (and is out of three.c's list too) */
+    if (!(l->intensity > 0 && (l->color.r > 0 || l->color.g > 0 || l->color.b > 0))) continue;
+    cl_light c = { l, l->base.cast_shadow && l->shadow, 0, l->base.id };
+    cw_array_push(&L->lights, c);
+  }
+  for (int i = 0; i < L->ix_lights.count; i++) {
+    const t3_light *l = L->ix_lights.data[i];
+    if (!clusters(L, l) && (l->base.layers & cam_layers) && shown_in(&l->base, ctx->scene3d)) L->stats.forward++;
+  }
   tg = wall_ms();
   int n = L->lights.count;
   if (n > L->s.max_lights) {
@@ -398,7 +598,10 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
   }
   qsort(L->lights.data, (size_t)n, sizeof *L->lights.data, cmp_light);
   /* the light texture: view-space data, one column a light */
+  /* (never narrower than it was: split screen views differ in light counts, and a
+   * texture made again each view would cost WebGPU every bind group that samples it) */
   int w = pow2_at_least(CW_MAX(n, 16));
+  if (L->light_tex && L->light_tex->width > w) w = L->light_tex->width;
   if (!L->light_tex || L->light_tex->width != w) {
     if (L->light_tex) t3_release(L->light_tex);
     L->light_tex = t3_data_texture_new_typed(w, ROWS, NULL, T3_FLOAT_TYPE);
@@ -514,13 +717,10 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
   L->stats.clustered = n;
   L->stats.clustered_spots = spots;
   cw_froxel_grid_stats(L->grid, &L->stats.grid);
-  double tm = wall_ms();
-  L->stats.materials = mark_scene(ctx->scene3d, true, csm);
-  L->marked = true;
   L->stats.cpu_ms = (float)(wall_ms() - t0);
   if (getenv("CW_LIGHTING_TRACE"))
-    cw_info("lighting: gather %.3f, lights %.3f, bin %.3f, textures %.3f, materials %.3f ms", tg - t0, tb - tg, tt - tb,
-            tm - tt, wall_ms() - tm);
+    cw_info("lighting: gather %.3f, lights %.3f, bin %.3f, textures %.3f ms (%d lights, %d meshes indexed)", tg - t0, tb - tg,
+            tt - tb, wall_ms() - tt, L->ix_lights.count, L->ix_meshes.count);
 }
 
 /* ── LightingSettings ───────────────────────────────────────────────── */

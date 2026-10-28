@@ -2871,6 +2871,30 @@
     "note": "clustered lighting (cartwheel/lighting.h): a night street with 58 street lamps, 96 neon signs, 48 shop spot lights and flickering muzzle flashes binned into r186 ClusteredLighting clusters on the CPU and shaded with r186 BRDF per cluster, and 4 floodlights whose shadows are tiles of the shadow atlas; the binned lists hash equal on every host and backend. Control: FORWARD (three.c lights at most 8 of a kind: nothing clustered, the image differs)"
   },
   {
+    "name": "lighting-changes",
+    "webgpu": true,
+    "app": "lighting_changes",
+    "frames": 36,
+    "maxGt16": 0.003,
+    "minColors": 50,
+    "fields": ["lc.tick", "lc.checks", "lc.mismatch", "lc.remark", "lc.cascades_bad", "lc.clustered"],
+    "expect": { "lc.checks": 35, "lc.mismatch": 0, "lc.remark": 1, "lc.cascades_bad": 0, "lc.clustered": 3 },
+    "controlEnv": { "CW_TEST_LIGHTS_STALE": "1" },
+    "note": "the clustered lighting pass follows a changing scene in two-view split screen with a cascaded sun: node lights, one shown in the first view only, and lights a game adds with three.c directly (added, reparented, hidden with their parent, moved to another layer, removed, a node freed, shown again); after every frame the last view clustered exactly the expected lights and drew the sun's cascades, and a mesh whose material was swapped by a plain write carries the cluster and csm parts the next frame. Control: CW_TEST_LIGHTS_STALE=1 keeps the first scene index (later lights are missed)"
+  },
+  {
+    "name": "lighting-remark",
+    "webgpu": true,
+    "app": "lighting_changes",
+    "frames": 36,
+    "maxGt16": 0.003,
+    "minColors": 50,
+    "fields": ["lc.tick", "lc.checks", "lc.mismatch", "lc.remark", "lc.cascades_bad", "lc.clustered"],
+    "expect": { "lc.checks": 35, "lc.mismatch": 0, "lc.remark": 1, "lc.cascades_bad": 0, "lc.clustered": 3 },
+    "controlEnv": { "CW_TEST_NO_REMARK": "1" },
+    "note": "lighting-changes with the material control: CW_TEST_NO_REMARK=1 marks materials on the first frame only, so the swapped-in material carries no shading parts (its program state is missing from the table) and lc.remark is 0"
+  },
+  {
     "name": "cluster-parity",
     "script": "tests/cluster-parity.mjs",
     "note": "night_street with 7 omni and 7 spot lights (NS_PARITY): CLUSTERED and FORWARD (three.c own lights) draw the same image on GL and on WebGPU (no pixel off by more than 2 levels); control: FORWARD with one light fewer must differ"

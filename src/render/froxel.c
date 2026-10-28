@@ -508,8 +508,11 @@ static int pow2_at_least(int v) {
   return p;
 }
 
+/* a texture at least h rows tall: one that is taller already is kept (split
+ * screen views differ in size and light counts; a texture made again each
+ * view would cost WebGPU every bind group that samples it) */
 static t3_texture *uint_tex(t3_texture *old, int w, int h) {
-  if (old && old->width == w && old->height == h) return old;
+  if (old && old->width == w && old->height >= h) return old;
   if (old) t3_release(old);
   return t3_data_texture_new_format(w, h, NULL, T3_RED_INTEGER_FORMAT, T3_UNSIGNED_INT_TYPE);
 }
@@ -520,7 +523,7 @@ void cw_froxel_grid_textures(cw_froxel_grid *g, t3_texture **records, int *recor
     int cells = CW_MAX(g->cells, 1);
     int rw = CW_MIN(cells, RECORDS_W), rh = (cells + rw - 1) / rw;
     g->rec_tex = uint_tex(g->rec_tex, rw, rh);
-    memset(g->rec_tex->pixels, 0, (size_t)rw * rh * 4);
+    memset(g->rec_tex->pixels, 0, (size_t)rw * g->rec_tex->height * 4);
     if (g->cells) memcpy(g->rec_tex->pixels, g->records, (size_t)g->cells * 4);
     g->rec_tex->version++;
     int texels = CW_MAX((g->item_count + 1) / 2, 1);
