@@ -169,7 +169,10 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   // texel rows top row first on both backends (three.c's GL targets and the WebGPU copy alike)
   const dSize = refrSize.xy;
   const dTc = clamp(floor(uvS.mul(dSize)), vec2(0), dSize.sub(1));
-  const dz = textureLoad(refrDepth, ivec2(int(dTc.x), int(dTc.y))).x;
+  // (taken to GL's [0, 1] range at once: the WebGPU copy holds 3e38 where nothing was drawn, and any use of that
+  // raw value can overflow to inf; inf times a mix weight of 0 is NaN, and a NaN in one channel turns that channel
+  // black. Every later use reads dz, never the texel.)
+  const dz = min(textureLoad(refrDepth, ivec2(int(dTc.x), int(dTc.y))).x, 1);
   // the planar targets' depth is GL's window depth on both backends (three.c remaps WebGPU's clip z), and suv
   // reads them top row first
   // (clamped under 1: the WebGPU copy holds 3e38 where nothing was drawn, and the oblique projection's far plane
@@ -278,12 +281,16 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const hn = clamp(positionWorld.y.sub(dbg.y).div(dbg.z.sub(dbg.y)), 0, 1).mul(65535);
   const hi = floor(hn.div(256)), lo = floor(hn.sub(hi.mul(256)));
   const enc = sRGBTransferEOTF(vec3(hi.div(255), lo.div(255), 1));
-  // debug view REFRACTION_DEPTH: R = the vertical depth over 20 m, G = the raw depth texel, B = hit
+  // debug view REFRACTION_DEPTH: R = the vertical depth over 20 m, G = the window depth (1: nothing drawn), B = hit
   const encZ = sRGBTransferEOTF(vec3(clamp(zDepth.div(20), 0, 1), dz, hit));
   // from under the water the surface is drawn as computed here, unlit: the scene's lights and environment shading a
   // surface from its back side are not what the eye sees through it (and the environment's lower half is not water)
   const belowOut = vec4(mix(bodyU, above, trU).mul(float(1).sub(foamV)).add(vec3(0.5, 0.6, 0.6).mul(lit).mul(foamV)), 1);
   // (alpha 1: the post chain reads the scene target's alpha, and the lit output's is not 1 on every backend)
+  // (both sides finite: belowOut is built from clamped reads. The lit output cannot go in a select here: r186's
+  // shadow pass then stops drawing the caster with its own material)
   const shaded = mix(output, belowOut, under);
-  mat.outputNode = mix(shaded, vec4(mix(enc, encZ, step(1.5, dbg.x)), 1), step(0.5, dbg.x));
+  // (select, never mix by a 0 / 1 weight, for the debug views: WGSL leaves inf and NaN arithmetic to the
+  // implementation, so a side not shown that overflows would reach the picture as inf * 0 = NaN)
+  mat.outputNode = select(dbg.x.greaterThan(0.5), vec4(select(dbg.x.greaterThan(1.5), encZ, enc), 1), shaded);
 }
