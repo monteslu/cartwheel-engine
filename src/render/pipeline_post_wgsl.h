@@ -147,8 +147,13 @@ WGSL_DECL WGSL_AO = S(
     let pl = view_pos_px(q - vec2i(1, 0));
     let pu = view_pos_px(q + vec2i(0, 1));
     let pd = view_pos_px(q - vec2i(0, 1));
-    let dx = select(P - pl, pr - P, abs(pr.z - P.z) < abs(P.z - pl.z));
-    let dy = select(P - pd, pu - P, abs(pu.z - P.z) < abs(P.z - pd.z));
+    /* the smaller depth step of the two sides; at the frame's edge the side
+     * outside it is never taken (pipeline_post.c AO_FS) */
+    let lim = vec2i(u.u_proj_scale.zw) - 1;
+    let xr = q.x >= lim.x || (q.x > 0 && abs(pl.z - P.z) <= abs(pr.z - P.z));
+    let yr = q.y >= lim.y || (q.y > 0 && abs(pd.z - P.z) <= abs(pu.z - P.z));
+    let dx = select(pr - P, P - pl, xr);
+    let dy = select(pu - P, P - pd, yr);
     var N = normalize(cross(dx, dy));
     let V = normalize(-P);
     if (dot(N, V) < 0.0) { N = -N; }
@@ -697,8 +702,9 @@ WGSL_DECL WGSL_VIEW = S(
     if (u.u_view == 2) {
       let P = vpos(q); let pr = vpos(q + vec2i(1, 0)); let pl = vpos(q - vec2i(1, 0));
       let pu = vpos(q + vec2i(0, 1)); let pd = vpos(q - vec2i(0, 1));
-      let dx = select(P - pl, pr - P, abs(pr.z - P.z) < abs(P.z - pl.z));
-      let dy = select(P - pd, pu - P, abs(pu.z - P.z) < abs(P.z - pd.z));
+      let lim = vec2i(u.u_size) - 1;
+      let dx = select(pr - P, P - pl, q.x >= lim.x || (q.x > 0 && abs(pl.z - P.z) <= abs(pr.z - P.z)));
+      let dy = select(pu - P, P - pd, q.y >= lim.y || (q.y > 0 && abs(pd.z - P.z) <= abs(pu.z - P.z)));
       var N = normalize(cross(dx, dy));
       if (dot(N, -P) < 0.0) { N = -N; }
       return vec4f(N * 0.5 + 0.5, 1.0);
