@@ -358,7 +358,7 @@ static bool r_start(cw_remote *r) {
   }
   char *path = cw__json_escape(r->d.cart);
   char *args = malloc(strlen(path) + 128);
-  /* the game is the dual GL + WebGPU cart (there is no GL-only one): romdev runs it on GL, as it ran the GL cart */
+  /* the game is the dual GL + WebGPU cart (the only kind): romdev runs it on GL, as it ran the GL cart */
   sprintf(args, "{\"platform\":\"wasmcart\",\"path\":%s,\"wgpu\":false,\"deterministicSeed\":%u}", path, r->d.seed);
   free(path);
   char err[2048];

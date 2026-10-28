@@ -14,9 +14,10 @@
 // gl.glClear, packed with wasmcart-pack) is flagged by check 1, and
 // check-imports passes it only when told --wgpu would not be given.
 //
-// The GL_ONLY apps (cw_add_app ... GL_ONLY: they draw with GL themselves and
-// get no cart at all) are listed: only test binaries that inspect GL by
-// design belong there.
+//   4. no app can opt out: the build has no GL-only marker (no CMake file
+//      says GL_ONLY; cw_add_app refuses unknown arguments), and the native
+//      GL test binary unit_pipeline has no cart target (not in carts.txt).
+//      Control: the scanner finds a marker planted in a sample text.
 //
 //   node tests/no-gl-only-carts.mjs
 import { spawnSync } from 'node:child_process';
@@ -112,19 +113,28 @@ if (/editor-cart/.test(cwp) || !/buildTarget\(dir, 'cart', proj, `\$\{proj\.app\
   fail('tools/cwproject.mjs: the project editor cart is not built in the dual tree (cart-wgpu)');
 else console.log('ok   the project editor cart builds in the dual tree (cart-wgpu) or is refused');
 
-// ── the GL_ONLY apps (no cart at all) ──
-const glOnlyApps = [];
+// ── 4. no app can opt out of the dual cart ──
+const MARK = /\bGL_ONLY\b/;
+const marked = [];
 const walk = (d) => {
   for (const f of readdirSync(d, { withFileTypes: true })) {
     if (['deps', 'build', 'out', 'node_modules', '.git', 'worktrees', '.cwbuild'].includes(f.name)) continue;
     const p = join(d, f.name);
     if (f.isDirectory()) walk(p);
-    else if (f.name === 'CMakeLists.txt' || f.name.endsWith('.cmake'))
-      for (const m of readFileSync(p, 'utf8').matchAll(/cw_add_app\(([^\s)]+)[^)]*\bGL_ONLY\)/g)) glOnlyApps.push(`${m[1]} (${relative(PROJ, p)})`);
+    else if ((f.name === 'CMakeLists.txt' || f.name.endsWith('.cmake')) && MARK.test(readFileSync(p, 'utf8'))) marked.push(relative(PROJ, p));
   }
 };
 walk(PROJ);
-console.log(`note GL_ONLY apps (native only, no cart): ${glOnlyApps.length ? glOnlyApps.join(', ') : 'none'}`);
+if (marked.length) fail(`a GL-only marker in the build: ${marked.join(', ')}`);
+else console.log('ok   no CMake file marks an app GL_ONLY');
+if (!MARK.test('cw_add_app(planted SOURCES main.c GL_ONLY)')) fail('CONTROL PASSED: the marker scan misses a planted GL_ONLY');
+else console.log('ok   control: a planted marker is found');
+const appCmake = readFileSync(join(ROOT, 'cmake', 'app.cmake'), 'utf8');
+if (!/if\(A_UNPARSED_ARGUMENTS\)\s*\n\s*message\(FATAL_ERROR/.test(appCmake)) fail('cmake/app.cmake: cw_add_app does not refuse unknown arguments');
+const listed = join(PROJ, 'build', 'cart-wgpu', 'carts.txt');
+if (PROJ === ROOT && existsSync(listed) && readFileSync(listed, 'utf8').split('\n').includes('unit_pipeline'))
+  fail('unit_pipeline (a native GL test binary) is a cart target');
+else if (PROJ === ROOT) console.log('ok   unit_pipeline is a native test binary, not a cart target');
 
 console.log(failed ? `no-gl-only-carts: ${failed} failure(s)` : 'no-gl-only-carts: ok');
 process.exit(failed ? 1 : 0);

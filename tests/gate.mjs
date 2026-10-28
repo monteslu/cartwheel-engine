@@ -53,15 +53,15 @@ const warnDropped = (name, hosts) => {
   if (miss.length) console.log(`WARN ${name}: --hosts asked for ${miss.join(', ')}, but this gate's hosts / skip list leaves them out: those legs did NOT run`);
 };
 const usesHosts = (hosts) => hosts.filter((h) => !(noChromium && h === 'chromium') && !(chromiumOnly && !['native', 'chromium'].includes(h)));
-// There is one cart per game: the dual GL + WebGPU one (build/cart-wgpu); there is no GL-only cart tree. The GL leg of a
+// There is one cart per game: the dual GL + WebGPU one (build/cart-wgpu). The GL leg of a
 // cart is the dual cart told to render with GL on romdev (run-cart --dual-gl, implied there); Chromium and wasmcart-native
 // run the WebGPU axis (--gpu webgpu).
-// An app built GL_ONLY makes no dual cart, so it has no cart at all: its romdev leg is dropped, said in the output
-// (a test app that draws with GL itself, such as unit_pipeline, runs natively only).
+// A native-only test binary (unit_pipeline: it reads GL framebuffers itself) has no cart target at all: its romdev leg
+// is dropped, said in the output.
 const dualCart = (app) => existsSync(join(PROJ, 'build', 'cart-wgpu', 'carts', `${app}.wasc`));
 const glHosts = (hosts, name, app) => usesHosts(hosts).filter((h) => !['chromium', 'wcnative'].includes(h)).filter((h) => {
   if (h !== 'romdev' || dualCart(app)) return true;
-  console.log(`note ${name}: no romdev leg (${app} is GL_ONLY: no dual cart, and there is no GL-only cart tree)`);
+  console.log(`note ${name}: no romdev leg (${app} is a native-only test binary: it has no cart)`);
   return false;
 });
 // --gates-file a.json,b.json (or CW_GATES_FILE): gate files in the project's tests/ in place of gates.json, so a

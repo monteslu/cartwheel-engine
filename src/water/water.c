@@ -24,7 +24,7 @@
 #if CW_WGPU
 #include "platform/wgpu.h"
 #else
-static inline bool cw__wgpu_on(void) { return false; } /* a GL-only build never renders with WebGPU */
+static inline bool cw__wgpu_on(void) { return false; } /* a build without WebGPU never renders with it */
 #endif
 
 #define TWO_PI 6.283185307179586

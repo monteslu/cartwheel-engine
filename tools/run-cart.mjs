@@ -113,7 +113,7 @@ const isFile = (p) => existsSync(p) && statSync(p).isFile();
 const appBinary = () => { try { return JSON.parse(readFileSync(join(PROJ, 'build/native/apps', `${app}.json`), 'utf8')).binary; } catch { return null; } };
 const nativeExe = args.exe ? resolve(args.exe) : ['samples', 'tests/unit', 'games', 'editor', `samples/${app}`].map((d) => join(PROJ, 'build/native', d, app)).find(isFile) ||
   appBinary() || join(PROJ, 'build/native/samples', app);
-// Every cart is the DUAL one (GL + WebGPU imports, build/cart-wgpu); there is no GL-only cart. A --gpu gl run on romdev or
+// Every cart is the DUAL one (GL + WebGPU imports, build/cart-wgpu). A --gpu gl run on romdev or
 // Chromium tells it to render with GL (wgpu: false; --dual-gl says so explicitly), wasmcart-native with WASMCART_NO_WGPU=1.
 const dualGl = ['romdev', 'chromium'].includes(host) && gpu === 'gl';
 if (args['dual-gl'] && !dualGl) { console.error('--dual-gl is a romdev or chromium --gpu gl run'); process.exit(2); }

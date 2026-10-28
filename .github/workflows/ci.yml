@@ -110,8 +110,8 @@ jobs:
       - name: Gates (native, software rendering)
         run: node tests/ci.mjs ${{ matrix.part }}
 
-  # Every app as the one cart a game ships: the dual GL + WebGPU cart (there is no
-  # GL-only cart tree; the gates run the dual cart on GL hosts for GL).
+  # Every app as the one cart a game ships: the dual GL + WebGPU cart (the gates
+  # run it on GL hosts for GL).
   carts:
     name: Carts (dual ${{ matrix.share }})
     runs-on: ubuntu-latest
@@ -154,7 +154,7 @@ jobs:
           missing=0
           while read -r c; do [ -f "build/carts/carts/$c.wasc" ] || { echo "missing: $c.wasc"; missing=1; }; done < share.txt
           exit $missing
-      # every cart it made is a dual GL + WebGPU cart, and the build refuses a GL-only one (a
-      # GL-only control cart must be caught; a cart tree with CW_WGPU=OFF must stop at configure)
-      - name: No GL-only carts
+      # every cart it made is a dual GL + WebGPU cart, nothing can opt out, and the build refuses
+      # a cart without WebGPU (the control cart must be caught; CW_WGPU=OFF stops at configure)
+      - name: Every cart is dual
         run: node tests/no-gl-only-carts.mjs

@@ -194,7 +194,7 @@ export async function hostCwpack(log) {
 export async function buildApp(ctx, platform) {
   // 'cart-wgpu': the dual cart (GL + WebGPU imports; the host picks, WebGPU where it has it)
   const dual = platform === 'cart-wgpu';
-  const cart = dual; // there is no GL-only cart build
+  const cart = dual; // every cart is the dual one
   const toolchain = cart ? join(ROOT, 'cmake/cart.cmake') : join(ROOT, 'cmake/export', `${platform}.cmake`);
   /* --three-builder: three.c's runtime program builder in the cart (a preview
    * while three.c's table catches up with new states; +4.7 MB, a hitch the
@@ -246,14 +246,13 @@ export async function buildApp(ctx, platform) {
 /**
  * The cart a cart export ships: the dual cart (GL + WebGPU imports: the host
  * runs it on WebGPU where it has WebGPU, else on GL), from the dual build
- * (build/cart-wgpu, the deps scripts/fetch-deps.sh fetches for it). An app
- * built GL_ONLY (it calls GL itself) has no dual cart, and there is no GL-only
- * cart: exporting it as a cart is an error.
+ * (build/cart-wgpu, the deps scripts/fetch-deps.sh fetches for it). A
+ * native-only test binary has no cart: exporting it as a cart is an error.
  * @returns {Promise<{name: string, binary: string, buildDir: string, dual: boolean}>}
  */
 export async function buildCart(ctx) {
   const dual = await buildDualOrNull(ctx);
-  if (!dual) throw new ExportError(`${ctx.app} is built GL_ONLY (cw_add_app ... GL_ONLY: it calls GL itself), so it has no dual cart, and there is no GL-only cart: export it natively, or draw through the engine and drop GL_ONLY`);
+  if (!dual) throw new ExportError(`${ctx.app} has no cart target (a native-only test binary): export it natively`);
   return { ...dual, dual: true };
 }
 async function buildDualOrNull(ctx) {

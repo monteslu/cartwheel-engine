@@ -18,7 +18,7 @@ The native SDKs come as Release builds and, with `-debug` in the name, Debug
 builds. Each tarball has a `.sha256` beside it: eleven SDKs, 22 files per
 release. There is one cart SDK: a game ships one cart, the dual one, which
 runs with WebGPU on WebGPU hosts and with GL on GL hosts (releases up to
-v0.18.0 also carried a GL-only `cart` SDK).
+v0.18.0 also carried an older `cart` SDK).
 
 Inside each SDK:
 

@@ -81,16 +81,9 @@ void cw__host_debug_update(void) {
   host_worker_chunks = (uint32_t)w;
 }
 
-/* true in an app built with cw_add_app(... GL_ONLY): it calls GL itself, so
- * it has no WebGPU build (the cart-wgpu tree makes no dual cart for it). A
- * native run asked for WebGPU refuses at startup, as asking for WebGPU where it
- * cannot be had always does, rather than trapping at the app's first GL call. */
-bool cw__app_gl_only(void);
-__attribute__((weak)) bool cw__app_gl_only(void) { return false; }
-
 #if !CW_CART
 /* the API a native run asks for: CW_GPU (gl | webgpu | wgpu) over the app's
- * desc; false (logged) on an unknown CW_GPU or WebGPU for a GL_ONLY app */
+ * desc; false (logged) on an unknown CW_GPU */
 static bool native_want(cw_gpu_api *want) {
   const char *env = getenv("CW_GPU");
   if (env && *env) {
@@ -100,12 +93,6 @@ static bool native_want(cw_gpu_api *want) {
       cw_error("CW_GPU=%s: use gl or webgpu", env);
       return false;
     }
-  }
-  if (*want == CW_GPU_WEBGPU && cw__app_gl_only()) {
-    cw_error("WebGPU was asked for (%s%s), but this app draws with GL itself (cw_add_app GL_ONLY) and has no "
-             "WebGPU build, as the cart-wgpu tree makes no dual cart for it: run it on GL (CW_GPU=gl)",
-             env && *env ? "CW_GPU=" : "", env && *env ? env : "cw_app_desc.gpu");
-    return false;
   }
   return true;
 }
@@ -281,13 +268,13 @@ bool cw__gpu_select(cw_gpu_api want, bool host_wgpu) {
   if (!native_want(&want)) return false;
   /* AUTO in an export build (CW_GPU_AUTO_WEBGPU: the export toolchains and
    * the prebuilt SDKs): WebGPU (Dawn), and GL if WebGPU does not start on
-   * this machine (cw__gpu_fallback_to_gl); GL_ONLY apps draw with GL. A
+   * this machine (cw__gpu_fallback_to_gl). A
    * development build keeps GL. An explicit request (CW_GPU,
    * cw_app_desc.gpu) gets that API or fails. */
 #ifndef CW_GPU_AUTO_WEBGPU
 #define CW_GPU_AUTO_WEBGPU 0
 #endif
-  auto_pick = CW_GPU_AUTO_WEBGPU && want == CW_GPU_AUTO && !cw__app_gl_only();
+  auto_pick = CW_GPU_AUTO_WEBGPU && want == CW_GPU_AUTO ;
   set_backend(want == CW_GPU_WEBGPU || auto_pick ? CW_GPU_WEBGPU : CW_GPU_GL);
 #endif
   return true;

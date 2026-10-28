@@ -12,7 +12,6 @@ shift
 BT="${BUILD_TYPE:-Release}"
 for t in ${@:-native cart-wgpu}; do
   case "$t" in
-    cart) echo "build-ab.sh: there are no GL-only carts: use cart-wgpu (the dual cart)" >&2; exit 2 ;;
     cart-wgpu) cmake -S "$ROOT" -B "$OUTDIR/cart-wgpu" -G Ninja -DCMAKE_BUILD_TYPE="$BT" -DCMAKE_TOOLCHAIN_FILE="$ROOT/cmake/cart.cmake" \
       -DCW_WGPU=ON -DCW_CWPACK="$OUTDIR/native/tools/cwpack/cwpack" >/dev/null ;;
     *) cmake -S "$ROOT" -B "$OUTDIR/native" -G Ninja -DCMAKE_BUILD_TYPE="$BT" >/dev/null ;;

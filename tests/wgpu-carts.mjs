@@ -23,9 +23,8 @@
 // must stop with the engine's message naming the feature and the GL call.
 //
 // The carts checked are the ones the build produces (build/cart-wgpu/carts.txt,
-// written by CMake; apps built with cw_add_app(... GL_ONLY) make no dual cart),
-// never whatever else lies in carts/. A native GL_ONLY app (input_demo) asked
-// for WebGPU must refuse at startup, naming GL_ONLY.
+// written by CMake: every app),
+// never whatever else lies in carts/.
 //
 // CW_PROJECT_ROOT=<games repository>: its build/cart-wgpu carts and its
 // tests/gates.json instead (no control or native check: those are the engine's).
@@ -118,6 +117,7 @@ if (argv[0] === '--one') {
     for (let i = 0; i < px.length && colours.size < minColors; i += 4) colours.add(px[i] | (px[i + 1] << 8) | (px[i + 2] << 16));
     if (colours.size < minColors) throw new Error(`the last frame has ${colours.size} colour(s) on ${gpu}, its gate wants ${minColors}`);
   } catch (e) {
+    if (process.env.CW_TRAP_STACK) console.log(e && e.stack); // CW_TRAP_STACK=1: the cart's wasm stack at a trap
     console.log(`RESULT ${String(e && e.message ? e.message : e).split('\n')[0]}`);
     code = 1;
   }
@@ -186,6 +186,7 @@ await Promise.all(Array.from({ length: jobs }, async () => {
     if (!r.ok) {
       const site = r.log.split('\n').find((l) => / called GL \(/.test(l));
       if (site) console.log(`     ${site.trim()}`);
+      if (process.env.CW_TRAP_STACK) console.log(r.log.split('\n').filter((l) => /^\s+at /.test(l)).slice(0, 25).join('\n'));
       failed.push(`${r.name}/${g}`);
     }
   }
@@ -204,26 +205,6 @@ if (PROJ === ROOT && (!only.length || only.includes('post_stack'))) {
   }
 }
 
-if (PROJ === ROOT && !only.length) {
-  // A GL_ONLY app run natively with CW_GPU=webgpu refuses at startup with a
-  // message naming GL_ONLY (src/platform/gpu.c), not a crash in its first GL call.
-  const glOnly = await new Promise((res) => {
-    const exe = join(ROOT, 'build', 'native', 'samples', 'input_demo');
-    if (!existsSync(exe)) return res({ ok: false, why: `${exe} not built (TARGETS=native scripts/build.sh)` });
-    const p = spawn(exe, [], { cwd: dirname(exe), env: { ...env, CW_GPU: 'webgpu', CW_FRAMES: '5', SDL_AUDIODRIVER: 'dummy' }, stdio: ['ignore', 'pipe', 'pipe'] });
-    let out = '';
-    p.stdout.on('data', (d) => (out += d));
-    p.stderr.on('data', (d) => (out += d));
-    const t = setTimeout(() => p.kill('SIGKILL'), 60000);
-    p.on('close', (code, sig) => {
-      clearTimeout(t);
-      const ok = code === 1 && !sig && /has no WebGPU build/.test(out) && /GL_ONLY/.test(out);
-      res({ ok, why: `exit ${code ?? sig}: ${out.trim().split('\n').slice(-2).join(' | ')}` });
-    });
-  });
-  console.log(`${glOnly.ok ? 'ok  ' : 'FAIL'} native GL_ONLY input_demo refuses CW_GPU=webgpu${glOnly.ok ? '' : ': ' + glOnly.why}`);
-  if (!glOnly.ok) failed.push('native-gl-only');
-}
 guard.finish();
 console.log(`wgpu-carts: ${todo.length - failed.filter((f) => f.includes('/')).length}/${todo.length} dual cart runs (${gpus.join(' + ')}) passed` +
   (failed.length ? `; failed: ${failed.join(' ')}` : ''));

@@ -2,8 +2,7 @@
 # Build the native tree (build/native) and the cart tree (build/cart-wgpu):
 # every app as a dual GL + WebGPU cart (cartwheel/gpu.h) that renders with
 # WebGPU on a WebGPU host and with GL on a GL host, so one cart tests both.
-# There is no GL-only cart tree: test GL by running the dual cart on a GL
-# host (romdev wgpu:false, tools/run-cart.mjs --dual-gl, wasmcart-libretro).
+# Test GL by running the dual cart on a GL host (romdev wgpu:false, tools/run-cart.mjs --dual-gl, wasmcart-libretro).
 #   BUILD_TYPE=Debug scripts/build.sh    TARGETS="native" scripts/build.sh
 #   TARGETS="cart-wgpu" scripts/build.sh
 # NINJA_JOBS=<n> caps ninja's parallel jobs (default: ninja's own).
@@ -17,7 +16,6 @@ JOBS=(); [ -n "${NINJA_JOBS:-}" ] && JOBS=(-j "$NINJA_JOBS")
 for t in ${TARGETS:-native cart-wgpu}; do
   case "$t" in
     native|cart-wgpu) ;;
-    cart) echo "scripts/build.sh: there is no GL-only cart tree (build/cart) any more: build cart-wgpu, the dual cart, and run it on a GL host for GL" >&2; exit 2 ;;
     *) echo "scripts/build.sh: unknown target $t (native, cart-wgpu)" >&2; exit 2 ;;
   esac
   if [ "$t" = cart-wgpu ] && ! { [ -d "$ROOT/deps/wasmcart-wgpu/wgpu-wasi" ] && [ -d "$ROOT/deps/emdawnwebgpu/webgpu" ]; }; then
@@ -32,7 +30,7 @@ for t in ${TARGETS:-native cart-wgpu}; do
   fi
   ninja -C "$ROOT/build/$t" "${JOBS[@]}"
   ninja -C "$ROOT/build/$t" -t cleandead >/dev/null # outputs of targets that no longer exist (a removed sample)
-  # a cart no target packs any more (a removed sample, a GL_ONLY app) must
+  # a cart no target packs any more (a removed sample) must
   # not linger in carts/: tools would still find and run it
   if [ -f "$ROOT/build/$t/carts.txt" ] && [ -d "$ROOT/build/$t/carts" ]; then
     for f in "$ROOT/build/$t/carts/"*.wasc; do
