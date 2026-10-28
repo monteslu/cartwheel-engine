@@ -482,7 +482,7 @@ For bullet holes and footprints, spawn decals and forget them: give each a `max_
 
 The cut is the same on every host, bit for bit, so a replay or a networked game shows every hole in the same place.
 
-Samples: `samples/fx_particles` (a fountain colliding with depth, sparks, sorted smoke, mesh debris, an attracted ring, mesh-surface emission, a Trail3D ribbon), `samples/fx_collide` (particles coming to rest on a table they can see), `samples/fx_decals` (scorch over steps, an arrow over a ramp, cracks wrapping a sphere, sheet splats, 240 culled splats), `samples/fx_mesh_decals` (mesh mode: a badge and paint on a walking character, a crack on a glass pane, a glow on a spinning crate, pooled bullet holes; `fx_mesh_decals_lit` is the same scene under clustered lighting), `samples/fx_lit_decals` (stickers in the dark, under a lamp and in the sun, and badges on two characters).
+Samples: `samples/fx_particles` (a fountain colliding with depth, sparks, sorted smoke, mesh debris, an attracted ring, mesh-surface emission, a Trail3D ribbon), `samples/fx_collide` (particles coming to rest on a table they can see), `samples/fx_decals` (scorch over steps, an arrow over a ramp, cracks wrapping a sphere, sheet splats, 240 culled splats), `samples/decal_walls` (about two hundred stains from one sheet on the faces of a side-on cliff, through the full post stack; GL and WebGPU draw the same picture), `samples/fx_mesh_decals` (mesh mode: a badge and paint on a walking character, a crack on a glass pane, a glow on a spinning crate, pooled bullet holes; `fx_mesh_decals_lit` is the same scene under clustered lighting), `samples/fx_lit_decals` (stickers in the dark, under a lamp and in the sun, and badges on two characters).
 
 ## The showcase
 

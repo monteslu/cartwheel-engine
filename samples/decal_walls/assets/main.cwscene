@@ -1,0 +1,39 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.45, 0.55, 0.7, 1)
+ambient_energy = 0.2
+sky_color = color(0.6, 0.7, 0.9, 1)
+ground_color = color(0.35, 0.3, 0.25, 1)
+hemi_energy = 0.4
+
+# the post stack a side-on platformer uses: tone mapping, ambient occlusion, bloom (no MSAA: WebGPU cannot
+# multisample an HDR scene in compatibility mode, so with it GL alone would smooth the edges)
+[node name="Post" parent="." type="PostProcess"]
+tonemap = ACES_FILMIC
+ssao = true
+ssao_radius = 0.8
+bloom = true
+bloom_intensity = 0.08
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+rotation = vec3(-0.9, 0.35, 0)
+energy = 2.5
+shadow = true
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 4, 16)
+rotation = vec3(-0.12, 0, 0)
+fov = 40
+near = 0.5
+far = 400
+
+# the ground the columns stand in
+[node name="Ground" parent="." type="MeshInstance3D"]
+position = vec3(0, -3, 0)
+size = vec3(40, 4, 3)
+color = color(0.36, 0.32, 0.28, 1)
+roughness = 0.95
+receive_shadow = true
