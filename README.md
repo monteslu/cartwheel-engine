@@ -137,12 +137,12 @@ GL + WebGPU one, `build/cart-wgpu/carts/<app>.wasc`, built with wasi-sdk. It
 imports both APIs and renders with WebGPU where the host offers it, GL
 otherwise, so the same cart tests both backends: run it on a GL host (romdev
 `wgpu:false`, a browser without WebGPU, wasmcart-native with
-`WASMCART_NO_WGPU=1`, wasmcart-libretro) for GL. There is no GL-only cart. The
+`WASMCART_NO_WGPU=1`, wasmcart-libretro) for GL. Every cart is this one. The
 cart build needs `deps/wasmcart-wgpu` and `deps/emdawnwebgpu` (`fetch-deps.sh`
 fetches both) and packs assets with the native tree's
-`build/native/tools/cwpack/cwpack`, so build native first. An app marked
-`GL_ONLY` (it calls GL itself, such as the editor) has no cart in this
-build.
+`build/native/tools/cwpack/cwpack`, so build native first. Every app, the
+editor included, draws through the engine and gets the dual cart; no app can
+opt out.
 
 ```sh
 scripts/build.sh
@@ -233,8 +233,9 @@ A sample:
    app's callbacks (or `cw_scene_app` for a scene tree). Put its files in
    `samples/<name>/assets/`.
 2. Add `cw_add_app(<name> SOURCES <name>/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/<name>/assets)`
-   to `samples/CMakeLists.txt`. `GL_ONLY` keeps an app that calls GL itself
-   out of the dual cart build.
+   to `samples/CMakeLists.txt`. Draw through the engine (the 2D renderer, the
+   UI, the 3D pipeline, `cw_gpu_clear_window`, `cw_gpu_read_window`), never
+   with GL calls: every app is a dual GL + WebGPU cart.
 3. Add a gate to `tests/gates.json`: `name`, `app`, `frames`, optionally an
    `input` script, the named `fields` that must agree, and a control.
 4. If it draws 3D materials, run `node tools/programs.mjs <name> --gates` to

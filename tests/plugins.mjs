@@ -31,8 +31,9 @@
 //      the plugin compiled in) on romdev: the plugin is there, the scene opens,
 //      the inspector plugin renders, disable/enable work (disabled, the
 //      scene is refused: the control for "compiled in"). The game cart is
-//      the dual one, run on GL; the editor cart is a GL one (the editor
-//      draws with GL itself), built only by `cwproject build <dir> editor`
+//      the dual one, run on GL, and so is the editor cart (built in the dual
+//      tree by `cwproject build <dir> editor`, run on GL); the stock
+//      editor.wasc refuses the same scene (the type is not there)
 // Every check that could pass by accident has a control that MUST fail.
 //
 //   node tests/plugins.mjs      (romdev on 127.0.0.1:7331; wasmcart-native beside the checkout)
@@ -54,7 +55,7 @@ const PROJ = join(OUT, 'proj');
 const CWPROJECT = join(ROOT, 'tools/cwproject.mjs');
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
-for (const f of [EDITOR, join(ROOT, 'build/cart-wgpu/carts/plugin_demo.wasc')])
+for (const f of [EDITOR, join(ROOT, 'build/cart-wgpu/carts/plugin_demo.wasc'), join(ROOT, 'build/cart-wgpu/carts/editor.wasc')])
   if (!existsSync(f)) { console.log(`FAIL missing ${f}: run scripts/build.sh`); process.exit(1); }
 
 let failed = 0;
@@ -143,7 +144,7 @@ async function romdev(tool, a, session) {
 async function romdevEditor(wasc, fn) {
   const session = `cw-plugins-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
   try {
-    await romdev('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: wasc, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
+    await romdev('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, wgpu: false, path: wasc, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
     await romdev('frame', { op: 'step', frames: 30 }, session);
     const req = async (text) => {
       const r = await romdev('wasm', { op: 'command', text, maxFrames: 120 }, session);
@@ -446,7 +447,7 @@ try {
       JSON.stringify(r).includes('/root/Main/Table'), JSON.stringify(state) + JSON.stringify(r).slice(0, 300));
   } finally { await romdev('host', { op: 'shutdown' }, session).catch(() => {}); }
   const ce = cwproject('editor');
-  const edCart = join(PROJ, '.cwbuild/editor-cart/carts/plugin_demo_editor.wasc');
+  const edCart = join(PROJ, '.cwbuild/cart-wgpu/carts/plugin_demo_editor.wasc'); // the dual tree: there are no GL-only carts
   check('project build: the project editor cart with the plugin compiled in (cwproject build <dir> editor)', ce.ok && existsSync(edCart), ce.out.slice(-800));
   await romdevEditor(edCart, async (s) => {
     const list = await s.ed('plugin.list');
@@ -465,6 +466,15 @@ try {
     const on = await s.ed('plugin.enable name=turntable');
     const re2 = await s.ed('scene.open main.cwscene');
     check('cart editor: enable brings it back', on.ok && re2.ok, JSON.stringify([on, re2]));
+  });
+  // the stock editor cart has no Turntable: the same scene is refused
+  const text = readFileSync(join(ROOT, 'samples/plugin_demo/main.cwscene'), 'utf8');
+  await romdevEditor(join(ROOT, 'build/cart-wgpu/carts/editor.wasc'), async (s) => {
+    await s.request(`vfs write plugin_scene.cwscene ${Buffer.from(text).toString('base64')}`).catch(() => null);
+    const w = await s.ed(`scene.check path=plugin_scene.cwscene`);
+    const opened = await s.ed('scene.open plugin_scene.cwscene');
+    control('the stock editor cart (no plugin) opening the scene', opened.ok, JSON.stringify([w, opened]));
+    check('the stock editor cart names the missing type', /Turntable/.test(opened.error || ''), JSON.stringify(opened));
   });
 } catch (e) { check('cart editor on romdev', false, e.stack); }
 

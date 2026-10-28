@@ -6,11 +6,11 @@
 // tools/scene-to-ed.mjs: scene.new, node.add / node.instance, node.set,
 // node.group, node.connect, anim.new / track_add / key_add, scene.save):
 //   1. natively (platformer3d_editor, CW_PROJECT = a copy of the game's
-//      assets WITHOUT level1.cwscene): every reply ok, and the saved file
-//      identical to the editor's canonical save of the hand-written level (so
-//      the content is the same node for node, value for value); the editor
-//      draws with GL itself (GL_ONLY), so it has no dual cart and there is no
-//      cart editor leg;
+//      assets WITHOUT level1.cwscene) and as a cart in romdev (the project
+//      layer, read back with `vfs export`): every reply ok, the two saved
+//      files byte-identical, and identical to the editor's canonical save of
+//      the hand-written level (so the content is the same node for node,
+//      value for value);
 //   2. the saved level PLAYS identically to the hand-written one: the
 //      game's full autopilot run (platformer3d_auto, 2150 frames,
 //      title -> level 1 -> level 2 -> end) with the editor-built level1 in
@@ -33,23 +33,26 @@ import { fileURLToPath } from 'node:url';
 import { sceneToEd } from '../tools/scene-to-ed.mjs';
 import { readImage, diffImages } from '../tools/lib/png.mjs';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
+import { wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'out', 'editor-level');
 const argv = process.argv.slice(2);
 const HOSTS = argv.includes('--hosts') ? argv[argv.indexOf('--hosts') + 1].split(',') : ['native', 'romdev', 'chromium', 'wcnative'];
+const port = process.env.ROMDEV_PORT || 7331;
 const P3D = join(ROOT, 'games/platformer3d/assets');
 const LEVEL = 'scenes/level1.cwscene';
 const SOURCE = process.env.CW_EDLEVEL_SOURCE || join(P3D, LEVEL); // the hand-written level
 const editorExe = join(ROOT, 'build/native/games/platformer3d_editor');
+const editorCart = join(ROOT, 'build/cart-wgpu/carts/platformer3d_editor.wasc');
 const gameApp = 'platformer3d_auto';
 const FRAMES = +(process.env.CW_EDLEVEL_FRAMES || 2150);
 const SHOT_FRAMES = [600]; // mid level 1 (frame-exact compare on wcnative)
 const FIELDS = ['tree.nodes', 'game.state', 'game.level', 'score', 'coins', 'gems', 'lives', 'deaths', 'checkpoint', 'timer', 'level.ticks',
   'player.jumps', 'player.double_jumps', 'player.dashes', 'player.floor', 'anim.state', 'player.pos', 'player.vel', 'cam.pos', 'props.hash',
   'phys.hash', 'state.hash', 'ticks'];
-for (const f of [editorExe, join(ROOT, 'build/native/games', gameApp), join(ROOT, 'build/cart-wgpu/carts', gameApp + '.wasc')])
+for (const f of [editorExe, editorCart, join(ROOT, 'build/native/games', gameApp), join(ROOT, 'build/cart-wgpu/carts', gameApp + '.wasc')])
   if (!existsSync(f)) { console.error('missing', f); process.exit(1); }
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
@@ -111,6 +114,39 @@ if (built.text !== canonical) {
 } else ok(`native: ${lines.length} commands built ${LEVEL} (${built.text.length} bytes), identical to the hand-written level's canonical form`);
 const ctl1 = buildNative('control-drop', ctlDrop), ctl2 = buildNative('control-moved', moved);
 if (!ctl1.text || !ctl2.text || ctl1.failed.length || ctl2.failed.length) bad('control builds did not complete');
+
+// 1b. the same script in the editor cart on romdev
+const S = `cw-editor-level-${process.pid}`;
+const call = async (tool, a) => {
+  const res = await fetch(`http://127.0.0.1:${port}/tool/${tool}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-romdev-session': S }, body: JSON.stringify(a) });
+  const t = await res.text();
+  try { return JSON.parse(t); } catch { return { raw: t }; }
+};
+const cmd = async (text) => (await call('wasm', { op: 'command', text })).reply;
+let cartText = null;
+if (HOSTS.includes('romdev')) {
+  await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, wgpu: false, path: editorCart, deterministicSeed: 1 });
+  await call('frame', { op: 'step', frames: 3 });
+  let n = 0;
+  for (const l of lines) {
+    const r = await cmd('ed64 ' + b64(l));
+    if (!r?.ok) { bad(`romdev: \`${l}\` failed: ${JSON.stringify(r).slice(0, 300)}`); if (++n > 5) break; }
+  }
+  const exp = await cmd('vfs export');
+  const archive = Buffer.from(exp?.base64 || '', 'base64');
+  for (let p = 7; p < archive.length;) {
+    const nl = archive.indexOf(10, p), name = archive.subarray(p, nl).toString();
+    const nl2 = archive.indexOf(10, nl + 1), len = +archive.subarray(nl + 1, nl2).toString();
+    if (name === LEVEL) cartText = archive.subarray(nl2 + 1, nl2 + 1 + len).toString();
+    p = nl2 + 1 + len;
+  }
+  await call('frame', { op: 'step', frames: 2 });
+  await call('frame', { op: 'screenshot', path: join(OUT, 'editor-romdev.png') });
+  await call('host', { op: 'shutdown' });
+  writeFileSync(join(OUT, "romdev-level1.cwscene"), cartText ?? "");
+  if (cartText !== built.text) bad('romdev: the cart editor saved a different ' + LEVEL + ' (vfs export)');
+  else ok('romdev: the editor cart built the same bytes (vfs export)');
+}
 
 // 2. play: the editor-built level against the hand-written one
 function runCart(args, env = {}) {
@@ -230,5 +266,5 @@ if (HOSTS.includes('wcnative') && get('wcnative', 'control-drop')) {
   if (px === 0) bad('CONTROL PASSED: wcnative control-drop end frame is identical');
   else ok(`control wcnative control-drop end frame differs as it must (${px})`);
 }
-console.log(fail ? `editor-level: ${fail} failures` : `ok   editor-level (level 1 rebuilt by ${lines.length} editor commands natively, plays identically on ${HOSTS.join(', ')}; controls fail)`);
+console.log(fail ? `editor-level: ${fail} failures` : `ok   editor-level (level 1 rebuilt by ${lines.length} editor commands on native + romdev, plays identically on ${HOSTS.join(', ')}; controls fail)`);
 process.exit(fail ? 1 : 0);

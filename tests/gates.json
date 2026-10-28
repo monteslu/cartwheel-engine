@@ -219,6 +219,7 @@
   {
     "name": "physics-determinism",
     "app": "physics_determinism",
+    "webgpu": true,
     "frames": 400,
     "minColors": 1,
     "controlFrames": 100,
@@ -239,6 +240,7 @@
   {
     "name": "physics-scaling",
     "app": "physics_determinism",
+    "webgpu": true,
     "frames": 400,
     "minColors": 1,
     "controlFrames": 100,
@@ -410,6 +412,7 @@
   {
     "name": "input-pad",
     "app": "input_demo",
+    "webgpu": true,
     "frames": 100,
     "input": "input-pad.json",
     "controlInput": "input-pad-control.json",
@@ -435,6 +438,7 @@
   {
     "name": "input-players",
     "app": "input_demo",
+    "webgpu": true,
     "frames": 40,
     "input": "input-players.json",
     "controlInput": "input-players-control.json",
@@ -452,6 +456,7 @@
   {
     "name": "input-players-hotplug",
     "app": "input_demo",
+    "webgpu": true,
     "frames": 40,
     "input": "input-players-hotplug.json",
     "controlInput": "input-players-control.json",
@@ -477,7 +482,7 @@
   {
     "name": "wcnative-pads",
     "script": "tests/wcnative-pads.mjs",
-    "note": "four virtual controllers (uinput) through wasmcart-native to the dual hello cart on GL, plugged in and out while it runs: each its own pad slot"
+    "note": "four virtual controllers (uinput) through wasmcart-native to the dual input_demo cart on GL, plugged in and out while it runs: each its own pad and player"
   },
   {
     "name": "web-pads",
@@ -487,6 +492,7 @@
   {
     "name": "input-keys",
     "app": "input_demo",
+    "webgpu": true,
     "frames": 62,
     "input": "input-keys.json",
     "controlInput": "input-keys-control.json",
@@ -510,6 +516,7 @@
   {
     "name": "input-pointer",
     "app": "input_demo",
+    "webgpu": true,
     "frames": 62,
     "input": "input-pointer.json",
     "controlInput": "input-pointer-control.json",
@@ -569,6 +576,7 @@
   {
     "name": "motion-demo",
     "app": "motion_demo",
+    "webgpu": true,
     "frames": 95,
     "input": "motion-demo.json",
     "controlInput": "motion-demo-control.json",
@@ -600,6 +608,7 @@
   {
     "name": "perf-nodes",
     "app": "perf_nodes",
+    "webgpu": true,
     "frames": 2,
     "minColors": 1,
     "fields": [
@@ -621,6 +630,7 @@
   {
     "name": "audio-mix",
     "app": "audio_mix",
+    "webgpu": true,
     "frames": 240,
     "fields": [
       "mix.hash",
@@ -653,6 +663,7 @@
   {
     "name": "audio-3d",
     "app": "audio_3d",
+    "webgpu": true,
     "frames": 722,
     "fields": [
       "sp.hash",
@@ -730,6 +741,7 @@
   {
     "name": "audio-play",
     "app": "audio_play",
+    "webgpu": true,
     "frames": 120,
     "fields": [
       "play.device",
@@ -1122,6 +1134,7 @@
   {
     "name": "physics3d-stack",
     "app": "physics3d_stack",
+    "webgpu": true,
     "frames": 240,
     "fields": [
       "phys.hash",
@@ -1168,6 +1181,7 @@
   {
     "name": "physics2d-joints",
     "app": "physics2d_joints",
+    "webgpu": true,
     "frames": 300,
     "fields": [
       "phys.hash",
@@ -1198,6 +1212,7 @@
   {
     "name": "character3d-course",
     "app": "character3d",
+    "webgpu": true,
     "frames": 900,
     "input": "character3d-input.json",
     "controlInput": "character3d-control.json",
@@ -1229,6 +1244,7 @@
   {
     "name": "character3d-auto",
     "app": "character3d_auto",
+    "webgpu": true,
     "frames": 900,
     "fields": [
       "mover.pos",
@@ -1285,6 +1301,7 @@
   {
     "name": "r2d-camera",
     "app": "r2d_camera",
+    "webgpu": true,
     "frames": 150,
     "assets": "samples/r2d_assets",
     "maxGt16": 0.002,
@@ -1311,6 +1328,7 @@
   {
     "name": "r2d-interop",
     "app": "r2d_interop",
+    "webgpu": true,
     "frames": 90,
     "assets": "samples/r2d_assets",
     "maxGt16": 0.003,
@@ -1319,6 +1337,7 @@
   {
     "name": "r2d-bench",
     "app": "r2d_bench",
+    "webgpu": true,
     "frames": 150,
     "assets": "samples/r2d_assets",
     "maxGt16": 0.005,
@@ -3426,6 +3445,7 @@
   {
     "name": "fx-perf",
     "app": "fx_perf",
+    "webgpu": true,
     "frames": 320,
     "maxGt16": 0.003,
     "fields": [
@@ -3790,6 +3810,7 @@
   {
     "name": "fx-decals",
     "app": "fx_decals",
+    "webgpu": true,
     "frames": 30,
     "maxGt16": 0.002,
     "fields": [
@@ -3814,6 +3835,7 @@
   {
     "name": "fx-decals-spin",
     "app": "fx_decals",
+    "webgpu": true,
     "frames": 90,
     "maxGt16": 0.002,
     "fields": [
@@ -4058,6 +4080,7 @@
   {
     "name": "vis-city-house",
     "app": "vis_city",
+    "webgpu": true,
     "frames": 450,
     "maxGt16": 0.003,
     "fields": [
@@ -4079,6 +4102,7 @@
   {
     "name": "vis-city-check",
     "app": "vis_city_check",
+    "webgpu": true,
     "frames": 720,
     "maxGt16": 0.003,
     "fields": [
@@ -4274,13 +4298,19 @@
     "note": "showcase with the day / night cycle running (half an hour a second) and the camera still circling. Control: the night segment's end"
   },
   {
+    "name": "no-gl-only-carts",
+    "script": "tests/no-gl-only-carts.mjs",
+    "note": "there are no GL-only carts: every cart the build trees hold imports both GL and WebGPU, check-imports refuses a cart checked without --wgpu, a cart tree configured with CW_WGPU=OFF stops at configure, the project editor cart builds in the dual tree or is refused; control: a GL-only cart made on the spot (gl.glClear only) must be caught"
+  },
+  {
     "name": "showcase-perf",
     "script": "tests/showcase-perf.mjs",
-    "note": "showcase_perf at 1920x1080 full quality (particles, decals and visibility included) through all five segments natively (showcase_perf is GL_ONLY: no cart): every segment's frame (GPU drained each frame) under 16.7 ms; per-pass GPU ms reported in out/perf/showcase-report.txt; control: an impossible 0.05 ms budget must fail"
+    "note": "showcase_perf at 1920x1080 full quality (particles, decals and visibility included) through all five segments on native, romdev, Chromium and wasmcart-native (the dual cart on GL): every segment's frame (GPU drained each frame) under 16.7 ms; per-pass GPU ms reported in out/perf/showcase-report.txt; control: an impossible 0.05 ms budget must fail"
   },
   {
     "name": "unit-editor",
     "app": "unit_editor",
+    "webgpu": true,
     "frames": 2,
     "minColors": 1,
     "fields": [
@@ -4302,6 +4332,7 @@
   {
     "name": "editor",
     "app": "editor",
+    "webgpu": true,
     "frames": 30,
     "maxGt16": 0.002,
     "fields": [
@@ -4328,7 +4359,7 @@
     "expect": {
       "editor.docs": 1,
       "editor.nodes": 11,
-      "editor.modules": 18,
+      "editor.modules": 19,
       "editor.command_errors": 0
     },
     "controlFrames": 30,
@@ -4340,6 +4371,7 @@
   {
     "name": "editor-session",
     "app": "editor_session",
+    "webgpu": true,
     "frames": 50,
     "maxGt16": 0.002,
     "fields": [
@@ -4379,6 +4411,7 @@
   {
     "name": "editor-mouse",
     "app": "editor",
+    "webgpu": true,
     "frames": 34,
     "input": "editor-mouse.json",
     "controlInput": "editor-mouse-control.json",
@@ -4639,7 +4672,7 @@
   {
     "name": "editor-play",
     "script": "tests/editor-play.mjs",
-    "note": "play-in-editor, the editor side: the native editor plays samples/play_demo natively and in romdev, driven over ed and by pointer only (edit a live property, step, inspect, keep it in the scene, crash, relaunch), each with a control that must fail"
+    "note": "play-in-editor, the editor side: the native editor plays samples/play_demo natively and in romdev, driven over ed and by pointer only (edit a live property, step, inspect, keep it in the scene, crash, relaunch), each with a control that must fail; the cart editor (the dual editor cart on GL) says Play is unavailable"
   },
   {
     "name": "unit-net",
@@ -4735,7 +4768,7 @@
   {
     "name": "editor-import",
     "script": "tests/editor-import.mjs",
-    "note": "drag a glTF in, see it imported, place it (in-app pointer session natively, and the same over the debug channel; the editor is GL_ONLY, so no cart legs; controls: session stopped before the drag, hidden node covers 0 pixels, corrupt glTF errors, refused delete)"
+    "note": "drag a glTF in, see it imported, place it (in-app pointer session on native, romdev, chromium, wcnative; the same over the debug channel native vs romdev, the dual editor cart on GL; controls: session stopped before the drag, hidden node covers 0 pixels, corrupt glTF errors, refused delete)"
   },
   {
     "name": "triggers",
@@ -4825,6 +4858,7 @@
   {
     "name": "editor-agent-ui",
     "app": "editor",
+    "webgpu": true,
     "frames": 60,
     "input": "editor-agent-ui.json",
     "controlInput": "editor-agent-ui-control.json",
@@ -5175,7 +5209,7 @@
   {
     "name": "plugins",
     "script": "tests/plugins.mjs",
-    "note": "a project plugin (samples/plugin_demo/plugins/turntable, copied to a fresh project) used without editing the engine tree: built by tools/cwproject.mjs (plugin libraries + the game), the game with the plugin's node type and debug command natively and on wasmcart-native; the native editor loads it (panel, inspector plugin, gizmo, commands), pointer-only session (panel row, gizmo radius drag = one undo step, inspector slider + Reverse), hot reload of edited editor + runtime code built outside the editor (a failing build keeps the old code), disable (refused while dirty, everything withdrawn, the scene refused naming the plugin, file unchanged, the game without it names the plugin), version mismatch refused by editor and build, a stale library refused at load; the cart project editor on romdev with the plugin compiled in; controls: non-Turntable node, unbuilt edit, presses removed, engine_api 2.0, code compiled for 1.9, the plugin disabled in the cart editor"
+    "note": "a project plugin (samples/plugin_demo/plugins/turntable, copied to a fresh project) used without editing the engine tree: built by tools/cwproject.mjs (plugin libraries + the game), the game with the plugin's node type and debug command natively and on wasmcart-native; the native editor loads it (panel, inspector plugin, gizmo, commands), pointer-only session (panel row, gizmo radius drag = one undo step, inspector slider + Reverse), hot reload of edited editor + runtime code built outside the editor (a failing build keeps the old code), disable (refused while dirty, everything withdrawn, the scene refused naming the plugin, file unchanged, the game without it names the plugin), version mismatch refused by editor and build, a stale library refused at load; the cart project editor on romdev with the plugin compiled in; controls: non-Turntable node, unbuilt edit, presses removed, engine_api 2.0, code compiled for 1.9, the plugin disabled in the cart editor, the stock editor cart"
   },
   {
     "name": "docs",
@@ -6044,6 +6078,7 @@
   {
     "name": "platformer2d",
     "app": "platformer2d",
+    "webgpu": true,
     "frames": 780,
     "fields": [
       "pf.hash",
