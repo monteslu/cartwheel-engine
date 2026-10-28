@@ -796,8 +796,12 @@ static void frame_body(double now) {
    * depends on the host's clock (native: frame / hz, a cart: the host's
    * milliseconds / 1000), so the same run summed different dts per host and
    * time-based state (a caption cue starting at 0.5 s) flipped a frame
-   * between hosts. Snap it: every host passes the same dt bit for bit. */
-  if (fabs(dt - p->fixed_dt) < p->fixed_dt * 1e-6) dt = p->fixed_dt;
+   * between hosts. Snap it: every host passes the same dt bit for bit. The
+   * same for a frame of a whole number of fixed steps (a 60 Hz frame of a
+   * 120 Hz game: cw.frame_dt differed in its last bit between native and
+   * the cart hosts). */
+  double whole = floor(dt / p->fixed_dt + 0.5);
+  if (whole >= 1 && whole <= 8 && fabs(dt - whole * p->fixed_dt) < p->fixed_dt * 1e-6) dt = whole * p->fixed_dt;
   p->last = now;
   p->frame_dt = dt;
   p->now = now - dbg.held;
