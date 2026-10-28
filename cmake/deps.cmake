@@ -361,10 +361,15 @@ target_compile_options(cw_kbts PRIVATE -O2 -w)
 #    cart). Native: native-dawn's C SDK (deps/native-dawn, dawn::webgpu_dawn).
 #    Carts: CW_WGPU=ON builds DUAL carts (gl + WebGPU imports, gpu_api 2) in
 #    their own tree (build/cart-wgpu, scripts/build.sh target cart-wgpu) with
-#    the wasmcart tier's wgpu-wasi kit and Dawn's emdawnwebgpu port; the
-#    plain cart tree stays GL-only. ─────────────────────────────────────
+#    the wasmcart tier's wgpu-wasi kit and Dawn's emdawnwebgpu port. Every
+#    cart is a dual one: there are no GL-only carts, and a cart tree
+#    configured with CW_WGPU=OFF stops here. ─────────────────────────────
 if(CW_CART)
-  option(CW_WGPU "dual GL + WebGPU carts (the wasmcart WebGPU tier)" OFF)
+  option(CW_WGPU "dual GL + WebGPU carts (the wasmcart WebGPU tier)" ON)
+  if(NOT CW_WGPU)
+    message(FATAL_ERROR "CW_WGPU=OFF in a cart build: there are no GL-only carts. Every cart is the dual GL + WebGPU "
+      "one (it renders with GL on a GL host): configure the cart tree with -DCW_WGPU=ON (scripts/build.sh, target cart-wgpu)")
+  endif()
 else()
   # native-dawn's prefix: deps/native-dawn for this machine, an export
   # toolchain's own for its target (cmake/export/common.cmake)

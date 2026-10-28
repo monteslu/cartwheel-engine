@@ -18,11 +18,12 @@
 // the shared libraries the native editor loads, in the native tree:
 //   .cwbuild/native/plugins/<name>/<name>_runtime.so, <name>_editor.so
 // (native and cart builds compile enabled runtime plugins into the game).
-// editor: the project editor as a cart, .cwbuild/editor-cart/carts/<app>_editor.wasc:
+// editor: the project editor as a dual cart, .cwbuild/cart-wgpu/carts/<app>_editor.wasc:
 // the editor with the project's enabled plugins compiled in (a cart cannot
-// load plugin code at runtime) and the project as its bundled files. The
-// editor draws with GL itself (GL_ONLY), so this tree is a GL one, built only
-// on request; a game's cart is always the dual one.
+// load plugin code at runtime) and the project as its bundled files, built
+// only on request in the game's cart tree. There are no GL-only carts: while
+// the project editor is built GL_ONLY (cmake/plugins.cmake) it gets no cart,
+// and this target is refused with that reason.
 //
 // stdout: the build's own lines, then one line per target:
 //   @result {"target":"native","ok":true,"path":".cwbuild/native/project/app"}
@@ -90,15 +91,17 @@ function run(c, a, cwd) {
   });
 }
 
-/** the build tree under .cwbuild/ of a target: the game's cart is the dual one (cart-wgpu)
- * @param {'native'|'cart'|'editor-cart'} target */
+/** the build tree under .cwbuild/ of a target: every cart is the dual one (cart-wgpu)
+ * @param {'native'|'cart'} target */
 const treeDir = (target) => (target === 'cart' ? 'cart-wgpu' : target);
+// the project editor's cw_add_app (cmake/plugins.cmake): GL_ONLY there means it has no cart
+const editorGlOnly = () => /cw_add_app\(\$\{ed\}[^)]*\bGL_ONLY\)/.test(readFileSync(join(ROOT, 'cmake', 'plugins.cmake'), 'utf8'));
 
 const launcher = spawnSync('ccache', ['--version'], { stdio: 'ignore' }).status === 0
   ? ['-DCMAKE_C_COMPILER_LAUNCHER=ccache', '-DCMAKE_CXX_COMPILER_LAUNCHER=ccache'] : [];
 
 
-/** @param {string} dir @param {'native'|'cart'|'editor-cart'} target @param {Record<string,string>} proj @param {string} [ninjaTarget] */
+/** @param {string} dir @param {'native'|'cart'} target @param {Record<string,string>} proj @param {string} [ninjaTarget] */
 async function buildTarget(dir, target, proj, ninjaTarget) {
   if (target !== 'native') {
     // a cart tree packs with the native tree's cwpack (a host tool): built
@@ -112,7 +115,7 @@ async function buildTarget(dir, target, proj, ninjaTarget) {
   return withBuildLock(join(dir, '.cwbuild', treeDir(target)), () => buildTargetLocked(dir, target, proj, ninjaTarget));
 }
 
-/** @param {string} dir @param {'native'|'cart'|'editor-cart'} target @param {Record<string,string>} proj @param {string} [ninjaTarget] */
+/** @param {string} dir @param {'native'|'cart'} target @param {Record<string,string>} proj @param {string} [ninjaTarget] */
 async function buildTargetLocked(dir, target, proj, ninjaTarget) {
   const bdir = join(dir, '.cwbuild', treeDir(target));
   const app = ninjaTarget || proj.app;
@@ -146,7 +149,11 @@ async function build() {
   if (!['native', 'cart', 'all', 'plugins', 'editor'].includes(which)) usage();
   if (which === 'editor') {
     if (!existsSync(join(dir, 'plugins'))) throw new Error('the project has no plugins/ directory: the stock editor cart (editor.wasc) is its editor');
-    const r = await buildTarget(dir, 'editor-cart', proj, `${proj.app}_editor`);
+    if (editorGlOnly()) {
+      console.log('@result ' + JSON.stringify({ target: 'editor', ok: false, error: 'the project editor is still built GL_ONLY (cmake/plugins.cmake), and there are no GL-only carts: no editor cart until it draws through the engine on GL and WebGPU' }));
+      process.exit(1);
+    }
+    const r = await buildTarget(dir, 'cart', proj, `${proj.app}_editor`);
     console.log('@result ' + JSON.stringify({ ...r, target: 'editor' }));
     process.exit(r.ok ? 0 : 1);
   }

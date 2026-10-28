@@ -6,13 +6,11 @@
 
 # ── cw_add_app(name SOURCES ... [ASSETS dir] [NET domain...] [PLUGINS dir] [NO_PLUGINS] [PROGRAMS table.txt...] [GL_ONLY]) ──
 # Native: an executable. Cart: <name>.wasm packed into <name>.wasc (with the
-# asset directory) by wasmcart-pack, after the import audit. GL_ONLY: an app
-# that renders with GL itself (not only through the engine's ported paths)
-# gets no cart: in the cart build (CW_WGPU, build/cart-wgpu, the dual cart)
-# its target is left out of the default build and packs no cart, so no cart
-# claims WebGPU it cannot draw with (there is no GL-only cart build; a
-# project's editor cart, tools/cwproject.mjs build <dir> editor, is the one
-# GL-only cart, built on request). Every
+# asset directory) by wasmcart-pack, after the import audit. Every cart is
+# the dual GL + WebGPU one: there are no GL-only carts. GL_ONLY is for a
+# native test binary that inspects GL itself by design (unit_pipeline): in
+# the cart build its target is left out of the default build and packs no
+# cart, and natively it refuses CW_GPU=webgpu. Every
 # cart a build packs is listed in <build>/carts.txt. NET lists the
 # hosts the cart may dial with wc_peer_open (the manifest net.domains grant);
 # without NET, a project's `net.domains` key in project.cwproj gives them.
