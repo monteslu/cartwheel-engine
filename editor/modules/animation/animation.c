@@ -312,18 +312,18 @@ static void init(void) {
   };
   cwed_command_register(&(cwed_command_desc){ .name = "anim.new", .title = "New Animation", .params = new_p, .flags = U,
     .doc = "Add an empty animation to an AnimationPlayer (stored in the scene).",
-    .example = "anim.new player=Anim name=spin length=1.6 loop=LOOP", .exec = new_exec, .undo = undo, .free_state = free_state });
+    .example = "node.add type=AnimationPlayer parent=. name=Anim\nanim.new player=Anim name=spin length=1.6 loop=LOOP", .exec = new_exec, .undo = undo, .free_state = free_state });
   cwed_command_register(&(cwed_command_desc){ .name = "anim.track_add", .title = "Add Animation Track", .params = track_p, .flags = U,
     .doc = "Add a track to an animation: a property (value), method calls (method) or events (event).",
-    .example = "anim.track_add player=Anim anim=spin path=\"Spin:rotation\"", .exec = track_add_exec, .undo = undo,
+    .example = "node.add type=AnimationPlayer parent=. name=Anim\nanim.new player=Anim name=spin length=1.6 loop=LOOP\nanim.track_add player=Anim anim=spin path=\"Spin:rotation\"", .exec = track_add_exec, .undo = undo,
     .free_state = free_state });
   cwed_command_register(&(cwed_command_desc){ .name = "anim.track_set", .title = "Set Animation Track", .params = track_set_p, .flags = U,
     .doc = "Change a track's interpolation, quaternion mode or enabled flag (only the arguments given).",
-    .example = "anim.track_set player=Anim anim=spin track=0 interp=CUBIC", .exec = track_set_exec, .undo = undo,
+    .example = "node.add type=AnimationPlayer parent=. name=Anim\nanim.new player=Anim name=spin length=1.6 loop=LOOP\nanim.track_add player=Anim anim=spin path=\"Spin:rotation\"\nanim.track_set player=Anim anim=spin track=0 interp=CUBIC", .exec = track_set_exec, .undo = undo,
     .free_state = free_state });
   cwed_command_register(&(cwed_command_desc){ .name = "anim.key_add", .title = "Add Animation Key", .params = key_p, .flags = U,
     .doc = "Add a key to a track, written as in a scene file.",
-    .example = "anim.key_add player=Anim anim=spin track=0 time=0 value=\"vec3(0, 0, 0)\"", .exec = key_add_exec, .undo = undo,
+    .example = "node.add type=AnimationPlayer parent=. name=Anim\nanim.new player=Anim name=spin length=1.6 loop=LOOP\nanim.track_add player=Anim anim=spin path=\"Spin:rotation\"\nanim.key_add player=Anim anim=spin track=0 time=0 value=\"vec3(0, 0, 0)\"", .exec = key_add_exec, .undo = undo,
     .free_state = free_state });
   cwed_command_register(&(cwed_command_desc){ .name = "anim.text", .title = "Animation Text", .params = text_p,
     .flags = CWED_CMD_SCENE | CWED_CMD_QUERY | CWED_CMD_HIDDEN, .doc = "An animation as scene-file text.", .exec = text_exec });
