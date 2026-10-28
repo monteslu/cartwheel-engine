@@ -80,6 +80,18 @@ split-screen view, and three.c v0.186.22.
   MSAA on both.
 - Split-screen views reuse the WebGPU MSAA attachments and only retarget
   the resolve.
+- Profiler: in split screen each view's run of a pass is its own entry in
+  the trace's GPU lane (`ssao@v1`; the pass's stats still sum the views),
+  and the pipeline's own GPU work between passes is timed as the steps
+  `views` and `resolve`. On WebGPU a pass is timed whole, so three.c's
+  shadow maps, G-buffers and the volumetric fog's shadow tiles count in the
+  pass that drew them. A frame keeps up to 128 GPU entries (was 48).
+- The debug field `cw.msaa_resolves` counts the scene colour's resolves a
+  frame. The engine is ready for a single resolve when the viewmodel pass
+  follows the scene pass on WebGPU, and for PostProcess `depth_prepass` on
+  WebGPU; both need three.c support that is not in v0.186.22 (with v0.186.22
+  WebGPU resolves as before and draws without the prepass, the same
+  picture).
 - Clustered lighting does its scene work once a frame, not once a
   split-screen view: the frame's first view builds an index of the scene's
   omni and spot lights and meshes in one walk (lights a game added with
@@ -156,6 +168,9 @@ split-screen view, and three.c v0.186.22.
   frame and four views cost the pass under 2.5 times one; controls: the
   scene work each view, an impossible ratio). It times the CPU against the
   test GPU, so it runs locally, not in CI's software rendering.
+- Gate `split-gpu-share`: the viewmodel and prepass checks and per-view
+  pass timing (controls: two resolves, a squeezed prepass depth, a run
+  without GPU profiling).
 - `CW_TEST_WGPU_NO_MSAA`, `CW_TEST_WGPU_NO_DEPTH_RESOLVE`,
   `CW_TEST_IMPOSTOR_WGPU_OFF` and `CW_TEST_IMPOSTOR_BAKE_MS` test switches;
   `CW_TRAP_STACK=1` in `tests/wgpu-carts.mjs` prints a cart's wasm stack
