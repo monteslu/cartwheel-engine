@@ -25,6 +25,9 @@ void cw__wgpu_fail(const char *fmt, ...);
  * when the adapter offers it; CW_WGPU_TIMESTAMPS=0 turns it off). Never in a
  * cart: the tier keeps timestamp queries off unless requested. */
 bool cw__wgpu_timestamps(void);
+/* a core WebGPU device (CoreFeaturesAndLimits): rgba16float multisamples, depth textures are
+ * read with textureLoad (multisampled too); false in compatibility mode */
+bool cw__wgpu_core(void);
 /* WGSL -> shader module; NULL (logged) on a compile error */
 WGPUShaderModule cw__wgpu_shader(const char *label, const char *wgsl);
 

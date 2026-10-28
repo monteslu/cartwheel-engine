@@ -972,24 +972,36 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
     else {
       scene_draw = scene;
       static bool msaa_warned;
-      /* compatibility mode (the tier's floor): RGBA16Float cannot be
-       * multisampled, and a multisampled depth cannot be read back (no
-       * textureLoad on depth, no sampling of multisampled textures), so 4x
-       * MSAA serves RGBA8 scenes that no SKY / EFFECTS / depth-reading pass
-       * follows; anything else renders single-sampled (logged once) */
-      bool msaa_ok = sf == CW_RT_RGBA8 && !wgpu_depth && !fx_any;
+      /* core WebGPU multisamples any scene: the colour resolves at the end of
+       * each render pass, the depth when the opaque phase ends (below).
+       * Compatibility mode (the tier's floor, a device without core):
+       * RGBA16Float cannot be multisampled, and a multisampled depth cannot be
+       * read back (no textureLoad on depth, no sampling of multisampled
+       * textures), so 4x MSAA serves RGBA8 scenes that no SKY / EFFECTS /
+       * depth-reading pass follows; anything else renders single-sampled
+       * (logged once). CW_TEST_WGPU_NO_MSAA=1 (native test runs) renders every
+       * WebGPU scene single-sampled: the control the MSAA parity gates must fail. */
+      bool core = wgpu && cw__pw_core();
+      bool msaa_ok = core || (sf == CW_RT_RGBA8 && !wgpu_depth && !fx_any);
+#if !CW_CART
+      bool no_msaa_test = wgpu && getenv("CW_TEST_WGPU_NO_MSAA") && atoi(getenv("CW_TEST_WGPU_NO_MSAA"));
+      if (no_msaa_test) msaa_ok = false;
+#else
+      const bool no_msaa_test = false;
+#endif
       if (s->msaa > 1 && wgpu && !msaa_ok && !msaa_warned) {
         msaa_warned = true;
-        cw_warn("render pipeline: MSAA on WebGPU (compatibility mode) needs an RGBA8 scene (hdr off) and no SKY / EFFECTS / "
-                "depth-reading pass; this frame renders without MSAA");
+        if (no_msaa_test) cw_warn("CW_TEST_WGPU_NO_MSAA: the WebGPU scene renders without MSAA (a gate control)");
+        else cw_warn("render pipeline: MSAA on WebGPU in compatibility mode needs an RGBA8 scene (hdr off) and no SKY / EFFECTS / "
+                "depth-reading pass; this frame renders without MSAA (a core WebGPU device multisamples any scene)");
       }
       if (s->msaa > 1 && wgpu && msaa_ok) {
-        /* 4x (compatibility mode's only count), resolved by each render pass */
-        if (!p->msaa_rt.fbo || p->msaa_rt.w != w || p->msaa_rt.h != h || p->msaa_rt.format != sf || p->msaa_color != scene->tex) {
+        /* 4x: WebGPU's only multisample count (2 and 8 become 4), resolved by each render pass */
+        if (!p->msaa_rt.fbo || p->msaa_rt.w != w || p->msaa_rt.h != h || p->msaa_rt.format != sf) {
           if (p->msaa_rt.fbo) cw__rt_destroy(&p->msaa_rt);
           cw__pw_msaa_create(&p->msaa_rt, scene);
-          p->msaa_color = scene->tex;
-        }
+        } else cw__pw_msaa_retarget(&p->msaa_rt, scene);
+        p->msaa_color = scene->tex;
         scene_draw = &p->msaa_rt;
       } else if (s->msaa > 1 && (!wgpu || test_gl_msaa_on_webgpu)) { /* GL only: a WebGPU run has no GL context */
         GL_FEATURE("PostProcess msaa (the GL multisampled scene framebuffer)");
@@ -1043,7 +1055,16 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
     }
     if (offscreen && ph == CW_PHASE_SKY && wgpu) {
       /* leaving the opaque phase: MSAA colour is resolved already (each
-       * render pass resolves); the linear depth for passes that sample it */
+       * render pass resolves); a multisampled depth (core WebGPU) resolves
+       * into the scene's for the SKY / EFFECTS passes that depth-test against
+       * it; the linear depth for passes that sample it */
+      bool resolve_depth = scene_draw != scene && fx_any;
+#if !CW_CART
+      /* CW_TEST_WGPU_NO_DEPTH_RESOLVE=1: the resolve left out (a gate control: SKY / EFFECTS passes then
+       * test against a scene depth nothing wrote) */
+      if (getenv("CW_TEST_WGPU_NO_DEPTH_RESOLVE") && atoi(getenv("CW_TEST_WGPU_NO_DEPTH_RESOLVE"))) resolve_depth = false;
+#endif
+      if (resolve_depth) cw__pw_depth_resolve(scene_draw, scene);
       if (wgpu_depth) {
         const cw_rt *lin = cw_pipeline_rt_persistent(p, "scene.depth_linear", w, h, CW__RT_R32F, NULL);
         const float *e = ctx.camera->projection_matrix.e;

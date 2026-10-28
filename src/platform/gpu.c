@@ -2,8 +2,9 @@
  * the instance / adapter / device / surface, the frame's target texture,
  * error routing, presenting and (native) readback.
  *
- * Native (native-dawn): instance -> adapter (compatibility feature level,
- * the power preference CW_WGPU_POWER names, low power by default; the adapter is checked before a device exists in test runs) ->
+ * Native (native-dawn): instance -> adapter (core feature level where the
+ * GPU has it, else compatibility mode; CW_WGPU_FEATURE_LEVEL=compat|core
+ * forces one; the power preference CW_WGPU_POWER names, low power by default; the adapter is checked before a device exists in test runs) ->
  * device with uncaptured-error and device-lost callbacks -> a surface on the
  * SDL window (native_dawn/sdl2.h), or, in test runs (CW_FRAMES), no surface at
  * all: an offscreen RGBA8 texture (and SDL's offscreen video driver, so no
@@ -41,6 +42,7 @@ static bool auto_pick __attribute__((unused)); /* the native run chose WebGPU it
 static cw_gpu_adapter adapter_info;
 static uint32_t gpu_errors;
 static uint32_t dbg_api; /* debug field: 1 GL, 2 WebGPU */
+static uint32_t dbg_core; /* debug field host.gpu.core: 1 core WebGPU device */
 static uint32_t host_threads, host_worker_chunks;
 
 cw_gpu_api cw_gpu_backend(void) { return backend; }
@@ -62,6 +64,7 @@ void cw__gpu_debug_register(void) {
   cw_debug_u32("host.gpu.device_id", &adapter_info.device_id);
   cw_debug_u32("host.gpu.adapter_type", &adapter_info.adapter_type);
   cw_debug_u32("host.gpu.backend", &adapter_info.backend);
+  cw_debug_u32("host.gpu.core", &dbg_core);
   cw_debug_u32("host.jobs.threads", &host_threads);
   cw_debug_u32("host.jobs.worker_chunks", &host_worker_chunks);
 }
@@ -129,6 +132,8 @@ bool cw__gpu_select(cw_gpu_api want, bool host_wgpu) {
 }
 bool cw__gpu_fallback_to_gl(void) { return false; }
 bool cw__wgpu_init(void) { return false; }
+bool cw__wgpu_core(void);
+bool cw__wgpu_core(void) { return false; }
 void cw__wgpu_frame_end(bool present) { (void)present; }
 bool cw__wgpu_readback(unsigned char **px, int *w, int *h) { (void)px, (void)w, (void)h; return false; }
 void cw__wgpu_shutdown(void) {}
@@ -182,6 +187,7 @@ static struct {
   bool frame_from_surface;
   bool lost;
   bool timestamps;
+  bool core; /* core WebGPU device (CoreFeaturesAndLimits), else compatibility mode */
 #if CW_CART
   WGPUAdapter err_adapter; /* the second request for the host's device (errors) */
   WGPUDevice err_device;   /* the host's device again, with the uncaptured-error handler */
@@ -199,6 +205,16 @@ WGPUQueue cw__wgpu_queue(void) { return G.queue; }
 const WGPULimits *cw__wgpu_limits(void) { return &G.limits; }
 WGPUTextureFormat cw__wgpu_frame_format(void) { return G.format; }
 bool cw__wgpu_timestamps(void) { return G.timestamps; }
+bool cw__wgpu_core(void) { return G.core; }
+
+/* the device's feature level: core devices have CoreFeaturesAndLimits */
+static void read_level(void) {
+  G.core = wgpuDeviceHasFeature(G.device, WGPUFeatureName_CoreFeaturesAndLimits);
+  adapter_info.core = G.core;
+  dbg_core = G.core;
+  cw_info("WebGPU: %s", G.core ? "core feature level (HDR scenes multisample)"
+                               : "compatibility mode (an HDR scene with depth-reading passes renders without MSAA)");
+}
 
 static void sv_copy(char *dst, size_t cap, WGPUStringView v) {
   size_t n = v.data ? (v.length == WGPU_STRLEN ? strlen(v.data) : v.length) : 0;
@@ -580,6 +596,7 @@ bool cw__wgpu_init(void) {
     wgpuAdapterInfoFreeMembers(ai);
   }
   wgpuDeviceGetLimits(G.device, &G.limits);
+  read_level();
   G.instance = wgpuCreateInstance(NULL);
   WGPUEmscriptenSurfaceSourceCanvasHTMLSelector canvas = {
     .chain = { .sType = WGPUSType_EmscriptenSurfaceSourceCanvasHTMLSelector }, .selector = CW_WGPU_SV("#canvas") };
@@ -611,7 +628,16 @@ bool cw__wgpu_init(void) {
     }
   }
   const char *pw = getenv("CW_WGPU_POWER");
-  WGPURequestAdapterOptions ao = { .featureLevel = WGPUFeatureLevel_Compatibility,
+  /* core where the GPU has it (an HDR scene multisamples, passes read depth
+   * directly), compatibility mode where it does not (a GLES-class device);
+   * CW_WGPU_FEATURE_LEVEL=compat|core forces one (a test of either path) */
+  const char *fl = getenv("CW_WGPU_FEATURE_LEVEL");
+  bool force_compat = fl && !strncmp(fl, "compat", 6), force_core = fl && !strcmp(fl, "core");
+  if (fl && *fl && !force_compat && !force_core) {
+    cw_error("CW_WGPU_FEATURE_LEVEL=%s: expected compat or core", fl);
+    return false;
+  }
+  WGPURequestAdapterOptions ao = { .featureLevel = force_compat ? WGPUFeatureLevel_Compatibility : WGPUFeatureLevel_Core,
                                    .powerPreference = pw && !strcmp(pw, "high")
                                                           ? WGPUPowerPreference_HighPerformance
                                                           : WGPUPowerPreference_LowPower,
@@ -621,6 +647,15 @@ bool cw__wgpu_init(void) {
                              (WGPURequestAdapterCallbackInfo){ .mode = WGPUCallbackMode_AllowProcessEvents,
                                                                .callback = on_adapter, .userdata1 = &ar });
   pump_until(&ar.done);
+  if (!force_compat && !force_core && !(ar.done && ar.st == WGPURequestAdapterStatus_Success && ar.a)) {
+    cw_info("WebGPU: no core adapter (%s): asking for compatibility mode", ar.done ? ar.msg : "timed out");
+    ao.featureLevel = WGPUFeatureLevel_Compatibility;
+    ar = (adapter_req){ 0 };
+    wgpuInstanceRequestAdapter(G.instance, &ao,
+                               (WGPURequestAdapterCallbackInfo){ .mode = WGPUCallbackMode_AllowProcessEvents,
+                                                                 .callback = on_adapter, .userdata1 = &ar });
+    pump_until(&ar.done);
+  }
   if (!ar.done || ar.st != WGPURequestAdapterStatus_Success || !ar.a) {
     cw_error("WebGPU: no adapter (%s)", ar.done ? ar.msg : "timed out");
     return false;
@@ -664,6 +699,7 @@ bool cw__wgpu_init(void) {
   G.queue = wgpuDeviceGetQueue(G.device);
   wgpuDeviceGetLimits(G.device, &G.limits);
   G.timestamps = nfeats > 0;
+  read_level();
   if (!G.headless) { /* a surface this adapter cannot present to: not started (GL takes over when it may) */
     WGPUSurfaceCapabilities caps = { 0 };
     bool ok = wgpuSurfaceGetCapabilities(G.surface, G.adapter, &caps) == WGPUStatus_Success && caps.formatCount > 0;

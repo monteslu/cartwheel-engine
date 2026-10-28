@@ -1,0 +1,55 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+ambient_energy = 0.2
+sky_color = color(0.6, 0.7, 0.9, 1)
+ground_color = color(0.35, 0.3, 0.25, 1)
+hemi_energy = 0.4
+
+# an HDR scene with 4x MSAA and passes that read the depth (ambient occlusion, decals) or test against it (the
+# sky's sun disc): GL and WebGPU must smooth the same edges
+[node name="Post" parent="." type="PostProcess"]
+msaa = 4
+tonemap = ACES_FILMIC
+ssao = true
+ssao_radius = 0.8
+bloom = true
+bloom_intensity = 0.06
+
+# a low evening sun, in the frame behind the fence: its disc is drawn after the opaque phase, depth-tested against
+# the resolved scene depth
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 18.25
+latitude = 40
+declination = 15
+north = 270
+sun_size = 5
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 1.6, 9)
+rotation = vec3(0.04, 0, 0)
+fov = 55
+near = 0.1
+far = 400
+
+[node name="Ground" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.1, -20)
+size = vec3(120, 0.2, 80)
+color = color(0.3, 0.36, 0.22, 1)
+roughness = 0.95
+receive_shadow = true
+
+# the wall the decals stain
+[node name="Wall" parent="." type="MeshInstance3D"]
+position = vec3(-5, 1.25, -2)
+size = vec3(5, 2.5, 0.4)
+color = color(0.62, 0.58, 0.52, 1)
+roughness = 0.9
+cast_shadow = true
+receive_shadow = true

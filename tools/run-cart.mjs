@@ -251,7 +251,7 @@ async function runRomdev() {
   const loaded = await romdevCall('loadMedia', { platform: 'wasmcart', path: cart, deterministicSeed: +(args.seed || 1), deterministicStepMs: 1000 / frameHz,
     // the power preference of the test GPU on every load, GL included: without it romdev's host picks the
     // high-performance adapter, which on a two-GPU machine is the desktop's display GPU
-    gpuPower: (pin || wgpuPin()).power, wgpu: gpu === 'webgpu' }, session);
+    gpuPower: (pin || wgpuPin()).power, wgpu: gpu === 'webgpu', ...(gpu === 'webgpu' && cartFeatureLevel() ? { wgpuFeatureLevel: cartFeatureLevel() } : {}) }, session);
   if (gpu === 'gl' && loaded && loaded.gpu !== 'gl') {
     await romdevCall('host', { op: 'shutdown' }, session).catch(() => {});
     throw new Error(`romdev: requested GL but the cart runs on ${loaded && loaded.gpu} (loadMedia wgpu:false needs romdev 65237621+)`);
@@ -352,6 +352,18 @@ async function runRomdev() {
   result({ host, frames, shot: args.shot, state: args.state });
 }
 
+// CW_WGPU_FEATURE_LEVEL=compat|core (the native run reads it itself, cartwheel/gpu.h): the WebGPU feature level
+// every cart host is told to use too, wasmcart's names (romdev wgpuFeatureLevel, wasmcart-native
+// WASMCART_WGPU_FEATURE_LEVEL, CartHostWeb adapterOptions.featureLevel); unset, each host takes core WebGPU where the
+// adapter offers it and compatibility mode where it does not
+function cartFeatureLevel() {
+  const v = process.env.CW_WGPU_FEATURE_LEVEL;
+  if (!v) return undefined;
+  if (v.startsWith('compat')) return 'compatibility';
+  if (v === 'core') return 'core';
+  throw new Error(`CW_WGPU_FEATURE_LEVEL=${v}: expected compat or core`);
+}
+
 const MIME = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'text/html', '.wasc': 'application/octet-stream', '.wasm': 'application/wasm' };
 
 async function runChromium() {
@@ -361,10 +373,17 @@ async function runChromium() {
 <script type=module>
 import { CartHostWeb } from '/wc/src/CartHostWeb.js';
 window.run = async (cfg) => {
-  const host = new CartHostWeb();
+  let host = new CartHostWeb();
   const canvas = document.getElementById('c');
-  await host.load('/cart.wasc', { glBackend: () => canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: true }),
-    ...(cfg.gpu === 'webgpu' ? { adapterOptions: { powerPreference: cfg.power } } : { wgpu: false }) });
+  // WebGPU: a core adapter where the browser offers one, else compatibility mode (cfg.featureLevel forces one); a
+  // dual cart given no adapter at the level asked would run on GL instead
+  const load = (level) => host.load('/cart.wasc', { glBackend: () => canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: true }),
+    ...(cfg.gpu === 'webgpu' ? { adapterOptions: { powerPreference: cfg.power, featureLevel: level } } : { wgpu: false }) });
+  await load(cfg.featureLevel || 'core');
+  if (cfg.gpu === 'webgpu' && !host.usesWgpu && !cfg.featureLevel) {
+    host = new CartHostWeb();
+    await load('compatibility');
+  }
   const adapter = host.getGpuAdapterInfo ? host.getGpuAdapterInfo() : null;
   if (cfg.gpu === 'webgpu' && !host.usesWgpu) throw new Error('the cart did not run on WebGPU (usesWgpu false)');
   // a browser may withhold the device name (privacy): then the bubblewrap pin and the DRM
@@ -526,7 +545,7 @@ window.ready = true;
     await page.waitForFunction('window.ready === true');
     const pinned = await verify(page);
     if (pinned && args.verbose) console.error(`chromium pinned to ${process.env.CW_CHROMIUM_GPU || process.env.CW_CHROMIUM_RENDER_NODE}: ${pinned}`);
-    const cfg = { gpu, spread, startPlan, match: pin ? pin.match : '', power: pin ? pin.power : '', frames, frameHz, script: script.map((s) => ({ ...s, mask: mask(s.buttons, WC_BITS), masks: ['pad2', 'pad3', 'pad4'].map((k) => (s[k] ? mask(s[k].buttons, WC_BITS) : 0)), scancodes: scancodes(s.keys),
+    const cfg = { gpu, spread, startPlan, match: pin ? pin.match : '', power: pin ? pin.power : '', featureLevel: cartFeatureLevel(), frames, frameHz, script: script.map((s) => ({ ...s, mask: mask(s.buttons, WC_BITS), masks: ['pad2', 'pad3', 'pad4'].map((k) => (s[k] ? mask(s[k].buttons, WC_BITS) : 0)), scancodes: scancodes(s.keys),
       mouseMask: mouseMask(s.mouse), wheelXY: wheelOf(s.wheel) })) };
     const r = await page.evaluate((c) => window.run(c), cfg).catch((e) => { throw new Error(`${e.message}\n${logs.join('\n')}`); });
     if (!r.crossOriginIsolated) throw new Error('page is not cross-origin isolated: threads cannot run');
@@ -580,7 +599,8 @@ async function runWcnative() {
   // throttled vsync from setting the pace.
   // no window, no desktop: SDL's offscreen driver (Mesa's surfaceless EGL) and no display variables
   const glp = pin ? null : glPin();
-  const wenv = { ...process.env, SDL_AUDIODRIVER: 'dummy', ...(pin ? pin.env : { WASMCART_NO_WGPU: '1', ...(glp ? glp.env : {}) }) };
+  const wenv = { ...process.env, SDL_AUDIODRIVER: 'dummy', ...(pin ? pin.env : { WASMCART_NO_WGPU: '1', ...(glp ? glp.env : {}) }),
+    ...(pin && cartFeatureLevel() ? { WASMCART_WGPU_FEATURE_LEVEL: cartFeatureLevel() } : {}) };
   if (!process.env.CW_TEST_WINDOW) scrubDisplay(wenv);
   else delete wenv.SDL_VIDEODRIVER;
   // warmup_spread 0 before frame 1: the whole warm-up in that frame, as on the other test hosts
