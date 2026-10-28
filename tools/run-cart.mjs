@@ -471,6 +471,13 @@ window.run = async (cfg) => {
     await host.runFrame(pads);
     /* a WebGPU frame is read in the task that drew it */
     if (cfg.gpu === 'webgpu' && k === cfg.frames - 1) gframe = await host.readGpuFrame();
+    // WebGPU: wait until the GPU has finished the frame, then let the results of the
+    // frame's readbacks (occlusion queries, pixel reads) land before the next one, as
+    // native runs (which keep two frames in flight and wait) and romdev (one frame
+    // per step) get them. Without it, a frame of heavy GPU work (an impostor bake)
+    // delivered its results a frame late here only, and occlusion_wait's counts
+    // differed on this host alone.
+    if (cfg.gpu === 'webgpu' && host._wgpu && host._wgpu.device) await host._wgpu.device.queue.onSubmittedWorkDone();
     // yield to the event loop between frames, as a page driven by rAF does:
     // wasi-thread workers start, and receive messages, only when it runs
     await new Promise((r) => setTimeout(r, 0));
