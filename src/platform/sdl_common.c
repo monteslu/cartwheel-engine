@@ -727,15 +727,23 @@ void cw__sdl_poll(void) {
     }
     if (e.type != CW_EVENT_NONE) emit(&e);
   }
+  /* a button is pressed on the frame its press event arrives, or the frame it reads down after reading up (a pad
+   * that connects with a button already down, as a host that plugs a pad and presses on one frame does: the press
+   * event came before the pad was opened, so it had no slot, or never came at all) */
+  static uint32_t pad_held[CW_MAX_PADS];
   for (int i = 0; i < CW_MAX_PADS; i++) {
     cw_pad_state *ps = &in->pads[i];
     SDL_GameController *gc = p->pads[i];
     memset(ps, 0, sizeof *ps);
-    if (!gc) continue;
+    if (!gc) {
+      pad_held[i] = 0;
+      continue;
+    }
     ps->connected = true;
-    ps->pressed = pad_pressed[i];
     for (int b = 0; b < CW_PAD_BUTTON_COUNT; b++)
       if (SDL_GameControllerGetButton(gc, (SDL_GameControllerButton)b)) ps->buttons |= 1u << b;
+    ps->pressed = pad_pressed[i] | (ps->buttons & ~pad_held[i]);
+    pad_held[i] = ps->buttons;
     for (int a = 0; a < CW_AXIS_COUNT; a++) {
       float v = SDL_GameControllerGetAxis(gc, (SDL_GameControllerAxis)a) / 32767.0f;
       ps->axes[a] = v < -1 ? -1 : v;
