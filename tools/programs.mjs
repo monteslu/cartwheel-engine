@@ -22,6 +22,9 @@
 //       survey; --gates also runs each gate's input scripts. Carts are named by their file, which is
 //       the app's name (the cart must be built: scripts/build.sh). --webgpu-only skips the GL host leg (a cart
 //       that cannot be loaded on romdev's GL path is still surveyed where it ships on WebGPU).
+//       Every run must survey something: one that fails, never renders a frame or has no state list to read (a cart
+//       that draws without the engine's pipeline) stops the survey with exit 1, naming the app and the host, and no
+//       table changes; no carts to survey (a project's carts need CW_PROJECT_ROOT) is an error too.
 //   --scenes NAME=a,b,c   runs each app once per value with environment NAME set to it (on GL and on WebGPU), for a
 //       game that picks its scene from the environment or runs a different scene per level: the table gets the
 //       union of every scene's states (a runtime-created light or particle needs its state in the table, and a
@@ -214,13 +217,27 @@ const list = apps().filter((a) => !names.length || names.includes(a.name)).filte
 if (names.length && list.length !== names.length)
   throw new Error(`not built: ${names.filter((n) => !list.some((a) => a.name === n)).join(' ')}`);
 
-/** the states a cart run reported (its debug state file), one per line */
-const cartStates = (replyFile) => { // the "pipeline" reply of a run (run-cart --cmd-end pipeline --cmd-out)
+/**
+ * What a cart run surveyed, from its "pipeline" reply (run-cart --cmd-end pipeline --cmd-out): the states the cart
+ * reported, one per line, or why the run proves nothing. A run with no reply (it failed before its last frame), an
+ * error reply (no pipeline: no 3D frame was ever made) or no render pass that ran (no frame was rendered) surveyed
+ * nothing, and "no missing states" from it would be a false all-clear.
+ * @param {string} replyFile
+ * @returns {{ states: string[], why: string | null }}
+ */
+const cartSurvey = (replyFile) => {
+  if (!existsSync(replyFile)) return { states: [], why: 'no pipeline reply (the run ended before its last frame)' };
+  let rep;
   try {
     const j = JSON.parse(readFileSync(replyFile, 'utf8'));
-    const rep = j.at(-1)?.reply?.reply ?? j.at(-1)?.reply ?? {};
-    return String(rep.missing_states || '').split('\n').map((l) => l.trim()).filter(Boolean);
-  } catch { return []; }
+    rep = j.at(-1)?.reply?.reply ?? j.at(-1)?.reply;
+  } catch (e) { return { states: [], why: `unreadable pipeline reply (${e.message})` }; }
+  if (!rep || typeof rep !== 'object') return { states: [], why: `no pipeline reply object (${JSON.stringify(rep)?.slice(0, 200)})` };
+  if (rep.error) return { states: [], why: `the cart never reached a rendered 3D frame (${rep.error})` };
+  if (!Array.isArray(rep.passes) || !rep.passes.some((p) => p.ran))
+    return { states: [], why: 'no render pass ran: the cart never reached a rendered frame' };
+  if (typeof rep.missing_states !== 'string') return { states: [], why: 'the pipeline reply has no missing_states field' };
+  return { states: rep.missing_states.split('\n').map((l) => l.trim()).filter(Boolean), why: null };
 };
 if (CARTS && !argv.includes('--no-run')) {
   rmSync(runDir, { recursive: true, force: true });
@@ -228,7 +245,11 @@ if (CARTS && !argv.includes('--no-run')) {
   const cartDir = join(PROJ, 'build', 'cart-wgpu', 'carts');
   const have = existsSync(cartDir) ? readdirSync(cartDir).filter((f) => f.endsWith('.wasc')).map((f) => f.slice(0, -5)) : [];
   const todo = names.length ? names : have;
-  for (const n of todo) if (!have.includes(n)) throw new Error(`no dual cart ${n} in ${cartDir} (build it: scripts/build.sh)`);
+  // a survey of nothing is a failure, not "0 states": name the directory it looked in (CW_PROJECT_ROOT picks a project's)
+  if (!todo.length) throw new Error(`no dual carts to survey in ${cartDir} (build them: scripts/build.sh; a project's carts need CW_PROJECT_ROOT)`);
+  for (const n of todo) if (!have.includes(n)) throw new Error(`no dual cart ${n} in ${cartDir} (build it: scripts/build.sh; a project's carts need CW_PROJECT_ROOT)`);
+  console.log(`surveying ${todo.length} dual cart(s) from ${cartDir}`);
+  const failed = []; // every run that surveyed nothing: "<run> on the <leg> host: why"
   if (argv.includes('--gl-only') && argv.includes('--webgpu-only')) throw new Error('--gl-only and --webgpu-only leave no host');
   const legs = argv.includes('--webgpu-only') ? [] : [['gl', ['--gpu', 'gl', '--dual-gl']]];
   if (!argv.includes('--gl-only')) legs.push(['webgpu', ['--gpu', 'webgpu']]);
@@ -238,15 +259,25 @@ if (CARTS && !argv.includes('--no-run')) {
     for (const g of gates.filter((x) => x.app === app))
       runs.push({ tag: g.name, args: ['--frames', String(g.frames), ...(g.input ? ['--input', join(PROJ, 'tests', g.input)] : [])] });
     const seen = new Set();
+    let surveyed = 0;
     for (const run of runs) for (const [leg, legArgs] of legs) {
       const stateFile = join(runDir, `${run.tag}.${leg}.cmd.json`);
       const r = spawnSync(process.execPath, [join(ROOT, 'tools', 'run-cart.mjs'), '--host', 'romdev', '--app', app, ...run.args, ...legArgs, '--cmd-end', 'pipeline', '--cmd-out', stateFile],
         { encoding: 'utf8', timeout: 600000, env: testEnv({ ...process.env }) });
-      if (r.status !== 0) console.log(`cart ${run.tag} (${leg}): run failed: ${(r.stderr || r.stdout || '').trim().split('\n').slice(-1)[0]}`);
-      for (const st of cartStates(stateFile)) seen.add(st);
+      const got = cartSurvey(stateFile);
+      const why = r.status !== 0 ? `run failed (${r.signal || 'exit ' + r.status}): ${(r.stderr || r.stdout || '').trim().split('\n').slice(-1)[0]}` : got.why;
+      if (why) { failed.push(`${run.tag} on the ${leg} host: ${why}`); console.log(`cart ${run.tag} (${leg}): FAILED: ${why}`); continue; }
+      surveyed++;
+      for (const st of got.states) seen.add(st);
     }
     if (seen.size) writeFileSync(join(runDir, `${app}.log`), [...seen].join('\n') + '\n');
-    console.log(`cart ${app}: ${seen.size} state(s) no table has`);
+    console.log(`cart ${app}: ${seen.size} state(s) no table has (${surveyed} of ${runs.length * legs.length} run(s) surveyed)`);
+  }
+  // fail loudly: a run that surveyed nothing would otherwise read as "no missing states" (the states it would have
+  // reported then show up later as skipped draws on that host); the states the other runs found are not merged
+  if (failed.length) {
+    console.error(`programs --carts: ${failed.length} run(s) surveyed nothing, no table changed:\n  ${failed.join('\n  ')}`);
+    process.exit(1);
   }
   logDirs.push(runDir);
 }
