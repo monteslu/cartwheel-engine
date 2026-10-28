@@ -57,7 +57,14 @@ const usesHosts = (hosts) => hosts.filter((h) => !(noChromium && h === 'chromium
 // leg of a cart is the dual cart told to render with GL on romdev (run-cart --dual-gl, implied there); Chromium and
 // wasmcart-native then run only the WebGPU axis (--gpu webgpu), their GL host would be the GL-only cart that no longer exists.
 const glCarts = existsSync(join(PROJ, 'build', 'cart', 'carts'));
-const glHosts = (hosts) => usesHosts(hosts).filter((h) => glCarts || !['chromium', 'wcnative'].includes(h));
+// An app built GL_ONLY makes no dual cart, so with no GL-only tree it has no cart at all: its romdev leg is dropped,
+// said in the output (a test app that draws with GL itself, such as unit_pipeline, runs natively only).
+const dualCart = (app) => existsSync(join(PROJ, 'build', 'cart-wgpu', 'carts', `${app}.wasc`));
+const glHosts = (hosts, name, app) => usesHosts(hosts).filter((h) => glCarts || !['chromium', 'wcnative'].includes(h)).filter((h) => {
+  if (h !== 'romdev' || glCarts || dualCart(app)) return true;
+  console.log(`note ${name}: no romdev leg (${app} is GL_ONLY: no dual cart, and there is no GL-only cart tree)`);
+  return false;
+});
 // --gates-file a.json,b.json (or CW_GATES_FILE): gate files in the project's tests/ in place of gates.json, so a
 // repository of several games keeps one file per game and they never collide
 const gatesArg = argv.includes('--gates-file') ? argv[argv.indexOf('--gates-file') + 1] : process.env.CW_GATES_FILE || 'gates.json';
@@ -307,7 +314,7 @@ for (const g of gates) {
   const defaults = g.input ? ['native', 'romdev', 'chromium'] : ['native', 'romdev', 'chromium', 'wcnative'];
   if (process.env.CW_ANGLE_DIR) defaults.push('angle'); // the Windows/macOS/iOS GL stack, on this machine
   const eligible = g.hosts || defaults; // --hosts narrows the set; it never adds a host a gate cannot run on
-  const hosts = glHosts((hostsArg ? hostsArg.filter((h) => eligible.includes(h)) : eligible).filter((h) => !(g.skip || []).includes(h)));
+  const hosts = glHosts((hostsArg ? hostsArg.filter((h) => eligible.includes(h)) : eligible).filter((h) => !(g.skip || []).includes(h)), g.name, g.app);
   if (chromiumOnly && !hosts.includes('chromium')) continue;
   warnDropped(g.name, hosts);
   const common = ['--app', g.app, '--frames', String(g.frames), ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : [])];

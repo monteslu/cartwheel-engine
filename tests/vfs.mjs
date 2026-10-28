@@ -1,5 +1,5 @@
 // Gate: edit a project inside a CART, carry it out, land it on DISK.
-//   1. romdev runs the project_edit cart; over the debug channel we spawn a
+//   1. romdev runs the project_edit dual cart on GL; over the debug channel we spawn a
 //      light, set a property, `project save` the level into the project layer
 //      and `vfs export` the changes (one base64 archive).
 //   2. A native run imports that archive with CW_PROJECT=<dir> set, so the
@@ -25,7 +25,8 @@ const cmd = async (text) => {
   if (!r.reply || r.reply.error) throw new Error(`${text}: ${JSON.stringify(r)}`);
   return r.reply;
 };
-await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: join(ROOT, 'build/cart/carts/project_edit.wasc'), deterministicSeed: 1 });
+// the dual cart (build/cart-wgpu) told to render with GL: there is one cart per app
+await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, wgpu: false, path: join(ROOT, 'build/cart-wgpu/carts/project_edit.wasc'), deterministicSeed: 1 });
 await cmd('pause 1');
 await cmd('spawn OmniLight3D /root/Level Lamp');
 await cmd('set /root/Level/Lamp position vec3(0, 4, 0)');

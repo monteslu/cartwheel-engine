@@ -113,10 +113,10 @@ const isFile = (p) => existsSync(p) && statSync(p).isFile();
 const appBinary = () => { try { return JSON.parse(readFileSync(join(PROJ, 'build/native/apps', `${app}.json`), 'utf8')).binary; } catch { return null; } };
 const nativeExe = args.exe ? resolve(args.exe) : ['samples', 'tests/unit', 'games', 'editor', `samples/${app}`].map((d) => join(PROJ, 'build/native', d, app)).find(isFile) ||
   appBinary() || join(PROJ, 'build/native/samples', app);
-// --dual-gl (romdev, --gpu gl): the DUAL cart of build/cart-wgpu, told to render with GL (loadMedia wgpu:false)
-// (no GL-only cart tree any more, build/cart: a romdev GL run of a cart is then the dual cart told to render with GL)
-const dualGl = !!args['dual-gl'] || (host === 'romdev' && gpu === 'gl' && !args.cart && !existsSync(join(PROJ, 'build/cart/carts', `${app}.wasc`)) && existsSync(join(PROJ, 'build/cart-wgpu/carts', `${app}.wasc`)));
-if (dualGl && (host !== 'romdev' || gpu !== 'gl')) { console.error('--dual-gl is a romdev --gpu gl run'); process.exit(2); }
+// --dual-gl (romdev or chromium, --gpu gl): the DUAL cart of build/cart-wgpu, told to render with GL (wgpu: false)
+// (no GL-only cart tree any more, build/cart: a romdev or Chromium GL run of a cart is then the dual cart told to render with GL)
+const dualGl = !!args['dual-gl'] || (['romdev', 'chromium'].includes(host) && gpu === 'gl' && !args.cart && !existsSync(join(PROJ, 'build/cart/carts', `${app}.wasc`)) && existsSync(join(PROJ, 'build/cart-wgpu/carts', `${app}.wasc`)));
+if (dualGl && (!['romdev', 'chromium'].includes(host) || gpu !== 'gl')) { console.error('--dual-gl is a romdev or chromium --gpu gl run'); process.exit(2); }
 const cart = args.cart ? resolve(args.cart) : join(PROJ, gpu === 'webgpu' || dualGl ? 'build/cart-wgpu/carts' : 'build/cart/carts', `${app}.wasc`);
 const script = args.input ? JSON.parse(readFileSync(args.input, 'utf8')) : [];
 const OUT = join(PROJ, 'out');
@@ -355,7 +355,7 @@ async function runRomdev() {
 const MIME = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'text/html', '.wasc': 'application/octet-stream', '.wasm': 'application/wasm' };
 
 async function runChromium() {
-  const WC = join(ROOT, gpu === 'webgpu' ? 'deps/wasmcart-wgpu' : 'deps/wasmcart'); // the WebGPU tier's host for dual carts
+  const WC = join(ROOT, gpu === 'webgpu' || dualGl ? 'deps/wasmcart-wgpu' : 'deps/wasmcart'); // the WebGPU tier's host for dual carts
   const page_html = `<!doctype html><html><body><canvas id=c></canvas>
 <script type=importmap>{"imports":{"fflate":"/wc/node_modules/fflate/esm/browser.js"}}</script>
 <script type=module>

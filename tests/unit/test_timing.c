@@ -4,7 +4,7 @@
  * at 30, 60 and 144 Hz render rates for 60 simulated seconds. */
 #include "cartwheel/core.h"
 #include "cartwheel/debug.h"
-#include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/math.h"
 #include "cartwheel/platform.h"
 
@@ -31,8 +31,7 @@ static void fixed(void *u, double dt) {
 static void render(void *u, double a) {
   (void)u;
   (void)a;
-  glClearColor(0.2f, 0.2f, 0.2f, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
+  cw_gpu_clear_window(0.2f, 0.2f, 0.2f, 1);
 }
 cw_app_desc cw_main(int argc, char **argv) {
   (void)argc;
