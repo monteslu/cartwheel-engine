@@ -25,7 +25,7 @@ CI (`.github/workflows/ci.yml`) runs on every push and pull request to main, on 
 Local only (they need GPU hardware or a host CI does not have; `LOCAL_ONLY` in `tests/ci.mjs` gives the reason for each):
 
 - the romdev, Chromium, wasmcart-native (`wcnative`) and wasmcart-libretro legs of every gate;
-- `gpu-guard`, `fx-gpu-report`, `pipeline-perf`, `fx-perf-report`, `vis-perf-report`, `showcase-perf`, `nav-perf-report`: GPU guards, timings and frame-time budgets;
+- `gpu-guard`, `fx-gpu-report`, `pipeline-perf`, `fx-perf-report`, `vis-perf-report`, `showcase-perf`, `nav-perf-report`, `profile-lighting`: GPU guards, timings and frame-time budgets;
 - `gpu-no-display`, `gpu-cleanup`, `wcnative-pads`, `editor-channel`, `editor-play`, `editor-import`, `a11y-channel`, `net`, `plugins`, `project-templates`, `tutorials`, `docs`, `nav-determinism`, `noise-gpu`, `water-surface`: they drive romdev, Chromium or wasmcart-native;
 - `export`, `project-export`: the export toolchains, Wine and an Android emulator.
 

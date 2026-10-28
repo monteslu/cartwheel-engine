@@ -154,7 +154,8 @@ split-screen view, and three.c v0.186.22.
   and `profile-lighting` (1600 boxes, 64 lights and a cascaded sun traced
   in one view and in four on GL and WebGPU: the scene work runs once a
   frame and four views cost the pass under 2.5 times one; controls: the
-  scene work each view, an impossible ratio).
+  scene work each view, an impossible ratio). It times the CPU against the
+  test GPU, so it runs locally, not in CI's software rendering.
 - `CW_TEST_WGPU_NO_MSAA`, `CW_TEST_WGPU_NO_DEPTH_RESOLVE`,
   `CW_TEST_IMPOSTOR_WGPU_OFF` and `CW_TEST_IMPOSTOR_BAKE_MS` test switches;
   `CW_TRAP_STACK=1` in `tests/wgpu-carts.mjs` prints a cart's wasm stack
