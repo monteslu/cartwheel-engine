@@ -7,11 +7,17 @@
 // program draws nothing on WebGPU while every tool says ok. tools/programs.mjs runs this after each
 // regeneration and fails on any rejection.
 //
+// The vertex buffers are three.c's own layout (its tools/program-model.mjs vertexBufferLayout: the instance
+// matrix columns share one buffer), and a program that needs more vertex buffers or attributes than every
+// WebGPU device has (maxVertexBuffers 8, maxVertexAttributes 16, core and compatibility mode alike) is
+// reported as over the device limits, naming the buffers, before Dawn sees it.
+//
 // It runs on lavapipe (Mesa's software Vulkan), never on a hardware GPU: Tint's output does not depend on
 // the driver, so no GPU lock is needed and CI can run it. A program that passed is stamped
 // (<state>.wgpu.tint: the hash of its sources and of the Dawn library) and not compiled again.
 //
 //   node tools/lib/wgsl-check.mjs <capture dir> [state ...]      (exit 1 on any rejection)
+//   CW_THREE_DIR=<three.c> picks the three.c whose layout is checked (default deps/three.c)
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -30,6 +36,9 @@ function webgpuNode() {
   return d;
 }
 
+/** the three.c tree whose vertex buffer layout the check uses */
+export function threeDir() { return resolve(process.env.CW_THREE_DIR || join(ROOT, 'deps', 'three.c')); }
+
 /** the captured states in a directory (each with .wgpu.vert, .wgpu.frag, .wgpu.json) */
 export function capturedStates(dir) {
   return readdirSync(dir).filter((f) => f.endsWith('.wgpu.json')).map((f) => f.slice(0, -'.wgpu.json'.length))
@@ -41,15 +50,16 @@ export function capturedStates(dir) {
  * Tint's message, when any is rejected.
  * @param {string} dir capture directory
  * @param {string[]} [states] default: every captured state in it
+ * @param {{ three?: string }} [opts] the three.c tree (default: threeDir())
  * @returns {{ checked: number, cached: number }}
  */
-export function checkWgsl(dir, states = capturedStates(dir)) {
+export function checkWgsl(dir, states = capturedStates(dir), { three = threeDir() } = {}) {
   const icd = LVP.find(existsSync);
   if (!icd) throw new Error('wgsl-check: lavapipe (Mesa software Vulkan, mesa-vulkan-drivers) is not installed: cannot check the WGSL Tint gets');
   const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--child', dir, ...states], {
     encoding: 'utf8', timeout: 1800000, maxBuffer: 64 << 20,
     // software Vulkan only (no hardware GPU, no display), two threads: a background check on a shared machine
-    env: { ...process.env, VK_ICD_FILENAMES: icd, VK_DRIVER_FILES: icd, LP_NUM_THREADS: '2', DISPLAY: '', WAYLAND_DISPLAY: '' },
+    env: { ...process.env, CW_THREE_DIR: three, VK_ICD_FILENAMES: icd, VK_DRIVER_FILES: icd, LP_NUM_THREADS: '2', DISPLAY: '', WAYLAND_DISPLAY: '' },
   });
   const out = (r.stdout || '').trim();
   const last = out.split('\n').filter((l) => l.startsWith('{')).pop();
@@ -63,6 +73,9 @@ export function checkWgsl(dir, states = capturedStates(dir)) {
 }
 
 function hint(msg) {
+  if (/over the device limits/.test(msg))
+    return '\n    (three.c binds one vertex buffer per geometry attribute plus the instance matrix and the instance colour:'
+      + ' drop an attribute the material does not need, e.g. vertex colours or tangents; see docs/guides/rendering-3d.md, Program tables)';
   if (/swizzle view instruction still has usages/.test(msg))
     return '\n    (a known Tint internal error: a swizzle of a swizzle on a variable, e.g. v.xy.x. In TSL, swizzle the whole'
       + ' value once (k.x, k.y) or combine with dot(); see docs/guides/rendering-3d.md, Program tables)';
@@ -70,10 +83,11 @@ function hint(msg) {
 }
 
 // ── the child: compiles on Dawn ──────────────────────────────────────
-const VERTEX_FORMAT = { float: 'float32', vec2: 'float32x2', vec3: 'float32x3', vec4: 'float32x4',
-  int: 'sint32', ivec2: 'sint32x2', ivec3: 'sint32x3', ivec4: 'sint32x4', uint: 'uint32', uvec2: 'uint32x2', uvec3: 'uint32x3', uvec4: 'uint32x4' };
-
 async function child(dir, states) {
+  const model = join(threeDir(), 'tools', 'program-model.mjs');
+  const { vertexBufferLayout } = existsSync(model) ? await import(pathToFileURL(model).href) : {};
+  if (typeof vertexBufferLayout !== 'function')
+    throw new Error(`wgsl-check: ${model} has no vertexBufferLayout (three.c v0.186.21 or later): the check needs three.c's vertex buffer layout`);
   const { createGPU, globals } = await import(pathToFileURL(join(webgpuNode(), 'index.mjs')).href);
   Object.assign(globalThis, globals);
   const gpu = createGPU(['backend=vulkan']);
@@ -99,9 +113,20 @@ async function child(dir, states) {
     const frag = existsSync(join(dir, st + '.wgpu.frag')) ? readFileSync(join(dir, st + '.wgpu.frag'), 'utf8') : null;
     const json = JSON.parse(readFileSync(join(dir, st + '.wgpu.json'), 'utf8'));
     const stamp = join(dir, st + '.wgpu.tint');
-    const hash = createHash('sha256').update(vert).update('\0').update(frag || '').update('\0' + dawnLib).digest('hex');
+    // vertex buffers as three.c binds them (one per geometry attribute, the instance matrix columns in one)
+    const buffers = vertexBufferLayout(json.attributes || []);
+    const hash = createHash('sha256').update(vert).update('\0').update(frag || '').update('\0' + dawnLib).update('\0' + JSON.stringify(buffers)).digest('hex');
     if (existsSync(stamp) && readFileSync(stamp, 'utf8').trim() === hash) { cached++; continue; }
     const dev = await device((json.features || []).includes('cm'));
+    // the device's limits first: Dawn's own message for a pipeline over them names no attribute
+    const nattr = buffers.reduce((n, b) => n + b.attributes.length, 0);
+    if (buffers.length > dev.limits.maxVertexBuffers || nattr > dev.limits.maxVertexAttributes) {
+      const names = (json.attributes || []).map((a) => a.name).join(' ');
+      failed.push({ state: st, message: `over the device limits: ${buffers.length} vertex buffers (max ${dev.limits.maxVertexBuffers}), `
+        + `${nattr} vertex attributes (max ${dev.limits.maxVertexAttributes}): ${names}` });
+      checked++;
+      continue;
+    }
     dev.pushErrorScope('internal');
     dev.pushErrorScope('validation');
     const messages = [];
@@ -112,13 +137,6 @@ async function child(dir, states) {
     const vm = await mod(vert, 'vertex');
     const fm = frag ? await mod(frag, 'fragment') : null;
     if (!messages.length) {
-      // vertex buffers as the program's attributes, one buffer each (what three.c binds does not change what Tint compiles)
-      const buffers = (json.attributes || []).map((a) => {
-        const format = VERTEX_FORMAT[a.type];
-        if (!format) throw new Error(`${st}: attribute ${a.name} has type ${a.type} the checker does not know`);
-        const n = +format.replace(/^\D+32x?/, '') || 1;
-        return { arrayStride: 4 * n, stepMode: a.instanced ? 'instance' : 'vertex', attributes: [{ shaderLocation: a.location, offset: 0, format }] };
-      });
       const outs = frag ? [...(/struct OutputStruct\s*\{([\s\S]*?)\}/.exec(frag)?.[1] || '').matchAll(/@location\(\s*(\d+)\s*\)\s*\w+\s*:\s*([\w<>]+)/g)] : [];
       const targets = [];
       for (const [, loc, type] of outs) targets[+loc] = { format: /u32/.test(type) ? 'rgba32uint' : /i32/.test(type) ? 'rgba32sint' : 'rgba16float' };

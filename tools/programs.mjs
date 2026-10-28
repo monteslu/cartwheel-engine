@@ -145,7 +145,7 @@ function regenerate(manifest, logs = []) {
   // the captures ran on a mock GPU, which takes any WGSL: compile each WebGPU program with Dawn's own compiler
   // (Tint) as a host will, and fail here, not on the first WebGPU draw (tools/lib/wgsl-check.mjs)
   if (!argv.includes('--no-wgsl-check')) {
-    const c = checkWgsl(cache);
+    const c = checkWgsl(cache, undefined, { three: THREE });
     console.log(`${name}: Tint accepts all ${c.checked + c.cached} WebGPU programs (${c.checked} compiled)`);
   }
   // the capture cache sits in the build tree; the generated C beside the manifest, checked in
