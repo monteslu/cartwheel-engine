@@ -4,6 +4,83 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.19.0 (2026-10-28)
+
+Rim light, navigation links (jumps, drops, jump pads, ladders) and
+split-screen fixes for volumetric fog and the frame history.
+
+### Added
+- Rim light (`cartwheel/rim_light.h`): a coloured glow along a model's
+  silhouette, added to its emissive light and fading in with distance from
+  the camera, so team colours read at 30 m without painting over a figure at
+  arm's length; set the strength each tick for a pulsing shimmer (spawn
+  protection). It composes with clustered lights, the cascaded sun, skin
+  shading and global illumination on GL and WebGPU. New API:
+  `cw_rim_light_desc`, `cw_rim_light_default`, `cw_rim_light_apply`,
+  `cw_rim_light_get`, `cw_rim_light_remove`, `cw_rim_light_apply_tree`,
+  `cw_rim_light_remove_tree`, `cw_rim_light_count`. Sample `rim_light`, gate
+  `rim-light` (control: no rims). Cost on the 890M: under the noise for one
+  view, about 0.45 ms with four split-screen views on WebGPU.
+- Navigation links (Detour's off-mesh connections): two points that walking
+  cannot join, such as a jump up a ledge, a drop, a jump pad or a ladder.
+  `cw_nav_geom_add_link` takes a `cw_nav_link` (start, end, one- or two-way,
+  a cost in metres of walking, an area that filters can exclude or weigh, a
+  game tag `CW_NAV_LINK_JUMP` / `DROP` / `PAD` / `LADDER` / `TELEPORT` /
+  `USER`, a radius, and a crowd crossing's duration and arc height). Links
+  are built into static and tile-cache navmeshes and are part of the
+  navmesh's bytes, hash and saves. `cw_nav_link_count`, `cw_nav_link_get`,
+  `cw_nav_link_connected` (an end that misses the navmesh is named in a
+  warning, counted in `cw_navmesh_stats.links_connected` and drawn red by
+  `CW_NAV_DRAW_LINKS`). `cw_nav_find_path_links` and `cw_nav_take_path_links`
+  give each waypoint's link id, for games that move their own characters.
+  Crowd agents cross a link when they reach its start (status
+  `CW_CROWD_ON_LINK`, carried along the arc), with
+  `cw_crowd_set_link_callback` (`cw_crowd_link_event`, `cw_crowd_link_fn`)
+  called in agent order when a crossing begins and lands; with
+  `manual_links` an agent waits at the start until `cw_crowd_finish_link`.
+  `CW_NAV_LINKS` is defined, so a game can test for links when it also
+  builds against an older engine.
+- Node `NavigationLink3D`, baked with its `NavigationRegion3D`;
+  `NavigationAgent3D` emits `link_entered` and `link_exited` and has
+  `manual_links` and `finish_link`.
+- Sample `nav_links` (eight agents over a two-way ledge jump, a one-way pad
+  and a drop, from the scene file) and gate `nav-links` on GL and WebGPU,
+  every host (control: the links removed, nobody reaches the ledge or the
+  deck); `unit_nav` covers paths with link ids, cost and area filters,
+  one-way links, save and load, an unconnected link, crowd crossings equal at
+  pool sizes 0, 1, 3 and 7, manual links and a no-links control.
+- Sample `fog_shafts_split` (the fog room from four cameras) and gate
+  `fog-split` on GL and WebGPU, every host (control: the old shared grid).
+- `unit-nav` and `nav-demo` have WebGPU legs (Chromium and wasmcart-native
+  run them again; they had no cart legs off romdev since the GL cart tree
+  went away).
+
+### Changed
+- Navmesh saves are format 2 (they carry links); format 1 saves still load.
+  A navmesh without links hashes as before.
+
+### Fixed
+- Split screen: volumetric fog gets a grid per view, sized to the view's
+  share of the screen's width, with its own history, uniforms and previous
+  view-projection. Before, the views shared one full-size grid: each view's
+  temporal blend took the previous view's grid (ghost shafts from another
+  camera), and on WebGPU every view's grid was lit with the last view's
+  uniforms. Four-way split at 1920 x 1080 on the 890M: the fog grid went from
+  2.94 to 1.65 ms (GL High) and 7.64 to 2.79 ms (GL Ultra).
+- Split screen: the pipeline keeps each view's previous view-projection, so
+  motion vectors and reprojection no longer follow the view drawn before.
+- Split screen: the probe grid and reflection probe captures run once per
+  frame (on the first view), not once per view.
+- The volumetric fog's uniform locations are looked up once (each lookup
+  waited for Mesa's GL thread).
+- A pad that connects and presses a button on the same frame (a test host
+  plugging a pad in, a controller connected with a button held) now reports
+  that press: the press event arrived before the pad had a slot, so a
+  one-press join (`cw_shell_join_press`) or the join screen missed it on
+  wasmcart hosts. Presses are now also taken from each pad's button state
+  read up then down. The `shell-join` and `shell-join-press` gates pass on
+  romdev again.
+
 ## v0.18.1 (2026-10-28)
 
 Build and CI cleanup: one cart per app, the dual GL + WebGPU cart. The
