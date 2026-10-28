@@ -30,12 +30,12 @@ cart on GL hosts.
 - Tests and tools run the dual cart on GL where they ran the GL cart:
   romdev with `wgpu: false`, Chromium through the WebGPU tier's host with
   `wgpu: false`, wasmcart-native with `WASMCART_NO_WGPU=1`, the libretro core
-  as is (`run-cart.mjs`, `perf-frame.mjs`, `net`, `showcase-perf`,
-  `channel`, `a11y-channel`, `profile-cart`, `remote`, `host-resolution`,
+  as is (`run-cart.mjs`, `perf-frame.mjs`, `net`, `channel`, `a11y-channel`, `profile-cart`, `remote`, `host-resolution`,
   `editor-level`, `plugins`). `cart-audio-ring` uses the dual hello cart and
   `wcnative-pads` checks pad slots on it (input_demo is `GL_ONLY`).
   `editor-channel`, `editor-import` and `editor-play` lost their editor cart
-  legs (the editor is `GL_ONLY`, so it has no dual cart).
+  legs and `showcase-perf` its cart legs (the editor and showcase_perf are
+  `GL_ONLY`, so they have no dual cart).
 
 ## v0.18.0 (2026-10-27)
 

@@ -4085,7 +4085,7 @@
   {
     "name": "showcase-perf",
     "script": "tests/showcase-perf.mjs",
-    "note": "showcase_perf at 1920x1080 full quality (particles, decals and visibility included) through all five segments on native, romdev, Chromium and wasmcart-native: every segment's frame (GPU drained each frame) under 16.7 ms; per-pass GPU ms reported in out/perf/showcase-report.txt; control: an impossible 0.05 ms budget must fail"
+    "note": "showcase_perf at 1920x1080 full quality (particles, decals and visibility included) through all five segments natively (showcase_perf is GL_ONLY: no cart): every segment's frame (GPU drained each frame) under 16.7 ms; per-pass GPU ms reported in out/perf/showcase-report.txt; control: an impossible 0.05 ms budget must fail"
   },
   {
     "name": "unit-editor",
@@ -4448,7 +4448,7 @@
   {
     "name": "editor-play",
     "script": "tests/editor-play.mjs",
-    "note": "play-in-editor, the editor side: the native editor plays samples/play_demo natively and in romdev, driven over ed and by pointer only (edit a live property, step, inspect, keep it in the scene, crash, relaunch), each with a control that must fail; the cart editor says Play is unavailable"
+    "note": "play-in-editor, the editor side: the native editor plays samples/play_demo natively and in romdev, driven over ed and by pointer only (edit a live property, step, inspect, keep it in the scene, crash, relaunch), each with a control that must fail"
   },
   {
     "name": "unit-net",
@@ -4544,7 +4544,7 @@
   {
     "name": "editor-import",
     "script": "tests/editor-import.mjs",
-    "note": "drag a glTF in, see it imported, place it (in-app pointer session on native, romdev, chromium, wcnative; the same over the debug channel native vs romdev; controls: session stopped before the drag, hidden node covers 0 pixels, corrupt glTF errors, refused delete)"
+    "note": "drag a glTF in, see it imported, place it (in-app pointer session natively, and the same over the debug channel; the editor is GL_ONLY, so no cart legs; controls: session stopped before the drag, hidden node covers 0 pixels, corrupt glTF errors, refused delete)"
   },
   {
     "name": "triggers",
@@ -4984,7 +4984,7 @@
   {
     "name": "plugins",
     "script": "tests/plugins.mjs",
-    "note": "a project plugin (samples/plugin_demo/plugins/turntable, copied to a fresh project) used without editing the engine tree: built by tools/cwproject.mjs (plugin libraries + the game), the game with the plugin's node type and debug command natively and on wasmcart-native; the native editor loads it (panel, inspector plugin, gizmo, commands), pointer-only session (panel row, gizmo radius drag = one undo step, inspector slider + Reverse), hot reload of edited editor + runtime code built outside the editor (a failing build keeps the old code), disable (refused while dirty, everything withdrawn, the scene refused naming the plugin, file unchanged, the game without it names the plugin), version mismatch refused by editor and build, a stale library refused at load; the cart project editor on romdev with the plugin compiled in; controls: non-Turntable node, unbuilt edit, presses removed, engine_api 2.0, code compiled for 1.9, the stock editor cart"
+    "note": "a project plugin (samples/plugin_demo/plugins/turntable, copied to a fresh project) used without editing the engine tree: built by tools/cwproject.mjs (plugin libraries + the game), the game with the plugin's node type and debug command natively and on wasmcart-native; the native editor loads it (panel, inspector plugin, gizmo, commands), pointer-only session (panel row, gizmo radius drag = one undo step, inspector slider + Reverse), hot reload of edited editor + runtime code built outside the editor (a failing build keeps the old code), disable (refused while dirty, everything withdrawn, the scene refused naming the plugin, file unchanged, the game without it names the plugin), version mismatch refused by editor and build, a stale library refused at load; the cart project editor on romdev with the plugin compiled in; controls: non-Turntable node, unbuilt edit, presses removed, engine_api 2.0, code compiled for 1.9, the plugin disabled in the cart editor"
   },
   {
     "name": "docs",
