@@ -500,7 +500,7 @@ void cw__atlas_update(cw__atlas *a, cw_pass_ctx *ctx, const cw__shadow_req *req,
           memcpy(t->mat, tm.e, sizeof t->mat);
         }
         t->face_key[f] = ck;
-        t->valid[f] = true;
+        t->valid[f] = ctx->frame > 0; /* (not from the first frame: see lighting_csm.c) */
         a->info.faces_rendered++;
       }
       t->pos = pos, t->near = near, t->far = far;

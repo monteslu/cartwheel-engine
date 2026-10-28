@@ -365,7 +365,10 @@ bool cw__csm_update(cw__csm *c, cw_pass_ctx *ctx, t3_light *sun, const cw__csm_c
     if (!webgpu) et.color = c->gl_fbo;
     t3_renderer_render_depth_to(ctx->renderer, ctx->scene3d, oc, &et);
     c->key[i] = key;
-    c->valid[i] = true;
+    /* (not kept from the renderer's first frame: three.c's GL depth pass filled no
+     * camera for casters drawn before its first scene render, so the map was
+     * empty; the next frame draws it again) */
+    c->valid[i] = ctx->frame > 0;
     c->rendered++;
   }
   if (!webgpu) {
