@@ -877,7 +877,7 @@
      "default": "true",
      "stored": true,
      "readonly": false,
-     "doc": "Render the scene into RGBA16F (linear HDR; off: RGBA8, banding in the darks, for MSAA in WebGPU compatibility mode)."
+     "doc": "Render the scene into RGBA16F (linear HDR; off: RGBA8, banding in the darks, for MSAA on a compatibility-mode WebGPU device)."
     },
     {
      "name": "msaa",
@@ -887,7 +887,7 @@
      "readonly": false,
      "min": 0,
      "max": 8,
-     "doc": "MSAA samples on the scene pass (0 = off)."
+     "doc": "MSAA samples on the scene pass (0 = off; WebGPU multisamples 4x for any of 2-8)."
     },
     {
      "name": "depth_prepass",
@@ -895,7 +895,7 @@
      "default": "false",
      "stored": true,
      "readonly": false,
-     "doc": "Depth-only pass before the scene (early-z for heavy fragment shaders)."
+     "doc": "Depth-only pass before the scene (early-z for heavy fragment shaders; GL and WebGPU, the same picture)."
     },
     {
      "name": "exposure",

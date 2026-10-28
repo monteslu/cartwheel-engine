@@ -82,7 +82,7 @@ A frame runs the tree's active passes phase by phase, and inside a phase by `ord
 | Phase | Built-in and module passes |
 |---|---|
 | SHADOW | "sky_env" (100: sky cube), "visibility" (2000: culling, LOD, impostor bakes) |
-| PREPASS | "depth_prepass" when `depth_prepass` is on (GL only: depth of the opaque queue, alpha-tested cutouts still discarding; transparent and transmissive surfaces, colour and the sky are left out) |
+| PREPASS | "depth_prepass" when `depth_prepass` is on (GL and WebGPU: depth of the opaque queue, alpha-tested cutouts still discarding; transparent and transmissive surfaces, colour and the sky are left out) |
 | OPAQUE | "scene" (0: three.c renders the tree), "impostors" (100), "occlusion_queries" (900) |
 | SKY | "sky_sun" (0: the sun disk) |
 | EFFECTS | "decals" (100), "particles" (200), "height_fog" (300) |
@@ -475,7 +475,7 @@ cw_node_set(camera, "viewmodel_layers", cw_val_int(2));
 cw_node_set(camera, "viewmodel_fov", cw_val_float(52));
 ```
 
-After the scene, the `viewmodel` pass draws those layers with a second camera at the same pose and the viewmodel lens, over the same colour and depth. It draws in the near end of the depth range, so the weapon always lands in front of the world and sorts against itself, while the scene's depth stays right everywhere else for the passes that read it (ambient occlusion, decals, particles). The weapon is lit by the scene's lights and shadows, and costs one more scene submission of the few objects on those layers (a split screen pays it once per view). The pass runs on GL and on WebGPU. The background is not redrawn.
+After the scene, the `viewmodel` pass draws those layers with a second camera at the same pose and the viewmodel lens, over the same colour and depth. It draws in the near end of the depth range, so the weapon always lands in front of the world and sorts against itself, while the scene's depth stays right everywhere else for the passes that read it (ambient occlusion, decals, particles). The weapon is lit by the scene's lights and shadows, and costs one more scene submission of the few objects on those layers (a split screen pays it once per view). The pass runs on GL and on WebGPU. The background is not redrawn. With MSAA on WebGPU the scene pass leaves its samples unresolved and the viewmodel pass resolves the colour once at its end (each render pass would resolve its own), which saves a full-screen resolve: about 0.5 ms a frame at 1920 x 1080 on a Radeon 890M, one view or four, the picture the same to the bit (`tests/split-gpu-share.mjs`).
 
 In a split screen, hide the other players' weapons for each view with the pipeline's view hook (`cw_pipeline_set_view_hook`): each view draws every object on its layers.
 

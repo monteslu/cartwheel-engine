@@ -75,6 +75,10 @@ struct cw_pipeline {
   cw_rt_format msaa_format;
   int msaa_failed; /* format + 1 the host could not multisample */
   cw_rt msaa_rt;   /* WebGPU: the 4x MSAA attachments (resolve into the scene) */
+  /* WebGPU, this run: the scene pass leaves its multisampled colour unresolved because the viewmodel pass draws
+   * into it next and resolves at its end (one resolve of the scene colour, not two) */
+  bool msaa_keep;
+  int32_t msaa_resolves, msaa_resolves_frame; /* the scene colour's resolves this frame (all views), and last frame's (cw.msaa_resolves) */
   cw_rt screen;              /* the default framebuffer as a target */
   const cw_rt *output_user;  /* cw_pipeline_set_output */
   void (*app_render)(void *user, double alpha);

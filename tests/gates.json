@@ -1179,6 +1179,11 @@
     "note": "the clustered lighting pass in split screen, from the profile trace (lighting_changes LC_STRESS=40: 1600 boxes with a material each, 64 lights a game added, a cascaded sun), GL and WebGPU: with four views the scene index and the material marking run once a frame, and the pass costs under 2.5 times one view. Controls: CW_TEST_LIGHTS_EACH_VIEW=1 (the scene work each view, as before) fails the once-a-frame check; an impossible ratio fails the cost check"
   },
   {
+    "name": "split-gpu-share",
+    "script": "tests/split-gpu-share.mjs",
+    "note": "GPU work done once where it was done twice, with the same picture, native GL and WebGPU: viewmodel_demo at 4x MSAA resolves the scene colour once a frame on WebGPU (cw.msaa_resolves 1; the scene pass keeps its samples, the viewmodel pass resolves) and draws the frame two resolves drew, to the bit; the depth prepass (GL and WebGPU) draws the frame drawn without it, to the bit; msaa_hdr in four views times each view's scene pass and the pipeline's steps (views, resolve) in the profiler's GPU lane. Controls: CW_TEST_WGPU_RESOLVE_TWICE=1 resolves twice; CW_TEST_PREPASS_SHIFT=1 (the prepass depth squeezed into 0..0.5) changes the frame; a run without CW_PROFILE_GPU has no GPU lane"
+  },
+  {
     "name": "profile-cart",
     "script": "tests/profile-cart.mjs",
     "note": "the profile_demo cart on romdev records a trace over the debug channel (profile trace, read back in pieces by tools/cwtrace.mjs) with every engine phase, job zones on workers and no GPU lane; the state with profiling off and on equals native; zones cost the cart's main thread under 0.1 ms a frame. Controls: trace_get before a trace, a run one tick short, an impossible budget"

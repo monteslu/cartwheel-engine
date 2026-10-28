@@ -12,7 +12,10 @@
  * whole picture the scene pass drew, leaving only the gun over the sky).
  *
  * VIEWMODEL_OFF=1 puts the gun on the default layer and removes the camera's
- * viewmodel layers (the gate's control: the frame differs).
+ * viewmodel layers (the gate's control: the frame differs). VIEWMODEL_MSAA=4
+ * multisamples the scene, VIEWMODEL_PREPASS=1 turns the depth prepass on
+ * (tests/split-gpu-share.mjs: the same picture with fewer resolves, and with
+ * the prepass).
  *
  * Debug state: vm.on (1 with the viewmodel layers), vm.layers (the gun's
  * Node3D layers), vm.fov (the viewmodel lens), vm.tick, and on GL vm.wall_ok:
@@ -43,6 +46,9 @@ static void init(void *u) {
   cw_debug_i32("vm.wall_ok", &wall_ok);
   cw_debug_field("vm.wall_px", wall_px, CW_DBG_I32, 3);
   cw_node cam = node("World/Camera"), gun = node("World/Camera/Gun");
+  const char *e;
+  if ((e = getenv("VIEWMODEL_MSAA")) && *e) cw_node_set(node("World/Post"), "msaa", cw_val_int(atoi(e)));
+  if ((e = getenv("VIEWMODEL_PREPASS")) && *e) cw_node_set(node("World/Post"), "depth_prepass", cw_val_bool(atoi(e) != 0));
   if (getenv("VIEWMODEL_OFF")) {
     cw_node_set(gun, "layers", cw_val_int(1));
     cw_node_set(cam, "viewmodel_layers", cw_val_int(0));
