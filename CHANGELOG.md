@@ -4,6 +4,162 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.20.0 (2026-10-28)
+
+WebGPU antialiases HDR scenes like GL (core WebGPU wherever the GPU has
+it), every app builds as the dual GL + WebGPU cart (no app can be GL only
+any more), pixel reads and 3D-into-2D targets on both APIs, impostors on
+WebGPU, clustered lighting's scene work once a frame instead of once a
+split-screen view, and three.c v0.186.22.
+
+### Added
+- Core WebGPU where the adapter has it: natively the engine asks for a
+  core adapter first and falls back to compatibility mode
+  (`CW_WGPU_FEATURE_LEVEL=compat|core` forces one); a cart reads the
+  level of the device its host gave it. `cw_gpu_adapter_info()->core`
+  (new field `core`) and the debug field `host.gpu.core` say which a run
+  got. The test harness's cart hosts (romdev, Chromium, wasmcart-native)
+  ask for core too.
+- MSAA on HDR scenes on WebGPU: on a core device the scene pass
+  multisamples any scene, RGBA16F included, 4x (WebGPU's only count, for
+  `msaa` 2 to 8), and the multisampled depth's first sample is resolved
+  into the scene depth when the opaque phase ends, as GL's resolving blit
+  does, so sky and effects passes, ambient occlusion and decals see the
+  same depth. A compatibility-mode device keeps the old rule (RGBA8 scenes
+  without depth readers only, a warning otherwise). Sample `msaa_hdr` and
+  gate `msaa-hdr` (GL vs WebGPU 0.016% of pixels on the 890M; controls:
+  single-sampled WebGPU, the depth resolve left out, a compatibility-mode
+  device). Cost on the 890M at 1920 x 1080: 0.3 to 0.6 ms of GPU time on
+  WebGPU at Low and Medium, 0.7 to 1.5 ms at High and Ultra (GL 0.25 to
+  0.8 ms).
+- Pixel reads on GL and WebGPU without GL calls (`cartwheel/gpu.h`):
+  `cw_gpu_read_window` (a region of the picture the frame puts in the
+  window, taken at the end of the frame), `cw_gpu_read_window_now` (what
+  the window holds so far), `cw_gpu_read_rt` (a 3D pipeline target),
+  `cw_gpu_read_result` (the top-down RGBA8 pixels once they land: GL from
+  the next frame on, WebGPU a frame or more later), `cw_gpu_read_wait`
+  (waits natively), `cw_gpu_read_drop`, and `cw_gpu_finish` (waits for the
+  GPU natively on both APIs and in a cart on GL; a WebGPU cart cannot
+  wait).
+- 3D into 2D render targets on GL and WebGPU: `cw_target_rt` (a 2D target
+  as a 3D pipeline output, for `cw_pipeline_set_output`) and
+  `cw_render3d_texture_target` (an app's own three.c renderer draws into a
+  2D target, which the 2D renderer then draws the right way up).
+  `cw_target_fbo` stays GL only.
+- `cw_anim_from_text`: one `[animation]` section, as a scene file writes
+  it, into a stored animation (the inverse of `cw_anim_to_text`).
+- Editor animation module: the commands `anim.new`, `anim.track_add`,
+  `anim.track_set`, `anim.key_add` (undoable) and `anim.text`, which
+  `tools/scene-to-ed.mjs` writes.
+- Impostors on WebGPU: the albedo and normal atlases are baked on WebGPU
+  (the same texels as GL, mips box filtered on the GPU) and impostors draw
+  there as on GL; the mesh fading out under its impostor draws after the
+  impostors on both. Measured on the 890M: a bake takes about 1 ms on GL
+  and 2 to 3 ms on WebGPU; drawing 49 impostors 0.16 to 0.37 ms on GL and
+  0.11 to 0.21 ms on WebGPU, Low to Ultra.
+
+### Changed
+- No app can opt out of the dual cart: the `GL_ONLY` option of
+  `cw_add_app` is gone (unknown arguments are refused), a cart tree
+  configured with `CW_WGPU=OFF` stops at configure,
+  `tools/check-imports.mjs` refuses a cart checked without `--wgpu`, and
+  `cwproject build <dir> editor` builds the project editor in the dual
+  tree (`.cwbuild/cart-wgpu`; the `.cwbuild/editor-cart` GL tree is gone).
+  The native test binary `unit_pipeline`, which reads GL framebuffers
+  itself, is native only and has no cart target.
+- Every sample and the editor draw through the engine and build as dual
+  carts: window clears with `cw_gpu_clear_window`, panels with the 2D
+  renderer, own three.c renderers through `cw_render3d_window_renderer` /
+  `cw_render3d_window_target` / `cw_render3d_texture_target`, GPU waits
+  with `cw_gpu_finish`, pixel checks with `cw_gpu_read_window(_now)`. The
+  editor's 3D viewport renders into its 2D target through `cw_target_rt`
+  and its previews read with `cw_gpu_read_rt` (a cart on WebGPU shows a
+  preview when it lands).
+- Anti-aliasing Off in the quality settings turns the scene's MSAA off
+  too, on GL and WebGPU alike; the presets (FXAA, SMAA) keep the game's
+  MSAA on both.
+- Split-screen views reuse the WebGPU MSAA attachments and only retarget
+  the resolve.
+- Clustered lighting does its scene work once a frame, not once a
+  split-screen view: the frame's first view builds an index of the scene's
+  omni and spot lights and meshes in one walk (lights a game added with
+  three.c directly included), takes the clustered lights out of three.c's
+  list for the frame, updates world matrices once and marks lit materials
+  (a mesh again only when its material slots or their extensions change,
+  so a material swapped by a plain write is seen); each view only filters
+  the lights by its camera layers and visibility, projects, sorts, bins
+  and fills its textures. The cascaded sun's shadow casters key is computed
+  once a frame too. Four players on a large racing track, GL: the lights
+  pass went from 3.8 to 1.3 ms of CPU a frame, material marking from 1.27
+  to 0.13 ms, the picture identical.
+- The light and froxel textures only grow (on WebGPU a texture made again
+  each view cost every bind group that sampled it).
+- three.c v0.186.22: `t3_graph_version` (a counter that moves when a
+  scene's structure changes), GLES re-uploads a same-size texture into its
+  existing storage, extension uniform and texture lookups are cached by
+  name, and GLES shadow maps drawn before a renderer's first render get
+  their camera.
+
+### Fixed
+- Ambient occlusion and the normals debug view at the frame's left and
+  bottom edges: the normal from depth took the difference toward the
+  neighbour outside the frame, so it was zero and the normal NaN, and GL
+  drew a dark band three pixels high along the bottom of the frame.
+- Impostors were about 35% darker than their meshes on GL and WebGPU (the
+  normal atlas held sRGB-converted packed normals, so normals decoded bent
+  away from the camera); the normal atlas is now sRGB storage and the
+  shaders pack what sampling decodes. Against the same trees drawn as
+  meshes: 6.71% of pixels over 16 levels became 0.69%.
+- Every impostor showed its views mirrored front to back on GL (the bake
+  counted viewport rows from the bottom; three.js counts from the top).
+- Split screen drew the cascaded sun in the first view only: later views
+  drew the sun through three.c's own shadow map. The sun now stays the
+  frame's and each view fits its own cascades.
+- GL crash in split screen with a cascaded sun: a later view's cascade
+  casters drew with another pass's vertex array (no index buffer). The
+  lights pass now resets three.c's bindings before its shadow draws.
+- A light whose layers a game set while the lights pass had it out kept
+  the pass's value; the game's value is kept now.
+- Shadow maps drawn on a pipeline's first frame are not kept (the first
+  frame had no sun shadows on GL when casters drew before the first scene
+  render; three.c v0.186.22 also fixes the cause).
+- A frame of a whole number of fixed steps (a 60 Hz frame of a 120 Hz
+  game) passes the same `dt` bit for bit on every host; `cw.frame_dt`
+  differed in its last bit between native and the cart hosts.
+
+### Tests
+- `tests/no-gl-only-carts.mjs` (gate, `tests/all.mjs` and the CI carts
+  job): every built cart imports GL and WebGPU, the configure and import
+  refusals hold, the project editor cart is dual, no `GL_ONLY` marker is
+  left in the build; controls: a GL-only cart made on the spot and a
+  planted marker are caught.
+- Gates `msaa-hdr` and `msaa-hdr-aa-off` (with Off, GL and WebGPU both
+  draw single-sampled and match; control: FXAA keeps the MSAA).
+- WebGPU legs on the converted apps' gates (input, audio, motion, physics,
+  platformer2d, character3d, r2d, fx, the editor gates, vis-city-house,
+  vis-city-check) and again on vis-impostor, vis-impostor-band and
+  vis-city (control: no bake on WebGPU, `CW_TEST_IMPOSTOR_WGPU_OFF=1`);
+  the cart legs of wcnative-pads, showcase-perf, editor-channel,
+  editor-import, editor-play, editor-level and plugins are back.
+  `tests/gate.mjs`: a WebGPU control may be told apart by named state
+  fields.
+- Chromium WebGPU test runs wait for the GPU after each frame, so a
+  frame's readbacks land before the next as on native and romdev (after a
+  heavy frame, occlusion query counts arrived a frame late in Chromium
+  only).
+- Gates `lighting-changes` (two views, a cascaded sun, lights added,
+  reparented, hidden, moved to another layer and removed, a node freed, a
+  material swapped by a plain write; control: the first index kept),
+  `lighting-remark` (control: a swapped-in material gets no shading parts)
+  and `profile-lighting` (1600 boxes, 64 lights and a cascaded sun traced
+  in one view and in four on GL and WebGPU: the scene work runs once a
+  frame and four views cost the pass under 2.5 times one; controls: the
+  scene work each view, an impossible ratio).
+- `CW_TEST_WGPU_NO_MSAA`, `CW_TEST_WGPU_NO_DEPTH_RESOLVE`,
+  `CW_TEST_IMPOSTOR_WGPU_OFF` and `CW_TEST_IMPOSTOR_BAKE_MS` test switches;
+  `CW_TRAP_STACK=1` in `tests/wgpu-carts.mjs` prints a cart's wasm stack
+  at a trap.
+
 ## v0.19.1 (2026-10-28)
 
 The program-table check builds WebGPU pipelines with the vertex buffers
