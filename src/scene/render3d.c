@@ -26,6 +26,7 @@ void cw__programs_register(void); /* src/render/programs.c */
 void cw__decals_renderer_init(t3_renderer *r); /* src/fx/decals.c: mesh decals' extension hook */
 void cw__skin_shading_renderer_init(t3_renderer *r); /* src/render/skin_shading.c: the skin part's hook */
 void cw__skin_shading_frame(void);                   /* follow the quality setting */
+void cw__rim_light_renderer_init(t3_renderer *r);   /* src/render/rim_light.c: the rim part's hook */
 
 typedef struct render3d_state {
   t3_scene *scene;
@@ -101,6 +102,7 @@ t3_renderer *cw_render3d_window_renderer(int w, int h) {
   t3_renderer_set_sort_bounds(r, !getenv("CW_SORT_ORIGINS"));
   cw__decals_renderer_init(r);
   cw__skin_shading_renderer_init(r);
+  cw__rim_light_renderer_init(r);
 #if CW_WGPU
   if (r && cw_gpu_backend() == CW_GPU_WEBGPU)
     t3_renderer_use_wgpu(r, cw__wgpu_device(), cw__wgpu_queue(), (int)cw__wgpu_frame_format());
@@ -998,6 +1000,7 @@ t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
     t3_renderer_set_sort_bounds(s->renderer, !getenv("CW_SORT_ORIGINS"));
     cw__decals_renderer_init(s->renderer);
     cw__skin_shading_renderer_init(s->renderer);
+    cw__rim_light_renderer_init(s->renderer);
 #if CW_WGPU
     /* a WebGPU frame: three.c's WebGPU backend, drawing into the pipeline's
      * scene target on its frame encoder (the scene pass) */

@@ -57,6 +57,7 @@ void cw__ktx2_init(void);
 /* glTF (gltf.c): hot reload in place re-links instances */
 void cw__gltf_shutdown(void);
 void cw__skin_shading_shutdown(void); /* src/render/skin_shading.c */
+void cw__rim_light_shutdown(void);     /* src/render/rim_light.c */
 
 uint64_t cw__res_frame_index(void);
 /* payload when READY and of type t */

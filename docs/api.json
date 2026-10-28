@@ -10752,6 +10752,62 @@
    ]
   },
   {
+   "header": "cartwheel/rim_light.h",
+   "summary": "cartwheel/rim_light.h: a rim light, a coloured glow along a surface's\nsilhouette edges (a shading part, cartwheel/shading.h).\n\nWhere a surface turns away from the camera its edge glows in the rim's\ncolour: glow = color x strength x (1 - N.V)^power, added to the\nmaterial's emissive light (so it shows in shadow and at night, and bloom\npicks it up). It fades in with distance from the camera: below\n`near` metres it is `close` of its full strength, past `far` it is all\nof it, smooth in between. That is what a split-screen shooter wants for\ntelling teams apart: a fighter 30 m away reads as a red or blue outline,\none at arm's length is not painted over. Also: a highlight on pickups or\ninteractive objects, a \"spawn protected\" shimmer (pulse the strength from\ncode), a selection glow in a menu scene.\n\nPer material: every mesh drawing the material gets the same rim (glTF\ninstances share their file's materials: clone a material per character,\nt3_material_clone, for a per-character colour; MeshInstance3D primitives\nof one look share one material in a tree). Changing the values is free (a\nuniform per draw); the part is added once.\n\nWorks on MeshStandardMaterial and MeshPhysicalMaterial, skinned or not,\nwith every other part (clustered lights, the cascaded sun, skin shading,\nGI). Costs a few ALU operations per pixel of the material; nothing when\nno material has a rim. Shadow casters are untouched. Every quality preset\ndraws it (it is a readability feature, not decoration).\n\nProgram tables: a material with a rim draws the composed state with\n\"rim\" in its extension (xrim, xcluster_rim_gi, ...): tools/programs.mjs\nfinds and adds those like any other state.",
+   "functions": [
+    {
+     "name": "cw_rim_light_default",
+     "signature": "cw_rim_light_desc cw_rim_light_default(void)",
+     "doc": "the defaults above",
+     "inline": false
+    },
+    {
+     "name": "cw_rim_light_apply",
+     "signature": "bool cw_rim_light_apply(t3_material *m, const cw_rim_light_desc *d)",
+     "doc": "Give material m a rim (d NULL: the defaults). m must be a\nMeshStandardMaterial or MeshPhysicalMaterial; false otherwise, or when m\nalready carries CW_SHADING_MAX_PARTS parts. Applying again replaces the\nvalues (cheap: call it every frame to pulse a rim). The material is\nretained until cw_rim_light_remove.",
+     "inline": false
+    },
+    {
+     "name": "cw_rim_light_remove",
+     "signature": "void cw_rim_light_remove(t3_material *m)",
+     "doc": "No rim any more (no-op when m has none).",
+     "inline": false
+    },
+    {
+     "name": "cw_rim_light_get",
+     "signature": "bool cw_rim_light_get(const t3_material *m, cw_rim_light_desc *out)",
+     "doc": "m has a rim; its values into *out when out is not NULL.",
+     "inline": false
+    },
+    {
+     "name": "cw_rim_light_apply_tree",
+     "signature": "int cw_rim_light_apply_tree(t3_object *root, const cw_rim_light_desc *d)",
+     "doc": "Every material of every mesh under root gets the rim (each material once;\nclone first for a per-object colour). Returns how many materials.",
+     "inline": false
+    },
+    {
+     "name": "cw_rim_light_remove_tree",
+     "signature": "int cw_rim_light_remove_tree(t3_object *root)",
+     "doc": "Every material under root loses its rim (call before releasing a model\nwhose materials have one: the rim keeps its materials alive). Returns how\nmany materials.",
+     "inline": false
+    },
+    {
+     "name": "cw_rim_light_count",
+     "signature": "int cw_rim_light_count(void)",
+     "doc": "Materials with a rim now.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_rim_light_desc",
+     "doc": "",
+     "decl": "typedef struct cw_rim_light_desc {\n  t3_color color;   /* the glow's colour (linear; 1, 0.3, 0.2) */\n  float strength;   /* its brightness, emissive units (2) */\n  float power;      /* how tight to the edge, 1 = broad, 8 = a thin line (3) */\n  float near, far;  /* metres from the camera where it fades in (6 to 20) */\n  float close;      /* the share of the strength it keeps below `near` (0.15) */\n} cw_rim_light_desc;"
+    }
+   ],
+   "macros": []
+  },
+  {
    "header": "cartwheel/scene.h",
    "summary": "cartwheel scene model: nodes, the scene tree, groups, signals, reflection.\n\nA node is a named element of a tree. Its TYPE (registered once) says what\ndata it carries, which properties it exposes by name (reflection), which\nsignals it can emit and which lifecycle callbacks it has. Node types\ninherit: Node3D extends Node, MeshInstance3D extends Node3D. Users hold\nnodes by generational handle (cw_node); a freed node's handle reads as\nnull, never as another node.\n\nProcessing order is tree order (depth first, children in order), so a run\nis deterministic. Adding or removing nodes while the tree is being\nprocessed is queued and applied at the end of the current phase.\n\nEvery property is reachable by name (cw_node_set / cw_node_get) with typed\nvalues (cw_value). That one path serves the editor's inspector, the text\nscene format, animation tracks, romdev's debug channel and script bindings.",
    "functions": [

@@ -1380,6 +1380,7 @@ void cw_res_shutdown(void) {
   }
   cw__gltf_shutdown();
   cw__skin_shading_shutdown();
+  cw__rim_light_shutdown();
   cw_pool_free_all(&R.slots);
   cw_map_free(&R.by_path);
   cw_map_free(&R.by_uid);

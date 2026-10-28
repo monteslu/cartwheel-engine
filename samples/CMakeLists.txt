@@ -8,6 +8,8 @@ cw_add_app(vertex_colors SOURCES vertex_colors/main.c)
 # characters: skin shading, glTF material extensions, morph targets on skinned meshes, many instances of one glTF
 cw_add_app(character_skin SOURCES character_skin/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/character_skin/assets
   PROGRAMS character_skin/programs/character_skin.txt)
+# a coloured glow along silhouettes that fades in with distance (team colours at range, a pulsing shimmer)
+cw_add_app(rim_light SOURCES rim_light/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/rim_light/assets)
 # fine texture detail at grazing angles (anisotropic filtering, mip chains, sRGB albedo, normal maps): GL and WebGPU draw the same picture
 cw_add_app(texture_filtering SOURCES texture_filtering/main.c)
 # the game shell's join screen opened during a match: seats added and dropped between rounds

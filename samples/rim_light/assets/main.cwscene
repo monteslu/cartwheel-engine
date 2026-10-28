@@ -1,0 +1,60 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.04, 0.05, 0.08, 1)
+sky_color = color(0.1, 0.12, 0.18, 1)
+ground_color = color(0.05, 0.05, 0.05, 1)
+hemi_energy = 0.5
+ambient_energy = 0.1
+
+[node name="Lighting" parent="." type="LightingSettings"]
+mode = "CLUSTERED"
+
+[node name="Post" parent="." type="PostProcess"]
+hdr = true
+bloom = true
+bloom_intensity = 0.25
+bloom_threshold = 1.0
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 1.6, 2.5)
+rotation = vec3(-0.04, 0, 0)
+fov = 60
+near = 0.1
+far = 120
+
+[node name="Moon" parent="." type="DirectionalLight3D"]
+rotation = vec3(-0.9, 0.4, 0)
+energy = 0.6
+color = color(0.6, 0.7, 1, 1)
+shadow = true
+shadow_extent = 30
+
+[node name="Lamp" parent="." type="OmniLight3D"]
+position = vec3(0, 3, -1)
+energy = 6
+range = 8
+color = color(1, 0.8, 0.6, 1)
+
+[node name="Ground" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.1, -25)
+size = vec3(14, 0.2, 60)
+color = color(0.16, 0.16, 0.17, 1)
+roughness = 0.9
+receive_shadow = true
+
+[node name="WallL" parent="." type="MeshInstance3D"]
+position = vec3(-5, 3, -25)
+size = vec3(0.4, 6, 60)
+color = color(0.2, 0.19, 0.18, 1)
+roughness = 0.9
+receive_shadow = true
+
+[node name="WallR" parent="." type="MeshInstance3D"]
+position = vec3(5, 3, -25)
+size = vec3(0.4, 6, 60)
+color = color(0.2, 0.19, 0.18, 1)
+roughness = 0.9
+receive_shadow = true
