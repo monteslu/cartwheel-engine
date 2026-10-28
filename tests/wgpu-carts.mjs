@@ -36,7 +36,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { takeSuiteLock } from '../tools/lib/suite-lock.mjs';
-import { armGuard, killTree } from '../tools/lib/gpu-guard.mjs';
+import { armGuard } from '../tools/lib/gpu-guard.mjs';
 import { testEnv, wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
 
@@ -166,7 +166,7 @@ function check(name, gpu, extra = []) {
     let out = '', log = '';
     p.stdout.on('data', (d) => (out += d));
     p.stderr.on('data', (d) => (log += d)); // the cart's own logging
-    const t = setTimeout(() => { out += 'RESULT timed out'; killTree(p.pid); }, 60000 + frames * 400);
+    const t = setTimeout(() => { out += 'RESULT timed out'; p.kill('SIGKILL'); }, 60000 + frames * 400);
     p.on('close', (code, sig) => {
       clearTimeout(t);
       const why = (out.match(/RESULT (.*)/) || [])[1] || `exit ${code ?? sig}`;
@@ -214,7 +214,7 @@ if (PROJ === ROOT && !only.length) {
     let out = '';
     p.stdout.on('data', (d) => (out += d));
     p.stderr.on('data', (d) => (out += d));
-    const t = setTimeout(() => killTree(p.pid), 60000);
+    const t = setTimeout(() => p.kill('SIGKILL'), 60000);
     p.on('close', (code, sig) => {
       clearTimeout(t);
       const ok = code === 1 && !sig && /has no WebGPU build/.test(out) && /GL_ONLY/.test(out);

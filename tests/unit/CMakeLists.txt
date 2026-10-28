@@ -76,6 +76,8 @@ cw_add_app(unit_plugin SOURCES test_plugin.c PLUGINS ${CMAKE_CURRENT_SOURCE_DIR}
 # without the render pipeline (its own boxes, depth and pass context)
 cw_add_app(fx_gpu SOURCES fx_gpu.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_gpu_assets)
 target_include_directories(fx_gpu PRIVATE ${CMAKE_SOURCE_DIR}/src)
+# a cart whose worker thread dies mid-chunk: the page thread stops with an error instead of spinning forever (tests/jobs-stall.mjs)
+cw_add_app(jobs_stall SOURCES jobs_stall.c)
 # Phase 0 spikes: what an FFT ocean, a ripple grid, a fire volume and a particle liquid cost on WebGPU (tests/boom-perf.mjs, tests/spikes.mjs)
 cw_add_app(fx_spikes SOURCES fx_spikes.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_spikes_assets)
 target_include_directories(fx_spikes PRIVATE ${CMAKE_SOURCE_DIR}/src)
