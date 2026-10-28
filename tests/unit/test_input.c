@@ -338,6 +338,28 @@ static bool home_stays(int stick, float lx, float ly, float mx, float my, float 
   return same;
 }
 
+/* The older rect stick added floating: it keeps a home in its rect's bottom left (every example game called it that way
+ * and its ring jumped to wherever the thumb landed). cw_touch_set_floating brings the older feel back: the control. */
+static void test_rect_stick_home(void) {
+  fresh();
+  int s = cw_touch_add_stick(0, 160, 400, 380, 60, true);
+  CHECK(near2(cw_touch_home(s), 120, 420)); /* two radii in from the bottom left corner */
+  run_frame(-1, 1); /* (the ring is placed by a frame) */
+  CHECK(home_stays(s, 300, 200, 350, 250, 30, 520));
+  /* steering is from the home: a thumb 60 px right of it is full right */
+  raw.touches[0] = (cw_touch_state){ .active = true, .tapped = true, .x = 180, .y = 420 };
+  run_frame(-1, 1);
+  CHECK(near2(cw_touch_stick_value(s), 1, 0));
+  raw.touches[0].active = false;
+  run_frame(-1, 1);
+  /* a small rect: the home is its middle */
+  int m = cw_touch_add_stick(500, 400, 100, 80, 60, true);
+  CHECK(near2(cw_touch_home(m), 550, 440));
+  /* the control that must fail: the older floating feel follows the thumb */
+  cw_touch_set_floating(s, true);
+  CHECK(!home_stays(s, 300, 200, 350, 250, 30, 520));
+}
+
 /* The anchored controls: a thumbstick with a home that stays put, sizes in
  * touch units that follow the area, round buttons, the overlay's switch. */
 static void test_thumbstick(void) {
@@ -582,4 +604,4 @@ static void test_aim(void) {
 
 CW_TEST_SUITE("input", { "tick_latch", test_tick_latch }, { "strength_vector", test_strength_and_vector },
               { "players", test_players }, { "text", test_text }, { "capture", test_capture },
-              { "touch", test_touch }, { "thumbstick", test_thumbstick }, { "record_replay", test_record_replay }, { "aim", test_aim })
+              { "touch", test_touch }, { "thumbstick", test_thumbstick }, { "rect_stick_home", test_rect_stick_home }, { "record_replay", test_record_replay }, { "aim", test_aim })
