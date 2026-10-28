@@ -1,28 +1,34 @@
 // Showcase performance report: showcase_perf (the outdoor
 // valley at 1920x1080, full quality: 193 lights, shadows, height fog,
 // GTAO, TAA, bloom, SMAA) through its five time-of-day segments of 150 frames
-// (morning, golden hour, dusk, night, the running cycle), natively.
-// showcase_perf is GL_ONLY (it reads the frame back with GL itself), so it has
-// no dual cart, and there is no GL-only cart: it has no romdev, browser or
-// wasmcart-native legs.
+// (morning, golden hour, dusk, night, the running cycle), on every host.
 //
-// The app measures itself: frame ms is render
+// The cart measures itself, the same way on every host: frame ms is render
 // end to render end with a 1-pixel read after each frame (the whole frame's
 // CPU and GPU work, not a pipelined submission rate), averaged per segment
 // after 30 settling frames, plus the worst frame; GPU ms per pass come from
-// the pipeline's timer queries (16-frame averages).
+// the pipeline's timer queries (16-frame averages). Hosts without the debug
+// state (wasmcart-run) report through the cart's per-segment stderr line.
+// romdev's frame stepping is also timed from outside (wall ms per stepped
+// frame, HTTP included), since a deterministic host may virtualize clocks.
 //
-// Checks: every segment averages under the budget
+// Checks: every segment of every host that ran averages under the budget
 // (60 fps: 16.7 ms); the night segment has all 128 lamps on. Control: the same budget check against an impossible budget
 // (0.05 ms) must fail, or the check cannot fail at all.
 //
-//   node tests/showcase-perf.mjs [--budget-ms 16.7]
+//   node tests/showcase-perf.mjs [--hosts native,romdev,chromium,wcnative] [--budget-ms 16.7]
+//
+// Chromium runs on CW_CHROMIUM_GPU (a PCI address) when set, on that GPU alone (tools/lib/chromium.mjs);
+// the report names the GPU it got.
 import { spawn } from 'node:child_process';
-import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
-import { join, resolve, dirname } from 'node:path';
+import { createServer } from 'node:http';
+import { readFileSync, mkdirSync, writeFileSync, existsSync, mkdtempSync } from 'node:fs';
+import { join, resolve, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { wcnativePlayer } from '../tools/lib/wcnative.mjs';
+import { launchChromium } from '../tools/lib/chromium.mjs';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
-import { testEnv } from '../tools/lib/wgpu-pin.mjs';
+import { testEnv, wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 testEnv(process.env); // what it starts renders offscreen and cannot reach the desktop
 
@@ -31,11 +37,12 @@ const OUT = join(ROOT, 'out', 'perf');
 mkdirSync(OUT, { recursive: true });
 const argv = process.argv.slice(2);
 const opt = (k, d) => (argv.includes('--' + k) ? argv[argv.indexOf('--' + k) + 1] : d);
-const HOSTS = opt('hosts', 'native').split(',');
-if (HOSTS.some((h) => h !== 'native')) { console.error('showcase-perf: native only (showcase_perf is GL_ONLY: no cart)'); process.exit(2); }
+const HOSTS = opt('hosts', 'native,romdev,chromium,wcnative').split(',');
 const BUDGET = +opt('budget-ms', 1000 / 60);
 const APP = 'showcase_perf', SEGS = 5, SEG = 150, FRAMES = SEGS * SEG;
 const SEG_NAMES = ['morning', 'golden', 'dusk', 'night', 'cycle'];
+// the dual cart (build/cart-wgpu), run on GL: romdev and Chromium with wgpu: false, wasmcart-native with WASMCART_NO_WGPU=1
+const cart = join(ROOT, 'build/cart-wgpu/carts', `${APP}.wasc`);
 
 // "showcase-perf seg=3 frame_ms=1.2 max_ms=2 gpu_ms=0.9 lamps=128 scene=0.5 ..."
 function parseLines(text) {
@@ -73,7 +80,139 @@ function runNative() {
   });
 }
 
-const runners = { native: runNative };
+async function romdevCall(tool, a, session) {
+  const r = await fetch(`http://127.0.0.1:7331/tool/${tool}`, { method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-romdev-session': session }, body: JSON.stringify(a) });
+  const text = await r.text();
+  let body;
+  try { body = JSON.parse(text); } catch { body = text; }
+  if (!r.ok || (body && body.isError)) throw new Error(`romdev ${tool}: ${String(typeof body === 'string' ? body : JSON.stringify(body)).slice(0, 400)}`);
+  if (body && Array.isArray(body.content)) {
+    const t = body.content.find((c) => c.type === 'text');
+    try { return JSON.parse(t.text); } catch { return t ? t.text : body; }
+  }
+  return body;
+}
+
+async function runRomdev() {
+  const session = `cartwheel-showcase-perf-${process.pid}`;
+  try {
+    await romdevCall('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, wgpu: false, path: cart, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
+    // load ran frame 1; step each segment's remainder and time it
+    const outside = {};
+    let at = 1;
+    for (let k = 0; k < SEGS; k++) {
+      const settle = k * SEG + 30 - at;
+      if (settle > 0) { await romdevCall('frame', { op: 'step', frames: settle }, session); at += settle; }
+      const n = (k + 1) * SEG - at, t0 = performance.now();
+      await romdevCall('frame', { op: 'step', frames: n }, session);
+      outside[k] = (performance.now() - t0) / n;
+      at += n;
+    }
+    const st = await romdevCall('wasm', { op: 'debugState' }, session);
+    const s = {};
+    for (const f of st.fields || []) s[f.name] = f.values ?? f.value;
+    const segs = fromState(s);
+    for (let k = 0; k < SEGS; k++) segs[k] = { ...(segs[k] || { seg: k }), outside_ms: outside[k] };
+    return { state: s, segs, passes: passesOf(s), gpu: 'romdev wasmcart host' };
+  } catch (e) {
+    return { error: e.message.split('\n')[0] };
+  } finally {
+    await romdevCall('host', { op: 'shutdown' }, session).catch(() => {});
+  }
+}
+
+const MIME = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'text/html', '.wasc': 'application/octet-stream' };
+async function runChromium() {
+  const WC = join(ROOT, 'deps/wasmcart-wgpu'); // the WebGPU tier's host: it runs dual carts (here on GL)
+  const page = `<!doctype html><html><body><canvas id=c></canvas>
+<script type=importmap>{"imports":{"fflate":"/wc/node_modules/fflate/esm/browser.js"}}</script>
+<script type=module>
+import { CartHostWeb } from '/wc/src/CartHostWeb.js';
+window.run = async (frames) => {
+  const host = new CartHostWeb();
+  const canvas = document.getElementById('c');
+  let lost = -1, k = 0;
+  canvas.addEventListener('webglcontextlost', () => { lost = k; });
+  await host.load('/cart.wasc', { glBackend: () => canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: false }), wgpu: false });
+  const info = host.getInfo();
+  canvas.width = info.width; canvas.height = info.height;
+  const step = 1000 / 60;
+  host._writeTime = ((orig) => function () { orig.call(this, k * step, step, k); })(host._writeTime);
+  const pads = [{ connected: true, buttons: 0 }, { connected: false }, { connected: false }, { connected: false }];
+  for (k = 0; k < frames; k++) {
+    await host.runFrame(pads);
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  const gl = host.getGlContext();
+  const e = gl.getExtension('WEBGL_debug_renderer_info');
+  const state = {};
+  const ex = host.instance.exports;
+  const dv = new DataView(host.memory ? host.memory.buffer : ex.memory.buffer);
+  const str = (q) => { let s = ''; for (let b; (b = dv.getUint8(q)); q++) s += String.fromCharCode(b); return s; };
+  for (let p = ex.wc_debug_state(); ; p += 16) {
+    const name = dv.getUint32(p, true); if (!name) break;
+    const vp = dv.getUint32(p + 4, true), type = dv.getUint8(p + 8), len = dv.getUint32(p + 12, true);
+    const rd = (q) => (type === 6 ? dv.getFloat32(q, true) : type === 5 ? dv.getInt32(q, true) : type === 4 ? dv.getUint32(q, true) : null);
+    state[str(name)] = len === 1 ? rd(vp) : Array.from({ length: len }, (_, i) => rd(vp + i * 4));
+  }
+  return { state, lost, renderer: e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER) };
+};
+window.ready = true;
+</script></body></html>`;
+  const server = createServer((req, res) => {
+    const url = decodeURIComponent(req.url.split('?')[0]);
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+    if (url === '/') { res.setHeader('Content-Type', 'text/html'); res.end(page); return; }
+    const file = url === '/cart.wasc' ? cart : url.startsWith('/wc/') ? join(WC, url.slice(4)) : null;
+    if (!file || !existsSync(file)) { res.statusCode = 404; res.end(); return; }
+    res.setHeader('Content-Type', MIME[extname(file)] || 'application/octet-stream');
+    res.end(readFileSync(file));
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const { chromium } = await import(join(WC, 'node_modules', 'playwright', 'index.mjs'));
+  const { browser, verify } = await launchChromium(chromium, OUT);
+  try {
+    const pg = await browser.newPage({ viewport: { width: 1960, height: 1120 } });
+    await pg.goto(`http://127.0.0.1:${server.address().port}/`);
+    await pg.waitForFunction('window.ready === true');
+    await verify(pg);
+    const r = await pg.evaluate((f) => window.run(f), FRAMES);
+    if (r.lost >= 0) return { error: `WebGL context lost at frame ${r.lost}` };
+    return { state: r.state, segs: fromState(r.state), passes: passesOf(r.state), gpu: r.renderer };
+  } catch (e) {
+    return { error: String(e.message).split('\n')[0] };
+  } finally {
+    await browser.close();
+    server.close();
+  }
+}
+
+async function runWcnative() {
+  let exe;
+  try { exe = wcnativePlayer(); } catch (e) { return { error: e.message }; } // tools/lib/wcnative.mjs
+  const ppm = join(mkdtempSync(join(ROOT, 'out', 'wcn-')), 'shot.ppm');
+  const child = spawn(exe, [cart, '--fixed-step', String(1000 / 60), '--shot', String(FRAMES - 1), ppm, '--uncapped'],
+    { env: { ...process.env, SDL_AUDIODRIVER: 'dummy', WASMCART_NO_WGPU: '1' }, stdio: ['ignore', 'ignore', 'pipe'] });
+  let err = '';
+  child.stderr.on('data', (d) => (err += d));
+  const deadline = Date.now() + 300000;
+  while (!existsSync(ppm) && child.exitCode === null && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
+  await new Promise((r) => setTimeout(r, 300));
+  child.kill('SIGTERM');
+  const segs = parseLines(err);
+  if (!Object.keys(segs).length) {
+    const why = err.split('\n').filter((l) => /failed|error/i.test(l)).slice(0, 2).join(' | ') || err.trim().split('\n').slice(-2).join(' | ');
+    return { error: `no perf lines (wasmcart-run needs a display for its EGL window): ${why}` };
+  }
+  // wasmcart-run stubs the timer queries: no per-pass GPU times there
+  for (const k in segs) delete segs[k].gpu_ms;
+  return { segs, passes: Object.fromEntries(Object.entries(segs[SEGS - 1] || {}).filter(([k]) => !/^(seg|frame_ms|max_ms|cpu_ms|gpu_ms|lamps)$/.test(k))),
+    gpu: 'wasmcart-native (EGL default device)', lines: segs };
+}
+
+const runners = { native: runNative, romdev: runRomdev, chromium: runChromium, wcnative: runWcnative };
 const results = {};
 for (const h of HOSTS) results[h] = await runners[h]();
 
@@ -96,6 +235,7 @@ lines.push('GPU ms per pass (last frame\'s 16-frame average, the running cycle):
 lines.push(pad('pass', 20) + hs.map((h) => pad(h, 12)).join(''));
 for (const p of passNames) lines.push(pad(p, 20) + hs.map((h) => pad(num((results[h].passes || {})[p], 3), 12)).join(''));
 for (const h of HOSTS) if (results[h].error) lines.push(`${h}: did not run: ${results[h].error}`);
+if (results.romdev && !results.romdev.error) lines.push('romdev: o = wall ms per frame stepped through the tool route, measured outside the cart');
 console.log(lines.join('\n'));
 writeFileSync(join(OUT, 'showcase-report.txt'), lines.join('\n') + '\n');
 

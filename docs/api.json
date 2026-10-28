@@ -394,6 +394,12 @@
      "inline": false
     },
     {
+     "name": "cw_anim_from_text",
+     "signature": "cw_anim cw_anim_from_text(const char *text)",
+     "doc": "The other way: one [animation] section (with its [track]s and keys) into a new\nanimation, stored in scene files (the caller holds its reference). Null, logged,\non a parse error. The header's player= is not used (cw_anim_player_add places it).",
+     "inline": false
+    },
+    {
      "name": "cw_anim_player_add",
      "signature": "void cw_anim_player_add(cw_node player, const char *name, cw_anim a)",
      "doc": "Library: name -> animation. The player retains it; a name already present\nis replaced.",
@@ -2816,6 +2822,48 @@
      "name": "cw_gpu_clear_window",
      "signature": "void cw_gpu_clear_window(float r, float g, float b, float a)",
      "doc": "Clear the whole window to (r, g, b, a) (both backends): what an app that draws its\nown background before any pass does instead of glClear.",
+     "inline": false
+    },
+    {
+     "name": "cw_gpu_read_window",
+     "signature": "uint32_t cw_gpu_read_window(int x, int y, int w, int h)",
+     "doc": "Read the window back, on either backend. cw_gpu_read_window asks for the\nregion (x, y, w, h: window pixels, top-left origin) of the picture this\nframe puts in the window; the read is taken at the end of the frame, after\neverything has drawn (the UI, a pixel_scale or render resolution upscale),\nand returns a ticket (0: a bad region, or eight reads already waiting).\ncw_gpu_read_result copies the pixels out once they have arrived, as\ntop-down RGBA8 (w * h * 4 bytes): 1 (the ticket is spent), 0 (not yet:\nask again next frame) or -1 (an unknown ticket, or a read that failed).\nOn GL the pixels arrive at the end of the frame they were asked in, so\nthey can be taken from the next frame on; on WebGPU a frame or more later\n(a cart never waits for the GPU). Reads made in the same frame arrive in\nthe order they were asked. A read is a stall on GL and costs a copy on\nWebGPU: for checks and tools, not for every frame of a game.",
+     "inline": false
+    },
+    {
+     "name": "cw_gpu_read_window_now",
+     "signature": "uint32_t cw_gpu_read_window_now(int x, int y, int w, int h)",
+     "doc": "The same, taken now instead of at the end of the frame: what has been drawn\nto the window so far (between two passes, to compare them).",
+     "inline": false
+    },
+    {
+     "name": "cw_gpu_read_result",
+     "signature": "int cw_gpu_read_result(uint32_t ticket, void *rgba)",
+     "doc": "Take a read's pixels (top-down RGBA8) once they arrived: 1, 0 (not yet) or -1 (above).",
+     "inline": false
+    },
+    {
+     "name": "cw_gpu_read_rt",
+     "signature": "uint32_t cw_gpu_read_rt(const struct cw_rt *rt, int x, int y, int w, int h)",
+     "doc": "A read of a 3D pipeline target (cw_rt_new; a cw_target_rt cannot be read): the\nregion (x, y, w, h, top-left origin) as it is now, top-down RGBA8 like the window's.\nTaken at once; it arrives as the window's reads do.",
+     "inline": false
+    },
+    {
+     "name": "cw_gpu_read_wait",
+     "signature": "int cw_gpu_read_wait(uint32_t ticket, void *rgba)",
+     "doc": "cw_gpu_read_result, but natively it waits for a WebGPU read to arrive (a tool or an\neditor measuring a picture). On GL the read is there already; a cart on WebGPU\ncannot wait (0 until a later frame).",
+     "inline": false
+    },
+    {
+     "name": "cw_gpu_read_drop",
+     "signature": "void cw_gpu_read_drop(uint32_t ticket)",
+     "doc": "Give up a read: its slot is free again (at once, or when it lands).",
+     "inline": false
+    },
+    {
+     "name": "cw_gpu_finish",
+     "signature": "bool cw_gpu_finish(void)",
+     "doc": "Wait until the GPU has finished all the work submitted so far (a perf\nbuild timing whole frames): natively on both backends, and in a cart on\nGL (a one-pixel read). A cart on WebGPU cannot wait: false, nothing done.",
      "inline": false
     }
    ],
@@ -9625,6 +9673,12 @@
      "inline": false
     },
     {
+     "name": "cw_target_rt",
+     "signature": "const struct cw_rt *cw_target_rt(cw_texture t)",
+     "doc": "The target as a 3D pipeline output, on either GPU API: cw_pipeline_set_output(p,\ncw_target_rt(t)) and cw_pipeline_render draw the scene into it, and the target then\ndraws as a sprite or a UI image (cw_ui_draw_texture) the right way up. NULL for a\nhandle that is not a target. Owned by the target: valid until it is resized or\ndestroyed (ask again after cw_target_resize). (cw_target_fbo is GL only.)",
+     "inline": false
+    },
+    {
      "name": "cw_camera2d_view",
      "signature": "cw_xform2d cw_camera2d_view(const cw_camera2d *cam, cw_rect viewport, cw_vec2 parallax)",
      "doc": "World -> canvas transform for a viewport (canvas pixels) and a parallax\nfactor ((0,0) = (1,1); (0.5, 0.5) scrolls at half speed).",
@@ -10222,6 +10276,12 @@
      "name": "cw_render3d_window_renderer",
      "signature": "t3_renderer *cw_render3d_window_renderer(int w, int h)",
      "doc": "A three.c renderer an app drives itself (t3_renderer_render, no scene\ntree), on whichever GPU API this run uses: t3_renderer_new, plus three.c's\nWebGPU backend on a WebGPU run (a dual cart must not touch GL once the\nhost selected WebGPU). Draw to the window with cw_render3d_window_target.",
+     "inline": false
+    },
+    {
+     "name": "cw_render3d_texture_target",
+     "signature": "void cw_render3d_texture_target(t3_renderer *r, cw_texture target)",
+     "doc": "Before a t3_renderer_render into a 2D render target (cw_target_create with\ndepth; null handle = the window, as cw_render3d_window_target): the target\nthen draws as a sprite the right way up, on GL and WebGPU. Size the renderer\nto the target first (t3_renderer_set_size) and back to the window after.",
      "inline": false
     },
     {

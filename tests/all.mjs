@@ -32,7 +32,7 @@ let failed = 0;
 // the WebGPU axis (gate.mjs --gpu webgpu, and every dual cart on WebGPU in Node) when the dual cart tree is built
 const wgpu = existsSync(join(ROOT, 'build', 'cart-wgpu', 'carts'));
 const runs = [['gate.mjs', ...flags], ...(wgpu ? [['gate.mjs', '--gpu', 'webgpu', ...flags]] : []),
-  ...(wgpu && !chromiumOnly ? [['wgpu-carts.mjs'], ['jobs-stall.mjs'], ['mem-grow.mjs']] : []),
+  ...(wgpu && !chromiumOnly ? [['wgpu-carts.mjs'], ['no-gl-only-carts.mjs'], ['jobs-stall.mjs'], ['mem-grow.mjs']] : []),
   // pixel_scale / crisp UI on each host and GPU API; carts at the host's preferred size through wasmcart-libretro
   ['pixel-scale.mjs', '--hosts', chromiumOnly ? 'chromium' : flags.includes('--no-chromium') ? 'native' : 'native,chromium', ...(wgpu ? [] : ['--gpus', 'gl'])],
   ...(chromiumOnly ? [] : [['host-resolution.mjs']]),
