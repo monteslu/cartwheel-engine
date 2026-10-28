@@ -80,3 +80,6 @@ standard+trans+l0001+xcluster_csm
 standard+trans+l1001
 standard+vcol+shadow+l1001
 standard+vcol+shadow+senv+l1801+s110
+standard+map+rep+nmap+rmap+l1001
+standard+map+rep+nmap+l1001
+basic+map+rep
