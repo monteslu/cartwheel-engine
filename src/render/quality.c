@@ -572,7 +572,8 @@ void cw__quality_post(cw_post_settings *s) {
   if (s->ssgi && ev(CW_GFX_EFFECTS) < 3) s->ssgi = false;
   if (s->bloom && e->bloom_levels > 0 && s->bloom_levels > e->bloom_levels) s->bloom_levels = e->bloom_levels;
   int aa = ev(CW_GFX_AA);
-  if (aa == AA_OFF) s->aa = CW_AA_NONE;
+  /* Off is no antialiasing at all: the post AA and the scene's MSAA (its cost back, on GL and WebGPU alike) */
+  if (aa == AA_OFF) s->aa = CW_AA_NONE, s->msaa = 0;
   else if (aa == AA_FXAA && s->aa == CW_AA_SMAA) s->aa = CW_AA_FXAA;
 }
 
