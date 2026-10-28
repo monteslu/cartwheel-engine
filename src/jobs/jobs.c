@@ -34,6 +34,11 @@
 #if CW_CART
 int cw__cart_hardware_threads(void); /* src/platform/cart.c */
 #endif
+/* a thread that sees fewer of the cart's memory pages than an allocation has
+ * handed out catches up (src/core/mem.c): a chunk may touch blocks another
+ * thread allocated, and a waiter the blocks its job's chunks allocated.
+ * A no-op natively. */
+void cw__mem_sync(void);
 
 #define MAX_THREADS 64
 #define JOB_POOL 4096
@@ -157,6 +162,7 @@ static void zone_flush(void) {
 }
 
 static void run_chunk(cw_job *j, int c) {
+  cw__mem_sync();
   const char *zone = j->zone;
   uint64_t t0 = 0;
   if (zone && CW_PROFILE_ON()) {
@@ -394,6 +400,7 @@ void cw_job_wait(cw_job *j) {
     atomic_fetch_sub(&done_sleepers, 1);
     pthread_mutex_unlock(&sleep_lock);
   }
+  cw__mem_sync();
   zone_flush();
   if (n_workers) unpublish(j, atomic_load_explicit(&j->gen, memory_order_relaxed));
   atomic_store_explicit(&j->in_use, 0, memory_order_release);

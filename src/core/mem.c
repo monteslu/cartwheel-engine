@@ -1,7 +1,9 @@
 #include <stdarg.h>
 #include <stdatomic.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "cartwheel/core.h"
 
@@ -28,6 +30,113 @@ static void *sys_aligned_alloc(size_t align, size_t size) {
 #else
 #define sys_aligned_alloc(align, size) aligned_alloc((align), (size))
 #define sys_aligned_free(p) free(p)
+#endif
+
+/* ── a cart's heap growth seen by every thread ─────────────────────────
+ *
+ * A cart's memory is one shared wasm memory, and malloc grows it (sbrk,
+ * memory.grow) on whichever thread runs out. V8 (Node, Chromium) gives each
+ * thread its own copy of the memory's size and updates the other threads'
+ * copies only when they next stop for an interrupt check. Plain loads and
+ * stores never read that copy, but memory.fill / memory.copy (memset, memcpy:
+ * clang emits them inline) and memory.size do: on a thread whose copy is
+ * stale, a memset into memory another thread has just grown traps with
+ * "memory access out of bounds", although the address is in bounds. A
+ * navmesh tile build job did exactly that, about 1 run in 4 of a game that
+ * builds tiles on several threads while its heap grows.
+ *
+ * memory.grow(0) brings the calling thread's copy up to date. So every
+ * allocation the cart makes (cw_alloc and libc's malloc family, which cart
+ * links route here with --wrap, cmake/app.cmake) checks that the block it
+ * hands out lies inside what the calling thread sees, and refreshes when it
+ * does not; and the job pool refreshes a thread that sees fewer pages than
+ * any allocation has handed out (cw__mem_sync) before it runs a chunk and
+ * after a wait, so a block allocated on one thread is safe on another.
+ * tests/mem-grow.mjs (the mem_grow cart) races the threads, with a control
+ * that turns this off and must trap. */
+#if CW_CART
+static atomic_uint mem_pages_out;   /* pages any allocation has handed out (max) */
+static atomic_llong mem_refreshes;  /* stale views refreshed (a debug count) */
+int cw__mem_sync_off;               /* tests only: 1 skips the refresh (the control) */
+
+static inline unsigned mem_pages_seen(void) { return (unsigned)__builtin_wasm_memory_size(0); }
+
+/* the calling thread must see [p, p + n) */
+static void mem_seen(const void *p, size_t n) {
+  if (!p) return;
+  uint64_t end = (uint64_t)(uintptr_t)p + n;
+  unsigned need = (unsigned)((end + 65535) >> 16), seen = mem_pages_seen();
+  if (need > seen && !cw__mem_sync_off) {
+    __builtin_wasm_memory_grow(0, 0);
+    atomic_fetch_add_explicit(&mem_refreshes, 1, memory_order_relaxed);
+    seen = mem_pages_seen();
+  }
+  unsigned out = atomic_load_explicit(&mem_pages_out, memory_order_relaxed);
+  while (seen > out && !atomic_compare_exchange_weak_explicit(&mem_pages_out, &out, seen, memory_order_release,
+                                                              memory_order_relaxed)) {}
+}
+
+void cw__mem_sync(void) {
+  if (mem_pages_seen() < atomic_load_explicit(&mem_pages_out, memory_order_acquire) && !cw__mem_sync_off) {
+    __builtin_wasm_memory_grow(0, 0);
+    atomic_fetch_add_explicit(&mem_refreshes, 1, memory_order_relaxed);
+  }
+}
+
+long long cw__mem_refresh_count(void) { return atomic_load_explicit(&mem_refreshes, memory_order_relaxed); }
+
+/* libc's allocator, through `-Wl,--wrap=` in every cart link: references to
+ * malloc reach __wrap_malloc, which calls the real one as __real_malloc.
+ * calloc and realloc are rebuilt on malloc, because the real ones memset /
+ * memcpy into the new block inside libc, before a wrapper could refresh. */
+void *__real_malloc(size_t n);
+void *__real_aligned_alloc(size_t align, size_t n);
+int __real_posix_memalign(void **out, size_t align, size_t n);
+size_t malloc_usable_size(void *p);
+
+void *__wrap_malloc(size_t n) {
+  void *p = __real_malloc(n);
+  mem_seen(p, n);
+  return p;
+}
+
+void *__wrap_aligned_alloc(size_t align, size_t n) {
+  void *p = __real_aligned_alloc(align, n);
+  mem_seen(p, n);
+  return p;
+}
+
+int __wrap_posix_memalign(void **out, size_t align, size_t n) {
+  int r = __real_posix_memalign(out, align, n);
+  if (!r) mem_seen(*out, n);
+  return r;
+}
+
+void *__wrap_calloc(size_t count, size_t size) {
+  if (size && count > SIZE_MAX / size) return NULL;
+  size_t n = count * size;
+  void *p = __wrap_malloc(n);
+  if (p) memset(p, 0, n);
+  return p;
+}
+
+void *__wrap_realloc(void *old, size_t n) {
+  if (!old) return __wrap_malloc(n);
+  if (!n) {
+    free(old);
+    return NULL;
+  }
+  size_t have = malloc_usable_size(old);
+  mem_seen(old, have);
+  void *p = __wrap_malloc(n);
+  if (!p) return NULL; /* realloc's contract: the old block stays */
+  memcpy(p, old, have < n ? have : n);
+  free(old);
+  return p;
+}
+#else
+void cw__mem_sync(void) {}
+long long cw__mem_refresh_count(void) { return 0; }
 #endif
 
 static atomic_llong bytes[CW_MEM_TAG_COUNT], allocs[CW_MEM_TAG_COUNT], total, peak;
