@@ -26,7 +26,9 @@
  * soft).
  *
  * Anti-aliasing: Off, FXAA, or SMAA (as the PostProcess asks: a scene that
- * asks for FXAA or none keeps it).
+ * asks for FXAA or none keeps it). The scene's MSAA (PostProcess msaa) is the
+ * game's and stays on every preset, on GL and WebGPU alike (4x WebGPU, as
+ * GL at 4); Off turns it off too.
  *
  * Effects detail (Low, Medium, High, Ultra): the share of GPU particles
  * drawn (0.4, 0.7, 1, 1), the density games thin their instancing by (0.35,
