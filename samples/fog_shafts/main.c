@@ -8,6 +8,12 @@
  *   seg 2   frames 61-80  volumetric again, the spot light swung toward the
  *                         window (the grid follows a moving light)
  *
+ * FOG_SHAFTS_HOT=1 (environment): the spot light flares absurdly bright (100000) for frames 5 to 7
+ * and goes back to its own strength (FOG_SHAFTS_HOT=nan: instead its position is not a number for those frames,
+ * one bad frame of input); the fog must look as if it never had (no light that strong may leave the grid
+ * overflowed or poisoned for good: the temporal history would carry it forever). The test compares
+ * frame 120 with and without the flare.
+ *
  * Debug state: fog.seg, vfog.active (the grid was built and applied last
  * frame), vfog.grid_x / _y / _z, vfog.lights, vfog.shadowed, vfog.volumes.
  *
@@ -17,6 +23,8 @@
  * the host has no timers) for the preset CW_QUALITY picks. fog_shafts_perf_off
  * (FOG_SHAFTS_OFF too): the same with the fog analytic and the mist hidden
  * (no grid at all), the A/B baseline. */
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "cartwheel/debug.h"
@@ -30,6 +38,9 @@ static int32_t tick, seg = -1, active, gx, gy, gz, lights, shadowed, volumes;
 static float grid_ms = -1, apply_ms = -1, scene_ms = -1;
 
 static cw_node node(const char *path) { return cw_node_get(cw_tree_root(cw_scene_app_tree()), path); }
+static int hot; /* 1 a flare, 2 a NaN position */
+static float spot_energy;
+static t3_vec3 spot_pos;
 
 static void apply(int s) {
 #ifdef FOG_SHAFTS_OFF
@@ -45,6 +56,10 @@ static void init(void *u) {
   cw_node3d_look_at(node("Room/Sun"), (t3_vec3){ -1, -2, -9 }, (t3_vec3){ 0, 1, 0 });
   cw_node3d_look_at(node("Room/Spot"), (t3_vec3){ 3, 0, -6 }, (t3_vec3){ 0, 0, -1 });
   cw_node3d_look_at(node("Room/Camera"), (t3_vec3){ -4, 2, -5 }, (t3_vec3){ 0, 1, 0 });
+  hot = getenv("FOG_SHAFTS_HOT") ? (strcmp(getenv("FOG_SHAFTS_HOT"), "nan") == 0 ? 2 : 1) : 0;
+  spot_pos = cw_node3d_position(node("Room/Spot"));
+  cw_value sv;
+  spot_energy = cw_node_get_prop(node("Room/Spot"), "energy", &sv) ? (float)sv.f : 60.0f;
   cw_debug_i32("fog.seg", &seg);
   cw_debug_i32("vfog.active", &active);
   cw_debug_i32("vfog.grid_x", &gx);
@@ -64,6 +79,9 @@ static void fixed_update(void *u, double dt) {
   (void)u;
   (void)dt;
   tick++;
+  bool flare = tick >= 5 && tick <= 7;
+  if (hot == 1) cw_node_set(node("Room/Spot"), "energy", cw_val_float(flare ? 100000.0f : spot_energy));
+  if (hot == 2) cw_node3d_set_position(node("Room/Spot"), flare ? (t3_vec3){ NAN, spot_pos.y, spot_pos.z } : spot_pos);
 #ifdef FOG_SHAFTS_PERF
   int s = 0;
   float a = (float)tick * 0.002f;

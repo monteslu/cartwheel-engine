@@ -26,6 +26,7 @@
  * draws). WebGPU: compute shaders into storage textures
  * (volumetric_fog_wgpu.c). */
 #include <math.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -222,6 +223,17 @@ static const char VF_GLSL_COMMON[] =
       }
       /* Hillaire's step: the light scattered over ds of a medium with
        * extinction e (s.a) and in-scattering s.rgb, through what is left of acc */
+      /* what a half-float cell may hold: a light too strong for RGBA16F (65504 at most) would store an
+       * infinity there, and one bad frame (a NaN from any input) a NaN; the temporal history (and its
+       * linear fetch) would carry and spread either for good. A NaN becomes 0 (mix with a bvec4 is a
+       * select, no arithmetic), the rest is clamped (light to 60000; extinction to 64 per unit, opaque
+       * within a few centimetres, so a broken cell's extinction fades out with the blend in about a
+       * second instead of the minutes 60000 would take). u.counts.z > 0.5 turns the bound off and u.counts.w
+       * > 0.5 puts an infinity into the left quarter of the grid (tests/fog-flare.mjs) */
+      vec4 vf_bound(vec4 c) { return u.counts.z > 0.5 ? c : clamp(mix(c, vec4(0.0), isnan(c)), vec4(0.0), vec4(60000.0, 60000.0, 60000.0, 64.0)); }
+      /* the history a cell blends in: bounded, and at most 8 times what the cell holds now (plus a little), so
+       * a cell that went bad, or a light switched off, fades in a frame or two rather than over seconds */
+      vec4 vf_hist(vec4 cur, vec4 h) { return u.counts.z > 0.5 ? h : min(vf_bound(h), cur * 8.0 + vec4(0.02)); }
       vec4 vf_acc(vec4 acc, vec4 s, float ds) {
         float e = s.a;
         float tr = exp(-e * ds);
@@ -297,11 +309,13 @@ static const char VF_GLSL_INJECT[] = S(
       }
     }
     vec4 res = vec4(sca * li + emi, ext);
+    if (u.counts.w > 0.5 && float(c.x) < u.grid.x * 0.25) res = vec4(u.counts.w * 3e38 * 10.0);
+    res = vf_bound(res);
     if (u.slices.w > 0.0) {
       vec4 pc = u.prev_vp * vec4(p, 1.0);
       if (pc.w > 1e-4) {
         vec3 h = vec3(pc.xy / pc.w * 0.5 + 0.5, pow(clamp(pc.w / u.slices.x, 1e-10, 2.0), u.slices.z));
-        if (all(greaterThanEqual(h, vec3(0.0))) && all(lessThanEqual(h, vec3(1.0)))) res = mix(res, texture(u_hist, h), u.slices.w);
+        if (all(greaterThanEqual(h, vec3(0.0))) && all(lessThanEqual(h, vec3(1.0)))) res = mix(res, vf_hist(res, texture(u_hist, h)), u.slices.w);
       }
     }
     return res;
@@ -423,6 +437,8 @@ const char CW__VF_WGSL_COMMON[] =
         let g2 = g * g;
         return (1.0 - g2) / (12.5663706 * pow(max(1.0 + g2 - 2.0 * g * mu, 1e-4), 1.5));
       }
+      fn vf_bound(c: vec4f) -> vec4f { return select(clamp(select(c, vec4f(0.0), c != c), vec4f(0.0), vec4f(60000.0, 60000.0, 60000.0, 64.0)), c, u.counts.z > 0.5); }
+      fn vf_hist(cur: vec4f, h: vec4f) -> vec4f { return select(min(vf_bound(h), cur * 8.0 + vec4f(0.02)), h, u.counts.z > 0.5); }
       fn vf_acc(acc: vec4f, s: vec4f, ds: f32) -> vec4f {
         let e = s.a;
         let tr = exp(-e * ds);
@@ -514,7 +530,7 @@ static unsigned gl_program(const char *name, const char *body, int nout, bool in
                   "  vec4 acc = u_first != 0 ? vec4(0.0, 0.0, 0.0, 1.0) : texelFetch(u_carry, xy, 0);\n"
                   "  float rl = length(vf_ray(vec2(xy) + 0.5));\n");
     for (int i = 0; i < nout - 1; i++)
-      k += snprintf(src + k, cap - (size_t)k, "  acc = vf_step(xy, u_z0 + %d, rl, acc);\n  o[%d] = acc;\n", i, i);
+      k += snprintf(src + k, cap - (size_t)k, "  acc = vf_bound(vf_step(xy, u_z0 + %d, rl, acc));\n  o[%d] = acc;\n", i, i);
     k += snprintf(src + k, cap - (size_t)k, "  o[%d] = acc;\n", nout - 1);
   }
   snprintf(src + k, cap - (size_t)k, "}\n");
@@ -939,6 +955,14 @@ static void vf_build_exec(cw_pass_ctx *ctx, void *user) {
     o->wind[3] = p->shape == 2 ? w.e[13] : w.e[13] - (fabsf(w.e[1]) + fabsf(w.e[5]) + fabsf(w.e[9]));
   }
   u->counts[1] = (float)nvol;
+  { /* test hooks (tests/fog-flare.mjs): CW_TEST_VFOG_UNBOUNDED=1 the grid without its bound;
+     * CW_TEST_VFOG_POISON=1 an infinity in the left quarter of the cells on frames 5 to 7 */
+    static int unbounded = -1, poison = -1;
+    if (unbounded < 0) unbounded = getenv("CW_TEST_VFOG_UNBOUNDED") && atoi(getenv("CW_TEST_VFOG_UNBOUNDED")) != 0;
+    if (poison < 0) poison = getenv("CW_TEST_VFOG_POISON") && atoi(getenv("CW_TEST_VFOG_POISON")) != 0;
+    u->counts[2] = unbounded ? 1.0f : 0.0f;
+    u->counts[3] = poison && ctx->frame >= 5 && ctx->frame <= 7 ? 1.0f : 0.0f;
+  }
   if (!(med || nvol)) return; /* nothing to draw after all */
 
   if (wgpu()) cw__vf_wg_run(v->wg, u, v->cur, NULL);
