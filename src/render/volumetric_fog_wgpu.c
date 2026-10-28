@@ -93,11 +93,13 @@ static const char VF_WGSL_INJECT[] = S(
       }
     }
     var res = vec4f(sca * li + emi, ext);
+    if (u.counts.w > 0.5 && f32(c.x) < u.grid.x * 0.25) { res = vec4f(u.counts.w * 3e38 * 10.0); }
+    res = vf_bound(res);
     if (u.slices.w > 0.0) {
       let pc = u.prev_vp * vec4f(p, 1.0);
       if (pc.w > 1e-4) {
         let h = vec3f(pc.xy / pc.w * 0.5 + 0.5, pow(clamp(pc.w / u.slices.x, 1e-10, 2.0), u.slices.z));
-        if (all(h >= vec3f(0.0)) && all(h <= vec3f(1.0))) { res = mix(res, textureSampleLevel(t_hist, s_lin, h, 0.0), u.slices.w); }
+        if (all(h >= vec3f(0.0)) && all(h <= vec3f(1.0))) { res = mix(res, vf_hist(res, textureSampleLevel(t_hist, s_lin, h, 0.0)), u.slices.w); }
       }
     }
     return res;
@@ -118,7 +120,7 @@ static const char VF_WGSL_INTEGRATE[] = S(
     let n = i32(u.grid.z);
     for (var z = 0; z < n; z++) {
       let s = textureLoad(t_scatter, vec3i(xy, z), 0);
-      acc = vf_acc(acc, s, (vf_slice_dist(f32(z + 1)) - vf_slice_dist(f32(z))) * rl);
+      acc = vf_bound(vf_acc(acc, s, (vf_slice_dist(f32(z + 1)) - vf_slice_dist(f32(z))) * rl));
       textureStore(o_integ, vec3i(xy, z), acc);
     }
   });

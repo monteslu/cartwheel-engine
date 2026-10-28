@@ -2795,6 +2795,11 @@
     "note": "volumetric fog after the analytic segment: the spot light swung toward the window, the grid rebuilt from no history. Control: the first segment (the spot pointing down)"
   },
   {
+    "name": "fog-flare",
+    "script": "tests/fog-flare.mjs",
+    "note": "volumetric fog heals from a broken cell: an infinity put into a quarter of the grid for three frames (CW_TEST_VFOG_POISON) fades out with the temporal blend (143 frames later the picture matches the clean run, GL and WebGPU) and shows while it lasts; a spot light flaring to 100000 and a light at a NaN position leave no trace. Control: CW_TEST_VFOG_UNBOUNDED=1 (no bound) stays broken and must fail"
+  },
+  {
     "name": "lightmap-bake",
     "app": "lightmap_room",
     "frames": 30,
