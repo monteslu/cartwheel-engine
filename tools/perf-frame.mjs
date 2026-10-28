@@ -141,16 +141,17 @@ function runNative(app, gpu, BUILD) {
 
 // ── chromium: the exported web player ──────────────────────────────────
 // The site cwexport's web exporter writes (tools/cwexport/web.mjs), assembled
-// from the build's cart: index.html + player.js + wasmcart's web host. For
-// WebGPU the WebGPU tier's host and the dual cart (build/cart-wgpu), drawing
-// straight into the page's canvas (wgpuCanvas). Two lines of player.js change,
+// from the build's cart: index.html + player.js + wasmcart's web host: the
+// WebGPU tier's host and the dual cart (build/cart-wgpu, the only cart), for
+// WebGPU drawing straight into the page's canvas (wgpuCanvas), for GL told to
+// use GL (wgpu: false). Two lines of player.js change,
 // both for measuring: the host is reachable (window.__cwHost) and its clock is
 // pinned to one fixed tick per rendered frame (window.__cwPinClock).
 async function buildSite(app, gpu, BUILD) {
   const site = tempDir(OUT, `site-${gpu}-${app}-`); // removed when the tool exits
   mkdirSync(join(site, 'wasmcart'), { recursive: true });
   const T = join(ROOT, 'tools/cwexport/templates/web');
-  const WC = join(ROOT, gpu === 'webgpu' ? 'deps/wasmcart-wgpu' : 'deps/wasmcart');
+  const WC = join(ROOT, 'deps/wasmcart-wgpu');
   const fill = (t) => t.replaceAll('@TITLE@', app).replaceAll('@VERSION@', 'perf').replaceAll('@COI_SHIM@', 'off');
   writeFileSync(join(site, 'index.html'), fill(readFileSync(join(T, 'index.html'), 'utf8')));
   let player = fill(readFileSync(join(T, 'player.js'), 'utf8'));
@@ -165,12 +166,11 @@ window.__cwHost = host;
     try { return rf.apply(this, a); } finally { P.rafEnds.push(performance.now()); } }; }
 if (window.__cwPinClock) { let k = 0; const step = 1000 / 60;
   host._writeTime = ((orig) => function () { orig.call(this, k * step, step, k); k++; })(host._writeTime); }`);
-  if (gpu === 'webgpu') {
-    // the player hands the dual cart its canvas for WebGPU (wgpuCanvas); measure on the discrete GPU
-    const load = 'await host.load(bytes, { wasm: CODE, wgpuCanvas: canvas,';
-    if (!player.includes(load)) throw new Error('player.js changed: no host.load line to hook');
-    player = player.replace(load, "await host.load(bytes, { wasm: CODE, wgpuCanvas: canvas, adapterOptions: { powerPreference: 'high-performance' },");
-  }
+  // the player hands the dual cart its canvas for WebGPU (wgpuCanvas): measure WebGPU on the discrete GPU, GL with wgpu: false
+  const load = 'await host.load(bytes, { wasm: CODE, wgpuCanvas: canvas,';
+  if (!player.includes(load)) throw new Error('player.js changed: no host.load line to hook');
+  player = player.replace(load, gpu === 'webgpu' ? "await host.load(bytes, { wasm: CODE, wgpuCanvas: canvas, adapterOptions: { powerPreference: 'high-performance' },"
+    : "await host.load(bytes, { wasm: CODE, wgpuCanvas: canvas, wgpu: false,");
   // the warm-up runs in the first frame, as in a native test run (CW_FRAMES), so frame N is the same
   // game moment on every host (spreading it shows a loading bar; per-frame cost is unchanged)
   const touch = "if (coarse) window.cwDebug.command('touch_primary 1')";
@@ -185,7 +185,7 @@ if (window.__cwPinClock) { let k = 0; const step = 1000 / 60;
     writeFileSync(join(site, 'wasmcart', f), readFileSync(join(WC, 'src', f), 'utf8').replace(/(from\s+|import\()(['"])fflate\2/g, `$1$2${fflate}$2`));
   }
   cpSync(join(WC, 'node_modules/fflate/esm/browser.js'), join(site, 'wasmcart/fflate.js'));
-  const cart = join(BUILD, gpu === 'webgpu' ? 'cart-wgpu/carts' : 'cart/carts', `${app}.wasc`);
+  const cart = join(BUILD, 'cart-wgpu/carts', `${app}.wasc`);
   if (!existsSync(cart)) throw new Error(`no cart ${cart} (scripts/build.sh)`);
   await splitCart(cart, join(site, 'game.wasm'), join(site, 'game.wasc')); // as the web export ships it
   return site;

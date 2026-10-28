@@ -20,7 +20,7 @@ Every run that touches the GPU goes through `node tools/with-gpu-suite.mjs <name
 
 ## Continuous integration
 
-CI (`.github/workflows/ci.yml`) runs on every push and pull request to main, on a GitHub runner with no GPU. One job fetches the pinned dependencies, builds the native tree, runs `node tools/gen-api.mjs --check` and `node tools/gen-docs.mjs --check`, and hands the build to the test jobs as an artifact. They run `tests/ci.mjs` with `CW_TEST_GPU=software`: every app gate on the native host through Mesa's llvmpipe (GL), every gate with a `webgpu` entry through lavapipe (WebGPU), and the scripted gates that need no other host. The GL gates are split over seven jobs (`node tests/ci.mjs gl-<k>of7`) and the WebGPU gates over three (`webgpu-<k>of3`), balanced by each gate's measured CI time in `tests/ci-times.json`; after adding gates or making one slower, refresh it from the latest runs with `node tools/ci-times.mjs` (needs the GitHub CLI). Three more jobs build the GL carts (in two shares) and the dual GL + WebGPU carts. In software mode nothing is pinned, sandboxed or guarded, and the renderer checks expect llvmpipe. `native-pads` plugs virtual controllers in through uinput (`tools/vpad.c`), so CI loads the `uinput` module and makes `/dev/uinput` and the input devices it creates usable by the runner's user; on a desktop the session already grants both.
+CI (`.github/workflows/ci.yml`) runs on every push and pull request to main, on a GitHub runner with no GPU. One job fetches the pinned dependencies, builds the native tree, runs `node tools/gen-api.mjs --check` and `node tools/gen-docs.mjs --check`, and hands the build to the test jobs as an artifact. They run `tests/ci.mjs` with `CW_TEST_GPU=software`: every app gate on the native host through Mesa's llvmpipe (GL), every gate with a `webgpu` entry through lavapipe (WebGPU), and the scripted gates that need no other host. The GL gates are split over seven jobs (`node tests/ci.mjs gl-<k>of7`) and the WebGPU gates over six (`webgpu-<k>of6`), balanced by each gate's measured CI time in `tests/ci-times.json`; after adding gates or making one slower, refresh it from the latest runs with `node tools/ci-times.mjs` (needs the GitHub CLI). One more job builds every app's cart: the dual GL + WebGPU cart, the only kind there is (the gates run it on GL hosts for GL). In software mode nothing is pinned, sandboxed or guarded, and the renderer checks expect llvmpipe. `native-pads` plugs virtual controllers in through uinput (`tools/vpad.c`), so CI loads the `uinput` module and makes `/dev/uinput` and the input devices it creates usable by the runner's user; on a desktop the session already grants both.
 
 Local only (they need GPU hardware or a host CI does not have; `LOCAL_ONLY` in `tests/ci.mjs` gives the reason for each):
 
@@ -66,7 +66,7 @@ An array of gate objects. Every key `tests/gate.mjs` reads:
 | Key | Meaning |
 |---|---|
 | `name` | the gate's name (what you pass on the command line) |
-| `app` | the app target (`build/native/{samples,tests/unit,games,editor}/<app>`, `build/cart/carts/<app>.wasc`) |
+| `app` | the app target (`build/native/{samples,tests/unit,games,editor}/<app>`, `build/cart-wgpu/carts/<app>.wasc`) |
 | `frames` | engine frames to run before capturing |
 | `frameHz` | the virtual render rate (default 60); fixed ticks stay at the app's own rate |
 | `input` | an input script in `tests/` |

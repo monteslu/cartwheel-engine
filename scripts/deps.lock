@@ -10,7 +10,7 @@ wasi-sdk      https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk
 binaryen      https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-x86_64-linux.tar.gz   123   e959f2170af4c20c552e9de3a0253704d6a9d2766e8fdb88e4d6ac4bae9388fe
 wasmcart      https://github.com/wasmcart/wasmcart.git       v0.36.2              1e868ab59b4cbd5a46da4d47363db60782277f3c
 # WebGPU tier (wasmcart v0.36.2, released): the hosts and wgpu-wasi/ kit
-# the dual (GL + WebGPU) cart build uses (build/cart-wgpu); the GL cart build keeps the wasmcart pin above
+# the cart build uses (build/cart-wgpu, the dual GL + WebGPU cart); the wasmcart pin above is the Node GL test host
 wasmcart-wgpu https://github.com/wasmcart/wasmcart.git       v0.36.2              1e868ab59b4cbd5a46da4d47363db60782277f3c
 # Dawn's emdawnwebgpu port at the release the tier freezes its imports to (wasmcart scripts/wgpu/emdawnwebgpu.json):
 # wgpu-wasi compiles its webgpu.cpp into WebGPU carts

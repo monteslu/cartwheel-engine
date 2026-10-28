@@ -50,7 +50,7 @@ CW_FRAMES=200 CW_PROFILE_TRACE=trace.json CW_PROFILE_TRACE_START=60 CW_PROFILE_T
 From a cart (or any running game) the debug channel does it: `profile trace <frames>` records that many frames and then answers with the trace's size, and `profile trace_get <offset>` returns the trace in pieces. `tools/cwtrace.mjs` does both through romdev and writes the file:
 
 ```sh
-node tools/cwtrace.mjs build/cart/carts/profile_demo.wasc -o trace.json --frames 60 --start 10
+node tools/cwtrace.mjs build/cart-wgpu/carts/profile_demo.wasc -o trace.json --frames 60 --start 10
 node tools/cwtrace.mjs --session <romdev session> -o trace.json   # a cart already running in romdev
 ```
 

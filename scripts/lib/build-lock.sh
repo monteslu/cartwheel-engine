@@ -1,13 +1,13 @@
 # shellcheck shell=bash
 # An exclusive lock on a build tree, the same one tools/lib/build-lock.mjs
 # takes: two builds of one tree at once (two agents running scripts/build.sh,
-# or an export building build/cart while build.sh does) run two ninjas over
+# or an export building build/cart-wgpu while build.sh does) run two ninjas over
 # the same outputs, and a link then finds an archive another ninja is
 # rewriting ("cannot open libcw_basisu_transcoder.a") or a .wasm another is
 # still writing. The lock is the directory <tree>.lock (mkdir is atomic)
 # holding the owner's pid; a lock whose owner is gone is taken over.
 #   source scripts/lib/build-lock.sh
-#   build_lock "$ROOT/build/cart"   ...   build_unlock "$ROOT/build/cart"
+#   build_lock "$ROOT/build/cart-wgpu"   ...   build_unlock "$ROOT/build/cart-wgpu"
 # Locks still held when the script exits are released.
 _cw_locks=()
 build_lock() {

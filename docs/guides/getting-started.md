@@ -27,9 +27,9 @@ scripts/build.sh
 | Tree | What it holds |
 |---|---|
 | `build/native` | samples in `build/native/samples/<app>`, unit suites in `build/native/tests/unit/`, games in `build/native/games/`, tools (`cwhot`, `cwbake`) |
-| `build/cart` | every app as a cart in `build/cart/carts/<app>.wasc` |
+| `build/cart-wgpu` | every app as a cart in `build/cart-wgpu/carts/<app>.wasc`: the dual GL + WebGPU cart, which renders with WebGPU on a WebGPU host and with GL on a GL host (there is no GL-only cart) |
 
-`BUILD_TYPE=Debug` and `TARGETS="native"` (or `"cart"`) narrow it. New `src/<module>/*.c` files are picked up by a glob, so re-run the script (it re-runs cmake) after adding one.
+`BUILD_TYPE=Debug` and `TARGETS="native"` (or `"cart-wgpu"`) narrow it, and `NINJA_JOBS=4` caps ninja's parallel jobs. New `src/<module>/*.c` files are picked up by a glob, so re-run the script (it re-runs cmake) after adding one.
 
 ## Run a sample on every host
 
@@ -96,7 +96,7 @@ Rename it by editing `name` and `app` in `project.cwproj` (`app` is a C identifi
 
 ```text
 @result {"target":"native","ok":true,"path":".cwbuild/native/project/my_game"}
-@result {"target":"cart","ok":true,"path":".cwbuild/cart/carts/my_game.wasc"}
+@result {"target":"cart","ok":true,"path":".cwbuild/cart-wgpu/carts/my_game.wasc"}
 ```
 
 The paths are also written into `project.cwproj` as `game_exe` and `game_cart`. Run the native build directly, or through `run-cart.mjs` with `--exe` / `--cart`:
@@ -104,7 +104,7 @@ The paths are also written into `project.cwproj` as `game_exe` and `game_cart`. 
 ```sh
 ~/games/mygame/.cwbuild/native/project/my_game
 CW_FRAMES=30 CW_DEBUG_CMDS='tree /root 2' ~/games/mygame/.cwbuild/native/project/my_game
-node tools/run-cart.mjs --host romdev --app my_game --cart ~/games/mygame/.cwbuild/cart/carts/my_game.wasc --frames 60 --state out/mygame.json
+node tools/run-cart.mjs --host romdev --app my_game --cart ~/games/mygame/.cwbuild/cart-wgpu/carts/my_game.wasc --frames 60 --state out/mygame.json
 ```
 
 `node tools/cwproject.mjs info <dir>` prints the project's keys as JSON. [Templates](guide:templates) lists what each template contains; [Your first 3D game](tutorial:first-3d) and [Your first 2D game](tutorial:first-2d) start from the empty ones.

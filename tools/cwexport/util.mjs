@@ -15,7 +15,7 @@ export const IN_SDK = existsSync(join(ROOT, 'lib/cmake/cartwheel/cartwheelConfig
 export const EXPORT_DEPS = join(ROOT, 'deps', 'export');
 /** export platform -> the SDK target that builds it */
 export const SDK_TARGET = { 'linux-x64': 'linux-x64', 'linux-arm64': 'linux-arm64', 'windows-x64': 'windows-x64', 'android-arm64': 'android-arm64',
-  macos: 'macos-arm64', cart: 'cart', 'cart-wgpu': 'cart-wgpu' };
+  macos: 'macos-arm64', 'cart-wgpu': 'cart-wgpu' };
 /**
  * The SDK that builds a platform: SDKs unpack side by side, one directory per
  * target (deps/cartwheel-sdk/<target>/ in a game repository), so the target's
@@ -185,15 +185,16 @@ export async function hostCwpack(log) {
 
 /**
  * Build one app for one platform with that platform's toolchain file
- * (cmake/export/<platform>.cmake, or cmake/cart.cmake for carts).
- * Tree apps (samples, games) build in build/export/<platform> (carts: the dev
- * build/cart tree); projects in <project>/.cwbuild/<platform>.
+ * (cmake/export/<platform>.cmake, or cmake/cart.cmake for the dual cart,
+ * platform 'cart-wgpu'). Tree apps (samples, games) build in
+ * build/export/<platform> (the cart: the dev build/cart-wgpu tree); projects
+ * in <project>/.cwbuild/<platform>.
  * @returns {Promise<{name: string, binary: string, pak: string, assets: string, manifest: string, buildDir: string}>}
  */
 export async function buildApp(ctx, platform) {
   // 'cart-wgpu': the dual cart (GL + WebGPU imports; the host picks, WebGPU where it has it)
   const dual = platform === 'cart-wgpu';
-  const cart = platform === 'cart' || dual;
+  const cart = dual; // there is no GL-only cart build
   const toolchain = cart ? join(ROOT, 'cmake/cart.cmake') : join(ROOT, 'cmake/export', `${platform}.cmake`);
   /* --three-builder: three.c's runtime program builder in the cart (a preview
    * while three.c's table catches up with new states; +4.7 MB, a hitch the
@@ -246,12 +247,14 @@ export async function buildApp(ctx, platform) {
  * The cart a cart export ships: the dual cart (GL + WebGPU imports: the host
  * runs it on WebGPU where it has WebGPU, else on GL), from the dual build
  * (build/cart-wgpu, the deps scripts/fetch-deps.sh fetches for it). An app
- * built GL_ONLY (it calls GL itself) has no dual cart: its GL cart.
+ * built GL_ONLY (it calls GL itself) has no dual cart, and there is no GL-only
+ * cart: exporting it as a cart is an error.
  * @returns {Promise<{name: string, binary: string, buildDir: string, dual: boolean}>}
  */
 export async function buildCart(ctx) {
   const dual = await buildDualOrNull(ctx);
-  return dual ? { ...dual, dual: true } : { ...(await buildApp(ctx, 'cart')), dual: false };
+  if (!dual) throw new ExportError(`${ctx.app} is built GL_ONLY (cw_add_app ... GL_ONLY: it calls GL itself), so it has no dual cart, and there is no GL-only cart: export it natively, or draw through the engine and drop GL_ONLY`);
+  return { ...dual, dual: true };
 }
 async function buildDualOrNull(ctx) {
   if (IN_SDK) {

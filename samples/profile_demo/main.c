@@ -10,7 +10,7 @@
  *
  * Capture a trace natively:
  *   CW_FRAMES=200 CW_PROFILE_TRACE=trace.json CW_PROFILE_TRACE_START=60 build/native/samples/profile_demo
- * or from a cart through romdev: node tools/cwtrace.mjs build/cart/carts/profile_demo.wasc -o trace.json
+ * or from a cart through romdev: node tools/cwtrace.mjs build/cart-wgpu/carts/profile_demo.wasc -o trace.json
  *
  * Debug fields: demo.tick, demo.crates (the crates' positions folded into a
  * hash every tick: the simulation, which profiling must not change),

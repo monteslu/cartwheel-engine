@@ -34,7 +34,7 @@
 // (every run fails on one otherwise: a test that skips on purpose says so).
 //
 // --gpu gl|webgpu (default gl): the graphics backend (cartwheel/gpu.h). webgpu runs the native
-// build with CW_GPU=webgpu and the DUAL carts of build/cart-wgpu (gl + WebGPU imports), and holds
+// build with CW_GPU=webgpu and the dual carts (build/cart-wgpu) on WebGPU, and holds
 // every host to the test GPU (tools/lib/wgpu-pin.mjs): a run that lands on another adapter fails
 // before it draws (romdev, chromium) or as soon as the adapter is known (native, wcnative). It also
 // fails on any WebGPU error the engine counted (debug field cw.gpu.errors).
@@ -113,11 +113,11 @@ const isFile = (p) => existsSync(p) && statSync(p).isFile();
 const appBinary = () => { try { return JSON.parse(readFileSync(join(PROJ, 'build/native/apps', `${app}.json`), 'utf8')).binary; } catch { return null; } };
 const nativeExe = args.exe ? resolve(args.exe) : ['samples', 'tests/unit', 'games', 'editor', `samples/${app}`].map((d) => join(PROJ, 'build/native', d, app)).find(isFile) ||
   appBinary() || join(PROJ, 'build/native/samples', app);
-// --dual-gl (romdev or chromium, --gpu gl): the DUAL cart of build/cart-wgpu, told to render with GL (wgpu: false)
-// (no GL-only cart tree any more, build/cart: a romdev or Chromium GL run of a cart is then the dual cart told to render with GL)
-const dualGl = !!args['dual-gl'] || (['romdev', 'chromium'].includes(host) && gpu === 'gl' && !args.cart && !existsSync(join(PROJ, 'build/cart/carts', `${app}.wasc`)) && existsSync(join(PROJ, 'build/cart-wgpu/carts', `${app}.wasc`)));
-if (dualGl && (!['romdev', 'chromium'].includes(host) || gpu !== 'gl')) { console.error('--dual-gl is a romdev or chromium --gpu gl run'); process.exit(2); }
-const cart = args.cart ? resolve(args.cart) : join(PROJ, gpu === 'webgpu' || dualGl ? 'build/cart-wgpu/carts' : 'build/cart/carts', `${app}.wasc`);
+// Every cart is the DUAL one (GL + WebGPU imports, build/cart-wgpu); there is no GL-only cart. A --gpu gl run on romdev or
+// Chromium tells it to render with GL (wgpu: false; --dual-gl says so explicitly), wasmcart-native with WASMCART_NO_WGPU=1.
+const dualGl = ['romdev', 'chromium'].includes(host) && gpu === 'gl';
+if (args['dual-gl'] && !dualGl) { console.error('--dual-gl is a romdev or chromium --gpu gl run'); process.exit(2); }
+const cart = args.cart ? resolve(args.cart) : join(PROJ, 'build/cart-wgpu/carts', `${app}.wasc`);
 const script = args.input ? JSON.parse(readFileSync(args.input, 'utf8')) : [];
 const OUT = join(PROJ, 'out');
 
@@ -355,7 +355,7 @@ async function runRomdev() {
 const MIME = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'text/html', '.wasc': 'application/octet-stream', '.wasm': 'application/wasm' };
 
 async function runChromium() {
-  const WC = join(ROOT, gpu === 'webgpu' || dualGl ? 'deps/wasmcart-wgpu' : 'deps/wasmcart'); // the WebGPU tier's host for dual carts
+  const WC = join(ROOT, 'deps/wasmcart-wgpu'); // the WebGPU tier's host: it runs the dual cart on either backend
   const page_html = `<!doctype html><html><body><canvas id=c></canvas>
 <script type=importmap>{"imports":{"fflate":"/wc/node_modules/fflate/esm/browser.js"}}</script>
 <script type=module>

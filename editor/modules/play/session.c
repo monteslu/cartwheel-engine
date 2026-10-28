@@ -20,7 +20,7 @@
  * (settings), else project.cwproj's game_exe / game_cart (paths relative to
  * the project), else its game_module run under cwhot (hot reload),
  * else its game_app resolved in the editor's own build tree
- * (<build>/samples|games/<app>, <build>/../cart/carts/<app>.wasc). */
+ * (<build>/samples|games/<app>, <build>/../cart-wgpu/carts/<app>.wasc, the dual cart). */
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -319,7 +319,7 @@ static bool find_game(bool cart, char *out, size_t cap, char *why, size_t why_ca
   if (*S.game_app) {
     const char *d = exe_dir();
     const char *const native_dirs[] = { "../samples", "../games", "..", NULL };
-    const char *const cart_dirs[] = { "../../cart/carts", "../carts", NULL };
+    const char *const cart_dirs[] = { "../../cart-wgpu/carts", "../carts", NULL };
     for (const char *const *dir = cart ? cart_dirs : native_dirs; d && *dir; dir++) {
       snprintf(out, cap, "%s/%s/%s%s", d, *dir, S.game_app, cart ? ".wasc" : "");
       if (file_ok(out)) {

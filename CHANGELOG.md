@@ -4,6 +4,39 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.18.1 (2026-10-27)
+
+Build and CI cleanup: one cart per app, the dual GL + WebGPU cart. The
+GL-only cart tree and its SDK are gone; GL is tested by running the dual
+cart on GL hosts.
+
+### Changed
+- `scripts/build.sh` builds `build/native` and `build/cart-wgpu` only (the
+  dual cart, which renders with WebGPU on WebGPU hosts and with GL on GL
+  hosts). `TARGETS=cart` is refused with that reason; `NINJA_JOBS=<n>` caps
+  ninja's parallel jobs.
+- Releases carry no `cartwheel-sdk-<v>-cart` SDK any more: eleven SDKs, 22
+  files (v0.18.0 had 24). Games use `cartwheel-sdk-<v>-cart-wgpu` for carts.
+- CI builds the dual carts only (the two GL cart jobs are gone); the SDK
+  workflow runs on Node 24 and `actions/download-artifact@v8`.
+- `tools/cwproject.mjs build <dir> cart` builds the dual cart into
+  `.cwbuild/cart-wgpu/carts/<app>.wasc` (and writes that path as
+  `game_cart`); the project editor cart (`... editor`, the editor draws with
+  GL itself) is built on request into `.cwbuild/editor-cart/`.
+- A cart export (`wasc`, `web`) of an app built `GL_ONLY` is refused with the
+  reason instead of shipping a GL-only cart.
+- The editor's Play finds a game's cart in `build/cart-wgpu/carts`, and
+  romdev plays it on GL (`wgpu: false`), as it played the GL cart.
+- Tests and tools run the dual cart on GL where they ran the GL cart:
+  romdev with `wgpu: false`, Chromium through the WebGPU tier's host with
+  `wgpu: false`, wasmcart-native with `WASMCART_NO_WGPU=1`, the libretro core
+  as is (`run-cart.mjs`, `perf-frame.mjs`, `net`, `showcase-perf`,
+  `channel`, `a11y-channel`, `profile-cart`, `remote`, `host-resolution`,
+  `editor-level`, `plugins`). `cart-audio-ring` uses the dual hello cart and
+  `wcnative-pads` checks pad slots on it (input_demo is `GL_ONLY`).
+  `editor-channel`, `editor-import` and `editor-play` lost their editor cart
+  legs (the editor is `GL_ONLY`, so it has no dual cart).
+
 ## v0.18.0 (2026-10-27)
 
 Ragdolls, skin shading and morph targets by name for characters, depth of

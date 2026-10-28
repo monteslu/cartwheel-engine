@@ -41,7 +41,8 @@ const HOSTS = opt('hosts', 'native,romdev,chromium,wcnative').split(',');
 const BUDGET = +opt('budget-ms', 1000 / 60);
 const APP = 'showcase_perf', SEGS = 5, SEG = 150, FRAMES = SEGS * SEG;
 const SEG_NAMES = ['morning', 'golden', 'dusk', 'night', 'cycle'];
-const cart = join(ROOT, 'build/cart/carts', `${APP}.wasc`);
+// the dual cart (build/cart-wgpu), run on GL: romdev and Chromium with wgpu: false, wasmcart-native with WASMCART_NO_WGPU=1
+const cart = join(ROOT, 'build/cart-wgpu/carts', `${APP}.wasc`);
 
 // "showcase-perf seg=3 frame_ms=1.2 max_ms=2 gpu_ms=0.9 lamps=128 scene=0.5 ..."
 function parseLines(text) {
@@ -96,7 +97,7 @@ async function romdevCall(tool, a, session) {
 async function runRomdev() {
   const session = `cartwheel-showcase-perf-${process.pid}`;
   try {
-    await romdevCall('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: cart, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
+    await romdevCall('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, wgpu: false, path: cart, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
     // load ran frame 1; step each segment's remainder and time it
     const outside = {};
     let at = 1;
@@ -123,7 +124,7 @@ async function runRomdev() {
 
 const MIME = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'text/html', '.wasc': 'application/octet-stream' };
 async function runChromium() {
-  const WC = join(ROOT, 'deps/wasmcart');
+  const WC = join(ROOT, 'deps/wasmcart-wgpu'); // the WebGPU tier's host: it runs dual carts (here on GL)
   const page = `<!doctype html><html><body><canvas id=c></canvas>
 <script type=importmap>{"imports":{"fflate":"/wc/node_modules/fflate/esm/browser.js"}}</script>
 <script type=module>
@@ -133,7 +134,7 @@ window.run = async (frames) => {
   const canvas = document.getElementById('c');
   let lost = -1, k = 0;
   canvas.addEventListener('webglcontextlost', () => { lost = k; });
-  await host.load('/cart.wasc', { glBackend: () => canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: false }) });
+  await host.load('/cart.wasc', { glBackend: () => canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: false }), wgpu: false });
   const info = host.getInfo();
   canvas.width = info.width; canvas.height = info.height;
   const step = 1000 / 60;
@@ -193,7 +194,7 @@ async function runWcnative() {
   try { exe = wcnativePlayer(); } catch (e) { return { error: e.message }; } // tools/lib/wcnative.mjs
   const ppm = join(mkdtempSync(join(ROOT, 'out', 'wcn-')), 'shot.ppm');
   const child = spawn(exe, [cart, '--fixed-step', String(1000 / 60), '--shot', String(FRAMES - 1), ppm, '--uncapped'],
-    { env: { ...process.env, SDL_AUDIODRIVER: 'dummy' }, stdio: ['ignore', 'ignore', 'pipe'] });
+    { env: { ...process.env, SDL_AUDIODRIVER: 'dummy', WASMCART_NO_WGPU: '1' }, stdio: ['ignore', 'ignore', 'pipe'] });
   let err = '';
   child.stderr.on('data', (d) => (err += d));
   const deadline = Date.now() + 300000;

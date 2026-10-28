@@ -19,7 +19,7 @@ SRC="$OUT/src"
 CC="$WASI/bin/clang"
 AR="$WASI/bin/llvm-ar"
 
-# every cart tree (build/cart, build/cart-wgpu, an SDK's) builds this one
+# every cart tree (build/cart-wgpu, a project's, an SDK's) builds this one
 # output, maybe from ninjas running at once: one builds it, the others wait
 # and find it made
 source "$ROOT/scripts/lib/build-lock.sh"

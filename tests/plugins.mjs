@@ -5,8 +5,8 @@
 //   1. builds: the plugin's shared libraries (tools/cwproject.mjs build <dir>
 //      plugins) and the game natively (build <dir> native, the runtime plugin
 //      compiled in); the game runs with the Turntable type and the plugin's
-//      `turntables` debug command; the cart (repository tree, same sources)
-//      on wasmcart-native with --debug-dump / --debug-cmd (gates plugin-demo
+//      `turntables` debug command; the dual cart (repository tree, same
+//      sources) on wasmcart-native's GL (WASMCART_NO_WGPU=1) with --debug-dump / --debug-cmd (gates plugin-demo
 //      and unit-plugin cover native, romdev and chromium)
 //   2. native editor, scripted (`ed` over the socket): the plugin loads (its
 //      panel, inspector plugin, gizmo, commands, menu items), the inspector
@@ -29,8 +29,10 @@
 //   7. the project built as a cart game (romdev: the Turntable turns) and as
 //      its cart editor (cwproject build <dir> editor: plugin_demo_editor.wasc,
 //      the plugin compiled in) on romdev: the plugin is there, the scene opens,
-//      the inspector plugin renders, disable/enable work; the stock
-//      editor.wasc refuses the same scene (the type is not there)
+//      the inspector plugin renders, disable/enable work (disabled, the
+//      scene is refused: the control for "compiled in"). The game cart is
+//      the dual one, run on GL; the editor cart is a GL one (the editor
+//      draws with GL itself), built only by `cwproject build <dir> editor`
 // Every check that could pass by accident has a control that MUST fail.
 //
 //   node tests/plugins.mjs      (romdev on 127.0.0.1:7331; wasmcart-native beside the checkout)
@@ -52,7 +54,7 @@ const PROJ = join(OUT, 'proj');
 const CWPROJECT = join(ROOT, 'tools/cwproject.mjs');
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
-for (const f of [EDITOR, join(ROOT, 'build/cart/carts/plugin_demo.wasc'), join(ROOT, 'build/cart/carts/plugin_demo_editor.wasc')])
+for (const f of [EDITOR, join(ROOT, 'build/cart-wgpu/carts/plugin_demo.wasc')])
   if (!existsSync(f)) { console.log(`FAIL missing ${f}: run scripts/build.sh`); process.exit(1); }
 
 let failed = 0;
@@ -107,7 +109,7 @@ async function runWcnative(wasc, frames, cmds) {
   const args = [wasc, '--fixed-step', String(1000 / 60), '--uncapped', '--debug-dump', String(frames - 1), dump];
   args.push('--debug-cmd', '0', 'warmup_spread 0'); // the warm-up in frame 1, as on romdev (a deterministic load)
   for (const [f, text] of cmds) args.push('--debug-cmd', String(f), text);
-  const env = { ...process.env, SDL_AUDIODRIVER: 'dummy' };
+  const env = { ...process.env, SDL_AUDIODRIVER: 'dummy', WASMCART_NO_WGPU: '1' }; // the dual cart on GL
   testEnv(env);
   const child = spawn(exe, args, { env, stdio: ['ignore', 'ignore', 'pipe'] });
   let err = '';
@@ -172,7 +174,7 @@ check(`project build: the game natively with the runtime plugin compiled in (${(
   check('game: the plugin\'s method answers over the channel', /"result"/.test(g.replies[2] || '') && g.replies[2].includes('-1.5'), g.replies[2]);
 }
 try {
-  const w = await runWcnative(join(ROOT, 'build/cart/carts/plugin_demo.wasc'), 90, [[30, 'turntables'], [60, 'plugins']]);
+  const w = await runWcnative(join(ROOT, 'build/cart-wgpu/carts/plugin_demo.wasc'), 90, [[30, 'turntables'], [60, 'plugins']]);
   check('cart on wasmcart-native: the Turntable turns (debug dump)', w.state['table.found'] === 1 && Math.abs(w.state['table.angle'] - 1.5 * 89 / 60) < 0.05 &&
     w.state['plugins.loaded'] === 1, JSON.stringify(w.state));
   check('cart on wasmcart-native: the plugin\'s debug command answers', w.replies.length === 2 && w.replies[0].includes('"path":"/root/Main/Table"') &&
@@ -430,11 +432,11 @@ await lifecycle().catch((e) => check('editor lifecycle session', false, e.stack)
 
 try {
   const cg = cwproject('cart');
-  const gameCart = join(PROJ, '.cwbuild/cart/carts/plugin_demo.wasc');
+  const gameCart = join(PROJ, '.cwbuild/cart-wgpu/carts/plugin_demo.wasc'); // the dual cart, run on GL
   check('project build: the game as a cart (runtime plugin compiled in)', cg.ok && existsSync(gameCart), cg.out.slice(-800));
   const session = `cw-plugins-game-${process.pid}`;
   try {
-    await romdev('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: gameCart, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
+    await romdev('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, wgpu: false, path: gameCart, deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, session);
     await romdev('frame', { op: 'step', frames: 60 }, session);
     const st = await romdev('wasm', { op: 'debugState' }, session);
     const state = {};
@@ -444,7 +446,7 @@ try {
       JSON.stringify(r).includes('/root/Main/Table'), JSON.stringify(state) + JSON.stringify(r).slice(0, 300));
   } finally { await romdev('host', { op: 'shutdown' }, session).catch(() => {}); }
   const ce = cwproject('editor');
-  const edCart = join(PROJ, '.cwbuild/cart/carts/plugin_demo_editor.wasc');
+  const edCart = join(PROJ, '.cwbuild/editor-cart/carts/plugin_demo_editor.wasc');
   check('project build: the project editor cart with the plugin compiled in (cwproject build <dir> editor)', ce.ok && existsSync(edCart), ce.out.slice(-800));
   await romdevEditor(edCart, async (s) => {
     const list = await s.ed('plugin.list');
@@ -463,15 +465,6 @@ try {
     const on = await s.ed('plugin.enable name=turntable');
     const re2 = await s.ed('scene.open main.cwscene');
     check('cart editor: enable brings it back', on.ok && re2.ok, JSON.stringify([on, re2]));
-  });
-  // the stock editor cart has no Turntable: the same scene is refused
-  const text = readFileSync(join(ROOT, 'samples/plugin_demo/main.cwscene'), 'utf8');
-  await romdevEditor(join(ROOT, 'build/cart/carts/editor.wasc'), async (s) => {
-    await s.request(`vfs write plugin_scene.cwscene ${Buffer.from(text).toString('base64')}`).catch(() => null);
-    const w = await s.ed(`scene.check path=plugin_scene.cwscene`);
-    const opened = await s.ed('scene.open plugin_scene.cwscene');
-    control('the stock editor cart (no plugin) opening the scene', opened.ok, JSON.stringify([w, opened]));
-    check('the stock editor cart names the missing type', /Turntable/.test(opened.error || ''), JSON.stringify(opened));
   });
 } catch (e) { check('cart editor on romdev', false, e.stack); }
 

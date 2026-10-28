@@ -1,7 +1,9 @@
 # cartwheel: one build description, two targets.
 #
 #   native:  cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release
-#   cart:    cmake -S . -B build/cart -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/cart.cmake
+#   cart:    cmake -S . -B build/cart-wgpu -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/cart.cmake -DCW_WGPU=ON \
+#              -DCW_CWPACK=build/native/tools/cwpack/cwpack
+#            (the dual GL + WebGPU cart: there is no GL-only cart build)
 #
 # scripts/build.sh does both. Dependencies come from deps/ (scripts/fetch-deps.sh).
 cmake_minimum_required(VERSION 3.20)

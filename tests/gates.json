@@ -433,7 +433,7 @@
   {
     "name": "wcnative-pads",
     "script": "tests/wcnative-pads.mjs",
-    "note": "four virtual controllers (uinput) through wasmcart-native to the input_demo cart, plugged in and out while it runs: each its own pad and player"
+    "note": "four virtual controllers (uinput) through wasmcart-native to the dual hello cart on GL, plugged in and out while it runs: each its own pad slot"
   },
   {
     "name": "web-pads",

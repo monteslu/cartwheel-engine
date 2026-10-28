@@ -21,7 +21,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'out/gate');
 mkdirSync(OUT, { recursive: true });
 const port = process.env.ROMDEV_PORT || 7331;
-const cart = join(ROOT, 'build/cart/carts/profile_demo.wasc');
+const cart = join(ROOT, 'build/cart-wgpu/carts/profile_demo.wasc') // the dual cart, run on GL (wgpu: false);
 const exe = join(ROOT, 'build/native/samples/profile_demo');
 if (!existsSync(cart)) { console.error('no cart', cart); process.exit(1); }
 const FRAMES = 60;
@@ -47,7 +47,7 @@ const command = async (text, s, maxFrames = 4) => {
   return typeof rep === 'string' ? JSON.parse(rep) : rep;
 };
 const fields = ['demo.tick', 'demo.crates', 'demo.flock', 'phys.hash'];
-const load = (s) => romdev('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: cart, deterministicSeed: 1, deterministicStepMs: 1000 / 60, gpuPower: testGpu().power }, s);
+const load = (s) => romdev('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, wgpu: false, path: cart, deterministicSeed: 1, deterministicStepMs: 1000 / 60, gpuPower: testGpu().power }, s);
 /** the cart's state after `frames` frames, with profiling on from frame 1 or not */
 async function cartState(frames, profile) {
   const s = `cw-profile-state-${process.pid}-${frames}-${profile ? 1 : 0}`;

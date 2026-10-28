@@ -12,11 +12,13 @@ the audio codecs, SDL2 and the rest come prebuilt.
 | `cartwheel-sdk-<v>-windows-x64` | Ubuntu x64, llvm-mingw (UCRT) | `bin/cwpack.exe`, native-dawn (`webgpu_dawn.dll`, `dxcompiler.dll`, `dxil.dll`), ANGLE (D3D11) |
 | `cartwheel-sdk-<v>-macos-arm64` | macOS arm64, Xcode's clang | `bin/cwpack`, native-dawn (`libwebgpu_dawn.dylib`), ANGLE (Metal) |
 | `cartwheel-sdk-<v>-android-arm64` | Ubuntu x64, Android NDK 27.2 (API 24) | native-dawn (`libwebgpu_dawn.so`), SDL2's Java activity |
-| `cartwheel-sdk-<v>-cart` | Ubuntu x64, wasi-sdk (wasm32-wasip1-threads) | GL carts: wasmcart-pack and the import checker |
-| `cartwheel-sdk-<v>-cart-wgpu` | Ubuntu x64, wasi-sdk | dual GL + WebGPU carts: the emdawnwebgpu port, wasmcart-pack |
+| `cartwheel-sdk-<v>-cart-wgpu` | Ubuntu x64, wasi-sdk (wasm32-wasip1-threads) | carts (the dual GL + WebGPU cart): the emdawnwebgpu port, wasmcart-pack and the import checker |
 
 The native SDKs come as Release builds and, with `-debug` in the name, Debug
-builds. Each tarball has a `.sha256` beside it.
+builds. Each tarball has a `.sha256` beside it: eleven SDKs, 22 files per
+release. There is one cart SDK: a game ships one cart, the dual one, which
+runs with WebGPU on WebGPU hosts and with GL on GL hosts (releases up to
+v0.18.0 also carried a GL-only `cart` SDK).
 
 Inside each SDK:
 

@@ -32,13 +32,12 @@ jobs:
           - { target: windows-x64, os: ubuntu-24.04, deps: 'export/llvm-mingw,export/native-dawn-win32-x64,export/angle-gles-win32-x64' }
           - { target: android-arm64, os: ubuntu-24.04, deps: 'export/llvm-mingw,export/native-dawn-android-arm64' }
           - { target: macos-arm64, os: macos-15, deps: 'export/native-dawn-darwin-arm64,export/angle-gles-darwin-arm64' }
-          - { target: cart, os: ubuntu-24.04, deps: '' }
           - { target: cart-wgpu, os: ubuntu-24.04, deps: '' }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
       - name: System packages (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -57,7 +56,7 @@ jobs:
       - name: Fetch dependencies
         run: |
           case "${{ matrix.target }}" in
-            cart|cart-wgpu) scripts/fetch-deps.sh ;;
+            cart-wgpu) scripts/fetch-deps.sh ;;
             *) scripts/fetch-deps.sh --only "$NATIVE_DEPS,${{ matrix.deps }}" ;;
           esac
       - name: Version
@@ -68,7 +67,7 @@ jobs:
       - name: Build the SDK (Release)
         run: scripts/build-sdk.sh ${{ matrix.target }}
       - name: Build the SDK (Debug)
-        if: matrix.target != 'cart' && matrix.target != 'cart-wgpu'
+        if: matrix.target != 'cart-wgpu'
         run: BUILD_TYPE=Debug scripts/build-sdk.sh ${{ matrix.target }}
       - uses: actions/upload-artifact@v7
         with:
@@ -87,7 +86,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           path: sdk
           merge-multiple: true
