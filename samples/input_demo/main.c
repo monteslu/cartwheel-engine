@@ -20,9 +20,9 @@
 
 #include "cartwheel/core.h"
 #include "cartwheel/debug.h"
-#include "cartwheel/gl.h"
 #include "cartwheel/input.h"
 #include "cartwheel/platform.h"
+#include "cartwheel/render2d.h"
 
 #define W 640
 #define H 360
@@ -215,20 +215,18 @@ static void update(void *user, double dt) {
   if (d->sim.verify && !d->replay_done) verify_replay(d);
 }
 
+/* a filled rectangle, top-left origin, in the W x H layout */
 static void rect(int x, int y, int w, int h, float r, float g, float b) {
-  glScissor(x, H - y - h, w, h); /* top-left origin */
-  glClearColor(r, g, b, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
+  if (w <= 0 || h <= 0) return;
+  cw_vec2 c = cw_r2d_canvas_size();
+  float kx = c.x / W, ky = c.y / H;
+  cw_r2d_rect((cw_rect){ (float)x * kx, (float)y * ky, (float)w * kx, (float)h * ky }, cw_rgba(r, g, b, 1));
 }
 
 static void render(void *user, double alpha) {
   (void)alpha;
   demo *d = user;
-  glViewport(0, 0, W, H);
-  glDisable(GL_SCISSOR_TEST);
-  glClearColor(0.10f, 0.12f, 0.16f, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
-  glEnable(GL_SCISSOR_TEST);
+  cw_r2d_begin(&(cw_r2d_pass_desc){ .clear = true, .clear_color = cw_rgba(0.10f, 0.12f, 0.16f, 1) });
   /* touch controls */
   rect(0, 200, 200, 160, 0.16f, 0.18f, 0.24f);
   rect(520, 260, 100, 80, cw_touch_control_active(1) ? 0.9f : 0.25f, 0.3f, 0.3f);
@@ -247,7 +245,7 @@ static void render(void *user, double alpha) {
   rect(10, 80, 6 * (d->sim.zoom + 10), 6, 0.6f, 0.6f, 0.9f);
   rect(10, 90, 6 * d->sim.special_jp, 6, 0.9f, 0.9f, 0.3f);
   if (d->replay_done) rect(W - 40, 10, 30, 30, d->replay_match ? 0.2f : 1.0f, d->replay_match ? 1.0f : 0.1f, 0.2f);
-  glDisable(GL_SCISSOR_TEST);
+  cw_r2d_end();
 }
 
 cw_app_desc cw_main(int argc, char **argv) {

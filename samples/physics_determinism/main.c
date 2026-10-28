@@ -29,7 +29,7 @@
 #include "box2d/box2d.h"
 #include "box3d/box3d.h"
 #include "cartwheel/debug.h"
-#include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/physics_tasks.h"
 #include "cartwheel/platform.h"
 
@@ -289,18 +289,14 @@ static void update(void *user, double dt) {
 static void render(void *user, double alpha) {
   (void)user;
   (void)alpha;
-  int w, h;
-  cw_drawable_size(&w, &h);
-  glViewport(0, 0, w, h);
   /* green when every hash matched upstream, red otherwise, grey while running */
   bool ok = done;
   for (int i = 0; i < DET_RUNS && ok; i++)
     ok = b3_hash[i] == b3_expected_hash && b3_sleep[i] == b3_expected_sleep && b2_hash[i] == b2_expected_hash &&
          b2_sleep[i] == b2_expected_sleep;
-  if (!done) glClearColor(0.3f, 0.3f, 0.3f, 1);
-  else if (ok) glClearColor(0.1f, 0.6f, 0.2f, 1);
-  else glClearColor(0.7f, 0.1f, 0.1f, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
+  if (!done) cw_gpu_clear_window(0.3f, 0.3f, 0.3f, 1);
+  else if (ok) cw_gpu_clear_window(0.1f, 0.6f, 0.2f, 1);
+  else cw_gpu_clear_window(0.7f, 0.1f, 0.1f, 1);
 }
 
 cw_app_desc cw_main(int argc, char **argv) {

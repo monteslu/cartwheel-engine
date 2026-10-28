@@ -23,7 +23,6 @@
 #include <string.h>
 
 #include "cartwheel/debug.h"
-#include "cartwheel/gl.h"
 #include "cartwheel/gpu.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
@@ -143,6 +142,8 @@ static void update(void *u, double dt) {
 }
 
 /* the app's overlay pass: the output is bound and complete */
+static void taa_crop(const uint8_t *crop_cur);
+
 static void render(void *u, double alpha) {
   (void)u;
   (void)alpha;
@@ -161,28 +162,46 @@ static void render(void *u, double alpha) {
         gpu_ms[k] = st[i].gpu_ms_avg;
       }
   }
-  /* (GL only: a readback of its own; on WebGPU there is no GL to read with) */
-  if (strcmp(segs[seg_index].name, "taa") == 0 && cw_gpu_backend() == CW_GPU_GL) {
+  /* window reads (both backends): one crop asked every frame of the taa
+   * segment, taken in order as they arrive (a frame or more later on
+   * WebGPU); a read from an earlier segment is dropped */
+  static uint32_t q_ticket[8];
+  static int q_seg[8], q_n;
+  bool taa = strcmp(segs[seg_index].name, "taa") == 0;
+  while (q_n > 0) {
+    uint8_t *crop_cur = crops[crop_count % 9];
+    int got = cw_gpu_read_result(q_ticket[0], crop_cur);
+    if (got == 0) break;
+    int from = q_seg[0];
+    q_n--;
+    memmove(q_ticket, q_ticket + 1, sizeof q_ticket[0] * (size_t)q_n);
+    memmove(q_seg, q_seg + 1, sizeof q_seg[0] * (size_t)q_n);
+    if (got < 0 || from != seg_index) continue;
+    taa_crop(crop_cur);
+  }
+  if (taa && q_n < 8) {
     int w, h;
     cw_drawable_size(&w, &h);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
     /* the ball's silhouette and the crates' edges: where jitter shows */
-    uint8_t *crop_cur = crops[crop_count % 9];
-    glReadPixels(w * 260 / 640, h * 150 / 360, 64, 64, GL_RGBA, GL_UNSIGNED_BYTE, crop_cur);
-    const uint8_t *crop_prev = crops[(crop_count + 1) % 9]; /* 8 frames ago */
-    if (++crop_count > 8) {
-      long sum = 0;
-      int mx = 0;
-      for (int i = 0; i < 64 * 64 * 4; i++)
-        if ((i & 3) != 3) {
-          int d = abs((int)crop_cur[i] - (int)crop_prev[i]);
-          sum += d;
-          mx = d > mx ? d : mx;
-        }
-      taa_delta = (int32_t)(sum * 1000 / (64 * 64 * 3));
-      taa_max = mx;
-      taa_converged = taa_delta < 100 && taa_max <= 4;
-    }
+    uint32_t t = cw_gpu_read_window(w * 260 / 640, h - h * 150 / 360 - 64, 64, 64);
+    if (t) q_ticket[q_n] = t, q_seg[q_n++] = seg_index;
+  }
+}
+
+static void taa_crop(const uint8_t *crop_cur) {
+  const uint8_t *crop_prev = crops[(crop_count + 1) % 9]; /* 8 frames ago */
+  if (++crop_count > 8) {
+    long sum = 0;
+    int mx = 0;
+    for (int i = 0; i < 64 * 64 * 4; i++)
+      if ((i & 3) != 3) {
+        int d = abs((int)crop_cur[i] - (int)crop_prev[i]);
+        sum += d;
+        mx = d > mx ? d : mx;
+      }
+    taa_delta = (int32_t)(sum * 1000 / (64 * 64 * 3));
+    taa_max = mx;
+    taa_converged = taa_delta < 100 && taa_max <= 4;
   }
 }
 

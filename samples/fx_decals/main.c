@@ -13,7 +13,7 @@
 
 #include "cartwheel/debug.h"
 #include "cartwheel/decals.h"
-#include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/render3d.h"
 #include "cartwheel/scene_file.h"
@@ -92,12 +92,18 @@ static void render(void *u, double a) {
   int W, H;
   cw_drawable_size(&W, &H);
   int px = (int)((x / w * 0.5f + 0.5f) * (float)W), py = (int)((y / w * 0.5f + 0.5f) * (float)H);
+  /* the window read arrives a frame or more later (on WebGPU): one in
+   * flight at a time, the fields keep the newest delivered pixel */
+  static uint32_t ticket;
   uint8_t c[4] = { 0 };
-  glReadPixels(px, py, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
-  red_px[0] = c[0];
-  red_px[1] = c[1];
-  red_px[2] = c[2];
-  red_ok = c[0] > 140 && c[0] > c[1] + 70 && c[0] > c[2] + 70;
+  if (ticket && cw_gpu_read_result(ticket, c) != 0) {
+    ticket = 0;
+    red_px[0] = c[0];
+    red_px[1] = c[1];
+    red_px[2] = c[2];
+    red_ok = c[0] > 140 && c[0] > c[1] + 70 && c[0] > c[2] + 70;
+  }
+  if (!ticket && px >= 0 && px < W && py >= 0 && py < H) ticket = cw_gpu_read_window(px, H - 1 - py, 1, 1);
 }
 
 cw_app_desc cw_main(int argc, char **argv) {

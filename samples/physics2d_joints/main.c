@@ -23,6 +23,7 @@
 #include "cartwheel/debug.h"
 #include "cartwheel/physics.h"
 #include "cartwheel/platform.h"
+#include "cartwheel/render3d.h"
 #include "three.h"
 
 typedef struct app {
@@ -225,7 +226,7 @@ static void init(void *user) {
   (void)user;
   int w, h;
   cw_drawable_size(&w, &h);
-  A.renderer = t3_renderer_new(w, h);
+  A.renderer = cw_render3d_window_renderer(w, h);
   t3_renderer_set_clear_color(A.renderer, 0x202a33, 1);
   A.scene = t3_scene_new();
   A.camera = t3_orthographic_camera_new(-16, 16, 16.5f, -1.5f, -10, 10);
@@ -320,6 +321,7 @@ static void render(void *user, double alpha) {
   cw_world2d_debug_draw(A.world, &A.lines, CW_PHYS_DRAW_SHAPES | CW_PHYS_DRAW_JOINTS);
   A.line_count = cw_phys_lines_count(&A.lines);
   phys_lines_t3_update(&A.lines_t3, &A.lines);
+  cw_render3d_window_target(A.renderer);
   t3_renderer_render(A.renderer, A.scene, A.camera);
 }
 

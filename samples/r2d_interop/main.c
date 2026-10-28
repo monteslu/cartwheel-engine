@@ -1,15 +1,18 @@
-/* r2d_interop: three.c and the 2D renderer sharing one GL context.
+/* r2d_interop: three.c and the 2D renderer drawing one frame, on GL or WebGPU.
  * Each frame: three.c renders a torus knot INTO a 2D render target (its
  * framebuffer, with depth), then a cube scene to the window; the 2D pass
  * draws on top of that 3D frame without clearing it (a HUD panel, text,
  * sprites) and draws the render target as a rotating, translucent sprite.
- * After the 2D pass, t3_renderer_reset_bindings() resyncs three.c's GL state
- * cache, as render2d.h documents. */
+ * cw_render3d_texture_target / cw_render3d_window_target point three.c at the
+ * target or the window on either API. On GL, after the 2D pass,
+ * t3_renderer_reset_bindings() resyncs three.c's state cache, as render2d.h
+ * documents (on WebGPU it costs nothing). */
 #include <math.h>
 
 #include "cartwheel/debug.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/render2d.h"
+#include "cartwheel/render3d.h"
 #include "three.h"
 
 typedef struct {
@@ -28,7 +31,7 @@ static app_t app;
 static void init(void *user) {
   app_t *a = user;
   cw_drawable_size(&a->win_w, &a->win_h);
-  a->r = t3_renderer_new(a->win_w, a->win_h);
+  a->r = cw_render3d_window_renderer(a->win_w, a->win_h);
   t3_renderer_set_clear_color(a->r, 0x182030, 1.0f);
   /* window scene: a ring of cubes */
   a->scene = t3_scene_new();
@@ -81,12 +84,12 @@ static void render(void *user, double alpha) {
   t3_object_set_rotation(a->knot, t * 0.8f, t * 0.3f, 0);
 
   /* 1. three.c into the 2D render target */
-  t3_renderer_set_framebuffer(a->r, cw_target_fbo(a->rt));
   t3_renderer_set_size(a->r, 192, 192);
+  cw_render3d_texture_target(a->r, a->rt);
   t3_renderer_render(a->r, a->rt_scene, a->rt_cam);
   /* 2. three.c to the window */
-  t3_renderer_set_framebuffer(a->r, 0);
   t3_renderer_set_size(a->r, a->win_w, a->win_h);
+  cw_render3d_window_target(a->r);
   t3_renderer_render(a->r, a->scene, a->cam);
   const t3_render_info *info = t3_renderer_info(a->r);
   a->t3_calls = info->calls;
@@ -106,7 +109,7 @@ static void render(void *user, double alpha) {
                                 .pos = { 60.0f + (float)i * 50 + 20 * sinf(t + (float)i), 320 }, .pivot = { 0.5f, 1 },
                                 .scale = { 1.5f, 1.5f } });
   cw_r2d_end();
-  /* 4. three.c's GL cache is stale after our GL work */
+  /* 4. three.c's GL cache is stale after the 2D pass's GL work */
   t3_renderer_reset_bindings(a->r);
 }
 

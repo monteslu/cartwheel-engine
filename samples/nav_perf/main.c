@@ -17,7 +17,7 @@
 
 #include "../common/nav_level.h"
 #include "cartwheel/debug.h"
-#include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/jobs.h"
 #include "cartwheel/nav.h"
 #include "cartwheel/platform.h"
@@ -206,8 +206,7 @@ static void bench(void) {
 
 static void render(void *u, double a) {
   (void)u, (void)a;
-  glClearColor(0.1f, 0.3f, 0.5f, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
+  cw_gpu_clear_window(0.1f, 0.3f, 0.5f, 1);
 }
 
 cw_app_desc cw_main(int argc, char **argv) {
