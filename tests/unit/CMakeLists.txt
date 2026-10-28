@@ -1,7 +1,7 @@
 # the unit apps' three.c program table (cmake/programs.cmake)
 set(CW_PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/programs/cw_tests.txt)
 # Unit test suites: apps that run natively and as dual carts (see test.h). unit_pipeline reads GL
-# framebuffers itself, so it is GL_ONLY (native only when there is no GL-only cart tree).
+# framebuffers itself: a native test binary, never a cart (below).
 cw_add_app(unit_core SOURCES test_core.c)
 cw_add_app(unit_math SOURCES test_math.c)
 cw_add_app(unit_froxel SOURCES test_froxel.c)
@@ -32,10 +32,11 @@ cw_add_app(unit_physics_nodes SOURCES test_physics_nodes.c)
 cw_add_app(unit_nav SOURCES test_nav.c)
 cw_add_app(unit_resource SOURCES test_resource.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/res_project/roots.txt)
 cw_add_app(unit_stream SOURCES test_stream.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/stream_assets)
-# the render pipeline (pass graph, POST chain, pool, LUT parser)
-cw_add_app(unit_pipeline SOURCES test_pipeline.c GL_ONLY)
 # Hot reload watches files and reruns cwpack: native dev builds only.
 if(NOT CW_CART)
+  # the render pipeline (pass graph, POST chain, pool, LUT parser): it reads GL framebuffers
+  # itself, so it is a native GL test binary with no cart target at all
+  cw_add_app(unit_pipeline SOURCES test_pipeline.c)
   cw_add_app(unit_hotreload SOURCES test_hotreload.c)
   add_dependencies(unit_hotreload cwpack)
 endif()
