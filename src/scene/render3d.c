@@ -1074,10 +1074,22 @@ static void note_skipped(render3d_state *s, const t3_render_info *i) {
     snprintf(s->skipped_said, sizeof s->skipped_said, "%s", e);
     cw_warn("render3d: three.c skipped %u draw(s): %s", i->skipped, e);
   }
-  static bool said_how;
-  if (!said_how) { /* once per run, at error level: a scene that draws nothing looks like an empty scene */
-    said_how = true;
-    cw_error("render3d: draws are being skipped because this app's program table lacks a state it needs. Regenerate it with: node tools/programs.mjs <app>  (see docs/guides/rendering-3d.md, program tables)");
+  /* once per run and kind, at error level (a scene that draws nothing looks like an empty scene), naming the cause
+   * three.c gave: only a state missing from the table is fixed by regenerating the table */
+  static bool said_table, said_ext, said_other;
+  if (strstr(e, "no table state") || strstr(e, "the runtime builder failed")) {
+    if (!said_table) {
+      said_table = true;
+      cw_error("render3d: draws are being skipped because this app's program table lacks a state it needs. Regenerate it with: node tools/programs.mjs <app>  (see docs/guides/rendering-3d.md, program tables)");
+    }
+  } else if (strstr(e, "left texture") || strstr(e, "no hook for extension")) {
+    if (!said_ext) {
+      said_ext = true;
+      cw_error("render3d: draws are being skipped because a material extension's fill hook left a texture its program samples unset (the table has the state: the node that owns the extension did not bind the texture this frame)");
+    }
+  } else if (!said_other) {
+    said_other = true;
+    cw_error("render3d: draws are being skipped: three.c could not draw them (the reason is in the warning above)");
   }
 }
 void cw__render3d_count(cw_tree *t) {

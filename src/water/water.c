@@ -703,6 +703,11 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   } else if (first || d->refr_on) {
     render_refr(ctx, wt, d, NULL, 1, 1);
   }
+  /* WebGPU: the surface's program samples the engine's refraction colour and depth in every state, and only the
+   * branches above the water make them. A Water3D first drawn from under its surface took the branch below and had
+   * neither: its draws were skipped (waterRefractionDepth unset) until the camera came up, and for good with
+   * refraction off. Cleared 1 x 1 stand-ins until a refraction is drawn. */
+  if (cw__wgpu_on() && (!d->wg_dep_tex || !d->wg_col_tex)) render_refr(ctx, wt, d, NULL, 1, 1);
   wt->stats.reflection_w = d->refl_on ? w : 0;
   wt->stats.reflection_h = d->refl_on ? h : 0;
   wt->stats.refraction_w = d->refr_on ? w : 0;
