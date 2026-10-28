@@ -26,6 +26,16 @@ cart on GL hosts. Games built against an SDK recompile when the SDK changes.
   compile line (`tests/sdk-rebuild.mjs`, with the old package as the
   control). Games on an SDK up to v0.18.0: build from a clean tree after an
   SDK bump.
+- `scripts/fetch-deps.sh`: a file created by a patch that was later dropped no
+  longer stops the fetch (the files each patch creates are recorded and
+  removed when it is unapplied), and untracked leftovers that the new pin
+  tracks are cleaned on a pin move (`tests/deps-patches.mjs`, with a
+  control).
+- `tools/programs.mjs --carts` fails, naming the app and host, when a survey
+  covered nothing (a failed run, no pipeline reply, no frame rendered, no
+  state list) or found no carts, instead of reporting 0 states and success;
+  `tests/programs-carts.mjs` surveys noise_demo as the covered control, with
+  three cases that must fail.
 
 ### Changed
 - `scripts/build.sh` builds `build/native` and `build/cart-wgpu` only (the
