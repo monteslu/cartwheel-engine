@@ -171,9 +171,21 @@ bool cw_touch_overlay_visible(void) {
 int cw_touch_add_button(float x, float y, float w, float h) {
   return add_control((cw__touch_control){ .x = x, .y = y, .w = w, .h = h });
 }
+/* A rect stick asked to float now keeps a home instead (the ring jumped to wherever the thumb landed): two throws in from
+ * the rect's bottom left corner, or its middle when the rect is smaller than that. cw_touch_set_floating(id, true) brings
+ * the older feel back */
 int cw_touch_add_stick(float x, float y, float w, float h, float radius, bool floating) {
-  return add_control((cw__touch_control){ .stick = true, .floating = floating, .x = x, .y = y, .w = w, .h = h,
+  return add_control((cw__touch_control){ .stick = true, .rect_home = floating, .x = x, .y = y, .w = w, .h = h,
                                           .radius = radius > 0 ? radius : 1 });
+}
+static cw_vec2 rect_home_at(const cw__touch_control *c) {
+  return (cw_vec2){ c->x + fminf(2.0f * c->radius, c->w * 0.5f), c->y + c->h - fminf(2.0f * c->radius, c->h * 0.5f) };
+}
+void cw_touch_set_floating(int id, bool floating) {
+  if (!valid_id(id) || !I.controls[id].stick) return;
+  cw__touch_control *c = &I.controls[id];
+  c->floating = floating;
+  if (floating) c->rect_home = false;
 }
 void cw_touch_set_rect(int id, float x, float y, float w, float h) {
   if (!valid_id(id) || I.controls[id].anchored) return;
@@ -191,7 +203,8 @@ cw_vec2 cw_touch_stick_center(int id) { return valid_id(id) ? I.controls[id].cen
 cw_vec2 cw_touch_home(int id) {
   if (!valid_id(id)) return (cw_vec2){ 0, 0 };
   const cw__touch_control *c = &I.controls[id];
-  return c->anchored ? c->home : (cw_vec2){ c->x + c->w * 0.5f, c->y + c->h * 0.5f };
+  if (c->anchored) return c->home;
+  return c->rect_home ? rect_home_at(c) : (cw_vec2){ c->x + c->w * 0.5f, c->y + c->h * 0.5f };
 }
 float cw_touch_radius(int id) {
   if (!valid_id(id)) return 0;
@@ -220,6 +233,7 @@ void cw__touch_update(const cw_raw_input *raw) {
     tc->active = tc->tapped = false;
     tc->value = (cw_vec2){ 0, 0 };
     if (tc->anchored) tc->center = tc->home; /* a floating ring goes home when let go */
+    else if (tc->stick && tc->rect_home) tc->center = rect_home_at(tc);
     else if (!tc->stick || !tc->floating) tc->center = (cw_vec2){ tc->x + tc->w * 0.5f, tc->y + tc->h * 0.5f };
   }
   for (int p = 0; p < CW_MAX_PADS; p++)

@@ -322,9 +322,13 @@ bool cw_touch_overlay_visible(void);
 /* The older rect controls: regions in logical window coordinates. */
 int cw_touch_add_button(float x, float y, float w, float h);
 /* A stick claims touches starting in rect (x,y,w,h); its value is (touch -
- * center) / radius, length clamped to 1. floating: the center is where the
- * touch started; else the rect's center. */
+ * center) / radius, length clamped to 1. floating: the center is a home in
+ * the rect's bottom left (below); else the rect's center. */
 int cw_touch_add_stick(float x, float y, float w, float h, float radius, bool floating);
+/* A rect stick added with floating = true keeps its ring at a HOME (two radii in from the rect's bottom left corner, or
+ * its middle if the rect is smaller) and steers relative to it, like a thumbstick: the ring no longer jumps to where the
+ * thumb landed. cw_touch_set_floating(id, true) brings the older floating feel back (any stick). */
+void cw_touch_set_floating(int id, bool floating);
 /* Move/resize a rect control (layout changes); bad id or an anchored control ignored. */
 void cw_touch_set_rect(int id, float x, float y, float w, float h);
 void cw_touch_clear(void); /* remove every control */

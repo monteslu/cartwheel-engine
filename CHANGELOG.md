@@ -4,6 +4,44 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.21.0 (2026-10-28)
+
+Touch controls that stay where they are drawn: a thumbstick with a fixed home
+in the bottom left corner, round buttons, sizes that follow the screen, and an
+overlay the engine draws; the older floating stick keeps a home too, so every
+game that used one stops jumping without a code change.
+
+### Added
+- Thumbsticks and round buttons (`cw_touch_add_thumbstick`,
+  `cw_touch_add_round_button`, descs `cw_touch_stick_desc` and
+  `cw_touch_button_desc`): placed in touch units (1/540 of the shorter side
+  of the touch area, `cw_touch_unit`) from a corner (bottom left for a
+  stick, bottom right for a button by default), laid out every frame so they
+  follow a resize or a rotation. A thumbstick's ring stays at its home: a
+  touch landing anywhere in its zone (default 2.4 radii past the home) steers
+  relative to the home. `floating` in the desc keeps the older feel. In an
+  overlap a button wins over a stick's zone, the nearer centre between
+  buttons; a button takes touches out to 1.25 times its radius.
+- The touch overlay: the engine draws its thumbsticks (base, ring, knob) and
+  round buttons (disc, label) over the frame, translucent, in window
+  coordinates (`cw_touch_set_overlay`: AUTO shows it when
+  `cw_platform_touch_primary` or once a touch lands and hides it on a pad
+  press; ALWAYS; OFF), `hidden` per control for a game that draws its own,
+  `cw_touch_overlay_visible`, debug field `cw.touch_overlay`.
+- `cw_touch_set_thumbstick`, `cw_touch_set_round_button`,
+  `cw_touch_set_radius`, `cw_touch_set_enabled`, `cw_touch_set_area` (a
+  safe area or a split screen's rect), `cw_touch_home`, `cw_touch_radius`,
+  `cw_touch_set_floating`.
+
+### Changed
+- A rect stick added with `floating` (`cw_touch_add_stick(..., true)`) keeps
+  its ring at a home two radii in from its rect's bottom left corner (the
+  middle of a smaller rect) and steers from it, instead of centring the ring
+  where the thumb landed: every example game's stick jumped across half the
+  screen. `cw_touch_set_floating(id, true)` brings the older feel back.
+  Unit tests `thumbstick` and `rect_stick_home` (controls: a floating stick
+  follows the thumb). The input demo uses a thumbstick and a round button.
+
 ## v0.20.1 (2026-10-28)
 
 The tag v0.20.0 was made at the wrong commit by mistake and has no release:

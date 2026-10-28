@@ -26,6 +26,7 @@ typedef struct cw__action_def {
 
 typedef struct cw__touch_control {
   bool stick, floating;
+  bool rect_home;            /* a rect stick added floating: its ring stays at a home in the rect's bottom left (rect_home_at) */
   float x, y, w, h, radius; /* the claim rect (laid out each frame for anchored ones) and the throw, window coordinates */
   /* anchored (thumbstick / round button): placed in touch units from a corner */
   bool anchored, hidden, disabled;

@@ -3389,21 +3389,87 @@
      "inline": false
     },
     {
+     "name": "cw_touch_add_thumbstick",
+     "signature": "int cw_touch_add_thumbstick(const cw_touch_stick_desc *d)",
+     "doc": "A thumbstick (desc NULL = every default). Returns its id, -1 when full.",
+     "inline": false
+    },
+    {
+     "name": "cw_touch_add_round_button",
+     "signature": "int cw_touch_add_round_button(const cw_touch_button_desc *d)",
+     "doc": "A round button (desc NULL = every default). Where two overlap, the touch\ngoes to the nearer centre. Returns its id, -1 when full.",
+     "inline": false
+    },
+    {
+     "name": "cw_touch_set_thumbstick",
+     "signature": "void cw_touch_set_thumbstick(int id, const cw_touch_stick_desc *d)",
+     "doc": "Re-place a thumbstick or round button (a settings screen, a left-handed\nlayout); a desc of the other kind, a rect control or a bad id is ignored.\nA touch holding the control keeps it.",
+     "inline": false
+    },
+    {
+     "name": "cw_touch_set_round_button",
+     "signature": "void cw_touch_set_round_button(int id, const cw_touch_button_desc *d)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw_touch_set_radius",
+     "signature": "void cw_touch_set_radius(int id, float radius)",
+     "doc": "A stick's throw or a round button's radius: touch units for the anchored\ncontrols, window coordinates for a rect stick (cw_touch_add_stick); a rect\nbutton or bad id is ignored, radius <= 0 is ignored.",
+     "inline": false
+    },
+    {
+     "name": "cw_touch_set_enabled",
+     "signature": "void cw_touch_set_enabled(int id, bool on)",
+     "doc": "An off control claims no touches, reads as released and is not drawn\n(a menu over the game, a vehicle with no fire button). Default on.",
+     "inline": false
+    },
+    {
+     "name": "cw_touch_set_area",
+     "signature": "void cw_touch_set_area(float x, float y, float w, float h)",
+     "doc": "The rectangle the anchored controls lay out in, logical window\ncoordinates (a phone's safe area, one player's half of the screen).\nw or h <= 0: the whole window, followed every frame (the default).",
+     "inline": false
+    },
+    {
+     "name": "cw_touch_unit",
+     "signature": "float cw_touch_unit(void)",
+     "doc": "window coordinates per touch unit, as last laid out",
+     "inline": false
+    },
+    {
+     "name": "cw_touch_set_overlay",
+     "signature": "void cw_touch_set_overlay(cw_touch_overlay_mode mode)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw_touch_overlay_visible",
+     "signature": "bool cw_touch_overlay_visible(void)",
+     "doc": "Whether the overlay is drawing the controls this frame (in AUTO, the same\nrule a game can use to show touch prompts).",
+     "inline": false
+    },
+    {
      "name": "cw_touch_add_button",
      "signature": "int cw_touch_add_button(float x, float y, float w, float h)",
-     "doc": "── touch controls (phones, tablets, the browser) ─────────────────────\nRegions in logical window coordinates. A touch that STARTS inside a\ncontrol belongs to it until lifted (sliding off a stick keeps steering).\nBind actions to them with touch:<id> / touch:<id>.<dir>.",
+     "doc": "The older rect controls: regions in logical window coordinates.",
      "inline": false
     },
     {
      "name": "cw_touch_add_stick",
      "signature": "int cw_touch_add_stick(float x, float y, float w, float h, float radius, bool floating)",
-     "doc": "A stick claims touches starting in rect (x,y,w,h); its value is (touch -\ncenter) / radius, length clamped to 1. floating: the center is where the\ntouch started; else the rect's center.",
+     "doc": "A stick claims touches starting in rect (x,y,w,h); its value is (touch -\ncenter) / radius, length clamped to 1. floating: the center is a home in\nthe rect's bottom left (below); else the rect's center.",
+     "inline": false
+    },
+    {
+     "name": "cw_touch_set_floating",
+     "signature": "void cw_touch_set_floating(int id, bool floating)",
+     "doc": "A rect stick added with floating = true keeps its ring at a HOME (two radii in from the rect's bottom left corner, or\nits middle if the rect is smaller) and steers relative to it, like a thumbstick: the ring no longer jumps to where the\nthumb landed. cw_touch_set_floating(id, true) brings the older floating feel back (any stick).",
      "inline": false
     },
     {
      "name": "cw_touch_set_rect",
      "signature": "void cw_touch_set_rect(int id, float x, float y, float w, float h)",
-     "doc": "Move/resize a control (layout changes); bad id ignored.",
+     "doc": "Move/resize a rect control (layout changes); bad id or an anchored control ignored.",
      "inline": false
     },
     {
@@ -3427,7 +3493,19 @@
     {
      "name": "cw_touch_stick_center",
      "signature": "cw_vec2 cw_touch_stick_center(int id)",
-     "doc": "window coordinates; (0,0) for a bad id",
+     "doc": "Where the stick's value is measured from this frame, window coordinates:\nhome (or where a floating touch started); (0,0) for a bad id.",
+     "inline": false
+    },
+    {
+     "name": "cw_touch_home",
+     "signature": "cw_vec2 cw_touch_home(int id)",
+     "doc": "A thumbstick's home or a round button's centre (window coordinates), as\nlaid out this frame; a rect control's rect centre; (0,0) for a bad id.",
+     "inline": false
+    },
+    {
+     "name": "cw_touch_radius",
+     "signature": "float cw_touch_radius(int id)",
+     "doc": "A stick's throw or a round button's radius in window coordinates; 0 for a\nrect button or bad id.",
      "inline": false
     },
     {
@@ -3563,6 +3641,26 @@
      "name": "cw_bindings_changed_fn",
      "doc": "Called after every rebinding call (bind/unbind/set/clear/deadzone/reset).\nThe game owns persistence: typically cw_input_save_bindings(.., true) into\nits own save data. The engine never writes files (carts cannot).",
      "decl": "typedef void (*cw_bindings_changed_fn)(void *user);"
+    },
+    {
+     "name": "cw_touch_corner",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_TOUCH_CORNER_AUTO,  /* a thumbstick's bottom left, a button's bottom right */\n  CW_TOUCH_BOTTOM_LEFT,\n  CW_TOUCH_BOTTOM_RIGHT,\n  CW_TOUCH_TOP_LEFT,\n  CW_TOUCH_TOP_RIGHT,\n} cw_touch_corner;"
+    },
+    {
+     "name": "cw_touch_stick_desc",
+     "doc": "",
+     "decl": "typedef struct cw_touch_stick_desc {\n  cw_touch_corner corner; /* where x, y are measured from (AUTO: bottom left) */\n  float x, y;             /* home, touch units in from the corner; 0, 0 = 150, 140 */\n  float radius;           /* full deflection at this distance from home, touch units; 0 = 70 */\n  float zone;             /* touches starting between the corner and this far past home (each axis)\n                           * belong to the stick, touch units; 0 = 2.4 * radius */\n  bool floating;          /* the older feel: the ring centres where the touch started (in the zone) */\n  bool hidden;            /* the engine does not draw it (the game does) */\n} cw_touch_stick_desc;"
+    },
+    {
+     "name": "cw_touch_button_desc",
+     "doc": "",
+     "decl": "typedef struct cw_touch_button_desc {\n  cw_touch_corner corner; /* where x, y are measured from (AUTO: bottom right) */\n  float x, y;             /* centre, touch units in from the corner; 0, 0 = 110, 110 */\n  float radius;           /* touch units; 0 = 48. Touches count up to 1.25 x this (thumbs miss) */\n  const char *label;      /* drawn on it (copied, 15 bytes kept); NULL = none */\n  cw_color color;         /* its fill; alpha 0 = white */\n  bool hidden;            /* the engine does not draw it (the game does) */\n} cw_touch_button_desc;"
+    },
+    {
+     "name": "cw_touch_overlay_mode",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_TOUCH_OVERLAY_AUTO,   /* drawn on a touch-first device or once a touch lands (until a pad is pressed) */\n  CW_TOUCH_OVERLAY_ALWAYS, /* drawn every frame (a desktop test, a demo) */\n  CW_TOUCH_OVERLAY_OFF,    /* never drawn: the game draws its own (the controls still work) */\n} cw_touch_overlay_mode;"
     }
    ],
    "macros": [
@@ -3585,6 +3683,10 @@
     {
      "name": "CW_HAVE_INPUT_RUMBLE",
      "doc": "── rumble ────────────────────────────────────────────────────────────\nThe game drives a player's pad motors: `low` is the heavy (low-frequency)\nmotor, `high` the light one, both 0..1 (out of range is clamped, NaN is 0),\nfor `ms` milliseconds (capped at 5000). A new call replaces the one running;\ncw_input_rumble_stop ends it early. A player with no pad, a pad without\nmotors, a keyboard-only setup and a host with no hardware all make these\nsilent no-ops, so a game can call them unconditionally and ask\ncw_input_has_rumble only to offer the player a toggle. Natively this is\nSDL_GameControllerRumble; in a cart it is wasmcart's wc_pad_rumble (the\nbrowser's dual-rumble effect, a native player's SDL). Presentation only:\nrumble never feeds back into input or the simulation, so it is safe to call\nfrom fixed_update or update. The debug field `cw.rumble` (request count,\npad, low and high in thousandths, ms) shows the last request to tests."
+    },
+    {
+     "name": "CW_TOUCH_UNITS",
+     "doc": "── touch controls (phones, tablets, the browser) ─────────────────────\nA touch that STARTS inside a control belongs to it until lifted (sliding\noff a stick keeps steering). Bind actions to them with touch:<id> /\ntouch:<id>.<dir>; ids count up from 0 in the order controls are added.\n\nThe usual way: a thumbstick with a HOME in the bottom left corner and\nround buttons in the bottom right, placed in TOUCH UNITS from a corner of\nthe screen, laid out again every frame (so they follow a resize or a turn\nof the phone) and drawn by the engine on top of the frame:\n\n  int stick = cw_touch_add_thumbstick(NULL);            // home 150,140 from the bottom left\n  int jump = cw_touch_add_round_button(&(cw_touch_button_desc){ .x = 110, .y = 110, .label = \"A\" });\n  cw_action_bind_text(left, \"key:a, touch:0.left\");\n\nA touch unit is 1/540 of the shorter side of the touch area (the window\nunless cw_touch_set_area), so a control is the same share of the screen at\nevery size and in either orientation.\n\nThe thumbstick's ring stays at home: a touch landing anywhere in its zone\n(from the corner to `zone` units past home on both axes) steers by where\nthe thumb is relative to HOME, so the drawn ring never jumps to where the\nthumb happened to land. `floating` brings back that older behaviour (the\nring centred where the touch started, inside the zone).\n\nThe overlay: the engine draws its thumbsticks (base, ring, knob) and round\nbuttons (disc, label) after the app's render callback, translucent, in\nwindow coordinates. CW_TOUCH_OVERLAY_AUTO (the default) shows them while\ncw_platform_touch_primary or once a touch has landed, until a pad button\nis pressed. A game drawing its own sets `hidden` on a control or turns the\noverlay off; the queries below give it what it needs. The debug field\n`cw.touch_overlay` is the count of controls drawn last frame.\n\nThe rect controls (cw_touch_add_button / cw_touch_add_stick) are the\nolder form: regions in logical window coordinates that the game lays out\nand draws itself; the engine never draws them."
     }
    ]
   },
