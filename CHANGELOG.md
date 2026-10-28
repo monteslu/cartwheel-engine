@@ -4,7 +4,7 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## v0.18.1 (2026-10-27)
+## v0.18.1 (2026-10-28)
 
 Build and CI cleanup: one cart per app, the dual GL + WebGPU cart. The
 GL-only cart tree and its SDK are gone; GL is tested by running the dual
