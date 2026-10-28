@@ -25,6 +25,11 @@ typedef struct cw__ui_hooks {
 } cw__ui_hooks;
 void cw__platform_hook_ui(const cw__ui_hooks *h);
 
+/* The engine's touch overlay (src/input/touch.c): drawn right after the
+ * app's render callback, so it lands over the game's HUD and menus. Registered
+ * by the input module when the first thumbstick or round button is added. */
+void cw__platform_hook_touch_overlay(void (*draw)(void));
+
 /* The user's preferred locale ("ja-JP", "en"), written into out; "" when
  * the platform does not say (carts: the wasmcart ABI carries no locale, so
  * always ""). The l10n module reads it through here, never SDL itself. */

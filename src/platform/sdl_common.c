@@ -193,6 +193,9 @@ void cw__platform_hook_input(const cw__input_hooks *h) { input_hooks = *h; }
 static cw__ui_hooks ui_hooks;
 void cw__platform_hook_ui(const cw__ui_hooks *h) { ui_hooks = *h; }
 
+static void (*touch_overlay)(void);
+void cw__platform_hook_touch_overlay(void (*draw)(void)) { touch_overlay = draw; }
+
 static void emit(const cw_event *e) {
   if (ui_hooks.event) ui_hooks.event(e);
   if (cw__plat.app.event) cw__plat.app.event(cw__plat.app.user, e);
@@ -856,6 +859,7 @@ static void frame_body(double now) {
       cw__profile_frame_render();
       CW_PROFILE_BEGIN("render");
       if (p->app.render) p->app.render(p->app.user, p->accumulator / p->fixed_dt);
+      if (touch_overlay) touch_overlay();
       CW_PROFILE_END();
       p->frame++;
       cw__pixel_frame_end();
@@ -925,6 +929,7 @@ static void frame_body(double now) {
   cw__profile_frame_render();
   CW_PROFILE_BEGIN("render");
   if (p->app.render) p->app.render(p->app.user, p->accumulator / p->fixed_dt);
+  if (touch_overlay) touch_overlay(); /* the engine's on-screen touch controls, over the HUD (src/input/touch.c) */
   missing_programs_banner();
   CW_PROFILE_END();
   cw__perf_mark(CW_PERF_RENDER);

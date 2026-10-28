@@ -26,10 +26,18 @@ typedef struct cw__action_def {
 
 typedef struct cw__touch_control {
   bool stick, floating;
-  float x, y, w, h, radius;
+  float x, y, w, h, radius; /* the claim rect (laid out each frame for anchored ones) and the throw, window coordinates */
+  /* anchored (thumbstick / round button): placed in touch units from a corner */
+  bool anchored, hidden, disabled;
+  uint8_t corner;            /* cw_touch_corner, AUTO resolved */
+  float ux, uy, ur, uzone;   /* home / centre, radius, zone in touch units */
+  cw_vec2 home;              /* laid out, window coordinates */
+  char label[16];
+  cw_color color;
   /* frame state */
   bool active, tapped;
   cw_vec2 value, center;
+  cw_vec2 start;             /* where the touch holding a floating stick landed */
 } cw__touch_control;
 
 typedef struct cw__input_state {
@@ -53,6 +61,10 @@ typedef struct cw__input_state {
   int ncontrols;
   int8_t touch_owner[CW_MAX_TOUCHES];
   bool touch_prev_active[CW_MAX_TOUCHES];
+  float area[4];     /* cw_touch_set_area; w or h <= 0 = the window */
+  float unit;        /* window coordinates per touch unit, last layout */
+  uint8_t overlay;   /* cw_touch_overlay_mode */
+  bool touch_seen;   /* a touch landed since the last pad press (overlay AUTO) */
   /* capture */
   struct {
     bool on, done, pad;
@@ -71,6 +83,7 @@ extern cw__input_state cw__in;
 
 void cw__input_ensure_init(void);
 void cw__input_changed(void);
+void cw__touch_update(const cw_raw_input *raw); /* touch.c: lay out, claim and steer the touch controls */
 bool cw__action_bind_quiet(cw_action a, cw_binding b);
 int16_t cw__input_quant(float v);
 uint32_t cw__snapshot_hash(const cw__snapshot *s, int count, uint32_t h);

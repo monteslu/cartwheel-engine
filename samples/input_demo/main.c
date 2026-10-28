@@ -8,7 +8,9 @@
  *   - UI counters (update, frame snapshot) for the same actions, and the
  *     three deadzone modes of the same vector;
  *   - rebinding: pressing "rebind" captures the next input into "special";
- *   - touch: an on-screen stick (touch:0) and button (touch:1);
+ *   - touch: an on-screen thumbstick (touch:0) with its home in the bottom
+ *     left corner and a round button (touch:1) in the bottom right, both
+ *     placed in touch units and drawn by the engine's overlay;
  *   - record/replay: the whole run is recorded from the first tick; pressing
  *     "verify" re-simulates it from the recording alone inside one frame and
  *     publishes whether the replayed state equals the live one;
@@ -43,6 +45,7 @@ typedef struct {
   sim_state sim, replayed;
   /* frame (UI) side */
   int32_t ui_jump_jp, ui_jump_jr, ui_jump_frames, ui_fire_jp, ui_touch_button;
+  int32_t ui_stick_frames, ui_home_moved, ui_overlay_frames;
   float vec_axial[2], vec_radial[2], vec_scaled[2], stick[2];
   /* bindings */
   int32_t bind_changes;
@@ -94,8 +97,9 @@ static void init(void *user) {
   demo *d = user;
   /* #region bindings */
   /* touch controls first: their ids are what the bindings name */
-  cw_touch_add_stick(0, 200, 200, 160, 50, false); /* touch:0 */
-  cw_touch_add_button(520, 260, 100, 80);          /* touch:1 */
+  cw_touch_add_thumbstick(NULL); /* touch:0: home 150,140 touch units from the bottom left */
+  /* touch:1: 120,90 touch units from the bottom right (560,300 in this 640x360 window) */
+  cw_touch_add_round_button(&(cw_touch_button_desc){ .x = 120, .y = 90, .label = "JUMP" });
   if (!cw_input_load_bindings_asset("bindings.txt")) cw_error("input_demo: default bindings did not load");
   cw_input_commit_defaults();
   /* the user's saved overrides (a game reads these from its own save data) */
@@ -132,6 +136,9 @@ static void init(void *user) {
   cw_debug_i32("ui.jump_frames", &d->ui_jump_frames);
   cw_debug_i32("ui.fire_jp", &d->ui_fire_jp);
   cw_debug_i32("ui.touch_button", &d->ui_touch_button);
+  cw_debug_i32("ui.stick_frames", &d->ui_stick_frames);
+  cw_debug_i32("ui.home_moved", &d->ui_home_moved);
+  cw_debug_i32("ui.overlay_frames", &d->ui_overlay_frames);
   cw_debug_f32_array("ui.vec_axial", d->vec_axial, 2);
   cw_debug_f32_array("ui.vec_radial", d->vec_radial, 2);
   cw_debug_f32_array("ui.vec_scaled", d->vec_scaled, 2);
@@ -192,6 +199,11 @@ static void update(void *user, double dt) {
     cw_input_rumble(0, 0.5f, 0.25f, 120); /* the gate reads cw.rumble: the heavy motor at half, the light at a quarter, 120 ms */
   }
   if (cw_touch_control_active(1)) d->ui_touch_button++;
+  /* the stick's ring stays at its home wherever the thumb lands in its zone */
+  cw_vec2 sc = cw_touch_stick_center(0), sh = cw_touch_home(0);
+  if (cw_touch_control_active(0)) d->ui_stick_frames++;
+  if (sc.x != sh.x || sc.y != sh.y) d->ui_home_moved++;
+  if (cw_touch_overlay_visible()) d->ui_overlay_frames++;
   for (int p = 0; p < CW_INPUT_MAX_PLAYERS; p++) {
     if (cw_action_just_pressed(p, d->jump)) d->pl_jump_jp[p]++;
     if (cw_action_pressed(p, d->jump)) d->pl_jump_frames[p]++;
@@ -227,11 +239,7 @@ static void render(void *user, double alpha) {
   (void)alpha;
   demo *d = user;
   cw_r2d_begin(&(cw_r2d_pass_desc){ .clear = true, .clear_color = cw_rgba(0.10f, 0.12f, 0.16f, 1) });
-  /* touch controls */
-  rect(0, 200, 200, 160, 0.16f, 0.18f, 0.24f);
-  rect(520, 260, 100, 80, cw_touch_control_active(1) ? 0.9f : 0.25f, 0.3f, 0.3f);
-  cw_vec2 c = cw_touch_stick_center(0);
-  rect((int)(c.x + d->stick[0] * 50) - 8, (int)(c.y + d->stick[1] * 50) - 8, 16, 16, 0.8f, 0.8f, 0.8f);
+  /* the touch controls are the engine's overlay, drawn after this callback */
   /* the simulated player */
   int px = W / 2 + (int)d->sim.pos[0], py = H / 2 + (int)d->sim.pos[1];
   rect(px - 12, py - 12, 24, 24, 0.2f, 0.6f, 1.0f);

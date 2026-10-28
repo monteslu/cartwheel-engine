@@ -1,5 +1,5 @@
 # input_demo default bindings (cartwheel/input.h has the format).
-# touch:0 is the on-screen stick, touch:1 the on-screen button.
+# touch:0 is the on-screen thumbstick, touch:1 the round on-screen button.
 jump = pad:south, key:space, mouse:left, touch:1
 fire = axis:rt+@0.5, pad:west, key:j, mouse:right
 left = axis:lx-, pad:left, key:a, key:left, touch:0.left
