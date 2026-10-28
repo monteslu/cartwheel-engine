@@ -86,6 +86,20 @@ foreach(_t cartwheel cartwheel_main)
     set_property(TARGET ${_t} APPEND PROPERTY INTERFACE_COMPILE_OPTIONS -ffp-contract=off -fno-fast-math)
   endif()
 endforeach()
+# Another SDK unpacked where this one was (an engine bump) must rebuild every
+# object compiled against it, even when the archive kept header times older
+# than those objects (so no header looks newer): the SDK's directory, which an
+# unpack into a fresh directory dates to that moment, re-runs this configure,
+# and the SDK's identity in every compile line makes the build system recompile
+# what changed SDK.
+set_property(DIRECTORY ${CMAKE_SOURCE_DIR} APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  ${CW_ROOT} ${CMAKE_CURRENT_LIST_DIR}/cartwheel-sdk-info.cmake)
+foreach(_t cartwheel cartwheel_main)
+  if(TARGET ${_t})
+    set_property(TARGET ${_t} APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS
+      "CW__SDK_ID=\"${CW_SDK_TARGET} ${CW_SDK_VERSION} ${CW_SDK_COMMIT}\"")
+  endif()
+endforeach()
 
 include(${CW_ROOT}/cmake/programs.cmake)
 include(${CW_ROOT}/cmake/plugins.cmake)
