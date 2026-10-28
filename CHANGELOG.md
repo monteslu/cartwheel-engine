@@ -4,7 +4,10 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## v0.20.0 (2026-10-28)
+## v0.20.1 (2026-10-28)
+
+The tag v0.20.0 was made at the wrong commit by mistake and has no release:
+do not use it. v0.20.1 is the release described here.
 
 WebGPU antialiases HDR scenes like GL (core WebGPU wherever the GPU has
 it), every app builds as the dual GL + WebGPU cart (no app can be GL only

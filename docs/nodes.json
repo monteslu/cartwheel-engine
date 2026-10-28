@@ -895,7 +895,7 @@
      "default": "false",
      "stored": true,
      "readonly": false,
-     "doc": "Depth-only pass before the scene (early-z for heavy fragment shaders; GL and WebGPU, the same picture)."
+     "doc": "Depth-only pass before the scene (early-z for heavy fragment shaders; the same picture). GL only with three.c v0.186.22; WebGPU comes with the next three.c."
     },
     {
      "name": "exposure",
