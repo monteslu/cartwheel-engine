@@ -4,6 +4,138 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.18.0 (2026-10-27)
+
+Ragdolls, skin shading and morph targets by name for characters, depth of
+field, interactive water (ripples, caustics, the view from under the water),
+a Screen shake setting, threaded carts that no longer trap when the heap
+grows, GL and WebGPU drawing the same textures and decals, and three.c
+v0.186.20.
+
+### Added
+- Ragdolls (`cartwheel/ragdoll.h`): a skeleton pose turned into Box3D
+  capsules with cone, twist and hinge limits measured from the rest pose,
+  seeded from the current pose, written back and blended into animation
+  (bones no clip writes get their values back); a part can hang from a named
+  part (IK feet). `cw_ragdoll_default_def`, `cw_ragdoll_create`,
+  `cw_ragdoll_destroy`, `cw_ragdoll_part_count`, `cw_ragdoll_find`,
+  `cw_ragdoll_body`, `cw_ragdoll_part_transform`, `cw_ragdoll_axis`,
+  `cw_ragdoll_set_velocity`, `cw_ragdoll_apply_impulse`,
+  `cw_ragdoll_apply_force`, `cw_ragdoll_write_pose`, `cw_ragdoll_blend_pose`,
+  `cw_ragdoll_resting`, `cw_ragdoll_max_speed`, `cw_ragdoll_joint_angle`,
+  `cw_ragdoll_hash` (types `cw_ragdoll`, `cw_ragdoll_def`, `cw_ragdoll_part`,
+  `cw_ragdoll_joint_kind`). See `samples/ragdoll` and the animation guide.
+- Characters:
+  - Skin shading (`cartwheel/skin_shading.h`): wrap lighting and
+    translucency on a skin material, from glTF extras,
+    `KHR_materials_diffuse_transmission` or code (`cw_skin_shading_default`,
+    `cw_skin_shading_apply`, `cw_skin_shading_apply_named`,
+    `cw_skin_shading_remove`, `cw_skin_shading_get`,
+    `cw_skin_shading_count`, `cw_skin_shading_enabled`,
+    `cw_skin_shading_desc`); on from the Medium quality preset (`skin` in
+    `cw_quality_scale`), plain PBR on Low.
+  - Morph targets by name (`cartwheel/morph.h`: `cw_morph_set`,
+    `cw_morph_get`, `cw_morph_reset`, `cw_morph_names`), and a glTF
+    animation's morph weight channels play as AnimationPlayer tracks.
+  - glTF materials keep their names and the factors of
+    `KHR_materials_sheen`, `clearcoat`, `specular`, `ior`, `transmission`,
+    `volume`, `emissive_strength`, `iridescence` and `anisotropy`.
+  - `samples/character_skin` (six instances of one skinned glTF: skin,
+    sheen, clear coat, a talking jaw clip, smiles and blinks by name). Costs
+    on the 890M are in the rendering guide (twenty characters 0.75 ms GL,
+    0.63 ms WebGPU).
+- Depth of field on PostProcess (`dof`, `dof_focus_distance`,
+  `dof_focus_range`, `dof_blur`, `dof_near_blur`): a full resolution gather
+  in the HDR image before bloom, the blur from each pixel's view depth, a
+  sharp subject keeping its edge against a blurred background. GL and WebGPU;
+  off on the Low effects preset.
+- Water:
+  - Interactive ripples: a height field of small ripples drawn as a bent
+    normal and foam, written by splashes, wakes and rain, bit-identical on
+    every host (`cw_water_splash`, `cw_water_wake`, `cw_water_ripple_at`,
+    `cw_water_ripple_hash`; Water3D `ripple_cells`, `ripple_size`,
+    `ripple_center`, `ripple_speed`, `ripple_damping`, `ripple_strength`,
+    `foam_fade`, `rain`, `rain_size`, `rain_strength`, `splash_fx`,
+    `splash_fx_min`, and a body's `splash` and `wake`).
+  - Caustics on the floor (softer with depth, only on surfaces facing up
+    under the water), the view from under the water (fog that loses red first,
+    light shafts, the surface seen from below; the `underwater` stat), lace
+    foam, crest scatter and sun glint (`scatter`, `glint`).
+  - The refraction depth on WebGPU through an R32Float copy (compatibility
+    mode).
+- Shell: a Screen shake setting (Full, Reduced, Off) saved with the other
+  settings: `cw_shell_screen_shake` is the factor a game multiplies its
+  camera shake by, `cw_shell_shake_level` / `cw_shell_set_shake_level` read
+  and set it (`cw_shell_shake`, `CW_SHELL_SHAKE_FULL`,
+  `CW_SHELL_SHAKE_REDUCED`, `CW_SHELL_SHAKE_OFF`,
+  `CW_SHELL_SHAKE_REDUCED_SCALE`); reduced motion caps it at Reduced.
+- GL on a WebGPU run stops at the call site: in a build that can render with
+  WebGPU every GL entry point is checked, and the engine names the GL
+  function, file, line and the feature that was running
+  (`cartwheel/gl.h`). `tests/wgpu-carts.mjs` runs every dual cart on WebGPU
+  and on GL for its longest gate's frames, with a control.
+- `samples/texture_filtering` (a grazing tiled floor and a wall of textures at
+  anisotropy 8) and its gate, GL against WebGPU.
+- `tools/programs.mjs`: every regenerated WebGPU program is compiled with
+  Tint and a rejection fails the run naming the state; `--carts
+  --webgpu-only` skips the GL host leg; `CW_PROJECT_ROOT` surveys a games
+  repository's carts and gates.
+- `tools/run-cart.mjs`: Chromium runs the dual cart told to render with GL
+  (`--dual-gl`), as romdev does, when there is no GL-only cart.
+- Tests: `tests/mem-grow.mjs`, `tests/jobs-stall.mjs`,
+  `tests/romdev-load-args.mjs` (every romdev load passes `gpuPower`) and
+  `tests/deps-patches.mjs`, each with a control that must fail.
+
+### Changed
+- three.c v0.186.20 (was v0.186.19 with three local patches): glTF material
+  names and KHR_materials factors, morph target names, WebGPU blend modes,
+  anisotropic WebGPU samplers, flip_y screen derivatives and one-morph-target
+  meshes on WebGPU compatibility mode. The engine carries no three.c patches.
+- The wasmcart and wasmcart-wgpu test hosts are v0.36.2 (0.34.3 read integer
+  textures four times over); `scripts/fetch-deps.sh` reinstalls wasmcart's
+  packages when its lockfile changes.
+- The unit test suites are dual carts (they clear the window with
+  `cw_gpu_clear_window`), so their romdev legs run the dual cart on GL;
+  `unit_pipeline` reads GL framebuffers itself and stays `GL_ONLY` (native
+  only when there is no GL-only cart tree, said by the gate runner).
+- `tests/vfs.mjs` and `tests/water-surface.mjs` use the dual cart on a GL
+  host instead of the GL-only cart.
+
+### Fixed
+- Threaded carts: a thread whose view of the shared memory lagged another
+  thread's growth trapped in memset or memcpy although the address was in
+  bounds (V8 checks `memory.fill` and `memory.copy` against a per-thread copy
+  of the size, updated only at an interrupt check; a navmesh tile job trapped
+  in `cw_calloc`). Every allocation refreshes the calling thread when the
+  block lies past what it sees, and the job pool catches a lagging thread up
+  before each chunk and after a wait.
+- A cart's page thread stops with an error when a job makes no progress for
+  30 seconds (a worker thread died mid-chunk) instead of spinning forever and
+  wedging its host.
+- GL and WebGPU draw the same: Decal3D and every material with a custom,
+  subtractive or multiply blend (WebGPU drew them as normal blending),
+  anisotropic textures (WebGPU sampled them at anisotropy 1), sampler settings
+  changed after a texture's upload (GL kept the old ones), and normal maps on
+  geometry without tangents in the pipeline's offscreen targets (WebGPU lit
+  them from the wrong side). A mesh with one morph target draws on WebGPU.
+- Volumetric fog heals from a broken cell (a NaN becomes 0, each cell holds
+  at most 60000 of light and an extinction of 64, and the temporal blend
+  takes in at most 8 times what a cell holds) instead of a black cloud that
+  never cleared.
+- `scripts/fetch-deps.sh` moves a checkout with patches applied to a new pin
+  (the patched files restored and the files the patches made removed first),
+  and skips a patch already applied.
+- Gate runner: `--gpu webgpu` names each requested gate that has no WebGPU
+  entry (SKIP) and fails when none has one, instead of passing a run that
+  tested nothing; a host `--hosts` asked for that a gate leaves out is a
+  WARN; test timeouts kill their whole process tree.
+- The ragdoll body accessor `cw_ragdoll_body` is documented (the API check
+  failed on it).
+
+### Known issues
+- Decal3D in the cooperative platformer example draws slightly differently on
+  GL and WebGPU; the cause is not found yet.
+
 ## v0.17.0 (2026-10-27)
 
 Fighting, shooting and platforming controls (motion inputs, a framing camera,
