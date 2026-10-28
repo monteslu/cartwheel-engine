@@ -80,6 +80,11 @@ split-screen fixes for volumetric fog and the frame history.
   wasmcart hosts. Presses are now also taken from each pad's button state
   read up then down. The `shell-join` and `shell-join-press` gates pass on
   romdev again.
+- A sub-emitter (`emission_shape` PARENT) on a WebGL host (romdev's GL
+  path) spawned every particle at its own node instead of at the parent's
+  particles: the simulation sampled the parent's state textures while they
+  were still attached to the bound framebuffer, which WebGL refuses as a
+  feedback loop. The `fx-sub-emitters` gate passes on romdev's GL leg again.
 
 ## v0.18.1 (2026-10-28)
 

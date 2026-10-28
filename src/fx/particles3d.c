@@ -1157,6 +1157,9 @@ static void run_steps(cw_node n, p3d *d, cw__psys *r, cw_pass_ctx *ctx, cw__fx_t
       cw__fx_u1i(p, "u_pn", pd->amount);
       cw__fx_bind_tex(3, GL_TEXTURE_2D, pd->rt->state_tex[0]);
       cw__fx_bind_tex(4, GL_TEXTURE_2D, pd->rt->state_tex[1]);
+      /* off the parent's state framebuffer: the sim samples those textures, and with them still attached WebGL
+       * (romdev's GL host) refuses the draw as a feedback loop, rasterizer discard or not */
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
     } else cw__fx_u1i(p, "u_shape", SHAPE_POINT);
   }
   cw__fx_u1i(p, "u_emit", 2);
