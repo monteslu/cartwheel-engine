@@ -100,6 +100,8 @@ void cw_ragdoll_destroy(cw_ragdoll *r);
 int cw_ragdoll_part_count(const cw_ragdoll *r);
 /* part index of a bone name, -1 when it is not a part */
 int cw_ragdoll_find(const cw_ragdoll *r, const char *bone);
+/* the part's physics body (cartwheel/physics3d.h), to read its velocity or
+ * push it directly; a zero handle for a part out of range or a NULL ragdoll */
 cw_body3d cw_ragdoll_body(const cw_ragdoll *r, int part);
 /* the part's world transform (its bone's origin and rotation) */
 cw_xform3 cw_ragdoll_part_transform(const cw_ragdoll *r, int part);
