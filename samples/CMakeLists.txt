@@ -5,6 +5,8 @@ set(CW_PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/programs/cw_samples.txt)
 cw_add_app(hello SOURCES hello/main.c)
 # vertex colours as rgb and as rgba attributes (glTF writes four floats): both draw, alpha is not used
 cw_add_app(vertex_colors SOURCES vertex_colors/main.c)
+# one InstancedMesh with every optional vertex attribute (two uv sets, vertex and instance colours, tangents) and five maps: GL and WebGPU agree
+cw_add_app(instanced_attributes SOURCES instanced_attributes/main.c)
 # characters: skin shading, glTF material extensions, morph targets on skinned meshes, many instances of one glTF
 cw_add_app(character_skin SOURCES character_skin/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/character_skin/assets
   PROGRAMS character_skin/programs/character_skin.txt)

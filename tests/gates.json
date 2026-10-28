@@ -117,6 +117,29 @@
     "note": "vertex colours as rgb and rgba attributes: both quads draw the same gradient (alpha unused). The control gives the right quad a two float colour attribute, which three.c refuses: its draw is skipped"
   },
   {
+    "name": "instanced-attributes",
+    "webgpu": {
+      "vsGl": 0.0005
+    },
+    "app": "instanced_attributes",
+    "frames": 3,
+    "maxGt16": 0.0005,
+    "minColors": 64,
+    "fields": [
+      "calls",
+      "skipped",
+      "instances"
+    ],
+    "expect": {
+      "skipped": 0,
+      "instances": 20
+    },
+    "controlEnv": {
+      "CW_IATTR_CONTROL": "1"
+    },
+    "note": "20 boxes in one InstancedMesh with every optional vertex attribute (two uv sets, vertex colours, tangents, instance colours) and colour, normal, ambient occlusion, emissive and roughness maps, under a shadow-casting sun: on WebGPU the most vertex buffers a draw binds, inside the 8 every device has. GL and WebGPU agree within 0.05% of pixels. The control makes every instance white"
+  },
+  {
     "name": "rim-light",
     "webgpu": true,
     "app": "rim_light",

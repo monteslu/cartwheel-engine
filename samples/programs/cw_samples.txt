@@ -87,3 +87,4 @@ standard+l1001+xcluster
 standard+shadow+l1001+xcluster
 depth+xcluster_rim
 standard+l1001+xcluster_rim
+physical+map+vcol+nearest+instbig+nmap+ao+emap+rmap+shadow+tan+icol+l1000

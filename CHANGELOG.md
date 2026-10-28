@@ -4,6 +4,45 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.19.1 (2026-10-28)
+
+The program-table check builds WebGPU pipelines with the vertex buffers
+three.c binds, and three.c v0.186.21 (no GL call when a WebGPU renderer is
+destroyed).
+
+### Fixed
+- The WebGPU program check (`tools/lib/wgsl-check.mjs`, run by
+  `tools/programs.mjs` after each regeneration) gave every vertex attribute
+  a buffer of its own, so the instance matrix counted four times: an
+  `InstancedMesh` with vertex colours, a normal map and instance colours
+  needed 9 vertex buffers there, over WebGPU's 8, and the check refused
+  states three.c draws with 6 ("Vertex buffer count (9) exceeds the maximum
+  number of vertex buffers (8)"), so their tables could not be regenerated.
+  It now uses three.c's own layout (`vertexBufferLayout` in three.c's
+  `tools/program-model.mjs`: the matrix in one buffer, the instance colour
+  in its own).
+- A program that needs more vertex buffers or vertex attributes than a
+  WebGPU device allows is reported by the check as over the device limits,
+  naming its attributes, before the table ships.
+
+### Changed
+- three.c v0.186.21: a WebGPU program over the device's vertex buffer limit
+  does not build and is named (it was a pipeline validation error), the
+  vertex buffer layout is a tool API, and destroying a WebGPU renderer makes
+  no GL call (a dual cart running on WebGPU trapped on `glDeleteTextures(0)`
+  when a scene tree was freed).
+
+### Tests
+- Sample `instanced_attributes` and gate `instanced-attributes`: one
+  InstancedMesh of 20 boxes with every optional vertex attribute (two uv
+  sets, vertex colours, tangents, instance colours) and colour, normal,
+  ambient occlusion, emissive and roughness maps under a shadow-casting sun,
+  on GL and WebGPU, GL vs WebGPU within 0.05% of pixels; the control makes
+  every instance white.
+- `tests/programs-wgsl.mjs`: an instanced program with every optional
+  attribute is accepted (7 buffers); the control, nine geometry attributes,
+  is reported as over the device limits.
+
 ## v0.19.0 (2026-10-28)
 
 Rim light, navigation links (jumps, drops, jump pads, ladders) and
