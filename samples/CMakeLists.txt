@@ -88,6 +88,13 @@ configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.LICENSE.md ${CW_SKINNED_ASS
 cw_add_app(anim_skinned SOURCES anim_skinned/main.c ASSETS ${CW_SKINNED_ASSETS})
 # limbs that reach and plant (cartwheel/ik.h): RobotExpressive (CC0, committed with its license)
 cw_add_app(anim_ik SOURCES anim_ik/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/anim_ik/assets)
+# knocked down, falls, gets up (cartwheel/ragdoll.h): RobotExpressive (CC0) staged from anim_ik with its license
+set(CW_RAGDOLL_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/ragdoll_assets)
+file(MAKE_DIRECTORY ${CW_RAGDOLL_ASSETS})
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/ragdoll/assets/main.cwscene ${CW_RAGDOLL_ASSETS}/main.cwscene COPYONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/anim_ik/assets/RobotExpressive.glb ${CW_RAGDOLL_ASSETS}/RobotExpressive.glb COPYONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/anim_ik/assets/RobotExpressive.LICENSE.md ${CW_RAGDOLL_ASSETS}/RobotExpressive.LICENSE.md COPYONLY)
+cw_add_app(ragdoll SOURCES ragdoll/main.c ASSETS ${CW_RAGDOLL_ASSETS})
 cw_add_app(project_edit SOURCES project_edit/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/scene3d/assets)
 # play-in-editor: the game tests/remote.mjs drives through cartwheel/remote.h
 cw_add_app(remote_target SOURCES remote_target/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/remote_target/assets)
