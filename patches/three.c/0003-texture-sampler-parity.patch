@@ -1,8 +1,109 @@
 diff --git a/src/gen_wgpu.c b/src/gen_wgpu.c
-index 8b0d75e..12c78a6 100644
+index 8b0d75e..31b62ff 100644
 --- a/src/gen_wgpu.c
 +++ b/src/gen_wgpu.c
-@@ -1123,15 +1123,21 @@ WGPUTextureView t3_wgpu_data_texture(t3_wgpu *w, void **slot, int width, int hei
+@@ -5,6 +5,7 @@
+ #include <math.h>
+ #include <stdio.h>
+ #include <stdlib.h>
++#include <ctype.h>
+ #include <string.h>
+ 
+ #define SV(s) ((WGPUStringView){ (s), WGPU_STRLEN })
+@@ -24,7 +25,8 @@ static uint32_t view_epoch;
+ struct gen_wgpu_prog {
+   WGPUShaderModule vs, fs;
+   WGPUShaderModule vs_flip;   /* made on first use: clip y negated */
+-  char *vtext;                /* the vertex source, for vs_flip */
++  WGPUShaderModule fs_flip;   /* made on first use: screen y derivatives negated */
++  char *vtext, *ftext;        /* the sources, for vs_flip and fs_flip */
+   WGPUBindGroupLayout bgl[T3_GEN_MAX_GROUPS];
+   bool present[T3_GEN_MAX_GROUPS];
+   WGPUPipelineLayout layout;
+@@ -183,7 +185,7 @@ t3_gen_gl *t3_gen_wgpu_build(t3_wgpu *w, const t3_gen_program *src, t3_gen_param
+     snprintf(tag, sizeof tag, "@group( %d )", i);
+     wg->present[i] = strstr(vt, tag) || strstr(ft, tag);
+   }
+-  free(ft);
++  wg->ftext = ft;
+   /* groups: the uniform struct (a dynamic offset into the frame stream), its
+    * textures + samplers, its extra buffers (dynamic offsets too) */
+   for (int i = 0; i < src->n_groups; i++) {
+@@ -257,7 +259,9 @@ void t3_gen_wgpu_free(t3_gen_gl *g) {
+   wgpuPipelineLayoutRelease(wg->layout);
+   wgpuShaderModuleRelease(wg->vs);
+   if (wg->vs_flip) wgpuShaderModuleRelease(wg->vs_flip);
++  if (wg->fs_flip) wgpuShaderModuleRelease(wg->fs_flip);
+   free(wg->vtext);
++  free(wg->ftext);
+   wgpuShaderModuleRelease(wg->fs);
+   free(g->ops);
+   free(wg);
+@@ -282,6 +286,54 @@ static int attr_components(const char *type) {
+   return 1;
+ }
+ 
++/* flip_y draws are rendered upside down (clip y negated), so the screen's y
++ * runs the other way: r186's fragment programs take the y derivative of the
++ * WebGPU framebuffer (y down; they negate dpdy where GL's dFdy points up),
++ * which is the GL direction here. Every dpdy / dpdyFine / dpdyCoarse call
++ * is negated, (-dpdy( ... )), so a normal map's tangent frame (built from
++ * screen derivatives when the geometry has no tangents) and anything else
++ * read along screen y matches the unflipped picture and GLES. */
++static char *negate_dpdy(const char *src) {
++  size_t n = strlen(src), cap = n * 2 + 64, o = 0;
++  char *out = malloc(cap);
++  T3_CHECK_ALLOC(out);
++  /* close[i]: a ')' to emit after source byte i (nesting counted) */
++  int *closes = calloc(n + 1, sizeof *closes);
++  T3_CHECK_ALLOC(closes);
++  for (size_t i = 0; i < n; i++) {
++    bool start = !strncmp(src + i, "dpdy", 4) && (i == 0 || !(isalnum((unsigned char)src[i - 1]) || src[i - 1] == '_'));
++    if (start) {
++      size_t e = i + 4;
++      if (!strncmp(src + e, "Fine", 4) || !strncmp(src + e, "Coarse", 6)) e += src[e] == 'F' ? 4 : 6;
++      while (src[e] == ' ') e++;
++      if (src[e] == '(') {
++        int depth = 0;
++        size_t c = e;
++        for (; c < n; c++) {
++          if (src[c] == '(') depth++;
++          else if (src[c] == ')' && --depth == 0) break;
++        }
++        if (c < n) { out[o++] = '('; out[o++] = '-'; closes[c]++; }
++      }
++    }
++    out[o++] = src[i];
++    for (int k = 0; k < closes[i]; k++) out[o++] = ')';
++    if (o + 8 > cap) { cap *= 2; out = realloc(out, cap); T3_CHECK_ALLOC(out); }
++  }
++  out[o] = 0;
++  free(closes);
++  return out;
++}
++static WGPUShaderModule flip_fragment(t3_wgpu *w, struct gen_wgpu_prog *wg) {
++  if (!strstr(wg->ftext, "dpdy")) return wg->fs;   /* nothing reads screen y */
++  if (!wg->fs_flip) {
++    char *t = negate_dpdy(wg->ftext);
++    wg->fs_flip = module(w, t);
++    free(t);
++  }
++  return wg->fs_flip;
++}
++
+ WGPURenderPipeline t3_wgpu_pipeline(t3_wgpu *w, t3_gen_gl *g, const t3_wgpu_state *st) {
+   struct gen_wgpu_prog *wg = g->wg;
+   for (int i = 0; i < wg->n_pipes; i++) if (!memcmp(&wg->pipes[i].st, st, sizeof *st)) return wg->pipes[i].p;
+@@ -335,7 +387,7 @@ WGPURenderPipeline t3_wgpu_pipeline(t3_wgpu *w, t3_gen_gl *g, const t3_wgpu_stat
+   }
+   WGPUColorTargetState ct = { .format = st->color, .blend = st->blend ? &blend : NULL,
+                               .writeMask = st->color_write ? WGPUColorWriteMask_All : WGPUColorWriteMask_None };
+-  WGPUFragmentState fs = { .module = wg->fs, .entryPoint = SV("main"), .targetCount = st->color ? 1 : 0, .targets = &ct };
++  WGPUFragmentState fs = { .module = st->flip_y ? flip_fragment(w, wg) : wg->fs, .entryPoint = SV("main"), .targetCount = st->color ? 1 : 0, .targets = &ct };
+   WGPUDepthStencilState ds = { .format = st->depth, .depthWriteEnabled = st->depth_write ? WGPUOptionalBool_True : WGPUOptionalBool_False,
+     .depthCompare = st->depth_test ? compare(st->depth_func) : WGPUCompareFunction_Always,
+     .stencilFront = { .compare = WGPUCompareFunction_Always, .failOp = WGPUStencilOperation_Keep, .depthFailOp = WGPUStencilOperation_Keep, .passOp = WGPUStencilOperation_Keep },
+@@ -1123,15 +1175,21 @@ WGPUTextureView t3_wgpu_data_texture(t3_wgpu *w, void **slot, int width, int hei
  WGPUSampler t3_wgpu_sampler(t3_wgpu *w, const t3_texture *t, bool cmp) {
    int ws = t ? t->wrap_s : T3_CLAMP_TO_EDGE, wt = t ? t->wrap_t : T3_CLAMP_TO_EDGE;
    int mag = t ? t->mag_filter : T3_LINEAR, min = t ? t->min_filter : T3_LINEAR;
