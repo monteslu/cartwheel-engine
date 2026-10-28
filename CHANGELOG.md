@@ -8,7 +8,24 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
 Build and CI cleanup: one cart per app, the dual GL + WebGPU cart. The
 GL-only cart tree and its SDK are gone; GL is tested by running the dual
-cart on GL hosts.
+cart on GL hosts. Games built against an SDK recompile when the SDK changes.
+
+### Added
+- `samples/decal_walls` and the gate `decal-walls`: about two hundred
+  multiply decals on a cliff through HDR, ambient occlusion, bloom and tone
+  mapping (the cooperative platformer's settings), drawn the same on GL and
+  WebGPU (0.0009 percent of pixels apart on the 890M).
+
+### Fixed
+- A game built against a prebuilt SDK now recompiles when another SDK is
+  unpacked in its place (an engine bump). The archive keeps each file's time,
+  so headers could look older than the game's objects and an incremental
+  build linked stale objects against the new libraries (a struct whose layout
+  changed crashed at run time). The SDK's CMake package now re-runs the
+  configure when its directory changes and puts the SDK's identity in every
+  compile line (`tests/sdk-rebuild.mjs`, with the old package as the
+  control). Games on an SDK up to v0.18.0: build from a clean tree after an
+  SDK bump.
 
 ### Changed
 - `scripts/build.sh` builds `build/native` and `build/cart-wgpu` only (the
@@ -36,6 +53,14 @@ cart on GL hosts.
   `editor-channel`, `editor-import` and `editor-play` lost their editor cart
   legs and `showcase-perf` its cart legs (the editor and showcase_perf are
   `GL_ONLY`, so they have no dual cart).
+
+### Known issues
+- A 3D scene with an HDR target (sky, effects or a pass that reads depth) is
+  multisampled on GL but single-sampled on WebGPU: the engine's WebGPU tier is
+  compatibility mode, which cannot multisample `rgba16float` or read a
+  multisampled depth texture, so edges differ slightly (about 0.5 to 1 percent
+  of pixels in the cooperative platformer). v0.18.0 named Decal3D as the
+  cause; it is not: decals draw the same on both (`decal-walls`).
 
 ## v0.18.0 (2026-10-27)
 
@@ -164,10 +189,6 @@ v0.186.20.
   WARN; test timeouts kill their whole process tree.
 - The ragdoll body accessor `cw_ragdoll_body` is documented (the API check
   failed on it).
-
-### Known issues
-- Decal3D in the cooperative platformer example draws slightly differently on
-  GL and WebGPU; the cause is not found yet.
 
 ## v0.17.0 (2026-10-27)
 
