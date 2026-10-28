@@ -10733,7 +10733,9 @@
    "signals": [
     "path_changed",
     "target_reached",
-    "velocity_computed"
+    "velocity_computed",
+    "link_entered",
+    "link_exited"
    ],
    "properties": [
     {
@@ -10861,6 +10863,14 @@
      "doc": "Move the parent Node3D every tick. Off: the parent moves by velocity_computed and the agent follows it."
     },
     {
+     "name": "manual_links",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Stop at a link's start (ON_LINK) until the finish_link method: the game moves the parent across."
+    },
+    {
      "name": "region",
      "type": "string",
      "default": "\"\"",
@@ -10880,9 +10890,10 @@
       "MOVING",
       "ARRIVED",
       "NO_PATH",
-      "VELOCITY"
+      "VELOCITY",
+      "ON_LINK"
      ],
-     "doc": "IDLE, WAITING (for a path), MOVING, ARRIVED, NO_PATH or VELOCITY."
+     "doc": "IDLE, WAITING (for a path), MOVING, ARRIVED, NO_PATH, VELOCITY or ON_LINK."
     },
     {
      "name": "velocity",
@@ -10955,6 +10966,98 @@
      "stored": true,
      "readonly": false,
      "doc": "Path to its NavigationRegion3D (empty = the tree's first)."
+    }
+   ]
+  },
+  {
+   "name": "NavigationLink3D",
+   "parent": "Node3D",
+   "doc": "A link (jump, drop, pad, ladder) baked into the NavigationRegion3D above it: paths cross it and agents traverse it.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "start_position",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Start, local to the node, m (on the walkable surface)."
+    },
+    {
+     "name": "end_position",
+     "type": "vec3",
+     "default": "vec3(0, 0, 2)",
+     "stored": true,
+     "readonly": false,
+     "doc": "End, local to the node, m (on the walkable surface)."
+    },
+    {
+     "name": "bidirectional",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Crossable both ways (off: start to end only)."
+    },
+    {
+     "name": "cost",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100000,
+     "doc": "Crossing cost in metres of walking (0 = its length)."
+    },
+    {
+     "name": "tag",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 2147480000,
+     "doc": "The game's kind of link (1 jump, 2 drop, 3 pad, 4 ladder, 5 teleport, 16 and up its own)."
+    },
+    {
+     "name": "area",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 63,
+     "doc": "Area id filters weigh or exclude (0 = walk)."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "How far across an end may be from the navmesh, m (0 = agent radius)."
+    },
+    {
+     "name": "duration",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Crossing time for crowd agents, s (0 = length / speed)."
+    },
+    {
+     "name": "arc",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Height of the crossing's arc at its middle, m."
     }
    ]
   },

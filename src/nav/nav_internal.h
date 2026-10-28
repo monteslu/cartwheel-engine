@@ -19,9 +19,16 @@ bool cw__nav_nearest_ref(cw_navmesh nm, const float p[3], const cw_nav_filter *f
 int cw__nav_path_polys(cw_navmesh nm, cw__poly sref, const float spos[3], cw__poly eref, const float epos[3],
                        const cw_nav_filter *f, int max_iters, cw__poly *polys, int max, bool *partial);
 /* The straight path from spos to epos along a corridor: up to max corners
- * (xyz each) with Detour's straight-path flags; returns the count. */
+ * (xyz each) with Detour's straight-path flags and the polygon each one
+ * enters (flags, refs may be NULL); returns the count. */
 int cw__nav_corners(cw_navmesh nm, const float spos[3], const float epos[3], const cw__poly *path, int npath,
-                    float *corners, uint8_t *flags, int max);
+                    float *corners, uint8_t *flags, cw__poly *refs, int max);
+/* Crossing link polygon ref, entered from prev: its start and end (in the
+ * direction of travel); returns the link id (0: not a link). */
+uint32_t cw__nav_link_cross(cw_navmesh nm, cw__poly prev, cw__poly ref, float start[3], float end[3]);
+/* The link table entry (defaults filled in); NULL for an unknown id. */
+const cw_nav_link *cw__nav_link(cw_navmesh nm, uint32_t id);
+void cw__nav_each_link(cw_navmesh nm, void (*fn)(const cw_nav_link *l, bool connected, void *ctx), void *ctx);
 /* moveAlongSurface from (sref, s) toward e: the reached point, and the
  * polygons crossed (visited[0] = sref ... the end polygon); returns their count. */
 int cw__nav_move_along(cw_navmesh nm, cw__poly sref, const float s[3], const float e[3], const cw_nav_filter *f,

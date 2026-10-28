@@ -34,8 +34,23 @@ namespace {
 
 struct Filter : dtQueryFilter {
   uint64_t exclude = 0;
+  const cw_nav_link *links = nullptr; /* the navmesh's link table: a link's own cost */
+  int nlinks = 0;
   bool passFilter(const dtPolyRef, const dtMeshTile *, const dtPoly *poly) const override {
     return poly->flags != 0 && !((exclude >> poly->getArea()) & 1);
+  }
+  float getCost(const float *pa, const float *pb, const dtPolyRef, const dtMeshTile *, const dtPoly *, const dtPolyRef,
+                const dtMeshTile *curTile, const dtPoly *curPoly, const dtPolyRef, const dtMeshTile *,
+                const dtPoly *) const override {
+    const float area_cost = getAreaCost(curPoly->getArea());
+    if (curPoly->getType() == DT_POLYTYPE_OFFMESH_CONNECTION && nlinks > 0) {
+      unsigned idx = (unsigned)(curPoly - curTile->polys) - (unsigned)curTile->header->offMeshBase;
+      if (idx < (unsigned)curTile->header->offMeshConCount) {
+        unsigned id = curTile->offMeshCons[idx].userId;
+        if (id >= 1 && id <= (unsigned)nlinks && links[id - 1].cost > 0) return links[id - 1].cost * area_cost;
+      }
+    }
+    return dtVdist(pa, pb) * area_cost;
   }
 };
 
@@ -66,10 +81,29 @@ struct NoCompressor : dtTileCacheCompressor {
   }
 };
 
-/* Walkable polygons get flag 1: a polygon with flags 0 is never entered. */
+struct NavMesh;
+void tile_links(const NavMesh *n, const cw_nav_link *links, int nlinks, int tx, int ty, dtNavMeshCreateParams *p);
+
+/* Walkable polygons get flag 1: a polygon with flags 0 is never entered.
+ * The links that start in the tile join it. */
 struct MeshProcess : dtTileCacheMeshProcess {
-  void process(dtNavMeshCreateParams *params, unsigned char *areas, unsigned short *flags) override {
-    for (int i = 0; i < params->polyCount; i++) flags[i] = areas[i] != RC_NULL_AREA ? 1 : 0;
+  const NavMesh *n = nullptr;
+  void process(dtNavMeshCreateParams *params, unsigned char *areas, unsigned short *flags) override;
+};
+
+/* Links for one tile's dtNavMeshCreateParams; one per pool thread, kept until that thread's next tile. */
+struct LinkScratch {
+  CW_ARRAY(float) verts = {}, rad = {};
+  CW_ARRAY(unsigned short) flags = {};
+  CW_ARRAY(unsigned char) areas = {}, dir = {};
+  CW_ARRAY(unsigned int) ids = {};
+  void clear() {
+    cw_array_clear(&verts), cw_array_clear(&rad), cw_array_clear(&flags);
+    cw_array_clear(&areas), cw_array_clear(&dir), cw_array_clear(&ids);
+  }
+  void free_all() {
+    cw_array_free(&verts), cw_array_free(&rad), cw_array_free(&flags);
+    cw_array_free(&areas), cw_array_free(&dir), cw_array_free(&ids);
   }
 };
 
@@ -116,7 +150,8 @@ struct PathReq {
   cw_nav_filter filter;
   bool has_filter;
   int count;
-  t3_vec3 *pts; /* answered: count waypoints */
+  t3_vec3 *pts;    /* answered: count waypoints */
+  uint32_t *links; /* answered: each waypoint's link id (0: walking) */
 };
 
 struct Obstacle {
@@ -154,6 +189,8 @@ struct NavMesh {
   uint32_t next_obstacle;
   CW_ARRAY(cw_crowd) crowds;
   float build_ms;
+  CW_ARRAY(cw_nav_link) links; /* the build geometry's, defaults filled in; id = index + 1 */
+  LinkScratch lscratch[MAX_THREADS];
 };
 
 cw_pool g_meshes;
@@ -171,6 +208,63 @@ dtNavMeshQuery *query_of(NavMesh *n) {
     n->query[w] = q;
   }
   return q;
+}
+
+/* The geometry's links with their defaults filled in become the table. */
+void set_links(NavMesh *n, const cw_nav_geom *g) {
+  cw_array_clear(&n->links);
+  for (int i = 0; g && i < g->links.count; i++) {
+    cw_nav_link l = g->links.data[i];
+    if (!l.area) l.area = CW_NAV_AREA_WALK;
+    if (!(l.radius > 0)) l.radius = n->cfg.agent_radius;
+    if (l.cost < 0) l.cost = 0;
+    if (l.duration < 0) l.duration = 0;
+    cw_array_push(&n->links, l);
+  }
+}
+
+void filter_links(Filter &f, const NavMesh *n) {
+  f.links = n->links.data;
+  f.nlinks = n->links.count;
+}
+
+/* The links whose start lies in tile (tx, ty) (its own cells, without the
+ * border, so each link is in exactly one tile column), into the create
+ * params through the calling pool thread's scratch. Detour keeps the ones
+ * whose start is at the tile's (or layer's) height. */
+void tile_links(const NavMesh *cn, const cw_nav_link *links, int nlinks, int tx, int ty, dtNavMeshCreateParams *p) {
+  p->offMeshConCount = 0;
+  if (nlinks <= 0) return;
+  NavMesh *n = (NavMesh *)cn;
+  int w = cw_jobs_worker_index();
+  CW_ASSERT(w >= 0 && w < MAX_THREADS);
+  LinkScratch &s = n->lscratch[w];
+  s.clear();
+  const float x0 = n->bmin[0] + tx * n->tile_world, x1 = n->bmin[0] + (tx + 1) * n->tile_world;
+  const float z0 = n->bmin[2] + ty * n->tile_world, z1 = n->bmin[2] + (ty + 1) * n->tile_world;
+  for (int i = 0; i < nlinks; i++) {
+    const cw_nav_link &l = links[i];
+    if (!(l.start.x >= x0 && l.start.x < x1 && l.start.z >= z0 && l.start.z < z1)) continue;
+    const float v[6] = { l.start.x, l.start.y, l.start.z, l.end.x, l.end.y, l.end.z };
+    for (int k = 0; k < 6; k++) cw_array_push(&s.verts, v[k]);
+    cw_array_push(&s.rad, l.radius);
+    cw_array_push(&s.flags, (unsigned short)1);
+    cw_array_push(&s.areas, l.area);
+    cw_array_push(&s.dir, (unsigned char)(l.bidirectional ? 1 : 0));
+    cw_array_push(&s.ids, (unsigned int)(i + 1));
+  }
+  p->offMeshConVerts = s.verts.data;
+  p->offMeshConRad = s.rad.data;
+  p->offMeshConFlags = s.flags.data;
+  p->offMeshConAreas = s.areas.data;
+  p->offMeshConDir = s.dir.data;
+  p->offMeshConUserID = s.ids.data;
+  p->offMeshConCount = s.rad.count;
+}
+
+void MeshProcess::process(dtNavMeshCreateParams *params, unsigned char *areas, unsigned short *flags) {
+  for (int i = 0; i < params->polyCount; i++) flags[i] = areas[i] != RC_NULL_AREA ? 1 : 0;
+  if (n) tile_links(n, n->links.data, n->links.count, params->tileX, params->tileY, params);
 }
 
 /* ── per-tile build ───────────────────────────────────────────────────── */
@@ -324,6 +418,7 @@ void build_static_tile(BuildJob *j, int ti, int tx, int ty, TileOut *o) {
   p.cs = c.cell_size;
   p.ch = c.cell_height;
   p.buildBvTree = true;
+  tile_links(n, n->links.data, n->links.count, tx, ty, &p);
   if (!dtCreateNavMeshData(&p, &o->nav, &o->nav_size)) o->ok = false;
 }
 
@@ -533,6 +628,7 @@ bool setup(NavMesh *n, const cw_nav_config *c, const float bmin[3], const float 
   if (c->dynamic) {
     n->comp = new (cw_alloc(sizeof(NoCompressor), CW_MEM_NAV)) NoCompressor();
     n->mproc = new (cw_alloc(sizeof(MeshProcess), CW_MEM_NAV)) MeshProcess();
+    n->mproc->n = n;
     n->talloc[0] = new (cw_alloc(sizeof(LinearAlloc), CW_MEM_NAV)) LinearAlloc();
     dtTileCacheParams tp;
     memset(&tp, 0, sizeof tp);
@@ -579,9 +675,11 @@ void destroy(NavMesh *n) {
     cw_free(n->mproc);
   }
   dtFreeNavMesh(n->mesh);
-  for (int i = 0; i < n->reqs.count; i++) cw_free(n->reqs.data[i].pts);
+  for (int i = 0; i < n->reqs.count; i++) cw_free(n->reqs.data[i].pts), cw_free(n->reqs.data[i].links);
   cw_array_free(&n->reqs);
   cw_array_free(&n->obstacles);
+  cw_array_free(&n->links);
+  for (int i = 0; i < MAX_THREADS; i++) n->lscratch[i].free_all();
 }
 
 cw_navmesh alloc_handle(NavMesh **out) {
@@ -647,6 +745,43 @@ void cache_build_all(NavMesh *n) {
   cw_array_free(&refs);
 }
 
+/* Each link's ends that reached the navmesh: bit 0 the start, bit 1 the end
+ * (a link a tile-cache navmesh holds in two layers counts once). */
+void link_ends(const NavMesh *n, uint8_t *ends) {
+  memset(ends, 0, (size_t)n->links.count);
+  const dtNavMesh *m = n->mesh;
+  for (int i = 0; i < m->getMaxTiles(); i++) {
+    const dtMeshTile *t = m->getTile(i);
+    if (!t->header) continue;
+    for (int k = 0; k < t->header->offMeshConCount; k++) {
+      const dtOffMeshConnection *con = &t->offMeshCons[k];
+      if (con->userId < 1 || con->userId > (unsigned)n->links.count) continue;
+      const dtPoly *poly = &t->polys[con->poly];
+      uint8_t e = 0;
+      for (unsigned l = poly->firstLink; l != DT_NULL_LINK; l = t->links[l].next)
+        e |= t->links[l].edge == 0 ? 1 : t->links[l].edge == 1 ? 2 : 0;
+      ends[con->userId - 1] |= e;
+    }
+  }
+}
+
+/* Names every link that cannot be used (an end off the navmesh). */
+void warn_links(const NavMesh *n) {
+  if (!n->links.count) return;
+  uint8_t *ends = (uint8_t *)cw_alloc((size_t)n->links.count, CW_MEM_NAV);
+  link_ends(n, ends);
+  for (int i = 0; i < n->links.count; i++) {
+    if (ends[i] == 3) continue;
+    const cw_nav_link &l = n->links.data[i];
+    cw_warn("nav: link %d (%g, %g, %g) -> (%g, %g, %g) is not used: its %s not on the navmesh (within radius %g across, "
+            "agent_max_climb %g up or down)",
+            i + 1, (double)l.start.x, (double)l.start.y, (double)l.start.z, (double)l.end.x, (double)l.end.y,
+            (double)l.end.z, ends[i] == 1 ? "end is" : ends[i] == 2 ? "start is" : "start and end are", (double)l.radius,
+            (double)n->cfg.agent_max_climb);
+  }
+  cw_free(ends);
+}
+
 } // namespace
 
 double cw__nav_now_ms(void) {
@@ -710,6 +845,7 @@ cw_navmesh cw_navmesh_build(const cw_nav_config *config, const cw_nav_geom *geom
     release(h, n);
     return none;
   }
+  set_links(n, geom);
   int count = n->tw * n->th;
   int *tiles = (int *)cw_alloc(sizeof(int) * 2 * (size_t)count, CW_MEM_NAV);
   for (int ty = 0, i = 0; ty < n->th; ty++)
@@ -723,6 +859,7 @@ cw_navmesh cw_navmesh_build(const cw_nav_config *config, const cw_nav_geom *geom
     release(h, n);
     return none;
   }
+  warn_links(n);
   n->build_ms = (float)(cw__nav_now_ms() - t0);
   return h;
 }
@@ -738,6 +875,7 @@ bool cw_navmesh_rebuild_area(cw_navmesh h, const cw_nav_geom *geom, t3_vec3 bmin
   int z0 = (int)floorf((bmin.z - n->bmin[2]) / n->tile_world), z1 = (int)floorf((bmax.z - n->bmin[2]) / n->tile_world);
   x0 = x0 < 0 ? 0 : x0, z0 = z0 < 0 ? 0 : z0;
   x1 = x1 >= n->tw ? n->tw - 1 : x1, z1 = z1 >= n->th ? n->th - 1 : z1;
+  set_links(n, geom);
   if (x1 < x0 || z1 < z0) return true;
   int count = (x1 - x0 + 1) * (z1 - z0 + 1);
   int *tiles = (int *)cw_alloc(sizeof(int) * 2 * (size_t)count, CW_MEM_NAV);
@@ -776,6 +914,13 @@ uint64_t cw_navmesh_hash(cw_navmesh h) {
     x = cw_hash_bytes(pre, sizeof pre, x);
     x = cw_hash_bytes(t->data, (size_t)t->dataSize, x);
   }
+  for (int i = 0; i < n->links.count; i++) { /* none: the hash a navmesh without links always had */
+    const cw_nav_link &l = n->links.data[i];
+    const float f[10] = { l.start.x, l.start.y, l.start.z, l.end.x, l.end.y, l.end.z, l.cost, l.radius, l.duration, l.arc };
+    const uint32_t u[3] = { l.tag, l.bidirectional ? 1u : 0u, l.area };
+    x = cw_hash_bytes(f, sizeof f, x);
+    x = cw_hash_bytes(u, sizeof u, x);
+  }
   return x;
 }
 
@@ -797,14 +942,43 @@ cw_navmesh_stats cw_navmesh_get_stats(cw_navmesh h) {
   s.tiles_z = n->th;
   s.obstacles = n->obstacles.count;
   s.build_ms = n->build_ms;
+  s.links = n->links.count;
+  if (s.links) {
+    uint8_t *ends = (uint8_t *)cw_alloc((size_t)s.links, CW_MEM_NAV);
+    link_ends(n, ends);
+    for (int i = 0; i < s.links; i++) s.links_connected += ends[i] == 3;
+    cw_free(ends);
+  }
   return s;
+}
+
+int cw_nav_link_count(cw_navmesh h) {
+  NavMesh *n = get(h);
+  return n ? n->links.count : 0;
+}
+
+bool cw_nav_link_get(cw_navmesh h, uint32_t id, cw_nav_link *out) {
+  NavMesh *n = get(h);
+  if (!n || id < 1 || id > (uint32_t)n->links.count) return false;
+  if (out) *out = n->links.data[id - 1];
+  return true;
+}
+
+bool cw_nav_link_connected(cw_navmesh h, uint32_t id) {
+  NavMesh *n = get(h);
+  if (!n || id < 1 || id > (uint32_t)n->links.count) return false;
+  uint8_t *ends = (uint8_t *)cw_alloc((size_t)n->links.count, CW_MEM_NAV);
+  link_ends(n, ends);
+  bool ok = ends[id - 1] == 3;
+  cw_free(ends);
+  return ok;
 }
 
 /* ── save / load ──────────────────────────────────────────────────────── */
 
 namespace {
 const uint32_t SAVE_MAGIC = 0x4e415643u; /* "CVAN" */
-const uint32_t SAVE_VERSION = 1;
+const uint32_t SAVE_VERSION = 2; /* 2: the link table after the bounds */
 
 struct Writer {
   CW_ARRAY(uint8_t) b = {};
@@ -815,6 +989,17 @@ struct Writer {
   }
   void u32(uint32_t v) { put(&v, 4); }
 };
+
+void put_links(Writer &w, const NavMesh *n) {
+  w.u32((uint32_t)n->links.count);
+  for (int i = 0; i < n->links.count; i++) {
+    const cw_nav_link &l = n->links.data[i];
+    const float f[10] = { l.start.x, l.start.y, l.start.z, l.end.x, l.end.y, l.end.z, l.cost, l.radius, l.duration, l.arc };
+    const uint32_t u[3] = { l.tag, l.bidirectional ? 1u : 0u, l.area };
+    w.put(f, sizeof f);
+    w.put(u, sizeof u);
+  }
+}
 
 struct Reader {
   const uint8_t *p, *end;
@@ -862,6 +1047,7 @@ void *cw_navmesh_save(cw_navmesh h, size_t *len) {
   put_config(w, n->cfg);
   w.put(n->bmin, sizeof n->bmin);
   w.put(n->bmax, sizeof n->bmax);
+  put_links(w, n);
   if (!n->cfg.dynamic) {
     const dtNavMesh *m = n->mesh;
     uint32_t count = 0;
@@ -903,8 +1089,8 @@ cw_navmesh cw_navmesh_load(const void *data, size_t len) {
   uint32_t magic = 0, version = 0;
   cw_nav_config c;
   float bmin[3], bmax[3];
-  if (!data || !r.get(&magic, 4) || !r.get(&version, 4) || magic != SAVE_MAGIC || version != SAVE_VERSION ||
-      !get_config(r, c) || !r.get(bmin, sizeof bmin) || !r.get(bmax, sizeof bmax)) {
+  if (!data || !r.get(&magic, 4) || !r.get(&version, 4) || magic != SAVE_MAGIC || version < 1 ||
+      version > SAVE_VERSION || !get_config(r, c) || !r.get(bmin, sizeof bmin) || !r.get(bmax, sizeof bmax)) {
     cw_error("nav: not navmesh data (or another version)");
     return none;
   }
@@ -914,8 +1100,25 @@ cw_navmesh cw_navmesh_load(const void *data, size_t len) {
     release(h, n);
     return none;
   }
-  uint32_t count;
-  bool ok = r.get(&count, 4);
+  bool ok = true;
+  if (version >= 2) { /* the link table: before the tiles, which a tile cache builds with its links */
+    uint32_t nl = 0;
+    ok = r.get(&nl, 4) && (size_t)(r.end - r.p) / 52 >= nl;
+    for (uint32_t i = 0; ok && i < nl; i++) {
+      float f[10];
+      uint32_t u[3];
+      ok = r.get(f, sizeof f) && r.get(u, sizeof u);
+      if (!ok) break;
+      cw_nav_link l;
+      memset(&l, 0, sizeof l);
+      l.start = { f[0], f[1], f[2] }, l.end = { f[3], f[4], f[5] };
+      l.cost = f[6], l.radius = f[7], l.duration = f[8], l.arc = f[9];
+      l.tag = u[0], l.bidirectional = u[1] != 0, l.area = (uint8_t)u[2];
+      cw_array_push(&n->links, l);
+    }
+  }
+  uint32_t count = 0;
+  ok = ok && r.get(&count, 4);
   for (uint32_t i = 0; ok && i < count; i++) {
     uint32_t size;
     ok = r.get(&size, 4) && (size_t)(r.end - r.p) >= size;
@@ -966,15 +1169,29 @@ bool nearest(NavMesh *n, dtNavMeshQuery *q, const float p[3], const Filter &f, d
   return true;
 }
 
-int straight(dtNavMeshQuery *q, const float s[3], const float e[3], const dtPolyRef *polys, int np, t3_vec3 *pts,
-             int max) {
+/* The straight path; links (may be NULL): the id of the link each waypoint starts. */
+int straight(NavMesh *n, dtNavMeshQuery *q, const float s[3], const float e[3], const dtPolyRef *polys, int np,
+             t3_vec3 *pts, uint32_t *links, int max) {
   if (max <= 0) return 0;
   float local[3 * 128];
-  float *buf = max <= 128 ? local : (float *)cw_alloc(sizeof(float) * 3 * (size_t)max, CW_MEM_NAV);
+  unsigned char lflags[128];
+  dtPolyRef lrefs[128];
+  bool big = max > 128;
+  float *buf = big ? (float *)cw_alloc(sizeof(float) * 3 * (size_t)max, CW_MEM_NAV) : local;
+  unsigned char *flags = big ? (unsigned char *)cw_alloc((size_t)max, CW_MEM_NAV) : lflags;
+  dtPolyRef *refs = big ? (dtPolyRef *)cw_alloc(sizeof(dtPolyRef) * (size_t)max, CW_MEM_NAV) : lrefs;
   int ns = 0;
-  if (dtStatusFailed(q->findStraightPath(s, e, polys, np, buf, nullptr, nullptr, &ns, max, 0))) ns = 0;
-  for (int i = 0; i < ns; i++) pts[i] = { buf[i * 3], buf[i * 3 + 1], buf[i * 3 + 2] };
-  if (buf != local) cw_free(buf);
+  if (dtStatusFailed(q->findStraightPath(s, e, polys, np, buf, flags, refs, &ns, max, 0))) ns = 0;
+  for (int i = 0; i < ns; i++) {
+    pts[i] = { buf[i * 3], buf[i * 3 + 1], buf[i * 3 + 2] };
+    if (!links) continue;
+    links[i] = 0;
+    if (flags[i] & DT_STRAIGHTPATH_OFFMESH_CONNECTION) {
+      const dtOffMeshConnection *con = n->mesh->getOffMeshConnectionByRef(refs[i]);
+      if (con) links[i] = con->userId;
+    }
+  }
+  if (big) cw_free(buf), cw_free(flags), cw_free(refs);
   return ns;
 }
 
@@ -982,9 +1199,10 @@ const int MAX_CORRIDOR = 512;
 
 /* The path query every public path call shares; max_iters 0 = one findPath. */
 int find_path(NavMesh *n, const float a[3], const float b[3], const cw_nav_filter *cf, int max_iters, t3_vec3 *pts,
-              int max, bool *partial, bool *failed) {
+              uint32_t *links, int max, bool *partial, bool *failed) {
   Filter f;
   make_filter(f, cf);
+  filter_links(f, n);
   dtNavMeshQuery *q = query_of(n);
   dtPolyRef sref, eref, polys[MAX_CORRIDOR];
   float s[3], e[3];
@@ -1013,7 +1231,7 @@ int find_path(NavMesh *n, const float a[3], const float b[3], const cw_nav_filte
     q->closestPointOnPoly(polys[np - 1], e, c, nullptr);
     dtVcopy(e, c);
   }
-  return straight(q, s, e, polys, np, pts, max);
+  return straight(n, q, s, e, polys, np, pts, links, max);
 }
 
 thread_local cw_rng *tl_rng;
@@ -1055,7 +1273,20 @@ int cw_nav_find_path(cw_navmesh h, t3_vec3 a, t3_vec3 b, const cw_nav_filter *f,
   int c = 0;
   if (n && pts && max > 0) {
     const float pa[3] = { a.x, a.y, a.z }, pb[3] = { b.x, b.y, b.z };
-    c = find_path(n, pa, pb, f, 0, pts, max, &part, &failed);
+    c = find_path(n, pa, pb, f, 0, pts, nullptr, max, &part, &failed);
+  }
+  if (partial) *partial = part;
+  return c;
+}
+
+int cw_nav_find_path_links(cw_navmesh h, t3_vec3 a, t3_vec3 b, const cw_nav_filter *f, t3_vec3 *pts, uint32_t *links,
+                           int max, bool *partial) {
+  NavMesh *n = get(h);
+  bool part = false, failed = false;
+  int c = 0;
+  if (n && pts && max > 0) {
+    const float pa[3] = { a.x, a.y, a.z }, pb[3] = { b.x, b.y, b.z };
+    c = find_path(n, pa, pb, f, 0, pts, links, max, &part, &failed);
   }
   if (partial) *partial = part;
   return c;
@@ -1135,7 +1366,7 @@ void batch_range(int b, int e, int, void *ctx) {
     const cw_nav_path_req *r = &j->reqs[i];
     const float pa[3] = { r->from.x, r->from.y, r->from.z }, pb[3] = { r->to.x, r->to.y, r->to.z };
     bool part, failed;
-    j->counts[i] = find_path(j->n, pa, pb, r->filter, 0, j->pts + (size_t)i * j->max, j->max, &part, &failed);
+    j->counts[i] = find_path(j->n, pa, pb, r->filter, 0, j->pts + (size_t)i * j->max, nullptr, j->max, &part, &failed);
   }
 }
 } // namespace
@@ -1176,13 +1407,17 @@ void tick_range(int b, int e, int, void *ctx) {
   for (int i = b; i < e; i++) {
     PathReq *r = &j->n->reqs.data[j->idx[i]];
     t3_vec3 tmp[MAXP];
+    uint32_t ltmp[MAXP];
     bool part, failed;
-    int c = find_path(j->n, r->from, r->to, r->has_filter ? &r->filter : nullptr, j->iters, tmp, MAXP, &part, &failed);
+    int c = find_path(j->n, r->from, r->to, r->has_filter ? &r->filter : nullptr, j->iters, tmp, ltmp, MAXP, &part,
+                      &failed);
     r->status = failed ? CW_NAV_PATH_FAILED : part ? CW_NAV_PATH_PARTIAL : CW_NAV_PATH_DONE;
     r->count = c;
     if (c) {
       r->pts = (t3_vec3 *)cw_alloc(sizeof(t3_vec3) * (size_t)c, CW_MEM_NAV);
       memcpy(r->pts, tmp, sizeof(t3_vec3) * (size_t)c);
+      r->links = (uint32_t *)cw_alloc(sizeof(uint32_t) * (size_t)c, CW_MEM_NAV);
+      memcpy(r->links, ltmp, sizeof(uint32_t) * (size_t)c);
     }
   }
 }
@@ -1201,6 +1436,11 @@ void cw_nav_tick(cw_navmesh h, int max_requests, int max_iters) {
 }
 
 cw_nav_path_status cw_nav_take_path(cw_navmesh h, uint32_t ticket, t3_vec3 *pts, int max, int *count) {
+  return cw_nav_take_path_links(h, ticket, pts, nullptr, max, count);
+}
+
+cw_nav_path_status cw_nav_take_path_links(cw_navmesh h, uint32_t ticket, t3_vec3 *pts, uint32_t *links, int max,
+                                          int *count) {
   NavMesh *n = get(h);
   if (count) *count = 0;
   if (!n) return CW_NAV_PATH_UNKNOWN;
@@ -1211,8 +1451,10 @@ cw_nav_path_status cw_nav_take_path(cw_navmesh h, uint32_t ticket, t3_vec3 *pts,
     if (s == CW_NAV_PATH_PENDING) return s;
     int c = r->count < max ? r->count : max;
     if (pts && c > 0) memcpy(pts, r->pts, sizeof(t3_vec3) * (size_t)c);
+    if (links && c > 0) memcpy(links, r->links, sizeof(uint32_t) * (size_t)c);
     if (count) *count = pts ? c : r->count;
     cw_free(r->pts);
+    cw_free(r->links);
     memmove(r, r + 1, sizeof *r * (size_t)(n->reqs.count - i - 1));
     n->reqs.count--;
     return s;
@@ -1350,6 +1592,7 @@ int cw__nav_path_polys(cw_navmesh h, cw__poly sref, const float s[3], cw__poly e
   if (!n) return 0;
   Filter f;
   make_filter(f, cf);
+  filter_links(f, n);
   dtNavMeshQuery *q = query_of(n);
   int np = 0;
   dtStatus st;
@@ -1366,12 +1609,34 @@ int cw__nav_path_polys(cw_navmesh h, cw__poly sref, const float s[3], cw__poly e
 }
 
 int cw__nav_corners(cw_navmesh h, const float s[3], const float e[3], const cw__poly *path, int np, float *corners,
-                    uint8_t *flags, int max) {
+                    uint8_t *flags, cw__poly *refs, int max) {
   NavMesh *n = get(h);
   if (!n || np <= 0) return 0;
   int ns = 0;
-  if (dtStatusFailed(query_of(n)->findStraightPath(s, e, path, np, corners, flags, nullptr, &ns, max, 0))) return 0;
+  if (dtStatusFailed(query_of(n)->findStraightPath(s, e, path, np, corners, flags, refs, &ns, max, 0))) return 0;
   return ns;
+}
+
+uint32_t cw__nav_link_cross(cw_navmesh h, cw__poly prev, cw__poly ref, float start[3], float end[3]) {
+  NavMesh *n = get(h);
+  if (!n) return 0;
+  const dtOffMeshConnection *con = n->mesh->getOffMeshConnectionByRef(ref);
+  if (!con || dtStatusFailed(n->mesh->getOffMeshConnectionPolyEndPoints(prev, ref, start, end))) return 0;
+  return con->userId;
+}
+
+const cw_nav_link *cw__nav_link(cw_navmesh h, uint32_t id) {
+  NavMesh *n = get(h);
+  return n && id >= 1 && id <= (uint32_t)n->links.count ? &n->links.data[id - 1] : nullptr;
+}
+
+void cw__nav_each_link(cw_navmesh h, void (*fn)(const cw_nav_link *l, bool connected, void *ctx), void *ctx) {
+  NavMesh *n = get(h);
+  if (!n || !n->links.count) return;
+  uint8_t *ends = (uint8_t *)cw_alloc((size_t)n->links.count, CW_MEM_NAV);
+  link_ends(n, ends);
+  for (int i = 0; i < n->links.count; i++) fn(&n->links.data[i], ends[i] == 3, ctx);
+  cw_free(ends);
 }
 
 int cw__nav_move_along(cw_navmesh h, cw__poly sref, const float s[3], const float e[3], const cw_nav_filter *cf,

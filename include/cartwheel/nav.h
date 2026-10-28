@@ -59,14 +59,55 @@ typedef struct cw_nav_filter {
 /* Every area allowed, every cost 1 (what NULL means for a filter argument). */
 cw_nav_filter cw_nav_filter_default(void);
 
+/* ── links (off-mesh connections) ──────────────────────────────────────
+ * A link joins two navmesh points that walking cannot: a jump up a ledge,
+ * a drop off one, a jump pad, a ladder, a teleporter. Paths may cross it;
+ * a crowd agent that reaches its start traverses it (see the crowd's link
+ * callback) and walks on from its end.
+ *
+ * Both ends must lie on (or just over) the walkable surface: within radius
+ * across and agent_max_climb up or down of a navmesh polygon. A link whose
+ * end does not touch the navmesh is never used; the build warns about it
+ * and cw_nav_link_connected says false. Links are part of the build input
+ * (cw_nav_geom), so they are in the navmesh bytes, its hash and its saves.
+ * A zero field takes the default noted beside it, so a designated
+ * initializer is enough:
+ *   cw_nav_geom_add_link(&g, &(cw_nav_link){ .start = a, .end = b, .tag = CW_NAV_LINK_JUMP }); */
+enum {
+  CW_NAV_LINK_JUMP = 1, /* suggested tags; any value is the game's own */
+  CW_NAV_LINK_DROP = 2,
+  CW_NAV_LINK_PAD = 3,
+  CW_NAV_LINK_LADDER = 4,
+  CW_NAV_LINK_TELEPORT = 5,
+  CW_NAV_LINK_USER = 16, /* the first value no engine code will ever name */
+};
+
+typedef struct cw_nav_link {
+  t3_vec3 start, end;   /* world space */
+  bool bidirectional;   /* false: start to end only */
+  uint8_t area;         /* 0 = CW_NAV_AREA_WALK: filters exclude and weigh links by area, like ground */
+  uint32_t tag;         /* the game's: what kind of link it is (CW_NAV_LINK_*) */
+  float cost;           /* what crossing it costs, in metres of walking (times the filter's cost for its
+                         * area); 0 = its straight-line length. A jump pad that saves a long walk can cost less
+                         * than its length */
+  float radius;         /* 0 = the navmesh's agent_radius: how far across an end may be from the navmesh */
+  float duration;       /* crowd traversal, seconds; 0 = length / the agent's max_speed */
+  float arc;            /* crowd traversal: the arc's height over the straight line at its middle, m (0 = straight) */
+} cw_nav_link;
+
 /* ── input geometry ────────────────────────────────────────────────────
- * A triangle soup in world space with an area per triangle. Fill it from
- * any mix of sources; the build reads it and does not keep it. */
+ * A triangle soup in world space with an area per triangle, and the links.
+ * Fill it from any mix of sources; the build reads it and does not keep it. */
 typedef struct cw_nav_geom {
   CW_ARRAY(float) verts;   /* x, y, z per vertex */
   CW_ARRAY(int32_t) tris;  /* 3 vertex indices per triangle */
   CW_ARRAY(uint8_t) areas; /* one per triangle */
+  CW_ARRAY(cw_nav_link) links; /* cw_nav_geom_add_link; a link's id is its index + 1 */
 } cw_nav_geom;
+
+/* Appends a link; returns its id (never 0): the navmesh built from this
+ * geometry names the link by it in paths, crowd events and cw_nav_link_get. */
+uint32_t cw_nav_geom_add_link(cw_nav_geom *g, const cw_nav_link *link);
 
 /* Appends triangles: verts (xyz per vertex), idx (3 per triangle; NULL =
  * consecutive triples), transformed by xf (NULL = identity), with one area. */
@@ -127,7 +168,10 @@ cw_nav_config cw_nav_config_default(void); /* the defaults noted in cw_nav_confi
 cw_navmesh cw_navmesh_build(const cw_nav_config *config, const cw_nav_geom *geom);
 /* Rebuilds the tiles that overlap [bmin, bmax] from new geometry (the whole
  * scene's, or at least everything near the box), in parallel; tiles outside
- * the original bounds are not added. Static navmeshes only. */
+ * the original bounds are not added. Static navmeshes only. The geometry's
+ * links replace the navmesh's link table: keep every link, in the same
+ * order, so ids stay the same (links starting in tiles that are not rebuilt
+ * keep the id they were built with). */
 bool cw_navmesh_rebuild_area(cw_navmesh nm, const cw_nav_geom *geom, t3_vec3 bmin, t3_vec3 bmax);
 void cw_navmesh_free(cw_navmesh nm); /* null or stale: no-op; frees its crowds too */
 bool cw_navmesh_valid(cw_navmesh nm); /* false for a null, freed or failed navmesh */
@@ -141,12 +185,20 @@ cw_navmesh cw_navmesh_load(const void *data, size_t len);
 uint64_t cw_navmesh_hash(cw_navmesh nm);
 const cw_nav_config *cw_navmesh_config(cw_navmesh nm); /* NULL when invalid */
 
+/* The navmesh's links (the build geometry's, in its order): ids 1..count. */
+int cw_nav_link_count(cw_navmesh nm);
+bool cw_nav_link_get(cw_navmesh nm, uint32_t id, cw_nav_link *out); /* false for an unknown id */
+/* Both ends of the link reached the navmesh (one end, for a one-way link
+ * whose end is off it, is not enough): paths can use it. */
+bool cw_nav_link_connected(cw_navmesh nm, uint32_t id);
+
 typedef struct cw_navmesh_stats {
   int tiles, polys, verts;   /* tiles holding polygons; their polygons and vertices */
   int tiles_x, tiles_z;      /* the tile grid */
   int obstacles;             /* live obstacles (dynamic) */
   int64_t bytes;             /* tile data */
   float build_ms;            /* the last build or update, wall time (never feeds state) */
+  int links, links_connected; /* links in the table; those both ends of which reached the navmesh */
 } cw_navmesh_stats;
 cw_navmesh_stats cw_navmesh_get_stats(cw_navmesh nm); /* all zero for an invalid navmesh */
 
@@ -164,6 +216,12 @@ bool cw_nav_height(cw_navmesh nm, t3_vec3 p, float *y);
  * max). *partial (may be NULL): b is not reachable and the path ends near it. */
 int cw_nav_find_path(cw_navmesh nm, t3_vec3 a, t3_vec3 b, const cw_nav_filter *filter, t3_vec3 *pts, int max,
                      bool *partial);
+/* cw_nav_find_path, and which waypoints start a link: links[i] (max of
+ * them; may be NULL) is the id of the link crossed from waypoint i to
+ * waypoint i + 1 (its far end), 0 for walking. A bidirectional link crossed
+ * backwards has the link's end at i and its start at i + 1. */
+int cw_nav_find_path_links(cw_navmesh nm, t3_vec3 a, t3_vec3 b, const cw_nav_filter *filter, t3_vec3 *pts,
+                           uint32_t *links, int max, bool *partial);
 /* Walks the navmesh surface from a toward b: false when a is off the mesh.
  * hit: a wall stops the ray; t in [0, 1] is how far (1 = reached b), normal
  * the wall's (xz) and point where it stopped. */
@@ -210,6 +268,9 @@ void cw_nav_tick(cw_navmesh nm, int max_requests, int max_iters);
  * max waypoints into pts and their count into *count (both may be NULL) and
  * forgets the ticket. */
 cw_nav_path_status cw_nav_take_path(cw_navmesh nm, uint32_t ticket, t3_vec3 *pts, int max, int *count);
+/* cw_nav_take_path with each waypoint's link id (as cw_nav_find_path_links; links may be NULL). */
+cw_nav_path_status cw_nav_take_path_links(cw_navmesh nm, uint32_t ticket, t3_vec3 *pts, uint32_t *links, int max,
+                                          int *count);
 void cw_nav_cancel_path(cw_navmesh nm, uint32_t ticket); /* forgets a queued or answered request */
 int cw_nav_pending_paths(cw_navmesh nm); /* requests not yet answered */
 
@@ -252,6 +313,9 @@ typedef struct cw_crowd_agent_params {
   bool avoidance;       /* true: ORCA against other agents (others avoid this one either way) */
   float avoidance_priority; /* 0.5: between two agents each avoids in proportion to the OTHER's
                              * priority (equal priorities: half each; 0 makes the other avoid it all) */
+  bool manual_links;        /* false: the crowd moves the agent across links (the link's duration and arc).
+                             * true: the agent stops at a link's start (ON_LINK) until cw_crowd_finish_link,
+                             * so the game can move its body across (a physics jump, a ladder climb) */
 } cw_crowd_agent_params;
 #define CW_CROWD_MAX_NEIGHBORS 16
 cw_crowd_agent_params cw_crowd_agent_params_default(void); /* the defaults noted in cw_crowd_agent_params above */
@@ -263,6 +327,7 @@ typedef enum {
   CW_CROWD_ARRIVED,    /* within arrive_dist of the target */
   CW_CROWD_NO_PATH,    /* target unreachable (the agent stays put) */
   CW_CROWD_VELOCITY,   /* moving by cw_crowd_set_velocity */
+  CW_CROWD_ON_LINK,    /* crossing a link (see cw_crowd_agent_state.link) */
 } cw_crowd_agent_status;
 
 typedef struct cw_crowd_agent_state {
@@ -273,6 +338,9 @@ typedef struct cw_crowd_agent_state {
   bool partial;              /* the path ends short of the target */
   int path_polys;            /* corridor length */
   uint32_t path_version;     /* bumped whenever a new path is taken */
+  uint32_t link;             /* ON_LINK: the link's id (0 otherwise) */
+  float link_progress;       /* ON_LINK: 0 at the start, 1 at the end (stays 0 for manual_links) */
+  t3_vec3 link_start, link_end; /* ON_LINK: where the crossing began and where it lands */
 } cw_crowd_agent_state;
 
 /* A crowd of up to max_agents agents on nm (null when nm is invalid). */
@@ -305,6 +373,27 @@ void cw_crowd_teleport(cw_crowd c, cw_crowd_agent a, t3_vec3 p); /* snapped; the
 void cw_crowd_set_position(cw_crowd c, cw_crowd_agent a, t3_vec3 p);
 bool cw_crowd_get_state(cw_crowd c, cw_crowd_agent a, cw_crowd_agent_state *out); /* false for an invalid agent */
 t3_vec3 cw_crowd_position(cw_crowd c, cw_crowd_agent a); /* zero when invalid */
+/* Links: an agent following a path whose next corner starts a link begins
+ * crossing it when it comes within its radius x 2.25 of that corner: its
+ * status becomes ON_LINK and (unless manual_links) it moves from where it
+ * stands to the link's end over the link's duration along an arc of the
+ * link's height, then walks on. The callback (if set) runs at the end of
+ * cw_crowd_step on the calling thread, once per agent that began or ended a
+ * crossing in that step, in agent index order: play the jump, launch the
+ * pad's effect, turn the model. A target set during a crossing is planned
+ * once it lands; a teleport ends it at once. */
+typedef struct cw_crowd_link_event {
+  cw_crowd_agent agent;
+  uint32_t link, tag;    /* the link's id and its tag */
+  t3_vec3 start, end;    /* the crossing: from the agent's position to the far end */
+  float duration;        /* seconds (0 for manual_links) */
+  bool finished;         /* false: began this step; true: landed this step */
+} cw_crowd_link_event;
+typedef void (*cw_crowd_link_fn)(cw_crowd c, const cw_crowd_link_event *e, void *user);
+void cw_crowd_set_link_callback(cw_crowd c, cw_crowd_link_fn fn, void *user); /* NULL = none */
+/* Ends a manual_links agent's crossing: it is placed at the link's end (on
+ * the navmesh) and walks on. False when it is not on a link. */
+bool cw_crowd_finish_link(cw_crowd c, cw_crowd_agent a);
 /* One fixed tick (dt in seconds; the same dt every tick for replays). */
 void cw_crowd_step(cw_crowd c, float dt);
 int cw_crowd_count(cw_crowd c); /* live agents */
@@ -331,10 +420,11 @@ enum {
   CW_NAV_DRAW_OBSTACLES = 1 << 3,
   CW_NAV_DRAW_AGENTS = 1 << 4,    /* crowd: circles, velocities */
   CW_NAV_DRAW_PATHS = 1 << 5,     /* crowd: each agent's corners to its target */
+  CW_NAV_DRAW_LINKS = 1 << 6,     /* links: an arc from start to end (green connected, red not), a tick at each end */
   CW_NAV_DRAW_DEFAULT = CW_NAV_DRAW_POLYS | CW_NAV_DRAW_BOUNDARY | CW_NAV_DRAW_OBSTACLES | CW_NAV_DRAW_AGENTS |
-                        CW_NAV_DRAW_PATHS,
+                        CW_NAV_DRAW_PATHS | CW_NAV_DRAW_LINKS,
 };
-void cw_nav_debug_draw(cw_navmesh nm, cw_phys_lines *out, uint32_t flags); /* polygons, walls, tiles, obstacles */
+void cw_nav_debug_draw(cw_navmesh nm, cw_phys_lines *out, uint32_t flags); /* polygons, walls, tiles, obstacles, links */
 void cw_crowd_debug_draw(cw_crowd c, cw_phys_lines *out, uint32_t flags); /* agents and paths */
 /* A waypoint list as a polyline. */
 void cw_nav_debug_draw_path(cw_phys_lines *out, const t3_vec3 *pts, int count, uint32_t color);
@@ -349,7 +439,13 @@ void cw_nav_debug_draw_path(cw_phys_lines *out, const t3_vec3 *pts, int count, u
  * and velocity_computed (vec3). It joins the region named by `region` (a
  * node path), else the first region in the tree.
  * NavigationObstacle3D (Node3D): a cylinder or box carved out of a dynamic
- * region's navmesh while it is in the tree; moving it moves the hole. */
+ * region's navmesh while it is in the tree; moving it moves the hole.
+ * NavigationLink3D (Node3D): a link baked into the region it is under, from
+ * the node's `start_position` to its `end_position` (both local to the
+ * node), with `bidirectional`, `cost`, `tag`, `area`, `radius`, `duration`
+ * and `arc` as cw_nav_link. Its id is its order among the region's links
+ * (tree order). Agents emit link_entered(link, tag, end) and link_exited(link)
+ * and their parent is moved across. */
 cw_navmesh cw_nav_region_navmesh(cw_node region); /* null until baked or loaded */
 cw_crowd cw_nav_region_crowd(cw_node region); /* null until baked or loaded */
 /* Bakes now (replacing the navmesh; its agents are re-added). */

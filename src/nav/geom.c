@@ -276,10 +276,18 @@ void cw_nav_geom_clear(cw_nav_geom *g) {
   cw_array_clear(&g->verts);
   cw_array_clear(&g->tris);
   cw_array_clear(&g->areas);
+  cw_array_clear(&g->links);
 }
 
 void cw_nav_geom_free(cw_nav_geom *g) {
   cw_array_free(&g->verts);
   cw_array_free(&g->tris);
   cw_array_free(&g->areas);
+  cw_array_free(&g->links);
+}
+
+uint32_t cw_nav_geom_add_link(cw_nav_geom *g, const cw_nav_link *link) {
+  if (!g || !link) return 0;
+  cw_array_push(&g->links, *link);
+  return (uint32_t)g->links.count;
 }

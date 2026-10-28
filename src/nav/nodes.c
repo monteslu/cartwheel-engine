@@ -55,7 +55,7 @@ static void list_remove(cw_node *data, int *count, cw_node n) {
     }
 }
 
-static const cw_node_type *region_t, *agent_t, *obstacle_t;
+static const cw_node_type *region_t, *agent_t, *obstacle_t, *link_t;
 
 /* ── NavigationRegion3D ───────────────────────────────────────────────── */
 
@@ -197,8 +197,14 @@ static bool has_agent_child(cw_node n) {
   return false;
 }
 
+static void add_link_node(cw_nav_geom *g, cw_node n);
+
 static bool bake_walk(cw_node n, void *u) {
   bake_ctx *b = u;
+  if (cw_node_get_type(n) == link_t) {
+    add_link_node(b->g, n);
+    return false;
+  }
   /* moving things are not level geometry */
   if (cw_node_get_type(n) == obstacle_t || has_agent_child(n) || cw_node_is(n, "RigidBody3D") ||
       cw_node_is(n, "CharacterBody3D") || cw_node_is(n, "KinematicBody3D"))
@@ -220,6 +226,17 @@ static bool bake_walk(cw_node n, void *u) {
     } else {
       add_prim(b->g, n);
     }
+  }
+  return true;
+}
+
+/* Only the links (a COLLIDERS bake). */
+static bool links_walk(cw_node n, void *u) {
+  bake_ctx *b = u;
+  if (n.id != b->region.id && cw_node_get_type(n) == region_t) return false;
+  if (cw_node_get_type(n) == link_t) {
+    add_link_node(b->g, n);
+    return false;
   }
   return true;
 }
@@ -258,6 +275,7 @@ static bool region_bake_now(cw_node n, region3d *r) {
     cw_nav_geom g = { 0 };
     bake_ctx b = { &g, n };
     if (r->source != SRC_COLLIDERS) cw_node_walk(n, bake_walk, &b);
+    else cw_node_walk(n, links_walk, &b);
     cw_tree *t = cw_node_tree(n);
     if (r->source != SRC_MESHES && t && cw_tree_slot(t, "physics3d")) {
       cw_phys_filter f = { .layers = (uint32_t)r->collision_mask, .fn = in_region, .ctx = &n };
@@ -433,13 +451,13 @@ static cw_node_type region_type = { .name = "NavigationRegion3D", .parent = "Nod
 
 /* ── NavigationAgent3D ────────────────────────────────────────────────── */
 
-static const char *const status_names[] = { "IDLE", "WAITING", "MOVING", "ARRIVED", "NO_PATH", "VELOCITY", NULL };
+static const char *const status_names[] = { "IDLE", "WAITING", "MOVING", "ARRIVED", "NO_PATH", "VELOCITY", "ON_LINK", NULL };
 
 typedef struct agent3d {
   t3_vec3 target_position;
   float radius, height, max_speed, max_accel, neighbor_dist, time_horizon, arrive_dist, slowdown_dist, avoidance_priority;
   int max_neighbors;
-  bool avoidance, drive_parent;
+  bool avoidance, drive_parent, manual_links;
   const char *region;
   /* runtime */
   cw_node joined;        /* the region whose crowd holds it */
@@ -450,6 +468,7 @@ typedef struct agent3d {
   int status;
   t3_vec3 velocity;
   uint32_t path_version;
+  uint32_t link; /* the link it is crossing (0: none) */
   bool warned;
 } agent3d;
 
@@ -466,6 +485,7 @@ static cw_crowd_agent_params params_of(const agent3d *a) {
   p.slowdown_dist = a->slowdown_dist;
   p.avoidance = a->avoidance;
   p.avoidance_priority = a->avoidance_priority;
+  p.manual_links = a->manual_links;
   return p;
 }
 
@@ -496,6 +516,7 @@ static void agent_leave(agent3d *a) {
   if (!CW_HANDLE_IS_NULL(a->joined)) cw_crowd_remove(crowd_of(a->joined), a->handle);
   a->joined = (cw_node){ 0 };
   a->handle = (cw_crowd_agent){ 0 };
+  a->link = 0;
 }
 
 static void agent_enter(cw_node n, void *d) {
@@ -585,6 +606,14 @@ static bool m_stop(cw_node self, const cw_value *args, int argc, cw_value *ret, 
   return true;
 }
 
+static bool m_finish_link(cw_node self, const cw_value *args, int argc, cw_value *ret, void *user) {
+  (void)args, (void)argc, (void)user;
+  agent3d *a = cw_node_data_t(self, agent_t);
+  bool ok = a && !CW_HANDLE_IS_NULL(a->joined) && cw_crowd_finish_link(crowd_of(a->joined), a->handle);
+  if (ret) *ret = cw_val_bool(ok);
+  return true;
+}
+
 cw_crowd_agent cw_nav_agent_handle(cw_node n) {
   agent3d *a = cw_node_data_t(n, agent_t);
   return a ? a->handle : (cw_crowd_agent){ 0 };
@@ -602,7 +631,8 @@ static void finished_get(cw_node n, void *d, cw_value *o) {
   *o = cw_val_bool(a->status == CW_CROWD_ARRIVED || a->status == CW_CROWD_NO_PATH || a->status == CW_CROWD_IDLE);
 }
 
-static const char *const agent_signals[] = { "path_changed", "target_reached", "velocity_computed", NULL };
+static const char *const agent_signals[] = { "path_changed", "target_reached", "velocity_computed", "link_entered",
+                                             "link_exited", NULL };
 static const cw_prop agent_props[] = {
   CW_PROP_FIELD(agent3d, target_position, CW_T_VEC3, CW_PROP_DEFAULT, "Where to go (world space); setting it plans a path."),
   CW_PROP_FIELD_RANGE(agent3d, radius, CW_T_FLOAT, 0.01, 100, "Avoidance radius, m."),
@@ -618,9 +648,11 @@ static const cw_prop agent_props[] = {
   CW_PROP_FIELD_RANGE(agent3d, avoidance_priority, CW_T_FLOAT, 0, 1, "Higher: others give way more."),
   CW_PROP_FIELD(agent3d, drive_parent, CW_T_BOOL, CW_PROP_DEFAULT,
                 "Move the parent Node3D every tick. Off: the parent moves by velocity_computed and the agent follows it."),
+  CW_PROP_FIELD(agent3d, manual_links, CW_T_BOOL, CW_PROP_DEFAULT,
+                "Stop at a link's start (ON_LINK) until the finish_link method: the game moves the parent across."),
   CW_PROP_FIELD(agent3d, region, CW_T_STRING, CW_PROP_DEFAULT, "Path to its NavigationRegion3D (empty = the tree's first)."),
   { .name = "status", .type = CW_T_ENUM, .flags = CW_PROP_READONLY | CW_PROP_EDITOR, .offset = -1, .get = status_get,
-    .enum_names = status_names, .doc = "IDLE, WAITING (for a path), MOVING, ARRIVED, NO_PATH or VELOCITY." },
+    .enum_names = status_names, .doc = "IDLE, WAITING (for a path), MOVING, ARRIVED, NO_PATH, VELOCITY or ON_LINK." },
   { .name = "velocity", .type = CW_T_VEC3, .flags = CW_PROP_READONLY | CW_PROP_EDITOR, .offset = offsetof(agent3d, velocity),
     .size = sizeof(t3_vec3), .doc = "The velocity it moved with last tick." },
   CW_PROP_ACCESSOR("is_navigation_finished", CW_T_BOOL, CW_PROP_READONLY | CW_PROP_EDITOR, finished_get, NULL,
@@ -708,6 +740,57 @@ static cw_node_type obstacle_type = { .name = "NavigationObstacle3D", .parent = 
                                       .doc = "A shape carved out of a dynamic NavigationRegion3D's navmesh while it is in the tree.",
                                       .init = obstacle_init, .enter_tree = obstacle_enter, .exit_tree = obstacle_exit,
                                       .prop_changed = obstacle_prop_changed };
+
+/* ── NavigationLink3D ─────────────────────────────────────────────────── */
+
+typedef struct link3d {
+  t3_vec3 start_position, end_position;
+  bool bidirectional;
+  float cost, radius, duration, arc;
+  int tag, area;
+} link3d;
+
+static void link_init(cw_node n, void *d) {
+  (void)n;
+  link3d *l = d;
+  l->end_position = (t3_vec3){ 0, 0, 2 };
+  l->bidirectional = true;
+  l->tag = CW_NAV_LINK_JUMP;
+}
+
+static void add_link_node(cw_nav_geom *g, cw_node n) {
+  link3d *d = cw_node_data_t(n, link_t);
+  if (!d) return;
+  const t3_mat4 *m = cw_node3d_global_transform(n);
+  cw_nav_link l = { 0 };
+  l.start = t3_vec3_apply_mat4(d->start_position, m);
+  l.end = t3_vec3_apply_mat4(d->end_position, m);
+  l.bidirectional = d->bidirectional;
+  l.area = (uint8_t)(d->area > 0 && d->area < CW_NAV_AREAS ? d->area : 0);
+  l.tag = (uint32_t)(d->tag > 0 ? d->tag : 0);
+  l.cost = d->cost;
+  l.radius = d->radius;
+  l.duration = d->duration;
+  l.arc = d->arc;
+  cw_nav_geom_add_link(g, &l);
+}
+
+static const cw_prop link_props[] = {
+  CW_PROP_FIELD(link3d, start_position, CW_T_VEC3, CW_PROP_DEFAULT, "Start, local to the node, m (on the walkable surface)."),
+  CW_PROP_FIELD(link3d, end_position, CW_T_VEC3, CW_PROP_DEFAULT, "End, local to the node, m (on the walkable surface)."),
+  CW_PROP_FIELD(link3d, bidirectional, CW_T_BOOL, CW_PROP_DEFAULT, "Crossable both ways (off: start to end only)."),
+  CW_PROP_FIELD_RANGE(link3d, cost, CW_T_FLOAT, 0, 100000, "Crossing cost in metres of walking (0 = its length)."),
+  CW_PROP_FIELD_RANGE(link3d, tag, CW_T_INT, 0, 2147483647, "The game's kind of link (1 jump, 2 drop, 3 pad, 4 ladder, 5 teleport, 16 and up its own)."),
+  CW_PROP_FIELD_RANGE(link3d, area, CW_T_INT, 0, 63, "Area id filters weigh or exclude (0 = walk)."),
+  CW_PROP_FIELD_RANGE(link3d, radius, CW_T_FLOAT, 0, 100, "How far across an end may be from the navmesh, m (0 = agent radius)."),
+  CW_PROP_FIELD_RANGE(link3d, duration, CW_T_FLOAT, 0, 1000, "Crossing time for crowd agents, s (0 = length / speed)."),
+  CW_PROP_FIELD_RANGE(link3d, arc, CW_T_FLOAT, 0, 1000, "Height of the crossing's arc at its middle, m."),
+  CW_PROP_END,
+};
+static cw_node_type link_type = { .name = "NavigationLink3D", .parent = "Node3D", .data_size = sizeof(link3d),
+                                  .props = link_props,
+                                  .doc = "A link (jump, drop, pad, ladder) baked into the NavigationRegion3D above it: paths cross it and agents traverse it.",
+                                  .init = link_init };
 
 /* ── the tick ─────────────────────────────────────────────────────────── */
 
@@ -819,6 +902,20 @@ static void hook(cw_tree *t, double dt, void *u) {
       a->reached = true;
       cw_emit(n, "target_reached", NULL, 0);
     }
+    if (s.link != a->link) {
+      if (a->link) {
+        cw_value v = cw_val_int(a->link);
+        cw_emit(n, "link_exited", &v, 1);
+      }
+      a->link = s.link;
+      if (s.link) {
+        cw_nav_link l;
+        cw_navmesh nm = cw_nav_region_navmesh(a->joined);
+        uint32_t tag = cw_nav_link_get(nm, s.link, &l) ? l.tag : 0;
+        cw_value v[3] = { cw_val_int(s.link), cw_val_int(tag), cw_val_vec3(s.link_end.x, s.link_end.y, s.link_end.z) };
+        cw_emit(n, "link_entered", v, 3);
+      }
+    }
     if (s.status == CW_CROWD_MOVING || s.status == CW_CROWD_VELOCITY) {
       cw_value v = cw_val_vec3(s.velocity.x, s.velocity.y, s.velocity.z);
       cw_emit(n, "velocity_computed", &v, 1);
@@ -833,8 +930,12 @@ void cw__register_nav_types(void) {
   agent_t = &agent_type;
   cw_node_type_register(&obstacle_type);
   obstacle_t = &obstacle_type;
+  cw_node_type_register(&link_type);
+  link_t = &link_type;
   cw_node_type_add_method("NavigationRegion3D", "bake", NULL, m_bake, NULL, "Bake (or load) the navmesh now.");
   cw_node_type_add_method("NavigationAgent3D", "set_velocity", "vec3", m_set_velocity, NULL,
                           "Move at this velocity (avoiding others) instead of following a path.");
   cw_node_type_add_method("NavigationAgent3D", "stop", NULL, m_stop, NULL, "Drop the target and stand.");
+  cw_node_type_add_method("NavigationAgent3D", "finish_link", NULL, m_finish_link, NULL,
+                          "End a manual_links crossing: the agent stands on the link's end and walks on.");
 }

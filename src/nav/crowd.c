@@ -30,6 +30,8 @@
 #define MAX_NB CW_CROWD_MAX_NEIGHBORS
 #define MAX_VISITED 16
 #define STRAIGHTPATH_END 0x02 /* Detour's DT_STRAIGHTPATH_END */
+#define STRAIGHTPATH_LINK 0x04 /* Detour's DT_STRAIGHTPATH_OFFMESH_CONNECTION: the corner starts a link */
+#define LINK_TRIGGER 2.25f    /* a link starts within radius x this of its first corner (as DetourCrowd) */
 
 typedef struct agent {
   uint32_t gen;  /* odd: live */
@@ -45,9 +47,16 @@ typedef struct agent {
   int npath;         /* corridor length (corridor[0]: the polygon the agent is on) */
   float corners[MAX_CORNERS * 3];
   uint8_t corner_flags[MAX_CORNERS];
+  cw__poly corner_refs[MAX_CORNERS];
   int ncorners;
   int nnb;
   int nb[MAX_NB];
+  /* a link crossing */
+  uint32_t link;              /* its id while crossing (0: not on a link) */
+  float link_a[3], link_b[3]; /* from (where it stood) and to (the far end) */
+  float link_t, link_dur, link_arc;
+  uint8_t link_event;         /* this step: 1 began, 2 landed (reported after the step) */
+  uint32_t event_link;        /* the link the event is about */
 } agent;
 
 typedef struct crowd {
@@ -71,6 +80,8 @@ typedef struct crowd {
   int *plan_list;
   float dt;
   cw_crowd_stats stats;
+  cw_crowd_link_fn link_fn;
+  void *link_user;
 } crowd;
 
 static cw_pool g_crowds;
@@ -94,7 +105,7 @@ static cw__poly *corridor(crowd *c, const agent *a) { return &c->corridors[(size
 cw_crowd_agent_params cw_crowd_agent_params_default(void) {
   return (cw_crowd_agent_params){ .radius = 0.5f, .height = 2, .max_speed = 3.5f, .max_accel = 8, .neighbor_dist = 6,
                                   .max_neighbors = 10, .time_horizon = 2, .arrive_dist = 0.3f, .slowdown_dist = 1.5f,
-                                  .avoidance = true, .avoidance_priority = 0.5f };
+                                  .avoidance = true, .avoidance_priority = 0.5f, .manual_links = false };
 }
 
 static cw_crowd_agent_params clean_params(const cw_crowd_agent_params *p) {
@@ -284,6 +295,7 @@ void cw_crowd_teleport(cw_crowd h, cw_crowd_agent ah, t3_vec3 p) {
   float s[3];
   cw__poly ref;
   if (!cw__nav_nearest_ref(c->nm, pp, &c->filter, &ref, s)) return;
+  a->link = 0; /* a teleport ends a crossing */
   memcpy(a->pos, s, sizeof a->pos);
   memset(a->vel, 0, sizeof a->vel);
   corridor(c, a)[0] = ref;
@@ -297,7 +309,7 @@ void cw_crowd_teleport(cw_crowd h, cw_crowd_agent ah, t3_vec3 p) {
 void cw_crowd_set_position(cw_crowd h, cw_crowd_agent ah, t3_vec3 p) {
   crowd *c = get(h);
   agent *a = agent_of(c, ah);
-  if (!a || a->npath <= 0) return;
+  if (!a || a->npath <= 0 || a->link) return; /* a crossing places the agent itself */
   cw__poly *path = corridor(c, a);
   const float to[3] = { p.x, p.y, p.z };
   float out[3];
@@ -325,6 +337,45 @@ bool cw_crowd_get_state(cw_crowd h, cw_crowd_agent ah, cw_crowd_agent_state *out
   out->partial = a->partial;
   out->path_polys = a->npath;
   out->path_version = a->path_version;
+  out->link = a->link;
+  out->link_progress = a->link ? a->link_t : 0;
+  out->link_start = a->link ? (t3_vec3){ a->link_a[0], a->link_a[1], a->link_a[2] } : (t3_vec3){ 0, 0, 0 };
+  out->link_end = a->link ? (t3_vec3){ a->link_b[0], a->link_b[1], a->link_b[2] } : (t3_vec3){ 0, 0, 0 };
+  if (a->link) out->status = CW_CROWD_ON_LINK;
+  return true;
+}
+
+void cw_crowd_set_link_callback(cw_crowd h, cw_crowd_link_fn fn, void *user) {
+  crowd *c = get(h);
+  if (!c) return;
+  c->link_fn = fn;
+  c->link_user = user;
+}
+
+/* Lands a crossing: the agent stands on the link's far end (its corridor
+ * already starts with the polygon there). */
+static void land(crowd *c, agent *a) {
+  cw__poly *path = corridor(c, a);
+  float p[3];
+  memcpy(p, a->link_b, sizeof p);
+  if (a->npath > 0) {
+    float hy;
+    cw__nav_closest_on_poly(c->nm, path[0], a->link_b, p);
+    if (cw__nav_poly_height(c->nm, path[0], p, &hy)) p[1] = hy;
+  }
+  memcpy(a->pos, p, sizeof a->pos);
+  a->event_link = a->link;
+  a->link = 0;
+  a->link_event = 2;
+}
+
+bool cw_crowd_finish_link(cw_crowd h, cw_crowd_agent ah) {
+  crowd *c = get(h);
+  agent *a = agent_of(c, ah);
+  if (!a || !a->link) return false;
+  memset(a->vel, 0, sizeof a->vel);
+  land(c, a);
+  a->link_event = 0; /* the game ended it: no event */
   return true;
 }
 
@@ -361,7 +412,8 @@ uint64_t cw_crowd_hash(cw_crowd h) {
     struct {
       int32_t i, status;
       float pos[3], vel[3];
-    } rec = { i, (int32_t)a->status, { a->pos[0], a->pos[1], a->pos[2] }, { a->vel[0], a->vel[1], a->vel[2] } };
+    } rec = { i, a->link ? (int32_t)CW_CROWD_ON_LINK : (int32_t)a->status, { a->pos[0], a->pos[1], a->pos[2] },
+              { a->vel[0], a->vel[1], a->vel[2] } };
     x = cw_hash_bytes(&rec, sizeof rec, x);
   }
   return x;
@@ -587,35 +639,52 @@ static void neighbours_range(int b, int e, int w, void *ctx) {
 
 static float len2(float x, float z) { return sqrtf(x * x + z * z); }
 
+/* The corners from the agent on: the ones it already stands on are dropped
+ * (never the end or a link's start), and none after a link's start (what
+ * lies beyond it is reached by crossing). Returns the first kept index. */
+static int trim_corners(const agent *a, const float *corners, const uint8_t *flags, int *n) {
+  int first = 0;
+  while (first < *n && !(flags[first] & (STRAIGHTPATH_END | STRAIGHTPATH_LINK)) &&
+         len2(corners[first * 3] - a->pos[0], corners[first * 3 + 2] - a->pos[2]) < 0.01f)
+    first++;
+  for (int k = first; k < *n; k++)
+    if (flags[k] & STRAIGHTPATH_LINK) {
+      *n = k + 1;
+      break;
+    }
+  return first;
+}
+
 static void steer(crowd *c, int i) {
   agent *a = &c->agents[i];
   a->dvel[0] = a->dvel[1] = a->dvel[2] = 0;
   a->ncorners = 0;
+  if (a->link) { /* crossing a link: the move phase places it */
+    a->nvel[0] = c->vx[i], a->nvel[1] = 0, a->nvel[2] = c->vz[i];
+    return;
+  }
   if (a->status == CW_CROWD_VELOCITY) {
     memcpy(a->dvel, a->vreq, sizeof a->dvel);
   } else if (a->status == CW_CROWD_MOVING && a->npath > 0) {
     float corners[MAX_CORNERS * 3 + 3];
     uint8_t flags[MAX_CORNERS + 1];
-    int n = cw__nav_corners(c->nm, a->pos, a->goal, corridor(c, a), a->npath, corners, flags, MAX_CORNERS + 1);
+    cw__poly refs[MAX_CORNERS + 1];
+    int n = cw__nav_corners(c->nm, a->pos, a->goal, corridor(c, a), a->npath, corners, flags, refs, MAX_CORNERS + 1);
     /* the straight path starts at the agent: drop corners it is already on */
-    int first = 0;
-    while (first < n && !(flags[first] & STRAIGHTPATH_END) &&
-           len2(corners[first * 3] - a->pos[0], corners[first * 3 + 2] - a->pos[2]) < 0.01f)
-      first++;
-    if (n - first > 0) {
-      /* shortcut the corridor toward the corner after next, then find the corners again */
+    int first = trim_corners(a, corners, flags, &n);
+    /* shortcut the corridor toward the corner after next, then find the corners again (not when the next
+     * corner starts a link: a shortcut must not skip it) */
+    if (n - first > 0 && !(flags[first] & STRAIGHTPATH_LINK)) {
       int ahead = first + (n - first > 1 ? 1 : 0);
       if (optimize_visibility(c, a, &corners[ahead * 3])) {
-        n = cw__nav_corners(c->nm, a->pos, a->goal, corridor(c, a), a->npath, corners, flags, MAX_CORNERS + 1);
-        first = 0;
-        while (first < n && !(flags[first] & STRAIGHTPATH_END) &&
-               len2(corners[first * 3] - a->pos[0], corners[first * 3 + 2] - a->pos[2]) < 0.01f)
-          first++;
+        n = cw__nav_corners(c->nm, a->pos, a->goal, corridor(c, a), a->npath, corners, flags, refs, MAX_CORNERS + 1);
+        first = trim_corners(a, corners, flags, &n);
       }
     }
     a->ncorners = n - first < MAX_CORNERS ? n - first : MAX_CORNERS;
     memcpy(a->corners, &corners[first * 3], sizeof(float) * 3 * (size_t)a->ncorners);
     memcpy(a->corner_flags, &flags[first], (size_t)a->ncorners);
+    memcpy(a->corner_refs, &refs[first], sizeof(cw__poly) * (size_t)a->ncorners);
     float gx = a->goal[0] - a->pos[0], gz = a->goal[2] - a->pos[2];
     float goal_dist = len2(gx, gz);
     bool last_is_end = a->ncorners > 0 && (a->corner_flags[a->ncorners - 1] & STRAIGHTPATH_END);
@@ -680,13 +749,80 @@ static void steer_range(int b, int e, int w, void *ctx) {
 
 /* ── phase 4: move ────────────────────────────────────────────────────── */
 
+/* Begins crossing the link whose start is the agent's last corner: the
+ * corridor drops everything up to the link (it then starts on the far end's
+ * polygon). False when the corridor does not hold it (it is replanned). */
+static bool begin_link(crowd *c, agent *a) {
+  cw__poly *path = corridor(c, a);
+  cw__poly ref = a->corner_refs[a->ncorners - 1];
+  int k = 1;
+  while (k < a->npath && path[k] != ref) k++;
+  if (k >= a->npath || k + 1 >= a->npath) return false;
+  float s[3], e[3];
+  uint32_t id = cw__nav_link_cross(c->nm, path[k - 1], ref, s, e);
+  const cw_nav_link *l = cw__nav_link(c->nm, id);
+  if (!id || !l) return false;
+  memmove(path, path + k + 1, sizeof(cw__poly) * (size_t)(a->npath - k - 1));
+  a->npath -= k + 1;
+  memcpy(a->link_a, a->pos, sizeof a->link_a);
+  memcpy(a->link_b, e, sizeof a->link_b);
+  float dx = e[0] - a->pos[0], dy = e[1] - a->pos[1], dz = e[2] - a->pos[2];
+  float len = sqrtf(dx * dx + dy * dy + dz * dz);
+  a->link = id;
+  a->event_link = id;
+  a->link_t = 0;
+  a->link_arc = l->arc;
+  a->link_dur = a->p.manual_links ? 0 : l->duration > 0 ? l->duration : a->p.max_speed > 0 ? len / a->p.max_speed : 0;
+  a->link_event = 1;
+  a->ncorners = 0;
+  /* while crossing, others see it moving straight at the far end */
+  if (a->link_dur > 0) a->vel[0] = dx / a->link_dur, a->vel[1] = 0, a->vel[2] = dz / a->link_dur;
+  else memset(a->vel, 0, sizeof a->vel);
+  return true;
+}
+
+/* One step of a crossing: along the straight line from link_a to link_b,
+ * raised by 4 arc t (1 - t); lands at t = 1. */
+static void cross_link(crowd *c, agent *a) {
+  if (a->p.manual_links) return; /* the game moves it and calls cw_crowd_finish_link */
+  a->link_t = a->link_dur > 0 ? a->link_t + c->dt / a->link_dur : 1;
+  if (a->link_t >= 1) {
+    a->link_t = 1;
+    memset(a->vel, 0, sizeof a->vel);
+    land(c, a);
+    return;
+  }
+  float t = a->link_t, up = 4 * a->link_arc * t * (1 - t);
+  for (int k = 0; k < 3; k++) a->pos[k] = a->link_a[k] + (a->link_b[k] - a->link_a[k]) * t;
+  a->pos[1] += up;
+}
+
+/* Near the start of the link its corners lead to: cross it. */
+static void maybe_link(crowd *c, agent *a) {
+  if (a->status != CW_CROWD_MOVING || a->ncorners <= 0 || !(a->corner_flags[a->ncorners - 1] & STRAIGHTPATH_LINK))
+    return;
+  const float *lc = &a->corners[(a->ncorners - 1) * 3];
+  if (len2(lc[0] - a->pos[0], lc[2] - a->pos[2]) >= a->p.radius * LINK_TRIGGER || begin_link(c, a)) return;
+  a->npath = a->npath ? 1 : 0;
+  a->status = CW_CROWD_WAITING; /* the corridor lost the link: plan again */
+  a->plan_seq = 0;              /* numbered after the phase, on the calling thread */
+}
+
 static void move_range(int b, int e, int w, void *ctx) {
   crowd *c = ctx;
   for (int i = b; i < e; i++) {
     if (!c->alive[i]) continue;
     agent *a = &c->agents[i];
+    a->link_event = 0;
+    if (a->link) {
+      cross_link(c, a);
+      continue;
+    }
     memcpy(a->vel, a->nvel, sizeof a->vel);
-    if (a->vel[0] == 0 && a->vel[2] == 0) continue;
+    if (a->vel[0] == 0 && a->vel[2] == 0) {
+      maybe_link(c, a);
+      continue;
+    }
     cw__poly *path = corridor(c, a);
     if (a->npath <= 0) continue;
     float to[3] = { a->pos[0] + a->vel[0] * c->dt, a->pos[1], a->pos[2] + a->vel[2] * c->dt };
@@ -706,6 +842,7 @@ static void move_range(int b, int e, int w, void *ctx) {
     a->vel[0] = (out[0] - a->pos[0]) / c->dt;
     a->vel[2] = (out[2] - a->pos[2]) / c->dt;
     memcpy(a->pos, out, sizeof a->pos);
+    maybe_link(c, a);
   }
   (void)w;
 }
@@ -767,7 +904,7 @@ void cw_crowd_step(cw_crowd h, float dt) {
   int np = 0, K = c->plan_per_step;
   for (int i = 0; i < c->max; i++) {
     agent *a = &c->agents[i];
-    if (!(a->gen & 1) || a->status != CW_CROWD_WAITING) continue;
+    if (!(a->gen & 1) || a->status != CW_CROWD_WAITING || a->link) continue; /* a crossing plans once it lands */
     int k;
     if (np < K) k = np++;
     else if (a->plan_seq < c->agents[c->plan_list[K - 1]].plan_seq) k = K - 1;
@@ -791,7 +928,7 @@ void cw_crowd_step(cw_crowd h, float dt) {
     c->vx[i] = a->vel[0], c->vz[i] = a->vel[2];
     c->rad[i] = a->p.radius, c->hgt[i] = a->p.height, c->pri[i] = a->p.avoidance_priority;
     c->avoids[i] = a->p.avoidance;
-    moving += a->status == CW_CROWD_MOVING || a->status == CW_CROWD_VELOCITY;
+    moving += a->status == CW_CROWD_MOVING || a->status == CW_CROWD_VELOCITY || a->link;
     waiting += a->status == CW_CROWD_WAITING;
   }
   build_grid(c);
@@ -804,6 +941,28 @@ void cw_crowd_step(cw_crowd h, float dt) {
   c->stats.phase_ms[2] = (float)(t2 - t1);
   /* 4. move */
   cw_parallel_for(c->max, 64, move_range, c);
+  /* in index order on this thread: agents whose corridor lost a link queue a plan; link events */
+  for (int i = 0; i < c->max; i++) {
+    agent *a = &c->agents[i];
+    if (!(a->gen & 1)) continue;
+    if (a->status == CW_CROWD_WAITING && a->plan_seq == 0) a->plan_seq = ++c->seq;
+  }
+  if (c->link_fn)
+    for (int i = 0; i < c->max; i++) {
+      agent *a = &c->agents[i];
+      if (!(a->gen & 1) || !a->link_event) continue;
+      const cw_nav_link *l = cw__nav_link(c->nm, a->event_link);
+      cw_crowd_link_event ev = {
+        .agent = CW_HANDLE_MAKE(cw_crowd_agent, (uint32_t)i + 1, a->gen),
+        .link = a->event_link,
+        .tag = l ? l->tag : 0,
+        .start = { a->link_a[0], a->link_a[1], a->link_a[2] },
+        .end = { a->link_b[0], a->link_b[1], a->link_b[2] },
+        .duration = a->link_dur,
+        .finished = a->link_event == 2,
+      };
+      c->link_fn((cw_crowd){ h.id }, &ev, c->link_user);
+    }
   double t3 = cw__nav_now_ms();
   c->stats.phase_ms[3] = (float)(t3 - t2);
   int pairs = 0;
@@ -845,7 +1004,7 @@ void cw_crowd_debug_draw(cw_crowd h, cw_phys_lines *out, uint32_t flags) {
     if ((flags & CW_NAV_DRAW_PATHS) && a->status == CW_CROWD_MOVING && a->npath > 0) {
       t3_vec3 pts[32];
       float buf[32 * 3];
-      int n = cw__nav_corners(c->nm, a->pos, a->goal, corridor(c, a), a->npath, buf, NULL, 32);
+      int n = cw__nav_corners(c->nm, a->pos, a->goal, corridor(c, a), a->npath, buf, NULL, NULL, 32);
       for (int k = 0; k < n; k++) pts[k] = (t3_vec3){ buf[k * 3], buf[k * 3 + 1] + 0.1f, buf[k * 3 + 2] };
       cw_nav_debug_draw_path(out, pts, n, 0xff8800);
     }

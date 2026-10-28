@@ -2,7 +2,7 @@
 
 {{name}} finds paths over navigation meshes and moves crowds of agents along them. Navmeshes are built by Recast and queried with Detour (both zlib, vendored with small patches); obstacles carve them at run time through DetourTileCache. The crowd is the engine's own C, with ORCA avoidance ported from the RVO2 library. Builds run on the job pool, crowds step on it too, and the results are bit-identical on every host and at every worker count.
 
-Header: [cartwheel/nav.h](header:nav.h). Samples: `nav_demo` (the node types: 500 agents and a gate that closes a doorway) and `nav_perf` (the C API, timed). Tests: `unit_nav`, and the gates described under Determinism below.
+Header: [cartwheel/nav.h](header:nav.h). Samples: `nav_demo` (the node types: 500 agents and a gate that closes a doorway), `nav_links` (jumps up a ledge, a jump pad and a drop) and `nav_perf` (the C API, timed). Tests: `unit_nav`, and the gates described under Determinism below.
 
 ## Two ways in
 
@@ -44,6 +44,30 @@ Games that ask for many paths at once spread them over ticks with [cw_nav_reques
 
 On a dynamic navmesh, [cw_nav_obstacle_add_cylinder](api:cw_nav_obstacle_add_cylinder) and [cw_nav_obstacle_add_box](api:cw_nav_obstacle_add_box) (an axis box, or a box turned about y) queue a change, and so does [cw_nav_obstacle_remove](api:cw_nav_obstacle_remove). [cw_nav_update](api:cw_nav_update) applies the queue. The queue holds 64 changes; when it is full, the next add or remove applies it first, so a level can add hundreds of obstacles (or a game destroy dozens of crates in one tick) without calling update in between. The touched tiles rebuild in parallel and are committed in ascending tile order, which is why Detour's tile cache is patched (below). Crowds notice the change and replan agents whose paths crossed a polygon that is gone.
 
+## Links: jumps, drops and pads
+
+Walking only reaches what the navmesh joins: a ledge higher than `agent_max_climb`, a roof reached by a jump pad, or the floor below a balcony are separate pieces. A link ([cw_nav_link](api:cw_nav_link), Detour's off-mesh connection) joins two points that walking cannot. Paths cross it, and crowd agents traverse it. Add links to the build input with [cw_nav_geom_add_link](api:cw_nav_geom_add_link):
+
+- `start` and `end` lie on the walkable surface (within `radius` across, default the navmesh's `agent_radius`, and `agent_max_climb` up or down). The navmesh keeps `agent_radius` back from walls, so put a ledge jump's ends a little out from the wall and a little in from the top's edge.
+- `bidirectional`: a ledge jump is two-way; a jump pad or a drop is one-way (start to end).
+- `tag`: what kind of link it is, for the game (`CW_NAV_LINK_JUMP`, `DROP`, `PAD`, `LADDER`, `TELEPORT`, or any value from `CW_NAV_LINK_USER` up).
+- `cost`: what crossing costs, in metres of walking (0: its length). A pad that saves a long walk can cost less than its length; a risky drop can cost more. Paths multiply it by the filter's cost for the link's `area`, and a filter that excludes that area keeps paths off the link (a heavy unit that cannot jump, say).
+- `duration` and `arc`: how a crowd agent crosses (seconds, default its length over the agent's speed; the arc's height at the middle).
+
+A zero field takes its default, so a designated initializer is enough. A link's id is its order in the geometry (1, 2, 3...). Links are part of the build input, so they are in the navmesh's bytes, its hash and its saves. An end that misses the navmesh makes the link useless: the build names it in a warning, [cw_nav_link_connected](api:cw_nav_link_connected) says false, and the debug draw paints it red.
+
+[cw_nav_find_path_links](api:cw_nav_find_path_links) and [cw_nav_take_path_links](api:cw_nav_take_path_links) return the waypoints and, for each, the id of the link it starts (0 for walking). A game that moves its own characters (a player-like bot with a character controller) follows the waypoints and, at a waypoint with a link id, does what the link's tag says: jumps toward the next waypoint, waits for the pad to throw it, or steps off.
+
+A crowd agent whose next corner starts a link begins crossing it within 2.25 radii of the corner: its status becomes `CW_CROWD_ON_LINK` and it moves from where it stands to the link's end along the arc, then walks on. [cw_crowd_set_link_callback](api:cw_crowd_set_link_callback) is called at the end of the step, in agent order, for each crossing that began or landed, with the link's id, tag, the start, the end and the duration: the place to start the jump animation or the pad's effect. With `manual_links` set in the agent's params, the agent stops at the link's start and waits until the game has moved its body across and calls [cw_crowd_finish_link](api:cw_crowd_finish_link). A target set during a crossing is planned after landing, and a teleport ends the crossing.
+
+In a scene, a [NavigationLink3D](node:NavigationLink3D) under a [NavigationRegion3D](node:NavigationRegion3D) is baked with it: `start_position` and `end_position` are local to the node, and the other properties are the link's fields. Agents emit `link_entered` (the link's id, its tag and where it lands) and `link_exited`, and their parent is carried along the arc. `nav_links` declares its three links in its scene file:
+
+@include samples/nav_links/assets/main.cwscene#Pad
+
+@include samples/nav_links/main.c#signals
+
+Links are cheap: each is one extra polygon in its tile and a few bytes in the save. A path search treats a link like any other polygon edge. A link cheaper than its length lets the search's distance estimate overestimate, so the path it picks is still valid but may not be the shortest one.
+
 ## Crowds
 
 A crowd ([cw_crowd_new](api:cw_crowd_new)) holds up to `max_agents` agents on one navmesh. An agent has a radius, height, speed, acceleration, a neighbour radius and count, a time horizon and an arrival distance ([cw_crowd_agent_params](api:cw_crowd_agent_params)). Give it a target and step the crowd every fixed tick:
@@ -81,7 +105,7 @@ One fixed-tick hook per tree, at order -50, runs all of this. It bakes, applies 
 
 ## Debug draw
 
-[cw_nav_debug_draw](api:cw_nav_debug_draw), [cw_crowd_debug_draw](api:cw_crowd_debug_draw) and [cw_nav_debug_draw_path](api:cw_nav_debug_draw_path) append line segments to a [cw_phys_lines](api:cw_phys_lines), the same list physics debug drawing uses. Polygon edges are dim and walls bright, obstacles are outlined, agents are circles with their velocity, and paths are polylines through their corners. Regions draw it themselves with `debug_draw`.
+[cw_nav_debug_draw](api:cw_nav_debug_draw), [cw_crowd_debug_draw](api:cw_crowd_debug_draw) and [cw_nav_debug_draw_path](api:cw_nav_debug_draw_path) append line segments to a [cw_phys_lines](api:cw_phys_lines), the same list physics debug drawing uses. Polygon edges are dim and walls bright, obstacles are outlined, links are arcs from start to end (green when paths can use them, red when an end missed the navmesh, with barbs at the end of a one-way link), agents are circles with their velocity, and paths are polylines through their corners. Regions draw it themselves with `debug_draw`.
 
 ## Determinism
 
@@ -91,9 +115,9 @@ Navigation results are part of the simulation, so they follow the engine's rule:
 - **Trigonometry.** The walkable-slope cosine and the box-obstacle rotation go through math hooks that the engine fills with `cw_cos` and `cw_sin` (`0002`).
 - **Memory.** Recast and Detour allocate through `cw_alloc` (tag `CW_MEM_NAV`, thread-safe), compiled in through a hook rather than a function pointer set at run time. Memory comes zeroed, so no uninitialized byte reaches tile data that is hashed or saved (`0003`).
 - **Tile-cache rebuilds.** `dtTileCache::update` rebuilt one tile per call. It is split into a pure build that any thread may run and a commit that runs in tile order (`0004`).
-- **The crowd.** Each phase reads the step's starting state and writes only its own agent. Neighbours are chosen by a total order. Planning order is request order. The SIMD paths use only add, subtract, multiply, divide, square root, compares and bitwise selects, so SSE2, wasm SIMD128, NEON and plain C give the same bits.
+- **The crowd.** Each phase reads the step's starting state and writes only its own agent. Link crossings start and end in the movement phase, and their callbacks run afterwards on the calling thread in agent order. Neighbours are chosen by a total order. Planning order is request order. The SIMD paths use only add, subtract, multiply, divide, square root, compares and bitwise selects, so SSE2, wasm SIMD128, NEON and plain C give the same bits.
 
-The `unit-nav` and `nav-demo` gates pin their results (the suite's checksum, and the demo's crowd hash folded every tick). `node tests/nav-determinism.mjs` runs both on native, Chromium and wcnative at `CW_WORKERS` 0, 1, 3 and the default. A cart has no environment: Chromium's carts get the pool size as `navigator.hardwareConcurrency`, and the GPU sandbox shows wcnative the matching number of online CPUs. Natively, `unit_nav` also rebuilds and reruns at four pool sizes in one process.
+The `unit-nav`, `nav-demo` and `nav-links` gates pin their results (the suite's checksum, and the samples' crowd hashes folded every tick). `nav-links` also runs on the WebGPU axis, so its crowd is compared in Chromium, romdev and wcnative too. `node tests/nav-determinism.mjs` runs all three on native, Chromium and wcnative at `CW_WORKERS` 0, 1, 3 and the default. A cart has no environment: Chromium's carts get the pool size as `navigator.hardwareConcurrency`, and the GPU sandbox shows wcnative the matching number of online CPUs. Natively, `unit_nav` also rebuilds and reruns at four pool sizes in one process.
 
 ## Performance
 

@@ -1,5 +1,5 @@
-// Navigation determinism across hosts AND job-pool sizes: the unit-nav and
-// nav-demo gates (tests/gates.json) on native, Chromium and wcnative, once
+// Navigation determinism across hosts AND job-pool sizes: the unit-nav,
+// nav-demo and nav-links gates (tests/gates.json) on native, Chromium and wcnative, once
 // each at CW_WORKERS=0, 1, 3 and the machine's default. Each gate holds every
 // host to the native run and every run to the same expected hashes, so all
 // twelve host and pool combinations must agree.
@@ -26,7 +26,7 @@ for (const w of ['0', '1', '3', undefined]) {
   if (w === undefined) delete env.CW_WORKERS;
   else env.CW_WORKERS = w;
   console.log(`── CW_WORKERS=${w ?? '(default)'}`);
-  const code = await new Promise((res) => spawn('node', [join(ROOT, 'tests', 'gate.mjs'), 'unit-nav', 'nav-demo',
+  const code = await new Promise((res) => spawn('node', [join(ROOT, 'tests', 'gate.mjs'), 'unit-nav', 'nav-demo', 'nav-links',
     '--hosts', 'native,chromium,wcnative', ...extra], { stdio: 'inherit', env }).on('close', (c) => res(c ?? 1)));
   if (code !== 0) fail++;
 }
