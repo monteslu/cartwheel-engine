@@ -195,6 +195,58 @@ node tests/ik-determinism.mjs
 
 The debug command `ik <model path>` lists a model's modifiers with their last results (`reached`, `in_limit`, foot offsets, pelvis offset), the pose hash and the microseconds the last tick took.
 
+## Ragdolls
+
+[cartwheel/ragdoll.h](api:cw_ragdoll_create) turns a skeleton into physics for a fall: a character knocked down, thrown or killed goes limp, lands on whatever is there, and then either stays down or blends back into animation and gets up. It works on the same [cw_pose](api:cw_pose_bind) the IK layer uses, so any skinned glTF character works.
+
+You describe the body as a list of parts. Each part is one bone with a capsule from the bone's origin to a tip (a child bone, or an offset), and the joint that hangs it from the nearest ancestor part:
+
+- `CW_RAGDOLL_BALL`: a cone around the bone's rest direction plus a twist range about the bone (shoulders, hips, spine, neck).
+- `CW_RAGDOLL_HINGE`: one axis given in model space at rest, with an angle range (knees, elbows). 0 is the rest pose.
+
+Limits are measured from the rest pose, so a ragdoll made from any animated pose has the same anatomy. Bones that are not parts (fingers, the face, twist bones) keep whatever the animation gives them and ride along with their part, so a knocked out face or a clenched fist stays on.
+
+```c
+static const cw_ragdoll_part PARTS[] = {
+  { .bone = "Hips", .tip = "Spine", .radius = 0.14f },
+  { .bone = "Spine", .tip = "Chest", .radius = 0.13f, .joint = CW_RAGDOLL_BALL, .swing = 0.45f, .lower = -0.35f, .upper = 0.35f },
+  { .bone = "UpperLegL", .tip = "LowerLegL", .radius = 0.085f, .joint = CW_RAGDOLL_BALL, .swing = 1.25f, .lower = -0.45f, .upper = 0.45f },
+  { .bone = "LowerLegL", .tip = "FootL", .radius = 0.065f, .joint = CW_RAGDOLL_HINGE, .axis = { 1, 0, 0 }, .lower = -0.05f, .upper = 2.4f },
+  /* ... */
+};
+```
+
+The usual flow:
+
+1. On the fall: `cw_pose_capture`, then [cw_ragdoll_create](api:cw_ragdoll_create) with the model's world transform. The bodies start where the bones are. Give them the blow with [cw_ragdoll_set_velocity](api:cw_ragdoll_set_velocity) (the whole body, plus a spin) and [cw_ragdoll_apply_impulse](api:cw_ragdoll_apply_impulse) (one part, at a point).
+2. Each tick, after the world step: `cw_pose_capture` (the animated pose), [cw_ragdoll_blend_pose](api:cw_ragdoll_blend_pose) with weight 1, `cw_pose_flush`. The skin follows the bodies.
+3. To get up: when [cw_ragdoll_resting](api:cw_ragdoll_resting) says it has settled (or your rules say it is time), read [cw_ragdoll_axis](api:cw_ragdoll_axis) on the chest (its rest forward against world up) to choose a face-up or face-down get-up clip, turn the model so the clip's lying body points the way the ragdoll lies, play the clip and ramp the weight from 1 to 0 over a few tenths of a second. Then [cw_ragdoll_destroy](api:cw_ragdoll_destroy).
+4. The dead: keep the ragdoll until it rests, then copy the pose and destroy it. A still body costs nothing.
+
+A ragdoll lives in the [cw_world3d](guide:physics) it was made in and collides with everything there; its own parts never collide with each other. [cw_ragdoll_apply_force](api:cw_ragdoll_apply_force) on the root part is enough for a tether: a spring that keeps a limp body near a point your rules choose.
+
+### Ragdolls and game rules
+
+Box3D steps are bit-identical across hosts for the same inputs, and the ragdoll code uses only arithmetic and `sqrt`, so the same fall lands the same way everywhere ([cw_ragdoll_hash](api:cw_ragdoll_hash) folds every body; the sample's gate compares it across hosts). Even so, a game whose rules run on their own fixed tick is easier to keep correct when ragdolls are presentation: the rules decide who falls, where the body is and when it gets up, and the ragdoll only shows it. The brawler example works that way: its fights are identical with and without ragdolls.
+
+### Cost
+
+A ragdoll costs CPU only: the skin draws the same triangles whether bones come from a clip or from bodies. The figures below are the whole per-tick ragdoll work (pose captures, the Box3D step of the ragdoll world, writes and blends), measured on the 890M laptop (Ryzen AI 9 HX 370, native, load average about 8):
+
+| Scene | Live ragdolls | Bodies | Per tick |
+|---|---|---|---|
+| a street brawl, everyone knocked down every 4 s (4 fighters, 14 enemies, a cap of 12) | 12 | 168 | 0.34 ms mean |
+
+Resting ragdolls fall asleep and cost almost nothing; a dead body that has settled can be copied into a still pose and destroyed. On a Vega 8 laptop (about half the per-core speed) expect about twice that: 0.7 ms per tick for twelve live ragdolls. Cap the number of live ragdolls in game code (fall back to a keyed clip past the cap); the quality presets do not change ragdolls because they are a CPU cost the GPU presets do not touch.
+
+The sample:
+
+```sh
+node tests/gate.mjs ragdoll
+```
+
+Four robots are knocked over one after another onto a floor, a kerb and a crate. The gate checks that every part bone in the written pose sits on its body (within 2 cm), that hinges stay inside their limits, that one robot lands on the crate, that all four get up, and compares the ragdoll hash per 60-tick window across hosts. Its control stops writing the ragdoll into the pose: the bones stay standing while the bodies lie, and the follow check fails.
+
 ## Determinism and testing
 
 Animation that runs in the fixed step is bit-identical across hosts: time is a double advanced by the fixed `dt`, interpolation uses only arithmetic, `sqrt` and the `cartwheel/math.h` functions (three.c's own mixer calls libm, so {{name}} samples glTF clips itself and lets three.c only render the skin), blends accumulate in insertion order, and values are written through the reflection path. Players and trees keep a running hash of every value they write ([cw_anim_player_hash](api:cw_anim_player_hash), [cw_animtree_hash](api:cw_animtree_hash)); the samples publish one hash per 60-tick window as debug state, and the gates compare them across hosts:

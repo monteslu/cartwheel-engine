@@ -1528,6 +1528,17 @@
     "note": "four skinned robots (RobotExpressive, CC0) walk over stairs and a slope with FootPlacement3D, a TwoBoneIK3D hand grabbing a handle and neck/head LookAtModifier3D following a firefly; the probe holds every planted ankle's height above the ground under it to its animated height above flat ground within 1 cm (feet_ok) and the hand within 1 mm of the handle (reach_ok); pose hashes per 60-tick window for the front robot and the crowd. The control turns foot placement off at frame 10. tests/ik-determinism.mjs runs it at CW_WORKERS 0, 3 and 7"
   },
   {
+    "name": "ragdoll",
+    "app": "ragdoll",
+    "frames": 480,
+    "controlInput": "ragdoll-control.json",
+    "maxGt16": 0.004,
+    "webgpu": { "vsGl": 0.02 },
+    "fields": ["tree.tick", "made", "rested", "got_up", "follow_err", "follow_ok", "hinge_max", "limits_ok", "on_crate", "hash_win"],
+    "expect": { "made": 4, "got_up": 4, "follow_ok": 1, "limits_ok": 1, "on_crate": 1 },
+    "note": "four skinned robots (RobotExpressive, CC0) knocked over one after another (cartwheel/ragdoll.h): capsules per bone with cone, twist and hinge limits, seeded from the idle pose and a blow, onto a floor, a kerb and a crate; each comes to rest and blends back into its idle. The probe holds every part bone of the written pose within 2 cm of its body (follow_ok), every hinge within 0.2 rad of its limits (limits_ok), one robot resting on the crate (on_crate); the ragdoll hash per 60-tick window is compared across hosts. The control stops writing the ragdoll into the pose at frame 10: the bones stay standing while the bodies fall and follow_ok fails"
+  },
+  {
     "name": "physics3d-nodes",
     "app": "physics3d_nodes",
     "frames": 720,

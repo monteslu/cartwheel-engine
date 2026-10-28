@@ -9099,6 +9099,142 @@
    "macros": []
   },
   {
+   "header": "cartwheel/ragdoll.h",
+   "summary": "cartwheel ragdolls: a skeleton (cartwheel/ik.h cw_pose) turned into Box3D\nbodies and joints, seeded from the current pose, and written back onto the\npose so the skinned mesh follows the bodies.\n\nA ragdoll is a list of parts. Each part is one bone (a capsule from the\nbone's origin to a tip: a child bone's origin or an offset), hung from the\nnearest ancestor bone that is also a part by a joint with limits:\n  BALL   a cone around the bone's rest direction (relative to its parent\n         part) and a twist range about the bone (shoulders, hips, neck,\n         spine)\n  HINGE  one axis (knees, elbows) with an angle range; 0 is the rest pose\nLimits are measured from the REST pose (cw_pose rest_*), so a ragdoll\nmade from any animated pose keeps the same anatomy. Bones that are not\nparts (fingers, face, twist bones) keep whatever local transform the pose\nhas, so they ride along with their part.\n\nTypical use (a character knocked down; see docs/guides/animation.md\n\"Ragdolls\"):\n  on the knockdown: r = cw_ragdoll_create(world, &def, &pose, &model_to_world);\n                    cw_ragdoll_set_velocity(r, v, spin); cw_ragdoll_apply_impulse(...)\n  each tick:        cw_world3d_step(world, dt);\n                    cw_pose_capture(&pose);          the animated pose\n                    cw_ragdoll_blend_pose(r, &pose, &model_to_world, w);  w = 1 while limp\n                    cw_pose_flush(&pose);\n  to get up:        when cw_ragdoll_resting(): pick a get-up clip by\n                    cw_ragdoll_axis (face up or down), play it, and ramp\n                    w from 1 to 0 over a few tenths of a second; then\n                    cw_ragdoll_destroy(r).\n\nThe ragdoll lives in the cw_world3d it was made in and collides with\nwhatever is there (ground, props). Its own parts never collide with each\nother (one negative group per ragdoll unless def.group says otherwise).\n\nDETERMINISM. Box3D steps are bit-identical across hosts for the same\ninputs, and everything here is + - * / sqrt on floats, so a ragdoll made\nfrom the same pose and impulses lands the same way on every host\n(cw_ragdoll_hash folds every body transform: a cross-host test compares\nit). Keep ragdolls out of game rules anyway when the rules run on a fixed\ntick of their own: treat them as presentation.\n\nCOST: a part is one body, one capsule and one joint: a 14 part humanoid is\nabout the cost of 14 boxes in a stack while it moves; resting ragdolls\nfall asleep (no cost). docs/guides/animation.md has measured numbers.",
+   "functions": [
+    {
+     "name": "cw_ragdoll_default_def",
+     "signature": "cw_ragdoll_def cw_ragdoll_default_def(const cw_ragdoll_part *parts, int count)",
+     "doc": "The defaults noted above, with parts/count from the arguments.",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_create",
+     "signature": "cw_ragdoll *cw_ragdoll_create(cw_world3d w, const cw_ragdoll_def *def, const cw_pose *pose, const t3_mat4 *model_to_world)",
+     "doc": "Bodies and joints for every part in `w`, placed where the pose's bones are\n(its current model transforms: call cw_pose_capture or\ncw_pose_update_model first) under `model_to_world` (rotation, translation\nand a uniform scale). NULL (logged) when a part's bone or tip is missing\nfrom the pose or the world is invalid. Velocities start at zero.",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_destroy",
+     "signature": "void cw_ragdoll_destroy(cw_ragdoll *r)",
+     "doc": "Removes the bodies and joints and frees the ragdoll. NULL is fine.",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_part_count",
+     "signature": "int cw_ragdoll_part_count(const cw_ragdoll *r)",
+     "doc": "the number of parts (0 for NULL)",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_find",
+     "signature": "int cw_ragdoll_find(const cw_ragdoll *r, const char *bone)",
+     "doc": "part index of a bone name, -1 when it is not a part",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_body",
+     "signature": "cw_body3d cw_ragdoll_body(const cw_ragdoll *r, int part)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_part_transform",
+     "signature": "cw_xform3 cw_ragdoll_part_transform(const cw_ragdoll *r, int part)",
+     "doc": "the part's world transform (its bone's origin and rotation)",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_axis",
+     "signature": "t3_vec3 cw_ragdoll_axis(const cw_ragdoll *r, int part, t3_vec3 rest_model_dir)",
+     "doc": "A model-space direction at REST (e.g. (0,0,1): the way the chest faced in\nthe bind pose) as it points now in world space, carried by the part.\nFace up or face down: the chest's rest forward against world up.",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_set_velocity",
+     "signature": "void cw_ragdoll_set_velocity(cw_ragdoll *r, t3_vec3 v, t3_vec3 angular)",
+     "doc": "Every part moves with linear velocity v plus a spin `angular` (rad/s,\nworld) about the root part: the whole body carried by a blow.",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_apply_impulse",
+     "signature": "int cw_ragdoll_apply_impulse(cw_ragdoll *r, int part, t3_vec3 impulse, t3_vec3 point)",
+     "doc": "An impulse (N*s) at a world point on one part; part < 0: the part whose\ncapsule is nearest the point. Returns the part hit.",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_apply_force",
+     "signature": "void cw_ragdoll_apply_force(cw_ragdoll *r, t3_vec3 force)",
+     "doc": "A force (N) at the root part's centre for this step (keep a ragdoll near a\npoint: a tether, wind).",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_write_pose",
+     "signature": "void cw_ragdoll_write_pose(const cw_ragdoll *r, cw_pose *pose, const t3_mat4 *model_to_world)",
+     "doc": "Write the bodies into the pose: every part bone gets the model rotation of\nits body, the root part's bone also its position; other bones keep their\nlocal transforms. Model transforms are updated; flush to show it.",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_blend_pose",
+     "signature": "void cw_ragdoll_blend_pose(cw_ragdoll *r, cw_pose *pose, const t3_mat4 *model_to_world, float w)",
+     "doc": "Blend the pose toward the ragdoll by w (0 = the pose as it is, 1 = the\nragdoll): local translations lerp, rotations slerp, per bone. Ramping w\ndown while a get-up clip plays hands the body from physics back to\nanimation without a pop. Call it every tick on the freshly captured pose\n(w 0 included) until the ragdoll is destroyed: a part bone that no clip\nwrites would otherwise keep the last ragdoll angle, so a bone that still\nholds exactly what the previous call left gets back the local transform\nit had when the ragdoll was made.",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_resting",
+     "signature": "bool cw_ragdoll_resting(const cw_ragdoll *r, float speed)",
+     "doc": "true when every part moves slower than `speed` (m/s, and rad/s for spin)",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_max_speed",
+     "signature": "float cw_ragdoll_max_speed(const cw_ragdoll *r)",
+     "doc": "the largest speed of any part (m/s)",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_joint_angle",
+     "signature": "float cw_ragdoll_joint_angle(const cw_ragdoll *r, int part)",
+     "doc": "For a HINGE part: its current angle about the hinge (radians, 0 = rest);\nfor a BALL part: the angle between the bone and its rest direction\nrelative to its parent (the swing). 0 for the root. Probes check limits.",
+     "inline": false
+    },
+    {
+     "name": "cw_ragdoll_hash",
+     "signature": "uint32_t cw_ragdoll_hash(const cw_ragdoll *r, uint32_t h)",
+     "doc": "FNV-1a over every body's position and rotation bits, folded into h",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_ragdoll_joint_kind",
+     "doc": "",
+     "decl": "typedef enum { CW_RAGDOLL_BALL, CW_RAGDOLL_HINGE } cw_ragdoll_joint_kind;"
+    },
+    {
+     "name": "cw_ragdoll_part",
+     "doc": "",
+     "decl": "typedef struct cw_ragdoll_part {\n  const char *bone;            /* the bone this body drives */\n  const char *tip;             /* the capsule ends at this bone's origin (usually a child); NULL: tip_offset */\n  const char *attach;          /* hang from this part (a bone name) instead of the nearest part above it in the skeleton:\n                                * for bones outside the chain they belong to (an IK rig's feet under the root); the bone's\n                                * position is written as well as its rotation */\n  t3_vec3 tip_offset;          /* model-space offset from the bone's origin at REST, when tip is NULL */\n  float radius;                /* capsule radius in world metres */\n  float density_scale;         /* times def.density; 0 = 1 */\n  cw_ragdoll_joint_kind joint; /* how it hangs from its parent part (ignored for the root part) */\n  float swing;                 /* BALL: cone half angle, radians (0: no cone limit) */\n  float lower, upper;          /* BALL: twist about the bone; HINGE: angle about axis (radians, 0 = rest) */\n  t3_vec3 axis;                /* HINGE: the hinge axis in model space at rest (e.g. (1,0,0) for a knee) */\n} cw_ragdoll_part;"
+    },
+    {
+     "name": "cw_ragdoll_def",
+     "doc": "",
+     "decl": "typedef struct cw_ragdoll_def {\n  const cw_ragdoll_part *parts; /* parents before children is not required; a part's parent is found by bone */\n  int count;                    /* up to CW_RAGDOLL_MAX_PARTS */\n  float density;                /* kg/m^3 of the capsules: 1000 (water: a human's mass from body-sized capsules) */\n  float friction;               /* contact friction: 0.7 */\n  float restitution;            /* bounce: 0.05 */\n  float joint_friction;         /* N*m resisting every joint's motion (a motor at zero speed): 2; 0 = limp */\n  float linear_damping, angular_damping; /* 0.05, 0.6 */\n  int layer;                    /* collision layer of every part: 0 */\n  uint32_t mask;                /* layers the parts collide with: all */\n  int group;                    /* 0: a fresh negative group per ragdoll (no self collision) */\n} cw_ragdoll_def;"
+    },
+    {
+     "name": "cw_ragdoll",
+     "doc": "",
+     "decl": "typedef struct cw_ragdoll cw_ragdoll;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_RAGDOLL_MAX_PARTS",
+     "doc": ""
+    }
+   ]
+  },
+  {
    "header": "cartwheel/remote.h",
    "summary": "cartwheel remote: the EDITOR side of play-in-editor.\n\nLaunches a game under edit and talks to it over the debug channel\n(cartwheel/debug.h), the same text requests and JSON replies romdev's\nwasm({op:'command'}) uses. The game never runs in the editor's address\nspace, so a crashing game cannot take the editor down: the editor sees the\ncrash as a state change and relaunches.\n\nTransports (same API, same requests):\n  CW_REMOTE_NATIVE  the game executable as a child process. The editor\n                    makes a socketpair; the child inherits one end and gets\n                    CW_REMOTE=fd:N (the channel turns on even without\n                    .debug). Exits and crashes (signals) are detected with\n                    waitpid; the child's stdout/stderr come back as log\n                    lines. Linux only: on Linux the child also dies with\n                    the editor (PR_SET_PDEATHSIG, plus EOF on the socket\n                    quits it); macOS works the same but without the\n                    death signal; Windows is not implemented yet.\n  CW_REMOTE_ROMDEV  the game's .wasc in romdev (HTTP to its tool route,\n                    default http://127.0.0.1:7331, one session per\n                    cw_remote): loadMedia, then each request is\n                    wasm({op:'command'}). romdev runs a cart only when told,\n                    so a worker thread keeps the game's frames flowing at\n                    60 per wall-clock second while it is not paused. A\n                    wasm trap or an evicted host is reported as a crash /\n                    exit like a native one.\nAn editor that is itself a CART has no transport: a cart cannot open a\nsocket or spawn anything, and wasmcart's wc_peer_* (the only network ABI)\nneeds a host that registers a peer to the game, which no host does today\n(romdev has no wc_peer support). cw_remote_launch fails there and says so.\n\nThreading: one cw_remote belongs to one thread (the editor's frame loop);\nthe romdev transport's worker is internal.\n\nUse from a frame loop:\n\n  cw_remote *g = cw_remote_launch(&(cw_remote_desc){ .transport = CW_REMOTE_NATIVE,\n                                                     .exe = \"build/native/games/action2d\",\n                                                     .start_paused = true });\n  cw_remote_send(g, \"tree\", 0, on_tree, ui);     // async; on_tree runs inside pump\n  ... every frame: cw_remote_pump(g);\n  if (cw_remote_state_of(g) == CW_REMOTE_CRASHED) show(cw_remote_status(g)), cw_remote_relaunch(g);\n\nThe request language is the debug channel's (`help` lists a game's\ncommands). The play-in-editor set: status, pause [1|0], resume,\nstep <ticks>, tree [node] [depth], node <node>, changes <revision>,\nget <node> <prop...>, set <node> <prop> <value>, props, methods, call,\nemit, spawn, free, change_scene, reload_scene, reload <res path...>,\nscreenshot <world|ui|debug|all> [scale] + screenshot_get, record ...,\nstats, phys, quit. Nodes are addressed as #uid (stable) or by path.",
    "functions": [
