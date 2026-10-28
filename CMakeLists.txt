@@ -54,7 +54,7 @@ list(APPEND CW_CORE_SRCS src/nav/navmesh.cpp ${CW_RECAST_SRCS})
 set_source_files_properties(src/nav/navmesh.cpp ${CW_RECAST_SRCS} PROPERTIES
   COMPILE_OPTIONS "-fno-exceptions;-fno-rtti" COMPILE_DEFINITIONS "${CW_RECAST_DEFS}")
 set_source_files_properties(${CW_RECAST_SRCS} PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-fno-rtti;-O2;-w")
-set(CW_PLATFORM_SRCS src/platform/sdl_common.c src/platform/gpu.c src/platform/pixel.c)
+set(CW_PLATFORM_SRCS src/platform/sdl_common.c src/platform/gpu.c src/platform/gpu_read.c src/platform/pixel.c)
 if(CW_CART)
   list(APPEND CW_PLATFORM_SRCS src/platform/cart.c)
 else()

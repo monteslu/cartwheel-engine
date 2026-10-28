@@ -760,6 +760,13 @@ void cw__wgpu_frame_end(bool present) {
   G.frame_tex = NULL;
 }
 
+/* Deliver the asynchronous results that have completed (natively: a wait
+ * that polls, such as cw_gpu_read_wait). */
+void cw__wgpu_process_events(void);
+void cw__wgpu_process_events(void) {
+  if (G.instance) wgpuInstanceProcessEvents(G.instance);
+}
+
 /* Native: wait until the GPU has finished everything submitted (perf
  * measurements). A no-op in carts, which never wait. */
 void cw__wgpu_wait_idle(void) {

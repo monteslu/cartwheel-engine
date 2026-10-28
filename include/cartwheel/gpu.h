@@ -87,6 +87,42 @@ uint32_t cw_gpu_error_count(void);
  * own background before any pass does instead of glClear. */
 void cw_gpu_clear_window(float r, float g, float b, float a);
 
+struct cw_rt; /* cartwheel/pipeline.h */
+/* Read the window back, on either backend. cw_gpu_read_window asks for the
+ * region (x, y, w, h: window pixels, top-left origin) of the picture this
+ * frame puts in the window; the read is taken at the end of the frame, after
+ * everything has drawn (the UI, a pixel_scale or render resolution upscale),
+ * and returns a ticket (0: a bad region, or eight reads already waiting).
+ * cw_gpu_read_result copies the pixels out once they have arrived, as
+ * top-down RGBA8 (w * h * 4 bytes): 1 (the ticket is spent), 0 (not yet:
+ * ask again next frame) or -1 (an unknown ticket, or a read that failed).
+ * On GL the pixels arrive at the end of the frame they were asked in, so
+ * they can be taken from the next frame on; on WebGPU a frame or more later
+ * (a cart never waits for the GPU). Reads made in the same frame arrive in
+ * the order they were asked. A read is a stall on GL and costs a copy on
+ * WebGPU: for checks and tools, not for every frame of a game. */
+uint32_t cw_gpu_read_window(int x, int y, int w, int h);
+/* The same, taken now instead of at the end of the frame: what has been drawn
+ * to the window so far (between two passes, to compare them). */
+uint32_t cw_gpu_read_window_now(int x, int y, int w, int h);
+/* Take a read's pixels (top-down RGBA8) once they arrived: 1, 0 (not yet) or -1 (above). */
+int cw_gpu_read_result(uint32_t ticket, void *rgba);
+/* A read of a 3D pipeline target (cw_rt_new; a cw_target_rt cannot be read): the
+ * region (x, y, w, h, top-left origin) as it is now, top-down RGBA8 like the window's.
+ * Taken at once; it arrives as the window's reads do. */
+uint32_t cw_gpu_read_rt(const struct cw_rt *rt, int x, int y, int w, int h);
+/* cw_gpu_read_result, but natively it waits for a WebGPU read to arrive (a tool or an
+ * editor measuring a picture). On GL the read is there already; a cart on WebGPU
+ * cannot wait (0 until a later frame). */
+int cw_gpu_read_wait(uint32_t ticket, void *rgba);
+/* Give up a read: its slot is free again (at once, or when it lands). */
+void cw_gpu_read_drop(uint32_t ticket);
+
+/* Wait until the GPU has finished all the work submitted so far (a perf
+ * build timing whole frames): natively on both backends, and in a cart on
+ * GL (a one-pixel read). A cart on WebGPU cannot wait: false, nothing done. */
+bool cw_gpu_finish(void);
+
 #ifdef __cplusplus
 }
 #endif

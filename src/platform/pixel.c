@@ -536,7 +536,13 @@ void cw__pixel_ui_begin(void) {
   scene_used = false;
 }
 
+static void pixel_frame_end(void);
+void cw__gpu_reads_frame_end(void); /* gpu_read.c */
 void cw__pixel_frame_end(void) {
+  pixel_frame_end();
+  cw__gpu_reads_frame_end(); /* the composed picture: window reads take it now */
+}
+static void pixel_frame_end(void) {
   cw_platform *p = &cw__plat;
   int t = target;
   target = T_OUT;
