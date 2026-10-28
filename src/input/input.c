@@ -307,84 +307,6 @@ cw_input_context cw_input_set_context(cw_input_context c) {
 }
 cw_input_context cw_input_context_now(void) { return I.ctx; }
 
-/* ── touch controls ────────────────────────────────────────────────── */
-
-static int add_control(cw__touch_control c) {
-  cw__input_ensure_init();
-  if (I.ncontrols >= CW_INPUT_MAX_TOUCH_CONTROLS) {
-    cw_error("input: more than %d touch controls", CW_INPUT_MAX_TOUCH_CONTROLS);
-    return -1;
-  }
-  I.controls[I.ncontrols] = c;
-  return I.ncontrols++;
-}
-int cw_touch_add_button(float x, float y, float w, float h) {
-  return add_control((cw__touch_control){ .x = x, .y = y, .w = w, .h = h });
-}
-int cw_touch_add_stick(float x, float y, float w, float h, float radius, bool floating) {
-  return add_control((cw__touch_control){ .stick = true, .floating = floating, .x = x, .y = y, .w = w, .h = h,
-                                          .radius = radius > 0 ? radius : 1 });
-}
-void cw_touch_set_rect(int id, float x, float y, float w, float h) {
-  if (!I.init || id < 0 || id >= I.ncontrols) return;
-  cw__touch_control *c = &I.controls[id];
-  c->x = x, c->y = y, c->w = w, c->h = h;
-}
-void cw_touch_clear(void) {
-  if (!I.init) return;
-  I.ncontrols = 0;
-  for (int i = 0; i < CW_MAX_TOUCHES; i++) I.touch_owner[i] = -1;
-}
-bool cw_touch_control_active(int id) { return I.init && id >= 0 && id < I.ncontrols && I.controls[id].active; }
-cw_vec2 cw_touch_stick_value(int id) {
-  return I.init && id >= 0 && id < I.ncontrols ? I.controls[id].value : (cw_vec2){ 0, 0 };
-}
-cw_vec2 cw_touch_stick_center(int id) {
-  if (!I.init || id < 0 || id >= I.ncontrols) return (cw_vec2){ 0, 0 };
-  return I.controls[id].center;
-}
-
-static void touch_update(const cw_raw_input *raw) {
-  for (int c = 0; c < I.ncontrols; c++) {
-    cw__touch_control *tc = &I.controls[c];
-    tc->active = tc->tapped = false;
-    tc->value = (cw_vec2){ 0, 0 };
-    if (!tc->stick || !tc->floating) tc->center = (cw_vec2){ tc->x + tc->w * 0.5f, tc->y + tc->h * 0.5f };
-  }
-  for (int i = 0; i < CW_MAX_TOUCHES; i++) {
-    const cw_touch_state *t = &raw->touches[i];
-    bool down = t->active || t->tapped;
-    bool began = t->tapped || (t->active && !I.touch_prev_active[i]);
-    if (began) {
-      I.touch_owner[i] = -1;
-      for (int c = 0; c < I.ncontrols; c++) {
-        cw__touch_control *tc = &I.controls[c];
-        if (t->x >= tc->x && t->x < tc->x + tc->w && t->y >= tc->y && t->y < tc->y + tc->h) {
-          I.touch_owner[i] = (int8_t)c;
-          if (tc->stick && tc->floating) tc->center = (cw_vec2){ t->x, t->y };
-          break;
-        }
-      }
-    }
-    int c = I.touch_owner[i];
-    if (down && c >= 0 && c < I.ncontrols) {
-      cw__touch_control *tc = &I.controls[c];
-      if (!tc->active) { /* the lowest touch slot steers */
-        tc->active = true;
-        if (tc->stick) {
-          float dx = (t->x - tc->center.x) / tc->radius, dy = (t->y - tc->center.y) / tc->radius;
-          float l = sqrtf(dx * dx + dy * dy);
-          if (l > 1) dx /= l, dy /= l;
-          tc->value = (cw_vec2){ dx, dy };
-        }
-      }
-      if (t->tapped) tc->tapped = true;
-    }
-    if (!t->active) I.touch_owner[i] = -1;
-    I.touch_prev_active[i] = t->active;
-  }
-}
-
 /* ── evaluation ────────────────────────────────────────────────────── */
 
 static int16_t eval_binding(int player, cw_binding b, const cw_raw_input *raw, bool *sub) {
@@ -432,7 +354,7 @@ static void capture_update(const cw_raw_input *raw);
 
 void cw_input_frame_begin(const cw_raw_input *raw) {
   if (!I.init) return;
-  touch_update(raw);
+  cw__touch_update(raw);
   for (int p = 0; p < CW_INPUT_MAX_PLAYERS; p++) {
     for (int a = 0; a < I.count; a++) {
       const cw__action_def *d = &I.actions[a];

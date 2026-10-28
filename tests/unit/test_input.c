@@ -313,6 +313,156 @@ static void test_touch(void) {
   CHECK(!cw_action_pressed(1, fire));
 }
 
+static bool near2(cw_vec2 a, float x, float y) { return fabsf(a.x - x) < 1e-3f && fabsf(a.y - y) < 1e-3f; }
+
+/* Land a thumb at (lx, ly), slide it to (mx, my), lift it, then land a second
+ * one at (sx, sy): true when the stick's centre stayed at its home throughout
+ * (what the player sees: the ring does not jump to where the thumb landed). */
+static bool home_stays(int stick, float lx, float ly, float mx, float my, float sx, float sy) {
+  cw_vec2 home = cw_touch_home(stick);
+  bool same = near2(cw_touch_stick_center(stick), home.x, home.y);
+  raw.touches[0] = (cw_touch_state){ .active = true, .tapped = true, .x = lx, .y = ly };
+  run_frame(-1, 1);
+  same = same && cw_touch_control_active(stick) && near2(cw_touch_stick_center(stick), home.x, home.y);
+  raw.touches[0].x = mx, raw.touches[0].y = my;
+  run_frame(-1, 1);
+  same = same && near2(cw_touch_stick_center(stick), home.x, home.y);
+  raw.touches[0].active = false;
+  run_frame(-1, 1);
+  same = same && !cw_touch_control_active(stick) && near2(cw_touch_stick_center(stick), home.x, home.y);
+  raw.touches[1] = (cw_touch_state){ .active = true, .tapped = true, .x = sx, .y = sy };
+  run_frame(-1, 1);
+  same = same && cw_touch_control_active(stick) && near2(cw_touch_stick_center(stick), home.x, home.y);
+  raw.touches[1].active = false;
+  run_frame(-1, 1);
+  return same;
+}
+
+/* The anchored controls: a thumbstick with a home that stays put, sizes in
+ * touch units that follow the area, round buttons, the overlay's switch. */
+static void test_thumbstick(void) {
+  fresh();
+  cw_action right = cw_action_add("right", 0.5f), down = cw_action_add("down", 0.5f), jump = cw_action_add("jump", 0.5f);
+  cw_touch_set_area(0, 0, 960, 540); /* 540 high: one touch unit is one window unit */
+  int stick = cw_touch_add_thumbstick(NULL);
+  int btn = cw_touch_add_round_button(&(cw_touch_button_desc){ .label = "JUMP" });
+  CHECK(cw_action_bind_text(right, "touch:0.right") && cw_action_bind_text(down, "touch:0.down"));
+  CHECK(cw_action_bind_text(jump, "touch:1"));
+  CHECK(fabsf(cw_touch_unit() - 1) < 1e-6f);
+  /* the defaults: home 150,140 from the bottom left, throw 70; the button 110,110 from the bottom right, radius 48 */
+  CHECK(near2(cw_touch_home(stick), 150, 400));
+  CHECK(fabsf(cw_touch_radius(stick) - 70) < 1e-4f);
+  CHECK(near2(cw_touch_home(btn), 850, 430));
+  CHECK(fabsf(cw_touch_radius(btn) - 48) < 1e-4f);
+
+  /* a thumb landing anywhere in the zone steers relative to HOME */
+  raw.touches[0] = (cw_touch_state){ .active = true, .tapped = true, .x = 185, .y = 400 };
+  run_frame(right, 1);
+  CHECK(cw_touch_control_active(stick));
+  CHECK(near2(cw_touch_stick_center(stick), 150, 400));
+  CHECK(fabsf(cw_action_raw_strength(0, right) - 0.5f) < 1e-3f); /* 35 / 70, not 0 as a floating stick reads */
+  raw.touches[0].active = false;
+  run_frame(right, 1);
+  /* far corner of the zone: still the stick (2.4 x 70 = 168 past home), clamped to full */
+  raw.touches[0] = (cw_touch_state){ .active = true, .tapped = true, .x = 310, .y = 535 };
+  run_frame(right, 1);
+  CHECK(cw_touch_control_active(stick));
+  cw_vec2 v = cw_touch_stick_value(stick);
+  CHECK(fabsf(sqrtf(v.x * v.x + v.y * v.y) - 1) < 1e-4f && v.x > 0 && v.y > 0);
+  FOLD(v);
+  raw.touches[0].active = false;
+  run_frame(right, 1);
+  /* just outside the zone: nobody's (the rest of the screen is the game's) */
+  raw.touches[0] = (cw_touch_state){ .active = true, .tapped = true, .x = 330, .y = 400 };
+  run_frame(right, 1);
+  CHECK(!cw_touch_control_active(stick));
+  raw.touches[0].active = false;
+  run_frame(right, 1);
+
+  /* the gate's claim: the home does not move, wherever in the zone the thumb lands */
+  CHECK(home_stays(stick, 20, 520, 260, 300, 300, 250));
+  /* the control that must fail: the older floating feel moves the ring to the thumb */
+  int floating = cw_touch_add_thumbstick(&(cw_touch_stick_desc){ .corner = CW_TOUCH_TOP_RIGHT, .floating = true });
+  CHECK(near2(cw_touch_home(floating), 810, 140));
+  CHECK(!home_stays(floating, 900, 40, 860, 200, 700, 100));
+  raw.touches[0] = (cw_touch_state){ .active = true, .tapped = true, .x = 900, .y = 40 };
+  run_frame(right, 1);
+  CHECK(near2(cw_touch_stick_center(floating), 900, 40) && near2(cw_touch_stick_value(floating), 0, 0));
+  raw.touches[0].active = false;
+  run_frame(right, 1);
+  CHECK(near2(cw_touch_stick_center(floating), 810, 140)); /* let go: the ring is home again */
+
+  /* a button inside the stick's zone takes the touch (nearer, more specific) */
+  int inner = cw_touch_add_round_button(&(cw_touch_button_desc){ .corner = CW_TOUCH_BOTTOM_LEFT, .x = 290, .y = 60, .radius = 20 });
+  raw.touches[0] = (cw_touch_state){ .active = true, .tapped = true, .x = 290, .y = 480 };
+  run_frame(right, 1);
+  CHECK(cw_touch_control_active(inner) && !cw_touch_control_active(stick));
+  raw.touches[0].active = false;
+  run_frame(right, 1);
+  /* off: claims nothing; the zone under it is the stick's again */
+  cw_touch_set_enabled(inner, false);
+  raw.touches[0] = (cw_touch_state){ .active = true, .tapped = true, .x = 290, .y = 480 };
+  run_frame(right, 1);
+  CHECK(!cw_touch_control_active(inner) && cw_touch_control_active(stick));
+  raw.touches[0].active = false;
+  run_frame(right, 1);
+
+  /* the round button: within 1.25 x its radius counts (thumbs miss), and it is an action */
+  raw.touches[2] = (cw_touch_state){ .active = true, .tapped = true, .x = 850 + 55, .y = 430 };
+  seen s = run_frame(jump, 1);
+  CHECK_EQ_INT(s.jp, 1);
+  raw.touches[2].active = false;
+  run_frame(jump, 1);
+  raw.touches[2] = (cw_touch_state){ .active = true, .tapped = true, .x = 850 + 62, .y = 430 };
+  s = run_frame(jump, 1);
+  CHECK_EQ_INT(s.jp, 0);
+  raw.touches[2].active = false;
+  run_frame(jump, 1);
+
+  /* sizes follow the area's shorter side, laid out again on the next frame (a resize, a turn of the phone) */
+  cw_touch_set_area(0, 0, 1920, 1080);
+  run_frame(right, 1);
+  CHECK(fabsf(cw_touch_unit() - 2) < 1e-6f);
+  CHECK(near2(cw_touch_home(stick), 300, 800));
+  CHECK(fabsf(cw_touch_radius(stick) - 140) < 1e-3f);
+  CHECK(near2(cw_touch_home(btn), 1700, 860));
+  CHECK(home_stays(stick, 40, 1040, 520, 600, 600, 500));
+  cw_touch_set_area(0, 0, 1080, 1920); /* portrait: the width is the shorter side */
+  run_frame(right, 1);
+  CHECK(fabsf(cw_touch_unit() - 2) < 1e-6f && near2(cw_touch_home(stick), 300, 1640));
+  cw_touch_set_area(100, 50, 1280, 720); /* an inset area (a notch, one player's half) */
+  run_frame(right, 1);
+  CHECK(near2(cw_touch_home(stick), 100 + 150 * (720 / 540.0f), 50 + 720 - 140 * (720 / 540.0f)));
+  /* a throw in touch units, scaled with the rest */
+  cw_touch_set_radius(stick, 100);
+  CHECK(fabsf(cw_touch_radius(stick) - 100 * (720 / 540.0f)) < 1e-3f);
+  /* the whole window again: follows cw_window_size */
+  cw_touch_set_area(0, 0, 0, 0);
+  run_frame(right, 1);
+  int ww, wh;
+  cw_window_size(&ww, &wh);
+  if (ww > 0 && wh > 0) CHECK(fabsf(cw_touch_unit() - (float)(ww < wh ? ww : wh) / 540.0f) < 1e-5f);
+  /* re-placing: a left-handed layout puts the stick bottom right */
+  cw_touch_set_area(0, 0, 960, 540);
+  cw_touch_set_thumbstick(stick, &(cw_touch_stick_desc){ .corner = CW_TOUCH_BOTTOM_RIGHT });
+  CHECK(near2(cw_touch_home(stick), 810, 400));
+  cw_touch_set_rect(stick, 0, 0, 10, 10); /* an anchored control ignores set_rect */
+  CHECK(near2(cw_touch_home(stick), 810, 400));
+
+  /* the overlay: AUTO shows once a touch lands (a desktop is not touch-first), a pad press hides it */
+  CHECK(cw_touch_overlay_visible()); /* touches landed above */
+  raw.pads[0].pressed = 1;
+  run_frame(right, 1);
+  CHECK(cw_platform_touch_primary() || !cw_touch_overlay_visible());
+  cw_touch_set_overlay(CW_TOUCH_OVERLAY_ALWAYS);
+  CHECK(cw_touch_overlay_visible());
+  cw_touch_set_overlay(CW_TOUCH_OVERLAY_OFF);
+  CHECK(!cw_touch_overlay_visible());
+  cw_touch_set_overlay(CW_TOUCH_OVERLAY_AUTO);
+  /* bad ids */
+  CHECK(near2(cw_touch_home(99), 0, 0) && cw_touch_radius(-1) == 0);
+}
+
 /* random input over frames with 0..3 ticks; replaying the recording must give
  * the same tick snapshots, tick by tick, and the same hash */
 static void test_record_replay(void) {
@@ -432,4 +582,4 @@ static void test_aim(void) {
 
 CW_TEST_SUITE("input", { "tick_latch", test_tick_latch }, { "strength_vector", test_strength_and_vector },
               { "players", test_players }, { "text", test_text }, { "capture", test_capture },
-              { "touch", test_touch }, { "record_replay", test_record_replay }, { "aim", test_aim })
+              { "touch", test_touch }, { "thumbstick", test_thumbstick }, { "record_replay", test_record_replay }, { "aim", test_aim })
