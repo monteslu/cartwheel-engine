@@ -2936,6 +2936,37 @@
     "note": "volumetric fog after the analytic segment: the spot light swung toward the window, the grid rebuilt from no history. Control: the first segment (the spot pointing down)"
   },
   {
+    "name": "fog-split",
+    "app": "fog_shafts_split",
+    "frames": 40,
+    "maxGt16": 0.003,
+    "fields": [
+      "fog.seg",
+      "vfog.active",
+      "vfog.grid_x",
+      "vfog.grid_y",
+      "vfog.grid_z",
+      "vfog.lights",
+      "vfog.shadowed",
+      "vfog.volumes"
+    ],
+    "expect": {
+      "fog.seg": 0,
+      "vfog.active": 1,
+      "vfog.grid_x": 80,
+      "vfog.grid_y": 45,
+      "vfog.grid_z": 64,
+      "vfog.shadowed": 2
+    },
+    "controlEnv": {
+      "CW_TEST_VFOG_ONE_GRID": "1"
+    },
+    "webgpu": {
+      "vsGl": 0.003
+    },
+    "note": "volumetric fog in four-way split screen, four cameras round the room: each view has a grid of its own sized to its share of the screen (80 x 45 cells in a quarter view at High, as many pixels a cell as one full view's 160 x 90), lit, shadowed and reprojected for its own camera; GL and WebGPU draw the same picture. Control CW_TEST_VFOG_ONE_GRID=1: the views share one full-size grid as before, which blends each view's fog with the other views' (ghost shafts from another camera) and on WebGPU lights every view with the last view's uniforms"
+  },
+  {
     "name": "fog-flare",
     "script": "tests/fog-flare.mjs",
     "note": "volumetric fog heals from a broken cell: an infinity put into a quarter of the grid for three frames (CW_TEST_VFOG_POISON) fades out with the temporal blend (143 frames later the picture matches the clean run, GL and WebGPU) and shows while it lasts; a spot light flaring to 100000 and a light at a NaN position leave no trace. Control: CW_TEST_VFOG_UNBOUNDED=1 (no bound) stays broken and must fail"

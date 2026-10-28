@@ -184,9 +184,15 @@ static void captures(gi_tree *g, cw_pass_ctx *ctx);
 static void probes_exec(cw_pass_ctx *ctx, void *user) {
   (void)user;
   gi_tree *g = cw__gi_tree(ctx->tree);
-  g->stats.captures = 0;
-  g->stats.probes_bound_max = g->bound_max;
-  g->bound_max = 0;
+  /* a splitscreen frame runs this once per view: the probe grid and the probe captures are the world's, not a
+   * view's, so only the frame's first view updates them (the others would spend the frame's budget again and age
+   * EVERY_N_FRAMES probes once per view); the G-buffer below is each view's own */
+  bool later_view = ctx->pipeline && ctx->pipeline->view_i > 0;
+  if (!later_view) {
+    g->stats.captures = 0;
+    g->stats.probes_bound_max = g->bound_max;
+    g->bound_max = 0;
+  }
   if (!ctx->renderer || !ctx->scene3d) return;
   if (g->hook_renderer != ctx->renderer) {
     cw_shading_part(ctx->renderer, "gi", cw__gi_fill, g);
@@ -206,8 +212,10 @@ static void probes_exec(cw_pass_ctx *ctx, void *user) {
    * scene's objects) */
   cw__gi_tag(g, &ctx->scene3d->base);
   /* the grid first: probes captured after it see its bounce light */
-  cw__gi_grids_exec(g, ctx);
-  captures(g, ctx);
+  if (!later_view) {
+    cw__gi_grids_exec(g, ctx);
+    captures(g, ctx);
+  }
   /* the screen-space passes' G-buffer, after this frame's captures (ssr.c) */
   int hw = (ctx->width + 1) / 2, hh = (ctx->height + 1) / 2;
   bool want = ctx->settings->ssr || ctx->settings->ssgi;
@@ -217,7 +225,7 @@ static void probes_exec(cw_pass_ctx *ctx, void *user) {
    * renders came first: with the objects a probe's cull_mask hides, or the surfaces the
    * G-buffer leaves out, missing from them. Arm them again, so the frame's own render draws
    * them with everything in. (A later view of a split screen keeps the first view's maps.) */
-  if ((g->stats.captures || g->stats.grid_updates || g->gbuf_ok) && !cw__render3d_shadows_kept(ctx->tree))
+  if (((!later_view && (g->stats.captures || g->stats.grid_updates)) || g->gbuf_ok) && !cw__render3d_shadows_kept(ctx->tree))
     t3_renderer_shadow_needs_update(ctx->renderer);
 }
 
