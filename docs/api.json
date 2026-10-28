@@ -9135,7 +9135,7 @@
     {
      "name": "cw_ragdoll_body",
      "signature": "cw_body3d cw_ragdoll_body(const cw_ragdoll *r, int part)",
-     "doc": "",
+     "doc": "the part's physics body (cartwheel/physics3d.h), to read its velocity or\npush it directly; a zero handle for a part out of range or a NULL ragdoll",
      "inline": false
     },
     {
