@@ -36,6 +36,9 @@
 //       regenerates one table (what `ninja <table>_programs` runs)
 //   node tools/programs.mjs --all-tables
 //       regenerates every table the build knows (`ninja programs`)
+//   Every regeneration then compiles the table's WebGPU programs with Dawn's WGSL compiler (Tint) on
+//   lavapipe (tools/lib/wgsl-check.mjs) and fails, naming the state and Tint's message, on any rejection
+//   (--no-wgsl-check skips it).
 //
 // --extend adds project-owned extensions, including composed x<project>_csm
 // states, without copying project code into the engine. The module filename
@@ -55,6 +58,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { enterGpuSandbox } from './lib/gpu-sandbox.mjs';
 import { testEnv, wgpuPin } from './lib/wgpu-pin.mjs';
+import { checkWgsl } from './lib/wgsl-check.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -135,6 +139,12 @@ function regenerate(manifest, logs = []) {
   console.log(`${name}: regenerating (${dirname(manifest)})`);
   const r = spawnSync(process.execPath, args, { stdio: 'inherit' }); // the capture runs on three.c's mock GPU: no device
   if (r.status !== 0) throw new Error(`${name}: gen-project-table failed (${r.signal || 'exit ' + r.status})`);
+  // the captures ran on a mock GPU, which takes any WGSL: compile each WebGPU program with Dawn's own compiler
+  // (Tint) as a host will, and fail here, not on the first WebGPU draw (tools/lib/wgsl-check.mjs)
+  if (!argv.includes('--no-wgsl-check')) {
+    const c = checkWgsl(cache);
+    console.log(`${name}: Tint accepts all ${c.checked + c.cached} WebGPU programs (${c.checked} compiled)`);
+  }
   // the capture cache sits in the build tree; the generated C beside the manifest, checked in
   rmSync(join(dirname(manifest), '.t3-captures'), { recursive: true, force: true });
 }
