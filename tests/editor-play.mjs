@@ -1,7 +1,8 @@
 // Play-in-editor gate (the editor side): "Edit a
 // property in a running game; pause, step, inspect", on both game transports
 // from the native editor, scripted and by pointer, plus the cart editor's
-// clear "not available".
+// clear "not available" (no longer tested: the editor draws with GL itself,
+// GL_ONLY, so it has no dual cart, and there is no GL-only cart).
 //
 //  1. scripted (ed protocol): build/native/tests/editor_play_test drives the
 //     native editor over its debug channel while the editor plays
@@ -13,16 +14,12 @@
 //     Relaunch. Control rects come from the editor itself (`ed play.widgets`)
 //     on the same session cut short, so the script follows the real layout.
 //     Control: the same moves without presses MUST fail every effect check.
-//  3. cart editor (romdev): Play has no transport there; play.start must fail
-//     saying so and the Game panel must show the reason. Control: the native
-//     editor shows no such banner.
 //   node tests/editor-play.mjs [native|romdev ...]     ROMDEV_PORT (default 7331)
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
-import { wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -31,9 +28,8 @@ mkdirSync(OUT, { recursive: true });
 const which = process.argv.slice(2).length ? process.argv.slice(2) : ['native', 'romdev'];
 const driver = join(ROOT, 'build/native/tests/editor_play_test');
 const editor = join(ROOT, 'build/native/editor/editor');
-const editorCart = join(ROOT, 'build/cart/carts/editor.wasc');
 const project = join(ROOT, 'samples/play_demo/assets');
-for (const p of [driver, editor, join(ROOT, 'build/native/samples/play_demo'), ...(which.includes('romdev') ? [editorCart, join(ROOT, 'build/cart/carts/play_demo.wasc')] : [])])
+for (const p of [driver, editor, join(ROOT, 'build/native/samples/play_demo'), ...(which.includes('romdev') ? [join(ROOT, 'build/cart-wgpu/carts/play_demo.wasc')] : [])])
   if (!existsSync(p)) { console.error(`missing ${p}: run scripts/build.sh`); process.exit(1); }
 
 let fail = 0;
@@ -221,37 +217,5 @@ for (const t of which) {
   if (ctlEffects.some(Boolean)) bad(`CONTROL PASSED: editor-play pointer ${t} without presses still shows an effect: ${JSON.stringify(ctlEffects)} ${JSON.stringify(cst).slice(0, 200)}`);
   else good(`editor-play pointer ${t} control: the same moves without presses do nothing (no game, no edit, no history)`);
 }
-
-// ── 3. the cart editor has no transport, and says so ─────────────────────
-if (which.includes('romdev')) {
-  const port = process.env.ROMDEV_PORT || 7331;
-  const S = `cw-editor-play-${process.pid}`;
-  const call = async (tool, a) => {
-    const res = await fetch(`http://127.0.0.1:${port}/tool/${tool}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-romdev-session': S }, body: JSON.stringify(a) });
-    const txt = await res.text();
-    try { return JSON.parse(txt); } catch { return { raw: txt }; }
-  };
-  const cmd = async (text) => (await call('wasm', { op: 'command', text })).reply;
-  await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: editorCart, deterministicSeed: 1 });
-  await call('frame', { op: 'step', frames: 5 });
-  const start = await cmd('ed play.start');
-  const status = await cmd('ed play.status');
-  await cmd('ed panel.show id=game');
-  await call('frame', { op: 'step', frames: 3 });
-  const widgets = await cmd('ed play.widgets');
-  await call('frame', { op: 'screenshot', path: join(OUT, 'cart-editor.png') });
-  await call('host', { op: 'shutdown' });
-  const why = /not available in the cart editor/;
-  if (start?.ok !== false || !why.test(start?.error || '')) bad('cart editor: play.start must fail saying Play is not available there: ' + JSON.stringify(start));
-  else good('cart editor: play.start refuses and says why');
-  if (status?.available !== false || !why.test(status?.reason || '')) bad('cart editor: play.status must say unavailable: ' + JSON.stringify(status));
-  if (!why.test(widgets?.game?.banner || '')) bad('cart editor: the Game panel must show the reason: ' + JSON.stringify(widgets?.game));
-  else good('cart editor: the Game panel shows the reason (no transport; a romdev peer bridge is undecided)');
-  // control: the native editor shows no such banner and Play is available there
-  const n = runEditor('banner-control', 'native', [], 5, ['ed play.status', 'ed play.widgets']);
-  if (n[0].available !== true || why.test(n[1].game.banner)) bad('CONTROL PASSED: the native editor also reports Play unavailable');
-  else good('cart editor control: the native editor has Play and no banner');
-}
-
 console.log(fail ? `editor-play: ${fail} failures` : 'ok   editor-play');
 process.exit(fail ? 1 : 0);

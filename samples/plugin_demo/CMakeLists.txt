@@ -1,7 +1,7 @@
 # A cartwheel project. The engine tree builds it (any target, any toolchain):
 #   node <cartwheel>/tools/cwproject.mjs build <this directory> [native|cart]
 # configures cartwheel with -DCW_PROJECT_DIR=<this directory> -DCW_ENGINE_ONLY=ON
-# into .cwbuild/<target>/, which adds this file as a subdirectory, so all it
+# into .cwbuild/native/ or .cwbuild/cart-wgpu/ (the dual cart), which adds this file as a subdirectory, so all it
 # does is declare the game with cw_add_app (cartwheel's CMakeLists.txt):
 # natively an executable (+ <app>.cwpak), as a cart <app>.wasc.
 # The app's name is `app` in project.cwproj; its sources are src/*.c; what

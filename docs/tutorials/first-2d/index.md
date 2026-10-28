@@ -34,11 +34,11 @@ node tools/cwproject.mjs build ../gem_garden all
 ../gem_garden/.cwbuild/native/project/gem_garden
 ```
 
-`all` builds both targets into the project's own `.cwbuild/` directory: the native executable (`.cwbuild/native/project/gem_garden`, with its `gem_garden.cwpak` beside it) and the cart (`.cwbuild/cart/carts/gem_garden.wasc`). The build prints one `@result` line per target:
+`all` builds both targets into the project's own `.cwbuild/` directory: the native executable (`.cwbuild/native/project/gem_garden`, with its `gem_garden.cwpak` beside it) and the cart (`.cwbuild/cart-wgpu/carts/gem_garden.wasc`). The build prints one `@result` line per target:
 
 ```text
 @result {"target":"native","ok":true,"path":".cwbuild/native/project/gem_garden"}
-@result {"target":"cart","ok":true,"path":".cwbuild/cart/carts/gem_garden.wasc"}
+@result {"target":"cart","ok":true,"path":".cwbuild/cart-wgpu/carts/gem_garden.wasc"}
 ```
 
 The first build compiles the engine for the project and takes a minute or two; later builds only compile what changed.
@@ -155,7 +155,7 @@ The native build is a normal executable; run it as in step 1. The cart is the sa
 
 ```sh
 node tools/run-cart.mjs --host native --app gem_garden --exe ../gem_garden/.cwbuild/native/project/gem_garden --frames 120 --shot out/gem.png --state out/gem.json
-node tools/run-cart.mjs --host romdev --app gem_garden --cart ../gem_garden/.cwbuild/cart/carts/gem_garden.wasc --frames 120 --shot out/gem-romdev.png --state out/gem-romdev.json
+node tools/run-cart.mjs --host romdev --app gem_garden --cart ../gem_garden/.cwbuild/cart-wgpu/carts/gem_garden.wasc --frames 120 --shot out/gem-romdev.png --state out/gem-romdev.json
 ```
 
 The `romdev` host runs the cart in the romdev MCP server (it must be listening on 127.0.0.1:7331). `--host chromium` runs the cart in headless Chromium the same way.
@@ -170,7 +170,7 @@ Run it on two hosts and compare:
 
 ```sh
 node tools/run-cart.mjs --host native --app gem_garden --exe ../gem_garden/.cwbuild/native/project/gem_garden --frames 520 --input docs/tutorials/first-2d/input.json --state out/gem.json --shot out/gem.png
-node tools/run-cart.mjs --host romdev --app gem_garden --cart ../gem_garden/.cwbuild/cart/carts/gem_garden.wasc --frames 520 --input docs/tutorials/first-2d/input.json --state out/gem-romdev.json --shot out/gem-romdev.png
+node tools/run-cart.mjs --host romdev --app gem_garden --cart ../gem_garden/.cwbuild/cart-wgpu/carts/gem_garden.wasc --frames 520 --input docs/tutorials/first-2d/input.json --state out/gem-romdev.json --shot out/gem-romdev.png
 ```
 
 Both states end with the same values, bit for bit:

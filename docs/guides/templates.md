@@ -13,7 +13,7 @@ node tools/cwproject.mjs build ~/games/mygame all
 
 Then set `name` (the display name) and `app` (a C identifier: the executable and cart name) in `~/games/mygame/project.cwproj` and build again. `template.cfg` is only the template's listing (title, description, order); a copied project ignores it and you may delete it.
 
-`tools/cwproject.mjs build <dir> [native|cart|all]` configures the engine tree with `-DCW_PROJECT_DIR=<dir> -DCW_ENGINE_ONLY=ON` into `<dir>/.cwbuild/<target>/`. The native game lands in `.cwbuild/native/project/<app>` (with its `.cwpak`), the cart in `.cwbuild/cart/carts/<app>.wasc`, and both paths are written back into `project.cwproj` as `game_exe` and `game_cart`. The command ends with one `@result {json}` line per target and exits 0 only when every target built. `node tools/cwproject.mjs info <dir>` prints the project's keys. See [Getting started](guide:getting-started) for running the result on each host.
+`tools/cwproject.mjs build <dir> [native|cart|all]` configures the engine tree with `-DCW_PROJECT_DIR=<dir> -DCW_ENGINE_ONLY=ON` into `<dir>/.cwbuild/native/` and `<dir>/.cwbuild/cart-wgpu/`. The native game lands in `.cwbuild/native/project/<app>` (with its `.cwpak`), the cart (the dual GL + WebGPU one) in `.cwbuild/cart-wgpu/carts/<app>.wasc`, and both paths are written back into `project.cwproj` as `game_exe` and `game_cart`. The command ends with one `@result {json}` line per target and exits 0 only when every target built. `node tools/cwproject.mjs info <dir>` prints the project's keys. See [Getting started](guide:getting-started) for running the result on each host.
 
 ## What every template has
 

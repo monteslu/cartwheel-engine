@@ -135,7 +135,7 @@ Run it natively and in romdev:
 
 ```sh
 node tools/run-cart.mjs --host native --app crate_push --exe ../crate_push/.cwbuild/native/project/crate_push --frames 300 --input docs/tutorials/first-3d/input.json --state out/crate.json --shot out/crate.png
-node tools/run-cart.mjs --host romdev --app crate_push --cart ../crate_push/.cwbuild/cart/carts/crate_push.wasc --frames 300 --input docs/tutorials/first-3d/input.json --state out/crate-romdev.json --shot out/crate-romdev.png
+node tools/run-cart.mjs --host romdev --app crate_push --cart ../crate_push/.cwbuild/cart-wgpu/carts/crate_push.wasc --frames 300 --input docs/tutorials/first-3d/input.json --state out/crate-romdev.json --shot out/crate-romdev.png
 ```
 
 Both end with the crate on the pad and the same numbers:

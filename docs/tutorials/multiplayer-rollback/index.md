@@ -184,7 +184,7 @@ player 0 for the first 200 frames, then the bots take over):
 node tools/cwproject.mjs build duel all
 node tools/run-cart.mjs --host native --app rollback_duel \
   --exe duel/.cwbuild/native/project/rollback_duel \
-  --cart duel/.cwbuild/cart/carts/rollback_duel.wasc \
+  --cart duel/.cwbuild/cart-wgpu/carts/rollback_duel.wasc \
   --frames 720 --input docs/tutorials/multiplayer-rollback/input.json \
   --state out/duel.json --shot out/duel.png
 ```

@@ -53,15 +53,14 @@ const warnDropped = (name, hosts) => {
   if (miss.length) console.log(`WARN ${name}: --hosts asked for ${miss.join(', ')}, but this gate's hosts / skip list leaves them out: those legs did NOT run`);
 };
 const usesHosts = (hosts) => hosts.filter((h) => !(noChromium && h === 'chromium') && !(chromiumOnly && !['native', 'chromium'].includes(h)));
-// There is one cart per game: the dual GL + WebGPU one (build/cart-wgpu). Without a GL-only cart tree (build/cart) the GL
-// leg of a cart is the dual cart told to render with GL on romdev (run-cart --dual-gl, implied there); Chromium and
-// wasmcart-native then run only the WebGPU axis (--gpu webgpu), their GL host would be the GL-only cart that no longer exists.
-const glCarts = existsSync(join(PROJ, 'build', 'cart', 'carts'));
-// An app built GL_ONLY makes no dual cart, so with no GL-only tree it has no cart at all: its romdev leg is dropped,
-// said in the output (a test app that draws with GL itself, such as unit_pipeline, runs natively only).
+// There is one cart per game: the dual GL + WebGPU one (build/cart-wgpu); there is no GL-only cart tree. The GL leg of a
+// cart is the dual cart told to render with GL on romdev (run-cart --dual-gl, implied there); Chromium and wasmcart-native
+// run the WebGPU axis (--gpu webgpu).
+// An app built GL_ONLY makes no dual cart, so it has no cart at all: its romdev leg is dropped, said in the output
+// (a test app that draws with GL itself, such as unit_pipeline, runs natively only).
 const dualCart = (app) => existsSync(join(PROJ, 'build', 'cart-wgpu', 'carts', `${app}.wasc`));
-const glHosts = (hosts, name, app) => usesHosts(hosts).filter((h) => glCarts || !['chromium', 'wcnative'].includes(h)).filter((h) => {
-  if (h !== 'romdev' || glCarts || dualCart(app)) return true;
+const glHosts = (hosts, name, app) => usesHosts(hosts).filter((h) => !['chromium', 'wcnative'].includes(h)).filter((h) => {
+  if (h !== 'romdev' || dualCart(app)) return true;
   console.log(`note ${name}: no romdev leg (${app} is GL_ONLY: no dual cart, and there is no GL-only cart tree)`);
   return false;
 });

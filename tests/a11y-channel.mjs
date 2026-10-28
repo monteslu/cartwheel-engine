@@ -28,9 +28,9 @@ const call = async (tool, a) => {
   const res = await fetch(`http://127.0.0.1:${port}/tool/${tool}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-romdev-session': S }, body: JSON.stringify(a) });
   return JSON.parse(await res.text());
 };
-const cart = join(ROOT, 'build/cart/carts', `${app}.wasc`);
+const cart = join(ROOT, 'build/cart-wgpu/carts', `${app}.wasc`) // the dual cart, run on GL (wgpu: false);
 if (!existsSync(cart)) { console.error('no cart', cart); process.exit(1); }
-await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: cart, deterministicSeed: 1 });
+await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, wgpu: false, path: cart, deterministicSeed: 1 });
 await call('frame', { op: 'step', frames: frames - 1 });
 await call('wasm', { op: 'command', text: 'pause 1' }); // each request costs a frame: hold the screen still
 const out = [];

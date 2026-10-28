@@ -20,7 +20,7 @@ await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const which = process.argv.slice(2).length ? process.argv.slice(2) : ['native', 'romdev'];
 const driver = join(ROOT, 'build/native/tests/remote_test');
-const game = { native: join(ROOT, 'build/native/samples/remote_target'), romdev: join(ROOT, 'build/cart/carts/remote_target.wasc') };
+const game = { native: join(ROOT, 'build/native/samples/remote_target'), romdev: join(ROOT, 'build/cart-wgpu/carts/remote_target.wasc') };
 for (const p of [driver, ...which.map((t) => game[t])])
   if (!existsSync(p)) { console.error(`missing ${p}: run scripts/build.sh`); process.exit(1); }
 

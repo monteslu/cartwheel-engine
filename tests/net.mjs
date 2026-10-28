@@ -106,7 +106,8 @@ if (want('udp')) {
 }
 
 // ── 3. cart <-> cart over wasmcart peers, through the relay ────────────
-const cartPath = (name) => join(ROOT, 'build/cart/carts', `${name}.wasc`);
+// the dual carts (build/cart-wgpu), run on GL: romdev and Chromium with wgpu: false, wasmcart-native with WASMCART_NO_WGPU=1
+const cartPath = (name) => join(ROOT, 'build/cart-wgpu/carts', `${name}.wasc`);
 async function romdevCall(tool, a, session) {
   const res = await fetch(`http://127.0.0.1:${process.env.ROMDEV_PORT || 7331}/tool/${tool}`, { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-romdev-session': session }, body: JSON.stringify(a) });
@@ -130,7 +131,7 @@ async function romdevPair(tag, carts) {
   try {
     // one after the other: the first takes slot 0, the second slot 1
     for (let i = 0; i < carts.length; i++) {
-      await romdevCall('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: cartPath(carts[i]), deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, sessions[i]);
+      await romdevCall('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, wgpu: false, path: cartPath(carts[i]), deterministicSeed: 1, deterministicStepMs: 1000 / 60 }, sessions[i]);
       await sleep(100);
     }
     let out = [];
@@ -175,7 +176,7 @@ async function wcnativePair(tag, carts) {
       // time while stalled on its peer's input, so the 5 s peer timeout fires within milliseconds of wall time
       // ("player 1 left (timed out)"), and which frames each side saw depends on how fast the player is.
       const p = spawn(exe, [cartPath(carts[i]), '--fixed-step', String(1000 / 60), '--shot', '1300', shot],
-        { env: testEnv({ ...process.env, SDL_AUDIODRIVER: 'dummy' }), stdio: ['ignore', 'pipe', 'pipe'] });
+        { env: testEnv({ ...process.env, SDL_AUDIODRIVER: 'dummy', WASMCART_NO_WGPU: '1' }), stdio: ['ignore', 'pipe', 'pipe'] });
       p.log = '';
       p.stdout.on('data', (x) => (p.log += x));
       p.stderr.on('data', (x) => (p.log += x));
@@ -214,7 +215,7 @@ if (want('wcnative')) {
 async function chromiumPair(tag, carts) {
   const { createServer } = await import('node:http');
   const { launchChromium } = await import('../tools/lib/chromium.mjs');
-  const WC = join(ROOT, 'deps/wasmcart');
+  const WC = join(ROOT, 'deps/wasmcart-wgpu'); // the WebGPU tier's host: it runs dual carts (here on GL)
   const page = `<!doctype html><html><body>
 <script type=importmap>{"imports":{"fflate":"/wc/node_modules/fflate/esm/browser.js"}}</script>
 <script type=module>
@@ -239,7 +240,7 @@ window.run = async (carts) => {
     const h = new CartHostWeb();
     const canvas = document.createElement('canvas');
     document.body.appendChild(canvas);
-    await h.load('/cart/' + carts[i] + '.wasc', { glBackend: () => canvas.getContext('webgl2', { antialias: false }) });
+    await h.load('/cart/' + carts[i] + '.wasc', { glBackend: () => canvas.getContext('webgl2', { antialias: false }), wgpu: false });
     let k = 0;
     h._writeTime = ((orig) => function () { orig.call(this, k * 1000 / 60, 1000 / 60, k); })(h._writeTime);
     h.frame = () => { k++; };

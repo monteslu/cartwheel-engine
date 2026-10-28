@@ -197,7 +197,7 @@ English, larger text on, `en-XA` and back to Arabic.
 node tools/cwproject.mjs build coins all
 node tools/run-cart.mjs --host native --app coin_counter \
   --exe coins/.cwbuild/native/project/coin_counter \
-  --cart coins/.cwbuild/cart/carts/coin_counter.wasc \
+  --cart coins/.cwbuild/cart-wgpu/carts/coin_counter.wasc \
   --frames 240 --input docs/tutorials/localize/input.json \
   --state out/coins.json --shot out/coins.png
 ```

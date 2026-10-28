@@ -1,34 +1,31 @@
-// End-to-end gate, "drag a glTF in, see it imported, place it", on every host.
+// End-to-end gate, "drag a glTF in, see it imported, place it", natively. The
+// editor draws with GL itself (GL_ONLY: editor_import and the editor have no
+// dual cart), and there is no GL-only cart, so it has no cart legs.
 //
-// 1. The in-app session (editor/tests/import_app.c, app editor_import) on
-//    native, romdev, Chromium and wasmcart-native: a CC0 glTF is copied into
-//    the project (natively onto disk in a fresh project directory, in a cart
-//    through the in-memory layer), imports through cwpack's importer, gets a
+// 1. The in-app session (editor/tests/import_app.c, app editor_import):
+//    a CC0 glTF is copied into the project (onto disk in a fresh project
+//    directory), imports through cwpack's importer, gets a
 //    thumbnail, is dragged by the pointer from the FileSystem grid onto the
 //    scene preview (placed on the ground there) and placed again with
 //    fs.place; a used texture is renamed (the glTF's URI follows), deleting a
 //    used file is refused, a corrupt glTF fails to import with a clear
 //    message; the scene is saved, reopened, and both lanterns render (the
 //    pixels each covers in the scene camera's view).
-//    Checks: the session's results (debug fields) on native/romdev/Chromium,
-//    the same fields on every host, frames within 0.2% (>16 levels) of
-//    native on all four, and natively the files on DISK.
-// 2. The same over the debug channel, as a script would do it: native
-//    (CW_DEBUG_CMDS) and the editor cart in romdev get the files (`vfs write` / `vfs append` in pieces)
-//    and `ed fs.* / import.* / preview.*` requests and must reply alike; the
-//    cart's saved scene comes out of `vfs export`.
+//    Checks: the session's results (debug fields) and the files on DISK.
+// 2. The same over the debug channel, as a script would do it: the native
+//    editor (CW_DEBUG_CMDS) gets the files (`vfs write` / `vfs append` in
+//    pieces) and `ed fs.* / import.* / preview.*` requests.
 // Controls that must fail: the session stopped before the drag (its checks
 // must fail and its frame differ), a hidden node covers no pixels, the
 // corrupt glTF reports an error, fs.place of a missing file is refused.
 //
-//   node tests/editor-import.mjs [--hosts native,romdev,chromium,wcnative]
+//   node tests/editor-import.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readImage, diffImages, uniqueColors } from '../tools/lib/png.mjs';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
-import { wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -36,9 +33,9 @@ const OUT = join(ROOT, 'out', 'editor-import');
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
 const argv = process.argv.slice(2);
-const HOSTS = argv.includes('--hosts') ? argv[argv.indexOf('--hosts') + 1].split(',') : ['native', 'romdev', 'chromium', 'wcnative'];
+const HOSTS = argv.includes('--hosts') ? argv[argv.indexOf('--hosts') + 1].split(',') : ['native'];
+if (HOSTS.some((h) => h !== 'native')) { console.error('editor-import: native only (editor_import and the editor are GL_ONLY: no cart)'); process.exit(2); }
 const FRAMES = 50;
-const port = process.env.ROMDEV_PORT || 7331;
 let fail = 0;
 const bad = (m) => { fail++; console.log('FAIL ' + m); };
 
@@ -170,46 +167,8 @@ delete nenv.CW_EDITOR_SETTINGS;
 const nr = spawnSync(join(ROOT, 'build/native/editor/editor'), [], { encoding: 'utf8', env: nenv, timeout: 120000 });
 const native = (nr.stdout || '').trim().split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
 if (nr.status !== 0 || native.length !== all.length) bad(`native channel run: exit ${nr.status}, ${native.length} replies for ${all.length}`);
-let cartReplies = [];
-if (HOSTS.includes('romdev')) {
-  const S = `cw-editor-import-${process.pid}`;
-  const call = async (tool, a) => {
-    const res = await fetch(`http://127.0.0.1:${port}/tool/${tool}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-romdev-session': S }, body: JSON.stringify(a) });
-    const t = await res.text();
-    try { return JSON.parse(t); } catch { return { raw: t }; }
-  };
-  const cmd = async (text) => (await call('wasm', { op: 'command', text })).reply;
-  await call('loadMedia', { platform: 'wasmcart', gpuPower: wgpuPin().power, path: join(ROOT, 'build/cart/carts/editor.wasc'), deterministicSeed: 1 });
-  await call('frame', { op: 'step', frames: 29 });
-  for (const q of all) cartReplies.push(await cmd(q));
-  // the saved scene comes out of the cart's project layer
-  const exp = await cmd('vfs export');
-  const ar = Buffer.from(exp?.base64 || '', 'base64');
-  const files = {};
-  for (let p = 7; p < ar.length;) {
-    const nl = ar.indexOf(10, p), name = ar.subarray(p, nl).toString();
-    const nl2 = ar.indexOf(10, nl + 1), lenTxt = ar.subarray(nl + 1, nl2).toString();
-    if (lenTxt === 'removed') { files[name] = null; p = nl2 + 1; continue; }
-    files[name] = ar.subarray(nl2 + 1, nl2 + 1 + +lenTxt).toString();
-    p = nl2 + 1 + +lenTxt;
-  }
-  if (!/\[node name="lantern" parent="Props" type="MeshInstance3D"\]\nmesh = res\(0x[0-9a-f]+\)/.test(files['main.cwscene'] || ''))
-    bad('romdev: vfs export main.cwscene lacks the placed lantern:\n' + files['main.cwscene']);
-  if (!(files['models/lantern.gltf'] || '').includes('"lantern_tex.png"')) bad('romdev: the exported glTF does not name the renamed texture');
-  if (!('models/lantern_paint.png' in files) || files['models/lantern_paint.png'] !== null) {
-    if (files['models/lantern_paint.png'] !== undefined) bad('romdev: the renamed texture is still exported at its old path');
-  }
-  await call('host', { op: 'shutdown' });
-  const norm = (o) => JSON.stringify(o)?.replace(/"uid":\d+/g, '"uid":0').replace(/"layer":"(disk|memory)"/g, '"layer":"project"')
-    .replace(/"texture":\d+/g, '"texture":0').replace(/"changed_files":\d+/, '"changed_files":0').replace(/"files":\d+\}/, '"files":0}')
-    .replace(/"to_disk":(true|false)/, '"to_disk":0'); // where a save lands is the host's by design
-  all.forEach((q, i) => {
-    const a = norm(native[i]), b = norm(cartReplies[i]);
-    if (a !== b) bad(`${q.slice(0, 60)}\n  native ${a?.slice(0, 500)}\n  cart   ${b?.slice(0, 500)}`);
-  });
-}
 const rep = (q, src) => src[all.indexOf(q)];
-for (const [src, who] of [[native, 'native'], ...(cartReplies.length ? [[cartReplies, 'romdev']] : [])]) {
+for (const [src, who] of [[native, 'native']]) {
   requests.forEach((q) => { if (!q.startsWith('vfs') && rep(q, src)?.ok !== true) bad(`${who}: ${q.slice(0, 60)} did not succeed: ${JSON.stringify(rep(q, src))?.slice(0, 300)}`); });
   mustFail.forEach((q) => { if (rep(q, src)?.ok !== false) bad(`CONTROL PASSED (${who}): ${q} should have failed`); });
   if (rep('ed import.info models/lantern.gltf', src)?.status !== 'ok') bad(`${who}: lantern.gltf did not import`);
@@ -223,7 +182,6 @@ for (const [src, who] of [[native, 'native'], ...(cartReplies.length ? [[cartRep
   if (!/fs\.delete|used by/.test(rep('ed fs.delete models/lantern.bin', src)?.error || '')) bad(`${who}: the refused delete does not name its user`);
 }
 writeFileSync(join(OUT, 'channel.native.json'), JSON.stringify(native, null, 1));
-if (cartReplies.length) writeFileSync(join(OUT, 'channel.romdev.json'), JSON.stringify(cartReplies, null, 1));
 
-console.log(fail ? `editor-import: ${fail} failures` : `ok   editor-import (session on ${HOSTS.join(', ')}; ${requests.length} channel requests + ${mustFail.length} must-fail, native vs romdev; controls fail)`);
+console.log(fail ? `editor-import: ${fail} failures` : `ok   editor-import (session on ${HOSTS.join(', ')}; ${requests.length} channel requests + ${mustFail.length} must-fail natively; controls fail)`);
 process.exit(fail ? 1 : 0);

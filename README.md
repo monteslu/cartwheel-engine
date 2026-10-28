@@ -115,16 +115,16 @@ development packages, Node.js, curl and unzip.
 
 ```sh
 scripts/fetch-deps.sh    # every dependency in scripts/deps.lock, into deps/ (WASI_SDK=... reuses an existing wasi-sdk)
-scripts/build.sh         # build/native, build/cart and build/cart-wgpu
+scripts/build.sh         # build/native and build/cart-wgpu
 ```
 
-`TARGETS="native"` (or `cart`, `cart-wgpu`) builds one tree and
-`BUILD_TYPE=Debug` makes a debug build. The script runs cmake and ninja; to
+`TARGETS="native"` (or `cart-wgpu`) builds one tree, `BUILD_TYPE=Debug`
+makes a debug build and `NINJA_JOBS=4` caps ninja's parallel jobs. The script runs cmake and ninja; to
 build one target, run ninja yourself:
 
 ```sh
 ninja -C build/native hello              # one native app: build/native/samples/hello
-ninja -C build/cart hello                # one GL cart: build/cart/carts/hello.wasc
+ninja -C build/cart-wgpu hello           # one cart: build/cart-wgpu/carts/hello.wasc
 ```
 
 Native apps land in `build/native/samples/<app>`, `build/native/games/<app>`,
@@ -132,20 +132,20 @@ Native apps land in `build/native/samples/<app>`, `build/native/games/<app>`,
 
 ## Building wasmcart carts
 
-Every app (sample, game, unit suite, the editor) is also a cart.
-`scripts/build.sh` builds two kinds with wasi-sdk:
-
-- **GL cart**, `build/cart/carts/<app>.wasc`: renders with GLES 3.0 / WebGL 2.
-- **Dual GL + WebGPU cart**, `build/cart-wgpu/carts/<app>.wasc`: imports both
-  APIs and uses WebGPU where the host offers it, GL otherwise. Built when
-  `deps/wasmcart-wgpu` and `deps/emdawnwebgpu` are present (`fetch-deps.sh`
-  fetches both). The dual build packs assets with the native tree's
-  `build/native/tools/cwpack/cwpack`, so build native first. An app marked
-  `GL_ONLY` has no dual cart.
+Every app (sample, game, unit suite) is also a cart: one cart, the dual
+GL + WebGPU one, `build/cart-wgpu/carts/<app>.wasc`, built with wasi-sdk. It
+imports both APIs and renders with WebGPU where the host offers it, GL
+otherwise, so the same cart tests both backends: run it on a GL host (romdev
+`wgpu:false`, a browser without WebGPU, wasmcart-native with
+`WASMCART_NO_WGPU=1`, wasmcart-libretro) for GL. There is no GL-only cart. The
+cart build needs `deps/wasmcart-wgpu` and `deps/emdawnwebgpu` (`fetch-deps.sh`
+fetches both) and packs assets with the native tree's
+`build/native/tools/cwpack/cwpack`, so build native first. An app marked
+`GL_ONLY` (it calls GL itself, such as the editor) has no cart in this
+build.
 
 ```sh
-TARGETS="native cart cart-wgpu" scripts/build.sh
-npx wasmcart build/cart/carts/showcase.wasc
+scripts/build.sh
 npx wasmcart build/cart-wgpu/carts/showcase.wasc
 ```
 

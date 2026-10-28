@@ -12,8 +12,8 @@
 #   windows-x64     export/llvm-mingw export/native-dawn-win32-x64 export/angle-gles-win32-x64
 #   android-arm64   export/native-dawn-android-arm64 (and an NDK: ANDROID_NDK_HOME or ANDROID_HOME)
 #   macos-arm64     export/native-dawn-darwin-arm64 export/angle-gles-darwin-arm64 (on a Mac)
-#   cart            (wasi-sdk, binaryen: the default fetch)
-#   cart-wgpu       (the same, plus wasmcart-wgpu and emdawnwebgpu)
+#   cart-wgpu       (the default fetch: wasi-sdk, binaryen, wasmcart-wgpu, emdawnwebgpu)
+#                   the dual GL + WebGPU cart SDK; there is no GL-only cart SDK
 #
 # Output: out/sdk/cartwheel-sdk-<version>-<target>[-debug]/ and its .tar.gz
 # with a .sha256 beside it. The build tree is build/sdk/<target>[-debug].
@@ -29,9 +29,9 @@ ARGS=(-G Ninja -DCMAKE_BUILD_TYPE="$BT" -DCW_ENGINE_ONLY=ON -DCW_SDK=ON -DCW_THR
 case "$T" in
   linux-x64|linux-arm64|windows-x64|android-arm64|macos-arm64)
     ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$ROOT/cmake/export/$T.cmake" -DCW_WGPU=ON) ;;
-  cart) ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$ROOT/cmake/cart.cmake") ;;
+  cart) echo "there is no GL-only cart SDK any more: build cart-wgpu (its dual carts run on GL hosts too)" >&2; exit 2 ;;
   cart-wgpu) ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$ROOT/cmake/cart.cmake" -DCW_WGPU=ON) ;;
-  *) echo "unknown SDK target: $T (linux-x64 linux-arm64 windows-x64 android-arm64 macos-arm64 cart cart-wgpu)" >&2; exit 2 ;;
+  *) echo "unknown SDK target: $T (linux-x64 linux-arm64 windows-x64 android-arm64 macos-arm64 cart-wgpu)" >&2; exit 2 ;;
 esac
 cmake -S "$ROOT" -B "$B" "${ARGS[@]}" >/dev/null
 ninja -C "$B" cw_sdk
@@ -42,7 +42,7 @@ NAME="cartwheel-sdk-$VER-$T$SUFFIX"
 mkdir -p "$ROOT/out/sdk"
 PACK=(--build "$B" --target "$T" --out "$ROOT/out/sdk/$NAME" --tar "$ROOT/out/sdk/$NAME.tar.gz")
 case "$T" in
-  cart|cart-wgpu) # the same libraries without ThinLTO, for dev carts (CW_CART_DEV): lib/nolto/
+  cart-wgpu) # the same libraries without ThinLTO, for dev carts (CW_CART_DEV): lib/nolto/
     build_lock "$B-nolto"
     cmake -S "$ROOT" -B "$B-nolto" "${ARGS[@]}" -DCW_CART_LTO=OFF >/dev/null
     ninja -C "$B-nolto" cw_sdk

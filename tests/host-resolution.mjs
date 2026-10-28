@@ -11,7 +11,7 @@
 //
 //   node tests/host-resolution.mjs [app ...] [--cart-dir <dir>]
 //
-// The GL carts of build/cart (or --cart-dir); the core and frontend from
+// The dual carts of build/cart-wgpu (or --cart-dir), which the libretro core runs on GL; the core and frontend from
 // tools/lib/libretro.mjs.
 import { spawn } from 'node:child_process';
 import { mkdirSync, existsSync } from 'node:fs';
@@ -33,7 +33,7 @@ const OUT = join(ROOT, 'out', 'gate', 'host-resolution');
 mkdirSync(OUT, { recursive: true });
 const argv = process.argv.slice(2);
 const opt = (k, d) => (argv.includes(k) ? argv[argv.indexOf(k) + 1] : d);
-const cartDir = resolve(opt('--cart-dir', join(ROOT, 'build', 'cart', 'carts')));
+const cartDir = resolve(opt('--cart-dir', join(ROOT, 'build', 'cart-wgpu', 'carts')));
 const only = argv.filter((a, i) => !a.startsWith('-') && argv[i - 1] !== '--cart-dir');
 const { core, frontend } = libretroBuild();
 

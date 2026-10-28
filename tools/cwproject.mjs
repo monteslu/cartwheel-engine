@@ -10,16 +10,19 @@
 // <project>/.cwbuild/<target>, and adds the project's CMakeLists.txt (which
 // only calls cw_add_app). Outputs:
 //   native  .cwbuild/native/project/<app> (+ <app>.cwpak beside it)
-//   cart    .cwbuild/cart/carts/<app>.wasc
+//   cart    .cwbuild/cart-wgpu/carts/<app>.wasc, the dual GL + WebGPU cart (the
+//           one cart a game ships: GL hosts run it on GL, WebGPU hosts on WebGPU)
 // After a successful build the paths go into project.cwproj as game_exe /
 // game_cart (relative to the project): what the editor's Play launches.
 // plugins: the project's plugins (plugins/<name>/plugin.cwplugin) as
 // the shared libraries the native editor loads, in the native tree:
 //   .cwbuild/native/plugins/<name>/<name>_runtime.so, <name>_editor.so
 // (native and cart builds compile enabled runtime plugins into the game).
-// editor: the project editor as a cart, .cwbuild/cart/carts/<app>_editor.wasc:
+// editor: the project editor as a cart, .cwbuild/editor-cart/carts/<app>_editor.wasc:
 // the editor with the project's enabled plugins compiled in (a cart cannot
-// load plugin code at runtime) and the project as its bundled files.
+// load plugin code at runtime) and the project as its bundled files. The
+// editor draws with GL itself (GL_ONLY), so this tree is a GL one, built only
+// on request; a game's cart is always the dual one.
 //
 // stdout: the build's own lines, then one line per target:
 //   @result {"target":"native","ok":true,"path":".cwbuild/native/project/app"}
@@ -87,14 +90,18 @@ function run(c, a, cwd) {
   });
 }
 
+/** the build tree under .cwbuild/ of a target: the game's cart is the dual one (cart-wgpu)
+ * @param {'native'|'cart'|'editor-cart'} target */
+const treeDir = (target) => (target === 'cart' ? 'cart-wgpu' : target);
+
 const launcher = spawnSync('ccache', ['--version'], { stdio: 'ignore' }).status === 0
   ? ['-DCMAKE_C_COMPILER_LAUNCHER=ccache', '-DCMAKE_CXX_COMPILER_LAUNCHER=ccache'] : [];
 
 
-/** @param {string} dir @param {'native'|'cart'} target @param {Record<string,string>} proj @param {string} [ninjaTarget] */
+/** @param {string} dir @param {'native'|'cart'|'editor-cart'} target @param {Record<string,string>} proj @param {string} [ninjaTarget] */
 async function buildTarget(dir, target, proj, ninjaTarget) {
-  if (target === 'cart') {
-    // the cart tree packs with the native tree's cwpack (a host tool): built
+  if (target !== 'native') {
+    // a cart tree packs with the native tree's cwpack (a host tool): built
     // first, under the native tree's own lock
     const cwpack = join(dir, '.cwbuild', 'native', 'tools', 'cwpack', 'cwpack');
     if (!existsSync(cwpack)) {
@@ -102,28 +109,29 @@ async function buildTarget(dir, target, proj, ninjaTarget) {
       if (!r.ok) return { target, ok: false, error: `the native tree (for its cwpack) failed: ${r.error}` };
     }
   }
-  return withBuildLock(join(dir, '.cwbuild', target), () => buildTargetLocked(dir, target, proj, ninjaTarget));
+  return withBuildLock(join(dir, '.cwbuild', treeDir(target)), () => buildTargetLocked(dir, target, proj, ninjaTarget));
 }
 
-/** @param {string} dir @param {'native'|'cart'} target @param {Record<string,string>} proj @param {string} [ninjaTarget] */
+/** @param {string} dir @param {'native'|'cart'|'editor-cart'} target @param {Record<string,string>} proj @param {string} [ninjaTarget] */
 async function buildTargetLocked(dir, target, proj, ninjaTarget) {
-  const bdir = join(dir, '.cwbuild', target);
+  const bdir = join(dir, '.cwbuild', treeDir(target));
   const app = ninjaTarget || proj.app;
   const args = ['-S', ROOT, '-B', bdir, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', `-DCW_PROJECT_DIR=${dir}`, '-DCW_ENGINE_ONLY=ON', ...launcher];
-  if (target === 'cart') {
+  if (target !== 'native') {
     const cwpack = join(dir, '.cwbuild', 'native', 'tools', 'cwpack', 'cwpack');
     args.push(`-DCMAKE_TOOLCHAIN_FILE=${join(ROOT, 'cmake', 'cart.cmake')}`, `-DCW_CWPACK=${cwpack}`);
+    if (target === 'cart') args.push('-DCW_WGPU=ON'); // the dual cart
   }
   console.log(`== ${target}: configure ${bdir}`);
   if (await run('cmake', args)) return { target, ok: false, error: `cmake configure failed for ${target} (see the lines above)` };
   console.log(`== ${target}: build`);
   if (await run('ninja', ['-C', bdir, app])) return { target, ok: false, error: `the ${target} build failed (see the compiler output above)` };
-  if (ninjaTarget === 'cwplugins_all') return { target, ok: true, path: join('.cwbuild', target, 'plugins') };
+  if (ninjaTarget === 'cwplugins_all') return { target, ok: true, path: join('.cwbuild', 'native', 'plugins') };
   if (ninjaTarget) {
-    const p = join('.cwbuild', target, 'carts', `${ninjaTarget}.wasc`);
+    const p = join('.cwbuild', treeDir(target), 'carts', `${ninjaTarget}.wasc`);
     return existsSync(join(dir, p)) ? { target, ok: true, path: p } : { target, ok: false, error: `the build finished but ${p} is missing` };
   }
-  const path = target === 'native' ? join('.cwbuild', 'native', 'project', app) : join('.cwbuild', 'cart', 'carts', `${app}.wasc`);
+  const path = target === 'native' ? join('.cwbuild', 'native', 'project', app) : join('.cwbuild', 'cart-wgpu', 'carts', `${app}.wasc`);
   if (!existsSync(join(dir, path))) return { target, ok: false, error: `the build finished but ${path} is missing` };
   return { target, ok: true, path };
 }
@@ -138,7 +146,7 @@ async function build() {
   if (!['native', 'cart', 'all', 'plugins', 'editor'].includes(which)) usage();
   if (which === 'editor') {
     if (!existsSync(join(dir, 'plugins'))) throw new Error('the project has no plugins/ directory: the stock editor cart (editor.wasc) is its editor');
-    const r = await buildTarget(dir, 'cart', proj, `${proj.app}_editor`);
+    const r = await buildTarget(dir, 'editor-cart', proj, `${proj.app}_editor`);
     console.log('@result ' + JSON.stringify({ ...r, target: 'editor' }));
     process.exit(r.ok ? 0 : 1);
   }

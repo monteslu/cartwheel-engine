@@ -57,8 +57,9 @@ with the engine (`-DCW_PROJECT_DIR=<dir> -DCW_ENGINE_ONLY=ON`) in
 | `ios` | Info.plist, pack, icon + `build-on-mac.sh` (generates and builds the Xcode project) | on a Mac: `cmake -G Xcode` with `cmake/export/ios.cmake` | not built (needs Apple's SDK and signing) |
 
 Both cart exports ship the dual cart (`build/cart-wgpu`): it imports GL and
-WebGPU and runs on WebGPU where the host has it. An app built `GL_ONLY` (it
-calls GL itself) has no dual cart and ships its GL cart.
+WebGPU and runs on WebGPU where the host has it, on GL elsewhere. An app built
+`GL_ONLY` (it calls GL itself) has no dual cart, and there is no GL-only cart:
+its cart export is refused with that reason (export it natively).
 
 The web export needs a cross-origin isolated page (threads use
 `SharedArrayBuffer`): every file must be served with

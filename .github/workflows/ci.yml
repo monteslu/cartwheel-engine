@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch: # a branch's CI before it lands on main
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -109,17 +110,16 @@ jobs:
       - name: Gates (native, software rendering)
         run: node tests/ci.mjs ${{ matrix.part }}
 
+  # Every app as the one cart a game ships: the dual GL + WebGPU cart (there is no
+  # GL-only cart tree; the gates run the dual cart on GL hosts for GL).
   carts:
-    name: Carts (${{ matrix.build }} ${{ matrix.share }})
+    name: Carts (dual ${{ matrix.share }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { build: gl, share: 1of2 }
-          - { build: gl, share: 2of2 }
-          - { build: dual, share: 1of1 }
+        share: [1of1]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -142,12 +142,8 @@ jobs:
           ninja -C build/native cwpack
       - name: Configure
         run: |
-          if [ ${{ matrix.build }} = gl ]; then
-            cmake -S . -B build/carts -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$PWD/cmake/cart.cmake
-          else
-            cmake -S . -B build/carts -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$PWD/cmake/cart.cmake \
-              -DCW_WGPU=ON -DCW_CWPACK=$PWD/build/native/tools/cwpack/cwpack
-          fi
+          cmake -S . -B build/carts -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$PWD/cmake/cart.cmake \
+            -DCW_WGPU=ON -DCW_CWPACK=$PWD/build/native/tools/cwpack/cwpack
       # share k of n: every n-th cart of carts.txt, starting at the k-th
       - name: Build carts
         run: |
