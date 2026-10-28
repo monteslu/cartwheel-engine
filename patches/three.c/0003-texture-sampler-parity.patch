@@ -1,0 +1,103 @@
+diff --git a/src/gen_wgpu.c b/src/gen_wgpu.c
+index 8b0d75e..12c78a6 100644
+--- a/src/gen_wgpu.c
++++ b/src/gen_wgpu.c
+@@ -1123,15 +1123,21 @@ WGPUTextureView t3_wgpu_data_texture(t3_wgpu *w, void **slot, int width, int hei
+ WGPUSampler t3_wgpu_sampler(t3_wgpu *w, const t3_texture *t, bool cmp) {
+   int ws = t ? t->wrap_s : T3_CLAMP_TO_EDGE, wt = t ? t->wrap_t : T3_CLAMP_TO_EDGE;
+   int mag = t ? t->mag_filter : T3_LINEAR, min = t ? t->min_filter : T3_LINEAR;
+-  uint32_t key = (uint32_t)(ws - 1000) | (uint32_t)(wt - 1000) << 2 | (uint32_t)(mag - 1003) << 4 | (uint32_t)(min - 1003) << 7 | (uint32_t)cmp << 10;
+-  for (int i = 0; i < w->n_samplers; i++) if (w->samplers[i].key == key) return w->samplers[i].s;
+   static const WGPUAddressMode am[3] = { WGPUAddressMode_Repeat, WGPUAddressMode_ClampToEdge, WGPUAddressMode_MirrorRepeat };
+   bool mag_lin = mag != T3_NEAREST, min_lin = min == T3_LINEAR || min == T3_LINEAR_MIPMAP_NEAREST || min == T3_LINEAR_MIPMAP_LINEAR;
+   bool mip_lin = min == T3_NEAREST_MIPMAP_LINEAR || min == T3_LINEAR_MIPMAP_LINEAR;
++  /* r186 WebGPUTextureUtils: texture.anisotropy when every filter is linear
++   * (WebGPU allows no other); the device clamps it to what it supports, as
++   * the GL backend's min(anisotropy, MAX_TEXTURE_MAX_ANISOTROPY) */
++  uint32_t aniso = 1;
++  if (t && !cmp && mag_lin && min_lin && mip_lin && t->anisotropy > 1) aniso = t->anisotropy >= 16 ? 16 : (uint32_t)t->anisotropy;
++  uint32_t key = (uint32_t)(ws - 1000) | (uint32_t)(wt - 1000) << 2 | (uint32_t)(mag - 1003) << 4 | (uint32_t)(min - 1003) << 7 | (uint32_t)cmp << 10
++               | (aniso - 1) << 11;
++  for (int i = 0; i < w->n_samplers; i++) if (w->samplers[i].key == key) return w->samplers[i].s;
+   WGPUSamplerDescriptor d = { .addressModeU = am[(ws - 1000) % 3], .addressModeV = am[(wt - 1000) % 3], .addressModeW = WGPUAddressMode_ClampToEdge,
+     .magFilter = mag_lin ? WGPUFilterMode_Linear : WGPUFilterMode_Nearest, .minFilter = min_lin ? WGPUFilterMode_Linear : WGPUFilterMode_Nearest,
+     .mipmapFilter = mip_lin ? WGPUMipmapFilterMode_Linear : WGPUMipmapFilterMode_Nearest, .lodMinClamp = 0, .lodMaxClamp = 32,
+-    .compare = cmp ? WGPUCompareFunction_LessEqual : WGPUCompareFunction_Undefined, .maxAnisotropy = 1 };
++    .compare = cmp ? WGPUCompareFunction_LessEqual : WGPUCompareFunction_Undefined, .maxAnisotropy = (uint16_t)aniso };
+   WGPUSampler s = wgpuDeviceCreateSampler(w->dev, &d);
+   if (w->n_samplers < 64) w->samplers[w->n_samplers++] = (struct sampler_entry){ key, s };
+   return s;
+diff --git a/src/renderer.c b/src/renderer.c
+index 91c9e24..7d0aa32 100644
+--- a/src/renderer.c
++++ b/src/renderer.c
+@@ -104,7 +104,9 @@ typedef struct {
+   uint32_t version;
+   float max_mip;      /* __maxMipLevel: log2(size) when mipmaps were generated */
+   bool borrowed;      /* t3_texture_from_gl with owns_gl false: the embedder deletes it */
++  uint32_t sampler;   /* the sampler fields (sampler_key) its parameters were last set from */
+ } texture_gl;
++static uint32_t sampler_key(const t3_texture *t);
+ 
+ #define T3_MAX_LIGHTS 8 /* per type; more are ignored */
+ typedef struct {
+@@ -1141,6 +1143,7 @@ void t3_texture_adopt_gl(t3_texture *t, unsigned gl_name, int w, int h, int leve
+   tg->version = t->version;
+   tg->max_mip = levels > 1 ? (float)(levels - 1) : 0;
+   tg->borrowed = !owns_gl;
++  tg->sampler = sampler_key(t);   /* the embedder set its parameters from these fields */
+   t->_gl = tg;
+   /* the embedder bound it (on some unit) while filling it */
+   tu_forget_all();
+@@ -1173,19 +1176,32 @@ static bool needs_mipmaps(const t3_texture *t) {
+   return t->generate_mipmaps && t->min_filter != T3_NEAREST && t->min_filter != T3_LINEAR;
+ }
+ 
+-/* setTextureParameters, on the texture bound to target of the active unit */
+-static void texture_params(GLenum target, const t3_texture *t) {
++/* the fields setTextureParameters reads: wrap, filters, anisotropy */
++static uint32_t sampler_key(const t3_texture *t) {
++  uint32_t a = t->anisotropy <= 1 ? 0 : t->anisotropy >= 255 ? 255 : (uint32_t)t->anisotropy;
++  return 1u | (uint32_t)(t->wrap_s - 1000) << 1 | (uint32_t)(t->wrap_t - 1000) << 3 | (uint32_t)(t->mag_filter - 1003) << 5
++       | (uint32_t)(t->min_filter - 1003) << 8 | a << 11;
++}
++
++/* setTextureParameters, on the texture bound to target of the active unit.
++ * no_mips: the texture has one level (an adopted texture made without a
++ * chain): a mipmap min filter would leave it incomplete, so its base filter.
++ * was_aniso: anisotropy was set before (put back to 1 when it is no more) */
++static void texture_params_ex(GLenum target, const t3_texture *t, bool no_mips, bool was_aniso) {
++  t3_filter min = t->min_filter;
++  if (no_mips) min = min == T3_NEAREST || min == T3_NEAREST_MIPMAP_NEAREST || min == T3_NEAREST_MIPMAP_LINEAR ? T3_NEAREST : T3_LINEAR;
+   glTexParameteri(target, GL_TEXTURE_WRAP_S, gl_wrap(t->wrap_s));
+   glTexParameteri(target, GL_TEXTURE_WRAP_T, gl_wrap(t->wrap_t));
+   glTexParameteri(target, GL_TEXTURE_MAG_FILTER, t->mag_filter == T3_NEAREST ? GL_NEAREST : GL_LINEAR);
+-  glTexParameteri(target, GL_TEXTURE_MIN_FILTER, gl_filter(t->min_filter));
++  glTexParameteri(target, GL_TEXTURE_MIN_FILTER, gl_filter(min));
+   if (t->anisotropy > 1) {
+     /* min(texture.anisotropy, capabilities.getMaxAnisotropy()) */
+     GLfloat mx = 1;
+     glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &mx);
+     glTexParameterf(target, GL_TEXTURE_MAX_ANISOTROPY_EXT, t->anisotropy < mx ? t->anisotropy : mx);
+-  }
++  } else if (was_aniso) glTexParameterf(target, GL_TEXTURE_MAX_ANISOTROPY_EXT, 1);
+ }
++static void texture_params(GLenum target, const t3_texture *t) { texture_params_ex(target, t, false, false); }
+ 
+ /* tex on unit's cube map target (the unit's 2D binding is its own) */
+ static void tu_bind_cube(int unit, GLuint tex, bool select) {
+@@ -1266,6 +1282,14 @@ static void bind_texture(t3_texture *t, int unit) {
+     free(tmp);
+     texture_params(GL_TEXTURE_2D, t);
+     if (needs_mipmaps(t)) glGenerateMipmap(GL_TEXTURE_2D);
++    tg->sampler = sampler_key(t);
++  } else if (tg->sampler && tg->sampler != sampler_key(t)) {
++    /* wrap, filter or anisotropy changed since the upload: the WebGPU backend
++     * makes its sampler from these fields at every draw, so GL follows them
++     * too (a resource texture is never re-uploaded) */
++    tu_activate(unit);
++    texture_params_ex(GL_TEXTURE_2D, t, tg->max_mip == 0 && !t->pixels, tg->sampler >> 11 != 0);
++    tg->sampler = sampler_key(t);
+   }
+   tg->version = t->version;
+ }

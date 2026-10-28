@@ -48,6 +48,8 @@ Because the mock GPU accepts any shader, every regeneration then compiles the ta
 
 Vertex colours (`vertex_colors` on a material) take an rgb or an rgba attribute; a glTF exporter's default `COLOR_0` is rgba and draws, with its alpha ignored (three.c 0.186.19: the generated programs read the colour only). A colour attribute of any other width is refused and the draw is reported as skipped. `samples/vertex_colors` draws both and its gate (`vertex-colors`, GL and WebGPU) has a control with a refused attribute.
 
+Texture filtering is the same on GL and WebGPU. A texture's `anisotropy` (1 by default; 8 is a good value for floors, roads and walls seen at a low angle, where detail otherwise smears into a blur) applies on both backends when its filters are linear with a linear mip filter (`T3_LINEAR_MIPMAP_LINEAR`, the default); the GPU clamps it to what it supports (16 at most). Wrap, filter and anisotropy can be changed at any time, also on a texture from the resource system after it loaded: the next draw uses them. A resource texture's colour space is fixed when it loads (see `cw_res_texture`). `samples/texture_filtering` draws a tiled floor at a grazing angle and a wall with resource textures, at anisotropy 8; its gate (`texture-filtering`) holds GL and WebGPU to the same picture, with a control that turns anisotropy off on WebGPU alone.
+
 ## The 3D node types
 
 | Node | What it configures |

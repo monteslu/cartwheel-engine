@@ -146,6 +146,33 @@
     "note": "six instances of one skinned glTF: skin shading from the file (face, ears, hands), sheen knit and hair, clear coat eyes and belt (KHR_materials_*), a talk clip opening the jaw through morph weights, smiles and blinks set by name from code. The control removes the skin shading: the state (skin.materials 0) and the picture differ"
   },
   {
+    "name": "texture-filtering",
+    "webgpu": {
+      "vsGl": 0.005,
+      "maxArea": 0.0005,
+      "controls": [{ "env": { "TF_CONTROL_WGPU": "1" } }]
+    },
+    "app": "texture_filtering",
+    "frames": 5,
+    "minColors": 200,
+    "fields": [
+      "aniso",
+      "mips",
+      "wall_ready",
+      "calls"
+    ],
+    "expect": {
+      "aniso": 8,
+      "mips": 1,
+      "wall_ready": 1,
+      "calls": 3
+    },
+    "controlEnv": {
+      "TF_ANISO": "1"
+    },
+    "note": "fine texture detail at a grazing angle, anisotropy 8 and mip chains (the floor's textures made in code, the wall's from the resource system, filtering set after the load): GL and WebGPU draw the same picture. Controls: anisotropy 1 (the picture moves), and anisotropy off on WebGPU alone (TF_CONTROL_WGPU), which must fail the GL-vs-WebGPU bound"
+  },
+  {
     "name": "physics-determinism",
     "app": "physics_determinism",
     "frames": 400,
