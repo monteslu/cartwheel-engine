@@ -256,8 +256,14 @@ static const char *AO_FS = S(
     vec3 P = view_pos_px(q);
     vec3 pr = view_pos_px(q + ivec2(1, 0)), pl = view_pos_px(q - ivec2(1, 0));
     vec3 pu = view_pos_px(q + ivec2(0, 1)), pd = view_pos_px(q - ivec2(0, 1));
-    vec3 dx = abs(pr.z - P.z) < abs(P.z - pl.z) ? pr - P : P - pl;
-    vec3 dy = abs(pu.z - P.z) < abs(P.z - pd.z) ? pu - P : P - pd;
+    /* the smaller depth step of the two sides; at the frame's edge the side
+     * outside it (clamped onto P) is never taken: its zero difference made
+     * the normal NaN, which GL and WebGPU turn into different shades */
+    ivec2 lim = ivec2(u_proj_scale.zw) - 1;
+    bool xr = q.x >= lim.x || (q.x > 0 && abs(pl.z - P.z) <= abs(pr.z - P.z));
+    bool yr = q.y >= lim.y || (q.y > 0 && abs(pd.z - P.z) <= abs(pu.z - P.z));
+    vec3 dx = xr ? P - pl : pr - P;
+    vec3 dy = yr ? P - pd : pu - P;
     vec3 N = normalize(cross(dx, dy));
     vec3 V = normalize(-P);
     if (dot(N, V) < 0.0) N = -N;
@@ -1299,8 +1305,9 @@ static const char *VIEW_FS = S(
     if (u_view == 1) { float z = -vpos(q).z; o = vec4(vec3(1.0 / (1.0 + z / 4.0)), 1.0); }
     else if (u_view == 2) {
       vec3 P = vpos(q), pr = vpos(q + ivec2(1, 0)), pl = vpos(q - ivec2(1, 0)), pu = vpos(q + ivec2(0, 1)), pd = vpos(q - ivec2(0, 1));
-      vec3 dx = abs(pr.z - P.z) < abs(P.z - pl.z) ? pr - P : P - pl;
-      vec3 dy = abs(pu.z - P.z) < abs(P.z - pd.z) ? pu - P : P - pd;
+      ivec2 lim = ivec2(u_size) - 1; /* the edge: the side outside the frame is never taken (AO_FS) */
+      vec3 dx = q.x >= lim.x || (q.x > 0 && abs(pl.z - P.z) <= abs(pr.z - P.z)) ? P - pl : pr - P;
+      vec3 dy = q.y >= lim.y || (q.y > 0 && abs(pd.z - P.z) <= abs(pu.z - P.z)) ? P - pd : pu - P;
       vec3 N = normalize(cross(dx, dy));
       if (dot(N, -P) < 0.0) N = -N;
       o = vec4(N * 0.5 + 0.5, 1.0);
