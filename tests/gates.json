@@ -117,6 +117,26 @@
     "note": "vertex colours as rgb and rgba attributes: both quads draw the same gradient (alpha unused). The control gives the right quad a two float colour attribute, which three.c refuses: its draw is skipped"
   },
   {
+    "name": "rim-light",
+    "webgpu": true,
+    "app": "rim_light",
+    "frames": 60,
+    "fields": [
+      "rim.materials",
+      "rim.remove_ok",
+      "rim.pulse"
+    ],
+    "expect": {
+      "rim.materials": 6,
+      "rim.remove_ok": 1
+    },
+    "tol": 0.0001,
+    "controlEnv": {
+      "RIM_OFF": "1"
+    },
+    "note": "two lines of grey figures walking away down a dark street at 3 to 40 m, a red rim on the left line, a blue one on the right, a white one pulsing on the middle figure: faint close to the camera, full strength by 20 m. Apply, get and remove leave a spare material as it was. The control gives no figure a rim: the state (rim.materials 0) and the picture differ"
+  },
+  {
     "name": "character-skin",
     "webgpu": true,
     "app": "character_skin",

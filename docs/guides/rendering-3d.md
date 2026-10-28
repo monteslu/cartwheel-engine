@@ -432,6 +432,20 @@ Cost on a Radeon 890M (native, the sample at 960 x 540 drawn at 1920 x 1080, two
 
 Skin shading costs less than the run-to-run noise (under 0.05 ms) even with a face filling the screen. A slower integrated GPU (a Vega 8 is about a quarter of an 890M) should stay under 0.2 ms for it. The 20 characters cost about 0.9 ms of CPU per frame on GL (skinning matrices and draw submission).
 
+### Rim light: telling teams apart at range
+
+A **rim light** ([rim_light.h](header:rim_light.h)) is a coloured glow along a surface's silhouette, where it turns away from the camera. It is added to the material's emissive light, so it shows in shadow and at night and bloom picks it up, and it fades in with distance: below `near` metres it keeps `close` of its strength, past `far` all of it. A fighter 30 m away reads as a red or blue outline against a dark wall; one at arm's length is not painted over. It also makes a "spawn protected" shimmer (set the strength every tick, it is a uniform), a pickup highlight or a menu selection glow.
+
+```c
+cw_rim_light_desc d = cw_rim_light_default();   /* red, strength 2, power 3, fading in from 6 m to 20 m */
+d.color = (t3_color){ 0.25f, 0.55f, 1.0f };     /* the blue team */
+cw_rim_light_apply_tree(model_root, &d);         /* every material under a model */
+...
+cw_rim_light_remove_tree(model_root);            /* before releasing the model: the rim keeps its materials */
+```
+
+The rim is per material: glTF instances share their file's materials, so clone one per character for a per-character colour (MeshInstance3D primitives of one look share one material in a tree too). It works with every other part (clustered lights, the cascaded sun, skin shading, GI) and costs a few instructions per pixel of the material; shadow casters are untouched and every preset draws it. `samples/rim_light` shows two lines of figures from 3 m to 40 m with red and blue rims and a pulsing one; its gate is `rim-light`.
+
 ## Visibility: culling, LOD and impostors
 
 Without a VisibilityManager, three.c's per-object frustum test is all there is. Add one ([visibility.h](header:visibility.h)) and the "visibility" pass culls, picks LODs and bakes impostors before the scene draws; culled meshes are hidden for the frame and restored in PRESENT (and after each view of a split screen, so one player's culling never hides meshes from the next view's shadows, GI or culling), so game code never sees the flags change.
