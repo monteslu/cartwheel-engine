@@ -336,11 +336,32 @@ cw_job *cw_job_single(cw_single_fn fn, void *ctx) {
   return submit(j);
 }
 
+#if CW_CART
+#include <time.h>
+/* A cart's page thread never blocks in cw_job_wait: it spins. If a worker
+ * thread stops in the middle of a chunk (its wasm trapped, or a host call
+ * failed in it), the job can never finish and the spin would hold the page
+ * thread, and the host's one thread with it, forever. A host sees a worker
+ * die only when its own thread gets back to its event loop, which a spinning
+ * cart never lets it do. So a job that makes no progress for this long stops
+ * the cart with an error instead (cw__jobs_stall_ms; 0 turns the check off). */
+int cw__jobs_stall_ms = 30000;
+static double page_now_ms(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+}
+#endif
+
 void cw_job_wait(cw_job *j) {
   if (!j) return;
   /* help: first with this job's own chunks, then with anything published */
   while (run_own(j)) {}
   int empty = 0;
+#if CW_CART
+  int stall_done = -1;
+  double stall_since = 0;
+#endif
   while (atomic_load(&j->done) < j->chunks) {
     unsigned seen = atomic_load(&ticket);
     if (run_any()) {
@@ -354,7 +375,18 @@ void cw_job_wait(cw_job *j) {
     }
     empty = 0;
 #if CW_CART
-    if (worker_index == 0) continue; /* the page thread cannot block */
+    if (worker_index == 0) { /* the page thread cannot block */
+      int d = atomic_load(&j->done);
+      if (d != stall_done) {
+        stall_done = d;
+        stall_since = page_now_ms();
+      } else if (cw__jobs_stall_ms > 0 && page_now_ms() - stall_since > cw__jobs_stall_ms)
+        CW_FATAL("jobs: a job (%s) has had %d of its %d chunks done for %d ms and no worker finishes one: a worker thread "
+                 "stopped in the middle of a chunk (its code trapped, or a host call failed in it; the host's log names "
+                 "the thread), so the job can never finish. Stopping instead of spinning forever",
+                 j->zone ? j->zone : "unnamed", d, j->chunks, cw__jobs_stall_ms);
+      continue;
+    }
 #endif
     pthread_mutex_lock(&sleep_lock);
     atomic_fetch_add(&done_sleepers, 1);
