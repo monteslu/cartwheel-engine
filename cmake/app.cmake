@@ -213,7 +213,12 @@ function(cw_add_app name)
       # host puts glGetString results there); without the export it wrote them
       # into the top 16 KB of memory, the live dlmalloc heap, and a later free
       # crashed in dlfree)
-      -Wl,--export=malloc)
+      -Wl,--export=malloc
+      # every allocation makes sure the thread it runs on sees the block: a
+      # thread's view of the memory's size can lag another thread's growth,
+      # and memset into the block would trap (src/core/mem.c)
+      -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=aligned_alloc
+      -Wl,--wrap=posix_memalign)
     # the asset dir is staged with its bundle manifest (cwfiles.txt: the file
     # list cw_vfs_list_dir reads, since a cart cannot list its bundle)
     set(_assets "")
