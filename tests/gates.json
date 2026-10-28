@@ -4023,7 +4023,6 @@
     "maxGt16": 0.002,
     "fields": [
       "vimp.tick",
-      "vimp.max_jump",
       "vimp.pop_free",
       "vimp.impostors",
       "vimp.fading",
@@ -4038,7 +4037,7 @@
     "controlEnv": {
       "VIS_NO_FADE": "1"
     },
-    "note": "octahedral impostors (albedo + normal atlases, lit at draw time) for 49 generated glTF trees with cwpack LOD chains; impostor_distance sweeps 60 m to 6 m and back, every frame is diffed with the last: the crossfade never changes more than 60 pixels by >24 levels at once. Control: impostor_fade 0 (hard switches pop about a thousand pixels)"
+    "note": "octahedral impostors (albedo + normal atlases, lit at draw time) for 49 generated glTF trees with cwpack LOD chains; impostor_distance sweeps 60 m to 6 m and back, every frame is diffed with the last: the crossfade never changes more than 60 pixels by >24 levels at once. vimp.max_jump is reported, not compared (2 or 3 pixels depending on the host since impostors are lit like their meshes; pop_free is the check). Control: impostor_fade 0 (hard switches pop about a thousand pixels)"
   },
   {
     "name": "vis-impostor-band",
@@ -4048,7 +4047,6 @@
     "maxGt16": 0.002,
     "fields": [
       "vimp.tick",
-      "vimp.max_jump",
       "vimp.pop_free",
       "vimp.impostors",
       "vimp.fading",
