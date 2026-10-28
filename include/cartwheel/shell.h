@@ -6,8 +6,9 @@
  *
  * Settings: graphics (cartwheel/quality.h; left / right step the preset,
  * accept opens the graphics page of cartwheel/quality_menu.h with every
- * setting), music and effects volume, and the controls (each action's
- * bindings). They are saved, with the game's own save data, in one
+ * setting), music and effects volume, screen shake (Full, Reduced, Off: games
+ * scale their camera shake by cw_shell_screen_shake) and the controls (each
+ * action's bindings). They are saved, with the game's own save data, in one
  * versioned, checksummed block the shell keeps in cw_app_desc.save.
  *
  *   static cw_app_desc desc = { ... };
@@ -151,6 +152,19 @@ void cw_shell_to_title(void); /* end the match and show the title (every pad dri
 /* Loading: progress 0..1 shown on the loading screen; loaded goes on to the title. */
 void cw_shell_loading(float progress);
 void cw_shell_loaded(void); /* loading done: on to the title */
+
+/* What Reduced screen shake scales a game's shake by (cw_shell_screen_shake). */
+#define CW_SHELL_SHAKE_REDUCED_SCALE 0.35f
+/* The player's Screen shake setting (Settings > Screen shake), saved with the other settings; Full by default and
+ * for a save from before the setting. */
+typedef enum { CW_SHELL_SHAKE_FULL, CW_SHELL_SHAKE_REDUCED, CW_SHELL_SHAKE_OFF } cw_shell_shake;
+/* The factor a game multiplies every camera shake, kick and bob by: 1 for Full, CW_SHELL_SHAKE_REDUCED_SCALE for
+ * Reduced, 0 for Off. Reduced motion (cw_ui_set_reduced_motion) caps it at Reduced. */
+float cw_shell_screen_shake(void);
+/* The Screen shake level the player chose. */
+cw_shell_shake cw_shell_shake_level(void);
+/* Set the Screen shake level as the settings menu does: it applies at once and is saved. */
+void cw_shell_set_shake_level(cw_shell_shake level);
 
 cw_bus cw_shell_music_bus(void); /* play music here: it follows the Music volume */
 cw_bus cw_shell_sfx_bus(void);   /* play effects here: they follow the Effects volume */

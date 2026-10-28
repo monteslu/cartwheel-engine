@@ -28,7 +28,8 @@ typedef struct shell_save {
   uint8_t music, sfx; /* volume steps 0..10 */
   uint8_t crisp;     /* cw_crisp_ui_saved */
   uint8_t gfx[4];    /* cw_quality_saved, little-endian (0: none, or a save from before it) */
-  uint8_t reserved[8];
+  uint8_t shake;     /* cw_shell_shake (0 Full: also what a save from before the setting holds) */
+  uint8_t reserved[7];
   uint8_t game[CW_SHELL_GAME_SAVE_MAX];
 } shell_save;
 static shell_save SAVE;
@@ -65,7 +66,7 @@ static struct {
   float progress;
   cw_action act[A_COUNT];
   cw_bus music, sfx;
-  int dbg_screen, dbg_players, dbg_item;
+  int dbg_screen, dbg_players, dbg_item, dbg_shake;
   bool inited, own_audio, hooked, just_resumed;
 } S;
 
@@ -112,6 +113,18 @@ void cw_shell_save_commit(void) {
 
 void *cw_shell_game_save(void) { return SAVE.game; }
 
+cw_shell_shake cw_shell_shake_level(void) { return SAVE.shake <= CW_SHELL_SHAKE_OFF ? (cw_shell_shake)SAVE.shake : CW_SHELL_SHAKE_FULL; }
+float cw_shell_screen_shake(void) {
+  cw_shell_shake l = cw_shell_shake_level();
+  float s = l == CW_SHELL_SHAKE_OFF ? 0.0f : l == CW_SHELL_SHAKE_REDUCED ? CW_SHELL_SHAKE_REDUCED_SCALE : 1.0f;
+  return cw_ui_reduced_motion() && s > CW_SHELL_SHAKE_REDUCED_SCALE ? CW_SHELL_SHAKE_REDUCED_SCALE : s;
+}
+void cw_shell_set_shake_level(cw_shell_shake level) {
+  SAVE.shake = (uint8_t)CW_CLAMP((int)level, 0, 2);
+  S.dbg_shake = SAVE.shake;
+  cw_shell_save_commit();
+}
+
 static void tree_hook(cw_tree *t, double dt, void *user);
 
 void cw_shell_init(const cw_shell_desc *d) {
@@ -151,6 +164,8 @@ void cw_shell_init(const cw_shell_desc *d) {
   cw_debug_field("shell.screen", &S.dbg_screen, CW_DBG_I32, 1);
   cw_debug_field("shell.players", &S.dbg_players, CW_DBG_I32, 1);
   cw_debug_field("shell.item", &S.dbg_item, CW_DBG_I32, 1);
+  S.dbg_shake = cw_shell_shake_level();
+  cw_debug_field("shell.shake", &S.dbg_shake, CW_DBG_I32, 1);
   S.inited = true;
   S.screen = S.d.loading ? CW_SHELL_LOADING : CW_SHELL_TITLE;
   S.dbg_screen = (int)S.screen;
@@ -281,7 +296,8 @@ static void pause_items(void) {
   items[n_items++] = (item){ "Settings", "" };
   items[n_items++] = (item){ "Quit to title", "" };
 }
-enum { SET_GRAPHICS, SET_MUSIC, SET_SFX, SET_CONTROLS, SET_BACK };
+enum { SET_GRAPHICS, SET_MUSIC, SET_SFX, SET_SHAKE, SET_CONTROLS, SET_BACK };
+static const char *const SHAKE_LABELS[3] = { "Full", "Reduced", "Off" };
 static void settings_items(void) {
   n_items = 0;
   items[n_items] = (item){ "Graphics", "" };
@@ -290,6 +306,8 @@ static void settings_items(void) {
   snprintf(items[n_items++].value, sizeof items[0].value, "%d%%", SAVE.music * 10);
   items[n_items] = (item){ "Effects", "" };
   snprintf(items[n_items++].value, sizeof items[0].value, "%d%%", SAVE.sfx * 10);
+  items[n_items] = (item){ "Screen shake", "" };
+  snprintf(items[n_items++].value, sizeof items[0].value, "%s", SHAKE_LABELS[cw_shell_shake_level()]);
   items[n_items++] = (item){ "Controls", "" };
   items[n_items++] = (item){ "Back", "" };
 }
@@ -332,9 +350,13 @@ static void settings_change(int dir) { /* dir -1 / +1: left / right; 0: accept *
     break;
   case SET_MUSIC: SAVE.music = step(SAVE.music, dir); break;
   case SET_SFX: SAVE.sfx = step(SAVE.sfx, dir); break;
+  case SET_SHAKE: /* left / right step it (stopping at the ends), accept goes round */
+    SAVE.shake = (uint8_t)(!dir ? ((int)cw_shell_shake_level() + 1) % 3 : CW_CLAMP((int)cw_shell_shake_level() + dir, 0, 2));
+    break;
   default: return;
   }
   apply_volumes();
+  S.dbg_shake = SAVE.shake;
   cw_shell_save_commit();
   sound(CW_SHELL_SND_MOVE);
 }
