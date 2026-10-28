@@ -24,8 +24,11 @@
  * them logs an error once and draws nothing for them.
  *
  * WebGPU rules this module keeps for every renderer:
- *   - compatibility feature level (the wasmcart tier's floor, enforced by
- *     Dawn on every backend);
+ *   - core WebGPU where the adapter has it, compatibility mode (the wasmcart
+ *     tier's floor) where it does not: natively the engine asks for a core
+ *     adapter first; a cart gets the host's device, whatever its level.
+ *     Renderers ask cw__wgpu_core() and keep a compatibility-mode path
+ *     (CW_WGPU_FEATURE_LEVEL=compat forces it natively, for tests);
  *   - main thread only: workers never call wgpu*;
  *   - nothing blocks in a cart: asynchronous results (errors) arrive
  *     between frames;
@@ -71,6 +74,8 @@ typedef struct cw_gpu_adapter {
   uint32_t vendor_id, device_id;
   uint32_t backend;      /* WGPUBackendType */
   uint32_t adapter_type; /* WGPUAdapterType: 1 discrete, 2 integrated, 3 CPU */
+  bool core;             /* the device is core WebGPU (not compatibility mode): HDR scenes multisample
+                          * and passes may read depth with textureLoad; false on GL */
 } cw_gpu_adapter;
 const cw_gpu_adapter *cw_gpu_adapter_info(void); /* never NULL; zeroed on GL */
 

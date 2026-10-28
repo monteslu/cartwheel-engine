@@ -187,6 +187,13 @@ file(MAKE_DIRECTORY ${CW_DECAL_WALLS_ASSETS}/decals)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/decal_walls/assets/main.cwscene ${CW_DECAL_WALLS_ASSETS}/main.cwscene COPYONLY)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/fx_decals/assets/decals/sheet.png ${CW_DECAL_WALLS_ASSETS}/decals/sheet.png COPYONLY)
 cw_add_app(decal_walls SOURCES decal_walls/main.c ASSETS ${CW_DECAL_WALLS_ASSETS})
+# an HDR scene with 4x MSAA and passes that read the depth (fence, wires, grass, decals, the sun disc): GL and
+# WebGPU must smooth the same edges (gate msaa-hdr)
+set(CW_MSAA_HDR_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/msaa_hdr_assets)
+file(MAKE_DIRECTORY ${CW_MSAA_HDR_ASSETS}/decals)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/msaa_hdr/assets/main.cwscene ${CW_MSAA_HDR_ASSETS}/main.cwscene COPYONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/fx_decals/assets/decals/sheet.png ${CW_MSAA_HDR_ASSETS}/decals/sheet.png COPYONLY)
+cw_add_app(msaa_hdr SOURCES msaa_hdr/main.c ASSETS ${CW_MSAA_HDR_ASSETS})
 # mesh-mode decals: clipped onto a skinned character (CesiumMan, CC-BY-4.0,
 # staged with its license as anim_skinned does), a glass pane, a spinning
 # crate and pooled bullet holes; the images are fx_decals' generated CC0 art

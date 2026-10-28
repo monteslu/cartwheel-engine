@@ -95,8 +95,8 @@ CW_STATIC_ASSERT(sizeof(cw_debug_view) == sizeof(int) && sizeof(cw_tonemap) == s
                  "enum properties are int-sized");
 
 static const cw_prop post_props[] = {
-  FB(hdr, "Render the scene into RGBA16F (linear HDR; off: RGBA8, banding in the darks, for MSAA in WebGPU compatibility mode)."),
-  FI(msaa, 0, 8, "MSAA samples on the scene pass (0 = off)."),
+  FB(hdr, "Render the scene into RGBA16F (linear HDR; off: RGBA8, banding in the darks, for MSAA on a compatibility-mode WebGPU device)."),
+  FI(msaa, 0, 8, "MSAA samples on the scene pass (0 = off; WebGPU multisamples 4x for any of 2-8)."),
   FB(depth_prepass, "Depth-only pass before the scene (early-z for heavy fragment shaders)."),
   FR(exposure, 0, 1000, "Linear exposure multiplier (toneMappingExposure)."),
   FR(exposure_ev, -20, 20, "Exposure in stops (multiplies by 2^ev)."),

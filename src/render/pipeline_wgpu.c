@@ -6,9 +6,12 @@
  * model (ids, one encoder per frame, GL row order offscreen, depth).
  *
  * Compatibility mode (the wasmcart tier's floor): 2D / 3D textures only
- * (their binding view dimension is the default), 4x MSAA, the depth copy
- * reads the depth attachment through a comparison sampler (exactly), R32Float
- * only through textureLoad (unfilterable). */
+ * (their binding view dimension is the default), 4x MSAA of RGBA8 only, the
+ * depth copy reads the depth attachment through a comparison sampler
+ * (exactly), R32Float only through textureLoad (unfilterable). On a core
+ * device (cw__wgpu_core) the scene multisamples in RGBA16Float too, and the
+ * depth copy and the depth resolve read the (multisampled) depth with
+ * textureLoad. */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +27,9 @@ bool cw__pw_rt_create(cw_rt *rt, int w, int h, cw_rt_format f, bool depth) { (vo
 void cw__pw_rt_destroy(cw_rt *rt) { (void)rt; }
 bool cw__pw_msaa_create(cw_rt *msaa, const cw_rt *scene) { (void)msaa, (void)scene; return false; }
 void cw__pw_depth_copy(cw_pass_ctx *ctx, const cw_rt *src, const cw_rt *dst, const float pz[4]) { (void)ctx, (void)src, (void)dst, (void)pz; }
+void cw__pw_msaa_retarget(cw_rt *msaa, const cw_rt *scene) { (void)msaa, (void)scene; }
+void cw__pw_depth_resolve(const cw_rt *msaa, const cw_rt *scene) { (void)msaa, (void)scene; }
+bool cw__pw_core(void) { return false; }
 void cw__pw_bind_target(const cw_rt *rt) { (void)rt; }
 void cw__pw_state_reset(void) {}
 void cw__pw_frame_begin(void) {}
@@ -113,7 +119,7 @@ void cw__pw_release(unsigned id) {
   pw_obj *o = obj(id);
   if (!o) return;
   close_open(); /* an open pass must not outlive its target's id (ids are reused) */
-  bg_epoch++;
+  if (o->view) bg_epoch++; /* (a target id is in no bind group) */
   if (o->view) wgpuTextureViewRelease(o->view);
   if (o->attach) wgpuTextureViewRelease(o->attach);
   if (o->tex) defer_texture(o->tex);
@@ -373,6 +379,18 @@ bool cw__pw_msaa_create(cw_rt *msaa, const cw_rt *scene) {
                             WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding, 4);
   msaa->fbo = target_new(msaa->tex, msaa->depth_tex, scene->tex, scene->w, scene->h, 4);
   return true;
+}
+
+bool cw__pw_core(void) { return cw__wgpu_core(); }
+
+/* the same MSAA attachments resolving into another scene colour of their
+ * size and format (split-screen views each keep their own scene target):
+ * only the target id changes */
+void cw__pw_msaa_retarget(cw_rt *msaa, const cw_rt *scene) {
+  pw_obj *t = obj(msaa->fbo);
+  if (t && t->resolve == scene->tex) return;
+  cw__pw_release(msaa->fbo);
+  msaa->fbo = target_new(msaa->tex, msaa->depth_tex, scene->tex, scene->w, scene->h, 4);
 }
 
 /* the attachments of a target id (0 = the window) */
@@ -1159,17 +1177,71 @@ static const char *DEPTH_COPY =
     "  let zv = (u.pz.y - z * u.pz.w) / (z * u.pz.z - u.pz.x);\n"
     "  return vec4f(-zv, 0.0, 0.0, 1.0);\n"
     "}\n";
+/* core WebGPU: the depth is read directly (one textureLoad: the same value
+ * the compares find). The multisampled scene depth gives its sample 0, the
+ * sample a GL blit resolving depth keeps (Mesa); the window-depth to distance
+ * math is the compatibility copy's */
+#define DEPTH_LINEAR_WGSL \
+  "  if (d >= 1.0) { return vec4f(3.0e38, 0.0, 0.0, 1.0); }\n" \
+  "  let z = d * 2.0 - 1.0;\n" \
+  "  let zv = (u.pz.y - z * u.pz.w) / (z * u.pz.z - u.pz.x);\n" \
+  "  return vec4f(-zv, 0.0, 0.0, 1.0);\n" \
+  "}\n"
+static const char *DEPTH_COPY_LOAD =
+    "struct U { pz: vec4f };\n"
+    "@group(0) @binding(0) var<uniform> u: U;\n"
+    "@group(0) @binding(1) var t_depth: texture_depth_2d;\n"
+    "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
+    "  let d = textureLoad(t_depth, vec2i(pos.xy), 0);\n" DEPTH_LINEAR_WGSL;
+static const char *DEPTH_COPY_MS =
+    "struct U { pz: vec4f };\n"
+    "@group(0) @binding(0) var<uniform> u: U;\n"
+    "@group(0) @binding(1) var t_depth: texture_depth_multisampled_2d;\n"
+    "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
+    "  let d = textureLoad(t_depth, vec2i(pos.xy), 0);\n" DEPTH_LINEAR_WGSL;
+/* the multisampled scene depth into the scene's own depth attachment (sample
+ * 0, as GL's resolving blit), for SKY / EFFECTS passes that depth-test
+ * against the resolved scene; the colour is not written */
+static const char *DEPTH_RESOLVE =
+    "@group(0) @binding(1) var t_depth: texture_depth_multisampled_2d;\n"
+    "struct O { @location(0) c: vec4f, @builtin(frag_depth) d: f32 };\n"
+    "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> O {\n"
+    "  var o: O;\n"
+    "  o.c = vec4f(0.0);\n"
+    "  o.d = textureLoad(t_depth, vec2i(pos.xy), 0);\n"
+    "  return o;\n"
+    "}\n";
+
+void cw__pw_depth_resolve(const cw_rt *msaa, const cw_rt *scene) {
+  static unsigned prog;
+  pw_obj *d = obj(msaa->depth_tex);
+  if (!d || d->samples < 2 || !scene->depth_tex || !cw__wgpu_core()) return;
+  if (!prog && !(prog = cw__pw_program("depth_resolve", DEPTH_RESOLVE))) return;
+  cw__pw_state_reset();
+  cw__pw_bind_target(scene);
+  cw__pw_use(prog);
+  cw__pw_bind_texture(0, msaa->depth_tex);
+  cw__pw_set_depth(false, true); /* always, written */
+  draw(true, 3);
+  cw__pw_state_reset();
+}
+
 void cw__pw_depth_copy(cw_pass_ctx *ctx, const cw_rt *src, const cw_rt *dst, const float pz[4]) {
   (void)ctx;
-  static unsigned prog;
+  static unsigned prog, prog_load, prog_ms;
   pw_obj *d = obj(src->depth_tex);
-  if (!d || d->samples > 1) return; /* (pipeline.c never asks with MSAA) */
-  if (!prog && !(prog = cw__pw_program("depth_copy", DEPTH_COPY))) return;
+  if (!d) return;
+  bool core = cw__wgpu_core();
+  if (d->samples > 1 && !core) return; /* (compatibility mode: pipeline.c never asks with MSAA) */
+  unsigned *pp = d->samples > 1 ? &prog_ms : core ? &prog_load : &prog;
+  /* one name for the three (CW_TEST_BREAK_PROGRAM=depth_copy breaks whichever runs) */
+  if (!*pp && !(*pp = cw__pw_program("depth_copy", d->samples > 1 ? DEPTH_COPY_MS : core ? DEPTH_COPY_LOAD : DEPTH_COPY)))
+    return;
   cw__pw_state_reset();
   cw__pw_bind_target(dst);
-  cw__pw_use(prog);
+  cw__pw_use(*pp);
   cw__pw_bind_texture(0, src->depth_tex);
-  cw__pw_uniform(prog, "pz", 4, pz, 0);
+  cw__pw_uniform(*pp, "pz", 4, pz, 0);
   draw(false, 3);
 }
 

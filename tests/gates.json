@@ -3855,6 +3855,38 @@
     "note": "about two hundred MULTIPLY decals from regions of a non-square sheet on the faces and tops of a side-on cliff (boxes 0.7 deep around the face, edge_fade 0.3, normal_fade 0.5, spun), through the full pipeline (HDR, ambient occlusion, bloom, tone mapping): GL and WebGPU draw the same picture. Controls: no decals; and on WebGPU alone every decal without its fades (DW_CONTROL_WGPU), which must fail the GL-vs-WebGPU bound"
   },
   {
+    "name": "msaa-hdr",
+    "webgpu": {
+      "vsGl": 0.0004,
+      "maxGt16": 0.0004,
+      "maxArea": 0.0002,
+      "controls": [
+        { "env": { "CW_TEST_WGPU_NO_MSAA": "1" } },
+        { "env": { "CW_TEST_WGPU_NO_DEPTH_RESOLVE": "1" } },
+        { "env": { "CW_WGPU_FEATURE_LEVEL": "compat" } }
+      ]
+    },
+    "app": "msaa_hdr",
+    "frames": 5,
+    "maxGt16": 0.002,
+    "minColors": 200,
+    "fields": [
+      "mh.blades",
+      "mh.posts",
+      "mh.decals",
+      "mh.msaa",
+      "mh.tick"
+    ],
+    "expect": {
+      "mh.blades": 360,
+      "mh.posts": 40,
+      "mh.decals": 12,
+      "mh.msaa": 4,
+      "mh.tick": 5
+    },
+    "note": "an HDR (RGBA16F) scene with 4x MSAA and passes after the opaque phase that read the depth (ambient occlusion, decals) or test against it (the sun disc behind a pole and wires): a fence, wires and slanted grass blades whose every edge steps without MSAA. GL multisamples; WebGPU on a core device multisamples too and resolves the depth (GL vs WebGPU 0.016 percent on the 890M). Controls that must fail: WebGPU single-sampled (CW_TEST_WGPU_NO_MSAA, 1.3 percent), the depth resolve left out (the sun drawn over the pole, 0.09 percent), and a compatibility-mode device (the fallback: single-sampled, 1.3 percent)"
+  },
+  {
     "name": "fx-mesh-decals",
     "app": "fx_mesh_decals",
     "frames": 120,

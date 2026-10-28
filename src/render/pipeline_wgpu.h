@@ -74,7 +74,13 @@ void cw__pw_rt_destroy(cw_rt *rt);
 /* the scene's 4x MSAA target resolving into scene->tex (a cw_rt whose fbo
  * names the MSAA attachments) */
 bool cw__pw_msaa_create(cw_rt *msaa, const cw_rt *scene);
-/* R32F linear depth from the (single-sampled) depth attachment of src */
+/* the same MSAA attachments resolving into another scene colour of their size */
+void cw__pw_msaa_retarget(cw_rt *msaa, const cw_rt *scene);
+/* core WebGPU: the MSAA depth's sample 0 into scene->depth_tex (as GL's resolving blit) */
+void cw__pw_depth_resolve(const cw_rt *msaa, const cw_rt *scene);
+/* a core WebGPU device (false in compatibility mode and without WebGPU) */
+bool cw__pw_core(void);
+/* R32F linear depth from the depth attachment of src (multisampled: core WebGPU only) */
 void cw__pw_depth_copy(cw_pass_ctx *ctx, const cw_rt *src, const cw_rt *dst_r32f, const float proj_z[4]);
 void cw__pw_bind_target(const cw_rt *rt);
 void cw__pw_state_reset(void);

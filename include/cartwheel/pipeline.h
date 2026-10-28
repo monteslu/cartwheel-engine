@@ -114,8 +114,10 @@
  *     GL's row order and depth is GL's [0, 1] window depth, so GLSL ports
  *     line for line. ctx->depth_tex is an R32F LINEAR depth there (view-space
  *     distance, 3e38 where nothing was drawn; read it with textureLoad /
- *     cw_load); MSAA serves RGBA8 scenes without depth readers
- *     (compatibility mode). three.c has no WebGPU backend yet: the "scene"
+ *     cw_load). MSAA (4x, WebGPU's only count) serves any scene on a core
+ *     WebGPU device (the multisampled depth's sample 0 is resolved into the
+ *     scene depth when the opaque phase ends, as GL's blit does); in
+ *     compatibility mode only RGBA8 scenes without depth readers. three.c has no WebGPU backend yet: the "scene"
  *     pass is skipped, and an OPAQUE pass of the app's (webgpu = true) can
  *     draw the scene (samples/post_synth).
  *   - Under TAA the camera's projection_matrix carries this frame's jitter
@@ -197,8 +199,9 @@ typedef enum {
  * frame; nothing is ever lowered automatically (quality is the developer's). */
 typedef struct cw_post_settings {
   bool hdr;                 /* the scene target is RGBA16F (linear HDR); off: RGBA8, where linear
-                             * values band in the darks (WebGPU compatibility mode's MSAA needs it); true */
-  int msaa;                 /* samples on the scene pass (0, 2, 4, 8; clamped to GL_MAX_SAMPLES); 0 */
+                             * values band in the darks (MSAA on a compatibility-mode WebGPU device needs it); true */
+  int msaa;                 /* samples on the scene pass (0, 2, 4, 8; clamped to GL_MAX_SAMPLES; WebGPU
+                             * multisamples 4x for any of 2-8); 0 */
   bool depth_prepass;       /* depth-only pass before the scene (early-z for heavy shaders) */
   /* exposure: a linear multiplier (three.js's toneMappingExposure) times
    * 2^exposure_ev (photographic stops) */
