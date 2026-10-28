@@ -58,7 +58,7 @@
 #include "cartwheel/debug.h"
 #include "cartwheel/decals.h"
 #include "cartwheel/environment.h"
-#include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/particles.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
@@ -313,14 +313,11 @@ static void render(void *u, double alpha) {
   gpu_total = cw_pipeline_gpu_ms(cw_pipeline_of(t));
 
   /* frame time: render end to render end. SC_PERF builds wait for the GPU
-   * after every frame (a 1-pixel read), so this is the whole frame's work,
+   * after every frame (cw_gpu_finish), so this is the whole frame's work,
    * CPU and GPU, not a pipelined submission rate */
   static double last;
   double submitted = wall_ms();
-  if (SC_PERF) {
-    uint8_t px[4];
-    glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
-  }
+  if (SC_PERF) cw_gpu_finish();
   double now = wall_ms();
   if (last > 0) {
     float d = (float)(now - last);

@@ -22,6 +22,7 @@
 #include "cartwheel/input.h"
 #include "cartwheel/physics.h"
 #include "cartwheel/platform.h"
+#include "cartwheel/render3d.h"
 #include "three.h"
 
 #define COINS 5
@@ -137,7 +138,7 @@ static void init(void *user) {
   cw_drawable_size(&w, &h);
   jump_action = cw_action_add("jump", 0.5f);
   cw_action_bind_text(jump_action, "pad:south");
-  A.renderer = t3_renderer_new(w, h);
+  A.renderer = cw_render3d_window_renderer(w, h);
   t3_renderer_set_clear_color(A.renderer, 0x87a8c8, 1);
   A.scene = t3_scene_new();
   A.camera = t3_perspective_camera_new(60, (float)w / (float)h, 0.1f, 200);
@@ -265,6 +266,7 @@ static void render(void *user, double alpha) {
   for (int c = 0; c < COINS; c++) t3_object_set_rotation(A.coin_mesh[c], 0, (float)A.tick * 0.05f, 0);
   t3_object_set_position(A.camera, p.x - 4, p.y + 3.5f, p.z + 7);
   t3_object_look_at(A.camera, p.x + 1, p.y + 0.8f, p.z);
+  cw_render3d_window_target(A.renderer);
   t3_renderer_render(A.renderer, A.scene, A.camera);
 }
 

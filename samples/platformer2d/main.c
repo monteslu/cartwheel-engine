@@ -11,6 +11,7 @@
 
 #include "cartwheel/debug.h"
 #include "cartwheel/platform.h"
+#include "cartwheel/render3d.h"
 #include "cartwheel/platformer2d.h"
 #include "three.h"
 
@@ -48,7 +49,7 @@ static void init(void *user) {
   (void)user;
   int w, h;
   cw_drawable_size(&w, &h);
-  A.renderer = t3_renderer_new(w, h);
+  A.renderer = cw_render3d_window_renderer(w, h);
   t3_renderer_set_clear_color(A.renderer, 0x182028, 1);
   A.scene = t3_scene_new();
   A.camera = t3_orthographic_camera_new(-4, 28, 10, -8, -10, 10);
@@ -140,6 +141,7 @@ static void render(void *user, double alpha) {
   (void)user;
   cw_pos2 p = cw_mover2d_interpolated(&A.pf.body, (float)alpha);
   t3_object_set_position(A.hero, (float)p.x, (float)p.y + 0.9f, 0);
+  cw_render3d_window_target(A.renderer);
   t3_renderer_render(A.renderer, A.scene, A.camera);
 }
 

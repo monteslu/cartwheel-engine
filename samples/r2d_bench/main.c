@@ -14,7 +14,7 @@
 
 #include "cartwheel/core.h"
 #include "cartwheel/debug.h"
-#include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/jobs.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/render2d.h"
@@ -102,8 +102,7 @@ static void render(void *user, double alpha) {
   double t2 = now_ms();
   cw_r2d_end();
   double t3 = now_ms();
-  uint8_t px[4];
-  glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px); /* wait for the GPU */
+  cw_gpu_finish(); /* wait for the GPU */
   double t4 = now_ms();
   a->draws_per_frame = cw_r2d_get_stats()->draw_calls;
   if (f >= WARMUP) {

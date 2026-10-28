@@ -24,8 +24,8 @@
 #include "cartwheel/audio.h"
 #include "cartwheel/core.h"
 #include "cartwheel/debug.h"
-#include "cartwheel/gl.h"
 #include "cartwheel/platform.h"
+#include "cartwheel/render2d.h"
 
 #define RATE 48000
 #define FRAMES_PER_TICK (RATE / 60)
@@ -222,10 +222,15 @@ static void update(void *user, double dt) {
 }
 /* #endregion */
 
+/* a filled rectangle at (x, y, w, h) in drawable pixels, bottom-left origin
+ * (the layout this sample was drawn in), through the 2D renderer */
 static void rect(int x, int y, int w, int h, float r, float g, float b) {
-  glScissor(x, y, w, h);
-  glClearColor(r, g, b, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
+  if (w <= 0 || h <= 0) return;
+  int dw, dh;
+  cw_drawable_size(&dw, &dh);
+  cw_vec2 c = cw_r2d_canvas_size();
+  float kx = c.x / (float)dw, ky = c.y / (float)dh;
+  cw_r2d_rect((cw_rect){ (float)x * kx, (float)(dh - y - h) * ky, (float)w * kx, (float)h * ky }, cw_rgba(r, g, b, 1));
 }
 
 static void render(void *user, double alpha) {
@@ -233,11 +238,7 @@ static void render(void *user, double alpha) {
   mix_app *a = user;
   int w, h;
   cw_drawable_size(&w, &h);
-  glDisable(GL_SCISSOR_TEST);
-  glViewport(0, 0, w, h);
-  glClearColor(0.06f, 0.07f, 0.09f, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
-  glEnable(GL_SCISSOR_TEST);
+  cw_r2d_begin(&(cw_r2d_pass_desc){ .clear = true, .clear_color = cw_rgba(0.06f, 0.07f, 0.09f, 1) });
   float sx = (float)w / 480.0f, sy = (float)h / 270.0f;
   /* waveform peaks: one column per rendered tick */
   for (int t = 0; t < a->tick; t++) {
@@ -249,7 +250,7 @@ static void render(void *user, double alpha) {
     float v = (a->hash >> i) & 1 ? 1.0f : 0.2f;
     rect((int)((8 + i * 14) * sx), (int)(16 * sy), (int)(12 * sx), (int)(24 * sy), v, a->done ? v : 0.2f, v);
   }
-  glDisable(GL_SCISSOR_TEST);
+  cw_r2d_end();
 }
 
 static void shutdown(void *user) {

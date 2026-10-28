@@ -10,7 +10,7 @@
 
 #include "cartwheel/core.h"
 #include "cartwheel/debug.h"
-#include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/render2d.h"
 
@@ -121,24 +121,32 @@ static void render(void *user, double alpha) {
   snprintf(buf, sizeof buf, "CAM %4d %4d Z%.2f", (int)a->cam.position.x, (int)a->cam.position.y, a->cam.zoom);
   cw_r2d_text(a->pixel, buf, (cw_vec2){ 6, 156 }, &(cw_text_style){ .size = 8, .color = cw_hex(0xffffa0ff) });
   cw_r2d_end();
-  if (a->ticks % 30 == 0) { /* read the window back and check the integer scaling */
+  /* read the canvas back and check the integer scaling: asked every 30
+   * ticks, checked when the pixels arrive (a frame or more later on WebGPU) */
+  static uint32_t ticket;
+  static int rk, rw, rh;
+  if (ticket) {
+    uint8_t *px = cw_frame_alloc((size_t)rw * (size_t)rh * 4);
+    int got = cw_gpu_read_result(ticket, px);
+    if (got != 0) ticket = 0;
+    if (got == 1) {
+      int bad = 0;
+      for (int by = 0; by < 170; by++)
+        for (int bx = 0; bx < 300; bx++) {
+          const uint8_t *p0 = px + ((size_t)(by * rk) * (size_t)rw + (size_t)(bx * rk)) * 4;
+          for (int j = 0; j < rk; j++)
+            for (int i = 0; i < rk; i++)
+              if (memcmp(p0, px + ((size_t)(by * rk + j) * (size_t)rw + (size_t)(bx * rk + i)) * 4, 3)) bad++;
+        }
+      a->bad_blocks = bad;
+      a->scale = rk;
+    }
+  }
+  if (a->ticks % 30 == 0 && !ticket) {
     cw_rect r = cw_r2d_canvas_rect();
-    int w, h, k = (int)(r.w / 300.0f);
-    cw_drawable_size(&w, &h);
-    uint8_t *px = cw_frame_alloc((size_t)w * (size_t)h * 4);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px);
-    int bad = 0, x0 = (int)r.x, y0 = h - (int)r.y - (int)r.h; /* GL rows are bottom-up */
-    for (int by = 0; by < 170; by++)
-      for (int bx = 0; bx < 300; bx++) {
-        const uint8_t *p0 = px + ((size_t)(y0 + by * k) * (size_t)w + (size_t)(x0 + bx * k)) * 4;
-        for (int j = 0; j < k; j++)
-          for (int i = 0; i < k; i++)
-            if (memcmp(p0, px + ((size_t)(y0 + by * k + j) * (size_t)w + (size_t)(x0 + bx * k + i)) * 4, 3)) bad++;
-      }
-    a->bad_blocks = bad;
-    a->scale = k;
+    rk = (int)(r.w / 300.0f);
+    rw = 300 * rk, rh = 170 * rk;
+    ticket = cw_gpu_read_window((int)r.x, (int)r.y, rw, rh);
   }
 }
 

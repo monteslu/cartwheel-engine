@@ -38,9 +38,9 @@
 #include "cartwheel/audio.h"
 #include "cartwheel/core.h"
 #include "cartwheel/debug.h"
-#include "cartwheel/gl.h"
 #include "cartwheel/math.h"
 #include "cartwheel/platform.h"
+#include "cartwheel/render2d.h"
 
 #define RATE 48000
 #define FRAMES_PER_TICK (RATE / 60)
@@ -360,10 +360,15 @@ static void update(void *user, double dt) {
   if (++a->tick == TICKS) finish(a);
 }
 
+/* a filled rectangle at (x, y, w, h) in drawable pixels, bottom-left origin
+ * (the layout this sample was drawn in), through the 2D renderer */
 static void rect(int x, int y, int w, int h, float r, float g, float b) {
-  glScissor(x, y, w, h);
-  glClearColor(r, g, b, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
+  if (w <= 0 || h <= 0) return;
+  int dw, dh;
+  cw_drawable_size(&dw, &dh);
+  cw_vec2 c = cw_r2d_canvas_size();
+  float kx = c.x / (float)dw, ky = c.y / (float)dh;
+  cw_r2d_rect((cw_rect){ (float)x * kx, (float)(dh - y - h) * ky, (float)w * kx, (float)h * ky }, cw_rgba(r, g, b, 1));
 }
 
 static void dot(float sx, float sy, t3_vec3 p, float scale, float r, float g, float b) {
@@ -376,11 +381,7 @@ static void render(void *user, double alpha) {
   app3d *a = user;
   int w, h;
   cw_drawable_size(&w, &h);
-  glDisable(GL_SCISSOR_TEST);
-  glViewport(0, 0, w, h);
-  glClearColor(0.06f, 0.07f, 0.09f, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
-  glEnable(GL_SCISSOR_TEST);
+  cw_r2d_begin(&(cw_r2d_pass_desc){ .clear = true, .clear_color = cw_rgba(0.06f, 0.07f, 0.09f, 1) });
   float sx = (float)w / 480.0f, sy = (float)h / 270.0f;
   if (a->tick < WALK) {
     bool hp = a->tick < 180 || a->tick >= 240;
@@ -407,7 +408,7 @@ static void render(void *user, double alpha) {
   }
   /* progress */
   rect(0, (int)(264 * sy), (int)((float)a->tick / TICKS * 480.0f * sx), (int)(6 * sy), 0.3f, 0.7f, 1.0f);
-  glDisable(GL_SCISSOR_TEST);
+  cw_r2d_end();
 }
 
 static void shutdown(void *user) {

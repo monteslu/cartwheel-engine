@@ -18,16 +18,16 @@ cw_add_app(texture_filtering SOURCES texture_filtering/main.c)
 cw_add_app(shell_join SOURCES shell_join/main.c)
 
 # actions, tick/frame snapshots, rebinding, touch controls, record/replay (120 Hz).
-cw_add_app(input_demo SOURCES input_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/input_demo/assets GL_ONLY)
+cw_add_app(input_demo SOURCES input_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/input_demo/assets)
 # motion inputs and the framing camera: a command buffer reading a quarter circle, a rising strike and a dash; a fit for two moving points
-cw_add_app(motion_demo SOURCES motion_demo/main.c GL_ONLY)
+cw_add_app(motion_demo SOURCES motion_demo/main.c)
 
 # upstream's determinism scenes + Box3D's large pyramid on the job pool.
 # deps/<lib>/shared is upstream's sample support code, compiled as-is.
 cw_add_app(physics_determinism SOURCES physics_determinism/main.c
   ${DEPS}/box3d/shared/determinism.c ${DEPS}/box3d/shared/human.c ${DEPS}/box3d/shared/utils.c
   ${DEPS}/box3d/shared/benchmarks.c
-  ${CMAKE_CURRENT_BINARY_DIR}/box2d_determinism.c GL_ONLY)
+  ${CMAKE_CURRENT_BINARY_DIR}/box2d_determinism.c)
 # Box2D's shared/determinism.c has the same file name and header name as
 # Box3D's; compile it through a renamed copy so both live in one app.
 configure_file(${DEPS}/box2d/shared/determinism.c ${CMAKE_CURRENT_BINARY_DIR}/box2d_determinism.c COPYONLY)
@@ -38,18 +38,18 @@ set_source_files_properties(${DEPS}/box3d/shared/determinism.c ${DEPS}/box3d/sha
 target_include_directories(physics_determinism PRIVATE ${DEPS}/box3d/shared)
 
 # physics module samples (cartwheel/physics.h)
-cw_add_app(physics3d_stack SOURCES physics3d_stack/main.c GL_ONLY)
-cw_add_app(physics2d_joints SOURCES physics2d_joints/main.c GL_ONLY)
-cw_add_app(platformer2d SOURCES platformer2d/main.c GL_ONLY)
-cw_add_app(character3d SOURCES character3d/main.c GL_ONLY)
-cw_add_app(character3d_auto SOURCES character3d/main.c GL_ONLY)
+cw_add_app(physics3d_stack SOURCES physics3d_stack/main.c)
+cw_add_app(physics2d_joints SOURCES physics2d_joints/main.c)
+cw_add_app(platformer2d SOURCES platformer2d/main.c)
+cw_add_app(character3d SOURCES character3d/main.c)
+cw_add_app(character3d_auto SOURCES character3d/main.c)
 target_compile_definitions(character3d_auto PRIVATE CHARACTER_AUTOPILOT=1)
 cw_add_app(scene3d SOURCES scene3d/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/scene3d/assets)
 # navigation: 500 agents crossing a level, a gate carving the navmesh (cartwheel/nav.h)
 cw_add_app(nav_demo SOURCES nav_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/nav_demo/assets)
 cw_add_app(nav_links SOURCES nav_links/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/nav_links/assets)
 # navigation timings (tests/nav-perf.mjs): navmesh builds, obstacle updates, batched paths, crowd steps
-cw_add_app(nav_perf SOURCES nav_perf/main.c GL_ONLY)
+cw_add_app(nav_perf SOURCES nav_perf/main.c)
 # terrain (cartwheel/terrain.h): CDLOD, splat layers, scatter, a car on Box3D's height field
 # cloth and ropes as nodes (cartwheel/cloth.h): a flag in wind, a cape on a walking hero, a rope holding a crate, a chain of links
 cw_add_app(cloth_demo SOURCES cloth_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/cloth_demo/assets)
@@ -58,7 +58,7 @@ cw_add_app(terrain_demo SOURCES terrain_demo/main.c PACK ${CMAKE_CURRENT_SOURCE_
 cw_add_app(terrain_lights SOURCES terrain_demo/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/terrain_demo/project/roots.txt
   PROGRAMS terrain_demo/programs/terrain_demo.txt)
 target_compile_definitions(terrain_lights PRIVATE TERRAIN_DEFAULT_MODE="lights")
-cw_add_app(perf_nodes SOURCES perf_nodes/main.c GL_ONLY)
+cw_add_app(perf_nodes SOURCES perf_nodes/main.c)
 # big open worlds (cartwheel/stream.h): a 16.4 km world in 512 m cells, streamed in
 # around a car or a flight; the world (45 MB of zstd cell files) is generated
 # at build time by gen-world.mjs
@@ -74,9 +74,9 @@ add_dependencies(open_world open_world_world)
 set_property(TARGET open_world APPEND PROPERTY LINK_DEPENDS ${_ow}/stamp)
 # audio: an offline-rendered scripted mix (the cross-host hash gate) and
 # a sample that plays through the real device path.
-cw_add_app(audio_mix SOURCES audio_mix/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/audio_mix/assets GL_ONLY)
-cw_add_app(audio_play SOURCES audio_play/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/audio_play/assets GL_ONLY)
-cw_add_app(audio_3d SOURCES audio_3d/main.c GL_ONLY)
+cw_add_app(audio_mix SOURCES audio_mix/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/audio_mix/assets)
+cw_add_app(audio_play SOURCES audio_play/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/audio_play/assets)
+cw_add_app(audio_3d SOURCES audio_3d/main.c)
 # the profiler: something in every engine phase (physics jobs, animation, audio, passes, a game zone)
 cw_add_app(profile_demo SOURCES profile_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/profile_demo/assets)
 # video: an MPEG-1 cutscene (pl_mpeg) drawn on GL or WebGPU, its sound mixed offline
@@ -128,10 +128,10 @@ set(R2D_ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/r2d_assets)
 cw_add_app(r2d_sprites SOURCES r2d_sprites/main.c ASSETS ${R2D_ASSETS})
 cw_add_app(r2d_tilemap SOURCES r2d_tilemap/main.c ASSETS ${R2D_ASSETS})
 cw_add_app(r2d_text SOURCES r2d_text/main.c ASSETS ${R2D_ASSETS})
-cw_add_app(r2d_camera SOURCES r2d_camera/main.c ASSETS ${R2D_ASSETS} GL_ONLY)
+cw_add_app(r2d_camera SOURCES r2d_camera/main.c ASSETS ${R2D_ASSETS})
 cw_add_app(r2d_lights SOURCES r2d_lights/main.c ASSETS ${R2D_ASSETS})
-cw_add_app(r2d_interop SOURCES r2d_interop/main.c ASSETS ${R2D_ASSETS} GL_ONLY)
-cw_add_app(r2d_bench SOURCES r2d_bench/main.c ASSETS ${R2D_ASSETS} GL_ONLY)
+cw_add_app(r2d_interop SOURCES r2d_interop/main.c ASSETS ${R2D_ASSETS})
+cw_add_app(r2d_bench SOURCES r2d_bench/main.c ASSETS ${R2D_ASSETS})
 # the retained UI system (cartwheel/ui.h). Shared scenes, themes and art in ui_assets.
 set(UI_ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/ui_assets)
 cw_add_app(ui_gallery SOURCES ui_gallery/main.c ASSETS ${UI_ASSETS})
@@ -159,7 +159,7 @@ cw_add_app(ui_scene SOURCES ui_scene/main.c ASSETS ${UI_ASSETS})
 # (post_stack), the same at 1280x720 full quality for the GPU timing report
 # (post_stack_perf).
 cw_add_app(post_stack SOURCES post_stack/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/post_stack/assets)
-cw_add_app(post_stack_perf SOURCES post_stack/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/post_stack/assets GL_ONLY)
+cw_add_app(post_stack_perf SOURCES post_stack/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/post_stack/assets)
 target_compile_definitions(post_stack_perf PRIVATE POST_PERF=1)
 # the post stack on a scene the app ray traces itself, the
 # same on GL and WebGPU (post_synth), and at 1280x720 full quality for timing.
@@ -174,12 +174,12 @@ cw_add_app(fx_explosion SOURCES fx_explosion/main.c ASSETS ${CMAKE_CURRENT_SOURC
 cw_add_app(fx_sub_emitters SOURCES fx_sub_emitters/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_sub_emitters/assets)
 cw_add_app(fx_boom_water SOURCES fx_boom_water/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_boom_water/assets)
 cw_add_app(fx_collide SOURCES fx_collide/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_collide/assets)
-cw_add_app(fx_perf SOURCES fx_perf/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_perf/assets GL_ONLY)
+cw_add_app(fx_perf SOURCES fx_perf/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_perf/assets)
 cw_add_app(fx_particles2d SOURCES fx_particles2d/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_particles2d/assets)
 # decals on uneven geometry (images generated by fx_decals/make-art.mjs)
 # a first person weapon on its own render layer and lens (Node3D layers, Camera3D viewmodel_layers)
 cw_add_app(viewmodel_demo SOURCES viewmodel_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/viewmodel_demo/assets)
-cw_add_app(fx_decals SOURCES fx_decals/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_decals/assets GL_ONLY)
+cw_add_app(fx_decals SOURCES fx_decals/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_decals/assets)
 # about two hundred MULTIPLY decals from a sheet on the faces of a side-on cliff, through the full pipeline: GL and
 # WebGPU must draw the same picture (gate decal-walls)
 set(CW_DECAL_WALLS_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/decal_walls_assets)
@@ -219,13 +219,13 @@ configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.LICENSE.md ${CW_LIT_DECALS_
 cw_add_app(fx_lit_decals SOURCES fx_lit_decals/main.c ASSETS ${CW_LIT_DECALS_ASSETS})
 # visibility: impostor crossfade (no popping) on a grove of generated
 # trees, and the city (BVH frustum culling, occlusion queries, portals, LOD).
-cw_add_app(vis_impostor SOURCES vis_impostor/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt GL_ONLY)
-cw_add_app(vis_city SOURCES vis_city/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt GL_ONLY)
-cw_add_app(vis_city_check SOURCES vis_city/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt GL_ONLY)
+cw_add_app(vis_impostor SOURCES vis_impostor/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt)
+cw_add_app(vis_city SOURCES vis_city/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt)
+cw_add_app(vis_city_check SOURCES vis_city/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt)
 target_compile_definitions(vis_city_check PRIVATE VIS_DEFAULT_MODE="check")
-cw_add_app(vis_city_off SOURCES vis_city/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt GL_ONLY)
+cw_add_app(vis_city_off SOURCES vis_city/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt)
 target_compile_definitions(vis_city_off PRIVATE VIS_DEFAULT_MODE="off")
-cw_add_app(vis_city_lights SOURCES vis_city/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt GL_ONLY)
+cw_add_app(vis_city_lights SOURCES vis_city/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/vis_city/project/roots.txt)
 target_compile_definitions(vis_city_lights PRIVATE VIS_DEFAULT_MODE="lights")
 
 # the procedural sky, its sun and environment, the day / night cycle.
@@ -261,7 +261,7 @@ cw_add_app(water_ripples SOURCES water_ripples/main.c ASSETS ${CMAKE_CURRENT_SOU
 cw_add_app(lightmap_room SOURCES lightmap_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/lightmap_room/assets)
 # reflection probes (cartwheel/gi.h): a room with coloured walls, a polished floor, chrome
 cw_add_app(gi_room SOURCES gi_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/gi_room/assets PROGRAMS gi_room/programs/gi_room.txt)
-cw_add_app(gi_room_perf SOURCES gi_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/gi_room/assets PROGRAMS gi_room/programs/gi_room.txt GL_ONLY)
+cw_add_app(gi_room_perf SOURCES gi_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/gi_room/assets PROGRAMS gi_room/programs/gi_room.txt)
 target_compile_definitions(gi_room_perf PRIVATE GI_PERF=1)
 cw_add_app(gi_probe_check SOURCES gi_probe_check/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/gi_probe_check/assets PROGRAMS gi_room/programs/gi_room.txt)
 cw_add_app(gi_shadow SOURCES gi_shadow/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/gi_shadow/assets PROGRAMS gi_shadow/programs/gi_shadow.txt)
@@ -283,7 +283,7 @@ configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.LICENSE.md ${CW_SHOWCASE_AS
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/fx_decals/assets/decals/scorch.png ${CW_SHOWCASE_ASSETS}/decals/scorch.png COPYONLY)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/fx_decals/assets/decals/cracks.png ${CW_SHOWCASE_ASSETS}/decals/cracks.png COPYONLY)
 cw_add_app(showcase SOURCES showcase/main.c showcase/world.c ASSETS ${CW_SHOWCASE_ASSETS})
-cw_add_app(showcase_perf SOURCES showcase/main.c showcase/world.c ASSETS ${CW_SHOWCASE_ASSETS} GL_ONLY)
+cw_add_app(showcase_perf SOURCES showcase/main.c showcase/world.c ASSETS ${CW_SHOWCASE_ASSETS})
 target_compile_definitions(showcase_perf PRIVATE SC_PERF=1)
 # networking: a two-player arena on rollback netcode (cartwheel/net.h).
 # net_arena runs both peers in one process over the simulated network (every

@@ -21,7 +21,7 @@
 #include <string.h>
 
 #include "cartwheel/debug.h"
-#include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/resource.h"
@@ -109,6 +109,8 @@ static void fixed(void *u, double dt) {
   }
 }
 
+static void compare(int W, int H, uint32_t t_read, bool consecutive);
+
 static void render(void *u, double a) {
   (void)u;
   (void)a;
@@ -121,8 +123,33 @@ static void render(void *u, double a) {
   for (int k = 0; k < 4; k++) lod[k] = st.lod_counts[k];
   int W, H;
   cw_drawable_size(&W, &H);
-  glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, cur);
-  if (have_prev && tick > 20) {
+  /* every frame is read; the reads arrive in order a frame or more later
+   * (WebGPU), each compared with the frame before it when that one arrived */
+  static uint32_t q_ticket[8], q_tick[8];
+  static int q_n;
+  static uint32_t prev_tick;
+  while (q_n > 0) {
+    int got = cw_gpu_read_result(q_ticket[0], cur);
+    if (got == 0) break;
+    uint32_t t_read = q_tick[0];
+    q_n--;
+    memmove(q_ticket, q_ticket + 1, sizeof q_ticket[0] * (size_t)q_n);
+    memmove(q_tick, q_tick + 1, sizeof q_tick[0] * (size_t)q_n);
+    if (got < 0) {
+      have_prev = 0;
+      continue;
+    }
+    compare(W, H, t_read, have_prev && prev_tick + 1 == t_read);
+    prev_tick = t_read;
+  }
+  if (q_n < 8) {
+    uint32_t t = cw_gpu_read_window(0, 0, W, H);
+    if (t) q_ticket[q_n] = t, q_tick[q_n++] = tick;
+  }
+}
+
+static void compare(int W, int H, uint32_t t_read, bool consecutive) {
+  if (consecutive && t_read > 20) {
     int jump = 0;
     for (int i = 0; i < W * H; i++) {
       const uint8_t *p = prev + 4 * i, *c = cur + 4 * i;

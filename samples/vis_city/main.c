@@ -59,7 +59,7 @@
 #include <time.h>
 
 #include "cartwheel/debug.h"
-#include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/render3d.h"
@@ -88,7 +88,6 @@ static bool check, no_ranges, lights;
 static int32_t n_lights;
 static cw_tree *ref_tree;
 static cw_node ref_cam;
-static cw_rt *ref_rt;
 static uint8_t *img_a, *img_b;
 static int32_t bvh_nodes, static_meshes, max_pop, pop_free = 1, max_pop_tick, late_total, pop_log[16], pop_logged, pop_frames;
 
@@ -365,8 +364,6 @@ static void init(void *u) {
     world = cw_node_get(cw_tree_root(tree), "World");
     int W, H;
     cw_drawable_size(&W, &H);
-    ref_rt = cw_rt_new(W, H, CW_RT_RGBA8, true);
-    cw_pipeline_set_output(cw_pipeline_of(ref_tree), ref_rt);
     img_a = cw_alloc((size_t)W * H * 4, CW_MEM_GAME);
     img_b = cw_alloc((size_t)W * H * 4, CW_MEM_GAME);
   }
@@ -390,11 +387,44 @@ static void update(void *u, double dt) {
   t_update = now_ms();
 }
 
+/* one checked frame: A (culled) against the reference (nothing culled) */
+static void check_pair(int W, int H, uint32_t t_read) {
+  int n = 0;
+  for (int i = 0; i < W * H; i++) {
+    const uint8_t *p = img_a + 4 * i, *q = img_b + 4 * i;
+    int d = abs(p[0] - q[0]);
+    d = CW_MAX(d, abs(p[1] - q[1]));
+    d = CW_MAX(d, abs(p[2] - q[2]));
+    n += d > 24;
+  }
+  if (n > 4 && pop_logged < 16) pop_log[pop_logged++] = (int32_t)t_read * 100000 + CW_MIN(n, 99999);
+  if (n > max_pop) {
+    max_pop = n;
+    max_pop_tick = (int32_t)t_read;
+  }
+  if (n > 64) pop_frames++;
+  pop_free = pop_frames <= 1 && max_pop < 1000;
+#ifndef __wasm__
+  if (getenv("VIS_DUMP") && t_read == (uint32_t)atoi(getenv("VIS_DUMP"))) {
+    FILE *fa = fopen("out/vis_a.ppm", "wb"), *fb = fopen("out/vis_b.ppm", "wb");
+    fprintf(fa, "P6\n%d %d\n255\n", W, H);
+    fprintf(fb, "P6\n%d %d\n255\n", W, H);
+    for (int y = 0; y < H; y++) /* the reads are top-down */
+      for (int x = 0; x < W; x++) {
+        fwrite(img_a + 4 * (y * W + x), 1, 3, fa);
+        fwrite(img_b + 4 * (y * W + x), 1, 3, fb);
+      }
+    fclose(fa);
+    fclose(fb);
+  }
+#endif
+  if (getenv("VIS_LOG") && n > 4) cw_info("tick %u: %d pixels differ from the unculled city", t_read, n);
+}
+
 static void render(void *u, double a) {
   (void)u;
   (void)a;
-  uint8_t px[4];
-  glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px); /* wait for the GPU */
+  cw_gpu_finish(); /* wait for the GPU */
   double t = now_ms();
   cw_visibility_stats st;
   cw_visibility_get_stats(tree, &st);
@@ -417,49 +447,32 @@ static void render(void *u, double a) {
   draws = rs.draw_calls;
   tris_k = (float)rs.triangles / 1000.0f;
   gpu_ms = cw_pipeline_gpu_ms(cw_pipeline_of(tree));
+  /* the frame A just drew against the reference tree drawn the same way
+   * without any culling, over it in the window (so the frame shows the
+   * reference: the same picture when culling is right). The two reads are
+   * taken at once and arrive later on WebGPU: compared when both are in. */
+  static uint32_t ta, tb, t_tick;
+  static int got_a;
   if (check) {
-    /* the frame A just drew against the reference tree drawn the same way
-     * without any culling */
     int W, H;
     cw_drawable_size(&W, &H);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, img_a);
+    bool ask = !ta;
+    if (ask) ta = cw_gpu_read_window_now(0, 0, W, H);
     cw_tree_update(ref_tree, 1.0 / 60);
     cw_tree_pre_render(ref_tree, a);
     cw_pipeline_render(ref_tree, W, H, a);
-    glBindFramebuffer(GL_FRAMEBUFFER, ref_rt->fbo);
-    glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, img_b);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    int n = 0;
-    for (int i = 0; i < W * H; i++) {
-      const uint8_t *p = img_a + 4 * i, *q = img_b + 4 * i;
-      int d = abs(p[0] - q[0]);
-      d = CW_MAX(d, abs(p[1] - q[1]));
-      d = CW_MAX(d, abs(p[2] - q[2]));
-      n += d > 24;
+    if (ask) {
+      tb = cw_gpu_read_window_now(0, 0, W, H);
+      t_tick = tick;
+      got_a = 0;
     }
-    if (n > 4 && pop_logged < 16) pop_log[pop_logged++] = (int32_t)tick * 100000 + CW_MIN(n, 99999);
-    if (n > max_pop) {
-      max_pop = n;
-      max_pop_tick = (int32_t)tick;
+    if (ta && !got_a) got_a = cw_gpu_read_result(ta, img_a);
+    int got_b = got_a ? cw_gpu_read_result(tb, img_b) : 0;
+    if (got_b) {
+      if (got_a == 1 && got_b == 1) check_pair(W, H, t_tick);
+      ta = tb = 0;
+      got_a = 0;
     }
-    if (n > 64) pop_frames++;
-    pop_free = pop_frames <= 1 && max_pop < 1000;
-#ifndef __wasm__
-    if (getenv("VIS_DUMP") && tick == (uint32_t)atoi(getenv("VIS_DUMP"))) {
-      FILE *fa = fopen("out/vis_a.ppm", "wb"), *fb = fopen("out/vis_b.ppm", "wb");
-      fprintf(fa, "P6\n%d %d\n255\n", W, H);
-      fprintf(fb, "P6\n%d %d\n255\n", W, H);
-      for (int y = H - 1; y >= 0; y--)
-        for (int x = 0; x < W; x++) {
-          fwrite(img_a + 4 * (y * W + x), 1, 3, fa);
-          fwrite(img_b + 4 * (y * W + x), 1, 3, fb);
-        }
-      fclose(fa);
-      fclose(fb);
-    }
-#endif
-    if (getenv("VIS_LOG") && n > 4) cw_info("tick %u: %d pixels differ from the unculled city", tick, n);
   }
   if (tick > WARMUP && t_last > 0) {
     timed++;
@@ -481,8 +494,6 @@ static void vis_shutdown(void *u) {
   (void)u;
   if (ref_tree) cw_tree_free(ref_tree);
   ref_tree = NULL;
-  if (ref_rt) cw_rt_free(ref_rt);
-  ref_rt = NULL;
 }
 
 cw_app_desc cw_main(int argc, char **argv) {

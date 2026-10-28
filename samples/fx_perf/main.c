@@ -13,7 +13,7 @@
 #include <time.h>
 
 #include "cartwheel/debug.h"
-#include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/particles.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
@@ -53,8 +53,7 @@ static void update(void *u, double dt) {
 static void render(void *u, double a) {
   (void)u;
   (void)a;
-  uint8_t px[4];
-  glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px); /* wait for the GPU */
+  cw_gpu_finish(); /* wait for the GPU */
   double t = now_ms();
   cw_particles_stats st;
   cw_particles_get_stats(cw_scene_app_tree(), &st);
