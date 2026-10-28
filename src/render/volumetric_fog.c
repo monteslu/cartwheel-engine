@@ -66,6 +66,19 @@ typedef struct vf_gl {
   int n_inj, n_int;
 } vf_gl;
 
+/* one view's grid: splitscreen gives each view its own (its own camera's
+ * history, its own uniforms), sized to the view's share of the screen */
+typedef struct vf_slot {
+  vf_uniforms u;
+  bool built;            /* the grid was built this frame (the apply pass reads it) */
+  uint64_t built_frame;  /* ctx->frame of the last build */
+  bool have_history;
+  int cur;               /* the scatter volume written this frame */
+  float apply_sun[6];    /* the analytic tail's sun: direction, colour (albedo applied) */
+  vf_gl gl;
+  vf_wg *wg;
+} vf_slot;
+
 typedef struct vfog_rt {
   uint64_t stamp_l, stamp_v; /* cw_frame_index() the entries belong to */
   vf_light_in lights[VF_MAX_LIGHTS];
@@ -73,18 +86,36 @@ typedef struct vfog_rt {
   vf_vol_in vols[VF_MAX_VOLUMES];
   int nv;
   bool warned_lights, warned_vols, warned_ortho;
-  /* the frame's grid */
-  vf_uniforms u;
-  bool built;            /* the grid was built this frame (the apply pass reads it) */
-  uint64_t built_frame;  /* ctx->frame of the last build */
-  bool have_history;
-  int cur;               /* the scatter volume written this frame */
-  float apply_sun[6];    /* the analytic tail's sun: direction, colour (albedo applied) */
   cw_volumetric_fog_state st;
   t3_camera *cam_dir, *cam_spot[3];
-  vf_gl gl;
-  vf_wg *wg;
+  vf_slot slot[CW_MAX_VIEWS]; /* [0] a single view's; [i] splitscreen view i's */
 } vfog_rt;
+
+/* test hook (gate fog-split's control): CW_TEST_VFOG_ONE_GRID=1 every splitscreen view shares one full-size grid,
+ * its history and its uniforms, as before views had their own */
+static bool one_grid(void) {
+#if CW_CART
+  return false;
+#else
+  static int on = -1;
+  if (on < 0) on = getenv("CW_TEST_VFOG_ONE_GRID") && atoi(getenv("CW_TEST_VFOG_ONE_GRID")) != 0;
+  return on != 0;
+#endif
+}
+
+/* the grid of the view being drawn */
+static vf_slot *slot_of(vfog_rt *v, const cw_pass_ctx *ctx) {
+  int i = ctx->pipeline && !one_grid() ? ctx->pipeline->view_i : -1;
+  return &v->slot[i >= 0 && i < CW_MAX_VIEWS ? i : 0];
+}
+/* the view's share of the output's width (1 without splitscreen): its grid and shadow tile shrink with it, so a
+ * cell covers as many pixels in a quarter-screen view as in a full one */
+static float view_share(const cw_pass_ctx *ctx) {
+  const cw_pipeline *p = ctx->pipeline;
+  if (!p || one_grid() || p->view_i < 0 || p->view_i >= p->nviews) return 1;
+  float w = p->views[p->view_i].w;
+  return w > 0 && w < 1 ? w : 1;
+}
 
 static bool wgpu(void) { return cw_gpu_backend() == CW_GPU_WEBGPU; }
 
@@ -100,8 +131,10 @@ static void vfog_free(void *p) {
   if (v->cam_dir) t3_release(v->cam_dir);
   for (int i = 0; i < 3; i++)
     if (v->cam_spot[i]) t3_release(v->cam_spot[i]);
-  if (!wgpu()) gl_free(&v->gl);
-  else cw__vf_wg_free(v->wg);
+  for (int i = 0; i < CW_MAX_VIEWS; i++) {
+    if (!wgpu()) gl_free(&v->slot[i].gl);
+    else cw__vf_wg_free(v->slot[i].wg);
+  }
   cw_free(v);
 }
 
@@ -674,38 +707,43 @@ static bool gl_resources(vf_gl *g, int w, int h, int d, int atlas, bool *ok) {
   return true;
 }
 
-static void gl_run(vfog_rt *v) {
-  vf_gl *g = &v->gl;
+static void gl_run(vf_slot *S) {
+  vf_gl *g = &S->gl;
   int nout = gl_draw_buffers(), nl = nout - 1;
+  /* uniform locations once: a glGet* waits for the driver thread (Mesa's glthread) to drain */
+  static GLint zl = -1, il = -1, fl = -1;
   if (!gl_inj_prog && !gl_failed) {
     gl_inj_prog = gl_program("volumetric_fog.inject", VF_GLSL_INJECT, nout, true);
     gl_int_prog = gl_program("volumetric_fog.integrate", VF_GLSL_INTEGRATE, nout, false);
     if (!gl_inj_prog || !gl_int_prog) gl_failed = 1;
+    else {
+      zl = glGetUniformLocation(gl_inj_prog, "u_z0");
+      il = glGetUniformLocation(gl_int_prog, "u_z0");
+      fl = glGetUniformLocation(gl_int_prog, "u_first");
+    }
   }
   if (gl_failed) return;
   cw__pass_state_reset();
   glBindBuffer(GL_UNIFORM_BUFFER, g->ubo);
-  glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof v->u, &v->u);
+  glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof S->u, &S->u);
   glBindBuffer(GL_UNIFORM_BUFFER, 0);
   glBindBufferBase(GL_UNIFORM_BUFFER, VF_UBO_BINDING, g->ubo);
   glViewport(0, 0, g->w, g->h);
   /* inject into scatter[cur], the history from the other */
   glUseProgram(gl_inj_prog);
   glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_3D, g->scatter[v->cur ^ 1]);
+  glBindTexture(GL_TEXTURE_3D, g->scatter[S->cur ^ 1]);
   glActiveTexture(GL_TEXTURE1);
   glBindTexture(GL_TEXTURE_2D, g->shadow_tex);
-  GLint zl = glGetUniformLocation(gl_inj_prog, "u_z0");
   for (int b = 0; b < g->n_inj; b++) {
-    glBindFramebuffer(GL_FRAMEBUFFER, g->inj_fbo[v->cur][b]);
+    glBindFramebuffer(GL_FRAMEBUFFER, g->inj_fbo[S->cur][b]);
     glUniform1i(zl, b * nout);
     cw_pass_fullscreen();
   }
   /* integrate front to back, nl layers a draw, the running sum carried */
   glUseProgram(gl_int_prog);
   glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_3D, g->scatter[v->cur]);
-  GLint il = glGetUniformLocation(gl_int_prog, "u_z0"), fl = glGetUniformLocation(gl_int_prog, "u_first");
+  glBindTexture(GL_TEXTURE_3D, g->scatter[S->cur]);
   for (int b = 0; b < g->n_int; b++) {
     glBindFramebuffer(GL_FRAMEBUFFER, g->int_fbo[b]);
     glActiveTexture(GL_TEXTURE1);
@@ -753,7 +791,7 @@ static const cw__height_fog *medium_of(cw_tree *t) {
 
 static bool vf_build_active(const cw_pass_ctx *ctx, void *user) {
   vfog_rt *v = user;
-  v->built = false;
+  slot_of(v, ctx)->built = false;
   if (!cw__vfog_supported() || !ctx->camera || !ctx->renderer) return false;
   bool any = medium_of(ctx->tree) != NULL || content(v);
   if (any && ctx->camera->base.type != T3_PERSPECTIVE_CAMERA) {
@@ -765,13 +803,13 @@ static bool vf_build_active(const cw_pass_ctx *ctx, void *user) {
 }
 
 /* a depth tile of the atlas from cam (three.c's caster programs) */
-static void render_tile(cw_pass_ctx *ctx, vfog_rt *v, t3_camera *cam, int tile, int ts, bool first) {
+static void render_tile(cw_pass_ctx *ctx, vf_slot *S, t3_camera *cam, int tile, int ts, bool first) {
   int x = (tile & 1) * ts, y = (tile >> 1) * ts;
   t3_renderer *r = ctx->renderer;
   t3_object_update_world_matrix(cam, false, false);
   if (wgpu()) {
     int fmt = 0;
-    void *view = cw__vf_wg_atlas_view(v->wg, &fmt);
+    void *view = cw__vf_wg_atlas_view(S->wg, &fmt);
     t3_renderer_set_external_encoder(r, (uintptr_t)cw__vf_wg_encoder());
     /* a WebGPU pass clears the whole attachment: only the frame's first tile clears */
     t3_external_target et = { .depth = (uintptr_t)view, .depth_format = fmt, .load_depth = !first, .clear_depth = 1,
@@ -780,7 +818,7 @@ static void render_tile(cw_pass_ctx *ctx, vfog_rt *v, t3_camera *cam, int tile, 
     return;
   }
   t3_renderer_reset_bindings(r);
-  t3_external_target et = { .color = v->gl.shadow_fbo, .load_depth = false, .clear_depth = 1, .x = x, .y = y, .w = ts, .h = ts };
+  t3_external_target et = { .color = S->gl.shadow_fbo, .load_depth = false, .clear_depth = 1, .x = x, .y = y, .w = ts, .h = ts };
   t3_renderer_render_depth_to(r, ctx->scene3d, cam, &et);
   t3_renderer_reset_bindings(r);
 }
@@ -795,11 +833,14 @@ static void shadow_matrix(t3_camera *cam, float out[16]) {
 
 static void vf_build_exec(cw_pass_ctx *ctx, void *user) {
   vfog_rt *v = user;
+  vf_slot *S = slot_of(v, ctx);
   const cw__height_fog *hf = cw__height_fog_of(ctx->tree), *med = medium_of(ctx->tree);
   int q = CW_CLAMP(cw_gfx_get(CW_GFX_EFFECTS), 0, CW_QUALITY_COUNT - 1);
   const vf_preset *pr = &PRESETS[q];
-  int gw = pr->gw, gh = CW_MAX(1, (int)lroundf((float)gw * (float)ctx->height / (float)CW_MAX(ctx->width, 1)));
-  int gd = pr->d, ts = pr->tile, atlas = ts * 2;
+  float share = view_share(ctx);
+  int gw = CW_MAX(32, (int)lroundf((float)pr->gw * share));
+  int gh = CW_MAX(1, (int)lroundf((float)gw * (float)ctx->height / (float)CW_MAX(ctx->width, 1)));
+  int gd = pr->d, ts = CW_MAX(256, (int)lroundf((float)pr->tile * share)), atlas = ts * 2;
   float dist = hf ? CW_MAX(hf->volumetric_distance, 1.0f) : 64.0f;
   float spread = hf ? CW_CLAMP(hf->volumetric_detail_spread, 1.0f, 4.0f) : 2.0f;
   float temporal = hf ? CW_CLAMP(hf->volumetric_temporal, 0.0f, 0.98f) : 0.9f;
@@ -808,19 +849,19 @@ static void vf_build_exec(cw_pass_ctx *ctx, void *user) {
 
   /* GPU resources */
   bool fresh;
-  if (wgpu()) fresh = cw__vf_wg_resources(&v->wg, gw, gh, gd, atlas);
+  if (wgpu()) fresh = cw__vf_wg_resources(&S->wg, gw, gh, gd, atlas);
   else {
     bool ok;
-    fresh = gl_resources(&v->gl, gw, gh, gd, atlas, &ok);
+    fresh = gl_resources(&S->gl, gw, gh, gd, atlas, &ok);
     if (!ok) {
-      gl_free(&v->gl);
+      gl_free(&S->gl);
       return;
     }
   }
-  if (fresh || v->built_frame + 1 != ctx->frame) v->have_history = false;
-  v->cur = v->have_history ? v->cur ^ 1 : 0;
+  if (fresh || S->built_frame + 1 != ctx->frame) S->have_history = false;
+  S->cur = S->have_history ? S->cur ^ 1 : 0;
 
-  vf_uniforms *u = &v->u;
+  vf_uniforms *u = &S->u;
   memset(u, 0, sizeof *u);
   t3_mat4 inv_view;
   t3_mat4_invert(&inv_view, &ctx->view);
@@ -829,7 +870,7 @@ static void vf_build_exec(cw_pass_ctx *ctx, void *user) {
   u->grid[0] = (float)gw, u->grid[1] = (float)gh, u->grid[2] = (float)gd, u->grid[3] = 1.0f / (float)gd;
   const float *P = ctx->proj.e;
   u->proj[0] = P[0], u->proj[1] = P[5], u->proj[2] = P[8], u->proj[3] = P[9];
-  float hist = v->have_history ? temporal : 0;
+  float hist = S->have_history ? temporal : 0;
   u->slices[0] = dist, u->slices[1] = spread, u->slices[2] = 1.0f / spread, u->slices[3] = hist;
   if (temporal > 0) {
     int k = (int)(ctx->frame % 16) + 1;
@@ -857,7 +898,7 @@ static void vf_build_exec(cw_pass_ctx *ctx, void *user) {
   /* lights */
   int shadows = 0, nsh = 0, spot_tiles = 0;
   bool sun_tile = false;
-  memset(v->apply_sun, 0, sizeof v->apply_sun);
+  memset(S->apply_sun, 0, sizeof S->apply_sun);
   bool apply_sun_set = false;
   int n = 0;
   for (int i = 0; i < nl && n < VF_MAX_LIGHTS; i++) {
@@ -872,8 +913,8 @@ static void vf_build_exec(cw_pass_ctx *ctx, void *user) {
       o->pos[0] = d.x, o->pos[1] = d.y, o->pos[2] = d.z, o->pos[3] = 0;
       if (!apply_sun_set) {
         apply_sun_set = true;
-        v->apply_sun[0] = d.x, v->apply_sun[1] = d.y, v->apply_sun[2] = d.z;
-        v->apply_sun[3] = o->color[0] * alb.r, v->apply_sun[4] = o->color[1] * alb.g, v->apply_sun[5] = o->color[2] * alb.b;
+        S->apply_sun[0] = d.x, S->apply_sun[1] = d.y, S->apply_sun[2] = d.z;
+        S->apply_sun[3] = o->color[0] * alb.r, S->apply_sun[4] = o->color[1] * alb.g, S->apply_sun[5] = o->color[2] * alb.b;
       }
       if (in->shadow && !sun_tile) {
         /* an orthographic map round the sphere that holds the grid, its
@@ -897,7 +938,7 @@ static void vf_build_exec(cw_pass_ctx *ctx, void *user) {
         t3_camera_update_projection_matrix(sc);
         sc->base.position = (t3_vec3){ c.x + d.x * (rad + back), c.y + d.y * (rad + back), c.z + d.z * (rad + back) };
         t3_object_look_at(sc, c.x, c.y, c.z);
-        render_tile(ctx, v, sc, 0, ts, shadows == 0);
+        render_tile(ctx, S, sc, 0, ts, shadows == 0);
         shadow_matrix(sc, o->shadow);
         o->cone[2] = 1, o->cone[3] = 0.0005f;
         o->tile[0] = 0, o->tile[1] = 0, o->tile[2] = 0.5f, o->tile[3] = 0.5f;
@@ -920,7 +961,7 @@ static void vf_build_exec(cw_pass_ctx *ctx, void *user) {
           sc->base.position = (t3_vec3){ m[12], m[13], m[14] };
           sc->base.up = fabsf(ax.y) > 0.999f ? (t3_vec3){ 0, 0, 1 } : (t3_vec3){ 0, 1, 0 };
           t3_object_look_at(sc, m[12] + ax.x, m[13] + ax.y, m[14] + ax.z);
-          render_tile(ctx, v, sc, t, ts, shadows == 0);
+          render_tile(ctx, S, sc, t, ts, shadows == 0);
           shadow_matrix(sc, o->shadow);
           o->cone[2] = 1, o->cone[3] = 0.0002f;
           o->tile[0] = (float)(t & 1) * 0.5f, o->tile[1] = (float)(t >> 1) * 0.5f, o->tile[2] = 0.5f, o->tile[3] = 0.5f;
@@ -965,12 +1006,12 @@ static void vf_build_exec(cw_pass_ctx *ctx, void *user) {
   }
   if (!(med || nvol)) return; /* nothing to draw after all */
 
-  if (wgpu()) cw__vf_wg_run(v->wg, u, v->cur, NULL);
-  else gl_run(v);
+  if (wgpu()) cw__vf_wg_run(S->wg, u, S->cur, NULL);
+  else gl_run(S);
 
-  v->built = true;
-  v->built_frame = ctx->frame;
-  v->have_history = temporal > 0;
+  S->built = true;
+  S->built_frame = ctx->frame;
+  S->have_history = temporal > 0;
   v->st = (cw_volumetric_fog_state){ .active = true, .grid = { gw, gh, gd }, .lights = n, .shadowed_lights = nsh,
                                      .volumes = nvol, .distance = dist, .shadow_map = nsh ? ts : 0 };
 }
@@ -1000,7 +1041,8 @@ static unsigned apply_program(void) {
 
 static void vf_apply_exec(cw_pass_ctx *ctx, void *user) {
   vfog_rt *v = user;
-  if (!v->built || !ctx->depth_tex) {
+  vf_slot *S = slot_of(v, ctx);
+  if (!S->built || !ctx->depth_tex) {
     v->st.active = false;
     return;
   }
@@ -1010,16 +1052,16 @@ static void vf_apply_exec(cw_pass_ctx *ctx, void *user) {
   cw_pass_use(pr);
   cw_pass_bind_texture(0, ctx->depth_tex);
   cw_pass_uniform1i(pr, "u_depth", 0);
-  cw_pass_bind_texture_3d(1, wgpu() ? cw__vf_wg_integrated(v->wg) : v->gl.integ);
+  cw_pass_bind_texture_3d(1, wgpu() ? cw__vf_wg_integrated(S->wg) : S->gl.integ);
   cw_pass_uniform1i(pr, "u_vol", 1);
   cw_pass_uniform_mat4(pr, "u_inv_view_proj", &ctx->inv_view_proj);
-  const float *iv = v->u.inv_view;
+  const float *iv = S->u.inv_view;
   cw_pass_uniform3f(pr, "u_cam", iv[12], iv[13], iv[14]);
   t3_vec3 fwd = v3norm((t3_vec3){ -iv[8], -iv[9], -iv[10] });
   cw_pass_uniform3f(pr, "u_fwd", fwd.x, fwd.y, fwd.z);
   const float *e = ctx->camera->projection_matrix.e;
   cw_pass_uniform4f(pr, "u_pz", e[10], e[14], e[11], e[15]);
-  cw_pass_uniform4f(pr, "u_grid", v->u.grid[2], v->u.slices[0], v->u.slices[2], med ? 1.0f : 0.0f);
+  cw_pass_uniform4f(pr, "u_grid", S->u.grid[2], S->u.slices[0], S->u.slices[2], med ? 1.0f : 0.0f);
   if (med) {
     cw_pass_uniform4f(pr, "u_fog", med->density, CW_MAX(med->height_falloff, 0.0f), med->base_height,
                       CW_CLAMP(med->max_opacity, 0.0f, 1.0f));
@@ -1031,10 +1073,10 @@ static void vf_apply_exec(cw_pass_ctx *ctx, void *user) {
   /* the tail's in-scattered light: the grid's ambient and its first
    * directional light, unshadowed, so the two meet without a seam */
   t3_color alb = hf ? hf->volumetric_albedo : (t3_color){ 1, 1, 1 };
-  cw_pass_uniform3f(pr, "u_color", v->u.ambient[0] * alb.r, v->u.ambient[1] * alb.g, v->u.ambient[2] * alb.b);
-  cw_pass_uniform3f(pr, "u_sun_dir", v->apply_sun[0], v->apply_sun[1], v->apply_sun[2]);
-  cw_pass_uniform3f(pr, "u_sun_color", v->apply_sun[3], v->apply_sun[4], v->apply_sun[5]);
-  cw_pass_uniform1f(pr, "u_g", v->u.medium[3]);
+  cw_pass_uniform3f(pr, "u_color", S->u.ambient[0] * alb.r, S->u.ambient[1] * alb.g, S->u.ambient[2] * alb.b);
+  cw_pass_uniform3f(pr, "u_sun_dir", S->apply_sun[0], S->apply_sun[1], S->apply_sun[2]);
+  cw_pass_uniform3f(pr, "u_sun_color", S->apply_sun[3], S->apply_sun[4], S->apply_sun[5]);
+  cw_pass_uniform1f(pr, "u_g", S->u.medium[3]);
   cw_pass_set_blend(CW_PASS_BLEND_PREMUL);
   cw_pass_fullscreen();
   cw_pass_set_blend(CW_PASS_BLEND_NONE);

@@ -918,7 +918,10 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
   bool taa = offscreen && s->taa && !post_run;
   if (offscreen && !post_run) {
     mat4_from_camera(&ctx);
-    if (!p->have_prev || p->prev_w != w || p->prev_h != h) ctx.prev_view_proj = ctx.view_proj;
+    if (mode == RUN_VIEW && p->view_i >= 0) {
+      const struct cw__view_prev *vp = &p->view_prev[p->view_i];
+      ctx.prev_view_proj = vp->have && vp->w == w && vp->h == h ? vp->vp : ctx.view_proj;
+    } else if (!p->have_prev || p->prev_w != w || p->prev_h != h) ctx.prev_view_proj = ctx.view_proj;
     else ctx.prev_view_proj = p->prev_view_proj;
     if (taa) {
       int n = CW_CLAMP(s->taa_samples, 1, 64);
@@ -1197,6 +1200,14 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
   /* undo the jitter so game code sees the camera's real projection */
   if (taa) t3_camera_update_projection_matrix(ctx.camera);
   if (mode == RUN_OVERLAY) return; /* the views' history stands */
+  if (mode == RUN_VIEW && p->view_i >= 0) {
+    p->view_prev[p->view_i].vp = ctx.view_proj;
+    p->view_prev[p->view_i].have = offscreen;
+    p->view_prev[p->view_i].w = w;
+    p->view_prev[p->view_i].h = h;
+    p->have_prev = false; /* a single view afterwards starts its own history */
+    return;
+  }
   if (offscreen) {
     p->prev_view_proj = ctx.view_proj;
     p->have_prev = true;

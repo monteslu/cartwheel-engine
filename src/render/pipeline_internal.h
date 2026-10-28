@@ -85,6 +85,9 @@ struct cw_pipeline {
   t3_mat4 prev_view_proj;
   bool have_prev;
   int prev_w, prev_h;
+  /* splitscreen: each view's own previous view-projection (motion vectors and
+   * reprojection follow that view's camera, not the view drawn before it) */
+  struct cw__view_prev { t3_mat4 vp; bool have; int w, h; } view_prev[CW_MAX_VIEWS];
   bool velocity_wanted, depth_copy_wanted, prepass_ran;
   bool drew3d; /* the scene pass ran this frame (the canvas pass clears when not) */
   /* stats for cw_pipeline_pass_stats, in run order */

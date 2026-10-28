@@ -22,7 +22,13 @@
  * as perf.grid_ms, perf.apply_ms, perf.scene_ms (CW_GPU_TIMERS=1; -1 where
  * the host has no timers) for the preset CW_QUALITY picks. fog_shafts_perf_off
  * (FOG_SHAFTS_OFF too): the same with the fog analytic and the mist hidden
- * (no grid at all), the A/B baseline. */
+ * (no grid at all), the A/B baseline.
+ *
+ * fog_shafts_split (FOG_SHAFTS_SPLIT): four-way split screen, each view its
+ * own camera (the room's camera, one from the window's side, one low by the
+ * mist, one looking down from the ceiling): every view gets a grid of its
+ * own, sized to its share of the screen (vfog.grid_x is a quarter view's),
+ * lit and reprojected for its own camera. */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,6 +62,21 @@ static void init(void *u) {
   cw_node3d_look_at(node("Room/Sun"), (t3_vec3){ -1, -2, -9 }, (t3_vec3){ 0, 1, 0 });
   cw_node3d_look_at(node("Room/Spot"), (t3_vec3){ 3, 0, -6 }, (t3_vec3){ 0, 0, -1 });
   cw_node3d_look_at(node("Room/Camera"), (t3_vec3){ -4, 2, -5 }, (t3_vec3){ 0, 1, 0 });
+#ifdef FOG_SHAFTS_SPLIT
+  {
+    static const t3_vec3 at[3][2] = { { { -6, 2.5f, 2 }, { 2, 1, -6 } }, { { 3, 0.6f, -2 }, { -3, 0.8f, -8 } },
+                                       { { 0, 5.5f, -3 }, { -1, 0, -5 } } };
+    cw_node cams[4] = { node("Room/Camera") };
+    for (int i = 0; i < 3; i++) {
+      cams[i + 1] = cw_node_new("Camera3D", "SplitCam");
+      cw_node_add_child(node("Room"), cams[i + 1]);
+      cw_node_set(cams[i + 1], "fov", cw_val_float(70));
+      cw_node3d_set_position(cams[i + 1], at[i][0]);
+      cw_node3d_look_at(cams[i + 1], at[i][1], (t3_vec3){ 0, 1, 0 });
+    }
+    cw_pipeline_split(cw_pipeline_of(cw_scene_app_tree()), cams, 4);
+  }
+#endif
   hot = getenv("FOG_SHAFTS_HOT") ? (strcmp(getenv("FOG_SHAFTS_HOT"), "nan") == 0 ? 2 : 1) : 0;
   spot_pos = cw_node3d_position(node("Room/Spot"));
   cw_value sv;
