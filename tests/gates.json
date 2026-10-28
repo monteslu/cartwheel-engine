@@ -4017,6 +4017,7 @@
   },
   {
     "name": "vis-impostor",
+    "webgpu": { "vsGl": 0.002, "controls": [{ "env": { "CW_TEST_IMPOSTOR_WGPU_OFF": "1" }, "fields": ["vimp.atlases", "vimp.max_jump"] }] },
     "app": "vis_impostor",
     "frames": 480,
     "maxGt16": 0.002,
@@ -4041,6 +4042,7 @@
   },
   {
     "name": "vis-impostor-band",
+    "webgpu": { "vsGl": 0.002, "controls": [{ "env": { "CW_TEST_IMPOSTOR_WGPU_OFF": "1" }, "fields": ["vimp.impostors", "vimp.atlases"] }] },
     "app": "vis_impostor",
     "frames": 200,
     "maxGt16": 0.002,
@@ -4058,6 +4060,7 @@
   },
   {
     "name": "vis-city",
+    "webgpu": { "vsGl": 0.003, "controls": [{ "env": { "CW_TEST_IMPOSTOR_WGPU_OFF": "1" }, "fields": ["city.impostors"] }] },
     "app": "vis_city",
     "frames": 240,
     "maxGt16": 0.003,

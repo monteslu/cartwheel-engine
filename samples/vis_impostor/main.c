@@ -16,7 +16,10 @@
  *
  * Debug state: vimp.tick, vimp.max_jump, vimp.pop_free, vimp.impostors (drawn
  * as impostors only), vimp.fading, vimp.lod (vec4 counts), vimp.atlases,
- * vimp.visible. */
+ * vimp.visible. With the pass timers on (CW_GPU_TIMERS=1), vimp.ms_scene,
+ * vimp.ms_impostors and vimp.ms_frame are the GPU ms (16-frame averages) of the
+ * scene pass, the impostor pass and every pass; -1 without timers.
+ * VIS_NO_IMPOSTORS=1 keeps every tree a mesh (what the impostors save). */
 #include <stdlib.h>
 #include <string.h>
 
@@ -35,7 +38,8 @@ static uint32_t tick;
 static int32_t max_jump, pop_free, impostors, fading, atlases, visible, lod[4];
 static uint8_t *prev, *cur;
 static int have_prev;
-static bool no_fade;
+static bool no_fade, no_impostors;
+static float ms_scene = -1, ms_impostors = -1, ms_frame = -1;
 
 static cw_node add(cw_node parent, const char *type, const char *name) {
   cw_node n = cw_node_new(type, name);
@@ -54,8 +58,13 @@ static void init(void *u) {
   cw_debug_i32("vimp.atlases", &atlases);
   cw_debug_i32("vimp.visible", &visible);
   cw_debug_field("vimp.lod", lod, CW_DBG_I32, 4);
+  cw_debug_f32("vimp.ms_scene", &ms_scene);
+  cw_debug_f32("vimp.ms_impostors", &ms_impostors);
+  cw_debug_f32("vimp.ms_frame", &ms_frame);
   const char *e = getenv("VIS_NO_FADE");
   no_fade = e && *e == '1';
+  e = getenv("VIS_NO_IMPOSTORS");
+  no_impostors = e && *e == '1';
   cw_node root = cw_tree_root(tree);
   cw_node w = add(root, "Node3D", "World");
   cw_node env = add(w, "WorldEnvironment", "Env");
@@ -80,7 +89,7 @@ static void init(void *u) {
       cw_node3d_set_position(t, (t3_vec3){ (x - N / 2) * 6.0f + (z & 1) * 2.0f, 0, -(float)z * 6.0f });
       cw_node3d_set_rotation(t, (t3_vec3){ 0, (float)(x * 7 + z * 3) * 0.7f, 0 });
       cw_node_set(t, "static", cw_val_bool(true));
-      cw_node_set(t, "impostor", cw_val_bool(true));
+      cw_node_set(t, "impostor", cw_val_bool(!no_impostors));
       cw_node_set(t, "impostor_distance", cw_val_float(30));
       cw_node_set(t, "impostor_fade", cw_val_float(no_fade ? 0 : 8));
     }
@@ -121,6 +130,16 @@ static void render(void *u, double a) {
   atlases = st.impostor_atlases;
   visible = st.visible;
   for (int k = 0; k < 4; k++) lod[k] = st.lod_counts[k];
+  const cw_pass_stat *ps;
+  int np = cw_pipeline_pass_stats(cw_pipeline_of(tree), &ps);
+  float total = 0;
+  bool timed = false;
+  for (int i = 0; i < np; i++) {
+    if (!strcmp(ps[i].name, "scene")) ms_scene = ps[i].gpu_ms_avg;
+    if (!strcmp(ps[i].name, "impostors")) ms_impostors = ps[i].ran ? ps[i].gpu_ms_avg : 0;
+    if (ps[i].ran && ps[i].gpu_ms_avg >= 0) total += ps[i].gpu_ms_avg, timed = true;
+  }
+  ms_frame = timed ? total : -1;
   int W, H;
   cw_drawable_size(&W, &H);
   /* every frame is read; the reads arrive in order a frame or more later

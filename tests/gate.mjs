@@ -152,8 +152,11 @@ function stateDiff(a, b, tol, fields) {
 //     app's own switch). Each must fail on the PICTURE alone (named state is
 //     not consulted): over the cross-host bound against the WebGPU
 //     reference and over vsGl against GL, so the frame tolerances are proven
-//     to see a broken or missing pass.
-// "webgpu": true | { "hosts": [...], "skip": [...], "maxGt16": n, "vsGl": n, "maxArea": n, "controls": [{ "env": {...} }] }
+//     to see a broken or missing pass. A control with "fields" may instead be
+//     told apart by those named state fields, each differing from both the
+//     WebGPU reference and GL (a feature whose effect leaves the last frame,
+//     e.g. impostors at the end of a sweep that ends with every mesh near).
+// "webgpu": true | { "hosts": [...], "skip": [...], "maxGt16": n, "vsGl": n, "maxArea": n, "controls": [{ "env": {...}, "fields": [...] }] }
 // "gl": false keeps a gate off the GL axis (controls that inject WebGPU faults)
 async function wgpuGates(list) {
   let failedW = 0;
@@ -262,9 +265,15 @@ async function wgpuGates(list) {
         if (r.code !== 0) { problems.push(`control [${tag}] run failed: ${r.err.trim().split('\n').slice(-2).join(' | ')}`); continue; }
         const ci = readImage(q.shot);
         const d = diffImages(refImg, ci), dv = diffImages(glImg, ci);
-        if (d.gt16 <= bound) problems.push(`CONTROL PASSED [${tag}]: ${(d.gt16 * 100).toFixed(3)}% vs the WebGPU reference is within the bound`);
-        if (dv.gt16 <= vsGl) problems.push(`CONTROL PASSED [${tag}]: ${(dv.gt16 * 100).toFixed(3)}% vs GL is within vsGl`);
-        else ctlNotes.push(`${tag}: ${(d.gt16 * 100).toFixed(2)}% / ${(dv.gt16 * 100).toFixed(2)}%`);
+        let told = [];
+        if (k.fields) {
+          const cs = JSON.parse(readFileSync(q.state, 'utf8')), j = (v) => JSON.stringify(v);
+          told = k.fields.filter((f) => j(cs[f]) !== j(refState[f]) && j(cs[f]) !== j(glState[f]));
+        }
+        const by = told.length ? `; state ${told.join(', ')}` : '';
+        if (d.gt16 <= bound && !told.length) problems.push(`CONTROL PASSED [${tag}]: ${(d.gt16 * 100).toFixed(3)}% vs the WebGPU reference is within the bound`);
+        if (dv.gt16 <= vsGl && !told.length) problems.push(`CONTROL PASSED [${tag}]: ${(dv.gt16 * 100).toFixed(3)}% vs GL is within vsGl`);
+        else ctlNotes.push(`${tag}: ${(d.gt16 * 100).toFixed(2)}% / ${(dv.gt16 * 100).toFixed(2)}%${by}`);
       }
     }
     if (problems.length) { failedW++; console.log(`FAIL ${g.name} [webgpu]\n  ${problems.join('\n  ')}`); }
