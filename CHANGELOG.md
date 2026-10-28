@@ -42,6 +42,26 @@ game that used one stops jumping without a code change.
   Unit tests `thumbstick` and `rect_stick_home` (controls: a floating stick
   follows the thumb). The input demo uses a thumbstick and a round button.
 
+### Fixed
+- A Water3D made while the camera is under its surface (a level that
+  builds its pools around the player) draws on WebGPU. Its first frame
+  took the under-the-water branch, which makes none of the WebGPU
+  refraction colour and depth textures the surface samples, so three.c
+  skipped every draw of it (`waterRefractionDepth` unset) until the
+  camera came up, and for good with `refraction` off. The surface now
+  gets cleared 1 x 1 stand-ins until a refraction is drawn.
+- A draw skipped because a material extension left a texture unset no
+  longer logs that the app's program table lacks a state: the error
+  names the cause three.c gave (a state missing from the table, an
+  extension that did not bind a texture, or another reason, which the
+  warning before it spells out).
+
+### Tests
+- `water-under-new` (GL and WebGPU): a second Water3D spawned under the
+  beach scene's surface with refraction off must draw with no draw
+  skipped. Before the fix its WebGPU leg failed (147 skipped draws on
+  lavapipe). Control: without the second pool the frame must change.
+
 ## v0.20.1 (2026-10-28)
 
 The tag v0.20.0 was made at the wrong commit by mistake and has no release:

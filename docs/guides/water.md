@@ -74,7 +74,7 @@ Sunlight that passes through a rippled surface is bent into a moving web of brig
 
 A camera under the surface sees through the water (`underwater`, on by default): light fades with distance, red first, into the water's own colour, which darkens the deeper the camera is; whatever faces up (the floor, a rock's top, not a hull's underside) carries the caustics, and the same pattern met along each view ray draws soft shafts of light slanting down from the sun; and the surface seen from below shows the world above only inside a circle of light (the window that refraction leaves; past it the surface mirrors the water). Where the surface crosses the lens a thin dark line marks the waterline, and each pixel decides for itself whether it is above or below, so a camera bobbing at the surface splits the picture along the real wave. One full-screen pass does it, and only while the camera is under or near the water of its view, so it costs nothing on a dry frame.
 
-The `water-under` gate puts the beach sample's camera under the surface and checks that the frame was drawn from under the water ([cw_water_get_stats](api:cw_water_get_stats), `underwater`), on every host and backend.
+The `water-under` gate puts the beach sample's camera under the surface and checks that the frame was drawn from under the water ([cw_water_get_stats](api:cw_water_get_stats), `underwater`), on every host and backend. The `water-under-new` gate spawns a second Water3D while the camera is already under the water (refraction off, as a level that builds its pools around the player does): it must draw from its first frame, with no draw skipped, on GL and WebGPU.
 
 ## Things that float
 
