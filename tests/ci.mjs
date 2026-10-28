@@ -44,7 +44,7 @@ export const LOCAL_ONLY = {
   'ik-determinism': 'Chromium',
   'froxel-determinism': 'Chromium and wasmcart-native',
   'vis-city-batch': 'Chromium (the leg compares against the native run on one machine)',
-  'showcase-perf': 'GPU timings on romdev, Chromium and wasmcart-native',
+  'showcase-perf': 'GPU timings on the test GPU',
   'editor-channel': 'native editor sessions, not yet run in CI (its editor cart leg went with the GL-only cart)',
   'editor-play': 'romdev',
   net: 'romdev, Chromium and wasmcart-native',
