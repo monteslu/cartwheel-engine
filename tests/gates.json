@@ -524,7 +524,7 @@
     "controlEnv": {
       "CW_TEST_NO_SHARED": "1"
     },
-    "note": "shell shared_screen: one view and the whole canvas for every player, against the same call without the option (the control leaves the option off, so the shared checks fail)"
+    "note": "shell shared_screen: one view and the whole canvas for every player, against the same call without the option (the control leaves the option off, so the shared checks fail); the Screen shake setting: Full 1, Reduced a fraction, Off 0, saved across an init, capped by reduced motion (CW_TEST_SHAKE_IGNORED=1 is its own control: 1 failed)"
   },
   {
     "name": "perf-nodes",

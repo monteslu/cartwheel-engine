@@ -58,7 +58,7 @@ An [Explosion3D](node:Explosion3D) fires everything under it. Its children are t
 
 - A flash. A pooled point light flares at the blast and dies away quickly. The pool is small and shared by every explosion of the tree: the effects preset sets its size (2, 4, 8 and 8 lights from Low to Ultra) and a busy scene takes the oldest flash back, so a chain of blasts, or four split-screen views, never grows the light count. After the flash the light is off, and the frame is exactly the frame without it.
 - A scorch mark on the ground under the node: a dark layer that fades after `scorch_life` and a glowing layer that cools from orange to nothing over `scorch_time`. Each mark is one of four ragged shapes (`scorch_texture`, a 2 by 2 sheet the baker writes), turned about the vertical and stretched a little at random, so a yard of blasts does not repeat. Twelve marks are pooled; a thirteenth recycles the oldest.
-- A shake. `cw_explosion_shake(tree, position)` returns how hard the ground shakes at a place (each explosion adds its `shake_amount` fading with distance and age) and `cw_shake_offset(shake, tick, max_offset)` turns that into a deterministic camera offset. The engine never moves your camera: you decide how much of it a player feels.
+- A shake. `cw_explosion_shake(tree, position)` returns how hard the ground shakes at a place (each explosion adds its `shake_amount` fading with distance and age) and `cw_shake_offset(shake, tick, max_offset)` turns that into a deterministic camera offset. The engine never moves your camera: you decide how much of it a player feels, and scale it by the player's Screen shake setting, `cw_shell_screen_shake()` (header:shell.h), so Off means no shake at all.
 
 @include samples/fx_explosion/assets/main.cwscene#Boom
 

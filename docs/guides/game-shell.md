@@ -13,9 +13,18 @@ writes only its gameplay and art:
   accept opens the graphics page of (header:quality_menu.h) with every
   setting, the render resolution with its pixel size, ambient occlusion,
   shadows, anti-aliasing, effects detail, Auto, and the game's own settings
-  from `cw_quality_lever_add`), music and effects volume, and the controls
-  (each action and its bindings, from (header:input.h)); saved with the
-  game's own save data in one versioned, checksummed block;
+  from `cw_quality_lever_add`), music and effects volume, screen shake
+  (Full, Reduced, Off) and the controls (each action and its bindings, from
+  (header:input.h)); saved with the game's own save data in one versioned,
+  checksummed block;
+- screen shake: the shell never moves a camera, the game does, so the game
+  multiplies every camera shake, kick and bob by `cw_shell_screen_shake()`
+  (1 for Full, `CW_SHELL_SHAKE_REDUCED_SCALE` for Reduced, 0 for Off; reduced
+  motion caps it at Reduced). Shake only for real events the camera can see
+  (a big landing, a boss hit, an explosion), keep it short and let it fade:
+  a shake that is set again every tick, or set by something off screen, makes
+  the whole picture tremble all the time. `cw_shell_shake_level` and
+  `cw_shell_set_shake_level` read and set the level itself;
 - input: menus answer pads, the keyboard and pointer taps (mouse or touch);
   joined players are assigned their pad and devices in join order, so
   gameplay asks `cw_action_*` for players 0 to n-1;
