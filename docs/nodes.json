@@ -1234,6 +1234,54 @@
      "doc": "Asset path of a .cube 3D LUT."
     },
     {
+     "name": "dof",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Depth of field: blur away from the focus distance (off on the Low effects preset)."
+    },
+    {
+     "name": "dof_focus_distance",
+     "type": "float",
+     "default": "3",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "View distance that is sharp (world units)."
+    },
+    {
+     "name": "dof_focus_range",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Depth around the focus distance that stays sharp."
+    },
+    {
+     "name": "dof_blur",
+     "type": "float",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 32,
+     "doc": "Largest blur radius in pixels of a 1080 line image."
+    },
+    {
+     "name": "dof_near_blur",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Blur in front of the focus, as a share of dof_blur."
+    },
+    {
      "name": "vignette",
      "type": "bool",
      "default": "false",
