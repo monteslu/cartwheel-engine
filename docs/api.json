@@ -4866,6 +4866,10 @@
      "doc": ""
     },
     {
+     "name": "CW_NAV_LINKS",
+     "doc": "── links (off-mesh connections) ──────────────────────────────────────\nA link joins two navmesh points that walking cannot: a jump up a ledge,\na drop off one, a jump pad, a ladder, a teleporter. Paths may cross it;\na crowd agent that reaches its start traverses it (see the crowd's link\ncallback) and walks on from its end.\n\nBoth ends must lie on (or just over) the walkable surface: within radius\nacross and agent_max_climb up or down of a navmesh polygon. A link whose\nend does not touch the navmesh is never used; the build warns about it\nand cw_nav_link_connected says false. Links are part of the build input\n(cw_nav_geom), so they are in the navmesh bytes, its hash and its saves.\nA zero field takes the default noted beside it, so a designated\ninitializer is enough:\n  cw_nav_geom_add_link(&g, &(cw_nav_link){ .start = a, .end = b, .tag = CW_NAV_LINK_JUMP });\nCW_NAV_LINKS is defined from the engine version that has links, so code\nthat must also build against an older engine can test for them."
+    },
+    {
      "name": "CW_CROWD_MAX_NEIGHBORS",
      "doc": ""
     }

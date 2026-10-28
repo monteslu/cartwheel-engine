@@ -72,7 +72,10 @@ cw_nav_filter cw_nav_filter_default(void);
  * (cw_nav_geom), so they are in the navmesh bytes, its hash and its saves.
  * A zero field takes the default noted beside it, so a designated
  * initializer is enough:
- *   cw_nav_geom_add_link(&g, &(cw_nav_link){ .start = a, .end = b, .tag = CW_NAV_LINK_JUMP }); */
+ *   cw_nav_geom_add_link(&g, &(cw_nav_link){ .start = a, .end = b, .tag = CW_NAV_LINK_JUMP });
+ * CW_NAV_LINKS is defined from the engine version that has links, so code
+ * that must also build against an older engine can test for them. */
+#define CW_NAV_LINKS 1
 enum {
   CW_NAV_LINK_JUMP = 1, /* suggested tags; any value is the game's own */
   CW_NAV_LINK_DROP = 2,
