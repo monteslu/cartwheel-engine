@@ -8,6 +8,7 @@
 #include "cartwheel/pipeline.h"
 #include "cartwheel/render3d.h"
 #include "test.h"
+#include "cartwheel/gl.h" /* this suite reads GL framebuffers itself (GL_ONLY) */
 
 static char order[64];
 static int order_n;

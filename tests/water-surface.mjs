@@ -78,10 +78,10 @@ const fmt = (m) => m.error || `${m.seen}/${m.n} probes on water, worst ${(m.wors
 let fail = 0;
 for (const gpu of GPUS) {
   for (const host of HOSTS) {
-    // (one dual cart per game: without a GL-only cart tree, Chromium and wasmcart-native have no GL leg, as in gate.mjs;
-    // romdev runs the dual cart on GL)
-    if (gpu === 'gl' && ['chromium', 'wcnative'].includes(host) && !existsSync(join(ROOT, 'build', 'cart', 'carts'))) {
-      console.log(`skip water-surface ${host} gl: no GL-only cart tree (build/cart); the dual cart runs GL on romdev`);
+    // one dual cart per game: romdev and Chromium run it told to render with GL (run-cart --dual-gl, implied when there
+    // is no GL-only cart tree); wasmcart-native has no GL leg for it
+    if (gpu === 'gl' && host === 'wcnative' && !existsSync(join(ROOT, 'build', 'cart', 'carts'))) {
+      console.log(`skip water-surface ${host} gl: wasmcart-native runs a dual cart on WebGPU only`);
       continue;
     }
     const r = await runCart(host, gpu, 'ref');

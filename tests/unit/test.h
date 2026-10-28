@@ -9,7 +9,7 @@
 #include <stdlib.h>
 
 #include "cartwheel/core.h"
-#include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/debug.h"
 #include "cartwheel/platform.h"
 
@@ -38,10 +38,9 @@ typedef struct { const char *name; cw_test_fn fn; } cw_test_case;
   uint32_t cw_test_checksum = CW_HASH32_INIT; \
   static const cw_test_case cw__cases[] = { __VA_ARGS__ }; \
   static int32_t cw__done; \
-  static void cw__test_render(void *u, double a) { /* green = passed, red = failed */ \
+  static void cw__test_render(void *u, double a) { /* green = passed, red = failed (GL or WebGPU) */ \
     (void)u; (void)a; \
-    glClearColor(cw_test_failed ? 0.8f : 0.1f, cw_test_failed ? 0.1f : 0.7f, 0.2f, 1); \
-    glClear(GL_COLOR_BUFFER_BIT); \
+    cw_gpu_clear_window(cw_test_failed ? 0.8f : 0.1f, cw_test_failed ? 0.1f : 0.7f, 0.2f, 1); \
   } \
   static void cw__test_init(void *u) { \
     (void)u; \
