@@ -242,11 +242,19 @@ if [ "$VERIFY" = 1 ]; then
 fi
 
 # wasmcart's Node tooling (pack, the reference hosts) needs its packages (a
-# checkout: an SDK carries the few it uses, and no lockfile)
-if [ -f "$DEPS/wasmcart/package-lock.json" ] && [ ! -d "$DEPS/wasmcart/node_modules" ]; then
-  (cd "$DEPS/wasmcart" && npm ci --no-audit --no-fund >/dev/null)
-fi
-# the WebGPU tier's hosts (webgpu-node, playwright) for the dual-cart runs
-if [ -f "$DEPS/wasmcart-wgpu/package-lock.json" ] && [ ! -d "$DEPS/wasmcart-wgpu/node_modules" ]; then
-  (cd "$DEPS/wasmcart-wgpu" && npm ci --no-audit --no-fund >/dev/null)
-fi
+# checkout: an SDK carries the few it uses, and no lockfile), and the WebGPU
+# tier's hosts (webgpu-node, playwright) for the dual-cart runs. They are
+# installed again when the lockfile changes (a new wasmcart pin), not only
+# when node_modules is missing: a moved pin kept the old release's packages.
+npm_deps() { # <dir>
+  local lock="$1/package-lock.json" stamp="$1/node_modules/.cw-lock-sha256" sum
+  [ -f "$lock" ] || return 0
+  [ -L "$1" ] && [ -d "$1/node_modules" ] && return 0 # another checkout's (shared): never reinstall it from here
+  sum="$(sha256sum "$lock" 2>/dev/null || shasum -a 256 "$lock")"
+  sum="${sum%% *}"
+  [ -d "$1/node_modules" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$sum" ] && return 0
+  (cd "$1" && npm ci --no-audit --no-fund >/dev/null)
+  echo "$sum" > "$stamp"
+}
+npm_deps "$DEPS/wasmcart"
+npm_deps "$DEPS/wasmcart-wgpu"
