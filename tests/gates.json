@@ -804,13 +804,13 @@
     "controlFrames": 2,
     "expect": {
       "unit.failed": 0,
-      "unit.checksum": 703783090,
+      "unit.checksum": 470590478,
       "unit.done": 1
     },
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "(unit.passed is not compared: natively the suite reruns at four pool sizes, a cart at its own) navigation: navmesh bytes and crowd hashes equal at pool sizes 0, 1, 3 and 7 in one run; save/load, 1000 seeded queries, batched and budgeted paths, tile-cache obstacles, ORCA head-on and circle, crowd replanning"
+    "note": "(unit.passed is not compared: natively the suite reruns at four pool sizes, a cart at its own) navigation: navmesh bytes and crowd hashes equal at pool sizes 0, 1, 3 and 7 in one run; save/load, 1000 seeded queries, batched and budgeted paths, tile-cache obstacles, ORCA head-on and circle, crowd replanning; links (off-mesh connections): paths with link ids up a ledge and a one-way pad, link cost and area filters, save/load, an unconnected link reported, crowd crossings with begin/land events at every pool size, manual_links, and the no-links control in which nothing reaches the ledge"
   },
   {
     "name": "nav-demo",
@@ -840,9 +840,47 @@
     "note": "500 agents (NavigationAgent3D) for 15 s in a baked dynamic NavigationRegion3D, a gate (NavigationObstacle3D) closing a doorway at 10 s; every tick's crowd hash folded. The expected values are the same at every pool size (tests/nav-determinism.mjs runs this gate at CW_WORKERS 0, 1, 3 and the default)"
   },
   {
+    "name": "nav-links",
+    "webgpu": true,
+    "app": "nav_links",
+    "frames": 1800,
+    "minColors": 8,
+    "maxGt16": 0.01,
+    "fields": [
+      "links.count",
+      "links.connected",
+      "links.jumps",
+      "links.pads",
+      "links.drops",
+      "links.landed",
+      "links.ledge",
+      "links.deck",
+      "links.arrivals",
+      "links.hash",
+      "links.hash_hi"
+    ],
+    "expect": {
+      "links.count": 3,
+      "links.connected": 3,
+      "links.jumps": 17,
+      "links.pads": 6,
+      "links.drops": 6,
+      "links.landed": 28,
+      "links.ledge": 8,
+      "links.deck": 6,
+      "links.arrivals": 30,
+      "links.hash": 60006061,
+      "links.hash_hi": 578278243
+    },
+    "controlEnv": {
+      "NAV_LINKS_OFF": "1"
+    },
+    "note": "eight NavigationAgent3D agents for 30 s walking floor, ledge, floor, deck, floor over three NavigationLink3D nodes from the scene file: a two-way jump up a 1.2 m ledge (higher than the 0.9 m climb), a one-way jump pad to a 3.5 m deck and a one-way drop back; crossings counted by tag from link_entered, landings from link_exited, arrivals only when standing up there; every tick's crowd hash folded. Control: the links removed before the bake, so nobody reaches the ledge or the deck (links.ledge 0)"
+  },
+  {
     "name": "nav-determinism",
     "script": "tests/nav-determinism.mjs",
-    "note": "unit-nav and nav-demo on native, Chromium and wcnative at CW_WORKERS 0, 1, 3 and the default: every host and pool size gives the pinned hashes"
+    "note": "unit-nav, nav-demo and nav-links on native, Chromium and wcnative at CW_WORKERS 0, 1, 3 and the default: every host and pool size gives the pinned hashes"
   },
   {
     "name": "ik-determinism",

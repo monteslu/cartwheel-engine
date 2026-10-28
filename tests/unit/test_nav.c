@@ -10,6 +10,7 @@
 #include "cartwheel/jobs.h"
 #include "cartwheel/nav.h"
 #include "../../samples/common/nav_level.h"
+#include "../../samples/common/nav_links_level.h"
 #include "test.h"
 
 static void fold64(uint64_t v) { FOLD(v); }
@@ -549,19 +550,333 @@ static void test_geom(void) {
   cw_nav_geom_free(&g);
 }
 
+
+/* ── links ────────────────────────────────────────────────────────────── */
+
+static cw_navmesh links_mesh(bool links, bool dynamic) {
+  cw_nav_geom g = { 0 };
+  nav_links_level_geom(&g, links);
+  cw_nav_config c = cw_nav_config_default();
+  c.dynamic = dynamic;
+  c.tile_size = 32;
+  cw_navmesh nm = cw_navmesh_build(&c, &g);
+  cw_nav_geom_free(&g);
+  return nm;
+}
+
+static const t3_vec3 FLOOR_A = { 10, 0, 6 }, LEDGE = { 8, NAV_LINKS_LEDGE_TOP, -8 }, DECK = { -12, NAV_LINKS_DECK_TOP, -9 },
+                     FLOOR_B = { -5, 0, -9 };
+
+/* Paths: without links the ledge and the deck are out of reach; with them the
+ * path crosses the right link (ids at the right waypoints), the one-way pad
+ * is not taken backwards, link cost and area filters choose the route. */
+static void test_link_paths(void) {
+  for (int dyn = 0; dyn < 2; dyn++) {
+    cw_navmesh none = links_mesh(false, dyn), nm = links_mesh(true, dyn);
+    CHECK(cw_navmesh_valid(none) && cw_navmesh_valid(nm));
+    t3_vec3 pts[64];
+    uint32_t ids[64];
+    bool partial = false;
+    /* the control: no links, no way up */
+    int n = cw_nav_find_path(none, FLOOR_A, LEDGE, NULL, pts, 64, &partial);
+    CHECK(n > 0 && partial);
+    CHECK(pts[n - 1].y < 0.5f);
+    cw_navmesh_stats s = cw_navmesh_get_stats(nm);
+    CHECK_EQ_INT(s.links, 3);
+    CHECK_EQ_INT(s.links_connected, 3);
+    CHECK_EQ_INT(cw_nav_link_count(nm), 3);
+    for (uint32_t id = 1; id <= 3; id++) CHECK(cw_nav_link_connected(nm, id));
+    CHECK(!cw_nav_link_connected(nm, 4) && !cw_nav_link_get(nm, 0, NULL));
+    cw_nav_link l;
+    CHECK(cw_nav_link_get(nm, 2, &l) && l.tag == CW_NAV_LINK_PAD && l.area == CW_NAV_AREA_WALK && l.radius > 0);
+    /* up the ledge: one jump */
+    n = cw_nav_find_path_links(nm, FLOOR_A, LEDGE, NULL, pts, ids, 64, &partial);
+    CHECK(n >= 3 && !partial);
+    CHECK(fabsf(pts[n - 1].y - NAV_LINKS_LEDGE_TOP) < 0.3f);
+    int jumps = 0, at = -1;
+    for (int i = 0; i < n; i++)
+      if (ids[i]) jumps++, at = i;
+    CHECK_EQ_INT(jumps, 1);
+    CHECK(at >= 0 && at + 1 < n && ids[at] == 1);
+    CHECK(at >= 0 && pts[at].y < 0.5f && pts[at + 1].y > 1.0f);
+    FOLD(n);
+    /* the same path through the budgeted queue */
+    uint32_t t = cw_nav_request_path(nm, FLOOR_A, LEDGE, NULL);
+    cw_nav_tick(nm, 0, 0);
+    t3_vec3 pts2[64];
+    uint32_t ids2[64];
+    int n2 = 0;
+    CHECK(cw_nav_take_path_links(nm, t, pts2, ids2, 64, &n2) == CW_NAV_PATH_DONE);
+    CHECK_EQ_INT(n2, n);
+    CHECK(n2 == n && !memcmp(pts, pts2, sizeof(t3_vec3) * (size_t)n) && !memcmp(ids, ids2, sizeof(uint32_t) * (size_t)n));
+    /* down the ledge: the jump is two-way */
+    n = cw_nav_find_path_links(nm, LEDGE, FLOOR_A, NULL, pts, ids, 64, &partial);
+    CHECK(n >= 3 && !partial);
+    jumps = 0;
+    for (int i = 0; i < n; i++) jumps += ids[i] == 1;
+    CHECK_EQ_INT(jumps, 1);
+    /* up to the deck: the pad; down from it: the drop (the pad is one way) */
+    n = cw_nav_find_path_links(nm, FLOOR_A, DECK, NULL, pts, ids, 64, &partial);
+    CHECK(!partial);
+    bool pad = false, drop = false;
+    for (int i = 0; i < n; i++) pad |= ids[i] == 2, drop |= ids[i] == 3;
+    CHECK(pad && !drop);
+    n = cw_nav_find_path_links(nm, DECK, FLOOR_A, NULL, pts, ids, 64, &partial);
+    CHECK(!partial);
+    pad = drop = false;
+    for (int i = 0; i < n; i++) pad |= ids[i] == 2, drop |= ids[i] == 3;
+    CHECK(drop && !pad);
+    fold64(cw_navmesh_hash(nm));
+    CHECK(cw_navmesh_hash(nm) != cw_navmesh_hash(none));
+    /* save / load keeps the links */
+    size_t len = 0;
+    void *bytes = cw_navmesh_save(nm, &len);
+    cw_navmesh nm2 = cw_navmesh_load(bytes, len);
+    CHECK(cw_navmesh_valid(nm2));
+    CHECK(cw_navmesh_hash(nm2) == cw_navmesh_hash(nm));
+    CHECK_EQ_INT(cw_navmesh_get_stats(nm2).links_connected, 3);
+    n = cw_nav_find_path_links(nm2, FLOOR_A, LEDGE, NULL, pts, ids, 64, &partial);
+    CHECK(n > 0 && !partial);
+    cw_free(bytes);
+    cw_navmesh_free(nm2);
+    cw_navmesh_free(nm);
+    cw_navmesh_free(none);
+  }
+  /* cost: a far ledge reached by a second jump at the ledge's east end that costs 50 m is not taken
+   * from near it; at cost 0 (its length) it is */
+  for (int k = 0; k < 2; k++) {
+    cw_nav_geom g = { 0 };
+    nav_links_level_geom(&g, true);
+    cw_nav_link east = { .start = { 13, 0, -10 }, .end = { 11, NAV_LINKS_LEDGE_TOP, -10 }, .bidirectional = true,
+                         .tag = CW_NAV_LINK_JUMP, .cost = k ? 0 : 50 };
+    uint32_t id = cw_nav_geom_add_link(&g, &east);
+    CHECK_EQ_INT(id, 4);
+    cw_nav_config c = cw_nav_config_default();
+    c.tile_size = 32;
+    cw_navmesh nm = cw_navmesh_build(&c, &g);
+    cw_nav_geom_free(&g);
+    t3_vec3 pts[64];
+    uint32_t ids[64];
+    int n = cw_nav_find_path_links(nm, (t3_vec3){ 14, 0, -8 }, (t3_vec3){ 10, NAV_LINKS_LEDGE_TOP, -9 }, NULL, pts, ids, 64,
+                                   NULL);
+    bool used = false;
+    for (int i = 0; i < n; i++) used |= ids[i] == 4;
+    CHECK(used == (k == 1));
+    cw_navmesh_free(nm);
+  }
+  /* a link with its own area: a filter that excludes the area keeps agents off it, the ground stays walkable */
+  {
+    cw_nav_geom g = { 0 };
+    nav_links_level_geom(&g, false);
+    cw_nav_link l[8];
+    nav_links_level_links(l, 8);
+    l[0].area = 5;
+    cw_nav_geom_add_link(&g, &l[0]);
+    cw_nav_config c = cw_nav_config_default();
+    cw_navmesh nm = cw_navmesh_build(&c, &g);
+    cw_nav_geom_free(&g);
+    cw_nav_filter f = cw_nav_filter_default();
+    t3_vec3 pts[64];
+    bool partial = true;
+    CHECK(cw_nav_find_path(nm, FLOOR_A, LEDGE, &f, pts, 64, &partial) > 0 && !partial);
+    f.exclude_areas = 1ull << 5;
+    CHECK(cw_nav_find_path(nm, FLOOR_A, LEDGE, &f, pts, 64, &partial) > 0 && partial);
+    cw_navmesh_free(nm);
+  }
+  /* a link whose end is in mid air is reported and never used */
+  {
+    cw_nav_geom g = { 0 };
+    nav_links_level_geom(&g, false);
+    cw_nav_geom_add_link(&g, &(cw_nav_link){ .start = { 8, 0, 0.2f }, .end = { 8, 6, -8 } });
+    cw_nav_config c = cw_nav_config_default();
+    cw_navmesh nm = cw_navmesh_build(&c, &g);
+    cw_nav_geom_free(&g);
+    CHECK_EQ_INT(cw_navmesh_get_stats(nm).links, 1);
+    CHECK_EQ_INT(cw_navmesh_get_stats(nm).links_connected, 0);
+    CHECK(!cw_nav_link_connected(nm, 1));
+    cw_phys_lines lines = { 0 };
+    cw_nav_debug_draw(nm, &lines, CW_NAV_DRAW_LINKS);
+    CHECK(cw_phys_lines_count(&lines) >= 10); /* the arc and the end ticks */
+    cw_phys_lines_free(&lines);
+    cw_navmesh_free(nm);
+  }
+}
+
+typedef struct link_log {
+  int began, landed, tags[8];
+  float land_y;
+} link_log;
+
+static void on_link(cw_crowd c, const cw_crowd_link_event *e, void *user) {
+  (void)c;
+  link_log *L = user;
+  if (e->finished) {
+    L->landed++;
+    L->land_y = e->end.y;
+  } else {
+    L->began++;
+    if (e->tag < 8) L->tags[e->tag]++;
+  }
+}
+
+/* Runs agents through the level: each walks a circuit floor, ledge, floor,
+ * deck, floor; returns the per-tick hash folded. */
+static uint64_t run_link_crowd(cw_navmesh nm, int agents, int ticks, link_log *L, int *visits) {
+  static const t3_vec3 *const circuit[4] = { &LEDGE, &FLOOR_A, &DECK, &FLOOR_B };
+  cw_crowd cr = cw_crowd_new(nm, agents);
+  cw_crowd_set_link_callback(cr, on_link, L);
+  cw_crowd_agent a[16];
+  int leg[16];
+  for (int i = 0; i < agents; i++) {
+    a[i] = cw_crowd_add(cr, (t3_vec3){ 6.0f + (float)(i % 4) * 2.5f, 0, 4.0f + (float)(i / 4) * 2.5f }, NULL);
+    leg[i] = i % 4;
+    cw_crowd_set_target(cr, a[i], *circuit[leg[i]]);
+  }
+  uint64_t x = 0;
+  *visits = 0;
+  for (int t = 0; t < ticks; t++) {
+    cw_crowd_step(cr, 1.0f / 30);
+    for (int i = 0; i < agents; i++) {
+      cw_crowd_agent_state s;
+      cw_crowd_get_state(cr, a[i], &s);
+      if (s.status == CW_CROWD_ARRIVED) {
+        (*visits)++;
+        leg[i] = (leg[i] + 1) % 4;
+        cw_crowd_set_target(cr, a[i], *circuit[leg[i]]);
+      }
+    }
+    uint64_t h = cw_crowd_hash(cr);
+    x = cw_hash_bytes(&h, sizeof h, x);
+  }
+  cw_crowd_free(cr);
+  return x;
+}
+
+/* Crowds cross links: began and landed events with the links' tags, agents
+ * reach the ledge and the deck (none can without links), the same per-tick
+ * hashes at every pool size; manual_links stops an agent ON_LINK until the
+ * game finishes the crossing. */
+static void test_link_crowd(void) {
+  cw_navmesh nm = links_mesh(true, false), none = links_mesh(false, false);
+  uint64_t first = 0;
+  for (size_t i = 0; i < CW_ARRAY_LEN(pool_sizes); i++) {
+    set_workers(pool_sizes[i]);
+    link_log L = { 0 };
+    int visits = 0;
+    uint64_t x = run_link_crowd(nm, 8, 1800, &L, &visits);
+    if (i == 0) {
+      first = x;
+      fold64(x);
+      FOLD(L.began);
+      FOLD(L.landed);
+      FOLD(visits);
+      cw_info("nav: link crowd of 8 for 60 s: %d crossings began (%d jumps, %d pads, %d drops), %d landed, %d arrivals",
+              L.began, L.tags[CW_NAV_LINK_JUMP], L.tags[CW_NAV_LINK_PAD], L.tags[CW_NAV_LINK_DROP], L.landed, visits);
+      CHECK(L.tags[CW_NAV_LINK_JUMP] >= 8);
+      CHECK(L.tags[CW_NAV_LINK_PAD] >= 4);
+      CHECK(L.tags[CW_NAV_LINK_DROP] >= 4);
+      CHECK(L.landed >= L.began - 8); /* every crossing lands (some may be in the air at the end) */
+      CHECK(visits >= 24);
+    }
+    CHECK(x == first);
+  }
+  set_workers(restore_workers);
+  /* the control: no links, nobody reaches the ledge */
+  {
+    link_log L = { 0 };
+    cw_crowd cr = cw_crowd_new(none, 1);
+    cw_crowd_set_link_callback(cr, on_link, &L);
+    cw_crowd_agent a = cw_crowd_add(cr, FLOOR_A, NULL);
+    cw_crowd_set_target(cr, a, LEDGE);
+    for (int t = 0; t < 600; t++) cw_crowd_step(cr, 1.0f / 30);
+    CHECK(cw_crowd_position(cr, a).y < 0.5f);
+    CHECK_EQ_INT(L.began, 0);
+    cw_crowd_free(cr);
+  }
+  /* one agent up the ledge: lands on top and arrives */
+  {
+    link_log L = { 0 };
+    cw_crowd cr = cw_crowd_new(nm, 1);
+    cw_crowd_set_link_callback(cr, on_link, &L);
+    cw_crowd_agent a = cw_crowd_add(cr, FLOOR_A, NULL);
+    cw_crowd_set_target(cr, a, LEDGE);
+    float top = 0;
+    bool seen_on_link = false;
+    for (int t = 0; t < 600; t++) {
+      cw_crowd_step(cr, 1.0f / 30);
+      cw_crowd_agent_state s;
+      cw_crowd_get_state(cr, a, &s);
+      if (s.status == CW_CROWD_ON_LINK) {
+        seen_on_link = true;
+        CHECK(s.link == 1 && s.link_progress >= 0 && s.link_progress <= 1);
+        if (s.position.y > top) top = s.position.y;
+      }
+    }
+    cw_crowd_agent_state s;
+    cw_crowd_get_state(cr, a, &s);
+    CHECK(seen_on_link);
+    CHECK(s.status == CW_CROWD_ARRIVED);
+    CHECK(fabsf(s.position.y - NAV_LINKS_LEDGE_TOP) < 0.3f);
+    CHECK(top > NAV_LINKS_LEDGE_TOP); /* the arc rises over the landing */
+    CHECK_EQ_INT(L.began, 1);
+    CHECK_EQ_INT(L.landed, 1);
+    CHECK(fabsf(L.land_y - NAV_LINKS_LEDGE_TOP) < 0.3f);
+    FOLD(s.position.x);
+    FOLD(s.position.z);
+    cw_crowd_free(cr);
+  }
+  /* manual_links: the agent waits at the start until the game finishes the crossing */
+  {
+    link_log L = { 0 };
+    cw_crowd cr = cw_crowd_new(nm, 1);
+    cw_crowd_set_link_callback(cr, on_link, &L);
+    cw_crowd_agent_params p = cw_crowd_agent_params_default();
+    p.manual_links = true;
+    cw_crowd_agent a = cw_crowd_add(cr, FLOOR_A, &p);
+    cw_crowd_set_target(cr, a, LEDGE);
+    int waited = 0;
+    cw_crowd_agent_state s;
+    for (int t = 0; t < 400; t++) {
+      cw_crowd_step(cr, 1.0f / 30);
+      cw_crowd_get_state(cr, a, &s);
+      if (s.status == CW_CROWD_ON_LINK) waited++;
+    }
+    CHECK(waited > 100); /* it stays there */
+    CHECK(s.status == CW_CROWD_ON_LINK && s.link == 1 && s.position.y < 0.5f);
+    CHECK(fabsf(s.link_end.y - NAV_LINKS_LEDGE_TOP) < 0.3f);
+    CHECK(cw_crowd_finish_link(cr, a));
+    CHECK(!cw_crowd_finish_link(cr, a));
+    for (int t = 0; t < 300; t++) cw_crowd_step(cr, 1.0f / 30);
+    cw_crowd_get_state(cr, a, &s);
+    CHECK(s.status == CW_CROWD_ARRIVED);
+    CHECK(fabsf(s.position.y - NAV_LINKS_LEDGE_TOP) < 0.3f);
+    CHECK_EQ_INT(L.began, 1);
+    CHECK_EQ_INT(L.landed, 0); /* the game ended it */
+    cw_crowd_free(cr);
+  }
+  cw_navmesh_free(none);
+  cw_navmesh_free(nm);
+}
+
 /* Building, querying, carving and crowding, then freeing everything, gives
  * back every byte (CW_MEM_NAV): measured after one warm-up round, since the
  * handle pools keep their chunks. */
 static void nav_round(void) {
   cw_nav_geom g = level();
+  cw_nav_geom_add_link(&g, &(cw_nav_link){ .start = { 24, 0, 10 }, .end = { 24, 1.5f, 22 } }); /* onto the deck */
   cw_nav_config c = cw_nav_config_default();
   c.dynamic = true;
   cw_navmesh nm = cw_navmesh_build(&c, &g);
   t3_vec3 pts[32];
+  uint32_t ids[32];
   cw_nav_find_path(nm, (t3_vec3){ -25, 0, -25 }, (t3_vec3){ 25, 0, 0 }, NULL, pts, 32, NULL);
+  cw_nav_find_path_links(nm, (t3_vec3){ 24, 0, 5 }, (t3_vec3){ 24, 1.5f, 24 }, NULL, pts, ids, 32, NULL);
   uint32_t t = cw_nav_request_path(nm, (t3_vec3){ -25, 0, -25 }, (t3_vec3){ 25, 0, 0 }, NULL);
   cw_nav_tick(nm, 0, 0);
   cw_nav_request_path(nm, (t3_vec3){ 0, 0, 0 }, (t3_vec3){ 5, 0, 5 }, NULL); /* left queued: freed with the navmesh */
+  uint32_t t2 = cw_nav_request_path(nm, (t3_vec3){ 24, 0, 5 }, (t3_vec3){ 24, 1.5f, 24 }, NULL);
+  cw_nav_tick(nm, 0, 0); /* answered, never taken: freed with the navmesh */
+  (void)t2;
   cw_nav_take_path(nm, t, pts, 32, NULL);
   cw_nav_obstacle_add_cylinder(nm, (t3_vec3){ 0, 0, 0 }, 2, 2);
   cw_nav_update(nm);
@@ -599,4 +914,5 @@ static void test_setup(void) { restore_workers = cw_jobs_thread_count() - 1; }
 
 CW_TEST_SUITE("nav", { "setup", test_setup }, { "geom", test_geom }, { "build", test_build },
               { "queries", test_queries }, { "obstacles", test_obstacles }, { "obstacle_queue", test_obstacle_queue }, { "head_on", test_head_on }, { "circle", test_circle },
-              { "crowd", test_crowd }, { "handles", test_handles }, { "crowd_obstacle", test_crowd_obstacle }, { "memory", test_memory })
+              { "crowd", test_crowd }, { "handles", test_handles }, { "crowd_obstacle", test_crowd_obstacle },
+              { "link_paths", test_link_paths }, { "link_crowd", test_link_crowd }, { "memory", test_memory })

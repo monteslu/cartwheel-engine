@@ -45,6 +45,7 @@ target_compile_definitions(character3d_auto PRIVATE CHARACTER_AUTOPILOT=1)
 cw_add_app(scene3d SOURCES scene3d/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/scene3d/assets)
 # navigation: 500 agents crossing a level, a gate carving the navmesh (cartwheel/nav.h)
 cw_add_app(nav_demo SOURCES nav_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/nav_demo/assets)
+cw_add_app(nav_links SOURCES nav_links/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/nav_links/assets)
 # navigation timings (tests/nav-perf.mjs): navmesh builds, obstacle updates, batched paths, crowd steps
 cw_add_app(nav_perf SOURCES nav_perf/main.c GL_ONLY)
 # terrain (cartwheel/terrain.h): CDLOD, splat layers, scatter, a car on Box3D's height field
