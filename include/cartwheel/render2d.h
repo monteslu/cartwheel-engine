@@ -147,6 +147,13 @@ cw_texture cw_target_create(const cw_target_desc *desc);
 unsigned cw_target_fbo(cw_texture t);
 /* Reallocates (contents lost). */
 void cw_target_resize(cw_texture t, int width, int height);
+struct cw_rt; /* cartwheel/pipeline.h */
+/* The target as a 3D pipeline output, on either GPU API: cw_pipeline_set_output(p,
+ * cw_target_rt(t)) and cw_pipeline_render draw the scene into it, and the target then
+ * draws as a sprite or a UI image (cw_ui_draw_texture) the right way up. NULL for a
+ * handle that is not a target. Owned by the target: valid until it is resized or
+ * destroyed (ask again after cw_target_resize). (cw_target_fbo is GL only.) */
+const struct cw_rt *cw_target_rt(cw_texture t);
 
 /* ── cameras ─────────────────────────────────────────────────────────────
  * A plain value the game owns. The view maps world -> canvas pixels:

@@ -57,6 +57,10 @@ void r2d_wg_yuv_convert(void *y, const uint8_t *const planes[3], void *target_te
   (void)y, (void)planes, (void)target_tex, (void)w, (void)h;
 }
 void r2d_wg_yuv_free(void *y) { (void)y; }
+unsigned r2d_wg_target_rt(void *tex, int w, int h) { (void)tex, (void)w, (void)h; return 0; }
+void *r2d_wg_layer_view(void *tex) { (void)tex; return NULL; }
+void r2d_wg_view_release(void *view) { (void)view; }
+void r2d_wg_target_rt_free(unsigned id) { (void)id; }
 #else
 
 #include "platform/wgpu.h"
@@ -807,7 +811,10 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
     r2d_ensure_rt(&R.canvas_rt, R.canvas_w, R.canvas_h, CW_FILTER_NEAREST, false);
     ct = (canvas_target){ keep_view(layer_view(tex_of(R.canvas_rt), 0)), WGPUTextureFormat_RGBA8Unorm, true };
   } else if (has_target) {
-    ct = (canvas_target){ keep_view(layer_view(tex_of(R.pass.target), 0)), WGPUTextureFormat_RGBA8Unorm, true };
+    /* a target whose rows run top-down (three.c drew it: cw_render3d_texture_target) is
+     * drawn unflipped, as the window is */
+    ct = (canvas_target){ keep_view(layer_view(tex_of(R.pass.target), 0)), WGPUTextureFormat_RGBA8Unorm,
+                          r2d_tex_get(R.pass.target)->y_up };
   } else {
     WGPUTextureView fv = cw__wgpu_frame_view();
     if (!fv) return;
@@ -1099,4 +1106,11 @@ static void yuv_shutdown(void) {
   Y.pipe = NULL;
   Y.bgl = NULL;
 }
+/* a 3D pipeline output into a target (cw_target_rt): the pipeline's registry wraps layer 0 */
+unsigned cw__pw_target_wrap(WGPUTexture color, int w, int h);
+void cw__pw_target_unwrap(unsigned target);
+unsigned r2d_wg_target_rt(void *tex, int w, int h) { return cw__pw_target_wrap((WGPUTexture)tex, w, h); }
+void *r2d_wg_layer_view(void *tex) { return layer_view((WGPUTexture)tex, 0); }
+void r2d_wg_view_release(void *view) { if (view) wgpuTextureViewRelease((WGPUTextureView)view); }
+void r2d_wg_target_rt_free(unsigned id) { cw__pw_target_unwrap(id); }
 #endif

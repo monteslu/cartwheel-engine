@@ -13,6 +13,7 @@
 #include "render3d_internal.h"
 #include "render/lighting_internal.h"
 #include "render/quality_internal.h"
+#include "cartwheel/render2d.h"
 #include "cartwheel/render3d.h"
 #include "render/bake_internal.h"
 #include "cartwheel/gpu.h"
@@ -119,6 +120,23 @@ void cw_render3d_window_target(t3_renderer *r) {
   }
 #endif
   if (r) t3_renderer_set_framebuffer(r, cw__gl_window_fbo); /* the window (pixel.c may stand in) */
+}
+
+void *cw__r2d_target_three_view(cw_texture h, int *w, int *hh); /* render2d/texture.c */
+void cw_render3d_texture_target(t3_renderer *r, cw_texture target) {
+  if (!r) return;
+  if (CW_HANDLE_IS_NULL(target)) {
+    cw_render3d_window_target(r);
+    return;
+  }
+#if CW_WGPU
+  if (cw_gpu_backend() == CW_GPU_WEBGPU) {
+    void *v = cw__r2d_target_three_view(target, NULL, NULL);
+    if (v) t3_renderer_wgpu_set_output(r, v, (int)WGPUTextureFormat_RGBA8Unorm);
+    return;
+  }
+#endif
+  t3_renderer_set_framebuffer(r, cw_target_fbo(target));
 }
 
 /* ── Camera3D ───────────────────────────────────────────────────────── */

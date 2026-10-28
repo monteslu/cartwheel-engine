@@ -55,6 +55,8 @@ typedef struct r2d_tex {
   bool target, has_normal;
   GLuint fbo, depth_rb;
   void *wdepth;            /* WebGPU: depth-stencil texture of a target made with depth */
+  void *rt;                /* cw_target_rt: the cw_rt naming this target (made on first ask) */
+  void *wview;             /* WebGPU: a view of the target for three.c (cw__r2d_target_three_view) */
   cw_filter filter;
   bool premultiplied;
 } r2d_tex;
@@ -242,6 +244,12 @@ void r2d_wg_tex_fill(void *tex, int from, int to, const uint8_t rgba[4]);
 void r2d_wg_tex_copy(void *src, void *dst, int layers);
 void r2d_wg_tex_write(void *tex, int x, int y, int layer, int w, int h, const uint8_t *px);
 void r2d_wg_tex_release(void *tex);
+/* cw_target_rt on WebGPU: a pipeline target id drawing into the texture, and its release */
+unsigned r2d_wg_target_rt(void *tex, int w, int h);
+void r2d_wg_target_rt_free(unsigned id);
+/* a render-attachment view of layer 0 of a WebGPU texture, and its release */
+void *r2d_wg_layer_view(void *tex);
+void r2d_wg_view_release(void *view);
 void r2d_wg_array_changed(r2d_array *a);
 typedef struct r2d_batch {
   uint32_t state, first, count, payload;

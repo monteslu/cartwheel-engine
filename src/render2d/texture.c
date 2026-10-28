@@ -7,6 +7,7 @@
 
 /* stb_image declares (static) loaders it only defines for formats compiled in */
 #pragma GCC diagnostic ignored "-Wunused-function"
+#include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
 
 #define STB_IMAGE_STATIC
@@ -399,6 +400,13 @@ void cw_texture_size(cw_texture h, int *w, int *hh) {
 bool cw_texture_valid(cw_texture h) { return r2d_tex_get(h) != NULL; }
 
 static void target_free_gl(r2d_tex *t) {
+  if (t->wview) r2d_wg_view_release(t->wview);
+  t->wview = NULL;
+  if (t->rt) { /* cw_target_rt: its WebGPU target goes with the texture */
+    if (r2d_wg()) r2d_wg_target_rt_free(((cw_rt *)t->rt)->fbo);
+    cw_free(t->rt);
+    t->rt = NULL;
+  }
   if (t->wdepth) r2d_wg_tex_release(t->wdepth);
   t->wdepth = NULL;
   if (t->fbo) glDeleteFramebuffers(1, &t->fbo);
@@ -467,6 +475,37 @@ unsigned cw_target_fbo(cw_texture h) {
   return t && t->target ? t->fbo : 0;
 }
 
+const cw_rt *cw_target_rt(cw_texture h) {
+  r2d_tex *t = r2d_tex_get(h);
+  if (!t || !t->target) return NULL;
+  if (!t->rt) {
+    cw_rt *rt = cw_calloc(1, sizeof *rt, CW_MEM_RENDER2D);
+    rt->w = t->w;
+    rt->h = t->h;
+    rt->format = CW_RT_RGBA8;
+    /* GL: the target's framebuffer; WebGPU: a pipeline target on its texture. Both keep
+     * rows bottom-up, as the 2D renderer reads a target */
+    rt->fbo = r2d_wg() ? r2d_wg_target_rt(R.arrays.data[t->array].wtex, t->w, t->h) : t->fbo;
+    t->rt = rt;
+  }
+  return t->rt;
+}
+
+/* render3d.c (cw_render3d_texture_target): on WebGPU a view three.c draws the
+ * target through, top-down from then on (three.c's output pass writes rows
+ * top-down: the 2D renderer then samples and draws it unflipped); NULL on GL or
+ * for a handle that is not a target */
+void *cw__r2d_target_three_view(cw_texture h, int *w, int *hh);
+void *cw__r2d_target_three_view(cw_texture h, int *w, int *hh) {
+  r2d_tex *t = r2d_tex_get(h);
+  if (!t || !t->target || !r2d_wg()) return NULL;
+  if (!t->wview) t->wview = r2d_wg_layer_view(R.arrays.data[t->array].wtex);
+  t->y_up = false;
+  if (w) *w = t->w;
+  if (hh) *hh = t->h;
+  return t->wview;
+}
+
 void cw_target_resize(cw_texture h, int w, int hh) {
   r2d_tex *t = r2d_tex_get(h);
   if (!t || !t->target || (t->w == w && t->h == hh)) return;
@@ -475,6 +514,7 @@ void cw_target_resize(cw_texture h, int w, int hh) {
   target_free_gl(t);
   t->w = w;
   t->h = hh;
+  t->y_up = true; /* new storage: the 2D renderer's rows again */
   target_alloc(t, depth);
 }
 

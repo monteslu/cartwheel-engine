@@ -52,6 +52,7 @@
 #ifndef CW_RENDER3D_H
 #define CW_RENDER3D_H
 
+#include "render2d.h"
 #include "scene.h"
 
 #ifdef __cplusplus
@@ -73,6 +74,11 @@ t3_renderer *cw_render3d_renderer(cw_tree *t); /* NULL before the first draw */
  * WebGPU backend on a WebGPU run (a dual cart must not touch GL once the
  * host selected WebGPU). Draw to the window with cw_render3d_window_target. */
 t3_renderer *cw_render3d_window_renderer(int w, int h);
+/* Before a t3_renderer_render into a 2D render target (cw_target_create with
+ * depth; null handle = the window, as cw_render3d_window_target): the target
+ * then draws as a sprite the right way up, on GL and WebGPU. Size the renderer
+ * to the target first (t3_renderer_set_size) and back to the window after. */
+void cw_render3d_texture_target(t3_renderer *r, cw_texture target);
 /* Before each t3_renderer_render of a cw_render3d_window_renderer that draws
  * to the window: point it at this frame's window (the frame texture on
  * WebGPU; nothing to do on GL, where it draws to the default framebuffer). */

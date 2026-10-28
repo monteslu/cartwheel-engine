@@ -368,6 +368,32 @@ void cw__pw_rt_destroy(cw_rt *rt) {
   memset(rt, 0, sizeof *rt);
 }
 
+/* A target drawing into an embedder's colour texture (layer 0 of it: a 2D
+ * render target of the 2D renderer, an array texture of one layer), no
+ * depth: the pipeline renders its scene offscreen and composites into it.
+ * The texture stays the embedder's: releasing the target releases the view. */
+unsigned cw__pw_target_wrap(WGPUTexture color, int w, int h) {
+  init();
+  unsigned cid = obj_new();
+  pw_obj *c = obj(cid);
+  c->fmt = wgpuTextureGetFormat(color);
+  c->dim = WGPUTextureDimension_2D;
+  c->samples = 1;
+  c->w = w;
+  c->h = h;
+  c->attach = wgpuTextureCreateView(color, &(WGPUTextureViewDescriptor){ .format = c->fmt, .dimension = WGPUTextureViewDimension_2D,
+                                                                       .baseMipLevel = 0, .mipLevelCount = 1, .baseArrayLayer = 0,
+                                                                       .arrayLayerCount = 1, .aspect = WGPUTextureAspect_All });
+  return target_new(cid, 0, 0, w, h, 1);
+}
+void cw__pw_target_unwrap(unsigned target) {
+  pw_obj *t = obj(target);
+  if (!t) return;
+  unsigned c = t->color;
+  cw__pw_release(target);
+  cw__pw_release(c);
+}
+
 bool cw__pw_msaa_create(cw_rt *msaa, const cw_rt *scene) {
   init();
   memset(msaa, 0, sizeof *msaa);
