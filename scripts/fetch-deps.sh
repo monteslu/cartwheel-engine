@@ -58,27 +58,55 @@ OVERRIDDEN=" $(awk -v h="@$HOST" '$1 ~ h"$" { sub(h"$", "", $1); print $1 }' "$R
 # patches/<name>/*.patch are applied on top of the pinned commit (git deps);
 # the tree is reset first, so re-running is idempotent.
 # unpatch: put back every tracked file a patch (this run's or an older one,
-# since dropped from patches/) changed, and remove the untracked files the
-# current patches create, so the checkout can move to another pin and the
+# since dropped from patches/) changed, and remove the untracked files patches
+# created: the current patches' and, from the record apply_patches keeps in the
+# checkout's git directory (cw-patch-created), those of patches applied before and
+# since dropped from patches/, so the checkout can move to another pin and the
 # patches apply again. Other untracked files (a builder's third_party/) stay.
+# the files a patch creates (a "--- /dev/null" hunk; git apply --summary names only those with a mode line)
+created_by() { awk '/^--- \/dev\/null/ { n = 1; next } n && /^\+\+\+ / { sub(/^\+\+\+ (b\/)?/, ""); sub(/\t.*$/, ""); print } { n = 0 }' "$1"; }
+created_record() { echo "$(git -C "$1" rev-parse --absolute-git-dir)/cw-patch-created"; }
 unpatch() { # name dst
-  local p f
+  local p f rec
   git -C "$2" checkout -q -- . 2>/dev/null || true
-  for p in "$ROOT"/patches/"$1"/*.patch; do
-    [ -f "$p" ] || continue
-    git -C "$2" apply --summary "$p" | sed -n 's/^ create mode [0-7]* //p' | while read -r f; do
-      [ -n "$f" ] && ! git -C "$2" ls-files --error-unmatch -- "$f" >/dev/null 2>&1 && rm -f "$2/$f"
+  rec="$(created_record "$2")"
+  {
+    for p in "$ROOT"/patches/"$1"/*.patch; do
+      [ -f "$p" ] || continue
+      created_by "$p"
     done
+    if [ -f "$rec" ]; then cat "$rec"; fi
+  } | sort -u | while read -r f; do
+    if [ -n "$f" ] && ! git -C "$2" ls-files --error-unmatch -- "$f" >/dev/null 2>&1; then rm -f "$2/$f"; fi
   done
+  rm -f "$rec"
 }
 apply_patches() { # name dst
-  local p
+  local p f rec
   unpatch "$1" "$2"
+  rec="$(created_record "$2")"
   for p in "$ROOT"/patches/"$1"/*.patch; do
     [ -f "$p" ] || continue
     if git -C "$2" apply --check "$p" 2>/dev/null; then git -C "$2" apply "$p"
     elif git -C "$2" apply -R --check "$p" 2>/dev/null; then echo "$1: already applied: $(basename "$p")"
     else git -C "$2" apply "$p" || { echo "$1: patch failed: $p" >&2; exit 1; }
+    fi
+    # record the files it created (untracked at this pin), so a later run removes them after the patch is dropped
+    created_by "$p" | while read -r f; do
+      if [ -n "$f" ] && ! git -C "$2" ls-files --error-unmatch -- "$f" >/dev/null 2>&1; then echo "$f" >> "$rec"; fi
+    done
+  done
+  return 0
+}
+# moving a checkout to another pin: an untracked file (not ignored) that the new pin tracks stops the checkout.
+# In a dependency checkout (never edited in place) it is a leftover of a patch applied before this script kept its
+# record (a dropped patch that added a file upstream later took): removed, and named.
+clear_blockers() { # name dst rev
+  local f
+  git -C "$2" ls-files --others --exclude-standard -z | while IFS= read -r -d '' f; do
+    if git -C "$2" cat-file -e "$3:$f" 2>/dev/null; then
+      rm -f "$2/$f"
+      echo "$1: removed $f (untracked here, tracked at $3: left by an earlier patch)"
     fi
   done
 }
@@ -117,6 +145,7 @@ fetch_git() { # name src rev
     # moving the pin: undo what the patches changed first (checkout refuses to overwrite it)
     unpatch "$name" "$dst"
     git -C "$dst" fetch -q "$src" "$rev" 2>/dev/null || git -C "$dst" fetch -q "$src" "+refs/heads/*:refs/remotes/src/*" "+refs/tags/*:refs/tags/*"
+    clear_blockers "$name" "$dst" "$rev"
   else
     # only the pinned commit when the server allows it (GitHub does), else the whole history
     rm -rf "$dst" && git init -q "$dst"

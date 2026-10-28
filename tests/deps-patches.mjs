@@ -1,7 +1,9 @@
 // scripts/fetch-deps.sh and patches/<dep>/: a dependency checkout with patches applied (by an earlier run, at an
 // older pin, or by a patch since dropped from patches/) must move to a new pin and take the current patches cleanly,
-// and a patch that is already applied is skipped, not an error. A patch that neither applies nor is applied must
-// still stop the fetch (the control).
+// and a patch that is already applied is skipped, not an error. A file a dropped patch created is removed (at the same
+// pin, from the record the script keeps; on a pin move, when the new pin tracks it, even with no record). Controls: a
+// patch that neither applies nor is applied must still stop the fetch, and a copy of the script without the pin-move
+// cleanup must stop on the old patch's file.
 //
 //   node tests/deps-patches.mjs        (no GPU; makes a throw-away fixture under out/deps-patches)
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -60,6 +62,35 @@ writeFileSync(join(pdir, '0001-edit.patch'), p1);
 writeFileSync(join(dep, 'other-untracked.txt'), 'keep me\n');
 r = run();
 check('untracked files no patch creates are kept', r.status === 0 && existsSync(join(dep, 'other-untracked.txt')), r.stdout + r.stderr);
+// a patch that created a file is dropped from patches/ while the pin stays: its file goes (the record the script
+// keeps in the checkout's git directory names it); the run before it applied 0002 and recorded new.c
+rmSync(join(pdir, '0002-add.patch'));
+r = run();
+check('a dropped patch\'s created file is removed at the same pin', r.status === 0 && !existsSync(join(dep, 'new.c')) && existsSync(join(dep, 'other-untracked.txt')), r.stdout + r.stderr);
+// a checkout patched before that record existed: a dropped patch left t.c, which the next pin tracks (upstream took
+// the file). Without the cleanup git checkout refuses to overwrite it and the fetch stops (what happened on the
+// three.c v0.186.20 repin). Run with a copy of the script whose cleanup is cut out: it MUST fail (the control).
+writeFileSync(join(up, 't.c'), 'upstream t\n'); git(up, 'add', 't.c'); git(up, 'commit', '-qm', 'three');
+const pin3 = git(up, 'rev-parse', 'HEAD');
+const script = readFileSync(join(fx, 'scripts', 'fetch-deps.sh'), 'utf8');
+const noCleanup = script.replace(/^\s*clear_blockers "\$name" "\$dst" "\$rev"\n/m, '');
+check('the control script really lacks the cleanup', noCleanup !== script && !/^\s*clear_blockers "/m.test(noCleanup));
+writeFileSync(join(fx, 'scripts', 'fetch-deps-nocleanup.sh'), noCleanup);
+const legacy = (file) => {
+  lock(pin1);
+  const s = spawnSync('bash', [join(fx, 'scripts', 'fetch-deps.sh')], { cwd: fx, encoding: 'utf8' });
+  if (s.status !== 0) throw new Error('legacy setup: ' + s.stdout + s.stderr);
+  writeFileSync(join(dep, 't.c'), 'from an old patch\n');
+  rmSync(join(dep, '.git', 'cw-patch-created'), { force: true });
+  lock(pin3);
+  return spawnSync('bash', [join(fx, 'scripts', file)], { cwd: fx, encoding: 'utf8' });
+};
+r = legacy('fetch-deps-nocleanup.sh');
+check('CONTROL: without the cleanup the old patch\'s file stops the pin move', r.status !== 0 && git(dep, 'rev-parse', 'HEAD') === pin1, r.stdout + r.stderr);
+r = legacy('fetch-deps.sh');
+check('an unrecorded leftover the new pin tracks is removed and named, and the move succeeds',
+  r.status === 0 && git(dep, 'rev-parse', 'HEAD') === pin3 && readFileSync(join(dep, 't.c'), 'utf8') === 'upstream t\n' && /removed t\.c/.test(r.stdout), r.stdout + r.stderr);
+check('untracked files the new pin does not track are still kept', existsSync(join(dep, 'other-untracked.txt')));
 // control: a patch that does not apply and is not applied must stop the fetch
 writeFileSync(join(pdir, '0003-bad.patch'), '--- a/a.c\n+++ b/a.c\n@@ -1,2 +1,2 @@\n nothing\n-like\n+this\n');
 r = run();
