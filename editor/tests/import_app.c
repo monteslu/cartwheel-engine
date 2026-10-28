@@ -22,7 +22,7 @@
 #include <string.h>
 
 #include "cartwheel/debug.h"
-#include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/resource.h"
 #include "cartwheel/vfs.h"
 #include "../core/internal.h"
@@ -250,11 +250,7 @@ static void update(void *u, double dt) {
 
 static void render(void *u, double a) {
   (void)u, (void)a;
-  int w, h;
-  cw_drawable_size(&w, &h);
-  glViewport(0, 0, w, h);
-  glClearColor(0.1f, 0.11f, 0.13f, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
+  cw_gpu_clear_window(0.1f, 0.11f, 0.13f, 1);
   cw_ui_render(cwed_ui_tree());
 }
 

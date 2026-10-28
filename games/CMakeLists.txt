@@ -27,14 +27,14 @@ string(REPLACE ";" "\n" _p3d_tpl "${_p3d_tpl}")
 file(CONFIGURE OUTPUT ${P3D_EDITOR_ASSETS}/cwtemplates.txt CONTENT "${_p3d_tpl}\n" @ONLY)
 # the editor with platformer3d's node types, so the game's scenes open,
 # edit and save in it (gate editor-level rebuilds level 1 with it)
-cw_add_app(platformer3d_editor SOURCES ${CMAKE_SOURCE_DIR}/editor/app/main.c ${P3D}/nodes.c ${P3D}/editor_types.c ASSETS ${P3D_EDITOR_ASSETS} GL_ONLY)
+cw_add_app(platformer3d_editor SOURCES ${CMAKE_SOURCE_DIR}/editor/app/main.c ${P3D}/nodes.c ${P3D}/editor_types.c ASSETS ${P3D_EDITOR_ASSETS})
 target_link_libraries(platformer3d_editor PRIVATE cartwheel_editor)
 target_compile_definitions(platformer3d_editor PRIVATE CWED_APP_TYPES=platformer3d_editor_types)
 # Gate apps: the editor with platformer3d's types playing a scripted
 # session (editor/tests/session_*.inc): the 3D view, a 2D scene, a pointer
 # gizmo session
 foreach(s view3d view2d gizmo pointer)
-  cw_add_app(platformer3d_editor_${s} SOURCES ${CMAKE_SOURCE_DIR}/editor/app/main.c ${P3D}/nodes.c ${P3D}/editor_types.c ASSETS ${P3D_EDITOR_ASSETS} GL_ONLY)
+  cw_add_app(platformer3d_editor_${s} SOURCES ${CMAKE_SOURCE_DIR}/editor/app/main.c ${P3D}/nodes.c ${P3D}/editor_types.c ASSETS ${P3D_EDITOR_ASSETS})
   target_link_libraries(platformer3d_editor_${s} PRIVATE cartwheel_editor)
   target_compile_definitions(platformer3d_editor_${s} PRIVATE CWED_APP_TYPES=platformer3d_editor_types EDITOR_SESSION=1
                              EDITOR_SESSION_INC="../tests/session_${s}.inc")

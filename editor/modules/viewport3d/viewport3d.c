@@ -29,7 +29,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "cartwheel/gl.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/render3d.h"
 #include "../gizmos/gizmos.h"
@@ -396,8 +395,7 @@ static void render(cwed_doc *d) {
   build_helpers(d, vc);
   cw_pipeline *pl = cw_pipeline_of(t);
   if (cw_pipeline_has_pass(pl, "canvas")) cw_pipeline_set_pass_enabled(pl, "canvas", false);
-  cw_rt rt = { .fbo = cw_target_fbo(V.target), .w = V.tw, .h = V.th, .format = CW_RT_RGBA8 };
-  cw_pipeline_set_output(pl, &rt);
+  cw_pipeline_set_output(pl, cw_target_rt(V.target)); /* GL and WebGPU */
   cwed_doc_enter(d);
   cw_tree_pre_render(t, 1.0);
   cw_pipeline_render(t, V.tw, V.th, 1.0);
@@ -405,7 +403,6 @@ static void render(cwed_doc *d) {
   cw_pipeline_set_output(pl, NULL);
   t3_renderer *r = cw_render3d_renderer(t);
   if (r) t3_renderer_reset_bindings(r);
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
   V.renders++;
   V.f_renders++;
 }

@@ -25,7 +25,7 @@
 #include <string.h>
 
 #include "cartwheel/debug.h"
-#include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/render2d.h"
 #include "cartwheel/render3d.h"
@@ -173,6 +173,13 @@ static uint64_t hash_of(const char *path) {
 /* ── off-screen rendering ─────────────────────────────────────────────── */
 
 static cw_rt *rt;
+/* A cart on WebGPU cannot wait for a picture to come back: render_tree then
+ * returns NULL with the read on its way (pend.ticket, of pend.w x pend.h), and
+ * whoever asked takes it when it lands (frame(): a thumbnail or the Preview
+ * panel). One at a time: a newer render drops the older read. */
+enum { PEND_NONE, PEND_THUMB, PEND_VIEW };
+static struct { uint32_t ticket; int kind, w, h; uint64_t hash; } pend;
+static bool pended; /* the last render_tree left its picture pending */
 static uint8_t *px_buf;
 static size_t px_cap;
 
@@ -189,31 +196,29 @@ static uint8_t *render_tree(cw_tree *t, int w, int h, bool doc) {
     px_buf = cw_realloc(px_buf, need, CW_MEM_EDITOR);
     px_cap = need;
   }
+  if (pend.ticket) cw_gpu_read_drop(pend.ticket);
+  pend = (__typeof__(pend)){ 0 };
+  pended = false;
   cw_tree *prev = cw_current_tree();
   if (!doc) cw_set_current_tree(t);
-  glBindFramebuffer(GL_FRAMEBUFFER, rt->fbo);
-  glViewport(0, 0, w, h);
-  glClearColor(BG[0], BG[1], BG[2], 1);
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   if (cw_render3d_renderer(t)) t3_renderer_reset_bindings(cw_render3d_renderer(t));
   cw_tree_pre_render(t, 0);
   cw_pipeline *p = cw_pipeline_of(t);
   cw_pipeline_set_output(p, rt);
   cw_pipeline_render(t, w, h, 0);
   cw_pipeline_set_output(p, NULL);
-  glBindFramebuffer(GL_FRAMEBUFFER, rt->fbo);
-  glPixelStorei(GL_PACK_ALIGNMENT, 1);
-  glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px_buf);
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
   if (cw_render3d_renderer(t)) t3_renderer_reset_bindings(cw_render3d_renderer(t));
   if (!doc) cw_set_current_tree(prev);
-  /* GL rows are bottom-up */
-  uint8_t row[4096 * 4];
-  for (int y = 0; y < h / 2 && w <= 4096; y++) {
-    memcpy(row, px_buf + (size_t)y * w * 4, (size_t)w * 4);
-    memcpy(px_buf + (size_t)y * w * 4, px_buf + (size_t)(h - 1 - y) * w * 4, (size_t)w * 4);
-    memcpy(px_buf + (size_t)(h - 1 - y) * w * 4, row, (size_t)w * 4);
+  /* the picture back (top-down rows), on either GPU API; natively the editor waits for
+   * it, a cart on WebGPU cannot (no preview there until it arrives: NULL) */
+  uint32_t ticket = cw_gpu_read_rt(rt, 0, 0, w, h);
+  int got = ticket ? cw_gpu_read_wait(ticket, px_buf) : -1;
+  if (got == 0) {
+    pend.ticket = ticket, pend.w = w, pend.h = h;
+    pended = true;
+    return NULL;
   }
+  if (got < 0) return NULL;
   for (size_t i = 0; i < (size_t)w * h; i++) px_buf[i * 4 + 3] = 255;
   return px_buf;
 }
@@ -465,6 +470,7 @@ static pv *request(const char *path, bool now) {
   }
   if (now) {
     e->ready = render_one(path, e);
+    if (!e->ready && pended) pend.kind = PEND_THUMB, pend.hash = e->hash;
     renders++;
     return e;
   }
@@ -485,7 +491,8 @@ static void pump(void) {
     if (!e || e->ready || e->error[0]) continue;
     e->ready = render_one(p, e);
     renders++;
-    if (!e->ready) cwed_log(CWED_LOG_WARN, "preview of %s: %s", p, e->error);
+    if (!e->ready && pended) pend.kind = PEND_THUMB, pend.hash = e->hash; /* lands in a later frame */
+    else if (!e->ready) cwed_log(CWED_LOG_WARN, "preview of %s: %s", p, e->error);
     break;
   }
 }
@@ -528,6 +535,7 @@ static bool render_exec(cwed_call *c) {
   if (!kind_of(path)) return cwed_fail(c, "%s has no preview (models, meshes, materials, textures and scenes do)", path);
   pv *e = request(path, true);
   if (!e) return cwed_fail(c, "no file '%s' in the project", path);
+  if (!e->ready && pended) return cwed_fail(c, "the preview of %s is on its way (a cart on WebGPU cannot wait for a picture): preview.get shows it when it lands", path);
   if (!e->ready) return cwed_fail(c, "%s", e->error[0] ? e->error : "the preview did not render");
   reply_pv(c, path, e);
   return true;
@@ -548,6 +556,7 @@ static bool scene_exec(cwed_call *c) {
   int w = (int)cwed_arg_int(c, "width"), h = (int)cwed_arg_int(c, "height");
   if (w < 16 || h < 16 || w > 2048 || h > 2048) return cwed_fail(c, "width and height are 16..2048");
   uint8_t *px = render_doc(d, w, h);
+  if (!px && pended) return cwed_fail(c, "a cart on WebGPU cannot wait for the picture to come back: measure on a GL host or natively");
   if (!px) return cwed_fail(c, "the scene has no current Camera3D to render through");
   cwed_json *j = cwed_reply(c);
   cwed_json_key(j, "pixels");
@@ -566,6 +575,7 @@ static bool node_pixels_exec(cwed_call *c) {
   int w = (int)cwed_arg_int(c, "width"), h = (int)cwed_arg_int(c, "height");
   if (w < 16 || h < 16 || w > 2048 || h > 2048) return cwed_fail(c, "width and height are 16..2048");
   uint8_t *a = render_doc(d, w, h);
+  if (!a && pended) return cwed_fail(c, "a cart on WebGPU cannot wait for the picture to come back: measure on a GL host or natively");
   if (!a) return cwed_fail(c, "the scene has no current Camera3D to render through");
   size_t sz = (size_t)w * h * 4;
   uint8_t *with = cw_alloc(sz, CW_MEM_EDITOR);
@@ -605,6 +615,7 @@ static bool view_dirty = true;
 static t3_mat4 view_cam_world, view_cam_proj_inv;
 static bool view_cam_valid;
 
+static void view_show(cwed_doc *d, const uint8_t *px, int w, int h);
 static void refresh_view(void) {
   cwed_doc *d = cwed_doc_active();
   cw_rect r = cw_control_global_rect(view);
@@ -620,6 +631,15 @@ static void refresh_view(void) {
   view_version = d ? cwed_doc_version(d) : 0;
   view_doc_gen = cw_vfs_generation();
   uint8_t *px = d ? render_doc(d, w, h) : NULL;
+  if (!px && pended) { /* shown when it lands (frame) */
+    pend.kind = PEND_VIEW;
+    return;
+  }
+  view_show(d, px, w, h);
+}
+
+/* the Preview panel shows a picture of the active scene (NULL: why not) */
+static void view_show(cwed_doc *d, const uint8_t *px, int w, int h) {
   view_cam_valid = false;
   if (!px) {
     cw_label_set_text(caption, d ? "This scene has no current Camera3D: add one to preview it here." : "No scene open.");
@@ -697,8 +717,34 @@ static void on_event(const cwed_event *e, void *user) {
   view_dirty = true;
 }
 
+/* a picture a WebGPU cart could not wait for, taken when it lands */
+static void take_pending(void) {
+  if (!pend.ticket) return;
+  size_t need = (size_t)pend.w * pend.h * 4;
+  if (px_cap < need) {
+    px_buf = cw_realloc(px_buf, need, CW_MEM_EDITOR);
+    px_cap = need;
+  }
+  int got = cw_gpu_read_result(pend.ticket, px_buf);
+  if (got == 0) return;
+  int kind = pend.kind, w = pend.w, h = pend.h;
+  uint64_t hash = pend.hash;
+  pend = (__typeof__(pend)){ 0 };
+  if (got < 0) return;
+  for (size_t i = 0; i < (size_t)w * h; i++) px_buf[i * 4 + 3] = 255;
+  pv *e = kind == PEND_THUMB ? cache_find(hash) : NULL;
+  if (e) {
+    fill_texture(e, px_buf, w, h);
+    e->coverage = (float)non_background(px_buf, w, h) / (float)(w * h);
+    e->ready = true;
+  } else if (kind == PEND_VIEW && cwed_doc_active() == view_doc) {
+    view_show(view_doc, px_buf, w, h);
+  }
+}
+
 static void frame(double dt) {
   (void)dt;
+  take_pending();
   pump();
   if (cw_node_valid(view) && cwed_panel_visible("preview") && cw_control_visible_in_tree(panel)) refresh_view();
   f_renders = renders;
