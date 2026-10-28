@@ -2,7 +2,7 @@
  * works too), as a cart editor.wasc (its bundled demo project plus the
  * in-memory project layer). Built with EDITOR_SESSION it plays a scripted
  * editing session (editor/tests/session.inc) for the cross-host gate. */
-#include "cartwheel/gl.h"
+#include "cartwheel/gpu.h"
 #include "../core/internal.h"
 
 /* An editor built for a game (games/<game>/editor_types.c) registers the
@@ -84,11 +84,7 @@ static void update(void *u, double dt) {
 
 static void render(void *u, double a) {
   (void)u, (void)a;
-  int w, h;
-  cw_drawable_size(&w, &h);
-  glViewport(0, 0, w, h);
-  glClearColor(0.1f, 0.11f, 0.13f, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
+  cw_gpu_clear_window(0.1f, 0.11f, 0.13f, 1);
   cw_ui_render(cwed_ui_tree());
 }
 

@@ -336,7 +336,7 @@ function(cw__make_project_editors)
       set(_progs "")
     endif()
     cw_add_app(${ed} SOURCES ${CMAKE_SOURCE_DIR}/editor/app/main.c ${_gen} ${_srcs} ASSETS ${stage} PLUGINS ${pdir_root} QUIET_PLUGINS
-      NO_PROJECT_EDITOR PROGRAMS ${_progs} GL_ONLY) # the editor frame draws with GL
+      NO_PROJECT_EDITOR PROGRAMS ${_progs}) # a dual cart, as every cart is
     target_link_libraries(${ed} PRIVATE cartwheel_editor)
     if(CW_ENGINE_ONLY) # a project build makes it only when asked (cwproject.mjs build <dir> editor)
       set_target_properties(${ed} PROPERTIES EXCLUDE_FROM_ALL ON)

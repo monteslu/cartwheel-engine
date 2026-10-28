@@ -24,7 +24,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "cartwheel/gl.h"
 #include "cartwheel/scene2d.h"
 #include "cartwheel/vfs.h"
 #include "../gizmos/gizmos.h"
@@ -464,7 +463,6 @@ static void render(cwed_doc *d) {
   cw_canvas_draw_view(cwed_doc_tree(d), &(cw_canvas_view){ .target = V.target, .use_camera = true, .camera = camera_of(vc), .clear = true,
                                                             .clear_color = cw_rgba(0.16f, 0.17f, 0.2f, 1), .skip_overlays = true }, 1.0);
   cwed_doc_leave();
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
   build_overlay(d, vc);
   V.renders++;
 }
