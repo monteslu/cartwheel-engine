@@ -98,7 +98,8 @@
  * Costs per frame: the BVH walk (visible boxes plus their near misses), a
  * pass over moving meshes, a pass over visible meshes for LOD, one query
  * draw per queried mesh, one instanced draw per impostor atlas. The first use
- * of an impostor atlas renders the mesh 64 times. */
+ * of an impostor atlas renders the mesh 128 times (64 views, albedo and
+ * normals). GL and WebGPU bake the same atlas and draw the same impostors. */
 #ifndef CW_VISIBILITY_H
 #define CW_VISIBILITY_H
 

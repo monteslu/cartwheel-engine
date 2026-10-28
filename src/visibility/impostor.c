@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cartwheel/gpu.h"
 #include "cartwheel/render3d.h"
 #include "vis_internal.h"
 #if CW_WGPU
@@ -19,6 +20,7 @@
 #define IMP_CELL 128
 #define IMP_SIZE (IMP_G * IMP_CELL)
 #define IMP_MAX_DIR 4
+#define IMP_MIPS 5 /* 1024 down to 64 texels */
 
 typedef struct imp_atlas {
   uint64_t key;
@@ -235,6 +237,35 @@ void cw__vis_impostor_add(vis_impostors *im, int atlas, const vis_impostor_inst 
 
 /* ── baking ─────────────────────────────────────────────────────────── */
 
+/* CW_TEST_IMPOSTOR_BAKE_MS=1: each bake waits for the GPU before and after
+ * (cw_gpu_finish; on WebGPU the frame's encoder is submitted first, so the
+ * bake goes to the GPU at once) and logs its time, so bake cost can be
+ * measured on either backend. A WebGPU cart cannot wait: there the time is the
+ * CPU side only. */
+static bool bake_timing(void) {
+  const char *e = getenv("CW_TEST_IMPOSTOR_BAKE_MS");
+  return e && *e == '1';
+}
+static bool bake_finish(t3_renderer *r) {
+#if CW_WGPU
+  if (cw__wgpu_on()) {
+    cw__pw_flush();
+    t3_renderer_wgpu_submit(r);
+  }
+#endif
+  (void)r;
+  return cw_gpu_finish();
+}
+static double bake_clock_start(t3_renderer *r) {
+  bake_finish(r);
+  double t = cw__render3d_now_ms();
+  return t > 0 ? t : 1e-9;
+}
+static void bake_clock_report(t3_renderer *r, double t0, const char *api) {
+  bool waited = bake_finish(r);
+  cw_info("impostor bake (%s): %.2f ms%s", api, cw__render3d_now_ms() - t0, waited ? "" : " (CPU only: this host cannot wait for the GPU)");
+}
+
 typedef struct mesh_list { CW_ARRAY(t3_mesh *) m; } mesh_list;
 static void collect_meshes(t3_object *o, void *u) {
   mesh_list *l = u;
@@ -269,53 +300,232 @@ static GLuint atlas_tex(void) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 4);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, IMP_MIPS - 1);
   return t;
 }
 
-/* render the 64 views of scene sc into tex (bound to a->fbo) */
-static void render_views(t3_renderer *r, t3_scene *sc, imp_atlas *a, GLuint tex) {
-  glBindFramebuffer(GL_FRAMEBUFFER, a->fbo);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-  glClearColor(0, 0, 0, 0);
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-  t3_renderer_reset_bindings(r);
-  t3_renderer_set_framebuffer(r, a->fbo);
-  t3_renderer_set_size(r, IMP_SIZE, IMP_SIZE);
-  t3_renderer_set_clear_color(r, 0x000000, 0);
-  t3_renderer_set_scissor_test(r, true);
+/* where a bake draws: GL, the atlas framebuffer with tex attached; WebGPU,
+ * mip 0 of the atlas texture and a depth view of the atlas's size */
+typedef struct bake_dst {
+  GLuint fbo, tex;
+#if CW_WGPU
+  WGPUTextureView color, depth;
+#endif
+} bake_dst;
+
+/* the first texel row (counted from row 0, where texture coordinate 0 is) of
+ * view row j: the draw shaders read view (i, j) at (ij + uv) / 8. Both
+ * backends place every view through this one function, so the atlases hold the
+ * same texels in the same rows (the WebGPU bake draws with flip_y: GL's
+ * bottom-up rows). three.js's setViewport counts y from the top, so the GL
+ * bake asks for IMP_SIZE - row - IMP_CELL; it once asked for row itself, which
+ * put view row j where row 7 - j is read: every impostor showed each view
+ * mirrored front to back (z), its far side lit as its near side. */
+static int tile_row(int j) { return j * IMP_CELL; }
+
+/* render the 64 views of scene sc into the bake destination */
+static void render_views(t3_renderer *r, t3_scene *sc, imp_atlas *a, const bake_dst *d) {
+  bool wg = false;
+#if CW_WGPU
+  wg = d->color != NULL;
+#endif
+  if (!wg) {
+    glBindFramebuffer(GL_FRAMEBUFFER, d->fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, d->tex, 0);
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    t3_renderer_reset_bindings(r);
+    t3_renderer_set_framebuffer(r, d->fbo);
+    t3_renderer_set_size(r, IMP_SIZE, IMP_SIZE);
+    t3_renderer_set_clear_color(r, 0x000000, 0);
+    t3_renderer_set_scissor_test(r, true);
+  }
   float R = a->radius;
   t3_camera *cam = t3_orthographic_camera_new(-R, R, R, -R, 0.01f, 4 * R);
   t3_vec3 c = { a->center[0], a->center[1], a->center[2] };
   for (int j = 0; j < IMP_G; j++)
     for (int i = 0; i < IMP_G; i++) {
-      float d[3];
-      oct_dec((i + 0.5f) / IMP_G, (j + 0.5f) / IMP_G, d);
-      cam->base.up = fabsf(d[1]) > 0.999f ? (t3_vec3){ 0, 0, -1 } : (t3_vec3){ 0, 1, 0 };
-      cam->base.position = (t3_vec3){ c.x + d[0] * 2 * R, c.y + d[1] * 2 * R, c.z + d[2] * 2 * R };
+      float dir[3];
+      oct_dec((i + 0.5f) / IMP_G, (j + 0.5f) / IMP_G, dir);
+      cam->base.up = fabsf(dir[1]) > 0.999f ? (t3_vec3){ 0, 0, -1 } : (t3_vec3){ 0, 1, 0 };
+      cam->base.position = (t3_vec3){ c.x + dir[0] * 2 * R, c.y + dir[1] * 2 * R, c.z + dir[2] * 2 * R };
       t3_object_look_at(cam, c.x, c.y, c.z);
       t3_camera_update_projection_matrix(cam);
-      t3_renderer_set_viewport(r, i * IMP_CELL, j * IMP_CELL, IMP_CELL, IMP_CELL);
-      t3_renderer_set_scissor(r, i * IMP_CELL, j * IMP_CELL, IMP_CELL, IMP_CELL);
+#if CW_WGPU
+      if (wg) {
+        /* the first view clears the whole atlas (a WebGPU pass clears its
+         * whole attachment), the rest load it; flip_y: GL's row order, so
+         * y counts from the bottom row */
+        bool first = i == 0 && j == 0;
+        t3_external_target et = {
+          .color = (uintptr_t)d->color, .depth = (uintptr_t)d->depth,
+          .color_format = (int)WGPUTextureFormat_RGBA8Unorm, .depth_format = (int)WGPUTextureFormat_Depth24Plus,
+          .samples = 1, .load_color = !first, .load_depth = !first, .clear_rgba = { 0, 0, 0, 0 }, .clear_depth = 1,
+          .x = i * IMP_CELL, .y = tile_row(j), .w = IMP_CELL, .h = IMP_CELL, .flip_y = true,
+        };
+        t3_renderer_set_external_target(r, &et);
+        t3_renderer_render(r, sc, cam);
+        continue;
+      }
+#endif
+      int top = IMP_SIZE - tile_row(j) - IMP_CELL;
+      t3_renderer_set_viewport(r, i * IMP_CELL, top, IMP_CELL, IMP_CELL);
+      t3_renderer_set_scissor(r, i * IMP_CELL, top, IMP_CELL, IMP_CELL);
       t3_renderer_render(r, sc, cam);
     }
   t3_release(cam);
+#if CW_WGPU
+  if (wg) {
+    t3_renderer_set_external_target(r, NULL);
+    return;
+  }
+#endif
   t3_renderer_set_scissor_test(r, false);
-  glBindTexture(GL_TEXTURE_2D, tex);
+  glBindTexture(GL_TEXTURE_2D, d->tex);
   glGenerateMipmap(GL_TEXTURE_2D);
+}
+
+#if CW_WGPU
+/* ── baking on WebGPU: three.c draws the views into mip 0, mips by 2x2 box
+ * filtering on the GPU (glGenerateMipmap's filter) ─────────────────────── */
+
+static const char WGSL_MIP[] =
+    "@group(0) @binding(0) var src: texture_2d<f32>;\n"
+    "@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n"
+    "  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));\n"
+    "  return vec4f(p * 2.0 - 1.0, 0.0, 1.0);\n"
+    "}\n"
+    "@fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n"
+    "  let q = vec2i(pos.xy) * 2;\n"
+    "  return (textureLoad(src, q, 0) + textureLoad(src, q + vec2i(1, 0), 0) + textureLoad(src, q + vec2i(0, 1), 0) +\n"
+    "          textureLoad(src, q + vec2i(1, 1), 0)) * 0.25;\n"
+    "}\n";
+
+static struct {
+  WGPUShaderModule sm;
+  WGPUBindGroupLayout bgl;
+  WGPURenderPipeline p;
+} M;
+
+static bool mip_init(void) {
+  if (M.p) return true;
+  const char *const parts[] = { WGSL_MIP, NULL };
+  M.sm = cw__wg_module("impostor mips", parts);
+  if (!M.sm) return false;
+  const cw__wg_slot sl[1] = { { CW_WB_TEX, WGPUShaderStage_Fragment, 0, 0 } };
+  M.bgl = cw__wg_layout(sl, 1);
+  WGPUColorTargetState ct = { .format = WGPUTextureFormat_RGBA8Unorm, .writeMask = WGPUColorWriteMask_All };
+  WGPUFragmentState fs = { .module = M.sm, .entryPoint = CW_WGPU_SV("fs"), .targetCount = 1, .targets = &ct };
+  WGPURenderPipelineDescriptor d = {
+    .label = CW_WGPU_SV("impostor mips"), .layout = cw__wg_pipeline_layout(&M.bgl, 1),
+    .vertex = { .module = M.sm, .entryPoint = CW_WGPU_SV("vs") },
+    .primitive = { .topology = WGPUPrimitiveTopology_TriangleList, .cullMode = WGPUCullMode_None },
+    .multisample = { .count = 1, .mask = 0xffffffffu },
+    .fragment = &fs,
+  };
+  M.p = wgpuDeviceCreateRenderPipeline(cw__wgpu_device(), &d);
+  wgpuPipelineLayoutRelease(d.layout);
+  return M.p != NULL;
+}
+
+/* levels 1 .. IMP_MIPS-1 of t from level 0, recorded on enc. Each level is
+ * drawn into a texture of its own and copied in, so no pass samples the
+ * texture it draws into (compatibility mode allows no feedback loop) */
+static void wg_mips(WGPUCommandEncoder enc, WGPUTexture t) {
+  if (!mip_init()) return;
+  WGPUTexture tmp[IMP_MIPS] = { 0 };
+  WGPUTextureView views[IMP_MIPS] = { 0 };
+  WGPUBindGroup groups[IMP_MIPS] = { 0 };
+  views[0] = cw__wg_view(t, WGPUTextureViewDimension_2D, 0, IMP_MIPS, 0, 1); /* textureLoad level 0 */
+  for (int k = 1; k < IMP_MIPS; k++) {
+    uint32_t s = (uint32_t)(IMP_SIZE >> k);
+    tmp[k] = cw__wg_texture(WGPUTextureDimension_2D, (int)s, (int)s, 1, 1, WGPUTextureFormat_RGBA8Unorm,
+                            WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc,
+                            WGPUTextureViewDimension_Undefined, "impostor mip");
+    views[k] = cw__wg_view(tmp[k], WGPUTextureViewDimension_2D, 0, 1, 0, 1);
+    cw__wg_entry e = { .view = views[k - 1] };
+    groups[k] = cw__wg_group(M.bgl, &e, 1);
+    WGPURenderPassColorAttachment ca = { .view = views[k], .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED,
+                                         .loadOp = WGPULoadOp_Clear, .storeOp = WGPUStoreOp_Store };
+    WGPURenderPassDescriptor rp = { .label = CW_WGPU_SV("impostor mip"), .colorAttachmentCount = 1, .colorAttachments = &ca };
+    WGPURenderPassEncoder p = wgpuCommandEncoderBeginRenderPass(enc, &rp);
+    wgpuRenderPassEncoderSetPipeline(p, M.p);
+    wgpuRenderPassEncoderSetBindGroup(p, 0, groups[k], 0, NULL);
+    wgpuRenderPassEncoderDraw(p, 3, 1, 0, 0);
+    wgpuRenderPassEncoderEnd(p);
+    wgpuRenderPassEncoderRelease(p);
+    WGPUTexelCopyTextureInfo src = { .texture = tmp[k], .aspect = WGPUTextureAspect_All };
+    WGPUTexelCopyTextureInfo dst = { .texture = t, .mipLevel = (uint32_t)k, .aspect = WGPUTextureAspect_All };
+    WGPUExtent3D ext = { s, s, 1 };
+    wgpuCommandEncoderCopyTextureToTexture(enc, &src, &dst, &ext);
+  }
+  for (int k = 0; k < IMP_MIPS; k++) {
+    if (groups[k]) wgpuBindGroupRelease(groups[k]);
+    if (views[k]) wgpuTextureViewRelease(views[k]);
+    if (tmp[k]) wgpuTextureRelease(tmp[k]);
+  }
+}
+
+/* the two atlases of a: three.c draws the views on the frame's encoder (as
+ * the shadow passes do: one submit, before the passes that sample them),
+ * linear and untoned as the GL bake (the 3D pipeline's renderer state) */
+static bool wg_bake(t3_renderer *r, t3_scene *sa, t3_scene *sn, imp_atlas *a) {
+  WGPUTexture tex[2];
+  for (int k = 0; k < 2; k++)
+    tex[k] = cw__wg_texture(WGPUTextureDimension_2D, IMP_SIZE, IMP_SIZE, 1, IMP_MIPS, WGPUTextureFormat_RGBA8Unorm,
+                            WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst | WGPUTextureUsage_RenderAttachment,
+                            WGPUTextureViewDimension_Undefined, k ? "impostor normal" : "impostor albedo");
+  WGPUTexture depth = cw__wg_texture(WGPUTextureDimension_2D, IMP_SIZE, IMP_SIZE, 1, 1, WGPUTextureFormat_Depth24Plus,
+                                     WGPUTextureUsage_RenderAttachment, WGPUTextureViewDimension_Undefined, "impostor bake depth");
+  if (!tex[0] || !tex[1] || !depth) {
+    cw_error("impostor atlas: the WebGPU bake textures could not be made");
+    for (int k = 0; k < 2; k++)
+      if (tex[k]) wgpuTextureRelease(tex[k]);
+    if (depth) wgpuTextureRelease(depth);
+    return false;
+  }
+  float exposure = 1;
+  t3_tone_mapping tm = t3_renderer_get_tone_mapping(r, &exposure);
+  t3_color_space cs = t3_renderer_get_output_color_space(r);
+  t3_renderer_set_tone_mapping(r, T3_NO_TONE_MAPPING, 1);
+  t3_renderer_set_output_color_space(r, T3_LINEAR_SRGB_COLOR_SPACE);
+  WGPUCommandEncoder enc = cw__pw_encoder();
+  t3_renderer_set_external_encoder(r, (uintptr_t)enc);
+  bake_dst d = { 0 };
+  d.depth = cw__wg_view(depth, WGPUTextureViewDimension_2D, 0, 1, 0, 1);
+  for (int k = 0; k < 2; k++) {
+    d.color = cw__wg_view(tex[k], WGPUTextureViewDimension_2D, 0, 1, 0, 1);
+    render_views(r, k ? sn : sa, a, &d);
+    wgpuTextureViewRelease(d.color);
+    wg_mips(enc, tex[k]);
+  }
+  wgpuTextureViewRelease(d.depth);
+  wgpuTextureRelease(depth);
+  t3_renderer_set_tone_mapping(r, tm, exposure);
+  t3_renderer_set_output_color_space(r, cs);
+  a->walbedo = cw__wg_view(tex[0], WGPUTextureViewDimension_2D, 0, IMP_MIPS, 0, 1);
+  a->wnormal = cw__wg_view(tex[1], WGPUTextureViewDimension_2D, 0, IMP_MIPS, 0, 1);
+  wgpuTextureRelease(tex[0]);
+  wgpuTextureRelease(tex[1]);
+  return true;
+}
+#endif
+
+/* CW_TEST_IMPOSTOR_WGPU_OFF=1: WebGPU runs bake nothing and draw the meshes
+ * (the gates' control: impostors off on WebGPU only) */
+static bool wgpu_bake_off(void) {
+  const char *e = getenv("CW_TEST_IMPOSTOR_WGPU_OFF");
+  return e && *e == '1';
 }
 
 int cw__vis_impostor_atlas(vis_impostors *im, cw_pass_ctx *ctx, cw_node src, const cw__mesh_info *info, float *radius,
                            float center_local[3]) {
   if (!info->obj) return -1;
+  bool wg = false;
 #if CW_WGPU
-  if (cw__wgpu_on()) {
-    /* WebGPU runs draw the meshes, never impostors: baking the mesh's 64
-     * views is GL only (cw__vis_impostor_atlas_from_pixels feeds tests) */
-    (void)im, (void)ctx, (void)src, (void)radius, (void)center_local;
-    return -1;
-  }
+  wg = cw__wgpu_on();
 #endif
+  if (wg && wgpu_bake_off()) return -1;
   /* bake space: the node's world transform without its rotation and
    * translation (its scale and every sub-transform stay in) */
   t3_object *group = cw_node3d_object(src);
@@ -346,7 +556,7 @@ int cw__vis_impostor_atlas(vis_impostors *im, cw_pass_ctx *ctx, cw_node src, con
   cw_array_push(&im->atlases, a);
   int index = im->atlases.count - 1;
   t3_renderer *r = ctx->renderer;
-  if (!r || !gl_init()) return -1;
+  if (!r || (!wg && !gl_init())) return -1;
 
   /* the meshes at full detail, in bake space, twice: unlit albedo and
    * view-space normals */
@@ -410,7 +620,21 @@ int cw__vis_impostor_atlas(vis_impostors *im, cw_pass_ctx *ctx, cw_node src, con
   for (int k = 0; k < 3; k++) a->center[k] = (bmn[k] + bmx[k]) * 0.5f;
   float dx = bmx[0] - bmn[0], dy = bmx[1] - bmn[1], dz = bmx[2] - bmn[2];
   a->radius = 0.5f * sqrtf(dx * dx + dy * dy + dz * dz) * 1.02f;
+  double t0 = bake_timing() ? bake_clock_start(r) : 0;
 
+#if CW_WGPU
+  if (wg) {
+    bool ok = wg_bake(r, sa, sn, a);
+    t3_release(sa);
+    t3_release(sn);
+    if (!ok) return -1;
+    if (t0) bake_clock_report(r, t0, "WebGPU");
+    a->ok = true;
+    *radius = a->radius;
+    memcpy(center_local, a->center, sizeof a->center);
+    return index;
+  }
+#endif
   a->albedo = atlas_tex();
   a->normal = atlas_tex();
   glGenRenderbuffers(1, &a->depth_rb);
@@ -429,8 +653,8 @@ int cw__vis_impostor_atlas(vis_impostors *im, cw_pass_ctx *ctx, cw_node src, con
   }
   float ca = 1;
   t3_color cc = t3_renderer_get_clear_color(r, &ca);
-  render_views(r, sa, a, a->albedo);
-  render_views(r, sn, a, a->normal);
+  render_views(r, sa, a, &(bake_dst){ .fbo = a->fbo, .tex = a->albedo });
+  render_views(r, sn, a, &(bake_dst){ .fbo = a->fbo, .tex = a->normal });
   t3_renderer_set_size(r, ctx->width, ctx->height);
   t3_renderer_set_clear_color(r, ((uint32_t)(fminf(fmaxf(cc.r, 0), 1) * 255 + 0.5f) << 16) |
                                      ((uint32_t)(fminf(fmaxf(cc.g, 0), 1) * 255 + 0.5f) << 8) |
@@ -441,6 +665,7 @@ int cw__vis_impostor_atlas(vis_impostors *im, cw_pass_ctx *ctx, cw_node src, con
   t3_release(sn);
   glBindTexture(GL_TEXTURE_2D, 0);
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  if (t0) bake_clock_report(r, t0, "GL");
   a->ok = true;
   *radius = a->radius;
   memcpy(center_local, a->center, sizeof a->center);
@@ -461,13 +686,13 @@ int cw__vis_impostor_atlas_from_pixels(vis_impostors *im, const uint8_t *albedo,
 #if CW_WGPU
   if (cw__wgpu_on()) {
     for (int k = 0; k < 2; k++) {
-      WGPUTexture t = cw__wg_texture(WGPUTextureDimension_2D, IMP_SIZE, IMP_SIZE, 1, 5, WGPUTextureFormat_RGBA8Unorm,
+      WGPUTexture t = cw__wg_texture(WGPUTextureDimension_2D, IMP_SIZE, IMP_SIZE, 1, IMP_MIPS, WGPUTextureFormat_RGBA8Unorm,
                                      WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst,
                                      WGPUTextureViewDimension_Undefined, k ? "impostor normal" : "impostor albedo");
       const uint8_t *px = k ? normal : albedo;
       cw__wg_tex_write(t, 0, 0, 0, 0, IMP_SIZE, IMP_SIZE, 4, px);
-      cw__fx_wg_write_mips(t, IMP_SIZE, IMP_SIZE, 5, px);
-      WGPUTextureView v = cw__wg_view(t, WGPUTextureViewDimension_2D, 0, 5, 0, 1);
+      cw__fx_wg_write_mips(t, IMP_SIZE, IMP_SIZE, IMP_MIPS, px);
+      WGPUTextureView v = cw__wg_view(t, WGPUTextureViewDimension_2D, 0, IMP_MIPS, 0, 1);
       wgpuTextureRelease(t);
       if (k) a->wnormal = v;
       else a->walbedo = v;

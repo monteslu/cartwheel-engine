@@ -620,13 +620,8 @@ static void fade_collect(t3_object *o, void *u) {
   cw_array_push(&fc->slots, s);
 }
 
-static bool fade_after_impostors(void) {
-#if CW_WGPU
-  return !cw__wgpu_on();
-#else
-  return true;
-#endif
-}
+/* both backends draw the fading meshes after the impostors (fade_draw) */
+static bool fade_after_impostors(void) { return true; }
 
 /* draw the record's meshes with opacity `op` this frame (clones of their
  * materials, transparent; the restore pass swaps the originals back), on
@@ -664,8 +659,7 @@ static void fade_mesh(vis_state *s, vrec *r, float op) {
       sl->mesh->materials[k] = c;
     }
     /* the field, not t3_object_set_layers: the restore pass puts it back
-     * before anything raycasts, so the raycast candidate cache stays valid.
-     * (WebGPU: fade_draw is GL's; a fading mesh stays in the scene pass) */
+     * before anything raycasts, so the raycast candidate cache stays valid. */
     if (fade_after_impostors() && sl->mesh->base.layers != FADE_LAYER) {
       sl->layers = sl->mesh->base.layers;
       if (sl->layers & s->cam_layers) sl->mesh->base.layers = FADE_LAYER;
@@ -697,10 +691,11 @@ static void fade_light(t3_object *o, void *u) {
   }
 }
 
-/* the fading meshes, after the impostors (GL; WebGPU bakes no impostors yet,
- * so nothing fades there): a second render of the scene that sees only
- * FADE_LAYER, into the scene target as it stands (no clear, no background),
- * lit by the lights the camera sees */
+/* the fading meshes, after the impostors: a second render of the scene that
+ * sees only FADE_LAYER, into the scene target as it stands (no clear, no
+ * background), lit by the lights the camera sees. WebGPU: three.c records it
+ * on the frame encoder into the scene colour and depth, loaded, as the
+ * viewmodel pass draws */
 static void fade_draw(vis_state *s, cw_pass_ctx *ctx) {
   if (!s->faded.count || !ctx->renderer || !ctx->scene3d || !ctx->camera) return;
   t3_renderer *r = ctx->renderer;
@@ -715,9 +710,30 @@ static void fade_draw(vis_state *s, cw_pass_ctx *ctx) {
   sc->background_texture = NULL;
   cam->base.layers = FADE_LAYER;
   t3_renderer_set_auto_clear(r, false);
-  t3_renderer_reset_state(r); /* the impostors drew with their own GL */
-  t3_renderer_set_framebuffer(r, ctx->pipeline->bound_fbo);
-  t3_renderer_render(r, sc, cam);
+  bool drawn = false;
+#if CW_WGPU
+  if (cw__wgpu_on()) {
+    const cw__wgpu_pass_targets *pt = cw__fx_pass_targets(ctx);
+    if (pt && pt->enc && pt->color) {
+      t3_external_target et = {
+        .color = (uintptr_t)pt->color, .color_resolve = (uintptr_t)pt->resolve, .depth = (uintptr_t)pt->depth,
+        .color_format = (int)pt->color_format, .depth_format = (int)pt->depth_format, .samples = pt->samples,
+        .load_color = true, .load_depth = true, .clear_depth = 1,
+        .x = 0, .y = 0, .w = pt->w, .h = pt->h, .flip_y = pt->flip_y,
+      };
+      t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
+      t3_renderer_set_external_target(r, &et);
+      t3_renderer_render(r, sc, cam);
+      t3_renderer_set_external_target(r, NULL);
+    }
+    drawn = true;
+  }
+#endif
+  if (!drawn) {
+    t3_renderer_reset_state(r); /* the impostors drew with their own GL */
+    t3_renderer_set_framebuffer(r, ctx->pipeline->bound_fbo);
+    t3_renderer_render(r, sc, cam);
+  }
   t3_renderer_set_auto_clear(r, auto_clear);
   cam->base.layers = s->cam_layers;
   sc->has_background = has_bg;
@@ -1418,8 +1434,15 @@ static bool imp_active(const cw_pass_ctx *ctx, void *u) {
 static void imp_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
   vis_state *s = vstate(ctx->tree);
+#if CW_WGPU
+  /* the impostors' render pass and three.c's fade render: timed as one span */
+  if (cw__wgpu_on()) cw__pw_timing_span((void *)cw__pw_encoder(), false);
+#endif
   cw__vis_impostors_draw(s->imp, ctx);
   if (fade_after_impostors()) fade_draw(s, ctx);
+#if CW_WGPU
+  if (cw__wgpu_on()) cw__pw_timing_span((void *)cw__pw_encoder(), true);
+#endif
 }
 
 static bool restore_active(const cw_pass_ctx *ctx, void *u) {
