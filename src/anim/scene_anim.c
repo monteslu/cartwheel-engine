@@ -149,6 +149,46 @@ static void sec_free(void *vs) {
   cw_free(st);
 }
 
+/* cw_anim_from_text: one [animation] section (cw_anim_to_text's output) parsed
+ * as a scene file parses it; stored in scene files like a loaded one */
+cw_anim cw_anim_from_text(const char *text) {
+  sec_state *st = NULL;
+  int lineno = 0;
+  bool ok = true;
+  for (const char *p = text; ok && p && *p;) {
+    const char *nl = strchr(p, '\n');
+    size_t n = nl ? (size_t)(nl - p) : strlen(p);
+    char line[4096];
+    lineno++;
+    while (n && (p[n - 1] == '\r' || p[n - 1] == ' ' || p[n - 1] == '\t')) n--;
+    const char *q = p;
+    while (n && (*q == ' ' || *q == '\t')) q++, n--;
+    p = nl ? nl + 1 : NULL;
+    if (!n || *q == ';') continue;
+    if (n >= sizeof line) { cw_error("cw_anim_from_text:%d: a line over %d bytes", lineno, (int)sizeof line); ok = false; break; }
+    memcpy(line, q, n);
+    line[n] = 0;
+    if (!st) {
+      if (strncmp(line, "[animation", 10) != 0) { cw_error("cw_anim_from_text:%d: expected an [animation] header", lineno); ok = false; break; }
+      st = sec_begin(line, "cw_anim_from_text", lineno);
+      ok = st != NULL;
+    } else {
+      ok = sec_line(st, line, "cw_anim_from_text", lineno);
+    }
+  }
+  if (!st) {
+    if (ok) cw_error("cw_anim_from_text: no [animation] header");
+    return (cw_anim){ 0 };
+  }
+  cw_anim a = st->anim;
+  if (ok) {
+    cw_anim_set_stored(a, true);
+    st->anim = (cw_anim){ 0 }; /* the caller's reference now */
+  }
+  sec_free(st);
+  return ok ? a : (cw_anim){ 0 };
+}
+
 typedef struct { cw_node root; void (*put)(void *, const char *); void *ctx; } save_walk;
 
 static bool save_fn(cw_node n, void *u) {
