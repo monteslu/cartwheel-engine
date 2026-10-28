@@ -21,6 +21,7 @@
 #define IMP_SIZE (IMP_G * IMP_CELL)
 #define IMP_MAX_DIR 4
 #define IMP_MIPS 5 /* 1024 down to 64 texels */
+#define IMP_GL_SRGB8_ALPHA8 0x8C43 /* GL_SRGB8_ALPHA8 (GLES 3.0; not in every GL header the carts build with) */
 
 typedef struct imp_atlas {
   uint64_t key;
@@ -105,6 +106,8 @@ static const char *const fs =
     "out vec4 frag;\n"
     "const float G = 8.0;\n"
     "vec3 qrot(vec4 q, vec3 v) { vec3 t = 2.0 * cross(q.xyz, v); return v + q.w * t + cross(q.xyz, t); }\n"
+    /* the normal atlas is sRGB storage: sampling decodes it, this packs it again */
+    "vec3 srgb_enc(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c)); }\n"
     "vec2 oct_enc(vec3 n) {\n"
     "  n /= abs(n.x) + abs(n.y) + abs(n.z);\n"
     "  vec2 p = n.xz;\n"
@@ -128,7 +131,7 @@ static const char *const fs =
     "  uv = clamp(uv, 0.5 / 128.0, 1.0 - 0.5 / 128.0);\n"
     "  vec2 t = (ij + uv) / G;\n"
     "  vec4 a = texture(u_albedo, t);\n"
-    "  vec3 nv = texture(u_normal, t).xyz * 2.0 - 1.0;\n"
+    "  vec3 nv = srgb_enc(texture(u_normal, t).xyz) * 2.0 - 1.0;\n"
     "  alb += a * w;\n"
     "  nrm += (x * nv.x + y * nv.y + d * nv.z) * (a.a * w);\n"
     "}\n"
@@ -291,11 +294,15 @@ static void oct_dec(float u, float v, float out[3]) {
   out[2] = nz / l;
 }
 
-static GLuint atlas_tex(void) {
+/* srgb: the normal atlas. three.js r186's normal material writes its packed
+ * normal as an sRGB colour converted to linear (colorSpaceToWorking): sRGB
+ * storage encodes it back on the write, so the texels hold the packed normal
+ * at full 8-bit precision; the draw shaders pack what sampling decodes. */
+static GLuint atlas_tex(bool srgb) {
   GLuint t;
   glGenTextures(1, &t);
   glBindTexture(GL_TEXTURE_2D, t);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, IMP_SIZE, IMP_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+  glTexImage2D(GL_TEXTURE_2D, 0, srgb ? IMP_GL_SRGB8_ALPHA8 : GL_RGBA8, IMP_SIZE, IMP_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -310,6 +317,7 @@ typedef struct bake_dst {
   GLuint fbo, tex;
 #if CW_WGPU
   WGPUTextureView color, depth;
+  WGPUTextureFormat format;
 #endif
 } bake_dst;
 
@@ -359,7 +367,7 @@ static void render_views(t3_renderer *r, t3_scene *sc, imp_atlas *a, const bake_
         bool first = i == 0 && j == 0;
         t3_external_target et = {
           .color = (uintptr_t)d->color, .depth = (uintptr_t)d->depth,
-          .color_format = (int)WGPUTextureFormat_RGBA8Unorm, .depth_format = (int)WGPUTextureFormat_Depth24Plus,
+          .color_format = (int)d->format, .depth_format = (int)WGPUTextureFormat_Depth24Plus,
           .samples = 1, .load_color = !first, .load_depth = !first, .clear_rgba = { 0, 0, 0, 0 }, .clear_depth = 1,
           .x = i * IMP_CELL, .y = tile_row(j), .w = IMP_CELL, .h = IMP_CELL, .flip_y = true,
         };
@@ -404,17 +412,21 @@ static const char WGSL_MIP[] =
 static struct {
   WGPUShaderModule sm;
   WGPUBindGroupLayout bgl;
-  WGPURenderPipeline p;
+  WGPURenderPipeline p[2]; /* RGBA8Unorm, RGBA8UnormSrgb */
 } M;
 
-static bool mip_init(void) {
-  if (M.p) return true;
-  const char *const parts[] = { WGSL_MIP, NULL };
-  M.sm = cw__wg_module("impostor mips", parts);
-  if (!M.sm) return false;
-  const cw__wg_slot sl[1] = { { CW_WB_TEX, WGPUShaderStage_Fragment, 0, 0 } };
-  M.bgl = cw__wg_layout(sl, 1);
-  WGPUColorTargetState ct = { .format = WGPUTextureFormat_RGBA8Unorm, .writeMask = WGPUColorWriteMask_All };
+static WGPUTextureFormat atlas_format(bool srgb) { return srgb ? WGPUTextureFormat_RGBA8UnormSrgb : WGPUTextureFormat_RGBA8Unorm; }
+
+static bool mip_init(bool srgb) {
+  if (M.p[srgb]) return true;
+  if (!M.sm) {
+    const char *const parts[] = { WGSL_MIP, NULL };
+    M.sm = cw__wg_module("impostor mips", parts);
+    if (!M.sm) return false;
+    const cw__wg_slot sl[1] = { { CW_WB_TEX, WGPUShaderStage_Fragment, 0, 0 } };
+    M.bgl = cw__wg_layout(sl, 1);
+  }
+  WGPUColorTargetState ct = { .format = atlas_format(srgb), .writeMask = WGPUColorWriteMask_All };
   WGPUFragmentState fs = { .module = M.sm, .entryPoint = CW_WGPU_SV("fs"), .targetCount = 1, .targets = &ct };
   WGPURenderPipelineDescriptor d = {
     .label = CW_WGPU_SV("impostor mips"), .layout = cw__wg_pipeline_layout(&M.bgl, 1),
@@ -423,23 +435,23 @@ static bool mip_init(void) {
     .multisample = { .count = 1, .mask = 0xffffffffu },
     .fragment = &fs,
   };
-  M.p = wgpuDeviceCreateRenderPipeline(cw__wgpu_device(), &d);
+  M.p[srgb] = wgpuDeviceCreateRenderPipeline(cw__wgpu_device(), &d);
   wgpuPipelineLayoutRelease(d.layout);
-  return M.p != NULL;
+  return M.p[srgb] != NULL;
 }
 
 /* levels 1 .. IMP_MIPS-1 of t from level 0, recorded on enc. Each level is
  * drawn into a texture of its own and copied in, so no pass samples the
  * texture it draws into (compatibility mode allows no feedback loop) */
-static void wg_mips(WGPUCommandEncoder enc, WGPUTexture t) {
-  if (!mip_init()) return;
+static void wg_mips(WGPUCommandEncoder enc, WGPUTexture t, bool srgb) {
+  if (!mip_init(srgb)) return;
   WGPUTexture tmp[IMP_MIPS] = { 0 };
   WGPUTextureView views[IMP_MIPS] = { 0 };
   WGPUBindGroup groups[IMP_MIPS] = { 0 };
   views[0] = cw__wg_view(t, WGPUTextureViewDimension_2D, 0, IMP_MIPS, 0, 1); /* textureLoad level 0 */
   for (int k = 1; k < IMP_MIPS; k++) {
     uint32_t s = (uint32_t)(IMP_SIZE >> k);
-    tmp[k] = cw__wg_texture(WGPUTextureDimension_2D, (int)s, (int)s, 1, 1, WGPUTextureFormat_RGBA8Unorm,
+    tmp[k] = cw__wg_texture(WGPUTextureDimension_2D, (int)s, (int)s, 1, 1, atlas_format(srgb),
                             WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc,
                             WGPUTextureViewDimension_Undefined, "impostor mip");
     views[k] = cw__wg_view(tmp[k], WGPUTextureViewDimension_2D, 0, 1, 0, 1);
@@ -449,7 +461,7 @@ static void wg_mips(WGPUCommandEncoder enc, WGPUTexture t) {
                                          .loadOp = WGPULoadOp_Clear, .storeOp = WGPUStoreOp_Store };
     WGPURenderPassDescriptor rp = { .label = CW_WGPU_SV("impostor mip"), .colorAttachmentCount = 1, .colorAttachments = &ca };
     WGPURenderPassEncoder p = wgpuCommandEncoderBeginRenderPass(enc, &rp);
-    wgpuRenderPassEncoderSetPipeline(p, M.p);
+    wgpuRenderPassEncoderSetPipeline(p, M.p[srgb]);
     wgpuRenderPassEncoderSetBindGroup(p, 0, groups[k], 0, NULL);
     wgpuRenderPassEncoderDraw(p, 3, 1, 0, 0);
     wgpuRenderPassEncoderEnd(p);
@@ -472,7 +484,7 @@ static void wg_mips(WGPUCommandEncoder enc, WGPUTexture t) {
 static bool wg_bake(t3_renderer *r, t3_scene *sa, t3_scene *sn, imp_atlas *a) {
   WGPUTexture tex[2];
   for (int k = 0; k < 2; k++)
-    tex[k] = cw__wg_texture(WGPUTextureDimension_2D, IMP_SIZE, IMP_SIZE, 1, IMP_MIPS, WGPUTextureFormat_RGBA8Unorm,
+    tex[k] = cw__wg_texture(WGPUTextureDimension_2D, IMP_SIZE, IMP_SIZE, 1, IMP_MIPS, atlas_format(k == 1),
                             WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst | WGPUTextureUsage_RenderAttachment,
                             WGPUTextureViewDimension_Undefined, k ? "impostor normal" : "impostor albedo");
   WGPUTexture depth = cw__wg_texture(WGPUTextureDimension_2D, IMP_SIZE, IMP_SIZE, 1, 1, WGPUTextureFormat_Depth24Plus,
@@ -495,9 +507,10 @@ static bool wg_bake(t3_renderer *r, t3_scene *sa, t3_scene *sn, imp_atlas *a) {
   d.depth = cw__wg_view(depth, WGPUTextureViewDimension_2D, 0, 1, 0, 1);
   for (int k = 0; k < 2; k++) {
     d.color = cw__wg_view(tex[k], WGPUTextureViewDimension_2D, 0, 1, 0, 1);
+    d.format = atlas_format(k == 1);
     render_views(r, k ? sn : sa, a, &d);
     wgpuTextureViewRelease(d.color);
-    wg_mips(enc, tex[k]);
+    wg_mips(enc, tex[k], k == 1);
   }
   wgpuTextureViewRelease(d.depth);
   wgpuTextureRelease(depth);
@@ -635,8 +648,8 @@ int cw__vis_impostor_atlas(vis_impostors *im, cw_pass_ctx *ctx, cw_node src, con
     return index;
   }
 #endif
-  a->albedo = atlas_tex();
-  a->normal = atlas_tex();
+  a->albedo = atlas_tex(false);
+  a->normal = atlas_tex(true);
   glGenRenderbuffers(1, &a->depth_rb);
   glBindRenderbuffer(GL_RENDERBUFFER, a->depth_rb);
   glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, IMP_SIZE, IMP_SIZE);
@@ -686,7 +699,7 @@ int cw__vis_impostor_atlas_from_pixels(vis_impostors *im, const uint8_t *albedo,
 #if CW_WGPU
   if (cw__wgpu_on()) {
     for (int k = 0; k < 2; k++) {
-      WGPUTexture t = cw__wg_texture(WGPUTextureDimension_2D, IMP_SIZE, IMP_SIZE, 1, IMP_MIPS, WGPUTextureFormat_RGBA8Unorm,
+      WGPUTexture t = cw__wg_texture(WGPUTextureDimension_2D, IMP_SIZE, IMP_SIZE, 1, IMP_MIPS, atlas_format(k == 1),
                                      WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst,
                                      WGPUTextureViewDimension_Undefined, k ? "impostor normal" : "impostor albedo");
       const uint8_t *px = k ? normal : albedo;
@@ -702,10 +715,10 @@ int cw__vis_impostor_atlas_from_pixels(vis_impostors *im, const uint8_t *albedo,
     return im->atlases.count - 1;
   }
 #endif
-  a->albedo = atlas_tex();
+  a->albedo = atlas_tex(false);
   glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, IMP_SIZE, IMP_SIZE, GL_RGBA, GL_UNSIGNED_BYTE, albedo);
   glGenerateMipmap(GL_TEXTURE_2D);
-  a->normal = atlas_tex();
+  a->normal = atlas_tex(true);
   glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, IMP_SIZE, IMP_SIZE, GL_RGBA, GL_UNSIGNED_BYTE, normal);
   glGenerateMipmap(GL_TEXTURE_2D);
   glBindTexture(GL_TEXTURE_2D, 0);
@@ -898,6 +911,7 @@ static const char WGSL_IMP[] =
     "  @location(2) @interpolate(flat, either) quat: vec4f, @location(3) alpha: f32, @location(4) r: f32, @location(5) depth: f32 }\n"
     "fn qrot_inv(q: vec4f, v: vec3f) -> vec3f { let uu = -q.xyz; let t = 2.0 * cross(uu, v); return v + q.w * t + cross(uu, t); }\n"
     "fn qrot(q: vec4f, v: vec3f) -> vec3f { let t = 2.0 * cross(q.xyz, v); return v + q.w * t + cross(q.xyz, t); }\n"
+    "fn srgb_enc(c: vec3f) -> vec3f { return select(c * 12.92, 1.055 * pow(c, vec3f(1.0 / 2.4)) - 0.055, c > vec3f(0.0031308)); }\n"
     "@vertex fn vs(@location(0) corner: vec2f, @location(1) cr: vec4f, @location(2) quat: vec4f, @location(3) alpha: f32) -> VO {\n"
     "  var o: VO;\n"
     "  let c = cr.xyz; let r = cr.w;\n"
@@ -943,7 +957,7 @@ static const char WGSL_IMP[] =
     /* the atlas holds GL\x27s rows in memory order, and both APIs put
      * texture coordinate 0 at the first row: the same coordinates */
     "  let a = textureSample(albedo, samp, t);\n"
-    "  let nv = textureSample(normal, samp, t).xyz * 2.0 - 1.0;\n"
+    "  let nv = srgb_enc(textureSample(normal, samp, t).xyz) * 2.0 - 1.0;\n"
     "  let ww = select(0.0, w, inside);\n"
     "  *alb += a * ww;\n"
     "  *nrm += (x * nv.x + y * nv.y + d * nv.z) * (a.a * ww);\n"
