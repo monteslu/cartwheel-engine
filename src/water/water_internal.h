@@ -80,6 +80,7 @@ typedef struct water3d {
   cw_rt *wg_col, *wg_dep; /* WebGPU: the refraction's colour + depth target and its depth's R32Float copy (refraction_wgpu.c) */
   t3_texture *wg_col_tex, *wg_dep_tex;
   bool wg_fresh;
+  bool cam_under; /* this view's camera is under the surface */
 } water3d;
 
 /* the waves at time t, phases reduced (water.c) */

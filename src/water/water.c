@@ -159,6 +159,8 @@ static void water_init(cw_node n, void *data) {
   d->rain_size = 0.5f;
   d->rain_strength = 0.03f;
   d->splash_fx_min = 0.15f;
+  /* a valid inverse projection before the first refraction render (the surface reads it in every state) */
+  for (int i = 0; i < 16; i++) d->refr_inv[i] = (i % 5) == 0 ? 1.0f : 0.0f;
   d->caustics = 1.0f;
   d->caustic_size = 5.0f;
   d->underwater = true;
@@ -693,6 +695,7 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
     oblique(&v->projection_matrix, &vi, up, wpos);
     t3_mat4_invert(&v->projection_matrix_inverse, &v->projection_matrix);
     render_into(ctx, wt, d->refr, v);
+    memcpy(d->refr_inv, v->projection_matrix_inverse.e, sizeof d->refr_inv);
     d->refr_above = true;
     v->base.matrix_world_external = false;
   } else if (first || d->refr_on) {
@@ -738,7 +741,7 @@ static void fill(t3_extension_ctx *c, void *user) {
   t3_extension_set_uniform(c, "waterShore", v, 4);
   v[0] = d->shallow_color[0], v[1] = d->shallow_color[1], v[2] = d->shallow_color[2], v[3] = d->foam_time;
   t3_extension_set_uniform(c, "waterShallow", v, 4);
-  v[0] = d->size[0], v[1] = d->size[1], v[2] = 0, v[3] = 0;
+  v[0] = d->size[0], v[1] = d->size[1], v[2] = d->cam_under ? 1.0f : 0.0f, v[3] = 0;
   t3_extension_set_uniform(c, "waterFloorRect", v, 4);
   /* every texture the program declares is bound in every state (a draw with one unset is skipped): the
    * normal map stands in for maps a feature that is off never reads */
@@ -828,6 +831,11 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     /* the WebGPU scene pass draws rows bottom-up (GL's order, pipeline_wgpu.h), three.c's own
      * targets top-down: the planar targets are read flipped there */
     d->cam[3] = cw_gpu_backend() == CW_GPU_WEBGPU ? 1.0f : 0.0f;
+    {
+      /* the camera under the surface (the drawn waves at its x, z): the surface is then seen from below */
+      float ch = cw_water_height_at(n, cw[12], cw[14], t);
+      d->cam_under = cw[13] < ch;
+    }
     cw__ripples_upload(d);
     {
       cw_sky_state sk;
@@ -842,7 +850,9 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     d->mat->roughness = d->roughness;
     /* the environment's specular is the reflection when no planar one is drawn */
     planar(ctx, wt, n, d);
-    d->mat->env_map_intensity = d->refl_on ? 0.0f : 1.0f;
+    /* (and none from under the surface: what the surface mirrors there is the water itself, which the shader draws;
+     * the environment's lower half is not that) */
+    d->mat->env_map_intensity = d->refl_on || d->cam_under ? 0.0f : 1.0f;
     tri += d->triangles;
     wt->stats.surfaces++;
   }
