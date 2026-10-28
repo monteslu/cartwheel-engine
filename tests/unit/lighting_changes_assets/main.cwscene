@@ -66,3 +66,17 @@ color = color(0.6, 0.55, 0.5, 1)
 roughness = 0.7
 cast_shadow = true
 receive_shadow = true
+
+[node name="Camera3" parent="." type="Camera3D"]
+position = vec3(-6, 5, 6)
+rotation = vec3(-0.5, -0.75, 0)
+fov = 60
+near = 0.1
+far = 80
+
+[node name="Camera4" parent="." type="Camera3D"]
+position = vec3(0, 9, -9)
+rotation = vec3(-0.7, 3.14159, 0)
+fov = 60
+near = 0.1
+far = 80

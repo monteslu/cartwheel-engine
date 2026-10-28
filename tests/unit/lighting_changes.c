@@ -24,6 +24,8 @@
  * swapped-in material carried both parts the next frame), lc.cascades_bad
  * (checked frames whose last view had no cascades), lc.clustered (the last
  * view's count now).
+ * LC_STRESS=n with LC_VIEWS=1..4 (tests/profile-lighting.mjs) checks nothing: an n x n grid of
+ * boxes with a material each under 64 added lights, for the profiler.
  * Controls (engine test switches): CW_TEST_LIGHTS_STALE=1 keeps the first
  * index (lights added later are missed: lc.mismatch > 0); CW_TEST_NO_REMARK=1
  * marks a mesh only the first time (lc.remark 0). */
@@ -56,6 +58,30 @@ static t3_light *raw_light(t3_object *parent, float x, float z, uint32_t color) 
   return l;
 }
 
+/* LC_STRESS=n (tests/profile-lighting.mjs): no checks; an n x n grid of boxes, each with a
+ * material of its own, under 64 lights a game added, drawn in LC_VIEWS views (1 to 4) */
+static int stress, views = 2;
+static void build_stress(cw_tree *t, t3_scene *sc) {
+  static const char *const cams[4] = { "World/Camera", "World/Camera2", "World/Camera3", "World/Camera4" };
+  cw_node v[4];
+  for (int i = 0; i < views; i++) v[i] = node(cams[i]);
+  if (views > 1) cw_pipeline_split(cw_pipeline_of(t), v, views);
+  t3_object *grp = t3_group_new();
+  t3_object_add(&sc->base, grp);
+  t3_release(grp);
+  t3_geometry *g = t3_box_geometry_new(0.3f, 0.3f, 0.3f, 1, 1, 1);
+  for (int i = 0; i < stress * stress; i++) {
+    t3_material *m = t3_mesh_standard_material_new(0x808080 + (uint32_t)(i % 97));
+    t3_mesh *mesh = t3_mesh_new(g, m);
+    t3_object_set_position(mesh, -8 + 16.0f * (float)(i % stress) / (float)stress, 0.2f, -8 + 16.0f * (float)(i / stress) / (float)stress);
+    t3_object_add(grp, mesh);
+    t3_release(mesh);
+    t3_release(m);
+  }
+  t3_release(g);
+  for (int i = 0; i < 64; i++) raw_light(grp, -8 + 2.0f * (float)(i % 8), -8 + 2.0f * (float)(i / 8), 0x808080 + (uint32_t)i * 0x020101);
+}
+
 /* N2 is the first view's alone */
 static void view_hook(int view, void *u) {
   (void)u;
@@ -84,6 +110,10 @@ static void frame_hook(cw_tree *t, double dt, void *u) {
     }
   }
   t3_scene *sc = cw_render3d_scene(t);
+  if (stress) {
+    if (tick == 1) build_stress(t, sc);
+    return;
+  }
   switch (tick) {
   case 1: { /* two views, N2 in the first only: the last view sees N0 and N1 */
     cw_node cams[2] = { node("World/Camera"), node("World/Camera2") };
@@ -157,6 +187,8 @@ static void init(void *u) {
   cw_debug_i32("lc.remark", &remark);
   cw_debug_i32("lc.cascades_bad", &cascades_bad);
   cw_debug_i32("lc.clustered", &clustered);
+  if (getenv("LC_STRESS")) stress = atoi(getenv("LC_STRESS"));
+  if (getenv("LC_VIEWS")) views = CW_CLAMP(atoi(getenv("LC_VIEWS")), 1, 4);
   cw_tree_add_hook(tree(), 2, 0, frame_hook, NULL);
 }
 
