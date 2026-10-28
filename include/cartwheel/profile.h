@@ -23,6 +23,12 @@
  * land in a "GPU" lane, laid end to end from the start of their frame's
  * render: the durations are measured, the positions are not. They are off
  * unless asked for (cw_profile_gpu): the queries cost CPU time of their own.
+ * In split screen each view's run of a pass is its own entry ("ssao@v1"),
+ * and the pipeline's own GPU work between passes is timed as steps:
+ * "views" (the views laid into the frame) and "resolve" (the multisampled
+ * scene resolved, the depth copies the later passes sample). On WebGPU a
+ * pass is timed whole, with every render three.c records for it (shadow
+ * maps, G-buffers, probe captures).
  * Carts never issue GPU timer queries, so a cart's trace has no GPU lane.
  *
  * Turning it on: cw_profile_set_enabled, `profile on` over the debug channel,

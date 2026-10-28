@@ -34,6 +34,7 @@ typedef struct pass_rec {
   bool q_busy[CW__QUERY_RING];
   uint64_t q_frame[CW__QUERY_RING]; /* the frame each query timed */
   uint64_t q_eframe[CW__QUERY_RING]; /* the same as the engine's frame index (cw_frame_index, for the profiler) */
+  const char *q_pname[CW__QUERY_RING]; /* the profiler's name for the run (split screen: "ssao@v1") */
   bool q_init;
   /* a frame's GPU time summed over its runs (splitscreen times a pass once
    * per view): the frame being summed, and the sum so far */
@@ -61,6 +62,7 @@ typedef struct persist_rt {
 struct cw_pipeline {
   cw_tree *tree;
   CW_ARRAY(pass_rec *) passes;
+  CW_ARRAY(pass_rec *) steps; /* GPU work between passes (the views' layout, MSAA resolves, depth copies): timed, never run as passes */
   bool order_dirty;
   int next_seq;
   cw_post_settings s;

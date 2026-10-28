@@ -35,7 +35,8 @@ void cw__pw_state_reset(void) {}
 void cw__pw_frame_begin(void) {}
 void cw__pw_flush(void) {}
 void cw__pw_probe_caps(cw_pipeline_caps *caps) { (void)caps; }
-void cw__pw_timing_pass(cw_pipeline *p, const char *n) { (void)p, (void)n; }
+void cw__pw_timing_pass(cw_pipeline *p, const char *n, const char *l) { (void)p, (void)n, (void)l; }
+void cw__pw_timing_whole(bool end) { (void)end; }
 void cw__pw_timing_poll(void) {}
 void cw__pw_timing_hold(bool hold) { (void)hold; }
 void cw__pw_timing_span(void *enc, bool end) { (void)enc, (void)end; }
@@ -454,7 +455,7 @@ static bool target_att(unsigned id, att *a) {
 /* ── GPU timing (native: timestamp queries) ─────────────────────────── */
 
 #define TS_MAX 256
-typedef struct ts_slot { cw_pipeline *p; const char *name; } ts_slot;
+typedef struct ts_slot { cw_pipeline *p; const char *name, *lane; } ts_slot; /* lane: the profiler's name (split screen: "ssao@v1") */
 static struct {
   bool avail, on, checked; /* avail: the device has timestamps; on: requested too (cw__gpu_timing_wanted) */
   WGPUQuerySet qs;
@@ -466,6 +467,7 @@ static struct {
   bool mapping;
   bool hold;     /* cw__pw_timing_hold: no read back at a flush */
   bool frame_ok; /* the frame began with the last read back done: every pass of it is timed */
+  int whole;     /* cw__pw_timing_whole: the begin query of the span round the whole pass (-1 none) */
   /* the frame being read back */
   uint64_t rframe; /* its engine frame index (cw_frame_index, for the profiler) */
   ts_slot rslots[TS_MAX / 2];
@@ -489,9 +491,10 @@ static void timing_check(void) {
   T.readback = wgpuDeviceCreateBuffer(W.dev, &(WGPUBufferDescriptor){ .usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst,
                                                                      .size = TS_MAX * 8 });
   T.cur = -1;
+  T.whole = -1;
 }
 
-void cw__pw_timing_pass(cw_pipeline *p, const char *name) {
+void cw__pw_timing_pass(cw_pipeline *p, const char *name, const char *lane) {
   init();
   timing_check();
   if (!T.on) return;
@@ -503,7 +506,7 @@ void cw__pw_timing_pass(cw_pipeline *p, const char *name) {
     T.cur = -1;
     return;
   }
-  T.slots[T.nslots] = (ts_slot){ p, name };
+  T.slots[T.nslots] = (ts_slot){ p, name, lane ? lane : name };
   T.cur = T.nslots++;
 }
 
@@ -515,7 +518,7 @@ void cw__pw_forget(cw_pipeline *p) {
 }
 
 static bool timing_writes(WGPUPassTimestampWrites *tw) {
-  if (!T.on || T.mapping || !T.frame_ok || T.cur < 0 || T.used + 2 > TS_MAX) return false;
+  if (!T.on || T.whole >= 0 || T.mapping || !T.frame_ok || T.cur < 0 || T.used + 2 > TS_MAX) return false;
   T.slot_of[T.used / 2] = T.cur;
   *tw = (WGPUPassTimestampWrites){ .querySet = T.qs, .beginningOfPassWriteIndex = (uint32_t)T.used,
                                    .endOfPassWriteIndex = (uint32_t)T.used + 1 };
@@ -534,6 +537,21 @@ static void on_ts_map(WGPUMapAsyncStatus st, WGPUStringView msg, void *u1, void 
       if (v[i * 2 + 1] >= v[i * 2]) ms[s] += (float)(v[i * 2 + 1] - v[i * 2]) / 1e6f;
       seen[s] = true;
     }
+    /* the profiler's lane: a pass's runs under one lane name add up (split screen names each view apart) */
+    if (CW_PROFILE_ON()) {
+      float lm[TS_MAX / 2];
+      bool ls[TS_MAX / 2];
+      memcpy(lm, ms, sizeof lm);
+      memcpy(ls, seen, sizeof ls);
+      for (int s = 0; s < TS_MAX / 2; s++)
+        for (int e = 0; ls[s] && e < s; e++)
+          if (ls[e] && T.rslots[e].p == T.rslots[s].p && T.rslots[e].lane == T.rslots[s].lane) {
+            lm[e] += lm[s];
+            ls[s] = false;
+          }
+      for (int s = 0; s < TS_MAX / 2; s++)
+        if (ls[s] && T.rslots[s].p) cw__profile_gpu(T.rslots[s].lane, T.rframe, lm[s]);
+    }
     /* a pass timed more than once in the frame (splitscreen: once per view) adds up */
     for (int s = 0; s < TS_MAX / 2; s++)
       for (int e = 0; seen[s] && e < s; e++)
@@ -542,10 +560,7 @@ static void on_ts_map(WGPUMapAsyncStatus st, WGPUStringView msg, void *u1, void 
           seen[s] = false;
         }
     for (int s = 0; s < TS_MAX / 2; s++)
-      if (seen[s] && T.rslots[s].p) {
-        cw__pipeline_gpu_time(T.rslots[s].p, T.rslots[s].name, ms[s]);
-        if (CW_PROFILE_ON()) cw__profile_gpu(T.rslots[s].name, T.rframe, ms[s]);
-      }
+      if (seen[s] && T.rslots[s].p) cw__pipeline_gpu_time(T.rslots[s].p, T.rslots[s].name, ms[s]);
     wgpuBufferUnmap(T.readback);
   }
   T.mapping = false;
@@ -553,8 +568,36 @@ static void on_ts_map(WGPUMapAsyncStatus st, WGPUStringView msg, void *u1, void 
 
 void cw__pw_timing_hold(bool hold) { T.hold = hold; }
 
+/* the whole current pass as one span (the profiler's GPU lane on a native run): everything recorded on the frame
+ * encoder between the two, three.c's passes and compute included, where a pass's own render passes alone miss
+ * the shadow, G-buffer and probe renders three.c records for it. Inside it no other timestamp is written. */
+void cw__pw_timing_whole(bool end) {
+  if (!T.on) return;
+  if (!end) {
+    if (T.whole >= 0) return;
+    WGPUPassTimestampWrites tw;
+    WGPUCommandEncoder enc = cw__pw_encoder();
+    if (!timing_writes(&tw)) return;
+    T.whole = (int)tw.beginningOfPassWriteIndex;
+    tw.endOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED;
+    WGPUComputePassEncoder cp = wgpuCommandEncoderBeginComputePass(enc, &(WGPUComputePassDescriptor){ .timestampWrites = &tw });
+    wgpuComputePassEncoderEnd(cp);
+    wgpuComputePassEncoderRelease(cp);
+    return;
+  }
+  if (T.whole < 0) return;
+  WGPUCommandEncoder enc = cw__pw_encoder(); /* closes the pass's open render pass */
+  WGPUPassTimestampWrites tw = { .querySet = T.qs, .beginningOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED,
+                                 .endOfPassWriteIndex = (uint32_t)T.whole + 1 };
+  T.whole = -1;
+  WGPUComputePassEncoder cp = wgpuCommandEncoderBeginComputePass(enc, &(WGPUComputePassDescriptor){ .timestampWrites = &tw });
+  wgpuComputePassEncoderEnd(cp);
+  wgpuComputePassEncoderRelease(cp);
+}
+
 void cw__pw_timing_span(void *enc, bool end) {
   static int open = -1; /* the begin query of the span being written */
+  if (T.whole >= 0) return; /* inside a whole-pass span */
   WGPUPassTimestampWrites tw = { .querySet = NULL, .beginningOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED,
                                  .endOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED };
   if (!end) {
