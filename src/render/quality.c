@@ -566,6 +566,8 @@ void cw__quality_post(cw_post_settings *s) {
     else if (fxl == 1) s->ssr_quality *= 0.5f;
     else if (fxl == 3) s->ssr_quality = CW_MIN(1.0f, s->ssr_quality * 1.5f);
   }
+  /* depth of field: off on Low */
+  if (s->dof && ev(CW_GFX_EFFECTS) == 0) s->dof = false;
   /* SSGI: Ultra only (several ms of an integrated GPU even at half resolution) */
   if (s->ssgi && ev(CW_GFX_EFFECTS) < 3) s->ssgi = false;
   if (s->bloom && e->bloom_levels > 0 && s->bloom_levels > e->bloom_levels) s->bloom_levels = e->bloom_levels;

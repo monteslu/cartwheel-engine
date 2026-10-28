@@ -1167,6 +1167,69 @@ static void aa_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_fullscreen();
 }
 
+/* ── depth of field ─────────────────────────────────────────────────── */
+
+static unsigned dof_prog;
+static const char *DOF_FS = S(
+  uniform sampler2D u_src;
+  uniform sampler2D u_depth;
+  uniform vec4 u_pz;      /* the projection's z rows (window depth to view depth) */
+  uniform vec4 u_dof;     /* focus distance, half the sharp range, far blur px, near blur px */
+  uniform vec2 u_texel;
+  out vec4 o;
+  float vdepth(vec2 uv) {
+    ivec2 sz = textureSize(u_depth, 0);
+    float d = texelFetch(u_depth, clamp(ivec2(uv * vec2(sz)), ivec2(0), sz - 1), 0).r;
+    if (d >= 1.0) return 1e6;
+    float ndc = d * 2.0 - 1.0;
+    return -(u_pz.y - ndc * u_pz.w) / (ndc * u_pz.z - u_pz.x);
+  }
+  float coc(float z) {
+    float dz = z - u_dof.x, a = max(abs(dz) - u_dof.y, 0.0);
+    float k = a / (a + max(u_dof.x, 0.05) * 0.5); /* grows toward 1 with distance from the sharp band (a lens's 1/z falloff) */
+    return k * (dz > 0.0 ? u_dof.z : u_dof.w);
+  }
+  void main() {
+    vec4 c0 = texture(u_src, v_uv);
+    float z0 = vdepth(v_uv), r0 = coc(z0);
+    float maxr = max(u_dof.z, u_dof.w);
+    if (maxr < 0.5) { o = c0; return; }
+    vec3 acc = c0.rgb; float wsum = 1.0;
+    for (int i = 0; i < 32; i++) {
+      float fi = float(i) + 0.5, rr = sqrt(fi / 32.0) * maxr, a = fi * 2.39996323;
+      vec2 off = vec2(cos(a), sin(a)) * rr;
+      vec2 uv = v_uv + off * u_texel;
+      float z = vdepth(uv), r = coc(z);
+      if (z > z0) r = min(r, r0); /* behind the pixel: no more blur than the pixel's own */
+      float w = clamp(r - rr + 1.0, 0.0, 1.0);
+      acc += texture(u_src, uv).rgb * w; wsum += w;
+    }
+    o = vec4(acc / wsum, c0.a);
+  });
+
+static bool dof_active(const cw_pass_ctx *ctx, void *u) {
+  (void)u;
+  const cw_post_settings *s = ctx->settings;
+  return s->dof && s->dof_blur > 0.25f && ctx->camera;
+}
+
+static void dof_exec(cw_pass_ctx *ctx, void *u) {
+  (void)u;
+  const cw_post_settings *s = ctx->settings;
+  if (!dof_prog) dof_prog = prog_of("dof", GLSL_COMMON, DOF_FS, NULL, WGSL_COMMON, WGSL_DOF, NULL);
+  if (!dof_prog) return;
+  float px = s->dof_blur * (float)ctx->height / 1080.0f;
+  cw_pass_use(dof_prog);
+  set_pz(dof_prog, ctx);
+  cw_pass_bind_texture(0, ctx->src->tex);
+  cw_pass_bind_texture(1, ctx->depth_tex);
+  cw_pass_uniform1i(dof_prog, "u_src", 0);
+  cw_pass_uniform1i(dof_prog, "u_depth", 1);
+  cw_pass_uniform4f(dof_prog, "u_dof", s->dof_focus_distance, s->dof_focus_range * 0.5f, px, px * CW_CLAMP(s->dof_near_blur, 0.0f, 1.0f));
+  cw_pass_uniform2f(dof_prog, "u_texel", 1.0f / (float)ctx->width, 1.0f / (float)ctx->height);
+  cw_pass_fullscreen();
+}
+
 /* ── lens: chromatic aberration, vignette, film grain ───────────────── */
 
 static unsigned lens_prog;
@@ -1327,6 +1390,9 @@ void cw__pipeline_add_builtin_passes(cw_pipeline *p) {
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "taa", .phase = CW_PHASE_POST, .order = 200,
                                            .reads = CW_RES_COLOR | CW_RES_VELOCITY, .writes = CW_RES_COLOR,
                                            .active = taa_active, .execute = taa_exec, .webgpu = true });
+  cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "dof", .phase = CW_PHASE_POST, .order = 250,
+                                           .reads = CW_RES_COLOR | CW_RES_DEPTH, .writes = CW_RES_COLOR,
+                                           .active = dof_active, .execute = dof_exec, .webgpu = true });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "bloom", .phase = CW_PHASE_POST, .order = 300,
                                            .reads = CW_RES_COLOR, .writes = CW_RES_COLOR,
                                            .active = bloom_active, .execute = bloom_exec, .webgpu = true });

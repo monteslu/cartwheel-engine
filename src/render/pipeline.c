@@ -37,6 +37,10 @@ static void settings_default(cw_post_settings *s) {
   s->ssr_quality = 0.5f;
   s->ssr_intensity = 1;
   s->ssgi_radius = 12;
+  s->dof_focus_distance = 3;
+  s->dof_focus_range = 1;
+  s->dof_blur = 8;
+  s->dof_near_blur = 0.5f;
   s->ssgi_intensity = 10;
   s->ssgi_ao_intensity = 1;
   s->ssgi_thickness = 1;

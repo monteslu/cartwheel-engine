@@ -40,7 +40,7 @@
  *                      current image as src (after the last writer that is
  *                      the output: tex 0 when it is the screen). Built-ins:
  *                      "velocity" (0, when something reads CW_RES_VELOCITY),
- *                      "ssao" (100), "taa" (200), "bloom" (300), "tonemap"
+ *                      "ssao" (100), "taa" (200), "dof" (250), "bloom" (300), "tonemap"
  *                      (500, HDR to display), "grade" (550, 3D LUT), "aa"
  *                      (600, FXAA or SMAA), "lens" (700: chromatic
  *                      aberration, vignette, film grain), "debug_view"
@@ -262,6 +262,18 @@ typedef struct cw_post_settings {
   float ssgi_thickness;     /* 1 */
   int ssgi_slices;          /* 2 (r186's example) */
   int ssgi_steps;           /* 8 (r186's example) */
+  /* depth of field: a lens's blur away from the focus distance (a portrait,
+   * a menu showcase, a cut scene). Full resolution gather in the HDR image
+   * before bloom: each pixel's circle of confusion from its view depth,
+   * 32 taps on a golden-angle disk; a farther sample counts only up to the
+   * pixel's own blur, so a sharp subject never takes the blurred background's
+   * colour while a blurred foreground spreads over what is behind it.
+   * Off on the Low effects preset */
+  bool dof;
+  float dof_focus_distance; /* 3: view distance that is sharp (world units) */
+  float dof_focus_range;    /* 1: depth around it that stays sharp */
+  float dof_blur;           /* 8: largest blur radius, in pixels of a 1080 line image (scaled with the height) */
+  float dof_near_blur;      /* 0.5: the blur in front of the focus, as a share of dof_blur (a lens blurs both sides) */
 } cw_post_settings;
 
 /* ── the pass context ──────────────────────────────────────────────── */

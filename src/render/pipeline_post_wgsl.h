@@ -620,6 +620,40 @@ WGSL_DECL WGSL_FXAA = S(
     return vec4f(T(posM).rgb, rgbyM.a);
   });
 
+WGSL_DECL WGSL_DOF = S(
+  struct U { u_pz: vec4f, u_dof: vec4f, u_texel: vec2f };
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var u_src: texture_2d<f32>;
+  @group(0) @binding(2) var u_depth: texture_2d<f32>;
+  fn vdepth(uv: vec2f) -> f32 { /* the depth copy holds the linear view depth on WebGPU (3e38: nothing drawn) */
+    let sz = vec2f(textureDimensions(u_depth));
+    let q = clamp(vec2i(uv * sz), vec2i(0), vec2i(sz) - 1);
+    let zl = textureLoad(u_depth, q, 0).r;
+    return select(zl, 1e6, zl > 1e30);
+  }
+  fn coc(z: f32) -> f32 {
+    let dz = z - u.u_dof.x; let a = max(abs(dz) - u.u_dof.y, 0.0);
+    let k = a / (a + max(u.u_dof.x, 0.05) * 0.5);
+    return k * select(u.u_dof.w, u.u_dof.z, dz > 0.0);
+  }
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    let c0 = textureSampleLevel(u_src, cw_linear, uv, 0.0);
+    let z0 = vdepth(uv); let r0 = coc(z0);
+    let maxr = max(u.u_dof.z, u.u_dof.w);
+    if (maxr < 0.5) { return c0; }
+    var acc = c0.rgb; var wsum = 1.0;
+    for (var i = 0; i < 32; i++) {
+      let fi = f32(i) + 0.5; let rr = sqrt(fi / 32.0) * maxr; let a = fi * 2.39996323;
+      let p = uv + vec2f(cos(a), sin(a)) * rr * u.u_texel;
+      let z = vdepth(p);
+      var r = coc(z);
+      if (z > z0) { r = min(r, r0); }
+      let w = clamp(r - rr + 1.0, 0.0, 1.0);
+      acc += textureSampleLevel(u_src, cw_linear, p, 0.0).rgb * w; wsum += w;
+    }
+    return vec4f(acc / wsum, c0.a);
+  });
+
 WGSL_DECL WGSL_LENS = S(
   struct U { u_on: vec4f, u_amt: vec4f, u_frame: i32 };
   @group(0) @binding(0) var<uniform> u: U;

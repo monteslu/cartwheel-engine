@@ -2373,6 +2373,23 @@
     }
   },
   {
+    "name": "post-dof",
+    "webgpu": true,
+    "app": "post_stack",
+    "frames": 448,
+    "maxGt16": 0.003,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "pipe.float"
+    ],
+    "controlFrames": 20,
+    "note": "depth of field: focus 4.5 m, the back wall and the near floor soft, the room's middle sharp. Control: off (the base segment)",
+    "expect": {
+      "post.seg": 21
+    }
+  },
+  {
     "name": "pipeline-perf",
     "script": "tests/pipeline-perf.mjs",
     "note": "per-pass GPU ms at 1280x720 full quality (reported, not compared); every running pass timed natively, idle passes untimed"

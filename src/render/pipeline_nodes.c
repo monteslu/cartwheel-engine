@@ -38,6 +38,10 @@ static void post_init(cw_node n, void *data) {
   s->ssr_quality = 0.5f;
   s->ssr_intensity = 1;
   s->ssgi_radius = 12;
+  s->dof_focus_distance = 3;
+  s->dof_focus_range = 1;
+  s->dof_blur = 8;
+  s->dof_near_blur = 0.5f;
   s->ssgi_intensity = 10;
   s->ssgi_ao_intensity = 1;
   s->ssgi_thickness = 1;
@@ -128,6 +132,11 @@ static const cw_prop post_props[] = {
   FB(grade, "Colour grading with the 3D LUT in `lut`."),
   FR(grade_intensity, 0, 1, "Blend between the ungraded and graded image."),
   CW_PROP_FIELD(post_node, lut, CW_T_STRING, CW_PROP_DEFAULT, "Asset path of a .cube 3D LUT."),
+  FB(dof, "Depth of field: blur away from the focus distance (off on the Low effects preset)."),
+  FR(dof_focus_distance, 0, 1e6, "View distance that is sharp (world units)."),
+  FR(dof_focus_range, 0, 1e6, "Depth around the focus distance that stays sharp."),
+  FR(dof_blur, 0, 32, "Largest blur radius in pixels of a 1080 line image."),
+  FR(dof_near_blur, 0, 1, "Blur in front of the focus, as a share of dof_blur."),
   FB(vignette, "Darken toward the corners."),
   FR(vignette_intensity, 0, 1, "Vignette strength."),
   FR(vignette_smoothness, 0.01, 1, "Vignette falloff width."),
