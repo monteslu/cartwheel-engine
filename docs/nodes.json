@@ -7650,6 +7650,16 @@
      "doc": "Fade over this distance in front of geometry (0 = hard)."
     },
     {
+     "name": "camera_fade",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Fade out as a particle comes within this distance of the camera (0 = off): smoke a chase camera drives into thins instead of filling the screen."
+    },
+    {
      "name": "distort_strength",
      "type": "float",
      "default": "0.3",

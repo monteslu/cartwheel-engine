@@ -44,6 +44,10 @@ A flipbook is a sheet of frames played over a particle's life (`texture`, `hfram
 
 @include samples/fx_explosion/assets/main.cwscene#Fire
 
+## Smoke near the camera
+
+A blast on the thing a chase camera follows puts its smoke and flash a few metres from the lens, where one big billboard covers the whole view. `camera_fade` on a [GPUParticles3D](node:GPUParticles3D) fades its particles out as they come within that distance of the camera (smoothly, to nothing at the camera): set it to about the camera's distance from its target and the cloud thins as it reaches the lens instead of whiting out the screen. Particles farther away are untouched. It works with every blend mode and on both renderers.
+
 ## Sub-emitters: smoke from flying debris
 
 Set a system's `emission_shape` to `PARENT` and name another [GPUParticles3D](node:GPUParticles3D) in `parent`: each new particle is born at a living particle of the parent (picked by the same deterministic hash that picks everything else) and can carry a share of its velocity (`inherit_velocity`). Debris that trails smoke, sparks that leave puffs, a rocket's exhaust are all one parent and one child. Put the parent before the child in the tree, and start both in the same tick (an [Explosion3D](node:Explosion3D) does). The parent's particles are read in world space.

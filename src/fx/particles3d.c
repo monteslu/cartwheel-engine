@@ -436,6 +436,7 @@ static const char *const draw_fs =
     "uniform int u_blend, u_mode;\n"
     "uniform vec4 u_soft;\n" /* soft distance, near, far, ortho */
     "uniform vec2 u_inv_size;\n"
+    "uniform float u_camfade;\n"
     "out vec4 frag;\n"
     "float lin(float d) { return u_soft.w > 0.5 ? u_soft.y + d * (u_soft.z - u_soft.y) : u_soft.y * u_soft.z / (u_soft.z - d * (u_soft.z - u_soft.y)); }\n"
     "void main() {\n"
@@ -455,6 +456,7 @@ static const char *const draw_fs =
     "    float zs = lin(texture(u_depth, gl_FragCoord.xy * u_inv_size).r);\n"
     "    c.a *= clamp((zs - v_vz) / u_soft.x, 0.0, 1.0);\n"
     "  }\n"
+    "  if (u_camfade > 0.0) c.a *= smoothstep(0.0, 1.0, v_vz / u_camfade);\n"
     "  if (u_blend >= 3) {\n"
     "    vec2 uv0 = gl_FragCoord.xy * u_inv_size;\n"
     "    float zd = lin(texture(u_depth, uv0).r);\n"
@@ -1637,6 +1639,7 @@ static void psys_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, const psys_p
   cw__fx_u1i(dp, "u_curve", 2);
   cw__fx_u4f(dp, "u_soft", ctx->depth_tex ? d->soft_distance : 0, lp[0], lp[1], lp[2]);
   cw__fx_u2f(dp, "u_inv_size", 1.0f / (float)(dist ? dist->w : ctx->width), 1.0f / (float)(dist ? dist->h : ctx->height));
+  cw__fx_u1f(dp, "u_camfade", d->camera_fade);
   if (sorted) {
     cw__fx_bind_tex(3, GL_TEXTURE_2D, r->state_tex[0]);
     cw__fx_bind_tex(4, GL_TEXTURE_2D, r->state_tex[1]);
@@ -1995,6 +1998,7 @@ static const cw_prop p3d_props[] = {
   F(spin, CW_T_FLOAT, "Rotation speed, rad/s (random direction per particle)."),
   E(blend, blend_names, "ADD (glow), ALPHA (premultiplied, sortable), OPAQUE (alpha tested, writes depth), DISTORT (bends the picture behind it, draws no colour: heat haze) or REFRACT (shows the scene through it: glass, drops; explosions.h)."),
   R(soft_distance, CW_T_FLOAT, 0, 1e6, "Fade over this distance in front of geometry (0 = hard)."),
+  R(camera_fade, CW_T_FLOAT, 0, 1e6, "Fade out as a particle comes within this distance of the camera (0 = off): smoke a chase camera drives into thins instead of filling the screen."),
   R(distort_strength, CW_T_FLOAT, 0, 1e3, "DISTORT / REFRACT: how far the picture behind a particle is shifted at its centre (world units at its distance), times its alpha over life."),
   F(motion_texture, CW_T_STRING, "Flipbook motion vectors: an image the size of `texture` whose red and green say how each pixel moves into the next frame (tools/fx/bake-flipbooks.mjs writes them). The frame in between is drawn by blending two frames along the motion: 16 frames look like 60. Empty = frames just step."),
   R(motion_strength, CW_T_FLOAT, 0, 16, "Scale of the motion vectors (1 = as baked)."),

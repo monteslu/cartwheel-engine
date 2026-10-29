@@ -112,6 +112,7 @@ typedef struct p3d {
   float spin;
   int blend;
   float soft_distance;
+  float camera_fade; /* alpha fades to 0 as a particle comes this close to the camera (0 = off) */
   float distort_strength; /* DISTORT / REFRACT: how far the picture is shifted (world units at the particle) */
   const char *motion_texture; /* flipbook: motion vector sheet (red, green = motion to the next frame), frames are blended along it */
   float motion_strength;        /* its scale (1 = as the baker wrote it) */

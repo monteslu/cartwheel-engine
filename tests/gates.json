@@ -2757,6 +2757,7 @@
     "script": "tests/explosion.mjs",
     "note": "Explosion3D on GL and WebGPU: pooled flash light (pool size per preset), scorch mark, shake, particles; after its life the frame equals the never-fired frame (control: early it differs); GL and WebGPU agree"
   },
+  {"name":"fx-camera-fade","app":"fx_explosion","frames":70,"startCmds":["set World/Boom/Smoke camera_fade 20","set World/Boom/Fire camera_fade 20"],"fields":["fxe.tick"],"controlFrames":70,"note":"camera_fade on the blast's smoke and fire (20 m, the camera stands about 11 m off): both thin out toward the lens on every host and both backends, GL and WebGPU alike; control: the same frame without it must differ","webgpu":{"hosts":["native","romdev","chromium","wcnative"],"vsGl":0.01}},
   {
     "name": "fx-distort-regions",
     "script": "tests/distort.mjs",

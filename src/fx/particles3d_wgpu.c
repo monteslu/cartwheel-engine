@@ -448,6 +448,7 @@ static const char WGSL_DRAW[] =
     "    let zs = textureLoad(depth, vec2i(in.pos.xy), 0).r;\n"
     "    c.a *= clamp((zs - in.vz) / D.p2.x, 0.0, 1.0);\n"
     "  }\n"
+    "  if (D.p4.z > 0.0) { c.a *= smoothstep(0.0, 1.0, in.vz / D.p4.z); }\n"
     "  let blend = i32(D.p1.w);\n"
     "  if (blend >= 3) {\n"
     "    let uv0 = in.pos.xy * D.p2.zw;\n"
@@ -1237,6 +1238,7 @@ void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx
   WGPUTextureView mvv = d->motion_texture && *d->motion_texture ? cw__fx_wg_texture_asset(d->motion_texture) : NULL;
   du[84] = mvv ? 1.0f : 0.0f;
   du[85] = d->motion_strength;
+  du[86] = d->camera_fade;
   du[68] = d->lifetime;
   du[69] = CW_CLAMP(d->lifetime_random, 0, 1);
   du[70] = d->trail_width;
