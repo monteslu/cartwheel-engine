@@ -21,6 +21,8 @@ Water made under the camera draws on WebGPU, and a skipped draw names its real c
   names the cause three.c gave (a state missing from the table, an
   extension that did not bind a texture, or another reason, which the
   warning before it spells out).
+- `cw_touch_set_round_button` and `cw_touch_set_overlay` have their API
+  comments (v0.21.0 shipped them without, so its API check failed).
 
 ### Tests
 - `water-under-new` (GL and WebGPU): a second Water3D spawned under the

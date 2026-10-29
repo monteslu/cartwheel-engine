@@ -295,7 +295,7 @@ int cw_touch_add_round_button(const cw_touch_button_desc *d);
  * layout); a desc of the other kind, a rect control or a bad id is ignored.
  * A touch holding the control keeps it. */
 void cw_touch_set_thumbstick(int id, const cw_touch_stick_desc *d);
-void cw_touch_set_round_button(int id, const cw_touch_button_desc *d);
+void cw_touch_set_round_button(int id, const cw_touch_button_desc *d); /* the same for a round button */
 /* A stick's throw or a round button's radius: touch units for the anchored
  * controls, window coordinates for a rect stick (cw_touch_add_stick); a rect
  * button or bad id is ignored, radius <= 0 is ignored. */
@@ -314,7 +314,7 @@ typedef enum {
   CW_TOUCH_OVERLAY_ALWAYS, /* drawn every frame (a desktop test, a demo) */
   CW_TOUCH_OVERLAY_OFF,    /* never drawn: the game draws its own (the controls still work) */
 } cw_touch_overlay_mode;
-void cw_touch_set_overlay(cw_touch_overlay_mode mode);
+void cw_touch_set_overlay(cw_touch_overlay_mode mode); /* when the engine draws its touch controls (default AUTO) */
 /* Whether the overlay is drawing the controls this frame (in AUTO, the same
  * rule a game can use to show touch prompts). */
 bool cw_touch_overlay_visible(void);
