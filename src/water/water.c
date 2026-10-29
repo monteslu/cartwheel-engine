@@ -408,10 +408,10 @@ static t3_geometry *grid(float sx, float sz, int nx, int nz, float horizon) {
       idx[w++] = b, idx[w++] = c, idx[w++] = d;
     }
   t3_geometry *g = t3_geometry_new();
-  t3_geometry_set_attribute(g, T3_ATTR_POSITION, t3_attribute_new(T3_FLOAT32, pos, nv, 3));
-  t3_geometry_set_attribute(g, T3_ATTR_NORMAL, t3_attribute_new(T3_FLOAT32, nrm, nv, 3));
-  t3_geometry_set_attribute(g, T3_ATTR_UV, t3_attribute_new(T3_FLOAT32, uv, nv, 2));
-  t3_geometry_set_index(g, t3_attribute_new(T3_UINT32, idx, ni, 1));
+  { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, pos, nv, 3); t3_geometry_set_attribute(g, T3_ATTR_POSITION, a_); t3_release(a_); }
+  { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, nrm, nv, 3); t3_geometry_set_attribute(g, T3_ATTR_NORMAL, a_); t3_release(a_); }
+  { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, uv, nv, 2); t3_geometry_set_attribute(g, T3_ATTR_UV, a_); t3_release(a_); }
+  { t3_attribute *a_ = t3_attribute_new(T3_UINT32, idx, ni, 1); t3_geometry_set_index(g, a_); t3_release(a_); }
   cw_free(pos);
   cw_free(nrm);
   cw_free(uv);

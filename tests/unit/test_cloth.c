@@ -623,7 +623,32 @@ static void test_perf(void) {
   CHECK(1);
 }
 
+/* the geometries cw_cloth_geometry_new and cw_rope_geometry_new hand out own their attributes alone: a geometry
+ * released frees every buffer (a second reference left on each attribute leaked them all, every rebuild) */
+static void attr_refs(t3_geometry *g) {
+  int slots[] = { T3_ATTR_POSITION, T3_ATTR_NORMAL, T3_ATTR_UV };
+  for (int i = 0; i < 3; i++) if (g->attributes[slots[i]]) CHECK_EQ_INT(g->attributes[slots[i]]->_refs, 1);
+  CHECK(g->index != NULL);
+  if (g->index) CHECK_EQ_INT(g->index->_refs, 1);
+}
+static void test_geometry_refs(void) {
+  cw_world3d w = world();
+  cw_cloth c = make_flag(w, 0, 1.02f, 8);
+  t3_geometry *g = cw_cloth_geometry_new(c);
+  CHECK(g != NULL);
+  if (g) { CHECK(g->attributes[T3_ATTR_POSITION] != NULL); attr_refs(g); t3_release(g); }
+  cw_rope_def rd = cw_rope_default_def();
+  rd.start = (t3_vec3){ 0, 5, 0 };
+  rd.end = (t3_vec3){ 0, 2, 0 };
+  rd.segments = 8;
+  cw_cloth r = cw_rope_create(w, &rd);
+  t3_geometry *rg = cw_rope_geometry_new(r, 0.03f, 6);
+  CHECK(rg != NULL);
+  if (rg) { attr_refs(rg); t3_release(rg); }
+  cw_world3d_destroy(w);
+}
+
 CW_TEST_SUITE("cloth", { "flag", test_flag }, { "stretch", test_stretch }, { "sphere", test_sphere },
               { "tunnel", test_tunnel }, { "box", test_box }, { "rope_crate", test_rope_crate },
               { "rope_two_bodies", test_rope_two_bodies }, { "skin", test_skin }, { "rollback", test_rollback },
-              { "chain", test_chain }, { "nodes", test_nodes }, { "step_many", test_step_many }, { "bad_input", test_bad_input }, { "perf", test_perf })
+              { "chain", test_chain }, { "nodes", test_nodes }, { "step_many", test_step_many }, { "bad_input", test_bad_input }, { "geometry_refs", test_geometry_refs }, { "perf", test_perf })

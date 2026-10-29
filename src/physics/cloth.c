@@ -1656,8 +1656,9 @@ t3_geometry *cw_cloth_geometry_new(cw_cloth h) {
   pos->usage = nrm->usage = T3_DYNAMIC_DRAW;
   t3_geometry_set_attribute(g, T3_ATTR_POSITION, pos);
   t3_geometry_set_attribute(g, T3_ATTR_NORMAL, nrm);
-  if (c->uv) t3_geometry_set_attribute(g, T3_ATTR_UV, t3_attribute_new(T3_FLOAT32, c->uv, c->n, 2));
-  t3_geometry_set_index(g, t3_attribute_new(T3_UINT32, c->tri, c->ntri * 3, 1));
+  t3_release(pos), t3_release(nrm); /* the geometry holds them */
+  if (c->uv) { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, c->uv, c->n, 2); t3_geometry_set_attribute(g, T3_ATTR_UV, a_); t3_release(a_); }
+  { t3_attribute *a_ = t3_attribute_new(T3_UINT32, c->tri, c->ntri * 3, 1); t3_geometry_set_index(g, a_); t3_release(a_); }
   cw_cloth_update_geometry(h, g, 1);
   return g;
 }
@@ -1689,8 +1690,9 @@ t3_geometry *cw_rope_geometry_new(cw_cloth h, float radius, int sides) {
   pos->usage = nrm->usage = T3_DYNAMIC_DRAW;
   t3_geometry_set_attribute(g, T3_ATTR_POSITION, pos);
   t3_geometry_set_attribute(g, T3_ATTR_NORMAL, nrm);
-  t3_geometry_set_attribute(g, T3_ATTR_UV, t3_attribute_new(T3_FLOAT32, uv, nv, 2));
-  t3_geometry_set_index(g, t3_attribute_new(T3_UINT32, idx, ni, 1));
+  t3_release(pos), t3_release(nrm); /* the geometry holds them */
+  { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, uv, nv, 2); t3_geometry_set_attribute(g, T3_ATTR_UV, a_); t3_release(a_); }
+  { t3_attribute *a_ = t3_attribute_new(T3_UINT32, idx, ni, 1); t3_geometry_set_index(g, a_); t3_release(a_); }
   cw_free(zero), cw_free(uv), cw_free(idx);
   cw_cloth_update_geometry(h, g, 1);
   return g;
