@@ -62,11 +62,19 @@ static const effects FX[CW_QUALITY_COUNT] = {
 };
 
 /* Auto's ladder, top first: a preset, its resolution replaced */
-static const struct { uint8_t preset, res; } LADDER[] = {
+typedef struct { uint8_t preset, res; } rung_t;
+static const rung_t LADDER[] = {
   { CW_QUALITY_HIGH, RES_100 }, { CW_QUALITY_HIGH, RES_85 }, { CW_QUALITY_MEDIUM, RES_75 }, { CW_QUALITY_MEDIUM, RES_67 },
   { CW_QUALITY_LOW, RES_67 },   { CW_QUALITY_LOW, RES_60 },  { CW_QUALITY_LOW, RES_50 },
 };
-enum { LADDER_N = (int)(sizeof LADDER / sizeof LADDER[0]) };
+enum { LADDER_N_ALL = (int)(sizeof LADDER / sizeof LADDER[0]) };
+/* cw_quality_full_resolution: the ladder without its resolution steps (each preset at 100%) */
+static const rung_t LADDER_FULL[] = {
+  { CW_QUALITY_HIGH, RES_100 }, { CW_QUALITY_MEDIUM, RES_100 }, { CW_QUALITY_LOW, RES_100 },
+};
+static bool full_res;
+#define LADDER_N (full_res ? (int)(sizeof LADDER_FULL / sizeof LADDER_FULL[0]) : LADDER_N_ALL)
+#define RUNG(r) (full_res ? LADDER_FULL[r] : LADDER[r])
 
 typedef struct {
   const char *name;
@@ -141,6 +149,7 @@ static void changed(void) {
 static void apply_preset(cw_quality q, int res) {
   for (int i = 0; i < CW_GFX_ENGINE_COUNT; i++) Q.v[i] = PRESET[q][i];
   if (res >= 0) Q.v[CW_GFX_RESOLUTION] = (uint8_t)res;
+  if (full_res) Q.v[CW_GFX_RESOLUTION] = RES_100; /* the game never draws below its output size */
   for (int i = 0; i < Q.n_levers; i++) Q.v[CW_GFX_ENGINE_COUNT + i] = Q.levers[i].preset[q];
   Q.level = q;
 }
@@ -149,7 +158,8 @@ static void apply_preset(cw_quality q, int res) {
 static int matching_preset(void) {
   for (int q = 0; q < CW_QUALITY_COUNT; q++) {
     bool same = true;
-    for (int i = 0; i < CW_GFX_ENGINE_COUNT && same; i++) same = Q.v[i] == PRESET[q][i];
+    for (int i = 0; i < CW_GFX_ENGINE_COUNT && same; i++)
+      same = Q.v[i] == (full_res && i == CW_GFX_RESOLUTION ? RES_100 : PRESET[q][i]);
     for (int i = 0; i < Q.n_levers && same; i++) same = Q.v[CW_GFX_ENGINE_COUNT + i] == Q.levers[i].preset[q];
     if (same) return q;
   }
@@ -158,7 +168,7 @@ static int matching_preset(void) {
 
 static void set_rung(int rung) {
   Q.rung = CW_CLAMP(rung, 0, LADDER_N - 1);
-  apply_preset((cw_quality)LADDER[Q.rung].preset, LADDER[Q.rung].res);
+  apply_preset((cw_quality)RUNG(Q.rung).preset, RUNG(Q.rung).res);
 }
 
 void cw__quality_init(void) {
@@ -192,7 +202,7 @@ void cw_quality_set(cw_quality q, bool user) {
   }
   if (Q.mode == MODE_AUTO) { /* the game or a tool: Auto goes on from the nearest level */
     int r = 0;
-    while (r < LADDER_N - 1 && LADDER[r].preset > q) r++;
+    while (r < LADDER_N - 1 && RUNG(r).preset > q) r++;
     set_rung(r);
   } else {
     Q.mode = MODE_PRESET;
@@ -308,6 +318,17 @@ static void auto_start(int rung) {
   changed();
 }
 
+void cw_quality_full_resolution(bool on) {
+  init_once();
+  if (full_res == on) return;
+  full_res = on;
+  if (Q.rung >= LADDER_N) Q.rung = LADDER_N - 1;
+  if (Q.mode == MODE_AUTO) set_rung(Q.rung);
+  else if (Q.mode == MODE_PRESET) apply_preset((cw_quality)Q.level, -1);
+  changed();
+}
+bool cw_quality_is_full_resolution(void) { return full_res; }
+
 void cw_quality_auto(bool on, float budget_ms) {
   init_once();
   if (budget_ms > 0) Q.budget = budget_ms;
@@ -353,17 +374,17 @@ void cw_quality_auto_measure(bool in_play) {
   }
   Q.avg += (cost - Q.avg) * 0.05f;
   if (Q.frames > 150 && Q.avg > budget && Q.rung < LADDER_N - 1) {
-    cw_info("quality: auto %s %d%% -> %s %d%% (%s averaged %.1f ms, budget %.1f)", NAMES[LADDER[Q.rung].preset],
-            (int)(RES[LADDER[Q.rung].res] * 100 + 0.5f), NAMES[LADDER[Q.rung + 1].preset],
-            (int)(RES[LADDER[Q.rung + 1].res] * 100 + 0.5f), Q.gpu_timed ? "GPU time" : "frames", (double)Q.avg,
+    cw_info("quality: auto %s %d%% -> %s %d%% (%s averaged %.1f ms, budget %.1f)", NAMES[RUNG(Q.rung).preset],
+            (int)(RES[RUNG(Q.rung).res] * 100 + 0.5f), NAMES[RUNG(Q.rung + 1).preset],
+            (int)(RES[RUNG(Q.rung + 1).res] * 100 + 0.5f), Q.gpu_timed ? "GPU time" : "frames", (double)Q.avg,
             (double)budget);
     Q.fail_rung = CW_MAX(Q.fail_rung, Q.rung);
     set_rung(Q.rung + 1);
     changed();
   } else if (Q.gpu_timed && Q.frames > 300 && Q.avg < budget * 0.55f && Q.rung > 0 && Q.rung - 1 > Q.fail_rung) {
-    cw_info("quality: auto %s %d%% -> %s %d%% (GPU time averaged %.1f ms, budget %.1f)", NAMES[LADDER[Q.rung].preset],
-            (int)(RES[LADDER[Q.rung].res] * 100 + 0.5f), NAMES[LADDER[Q.rung - 1].preset],
-            (int)(RES[LADDER[Q.rung - 1].res] * 100 + 0.5f), (double)Q.avg, (double)budget);
+    cw_info("quality: auto %s %d%% -> %s %d%% (GPU time averaged %.1f ms, budget %.1f)", NAMES[RUNG(Q.rung).preset],
+            (int)(RES[RUNG(Q.rung).res] * 100 + 0.5f), NAMES[RUNG(Q.rung - 1).preset],
+            (int)(RES[RUNG(Q.rung - 1).res] * 100 + 0.5f), (double)Q.avg, (double)budget);
     set_rung(Q.rung - 1);
     changed();
   }
