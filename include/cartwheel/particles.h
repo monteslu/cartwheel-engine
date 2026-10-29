@@ -43,8 +43,11 @@
  *                        texture (asset path; default a soft dot), hframes /
  *                        vframes (flipbook played over life), spin (rad/s,
  *                        random sign), blend ADD / ALPHA / OPAQUE, soft_distance
- *                        (fade where particles meet geometry), sort (ALPHA:
- *                        back to front with a bitonic sort in fragment passes)
+ *                        (fade where particles meet geometry), camera_fade
+ *                        (fade out within this distance of the camera: smoke a
+ *                        chase camera drives into thins instead of filling the
+ *                        screen), sort (ALPHA: back to front with a bitonic
+ *                        sort in fragment passes)
  *     trails             trail_length (history samples, 0 = off, max 64): each
  *                        particle draws a camera-facing ribbon through its last
  *                        positions (one sample per fixed tick, kept in a float

@@ -4,6 +4,16 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.24.0 (2026-10-29)
+
+Smoke that thins at the lens.
+
+### Added
+- GPUParticles3D `camera_fade`: particles fade out as they come within this distance of the camera (smoothly, to nothing at
+  the lens), on GL and WebGPU and with every blend mode. A blast on the kart or player a chase camera follows puts its smoke
+  and flash a few metres from the lens, where one billboard covered the whole view; set it to about the camera's distance
+  from its target. Gate `fx-camera-fade`; [Explosions](docs/guides/explosions.md#smoke-near-the-camera).
+
 ## v0.23.1 (2026-10-29)
 
 ### Fixed
