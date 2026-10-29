@@ -15,6 +15,7 @@ typedef struct cw__light {
   float range, decay;
   float angle, penumbra;    /* spot */
   bool direct;              /* bake_direct: the lightmaps keep its direct light too */
+  bool realtime;            /* it lights the scene in real time (false: bake only; the probes keep its direct light) */
 } cw__light;
 bool cw__light3d_bake_info(cw_node n, cw__light *out);
 
