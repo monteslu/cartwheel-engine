@@ -1293,6 +1293,7 @@ bool cw__light3d_bake_info(cw_node n, cw__light *out) {
   out->angle = l->angle;
   out->penumbra = l->penumbra;
   out->direct = l->bake_direct;
+  out->realtime = l->realtime;
   return true;
 }
 

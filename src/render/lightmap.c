@@ -896,6 +896,34 @@ static void probes_fn(int begin, int end, int worker, void *ctx) {
     /* stored as radiance SH */
     float *o = j->d->sh + (size_t)i * 27;
     for (int k = 0; k < 27; k++) o[k] = c[k] * w;
+    /* a light that is in the bake only (bake_direct, realtime off) reaches what moves through the probes: its
+     * direct light, shadow tested, as a delta of radiance from its direction (SH of a direction: Y(d) x colour) */
+    for (int li = 0; li < b->lights.count; li++) {
+      const cw__light *l = &b->lights.data[li];
+      if (!l->direct || l->realtime) continue;
+      float L[3], dist = 1e30f, fall = 1;
+      if (l->kind == 0) L[0] = -l->dir.x, L[1] = -l->dir.y, L[2] = -l->dir.z;
+      else {
+        float v[3] = { l->pos.x - p[0], l->pos.y - p[1], l->pos.z - p[2] };
+        dist = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        if (dist <= 1e-6f || (l->range > 0 && dist >= l->range)) continue;
+        for (int a = 0; a < 3; a++) L[a] = v[a] / dist;
+        fall = falloff(dist, l->range, l->decay);
+        if (l->kind == 2) {
+          float cone = cw_cos(l->angle), pen = cw_cos(l->angle * (1 - l->penumbra));
+          float ac = -(L[0] * l->dir.x + L[1] * l->dir.y + L[2] * l->dir.z);
+          if (ac <= cone) continue;
+          fall *= cw_smoothstep(cone, pen, ac);
+        }
+      }
+      if (fall <= 0 || lm_bvh_any(&b->bvh, p, L, 0, dist - b->eps)) continue;
+      float x = L[0], y = L[1], zz = L[2];
+      float Y[9] = { 0.282095f, 0.488603f * y, 0.488603f * zz, 0.488603f * x, 1.092548f * x * y, 1.092548f * y * zz,
+                     0.315392f * (3 * zz * zz - 1), 1.092548f * x * zz, 0.546274f * (x * x - y * y) };
+      float col[3] = { l->color.r * fall, l->color.g * fall, l->color.b * fall };
+      for (int k = 0; k < 9; k++)
+        for (int ch = 0; ch < 3; ch++) o[k * 3 + ch] += col[ch] * Y[k];
+    }
     j->valid[i] = backs * 4 < S; /* mostly inside geometry: invalid */
   }
 }
@@ -1356,6 +1384,37 @@ bool cw_lightmap_irradiance_below(const cw_lightmap_data *dc, t3_vec3 pos, t3_co
   float e[3];
   texel_bilinear(&d->recs.data[t->rec], u, v, e);
   if (out) *out = (t3_color){ e[0], e[1], e[2] };
+  return true;
+}
+
+bool cw_lightmap_probe_irradiance(const cw_lightmap_data *d, t3_vec3 pos, t3_vec3 n, t3_color *out) {
+  if (out) *out = (t3_color){ 0, 0, 0 };
+  if (!d || !d->has_sh || !d->sh) return false;
+  float c[27] = { 0 }, g[3] = { pos.x, pos.y, pos.z };
+  int dims[3] = { d->nx, d->ny, d->nz }, i0[3];
+  float fr[3];
+  for (int a = 0; a < 3; a++) {
+    float t = (g[a] - d->lo[a]) / CW_MAX(d->hi[a] - d->lo[a], 1e-6f) * (float)(dims[a] - 1);
+    t = CW_CLAMP(t, 0.0f, (float)(dims[a] - 1));
+    i0[a] = CW_MIN((int)floorf(t), dims[a] - 2 < 0 ? 0 : dims[a] - 2);
+    fr[a] = t - (float)i0[a];
+  }
+  for (int q = 0; q < 8; q++) { /* trilinear */
+    int ix = CW_MIN(i0[0] + (q & 1), dims[0] - 1), iy = CW_MIN(i0[1] + ((q >> 1) & 1), dims[1] - 1), iz = CW_MIN(i0[2] + (q >> 2), dims[2] - 1);
+    float w = ((q & 1) ? fr[0] : 1 - fr[0]) * (((q >> 1) & 1) ? fr[1] : 1 - fr[1]) * ((q >> 2) ? fr[2] : 1 - fr[2]);
+    const float *s = d->sh + ((size_t)(iz * dims[1] + iy) * dims[0] + ix) * 27;
+    for (int k = 0; k < 27; k++) c[k] += w * s[k];
+  }
+  float l = sqrtf(n.x * n.x + n.y * n.y + n.z * n.z);
+  float x = l > 0 ? n.x / l : 0, y = l > 0 ? n.y / l : 1, z = l > 0 ? n.z / l : 0;
+  /* irradiance from radiance SH: the cosine lobe's bands (PI, 2 PI / 3, PI / 4) */
+  const float A0 = CW_PI, A1 = 2 * CW_PI / 3, A2 = CW_PI / 4;
+  float Y[9] = { 0.282095f * A0, 0.488603f * y * A1, 0.488603f * z * A1, 0.488603f * x * A1, 1.092548f * x * y * A2,
+                 1.092548f * y * z * A2, 0.315392f * (3 * z * z - 1) * A2, 1.092548f * x * z * A2, 0.546274f * (x * x - y * y) * A2 };
+  float e[3] = { 0, 0, 0 };
+  for (int k = 0; k < 9; k++)
+    for (int ch = 0; ch < 3; ch++) e[ch] += Y[k] * c[k * 3 + ch];
+  if (out) *out = (t3_color){ CW_MAX(e[0], 0.0f), CW_MAX(e[1], 0.0f), CW_MAX(e[2], 0.0f) };
   return true;
 }
 

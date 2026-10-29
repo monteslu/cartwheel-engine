@@ -20,7 +20,9 @@
  * (probe_spacing apart over the static geometry's bounds), interpolated per
  * pixel. Standard and Phong materials use both (Lambert and Basic read
  * lightmaps through three.c alone). The probe grid is baked and stored in the
- * .cwlm; no material reads it yet.
+ * .cwlm; no material reads it per pixel yet: cw_lightmap_probe_irradiance
+ * reads it on the CPU (a moving object's light at its position), and a light
+ * in the bake only (bake_direct, realtime off) adds its direct light to it.
  *
  * Which UVs. three.c's programs read every map, the lightmap included,
  * through uv0 (r186 samples a texture through uv(texture.channel), and three.c
@@ -164,6 +166,13 @@ bool cw_lightmap_use_reflection(const cw_lightmap_data *d, t3_material *m, float
  * triangles are taken then; a mesh moved after the apply is not followed).
  * false (and black) where no baked surface lies below. */
 bool cw_lightmap_irradiance_below(const cw_lightmap_data *d, t3_vec3 pos, t3_color *out);
+/* The irradiance a surface of normal n at pos takes from the bake's SH probe
+ * grid (trilinear between probes, the cosine lobe applied): the sky and the
+ * bounces the probes saw, and the direct light of lights in the bake only
+ * (realtime off). A light probe for a moving object, evaluated per object (a
+ * crowd's instance colour) rather than per pixel. false (and black) when the
+ * bake has no probe grid (probe_spacing 0). */
+bool cw_lightmap_probe_irradiance(const cw_lightmap_data *d, t3_vec3 pos, t3_vec3 n, t3_color *out);
 /* A LightmapGI node's bake once it has baked or loaded (NULL before, and for
  * another node): for cw_lightmap_reflection, cw_lightmap_use_reflection and
  * cw_lightmap_irradiance_below. Owned by the node. */
