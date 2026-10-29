@@ -4,6 +4,24 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.21.2 (2026-10-28)
+
+Geometry the engine builds no longer leaks its vertex buffers.
+
+### Fixed
+- Water3D, terrain chunks and grass tufts, cloth and rope geometry and
+  the colours of a cloth node kept a second reference on every vertex
+  attribute and index they made (`t3_geometry_set_attribute` and
+  `t3_geometry_set_index` retain what they are given), so each rebuilt
+  geometry leaked all its buffers. A game that reloads a scene with water
+  every round grew by about 3 MB a round (14 MB in 18000 frames of a
+  water mini-game); with the fix its memory stays flat.
+
+### Tests
+- `cloth.geometry_refs` (unit_cloth): the attributes and index of the
+  geometry `cw_cloth_geometry_new` and `cw_rope_geometry_new` return hold
+  one reference each. Before the fix it failed (two each).
+
 ## v0.21.1 (2026-10-28)
 
 Water made under the camera draws on WebGPU, and a skipped draw names its real cause.
