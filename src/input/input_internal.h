@@ -65,7 +65,7 @@ typedef struct cw__input_state {
   float area[4];     /* cw_touch_set_area; w or h <= 0 = the window */
   float unit;        /* window coordinates per touch unit, last layout */
   uint8_t overlay;   /* cw_touch_overlay_mode */
-  bool touch_seen;   /* a touch landed since the last pad press (overlay AUTO) */
+  bool touch_seen;   /* a touch landed since the pad was last used (overlay AUTO) */
   /* capture */
   struct {
     bool on, done, pad;

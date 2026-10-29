@@ -236,8 +236,13 @@ void cw__touch_update(const cw_raw_input *raw) {
     else if (tc->stick && tc->rect_home) tc->center = rect_home_at(tc);
     else if (!tc->stick || !tc->floating) tc->center = (cw_vec2){ tc->x + tc->w * 0.5f, tc->y + tc->h * 0.5f };
   }
-  for (int p = 0; p < CW_MAX_PADS; p++)
-    if (raw->pads[p].pressed) I.touch_seen = false; /* a pad in use: the overlay (AUTO) steps aside */
+  for (int p = 0; p < CW_MAX_PADS; p++) { /* a pad in use (a button, or a stick or trigger past half): the overlay (AUTO) steps aside */
+    const cw_pad_state *ps = &raw->pads[p];
+    if (!ps->connected && !ps->pressed) continue;
+    bool used = ps->pressed || ps->buttons;
+    for (int a = 0; a < CW_AXIS_COUNT && !used; a++) used = fabsf(ps->axes[a]) > 0.5f;
+    if (used) I.touch_seen = false;
+  }
   for (int i = 0; i < CW_MAX_TOUCHES; i++) {
     const cw_touch_state *t = &raw->touches[i];
     bool down = t->active || t->tapped;
