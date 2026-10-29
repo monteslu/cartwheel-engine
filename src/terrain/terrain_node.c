@@ -80,10 +80,10 @@ static t3_geometry *rings(const float (*ring)[5], int nr, int seg, float sx, flo
       idx[k++] = b, idx[k++] = c, idx[k++] = d;
     }
   t3_geometry *g = t3_geometry_new();
-  t3_geometry_set_attribute(g, T3_ATTR_POSITION, t3_attribute_new(T3_FLOAT32, pos, nv, 3));
-  t3_geometry_set_attribute(g, T3_ATTR_NORMAL, t3_attribute_new(T3_FLOAT32, nrm, nv, 3));
-  t3_geometry_set_attribute(g, T3_ATTR_COLOR, t3_attribute_new(T3_FLOAT32, col, nv, 3));
-  t3_geometry_set_index(g, t3_attribute_new(T3_UINT16, idx, ni, 1));
+  { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, pos, nv, 3); t3_geometry_set_attribute(g, T3_ATTR_POSITION, a_); t3_release(a_); }
+  { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, nrm, nv, 3); t3_geometry_set_attribute(g, T3_ATTR_NORMAL, a_); t3_release(a_); }
+  { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, col, nv, 3); t3_geometry_set_attribute(g, T3_ATTR_COLOR, a_); t3_release(a_); }
+  { t3_attribute *a_ = t3_attribute_new(T3_UINT16, idx, ni, 1); t3_geometry_set_index(g, a_); t3_release(a_); }
   cw_free(pos), cw_free(nrm), cw_free(col), cw_free(idx);
   return g;
 }
@@ -109,9 +109,9 @@ static t3_geometry *tuft(int blades) {
     }
   }
   t3_geometry *g = t3_geometry_new();
-  t3_geometry_set_attribute(g, T3_ATTR_POSITION, t3_attribute_new(T3_FLOAT32, pos, nv, 3));
-  t3_geometry_set_attribute(g, T3_ATTR_NORMAL, t3_attribute_new(T3_FLOAT32, nrm, nv, 3));
-  t3_geometry_set_attribute(g, T3_ATTR_COLOR, t3_attribute_new(T3_FLOAT32, col, nv, 3));
+  { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, pos, nv, 3); t3_geometry_set_attribute(g, T3_ATTR_POSITION, a_); t3_release(a_); }
+  { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, nrm, nv, 3); t3_geometry_set_attribute(g, T3_ATTR_NORMAL, a_); t3_release(a_); }
+  { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, col, nv, 3); t3_geometry_set_attribute(g, T3_ATTR_COLOR, a_); t3_release(a_); }
   cw_free(pos), cw_free(nrm), cw_free(col);
   return g;
 }

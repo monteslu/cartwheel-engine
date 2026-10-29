@@ -256,7 +256,7 @@ static void pattern_colours(cloth3d *d, t3_geometry *g, int nu, int nv) {
       float *o = &col[3 * (i + j * nu)];
       o[0] = c[0], o[1] = c[1], o[2] = c[2];
     }
-  t3_geometry_set_attribute(g, T3_ATTR_COLOR, t3_attribute_new(T3_FLOAT32, col, nu * nv, 3));
+  { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, col, nu * nv, 3); t3_geometry_set_attribute(g, T3_ATTR_COLOR, a_); t3_release(a_); }
   cw_free(col);
 }
 
