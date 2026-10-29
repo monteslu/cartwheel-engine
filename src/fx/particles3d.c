@@ -64,10 +64,37 @@ static void alive_range(int begin, int end, int worker, void *ctx) {
   j->counts[begin / j->chunk] = n;
 }
 
+int cw__psys_burst_keep(const p3d *d) {
+  int nb = CW_CLAMP(d->bursts, 1, MAX_BURSTS);
+  return cw_quality_count(CW_MAX(d->amount / nb, 1), "particles");
+}
+int cw__psys_draw_count(const p3d *d) { return d->bursts > 0 ? d->amount : cw_quality_count(d->amount, "particles"); }
+
+/* bursts: each fired slot's particles, alive while their one cycle lasts */
+static int cpu_alive_bursts(const p3d *d) {
+  const cw__psys *r = d->rt;
+  int nb = CW_CLAMP(d->bursts, 1, MAX_BURSTS), per = CW_MAX(d->amount / nb, 1), n = 0;
+  float L = d->lifetime, t = (float)(r->sim_time - r->emit_start);
+  for (int b = 0; b < nb; b++) {
+    float st = r->burst_p[b][3];
+    if (st < 0 || t - st >= L) continue;
+    int k = (int)r->burst_d[b][3];
+    for (int li = 0, keep = cw__psys_burst_keep(d); li < keep; li++) {
+      float off = (float)li / (float)per * L * (1.0f - d->explosiveness), rel = t - st - off;
+      if (rel < 0) continue;
+      uint32_t s = pseed((uint32_t)d->seed, b * per + li, k);
+      float life = L * (1.0f - d->lifetime_random * prnd(&s));
+      if (rel < life) n++;
+    }
+  }
+  return n;
+}
+
 static int cpu_alive(const p3d *d) {
   const cw__psys *r = d->rt;
   if (!r || d->amount <= 0 || d->lifetime <= 0) return 0;
   if (!r->has_emitted) return 0;
+  if (d->bursts > 0) return cpu_alive_bursts(d);
   alive_job j = { .d = d, .t = (float)(r->sim_time - r->emit_start),
                   .emit_end = r->emit_end < 0 ? -1.0f : (float)r->emit_end };
   j.chunk = CW_MAX(1024, (d->amount + 255) / 256);
@@ -125,7 +152,9 @@ static const char *const sim_vs =
     "uniform sampler2D u_p0, u_p1;\n"
     "uniform int u_ptw, u_pn;\n"
     "uniform float u_inherit;\n"
-    "bool g_par = false; vec3 g_ppos = vec3(0.0); vec3 g_pvel = vec3(0.0);\n"
+    "uniform int u_bursts, u_burst_keep;\n"
+    "uniform vec4 u_burst[32], u_burst_d[32];\n"
+    "bool g_par = false; vec3 g_ppos = vec3(0.0); vec3 g_pvel = vec3(0.0); vec3 g_dir = vec3(0.0, 1.0, 0.0);\n"
     "void emit_shape(inout uint s, out vec3 p, out vec3 n) {\n"
     "  p = vec3(0.0); n = vec3(0.0);\n"
     "  if (u_shape == 1 || u_shape == 2) {\n"
@@ -152,7 +181,7 @@ static const char *const sim_vs =
     "vec3 cone(inout uint s) {\n"
     "  float ct = mix(1.0, u_cos_spread, prnd(s)); float st = sqrt(max(0.0, 1.0 - ct * ct));\n"
     "  float a = prnd(s) * 6.2831853;\n"
-    "  vec3 w = u_dir; vec3 up = abs(w.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);\n"
+    "  vec3 w = g_dir; vec3 up = abs(w.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);\n"
     "  vec3 u = normalize(cross(up, w)); vec3 v = cross(w, u);\n"
     "  return u * (st * cos(a)) + v * (st * sin(a)) + w * ct;\n"
     "}\n"
@@ -238,19 +267,36 @@ static const char *const sim_vs =
     "void main() {\n"
     "  int i = gl_VertexID;\n"
     "  float L = u_lifetime;\n"
+    "  vec4 pa = a_pa, vc = a_vc;\n"
+    "  g_dir = u_dir;\n"
+    "  mat4 M0 = u_em0, M1 = u_em1;\n"
+    "  int k; float spawn, age; bool ok;\n"
+    "  if (u_bursts > 0) {\n"
+    "    int per = max(u_amount / u_bursts, 1), slot = i / per, li = i - slot * per;\n"
+    "    vec4 B = slot < u_bursts ? u_burst[slot] : vec4(0.0, 0.0, 0.0, -1.0);\n"
+    "    vec4 D = slot < u_bursts ? u_burst_d[slot] : vec4(0.0);\n"
+    "    float off = float(li) / float(per) * L * (1.0 - u_explosive);\n"
+    "    float rel = u_t1 - B.w - off;\n"
+    "    k = int(D.w);\n"
+    "    ok = slot < u_bursts && li < u_burst_keep && B.w >= 0.0 && rel >= 0.0 && rel < L;\n"
+    "    spawn = B.w + off;\n"
+    "    age = rel;\n"
+    "    M1[3] = vec4(B.xyz, 1.0); M0 = M1;\n"
+    "    if (dot(D.xyz, D.xyz) > 0.0) g_dir = normalize(D.xyz);\n"
+    "  } else {\n"
     "  float off = float(i) / float(u_amount) * L * (1.0 - u_explosive);\n"
     "  float rel = u_t1 - off;\n"
-    "  vec4 pa = a_pa, vc = a_vc;\n"
-    "  int k = rel >= 0.0 ? int(floor(rel / L)) : -1;\n"
-    "  float spawn = off + float(k) * L;\n"
-    "  bool ok = k >= 0 && (u_emit_end < 0.0 || spawn < u_emit_end);\n"
+    "  k = rel >= 0.0 ? int(floor(rel / L)) : -1;\n"
+    "  spawn = off + float(k) * L;\n"
+    "  ok = k >= 0 && (u_emit_end < 0.0 || spawn < u_emit_end);\n"
+    "  age = rel - float(k) * L;\n"
+    "  }\n"
     "  float life = ok ? plife(i, k) : 0.0;\n"
-    "  float age = rel - float(k) * L;\n"
     "  if (!ok || age >= life) { o_pa = vec4(pa.xyz, -1.0); o_vc = vc; return; }\n"
     "  if (pa.w < 0.0 || int(vc.w) != k) {\n"
     "    uint s = pseed(i, k); prnd(s);\n"
     "    float f = clamp((spawn - u_t0) / max(u_t1 - u_t0, 1e-6), 0.0, 1.0);\n"
-    "    mat4 M = u_em0 * (1.0 - f) + u_em1 * f;\n"
+    "    mat4 M = M0 * (1.0 - f) + M1 * f;\n"
     "    vec3 lp, ln; emit_shape(s, lp, ln);\n"
     "    vec3 d = cone(s);\n"
     "    float sp = mix(u_speed.x, u_speed.y, prnd(s));\n"
@@ -1171,6 +1217,13 @@ static void run_steps(cw_node n, p3d *d, cw__psys *r, cw_pass_ctx *ctx, cw__fx_t
   cw__fx_bind_tex(2, GL_TEXTURE_2D, d->emission_shape == SHAPE_MESH ? r->emit_tex : 0);
   if (d->emission_shape == SHAPE_MESH && !r->emit_tex) cw__fx_u1i(p, "u_shape", SHAPE_POINT);
   cw__fx_u1f(p, "u_emit_end", r->emit_end < 0 ? -1.0f : (float)r->emit_end);
+  int nb = CW_CLAMP(d->bursts, 0, MAX_BURSTS);
+  cw__fx_u1i(p, "u_bursts", nb);
+  cw__fx_u1i(p, "u_burst_keep", nb ? cw__psys_burst_keep(d) : 0);
+  if (nb) {
+    cw__fx_u4fv(p, "u_burst", &r->burst_p[0][0], nb);
+    cw__fx_u4fv(p, "u_burst_d", &r->burst_d[0][0], nb);
+  }
 
   bool hist = d->trail_length >= 2 && ensure_hist(r, CW_MIN(d->trail_length, TRAIL_MAX));
   glEnable(GL_RASTERIZER_DISCARD); /* after ensure_hist: it clears, and discard drops clears too */
@@ -1531,7 +1584,7 @@ static void psys_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, const psys_p
     cw__fx_u1i(prog_trail, "u_blend", d->blend == BLEND_OPAQUE ? BLEND_ALPHA : d->blend);
     if (d->blend == BLEND_OPAQUE) set_blend(BLEND_ALPHA);
     glBindVertexArray(cw__fx_empty_vao());
-    glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 2 * r->hist_len, cw_quality_count(d->amount, "particles"));
+    glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 2 * r->hist_len, cw__psys_draw_count(d));
     ft->stats.draw_calls++;
     set_blend(d->blend);
   }
@@ -1626,7 +1679,7 @@ static void psys_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, const psys_p
     }
     static const float nz[4] = { 0, 0, 1, 0 };
     glVertexAttrib4fv(3, nz);
-    glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, cw_quality_count(d->amount, "particles"));
+    glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, cw__psys_draw_count(d));
   }
   ft->stats.draw_calls++;
   glBindVertexArray(0);
@@ -1747,6 +1800,30 @@ static void p3d_fixed(cw_node n, void *data, double dt) {
     r->last_m = m;
     r->have_last_m = true;
   }
+  if (d->bursts > 0) { /* bursts: no emission window; steps while a fired slot lives */
+    if (!r->has_emitted) {
+      r->sim_time += step;
+      r->last_m = m;
+      r->idle = true;
+      return;
+    }
+    double t0b = r->sim_time - r->emit_start;
+    bool live = false;
+    for (int b = 0; b < CW_MIN(d->bursts, MAX_BURSTS) && !live; b++)
+      live = r->burst_p[b][3] >= 0 && t0b < (double)r->burst_p[b][3] + 2.0 * (double)d->lifetime;
+    r->sim_time += step;
+    if (!live) {
+      r->last_m = m;
+      r->idle = true;
+      d->alive = 0;
+      return;
+    }
+    r->idle = false;
+    if (step > 0) push_step(r, (float)t0b, (float)(r->sim_time - r->emit_start), &m, &m);
+    r->last_m = m;
+    d->alive = cpu_alive(d);
+    return;
+  }
   if (d->emitting && !r->was_emitting) {
     /* a new emission window: everything alive dies, cycles restart */
     double pre = d->preprocess > 0 ? d->preprocess : 0;
@@ -1822,6 +1899,27 @@ void cw_particles_restart(cw_node n) {
   cw__particles2d_restart(n);
 }
 
+void cw_particles_burst(cw_node n, t3_vec3 at, t3_vec3 dir) {
+  p3d *d = cw_node_data_t(n, p3d_t);
+  if (!d || !d->rt || d->bursts <= 0) return;
+  cw__psys *r = d->rt;
+  int nb = CW_MIN(d->bursts, MAX_BURSTS);
+  if (!r->has_emitted) { /* the first burst opens the system's clock; every slot is unfired */
+    r->emit_start = r->sim_time;
+    r->emit_end = -1;
+    r->has_emitted = true;
+    r->need_reset = true;
+    r->nsteps = 0;
+    for (int b = 0; b < MAX_BURSTS; b++) r->burst_p[b][3] = -1, r->burst_d[b][3] = 0;
+  }
+  int b = r->burst_next++ % nb;
+  if (r->burst_next >= nb) r->burst_next = 0;
+  r->burst_p[b][0] = at.x, r->burst_p[b][1] = at.y, r->burst_p[b][2] = at.z;
+  r->burst_p[b][3] = (float)(r->sim_time - r->emit_start);
+  r->burst_d[b][0] = dir.x, r->burst_d[b][1] = dir.y, r->burst_d[b][2] = dir.z;
+  r->burst_d[b][3] = (float)(((int)r->burst_d[b][3] + 1) & 0xffff); /* a new seed for the slot's particles */
+}
+
 int cw_particles_alive(cw_node n) {
   p3d *d = cw_node_data_t(n, p3d_t);
   if (d) return d->alive;
@@ -1889,6 +1987,10 @@ static const cw_prop p3d_props[] = {
   F(motion_texture, CW_T_STRING, "Flipbook motion vectors: an image the size of `texture` whose red and green say how each pixel moves into the next frame (tools/fx/bake-flipbooks.mjs writes them). The frame in between is drawn by blending two frames along the motion: 16 frames look like 60. Empty = frames just step."),
   R(motion_strength, CW_T_FLOAT, 0, 16, "Scale of the motion vectors (1 = as baked)."),
   F(sort, CW_T_BOOL, "ALPHA: draw back to front (GPU bitonic sort)."),
+  R(bursts, CW_T_INT, 0, MAX_BURSTS,
+    "0: the emission window (emitting, one_shot). 1..32: burst slots: amount / bursts particles a slot, each fired by "
+    "cw_particles_burst at its own place and direction, once, the oldest slot reused: one system and one draw for a pool "
+    "of one-shot effects (hits, muzzle flashes) instead of a system each."),
   F(trail_length, CW_T_INT, "Trail samples per particle, one per tick (0 = none, max 64)."),
   R(trail_width, CW_T_FLOAT, 0, 1e6, "Trail width at the particle (tapers to 0)."),
   RO(alive, CW_T_INT, "Particles alive now (the CPU's evaluation of the emission function)."),

@@ -315,3 +315,5 @@ cw_add_app(fx_pipeline SOURCES fx_pipeline/main.c ASSETS ${CMAKE_CURRENT_SOURCE_
 # baked lighting for weak GPUs: direct light in the lightmaps, unlit BAKED shading, bake-only lights, instanced
 # occluders, the reflection cube, light from the ground under a moving ball, blob shadows and light pools.
 cw_add_app(lightmap_yard SOURCES lightmap_yard/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/lightmap_yard/assets)
+# burst slots: a pool of one-shot sparks as one GPUParticles3D (bursts, cw_particles_burst)
+cw_add_app(fx_bursts SOURCES fx_bursts/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_bursts/assets)

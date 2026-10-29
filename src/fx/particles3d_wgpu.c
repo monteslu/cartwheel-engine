@@ -26,11 +26,13 @@
 
 #include "particles3d_internal.h"
 #include "cartwheel/quality.h"
+#include "cartwheel/profile.h"
 
 #if CW_WGPU
 
 #define SV CW_WGPU_SV
-#define SYS_SIZE 1792
+#define SYS_SIZE 2832 /* 1792, then the burst count (16) and 32 + 32 burst slots (1024) */
+#define SYS_BASE 1808
 #define STEP_STRIDE 256
 #define DRAW_SIZE 352
 #define PASS_STRIDE 256
@@ -43,6 +45,7 @@ static const char WGSL_SYS[] =
     "  turb: vec4f, coll: vec4f, campos: vec4f, depth: vec4f,\n"
     "  vp: mat4x4f, ivp: mat4x4f, proj: mat4x4f,\n"
     "  attr: array<vec4f, 16>, col_inv: array<mat4x4f, 8>, col_m: array<mat4x4f, 8>, col_p: array<vec4f, 8>,\n"
+    "  bursts: vec4u, burst: array<vec4f, 32>, burst_d: array<vec4f, 32>,\n"
     "}\n"
     "struct Step { t: vec4f, h: vec4i, em0: mat4x4f, em1: mat4x4f }\n"
     "struct P { pa: vec4f, vc: vec4f }\n";
@@ -58,7 +61,7 @@ static const char WGSL_SIM[] =
     "@group(0) @binding(6) var nsamp: sampler;\n"
     "@group(0) @binding(7) var depth: texture_2d<f32>;\n"
     "@group(0) @binding(8) var<storage, read> pst: array<P>;\n"
-    "var<private> g_par: bool = false; var<private> g_ppos: vec3f; var<private> g_pvel: vec3f;\n"
+    "var<private> g_par: bool = false; var<private> g_ppos: vec3f; var<private> g_pvel: vec3f; var<private> g_dir: vec3f;\n"
     "fn emit_shape(s: ptr<function, u32>, p: ptr<function, vec3f>, n: ptr<function, vec3f>) {\n"
     "  *p = vec3f(0.0); *n = vec3f(0.0);\n"
     "  let shape = S.a.z;\n"
@@ -86,7 +89,7 @@ static const char WGSL_SIM[] =
     "fn cone(s: ptr<function, u32>) -> vec3f {\n"
     "  let ct = mix(1.0, S.rad.z, prnd(s)); let st_ = sqrt(max(0.0, 1.0 - ct * ct));\n"
     "  let a = prnd(s) * 6.2831853;\n"
-    "  let w = S.dir.xyz; let up = select(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), abs(w.y) < 0.999);\n"
+    "  let w = g_dir; let up = select(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), abs(w.y) < 0.999);\n"
     "  let u = normalize(cross(up, w)); let v = cross(w, u);\n"
     "  return u * (st_ * cos(a)) + v * (st_ * sin(a)) + w * ct;\n"
     "}\n"
@@ -183,23 +186,40 @@ static const char WGSL_SIM[] =
     "  if (iu >= S.a.y) { return; }\n"
     "  let i = i32(iu);\n"
     "  let L = S.life.x;\n"
+    "  let pa = st[iu].pa; let vc = st[iu].vc;\n"
+    "  g_dir = S.dir.xyz;\n"
+    "  var M0 = T.em0; var M1 = T.em1;\n"
+    "  var k = -1; var spawn = 0.0; var age = 0.0; var ok = false;\n"
+    "  let nb = i32(S.bursts.x);\n"
+    "  if (nb > 0) {\n"
+    "    let per = max(i32(S.a.y) / nb, 1); let slot = i / per; let li = i - slot * per;\n"
+    "    var B = vec4f(0.0, 0.0, 0.0, -1.0); var D = vec4f(0.0);\n"
+    "    if (slot < nb) { B = S.burst[slot]; D = S.burst_d[slot]; }\n"
+    "    let off = f32(li) / f32(per) * L * (1.0 - S.life.z);\n"
+    "    let rel = T.t.y - B.w - off;\n"
+    "    k = i32(D.w);\n"
+    "    ok = slot < nb && li < i32(S.bursts.y) && B.w >= 0.0 && rel >= 0.0 && rel < L;\n"
+    "    spawn = B.w + off;\n"
+    "    age = rel;\n"
+    "    M1[3] = vec4f(B.xyz, 1.0); M0 = M1;\n"
+    "    if (dot(D.xyz, D.xyz) > 0.0) { g_dir = normalize(D.xyz); }\n"
+    "  } else {\n"
     "  let off = f32(i) / f32(S.a.y) * L * (1.0 - S.life.z);\n"
     "  let rel = T.t.y - off;\n"
-    "  let pa = st[iu].pa; let vc = st[iu].vc;\n"
-    "  var k = -1;\n"
     "  if (rel >= 0.0) { k = i32(floor(rel / L)); }\n"
-    "  let spawn = off + f32(k) * L;\n"
-    "  let ok = k >= 0 && (S.life.w < 0.0 || spawn < S.life.w);\n"
+    "  spawn = off + f32(k) * L;\n"
+    "  ok = k >= 0 && (S.life.w < 0.0 || spawn < S.life.w);\n"
+    "  age = rel - f32(k) * L;\n"
+    "  }\n"
     "  var life = 0.0;\n"
     "  if (ok) { life = plife(S.a.x, L, S.life.y, i, k); }\n"
-    "  let age = rel - f32(k) * L;\n"
     "  var opa: vec4f; var ovc: vec4f;\n"
     "  if (!ok || age >= life) {\n"
     "    opa = vec4f(pa.xyz, -1.0); ovc = vc;\n"
     "  } else if (pa.w < 0.0 || i32(vc.w) != k) {\n"
     "    var s = pseed(S.a.x, i, k); _ = prnd(&s);\n"
     "    let f = clamp((spawn - T.t.x) / max(T.t.y - T.t.x, 1e-6), 0.0, 1.0);\n"
-    "    let M = T.em0 * (1.0 - f) + T.em1 * f;\n"
+    "    let M = M0 * (1.0 - f) + M1 * f;\n"
     "    var lp: vec3f; var ln: vec3f; emit_shape(&s, &lp, &ln);\n"
     "    let d = cone(&s);\n"
     "    let sp = mix(S.speed.x, S.speed.y, prnd(&s));\n"
@@ -870,6 +890,7 @@ static void end_cp(WGPUComputePassEncoder *cp) {
 }
 
 bool cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, WGPUComputePassEncoder *shared_cp) {
+  CW_PROFILE_SCOPE("psys.wg.frame");
   cw__psys *r = d->rt;
   if (r->idle && r->nsteps == 0 && !d->gpu_stats) { /* nothing alive, nothing to simulate (p3d_fixed) */
     ft->stats.systems++;
@@ -993,7 +1014,19 @@ bool cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, W
       memcpy(f + 280, cm, 64 * (size_t)nc);
       memcpy(f + 408, cpar, 16 * (size_t)nc);
     }
-    cw__wg_write(w->sys_u, 0, sys, sizeof sys);
+    {
+      int nb = CW_CLAMP(d->bursts, 0, MAX_BURSTS);
+      uint32_t *bu = (uint32_t *)(sys + 448);
+      bu[0] = (uint32_t)nb;
+      bu[1] = nb ? (uint32_t)cw__psys_burst_keep(d) : 0;
+      if (nb) {
+        memcpy(sys + 452, r->burst_p, sizeof(float) * 4 * (size_t)nb);
+        memcpy(sys + 452 + 128, r->burst_d, sizeof(float) * 4 * (size_t)nb);
+      }
+      /* the burst slots only when the system has them: the rest of the struct keeps its zeros */
+      CW_PROFILE_SCOPE("psys.wg.write");
+      cw__wg_write(w->sys_u, 0, sys, nb ? sizeof sys : SYS_BASE);
+    }
     /* steps, with the history slot each one writes */
     uint8_t *steps = cw_frame_alloc((size_t)STEP_STRIDE * (size_t)r->nsteps);
     memset(steps, 0, (size_t)STEP_STRIDE * (size_t)r->nsteps);
@@ -1123,6 +1156,7 @@ bool cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, W
 
 /* the second half: its draws, into the pass's one render pass */
 void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, const cw__wgpu_pass_targets *tg) {
+  CW_PROFILE_SCOPE("psys.wg.draw");
   (void)n;
   cw__psys *r = d->rt;
   pw *w = r->wg;
@@ -1171,7 +1205,7 @@ void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx
   dw[76] = (uint32_t)r->hist_head;
   dw[77] = (uint32_t)r->hist_count;
   dw[78] = (uint32_t)w->trows;
-  cw__wg_write(w->draw_u, 0, du, sizeof du);
+  { CW_PROFILE_SCOPE("psys.wg.write"); cw__wg_write(w->draw_u, 0, du, sizeof du); }
   WGPUTextureView tex = d->texture && *d->texture ? cw__fx_wg_texture_asset(d->texture) : NULL;
   if (!tex) tex = cw__fx_wg_dot();
   cw__wg_entry e[9] = {
@@ -1186,7 +1220,7 @@ void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx
   wgpuRenderPassEncoderSetBindGroup(rp, 0, bg, 0, NULL);
   if (want_trail) {
     wgpuRenderPassEncoderSetPipeline(rp, draw_pipe_for(V_TRAIL, d->blend == BLEND_OPAQUE ? BLEND_ALPHA : d->blend, tg));
-    wgpuRenderPassEncoderDraw(rp, (uint32_t)(2 * w->hist_len), (uint32_t)cw_quality_count(d->amount, "particles"), 0, 0);
+    wgpuRenderPassEncoderDraw(rp, (uint32_t)(2 * w->hist_len), (uint32_t)cw__psys_draw_count(d), 0, 0);
     ft->stats.draw_calls++;
   }
   if (draw_particles) {
@@ -1196,10 +1230,10 @@ void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx
     if (mesh) {
       wgpuRenderPassEncoderSetVertexBuffer(rp, 1, w->mesh_vb, 0, WGPU_WHOLE_SIZE);
       wgpuRenderPassEncoderSetIndexBuffer(rp, w->mesh_ib, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
-      wgpuRenderPassEncoderDrawIndexed(rp, (uint32_t)r->mesh_count, (uint32_t)cw_quality_count(d->amount, "particles"), 0, 0, 0);
+      wgpuRenderPassEncoderDrawIndexed(rp, (uint32_t)r->mesh_count, (uint32_t)cw__psys_draw_count(d), 0, 0, 0);
     } else {
       wgpuRenderPassEncoderSetVertexBuffer(rp, 1, G.quad, 0, WGPU_WHOLE_SIZE);
-      wgpuRenderPassEncoderDraw(rp, 4, (uint32_t)cw_quality_count(d->amount, "particles"), 0, 0);
+      wgpuRenderPassEncoderDraw(rp, 4, (uint32_t)cw__psys_draw_count(d), 0, 0);
     }
     ft->stats.draw_calls++;
   }
