@@ -122,6 +122,15 @@ void cw_particles_restart(cw_node n);
 /* Particles alive now (GPUParticles3D / GPUParticles2D); the same number as
  * the `alive` property. */
 int cw_particles_alive(cw_node n);
+/* A GPUParticles3D with bursts > 0: fire its next burst slot (the oldest
+ * reused) once at world position at, its particles' direction dir (zero:
+ * the system's direction). The slot's amount / bursts particles spawn as a
+ * one-shot of that system would (the same lifetime, explosiveness, shape,
+ * speeds, forces and look), each firing with a new seed. A pool of one-shot
+ * effects becomes one system and one draw, where a system each cost a
+ * simulation pass and a draw whenever any was alive. No-op for another node
+ * or bursts 0. Render only. */
+void cw_particles_burst(cw_node n, t3_vec3 at, t3_vec3 dir);
 
 /* Tree totals, for profilers and debug fields. */
 typedef struct cw_particles_stats {

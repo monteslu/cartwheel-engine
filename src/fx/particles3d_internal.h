@@ -21,6 +21,7 @@ enum { BLEND_ADD, BLEND_ALPHA, BLEND_OPAQUE, BLEND_DISTORT, BLEND_REFRACT };
 #define MAX_ATTR 8
 #define MAX_COLL 8
 #define TRAIL_MAX 64
+#define MAX_BURSTS 32
 
 typedef struct step_rec {
   float t0, t1;   /* sim time relative to the emission start */
@@ -47,6 +48,10 @@ struct cw__psys {
   /* the emission window is over and every particle of it is dead (p3d_fixed):
    * nothing to simulate or draw until the next window */
   bool idle;
+  /* bursts (p3d bursts > 0): each slot fires amount / bursts particles once, from its own place and direction */
+  float burst_p[MAX_BURSTS][4];   /* xyz world position, w start (sim seconds from emit_start; < 0 never fired) */
+  float burst_d[MAX_BURSTS][4];   /* xyz direction (0: the system's), w the slot's fire count (seeds its particles) */
+  int burst_next;
   /* curves */
   GLuint curve_tex;
   const char *baked_ramp, *baked_size;
@@ -111,6 +116,7 @@ typedef struct p3d {
   const char *motion_texture; /* flipbook: motion vector sheet (red, green = motion to the next frame), frames are blended along it */
   float motion_strength;        /* its scale (1 = as the baker wrote it) */
   bool sort;
+  int bursts;                /* > 0: burst slots (cw_particles_burst) instead of the emission window */
   int trail_length;
   float trail_width;
   /* stats */
@@ -123,6 +129,11 @@ typedef struct p3d {
 
 /* the runtime of a GPUParticles3D node (NULL for any other node) */
 cw__psys *cw__psys_of(cw_node n);
+/* instances a system draws: with bursts every slot's (each slot thins its own particles at emission), else the
+ * effects preset's share of amount */
+int cw__psys_draw_count(const p3d *d);
+/* bursts: particles a slot keeps at the effects preset */
+int cw__psys_burst_keep(const p3d *d);
 /* the GPUParticles3D data of a node (NULL for any other node) */
 p3d *cw__psys_data(cw_node n);
 /* particles3d.c helpers the WebGPU path uses */

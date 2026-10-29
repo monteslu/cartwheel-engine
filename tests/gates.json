@@ -3087,6 +3087,18 @@
     "note": "cwbake twice: identical bytes; the same fingerprint as the runtime bake; lightmap_room loading the .cwlm renders the same frame without baking; control: another seed differs"
   },
   {
+    "name": "fx-bursts",
+    "webgpu": { "vsGl": 0.004, "controls": [{ "env": { "FX_BURSTS_OFF": "1" } }] },
+    "app": "fx_bursts",
+    "frames": 60,
+    "maxGt16": 0.005,
+    "fields": ["fx.tick", "fx.bursts.alive", "fx.bursts.fired", "fx.systems"],
+    "expect": { "fx.systems": 1, "fx.bursts.fired": 7 },
+    "controlFrames": 60,
+    "controlEnv": { "FX_BURSTS_OFF": "1" },
+    "note": "burst slots: eight slots of 40 sparks in one GPUParticles3D, the next fired every 9 ticks round a ring and thrown outward (cw_particles_burst), up to eight alive at once from one simulation and one draw; the CPU alive count and the frame agree on every host. Control: FX_BURSTS_OFF=1 (bursts 0: nothing fires) must change the frame"
+  },
+  {
     "name": "lightmap-yard",
     "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "YARD_LIT": "1" } }] },
     "app": "lightmap_yard",
