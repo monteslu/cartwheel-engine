@@ -118,7 +118,7 @@ struct cw_pipeline {
    * anti-aliasing, inside the tonemap pass; each fused step rounds its value
    * as the target the separate pass wrote would (RGBA16F, RGBA8), so the
    * picture is the same with up to five full-screen passes fewer */
-  bool fuse_fog, fuse_bloom, fuse_grade, fuse_lens, fuse_lens_tm;
+  bool fuse_fog, fuse_bloom, fuse_grade, fuse_lens, fuse_lens_tm, fuse_distort;
   const cw_rt *bloom_glow;   /* fuse_bloom: bloom's glow, released by the tonemap pass */
   float bloom_texel[2], bloom_norm;
 };
@@ -129,6 +129,10 @@ bool cw__fusion_raw(void);
 /* the fused passes' rounding helpers and the lens step, GLSL and WGSL
  * (pipeline_post.c); the lens step needs the common helpers (luma, hash01) */
 const char *cw__fuse_round_glsl(void);
+/* src/fx/distort.c: the distortion buffer this view made (NULL when none), taken by the tonemap pass when
+ * the distortion is fused into it (PostProcess fuse_distortion), and the apply's uniforms */
+const cw_rt *cw__fx_take_distortion(cw_tree *t);
+void cw__fx_distortion_uniforms(cw_pass_ctx *ctx, unsigned prog, bool on);
 const char *cw__fuse_round_wgsl(void);
 const char *cw__post_common_glsl(void);
 const char *cw__fuse_lens_glsl(void);

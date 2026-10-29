@@ -819,7 +819,7 @@ static const char *TM_FS = S(
 /* the tonemap pass's main, also the fused pass's middle (FINAL_FS) */
 static const char *TM_MAIN = S(
   void main() {
-    vec4 c = texture(u_src, v_uv);
+    vec4 c = TM_SRC;
     TM_FUSED_IN
     vec3 x = max(c.rgb, vec3(0.0));
     if (u_curve == 0) x = clamp(x * toneMappingExposure, 0.0, 1.0);
@@ -969,21 +969,81 @@ void cw__lens_uniforms(cw_pass_ctx *ctx, unsigned prog, bool ca) {
   cw_pass_uniform1i(prog, "u_frame", (int)(ctx->frame & 0x7fffffff));
 }
 
-/* the tonemap program: plain, or with bloom's composite, the grade and / or
- * the lens fused in */
-static unsigned tm_variant(bool bloom, bool grade, bool lens) {
-  static unsigned progs[8];
-  int k = (bloom ? 1 : 0) | (grade ? 2 : 0) | (lens ? 4 : 0);
+/* the distortion apply (src/fx/distort.c's) as the tonemap pass's read of its source: the same guards, the
+ * value rounded as the separate pass's RGBA16F target rounded it */
+static const char *TM_DIST_GLSL =
+    "uniform sampler2D u_dist, u_depth;\n"
+    "uniform vec4 u_dp;    /* dispersion, how much nearer than the haze a sample may be, max shift, on */\n"
+    "uniform vec4 u_dsoft; /* near, far, ortho */\n"
+    "float dlin(float d) { return u_dsoft.z > 0.5 ? u_dsoft.x + d * (u_dsoft.y - u_dsoft.x) : u_dsoft.x * u_dsoft.y / (u_dsoft.y - d * (u_dsoft.y - u_dsoft.x)); }\n"
+    "vec4 distort_src(vec2 uv) {\n"
+    "  vec4 s0 = texture(u_src, uv);\n"
+    "  if (u_dp.w < 0.5) return s0;\n"
+    "  vec4 d = texture(u_dist, uv);\n"
+    "  if (d.a <= 1e-5) return s0;\n"
+    "  float hz = d.b / d.a;\n"
+    "  if (dlin(texture(u_depth, uv).r) < hz - u_dp.y) return s0;\n"
+    "  vec2 off = clamp(d.rg, vec2(-u_dp.z), vec2(u_dp.z));\n"
+    "  vec2 uv2 = uv + off;\n"
+    "  if (dlin(texture(u_depth, uv2).r) < hz - u_dp.y) return s0;\n"
+    "  vec3 c = texture(u_src, uv2).rgb;\n"
+    "  if (u_dp.x > 0.0) c = vec3(texture(u_src, uv2 + off * u_dp.x).r, c.g, texture(u_src, uv2 - off * u_dp.x).b);\n"
+    "  return vec4(q16(c), s0.a);\n"
+    "}\n";
+static const char *TM_DIST_WGSL =
+    "@group(0) @binding(4) var u_dist: texture_2d<f32>;\n"
+    "@group(0) @binding(5) var u_depth: texture_2d<f32>;\n"
+    "fn distort_src(uv: vec2f) -> vec4f {\n"
+    "  let s0 = textureSampleLevel(u_src, cw_linear, uv, 0.0);\n"
+    "  if (u.u_dp.w < 0.5) { return s0; }\n"
+    "  let d = textureSampleLevel(u_dist, cw_linear, uv, 0.0);\n"
+    "  if (d.a <= 1e-5) { return s0; }\n"
+    "  let hz = d.b / d.a;\n"
+    "  if (cw_load(u_depth, uv).r < hz - u.u_dp.y) { return s0; }\n"
+    "  let off = clamp(d.rg, vec2f(-u.u_dp.z), vec2f(u.u_dp.z));\n"
+    "  let uv2 = uv + off;\n"
+    "  if (cw_load(u_depth, uv2).r < hz - u.u_dp.y) { return s0; }\n"
+    "  var c = textureSampleLevel(u_src, cw_linear, uv2, 0.0).rgb;\n"
+    "  if (u.u_dp.x > 0.0) {\n"
+    "    c = vec3f(textureSampleLevel(u_src, cw_linear, uv2 + off * u.u_dp.x, 0.0).r, c.g,\n"
+    "              textureSampleLevel(u_src, cw_linear, uv2 - off * u.u_dp.x, 0.0).b);\n"
+    "  }\n"
+    "  return vec4f(q16(c), s0.a);\n"
+    "}\n";
+
+/* a copy of src with `from` replaced by `to` (once; the source must hold it) */
+static const char *swap_once(char *buf, size_t cap, const char *src, const char *from, const char *to) {
+  const char *at = strstr(src, from);
+  if (!at) {
+    snprintf(buf, cap, "%s", src);
+    return buf;
+  }
+  snprintf(buf, cap, "%.*s%s%s", (int)(at - src), src, to, at + strlen(from));
+  return buf;
+}
+
+/* the tonemap program: plain, or with bloom's composite, the grade, the lens and / or the distortion fused in */
+static unsigned tm_variant(bool bloom, bool grade, bool lens, bool dist) {
+  static unsigned progs[16];
+  int k = (bloom ? 1 : 0) | (grade ? 2 : 0) | (lens ? 4 : 0) | (dist ? 8 : 0);
   if (progs[k]) return progs[k];
-  static const char *const names[8] = { "tonemap", "tonemap+bloom", "tonemap+grade", "tonemap+bloom+grade",
-                                        "tonemap+lens", "tonemap+bloom+lens", "tonemap+grade+lens", "tonemap+bloom+grade+lens" };
+  static const char *const names[16] = { "tonemap", "tonemap+bloom", "tonemap+grade", "tonemap+bloom+grade",
+                                         "tonemap+lens", "tonemap+bloom+lens", "tonemap+grade+lens", "tonemap+bloom+grade+lens",
+                                         "tonemap+dist", "tonemap+bloom+dist", "tonemap+grade+dist", "tonemap+bloom+grade+dist",
+                                         "tonemap+lens+dist", "tonemap+bloom+lens+dist", "tonemap+grade+lens+dist",
+                                         "tonemap+bloom+grade+lens+dist" };
   if (!k)
-    return progs[0] = prog_of("tonemap", "#define TM_FUSED_IN\n#define TM_FUSED_OUT\n#define TM_FUSED_LENS\n", TM_FS, TM_MAIN,
+    return progs[0] = prog_of("tonemap", "#define TM_SRC texture(u_src, v_uv)\n#define TM_FUSED_IN\n#define TM_FUSED_OUT\n#define TM_FUSED_LENS\n", TM_FS, TM_MAIN,
                               WGSL_TM, NULL, NULL);
   static char buf[49152];
   if (cw_gpu_backend() == CW_GPU_WEBGPU) {
-    snprintf(buf, sizeof buf, "%s%s%s%s%s%s%s%s%s%s%s", WGSL_TM_FUSED_HEAD, WGSL_COMMON, WGSL_BL_PREFILTER, cw__fuse_round_wgsl(),
-             WGSL_FUSE_BLOOM_GRADE, WGSL_FUSE_LENS, WGSL_TM_FNS, WGSL_TM_FUSED_FS, bloom ? "c = fuse_bloom(c, uv);\n" : "",
+    static char head[4096], fs[1024];
+    const char *h = dist ? swap_once(head, sizeof head, WGSL_TM_FUSED_HEAD, "u_frame: i32 };", "u_frame: i32, u_dp: vec4f, u_dsoft: vec4f };")
+                         : WGSL_TM_FUSED_HEAD;
+    const char *fsrc = dist ? swap_once(fs, sizeof fs, WGSL_TM_FUSED_FS, "textureSampleLevel(u_src, cw_linear, uv, 0.0)", "distort_src(uv)")
+                            : WGSL_TM_FUSED_FS;
+    snprintf(buf, sizeof buf, "%s%s%s%s%s%s%s%s%s%s%s%s", h, WGSL_COMMON, WGSL_BL_PREFILTER, cw__fuse_round_wgsl(),
+             WGSL_FUSE_BLOOM_GRADE, WGSL_FUSE_LENS, WGSL_TM_FNS, dist ? TM_DIST_WGSL : "", fsrc, bloom ? "c = fuse_bloom(c, uv);\n" : "",
              WGSL_TM_FUSED_CURVES, "");
     /* the steps after the curve */
     size_t n = strlen(buf);
@@ -991,9 +1051,10 @@ static unsigned tm_variant(bool bloom, bool grade, bool lens) {
              lens ? "o = fuse_lens(o, uv, pos);\n" : "");
     return progs[k] = cw_pass_program_wgsl(names[k], buf);
   }
-  snprintf(buf, sizeof buf, "#define TM_FUSED_IN %s\n#define TM_FUSED_OUT %s\n#define TM_FUSED_LENS %s\n%s%s%s%s%s%s%s%s",
-           bloom ? "c = fuse_bloom(c);" : "", grade ? "x = fuse_grade(x);" : "", lens ? "o = fuse_lens(o);" : "",
-           cw__fusion_raw() ? "#define FUSE_RAW 1\n" : "", GLSL_COMMON, BL_PREFILTER, TM_FS, FUSE_ROUND, FUSE_FS, FUSE_LENS, TM_MAIN);
+  snprintf(buf, sizeof buf, "#define TM_SRC %s\n#define TM_FUSED_IN %s\n#define TM_FUSED_OUT %s\n#define TM_FUSED_LENS %s\n%s%s%s%s%s%s%s%s%s",
+           dist ? "distort_src(v_uv)" : "texture(u_src, v_uv)", bloom ? "c = fuse_bloom(c);" : "", grade ? "x = fuse_grade(x);" : "",
+           lens ? "o = fuse_lens(o);" : "", cw__fusion_raw() ? "#define FUSE_RAW 1\n" : "", GLSL_COMMON, BL_PREFILTER, TM_FS, FUSE_ROUND,
+           FUSE_FS, FUSE_LENS, dist ? TM_DIST_GLSL : "", TM_MAIN);
   return progs[k] = cw_pass_program(names[k], buf);
 }
 
@@ -1001,13 +1062,14 @@ static void tonemap_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
   const cw_post_settings *s = ctx->settings;
   cw_pipeline *pl = ctx->pipeline;
-  bool bloom = pl->fuse_bloom && pl->bloom_glow, grade = pl->fuse_grade, lens = pl->fuse_lens_tm;
+  bool bloom = pl->fuse_bloom && pl->bloom_glow, grade = pl->fuse_grade, lens = pl->fuse_lens_tm, dist = pl->fuse_distort;
   int n = 0;
   float dmin[3], dmax[3];
   unsigned lut = grade ? cw__lut_texture(s->grade_lut, &n, dmin, dmax) : 0;
   if (grade && !lut) grade = false;
-  unsigned prog = tm_variant(bloom, grade, lens);
+  unsigned prog = tm_variant(bloom, grade, lens, dist);
   if (!prog) return;
+  const cw_rt *dbuf = dist ? cw__fx_take_distortion(ctx->tree) : NULL;
   cw_pass_use(prog);
   cw_pass_bind_texture(0, ctx->src->tex);
   cw_pass_uniform1i(prog, "u_src", 0);
@@ -1029,6 +1091,13 @@ static void tonemap_exec(cw_pass_ctx *ctx, void *u) {
    * dummy 3D texture the program never samples. */
   else if (cw_gpu_backend() == CW_GPU_WEBGPU) cw_pass_bind_texture_3d(2, 0);
   if (lens) cw__lens_uniforms(ctx, prog, false);
+  if (dist) { /* units 3 and 4 (WebGPU bindings 4 and 5): the buffer and the depth; none made this frame: off */
+    cw_pass_bind_texture(3, dbuf ? dbuf->tex : ctx->src->tex);
+    cw_pass_uniform1i(prog, "u_dist", 3);
+    cw_pass_bind_texture(4, ctx->depth_tex ? ctx->depth_tex : ctx->src->tex);
+    cw_pass_uniform1i(prog, "u_depth", 4);
+    cw__fx_distortion_uniforms(ctx, prog, dbuf && ctx->depth_tex);
+  }
   cw_pass_fullscreen();
   if (grade && cw_gpu_backend() != CW_GPU_WEBGPU) {
     glBindTexture(GL_TEXTURE_3D, 0);
