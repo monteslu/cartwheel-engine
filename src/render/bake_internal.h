@@ -14,6 +14,7 @@ typedef struct cw__light {
   t3_color color;           /* colour x energy */
   float range, decay;
   float angle, penumbra;    /* spot */
+  bool direct;              /* bake_direct: the lightmaps keep its direct light too */
 } cw__light;
 bool cw__light3d_bake_info(cw_node n, cw__light *out);
 
@@ -23,10 +24,11 @@ typedef struct cw__mesh_bake {
   t3_mesh *mesh;            /* its three.c mesh (world matrix: mesh->base.matrix_world) */
   t3_color albedo, emissive;
   float scale;              /* lightmap_scale */
+  bool instanced;           /* an instanced mesh: occludes and bounces in the bake, gets no lightmap */
 } cw__mesh_bake;
 bool cw__mesh3d_bake_info(cw_node n, cw__mesh_bake *out);
 /* the baked geometry (with uv1) and lightmap for a mesh */
-void cw__mesh3d_set_lightmap(cw_node n, t3_geometry *g, t3_texture *lm, float intensity);
+void cw__mesh3d_set_lightmap(cw_node n, t3_geometry *g, t3_texture *lm, float intensity, bool baked);
 /* the WorldEnvironment's ambient and hemisphere light (colour x energy) */
 void cw__world_env_bake(cw_tree *t, t3_color *ambient, t3_color *sky, t3_color *ground);
 

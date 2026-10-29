@@ -20,12 +20,13 @@
 #endif
 
 #define MAGIC 0x4d4c5743u /* "CWLM" */
-#define VERSION 2u
+#define VERSION 3u /* 3: the reflection cube; 2 still loads */
 
 cw_lightmap_settings cw_lightmap_settings_default(void) {
   return (cw_lightmap_settings){ .texel_density = 8, .min_size = 8, .max_size = 1024, .padding = 2, .samples = 64,
                                  .bounces = 2, .seed = 1, .probe_spacing = 2, .probe_samples = 128, .intensity = 1,
-                                 .denoise = 2 };
+                                 .denoise = 2, .direct_samples = 1, .shadow_softness = 0, .reflection_size = 0,
+                                 .reflection_origin = { 0, 1.5f, 0 } };
 }
 
 /* ── the data ───────────────────────────────────────────────────────── */
@@ -45,6 +46,16 @@ struct cw_lightmap_data {
   int nx, ny, nz;
   float lo[3], hi[3];
   float *sh;                /* nx * ny * nz * 27 */
+  int cube_size;            /* the reflection cube's face side (0 = none) */
+  uint16_t *cube;           /* 6 faces x cube_size^2 x rgba halves, three.js's face order (+x -x +y -y +z -z) */
+  t3_texture *cube_tex;     /* made on first use (cw_lightmap_reflection) */
+  float cube_scale;
+  /* cw_lightmap_irradiance_below: the applied meshes' upward-facing triangles, world space, in an XZ grid */
+  struct below_tri { float p[9]; float uv[6]; int rec; } *btris;
+  int nbtris;
+  float glo[2], gcell;
+  int gw, gh;
+  int *gstart, *gidx;       /* gw * gh + 1 offsets, then triangle indices */
   uint8_t *bytes;
   size_t len;
   cw_lightmap_info info;
@@ -62,6 +73,11 @@ void cw_lightmap_free(cw_lightmap_data *d) {
   if (!d) return;
   data_free_recs(d);
   cw_free(d->sh);
+  cw_free(d->cube);
+  if (d->cube_tex) t3_release(d->cube_tex);
+  cw_free(d->btris);
+  cw_free(d->gstart);
+  cw_free(d->gidx);
   cw_free(d->bytes);
   cw_free(d);
 }
@@ -134,6 +150,11 @@ static void serialize(cw_lightmap_data *d) {
     for (int a = 0; a < 3; a++) put_f32(&w, d->hi[a]);
     for (int k = 0; k < d->nx * d->ny * d->nz * 27; k++) put_f32(&w, d->sh[k]);
   }
+  put_u32(&w, (uint32_t)d->cube_size);
+  for (int k = 0; k < 6 * d->cube_size * d->cube_size * 4; k++) {
+    uint8_t b[2] = { (uint8_t)d->cube[k], (uint8_t)(d->cube[k] >> 8) };
+    put(&w, b, 2);
+  }
   cw_free(d->bytes);
   d->bytes = w.p;
   d->len = w.n;
@@ -161,7 +182,8 @@ static float get_f32(rbuf *r) {
 
 cw_lightmap_data *cw_lightmap_parse(const void *bytes, size_t len) {
   rbuf r = { bytes, len, 0, false };
-  if (get_u32(&r) != MAGIC || get_u32(&r) != VERSION) {
+  uint32_t magic = get_u32(&r), version = get_u32(&r);
+  if (magic != MAGIC || (version != VERSION && version != 2u)) {
     cw_error("lightmap: not a .cwlm file (or another version)");
     return NULL;
   }
@@ -204,6 +226,20 @@ cw_lightmap_data *cw_lightmap_parse(const void *bytes, size_t len) {
       size_t k = (size_t)d->nx * d->ny * d->nz * 27;
       d->sh = cw_alloc(k * sizeof(float), CW_MEM_RENDER);
       for (size_t i = 0; i < k; i++) d->sh[i] = get_f32(&r);
+    }
+  }
+  if (!r.bad && version >= 3u) {
+    int cs = (int)get_u32(&r);
+    if (cs < 0 || cs > 1024) r.bad = true;
+    else if (cs > 0) {
+      d->cube_size = cs;
+      size_t k = (size_t)6 * cs * cs * 4;
+      d->cube = cw_alloc(k * sizeof(uint16_t), CW_MEM_RENDER);
+      for (size_t i = 0; i < k; i++) {
+        uint8_t b[2] = { 0 };
+        get(&r, b, 2);
+        d->cube[i] = (uint16_t)(b[0] | b[1] << 8);
+      }
     }
   }
   if (r.bad) {
@@ -270,6 +306,7 @@ typedef struct lm_mesh {
   uint8_t *inside;          /* the texel centre sits inside other geometry (its rays mostly hit back faces) */
   float *tp, *tn;           /* texel world position, normal */
   float *ed, *ei, *b;       /* direct irradiance, indirect irradiance, outgoing radiance (rgb) */
+  float *ebd;               /* the direct irradiance of the bake_direct lights (kept in the lightmap) */
   float *ei_next;
 } lm_mesh;
 
@@ -284,6 +321,13 @@ typedef struct baker {
   const cw_lightmap_settings *s;
   CW_ARRAY(lm_mesh) meshes;
   CW_ARRAY(cw__light) lights;
+  bool any_direct;          /* a light with bake_direct */
+  /* instanced STATIC meshes: occluders (and bouncers) with no lightmap, one radiance per triangle */
+  CW_ARRAY(float) occ_pos;  /* 9 floats a triangle, world */
+  CW_ARRAY(float) occ_alb;  /* 3 a triangle: albedo (material x vertex x instance colour) */
+  CW_ARRAY(float) occ_emi;  /* 3 a triangle */
+  float *occ_rad;           /* 3 a triangle: outgoing radiance */
+  int occ_count;
   lm_bvh bvh;
   sky_table sky;
   float eps;
@@ -320,13 +364,68 @@ static uint64_t geometry_sig(const t3_geometry *g) {
 
 typedef struct gather_ctx { baker *b; cw_node root; } gather_ctx;
 
+/* an instanced STATIC mesh: every instance's triangles occlude and bounce light in the bake (its instances share
+ * one geometry, so it gets no lightmap of its own and stays lit in real time). Albedo per triangle: the
+ * material's colour x the triangle's mean vertex colour (when the material uses them) x the instance's colour. */
+static void gather_instanced(baker *b, const cw__mesh_bake *mb) {
+  t3_instanced_mesh *im = (t3_instanced_mesh *)mb->mesh;
+  t3_mesh *mesh = mb->mesh;
+  if (!mesh->geometry || !im->instance_matrix || im->count <= 0) return;
+  t3_geometry *ni = t3_geometry_to_non_indexed(mesh->geometry);
+  const t3_attribute *pa = ni->attributes[T3_ATTR_POSITION], *ca = ni->attributes[T3_ATTR_COLOR];
+  if (!pa || pa->type != T3_FLOAT32 || pa->count < 3) {
+    t3_release(ni);
+    return;
+  }
+  const t3_material *mat = mesh->material_count ? mesh->materials[0] : NULL;
+  bool vcol = mat && mat->vertex_colors && ca && ca->type == T3_FLOAT32 && ca->item_size >= 3;
+  t3_color mc = mat ? mat->color : (t3_color){ 1, 1, 1 };
+  float ek = mat ? mat->emissive_intensity : 0;
+  t3_color me = mat ? (t3_color){ mat->emissive.r * ek, mat->emissive.g * ek, mat->emissive.b * ek } : (t3_color){ 0, 0, 0 };
+  const float *P = pa->array, *C = vcol ? ca->array : NULL;
+  const float *IM = im->instance_matrix->array;
+  const float *IC = im->instance_color ? im->instance_color->array : NULL;
+  int tris = pa->count / 3, cs = vcol ? ca->item_size : 0, n = CW_MIN(im->count, im->instance_matrix->count);
+  for (int i = 0; i < n; i++) {
+    t3_mat4 inst, w;
+    memcpy(inst.e, IM + (size_t)i * 16, sizeof inst.e);
+    if (inst.e[15] == 0) continue; /* a hidden (zero) instance */
+    t3_mat4_multiply(&w, &mesh->base.matrix_world, &inst);
+    float ic[3] = { 1, 1, 1 };
+    if (IC) for (int a = 0; a < 3; a++) ic[a] = IC[i * 3 + a];
+    for (int t = 0; t < tris; t++) {
+      for (int k = 0; k < 3; k++) {
+        float p[3];
+        mat_apply(&w, P + (t * 3 + k) * 3, p);
+        for (int a = 0; a < 3; a++) cw_array_push(&b->occ_pos, p[a]);
+      }
+      float al[3] = { mc.r, mc.g, mc.b };
+      if (C)
+        for (int a = 0; a < 3; a++) al[a] *= (C[(t * 3) * cs + a] + C[(t * 3 + 1) * cs + a] + C[(t * 3 + 2) * cs + a]) / 3.0f;
+      for (int a = 0; a < 3; a++) cw_array_push(&b->occ_alb, CW_CLAMP(al[a] * ic[a], 0.0f, 1.0f));
+      cw_array_push(&b->occ_emi, me.r);
+      cw_array_push(&b->occ_emi, me.g);
+      cw_array_push(&b->occ_emi, me.b);
+      b->occ_count++;
+    }
+  }
+  t3_release(ni);
+}
+
 static bool gather_node(cw_node n, void *user) {
   gather_ctx *g = user;
   baker *b = g->b;
   cw__light l;
-  if (cw__light3d_bake_info(n, &l)) cw_array_push(&b->lights, l);
+  if (cw__light3d_bake_info(n, &l)) {
+    cw_array_push(&b->lights, l);
+    b->any_direct |= l.direct;
+  }
   cw__mesh_bake mb;
   if (!cw__mesh3d_bake_info(n, &mb) || !mb.is_static) return true;
+  if (mb.instanced) {
+    gather_instanced(b, &mb);
+    return true;
+  }
   t3_mesh *mesh = mb.mesh;
   t3_geometry *ni = t3_geometry_to_non_indexed(mesh->geometry);
   const t3_attribute *pa = ni->attributes[T3_ATTR_POSITION], *na = ni->attributes[T3_ATTR_NORMAL];
@@ -456,9 +555,39 @@ static float falloff(float d, float cutoff, float decay) {
   return f;
 }
 
-/* direct irradiance at p (normal n) from the bake lights, shadow tested */
-static void direct_at(const baker *b, const float p[3], const float n[3], float out[3], long long *rays) {
+/* the share of `samples` shadow rays from o toward a light that reach it: one ray at the light's centre, or
+ * (shadow_softness > 0) rays to points of a disc round it whose radius is softness x the distance (a
+ * directional light: softness radians), jittered per texel by rng */
+static float visibility(const baker *b, const float o[3], const float L[3], float dist, cw_rng *rng, long long *rays) {
+  int S = rng ? CW_MAX(b->s->direct_samples, 1) : 1;
+  float soft = b->s->shadow_softness;
+  if (S == 1 || soft <= 0) {
+    (*rays)++;
+    return lm_bvh_any(&b->bvh, o, L, 0, dist - b->eps) ? 0.0f : 1.0f;
+  }
+  float t[3], bt[3];
+  onb(L, t, bt);
+  int lit = 0;
+  for (int i = 0; i < S; i++) {
+    /* a point of the unit disc (concentric: stratified by i) */
+    float r = sqrtf(((float)i + cw_rng_float(rng)) / (float)S) * soft, a = CW_TAU * cw_rng_float(rng), sa, ca;
+    cw_sincos(a, &sa, &ca);
+    float d[3];
+    for (int k = 0; k < 3; k++) d[k] = L[k] + (t[k] * ca + bt[k] * sa) * r;
+    float l = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    for (int k = 0; k < 3; k++) d[k] /= l;
+    (*rays)++;
+    lit += !lm_bvh_any(&b->bvh, o, d, 0, dist * l - b->eps);
+  }
+  return (float)lit / (float)S;
+}
+
+/* direct irradiance at p (normal n) from the bake lights, shadow tested: out from every one, out_direct (when
+ * not NULL) from the bake_direct ones only */
+static void direct_at(const baker *b, const float p[3], const float n[3], float out[3], float *out_direct, cw_rng *rng,
+                      long long *rays) {
   out[0] = out[1] = out[2] = 0;
+  if (out_direct) out_direct[0] = out_direct[1] = out_direct[2] = 0;
   float o[3] = { p[0] + n[0] * b->eps, p[1] + n[1] * b->eps, p[2] + n[2] * b->eps };
   for (int i = 0; i < b->lights.count; i++) {
     const cw__light *l = &b->lights.data[i];
@@ -483,12 +612,17 @@ static void direct_at(const baker *b, const float p[3], const float n[3], float 
     }
     float ndl = n[0] * L[0] + n[1] * L[1] + n[2] * L[2];
     if (ndl <= 0 || f <= 0) continue;
-    (*rays)++;
-    if (lm_bvh_any(&b->bvh, o, L, 0, dist - b->eps)) continue;
-    float k = f * ndl;
+    float vis = visibility(b, o, L, dist, rng, rays);
+    if (vis <= 0) continue;
+    float k = f * ndl * vis;
     out[0] += l->color.r * k;
     out[1] += l->color.g * k;
     out[2] += l->color.b * k;
+    if (out_direct && l->direct) {
+      out_direct[0] += l->color.r * k;
+      out_direct[1] += l->color.g * k;
+      out_direct[2] += l->color.b * k;
+    }
   }
 }
 
@@ -507,6 +641,13 @@ static void trace(const baker *b, const float o[3], const float d[3], float out[
     return;
   }
   const lm_tri *t = &b->bvh.tris[h.tri];
+  if (t->mesh < 0) { /* an instanced occluder: its triangle's radiance */
+    const float *r = b->occ_rad + (size_t)t->tri * 3;
+    out[0] = r[0];
+    out[1] = r[1];
+    out[2] = r[2];
+    return;
+  }
   const lm_mesh *m = &b->meshes.data[t->mesh];
   const float *tc = m->uw.tex + t->tri * 6;
   float w0 = 1 - h.u - h.v;
@@ -540,7 +681,9 @@ static void rows_fn(int begin, int end, int worker, void *ctx) {
       if (m->texel_tri[t] < 0) continue;
       const float *p = m->tp + t * 3, *n = m->tn + t * 3;
       if (j->kind == 0) {
-        direct_at(b, p, n, m->ed + t * 3, &rays);
+        cw_rng drng;
+        cw_rng_seed(&drng, seed_of(b, j->mesh, t, 1000));
+        direct_at(b, p, n, m->ed + t * 3, b->any_direct ? m->ebd + t * 3 : NULL, &drng, &rays);
         continue;
       }
       cw_rng rng;
@@ -828,6 +971,100 @@ static void bake_probes(baker *b, cw_lightmap_data *d) {
   cw_free(pos);
 }
 
+/* ── instanced occluders: one radiance a triangle ───────────────────── */
+
+/* what an occluder triangle sends back: albedo / PI x (the direct light at its centre + the sky it sees, 16
+ * cosine rays) + its emission. Taken before the bounces (rays that hit lightmapped surfaces then see their
+ * emission only): occluders are scenery round the baked surfaces, a single bounce off them is what shows. */
+typedef struct occ_job { baker *b; long long *rays; } occ_job;
+static void occ_fn(int begin, int end, int worker, void *ctx) {
+  (void)worker;
+  occ_job *j = ctx;
+  baker *b = j->b;
+  for (int i = begin; i < end; i++) {
+    const float *p = b->occ_pos.data + (size_t)i * 9;
+    float e1[3] = { p[3] - p[0], p[4] - p[1], p[5] - p[2] }, e2[3] = { p[6] - p[0], p[7] - p[1], p[8] - p[2] };
+    float n[3] = { e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0] };
+    float l = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+    float *o = b->occ_rad + (size_t)i * 3;
+    const float *al = b->occ_alb.data + (size_t)i * 3, *em = b->occ_emi.data + (size_t)i * 3;
+    if (l <= 0) {
+      for (int a = 0; a < 3; a++) o[a] = em[a];
+      continue;
+    }
+    for (int a = 0; a < 3; a++) n[a] /= l;
+    float c[3] = { (p[0] + p[3] + p[6]) / 3, (p[1] + p[4] + p[7]) / 3, (p[2] + p[5] + p[8]) / 3 };
+    long long rays = 0;
+    float E[3];
+    direct_at(b, c, n, E, NULL, NULL, &rays);
+    cw_rng rng;
+    cw_rng_seed(&rng, seed_of(b, -2, i, 0));
+    float tg[3], bt[3];
+    onb(n, tg, bt);
+    float org[3] = { c[0] + n[0] * b->eps, c[1] + n[1] * b->eps, c[2] + n[2] * b->eps }, acc[3] = { 0, 0, 0 };
+    enum { R = 16 };
+    for (int k = 0; k < R; k++) {
+      float r1 = cw_rng_float(&rng), r2 = cw_rng_float(&rng), sp, cp, r = sqrtf(r2);
+      cw_sincos(CW_TAU * r1, &sp, &cp);
+      float lx = r * cp, ly = r * sp, lz = sqrtf(CW_MAX(1 - r2, 0.0f));
+      float d[3] = { tg[0] * lx + bt[0] * ly + n[0] * lz, tg[1] * lx + bt[1] * ly + n[1] * lz, tg[2] * lx + bt[2] * ly + n[2] * lz };
+      if (!lm_bvh_any(&b->bvh, org, d, 0, 1e30f)) {
+        float L[3];
+        sky_radiance(b, d, L);
+        for (int a = 0; a < 3; a++) acc[a] += L[a];
+      }
+    }
+    rays += R;
+    for (int a = 0; a < 3; a++) o[a] = al[a] / CW_PI * (E[a] + acc[a] * CW_PI / R) + em[a];
+    j->rays[i] = rays;
+  }
+}
+
+/* ── the reflection cube ────────────────────────────────────────────── */
+
+/* the direction of texel (x, y) of cube face f (+x -x +y -y +z -z, row 0 at the top), as three.js samples a
+ * CubeTexture (it flips x: CubeTexture._needsFlipEnvMap) */
+static void cube_dir(int f, float sc, float tc, float d[3]) {
+  switch (f) {
+  case 0: d[0] = 1, d[1] = -tc, d[2] = -sc; break;
+  case 1: d[0] = -1, d[1] = -tc, d[2] = sc; break;
+  case 2: d[0] = sc, d[1] = 1, d[2] = tc; break;
+  case 3: d[0] = sc, d[1] = -1, d[2] = -tc; break;
+  case 4: d[0] = sc, d[1] = -tc, d[2] = 1; break;
+  default: d[0] = -sc, d[1] = -tc, d[2] = -1; break;
+  }
+  d[0] = -d[0];
+  float l = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+  for (int a = 0; a < 3; a++) d[a] /= l;
+}
+
+typedef struct cube_job { baker *b; float *out; int size; } cube_job;
+static void cube_fn(int begin, int end, int worker, void *ctx) {
+  (void)worker;
+  cube_job *j = ctx;
+  const baker *b = j->b;
+  const float *o = b->s->reflection_origin;
+  int S = j->size;
+  for (int row = begin; row < end; row++) { /* row = face * S + y */
+    int f = row / S, y = row % S;
+    for (int x = 0; x < S; x++) {
+      cw_rng rng;
+      cw_rng_seed(&rng, seed_of(b, -3, row * S + x, 0));
+      float acc[3] = { 0, 0, 0 };
+      enum { SS = 4 };
+      for (int k = 0; k < SS; k++) {
+        float sc = 2 * ((float)x + cw_rng_float(&rng)) / (float)S - 1, tc = 2 * ((float)y + cw_rng_float(&rng)) / (float)S - 1;
+        float d[3], L[3];
+        bool back;
+        cube_dir(f, sc, tc, d);
+        trace(b, o, d, L, &back);
+        for (int a = 0; a < 3; a++) acc[a] += L[a];
+      }
+      for (int a = 0; a < 3; a++) j->out[((size_t)row * S + x) * 3 + a] = acc[a] / SS;
+    }
+  }
+}
+
 /* ── the bake ───────────────────────────────────────────────────────── */
 
 static void baker_free(baker *b) {
@@ -844,9 +1081,14 @@ static void baker_free(baker *b) {
     cw_free(m->ei);
     cw_free(m->b);
     cw_free(m->ei_next);
+    cw_free(m->ebd);
   }
   cw_array_free(&b->meshes);
   cw_array_free(&b->lights);
+  cw_array_free(&b->occ_pos);
+  cw_array_free(&b->occ_alb);
+  cw_array_free(&b->occ_emi);
+  cw_free(b->occ_rad);
   lm_bvh_free(&b->bvh);
   cw_free(b->sky.table);
 }
@@ -879,7 +1121,7 @@ cw_lightmap_data *cw_lightmap_bake(cw_tree *t, cw_node root, const cw_lightmap_s
   }
   sky_build(&b);
   /* the BVH over every static triangle; rays start eps off the surface */
-  int total = 0;
+  int total = b.occ_count;
   float span = 0;
   for (int i = 0; i < b.meshes.count; i++) total += b.meshes.data[i].tri_count;
   lm_tri *tris = cw_alloc((size_t)total * sizeof *tris, CW_MEM_RENDER);
@@ -900,8 +1142,29 @@ cw_lightmap_data *cw_lightmap_bake(cw_tree *t, cw_node root, const cw_lightmap_s
       tr->tri = k;
     }
   }
+  for (int k = 0; k < b.occ_count; k++, at++) {
+    const float *p = b.occ_pos.data + (size_t)k * 9;
+    lm_tri *tr = &tris[at];
+    for (int a = 0; a < 3; a++) {
+      tr->v0[a] = p[a];
+      tr->e1[a] = p[3 + a] - p[a];
+      tr->e2[a] = p[6 + a] - p[a];
+      float ext = fabsf(p[a]);
+      span = ext > span ? ext : span;
+    }
+    tr->mesh = -1;
+    tr->tri = k;
+  }
   lm_bvh_build(&b.bvh, tris, total);
   b.eps = CW_MAX(span * 2e-5f, 1e-3f);
+  if (b.occ_count) {
+    b.occ_rad = cw_calloc((size_t)b.occ_count * 3, sizeof(float), CW_MEM_RENDER);
+    long long *rays = cw_calloc((size_t)b.occ_count, sizeof(long long), CW_MEM_RENDER);
+    occ_job oj = { &b, rays };
+    cw_parallel_for(b.occ_count, 64, occ_fn, &oj);
+    for (int k = 0; k < b.occ_count; k++) b.rays += rays[k];
+    cw_free(rays);
+  }
   /* texels, direct light */
   for (int i = 0; i < b.meshes.count; i++) {
     lm_mesh *m = &b.meshes.data[i];
@@ -911,6 +1174,7 @@ cw_lightmap_data *cw_lightmap_bake(cw_tree *t, cw_node root, const cw_lightmap_s
     m->ei = cw_calloc((size_t)n * 3, sizeof(float), CW_MEM_RENDER);
     m->b = cw_calloc((size_t)n * 3, sizeof(float), CW_MEM_RENDER);
     m->ei_next = cw_calloc((size_t)n * 3, sizeof(float), CW_MEM_RENDER);
+    if (b.any_direct) m->ebd = cw_calloc((size_t)n * 3, sizeof(float), CW_MEM_RENDER);
     b.rays += run_rows(&b, i, 0);
   }
   /* bounces: each gathers the radiance the last one left on the surfaces */
@@ -930,6 +1194,9 @@ cw_lightmap_data *cw_lightmap_bake(cw_tree *t, cw_node root, const cw_lightmap_s
   for (int i = 0; i < b.meshes.count; i++) {
     lm_mesh *m = &b.meshes.data[i];
     denoise(m, m->ei, s.denoise, 1.0f / CW_MAX(s.texel_density, 1e-3f));
+    if (m->ebd) { /* the baked direct light: exact shadow rays (soft ones are already averaged), not smoothed */
+      for (int k = 0; k < m->w * m->h * 3; k++) m->ei[k] += m->ebd[k];
+    }
     dilate(m, m->ei, 4);
     lm_rec r;
     memset(&r, 0, sizeof r);
@@ -952,6 +1219,20 @@ cw_lightmap_data *cw_lightmap_bake(cw_tree *t, cw_node root, const cw_lightmap_s
     d->info.width_total += m->w;
   }
   d->info.meshes = b.meshes.count;
+  if (s.reflection_size > 0) {
+    int S = CW_CLAMP(s.reflection_size, 4, 256);
+    float *rad = cw_alloc((size_t)6 * S * S * 3 * sizeof(float), CW_MEM_RENDER);
+    cube_job cj = { &b, rad, S };
+    cw_parallel_for(6 * S, 1, cube_fn, &cj);
+    b.rays += (long long)6 * S * S * 4;
+    d->cube_size = S;
+    d->cube = cw_alloc((size_t)6 * S * S * 4 * sizeof(uint16_t), CW_MEM_RENDER);
+    for (int k = 0; k < 6 * S * S; k++) {
+      for (int a = 0; a < 3; a++) d->cube[k * 4 + a] = lm_float_to_half(rad[k * 3 + a]);
+      d->cube[k * 4 + 3] = lm_float_to_half(1.0f);
+    }
+    cw_free(rad);
+  }
   bake_probes(&b, d);
   d->info.probes = d->has_sh ? d->nx * d->ny * d->nz : 0;
   d->info.rays = b.rays;
@@ -962,7 +1243,120 @@ cw_lightmap_data *cw_lightmap_bake(cw_tree *t, cw_node root, const cw_lightmap_s
 
 /* ── applying a bake ────────────────────────────────────────────────── */
 
+/* ── the irradiance below a point (cw_lightmap_irradiance_below) ─────── */
+
+static void below_add(cw_lightmap_data *d, t3_geometry *ni, const t3_mat4 *w, const lm_rec *r, int rec) {
+  const t3_attribute *pa = ni->attributes[T3_ATTR_POSITION];
+  if (!pa || pa->type != T3_FLOAT32 || pa->count / 3 != r->tri_count) return;
+  const float *P = pa->array;
+  d->btris = cw_realloc(d->btris, sizeof *d->btris * (size_t)(d->nbtris + r->tri_count), CW_MEM_RENDER);
+  for (int t = 0; t < r->tri_count; t++) {
+    struct below_tri *bt = &d->btris[d->nbtris];
+    for (int k = 0; k < 3; k++) mat_apply(w, P + (t * 3 + k) * 3, bt->p + k * 3);
+    const float *p = bt->p;
+    float e1[3] = { p[3] - p[0], p[4] - p[1], p[5] - p[2] }, e2[3] = { p[6] - p[0], p[7] - p[1], p[8] - p[2] };
+    float nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0];
+    float l = sqrtf(nx * nx + ny * ny + nz * nz);
+    if (l <= 0 || ny / l < 0.3f) continue; /* faces up: ground, a floor, a ramp */
+    memcpy(bt->uv, r->uv2 + t * 6, sizeof bt->uv);
+    bt->rec = rec;
+    d->nbtris++;
+  }
+  cw_free(d->gstart), cw_free(d->gidx);
+  d->gstart = d->gidx = NULL; /* the grid is (re)built on the next query */
+}
+
+static void below_grid(cw_lightmap_data *d) {
+  float lo[2] = { 1e30f, 1e30f }, hi[2] = { -1e30f, -1e30f }, area = 0;
+  for (int i = 0; i < d->nbtris; i++)
+    for (int k = 0; k < 3; k++) {
+      lo[0] = CW_MIN(lo[0], d->btris[i].p[k * 3]), hi[0] = CW_MAX(hi[0], d->btris[i].p[k * 3]);
+      lo[1] = CW_MIN(lo[1], d->btris[i].p[k * 3 + 2]), hi[1] = CW_MAX(hi[1], d->btris[i].p[k * 3 + 2]);
+    }
+  area = (hi[0] - lo[0]) * (hi[1] - lo[1]);
+  /* about four triangles a cell */
+  float cell = sqrtf(CW_MAX(area, 1e-6f) / (float)CW_MAX(d->nbtris / 4, 1));
+  d->gcell = CW_MAX(cell, 1e-3f);
+  d->glo[0] = lo[0], d->glo[1] = lo[1];
+  d->gw = CW_CLAMP((int)((hi[0] - lo[0]) / d->gcell) + 1, 1, 4096);
+  d->gh = CW_CLAMP((int)((hi[1] - lo[1]) / d->gcell) + 1, 1, 4096);
+  int cells = d->gw * d->gh;
+  d->gstart = cw_calloc((size_t)cells + 1, sizeof(int), CW_MEM_RENDER);
+  for (int pass = 0; pass < 2; pass++) {
+    int *fill = pass ? cw_alloc(sizeof(int) * (size_t)cells, CW_MEM_RENDER) : NULL;
+    if (pass) {
+      for (int c = 0; c < cells; c++) d->gstart[c + 1] += d->gstart[c];
+      memcpy(fill, d->gstart, sizeof(int) * (size_t)cells);
+      d->gidx = cw_alloc(sizeof(int) * (size_t)CW_MAX(d->gstart[cells], 1), CW_MEM_RENDER);
+    }
+    for (int i = 0; i < d->nbtris; i++) {
+      const float *p = d->btris[i].p;
+      float x0 = CW_MIN(p[0], CW_MIN(p[3], p[6])), x1 = CW_MAX(p[0], CW_MAX(p[3], p[6]));
+      float z0 = CW_MIN(p[2], CW_MIN(p[5], p[8])), z1 = CW_MAX(p[2], CW_MAX(p[5], p[8]));
+      int cx0 = CW_CLAMP((int)((x0 - lo[0]) / d->gcell), 0, d->gw - 1), cx1 = CW_CLAMP((int)((x1 - lo[0]) / d->gcell), 0, d->gw - 1);
+      int cz0 = CW_CLAMP((int)((z0 - lo[1]) / d->gcell), 0, d->gh - 1), cz1 = CW_CLAMP((int)((z1 - lo[1]) / d->gcell), 0, d->gh - 1);
+      for (int z = cz0; z <= cz1; z++)
+        for (int x = cx0; x <= cx1; x++) {
+          if (pass) d->gidx[fill[z * d->gw + x]++] = i;
+          else d->gstart[z * d->gw + x + 1]++;
+        }
+    }
+    cw_free(fill);
+  }
+}
+
+static void texel_bilinear(const lm_rec *r, float u, float v, float out[3]) {
+  float x = u * (float)r->w - 0.5f, y = v * (float)r->h - 0.5f;
+  int x0 = (int)floorf(x), y0 = (int)floorf(y);
+  float fx = x - (float)x0, fy = y - (float)y0;
+  out[0] = out[1] = out[2] = 0;
+  for (int k = 0; k < 4; k++) {
+    int xx = CW_CLAMP(x0 + (k & 1), 0, r->w - 1), yy = CW_CLAMP(y0 + (k >> 1), 0, r->h - 1);
+    float wgt = ((k & 1) ? fx : 1 - fx) * ((k >> 1) ? fy : 1 - fy);
+    const uint16_t *t = r->texels + ((size_t)yy * r->w + xx) * 4;
+    for (int a = 0; a < 3; a++) out[a] += wgt * lm_half_to_float(t[a]);
+  }
+}
+
+bool cw_lightmap_irradiance_below(const cw_lightmap_data *dc, t3_vec3 pos, t3_color *out) {
+  cw_lightmap_data *d = (cw_lightmap_data *)dc;
+  if (out) *out = (t3_color){ 0, 0, 0 };
+  if (!d || !d->nbtris) return false;
+  if (!d->gstart) below_grid(d);
+  int cx = (int)floorf((pos.x - d->glo[0]) / d->gcell), cz = (int)floorf((pos.z - d->glo[1]) / d->gcell);
+  if (cx < 0 || cz < 0 || cx >= d->gw || cz >= d->gh) return false;
+  int c = cz * d->gw + cx, best = -1;
+  float best_y = -1e30f, bw[3] = { 0, 0, 0 };
+  for (int k = d->gstart[c]; k < d->gstart[c + 1]; k++) {
+    const struct below_tri *t = &d->btris[d->gidx[k]];
+    const float *p = t->p;
+    /* barycentrics in XZ */
+    float ax = p[0], az = p[2], bx = p[3], bz = p[5], qx = p[6], qz = p[8];
+    float den = (bz - qz) * (ax - qx) + (qx - bx) * (az - qz);
+    if (fabsf(den) < 1e-12f) continue;
+    float w0 = ((bz - qz) * (pos.x - qx) + (qx - bx) * (pos.z - qz)) / den;
+    float w1 = ((qz - az) * (pos.x - qx) + (ax - qx) * (pos.z - qz)) / den;
+    float w2 = 1 - w0 - w1;
+    if (w0 < -1e-5f || w1 < -1e-5f || w2 < -1e-5f) continue;
+    float y = w0 * p[1] + w1 * p[4] + w2 * p[7];
+    if (y > pos.y + 1e-3f || y <= best_y) continue;
+    best_y = y, best = d->gidx[k];
+    bw[0] = w0, bw[1] = w1, bw[2] = w2;
+  }
+  if (best < 0) return false;
+  const struct below_tri *t = &d->btris[best];
+  float u = bw[0] * t->uv[0] + bw[1] * t->uv[2] + bw[2] * t->uv[4], v = bw[0] * t->uv[1] + bw[1] * t->uv[3] + bw[2] * t->uv[5];
+  float e[3];
+  texel_bilinear(&d->recs.data[t->rec], u, v, e);
+  if (out) *out = (t3_color){ e[0], e[1], e[2] };
+  return true;
+}
+
 void cw_lightmap_apply(cw_tree *t, cw_node root, const cw_lightmap_data *d, float intensity) {
+  cw_lightmap_apply_shaded(t, root, d, intensity, CW_LIGHTMAP_LIT);
+}
+
+void cw_lightmap_apply_shaded(cw_tree *t, cw_node root, const cw_lightmap_data *d, float intensity, cw_lightmap_shading shading) {
   (void)t;
   for (int i = 0; i < d->recs.count; i++) {
     const lm_rec *r = &d->recs.data[i];
@@ -977,6 +1371,7 @@ void cw_lightmap_apply(cw_tree *t, cw_node root, const cw_lightmap_data *d, floa
       continue;
     }
     t3_geometry *ni = t3_geometry_to_non_indexed(mb.mesh->geometry);
+    below_add((cw_lightmap_data *)d, ni, &mb.mesh->base.matrix_world, r, i);
     t3_attribute *uv2 = t3_attribute_new(T3_FLOAT32, r->uv2, r->tri_count * 3, 2);
     t3_geometry_set_attribute(ni, T3_ATTR_UV1, uv2);
     t3_release(uv2);
@@ -984,10 +1379,56 @@ void cw_lightmap_apply(cw_tree *t, cw_node root, const cw_lightmap_data *d, floa
     tex->mag_filter = T3_LINEAR;
     tex->min_filter = T3_LINEAR;
     tex->wrap_s = tex->wrap_t = T3_CLAMP_TO_EDGE;
-    cw__mesh3d_set_lightmap(n, ni, tex, intensity);
+    cw__mesh3d_set_lightmap(n, ni, tex, intensity, shading == CW_LIGHTMAP_BAKED);
     t3_release(tex);
     t3_release(ni);
   }
+}
+
+t3_texture *cw_lightmap_reflection(const cw_lightmap_data *dc, float *scale) {
+  cw_lightmap_data *d = (cw_lightmap_data *)dc; /* the texture is made once and kept with the data */
+  if (scale) *scale = 0;
+  if (!d || !d->cube_size) return NULL;
+  if (!d->cube_tex) {
+    int S = d->cube_size;
+    /* an 8-bit sRGB cube scaled by the brightest texel (at most 64): the colours keep their ratios, the scale
+     * goes back in through the material's reflectivity */
+    float mx = 0;
+    for (int k = 0; k < 6 * S * S * 4; k++)
+      if ((k & 3) != 3) mx = CW_MAX(mx, lm_half_to_float(d->cube[k]));
+    d->cube_scale = CW_CLAMP(mx, 1e-4f, 64.0f);
+    uint8_t *faces[6];
+    for (int f = 0; f < 6; f++) {
+      faces[f] = cw_alloc((size_t)S * S * 4, CW_MEM_RENDER);
+      for (int i = 0; i < S * S; i++)
+        for (int a = 0; a < 4; a++) {
+          float v = a == 3 ? 1.0f : CW_CLAMP(lm_half_to_float(d->cube[((size_t)f * S * S + i) * 4 + a]) / d->cube_scale, 0.0f, 1.0f);
+          float e = a == 3 ? v : v <= 0.0031308f ? v * 12.92f : 1.055f * cw_pow(v, 1.0f / 2.4f) - 0.055f;
+          faces[f][i * 4 + a] = (uint8_t)CW_CLAMP((int)(e * 255.0f + 0.5f), 0, 255);
+        }
+    }
+    d->cube_tex = t3_cube_texture_new(S, (const uint8_t *const *)faces);
+    for (int f = 0; f < 6; f++) cw_free(faces[f]);
+    d->cube_tex->color_space = T3_SRGB_COLOR_SPACE;
+    d->cube_tex->generate_mipmaps = false;
+    d->cube_tex->min_filter = T3_LINEAR;
+    d->cube_tex->mag_filter = T3_LINEAR;
+  }
+  if (scale) *scale = d->cube_scale;
+  return d->cube_tex;
+}
+
+bool cw_lightmap_use_reflection(const cw_lightmap_data *d, t3_material *m, float strength) {
+  float k;
+  t3_texture *cube = cw_lightmap_reflection(d, &k);
+  if (!cube || !m) return false;
+  t3_material_set_texture(m, T3_ENV_MAP, cube);
+  if (m->type == T3_MESH_STANDARD_MATERIAL || m->type == T3_MESH_PHYSICAL_MATERIAL) m->env_map_intensity = strength * k;
+  else {
+    m->combine = T3_ADD_OPERATION;
+    m->reflectivity = strength * k;
+  }
+  return true;
 }
 
 /* ── LightmapGI ─────────────────────────────────────────────────────── */
@@ -997,6 +1438,7 @@ typedef struct gi_node {
   int seed;
   const char *data;         /* .cwlm asset (empty: bake on the first frame) */
   bool bake_twice;          /* bake a second time and compare (determinism check, tests) */
+  int shading;              /* cw_lightmap_shading */
   /* read only */
   const char *hash;
   int texels, probes;
@@ -1039,7 +1481,7 @@ static void gi_bake_now(cw_node n, gi_node *g, cw_tree *t) {
   g->hash = cw_intern(hex);
   g->texels = d->info.texels;
   g->probes = d->info.probes;
-  cw_lightmap_apply(t, root, d, g->s.intensity);
+  cw_lightmap_apply_shaded(t, root, d, g->s.intensity, (cw_lightmap_shading)g->shading);
 }
 
 static void gi_node_init(cw_node n, void *data) {
@@ -1100,6 +1542,7 @@ static void ro_probes(cw_node n, void *d, cw_value *o) { (void)n; *o = cw_val_in
 static void ro_ms(cw_node n, void *d, cw_value *o) { (void)n; *o = cw_val_float(((gi_node *)d)->bake_ms); }
 static void ro_same(cw_node n, void *d, cw_value *o) { (void)n; *o = cw_val_bool(((gi_node *)d)->same); }
 
+static const char *const shading_names[] = { "LIT", "BAKED", NULL };
 static const cw_prop gi_props[] = {
   GF(texel_density, 0.01, 1000, "Lightmap texels per world unit (times each mesh's lightmap_scale)."),
   GI(min_size, 4, 4096, "Smallest lightmap side, texels."),
@@ -1114,6 +1557,15 @@ static const cw_prop gi_props[] = {
   GF(intensity, 0, 100, "Multiplier of the baked light."),
   GI(denoise, 0, 8, "Edge-aware smoothing radius in texels (0 = the raw Monte Carlo result)."),
   CW_PROP_FIELD(gi_node, data, CW_T_STRING, CW_PROP_DEFAULT, "A .cwlm asset to load (empty or missing: bake on the first frame)."),
+  GI(direct_samples, 1, 1024, "Shadow rays a texel per light for the baked direct light (soft shadows need several)."),
+  GF(shadow_softness, 0, 1, "Baked shadows' softness: the light's radius over its distance (0 = hard)."),
+  GI(reflection_size, 0, 256, "Face side of the reflection cube traced through the bake (0 = none; cw_lightmap_use_reflection)."),
+  { .name = "reflection_origin", .type = CW_T_VEC3, .flags = CW_PROP_DEFAULT, .offset = (int)offsetof(gi_node, s.reflection_origin),
+    .size = (int)sizeof(float[3]), .doc = "Where the reflection cube is traced from (world)." },
+  { .name = "shading", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = (int)offsetof(gi_node, shading), .size = sizeof(int),
+    .enum_names = shading_names,
+    .doc = "LIT: lightmapped meshes keep their material (real-time lights add the direct light). BAKED: they draw unlit "
+           "from the lightmap alone (lights with bake_direct put their direct light in it)." },
   CW_PROP_FIELD(gi_node, bake_twice, CW_T_BOOL, CW_PROP_DEFAULT, "Bake a second time and compare the bytes (`reproducible`)."),
   CW_PROP_ACCESSOR("hash", CW_T_STRING, CW_PROP_EDITOR | CW_PROP_READONLY, ro_hash, NULL, "The bake's fingerprint (FNV-1a 64 of its bytes)."),
   CW_PROP_ACCESSOR("texels", CW_T_INT, CW_PROP_EDITOR | CW_PROP_READONLY, ro_texels, NULL, "Lightmap texels in the bake."),

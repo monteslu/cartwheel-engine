@@ -19,7 +19,37 @@
  * volume takes its ambient light from a grid of L2 spherical-harmonic probes
  * (probe_spacing apart over the static geometry's bounds), interpolated per
  * pixel. Standard and Phong materials use both (Lambert and Basic read
- * lightmaps through three.c alone).
+ * lightmaps through three.c alone). The probe grid is baked and stored in the
+ * .cwlm; no material reads it yet.
+ *
+ * Fully baked lighting (opt in; nothing changes unless a scene asks). A
+ * light with bake_direct puts its direct light (shadowed by the static
+ * geometry, soft when shadow_softness > 0) into the lightmaps as well, and
+ * LightmapGI's shading BAKED draws every lightmapped mesh unlit: a Basic
+ * copy of its material (colour, map, vertex colours, AO map, transparency)
+ * whose light is all from its lightmap (albedo x irradiance / PI, the same
+ * Lambert diffuse three.js's lightMap gives a Standard material). No
+ * real-time light reaches those meshes, so their cost per pixel is a few
+ * texture reads however many lights the scene has; the lights still light
+ * everything else (moving objects, DYNAMIC meshes) in real time. This is how
+ * games on weak GPUs light static scenery: the floor of a big lit yard costs
+ * the same with one light or twenty.
+ *
+ * A light with realtime off is in the bake only (its lightmap light and its
+ * bounces); it lights nothing at run time and costs nothing a frame. Moving
+ * objects can still take it from the ground: cw_lightmap_irradiance_below.
+ *
+ * Instanced scenery: a MeshInstance3D whose procedural mesh
+ * (cw_mesh3d_set_procedural) is a t3_instanced_mesh, with gi_mode STATIC,
+ * occludes and bounces light in the bake (every instance) but gets no
+ * lightmap (its instances share one geometry) and stays lit in real time.
+ *
+ * Reflection cube: reflection_size > 0 traces a cube map from
+ * reflection_origin through the baked scene (each texel the radiance the bake
+ * left on what it sees, the sky where it sees nothing; emissive surfaces
+ * glow in it). cw_lightmap_use_reflection gives it to a material as its
+ * envMap: wet patches and puddles reflect the lit scene for one texture read,
+ * where screen-space reflections cost a G-buffer and a trace every frame.
  *
  * How. A BVH over the static triangles (median splits on the longest axis,
  * deterministic), cosine-weighted hemisphere rays per texel (`samples` per
@@ -59,7 +89,17 @@ typedef struct cw_lightmap_settings {
   int probe_samples;        /* 128 rays per probe */
   float intensity;          /* 1: multiplier of the baked light at runtime */
   int denoise;              /* 2: edge-aware smoothing radius, texels (0 = none) */
+  int direct_samples;       /* 1: shadow rays a texel per light (more with shadow_softness > 0) */
+  float shadow_softness;    /* 0 (hard): the light's radius over its distance (a directional light's angular
+                             * radius, radians) for soft baked shadows */
+  int reflection_size;      /* 0: no reflection cube; else its face side, texels (4 .. 256) */
+  float reflection_origin[3]; /* (0, 1.5, 0): where the cube is traced from, world */
 } cw_lightmap_settings;
+
+/* How lightmapped meshes draw: LIT keeps their material (the lightmap is
+ * their indirect light, real-time lights add the direct); BAKED draws them
+ * unlit from the lightmap alone (bake the direct light: bake_direct). */
+typedef enum { CW_LIGHTMAP_LIT, CW_LIGHTMAP_BAKED } cw_lightmap_shading;
 
 /* The defaults above. */
 cw_lightmap_settings cw_lightmap_settings_default(void);
@@ -95,6 +135,26 @@ cw_lightmap_data *cw_lightmap_load(const char *asset_path); /* caller frees with
  * changed since the bake is skipped with a warning). d must outlive the
  * application (the LightmapGI node keeps it). */
 void cw_lightmap_apply(cw_tree *t, cw_node root, const cw_lightmap_data *d, float intensity);
+/* The same, choosing how the meshes draw (cw_lightmap_apply is LIT). */
+void cw_lightmap_apply_shaded(cw_tree *t, cw_node root, const cw_lightmap_data *d, float intensity,
+                              cw_lightmap_shading shading);
+/* The bake's reflection cube (NULL when it has none), made on first call and
+ * owned by d: 8-bit sRGB, scaled down by *scale (the brightest texel). */
+t3_texture *cw_lightmap_reflection(const cw_lightmap_data *d, float *scale);
+/* Give material m the reflection cube as its envMap at strength (1 = the
+ * baked radiance): Standard / Physical through envMapIntensity, Basic,
+ * Lambert and Phong added on top (combine ADD, reflectivity). false when the
+ * bake has no cube. */
+bool cw_lightmap_use_reflection(const cw_lightmap_data *d, t3_material *m, float strength);
+/* The baked irradiance (linear, physical units: what the lightmap holds) on
+ * the highest upward-facing lightmapped surface at or below pos, read from
+ * its lightmap (bilinear). A light probe from the floor, for things that
+ * move over a baked ground: a character in a floodlight's pool, or in a
+ * wall's shadow, takes that light, for no GPU cost (a top-down or racing game
+ * lights its crowd or its cars this way). Needs d applied (the meshes' world
+ * triangles are taken then; a mesh moved after the apply is not followed).
+ * false (and black) where no baked surface lies below. */
+bool cw_lightmap_irradiance_below(const cw_lightmap_data *d, t3_vec3 pos, t3_color *out);
 
 #ifdef __cplusplus
 }

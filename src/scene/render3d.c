@@ -698,6 +698,8 @@ typedef struct light3d {
   t3_light *light;
   int kind; /* 0 directional, 1 omni, 2 spot */
   bool bake;                /* contributes to baked lightmaps (LightmapGI) */
+  bool bake_direct;         /* its direct light is baked too (for meshes LightmapGI draws BAKED) */
+  bool realtime;            /* lights the scene in real time (false: only the bake has it) */
   int shadow_cascades;      /* directional: 0 = one shadow map (three.c), 1-4 = cascades (r186 CSMShadowNode) */
   float shadow_distance;    /* directional cascades: where the last ends (r186 maxFar; 0 = the camera's far) */
   bool cascade_fade;        /* directional cascades: cross-fade between them (r186 CSMShadowNode.fade) */
@@ -717,6 +719,7 @@ static void light_common_init(cw_node n, light3d *l, int kind) {
   l->shadow_far = 500;
   l->kind = kind;
   l->bake = true;
+  l->realtime = true;
   l->cascade_fade = true;
   l->fog_energy = 1;
   l->light = kind == 0 ? t3_directional_light_new(0xffffff, 1)
@@ -746,7 +749,7 @@ static void light_pre_render(cw_node n, void *data, double alpha) {
   (void)alpha;
   light3d *l = data;
   l->light->color = l->color;
-  l->light->intensity = l->energy;
+  l->light->intensity = l->realtime ? l->energy : 0; /* not real time: dark to three.c and the clusters, the bake still reads energy */
   l->light->distance = l->range;
   l->light->decay = l->decay;
   l->light->angle = l->angle;
@@ -802,6 +805,12 @@ static const cw_prop light_props[] = {
   CW_PROP_FIELD_RANGE(light3d, angle, CW_T_FLOAT, 0, 1.5707963, "Spot: cone half-angle, radians."),
   CW_PROP_FIELD_RANGE(light3d, penumbra, CW_T_FLOAT, 0, 1, "Spot: soft edge fraction."),
   CW_PROP_FIELD(light3d, bake, CW_T_BOOL, CW_PROP_DEFAULT, "Contributes to baked lightmaps and ambient probes (LightmapGI)."),
+  CW_PROP_FIELD(light3d, realtime, CW_T_BOOL, CW_PROP_DEFAULT,
+                "Lights the scene in real time (default). Off: only the bake has it (with bake_direct, the lightmaps "
+                "carry its light; moving objects can take it from cw_lightmap_irradiance_below); it costs nothing a frame."),
+  CW_PROP_FIELD(light3d, bake_direct, CW_T_BOOL, CW_PROP_DEFAULT,
+                "With bake: its direct light (shadowed by the static geometry) goes into the lightmaps too, for meshes a "
+                "LightmapGI with shading BAKED draws unlit; it still lights everything else in real time (cartwheel/lightmap.h)."),
   CW_PROP_FIELD_RANGE(light3d, shadow_cascades, CW_T_INT, 0, 4,
                       "Directional: 0 = one shadow map around the light; 1-4 = cascaded shadow maps that follow the camera "
                       "(r186 CSMShadowNode; shadow_size is each cascade's; cartwheel/lighting.h)."),
@@ -1198,6 +1207,7 @@ bool cw__mesh3d_bake_info(cw_node n, cw__mesh_bake *out) {
   memset(out, 0, sizeof *out);
   out->is_static = m->gi_mode == 1;
   out->mesh = cw__mesh3d_t3(n);
+  out->instanced = out->mesh && out->mesh->base.type == T3_INSTANCED_MESH;
   out->scale = m->lightmap_scale;
   t3_material *mat = out->mesh && out->mesh->material_count ? out->mesh->materials[0] : NULL;
   out->albedo = mat ? mat->color : m->color;
@@ -1209,7 +1219,29 @@ bool cw__mesh3d_bake_info(cw_node n, cw__mesh_bake *out) {
   return out->mesh != NULL;
 }
 
-void cw__mesh3d_set_lightmap(cw_node n, t3_geometry *g, t3_texture *lm, float intensity) {
+/* what a BAKED lightmapped mesh draws with: an unlit (Basic) copy of its material that keeps the surface (colour,
+ * maps, vertex colours, transparency) and takes all its light from the lightmap: Basic with a lightMap is
+ * albedo x irradiance / PI, the Lambert diffuse of the baked light, and no real-time light reaches it */
+static t3_material *baked_material(const t3_material *src) {
+  t3_material *b = t3_mesh_basic_material_new(0xffffff);
+  b->color = src->color;
+  b->vertex_colors = src->vertex_colors;
+  b->opacity = src->opacity;
+  b->transparent = src->transparent;
+  b->alpha_test = src->alpha_test;
+  b->side = src->side;
+  b->fog = src->fog;
+  b->depth_write = src->depth_write;
+  b->depth_test = src->depth_test;
+  b->blending = src->blending;
+  b->ao_map_intensity = src->ao_map_intensity;
+  if (src->map) t3_material_set_texture(b, T3_MAP, src->map);
+  if (src->ao_map) t3_material_set_texture(b, T3_AO_MAP, src->ao_map);
+  if (src->alpha_map) t3_material_set_texture(b, T3_ALPHA_MAP, src->alpha_map);
+  return b;
+}
+
+void cw__mesh3d_set_lightmap(cw_node n, t3_geometry *g, t3_texture *lm, float intensity, bool baked) {
   mesh3d *m = cw_node_data_t(n, mesh3d_t);
   t3_mesh *mesh = m ? cw__mesh3d_t3(n) : NULL;
   if (!mesh || !mesh->material_count) return;
@@ -1224,7 +1256,7 @@ void cw__mesh3d_set_lightmap(cw_node n, t3_geometry *g, t3_texture *lm, float in
     /* a resource's material is shared with its other users, a primitive's
      * with every primitive of the same look: this mesh gets its own */
     if (m->lm_mat) t3_release(m->lm_mat);
-    m->lm_mat = t3_material_clone(mat);
+    m->lm_mat = baked ? baked_material(mat) : t3_material_clone(mat);
     t3_retain(m->lm_mat);
     t3_release(mesh->materials[0]);
     mesh->materials[0] = m->lm_mat;
@@ -1252,6 +1284,7 @@ bool cw__light3d_bake_info(cw_node n, cw__light *out) {
   out->decay = l->decay;
   out->angle = l->angle;
   out->penumbra = l->penumbra;
+  out->direct = l->bake_direct;
   return true;
 }
 
