@@ -8,6 +8,7 @@
 
 #include "cartwheel/platform.h"
 #include "fx_internal.h"
+#include "render/pipeline_internal.h"
 
 unsigned char *stbi_load_from_memory(const unsigned char *buffer, int len, int *x, int *y, int *channels_in_file,
                                      int desired_channels);
@@ -47,6 +48,7 @@ unsigned cw__fx_program(const char *name, const char *vs, const char *fs, const 
     return 0;
   }
   GLuint p = glCreateProgram();
+  cw__gl_program_born(p);
   glAttachShader(p, v);
   glAttachShader(p, f);
   if (varyings && nvaryings > 0) glTransformFeedbackVaryings(p, nvaryings, varyings, GL_SEPARATE_ATTRIBS);
@@ -75,7 +77,7 @@ int cw__fx_loc(unsigned prog, const char *name) {
     cw_map_init(&loc_cache, CW_MEM_RENDER);
     loc_init = true;
   }
-  uint64_t key = ((uint64_t)prog << 40) ^ (uint64_t)(uintptr_t)name;
+  uint64_t key = (((uint64_t)prog << 40) ^ (uint64_t)(uintptr_t)name) * 0x9E3779B97F4A7C15ull ^ ((uint64_t)cw__gl_program_epoch(prog) << 1);
   uint64_t v;
   if (cw_map_get(&loc_cache, key, &v)) return (int)v - 1;
   int loc = glGetUniformLocation(prog, name);
@@ -83,18 +85,36 @@ int cw__fx_loc(unsigned prog, const char *name) {
   return loc;
 }
 
-void cw__fx_u1f(unsigned p, const char *n, float v) { glUniform1f(cw__fx_loc(p, n), v); }
-void cw__fx_u1i(unsigned p, const char *n, int v) { glUniform1i(cw__fx_loc(p, n), v); }
-void cw__fx_u1ui(unsigned p, const char *n, unsigned v) { glUniform1ui(cw__fx_loc(p, n), v); }
-void cw__fx_u2f(unsigned p, const char *n, float x, float y) { glUniform2f(cw__fx_loc(p, n), x, y); }
-void cw__fx_u3f(unsigned p, const char *n, float x, float y, float z) { glUniform3f(cw__fx_loc(p, n), x, y, z); }
+/* each setter skips a value the program already holds (cw__gl_uniform_held) */
+#define HELD(p, l, ptr, n) cw__gl_uniform_held((p), (l), (ptr), (n))
+void cw__fx_u1f(unsigned p, const char *n, float v) { int l = cw__fx_loc(p, n); if (!HELD(p, l, &v, 4)) glUniform1f(l, v); }
+void cw__fx_u1i(unsigned p, const char *n, int v) { int l = cw__fx_loc(p, n); if (!HELD(p, l, &v, 4)) glUniform1i(l, v); }
+void cw__fx_u1ui(unsigned p, const char *n, unsigned v) { int l = cw__fx_loc(p, n); if (!HELD(p, l, &v, 4)) glUniform1ui(l, v); }
+void cw__fx_u2f(unsigned p, const char *n, float x, float y) {
+  float v[2] = { x, y };
+  int l = cw__fx_loc(p, n);
+  if (!HELD(p, l, v, 8)) glUniform2f(l, x, y);
+}
+void cw__fx_u3f(unsigned p, const char *n, float x, float y, float z) {
+  float v[3] = { x, y, z };
+  int l = cw__fx_loc(p, n);
+  if (!HELD(p, l, v, 12)) glUniform3f(l, x, y, z);
+}
 void cw__fx_u4f(unsigned p, const char *n, float x, float y, float z, float w) {
-  glUniform4f(cw__fx_loc(p, n), x, y, z, w);
+  float v[4] = { x, y, z, w };
+  int l = cw__fx_loc(p, n);
+  if (!HELD(p, l, v, 16)) glUniform4f(l, x, y, z, w);
 }
 void cw__fx_u4fv(unsigned p, const char *n, const float *v, int count) {
-  if (count > 0) glUniform4fv(cw__fx_loc(p, n), count, v);
+  if (count <= 0) return;
+  int l = cw__fx_loc(p, n);
+  if (!HELD(p, l, v, count * 16)) glUniform4fv(l, count, v);
 }
-void cw__fx_mat4(unsigned p, const char *n, const float *m) { glUniformMatrix4fv(cw__fx_loc(p, n), 1, GL_FALSE, m); }
+void cw__fx_mat4(unsigned p, const char *n, const float *m) {
+  int l = cw__fx_loc(p, n);
+  if (!HELD(p, l, m, 64)) glUniformMatrix4fv(l, 1, GL_FALSE, m);
+}
+#undef HELD
 
 /* ── textures and targets ───────────────────────────────────────────── */
 

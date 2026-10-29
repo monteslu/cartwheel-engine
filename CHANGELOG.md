@@ -22,6 +22,15 @@ Geometry the engine builds no longer leaks its vertex buffers.
   geometry `cw_cloth_geometry_new` and `cw_rope_geometry_new` return hold
   one reference each. Before the fix it failed (two each).
 
+### Changed
+- GL: the engine's own passes and particle systems no longer send a uniform value the program already holds
+  (samplers and constants were set again every frame), and a particle system's draw keeps one vertex array
+  per state buffer instead of setting its attributes before every draw. In a cart every GL call crosses into
+  the host: on a late wave of a 2000-enemy horde game that is about 4,600 fewer uniform calls and 1,000 fewer
+  vertex-attribute calls a frame (Chromium GL: 14,710 calls a frame to 10,137 with the first, about 8,850 with both).
+  The pixels are the same: the frames of every fx and post sample, GL and WebGPU, compared byte for byte at
+  frames 90, 300 and 600, and the 45 fx and post gates.
+
 ## v0.21.1 (2026-10-28)
 
 Water made under the camera draws on WebGPU, and a skipped draw names its real cause.

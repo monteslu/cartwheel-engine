@@ -32,6 +32,8 @@ struct cw__psys {
   int cap; /* allocated particles */
   GLuint buf[2][2];
   GLuint sim_vao[2], draw_vao;
+  GLuint draw_vaos[2];  /* the draw's attributes over state buffer 0 or 1, set up once per layout */
+  uint64_t draw_key[2]; /* the layout each holds (0: none yet) */
   int cur;
   bool need_reset;
   bool gl_ready;

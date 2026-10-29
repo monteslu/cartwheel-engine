@@ -211,6 +211,7 @@ static unsigned program_glsl(const char *name, const char *vsrc, const char *fs)
     return 0;
   }
   GLuint p = glCreateProgram();
+  cw__gl_program_born(p);
   glAttachShader(p, vs);
   glAttachShader(p, f);
   glLinkProgram(p);
@@ -352,7 +353,50 @@ void cw_pass_linear_depth_params(const cw_pass_ctx *ctx, float out[3]) {
   out[2] = c && c->base.type == T3_ORTHOGRAPHIC_CAMERA ? 1.0f : 0.0f;
 }
 
-/* uniform locations by (program, name) */
+/* ── uniform values held ───────────────────────────────────────────── */
+
+typedef struct { uint8_t n; uint8_t b[64]; } held_val;
+static cw_map held_map, born_map; /* (prog, epoch, loc) -> index into held; prog -> epoch */
+static held_val *held;
+static int held_n, held_cap;
+static bool held_init;
+static uint32_t prog_epoch(unsigned prog) {
+  uint64_t e = 0;
+  if (held_init) cw_map_get(&born_map, (uint64_t)prog + 1, &e);
+  return (uint32_t)e;
+}
+uint32_t cw__gl_program_epoch(unsigned prog) { return prog_epoch(prog); }
+void cw__gl_program_born(unsigned prog) {
+  if (!held_init) {
+    cw_map_init(&held_map, CW_MEM_RENDER);
+    cw_map_init(&born_map, CW_MEM_RENDER);
+    held_init = true;
+  }
+  cw_map_set(&born_map, (uint64_t)prog + 1, (uint64_t)prog_epoch(prog) + 1);
+}
+bool cw__gl_uniform_held(unsigned prog, int loc, const void *bytes, int n) {
+  if (loc < 0) return true; /* not in the program: GL ignores location -1 */
+  if (!held_init || n > 64) return false;
+  uint64_t key = ((uint64_t)prog << 32 | (uint64_t)(uint32_t)loc) * 0x9E3779B97F4A7C15ull ^ (uint64_t)prog_epoch(prog) * 0xC2B2AE3D27D4EB4Full;
+  uint64_t ix;
+  if (cw_map_get(&held_map, key, &ix)) {
+    held_val *h = &held[ix];
+    if (h->n == n && !memcmp(h->b, bytes, (size_t)n)) return true;
+    h->n = (uint8_t)n;
+    memcpy(h->b, bytes, (size_t)n);
+    return false;
+  }
+  if (held_n == held_cap) {
+    held_cap = held_cap ? held_cap * 2 : 256;
+    held = cw_realloc(held, sizeof *held * (size_t)held_cap, CW_MEM_RENDER);
+  }
+  held[held_n].n = (uint8_t)n;
+  memcpy(held[held_n].b, bytes, (size_t)n);
+  cw_map_set(&held_map, key, (uint64_t)held_n++);
+  return false;
+}
+
+/* uniform locations by (program, its epoch, name) */
 static cw_map uniform_cache;
 static bool uniform_cache_init;
 static GLint uloc(unsigned prog, const char *name) {
@@ -360,7 +404,7 @@ static GLint uloc(unsigned prog, const char *name) {
     cw_map_init(&uniform_cache, CW_MEM_RENDER);
     uniform_cache_init = true;
   }
-  uint64_t h = 1469598103934665603ull ^ (uint64_t)prog * 0x9E3779B97F4A7C15ull;
+  uint64_t h = 1469598103934665603ull ^ (uint64_t)prog * 0x9E3779B97F4A7C15ull ^ (uint64_t)prog_epoch(prog) * 0xC2B2AE3D27D4EB4Full;
   for (const char *c = name; *c; c++) h = (h ^ (uint8_t)*c) * 1099511628211ull;
   uint64_t v;
   if (cw_map_get(&uniform_cache, h, &v)) return (GLint)v - 1;
@@ -370,30 +414,48 @@ static GLint uloc(unsigned prog, const char *name) {
 }
 void cw_pass_uniform1f(unsigned p, const char *n, float v) {
   if (wg()) cw__pw_uniform(p, n, 1, &v, 0);
-  else glUniform1f(uloc(p, n), v);
+  else {
+    GLint l = uloc(p, n);
+    if (!cw__gl_uniform_held(p, l, &v, sizeof v)) glUniform1f(l, v);
+  }
 }
 void cw_pass_uniform2f(unsigned p, const char *n, float x, float y) {
   float v[2] = { x, y };
   if (wg()) cw__pw_uniform(p, n, 2, v, 0);
-  else glUniform2f(uloc(p, n), x, y);
+  else {
+    GLint l = uloc(p, n);
+    if (!cw__gl_uniform_held(p, l, v, sizeof v)) glUniform2f(l, x, y);
+  }
 }
 void cw_pass_uniform3f(unsigned p, const char *n, float x, float y, float z) {
   float v[3] = { x, y, z };
   if (wg()) cw__pw_uniform(p, n, 3, v, 0);
-  else glUniform3f(uloc(p, n), x, y, z);
+  else {
+    GLint l = uloc(p, n);
+    if (!cw__gl_uniform_held(p, l, v, sizeof v)) glUniform3f(l, x, y, z);
+  }
 }
 void cw_pass_uniform4f(unsigned p, const char *n, float x, float y, float z, float w) {
   float v[4] = { x, y, z, w };
   if (wg()) cw__pw_uniform(p, n, 4, v, 0);
-  else glUniform4f(uloc(p, n), x, y, z, w);
+  else {
+    GLint l = uloc(p, n);
+    if (!cw__gl_uniform_held(p, l, v, sizeof v)) glUniform4f(l, x, y, z, w);
+  }
 }
 void cw_pass_uniform1i(unsigned p, const char *n, int v) {
   if (wg()) cw__pw_uniform(p, n, -1, NULL, v);
-  else glUniform1i(uloc(p, n), v);
+  else {
+    GLint l = uloc(p, n);
+    if (!cw__gl_uniform_held(p, l, &v, sizeof v)) glUniform1i(l, v);
+  }
 }
 void cw_pass_uniform_mat4(unsigned p, const char *n, const t3_mat4 *m) {
   if (wg()) cw__pw_uniform(p, n, 16, m->e, 0);
-  else glUniformMatrix4fv(uloc(p, n), 1, GL_FALSE, m->e);
+  else {
+    GLint l = uloc(p, n);
+    if (!cw__gl_uniform_held(p, l, m->e, sizeof m->e)) glUniformMatrix4fv(l, 1, GL_FALSE, m->e);
+  }
 }
 
 /* ── copy ───────────────────────────────────────────────────────────── */
