@@ -312,3 +312,6 @@ add_subdirectory(plugin_demo)
 # the 3D effects through the render pipeline on GL and WebGPU
 # (an app OPAQUE pass draws the boxes; decals and particles are the module's)
 cw_add_app(fx_pipeline SOURCES fx_pipeline/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_pipeline/assets)
+# baked lighting for weak GPUs: direct light in the lightmaps, unlit BAKED shading, bake-only lights, instanced
+# occluders, the reflection cube, light from the ground under a moving ball, blob shadows and light pools.
+cw_add_app(lightmap_yard SOURCES lightmap_yard/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/lightmap_yard/assets)

@@ -4085,7 +4085,7 @@
   },
   {
    "header": "cartwheel/lightmap.h",
-   "summary": "Baked lighting: an offline CPU lightmapper and an ambient probe\ngrid.\n\nWhat is baked. MeshInstance3D nodes with gi_mode STATIC are the baked\ngeometry: each gets a second UV set (generated: triangles flood-filled\ninto charts of similar normal, each chart projected onto its plane at\ntexel_density texels per world unit x the mesh's lightmap_scale, charts\nshelf-packed with `padding` texels between them) and a lightmap of its own.\nThe lightmap holds the INDIRECT irradiance: sky light (the WorldEnvironment\nambient + hemisphere light, or the ProceduralSky's radiance when the tree\nhas one) and `bounces` bounces of every Light3D with `bake` (default on),\nthe light's direct part shadow-tested against the baked geometry. Direct\nlight stays real-time (engine or three.c lights, with their shadows), so\nmoving objects still cast and lights can still change; the baked part is\nwhat real-time lighting cannot do: occluded sky and colour bleeding.\nLightmapped meshes take that irradiance in place of the ambient,\nhemisphere and environment-diffuse light (three.js's lightMap, read\nthrough uv1; on r186 programs once three.c reads uv1, see lighting.h). Everything else (moving objects, DYNAMIC meshes) inside the baked\nvolume takes its ambient light from a grid of L2 spherical-harmonic probes\n(probe_spacing apart over the static geometry's bounds), interpolated per\npixel. Standard and Phong materials use both (Lambert and Basic read\nlightmaps through three.c alone).\n\nHow. A BVH over the static triangles (median splits on the longest axis,\ndeterministic), cosine-weighted hemisphere rays per texel (`samples` per\nbounce), one shadow ray per light per texel, bounce radiance looked up in\nthe previous bounce's lightmaps, the sky through a 64 x 32 table of the\nsky model. Texels run in parallel on the job pool, each with its own\nrandom sequence seeded from (seed, mesh, texel), all math scalar IEEE\n(cw_ trig), so the same input gives the same bytes on every host and any\nthread count: cw_lightmap_hash over the serialized data is the bake's\nfingerprint. The Monte Carlo noise is smoothed per chart (texels whose\nnormals agree and whose positions are near, `denoise` texels around).\nGaps between charts are filled from neighbouring texels\n(dilation) so bilinear filtering never reads black. Units are physical\n(three.js r186's); a file baked in r128's legacy units says so on load.\n\nNode: LightmapGI (docs/nodes.json) bakes on its first frame (or loads\n`data`, a .cwlm asset written by cw_lightmap_save) and applies the result\nto the tree. A bake is synchronous: tools and editors bake ahead and ship\nthe .cwlm.",
+   "summary": "Baked lighting: an offline CPU lightmapper and an ambient probe\ngrid.\n\nWhat is baked. MeshInstance3D nodes with gi_mode STATIC are the baked\ngeometry: each gets a second UV set (generated: triangles flood-filled\ninto charts of similar normal, each chart projected onto its plane at\ntexel_density texels per world unit x the mesh's lightmap_scale, charts\nshelf-packed with `padding` texels between them) and a lightmap of its own.\nThe lightmap holds the INDIRECT irradiance: sky light (the WorldEnvironment\nambient + hemisphere light, or the ProceduralSky's radiance when the tree\nhas one) and `bounces` bounces of every Light3D with `bake` (default on),\nthe light's direct part shadow-tested against the baked geometry. Direct\nlight stays real-time (engine or three.c lights, with their shadows), so\nmoving objects still cast and lights can still change; the baked part is\nwhat real-time lighting cannot do: occluded sky and colour bleeding.\nLightmapped meshes take that irradiance in place of the ambient,\nhemisphere and environment-diffuse light (three.js's lightMap, read\nthrough uv1; on r186 programs once three.c reads uv1, see lighting.h). Everything else (moving objects, DYNAMIC meshes) inside the baked\nvolume takes its ambient light from a grid of L2 spherical-harmonic probes\n(probe_spacing apart over the static geometry's bounds), interpolated per\npixel. Standard and Phong materials use both (Lambert and Basic read\nlightmaps through three.c alone). The probe grid is baked and stored in the\n.cwlm; no material reads it yet.\n\nWhich UVs. three.c's programs read every map, the lightmap included,\nthrough uv0 (r186 samples a texture through uv(texture.channel), and three.c\nhas no texture channel yet): the generated uv1 charts are set on the mesh\nbut not read, so a lightmap with GENERATED charts lands where the mesh's\nuv0 puts it. A mesh whose uv0 covers [0, 1] without overlapping (a ground\nplane, a terrain, a hand-unwrapped level) sets MeshInstance3D lightmap_uv\nUV0: the bake lays its lightmap on that uv0 (a square map of about\ntexel_density texels a unit of its area), and it lines up on GL and WebGPU.\n\nFully baked lighting (opt in; nothing changes unless a scene asks). A\nlight with bake_direct puts its direct light (shadowed by the static\ngeometry, soft when shadow_softness > 0) into the lightmaps as well, and\nLightmapGI's shading BAKED draws every lightmapped mesh unlit: a Basic\ncopy of its material (colour, map, vertex colours, AO map, transparency)\nwhose light is all from its lightmap (albedo x irradiance / PI, the same\nLambert diffuse three.js's lightMap gives a Standard material). No\nreal-time light reaches those meshes, so their cost per pixel is a few\ntexture reads however many lights the scene has; the lights still light\neverything else (moving objects, DYNAMIC meshes) in real time. This is how\ngames on weak GPUs light static scenery: the floor of a big lit yard costs\nthe same with one light or twenty.\n\nA light with realtime off is in the bake only (its lightmap light and its\nbounces); it lights nothing at run time and costs nothing a frame. Moving\nobjects can still take it from the ground: cw_lightmap_irradiance_below.\n\nInstanced scenery: a MeshInstance3D whose procedural mesh\n(cw_mesh3d_set_procedural) is a t3_instanced_mesh, with gi_mode STATIC,\noccludes and bounces light in the bake (every instance) but gets no\nlightmap (its instances share one geometry) and stays lit in real time.\n\nReflection cube: reflection_size > 0 traces a cube map from\nreflection_origin through the baked scene (each texel the radiance the bake\nleft on what it sees, the sky where it sees nothing; emissive surfaces\nglow in it). cw_lightmap_use_reflection gives it to a material as its\nenvMap: wet patches and puddles reflect the lit scene for one texture read,\nwhere screen-space reflections cost a G-buffer and a trace every frame.\n\nHow. A BVH over the static triangles (median splits on the longest axis,\ndeterministic), cosine-weighted hemisphere rays per texel (`samples` per\nbounce), one shadow ray per light per texel, bounce radiance looked up in\nthe previous bounce's lightmaps, the sky through a 64 x 32 table of the\nsky model. Texels run in parallel on the job pool, each with its own\nrandom sequence seeded from (seed, mesh, texel), all math scalar IEEE\n(cw_ trig), so the same input gives the same bytes on every host and any\nthread count: cw_lightmap_hash over the serialized data is the bake's\nfingerprint. The Monte Carlo noise is smoothed per chart (texels whose\nnormals agree and whose positions are near, `denoise` texels around).\nGaps between charts are filled from neighbouring texels\n(dilation) so bilinear filtering never reads black. Units are physical\n(three.js r186's); a file baked in r128's legacy units says so on load.\n\nNode: LightmapGI (docs/nodes.json) bakes on its first frame (or loads\n`data`, a .cwlm asset written by cw_lightmap_save) and applies the result\nto the tree. A bake is synchronous: tools and editors bake ahead and ship\nthe .cwlm.",
    "functions": [
     {
      "name": "cw_lightmap_settings_default",
@@ -4146,13 +4146,48 @@
      "signature": "void cw_lightmap_apply(cw_tree *t, cw_node root, const cw_lightmap_data *d, float intensity)",
      "doc": "Give the tree the result: uv1 and lightmaps (the material's lightMap) to\nthe baked meshes (matched by node path under root; a mesh whose geometry\nchanged since the bake is skipped with a warning). d must outlive the\napplication (the LightmapGI node keeps it).",
      "inline": false
+    },
+    {
+     "name": "cw_lightmap_apply_shaded",
+     "signature": "void cw_lightmap_apply_shaded(cw_tree *t, cw_node root, const cw_lightmap_data *d, float intensity, cw_lightmap_shading shading)",
+     "doc": "The same, choosing how the meshes draw (cw_lightmap_apply is LIT).",
+     "inline": false
+    },
+    {
+     "name": "cw_lightmap_reflection",
+     "signature": "t3_texture *cw_lightmap_reflection(const cw_lightmap_data *d, float *scale)",
+     "doc": "The bake's reflection cube (NULL when it has none), made on first call and\nowned by d: 8-bit sRGB, scaled down by *scale (the brightest texel).",
+     "inline": false
+    },
+    {
+     "name": "cw_lightmap_use_reflection",
+     "signature": "bool cw_lightmap_use_reflection(const cw_lightmap_data *d, t3_material *m, float strength)",
+     "doc": "Give material m the reflection cube as its envMap at strength (1 = the\nbaked radiance): Standard / Physical through envMapIntensity, Basic,\nLambert and Phong added on top (combine ADD, reflectivity). false when the\nbake has no cube.",
+     "inline": false
+    },
+    {
+     "name": "cw_lightmap_irradiance_below",
+     "signature": "bool cw_lightmap_irradiance_below(const cw_lightmap_data *d, t3_vec3 pos, t3_color *out)",
+     "doc": "The baked irradiance (linear, physical units: what the lightmap holds) on\nthe highest upward-facing lightmapped surface at or below pos, read from\nits lightmap (bilinear). A light probe from the floor, for things that\nmove over a baked ground: a character in a floodlight's pool, or in a\nwall's shadow, takes that light, for no GPU cost (a top-down or racing game\nlights its crowd or its cars this way). Needs d applied (the meshes' world\ntriangles are taken then; a mesh moved after the apply is not followed).\nfalse (and black) where no baked surface lies below.",
+     "inline": false
+    },
+    {
+     "name": "cw_lightmap_gi_data",
+     "signature": "const cw_lightmap_data *cw_lightmap_gi_data(cw_node gi)",
+     "doc": "A LightmapGI node's bake once it has baked or loaded (NULL before, and for\nanother node): for cw_lightmap_reflection, cw_lightmap_use_reflection and\ncw_lightmap_irradiance_below. Owned by the node.",
+     "inline": false
     }
    ],
    "types": [
     {
      "name": "cw_lightmap_settings",
      "doc": "",
-     "decl": "typedef struct cw_lightmap_settings {\n  float texel_density;      /* 8 texels per world unit */\n  int min_size, max_size;   /* 8, 1024: a mesh's lightmap side, texels */\n  int padding;              /* 2 texels around each chart */\n  int samples;              /* 64 hemisphere rays per texel per bounce */\n  int bounces;              /* 2 */\n  uint64_t seed;            /* 1 */\n  float probe_spacing;      /* 2 world units between SH probes; 0 = no probe grid */\n  int probe_samples;        /* 128 rays per probe */\n  float intensity;          /* 1: multiplier of the baked light at runtime */\n  int denoise;              /* 2: edge-aware smoothing radius, texels (0 = none) */\n} cw_lightmap_settings;"
+     "decl": "typedef struct cw_lightmap_settings {\n  float texel_density;      /* 8 texels per world unit */\n  int min_size, max_size;   /* 8, 1024: a mesh's lightmap side, texels */\n  int padding;              /* 2 texels around each chart */\n  int samples;              /* 64 hemisphere rays per texel per bounce */\n  int bounces;              /* 2 */\n  uint64_t seed;            /* 1 */\n  float probe_spacing;      /* 2 world units between SH probes; 0 = no probe grid */\n  int probe_samples;        /* 128 rays per probe */\n  float intensity;          /* 1: multiplier of the baked light at runtime */\n  int denoise;              /* 2: edge-aware smoothing radius, texels (0 = none) */\n  int direct_samples;       /* 1: shadow rays a texel per light (more with shadow_softness > 0) */\n  float shadow_softness;    /* 0 (hard): the light's radius over its distance (a directional light's angular\n                             * radius, radians) for soft baked shadows */\n  int reflection_size;      /* 0: no reflection cube; else its face side, texels (4 .. 256) */\n  float reflection_origin[3]; /* (0, 1.5, 0): where the cube is traced from, world */\n} cw_lightmap_settings;"
+    },
+    {
+     "name": "cw_lightmap_shading",
+     "doc": "How lightmapped meshes draw: LIT keeps their material (the lightmap is\ntheir indirect light, real-time lights add the direct); BAKED draws them\nunlit from the lightmap alone (bake the direct light: bake_direct).",
+     "decl": "typedef enum { CW_LIGHTMAP_LIT, CW_LIGHTMAP_BAKED } cw_lightmap_shading;"
     },
     {
      "name": "cw_lightmap_data",
@@ -8155,7 +8190,7 @@
     {
      "name": "cw_post_settings",
      "doc": "Every post setting, with its default. The PostProcess node (docs/nodes.json)\nmirrors these as properties for scene files; code can write\ncw_pipeline_settings(p) directly. Changing a field takes effect on the next\nframe; nothing is ever lowered automatically (quality is the developer's).",
-     "decl": "typedef struct cw_post_settings {\n  bool hdr;                 /* the scene target is RGBA16F (linear HDR); off: RGBA8, where linear\n                             * values band in the darks (MSAA on a compatibility-mode WebGPU device needs it); true */\n  int msaa;                 /* samples on the scene pass (0, 2, 4, 8; clamped to GL_MAX_SAMPLES; WebGPU\n                             * multisamples 4x for any of 2-8); 0 */\n  bool depth_prepass;       /* depth-only pass before the scene (early-z for heavy shaders) */\n  /* exposure: a linear multiplier (three.js's toneMappingExposure) times\n   * 2^exposure_ev (photographic stops) */\n  float exposure;           /* 1 */\n  float exposure_ev;        /* 0 */\n  cw_tonemap tonemap;       /* AGX */\n  /* bloom: dual-filter chain; threshold/knee pick what blooms (0 = all\n   * light, the physical default), intensity is the share of that energy that\n   * is spread (energy conserving: what blooms is taken from the source) */\n  bool bloom;\n  float bloom_intensity;    /* 0.05 */\n  float bloom_threshold;    /* 0 (scene-linear units) */\n  float bloom_knee;         /* 0.5: soft transition width, as a fraction of threshold */\n  float bloom_radius;       /* 1: upsample tent radius in texels of each level */\n  int bloom_levels;         /* 6 */\n  /* ambient occlusion: GTAO at half resolution, depth-aware upsample */\n  bool ssao;\n  float ssao_radius;        /* 0.5 world units */\n  float ssao_intensity;     /* 1 */\n  float ssao_power;         /* 1.5: contrast curve on the visibility */\n  int ssao_slices;          /* 2 directions per pixel (x2 sides) */\n  int ssao_steps;           /* 6 horizon steps per side */\n  /* temporal antialiasing: jittered projection (Halton 2,3), reprojection by\n   * the velocity target (camera motion rebuilt from depth; moving objects\n   * have no velocity of their own yet and rely on the YCoCg neighbourhood\n   * clip), Catmull-Rom history fetch */\n  bool taa;\n  float taa_feedback;       /* 0.9: history weight */\n  int ..."
+     "decl": "typedef struct cw_post_settings {\n  bool hdr;                 /* the scene target is RGBA16F (linear HDR); off: RGBA8, where linear\n                             * values band in the darks (MSAA on a compatibility-mode WebGPU device needs it); true */\n  int msaa;                 /* samples on the scene pass (0, 2, 4, 8; clamped to GL_MAX_SAMPLES; WebGPU\n                             * multisamples 4x for any of 2-8); 0 */\n  bool depth_prepass;       /* depth-only pass before the scene (early-z for heavy shaders) */\n  bool fuse_distortion;     /* false: heat haze and shockwaves bend the frame inside the tonemap pass (opt in: bloom\n                             * then glows from the unbent frame) instead of a full-frame pass of their own */\n  /* exposure: a linear multiplier (three.js's toneMappingExposure) times\n   * 2^exposure_ev (photographic stops) */\n  float exposure;           /* 1 */\n  float exposure_ev;        /* 0 */\n  cw_tonemap tonemap;       /* AGX */\n  /* bloom: dual-filter chain; threshold/knee pick what blooms (0 = all\n   * light, the physical default), intensity is the share of that energy that\n   * is spread (energy conserving: what blooms is taken from the source) */\n  bool bloom;\n  float bloom_intensity;    /* 0.05 */\n  float bloom_threshold;    /* 0 (scene-linear units) */\n  float bloom_knee;         /* 0.5: soft transition width, as a fraction of threshold */\n  float bloom_radius;       /* 1: upsample tent radius in texels of each level */\n  int bloom_levels;         /* 6 */\n  /* ambient occlusion: GTAO at half resolution, depth-aware upsample */\n  bool ssao;\n  float ssao_radius;        /* 0.5 world units */\n  float ssao_intensity;     /* 1 */\n  float ssao_power;         /* 1.5: contrast curve on the visibility */\n  int ssao_slices;          /* 2 directions per pixel (x2 sides) */\n  int ssao_steps;           /* 6 horizon steps per side */\n  /* temporal antialiasing: jittered projection (Halton 2,3), reprojection by\n   * the velocity target (camera mo ..."
     },
     {
      "name": "cw_pass_ctx",
@@ -9045,7 +9080,7 @@
   },
   {
    "header": "cartwheel/quality.h",
-   "summary": "cartwheel/quality.h: graphics settings, the presets that set them, and\nthe automatic choice.\n\nEach setting is something the player can pick on its own; a preset picks\nthem all:\n\n                    Low       Medium    High (default)  Ultra\n  resolution        67%       75%       100%            100%\n  ambient occl.     off       on        on              on\n  shadows           Low       Medium    High            Ultra\n  anti-aliasing     FXAA      FXAA      SMAA            SMAA\n  effects detail    Low       Medium    High            Ultra\n\nResolution: the 3D scene (and its post) renders at that share of the\noutput's size and is scaled up with a filter (Catmull-Rom); the 2D window\npasses (HUD, menus, text) draw at the output's full size over it. It is the\nbiggest lever: GPU time of the scene and its post goes with its pixel\ncount. It applies on top of cw_app_desc.render_scale (the output size);\nan app with pixel_scale draws at its own size and ignores it.\n\nAmbient occlusion: GTAO as the scene's PostProcess asks for it (On) or\nnone (Off); its sample count follows effects detail.\n\nShadows: Low (maps of 1024 at most, hard PCF), Medium (1024 at most,\nsoft), High (as the lights ask, soft), Ultra (twice that, up to 4096,\nsoft).\n\nAnti-aliasing: Off, FXAA, or SMAA (as the PostProcess asks: a scene that\nasks for FXAA or none keeps it). The scene's MSAA (PostProcess msaa) is the\ngame's and stays on every preset, on GL and WebGPU alike (4x WebGPU, as\nGL at 4); Off turns it off too.\n\nEffects detail (Low, Medium, High, Ultra): the share of GPU particles\ndrawn (0.4, 0.7, 1, 1), the density games thin their instancing by (0.35,\n0.65, 1, 1: grass, crowd, scatter), the bloom chain (3, 5 levels, as\nauthored), GTAO's samples (1 slice of 4 steps, 1 of 4, as authored, 3\nslices of 8 steps), the LOD error budget (x2, x1.5, x1, x1: coarser\nmeshes sooner), the clustered lights one cluster keeps (x0.375, x0.5,\nx1, x1 of LightingSettings.max_per_cluster: 24, 32, 64, 64 by default;\ncw_quality_scale(\"lights\"), cartwheel/lighting.h) and the volumetric fog\ngrid (cartwheel/environment.h: 64 x 32, 96 x 48, 160 x 64, 240 x 96 cells\nacross x slices), the distortion buffer (cartwheel/explosions.h: half the\nframe on Low and Medium, the whole frame on High and Ultra;\ncw_quality_scale(\"distortion\")), colour fringing on bent edges (High and\nUltra: \"dispersion\"), the share of the explosion light pool in use\n(0.25, 0.5, 1, 1: \"flash_lights\") and skin shading (Medium and up:\n\"skin\", cartwheel/skin_shading.h; Low draws skin as plain PBR).\n\n\"As authored\" is what the scene's PostProcess / lights ask for: High\ndraws exactly what the game would without this module.\n\nGame settings: a game adds its own render-only levers (cw_quality_lever_add:\na cheaper material at distance, say) with the value each preset picks;\nthey show in the graphics menu after the engine's, and are saved with them.\n\nDensity: games read cw_quality_scale(\"grass\"), (\"crowd\"), (\"scatter\") or\nthe shorthand cw_quality_density() and thin their instancing; set a change\ncallback to re-thin when a setting changes. Particles: the engine draws\ncw_quality_scale(\"particles\") of every GPU particle system's particles\n(they are all still simulated, so counts and seeds agree).\n\nThe player picks a preset, Auto, or each setting (the graphics menu,\ncartwheel/quality_menu.h, or the game shell's settings); changing one\nsetting shows the preset as \"Custom\". Persist the choice in the game's\nsave data (cw_quality_saved / cw_quality_restore below).\n\nAuto: the engine picks, and holds the frame's cost under a budget. While\nthe game says it is in play (cw_quality_auto_measure(true) every frame) it\naverages the cost: the GPU time of the frame's passes where the host\ntimes them cheaply (native WebGPU's timestamps), else the frame-to-frame\ntime (GL, a cart: a frame the GPU cannot finish in time arrives late). After a couple of\nseconds over budget it steps down one level of its ladder:\n\n  High 100%, High 85%, Medium 75%, Medium 67%, Low 67%, Low 60%, Low 50%\n\n(resolution first: it costs the picture least for what it saves). Where\nit measures GPU time it also steps back up when the cost has stayed well\nunder budget, never into a level that was over it in this run. A game\nmakes Auto the starting choice with cw_quality_auto(true, budget); the\nplayer can always pick it. The level it reached is saved, so the next run\nstarts there.\n\nDeterminism: a deterministic run (a test) starts at High whatever the\nsave holds, with Auto off, so every host draws the same frame; a choice\nmade in it (from the menus, by input every host replays alike) applies.\nNothing here reaches the simulation.",
+   "summary": "cartwheel/quality.h: graphics settings, the presets that set them, and\nthe automatic choice.\n\nEach setting is something the player can pick on its own; a preset picks\nthem all:\n\n                    Low       Medium    High (default)  Ultra\n  resolution        67%       75%       100%            100%\n  ambient occl.     off       on        on              on\n  shadows           Low       Medium    High            Ultra\n  anti-aliasing     FXAA      FXAA      SMAA            SMAA\n  effects detail    Low       Medium    High            Ultra\n\nResolution: the 3D scene (and its post) renders at that share of the\noutput's size and is scaled up with a filter (Catmull-Rom); the 2D window\npasses (HUD, menus, text) draw at the output's full size over it. It is the\nbiggest lever: GPU time of the scene and its post goes with its pixel\ncount. It applies on top of cw_app_desc.render_scale (the output size);\nan app with pixel_scale draws at its own size and ignores it.\n\nAmbient occlusion: GTAO as the scene's PostProcess asks for it (On) or\nnone (Off); its sample count follows effects detail.\n\nShadows: Low (maps of 1024 at most, hard PCF), Medium (1024 at most,\nsoft), High (as the lights ask, soft), Ultra (twice that, up to 4096,\nsoft).\n\nAnti-aliasing: Off, FXAA, or SMAA (as the PostProcess asks: a scene that\nasks for FXAA or none keeps it). The scene's MSAA (PostProcess msaa) is the\ngame's and stays on every preset, on GL and WebGPU alike (4x WebGPU, as\nGL at 4); Off turns it off too.\n\nEffects detail (Low, Medium, High, Ultra): the share of GPU particles\ndrawn (0.4, 0.7, 1, 1), the density games thin their instancing by (0.35,\n0.65, 1, 1: grass, crowd, scatter), the bloom chain (3, 5 levels, as\nauthored), GTAO's samples (1 slice of 4 steps, 1 of 4, as authored, 3\nslices of 8 steps), the LOD error budget (x2, x1.5, x1, x1: coarser\nmeshes sooner), the clustered lights one cluster keeps (x0.375, x0.5,\nx1, x1 of LightingSettings.max_per_cluster: 24, 32, 64, 64 by default;\ncw_quality_scale(\"lights\"), cartwheel/lighting.h) and the volumetric fog\ngrid (cartwheel/environment.h: 64 x 32, 96 x 48, 160 x 64, 240 x 96 cells\nacross x slices), the distortion buffer (cartwheel/explosions.h: half the\nframe on Low and Medium, the whole frame on High and Ultra;\ncw_quality_scale(\"distortion\")), colour fringing on bent edges (High and\nUltra: \"dispersion\"), the share of the explosion light pool in use\n(0.25, 0.5, 1, 1: \"flash_lights\") and skin shading (Medium and up:\n\"skin\", cartwheel/skin_shading.h; Low draws skin as plain PBR).\n\n\"As authored\" is what the scene's PostProcess / lights ask for: High\ndraws exactly what the game would without this module.\n\nGame settings: a game adds its own render-only levers (cw_quality_lever_add:\na cheaper material at distance, say) with the value each preset picks;\nthey show in the graphics menu after the engine's, and are saved with them.\n\nDensity: games read cw_quality_scale(\"grass\"), (\"crowd\"), (\"scatter\") or\nthe shorthand cw_quality_density() and thin their instancing; set a change\ncallback to re-thin when a setting changes. Particles: the engine draws\ncw_quality_scale(\"particles\") of every GPU particle system's particles\n(they are all still simulated, so counts and seeds agree).\n\nThe player picks a preset, Auto, or each setting (the graphics menu,\ncartwheel/quality_menu.h, or the game shell's settings); changing one\nsetting shows the preset as \"Custom\". Persist the choice in the game's\nsave data (cw_quality_saved / cw_quality_restore below).\n\nAuto: the engine picks, and holds the frame's cost under a budget. While\nthe game says it is in play (cw_quality_auto_measure(true) every frame) it\naverages the cost: the GPU time of the frame's passes where the host\ntimes them cheaply (native WebGPU's timestamps), else the frame-to-frame\ntime (GL, a cart: a frame the GPU cannot finish in time arrives late). After a couple of\nseconds over budget it steps down one level of its ladder:\n\n  High 100%, High 85%, Medium 75%, Medium 67%, Low 67%, Low 60%, Low 50%\n\n(resolution first: it costs the picture least for what it saves; a game\nthat asks for cw_quality_full_resolution gets High, Medium, Low at 100%). Where\nit measures GPU time it also steps back up when the cost has stayed well\nunder budget, never into a level that was over it in this run. A game\nmakes Auto the starting choice with cw_quality_auto(true, budget); the\nplayer can always pick it. The level it reached is saved, so the next run\nstarts there.\n\nDeterminism: a deterministic run (a test) starts at High whatever the\nsave holds, with Auto off, so every host draws the same frame; a choice\nmade in it (from the menus, by input every host replays alike) applies.\nNothing here reaches the simulation.",
    "functions": [
     {
      "name": "cw_quality_get",
@@ -9177,6 +9212,18 @@
      "name": "cw_quality_auto_measure",
      "signature": "void cw_quality_auto_measure(bool in_play)",
      "doc": "every frame: true while the frame time means something",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_full_resolution",
+     "signature": "void cw_quality_full_resolution(bool on)",
+     "doc": "Full resolution (opt in; off by default): the game always draws its 3D at\nthe output's size. Every preset keeps Resolution at 100% (Low and Medium\nkeep their other settings), and Auto's ladder drops its resolution steps:\nHigh, Medium, Low, each at 100%. Only the player picking a resolution in\nthe graphics menu changes it. For a game whose look depends on full-size\npixels, or a host that must never upscale. Call in init, before\ncw_quality_restore.",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_is_full_resolution",
+     "signature": "bool cw_quality_is_full_resolution(void)",
+     "doc": "cw_quality_full_resolution is on",
      "inline": false
     },
     {
@@ -10360,6 +10407,12 @@
      "name": "cw_mesh3d_set_procedural",
      "signature": "bool cw_mesh3d_set_procedural(cw_node node, t3_mesh *mesh)",
      "doc": "Attach a procedural mesh to a MeshInstance3D for visibility/BVH support.\nRetains mesh as a child of the node; preserves its local transform, materials\nand shadow flags. While attached, primitive/resource/look properties are\nignored. NULL restores property-driven geometry. No automatic LOD chain is\ninferred. Returns false for another node type or an already-parented mesh.",
+     "inline": false
+    },
+    {
+     "name": "cw_geometry_optimize_vertex_cache",
+     "signature": "bool cw_geometry_optimize_vertex_cache(t3_geometry *g, float *acmr_before, float *acmr_after)",
+     "doc": "Reorder an indexed geometry's triangles for the GPU's post-transform vertex cache (meshoptimizer's\noptimizeVertexCache, Forsyth-style): the same triangles and vertices, an order in which each vertex is\nshaded fewer times. Meshes exported in modelling order often run the vertex shader two or three times a\nvertex; for a crowd of thousands of instanced characters that is most of its vertex cost. Opaque meshes draw\nthe same picture (depth decides what shows; only exact depth ties between a mesh's own triangles can\ndiffer); a transparent mesh drawn without sorting changes its blend order. Call once after building the\ngeometry, before its first draw. acmr_before / acmr_after (either may be NULL): vertices shaded per triangle\nfor a 16-entry cache, before and after (report only). false (nothing changed) without an index or with an\nindex past the vertices. Opt in: nothing calls it for you.",
      "inline": false
     },
     {
@@ -12347,6 +12400,73 @@
      "name": "cw_skin_shading_desc",
      "doc": "",
      "decl": "typedef struct cw_skin_shading_desc {\n  t3_color scatter;    /* colour that scatters furthest under the skin (linear; 1, 0.35, 0.22) */\n  float wrap;          /* how far light wraps past the terminator, 0 to 1 (0.55) */\n  float translucency;  /* strength of light seen through thin parts from behind, 0 = off (0.35) */\n  float distortion;    /* how much the surface normal bends the light seen through (0.25) */\n  float power;         /* how tightly the glow gathers toward the light (3) */\n  float ambient;       /* translucency that reaches every lit pixel, a softening term (0) */\n} cw_skin_shading_desc;"
+    }
+   ],
+   "macros": []
+  },
+  {
+   "header": "cartwheel/splats.h",
+   "summary": "cartwheel/splats.h: blob shadows and light splats, the cheap stand-ins\nfor dynamic shadows and dynamic lights on ground that draws baked\n(LightmapGI shading BAKED, cartwheel/lightmap.h, takes no real-time light\nor shadow).\n\nA splat set is one instanced draw of flat quads lying on the ground, each\nplaced, stretched and turned by the caller every frame:\n\n  CW_SPLATS_SHADOW  a soft dark blob under a moving object: the colour\n                    below is multiplied by 1 - strength x falloff (blend\n                    ZERO, ONE_MINUS_SRC_COLOR), so a strength of 0.6\n                    takes 60% of the light at the centre. Stretch it away\n                    from the sun for a low sun's long shadow.\n  CW_SPLATS_LIGHT   a pool of added light on the ground under a moving\n                    light (a muzzle flash, a fire, a lamp a player\n                    carries): additive, the colour is the light's colour\n                    x strength (HDR, so it blooms), the falloff that of a\n                    point light above the ground.\n\nCost: one draw for the whole set; pixels only where a splat lies (a\nshadow under 2000 enemies is a few percent of a 1080p frame). Splats test\ndepth and write none, so what stands on them hides them. Render only:\nnothing here reaches the simulation. Opt in: nothing draws a splat unless\na game makes a set.",
+   "functions": [
+    {
+     "name": "cw_splats_new",
+     "signature": "cw_splats *cw_splats_new(cw_node parent, const char *name, cw_splats_kind kind, int capacity)",
+     "doc": "A set of up to `capacity` splats drawn under a new Node3D `name`, a\nchild of parent. NULL when capacity < 1.",
+     "inline": false
+    },
+    {
+     "name": "cw_splats_free",
+     "signature": "void cw_splats_free(cw_splats *s)",
+     "doc": "removes its node too; NULL is a no-op",
+     "inline": false
+    },
+    {
+     "name": "cw_splats_begin",
+     "signature": "void cw_splats_begin(cw_splats *s)",
+     "doc": "Start this frame's splats (none drawn until added).",
+     "inline": false
+    },
+    {
+     "name": "cw_splats_add",
+     "signature": "bool cw_splats_add(cw_splats *s, t3_vec3 at, float length, float width, float yaw, float offset, t3_color color, float strength)",
+     "doc": "One splat centred at `at` (its height: the ground's, a few centimetres are\nadded against z-fighting), `length` along its yaw (radians about +Y, 0 =\nalong +Z) and `width` across, metres. strength: SHADOW 0..1 (the share of\nthe light taken at its centre); LIGHT any (x color). The centre can sit\noff the middle: `offset` (-1..1) slides it toward the far end, for a long\nshadow that starts at the caster's feet. false when the set is full.",
+     "inline": false
+    },
+    {
+     "name": "cw_splats_add_lights",
+     "signature": "int cw_splats_add_lights(cw_splats *s, cw_node root, float ground_y, float scale)",
+     "doc": "A LIGHT set: a splat under every visible OmniLight3D under root that has\nenergy and is not baked (bake_direct off), sized to where its light on\nground at height ground_y falls to a twentieth (at most its range), its\nstrength the light's irradiance straight below (energy / height^2) x\nscale: give scale the ground's albedo / PI and the pool is about the\nlight a lit ground would show. Returns how many it added.",
+     "inline": false
+    },
+    {
+     "name": "cw_splats_end",
+     "signature": "void cw_splats_end(cw_splats *s)",
+     "doc": "Upload this frame's splats (after the last add).",
+     "inline": false
+    },
+    {
+     "name": "cw_splats_count",
+     "signature": "int cw_splats_count(const cw_splats *s)",
+     "doc": "splats added since cw_splats_begin",
+     "inline": false
+    },
+    {
+     "name": "cw_splats_mesh",
+     "signature": "t3_instanced_mesh *cw_splats_mesh(cw_splats *s)",
+     "doc": "The set's instanced mesh (render order, layers, visibility).",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_splats_kind",
+     "doc": "",
+     "decl": "typedef enum { CW_SPLATS_SHADOW, CW_SPLATS_LIGHT } cw_splats_kind;"
+    },
+    {
+     "name": "cw_splats",
+     "doc": "",
+     "decl": "typedef struct cw_splats cw_splats;"
     }
    ],
    "macros": []

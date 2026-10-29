@@ -38,7 +38,7 @@ typedef struct cw_splats cw_splats;
 /* A set of up to `capacity` splats drawn under a new Node3D `name`, a
  * child of parent. NULL when capacity < 1. */
 cw_splats *cw_splats_new(cw_node parent, const char *name, cw_splats_kind kind, int capacity);
-void cw_splats_free(cw_splats *s);
+void cw_splats_free(cw_splats *s); /* removes its node too; NULL is a no-op */
 /* Start this frame's splats (none drawn until added). */
 void cw_splats_begin(cw_splats *s);
 /* One splat centred at `at` (its height: the ground's, a few centimetres are
@@ -58,7 +58,7 @@ bool cw_splats_add(cw_splats *s, t3_vec3 at, float length, float width, float ya
 int cw_splats_add_lights(cw_splats *s, cw_node root, float ground_y, float scale);
 /* Upload this frame's splats (after the last add). */
 void cw_splats_end(cw_splats *s);
-int cw_splats_count(const cw_splats *s);
+int cw_splats_count(const cw_splats *s); /* splats added since cw_splats_begin */
 /* The set's instanced mesh (render order, layers, visibility). */
 t3_instanced_mesh *cw_splats_mesh(cw_splats *s);
 

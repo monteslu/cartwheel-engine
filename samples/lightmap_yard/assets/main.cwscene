@@ -1,0 +1,75 @@
+[scene format=1]
+
+; a yard at dusk lit the way a weak GPU can afford: everything that stands
+; still is baked (the sun, two floodlights that exist only in the bake, their
+; shadows from the walls and a row of instanced posts) and drawn unlit
+[node name="Yard" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+ambient_color = color(0.4, 0.48, 0.72, 1)
+ambient_energy = 0.2
+sky_color = color(0.35, 0.42, 0.7, 1)
+ground_color = color(0.08, 0.07, 0.06, 1)
+hemi_energy = 0.5
+
+[node name="Post" parent="." type="PostProcess"]
+tonemap = AGX
+bloom = true
+bloom_intensity = 0.12
+
+[node name="GI" parent="." type="LightmapGI"]
+shading = BAKED
+texel_density = 8
+samples = 32
+bounces = 1
+probe_spacing = 0
+direct_samples = 8
+shadow_softness = 0.03
+reflection_size = 16
+reflection_origin = vec3(0, 1, 0)
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 13, 9)
+fov = 50
+near = 0.1
+far = 80
+
+; the low sun: baked into the floor, real time for what moves
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(-6, 2.2, 3)
+energy = 2
+color = color(1, 0.7, 0.45, 1)
+bake_direct = true
+
+; two floodlights in the bake only: they cost nothing a frame
+[node name="FloodA" parent="." type="SpotLight3D"]
+position = vec3(-6, 6, -5)
+color = color(0.72, 0.86, 1, 1)
+energy = 400
+range = 25
+angle = 0.5
+penumbra = 0.5
+bake_direct = true
+realtime = false
+
+[node name="FloodB" parent="." type="SpotLight3D"]
+position = vec3(6, 6, -4)
+color = color(1, 0.85, 0.6, 1)
+energy = 300
+range = 25
+angle = 0.45
+penumbra = 0.5
+bake_direct = true
+realtime = false
+
+; the ground: a plane made in code (its uv0 is the lightmap layout: lightmap_uv UV0)
+[node name="Ground" parent="." type="MeshInstance3D"]
+gi_mode = STATIC
+lightmap_uv = UV0
+
+[node name="Ball" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 0.5, 2)
+size = vec3(1, 1, 1)
+color = color(0.8, 0.8, 0.8, 1)
+roughness = 0.5

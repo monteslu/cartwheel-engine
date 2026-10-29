@@ -951,6 +951,28 @@
     "note": "cw_vehicle3d: settling on the springs, drive, brake, reverse, steering, the friction circle (slide and grip), handbrake lock and powerslide, a car on a wall along its own down, a car riding on another, wheel transforms, teleport and the ragdoll switch; one step worker and all of them give the same bits"
   },
   {
+    "name": "unit-weakgpu",
+    "app": "unit_weakgpu",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1,
+      "unit.checksum": 1469186084
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "the opt-in pieces for weak GPUs: cw_geometry_optimize_vertex_cache on a shuffled grid (fewer vertices shaded a triangle, the same triangles; the shuffled ACMR is the control), cw_quality_full_resolution (Low keeps 100%; off, Low is 67%), splat sets at their capacity. The checksum folds every number, the same on every host"
+  },
+  {
     "name": "unit-cloth",
     "app": "unit_cloth",
     "frames": 2,
@@ -3063,6 +3085,18 @@
     "name": "lightmap-tool",
     "script": "tests/lightmap-tool.mjs",
     "note": "cwbake twice: identical bytes; the same fingerprint as the runtime bake; lightmap_room loading the .cwlm renders the same frame without baking; control: another seed differs"
+  },
+  {
+    "name": "lightmap-yard",
+    "webgpu": { "vsGl": 0.005, "controls": [{ "env": { "YARD_LIT": "1" } }] },
+    "app": "lightmap_yard",
+    "frames": 40,
+    "maxGt16": 0.003,
+    "fields": ["yard.tick", "yard.hash_lo", "yard.hash_hi", "yard.baked", "yard.cube", "yard.splats", "yard.light"],
+    "expect": { "yard.baked": 1, "yard.cube": 16, "yard.splats": 2 },
+    "controlFrames": 40,
+    "controlEnv": { "YARD_LIT": "1" },
+    "note": "fully baked lighting: the sun and two bake-only floodlights (realtime off) in the lightmap with soft shadows from instanced walls and posts, the ground drawn BAKED (unlit, laid on its uv0), a puddle on the traced reflection cube, a ball lit by the ground under it (cw_lightmap_irradiance_below) with a blob shadow and a light pool; the same bake fingerprint and state on every host. Control: shading LIT (YARD_LIT=1) loses the floodlight pools and must change the frame"
   },
   {
     "name": "csg-greybox",

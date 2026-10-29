@@ -118,6 +118,8 @@ The post settings are the fields of `cw_post_settings`, mirrored as PostProcess 
 
 **MSAA on both backends.** `msaa` multisamples the scene pass. GL takes the sample count asked for (2, 4 or 8, up to what the driver allows); WebGPU multisamples 4x, its only count, for any of them. For an HDR scene WebGPU needs a core device: the engine asks for core WebGPU wherever the GPU has it (natively, and the cart hosts do too: romdev, wasmcart-native and the test harness's browser), so an HDR scene with ambient occlusion, decals, fog or a sky is smoothed as on GL, and the passes after the opaque phase see the multisampled depth's first sample, as GL's resolving blit gives them. On a device that offers only compatibility mode (a GLES-class GPU), WebGPU multisamples an RGBA8 scene with no depth-reading pass and draws anything else single-sampled, with a warning in the log. `cw_gpu_adapter_info()->core` says which device a run got, and `CW_WGPU_FEATURE_LEVEL=compat` runs a native build that way, to check a game still looks right there. `samples/msaa_hdr` (gate `msaa-hdr`) is a fence, wires and grass against a low sun with HDR, ambient occlusion, decals and 4x MSAA, held to GL within 0.04% of pixels. On the 890M at 1920 x 1080, 4x MSAA costs WebGPU about 0.3 to 0.6 ms of GPU time at the Low and Medium presets and 0.7 to 1.5 ms at High and Ultra (GL 0.25 to 0.8 ms), with one view or four (the views split the same pixels); budget roughly three times that on a Vega 8. The Anti-aliasing setting's Off turns the scene's MSAA off as well, on both backends; the presets keep the game's MSAA.
 
+**Distortion inside the tone curve.** Heat haze and shockwaves (cartwheel/explosions.h) bend the finished frame in a full-frame pass of their own. `fuse_distortion` (off by default) does the same bending inside the tonemap pass, with the same guards and rounding, and saves that pass's read and write of the HDR frame (about 0.45 ms at 1080p on the 890M); bloom then glows from the unbent frame, which is the one difference.
+
 Two limits stated in the header: TAA reprojects camera motion only (moving objects rely on the neighbourhood clip), and SMAA has no diagonal pattern search yet.
 
 `samples/post_stack` steps one static room through every effect in turn, one schedule segment each (its gates are `post-bloom`, `post-ssao`, `post-taa` and so on, each against the plain AgX segment), and measures TAA convergence over one jitter cycle.
@@ -234,6 +236,8 @@ The player picks from the graphics page ([cartwheel/quality_menu.h](header:quali
 
 **Auto** holds the frame's cost under a budget. While the game says it is in play (`cw_quality_auto_measure(true)` every frame), the engine averages the cost: the GPU time of the frame's passes where the host times them cheaply (native WebGPU's timestamps), else the frame-to-frame time (GL's timer queries would cost the CPU a driver sync every frame; a cart has no GPU timers). After a couple of seconds over budget it steps down a ladder that gives up resolution first (High 100%, High 85%, Medium 75%, Medium 67%, Low 67%, Low 60%, Low 50%); where it measures GPU time it also steps back up when the cost stays well under budget, never into a level that was over it in this run. `cw_quality_auto(true, budget_ms)` makes Auto a game's starting choice (19 ms of frame time by default, three quarters of that of GPU time). The level it reached is saved with the choice.
 
+**Full resolution.** A game that must never draw its 3D below the output size calls `cw_quality_full_resolution(true)` in init: every preset keeps Resolution at 100% (Low and Medium keep their other settings) and Auto's ladder becomes High, Medium, Low, each at 100%. Only the player picking a resolution on the graphics page lowers it.
+
 A deterministic run starts at High whatever the save holds, with Auto off, so every host draws the same frame; a choice made in it from the menus (input every host replays alike) applies. `CW_QUALITY=low` (native) fixes a preset to compare them; the debug command `quality [low|medium|high|ultra|auto]` switches one live and `quality set <setting> <value>` one setting (`resolution 0-5`, `ssao 0-1`, `shadows 0-3`, `aa 0-2`, `effects 0-3`, or a game setting's name); `quality_menu 1` opens the graphics page.
 
 ## Sky and fog
@@ -322,6 +326,25 @@ build/native/cwbake samples/lightmap_room/assets/main.cwscene out/room.cwlm
 ```
 
 `samples/lightmap_room` bakes the same room at runtime, twice, and publishes the hash as `lm.hash_hi` / `lm.hash_lo`; its gate (`lightmap-bake`) requires the same value on every host. A ball rolls through it.
+
+Which UVs a lightmap is read through: three.c's programs read every map, the lightmap included, through uv0 (three.js reads a texture through `uv(texture.channel)`, and three.c has no texture channel yet), so the generated charts line up only where they happen to match uv0. A mesh whose uv0 already covers [0, 1] without overlapping, a ground plane or a terrain, sets `lightmap_uv = UV0`: the bake lays its lightmap on that uv0 and it lines up on GL and WebGPU.
+
+### Fully baked lighting for weak GPUs
+
+A scene whose scenery never moves can bake all of its light, the way games on weak GPUs light their levels, and pay a few texture reads a pixel for its floor however many lights shine on it. Everything here is opt in.
+
+- `bake_direct` on a light puts its direct light, shadowed by the static geometry, into the lightmaps. LightmapGI `shadow_softness` (the light's radius over its distance; a directional light's angular radius) and `direct_samples` soften those shadows.
+- `realtime = false` keeps a light in the bake only: it lights nothing at run time and costs nothing a frame.
+- LightmapGI `shading = BAKED` draws the lightmapped meshes unlit from their lightmap: each gets a Basic copy of its material (colour, map, vertex colours, AO map, transparency), whose light is its lightmap's irradiance, the same Lambert diffuse three.js's lightMap gives a Standard material. No real-time light reaches them; lights still light the rest in real time.
+- An instanced mesh under a STATIC MeshInstance3D (`cw_mesh3d_set_procedural` with a `t3_instanced_mesh`) shadows and bounces light in the bake: walls, posts, containers.
+- `reflection_size` traces a small cube map from `reflection_origin` through the bake (the sky, the lit floor and walls, emissive lamp heads). `cw_lightmap_use_reflection(cw_lightmap_gi_data(gi), material, 1)` gives it to a puddle or a wet patch: one texture read, where screen-space reflections draw a G-buffer and trace every frame.
+- `cw_lightmap_irradiance_below` returns the baked light on the ground under a point: a crowd that walks through a floodlight's pool or a wall's shadow takes that light (as a colour on its instances), with no GPU cost.
+
+Moving things need their shadows and their lights shown on a ground that takes no real-time light: [splats.h](header:splats.h) draws blob shadows (the colour below multiplied by 1 - strength, stretched away from a low sun) and light pools (added light under a moving lamp, a muzzle flash, a fire: `cw_splats_add_lights` puts one under every lit, unbaked OmniLight3D), one instanced draw of ground discs per set.
+
+A late wave of a 2000-enemy top-down game at 1080p on the 890M, its yard of six floodlights baked this way (with SSR, SSAO and volumetric fog replaced by the reflection cube, blob shadows and light shaft cards): 12.2 to 3.8 ms of GPU time on GL, 11.1 to 3.8 on WebGPU.
+
+Sample: `samples/lightmap_yard` (a dusk yard: the sun and two bake-only floodlights in the lightmaps, a row of instanced posts in the bake, a puddle on the reflection cube, a ball lit by the ground under it with a blob shadow and a light pool). Gate `lightmap-yard`.
 
 ## Reflections and bounce light
 
@@ -449,6 +472,8 @@ cw_rim_light_remove_tree(model_root);            /* before releasing the model: 
 ```
 
 The rim is per material: glTF instances share their file's materials, so clone one per character for a per-character colour (MeshInstance3D primitives of one look share one material in a tree too). It works with every other part (clustered lights, the cascaded sun, skin shading, GI) and costs a few instructions per pixel of the material; shadow casters are untouched and every preset draws it. Measured on a Radeon 890M in a split-screen shooter at 1920 x 1080, High preset, four to eight rimmed skinned characters (scene pass GPU ms, rims on against off, two interleaved runs each): GL one view 5.26 to 5.66 against 5.15 to 5.33, four views 5.2 to 5.5 against 5.21 to 5.34; WebGPU one view 4.08 to 4.7 against 4.36 to 4.75, four views 4.68 to 4.71 against 4.23. That is under the run-to-run noise on one view and about 0.45 ms on WebGPU with four views; a Vega 8 (about a quarter of an 890M) should stay under 1 ms. `samples/rim_light` shows two lines of figures from 3 m to 40 m with red and blue rims and a pulsing one; its gate is `rim-light`.
+
+**Vertex cache order.** `cw_geometry_optimize_vertex_cache` reorders an indexed geometry's triangles for the GPU's post-transform cache (meshoptimizer's optimizeVertexCache) and reports the vertices shaded per triangle before and after. Meshes exported in modelling order can shade each vertex two or three times; already ordered ones (most of a character exporter's) gain little. Opaque meshes draw the same picture.
 
 ## Visibility: culling, LOD and impostors
 

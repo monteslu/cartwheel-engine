@@ -48,7 +48,6 @@ standard+instbig+shadow+senv+l1801+s110
 standard+l0001+xcluster_csm
 standard+l0001+xcluster_csm_gi
 standard+l0211
-standard+l1101
 standard+map+rep+instbig+l1001
 standard+map+rep+l1001
 standard+map+rep+nmap+ao+emap+rmap+mmap+tan+l1001
@@ -88,3 +87,8 @@ standard+shadow+l1001+xcluster
 depth+xcluster_rim
 standard+l1001+xcluster_rim
 physical+map+vcol+nearest+instbig+nmap+ao+emap+rmap+shadow+tan+icol+l1000
+standard+l1121
+basic+lmap
+basic+map+trans+instbig+icol
+basic+trans+cenv+add
+standard+lmap+l1121
