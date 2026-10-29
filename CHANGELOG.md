@@ -4,6 +4,13 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.23.1 (2026-10-29)
+
+### Fixed
+- The touch overlay (`CW_TOUCH_OVERLAY_AUTO`) now hides when a pad's stick or trigger is pushed past half way, not only on a
+  pad button: a phone player who touched the screen once and then steered with a controller's stick alone kept the
+  on-screen controls. The next touch brings them back, as before.
+
 ## v0.23.0 (2026-10-29)
 
 One particle system for a pool of one-shot effects, and light probes for what moves.

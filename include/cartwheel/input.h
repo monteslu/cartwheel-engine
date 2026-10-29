@@ -250,9 +250,11 @@ bool cw_input_capturing(void); /* still waiting for a press */
  * The overlay: the engine draws its thumbsticks (base, ring, knob) and round
  * buttons (disc, label) after the app's render callback, translucent, in
  * window coordinates. CW_TOUCH_OVERLAY_AUTO (the default) shows them while
- * cw_platform_touch_primary or once a touch has landed, until a pad button
- * is pressed. A game drawing its own sets `hidden` on a control or turns the
- * overlay off; the queries below give it what it needs. The debug field
+ * cw_platform_touch_primary or once a touch has landed, until the pad is
+ * used (a button, or a stick or trigger past half way; a pad merely
+ * plugged in does not count) and again from the next touch. A game drawing
+ * its own sets `hidden` on a control or turns the overlay off; the queries
+ * below give it what it needs. The debug field
  * `cw.touch_overlay` is the count of controls drawn last frame.
  *
  * The rect controls (cw_touch_add_button / cw_touch_add_stick) are the
@@ -310,7 +312,7 @@ void cw_touch_set_area(float x, float y, float w, float h);
 float cw_touch_unit(void); /* window coordinates per touch unit, as last laid out */
 
 typedef enum {
-  CW_TOUCH_OVERLAY_AUTO,   /* drawn on a touch-first device or once a touch lands (until a pad is pressed) */
+  CW_TOUCH_OVERLAY_AUTO,   /* drawn on a touch-first device or once a touch lands, until a pad is used */
   CW_TOUCH_OVERLAY_ALWAYS, /* drawn every frame (a desktop test, a demo) */
   CW_TOUCH_OVERLAY_OFF,    /* never drawn: the game draws its own (the controls still work) */
 } cw_touch_overlay_mode;

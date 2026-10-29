@@ -476,6 +476,21 @@ static void test_thumbstick(void) {
   raw.pads[0].pressed = 1;
   run_frame(right, 1);
   CHECK(cw_platform_touch_primary() || !cw_touch_overlay_visible());
+  raw.pads[0].pressed = 0;
+  /* a touch brings it back; steering with the stick alone hides it again */
+  raw.touches[0] = (cw_touch_state){ .active = true, .x = 5, .y = 5 };
+  run_frame(right, 1);
+  raw.touches[0] = (cw_touch_state){ 0 };
+  run_frame(right, 1);
+  CHECK(cw_touch_overlay_visible());
+  raw.pads[0].connected = true;
+  raw.pads[0].axes[CW_AXIS_LX] = 0.3f; /* resting drift: still touch */
+  run_frame(right, 1);
+  CHECK(cw_touch_overlay_visible());
+  raw.pads[0].axes[CW_AXIS_LX] = -0.9f;
+  run_frame(right, 1);
+  CHECK(cw_platform_touch_primary() || !cw_touch_overlay_visible());
+  raw.pads[0] = (cw_pad_state){ 0 };
   cw_touch_set_overlay(CW_TOUCH_OVERLAY_ALWAYS);
   CHECK(cw_touch_overlay_visible());
   cw_touch_set_overlay(CW_TOUCH_OVERLAY_OFF);
