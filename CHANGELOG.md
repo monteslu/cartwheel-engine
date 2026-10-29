@@ -18,8 +18,10 @@ One particle system for a pool of one-shot effects, and light probes for what mo
   light probe per moving object; lights in the bake only (realtime off) add their direct light to the probes.
 - `cw_splats_set_texture`: a splat set's own falloff texture (a damp sheen that breaks into wet patches).
 
-
 ### Changed
+- WebGPU particles: every system's simulation, step and draw uniforms go into one buffer per particles pass, read
+  through dynamic offsets and written once (each system made three queue writes a frame, a host call each in a
+  cart). The same pixels.
 - Splat sets reuse the sines of a yaw equal to the last splat's (a crowd's blob shadows all point away from one sun).
 
 ## v0.22.0 (2026-10-29)
