@@ -3409,7 +3409,7 @@
     {
      "name": "cw_touch_set_round_button",
      "signature": "void cw_touch_set_round_button(int id, const cw_touch_button_desc *d)",
-     "doc": "",
+     "doc": "the same for a round button",
      "inline": false
     },
     {
@@ -3439,7 +3439,7 @@
     {
      "name": "cw_touch_set_overlay",
      "signature": "void cw_touch_set_overlay(cw_touch_overlay_mode mode)",
-     "doc": "",
+     "doc": "when the engine draws its touch controls (default AUTO)",
      "inline": false
     },
     {
