@@ -203,6 +203,8 @@ typedef struct cw_post_settings {
   int msaa;                 /* samples on the scene pass (0, 2, 4, 8; clamped to GL_MAX_SAMPLES; WebGPU
                              * multisamples 4x for any of 2-8); 0 */
   bool depth_prepass;       /* depth-only pass before the scene (early-z for heavy shaders) */
+  bool fuse_distortion;     /* false: heat haze and shockwaves bend the frame inside the tonemap pass (opt in: bloom
+                             * then glows from the unbent frame) instead of a full-frame pass of their own */
   /* exposure: a linear multiplier (three.js's toneMappingExposure) times
    * 2^exposure_ev (photographic stops) */
   float exposure;           /* 1 */

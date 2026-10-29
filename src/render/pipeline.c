@@ -267,7 +267,7 @@ static void fuse_off(cw_pipeline *p, int i) {
   r->stat.ran = r->stat.fused = true;
 }
 static void plan_fusion(cw_pipeline *p, const cw_post_settings *s, bool post) {
-  p->fuse_fog = p->fuse_bloom = p->fuse_grade = p->fuse_lens = p->fuse_lens_tm = false;
+  p->fuse_fog = p->fuse_bloom = p->fuse_grade = p->fuse_lens = p->fuse_lens_tm = p->fuse_distort = false;
   p->bloom_glow = NULL;
   if (!post || s->debug_view != CW_VIEW_NONE || test_no_fusion()) return;
   int bl = active_index(p, "bloom"), tm = active_index(p, "tonemap"), gr = active_index(p, "grade");
@@ -281,6 +281,19 @@ static void plan_fusion(cw_pipeline *p, const cw_post_settings *s, bool post) {
     fuse_off(p, fg);
   }
   if (tm >= 0 && post_adjacent(p, bl, tm)) p->fuse_bloom = true;
+  /* the distortion read inside the tonemap pass (opt in): nothing but a fused bloom between them */
+  int ds = active_index(p, "distort");
+  if (s->fuse_distortion && ds >= 0 && tm > ds) {
+    bool ok = true;
+    for (int i = ds + 1; i < tm && ok; i++) {
+      pass_rec *r = p->passes.data[i];
+      if (r->active && r->d.phase == CW_PHASE_POST && (r->d.writes & CW_RES_COLOR) && !(i == bl && p->fuse_bloom)) ok = false;
+    }
+    if (ok) {
+      p->fuse_distort = true;
+      fuse_off(p, ds);
+    }
+  }
   if (tm >= 0 && post_adjacent(p, tm, gr)) {
     p->fuse_grade = true;
     fuse_off(p, gr);

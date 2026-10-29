@@ -384,6 +384,20 @@ static void apply_exec(cw_pass_ctx *ctx, void *user) {
   cw_pass_fullscreen();
 }
 
+/* the tonemap pass fuses the apply (PostProcess fuse_distortion): it takes the buffer and sets the same uniforms */
+const cw_rt *cw__fx_take_distortion(cw_tree *t) {
+  cw__fx_tree *ft = cw__fx_tree_of(t);
+  const cw_rt *d = ft->dist;
+  ft->dist = NULL;
+  return d;
+}
+void cw__fx_distortion_uniforms(cw_pass_ctx *ctx, unsigned prog, bool on) {
+  float lp[3];
+  cw_pass_linear_depth_params(ctx, lp);
+  cw_pass_uniform4f(prog, "u_dp", cw_quality_scale("dispersion") * 0.35f, 0.25f, 0.08f, on ? 1.0f : 0.0f);
+  cw_pass_uniform4f(prog, "u_dsoft", lp[0], lp[1], lp[2], 0);
+}
+
 void cw__fx_ensure_distort(cw_tree *t) {
   cw__fx_tree *ft = cw__fx_tree_of(t);
   if (ft->distort_added) return;
