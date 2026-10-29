@@ -1348,6 +1348,10 @@ bool cw__psys_refract_active(cw_node n) {
   return d && d->blend == BLEND_REFRACT && d->rt && d->amount > 0 && d->lifetime > 0 && d->alive > 0;
 }
 
+typedef struct psys_prep { bool ok, sorted, have_state, want_trail, distort; t3_mat4 model; } psys_prep;
+static void psys_prepare(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, psys_prep *out);
+static void psys_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, const psys_prep *pp);
+
 void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft) {
   ft->copy = NULL;
   for (int i = 0; i < ft->systems.count; i++)
@@ -1411,10 +1415,27 @@ void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft) {
     return;
   }
 #endif
-  for (int i = 0; i < ft->systems.count; i++) cw__psys_frame(ft->systems.data[i], ctx, ft);
+  /* GL: every system's simulation (transform feedback, scatter, sort) first, then every draw in the systems'
+   * order, the scene's first and the distortion buffer's after: a draw right after its own simulation waits for
+   * the transform feedback to land (a flush on each system), and the target switched twice a system. The same
+   * pixels: no draw reads another system's state, and the two targets are drawn in their own order. */
+  int n = ft->systems.count;
+  psys_prep *pp = cw_frame_alloc(sizeof(psys_prep) * (size_t)(n ? n : 1));
+  for (int i = 0; i < n; i++) psys_prepare(ft->systems.data[i], ctx, ft, &pp[i]);
+  for (int pass = 0; pass < 2; pass++)
+    for (int i = 0; i < n; i++)
+      if (pp[i].ok && pp[i].distort == (pass == 1)) psys_draw(ft->systems.data[i], ctx, ft, &pp[i]);
 }
 
 void cw__psys_frame(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
+  psys_prep p;
+  psys_prepare(n, ctx, ft, &p);
+  if (p.ok) psys_draw(n, ctx, ft, &p);
+}
+
+/* a system's frame before its draw: the simulation steps, the state scatter, the sort */
+static void psys_prepare(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, psys_prep *out) {
+  memset(out, 0, sizeof *out);
   p3d *d = cw_node_data_t(n, p3d_t);
   if (!d || !d->rt || d->amount <= 0 || d->lifetime <= 0) return;
   cw__psys *r = d->rt;
@@ -1453,7 +1474,20 @@ void cw__psys_frame(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
     ft->stats.sort_passes += np;
     sorted = np > 0 || r->sort_n == 1;
   }
+  out->ok = true;
+  out->sorted = sorted;
+  out->have_state = have_state;
+  out->want_trail = want_trail;
+  out->distort = d->blend == BLEND_DISTORT;
+  out->model = model;
+}
 
+/* a prepared system's draw */
+static void psys_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, const psys_prep *pp) {
+  p3d *d = cw_node_data_t(n, p3d_t);
+  cw__psys *r = d->rt;
+  bool sorted = pp->sorted, have_state = pp->have_state, want_trail = pp->want_trail;
+  t3_mat4 model = pp->model;
   const cw_rt *dist = NULL;
   if (d->blend == BLEND_DISTORT) {
     dist = cw__fx_distort_target(ft);
