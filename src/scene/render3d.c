@@ -245,11 +245,13 @@ typedef struct mesh3d {
   /* baked lighting (cartwheel/lightmap.h) */
   int gi_mode;              /* DYNAMIC, STATIC */
   float lightmap_scale;
+  int lightmap_uv;          /* GENERATED, UV0 */
   mesh_look look;           /* what m->mat draws (a primitive's material, shared by look) */
   t3_material *lm_mat;      /* the mesh's material, cloned to carry its own lightmap */
   bool lightmapped;         /* its geometry is the lightmap's uv2 copy: no LOD switching */
 } mesh3d;
 static const char *const gi_names[] = { "DYNAMIC", "STATIC", NULL };
+static const char *const lmuv_names[] = { "GENERATED", "UV0", NULL };
 static const cw_node_type *mesh3d_t;
 
 /* Primitives are unit shapes shared by every MeshInstance3D (the mesh
@@ -555,6 +557,11 @@ static const cw_prop mesh_props[] = {
     .doc = "STATIC: baked geometry (a lightmap of its own; occludes and bounces light in the bake). DYNAMIC: lit by the "
            "baked probe grid (cartwheel/lightmap.h)." },
   CW_PROP_FIELD_RANGE(mesh3d, lightmap_scale, CW_T_FLOAT, 0.01, 100, "Multiplier of LightmapGI.texel_density for this mesh."),
+  { .name = "lightmap_uv", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(mesh3d, lightmap_uv), .size = sizeof(int),
+    .enum_names = lmuv_names,
+    .doc = "GENERATED: the bake lays out charts of its own (uv1). UV0: the lightmap is laid out on the mesh's own uv0, which "
+           "must cover [0, 1] without overlapping (a ground plane, a terrain): three.c's programs read the lightmap through "
+           "uv0, so this is the layout that lines up today (cartwheel/lightmap.h)." },
   CW_PROP_END,
 };
 
@@ -1208,6 +1215,7 @@ bool cw__mesh3d_bake_info(cw_node n, cw__mesh_bake *out) {
   out->is_static = m->gi_mode == 1;
   out->mesh = cw__mesh3d_t3(n);
   out->instanced = out->mesh && out->mesh->base.type == T3_INSTANCED_MESH;
+  out->uv0 = m->lightmap_uv == 1;
   out->scale = m->lightmap_scale;
   t3_material *mat = out->mesh && out->mesh->material_count ? out->mesh->materials[0] : NULL;
   out->albedo = mat ? mat->color : m->color;

@@ -56,6 +56,9 @@ typedef struct lm_unwrap {
  * (the density is lowered, and logged, when the charts would not fit). */
 void lm_unwrap_mesh(lm_unwrap *u, const float *pos, const float *nrm, int tri_count, float density, int padding,
                     int min_size, int max_size);
+/* The mesh's own uv0 (6 floats a triangle, in [0, 1], not overlapping) as its lightmap layout: a square map of
+ * about density texels a unit of the surface's area, within [min_size, max_size]. */
+void lm_unwrap_from_uv(lm_unwrap *u, const float *uv, const float *pos, int n, float density, int min_size, int max_size);
 void lm_unwrap_free(lm_unwrap *u);
 
 /* ── half floats ─────────────────────────────────────────────────────── */

@@ -25,6 +25,7 @@ typedef struct cw__mesh_bake {
   t3_color albedo, emissive;
   float scale;              /* lightmap_scale */
   bool instanced;           /* an instanced mesh: occludes and bounces in the bake, gets no lightmap */
+  bool uv0;                 /* lightmap_uv UV0: the lightmap is laid out on the mesh's own uv0 */
 } cw__mesh_bake;
 bool cw__mesh3d_bake_info(cw_node n, cw__mesh_bake *out);
 /* the baked geometry (with uv1) and lightmap for a mesh */

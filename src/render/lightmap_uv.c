@@ -242,6 +242,30 @@ void lm_unwrap_mesh(lm_unwrap *u, const float *pos, const float *nrm, int n, flo
   cw_free(fn);
 }
 
+void lm_unwrap_from_uv(lm_unwrap *u, const float *uv, const float *pos, int n, float density, int min_size, int max_size) {
+  memset(u, 0, sizeof *u);
+  u->tri_count = n;
+  u->uv2 = cw_calloc((size_t)CW_MAX(n, 1) * 6, sizeof(float), CW_MEM_RENDER);
+  u->tex = cw_calloc((size_t)CW_MAX(n, 1) * 6, sizeof(float), CW_MEM_RENDER);
+  /* the side from the surface's area: a square map at about density texels a unit */
+  double area = 0;
+  for (int t = 0; t < n; t++) {
+    const float *p = pos + t * 9;
+    float e1[3] = { p[3] - p[0], p[4] - p[1], p[5] - p[2] }, e2[3] = { p[6] - p[0], p[7] - p[1], p[8] - p[2] };
+    float cx = e1[1] * e2[2] - e1[2] * e2[1], cy = e1[2] * e2[0] - e1[0] * e2[2], cz = e1[0] * e2[1] - e1[1] * e2[0];
+    area += 0.5 * sqrt((double)(cx * cx + cy * cy + cz * cz));
+  }
+  int side = (int)ceil(sqrt(area) * (double)density);
+  side = side < min_size ? min_size : side > max_size ? max_size : side;
+  u->width = u->height = side;
+  u->charts = 1;
+  for (int k = 0; k < n * 6; k++) {
+    float v = uv[k] < 0 ? 0 : uv[k] > 1 ? 1 : uv[k];
+    u->uv2[k] = v;
+    u->tex[k] = v * (float)side;
+  }
+}
+
 void lm_unwrap_free(lm_unwrap *u) {
   cw_free(u->uv2);
   cw_free(u->tex);
