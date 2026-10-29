@@ -66,6 +66,17 @@ extern "C" {
  * inferred. Returns false for another node type or an already-parented mesh. */
 bool cw_mesh3d_set_procedural(cw_node node, t3_mesh *mesh);
 
+/* Reorder an indexed geometry's triangles for the GPU's post-transform vertex cache (meshoptimizer's
+ * optimizeVertexCache, Forsyth-style): the same triangles and vertices, an order in which each vertex is
+ * shaded fewer times. Meshes exported in modelling order often run the vertex shader two or three times a
+ * vertex; for a crowd of thousands of instanced characters that is most of its vertex cost. Opaque meshes draw
+ * the same picture (depth decides what shows; only exact depth ties between a mesh's own triangles can
+ * differ); a transparent mesh drawn without sorting changes its blend order. Call once after building the
+ * geometry, before its first draw. acmr_before / acmr_after (either may be NULL): vertices shaded per triangle
+ * for a 16-entry cache, before and after (report only). false (nothing changed) without an index or with an
+ * index past the vertices. Opt in: nothing calls it for you. */
+bool cw_geometry_optimize_vertex_cache(t3_geometry *g, float *acmr_before, float *acmr_after);
+
 /* The tree's three.c scene, created on first use and owned by the tree (freed with it). */
 t3_scene *cw_render3d_scene(cw_tree *t);
 t3_renderer *cw_render3d_renderer(cw_tree *t); /* NULL before the first draw */
