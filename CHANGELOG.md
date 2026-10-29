@@ -4,9 +4,9 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## v0.21.2 (2026-10-28)
+## v0.22.0 (2026-10-29)
 
-Geometry the engine builds no longer leaks its vertex buffers.
+Lighting for weak GPUs (baked direct light and reflections, blob shadows and light pools, full-resolution quality), fewer GL calls and faster GL particles, and geometry the engine builds no longer leaks its vertex buffers.
 
 ### Added
 Lighting for weak GPUs, all opt in (nothing changes for a scene that does not ask):
