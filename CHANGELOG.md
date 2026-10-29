@@ -4,6 +4,24 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.23.0 (2026-10-29)
+
+One particle system for a pool of one-shot effects, and light probes for what moves.
+
+### Added
+- Particle burst slots: GPUParticles3D `bursts` (1 to 32) splits a system into slots that `cw_particles_burst(node, at, dir)`
+  fires one at a time, each a one-shot of the system's settings at its own place and direction: a pool of one-shot
+  effects (hits, muzzle flashes, splashes) is one simulation and one draw instead of a system each. A 2000-enemy
+  late wave: 96 active particle systems to 50, the particles pass 0.73 to 0.42 ms of GPU time. Sample fx_bursts,
+  gate `fx-bursts`.
+- `cw_lightmap_probe_irradiance`: the bake's SH probe grid read on the CPU (trilinear, the cosine lobe applied), a
+  light probe per moving object; lights in the bake only (realtime off) add their direct light to the probes.
+- `cw_splats_set_texture`: a splat set's own falloff texture (a damp sheen that breaks into wet patches).
+
+
+### Changed
+- Splat sets reuse the sines of a yaw equal to the last splat's (a crowd's blob shadows all point away from one sun).
+
 ## v0.22.0 (2026-10-29)
 
 Lighting for weak GPUs (baked direct light and reflections, blob shadows and light pools, full-resolution quality), fewer GL calls and faster GL particles, and geometry the engine builds no longer leaks its vertex buffers.
@@ -32,7 +50,6 @@ Lighting for weak GPUs, all opt in (nothing changes for a scene that does not as
 - `cw_quality_full_resolution`: presets keep Resolution at 100% and Auto's ladder drops its resolution steps.
 - `cw_geometry_optimize_vertex_cache`: meshoptimizer's vertex cache order for an indexed geometry.
 - Sample lightmap_yard and gate `lightmap-yard`.
-
 ### Changed
 - GL particles: every system's simulation runs first, then every draw in the systems' order, as on WebGPU (a draw
   right after its own transform feedback waited for it). The same pixels; a 2000-enemy late wave at 1080p on the
