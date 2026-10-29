@@ -12,6 +12,8 @@ struct cw_splats {
   cw_node node;
   t3_instanced_mesh *im;
   int cap, n;
+  float yaw, sy, cy, qy, qw; /* the last splat's yaw and its sines */
+  bool have_yaw;
 };
 
 enum { TEX = 128 };
@@ -111,11 +113,16 @@ void cw_splats_begin(cw_splats *s) {
 bool cw_splats_add(cw_splats *s, t3_vec3 at, float length, float width, float yaw, float offset, t3_color color,
                    float strength) {
   if (!s || s->n >= s->cap) return false;
-  float sy, cy;
-  cw_sincos(yaw, &sy, &cy);
+  /* the same yaw as the last splat (blob shadows away from one sun): its sines are reused */
+  if (yaw != s->yaw || !s->have_yaw) {
+    cw_sincos(yaw, &s->sy, &s->cy);
+    s->qy = cw_sin(yaw * 0.5f), s->qw = cw_cos(yaw * 0.5f);
+    s->yaw = yaw, s->have_yaw = true;
+  }
+  float sy = s->sy, cy = s->cy;
   float along = offset * length * 0.5f;
   t3_mat4 m;
-  t3_quat q = { 0, cw_sin(yaw * 0.5f), 0, cw_cos(yaw * 0.5f) };
+  t3_quat q = { 0, s->qy, 0, s->qw };
   t3_mat4_compose(&m, (t3_vec3){ at.x + sy * along, at.y + 0.02f, at.z + cy * along }, q, (t3_vec3){ width, 1, length });
   t3_instanced_mesh_set_matrix_at(s->im, s->n, &m);
   float k = s->kind == CW_SPLATS_SHADOW ? CW_CLAMP(strength, 0.0f, 1.0f) : strength;
@@ -133,6 +140,17 @@ void cw_splats_end(cw_splats *s) {
 }
 
 int cw_splats_count(const cw_splats *s) { return s ? s->n : 0; }
+
+void cw_splats_set_texture(cw_splats *s, t3_texture *t) {
+  if (!s || !s->im->mesh.material_count) return;
+  t3_material *m = s->im->mesh.materials[0];
+  if (t) t3_material_set_texture(m, T3_MAP, t);
+  else {
+    t3_texture *d = falloff_texture(s->kind);
+    t3_material_set_texture(m, T3_MAP, d);
+    t3_release(d);
+  }
+}
 t3_instanced_mesh *cw_splats_mesh(cw_splats *s) { return s ? s->im : NULL; }
 
 /* every lit, visible OmniLight3D under root that is not baked (bake_direct off): a light splat under it */

@@ -56,6 +56,11 @@ bool cw_splats_add(cw_splats *s, t3_vec3 at, float length, float width, float ya
  * scale: give scale the ground's albedo / PI and the pool is about the
  * light a lit ground would show. Returns how many it added. */
 int cw_splats_add_lights(cw_splats *s, cw_node root, float ground_y, float scale);
+/* Replace the set's falloff with a texture of your own (retained; its rgb
+ * is the strength across the splat, centred, fading to black at the edge):
+ * a wet sheen that shows the asphalt's damp patches, a lamp's gobo. NULL
+ * puts the built-in falloff back. */
+void cw_splats_set_texture(cw_splats *s, t3_texture *t);
 /* Upload this frame's splats (after the last add). */
 void cw_splats_end(cw_splats *s);
 int cw_splats_count(const cw_splats *s); /* splats added since cw_splats_begin */
