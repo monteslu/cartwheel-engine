@@ -690,6 +690,7 @@ static void free_gl(cw__psys *r) {
   glDeleteBuffers(4, &r->buf[0][0]);
   glDeleteVertexArrays(2, r->sim_vao);
   glDeleteVertexArrays(1, &r->draw_vao);
+  glDeleteVertexArrays(2, r->draw_vaos);
   free_tex(&r->curve_tex);
   free_tex(&r->emit_tex);
   if (r->mesh_vbo) glDeleteBuffers(1, &r->mesh_vbo);
@@ -734,6 +735,8 @@ static void ensure_gl(cw__psys *r, int amount) {
   glGenBuffers(4, &r->buf[0][0]);
   glGenVertexArrays(2, r->sim_vao);
   glGenVertexArrays(1, &r->draw_vao);
+  glGenVertexArrays(2, r->draw_vaos);
+  r->draw_key[0] = r->draw_key[1] = 0;
   r->gl_ready = true;
   r->mesh_built_kind = -1;
   upload_dead(r);
@@ -935,6 +938,7 @@ void cw__psys_ensure_mesh(cw_node self, p3d *d, cw__psys *r) {
 #endif
   {
     if (!r->mesh_vbo) glGenBuffers(1, &r->mesh_vbo);
+    r->draw_key[0] = r->draw_key[1] = 0; /* the draw VAOs name the mesh's buffers: set them up again */
     if (!r->mesh_ibo) glGenBuffers(1, &r->mesh_ibo);
     glBindBuffer(GL_ARRAY_BUFFER, r->mesh_vbo);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(sizeof(float) * 6 * (size_t)nv), v, GL_STATIC_DRAW);
@@ -1544,38 +1548,48 @@ void cw__psys_frame(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
     cw__fx_u1i(dp, "u_tw", r->tw);
     cw__fx_u1i(dp, "u_ow", r->sw);
   }
-  glBindVertexArray(r->draw_vao);
-  if (!sorted) bind_particle_attrs(r, r->cur, 1);
-  else {
-    glDisableVertexAttribArray(0);
-    glDisableVertexAttribArray(1);
-  }
   bool mesh = d->draw_mode == DRAW_MESH;
   if (mesh) {
     cw__psys_ensure_mesh(n, d, r);
-    if (!r->mesh_count) {
-      glBindVertexArray(0);
-      return;
+    if (!r->mesh_count) return;
+  }
+  /* one VAO per state buffer, its attributes specified when the layout first appears (in a cart a
+   * GL call is a crossing into the host: this was 9 to 13 calls a system a frame) */
+  uint64_t key = 1u | (sorted ? 2u : 0u) | (mesh ? 4u : 0u) | (uint64_t)(mesh ? r->mesh_vbo : cw__fx_quad_vbo()) << 8 |
+                 (uint64_t)(mesh ? r->mesh_ibo : 0) << 36;
+  glBindVertexArray(r->draw_vaos[r->cur]);
+  bool setup = r->draw_key[r->cur] != key;
+  r->draw_key[r->cur] = key;
+  if (setup) {
+    if (!sorted) bind_particle_attrs(r, r->cur, 1);
+    else {
+      glDisableVertexAttribArray(0);
+      glDisableVertexAttribArray(1);
     }
-    glBindVertexArray(r->draw_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, r->mesh_vbo);
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 24, 0);
-    glVertexAttribDivisor(2, 0);
-    glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 24, (const void *)12);
-    glVertexAttribDivisor(3, 0);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, r->mesh_ibo);
+  }
+  if (mesh) {
+    if (setup) {
+      glBindBuffer(GL_ARRAY_BUFFER, r->mesh_vbo);
+      glEnableVertexAttribArray(2);
+      glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 24, 0);
+      glVertexAttribDivisor(2, 0);
+      glEnableVertexAttribArray(3);
+      glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 24, (const void *)12);
+      glVertexAttribDivisor(3, 0);
+      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, r->mesh_ibo);
+    }
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     glDrawElementsInstanced(GL_TRIANGLES, r->mesh_count, GL_UNSIGNED_INT, 0, d->amount);
     glDisable(GL_CULL_FACE);
   } else {
-    glBindBuffer(GL_ARRAY_BUFFER, cw__fx_quad_vbo());
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8, 0);
-    glVertexAttribDivisor(2, 0);
-    glDisableVertexAttribArray(3);
+    if (setup) {
+      glBindBuffer(GL_ARRAY_BUFFER, cw__fx_quad_vbo());
+      glEnableVertexAttribArray(2);
+      glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8, 0);
+      glVertexAttribDivisor(2, 0);
+      glDisableVertexAttribArray(3);
+    }
     static const float nz[4] = { 0, 0, 1, 0 };
     glVertexAttrib4fv(3, nz);
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, cw_quality_count(d->amount, "particles"));

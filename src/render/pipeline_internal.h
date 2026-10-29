@@ -166,6 +166,15 @@ unsigned cw__pw_pass_texture(int w, int h, cw_rt_format f, const void *texels);
 void cw__pw_tex_free(unsigned id);
 /* a program for this run's backend: GLSL on GL, WGSL on WebGPU */
 unsigned cw__pass_program2(const char *name, const char *glsl, const char *wgsl);
+/* GL uniform values the engine's own programs (cw_pass_program*, the fx programs) already hold:
+ * cw__gl_uniform_held is true when (prog, loc) was last set to these bytes (at most 64), so the
+ * glUniform call is skipped (a cart pays a wasm -> host crossing per GL call; a pass or a particle
+ * system sets the same samplers and constants every frame). It records the bytes when they differ.
+ * cw__gl_program_born forgets a program id's values (GL reuses ids): every program those setters
+ * write is made through it. */
+bool cw__gl_uniform_held(unsigned prog, int loc, const void *bytes, int n);
+void cw__gl_program_born(unsigned prog);
+uint32_t cw__gl_program_epoch(unsigned prog);
 void cw__pipeline_probe_caps(void);
 /* built-in passes (pipeline_post.c) */
 void cw__pipeline_add_builtin_passes(cw_pipeline *p);
