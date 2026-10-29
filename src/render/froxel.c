@@ -324,6 +324,11 @@ static void bin_slices(int begin, int end, int worker, void *ctx) {
   for (int k = begin; k < end; k++) {
     size_t base = (size_t)k * nx * ny;
     memset(g->count + base, 0, (size_t)nx * ny * sizeof *g->count);
+    if (g->slice_start[k] == g->slice_start[k + 1]) { /* nothing reaches this slice: its totals are zero (no cell to count) */
+      int *t0 = g->sl + 5 * k;
+      t0[0] = t0[1] = t0[2] = t0[3] = 0;
+      continue;
+    }
     float z_near = -g->slice[k], z_far = -g->slice[k + 1];
     for (int q = g->slice_start[k]; q < g->slice_start[k + 1]; q++) {
       int vi = g->slice_vols[q];
@@ -378,6 +383,10 @@ static void compact_slices(int begin, int end, int worker, void *ctx) {
   size_t per = (size_t)g->nx * g->ny;
   for (int k = begin; k < end; k++) {
     int at = g->sl[5 * k + 4];
+    if (!g->sl[5 * k]) { /* an empty slice: every record points at the same place, none has items */
+      for (size_t c = (size_t)k * per; c < (size_t)(k + 1) * per; c++) g->records[c] = (uint32_t)at << 8;
+      continue;
+    }
     for (size_t c = (size_t)k * per; c < (size_t)(k + 1) * per; c++) {
       int cnt = CW_MIN((int)g->count[c], mpc);
       g->records[c] = (uint32_t)at << 8 | (uint32_t)cnt;
