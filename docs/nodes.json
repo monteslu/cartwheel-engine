@@ -7686,6 +7686,16 @@
      "doc": "ALPHA: draw back to front (GPU bitonic sort)."
     },
     {
+     "name": "bursts",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 32,
+     "doc": "0: the emission window (emitting, one_shot). 1..32: burst slots: amount / bursts particles a slot, each fired by cw_particles_burst at its own place and direction, once, the oldest slot reused: one system and one draw for a pool of one-shot effects (hits, muzzle flashes) instead of a system each."
+    },
+    {
      "name": "trail_length",
      "type": "int",
      "default": "0",
