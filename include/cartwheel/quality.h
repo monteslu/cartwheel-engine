@@ -190,6 +190,7 @@ void cw_quality_auto_measure(bool in_play); /* every frame: true while the frame
  * pixels, or a host that must never upscale. Call in init, before
  * cw_quality_restore. */
 void cw_quality_full_resolution(bool on);
+/* cw_quality_full_resolution is on */
 bool cw_quality_is_full_resolution(void);
 bool cw_quality_is_auto(void); /* Auto is choosing (not a test run) */
 bool cw_quality_is_custom(void); /* the settings match no preset (and Auto is off) */

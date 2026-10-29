@@ -8,6 +8,42 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
 Geometry the engine builds no longer leaks its vertex buffers.
 
+### Added
+Lighting for weak GPUs, all opt in (nothing changes for a scene that does not ask):
+- Baked direct light: a Light3D with `bake_direct` puts its direct light, shadowed by the static geometry, into
+  the lightmaps; LightmapGI `shadow_softness` and `direct_samples` make those shadows soft.
+- Bake-only lights: Light3D `realtime` off keeps a light in the bake only; it lights nothing at run time and
+  costs nothing a frame.
+- LightmapGI `shading` BAKED: lightmapped meshes draw unlit from their lightmap (a Basic copy of their material:
+  colour, map, vertex colours, AO map, transparency), so no real-time light reaches them and a pixel costs a few
+  texture reads however many lights the scene has. `cw_lightmap_apply_shaded`.
+- Instanced scenery in the bake: an instanced mesh under a STATIC MeshInstance3D (`cw_mesh3d_set_procedural`)
+  occludes and bounces light (it gets no lightmap of its own).
+- MeshInstance3D `lightmap_uv` UV0: the lightmap is laid out on the mesh's own uv0 (a ground plane, a terrain).
+- A reflection cube traced through the bake (LightmapGI `reflection_size`, `reflection_origin`;
+  `cw_lightmap_reflection`, `cw_lightmap_use_reflection`): wet patches reflect the lit scene for one texture read.
+- `cw_lightmap_irradiance_below`: the baked light on the ground under a point, a light probe for what moves
+  (a crowd walking through floodlight pools and wall shadows), and `cw_lightmap_gi_data`.
+- Splats (cartwheel/splats.h): blob shadows and light pools, one instanced draw of ground discs each, the stand-ins
+  for dynamic shadows and lights on baked ground; `cw_splats_add_lights` puts a pool under every lit, unbaked
+  OmniLight3D.
+- PostProcess `fuse_distortion`: heat haze and shockwaves bend the frame inside the tonemap pass instead of a
+  full-frame pass of their own (bloom then glows from the unbent frame).
+- `cw_quality_full_resolution`: presets keep Resolution at 100% and Auto's ladder drops its resolution steps.
+- `cw_geometry_optimize_vertex_cache`: meshoptimizer's vertex cache order for an indexed geometry.
+- Sample lightmap_yard and gate `lightmap-yard`.
+
+### Changed
+- GL particles: every system's simulation runs first, then every draw in the systems' order, as on WebGPU (a draw
+  right after its own transform feedback waited for it). The same pixels; a 2000-enemy late wave at 1080p on the
+  890M: the particles pass 1.07 to 0.75 ms of GPU time.
+- Clustered lighting skips the froxel slices no light reaches (the same records, less work a frame).
+- The .cwlm format is version 3 (the reflection cube); version 2 files still load.
+
+### Fixed
+- The lightmap header said materials read the baked SH probe grid; none does yet (the grid is baked and stored).
+  It also says now that three.c reads a lightmap through uv0 (see `lightmap_uv`).
+
 ### Fixed
 - Water3D, terrain chunks and grass tufts, cloth and rope geometry and
   the colours of a cloth node kept a second reference on every vertex

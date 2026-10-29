@@ -560,6 +560,18 @@
      "min": 0.01,
      "max": 100,
      "doc": "Multiplier of LightmapGI.texel_density for this mesh."
+    },
+    {
+     "name": "lightmap_uv",
+     "type": "enum",
+     "default": "GENERATED",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "GENERATED",
+      "UV0"
+     ],
+     "doc": "GENERATED: the bake lays out charts of its own (uv1). UV0: the lightmap is laid out on the mesh's own uv0, which must cover [0, 1] without overlapping (a ground plane, a terrain): three.c's programs read the lightmap through uv0, so this is the layout that lines up today (cartwheel/lightmap.h)."
     }
    ]
   },
@@ -690,6 +702,22 @@
      "stored": true,
      "readonly": false,
      "doc": "Contributes to baked lightmaps and ambient probes (LightmapGI)."
+    },
+    {
+     "name": "realtime",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Lights the scene in real time (default). Off: only the bake has it (with bake_direct, the lightmaps carry its light; moving objects can take it from cw_lightmap_irradiance_below); it costs nothing a frame."
+    },
+    {
+     "name": "bake_direct",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "With bake: its direct light (shadowed by the static geometry) goes into the lightmaps too, for meshes a LightmapGI with shading BAKED draws unlit; it still lights everything else in real time (cartwheel/lightmap.h)."
     },
     {
      "name": "shadow_cascades",
@@ -888,6 +916,14 @@
      "min": 0,
      "max": 8,
      "doc": "MSAA samples on the scene pass (0 = off; WebGPU multisamples 4x for any of 2-8)."
+    },
+    {
+     "name": "fuse_distortion",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Heat haze and shockwaves bend the frame inside the tonemap pass instead of a full-frame pass of their own (saves that pass's read and write of the HDR frame; bloom then glows from the unbent frame). Off by default."
     },
     {
      "name": "depth_prepass",
@@ -1961,6 +1997,56 @@
      "stored": true,
      "readonly": false,
      "doc": "A .cwlm asset to load (empty or missing: bake on the first frame)."
+    },
+    {
+     "name": "direct_samples",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 1024,
+     "doc": "Shadow rays a texel per light for the baked direct light (soft shadows need several)."
+    },
+    {
+     "name": "shadow_softness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Baked shadows' softness: the light's radius over its distance (0 = hard)."
+    },
+    {
+     "name": "reflection_size",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 256,
+     "doc": "Face side of the reflection cube traced through the bake (0 = none; cw_lightmap_use_reflection)."
+    },
+    {
+     "name": "reflection_origin",
+     "type": "vec3",
+     "default": "vec3(0, 1.5, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Where the reflection cube is traced from (world)."
+    },
+    {
+     "name": "shading",
+     "type": "enum",
+     "default": "LIT",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "LIT",
+      "BAKED"
+     ],
+     "doc": "LIT: lightmapped meshes keep their material (real-time lights add the direct light). BAKED: they draw unlit from the lightmap alone (lights with bake_direct put their direct light in it)."
     },
     {
      "name": "bake_twice",
