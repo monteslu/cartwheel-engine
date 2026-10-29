@@ -132,6 +132,10 @@ cw__psys *cw__psys_of(cw_node n);
 /* instances a system draws: with bursts every slot's (each slot thins its own particles at emission), else the
  * effects preset's share of amount */
 int cw__psys_draw_count(const p3d *d);
+/* WebGPU: the particles pass's uniform arena (particles3d_wgpu.c) */
+void cw__psys_arena_begin(uint64_t frame, size_t need);
+void cw__psys_arena_end(void);
+size_t cw__psys_arena_need(int nsteps);
 /* bursts: particles a slot keeps at the effects preset */
 int cw__psys_burst_keep(const p3d *d);
 /* the GPUParticles3D data of a node (NULL for any other node) */

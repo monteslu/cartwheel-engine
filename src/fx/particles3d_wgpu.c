@@ -536,6 +536,50 @@ static struct {
   int fault; /* tests: 1 broken sim shader, 2 wrong sort order, 3 colliders dropped */
 } G;
 
+/* ── the uniform arena ──────────────────────────────────────────────────
+ * Every system's simulation, step and draw uniforms for the frame go into one buffer, each at a 256-byte aligned
+ * offset its bind group reads through a dynamic offset, and the buffer is written once per particles pass: a
+ * system used to make three queue writes a frame (a host call each in a cart). Offsets keep growing over the
+ * frame's passes (split screen runs the pass per view: a later write must not overwrite what an earlier pass's
+ * commands still read), and start again on the next frame. */
+static struct {
+  WGPUBuffer buf;
+  size_t cap, n, start;
+  uint8_t *cpu;
+  uint64_t frame;
+  bool have_frame;
+} A;
+#define ARENA_ALIGN 256
+static size_t arena_round(size_t b) { return (b + ARENA_ALIGN - 1) & ~(size_t)(ARENA_ALIGN - 1); }
+void cw__psys_arena_begin(uint64_t frame, size_t need) {
+  if (!A.have_frame || frame != A.frame) A.n = 0, A.frame = frame, A.have_frame = true;
+  A.start = A.n;
+  size_t want = A.n + need;
+  if (want > A.cap) {
+    size_t cap = CW_MAX(want * 2, (size_t)256 << 10);
+    if (A.buf) wgpuBufferRelease(A.buf); /* bind groups made over it hold their own reference */
+    A.buf = cw__wg_buffer(cap, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst, "particles uniform arena");
+    A.cpu = cw_realloc(A.cpu, cap, CW_MEM_RENDER);
+    A.cap = cap;
+    A.n = A.start = 0; /* a new buffer: this pass starts it */
+  }
+}
+void cw__psys_arena_end(void) {
+  if (A.buf && A.n > A.start) cw__wg_write(A.buf, A.start, A.cpu + A.start, A.n - A.start);
+}
+/* room for bytes (aligned): its offset */
+static uint32_t arena_put(const void *p, size_t bytes) {
+  size_t off = A.n, sz = arena_round(bytes);
+  if (off + sz > A.cap) return 0; /* cannot happen: arena_begin sized the pass */
+  memcpy(A.cpu + off, p, bytes);
+  A.n = off + sz;
+  return (uint32_t)off;
+}
+/* the arena a system's frame needs: its sys block, its steps and its draw */
+size_t cw__psys_arena_need(int nsteps) {
+  return arena_round(SYS_SIZE) + (size_t)CW_MAX(nsteps, 1) * STEP_STRIDE + arena_round(DRAW_SIZE);
+}
+
 void cw__fx_wgpu_test_fault(int fault);
 void cw__fx_wgpu_test_fault(int fault) { G.fault = fault; }
 
@@ -544,14 +588,14 @@ static bool init_pipes(void) {
   G.tried = true;
   WGPUShaderStage C = WGPUShaderStage_Compute, VF = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
   const cw__wg_slot sim[9] = {
-    { CW_WB_UNIFORM, C, 0, SYS_SIZE }, { CW_WB_UNIFORM_DYN, C, 0, 160 }, { CW_WB_STORAGE, C, 0, 0 },
+    { CW_WB_UNIFORM_DYN, C, 0, SYS_SIZE }, { CW_WB_UNIFORM_DYN, C, 0, 160 }, { CW_WB_STORAGE, C, 0, 0 },
     { CW_WB_STORAGE, C, 0, 0 }, { CW_WB_STORAGE_RO, C, 0, 0 }, { CW_WB_TEX, C, WGPUTextureViewDimension_3D, 0 },
     { CW_WB_SAMPLER, C, 0, 0 }, { CW_WB_TEX_UNFILT, C, 0, 0 }, { CW_WB_STORAGE_RO, C, 0, 0 },
   };
   const cw__wg_slot sort[5] = { { CW_WB_UNIFORM, C, 0, 80 }, { CW_WB_UNIFORM_DYN, C, 0, 16 }, { CW_WB_STORAGE, C, 0, 0 },
                                 { CW_WB_STORAGE_RO, C, 0, 0 }, { CW_WB_STORAGE, C, 0, 0 } };
   const cw__wg_slot red[3] = { { CW_WB_UNIFORM, C, 0, 16 }, { CW_WB_STORAGE_RO, C, 0, 0 }, { CW_WB_STORAGE, C, 0, 0 } };
-  const cw__wg_slot draw[9] = { { CW_WB_UNIFORM, VF, 0, DRAW_SIZE }, { CW_WB_TEX_UNFILT, VF, 0, 0 },
+  const cw__wg_slot draw[9] = { { CW_WB_UNIFORM_DYN, VF, 0, DRAW_SIZE }, { CW_WB_TEX_UNFILT, VF, 0, 0 },
                                 { CW_WB_TEX, WGPUShaderStage_Fragment, 0, 0 }, { CW_WB_SAMPLER, WGPUShaderStage_Fragment, 0, 0 },
                                 { CW_WB_TEX_UNFILT, WGPUShaderStage_Fragment, 0, 0 }, { CW_WB_TEX_UNFILT, WGPUShaderStage_Vertex, 0, 0 },
                                 { CW_WB_TEX_UNFILT, WGPUShaderStage_Vertex, 0, 0 }, { CW_WB_TEX, WGPUShaderStage_Fragment, 0, 0 },
@@ -1024,9 +1068,8 @@ bool cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, W
         memcpy(sys + 452 + 128, r->burst_d, sizeof(float) * 4 * (size_t)nb);
       }
       /* the burst slots only when the system has them: the rest of the struct keeps its zeros */
-      CW_PROFILE_SCOPE("psys.wg.write");
-      cw__wg_write(w->sys_u, 0, sys, nb ? sizeof sys : SYS_BASE);
     }
+    uint32_t sys_off = arena_put(sys, sizeof sys);
     /* steps, with the history slot each one writes */
     uint8_t *steps = cw_frame_alloc((size_t)STEP_STRIDE * (size_t)r->nsteps);
     memset(steps, 0, (size_t)STEP_STRIDE * (size_t)r->nsteps);
@@ -1045,9 +1088,9 @@ bool cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, W
       put_mat(o + 8, &st->m0);
       put_mat(o + 24, &st->m1);
     }
-    cw__wg_write(w->step_u, 0, steps, (size_t)STEP_STRIDE * (size_t)r->nsteps);
+    uint32_t step_off = arena_put(steps, (size_t)STEP_STRIDE * (size_t)r->nsteps);
     cw__wg_entry e[9] = {
-      { .buffer = w->sys_u }, { .buffer = w->step_u, .size = 160 }, { .buffer = w->state },
+      { .buffer = A.buf, .size = SYS_SIZE }, { .buffer = A.buf, .size = 160 }, { .buffer = w->state },
       { .buffer = hist ? w->hist : G.dummy_storage }, { .buffer = w->emit }, { .view = cw__fx_wg_noise3d() },
       { .sampler = cw__wg_sampler(true, true, false) },
       { .view = depth ? tg->linear_depth : cw__fx_wg_dummy_r32f() },
@@ -1057,8 +1100,8 @@ bool cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, W
     if (!cp) cp = wgpuCommandEncoderBeginComputePass(enc, &(WGPUComputePassDescriptor){ .label = SV("particles") });
     wgpuComputePassEncoderSetPipeline(cp, G.sim);
     for (int s = 0; s < r->nsteps; s++) {
-      uint32_t off = (uint32_t)(STEP_STRIDE * s);
-      wgpuComputePassEncoderSetBindGroup(cp, 0, bg, 1, &off);
+      uint32_t offs[2] = { sys_off, step_off + (uint32_t)(STEP_STRIDE * s) };
+      wgpuComputePassEncoderSetBindGroup(cp, 0, bg, 2, offs);
       cw__wg_dispatch(cp, (uint32_t)d->amount);
       ft->stats.sim_steps++;
     }
@@ -1205,11 +1248,11 @@ void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx
   dw[76] = (uint32_t)r->hist_head;
   dw[77] = (uint32_t)r->hist_count;
   dw[78] = (uint32_t)w->trows;
-  { CW_PROFILE_SCOPE("psys.wg.write"); cw__wg_write(w->draw_u, 0, du, sizeof du); }
+  uint32_t draw_off = arena_put(du, sizeof du);
   WGPUTextureView tex = d->texture && *d->texture ? cw__fx_wg_texture_asset(d->texture) : NULL;
   if (!tex) tex = cw__fx_wg_dot();
   cw__wg_entry e[9] = {
-    { .buffer = w->draw_u }, { .view = w->curve_v }, { .view = tex }, { .sampler = cw__wg_sampler(true, false, true) },
+    { .buffer = A.buf, .size = DRAW_SIZE }, { .view = w->curve_v }, { .view = tex }, { .sampler = cw__wg_sampler(true, false, true) },
     { .view = tg->linear_depth ? tg->linear_depth : cw__fx_wg_dummy_r32f() },
     { .view = w->stex_v ? w->stex_v : cw__fx_wg_dummy_rgba32f() },
     { .view = w->htex_v ? w->htex_v : cw__fx_wg_dummy_rgba32f() },
@@ -1217,7 +1260,7 @@ void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx
     { .view = mvv ? mvv : cw__fx_wg_dot() },
   };
   WGPUBindGroup bg = cw__wg_group_cached(&w->draw_bg, G.draw_bgl, e, 9);
-  wgpuRenderPassEncoderSetBindGroup(rp, 0, bg, 0, NULL);
+  wgpuRenderPassEncoderSetBindGroup(rp, 0, bg, 1, &draw_off);
   if (want_trail) {
     wgpuRenderPassEncoderSetPipeline(rp, draw_pipe_for(V_TRAIL, d->blend == BLEND_OPAQUE ? BLEND_ALPHA : d->blend, tg));
     wgpuRenderPassEncoderDraw(rp, (uint32_t)(2 * w->hist_len), (uint32_t)cw__psys_draw_count(d), 0, 0);

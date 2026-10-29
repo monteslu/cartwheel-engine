@@ -1417,6 +1417,14 @@ void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft) {
     int n = ft->systems.count;
     bool *draws = cw_frame_alloc((size_t)(n ? n : 1));
     WGPUComputePassEncoder cp = NULL;
+    { /* the pass's uniforms in one arena, written once (particles3d_wgpu.c) */
+      size_t need = 0;
+      for (int i = 0; i < n; i++) {
+        p3d *d = cw_node_data_t(ft->systems.data[i], p3d_t);
+        if (d && d->rt && !(d->rt->idle && d->rt->nsteps == 0 && !d->gpu_stats)) need += cw__psys_arena_need(d->rt->nsteps);
+      }
+      cw__psys_arena_begin(ctx->frame, need);
+    }
     bool any = false;
     for (int i = 0; i < n; i++) {
       p3d *d = cw_node_data_t(ft->systems.data[i], p3d_t);
@@ -1427,7 +1435,10 @@ void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft) {
       wgpuComputePassEncoderEnd(cp);
       wgpuComputePassEncoderRelease(cp);
     }
-    if (!any) return;
+    if (!any) {
+      cw__psys_arena_end();
+      return;
+    }
     const cw__wgpu_pass_targets *base = cw__fx_pass_targets(ctx);
     bool main_any = false, dist_any = false;
     for (int i = 0; i < n; i++) {
@@ -1465,6 +1476,7 @@ void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft) {
       wgpuRenderPassEncoderEnd(rp);
       wgpuRenderPassEncoderRelease(rp);
     }
+    cw__psys_arena_end();
     return;
   }
 #endif
