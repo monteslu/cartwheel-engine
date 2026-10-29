@@ -464,9 +464,16 @@ static bool gather_node(cw_node n, void *user) {
       else memcpy(m.nrm + t * 9 + k * 3, fnr, sizeof fnr);
     }
   }
+  const t3_attribute *ua = ni->attributes[T3_ATTR_UV];
+  if (mb.uv0 && ua && ua->type == T3_FLOAT32 && ua->count == pa->count) {
+    lm_unwrap_from_uv(&m.uw, ua->array, m.pos, m.tri_count, b->s->texel_density * mb.scale, CW_MAX(b->s->min_size, 4),
+                      CW_MAX(b->s->max_size, 8));
+  } else {
+    if (mb.uv0) cw_warn("lightmap: '%s' asks for lightmap_uv UV0 but has no uv0: generated charts instead", m.path);
+    lm_unwrap_mesh(&m.uw, m.pos, m.nrm, m.tri_count, b->s->texel_density * mb.scale, CW_MAX(b->s->padding, 1),
+                   CW_MAX(b->s->min_size, 4), CW_MAX(b->s->max_size, 8));
+  }
   t3_release(ni);
-  lm_unwrap_mesh(&m.uw, m.pos, m.nrm, m.tri_count, b->s->texel_density * mb.scale, CW_MAX(b->s->padding, 1),
-                 CW_MAX(b->s->min_size, 4), CW_MAX(b->s->max_size, 8));
   m.w = m.uw.width;
   m.h = m.uw.height;
   cw_array_push(&b->meshes, m);
@@ -1575,6 +1582,11 @@ static const cw_prop gi_props[] = {
                    "With bake_twice: the second bake's bytes equal the first's."),
   CW_PROP_END,
 };
+
+const cw_lightmap_data *cw_lightmap_gi_data(cw_node gi) {
+  gi_node *g = cw_node_is(gi, "LightmapGI") ? cw_node_data(gi, "LightmapGI") : NULL;
+  return g ? g->result : NULL;
+}
 
 static cw_node_type gi_type = {
   .name = "LightmapGI", .parent = "Node", .data_size = sizeof(gi_node), .props = gi_props,

@@ -22,6 +22,15 @@
  * lightmaps through three.c alone). The probe grid is baked and stored in the
  * .cwlm; no material reads it yet.
  *
+ * Which UVs. three.c's programs read every map, the lightmap included,
+ * through uv0 (r186 samples a texture through uv(texture.channel), and three.c
+ * has no texture channel yet): the generated uv1 charts are set on the mesh
+ * but not read, so a lightmap with GENERATED charts lands where the mesh's
+ * uv0 puts it. A mesh whose uv0 covers [0, 1] without overlapping (a ground
+ * plane, a terrain, a hand-unwrapped level) sets MeshInstance3D lightmap_uv
+ * UV0: the bake lays its lightmap on that uv0 (a square map of about
+ * texel_density texels a unit of its area), and it lines up on GL and WebGPU.
+ *
  * Fully baked lighting (opt in; nothing changes unless a scene asks). A
  * light with bake_direct puts its direct light (shadowed by the static
  * geometry, soft when shadow_softness > 0) into the lightmaps as well, and
@@ -155,6 +164,10 @@ bool cw_lightmap_use_reflection(const cw_lightmap_data *d, t3_material *m, float
  * triangles are taken then; a mesh moved after the apply is not followed).
  * false (and black) where no baked surface lies below. */
 bool cw_lightmap_irradiance_below(const cw_lightmap_data *d, t3_vec3 pos, t3_color *out);
+/* A LightmapGI node's bake once it has baked or loaded (NULL before, and for
+ * another node): for cw_lightmap_reflection, cw_lightmap_use_reflection and
+ * cw_lightmap_irradiance_below. Owned by the node. */
+const cw_lightmap_data *cw_lightmap_gi_data(cw_node gi);
 
 #ifdef __cplusplus
 }
