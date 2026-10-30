@@ -215,19 +215,33 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     const sc = layerScale(id).mul(scaleOf(ctl.scl));
     const uv = rot(wp.xz.mul(sc), ctl.angle);
     const gx = rot(g.dx.mul(sc), ctl.angle), gy = rot(g.dy.mul(sc), ctl.angle);
-    const alb = sampleLayer(false, id, uv, gx, gy).toVar();
-    const nrm = sampleLayer(true, id, uv, gx, gy).toVar();
-    // steep: blend in the two side projections, weighted by the normal (medium and up)
+    const alb = vec4(0, 0, 0, 0.5).toVar();
+    const nrm = vec4(0.5, 0.5, 1, 0.9).toVar();
+    // the top-down projection, unless the ground is steep enough that the sides carry it all
+    If(g.tri.lessThan(0.999), () => {
+      alb.assign(sampleLayer(false, id, uv, gx, gy));
+      nrm.assign(sampleLayer(true, id, uv, gx, gy));
+    });
+    // steep: the side projections, weighted by the normal (medium and up). Only the facing one is read, both only
+    // across the band where they hand over (a cliff read all of them: 18 texture reads a layer, most of a
+    // canyon's frame time)
     If(g.tri.greaterThan(0), () => {
       const n = worldNormal;
       const ax = abs(n.x), az = abs(n.z);
-      const wx2 = ax.div(ax.add(az).add(1e-4));
+      const sx = smoothstep(0.35, 0.65, ax.div(ax.add(az).add(1e-4))).toVar();
       const uvX = wp.zy.mul(sc), uvZ = wp.xy.mul(sc);
       const dxs = g.dx3.mul(sc), dys = g.dy3.mul(sc);
-      const ax1 = sampleLayer(false, id, uvX, dxs.zy, dys.zy), az1 = sampleLayer(false, id, uvZ, dxs.xy, dys.xy);
-      const nx1 = sampleLayer(true, id, uvX, dxs.zy, dys.zy), nz1 = sampleLayer(true, id, uvZ, dxs.xy, dys.xy);
-      alb.assign(mix(alb, mix(az1, ax1, wx2), g.tri));
-      nrm.assign(mix(nrm, mix(nz1, nx1, wx2), g.tri));
+      const sideA = vec4(0).toVar(), sideN = vec4(0).toVar();
+      If(sx.greaterThan(0.001), () => {
+        sideA.addAssign(sampleLayer(false, id, uvX, dxs.zy, dys.zy).mul(sx));
+        sideN.addAssign(sampleLayer(true, id, uvX, dxs.zy, dys.zy).mul(sx));
+      });
+      If(sx.lessThan(0.999), () => {
+        sideA.addAssign(sampleLayer(false, id, uvZ, dxs.xy, dys.xy).mul(float(1).sub(sx)));
+        sideN.addAssign(sampleLayer(true, id, uvZ, dxs.xy, dys.xy).mul(float(1).sub(sx)));
+      });
+      alb.assign(mix(alb, sideA, g.tri));
+      nrm.assign(mix(nrm, sideN, g.tri));
     });
     return { alb, nrm };
   };
@@ -242,9 +256,15 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   const blendTexel = (c, g) => {
     const ctl = decode(c);
     const a = layerAt(ctl.base, ctl, g);
-    const b = layerAt(ctl.over, ctl, g);
-    const t = heightBlend(a, b, ctl.blend);
-    return { alb: mix(a.alb, b.alb, t), nrm: mix(a.nrm, b.nrm, t) };
+    const alb = a.alb.toVar(), nrm = a.nrm.toVar();
+    // the overlay only where it shows (most of a terrain is one layer)
+    If(ctl.blend.greaterThan(0.004).and(ctl.over.notEqual(ctl.base)), () => {
+      const b = layerAt(ctl.over, ctl, g);
+      const t = heightBlend(a, b, ctl.blend);
+      alb.assign(mix(a.alb, b.alb, t));
+      nrm.assign(mix(a.nrm, b.nrm, t));
+    });
+    return { alb, nrm };
   };
 
   // the splat, into properties (declared at the top of the shader, so the
@@ -300,10 +320,16 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
           B.assign(select(better, cand, B));
           wB.assign(select(better, wc, wB));
         }
-        const a = layerAt(A, near, g), b = layerAt(B, near, g);
-        const tb = heightBlend(a, b, wB.div(max(wA.add(wB), 1e-4)));
-        pAlb.assign(mix(a.alb, b.alb, tb));
-        pNrm.assign(mix(a.nrm, b.nrm, tb));
+        const a = layerAt(A, near, g);
+        pAlb.assign(a.alb);
+        pNrm.assign(a.nrm);
+        // the second layer only where it has a share (away from transitions the four texels agree)
+        If(wB.greaterThan(0.004), () => {
+          const b = layerAt(B, near, g);
+          const tb = heightBlend(a, b, wB.div(max(wA.add(wB), 1e-4)));
+          pAlb.assign(mix(a.alb, b.alb, tb));
+          pNrm.assign(mix(a.nrm, b.nrm, tb));
+        });
       }
     });
     return fade;

@@ -4,6 +4,15 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.24.2 (2026-10-30)
+
+### Fixed
+- Terrain shading cost on steep ground: triplanar read both side projections and the top-down one for every layer of
+  every control texel, 18 texture reads a layer, and a screen of canyon walls at High took 38 ms of scene time on the
+  Radeon 890M (46 ms a frame). Now only the side projection a slope faces is read (both only across the band where they
+  hand over), the top-down one is skipped where the sides carry it all, and a texel's second layer only where it has a
+  share: 8 ms at High, 6 at Medium, for the same transitions. Program tables regenerated (terrain_demo, open_world).
+
 ## v0.24.1 (2026-10-29)
 
 ### Fixed
