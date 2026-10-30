@@ -1445,6 +1445,7 @@ void cw_lightmap_apply_shaded(cw_tree *t, cw_node root, const cw_lightmap_data *
     tex->mag_filter = T3_LINEAR;
     tex->min_filter = T3_LINEAR;
     tex->wrap_s = tex->wrap_t = T3_CLAMP_TO_EDGE;
+    tex->channel = 1;   /* read through the uv1 above: the bake's charts, or the mesh's uv0 under lightmap_uv UV0 */
     cw__mesh3d_set_lightmap(n, ni, tex, intensity, shading == CW_LIGHTMAP_BAKED);
     t3_release(tex);
     t3_release(ni);

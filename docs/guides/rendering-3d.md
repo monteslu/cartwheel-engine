@@ -327,7 +327,7 @@ build/native/cwbake samples/lightmap_room/assets/main.cwscene out/room.cwlm
 
 `samples/lightmap_room` bakes the same room at runtime, twice, and publishes the hash as `lm.hash_hi` / `lm.hash_lo`; its gate (`lightmap-bake`) requires the same value on every host. A ball rolls through it.
 
-Which UVs a lightmap is read through: three.c's programs read every map, the lightmap included, through uv0 (three.js reads a texture through `uv(texture.channel)`, and three.c has no texture channel yet), so the generated charts line up only where they happen to match uv0. A mesh whose uv0 already covers [0, 1] without overlapping, a ground plane or a terrain, sets `lightmap_uv = UV0`: the bake lays its lightmap on that uv0 and it lines up on GL and WebGPU.
+Which UVs a lightmap is read through: its own second UV set (`texture.channel = 1`), so the bake's generated charts line up on any mesh, on GL and WebGPU. A mesh whose uv0 already covers [0, 1] without overlapping, a ground plane or a terrain, can set `lightmap_uv = UV0` to lay its lightmap on that uv0 instead of generating charts.
 
 ### Fully baked lighting for weak GPUs
 

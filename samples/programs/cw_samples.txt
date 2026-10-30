@@ -92,3 +92,6 @@ basic+lmap
 basic+map+trans+instbig+icol
 basic+trans+cenv+add
 standard+lmap+l1121
+standard+shadow+lmap+c1lmap+l1001
+basic+lmap+c1lmap
+standard+lmap+c1lmap+l1121
