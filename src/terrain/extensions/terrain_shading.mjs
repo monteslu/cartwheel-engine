@@ -188,7 +188,14 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   // Triangular stochastic blending: adjacent cells share the same three
   // random offsets, so scanned material detail stays continuous without a
   // square grid of identical repeated landmarks.
-  const sampleLayer = (nrm, id, uv, gx, gy) => {
+  const sampleLayer = (nrm, id, uv, gx, gy, plain = false) => {
+    const image = nrm ? normalArr : albedoArr;
+    // a side projection reads the layer plainly: its stochastic cells, seen on a steep face, showed as facets of
+    // their own brightness (and it is a third of the reads)
+    if (plain) {
+      const p = texture(image, uv).depth(int(id)).grad(gx, gy);
+      return nrm ? p : vec4(sRGBTransferEOTF(p.rgb), p.a);
+    }
     const skew = vec2(uv.x.sub(uv.y.mul(0.57735027)), uv.y.mul(1.15470054));
     const cell = floor(skew), f = fract(skew), upper = f.x.add(f.y).greaterThan(1);
     const a = select(upper, cell.add(vec2(1, 1)), cell);
@@ -197,7 +204,6 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     const w = select(upper, vec3(f.x.add(f.y).sub(1), float(1).sub(f.x), float(1).sub(f.y)),
       vec3(float(1).sub(f.x).sub(f.y), f.x, f.y));
     const offset = (p) => fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))).mul(43758.5453));
-    const image = nrm ? normalArr : albedoArr;
     const tex = (p) => texture(image, uv.add(offset(p))).depth(int(id)).grad(gx, gy);
     const t = tex(a).mul(w.x).add(tex(b).mul(w.y)).add(tex(c).mul(w.z));
     return nrm ? t : vec4(sRGBTransferEOTF(t.rgb), t.a);
@@ -215,12 +221,18 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     const sc = layerScale(id).mul(scaleOf(ctl.scl));
     const uv = rot(wp.xz.mul(sc), ctl.angle);
     const gx = rot(g.dx.mul(sc), ctl.angle), gy = rot(g.dy.mul(sc), ctl.angle);
+    // nrm carries each projection's detail normal as a world-space nudge in that projection's own plane (xyz) and
+    // roughness (w): a side projection's map read as if it lay flat tipped a steep face toward and away from the light
+    // once a repeat (bands down every cliff and cut bank at Medium and up)
+    const toTop = (t) => vec4(t.x.mul(2).sub(1), 0, float(1).sub(t.y.mul(2)), t.w);
+    const toX = (t) => vec4(0, float(1).sub(t.y.mul(2)), t.x.mul(2).sub(1), t.w);
+    const toZ = (t) => vec4(t.x.mul(2).sub(1), float(1).sub(t.y.mul(2)), 0, t.w);
     const alb = vec4(0, 0, 0, 0.5).toVar();
-    const nrm = vec4(0.5, 0.5, 1, 0.9).toVar();
+    const nrm = vec4(0, 0, 0, 0.9).toVar();
     // the top-down projection, unless the ground is steep enough that the sides carry it all
     If(g.tri.lessThan(0.999), () => {
       alb.assign(sampleLayer(false, id, uv, gx, gy));
-      nrm.assign(sampleLayer(true, id, uv, gx, gy));
+      nrm.assign(toTop(sampleLayer(true, id, uv, gx, gy)));
     });
     // steep: the side projections, weighted by the normal (medium and up). Only the facing one is read, both only
     // across the band where they hand over (a cliff read all of them: 18 texture reads a layer, most of a
@@ -233,12 +245,12 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
       const dxs = g.dx3.mul(sc), dys = g.dy3.mul(sc);
       const sideA = vec4(0).toVar(), sideN = vec4(0).toVar();
       If(sx.greaterThan(0.001), () => {
-        sideA.addAssign(sampleLayer(false, id, uvX, dxs.zy, dys.zy).mul(sx));
-        sideN.addAssign(sampleLayer(true, id, uvX, dxs.zy, dys.zy).mul(sx));
+        sideA.addAssign(sampleLayer(false, id, uvX, dxs.zy, dys.zy, true).mul(sx));
+        sideN.addAssign(toX(sampleLayer(true, id, uvX, dxs.zy, dys.zy, true)).mul(sx));
       });
       If(sx.lessThan(0.999), () => {
-        sideA.addAssign(sampleLayer(false, id, uvZ, dxs.xy, dys.xy).mul(float(1).sub(sx)));
-        sideN.addAssign(sampleLayer(true, id, uvZ, dxs.xy, dys.xy).mul(float(1).sub(sx)));
+        sideA.addAssign(sampleLayer(false, id, uvZ, dxs.xy, dys.xy, true).mul(float(1).sub(sx)));
+        sideN.addAssign(toZ(sampleLayer(true, id, uvZ, dxs.xy, dys.xy, true)).mul(float(1).sub(sx)));
       });
       alb.assign(mix(alb, sideA, g.tri));
       nrm.assign(mix(nrm, sideN, g.tri));
@@ -253,19 +265,6 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     const wa = max(ha.sub(m), 0), wb = max(hb.sub(m), 0);
     return wb.div(max(wa.add(wb), 1e-4));
   };
-  const blendTexel = (c, g) => {
-    const ctl = decode(c);
-    const a = layerAt(ctl.base, ctl, g);
-    const alb = a.alb.toVar(), nrm = a.nrm.toVar();
-    // the overlay only where it shows (most of a terrain is one layer)
-    If(ctl.blend.greaterThan(0.004).and(ctl.over.notEqual(ctl.base)), () => {
-      const b = layerAt(ctl.over, ctl, g);
-      const t = heightBlend(a, b, ctl.blend);
-      alb.assign(mix(a.alb, b.alb, t));
-      nrm.assign(mix(a.nrm, b.nrm, t));
-    });
-    return { alb, nrm };
-  };
 
   // the splat, into properties (declared at the top of the shader, so the
   // branches can write them): albedo + height, normal + roughness, and the
@@ -279,67 +278,57 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     };
     const fade = clamp(dist.sub(far.x).mul(far.y), 0, 1).toVar();
     pAlb.assign(vec4(0));
-    pNrm.assign(vec4(0.5, 0.5, 1, 0.9));
+    pNrm.assign(vec4(0, 0, 0, 0.9));
     If(fade.lessThan(1), () => {
       const tcoord = wp.xz.sub(grid.xy).mul(grid.z);
-      if (mode === 'high') {
-        // four control texels around the point, bilinearly weighted
-        const t = tcoord.sub(0.5);
-        const i0 = floor(t), f = fract(t);
-        const ld = (ix, iz) => textureLoad(ctlMap, ivec2(clamp(i0.x.add(ix), 0, hgt.z), clamp(i0.y.add(iz), 0, hgt.w)));
-        const s00 = blendTexel(ld(0, 0), g), s10 = blendTexel(ld(1, 0), g);
-        const s01 = blendTexel(ld(0, 1), g), s11 = blendTexel(ld(1, 1), g);
-        pAlb.assign(mix(mix(s00.alb, s10.alb, f.x), mix(s01.alb, s11.alb, f.x), f.y));
-        pNrm.assign(mix(mix(s00.nrm, s10.nrm, f.x), mix(s01.nrm, s11.nrm, f.x), f.y));
-      } else {
-        // two layers, smoothly weighted: the four control texels around the point are read (point
-        // loads, no filtering), their bilinear weights summed per layer for the nearest texel's base
-        // layer (A) and the strongest other layer among the four (B), and A and B blended by height
-        // with that weight. Four layer reads, the same transitions as High's, cheaper.
-        const t = tcoord.sub(0.5);
-        const i0 = floor(t), f = fract(t);
-        const ld = (ix, iz) => {
-          const c = decode(textureLoad(ctlMap, ivec2(clamp(i0.x.add(ix), 0, hgt.z), clamp(i0.y.add(iz), 0, hgt.w))));
-          return { base: c.base.toVar(), over: c.over.toVar(), blend: c.blend.toVar(), angle: c.angle, scl: c.scl };
-        };
-        const taps = [ld(0, 0), ld(1, 0), ld(0, 1), ld(1, 1)];
-        const fx = f.x, fz = f.y, gx1 = float(1).sub(fx), gz1 = float(1).sub(fz);
-        const w = [gx1.mul(gz1), fx.mul(gz1), gx1.mul(fz), fx.mul(fz)];
-        // the nearest texel (the weights' largest)
-        const nx = fx.greaterThan(0.5), nz = fz.greaterThan(0.5);
-        const pick = (k) => select(nz, select(nx, k(taps[3]), k(taps[2])), select(nx, k(taps[1]), k(taps[0])));
-        const near = { base: pick((c) => c.base), over: pick((c) => c.over), angle: pick((c) => c.angle), scl: pick((c) => c.scl) };
-        const share = (c, L) => select(c.base.equal(L), float(1).sub(c.blend), float(0)).add(select(c.over.equal(L), c.blend, float(0)));
-        const weight = (L) => share(taps[0], L).mul(w[0]).add(share(taps[1], L).mul(w[1])).add(share(taps[2], L).mul(w[2])).add(share(taps[3], L).mul(w[3]));
-        const A = near.base.toVar();
-        const wA = weight(A).toVar();
-        const B = A.toVar(), wB = float(0).toVar();
-        for (const cand of [near.over, taps[0].base, taps[1].base, taps[2].base, taps[3].base, taps[0].over, taps[3].over]) {
-          const wc = weight(cand);
-          const better = cand.notEqual(A).and(wc.greaterThan(wB));
-          B.assign(select(better, cand, B));
-          wB.assign(select(better, wc, wB));
-        }
-        const a = layerAt(A, near, g);
-        pAlb.assign(a.alb);
-        pNrm.assign(a.nrm);
-        // the second layer only where it has a share (away from transitions the four texels agree)
-        If(wB.greaterThan(0.004), () => {
-          const b = layerAt(B, near, g);
-          const tb = heightBlend(a, b, wB.div(max(wA.add(wB), 1e-4)));
-          pAlb.assign(mix(a.alb, b.alb, tb));
-          pNrm.assign(mix(a.nrm, b.nrm, tb));
-        });
+      // two layers, smoothly weighted: the four control texels around the point are read (point
+      // loads, no filtering), their bilinear weights summed per layer for the nearest texel's base
+      // layer (A) and the strongest other layer among the four (B), and A and B blended by height
+      // with that weight. Every quality (High's own once height-blended each of the four texels and mixed them
+      // bilinearly: where layers met, that drew diamonds the size of a control texel).
+      const t = tcoord.sub(0.5);
+      const i0 = floor(t), f = fract(t);
+      const ld = (ix, iz) => {
+        const c = decode(textureLoad(ctlMap, ivec2(clamp(i0.x.add(ix), 0, hgt.z), clamp(i0.y.add(iz), 0, hgt.w))));
+        return { base: c.base.toVar(), over: c.over.toVar(), blend: c.blend.toVar(), angle: c.angle, scl: c.scl };
+      };
+      const taps = [ld(0, 0), ld(1, 0), ld(0, 1), ld(1, 1)];
+      const fx = f.x, fz = f.y, gx1 = float(1).sub(fx), gz1 = float(1).sub(fz);
+      const w = [gx1.mul(gz1), fx.mul(gz1), gx1.mul(fz), fx.mul(fz)];
+      // the nearest texel (the weights' largest)
+      const nx = fx.greaterThan(0.5), nz = fz.greaterThan(0.5);
+      const pick = (k) => select(nz, select(nx, k(taps[3]), k(taps[2])), select(nx, k(taps[1]), k(taps[0])));
+      const near = { base: pick((c) => c.base), over: pick((c) => c.over), angle: pick((c) => c.angle), scl: pick((c) => c.scl) };
+      const share = (c, L) => select(c.base.equal(L), float(1).sub(c.blend), float(0)).add(select(c.over.equal(L), c.blend, float(0)));
+      const weight = (L) => share(taps[0], L).mul(w[0]).add(share(taps[1], L).mul(w[1])).add(share(taps[2], L).mul(w[2])).add(share(taps[3], L).mul(w[3]));
+      const A = near.base.toVar();
+      const wA = weight(A).toVar();
+      const B = A.toVar(), wB = float(0).toVar();
+      for (const cand of [near.over, taps[0].base, taps[1].base, taps[2].base, taps[3].base, taps[0].over, taps[3].over]) {
+        const wc = weight(cand);
+        const better = cand.notEqual(A).and(wc.greaterThan(wB));
+        B.assign(select(better, cand, B));
+        wB.assign(select(better, wc, wB));
       }
+      const a = layerAt(A, near, g);
+      pAlb.assign(a.alb);
+      pNrm.assign(a.nrm);
+      // the second layer only where it has a share (away from transitions the four texels agree)
+      If(wB.greaterThan(0.004), () => {
+        const b = layerAt(B, near, g);
+        const tb = heightBlend(a, b, wB.div(max(wA.add(wB), 1e-4)));
+        pAlb.assign(mix(a.alb, b.alb, tb));
+        pNrm.assign(mix(a.nrm, b.nrm, tb));
+      });
     });
     return fade;
   }).once()();
 
-  // detail normal (tangent space, +Y up: Terrain3D's normal maps) on the macro normal, a UDN blend in world space
+  // detail normal on the macro normal: the splat's world-space nudge (each projection's tangent-space map, +Y up as
+  // Terrain3D packs them, turned into its own plane in layerAt), a UDN blend
   const shadedNormal = Fn(() => {
     const n = worldNormal;
-    const d = pNrm.xyz.mul(2).sub(1);
-    const nd = normalize(vec3(n.x.add(d.x), n.y, n.z.sub(d.y)));
+    const nd = normalize(n.add(pNrm.xyz));
     return normalize(mix(nd, n, shade));
   })();
 

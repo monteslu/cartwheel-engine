@@ -34,7 +34,8 @@
  * Shading is three.js r186's MeshStandardMaterial (lights, shadows, fog and
  * environment are three.js's own) with a TSL extension of cartwheel's
  * (src/terrain/extensions): the height fetch and morph in the vertex stage;
- * in the fragment stage the splat of up to 8 layers by the control map,
+ * in the fragment stage the splat of 8 layers by the control map (the two
+ * strongest at a point, weighted from the four control texels round it),
  * triplanar on steep slopes, and past far_distance only a baked macro colour
  * and the normal map (two texture reads). Patches wholly past far_distance
  * draw with a third program that reads only those two.
@@ -43,8 +44,8 @@
  *   Low     nearest control texel (base + overlay: 2 layers), no triplanar,
  *           far distance x0.5        (the Vega 8 class default)
  *   Medium  nearest control texel, triplanar on steep slopes, far x0.75
- *   High    4 control texels blended (up to 8 layer samples), height
- *           blending, triplanar, far x1
+ *   High    Medium's shading (two layers weighted from 4 control texels,
+ *           height blending, triplanar), far x1
  *   Ultra   High, far x1.5 and patch ranges x1.25
  * and the scatter's density follows cw_quality_scale("grass") / ("scatter").
  *
