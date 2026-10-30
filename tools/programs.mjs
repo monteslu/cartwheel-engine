@@ -41,7 +41,9 @@
 //       regenerates every table the build knows (`ninja programs`)
 //   Every regeneration then compiles the table's WebGPU programs with Dawn's WGSL compiler (Tint) on
 //   lavapipe (tools/lib/wgsl-check.mjs) and fails, naming the state and Tint's message, on any rejection
-//   (--no-wgsl-check skips it).
+//   (--no-wgsl-check skips it). An engine checkout requires the check. A prebuilt SDK carries neither Dawn
+//   nor webgpu-node, so there it warns and goes on unless WEBGPU_NODE=<dir> names one.
+//   A manifest line "# extend: <path>" (relative to it) adds one of the project's own extension modules.
 //
 // --extend adds project-owned extensions, including composed x<project>_csm
 // states, without copying project code into the engine. The module filename
@@ -100,7 +102,7 @@ const EXTENSION_HELPERS = EXTENSIONS.length ? [...new Set(EXTENSIONS.map((e) => 
   .flatMap((d) => readdirSync(d).filter((f) => f.endsWith('.mjs')).map((f) => join(d, f))).filter((f) => !EXTENSIONS.includes(f)) : [];
 // composed extensions (cartwheel/shading.h): a state x<a>_<b> applies the parts a and b (each an
 // extension above) in that order; its module is written into the build tree for the generator
-function composedModules(stateFiles) {
+function composedModules(stateFiles, extensions = EXTENSIONS) {
   const names = new Set();
   for (const f of stateFiles) for (const s of statesOf(f)) for (const t of s.split('+')) if (/^x[a-z0-9]+(_[a-z0-9]+)+$/.test(t)) names.add(t.slice(1));
   if (!names.size) return [];
@@ -108,8 +110,8 @@ function composedModules(stateFiles) {
   mkdirSync(dir, { recursive: true });
   return [...names].sort().map((n) => {
     const parts = n.split('_').map((p) => {
-      const m = EXTENSIONS.find((e) => basename(e) === p + '.mjs');
-      if (!m) throw new Error(`composed extension ${n}: no part ${p} (src/<module>/extensions/${p}.mjs or --extend ${p}.mjs)`);
+      const m = extensions.find((e) => basename(e) === p + '.mjs');
+      if (!m) throw new Error(`composed extension ${n}: no part ${p} (src/<module>/extensions/${p}.mjs, --extend ${p}.mjs, or "# extend: <path>" in the manifest)`);
       return m;
     });
     const file = join(dir, n + '.mjs');
@@ -123,9 +125,50 @@ function composedModules(stateFiles) {
 }
 const statesOf = (f) => (existsSync(f) ? readFileSync(f, 'utf8').split('\n').map((l) => l.replace(/#.*/, '').trim()).filter(Boolean) : []);
 
+// A manifest names the project's own parts itself, so `ninja programs` and a bare --table need no flags:
+//   # extend: ../shaders/foliage.mjs        (relative to the manifest)
+function manifestExtensions(manifest) {
+  if (!existsSync(manifest)) return [];
+  return [...readFileSync(manifest, 'utf8').matchAll(/^#\s*extend:\s*(\S+)\s*$/gm)].map((m) => {
+    const path = resolve(dirname(manifest), m[1]);
+    if (!existsSync(path)) throw new Error(`${manifest}: extension module not found: ${path}`);
+    if (!/^[a-z0-9]+\.mjs$/.test(basename(path))) throw new Error(`${manifest}: extension filename must be <name>.mjs: ${path}`);
+    return path;
+  });
+}
+// Lightmaps read through the second UV set since v0.25.0 (a lightmap's texture channel is part of the
+// program): a table made before lists lmap states without it, and baked meshes would skip. Each gets its
+// c1lmap state beside it, placed where three.c's state names put it (after the other features). Kept beside,
+// not replaced: a game's own material may still read a lightmap through uv0.
+function addLightmapChannelStates(manifest) {
+  if (!existsSync(manifest)) return;
+  const text = readFileSync(manifest, 'utf8');
+  const have = new Set(statesOf(manifest));
+  const add = [];
+  for (const s of have) {
+    const t = s.split('+');
+    if (!t.includes('lmap') || t.includes('c1lmap')) continue;
+    let at = t.findIndex((x, i) => i > 0 && (x === 'rdepth' || /^l\d{4}$/.test(x) || /^s\d{3}$/.test(x) || /^x[a-z0-9_]+$/.test(x)));
+    if (at < 0) at = t.length;
+    t.splice(at, 0, 'c1lmap');
+    const n = t.join('+');
+    if (!have.has(n) && !add.includes(n)) add.push(n);
+  }
+  if (!add.length) return;
+  writeFileSync(manifest, text.replace(/\n?$/, '\n') + add.join('\n') + '\n');
+  console.log(`${basename(manifest)}: added ${add.length} lightmap state(s) on the second UV set (c1lmap)`);
+}
 /** regenerate one table from its manifest (plus missing logs) */
 function regenerate(manifest, logs = []) {
   const name = basename(manifest, '.txt');
+  addLightmapChannelStates(manifest);
+  const own = manifestExtensions(manifest).filter((e) => !EXTENSIONS.includes(e));
+  for (const e of own) {
+    const previous = EXTENSIONS.find((x) => basename(x) === basename(e));
+    if (previous) throw new Error(`${manifest}: duplicate extension ${basename(e)}: ${previous} and ${e}`);
+  }
+  const extensions = [...EXTENSIONS, ...own];
+  const helpers = [...new Set(extensions.map((e) => dirname(e)))].flatMap((d) => readdirSync(d).filter((f) => f.endsWith('.mjs')).map((f) => join(d, f))).filter((f) => !extensions.includes(f));
   if (!existsSync(GEN)) throw new Error(`${GEN} not found: CW_THREE_DIR must be a three.c with tools/gen-project-table.mjs`);
   if (!statesOf(manifest).length && !logs.some((l) => statesOf(l).length)) {
     console.log(`${name}: no states, nothing to generate`);
@@ -133,11 +176,11 @@ function regenerate(manifest, logs = []) {
   }
   // the cache is keyed by state name only: captures made with other extension sources go to another one
   const extHash = createHash('sha256');
-  for (const e of [...EXTENSIONS, ...EXTENSION_HELPERS].sort()) extHash.update(readFileSync(e));
-  const cache = join(BUILD, 'programs-cache', EXTENSIONS.length ? `${name}-${extHash.digest('hex').slice(0, 12)}` : name);
+  for (const e of [...extensions, ...helpers].sort()) extHash.update(readFileSync(e));
+  const cache = join(BUILD, 'programs-cache', extensions.length ? `${name}-${extHash.digest('hex').slice(0, 12)}` : name);
   const args = [GEN, '--name', name, '--out', dirname(manifest), '--states', manifest, '--cache', cache, '--minimize',
-    ...logs.flatMap((l) => ['--missing', l]), ...EXTENSIONS.flatMap((e) => ['--extend', e]),
-    ...composedModules([manifest, ...logs]).flatMap((e) => ['--extend', e]),
+    ...logs.flatMap((l) => ['--missing', l]), ...extensions.flatMap((e) => ['--extend', e]),
+    ...composedModules([manifest, ...logs], extensions).flatMap((e) => ['--extend', e]),
     ...(argv.includes('--fast') ? [] : ['--check'])];
   console.log(`${name}: regenerating (${dirname(manifest)})`);
   const r = spawnSync(process.execPath, args, { stdio: 'inherit' }); // the capture runs on three.c's mock GPU: no device
@@ -146,7 +189,8 @@ function regenerate(manifest, logs = []) {
   // (Tint) as a host will, and fail here, not on the first WebGPU draw (tools/lib/wgsl-check.mjs)
   if (!argv.includes('--no-wgsl-check')) {
     const c = checkWgsl(cache, undefined, { three: THREE });
-    console.log(`${name}: Tint accepts all ${c.checked + c.cached} WebGPU programs (${c.checked} compiled)`);
+    if (c.skipped) console.warn(`${name}: WebGPU programs NOT checked with Tint: ${c.skipped}`);
+    else console.log(`${name}: Tint accepts all ${c.checked + c.cached} WebGPU programs (${c.checked} compiled)`);
   }
   // the capture cache sits in the build tree; the generated C beside the manifest, checked in
   rmSync(join(dirname(manifest), '.t3-captures'), { recursive: true, force: true });
@@ -302,7 +346,7 @@ if (!CARTS && !argv.includes('--no-run')) {
   }
   // --gates: also every gate's native runs (its input, assets and control variant), where most states show up
   if (argv.includes('--gates')) {
-    const gates = JSON.parse(readFileSync(join(ROOT, 'tests', 'gates.json'), 'utf8'))
+    const gates = JSON.parse(readFileSync(join(PROJ, 'tests', 'gates.json'), 'utf8'))
       .filter((g) => g.app && !g.script && (!names.length || names.includes(g.app)));
     for (const g of gates) {
       const base = ['--host', 'native', '--app', g.app, '--frames', String(g.frames), ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : []),

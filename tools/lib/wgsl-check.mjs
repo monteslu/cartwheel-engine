@@ -27,6 +27,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const LVP = ['/usr/share/vulkan/icd.d/lvp_icd.json', '/usr/share/vulkan/icd.d/lvp_icd.x86_64.json'];
 
+/** an engine checkout, where the check's tools are always fetched; a prebuilt SDK has none of them */
+const ENGINE_TREE = existsSync(join(ROOT, 'tests', 'gates.json'));
 /** webgpu-node (native-dawn's Dawn) as the engine's deps carry it */
 function webgpuNode() {
   const c = [process.env.WEBGPU_NODE, join(ROOT, 'deps', 'wasmcart', 'node_modules', 'webgpu-node'),
@@ -55,6 +57,8 @@ export function capturedStates(dir) {
  */
 export function checkWgsl(dir, states = capturedStates(dir), { three = threeDir() } = {}) {
   const icd = LVP.find(existsSync);
+  if (!ENGINE_TREE && !process.env.WEBGPU_NODE) return { checked: 0, cached: 0, skipped: 'a prebuilt SDK carries no webgpu-node (WEBGPU_NODE=<dir> names one); a program Tint rejects shows on its first WebGPU draw' };
+  if (!ENGINE_TREE && !icd) return { checked: 0, cached: 0, skipped: 'lavapipe (mesa-vulkan-drivers) is not installed' };
   if (!icd) throw new Error('wgsl-check: lavapipe (Mesa software Vulkan, mesa-vulkan-drivers) is not installed: cannot check the WGSL Tint gets');
   const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--child', dir, ...states], {
     encoding: 'utf8', timeout: 1800000, maxBuffer: 64 << 20,
