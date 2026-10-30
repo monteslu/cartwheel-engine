@@ -4,6 +4,15 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.24.3 (2026-10-30)
+
+### Fixed
+- Terrain on steep ground at Medium and up: each triplanar side projection's detail normal is turned into its own
+  plane (it was read as if it lay flat, tipping a cliff toward and away from the light once a repeat: bands down every
+  cut bank), and the sides read their layer plainly (their stochastic cells showed as facets). High shades as Medium
+  does, the two strongest layers weighted from the four control texels and height-blended once: blending each texel
+  apart and mixing the four drew diamonds where layers met. Program tables regenerated (terrain_demo, open_world).
+
 ## v0.24.2 (2026-10-30)
 
 ### Fixed

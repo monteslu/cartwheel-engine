@@ -71,10 +71,10 @@ The terrain follows [cartwheel/quality.h](header:quality.h) (effects detail):
 |---|---|---|---|
 | Low | two layers, smoothly weighted from the four control texels around the pixel; no triplanar | x0.5 | x1 |
 | Medium | Low, plus triplanar on steep slopes | x0.75 | x1 |
-| High | each of the four control texels blended (up to 8 layer samples), height blending, triplanar | x1 | x1 |
+| High | Medium's shading | x1 | x1 |
 | Ultra | High | x1.5 | x1.25 |
 
-Triplanar reads only the side projection a slope faces (both only across the band where they hand over), skips the top-down one on ground steep enough that the sides carry it all, and a texel's second layer is read only where it has a share. A screen of steep canyon walls at High went from 38 ms of scene time to 8 on the Radeon 890M (racer's Dam), with the same transitions.
+Every level weighs the two strongest layers from the four control texels round a pixel and height-blends them once (High once blended each texel apart and mixed the four bilinearly, which drew diamonds where layers met). Triplanar reads only the side projection a slope faces (both only across the band where they hand over), skips the top-down one on ground steep enough that the sides carry it all, and a texel's second layer is read only where it has a share. A screen of steep canyon walls at High went from 38 ms of scene time to 8 on the Radeon 890M (racer's Dam), with the same transitions.
 
 Scatter density follows `cw_quality_scale("grass")` or `("scatter")`. [cw_terrain_set_quality](api:cw_terrain_set_quality) pins a terrain to one level.
 
