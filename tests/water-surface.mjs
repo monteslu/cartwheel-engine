@@ -31,14 +31,18 @@ const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf(k); return (i >= 0 ? argv[i + 1] : d).split(','); };
 const HOSTS = opt('--hosts', 'native,romdev,chromium');
 const GPUS = opt('--gpus', 'gl,webgpu');
+// --app water_open_sea: the same check on a VIEW grid with a wave mask; its second control reads the height with
+// the mask ignored (probe.h0), which must not match: the mask is really drawn, and really read on the CPU
+const APP = opt('--app', 'water_boat')[0];
 const FRAMES = 90, LO = -2, HI = 2, MAX_ERR = 0.015, MAX_MEAN = 0.005, MIN_SHARE = 0.8;
 // a steep view: at grazing angles a crest in front can hide the point a probe projects to
 const CMDS = ['set Root/Water debug_view HEIGHT', 'set Root/Post tonemap NONE', 'set Root/Camera position vec3(0, 25, 10)',
   'set Root/Camera rotation vec3(-1.1, 0, 0)'];
+if (APP !== 'water_boat') CMDS.length = 2; // the app moves its own camera
 
 function runCart(host, gpu, tag, extraCmds = []) {
   const shot = join(OUT, `${host}-${gpu}-${tag}.png`), state = join(OUT, `${host}-${gpu}-${tag}.json`);
-  const args = ['tools/run-cart.mjs', '--host', host, '--gpu', gpu, '--app', 'water_boat', '--frames', String(FRAMES),
+  const args = ['tools/run-cart.mjs', '--host', host, '--gpu', gpu, '--app', APP, '--frames', String(APP === 'water_boat' ? FRAMES : 1500),
     '--shot', shot, '--state', state, '--start-cmds', [...CMDS, ...extraCmds].join(';')];
   return new Promise((res) => {
     const p = spawn(process.execPath, args, { cwd: ROOT, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -53,8 +57,8 @@ function runCart(host, gpu, tag, extraCmds = []) {
 }
 
 // sRGB byte -> the value the shader wrote (it wrote the byte's exact decode)
-function measure({ img, st }) {
-  const uv = st['probe.uv'], hs = st['probe.h'];
+function measure({ img, st }, field = 'probe.h') {
+  const uv = st['probe.uv'], hs = st[field];
   if (!uv || !hs) return { error: 'no probe.uv / probe.h in the state' };
   let n = 0, seen = 0, worst = 0, sum = 0;
   for (let k = 0; k < hs.length; k++) {
@@ -95,5 +99,11 @@ for (const gpu of GPUS) {
   const m = measure(c);
   if (ok(m)) { fail++; console.log(`FAIL water-surface ${gpu}: CONTROL PASSED (drawn 0.25 s late): ${fmt(m)}`); }
   else console.log(`ok   water-surface ${gpu} control fails as it must: ${fmt(m)}`);
+  if (APP !== 'water_boat') {
+    const r = await runCart('native', gpu, 'ref');
+    const m0 = r.error ? { error: r.error } : measure(r, 'probe.h0');
+    if (ok(m0)) { fail++; console.log(`FAIL water-surface ${gpu}: CONTROL PASSED (the mask ignored): ${fmt(m0)}`); }
+    else console.log(`ok   water-surface ${gpu} no-mask control fails as it must: ${fmt(m0)}`);
+  }
 }
 process.exit(fail ? 1 : 0);

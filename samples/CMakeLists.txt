@@ -258,6 +258,8 @@ target_compile_definitions(fog_shafts_split PRIVATE FOG_SHAFTS_SPLIT=1)
 cw_add_app(water_boat SOURCES water_boat/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/water_boat/assets)
 cw_add_app(water_shore SOURCES water_shore/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/water_shore/assets)
 cw_add_app(water_ripples SOURCES water_ripples/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/water_ripples/assets)
+# water: rings around the camera for an open sea, a wave mask for sheltered water, a ripple grid that follows
+cw_add_app(water_open_sea SOURCES water_open_sea/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/water_open_sea/assets)
 # baked lighting: lightmaps with generated uv1 charts, an SH probe grid, a reproducible bake.
 cw_add_app(lightmap_room SOURCES lightmap_room/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/lightmap_room/assets)
 # reflection probes (cartwheel/gi.h): a room with coloured walls, a polished floor, chrome

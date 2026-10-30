@@ -2,7 +2,7 @@
 
 {{name}} draws water as three.js r187's water add-ons do (planar reflection and refraction, scrolling ripples, flow maps) on a surface that Gerstner waves really move, and floats rigid bodies on it with the same waves, computed the same way on every host.
 
-Header: [cartwheel/water.h](header:water.h). Node types: [Water3D](node:Water3D) and [Buoyancy3D](node:Buoyancy3D). Sample: `water_boat`, a boat and two crates bobbing beside a pier. Gates: `unit-water`, `water-boat` and `water-surface`.
+Header: [cartwheel/water.h](header:water.h). Node types: [Water3D](node:Water3D) and [Buoyancy3D](node:Buoyancy3D). Samples: `water_boat`, a boat and two crates bobbing beside a pier, and `water_open_sea`, an open sea with a sheltered bay. Gates: `unit-water`, `water-boat` and `water-surface`.
 
 ## A body of water
 
@@ -91,6 +91,28 @@ The waves run on the tree's fixed clock (ticks times the fixed time step, plus `
 The GPU moves the surface's vertices with the same sums from the same reduced phases, so the drawn water is where the CPU says it is, up to float rounding and the flat triangles between vertices. The `water-surface` gate checks it: the sample draws each water pixel's height as colour, and the CPU's height at 48 points must match the frame to 1.5 cm on every host and backend (it is within 6 mm on the 890M).
 
 Gerstner waves move the water sideways as well as up and down, so "the height at (x, z)" is the height of the surface point that has moved over (x, z). [cw_waves_height](api:cw_waves_height) finds it with four fixed-point steps (well under a millimetre off for any steepness below 1); [cw_waves_displace](api:cw_waves_displace) is the forward direction, for effects that follow a point of the surface.
+
+## A sea much larger than its detail
+
+A rectangle's grid costs the same everywhere: to have 30 cm quads under a chase camera on a 2 km course it would need millions of triangles. Set `grid = VIEW` and the surface is drawn as rings around the camera instead, out to `horizon_distance`: each ring has `subdivisions` quads and lies one quad's width from the last (never closer than `grid_min_cell`), so quads stay about square and grow with distance at the rate the view shrinks them. 256 subdivisions out to 5 km with 30 cm near cells is about 130,000 triangles. The rectangle (`size`) still sets where the floor map, flow map and wave mask lie.
+
+@include samples/water_open_sea/assets/main.cwscene#Water
+
+The rings can only draw a wave where they are several times denser than it, so each wave fades out between five and eight of its wavelengths from the camera. That is the drawn surface only: `cw_water_height_at` always has the whole wave, so a query on something far from the camera can differ from the picture by that wave's height, and within five wavelengths it does not. Give the smallest wave that gameplay rides a wavelength of a fifth of the distance the camera keeps from it, or more.
+
+## Sheltered water
+
+Waves on a rectangle are the same everywhere, which is wrong for a harbour or a lagoon. [cw_water_set_wave_mask](api:cw_water_set_wave_mask) gives the water a map (0 to 1) of how free the waves are, and `wave_shelter` says how much it holds down each wave:
+
+@include samples/water_open_sea/main.c#mask
+
+A swell with `wave_shelter` 1 is gone where the map is 0, and a local chop with 0 is not touched. The drawn surface and [cw_water_height_at](api:cw_water_height_at), [cw_water_sample_at](api:cw_water_sample_at) and [Buoyancy3D](node:Buoyancy3D) all read the same bilinear map. Keep the map smooth: the surface's normal ignores its slope. The `water-open-sea-surface` gate checks the picture against the CPU over the transition, and that it does not match the height with the mask ignored.
+
+## A ripple grid that follows
+
+A ripple grid sharp enough for a wake (25 to 50 cm cells) covers 100 to 150 metres at a cost a frame can pay. [cw_water_ripple_follow](api:cw_water_ripple_follow) keeps it around a point: the grid and what is on it move by whole cells, so ripples stay where they are in the world and new cells come in flat. Call it once a tick with simulation values; the field stays the same bits on every host (the `water-open-sea` gate).
+
+@include samples/water_open_sea/main.c#follow
 
 ## Quality and costs
 

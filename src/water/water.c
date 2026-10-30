@@ -59,25 +59,42 @@ void cw__waves_prepare(const cw_waves *w, double t, wave_eval *e) {
   }
 }
 
+/* the wave mask at a rest point, bilinear over texel centres and clamped at the edge, as the GPU's linear filter reads it */
+static float mask_at(const wave_eval *e, float x0, float z0) {
+  float tx = (x0 / e->mask_sx + 0.5f) * (float)e->mask_nx - 0.5f, tz = (z0 / e->mask_sz + 0.5f) * (float)e->mask_nz - 0.5f;
+  float mx = (float)(e->mask_nx - 1), mz = (float)(e->mask_nz - 1);
+  tx = tx < 0 ? 0 : tx > mx ? mx : tx;
+  tz = tz < 0 ? 0 : tz > mz ? mz : tz;
+  int i = (int)tx, j = (int)tz;
+  float fx = tx - (float)i, fz = tz - (float)j;
+  int i1 = i + 1 < e->mask_nx ? i + 1 : i, j1 = j + 1 < e->mask_nz ? j + 1 : j;
+  const float *m = e->mask;
+  float a = m[j * e->mask_nx + i] + (m[j * e->mask_nx + i1] - m[j * e->mask_nx + i]) * fx;
+  float b = m[j1 * e->mask_nx + i] + (m[j1 * e->mask_nx + i1] - m[j1 * e->mask_nx + i]) * fx;
+  return a + (b - a) * fz;
+}
+
 static void displace(const wave_eval *e, float x0, float z0, float out[3], float *nrm, float *vel) {
   float x = x0, y = 0, z = z0;
   float nx = 0, ny = 1, nz = 0, vx = 0, vy = 0, vz = 0;
+  float m = e->mask ? mask_at(e, x0, z0) : 1.0f;
   for (int i = 0; i < e->n; i++) {
     if (e->a[i] == 0) continue;
     float th = e->k[i] * (e->dx[i] * x0 + e->dz[i] * z0) - e->ph[i];
     float s, c;
     cw_sincos(th, &s, &c);
-    float qa = e->q[i] * e->a[i];
+    float a = e->a[i] * (1.0f + (m - 1.0f) * e->shelter[i]);
+    float qa = e->q[i] * a;
     x += qa * e->dx[i] * c;
-    y += e->a[i] * s;
+    y += a * s;
     z += qa * e->dz[i] * c;
-    float wa = e->k[i] * e->a[i];
+    float wa = e->k[i] * a;
     nx -= e->dx[i] * wa * c;
     ny -= e->q[i] * wa * s;
     nz -= e->dz[i] * wa * c;
     /* d/dt of the displacement: th falls at omega */
     vx += qa * e->dx[i] * e->om[i] * s;
-    vy -= e->a[i] * e->om[i] * c;
+    vy -= a * e->om[i] * c;
     vz += qa * e->dz[i] * e->om[i] * s;
   }
   out[0] = x, out[1] = y, out[2] = z;
@@ -121,11 +138,14 @@ static const cw_node_type *water_t;
 
 const cw_node_type *cw__water_type(void) { return water_t; }
 
+static const char *const grid_names[] = { "RECT", "VIEW", NULL };
+
 static void water_init(cw_node n, void *data) {
   (void)n;
   water3d *d = data;
   d->size[0] = d->size[1] = 40;
   d->subdivisions = 160;
+  d->grid_min_cell = 0.25f;
   d->wave_count = 3;
   d->wave0[0] = 20, d->wave0[1] = 12, d->wave0[2] = 0.35f, d->wave0[3] = 0.5f;
   d->wave1[0] = 75, d->wave1[1] = 7, d->wave1[2] = 0.18f, d->wave1[3] = 0.5f;
@@ -150,6 +170,7 @@ static void water_init(cw_node n, void *data) {
   d->clarity = 5;
   d->shore_foam = 0.7f;
   d->crest_foam = 0.35f;
+  d->foam_scale = 1;
   d->shallow_color[0] = 0.05f, d->shallow_color[1] = 0.34f, d->shallow_color[2] = 0.38f, d->shallow_color[3] = 1;
   d->scatter = 0.6f;
   d->glint = 1.0f;
@@ -175,6 +196,14 @@ cw_waves cw__water_waves(const water3d *d) {
   const float *v[4] = { d->wave0, d->wave1, d->wave2, d->wave3 };
   for (int i = 0; i < 4; i++) w.wave[i] = (cw_water_wave){ v[i][0], v[i][1], v[i][2], v[i][3] };
   return w;
+}
+
+void cw__waves_use_mask(const water3d *d, wave_eval *e) {
+  if (!d->mask) return;
+  e->mask = d->mask;
+  e->mask_nx = d->mask_nx, e->mask_nz = d->mask_nz;
+  e->mask_sx = d->size[0] > 0.01f ? d->size[0] : 0.01f, e->mask_sz = d->size[1] > 0.01f ? d->size[1] : 0.01f;
+  for (int i = 0; i < CW_WATER_MAX_WAVES; i++) e->shelter[i] = d->wave_shelter[i] < 0 ? 0 : d->wave_shelter[i] > 1 ? 1 : d->wave_shelter[i];
 }
 
 /* the tree's waters, in entry order */
@@ -231,6 +260,7 @@ bool cw_water_sample_at(cw_node water, float x, float z, double t, cw_water_samp
   cw_waves w = cw__water_waves(d);
   wave_eval e;
   cw__waves_prepare(&w, t, &e);
+  cw__waves_use_mask(d, &e);
   float lx, lz, rx, rz, p[3], nl[3], vl[3];
   t3_mat4 inv;
   to_local(water, x, z, &lx, &lz, &inv);
@@ -364,6 +394,31 @@ float cw_water_floor_depth_at(cw_node water, float x, float z) {
   return d->floor_depth[(int)(v * (float)nz) * nx + (int)(u * (float)nx)];
 }
 
+void cw_water_set_wave_mask(cw_node water, const float *mask, int nx, int nz) {
+  water3d *d = cw_node_data_t(water, water_t);
+  if (!d) return;
+  cw_free(d->mask);
+  d->mask = NULL;
+  if (d->mask_tex) t3_release(d->mask_tex);
+  d->mask_tex = NULL;
+  if (!mask || nx < 1 || nz < 1) return;
+  size_t n = (size_t)nx * (size_t)nz;
+  d->mask = cw_alloc(n * sizeof(float), CW_MEM_RENDER);
+  memcpy(d->mask, mask, n * sizeof(float));
+  d->mask_nx = nx, d->mask_nz = nz;
+  uint16_t *tex = cw_alloc(n * 4 * sizeof(uint16_t), CW_MEM_RENDER);
+  for (size_t k = 0; k < n; k++) {
+    uint16_t h = to_half(mask[k]);
+    tex[k * 4] = h, tex[k * 4 + 1] = h, tex[k * 4 + 2] = h, tex[k * 4 + 3] = 0x3c00;
+  }
+  d->mask_tex = t3_data_texture_new_typed(nx, nz, tex, T3_HALF_FLOAT_TYPE);
+  d->mask_tex->mag_filter = T3_LINEAR;
+  d->mask_tex->min_filter = T3_LINEAR;
+  d->mask_tex->wrap_s = d->mask_tex->wrap_t = T3_CLAMP_TO_EDGE;
+  d->mask_tex->version++;
+  cw_free(tex);
+}
+
 void cw_water_rebake_floor(cw_node water) {
   water3d *d = cw_node_data_t(water, water_t);
   if (d) d->floor_dirty = true;
@@ -419,18 +474,77 @@ static t3_geometry *grid(float sx, float sz, int nx, int nz, float horizon) {
   return g;
 }
 
+/* The VIEW grid: rings around the camera with "sectors" quads around each. A
+ * ring's distance to the next is the width of a quad there (never under
+ * min_cell), so quads stay about square and shrink with distance on screen at
+ * the same rate everywhere: dense under the camera, coarse at the horizon, far
+ * fewer triangles than a rectangle with the same near detail. Vertex (0, 0) is
+ * the camera's foot; the extension adds the camera's x, z each view. */
+static t3_geometry *view_grid(int sectors, float radius, float min_cell, int *tris) {
+  float step = 2.0f * CW_PI / (float)sectors;
+  int rings = 0;
+  for (float r = 0; r < radius && rings < 4096; rings++) {
+    float dr = r * step;
+    r += dr > min_cell ? dr : min_cell;
+  }
+  int vs = sectors + 1, nv = 1 + rings * vs;
+  float *pos = cw_alloc((size_t)nv * 3 * sizeof(float), CW_MEM_RENDER);
+  float *nrm = cw_alloc((size_t)nv * 3 * sizeof(float), CW_MEM_RENDER);
+  float *uv = cw_calloc((size_t)nv * 2, sizeof(float), CW_MEM_RENDER);
+  pos[0] = pos[1] = pos[2] = 0;
+  float r = 0;
+  for (int j = 0; j < rings; j++) {
+    float dr = r * step;
+    r += dr > min_cell ? dr : min_cell;
+    for (int i = 0; i < vs; i++) {
+      int k = 1 + j * vs + i;
+      float s, c;
+      cw_sincos(step * (float)(i % sectors), &s, &c);
+      pos[k * 3] = c * r, pos[k * 3 + 1] = 0, pos[k * 3 + 2] = s * r;
+    }
+  }
+  for (int k = 0; k < nv; k++) nrm[k * 3] = 0, nrm[k * 3 + 1] = 1, nrm[k * 3 + 2] = 0;
+  int ni = (sectors + (rings - 1) * sectors * 2) * 3;
+  uint32_t *idx = cw_alloc((size_t)ni * sizeof(uint32_t), CW_MEM_RENDER);
+  int w = 0;
+  /* counter-clockwise seen from +Y (angle runs from +X toward +Z) */
+  for (int i = 0; i < sectors; i++) idx[w++] = 0, idx[w++] = (uint32_t)(1 + i + 1), idx[w++] = (uint32_t)(1 + i);
+  for (int j = 0; j + 1 < rings; j++)
+    for (int i = 0; i < sectors; i++) {
+      uint32_t a = (uint32_t)(1 + j * vs + i), b = a + 1, c2 = a + (uint32_t)vs, d = c2 + 1;
+      idx[w++] = a, idx[w++] = b, idx[w++] = c2;
+      idx[w++] = b, idx[w++] = d, idx[w++] = c2;
+    }
+  t3_geometry *g = t3_geometry_new();
+  { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, pos, nv, 3); t3_geometry_set_attribute(g, T3_ATTR_POSITION, a_); t3_release(a_); }
+  { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, nrm, nv, 3); t3_geometry_set_attribute(g, T3_ATTR_NORMAL, a_); t3_release(a_); }
+  { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, uv, nv, 2); t3_geometry_set_attribute(g, T3_ATTR_UV, a_); t3_release(a_); }
+  { t3_attribute *a_ = t3_attribute_new(T3_UINT32, idx, ni, 1); t3_geometry_set_index(g, a_); t3_release(a_); }
+  cw_free(pos);
+  cw_free(nrm);
+  cw_free(uv);
+  cw_free(idx);
+  *tris = ni / 3;
+  return g;
+}
+
 int cw__water_quality(void) { return cw_gfx_get(CW_GFX_EFFECTS); }
 
 static void build(cw_node n, water3d *d) {
   int q = cw__water_quality();
   int sub = d->subdivisions < 1 ? 1 : d->subdivisions;
-  if (q == CW_QUALITY_LOW) sub = sub / 4 < 1 ? 1 : sub / 4;
+  bool view = d->grid_mode == 1;
+  /* a VIEW grid's rings follow its sectors, so its triangles go as the square of them */
+  if (view) sub = q == CW_QUALITY_LOW ? sub / 2 : q == CW_QUALITY_MEDIUM ? sub * 3 / 4 : sub, sub = sub < 8 ? 8 : sub;
+  else if (q == CW_QUALITY_LOW) sub = sub / 4 < 1 ? 1 : sub / 4;
   else if (q == CW_QUALITY_MEDIUM) sub = sub / 2 < 1 ? 1 : sub / 2;
   float sx = d->size[0] > 0.01f ? d->size[0] : 0.01f, sz = d->size[1] > 0.01f ? d->size[1] : 0.01f;
   float amp = 0;
   cw_waves w = cw__water_waves(d);
   for (int i = 0; i < w.count; i++) amp += fabsf(w.wave[i].amplitude) * 2;
-  if (d->mesh && d->built_sub == sub && d->built_size[0] == sx && d->built_size[1] == sz && d->built_amp == amp && d->built_horizon == d->horizon_distance) return;
+  if (view) amp = 0; /* the rings are not culled and do not depend on the waves: the waves may change every tick */
+  if (d->mesh && d->built_sub == sub && d->built_size[0] == sx && d->built_size[1] == sz && d->built_amp == amp && d->built_horizon == d->horizon_distance
+      && d->built_mode == d->grid_mode && d->built_min_cell == d->grid_min_cell) return;
   t3_object *group = cw_node3d_object(n);
   if (d->mesh) {
     t3_object_remove(group, d->mesh);
@@ -440,7 +554,10 @@ static void build(cw_node n, water3d *d) {
   int nx = sx >= sz ? sub : (int)ceilf((float)sub * sx / sz), nz = sz >= sx ? sub : (int)ceilf((float)sub * sz / sx);
   if (nx < 1) nx = 1;
   if (nz < 1) nz = 1;
-  t3_geometry *g = grid(sx, sz, nx, nz, d->horizon_distance);
+  int view_tris = 0;
+  float view_radius = d->horizon_distance > 1 ? d->horizon_distance : (sx > sz ? sx : sz);
+  t3_geometry *g = view ? view_grid(sub, view_radius, d->grid_min_cell > 0.01f ? d->grid_min_cell : 0.01f, &view_tris)
+                        : grid(sx, sz, nx, nz, d->horizon_distance);
   /* the waves lift and move the surface: bounds that hold every crest */
   t3_geometry_compute_bounding_sphere(g);
   g->bounding_sphere.radius += amp;
@@ -457,12 +574,15 @@ static void build(cw_node n, water3d *d) {
   d->mesh->base.user_data = d;
   d->mesh->base.receive_shadow = true;
   d->mesh->base.cast_shadow = false;
+  if (view) d->mesh->base.frustum_culled = false; /* it is wherever the camera is */
   t3_object_add(group, d->mesh);
   d->built_sub = sub;
   d->built_size[0] = sx, d->built_size[1] = sz;
   d->built_amp = amp;
   d->built_horizon = d->horizon_distance;
-  d->triangles = nx * nz * 2;
+  d->triangles = view ? view_tris : nx * nz * 2;
+  d->built_mode = d->grid_mode;
+  d->built_min_cell = d->grid_min_cell;
 }
 
 static void water_destroy(cw_node n, void *data) {
@@ -480,6 +600,9 @@ static void water_destroy(cw_node n, void *data) {
   cw__water_refr_wgpu_free(d);
   cw__ripples_free(d);
   cw_free(d->floor_depth);
+  cw_free(d->mask);
+  if (d->mask_tex) t3_release(d->mask_tex);
+  if (d->mask_white) t3_release(d->mask_white);
   memset(&d->mesh, 0, sizeof *d - offsetof(water3d, mesh));
 }
 
@@ -729,6 +852,10 @@ static void fill(t3_extension_ctx *c, void *user) {
   }
   t3_extension_set_uniform(c, "waterSteep", d->ev.q, 4);
   t3_extension_set_uniform(c, "waterPhase", d->ev.ph, 4);
+  v[0] = d->grid_off[0], v[1] = d->grid_off[1], v[2] = d->grid_mode == 1 ? 1.0f : 0.0f, v[3] = d->foam_scale;
+  t3_extension_set_uniform(c, "waterGrid", v, 4);
+  t3_extension_set_uniform(c, "waterShelter", d->ev.shelter, 4);
+  t3_extension_set_texture(c, "waterWaveMask", d->mask_tex ? d->mask_tex : d->mask_white);
   v[0] = d->reflectivity, v[1] = d->distortion, v[2] = d->detail, v[3] = d->normal_scale;
   t3_extension_set_uniform(c, "waterLook", v, 4);
   v[0] = d->color[0], v[1] = d->color[1], v[2] = d->color[2], v[3] = d->refl_on ? 1.0f : 0.0f;
@@ -748,7 +875,7 @@ static void fill(t3_extension_ctx *c, void *user) {
   t3_extension_set_uniform(c, "waterShore", v, 4);
   v[0] = d->shallow_color[0], v[1] = d->shallow_color[1], v[2] = d->shallow_color[2], v[3] = d->foam_time;
   t3_extension_set_uniform(c, "waterShallow", v, 4);
-  v[0] = d->size[0], v[1] = d->size[1], v[2] = d->cam_under ? 1.0f : 0.0f, v[3] = 0;
+  v[0] = d->size[0], v[1] = d->size[1], v[2] = d->cam_under ? 1.0f : 0.0f, v[3] = d->swell_reflect;
   t3_extension_set_uniform(c, "waterFloorRect", v, 4);
   /* every texture the program declares is bound in every state (a draw with one unset is skipped): the
    * normal map stands in for maps a feature that is off never reads */
@@ -827,6 +954,12 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     if (t < 0) t = 0;
     cw_waves w = cw__water_waves(d);
     cw__waves_prepare(&w, t, &d->ev);
+    cw__waves_use_mask(d, &d->ev);
+    if (!d->mask_white) {
+      static const uint16_t one[4] = { 0x3c00, 0x3c00, 0x3c00, 0x3c00 };
+      d->mask_white = t3_data_texture_new_typed(1, 1, one, T3_HALF_FLOAT_TYPE);
+      d->mask_white->version++;
+    }
     /* Water2's two-phase flow, from the time (no state carried) */
     const double cycle = 0.15, half = cycle * 0.5;
     double o0 = fmod((double)d->flow_speed * t, cycle);
@@ -835,6 +968,15 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     d->flow_off[0] = (float)o0, d->flow_off[1] = (float)o1, d->flow_off[2] = (float)half;
     const float *cw = ctx->camera->base.matrix_world.e;
     d->cam[0] = cw[12], d->cam[1] = cw[13], d->cam[2] = cw[14];
+    if (d->grid_mode == 1) {
+      /* (the view's camera, in the node's plane: per view, as the pass is) */
+      t3_mat4 inv;
+      t3_mat4_invert(&inv, cw_node3d_global_transform(n));
+      t3_vec3 lc = t3_vec3_apply_mat4((t3_vec3){ cw[12], cw[13], cw[14] }, &inv);
+      d->grid_off[0] = lc.x, d->grid_off[1] = lc.z;
+    } else {
+      d->grid_off[0] = d->grid_off[1] = 0;
+    }
     /* the WebGPU scene pass draws rows bottom-up (GL's order, pipeline_wgpu.h), three.c's own
      * targets top-down: the planar targets are read flipped there */
     d->cam[3] = cw_gpu_backend() == CW_GPU_WEBGPU ? 1.0f : 0.0f;
@@ -910,7 +1052,11 @@ static void water_exit(cw_node n, void *data) {
 static const cw_prop water_props[] = {
   CW_PROP_FIELD(water3d, size, CW_T_VEC2, CW_PROP_DEFAULT, "Rectangle, x by z metres, centred on the node."),
   CW_PROP_FIELD_RANGE(water3d, horizon_distance, CW_T_FLOAT, 0, 1e7, "Optional outer grid extent; keeps the central size densely sampled."),
-  CW_PROP_FIELD_RANGE(water3d, subdivisions, CW_T_INT, 1, 2048, "Grid quads along the longer side (quality: Low 1/4, Medium 1/2)."),
+  CW_PROP_FIELD_RANGE(water3d, subdivisions, CW_T_INT, 1, 2048, "Grid quads along the longer side (quality: Low 1/4, Medium 1/2). VIEW grid: quads around each ring (Low 1/2, Medium 3/4)."),
+  { .name = "grid", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(water3d, grid_mode),
+    .size = sizeof(int), .enum_names = grid_names, .doc = "RECT: a grid over the rectangle. VIEW: rings around the camera out to horizon_distance, for water much larger than the view's detail." },
+  CW_PROP_FIELD_RANGE(water3d, grid_min_cell, CW_T_FLOAT, 0.01, 100, "VIEW grid: the smallest distance between rings, metres."),
+  CW_PROP_FIELD(water3d, wave_shelter, CW_T_VEC4, CW_PROP_DEFAULT, "How much the wave mask holds down each wave (0: not at all, 1: fully): cw_water_set_wave_mask."),
   CW_PROP_FIELD_RANGE(water3d, wave_count, CW_T_INT, 0, 4, "Waves in use (wave0 ..)."),
   CW_PROP_FIELD(water3d, wave0, CW_T_VEC4, CW_PROP_DEFAULT, WAVE_DOC),
   CW_PROP_FIELD(water3d, wave1, CW_T_VEC4, CW_PROP_DEFAULT, WAVE_DOC),
@@ -923,6 +1069,7 @@ static const cw_prop water_props[] = {
   CW_PROP_FIELD_RANGE(water3d, murk, CW_T_FLOAT, 0, 1, "Share of the refraction lost into deep_color (0: clear as glass)."),
   CW_PROP_FIELD_RANGE(water3d, reflectivity, CW_T_FLOAT, 0, 1, "Fresnel F0 (0.02: water)."),
   CW_PROP_FIELD_RANGE(water3d, distortion, CW_T_FLOAT, 0, 1, "How far the surface bends reflection and refraction."),
+  CW_PROP_FIELD_RANGE(water3d, swell_reflect, CW_T_FLOAT, 0, 1, "How far the swell's own tilt moves the reflection (0: only the ripples do; a hill of water then mirrors like flat water. Keep it low where land stands in the reflection)."),
   CW_PROP_FIELD_RANGE(water3d, detail, CW_T_FLOAT, 0, 4, "Strength of the normal map ripples on the waves."),
   CW_PROP_FIELD_RANGE(water3d, roughness, CW_T_FLOAT, 0, 1, "Surface roughness for the lights' glints."),
   CW_PROP_FIELD(water3d, normal_map, CW_T_STRING, CW_PROP_DEFAULT, "Normal map image (empty: a seamless gen://noise normal map)."),
@@ -941,6 +1088,7 @@ static const cw_prop water_props[] = {
   CW_PROP_FIELD_RANGE(water3d, clarity, CW_T_FLOAT, 0.01, 1000, "Metres of water over which the shallow colour has become deep_color."),
   CW_PROP_FIELD_RANGE(water3d, shore_foam, CW_T_FLOAT, 0, 20, "Width in metres of the foam where the water meets the floor (0: none)."),
   CW_PROP_FIELD_RANGE(water3d, crest_foam, CW_T_FLOAT, 0, 1, "Foam on crests where the surface bunches up (0: none)."),
+  CW_PROP_FIELD_RANGE(water3d, foam_scale, CW_T_FLOAT, 0.05, 32, "How much finer the foam's pattern is than its default (1: cells of a few metres, for a view from far above)."),
   CW_PROP_FIELD_RANGE(water3d, scatter, CW_T_FLOAT, 0, 4, "Light the sun sends through wave crests toward the eye (the turquoise glow; needs a ProceduralSky)."),
   CW_PROP_FIELD_RANGE(water3d, glint, CW_T_FLOAT, 0, 8, "Strength of the fine sparkle the sun makes on the small ripples."),
   CW_PROP_FIELD_RANGE(water3d, ripple_cells, CW_T_INT, 0, 512, "Cells along the longer side of the interactive ripple grid (0: no ripples; quality scales it)."),
@@ -950,6 +1098,7 @@ static const cw_prop water_props[] = {
   CW_PROP_FIELD_RANGE(water3d, ripple_damping, CW_T_FLOAT, 0, 60, "How fast ripples die, per second."),
   CW_PROP_FIELD_RANGE(water3d, ripple_strength, CW_T_FLOAT, 0, 8, "How much the ripples bend the surface normal."),
   CW_PROP_FIELD_RANGE(water3d, foam_fade, CW_T_FLOAT, 0, 60, "How fast the foam of splashes and wakes fades, per second."),
+  CW_PROP_FIELD_RANGE(water3d, foam_spread, CW_T_FLOAT, 0, 20, "How fast the foam of splashes and wakes spreads sideways as it fades, m per second (0: it stays where it was left)."),
   CW_PROP_FIELD_RANGE(water3d, rain, CW_T_FLOAT, 0, 20000, "Raindrops per second over the ripple area (0: dry)."),
   CW_PROP_FIELD_RANGE(water3d, rain_size, CW_T_FLOAT, 0.01, 20, "Radius of a raindrop ring, metres."),
   CW_PROP_FIELD_RANGE(water3d, rain_strength, CW_T_FLOAT, 0, 5, "Depth of a raindrop dent, metres."),

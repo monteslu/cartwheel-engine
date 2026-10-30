@@ -47,7 +47,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const dbg = v4('waterDebug');     // x: debug view (1 = height); y, z: height range; w: murk
   const shore = v4('waterShore');   // x: floor map on (1) / off (0); y: shore foam width (m); z: 1 / clarity (1 / m); w: crest foam amount
   const shallow = v4('waterShallow'); // rgb: shallow colour; w: the foam clock (s, mod 1000)
-  const floorRect = v4('waterFloorRect'); // x, y: the rectangle the floor map covers (m); z: the camera is under the surface (1)
+  const floorRect = v4('waterFloorRect'); // x, y: the rectangle the floor map covers (m); z: the camera is under the surface (1); w: the swell's share in the reflection
   const deepRgb = deep.rgb;
   const sun = v4('waterSun');       // xyz: the direction toward the sun (world); w: the waves' summed amplitude
   const sunCol = v4('waterSunCol'); // rgb: the sun's colour x energy (0 without a sky); w: scatter strength
@@ -55,6 +55,8 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const ripR = v4('waterRippleRect'); // x, y: the grid's centre (water-local x, z); z, w: 1 / cells along x, z
   const refrInfo = v4('waterRefr'); // x: the refraction's depth is valid (1); y: caustic strength; z: 1 / caustic tile (m); w: camera under the water (the refraction target holds the view up through the surface)
   const refrSize = v4('waterRefrSize'); // x, y: the refraction depth texture's size in texels
+  const grid = v4('waterGrid');     // x, y: the grid's centre (water-local; the camera's foot on a VIEW grid); z: VIEW grid on; w: the foam pattern's scale
+  const shelter = v4('waterShelter'); // per wave: how much the wave mask holds it down
   const cam = v4('waterCam');       // xyz: the camera's world position (three.c fills no cameraPosition); w: 1 when the view is drawn rows bottom-up (cartwheel's WebGPU scene target) but the planar targets top-down
 
   const m4 = (n) => {
@@ -85,6 +87,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const floorMap = tex('waterFloorMap', true, false, true);
   const rippleMap = tex('waterRippleMap', true, false, true);
   const causticMap = tex('waterCaustic', true, true, false);
+  const waveMask = tex('waterWaveMask', true, false, true);
   // the refraction's window depth, read texel by texel: a float texture (compatibility-mode WebGPU reads a depth
   // texture only through comparisons, so there the engine copies it into R32Float; GL binds the depth texture)
   const refrDepth = new THREE.DataTexture(new Float32Array(4), 2, 2, THREE.RedFormat, THREE.FloatType);
@@ -94,22 +97,29 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   // ── vertex: Gerstner ───────────────────────────────────────────────
   // plain node expressions (no Fn: the shadow pass rebuilds the vertex stage from positionNode alone)
   const p0 = positionLocal;
-  let pos = vec3(p0.x, float(0), p0.z);
+  const rx = p0.x.add(grid.x), rz = p0.z.add(grid.y);    // where this vertex rests in the water's plane
+  const fromCam = length(vec2(p0.x, p0.z));
+  const maskV = texture(waveMask, vec2(rx, rz).div(floorRect.xy).add(0.5)).level(0).r;
+  let pos = vec3(rx, float(0), rz);
   let nrm = vec3(0, 1, 0);
+  const SH = [shelter.x, shelter.y, shelter.z, shelter.w];
   const Q = [steep.x, steep.y, steep.z, steep.w];
   const PH = [phase.x, phase.y, phase.z, phase.w];
   for (let i = 0; i < 4; i++) {
     const w = waves[i];
-    const th = w.z.mul(w.x.mul(p0.x).add(w.y.mul(p0.z))).sub(PH[i]);
+    const th = w.z.mul(w.x.mul(rx).add(w.y.mul(rz))).sub(PH[i]);
     const c = cos(th), s = sin(th);
-    const qa = Q[i].mul(w.w);
-    pos = pos.add(vec3(qa.mul(w.x).mul(c), w.w.mul(s), qa.mul(w.y).mul(c)));
-    const wa = w.z.mul(w.w);
+    // a VIEW grid's rings are too far apart for a wave past five wavelengths (fromCam * k = 2 pi x wavelengths)
+    const lod = mix(float(1), float(1).sub(smoothstep(31.4, 50.3, fromCam.mul(w.z))), grid.z);
+    const a = w.w.mul(float(1).add(maskV.sub(1).mul(SH[i]))).mul(lod);
+    const qa = Q[i].mul(a);
+    pos = pos.add(vec3(qa.mul(w.x).mul(c), a.mul(s), qa.mul(w.y).mul(c)));
+    const wa = w.z.mul(a);
     nrm = nrm.sub(vec3(w.x.mul(wa).mul(c), Q[i].mul(wa).mul(s), w.y.mul(wa).mul(c)));
   }
   mat.positionNode = pos;
   const waveNormalLocal = varying(nrm, 'vWaterNormal');
-  const vRest = varying(vec2(p0.x, p0.z), 'vWaterRest');   // where the surface point rests (the floor map's coordinates)
+  const vRest = varying(vec2(rx, rz), 'vWaterRest');   // where the surface point rests (the floor map's coordinates)
   const vSurf = varying(pos.y, 'vWaterSurf');                // its height over the rest level
   const vBunch = varying(nrm.y, 'vWaterBunch');              // the wave normal's y: small where the surface bunches up (crests)
 
@@ -157,7 +167,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const offset = n.xz.sub(wn.xz.mul(0.6)).mul(look.y);
   const suv = vec2(screenUV.x, mix(screenUV.y, float(1).sub(screenUV.y), cam.w));
   // (the reflection is moved by the ripples only: the swell bending it reaches the ground under the mirrored horizon)
-  const refl = texture(reflectMap, vec2(float(1).sub(suv.x), suv.y).add(n.xz.sub(wn.xz).mul(look.y))).rgb.mul(tint.w);
+  const refl = texture(reflectMap, vec2(float(1).sub(suv.x), suv.y).add(n.xz.sub(wn.xz).mul(look.y)).add(wn.xz.mul(floorRect.w))).rgb.mul(tint.w);
   // depth over the baked floor (a map outside its rectangle, or none: deep)
   const uvF = vRest.div(floorRect.xy).add(0.5);
   const outside = step(0.5, max(abs(uvF.x.sub(0.5)), abs(uvF.y.sub(0.5))));
@@ -252,8 +262,8 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const foamRaw = max(max(shoreFoam.mul(mix(0.55, 1, lumpy)), lines.mul(noise2)), max(crestFoam, splashFoam));
   // foam is lace, not cotton: the caustic tile's web of lines, scrolled with the flow, is the bubbles' pattern; thin
   // foam keeps only its brightest knots, thick foam fills the cells (far away, where the lace would alias, it evens out)
-  const lace0 = texture(causticMap, rest.mul(0.29).add(f.mul(flow.x).mul(0.4))).r.mul(4);
-  const lace1 = texture(causticMap, rest.mul(0.71).add(vec2(0.37, 0.61)).sub(f.mul(flow.y).mul(0.6))).r.mul(4);
+  const lace0 = texture(causticMap, rest.mul(grid.w).mul(0.29).add(f.mul(flow.x).mul(0.4))).r.mul(4);
+  const lace1 = texture(causticMap, rest.mul(grid.w).mul(0.71).add(vec2(0.37, 0.61)).sub(f.mul(flow.y).mul(0.6))).r.mul(4);
   const lace = mix(clamp(max(lace0, lace1.mul(0.8)).mul(0.4), 0, 1), float(0.55), smoothstep(60, 250, dist));
   const foam = clamp(foamRaw.mul(1.45).sub(float(1).sub(lace).mul(1.4)), 0, 1).mul(mix(0.82, 1, noise2));
   const emitAbove = mix(refr, refl, fres).add(sss.mul(float(1).sub(fres))).add(gl);
