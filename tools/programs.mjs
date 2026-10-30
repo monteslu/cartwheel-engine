@@ -1,4 +1,4 @@
-// three.c program tables (cmake/programs.cmake): find the r186 program states
+// three.c program tables (cmake/programs.cmake): find the r187 program states
 // apps draw that their tables lack, add them to the tables' manifests and
 // regenerate the C with three.c's tools/gen-project-table.mjs.
 //
@@ -51,7 +51,7 @@
 // are dropped: more lights of each kind, the same casters), captures what the
 // capture cache (<build>/programs-cache/<table>) lacks twice to check it
 // (--check off with --fast), and writes <table>_gl.c and <table>_wgpu.c beside
-// the manifest. Capturing runs three.js r186's node renderer on three.c's mock
+// the manifest. Capturing runs three.js r187's node renderer on three.c's mock
 // GPU (byte-identical to a real device): Node only, no GPU. Running the apps
 // does use the test GPU, inside the GPU sandbox.
 import { spawnSync } from 'node:child_process';
@@ -199,7 +199,7 @@ if (argv.includes('--projects')) {
     if (!statesOf(log).length) { console.log(`${app}: no missing states`); continue; }
     const manifest = join(d, 'programs', `${app}.txt`);
     mkdirSync(dirname(manifest), { recursive: true });
-    if (!existsSync(manifest)) writeFileSync(manifest, `# r186 program states ${app} draws (cmake/programs.cmake, tools/programs.mjs)\n`);
+    if (!existsSync(manifest)) writeFileSync(manifest, `# r187 program states ${app} draws (cmake/programs.cmake, tools/programs.mjs)\n`);
     console.log(`${app}: ${new Set(statesOf(log)).size} missing state(s) -> ${manifest.replace(ROOT + '/', '')}`);
     if (!argv.includes('--dry')) regenerate(manifest, [log]);
   }
@@ -356,7 +356,7 @@ for (const a of list.length ? list : apps()) {
     manifest = join(a.dir, 'programs', `${a.name}.txt`);
     mkdirSync(dirname(manifest), { recursive: true });
     if (!existsSync(manifest)) {
-      writeFileSync(manifest, `# r186 program states ${a.name} draws (cmake/programs.cmake, tools/programs.mjs)\n`);
+      writeFileSync(manifest, `# r187 program states ${a.name} draws (cmake/programs.cmake, tools/programs.mjs)\n`);
       created.push(manifest);
     }
   }
