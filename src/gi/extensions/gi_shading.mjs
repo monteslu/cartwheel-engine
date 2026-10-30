@@ -4,12 +4,12 @@
 //
 // Reflection probes (cartwheel/gi.h, ReflectionProbe3D). Each draw carries
 // up to two probes, picked on the CPU for the object (src/gi/reflection_probe.c fills the
-// values below per draw; the material's envMapRotation, which r186's PMREMNode
-// applies, should stay zero). A probe is a PMREM in r186's cube-UV layout
-// (PMREMGenerator.fromScene with size, position and its own target), sampled
-// by r186's own PMREMNode (its flip, rotation and textureCubeUV), given the
-// probe's size values in place of its texture's, so two probes of different
-// sizes can be bound.
+// values below per draw; the material's envMapRotation, which r187's PMREMNode
+// applies, should stay zero). A probe is a PMREM, r187's cube render target with
+// a mip chain (PMREMGenerator.fromScene with size, position and its own target),
+// sampled by r187's own PMREMNode (its flip, rotation and roughness to mip), given
+// the probe's last mip level in place of its texture's, so two probes of
+// different sizes can be bound.
 //
 //   - Box projection: r186's getParallaxCorrectNormal (the ray from the
 //     surface along the reflection, cut by the probe's box), measured from
@@ -29,7 +29,7 @@
 //   giA0, giB0  vec4  box centre (world), blend distance
 //   giA1, giB1  vec4  box half size, intensity (0 = no probe in this slot)
 //   giA2, giB2  vec4  capture point (world), flags (1 box projection, 2 ambient)
-//   giA3, giB3  vec4  cube-UV texel width, texel height, max mip, 0
+//   giA3, giB3  vec4  0, 0, the probe's last mip level, 0
 //   giProbeA, giProbeB  the probes' PMREM textures (half float, linear, clamped)
 
 export function giShading({ TSL, THREE, mat, props, sentinel }) {
@@ -43,16 +43,11 @@ export function giShading({ TSL, THREE, mat, props, sentinel }) {
     return u;
   };
   const probeTex = (name) => {
-    // as a PMREM target's texture: half float RGBA, linear, no mipmaps, clamped
-    const t = new THREE.DataTexture(new Uint16Array(4 * 4 * 4).fill(0x3c00), 4, 4, THREE.RGBAFormat, THREE.HalfFloatType);
+    // as a PMREM target's texture: a half float RGBA cube, linear with mipmaps, drawn by the GPU
+    const t = new THREE.CubeRenderTarget(16, { type: THREE.HalfFloatType, minFilter: THREE.LinearMipmapLinearFilter, generateMipmaps: false, depthBuffer: false }).texture;
     t.name = 'ext.' + name;
-    // a PMREM target's texture as r186 sees one: cube-UV, drawn by the GPU
-    t.mapping = THREE.CubeUVReflectionMapping;
-    t.isRenderTargetTexture = true;
-    t.magFilter = t.minFilter = THREE.LinearFilter;
-    t.generateMipmaps = false;
-    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
-    t.needsUpdate = true;
+    t.mipmaps = [{ width: 16, height: 16 }, { width: 8, height: 8 }];
+    t.isPMREMTexture = true;
     return t;
   };
   const probe = (k) => ({ c: v4(`gi${k}0`), h: v4(`gi${k}1`), o: v4(`gi${k}2`), s: v4(`gi${k}3`), tex: probeTex(`giProbe${k}`) });
@@ -90,13 +85,11 @@ export function giShading({ TSL, THREE, mat, props, sentinel }) {
     const level = float(ctx.getTextureLevel()).toVar();
     const one = (P) => {
       const d = diffuse ? dir : select(flag(P, 1), boxProject(P, dir), dir);
-      // r186's own PMREMNode samples it (flip, rotation, textureCubeUV), with the probe's size values in
-      // place of the ones it would take from the texture's image
+      // r187's own PMREMNode samples it (flip, rotation, roughness to mip), with the probe's last mip in
+      // place of the one it would take from the texture
       const pm = pmremTexture(P.tex, d, level);
       pm.updateFromTexture = function (t) { this._texture.value = t; };
-      pm._width = P.s.x;
-      pm._height = P.s.y;
-      pm._maxMip = P.s.z;
+      pm._maxLod = P.s.z;
       return pm.rgb.mul(P.h.w);
     };
     let wA = weight(A), wB = weight(B);

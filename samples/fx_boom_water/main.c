@@ -14,7 +14,7 @@
  *
  * Debug state: boom.tick, boom.gpu_total (the pipeline's GPU ms of the frame,
  * averaged), boom.pass_ms (the GPU ms average of the passes named in
- * boom.pass_names order: see PASS below), boom.alive. Timings are reported,
+ * boom.pass_names order: see PASS below), boom.alive (the peak). Timings are reported,
  * never compared. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -92,7 +92,7 @@ static void render(void *u, double a) {
   gpu_total = cw_pipeline_gpu_ms(p);
   cw_particles_stats st;
   cw_particles_get_stats(cw_scene_app_tree(), &st);
-  alive = st.alive;
+  if (st.alive > alive) alive = st.alive;   /* the peak: a one-shot burst has mostly burnt out by the time a run ends */
 }
 
 cw_app_desc cw_main(int argc, char **argv) {

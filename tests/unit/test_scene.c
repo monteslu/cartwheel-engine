@@ -10,7 +10,7 @@
 #include "cartwheel/vfs.h"
 #include "test.h"
 #include "../../src/scene/render3d_internal.h"
-void cw__mesh3d_set_lightmap(cw_node n, t3_geometry *g, t3_texture *lm, float intensity);
+void cw__mesh3d_set_lightmap(cw_node n, t3_geometry *g, t3_texture *lm, float intensity, bool baked);
 #include <string.h>
 void cw__scene_cache_put(const char *path, cw_packed_scene *ps); /* engine internal (scene_file.c) */
 t3_mesh *cw__mesh3d_t3(cw_node n);                                 /* engine internal (render3d.c) */
@@ -639,7 +639,7 @@ static void test_procedural_mesh(void) {
   t3_mesh *primitive=cw__mesh3d_t3(n);
   unsigned char pixel[4]={255,255,255,255};
   t3_texture *lm=t3_texture_new(1,1,pixel);
-  cw__mesh3d_set_lightmap(n,primitive->geometry,lm,1);
+  cw__mesh3d_set_lightmap(n,primitive->geometry,lm,1,false);
   CHECK_EQ_INT(lm->_refs,2);
   CHECK(!cw_mesh3d_set_procedural(cw_tree_root(t),mesh));
   CHECK(cw_mesh3d_set_procedural(n,mesh));

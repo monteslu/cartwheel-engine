@@ -55,7 +55,7 @@ Each frame, [cw_terrain_update](api:cw_terrain_update) (the node calls it in the
 
 Every selected patch is one instance: the near terrain is one instanced draw, the far terrain another.
 
-Shading is three.js r186's MeshStandardMaterial, so lights, shadows, fog and the environment are three.js's own. A TSL extension of the engine's (`src/terrain/extensions`) supplies the rest:
+Shading is three.js r187's MeshStandardMaterial, so lights, shadows, fog and the environment are three.js's own. A TSL extension of the engine's (`src/terrain/extensions`) supplies the rest:
 
 - the vertex stage reads the heights, exactly, from an R32UI texture and morphs them;
 - the fragment stage reads the control words, blends the layers, uses triplanar sampling on steep slopes, and past `far_distance` uses only a baked macro colour and the normal map;

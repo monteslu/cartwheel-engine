@@ -1,6 +1,6 @@
 # Water
 
-{{name}} draws water as three.js r186's water add-ons do (planar reflection and refraction, scrolling ripples, flow maps) on a surface that Gerstner waves really move, and floats rigid bodies on it with the same waves, computed the same way on every host.
+{{name}} draws water as three.js r187's water add-ons do (planar reflection and refraction, scrolling ripples, flow maps) on a surface that Gerstner waves really move, and floats rigid bodies on it with the same waves, computed the same way on every host.
 
 Header: [cartwheel/water.h](header:water.h). Node types: [Water3D](node:Water3D) and [Buoyancy3D](node:Buoyancy3D). Sample: `water_boat`, a boat and two crates bobbing beside a pier. Gates: `unit-water`, `water-boat` and `water-surface`.
 
@@ -22,8 +22,8 @@ Small ripples come from a normal map (by default a seamless noise normal map, se
 
 The surface is drawn with the scene's lights: the sun's glints and the shadows of what stands over it are the renderer's own. What the water shows is mixed by a Fresnel term (`reflectivity` is the reflectance looking straight down, 0.02 for water):
 
-- the reflection: the scene rendered again from a camera mirrored about the rest level, with everything below the water clipped away (an oblique near plane, as r186's Reflector does);
-- the refraction: the scene rendered from the view's own camera with everything above the water clipped away (r186's Refractor), tinted by `color`;
+- the reflection: the scene rendered again from a camera mirrored about the rest level, with everything below the water clipped away (an oblique near plane, as r187's Reflector does);
+- the refraction: the scene rendered from the view's own camera with everything above the water clipped away (r187's Refractor), tinted by `color`;
 
 both bent by the surface's normal (`distortion`). The water itself is hidden while they render.
 

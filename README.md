@@ -10,7 +10,7 @@ in a native player and in RetroArch.
 The stack:
 
 - SDL2 for windows, input and audio (wasmcart-sdl2 inside carts).
-- [three.c](https://github.com/monteslu/three.c), the three.js r186 API in C,
+- [three.c](https://github.com/monteslu/three.c), the three.js r187 API in C,
   for 3D rendering on GLES 3.0 / WebGL 2 and on WebGPU.
 - [Box2D v3](https://github.com/erincatto/box2d) and
   [Box3D](https://github.com/erincatto/box3d) for physics.

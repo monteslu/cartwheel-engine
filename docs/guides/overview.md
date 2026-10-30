@@ -7,7 +7,7 @@
 | Layer | What it is |
 |---|---|
 | Platform | SDL2. Native builds link real SDL2; carts link wasmcart-sdl2, the same SDL2 API on the wasmcart ABI. Only `src/platform/` touches either. |
-| 3D rendering | three.c: three.js r186 in C, drawing with r186's generated shader programs on GLES 3.0 (WebGL2 in a browser) and WebGPU, plus the engine's pass graph for shadows, sky, fog, particles, decals and post effects, and on top of it clustered lighting with a shadow atlas and cascaded sun shadows, reflection probes and bounce light, volumetric fog, terrain and water. |
+| 3D rendering | three.c: three.js r187 in C, drawing with r187's generated shader programs on GLES 3.0 (WebGL2 in a browser) and WebGPU, plus the engine's pass graph for shadows, sky, fog, particles, decals and post effects, and on top of it clustered lighting with a shadow atlas and cascaded sun shadows, reflection probes and bounce light, volumetric fog, terrain and water. |
 | 2D rendering | the engine's own batched renderer (`cartwheel/render2d.h`) and 2D node types. |
 | Physics | Box2D v3 and Box3D, wrapped as worlds, queries, movers and node types; an XPBD solver beside Box3D for cloth and ropes; Recast and Detour for navigation. |
 | Threads | one job pool (`cartwheel/jobs.h`) shared by physics, culling, animation, IK, light binning, particles and asset decoding, plus background jobs for resource loads and world streaming. Natively pthreads, in a cart wasi-threads; the same code. |

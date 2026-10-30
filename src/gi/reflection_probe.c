@@ -34,6 +34,7 @@ static void gtree_free(void *p) {
   cw__rt_destroy(&g->gbuf);
   cw__rt_destroy(&g->albedo);
   if (g->dummy) t3_release(g->dummy);
+  if (g->dummy_cube) t3_release(g->dummy_cube);
   if (g->pmrem) t3_pmrem_generator_destroy(g->pmrem);
   cw_free(g);
 }
@@ -266,6 +267,11 @@ static void captures(gi_tree *g, cw_pass_ctx *ctx) {
 
 /* ── the fill hook: two probes per draw ──────────────────────────────── */
 
+/* an empty slot's probe texture: a slot with intensity 0 never reads it */
+static t3_texture *gi_dummy_cube(gi_tree *g) {
+  if (!g->dummy_cube) g->dummy_cube = t3_cube_texture_new(4, NULL);
+  return g->dummy_cube;
+}
 t3_texture *cw__gi_dummy(gi_tree *g) {
   if (!g->dummy) {
     uint16_t px[4 * 4 * 4] = { 0 };
@@ -311,7 +317,7 @@ static void set_slot(t3_extension_ctx *c, gi_tree *g, char k, const cand *q) {
   char nm[8] = "giA0";
   nm[2] = k;
   float v[4] = { 0, 0, 0, 0 };
-  t3_texture *tex = cw__gi_dummy(g);
+  t3_texture *tex = gi_dummy_cube(g);
   float sz[4] = { 0, 0, 4, 0 };
   if (q) {
     const refl_probe *p = q->p;
@@ -323,13 +329,8 @@ static void set_slot(t3_extension_ctx *c, gi_tree *g, char k, const cand *q) {
     nm[3] = '2';
     v[0] = q->o[0], v[1] = q->o[1], v[2] = q->o[2], v[3] = (float)((p->box_projection ? 1 : 0) | (p->ambient ? 2 : 0));
     t3_extension_set_uniform(c, nm, v, 4);
-    t3_render_target *rt = p->rt[p->front];
-    tex = rt->texture;
-    float hgt = (float)rt->height;
-    /* r186 PMREMNode's size uniforms from the target's height */
-    float mm = log2f(hgt) - 2;
-    float face = exp2f(mm) > 112 ? exp2f(mm) : 112;
-    sz[0] = 1.0f / (3 * face), sz[1] = 1.0f / hgt, sz[2] = mm;
+    tex = p->rt[p->front]->texture;
+    sz[2] = (float)(tex->mip_levels - 1);   /* r187 PMREMNode's _maxLod */
   } else {
     t3_extension_set_uniform(c, nm, v, 4);
     nm[3] = '1';

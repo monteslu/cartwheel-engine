@@ -192,7 +192,7 @@ endif()
 # three.js, and a 4 MB stack). Needs ${CW_THREE_DIR}/tools/fetch-builder-deps.sh
 # and Node at build time (to embed the JS).
 set(_t3_qjs ${CW_THREE_DIR}/third_party/quickjs)
-set(_t3_pkg ${CW_THREE_DIR}/third_party/three-0.186.1)
+set(_t3_pkg ${CW_THREE_DIR}/third_party/three-0.187.0)
 find_program(CW_NODE node)
 set(_t3_bld_default OFF)
 if(NOT CW_CART AND NOT CMAKE_CROSSCOMPILING AND NOT CW_ENGINE_ONLY AND CW_NODE AND EXISTS ${_t3_qjs}/quickjs.c

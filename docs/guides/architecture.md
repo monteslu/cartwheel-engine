@@ -86,7 +86,7 @@ Each tree that draws 3D owns a pipeline (`cartwheel/pipeline.h`), a small frame 
 | `OVERLAY` | `canvas` (the tree's 2D and UI), `app` (the app's render callback), debug draw at 1000 |
 | `PRESENT` | readbacks, captures, `visibility_restore` |
 
-A module adds a pass with `cw_pipeline_add_pass` (phase, order, the resources it reads and writes, an `active` switch and an `execute`). Every tree renders as three.js r186 does (linear HDR, physical light units, AgX); a `PostProcess` node holds the settings. The `pipeline` debug command lists the passes that ran and, natively, their GPU time. See [3D rendering](guide:rendering-3d) and [2D rendering](guide:rendering-2d).
+A module adds a pass with `cw_pipeline_add_pass` (phase, order, the resources it reads and writes, an `active` switch and an `execute`). Every tree renders as three.js r187 does (linear HDR, physical light units, AgX); a `PostProcess` node holds the settings. The `pipeline` debug command lists the passes that ran and, natively, their GPU time. See [3D rendering](guide:rendering-3d) and [2D rendering](guide:rendering-2d).
 
 GL is single-threaded: one context, used from the main thread. Everything before submission (culling, animation, particles' CPU work) is parallel.
 
