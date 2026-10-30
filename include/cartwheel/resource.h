@@ -424,7 +424,7 @@ struct t3_geometry;
 struct t3_gltf;
 
 /* owned by the resource (valid while referenced). Its colour space is the
- * file's, as three.js r186's loaders give it: a KTX2's DFD transfer function
+ * file's, as three.js r187's loaders give it: a KTX2's DFD transfer function
  * (cwpack's texture.color, sRGB by default), none (data) for PNG / JPEG,
  * unless a glTF that shows the image (as colour or as data) claimed it before
  * it loaded (a glTF that finds it loaded in the other one uploads its own). It

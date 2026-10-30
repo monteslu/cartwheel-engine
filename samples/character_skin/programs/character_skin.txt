@@ -1,4 +1,4 @@
-# r186 program states character_skin draws (cmake/programs.cmake, tools/programs.mjs)
+# r187 program states character_skin draws (cmake/programs.cmake, tools/programs.mjs)
 physical+skin+morph+l2001+xskinshade
 standard+skin+morph+l2001
 physical+skin+morph+cc+l2001

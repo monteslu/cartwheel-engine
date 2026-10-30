@@ -1,5 +1,5 @@
 /* Inverse kinematics: the pose layer, two-bone reach / pole plane / soften /
- * reached, aim with limits, CCD against three.js r186's CCDIKSolver
+ * reached, aim with limits, CCD against three.js r187's CCDIKSolver
  * (tests/unit/ccdik_r186.h), FABRIK reach and constraints, and the skeleton
  * modifier nodes in a tree (no accumulation across ticks, influence, foot
  * placement on Box3D ground). Every solved pose folds into unit.checksum, so
@@ -233,13 +233,13 @@ static void test_ccd_r186(void) {
       const float *e = cc->q[j];
       float d = fmaxf(fmaxf(fabsf(q.x - e[0]), fabsf(q.y - e[1])), fmaxf(fabsf(q.z - e[2]), fabsf(q.w - e[3])));
       if (d > worst) worst = d;
-      if (d > 1e-5f) cw_error("ccd case %d link %d: (%g %g %g %g) vs r186 (%g %g %g %g)", k, j + 1, q.x, q.y, q.z, q.w, e[0], e[1], e[2], e[3]);
+      if (d > 1e-5f) cw_error("ccd case %d link %d: (%g %g %g %g) vs r187 (%g %g %g %g)", k, j + 1, q.x, q.y, q.z, q.w, e[0], e[1], e[2], e[3]);
     }
     fold_pose(&p);
     cw_pose_free(&p);
   }
   CHECK(worst <= 1e-5f);
-  cw_info("ccd: worst quaternion component difference from three.js r186: %.3g over %d cases", worst, CCD_CASES);
+  cw_info("ccd: worst quaternion component difference from three.js r187: %.3g over %d cases", worst, CCD_CASES);
 }
 
 static void test_fabrik(void) {

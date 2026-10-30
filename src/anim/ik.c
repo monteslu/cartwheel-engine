@@ -3,7 +3,7 @@
  *
  * Algorithms: two-bone and aim after ozz-animation's IkTwoBoneJob /
  * IkAimJob (MIT; re-derived trig-free here, exact square roots), CCD as
- * three.js r186's CCDIKSolver (MIT), FABRIK after Aristidou and Lasenby
+ * three.js r187's CCDIKSolver (MIT), FABRIK after Aristidou and Lasenby
  * (2011) with cone and hinge constraints as caliko (MIT) applies them. */
 #include <stdlib.h>
 #include <string.h>
@@ -463,7 +463,7 @@ bool cw_ik_aim(cw_pose *p, int bone, t3_vec3 target, const cw_aim_opts *o) {
   return inside;
 }
 
-/* ── CCD (three.js r186 CCDIKSolver) ───────────────────────────────── */
+/* ── CCD (three.js r187 CCDIKSolver) ───────────────────────────────── */
 
 /* three.js Euler.setFromQuaternion(q, 'XYZ') via the rotation matrix */
 static t3_vec3 euler_xyz(t3_quat q) {
@@ -517,7 +517,7 @@ static void ccd_one(cw_pose *p, const cw_ccdik *ik, float override_blend) {
       t3_vec3 eff = cw_pose_model_position(p, ik->effector);
       t3_vec3 ev = vnorm(qrot(inv, vsub(eff, link_pos)));
       t3_vec3 tv = vnorm(qrot(inv, vsub(target, link_pos)));
-      /* r186: acos(clamp(dot)). Its three.js runs in doubles; in floats acos
+      /* r187: acos(clamp(dot)). Its three.js runs in doubles; in floats acos
        * near 1 loses half the bits (~3e-4 rad at 1e-7 from 1), so the same
        * angle comes from atan2(|cross|, dot), exact in float at small angles. */
       float angle = cw_atan2(vlen(vcross(ev, tv)), vdot(tv, ev));

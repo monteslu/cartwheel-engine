@@ -1,4 +1,4 @@
-/* physical_materials: three.js r186's MeshPhysicalMaterial lobes on
+/* physical_materials: three.js r187's MeshPhysicalMaterial lobes on
  * MeshInstance3D under a ProceduralSky (the background and the image-based
  * light). Left to right: plain red paint (Standard), the same paint with a
  * clearcoat (car paint), velvet (sheen), a beetle shell (iridescence) and

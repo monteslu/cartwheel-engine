@@ -24,9 +24,9 @@ const char CW_WGSL_COMMON[] =
     "fn prnd(s: ptr<function, u32>) -> f32 { *s = ph(*s); return f32(*s >> 8u) * (1.0 / 16777216.0); }\n"
     "fn plife(seed: u32, lifetime: f32, life_rand: f32, i: i32, k: i32) -> f32 {\n"
     "  var s = pseed(seed, i, k); return lifetime * (1.0 - life_rand * prnd(&s)); }\n"
-    /* a GL clip position (z in -w..w, y up) for a WebGPU pass: z into 0..w,
-     * y mirrored when the target keeps GL's bottom-up rows (flip = -1) */
-    "fn cw_clip(p: vec4f, flip: f32) -> vec4f { return vec4f(p.x, p.y * flip, (p.z + p.w) * 0.5, p.w); }\n"
+    /* a GL clip position (z in -w..w, y up) for a WebGPU pass: z into 0..w (w..0 with a
+     * reversed depth buffer), y mirrored when the target keeps GL's bottom-up rows (flip = -1) */
+    "fn cw_clip(p: vec4f, flip: f32) -> vec4f { return vec4f(p.x, p.y * flip, select((p.z + p.w) * 0.5, (p.w - p.z) * 0.5, CW_REV), p.w); }\n"
     "fn m3(m: mat4x4f) -> mat3x3f { return mat3x3f(m[0].xyz, m[1].xyz, m[2].xyz); }\n";
 
 /* ── pass targets ─────────────────────────────────────────────────────── */

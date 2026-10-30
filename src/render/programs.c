@@ -1,5 +1,5 @@
 /* three.c program tables. three.c draws every material with a program captured
- * from three.js r186, looked up by state in a table. The engine links
+ * from three.js r187, looked up by state in a table. The engine links
  * three.c's core table (the renderer's own programs: output pass,
  * backgrounds, PMREM, shadow casters); every other program comes from the
  * engine's table and the tables an app lists (cw_add_app ... PROGRAMS,

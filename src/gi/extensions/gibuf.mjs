@@ -1,6 +1,6 @@
 // three.c generator extension "gibuf" (states like standard+shadow+senv+l1101+xgibuf):
 // the screen-space passes' G-buffer (src/gi/ssr.c). While the gi pass draws the G-buffer it
-// swaps each material's extension to this one. The program writes what r186's SSR and SSGI
+// swaps each material's extension to this one. The program writes what r187's SSR and SSGI
 // examples take from their MRT attachments instead of the lit colour: the view space normal
 // (after normal maps) octahedral-encoded in r and g, roughness in b, metalness in a; with
 // giMode.x = 2 the diffuse colour times 1 - metalness (SSGI's albedo; alpha 1 marks a

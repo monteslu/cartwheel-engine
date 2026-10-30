@@ -23,7 +23,7 @@ const char *stbi_failure_reason(void);
 #define GL_COMPRESSED_RGBA_ASTC_4x4_KHR_ 0x93B0
 #define GL_COMPRESSED_RGBA8_ETC2_EAC_ 0x9278
 #define GL_COMPRESSED_RGBA_S3TC_DXT5_EXT_ 0x83F3
-/* their sRGB forms: a colour texture (three.js r186 colorSpace SRGB) is stored
+/* their sRGB forms: a colour texture (three.js r187 colorSpace SRGB) is stored
  * sRGB and GL decodes on sampling, as three.c's own GL uploads do */
 #define GL_SRGB8_ALPHA8_ 0x8C43
 #define GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM_EXT_ 0x8E8D
@@ -412,7 +412,7 @@ static void *tex_finish(void *decoded, cw_res self, const cw_res *deps, int n, v
   p->tex = t3_texture_new(1, 1, NULL);
   p->tex->flip_y = false;
   p->tex->wrap_s = p->tex->wrap_t = T3_REPEAT; /* glTF / three.js TextureLoader sampler defaults */
-  /* r186: KTX2Loader takes the colour space from the file (the DFD's
+  /* r187: KTX2Loader takes the colour space from the file (the DFD's
    * transfer function), TextureLoader leaves PNG / JPEG without one (data);
    * a glTF that shows the image claims it first (its material slot decides,
    * as GLTFLoader's assignTexture). On GL it is fixed here, where the texels

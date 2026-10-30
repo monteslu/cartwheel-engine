@@ -1,15 +1,15 @@
 // The "cluster" shading part (composed into extension states x<parts>, e.g.
 // standard+l1001+xcluster): clustered omni and spot lights, shaded as three.js
-// r186's ClusteredLightsNode shades its point lights.
+// r187's ClusteredLightsNode shades its point lights.
 //
 // The CPU bins the lights into a froxel grid every frame (src/render/froxel.c,
 // cartwheel/froxel.h) and src/render/lighting.c fills what this part declares
-// (its fill hook sets every "ext." name below). r186 bins on the GPU with a
+// (its fill hook sets every "ext." name below). r187 bins on the GPU with a
 // compute pass (WebGPU only); binning on the CPU gives GLES3 and WebGPU the
-// same lists. The per-fragment loop is r186's: each light goes through
-// LightsNode.setupDirectLight with directPointLight (r186's distance
+// same lists. The per-fragment loop is r187's: each light goes through
+// LightsNode.setupDirectLight with directPointLight (r187's distance
 // attenuation and its BRDF for the material's lighting model), skipped past
-// its cutoff distance. Spot lights (which r186 does not cluster) add
+// its cutoff distance. Spot lights (which r187 does not cluster) add
 // SpotLightNode's cone: smoothstep(coneCos, penumbraCos, angleCos).
 //
 // Data (all read with textureLoad, exact on both backends):
@@ -18,12 +18,12 @@
 //                       1: colour x intensity, decay exponent
 //                       2: view-space direction from the target to the light, cone cos (< -1: an omni light)
 //                       3: penumbra cos, shadow (0 none, 1 spot, 2 omni), bias, normal bias
-//                       4..7: spot shadow: world -> atlas uv (before r186's y flip) and depth, one column a row
+//                       4..7: spot shadow: world -> atlas uv (before r187's y flip) and depth, one column a row
 //                       4: omni shadow: world position, near; 5: far
 //                       8: the shadow's tile in the atlas (texels, rows top-down): x, y, face size; PCF radius (texels)
 //                       9: shadow intensity
 //   ext.clusterShadows  R32F (WebGPU: a copy of the depth; GLES: the depth texture), the atlas (src/render/lighting_atlas.c), read with textureLoad:
-//                       r186's PCF filter (five Vogel-disk taps rotated by interleaved gradient
+//                       r187's PCF filter (five Vogel-disk taps rotated by interleaved gradient
 //                       noise), each tap a 2 x 2 bilinear depth compare done by hand (WGSL forbids
 //                       textureSampleCompare in the per-light loop, a branch on the fragment's data)
 //   ext.clusterRecords  R32UI, one texel a froxel (froxel f at (f % width, f / width)):
@@ -129,7 +129,7 @@ export async function apply(ctx, next) {
     const coord = vec3(0).toVar(); // atlas texel x, y (rows top-down) and depth
     const tile = vec4(0).toVar();  // the face's texels: x0, y0, x1, y1
     If(d.y.lessThan(1.5), () => {
-      // spot: r186 ShadowNode (the matrix holds the tile; y = 1 - y; the depth bias added)
+      // spot: r187 ShadowNode (the matrix holds the tile; y = 1 - y; the depth bias added)
       const m = mat4(textureLoad(lights, ivec2(li, 4)), textureLoad(lights, ivec2(li, 5)),
         textureLoad(lights, ivec2(li, 6)), textureLoad(lights, ivec2(li, 7)));
       const p = m.mul(vec4(wp, 1)).toVar();
@@ -155,14 +155,14 @@ export async function apply(ctx, next) {
       coord.assign(vec3(x0.add(nx.mul(0.5).add(0.5).mul(s)), y0.add(float(1).sub(ny.mul(0.5).add(0.5)).mul(s)), zn.mul(0.5).add(0.5).add(d.z)));
       tile.assign(vec4(x0, y0, x0.add(s), y0.add(s)));
     });
-    // r186 PCFShadowFilter: five Vogel-disk taps, rotated per pixel by interleaved gradient noise
+    // r187 PCFShadowFilter: five Vogel-disk taps, rotated per pixel by interleaved gradient noise
     const phi = interleavedGradientNoise(screenCoordinate.xy).mul(6.28318530718);
     // (a loop, not five copies: each textureLoad site of a texture costs three.c a flipY slot)
     const sum = float(0).toVar();
     Loop(5, ({ i }) => {
       sum.addAssign(tap(coord.xy.add(vogelDiskSample(int(i), int(5), phi).mul(r8.w)), coord.z, tile));
     });
-    // r186's frustum test: outside the map (or past its far plane) is lit
+    // r187's frustum test: outside the map (or past its far plane) is lit
     const inside = coord.x.greaterThanEqual(tile.x).and(coord.x.lessThanEqual(tile.z)).and(coord.y.greaterThanEqual(tile.y))
       .and(coord.y.lessThanEqual(tile.w)).and(coord.z.lessThanEqual(1));
     return mix(float(1), select(inside, sum.mul(1 / 5), float(1)), r9.x);
@@ -173,7 +173,7 @@ export async function apply(ctx, next) {
     setup(builder) {
       const lightsNode = builder.lightsNode;
       const reflected = builder.context.reflectedLight;
-      // declared before the loop (r186's ClusteredLightsNode.setupLights does the same)
+      // declared before the loop (r187's ClusteredLightsNode.setupLights does the same)
       reflected.directDiffuse.toStack();
       reflected.directSpecular.toStack();
       Fn(() => {
@@ -193,7 +193,7 @@ export async function apply(ctx, next) {
             const c = textureLoad(lights, ivec2(li, 2));
             const d = textureLoad(lights, ivec2(li, 3));
             const point = directPointLight({ color: b.rgb, lightVector, cutoffDistance: cutoff, decayExponent: b.w });
-            // a spot light's cone (r186 SpotLightNode.getSpotAttenuation); omni lights carry cone cos -2
+            // a spot light's cone (r187 SpotLightNode.getSpotAttenuation); omni lights carry cone cos -2
             const cone = select(c.w.lessThan(-1.5), float(1), smoothstep(c.w, d.x, dot(normalize(lightVector), c.xyz)));
             const shadow = float(1).toVar();
             If(d.y.greaterThan(0.5), () => shadow.assign(lightShadow(li, d)));

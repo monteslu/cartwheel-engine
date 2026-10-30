@@ -415,7 +415,7 @@ static void take_lights(lighting *L) {
 static int cmp_light(const void *a, const void *b) {
   const cl_light *x = a, *y = b;
   /* nearest first (descending view z), ties by id: a full cluster keeps its nearest lights
-   * (r186 sorts the other way for its z-range culling, which binning here does not need) */
+   * (r187 sorts the other way for its z-range culling, which binning here does not need) */
   if (x->vz != y->vz) return x->vz > y->vz ? -1 : 1;
   return x->id < y->id ? -1 : x->id > y->id;
 }
@@ -631,7 +631,7 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
     t2[3] = -2;
     if (l->base.type == T3_SPOT_LIGHT && l->target) {
       t3_vec3 tp = t3_mat4_get_position(&l->target->matrix_world);
-      /* r186 lightTargetDirection: from the target to the light, in view space */
+      /* r187 lightTargetDirection: from the target to the light, in view space */
       t3_vec3 d = t3_vec3_normalize(t3_vec3_transform_direction(t3_vec3_sub(wp, tp), view));
       float cc = cw_cos(l->angle), pc = cw_cos(l->angle * (1 - l->penumbra));
       t2[0] = d.x, t2[1] = d.y, t2[2] = d.z, t2[3] = cc;
@@ -756,13 +756,13 @@ static const cw_prop ls_props[] = {
   { .name = "mode", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(cw_lighting_settings, mode),
     .size = sizeof(int), .enum_names = mode_names,
     .doc = "FORWARD: every light is three.c's (8 of a kind at most). CLUSTERED: shadowless omni and spot lights "
-           "are binned into clusters, hundreds at a time (r186 ClusteredLighting)." },
+           "are binned into clusters, hundreds at a time (r187 ClusteredLighting)." },
   CW_PROP_FIELD_RANGE(cw_lighting_settings, max_lights, CW_T_INT, 1, 65535, "Clustered lights a frame at most."),
   CW_PROP_FIELD_RANGE(cw_lighting_settings, tile_px, CW_T_INT, 4, 1024, "Cluster tile size in pixels."),
   CW_PROP_FIELD_RANGE(cw_lighting_settings, z_slices, CW_T_INT, 1, 256, "Exponential depth slices."),
   CW_PROP_FIELD_RANGE(cw_lighting_settings, max_per_cluster, CW_T_INT, 1, 255, "Lights one cluster keeps."),
   CW_PROP_FIELD(cw_lighting_settings, cluster_spot_lights, CW_T_BOOL, CW_PROP_DEFAULT,
-                "Shadowless spot lights are clustered too (beyond r186, which clusters point lights only)."),
+                "Shadowless spot lights are clustered too (beyond r187, which clusters point lights only)."),
   CW_PROP_FIELD_RANGE(cw_lighting_settings, cluster_far, CW_T_FLOAT, 0, 1e6, "Where the last slice ends; 0 = the camera's far."),
   CW_PROP_FIELD_RANGE(cw_lighting_settings, light_cutoff, CW_T_FLOAT, 1e-6, 10,
                       "A clustered light with range 0 ends where intensity / distance^2 falls under this."),

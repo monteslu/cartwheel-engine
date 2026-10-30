@@ -2,21 +2,21 @@
  * hundreds of omni and spot lights through clustered shading, their shadows
  * in one atlas, and the sun's cascaded shadow maps.
  *
- * FORWARD (the default): every Light3D is three.c's (three.js r186's lights,
+ * FORWARD (the default): every Light3D is three.c's (three.js r187's lights,
  * at most 8 of each kind light a surface; more are dropped with a warning).
  *
- * CLUSTERED: three.js r186's ClusteredLighting, on GLES3 and WebGPU alike.
+ * CLUSTERED: three.js r187's ClusteredLighting, on GLES3 and WebGPU alike.
  * Omni lights (and spot lights, unless cluster_spot_lights is off) leave
  * three.c's per-material light list and are shaded through clusters instead:
  *   - every frame the CPU bins them into a froxel grid over the view
- *     (cartwheel/froxel.h: r186's grid, tile_px tiles x z_slices exponential
+ *     (cartwheel/froxel.h: r187's grid, tile_px tiles x z_slices exponential
  *     slices, at most max_per_cluster lights a cell), on the job pool;
  *     lights are listed nearest first, so a full cell keeps its nearest
  *     (effects detail keeps fewer a cell on Low and Medium: cartwheel/quality.h);
  *   - each lit material (Lambert, Phong, Standard, Physical) draws with
  *     the "cluster" shading part (src/render/extensions/cluster_part.mjs):
- *     a fragment finds its cell and loops its lights with r186's own BRDF
- *     and distance attenuation (r186 ClusteredLightsNode's loop).
+ *     a fragment finds its cell and loops its lights with r187's own BRDF
+ *     and distance attenuation (r187 ClusteredLightsNode's loop).
  *   - with shadow_atlas (the default) the shadow-casting ones are clustered
  *     too: each gets a tile of one depth atlas (a spot light one tile, an
  *     omni light a 3 x 2 block of cube faces), as big as the light is on
@@ -24,13 +24,13 @@
  *     redrawn only when its light or a shadow caster inside the light's
  *     range changed (shadow_cache), at most shadow_updates_per_frame faces a
  *     frame, the biggest lights first. The loop filters a light's tile with
- *     r186's PCF (five Vogel-disk taps, each a 2 x 2 compare) and its bias,
+ *     r187's PCF (five Vogel-disk taps, each a 2 x 2 compare) and its bias,
  *     normal bias, radius and intensity. Without shadow_atlas they stay on
- *     three.c's path, as r186 keeps them.
+ *     three.c's path, as r187 keeps them.
  * Directional, hemisphere and ambient lights stay on three.c's path. Beyond
- * r186: r186 clusters only shadowless point lights; spot lights here get SpotLightNode's cone in the same loop, and
+ * r187: r187 clusters only shadowless point lights; spot lights here get SpotLightNode's cone in the same loop, and
  * are binned with a cone test (Filament's Froxelizer). A light with range 0
- * (r186: no cutoff, so in every cluster) gets the range where its intensity
+ * (r187: no cutoff, so in every cluster) gets the range where its intensity
  * falls under light_cutoff, and its falloff ends there as a range's does.
  * A light whose energy or colour is zero costs nothing.
  *
@@ -43,13 +43,13 @@
  * not auto-instance it).
  *
  * Cascaded sun shadows (FORWARD or CLUSTERED): a DirectionalLight3D with
- * shadow and shadow_cascades 1-4 is three.js r186's CSMShadowNode: the view
- * from the camera's near to shadow_distance (r186's maxFar) split by r186's
+ * shadow and shadow_cascades 1-4 is three.js r187's CSMShadowNode: the view
+ * from the camera's near to shadow_distance (r187's maxFar) split by r187's
  * practical split, each cascade an orthographic map of shadow_size fitted
- * around its slice with r186's width and texel snapping (no shimmer as the
+ * around its slice with r187's width and texel snapping (no shimmer as the
  * camera moves), the four in one depth atlas, picked per fragment by depth
- * and cross-faded (cascade_fade, r186's fade). The sun leaves three.c's
- * list and the "csm" shading part draws it, with r186's PCF on its
+ * and cross-faded (cascade_fade, r187's fade). The sun leaves three.c's
+ * list and the "csm" shading part draws it, with r187's PCF on its
  * cascade. A cascade is redrawn only when its matrix or a shadow caster
  * changed. The Shadows setting (cartwheel/quality.h) keeps 2 cascades on
  * Low and 3 on Medium, and the maps' size follows it as any shadow map's.
@@ -83,11 +83,11 @@ typedef enum { CW_LIGHTING_FORWARD, CW_LIGHTING_CLUSTERED } cw_lighting_mode;
 
 typedef struct cw_lighting_settings {
   cw_lighting_mode mode;     /* FORWARD */
-  int max_lights;            /* 1024 (r186): clustered lights a frame; more are dropped (warned once) */
-  int tile_px;               /* 32 (r186) */
-  int z_slices;              /* 24 (r186) */
-  int max_per_cluster;       /* 64 (r186), at most 255 */
-  bool cluster_spot_lights;  /* true: shadowless spot lights are clustered too (beyond r186) */
+  int max_lights;            /* 1024 (r187): clustered lights a frame; more are dropped (warned once) */
+  int tile_px;               /* 32 (r187) */
+  int z_slices;              /* 24 (r187) */
+  int max_per_cluster;       /* 64 (r187), at most 255 */
+  bool cluster_spot_lights;  /* true: shadowless spot lights are clustered too (beyond r187) */
   float cluster_far;         /* where the last slice ends; 0 = the camera's far */
   float light_cutoff;        /* 0.005: the intensity / distance^2 where a range-0 light ends */
   bool shadow_atlas;         /* true: shadowed omni and spot lights are clustered too, their shadows in one atlas */

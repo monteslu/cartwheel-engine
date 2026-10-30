@@ -15,7 +15,7 @@
  * what real-time lighting cannot do: occluded sky and colour bleeding.
  * Lightmapped meshes take that irradiance in place of the ambient,
  * hemisphere and environment-diffuse light (three.js's lightMap, read
- * through uv1; on r186 programs once three.c reads uv1, see lighting.h). Everything else (moving objects, DYNAMIC meshes) inside the baked
+ * through uv1; on r187 programs once three.c reads uv1, see lighting.h). Everything else (moving objects, DYNAMIC meshes) inside the baked
  * volume takes its ambient light from a grid of L2 spherical-harmonic probes
  * (probe_spacing apart over the static geometry's bounds), interpolated per
  * pixel. Standard and Phong materials use both (Lambert and Basic read
@@ -25,7 +25,7 @@
  * in the bake only (bake_direct, realtime off) adds its direct light to it.
  *
  * Which UVs. three.c's programs read every map, the lightmap included,
- * through uv0 (r186 samples a texture through uv(texture.channel), and three.c
+ * through uv0 (r187 samples a texture through uv(texture.channel), and three.c
  * has no texture channel yet): the generated uv1 charts are set on the mesh
  * but not read, so a lightmap with GENERATED charts lands where the mesh's
  * uv0 puts it. A mesh whose uv0 covers [0, 1] without overlapping (a ground
@@ -74,7 +74,7 @@
  * normals agree and whose positions are near, `denoise` texels around).
  * Gaps between charts are filled from neighbouring texels
  * (dilation) so bilinear filtering never reads black. Units are physical
- * (three.js r186's); a file baked in r128's legacy units says so on load.
+ * (three.js r187's); a file baked in r128's legacy units says so on load.
  *
  * Node: LightmapGI (docs/nodes.json) bakes on its first frame (or loads
  * `data`, a .cwlm asset written by cw_lightmap_save) and applies the result

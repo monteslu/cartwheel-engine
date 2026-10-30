@@ -1,6 +1,6 @@
 /* Water3D (cartwheel/water.h): Gerstner waves on the CPU, the surface's
  * three.c mesh with the "water" extension (src/water/extensions/water.mjs),
- * and the planar reflection and refraction, rendered as three.js r186's
+ * and the planar reflection and refraction, rendered as three.js r187's
  * Reflector / Refractor (and ReflectorNode) render them: a mirrored camera
  * or the view's own, each with an oblique near plane (Lengyel) at the rest
  * level, before the scene pass. */
@@ -567,7 +567,7 @@ static t3_vec3 rot3(const t3_mat4 *m, t3_vec3 v) {
 }
 static float signf(float x) { return x > 0 ? 1.0f : x < 0 ? -1.0f : 0.0f; }
 
-/* Lengyel's oblique near plane (r186 Reflector / Refractor, GL clip space):
+/* Lengyel's oblique near plane (r187 Reflector / Refractor, GL clip space):
  * the plane (normal n, through p, world) in the camera's view space becomes
  * the near plane of proj */
 static void oblique(t3_mat4 *proj, const t3_mat4 *view, t3_vec3 n, t3_vec3 p) {
@@ -645,7 +645,7 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   t3_vec3 wpos = { m->e[12], m->e[13], m->e[14] };
   t3_vec3 up = rot3(m, (t3_vec3){ 0, 1, 0 });
   t3_vec3 cpos = { cam->base.matrix_world.e[12], cam->base.matrix_world.e[13], cam->base.matrix_world.e[14] };
-  /* the camera under the water sees no reflection from above (r186 skips the render) */
+  /* the camera under the water sees no reflection from above (r187 skips the render) */
   bool below = v3dot(v3sub(wpos, cpos), up) > 0;
   bool first = !d->refl;
   d->refl = target(d->refl, d->refl_on ? w : 1, d->refl_on ? h : 1);
@@ -657,7 +657,7 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   t3_camera *v = d->vcam;
   v->fov = cam->fov, v->aspect = cam->aspect, v->near = cam->near, v->far = cam->far, v->zoom = cam->zoom;
   if (d->refl_on && !below) {
-    /* r186 ReflectorNode.updateBefore, with the water's up as the normal */
+    /* r187 ReflectorNode.updateBefore, with the water's up as the normal */
     t3_vec3 view = v3add(v3neg(v3reflect(v3sub(wpos, cpos), up)), wpos);
     t3_vec3 look = v3add(rot3(&cam->base.matrix_world, (t3_vec3){ 0, 0, -1 }), cpos);
     t3_vec3 tgt = v3add(v3neg(v3reflect(v3sub(wpos, look), up)), wpos);
@@ -674,7 +674,7 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
     render_into(ctx, wt, d->refl, NULL); /* cleared: never sampled garbage */
   }
   if (d->refr_on && !below) {
-    /* r186 Refractor: the view's own camera, clipped to below the rest level */
+    /* r187 Refractor: the view's own camera, clipped to below the rest level */
     t3_object_set_matrix_world(v, &cam->base.matrix_world);
     v->projection_matrix = ctx->proj;
     t3_mat4 vi;

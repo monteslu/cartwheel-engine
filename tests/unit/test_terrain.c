@@ -369,10 +369,11 @@ static int part_lod_draws(cw_terrain *t, t3_geometry *g, t3_geometry *g2, t3_mat
   /* cells are generated on the job pool as the camera comes in range: update until they are all in */
   cw_terrain_stats st;
   int last = -1;
-  for (int i = 0; i < 200; i++) {
+  /* (the main thread never waits for that pool: nothing drawn yet says nothing, on a host whose workers start late) */
+  for (int i = 0; i < 200000; i++) {
     cw_terrain_update(t, (t3_vec3){ 0, 110, 0 }, NULL);
     cw_terrain_get_stats(t, &st);
-    if (i > 10 && st.scatter_draws == last) break;
+    if (i > 10 && st.scatter_draws > 0 && st.scatter_draws == last) break;
     last = st.scatter_draws;
   }
   cw_terrain_scatter_remove(t, layer);

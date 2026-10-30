@@ -6,6 +6,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "cartwheel/gpu.h"
 #include "cartwheel/jobs.h"
 #include "cartwheel/profile.h"
 #include "cartwheel/render3d.h"
@@ -718,7 +719,7 @@ static void fade_draw(vis_state *s, cw_pass_ctx *ctx) {
       t3_external_target et = {
         .color = (uintptr_t)pt->color, .color_resolve = (uintptr_t)pt->resolve, .depth = (uintptr_t)pt->depth,
         .color_format = (int)pt->color_format, .depth_format = (int)pt->depth_format, .samples = pt->samples,
-        .load_color = true, .load_depth = true, .clear_depth = 1,
+        .load_color = true, .load_depth = true, .clear_depth = cw_gpu_reversed_depth() ? 0.0f : 1.0f,
         .x = 0, .y = 0, .w = pt->w, .h = pt->h, .flip_y = pt->flip_y,
       };
       t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
@@ -1320,7 +1321,7 @@ static void queries_exec_wgpu(cw_pass_ctx *ctx, vis_state *s) {
     WGPUVertexAttribute at = { .format = WGPUVertexFormat_Float32x3, .offset = 0, .shaderLocation = 0 };
     WGPUVertexBufferLayout vb = { .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 12, .attributeCount = 1, .attributes = &at };
     WGPUDepthStencilState ds = { .format = tg->depth_format, .depthWriteEnabled = WGPUOptionalBool_False,
-                                 .depthCompare = WGPUCompareFunction_LessEqual,
+                                 .depthCompare = cw_gpu_reversed_depth() ? WGPUCompareFunction_GreaterEqual : WGPUCompareFunction_LessEqual,
                                  .stencilFront = { .compare = WGPUCompareFunction_Always },
                                  .stencilBack = { .compare = WGPUCompareFunction_Always } };
     WGPURenderPipelineDescriptor d = {

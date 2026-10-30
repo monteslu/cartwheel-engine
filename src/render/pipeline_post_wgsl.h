@@ -479,7 +479,7 @@ WGSL_DECL WGSL_TM = S(
     else if (k == 4) { x = ACESFilmicToneMapping(x); }
     else if (k == 5) { x = AgXToneMapping(x); }
     else { x = clamp(NeutralToneMapping(x), vec3f(0.0), vec3f(1.0)); }
-    x = LinearTosRGB(x); // r186: the output transfer after every curve (Cineon's pow 2.2 returns to linear first)
+    x = LinearTosRGB(x); // r187: the output transfer after every curve (Cineon's pow 2.2 returns to linear first)
     return vec4f(x, 1.0);
   });
 WGSL_DECL WGSL_TM_FNS = WGSL_TM_FNS_SRC;

@@ -420,14 +420,20 @@ The cost, GPU ms per frame on an AMD Radeon 890M (integrated) at 1280 x 720, `sa
 
 | Preset | gi pass (probes, grid, G-buffer) | SSR | SSGI | Whole frame |
 |---|---|---|---|---|
-| Low | 0.3 | off | off | 1.6 |
-| Medium | 0.7 | 0.5 | off | 2.3 |
-| High | 1.4 | 1.2 | off | 4.2 |
-| Ultra | 3.7 | 1.4 | 6.5 | 14.2 |
+| Low | 0.5 | off | off | 1.8 |
+| Medium | 1.2 | 0.5 | off | 3.1 |
+| High | 2.0 | 1.1 | off | 5.0 |
+| Ultra | 3.8 | 1.4 | 6.5 | 16.5 |
 | No probes, grid, SSR or SSGI (High) | | | | 1.8 |
 
-The gi pass on High is two 128-pixel probe captures every other frame and the half-resolution G-buffer; Ultra doubles the capture size and budget and draws the G-buffer twice (SSGI needs the diffuse colour). Most of SSGI's time is the trace's fetches of the lit colour and the normal at the scattered steps, so it reads the colour from a half-resolution copy and the normals from a two-channel one, and its loops have fixed counts the compiler unrolls. A Vega 8 has about half the 890M's shader rate: expect about twice these numbers, so Low to High fit a 60 Hz frame there and Ultra (SSGI above all) is for discrete GPUs.
+The gi pass on High is two probe captures every other frame (r187's PMREM makes them at least 256 pixels a face) and the half-resolution G-buffer; Ultra doubles the capture size and budget and draws the G-buffer twice (SSGI needs the diffuse colour). Most of SSGI's time is the trace's fetches of the lit colour and the normal at the scattered steps, so it reads the colour from a half-resolution copy and the normals from a two-channel one, and its loops have fixed counts the compiler unrolls. A Vega 8 has about half the 890M's shader rate: expect about twice these numbers, so Low to High fit a 60 Hz frame there and Ultra (SSGI above all) is for discrete GPUs.
 
+
+## Far views: the reversed depth buffer
+
+`cw_app_desc.reversed_depth` stores distance the other way round in a 32-bit float buffer, which spreads precision evenly out to the horizon. Far surfaces stop flickering through each other, and a camera's `far` can sit hundreds of kilometres out with `near` still close: `samples/far_view` has two walls a metre apart 100 km away, which fight on forward depth and do not here. The picture is otherwise the same (gate `reversed-depth`).
+
+It takes effect on WebGPU. A GL run stays on forward depth, since a cart's GL has no way to change it, so a game that ships on both should not rely on a far plane only WebGPU can hold. Shadow maps stay on forward depth and no program table grows. A pass of your own with WGSL against the scene's depth checks `cw_gpu_reversed_depth()`: clear to 0, compare with greater-equal, write clip z as `(w - z) / 2`. Its WGSL has `CW_REV` and `CW_FAR` declared; passes that read the linear depth need no change.
 
 ## Characters: skin, glTF materials, faces
 

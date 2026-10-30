@@ -3,7 +3,7 @@
 // floodlights and two street lamps, all casting shadows over crates
 // (NS_PARITY=3), with LightingSettings.shadow_atlas on (the lights clustered,
 // their shadows tiles of the atlas) and off (NS_NO_ATLAS: three.c's own maps,
-// as three.js r186 draws them), natively on GL and on WebGPU. The images must
+// as three.js r187 draws them), natively on GL and on WebGPU. The images must
 // match (no pixel off by more than 2 levels, at most 0.1% off at all).
 // Control: the same lights without shadows (NS_PARITY=4) must differ by more
 // than 16 levels on at least 0.1% of the pixels, or the check cannot see a shadow.

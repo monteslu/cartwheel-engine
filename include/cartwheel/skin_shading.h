@@ -14,7 +14,7 @@
  *     component, so red bleeds furthest (a warm, soft terminator). The lit
  *     side is unchanged; the extra light is (N.L + w) / (1 + w) - N.L.
  *   - translucency: light from behind the surface, seen through it: strongest
- *     looking toward a light past a thin edge. r186's MeshSSSNodeMaterial
+ *     looking toward a light past a thin edge. r187's MeshSSSNodeMaterial
  *     term (fast translucency): pow(saturate(V . -(L + N * distortion)),
  *     power) + ambient, times `translucency`, the scatter colour, the
  *     surface's diffuse colour and the light's colour.

@@ -46,6 +46,13 @@ static uint32_t dbg_core; /* debug field host.gpu.core: 1 core WebGPU device */
 static uint32_t host_threads, host_worker_chunks;
 
 cw_gpu_api cw_gpu_backend(void) { return backend; }
+/* decided once, on the first ask (from the app's init on, when the backend is known) */
+bool cw_gpu_reversed_depth(void) {
+  static int on = -1;
+  if (on < 0) on = cw_gpu_backend() == CW_GPU_WEBGPU && (cw__plat.app.reversed_depth || (getenv("CW_REVERSED_DEPTH") && atoi(getenv("CW_REVERSED_DEPTH"))));
+  return on;
+}
+
 const char *cw_gpu_backend_name(void) { return backend == CW_GPU_WEBGPU ? "webgpu" : "gl"; }
 const cw_gpu_adapter *cw_gpu_adapter_info(void) { return &adapter_info; }
 uint32_t cw_gpu_error_count(void) { return gpu_errors; }
@@ -237,9 +244,18 @@ void cw__wgpu_fail(const char *fmt, ...) {
 }
 
 WGPUShaderModule cw__wgpu_shader(const char *label, const char *wgsl) {
-  WGPUShaderSourceWGSL src = { .chain = { .sType = WGPUSType_ShaderSourceWGSL }, .code = CW_WGPU_SV(wgsl) };
+  /* every module knows the depth direction: CW_REV picks the clip z (cw_clip) and the
+   * depth to distance math, CW_FAR is the far plane's depth */
+  /* (CW_TEST_BREAK_REVERSED: the must-fail control of tests/reversed-depth.mjs) */
+  const char *head = cw_gpu_reversed_depth() && !getenv("CW_TEST_BREAK_REVERSED") ? "const CW_REV = true;\nconst CW_FAR = 0.0;\n" : "const CW_REV = false;\nconst CW_FAR = 1.0;\n";
+  size_t n = strlen(head) + strlen(wgsl) + 1;
+  char *code = malloc(n);
+  snprintf(code, n, "%s%s", head, wgsl);
+  WGPUShaderSourceWGSL src = { .chain = { .sType = WGPUSType_ShaderSourceWGSL }, .code = CW_WGPU_SV(code) };
   WGPUShaderModuleDescriptor d = { .nextInChain = &src.chain, .label = CW_WGPU_SV(label) };
-  return wgpuDeviceCreateShaderModule(G.device, &d);
+  WGPUShaderModule m = wgpuDeviceCreateShaderModule(G.device, &d);
+  free(code);
+  return m;
 }
 
 static void read_adapter_info(WGPUAdapterInfo *ai) {

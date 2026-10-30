@@ -184,7 +184,7 @@ if(CW_CART)
   target_include_directories(three PRIVATE ${DEPS}/wasmcart/include)
 endif()
 # CW_THREE_BUILDER: three.c's runtime program builder (T3_BUILDER: three.js
-# r186 in an embedded QuickJS) builds a state no program table has on first
+# r187 in an embedded QuickJS) builds a state no program table has on first
 # use (a few hundred ms), so a draw is never skipped while developing. The
 # states it builds are still reported (cw.three.missing_states, the gates fail
 # on them): they belong in the app's table. On by default for native
@@ -218,7 +218,7 @@ if(CW_THREE_BUILDER)
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/three_builder
     COMMAND ${CW_NODE} ${CW_THREE_DIR}/tools/embed-builder.mjs ${_t3_pkg} ${_bjs}
     DEPENDS ${_bjs_deps} ${_t3_pkg}/build/three.webgpu.js ${_t3_pkg}/build/three.core.js
-    COMMENT "three.c builder: embedding three.js r186")
+    COMMENT "three.c builder: embedding three.js r187")
   add_library(three_qjs STATIC ${_t3_qjs}/dtoa.c ${_t3_qjs}/libregexp.c ${_t3_qjs}/libunicode.c ${_t3_qjs}/quickjs.c)
   target_include_directories(three_qjs PUBLIC ${_t3_qjs})
   target_compile_options(three_qjs PRIVATE -O2 -w)
@@ -400,7 +400,7 @@ if(CW_WGPU)
     find_package(Dawn REQUIRED CONFIG PATHS ${CW_NATIVE_DAWN} NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
     target_link_libraries(cw_wgpu INTERFACE dawn::webgpu_dawn)
   endif()
-  # three.c's WebGPU backend (three.js r186's generated WGSL): the scene pass
+  # three.c's WebGPU backend (three.js r187's generated WGSL): the scene pass
   # renders with it when the frame runs on WebGPU (t3_renderer_use_wgpu)
   target_sources(three PRIVATE ${CW_THREE_DIR}/src/gen_wgpu.c ${CW_THREE_DIR}/src/gen/programs${CW_T3_TBL}_wgpu.c)
   target_compile_definitions(three PRIVATE T3_WGPU)

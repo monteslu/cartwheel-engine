@@ -1,5 +1,5 @@
 /* Water: a wavy surface that reflects, refracts and flows, and things that
- * float on it. A port of three.js r186's Water / Water2 / WaterMesh add-ons
+ * float on it. A port of three.js r187's Water / Water2 / WaterMesh add-ons
  * (planar reflection and refraction rendered from mirrored and clipped
  * cameras, scrolling normal maps, flow maps) with Gerstner waves (GPU Gems
  * 1, chapter 1) moving the surface itself.
@@ -95,7 +95,7 @@
  * between vertices the drawn surface is flat, so it is within the grid's
  * sag of cw_water_height_at (a few millimetres at the default grid).
  *
- * Drawing renders the scene twice more before the main pass, as r186's
+ * Drawing renders the scene twice more before the main pass, as r187's
  * Reflector and Refractor do: mirrored about the rest level (an oblique
  * near plane clips what is below it) and clipped to below it, each at
  * resolution_scale, with the water hidden (Low draws neither: the

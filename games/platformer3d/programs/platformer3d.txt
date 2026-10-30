@@ -1,4 +1,4 @@
-# r186 program states for platformer3d (cmake/programs.cmake; tools/programs.mjs adds what runs lack)
+# r187 program states for platformer3d (cmake/programs.cmake; tools/programs.mjs adds what runs lack)
 standard+fog+shadow+l1801+s100
 standard+fog+l1801
 line+vcol

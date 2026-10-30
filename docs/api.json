@@ -2807,6 +2807,12 @@
      "inline": false
     },
     {
+     "name": "cw_gpu_reversed_depth",
+     "signature": "bool cw_gpu_reversed_depth(void)",
+     "doc": "This run renders with a reversed depth buffer (cw_app_desc.reversed_depth, WebGPU only).\nA pass that records its own WebGPU render passes against the scene's depth clears to 0,\ncompares with greater-equal, and writes clip z as (w - z) / 2 from a GL clip position. Its WGSL\nhas CW_REV (bool: this mode) and CW_FAR (the far plane's depth, 0 or 1) declared for it.",
+     "inline": false
+    },
+    {
      "name": "cw_gpu_adapter_info",
      "signature": "const cw_gpu_adapter *cw_gpu_adapter_info(void)",
      "doc": "never NULL; zeroed on GL",

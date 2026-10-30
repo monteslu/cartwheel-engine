@@ -1,0 +1,25 @@
+[scene format=1]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.01, 0.02, 0.04, 1)
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 2, 8)
+rotation = vec3(0.2, 0, 0)
+fov = 50
+near = 0.1
+far = 200000
+
+[node name="NearWall" parent="." type="MeshInstance3D"]
+position = vec3(0, 0, -100000)
+size = vec3(60000, 30000, 1)
+color = color(0, 0, 0, 1)
+emissive = color(0.05, 0.6, 0.05, 1)
+
+[node name="FarWall" parent="." type="MeshInstance3D"]
+position = vec3(0, 5000, -100001)
+size = vec3(60000, 30000, 1)
+color = color(0, 0, 0, 1)
+emissive = color(0.6, 0.05, 0.05, 1)

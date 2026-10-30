@@ -64,6 +64,11 @@ typedef enum cw_gpu_api {
 /* The API this run renders with (valid from the app's init on). */
 cw_gpu_api cw_gpu_backend(void);
 const char *cw_gpu_backend_name(void); /* "gl" or "webgpu" */
+/* This run renders with a reversed depth buffer (cw_app_desc.reversed_depth, WebGPU only).
+ * A pass that records its own WebGPU render passes against the scene's depth clears to 0,
+ * compares with greater-equal, and writes clip z as (w - z) / 2 from a GL clip position. Its WGSL
+ * has CW_REV (bool: this mode) and CW_FAR (the far plane's depth, 0 or 1) declared for it. */
+bool cw_gpu_reversed_depth(void);
 
 /* The adapter a WebGPU run got (all zero on GL). Also published as debug
  * fields when the debug channel is on: cw.gpu.api and cw.gpu.errors (compared

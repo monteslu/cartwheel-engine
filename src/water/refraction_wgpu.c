@@ -16,6 +16,7 @@
  * (flip_y off), as three.c's own targets: the surface samples both alike. */
 #include <string.h>
 
+#include "cartwheel/gpu.h"
 #include "cartwheel/pipeline.h"
 #include "water_internal.h"
 
@@ -69,7 +70,7 @@ bool cw__water_refr_wgpu(cw_pass_ctx *ctx, water3d *d, t3_camera *cam, int w, in
   t3_external_target et = {
     .color = (uintptr_t)cw__pw_attach(c->tex), .depth = (uintptr_t)cw__pw_attach(c->depth_tex),
     .color_format = (int)cw__pw_format(c->tex), .depth_format = (int)cw__pw_format(c->depth_tex), .samples = 1,
-    .load_color = false, .load_depth = false, .clear_rgba = { 0, 0, 0, 1 }, .clear_depth = 1,
+    .load_color = false, .load_depth = false, .clear_rgba = { 0, 0, 0, 1 }, .clear_depth = cw_gpu_reversed_depth() ? 0.0f : 1.0f,
     .x = 0, .y = 0, .w = w, .h = h, .flip_y = false,
   };
   t3_renderer_set_external_encoder(r, (uintptr_t)cw__pw_encoder());

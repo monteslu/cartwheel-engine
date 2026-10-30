@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cartwheel/gpu.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/profile.h"
 #include "pipeline_internal.h"
@@ -655,7 +656,7 @@ static WGPURenderPassEncoder begin(const att *a, const WGPUColor *clear, bool cl
                                        .loadOp = clear ? WGPULoadOp_Clear : WGPULoadOp_Load, .storeOp = WGPUStoreOp_Store };
   if (clear) ca.clearValue = *clear;
   WGPURenderPassDepthStencilAttachment da = { .view = a->depth, .depthLoadOp = clear_depth ? WGPULoadOp_Clear : WGPULoadOp_Load,
-                                              .depthStoreOp = WGPUStoreOp_Store, .depthClearValue = 1.0f };
+                                              .depthStoreOp = WGPUStoreOp_Store, .depthClearValue = cw_gpu_reversed_depth() ? 0.0f : 1.0f };
   WGPUPassTimestampWrites tw;
   WGPURenderPassDescriptor rp = { .colorAttachmentCount = 1, .colorAttachments = &ca, .depthStencilAttachment = a->depth ? &da : NULL,
                                   .timestampWrites = timed && timing_writes(&tw) ? &tw : NULL };
@@ -1064,7 +1065,7 @@ static WGPURenderPipeline pipeline(unsigned prog, const att *a, int blend, int d
   WGPUFragmentState fs = { .module = pr->mod, .entryPoint = SV(pr->entry), .targetCount = 1, .targets = &ct };
   WGPUDepthStencilState ds = {
     .format = a->dfmt, .depthWriteEnabled = (dmode & 2) ? WGPUOptionalBool_True : WGPUOptionalBool_False,
-    .depthCompare = (dmode & 1) ? WGPUCompareFunction_Less : WGPUCompareFunction_Always,
+    .depthCompare = (dmode & 1) ? (cw_gpu_reversed_depth() ? WGPUCompareFunction_Greater : WGPUCompareFunction_Less) : WGPUCompareFunction_Always,
     .stencilFront = { .compare = WGPUCompareFunction_Always, .failOp = WGPUStencilOperation_Keep,
                       .depthFailOp = WGPUStencilOperation_Keep, .passOp = WGPUStencilOperation_Keep },
     .stencilBack = { .compare = WGPUCompareFunction_Always, .failOp = WGPUStencilOperation_Keep,
@@ -1227,6 +1228,15 @@ unsigned cw__pw_lut(int size, const uint16_t *half) { return cw__pw_texture_3d(s
  * recovers each texel EXACTLY by a binary search over the bit patterns of
  * [0, 1] floats (ordered like the integers for non-negative floats): 30
  * nearest-filtered LessEqual compares. */
+/* the window depth to distance math. Reversed, pz holds the z rows with x = its z minus its w
+ * row in double (pipeline.c): the float difference would cancel at a large far / near */
+#define DEPTH_LINEAR_WGSL \
+  "  if (d == CW_FAR) { return vec4f(3.0e38, 0.0, 0.0, 1.0); }\n" \
+  "  var zv = 0.0;\n" \
+  "  if (CW_REV) { zv = (u.pz.w - u.pz.y - 2.0 * d * u.pz.w) / (2.0 * d * u.pz.z + u.pz.x); }\n" \
+  "  else { let z = d * 2.0 - 1.0; zv = (u.pz.y - z * u.pz.w) / (z * u.pz.z - u.pz.x); }\n" \
+  "  return vec4f(-zv, 0.0, 0.0, 1.0);\n" \
+  "}\n"
 static const char *DEPTH_COPY =
     "struct U { pz: vec4f };\n"
     "@group(0) @binding(0) var<uniform> u: U;\n"
@@ -1241,21 +1251,11 @@ static const char *DEPTH_COPY =
     "    if (textureSampleCompareLevel(t_depth, cw_compare, tc, bitcast<f32>(mid)) > 0.5) { lo = mid; } else { hi = mid - 1u; }\n"
     "  }\n"
     "  let d = bitcast<f32>(lo);\n"
-    "  if (d >= 1.0) { return vec4f(3.0e38, 0.0, 0.0, 1.0); }\n"
-    "  let z = d * 2.0 - 1.0;\n"
-    "  let zv = (u.pz.y - z * u.pz.w) / (z * u.pz.z - u.pz.x);\n"
-    "  return vec4f(-zv, 0.0, 0.0, 1.0);\n"
-    "}\n";
+    DEPTH_LINEAR_WGSL;
 /* core WebGPU: the depth is read directly (one textureLoad: the same value
  * the compares find). The multisampled scene depth gives its sample 0, the
  * sample a GL blit resolving depth keeps (Mesa); the window-depth to distance
  * math is the compatibility copy's */
-#define DEPTH_LINEAR_WGSL \
-  "  if (d >= 1.0) { return vec4f(3.0e38, 0.0, 0.0, 1.0); }\n" \
-  "  let z = d * 2.0 - 1.0;\n" \
-  "  let zv = (u.pz.y - z * u.pz.w) / (z * u.pz.z - u.pz.x);\n" \
-  "  return vec4f(-zv, 0.0, 0.0, 1.0);\n" \
-  "}\n"
 static const char *DEPTH_COPY_LOAD =
     "struct U { pz: vec4f };\n"
     "@group(0) @binding(0) var<uniform> u: U;\n"

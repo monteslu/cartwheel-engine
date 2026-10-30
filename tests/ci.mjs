@@ -29,6 +29,7 @@ if (process.env.CW_TEST_GPU !== 'software') {
 export const LOCAL_ONLY = {
   'gi-perf': 'GPU timings on the test GPU',
   'gi-probe': 'reads pixels of native runs on the test GPU (GL and WebGPU) against known answers',
+  'reversed-depth': 'reads pixels of WebGPU runs on the test GPU, forward depth against reversed',
   'gpu-guard': 'tests the GPU guards against a real card (VRAM, kernel log)',
   'gpu-no-display': 'runs wasmcart-native',
   'wcnative-pads': 'runs wasmcart-native',

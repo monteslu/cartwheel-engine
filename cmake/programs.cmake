@@ -1,5 +1,5 @@
 # ── three.c program tables (src/render/programs.c) ──────────────────────
-# three.c draws a material with the program three.js r186 generates for its
+# three.c draws a material with the program three.js r187 generates for its
 # state (material kind, features, light counts), looked up in tables. The
 # engine links three.c's core table only (CW_THREE_TABLE, cmake/deps.cmake):
 # an app's material programs come from program tables.

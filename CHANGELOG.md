@@ -4,6 +4,41 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.25.0 (2026-10-30)
+
+three.c v0.187.2: three.js r187. Every program table regenerated: a project's tables need
+regenerating too (`node tools/programs.mjs --projects <dir>`).
+
+### Added
+- A reversed depth buffer on WebGPU: `cw_app_desc.reversed_depth`. Depth runs from 1 at the near plane
+  to 0 at the far plane in a 32-bit float buffer, so precision is spread evenly out to the horizon: far
+  surfaces stop flickering through each other and the far plane can sit much farther away. The same
+  picture otherwise (gate `reversed-depth`: 41 samples against forward depth; `samples/far_view` shows what
+  it is for). Shadow maps stay forward and no program table grows. A GL run stays on forward depth: a
+  cart's GL has no way to change it. A pass with its own WGSL against the scene's depth checks
+  `cw_gpu_reversed_depth()`; its WGSL has `CW_REV` and `CW_FAR` declared.
+- Mesh3D `diffuse_roughness`: rough diffuse (EON). Dusty, chalky surfaces that look soft and flat at grazing
+  angles instead of plastic.
+- glTF materials honour `texCoord` and KHR_texture_transform's: a map on the second UV set reads it.
+
+### Changed
+- Reflection probes and the sky's environment are r187's PMREM, a cube render target with a mip chain. They
+  look better, and they cost more: r187's smallest is 256 pixels a face, with GGX filtering at 256 samples a
+  texel on the sharp levels. On a Radeon 890M at 1280 x 720, `gi_room` at High goes from 1.4 to 2.0 ms for the
+  gi pass and from 4.2 to 5.0 ms for the whole frame.
+- r187's own shading changes arrive with the tables: specular intensity in direct light, the ACES Filmic fit,
+  point light shadow seams, PCF radius on non-square shadow maps.
+- PostProcess `depth_prepass` runs on WebGPU, and the viewmodel pass resolves the scene colour once
+  (`cw.msaa_resolves`): the engine was ready and three.c now has both.
+
+### Fixed
+- Lightmaps read through their own second UV set: a bake's generated charts line up on any mesh, on GL and
+  WebGPU. They lined up only where they happened to match uv0, which drew blocky patches on most meshes.
+  `lightmap_uv = UV0` still lays a lightmap on a mesh's uv0.
+- `samples/gi_probe_check` sets its walls' Node3D layers (Node3D has written them over since the viewmodel
+  layers, and the capture saw no walls); `unit_scene` calls `cw__mesh3d_set_lightmap` with its real signature (a
+  wasm trap); `fx_boom_water` reports the peak of the particles alive (it read them after the burst burnt out).
+
 ## v0.24.3 (2026-10-30)
 
 ### Fixed

@@ -1,4 +1,4 @@
-/* LightProbeGrid3D (cartwheel/gi.h): three.js r186's LightProbeGrid on
+/* LightProbeGrid3D (cartwheel/gi.h): three.js r187's LightProbeGrid on
  * three.c. Each probe renders the scene into six small faces, an extension
  * material ("giproj", src/gi/extensions/giproj.mjs) projects them onto L2
  * spherical harmonics on the GPU and writes the seven packed groups into the
@@ -58,12 +58,12 @@ void cw__grid_bounds(cw_node n, const probe_grid *p, float lo[3], float hi[3]) {
 static void grid_res(const probe_grid *p, int r[3]) {
   for (int k = 0; k < 3; k++) {
     int v = (int)(&p->probes.x)[k];
-    if (v <= 0) v = (int)lroundf(fabsf((&p->size.x)[k])) + 1; /* r186: one a metre, plus one */
+    if (v <= 0) v = (int)lroundf(fabsf((&p->size.x)[k])) + 1; /* r187: one a metre, plus one */
     r[k] = v < 2 ? 2 : v > 32 ? 32 : v;
   }
 }
 
-/* r186's order: x fastest, then z, then y */
+/* r187's order: x fastest, then z, then y */
 static void probe_pos(cw_node n, const probe_grid *p, const int r[3], int i, int *ix, int *iy, int *iz, float out[3]) {
   float lo[3], hi[3];
   cw__grid_bounds(n, p, lo, hi);
@@ -334,15 +334,15 @@ static void ro_count(cw_node n, void *d, cw_value *o) {
 static const cw_prop grid_props[] = {
   CW_PROP_FIELD(probe_grid, size, CW_T_VEC3, CW_PROP_DEFAULT, "The grid's box (world units, axis aligned; the node's scale applies)."),
   CW_PROP_FIELD(probe_grid, probes, CW_T_VEC3, CW_PROP_DEFAULT,
-                "Probes along x, y, z (2 .. 32 each; 0 = one a metre plus one, as r186)."),
-  CW_PROP_FIELD_RANGE(probe_grid, cube_size, CW_T_INT, 4, 32, "Each probe's capture face size in pixels (r186: 8)."),
+                "Probes along x, y, z (2 .. 32 each; 0 = one a metre plus one, as r187)."),
+  CW_PROP_FIELD_RANGE(probe_grid, cube_size, CW_T_INT, 4, 32, "Each probe's capture face size in pixels (r187: 8)."),
   CW_PROP_FIELD_RANGE(probe_grid, bounces, CW_T_INT, 0, 8, "Extra sweeps of the bake, each adding a bounce."),
   { .name = "update_mode", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(probe_grid, update_mode), .size = sizeof(int),
     .enum_names = grid_update_names, .doc = "BAKED (once, at load) or INCREMENTAL (then probes_per_frame probes every frame, for moving lights)." },
   CW_PROP_FIELD_RANGE(probe_grid, probes_per_frame, CW_T_INT, 1, 4096, "INCREMENTAL: probes refreshed a frame (the quality preset scales it)."),
   CW_PROP_FIELD_RANGE(probe_grid, bake_per_frame, CW_T_INT, 0, 1 << 20, "Probes captured a frame while baking (0 = the whole grid in one frame)."),
   CW_PROP_FIELD_RANGE(probe_grid, intensity, CW_T_FLOAT, 0, 100, "Multiplier of the grid's light."),
-  CW_PROP_FIELD_RANGE(probe_grid, normal_offset, CW_T_FLOAT, 0, 4, "Sample offset along the surface normal, in probe spacings (r186: 0.5)."),
+  CW_PROP_FIELD_RANGE(probe_grid, normal_offset, CW_T_FLOAT, 0, 4, "Sample offset along the surface normal, in probe spacings (r187: 0.5)."),
   CW_PROP_FIELD_RANGE(probe_grid, near, CW_T_FLOAT, 0.001, 1000, "Capture near clip."),
   CW_PROP_FIELD_RANGE(probe_grid, far, CW_T_FLOAT, 0.01, 100000, "Capture far clip."),
   CW_PROP_ACCESSOR("probe_count", CW_T_INT, CW_PROP_EDITOR | CW_PROP_READONLY, ro_count, NULL, "Probes in the grid."),
@@ -353,7 +353,7 @@ static const cw_prop grid_props[] = {
 
 static cw_node_type grid_type = {
   .name = "LightProbeGrid3D", .parent = "Node3D", .data_size = sizeof(probe_grid), .props = grid_props,
-  .doc = "Bounce light: a grid of L2 spherical-harmonic probes captured from the scene (three.js r186 LightProbeGrid; gi.h).",
+  .doc = "Bounce light: a grid of L2 spherical-harmonic probes captured from the scene (three.js r187 LightProbeGrid; gi.h).",
   .init = grid_init, .enter_tree = grid_enter, .exit_tree = grid_exit, .destroy = grid_destroy,
 };
 

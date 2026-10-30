@@ -93,6 +93,8 @@ typedef struct vfog_rt {
 
 /* test hook (gate fog-split's control): CW_TEST_VFOG_ONE_GRID=1 every splitscreen view shares one full-size grid,
  * its history and its uniforms, as before views had their own */
+void cw__render_shadow_depth(t3_renderer *r, t3_scene *scene, t3_camera *cam, const t3_external_target *et);
+
 static bool one_grid(void) {
 #if CW_CART
   return false;
@@ -814,7 +816,7 @@ static void render_tile(cw_pass_ctx *ctx, vf_slot *S, t3_camera *cam, int tile, 
     /* a WebGPU pass clears the whole attachment: only the frame's first tile clears */
     t3_external_target et = { .depth = (uintptr_t)view, .depth_format = fmt, .load_depth = !first, .clear_depth = 1,
                               .x = x, .y = y, .w = ts, .h = ts, .flip_y = true };
-    t3_renderer_render_depth_to(r, ctx->scene3d, cam, &et);
+    cw__render_shadow_depth(r, ctx->scene3d, cam, &et);
     return;
   }
   t3_renderer_reset_bindings(r);

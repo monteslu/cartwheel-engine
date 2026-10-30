@@ -7,13 +7,13 @@
  * one instance; its matrix scales the unit grid (vertices at y = 1) to the
  * patch and carries the patch's level plus one in its Y column, which the
  * vertex stage reads back from positionLocal.y (the grid's y is 1, so that is
- * exactly what lands there; never zero, so r186's instance normal transform
+ * exactly what lands there; never zero, so r187's instance normal transform
  * stays finite). The objects are never frustum culled by
  * three.c: the selection culled the patches.
  *
  * Textures:
  *   heights   (size + 1)^2 R32UI, nearest: the uint16 steps (read with
- *             textureLoad: exact; r186 types only 32-bit textures as integer)
+ *             textureLoad: exact; r187 types only 32-bit textures as integer)
  *   normals   (size + 1)^2 RGBA8, linear + mipmaps: normal x, z in R, G
  *   control   (size + 1)^2 R32UI, nearest: the Terrain3D control words
  *   macro     at most 1024^2 RGBA8, linear + mipmaps, sRGB data decoded in

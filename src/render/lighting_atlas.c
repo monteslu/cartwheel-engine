@@ -6,7 +6,7 @@
  * only when its light moved or a shadow caster inside the light's range
  * changed, and at most `budget` faces a frame are redrawn (the most
  * important lights first; the rest keep the picture and matrix they were
- * drawn with). The "cluster" shading part samples the atlas with r186's PCF
+ * drawn with). The "cluster" shading part samples the atlas with r187's PCF
  * filter, comparing by hand (textureLoad: the reads sit inside the per-light
  * loop, where WGSL forbids textureSampleCompare). */
 #include <math.h>
@@ -379,6 +379,13 @@ static void copy_rect_wgpu(cw__atlas *a, int x, int y, int s) {
 }
 #endif
 
+void cw__render_shadow_depth(t3_renderer *r, t3_scene *scene, t3_camera *cam, const t3_external_target *et) {
+  bool rev = cw_gpu_reversed_depth();
+  if (rev) t3_renderer_set_reversed_depth(r, false);
+  t3_renderer_render_depth_to(r, scene, cam, et);
+  if (rev) t3_renderer_set_reversed_depth(r, true);
+}
+
 static void draw_rect(cw__atlas *a, cw_pass_ctx *ctx, t3_camera *cam, int x, int y, int s) {
   bool webgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
   t3_external_target et = { 0 };
@@ -399,7 +406,7 @@ static void draw_rect(cw__atlas *a, cw_pass_ctx *ctx, t3_camera *cam, int x, int
   }
 #endif
   if (!webgpu) et.color = a->gl_fbo;
-  t3_renderer_render_depth_to(ctx->renderer, ctx->scene3d, cam, &et);
+  cw__render_shadow_depth(ctx->renderer, ctx->scene3d, cam, &et);
 #if CW_WGPU
   if (webgpu) copy_rect_wgpu(a, et.x, et.y, s);
 #endif
@@ -490,7 +497,7 @@ void cw__atlas_update(cw__atlas *a, cw_pass_ctx *ctx, const cw__shadow_req *req,
           aim(a->pcam, pos, dir, up, fov, near, far);
           draw_rect(a, ctx, a->pcam, t->x, t->y, t->size);
           /* LightShadow.matrix (bias x projection x view), its rect in the atlas
-           * folded in (before r186's y flip: rows counted from the bottom) */
+           * folded in (before r187's y flip: rows counted from the bottom) */
           t3_mat4 b = { { 0.5f, 0, 0, 0, 0, 0.5f, 0, 0, 0, 0, 0.5f, 0, 0.5f, 0.5f, 0.5f, 1 } }, tm, m;
           float s = (float)t->size * inv;
           t3_mat4 q = { { s, 0, 0, 0, 0, s, 0, 0, 0, 0, 1, 0, (float)t->x * inv, 1 - (float)(t->y + t->size) * inv, 0, 1 } };

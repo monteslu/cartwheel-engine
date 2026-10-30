@@ -1,12 +1,12 @@
-/* Screen-space bounce light (cw_post_settings.ssgi): three.js r186's
+/* Screen-space bounce light (cw_post_settings.ssgi): three.js r187's
  * SSGINode (SSILVB, a port of SSRT3: horizon slices whose occluded sectors
  * are tracked in a 32-bit field, each newly occluded sector taking the
  * light of the sample that occludes it), at half resolution, on GL and
  * WebGPU.
  *
  *   1. The GI G-buffer (ssr.c) gives view normals; a second G-buffer draw
- *      gives the diffuse colour (r186's example takes both from MRT).
- *   2. Trace (half resolution): r186's slices and steps over the full
+ *      gives the diffuse colour (r187's example takes both from MRT).
+ *   2. Trace (half resolution): r187's slices and steps over the full
  *      resolution depth and the lit scene (the frame before post, read from a
  *      half-resolution copy: a quarter of the bytes at the scattered taps of
  *      the trace, which is where its time goes), giving bounce light (rgb) and
@@ -14,11 +14,11 @@
  *      constants of the trace program (one per pair in use), and the normals
  *      come from a two-channel copy of the G-buffer.
  *   3. Denoise (half resolution) over 5 x 5 trace texels with depth-,
- *      normal- and brightness-aware weights, then composite as r186's
+ *      normal- and brightness-aware weights, then composite as r187's
  *      example does, colour x AO + diffuse colour x GI, upsampled with
- *      depth-aware weights (r186 leans on TRAA for that; with the
+ *      depth-aware weights (r187 leans on TRAA for that; with the
  *      pipeline's TAA on, the slice rotation and step offset also follow
- *      r186's temporal sequence).
+ *      r187's temporal sequence).
  *
  * Surfaces without the GI shading part (cartwheel/gi.h) have no G-buffer
  * entry and are left as they are. */
@@ -72,7 +72,7 @@ static const char *TRACE_GLSL =
       float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
       uint occluded;
       vec3 horizon(bool right, float step_r, float radius_vs, vec3 P, vec2 slide, float init_step, vec2 uv, vec3 V, vec3 N, float n) {
-        /* r186 flips y here (its uv runs top-down); ours runs bottom-up, as SSRT3's */
+        /* r187 flips y here (its uv runs top-down); ours runs bottom-up, as SSRT3's */
         vec2 uvdir = right ? vec2(1.0, 1.0) : vec2(-1.0, -1.0);
         float sdir = right ? 1.0 : -1.0;
         vec3 color = vec3(0.0);
@@ -489,7 +489,7 @@ static void ssgi_exec(cw_pass_ctx *ctx, void *u) {
   const cw_rt *nm = cw_pipeline_rt_persistent(ctx->pipeline, "ssgi.normal", hw, hh, CW_RT_RG16F, NULL);
   if (!tr || !dn || !lt || !nm) return;
   const t3_camera *cam = ctx->camera;
-  /* r186's temporal sequence (rotation, offset) when the pipeline's TAA accumulates */
+  /* r187's temporal sequence (rotation, offset) when the pipeline's TAA accumulates */
   static const float ROT[6] = { 60, 300, 180, 240, 120, 0 }, OFF[4] = { 0, 0.5f, 0.25f, 0.75f };
   float tdir = s->taa ? ROT[ctx->frame % 6] / 360.0f : 0, toff = s->taa ? OFF[(ctx->frame / 6) % 4] : 0;
   cw_pass_bind_target(ctx, lt);

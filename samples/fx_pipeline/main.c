@@ -86,7 +86,7 @@ static const char *BOXES_WGSL =
     "  var o: V;\n"
     "  o.c = c.rgb * (0.35 + 0.65 * max(dot(wn, normalize(vec3f(0.4, 0.9, 0.3))), 0.0));\n"
     "  var cp = u.u_vp * (m * vec4f(p, 1.0));\n"
-    "  cp.z = (cp.z + cp.w) * 0.5;\n"
+    "  cp.z = select((cp.z + cp.w) * 0.5, (cp.w - cp.z) * 0.5, CW_REV);\n"
     "  cp.y = cp.y * cw_target.flip;\n"
     "  o.pos = cp;\n"
     "  return o;\n"

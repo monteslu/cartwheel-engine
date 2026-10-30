@@ -175,7 +175,7 @@ static const char *SCENE_WGSL =
     "  var o: O;\n"
     "  if (h.t > 60.0) {\n"
     "    o.c = vec4f(mix(vec3f(0.7, 0.75, 0.85), vec3f(0.25, 0.4, 0.8), clamp(rd.y * 1.5, 0.0, 1.0)) * 1.2, 1.0);\n"
-    "    o.d = 1.0;\n"
+    "    o.d = CW_FAR;\n"
     "    return o;\n"
     "  }\n"
     "  let p = ro + rd * h.t;\n"
@@ -184,7 +184,7 @@ static const char *SCENE_WGSL =
     "  let amb = mix(vec3f(0.2, 0.17, 0.15), vec3f(0.35, 0.45, 0.6), h.n.y * 0.5 + 0.5) * 0.6;\n"
     "  let c = h.alb * (vec3f(3.0, 2.8, 2.5) * max(dot(h.n, SUN), 0.0) * vis + amb) + h.emi;\n"
     "  let clip = u.u_vp * vec4f(p, 1.0);\n"
-    "  o.d = clamp(clip.z / clip.w * 0.5 + 0.5, 0.0, 1.0);\n"
+    "  o.d = clamp(select(clip.z / clip.w * 0.5 + 0.5, 0.5 - clip.z / clip.w * 0.5, CW_REV), 0.0, 1.0);\n"
     "  o.c = vec4f(c, 1.0);\n"
     "  return o;\n"
     "}\n";
@@ -230,7 +230,7 @@ static const char *BLADES_WGSL =
     "  let p = dir * 3.2 + tang * (q.x - 0.5) * 0.18 + vec3f(0.0, q.y * 1.7, 0.0) - dir * q.y * 0.5;\n"
     "  var cp = u.u_vp * vec4f(p, 1.0);\n"
     /* GL's depth range and row order */
-    "  cp.z = (cp.z + cp.w) * 0.5;\n"
+    "  cp.z = select((cp.z + cp.w) * 0.5, (cp.w - cp.z) * 0.5, CW_REV);\n"
     "  cp.y = cp.y * cw_target.flip;\n"
     "  var o: V; o.pos = cp; o.k = f32(k); o.h = q.y; return o;\n"
     "}\n"

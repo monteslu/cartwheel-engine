@@ -1,4 +1,4 @@
-# r186 program states the engine draws on its own behalf (cmake/programs.cmake):
+# r187 program states the engine draws on its own behalf (cmake/programs.cmake):
 # every app links this table. tools/programs.mjs regenerates it.
 basic
 normal

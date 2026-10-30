@@ -1,18 +1,18 @@
 // The "csm" shading part (composed into extension states x<parts>): the sun's
-// cascaded shadow maps, as three.js r186's CSMShadowNode draws them
+// cascaded shadow maps, as three.js r187's CSMShadowNode draws them
 // (examples/jsm/csm/CSMShadowNode.js): the view split into up to four
-// cascades by r186's practical split, each cascade an orthographic shadow map
+// cascades by r187's practical split, each cascade an orthographic shadow map
 // fitted around its slice of the view, picked per fragment by its linear depth
-// between the camera's near and the shadow distance, cross-faded over r186's
-// fade margin. Each cascade is filtered with r186's PCFShadowFilter (five
+// between the camera's near and the shadow distance, cross-faded over r187's
+// fade margin. Each cascade is filtered with r187's PCFShadowFilter (five
 // Vogel-disk taps rotated by interleaved gradient noise, hardware 2x2 compare
-// on each) and its shadow coordinates are r186 ShadowNode's (the normal bias
+// on each) and its shadow coordinates are r187 ShadowNode's (the normal bias
 // along the world normal, y = 1 - y, the depth bias added).
 //
 // The sun itself is drawn here: src/render/lighting.c takes the cascaded
 // DirectionalLight3D out of three.c's light list and this part adds it to the
 // material's lighting (LightsNode.setupDirectLight with the sun's direction
-// and colour, times mix(1, shadow, intensity)), so its BRDF is r186's own.
+// and colour, times mix(1, shadow, intensity)), so its BRDF is r187's own.
 // The texture reads run in uniform control flow (no branch around them), as
 // WGSL requires of textureSampleCompare: every cascade's coordinate is
 // computed, the cascade holding the fragment and its fade partner selected,
@@ -21,8 +21,8 @@
 // What the fill hook (src/render/lighting.c) sets:
 //   ext.csmMap      DepthTexture (compare LessEqual, linear): the cascades in a
 //                   2 x 2 atlas, cascade c in the quarter (c & 1, c >> 1)
-//   ext.csmMatrix0..3  world -> shadow uv (before r186's y flip) and depth, per cascade
-//                   (r186 LightShadow.matrix with the atlas quarter folded in)
+//   ext.csmMatrix0..3  world -> shadow uv (before r187's y flip) and depth, per cascade
+//                   (r187 LightShadow.matrix with the atlas quarter folded in)
 //   ext.csmDir      xyz: view-space direction to the sun; w: shadow intensity
 //   ext.csmColor    rgb: colour x intensity; w: cascades in use (1..4)
 //   ext.csmBias     x: bias, y: normal bias (world units), z: 1 / atlas size, w: PCF radius (texels)
@@ -63,7 +63,7 @@ export async function apply(ctx, next) {
   const dir = v4('csmDir'), color = v4('csmColor'), bias = v4('csmBias'), depth = v4('csmDepth');
   const ranges0 = v4('csmRanges0'), ranges1 = v4('csmRanges1');
   const mats = [m4('csmMatrix0'), m4('csmMatrix1'), m4('csmMatrix2'), m4('csmMatrix3')];
-  // per object (r186: a mesh that does not receive shadows is lit unshadowed)
+  // per object (r187: a mesh that does not receive shadows is lit unshadowed)
   const rs = sentinel();
   const receive = uniform(rs).setName('csmReceive');
   props['ext.csmReceive'] = { kind: 'f32', value: [rs] };
@@ -73,7 +73,7 @@ export async function apply(ctx, next) {
   map.minFilter = map.magFilter = THREE.LinearFilter;
   map.name = 'ext.csmMap';
 
-  // r186 PCFShadowFilter on coord (xy uv, z depth; a vec4 read once, no swizzle of a swizzle,
+  // r187 PCFShadowFilter on coord (xy uv, z depth; a vec4 read once, no swizzle of a swizzle,
   // which Dawn's Tint rejects), the taps clamped into the cascade's quarter (lo, hi) so none reads a neighbour
   const pcf = (coord, lo, hi) => {
     const texel = bias.z, radius = bias.w.mul(texel);
@@ -86,8 +86,8 @@ export async function apply(ctx, next) {
     }
     return sum.mul(1 / 5);
   };
-  // r186 ShadowNode for cascade c: the shadow position with the normal bias, y flipped, the depth
-  // bias added; w = 1 inside the cascade's map (r186's frustum test), else 0
+  // r187 ShadowNode for cascade c: the shadow position with the normal bias, y flipped, the depth
+  // bias added; w = 1 inside the cascade's map (r187's frustum test), else 0
   const cascadeCoord = (c) => {
     const p = mats[c].mul(vec4(positionWorld.add(normalWorld.mul(bias.y)), 1));
     const xyz = p.xyz.div(p.w);
@@ -111,12 +111,12 @@ export async function apply(ctx, next) {
       reflected.directDiffuse.toStack();
       reflected.directSpecular.toStack();
       Fn(() => {
-        // r186 CSMShadowNode: linear depth between the camera's near and the shadow far
+        // r187 CSMShadowNode: linear depth between the camera's near and the shadow far
         const linear = positionView.z.negate().sub(depth.x).div(depth.y.sub(depth.x)).toVar();
         const count = color.w;
         // (components read one at a time: Dawn's Tint rejects a swizzle of a swizzle of a uniform)
         const range = [{ x: ranges0.x, y: ranges0.y }, { x: ranges0.z, y: ranges0.w }, { x: ranges1.x, y: ranges1.y }, { x: ranges1.z, y: ranges1.w }];
-        // r186 _setupFade per cascade: margin = 0.25 * closestEdge^2 (0 without fade), the range
+        // r187 _setupFade per cascade: margin = 0.25 * closestEdge^2 (0 without fade), the range
         // widened by half of it on each side but the last's far edge; the weight is the distance to
         // the widened edges over the margin (1 without fade, and at the first cascade's near side)
         const weight = [], center = [];

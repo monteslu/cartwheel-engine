@@ -9,8 +9,8 @@
 /* a DirectionalLight3D's cascades, as its node asks (render3d.c) */
 typedef struct cw__csm_cfg {
   int cascades;        /* 1..4 */
-  float distance;      /* r186 maxFar: where the last cascade ends (0 = the camera's far) */
-  bool fade;           /* r186 CSMShadowNode.fade */
+  float distance;      /* r187 maxFar: where the last cascade ends (0 = the camera's far) */
+  bool fade;           /* r187 CSMShadowNode.fade */
   int size;            /* one cascade's map, texels (quality-adjusted) */
 } cw__csm_cfg;
 
@@ -38,6 +38,11 @@ void cw__csm_stats(const cw__csm *c, cw__csm_info *out);
 /* WebGPU: clear a rect of a Depth32Float view to the far depth with a draw on
  * the frame's encoder (a render pass would clear the whole view) */
 void cw__shadow_clear_rect_wgpu(void *view, int x, int y, int w, int h);
+
+/* a shadow map's depth pass: shadow maps stay forward under a reversed depth
+ * buffer (a light's short range needs no extra precision, and the shading parts'
+ * compares are written for it) */
+void cw__render_shadow_depth(t3_renderer *r, t3_scene *scene, t3_camera *cam, const t3_external_target *et);
 
 /* ── the spot / omni shadow atlas (lighting_atlas.c) ───────────────── */
 

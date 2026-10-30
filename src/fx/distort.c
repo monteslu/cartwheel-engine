@@ -203,7 +203,7 @@ static const char RING_WGSL[] =
     "  if (vi == 0u || vi == 3u) { q = vec2f(-1.0, -1.0); } else if (vi == 1u) { q = vec2f(1.0, -1.0); } else if (vi == 2u || vi == 4u) { q = vec2f(1.0, 1.0); }\n"
     "  let w = u.u_c.xyz + (u.u_right.xyz * q.x + u.u_up.xyz * q.y) * u.u_b.w;\n"
     "  var cp = u.u_vp * vec4f(w, 1.0);\n"
-    "  cp.z = (cp.z + cp.w) * 0.5;\n"
+    "  cp.z = select((cp.z + cp.w) * 0.5, (cp.w - cp.z) * 0.5, CW_REV);\n"
     "  cp.y = cp.y * cw_target.flip;\n"
     "  var o: V;\n"
     "  o.pos = cp;\n"

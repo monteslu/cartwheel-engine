@@ -107,6 +107,7 @@ t3_renderer *cw_render3d_window_renderer(int w, int h) {
 #if CW_WGPU
   if (r && cw_gpu_backend() == CW_GPU_WEBGPU)
     t3_renderer_use_wgpu(r, cw__wgpu_device(), cw__wgpu_queue(), (int)cw__wgpu_frame_format());
+  if (r && cw_gpu_reversed_depth()) t3_renderer_set_forward_shadows(r, true), t3_renderer_set_reversed_depth(r, true);
 #endif
   return r;
 }
@@ -220,7 +221,7 @@ typedef struct mesh3d {
   t3_color color;
   float metalness, roughness;
   t3_color emissive;
-  /* MeshPhysicalMaterial's lobes (three.js r186): any in use makes the mesh's
+  /* MeshPhysicalMaterial's lobes (three.js r187): any in use makes the mesh's
    * material a MeshPhysicalMaterial, otherwise it is a MeshStandardMaterial */
   float ior, specular_intensity;
   float clearcoat, clearcoat_roughness;
@@ -712,9 +713,9 @@ typedef struct light3d {
   bool bake;                /* contributes to baked lightmaps (LightmapGI) */
   bool bake_direct;         /* its direct light is baked too (for meshes LightmapGI draws BAKED) */
   bool realtime;            /* lights the scene in real time (false: only the bake has it) */
-  int shadow_cascades;      /* directional: 0 = one shadow map (three.c), 1-4 = cascades (r186 CSMShadowNode) */
-  float shadow_distance;    /* directional cascades: where the last ends (r186 maxFar; 0 = the camera's far) */
-  bool cascade_fade;        /* directional cascades: cross-fade between them (r186 CSMShadowNode.fade) */
+  int shadow_cascades;      /* directional: 0 = one shadow map (three.c), 1-4 = cascades (r187 CSMShadowNode) */
+  float shadow_distance;    /* directional cascades: where the last ends (r187 maxFar; 0 = the camera's far) */
+  bool cascade_fade;        /* directional cascades: cross-fade between them (r187 CSMShadowNode.fade) */
   float fog_energy;         /* strength in volumetric fog (src/render/volumetric_fog.c) */
 } light3d;
 static const cw_node_type *light3d_t;
@@ -825,7 +826,7 @@ static const cw_prop light_props[] = {
                 "LightmapGI with shading BAKED draws unlit; it still lights everything else in real time (cartwheel/lightmap.h)."),
   CW_PROP_FIELD_RANGE(light3d, shadow_cascades, CW_T_INT, 0, 4,
                       "Directional: 0 = one shadow map around the light; 1-4 = cascaded shadow maps that follow the camera "
-                      "(r186 CSMShadowNode; shadow_size is each cascade's; cartwheel/lighting.h)."),
+                      "(r187 CSMShadowNode; shadow_size is each cascade's; cartwheel/lighting.h)."),
   CW_PROP_FIELD_RANGE(light3d, shadow_distance, CW_T_FLOAT, 0, 1e6, "Directional cascades: where the last ends (0 = the camera's far)."),
   CW_PROP_FIELD(light3d, cascade_fade, CW_T_BOOL, CW_PROP_DEFAULT, "Directional cascades: cross-fade between neighbours."),
   CW_PROP_FIELD_RANGE(light3d, fog_energy, CW_T_FLOAT, 0, 100,
@@ -1045,6 +1046,7 @@ t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
      * scene target on its frame encoder (the scene pass) */
     if (cw_gpu_backend() == CW_GPU_WEBGPU)
       t3_renderer_use_wgpu(s->renderer, cw__wgpu_device(), cw__wgpu_queue(), (int)WGPUTextureFormat_RGBA16Float);
+    if (cw_gpu_reversed_depth()) t3_renderer_set_forward_shadows(s->renderer, true), t3_renderer_set_reversed_depth(s->renderer, true);
 #endif
     s->w = w;
     s->h = h;

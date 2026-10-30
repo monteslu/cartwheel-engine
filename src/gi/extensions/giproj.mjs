@@ -2,10 +2,10 @@
 // own table): the light probe grid's spherical-harmonic projection, drawn
 // into one texel of the grid's atlas per draw (src/gi/probe_grid.c).
 //
-// It is r186's LightProbeGenerator.fromCubeRenderTarget run on the GPU: every
+// It is r187's LightProbeGenerator.fromCubeRenderTarget run on the GPU: every
 // texel of the probe's six captured faces adds its radiance times the L2 SH
 // basis of its direction, weighted by the texel's solid angle, and the sum is
-// normalized to 4 pi. The output is one of the seven RGBA groups r186's
+// normalized to 4 pi. The output is one of the seven RGBA groups r187's
 // LightProbeGrid packs the nine RGB coefficients into (LightProbeGrid.js
 // repackNode): group 0 = c0.rgb, c1.r; 1 = c1.gb, c2.rg; 2 = c2.b, c3.rgb;
 // 3 = c4.rgb, c5.r; 4 = c5.gb, c6.rg; 5 = c6.b, c7.rgb; 6 = c8.rgb, 0.
@@ -62,7 +62,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
           const dir = d.div(sqrt(l2)).toVar();
           const rad = textureLoad(faces[k], ivec2(x, y)).rgb.mul(w).toVar();
           const X = dir.x, Y = dir.y, Z = dir.z;
-          // the L2 basis (r186 SphericalHarmonics3.getBasisAt)
+          // the L2 basis (r187 SphericalHarmonics3.getBasisAt)
           c[0].addAssign(rad.mul(0.282095));
           c[1].addAssign(rad.mul(Y.mul(0.488603)));
           c[2].addAssign(rad.mul(Z.mul(0.488603)));

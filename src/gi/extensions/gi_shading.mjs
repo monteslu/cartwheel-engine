@@ -1,4 +1,4 @@
-// GI shading for three.c's extension programs, written in three.js r186 TSL.
+// GI shading for three.c's extension programs, written in three.js r187 TSL.
 // Not an extension: gi.mjs (the "gi" shading part, cartwheel/shading.h)
 // imports it.
 //
@@ -11,17 +11,17 @@
 // the probe's last mip level in place of its texture's, so two probes of
 // different sizes can be bound.
 //
-//   - Box projection: r186's getParallaxCorrectNormal (the ray from the
+//   - Box projection: r187's getParallaxCorrectNormal (the ray from the
 //     surface along the reflection, cut by the probe's box), measured from
 //     the capture point rather than the box centre so a probe captured off
 //     centre (Godot's origin_offset) still lines up; with the capture at the
-//     centre it is r186's function exactly.
+//     centre it is r187's function exactly.
 //   - Blending (Godot's ReflectionProbe): a probe's weight is 1 inside its box
 //     and falls to 0 over blend_distance at its faces, per pixel. The probes'
 //     reflections are averaged by weight, and the sky's (the material's
-//     envMap or scene.environment, as r186 would use) fills what the probes'
+//     envMap or scene.environment, as r187 would use) fills what the probes'
 //     total weight leaves.
-//   - Diffuse: a probe also gives the ambient light (r186's irradiance
+//   - Diffuse: a probe also gives the ambient light (r187's irradiance
 //     context: the blurriest level along the normal, not box projected, as
 //     Godot does), weighted the same way, unless its flags say not to.
 //
@@ -59,7 +59,7 @@ export function giShading({ TSL, THREE, mat, props, sentinel }) {
     const w = clamp(min(min(d.x, d.y), d.z).div(max(P.c.w, 1e-4)), 0, 1);
     return select(P.h.w.greaterThan(0), w, float(0));
   };
-  // r186's getParallaxCorrectNormal, from the capture point
+  // r187's getParallaxCorrectNormal, from the capture point
   const boxProject = (P, dir) => {
     const n = normalize(dir);
     const rbmax = P.c.xyz.add(P.h.xyz).sub(positionWorld).div(n);
@@ -71,7 +71,7 @@ export function giShading({ TSL, THREE, mat, props, sentinel }) {
   };
   const flag = (P, bit) => fract(P.o.w.div(bit * 2)).greaterThanEqual(0.5);
 
-  // r186's EnvironmentNode builds envNode in two contexts: radiance (getUV
+  // r187's EnvironmentNode builds envNode in two contexts: radiance (getUV
   // the world reflection, getTextureLevel the roughness) and irradiance
   // (getUV the world normal, level 1)
   mat.envNode = Fn((builder) => {
@@ -108,17 +108,17 @@ export function giShading({ TSL, THREE, mat, props, sentinel }) {
   gridShading({ TSL, THREE, mat, props, sentinel });
 }
 
-// The light probe grid (LightProbeGrid3D): r186's LightProbeGridNode, which
+// The light probe grid (LightProbeGrid3D): r187's LightProbeGridNode, which
 // adds the grid's L2 SH irradiance at the surface to the lighting's
 // irradiance. three.c has no 3D textures, so the atlas is 2D: probe (ix, iy,
 // iz)'s group g is texel (iz * nx + ix, g * ny + iy). Each group is read for
 // the two z slices around the point with the hardware's bilinear filter in x
 // and y (sample coordinates clamped to texel centres inside the slice, as
-// r186's uvw remap does), and the slices are mixed by hand: 14 fetches where
-// r186's 3D texture takes 7.
+// r187's uvw remap does), and the slices are mixed by hand: 14 fetches where
+// r187's 3D texture takes 7.
 //
 //   giGridMin  vec4  the grid's min corner, intensity (0 = no grid)
-//   giGridMax  vec4  the grid's max corner, normal offset (in probe spacings: r186's 0.5)
+//   giGridMax  vec4  the grid's max corner, normal offset (in probe spacings: r187's 0.5)
 //   giGridRes  vec4  probes along x, y, z, 0
 //   giGrid     the atlas (half float RGBA, linear, clamped)
 function gridShading({ TSL, THREE, mat, props, sentinel }) {
@@ -163,7 +163,7 @@ function gridShading({ TSL, THREE, mat, props, sentinel }) {
         s[0].xyz, vec3(s[0].w, s[1].x, s[1].y), vec3(s[1].z, s[1].w, s[2].x), s[2].yzw,
         s[3].xyz, vec3(s[3].w, s[4].x, s[4].y), vec3(s[4].z, s[4].w, s[5].x), s[5].yzw, s[6].xyz,
       ];
-      // r186 getShIrradianceAt, on the nine values (its array form trips Tint's WGSL lowering)
+      // r187 getShIrradianceAt, on the nine values (its array form trips Tint's WGSL lowering)
       const n = normalWorld.toVar();
       const x = n.x, y = n.y, z = n.z;
       const irr = sh[0].mul(0.886227)

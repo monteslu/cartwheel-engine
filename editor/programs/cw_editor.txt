@@ -1,4 +1,4 @@
-# r186 program states for cw_editor (cmake/programs.cmake; tools/programs.mjs adds what runs lack)
+# r187 program states for cw_editor (cmake/programs.cmake; tools/programs.mjs adds what runs lack)
 standard+shadow+l1001
 line+vcol
 standard+l1001

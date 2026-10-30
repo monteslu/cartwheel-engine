@@ -1,17 +1,17 @@
 // three.c generator extension "water" (state standard+xwater and its light
 // variants, depth+xwater for shadows): Water3D's surface (cartwheel/water.h,
-// src/water/water.c fills the values), written in three.js r186 TSL.
+// src/water/water.c fills the values), written in three.js r187 TSL.
 //
 // Vertex: up to four Gerstner waves (GPU Gems 1, chapter 1) move the flat
 // grid; the phases come reduced from the CPU (the same numbers
 // cw_waves_displace uses), so the drawn surface is the CPU's to float
 // rounding. The analytic wave normal goes to the fragment stage.
 //
-// Fragment: r186's Water2 / Water2Mesh, on a MeshStandardMaterial so the
+// Fragment: r187's Water2 / Water2Mesh, on a MeshStandardMaterial so the
 // scene's lights give the glints (and shadows land on the water): two
 // scrolling normal maps blended by the two-phase flow (Water2's
 // flowConfig), on the wave normal; the planar reflection sampled at
-// screenUV.flipX() (r186's ReflectorNode) and the refraction at screenUV,
+// screenUV.flipX() (r187's ReflectorNode) and the refraction at screenUV,
 // both bent by the normal (Water2's offset); a Schlick Fresnel term mixes
 // them into the emissive, the diffuse colour is black, and the
 // environment's specular stands in for the reflection when there is no
@@ -287,7 +287,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   // surface from its back side are not what the eye sees through it (and the environment's lower half is not water)
   const belowOut = vec4(mix(bodyU, above, trU).mul(float(1).sub(foamV)).add(vec3(0.5, 0.6, 0.6).mul(lit).mul(foamV)), 1);
   // (alpha 1: the post chain reads the scene target's alpha, and the lit output's is not 1 on every backend)
-  // (both sides finite: belowOut is built from clamped reads. The lit output cannot go in a select here: r186's
+  // (both sides finite: belowOut is built from clamped reads. The lit output cannot go in a select here: r187's
   // shadow pass then stops drawing the caster with its own material)
   const shaded = mix(output, belowOut, under);
   // (select, never mix by a 0 / 1 weight, for the debug views: WGSL leaves inf and NaN arithmetic to the

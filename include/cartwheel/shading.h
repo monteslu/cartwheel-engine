@@ -2,7 +2,7 @@
  * stack on one material.
  *
  * three.c gives a material one generator extension (t3_material_set_extension,
- * state x<name>): r186 TSL captured into a program, filled at run time by a C
+ * state x<name>): r187 TSL captured into a program, filled at run time by a C
  * hook. Several engine features change how every surface shades (terrain or
  * water decide the surface, clustered lights add direct light, the GI module
  * adds reflections and bounce light), so one material often needs more than
@@ -16,7 +16,7 @@
  *     every composed state a manifest names (standard+senv+xcluster_gi), a
  *     module that applies the parts in that order to the capture's material,
  *     and hands it to three.c's generator. Surface parts set colorNode,
- *     normalNode, positionNode; lighting parts add an r186 LightingNode to the
+ *     normalNode, positionNode; lighting parts add an r187 LightingNode to the
  *     material's lights; the GI part sets envNode (reflections) and adds a
  *     LightingNode (the probe grid's irradiance). So parts compose without
  *     knowing each other, as long as each names its uniforms and textures
