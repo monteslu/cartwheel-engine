@@ -223,6 +223,8 @@ async function windowsX64(g) {
 }
 
 const adb = (...a) => spawnSync('adb', a, { encoding: 'utf8', timeout: 180000 });
+let startedEmulator = false;
+process.on('exit', () => { if (startedEmulator) adb('emu', 'kill'); });
 async function androidDevice() {
   if (/\tdevice/.test(adb('devices').stdout)) return true;
   const sdk = process.env.ANDROID_HOME || join(process.env.HOME, 'Android/Sdk');
@@ -230,7 +232,8 @@ async function androidDevice() {
   if (!existsSync(emu)) return false;
   const avds = spawnSync(emu, ['-list-avds'], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean);
   if (!avds.length) return false;
-  // headless, guest GL on SwiftShader (the host GPU is the user's desktop GPU)
+  // headless, guest GL on SwiftShader (the host GPU is the user's desktop GPU); shut down when this test exits
+  startedEmulator = true;
   spawn(emu, ['-avd', avds[0], '-no-window', '-no-snapshot', '-no-audio', '-gpu', 'swiftshader_indirect', '-no-boot-anim'],
     { detached: true, stdio: 'ignore' }).unref();
   for (let i = 0; i < 120; i++) {

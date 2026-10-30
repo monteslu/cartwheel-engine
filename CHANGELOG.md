@@ -4,10 +4,27 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.25.1 (2026-10-30)
+
+### Fixed
+- Baked meshes skipped their draws in a project on a table made before v0.25.0: lightmaps read through the
+  second UV set, a different program. `tools/programs.mjs` now adds each `lmap` state's `c1lmap` state when it
+  regenerates a table, so `--table` is enough. Regenerate every table with lightmaps.
+- `tools/programs.mjs` in a prebuilt SDK no longer exits 1 after writing a table: the SDK carries no webgpu-node
+  for the WGSL check, so it warns and goes on (`WEBGPU_NODE=<dir>` still runs the check). An engine checkout still
+  requires it.
+- `tools/programs.mjs --gates` reads the project's `tests/gates.json` (`CW_PROJECT_ROOT`), not the tool's.
+- `tests/export.mjs` shuts down an Android emulator it started (it left one running, 3 GB, after every run).
+
+### Added
+- A program manifest can name a project's own extension modules: a line `# extend: <path>`, relative to the manifest.
+  `ninja programs` and a bare `--table` then need no `--extend`.
+
 ## v0.25.0 (2026-10-30)
 
 three.c v0.187.2: three.js r187. Every program table regenerated: a project's tables need
-regenerating too (`node tools/programs.mjs --projects <dir>`).
+regenerating too (`node tools/programs.mjs --table <manifest>` for each, or `--projects <dir>` for a project
+built with cwproject; an engine older than v0.25.1 misses lightmap states).
 
 ### Added
 - A reversed depth buffer on WebGPU: `cw_app_desc.reversed_depth`. Depth runs from 1 at the near plane
