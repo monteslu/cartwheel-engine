@@ -47,11 +47,11 @@ gate whose control passes is a gate that cannot see anything.
   render pipeline's "app" overlay pass).
 - Rendering is a per-tree pass graph (`cartwheel/pipeline.h`): a module adds
   shadows, sky, fog, particles, decals or post effects as passes with a phase
-  and an order; the header says how. Every tree renders as three.js r186
+  and an order; the header says how. Every tree renders as three.js r187
   does (linear colours, physical light units, linear HDR, AgX); the debug
   command `pipeline` lists the passes, their GPU ms and any program states
   three.c lacks.
-- Adding a material combination: three.c draws each material with the r186
+- Adding a material combination: three.c draws each material with the r187
   program generated for its state, from the app's program tables
   (`cmake/programs.cmake`; samples share `samples/programs/cw_samples.txt`, a
   game or project has `programs/<app>.txt`). A state no table has is built at
@@ -61,7 +61,7 @@ gate whose control passes is a gate that cannot see anything.
   states to the app's manifest and regenerates (`ninja <table>_programs` does
   one table from its manifest), then commit the manifest and the generated
   `<table>_gl.c` / `<table>_wgpu.c`. No GPU is needed to generate.
-- Lighting: lights are three.c's (three.js r186's lights and shadow maps).
+- Lighting: lights are three.c's (three.js r187's lights and shadow maps).
   Sky and fog are node types (`cartwheel/environment.h`), baked lighting is
   LightmapGI and the `cwbake` tool (`cartwheel/lightmap.h`). The debug
   command `environment` reports what it did this frame.

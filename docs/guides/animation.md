@@ -130,7 +130,7 @@ Every tick starts again from the animated pose, never from the last tick's solut
 |---|---|
 | [TwoBoneIK3D](node:TwoBoneIK3D) | an arm or a leg (`root_bone`, `middle_bone`, `end_bone`) reaches a `target`. The middle joint bends toward a `pole` (`use_pole`), or keeps the animation's own bend plane. `soften` eases the last stretch so a straight limb does not snap. `use_target_rotation` gives the hand or foot the target's rotation (grip a handle, hold a wheel). `reached` reports whether the target was in reach |
 | [LookAtModifier3D](node:LookAtModifier3D) | turns a `bone` toward a target by the shortest rotation, at most `limit_angle` from where the animation points it. `forward_axis` is the way the bone faces at rest, in model space (`(0, 0, 1)` for a glTF character's head). Chain two, a neck at `influence = 0.4` and then the head, to spread the turn |
-| [CCDIK3D](node:CCDIK3D) | cyclic coordinate descent from `end_bone` up to `root_bone`, the same algorithm and limits as three.js r186's `CCDIKSolver`. Per-joint limits come from [cw_ccdik3d_set_joint](api:cw_ccdik3d_set_joint) |
+| [CCDIK3D](node:CCDIK3D) | cyclic coordinate descent from `end_bone` up to `root_bone`, the same algorithm and limits as three.js r187's `CCDIKSolver`. Per-joint limits come from [cw_ccdik3d_set_joint](api:cw_ccdik3d_set_joint) |
 | [FABRIK3D](node:FABRIK3D) | FABRIK over a chain (tails, spines, cables), with cone and hinge limits per joint ([cw_fabrik3d_set_joint](api:cw_fabrik3d_set_joint)) |
 | [FootPlacement3D](node:FootPlacement3D) | plants feet on the physics ground. Each leg casts a ray down through its animated ankle, the ankle is lifted or lowered by the ground's height (keeping the animation's own swing), the pelvis drops when a foot has to reach down, each leg is solved as two-bone IK, and the foot turns onto the ground normal while it is near the ground |
 
@@ -166,7 +166,7 @@ The nodes call plain functions that work on any `cw_pose`. You can use them dire
 
 - [cw_ik_two_bone](api:cw_ik_two_bone): no trigonometry at all. The law of cosines gives the middle joint, and each bone turns by the shortest rotation.
 - [cw_ik_aim](api:cw_ik_aim): an aim with an angle limit.
-- [cw_ccdik_solve](api:cw_ccdik_solve): r186's `CCDIKSolver.update`. It keeps its link order, the 1e-5 skip, min and max angles, the `limitation` axis projection, the Euler clamp, the early stop and the final slerp.
+- [cw_ccdik_solve](api:cw_ccdik_solve): r187's `CCDIKSolver.update`. It keeps its link order, the 1e-5 skip, min and max angles, the `limitation` axis projection, the Euler clamp, the early stop and the final slerp.
 - [cw_ik_fabrik](api:cw_ik_fabrik): FABRIK, which adds no roll.
 
 [cw_pose_bind](api:cw_pose_bind) binds a pose to a glTF scene's bones, and [cw_pose_init](api:cw_pose_init) makes a free-standing one. [cw_skeleton_pose](api:cw_skeleton_pose) and [cw_skeleton_bone_world](api:cw_skeleton_bone_world) read what the modifiers left this tick.
@@ -184,14 +184,14 @@ Cost on the 890M laptop (Ryzen AI 9 HX 370), anim_ik's front robot: two feet (tw
 
 There is no GPU cost: modifiers only change bone transforms the skin already reads. The quality presets do not change IK, because it moves simulation state that must agree across machines. Below 8 models the solves run on the main thread, since waking the job pool costs more than a few models' solves; from 8 up, each model is one job. On a Vega 8 laptop (a Zen or Zen+ CPU, about half the per-core speed), expect roughly twice these figures: about 25 to 50 us per character native and 45 to 100 us in a cart, so a crowd of 40 such characters costs about 1 to 2 ms per tick natively before threading.
 
-The gates compare solver results against three.js r186. They plant the robot's feet on the stairs: the ankle's height above the ground under it must match its animated height above flat ground, within 1 cm through every stance (worst 3.8 mm). They keep the hand within 1 mm of the handle (0.1 mm), and they compare pose hashes across hosts and worker counts:
+The gates compare solver results against three.js r187. They plant the robot's feet on the stairs: the ankle's height above the ground under it must match its animated height above flat ground, within 1 cm through every stance (worst 3.8 mm). They keep the hand within 1 mm of the handle (0.1 mm), and they compare pose hashes across hosts and worker counts:
 
 ```sh
 node tests/gate.mjs unit-ik anim-ik
 node tests/ik-determinism.mjs
 ```
 
-`unit-ik` checks the solvers (reach accuracy, the pole plane, limits, FABRIK constraints) and compares CCD against three.js r186 run in Node (`tools/gen-ccdik-fixture.mjs` writes the reference). It also runs the nodes in a tree (no accumulation across ticks, influence, foot placement on Box3D ground, a 12-rig crowd through the job pool).
+`unit-ik` checks the solvers (reach accuracy, the pole plane, limits, FABRIK constraints) and compares CCD against three.js r187 run in Node (`tools/gen-ccdik-fixture.mjs` writes the reference). It also runs the nodes in a tree (no accumulation across ticks, influence, foot placement on Box3D ground, a 12-rig crowd through the job pool).
 
 The debug command `ik <model path>` lists a model's modifiers with their last results (`reached`, `in_limit`, foot offsets, pelvis offset), the pose hash and the microseconds the last tick took.
 

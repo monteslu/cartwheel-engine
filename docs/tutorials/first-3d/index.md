@@ -45,7 +45,7 @@ The 3D physics layers get names, gravity is a little stronger than Earth's (it r
 
 Open `main.cwscene`. Keep the root `Main` node and replace the rest; the finished scene is built up in the steps below.
 
-Every scene renders as three.js r186 does: linear HDR with physical light units, finished by a tone curve (AgX by default) and sRGB output; a `PostProcess` node holds those settings. Its units are why the numbers look the way they do: a `DirectionalLight3D` energy is illuminance (a sun of 3 to 5 is a bright day at exposure 1), and ambient and hemisphere energies are small (0.05 to 0.3). `msaa` smooths the edges, and a little bloom makes the goal pad glow:
+Every scene renders as three.js r187 does: linear HDR with physical light units, finished by a tone curve (AgX by default) and sRGB output; a `PostProcess` node holds those settings. Its units are why the numbers look the way they do: a `DirectionalLight3D` energy is illuminance (a sun of 3 to 5 is a bright day at exposure 1), and ambient and hemisphere energies are small (0.05 to 0.3). `msaa` smooths the edges, and a little bloom makes the goal pad glow:
 
 @include docs/tutorials/first-3d/project/main.cwscene#Env..Sun
 

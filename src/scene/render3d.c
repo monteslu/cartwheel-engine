@@ -64,7 +64,7 @@ typedef struct mesh_look {
   int physical;
   t3_color color, emissive, sheen_color;
   float metalness, roughness, ior, specular_intensity, clearcoat, clearcoat_roughness, sheen, sheen_roughness, iridescence,
-      iridescence_ior, anisotropy;
+      iridescence_ior, anisotropy, diffuse_roughness;
 } mesh_look;
 struct look_mat { mesh_look look; t3_material *mat; };
 
@@ -228,6 +228,7 @@ typedef struct mesh3d {
   t3_color sheen_color;
   float iridescence, iridescence_ior;
   float anisotropy;
+  float diffuse_roughness;
   bool cast_shadow, receive_shadow;
   uint64_t mesh; /* resource uid (resource.h); 0 = use the primitive */
   cw__mesh_vis vis; /* culling, LOD, impostors (visibility.h) */
@@ -380,6 +381,7 @@ static mesh_look look_of(const mesh3d *m) {
     k.iridescence = m->iridescence;
     k.iridescence_ior = m->iridescence_ior;
     k.anisotropy = m->anisotropy;
+    k.diffuse_roughness = m->diffuse_roughness;
   }
   return k;
 }
@@ -400,6 +402,7 @@ static void look_apply(t3_material *t, const mesh_look *k) {
     t->iridescence = k->iridescence;
     t->iridescence_ior = k->iridescence_ior;
     t->anisotropy = k->anisotropy;
+    t->diffuse_roughness = k->diffuse_roughness;
   }
 }
 
@@ -477,7 +480,7 @@ static void mesh_rebuild(cw_node n, mesh3d *m) {
 }
 
 static bool mesh_physical(const mesh3d *m) {
-  return m->clearcoat > 0 || m->sheen > 0 || m->iridescence > 0 || m->anisotropy > 0 || m->ior != 1.5f ||
+  return m->clearcoat > 0 || m->sheen > 0 || m->iridescence > 0 || m->anisotropy > 0 || m->diffuse_roughness > 0 || m->ior != 1.5f ||
          m->specular_intensity != 1;
 }
 
@@ -530,6 +533,7 @@ static const cw_prop mesh_props[] = {
   CW_PROP_FIELD_RANGE(mesh3d, ior, CW_T_FLOAT, 1, 2.333, "Physical: index of refraction (1.5 = glass-like dielectric)."),
   CW_PROP_FIELD_RANGE(mesh3d, specular_intensity, CW_T_FLOAT, 0, 1, "Physical: strength of the dielectric specular reflection."),
   CW_PROP_FIELD_RANGE(mesh3d, anisotropy, CW_T_FLOAT, 0, 1, "Physical: stretched highlights, brushed metal (0 = none)."),
+  CW_PROP_FIELD_RANGE(mesh3d, diffuse_roughness, CW_T_FLOAT, 0, 1, "Physical: rough diffuse, dusty or chalky surfaces that look flat at grazing angles (0 = smooth, plastic-like)."),
   CW_PROP_FIELD(mesh3d, emissive, CW_T_COLOR, CW_PROP_DEFAULT, "Emitted light colour."),
   CW_PROP_FIELD(mesh3d, cast_shadow, CW_T_BOOL, CW_PROP_DEFAULT, "Casts shadows."),
   CW_PROP_FIELD(mesh3d, receive_shadow, CW_T_BOOL, CW_PROP_DEFAULT, "Receives shadows."),
@@ -645,6 +649,7 @@ bool cw__mesh3d_info(cw_node n, cw__mesh_info *out) {
     k = mix_key(k, float_bits(m->roughness));
     k = mix_key(k, float_bits(m->clearcoat));
     k = mix_key(k, float_bits(m->sheen));
+    k = mix_key(k, float_bits(m->diffuse_roughness));
     k = mix_key(k, float_bits(m->iridescence));
     k = mix_key(k, float_bits(m->emissive.r));
     k = mix_key(k, float_bits(m->emissive.g));

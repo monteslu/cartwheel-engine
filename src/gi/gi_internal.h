@@ -47,7 +47,7 @@ typedef struct gi_tree {
   t3_renderer *proj_hook;
   CW_ARRAY(t3_material *) mats; /* retained: those given the gi part */
   t3_pmrem_generator *pmrem;
-  t3_texture *dummy;
+  t3_texture *dummy, *dummy_cube;
   const t3_texture *env_seen; /* scene.environment at the last frame */
   t3_renderer *hook_renderer, *gbuf_hook;
   /* the screen-space passes' G-buffer (ssr.c) and the mode the gi part draws in: 0 lit, 1 G-buffer */

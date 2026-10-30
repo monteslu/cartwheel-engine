@@ -1,7 +1,7 @@
 {
   "title": "Your first 3D game",
   "order": 20,
-  "summary": "Crate Push: a CharacterBody3D player with a follow camera shoves a RigidBody3D crate onto a goal Area3D, lit by a sun and a lamp with three.js r186's lighting, run natively and as a cart and tested by an input script.",
+  "summary": "Crate Push: a CharacterBody3D player with a follow camera shoves a RigidBody3D crate onto a goal Area3D, lit by a sun and a lamp with three.js r187's lighting, run natively and as a cart and tested by an input script.",
   "template": "empty_3d",
   "project": "project",
   "frames": 300,

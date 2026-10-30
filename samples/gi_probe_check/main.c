@@ -31,12 +31,6 @@
 static int32_t captures, bound;
 static bool set;
 
-static void layers(t3_object *o, uint32_t m) {
-  if (!o) return;
-  t3_object_set_layers(o, m);
-  for (int i = 0; i < o->child_count; i++) layers(o->children[i], m);
-}
-
 static cw_node node(const char *p) { return cw_node_get(cw_tree_root(cw_scene_app_tree()), p); }
 
 static void init(void *u) {
@@ -59,13 +53,12 @@ static void fixed_update(void *u, double dt) {
 static void render(void *u, double alpha) {
   (void)u;
   (void)alpha;
-  /* the walls on layer 2 (their meshes exist once they have drawn), then a
-   * capture that sees them */
+  /* the walls on layer 2 (Node3D layers), then a capture that sees them */
   static bool walls_set;
   if (!walls_set) {
     walls_set = true;
     static const char *walls[] = { "Box/NegX", "Box/PosX", "Box/NegZ", "Box/PosZ", "Box/PosY", "Box/NegY" };
-    for (int i = 0; i < 6; i++) layers(cw_node3d_object(node(walls[i])), 1 | 2);
+    for (int i = 0; i < 6; i++) cw_node_set(node(walls[i]), "layers", cw_val_int(1 | 2));
     cw_reflection_probe_update(node("Box/Probe"));
   }
   cw_gi_stats s;
