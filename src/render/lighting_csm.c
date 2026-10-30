@@ -1,13 +1,13 @@
-/* Cascaded shadow maps for the sun (cartwheel/lighting.h), three.js r186's
+/* Cascaded shadow maps for the sun (cartwheel/lighting.h), three.js r187's
  * CSMShadowNode (examples/jsm/csm/CSMShadowNode.js, CSMFrustum.js) on the
  * engine's side: the practical split, each cascade's slice of the view
- * fitted with r186's bounding width and texel snapping, the cascades rendered
+ * fitted with r187's bounding width and texel snapping, the cascades rendered
  * with three.c's caster programs (t3_renderer_render_depth_to) into the
  * quarters of one depth atlas, and the values the "csm" shading part reads
  * (src/render/extensions/csm_part.mjs).
  *
  * A cascade is re-rendered only when its light matrix or any shadow caster
- * changed (r186 renders them every frame; the image is the same). */
+ * changed (r187 renders them every frame; the image is the same). */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,7 +22,7 @@
 #include "platform/wgpu.h"
 #endif
 
-#define LIGHT_MARGIN 200.0f /* r186 CSMShadowNode lightMargin */
+#define LIGHT_MARGIN 200.0f /* r187 CSMShadowNode lightMargin */
 
 struct cw__csm {
   int size, count;            /* one cascade's texels, cascades in use */
@@ -34,7 +34,7 @@ struct cw__csm {
 #endif
   t3_texture *tex;            /* the atlas for three.c (adopted) */
   t3_camera *cam;             /* the cascade's orthographic camera */
-  float mats[4][16];          /* world -> atlas uv (before r186's y flip) and depth */
+  float mats[4][16];          /* world -> atlas uv (before r187's y flip) and depth */
   float ranges[8];
   float near, far;
   float dir[4], color[4], bias[4];
@@ -170,7 +170,7 @@ void cw__shadow_clear_rect_wgpu(void *view, int x, int y, int w, int h) {
 }
 #endif
 
-/* ── r186 CSMFrustum / CSMShadowNode ────────────────────────────────── */
+/* ── r187 CSMFrustum / CSMShadowNode ────────────────────────────────── */
 
 typedef struct frust { t3_vec3 n[4], f[4]; } frust;
 
@@ -184,7 +184,7 @@ static uint64_t mixf(uint64_t h, float f) {
   return mix64(h, u);
 }
 
-/* every shadow caster's state (r186 renders the cascades every frame; a
+/* every shadow caster's state (r187 renders the cascades every frame; a
  * cascade is redrawn here when this or its matrix changed) */
 static uint64_t casters_key(const t3_object *o, uint64_t h) {
   if (!o->visible) return h;
@@ -248,7 +248,7 @@ bool cw__csm_update(cw__csm *c, cw_pass_ctx *ctx, t3_light *sun, const cw__csm_c
   c->fade = cfg->fade;
   t3_camera *cam = ctx->camera;
   const t3_light_shadow *ls = sun->shadow;
-  /* r186 _getBreaks, practical (lambda 0.5) over [near, min(far, maxFar)] */
+  /* r187 _getBreaks, practical (lambda 0.5) over [near, min(far, maxFar)] */
   float near = cam->near, far = cfg->distance > 0 ? CW_MIN(cam->far, cfg->distance) : cam->far;
   if (far <= near * 1.01f) far = near * 2;
   float breaks[4];
@@ -264,7 +264,7 @@ bool cw__csm_update(cw__csm *c, cw_pass_ctx *ctx, t3_light *sun, const cw__csm_c
   }
   c->near = near;
   c->far = far;
-  /* r186 CSMFrustum.setFromProjectionMatrix (WebGL clip z -1 .. 1: three.c's
+  /* r187 CSMFrustum.setFromProjectionMatrix (WebGL clip z -1 .. 1: three.c's
    * matrices), the far corners pulled in to maxFar */
   t3_mat4 ip;
   t3_mat4_invert(&ip, &ctx->proj);
@@ -290,7 +290,7 @@ bool cw__csm_update(cw__csm *c, cw_pass_ctx *ctx, t3_light *sun, const cw__csm_c
       fr[i].f[k] = i == n - 1 ? main.f[k] : lerp3(main.n[k], main.f[k], a1);
     }
   }
-  /* the light: where it shines, its orientation (r186 _lightOrientationMatrix) */
+  /* the light: where it shines, its orientation (r187 _lightOrientationMatrix) */
   t3_vec3 lp = t3_mat4_get_position(&sun->base.matrix_world);
   t3_vec3 tp = sun->target ? t3_mat4_get_position(&sun->target->matrix_world) : t3_vec3_add(lp, (t3_vec3){ 0, -1, 0 });
   t3_vec3 ldir = t3_vec3_normalize(t3_vec3_sub(tp, lp));
@@ -308,7 +308,7 @@ bool cw__csm_update(cw__csm *c, cw_pass_ctx *ctx, t3_light *sun, const cw__csm_c
   uint64_t ck = c->casters;
   bool webgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
   for (int i = 0; i < n; i++) {
-    /* r186 _updateShadowBounds: the slice's longest diagonal, widened by the fade margin */
+    /* r187 _updateShadowBounds: the slice's longest diagonal, widened by the fade margin */
     t3_vec3 p1 = fr[i].f[0];
     t3_vec3 p2 = t3_vec3_distance(p1, fr[i].f[2]) > t3_vec3_distance(p1, fr[i].n[2]) ? fr[i].f[2] : fr[i].n[2];
     float width = t3_vec3_distance(p1, p2);
@@ -318,7 +318,7 @@ bool cw__csm_update(cw__csm *c, cw_pass_ctx *ctx, t3_light *sun, const cw__csm_c
       width += 0.25f * lin * lin * (fmax - near);
     }
     float half = width / 2, texel = width / (float)size;
-    /* r186 updateBefore: the slice's box in light space, its centre snapped to texels */
+    /* r187 updateBefore: the slice's box in light space, its centre snapped to texels */
     float mn[3] = { 1e30f, 1e30f, 1e30f }, mx[3] = { -1e30f, -1e30f, -1e30f };
     for (int k = 0; k < 8; k++) {
       t3_vec3 v = t3_vec3_apply_mat4(k < 4 ? fr[i].n[k] : fr[i].f[k - 4], &cam_to_light);
@@ -339,7 +339,7 @@ bool cw__csm_update(cw__csm *c, cw_pass_ctx *ctx, t3_light *sun, const cw__csm_c
     t3_object_look_at(oc, ctr.x + ldir.x, ctr.y + ldir.y, ctr.z + ldir.z);
     t3_object_update_matrix_world(oc, false);
     /* LightShadow.updateMatrices: bias * projection * view; then the quarter
-     * (before the y flip) and r186's per-cascade bias, bias * (i + 1) */
+     * (before the y flip) and r187's per-cascade bias, bias * (i + 1) */
     t3_mat4 b = { { 0.5f, 0, 0, 0, 0, 0.5f, 0, 0, 0, 0, 0.5f, 0, 0.5f, 0.5f, 0.5f, 1 } }, t, m;
     t3_mat4 qm = { { 0.5f, 0, 0, 0, 0, 0.5f, 0, 0, 0, 0, 1, 0, (float)(i & 1) * 0.5f, (float)(1 - (i >> 1)) * 0.5f,
                      bias * (float)(i + 1), 1 } };
@@ -372,7 +372,7 @@ bool cw__csm_update(cw__csm *c, cw_pass_ctx *ctx, t3_light *sun, const cw__csm_c
     }
 #endif
     if (!webgpu) et.color = c->gl_fbo;
-    t3_renderer_render_depth_to(ctx->renderer, ctx->scene3d, oc, &et);
+    cw__render_shadow_depth(ctx->renderer, ctx->scene3d, oc, &et);
     c->key[i] = key;
     /* (not kept from the renderer's first frame: three.c's GL depth pass filled no
      * camera for casters drawn before its first scene render, so the map was
@@ -384,7 +384,7 @@ bool cw__csm_update(cw__csm *c, cw_pass_ctx *ctx, t3_light *sun, const cw__csm_c
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     t3_renderer_reset_bindings(ctx->renderer);
   }
-  /* the light as the part shades it: r186 lightTargetDirection (to the
+  /* the light as the part shades it: r187 lightTargetDirection (to the
    * light, view space), colour x intensity, shadow intensity */
   t3_vec3 d = t3_vec3_normalize(t3_vec3_transform_direction(t3_vec3_sub(lp, tp), &ctx->view));
   c->dir[0] = d.x, c->dir[1] = d.y, c->dir[2] = d.z, c->dir[3] = ls ? ls->intensity : 1;

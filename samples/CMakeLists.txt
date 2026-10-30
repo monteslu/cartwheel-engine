@@ -45,6 +45,7 @@ cw_add_app(character3d SOURCES character3d/main.c)
 cw_add_app(character3d_auto SOURCES character3d/main.c)
 target_compile_definitions(character3d_auto PRIVATE CHARACTER_AUTOPILOT=1)
 cw_add_app(scene3d SOURCES scene3d/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/scene3d/assets)
+cw_add_app(far_view SOURCES far_view/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/far_view/assets)
 # navigation: 500 agents crossing a level, a gate carving the navmesh (cartwheel/nav.h)
 cw_add_app(nav_demo SOURCES nav_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/nav_demo/assets)
 cw_add_app(nav_links SOURCES nav_links/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/nav_links/assets)
@@ -230,7 +231,7 @@ target_compile_definitions(vis_city_lights PRIVATE VIS_DEFAULT_MODE="lights")
 
 # the procedural sky, its sun and environment, the day / night cycle.
 cw_add_app(sky_day SOURCES sky_day/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/sky_day/assets)
-# three.js r186's MeshPhysicalMaterial lobes on MeshInstance3D: clearcoat, sheen, iridescence, anisotropy.
+# three.js r187's MeshPhysicalMaterial lobes on MeshInstance3D: clearcoat, sheen, iridescence, anisotropy.
 cw_add_app(physical_materials SOURCES physical_materials/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/physical_materials/assets)
 # height fog: analytic, with the sun lobe; dense ground fog.
 cw_add_app(fog_valley SOURCES fog_valley/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fog_valley/assets)

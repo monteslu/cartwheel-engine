@@ -825,14 +825,14 @@ static const cw_prop ccd_props[] = {
   CW_PROP_FIELD(ccd_node, end_bone, CW_T_STRING, CW_PROP_DEFAULT, "Effector: the bone brought to the target."),
   CW_PROP_FIELD(ccd_node, target, CW_T_STRING, CW_PROP_DEFAULT, "Node3D (path from this node) the effector reaches for."),
   CW_PROP_FIELD(ccd_node, target_position, CW_T_VEC3, CW_PROP_DEFAULT, "World target when no target node is set."),
-  CW_PROP_FIELD_RANGE(ccd_node, max_iterations, CW_T_INT, 1, 64, "CCD passes (r186 iteration); stops early when nothing turns."),
+  CW_PROP_FIELD_RANGE(ccd_node, max_iterations, CW_T_INT, 1, 64, "CCD passes (r187 iteration); stops early when nothing turns."),
   CW_PROP_FIELD_RANGE(ccd_node, min_angle, CW_T_FLOAT, 0, 3.14159265, "Smallest step per link (radians, 0 = none)."),
   CW_PROP_FIELD_RANGE(ccd_node, max_angle, CW_T_FLOAT, 0, 3.14159265, "Largest step per link (radians, 0 = none)."),
   CW_PROP_END,
 };
 static cw_node_type ccd_type = {
   .name = "CCDIK3D", .parent = "SkeletonModifier3D", .data_size = sizeof(ccd_node), .props = ccd_props,
-  .doc = "Cyclic coordinate descent over a chain, as three.js r186's CCDIKSolver.", .init = ccd_init,
+  .doc = "Cyclic coordinate descent over a chain, as three.js r187's CCDIKSolver.", .init = ccd_init,
 };
 
 static void fab_init(cw_node n, void *data) {

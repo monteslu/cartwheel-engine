@@ -1,17 +1,17 @@
-// Terrain shading for three.c's extension programs, written in three.js r186
+// Terrain shading for three.c's extension programs, written in three.js r187
 // TSL (see terrain.mjs, terrainlow.mjs and terrainfar.mjs, the extensions
 // themselves). Not an extension: the three import it.
 //
 // The mesh is a CDLOD patch: an InstancedMesh of one flat grid whose instance
 // matrices place each selected quadtree node (src/terrain/terrain_render.c).
 // The grid's vertices sit at y = 1 and the instance matrix's Y column carries
-// the node's LOD level plus one, so after r186's instancing positionLocal is
+// the node's LOD level plus one, so after r187's instancing positionLocal is
 // (world x, lod + 1, world z): everything the vertex stage needs, with no
-// attribute of its own. (Plus one: a zero Y scale would make r186's instance
+// attribute of its own. (Plus one: a zero Y scale would make r187's instance
 // normal transform divide by zero, and the NaN geometry normal would poison
-// the roughness r186 derives from it.)
+// the roughness r187 derives from it.)
 //
-// Vertex stage: heights are the uint16 steps in an R32UI texture (r186's TSL
+// Vertex stage: heights are the uint16 steps in an R32UI texture (r187's TSL
 // types only 32-bit textures as integer ones), read with textureLoad at
 // integer texel coordinates, so every fetch is exact and equal on GL and
 // WebGPU. Morphing is vertical:
@@ -54,7 +54,7 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   const far = v4('terrainFar');       // far start, 1 / fade length, macro variation, quality (0 low, 1 medium, 2 high)
 
   // textures: what the C side binds by these names
-  // the C side's textures must be made with these settings (r186 bakes filters and wrapping into the code)
+  // the C side's textures must be made with these settings (r187 bakes filters and wrapping into the code)
   const uintTex = (name) => {
     const t = new THREE.DataTexture(new Uint32Array(4), 2, 2, THREE.RedIntegerFormat, THREE.UnsignedIntType);
     t.name = 'ext.' + name;

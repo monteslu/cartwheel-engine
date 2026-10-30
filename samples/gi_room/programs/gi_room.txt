@@ -1,4 +1,4 @@
-# r186 program states gi_room draws (cmake/programs.cmake, tools/programs.mjs)
+# r187 program states gi_room draws (cmake/programs.cmake, tools/programs.mjs)
 depth+xgi
 standard+shadow+l1101+xgi
 standard+shadow+senv+l1101+xgi

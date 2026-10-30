@@ -2,7 +2,7 @@
  * and bounce light (a light probe grid).
  *
  * ReflectionProbe3D captures the scene around a point into a prefiltered
- * radiance map (three.js r186's PMREMGenerator.fromScene with its size,
+ * radiance map (three.js r187's PMREMGenerator.fromScene with its size,
  * position and renderTarget options) and every lit surface in its box
  * reflects that instead of the sky: a chrome ball shows the room's red
  * wall, a polished floor the furniture standing on it.
@@ -11,7 +11,7 @@
  *                   the node's rotation is ignored, its scale applies)
  *   origin_offset   where the capture is taken, from the box centre (Godot's
  *                   origin_offset: lift it off the floor, out of a pillar)
- *   box_projection  reflections are traced to the box's faces (r186's
+ *   box_projection  reflections are traced to the box's faces (r187's
  *                   getParallaxCorrectNormal) instead of being at infinity:
  *                   right for rooms and corridors, where the walls are near;
  *                   leave it off outdoors
@@ -37,7 +37,7 @@
  *                   the mask keeps whatever its layers.
  *
  * Shading. Every Standard and Physical material in a tree that has a probe
- * gets the "gi" shading part (cartwheel/shading.h): r186 TSL that samples up
+ * gets the "gi" shading part (cartwheel/shading.h): r187 TSL that samples up
  * to two probes per object, box projected, weighted per pixel, over the sky.
  * Each object takes the two probes whose boxes reach it (one containing its
  * centre first, then the smaller box). The app's program tables need the
@@ -58,24 +58,24 @@
  * authored, two a frame; Ultra at twice the resolution (up to 512), four a
  * frame.
  *
- * LightProbeGrid3D is three.js r186's LightProbeGrid: bounce light. A grid of
+ * LightProbeGrid3D is three.js r187's LightProbeGrid: bounce light. A grid of
  * probes over a box (size; probes along x, y, z, 2 .. 32 each, 0 = one a
  * metre plus one), each rendering the scene into six cube_size faces (8
  * pixels) that an extension material ("giproj") projects onto L2 spherical
- * harmonics on the GPU (r186's LightProbeGenerator over the faces' texels,
- * solid-angle weighted), packed as r186 packs them (seven RGBA groups) into
+ * harmonics on the GPU (r187's LightProbeGenerator over the faces' texels,
+ * solid-angle weighted), packed as r187 packs them (seven RGBA groups) into
  * a 2D atlas: three.c has no 3D textures, so probe (x, y, z)'s group g is
  * texel (z * nx + x, g * ny + y), read with bilinear filtering in x and y and
- * mixed by hand across z (14 fetches a pixel where r186 makes 7). The gi
+ * mixed by hand across z (14 fetches a pixel where r187 makes 7). The gi
  * shading part adds the irradiance at each lit surface (offset along the
- * normal by normal_offset probe spacings, r186's 0.5) to its light, as r186's
+ * normal by normal_offset probe spacings, r187's 0.5) to its light, as r187's
  * LightProbeGridNode does. update_mode BAKED captures the grid at load, in
  * 1 + bounces sweeps (each sweep sees the light the previous one stored, so
  * each adds a bounce; bake_per_frame spreads a sweep over frames, 0 = the
  * whole grid in one frame), and again when the sky's environment is
  * re-rendered; INCREMENTAL then keeps refreshing probes_per_frame probes
  * every frame (moving lights, opening doors). cw_light_probe_grid_rebake
- * (or `call <grid> rebake`) sweeps it again. Like r186's it has no
+ * (or `call <grid> rebake`) sweeps it again. Like r187's it has no
  * visibility term: light leaks through walls thinner than the probe spacing.
  * One grid lights a tree (the first in it). Cost per probe: six renders of
  * the scene at cube_size and seven one-texel draws. Quality: Low refreshes

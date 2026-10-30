@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cartwheel/gpu.h"
 #include "cartwheel/environment.h"
 #include "cartwheel/render3d.h"
 #include "environment_internal.h"
@@ -771,7 +772,7 @@ static const char WGSL_SUN[] =
     "  let c = dot(dir, u.sun.xyz);\n"
     "  if (c < u.disk.x) { discard; }\n"
     "  let edge = smoothstep(u.disk.x, u.disk.y, c);\n"
-    "  var o: FO; o.c = vec4f(u.color.rgb * u.disk.z * edge, 0.0); o.d = 1.0; return o;\n"
+    "  var o: FO; o.c = vec4f(u.color.rgb * u.disk.z * edge, 0.0); o.d = CW_FAR; return o;\n"
     "}\n";
 
 static void pass_sky_sun_wgpu(cw_pass_ctx *ctx, sky_rt *s) {
@@ -793,7 +794,7 @@ static void pass_sky_sun_wgpu(cw_pass_ctx *ctx, sky_rt *s) {
     WGPUColorTargetState ct = { .format = tg->color_format, .blend = cw__wg_blend(CW_WG_BLEND_ADD), .writeMask = WGPUColorWriteMask_All };
     WGPUFragmentState fs = { .module = sm, .entryPoint = CW_WGPU_SV("fs"), .targetCount = 1, .targets = &ct };
     WGPUDepthStencilState ds = { .format = tg->depth_format, .depthWriteEnabled = WGPUOptionalBool_False,
-                                 .depthCompare = WGPUCompareFunction_LessEqual,
+                                 .depthCompare = cw_gpu_reversed_depth() ? WGPUCompareFunction_GreaterEqual : WGPUCompareFunction_LessEqual,
                                  .stencilFront = { .compare = WGPUCompareFunction_Always },
                                  .stencilBack = { .compare = WGPUCompareFunction_Always } };
     WGPURenderPipelineDescriptor d = {

@@ -59,7 +59,7 @@
  *                      "visibility_restore" (1000) shows what "visibility"
  *                      hid.
  *
- * The scene is always linear HDR: three.c (three.js r186's generated
+ * The scene is always linear HDR: three.c (three.js r187's generated
  * programs, physical light units, colour management) renders it into the
  * RGBA16F scene target, and the "tonemap" POST pass applies exposure, the
  * tone curve and the sRGB transfer function.
@@ -127,7 +127,7 @@
  *     defaults sampler2D to lowp in fragment shaders, which quantizes depth
  *     and HDR on some GPUs.
  *
- * The workflow is three.js r186's: material and environment colours are
+ * The workflow is three.js r187's: material and environment colours are
  * linear, lights are physical units (see "Light units" below), and the post
  * chain works on scene-linear HDR until the tonemap pass.
  */
@@ -172,9 +172,9 @@ typedef struct cw_rt {
   cw_rt_format format;
 } cw_rt;
 
-/* Tone curves, three.js r186's (ToneMappingFunctions): NONE clamps; AGX
+/* Tone curves, three.js r187's (ToneMappingFunctions): NONE clamps; AGX
  * (Blender's AgX, three.js's minimal fit) is the default; NEUTRAL is Khronos
- * PBR Neutral. The sRGB transfer follows every curve, as in r186. */
+ * PBR Neutral. The sRGB transfer follows every curve, as in r187. */
 typedef enum {
   CW_TONEMAP_NONE, CW_TONEMAP_LINEAR, CW_TONEMAP_REINHARD, CW_TONEMAP_CINEON, CW_TONEMAP_ACES_FILMIC,
   CW_TONEMAP_AGX, CW_TONEMAP_NEUTRAL, CW_TONEMAP_COUNT
@@ -246,27 +246,27 @@ typedef struct cw_post_settings {
   bool chromatic_aberration;
   float ca_intensity;       /* 0.004 (uv offset at the corners) */
   cw_debug_view debug_view; /* NONE */
-  /* screen-space reflections: three.js r186's SSRNode (one mirror ray a
+  /* screen-space reflections: three.js r187's SSRNode (one mirror ray a
    * pixel, softened by roughness) at half resolution over a G-buffer of the
    * surfaces carrying the GI shading part (cartwheel/gi.h: every Standard /
    * Physical material of a tree with SSR, a probe or a grid); off on the Low
    * effects preset */
   bool ssr;
-  float ssr_max_distance;   /* 1: how far a reflection reaches (view units, r186's maxDistance) */
+  float ssr_max_distance;   /* 1: how far a reflection reaches (view units, r187's maxDistance) */
   float ssr_thickness;      /* 0.1: how deep a surface counts as hit behind the depth */
   float ssr_quality;        /* 0.5: march steps per pixel of the ray's screen length (0..1) */
   float ssr_intensity;      /* 1 */
-  /* screen-space bounce light and AO: three.js r186's SSGINode (SSILVB) at
+  /* screen-space bounce light and AO: three.js r187's SSGINode (SSILVB) at
    * half resolution over the same G-buffer plus the surfaces' diffuse
-   * colour; composited as r186's example does (colour x AO + diffuse x GI);
+   * colour; composited as r187's example does (colour x AO + diffuse x GI);
    * the Ultra effects preset only */
   bool ssgi;
-  float ssgi_radius;        /* 12: r186's radius (screen-space sampling) */
-  float ssgi_intensity;     /* 10: r186's giIntensity */
+  float ssgi_radius;        /* 12: r187's radius (screen-space sampling) */
+  float ssgi_intensity;     /* 10: r187's giIntensity */
   float ssgi_ao_intensity;  /* 1 */
   float ssgi_thickness;     /* 1 */
-  int ssgi_slices;          /* 2 (r186's example) */
-  int ssgi_steps;           /* 8 (r186's example) */
+  int ssgi_slices;          /* 2 (r187's example) */
+  int ssgi_steps;           /* 8 (r187's example) */
   /* depth of field: a lens's blur away from the focus distance (a portrait,
    * a menu showcase, a cut scene). Full resolution gather in the HDR image
    * before bloom: each pixel's circle of confusion from its view depth,
@@ -367,7 +367,7 @@ cw_post_settings *cw_pipeline_settings(cw_pipeline *p);
  * "pipeline" command. */
 const char *cw_pipeline_missing_states(cw_tree *t);
 
-/* Light units: physical, three.js r186's (r155+ made them its only ones):
+/* Light units: physical, three.js r187's (r155+ made them its only ones):
  *   DirectionalLight3D.energy   illuminance, lux-like (E; diffuse radiance =
  *                               albedo x E x cos / PI)
  *   Omni/SpotLight3D.energy     luminous intensity, candela-like: E = I / d^2

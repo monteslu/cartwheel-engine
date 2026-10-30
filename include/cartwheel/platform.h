@@ -194,6 +194,13 @@ typedef struct cw_app_desc {
   int max_substeps;        /* catch-up cap per rendered frame; 0 = 5 */
   int msaa;                /* default framebuffer samples (native); 0 = none */
   bool vsync_off;          /* native only */
+  /* A reversed depth buffer on WebGPU (cw_gpu_reversed_depth): depth runs from 1 at the
+   * near plane to 0 at the far plane in a 32-bit float buffer, which spreads precision
+   * evenly out to the horizon: far surfaces stop flickering through each other and the
+   * far plane can sit much farther away. Same picture otherwise. GL has no way to do it
+   * for a cart, so a GL run renders with forward depth. CW_REVERSED_DEPTH=1 turns it on
+   * from the environment. */
+  bool reversed_depth;
   bool deterministic;      /* cart: declare WC_FLAG_DETERMINISTIC */
   bool debug;              /* cart: export the debug channel (wc_debug_state) */
   bool net;                /* cart: declare WC_FLAG_NET_PEER (wasmcart peer connections, cartwheel/net.h) */

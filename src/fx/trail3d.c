@@ -1,5 +1,6 @@
 /* Trail3D: a camera-facing ribbon through the node's last positions (one
  * sample per fixed tick; the head follows the rendered position). */
+#include "cartwheel/gpu.h"
 #include <math.h>
 #include <string.h>
 
@@ -143,7 +144,7 @@ static WGPURenderPipeline trail_pipe(int blend, const cw__wgpu_pass_targets *tg)
                               .writeMask = WGPUColorWriteMask_All };
   WGPUFragmentState fs = { .module = tsm, .entryPoint = CW_WGPU_SV("fs"), .targetCount = 1, .targets = &ct };
   WGPUDepthStencilState ds = { .format = tg->depth_format, .depthWriteEnabled = WGPUOptionalBool_False,
-                               .depthCompare = WGPUCompareFunction_LessEqual,
+                               .depthCompare = cw_gpu_reversed_depth() ? WGPUCompareFunction_GreaterEqual : WGPUCompareFunction_LessEqual,
                                .stencilFront = { .compare = WGPUCompareFunction_Always },
                                .stencilBack = { .compare = WGPUCompareFunction_Always } };
   WGPURenderPipelineDescriptor d = {

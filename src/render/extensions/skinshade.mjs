@@ -1,12 +1,12 @@
 // The "skinshade" shading part (cartwheel/skin_shading.h; alone as xskinshade, composed as
 // xcluster_csm_skinshade_gi and so on): skin shading on a MeshStandardMaterial or
-// MeshPhysicalMaterial. It wraps the material's own r186 lighting model so every direct light
+// MeshPhysicalMaterial. It wraps the material's own r187 lighting model so every direct light
 // (the scene's lights, the cluster part's lights, the cascaded sun: they all reach the model's
-// direct()) adds two terms before r186's own BRDF runs:
+// direct()) adds two terms before r187's own BRDF runs:
 //
 //   wrap          the diffuse light past the terminator, per channel w = scatter.rgb * wrap:
 //                 ((N.L + w) / (1 + w) clamped - N.L clamped) * light * BRDF_Lambert(diffuse)
-//   translucency  r186 MeshSSSNodeMaterial's SSSLightingModel term (fast translucency):
+//   translucency  r187 MeshSSSNodeMaterial's SSSLightingModel term (fast translucency):
 //                 (pow(saturate(V . -normalize(L + N * distortion)), power) + ambient)
 //                 * translucency * scatter.rgb * light * diffuse
 //

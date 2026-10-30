@@ -31,7 +31,7 @@
  * to back. Every selected patch is one instance of one InstancedMesh: the
  * whole near terrain is one draw, the far terrain another.
  *
- * Shading is three.js r186's MeshStandardMaterial (lights, shadows, fog and
+ * Shading is three.js r187's MeshStandardMaterial (lights, shadows, fog and
  * environment are three.js's own) with a TSL extension of cartwheel's
  * (src/terrain/extensions): the height fetch and morph in the vertex stage;
  * in the fragment stage the splat of 8 layers by the control map (the two

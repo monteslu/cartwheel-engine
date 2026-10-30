@@ -99,7 +99,7 @@ static const char *const fs =
     "uniform vec3 u_dir_c[4];\n" /* colour x intensity */
     "uniform vec3 u_ambient;\n"
     "uniform vec3 u_hemi_sky, u_hemi_ground, u_hemi_up;\n"
-    "uniform float u_light_scale;\n" /* 1 / PI: physical light units (three.js r186's) */
+    "uniform float u_light_scale;\n" /* 1 / PI: physical light units (three.js r187's) */
     "uniform int u_fog;\n"
     "uniform vec4 u_fog_par;\n" /* near, far, density */
     "uniform vec3 u_fog_color;\n"
@@ -294,7 +294,7 @@ static void oct_dec(float u, float v, float out[3]) {
   out[2] = nz / l;
 }
 
-/* srgb: the normal atlas. three.js r186's normal material writes its packed
+/* srgb: the normal atlas. three.js r187's normal material writes its packed
  * normal as an sRGB colour converted to linear (colorSpaceToWorking): sRGB
  * storage encodes it back on the write, so the texels hold the packed normal
  * at full 8-bit precision; the draw shaders pack what sampling decodes. */
@@ -368,7 +368,7 @@ static void render_views(t3_renderer *r, t3_scene *sc, imp_atlas *a, const bake_
         t3_external_target et = {
           .color = (uintptr_t)d->color, .depth = (uintptr_t)d->depth,
           .color_format = (int)d->format, .depth_format = (int)WGPUTextureFormat_Depth24Plus,
-          .samples = 1, .load_color = !first, .load_depth = !first, .clear_rgba = { 0, 0, 0, 0 }, .clear_depth = 1,
+          .samples = 1, .load_color = !first, .load_depth = !first, .clear_rgba = { 0, 0, 0, 0 }, .clear_depth = cw_gpu_reversed_depth() ? 0.0f : 1.0f,
           .x = i * IMP_CELL, .y = tile_row(j), .w = IMP_CELL, .h = IMP_CELL, .flip_y = true,
         };
         t3_renderer_set_external_target(r, &et);
@@ -1021,7 +1021,7 @@ static WGPURenderPipeline imp_pipe_for(int pass, const cw__wgpu_pass_targets *tg
   WGPUFragmentState fs = { .module = W.sm, .entryPoint = CW_WGPU_SV("fs"), .targetCount = 1, .targets = &ct };
   WGPUDepthStencilState ds = { .format = tg->depth_format,
                                .depthWriteEnabled = pass ? WGPUOptionalBool_False : WGPUOptionalBool_True,
-                               .depthCompare = WGPUCompareFunction_LessEqual,
+                               .depthCompare = cw_gpu_reversed_depth() ? WGPUCompareFunction_GreaterEqual : WGPUCompareFunction_LessEqual,
                                .stencilFront = { .compare = WGPUCompareFunction_Always },
                                .stencilBack = { .compare = WGPUCompareFunction_Always } };
   WGPURenderPipelineDescriptor d = {

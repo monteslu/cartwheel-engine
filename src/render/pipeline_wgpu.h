@@ -15,7 +15,8 @@
  *     negate clip y (as render2d does), so UVs, gl_FragCoord-style math and
  *     the texture memory match GL row for row. The window is not flipped.
  *   - depth: the scene's Depth32Float attachment holds GL-convention window
- *     depth ([0, 1]: draws remap clip z to (z + w) / 2). Passes that SAMPLE
+ *     depth ([0, 1]: draws remap clip z to (z + w) / 2, or (w - z) / 2 and 1 at the
+ *     near plane under cw_gpu_reversed_depth). Passes that SAMPLE
  *     depth read an R32Float linear depth (view-space distance along -z,
  *     positive; 3e38 where nothing was drawn) made by a copy pass after the
  *     opaque phase (ctx->depth_tex). */

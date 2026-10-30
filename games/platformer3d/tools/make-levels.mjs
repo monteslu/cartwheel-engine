@@ -19,7 +19,7 @@ const f = (x) => {
 const vec = (a) => `vec3(${a.map(f).join(', ')})`;
 const eased = (a) => `${vec(a)} in=vec3(0, 0, 0) out=vec3(0, 0, 0)`;
 // palettes below are picked as screen (sRGB) colours; every colour the scenes
-// hold is linear (three.js r186's workflow): materials and lights through the
+// hold is linear (three.js r187's workflow): materials and lights through the
 // game's own 2.2 curve, the background and fog through sRGB's (they were
 // screen colours under r128 and keep their look that way)
 const lin = (v) => Math.pow(v, 2.2);
@@ -27,7 +27,7 @@ const col = (c) => `color(${[...c.slice(0, 3).map(lin), c.length === 4 ? c[3] : 
 const srgbToLinear = (v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
 const scol = (c) => `color(${[...c.slice(0, 3).map(srgbToLinear), 1].map(f).join(', ')})`;
 // light energies below are the r128-era values the levels were tuned with; the
-// scenes hold physical units (r186's): directional and ambient x PI, an omni
+// scenes hold physical units (r187's): directional and ambient x PI, an omni
 // light matched at 2 m (PI x d^2 x r128's (1 - d / range)^2 window there)
 const dirE = (e) => f(e * Math.PI);
 const omniE = (e, range, d = 2) => f(e * Math.PI * d * d * Math.pow(Math.max(0, 1 - d / range), 2));

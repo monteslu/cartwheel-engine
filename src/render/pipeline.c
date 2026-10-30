@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cartwheel/gpu.h"
 #include "cartwheel/debug.h"
 #include "cartwheel/profile.h"
 #include "cartwheel/platform.h"
@@ -1005,7 +1006,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
     t3_mat4_invert(&p->inv_view_proj_jittered, &vp_j);
   }
 
-  /* three.c: scene-linear output into the HDR target (r186 programs, physical lights, colour
+  /* three.c: scene-linear output into the HDR target (r187 programs, physical lights, colour
    * management); exposure, the tone curve and the sRGB transfer are the tonemap pass's */
   if (ctx.renderer) {
     t3_renderer_set_tone_mapping(ctx.renderer, T3_NO_TONE_MAPPING, 1);
@@ -1163,6 +1164,12 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
         const cw_rt *lin = cw_pipeline_rt_persistent(p, "scene.depth_linear", w, h, CW__RT_R32F, NULL);
         const float *e = ctx.camera->projection_matrix.e;
         float pz[4] = { e[10], e[14], e[11], e[15] };
+        if (cw_gpu_reversed_depth()) {
+          /* the z row minus the w row without the cancelling float difference */
+          double n = ctx.camera->near, f = ctx.camera->far;
+          bool plain = ctx.camera->base.type == T3_PERSPECTIVE_CAMERA && e[10] == (float)(-(f + n) / (f - n));
+          pz[0] = plain ? (float)(-2 * n / (f - n)) : (float)((double)e[10] - e[11]);
+        }
         if (lin) {
           cw__pw_depth_copy(&ctx, scene_draw, lin, pz);
           ctx.depth_tex = lin->tex;

@@ -50,6 +50,11 @@
     "note": "a reflection probe that hides an object from its capture (cull_mask) must not take the object's shadow from the frame: the sun's shadow of a crate is on the floor on a capture frame as on the next one, natively on GL and WebGPU; the control (sun shadow off) must lose it"
   },
   {
+    "name": "reversed-depth",
+    "script": "tests/reversed-depth.mjs",
+    "note": "a reversed depth buffer on WebGPU draws what forward depth draws on 41 samples, no program missing; far_view shows what it is for; controls: engine WGSL left on forward depth, far_view on forward depth"
+  },
+  {
     "name": "gi-probe",
     "script": "tests/gi-probe.mjs",
     "note": "reflection probes and bounce light against known answers natively on GL and WebGPU: walls where a mirror ball must show them, box projection acting, the grid tinting the ceiling by the coloured walls; controls with the probe and the grid off must fail"
@@ -1583,7 +1588,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "pose layer, two-bone reach / pole plane / soften / reached, aim limits, CCD against three.js r186 CCDIKSolver (tests/unit/ccdik_r186.h), FABRIK reach with cone and hinge limits, modifier nodes in a tree (no accumulation, influence), foot placement on Box3D ground; every solved pose folds into unit.checksum"
+    "note": "pose layer, two-bone reach / pole plane / soften / reached, aim limits, CCD against three.js r187 CCDIKSolver (tests/unit/ccdik_r186.h), FABRIK reach with cone and hinge limits, modifier nodes in a tree (no accumulation, influence), foot placement on Box3D ground; every solved pose folds into unit.checksum"
   },
   {
     "name": "anim-props",
@@ -2255,7 +2260,7 @@
       "pipe.float"
     ],
     "controlFrames": 20,
-    "note": "ACESFilmic curve (three.js r186's) in the tonemap pass. Control: AgX",
+    "note": "ACESFilmic curve (three.js r187's) in the tonemap pass. Control: AgX",
     "expect": {
       "post.seg": 3
     }
@@ -2449,7 +2454,7 @@
       "pipe.float"
     ],
     "controlFrames": 20,
-    "note": "+1 EV with Reinhard (three.js r186's) in the tonemap pass. Control: baseline",
+    "note": "+1 EV with Reinhard (three.js r187's) in the tonemap pass. Control: baseline",
     "expect": {
       "post.seg": 15
     }
@@ -2465,7 +2470,7 @@
       "pipe.float"
     ],
     "controlFrames": 20,
-    "note": "ACES Filmic tone mapping (r186's curve, the sRGB transfer after it) instead of AgX. Control: the plain AgX segment",
+    "note": "ACES Filmic tone mapping (r187's curve, the sRGB transfer after it) instead of AgX. Control: the plain AgX segment",
     "expect": {
       "post.seg": 16
     }
@@ -2570,7 +2575,7 @@
     },
     "controlFrames": 30,
     "webgpu": true,
-    "note": "three.js r186's MeshPhysicalMaterial on MeshInstance3D: Standard paint, clearcoat car paint, sheen velvet, iridescent shell, anisotropic brushed metal, lit by the ProceduralSky's PMREM environment; four of the five switch to Physical. Control: frame 30 (the camera orbits)"
+    "note": "three.js r187's MeshPhysicalMaterial on MeshInstance3D: Standard paint, clearcoat car paint, sheen velvet, iridescent shell, anisotropic brushed metal, lit by the ProceduralSky's PMREM environment; four of the five switch to Physical. Control: frame 30 (the camera orbits)"
   },
   {
     "name": "sky-noon",
@@ -2868,7 +2873,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "the froxel grid (cartwheel/froxel.h): r186 ClusteredLighting dimensions and exponential slices, 256 lights and cones binned: lists in input order, no point inside a light misses it in its cell, cones reference fewer cells than their spheres, no more references than a brute-force sphere vs cell-box test, overflow keeps the first lights; the binned lists hash into unit.checksum, equal on every host (tests/froxel-determinism.mjs: every pool size)"
+    "note": "the froxel grid (cartwheel/froxel.h): r187 ClusteredLighting dimensions and exponential slices, 256 lights and cones binned: lists in input order, no point inside a light misses it in its cell, cones reference fewer cells than their spheres, no more references than a brute-force sphere vs cell-box test, overflow keeps the first lights; the binned lists hash into unit.checksum, equal on every host (tests/froxel-determinism.mjs: every pool size)"
   },
   {
     "name": "night-street",
@@ -2902,7 +2907,7 @@
       "NS_FORWARD": "1"
     },
     "webgpu": true,
-    "note": "clustered lighting (cartwheel/lighting.h): a night street with 58 street lamps, 96 neon signs, 48 shop spot lights and flickering muzzle flashes binned into r186 ClusteredLighting clusters on the CPU and shaded with r186 BRDF per cluster, and 4 floodlights whose shadows are tiles of the shadow atlas; the binned lists hash equal on every host and backend. Control: FORWARD (three.c lights at most 8 of a kind: nothing clustered, the image differs)"
+    "note": "clustered lighting (cartwheel/lighting.h): a night street with 58 street lamps, 96 neon signs, 48 shop spot lights and flickering muzzle flashes binned into r187 ClusteredLighting clusters on the CPU and shaded with r187 BRDF per cluster, and 4 floodlights whose shadows are tiles of the shadow atlas; the binned lists hash equal on every host and backend. Control: FORWARD (three.c lights at most 8 of a kind: nothing clustered, the image differs)"
   },
   {
     "name": "lighting-changes",
@@ -2961,7 +2966,7 @@
       "NS_NO_SHADOW": "1"
     },
     "webgpu": true,
-    "note": "cascaded sun shadows (DirectionalLight3D.shadow_cascades, r186 CSMShadowNode): the street by day, four cascades fitted to the moving camera and reaching 250 m, rendered into one depth atlas and filtered with r186 PCF; the same picture on every host and backend. Control: the sun without shadows"
+    "note": "cascaded sun shadows (DirectionalLight3D.shadow_cascades, r187 CSMShadowNode): the street by day, four cascades fitted to the moving camera and reaching 250 m, rendered into one depth atlas and filtered with r187 PCF; the same picture on every host and backend. Control: the sun without shadows"
   },
   {
     "name": "csm-parity",
@@ -5509,7 +5514,7 @@
       "cam.z"
     ],
     "controlFrames": 43,
-    "note": "post_synth (the app ray traces the scene on both backends): OptimizedCineon (the sRGB transfer after it, as in r186)",
+    "note": "post_synth (the app ray traces the scene on both backends): OptimizedCineon (the sRGB transfer after it, as in r187)",
     "expect": {
       "post.seg": 5
     },

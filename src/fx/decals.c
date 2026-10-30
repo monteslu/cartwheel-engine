@@ -882,7 +882,7 @@ static void mat_dir(const float *m, const float *v, float *o) {
   o[2] = m[2] * v[0] + m[6] * v[1] + m[10] * v[2];
 }
 
-/* the source's vertices posed in world space: skinned as three.js r186's
+/* the source's vertices posed in world space: skinned as three.js r187's
  * skinning node does (bindMatrixInverse * sum(w * bone.matrixWorld *
  * boneInverse) * bindMatrix), then the mesh's matrixWorld */
 static void pose_source(t3_mesh *m, bool skinned, float *posed, float *posed_nrm) {

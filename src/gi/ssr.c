@@ -1,28 +1,28 @@
-/* Screen-space reflections (cw_post_settings.ssr): three.js r186's SSRNode,
+/* Screen-space reflections (cw_post_settings.ssr): three.js r187's SSRNode,
  * its first-generation path (stochastic = false: one mirror ray a pixel,
  * roughness softens it), at half resolution, on GL and WebGPU.
  *
  *   1. G-buffer: the scene draws a second time into a half-resolution
  *      RGBA16F target with the gi shading part in its G-buffer mode
  *      (gi_shading.mjs: view normal octahedral in rg, roughness, metalness;
- *      r186's example takes them from MRT attachments). Only surfaces
+ *      r187's example takes them from MRT attachments). Only surfaces
  *      carrying the gi part draw; everything else is hidden for it, and its
  *      pixels stay metalness 0 (no reflection).
  *   2. Trace (half resolution): from each metallic pixel the reflection ray
  *      is marched across the screen against the full-resolution depth,
- *      r186's march: screen-space steps over the ray's length times
+ *      r187's march: screen-space steps over the ray's length times
  *      `quality`, a hit where the ray passes behind the depth within
  *      `thickness` (or three texels), facing normals rejected, then attenuated
- *      by the distance to the reflecting plane over `max_distance` and r186's
- *      Fresnel term, weighted by metalness, held under r186's luminance cap.
- *   3. Composite: the scene colour plus the reflection (r186's example adds
+ *      by the distance to the reflecting plane over `max_distance` and r187's
+ *      Fresnel term, weighted by metalness, held under r187's luminance cap.
+ *   3. Composite: the scene colour plus the reflection (r187's example adds
  *      it), upsampled with depth-aware weights and softened by a ring of
- *      taps whose radius grows with roughness squared (r186 blurs a mip
+ *      taps whose radius grows with roughness squared (r187 blurs a mip
  *      chain and picks the level by roughness squared).
- * The march ends with r186's binary refinement (8 halvings).
+ * The march ends with r187's binary refinement (8 halvings).
  *
- * r186 adds SSR over the lit image, which already holds the environment's
- * (or a probe's) reflection: the two add up, as they do in r186. */
+ * r187 adds SSR over the lit image, which already holds the environment's
+ * (or a probe's) reflection: the two add up, as they do in r187. */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -121,7 +121,7 @@ static const char *TRACE_GLSL = S(
       }
     }
     if (!found) return;
-    /* r186's binary refinement between the last step in front and the hit */
+    /* r187's binary refinement between the last step in front and the hit */
     for (int k = 0; k < 8; k++) {
       float sm = (s_lo + s_hi) * 0.5;
       vec2 um = (d0 + len * sm) / u_size.zw;
@@ -405,7 +405,7 @@ bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, int w, int h, int mode) {
   if (cw_gpu_backend() == CW_GPU_WEBGPU) {
     /* (the SHADOW phase: three.c records on command buffers of its own, as
      * the probe captures do; rows bottom-up, as every offscreen target) */
-    t3_external_target et = { .samples = 1, .load_color = false, .load_depth = false, .clear_rgba = { 0, 0, 0, 0 }, .clear_depth = 1,
+    t3_external_target et = { .samples = 1, .load_color = false, .load_depth = false, .clear_rgba = { 0, 0, 0, 0 }, .clear_depth = cw_gpu_reversed_depth() ? 0.0f : 1.0f,
                               .x = 0, .y = 0, .w = w, .h = h, .flip_y = true };
     et.color = (uintptr_t)cw__pw_attach(rt->tex), et.depth = (uintptr_t)cw__pw_attach(rt->depth_tex);
     et.color_format = (int)cw__pw_format(rt->tex), et.depth_format = (int)cw__pw_format(rt->depth_tex);

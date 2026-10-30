@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cartwheel/gpu.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/scene2d.h"
 #include "pipeline_internal.h"
@@ -84,10 +85,10 @@ static void prepass_exec(cw_pass_ctx *ctx, void *u) {
     t3_external_target et = {
       .color = (uintptr_t)pt->color, .color_resolve = (uintptr_t)pt->resolve, .depth = (uintptr_t)pt->depth,
       .color_format = (int)pt->color_format, .depth_format = (int)pt->depth_format, .samples = pt->samples,
-      .load_color = false, .load_depth = false, .clear_rgba = { c.r, c.g, c.b, a }, .clear_depth = 1,
+      .load_color = false, .load_depth = false, .clear_rgba = { c.r, c.g, c.b, a }, .clear_depth = cw_gpu_reversed_depth() ? 0.0f : 1.0f,
       .x = 0, .y = 0, .w = pt->w, .h = pt->h, .flip_y = pt->flip_y, .keep_multisampled = true,
     };
-    if (prepass_shift()) et.depth_min = 0, et.depth_max = 0.5f;
+    if (prepass_shift()) et.depth_min = cw_gpu_reversed_depth() ? 0.5f : 0, et.depth_max = cw_gpu_reversed_depth() ? 1 : 0.5f;
     t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
     t3_renderer_set_external_target(r, &et);
     cw__pw_timing_span((void *)pt->enc, false);
@@ -115,7 +116,7 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
   t3_renderer *r = ctx->renderer;
 #if CW_WGPU
   if (cw_gpu_backend() == CW_GPU_WEBGPU) {
-    /* three.c's WebGPU renderer (three.js r186's generated WGSL) records its
+    /* three.c's WebGPU renderer (three.js r187's generated WGSL) records its
      * passes (shadow maps first, then the scene) on the frame encoder, into
      * the scene target; cw__pw_flush submits them with the rest of the frame
      * and three.c's frame closes after it (cw__pipeline_wgpu_submitted) */
@@ -130,7 +131,7 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
       .color = (uintptr_t)pt->color, .color_resolve = (uintptr_t)pt->resolve, .depth = (uintptr_t)pt->depth,
       .color_format = (int)pt->color_format, .depth_format = (int)pt->depth_format, .samples = pt->samples,
       .load_color = false, .load_depth = ctx->pipeline->prepass_ran, /* a depth prepass drew it */
-      .clear_rgba = { c.r, c.g, c.b, a }, .clear_depth = 1,
+      .clear_rgba = { c.r, c.g, c.b, a }, .clear_depth = cw_gpu_reversed_depth() ? 0.0f : 1.0f,
       .x = 0, .y = 0, .w = pt->w, .h = pt->h, .flip_y = pt->flip_y,
 #ifdef T3_EXTERNAL_TARGET_KEEP_MULTISAMPLED
       .keep_multisampled = ctx->pipeline->msaa_keep, /* the viewmodel pass resolves (pipeline.c) */
@@ -203,9 +204,9 @@ static void viewmodel_exec(cw_pass_ctx *ctx, void *u) {
     t3_external_target et = {
       .color = (uintptr_t)pt->color, .color_resolve = (uintptr_t)pt->resolve, .depth = (uintptr_t)pt->depth,
       .color_format = (int)pt->color_format, .depth_format = (int)pt->depth_format, .samples = pt->samples,
-      .load_color = true, .load_depth = true, .clear_depth = 1,
+      .load_color = true, .load_depth = true, .clear_depth = cw_gpu_reversed_depth() ? 0.0f : 1.0f,
       .x = 0, .y = 0, .w = pt->w, .h = pt->h, .flip_y = pt->flip_y,
-      .depth_min = 0, .depth_max = VIEWMODEL_DEPTH,
+      .depth_min = cw_gpu_reversed_depth() ? 1 - VIEWMODEL_DEPTH : 0, .depth_max = cw_gpu_reversed_depth() ? 1 : VIEWMODEL_DEPTH,
     };
     t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
     t3_renderer_set_external_target(r, &et);
@@ -740,7 +741,7 @@ static const char *TM_FS = S(
   uniform float toneMappingExposure;
   uniform int u_curve;
   out vec4 o;
-  /* three.js r186's curves (ToneMappingFunctions; the GLSL tonemapping_pars_fragment) */
+  /* three.js r187's curves (ToneMappingFunctions; the GLSL tonemapping_pars_fragment) */
   vec3 LinearToneMapping(vec3 color) { return toneMappingExposure * color; }
   vec3 ReinhardToneMapping(vec3 color) {
     color *= toneMappingExposure;
@@ -812,7 +813,7 @@ static const char *TM_FS = S(
     float g = 1.0 - 1.0 / (Desaturation * (peak - newPeak) + 1.0);
     return mix(color, vec3(newPeak), g);
   }
-  /* r186's sRGBTransferOETF */
+  /* r187's sRGBTransferOETF */
   vec3 LinearTosRGB(vec3 v) {
     return mix(pow(v, vec3(0.41666)) * 1.055 - vec3(0.055), v * 12.92, vec3(lessThanEqual(v, vec3(0.0031308))));
   });
@@ -829,7 +830,7 @@ static const char *TM_MAIN = S(
     else if (u_curve == 4) x = ACESFilmicToneMapping(x);
     else if (u_curve == 5) x = AgXToneMapping(x);
     else x = clamp(NeutralToneMapping(x), 0.0, 1.0);
-    /* r186 applies the output transfer after every curve: Cineon's pow(2.2) returns it to linear first */
+    /* r187 applies the output transfer after every curve: Cineon's pow(2.2) returns it to linear first */
     x = LinearTosRGB(x);
     TM_FUSED_OUT
     o = vec4(x, 1.0);

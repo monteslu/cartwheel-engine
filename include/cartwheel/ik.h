@@ -29,7 +29,7 @@
  * must be uniform (glTF armatures are).
  *
  * DETERMINISM. Solvers use + - * / and sqrt, cartwheel/math.h's cw_acos /
- * cw_sincos where an angle is needed (r186 CCD, angle limits), fixed
+ * cw_sincos where an angle is needed (r187 CCD, angle limits), fixed
  * iteration counts and exact 1/sqrt: the same input pose gives the same
  * output bits on every host. Each model's pose hash (cw_skeleton_hash)
  * folds every flushed value, so tests compare poses across hosts.
@@ -162,10 +162,10 @@ typedef struct cw_aim_opts {
 /* true when the target is within the limit (the bone points right at it) */
 bool cw_ik_aim(cw_pose *p, int bone, t3_vec3 target, const cw_aim_opts *o);
 
-/* CCD, exactly three.js r186's CCDIKSolver.updateOne/update, on a pose:
+/* CCD, exactly three.js r187's CCDIKSolver.updateOne/update, on a pose:
  * - the target is the target bone's model position (or target_position
  *   when target < 0), read once per chain;
- * - links run in array order (r186: effector side first); a disabled link
+ * - links run in array order (r187: effector side first); a disabled link
  *   ends the pass;
  * - the angle is acos(clamp(dot)), computed as atan2(|cross|, dot) (the
  *   same angle; float acos near 1 would lose half its bits where three.js
@@ -177,13 +177,13 @@ bool cw_ik_aim(cw_pose *p, int bone, t3_vec3 target, const cw_aim_opts *o);
  *   then rotation_min / rotation_max clamp its XYZ Euler angles;
  * - the iterations stop early when no link turned;
  * - with a blend factor < 1 every link slerps from its incoming rotation.
- * Mapping from r186: ik.target -> target, ik.effector -> effector,
+ * Mapping from r187: ik.target -> target, ik.effector -> effector,
  * ik.links[j] -> links[j] (index, enabled: !disabled, limitation,
  * rotationMin, rotationMax), ik.iteration, ik.minAngle, ik.maxAngle,
  * ik.blendFactor. */
 typedef struct cw_ccdik_link {
   int index;
-  bool disabled;         /* r186 enabled === false */
+  bool disabled;         /* r187 enabled === false */
   bool has_limitation;
   t3_vec3 limitation;    /* unit axis in the link's frame */
   bool has_rotation_min, has_rotation_max;
@@ -195,13 +195,13 @@ typedef struct cw_ccdik {
   int effector;
   const cw_ccdik_link *links;
   int link_count;
-  int iteration;         /* <= 0: 1 (r186 default) */
+  int iteration;         /* <= 0: 1 (r187 default) */
   bool has_min_angle, has_max_angle;
   float min_angle, max_angle;
   bool has_blend_factor;
   float blend_factor;    /* overrides the solve's blend for this chain */
 } cw_ccdik;
-/* r186 CCDIKSolver.update(blend): each chain in order. */
+/* r187 CCDIKSolver.update(blend): each chain in order. */
 void cw_ccdik_solve(cw_pose *p, const cw_ccdik *iks, int n, float blend);
 
 /* FABRIK over a chain of bones (tails, spines, tentacles, cables): chain[0]
@@ -260,7 +260,7 @@ int cw_ik_fabrik(cw_pose *p, const int *chain, int n, t3_vec3 target, const cw_c
  *                    max_iterations (int, 4), min_angle / max_angle
  *                    (radians; 0 = none); per joint limits through
  *                    cw_ccdik3d_set_joint. The links run from the bone
- *                    above end_bone up to root_bone, as r186 lists them.
+ *                    above end_bone up to root_bone, as r187 lists them.
  * FABRIK3D           root_bone, end_bone, target, target_position,
  *                    max_iterations (int, 4), min_distance (float, 0.001);
  *                    per joint constraints through cw_fabrik3d_set_joint.
@@ -298,7 +298,7 @@ t3_vec3 cw_skeleton_bone_world(cw_node model, const char *bone);
 float cw_skeleton_last_us(cw_node model);
 
 /* Per-joint limits for CCDIK3D: joint 0 is the link nearest the end bone
- * (r186 link order). Stored on the node (not in scene files). */
+ * (r187 link order). Stored on the node (not in scene files). */
 void cw_ccdik3d_set_joint(cw_node n, int joint, const cw_ccdik_link *limits);
 /* Per-joint constraints for FABRIK3D: joint 0 is root_bone. */
 void cw_fabrik3d_set_joint(cw_node n, int joint, const cw_ik_joint *j);

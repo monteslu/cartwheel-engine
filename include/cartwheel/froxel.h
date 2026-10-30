@@ -5,7 +5,7 @@
  * (fog volumes, decals, probes) can make its own grid, or read the lighting
  * one with cw_lighting_froxels.
  *
- * Grid (three.js r186 ClusteredLighting's): tiles of tile_px x tile_px
+ * Grid (three.js r187 ClusteredLighting's): tiles of tile_px x tile_px
  * pixels, nx = ceil(w / tile_px), ny = ceil(h / tile_px), and z_slices
  * slices spaced exponentially between near and far:
  *   slice k covers view depth [near * (far / near)^(k / nz), near * (far / near)^((k + 1) / nz)].
@@ -48,9 +48,9 @@ extern "C" {
 typedef struct cw_froxel_grid cw_froxel_grid;
 
 typedef struct cw_froxel_config {
-  int tile_px;         /* 32 (r186) */
-  int z_slices;        /* 24 (r186); at most 256 */
-  int max_per_froxel;  /* 64 (r186); at most 255 */
+  int tile_px;         /* 32 (r187) */
+  int z_slices;        /* 24 (r187); at most 256 */
+  int max_per_froxel;  /* 64 (r187); at most 255 */
 } cw_froxel_config;
 #define CW_FROXEL_CONFIG_DEFAULT ((cw_froxel_config){ 32, 24, 64 })
 

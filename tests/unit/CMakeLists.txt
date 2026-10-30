@@ -52,7 +52,7 @@ configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.LICENSE.md ${CW_ANIM_TEST_A
 cw_add_app(unit_anim SOURCES test_anim.c ASSETS ${CW_ANIM_TEST_ASSETS})
 # characters: glTF material names and KHR_materials_*, skin shading (file, code, quality), morph targets by name and in clips
 cw_add_app(unit_character SOURCES test_character.c ASSETS ${CMAKE_SOURCE_DIR}/samples/character_skin/assets)
-# inverse kinematics: pose layer, solvers (CCD against three.js r186: ccdik_r186.h), modifier nodes
+# inverse kinematics: pose layer, solvers (CCD against three.js r187: ccdik_r186.h), modifier nodes
 cw_add_app(unit_ik SOURCES test_ik.c)
 cw_add_app(unit_ui SOURCES test_ui.c)
 # project.cwproj editing and settings (cartwheel/project.h), child processes (cartwheel/process.h)

@@ -19,6 +19,7 @@
  *     rounding;
  *   - the sort compares (key, index) pairs in place, n/2 threads a pass, the
  *     same passes and the same total order as GL's fragment passes. */
+#include "cartwheel/gpu.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -674,7 +675,7 @@ static WGPURenderPipeline draw_pipe_for(int variant, int blend, const cw__wgpu_p
   bool write = variant != V_TRAIL && blend == BLEND_OPAQUE;
   WGPUDepthStencilState ds = { .format = t->depth_format,
                                .depthWriteEnabled = write ? WGPUOptionalBool_True : WGPUOptionalBool_False,
-                               .depthCompare = WGPUCompareFunction_LessEqual,
+                               .depthCompare = cw_gpu_reversed_depth() ? WGPUCompareFunction_GreaterEqual : WGPUCompareFunction_LessEqual,
                                .stencilFront = { .compare = WGPUCompareFunction_Always },
                                .stencilBack = { .compare = WGPUCompareFunction_Always } };
   WGPURenderPipelineDescriptor d = {

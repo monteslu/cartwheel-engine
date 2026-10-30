@@ -43,11 +43,11 @@
  * Which lights three.c draws and which the engine clusters: the tree's
  * lighting mode (cartwheel/lighting.h, a LightingSettings node). FORWARD,
  * the default, leaves every light to three.c; CLUSTERED shades shadowless
- * omni and spot lights through r186 ClusteredLighting's clusters, hundreds
+ * omni and spot lights through r187 ClusteredLighting's clusters, hundreds
  * at a time.
  *
  * Drawing goes through the tree's render pipeline (pipeline.h), as three.js
- * r186 draws: linear colours, physical light units, linear HDR.
+ * r187 draws: linear colours, physical light units, linear HDR.
  */
 #ifndef CW_RENDER3D_H
 #define CW_RENDER3D_H
