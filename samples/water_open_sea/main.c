@@ -29,7 +29,7 @@ static cw_node water, boat, camera;
 
 static void init(void *u) {
   (void)u;
-  cw_node root = cw_tree_root(cw_scene_app_tree());
+  cw_node root = cw_node_get(cw_tree_root(cw_scene_app_tree()), "Root");
   water = cw_node_get(root, "Water"), boat = cw_node_get(root, "Boat"), camera = cw_node_get(root, "Camera");
   /* #region mask */
   /* open sea to the east, a bay to the west: a smooth step across x */
@@ -42,6 +42,11 @@ static void init(void *u) {
       mask[j * MASK_N + i] = 0.1f + 0.9f * t * t * (3 - 2 * t);
     }
   cw_water_set_wave_mask(water, mask, MASK_N, MASK_N);
+  if (getenv("WATER_OPEN_SEA_X")) boat_x = (float)atof(getenv("WATER_OPEN_SEA_X"));
+  if (getenv("WATER_OPEN_SEA_HEIGHT")) { /* the height as colour, as the gate does through debug commands */
+    cw_node_set(water, "debug_view", cw_val_enum("HEIGHT"));
+    cw_node_set(cw_node_get(root, "Post"), "tonemap", cw_val_enum("NONE"));
+  }
   /* #endregion */
   cw_debug_u32("water.tick", &tick);
   cw_debug_f32("boat.x", &boat_x);
