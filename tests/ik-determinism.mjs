@@ -1,5 +1,5 @@
 // IK determinism across hosts AND job-pool sizes: the unit-ik and anim-ik
-// gates (tests/gates.json) on native and Chromium at CW_WORKERS=0, 3 and 7.
+// gates (tests/gates.json) on native and romdev at CW_WORKERS=0, 3 and 7.
 // Each gate holds Chromium to the native run; this script then holds every
 // pool size to the first one: unit-ik's checksum and anim-ik's pose hashes
 // (the front robot and the four-robot crowd, whose solves run one model per
@@ -21,7 +21,7 @@ await takeSuiteLock('ik-determinism'); // the gate runs below inherit it
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const extra = process.argv.slice(2);
-const HOSTS = ['native', 'chromium'];
+const HOSTS = ['native', 'romdev']; // (a GL gate has no Chromium leg: gate.mjs leaves it out)
 const PICK = { 'unit-ik': ['unit.checksum', 'unit.passed'], 'anim-ik': ['hash_win', 'crowd_win', 'foot_err'] };
 const state = (gate, host) => {
   const j = JSON.parse(readFileSync(join(ROOT, 'out', 'gate', `${gate}.${host}.json`), 'utf8'));
@@ -47,5 +47,5 @@ for (const w of ['0', '3', '7']) {
   for (const k of Object.keys(ref))
     if (ref[k] !== got[k]) { console.log(`  ${k}: ${got[k]} at CW_WORKERS=${w} vs ${ref[k]} at 0`); fail++; }
 }
-console.log(fail ? `ik-determinism: ${fail} difference(s)` : 'ok   ik-determinism (native, chromium at CW_WORKERS 0, 3 and 7)');
+console.log(fail ? `ik-determinism: ${fail} difference(s)` : 'ok   ik-determinism (native, romdev at CW_WORKERS 0, 3 and 7)');
 process.exit(fail ? 1 : 0);

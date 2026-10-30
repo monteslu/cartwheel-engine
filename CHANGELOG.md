@@ -38,6 +38,7 @@ regenerating too (`node tools/programs.mjs --projects <dir>`).
 - `samples/gi_probe_check` sets its walls' Node3D layers (Node3D has written them over since the viewmodel
   layers, and the capture saw no walls); `unit_scene` calls `cw__mesh3d_set_lightmap` with its real signature (a
   wasm trap); `fx_boom_water` reports the peak of the particles alive (it read them after the burst burnt out).
+- Tests: `unit_terrain`'s scatter check waits for the job pool, `ik-determinism` runs on the hosts its gates have.
 
 ## v0.24.3 (2026-10-30)
 
