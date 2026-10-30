@@ -737,7 +737,7 @@
      "readonly": false,
      "min": 0,
      "max": 4,
-     "doc": "Directional: 0 = one shadow map around the light; 1-4 = cascaded shadow maps that follow the camera (r186 CSMShadowNode; shadow_size is each cascade's; cartwheel/lighting.h)."
+     "doc": "Directional: 0 = one shadow map around the light; 1-4 = cascaded shadow maps that follow the camera (r187 CSMShadowNode; shadow_size is each cascade's; cartwheel/lighting.h)."
     },
     {
      "name": "shadow_distance",
@@ -978,7 +978,7 @@
       "AGX",
       "NEUTRAL"
      ],
-     "doc": "Tone curve (three.js r186's: AGX by default)."
+     "doc": "Tone curve (three.js r187's: AGX by default)."
     },
     {
      "name": "bloom",
@@ -1160,7 +1160,7 @@
      "readonly": false,
      "min": 0.1,
      "max": 100,
-     "doc": "SSGI sampling radius (r186's, screen space)."
+     "doc": "SSGI sampling radius (r187's, screen space)."
     },
     {
      "name": "ssgi_intensity",
@@ -2124,7 +2124,7 @@
       "FORWARD",
       "CLUSTERED"
      ],
-     "doc": "FORWARD: every light is three.c's (8 of a kind at most). CLUSTERED: shadowless omni and spot lights are binned into clusters, hundreds at a time (r186 ClusteredLighting)."
+     "doc": "FORWARD: every light is three.c's (8 of a kind at most). CLUSTERED: shadowless omni and spot lights are binned into clusters, hundreds at a time (r187 ClusteredLighting)."
     },
     {
      "name": "max_lights",
@@ -2172,7 +2172,7 @@
      "default": "true",
      "stored": true,
      "readonly": false,
-     "doc": "Shadowless spot lights are clustered too (beyond r186, which clusters point lights only)."
+     "doc": "Shadowless spot lights are clustered too (beyond r187, which clusters point lights only)."
     },
     {
      "name": "cluster_far",
@@ -6999,7 +6999,7 @@
   {
    "name": "CCDIK3D",
    "parent": "SkeletonModifier3D",
-   "doc": "Cyclic coordinate descent over a chain, as three.js r186's CCDIKSolver.",
+   "doc": "Cyclic coordinate descent over a chain, as three.js r187's CCDIKSolver.",
    "signals": [],
    "properties": [
     {
@@ -7042,7 +7042,7 @@
      "readonly": false,
      "min": 1,
      "max": 64,
-     "doc": "CCD passes (r186 iteration); stops early when nothing turns."
+     "doc": "CCD passes (r187 iteration); stops early when nothing turns."
     },
     {
      "name": "min_angle",
@@ -11423,7 +11423,7 @@
   {
    "name": "LightProbeGrid3D",
    "parent": "Node3D",
-   "doc": "Bounce light: a grid of L2 spherical-harmonic probes captured from the scene (three.js r186 LightProbeGrid; gi.h).",
+   "doc": "Bounce light: a grid of L2 spherical-harmonic probes captured from the scene (three.js r187 LightProbeGrid; gi.h).",
    "signals": [],
    "properties": [
     {
@@ -11440,7 +11440,7 @@
      "default": "vec3(0, 0, 0)",
      "stored": true,
      "readonly": false,
-     "doc": "Probes along x, y, z (2 .. 32 each; 0 = one a metre plus one, as r186)."
+     "doc": "Probes along x, y, z (2 .. 32 each; 0 = one a metre plus one, as r187)."
     },
     {
      "name": "cube_size",
@@ -11450,7 +11450,7 @@
      "readonly": false,
      "min": 4,
      "max": 32,
-     "doc": "Each probe's capture face size in pixels (r186: 8)."
+     "doc": "Each probe's capture face size in pixels (r187: 8)."
     },
     {
      "name": "bounces",
@@ -11512,7 +11512,7 @@
      "readonly": false,
      "min": 0,
      "max": 4,
-     "doc": "Sample offset along the surface normal, in probe spacings (r186: 0.5)."
+     "doc": "Sample offset along the surface normal, in probe spacings (r187: 0.5)."
     },
     {
      "name": "near",
