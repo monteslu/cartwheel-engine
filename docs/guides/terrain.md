@@ -94,7 +94,7 @@ A scatter layer ([cw_terrain_scatter_add](api:cw_terrain_scatter_add), or a [Ter
 - **LOD and fade.** Instances switch LOD by distance and shrink away over the end of the visible range, so nothing pops.
 - **Quality thinning.** Each instance has a rank, and quality thins a layer by rank, so thinning never reshuffles.
 
-A glTF mesh's primitives (a trunk and a crown) draw as parts that share one instance buffer, and a cwpack LOD chain gives the LODs.
+A glTF mesh's primitives (a trunk and a crown) draw as parts that share one instance buffer, and a cwpack LOD chain gives the LODs. A part with fewer LODs than the first (leaf cards that do not simplify) keeps drawing its coarsest one at the coarser levels.
 
 ## Performance
 

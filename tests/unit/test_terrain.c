@@ -350,6 +350,45 @@ static void test_scatter(void) {
   cw_terrain_destroy(t);
 }
 
+/* a part with fewer LODs than part 0 keeps drawing its coarsest LOD (a tree's leaf cards get one level where its
+ * trunk gets three): the same draws as a layer that names that LOD for every level; the crown used to vanish past
+ * the first switch, so layer A drew fewer */
+static int part_lod_draws(cw_terrain *t, t3_geometry *g, t3_geometry *g2, t3_material *m, bool explicit_lods) {
+  cw_scatter_def d = cw_scatter_default_def();
+  d.geometry[0][0] = g, d.geometry[0][1] = g2;
+  d.geometry[1][0] = g;
+  if (explicit_lods) d.geometry[1][1] = g2;
+  for (int l = 0; l < 2; l++)
+    for (int p = 0; p < 2; p++) d.material[l][p] = m;
+  d.lod_distance[0] = 4;
+  d.density = 0.05f;
+  d.visible_range = 120;
+  d.fade = 1;
+  d.seed = 7;
+  int layer = cw_terrain_scatter_add(t, &d);
+  /* cells are generated on the job pool as the camera comes in range: update until they are all in */
+  cw_terrain_stats st;
+  int last = -1;
+  for (int i = 0; i < 200; i++) {
+    cw_terrain_update(t, (t3_vec3){ 0, 110, 0 }, NULL);
+    cw_terrain_get_stats(t, &st);
+    if (i > 10 && st.scatter_draws == last) break;
+    last = st.scatter_draws;
+  }
+  cw_terrain_scatter_remove(t, layer);
+  return st.scatter_draws;
+}
+static void test_scatter_part_lods(void) {
+  cw_terrain *t = make(256, 9);
+  t3_geometry *g = t3_box_geometry_new(1, 1, 1, 1, 1, 1), *g2 = t3_box_geometry_new(0.5f, 0.5f, 0.5f, 1, 1, 1);
+  t3_material *m = t3_mesh_standard_material_new(0x808080);
+  int a = part_lod_draws(t, g, g2, m, false), b = part_lod_draws(t, g, g2, m, true);
+  CHECK(b > 0);
+  CHECK_EQ_INT(a, b);
+  t3_release(g), t3_release(g2), t3_release(m);
+  cw_terrain_destroy(t);
+}
+
 static void test_control(void) {
   uint32_t c = cw_terrain_control(5, 17, 200, 9, 3, true);
   CHECK_EQ_INT(c >> 27, 5);
@@ -489,5 +528,5 @@ static void test_height_texture_invalidation(void) {
 }
 
 CW_TEST_SUITE("terrain", { "height_texture_invalidation", test_height_texture_invalidation }, { "height_exact", test_height_exact }, { "cdlod", test_cdlod }, { "physics", test_physics },
-              { "vehicle", test_vehicle }, { "scatter", test_scatter }, { "control", test_control },
+              { "vehicle", test_vehicle }, { "scatter", test_scatter }, { "scatter_part_lods", test_scatter_part_lods }, { "control", test_control },
               { "import", test_import }, { "scene_file", test_scene_file })

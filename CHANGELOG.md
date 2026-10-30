@@ -4,6 +4,13 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.24.1 (2026-10-29)
+
+### Fixed
+- Terrain scatter: a part with fewer LODs than part 0 keeps drawing its coarsest LOD instead of vanishing. A glTF tree's
+  leaf cards rarely simplify (cwpack gives them one level where the trunk gets three), so every scattered tree lost its
+  crown past the first `lod_distance` and stood as a bare trunk. unit-terrain `scatter_part_lods` (fails without the fix).
+
 ## v0.24.0 (2026-10-29)
 
 Smoke that thins at the lens.

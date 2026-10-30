@@ -239,6 +239,10 @@ int cw_terrain_scatter_add(cw_terrain *t, const cw_scatter_def *def) {
   s->def.density_map = NULL;
   for (int l = 0; l < CW_SCATTER_LODS; l++) {
     if (!s->def.geometry[l][0]) break;
+    /* a part with fewer LODs than part 0 keeps drawing its coarsest one: a tree's leaf cards rarely simplify
+     * (cwpack gives them one level) while its trunk gets three, and the crown vanished at the first switch */
+    for (int p = 1; l > 0 && p < CW_SCATTER_PARTS && s->def.geometry[l - 1][p]; p++)
+      if (!s->def.geometry[l][p]) s->def.geometry[l][p] = s->def.geometry[l - 1][p], s->def.material[l][p] = s->def.material[l - 1][p];
     int np = 0;
     for (int p = 0; p < CW_SCATTER_PARTS && s->def.geometry[l][p]; p++) {
       if (!s->def.material[l][p]) s->def.material[l][p] = l ? s->def.material[l - 1][p] : NULL;
