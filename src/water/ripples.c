@@ -9,6 +9,7 @@
  * the Gerstner waves alone (cw_water_height_at), so gameplay never depends on
  * the grid's resolution or the quality preset. */
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "cartwheel/math.h"
@@ -198,6 +199,50 @@ uint32_t cw_water_ripple_hash(cw_node water) {
   return h;
 }
 
+void cw_water_ripple_follow(cw_node water, float x, float z) {
+  water3d *d = cw__water_data(water);
+  if (!d || !d->rip_h) return;
+  t3_mat4 inv;
+  t3_mat4_invert(&inv, cw_node3d_global_transform(water));
+  t3_vec3 p = t3_vec3_apply_mat4((t3_vec3){ x, 0, z }, &inv);
+  float cell_x = d->rip_ax / (float)d->rip_nx, cell_z = d->rip_az / (float)d->rip_nz;
+  /* whole cells only, so the field stays in step with the world */
+  int sx = (int)floorf((p.x - d->ripple_center[0]) / cell_x + 0.5f), sz = (int)floorf((p.z - d->ripple_center[1]) / cell_z + 0.5f);
+  if (!sx && !sz) return;
+  int nx = d->rip_nx, nz = d->rip_nz;
+  float *arr[3] = { d->rip_h, d->rip_v, d->rip_f };
+  for (int a = 0; a < 3; a++) {
+    float *f = arr[a];
+    if (abs(sx) >= nx || abs(sz) >= nz) {
+      memset(f, 0, (size_t)nx * (size_t)nz * sizeof(float));
+      continue;
+    }
+    int rows = nz - abs(sz), cols = nx - abs(sx);
+    /* the cell that was at (i + sx, j + sz) is now at (i, j); rows walked so nothing is read after it is written */
+    for (int jj = 0; jj < nz; jj++) {
+      int j = sz >= 0 ? jj : nz - 1 - jj;
+      float *dst = f + (size_t)j * (size_t)nx;
+      int src_j = j + sz;
+      if (src_j < 0 || src_j >= nz) {
+        memset(dst, 0, (size_t)nx * sizeof(float));
+        continue;
+      }
+      const float *src = f + (size_t)src_j * (size_t)nx;
+      if (sx >= 0) {
+        memmove(dst, src + sx, (size_t)cols * sizeof(float));
+        memset(dst + cols, 0, (size_t)(nx - cols) * sizeof(float));
+      } else {
+        memmove(dst - sx, src, (size_t)cols * sizeof(float));
+        memset(dst, 0, (size_t)(nx - cols) * sizeof(float));
+      }
+    }
+    (void)rows;
+  }
+  d->ripple_center[0] += (float)sx * cell_x;
+  d->ripple_center[1] += (float)sz * cell_z;
+  d->rip_upload = true;
+}
+
 /* one fixed tick: rain, then the wave equation */
 void cw__ripples_step(cw_node n, water3d *d, uint32_t tick) {
   int nx, nz;
@@ -233,6 +278,17 @@ void cw__ripples_step(cw_node n, water3d *d, uint32_t tick) {
   if (!d->rip_awake) return;
   float *h = d->rip_h, *v = d->rip_v, *f = d->rip_f;
   float energy = 0;
+  if (d->foam_spread > 0) {
+    /* foam widens as it fades: a wake's trail opens behind a boat. Diffusion, one sweep in a fixed order. */
+    float sp = d->foam_spread * dt / cell;
+    float kf = sp * sp + sp * 0.25f;
+    if (kf > 0.2f) kf = 0.2f;
+    for (int j = 1; j < nz - 1; j++)
+      for (int i = 1; i < nx - 1; i++) {
+        size_t k = (size_t)j * (size_t)nx + (size_t)i;
+        f[k] += kf * (f[k - 1] + f[k + 1] + f[k - (size_t)nx] + f[k + (size_t)nx] - 4.0f * f[k]);
+      }
+  }
   for (int j = 1; j < nz - 1; j++)
     for (int i = 1; i < nx - 1; i++) {
       size_t k = (size_t)j * (size_t)nx + (size_t)i;

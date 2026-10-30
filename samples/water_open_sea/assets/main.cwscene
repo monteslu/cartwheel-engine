@@ -1,0 +1,44 @@
+[scene format=1]
+
+[node name="Root" type="Node3D"]
+
+[node name="Post" parent="." type="PostProcess"]
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 16.5
+latitude = 40
+declination = 15
+north = 60
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+shadow_extent = 40
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 25, 10)
+rotation = vec3(-1.1, 0, 0)
+fov = 55
+far = 3000
+
+[node name="Water" parent="." type="Water3D"]
+size = vec2(600, 600)
+grid = VIEW
+subdivisions = 256
+grid_min_cell = 0.25
+horizon_distance = 2500
+wave_count = 4
+wave0 = vec4(20, 40, 0.8, 0.5)
+wave1 = vec4(35, 31, 0.5, 0.5)
+wave2 = vec4(-30, 11, 0.12, 0.5)
+wave3 = vec4(100, 5.5, 0.04, 0.4)
+wave_shelter = vec4(1, 1, 0.8, 0)
+floor_map_size = 0
+ripple_cells = 200
+ripple_size = vec2(100, 100)
+
+[node name="Boat" parent="." type="MeshInstance3D"]
+size = vec3(1.6, 0.8, 4)
+color = color(0.75, 0.1, 0.06, 1)
+roughness = 0.5
+cast_shadow = true

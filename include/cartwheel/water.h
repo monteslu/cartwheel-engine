@@ -10,6 +10,13 @@
  *                facing +Y. Properties:
  *     size, subdivisions   the grid the waves move (quads along the longer
  *                          side; quality scales it: Low 1/4, Medium 1/2)
+ *     grid                 RECT (the default) or VIEW: rings around the camera out
+ *                          to horizon_distance, subdivisions quads around each
+ *                          ring, grid_min_cell metres at the least between them;
+ *                          for water much larger than its detail. Each wave fades
+ *                          out past five to eight wavelengths from the camera,
+ *                          where the rings can no longer draw it
+ *     wave_shelter         vec4, how much cw_water_set_wave_mask holds each wave down
  *     wave_count, wave0..wave3   up to four Gerstner waves, each a vec4:
  *                          direction (degrees, 0 = +X, 90 = +Z), wavelength
  *                          (m), amplitude (m), steepness (0..1: 0 round
@@ -27,6 +34,7 @@
  *     reflectivity         Fresnel F0 (0.02, water)
  *     distortion           how far the normal maps bend reflection and
  *                          refraction
+ *     swell_reflect        how far the swell's own tilt moves the reflection (0)
  *     normal_map           a tangent-space normal map image (empty: a
  *                          seamless gen://noise normal map), scrolled twice
  *                          along the flow (Water2's two-phase flow)
@@ -58,6 +66,7 @@
  *                          the floor (0.7; 0 = none)
  *     crest_foam           0..1: foam on the wave crests where the surface
  *                          bunches up (0.35; 0 = none)
+ *     foam_scale           how much finer the foam's pattern is (1)
  *
  *     scatter, glint       the turquoise light the sun sends through crests
  *                          toward the eye (needs a ProceduralSky); the fine
@@ -164,6 +173,15 @@ bool cw_water_sample_at(cw_node water, float x, float z, double t, cw_water_samp
 /* The Water3D's waves, as cw_waves (for cw_waves_* in its local space). */
 bool cw_water_get_waves(cw_node water, cw_waves *out);
 
+/* A map of how free the waves are (0..1, nx x nz floats, row z, col x, over
+ * the node's rectangle, clamped at its edge): each wave's height there is
+ * multiplied by 1 + (mask - 1) * wave_shelter[i]. So the same swell can be
+ * full height on the open sea and gone inside a harbour, with the local chop
+ * untouched. The drawn surface and cw_water_height_at / cw_water_sample_at /
+ * Buoyancy3D read the same bilinear map: deterministic, and they agree. Keep
+ * it smooth: the normal ignores its slope. The map is copied. NULL removes it. */
+void cw_water_set_wave_mask(cw_node water, const float *mask, int nx, int nz);
+
 /* The water's baked floor: metres of water over the floor at world (x, z)
  * at rest (0 where the floor is land or above the rest level; a large value
  * where the map has no floor or the point is outside it). Deterministic: it
@@ -188,6 +206,12 @@ void cw_water_splash(cw_node water, float x, float z, float radius, float depth,
 /* A body moving through the water at (vx, vz): call once per fixed tick; it
  * leaves a trough and foam along its path. */
 void cw_water_wake(cw_node water, float x, float z, float vx, float vz, float radius, float depth, float foam);
+/* Keep the ripple grid around world (x, z): the grid and what is on it move by
+ * whole cells so the ripples stay where they are in the world, and cells
+ * coming in are flat. Call it from fixed_update with simulation values, so the
+ * field stays the same bits on every host. This is how a small, sharp grid
+ * covers a course much larger than itself. */
+void cw_water_ripple_follow(cw_node water, float x, float z);
 /* The ripple height in metres over world (x, z) (0 outside the grid). */
 float cw_water_ripple_at(cw_node water, float x, float z);
 /* A hash of the ripple field (heights and foam): the cross-host test. 0 without a grid. */

@@ -11,18 +11,26 @@ typedef struct wave_eval {
   int n;
   float dx[CW_WATER_MAX_WAVES], dz[CW_WATER_MAX_WAVES], k[CW_WATER_MAX_WAVES], a[CW_WATER_MAX_WAVES];
   float q[CW_WATER_MAX_WAVES], ph[CW_WATER_MAX_WAVES], om[CW_WATER_MAX_WAVES];
+  /* the wave mask (cw_water_set_wave_mask); NULL: every wave at full height */
+  const float *mask;
+  int mask_nx, mask_nz;
+  float mask_sx, mask_sz;
+  float shelter[CW_WATER_MAX_WAVES];
 } wave_eval;
 
 typedef struct water3d {
   /* properties */
   float size[2];
   float horizon_distance;
+  int grid_mode; /* 0 RECT, 1 VIEW */
+  float grid_min_cell;
+  float wave_shelter[4];
   int subdivisions;
   int wave_count;
   float wave0[4], wave1[4], wave2[4], wave3[4];
   float wave_speed, time_offset;
   float color[4], deep_color[4];
-  float reflectivity, distortion, detail, roughness, murk;
+  float reflectivity, distortion, swell_reflect, detail, roughness, murk;
   const char *normal_map;
   float normal_scale;
   float flow_direction[2];
@@ -34,13 +42,13 @@ typedef struct water3d {
   float debug_range[2];
   /* shore and depth shading, foam */
   int floor_map_size;
-  float floor_range, clarity, shore_foam, crest_foam;
+  float floor_range, clarity, shore_foam, crest_foam, foam_scale;
   float shallow_color[4];
   /* the look */
   float scatter, glint;
   /* the interactive ripple layer (ripples.c) */
   int ripple_cells;
-  float ripple_size[2], ripple_center[2], ripple_speed, ripple_damping, ripple_strength, foam_fade;
+  float ripple_size[2], ripple_center[2], ripple_speed, ripple_damping, ripple_strength, foam_fade, foam_spread;
   float rain, rain_size, rain_strength;
   const char *splash_fx;
   float splash_fx_min;
@@ -54,7 +62,12 @@ typedef struct water3d {
   t3_camera *vcam;
   cw_res normal_res, flow_res;
   const char *loaded_normal, *loaded_flow;
-  int built_sub, triangles;
+  int built_sub, built_mode, triangles;
+  float built_min_cell;
+  float grid_off[2]; /* VIEW: the grid's centre this view (water-local x, z) */
+  float *mask;       /* mask_nx x mask_nz, row z, col x; NULL: none */
+  int mask_nx, mask_nz;
+  t3_texture *mask_tex, *mask_white;
   float built_size[2], built_amp, built_horizon;
   bool refl_on, refr_on;
   wave_eval ev;      /* this frame's waves, as drawn */
@@ -86,6 +99,8 @@ typedef struct water3d {
 /* the waves at time t, phases reduced (water.c) */
 void cw__waves_prepare(const cw_waves *w, double t, wave_eval *e);
 cw_waves cw__water_waves(const water3d *d);
+/* the water's wave mask into a prepared wave_eval */
+void cw__waves_use_mask(const water3d *d, wave_eval *e);
 const cw_node_type *cw__water_type(void);
 water3d *cw__water_data(cw_node n);
 void cw__ripples_free(water3d *d);
