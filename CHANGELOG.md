@@ -4,6 +4,11 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.28.5 (2026-10-31)
+
+### Fixed
+- Water3D draws as it did before v0.26.0 with none of the new options set. v0.26.0 said every new water option was off by default, but its open-sea change also moved where all water reads its floor map and ripple grid: at the rest position of a surface point, where the waves have not yet carried it, in place of where it is drawn. So a wake's foam, a splash and a shore line sat up to half a metre off, wobbled with the waves and read softer and creamier (1.7% to 2.1% of the pixels in Party Pack's raft game moved by more than 16 levels; none of the new options caused it). They are back where they were made, and the depth in the picture agrees with `cw_water_floor_depth_at` again. Water that used to turn black on a crest stays fixed: that is the only remaining difference from v0.25.4. A game tuned since v0.26.0 will see its wakes and foam change. New gate `water-default-look`: against a frame stored from v0.25.4, it fails before this release at 3.8%, with a control. The water's program changed, so a project's program tables need regenerating (`node tools/programs.mjs`).
+
 ## v0.28.4 (2026-10-31)
 
 ### Fixed
@@ -59,6 +64,8 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 ## v0.26.0 (2026-10-30)
 
 Water for an open sea: as large as you like, sheltered where you say, sharp under a chase camera. Every option is off by default. The water's program changed, so a project's program tables need regenerating (`node tools/programs.mjs --projects <dir>`).
+
+Correction: the options are off by default, but this release also changed how water without them looks, by accident: see v0.28.5.
 
 ### Added
 - Water3D `grid = VIEW`: the surface is drawn as rings around the camera out to `horizon_distance` (`subdivisions` quads around each ring, at least `grid_min_cell` metres between rings), so quads are about 30 cm under a chase camera on any size of sea, for about 130,000 triangles. Each wave fades out between five and eight of its wavelengths from the camera, on the drawn surface only.

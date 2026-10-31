@@ -3063,6 +3063,11 @@
     "note": "the warm-up builds the programs of what the camera cannot see yet, on GL and WebGPU, spread as a player gets it; control: a mesh with a new program appears in play and its program arrives then"
   },
   {
+    "name": "water-default-look",
+    "script": "tests/water-default-look.mjs",
+    "note": "water with no option set draws its wake and foam as the engine at v0.25.4 did, against a stored frame, on GL and WebGPU; control: foam_lace 1.2 must break the bound"
+  },
+  {
     "name": "water-open-sea-surface",
     "script": "tests/water-open-sea-surface.mjs",
     "note": "a VIEW grid with a wave mask: the drawn surface over the bay is where cw_water_height_at says, on every host and backend; controls: drawn 0.25 s late, and the height with the mask ignored"
