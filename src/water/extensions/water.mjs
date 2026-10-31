@@ -237,7 +237,8 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
     .mul(hit).mul(useZ).mul(hasSun);
   const caus = float(1).add(refrInfo.y.mul(cfade).mul(kc.mul(2.2).sub(1)));
   const seen = texture(refractMap, uvS).rgb.mul(tint.rgb).mul(trans).mul(caus).add(body.mul(inscatter));
-  const refr = mix(body, seen, deep.w);
+  // crest_light: light comes through the thin top of a wave whatever lies under it, so it is mixed in after the refraction
+  const refr = mix(mix(body, seen, deep.w), shallow.rgb.mul(lit).mul(1.5), crestTop.mul(0.75));
   // light through the crests toward the eye: the turquoise glow of a wave against the sun
   const toSun = normalize(sun.xyz);
   const fwd = pow(max(dot(toSun, toEye.negate()), 0), 3);
@@ -263,8 +264,9 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const thr = float(0.95).sub(shore.w.mul(0.4));
   const farFade = float(1).sub(smoothstep(200, 700, dist));
   const crestFoam = smoothstep(thr, thr.add(0.12), float(1).sub(vBunch).add(noise.sub(0.5).mul(0.25))).mul(step(0.001, shore.w)).mul(lumpy).mul(farFade);
+  const crestTopFoam = smoothstep(0.7, 0.86, hBody.add(noise.sub(0.5).mul(0.14))).mul(crestLight.x).mul(lumpy).mul(float(1).sub(smoothstep(400, 1100, dist)));
   const splashFoam = smoothstep(0.08, 0.5, rfoam.mul(mix(0.55, 1.2, noise2)));
-  const foamRaw = max(max(shoreFoam.mul(mix(0.55, 1, lumpy)), lines.mul(noise2)), max(crestFoam, splashFoam));
+  const foamRaw = max(max(shoreFoam.mul(mix(0.55, 1, lumpy)), lines.mul(noise2)), max(max(crestFoam, crestTopFoam), splashFoam));
   // foam is lace, not cotton: the caustic tile's web of lines, scrolled with the flow, is the bubbles' pattern; thin
   // foam keeps only its brightest knots, thick foam fills the cells (far away, where the lace would alias, it evens out)
   const lace0 = texture(causticMap, rest.mul(grid.w).mul(0.29).add(f.mul(flow.x).mul(0.4))).r.mul(4);
@@ -275,7 +277,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   // scales and goes to nothing, with no edge the eye can read as a mask
   const softLace = clamp(max(texture(causticMap, rest.mul(grid.w).mul(0.29).add(f.mul(flow.x).mul(0.4))).g, texture(causticMap, rest.mul(grid.w).mul(0.71).add(vec2(0.37, 0.61)).sub(f.mul(flow.y).mul(0.6))).g).mul(9), 0, 1);
   const patchy = noise.mul(0.55).add(noise2.mul(0.45));
-  const thick = max(max(shoreFoam.mul(mix(0.55, 1, lumpy)), lines.mul(noise2)), max(crestFoam, rfoam.mul(1.25)));
+  const thick = max(max(shoreFoam.mul(mix(0.55, 1, lumpy)), lines.mul(noise2)), max(max(crestFoam, crestTopFoam), rfoam.mul(1.25)));
   const cover = smoothstep(0.04, 0.62, thick.add(patchy.sub(0.5).mul(0.55).mul(float(1).sub(smoothstep(0.5, 1, thick)))));
   const foam2 = cover.mul(mix(softLace.mul(0.75).add(0.25), float(1), smoothstep(0.42, 0.95, thick))).mul(mix(0.8, 1, noise));
   const foam = mix(foam1, clamp(foam2, 0, 1), refrSize.w);

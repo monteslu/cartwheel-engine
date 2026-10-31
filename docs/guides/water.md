@@ -78,7 +78,7 @@ The `water-under` gate puts the beach sample's camera under the surface and chec
 
 ## Crests
 
-`crest_light` (0 to 1, off by default) makes the thin water at the top of a wave lighter and greener than the body under it, whatever way the sun lies, so a low camera reads a crest as a crest and not as a dark mound.
+`crest_light` (0 to 1, off by default) lets light through the thin top of a wave: it mixes lighter water over whatever the refraction shows and breaks the very top into foam, however gently the wave bunches, so a low camera reads a swell as a crest and not as a dark band. `crest_foam` is separate: it answers how sharply the surface bunches, which a long swell never does much.
 
 ## Hulls in the refraction
 
