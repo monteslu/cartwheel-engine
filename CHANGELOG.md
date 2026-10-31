@@ -4,7 +4,7 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## v0.27.1 (2026-10-30)
+## v0.28.0 (2026-10-30)
 
 ### Fixed
 - The join screen answers Start. A pad with no seat pressing Start got no response at all; it now takes the first free seat and the match starts, or with every seat taken the seated players play, and on a join screen opened during a match it takes a free seat and play resumes. Start on the title accepts the highlighted item, so Start, Start from the title is playing. Enter plays from a keyboard in any seat, not only the first.
