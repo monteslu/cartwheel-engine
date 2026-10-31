@@ -21,11 +21,12 @@ project(linkcheck C CXX)
 find_package(cartwheel REQUIRED CONFIG)
 cw_add_app(linkcheck SOURCES main.c)
 EOF
+# the game packs nothing, but the package asks for a cwpack, and an Android SDK ships none
 cmake -S "$W/game" -B "$W/build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_TOOLCHAIN_FILE="$W/sdk/cmake/export/$T.cmake" \
-  -Dcartwheel_DIR="$W/sdk/lib/cmake/cartwheel" -DCW_EXPORT_DEPS="$ROOT/deps/export" >/dev/null
+  -Dcartwheel_DIR="$W/sdk/lib/cmake/cartwheel" -DCW_EXPORT_DEPS="$ROOT/deps/export" -DCW_CWPACK="$(type -P true)" >/dev/null
 ninja -C "$W/build" linkcheck
-exe="$(find "$W/build" -maxdepth 1 -type f \( -name linkcheck -o -name linkcheck.exe -o -name 'liblinkcheck.so' \) | head -1)"
+exe="$(find "$W/build" -type f \( -name linkcheck -o -name linkcheck.exe -o -name libmain.so \) | head -1)"
 [ -n "$exe" ] || { echo "sdk-link-check $T: the build made no game" >&2; exit 1; }
 rm -rf "$W"
 echo "sdk-link-check $T: a game links against $(basename "$TGZ")"
