@@ -4,6 +4,11 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.28.1 (2026-10-30)
+
+### Fixed
+- Water3D `crest_light` hardly showed on clear water: it only tinted the body, which the refraction covers. It now lights the top of a wave over whatever the refraction shows and foams its very top, so a swell seen from a low camera reads as a crest. Only water that sets `crest_light` changes. The water's program changed, so a project's program tables need regenerating (`node tools/programs.mjs`).
+
 ## v0.28.0 (2026-10-30)
 
 ### Fixed

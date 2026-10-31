@@ -10357,7 +10357,7 @@
      "readonly": false,
      "min": 0,
      "max": 1,
-     "doc": "How much lighter and greener the thin water at a wave's top is than the body under it (0: none)."
+     "doc": "How much light comes through the thin top of a wave: lighter water over what the refraction shows, and foam at the very top (0: none)."
     },
     {
      "name": "scatter",
