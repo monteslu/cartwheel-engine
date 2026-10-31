@@ -10010,7 +10010,37 @@
      "readonly": false,
      "min": 1,
      "max": 2048,
-     "doc": "Grid quads along the longer side (quality: Low 1/4, Medium 1/2)."
+     "doc": "Grid quads along the longer side (quality: Low 1/4, Medium 1/2). VIEW grid: quads around each ring (Low 1/2, Medium 3/4)."
+    },
+    {
+     "name": "grid",
+     "type": "enum",
+     "default": "RECT",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "RECT",
+      "VIEW"
+     ],
+     "doc": "RECT: a grid over the rectangle. VIEW: rings around the camera out to horizon_distance, for water much larger than the view's detail."
+    },
+    {
+     "name": "grid_min_cell",
+     "type": "float",
+     "default": "0.25",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 100,
+     "doc": "VIEW grid: the smallest distance between rings, metres."
+    },
+    {
+     "name": "wave_shelter",
+     "type": "vec4",
+     "default": "vec4(0, 0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "How much the wave mask holds down each wave (0: not at all, 1: fully): cw_water_set_wave_mask."
     },
     {
      "name": "wave_count",
