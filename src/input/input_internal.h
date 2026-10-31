@@ -55,6 +55,10 @@ typedef struct cw__input_state {
   bool frame_held[CW_INPUT_MAX_PLAYERS][CW_INPUT_MAX_ACTIONS];
   bool pend_jp[CW_INPUT_MAX_PLAYERS][CW_INPUT_MAX_ACTIONS]; /* a press since the last tick */
   int16_t pend_peak[CW_INPUT_MAX_PLAYERS][CW_INPUT_MAX_ACTIONS];
+  /* raw presses a frame saw, kept for the next tick as pend_jp keeps an action's: a frame can run no tick (a display
+   * faster than the tick rate) or several (a slow one), cw_input_raw holds a frame's presses for just that frame */
+  uint32_t pend_pad[CW_MAX_PADS], tick_pad[CW_MAX_PADS], pend_mouse, tick_mouse;
+  uint8_t pend_keys[CW_KEY_COUNT], tick_keys[CW_KEY_COUNT];
   cw_input_context ctx;
   cw_raw_input prev_raw;
   /* touch */
@@ -94,5 +98,11 @@ void cw__input_register_commands(void); /* the debug channel's record command */
 void cw__input_record_tick(const cw__snapshot *s);
 bool cw__input_replay_next(void); /* fills cw__in.tick_replay; false when no replay is running */
 void cw__input_replay_free(void);
+
+/* The raw presses of this tick, for code reading devices rather than actions (the game shell's join screen): each
+ * press once, on one tick, whatever number of ticks its frame runs. Outside a tick, the frame's (as actions read). */
+uint32_t cw__input_pad_pressed(int pad); /* a bit per CW_PAD_*; 0 for a pad not connected */
+bool cw__input_key_pressed(int key);     /* a scancode */
+uint32_t cw__input_mouse_pressed(void);  /* a bit per mouse button */
 
 #endif

@@ -16,6 +16,9 @@ cw_add_app(rim_light SOURCES rim_light/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}
 cw_add_app(texture_filtering SOURCES texture_filtering/main.c)
 # the game shell's join screen opened during a match: seats added and dropped between rounds
 cw_add_app(shell_join SOURCES shell_join/main.c)
+# the same with two seats and a start that takes about 300 ms
+cw_add_app(shell_join_slow SOURCES shell_join/main.c)
+target_compile_definitions(shell_join_slow PRIVATE SHELL_JOIN_SEATS=2 SHELL_JOIN_START_WORK=300000000u)
 
 # actions, tick/frame snapshots, rebinding, touch controls, record/replay (120 Hz).
 cw_add_app(input_demo SOURCES input_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/input_demo/assets)

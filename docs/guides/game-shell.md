@@ -6,9 +6,10 @@ data, menu sounds and music, split screen for local multiplayer.
 (header:shell.h) is all of it, built from the engine's own modules, so a game
 writes only its gameplay and art:
 
-- screens: loading, title (Play, Settings, Quit), join (one to four players:
-  a pad joins with South and leaves with East, the keyboard joins with
-  Enter), play, pause (Resume, Settings, Quit to title) and settings;
+- screens: loading, title (Play, Settings, Quit; South or Start on the
+  highlighted item), join (one to four players: a pad joins with South and
+  leaves with East, the keyboard joins with Enter; Start on any pad plays, see
+  below), play, pause (Resume, Settings, Quit to title) and settings;
 - settings: graphics ((header:quality.h): left and right step the preset,
   accept opens the graphics page of (header:quality_menu.h) with every
   setting, the render resolution with its pixel size, ambient occlusion,
@@ -41,9 +42,11 @@ writes only its gameplay and art:
   `cw_shell_shared_rect` is empty. The game draws one HUD with a card per player.
   The `unit-shell` gate checks both layouts.
 
+Start plays from any pad, so one player can press Start, Start from the title and be playing. A pad with no seat takes the first free seat as it presses Start; with every seat taken the seated players play. Enter does the same for a keyboard that holds any seat, or when every seat is taken by others. South still only joins and East still only leaves. The press is answered on its own frame: the select sound, and "Starting..." over the screen. The `start` hook then runs on the next tick after that picture was drawn, so a game that loads for a long time in `start` never looks dead. Presses on this screen are counted per tick: a frame that runs no tick (a display faster than the tick rate) keeps them for the next tick, and a frame that runs several sees each once. A test or autopilot calling `cw_shell_start` gets the hook at once, as before.
+
 A game that wants its own picture behind the title, join, settings and pause screens sets `draw_background` in `cw_shell_desc`: the shell calls it inside its own 2D pass with the canvas size, then dims the result lightly and draws the menu over it (without the hook the screens sit on a dark panel).
 
-A pad that appears in the middle of a match, or a player who wants out, does not need a restart: `cw_shell_join_open()` shows the join screen over the running match (play pauses as it does for the pause menu) with the current players seated. A pad presses A to take a free seat, a seated pad presses B to leave, Start or Enter confirms (one player always stays) and play resumes after the `players_changed` hook of `cw_shell_desc` told the game its new roster; B on a pad without a seat cancels. Seats keep their numbers (a player who stays is still player 2 after player 1 left, and the shell reports it as an empty seat 1: `cw_shell_seat_taken(1)` is false, its actions read nothing); the player count is the highest seat held plus one. `cw_shell_join_requested()` is true on the tick a pad that has no seat presses A or Start: call it between rounds and open the screen when it is true. For the quickest join, `cw_shell_join_press()` seats a pad that has no seat the moment it presses A (no screen, one press; it takes the first free seat and `players_changed` fires), and returns true when it did; the keyboard is left out because it already drives a player. The `shell_join` sample shows all three.
+A pad that appears in the middle of a match, or a player who wants out, does not need a restart: `cw_shell_join_open()` shows the join screen over the running match (play pauses as it does for the pause menu) with the current players seated. A pad presses A to take a free seat, a seated pad presses B to leave, Start or Enter confirms and a pad with no seat that presses Start takes a free seat as it does (one player always stays) and play resumes after the `players_changed` hook of `cw_shell_desc` told the game its new roster; B on a pad without a seat cancels. Seats keep their numbers (a player who stays is still player 2 after player 1 left, and the shell reports it as an empty seat 1: `cw_shell_seat_taken(1)` is false, its actions read nothing); the player count is the highest seat held plus one. `cw_shell_join_requested()` is true on the tick a pad that has no seat presses A or Start: call it between rounds and open the screen when it is true. For the quickest join, `cw_shell_join_press()` seats a pad that has no seat the moment it presses A (no screen, one press; it takes the first free seat and `players_changed` fires), and returns true when it did; the keyboard is left out because it already drives a player. The `shell_join` sample shows all three.
 
 The calls a game makes:
 
