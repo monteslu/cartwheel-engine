@@ -4,6 +4,18 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.25.3 (2026-10-30)
+
+three.c v0.187.3.
+
+### Fixed
+- macOS: no game could link against the macOS SDK of v0.25.0, v0.25.1 or v0.25.2 (`Undefined symbols:
+  _eglGetProcAddress`, from three.c). Move a macOS game to this release. Reversed depth on macOS is WebGPU's, as
+  on Windows.
+
+### Added
+- The SDK workflow links a game against each native SDK (`scripts/sdk-link-check.sh`) before it publishes it.
+
 ## v0.25.2 (2026-10-30)
 
 ### Fixed
