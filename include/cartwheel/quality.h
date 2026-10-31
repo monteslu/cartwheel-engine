@@ -72,10 +72,11 @@
  * host delivers a fixed step). After a couple of
  * seconds over budget it steps down one level of its ladder:
  *
- *   High 100%, High 85%, Medium 75%, Medium 67%, Low 67%, Low 60%, Low 50%
+ *   High, Medium, Low, each at 100%
  *
- * (resolution first: it costs the picture least for what it saves; a game
- * that asks for cw_quality_full_resolution gets High, Medium, Low at 100%). Where
+ * (it gives up detail, never pixels; a game that calls
+ * cw_quality_full_resolution(false) gets High 100%, High 85%, Medium 75%,
+ * Medium 67%, Low 67%, Low 60%, Low 50%). Where
  * it measures GPU time it also steps back up when the cost has stayed well
  * under budget, never into a level that was over it in this run. A game
  * makes Auto the starting choice with cw_quality_auto(true, budget); the
@@ -183,12 +184,12 @@ void cw_quality_on_change(cw_quality_change_fn fn, void *user); /* the change ca
  * of it of GPU time where the GPU is timed. Off in a deterministic run. */
 void cw_quality_auto(bool on, float budget_ms);
 void cw_quality_auto_measure(bool in_play); /* every frame: true while the frame time means something */
-/* Full resolution (opt in; off by default): the game always draws its 3D at
- * the output's size. Every preset keeps Resolution at 100% (Low and Medium
- * keep their other settings), and Auto's ladder drops its resolution steps:
- * High, Medium, Low, each at 100%. Only the player picking a resolution in
- * the graphics menu changes it. For a game whose look depends on full-size
- * pixels, or a host that must never upscale. Call in init, before
+/* Full resolution (on by default): the game always draws its 3D at the
+ * output's size. Every preset keeps Resolution at 100% (Low and Medium keep
+ * their other settings), and Auto's ladder has no resolution steps: High,
+ * Medium, Low, each at 100%. Only the player picking a resolution in the
+ * graphics menu changes it. false lets presets and Auto lower it (Low 67%,
+ * Medium 75%, and Auto's longer ladder above). Call in init, before
  * cw_quality_restore. */
 void cw_quality_full_resolution(bool on);
 /* cw_quality_full_resolution is on */

@@ -214,7 +214,7 @@ Light probes, reflection probes and screen-space light are in [Reflections and b
 
 | Setting | Low | Medium | High (default) | Ultra |
 |---|---|---|---|---|
-| Resolution | 67% | 75% | 100% | 100% |
+| Resolution (see Full resolution below) | 100% | 100% | 100% | 100% |
 | Ambient occlusion | Off | On | On | On |
 | Shadows | Low | Medium | High | Ultra |
 | Anti-aliasing | FXAA | FXAA | SMAA | SMAA |
@@ -234,9 +234,9 @@ A scene that does not need everything asks for less while it is on screen with a
 
 The player picks from the graphics page ([cartwheel/quality_menu.h](header:quality_menu.h)), which the game shell opens from its Settings and a game opens from its own pause menu: a row for the preset (Low, Medium, High, Ultra, Auto; Custom once a setting was changed on its own), one per setting with its value (the resolution with the pixel size it renders at), the game's own, and Back. Keep the choice in the save with `cw_quality_saved` / `cw_quality_restore` (13 bits for a game with no settings of its own, 21 with four).
 
-**Auto** holds the frame's cost under a budget. While the game says it is in play (`cw_quality_auto_measure(true)` every frame), the engine averages the cost: the GPU time of the frame's passes where the host times them cheaply (native WebGPU's timestamps), else the frame-to-frame time (GL's timer queries would cost the CPU a driver sync every frame; a cart has no GPU timers). After a couple of seconds over budget it steps down a ladder that gives up resolution first (High 100%, High 85%, Medium 75%, Medium 67%, Low 67%, Low 60%, Low 50%); where it measures GPU time it also steps back up when the cost stays well under budget, never into a level that was over it in this run. `cw_quality_auto(true, budget_ms)` makes Auto a game's starting choice (19 ms of frame time by default, three quarters of that of GPU time). The level it reached is saved with the choice.
+**Auto** holds the frame's cost under a budget. While the game says it is in play (`cw_quality_auto_measure(true)` every frame), the engine averages the cost: the GPU time of the frame's passes where the host times them cheaply (native WebGPU's timestamps), else the frame-to-frame time (GL's timer queries would cost the CPU a driver sync every frame; a cart has no GPU timers). After a couple of seconds over budget it steps down a ladder that gives up detail, never pixels (High, Medium, Low); where it measures GPU time it also steps back up when the cost stays well under budget, never into a level that was over it in this run. `cw_quality_auto(true, budget_ms)` makes Auto a game's starting choice (19 ms of frame time by default, three quarters of that of GPU time). The level it reached is saved with the choice.
 
-**Full resolution.** A game that must never draw its 3D below the output size calls `cw_quality_full_resolution(true)` in init: every preset keeps Resolution at 100% (Low and Medium keep their other settings) and Auto's ladder becomes High, Medium, Low, each at 100%. Only the player picking a resolution on the graphics page lowers it.
+**Full resolution.** By default the 3D never draws below the output size: every preset keeps Resolution at 100% (Low and Medium keep their other settings) and Auto's ladder is High, Medium, Low, each at 100%. Only the player picking a resolution on the graphics page lowers it. A game that wants presets and Auto to lower it calls `cw_quality_full_resolution(false)` in init: then Low draws at 67%, Medium at 75% and Auto's ladder is High 100%, High 85%, Medium 75%, Medium 67%, Low 67%, Low 60%, Low 50%.
 
 A deterministic run starts at High whatever the save holds, with Auto off, so every host draws the same frame; a choice made in it from the menus (input every host replays alike) applies. `CW_QUALITY=low` (native) fixes a preset to compare them; the debug command `quality [low|medium|high|ultra|auto]` switches one live and `quality set <setting> <value>` one setting (`resolution 0-5`, `ssao 0-1`, `shadows 0-3`, `aa 0-2`, `effects 0-3`, or a game setting's name); `quality_menu 1` opens the graphics page.
 

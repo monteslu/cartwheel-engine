@@ -62,18 +62,18 @@ static const effects FX[CW_QUALITY_COUNT] = {
   [CW_QUALITY_ULTRA] = { 1, 1, 1, 1, 0, 3, 1, 1, 1, 1, 1 },
 };
 
-/* Auto's ladder, top first: a preset, its resolution replaced */
+/* cw_quality_full_resolution(false): Auto's ladder with resolution steps, top first: a preset, its resolution replaced */
 typedef struct { uint8_t preset, res; } rung_t;
 static const rung_t LADDER[] = {
   { CW_QUALITY_HIGH, RES_100 }, { CW_QUALITY_HIGH, RES_85 }, { CW_QUALITY_MEDIUM, RES_75 }, { CW_QUALITY_MEDIUM, RES_67 },
   { CW_QUALITY_LOW, RES_67 },   { CW_QUALITY_LOW, RES_60 },  { CW_QUALITY_LOW, RES_50 },
 };
 enum { LADDER_N_ALL = (int)(sizeof LADDER / sizeof LADDER[0]) };
-/* cw_quality_full_resolution: the ladder without its resolution steps (each preset at 100%) */
+/* the default: the ladder without resolution steps (each preset at 100%) */
 static const rung_t LADDER_FULL[] = {
   { CW_QUALITY_HIGH, RES_100 }, { CW_QUALITY_MEDIUM, RES_100 }, { CW_QUALITY_LOW, RES_100 },
 };
-static bool full_res;
+static bool full_res = true;
 #define LADDER_N (full_res ? (int)(sizeof LADDER_FULL / sizeof LADDER_FULL[0]) : LADDER_N_ALL)
 #define RUNG(r) (full_res ? LADDER_FULL[r] : LADDER[r])
 
