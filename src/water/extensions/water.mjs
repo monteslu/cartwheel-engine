@@ -120,7 +120,9 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   }
   mat.positionNode = pos;
   const waveNormalLocal = varying(nrm, 'vWaterNormal');
-  const vRest = varying(vec2(rx, rz), 'vWaterRest');   // where the surface point rests (the floor map's coordinates)
+  // where this point of the surface has moved to in the water's plane, the displaced x, z: the floor map and the ripple grid are
+  // maps of that plane, so a splash and a shore line stay where they were made while the waves pass through them
+  const vRest = varying(vec2(pos.x, pos.z), 'vWaterRest');
   const vSurf = varying(pos.y, 'vWaterSurf');                // its height over the rest level
   const vBunch = varying(nrm.y, 'vWaterBunch');              // the wave normal's y: small where the surface bunches up (crests)
 
