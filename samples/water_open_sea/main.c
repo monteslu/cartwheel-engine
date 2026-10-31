@@ -89,6 +89,12 @@ static void render(void *u, double alpha) {
   float bx = boat_x + 12 * (float)((1 - alpha) * dt);
   cw_node3d_set_position(boat, (t3_vec3){ bx, cw_water_height_at(water, bx, 0, cw_water_time(water)) + 0.1f, 0 });
   cw_node3d_set_position(camera, (t3_vec3){ bx + 2, 25, 11 });
+  /* the underwater gate: a low camera in the bay, where the mask holds the swell far under what it is at sea */
+  { const char *e = getenv("WATER_OPEN_SEA_LOW");
+    if (e) {
+      cw_node3d_set_position(camera, (t3_vec3){ -240, (float)atof(e), 0 });
+      cw_node3d_look_at(camera, (t3_vec3){ -200, (float)atof(e), 0 }, (t3_vec3){ 0, 1, 0 });
+    } }
   if (!cam) return;
   double time = ((double)cw_tree_tick(t) - 1.0 + alpha) * dt;
   if (time < 0) time = 0;

@@ -4,6 +4,11 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.28.6 (2026-10-31)
+
+### Fixed
+- Water3D: the view from under the water and its caustics ignored the wave mask: in a bay a camera above the held-down swell could be judged under the waves of the open sea, and a teal sheet covered the screen. They now read the mask as the surface does.
+
 ## v0.28.5 (2026-10-31)
 
 ### Fixed

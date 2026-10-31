@@ -29,7 +29,9 @@
 /* ── GLSL ─────────────────────────────────────────────────────────────── */
 
 static const char UW_GLSL[] =
-    "uniform sampler2D u_src, u_depth, u_caustic;\n"
+    "uniform sampler2D u_src, u_depth, u_caustic, u_mask;\n"
+    "uniform vec4 u_shelter; /* per wave: how much the wave mask holds it down */\n"
+    "uniform vec4 u_msize;   /* xy: the wave mask's size in the water's plane */\n"
     "uniform mat4 u_inv_view_proj, u_to_local;\n"
     "uniform vec3 u_cam;\n"
     "uniform vec4 u_w0, u_w1, u_w2, u_w3, u_steep, u_phase;\n"
@@ -45,11 +47,13 @@ static const char UW_GLSL[] =
     "  vec2 r = p;\n"
     "  for (int it = 0; it < 3; it++) {\n"
     "    vec2 s = vec2(0.0);\n"
-    "    for (int i = 0; i < 4; i++) { vec4 w = W(i); float th = w.z * dot(w.xy, r) - u_phase[i]; s += u_steep[i] * w.w * w.xy * cos(th); }\n"
+    "    float m = textureLod(u_mask, r / u_msize.xy + 0.5, 0.0).r;\n"
+    "    for (int i = 0; i < 4; i++) { vec4 w = W(i); float th = w.z * dot(w.xy, r) - u_phase[i]; s += u_steep[i] * w.w * (1.0 + (m - 1.0) * u_shelter[i]) * w.xy * cos(th); }\n"
     "    r = p - s;\n"
     "  }\n"
     "  float h = 0.0;\n"
-    "  for (int i = 0; i < 4; i++) { vec4 w = W(i); h += w.w * sin(w.z * dot(w.xy, r) - u_phase[i]); }\n"
+    "  float m = textureLod(u_mask, r / u_msize.xy + 0.5, 0.0).r;\n"
+    "  for (int i = 0; i < 4; i++) { vec4 w = W(i); h += w.w * (1.0 + (m - 1.0) * u_shelter[i]) * sin(w.z * dot(w.xy, r) - u_phase[i]); }\n"
     "  return u_level.x + h;\n"
     "}\n"
     "vec2 tile(vec2 uv) { return texture(u_caustic, fract(uv)).rg * 4.0; }\n"
@@ -120,21 +124,24 @@ static const char UW_GLSL[] =
 
 static const char UW_WGSL[] =
     "struct U { u_inv_view_proj: mat4x4f, u_to_local: mat4x4f, u_cam: vec3f, u_pz: vec4f, u_w0: vec4f, u_w1: vec4f, u_w2: vec4f, u_w3: vec4f,\n"
-    "  u_steep: vec4f, u_phase: vec4f, u_level: vec4f, u_deep: vec4f, u_shallow: vec4f, u_sun: vec4f, u_sun_col: vec4f, u_on: vec4f };\n"
+    "  u_steep: vec4f, u_phase: vec4f, u_level: vec4f, u_deep: vec4f, u_shallow: vec4f, u_sun: vec4f, u_sun_col: vec4f, u_on: vec4f, u_shelter: vec4f, u_msize: vec4f };\n"
     "@group(0) @binding(0) var<uniform> u: U;\n"
     "@group(0) @binding(1) var u_src: texture_2d<f32>;\n"
     "@group(0) @binding(2) var u_depth: texture_2d<f32>;\n"
     "@group(0) @binding(3) var u_caustic: texture_2d<f32>;\n"
+    "@group(0) @binding(4) var u_mask: texture_2d<f32>;\n"
     "fn W(i: i32) -> vec4f { if (i == 0) { return u.u_w0; } if (i == 1) { return u.u_w1; } if (i == 2) { return u.u_w2; } return u.u_w3; }\n"
     "fn surf(p: vec2f) -> f32 {\n"
     "  var r = p;\n"
     "  for (var it = 0; it < 3; it++) {\n"
     "    var s = vec2f(0.0);\n"
-    "    for (var i = 0; i < 4; i++) { let w = W(i); let th = w.z * dot(w.xy, r) - u.u_phase[i]; s += u.u_steep[i] * w.w * w.xy * cos(th); }\n"
+    "    let m = textureSampleLevel(u_mask, cw_linear, r / u.u_msize.xy + 0.5, 0.0).r;\n"
+    "    for (var i = 0; i < 4; i++) { let w = W(i); let th = w.z * dot(w.xy, r) - u.u_phase[i]; s += u.u_steep[i] * w.w * (1.0 + (m - 1.0) * u.u_shelter[i]) * w.xy * cos(th); }\n"
     "    r = p - s;\n"
     "  }\n"
     "  var h = 0.0;\n"
-    "  for (var i = 0; i < 4; i++) { let w = W(i); h += w.w * sin(w.z * dot(w.xy, r) - u.u_phase[i]); }\n"
+    "  let m = textureSampleLevel(u_mask, cw_linear, r / u.u_msize.xy + 0.5, 0.0).r;\n"
+    "  for (var i = 0; i < 4; i++) { let w = W(i); h += w.w * (1.0 + (m - 1.0) * u.u_shelter[i]) * sin(w.z * dot(w.xy, r) - u.u_phase[i]); }\n"
     "  return u.u_level.x + h;\n"
     "}\n"
     "fn tile(uv: vec2f) -> vec2f { return textureSampleLevel(u_caustic, cw_linear, fract(uv), 0.0).rg * 4.0; }\n"
@@ -278,6 +285,18 @@ static void uw_exec(cw_pass_ctx *ctx, void *user) {
     cw_free(px);
   }
   if (!prog || !tex) return;
+  /* the wave mask, as the surface reads it; none: every wave at full height */
+  if (!d->under_mask) {
+    int mw = d->mask ? d->mask_nx : 1, mh = d->mask ? d->mask_nz : 1;
+    uint8_t *mp = cw_alloc((size_t)mw * (size_t)mh * 4, CW_MEM_RENDER);
+    for (int k = 0; k < mw * mh; k++) {
+      float v = d->mask ? d->mask[k] : 1.0f;
+      uint8_t b = (uint8_t)((v < 0 ? 0 : v > 1 ? 1 : v) * 255.0f + 0.5f);
+      mp[k * 4] = mp[k * 4 + 1] = mp[k * 4 + 2] = b, mp[k * 4 + 3] = 255;
+    }
+    d->under_mask = cw_pass_texture_new(mw, mh, CW_RT_RGBA8, mp);
+    cw_free(mp);
+  }
   const t3_mat4 *m = cw_node3d_global_transform(n);
   t3_mat4 inv;
   t3_mat4_invert(&inv, m);
@@ -292,6 +311,10 @@ static void uw_exec(cw_pass_ctx *ctx, void *user) {
   cw_pass_bind_texture(0, ctx->src->tex);
   cw_pass_bind_texture(1, ctx->depth_tex);
   cw_pass_bind_texture(2, tex);
+  cw_pass_bind_texture(3, d->under_mask);
+  cw_pass_uniform1i(prog, "u_mask", 3);
+  cw_pass_uniform4f(prog, "u_shelter", d->ev.shelter[0], d->ev.shelter[1], d->ev.shelter[2], d->ev.shelter[3]);
+  cw_pass_uniform4f(prog, "u_msize", d->size[0], d->size[1], 0, 0);
   cw_pass_uniform1i(prog, "u_src", 0);
   cw_pass_uniform1i(prog, "u_depth", 1);
   cw_pass_uniform1i(prog, "u_caustic", 2);
