@@ -171,6 +171,7 @@ static void water_init(cw_node n, void *data) {
   d->shore_foam = 0.7f;
   d->crest_foam = 0.35f;
   d->foam_scale = 1;
+  d->foam_lace = 1.4f;
   d->shallow_color[0] = 0.05f, d->shallow_color[1] = 0.34f, d->shallow_color[2] = 0.38f, d->shallow_color[3] = 1;
   d->scatter = 0.6f;
   d->glint = 1.0f;
@@ -912,7 +913,7 @@ static void fill(t3_extension_ctx *c, void *user) {
       int tw = 1, th = 1;
       if (cw__wgpu_on() && d->wg_dep) tw = d->wg_dep->w, th = d->wg_dep->h;
       else if (!cw__wgpu_on() && d->refr) tw = d->refr->width, th = d->refr->height;
-      float sz[4] = { (float)tw, (float)th, 0, 0 };
+      float sz[4] = { (float)tw, (float)th, d->foam_lace, 0 };
       t3_extension_set_uniform(c, "waterRefrSize", sz, 4);
     }
     /* the window depth under each pixel: GL's depth texture itself, WebGPU's R32Float copy (refraction_wgpu.c) */
@@ -1089,6 +1090,7 @@ static const cw_prop water_props[] = {
   CW_PROP_FIELD_RANGE(water3d, shore_foam, CW_T_FLOAT, 0, 20, "Width in metres of the foam where the water meets the floor (0: none)."),
   CW_PROP_FIELD_RANGE(water3d, crest_foam, CW_T_FLOAT, 0, 1, "Foam on crests where the surface bunches up (0: none)."),
   CW_PROP_FIELD_RANGE(water3d, foam_scale, CW_T_FLOAT, 0.05, 32, "How much finer the foam's pattern is than its default (1: cells of a few metres, for a view from far above)."),
+  CW_PROP_FIELD_RANGE(water3d, foam_lace, CW_T_FLOAT, 0, 4, "How much of the foam's lace pattern cuts holes in it (1.4; 0: solid foam)."),
   CW_PROP_FIELD_RANGE(water3d, scatter, CW_T_FLOAT, 0, 4, "Light the sun sends through wave crests toward the eye (the turquoise glow; needs a ProceduralSky)."),
   CW_PROP_FIELD_RANGE(water3d, glint, CW_T_FLOAT, 0, 8, "Strength of the fine sparkle the sun makes on the small ripples."),
   CW_PROP_FIELD_RANGE(water3d, ripple_cells, CW_T_INT, 0, 512, "Cells along the longer side of the interactive ripple grid (0: no ripples; quality scales it)."),
