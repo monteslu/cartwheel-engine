@@ -67,6 +67,8 @@
  *     crest_foam           0..1: foam on the wave crests where the surface
  *                          bunches up (0.35; 0 = none)
  *     foam_scale           how much finer the foam's pattern is (1)
+ *     foam_lace            how much of that pattern cuts holes in the foam (1.4)
+ *     foam_spread          m/s a wake's foam spreads as it fades (0)
  *
  *     scatter, glint       the turquoise light the sun sends through crests
  *                          toward the eye (needs a ProceduralSky); the fine
