@@ -90,6 +90,8 @@
  * Determinism: a deterministic run (a test) starts at High whatever the
  * save holds, with Auto off, so every host draws the same frame; a choice
  * made in it (from the menus, by input every host replays alike) applies.
+ * A test host with a real clock (tools/run-cart.mjs on Chromium and
+ * wasmcart-native) asks for the same with the debug request `quality lock`.
  * Nothing here reaches the simulation. */
 #ifndef CW_QUALITY_H
 #define CW_QUALITY_H

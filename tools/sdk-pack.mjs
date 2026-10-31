@@ -181,7 +181,7 @@ if (CART) {
   engineTree('cmake/export');
   // the host tools: cwpack, program-table regeneration, exports
   if (T.cwpack && existsSync(T.cwpack)) copyFile(T.cwpack, join(OUT, 'bin', basename(T.cwpack)));
-  for (const f of ['tools/programs.mjs', 'tools/cwexport.mjs']) engineFile(f);
+  for (const f of ['tools/programs.mjs', 'tools/run-cart.mjs', 'tools/cwexport.mjs']) engineFile(f);
   engineTree('tools/lib');
   engineTree('tools/cwexport');
   // the engine's own three.c generator extensions (terrain, clustered lights, gi, mesh decals, water, ...): a

@@ -129,7 +129,7 @@ static void init_once(void) {
   cw_debug_field("cw.quality_mode", &Q.mode, CW_DBG_I32, 1);
   cw_debug_field("cw.quality_scopes", &n_scopes, CW_DBG_I32, 1);
   cw_debug_command("quality",
-                   "quality [low|medium|high|ultra|auto | set <setting> <value> | scope push <setting>=<cap>... | scope pop]: the graphics settings (cartwheel/quality.h); "
+                   "quality [low|medium|high|ultra|auto|lock | set <setting> <value> | scope push <setting>=<cap>... | scope pop]: the graphics settings (cartwheel/quality.h); "
                    "settings: resolution 0-5, ssao 0-1, shadows 0-3, aa 0-2, effects 0-3, or a game setting's name (spaces as _)",
                    cmd_quality);
   cw__quality_menu_register();
@@ -138,7 +138,20 @@ static void init_once(void) {
 /* Auto, and a saved choice, never apply in a deterministic run (every host
  * starts at High); a choice made in it does (it comes from input every host
  * replays alike). CW_QUALITY fixes the preset against everything. */
-static bool locked(void) { return forced || cw_is_deterministic_run(); }
+static bool test_lock; /* cw__quality_lock: a test host that is not a deterministic run */
+static bool locked(void) { return forced || test_lock || cw_is_deterministic_run(); }
+
+/* Auto and a saved choice locked out as in a deterministic run, for a test host (Chromium, wasmcart-native) that keeps its
+ * real clock: Auto steps by how fast this machine ran, and a test's picture must not depend on that */
+void cw__quality_lock(void) {
+  init_once();
+  test_lock = true;
+  if (Q.mode == MODE_AUTO) {
+    Q.mode = MODE_PRESET;
+    cw_quality_set(CW_QUALITY_HIGH, false);
+  }
+  cw_info("quality: locked for a test run");
+}
 
 /* the settings took effect: the platform's scene size, the game's callback */
 static void changed(void) {
@@ -505,6 +518,8 @@ static void cmd_quality(int argc, const char **argv, cw_reply *r) {
         Q.chosen = true;
         auto_start(0);
       }
+    } else if (!strcasecmp(argv[1], "lock")) {
+      cw__quality_lock();
     } else if (!strcasecmp(argv[1], "scope")) { /* scope push <setting>=<cap> ... | scope pop */
       if (argc > 2 && !strcasecmp(argv[2], "pop")) cw_quality_scope_pop();
       else if (argc > 3 && !strcasecmp(argv[2], "push")) {

@@ -102,6 +102,10 @@ const frameHz = +args['frame-hz'] || 60;
 // (test runs otherwise do it all in frame 1); the frames it takes vary with the machine's speed,
 // so the state's ticks say where the game is
 const spread = !!args['warmup-spread'];
+// the request a cart host with a real clock posts before frame 1, for what a deterministic run gets from its flag: the whole
+// warm-up in that frame (not with --warmup-spread) and quality locked, so Auto cannot step by how fast this machine ran.
+// --keep-auto leaves quality alone (the control of tests/quality-lock.mjs)
+const firstCmd = args['keep-auto'] ? (spread ? null : 'warmup_spread 0') : spread ? 'quality lock' : 'test_run';
 const gpu = args.gpu === 'webgpu' || args.gpu === 'wgpu' ? 'webgpu' : 'gl';
 if (args.gpu && args.gpu !== true && !['gl', 'webgpu', 'wgpu'].includes(args.gpu)) { console.error('--gpu gl|webgpu'); process.exit(2); }
 const pin = gpu === 'webgpu' ? wgpuPin() : null;
@@ -441,9 +445,8 @@ window.run = async (cfg) => {
     dv.setUint32(f['dbg.cmd_seq'].ptr, dv.getUint32(f['dbg.cmd_seq'].ptr, true) + 1, true);
   };
   for (k = 0; k < cfg.frames; k++) {
-    // a cart spreads its warm-up over frames (a loading screen) unless told otherwise:
-    // a test does it all in frame 1, as native and romdev test runs do
-    if (k === 0 && !cfg.spread && host.instance.exports.wc_debug_state) postCmd('warmup_spread 0');
+    // a cart spreads its warm-up over frames (a loading screen) and can run Auto unless told otherwise (firstCmd above)
+    if (k === 0 && cfg.firstCmd && host.instance.exports.wc_debug_state) postCmd(cfg.firstCmd);
     for (const [at, text] of cfg.startPlan) if (at === k) postCmd(text);
     while (si < cfg.script.length && cfg.script[si].frame - 1 <= k) {
       const s = cfg.script[si++];
@@ -554,7 +557,7 @@ window.ready = true;
     await page.waitForFunction('window.ready === true');
     const pinned = await verify(page);
     if (pinned && args.verbose) console.error(`chromium pinned to ${process.env.CW_CHROMIUM_GPU || process.env.CW_CHROMIUM_RENDER_NODE}: ${pinned}`);
-    const cfg = { gpu, spread, startPlan, match: pin ? pin.match : '', power: pin ? pin.power : '', featureLevel: cartFeatureLevel(), frames, frameHz, script: script.map((s) => ({ ...s, mask: mask(s.buttons, WC_BITS), masks: ['pad2', 'pad3', 'pad4'].map((k) => (s[k] ? mask(s[k].buttons, WC_BITS) : 0)), scancodes: scancodes(s.keys),
+    const cfg = { gpu, spread, firstCmd, startPlan, match: pin ? pin.match : '', power: pin ? pin.power : '', featureLevel: cartFeatureLevel(), frames, frameHz, script: script.map((s) => ({ ...s, mask: mask(s.buttons, WC_BITS), masks: ['pad2', 'pad3', 'pad4'].map((k) => (s[k] ? mask(s[k].buttons, WC_BITS) : 0)), scancodes: scancodes(s.keys),
       mouseMask: mouseMask(s.mouse), wheelXY: wheelOf(s.wheel) })) };
     const r = await page.evaluate((c) => window.run(c), cfg).catch((e) => { throw new Error(`${e.message}\n${logs.join('\n')}`); });
     if (!r.crossOriginIsolated) throw new Error('page is not cross-origin isolated: threads cannot run');
@@ -612,8 +615,7 @@ async function runWcnative() {
     ...(pin && cartFeatureLevel() ? { WASMCART_WGPU_FEATURE_LEVEL: cartFeatureLevel() } : {}) };
   if (!process.env.CW_TEST_WINDOW) scrubDisplay(wenv);
   else delete wenv.SDL_VIDEODRIVER;
-  // warmup_spread 0 before frame 1: the whole warm-up in that frame, as on the other test hosts
-  const cmdArgs = [...(spread ? [] : ['--debug-cmd', '0', 'warmup_spread 0']), ...startPlan.flatMap(([k, c]) => ['--debug-cmd', String(k), c])];
+  const cmdArgs = [...(firstCmd ? ['--debug-cmd', '0', firstCmd] : []), ...startPlan.flatMap(([k, c]) => ['--debug-cmd', String(k), c])];
   showCartWorkers(); // CW_WORKERS: the cart's job pool as natively (tools/lib/gpu-sandbox.mjs)
   const child = spawn(player, [runCart, '--fixed-step', String(1000 / frameHz), '--shot', String(frames - 1), ppm, '--uncapped', ...cmdArgs],
     { env: wenv, stdio: ['ignore', 'ignore', 'pipe'] });

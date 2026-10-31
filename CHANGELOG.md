@@ -4,6 +4,14 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.28.4 (2026-10-31)
+
+### Fixed
+- `tools/programs.mjs --gates` could report "no missing states" when every run had failed. A failed run now stops the survey with exit 1, naming the reason, and no table changes; a failed control variant is only reported, since a control may be meant to break its run.
+- `tools/programs.mjs --gates` from an SDK now works on a project: the SDK ships `tools/run-cart.mjs`, `--build <project>/build/native` names the project, gates, inputs and assets come from it, `--gates-file` (or `CW_GATES_FILE`) reads a project's gate files as `tests/gate.mjs` does, and WebGPU runs where the SDK has it.
+- `tools/lib/wcnative.mjs` looks for wasmcart-native beside `CW_PROJECT_ROOT` too, so an engine in a project's `deps/` finds `wasmcart-run`.
+- Image gates of a game on Auto could fail on Chromium and wasmcart-native. Those test hosts keep a real clock and are not deterministic runs, so Auto stepped by how fast the machine happened to run and the picture stopped matching the other hosts. `tools/run-cart.mjs` now sends a debug request on them, `test_run` (`quality lock` with `--warmup-spread`), that locks quality as a deterministic run does: Auto off, High, no saved choice, explicit preset requests still apply. A game no longer needs to pin its gates. A cart built on an older engine does not know the request, so a harness from this release runs it with a spread warm-up: rebuild carts with the SDK they are tested with.
+
 ## v0.28.3 (2026-10-31)
 
 ### Fixed

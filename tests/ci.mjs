@@ -32,6 +32,7 @@ export const LOCAL_ONLY = {
   'reversed-depth': 'reads pixels of WebGPU runs on the test GPU, forward depth against reversed',
   'gpu-guard': 'tests the GPU guards against a real card (VRAM, kernel log)',
   'gpu-no-display': 'runs wasmcart-native',
+  'quality-lock': 'Chromium and wasmcart-native',
   'wcnative-pads': 'runs wasmcart-native',
   'gpu-cleanup': 'runs wasmcart-native',
   'pipeline-perf': 'GPU timings, and romdev and Chromium legs',

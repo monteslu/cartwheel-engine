@@ -52,6 +52,15 @@ static void cmd_warmup_spread(int argc, const char **argv, cw_reply *r) {
   if (argc > 1) warmup_spread = atoi(argv[1]) != 0;
   cw_reply_printf(r, "{\"warmup_spread\":%s}", warmup_spread ? "true" : "false");
 }
+/* test_run: a test host that keeps its real clock asks for what a deterministic run gets from its flag. One request, since
+ * a host's debug mailbox holds one a frame and both must arrive before the first */
+void cw__quality_lock(void);
+static void cmd_test_run(int argc, const char **argv, cw_reply *r) {
+  (void)argc, (void)argv;
+  warmup_spread = false;
+  cw__quality_lock();
+  cw_reply_printf(r, "{\"test_run\":true}");
+}
 void cw_loading_set(int done, int total, cw_load_stage stage) {
   loading[0] = done < 0 ? 0 : done;
   loading[1] = total < 0 ? 0 : total;
@@ -453,6 +462,7 @@ bool cw__sdl_init(void) {
   cw_debug_field("cw.view", view_dbg, CW_DBG_I32, 6);
   cw__quality_init(); /* cartwheel/quality.h: High and fixed in a deterministic run */
   cw_debug_command("warmup_spread", "warmup_spread [1|0]: one warm-up step per frame (cw_app_desc.warmup)", cmd_warmup_spread);
+  cw_debug_command("test_run", "test_run: warmup_spread 0 and quality lock, for a test host with a real clock", cmd_test_run);
 #if !CW_CART
   /* CW_WARMUP_SPREAD=1 or 0 decides; otherwise spread unless it is a test run.
    * A game the editor launches gets 0: the editor steps it tick by tick from
