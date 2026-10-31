@@ -368,6 +368,8 @@ const MIME = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'te
 
 async function runChromium() {
   const WC = join(ROOT, 'deps/wasmcart-wgpu'); // the WebGPU tier's host: it runs the dual cart on either backend
+  // a games repository's copy of this source has no deps/ of its own
+  if (!existsSync(join(WC, 'node_modules', 'playwright', 'index.mjs'))) throw new Error(`chromium: no ${WC}: run ${join(ROOT, 'scripts/fetch-deps.sh')} --only wasmcart-wgpu`);
   const page_html = `<!doctype html><html><body><canvas id=c></canvas>
 <script type=importmap>{"imports":{"fflate":"/wc/node_modules/fflate/esm/browser.js"}}</script>
 <script type=module>
