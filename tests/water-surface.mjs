@@ -31,7 +31,7 @@ const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf(k); return (i >= 0 ? argv[i + 1] : d).split(','); };
 const HOSTS = opt('--hosts', 'native,romdev,chromium');
 const GPUS = opt('--gpus', 'gl,webgpu');
-// --app water_open_sea: the same check on a VIEW grid with a wave mask; its second control reads the height with
+// --app water_open_sea: the same check on a VIEW grid with a wave mask, with the boat (and so the probes) over the mask's transition; its second control reads the height with
 // the mask ignored (probe.h0), which must not match: the mask is really drawn, and really read on the CPU
 const APP = opt('--app', 'water_boat')[0];
 const FRAMES = 90, LO = -2, HI = 2, MAX_ERR = 0.015, MAX_MEAN = 0.005, MIN_SHARE = 0.8;
@@ -42,7 +42,7 @@ if (APP !== 'water_boat') CMDS.length = 2; // the app moves its own camera
 
 function runCart(host, gpu, tag, extraCmds = []) {
   const shot = join(OUT, `${host}-${gpu}-${tag}.png`), state = join(OUT, `${host}-${gpu}-${tag}.json`);
-  const args = ['tools/run-cart.mjs', '--host', host, '--gpu', gpu, '--app', APP, '--frames', String(APP === 'water_boat' ? FRAMES : 1500),
+  const args = ['tools/run-cart.mjs', '--host', host, '--gpu', gpu, '--app', APP, '--frames', String(APP === 'water_boat' ? FRAMES : 500),
     '--shot', shot, '--state', state, '--start-cmds', [...CMDS, ...extraCmds].join(';')];
   return new Promise((res) => {
     const p = spawn(process.execPath, args, { cwd: ROOT, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
