@@ -4,6 +4,12 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.25.4 (2026-10-30)
+
+### Fixed
+- The SDK workflow's link check stopped on Android, whose SDK ships no cwpack, so the v0.25.3 tag published no SDKs.
+  This is the release with the macOS fix below: use v0.25.4, not v0.25.3.
+
 ## v0.25.3 (2026-10-30)
 
 three.c v0.187.3.
