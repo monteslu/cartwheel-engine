@@ -57,6 +57,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const refrSize = v4('waterRefrSize'); // x, y: the refraction depth texture's size in texels; z: the foam's lace; w: soft foam
   const grid = v4('waterGrid');     // x, y: the grid's centre (water-local; the camera's foot on a VIEW grid); z: VIEW grid on; w: the foam pattern's scale
   const shelter = v4('waterShelter'); // per wave: how much the wave mask holds it down
+  const crestLight = v4('waterCrest'); // x: how much lighter crests are (0: as before)
   const cam = v4('waterCam');       // xyz: the camera's world position (three.c fills no cameraPosition); w: 1 when the view is drawn rows bottom-up (cartwheel's WebGPU scene target) but the planar targets top-down
 
   const m4 = (n) => {
@@ -207,7 +208,9 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const lit = mix(vec3(1), max(vec3(0.14).add(sunCol.rgb.mul(sunUp).mul(0.32)), vec3(0.1)), hasSun);
   // a crest holds less water between the eye and the deep than a trough: lighter crests, darker troughs
   const hBody = clamp(vSurf.div(max(sun.w, 0.05)).mul(0.5).add(0.5), 0, 1);
-  const body = mix(shallow.rgb, deepRgb, ab3).mul(lit).mul(mix(0.75, 1.3, hBody));
+  // crest_light: the thin water at the top of a wave is lighter and greener than the body under it, whatever way the sun lies
+  const crestTop = smoothstep(0.55, 1, hBody).mul(crestLight.x);
+  const body = mix(mix(shallow.rgb, deepRgb, ab3), shallow.rgb.mul(1.25), crestTop).mul(lit).mul(mix(0.75, 1.3, hBody));
   // what is seen through the water lost its light on the way down to it and back up along the view, per colour (pure
   // water eats red ten times faster than green, green twice as fast as blue: clarity 5 m is clear sea water), and the
   // water's own lit colour scattered in over the same path (murk: how much)
@@ -228,7 +231,9 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const k2 = texture(causticMap, cq.mul(1.31).add(vec2(0.41, 0.17)).sub(vec2(0.006, 0.011).mul(ct))).rg;
   const cSoft = max(smoothstep(0.5, 4, below), smoothstep(12, 40, dist));
   const kc = dot(min(k1, k2), vec2(float(1).sub(cSoft), cSoft)).mul(4);
-  const cfade = smoothstep(0.02, 0.5, below).mul(exp(below.negate().mul(shore.z).mul(1.6))).mul(smoothstep(0, 0.25, toSun0.y))
+  // (max: a pixel whose refraction depth lies in front of the surface has below < 0, and exp() overflows there: inf times the
+  // smoothstep's 0 is NaN, which reaches the picture as black. A wave standing above the eye line hit it)
+  const cfade = smoothstep(0.02, 0.5, below).mul(exp(max(below, 0).negate().mul(shore.z).mul(1.6))).mul(smoothstep(0, 0.25, toSun0.y))
     .mul(hit).mul(useZ).mul(hasSun);
   const caus = float(1).add(refrInfo.y.mul(cfade).mul(kc.mul(2.2).sub(1)));
   const seen = texture(refractMap, uvS).rgb.mul(tint.rgb).mul(trans).mul(caus).add(body.mul(inscatter));

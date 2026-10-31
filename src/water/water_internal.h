@@ -42,7 +42,7 @@ typedef struct water3d {
   float debug_range[2];
   /* shore and depth shading, foam */
   int floor_map_size;
-  float floor_range, clarity, shore_foam, crest_foam, foam_scale, foam_lace, foam_soft;
+  float floor_range, clarity, shore_foam, crest_foam, foam_scale, foam_lace, foam_soft, crest_light;
   float shallow_color[4];
   /* the look */
   float scatter, glint;
