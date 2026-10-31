@@ -1017,7 +1017,8 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
       d->sun_col[2] = sk.sun_color.b * sk.sun_energy * on, d->sun_col[3] = d->scatter;
     }
     d->mat->roughness = d->roughness;
-    /* the environment's specular is the reflection when no planar one is drawn */
+    /* the environment's specular is the reflection when no planar one is drawn (this intensity is only a material's own
+     * env map's: a ProceduralSky is the scene's environment, and its specular stays on top of the planar reflection) */
     planar(ctx, wt, n, d);
     /* (and none from under the surface: what the surface mirrors there is the water itself, which the shader draws;
      * the environment's lower half is not that) */
