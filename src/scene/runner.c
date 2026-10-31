@@ -302,13 +302,15 @@ static void warm_slice(int w, int h) {
   if (!last && warm.shown >= reps) warm.shown = warm.n;
   int show = last ? warm.n : warm.shown;
   if (show >= warm.n) warm.shown = warm.n, warm.all_shown = true;
-  bool *was = malloc(sizeof *was * (size_t)(warm.n ? warm.n : 1));
+  /* (culling off: what is outside the view now still needs its program, or the first turn of the camera compiles it in play) */
+  bool *was = malloc(sizeof *was * 2 * (size_t)(warm.n ? warm.n : 1));
   for (int i = 0; i < warm.n; i++) {
-    was[i] = warm.objs[i]->visible;
+    was[i * 2] = warm.objs[i]->visible, was[i * 2 + 1] = warm.objs[i]->frustum_culled;
+    warm.objs[i]->frustum_culled = false;
     if (i >= show) warm.objs[i]->visible = false;
   }
   cw_pipeline_render(run.tree, w, h, 0);
-  for (int i = 0; i < warm.n; i++) warm.objs[i]->visible = was[i];
+  for (int i = 0; i < warm.n; i++) warm.objs[i]->visible = was[i * 2], warm.objs[i]->frustum_culled = was[i * 2 + 1];
   free(was);
   if (last) warm.final = true;
 }

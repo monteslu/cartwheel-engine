@@ -4,6 +4,11 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.28.3 (2026-10-31)
+
+### Fixed
+- The warm-up built only the programs of what the camera could see, and a scene whose camera later turned compiled the rest in play, a stall in the player's hands. The shader phase now draws with culling off. A game's loading bar may run a little longer, and its first turn no longer stalls.
+
 ## v0.28.2 (2026-10-31)
 
 ### Fixed

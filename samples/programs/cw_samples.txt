@@ -95,3 +95,5 @@ standard+lmap+l1121
 standard+shadow+lmap+c1lmap+l1001
 basic+lmap+c1lmap
 standard+lmap+c1lmap+l1121
+physical+sheen+l1000
+physical+cc+l1000

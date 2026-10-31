@@ -51,6 +51,7 @@ cw_add_app(scene3d SOURCES scene3d/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/sce
 cw_add_app(far_view SOURCES far_view/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/far_view/assets)
 # navigation: 500 agents crossing a level, a gate carving the navmesh (cartwheel/nav.h)
 cw_add_app(nav_demo SOURCES nav_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/nav_demo/assets)
+cw_add_app(warm_culled SOURCES warm_culled/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/warm_culled/assets)
 cw_add_app(nav_links SOURCES nav_links/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/nav_links/assets)
 # navigation timings (tests/nav-perf.mjs): navmesh builds, obstacle updates, batched paths, crowd steps
 cw_add_app(nav_perf SOURCES nav_perf/main.c)
