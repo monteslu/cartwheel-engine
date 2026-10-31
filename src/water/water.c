@@ -402,6 +402,8 @@ void cw_water_set_wave_mask(cw_node water, const float *mask, int nx, int nz) {
   d->mask = NULL;
   if (d->mask_tex) t3_release(d->mask_tex);
   d->mask_tex = NULL;
+  cw_pass_texture_free(d->under_mask);
+  d->under_mask = 0;
   if (!mask || nx < 1 || nz < 1) return;
   size_t n = (size_t)nx * (size_t)nz;
   d->mask = cw_alloc(n * sizeof(float), CW_MEM_RENDER);
