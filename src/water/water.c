@@ -868,6 +868,8 @@ static void fill(t3_extension_ctx *c, void *user) {
   }
   t3_extension_set_uniform(c, "waterSteep", d->ev.q, 4);
   t3_extension_set_uniform(c, "waterPhase", d->ev.ph, 4);
+  v[0] = d->crest_light, v[1] = v[2] = v[3] = 0;
+  t3_extension_set_uniform(c, "waterCrest", v, 4);
   v[0] = d->grid_off[0], v[1] = d->grid_off[1], v[2] = d->grid_mode == 1 ? 1.0f : 0.0f, v[3] = d->foam_scale;
   t3_extension_set_uniform(c, "waterGrid", v, 4);
   t3_extension_set_uniform(c, "waterShelter", d->ev.shelter, 4);
@@ -1107,6 +1109,7 @@ static const cw_prop water_props[] = {
   CW_PROP_FIELD_RANGE(water3d, foam_scale, CW_T_FLOAT, 0.05, 32, "How much finer the foam's pattern is than its default (1: cells of a few metres, for a view from far above)."),
   CW_PROP_FIELD_RANGE(water3d, foam_lace, CW_T_FLOAT, 0, 4, "How much of the foam's lace pattern cuts holes in it (1.4; 0: solid foam)."),
   CW_PROP_FIELD_RANGE(water3d, foam_soft, CW_T_FLOAT, 0, 1, "0: foam cut out by its lace. 1: thick foam solid and churned, thinning through soft patches to nothing, for water seen close up."),
+  CW_PROP_FIELD_RANGE(water3d, crest_light, CW_T_FLOAT, 0, 1, "How much lighter and greener the thin water at a wave's top is than the body under it (0: none)."),
   CW_PROP_FIELD_RANGE(water3d, scatter, CW_T_FLOAT, 0, 4, "Light the sun sends through wave crests toward the eye (the turquoise glow; needs a ProceduralSky)."),
   CW_PROP_FIELD_RANGE(water3d, glint, CW_T_FLOAT, 0, 8, "Strength of the fine sparkle the sun makes on the small ripples."),
   CW_PROP_FIELD_RANGE(water3d, ripple_cells, CW_T_INT, 0, 512, "Cells along the longer side of the interactive ripple grid (0: no ripples; quality scales it)."),

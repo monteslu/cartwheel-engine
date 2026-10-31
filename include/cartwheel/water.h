@@ -67,6 +67,7 @@
  *     crest_foam           0..1: foam on the wave crests where the surface
  *                          bunches up (0.35; 0 = none)
  *     foam_scale           how much finer the foam's pattern is (1)
+ *     crest_light          0..1: how much lighter the thin water at a wave's top is (0)
  *     foam_lace            how much of that pattern cuts holes in the foam (1.4)
  *     foam_soft            0..1: foam by thickness, thinning through soft patches (0)
  *     foam_spread          m/s a wake's foam spreads as it fades (0)
