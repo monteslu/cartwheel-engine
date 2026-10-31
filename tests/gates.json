@@ -1,6 +1,7 @@
 [
   { "name": "gate-cpu", "script": "tests/gate-cpu.mjs", "note": "gate.mjs --cpu runs without the GPU suite lock (control: the plain gate queues on the same held lock)" },
   { "name": "sdk-rebuild", "script": "tests/sdk-rebuild.mjs", "note": "a game built against a prebuilt SDK recompiles when another SDK is unpacked in its place with older file times; control: the v0.18.0 package misses the swap" },
+  { "name": "unit-weakgpu-auto", "script": "tests/unit-weakgpu-auto.mjs", "note": "Auto outside a deterministic run: a game's Auto default saves the level it stepped to, and a saved level is retried one up, kept on budget and unchanged over it (control: an injected failure must fail the run)" },
   { "name": "cart-audio-ring", "script": "tests/cart-audio-ring.mjs", "note": "Cart audio ring allocation and real 100 ms host burst capacity" },
   { "name": "program-extensions", "script": "tests/program-extensions.mjs", "note": "Project extension modules compose with GL/WebGPU sun-shadow variants and reject invalid modules" },
   {

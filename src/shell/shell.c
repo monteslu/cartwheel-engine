@@ -668,6 +668,10 @@ static void draw_controls(float x, float y, float size) {
 
 void cw_shell_draw(void) {
   if (S.own_audio) cw_audio_update();
+  if (S.inited && cw_quality_is_auto()) { /* the level Auto holds now outlives the run */
+    uint32_t saved = (uint32_t)SAVE.gfx[0] | (uint32_t)SAVE.gfx[1] << 8 | (uint32_t)SAVE.gfx[2] << 16 | (uint32_t)SAVE.gfx[3] << 24;
+    if (cw_quality_saved() != saved) cw_shell_save_commit();
+  }
   if (!S.inited || S.screen == CW_SHELL_PLAY) return;
   cw_r2d_begin(NULL);
   cw_vec2 sz = cw_r2d_canvas_size();

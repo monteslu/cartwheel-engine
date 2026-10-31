@@ -4,6 +4,13 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.28.2 (2026-10-31)
+
+### Fixed
+- Auto keeps the level it reached when Auto is the game's own default, as `quality.h` said. `cw_quality_saved` returned 0 unless the player had picked Auto, so a game starting on Auto began every run at High and a weak machine sat through a slow opening each time. It now returns the level once Auto has stepped down. The shell's save writes it by itself; a game that keeps the word itself writes it from `cw_quality_on_change`.
+- A saved Auto level no longer lasts for good. A run timed by frame time (every cart) cannot tell how far under budget it is, so it never stepped back up, and one bad session stayed in the save. A run now starts one level above its saved level; if that holds a couple of seconds of play on budget it is the new saved level, and if not Auto steps back down and the save is unchanged. A machine that really cannot hold it pays those couple of seconds at the start of each run's play.
+- `cw_quality_auto(false, ...)` turns Auto off. It set High and left Auto running.
+
 ## v0.28.1 (2026-10-30)
 
 ### Fixed
