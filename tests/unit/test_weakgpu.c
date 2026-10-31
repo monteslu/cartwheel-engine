@@ -65,8 +65,7 @@ static void test_vertex_cache(void) {
 }
 
 static void test_full_resolution(void) {
-  cw_quality_full_resolution(true);
-  CHECK(cw_quality_is_full_resolution());
+  CHECK(cw_quality_is_full_resolution()); /* the default */
   cw_quality_set(CW_QUALITY_LOW, false);
   int full = cw_gfx_get(CW_GFX_RESOLUTION);
   CHECK_EQ_INT(full, 5); /* 100% */
@@ -74,6 +73,7 @@ static void test_full_resolution(void) {
   cw_quality_set(CW_QUALITY_LOW, false);
   int low = cw_gfx_get(CW_GFX_RESOLUTION);
   CHECK_EQ_INT(low, 2); /* the control: 67% without it */
+  cw_quality_full_resolution(true);
   cw_quality_set(CW_QUALITY_HIGH, false);
   FOLD(full), FOLD(low);
 }

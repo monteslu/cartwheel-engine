@@ -4,6 +4,15 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.27.0 (2026-10-30)
+
+### Changed
+- Full resolution is the default: the Low and Medium presets and Auto no longer lower render resolution. Auto's ladder
+  is High, Medium, Low, each at 100%, so it gives up detail, never pixels. Low and Medium cost more than before on a weak
+  GPU. The player can still pick a resolution on the graphics page, and a game that wants the old behaviour calls
+  `cw_quality_full_resolution(false)` in init. A saved Auto level is read on the shorter ladder (a level past its end
+  becomes Low).
+
 ## v0.26.1 (2026-10-30)
 
 ### Fixed
