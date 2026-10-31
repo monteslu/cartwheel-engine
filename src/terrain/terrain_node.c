@@ -299,7 +299,7 @@ static cw_node_type scatter_type = {
 
 typedef struct terrain3d {
   int size_x, size_z, region_size, grid_quads, lod_count;
-  float vertex_spacing, min_height, max_height, lod0_range, far_distance, visible_range;
+  float vertex_spacing, min_height, max_height, lod0_range, far_distance, visible_range, side_detile;
   const char *heightmap, *control, *splat;
   int generate_seed;
   float generate_feature, generate_amplitude;
@@ -370,6 +370,7 @@ static void build(cw_node n, terrain3d *d) {
   def.lod_count = d->lod_count, def.vertex_spacing = d->vertex_spacing, def.min_height = d->min_height;
   def.max_height = d->max_height, def.lod0_range = d->lod0_range, def.far_distance = d->far_distance;
   def.visible_range = d->visible_range;
+  def.side_detile = d->side_detile;
   def.no_shadow_cast = !d->cast_shadow;
   def.origin = node_origin(n, d);
   cw_terrain *t = cw_terrain_create(&def);
@@ -510,6 +511,7 @@ static const cw_prop terrain_props[] = {
   CW_PROP_FIELD_RANGE(terrain3d, grid_quads, CW_T_INT, 8, 64, "Quads along a patch's side (power of two)."),
   CW_PROP_FIELD_RANGE(terrain3d, lod_count, CW_T_INT, 0, CW_TERRAIN_MAX_LODS, "Levels (0 = as many as the size allows)."),
   CW_PROP_FIELD_RANGE(terrain3d, lod0_range, CW_T_FLOAT, 0, 100000, "Metres the finest level reaches (0 = the least that stays crack-free)."),
+  CW_PROP_FIELD_RANGE(terrain3d, side_detile, CW_T_FLOAT, 0, 1, "Cliffs hide the layer's repeat: each small cell reads the layer at its own offset, with colour and strata by world position (0: off)."),
   CW_PROP_FIELD_RANGE(terrain3d, far_distance, CW_T_FLOAT, 1, 100000, "Metres past which only the macro colour is drawn (x quality)."),
   CW_PROP_FIELD_RANGE(terrain3d, visible_range, CW_T_FLOAT, 0, 1e7, "Patches farther are not drawn (0 = unlimited)."),
   CW_PROP_FIELD(terrain3d, heightmap, CW_T_STRING, CW_PROP_DEFAULT, "16-bit grey PNG or .r16 heightmap (resized to the samples)."),

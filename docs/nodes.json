@@ -8947,6 +8947,16 @@
      "doc": "Metres the finest level reaches (0 = the least that stays crack-free)."
     },
     {
+     "name": "side_detile",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Cliffs hide the layer's repeat: each small cell reads the layer at its own offset, with colour and strata by world position (0: off)."
+    },
+    {
      "name": "far_distance",
      "type": "float",
      "default": "400",

@@ -166,7 +166,7 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   const albedoArr = arrayTex('terrainAlbedo'), normalArr = arrayTex('terrainLayerNormals');
   const uvs0 = v4('terrainUv0');      // uv scale of layers 0..3 (repeats per metre)
   const uvs1 = v4('terrainUv1');      // 4..7
-  const slope = v4('terrainSlope');   // triplanar from normal.y = x down to x - y; (unused); height blend sharpness
+  const slope = v4('terrainSlope');   // triplanar from normal.y = x down to x - y; side_detile; height blend sharpness
 
   const layerScale = (id) => {
     const a = select(id.lessThan(0.5), uvs0.x, select(id.lessThan(1.5), uvs0.y, select(id.lessThan(2.5), uvs0.z, uvs0.w)));
@@ -215,6 +215,40 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     return vec2(uv.x.mul(c).sub(uv.y.mul(s)), uv.x.mul(s).add(uv.y.mul(c)));
   };
 
+  // a side projection's albedo and normal. Plainly, it repeats on a grid that shows across a whole cliff. With side_detile (slope.z) each small
+  // triangular cell reads the layer at its own offset, and where cells meet the rock whose height stands out wins, so the joins follow the rock's
+  // own cracks instead of showing as soft facets, and no feature ever comes round again. Seven reads to two.
+  const side = (id, uv, gx, gy, dt) => {
+    const alb = vec4(0).toVar(), nrm = vec4(0).toVar();
+    If(dt.lessThan(0.001), () => {
+      alb.assign(sampleLayer(false, id, uv, gx, gy, true));
+      nrm.assign(sampleLayer(true, id, uv, gx, gy, true));
+    }).Else(() => {
+      // the rock's big forms from a far larger tile: a cliff is not the same small stones all the way up. The tile at its own size comes back only
+      // as fine grain over them, on one read, too faint to line up
+      const big = 0.37, ub = uv.mul(big), gxb = gx.mul(big), gyb = gy.mul(big);
+      const q = ub.mul(1.7), skew = vec2(q.x.sub(q.y.mul(0.57735027)), q.y.mul(1.15470054));
+      const cell = floor(skew), f = fract(skew), upper = f.x.add(f.y).greaterThan(1);
+      const a = select(upper, cell.add(vec2(1, 1)), cell);
+      const b = select(upper, cell.add(vec2(0, 1)), cell.add(vec2(1, 0)));
+      const c = select(upper, cell.add(vec2(1, 0)), cell.add(vec2(0, 1)));
+      const w = select(upper, vec3(f.x.add(f.y).sub(1), float(1).sub(f.x), float(1).sub(f.y)), vec3(float(1).sub(f.x).sub(f.y), f.x, f.y));
+      const off = (p) => fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))).mul(43758.5453));
+      const oa = off(a).toVar(), ob = off(b).toVar(), oc = off(c).toVar();
+      const ra = texture(albedoArr, ub.add(oa)).depth(int(id)).grad(gxb, gyb), rb = texture(albedoArr, ub.add(ob)).depth(int(id)).grad(gxb, gyb), rc = texture(albedoArr, ub.add(oc)).depth(int(id)).grad(gxb, gyb);
+      const sc3 = vec3(w.x.add(ra.a.mul(0.35)), w.y.add(rb.a.mul(0.35)), w.z.add(rc.a.mul(0.35)));
+      const top = max(max(sc3.x, sc3.y), sc3.z).sub(0.12);
+      const k0 = max(sc3.sub(vec3(top)), vec3(0));
+      const k = k0.div(max(k0.x.add(k0.y).add(k0.z), 1e-4)).toVar();
+      const t = ra.mul(k.x).add(rb.mul(k.y)).add(rc.mul(k.z));
+      const fine = texture(albedoArr, vec2(uv.y.mul(1.13).add(0.31), uv.x.mul(1.13).add(0.77))).depth(int(id)).grad(vec2(gx.y, gx.x).mul(1.13), vec2(gy.y, gy.x).mul(1.13));
+      const grain = dot(fine.rgb, vec3(0.333)).div(max(dot(t.rgb, vec3(0.333)).mul(0.5).add(0.2), 0.05)).sub(1).mul(0.28).add(1);
+      alb.assign(vec4(sRGBTransferEOTF(t.rgb).mul(clamp(grain, 0.6, 1.45)), t.a));
+      nrm.assign(texture(normalArr, ub.add(oa)).depth(int(id)).grad(gxb, gyb).mul(k.x).add(texture(normalArr, ub.add(ob)).depth(int(id)).grad(gxb, gyb).mul(k.y)).add(texture(normalArr, ub.add(oc)).depth(int(id)).grad(gxb, gyb).mul(k.z)));
+    });
+    return { alb, nrm };
+  };
+
   // a layer's albedo (rgb + height in a) and normal-roughness at a world point, planar or (steep) triplanar;
   // g holds the derivatives, taken before any branch (WGSL allows them only in uniform control flow)
   const layerAt = (id, ctl, g) => {
@@ -241,17 +275,27 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
       const n = worldNormal;
       const ax = abs(n.x), az = abs(n.z);
       const sx = smoothstep(0.35, 0.65, ax.div(ax.add(az).add(1e-4))).toVar();
+      const dt = slope.z;
       const uvX = wp.zy.mul(sc), uvZ = wp.xy.mul(sc);
       const dxs = g.dx3.mul(sc), dys = g.dy3.mul(sc);
       const sideA = vec4(0).toVar(), sideN = vec4(0).toVar();
       If(sx.greaterThan(0.001), () => {
-        sideA.addAssign(sampleLayer(false, id, uvX, dxs.zy, dys.zy, true).mul(sx));
-        sideN.addAssign(toX(sampleLayer(true, id, uvX, dxs.zy, dys.zy, true)).mul(sx));
+        const t = side(id, uvX, dxs.zy, dys.zy, dt);
+        sideA.addAssign(t.alb.mul(sx));
+        sideN.addAssign(toX(t.nrm).mul(sx));
       });
       If(sx.lessThan(0.999), () => {
-        sideA.addAssign(sampleLayer(false, id, uvZ, dxs.xy, dys.xy, true).mul(float(1).sub(sx)));
-        sideN.addAssign(toZ(sampleLayer(true, id, uvZ, dxs.xy, dys.xy, true)).mul(float(1).sub(sx)));
+        const t = side(id, uvZ, dxs.xy, dys.xy, dt);
+        sideA.addAssign(t.alb.mul(float(1).sub(sx)));
+        sideN.addAssign(toZ(t.nrm).mul(float(1).sub(sx)));
       });
+      // and what a grid can't hide is broken by the rock's own scale: colour over tens of metres, and strata that follow height. Both are
+      // functions of the world, not of the tile
+      const q = wp.mul(0.021);
+      const macro = sin(q.x.add(sin(q.z.mul(1.7)).mul(1.3)).add(q.y.mul(0.6))).add(sin(q.z.mul(1.31).sub(q.y.mul(0.9)).add(sin(q.x.mul(0.8)).mul(1.1)))).mul(0.5);
+      const strat = sin(wp.y.mul(0.83).add(sin(wp.x.mul(0.047).add(wp.z.mul(0.031))).mul(3.1))).mul(0.6).add(sin(wp.y.mul(2.3).add(sin(wp.z.mul(0.071).sub(wp.x.mul(0.053))).mul(2.2))).mul(0.4));
+      const tone = float(1).add(macro.mul(0.2).add(strat.mul(0.14)).mul(dt));
+      sideA.assign(vec4(sideA.rgb.mul(tone), sideA.a));
       alb.assign(mix(alb, sideA, g.tri));
       nrm.assign(mix(nrm, sideN, g.tri));
     });

@@ -1378,6 +1378,11 @@
     "note": "lamps and cascades on the terrain natively on GL and WebGPU: clustered lamps against three.c's own (max 2 levels off on 0.1%), four cascades against one wide shadow map (0.5% off by >16). Controls: the nearest lamp missing, and no shadow, must fail"
   },
   {
+    "name": "terrain-side-detile",
+    "script": "tests/terrain-side-detile.mjs",
+    "note": "side_detile changes a steep face's picture and nothing when off; control: the same run twice differs by nothing, so a difference is the option's"
+  },
+  {
     "name": "unit-terrain",
     "app": "unit_terrain",
     "frames": 2,

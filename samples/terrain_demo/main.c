@@ -375,6 +375,7 @@ static void paint(cw_terrain *t) {
   cut_track(t, ctl, nx);
   cw_terrain_set_control(t, 0, 0, nx, nz, ctl);
   free(ctl);
+  if (getenv("TERRAIN_DETILE")) cw_terrain_set_side_detile(t, 1); /* gate terrain-side-detile */
   cw_terrain_sync_physics(t);
   cw_terrain_scatter_invalidate(t);
 }
