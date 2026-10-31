@@ -64,6 +64,7 @@ Out of the box the water is tuned to read as water, not as a blue sheet:
 - The body is lit by the sun: it dims and reddens toward dusk instead of staying one colour.
 - The sun sends a turquoise glow through the crests that face it (`scatter`, with a ProceduralSky), and a narrow glitter runs along the fine chop where it reflects (`glint`).
 - Three octaves of ripple normals break up the highlights; the swell's own tilt moves the reflection less than the ripples do, so a steep wave face does not reach past the mirrored horizon.
+- A ripple tilted away from the eye mirrors below the horizon, and the environment's specular reads a ProceduralSky's `ground_color` there. It shows as hard-edged streaks on a low camera's view and as part of a wake's colour, sandy with the default ground. Where they show, give the sky a ground colour close to the water's (say `ground_color = color(0.16, 0.26, 0.34, 1)`). It also sets the light that sky sends up from below, on everything in the scene.
 - Foam is lace, not cotton: its bubbles follow the caustic pattern's web of lines (below), thin foam keeping only the brightest knots and thick foam filling the cells; far away, where the lace would shimmer, it evens out.
 
 Set `scatter` and `glint` to 0 for a plainer look.
