@@ -69,6 +69,9 @@ jobs:
       - name: Build the SDK (Debug)
         if: matrix.target != 'cart-wgpu'
         run: BUILD_TYPE=Debug scripts/build-sdk.sh ${{ matrix.target }}
+      - name: Link a game against the SDK
+        if: matrix.target != 'cart-wgpu'
+        run: scripts/sdk-link-check.sh ${{ matrix.target }} "out/sdk/cartwheel-sdk-$CW_SDK_VERSION-${{ matrix.target }}.tar.gz"
       - uses: actions/upload-artifact@v7
         with:
           name: sdk-${{ matrix.target }}
