@@ -126,6 +126,8 @@ Some checks need more than one run: several processes, a tool, a timing report. 
 
 A repository of games built with this engine (configured as its project with `-DCW_PROJECT_DIR`) keeps its own `tests/gates.json`, input scripts, `build/` and `out/`, laid out as here. `CW_PROJECT_ROOT=<that repository>` points `tests/gate.mjs` and `tools/run-cart.mjs` at them: gates, inputs and scripts come from its `tests/`, apps from its `build/` (a project app is found through `build/native/apps/<app>.json`), and output goes to its `out/`. [cartwheel-examples](https://github.com/monteslu/cartwheel-examples) runs its games' gates this way.
 
+The engine source such a repository keeps has no `deps/` of its own. Its Chromium host needs wasmcart: run `scripts/fetch-deps.sh --only wasmcart-wgpu` in that copy (52 MB, the rest of the engine's dependencies stay out). Without it, `run-cart.mjs` stops and names this command.
+
 `tests/post-fusion.mjs` (post fusion draws what the separate passes draw, on GL and WebGPU) takes the apps to check as arguments, `app[:frame[:preset]]`, and reads `CW_PROJECT_ROOT` the same way.
 
 ## Everything at once

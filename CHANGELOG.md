@@ -4,6 +4,13 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.25.2 (2026-10-30)
+
+### Fixed
+- `tools/run-cart.mjs --host chromium` from a games repository's copy of the engine source, which has no `deps/`,
+  stopped on a missing-module error. It now names the command that fetches its host:
+  `scripts/fetch-deps.sh --only wasmcart-wgpu` in that copy. `docs/guides/testing.md` says so too.
+
 ## v0.25.1 (2026-10-30)
 
 ### Fixed
