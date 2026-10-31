@@ -80,8 +80,12 @@
  * it measures GPU time it also steps back up when the cost has stayed well
  * under budget, never into a level that was over it in this run. A game
  * makes Auto the starting choice with cw_quality_auto(true, budget); the
- * player can always pick it. The level it reached is saved, so the next run
- * starts there.
+ * player can always pick it. The level it reached is saved, and the next run
+ * starts one level above it: that level is saved only once it has held for
+ * a couple of seconds of play, and a run where it goes over budget steps
+ * back down and saves the old level. One bad session does not last for good.
+ * A game that keeps the word itself writes it from the change callback too,
+ * so a step is saved (the shell's save does this by itself).
  *
  * Determinism: a deterministic run (a test) starts at High whatever the
  * save holds, with Auto off, so every host draws the same frame; a choice
@@ -219,8 +223,9 @@ const char *cw_quality_label(void);
  * Menu > Core Options > Internal Resolution). */
 const char *cw_render_res_label(void);
 
-/* Save data: a word the game keeps in its save (0 = none chosen). It holds
- * the choice (a preset, Auto and the level it reached, or every setting of a
+/* Save data: a word the game keeps in its save (0 = nothing to keep). It holds
+ * the choice (a preset, Auto and the level it reached, also when Auto is the
+ * game's own default and has stepped down, or every setting of a
  * Custom choice, the game's levers too); cw_quality_restore applies it (at
  * init, after the save loaded and the levers were added; not in a
  * deterministic run). It fits in 13 bits

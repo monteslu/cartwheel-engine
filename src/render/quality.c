@@ -98,6 +98,7 @@ static struct {
   int rung, fail_rung; /* the ladder's level now; the highest level over budget in this run (-1 none) */
   float budget;
   bool in_play, gpu_timed;
+  bool retrying;   /* a run trying the level above its saved one: unproven until it has held for a while */
   double last_t;
   float avg;
   int frames;
@@ -315,6 +316,7 @@ void cw_quality_on_change(cw_quality_change_fn fn, void *user) {
 static void auto_start(int rung) {
   Q.mode = MODE_AUTO;
   Q.fail_rung = -1;
+  Q.retrying = false;
   set_rung(rung);
   changed();
 }
@@ -335,7 +337,10 @@ void cw_quality_auto(bool on, float budget_ms) {
   if (budget_ms > 0) Q.budget = budget_ms;
   if (locked() || Q.chosen) return;
   if (on && Q.mode != MODE_AUTO) auto_start(0);
-  else if (!on && Q.mode == MODE_AUTO) cw_quality_set(CW_QUALITY_HIGH, false);
+  else if (!on && Q.mode == MODE_AUTO) {
+    Q.mode = MODE_PRESET;
+    cw_quality_set(CW_QUALITY_HIGH, false);
+  }
 }
 bool cw_quality_is_auto(void) { return Q.mode == MODE_AUTO && !locked(); }
 bool cw_quality_is_custom(void) { return Q.mode == MODE_CUSTOM; }
@@ -376,12 +381,14 @@ void cw_quality_auto_measure(bool in_play) {
     return;
   }
   Q.avg += (cost - Q.avg) * 0.05f;
+  if (Q.frames > 150 && Q.avg <= budget) Q.retrying = false;
   if (Q.frames > 150 && Q.avg > budget && Q.rung < LADDER_N - 1) {
     cw_info("quality: auto %s %d%% -> %s %d%% (%s averaged %.1f ms, budget %.1f)", NAMES[RUNG(Q.rung).preset],
             (int)(RES[RUNG(Q.rung).res] * 100 + 0.5f), NAMES[RUNG(Q.rung + 1).preset],
             (int)(RES[RUNG(Q.rung + 1).res] * 100 + 0.5f), Q.gpu_timed ? "GPU time" : "frames", (double)Q.avg,
             (double)budget);
     Q.fail_rung = CW_MAX(Q.fail_rung, Q.rung);
+    Q.retrying = false;
     set_rung(Q.rung + 1);
     changed();
   } else if (Q.gpu_timed && Q.frames > 300 && Q.avg < budget * 0.55f && Q.rung > 0 && Q.rung - 1 > Q.fail_rung) {
@@ -432,8 +439,11 @@ const char *cw_render_res_label(void) {
  * the game's levers, 2 bits each): two bytes hold every choice of a game
  * with no levers of its own, three any game's */
 uint32_t cw_quality_saved(void) {
+  if (Q.mode == MODE_AUTO) { /* a level still being retried is not saved; a game's own Auto default counts once it has stepped */
+    int rung = Q.rung + Q.retrying;
+    return Q.chosen || rung > 0 ? 5u | (uint32_t)rung << 3 : 0;
+  }
   if (!Q.chosen) return 0;
-  if (Q.mode == MODE_AUTO) return 5u | (uint32_t)Q.rung << 3;
   if (Q.mode == MODE_PRESET) return (uint32_t)Q.level + 1;
   uint32_t w = 6u | (uint32_t)Q.v[CW_GFX_RESOLUTION] << 3 | (uint32_t)Q.v[CW_GFX_SSAO] << 6 | (uint32_t)Q.v[CW_GFX_SHADOWS] << 7 |
                (uint32_t)Q.v[CW_GFX_AA] << 9 | (uint32_t)Q.v[CW_GFX_EFFECTS] << 11;
@@ -447,7 +457,10 @@ void cw_quality_restore(uint32_t saved) {
   if (m >= 1 && m <= CW_QUALITY_COUNT) cw_quality_set((cw_quality)(m - 1), true);
   else if (m == 5) {
     Q.chosen = true;
-    auto_start((int)(saved >> 3 & 7));
+    /* one level up from the save: a frame-timed run has no other way back, so one bad session would otherwise last for good */
+    int rung = CW_CLAMP((int)(saved >> 3 & 7), 0, LADDER_N - 1);
+    auto_start(rung > 0 ? rung - 1 : 0);
+    Q.retrying = rung > 0;
   } else if (m == 6) {
     uint8_t v[CW_GFX_ENGINE_COUNT] = { (uint8_t)(saved >> 3 & 7), (uint8_t)(saved >> 6 & 1), (uint8_t)(saved >> 7 & 3),
                                        (uint8_t)(saved >> 9 & 3), (uint8_t)(saved >> 11 & 3) };
