@@ -117,6 +117,7 @@ typedef struct cw_terrain_def {
   float lod0_range;         /* metres level 0 reaches; 0 = 2.5 patch widths (raised to that if smaller) */
   float lod_ratio;          /* each level reaches this much farther: 2 */
   float morph_start;        /* where morphing starts inside a level's band, 0..1: 0.66 */
+  float side_detile;        /* 0..1: cliffs hide the layer's repeat (stochastic cells; colour and strata by world position). 0: off */
   float far_distance;       /* metres: past it only the macro colour is drawn (0 = 400) */
   float far_fade;           /* metres over which splat fades into macro: 0 = far_distance / 4 */
   float visible_range;      /* patches farther than this are not drawn: 0 = unlimited */
@@ -128,6 +129,8 @@ cw_terrain_def cw_terrain_default_def(void);
 /* A flat terrain at min_height. NULL (logged) for sizes that are not
  * multiples of grid_quads or a region_size that is not a power of two. */
 cw_terrain *cw_terrain_create(const cw_terrain_def *def);
+/* The def's side_detile, live. */
+void cw_terrain_set_side_detile(cw_terrain *t, float amount);
 /* Frees the terrain, its scatter, its physics and its scene objects. */
 void cw_terrain_destroy(cw_terrain *t);
 /* The definition it was made with, the levels and ranges it settled on filled in. */

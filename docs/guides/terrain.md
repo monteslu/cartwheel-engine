@@ -61,6 +61,8 @@ Shading is three.js r187's MeshStandardMaterial, so lights, shadows, fog and the
 - the fragment stage reads the control words, blends the layers, uses triplanar sampling on steep slopes, and past `far_distance` uses only a baked macro colour and the normal map;
 - patches wholly past `far_distance` use a third program that reads just those two textures.
 
+A side projection repeats, and on a big cliff that repeat shows as a grid. Set `side_detile` (0 to 1, off by default) and each cell of the projection reads the layer at a larger scale and its own offset, with the original scale as fine grain, joined along the rock's own cracks, while the rock takes colour over tens of metres and strata that follow height. It costs seven texture reads for two on a steep face, only where it is on.
+
 The near patches cast shadows with the same extension's caster program, morphed for the viewing camera.
 
 ## Quality

@@ -12647,6 +12647,12 @@
      "inline": false
     },
     {
+     "name": "cw_terrain_set_side_detile",
+     "signature": "void cw_terrain_set_side_detile(cw_terrain *t, float amount)",
+     "doc": "The def's side_detile, live.",
+     "inline": false
+    },
+    {
      "name": "cw_terrain_destroy",
      "signature": "void cw_terrain_destroy(cw_terrain *t)",
      "doc": "Frees the terrain, its scatter, its physics and its scene objects.",
@@ -12944,7 +12950,7 @@
     {
      "name": "cw_terrain_def",
      "doc": "",
-     "decl": "typedef struct cw_terrain_def {\n  int size_x, size_z;       /* quads; multiples of grid_quads: 512 x 512 */\n  int region_size;          /* quads per physics region (power of two): 256 */\n  float vertex_spacing;     /* metres between samples: 1 */\n  float min_height, max_height; /* metres: 0, 100 */\n  t3_vec3 origin;           /* world position of sample (0, 0) at height 0 */\n  int grid_quads;           /* quads along a patch's side (power of two, 8..64): 32 */\n  int lod_count;            /* levels (0 = as many as the sizes allow, at most CW_TERRAIN_MAX_LODS) */\n  float lod0_range;         /* metres level 0 reaches; 0 = 2.5 patch widths (raised to that if smaller) */\n  float lod_ratio;          /* each level reaches this much farther: 2 */\n  float morph_start;        /* where morphing starts inside a level's band, 0..1: 0.66 */\n  float far_distance;       /* metres: past it only the macro colour is drawn (0 = 400) */\n  float far_fade;           /* metres over which splat fades into macro: 0 = far_distance / 4 */\n  float visible_range;      /* patches farther than this are not drawn: 0 = unlimited */\n  bool no_shadow_cast;      /* the near patches cast shadows unless this is set: false */\n} cw_terrain_def;"
+     "decl": "typedef struct cw_terrain_def {\n  int size_x, size_z;       /* quads; multiples of grid_quads: 512 x 512 */\n  int region_size;          /* quads per physics region (power of two): 256 */\n  float vertex_spacing;     /* metres between samples: 1 */\n  float min_height, max_height; /* metres: 0, 100 */\n  t3_vec3 origin;           /* world position of sample (0, 0) at height 0 */\n  int grid_quads;           /* quads along a patch's side (power of two, 8..64): 32 */\n  int lod_count;            /* levels (0 = as many as the sizes allow, at most CW_TERRAIN_MAX_LODS) */\n  float lod0_range;         /* metres level 0 reaches; 0 = 2.5 patch widths (raised to that if smaller) */\n  float lod_ratio;          /* each level reaches this much farther: 2 */\n  float morph_start;        /* where morphing starts inside a level's band, 0..1: 0.66 */\n  float side_detile;        /* 0..1: cliffs hide the layer's repeat (stochastic cells; colour and strata by world position). 0: off */\n  float far_distance;       /* metres: past it only the macro colour is drawn (0 = 400) */\n  float far_fade;           /* metres over which splat fades into macro: 0 = far_distance / 4 */\n  float visible_range;      /* patches farther than this are not drawn: 0 = unlimited */\n  bool no_shadow_cast;      /* the near patches cast shadows unless this is set: false */\n} cw_terrain_def;"
     },
     {
      "name": "cw_terrain_hit",

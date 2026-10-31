@@ -35,6 +35,8 @@
 
 /* the instanced meshes of every terrain, for the fill hook to find its terrain by the drawn object
  * (any number of terrains: a streamed world has one per loaded cell) */
+void cw_terrain_set_side_detile(cw_terrain *t, float amount) { if (t) t->def.side_detile = amount; }
+
 static cw_map g_objs;
 static bool g_objs_init;
 
@@ -466,7 +468,7 @@ static void fill(t3_extension_ctx *c, void *user) {
   for (int k = 0; k < 4; k++) v[k] = t->layer[4 + k].uv_scale;
   t3_extension_set_uniform(c, "terrainUv1", v, 4);
   /* triplanar from normal.y 0.75 down over 0.2; height-blend sharpness */
-  v[0] = 0.75f, v[1] = 0.2f, v[2] = 0, v[3] = 0.15f;
+  v[0] = 0.75f, v[1] = 0.2f, v[2] = t->def.side_detile, v[3] = 0.15f;
   t3_extension_set_uniform(c, "terrainSlope", v, 4);
   t3_extension_set_texture(c, "terrainHeights", g->heights);
   t3_extension_set_texture(c, "terrainMacro", g->macro);

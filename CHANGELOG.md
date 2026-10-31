@@ -4,6 +4,11 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.29.0 (2026-10-31)
+
+### Added
+- Terrain3D `side_detile` (0 to 1, off by default): cliffs stop showing the rock layer's repeat as a grid. Each cell of a side projection reads the layer at a larger scale and its own offset, with the original scale as fine grain, joined along the rock's own cracks, and the rock takes colour over tens of metres and strata that follow height. Seven texture reads for two on a steep face where it is on. Terrain programs changed, so a project's program tables need regenerating (`node tools/programs.mjs`).
+
 ## v0.28.6 (2026-10-31)
 
 ### Fixed
