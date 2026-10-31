@@ -114,6 +114,10 @@ A ripple grid sharp enough for a wake (25 to 50 cm cells) covers 100 to 150 metr
 
 @include samples/water_open_sea/main.c#follow
 
+## Foam and swell seen from close by
+
+The foam's pattern is sized for a view from several metres up. From a chase camera set `foam_scale` (how much finer it is), `foam_lace` (1.4 by default, how much of that pattern cuts holes in it; lower it for a solid wake) and `foam_spread` (metres per second that a wake's foam spreads sideways as it fades, so the trail opens behind a boat). `swell_reflect` lets the swell's own tilt move the reflection (0 by default): a hill of water then stops mirroring the sky like a flat sheet and its faces read at a distance. Keep it low where land stands in the reflection.
+
 ## Quality and costs
 
 Water follows the effects detail setting of the graphics settings ([cartwheel/quality.h](header:quality.h)):
