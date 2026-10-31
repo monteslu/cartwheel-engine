@@ -64,6 +64,8 @@ typedef struct water3d {
   const char *loaded_normal, *loaded_flow;
   int built_sub, built_mode, triangles;
   float built_min_cell;
+  cw_node refr_hide[16]; /* cw_water_refraction_hide */
+  int refr_hide_n;
   float grid_off[2]; /* VIEW: the grid's centre this view (water-local x, z) */
   float *mask;       /* mask_nx x mask_nz, row z, col x; NULL: none */
   int mask_nx, mask_nz;

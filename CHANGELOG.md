@@ -12,6 +12,7 @@ Water for an open sea: as large as you like, sheltered where you say, sharp unde
 - Water3D `grid = VIEW`: the surface is drawn as rings around the camera out to `horizon_distance` (`subdivisions` quads around each ring, at least `grid_min_cell` metres between rings), so quads are about 30 cm under a chase camera on any size of sea, for about 130,000 triangles. Each wave fades out between five and eight of its wavelengths from the camera, on the drawn surface only.
 - `cw_water_set_wave_mask` and Water3D `wave_shelter`: a map of how free the waves are, and how much it holds each wave down, so a swell is full height at sea and gone in a harbour while the chop carries on. The drawn surface, `cw_water_height_at`, `cw_water_sample_at` and Buoyancy3D read the same map. Sample `water_open_sea`, gate `water-open-sea-surface`: within 0.44 cm of the CPU on a software GL run over the transition, 48 to 97 cm for the height with the mask ignored (the control).
 - `cw_water_ripple_follow`: a small, sharp ripple grid that follows a point by whole cells, the same bits on every host. Gate `water-open-sea`.
+- `cw_water_refraction_hide`: leave a floating hull out of the refraction, where it drew a ghost on the water behind it.
 - Water3D for water seen from close by: `foam_scale`, `foam_lace`, `foam_soft` (foam by thickness, thinning through soft patches with no cut-out edge), `foam_spread` (a wake's foam widens as it fades) and `swell_reflect` (a swell's tilt moves the reflection). See [Water](docs/guides/water.md).
 
 ## v0.25.4 (2026-10-30)
