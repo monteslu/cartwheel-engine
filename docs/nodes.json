@@ -10149,6 +10149,16 @@
      "doc": "How far the surface bends reflection and refraction."
     },
     {
+     "name": "swell_reflect",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "How far the swell's own tilt moves the reflection (0: only the ripples do; a hill of water then mirrors like flat water. Keep it low where land stands in the reflection)."
+    },
+    {
      "name": "detail",
      "type": "float",
      "default": "0.35",
@@ -10310,6 +10320,36 @@
      "doc": "Foam on crests where the surface bunches up (0: none)."
     },
     {
+     "name": "foam_scale",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.05,
+     "max": 32,
+     "doc": "How much finer the foam's pattern is than its default (1: cells of a few metres, for a view from far above)."
+    },
+    {
+     "name": "foam_lace",
+     "type": "float",
+     "default": "1.4",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 4,
+     "doc": "How much of the foam's lace pattern cuts holes in it (1.4; 0: solid foam)."
+    },
+    {
+     "name": "foam_soft",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "0: foam cut out by its lace. 1: thick foam solid and churned, thinning through soft patches to nothing, for water seen close up."
+    },
+    {
      "name": "scatter",
      "type": "float",
      "default": "0.6",
@@ -10394,6 +10434,16 @@
      "min": 0,
      "max": 60,
      "doc": "How fast the foam of splashes and wakes fades, per second."
+    },
+    {
+     "name": "foam_spread",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 20,
+     "doc": "How fast the foam of splashes and wakes spreads sideways as it fades, m per second (0: it stays where it was left)."
     },
     {
      "name": "rain",
