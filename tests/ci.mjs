@@ -64,6 +64,7 @@ export const LOCAL_ONLY = {
   tutorials: 'romdev and wasmcart-native',
   'noise-gpu': 'romdev and Chromium legs',
   'water-surface': 'romdev and Chromium legs',
+  'water-open-sea-surface': 'romdev and Chromium legs',
   'boom-perf': 'GPU timing reports (GL and WebGPU on the test GPU)',
   spikes: 'WebGPU timestamp queries on the test GPU',
   'fx-explosion-kit': 'the pinned GPU sandbox (renders on GL and WebGPU and diffs them)',
