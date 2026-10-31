@@ -11,6 +11,7 @@
 #include "cartwheel/gpu.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/pipeline.h"
+#include "cartwheel/profile.h"
 #include "cartwheel/scene.h"
 #include "pipeline_internal.h"
 #include "quality_internal.h"
@@ -349,7 +350,9 @@ static float gpu_frame_ms(void) {
 }
 
 void cw_quality_auto_measure(bool in_play) {
-  double now = cw_time();
+  /* the real clock, not cw_time(): a host may deliver a fixed step whatever the frame took (a libretro core does, for its
+   * audio), and on that clock every frame looks on time */
+  double now = (double)cw_profile_now_ns() / 1e9;
   double d = (now - Q.last_t) * 1000.0;
   bool was = Q.in_play;
   Q.last_t = now;

@@ -68,7 +68,8 @@
  * the game says it is in play (cw_quality_auto_measure(true) every frame) it
  * averages the cost: the GPU time of the frame's passes where the host
  * times them cheaply (native WebGPU's timestamps), else the frame-to-frame
- * time (GL, a cart: a frame the GPU cannot finish in time arrives late). After a couple of
+ * time on the real clock (GL, a cart: a frame the GPU cannot finish in time arrives late, even where the
+ * host delivers a fixed step). After a couple of
  * seconds over budget it steps down one level of its ladder:
  *
  *   High 100%, High 85%, Medium 75%, Medium 67%, Low 67%, Low 60%, Low 50%

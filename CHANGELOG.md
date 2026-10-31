@@ -4,6 +4,13 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.26.1 (2026-10-30)
+
+### Fixed
+- Auto graphics never stepped down on a host that delivers a fixed time step and has no GPU timestamps (a cart on the
+  libretro core, which passes 1000/60 ms every frame for its audio): it measured frame time on that clock, so every frame
+  looked on time. It now reads the real clock.
+
 ## v0.26.0 (2026-10-30)
 
 Water for an open sea: as large as you like, sheltered where you say, sharp under a chase camera. Every option is off by default. The water's program changed, so a project's program tables need regenerating (`node tools/programs.mjs --projects <dir>`).
