@@ -4,6 +4,13 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.27.1 (2026-10-30)
+
+### Fixed
+- The join screen answers Start. A pad with no seat pressing Start got no response at all; it now takes the first free seat and the match starts, or with every seat taken the seated players play, and on a join screen opened during a match it takes a free seat and play resumes. Start on the title accepts the highlighted item, so Start, Start from the title is playing. Enter plays from a keyboard in any seat, not only the first.
+- A press on the join screen could be lost or seen twice. It read a frame's raw presses from the fixed tick, so on a display faster than the tick rate a press on a frame with no tick did nothing (58% of presses at 144 Hz, 50% at 120 Hz, 20% at 75 Hz), and a frame of two ticks saw one press twice (at 30 Hz, Enter on the title also seated the keyboard, and the next Enter started the match). Each press now counts once, on one tick. Taps on menu items had the same fault.
+- A press to play is answered on its own frame: the select sound and "Starting..." on screen. The game's `start` hook runs after that picture is drawn, one frame later than before, so a long `start` no longer leaves a dead join screen. `cw_shell_start` still calls it at once. New debug field `shell.starting`. Sample `shell_join_slow`, gates `shell-start-title`, `shell-start-answer`, `shell-start-unseated`, `shell-start-second`, `shell-start-full`, `shell-start-midjoin`, `shell-start-enter`, `shell-start-144hz`, `shell-start-30hz`: all fail before this release, each with a control.
+
 ## v0.27.0 (2026-10-30)
 
 ### Changed

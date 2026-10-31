@@ -87,6 +87,243 @@
     "note": "one-press join: one player starts, then a pad with no seat presses A during play and holds seat 2 at once, no join screen. Control: that pad presses B instead, so nobody joins"
   },
   {
+    "name": "shell-start-title",
+    "app": "shell_join",
+    "frames": 21,
+    "input": "shell-start-title.json",
+    "controlInput": "shell-start-title-control.json",
+    "fields": [
+      "shell.screen",
+      "shell.players",
+      "shell.starting",
+      "game.players",
+      "game.seats",
+      "game.starts",
+      "game.changes",
+      "game.opened"
+    ],
+    "expect": {
+      "shell.screen": 3,
+      "shell.players": 1,
+      "shell.starting": 0,
+      "game.players": 1,
+      "game.seats": 1,
+      "game.starts": 1
+    },
+    "note": "Start, Start from the title with one pad: playing the frame after the press that answered. Today's main: Start does nothing on the title or for a pad with no seat. Control: the second press is West",
+    "webgpu": true
+  },
+  {
+    "name": "shell-start-answer",
+    "app": "shell_join",
+    "frames": 20,
+    "input": "shell-start-answer.json",
+    "controlInput": "shell-start-answer-control.json",
+    "fields": [
+      "shell.screen",
+      "shell.players",
+      "shell.starting",
+      "game.players",
+      "game.seats",
+      "game.starts",
+      "game.changes",
+      "game.opened"
+    ],
+    "expect": {
+      "shell.screen": 2,
+      "shell.starting": 2,
+      "game.starts": 0
+    },
+    "note": "the frame of the press: \"Starting...\" is drawn and the game's start has not run, so a start that blocks for seconds comes after a picture. Control: West, nothing to answer",
+    "webgpu": true
+  },
+  {
+    "name": "shell-start-unseated",
+    "app": "shell_join",
+    "frames": 40,
+    "input": "shell-start-unseated.json",
+    "controlInput": "shell-start-unseated-control.json",
+    "fields": [
+      "shell.screen",
+      "shell.players",
+      "shell.starting",
+      "game.players",
+      "game.seats",
+      "game.starts",
+      "game.changes",
+      "game.opened"
+    ],
+    "expect": {
+      "shell.screen": 3,
+      "shell.players": 1,
+      "game.players": 1,
+      "game.starts": 1
+    },
+    "note": "join screen, nobody seated: Start seats that pad and plays. Control: West",
+    "webgpu": true
+  },
+  {
+    "name": "shell-start-second",
+    "app": "shell_join",
+    "frames": 50,
+    "input": "shell-start-second.json",
+    "controlInput": "shell-start-second-control.json",
+    "fields": [
+      "shell.screen",
+      "shell.players",
+      "shell.starting",
+      "game.players",
+      "game.seats",
+      "game.starts",
+      "game.changes",
+      "game.opened"
+    ],
+    "expect": {
+      "shell.screen": 3,
+      "shell.players": 2,
+      "game.players": 2,
+      "game.seats": 3,
+      "game.starts": 1
+    },
+    "note": "one pad seated, a second with no seat presses Start: it takes seat 2 and the match starts with both. Control: West",
+    "webgpu": true
+  },
+  {
+    "name": "shell-start-full",
+    "app": "shell_join_slow",
+    "frames": 60,
+    "input": "shell-start-full.json",
+    "controlInput": "shell-start-full-control.json",
+    "fields": [
+      "shell.screen",
+      "shell.players",
+      "shell.starting",
+      "game.players",
+      "game.seats",
+      "game.starts",
+      "game.changes",
+      "game.opened"
+    ],
+    "expect": {
+      "shell.screen": 3,
+      "shell.players": 2,
+      "game.players": 2,
+      "game.seats": 3,
+      "game.starts": 1
+    },
+    "note": "two seats, both held, a third pad presses Start: the seated players play. Control: West",
+    "webgpu": true
+  },
+  {
+    "name": "shell-start-midjoin",
+    "app": "shell_join",
+    "frames": 90,
+    "input": "shell-start-midjoin.json",
+    "controlInput": "shell-start-midjoin-control.json",
+    "fields": [
+      "shell.screen",
+      "shell.players",
+      "shell.starting",
+      "game.players",
+      "game.seats",
+      "game.starts",
+      "game.changes",
+      "game.opened"
+    ],
+    "expect": {
+      "shell.screen": 3,
+      "shell.players": 3,
+      "game.players": 3,
+      "game.seats": 7,
+      "game.starts": 1,
+      "game.changes": 1,
+      "game.opened": 1
+    },
+    "note": "join screen over a running match, a pad with no seat presses Start: it takes the free seat and play resumes, no second start. Control: West",
+    "webgpu": true
+  },
+  {
+    "name": "shell-start-enter",
+    "app": "shell_join",
+    "frames": 60,
+    "input": "shell-start-enter.json",
+    "controlInput": "shell-start-enter-control.json",
+    "fields": [
+      "shell.screen",
+      "shell.players",
+      "shell.starting",
+      "game.players",
+      "game.seats",
+      "game.starts",
+      "game.changes",
+      "game.opened"
+    ],
+    "expect": {
+      "shell.screen": 3,
+      "shell.players": 2,
+      "game.players": 2,
+      "game.seats": 3,
+      "game.starts": 1
+    },
+    "note": "the keyboard in seat 2: Enter joins, Enter plays (today it only plays from seat 1). Control: one Enter",
+    "webgpu": true,
+    "skip": [
+      "romdev"
+    ]
+  },
+  {
+    "name": "shell-start-144hz",
+    "app": "shell_join",
+    "frames": 168,
+    "input": "shell-start-144hz.json",
+    "controlInput": "shell-start-144hz-control.json",
+    "fields": [
+      "shell.screen",
+      "shell.players",
+      "shell.starting",
+      "game.players",
+      "game.seats",
+      "game.starts",
+      "game.changes",
+      "game.opened"
+    ],
+    "expect": {
+      "shell.screen": 3,
+      "shell.players": 1,
+      "game.starts": 1
+    },
+    "note": "a display faster than the tick rate: a seated pad taps Start on a frame that runs no tick, and that press is kept for the next tick. Control: West",
+    "webgpu": true,
+    "frameHz": 144
+  },
+  {
+    "name": "shell-start-30hz",
+    "app": "shell_join",
+    "frames": 20,
+    "input": "shell-start-30hz.json",
+    "controlInput": "shell-start-30hz-control.json",
+    "fields": [
+      "shell.screen",
+      "shell.players",
+      "shell.starting",
+      "game.players",
+      "game.seats",
+      "game.starts",
+      "game.changes",
+      "game.opened"
+    ],
+    "expect": {
+      "shell.screen": 2,
+      "game.starts": 0
+    },
+    "note": "a frame of two ticks: Enter opens the join screen, Enter seats the keyboard, each press once; a press seen by both ticks joined at the title's Enter and started at the next. Control: a third Enter plays",
+    "webgpu": true,
+    "frameHz": 30,
+    "skip": [
+      "romdev"
+    ]
+  },
+  {
     "name": "frame-dt",
     "app": "hello",
     "frames": 30,

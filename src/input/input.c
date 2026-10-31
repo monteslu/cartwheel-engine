@@ -377,6 +377,9 @@ void cw_input_frame_begin(const cw_raw_input *raw) {
       if (pressed && f->raw > I.pend_peak[p][a]) I.pend_peak[p][a] = f->raw;
     }
   }
+  for (int i = 0; i < CW_MAX_PADS; i++) I.pend_pad[i] |= raw->pads[i].pressed;
+  for (int k = 0; k < CW_KEY_COUNT; k++) I.pend_keys[k] |= raw->keys_pressed[k];
+  I.pend_mouse |= raw->mouse_pressed;
   if (I.capture.on) capture_update(raw);
   I.prev_raw = *raw;
   I.ctx = CW_INPUT_FRAME;
@@ -411,6 +414,12 @@ uint32_t cw__snapshot_hash(const cw__snapshot *s, int count, uint32_t h) {
 void cw_input_tick_begin(void) {
   if (!I.init) return;
   live_tick();
+  memcpy(I.tick_pad, I.pend_pad, sizeof I.tick_pad);
+  memset(I.pend_pad, 0, sizeof I.pend_pad);
+  memcpy(I.tick_keys, I.pend_keys, sizeof I.tick_keys);
+  memset(I.pend_keys, 0, sizeof I.pend_keys);
+  I.tick_mouse = I.pend_mouse;
+  I.pend_mouse = 0;
   I.tick = &I.tick_live;
   if (cw__input_replay_next()) I.tick = &I.tick_replay;
   I.stream_hash = cw__snapshot_hash(I.tick, I.count, I.stream_hash);
@@ -422,6 +431,17 @@ void cw_input_tick_begin(void) {
 void cw_input_ticks_end(void) {
   if (I.init) I.ctx = CW_INPUT_FRAME;
 }
+
+uint32_t cw__input_pad_pressed(int pad) {
+  const cw_raw_input *raw = cw_input_raw();
+  if (pad < 0 || pad >= CW_MAX_PADS || !raw->pads[pad].connected) return 0;
+  return I.ctx == CW_INPUT_TICK ? I.tick_pad[pad] : raw->pads[pad].pressed;
+}
+bool cw__input_key_pressed(int key) {
+  if (key < 0 || key >= CW_KEY_COUNT) return false;
+  return I.ctx == CW_INPUT_TICK ? I.tick_keys[key] != 0 : cw_input_raw()->keys_pressed[key] != 0;
+}
+uint32_t cw__input_mouse_pressed(void) { return I.ctx == CW_INPUT_TICK ? I.tick_mouse : cw_input_raw()->mouse_pressed; }
 
 uint32_t cw_input_stream_hash(void) { return I.stream_hash; }
 

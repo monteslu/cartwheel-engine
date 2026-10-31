@@ -2,7 +2,11 @@
  *
  * Two players start. A pad that has no seat pressing A takes a seat at once (cw_shell_join_press, one press).
  * West (X) on any seated pad, or a pad that has no seat pressing Start, opens the join screen over the running match: a third and fourth pad take a seat with A, a seated pad leaves with B,
- * Start confirms and play carries on with the new seating (every seat keeps its number). The game only answers players_changed. */
+ * Start confirms and play carries on with the new seating (every seat keeps its number). The game only answers players_changed.
+ *
+ * Start on any pad at the title or on the join screen plays: a pad with no seat takes a free one first. shell_join_slow is
+ * this game with two seats (so a third pad finds them taken) and a start that takes about 300 ms, a game loading its world:
+ * "Starting..." is on screen before that work begins. */
 #include <stdio.h>
 #include <string.h>
 
@@ -12,6 +16,13 @@
 #include "cartwheel/render2d.h"
 #include "cartwheel/shell.h"
 
+#ifndef SHELL_JOIN_SEATS
+#define SHELL_JOIN_SEATS 4
+#endif
+#ifndef SHELL_JOIN_START_WORK
+#define SHELL_JOIN_START_WORK 0u
+#endif
+
 static struct {
   int32_t players;      /* the match's player count (the highest seat held plus one) */
   int32_t seats;        /* bit per seat held now */
@@ -19,6 +30,7 @@ static struct {
   int32_t ticks;        /* play ticks (they stop under the join screen) */
   int32_t opened;       /* how many times the join screen was opened */
   int32_t pressed;      /* how many pads joined with one press */
+  int32_t starts;       /* how many times the shell called start */
   float x[4];           /* each player's square, moved by its stick */
   cw_action left, right, open;
 } G;
@@ -28,6 +40,8 @@ static void start(int players, void *user) {
   G.players = players;
   G.seats = (1 << players) - 1;
   G.ticks = 0;
+  G.starts++;
+  for (volatile uint32_t i = 0; i < SHELL_JOIN_START_WORK; i = i + 1) {} /* loading (the clock stands still inside a frame) */
   for (int i = 0; i < 4; i++) G.x[i] = 80.0f + 60.0f * (float)i;
 }
 static void players_changed(int players, void *user) {
@@ -41,7 +55,7 @@ static void players_changed(int players, void *user) {
 
 static void init(void *user) {
   (void)user;
-  cw_shell_init(&(cw_shell_desc){ .title = "Join Demo", .max_players = 4, .start = start, .players_changed = players_changed });
+  cw_shell_init(&(cw_shell_desc){ .title = "Join Demo", .max_players = SHELL_JOIN_SEATS, .start = start, .players_changed = players_changed });
   G.left = cw_action_add("left", 0.2f);
   G.right = cw_action_add("right", 0.2f);
   G.open = cw_action_add("join", 0.5f);
@@ -54,6 +68,7 @@ static void init(void *user) {
   cw_debug_i32("game.ticks", &G.ticks);
   cw_debug_i32("game.opened", &G.opened);
   cw_debug_i32("game.pressed", &G.pressed);
+  cw_debug_i32("game.starts", &G.starts);
 }
 
 static void fixed_update(void *user, double dt) {

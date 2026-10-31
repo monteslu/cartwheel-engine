@@ -32,10 +32,19 @@
  * Input: menus read the actions ui_up, ui_down, ui_left, ui_right,
  * ui_accept, ui_back and pause, which the shell defines (keyboard arrows and
  * WASD, Enter / Space, Escape; pad d-pad and left stick, South, East,
- * Start), and pointer taps (mouse or touch) on menu items. On the join
- * screen each pad joins with South and leaves with East, the keyboard joins
- * with Enter; players are assigned their pad and devices (cw_input_assign)
- * in join order, so gameplay asks cw_action_* for players 0..n-1.
+ * Start), and pointer taps (mouse or touch) on menu items; Start on any pad
+ * also accepts on the title. On the join screen each pad joins with South and
+ * leaves with East, the keyboard joins with Enter and leaves with Esc. Start
+ * on any pad plays: a pad with no seat takes the first free one first, and
+ * with no seat free the seated players play. Enter plays from a keyboard that
+ * holds any seat, and when every seat is taken. Players are assigned their pad
+ * and devices (cw_input_assign) in join order, so gameplay asks cw_action_*
+ * for players 0..n-1.
+ *
+ * A press to play is answered on its own frame (the select sound and
+ * "Starting...", drawn by cw_shell_draw); the start hook runs on the next tick
+ * after that frame, so a start that loads for a long time comes after a
+ * picture. cw_shell_start skips this: it calls the hook at once.
  *
  * Split screen: cw_shell_split lays one view per player out with the
  * pipeline (cw_pipeline_split: two side by side, three and four in quadrants,
@@ -53,7 +62,8 @@
  *
  * Determinism: menus run in fixed_update from the input snapshot, so a
  * replay drives them like gameplay. A test or an autopilot build skips them
- * with cw_shell_start. Debug fields: shell.screen, shell.players, shell.item. */
+ * with cw_shell_start. Debug fields: shell.screen, shell.players, shell.item,
+ * shell.shake, shell.starting (1 a press to play was answered, 2 "Starting..." has been drawn). */
 #ifndef CW_SHELL_H
 #define CW_SHELL_H
 
@@ -130,7 +140,7 @@ int cw_shell_players(void); /* players in the match (1..max_players) */
 void cw_shell_start(int players);
 /* Join and leave during play: opens the join screen over the running match (play pauses, exactly as for the pause
  * menu) with the current players on their seats. A pad presses A to take a free seat, B to leave its own seat;
- * Start or Enter confirms (at least one player stays) and play resumes with players_changed; B on a pad that
+ * Start or Enter confirms, a pad with no seat taking a free one as it presses Start (at least one player stays) and play resumes with players_changed; B on a pad that
  * has no seat cancels and leaves everything as it was. Seats keep their numbers: a leaver's seat reads no
  * input (cw_shell_seat_taken says which are held), a newcomer takes the first free seat, and the match's
  * player count is the highest seat held plus one. Returns false (and does nothing) outside play or in a one
