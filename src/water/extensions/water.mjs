@@ -54,7 +54,7 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const rip = v4('waterRipple');    // x: ripple normal strength (0: no grid); y, z: the grid's size (m); w: glint
   const ripR = v4('waterRippleRect'); // x, y: the grid's centre (water-local x, z); z, w: 1 / cells along x, z
   const refrInfo = v4('waterRefr'); // x: the refraction's depth is valid (1); y: caustic strength; z: 1 / caustic tile (m); w: camera under the water (the refraction target holds the view up through the surface)
-  const refrSize = v4('waterRefrSize'); // x, y: the refraction depth texture's size in texels; z: the foam's lace
+  const refrSize = v4('waterRefrSize'); // x, y: the refraction depth texture's size in texels; z: the foam's lace; w: soft foam
   const grid = v4('waterGrid');     // x, y: the grid's centre (water-local; the camera's foot on a VIEW grid); z: VIEW grid on; w: the foam pattern's scale
   const shelter = v4('waterShelter'); // per wave: how much the wave mask holds it down
   const cam = v4('waterCam');       // xyz: the camera's world position (three.c fills no cameraPosition); w: 1 when the view is drawn rows bottom-up (cartwheel's WebGPU scene target) but the planar targets top-down
@@ -265,7 +265,15 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const lace0 = texture(causticMap, rest.mul(grid.w).mul(0.29).add(f.mul(flow.x).mul(0.4))).r.mul(4);
   const lace1 = texture(causticMap, rest.mul(grid.w).mul(0.71).add(vec2(0.37, 0.61)).sub(f.mul(flow.y).mul(0.6))).r.mul(4);
   const lace = mix(clamp(max(lace0, lace1.mul(0.8)).mul(0.4), 0, 1), float(0.55), smoothstep(60, 250, dist));
-  const foam = clamp(foamRaw.mul(1.45).sub(float(1).sub(lace).mul(refrSize.z)), 0, 1).mul(mix(0.82, 1, noise2));
+  const foam1 = clamp(foamRaw.mul(1.45).sub(float(1).sub(lace).mul(refrSize.z)), 0, 1).mul(mix(0.82, 1, noise2));
+  // close up: foam by thickness, not by a cut-out. Thick foam is solid and churned, thin foam breaks into soft patches at two
+  // scales and goes to nothing, with no edge the eye can read as a mask
+  const softLace = clamp(max(texture(causticMap, rest.mul(grid.w).mul(0.29).add(f.mul(flow.x).mul(0.4))).g, texture(causticMap, rest.mul(grid.w).mul(0.71).add(vec2(0.37, 0.61)).sub(f.mul(flow.y).mul(0.6))).g).mul(9), 0, 1);
+  const patchy = noise.mul(0.55).add(noise2.mul(0.45));
+  const thick = max(max(shoreFoam.mul(mix(0.55, 1, lumpy)), lines.mul(noise2)), max(crestFoam, rfoam.mul(1.25)));
+  const cover = smoothstep(0.04, 0.62, thick.add(patchy.sub(0.5).mul(0.55).mul(float(1).sub(smoothstep(0.5, 1, thick)))));
+  const foam2 = cover.mul(mix(softLace.mul(0.75).add(0.25), float(1), smoothstep(0.42, 0.95, thick))).mul(mix(0.8, 1, noise));
+  const foam = mix(foam1, clamp(foam2, 0, 1), refrSize.w);
   const emitAbove = mix(refr, refl, fres).add(sss.mul(float(1).sub(fres))).add(gl);
   // seen from under the water: the world above shows through a window of light (Snell's), bent and dimmed by the
   // Fresnel term from water into air; outside it the surface mirrors the water itself (total internal reflection)
