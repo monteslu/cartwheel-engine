@@ -1,0 +1,17 @@
+[scene format=1]
+
+[node name="Root" type="Node3D"]
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 1, 6)
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+rotation = vec3(-0.8, 0.5, 0)
+
+[node name="Ahead" parent="." type="MeshInstance3D"]
+primitive = BOX
+
+[node name="Behind" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 1, 16)
+clearcoat = 1
