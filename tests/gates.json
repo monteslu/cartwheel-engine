@@ -2829,6 +2829,7 @@
     "fields": ["water.tick", "boat.x", "rip.hash", "rip.center", "swell.a"],
     "tol": 0.001,
     "controlEnv": { "WATER_OPEN_SEA_OFF": "1" },
+    "webgpu": { "hosts": ["native", "romdev", "chromium"] },
     "note": "a ripple grid following a boat 200 m across the map, the same bits on every host; the swell is held down in the bay (swell.a); control: the grid does not follow"
   },
   {
