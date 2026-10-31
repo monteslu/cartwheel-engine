@@ -2,7 +2,8 @@
 // tool gates that start players themselves).
 //
 // The player is wasmcart-native's main build beside the checkout (or beside
-// the main checkout when this is a git worktree under worktrees/), built with
+// the main checkout when this is a git worktree under worktrees/, or beside the
+// project in CW_PROJECT_ROOT, whose engine may sit in its deps/), built with
 // WebGPU (a wgpu/ directory beside wasmcart-run). CW_WCNATIVE names the GL
 // player, CW_WCNATIVE_WGPU the WebGPU one. There is no other fallback: a
 // missing or WebGPU-less player throws, so a run can never silently take an
@@ -12,7 +13,9 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const builds = [join(ROOT, '..'), join(ROOT, '..', '..')].map((d) => join(d, 'wasmcart-native', 'build'));
+const PROJ = process.env.CW_PROJECT_ROOT ? resolve(process.env.CW_PROJECT_ROOT) : null;
+const builds = [join(ROOT, '..'), join(ROOT, '..', '..'), ...(PROJ ? [join(PROJ, '..'), join(PROJ, '..', '..')] : [])]
+  .map((d) => join(d, 'wasmcart-native', 'build'));
 
 function named(envName) {
   const v = process.env[envName];

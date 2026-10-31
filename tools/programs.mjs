@@ -6,7 +6,8 @@
 //        [--build <dir>] [--check] [--extend <module.mjs> ...]
 //       runs every native app (or the named ones) for N frames (default 120)
 //       on GL and on WebGPU with CW_PROGRAMS_LOG_DIR set, so each writes the
-//       states it could not draw to <logs>/<app>.log; --gates also runs every
+//       states it could not draw to <logs>/<app>.log (a run that fails stops the survey with exit 1, no table changed;
+//       --gates-file a.json,b.json reads those gate files in the project's tests/); --gates also runs every
 //       gate's native runs (inputs, assets, controls); --logs also reads logs
 //       other runs left (a gate run with CW_PROGRAMS_LOG_DIR=<dir>), --no-run
 //       only those. Each app's states go to its first table (cw_add_app
@@ -69,11 +70,21 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 const one = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const all = (k) => argv.flatMap((a, i) => (a === k ? [argv[i + 1]] : []));
-const VALUED = new Set(['--scenes', '--frames', '--logs', '--build', '--table', '--missing', '--extend']);
+const VALUED = new Set(['--scenes', '--frames', '--logs', '--build', '--gates-file', '--table', '--missing', '--extend']);
 const names = argv.filter((a, i) => !a.startsWith('--') && !VALUED.has(argv[i - 1]));
 const BUILD = resolve(one('--build') || join(ROOT, 'build', 'native'));
-// CW_PROJECT_ROOT (as tools/run-cart.mjs reads it): --carts surveys that tree's carts and gates
-const PROJ = process.env.CW_PROJECT_ROOT ? resolve(process.env.CW_PROJECT_ROOT) : ROOT;
+// CW_PROJECT_ROOT (as tools/run-cart.mjs reads it): the tree whose carts, gates, inputs and assets these are. Without it,
+// --build <project>/build/native names the project: from an SDK, ROOT holds the engine and none of the game's files
+const PROJ = process.env.CW_PROJECT_ROOT ? resolve(process.env.CW_PROJECT_ROOT)
+  : one('--build') && basename(BUILD) === 'native' && basename(dirname(BUILD)) === 'build' ? dirname(dirname(BUILD)) : ROOT;
+// --gates-file a.json,b.json (or CW_GATES_FILE): gate files in the project's tests/, as tests/gate.mjs reads them
+const gateFile = () => (one('--gates-file') || process.env.CW_GATES_FILE || 'gates.json').split(',')
+  .flatMap((f) => JSON.parse(readFileSync(join(PROJ, 'tests', f.trim()), 'utf8')));
+/** the line of a failed node run that says why (an uncaught error ends with the node version) */
+const whyFailed = (r) => {
+  const lines = (r.stderr || r.stdout || '').trim().split('\n');
+  return lines.find((l) => /Error|Cannot find/.test(l))?.trim() || lines.at(-1) || r.signal || `exit ${r.status}`;
+};
 const THREE = resolve(process.env.CW_THREE_DIR || cmakeCache('CW_THREE_DIR') || join(ROOT, 'deps', 'three.c'));
 const GEN = join(THREE, 'tools', 'gen-project-table.mjs');
 
@@ -256,7 +267,9 @@ const frames = one('--frames') || '120';
 const runDir = join(BUILD, 'programs-logs');
 const CARTS = argv.includes('--carts');
 const logDirs = all('--logs').map((d) => resolve(d));
-const wgpu = /^CW_WGPU:BOOL=ON$/m.test(existsSync(join(BUILD, 'CMakeCache.txt')) ? readFileSync(join(BUILD, 'CMakeCache.txt'), 'utf8') : '');
+// a tree says in its cache; a game built on an SDK has the engine's choice in the SDK's manifest
+const wgpu = /^CW_WGPU:BOOL=ON$/m.test(existsSync(join(BUILD, 'CMakeCache.txt')) ? readFileSync(join(BUILD, 'CMakeCache.txt'), 'utf8') : '')
+  || (existsSync(join(ROOT, 'manifest.json')) && JSON.parse(readFileSync(join(ROOT, 'manifest.json'), 'utf8')).wgpu === true);
 const list = apps().filter((a) => !names.length || names.includes(a.name)).filter((a) => existsSync(a.binary));
 if (names.length && list.length !== names.length)
   throw new Error(`not built: ${names.filter((n) => !list.some((a) => a.name === n)).join(' ')}`);
@@ -297,7 +310,7 @@ if (CARTS && !argv.includes('--no-run')) {
   if (argv.includes('--gl-only') && argv.includes('--webgpu-only')) throw new Error('--gl-only and --webgpu-only leave no host');
   const legs = argv.includes('--webgpu-only') ? [] : [['gl', ['--gpu', 'gl', '--dual-gl']]];
   if (!argv.includes('--gl-only')) legs.push(['webgpu', ['--gpu', 'webgpu']]);
-  const gates = argv.includes('--gates') ? JSON.parse(readFileSync(join(PROJ, 'tests', 'gates.json'), 'utf8')).filter((g) => g.app && !g.script) : [];
+  const gates = argv.includes('--gates') ? gateFile().filter((g) => g.app && !g.script) : [];
   for (const app of todo) {
     const runs = [{ tag: app, args: ['--frames', frames] }];
     for (const g of gates.filter((x) => x.app === app))
@@ -328,6 +341,7 @@ if (CARTS && !argv.includes('--no-run')) {
 if (!CARTS && !argv.includes('--no-run')) {
   rmSync(runDir, { recursive: true, force: true });
   mkdirSync(runDir, { recursive: true });
+  const failed = []; // every run that surveyed nothing: as --carts, a false all-clear otherwise
   const legs = [['gl', {}]];
   if (wgpu && !argv.includes('--gl-only')) legs.push(['webgpu', { CW_GPU: 'webgpu', ...wgpuPin().env }]);
   const sc = one('--scenes');
@@ -340,35 +354,45 @@ if (!CARTS && !argv.includes('--no-run')) {
           cwd: dirname(a.binary), encoding: 'utf8', timeout: 180000,
           env: testEnv({ ...process.env, ...extra, ...scene, CW_FRAMES: frames, SDL_AUDIODRIVER: 'dummy', CW_PROGRAMS_LOG_DIR: runDir }),
         });
-        if (r.status !== 0) console.log(`${a.name} (${leg}${sc ? ' ' + Object.values(scene)[0] : ''}): ${r.signal || 'exit ' + r.status}`);
+        if (r.status !== 0) {
+          const run = `${a.name} (${leg}${sc ? ' ' + Object.values(scene)[0] : ''}): ${r.signal || 'exit ' + r.status}`;
+          failed.push(run);
+          console.log(run);
+        }
       }
     }
   }
   // --gates: also every gate's native runs (its input, assets and control variant), where most states show up
   if (argv.includes('--gates')) {
-    const gates = JSON.parse(readFileSync(join(PROJ, 'tests', 'gates.json'), 'utf8'))
-      .filter((g) => g.app && !g.script && (!names.length || names.includes(g.app)));
+    const gates = gateFile().filter((g) => g.app && !g.script && (!names.length || names.includes(g.app)));
     for (const g of gates) {
       const base = ['--host', 'native', '--app', g.app, '--frames', String(g.frames), ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : []),
-        ...(g.assets ? ['--assets', join(ROOT, g.assets)] : [])];
-      const inp = (f) => (f ? ['--input', join(ROOT, 'tests', f)] : []);
+        ...(g.assets ? ['--assets', join(PROJ, g.assets)] : [])];
+      const inp = (f) => (f ? ['--input', join(PROJ, 'tests', f)] : []);
       // "repo:<path>" names a file the run may write back (the editor saves its settings): a copy, as gate.mjs does
       const repo = (e) => Object.fromEntries(Object.entries(e || {}).map(([k, val]) => {
         if (typeof val !== 'string' || !val.startsWith('repo:')) return [k, val];
         const copy = join(runDir, g.name + '.' + basename(val.slice(5)));
-        copyFileSync(join(ROOT, val.slice(5)), copy);
+        copyFileSync(join(PROJ, val.slice(5)), copy);
         return [k, copy];
       }));
       const variants = [{ args: inp(g.input), env: {} }];
-      if (g.controlInput || g.controlEnv) variants.push({ args: inp(g.controlInput || g.input), env: repo(g.controlEnv) });
+      if (g.controlInput || g.controlEnv) variants.push({ args: inp(g.controlInput || g.input), env: repo(g.controlEnv), control: true });
       const gpus = [...(g.gl === false ? [] : ['gl']), ...(g.webgpu && wgpu && !argv.includes('--gl-only') ? ['webgpu'] : [])];
       for (const v of variants)
         for (const gpu of gpus) {
-          const env = { ...process.env, ...v.env, CW_PROGRAMS_LOG_DIR: runDir };
-          const r = spawnSync(process.execPath, [join(ROOT, 'tools', 'run-cart.mjs'), ...base, ...v.args, '--gpu', gpu], { env, encoding: 'utf8', timeout: 300000 });
-          if (r.status !== 0) console.log(`gate ${g.name} (${gpu}): run failed: ${(r.stderr || '').trim().split('\n').slice(-1)[0]}`);
+          const env = { ...process.env, ...v.env, CW_PROJECT_ROOT: PROJ, CW_PROGRAMS_LOG_DIR: runDir };
+          const r = spawnSync(process.execPath, [join(ROOT, 'tools', 'run-cart.mjs'), ...base, ...v.args, '--gpu', gpu, '--allow-skipped'], { env, encoding: 'utf8', timeout: 300000 });
+          if (r.status === 0) continue;
+          const run = `gate ${g.name}${v.control ? ' control' : ''} (${gpu}): run failed: ${whyFailed(r)}`;
+          if (!v.control) failed.push(run); // a control may be meant to break its run
+          console.log(run);
         }
     }
+  }
+  if (failed.length) {
+    console.error(`programs: ${failed.length} run(s) surveyed nothing, no table changed:\n  ${failed.join('\n  ')}`);
+    process.exit(1);
   }
   logDirs.push(runDir);
 }

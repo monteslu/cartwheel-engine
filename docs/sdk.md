@@ -29,7 +29,7 @@ Inside each SDK:
 - `cmake/`: `cw_add_app` and its helpers (the same files the engine builds
   with), and the target's toolchain file (`cmake/export/<target>.cmake`, or
   `cmake/cart.cmake`).
-- `tools/`: in desktop SDKs `cwexport` (packaging), `programs.mjs` and
+- `tools/`: in desktop SDKs `cwexport` (packaging), `programs.mjs`, `run-cart.mjs` and
   three.c's generator (`deps/three.c/tools`) for program tables; in cart SDKs
   the import checker and asset stager the cart link runs.
 - `scripts/fetch-deps.sh` and `scripts/deps.lock`: fetch the pinned toolchain
