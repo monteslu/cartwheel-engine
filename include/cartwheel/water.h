@@ -185,6 +185,12 @@ bool cw_water_get_waves(cw_node water, cw_waves *out);
  * it smooth: the normal ignores its slope. The map is copied. NULL removes it. */
 void cw_water_set_wave_mask(cw_node water, const float *mask, int nx, int nz);
 
+/* Leave a node's tree out of the water's refraction (at most 16 nodes). A hull
+ * riding the waves crosses the rest level the refraction is clipped at, and the
+ * part under it, seen through a surface it is not actually under, draws a large
+ * ghost on the water behind it: floating craft belong in this list. */
+void cw_water_refraction_hide(cw_node water, cw_node n);
+
 /* The water's baked floor: metres of water over the floor at world (x, z)
  * at rest (0 where the floor is land or above the rest level; a large value
  * where the map has no floor or the point is outside it). Deterministic: it

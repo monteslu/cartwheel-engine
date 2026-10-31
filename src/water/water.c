@@ -420,6 +420,11 @@ void cw_water_set_wave_mask(cw_node water, const float *mask, int nx, int nz) {
   cw_free(tex);
 }
 
+void cw_water_refraction_hide(cw_node water, cw_node n) {
+  water3d *d = cw_node_data_t(water, water_t);
+  if (d && d->refr_hide_n < 16) d->refr_hide[d->refr_hide_n++] = n;
+}
+
 void cw_water_rebake_floor(cw_node water) {
   water3d *d = cw_node_data_t(water, water_t);
   if (d) d->floor_dirty = true;
@@ -740,6 +745,12 @@ static void render_into(cw_pass_ctx *ctx, water_tree *wt, t3_render_target *rt, 
 /* the refraction: three.c's render target on GL; on WebGPU a target of the engine's own whose depth is copied for
  * the surface to read (refraction_wgpu.c). cam NULL: cleared, 1 x 1 */
 static void render_refr(cw_pass_ctx *ctx, water_tree *wt, water3d *d, t3_camera *cam, int w, int h) {
+  bool was[16];
+  for (int i = 0; i < d->refr_hide_n; i++) {
+    t3_object *o = cw_node_valid(d->refr_hide[i]) ? cw_node3d_object(d->refr_hide[i]) : NULL;
+    was[i] = o ? o->visible : false;
+    if (o) o->visible = false;
+  }
   if (cw__wgpu_on()) {
     for (int i = 0; i < wt->nodes.count; i++) {
       water3d *o = cw_node_data_t(wt->nodes.data[i], water_t);
@@ -750,9 +761,13 @@ static void render_refr(cw_pass_ctx *ctx, water_tree *wt, water3d *d, t3_camera 
       water3d *o = cw_node_data_t(wt->nodes.data[i], water_t);
       if (o && o->mesh) o->mesh->base.visible = true;
     }
-    return;
+  } else {
+    render_into(ctx, wt, d->refr, cam);
   }
-  render_into(ctx, wt, d->refr, cam);
+  for (int i = 0; i < d->refr_hide_n; i++) {
+    t3_object *o = cw_node_valid(d->refr_hide[i]) ? cw_node3d_object(d->refr_hide[i]) : NULL;
+    if (o) o->visible = was[i];
+  }
 }
 
 static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {

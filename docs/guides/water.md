@@ -76,6 +76,10 @@ A camera under the surface sees through the water (`underwater`, on by default):
 
 The `water-under` gate puts the beach sample's camera under the surface and checks that the frame was drawn from under the water ([cw_water_get_stats](api:cw_water_get_stats), `underwater`), on every host and backend. The `water-under-new` gate spawns a second Water3D while the camera is already under the water (refraction off, as a level that builds its pools around the player does): it must draw from its first frame, with no draw skipped, on GL and WebGPU.
 
+## Hulls in the refraction
+
+The refraction is clipped at the rest level, not at the moving surface, so a hull riding the waves can have a part under the rest level while it is above the water, and from a low camera that part shows through the surface as a large ghost. [cw_water_refraction_hide](api:cw_water_refraction_hide) leaves a node out of the refraction; the reflection still has it.
+
 ## Things that float
 
 Give a [RigidBody3D](node:RigidBody3D) a [Buoyancy3D](node:Buoyancy3D) child and it floats:

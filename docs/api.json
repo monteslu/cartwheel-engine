@@ -14813,6 +14813,12 @@
      "inline": false
     },
     {
+     "name": "cw_water_refraction_hide",
+     "signature": "void cw_water_refraction_hide(cw_node water, cw_node n)",
+     "doc": "Leave a node's tree out of the water's refraction (at most 16 nodes). A hull\nriding the waves crosses the rest level the refraction is clipped at, and the\npart under it, seen through a surface it is not actually under, draws a large\nghost on the water behind it: floating craft belong in this list.",
+     "inline": false
+    },
+    {
      "name": "cw_water_floor_depth_at",
      "signature": "float cw_water_floor_depth_at(cw_node water, float x, float z)",
      "doc": "The water's baked floor: metres of water over the floor at world (x, z)\nat rest (0 where the floor is land or above the rest level; a large value\nwhere the map has no floor or the point is outside it). Deterministic: it\ncomes from physics ray casts, never from the GPU. 1e6 for a null or\nunbaked water.",
