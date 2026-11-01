@@ -29,7 +29,7 @@ A type's callbacks, all optional:
 
 Parent types' callbacks run first for init, enter and ready, and last for exit and destroy. Each phase visits nodes in tree order (depth first, children in order), so a run is deterministic. Adding, removing or freeing nodes while a phase runs is queued and applied when the phase ends; deferred signal connections are flushed at the same point. Modules hook phases too ([cw_tree_add_hook](api:cw_tree_add_hook)): physics steps before nodes see the results.
 
-A tree can be paused ([cw_tree_set_paused](api:cw_tree_set_paused)): each node's `pause_mode` (`INHERIT`, `PAUSABLE`, `WHEN_PAUSED`, `ALWAYS`, `DISABLED`) decides whether it still processes, which is how a pause menu keeps running over a frozen game. This is the game's own pause; the debugger's pause (see [Debug channel](guide:debug-channel)) freezes everything.
+A tree can be paused ([cw_tree_set_paused](api:cw_tree_set_paused)): each node's `pause_mode` (`INHERIT`, `PAUSABLE`, `WHEN_PAUSED`, `ALWAYS`, `DISABLED`) decides whether it still processes, which is how a pause menu keeps running over a frozen game. A paused tree draws its frozen tick: nodes that interpolate between their last two ticks and Water3D's waves hold still, frame after frame, whatever the host's frame rate. This is the game's own pause; the debugger's pause (see [Debug channel](guide:debug-channel)) freezes everything.
 
 Each tree also has a seeded RNG ([cw_tree_rng](api:cw_tree_rng)) and per-module slots where physics worlds, the render scene and the audio listener keep their per-tree state.
 
