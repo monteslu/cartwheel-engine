@@ -347,12 +347,13 @@ static void bake_floor(cw_node n, water3d *d) {
       float lx = ((float)i + 0.5f) / (float)nx * sx - sx * 0.5f, lz = ((float)j + 0.5f) / (float)nz * sz - sz * 0.5f;
       t3_vec3 p = t3_vec3_apply_mat4((t3_vec3){ lx, 0, lz }, m);
       float v = range;
+      bool floor_hit = false;
       /* a static shape holding the point at the rest level: land (and a post's foot) */
       cw_qshape3d q = cw_qshape3d_sphere(p, 0.05f);
       cw_shape3d inside[4];
       int ni = cw_world3d_overlap(w, &q, NULL, inside, 4), land = 0;
       for (int k = 0; k < ni && !land; k++) land = cw_body3d_type(cw_shape3d_body(inside[k])) == CW_BODY_STATIC;
-      if (land) v = 0;
+      if (land) { v = 0; floor_hit = true; }
       else {
         /* the highest static hit under the rest level is the floor */
         cw_ray_hit3d hits[6];
@@ -361,12 +362,19 @@ static void bake_floor(cw_node n, water3d *d) {
           if (cw_body3d_type(hits[k].body) == CW_BODY_STATIC) {
             float under = p.y - hits[k].point.y;
             v = under < range ? under : range;
+            floor_hit = true;
             break;
           }
       }
       depth[j * nx + i] = v;
       uint16_t h = to_half(v);
-      tex[(j * nx + i) * 4] = h, tex[(j * nx + i) * 4 + 1] = h, tex[(j * nx + i) * 4 + 2] = h, tex[(j * nx + i) * 4 + 3] = 0x3c00;
+      /* R retains the public floor-query range convention. G is the depth
+       * used for shoreline distortion: an unhit ray is open water even when
+       * floor_range is shorter than the shoreline attenuation distance. */
+      tex[(j * nx + i) * 4] = h;
+      tex[(j * nx + i) * 4 + 1] = floor_hit ? h : to_half(1000.0f);
+      tex[(j * nx + i) * 4 + 2] = h;
+      tex[(j * nx + i) * 4 + 3] = 0x3c00;
     }
   if (d->floor_tex) t3_release(d->floor_tex);
   d->floor_tex = t3_data_texture_new_typed(nx, nz, tex, T3_HALF_FLOAT_TYPE);
