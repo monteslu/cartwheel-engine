@@ -151,7 +151,13 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     return mix(float(1).sub(far.z), float(1).add(far.z), n);
   });
   const macroColor = Fn(() => sRGBTransferEOTF(texture(macroMap, gridUv).rgb).mul(variation())).once()();
-  const viewNormal = (n) => normalize(cameraViewMatrix.mul(vec4(n, 0)).xyz);
+  // A normal from the height map can point away from the eye where the drawn surface does not: the mesh's coarser levels smooth over a cut, and the normal map still knows it.
+  // At that angle the environment's specular goes to full strength, and a steep rock face shows hard flat shards of sky. Brought back to face the eye; only just facing, the specular still runs away at that angle.
+  const facingEye = (n) => {
+    const v = normalize(cam.xyz.sub(wp));
+    return normalize(n.add(v.mul(max(float(0.35).sub(dot(n, v)), 0))));
+  };
+  const viewNormal = (n) => normalize(cameraViewMatrix.mul(vec4(facingEye(n), 0)).xyz);
 
   if (mode === 'far') {
     mat.colorNode = vec4(macroColor.mul(materialColor.rgb), 1);
