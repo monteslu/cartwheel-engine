@@ -172,8 +172,13 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
   const uvF = vRest.div(floorRect.xy).add(0.5);
   const outside = step(0.5, max(abs(uvF.x.sub(0.5)), abs(uvF.y.sub(0.5))));
   const mapOn = shore.x.mul(float(1).sub(outside));
-  const bakedDepth = mix(float(100), max(texture(floorMap, uvF).r.add(vSurf), 0), mapOn);
-  const shoreDistortion = smoothstep(0.5, 3, bakedDepth);
+  const floorSample = texture(floorMap, uvF);
+  const bakedDepth = mix(float(100), max(floorSample.r.add(vSurf), 0), mapOn);
+  // The refraction pass clips at the rest plane: a crest must not make
+  // clipped shore pixels eligible again. Troughs also reduce clearance.
+  // G retains a deep sentinel for unhit floor rays, independently of range.
+  const distortionDepth = mix(float(100), max(min(floorSample.g, floorSample.g.add(vSurf)), 0), mapOn);
+  const shoreDistortion = smoothstep(0.5, 3, distortionDepth);
   // the swell's own tilt moves the refraction less than the ripples do
   const offset = n.xz.sub(wn.xz.mul(0.6)).mul(look.y).mul(shoreDistortion);
   const suv = vec2(screenUV.x, mix(screenUV.y, float(1).sub(screenUV.y), cam.w));
