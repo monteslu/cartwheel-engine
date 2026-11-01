@@ -166,16 +166,24 @@ export async function apply({ TSL, THREE, mat, props, sentinel }) {
     wn.z.add(d.z.mul(detailWeight)).add(df.y.mul(fineWeight)).sub(rslope.y)));
   const theta = max(dot(toEye, n), 0);
   const fres = pow(float(1).sub(theta), 5).mul(float(1).sub(look.x)).add(look.x);
-  // the swell's own tilt moves the refraction less than the ripples do
-  const offset = n.xz.sub(wn.xz.mul(0.6)).mul(look.y);
-  const suv = vec2(screenUV.x, mix(screenUV.y, float(1).sub(screenUV.y), cam.w));
-  // (the reflection is moved by the ripples only: the swell bending it reaches the ground under the mirrored horizon)
-  const refl = texture(reflectMap, vec2(float(1).sub(suv.x), suv.y).add(n.xz.sub(wn.xz).mul(look.y)).add(wn.xz.mul(floorRect.w))).rgb.mul(tint.w);
-  // depth over the baked floor (a map outside its rectangle, or none: deep)
+  // Depth over the undistorted baked floor. Refraction displacement must
+  // vanish where water meets land: otherwise its UV crosses into terrain
+  // clipped out of the refraction target and exposes dark clear pixels.
   const uvF = vRest.div(floorRect.xy).add(0.5);
   const outside = step(0.5, max(abs(uvF.x.sub(0.5)), abs(uvF.y.sub(0.5))));
   const mapOn = shore.x.mul(float(1).sub(outside));
-  const bakedDepth = mix(float(100), max(texture(floorMap, uvF).r.add(vSurf), 0), mapOn);
+  const floorSample = texture(floorMap, uvF);
+  const bakedDepth = mix(float(100), max(floorSample.r.add(vSurf), 0), mapOn);
+  // The refraction pass clips at the rest plane: a crest must not make
+  // clipped shore pixels eligible again. Troughs also reduce clearance.
+  // G retains a deep sentinel for unhit floor rays, independently of range.
+  const distortionDepth = mix(float(100), max(min(floorSample.g, floorSample.g.add(vSurf)), 0), mapOn);
+  const shoreDistortion = smoothstep(0.5, 3, distortionDepth);
+  // the swell's own tilt moves the refraction less than the ripples do
+  const offset = n.xz.sub(wn.xz.mul(0.6)).mul(look.y).mul(shoreDistortion);
+  const suv = vec2(screenUV.x, mix(screenUV.y, float(1).sub(screenUV.y), cam.w));
+  // (the reflection is moved by the ripples only: the swell bending it reaches the ground under the mirrored horizon)
+  const refl = texture(reflectMap, vec2(float(1).sub(suv.x), suv.y).add(n.xz.sub(wn.xz).mul(look.y)).add(wn.xz.mul(floorRect.w))).rgb.mul(tint.w);
   // the refraction's own depth: the water between the surface and whatever is under it, along the view ray, then
   // taken to a vertical depth. The clip depth (d or 2d - 1) and the row direction are what the host's targets use.
   const uvS = suv.add(offset);

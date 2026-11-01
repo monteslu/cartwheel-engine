@@ -3068,6 +3068,11 @@
     "note": "the warm-up builds the programs of what the camera cannot see yet, on GL and WebGPU, spread as a player gets it; control: a mesh with a new program appears in play and its program arrives then"
   },
   {
+    "name": "water-pause",
+    "script": "tests/water-pause.mjs",
+    "note": "a paused scene's water and bodies are the same picture frame after frame at a render rate that is not the tick rate, and pausing or resuming moves no more of the picture than a step of play, on GL and WebGPU; control: no pause must differ, and waves moved on half a second at the pause must break the bound"
+  },
+  {
     "name": "water-default-look",
     "script": "tests/water-default-look.mjs",
     "note": "water with no option set draws its wake and foam as the engine at v0.25.4 did, against a stored frame, on GL and WebGPU; control: foam_lace 1.2 must break the bound"
