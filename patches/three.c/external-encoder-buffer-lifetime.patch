@@ -1,20 +1,48 @@
-# Detaching an external encoder does not submit it. Preserve dynamic vertex
-# and instance buffers until submitted(), as the uniform stream already does.
-# Includes a two-target regression and changed-image control in test_wgpu_external.
+# Preserve externally referenced vertex and instance buffers until submitted().
+# Track this independently of uniform-stream replacement; partial updates rename too.
+# Includes rendered retention and partial-update/stream-growth regressions.
 diff --git a/src/gen_wgpu.c b/src/gen_wgpu.c
-index a5d4254..32a3de4 100644
 --- a/src/gen_wgpu.c
 +++ b/src/gen_wgpu.c
-@@ -943,7 +943,7 @@ static WGPUBuffer attribute_buf(t3_wgpu *w, t3_attribute *a, bool index, uint32_
+@@ -51,6 +51,7 @@
+   size_t stream_size;
+   uint32_t stream_gen;
+   uint32_t stage_serial;   /* bumped when the stage starts over or the stream buffer is replaced: earlier offsets are stale */
++  bool external_pending; /* external commands may still reference vertex buffers */
+   bool stream_ext;   /* the stream holds data for commands on an embedder's encoder (not yet known to be submitted) */
+   size_t stream_short; /* what the stream lacked since the last begin_frame (draws that got no room): the next one grows by it */
+   uint8_t *stage;
+@@ -591,9 +592,10 @@
+ void t3_wgpu_submitted(t3_wgpu *w) {
+   t3_wgpu_flush(w);
+   w->stream_ext = false;
++  w->external_pending = false;
+ }
+ void t3_wgpu_set_defer(t3_wgpu *w, bool on) { if (!on) t3_wgpu_flush(w); w->defer = on; }
+-void t3_wgpu_set_encoder(t3_wgpu *w, WGPUCommandEncoder enc) { t3_wgpu_flush(w); w->ext = enc; }
++void t3_wgpu_set_encoder(t3_wgpu *w, WGPUCommandEncoder enc) { t3_wgpu_flush(w); w->ext = enc; if (enc) w->external_pending = true; }
+ void t3_wgpu_begin_frame(t3_wgpu *w, size_t estimate) {
+   /* a render that ran out of stream drew with another draw's data: the
+    * buffer grows by what it lacked (the estimate does not see every draw:
+@@ -935,7 +937,7 @@
+   if (v && v->version == a->version && v->size >= padded && v->uint == as_uint) return v->b;
+   /* only the update range: a plain float vertex buffer that already holds the rest and no open frame reads */
+   if (v && a->update_count > 0 && !index && !as_uint && a->type == T3_FLOAT32 && v->b && v->size == padded && v->uint == as_uint &&
+-      !(w->enc && v->serial == w->serial)) {
++      !w->external_pending && !(w->enc && v->serial == w->serial)) {
+     size_t item = (size_t)a->item_size * 4;
+     wgpuQueueWriteBuffer(w->q, v->b, a->update_start * item, (const uint8_t *)a->array + a->update_start * item, a->update_count * item);
+     a->update_start = a->update_count = 0;
+@@ -943,7 +945,7 @@
      return v->b;
    }
    if (!v) { v = calloc(1, sizeof *v); T3_CHECK_ALLOC(v); a->_wgpu = v; }
 -  if (v->b && w->enc && v->serial == w->serial) { release_buffer(v->b); v->b = NULL; }   /* (in use by the open frame: renamed) */
-+  if (v->b && (w->stream_ext || (w->enc && v->serial == w->serial))) { release_buffer(v->b); v->b = NULL; }   /* (in use by the open frame: renamed) */
++  if (v->b && (w->external_pending || (w->enc && v->serial == w->serial))) { release_buffer(v->b); v->b = NULL; }   /* (in use by the open frame: renamed) */
    if (!v->b || v->size < padded) {
      if (v->b) release_buffer(v->b);
      WGPUBufferDescriptor d = { .usage = (index ? WGPUBufferUsage_Index : WGPUBufferUsage_Vertex) | WGPUBufferUsage_CopyDst, .size = padded };
-@@ -982,8 +982,11 @@ WGPUBuffer t3_wgpu_floats(t3_wgpu *w, void **slot, const float *data, size_t n)
+@@ -982,8 +984,11 @@
    size_t bytes = n * 4;
    if (!v) { v = calloc(1, sizeof *v); T3_CHECK_ALLOC(v); *slot = v; }
    if (!bytes) return v->b;
@@ -24,15 +52,14 @@ index a5d4254..32a3de4 100644
 +   * advanced serial. Detaching an encoder is not submitting its commands:
 +   * preserve vertex data until the embedder calls submitted(), just as the
 +   * uniform stream does. Deferred renders also retain their current data. */
-+  bool busy = v->b && (w->stream_ext || (w->enc && v->serial == w->serial));
++  bool busy = v->b && (w->external_pending || (w->enc && v->serial == w->serial));
    if (!v->b || v->size < bytes || busy) {
      if (v->b) release_buffer(v->b);
      size_t sz = v->size > bytes * 2 ? v->size : bytes * 2;
 diff --git a/test/test_wgpu_external.c b/test/test_wgpu_external.c
-index 762cef9..98389c7 100644
 --- a/test/test_wgpu_external.c
 +++ b/test/test_wgpu_external.c
-@@ -646,6 +646,47 @@ int main(void) {
+@@ -646,6 +646,83 @@
      t3_wgpu_destroy(w);
    }
  
@@ -75,6 +102,42 @@ index 762cef9..98389c7 100644
 +    wgpuTextureViewRelease(other_view); wgpuTextureRelease(other);
 +    t3_release(a); t3_release(b); t3_release(g); t3_release(m); t3_release(eye); t3_release(sc);
 +    t3_renderer_set_external_target(r, &et);
++  }
++
++  { /* P: partial updates and stream replacement must retain externally used attributes. */
++    for (int grow = 0; grow < 2; grow++) {
++      t3_wgpu *w = t3_wgpu_new(dev, queue, WGPUTextureFormat_RGBA8Unorm);
++      WGPUCommandEncoder enc = wgpuDeviceCreateCommandEncoder(dev, NULL);
++      t3_wgpu_set_encoder(w, enc);
++      t3_wgpu_begin_frame(w, 0);
++      float data[12] = { 0 };
++      t3_attribute *a = t3_attribute_new(T3_FLOAT32, data, 4, 3);
++      WGPUBuffer original = t3_wgpu_attribute(w, a, false, NULL);
++      wgpuBufferAddRef(original);
++      t3_wgpu_set_encoder(w, NULL);
++      if (grow) t3_wgpu_begin_frame(w, 1024 * 1024);
++      ((float *)a->array)[0] = 1;
++      a->version++;
++      a->update_start = 0;
++      a->update_count = grow ? 0 : 1;
++      WGPUBuffer changed = t3_wgpu_attribute(w, a, false, NULL);
++      check(changed != original, grow ?
++            "uniform-stream replacement retains outstanding external attribute data" :
++            "partial attribute update after detachment renames the buffer");
++      WGPUCommandBuffer cb = wgpuCommandEncoderFinish(enc, NULL);
++      wgpuQueueSubmit(queue, 1, &cb);
++      t3_wgpu_submitted(w);
++      ((float *)a->array)[0] = 2;
++      a->version++;
++      a->update_count = 1;
++      check(t3_wgpu_attribute(w, a, false, NULL) == changed,
++            "submitted attribute buffer can be reused");
++      wgpuBufferRelease(original);
++      wgpuCommandBufferRelease(cb);
++      wgpuCommandEncoderRelease(enc);
++      t3_release(a);
++      t3_wgpu_destroy(w);
++    }
 +  }
 +
    const char *err = t3_renderer_last_error(r);
