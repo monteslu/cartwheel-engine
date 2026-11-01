@@ -156,7 +156,8 @@ Hosts that run them:
 - [wasmcart-native](https://github.com/wasmcart/wasmcart-native): a native
   player (`wasmcart-run`).
 - [wasmcart-libretro](https://github.com/wasmcart/wasmcart-libretro): a
-  libretro core for RetroArch. It runs a cart's GL path.
+  libretro core for RetroArch. On Linux a dual cart runs on WebGPU there, on
+  a core device from v0.15.0 on; elsewhere it runs the GL path.
 
 ## Running and testing
 
