@@ -970,7 +970,10 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     if (!d->mesh) continue;
     /* the waves drawn as the bodies are: between the last two ticks, at alpha */
     double dt = cw_fixed_dt();
-    double t = ((double)cw_tree_tick(ctx->tree) - 1.0 + ctx->alpha) * dt + (double)d->time_offset;
+    /* The platform accumulator keeps cycling while a scene is paused.
+     * Do not interpolate its frozen water clock with that live alpha. */
+    double tick = (double)cw_tree_tick(ctx->tree);
+    double t = (cw_tree_paused(ctx->tree) ? tick : tick - 1.0 + ctx->alpha) * dt + (double)d->time_offset;
     if (t < 0) t = 0;
     cw_waves w = cw__water_waves(d);
     cw__waves_prepare(&w, t, &d->ev);

@@ -1,0 +1,82 @@
+# Detaching an external encoder does not submit it. Preserve dynamic vertex
+# and instance buffers until submitted(), as the uniform stream already does.
+# Includes a two-target regression and changed-image control in test_wgpu_external.
+diff --git a/src/gen_wgpu.c b/src/gen_wgpu.c
+index a5d4254..32a3de4 100644
+--- a/src/gen_wgpu.c
++++ b/src/gen_wgpu.c
+@@ -943,7 +943,7 @@ static WGPUBuffer attribute_buf(t3_wgpu *w, t3_attribute *a, bool index, uint32_
+     return v->b;
+   }
+   if (!v) { v = calloc(1, sizeof *v); T3_CHECK_ALLOC(v); a->_wgpu = v; }
+-  if (v->b && w->enc && v->serial == w->serial) { release_buffer(v->b); v->b = NULL; }   /* (in use by the open frame: renamed) */
++  if (v->b && (w->stream_ext || (w->enc && v->serial == w->serial))) { release_buffer(v->b); v->b = NULL; }   /* (in use by the open frame: renamed) */
+   if (!v->b || v->size < padded) {
+     if (v->b) release_buffer(v->b);
+     WGPUBufferDescriptor d = { .usage = (index ? WGPUBufferUsage_Index : WGPUBufferUsage_Vertex) | WGPUBufferUsage_CopyDst, .size = padded };
+@@ -982,8 +982,11 @@ WGPUBuffer t3_wgpu_floats(t3_wgpu *w, void **slot, const float *data, size_t n)
+   size_t bytes = n * 4;
+   if (!v) { v = calloc(1, sizeof *v); T3_CHECK_ALLOC(v); *slot = v; }
+   if (!bytes) return v->b;
+-  /* rewritten while a deferred frame still reads it: a new buffer instead */
+-  bool busy = v->b && w->enc && v->serial == w->serial;
++  /* An external encoder may still read this after set_encoder(NULL) has
++   * advanced serial. Detaching an encoder is not submitting its commands:
++   * preserve vertex data until the embedder calls submitted(), just as the
++   * uniform stream does. Deferred renders also retain their current data. */
++  bool busy = v->b && (w->stream_ext || (w->enc && v->serial == w->serial));
+   if (!v->b || v->size < bytes || busy) {
+     if (v->b) release_buffer(v->b);
+     size_t sz = v->size > bytes * 2 ? v->size : bytes * 2;
+diff --git a/test/test_wgpu_external.c b/test/test_wgpu_external.c
+index 762cef9..98389c7 100644
+--- a/test/test_wgpu_external.c
++++ b/test/test_wgpu_external.c
+@@ -646,6 +646,47 @@ int main(void) {
+     t3_wgpu_destroy(w);
+   }
+ 
++  { /* O: detaching an embedder encoder does not submit it. A later render
++     * must not overwrite the auto-instance transforms recorded by the first. */
++    static uint8_t expected[S * S * 4], actual[S * S * 4], moved[S * S * 4];
++    t3_scene *sc = t3_scene_new();
++    t3_geometry *g = t3_box_geometry_new(.45f, .45f, .45f, 1, 1, 1);
++    t3_material *m = t3_mesh_normal_material_new();
++    t3_mesh *a = t3_mesh_new(g, m), *b = t3_mesh_new(g, m);
++    t3_object_add(&sc->base, a); t3_object_add(&sc->base, b);
++    t3_camera *eye = t3_perspective_camera_new(55, 1, .1f, 20);
++    t3_object_set_position(eye, 0, 0, 4); t3_object_look_at(eye, 0, 0, 0);
++    t3_object_set_position(a, -.8f, -.45f, 0); t3_object_set_position(b, -.8f, .45f, 0);
++    t3_renderer_set_auto_instancing(r, true);
++    t3_renderer_set_external_target(r, &et);
++    t3_renderer_render(r, sc, eye); t3_renderer_wgpu_submit(r);
++    read_back(ct, false, expected);
++    WGPUTexture other = texture(WGPUTextureFormat_RGBA8Unorm);
++    WGPUTextureView other_view = wgpuTextureCreateView(other, NULL);
++    WGPUCommandEncoder enc = wgpuDeviceCreateCommandEncoder(dev, NULL);
++    t3_renderer_set_external_encoder(r, (uintptr_t)enc);
++    t3_renderer_render(r, sc, eye);
++    t3_renderer_set_external_encoder(r, 0);
++    t3_object_set_position(a, .8f, -.45f, 0); t3_object_set_position(b, .8f, .45f, 0);
++    t3_external_target second = et; second.color = (uintptr_t)other_view;
++    t3_renderer_set_external_encoder(r, (uintptr_t)enc);
++    t3_renderer_set_external_target(r, &second);
++    t3_renderer_render(r, sc, eye);
++    t3_renderer_set_external_encoder(r, 0);
++    WGPUCommandBuffer cb = wgpuCommandEncoderFinish(enc, NULL);
++    wgpuQueueSubmit(queue, 1, &cb);
++    t3_renderer_wgpu_submit(r);
++    read_back(ct, false, actual); read_back(other, false, moved);
++    check(distinct(expected) >= 2 && differ(expected, moved, false) > 100,
++          "instance lifetime control: moving the batch changes the image");
++    check(!memcmp(expected, actual, sizeof expected),
++          "detached external encoder retains its original instance transforms");
++    wgpuCommandBufferRelease(cb); wgpuCommandEncoderRelease(enc);
++    wgpuTextureViewRelease(other_view); wgpuTextureRelease(other);
++    t3_release(a); t3_release(b); t3_release(g); t3_release(m); t3_release(eye); t3_release(sc);
++    t3_renderer_set_external_target(r, &et);
++  }
++
+   const char *err = t3_renderer_last_error(r);
+   check(!err, err ? err : "no renderer error");
+   check(errors == 0, "no WebGPU validation errors");
