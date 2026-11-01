@@ -27,6 +27,8 @@ The surface is drawn with the scene's lights: the sun's glints and the shadows o
 
 both bent by the surface's normal (`distortion`). The water itself is hidden while they render.
 
+Over a baked floor map the refraction's bend fades out toward the shore, from full at 3 m of water to none at 0.5 m, so it never reaches land that was clipped away and shows the dark behind it. Water with no floor map bends as it always did. The reflection is not affected.
+
 ## Shore, depth and foam
 
 Water that is the same colour everywhere looks like a sheet of glass. Give it a floor to measure against and it shades by depth: pale turquoise where it is shallow, deep colour further out, foam where it meets the shore and white caps on the crests.

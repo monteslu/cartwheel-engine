@@ -145,6 +145,9 @@ static void r_update(void *u, double dt) {
 static void warm_render(int w, int h);
 
 static void r_render(void *u, double alpha) {
+  /* A paused scene holds still: its tick is frozen but the platform's accumulator keeps cycling, and an alpha that
+   * changes frame to frame would move everything interpolated between its last two ticks. Show the frozen tick. */
+  if (cw_tree_paused(run.tree)) alpha = 1;
   (void)u;
   cw_tree_pre_render(run.tree, alpha);
   int w, h;
