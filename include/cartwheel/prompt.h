@@ -38,11 +38,13 @@
  *   touch            the on-screen control as the touch overlay draws it: a
  *                    button's disc and label, a thumbstick's ring and knob
  * Each shape has a dark edge under a light (or `color`) fill, so a glyph reads
- * on a light background and on a dark one. MINIMUM SIZE: 14 canvas pixels at
- * a pixel scale of 1 (the rings stay open rings, the solid dot stays the only
- * solid one, and keycap text stays legible, measured from native-scale crops
- * on light and dark backgrounds). Use 18 or more for anything a player must
- * read in motion. Below 14 the draw still happens, but the rings close up.
+ * on a light background and on a dark one. MINIMUM SIZE: 16 canvas pixels at
+ * a pixel scale of 1, read from native-scale crops on light and dark
+ * backgrounds: the face-button diamond still reads at 14 (its rings stay
+ * open, the solid dot stays the only solid one), but keycap text, the word
+ * "Start" and a stick's arrows need 16. Use 18 or more for anything a player
+ * reads in motion. Smaller sizes still draw; the rings close up and the text
+ * blurs.
  *
  * ── Which device ───────────────────────────────────────────────────────
  * Each player's CURRENT device is the one they used last, read from the
