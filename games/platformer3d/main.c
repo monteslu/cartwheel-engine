@@ -29,6 +29,7 @@
 
 #include "cartwheel/debug.h"
 #include "cartwheel/platform.h"
+#include "cartwheel/prompt.h"
 #include "cartwheel/render2d.h"
 #include "cartwheel/render3d.h"
 #include "cartwheel/resource.h"
@@ -460,10 +461,10 @@ static void render(void *u, double alpha) {
     cw_r2d_rect(cw_rect_make(0, H * 0.12f, W, H * 0.28f), rgba(0.02f, 0.04f, 0.12f, 0.45f));
     text_shadow(font_title, "ROBO HOP", 0, H * 0.16f, 64 * s, rgba(1, 0.75f, 0.15f, 1), CW_ALIGN_CENTER, W);
     text_shadow(font_ui, "a cartwheel engine 3D platformer", 0, H * 0.3f, 24 * s, rgba(0.85f, 0.92f, 1, 1), CW_ALIGN_CENTER, W);
-    if ((frame / 30) % 2 == 0)
-      text_shadow(font_title, "PRESS START", 0, H * 0.74f, 24 * s, rgba(1, 1, 1, 1), CW_ALIGN_CENTER, W);
-    text_shadow(font_ui, "stick / WASD move    A / Space jump (twice in the air)    X / Shift dash", 0, H * 0.86f, 18 * s,
-                rgba(0.8f, 0.85f, 0.95f, 0.9f), CW_ALIGN_CENTER, W);
+    /* button prompts (cartwheel/prompt.h): the glyphs of the device the player holds, never a button's name */
+    if ((frame / 30) % 2 == 0) cw_prompt_text(font_title, "PRESS {start}", -1, cw_v2(W * 0.5f, H * 0.74f), 24 * s, rgba(1, 1, 1, 1), CW_ALIGN_CENTER);
+    cw_prompt_text(font_ui, "{move_left|move_right|move_forward|move_back} move    {jump} jump (twice in the air)    {dash} dash", 0,
+                   cw_v2(W * 0.5f, H * 0.86f), 18 * s, rgba(0.8f, 0.85f, 0.95f, 0.9f), CW_ALIGN_CENTER);
   } else if (G.state == GS_END) {
     cw_r2d_rect(cw_rect_make(0, H * 0.06f, W, 84 * s), rgba(0.02f, 0.04f, 0.12f, 0.45f));
     text_shadow(font_title, "YOU DID IT!", 0, H * 0.06f + 18 * s, 44 * s, rgba(1, 0.8f, 0.2f, 1), CW_ALIGN_CENTER, W);
@@ -483,7 +484,7 @@ static void render(void *u, double alpha) {
       text_shadow(font_ui, vals[i], px + 22 * s, py + (14 + 38 * i) * s, 28 * s, rgba(1, 1, 1, 1), CW_ALIGN_RIGHT, 226 * s);
     }
     if (G.state_ticks > 120 && (frame / 30) % 2 == 0)
-      text_shadow(font_title, "PRESS START", 0, H * 0.86f, 20 * s, rgba(1, 1, 1, 1), CW_ALIGN_CENTER, W);
+      cw_prompt_text(font_title, "PRESS {start}", -1, cw_v2(W * 0.5f, H * 0.86f), 20 * s, rgba(1, 1, 1, 1), CW_ALIGN_CENTER);
   } else {
     /* top-left: score, coins, gems */
     panel(14 * s, 14 * s, 250 * s, 92 * s);

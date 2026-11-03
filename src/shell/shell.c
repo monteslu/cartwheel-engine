@@ -9,6 +9,7 @@
 #include "cartwheel/debug.h"
 #include "cartwheel/input.h"
 #include "cartwheel/platform.h"
+#include "cartwheel/prompt.h"
 #include "cartwheel/quality.h"
 #include "cartwheel/quality_menu.h"
 #include "cartwheel/scene.h"
@@ -47,12 +48,14 @@ static uint32_t save_sum(void) {
 
 /* ── state ──────────────────────────────────────────────────────────── */
 
-enum { A_UP, A_DOWN, A_LEFT, A_RIGHT, A_ACCEPT, A_BACK, A_PAUSE, A_COUNT };
-static const char *const ACTION_NAMES[A_COUNT] = { "ui_up", "ui_down", "ui_left", "ui_right", "ui_accept", "ui_back", "pause" };
+enum { A_UP, A_DOWN, A_LEFT, A_RIGHT, A_ACCEPT, A_BACK, A_PAUSE, A_START, A_COUNT };
+static const char *const ACTION_NAMES[A_COUNT] = { "ui_up", "ui_down", "ui_left", "ui_right", "ui_accept", "ui_back", "pause", "ui_start" };
+/* ui_start is what the join screen plays with: Start on a pad, Enter on the keyboard (its prompt) */
 static const char *const ACTION_BINDS[A_COUNT] = {
   "key:up, key:w, pad:up, axis:ly-@0.5", "key:down, key:s, pad:down, axis:ly+@0.5",
   "key:left, key:a, pad:left, axis:lx-@0.5", "key:right, key:d, pad:right, axis:lx+@0.5",
   "key:return, key:space, pad:south", "key:escape, key:backspace, pad:east", "key:escape, key:p, pad:start",
+  "key:return, pad:start",
 };
 
 static struct {
@@ -633,6 +636,23 @@ static void text(const char *s, float x, float y, float size, cw_color c, int al
   cw_r2d_text(S.d.font, s, cw_v2(x, y), &st);
 }
 
+/* A line of controls under a menu, drawn with button prompts for the devices the players hold (cartwheel/prompt.h).
+ * Left out when no seat is on a pad, keyboard or mouse: on a touch screen the menu items are tapped. */
+static bool hints_wanted(void) {
+  const cw_raw_input *raw = cw_input_raw();
+  for (int p = 0; p < 4; p++) {
+    cw_prompt_device d = cw_prompt_device_of(p);
+    int pad = cw_input_player_pad(p);
+    if (d == CW_PROMPT_PAD && raw && pad >= 0 && raw->pads[pad].connected) return true;
+    if ((d == CW_PROMPT_KEYBOARD || d == CW_PROMPT_MOUSE) && (cw_input_player_devices(p) & (CW_DEVICE_KEYBOARD | CW_DEVICE_MOUSE)))
+      return true;
+  }
+  return false;
+}
+static void hint(const char *markup, float cx, float y, float size) {
+  if (hints_wanted()) cw_prompt_text(S.d.font, markup, -1, cw_v2(cx, y), size, cw_rgba(1, 1, 1, 0.75f), CW_ALIGN_CENTER);
+}
+
 static void draw_menu(float cx, float y, float size) {
   for (int i = 0; i < n_items; i++) {
     bool sel = i == S.item;
@@ -690,10 +710,12 @@ void cw_shell_draw(void) {
     text(S.d.title, cx, sz.y * 0.2f, u * 2.4f, cw_rgba(1, 1, 1, 1), 1);
     if (S.d.subtitle) text(S.d.subtitle, cx, sz.y * 0.2f + u * 2.8f, u * 0.9f, cw_rgba(1, 1, 1, 0.75f), 1);
     draw_menu(cx, sz.y * 0.5f, u * 1.1f);
+    hint("{ui_up|ui_down} choose    {ui_accept} select", cx, sz.y - u * 1.9f, u * 0.75f);
     break;
   case CW_SHELL_PAUSE:
     text("Paused", cx, sz.y * 0.22f, u * 1.8f, cw_rgba(1, 1, 1, 1), 1);
     draw_menu(cx, sz.y * 0.45f, u * 1.1f);
+    hint("{ui_up|ui_down} choose    {ui_accept} select    {ui_back} resume", cx, sz.y - u * 1.9f, u * 0.75f);
     break;
   case CW_SHELL_SETTINGS:
     if (cw_quality_menu_is_open()) {
@@ -703,7 +725,7 @@ void cw_shell_draw(void) {
     text("Settings", cx, sz.y * 0.12f, u * 1.6f, cw_rgba(1, 1, 1, 1), 1);
     draw_menu(S.item == SET_CONTROLS ? sz.x * 0.3f : cx, sz.y * 0.32f, u);
     if (S.item == SET_CONTROLS) draw_controls(sz.x * 0.52f, sz.y * 0.32f, u);
-    text("left / right to change", cx, sz.y - u * 1.6f, u * 0.7f, cw_rgba(1, 1, 1, 0.6f), 1);
+    hint("{ui_up|ui_down} choose    {ui_left|ui_right} change    {ui_back} back", cx, sz.y - u * 1.8f, u * 0.75f);
     break;
   case CW_SHELL_JOIN: {
     text("Join", cx, sz.y * 0.12f, u * 1.6f, cw_rgba(1, 1, 1, 1), 1);
@@ -717,12 +739,15 @@ void cw_shell_draw(void) {
       snprintf(p, sizeof p, "P%d", s + 1);
       text(p, x, sz.y * 0.36f, u * 1.4f, in ? S.d.accent : cw_rgba(1, 1, 1, 0.4f), 1);
       char dev[24];
-      if (!in) snprintf(dev, sizeof dev, "press A");
-      else if (S.joined_pad[s] == CW_MAX_PADS) snprintf(dev, sizeof dev, "keyboard");
-      else snprintf(dev, sizeof dev, "pad %d", S.joined_pad[s] + 1);
-      text(dev, x, sz.y * 0.5f, u * 0.8f, cw_rgba(1, 1, 1, in ? 0.9f : 0.5f), 1);
+      if (!in) cw_prompt_text(S.d.font, "{ui_accept} join", -1, cw_v2(x, sz.y * 0.5f - u * 0.1f), u, cw_rgba(1, 1, 1, 0.7f), CW_ALIGN_CENTER);
+      else {
+        if (S.joined_pad[s] == CW_MAX_PADS) snprintf(dev, sizeof dev, "keyboard");
+        else snprintf(dev, sizeof dev, "pad %d", S.joined_pad[s] + 1);
+        text(dev, x, sz.y * 0.5f, u * 0.8f, cw_rgba(1, 1, 1, 0.9f), 1);
+      }
     }
-    text(S.mid_join ? "A or Enter: join    B or Esc: leave    Start or Enter: back to the game" : "A or Enter: join    B or Esc: leave    Start or Enter: play", cx, sz.y - u * 2.2f, u * 0.75f, cw_rgba(1, 1, 1, 0.7f), 1);
+    hint(S.mid_join ? "{ui_accept} join    {ui_back} leave    {ui_start} back to the game" : "{ui_accept} join    {ui_back} leave    {ui_start} play",
+         cx, sz.y - u * 2.2f, u * 0.8f);
     break;
   }
   default: break;

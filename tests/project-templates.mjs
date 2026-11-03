@@ -86,6 +86,9 @@ for (const t of ids) {
     const shot = join(OUT, `${t}.${h}.png`), state = join(OUT, `${t}.${h}.json`);
     const a = ['--host', h, '--app', app, '--exe', exe, '--cart', cart, '--frames', String(spec.frames || FRAMES), '--shot', shot];
     if (h !== 'wcnative') a.push('--input', input, '--state', state);
+    // wasmcart-native has no pad plugged in here: its button prompts (cartwheel/prompt.h) would draw keys, while the
+    // input-free native run it is held to has its test pad; the prompt request puts it on the pad as well
+    else a.push('--start-cmds', 'prompt device 0 pad');
     const r = run(a);
     if (!check(`${t}: runs on ${h}`, r.status === 0 && existsSync(shot), (r.stderr || r.stdout).slice(-1000))) continue;
     shots[h] = shot;

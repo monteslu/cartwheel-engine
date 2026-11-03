@@ -862,7 +862,7 @@ static cw_node create(void *user) {
     cw_node_add_child(V.toolbar, V.tool_btn[i]);
   }
   V.local_btn = mkbtn("World", "Local / global axes (T)", "view3d.local on=toggle", true);
-  V.snap_btn = mkbtn("Snap", "Snapping (Y): view3d.snap move=1 angle=15 scale=0.1", "view3d.snap on=toggle", true);
+  V.snap_btn = mkbtn("Snap", "Snapping (Y key): view3d.snap move=1 angle=15 scale=0.1", "view3d.snap on=toggle", true);
   V.grid_btn = mkbtn("Grid", "Show the grid", "view3d.grid on=toggle", true);
   cw_node_add_child(V.toolbar, V.local_btn);
   cw_node_add_child(V.toolbar, V.snap_btn);

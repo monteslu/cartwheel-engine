@@ -234,7 +234,7 @@ bool cw_input_capturing(void); /* still waiting for a press */
  * of the phone) and drawn by the engine on top of the frame:
  *
  *   int stick = cw_touch_add_thumbstick(NULL);            // home 150,140 from the bottom left
- *   int jump = cw_touch_add_round_button(&(cw_touch_button_desc){ .x = 110, .y = 110, .label = "A" });
+ *   int jump = cw_touch_add_round_button(&(cw_touch_button_desc){ .x = 110, .y = 110, .label = "Jump" });
  *   cw_action_bind_text(left, "key:a, touch:0.left");
  *
  * A touch unit is 1/540 of the shorter side of the touch area (the window

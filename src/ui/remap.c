@@ -4,6 +4,7 @@
 #include "ui_internal.h"
 #include "cartwheel/a11y.h"
 #include "cartwheel/l10n.h"
+#include "cartwheel/prompt.h"
 
 /* ── display names ──────────────────────────────────────────────────── */
 
@@ -194,7 +195,28 @@ static const char *const remap_signals[] = { "remapped", NULL };
 static cw_node_type remap_type = { .name = "RemapButton", .parent = "Button", .data_size = sizeof(remap_data),
                                    .props = remap_props, .signals = remap_signals, .init = remap_init,
                                    .destroy = remap_destroy,
-                                   .doc = "Shows an action's binding; press it, then press a key or button to rebind." };
+                                   .doc = "Shows an action's binding as a button prompt and its name; press it, then press a key or button to rebind." };
+
+/* the binding a RemapButton shows; false while it listens or when its slot is empty */
+static bool shown_binding(cw_node n, cw_binding *out) {
+  remap_data *r = remap_t ? cw_node_data_t(n, remap_t) : NULL;
+  if (!r || r->listening) return false;
+  cw_action a = cw_action_find(ui_s(r->action));
+  cw_binding bs[CW_INPUT_MAX_BINDINGS];
+  int k = a >= 0 ? cw_action_bindings(a, bs, CW_INPUT_MAX_BINDINGS) : 0;
+  if (r->slot < 0 || r->slot >= k) return false;
+  *out = bs[r->slot];
+  return true;
+}
+float ui_remap_lead(cw_node n, float line_h) {
+  cw_binding b;
+  return shown_binding(n, &b) ? cw_prompt_binding_size(b, line_h).x : 0;
+}
+void ui_remap_draw_lead(cw_node n, cw_rect r, cw_color c) {
+  cw_binding b;
+  if (shown_binding(n, &b)) /* a light fill on the glyph's own dark backing, whatever the theme's text colour */
+    cw_prompt_binding(b, cw_v2_add(ui_draw_origin(), (cw_vec2){ r.x, r.y }), r.h, cw_rgba(1, 1, 1, c.a));
+}
 
 bool cw__remap_capturing(void) { return cw_node_valid(UI.remap_capture); }
 

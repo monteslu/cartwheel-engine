@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cartwheel/a11y.h"
 #include "game.h"
 
 game G;
@@ -301,13 +302,10 @@ static void close_options(void) {
 
 /* ── rebinding ─────────────────────────────────────────────────────── */
 
+/* a binding's name as the rebind button shows it: by position for the pad ("SOUTH BUTTON"), never by a maker's label */
 static const char *binding_label(cw_binding b) {
-  static const char *const PAD[] = { "A", "B", "X", "Y", "BACK", "GUIDE", "START", "LS", "RS", "LB", "RB", "UP", "DOWN", "LEFT", "RIGHT" };
-  if (b.kind == CW_BIND_PAD_BUTTON && b.code < CW_ARRAY_LEN(PAD)) return PAD[b.code];
   char buf[48];
-  cw_binding_format(b, buf, sizeof buf);
-  const char *s = strchr(buf, ':');
-  char *out = cw_frame_printf("%s", s ? s + 1 : buf);
+  char *out = cw_frame_printf("%s", cw_binding_display_name(b, buf, sizeof buf));
   for (char *c = out; *c; c++)
     if (*c >= 'a' && *c <= 'z') *c = (char)(*c - 32);
   return out;
