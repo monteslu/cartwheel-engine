@@ -1,0 +1,3 @@
+# check-prompts control: a scene's quoted strings
+[node name="hint" type="Label" parent="."]
+text = "(B) back"

@@ -157,6 +157,8 @@ if (existsSync(join(SRC, 'deps/fonts'))) engineTree('deps/fonts', (r) => !r.ends
 // the toolchain fetcher, reading the lock (scripts/fetch-deps.sh --only NAME)
 engineFile('scripts/fetch-deps.sh');
 engineFile('scripts/deps.lock');
+// the button-prompt check a game runs over its own sources (node <sdk>/tools/check-prompts.mjs src)
+engineFile('tools/check-prompts.mjs');
 
 const lock = readFileSync(join(SRC, 'scripts/deps.lock'), 'utf8').split('\n').filter((l) => l && !l.startsWith('#')).map((l) => l.trim().split(/\s+/));
 const lockRev = (name) => { const l = lock.find((x) => x[0] === name); return l ? l[2] : null; };

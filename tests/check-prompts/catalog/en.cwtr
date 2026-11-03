@@ -1,0 +1,3 @@
+@locale = en
+hint.jump = {jump}: hop a gap
+hint.move = {move_left|move_right} steer, {n} laps
