@@ -105,6 +105,17 @@ function checkMissing(problems, app, runs) {
   }
 }
 
+// A run whose prompts named an action that does not exist ({jmup}), or were drawn from fixed_update, counted it in
+// prompt.errors (cartwheel/prompt.h): every gate fails on it, unless the gate's expect block names the count.
+function checkPromptErrors(problems, g, runs) {
+  if (g.expect && 'prompt.errors' in g.expect) return;
+  for (const [h, file] of runs) {
+    let st;
+    try { st = JSON.parse(readFileSync(file, 'utf8')); } catch { continue; }
+    if (st['prompt.errors'] > 0) problems.push(`${h}: prompt.errors = ${st['prompt.errors']}: a prompt names an action that does not exist or ran in fixed_update (the run's log names it)`);
+  }
+}
+
 function stateDiff(a, b, tol, fields) {
   const diffs = [];
   // the debug channel's mailboxes are transport, not state
@@ -198,6 +209,7 @@ async function wgpuGates(list) {
       if (uniqueColors(refImg) < (g.minColors || 2)) problems.push(`native WebGPU frame has ${uniqueColors(refImg)} colours: not a real picture`);
       if (refState['cw.gpu.api'] !== 2) problems.push(`native run used gpu api ${refState['cw.gpu.api']}, not WebGPU`);
       checkMissing(problems, g.app, [...results.filter((r) => r.h !== 'wcnative').map((r) => [r.h + ' webgpu', r.state]), ['native gl', glq.state], ...(dual ? [['romdev dual-gl', dq.state]] : [])]);
+      checkPromptErrors(problems, g, [...results.filter((r) => r.h !== 'wcnative').map((r) => [r.h + ' webgpu', r.state]), ['native gl', glq.state]]);
       for (const [k, v] of Object.entries(g.expect || {}))
         if (JSON.stringify(refState[k]) !== JSON.stringify(v)) problems.push(`native WebGPU ${k} = ${JSON.stringify(refState[k])}, expected ${JSON.stringify(v)}`);
       const bound = w.maxGt16 ?? g.maxGt16 ?? 0.001;
@@ -344,6 +356,7 @@ for (const g of gates) {
     if (uniqueColors(refImg) < (g.minColors || 2)) problems.push(`native frame has ${uniqueColors(refImg)} colours: not a real picture`);
     if (!Object.keys(refState).length) problems.push('native state is empty');
     checkMissing(problems, g.app, results.filter((r) => r.h !== 'wcnative').map((r) => [r.h, r.state]));
+    checkPromptErrors(problems, g, results.filter((r) => r.h !== 'wcnative').map((r) => [r.h, r.state]));
     for (const [k, v] of Object.entries(g.expect || {}))
       if (JSON.stringify(refState[k]) !== JSON.stringify(v)) problems.push(`native ${k} = ${JSON.stringify(refState[k])}, expected ${JSON.stringify(v)}`);
     for (const r of results) {

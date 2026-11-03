@@ -1,0 +1,10 @@
+[
+  {"frame": 10, "keys": ["space"]},
+  {"frame": 11},
+  {"frame": 20, "buttons": ["east"]},
+  {"frame": 21},
+  {"frame": 30, "keys": ["d"]},
+  {"frame": 31},
+  {"frame": 35, "mouse": {"x": 400, "y": 300, "buttons": ["left"]}},
+  {"frame": 36, "mouse": {"x": 400, "y": 300}}
+]

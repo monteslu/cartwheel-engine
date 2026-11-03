@@ -82,6 +82,12 @@ typedef struct cw__input_state {
   void *changed_user;
   /* stream */
   uint32_t stream_hash, stream_ticks;
+  /* prompts (cartwheel/prompt.h): presentation only, never part of a snapshot or the stream hash */
+  uint8_t prompt_last[CW_INPUT_MAX_PLAYERS];  /* cw_prompt_device each player used last (NONE: nothing yet) */
+  uint8_t prompt_force[CW_INPUT_MAX_PLAYERS]; /* cw_prompt_force_device / CW_TEST_PROMPT_DEVICE (NONE: not forced) */
+  bool touch_prev_active_frame[CW_MAX_TOUCHES];
+  bool pad_stick_seen[CW_MAX_PADS], pad_dpad_seen[CW_MAX_PADS]; /* this pad's sticks / d-pad were used since it connected */
+  uint32_t prompt_count, prompt_codes[16];    /* glyphs drawn this frame (debug fields prompt.count, prompt.glyphs) */
 } cw__input_state;
 
 extern cw__input_state cw__in;
@@ -104,5 +110,9 @@ void cw__input_replay_free(void);
 uint32_t cw__input_pad_pressed(int pad); /* a bit per CW_PAD_*; 0 for a pad not connected */
 bool cw__input_key_pressed(int key);     /* a scancode */
 uint32_t cw__input_mouse_pressed(void);  /* a bit per mouse button */
+
+/* src/ui/prompt.c: the prompt module's debug request and test switches (called from cw__input_ensure_init) */
+void cw__prompt_input_init(void);
+void cw__prompt_frame(void); /* each frame, after the devices were seen: the prompt.devices debug field */
 
 #endif

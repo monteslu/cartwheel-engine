@@ -41,6 +41,7 @@ void cw__input_ensure_init(void) {
     cw__input_register_commands();
   }
   I.stream_hash = CW_HASH32_INIT;
+  cw__prompt_input_init();
   static const cw__input_hooks hooks = { cw_input_frame_begin, cw_input_tick_begin, cw_input_ticks_end };
   cw__platform_hook_input(&hooks);
 }
@@ -352,8 +353,47 @@ static int16_t eval_binding(int player, cw_binding b, const cw_raw_input *raw, b
 
 static void capture_update(const cw_raw_input *raw);
 
+/* Which device each player used last (cartwheel/prompt.h): from this frame's raw input against the last frame's.
+ * Presentation only: it never touches a snapshot, a recording or the stream hash. */
+static void track_devices(const cw_raw_input *raw) {
+  const cw_raw_input *pr = &I.prev_raw;
+  bool key = false, mouse = raw->mouse_pressed || (raw->mouse_buttons & ~pr->mouse_buttons) || raw->wheel_x != 0 || raw->wheel_y != 0;
+  for (int k = 0; k < CW_KEY_COUNT && !key; k++) key = raw->keys_pressed[k] || (raw->keys[k] && !pr->keys[k]);
+  bool touch = false;
+  for (int i = 0; i < CW_MAX_TOUCHES && !touch; i++) touch = raw->touches[i].tapped || (raw->touches[i].active && !I.touch_prev_active_frame[i]);
+  for (int i = 0; i < CW_MAX_TOUCHES; i++) I.touch_prev_active_frame[i] = raw->touches[i].active;
+  bool pad_used[CW_MAX_PADS] = { 0 };
+  for (int p = 0; p < CW_MAX_PADS; p++) {
+    const cw_pad_state *ps = &raw->pads[p], *pp = &pr->pads[p];
+    if (!ps->connected) {
+      I.pad_stick_seen[p] = I.pad_dpad_seen[p] = false;
+      continue;
+    }
+    uint32_t down = ps->pressed | (ps->buttons & ~pp->buttons);
+    bool used = down != 0;
+    if (down & ((1u << CW_PAD_UP) | (1u << CW_PAD_DOWN) | (1u << CW_PAD_LEFT) | (1u << CW_PAD_RIGHT))) I.pad_dpad_seen[p] = true;
+    for (int a = 0; a < CW_AXIS_COUNT; a++) {
+      if (!(fabsf(ps->axes[a]) > 0.5f && !(fabsf(pp->axes[a]) > 0.5f && pp->connected))) continue;
+      used = true;
+      if (a <= CW_AXIS_RY) I.pad_stick_seen[p] = true;
+    }
+    pad_used[p] = used;
+  }
+  for (int pl = 0; pl < CW_INPUT_MAX_PLAYERS; pl++) {
+    uint32_t dev = I.devices[pl];
+    int pad = I.pad[pl];
+    /* the last of these wins in a frame that saw several */
+    if (mouse && (dev & CW_DEVICE_MOUSE)) I.prompt_last[pl] = 3; /* CW_PROMPT_MOUSE */
+    if (key && (dev & CW_DEVICE_KEYBOARD)) I.prompt_last[pl] = 2; /* CW_PROMPT_KEYBOARD */
+    if (touch && (dev & CW_DEVICE_TOUCH)) I.prompt_last[pl] = 4; /* CW_PROMPT_TOUCH */
+    if (pad >= 0 && pad < CW_MAX_PADS && pad_used[pad]) I.prompt_last[pl] = 1; /* CW_PROMPT_PAD */
+  }
+  I.prompt_count = 0; /* glyphs are counted per frame */
+}
+
 void cw_input_frame_begin(const cw_raw_input *raw) {
   if (!I.init) return;
+  track_devices(raw);
   cw__touch_update(raw);
   for (int p = 0; p < CW_INPUT_MAX_PLAYERS; p++) {
     for (int a = 0; a < I.count; a++) {
@@ -383,6 +423,7 @@ void cw_input_frame_begin(const cw_raw_input *raw) {
   if (I.capture.on) capture_update(raw);
   I.prev_raw = *raw;
   I.ctx = CW_INPUT_FRAME;
+  cw__prompt_frame();
 }
 
 static void live_tick(void) {

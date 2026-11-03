@@ -20,6 +20,9 @@ cw_add_app(shell_join SOURCES shell_join/main.c)
 cw_add_app(shell_join_slow SOURCES shell_join/main.c)
 target_compile_definitions(shell_join_slow PRIVATE SHELL_JOIN_SEATS=2 SHELL_JOIN_START_WORK=300000000u)
 
+# button prompts (cartwheel/prompt.h): every glyph on dark and light, the diamond's size ladder, a player's prompts on
+# the device they used last, a shared prompt, each device, lanes by position, hint markup from catalogs (Arabic too)
+cw_add_app(prompts SOURCES prompts/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/prompts/project/roots.txt)
 # actions, tick/frame snapshots, rebinding, touch controls, record/replay (120 Hz).
 cw_add_app(input_demo SOURCES input_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/input_demo/assets)
 # motion inputs and the framing camera: a command buffer reading a quarter circle, a rising strike and a dash; a fit for two moving points
