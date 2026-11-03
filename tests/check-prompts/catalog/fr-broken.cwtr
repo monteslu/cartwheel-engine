@@ -1,0 +1,4 @@
+@locale = fr
+# control: the glyph dropped, a brace left open
+hint.jump = sauter un trou
+hint.move = {n} tours, {move_left|move_right pour tourner

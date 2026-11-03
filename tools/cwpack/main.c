@@ -5,7 +5,9 @@
  *          [--engine-root DIR] [-q]
  *   cwpack --po-export catalog.cwtr [--po-source en.cwtr]   PO text to stdout
  *   cwpack --po-import file.po                              canonical .cwtr to stdout
- *   cwpack --cwtr-check catalog.cwtr...                     validate (exit 1 on an error)
+ *   cwpack --cwtr-check catalog.cwtr... [--po-source en.cwtr]  validate (exit 1 on an error): entries, the {...}
+ *                                                         (placeholders and button-prompt markup) well formed and,
+ *                                                         with a source, each translation's {...} the same as its source's
  *
  * roots.txt, one entry per line ('#' comments):
  *   set <key> <value...>          a project-wide import setting
@@ -52,6 +54,7 @@
  * packs every file under DIR byte for byte (no import, no res.index; names
  * starting with '.' skipped): the .cwpak of an app that reads loose files
  * (cw_add_app ASSETS), which an export ships in place of the directory. */
+#include <ctype.h>
 #include <dirent.h>
 #include <stdlib.h>
 #include <string.h>
@@ -859,7 +862,54 @@ static void usage(void) {
                   "              [--set key=value]... [--depfile FILE --dep-target T] [--stats FILE]\n"
                   "              [--engine-root DIR] [-q]\n"
                   "       cwpack --raw-dir DIR --pak FILE [-q]\n"
-                  "       cwpack --po-export catalog.cwtr [--po-source en.cwtr] | --po-import file.po | --cwtr-check catalog.cwtr...\n");
+                  "       cwpack --po-export catalog.cwtr [--po-source en.cwtr] | --po-import file.po | --cwtr-check catalog.cwtr... [--po-source en.cwtr]\n");
+}
+
+/* The {...} in a catalog value: {n} placeholders (cw_trf) and button-prompt markup (cartwheel/prompt.h: {jump},
+ * {pad:west}, {move_left|move_right}); {{ and }} are braces. NULL when they are well formed, else what is wrong. */
+static const char *braces_problem(const char *v) {
+  for (const char *p = v; *p; p++) {
+    if ((p[0] == '{' && p[1] == '{') || (p[0] == '}' && p[1] == '}')) { p++; continue; }
+    if (*p == '}') return "a } with no { (write }} for a brace)";
+    if (*p != '{') continue;
+    const char *e = strchr(p + 1, '}');
+    if (!e) return "a { with no } (write {{ for a brace)";
+    if (e == p + 1) return "an empty {}";
+    for (const char *q = p + 1; q < e; q++)
+      if (!(isalnum((unsigned char)*q) || strchr("_.:+-|@ ", *q))) return "a {...} holding something that is no name, binding or a|b pair";
+    p = e;
+  }
+  return NULL;
+}
+/* the value's {...} in order, joined with spaces, for comparing a translation against its source */
+static void brace_tokens(const char *v, char *out, size_t cap) {
+  size_t n = 0;
+  out[0] = 0;
+  for (const char *p = v; *p; p++) {
+    if ((p[0] == '{' && p[1] == '{') || (p[0] == '}' && p[1] == '}')) { p++; continue; }
+    if (*p != '{') continue;
+    const char *e = strchr(p, '}');
+    if (!e) break;
+    n += (size_t)snprintf(out + n, n < cap ? cap - n : 0, "%.*s ", (int)(e - p + 1), p);
+    p = e;
+  }
+}
+static int cmp_tok(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
+/* a translation must carry the same {...} as its source, in any order (a translator moves them, never drops one) */
+static bool same_tokens(const char *a, const char *b) {
+  char ta[512], tb[512];
+  brace_tokens(a, ta, sizeof ta);
+  brace_tokens(b, tb, sizeof tb);
+  char *wa[32], *wb[32];
+  int na = 0, nb = 0;
+  for (char *t = strtok(ta, " "); t && na < 32; t = strtok(NULL, " ")) wa[na++] = t;
+  for (char *t = strtok(tb, " "); t && nb < 32; t = strtok(NULL, " ")) wb[nb++] = t;
+  if (na != nb) return false;
+  qsort(wa, (size_t)na, sizeof *wa, cmp_tok);
+  qsort(wb, (size_t)nb, sizeof *wb, cmp_tok);
+  for (int i = 0; i < na; i++)
+    if (strcmp(wa[i], wb[i])) return false;
+  return true;
 }
 
 /* the catalog conversions (translators' PO files both ways), on stdout */
@@ -878,16 +928,35 @@ static int l10n_tool(int argc, char **argv) {
   size_t n, sn;
   if (check) {
     int bad = 0;
+    /* --po-source en.cwtr: each translation's {...} must match the source's */
+    uint8_t *st = src ? cwp_read_file(src, &sn) : NULL;
+    cwtr_catalog *sc = st ? cwtr_parse((char *)st, sn, src, err, sizeof err) : NULL;
+    if (src && !sc) { fprintf(stderr, "cwpack: %s\n", st ? err : src); return 1; }
     for (int i = 1; i < argc; i++) {
       if (argv[i][0] == '-') continue;
       uint8_t *t = cwp_read_file(argv[i], &n);
       bool po = rl_is(argv[i], ".po");
       cwtr_catalog *c = !t ? NULL : po ? cwtr_parse_po((char *)t, n, argv[i], err, sizeof err) : cwtr_parse((char *)t, n, argv[i], err, sizeof err);
       if (!c) bad++, fprintf(stderr, "cwpack: %s\n", t ? err : argv[i]);
-      else printf("ok %s: %d entries\n", argv[i], c->entries.count);
+      else {
+        int before = bad;
+        for (int k = 0; k < c->entries.count; k++) {
+          const cwtr_entry *e = &c->entries.data[k];
+          const char *why = braces_problem(e->value);
+          if (why) bad++, fprintf(stderr, "cwpack: %s: %s: %s\n", argv[i], e->key, why);
+          /* plural forms may leave {n} out ("no points"): only plain entries are compared */
+          const cwtr_entry *se = sc && e->cat == CWTR_NONE ? cwtr_find(sc, e->key, e->cat) : NULL;
+          if (se && !same_tokens(e->value, se->value))
+            bad++, fprintf(stderr, "cwpack: %s: %s: its {...} differ from the source's (\"%s\"): a translation keeps every "
+                           "placeholder and button prompt, in any order\n", argv[i], e->key, se->value);
+        }
+        if (bad == before) printf("ok %s: %d entries\n", argv[i], c->entries.count);
+      }
       cwtr_free(c);
       cw_free(t);
     }
+    if (sc) cwtr_free(sc);
+    cw_free(st);
     return bad ? 1 : 0;
   }
   if (exp) {

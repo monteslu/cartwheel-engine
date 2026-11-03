@@ -1,0 +1,3 @@
+@locale = fr
+hint.jump = {jump} : sauter un trou
+hint.move = {n} tours, {move_left|move_right} pour tourner

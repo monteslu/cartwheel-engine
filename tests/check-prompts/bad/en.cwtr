@@ -1,0 +1,4 @@
+@locale = en
+# a catalog's values
+hint.join = press A to join
+hint.ok = {jump}: hop a gap

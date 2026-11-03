@@ -1,0 +1,2 @@
+[node name="hint" type="Label" parent="."]
+text = "{ui_back} back"

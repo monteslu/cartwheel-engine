@@ -1,0 +1,3 @@
+@locale = fr
+hint.jump = {jump} : sauter un trou
+hint.start = Start : jouer
