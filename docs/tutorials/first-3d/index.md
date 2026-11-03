@@ -91,6 +91,10 @@ The camera eases toward a point offset from the player every tick. Easing a frac
 
 @include docs/tutorials/first-3d/project/src/main.c#camera
 
+The controls go along the bottom of the screen as a button prompt. `{move_left|move_right|move_forward|move_back}` names the four movement actions and the engine draws them for the player's device: one stick glyph on a pad, the W A S D keycaps on a keyboard, and the glyph follows a rebinding at once. Never write a button's name ("A: jump"); it is a different button on another maker's pad. `render` runs after the 3D draw (`.render = render` in `main` below), so the prompt lands on top:
+
+@include docs/tutorials/first-3d/project/src/main.c#prompt
+
 ## 7. Winning, and a crate off the edge
 
 `init` connects the goal's `body_entered` signal and remembers where the crate and the camera start:

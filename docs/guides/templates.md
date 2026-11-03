@@ -23,7 +23,7 @@ Then set `name` (the display name) and `app` (a C identifier: the executable and
 | `CMakeLists.txt` | reads `app` from `project.cwproj` and declares the game: `cw_add_app(<app> SOURCES src/*.c PACK roots.txt)`. Nothing else; the engine tree does the rest. |
 | `roots.txt` | what ships: the asset packer follows scene references from these files, so only reachable assets are packed |
 | `main.cwscene` | the main scene, built only from engine node types |
-| `src/main.c` | the game code: `cw_main` loads the input map, applies the `render.*` settings and runs the main scene with `cw_scene_app`; `init` registers the debug fields; `fixed_update` is the game logic |
+| `src/main.c` | the game code: `cw_main` loads the input map, applies the `render.*` settings and runs the main scene with `cw_scene_app`; `init` registers the debug fields; `fixed_update` is the game logic; `render` draws the controls along the bottom as button prompts (`cartwheel/prompt.h`: the action's glyph for the player's device, never a button's name) |
 | `.gitignore` | ignores `.cwbuild/`, `.cwcache/` and `exports/` |
 
 The smallest one, `empty_2d`, in full:

@@ -17,6 +17,8 @@
 #include "cartwheel/input.h"
 #include "cartwheel/physics_nodes.h"
 #include "cartwheel/project.h"
+#include "cartwheel/prompt.h"
+#include "cartwheel/render2d.h"
 #include "cartwheel/scene2d.h"
 #include "cartwheel/scene_file.h"
 
@@ -92,10 +94,22 @@ static void fixed_update(void *user, double dt) {
   G.ticks++;
 }
 
+/* #region prompt */
+/* The controls along the bottom, drawn for the device the player holds (cartwheel/prompt.h): button glyphs on a
+ * pad, keycaps on a keyboard, and a rebinding shows at once. Name the action ("{jump}"), never a button ("A"). */
+static void render(void *user, double alpha) {
+  (void)user, (void)alpha;
+  cw_r2d_begin(NULL); /* the window, over the scene */
+  cw_vec2 size = cw_r2d_canvas_size();
+  cw_prompt_text((cw_font){ 0 }, "{move_left|move_right} run    {jump} jump", 0, cw_v2(size.x * 0.5f, size.y - 16 * 2.2f), 16, (cw_color){ 0 }, CW_ALIGN_CENTER);
+  cw_r2d_end();
+}
+/* #endregion */
+
 cw_app_desc cw_main(int argc, char **argv) {
   (void)argc, (void)argv;
   cw_scene_register_builtin_types();
-  static cw_app_desc app = { .width = 640, .height = 360, .debug = true, .init = init, .fixed_update = fixed_update };
+  static cw_app_desc app = { .width = 640, .height = 360, .debug = true, .init = init, .fixed_update = fixed_update, .render = render };
   cw_project_apply_app(&app); /* render.* and the name from project.cwproj */
   const char *main_scene = cw_project_get("main_scene");
   return cw_scene_app(main_scene ? main_scene : "main.cwscene", &app);

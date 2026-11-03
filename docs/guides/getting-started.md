@@ -107,6 +107,12 @@ CW_FRAMES=30 CW_DEBUG_CMDS='tree /root 2' ~/games/mygame/.cwbuild/native/project
 node tools/run-cart.mjs --host romdev --app my_game --cart ~/games/mygame/.cwbuild/cart-wgpu/carts/my_game.wasc --frames 60 --state out/mygame.json
 ```
 
+Every template draws its controls along the bottom of the screen as button prompts: the glyph of the button on a pad, the key on a keyboard, never a button's name. Keep that habit for every hint the game shows:
+
+@include editor/templates/empty_3d/src/main.c#prompt
+
+`node tools/check-prompts.mjs src` fails on a prompt that names a button ("A: jump", "press X", "RT: gas"); see [Showing controls](guide:input).
+
 `node tools/cwproject.mjs info <dir>` prints the project's keys as JSON. [Templates](guide:templates) lists what each template contains; [Your first 3D game](tutorial:first-3d) and [Your first 2D game](tutorial:first-2d) start from the empty ones.
 
 ## Next

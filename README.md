@@ -39,6 +39,11 @@ What it does, beyond the basics of scenes, nodes, input, audio, text and UI
 - Rollback networking, localization and accessibility, a profiler with
   Perfetto traces, graphics presets with an Auto mode that holds a budget,
   and a game shell (title, player join, settings, pause).
+- Button prompts: a game names the action (`"{jump}: hop a gap"`) and the
+  engine draws the button, key or touch control of the device each player
+  holds, as vector glyphs with no maker's letters or colours; a check
+  (`tools/check-prompts.mjs`, shipped in the SDK) fails text that names
+  buttons.
 
 What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 
