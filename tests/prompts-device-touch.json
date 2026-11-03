@@ -1,0 +1,8 @@
+[
+  {"frame": 10, "touches": [{"id": 1, "x": 480, "y": 200}]},
+  {"frame": 11},
+  {"frame": 20, "buttons": ["south"]},
+  {"frame": 21},
+  {"frame": 30, "touches": [{"id": 1, "x": 480, "y": 200}]},
+  {"frame": 31}
+]

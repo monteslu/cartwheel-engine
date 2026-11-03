@@ -1,0 +1,4 @@
+# prompts: the Arabic font its right-to-left hint lines fall back to
+# (deps/, scripts/fetch-deps.sh, SIL OFL 1.1).
+fonts/NotoSansArabic.ttf = @engine/deps/fonts/noto-sans-arabic.ttf
+fonts/NotoSansArabic-OFL.txt = @engine/deps/fonts/noto-sans-arabic-OFL.txt

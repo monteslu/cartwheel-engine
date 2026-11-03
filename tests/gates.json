@@ -799,6 +799,254 @@
     }
   },
   {
+    "name": "unit-prompt",
+    "app": "unit_prompt",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "prompt.errors": 5,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "button prompts with synthetic input: the device each player used last, the first binding on it (keyboard and mouse standing in for each other), a rebind seen by the next query, an action with nothing on the device drawing nothing and logged once, typos counted in prompt.errors, movement pairs as one stick or d-pad glyph (the d-pad on a pad used only through its d-pad), shared prompts, markup through catalogs and cw_trf, the stream hash untouched, CW_TEST_PROMPT_DEVICE and the prompt debug request"
+  },
+  {
+    "name": "prompts-glyphs",
+    "app": "prompts",
+    "webgpu": true,
+    "frames": 10,
+    "maxGt16": 0.001,
+    "controlFrames": 10,
+    "controlEnv": {
+      "CW_TEST_PROMPT_BREAK": "wrong_dot"
+    },
+    "expect": {
+      "prompt.errors": 0,
+      "prompt.missing": 2,
+      "prompt.count": 155,
+      "prompt.glyphs": [
+        65537,
+        262384,
+        65540,
+        393216,
+        458752,
+        65537,
+        65540,
+        65537,
+        65538,
+        65537,
+        262192,
+        196610,
+        196609,
+        589868,
+        589828,
+        589831
+      ],
+      "sample.dev_hist": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "note": "every glyph on a dark and a light strip, the size ladder, player 1 on the pad (forced, so a host with no pad plugged in, wasmcart-native, draws the same), a shared prompt, each device, lanes by position, hint markup: the glyph codes drawn are exact on every host. Control: the wrong dot of the face-button diamond lit",
+    "startCmds": [
+      "prompt device 0 pad"
+    ],
+    "controlStartCmds": [
+      "prompt device 0 pad"
+    ]
+  },
+  {
+    "name": "prompts-device",
+    "app": "prompts",
+    "webgpu": true,
+    "frames": 40,
+    "input": "prompts-pad-press.json",
+    "startCmds": [
+      "prompt device 0 keyboard"
+    ],
+    "controlStartCmds": [
+      "prompt device 0 keyboard"
+    ],
+    "controlEnv": {
+      "CW_TEST_PROMPT_BREAK": "ignore_force"
+    },
+    "expect": {
+      "sample.dev_hist": [
+        1,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "sample.dev_n": 2,
+      "prompt.errors": 0
+    },
+    "note": "the device forced to the keyboard by the prompt debug request (how a cart is told), then a touch and a pad press that must not move it: jump draws as Space. Control: the forcing ignored, so the touch and the pad take the prompt back"
+  },
+  {
+    "name": "prompts-device-switch",
+    "app": "prompts",
+    "webgpu": true,
+    "frames": 40,
+    "input": "prompts-device-touch.json",
+    "controlInput": "prompts-device-touch-control.json",
+    "expect": {
+      "sample.dev_hist": [
+        1,
+        4,
+        1,
+        4,
+        0,
+        0,
+        0,
+        0
+      ],
+      "sample.dev_n": 4,
+      "prompt.devices": [
+        4,
+        1,
+        1,
+        1
+      ],
+      "prompt.errors": 0
+    },
+    "note": "an input script switches the device with its first event on another one: pad, touch, pad, touch, and the prompts redraw for each (the touch controls own disc and stick). Control: no touches, so the pad never hands over"
+  },
+  {
+    "name": "prompts-device-keys",
+    "app": "prompts",
+    "hosts": [
+      "native",
+      "chromium"
+    ],
+    "webgpu": {
+      "hosts": [
+        "native",
+        "chromium"
+      ]
+    },
+    "frames": 40,
+    "input": "prompts-device-keys.json",
+    "controlInput": "prompts-device-keys-control.json",
+    "expect": {
+      "sample.dev_hist": [
+        1,
+        2,
+        1,
+        2,
+        3,
+        0,
+        0,
+        0
+      ],
+      "sample.dev_n": 5,
+      "prompt.devices": [
+        3,
+        1,
+        1,
+        1
+      ],
+      "prompt.errors": 0
+    },
+    "note": "the keyboard and mouse in an input script: a key, a pad button, a key, a mouse click (romdev has no keyboard op). Control: the pad button alone"
+  },
+  {
+    "name": "prompts-device-env",
+    "app": "prompts",
+    "hosts": [
+      "native"
+    ],
+    "frames": 40,
+    "input": "prompts-device-touch-control.json",
+    "env": {
+      "CW_TEST_PROMPT_DEVICE": "touch"
+    },
+    "controlEnv": {
+      "CW_TEST_PROMPT_DEVICE": ""
+    },
+    "expect": {
+      "sample.dev_hist": [
+        4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "prompt.devices": [
+        4,
+        4,
+        4,
+        1
+      ],
+      "prompt.errors": 0
+    },
+    "note": "CW_TEST_PROMPT_DEVICE=touch forces every player (native runs; carts take the prompt debug request), whatever the pad presses. Control: the variable empty"
+  },
+  {
+    "name": "prompts-rebind",
+    "app": "prompts",
+    "webgpu": true,
+    "frames": 30,
+    "input": "prompts-rebind.json",
+    "startCmds": [
+      "rebind"
+    ],
+    "expect": {
+      "sample.rebind_code": 65544,
+      "prompt.errors": 0
+    },
+    "note": "jump moved from south to north by a rebinding capture (the rebind debug request, then the north button): on the very frame it moves, jump draws with north solid, everywhere it is shown. Control: the rebind never requested, south stays lit"
+  },
+  {
+    "name": "prompts-text",
+    "app": "prompts",
+    "webgpu": true,
+    "frames": 10,
+    "startCmds": [
+      "prompt device 0 pad",
+      "l10n locale ar"
+    ],
+    "controlStartCmds": [
+      "prompt device 0 pad",
+      "l10n locale ar"
+    ],
+    "controlFrames": 10,
+    "controlEnv": {
+      "PROMPTS_TYPO": "1"
+    },
+    "expect": {
+      "prompt.errors": 0,
+      "sample.text_w": [
+        181.1920166015625,
+        187.7919921875,
+        264.80078125
+      ]
+    },
+    "note": "hint markup from an Arabic catalog, laid out right to left with the glyphs in reading order, measured and drawn the same on every host. Control: a {name} typo, which must set prompt.errors"
+  },
+  {
     "name": "unit-motion",
     "app": "unit_motion",
     "frames": 2,
