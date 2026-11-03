@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "cartwheel/quality_menu.h"
+#include "cartwheel/prompt.h"
 #include "cartwheel/core.h"
 #include "cartwheel/debug.h"
 #include "cartwheel/platform.h"
@@ -167,7 +168,10 @@ void cw_quality_menu_draw(const cw_quality_menu_style *style) {
     y += step;
     if (i == 0) y += u * 0.35f; /* the preset apart from the settings it sets */
   }
-  const char *hint = cw_quality_is_auto() ? "Auto keeps the frame under budget by changing these as you play"
-                                          : "up / down to choose, left / right to change";
-  text(st.font, hint, cx, sz.y - u * 1.8f, u * 0.7f, cw_rgba(1, 1, 1, 0.6f), 1);
+  if (cw_quality_is_auto()) text(st.font, "Auto keeps the frame under budget by changing these as you play", cx, sz.y - u * 1.8f, u * 0.7f, cw_rgba(1, 1, 1, 0.6f), 1);
+  else if (cw_action_find("ui_up") >= 0 && cw_action_find("ui_left") >= 0 && cw_action_find("ui_back") >= 0)
+    /* the game shell's menu actions: drawn as button prompts for the device in use (cartwheel/prompt.h) */
+    cw_prompt_text(st.font, "{ui_up|ui_down} choose    {ui_left|ui_right} change    {ui_back} back", -1, cw_v2(cx, sz.y - u * 1.9f), u * 0.75f,
+                   cw_rgba(1, 1, 1, 0.75f), CW_ALIGN_CENTER);
+  else text(st.font, "up and down to choose, left and right to change", cx, sz.y - u * 1.8f, u * 0.7f, cw_rgba(1, 1, 1, 0.6f), 1);
 }

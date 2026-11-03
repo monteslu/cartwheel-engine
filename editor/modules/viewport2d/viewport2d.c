@@ -842,7 +842,7 @@ static cw_node create(void *user) {
     V.tool_btn[i] = mkbtn(labels[i], tips[i], lines[i], true);
     cw_node_add_child(bar, V.tool_btn[i]);
   }
-  V.snap_btn = mkbtn("Snap", "Snapping (Y): grid step view2d.snap step=8; guides attract", "view2d.snap on=toggle", true);
+  V.snap_btn = mkbtn("Snap", "Snapping (Y key): grid step view2d.snap step=8; guides attract", "view2d.snap on=toggle", true);
   V.grid_btn = mkbtn("Grid", "Show the grid (every pixel from zoom 8)", "view2d.grid on=toggle", true);
   cw_node_add_child(bar, V.snap_btn);
   cw_node_add_child(bar, V.grid_btn);

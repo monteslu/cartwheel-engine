@@ -96,7 +96,11 @@ static cw_vec2 button_min(cw_node n, void *d) {
     w += sep + lh * 0.7f; /* the arrow sits in a square of the text height */
     break;
   }
-  default: break;
+  default: {
+    float lead = ui_remap_lead(n, lh); /* a RemapButton's button prompt before its text */
+    if (lead > 0) w += lead + (tw > 0 ? sep : 0);
+    break;
+  }
   }
   return (cw_vec2){ ceilf(w + SM_W(&st)), ceilf(h + SM_H(&st)) };
 }
@@ -142,6 +146,15 @@ static void button_draw(cw_node n, void *d) {
     cw_ui_draw_icon(CW_ICON_ARROW_DOWN, (cw_rect){ rtl ? in.x : in.x + in.w - a, in.y + (in.h - a) * 0.5f, a, a }, T_COLOR(n, "arrow_color"));
     if (rtl) in.x += a + sep;
     in.w -= a + sep;
+  }
+  if (kind == KIND_BUTTON) {
+    float lh = cw_ui_line_height(f, fs), lead = ui_remap_lead(n, lh);
+    if (lead > 0) { /* a RemapButton's button prompt, then the text in what is left */
+      float gx = rtl ? in.x + in.w - lead : in.x;
+      ui_remap_draw_lead(n, (cw_rect){ gx, in.y + (in.h - lh) * 0.5f, lead, lh }, fc);
+      if (!rtl) in.x += lead + sep;
+      in.w -= lead + sep;
+    }
   }
   cw_halign al = kind == KIND_BUTTON ? (cw_halign)b->alignment : CW_HALIGN_LEFT;
   cw_ui_draw_text_in(f, fs, text, in, al, fc, true);

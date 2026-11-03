@@ -151,8 +151,8 @@ void cw_captions_update(double dt);
 
 /* ── input remapping ──────────────────────────────────────────────────
  * RemapButton (a Button): properties `action` (name), `slot` (binding slot)
- * and `device` (KEYBOARD_MOUSE or GAMEPAD). It shows the binding's display
- * name; pressing it listens for the next key/button/axis on that device
+ * and `device` (KEYBOARD_MOUSE or GAMEPAD). It shows the binding as a
+ * button prompt (cartwheel/prompt.h) and its display name; pressing it listens for the next key/button/axis on that device
  * (cw_input_capture_begin), shows "remap.listening" (translated; English
  * fallback "Press a key...") and stores the capture with
  * cw_action_set_binding; Escape (or the pad's east / back button for a

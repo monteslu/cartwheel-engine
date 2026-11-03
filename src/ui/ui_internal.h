@@ -287,4 +287,9 @@ static inline const char *ui_s(const char *s) { return s ? s : ""; }
 static inline bool rect_has(cw_rect r, cw_vec2 p) { return p.x >= r.x && p.y >= r.y && p.x < r.x + r.w && p.y < r.y + r.h; }
 static inline float ui_round(float v) { return floorf(v + 0.5f); }
 
+/* remap.c: the button prompt a RemapButton draws before its text (cartwheel/prompt.h): its width at this line
+ * height (0: none, a plain Button or a RemapButton listening or unbound), and drawing it in r (local coordinates) */
+float ui_remap_lead(cw_node n, float line_h);
+void ui_remap_draw_lead(cw_node n, cw_rect r, cw_color c);
+
 #endif
