@@ -135,6 +135,10 @@ A `CanvasLayer` draws its children on top of the world, in window pixels (640 x 
 
 @include docs/tutorials/first-2d/project/src/main.c#hud
 
+The controls go along the bottom, as a button prompt: `{move_left|move_right|move_up|move_down}` names the four movement actions, and the engine draws them for the device the player holds (one stick glyph on a pad, the W A S D keycaps on a keyboard). Write a prompt this way, never as a button's name such as "A: jump": that is a different button on another maker's pad, and nothing at all on a keyboard. `render` runs after the scene is drawn, in `base.render` of the scene app (`.render = render` in `main` below):
+
+@include docs/tutorials/first-2d/project/src/main.c#prompt
+
 ## 8. Debug fields
 
 A test should not have to read pixels to know whether the game works. `cw_debug_*` registers a variable by name; every host can read the named values while the game runs, and romdev reads them with `wasm({op:'debugState'})`. The app desc already sets `.debug = true`:

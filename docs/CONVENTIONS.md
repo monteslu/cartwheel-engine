@@ -23,6 +23,32 @@ and named debug state (exact) against the native run, and runs a CONTROL
 that must fail (one frame early, other input, or an injected failure). A
 gate whose control passes is a gate that cannot see anything.
 
+## Button prompts
+
+Text and art that tell a player which button to press never name or colour
+a button. "A: jump" is the wrong button on another maker's pad and means
+nothing on a keyboard or a phone. Name the action and let the engine draw it
+for the player's device (`cartwheel/prompt.h`, guide: input, "Showing
+controls"):
+
+```c
+cw_prompt_text(font, "{jump}: hop a gap", player, pos, 22, white, CW_ALIGN_LEFT);
+```
+
+- `{action}` draws that action's binding on the device the player used last;
+  `{left|right}` and `{left|right|up|down}` draw one stick or d-pad glyph;
+  `{pad:west}` draws one button, for designs laid out by position. The word
+  "Start" is allowed (every pad has it).
+- Colours belong to the game, not the controller: no "press green".
+- Never track the last device yourself: `cw_prompt_device_of(player)`.
+- A game may count on four face buttons, a d-pad, two shoulders, Start and
+  Back. Sticks and analog triggers may be missing: anything a game needs
+  also binds to a button or the d-pad. Confirm is south, back is east.
+- `node tools/check-prompts.mjs` (in `tests/all.mjs`, and in the SDK for
+  game repos) fails on `A:`, `(A)`, `press A`, `LB`, `RT`, `Cross`, `green
+  button` and the like in strings; `prompt-ok: <reason>` on a line that
+  really means it.
+
 ## Finding your way
 
 - `docs/api.json`: every public function, type and macro with its comment

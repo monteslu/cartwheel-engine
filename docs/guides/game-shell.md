@@ -29,6 +29,16 @@ writes only its gameplay and art:
 - input: menus answer pads, the keyboard and pointer taps (mouse or touch);
   joined players are assigned their pad and devices in join order, so
   gameplay asks `cw_action_*` for players 0 to n-1;
+- prompts: every hint the shell draws is a button prompt ((header:prompt.h))
+  for the devices the players hold: the join screen's empty slots show
+  `{ui_accept} join` for every seat and its footer `{ui_accept} join
+  {ui_back} leave {ui_start} play`, and the title, pause and settings pages
+  end with a line of their controls. The shell's actions are `ui_up`,
+  `ui_down`, `ui_left`, `ui_right`, `ui_accept`, `ui_back`, `pause` and
+  `ui_start` (Start on a pad, Enter on the keyboard), so a game's own screens
+  say the same thing the same way: `cw_prompt_text(font, "{ui_back} back",
+  -1, pos, size, color, CW_ALIGN_CENTER)`. On a touch screen the lines are left
+  out: the items are tapped;
 - audio: the shell starts the mixer and makes two buses, music and effects,
   which follow the volume settings; its hooks play the menu sounds and each
   screen's music;

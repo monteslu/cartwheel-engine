@@ -4,6 +4,21 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.30.0 (2026-11-03)
+
+### Added
+- Button prompts (`cartwheel/prompt.h`): a game names the action and the engine draws how to do it on the device each player is using right now. `cw_prompt_text(font, "{jump}: hop a gap", player, pos, size, color, align)` draws a diamond of four dots with the south one solid for a pad player, a keycap reading "Space" for a keyboard player and the on-screen button's disc for a touch player; rebind jump to north and the north dot lights on that frame. The markup: `{action}`, a pair `{move_left|move_right}` or four directions drawn as one stick or d-pad glyph, `{pad:west}` for one physical button (designs laid out by position), `{{` and `}}` for braces. It sits inside translated strings, so a translator moves the glyph, and right-to-left lines lay glyphs out in reading order. `cw_prompt_action`, `cw_prompt_actions`, `cw_prompt_binding` draw single glyphs, each with a `_size` call; `cw_prompt_device_of(player)` says which device a player used last (pad, keyboard, mouse or touch), from the frame snapshot, so no game tracks it itself. Player -1 is a screen every seat reads. Glyphs are vector shapes on a dark backing, readable on light and dark backgrounds, with no maker's letters or colours; Start is the word "Start". Minimum size 16 canvas pixels at a pixel scale of 1.
+- Rules, each with a test: the first binding on the player's device in binding order (the keyboard and mouse stand in for each other); an action with nothing on the device draws nothing and logs once; a `{name}` that is no action logs once and counts in the debug field `prompt.errors`, which `tests/gate.mjs` now fails any gate on; a pad used only through its d-pad shows the d-pad where the stick would be shown (a pad with no stick); prompts never reach the simulation, recordings or `input.hash`, and a call from `fixed_update` asserts in a debug build and counts in `prompt.errors` in a release build. Tests force the device with `CW_TEST_PROMPT_DEVICE` natively or the debug request `prompt device <player|all> <device|auto>` in a cart.
+- `tools/check-prompts.mjs` fails on text that names a controller button by one maker's label or colour (`A:`, `(A)`, `press A`, `A or`, `A B X Y`, `LB`, `RT`, `L1`, `ZR`, `Cross`, `green button`) in C strings, scene files and catalogs; `prompt-ok: <reason>` marks a line that means it. It runs in `tests/all.mjs` over the engine and ships in the SDK, so a game runs `node <sdk>/tools/check-prompts.mjs src`.
+- `cwpack --cwtr-check` checks every `{...}` in a catalog is well formed and, with `--po-source`, that a translation keeps the source's placeholders and prompt markup.
+- Sample `prompts`; gates `unit-prompt`, `prompts-glyphs`, `prompts-device`, `prompts-device-switch`, `prompts-device-keys`, `prompts-device-env`, `prompts-rebind`, `prompts-text`, each with a control that must fail.
+- The docs can show a picture rendered by a sample (`@image`); the input guide's "Showing controls" has one of every glyph.
+
+### Changed
+- The game shell draws its hints as button prompts: the join screen's slots and footer, and a line of controls under the title, pause, settings and graphics pages. It has a new action, `ui_start` (Start on a pad, Enter on the keyboard), which the join screen's prompt names; it adds a slot to every shell game's input snapshot, so `input.hash` values change. On a touch screen the hint lines are left out.
+- `RemapButton` shows the binding as a glyph beside its name.
+- `games/platformer3d`, `games/action2d`, the editor templates, the first 2D and 3D tutorials and the touch example in `input.h` name actions or positions, never a maker's buttons.
+
 ## v0.29.1 (2026-11-01)
 
 ### Fixed

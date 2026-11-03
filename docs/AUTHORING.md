@@ -79,6 +79,11 @@ file or region is missing, and in tutorials it fails on any fenced block that
 is not `sh` or `text` (commands and output may be written inline; code may
 not).
 
+A picture is a line of its own too, `@image docs/images/<file>.png <caption>`:
+it must live in `docs/images/` (the site copies it), and `--check` fails when
+it is missing. Pictures are rendered by the engine from a sample (say which
+in the caption), never drawn by hand.
+
 Other directives: `@templates` (the editor templates as a table),
 `@headers` (every public header with its summary), `@gates` (the gate list from
 `tests/gates.json`).
@@ -131,3 +136,12 @@ Other directives: `@templates` (the editor templates as a table),
 Short sentences, present tense, no marketing. Say what a thing costs and who
 owns what. No em-dashes. No commercial game names. Every claim about
 behaviour should be one a reader can check in a header, a sample or a gate.
+
+Name a controller's buttons by position, never by one maker's labels or
+colours: the south, east, west and north buttons, the left and right
+shoulders, triggers and sticks, the d-pad, Start and Back. A guide that has
+to explain why (what the makers print on their pads, and why a game must not
+copy it) is the only exception, and it says so. Example code draws prompts
+with `cartwheel/prompt.h` (`"{jump}: hop a gap"`), never `"A: jump"`, because
+example code is what gets copied. `node tools/check-prompts.mjs` checks the
+code; read prose by eye.

@@ -79,6 +79,8 @@ The game draws into a 640x360 virtual canvas with `INTEGER` scaling, and the UI 
 
 Without `cw_ui_draw`, the UI draws in its own pass at window resolution over the scaled game, which is what you want for crisp text over pixel art.
 
+A HUD that tells the player which button does something draws it as a button prompt, never as a button's name: [cw_prompt_text](api:cw_prompt_text) ([cartwheel/prompt.h](header:prompt.h)) inside the same render2d pass, with the action in the markup (`"{jump}: hop a gap"`), so a pad player sees the glyph, a keyboard player the key, and a rebinding shows at once. The text can live in a Label's catalog entry and be drawn with the prompt call; see [Showing controls](guide:input). A [RemapButton](node:RemapButton) draws its binding the same way, as a glyph beside its name.
+
 ## Editor-scale layouts
 
 The same system carries a full tool layout. `samples/ui_editor` loads a menu bar with submenus, a toolbar, nested split panes, a two-column scene `Tree`, a file list, a `TextEdit` with line numbers and C highlighting, and an inspector, about 150 controls from one `.cwscene` and the theme above. The inspector is built by reflection: for the selected node it walks `cw_node_props` and makes a header per owning node type and a row per editable property, then rebuilds when the selection changes.

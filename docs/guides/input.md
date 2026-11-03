@@ -2,7 +2,7 @@
 
 Games ask about named actions ("jump", "move_left"), never about devices. Keys, mouse buttons, the wheel, pad buttons, pad axes and on-screen touch controls are bindings of those actions, rebindable at run time, and the stream of action states can be recorded and replayed bit for bit.
 
-Header: [cartwheel/input.h](header:input.h). Sample: `input_demo` (every feature below, at a 120 Hz tick so each 60 fps frame runs two ticks). Gates: `input-pad`, `input-keys`, `input-pointer`, `unit-input`; `games/action2d` plays the same run on a pad and on a keyboard and must end in the same state (`action2d`, `action2d-keys`).
+Header: [cartwheel/input.h](header:input.h); showing a player which button does what: [cartwheel/prompt.h](header:prompt.h) (below). Sample: `input_demo` (every feature below, at a 120 Hz tick so each 60 fps frame runs two ticks). Gates: `input-pad`, `input-keys`, `input-pointer`, `unit-input`; `games/action2d` plays the same run on a pad and on a keyboard and must end in the same state (`action2d`, `action2d-keys`).
 
 ## Actions and bindings
 
@@ -14,7 +14,7 @@ Bindings have a text form, used everywhere (binding files, `project.cwproj`, sav
 |---|---|
 | `key:space`, `key:a`, `key:44` | a key by SDL scancode name or number |
 | `mouse:left`, `wheel:up` | a mouse button; a wheel direction (pressed on frames the wheel moves) |
-| `pad:south`, `pad:start`, `pad:up` | a pad button (south is A on an Xbox pad) |
+| `pad:south`, `pad:start`, `pad:up` | a pad button, by position: `south` is the bottom face button on every pad |
 | `axis:lx-`, `axis:rt+@0.5` | a pad axis direction, with an optional threshold (triggers are axes) |
 | `touch:1`, `touch:0.left` | an on-screen touch button, or one direction of a touch stick |
 
@@ -75,7 +75,66 @@ A rebinding screen listens for the next press with capture. `input_demo` binds w
 
 @include samples/input_demo/main.c#rebind
 
-For a ready-made control, the UI module has a remap button node ([RemapButton](node:RemapButton)).
+For a ready-made control, the UI module has a remap button node ([RemapButton](node:RemapButton)): it shows the binding as a button prompt beside its name.
+
+## Showing controls
+
+A prompt tells the player which button does something. Never write a button's name or colour into a prompt: "A: jump" is the right button on one maker's pad, the wrong one on another's (the bottom button carries a different letter there, and the letter A sits on the east button), meaningless on a keyboard or a phone, and unknown on hosts that cannot say which pad is plugged in. Name the action instead and let the engine draw it for the device the player holds: [cartwheel/prompt.h](header:prompt.h).
+
+@include samples/prompts/main.c#hint
+
+[cw_prompt_text](api:cw_prompt_text) draws text with glyphs in it. `{jump}` is an action's glyph; `{move_left|move_right}` a pair, and `{left|right|up|down}` four directions, drawn as one stick or d-pad glyph; `{pad:west}` one physical input, for a design about position; `{{` and `}}` are braces. [cw_prompt_action](api:cw_prompt_action), [cw_prompt_actions](api:cw_prompt_actions) and [cw_prompt_binding](api:cw_prompt_binding) draw a single glyph, and each has a `_size` call that measures without drawing.
+
+@image docs/images/prompts.png Every glyph on a dark and a light strip, the face-button diamond from 10 to 48 canvas pixels, and a player's prompts on a pad, a keyboard, a mouse and a touch screen (the prompts sample, `samples/prompts`).
+
+| Input | Glyph |
+|---|---|
+| south, east, west, north | a diamond of four dots, the one to press solid, the other three rings |
+| shoulders | two flat bars on top of a pad's outline, the left or right one solid |
+| triggers | two tall tabs, the left or right one solid |
+| a stick | a ring with a knob, beside a small plain ring on the other side: the full one is the stick to use. Arrows show the direction, a pair or all four |
+| a stick press | the stick with a second ring round the knob |
+| the d-pad | a plus, the arms to press solid |
+| Start | the word "Start" in a pill |
+| Back | two small pills, the left one solid (the makers name this button differently, so no word is used) |
+| a key | a keycap with [cw_binding_display_name](api:cw_binding_display_name)'s text; the arrow keys draw an arrow |
+| the mouse | a mouse with the bound button solid, or the wheel and its direction |
+| touch | the on-screen control as the touch overlay draws it: a button's disc and label, a stick's ring |
+
+Every glyph is vector shapes from render2d, so it is sharp at any size and the same on GL and WebGPU. Solid means "this one" and an outline "not this one", so nothing depends on colour. Each glyph sits on its own dark backing, so it reads on light and dark backgrounds. The minimum size is 16 canvas pixels at a pixel scale of 1: below it keycap text, the word "Start" and stick arrows close up (the diamond alone still reads at 14). Use 18 or more for anything read in motion.
+
+The rules, each with a test in `unit-prompt` and the `prompts-*` gates:
+
+- **Which device.** The one the player used last (a pad button, a stick or trigger past half way, a key, a mouse button or the wheel, a touch landing), from the frame snapshot. Before anything is used: the pad when it is connected, else touch on a touch-first device, else the keyboard. [cw_prompt_device_of](api:cw_prompt_device_of) answers it; a game never tracks the last device itself.
+- **Which binding.** The first one, in binding order, on that device: `key:space, pad:south` draws the diamond for a pad player and "Space" for a keyboard player. The keyboard and the mouse stand in for each other.
+- **Rebinding.** A prompt reads the bindings when it draws, so a player who moves jump to the north button sees north lit, everywhere, on that frame.
+- **Nothing on the device.** An action with no binding there draws nothing and logs a warning once, naming the action and the device. It never guesses.
+- **A typo.** `{jmup}` draws nothing, logs once and counts in the debug field `prompt.errors`; `tests/gate.mjs` fails every gate whose run has one.
+- **Movement.** A pair or four directions draw one glyph when their pad bindings agree: the stick when all are on one stick, else the d-pad. No host reports whether a pad has a stick, so a pad whose d-pad the player has used and whose sticks they never have is taken to have none and shows the d-pad (a retro handheld steers through the same actions' d-pad bindings).
+- **Shared prompts.** Player `-1` is every present seat: a title or instructions screen shows the pad glyph if any seat is on a pad, then the keycap if any is on the keyboard, then the touch control.
+- **Determinism.** Prompts are presentation. Nothing here enters the simulation, the recording or `input.hash`. Calling them from `fixed_update` asserts in a debug build and counts in `prompt.errors` in a release build.
+- **Tests.** `CW_TEST_PROMPT_DEVICE=pad|keyboard|mouse|touch` forces every player's device in a native run; the debug request `prompt device <player|all> <device|auto>` does it in a cart (a gate's `startCmds`); an input script's first event on another device switches it as a player would.
+
+@include samples/prompts/main.c#shared
+
+When the design is about position (lanes, answer slots, a dance mat), lay it out by position and draw each slot's glyph with `{pad:west}`, `{pad:south}`, `{pad:east}`, so the slot, the glyph and the button all point the same way:
+
+@include samples/prompts/main.c#lanes
+
+### What a game may assume
+
+Every pad the engine meets has four face buttons in a diamond, a d-pad, two shoulders, Start and Back: wasmcart's own default set (its SPEC, the manifest's `controls`). Confirm is south and back is east on every pad; the engine does not swap them for any maker. Sticks and analog triggers are not always there (retro handhelds): a game may use them, but anything it needs must also have a binding on a button or the d-pad.
+
+### The rules for games
+
+1. Never write a button's name or colour in text or art. `{jump}: hop a gap`, not `A: hop a gap`. "Start" is the one exception: every pad has that button, and on a keyboard the prompt shows its key.
+2. Colours belong to the game, not the controller. A green lane is fine; "press green" is not, and neither is a green dot meaning the south button.
+3. When a design is about position, lay it out by position.
+4. Text says what the button does ("checkpoint"); the glyph says which button.
+5. Do not track the last device yourself. Ask [cw_prompt_device_of](api:cw_prompt_device_of).
+6. One string serves every device: the markup draws keys on a keyboard and the touch control on a phone with no extra work.
+
+`node tools/check-prompts.mjs src` (it ships in the SDK) fails on the usual slips in string literals, scene files and catalogs: `A:`, `(A)`, `press A`, `A or`, `A B X Y`, `LB`, `RT`, `L1`, `ZR`, `Cross`, `green button`. A line that really means it carries `prompt-ok: <reason>` on it or on the line above. It cannot see letters drawn in art or in code (a function that draws a letter in a circle), so review those by hand, and move keyboard hints such as "W / S: gas" to the markup too.
 
 ## The project input map
 

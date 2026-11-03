@@ -4738,7 +4738,7 @@
   {
    "name": "RemapButton",
    "parent": "Button",
-   "doc": "Shows an action's binding; press it, then press a key or button to rebind.",
+   "doc": "Shows an action's binding as a button prompt and its name; press it, then press a key or button to rebind.",
    "signals": [
     "remapped"
    ],

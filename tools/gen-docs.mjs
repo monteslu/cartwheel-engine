@@ -15,12 +15,13 @@
 // editor/templates/*/template.cfg, tests/gates.json. No dependencies: plain
 // node, so it runs anywhere the engine builds. The output works from file://
 // (the search index is a script, not a fetch) and from any static server.
-import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, rmSync, statSync, copyFileSync } from 'node:fs';
 import { join, resolve, dirname, extname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseHeader } from './gen-api.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const images = new Set(); // docs/images/* that pages show (@image), copied into the site
 const args = process.argv.slice(2);
 const CHECK = args.includes('--check');
 const OUTDIR = resolve(ROOT, args.includes('--out') ? args[args.indexOf('--out') + 1] : 'build/docs');
@@ -285,6 +286,15 @@ function markdown(src, ctx) {
       const x = extract(path, region, ctx.where);
       ctx.includes.push(m[1]);
       if (x) out.push(codeBlock(x.text, langOf(path), ctx.rel, `<span class="path">${esc(path)}</span>${region ? ` <span class="region">${esc(region)}</span>` : ''} <span class="lines">lines ${x.from}-${x.to}</span>`));
+      i++;
+      continue;
+    }
+    if ((m = l.match(/^@image\s+(\S+)\s+(.+)$/))) { /* a picture from the repo: @image docs/images/x.png what it shows */
+      const path = m[1];
+      if (!/^docs\/images\/[\w.-]+\.(png|jpg|svg)$/.test(path)) problem(ctx.where, `@image ${path}: pictures live in docs/images/`);
+      else if (!existsSync(join(ROOT, path))) problem(ctx.where, `@image ${path}: no such file`);
+      else images.add(path);
+      out.push(`<figure class="image"><img src="${ctx.rel}${path.slice('docs/'.length)}" alt="${esc(m[2])}"><figcaption>${inline(m[2], ctx)}</figcaption></figure>`);
       i++;
       continue;
     }
@@ -584,6 +594,7 @@ h1{font-size:2em;line-height:1.2;margin:.2em 0 .4em;overflow-wrap:anywhere}h2{ma
 h2,h3,h4{position:relative}.anchor{position:absolute;left:-1em;opacity:0;color:var(--dim)}h2:hover .anchor,h3:hover .anchor{opacity:1}
 .lead{font-size:1.12em;color:var(--dim)}
 figure.code{margin:1em 0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+figure.image{margin:1em 0}figure.image img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;image-rendering:auto}figure.image figcaption{font-size:.9em;opacity:.8}
 figcaption{font:13px ui-monospace,Menlo,Consolas,monospace;padding:6px 12px;background:var(--side);border-bottom:1px solid var(--line);color:var(--dim)}
 figcaption .path{color:var(--fg)}figcaption .region{color:var(--kw)}figcaption .lines{float:right}
 pre{margin:0;padding:12px 14px;overflow:auto;background:var(--code);line-height:1.45}
@@ -650,6 +661,7 @@ if (CHECK) {
 rmSync(OUTDIR, { recursive: true, force: true });
 for (const p of pages) { mkdirSync(dirname(join(OUTDIR, p.path)), { recursive: true }); writeFileSync(join(OUTDIR, p.path), p.html); }
 mkdirSync(join(OUTDIR, 'assets'), { recursive: true });
+for (const img of images) { mkdirSync(dirname(join(OUTDIR, img.slice('docs/'.length))), { recursive: true }); copyFileSync(join(ROOT, img), join(OUTDIR, img.slice('docs/'.length))); }
 writeFileSync(join(OUTDIR, 'assets/site.css'), CSS);
 writeFileSync(join(OUTDIR, 'assets/site.js'), JS);
 writeFileSync(join(OUTDIR, 'search-index.js'), `window.CW_SEARCH=${JSON.stringify(search)};\n`);

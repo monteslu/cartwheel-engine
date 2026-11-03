@@ -3692,7 +3692,7 @@
     },
     {
      "name": "CW_TOUCH_UNITS",
-     "doc": "── touch controls (phones, tablets, the browser) ─────────────────────\nA touch that STARTS inside a control belongs to it until lifted (sliding\noff a stick keeps steering). Bind actions to them with touch:<id> /\ntouch:<id>.<dir>; ids count up from 0 in the order controls are added.\n\nThe usual way: a thumbstick with a HOME in the bottom left corner and\nround buttons in the bottom right, placed in TOUCH UNITS from a corner of\nthe screen, laid out again every frame (so they follow a resize or a turn\nof the phone) and drawn by the engine on top of the frame:\n\n  int stick = cw_touch_add_thumbstick(NULL);            // home 150,140 from the bottom left\n  int jump = cw_touch_add_round_button(&(cw_touch_button_desc){ .x = 110, .y = 110, .label = \"A\" });\n  cw_action_bind_text(left, \"key:a, touch:0.left\");\n\nA touch unit is 1/540 of the shorter side of the touch area (the window\nunless cw_touch_set_area), so a control is the same share of the screen at\nevery size and in either orientation.\n\nThe thumbstick's ring stays at home: a touch landing anywhere in its zone\n(from the corner to `zone` units past home on both axes) steers by where\nthe thumb is relative to HOME, so the drawn ring never jumps to where the\nthumb happened to land. `floating` brings back that older behaviour (the\nring centred where the touch started, inside the zone).\n\nThe overlay: the engine draws its thumbsticks (base, ring, knob) and round\nbuttons (disc, label) after the app's render callback, translucent, in\nwindow coordinates. CW_TOUCH_OVERLAY_AUTO (the default) shows them while\ncw_platform_touch_primary or once a touch has landed, until the pad is\nused (a button, or a stick or trigger past half way; a pad merely\nplugged in does not count) and again from the next touch. A game drawing\nits own sets `hidden` on a control or turns the overlay off; the queries\nbelow give it what it needs. The debug field\n`cw.touch_overlay` is the count of controls drawn last frame.\n\nThe rect controls (cw_touch_add_button / cw_touch_add_stick) are the\nolder form: regions in logical window coordinates that the game lays out\nand draws itself; the engine never draws them."
+     "doc": "── touch controls (phones, tablets, the browser) ─────────────────────\nA touch that STARTS inside a control belongs to it until lifted (sliding\noff a stick keeps steering). Bind actions to them with touch:<id> /\ntouch:<id>.<dir>; ids count up from 0 in the order controls are added.\n\nThe usual way: a thumbstick with a HOME in the bottom left corner and\nround buttons in the bottom right, placed in TOUCH UNITS from a corner of\nthe screen, laid out again every frame (so they follow a resize or a turn\nof the phone) and drawn by the engine on top of the frame:\n\n  int stick = cw_touch_add_thumbstick(NULL);            // home 150,140 from the bottom left\n  int jump = cw_touch_add_round_button(&(cw_touch_button_desc){ .x = 110, .y = 110, .label = \"Jump\" });\n  cw_action_bind_text(left, \"key:a, touch:0.left\");\n\nA touch unit is 1/540 of the shorter side of the touch area (the window\nunless cw_touch_set_area), so a control is the same share of the screen at\nevery size and in either orientation.\n\nThe thumbstick's ring stays at home: a touch landing anywhere in its zone\n(from the corner to `zone` units past home on both axes) steers by where\nthe thumb is relative to HOME, so the drawn ring never jumps to where the\nthumb happened to land. `floating` brings back that older behaviour (the\nring centred where the touch started, inside the zone).\n\nThe overlay: the engine draws its thumbsticks (base, ring, knob) and round\nbuttons (disc, label) after the app's render callback, translucent, in\nwindow coordinates. CW_TOUCH_OVERLAY_AUTO (the default) shows them while\ncw_platform_touch_primary or once a touch has landed, until the pad is\nused (a button, or a stick or trigger past half way; a pad merely\nplugged in does not count) and again from the next touch. A game drawing\nits own sets `hidden` on a control or turns the overlay off; the queries\nbelow give it what it needs. The debug field\n`cw.touch_overlay` is the count of controls drawn last frame.\n\nThe rect controls (cw_touch_add_button / cw_touch_add_stick) are the\nolder form: regions in logical window coordinates that the game lays out\nand draws itself; the engine never draws them."
     }
    ]
   },
@@ -9094,6 +9094,104 @@
     }
    ],
    "types": [],
+   "macros": []
+  },
+  {
+   "header": "cartwheel/prompt.h",
+   "summary": "cartwheel prompts: how to show a player which button, key or touch control\ndoes something, drawn for the device that player is using right now.\n\nA game never writes a button's name or colour. It names the ACTION, and the\nengine draws that action's binding on the player's current device:\n\n  cw_prompt_text(font, \"{jump}: hop a gap\", 0, pos, 24, white, CW_ALIGN_LEFT);\n\nOn a pad that is a diamond of four dots with the south one solid; on a\nkeyboard a keycap reading \"Space\"; on a phone the on-screen button's disc\nand label. Rebind jump to the north button and the north dot lights, the\nsame frame. One string covers every device and every rebinding, and it sits\nin a translation catalog like any other text.\n\n── The glyphs ─────────────────────────────────────────────────────────\nVector shapes from render2d (circles, rings, rounded rects), so they are\nsharp at any size and identical on GL and WebGPU. Solid means \"this one\",\nan outline means \"not this one\"; nothing depends on colour, and no glyph\ncarries a maker's letter, symbol or colour.\n  face buttons     a diamond of four dots: the one to press solid, three rings\n  shoulders        two flat bars side by side, the left or right one solid\n  triggers         two tall tabs side by side, the left or right one solid\n  sticks           a ring with a solid knob, beside a small plain ring on the\n                   other side: the full one is the stick (left or right) to\n                   use. A direction pushes the knob that way under an arrow;\n                   a pair or four directions draw their arrows\n  stick press      the stick glyph with a second ring round the knob\n  d-pad            a plus: the arms to press solid, the rest outlined (a\n                   pair lights two, four directions light all four)\n  Start            the word \"Start\" in a pill (every pad has that button;\n                   a keyboard binding shows its keycap, usually \"Enter\")\n  Back             two small pills side by side, the left one solid (the\n                   makers name that button differently, so no word is used)\n  keyboard         a keycap holding cw_binding_display_name's text\n                   (\"Space\", \"Enter\", \"W\"); the arrow keys draw an arrow\n  mouse            a mouse outline with the bound button solid; the wheel\n                   draws its arrow\n  touch            the on-screen control as the touch overlay draws it: a\n                   button's disc and label, a thumbstick's ring and knob\nEach shape has a dark edge under a light (or `color`) fill, so a glyph reads\non a light background and on a dark one. MINIMUM SIZE: 14 canvas pixels at\na pixel scale of 1 (the rings stay open rings, the solid dot stays the only\nsolid one, and keycap text stays legible, measured from native-scale crops\non light and dark backgrounds). Use 18 or more for anything a player must\nread in motion. Below 14 the draw still happens, but the rings close up.\n\n── Which device ───────────────────────────────────────────────────────\nEach player's CURRENT device is the one they used last, read from the\ninput module's FRAME snapshot: a pad button, a stick or trigger past half\nway, a key going down, a mouse button or the wheel, a touch landing. Before\na player touches anything: their pad when it is connected, else a touch\nscreen on a touch-first device (cw_platform_touch_primary), else the\nkeyboard, else their pad even when it is unplugged. A pad that unplugs\nhands its player back to that default.\n\nWhich binding of several: the FIRST binding, in binding order, on that\ndevice. So `key:space, pad:south` draws the diamond for a pad player and\n\"Space\" for a keyboard player, with no game code. The keyboard and mouse\ncount as one desk: a keyboard player is shown a mouse binding when the\naction has no key, and the other way round.\n\nNothing on the device: an action with no binding on the player's device\ndraws NOTHING (never a guess, never a placeholder) and logs a warning ONCE\nper action and device, naming both. The debug field `prompt.missing` counts\nthose pairs.\n\n── Movement ───────────────────────────────────────────────────────────\nTwo actions (left|right or up|down) or four (left|right|up|down) draw as\nONE glyph when their pad bindings agree: the stick when all of them are on\none stick, else the d-pad when all are on it. When both exist the stick is\nshown, except on a pad whose d-pad this player has used and whose sticks\nthey never have: that is how a pad with no stick (a retro handheld, which\nstill steers through the d-pad bindings of the same actions) is told apart,\nsince no host reports which pads have sticks. Until a pad has been used it\nshows the stick. Bindings that agree on nothing draw each action's glyph\nside by side. On a keyboard each action's keycap is drawn, side by side.\n\n── Shared prompts (player -1) ─────────────────────────────────────────\nA title or instructions screen that several seats read: the pad glyph when\nany present seat is on a pad, then the keycap when any is on the keyboard\nor mouse, then the touch control when any is on touch, side by side. A\nseat is present when its pad is connected or it holds the keyboard, mouse\nor touch. A device the action has no binding on is left out while another\ndevice shows something (a menu's keys on a phone beside a pad); only when\nnothing at all is drawn is it logged. Per-seat text (a join slot, a\nsplit-screen HUD) passes the seat.\n\n── Text markup ───────────────────────────────────────────────────────\ncw_prompt_text draws text with glyphs in it, on one line or several ('\\n'):\n  {jump}                  an action's glyph, by its name\n  {pad:west} {key:space}  one binding (the cw_binding_parse text form), for a\n                          design that is about position (lanes, answer slots)\n  {move_left|move_right}  a pair as one glyph (Movement, above)\n  {left|right|up|down}    four directions as one glyph\n  {{ and }}               a literal brace\nThe markup lives inside translated strings (cw_tr(\"hint.jump\") returning\n\"{jump} : sauter\"), so a translator moves the glyph where the language\nwants it. Right-to-left text lays its runs out right to left, glyphs\nincluded. A name that is no action (a typo) draws nothing, is logged by\ncw_error ONCE naming it and the text, and counts in the debug field\n`prompt.errors`, which tests/gate.mjs fails a run on.\n\n── Determinism ───────────────────────────────────────────────────────\nPrompts are presentation. The current device comes from the frame\nsnapshot and never from the tick snapshot; nothing here enters the\nsimulation, the recorded action stream or `input.hash`. Calling any of\nthese from fixed_update is a bug (the answer would change the game as the\nplayer picks up another device): debug builds assert, release builds log\nonce and count it in `prompt.errors`.\n\n── Tests ─────────────────────────────────────────────────────────────\nCW_TEST_PROMPT_DEVICE=pad|keyboard|mouse|touch (native runs) forces every\nplayer's device, whatever they press. The debug request `prompt device\n<player|all> <pad|keyboard|mouse|touch|auto>` does the same in a cart (and\nnatively): a gate passes it with \"startCmds\". Without either, an input\nscript switches the device with its first event on another device, as a\nplayer would. `prompt` alone answers every player's device. Debug fields:\n`prompt.devices` (cw_prompt_device per player), `prompt.errors`,\n`prompt.missing`, `prompt.count` (glyphs drawn last frame) and\n`prompt.glyphs` (the first 16 of them, each kind << 16 | what was lit:\nsee cw_prompt_glyph_code).\n\nCosts: a glyph is 4 to 20 render2d shapes; text markup is one layout pass\nper call (cw_font_measure per run). Main thread only, inside an open\nrender2d pass (cw_r2d_begin), outside fixed_update.",
+   "functions": [
+    {
+     "name": "cw_prompt_device_of",
+     "signature": "cw_prompt_device cw_prompt_device_of(int player)",
+     "doc": "The device this player used last (see \"Which device\"), from the FRAME\nsnapshot: for UI only, never for simulation. player outside\n0..CW_INPUT_MAX_PLAYERS-1: CW_PROMPT_NONE.",
+     "inline": false
+    },
+    {
+     "name": "cw_prompt_device_name",
+     "signature": "const char *cw_prompt_device_name(cw_prompt_device d)",
+     "doc": "\"none\", \"pad\", \"keyboard\", \"mouse\", \"touch\".",
+     "inline": false
+    },
+    {
+     "name": "cw_prompt_force_device",
+     "signature": "void cw_prompt_force_device(int player, cw_prompt_device d)",
+     "doc": "Force a player's device (player -1: every player), as a test or a settings\npage (\"show keyboard prompts\") wants; CW_PROMPT_NONE ends the forcing and\nthe player's last-used device answers again.",
+     "inline": false
+    },
+    {
+     "name": "cw_prompt_action",
+     "signature": "cw_vec2 cw_prompt_action(cw_action a, int player, cw_vec2 pos, float size, cw_color color)",
+     "doc": "One action's glyph for this player (player -1: every present seat, see\n\"Shared prompts\"), its box's top left at pos, `size` canvas units tall\n(wider glyphs are wider than size). color: the light fill ({0,0,0,0} =\nwhite); its alpha fades the whole glyph. Returns the size drawn: {0, 0}\nwhen the action has no binding on the device (logged once).",
+     "inline": false
+    },
+    {
+     "name": "cw_prompt_action_size",
+     "signature": "cw_vec2 cw_prompt_action_size(cw_action a, int player, float size)",
+     "doc": "The size cw_prompt_action would draw, drawing nothing.",
+     "inline": false
+    },
+    {
+     "name": "cw_prompt_actions",
+     "signature": "cw_vec2 cw_prompt_actions(const cw_action *acts, int n, int player, cw_vec2 pos, float size, cw_color color)",
+     "doc": "Two or four actions as one movement glyph (see \"Movement\"): n 2 is a pair\n(left, right or up, down), n 4 is left, right, up, down. n 1 is\ncw_prompt_action. Returns the size drawn.",
+     "inline": false
+    },
+    {
+     "name": "cw_prompt_actions_size",
+     "signature": "cw_vec2 cw_prompt_actions_size(const cw_action *acts, int n, int player, float size)",
+     "doc": "the size it would draw",
+     "inline": false
+    },
+    {
+     "name": "cw_prompt_binding",
+     "signature": "cw_vec2 cw_prompt_binding(cw_binding b, cw_vec2 pos, float size, cw_color color)",
+     "doc": "One physical input, whatever device the player is on: for a design that is\nabout position (lanes laid out west, south, east; answers in a diamond).\nReturns the size drawn ({0, 0} for CW_BIND_NONE).",
+     "inline": false
+    },
+    {
+     "name": "cw_prompt_binding_size",
+     "signature": "cw_vec2 cw_prompt_binding_size(cw_binding b, float size)",
+     "doc": "the size it would draw",
+     "inline": false
+    },
+    {
+     "name": "cw_prompt_text",
+     "signature": "cw_vec2 cw_prompt_text(cw_font f, const char *text, int player, cw_vec2 pos, float size, cw_color color, cw_text_align align)",
+     "doc": "Text with glyphs in it (see \"Text markup\"), in font f at size (the em, as\ncw_text_style.size), each glyph as tall as the text's capitals plus a bit\nand centred on the line. pos: the box's top, and its left edge\n(CW_ALIGN_LEFT), centre (CW_ALIGN_CENTER) or right edge (CW_ALIGN_RIGHT),\neach line aligned on its own. The text has a dark outline, as the glyphs\ndo. Returns the size of the box drawn.",
+     "inline": false
+    },
+    {
+     "name": "cw_prompt_text_size",
+     "signature": "cw_vec2 cw_prompt_text_size(cw_font f, const char *text, int player, float size)",
+     "doc": "The box cw_prompt_text would draw, drawing nothing (a typo still counts).",
+     "inline": false
+    },
+    {
+     "name": "cw_prompt_set_font",
+     "signature": "void cw_prompt_set_font(cw_font f)",
+     "doc": "The font for keycaps and \"Start\" (and for cw_prompt_text with a null font).\nDefault: the UI's sans (cw_ui_font_sans).",
+     "inline": false
+    },
+    {
+     "name": "cw_prompt_glyph_code",
+     "signature": "uint32_t cw_prompt_glyph_code(cw_binding b)",
+     "doc": "What a glyph is, as the debug field prompt.glyphs records each one drawn:\nkind << 16 | lit. Kinds: 1 face buttons (lit: bit 0 south, 1 east, 2 west,\n3 north), 2 shoulders and 3 triggers (bit 0 left, 1 right), 4 stick (bit 0\nthe right stick, bits 4..7 directions left, right, up, down, bit 8 press),\n5 d-pad (bits 0..3 left, right, up, down), 6 Start, 7 Back, 8 Guide, 9\nkeycap (lit: the scancode), 10 mouse (bit 0 left, 1 right, 2 middle, 4..7\nwheel up, down, left, right), 11 touch button (lit: control id), 12 touch\nstick (control id | directions << 8). 0 when the binding draws nothing.",
+     "inline": false
+    },
+    {
+     "name": "cw_prompt_action_codes",
+     "signature": "int cw_prompt_action_codes(const cw_action *acts, int n, int player, uint32_t *out, int cap)",
+     "doc": "The codes of the glyphs cw_prompt_actions would draw for these actions and\nthis player, drawing nothing (tests, and a game checking its own prompts):\nreturns how many there are, writing up to cap of them.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_prompt_device",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_PROMPT_NONE,     /* the player has no device (a seat with nothing assigned) */\n  CW_PROMPT_PAD,\n  CW_PROMPT_KEYBOARD,\n  CW_PROMPT_MOUSE,\n  CW_PROMPT_TOUCH,\n  CW_PROMPT_DEVICE_COUNT\n} cw_prompt_device;"
+    }
+   ],
    "macros": []
   },
   {
