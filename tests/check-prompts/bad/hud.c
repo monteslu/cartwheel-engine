@@ -22,6 +22,10 @@ static const char *const HINTS[] = {
   "press red to stop",             /* FLAG */
   "P%d: (A) to join",              /* FLAG */
   "Y to rotate",                   /* FLAG */
+  "(a) resume",                    /* FLAG */
+  "(b): back to the menu",         /* FLAG */
+  "P%d: ( x ) to join",            /* FLAG */
+  "{pause} pause   (y) map",       /* FLAG */
 };
 static void hud(void) {
   draw("A: bomb"); draw("{jump}: hop"); /* FLAG: one finding for the line */

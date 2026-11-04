@@ -4,6 +4,17 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.30.1 (2026-11-03)
+
+### Fixed
+- The stick prompt read as an eye or a target, not as a stick: a ring round a dot, with the arrows of a left and right pair closing it into an almond, and a press drawn as rings inside rings. A stick is now a thumbstick seen from the front and a little above (a flat socket, a short post, a wide cap whose top shows), with the other stick smaller and dimmer beside it (the left stick has its twin on its right). Arrows sit beside the cap for left and right, above it for up and under the socket for down; a press lowers the cap under an arrow pointing down onto it. The glyph's width is unchanged (1.42 times the size), so layouts do not move. Glyph codes are unchanged.
+- The touch stick prompt had the same ring-and-dot look: it is now a knob on a filled base with the arrows inside the base. Its width is unchanged.
+- A single-character keycap legend (J, W, 7) was the size of a word's and thin, so at the 16 pixel minimum a J in HUD text read as an I. One character is now drawn larger and heavier, centred on its capital height with a hanging letter (J, Q) lifted so its tail stays inside the keycap. Words ("Space", "Esc", "Left Shift") are unchanged, and so are keycap widths.
+- `tools/check-prompts.mjs` missed a face-button letter in lower case in round brackets ("(a) resume", "(b): back"). It now reports one at the start of the text or after a space, a colon or a comma, and passes code and ordinary text such as `f(x)`, `bitcast<i32>(a)`, `item(s)`, `(x)%d`, `[x]` checkboxes and `[b]` tags; the fixtures test both.
+
+### Added
+- Sample `prompts`: the debug request `ladder` shows every stick glyph (a pair, four directions, one direction, each stick, a press, the touch stick) and the keycaps at 16, 20, 24, 32 and 48 canvas pixels on dark and light, then in lines of HUD text at 16 and 22.
+
 ## v0.30.0 (2026-11-03)
 
 ### Added

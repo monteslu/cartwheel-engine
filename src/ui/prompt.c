@@ -426,6 +426,8 @@ static void action_set(const cw_action *acts, int n, int player, gset *s) {
     for (int i = 0; i < held.n; i++) missing(held.a[i], (cw_prompt_device)held.d[i]);
 }
 
+static uint32_t utf8_next(const char **p);
+
 /* ── drawing ─────────────────────────────────────────────────────────── */
 
 static cw_font prompt_font(void) {
@@ -447,6 +449,18 @@ static pen pen_of(float size, cw_color c) {
 }
 
 static float label_size(float s) { return s * 0.56f; }
+/* one character on a keycap (J, W, 7) is drawn larger and heavier than a word: at the minimum size the thin legend of
+ * a J read as an I in HUD text */
+static bool one_char(const char *t) {
+  const char *p = t;
+  if (!*p) return false;
+  utf8_next(&p);
+  return !*p;
+}
+static cw_text_style key_style(const char *t, float s, cw_color c) {
+  if (one_char(t)) return (cw_text_style){ .size = s * 0.66f, .color = c, .outline_width = s * 0.035f, .outline_color = c };
+  return (cw_text_style){ .size = label_size(s), .color = c };
+}
 static float label_width(const char *t, float s) {
   if (!t[0]) return 0;
   cw_text_style st = { .size = label_size(s) };
@@ -464,7 +478,13 @@ static float glyph_width(const glyph *g, float s) {
   case PK_STICK: return s * 1.42f;
   case PK_START: return label_width(start_word(), s) + s * 0.75f;
   case PK_BACK: return s * 1.15f;
-  case PK_KEY: return g->label[0] ? fmaxf(s * 0.92f, label_width(g->label, s) + s * 0.5f) : s * 0.92f;
+  case PK_KEY:
+    if (!g->label[0]) return s * 0.92f;
+    if (one_char(g->label)) {
+      cw_text_style st = key_style(g->label, s, cw_rgba(1, 1, 1, 1));
+      return fmaxf(s * 0.92f, cw_font_measure(prompt_font(), g->label, &st).width + s * 0.4f);
+    }
+    return fmaxf(s * 0.92f, label_width(g->label, s) + s * 0.5f);
   case PK_MOUSE: return s * 0.72f;
   case PK_NONE: return 0;
   default: return s;
@@ -517,35 +537,71 @@ static void draw_shoulder(const pen *p, cw_vec2 o, uint32_t lit, bool trigger) {
   }
 }
 
-/* a stick's ring, knob and arrows centred at c; dirs: DIR_* bits; press: a ring round the knob */
-static void stick_body(const pen *p, cw_vec2 c, uint32_t dirs, bool press) {
-  float s = p->s;
-  ring(p, c, s * 0.3f, p->fill);
-  int nd = 0, one = -1;
-  for (int i = 0; i < 4; i++)
-    if (dirs & (1u << i)) nd++, one = i;
-  cw_vec2 k = c;
-  if (nd == 1) k = (cw_vec2){ c.x + DIRS[one].x * s * 0.06f, c.y + DIRS[one].y * s * 0.06f };
-  if (press) {
-    ring(p, k, s * 0.18f, p->fill);
-    dot(k, s * 0.08f, p->fill);
-  } else dot(k, s * 0.13f, p->fill);
-  for (int i = 0; i < 4; i++) {
-    if (!(dirs & (1u << i))) continue;
-    cw_vec2 tip = { c.x + DIRS[i].x * s * 0.49f, c.y + DIRS[i].y * s * 0.49f };
-    arrow(tip, DIRS[i], s * 0.17f, s * 0.15f, p->fill);
+static void ellipse(cw_vec2 c, float rx, float ry, cw_color col) {
+  cw_vec2 pts[28];
+  for (int i = 0; i < 28; i++) {
+    float a = (float)i * 2.0f * CW_PI / 28.0f;
+    pts[i] = (cw_vec2){ c.x + cosf(a) * rx, c.y + sinf(a) * ry };
+  }
+  cw_r2d_fan(c, pts, 28, true, col);
+}
+
+/* One thumbstick seen from the front and a little above: a flat socket, a short post and a round cap whose top face
+ * shows. cx: its middle; sy: the socket's middle; s: its size; press: the cap pushed down; m grows every part (the dark
+ * backing pass). */
+static void stick_shape(float cx, float sy, float s, float m, bool press, cw_color c, cw_color socket, cw_color rim) {
+  ellipse((cw_vec2){ cx, sy }, s * 0.44f + m, s * 0.12f + m, socket);
+  float crx = s * 0.32f, cry = s * 0.1f, side = s * 0.12f, top = sy - s * (press ? 0.36f : 0.44f), pw = s * 0.2f;
+  cw_r2d_rect(cw_rect_make(cx - pw * 0.5f - m, top, pw + 2 * m, sy - top), c);
+  ellipse((cw_vec2){ cx, top + side }, crx + m, cry + m, c);
+  cw_r2d_rect(cw_rect_make(cx - crx - m, top, 2 * (crx + m), side), c);
+  ellipse((cw_vec2){ cx, top }, crx + m, cry + m, c);
+  if (m == 0 && s >= 14) { /* the rim between the top face and the side */
+    cw_vec2 arc[13];
+    for (int i = 0; i <= 12; i++) {
+      float a = (float)i * CW_PI / 12.0f;
+      arc[i] = (cw_vec2){ cx + cosf(a) * crx * 0.98f, top + sinf(a) * cry };
+    }
+    cw_r2d_polyline(arc, 13, fmaxf(s * 0.05f, 1.0f), false, rim);
+  }
+}
+
+/* A pad's thumbstick from the front, the other stick smaller and dimmer beside it (which one: the left stick has its
+ * twin on its right). Arrows beside the cap say left and right, above it up, under the socket down; pressing in is an
+ * arrow down onto a lowered cap. No ring round a dot anywhere: that read as an eye (two side arrows round a ring) or a
+ * target. dark: the backing pass, every part grown by the margin. */
+static void stick_parts(const pen *p, cw_vec2 o, float W, bool right, uint32_t dirs, bool press, bool dark) {
+  float s = p->s, m = dark ? fmaxf(p->w * 0.8f, 1.0f) : 0;
+  /* dim: the ink a little over half way to the backing, opaque (overlapping parts must not show through) */
+  cw_color ink = dark ? p->dark : p->fill;
+  cw_color dim = dark ? p->dark : cw_rgba(p->fill.r * 0.55f + 0.014f, p->fill.g * 0.55f + 0.014f, p->fill.b * 0.55f + 0.027f, p->fill.a);
+  float cx = right ? o.x + W - s * 0.52f : o.x + s * 0.52f; /* the stick in use */
+  float ox = right ? o.x + s * 0.2f : o.x + W - s * 0.2f;   /* the other one */
+  float sy = o.y + s * 0.72f;
+  cw_color rim = cw_rgba(p->dark.r, p->dark.g, p->dark.b, p->fill.a);
+  stick_shape(ox, sy, s * 0.55f, m, false, dim, dim, rim);
+  stick_shape(cx, sy, s, m, press, ink, dim, rim);
+  float top = sy - s * (press ? 0.36f : 0.44f), len = s * 0.17f, half = s * 0.16f;
+  cw_vec2 tips[4] = { { cx - s * 0.53f, top + s * 0.06f }, { cx + s * 0.53f, top + s * 0.06f }, { cx, o.y },
+                      { cx, o.y + s * 1.02f } };
+  for (int i = 0; i < 5; i++) {
+    cw_vec2 tip, d;
+    if (i < 4) {
+      if (!(dirs & (1u << i))) continue;
+      tip = tips[i], d = DIRS[i];
+    } else {
+      if (!press) continue;
+      tip = (cw_vec2){ cx, top - s * 0.13f }, d = DIRS[3];
+    }
+    float l = d.y == 0 ? len * 1.12f : len, h = d.y == 0 ? half * 1.08f : half; /* the side arrows have the room */
+    if (dark) arrow((cw_vec2){ tip.x + d.x * m * 1.6f, tip.y + d.y * m * 1.6f }, d, l + m * 2.6f, h + m * 1.6f, ink);
+    else arrow(tip, d, l, h, ink);
   }
 }
 
 static void draw_stick(const pen *p, cw_vec2 o, uint32_t lit) {
-  float s = p->s, W = s * 1.42f;
-  bool right = lit & 1;
-  cw_vec2 main = { right ? o.x + W - s * 0.5f : o.x + s * 0.5f, o.y + s * 0.5f };
-  cw_vec2 other = { right ? o.x + s * 0.2f : o.x + W - s * 0.2f, o.y + s * 0.5f };
-  dot(other, s * 0.2f, p->dark);
-  dot(main, s * 0.5f, p->dark);
-  cw_r2d_circle_lines(other, s * 0.13f, fmaxf(p->w * 0.75f, 1.0f), 0, cw_rgba(p->fill.r, p->fill.g, p->fill.b, p->fill.a * 0.75f));
-  stick_body(p, main, (lit >> 4) & 15, lit & 0x100);
+  float W = glyph_width(&(glyph){ .kind = PK_STICK }, p->s);
+  for (int pass = 0; pass < 2; pass++) stick_parts(p, o, W, lit & 1, (lit >> 4) & 15, lit & 0x100, pass == 0);
 }
 
 static void draw_dpad(const pen *p, cw_vec2 o, uint32_t lit) {
@@ -601,8 +657,16 @@ static void draw_key(const pen *p, cw_vec2 o, const glyph *g) {
   cw_r2d_round_rect(grow(p, r), s * 0.16f + 1, 0, p->dark);
   cw_r2d_round_rect_lines(r, s * 0.16f, p->w, 0, p->fill);
   cw_vec2 c = { o.x + W * 0.5f, o.y + s * 0.5f };
-  if (g->label[0]) label_at(p, g->label, c, s);
-  else { /* an arrow key */
+  if (g->label[0]) {
+    cw_text_style st = key_style(g->label, s, p->fill);
+    cw_text_metrics m = cw_font_measure(prompt_font(), g->label, &st);
+    if (one_char(g->label)) {
+      /* centred on its capital height, a letter that hangs below the line (J, Q) lifted by half its tail;
+       * an outline of its own colour makes the stroke heavier */
+      float y = c.y + st.size * 0.35f - m.ascent - (strchr("JQgjpqy", g->label[0]) ? st.size * 0.08f : 0);
+      cw_r2d_text(prompt_font(), g->label, (cw_vec2){ c.x - m.width * 0.5f, y }, &st);
+    } else cw_r2d_text(prompt_font(), g->label, (cw_vec2){ c.x - m.width * 0.5f, c.y - m.height * 0.5f }, &st);
+  } else { /* an arrow key */
     int i = g->lit == SC_LEFT ? 0 : g->lit == SC_RIGHT ? 1 : g->lit == SC_UP ? 2 : 3;
     cw_vec2 tip = { c.x + DIRS[i].x * s * 0.2f, c.y + DIRS[i].y * s * 0.2f };
     arrow(tip, DIRS[i], s * 0.36f, s * 0.2f, p->fill);
@@ -656,11 +720,26 @@ static void draw_touch_button(const pen *p, cw_vec2 o, const glyph *g) {
   }
 }
 
+/* the touch stick as the overlay shows it, a knob on a pale base: the base is filled, not a ring, and the arrows sit
+ * inside it, so it reads as neither an eye nor a target */
 static void draw_touch_stick(const pen *p, cw_vec2 o, uint32_t lit) {
   float s = p->s;
   cw_vec2 c = { o.x + s * 0.5f, o.y + s * 0.5f };
+  uint32_t dirs = (lit >> 8) & 15;
   dot(c, s * 0.5f, p->dark);
-  stick_body(p, c, (lit >> 8) & 15, false);
+  cw_color base = cw_rgba(p->fill.r * 0.5f + 0.02f, p->fill.g * 0.5f + 0.02f, p->fill.b * 0.5f + 0.03f, p->fill.a);
+  dot(c, s * 0.5f - fmaxf(p->w * 0.6f, 1.0f), base);
+  int nd = 0, one = 0;
+  for (int i = 0; i < 4; i++)
+    if (dirs & (1u << i)) nd++, one = i;
+  cw_vec2 k = nd == 1 ? (cw_vec2){ c.x + DIRS[one].x * s * 0.07f, c.y + DIRS[one].y * s * 0.07f } : c;
+  dot(k, s * 0.17f + fmaxf(p->w * 0.5f, 1.0f), p->dark);
+  dot(k, s * 0.17f, p->fill);
+  for (int i = 0; i < 4; i++) {
+    if (!(dirs & (1u << i))) continue;
+    cw_vec2 tip = { c.x + DIRS[i].x * s * 0.46f, c.y + DIRS[i].y * s * 0.46f };
+    arrow(tip, DIRS[i], s * 0.19f, s * 0.16f, p->fill);
+  }
 }
 
 static void record(const glyph *g, uint32_t lit) {
