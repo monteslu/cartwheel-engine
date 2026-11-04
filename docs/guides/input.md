@@ -92,14 +92,14 @@ A prompt tells the player which button does something. Never write a button's na
 | south, east, west, north | a diamond of four dots, the one to press solid, the other three rings |
 | shoulders | two flat bars on top of a pad's outline, the left or right one solid |
 | triggers | two tall tabs, the left or right one solid |
-| a stick | a ring with a knob, beside a small plain ring on the other side: the full one is the stick to use. Arrows show the direction, a pair or all four |
-| a stick press | the stick with a second ring round the knob |
+| a stick | a thumbstick seen from the front and a little above (a flat socket, a short post, a wide cap), with the other stick smaller and dimmer beside it: the left stick has its twin on its right, the right stick on its left. Arrows show the direction: beside the cap for left and right, above it for up, under the socket for down |
+| a stick press | the stick with its cap pushed down and an arrow pointing down onto it |
 | the d-pad | a plus, the arms to press solid |
 | Start | the word "Start" in a pill |
 | Back | two small pills, the left one solid (the makers name this button differently, so no word is used) |
-| a key | a keycap with [cw_binding_display_name](api:cw_binding_display_name)'s text; the arrow keys draw an arrow |
+| a key | a keycap with [cw_binding_display_name](api:cw_binding_display_name)'s text (a single character larger and heavier than a word, so it reads at the minimum size); the arrow keys draw an arrow |
 | the mouse | a mouse with the bound button solid, or the wheel and its direction |
-| touch | the on-screen control as the touch overlay draws it: a button's disc and label, a stick's ring |
+| touch | the on-screen control as the touch overlay draws it: a button's disc and label; a stick's knob on its filled base, the arrows inside the base |
 
 Every glyph is vector shapes from render2d, so it is sharp at any size and the same on GL and WebGPU. Solid means "this one" and an outline "not this one", so nothing depends on colour. Each glyph sits on its own dark backing, so it reads on light and dark backgrounds. The minimum size is 16 canvas pixels at a pixel scale of 1: below it keycap text, the word "Start" and stick arrows close up (the diamond alone still reads at 14). Use 18 or more for anything read in motion.
 

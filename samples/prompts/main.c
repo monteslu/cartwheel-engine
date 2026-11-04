@@ -13,6 +13,10 @@
  * pad binding to it: every prompt follows on that frame. Native env:
  * PROMPTS_TYPO=1 writes {jmup} in one hint (the prompts-text gate's control).
  *
+ * The debug request `ladder` swaps the page for the stick ladder: every stick glyph (a pair, four ways,
+ * one way, each stick, a press, the touch stick) and the keycaps at 16, 20, 24, 32 and 48 canvas pixels, on dark
+ * and light, then in lines of HUD text at 16 and 22: the native-scale crops the stick glyph was drawn from.
+ *
  * Debug fields: sample.dev_hist (player 1's devices, in the order they
  * changed), sample.dev_n, sample.text_w (widths of the hint lines),
  * sample.rebind_code (the glyph jump drew on the frame it was rebound),
@@ -47,11 +51,11 @@ static const char AR[] =
 
 static struct {
   cw_font sans;
-  cw_action jump, dash, left, right, up, down, pause, back, fire, zoom, aim;
+  cw_action jump, dash, left, right, up, down, pause, back, fire, zoom, aim, look_l, look_r;
   int32_t dev_hist[8], dev_n;
   float text_w[3];
   uint32_t rebind_code, missing_touch;
-  bool listening, typo;
+  bool listening, typo, ladder;
   uint64_t rebound_frame;
 } S;
 
@@ -60,6 +64,12 @@ static void cmd_rebind(int argc, const char **argv, cw_reply *r) {
   cw_input_capture_begin(0, 0, true);
   S.listening = true;
   cw_reply_printf(r, "{\"listening\":true}");
+}
+
+static void cmd_ladder(int argc, const char **argv, cw_reply *r) {
+  (void)argc, (void)argv;
+  S.ladder = !S.ladder;
+  cw_reply_printf(r, "{\"ladder\":%s}", S.ladder ? "true" : "false");
 }
 
 static void init(void *user) {
@@ -93,6 +103,10 @@ static void init(void *user) {
   cw_action_bind_text(S.zoom, "wheel:up, pad:rshoulder");
   S.aim = cw_action_add("aim", 0.5f); /* nothing on touch: a touch player is shown nothing, and the log says so once */
   cw_action_bind_text(S.aim, "mouse:right, axis:lt+@0.5");
+  S.look_l = cw_action_add("look_left", 0.3f);
+  cw_action_bind_text(S.look_l, "axis:rx-");
+  S.look_r = cw_action_add("look_right", 0.3f);
+  cw_action_bind_text(S.look_r, "axis:rx+");
   /* #endregion */
 
   /* the touch controls the touch prompts show (the overlay is off: the sheet is the picture) */
@@ -101,6 +115,7 @@ static void init(void *user) {
   cw_touch_add_round_button(&(cw_touch_button_desc){ .x = 220, .y = 70, .label = "Dash", .color = cw_hex(0x80c0ffff) });
   cw_touch_set_overlay(CW_TOUCH_OVERLAY_OFF);
 
+  cw_debug_command("ladder", "ladder: the stick ladder page instead of the sheet (again: back)", cmd_ladder);
   cw_debug_command("rebind", "rebind: the next pad button becomes jump's pad binding", cmd_rebind);
   cw_debug_field("sample.dev_hist", S.dev_hist, CW_DBG_I32, 8);
   cw_debug_i32("sample.dev_n", &S.dev_n);
@@ -178,9 +193,61 @@ static void ladder(float x0, float y, cw_color bg, cw_color ink, float w) {
   }
 }
 
+/* one cell of the stick ladder at size s: row r, item i (0 or 1); returns its width */
+static float ladder_cell(int r, int i, cw_vec2 at, float s, cw_color ink) {
+  static const char *const one[][2] = { { "axis:lx-", "axis:ry+" }, { "pad:lstick", "pad:rstick" }, { "key:j", "key:escape" } };
+  cw_action steer[2] = { S.left, S.right }, vert[2] = { S.up, S.down }, four[4] = { S.left, S.right, S.up, S.down },
+            look[2] = { S.look_l, S.look_r };
+  cw_binding b;
+  switch (r) {
+  case 0: cw_prompt_force_device(3, CW_PROMPT_PAD); return cw_prompt_actions(i ? vert : steer, 2, 3, at, s, ink).x;
+  case 1: cw_prompt_force_device(3, CW_PROMPT_PAD); return cw_prompt_actions(i ? look : four, i ? 2 : 4, 3, at, s, ink).x;
+  case 2: case 3: case 5:
+    cw_binding_parse(one[r == 2 ? 0 : r == 3 ? 1 : 2][i], &b);
+    return cw_prompt_binding(b, at, s, ink).x;
+  case 4:
+    cw_prompt_force_device(3, CW_PROMPT_TOUCH);
+    return cw_prompt_actions(i ? four : steer, i ? 4 : 2, 3, at, s, ink).x;
+  default: return 0;
+  }
+}
+
+/* the stick ladder page (the debug request ladder) */
+static void stick_ladder(void) {
+  static const float sizes[] = { 16, 20, 24, 32, 48 };
+  cw_vec2 cs = cw_r2d_canvas_size();
+  label("stick ladder: 16 20 24 32 48", 16, 4, 14, INK);
+  for (int half = 0; half < 2; half++) {
+    float x0 = half * cs.x * 0.5f, y = 24;
+    cw_r2d_rect(cw_rect_make(x0, y, cs.x * 0.5f, 6 * 62 + 8), half ? cw_hex(0xe9e5dcff) : cw_hex(0x15171dff));
+    for (int r = 0; r < 6; r++, y += 62) {
+      float x = x0 + 8;
+      for (int i = 0; i < 2; i++, x += 10)
+        for (size_t k = 0; k < CW_ARRAY_LEN(sizes); k++)
+          x += ladder_cell(r, i, (cw_vec2){ x, y + 8 + (48 - sizes[k]) * 0.5f }, sizes[k], INK) + 6;
+    }
+  }
+  /* in HUD text: the pad and the keyboard, at 16 and 22 */
+  float y = 6 * 62 + 40;
+  static const cw_prompt_device devs[2] = { CW_PROMPT_PAD, CW_PROMPT_KEYBOARD };
+  for (int i = 0; i < 4; i++) {
+    float s = i < 2 ? 16 : 22;
+    cw_prompt_force_device(3, devs[i & 1]);
+    cw_prompt_text(S.sans, "{move_left|move_right} steer   {fire} fire   {look_left|look_right} look   {pad:rstick} horn", 3,
+                   (cw_vec2){ 16, y }, s, INK, CW_ALIGN_LEFT);
+    y += s * 1.5f;
+  }
+  cw_prompt_force_device(3, CW_PROMPT_NONE);
+}
+
 static void render(void *user, double alpha) {
   (void)user, (void)alpha;
   cw_r2d_begin(&(cw_r2d_pass_desc){ .clear = true, .clear_color = cw_hex(0x23262fff) });
+  if (S.ladder) {
+    stick_ladder();
+    cw_r2d_end();
+    return;
+  }
   cw_vec2 cs = cw_r2d_canvas_size();
   float W = cs.x;
   /* the live prompts first: their glyphs lead the prompt.glyphs debug field */

@@ -13,18 +13,19 @@
  * in a translation catalog like any other text.
  *
  * ── The glyphs ─────────────────────────────────────────────────────────
- * Vector shapes from render2d (circles, rings, rounded rects), so they are
- * sharp at any size and identical on GL and WebGPU. Solid means "this one",
- * an outline means "not this one"; nothing depends on colour, and no glyph
- * carries a maker's letter, symbol or colour.
+ * Vector shapes from render2d (circles, rings, rounded rects, polygons), so
+ * they are sharp at any size and identical on GL and WebGPU. Solid means
+ * "this one", an outline means "not this one"; nothing depends on colour,
+ * and no glyph carries a maker's letter, symbol or colour.
  *   face buttons     a diamond of four dots: the one to press solid, three rings
  *   shoulders        two flat bars side by side, the left or right one solid
  *   triggers         two tall tabs side by side, the left or right one solid
- *   sticks           a ring with a solid knob, beside a small plain ring on the
- *                    other side: the full one is the stick (left or right) to
- *                    use. A direction pushes the knob that way under an arrow;
- *                    a pair or four directions draw their arrows
- *   stick press      the stick glyph with a second ring round the knob
+ *   sticks           a thumbstick from the front and a little above (a flat
+ *                    socket, a short post, a wide cap), the other stick smaller
+ *                    and dimmer beside it: the left stick has its twin on its
+ *                    right. Arrows beside the cap say left and right, above it
+ *                    up, under the socket down; a pair or four draw them all
+ *   stick press      the stick with its cap pushed down under an arrow
  *   d-pad            a plus: the arms to press solid, the rest outlined (a
  *                    pair lights two, four directions light all four)
  *   Start            the word "Start" in a pill (every pad has that button;
@@ -32,11 +33,13 @@
  *   Back             two small pills side by side, the left one solid (the
  *                    makers name that button differently, so no word is used)
  *   keyboard         a keycap holding cw_binding_display_name's text
- *                    ("Space", "Enter", "W"); the arrow keys draw an arrow
+ *                    ("Space", "Enter", "W"; one character larger and heavier
+ *                    than a word); the arrow keys draw an arrow
  *   mouse            a mouse outline with the bound button solid; the wheel
  *                    draws its arrow
  *   touch            the on-screen control as the touch overlay draws it: a
- *                    button's disc and label, a thumbstick's ring and knob
+ *                    button's disc and label, a thumbstick's knob on its
+ *                    filled base with the arrows inside it
  * Each shape has a dark edge under a light (or `color`) fill, so a glyph reads
  * on a light background and on a dark one. MINIMUM SIZE: 16 canvas pixels at
  * a pixel scale of 1, read from native-scale crops on light and dark

@@ -19,6 +19,13 @@ static const char *const OK[] = {
   "{{literal braces}} and {n} points",
   "Square one",
   "a red car, a blue lane",
+  "f(x) = x * 2, sin(a) + cos(b)",
+  "item(s) left: %d",
+  "pos[x] (y/n) [y/n] (a, b)",
+  "(ab) and (by) and (axe)",
+  "grid (x)%d (y)%d",
+  "[x] done, [ ] to do, [b]bold[/b]",
+  "r = bitcast<f32>(a) >> 1",
 };
 static const char *const MEANT[] = {
   "A: the key that is literally labelled A on this keyboard", /* prompt-ok: a keyboard key, in a key-only menu */

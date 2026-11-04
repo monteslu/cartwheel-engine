@@ -1,4 +1,4 @@
-// Fails on text that names a controller button by one maker's label or colour ("A: jump", "(B) back", "press X",
+// Fails on text that names a controller button by one maker's label or colour ("A: jump", "(B) back", "(a) resume", "press X",
 // "LB / RB", "RT: gas", "Cross", "green button"). On another maker's pad those labels point at the wrong button, and on
 // a keyboard or a phone they mean nothing. Prompts name the ACTION and let the engine draw the glyph for the device the
 // player holds (cartwheel/prompt.h): "{jump}: hop a gap". The word "Start" is allowed: every pad has that button.
@@ -27,6 +27,9 @@ const RULES = [
   { re: new RegExp(`(?<![\\w{:])${L}\\s*:(?![\\w/])`), why: 'a button letter before a colon ("A: jump")' },
   { re: new RegExp(`\\(\\s*${L}\\s*\\)`), why: 'a button letter in brackets ("(A)")' },
   { re: new RegExp(`\\[\\s*${L}\\s*\\]`), why: 'a button letter in square brackets ("[A]")' },
+  // lower case in round brackets ("(a) resume") at the start of the text or after a space or ":"; code is not that
+  // (f(x), bitcast<i32>(a)), nor a plural (item(s)), a value label ("(x)%d"), a checkbox ("[x]") or a tag ("[b]")
+  { re: /(?:^|(?<=[\s:,•]))\(\s*[abxy]\s*\)(?![\w•])/, why: 'a button letter in brackets, lower case ("(a) resume")' },
   { re: new RegExp(`(?<![\\w{])${L}\\s*/\\s*${L}(?![\\w}])`), why: 'two button letters ("A / X")' },
   { re: new RegExp(`(?<![\\w{])${L}(?:[ ,/]+${L}){2,}(?![\\w}])`), why: 'a row of button letters ("A B X Y")' },
   { re: new RegExp(`\\b(?:[Pp]ress(?:es|ed|ing)?|[Hh]old(?:s|ing)?|[Tt]ap(?:s|ping)?|[Pp]ush(?:es)?|[Mm]ash(?:es)?)\\s+(?:the\\s+)?${L}\\b(?!')`), why: 'press, hold or tap a button letter ("press A")' },
