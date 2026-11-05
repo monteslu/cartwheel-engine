@@ -271,8 +271,8 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     const nrm = vec4(0, 0, 0, 0.9).toVar();
     // the top-down projection, unless the ground is steep enough that the sides carry it all
     If(g.tri.lessThan(0.999), () => {
-      alb.assign(sampleLayer(false, id, uv, gx, gy));
-      nrm.assign(toTop(sampleLayer(true, id, uv, gx, gy)));
+      alb.assign(sampleLayer(false, id, uv, gx, gy, mode === 'min'));
+      nrm.assign(toTop(sampleLayer(true, id, uv, gx, gy, mode === 'min')));
     });
     // steep: the side projections, weighted by the normal (medium and up). Only the facing one is read, both only
     // across the band where they hand over (a cliff read all of them: 18 texture reads a layer, most of a

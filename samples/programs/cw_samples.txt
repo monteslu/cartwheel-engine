@@ -102,3 +102,10 @@ standard+shadow+senv+l1801+s100
 standard+map+rep+shadow+skin+senv+l1801+s100
 standard+instbig+shadow+senv+l1801+s100
 standard+instbig+shadow+senv+icol+l1801+s100
+depth+xcluster_plain
+standard+senv+l1000+xcluster_plain
+standard+shadow+senv+l1000+xcluster_plain
+standard+l1121+xplain
+standard+instbig+l1121+xplain
+standard+instbig+icol+l1001+xcluster_plain
+standard+instbig+l1001+xcluster_plain

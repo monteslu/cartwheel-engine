@@ -241,10 +241,16 @@ High draws exactly what the scene's PostProcess and lights ask for, the same fra
 | distortion buffer, colour fringing | off | half, off | half, off | full, on | full, on |
 | explosion lights | 0 | 0.25 | 0.5 | 1 | 1 |
 | skin shading | plain | plain | on | on | on |
+| lighting model (`cw_quality_scale("shading")`) | plain | full | full | full | full |
 | SSR; depth of field; SSGI | off; off; off | off; off; off | half; on; off | as authored; on; off | x1.5; on; on |
 | HRTF voices | 0.25 | 0.25 | 0.5 | 1 | 1 |
 | water | Low's grid halved, no reflection, refraction or caustics | as before | as before | as before | as before |
-| terrain | the low layer set, the near ring at Low's reach | the same | | | |
+| terrain | the low layer set, the near ring at Low's reach, each layer read once, the coarser levels from 0.6 of their distance | the low layer set, the near ring at Low's reach | | | |
+| height fog, FXAA | inside the tone mapping pass | their own passes | | | |
+
+**The plain lighting model** (Very Low). Every MeshStandardMaterial and MeshPhysicalMaterial that the lighting system marks (the ones that take its clustered lights and cascaded sun, cartwheel/shading.h) carries the `plain` shading part: the material keeps its colour, maps, roughness, metalness, normal map, emission, ambient occlusion and light map, and is lit with Lambert diffuse and a Blinn-Phong highlight whose sharpness follows the roughness. The environment and the GI probes light it with their diffuse light only, the reflection is not sampled (the specular colour takes the diffuse light through an analytic estimate of the split sum, so metals keep their tint, duller), the light probe grid reads its first two SH bands, and clearcoat, sheen, iridescence and anisotropy are left out. A material with transmission keeps the full model, so glass stays glass. On the 890M at 1080p this took the scene pass of open_world from 1.9 to 1.1 ms on GL and 2.7 to 1.3 ms on WebGPU (with the terrain's single reads). The states are new program states (`x<parts>_plain`): the survey (`tools/programs.mjs`) runs every preset, so a regenerated table has them.
+
+**Very Low post.** The height fog runs inside the tone mapping pass (its blend over the HDR value as it is read), and so does FXAA, as FXAA 3.11's console variant: four diagonal reads and the centre, two or four along an edge, its edge test on a display brightness estimated from the HDR value. Two full-frame passes fewer (about 0.15 to 0.25 ms at 1080p on the 890M). The picture is the separate passes' except where FXAA blends: it blends HDR values, so an edge against a bright sky stays a little harder. `CW_TEST_NO_FUSION=1` runs the passes apart.
 
 A game adds its own render-only settings with `cw_quality_lever_add` (a name, its values' labels, the value each preset picks as a `cw_quality_lever_presets` struct: `(cw_quality_lever_presets){ .very_low = 0, .low = 0, .medium = 1, .high = 1, .ultra = 1 }`). The struct is passed by value, so a call written for the four presets before Very Low existed does not build instead of reading a shifted array. Levers show after the engine's settings, change with the presets and are saved with them. Re-apply them, and re-thin instancing, from a `cw_quality_on_change` callback. A game's own table indexed by `cw_quality` needs a Very Low entry: `CW_QUALITY_VERY_LOW` is first, so `q <= CW_QUALITY_LOW` reads "Low or cheaper", and an equality test against `CW_QUALITY_LOW` misses Very Low.
 

@@ -60,13 +60,14 @@ typedef struct {
   float skin;         /* skin shading (cartwheel/skin_shading.h): 0 = plain PBR */
   float ssr;          /* SSR march quality scale (0 = off) */
   bool dof, ssgi;
+  float shading; /* the lit materials' model: 1 = r187's physical one, 0 = the plain part (src/render/extensions/plain.mjs) */
 } effects;
 static const effects FX[CW_QUALITY_COUNT] = {
-  [CW_QUALITY_VERY_LOW] = { 0.25f, 0.2f, 3.0f, 0.25f, -1, 1, 0.25f, 0, 0, 0, 0, 0, false, false },
-  [CW_QUALITY_LOW] = { 0.4f, 0.35f, 2.0f, 0.25f, 3, 1, 0.375f, 0.5f, 0, 0.25f, 0, 0, false, false },
-  [CW_QUALITY_MEDIUM] = { 0.7f, 0.65f, 1.5f, 0.5f, 5, 1, 0.5f, 0.5f, 0, 0.5f, 1, 0.5f, true, false },
-  [CW_QUALITY_HIGH] = { 1, 1, 1, 1, 0, 2, 1, 1, 1, 1, 1, 1, true, false },
-  [CW_QUALITY_ULTRA] = { 1, 1, 0.75f, 1, 0, 3, 1, 1, 1, 1, 1, 1.5f, true, true },
+  [CW_QUALITY_VERY_LOW] = { 0.25f, 0.2f, 3.0f, 0.25f, -1, 1, 0.25f, 0, 0, 0, 0, 0, false, false, 0 },
+  [CW_QUALITY_LOW] = { 0.4f, 0.35f, 2.0f, 0.25f, 3, 1, 0.375f, 0.5f, 0, 0.25f, 0, 0, false, false, 1 },
+  [CW_QUALITY_MEDIUM] = { 0.7f, 0.65f, 1.5f, 0.5f, 5, 1, 0.5f, 0.5f, 0, 0.5f, 1, 0.5f, true, false, 1 },
+  [CW_QUALITY_HIGH] = { 1, 1, 1, 1, 0, 2, 1, 1, 1, 1, 1, 1, true, false, 1 },
+  [CW_QUALITY_ULTRA] = { 1, 1, 0.75f, 1, 0, 3, 1, 1, 1, 1, 1, 1.5f, true, true, 1 },
 };
 
 /* the shadows setting: caster culling (bounding sphere radius / distance under this skips the caster), cascades */
@@ -410,9 +411,11 @@ float cw_quality_scale(const char *knob) {
   if (!strcmp(knob, "dispersion")) return fx()->dispersion;
   if (!strcmp(knob, "flash_lights")) return fx()->flash_lights;
   if (!strcmp(knob, "skin")) return fx()->skin;
+  if (!strcmp(knob, "shading")) return fx()->shading;
   return 1;
 }
 float cw_quality_density(void) { return fx()->density; }
+bool cw__quality_cheap_post(void) { return fx()->shading < 0.5f; }
 int cw_quality_count(int n, const char *knob) {
   if (n <= 0) return n;
   int k = (int)((float)n * cw_quality_scale(knob) + 0.5f);

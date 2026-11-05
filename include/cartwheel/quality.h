@@ -75,12 +75,30 @@
  *   colour fringing     off       off     off     on           on     ("dispersion")
  *   explosion lights    0         0.25    0.5     1            1      ("flash_lights")
  *   skin shading        plain     plain   on      on           on     (cartwheel/skin_shading.h)
+ *   lighting model      plain     full    full    full         full   ("shading": 0 plain, 1 full)
  *   SSR                 off       off     half    as authored  x1.5   (march steps)
  *   depth of field      off       off     on      on           on
  *   SSGI                off       off     off     off          on
  *   HRTF voices         0.25      0.25    0.5     1            1      (cartwheel/audio.h)
  *   water               Low's grid halved, no reflection, refraction or caustics on Very Low (cartwheel/water.h)
- *   terrain             the low layer set and the coarsest far ring on Very Low and Low (cartwheel/terrain.h)
+ *   terrain             the low layer set and the coarsest far ring on Very Low and Low; on Very Low each
+ *                       layer read once (no stochastic tiling) and the coarser levels from 0.6 of their
+ *                       distance (cartwheel/terrain.h)
+ *   post passes         on Very Low the height fog and FXAA run inside the tone mapping pass (below)
+ *
+ * The plain lighting model (Very Low): MeshStandardMaterial and MeshPhysicalMaterial keep their colour,
+ * maps, roughness, metalness, normals, emission and light maps, and are lit with Lambert diffuse and a
+ * Blinn-Phong highlight sized by the roughness. The environment map lights them with its diffuse light
+ * only (no reflection is sampled; the specular colour takes that light through an analytic estimate, so
+ * metals keep their tint), and clearcoat, sheen, iridescence and anisotropy are left out. A material with
+ * transmission keeps the full model. Each lit material carries the "plain" shading part
+ * (cartwheel/shading.h) on Very Low, so a game's program tables need those states: the survey
+ * (tools/programs.mjs) runs every preset.
+ *
+ * Very Low post: the height fog is applied inside the tone mapping pass instead of as its own blend over
+ * the frame, and FXAA runs there too, its edge search on a display brightness estimated from the HDR
+ * scene. Two full-frame passes fewer; the picture differs from the separate passes only at the edges
+ * FXAA smooths (it blends HDR values, so an edge against a bright sky stays a little harder).
  *
  * Game settings: a game adds its own render-only levers (cw_quality_lever_add:
  * a cheaper material at distance, say) with the value each preset picks;

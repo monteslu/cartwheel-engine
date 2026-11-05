@@ -40,6 +40,10 @@ static void shadow_span(bool end) {
 
 #define ROWS 10 /* texels a light (cluster_part.mjs LIGHT_ROWS) */
 #define PART "cluster" /* the clustered lights' shading part; the sun's is "csm" (cartwheel/shading.h) */
+/* the parts a material is marked with: the clustered lights, the cascaded sun, and the plain lighting model
+ * (effects detail Very Low: cw_quality_scale("shading") 0; src/render/extensions/plain.mjs) */
+enum { ON_CLUSTER = 1, ON_CSM = 2, ON_PLAIN = 4 };
+static bool plain_wanted(void) { return cw_quality_scale("shading") < 0.5f; }
 
 typedef struct taken { t3_light *light; uint32_t layers; } taken;
 
@@ -72,7 +76,7 @@ typedef struct lighting {
   t3_scene *ix_scene;
   CW_ARRAY(t3_light *) ix_lights;  /* in scene order */
   CW_ARRAY(ix_mesh) ix_meshes;
-  int ix_on;                       /* the parts the meshes are marked with (cluster | csm << 1), -1 unmarked */
+  int ix_on;                       /* the parts the meshes are marked with (ON_CLUSTER | ON_CSM | ON_PLAIN), -1 unmarked */
   /* the frame part ran for this pipeline frame (frames + 1; 0 none) */
   uint64_t frame_done;
   const cw_pipeline *frame_pipe;
@@ -87,6 +91,7 @@ typedef struct lighting {
   int vols_cap;
   t3_texture *light_tex;
   t3_renderer *hooked;
+  t3_renderer *plain_hooked; /* the renderer the plain part's (empty) hook is on */
   int batching; /* the batching last handed to the hooked renderer (-1: none yet) */
   bool marked;  /* materials may carry the parts */
   bool warned_max;
@@ -161,6 +166,11 @@ static lighting *lighting_of(cw_tree *t) {
 
 cw_lighting_settings *cw_lighting_settings_of(cw_tree *t) { return &lighting_of(t)->s; }
 
+void cw__lighting_frame_begin(cw_tree *t) {
+  /* the plain part reaches every scene's materials, lit by the lighting pass or not */
+  if (plain_wanted() && !cw_tree_slot(t, "lighting")) lighting_of(t);
+}
+
 void cw_lighting_get_stats(cw_tree *t, cw_lighting_stats *out) {
   lighting *L = cw_tree_slot(t, "lighting");
   if (L) *out = L->stats;
@@ -203,7 +213,7 @@ static bool lit_type(t3_material_type t) {
  * (cartwheel/shading.h): terrain's surface parts and the GI parts compose
  * with them; a material with any other extension of its own keeps it alone */
 static bool composes(const char *ext) {
-  static const char *const ok[] = { "terrain", "terrainlow", "terrainfar", PART, "csm", "gi", "meshdecal", "foliage" };
+  static const char *const ok[] = { "terrain", "terrainlow", "terrainmin", "terrainfar", PART, "csm", "plain", "gi", "meshdecal", "foliage" };
   if (!ext) return true;
   for (const char *p = ext; *p;) {
     const char *e = strchr(p, '_');
@@ -229,12 +239,14 @@ static bool composes(const char *ext) {
  * A city's thousands of materials then cost an array read each, not a
  * composed name each. (Extension ids are small: three.c numbers them as
  * they are first named.) */
-typedef struct mark_memo { uint8_t known, counts; } mark_memo; /* known, counts: bit `on` (cluster | csm << 1) */
+typedef struct mark_memo { uint8_t known, counts; } mark_memo; /* known, counts: bit `on` (ON_CLUSTER | ON_CSM | ON_PLAIN) */
 static mark_memo *memo;
 static int memo_cap;
 
-static int mark_one(t3_material *mt, bool cluster, bool csm) {
-  uint8_t on = (uint8_t)(cluster | csm << 1);
+static int mark_one(t3_material *mt, int on) {
+  bool cluster = on & ON_CLUSTER, csm = on & ON_CSM;
+  /* the plain part (effects detail Very Low): the physically based materials only, whose model it replaces */
+  bool plain = (on & ON_PLAIN) && (mt->type == T3_MESH_STANDARD_MATERIAL || mt->type == T3_MESH_PHYSICAL_MATERIAL);
   uint16_t from = mt->extension;
   if (from < memo_cap && memo[from].known >> on & 1) return memo[from].counts >> on & 1;
   int counts = 0;
@@ -244,6 +256,8 @@ static int mark_one(t3_material *mt, bool cluster, bool csm) {
     else cw_shading_remove(mt, PART);
     if (csm) cw_shading_add(mt, "csm");
     else cw_shading_remove(mt, "csm");
+    if (plain) cw_shading_add(mt, "plain");
+    else cw_shading_remove(mt, "plain");
     counts = cluster || csm;
   }
   /* (only a fixed point is remembered: one that marking leaves as it is) */
@@ -270,6 +284,10 @@ static void fill_cluster(t3_extension_ctx *c, void *user) {
   t3_extension_set_texture(c, "clusterRecords", L->rec_tex);
   t3_extension_set_texture(c, "clusterItems", L->item_tex);
   t3_extension_set_texture(c, "clusterShadows", L->shadow_tex);
+}
+static void fill_plain(t3_extension_ctx *c, void *user) {
+  (void)c;
+  (void)user;
 }
 static void fill_csm(t3_extension_ctx *c, void *user) {
   lighting *L = user;
@@ -325,11 +343,11 @@ static uint64_t slots_sum(const t3_mesh *m) {
   return h;
 }
 
-static int mark_mesh(t3_mesh *m, bool cluster, bool csm) {
+static int mark_mesh(t3_mesh *m, int on) {
   int n = 0;
   for (int i = 0; i < m->material_count; i++) {
     t3_material *mt = m->materials[i];
-    if (mt && lit_type(mt->type)) n += mark_one(mt, cluster, csm);
+    if (mt && lit_type(mt->type)) n += mark_one(mt, on);
   }
   return n;
 }
@@ -357,9 +375,9 @@ static void index_build(lighting *L, t3_scene *sc) {
  * looked at again only when its slots changed (a material swapped, an
  * extension changed) or the parts did. The count of lit slots that draw
  * with a part. */
-static int index_mark(lighting *L, bool cluster, bool csm) {
+static int index_mark(lighting *L, int on) {
   CW_PROFILE_SCOPE("lighting.materials");
-  int on = cluster | csm << 1, n = 0;
+  int n = 0;
   bool all = on != L->ix_on;
   static int once = -1; /* CW_TEST_NO_REMARK=1 (a test control): materials are marked the first frame only */
   if (once < 0) once = getenv("CW_TEST_NO_REMARK") != NULL;
@@ -368,7 +386,7 @@ static int index_mark(lighting *L, bool cluster, bool csm) {
     ix_mesh *x = &L->ix_meshes.data[i];
     uint64_t sum = slots_sum(x->m);
     if (all || x->counts < 0 || sum != x->sum) {
-      x->counts = mark_mesh(x->m, cluster, csm);
+      x->counts = mark_mesh(x->m, on);
       x->sum = slots_sum(x->m); /* (marking changed the extensions) */
     }
     n += x->counts;
@@ -379,9 +397,9 @@ static int index_mark(lighting *L, bool cluster, bool csm) {
 
 /* the same, walking the scene: for a view whose parts differ from the
  * frame's (a sun on other layers), where the index may be out of date */
-static int mark_walk(t3_object *o, bool cluster, bool csm) {
-  int n = mesh_kind(o) ? mark_mesh((t3_mesh *)o, cluster, csm) : 0;
-  for (int i = 0; i < o->child_count; i++) n += mark_walk(o->children[i], cluster, csm);
+static int mark_walk(t3_object *o, int on) {
+  int n = mesh_kind(o) ? mark_mesh((t3_mesh *)o, on) : 0;
+  for (int i = 0; i < o->child_count; i++) n += mark_walk(o->children[i], on);
   return n;
 }
 
@@ -442,9 +460,9 @@ static void frame_part(lighting *L, cw_pass_ctx *ctx) {
   L->cfg = L->cfg_next;
   L->sun_layers = L->sun ? L->sun->base.layers : 0;
   L->sun_next = NULL; /* (its node registers it again next frame) */
-  bool clustered = L->s.mode == CW_LIGHTING_CLUSTERED;
-  if (!clustered && !L->sun) {
-    if (L->marked) mark_walk(&ctx->scene3d->base, false, false);
+  bool clustered = L->s.mode == CW_LIGHTING_CLUSTERED, plain = plain_wanted();
+  if (!clustered && !L->sun && !plain) {
+    if (L->marked) mark_walk(&ctx->scene3d->base, 0);
     L->marked = false;
     L->ix_on = -1;
     L->ix_scene = NULL;
@@ -458,7 +476,7 @@ static void frame_part(lighting *L, cw_pass_ctx *ctx) {
   /* the parts as most views want them: cluster, and csm with a sun (a view
    * whose sun is on other layers, or whose cascades cannot be made, marks
    * again for itself) */
-  L->materials = index_mark(L, clustered, L->sun != NULL);
+  L->materials = index_mark(L, (clustered ? ON_CLUSTER : 0) | (L->sun ? ON_CSM : 0) | (plain ? ON_PLAIN : 0));
   L->marked = true;
   if (clustered) take_lights(L);
 }
@@ -506,6 +524,12 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
   bool clustered = L->s.mode == CW_LIGHTING_CLUSTERED;
   t3_light *sun = L->sun;
   if (sun && !(L->sun_layers & ctx->camera->base.layers)) sun = NULL;
+  if (L->plain_hooked != ctx->renderer) {
+    /* the plain part has no values: an empty hook, so its draws are never skipped for want of one */
+    cw_shading_part(ctx->renderer, "plain", fill_plain, NULL);
+    cw_shading_part_batching(ctx->renderer, "plain", true);
+    L->plain_hooked = ctx->renderer;
+  }
   if (!clustered && !L->sun) return;
   if (L->hooked != ctx->renderer) {
     cw_shading_part(ctx->renderer, PART, fill_cluster, L);
@@ -552,11 +576,11 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
     t3_release(L->sun);
     L->sun_taken = false;
   }
-  int on = clustered | csm << 1;
+  int on = (clustered ? ON_CLUSTER : 0) | (csm ? ON_CSM : 0) | (plain_wanted() ? ON_PLAIN : 0);
   if (on != L->ix_on) {
     /* this view's parts differ from the frame's: every material again (the
      * index may be out of date: a walk) */
-    L->stats.materials = mark_walk(&ctx->scene3d->base, clustered, csm);
+    L->stats.materials = mark_walk(&ctx->scene3d->base, on);
     L->ix_on = -1;
   } else
     L->stats.materials = L->materials;
