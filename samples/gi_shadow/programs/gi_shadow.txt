@@ -2,3 +2,5 @@
 depth+xgi
 standard+shadow+l1001+xgi
 standard+l1001+xgi
+depth+xplain
+standard+shadow+l1001+xplain

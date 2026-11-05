@@ -3,3 +3,7 @@ standard+l0001
 standard+l1000
 depth+xcluster_csm
 standard+l0301+xcluster_csm
+depth+xcluster_csm_plain
+standard+l0001+xcluster_csm_plain
+standard+l0001+xplain
+standard+l1110+xplain

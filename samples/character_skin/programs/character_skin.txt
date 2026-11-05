@@ -17,3 +17,11 @@ physical+shadow+skin+l2001+s100+xskinshade
 physical+shadow+skin+cc+l2001+s100
 physical+shadow+skin+morph+l2001+s100
 physical+shadow+skin+l2001+s100
+depth+skin+xplain
+physical+shadow+skin+morph+l2001+s100+xplain
+standard+shadow+skin+morph+l2001+s100+xplain
+physical+shadow+skin+morph+cc+l2001+s100+xplain
+physical+shadow+skin+sheen+l2001+s100+xplain
+physical+shadow+skin+l2001+s100+xplain
+physical+shadow+skin+cc+l2001+s100+xplain
+standard+shadow+l2001+s100+xplain
