@@ -173,10 +173,32 @@ function addLightmapChannelStates(manifest) {
   writeFileSync(manifest, text.replace(/\n?$/, '\n') + add.join('\n') + '\n');
   console.log(`${basename(manifest)}: added ${add.length} lightmap state(s) on the second UV set (c1lmap)`);
 }
+// Water3D draws with its cheaper "waterlow" program on effects Very Low (cartwheel/quality.h), and without the sun's
+// shadow: a scene's water state on any other preset has that twin, whatever scene or mode the survey reached on Very
+// Low. Each xwater state (from the manifest or this run's missing logs) gets it beside it: no shadow, no shadow
+// casters, the water part as waterlow.
+function addVeryLowWaterStates(manifest, logs) {
+  if (!existsSync(manifest)) return;
+  const text = readFileSync(manifest, 'utf8');
+  const have = new Set(statesOf(manifest));
+  const add = [];
+  for (const st of [...have, ...logs.flatMap((l) => statesOf(l))]) {
+    const t = st.split('+');
+    const xi = t.findIndex((x) => /^x[a-z0-9_]+$/.test(x) && x.slice(1).split('_').includes('water'));
+    if (xi < 0 || t[0] !== 'standard') continue;
+    const n = t.filter((x) => x !== 'shadow' && !/^s\d{3}$/.test(x))
+      .map((x) => (x === t[xi] ? 'x' + x.slice(1).split('_').map((p) => (p === 'water' ? 'waterlow' : p)).join('_') : x)).join('+');
+    if (!have.has(n) && !add.includes(n)) add.push(n);
+  }
+  if (!add.length) return;
+  writeFileSync(manifest, text.replace(/\n?$/, '\n') + add.join('\n') + '\n');
+  console.log(`${basename(manifest)}: added ${add.length} Very Low water state(s) (xwaterlow, no shadow)`);
+}
 /** regenerate one table from its manifest (plus missing logs) */
 function regenerate(manifest, logs = []) {
   const name = basename(manifest, '.txt');
   addLightmapChannelStates(manifest);
+  addVeryLowWaterStates(manifest, logs);
   const own = manifestExtensions(manifest).filter((e) => !EXTENSIONS.includes(e));
   for (const e of own) {
     const previous = EXTENSIONS.find((x) => basename(x) === basename(e));
