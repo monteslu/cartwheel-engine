@@ -668,7 +668,7 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
   }
   if (!L->atlas) L->atlas = cw__atlas_new();
   int asize = L->s.shadow_atlas_size;
-  if (cw__quality_shadow_level() <= 1) asize = CW_MIN(asize, 2048); /* Shadows Low / Medium */
+  if (cw__quality_shadow_level() <= CW_GFX_SHADOWS_MEDIUM) asize = CW_MIN(asize, 2048); /* Shadows Minimal, Low, Medium */
   shadow_span(false);
   cw__atlas_update(L->atlas, ctx, L->reqs, nreq, asize, L->s.shadow_updates_per_frame, L->s.shadow_cache, L->outs);
   shadow_span(true);

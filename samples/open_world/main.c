@@ -567,7 +567,7 @@ static void world_start(void) {
   sd.cell_type = world_cell_type;
   /* what is drawn, by graphics preset (the fog closes in before it): visual only, so hosts on other
    * presets still activate the same cells on the same ticks */
-  static const float load_r[CW_QUALITY_COUNT] = { 1200, 1500, 1800, 2200 };
+  static const float load_r[CW_QUALITY_COUNT] = { 1000, 1200, 1500, 1800, 2200 };
   sd.load_radius = load_radius_set > 0 ? load_radius_set : load_r[cw_quality_get()];
   sd.active_radius = 600; /* what physics has */
   sd.hysteresis = 128;

@@ -60,7 +60,7 @@ static tr_gpu *gpu(cw_terrain *t) {
 int cw__terrain_quality(const cw_terrain *t) { return t->quality >= 0 ? t->quality : (int)cw_quality_get(); }
 
 float cw__terrain_far(const cw_terrain *t) {
-  static const float mul[CW_QUALITY_COUNT] = { 0.5f, 0.75f, 1.0f, 1.5f };
+  static const float mul[CW_QUALITY_COUNT] = { 0.5f, 0.5f, 0.75f, 1.0f, 1.5f }; /* Very Low as Low (nearer, the far shading blurs the ground in front of the camera) */
   return t->def.far_distance * mul[cw__terrain_quality(t)];
 }
 

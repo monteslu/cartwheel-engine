@@ -36,6 +36,7 @@
 #include "environment_internal.h"
 #include "pipeline_internal.h"
 #include "volumetric_fog_internal.h"
+#include "quality_internal.h"
 #define S(...) #__VA_ARGS__ "\n"
 
 _Static_assert(sizeof(vf_light_u) == 144, "vf_light_u is std140 / WGSL sized");
@@ -211,6 +212,7 @@ void cw_volumetric_fog_get_state(cw_tree *t, cw_volumetric_fog_state *out) {
  * shadows */
 typedef struct vf_preset { int gw, d, tile; bool spot_shadows; } vf_preset;
 static const vf_preset PRESETS[CW_QUALITY_COUNT] = {
+  { 0, 0, 0, false },      /* Very Low: no volumetric fog */
   { 64, 32, 256, false },  /* Low */
   { 128, 64, 512, true },   /* Medium */
   { 160, 64, 1024, true }, /* High */
@@ -795,6 +797,7 @@ static bool vf_build_active(const cw_pass_ctx *ctx, void *user) {
   vfog_rt *v = user;
   slot_of(v, ctx)->built = false;
   if (!cw__vfog_supported() || !ctx->camera || !ctx->renderer) return false;
+  if (cw__quality_effects() <= CW_QUALITY_VERY_LOW) return false; /* effects Very Low: no volumetric fog */
   bool any = medium_of(ctx->tree) != NULL || content(v);
   if (any && ctx->camera->base.type != T3_PERSPECTIVE_CAMERA) {
     if (!v->warned_ortho) cw_warn("volumetric fog needs a perspective camera; it is off for this one");
@@ -837,7 +840,7 @@ static void vf_build_exec(cw_pass_ctx *ctx, void *user) {
   vfog_rt *v = user;
   vf_slot *S = slot_of(v, ctx);
   const cw__height_fog *hf = cw__height_fog_of(ctx->tree), *med = medium_of(ctx->tree);
-  int q = CW_CLAMP(cw_gfx_get(CW_GFX_EFFECTS), 0, CW_QUALITY_COUNT - 1);
+  int q = CW_CLAMP(cw__quality_effects(), 0, CW_QUALITY_COUNT - 1);
   const vf_preset *pr = &PRESETS[q];
   float share = view_share(ctx);
   int gw = CW_MAX(32, (int)lroundf((float)pr->gw * share));
@@ -1025,7 +1028,7 @@ static bool vf_apply_active(const cw_pass_ctx *ctx, void *user) {
   vfog_rt *v = user;
   /* the grid pass runs first in the same phase and sets built; at
    * scheduling time it has not run yet, so the apply follows its activity */
-  return cw__vfog_supported() && ctx->camera && ctx->renderer && ctx->camera->base.type == T3_PERSPECTIVE_CAMERA &&
+  return cw__vfog_supported() && cw__quality_effects() > CW_QUALITY_VERY_LOW && ctx->camera && ctx->renderer && ctx->camera->base.type == T3_PERSPECTIVE_CAMERA &&
          (medium_of(ctx->tree) != NULL || content(v));
 }
 

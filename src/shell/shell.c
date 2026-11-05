@@ -26,7 +26,7 @@ typedef struct shell_save {
   uint16_t version, game_version;
   uint32_t game_size;
   uint32_t checksum; /* FNV-1a of everything after this field */
-  uint8_t quality;   /* cw_quality_saved when it is a preset (1..4), else 0 (saves before gfx) */
+  uint8_t quality;   /* an older engine's preset byte (1..4), read when gfx is 0; written 0 */
   uint8_t music, sfx; /* volume steps 0..10 */
   uint8_t crisp;     /* cw_crisp_ui_saved */
   uint8_t gfx[4];    /* cw_quality_saved, little-endian (0: none, or a save from before it) */
@@ -111,7 +111,7 @@ static void save_reset(void) {
 
 void cw_shell_save_commit(void) {
   uint32_t q = cw_quality_saved();
-  SAVE.quality = q <= CW_QUALITY_COUNT ? (uint8_t)q : 0;
+  SAVE.quality = 0; /* the old preset byte: an older engine reading this save sees no choice (the word is in gfx) */
   for (int i = 0; i < 4; i++) SAVE.gfx[i] = (uint8_t)(q >> (8 * i));
   SAVE.crisp = cw_crisp_ui_saved();
   SAVE.checksum = save_sum();

@@ -14,6 +14,7 @@
  * Debug fields: mh.blades, mh.posts, mh.decals, mh.msaa (the PostProcess's samples), mh.sun (toward the sun, and its
  * elevation in degrees), mh.tick. */
 #include <stdlib.h>
+#include <strings.h>
 
 #include "cartwheel/debug.h"
 #include "cartwheel/environment.h"
@@ -64,7 +65,9 @@ static void init(void *u) {
   cw_node post = cw_node_get(root, "World/Post");
   const char *e = getenv("MH_MSAA");
   if (e && *e && cw_node_valid(post)) cw_node_set(post, "msaa", cw_val_int(atoi(e)));
-  if ((e = getenv("MH_QUALITY")) && *e) cw_quality_set((cw_quality)atoi(e), false);
+  if ((e = getenv("MH_QUALITY")) && *e) /* a preset by name (verylow .. ultra) */
+    for (int q = 0; q < CW_QUALITY_COUNT; q++)
+      if (!strcasecmp(e, cw_quality_name((cw_quality)q)) || (q == CW_QUALITY_VERY_LOW && !strcasecmp(e, "verylow"))) cw_quality_set((cw_quality)q, false);
   cw_value v;
   if (cw_node_valid(post) && cw_node_get_prop(post, "msaa", &v)) msaa = v.i;
   if ((e = getenv("MH_VIEWS")) && atoi(e) == 4) {

@@ -81,8 +81,8 @@ static void init(void *u) {
   }
   e = getenv("FX_LIT_QUALITY");
   if (e) {
-    static const char *const names[] = { "low", "medium", "high", "ultra" };
-    for (int i = 0; i < 4; i++)
+    static const char *const names[CW_QUALITY_COUNT] = { "verylow", "low", "medium", "high", "ultra" };
+    for (int i = 0; i < CW_QUALITY_COUNT; i++)
       if (!strcmp(e, names[i])) cw_quality_set((cw_quality)i, true);
   }
   cw_debug_f32("ld.gpu_ms", &gpu_ms);

@@ -1,7 +1,7 @@
 /* cartwheel/quality_menu.h: a graphics settings page a game opens from its
  * own menus (the game shell, cartwheel/shell.h, opens it from Settings).
  *
- * One row per choice: the preset (Low, Medium, High, Ultra, Auto, or Custom
+ * One row per choice: the preset (Very Low, Low, Medium, High, Ultra, Auto, or Custom
  * once a setting was changed on its own), then every setting of
  * cartwheel/quality.h (resolution with the pixel size it renders at,
  * ambient occlusion, shadows, anti-aliasing, effects detail), then the

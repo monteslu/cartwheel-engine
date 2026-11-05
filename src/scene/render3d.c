@@ -767,7 +767,15 @@ static void light_pre_render(cw_node n, void *data, double alpha) {
   l->light->decay = l->decay;
   l->light->angle = l->angle;
   l->light->penumbra = l->penumbra;
-  l->light->base.cast_shadow = l->shadow && l->light->base.visible;
+  /* Shadows Minimal: the sun only (cartwheel/quality.h) */
+#if !CW_CART
+  /* CW_TEST_NO_SHADOWS=1: no light casts (the control of tests/quality-grounding.mjs) */
+  static int no_shadows = -1;
+  if (no_shadows < 0) no_shadows = getenv("CW_TEST_NO_SHADOWS") && atoi(getenv("CW_TEST_NO_SHADOWS")) > 0;
+#else
+  const int no_shadows = 0;
+#endif
+  l->light->base.cast_shadow = l->shadow && l->light->base.visible && (l->kind == 0 || cw__quality_local_shadows()) && !no_shadows;
   if (l->light->shadow) {
     t3_light_shadow *sh = l->light->shadow;
     sh->map_width = sh->map_height = cw__quality_shadow_size(l->shadow_size); /* cartwheel/quality.h */
@@ -782,15 +790,14 @@ static void light_pre_render(cw_node n, void *data, double alpha) {
       t3_camera_update_projection_matrix(sc);
     }
   }
-  if (l->shadow && l->light->base.visible) {
+  if (l->shadow && l->light->base.visible && !no_shadows) {
     cw_tree *t = cw_node_tree(n);
     if (t) state(t)->shadows_enabled = true;
     /* a cascaded sun (cartwheel/lighting.h): the lighting pass draws its
-     * shadows; the Shadows setting keeps 2 cascades on Low, 3 on Medium */
+     * shadows; the Shadows setting keeps 1 cascade on Minimal, 2 on Low, 3 on Medium, and scales the distance */
     if (t && l->kind == 0 && l->shadow_cascades > 0) {
-      static const int cap[4] = { 2, 3, 4, 4 };
       /* (each cascade at most 2048: the four share one map twice that wide) */
-      cw__csm_cfg cfg = { CW_MIN(CW_CLAMP(l->shadow_cascades, 1, 4), cap[cw__quality_shadow_level()]), l->shadow_distance,
+      cw__csm_cfg cfg = { cw__quality_cascades(CW_CLAMP(l->shadow_cascades, 1, 4)), l->shadow_distance * cw__quality_shadow_distance(),
                           l->cascade_fade, CW_MIN(cw__quality_shadow_size(l->shadow_size), 2048) };
       cw__lighting_csm_light(t, l->light, &cfg);
     }

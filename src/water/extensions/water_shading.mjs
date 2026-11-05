@@ -1,0 +1,388 @@
+// Water3D's surface for the three.c generator extensions "water" (water.mjs, state standard+xwater and its light
+// variants, depth+xwater for shadows) and "waterlow" (waterlow.mjs, effects detail Very Low): Water3D's surface (cartwheel/water.h,
+// src/water/water.c fills the values), written in three.js r187 TSL.
+//
+// Vertex: up to four Gerstner waves (GPU Gems 1, chapter 1) move the flat
+// grid; the phases come reduced from the CPU (the same numbers
+// cw_waves_displace uses), so the drawn surface is the CPU's to float
+// rounding. The analytic wave normal goes to the fragment stage.
+//
+// Fragment: r187's Water2 / Water2Mesh, on a MeshStandardMaterial so the
+// scene's lights give the glints (and shadows land on the water): two
+// scrolling normal maps blended by the two-phase flow (Water2's
+// flowConfig), on the wave normal; the planar reflection sampled at
+// screenUV.flipX() (r187's ReflectorNode) and the refraction at screenUV,
+// both bent by the normal (Water2's offset); a Schlick Fresnel term mixes
+// them into the emissive, the diffuse colour is black, and the
+// environment's specular stands in for the reflection when there is no
+// planar one (the C side sets envMapIntensity).
+//
+// Very Low (low = true) keeps the waves, the detail normal map, the floor map's depth colour and shore foam, the
+// environment's reflection and the sun's glitter, and leaves out what costs texture reads a pixel: the second and
+// fine normal octaves, the ripples' slope (their foam, the wakes, stays), the refraction and its depth, caustics and
+// the foam's lace.
+//
+// Names after "ext." are what the C fill hook sets (water.c); a name the low program lacks is skipped there.
+export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
+  const {
+    Fn, uniform, texture, sharedUniformGroup, positionLocal, positionWorld, cameraViewMatrix,
+    modelWorldMatrix, screenUV, vec2, vec3, vec4, float, normalize, dot, max, min, mix, pow, abs, sin, cos, clamp,
+    floor, length, smoothstep, varying, step, exp, sqrt, output, sRGBTransferEOTF, materialColor, materialEmissive,
+    textureLoad, ivec2, int, select,
+  } = TSL;
+
+  const frame = sharedUniformGroup('waterFrame', 0, THREE.NodeUpdateType.RENDER);
+  const v4 = (n) => {
+    const s = [sentinel(), sentinel(), sentinel(), sentinel()];
+    const u = uniform(new THREE.Vector4(...s)).setName(n);
+    u.setGroup(frame);
+    props['ext.' + n] = { kind: 'vec4', value: s };
+    return u;
+  };
+  // per wave i: waterWave<i> = (dir x, dir z, k = 2 pi / wavelength, amplitude)
+  const waves = [0, 1, 2, 3].map((i) => v4('waterWave' + i));
+  const steep = v4('waterSteep');   // Q per wave (already shared out: sum of Q k A <= 1)
+  const phase = v4('waterPhase');   // each wave's time phase, reduced to [0, 2 pi)
+  const look = v4('waterLook');     // reflectivity F0, distortion, detail strength, normal map repeats per metre
+  const tint = low ? null : v4('waterTint'); // rgb: colour; w: reflection on (1) / off (0)
+  const deep = v4('waterDeep');     // rgb: deep colour (the refraction when it is off); w: refraction on / off
+  const flow = v4('waterFlow');     // flow offset 0, offset 1, half cycle, flow map on (1) / off (0)
+  const flowDir = v4('waterFlowDir'); // flow x, flow z (without a map), rectangle size x, size z
+  const dbg = v4('waterDebug');     // x: debug view (1 = height); y, z: height range; w: murk
+  const shore = v4('waterShore');   // x: floor map on (1) / off (0); y: shore foam width (m); z: 1 / clarity (1 / m); w: crest foam amount
+  const shallow = v4('waterShallow'); // rgb: shallow colour; w: the foam clock (s, mod 1000)
+  const floorRect = v4('waterFloorRect'); // x, y: the rectangle the floor map covers (m); z: the camera is under the surface (1); w: the swell's share in the reflection
+  const deepRgb = deep.rgb;
+  const sun = v4('waterSun');       // xyz: the direction toward the sun (world); w: the waves' summed amplitude
+  const sunCol = v4('waterSunCol'); // rgb: the sun's colour x energy (0 without a sky); w: scatter strength
+  const rip = v4('waterRipple');    // x: ripple normal strength (0: no grid); y, z: the grid's size (m); w: glint
+  const ripR = v4('waterRippleRect'); // x, y: the grid's centre (water-local x, z); z, w: 1 / cells along x, z
+  const refrInfo = low ? null : v4('waterRefr'); // x: the refraction's depth is valid (1); y: caustic strength; z: 1 / caustic tile (m); w: camera under the water (the refraction target holds the view up through the surface)
+  const refrSize = low ? null : v4('waterRefrSize'); // x, y: the refraction depth texture's size in texels; z: the foam's lace; w: soft foam
+  const grid = v4('waterGrid');     // x, y: the grid's centre (water-local; the camera's foot on a VIEW grid); z: VIEW grid on; w: the foam pattern's scale
+  const shelter = v4('waterShelter'); // per wave: how much the wave mask holds it down
+  const crestLight = v4('waterCrest'); // x: how much lighter crests are (0: as before)
+  const cam = v4('waterCam');       // xyz: the camera's world position (three.c fills no cameraPosition); w: 1 when the view is drawn rows bottom-up (cartwheel's WebGPU scene target) but the planar targets top-down
+
+  const m4 = (n) => {
+    const sv = Array.from({ length: 16 }, () => sentinel());
+    const u = uniform(new THREE.Matrix4().fromArray(sv)).setName(n);
+    u.setGroup(frame);
+    props['ext.' + n] = { kind: 'mat4', value: sv };
+    return u;
+  };
+  const refrInv = low ? null : m4('waterRefrInv'); // the refraction camera's inverse projection (oblique near plane included)
+
+  const tex = (n, linear, repeat, half) => {
+    const t = half ? new THREE.DataTexture(new Uint16Array(16).fill(0x3c00), 2, 2, THREE.RGBAFormat, THREE.HalfFloatType)
+      : new THREE.DataTexture(new Uint8Array(16).fill(128), 2, 2);
+    t.name = 'ext.' + n;
+    t.magFilter = linear ? THREE.LinearFilter : THREE.NearestFilter;
+    t.minFilter = linear && repeat ? THREE.LinearMipmapLinearFilter : linear ? THREE.LinearFilter : THREE.NearestFilter;
+    t.generateMipmaps = linear && repeat;
+    t.wrapS = t.wrapT = repeat ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+    t.needsUpdate = true;
+    return t;
+  };
+  const normalMap = tex('waterNormal', true, true, false);
+  const flowMap = tex('waterFlowMap', true, false, false);
+  // the planar targets: half float, linear, clamped, no mips (a RenderTarget's texture)
+  const reflectMap = low ? null : tex('waterReflection', true, false, true);
+  const refractMap = low ? null : tex('waterRefraction', true, false, true);
+  const floorMap = tex('waterFloorMap', true, false, true);
+  const rippleMap = tex('waterRippleMap', true, false, true);
+  const causticMap = low ? null : tex('waterCaustic', true, true, false);
+  const waveMask = tex('waterWaveMask', true, false, true);
+  // the refraction's window depth, read texel by texel: a float texture (compatibility-mode WebGPU reads a depth
+  // texture only through comparisons, so there the engine copies it into R32Float; GL binds the depth texture)
+  const refrDepth = low ? null : new THREE.DataTexture(new Float32Array(4), 2, 2, THREE.RedFormat, THREE.FloatType);
+  if (refrDepth) {
+    refrDepth.name = 'ext.waterRefractionDepth';
+    refrDepth.needsUpdate = true;
+  }
+
+  // ── vertex: Gerstner ───────────────────────────────────────────────
+  // plain node expressions (no Fn: the shadow pass rebuilds the vertex stage from positionNode alone)
+  const p0 = positionLocal;
+  const rx = p0.x.add(grid.x), rz = p0.z.add(grid.y);    // where this vertex rests in the water's plane
+  const fromCam = length(vec2(p0.x, p0.z));
+  const maskV = texture(waveMask, vec2(rx, rz).div(floorRect.xy).add(0.5)).level(0).r;
+  let pos = vec3(rx, float(0), rz);
+  let nrm = vec3(0, 1, 0);
+  const SH = [shelter.x, shelter.y, shelter.z, shelter.w];
+  const Q = [steep.x, steep.y, steep.z, steep.w];
+  const PH = [phase.x, phase.y, phase.z, phase.w];
+  for (let i = 0; i < 4; i++) {
+    const w = waves[i];
+    const th = w.z.mul(w.x.mul(rx).add(w.y.mul(rz))).sub(PH[i]);
+    const c = cos(th), s = sin(th);
+    // a VIEW grid's rings are too far apart for a wave past five wavelengths (fromCam * k = 2 pi x wavelengths)
+    const lod = mix(float(1), float(1).sub(smoothstep(31.4, 50.3, fromCam.mul(w.z))), grid.z);
+    const a = w.w.mul(float(1).add(maskV.sub(1).mul(SH[i]))).mul(lod);
+    const qa = Q[i].mul(a);
+    pos = pos.add(vec3(qa.mul(w.x).mul(c), a.mul(s), qa.mul(w.y).mul(c)));
+    const wa = w.z.mul(a);
+    nrm = nrm.sub(vec3(w.x.mul(wa).mul(c), Q[i].mul(wa).mul(s), w.y.mul(wa).mul(c)));
+  }
+  mat.positionNode = pos;
+  const waveNormalLocal = varying(nrm, 'vWaterNormal');
+  // where this point of the surface has moved to in the water's plane, the displaced x, z: the floor map and the ripple grid are
+  // maps of that plane, so a splash and a shore line stay where they were made while the waves pass through them
+  const vRest = varying(vec2(pos.x, pos.z), 'vWaterRest');
+  const vSurf = varying(pos.y, 'vWaterSurf');                // its height over the rest level
+  const vBunch = varying(nrm.y, 'vWaterBunch');              // the wave normal's y: small where the surface bunches up (crests)
+
+  // ── fragment ───────────────────────────────────────────────────────
+  // Broad wave normals also need filtering once waves are smaller than a
+  // pixel. Avoid far-grid triangle glints stretching toward the horizon.
+  const swellWeight = float(1).sub(smoothstep(2000, 12000, length(cam.xyz.sub(positionWorld))));
+  const wn = normalize(mix(vec3(0, 1, 0), normalize(modelWorldMatrix.mul(vec4(waveNormalLocal, 0)).xyz), swellWeight));
+  const toEye = normalize(cam.xyz.sub(positionWorld));
+  // Water2's two-phase flow over the normal maps
+  const rest = positionWorld.xz;
+  const dist = length(cam.xyz.sub(positionWorld));
+  const mapFlow = texture(flowMap, rest.div(flowDir.zw).add(0.5)).rg.mul(2).sub(1);
+  const fm = mix(flowDir.xy, mapFlow, flow.w);
+  const f = vec2(fm.x.negate(), fm.y);
+  const uvs = rest.mul(look.w);
+  const n0 = texture(normalMap, uvs.add(f.mul(flow.x)));
+  const lerpF = abs(flow.z.sub(flow.x)).div(flow.z);
+  const nc = low ? n0 : mix(n0, texture(normalMap, uvs.mul(0.73).add(vec2(0.31, 0.57)).add(f.mul(flow.y))), lerpF);
+  // a third, finer octave running against the flow: the small chop that breaks up the highlights (not on Very Low)
+  const nf = low ? null : texture(normalMap, uvs.mul(2.9).add(vec2(0.77, 0.13)).sub(f.mul(flow.y).mul(1.7)));
+  // tangent-space map, +Z out of the surface (gen://noise out=normal): x along +x, y along -z
+  const d = vec3(nc.r.mul(2).sub(1), nc.b.mul(2).sub(1), nc.g.mul(2).sub(1).negate());
+  const df = low ? vec2(0, 0) : vec2(nf.r.mul(2).sub(1), nf.g.mul(2).sub(1).negate());
+  // Tiny repeating ripples alias at flight distances; keep the broad swell
+  // and fade the detail before its repetitions become a visible grid.
+  const detailWeight = float(1).sub(smoothstep(150, 900, dist)).mul(look.z);
+  const fineWeight = float(1).sub(smoothstep(30, 220, dist)).mul(look.z).mul(0.6);
+  // the interactive ripples: the height field's slope bends the normal (Very Low keeps only their foam: the wakes)
+  let rslope = vec2(0, 0);
+  const uvR = vRest.sub(ripR.xy).div(rip.yz).add(0.5);
+  const inR = float(1).sub(step(0.5, max(abs(uvR.x.sub(0.5)), abs(uvR.y.sub(0.5))))).mul(step(0.001, rip.x));
+  const rfoam = texture(rippleMap, uvR).g.mul(inR);
+  if (!low) {
+    const hL = texture(rippleMap, uvR.sub(vec2(ripR.z, 0))).r;
+    const hR = texture(rippleMap, uvR.add(vec2(ripR.z, 0))).r;
+    const hD = texture(rippleMap, uvR.sub(vec2(0, ripR.w))).r;
+    const hU = texture(rippleMap, uvR.add(vec2(0, ripR.w))).r;
+    const rcell = rip.yz.mul(vec2(ripR.z, ripR.w));
+    rslope = vec2(hR.sub(hL).div(rcell.x.mul(2)), hU.sub(hD).div(rcell.y.mul(2))).mul(rip.x).mul(inR).mul(2);
+  }
+  const n = normalize(vec3(wn.x.add(d.x.mul(detailWeight)).add(df.x.mul(fineWeight)).sub(rslope.x), wn.y,
+    wn.z.add(d.z.mul(detailWeight)).add(df.y.mul(fineWeight)).sub(rslope.y)));
+  const theta = max(dot(toEye, n), 0);
+  const fres = pow(float(1).sub(theta), 5).mul(float(1).sub(look.x)).add(look.x);
+  // Depth over the undistorted baked floor. Refraction displacement must
+  // vanish where water meets land: otherwise its UV crosses into terrain
+  // clipped out of the refraction target and exposes dark clear pixels.
+  const uvF = vRest.div(floorRect.xy).add(0.5);
+  const outside = step(0.5, max(abs(uvF.x.sub(0.5)), abs(uvF.y.sub(0.5))));
+  const mapOn = shore.x.mul(float(1).sub(outside));
+  const floorSample = texture(floorMap, uvF);
+  const bakedDepth = mix(float(100), max(floorSample.r.add(vSurf), 0), mapOn);
+  // The refraction pass clips at the rest plane: a crest must not make
+  // clipped shore pixels eligible again. Troughs also reduce clearance.
+  // G retains a deep sentinel for unhit floor rays, independently of range.
+  const distortionDepth = mix(float(100), max(min(floorSample.g, floorSample.g.add(vSurf)), 0), mapOn);
+  const shoreDistortion = smoothstep(0.5, 3, distortionDepth);
+  if (low) {
+    // ── Very Low: the baked floor's depth colours the body; no refraction, caustics or lace ──
+    const depthL = bakedDepth;
+    const absorb = mix(float(1), float(1).sub(exp(depthL.negate().mul(shore.z))), mapOn);
+    const ab3 = vec3(pow(absorb, 0.6), pow(absorb, 0.85), absorb);
+    const hasSun = step(0.0001, sunCol.r.add(sunCol.g).add(sunCol.b));
+    const sunUp = max(sun.y, 0);
+    const lit = mix(vec3(1), max(vec3(0.14).add(sunCol.rgb.mul(sunUp).mul(0.32)), vec3(0.1)), hasSun);
+    const hBody = clamp(vSurf.div(max(sun.w, 0.05)).mul(0.5).add(0.5), 0, 1);
+    const crestTop = smoothstep(0.55, 1, hBody).mul(crestLight.x);
+    const body = mix(mix(shallow.rgb, deepRgb, ab3), shallow.rgb.mul(1.25), crestTop).mul(lit).mul(mix(0.75, 1.3, hBody));
+    const refrL = mix(body, shallow.rgb.mul(lit).mul(1.5), crestTop.mul(0.75));
+    const toSun = normalize(sun.xyz);
+    const hv = normalize(toSun.add(toEye));
+    const vdh = max(dot(toEye, hv), 0);
+    const nG = normalize(vec3(wn.x.add(d.x.mul(detailWeight)), wn.y, wn.z.add(d.z.mul(detailWeight))));
+    const glL = pow(max(dot(nG, hv), 0), 900).mul(pow(float(1).sub(vdh), 5).mul(0.9).add(0.1)).mul(sunCol.rgb).mul(rip.w).mul(10).mul(float(1).sub(smoothstep(60, 500, dist)));
+    const noise = n0.a;
+    const lumpy = smoothstep(0.3, 0.7, noise);
+    const sw = max(shore.y, 0.001);
+    const shoreOn = mapOn.mul(step(0.001, shore.y));
+    const wob = sin(shallow.w.mul(1.4).add(noise.mul(6.283))).mul(0.5).add(0.5);
+    const shoreFoam = float(1).sub(smoothstep(0, sw.mul(0.45), depthL.add(noise.sub(0.5).mul(sw).mul(0.6)).sub(wob.mul(sw).mul(0.3)))).mul(shoreOn);
+    const lines = smoothstep(0.62, 0.8, sin(depthL.mul(7.0).sub(shallow.w.mul(1.6)).add(noise.mul(5))).mul(0.5).add(0.5))
+      .mul(float(1).sub(smoothstep(sw.mul(0.8), sw.mul(3.2), depthL))).mul(shoreOn).mul(0.55);
+    const thr = float(0.95).sub(shore.w.mul(0.4));
+    const crestFoam = smoothstep(thr, thr.add(0.12), float(1).sub(vBunch).add(noise.sub(0.5).mul(0.25))).mul(step(0.001, shore.w)).mul(lumpy).mul(float(1).sub(smoothstep(200, 700, dist)));
+    const splashFoam = smoothstep(0.08, 0.5, rfoam.mul(mix(0.55, 1.2, noise)));
+    // foam by thickness (the full surface's soft foam, without its lace): solid where it is thick, breaking into soft
+    // patches by the normal map's noise where it is thin
+    const thick = max(max(shoreFoam.mul(mix(0.55, 1, lumpy)), lines.mul(noise)), max(crestFoam, rfoam.mul(1.25)));
+    const cover = smoothstep(0.04, 0.62, thick.add(noise.sub(0.5).mul(0.55).mul(float(1).sub(smoothstep(0.5, 1, thick)))));
+    const foamL = clamp(max(cover.mul(mix(0.8, 1, noise)).mul(smoothstep(0, 0.06, thick)), splashFoam), 0, 1); /* (none where none is: no specks) */
+    // (no planar reflection on Very Low: the environment's specular stands in, as the C side sets it)
+    const emitL = refrL.mul(float(1).sub(fres)).add(glL);
+    // from under the water: the water's own colour (Very Low draws no view up through the surface)
+    const under = clamp(floorRect.z, 0, 1);
+    const bodyU = shallow.rgb.add(deepRgb).mul(0.5).mul(lit).mul(0.6);
+    const foamV = foamL.mul(float(1).sub(under.mul(0.6)));
+    mat.colorNode = vec4(materialColor.rgb.add(vec3(0.9, 0.92, 0.95).mul(foamV)), 1);
+    mat.normalNode = normalize(cameraViewMatrix.mul(vec4(mix(n, n.negate(), under), 0)).xyz);
+    mat.emissiveNode = select(under.greaterThan(0.5), bodyU, emitL).mul(materialEmissive).mul(float(1).sub(foamV));
+    const hn = clamp(positionWorld.y.sub(dbg.y).div(dbg.z.sub(dbg.y)), 0, 1).mul(65535);
+    const hi = floor(hn.div(256)), lo = floor(hn.sub(hi.mul(256)));
+    const enc = sRGBTransferEOTF(vec3(hi.div(255), lo.div(255), 1));
+    const belowOut = vec4(bodyU.mul(float(1).sub(foamV)).add(vec3(0.5, 0.6, 0.6).mul(lit).mul(foamV)), 1);
+    mat.outputNode = select(dbg.x.greaterThan(0.5), vec4(enc, 1), mix(output, belowOut, under));
+    return;
+  }
+  // the swell's own tilt moves the refraction less than the ripples do
+  const offset = n.xz.sub(wn.xz.mul(0.6)).mul(look.y).mul(shoreDistortion);
+  const suv = vec2(screenUV.x, mix(screenUV.y, float(1).sub(screenUV.y), cam.w));
+  // (the reflection is moved by the ripples only: the swell bending it reaches the ground under the mirrored horizon)
+  const refl = texture(reflectMap, vec2(float(1).sub(suv.x), suv.y).add(n.xz.sub(wn.xz).mul(look.y)).add(wn.xz.mul(floorRect.w))).rgb.mul(tint.w);
+  // the refraction's own depth: the water between the surface and whatever is under it, along the view ray, then
+  // taken to a vertical depth. The clip depth (d or 2d - 1) and the row direction are what the host's targets use.
+  const uvS = suv.add(offset);
+  // texel rows top row first on both backends (three.c's GL targets and the WebGPU copy alike)
+  const dSize = refrSize.xy;
+  const dTc = clamp(floor(uvS.mul(dSize)), vec2(0), dSize.sub(1));
+  // (taken to GL's [0, 1] range at once: the WebGPU copy holds 3e38 where nothing was drawn, and any use of that
+  // raw value can overflow to inf; inf times a mix weight of 0 is NaN, and a NaN in one channel turns that channel
+  // black. Every later use reads dz, never the texel.)
+  const dz = min(textureLoad(refrDepth, ivec2(int(dTc.x), int(dTc.y))).x, 1);
+  // the planar targets' depth is GL's window depth on both backends (three.c remaps WebGPU's clip z), and suv
+  // reads them top row first
+  // (clamped under 1: the WebGPU copy holds 3e38 where nothing was drawn, and the oblique projection's far plane
+  // may send window depth 1 to infinity; a NaN there survives every mix by 0 on some drivers)
+  const zClip = min(dz, 0.999).mul(2).sub(1);
+  const yClip = float(1).sub(uvS.y.mul(2));
+  const vp = refrInv.mul(vec4(uvS.x.mul(2).sub(1), yClip, zClip, 1));
+  const scenePos = vp.xyz.div(max(vp.w, 1e-6)); // (never 0 / 0: a NaN here would reach the picture through every mix by 0)
+  const surfPos = cameraViewMatrix.mul(vec4(positionWorld, 1)).xyz;
+  const hit = float(1).sub(step(0.99999, dz));
+  const ray = clamp(length(scenePos).sub(length(surfPos)), 0, 1000);
+  const zDepth = mix(float(100), ray.mul(max(toEye.y, 0.15)), hit);
+  const useZ = refrInfo.x.mul(deep.w);
+  const depth = mix(bakedDepth, zDepth, useZ);
+  const dOn = max(mapOn, useZ);
+  // Beer-Lambert style: the shallow colour turns into the deep one with depth, red first (water eats red light)
+  const absorb = mix(float(1), float(1).sub(exp(depth.negate().mul(shore.z))), dOn);
+  const ab3 = vec3(pow(absorb, 0.6), pow(absorb, 0.85), absorb);
+  // the sun lights the water's body: nothing under a low sun, the sun's own colour (dusk is red) under a high one
+  const hasSun = step(0.0001, sunCol.r.add(sunCol.g).add(sunCol.b));
+  const sunUp = max(sun.y, 0);
+  const lit = mix(vec3(1), max(vec3(0.14).add(sunCol.rgb.mul(sunUp).mul(0.32)), vec3(0.1)), hasSun);
+  // a crest holds less water between the eye and the deep than a trough: lighter crests, darker troughs
+  const hBody = clamp(vSurf.div(max(sun.w, 0.05)).mul(0.5).add(0.5), 0, 1);
+  // crest_light: the thin water at the top of a wave is lighter and greener than the body under it, whatever way the sun lies
+  const crestTop = smoothstep(0.55, 1, hBody).mul(crestLight.x);
+  const body = mix(mix(shallow.rgb, deepRgb, ab3), shallow.rgb.mul(1.25), crestTop).mul(lit).mul(mix(0.75, 1.3, hBody));
+  // what is seen through the water lost its light on the way down to it and back up along the view, per colour (pure
+  // water eats red ten times faster than green, green twice as fast as blue: clarity 5 m is clear sea water), and the
+  // water's own lit colour scattered in over the same path (murk: how much)
+  const viewPath = mix(depth.div(max(toEye.y, 0.15)), ray, useZ.mul(hit));
+  const path = mix(float(4), depth.add(viewPath), dOn);
+  const sig = vec3(0.45, 0.065, 0.035).mul(shore.z).mul(5);
+  const trans = exp(sig.mul(path).negate());
+  const inscatter = float(1).sub(exp(path.mul(shore.z).mul(dbg.w).mul(0.5).negate()));
+  // caustics: the sun's light gathered by the waves into moving lines on what is seen under the water (where the
+  // refraction's depth says where that is); two copies of the tile scrolled against each other, the smaller kept
+  const toSun0 = normalize(sun.xyz);
+  const sceneW = cam.xyz.sub(toEye.mul(length(scenePos)));
+  const below = positionWorld.y.sub(sceneW.y);
+  const cq = sceneW.xz.add(toSun0.xz.div(max(toSun0.y, 0.3)).mul(below).mul(0.75)).mul(refrInfo.z);
+  const ct = shallow.w;
+  // (red: the sharp web; green: a soft copy that takes over deeper down, where the lines spread)
+  const k1 = texture(causticMap, cq.add(vec2(0.013, 0.007).mul(ct))).rg;
+  const k2 = texture(causticMap, cq.mul(1.31).add(vec2(0.41, 0.17)).sub(vec2(0.006, 0.011).mul(ct))).rg;
+  const cSoft = max(smoothstep(0.5, 4, below), smoothstep(12, 40, dist));
+  const kc = dot(min(k1, k2), vec2(float(1).sub(cSoft), cSoft)).mul(4);
+  // (max: a pixel whose refraction depth lies in front of the surface has below < 0, and exp() overflows there: inf times the
+  // smoothstep's 0 is NaN, which reaches the picture as black. A wave standing above the eye line hit it)
+  const cfade = smoothstep(0.02, 0.5, below).mul(exp(max(below, 0).negate().mul(shore.z).mul(1.6))).mul(smoothstep(0, 0.25, toSun0.y))
+    .mul(hit).mul(useZ).mul(hasSun);
+  const caus = float(1).add(refrInfo.y.mul(cfade).mul(kc.mul(2.2).sub(1)));
+  const seen = texture(refractMap, uvS).rgb.mul(tint.rgb).mul(trans).mul(caus).add(body.mul(inscatter));
+  // crest_light: light comes through the thin top of a wave whatever lies under it, so it is mixed in after the refraction
+  const refr = mix(mix(body, seen, deep.w), shallow.rgb.mul(lit).mul(1.5), crestTop.mul(0.75));
+  // light through the crests toward the eye: the turquoise glow of a wave against the sun
+  const toSun = normalize(sun.xyz);
+  const fwd = pow(max(dot(toSun, toEye.negate()), 0), 3);
+  const h01 = clamp(vSurf.div(max(sun.w, 0.05)).mul(0.5).add(0.5), 0, 1);
+  const crest = smoothstep(0.4, 1, h01).mul(min(float(0.35).add(float(0.65).mul(float(1).sub(vBunch)).mul(4)), 1));
+  const sss = vec3(0.04, 0.5, 0.42).mul(sunCol.rgb).mul(fwd).mul(crest).mul(sunCol.w).mul(float(1).sub(smoothstep(300, 1500, dist)));
+  // the sun's glitter: a narrow highlight on the fine chop (lights give the broad one)
+  const nFine = normalize(vec3(wn.x.add(df.x.mul(fineWeight).mul(2.2)).add(d.x.mul(detailWeight)), wn.y, wn.z.add(df.y.mul(fineWeight).mul(2.2)).add(d.z.mul(detailWeight))));
+  const hv = normalize(toSun.add(toEye));
+  const vdh = max(dot(toEye, hv), 0);
+  const gl = pow(max(dot(nFine, hv), 0), 900).mul(pow(float(1).sub(vdh), 5).mul(0.9).add(0.1)).mul(sunCol.rgb).mul(rip.w).mul(10).mul(float(1).sub(smoothstep(60, 500, dist)));
+  // foam: where the water meets the floor, on crests (the wave normal's bunching), and what splashes and wakes leave; broken up by noise at two scales
+  const noise = texture(normalMap, uvs.mul(0.6).add(f.mul(flow.x))).a;
+  const noise2 = texture(normalMap, uvs.mul(1.9).add(f.mul(flow.y)).add(vec2(0.4, 0.9))).a;
+  const lumpy = smoothstep(0.3, 0.7, noise);
+  const wob = sin(shallow.w.mul(1.4).add(noise.mul(6.283))).mul(0.5).add(0.5);
+  const sw = max(shore.y, 0.001);
+  const shoreOn = dOn.mul(step(0.001, shore.y));
+  const shoreFoam = float(1).sub(smoothstep(0, sw.mul(0.45), depth.add(noise.sub(0.5).mul(sw).mul(0.6)).sub(wob.mul(sw).mul(0.3)))).mul(shoreOn);
+  // thinner lines of foam sliding in over the shallows
+  const lines = smoothstep(0.62, 0.8, sin(depth.mul(7.0 / 1).sub(shallow.w.mul(1.6)).add(noise.mul(5))).mul(0.5).add(0.5))
+    .mul(float(1).sub(smoothstep(sw.mul(0.8), sw.mul(3.2), depth))).mul(shoreOn).mul(0.55);
+  const thr = float(0.95).sub(shore.w.mul(0.4));
+  const farFade = float(1).sub(smoothstep(200, 700, dist));
+  const crestFoam = smoothstep(thr, thr.add(0.12), float(1).sub(vBunch).add(noise.sub(0.5).mul(0.25))).mul(step(0.001, shore.w)).mul(lumpy).mul(farFade);
+  const crestTopFoam = smoothstep(0.7, 0.86, hBody.add(noise.sub(0.5).mul(0.14))).mul(crestLight.x).mul(lumpy).mul(float(1).sub(smoothstep(400, 1100, dist)));
+  const splashFoam = smoothstep(0.08, 0.5, rfoam.mul(mix(0.55, 1.2, noise2)));
+  const foamRaw = max(max(shoreFoam.mul(mix(0.55, 1, lumpy)), lines.mul(noise2)), max(max(crestFoam, crestTopFoam), splashFoam));
+  // foam is lace, not cotton: the caustic tile's web of lines, scrolled with the flow, is the bubbles' pattern; thin
+  // foam keeps only its brightest knots, thick foam fills the cells (far away, where the lace would alias, it evens out)
+  const lace0 = texture(causticMap, rest.mul(grid.w).mul(0.29).add(f.mul(flow.x).mul(0.4))).r.mul(4);
+  const lace1 = texture(causticMap, rest.mul(grid.w).mul(0.71).add(vec2(0.37, 0.61)).sub(f.mul(flow.y).mul(0.6))).r.mul(4);
+  const lace = mix(clamp(max(lace0, lace1.mul(0.8)).mul(0.4), 0, 1), float(0.55), smoothstep(60, 250, dist));
+  const foam1 = clamp(foamRaw.mul(1.45).sub(float(1).sub(lace).mul(refrSize.z)), 0, 1).mul(mix(0.82, 1, noise2));
+  // close up: foam by thickness, not by a cut-out. Thick foam is solid and churned, thin foam breaks into soft patches at two
+  // scales and goes to nothing, with no edge the eye can read as a mask
+  const softLace = clamp(max(texture(causticMap, rest.mul(grid.w).mul(0.29).add(f.mul(flow.x).mul(0.4))).g, texture(causticMap, rest.mul(grid.w).mul(0.71).add(vec2(0.37, 0.61)).sub(f.mul(flow.y).mul(0.6))).g).mul(9), 0, 1);
+  const patchy = noise.mul(0.55).add(noise2.mul(0.45));
+  const thick = max(max(shoreFoam.mul(mix(0.55, 1, lumpy)), lines.mul(noise2)), max(max(crestFoam, crestTopFoam), rfoam.mul(1.25)));
+  const cover = smoothstep(0.04, 0.62, thick.add(patchy.sub(0.5).mul(0.55).mul(float(1).sub(smoothstep(0.5, 1, thick)))));
+  const foam2 = cover.mul(mix(softLace.mul(0.75).add(0.25), float(1), smoothstep(0.42, 0.95, thick))).mul(mix(0.8, 1, noise));
+  const foam = mix(foam1, clamp(foam2, 0, 1), refrSize.w);
+  const emitAbove = mix(refr, refl, fres).add(sss.mul(float(1).sub(fres))).add(gl);
+  // seen from under the water: the world above shows through a window of light (Snell's), bent and dimmed by the
+  // Fresnel term from water into air; outside it the surface mirrors the water itself (total internal reflection)
+  // (decided on the CPU from the drawn waves at the camera: one answer for the whole surface)
+  const under = clamp(floorRect.z, 0, 1);
+  const nb = n.negate();
+  const cosI = max(dot(toEye, nb), 0);
+  const sinT2 = float(1).sub(cosI.mul(cosI)).mul(1.777);
+  const cosT = sqrt(max(float(1).sub(sinT2), 0));
+  const trU = float(1).sub(pow(float(1).sub(cosT), 5).mul(0.98).add(0.02)).mul(float(1).sub(step(1, sinT2)));
+  const skyGuess = mix(vec3(0.5, 0.7, 0.9), sunCol.rgb.mul(0.3).add(vec3(0.1, 0.2, 0.35)), hasSun);
+  const above = mix(skyGuess, min(texture(refractMap, suv.add(nb.xz.mul(look.y).mul(3))).rgb, vec3(1e4)), refrInfo.w);
+  const bodyU = shallow.rgb.add(deepRgb).mul(0.5).mul(lit).mul(0.6);
+  // (select, not mix: whatever the side not shown computes, a NaN or an inf there must not reach the picture)
+  const emit = select(under.greaterThan(0.5), mix(bodyU, above, trU), emitAbove);
+  const foamV = foam.mul(float(1).sub(under.mul(0.6)));
+  // the material colour (black: no diffuse; the C side keeps it so) and emissive (white) stay inputs
+  mat.colorNode = vec4(materialColor.rgb.add(vec3(0.9, 0.92, 0.95).mul(foamV)), 1);
+  mat.normalNode = normalize(cameraViewMatrix.mul(vec4(mix(n, nb, under), 0)).xyz);
+  mat.emissiveNode = emit.mul(materialEmissive).mul(float(1).sub(foamV));
+  // debug view HEIGHT: the world height over the range as 16 bits in R and G, pre-decoded so
+  // that the sRGB output transfer (tone mapping NONE) lands each on its exact byte
+  const hn = clamp(positionWorld.y.sub(dbg.y).div(dbg.z.sub(dbg.y)), 0, 1).mul(65535);
+  const hi = floor(hn.div(256)), lo = floor(hn.sub(hi.mul(256)));
+  const enc = sRGBTransferEOTF(vec3(hi.div(255), lo.div(255), 1));
+  // debug view REFRACTION_DEPTH: R = the vertical depth over 20 m, G = the window depth (1: nothing drawn), B = hit
+  const encZ = sRGBTransferEOTF(vec3(clamp(zDepth.div(20), 0, 1), dz, hit));
+  // from under the water the surface is drawn as computed here, unlit: the scene's lights and environment shading a
+  // surface from its back side are not what the eye sees through it (and the environment's lower half is not water)
+  const belowOut = vec4(mix(bodyU, above, trU).mul(float(1).sub(foamV)).add(vec3(0.5, 0.6, 0.6).mul(lit).mul(foamV)), 1);
+  // (alpha 1: the post chain reads the scene target's alpha, and the lit output's is not 1 on every backend)
+  // (both sides finite: belowOut is built from clamped reads. The lit output cannot go in a select here: r187's
+  // shadow pass then stops drawing the caster with its own material)
+  const shaded = mix(output, belowOut, under);
+  // (select, never mix by a 0 / 1 weight, for the debug views: WGSL leaves inf and NaN arithmetic to the
+  // implementation, so a side not shown that overflows would reach the picture as inf * 0 = NaN)
+  mat.outputNode = select(dbg.x.greaterThan(0.5), vec4(select(dbg.x.greaterThan(1.5), encZ, enc), 1), shaded);
+}

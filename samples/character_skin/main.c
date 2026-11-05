@@ -84,7 +84,7 @@ static void init(void *u) {
   no_morph = env_f("CHARACTER_NO_MORPH", 0) != 0;
   const char *q = getenv("CHARACTER_QUALITY");
   if (q && *q) {
-    cw_quality p = !strcmp(q, "low") ? CW_QUALITY_LOW : !strcmp(q, "medium") ? CW_QUALITY_MEDIUM : !strcmp(q, "ultra") ? CW_QUALITY_ULTRA : CW_QUALITY_HIGH;
+    cw_quality p = !strcmp(q, "verylow") ? CW_QUALITY_VERY_LOW : !strcmp(q, "low") ? CW_QUALITY_LOW : !strcmp(q, "medium") ? CW_QUALITY_MEDIUM : !strcmp(q, "ultra") ? CW_QUALITY_ULTRA : CW_QUALITY_HIGH;
     cw_quality_set(p, false);
   }
   cw_node level = cw_node_get(cw_tree_root(cw_scene_app_tree()), "Level");

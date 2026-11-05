@@ -1,5 +1,6 @@
 /* Graphics settings (cartwheel/quality.h): the settings, the presets that
  * set them, Auto, and what the renderer asks of them (quality_internal.h). */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,58 +25,85 @@ void cw__quality_menu_register(void); /* src/shell/quality_menu.c: its debug com
 /* ── the settings and the presets ──────────────────────────────────── */
 
 static const float RES[] = { 0.5f, 0.6f, 2.0f / 3.0f, 0.75f, 0.85f, 1.0f };
-enum { RES_N = 6, RES_100 = 5, RES_85 = 4, RES_75 = 3, RES_67 = 2, RES_60 = 1, RES_50 = 0 };
-enum { SH_LOW, SH_MEDIUM, SH_HIGH, SH_ULTRA, SH_N };
-enum { AA_OFF, AA_FXAA, AA_SMAA, AA_N };
+enum { RES_N = 6, RES_100 = CW_GFX_RES_100 };
+enum { SH_MIN = CW_GFX_SHADOWS_MINIMAL, SH_LOW, SH_MEDIUM, SH_HIGH, SH_ULTRA, SH_N };
+enum { AA_OFF = CW_GFX_AA_OFF, AA_FXAA, AA_SMAA, AA_FULL, AA_N };
 static const int VALUES[CW_GFX_ENGINE_COUNT] = { RES_N, 2, SH_N, AA_N, CW_QUALITY_COUNT };
 static const char *const SETTING_NAMES[CW_GFX_ENGINE_COUNT] = { "Resolution", "Ambient occlusion", "Shadows", "Anti-aliasing",
                                                                 "Effects detail" };
-static const char *const NAMES[CW_QUALITY_COUNT] = { "Low", "Medium", "High", "Ultra" };
+static const char *const NAMES[CW_QUALITY_COUNT] = { "Very Low", "Low", "Medium", "High", "Ultra" };
 static const char *const ONOFF[2] = { "Off", "On" };
-static const char *const SHADOWS[SH_N] = { "Low", "Medium", "High", "Ultra" };
-static const char *const AAS[AA_N] = { "Off", "FXAA", "SMAA" };
+static const char *const SHADOWS[SH_N] = { "Minimal", "Low", "Medium", "High", "Ultra" };
+static const char *const AAS[AA_N] = { "Off", "FXAA", "SMAA", "Full" };
 
-/* each preset's settings: resolution, ssao, shadows, aa, effects */
-static const uint8_t PRESET[CW_QUALITY_COUNT][CW_GFX_ENGINE_COUNT] = {
-  [CW_QUALITY_LOW] = { RES_67, 0, SH_LOW, AA_FXAA, CW_QUALITY_LOW },
-  [CW_QUALITY_MEDIUM] = { RES_75, 1, SH_MEDIUM, AA_FXAA, CW_QUALITY_MEDIUM },
-  [CW_QUALITY_HIGH] = { RES_100, 1, SH_HIGH, AA_SMAA, CW_QUALITY_HIGH },
-  [CW_QUALITY_ULTRA] = { RES_100, 1, SH_ULTRA, AA_SMAA, CW_QUALITY_ULTRA },
+/* each preset's settings: ssao, shadows, aa, effects (Resolution is the player's, never a preset's) */
+enum { P_SSAO, P_SHADOWS, P_AA, P_EFFECTS, P_N };
+static const uint8_t PRESET[CW_QUALITY_COUNT][P_N] = {
+  [CW_QUALITY_VERY_LOW] = { 0, SH_MIN, AA_FXAA, CW_QUALITY_VERY_LOW },
+  [CW_QUALITY_LOW] = { 0, SH_LOW, AA_FXAA, CW_QUALITY_LOW },
+  [CW_QUALITY_MEDIUM] = { 1, SH_MEDIUM, AA_SMAA, CW_QUALITY_MEDIUM },
+  [CW_QUALITY_HIGH] = { 1, SH_HIGH, AA_FULL, CW_QUALITY_HIGH },
+  [CW_QUALITY_ULTRA] = { 1, SH_ULTRA, AA_FULL, CW_QUALITY_ULTRA },
 };
+static const int P_SETTING[P_N] = { CW_GFX_SSAO, CW_GFX_SHADOWS, CW_GFX_AA, CW_GFX_EFFECTS };
 
 /* effects detail */
 typedef struct {
   float particles, density, lod_bias;
-  float hrtf; /* share of the HRTF voice limit (cartwheel/audio.h) */
-  int bloom_levels; /* cap (0 = as authored) */
+  float hrtf;       /* share of the HRTF voice limit (cartwheel/audio.h) */
+  int bloom_levels; /* cap (0 = as authored, -1 = no bloom) */
   int ssao;         /* 1 one slice of 4 steps, 2 as authored, 3 raised */
   float lights;     /* clustered lights a cluster keeps (cartwheel/lighting.h max_per_cluster) */
-  float distortion; /* share of the frame size the distortion buffer is drawn at (heat haze, shockwaves) */
+  float distortion; /* share of the frame size the distortion buffer is drawn at (0 = no distortion) */
   float dispersion; /* distortion: colour fringing at the edges (0 = off) */
   float flash_lights; /* share of the explosion flash light pool used */
   float skin;         /* skin shading (cartwheel/skin_shading.h): 0 = plain PBR */
+  float ssr;          /* SSR march quality scale (0 = off) */
+  bool dof, ssgi;
 } effects;
 static const effects FX[CW_QUALITY_COUNT] = {
-  [CW_QUALITY_LOW] = { 0.4f, 0.35f, 2.0f, 0.25f, 3, 1, 0.375f, 0.5f, 0, 0.25f, 0 },
-  [CW_QUALITY_MEDIUM] = { 0.7f, 0.65f, 1.5f, 0.5f, 5, 1, 0.5f, 0.5f, 0, 0.5f, 1 },
-  [CW_QUALITY_HIGH] = { 1, 1, 1, 1, 0, 2, 1, 1, 1, 1, 1 },
-  [CW_QUALITY_ULTRA] = { 1, 1, 1, 1, 0, 3, 1, 1, 1, 1, 1 },
+  [CW_QUALITY_VERY_LOW] = { 0.25f, 0.2f, 3.0f, 0.25f, -1, 1, 0.25f, 0, 0, 0, 0, 0, false, false },
+  [CW_QUALITY_LOW] = { 0.4f, 0.35f, 2.0f, 0.25f, 3, 1, 0.375f, 0.5f, 0, 0.25f, 0, 0, false, false },
+  [CW_QUALITY_MEDIUM] = { 0.7f, 0.65f, 1.5f, 0.5f, 5, 1, 0.5f, 0.5f, 0, 0.5f, 1, 0.5f, true, false },
+  [CW_QUALITY_HIGH] = { 1, 1, 1, 1, 0, 2, 1, 1, 1, 1, 1, 1, true, false },
+  [CW_QUALITY_ULTRA] = { 1, 1, 0.75f, 1, 0, 3, 1, 1, 1, 1, 1, 1.5f, true, true },
 };
 
-/* cw_quality_full_resolution(false): Auto's ladder with resolution steps, top first: a preset, its resolution replaced */
-typedef struct { uint8_t preset, res; } rung_t;
+/* the shadows setting: caster culling (bounding sphere radius / distance under this skips the caster), cascades */
+static const float CASTER_MIN[SH_N] = { 0.02f, 0.012f, 0.006f, 0, 0 };
+static const int CASCADES[SH_N] = { 1, 2, 3, 4, 4 };
+
+/* Auto's ladder, top first: each rung a full setting vector (one change from the rung above), its levers its
+ * preset's; res -1 keeps the player's Resolution (cw_quality_full_resolution(false) adds the rungs below Very Low) */
+typedef struct {
+  uint8_t level, v[P_N];
+  int8_t res;
+  float ratio; /* the expected cost against High (refined in the run by what each rung measured) */
+} rung_t;
 static const rung_t LADDER[] = {
-  { CW_QUALITY_HIGH, RES_100 }, { CW_QUALITY_HIGH, RES_85 }, { CW_QUALITY_MEDIUM, RES_75 }, { CW_QUALITY_MEDIUM, RES_67 },
-  { CW_QUALITY_LOW, RES_67 },   { CW_QUALITY_LOW, RES_60 },  { CW_QUALITY_LOW, RES_50 },
+  { CW_QUALITY_HIGH, { 1, SH_HIGH, AA_FULL, CW_QUALITY_HIGH }, -1, 1.0f },
+  { CW_QUALITY_HIGH, { 1, SH_MEDIUM, AA_FULL, CW_QUALITY_HIGH }, -1, 0.85f },
+  { CW_QUALITY_MEDIUM, { 1, SH_MEDIUM, AA_SMAA, CW_QUALITY_MEDIUM }, -1, 0.6f },
+  { CW_QUALITY_MEDIUM, { 0, SH_MEDIUM, AA_SMAA, CW_QUALITY_MEDIUM }, -1, 0.52f },
+  { CW_QUALITY_LOW, { 0, SH_LOW, AA_FXAA, CW_QUALITY_LOW }, -1, 0.4f },
+  { CW_QUALITY_LOW, { 0, SH_LOW, AA_FXAA, CW_QUALITY_VERY_LOW }, -1, 0.33f },
+  { CW_QUALITY_VERY_LOW, { 0, SH_MIN, AA_FXAA, CW_QUALITY_VERY_LOW }, -1, 0.25f },
+  /* cw_quality_full_resolution(false) only */
+  { CW_QUALITY_VERY_LOW, { 0, SH_MIN, AA_FXAA, CW_QUALITY_VERY_LOW }, CW_GFX_RES_85, 0.25f * 0.72f },
+  { CW_QUALITY_VERY_LOW, { 0, SH_MIN, AA_FXAA, CW_QUALITY_VERY_LOW }, CW_GFX_RES_75, 0.25f * 0.56f },
+  { CW_QUALITY_VERY_LOW, { 0, SH_MIN, AA_FXAA, CW_QUALITY_VERY_LOW }, CW_GFX_RES_67, 0.25f * 0.45f },
+  { CW_QUALITY_VERY_LOW, { 0, SH_MIN, AA_FXAA, CW_QUALITY_VERY_LOW }, CW_GFX_RES_60, 0.25f * 0.36f },
+  { CW_QUALITY_VERY_LOW, { 0, SH_MIN, AA_FXAA, CW_QUALITY_VERY_LOW }, CW_GFX_RES_50, 0.25f * 0.25f },
 };
-enum { LADDER_N_ALL = (int)(sizeof LADDER / sizeof LADDER[0]) };
-/* the default: the ladder without resolution steps (each preset at 100%) */
-static const rung_t LADDER_FULL[] = {
-  { CW_QUALITY_HIGH, RES_100 }, { CW_QUALITY_MEDIUM, RES_100 }, { CW_QUALITY_LOW, RES_100 },
-};
+enum { LADDER_FULL_N = 7, LADDER_ALL_N = (int)(sizeof LADDER / sizeof LADDER[0]) };
 static bool full_res = true;
-#define LADDER_N (full_res ? (int)(sizeof LADDER_FULL / sizeof LADDER_FULL[0]) : LADDER_N_ALL)
-#define RUNG(r) (full_res ? LADDER_FULL[r] : LADDER[r])
+#define LADDER_N (full_res ? LADDER_FULL_N : LADDER_ALL_N)
+/* the old engine's Auto words (code 5): their rung's preset on this ladder, and (the resolution ladder) its resolution */
+static const uint8_t OLD_FULL_RUNG[3] = { 0, 2, 4 };
+static const uint8_t OLD_RUNG[7] = { 0, 0, 2, 2, 4, 4, 4 };
+static const uint8_t OLD_RUNG_RES[7] = { CW_GFX_RES_100, CW_GFX_RES_85, CW_GFX_RES_75, CW_GFX_RES_67, CW_GFX_RES_67, CW_GFX_RES_60, CW_GFX_RES_50 };
+/* and the resolution an old preset word (1..4: Low..Ultra) drew at without full resolution */
+static const uint8_t OLD_PRESET_RES[4] = { CW_GFX_RES_67, CW_GFX_RES_75, CW_GFX_RES_100, CW_GFX_RES_100 };
 
 typedef struct {
   const char *name;
@@ -91,29 +119,39 @@ static struct {
   int32_t level;   /* cw.quality: the preset (Custom: the one it came from) */
   int32_t mode;    /* cw.quality_mode */
   uint8_t v[CW_GFX_ENGINE_COUNT + CW_GFX_MAX_LEVERS];
+  uint8_t user_res; /* the player's Resolution (a resolution rung of Auto draws below it) */
   lever levers[CW_GFX_MAX_LEVERS];
   int n_levers;
   bool chosen;     /* the player (or a save) chose: the game's Auto default no longer applies */
+  bool keep_msaa;  /* cw_quality_keep_msaa */
   /* Auto */
-  int rung, fail_rung; /* the ladder's level now; the highest level over budget in this run (-1 none) */
+  int32_t rung;
+  int fail_rung;   /* the highest rung over budget in this run (-1 none) */
   float budget;
   bool in_play, gpu_timed;
-  bool retrying;   /* a run trying the level above its saved one: unproven until it has held for a while */
+  bool retrying;   /* a run trying the rung above its saved one: unproven until it has held for a while */
   double last_t;
   float avg;
   int frames;
+  float rung_cost[LADDER_ALL_N]; /* what each rung averaged when it last held a while (0 = never) */
   cw_quality_change_fn fn;
   void *fn_user;
-} Q = { .level = CW_QUALITY_HIGH, .budget = 19, .fail_rung = -1,
-        .v = { RES_100, 1, SH_HIGH, AA_SMAA, CW_QUALITY_HIGH } };
+} Q = { .level = CW_QUALITY_HIGH, .budget = 19, .fail_rung = -1, .user_res = RES_100,
+        .v = { RES_100, 1, SH_HIGH, AA_FULL, CW_QUALITY_HIGH } };
 
 /* scopes (cw_quality_scope_push): caps on top of the player's settings, innermost last */
 enum { SCOPE_MAX = 4 };
 static struct { char name[24]; int8_t cap[CW_GFX_ENGINE_COUNT]; } SCOPES[SCOPE_MAX];
 static int n_scopes;
+static bool flat; /* CW_TEST_QUALITY_FLAT (native): every preset draws High's settings (the range gate's control) */
+/* gate controls (native, tests/quality-unit.mjs): the old engine's behaviour back, one at a time */
+static bool old_res;  /* CW_TEST_QUALITY_OLD_RES: a preset sets Resolution to 100% and only 100% matches a preset */
+static bool v2_only;  /* CW_TEST_QUALITY_V2_ONLY: every saved word read with the new layout */
+static bool no_jump;  /* CW_TEST_QUALITY_NO_JUMP: Auto steps one rung at a time, never jumps */
 /* a setting as drawn: the player's value, lowered by every scope that caps it */
 static int ev(int s) {
   int v = Q.v[s];
+  if (flat && s != CW_GFX_RESOLUTION) v = s == CW_GFX_SSAO ? 1 : s == CW_GFX_SHADOWS ? SH_HIGH : s == CW_GFX_AA ? AA_FULL : CW_QUALITY_HIGH;
   for (int i = 0; i < n_scopes; i++)
     if (SCOPES[i].cap[s] >= 0 && v > SCOPES[i].cap[s]) v = SCOPES[i].cap[s];
   return v;
@@ -122,15 +160,32 @@ static int ev(int s) {
 static void cmd_quality(int argc, const char **argv, cw_reply *r);
 static bool forced; /* CW_QUALITY (native): this preset whatever else asks */
 
+static bool env_on(const char *k) {
+#if !CW_CART
+  const char *e = getenv(k);
+  return e && atoi(e) > 0;
+#else
+  (void)k;
+  return false;
+#endif
+}
+
 static void init_once(void) {
   if (Q.inited) return;
   Q.inited = true;
+  old_res = env_on("CW_TEST_QUALITY_OLD_RES");
+  v2_only = env_on("CW_TEST_QUALITY_V2_ONLY");
+  no_jump = env_on("CW_TEST_QUALITY_NO_JUMP");
+  if (old_res || v2_only || no_jump) cw_warn("quality: a gate control is on (CW_TEST_QUALITY_OLD_RES / V2_ONLY / NO_JUMP)");
   cw_debug_field("cw.quality", &Q.level, CW_DBG_I32, 1);
   cw_debug_field("cw.quality_mode", &Q.mode, CW_DBG_I32, 1);
+  cw_debug_field("cw.quality_rung", &Q.rung, CW_DBG_I32, 1);
   cw_debug_field("cw.quality_scopes", &n_scopes, CW_DBG_I32, 1);
   cw_debug_command("quality",
-                   "quality [low|medium|high|ultra|auto|lock | set <setting> <value> | scope push <setting>=<cap>... | scope pop]: the graphics settings (cartwheel/quality.h); "
-                   "settings: resolution 0-5, ssao 0-1, shadows 0-3, aa 0-2, effects 0-3, or a game setting's name (spaces as _)",
+                   "quality [verylow|low|medium|high|ultra|auto|lock | set <setting> <value> | scope push <setting>=<cap>... | scope pop]: "
+                   "the graphics settings (cartwheel/quality.h); settings and values (a name or its number): resolution 50|60|67|75|85|100 "
+                   "(0-5), ssao off|on (0-1), shadows minimal|low|medium|high|ultra (0-4), aa off|fxaa|smaa|full (0-3), effects "
+                   "verylow|low|medium|high|ultra (0-4), or a game setting's name (spaces as _) and its value's label or number",
                    cmd_quality);
   cw__quality_menu_register();
 }
@@ -140,6 +195,10 @@ static void init_once(void) {
  * replays alike). CW_QUALITY fixes the preset against everything. */
 static bool test_lock; /* cw__quality_lock: a test host that is not a deterministic run */
 static bool locked(void) { return forced || test_lock || cw_is_deterministic_run(); }
+
+static void auto_start(int rung);
+static void apply_preset(cw_quality q);
+static void changed(void);
 
 /* Auto and a saved choice locked out as in a deterministic run, for a test host (Chromium, wasmcart-native) that keeps its
  * real clock: Auto steps by how fast this machine ran, and a test's picture must not depend on that */
@@ -161,20 +220,21 @@ static void changed(void) {
   if (Q.fn) Q.fn((cw_quality)Q.level, Q.fn_user);
 }
 
-static void apply_preset(cw_quality q, int res) {
-  for (int i = 0; i < CW_GFX_ENGINE_COUNT; i++) Q.v[i] = PRESET[q][i];
-  if (res >= 0) Q.v[CW_GFX_RESOLUTION] = (uint8_t)res;
-  if (full_res) Q.v[CW_GFX_RESOLUTION] = RES_100; /* the game never draws below its output size */
+/* every setting of preset q but Resolution, which stays the player's */
+static void apply_preset(cw_quality q) {
+  for (int i = 0; i < P_N; i++) Q.v[P_SETTING[i]] = PRESET[q][i];
+  Q.v[CW_GFX_RESOLUTION] = old_res ? RES_100 : Q.user_res;
+  if (old_res) Q.user_res = RES_100;
   for (int i = 0; i < Q.n_levers; i++) Q.v[CW_GFX_ENGINE_COUNT + i] = Q.levers[i].preset[q];
   Q.level = q;
 }
 
-/* the preset every setting matches, else -1 */
+/* the preset every setting but Resolution matches, else -1 */
 static int matching_preset(void) {
   for (int q = 0; q < CW_QUALITY_COUNT; q++) {
     bool same = true;
-    for (int i = 0; i < CW_GFX_ENGINE_COUNT && same; i++)
-      same = Q.v[i] == (full_res && i == CW_GFX_RESOLUTION ? RES_100 : PRESET[q][i]);
+    if (old_res && Q.v[CW_GFX_RESOLUTION] != RES_100) same = false;
+    for (int i = 0; i < P_N && same; i++) same = Q.v[P_SETTING[i]] == PRESET[q][i];
     for (int i = 0; i < Q.n_levers && same; i++) same = Q.v[CW_GFX_ENGINE_COUNT + i] == Q.levers[i].preset[q];
     if (same) return q;
   }
@@ -183,24 +243,40 @@ static int matching_preset(void) {
 
 static void set_rung(int rung) {
   Q.rung = CW_CLAMP(rung, 0, LADDER_N - 1);
-  apply_preset((cw_quality)RUNG(Q.rung).preset, RUNG(Q.rung).res);
+  const rung_t *r = &LADDER[Q.rung];
+  for (int i = 0; i < P_N; i++) Q.v[P_SETTING[i]] = r->v[i];
+  Q.v[CW_GFX_RESOLUTION] = r->res >= 0 ? (uint8_t)r->res : Q.user_res;
+  for (int i = 0; i < Q.n_levers; i++) Q.v[CW_GFX_ENGINE_COUNT + i] = Q.levers[i].preset[r->level];
+  Q.level = r->level;
+}
+
+/* a preset's name as typed: "Very Low", "verylow", "very_low", "vlow" */
+static bool same_name(const char *a, const char *b);
+static int preset_by_name(const char *s) {
+  for (int i = 0; i < CW_QUALITY_COUNT; i++)
+    if (same_name(s, NAMES[i])) return i;
+  if (same_name(s, "vlow")) return CW_QUALITY_VERY_LOW;
+  return -1;
 }
 
 void cw__quality_init(void) {
   init_once();
   if (cw_is_deterministic_run()) { /* every host draws the same frame */
-    apply_preset(CW_QUALITY_HIGH, -1);
+    apply_preset(CW_QUALITY_HIGH);
     Q.mode = MODE_PRESET;
   }
 #if !CW_CART
-  /* CW_QUALITY=low|medium|high|ultra: a fixed preset (comparing presets in a test run) */
+  /* CW_QUALITY=verylow|low|medium|high|ultra: a fixed preset (comparing presets in a test run) */
   const char *env = getenv("CW_QUALITY");
-  for (int i = 0; env && *env && i < CW_QUALITY_COUNT; i++)
-    if (!strcasecmp(env, NAMES[i])) {
-      apply_preset((cw_quality)i, -1);
-      Q.mode = MODE_PRESET;
-      forced = true;
-    }
+  int q = env && *env ? preset_by_name(env) : -1;
+  if (q >= 0) {
+    apply_preset((cw_quality)q);
+    Q.mode = MODE_PRESET;
+    forced = true;
+  }
+  const char *fl = getenv("CW_TEST_QUALITY_FLAT");
+  flat = fl && atoi(fl) > 0;
+  if (flat) cw_warn("CW_TEST_QUALITY_FLAT: every preset draws High's settings (a gate control)");
 #endif
   cw__render_scale_apply(RES[ev(CW_GFX_RESOLUTION)]);
 }
@@ -215,16 +291,18 @@ void cw_quality_set(cw_quality q, bool user) {
     Q.chosen = true;
     Q.mode = MODE_PRESET;
   }
-  if (Q.mode == MODE_AUTO) { /* the game or a tool: Auto goes on from the nearest level */
+  if (Q.mode == MODE_AUTO) { /* the game or a tool: Auto goes on from the first rung at or below that preset */
     int r = 0;
-    while (r < LADDER_N - 1 && RUNG(r).preset > q) r++;
+    while (r < LADDER_N - 1 && LADDER[r].level > q) r++;
     set_rung(r);
   } else {
     Q.mode = MODE_PRESET;
-    apply_preset(q, -1);
+    apply_preset(q);
   }
   changed();
 }
+
+void cw_quality_keep_msaa(bool on) { Q.keep_msaa = on; }
 
 /* ── the settings ──────────────────────────────────────────────────── */
 
@@ -242,20 +320,10 @@ int cw_gfx_get(int s) { return valid(s) ? Q.v[s] : 0; }
 float cw_gfx_render_scale(void) { return RES[ev(CW_GFX_RESOLUTION)]; }
 int cw_gfx_effective(int s) { return valid(s) ? (s < CW_GFX_ENGINE_COUNT ? ev(s) : Q.v[s]) : 0; }
 
-const char *cw_gfx_value_label(int s) {
+static const char *value_name(int s, int v) {
   static char buf[48];
-  if (!valid(s)) return "?";
-  int v = Q.v[s];
   switch (s) {
-  case CW_GFX_RESOLUTION: {
-    int w = 0, h = 0;
-    cw__output_size(&w, &h);
-    float k = RES[v];
-    if (w > 0 && h > 0)
-      snprintf(buf, sizeof buf, "%d%%  %dx%d", (int)(k * 100 + 0.5f), CW_MAX(1, (int)(w * k + 0.5f)), CW_MAX(1, (int)(h * k + 0.5f)));
-    else snprintf(buf, sizeof buf, "%d%%", (int)(k * 100 + 0.5f));
-    return buf;
-  }
+  case CW_GFX_RESOLUTION: snprintf(buf, sizeof buf, "%d%%", (int)(RES[v] * 100 + 0.5f)); return buf;
   case CW_GFX_SSAO: return ONOFF[v];
   case CW_GFX_SHADOWS: return SHADOWS[v];
   case CW_GFX_AA: return AAS[v];
@@ -264,11 +332,36 @@ const char *cw_gfx_value_label(int s) {
   }
 }
 
-void cw_gfx_set(int s, int value) {
-  init_once();
-  if (forced || !valid(s)) return;
+const char *cw_gfx_value_label(int s) {
+  static char buf[48];
+  if (!valid(s)) return "?";
+  int v = Q.v[s];
+  if (s == CW_GFX_RESOLUTION) {
+    int w = 0, h = 0;
+    cw__output_size(&w, &h);
+    float k = RES[v];
+    if (w > 0 && h > 0)
+      snprintf(buf, sizeof buf, "%d%%  %dx%d", (int)(k * 100 + 0.5f), CW_MAX(1, (int)(w * k + 0.5f)), CW_MAX(1, (int)(h * k + 0.5f)));
+    else snprintf(buf, sizeof buf, "%d%%", (int)(k * 100 + 0.5f));
+    return buf;
+  }
+  return value_name(s, v);
+}
+
+/* a setting set by the player or a tool: Resolution alone touches nothing else */
+static void set_value(int s, int value) {
   value = CW_CLAMP(value, 0, cw_gfx_value_count(s) - 1);
   Q.chosen = true;
+  if (s == CW_GFX_RESOLUTION) {
+    Q.user_res = (uint8_t)value;
+    if (Q.mode != MODE_AUTO || LADDER[Q.rung].res < 0) Q.v[s] = (uint8_t)value;
+    if (old_res) { /* the old engine: Resolution counted in the match (100% only), so another is Custom */
+      int p = matching_preset();
+      Q.mode = p >= 0 ? MODE_PRESET : MODE_CUSTOM;
+    }
+    changed();
+    return;
+  }
   Q.v[s] = (uint8_t)value;
   int p = matching_preset();
   if (p >= 0) {
@@ -278,20 +371,27 @@ void cw_gfx_set(int s, int value) {
   changed();
 }
 
+void cw_gfx_set(int s, int value) {
+  init_once();
+  if (forced || !valid(s)) return;
+  set_value(s, value);
+}
+
 void cw_gfx_step(int s, int dir) {
   int n = cw_gfx_value_count(s);
   if (n <= 0) return;
   cw_gfx_set(s, ((cw_gfx_get(s) + (dir < 0 ? -1 : 1)) % n + n) % n);
 }
 
-int cw_quality_lever_add(const char *name, const char *const *values, int value_count, const uint8_t preset[CW_QUALITY_COUNT]) {
+int cw_quality_lever_add(const char *name, const char *const *values, int value_count, cw_quality_lever_presets presets) {
   init_once();
   if (Q.n_levers >= CW_GFX_MAX_LEVERS || !name || !values || value_count < 1) return -1;
   lever *l = &Q.levers[Q.n_levers];
   l->name = name;
   l->values = values;
   l->count = CW_MIN(value_count, CW_GFX_LEVER_MAX_VALUES);
-  for (int q = 0; q < CW_QUALITY_COUNT; q++) l->preset[q] = (uint8_t)CW_CLAMP(preset ? preset[q] : l->count - 1, 0, l->count - 1);
+  const uint8_t p[CW_QUALITY_COUNT] = { presets.very_low, presets.low, presets.medium, presets.high, presets.ultra };
+  for (int q = 0; q < CW_QUALITY_COUNT; q++) l->preset[q] = (uint8_t)CW_CLAMP(p[q], 0, l->count - 1);
   int id = CW_GFX_ENGINE_COUNT + Q.n_levers++;
   Q.v[id] = l->preset[Q.level]; /* what the preset now picks */
   return id;
@@ -330,6 +430,7 @@ static void auto_start(int rung) {
   Q.mode = MODE_AUTO;
   Q.fail_rung = -1;
   Q.retrying = false;
+  memset(Q.rung_cost, 0, sizeof Q.rung_cost);
   set_rung(rung);
   changed();
 }
@@ -340,7 +441,6 @@ void cw_quality_full_resolution(bool on) {
   full_res = on;
   if (Q.rung >= LADDER_N) Q.rung = LADDER_N - 1;
   if (Q.mode == MODE_AUTO) set_rung(Q.rung);
-  else if (Q.mode == MODE_PRESET) apply_preset((cw_quality)Q.level, -1);
   changed();
 }
 bool cw_quality_is_full_resolution(void) { return full_res; }
@@ -367,6 +467,22 @@ static float gpu_frame_ms(void) {
   return p ? cw_pipeline_gpu_ms(p) : 0;
 }
 
+/* a rung's expected cost: what it measured in this run, else the cost now scaled by the ladder's ratios */
+static float expected_cost(int r, float now) {
+  if (Q.rung_cost[r] > 0) return Q.rung_cost[r];
+  return now * LADDER[r].ratio / LADDER[Q.rung].ratio;
+}
+
+static void log_step(int to, const char *why, float budget) {
+  const rung_t *a = &LADDER[Q.rung], *b = &LADDER[to];
+  cw_info("quality: auto %s rung %d -> %s rung %d (%s %s averaged %.1f ms, budget %.1f)", NAMES[a->level], Q.rung, NAMES[b->level], to,
+          why, Q.gpu_timed ? "GPU time" : "frames", (double)Q.avg, (double)budget);
+}
+
+#if !CW_CART
+static double test_slow_ms = -1; /* CW_TEST_FRAME_MS (native): every frame of play takes this long on Auto's clock */
+#endif
+
 void cw_quality_auto_measure(bool in_play) {
   /* the real clock, not cw_time(): a host may deliver a fixed step whatever the frame took (a libretro core does, for its
    * audio), and on that clock every frame looks on time */
@@ -375,13 +491,27 @@ void cw_quality_auto_measure(bool in_play) {
   bool was = Q.in_play;
   Q.last_t = now;
   Q.in_play = in_play;
+#if !CW_CART
+  if (test_slow_ms < 0) {
+    const char *e = getenv("CW_TEST_FRAME_MS");
+    test_slow_ms = e && atof(e) > 0 ? atof(e) : 0;
+  }
+#endif
   if (!in_play || !was || !cw_quality_is_auto()) return;
+#if !CW_CART
+  /* the slow-frame host: each rung's frame time as the ladder's ratio of High's */
+  if (test_slow_ms > 0) d = test_slow_ms * LADDER[Q.rung].ratio;
+#endif
   if (d <= 0 || d > 250) return; /* a hitch (loading, a tab in the background) says nothing */
   /* the GPU's own time where timing it is cheap (native WebGPU's timestamps;
    * GL's timer queries cost the CPU a driver sync a frame): asked for while
    * Auto runs */
   float g = 0;
+#if !CW_CART
+  if (cw_gpu_backend() == CW_GPU_WEBGPU && test_slow_ms <= 0) {
+#else
   if (cw_gpu_backend() == CW_GPU_WEBGPU) {
+#endif
     cw__gpu_timing_request();
     g = gpu_frame_ms();
   }
@@ -394,20 +524,28 @@ void cw_quality_auto_measure(bool in_play) {
     return;
   }
   Q.avg += (cost - Q.avg) * 0.05f;
+  if (Q.frames > 150) Q.rung_cost[Q.rung] = Q.avg;
+  /* a big overshoot a second into a rung: straight to the rung expected to fit (every rung above it is over) */
+  if (!no_jump && Q.frames == 90 && Q.avg > budget * 1.6f && Q.rung < LADDER_N - 1) {
+    int to = Q.rung + 1;
+    while (to < LADDER_N - 1 && expected_cost(to, Q.avg) > budget) to++;
+    log_step(to, "jump:", budget);
+    Q.rung_cost[Q.rung] = Q.avg;
+    Q.fail_rung = CW_MAX(Q.fail_rung, to - 1);
+    Q.retrying = false;
+    set_rung(to);
+    changed();
+    return;
+  }
   if (Q.frames > 150 && Q.avg <= budget) Q.retrying = false;
   if (Q.frames > 150 && Q.avg > budget && Q.rung < LADDER_N - 1) {
-    cw_info("quality: auto %s %d%% -> %s %d%% (%s averaged %.1f ms, budget %.1f)", NAMES[RUNG(Q.rung).preset],
-            (int)(RES[RUNG(Q.rung).res] * 100 + 0.5f), NAMES[RUNG(Q.rung + 1).preset],
-            (int)(RES[RUNG(Q.rung + 1).res] * 100 + 0.5f), Q.gpu_timed ? "GPU time" : "frames", (double)Q.avg,
-            (double)budget);
+    log_step(Q.rung + 1, "step:", budget);
     Q.fail_rung = CW_MAX(Q.fail_rung, Q.rung);
     Q.retrying = false;
     set_rung(Q.rung + 1);
     changed();
   } else if (Q.gpu_timed && Q.frames > 300 && Q.avg < budget * 0.55f && Q.rung > 0 && Q.rung - 1 > Q.fail_rung) {
-    cw_info("quality: auto %s %d%% -> %s %d%% (GPU time averaged %.1f ms, budget %.1f)", NAMES[RUNG(Q.rung).preset],
-            (int)(RES[RUNG(Q.rung).res] * 100 + 0.5f), NAMES[RUNG(Q.rung - 1).preset],
-            (int)(RES[RUNG(Q.rung - 1).res] * 100 + 0.5f), (double)Q.avg, (double)budget);
+    log_step(Q.rung - 1, "up:", budget);
     set_rung(Q.rung - 1);
     changed();
   }
@@ -447,44 +585,82 @@ const char *cw_render_res_label(void) {
   return buf;
 }
 
-/* bits 0-2: 0 none, 1-4 a preset + 1, 5 Auto (bits 3-5 its level), 6 Custom
- * (bits 3-5 resolution, 6 ssao, 7-8 shadows, 9-10 aa, 11-12 effects, 13-20
- * the game's levers, 2 bits each): two bytes hold every choice of a game
- * with no levers of its own, three any game's */
+/* The save word.
+ *   v2 (written now): bits 0-2 = 7; bits 3-5 the choice (0..4 a preset, 5 Auto, 6 Custom); bits 6-8 Resolution;
+ *   Auto: bits 9-12 the rung; Custom: bit 13 ambient occlusion, 14-16 shadows, 17-18 anti-aliasing, 19-21 effects,
+ *   22-29 the game's levers (2 bits each). 30 bits.
+ *   Older words (read as before): 0 none, 1-4 Low..Ultra + 1, 5 Auto (its old ladder's rung in bits 3-5), 6 Custom
+ *   (bits 3-5 resolution, 6 ssao, 7-8 shadows Low..Ultra, 9-10 aa Off/FXAA/SMAA, 11-12 effects Low..Ultra, 13-20 levers). */
+enum { W_V2 = 7, C_AUTO = 5, C_CUSTOM = 6 };
 uint32_t cw_quality_saved(void) {
-  if (Q.mode == MODE_AUTO) { /* a level still being retried is not saved; a game's own Auto default counts once it has stepped */
-    int rung = Q.rung + Q.retrying;
-    return Q.chosen || rung > 0 ? 5u | (uint32_t)rung << 3 : 0;
+  uint32_t res = (uint32_t)Q.user_res << 6;
+  if (Q.mode == MODE_AUTO) { /* a rung still being retried is not saved; a game's own Auto default counts once it has stepped */
+    int rung = CW_MIN(Q.rung + Q.retrying, LADDER_N - 1);
+    return Q.chosen || rung > 0 ? W_V2 | (uint32_t)C_AUTO << 3 | res | (uint32_t)rung << 9 : 0;
   }
   if (!Q.chosen) return 0;
-  if (Q.mode == MODE_PRESET) return (uint32_t)Q.level + 1;
-  uint32_t w = 6u | (uint32_t)Q.v[CW_GFX_RESOLUTION] << 3 | (uint32_t)Q.v[CW_GFX_SSAO] << 6 | (uint32_t)Q.v[CW_GFX_SHADOWS] << 7 |
-               (uint32_t)Q.v[CW_GFX_AA] << 9 | (uint32_t)Q.v[CW_GFX_EFFECTS] << 11;
-  for (int i = 0; i < Q.n_levers; i++) w |= (uint32_t)(Q.v[CW_GFX_ENGINE_COUNT + i] & 3) << (13 + 2 * i);
+  if (Q.mode == MODE_PRESET) return W_V2 | (uint32_t)Q.level << 3 | res;
+  uint32_t w = W_V2 | (uint32_t)C_CUSTOM << 3 | res | (uint32_t)Q.v[CW_GFX_SSAO] << 13 | (uint32_t)Q.v[CW_GFX_SHADOWS] << 14 |
+               (uint32_t)Q.v[CW_GFX_AA] << 17 | (uint32_t)Q.v[CW_GFX_EFFECTS] << 19;
+  for (int i = 0; i < Q.n_levers; i++) w |= (uint32_t)(Q.v[CW_GFX_ENGINE_COUNT + i] & 3) << (22 + 2 * i);
   return w;
 }
+
+/* a Custom choice's settings (Resolution already set): its preset if they match one */
+static void restore_custom(const uint8_t v[P_N], uint32_t levers) {
+  for (int i = 0; i < P_N; i++) Q.v[P_SETTING[i]] = (uint8_t)CW_MIN(v[i], VALUES[P_SETTING[i]] - 1);
+  for (int i = 0; i < Q.n_levers; i++) Q.v[CW_GFX_ENGINE_COUNT + i] = (uint8_t)CW_MIN((levers >> (2 * i)) & 3, (uint32_t)Q.levers[i].count - 1);
+  Q.chosen = true;
+  int p = matching_preset();
+  Q.mode = p >= 0 ? MODE_PRESET : MODE_CUSTOM;
+  Q.level = p >= 0 ? p : Q.v[CW_GFX_EFFECTS];
+  changed();
+}
+/* Auto from a saved rung: one rung up (a frame-timed run has no other way back, so one bad session would otherwise last for good) */
+static void restore_auto(int rung) {
+  Q.chosen = true;
+  rung = CW_CLAMP(rung, 0, LADDER_N - 1);
+  auto_start(rung > 0 ? rung - 1 : 0);
+  Q.retrying = rung > 0;
+}
+static void restore_res(int res) {
+  Q.user_res = (uint8_t)CW_CLAMP(res, 0, RES_N - 1);
+  Q.v[CW_GFX_RESOLUTION] = Q.user_res;
+}
+
 void cw_quality_restore(uint32_t saved) {
   init_once();
   if (locked()) return;
   uint32_t m = saved & 7;
-  if (m >= 1 && m <= CW_QUALITY_COUNT) cw_quality_set((cw_quality)(m - 1), true);
-  else if (m == 5) {
-    Q.chosen = true;
-    /* one level up from the save: a frame-timed run has no other way back, so one bad session would otherwise last for good */
-    int rung = CW_CLAMP((int)(saved >> 3 & 7), 0, LADDER_N - 1);
-    auto_start(rung > 0 ? rung - 1 : 0);
-    Q.retrying = rung > 0;
+  if (m == W_V2 || (v2_only && saved)) {
+    uint32_t c = saved >> 3 & 7;
+    restore_res((int)(saved >> 6 & 7));
+    if (c < CW_QUALITY_COUNT) cw_quality_set((cw_quality)c, true);
+    else if (c == C_AUTO) restore_auto((int)(saved >> 9 & 15));
+    else if (c == C_CUSTOM) {
+      uint8_t v[P_N] = { (uint8_t)(saved >> 13 & 1), (uint8_t)(saved >> 14 & 7), (uint8_t)(saved >> 17 & 3), (uint8_t)(saved >> 19 & 7) };
+      restore_custom(v, saved >> 22);
+    }
+    return;
+  }
+  /* an older engine's word */
+  if (m >= 1 && m <= 4) { /* Low..Ultra: then at 100%, or the preset's own resolution without full resolution */
+    restore_res(full_res ? RES_100 : OLD_PRESET_RES[m - 1]);
+    cw_quality_set((cw_quality)m, true);
+  } else if (m == 5) {
+    int old = (int)(saved >> 3 & 7);
+    if (full_res) {
+      restore_res(RES_100);
+      restore_auto(OLD_FULL_RUNG[CW_MIN(old, 2)]);
+    } else {
+      restore_res(OLD_RUNG_RES[CW_MIN(old, 6)]);
+      restore_auto(OLD_RUNG[CW_MIN(old, 6)]);
+    }
   } else if (m == 6) {
-    uint8_t v[CW_GFX_ENGINE_COUNT] = { (uint8_t)(saved >> 3 & 7), (uint8_t)(saved >> 6 & 1), (uint8_t)(saved >> 7 & 3),
-                                       (uint8_t)(saved >> 9 & 3), (uint8_t)(saved >> 11 & 3) };
-    for (int i = 0; i < CW_GFX_ENGINE_COUNT; i++) Q.v[i] = (uint8_t)CW_MIN(v[i], VALUES[i] - 1);
-    for (int i = 0; i < Q.n_levers; i++) Q.v[CW_GFX_ENGINE_COUNT + i] = (uint8_t)CW_MIN((saved >> (13 + 2 * i)) & 3, (uint32_t)Q.levers[i].count - 1);
-    Q.chosen = true;
-    int p = matching_preset();
-    Q.mode = p >= 0 ? MODE_PRESET : MODE_CUSTOM;
-    if (p >= 0) Q.level = p;
-    else Q.level = Q.v[CW_GFX_EFFECTS];
-    changed();
+    restore_res((int)(saved >> 3 & 7));
+    static const uint8_t OLD_AA[4] = { AA_OFF, AA_FXAA, AA_FULL, AA_FULL }; /* the old SMAA kept the scene's MSAA: Full */
+    uint8_t v[P_N] = { (uint8_t)(saved >> 6 & 1), (uint8_t)((saved >> 7 & 3) + 1), OLD_AA[saved >> 9 & 3], (uint8_t)((saved >> 11 & 3) + 1) };
+    restore_custom(v, saved >> 13);
   }
 }
 
@@ -506,6 +682,25 @@ static int setting_by_name(const char *n) {
   for (int i = 0; i < Q.n_levers; i++)
     if (same_name(n, Q.levers[i].name)) return CW_GFX_ENGINE_COUNT + i;
   return -1;
+}
+/* a value as typed: its label ("minimal", "smaa", "75" or "75%" for Resolution), else its number; -1 unknown */
+static int value_by_name(int s, const char *t) {
+  for (int v = 0; v < cw_gfx_value_count(s); v++) {
+    const char *nm = value_name(s, v);
+    if (same_name(t, nm)) return v;
+    if (s == CW_GFX_RESOLUTION) {
+      char pct[8];
+      snprintf(pct, sizeof pct, "%d", (int)(RES[v] * 100 + 0.5f));
+      if (same_name(t, pct)) return v;
+    }
+  }
+  if (s == CW_GFX_EFFECTS) {
+    int q = preset_by_name(t);
+    if (q >= 0) return q;
+  }
+  char *end;
+  long v = strtol(t, &end, 10);
+  return *t && !*end ? (int)v : -1;
 }
 
 static void cmd_quality(int argc, const char **argv, cw_reply *r) {
@@ -534,11 +729,12 @@ static void cmd_quality(int argc, const char **argv, cw_reply *r) {
             nm[eq - argv[i]] = 0;
             s = setting_by_name(nm);
           }
-          if (s < 0 || s >= CW_GFX_ENGINE_COUNT) {
+          int v = s >= 0 && s < CW_GFX_ENGINE_COUNT ? value_by_name(s, eq + 1) : -1;
+          if (v < 0) {
             cw_reply_error(r, "quality scope push <resolution|ssao|shadows|aa|effects>=<highest value> ...");
             return;
           }
-          caps[s] = (int8_t)atoi(eq + 1);
+          caps[s] = (int8_t)v;
         }
         cw_quality_scope_push("debug", caps);
       } else {
@@ -547,34 +743,31 @@ static void cmd_quality(int argc, const char **argv, cw_reply *r) {
       }
     } else if (!strcasecmp(argv[1], "set")) {
       int s = argc > 3 ? setting_by_name(argv[2]) : -1;
-      if (s < 0) {
+      int v = s >= 0 ? value_by_name(s, argv[3]) : -1;
+      if (s < 0 || v < 0) {
         cw_reply_error(r, "quality set <resolution|ssao|shadows|aa|effects|a game setting> <value>");
         return;
       }
-      Q.v[s] = (uint8_t)CW_CLAMP(atoi(argv[3]), 0, cw_gfx_value_count(s) - 1);
-      int p = matching_preset();
-      Q.mode = p >= 0 ? MODE_PRESET : MODE_CUSTOM;
-      if (p >= 0) Q.level = p;
-      changed();
+      bool was_chosen = Q.chosen;
+      set_value(s, v);
+      Q.chosen = was_chosen || Q.chosen;
     } else {
-      int q = -1;
-      for (int i = 0; i < CW_QUALITY_COUNT; i++)
-        if (!strcasecmp(argv[1], NAMES[i])) q = i;
+      int q = preset_by_name(argv[1]);
       if (q < 0) {
-        cw_reply_error(r, "quality: low, medium, high, ultra, auto or set <setting> <value>");
+        cw_reply_error(r, "quality: verylow, low, medium, high, ultra, auto or set <setting> <value>");
         return;
       }
       Q.chosen = true;
       Q.mode = MODE_PRESET;
-      apply_preset((cw_quality)q, -1);
+      apply_preset((cw_quality)q);
       changed();
     }
   }
-  cw_reply_printf(r, "{\"quality\":\"%s\",\"preset\":\"%s\",\"auto\":%s,\"locked\":%s,\"cost_ms\":%.2f,\"gpu_timed\":%s,\"settings\":{",
-                  cw_quality_label(), NAMES[Q.level], cw_quality_is_auto() ? "true" : "false", locked() ? "true" : "false",
-                  (double)cw_quality_auto_cost(), Q.gpu_timed ? "true" : "false");
+  cw_reply_printf(r, "{\"quality\":\"%s\",\"preset\":\"%s\",\"auto\":%s,\"rung\":%d,\"locked\":%s,\"cost_ms\":%.2f,\"gpu_timed\":%s,\"saved\":%u,\"settings\":{",
+                  cw_quality_label(), NAMES[Q.level], cw_quality_is_auto() ? "true" : "false", Q.rung, locked() ? "true" : "false",
+                  (double)cw_quality_auto_cost(), Q.gpu_timed ? "true" : "false", cw_quality_saved());
   for (int i = 0; i < cw_gfx_count(); i++) cw_reply_printf(r, "%s\"%s\":\"%s\"", i ? "," : "", cw_gfx_name(i), cw_gfx_value_label(i));
-  cw_reply_printf(r, "},\"particles\":%g,\"density\":%g}", (double)fx()->particles, (double)fx()->density);
+  cw_reply_printf(r, "},\"particles\":%g,\"density\":%g,\"flat\":%s}", (double)fx()->particles, (double)fx()->density, flat ? "true" : "false");
 }
 
 /* ── scopes ───────────────────────────────────────────────────────── */
@@ -611,31 +804,44 @@ void cw__quality_post(cw_post_settings *s) {
       s->ssao_steps = s->ssao_steps < 8 ? 8 : s->ssao_steps;
     }
   }
-  /* SSR: off on Low, fewer march steps on Medium, more on Ultra */
+  /* SSR: off below Medium, fewer march steps on Medium, more on Ultra */
   if (s->ssr) {
-    int fxl = ev(CW_GFX_EFFECTS);
-    if (fxl == 0) s->ssr = false;
-    else if (fxl == 1) s->ssr_quality *= 0.5f;
-    else if (fxl == 3) s->ssr_quality = CW_MIN(1.0f, s->ssr_quality * 1.5f);
+    if (e->ssr <= 0) s->ssr = false;
+    else s->ssr_quality = CW_MIN(1.0f, s->ssr_quality * e->ssr);
   }
-  /* depth of field: off on Low */
-  if (s->dof && ev(CW_GFX_EFFECTS) == 0) s->dof = false;
+  if (s->dof && !e->dof) s->dof = false;
   /* SSGI: Ultra only (several ms of an integrated GPU even at half resolution) */
-  if (s->ssgi && ev(CW_GFX_EFFECTS) < 3) s->ssgi = false;
-  if (s->bloom && e->bloom_levels > 0 && s->bloom_levels > e->bloom_levels) s->bloom_levels = e->bloom_levels;
+  if (s->ssgi && !e->ssgi) s->ssgi = false;
+  if (s->bloom && e->bloom_levels < 0) s->bloom = false;
+  else if (s->bloom && e->bloom_levels > 0 && s->bloom_levels > e->bloom_levels) s->bloom_levels = e->bloom_levels;
   int aa = ev(CW_GFX_AA);
   /* Off is no antialiasing at all: the post AA and the scene's MSAA (its cost back, on GL and WebGPU alike) */
   if (aa == AA_OFF) s->aa = CW_AA_NONE, s->msaa = 0;
-  else if (aa == AA_FXAA && s->aa == CW_AA_SMAA) s->aa = CW_AA_FXAA;
+  else if (aa == AA_FXAA || aa == AA_SMAA) {
+    /* the scene's MSAA off (unless the game keeps it), the post filter in its place; a scene with no AA at all keeps none */
+    bool any = s->aa != CW_AA_NONE || s->msaa > 1;
+    bool keep = Q.keep_msaa && s->msaa > 1;
+    if (!keep) s->msaa = 0;
+    if (aa == AA_FXAA) s->aa = any && !(keep && s->aa == CW_AA_NONE) ? CW_AA_FXAA : s->aa;
+    else if (any && s->aa != CW_AA_FXAA && !(keep && s->aa == CW_AA_NONE)) s->aa = CW_AA_SMAA;
+  }
 }
 
+static int shadows(void) { return ev(CW_GFX_SHADOWS); }
 int cw__quality_shadow_size(int authored) {
-  int sh = ev(CW_GFX_SHADOWS);
+  int sh = shadows();
   int s = authored;
   if (sh == SH_ULTRA) s = CW_MIN(authored * 2, 4096);
   else if (sh == SH_LOW || sh == SH_MEDIUM) s = CW_MIN(authored, 1024);
+  else if (sh == SH_MIN) s = CW_CLAMP(authored / 2, 512, 1024);
+  if (s > authored && sh != SH_ULTRA) s = authored; /* never above what the light asks below Ultra */
   return s < 256 ? (authored < 256 ? authored : 256) : s;
 }
-bool cw__quality_soft_shadows(void) { return ev(CW_GFX_SHADOWS) != SH_LOW; }
-int cw__quality_shadow_level(void) { int sh = ev(CW_GFX_SHADOWS); return sh == SH_LOW ? 0 : sh == SH_MEDIUM ? 1 : sh == SH_HIGH ? 2 : 3; }
+bool cw__quality_soft_shadows(void) { return shadows() >= SH_MEDIUM; }
+int cw__quality_shadow_level(void) { return shadows(); }
+int cw__quality_cascades(int authored) { return CW_MIN(authored, CASCADES[shadows()]); }
+float cw__quality_shadow_distance(void) { int sh = shadows(); return sh == SH_MIN ? 0.5f : sh == SH_ULTRA ? 1.5f : 1.0f; }
+bool cw__quality_local_shadows(void) { return shadows() > SH_MIN; }
+float cw__quality_caster_min(void) { return CASTER_MIN[shadows()]; }
 float cw__quality_lod_bias(void) { return fx()->lod_bias; }
+int cw__quality_effects(void) { return ev(CW_GFX_EFFECTS); }

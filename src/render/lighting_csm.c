@@ -20,6 +20,7 @@
 #if CW_WGPU
 #include "pipeline_wgpu.h"
 #include "platform/wgpu.h"
+#include "quality_internal.h"
 #endif
 
 #define LIGHT_MARGIN 200.0f /* r187 CSMShadowNode lightMargin */
@@ -249,7 +250,8 @@ bool cw__csm_update(cw__csm *c, cw_pass_ctx *ctx, t3_light *sun, const cw__csm_c
   t3_camera *cam = ctx->camera;
   const t3_light_shadow *ls = sun->shadow;
   /* r187 _getBreaks, practical (lambda 0.5) over [near, min(far, maxFar)] */
-  float near = cam->near, far = cfg->distance > 0 ? CW_MIN(cam->far, cfg->distance) : cam->far;
+  /* (no distance: the camera's far, shortened as the Shadows setting shortens a distance, cartwheel/quality.h) */
+  float near = cam->near, far = cfg->distance > 0 ? CW_MIN(cam->far, cfg->distance) : cam->far * CW_MIN(1.0f, cw__quality_shadow_distance());
   if (far <= near * 1.01f) far = near * 2;
   float breaks[4];
   for (int i = 1; i < n; i++) {

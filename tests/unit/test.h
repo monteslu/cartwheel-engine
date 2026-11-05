@@ -29,6 +29,12 @@ extern uint32_t cw_test_checksum; /* results that must agree across hosts fold i
   } while (0)
 #define FOLD(v) (cw_test_checksum = cw_hash32(&(v), sizeof(v), cw_test_checksum))
 
+/* a suite with save data (define both before including this header): its region, kept in CW_SAVE_FILE natively */
+#ifndef CW_TEST_SAVE
+#define CW_TEST_SAVE NULL
+#define CW_TEST_SAVE_SIZE 0
+#endif
+
 typedef void (*cw_test_fn)(void);
 typedef struct { const char *name; cw_test_fn fn; } cw_test_case;
 
@@ -60,7 +66,7 @@ typedef struct { const char *name; cw_test_fn fn; } cw_test_case;
   cw_app_desc cw_main(int argc, char **argv) { \
     (void)argc; (void)argv; \
     return (cw_app_desc){ .title = suite_name " tests", .width = 64, .height = 64, .debug = true, \
-                          .init = cw__test_init, .render = cw__test_render }; \
+                          .init = cw__test_init, .render = cw__test_render, .save = CW_TEST_SAVE, .save_size = CW_TEST_SAVE_SIZE }; \
   }
 
 #endif

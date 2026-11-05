@@ -18,7 +18,7 @@ const failed = (log) => { const m = /weakgpu: \d+ passed, (\d+) failed/.exec(log
 const log = run({}), control = run({ CW_TEST_INJECT_FAIL: '1' });
 let fail = 0;
 if (failed(log) !== 0) { fail++; console.log(log); console.log('FAIL the checks failed'); }
-if (!/weakgpu\.auto_retry: ok/.test(log) || !/quality: auto Medium 100% -> Low 100%/.test(log)) { fail++; console.log('FAIL Auto did not step, the test ran nothing'); }
+if (!/weakgpu\.auto_retry: ok/.test(log) || !/quality: auto Medium rung 3 -> Low rung 4 \(step:/.test(log)) { fail++; console.log('FAIL Auto did not step, the test ran nothing'); }
 if (failed(control) < 1) { fail++; console.log('CONTROL PASSED: an injected failure went unseen'); }
 console.log(fail ? `unit-weakgpu-auto: ${fail} failures` : 'ok   unit-weakgpu-auto (Auto saved its step and retried a saved level)');
 process.exit(fail ? 1 : 0);

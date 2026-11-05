@@ -1,8 +1,8 @@
 /* unit_weakgpu: the opt-in pieces for weak GPUs that need no picture to check.
  *   vertex_cache     cw_geometry_optimize_vertex_cache on a grid whose triangles were shuffled: fewer vertices
  *                    shaded per triangle, the same set of triangles (control: the shuffled order is worse)
- *   full_resolution  cw_quality_full_resolution: Low keeps 100%; off again, Low is back to 67% (the control)
- *   auto_retry       a game's Auto default saves the level it stepped to; a saved level is retried one up: kept when on budget, the save unchanged when over it
+ *   full_resolution  a preset keeps the player's Resolution (75% stays 75% on Low, and on Very Low without full resolution)
+ *   auto_retry       a game's Auto default saves the rung it reached (a big overshoot jumps to the bottom); a saved rung is retried one up: kept when on budget, the save unchanged when over it
  *                    (gate unit-weakgpu-auto: only with CW_PLAYER_TIMING, Auto is locked off in a deterministic run)
  *   splats           cw_splats: a set holds its capacity and no more, begin clears it
  * Every number folds into unit.checksum, compared across hosts. */
@@ -78,13 +78,16 @@ static void play_frames(int n) {
 
 static void test_auto_retry(void) {
   if (!getenv("CW_PLAYER_TIMING")) return;
-  enum { AUTO_HIGH = 5 | 0 << 3, AUTO_MEDIUM = 5 | 1 << 3, AUTO_LOW = 5 | 2 << 3 };
-  cw_quality_auto(true, 0.001f); /* the game's own default, every frame over budget */
+  /* v2 Auto words (cartwheel/quality.h): code 7, choice 5, Resolution 100% (5), the rung */
+#define AUTO(r) (7 | 5 << 3 | 5 << 6 | (r) << 9)
+  cw_quality_auto(true, 0.001f); /* the game's own default, every frame far over budget */
   int none = (int)cw_quality_saved(); /* nothing to keep at the top */
   CHECK_EQ_INT(none, 0);
   play_frames(160);
-  int stepped = (int)cw_quality_saved();
-  CHECK_EQ_INT(stepped, AUTO_MEDIUM);
+  int jumped = (int)cw_quality_saved(); /* a big overshoot: straight to the bottom rung, Very Low */
+  CHECK_EQ_INT(jumped, AUTO(6));
+  int vl = cw_quality_get();
+  CHECK_EQ_INT(vl, CW_QUALITY_VERY_LOW);
 
   /* the shell's save keeps the step by itself: a run that loads it is back on Auto (control: a save without it has no choice) */
   cw_shell_init(&(cw_shell_desc){ .title = "t", .max_players = 1 });
@@ -101,43 +104,46 @@ static void test_auto_retry(void) {
   CHECK(cw_quality_is_auto());
 
   cw_quality_auto(false, 1000); /* a budget 1 ms frames are well under */
-  cw_quality_restore(AUTO_LOW);
+  cw_quality_restore(AUTO(4));  /* Low: retried one rung up, Medium with ambient occlusion off */
   CHECK(cw_quality_is_auto());
   int tried = cw_quality_get();
   CHECK_EQ_INT(tried, CW_QUALITY_MEDIUM);
   int saved = (int)cw_quality_saved(); /* not proven yet */
-  CHECK_EQ_INT(saved, AUTO_LOW);
+  CHECK_EQ_INT(saved, AUTO(4));
   play_frames(160);
   int kept = (int)cw_quality_saved();
-  CHECK_EQ_INT(kept, AUTO_MEDIUM);
+  CHECK_EQ_INT(kept, AUTO(3));
 
-  cw_quality_auto(false, 0.001f); /* every frame over budget */
-  cw_quality_restore(AUTO_LOW);
+  cw_quality_auto(false, 0.8f); /* every frame a little over budget: one step, no jump */
+  cw_quality_restore(AUTO(4));
   play_frames(160);
   int back = cw_quality_get();
   CHECK_EQ_INT(back, CW_QUALITY_LOW);
   int unchanged = (int)cw_quality_saved();
-  CHECK_EQ_INT(unchanged, AUTO_LOW);
+  CHECK_EQ_INT(unchanged, AUTO(4));
 
   cw_quality_auto(false, 1000);
-  cw_quality_restore(AUTO_HIGH); /* the top has nothing above it */
+  cw_quality_restore(AUTO(0)); /* the top has nothing above it */
   int top = (int)cw_quality_saved();
-  CHECK_EQ_INT(top, AUTO_HIGH);
+  CHECK_EQ_INT(top, AUTO(0));
   cw_quality_set(CW_QUALITY_HIGH, true);
+#undef AUTO
 }
 
 static void test_full_resolution(void) {
   CHECK(cw_quality_is_full_resolution()); /* the default */
+  cw_gfx_set(CW_GFX_RESOLUTION, CW_GFX_RES_75); /* the player's */
   cw_quality_set(CW_QUALITY_LOW, false);
-  int full = cw_gfx_get(CW_GFX_RESOLUTION);
-  CHECK_EQ_INT(full, 5); /* 100% */
+  int kept = cw_gfx_get(CW_GFX_RESOLUTION);
+  CHECK_EQ_INT(kept, CW_GFX_RES_75); /* a preset never sets it */
   cw_quality_full_resolution(false);
-  cw_quality_set(CW_QUALITY_LOW, false);
-  int low = cw_gfx_get(CW_GFX_RESOLUTION);
-  CHECK_EQ_INT(low, 2); /* the control: 67% without it */
+  cw_quality_set(CW_QUALITY_VERY_LOW, false);
+  int still = cw_gfx_get(CW_GFX_RESOLUTION);
+  CHECK_EQ_INT(still, CW_GFX_RES_75); /* nor without full resolution: only Auto's rungs below Very Low do */
   cw_quality_full_resolution(true);
+  cw_gfx_set(CW_GFX_RESOLUTION, CW_GFX_RES_100);
   cw_quality_set(CW_QUALITY_HIGH, false);
-  FOLD(full), FOLD(low);
+  FOLD(kept), FOLD(still);
 }
 
 static void test_splats(void) {
@@ -160,5 +166,5 @@ static void test_splats(void) {
   cw_node_free(root);
 }
 
-CW_TEST_SUITE("weakgpu", { "vertex_cache", test_vertex_cache }, { "full_resolution", test_full_resolution },
-              { "auto_retry", test_auto_retry }, { "splats", test_splats })
+CW_TEST_SUITE("weakgpu", { "vertex_cache", test_vertex_cache }, { "auto_retry", test_auto_retry },
+              { "full_resolution", test_full_resolution }, { "splats", test_splats })

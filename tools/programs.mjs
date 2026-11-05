@@ -26,6 +26,8 @@
 //       Every run must survey something: one that fails, never renders a frame or has no state list to read (a cart
 //       that draws without the engine's pipeline) stops the survey with exit 1, naming the app and the host, and no
 //       table changes; no carts to survey (a project's carts need CW_PROJECT_ROOT) is an error too.
+//   --presets a,b   the graphics presets each native app run goes through (default every one: verylow, low, medium,
+//       high, ultra; cartwheel/quality.h), since each asks for states of its own
 //   --scenes NAME=a,b,c   runs each app once per value with environment NAME set to it (on GL and on WebGPU), for a
 //       game that picks its scene from the environment or runs a different scene per level: the table gets the
 //       union of every scene's states (a runtime-created light or particle needs its state in the table, and a
@@ -58,6 +60,8 @@
 // GPU (byte-identical to a real device): Node only, no GPU. Running the apps
 // does use the test GPU, inside the GPU sandbox.
 import { spawnSync } from 'node:child_process';
+// the graphics presets every native survey run goes through (--presets narrows it)
+const PRESETS = ['verylow', 'low', 'medium', 'high', 'ultra'];
 import { createHash } from 'node:crypto';
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -70,7 +74,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 const one = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const all = (k) => argv.flatMap((a, i) => (a === k ? [argv[i + 1]] : []));
-const VALUED = new Set(['--scenes', '--frames', '--logs', '--build', '--gates-file', '--table', '--missing', '--extend']);
+const VALUED = new Set(['--scenes', '--presets', '--frames', '--logs', '--build', '--gates-file', '--table', '--missing', '--extend']);
 const names = argv.filter((a, i) => !a.startsWith('--') && !VALUED.has(argv[i - 1]));
 const BUILD = resolve(one('--build') || join(ROOT, 'build', 'native'));
 // CW_PROJECT_ROOT (as tools/run-cart.mjs reads it): the tree whose carts, gates, inputs and assets these are. Without it,
@@ -312,7 +316,8 @@ if (CARTS && !argv.includes('--no-run')) {
   if (!argv.includes('--gl-only')) legs.push(['webgpu', ['--gpu', 'webgpu']]);
   const gates = argv.includes('--gates') ? gateFile().filter((g) => g.app && !g.script) : [];
   for (const app of todo) {
-    const runs = [{ tag: app, args: ['--frames', frames] }];
+    // every preset but the default High, switched to at frame 2 (cartwheel/quality.h: each asks for states of its own)
+    const runs = [{ tag: app, args: ['--frames', frames] }, ...PRESETS.filter((p) => p !== 'high').map((p) => ({ tag: `${app}.${p}`, args: ['--frames', frames, '--start-cmds', `quality ${p}`] }))];
     for (const g of gates.filter((x) => x.app === app))
       runs.push({ tag: g.name, args: ['--frames', String(g.frames), ...(g.input ? ['--input', join(PROJ, 'tests', g.input)] : [])] });
     const seen = new Set();
@@ -347,15 +352,17 @@ if (!CARTS && !argv.includes('--no-run')) {
   const sc = one('--scenes');
   if (sc && !/^[A-Za-z_][A-Za-z0-9_]*=[^,]+(,[^,]+)*$/.test(sc)) throw new Error('--scenes wants NAME=a,b,c');
   const sceneEnvs = sc ? sc.slice(sc.indexOf('=') + 1).split(',').map((v) => ({ [sc.slice(0, sc.indexOf('='))]: v })) : [{}];
+  // every graphics preset (cartwheel/quality.h): each asks for its own states (hard filtering, one cascade, no bloom)
+  const presets = (one('--presets') || PRESETS.join(',')).split(',');
   for (const a of list) {
     for (const [leg, extra] of legs) {
-      for (const scene of sceneEnvs) {
+      for (const scene of sceneEnvs) for (const preset of presets) {
         const r = spawnSync(a.binary, [], {
           cwd: dirname(a.binary), encoding: 'utf8', timeout: 180000,
-          env: testEnv({ ...process.env, ...extra, ...scene, CW_FRAMES: frames, SDL_AUDIODRIVER: 'dummy', CW_PROGRAMS_LOG_DIR: runDir }),
+          env: testEnv({ ...process.env, ...extra, ...scene, CW_FRAMES: frames, SDL_AUDIODRIVER: 'dummy', CW_PROGRAMS_LOG_DIR: runDir, CW_QUALITY: preset }),
         });
         if (r.status !== 0) {
-          const run = `${a.name} (${leg}${sc ? ' ' + Object.values(scene)[0] : ''}): ${r.signal || 'exit ' + r.status}`;
+          const run = `${a.name} (${leg} ${preset}${sc ? ' ' + Object.values(scene)[0] : ''}): ${r.signal || 'exit ' + r.status}`;
           failed.push(run);
           console.log(run);
         }
@@ -378,6 +385,8 @@ if (!CARTS && !argv.includes('--no-run')) {
       }));
       const variants = [{ args: inp(g.input), env: {} }];
       if (g.controlInput || g.controlEnv) variants.push({ args: inp(g.controlInput || g.input), env: repo(g.controlEnv), control: true });
+      // the gate's run on the cheapest preset too: the states Very Low asks for where the gate's scene goes
+      variants.push({ args: inp(g.input), env: { ...repo(g.env), CW_QUALITY: 'verylow' }, control: true });
       const gpus = [...(g.gl === false ? [] : ['gl']), ...(g.webgpu && wgpu && !argv.includes('--gl-only') ? ['webgpu'] : [])];
       for (const v of variants)
         for (const gpu of gpus) {
