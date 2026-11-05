@@ -11,8 +11,9 @@
 //        [--project <a games tree built with this engine>] [--scenes <file.json>] [--json out/quality-range/report.json]
 //        [--no-control] [--reps 2] [--max-very-low 0.3] [--max-low 0.45]
 //
-// --scenes: [{ "name", "app", "frames", "env": {}, "startCmds": [], "input": "<json input script, project relative>" }]
-// for apps that need input or commands to reach play (a games tree keeps its list there).
+// --scenes: [{ "name", "app", "frames", "env": {}, "startCmds": [], "input": "<json input script, project relative>",
+// "maxVeryLow", "maxLow" }] for apps that need input or commands to reach play (a games tree keeps its list there), each
+// with its own shares of High where its floor is known (a scene bound by pixels a preset cannot cut has a higher one).
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -27,7 +28,7 @@ const opt = (k, d) => (argv.includes('--' + k) ? argv[argv.indexOf('--' + k) + 1
 const PROJ = resolve(opt('project', ROOT));
 const GPUS = opt('gpus', 'gl,webgpu').split(',');
 const FRAMES = +opt('frames', '400'), LINES = +opt('lines', '1080'), REPS = +opt('reps', '2');
-const MAX_VL = +opt('max-very-low', '0.3'), MAX_L = +opt('max-low', '0.45');
+const MAX_VL_ARG = +opt('max-very-low', '0.3'), MAX_L_ARG = +opt('max-low', '0.45');
 const PRESETS = ['verylow', 'low', 'medium', 'high', 'ultra'];
 const OUT = join(PROJ, 'out', 'quality-range');
 mkdirSync(OUT, { recursive: true });
@@ -85,8 +86,9 @@ function measure(sc, gpu, preset, flat) {
 }
 
 /** the checks on one app and backend; [] when it passes */
-function judge(r) {
+function judge(r, sc) {
   const bad = [], H = r.high.ms;
+  const MAX_VL = sc.maxVeryLow ?? MAX_VL_ARG, MAX_L = sc.maxLow ?? MAX_L_ARG;
   if (!(H > 0)) return ['no GPU time at High'];
   if (r.verylow.ms > MAX_VL * H) bad.push(`Very Low ${r.verylow.ms.toFixed(2)} ms is ${(r.verylow.ms / H).toFixed(2)} x High (at most ${MAX_VL})`);
   if (r.low.ms > MAX_L * H) bad.push(`Low ${r.low.ms.toFixed(2)} ms is ${(r.low.ms / H).toFixed(2)} x High (at most ${MAX_L})`);
@@ -116,7 +118,7 @@ function sweep(flat) {
         console.log(`FAIL ${key}${flat ? ' (control)' : ''}: ${err}`);
         continue;
       }
-      const bad = judge(r);
+      const bad = judge(r, sc);
       report[key] = { ...Object.fromEntries(PRESETS.map((p) => [p, r[p]])), bad };
       if (bad.length) failures++;
       const row = PRESETS.map((p) => `${p} ${r[p].ms.toFixed(2)}`).join('  ');

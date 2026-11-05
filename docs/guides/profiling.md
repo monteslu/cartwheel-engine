@@ -113,6 +113,12 @@ Natively every render pass is wrapped in a `GL_TIME_ELAPSED` query (`EXT_disjoin
 
 Carts never issue timer queries: in Chromium on ANGLE's GL backend they made rendering nondeterministic. In a cart `timer_query` is false and every `gpu_ms` reads -1, on every cart host. To time GPU work in a cart, measure whole frames from outside (below).
 
+## GPU time at every preset
+
+`tools/quality-range.mjs` runs each app natively at every graphics preset ([Graphics settings and presets](guide:rendering-3d)) on GL and WebGPU at 1080p, on the test GPU, and reads the pipeline's GPU time per pass after the last frame (`CW_GPU_TIMERS=1`, the `pipeline` request). Run it inside the GPU suite: `node tools/with-gpu-suite.mjs quality-range node tools/quality-range.mjs [--apps open_world,terrain_demo] [--project <games tree>] [--scenes <file.json>]`. A games tree lists its scenes (an app, frames, start commands, an input script) in a JSON file. It fails an app whose presets do not order by cost (a preset dearer than the one above it, Ultra under High) or whose Very Low and Low are over their share of High (`--max-very-low`, `--max-low`; an app in the default list carries its own, from its measured floor), and its control (`CW_TEST_QUALITY_FLAT=1`: every preset draws High's settings) must fail. The report (`out/quality-range/report.json`) has every pass's time at every preset.
+
+A pass whose time does not change between 1080p and 720p is not pixel-bound: shadow casters, water grids, particle simulation, light binning, the volumetric fog grid. The presets cut those (caster culling, Minimal shadows, the water grid and its cheaper surface on Very Low, fewer particles drawn, the fog grid off), since a lower resolution would not.
+
 ## Stats in the headers
 
 Code (a game's own HUD, a test, a report) reads the same numbers directly. Each is cheap to call and returns plain counters:
