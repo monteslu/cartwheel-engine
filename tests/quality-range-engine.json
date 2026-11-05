@@ -1,0 +1,6 @@
+[
+  { "name": "fx_explosion", "app": "fx_explosion", "maxVeryLow": 0.55, "maxLow": 0.8 },
+  { "name": "night_street", "app": "night_street", "maxVeryLow": 0.85, "maxLow": 1.1 },
+  { "name": "open_world", "app": "open_world", "maxVeryLow": 0.95, "maxLow": 1.1 },
+  { "name": "terrain_demo", "app": "terrain_demo", "maxVeryLow": 0.97, "maxLow": 1.1 }
+]
