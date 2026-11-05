@@ -42,8 +42,10 @@ cw_prompt_text(font, "{jump}: hop a gap", player, pos, 22, white, CW_ALIGN_LEFT)
 - Colours belong to the game, not the controller: no "press green".
 - Never track the last device yourself: `cw_prompt_device_of(player)`.
 - A game may count on four face buttons, a d-pad, two shoulders, Start and
-  Back. Sticks and analog triggers may be missing: anything a game needs
-  also binds to a button or the d-pad. Confirm is south, back is east.
+  Back. Confirm is south, back is east.
+- The left stick and the d-pad are interchangeable: bind every movement
+  action to both (`move_left = key:a, key:left, pad:left, axis:lx-`). The
+  right stick (aiming, the camera) has no d-pad equivalent and needs none.
 - `node tools/check-prompts.mjs` (in `tests/all.mjs`, and in the SDK for
   game repos) fails on `A:`, `(A)`, `press A`, `LB`, `RT`, `Cross`, `green
   button` and the like in strings; `prompt-ok: <reason>` on a line that

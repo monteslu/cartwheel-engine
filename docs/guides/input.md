@@ -123,7 +123,9 @@ When the design is about position (lanes, answer slots, a dance mat), lay it out
 
 ### What a game may assume
 
-Every pad the engine meets has four face buttons in a diamond, a d-pad, two shoulders, Start and Back: wasmcart's own default set (its SPEC, the manifest's `controls`). Confirm is south and back is east on every pad; the engine does not swap them for any maker. Sticks and analog triggers are not always there (retro handhelds): a game may use them, but anything it needs must also have a binding on a button or the d-pad.
+Every pad the engine meets has four face buttons in a diamond, a d-pad, two shoulders, Start and Back: wasmcart's own default set (its SPEC, the manifest's `controls`). Confirm is south and back is east on every pad; the engine does not swap them for any maker.
+
+Players use the left stick and the d-pad interchangeably, so every movement action binds to both, on the same action: `move_left = key:a, key:left, pad:left, axis:lx-`. A player then steers with either, and the prompt draws whichever one they last used (see Movement above). The right stick is its own control: aiming and the camera live there with no d-pad binding.
 
 ### The rules for games
 
