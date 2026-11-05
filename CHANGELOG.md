@@ -4,6 +4,40 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.31.0 (2026-11-05)
+
+### Added
+- A **Very Low** graphics preset below Low (`CW_QUALITY_VERY_LOW`, first in `cw_quality`, so `q <= CW_QUALITY_LOW` reads "Low or cheaper"). It keeps Resolution at 100% and cuts what a lower resolution would not: no ambient occlusion, bloom, volumetric fog, distortion, SSR, depth of field or skin shading; FXAA in place of the scene's MSAA; the new **Minimal** shadows (the sun only, one cascade of 512 to 1024, hard edges, half the shadow distance, small casters culled), so the sun's shadow still grounds characters and props; a quarter of the GPU particles drawn, a fifth of the instancing density, three times the LOD error budget, a quarter of the clustered lights; and water on a grid half of Low's with a cheaper surface program (`waterlow`: one normal map octave, the floor's depth colour and the shore, crest and wake foam, without refraction, the ripples' slope, caustics, the foam's lace or shadows on the water).
+- **Shadow caster culling**: Minimal, Low and Medium skip a mesh whose bounding sphere is small on screen (radius over its distance to the camera under 0.02, 0.012 and 0.006) in every shadow map of the frame. The debug fields `shadow.culled` and `shadow.casters` count them.
+- `cw_quality_keep_msaa(true)`: a game whose look needs the scene's MSAA keeps it on every anti-aliasing value but Off.
+- Named values for every setting (`CW_GFX_SHADOWS_MINIMAL` .. `CW_GFX_SHADOWS_ULTRA`, `CW_GFX_AA_OFF` .. `CW_GFX_AA_FULL`, `CW_GFX_SSAO_*`, `CW_GFX_RES_*`); the debug request `quality set` and scope caps take a value by name (`quality set shadows minimal`, `quality scope push ssao=off`).
+- `tools/quality-range.mjs`: each app's GPU time per pass at every preset, natively on GL and WebGPU at 1080p on the test GPU, failing presets that do not order by cost.
+- Gates `quality-unit`, `unit-quality`, `quality-sim-same`, `quality-grounding`, `quality-range`, each with a control that must fail.
+
+### Changed
+- **Resolution is independent of the presets.** Picking a preset or Auto never changes the player's Resolution, a preset with any resolution shows its own name (High at 75% is "High", not Custom), and the save keeps both. Auto lowers Resolution only in a game that calls `cw_quality_full_resolution(false)`, and then only below Very Low.
+- Low and Medium no longer draw the scene's MSAA: the Anti-aliasing setting's values are Off, FXAA, SMAA and Full, and only Full (High, Ultra) keeps the PostProcess's MSAA. Medium now draws SMAA (it drew FXAA). Off and FXAA also draw without TAA and its velocity pass.
+- Ultra holds finer levels of detail further (x0.75 the LOD error budget) and stretches the cascades' distance 1.5 times.
+- **Auto** walks a ladder of single changes (High; High with shadows Medium; Medium; Medium without ambient occlusion; Low; Low with effects Very Low; Very Low) instead of whole presets, and on a big overshoot (the first second and a half at a rung over 1.6 times the budget) jumps to the rung expected to fit, so a weak device is at its level within a few seconds of play.
+- **Source change for games with their own settings**: `cw_quality_lever_add` takes the value each preset picks as a `cw_quality_lever_presets` struct passed by value (`(cw_quality_lever_presets){ .very_low = 0, .low = 0, .medium = 1, .high = 1, .ultra = 1 }`), so a call written for four presets does not build instead of reading a shifted array. A game's own tables indexed by `cw_quality` need a Very Low entry, and an equality test against `CW_QUALITY_LOW` now misses Very Low.
+- The save word (`cw_quality_saved`) takes 30 bits: keep four bytes. Every word an older engine wrote still restores the choice it held.
+- `CW_GFX_SHADOWS` has a new lowest value, so every numeric shadow value moved up by one: use the names.
+- `tools/programs.mjs` surveys every native app at all five presets (`--presets` narrows it), and every cart at each preset; gates (`--gates`) also run at Very Low.
+- Every sample's program table regenerated for the new presets.
+
+### Measured
+GPU ms a frame on the Radeon 890M at 1920 x 1080 (GL / WebGPU, the pipeline's timers):
+
+| | Low before | High | Very Low now |
+|---|---|---|---|
+| Pirates (more-cartwheel-examples) | 2.43 / 2.69 | 5.52 / 5.96 | 1.51 / 1.51 |
+| Jetski | 3.62 / 4.52 | 7.54 / 6.36 | 2.40 / 2.42 |
+| Arena FPS | 6.64 / 6.95 | 9.73 / 9.37 | 4.81 / 4.92 |
+| Tux Racer | 2.82 / 2.69 | 4.71 / 3.74 | 2.32 / 2.29 |
+| open_world | 2.82 / 3.41 | 2.80 / 3.54 | 2.35 / 3.08 |
+
+Scenes bound by the pixels of their ground (open_world, terrain_demo) gain least: their cost is the terrain's shading, which no preset cuts at full resolution. Pirates' cart, through romdev on GL, takes 1.2 ms of CPU a frame on Very Low against 3.1 ms on High (its simulation 0.26 against 0.69 ms: the water's ripple grid has half the cells from Low down).
+
 ## v0.30.1 (2026-11-03)
 
 ### Fixed
