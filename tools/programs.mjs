@@ -274,7 +274,10 @@ const logDirs = all('--logs').map((d) => resolve(d));
 // a tree says in its cache; a game built on an SDK has the engine's choice in the SDK's manifest
 const wgpu = /^CW_WGPU:BOOL=ON$/m.test(existsSync(join(BUILD, 'CMakeCache.txt')) ? readFileSync(join(BUILD, 'CMakeCache.txt'), 'utf8') : '')
   || (existsSync(join(ROOT, 'manifest.json')) && JSON.parse(readFileSync(join(ROOT, 'manifest.json'), 'utf8')).wgpu === true);
-const list = apps().filter((a) => !names.length || names.includes(a.name)).filter((a) => existsSync(a.binary));
+// unit_programs_missing leaves a state no table has on purpose (tests/programs-carts.mjs must find it): only by name;
+// unit_pipeline reads GL framebuffers itself, so a WebGPU run of it aborts: its runs are GL only (below)
+const list = apps().filter((a) => !names.length || names.includes(a.name)).filter((a) => existsSync(a.binary))
+  .filter((a) => names.includes(a.name) || a.name !== 'unit_programs_missing');
 if (names.length && list.length !== names.length)
   throw new Error(`not built: ${names.filter((n) => !list.some((a) => a.name === n)).join(' ')}`);
 
@@ -355,7 +358,7 @@ if (!CARTS && !argv.includes('--no-run')) {
   // every graphics preset (cartwheel/quality.h): each asks for its own states (hard filtering, one cascade, no bloom)
   const presets = (one('--presets') || PRESETS.join(',')).split(',');
   for (const a of list) {
-    for (const [leg, extra] of legs) {
+    for (const [leg, extra] of legs.filter(([l]) => l === 'gl' || a.name !== 'unit_pipeline')) {
       for (const scene of sceneEnvs) for (const preset of presets) {
         const r = spawnSync(a.binary, [], {
           cwd: dirname(a.binary), encoding: 'utf8', timeout: 180000,
