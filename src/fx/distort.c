@@ -149,7 +149,8 @@ static bool distort_wanted(cw__fx_tree *ft) {
 
 static bool wanted_ctx(const cw_pass_ctx *ctx) {
   cw__fx_tree *ft = cw_tree_slot(ctx->tree, "fx");
-  return ft && ctx->camera && ft->distort_added && distort_wanted(ft);
+  /* (effects Very Low: no distortion, cw_quality_scale("distortion") is 0) */
+  return ft && ctx->camera && ft->distort_added && distort_wanted(ft) && cw_quality_scale("distortion") > 0;
 }
 
 const cw_rt *cw__fx_distort_target(cw__fx_tree *ft) { return ft->dist; }
