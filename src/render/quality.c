@@ -817,9 +817,12 @@ void cw__quality_post(cw_post_settings *s) {
   int aa = ev(CW_GFX_AA);
   /* Off is no antialiasing at all: the post AA and the scene's MSAA (its cost back, on GL and WebGPU alike) */
   if (aa == AA_OFF) s->aa = CW_AA_NONE, s->msaa = 0;
-  else if (aa == AA_FXAA || aa == AA_SMAA) {
+  /* TAA is the scene's own antialiasing too: FXAA (Very Low, Low) draws without it and its velocity pass */
+  bool had_taa = s->taa;
+  if (aa <= AA_FXAA) s->taa = false;
+  if (aa == AA_FXAA || aa == AA_SMAA) {
     /* the scene's MSAA off (unless the game keeps it), the post filter in its place; a scene with no AA at all keeps none */
-    bool any = s->aa != CW_AA_NONE || s->msaa > 1;
+    bool any = s->aa != CW_AA_NONE || s->msaa > 1 || had_taa;
     bool keep = Q.keep_msaa && s->msaa > 1;
     if (!keep) s->msaa = 0;
     if (aa == AA_FXAA) s->aa = any && !(keep && s->aa == CW_AA_NONE) ? CW_AA_FXAA : s->aa;

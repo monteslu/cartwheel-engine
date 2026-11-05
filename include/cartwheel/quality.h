@@ -56,7 +56,8 @@
  * Anti-aliasing: Off, FXAA, SMAA, or Full (as the PostProcess asks, the
  * scene's MSAA included). FXAA and SMAA drop the scene's MSAA (PostProcess
  * msaa) and put that post filter in its place (a scene that asks for none
- * at all keeps none; one that asks for FXAA keeps FXAA on SMAA). A game
+ * at all keeps none; one that asks for FXAA keeps FXAA on SMAA). Off and
+ * FXAA also draw without TAA (and its velocity pass). A game
  * whose look needs MSAA keeps it on every value but Off with
  * cw_quality_keep_msaa(true). WebGPU multisamples 1x or 4x only, so no
  * value goes above what the scene asks.
