@@ -14,6 +14,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - wasmcart 0.38.0 (from 0.36.2). 0.37.0 gives WebGPU carts a core device where the GPU has one, on every host; 0.38.0 adds the cart art fields and `wasmcart-pack --art`, and hosts ignore manifest fields they do not know.
 
 ### Fixed
+- The dual-cart check's control (`pipeline_test gl_msaa_on_webgpu`) passed on a core WebGPU device, which multisamples the scene, so the GL call it puts back never ran; it now takes the GL path on any device. `tests/programs-carts.mjs` expected two survey runs, where the survey now runs every graphics preset on both hosts.
 - The cart SDK now ships `src/cartArt.js` beside `bin/wasmcart-pack.js`, which imports it from wasmcart 0.38.0 on: without it every cart build from the SDK would stop at the pack.
 
 ## v0.31.0 (2026-11-05)

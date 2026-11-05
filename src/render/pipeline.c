@@ -116,7 +116,9 @@ void cw__gpu_timing_request(void) { gpu_timing = 1; }
 /* pipeline_test gl_msaa_on_webgpu: the defect the dual-cart check
  * (tests/wgpu-carts.mjs) must catch, put back on purpose: a WebGPU run that
  * cannot multisample its scene asks GL for an MSAA framebuffer, as it did
- * before WebGPU fell back to single-sampled. Its control only. */
+ * before WebGPU fell back to single-sampled. It takes that path even where
+ * the device could multisample the scene (a core WebGPU device, wasmcart
+ * 0.37.0 on), so the control still runs the GL call there. Its control only. */
 static bool test_gl_msaa_on_webgpu;
 static void cmd_pipeline_test(int argc, const char **argv, cw_reply *r) {
   if (argc == 2 && !strcmp(argv[1], "gl_msaa_on_webgpu")) {
@@ -1071,7 +1073,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
         else cw_warn("render pipeline: MSAA on WebGPU in compatibility mode needs an RGBA8 scene (hdr off) and no SKY / EFFECTS / "
                 "depth-reading pass; this frame renders without MSAA (a core WebGPU device multisamples any scene)");
       }
-      if (s->msaa > 1 && wgpu && msaa_ok) {
+      if (s->msaa > 1 && wgpu && msaa_ok && !test_gl_msaa_on_webgpu) { /* the control takes the GL path even where WebGPU could multisample (a core device) */
         /* 4x: WebGPU's only multisample count (2 and 8 become 4), resolved by each render pass */
         if (!p->msaa_rt.fbo || p->msaa_rt.w != w || p->msaa_rt.h != h || p->msaa_rt.format != sf) {
           if (p->msaa_rt.fbo) cw__rt_destroy(&p->msaa_rt);
