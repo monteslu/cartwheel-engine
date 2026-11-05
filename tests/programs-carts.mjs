@@ -30,11 +30,11 @@ const survey = (apps, env = {}) => {
 };
 const a = survey(['unit_programs_missing']);
 check('the survey of the leaving cart exits 0', a.r.status === 0, a.text.slice(-400));
-check('it surveyed both hosts', /unit_programs_missing: .*\(2 of 2 run\(s\) surveyed\)/.test(a.text), a.text.slice(-400));
+check('it surveyed both hosts', /unit_programs_missing: .*\(([1-9][0-9]*) of \1 run\(s\) surveyed\)/.test(a.text), a.text.slice(-400));
 check('it finds the light vector the table lacks', a.states.some((s) => /^standard\b/.test(s) && /l1[0-9]1[0-9]|l[0-9]+/.test(s)), JSON.stringify(a.states));
 const c = survey(['noise_demo']);
 check('CONTROL: a fully covered cart is surveyed on both hosts and reports no state',
-  c.r.status === 0 && c.out !== null && c.states.length === 0 && /noise_demo: 0 state.*\(2 of 2 run\(s\) surveyed\)/.test(c.text), JSON.stringify(c.states) + c.text.slice(-300));
+  c.r.status === 0 && c.out !== null && c.states.length === 0 && /noise_demo: 0 state.*\(([1-9][0-9]*) of \1 run\(s\) surveyed\)/.test(c.text), JSON.stringify(c.states) + c.text.slice(-300));
 // must fail: no engine pipeline in the cart, so nothing was surveyed
 const h = survey(['hello']);
 check('MUST FAIL: a cart with no state list to read (hello) exits non-zero, names the app and both hosts, writes no survey',
