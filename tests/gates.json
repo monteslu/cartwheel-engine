@@ -2,6 +2,7 @@
   { "name": "gate-cpu", "script": "tests/gate-cpu.mjs", "note": "gate.mjs --cpu runs without the GPU suite lock (control: the plain gate queues on the same held lock)" },
   { "name": "sdk-rebuild", "script": "tests/sdk-rebuild.mjs", "note": "a game built against a prebuilt SDK recompiles when another SDK is unpacked in its place with older file times; control: the v0.18.0 package misses the swap" },
   { "name": "unit-weakgpu-auto", "script": "tests/unit-weakgpu-auto.mjs", "note": "Auto outside a deterministic run: a game's Auto default saves the level it stepped to, and a saved level is retried one up, kept on budget and unchanged over it (control: an injected failure must fail the run)" },
+  { "name": "quality-unit", "script": "tests/quality-unit.mjs", "note": "the graphics settings outside a deterministic run: the player's Resolution stays on every preset and Auto with the preset's name shown, across a save and a restart; every older save word restores its choice; a lever's five preset values apply and a four-entry lever array does not build; a slow host jumps to the fitting rung within 3 seconds. Controls: the old preset resolution, old words read as new, Auto without the jump, the struct lever (must build)" },
   { "name": "quality-lock", "script": "tests/quality-lock.mjs", "note": "the harness locks quality on the cart hosts with a real clock: asking for Auto leaves Chromium on a preset and wasmcart-native logs the lock; control: --keep-auto on Chromium reaches Auto" },
   { "name": "programs-survey-fails", "script": "tests/programs-survey-fails.mjs", "note": "tools/programs.mjs --gates: a gate run that fails stops the survey with exit 1 and says why, gates and inputs come from the project and --gates-file (control: the same project with only the good gate passes)" },
   { "name": "cart-audio-ring", "script": "tests/cart-audio-ring.mjs", "note": "Cart audio ring allocation and real 100 ms host burst capacity" },
@@ -1466,6 +1467,28 @@
     "note": "the opt-in pieces for weak GPUs: cw_geometry_optimize_vertex_cache on a shuffled grid (fewer vertices shaded a triangle, the same triangles; the shuffled ACMR is the control), cw_quality_full_resolution (Low keeps 100%; off, Low is 67%), splat sets at their capacity. The checksum folds every number, the same on every host"
   },
   {
+    "name": "unit-quality",
+    "app": "unit_quality",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1,
+      "unit.checksum": 1469186084
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "the graphics settings in a deterministic run on every host: a lever's five preset values apply, and the graphics row steps through every choice (Very Low to Ultra, Auto) and back; the save and Auto cases run in tests/quality-unit.mjs. Control: an injected failure"
+  },
+  {
     "name": "unit-cloth",
     "app": "unit_cloth",
     "frames": 2,
@@ -2708,7 +2731,7 @@
     "app": "post_stack",
     "frames": 60,
     "maxGt16": 0.002,
-    "startCmds": ["quality scope push ssao=0"],
+    "startCmds": ["quality scope push ssao=off"],
     "controlFrames": 60,
     "fields": ["post.seg", "cw.quality_scopes"],
     "expect": { "post.seg": 2, "cw.quality_scopes": 1 },
@@ -2719,8 +2742,8 @@
     "app": "post_stack",
     "frames": 60,
     "maxGt16": 0.01,
-    "startCmds": ["quality scope push resolution=0", "quality scope push resolution=3"],
-    "controlStartCmds": ["quality scope push resolution=3"],
+    "startCmds": ["quality scope push resolution=50", "quality scope push resolution=75"],
+    "controlStartCmds": ["quality scope push resolution=75"],
     "controlFrames": 60,
     "fields": ["post.seg", "cw.quality_scopes"],
     "expect": { "cw.quality_scopes": 2 },
@@ -4531,14 +4554,14 @@
     },
     "app": "msaa_hdr",
     "frames": 5,
-    "startCmds": ["quality set aa 0"],
+    "startCmds": ["quality set aa off"],
     "maxGt16": 0.002,
     "minColors": 200,
     "fields": ["mh.blades", "mh.posts", "mh.decals", "mh.tick"],
     "expect": { "mh.tick": 5 },
     "controlFrames": 5,
-    "controlStartCmds": ["quality set aa 1"],
-    "note": "the quality setting Anti-aliasing Off turns the scene's MSAA off too, on GL and WebGPU alike: both draw msaa_hdr single-sampled and match. Control: FXAA keeps the MSAA (and adds FXAA), so its frame must differ"
+    "controlStartCmds": ["quality set aa full"],
+    "note": "the quality setting Anti-aliasing Off turns the scene's MSAA off too, on GL and WebGPU alike: both draw msaa_hdr single-sampled and match. Control: Full keeps the MSAA, so its frame must differ"
   },
   {
     "name": "fx-mesh-decals",

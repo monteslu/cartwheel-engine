@@ -83,6 +83,7 @@ typedef struct water3d {
   float foam_time;
   float *rip_h, *rip_v, *rip_f; /* ripple height, velocity, foam: rip_nx x rip_nz, row z, col x */
   int rip_nx, rip_nz, rip_cells_built, rip_quality;
+  bool ext_low; /* the material draws with "waterlow" (effects Very Low) */
   float rip_ax, rip_az, rain_acc;
   bool rip_awake, rip_upload;
   uint32_t fx_next;

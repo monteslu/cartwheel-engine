@@ -1361,7 +1361,7 @@ static bool step_prepare(cw__cloth *c, float dt, stepjob *j) {
   if (c->tethers_dirty) build_tethers(c);
   int S = c->def.substeps;
   bool self = c->def.self_collision;
-  if (c->def.quality_scaled && cw_quality_get() == CW_QUALITY_LOW) {
+  if (c->def.quality_scaled && cw_quality_get() <= CW_QUALITY_LOW) {
     S = S > 1 ? S / 2 : 1;
     self = false;
   }

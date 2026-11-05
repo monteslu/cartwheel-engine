@@ -16,6 +16,8 @@ cw_add_app(unit_vehicle3d SOURCES test_vehicle3d.c)
 cw_add_app(unit_cloth SOURCES test_cloth.c)
 # weak GPUs: vertex cache order, full resolution presets, splat sets (cartwheel/render3d.h, quality.h, splats.h)
 cw_add_app(unit_weakgpu SOURCES test_weakgpu.c)
+# graphics settings: Resolution beside the presets, old save words, levers, Auto's jump (cartwheel/quality.h; tests/quality-unit.mjs)
+cw_add_app(unit_quality SOURCES test_quality.c)
 # terrain: Box3D-exact heights, CDLOD's crack-free selection, physics, vehicles and characters on it, scatter
 cw_add_app(unit_terrain SOURCES test_terrain.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/terrain_assets)
 target_include_directories(unit_terrain PRIVATE ${CMAKE_SOURCE_DIR}/src)

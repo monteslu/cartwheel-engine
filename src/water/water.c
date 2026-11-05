@@ -23,6 +23,7 @@
 #include "water_internal.h"
 #if CW_WGPU
 #include "platform/wgpu.h"
+#include "render/quality_internal.h"
 #else
 static inline bool cw__wgpu_on(void) { return false; } /* a build without WebGPU never renders with it */
 #endif
@@ -544,14 +545,15 @@ static t3_geometry *view_grid(int sectors, float radius, float min_cell, int *tr
   return g;
 }
 
-int cw__water_quality(void) { return cw_gfx_get(CW_GFX_EFFECTS); }
+int cw__water_quality(void) { return cw__quality_effects(); } /* src/render/quality.c */
 
 static void build(cw_node n, water3d *d) {
   int q = cw__water_quality();
   int sub = d->subdivisions < 1 ? 1 : d->subdivisions;
   bool view = d->grid_mode == 1;
   /* a VIEW grid's rings follow its sectors, so its triangles go as the square of them */
-  if (view) sub = q == CW_QUALITY_LOW ? sub / 2 : q == CW_QUALITY_MEDIUM ? sub * 3 / 4 : sub, sub = sub < 8 ? 8 : sub;
+  if (view) sub = q <= CW_QUALITY_VERY_LOW ? sub / 4 : q == CW_QUALITY_LOW ? sub / 2 : q == CW_QUALITY_MEDIUM ? sub * 3 / 4 : sub, sub = sub < 8 ? 8 : sub;
+  else if (q <= CW_QUALITY_VERY_LOW) sub = sub / 8 < 1 ? 1 : sub / 8;
   else if (q == CW_QUALITY_LOW) sub = sub / 4 < 1 ? 1 : sub / 4;
   else if (q == CW_QUALITY_MEDIUM) sub = sub / 2 < 1 ? 1 : sub / 2;
   float sx = d->size[0] > 0.01f ? d->size[0] : 0.01f, sz = d->size[1] > 0.01f ? d->size[1] : 0.01f;
@@ -583,6 +585,7 @@ static void build(cw_node n, water3d *d) {
     d->mat->emissive = (t3_color){ 1, 1, 1 }; /* the extension multiplies its light by it (white: as computed) */
     d->mat->side = T3_DOUBLE_SIDE;           /* seen from under the water too */
     t3_material_set_extension(d->mat, "water");
+    d->ext_low = false;
   }
   d->mat->roughness = d->roughness;
   d->mesh = t3_mesh_new(g, d->mat);
@@ -786,6 +789,15 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
    * reflection at half the scale; High: both as asked; Ultra: both at 1.5x */
   float sc = d->resolution_scale * (q == CW_QUALITY_MEDIUM ? 0.5f : q == CW_QUALITY_ULTRA ? 1.5f : 1.0f);
   sc = sc < 0.05f ? 0.05f : sc > 1 ? 1 : sc;
+  /* effects Very Low: the cheaper surface program (src/water/extensions/waterlow.mjs: one normal map octave, no
+   * refraction, the ripples' slope, caustics, lace or planar reflection) */
+  bool low = q <= CW_QUALITY_VERY_LOW;
+  if (d->mat && low != d->ext_low) {
+    t3_material_set_extension(d->mat, low ? "waterlow" : "water");
+    d->ext_low = low;
+  }
+  /* and the surface takes no shadows there (its shadowed program costs a tenth of the frame on a wide sea) */
+  if (d->mesh) d->mesh->base.receive_shadow = !low;
   d->refl_on = d->reflection && q >= CW_QUALITY_MEDIUM;
   d->refr_on = d->refraction && q >= CW_QUALITY_HIGH;
   int w = (int)lroundf((float)ctx->width * sc), h = (int)lroundf((float)ctx->height * sc);
@@ -961,6 +973,7 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
   if (!wt || !ctx->camera || !ctx->renderer) return;
   if (wt->bound != ctx->renderer) {
     t3_renderer_set_extension(ctx->renderer, "water", fill, NULL);
+    t3_renderer_set_extension(ctx->renderer, "waterlow", fill, NULL); /* effects Very Low: the same values, those it has */
     wt->bound = ctx->renderer;
   }
   int tri = 0;

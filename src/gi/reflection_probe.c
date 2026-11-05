@@ -14,6 +14,7 @@
 #include "gi_internal.h"
 #include "scene/render3d_internal.h"
 #include "render/pipeline_internal.h"
+#include "render/quality_internal.h"
 
 static const char *const update_names[] = { "ONCE", "ON_DEMAND", "EVERY_N_FRAMES", NULL };
 
@@ -59,21 +60,22 @@ void cw_gi_get_stats(cw_tree *t, cw_gi_stats *out) {
 
 /* ── quality ──────────────────────────────────────────────────────────── */
 
-static int effects(void) { return cw_gfx_get(CW_GFX_EFFECTS); }
+static int effects(void) { return cw__quality_effects(); } /* src/render/quality.c */
 
 static int probe_size(const refl_probe *p) {
   int r = p->resolution, e = effects();
-  if (e <= 1) r /= 2;
-  else if (e >= 3) r *= 2;
-  int lo = e <= 1 ? 32 : 16, hi = e >= 3 ? 512 : 1024;
+  if (e <= CW_QUALITY_VERY_LOW) r /= 4;
+  else if (e <= CW_QUALITY_MEDIUM) r /= 2;
+  else if (e >= CW_QUALITY_ULTRA) r *= 2;
+  int lo = e <= CW_QUALITY_MEDIUM ? 32 : 16, hi = e >= CW_QUALITY_ULTRA ? 512 : 1024;
   if (r < lo) r = lo;
   if (r > hi) r = hi;
   int p2 = 16;
   while (p2 * 2 <= r) p2 *= 2;
   return p2;
 }
-static int every_scale(void) { int e = effects(); return e == 0 ? 4 : e == 1 ? 2 : 1; }
-static int capture_budget(void) { int e = effects(); return e <= 1 ? 1 : e == 2 ? 2 : 4; }
+static int every_scale(void) { int e = effects(); return e <= CW_QUALITY_VERY_LOW ? 8 : e == CW_QUALITY_LOW ? 4 : e == CW_QUALITY_MEDIUM ? 2 : 1; }
+static int capture_budget(void) { int e = effects(); return e <= CW_QUALITY_MEDIUM ? 1 : e == CW_QUALITY_HIGH ? 2 : 4; }
 
 /* ── the probe's box ─────────────────────────────────────────────────── */
 

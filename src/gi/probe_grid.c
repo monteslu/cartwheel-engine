@@ -11,6 +11,7 @@
 #include "cartwheel/quality.h"
 #include "cartwheel/shading.h"
 #include "gi_internal.h"
+#include "render/quality_internal.h"
 
 static const char *const grid_update_names[] = { "BAKED", "INCREMENTAL", NULL };
 
@@ -22,18 +23,18 @@ static const float FACE_U[6][3] = { { 0, 1, 0 }, { 0, 1, 0 }, { 0, 0, 1 }, { 0, 
 
 /* ── quality ──────────────────────────────────────────────────────────── */
 
-static int effects(void) { return cw_gfx_get(CW_GFX_EFFECTS); }
+static int effects(void) { return cw__quality_effects(); } /* src/render/quality.c */
 /* probes refreshed per frame once baked (INCREMENTAL) */
 static int refresh_budget(const probe_grid *p) {
   int e = effects(), n = p->probes_per_frame;
-  if (e == 0) return 0; /* Low: the bake only */
-  if (e == 1) return (n + 1) / 2;
-  if (e == 3) return n * 2;
+  if (e <= CW_QUALITY_LOW) return 0; /* Very Low, Low: the bake only */
+  if (e == CW_QUALITY_MEDIUM) return (n + 1) / 2;
+  if (e >= CW_QUALITY_ULTRA) return n * 2;
   return n;
 }
 static int face_size(const probe_grid *p) {
   int s = p->cube_size;
-  if (effects() == 0 && s > 8) s = 8;
+  if (effects() <= CW_QUALITY_LOW && s > 8) s = 8;
   return s < 4 ? 4 : s > 32 ? 32 : s;
 }
 

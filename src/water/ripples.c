@@ -19,6 +19,7 @@
 #include "cartwheel/quality.h"
 #include "cartwheel/water.h"
 #include "water_internal.h"
+#include "render/quality_internal.h"
 
 #define SPONGE 6
 
@@ -43,8 +44,8 @@ static uint16_t to_half_signed(float f) {
 static bool dims(const water3d *d, int *nx, int *nz, float *ax, float *az) {
   int n = d->ripple_cells;
   if (n < 4) return false;
-  int q = cw_gfx_get(CW_GFX_EFFECTS);
-  if (q == CW_QUALITY_LOW) n /= 2;
+  int q = cw__quality_effects(); /* src/render/quality.c */
+  if (q <= CW_QUALITY_LOW) n /= 2; /* (Very Low as Low: a coarser grid loses the wakes, the ripples' point there) */
   else if (q == CW_QUALITY_MEDIUM) n = n * 3 / 4;
   if (n < 8) n = 8;
   if (n > 512) n = 512;
@@ -81,7 +82,7 @@ static void alloc_grid(water3d *d, int nx, int nz, float ax, float az) {
   d->rip_awake = true; /* the first upload writes the empty field */
   d->rip_upload = true;
   d->rip_cells_built = d->ripple_cells;
-  d->rip_quality = cw_gfx_get(CW_GFX_EFFECTS);
+  d->rip_quality = cw__quality_effects();
   d->rip_tex = t3_data_texture_new_typed(nx, nz, NULL, T3_HALF_FLOAT_TYPE);
   d->rip_tex->mag_filter = T3_LINEAR;
   d->rip_tex->min_filter = T3_LINEAR;

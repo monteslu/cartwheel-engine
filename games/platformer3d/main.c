@@ -33,6 +33,7 @@
 #include "cartwheel/render2d.h"
 #include "cartwheel/render3d.h"
 #include "cartwheel/resource.h"
+#include "cartwheel/quality.h"
 #include "game.h"
 
 game G;
@@ -322,6 +323,12 @@ static void fixed(void *u, double dt) {
   G.ticks++;
   G.state_ticks++;
   G.level_ticks++;
+#if !CW_CART
+  /* tests/quality-sim-same.mjs's control: the graphics preset fed into the simulation, which the gate must see */
+  static int into_sim = -1;
+  if (into_sim < 0) into_sim = getenv("CW_TEST_QUALITY_INTO_SIM") != NULL;
+  if (into_sim && cw_quality_get() <= CW_QUALITY_LOW) G.level_ticks++;
+#endif
   if (G.banner_ticks > 0) G.banner_ticks--;
   if (G.toast_ticks > 0) G.toast_ticks--;
   G.cam_snap = false;

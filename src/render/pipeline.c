@@ -13,6 +13,7 @@
 #include "cartwheel/render3d.h"
 #include "pipeline_internal.h"
 #include "quality_internal.h"
+#include "shadow_cull.h"
 #include "pipeline_wgpu.h"
 #include "scene/render3d_internal.h"
 
@@ -898,7 +899,14 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   p->frame++;
 }
 
+static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, int mode);
+/* a view's run, its shadow caster culling (src/render/shadow_cull.c) undone after it */
 static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, int mode) {
+  render_run_inner(t, p, w, h, alpha, mode);
+  cw__shadow_cull_end();
+}
+
+static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, int mode) {
   double t_start = cw__render3d_now_ms(); /* cw_render3d_stats.cpu_ms: up to the overlay phase */
   bool wgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
   /* the frame's settings: the pipeline's, capped or raised by the quality
@@ -932,6 +940,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
     ctx.scene3d = cw_render3d_scene(t);
     ctx.camera_node = cw_render3d_camera(t);
     ctx.renderer = cw_render3d_renderer(t);
+    if (ctx.scene3d) cw__shadow_cull_begin(ctx.scene3d, ctx.camera); /* the Shadows setting: small casters off for this run */
   }
   ctx.hdr = s->hdr && cw__caps.float_render;
 

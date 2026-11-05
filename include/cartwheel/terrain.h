@@ -242,7 +242,7 @@ void cw_terrain_bind_renderer(cw_terrain *t, t3_renderer *r);
 /* The near material (MeshStandardMaterial): its colour, roughness and
  * metalness scale the terrain's. */
 t3_material *cw_terrain_material(cw_terrain *t);
-/* Quality level for shading (CW_QUALITY_LOW .. ULTRA); -1 follows
+/* Quality level for shading (CW_QUALITY_VERY_LOW .. ULTRA; Very Low draws as Low); -1 follows
  * cw_quality_get() (the default). */
 void cw_terrain_set_quality(cw_terrain *t, int quality);
 
