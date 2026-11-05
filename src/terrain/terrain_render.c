@@ -64,7 +64,7 @@ float cw__terrain_far(const cw_terrain *t) {
   return t->def.far_distance * mul[cw__terrain_quality(t)];
 }
 
-static const char *near_ext(int q) { return q >= CW_QUALITY_HIGH ? "terrain" : "terrainlow"; }
+static const char *near_ext(int q) { return q >= CW_QUALITY_HIGH ? "terrain" : q > CW_QUALITY_VERY_LOW ? "terrainlow" : "terrainmin"; }
 
 /* ── textures ───────────────────────────────────────────────────────── */
 
@@ -480,8 +480,8 @@ static void fill(t3_extension_ctx *c, void *user) {
 
 void cw_terrain_bind_renderer(cw_terrain *t, t3_renderer *r) {
   if (!r) return;
-  static const char *names[] = { "terrain", "terrainlow", "terrainfar" };
-  for (int i = 0; i < 3; i++) cw_shading_part(r, names[i], fill, t); /* (parts: they compose with others, cartwheel/shading.h) */
+  static const char *names[] = { "terrain", "terrainlow", "terrainmin", "terrainfar" };
+  for (int i = 0; i < 4; i++) cw_shading_part(r, names[i], fill, t); /* (parts: they compose with others, cartwheel/shading.h) */
 }
 
 void cw_terrain_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp) {
@@ -493,8 +493,10 @@ void cw_terrain_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp) {
       cw_terrain_sync_physics(t);
       break;
     }
-  /* quality: Ultra reaches farther with each level */
-  float rs = cw__terrain_quality(t) == CW_QUALITY_ULTRA ? 1.25f : 1.0f;
+  /* quality: Ultra reaches farther with each level, Very Low switches to the coarser levels sooner (they morph in
+   * as before: no cracks, no popping, the ground's shape a little softer at a distance) */
+  int tq = cw__terrain_quality(t);
+  float rs = tq == CW_QUALITY_ULTRA ? 1.25f : tq == CW_QUALITY_VERY_LOW ? 0.6f : 1.0f;
   if (rs != t->range_scale) {
     t->range_scale = rs;
     cw__terrain_ranges(t);

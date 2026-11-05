@@ -32,7 +32,7 @@
 //   giA3, giB3  vec4  0, 0, the probe's last mip level, 0
 //   giProbeA, giProbeB  the probes' PMREM textures (half float, linear, clamped)
 
-export function giShading({ TSL, THREE, mat, props, sentinel }) {
+export function giShading({ TSL, THREE, mat, props, sentinel, plain }) {
   const { Fn, If, uniform, vec3, float, abs, clamp, fract, max, min, mix, normalize, select, positionWorld, normalWorld, pmremTexture } = TSL;
 
   // ── the probes' values ──
@@ -105,7 +105,7 @@ export function giShading({ TSL, THREE, mat, props, sentinel }) {
     return mix(sky, probes.div(max(sum, 1e-4)), min(sum, 1));
   })();
 
-  gridShading({ TSL, THREE, mat, props, sentinel });
+  gridShading({ TSL, THREE, mat, props, sentinel, plain });
 }
 
 // The light probe grid (LightProbeGrid3D): r187's LightProbeGridNode, which
@@ -115,13 +115,15 @@ export function giShading({ TSL, THREE, mat, props, sentinel }) {
 // the two z slices around the point with the hardware's bilinear filter in x
 // and y (sample coordinates clamped to texel centres inside the slice, as
 // r187's uvw remap does), and the slices are mixed by hand: 14 fetches where
-// r187's 3D texture takes 7.
+// r187's 3D texture takes 7. Under the plain lighting model (effects detail Very Low: the "plain" part
+// ran first and set ctx.plain) only the first three groups are read, the SH's first two bands (L1): 6
+// fetches, the light's direction and amount without its finer shape.
 //
 //   giGridMin  vec4  the grid's min corner, intensity (0 = no grid)
 //   giGridMax  vec4  the grid's max corner, normal offset (in probe spacings: r187's 0.5)
 //   giGridRes  vec4  probes along x, y, z, 0
 //   giGrid     the atlas (half float RGBA, linear, clamped)
-function gridShading({ TSL, THREE, mat, props, sentinel }) {
+function gridShading({ TSL, THREE, mat, props, sentinel, plain }) {
   const { Fn, If, uniform, texture, vec2, vec3, vec4, float, floor, clamp, min, max, mix, positionWorld, normalWorld,
     sharedUniformGroup } = TSL;
   const v4 = (name) => {
@@ -157,8 +159,10 @@ function gridShading({ TSL, THREE, mat, props, sentinel }) {
         return texture(atlas, uv).level(0);
       };
       const s = [];
-      for (let k = 0; k < 7; k++) s.push(mix(slice(z0, k), slice(z1, k), fz));
-      for (let k = 0; k < 7; k++) s[k] = s[k].toVar();
+      const groups = plain ? 3 : 7;
+      for (let k = 0; k < groups; k++) s.push(mix(slice(z0, k), slice(z1, k), fz));
+      for (let k = 0; k < groups; k++) s[k] = s[k].toVar();
+      for (let k = groups; k < 7; k++) s.push(vec4(0));
       const sh = [
         s[0].xyz, vec3(s[0].w, s[1].x, s[1].y), vec3(s[1].z, s[1].w, s[2].x), s[2].yzw,
         s[3].xyz, vec3(s[3].w, s[4].x, s[4].y), vec3(s[4].z, s[4].w, s[5].x), s[5].yzw, s[6].xyz,

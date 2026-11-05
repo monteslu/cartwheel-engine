@@ -128,6 +128,7 @@ Some checks need more than one run: several processes, a tool, a timing report. 
 - `quality-sim-same`: the same replay at Very Low and High simulates the same bits. Control: `CW_TEST_QUALITY_INTO_SIM`.
 - `quality-grounding`: Very Low keeps the shadows High draws at the base of each caster (`CW_SHADOW_CONTACTS=1` and the `shadow_contacts` request put each caster's base on screen; `CW_TEST_NO_SHADOWS=1` draws the frame without them). Control: Very Low with no shadows.
 - `quality-range`: each preset's GPU time ([Profiling](guide:profiling)). Control: `CW_TEST_QUALITY_FLAT=1`.
+- `quality-verylow-post`: on Very Low the height fog and FXAA run inside the tonemap pass, reported as fused, and the frame is the separate passes' (`CW_TEST_NO_FUSION=1`) but for FXAA's edges. Controls: `CW_TEST_VERYLOW_POST=fog` and `=aa` leave each step out of the fused pass and must break the bound.
 
 ## Gates of another repository
 

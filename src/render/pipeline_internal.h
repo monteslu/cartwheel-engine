@@ -119,6 +119,8 @@ struct cw_pipeline {
    * as the target the separate pass wrote would (RGBA16F, RGBA8), so the
    * picture is the same with up to five full-screen passes fewer */
   bool fuse_fog, fuse_bloom, fuse_grade, fuse_lens, fuse_lens_tm, fuse_distort;
+  bool fuse_aa_tm;  /* FXAA inside the tonemap pass (effects detail Very Low) */
+  bool fuse_fog_tm; /* the height fog inside the tonemap pass (effects detail Very Low) */
   const cw_rt *bloom_glow;   /* fuse_bloom: bloom's glow, released by the tonemap pass */
   float bloom_texel[2], bloom_norm;
 };

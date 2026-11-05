@@ -17,6 +17,8 @@ typedef struct cw__csm_cfg {
 /* render3d.c, each frame from the light's pre_render: the tree's cascaded sun
  * (the first one wins; a frame without a call has none) */
 void cw__lighting_csm_light(cw_tree *t, t3_light *sun, const cw__csm_cfg *cfg);
+/* before a frame of the tree's pipeline: the lighting pass made when the plain part (effects detail Very Low) needs it */
+void cw__lighting_frame_begin(cw_tree *t);
 /* render3d.c's light cap check: the kinds the tree clusters (1 omni, 2 spot)
  * and whether a cascaded sun leaves three.c's list */
 int cw__lighting_cluster_kinds(cw_tree *t);

@@ -1023,10 +1023,13 @@ static const char *swap_once(char *buf, size_t cap, const char *src, const char 
   return buf;
 }
 
-/* the tonemap program: plain, or with bloom's composite, the grade, the lens and / or the distortion fused in */
-static unsigned tm_variant(bool bloom, bool grade, bool lens, bool dist) {
+static unsigned tm_cheap_variant(bool grade, bool lens, bool aa, bool fog);
+/* the tonemap program: plain, or with bloom's composite, the grade, the lens and / or the distortion fused in, or FXAA
+ * (tm_fxaa_variant) */
+static unsigned tm_variant(bool bloom, bool grade, bool lens, bool dist, bool aa, bool fog) {
   static unsigned progs[16];
   int k = (bloom ? 1 : 0) | (grade ? 2 : 0) | (lens ? 4 : 0) | (dist ? 8 : 0);
+  if (aa || fog) return tm_cheap_variant(grade, lens, aa, fog);
   if (progs[k]) return progs[k];
   static const char *const names[16] = { "tonemap", "tonemap+bloom", "tonemap+grade", "tonemap+bloom+grade",
                                          "tonemap+lens", "tonemap+bloom+lens", "tonemap+grade+lens", "tonemap+bloom+grade+lens",
@@ -1068,7 +1071,8 @@ static void tonemap_exec(cw_pass_ctx *ctx, void *u) {
   float dmin[3], dmax[3];
   unsigned lut = grade ? cw__lut_texture(s->grade_lut, &n, dmin, dmax) : 0;
   if (grade && !lut) grade = false;
-  unsigned prog = tm_variant(bloom, grade, lens, dist);
+  bool aa = pl->fuse_aa_tm, fog = pl->fuse_fog_tm;
+  unsigned prog = tm_variant(bloom, grade, lens, dist, aa, fog);
   if (!prog) return;
   const cw_rt *dbuf = dist ? cw__fx_take_distortion(ctx->tree) : NULL;
   cw_pass_use(prog);
@@ -1092,6 +1096,12 @@ static void tonemap_exec(cw_pass_ctx *ctx, void *u) {
    * dummy 3D texture the program never samples. */
   else if (cw_gpu_backend() == CW_GPU_WEBGPU) cw_pass_bind_texture_3d(2, 0);
   if (lens) cw__lens_uniforms(ctx, prog, false);
+  if (aa) cw_pass_uniform2f(prog, "u_rcp", 1.0f / (float)ctx->src->w, 1.0f / (float)ctx->src->h);
+  if (fog) { /* unit 4 (WebGPU binding 5): the depth, with the fog's uniforms (fog.c) */
+    cw_pass_bind_texture(4, ctx->depth_tex ? ctx->depth_tex : ctx->src->tex);
+    cw_pass_uniform1i(prog, "u_depth", 4);
+    cw__fog_fused_uniforms(ctx, prog);
+  }
   if (dist) { /* units 3 and 4 (WebGPU bindings 4 and 5): the buffer and the depth; none made this frame: off */
     cw_pass_bind_texture(3, dbuf ? dbuf->tex : ctx->src->tex);
     cw_pass_uniform1i(prog, "u_dist", 3);
@@ -1155,17 +1165,19 @@ static void grade_exec(cw_pass_ctx *ctx, void *u) {
 }
 
 /* ── FXAA 3.11 (quality preset 12) ───────────────────────────────────── */
+/* (its luma: the display value's, or with FXAA fused into the tonemap pass an approximation of it from the HDR scene) */
+#define FXAA_LUMA_DOT "#define FXAA_LUMA(c) dot(c, vec3(0.299, 0.587, 0.114))\n"
 
 static unsigned fxaa_prog, fxaa_lens_prog;
 static const char *FXAA_FS = S(
   uniform sampler2D u_src;
   uniform vec2 u_rcp;
   out vec4 o;
-  float L(vec2 p) { return dot(texture(u_src, p).rgb, vec3(0.299, 0.587, 0.114)); }
+  float L(vec2 p) { return FXAA_LUMA(texture(u_src, p).rgb); }
   vec4 fxaa() {
     vec2 posM = v_uv;
     vec4 rgbyM = texture(u_src, posM);
-    float lumaM = dot(rgbyM.rgb, vec3(0.299, 0.587, 0.114));
+    float lumaM = FXAA_LUMA(rgbyM.rgb);
     float lumaS = L(posM + vec2(0.0, 1.0) * u_rcp), lumaE = L(posM + vec2(1.0, 0.0) * u_rcp);
     float lumaN = L(posM + vec2(0.0, -1.0) * u_rcp), lumaW = L(posM + vec2(-1.0, 0.0) * u_rcp);
     float maxSM = max(lumaS, lumaM), minSM = min(lumaS, lumaM);
@@ -1264,7 +1276,7 @@ static void aa_exec(cw_pass_ctx *ctx, void *u) {
     return;
   }
   bool lens = ctx->pipeline->fuse_lens;
-  if (!fxaa_prog) fxaa_prog = prog_of("fxaa", "#define FXAA_FUSED_OUT\n", FXAA_FS, NULL, WGSL_FXAA_HEAD, WGSL_FXAA, WGSL_FXAA_FS);
+  if (!fxaa_prog) fxaa_prog = prog_of("fxaa", "#define FXAA_FUSED_OUT\n" FXAA_LUMA_DOT, FXAA_FS, NULL, WGSL_FXAA_HEAD, WGSL_FXAA, WGSL_FXAA_FS);
   if (lens && !fxaa_lens_prog) {
     static char b[32768];
     if (cw_gpu_backend() == CW_GPU_WEBGPU) {
@@ -1272,7 +1284,7 @@ static void aa_exec(cw_pass_ctx *ctx, void *u) {
                WGSL_FXAA_LENS_FS);
       fxaa_lens_prog = cw_pass_program_wgsl("fxaa+lens", b);
     } else {
-      snprintf(b, sizeof b, "#define FXAA_FUSED_OUT o = fuse_lens(o);\n%s%s%s%s%s", cw__fusion_raw() ? "#define FUSE_RAW 1\n" : "",
+      snprintf(b, sizeof b, "#define FXAA_FUSED_OUT o = fuse_lens(o);\n" FXAA_LUMA_DOT "%s%s%s%s%s", cw__fusion_raw() ? "#define FUSE_RAW 1\n" : "",
                GLSL_COMMON, FUSE_ROUND, FUSE_LENS, FXAA_FS);
       fxaa_lens_prog = cw_pass_program("fxaa+lens", b);
     }
@@ -1285,6 +1297,104 @@ static void aa_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_uniform2f(prog, "u_rcp", 1.0f / (float)ctx->width, 1.0f / (float)ctx->height);
   if (lens) cw__lens_uniforms(ctx, prog, false);
   cw_pass_fullscreen();
+}
+
+/* ── the tonemap pass on Very Low (effects detail Very Low; pipeline.c plan_fusion) ───────────────
+ * The height fog is applied to the scene's HDR value as the pass reads it (the fog pass's blend, rounded as
+ * its target rounded it), and FXAA runs inside the pass: its console variant (FXAA_CONSOLE_GLSL) reads the
+ * HDR scene, its edge test on a display brightness estimated from each read (the exposed luminance through
+ * x / (1 + x), then a square root: close to the tone curves' output in sRGB), and the colour it picks is
+ * then tone mapped once, with the grade and the lens after it. Two full-frame passes fewer. Where FXAA
+ * blends, it blends HDR values, so an edge against a bright sky stays a little harder than the separate
+ * passes draw it; CW_TEST_NO_FUSION=1 runs the passes apart. */
+static unsigned swap_must(char *buf, size_t cap, const char *src, const char *from, const char *to) {
+  if (!strstr(src, from)) {
+    cw_error("tonemap+fxaa: the FXAA source has no '%s'", from);
+    return 0;
+  }
+  swap_once(buf, cap, src, from, to);
+  return 1;
+}
+/* FXAA 3.11's console variant (FXAA_PC_CONSOLE): four half-texel diagonal reads and the centre, then two or four
+ * reads along the edge, no search: about half the reads of the quality preset in flat areas and a third at edges */
+static const char *FXAA_CONSOLE_GLSL = S(
+  vec4 fxaa() {
+    vec2 pos = v_uv;
+    vec4 rgbyM = T(pos);
+    float lumaM = dluma(rgbyM.rgb);
+    float lumaNw = dluma(T(pos + vec2(-0.5, -0.5) * u_rcp).rgb), lumaSw = dluma(T(pos + vec2(-0.5, 0.5) * u_rcp).rgb);
+    float lumaNe = dluma(T(pos + vec2(0.5, -0.5) * u_rcp).rgb) + 1.0 / 384.0, lumaSe = dluma(T(pos + vec2(0.5, 0.5) * u_rcp).rgb);
+    float lumaMax = max(max(lumaNe, lumaSe), max(lumaNw, lumaSw)), lumaMin = min(min(lumaNe, lumaSe), min(lumaNw, lumaSw));
+    float lumaMaxM = max(lumaMax, lumaM), lumaMinM = min(lumaMin, lumaM);
+    if (lumaMaxM - lumaMinM < max(0.05, lumaMax * 0.125)) return rgbyM;
+    float dirSwMinusNe = lumaSw - lumaNe, dirSeMinusNw = lumaSe - lumaNw;
+    vec2 dir1 = normalize(vec2(dirSwMinusNe + dirSeMinusNw, dirSwMinusNe - dirSeMinusNw) + 1e-8);
+    vec4 rgbyN1 = T(pos - dir1 * u_rcp * 0.5), rgbyP1 = T(pos + dir1 * u_rcp * 0.5);
+    vec2 dir2 = clamp(dir1 / (min(abs(dir1.x), abs(dir1.y)) * 8.0), -2.0, 2.0);
+    vec4 rgbyN2 = T(pos - dir2 * u_rcp * 2.0), rgbyP2 = T(pos + dir2 * u_rcp * 2.0);
+    vec4 rgbyA = rgbyN1 + rgbyP1;
+    vec4 rgbyB = (rgbyN2 + rgbyP2) * 0.25 + rgbyA * 0.25;
+    float lumaB = dluma(rgbyB.rgb);
+    if (lumaB < lumaMin || lumaB > lumaMax) rgbyB.rgb = rgbyA.rgb * 0.5;
+    return vec4(rgbyB.rgb, rgbyM.a);
+  });
+
+/* CW_TEST_VERYLOW_POST=fog or =aa (native test runs): the Very Low tonemap pass leaves that step out while still
+ * reporting it fused (the controls of tests/quality-verylow-post.mjs: the picture must change) */
+static const char *verylow_post_test(void) {
+#if CW_CART
+  return "";
+#else
+  const char *v = getenv("CW_TEST_VERYLOW_POST");
+  return v ? v : "";
+#endif
+}
+static unsigned tm_cheap_variant(bool grade, bool lens, bool aa, bool fog) {
+  static unsigned progs[16];
+  int k = (grade ? 1 : 0) | (lens ? 2 : 0) | (aa ? 4 : 0) | (fog ? 8 : 0);
+  if (progs[k]) return progs[k];
+  static char name[64];
+  snprintf(name, sizeof name, "tonemap%s%s%s%s", fog ? "+fog" : "", grade ? "+grade" : "", aa ? "+fxaa" : "", lens ? "+lens" : "");
+  static char buf[65536];
+  if (cw_gpu_backend() == CW_GPU_WEBGPU) {
+    static char head[4096], fs[1024];
+    char fields[1024], src[256], in[512];
+    snprintf(fields, sizeof fields, "u_frame: i32%s%s };", aa ? ", u_rcp: vec2f" : "", fog ? ", " WGSL_FOG_FIELDS "u_pz: vec4f" : "");
+    snprintf(src, sizeof src, "%s", aa && strcmp(verylow_post_test(), "aa") ? "fxaa(uv)" : "textureSampleLevel(u_src, cw_linear, uv, 0.0)");
+    if (fog && strcmp(verylow_post_test(), "fog")) snprintf(in, sizeof in, "var c = fog_over(%s, fog_eval(uv, win_depth(cw_load(u_depth, uv).r, u.u_pz)));", src);
+    else snprintf(in, sizeof in, "var c = %s;", src);
+    if (!swap_must(head, sizeof head, WGSL_TM_FUSED_HEAD, "u_frame: i32 };", fields) ||
+        !swap_must(fs, sizeof fs, WGSL_TM_FUSED_FS, "var c = textureSampleLevel(u_src, cw_linear, uv, 0.0);", in))
+      return 0;
+    snprintf(buf, sizeof buf, "%s%s%s%s%s%s%s%s%s%s%s%s%s%s  var o = vec4f(x, 1.0);\n%s  return o;\n}\n", head,
+             fog ? "@group(0) @binding(5) var u_depth: texture_2d<f32>;\n" : "", WGSL_COMMON, WGSL_BL_PREFILTER,
+             cw__fuse_round_wgsl(), WGSL_FUSE_BLOOM_GRADE, WGSL_FUSE_LENS, fog ? WGSL_FOG_FN : "", fog ? WGSL_FUSE_FOG : "",
+             WGSL_TM_FNS,
+             "fn dluma(c: vec3f) -> f32 { let y = max(dot(c, vec3f(0.299, 0.587, 0.114)), 0.0) * u.toneMappingExposure; "
+             "return sqrt(y / (1.0 + y)); }\n",
+             aa ? WGSL_FXAA_CONSOLE : "", fs, WGSL_TM_FUSED_CURVES, grade ? "x = fuse_grade(x);\n" : "", lens ? "o = fuse_lens(o, uv, pos);\n" : "");
+    return progs[k] = cw_pass_program_wgsl(name, buf);
+  }
+  const char *src = aa && strcmp(verylow_post_test(), "aa") ? "fxaa()" : "texture(u_src, v_uv)";
+  char tsrc[160];
+  if (fog && strcmp(verylow_post_test(), "fog")) snprintf(tsrc, sizeof tsrc, "fog_over(%s, fog_eval(v_uv, texture(u_depth, v_uv).r))", src);
+  else snprintf(tsrc, sizeof tsrc, "%s", src);
+  snprintf(buf, sizeof buf,
+           "#define TM_SRC %s\n#define TM_FUSED_IN\n#define TM_FUSED_OUT %s\n#define TM_FUSED_LENS %s\n"
+           "%s%s%s%s%s%s%s%s%s"
+           "float dluma(vec3 c) { float y = max(dot(c, vec3(0.299, 0.587, 0.114)), 0.0) * toneMappingExposure; return sqrt(y / (1.0 + y)); }\n"
+           "%s%s%s",
+           tsrc, grade ? "x = fuse_grade(x);" : "", lens ? "o = fuse_lens(o);" : "", cw__fusion_raw() ? "#define FUSE_RAW 1\n" : "",
+           GLSL_COMMON, BL_PREFILTER, TM_FS, FUSE_ROUND, FUSE_FS, FUSE_LENS, fog ? cw__fog_glsl() : "",
+           fog ? "uniform sampler2D u_depth;\n" : "", aa ? "uniform vec2 u_rcp;\nvec4 T(vec2 p) { return texture(u_src, p); }\n" : "",
+           aa ? FXAA_CONSOLE_GLSL : "", TM_MAIN);
+  if (fog) { /* (FUSE_FOG after FUSE_ROUND: it rounds as the fog pass's blend did) */
+    static char b2[65536];
+    const char *at = strstr(buf, "float dluma(");
+    snprintf(b2, sizeof b2, "%.*s%s%s", (int)(at - buf), buf, FUSE_FOG, at);
+    return progs[k] = cw_pass_program(name, b2);
+  }
+  return progs[k] = cw_pass_program(name, buf);
 }
 
 /* ── depth of field ─────────────────────────────────────────────────── */

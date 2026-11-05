@@ -16,6 +16,7 @@
 #include "shadow_cull.h"
 #include "pipeline_wgpu.h"
 #include "scene/render3d_internal.h"
+#include "lighting_internal.h"
 
 /* ── settings ───────────────────────────────────────────────────────── */
 
@@ -271,7 +272,7 @@ static void fuse_off(cw_pipeline *p, int i) {
   r->stat.ran = r->stat.fused = true;
 }
 static void plan_fusion(cw_pipeline *p, const cw_post_settings *s, bool post) {
-  p->fuse_fog = p->fuse_bloom = p->fuse_grade = p->fuse_lens = p->fuse_lens_tm = p->fuse_distort = false;
+  p->fuse_fog = p->fuse_bloom = p->fuse_grade = p->fuse_lens = p->fuse_lens_tm = p->fuse_distort = p->fuse_aa_tm = p->fuse_fog_tm = false;
   p->bloom_glow = NULL;
   if (!post || s->debug_view != CW_VIEW_NONE || test_no_fusion()) return;
   int bl = active_index(p, "bloom"), tm = active_index(p, "tonemap"), gr = active_index(p, "grade");
@@ -301,6 +302,22 @@ static void plan_fusion(cw_pipeline *p, const cw_post_settings *s, bool post) {
   if (tm >= 0 && post_adjacent(p, tm, gr)) {
     p->fuse_grade = true;
     fuse_off(p, gr);
+  }
+  /* effects detail Very Low (cartwheel/quality.h): the height fog read inside the tonemap pass (nothing between them
+   * draws colour), one full-frame blend fewer */
+  if (!p->fuse_fog && fg >= 0 && tm >= 0 && !p->fuse_bloom && !p->fuse_distort && cw__quality_cheap_post() &&
+      fx_post_adjacent(p, fg, tm)) {
+    p->fuse_fog_tm = true;
+    fuse_off(p, fg);
+  }
+  /* effects detail Very Low (cartwheel/quality.h): FXAA inside the tonemap pass, its edge search on the HDR scene
+   * (a display luma approximated from each read), one full-frame pass fewer. Not with bloom's composite or the
+   * distortion fused in (FXAA reads its neighbours, which those would have to be worked out for too) */
+  if (tm >= 0 && aa >= 0 && s->aa == CW_AA_FXAA && !p->fuse_bloom && !p->fuse_distort && cw__quality_cheap_post() &&
+      post_adjacent(p, tm, aa)) {
+    p->fuse_aa_tm = true;
+    fuse_off(p, aa);
+    aa = -1;
   }
   /* the lens reads only its own pixel unless chromatic aberration is on */
   if (ln >= 0 && !s->chromatic_aberration) {
@@ -838,6 +855,7 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
     cw__pw_frame_begin();
     cw__pw_timing_poll();
   }
+  cw__lighting_frame_begin(t); /* (may add the lighting pass) */
   if (p->order_dirty) {
     qsort(p->passes.data, (size_t)p->passes.count, sizeof *p->passes.data, pass_cmp);
     p->order_dirty = false;
@@ -1025,7 +1043,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   }
 
   /* WebGPU: passes sample an R32F linear depth copied after the opaque phase */
-  bool wgpu_depth = false;
+  bool wgpu_depth = wgpu && p->fuse_fog_tm; /* (the tonemap pass reads it for the fused fog) */
   for (int i = 0; wgpu && i < p->passes.count; i++) {
     pass_rec *r = p->passes.data[i];
     if (r->active && r->d.phase >= CW_PHASE_SKY && r->d.phase <= CW_PHASE_POST && (r->d.reads & (CW_RES_DEPTH | CW_RES_VELOCITY)))
