@@ -1462,12 +1462,12 @@
     "expect": {
       "unit.failed": 0,
       "unit.done": 1,
-      "unit.checksum": 1469186084
+      "unit.checksum": 3197877891
     },
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "the opt-in pieces for weak GPUs: cw_geometry_optimize_vertex_cache on a shuffled grid (fewer vertices shaded a triangle, the same triangles; the shuffled ACMR is the control), cw_quality_full_resolution (Low keeps 100%; off, Low is 67%), splat sets at their capacity. The checksum folds every number, the same on every host"
+    "note": "the opt-in pieces for weak GPUs: cw_geometry_optimize_vertex_cache on a shuffled grid (fewer vertices shaded a triangle, the same triangles; the shuffled ACMR is the control), a preset keeps the player's Resolution (75% stays on Low, and on Very Low without full resolution), splat sets at their capacity. The checksum folds every number, the same on every host"
   },
   {
     "name": "unit-quality",
@@ -1484,7 +1484,7 @@
     "expect": {
       "unit.failed": 0,
       "unit.done": 1,
-      "unit.checksum": 1469186084
+      "unit.checksum": 2512450327
     },
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
