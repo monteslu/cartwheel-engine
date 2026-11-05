@@ -110,7 +110,7 @@
  *
  * (each rung's game levers are its preset's). After a couple of seconds over
  * budget it steps down one rung. On a big overshoot (the average of the
- * first second at a rung over 1.6 x the budget) it jumps straight to the
+ * first second and a half at a rung over 1.6 x the budget) it jumps to the
  * rung expected to fit, so a weak device is at its level within a few
  * seconds of play instead of stuttering through every rung. Where it
  * measures GPU time it also steps back up when the cost has stayed well

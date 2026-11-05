@@ -9196,24 +9196,24 @@
   },
   {
    "header": "cartwheel/quality.h",
-   "summary": "cartwheel/quality.h: graphics settings, the presets that set them, and\nthe automatic choice.\n\nEach setting is something the player can pick on its own; a preset picks\nthem all:\n\n                    Low       Medium    High (default)  Ultra\n  resolution        67%       75%       100%            100%\n  ambient occl.     off       on        on              on\n  shadows           Low       Medium    High            Ultra\n  anti-aliasing     FXAA      FXAA      SMAA            SMAA\n  effects detail    Low       Medium    High            Ultra\n\nResolution: the 3D scene (and its post) renders at that share of the\noutput's size and is scaled up with a filter (Catmull-Rom); the 2D window\npasses (HUD, menus, text) draw at the output's full size over it. It is the\nbiggest lever: GPU time of the scene and its post goes with its pixel\ncount. It applies on top of cw_app_desc.render_scale (the output size);\nan app with pixel_scale draws at its own size and ignores it.\n\nAmbient occlusion: GTAO as the scene's PostProcess asks for it (On) or\nnone (Off); its sample count follows effects detail.\n\nShadows: Low (maps of 1024 at most, hard PCF), Medium (1024 at most,\nsoft), High (as the lights ask, soft), Ultra (twice that, up to 4096,\nsoft).\n\nAnti-aliasing: Off, FXAA, or SMAA (as the PostProcess asks: a scene that\nasks for FXAA or none keeps it). The scene's MSAA (PostProcess msaa) is the\ngame's and stays on every preset, on GL and WebGPU alike (4x WebGPU, as\nGL at 4); Off turns it off too.\n\nEffects detail (Low, Medium, High, Ultra): the share of GPU particles\ndrawn (0.4, 0.7, 1, 1), the density games thin their instancing by (0.35,\n0.65, 1, 1: grass, crowd, scatter), the bloom chain (3, 5 levels, as\nauthored), GTAO's samples (1 slice of 4 steps, 1 of 4, as authored, 3\nslices of 8 steps), the LOD error budget (x2, x1.5, x1, x1: coarser\nmeshes sooner), the clustered lights one cluster keeps (x0.375, x0.5,\nx1, x1 of LightingSettings.max_per_cluster: 24, 32, 64, 64 by default;\ncw_quality_scale(\"lights\"), cartwheel/lighting.h) and the volumetric fog\ngrid (cartwheel/environment.h: 64 x 32, 96 x 48, 160 x 64, 240 x 96 cells\nacross x slices), the distortion buffer (cartwheel/explosions.h: half the\nframe on Low and Medium, the whole frame on High and Ultra;\ncw_quality_scale(\"distortion\")), colour fringing on bent edges (High and\nUltra: \"dispersion\"), the share of the explosion light pool in use\n(0.25, 0.5, 1, 1: \"flash_lights\") and skin shading (Medium and up:\n\"skin\", cartwheel/skin_shading.h; Low draws skin as plain PBR).\n\n\"As authored\" is what the scene's PostProcess / lights ask for: High\ndraws exactly what the game would without this module.\n\nGame settings: a game adds its own render-only levers (cw_quality_lever_add:\na cheaper material at distance, say) with the value each preset picks;\nthey show in the graphics menu after the engine's, and are saved with them.\n\nDensity: games read cw_quality_scale(\"grass\"), (\"crowd\"), (\"scatter\") or\nthe shorthand cw_quality_density() and thin their instancing; set a change\ncallback to re-thin when a setting changes. Particles: the engine draws\ncw_quality_scale(\"particles\") of every GPU particle system's particles\n(they are all still simulated, so counts and seeds agree).\n\nThe player picks a preset, Auto, or each setting (the graphics menu,\ncartwheel/quality_menu.h, or the game shell's settings); changing one\nsetting shows the preset as \"Custom\". Persist the choice in the game's\nsave data (cw_quality_saved / cw_quality_restore below).\n\nAuto: the engine picks, and holds the frame's cost under a budget. While\nthe game says it is in play (cw_quality_auto_measure(true) every frame) it\naverages the cost: the GPU time of the frame's passes where the host\ntimes them cheaply (native WebGPU's timestamps), else the frame-to-frame\ntime on the real clock (GL, a cart: a frame the GPU cannot finish in time arrives late, even where the\nhost delivers a fixed step). After a couple of\nseconds over budget it steps down one level of its ladder:\n\n  High, Medium, Low, each at 100%\n\n(it gives up detail, never pixels; a game that calls\ncw_quality_full_resolution(false) gets High 100%, High 85%, Medium 75%,\nMedium 67%, Low 67%, Low 60%, Low 50%). Where\nit measures GPU time it also steps back up when the cost has stayed well\nunder budget, never into a level that was over it in this run. A game\nmakes Auto the starting choice with cw_quality_auto(true, budget); the\nplayer can always pick it. The level it reached is saved, and the next run\nstarts one level above it: that level is saved only once it has held for\na couple of seconds of play, and a run where it goes over budget steps\nback down and saves the old level. One bad session does not last for good.\nA game that keeps the word itself writes it from the change callback too,\nso a step is saved (the shell's save does this by itself).\n\nDeterminism: a deterministic run (a test) starts at High whatever the\nsave holds, with Auto off, so every host draws the same frame; a choice\nmade in it (from the menus, by input every host replays alike) applies.\nA test host with a real clock (tools/run-cart.mjs on Chromium and\nwasmcart-native) asks for the same with the debug request `quality lock`.\nNothing here reaches the simulation.",
+   "summary": "cartwheel/quality.h: graphics settings, the presets that set them, and\nthe automatic choice.\n\nTwo independent choices:\n\n  the graphics preset (Very Low, Low, Medium, High, Ultra, Auto, or Custom\n  once a setting was changed on its own) decides how much the engine draws;\n\n  Resolution (the 3D scene's share of the output, 50% to 100%) is the\n  player's alone: no preset sets it, Auto leaves it (unless the game opts\n  in, cw_quality_full_resolution below), a preset with any resolution still\n  shows the preset's name (High at 75% is \"High\", the resolution row says\n  75%), and the save keeps both. The output's own size (a 720p window on a\n  4K screen, a 4K display) is the host's: its window or display settings\n  (RetroArch: Quick Menu > Core Options > Internal Resolution). The\n  resolution row is the 3D scene's share of that output.\n\nEach setting is something the player can pick on its own; a preset picks\nthem all:\n\n                   Very Low   Low      Medium   High (default)  Ultra\n  ambient occl.    off        off      on       on              on\n  shadows          Minimal    Low      Medium   High            Ultra\n  anti-aliasing    FXAA       FXAA     SMAA     Full            Full\n  effects detail   Very Low   Low      Medium   High            Ultra\n\nHigh draws exactly what the game would without this module (\"as\nauthored\": what the scene's PostProcess and lights ask for).\n\nResolution: the 3D scene (and its post) renders at that share of the\noutput's size and is scaled up with a filter (Catmull-Rom); the 2D window\npasses (HUD, menus, text) draw at the output's full size over it. It\napplies on top of cw_app_desc.render_scale (the output size); an app with\npixel_scale draws at its own size and ignores it.\n\nAmbient occlusion: GTAO as the scene's PostProcess asks for it (On) or\nnone (Off); its sample count follows effects detail (1 slice of 4 steps on\nMedium and below, as authored on High, 3 slices of 8 steps on Ultra).\n\nShadows:\n  Minimal  the sun only (omni and spot lights cast none), one cascade,\n           maps of 512 to 1024 (half the authored size), hard edges, half\n           the shadow distance, and casters small on screen culled (below).\n           It keeps the sun's shadow under characters and props, so nothing\n           floats.\n  Low      maps of 1024 at most, hard edges, 2 cascades, small casters culled\n  Medium   1024 at most, soft, 3 cascades, tiny casters culled\n  High     as the lights ask\n  Ultra    twice that (up to 4096), soft, the cascades' distance x1.5\nCaster culling: a mesh whose bounding sphere's radius over its distance\nto the camera is under the setting's share (Minimal 0.02, about 40\npixels across at 1080p and a 60 degree view; Low 0.012, Medium 0.006;\nHigh and Ultra none) draws into no shadow map this frame. The scene's big\nshapes keep casting, and so does anything near the camera.\n\nAnti-aliasing: Off, FXAA, SMAA, or Full (as the PostProcess asks, the\nscene's MSAA included). FXAA and SMAA drop the scene's MSAA (PostProcess\nmsaa) and put that post filter in its place (a scene that asks for none\nat all keeps none; one that asks for FXAA keeps FXAA on SMAA). A game\nwhose look needs MSAA keeps it on every value but Off with\ncw_quality_keep_msaa(true). WebGPU multisamples 1x or 4x only, so no\nvalue goes above what the scene asks.\n\nEffects detail (Very Low, Low, Medium, High, Ultra):\n\n                      Very Low  Low     Medium  High         Ultra\n  particles drawn     0.25      0.4     0.7     1            1\n  density             0.2       0.35    0.65    1            1      (grass, crowd, scatter)\n  LOD error budget    x3        x2      x1.5    x1           x0.75  (coarser meshes sooner)\n  clustered lights    x0.25     x0.375  x0.5    x1           x1     (of LightingSettings.max_per_cluster)\n  bloom               off       3 lvls  5 lvls  as authored  as authored\n  volumetric fog      off       64x32   96x48   160x64       240x96 (cells across x slices)\n  distortion buffer   off       half    half    full         full   (cartwheel/explosions.h)\n  colour fringing     off       off     off     on           on     (\"dispersion\")\n  explosion lights    0         0.25    0.5     1            1      (\"flash_lights\")\n  skin shading        plain     plain   on      on           on     (cartwheel/skin_shading.h)\n  SSR                 off       off     half    as authored  x1.5   (march steps)\n  depth of field      off       off     on      on           on\n  SSGI                off       off     off     off          on\n  HRTF voices         0.25      0.25    0.5     1            1      (cartwheel/audio.h)\n  water               Low's grid halved, no reflection, refraction or caustics on Very Low (cartwheel/water.h)\n  terrain             the low layer set and the coarsest far ring on Very Low and Low (cartwheel/terrain.h)\n\nGame settings: a game adds its own render-only levers (cw_quality_lever_add:\na cheaper material at distance, say) with the value each preset picks;\nthey show in the graphics menu after the engine's, and are saved with them.\n\nDensity: games read cw_quality_scale(\"grass\"), (\"crowd\"), (\"scatter\") or\nthe shorthand cw_quality_density() and thin their instancing; set a change\ncallback to re-thin when a setting changes. Particles: the engine draws\ncw_quality_scale(\"particles\") of every GPU particle system's particles\n(they are all still simulated, so counts and seeds agree).\n\nThe player picks a preset, Auto, or each setting (the graphics menu,\ncartwheel/quality_menu.h, or the game shell's settings); changing one\nsetting other than Resolution shows the preset as \"Custom\". Persist the\nchoice in the game's save data (cw_quality_saved / cw_quality_restore\nbelow).\n\nAuto: the engine picks, and holds the frame's cost under a budget. While\nthe game says it is in play (cw_quality_auto_measure(true) every frame) it\naverages the cost: the GPU time of the frame's passes where the host\ntimes them cheaply (native WebGPU's timestamps), else the frame-to-frame\ntime on the real clock (GL, a cart: a frame the GPU cannot finish in time\narrives late, even where the host delivers a fixed step). It walks a\nladder of single changes, so a step never swaps a whole preset at once:\n\n  High; High with shadows Medium; Medium; Medium with ambient occlusion\n  off; Low; Low with effects Very Low; Very Low\n\n(each rung's game levers are its preset's). After a couple of seconds over\nbudget it steps down one rung. On a big overshoot (the average of the\nfirst second at a rung over 1.6 x the budget) it jumps straight to the\nrung expected to fit, so a weak device is at its level within a few\nseconds of play instead of stuttering through every rung. Where it\nmeasures GPU time it also steps back up when the cost has stayed well\nunder budget, never into a rung that was over it in this run. It never\nchanges Resolution: a game that calls cw_quality_full_resolution(false)\nlets it go on below Very Low at 85%, 75%, 67%, 60% and 50%. A game makes\nAuto the starting choice with cw_quality_auto(true, budget); the player\ncan always pick it. The rung it reached is saved, and the next run starts\none rung above it: that rung is saved only once it has held for a couple\nof seconds of play, and a run where it goes over budget steps back down\nand saves the old one. One bad session does not last for good. A game\nthat keeps the word itself writes it from the change callback too, so a\nstep is saved (the shell's save does this by itself).\n\nDeterminism: a deterministic run (a test) starts at High whatever the\nsave holds, with Auto off, so every host draws the same frame; a choice\nmade in it (from the menus, by input every host replays alike) applies.\nA test host with a real clock (tools/run-cart.mjs on Chromium and\nwasmcart-native) asks for the same with the debug request `quality lock`.\nNothing here reaches the simulation.",
    "functions": [
     {
      "name": "cw_quality_get",
      "signature": "cw_quality cw_quality_get(void)",
-     "doc": "The preset now: the one picked, Auto's current level, or (Custom) the\npreset the settings were last set from.",
+     "doc": "The preset now: the one picked, Auto's current rung's preset, or (Custom)\nthe preset the settings were last set from.",
      "inline": false
     },
     {
      "name": "cw_quality_set",
      "signature": "void cw_quality_set(cw_quality q, bool user)",
-     "doc": "Choose a preset (every setting). user = true: the player chose it (Auto\nstops); false: the game or a tool did (Auto, when on, may still change\nit). Calls the change callback.",
+     "doc": "Choose a preset (every setting but Resolution). user = true: the player\nchose it (Auto stops); false: the game or a tool did (Auto, when on, may\nstill change it). Calls the change callback.",
      "inline": false
     },
     {
      "name": "cw_quality_name",
      "signature": "const char *cw_quality_name(cw_quality q)",
-     "doc": "\"Low\", \"Medium\", \"High\", \"Ultra\"",
+     "doc": "\"Very Low\", \"Low\", \"Medium\", \"High\", \"Ultra\"",
      "inline": false
     },
     {
@@ -9249,7 +9249,7 @@
     {
      "name": "cw_gfx_set",
      "signature": "void cw_gfx_set(int s, int value)",
-     "doc": "The player sets one (value clamped): the preset becomes Custom unless the\nsettings now match one, and Auto stops.",
+     "doc": "The player sets one (value clamped). Resolution changes nothing else; any\nother setting turns the preset Custom unless the settings now match one.\nAuto stops (Resolution leaves it on).",
      "inline": false
     },
     {
@@ -9273,7 +9273,7 @@
     {
      "name": "cw_quality_scope_push",
      "signature": "bool cw_quality_scope_push(const char *name, const int8_t caps[CW_GFX_ENGINE_COUNT])",
-     "doc": "A scene or mode that does not need everything (a 2D mini-game, a scene with no use for ambient occlusion) caps\nsettings for as long as it is on screen: caps[CW_GFX_RESOLUTION ... CW_GFX_EFFECTS] each hold the highest value\nallowed (-1 leaves that setting alone). A scope only ever LOWERS what the player chose, so a player on Low\nstays on Low and the menu still shows the player's choice. Scopes nest (four at most); the lowest cap wins.\nRender-only, like the rest of this header: call between frames. Returns false when it is not opened.",
+     "doc": "A scene or mode that does not need everything (a 2D mini-game, a scene with no use for ambient occlusion) caps\nsettings for as long as it is on screen: caps[CW_GFX_RESOLUTION ... CW_GFX_EFFECTS] each hold the highest value\nallowed by name (CW_GFX_SHADOWS_MINIMAL, CW_QUALITY_VERY_LOW, ...; -1 leaves that setting alone). A scope only\never LOWERS what the player chose, so a player on Low stays on Low and the menu still shows the player's choice.\nScopes nest (four at most); the lowest cap wins. Render-only, like the rest of this header: call between frames.\nReturns false when it is not opened.",
      "inline": false
     },
     {
@@ -9290,14 +9290,20 @@
     },
     {
      "name": "cw_quality_lever_add",
-     "signature": "int cw_quality_lever_add(const char *name, const char *const *values, int value_count, const uint8_t preset[CW_QUALITY_COUNT])",
-     "doc": "A game's own render-only setting (at most CW_GFX_MAX_LEVERS, each with up\nto CW_GFX_LEVER_MAX_VALUES values, cheapest first): its name, its values'\nlabels (kept by pointer: static strings) and the value each preset picks\n(preset[CW_QUALITY_LOW] ...). Call in init, before cw_quality_restore (the\nsaved value applies to it). Returns its setting id (for cw_gfx_get), -1\nwhen full.",
+     "signature": "int cw_quality_lever_add(const char *name, const char *const *values, int value_count, cw_quality_lever_presets presets)",
+     "doc": "A game's own render-only setting (at most CW_GFX_MAX_LEVERS, each with up\nto CW_GFX_LEVER_MAX_VALUES values, cheapest first): its name, its values'\nlabels (kept by pointer: static strings) and the value each preset picks.\nCall in init, before cw_quality_restore (the saved value applies to it).\nReturns its setting id (for cw_gfx_get), -1 when full.\n\n  static const char *const EDGES[] = { \"Off\", \"On\" };\n  lever = cw_quality_lever_add(\"Edge smoothing\", EDGES, 2,\n    (cw_quality_lever_presets){ .very_low = 0, .low = 0, .medium = 1, .high = 1, .ultra = 1 });",
+     "inline": false
+    },
+    {
+     "name": "cw_quality_keep_msaa",
+     "signature": "void cw_quality_keep_msaa(bool on)",
+     "doc": "Keep the scene's MSAA (PostProcess msaa) on every anti-aliasing value but Off: for a game whose look needs it\n(thin lines that FXAA and SMAA cannot hold). Off by default: FXAA and SMAA drop it. Render-only.",
      "inline": false
     },
     {
      "name": "cw_quality_scale",
      "signature": "float cw_quality_scale(const char *knob)",
-     "doc": "A scale for a named knob, from effects detail: \"particles\", \"density\",\n\"grass\", \"crowd\", \"scatter\" (the last three are density), \"hrtf_voices\"\n(0.25, 0.5, 1, 1: the audio mixer's HRTF voice limit, cartwheel/audio.h),\n1 for any other name.",
+     "doc": "A scale for a named knob, from effects detail: \"particles\", \"density\",\n\"grass\", \"crowd\", \"scatter\" (the last three are density), \"lights\",\n\"distortion\", \"dispersion\", \"flash_lights\", \"skin\", \"hrtf_voices\" (the\ntable above), 1 for any other name.",
      "inline": false
     },
     {
@@ -9309,7 +9315,7 @@
     {
      "name": "cw_quality_count",
      "signature": "int cw_quality_count(int n, const char *knob)",
-     "doc": "n scaled by a knob, at least 1 when n > 0",
+     "doc": "n scaled by a knob, at least 1 when n > 0, at most n",
      "inline": false
     },
     {
@@ -9333,7 +9339,7 @@
     {
      "name": "cw_quality_full_resolution",
      "signature": "void cw_quality_full_resolution(bool on)",
-     "doc": "Full resolution (on by default): the game always draws its 3D at the\noutput's size. Every preset keeps Resolution at 100% (Low and Medium keep\ntheir other settings), and Auto's ladder has no resolution steps: High,\nMedium, Low, each at 100%. Only the player picking a resolution in the\ngraphics menu changes it. false lets presets and Auto lower it (Low 67%,\nMedium 75%, and Auto's longer ladder above). Call in init, before\ncw_quality_restore.",
+     "doc": "Full resolution (on by default): Auto never changes Resolution (no\npreset ever does). false lets Auto go on below Very Low by lowering it:\nVery Low at 85%, 75%, 67%, 60%, 50%. Call in init, before\ncw_quality_restore.",
      "inline": false
     },
     {
@@ -9363,7 +9369,7 @@
     {
      "name": "cw_quality_cycle",
      "signature": "void cw_quality_cycle(void)",
-     "doc": "The next choice in Low, Medium, High, Ultra, Auto, Low... (a player's\nchoice; from Custom, the preset after the one it came from).\nRender-only: call it from update or event handling, never from the\nfixed-step simulation. The frame's raw presses (cw_input_raw:\nkeys_pressed, pads[].pressed, mouse_pressed) hold for the whole frame, so\nupdate sees them as the ticks do.",
+     "doc": "The next choice in Very Low, Low, Medium, High, Ultra, Auto, Very Low...\n(a player's choice; from Custom, the preset after the one it came from).\nRender-only: call it from update or event handling, never from the\nfixed-step simulation. The frame's raw presses (cw_input_raw:\nkeys_pressed, pads[].pressed, mouse_pressed) hold for the whole frame, so\nupdate sees them as the ticks do.",
      "inline": false
     },
     {
@@ -9375,7 +9381,7 @@
     {
      "name": "cw_quality_label",
      "signature": "const char *cw_quality_label(void)",
-     "doc": "\"Low\", \"Medium\", \"High\", \"Ultra\", \"Auto\" or \"Custom\": what a settings entry shows",
+     "doc": "\"Very Low\", \"Low\", \"Medium\", \"High\", \"Ultra\", \"Auto\" or \"Custom\": what a settings entry shows",
      "inline": false
     },
     {
@@ -9387,7 +9393,7 @@
     {
      "name": "cw_quality_saved",
      "signature": "uint32_t cw_quality_saved(void)",
-     "doc": "Save data: a word the game keeps in its save (0 = nothing to keep). It holds\nthe choice (a preset, Auto and the level it reached, also when Auto is the\ngame's own default and has stepped down, or every setting of a\nCustom choice, the game's levers too); cw_quality_restore applies it (at\ninit, after the save loaded and the levers were added; not in a\ndeterministic run). It fits in 13 bits\n(two bytes) for a game with no levers, 21 bits (three bytes) with four.\nA byte 1..4 from an older save is still a preset.",
+     "doc": "Save data: a word the game keeps in its save (0 = nothing to keep). It holds\nthe choice (a preset, Auto and the rung it reached, also when Auto is the\ngame's own default and has stepped down, or every setting of a Custom\nchoice, the game's levers too) and the Resolution with it;\ncw_quality_restore applies it (at init, after the save loaded and the\nlevers were added; not in a deterministic run). It takes 30 bits: keep\nfour bytes. A word written by an older engine (a byte 1..4, an Auto or a\nCustom word) still restores the choice it held.",
      "inline": false
     },
     {
@@ -9400,13 +9406,18 @@
    "types": [
     {
      "name": "cw_quality",
-     "doc": "",
-     "decl": "typedef enum { CW_QUALITY_LOW, CW_QUALITY_MEDIUM, CW_QUALITY_HIGH, CW_QUALITY_ULTRA, CW_QUALITY_COUNT } cw_quality;"
+     "doc": "Cheapest first, so q <= CW_QUALITY_LOW reads \"Low or cheaper\".",
+     "decl": "typedef enum {\n  CW_QUALITY_VERY_LOW,\n  CW_QUALITY_LOW,\n  CW_QUALITY_MEDIUM,\n  CW_QUALITY_HIGH,\n  CW_QUALITY_ULTRA,\n  CW_QUALITY_COUNT\n} cw_quality;"
     },
     {
      "name": "cw_gfx_setting",
      "doc": "── the settings ────────────────────────────────────────────────────",
-     "decl": "typedef enum {\n  CW_GFX_RESOLUTION, /* 50%, 60%, 67%, 75%, 85%, 100% of the output */\n  CW_GFX_SSAO,       /* Off, On */\n  CW_GFX_SHADOWS,    /* Low, Medium, High, Ultra */\n  CW_GFX_AA,         /* Off, FXAA, SMAA */\n  CW_GFX_EFFECTS,    /* Low, Medium, High, Ultra */\n  CW_GFX_ENGINE_COUNT\n} cw_gfx_setting;"
+     "decl": "typedef enum {\n  CW_GFX_RESOLUTION, /* CW_GFX_RES_*: 50%, 60%, 67%, 75%, 85%, 100% of the output */\n  CW_GFX_SSAO,       /* CW_GFX_SSAO_*: Off, On */\n  CW_GFX_SHADOWS,    /* CW_GFX_SHADOWS_*: Minimal, Low, Medium, High, Ultra */\n  CW_GFX_AA,         /* CW_GFX_AA_*: Off, FXAA, SMAA, Full */\n  CW_GFX_EFFECTS,    /* a cw_quality: Very Low, Low, Medium, High, Ultra */\n  CW_GFX_ENGINE_COUNT\n} cw_gfx_setting;"
+    },
+    {
+     "name": "cw_quality_lever_presets",
+     "doc": "The value a game lever takes on each preset (an index into its values, cheapest first). Passed by value, so a\ncall written for the four presets before Very Low existed fails to build instead of reading a shifted array.",
+     "decl": "typedef struct {\n  uint8_t very_low, low, medium, high, ultra;\n} cw_quality_lever_presets;"
     },
     {
      "name": "cw_quality_change_fn",
@@ -9418,7 +9429,7 @@
   },
   {
    "header": "cartwheel/quality_menu.h",
-   "summary": "cartwheel/quality_menu.h: a graphics settings page a game opens from its\nown menus (the game shell, cartwheel/shell.h, opens it from Settings).\n\nOne row per choice: the preset (Low, Medium, High, Ultra, Auto, or Custom\nonce a setting was changed on its own), then every setting of\ncartwheel/quality.h (resolution with the pixel size it renders at,\nambient occlusion, shadows, anti-aliasing, effects detail), then the\ngame's own levers (cw_quality_lever_add), then Back.\n\n  // from the pause menu's \"Graphics\" entry (render-only: update, not the simulation)\n  cw_quality_menu_open();\n  // each frame, before the game's own menu reads input:\n  if (cw_quality_menu_update()) { ... the page used this frame's presses ... }\n  // in the frame's 2D pass, last:\n  cw_quality_menu_draw(&(cw_quality_menu_style){ .font = my_font });\n  // save when it closed after a change: cw_quality_menu_changed()\n\nInput (cw_quality_menu_update): up / down (arrows, W / S, d-pad, left\nstick) choose a row, left / right (A / D, d-pad, stick) change it, accept\n(Enter, Space, South) changes it forward or closes on Back, back (Escape,\nBackspace, East) closes; a tap (mouse or touch) on a row changes it. A game\nwith its own input mapping drives it with cw_quality_menu_input instead.\n\nEvery change applies at once (cw_quality_* settings); none reaches the\nsimulation.",
+   "summary": "cartwheel/quality_menu.h: a graphics settings page a game opens from its\nown menus (the game shell, cartwheel/shell.h, opens it from Settings).\n\nOne row per choice: the preset (Very Low, Low, Medium, High, Ultra, Auto, or Custom\nonce a setting was changed on its own), then every setting of\ncartwheel/quality.h (resolution with the pixel size it renders at,\nambient occlusion, shadows, anti-aliasing, effects detail), then the\ngame's own levers (cw_quality_lever_add), then Back.\n\n  // from the pause menu's \"Graphics\" entry (render-only: update, not the simulation)\n  cw_quality_menu_open();\n  // each frame, before the game's own menu reads input:\n  if (cw_quality_menu_update()) { ... the page used this frame's presses ... }\n  // in the frame's 2D pass, last:\n  cw_quality_menu_draw(&(cw_quality_menu_style){ .font = my_font });\n  // save when it closed after a change: cw_quality_menu_changed()\n\nInput (cw_quality_menu_update): up / down (arrows, W / S, d-pad, left\nstick) choose a row, left / right (A / D, d-pad, stick) change it, accept\n(Enter, Space, South) changes it forward or closes on Back, back (Escape,\nBackspace, East) closes; a tap (mouse or touch) on a row changes it. A game\nwith its own input mapping drives it with cw_quality_menu_input instead.\n\nEvery change applies at once (cw_quality_* settings); none reaches the\nsimulation.",
    "functions": [
     {
      "name": "cw_quality_menu_open",
@@ -12921,7 +12932,7 @@
     {
      "name": "cw_terrain_set_quality",
      "signature": "void cw_terrain_set_quality(cw_terrain *t, int quality)",
-     "doc": "Quality level for shading (CW_QUALITY_LOW .. ULTRA); -1 follows\ncw_quality_get() (the default).",
+     "doc": "Quality level for shading (CW_QUALITY_VERY_LOW .. ULTRA; Very Low draws as Low); -1 follows\ncw_quality_get() (the default).",
      "inline": false
     },
     {

@@ -122,6 +122,13 @@ Add a suite with `cw_add_app(unit_x SOURCES test_x.c)` in `tests/unit/CMakeLists
 
 Some checks need more than one run: several processes, a tool, a timing report. A gate with `script` runs a node script that prints `ok ...` / `FAIL ...` lines, runs its own must-fail control, and exits 0 only on success. Examples: `tests/cwpack.mjs` (asset packing), `tests/net.mjs` (cart-to-cart sessions), `tests/project-templates.mjs` ([Templates](guide:templates)), `tests/export.mjs`, the `*-perf.mjs` reports ([Profiling](guide:profiling)), and `tests/docs.mjs` / `tests/tutorials.mjs` for this site.
 
+### The graphics settings' gates
+
+- `quality-unit` (`tests/quality-unit.mjs`, no GPU): Resolution stays the player's on every preset and Auto across a save and a restart, every older save word restores its choice, a lever's five values apply and a four-entry lever array does not build, a slow host's Auto is on its rung within 3 seconds. Controls: `CW_TEST_QUALITY_OLD_RES`, `CW_TEST_QUALITY_V2_ONLY`, `CW_TEST_QUALITY_NO_JUMP` bring back the old behaviour one at a time, and each must fail its case.
+- `quality-sim-same`: the same replay at Very Low and High simulates the same bits. Control: `CW_TEST_QUALITY_INTO_SIM`.
+- `quality-grounding`: Very Low keeps the shadows High draws at the base of each caster (`CW_SHADOW_CONTACTS=1` and the `shadow_contacts` request put each caster's base on screen; `CW_TEST_NO_SHADOWS=1` draws the frame without them). Control: Very Low with no shadows.
+- `quality-range`: each preset's GPU time ([Profiling](guide:profiling)). Control: `CW_TEST_QUALITY_FLAT=1`.
+
 ## Gates of another repository
 
 A repository of games built with this engine (configured as its project with `-DCW_PROJECT_DIR`) keeps its own `tests/gates.json`, input scripts, `build/` and `out/`, laid out as here. `CW_PROJECT_ROOT=<that repository>` points `tests/gate.mjs` and `tools/run-cart.mjs` at them: gates, inputs and scripts come from its `tests/`, apps from its `build/` (a project app is found through `build/native/apps/<app>.json`), and output goes to its `out/`. [cartwheel-examples](https://github.com/monteslu/cartwheel-examples) runs its games' gates this way.

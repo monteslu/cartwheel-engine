@@ -28,6 +28,8 @@ if (process.env.CW_TEST_GPU !== 'software') {
 /** scripted gates that do not run in CI, and why */
 export const LOCAL_ONLY = {
   'gi-perf': 'GPU timings on the test GPU',
+  'quality-range': 'GPU timings on the test GPU at every preset',
+  'quality-grounding': 'reads pixels of native runs at 1080p on the test GPU, High against Very Low',
   'gi-probe': 'reads pixels of native runs on the test GPU (GL and WebGPU) against known answers',
   'reversed-depth': 'reads pixels of WebGPU runs on the test GPU, forward depth against reversed',
   'gpu-guard': 'tests the GPU guards against a real card (VRAM, kernel log)',

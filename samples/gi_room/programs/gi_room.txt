@@ -11,3 +11,4 @@ standard+shadow+senv+l1101+xgibuf
 standard+senv+l1101+xgibuf
 standard+l0001+xgibuf
 depth+xgibuf
+standard+shadow+senv+l1101+s100+xgi
