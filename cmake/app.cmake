@@ -4,7 +4,8 @@
 # every engine file it names (src/platform/native_entry.c, tools/*.mjs,
 # deps/wasmcart*) sits at the same path under both.
 
-# ── cw_add_app(name SOURCES ... [ASSETS dir] [NET domain...] [PLUGINS dir] [NO_PLUGINS] [PROGRAMS table.txt...]) ──
+# ── cw_add_app(name SOURCES ... [ASSETS dir] [NET domain...] [PLUGINS dir] [NO_PLUGINS] [PROGRAMS table.txt...]
+#               [ART dir] [DESCRIPTION text] [AUTHOR text]) ──
 # Native: an executable. Cart: <name>.wasm packed into <name>.wasc (with the
 # asset directory) by wasmcart-pack, after the import audit. Every cart is
 # the dual GL + WebGPU one, and every app draws through the engine on both
@@ -13,10 +14,16 @@
 # cart a build packs is listed in <build>/carts.txt. NET lists the
 # hosts the cart may dial with wc_peer_open (the manifest net.domains grant);
 # without NET, a project's `net.domains` key in project.cwproj gives them.
+# ART <dir> is the cart's pictures for launchers (an icon, a cover, a
+# background, a logo, a title screen, screenshots: wasmcart's docs/art.md),
+# packed under art/ in the .wasc; DESCRIPTION and AUTHOR go in its manifest
+# beside them. Without them, the app a project names (`app` in
+# project.cwproj) takes the project's `art` (a directory relative to the
+# project), `description` and `author` keys. Native builds do not use them.
 # Plugins (cmake/plugins.cmake): the runtime plugins of PLUGINS <dir>,
 # default <the calling directory>/plugins when it exists, are compiled in.
 function(cw_add_app name)
-  cmake_parse_arguments(A "NO_PLUGINS;QUIET_PLUGINS;NO_PROJECT_EDITOR" "ASSETS;PACK;PLUGINS" "SOURCES;NET;PROGRAMS" ${ARGN})
+  cmake_parse_arguments(A "NO_PLUGINS;QUIET_PLUGINS;NO_PROJECT_EDITOR" "ASSETS;PACK;PLUGINS;ART;DESCRIPTION;AUTHOR" "SOURCES;NET;PROGRAMS" ${ARGN})
   if(A_UNPARSED_ARGUMENTS)
     message(FATAL_ERROR "cw_add_app(${name}): unknown arguments ${A_UNPARSED_ARGUMENTS} (every app is a dual GL + WebGPU cart: there is no opt-out)")
   endif()
@@ -30,6 +37,25 @@ function(cw_add_app name)
       string(REGEX REPLACE "[ \t]*,[ \t]*" ";" A_NET "${_cw_net}")
       string(STRIP "${A_NET}" A_NET)
     endif()
+  endif()
+  # the project's own app takes its cart art and credits from project.cwproj
+  # (art = art, description = ..., author = ...) when the call passes none
+  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/project.cwproj)
+    cw__project_value(_cw_app app)
+    if(_cw_app STREQUAL name)
+      foreach(_k art description author)
+        string(TOUPPER ${_k} _K)
+        if(NOT A_${_K})
+          cw__project_value(A_${_K} ${_k})
+        endif()
+      endforeach()
+    endif()
+  endif()
+  if(A_ART AND NOT IS_ABSOLUTE "${A_ART}")
+    set(A_ART ${CMAKE_CURRENT_SOURCE_DIR}/${A_ART})
+  endif()
+  if(CW_CART AND A_ART AND NOT IS_DIRECTORY "${A_ART}")
+    message(FATAL_ERROR "cw_add_app(${name}): ART ${A_ART} is not a directory")
   endif()
   if(ANDROID)
     # SDLActivity loads the game as libmain.so (one per app directory) and
@@ -227,6 +253,19 @@ function(cw_add_app name)
     foreach(_d ${A_NET})
       list(APPEND _assets --ws ${_d})
     endforeach()
+    # the cart's pictures and credits for launchers (manifest art, description, author)
+    set(_meta "")
+    if(A_ART)
+      list(APPEND _meta --art ${A_ART})
+      file(GLOB_RECURSE _art_files CONFIGURE_DEPENDS ${A_ART}/*)
+      set_property(TARGET ${name} APPEND PROPERTY LINK_DEPENDS ${_art_files})
+    endif()
+    if(A_DESCRIPTION)
+      list(APPEND _meta --description "${A_DESCRIPTION}")
+    endif()
+    if(A_AUTHOR)
+      list(APPEND _meta --author "${A_AUTHOR}")
+    endif()
     # The .wasc is written after the link, so an asset-only change must relink
     # too, or the cart keeps the old assets (a regenerated sound reached the
     # pack but never the cart): the pack's stamp, or every loose asset file.
@@ -252,10 +291,28 @@ function(cw_add_app name)
       ${_stage_cmd}
       COMMAND node ${CW_ROOT}/tools/check-imports.mjs $<TARGET_FILE:${name}> ${_wgpu_check}
       COMMAND node ${_wc_pack} --wasm $<TARGET_FILE:${name}> --name ${name}
-              ${_assets} ${_files} --version 0.1.0 --output ${_wasc_tmp} > /dev/null
+              ${_assets} ${_files} ${_meta} --version 0.1.0 --output ${_wasc_tmp} > /dev/null
       COMMAND ${CMAKE_COMMAND} -E rename ${_wasc_tmp} ${_wasc}
       COMMENT "cart ${name}.wasc")
   endif()
+endfunction()
+
+# cw__project_value(<out> <key>): a key's value in the calling directory's
+# project.cwproj (surrounding quotes stripped, spaces trimmed); empty when the
+# file has no such key
+function(cw__project_value out key)
+  set(_v "")
+  string(REPLACE "." "\\." _kre "${key}")
+  file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/project.cwproj _line REGEX "^[ \t]*${_kre}[ \t]*=")
+  if(_line)
+    list(GET _line 0 _line)
+    string(REGEX REPLACE "^[ \t]*${_kre}[ \t]*=[ \t]*" "" _v "${_line}")
+    string(STRIP "${_v}" _v)
+    if(_v MATCHES "^\"(.*)\"$")
+      set(_v "${CMAKE_MATCH_1}")
+    endif()
+  endif()
+  set(${out} "${_v}" PARENT_SCOPE)
 endfunction()
 
 # <build>/carts.txt: the carts this build packs (scripts/build.sh removes any

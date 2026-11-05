@@ -20,6 +20,10 @@
  *   export.<preset>.platform / .output / ...   export presets (tools/cwexport)
  *   net.domains = play.example.com      hosts the cart may dial (wc_peer_open's
  *                                       manifest grant; read by cw_add_app at build)
+ *   art = art                           the cart's pictures for launchers (a directory
+ *                                       with art.json; docs/shipping.md), and
+ *   description / author                its description and credit: the manifest's
+ *                                       art, description, author (cw_add_app at build)
  * Editor and tool keys (the engine itself never reads them):
  *   scenes = levels/a.cwscene, ...     scenes the editor lists besides main_scene
  *   sources = src, game.c               C files and directories (the editor's

@@ -5,6 +5,11 @@
 # shows them (v0.25.0's macOS SDK packed fine and no game could link with it).
 #
 #   scripts/sdk-link-check.sh <target> <sdk.tar.gz>
+#
+# A cart SDK (cart-wgpu) has no native link: its wasmcart-pack packs a cart
+# with art from the SDK's own files instead (tests/cart-art.mjs --pack), so a
+# file the pack tool imports and the SDK left out fails here (wasmcart
+# 0.38.0's pack tool imports src/cartArt.js).
 set -euo pipefail
 
 T="${1:?target}"
@@ -14,6 +19,12 @@ W="$ROOT/out/sdk-link-check/$T"
 rm -rf "$W"
 mkdir -p "$W/sdk" "$W/game"
 tar -xzf "$TGZ" -C "$W/sdk" --strip-components=1
+if [ "$T" = cart-wgpu ]; then
+  node "$ROOT/tests/cart-art.mjs" --pack "$W/sdk/deps/wasmcart-wgpu/bin/wasmcart-pack.js" --carts "$W/no-carts"
+  rm -rf "$W"
+  echo "sdk-link-check $T: the SDK's wasmcart-pack packs a cart with art"
+  exit 0
+fi
 cp "$ROOT/samples/hello/main.c" "$W/game/main.c"
 cat > "$W/game/CMakeLists.txt" <<'EOF'
 cmake_minimum_required(VERSION 3.20)

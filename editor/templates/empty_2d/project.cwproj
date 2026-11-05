@@ -13,3 +13,7 @@ export.native.platform = linux-x64
 export.native.output = exports/native
 export.cart.platform = wasc
 export.cart.output = exports/cart
+# the cart's pictures for launchers and its credits (docs/shipping.md, "Give the cart its art"):
+# art = art
+# description = "What the game is, in a sentence or two."
+# author = "Your Name"
