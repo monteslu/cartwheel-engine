@@ -4,6 +4,18 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.32.0 (2026-11-05)
+
+### Added
+- Cart art: a cart can carry pictures of the game for launchers (an icon, a cover, a background, a logo, the title screen and labelled screenshots) with a description and the author, as wasmcart 0.38.0 defines them. `cw_add_app` takes `ART <dir>`, `DESCRIPTION` and `AUTHOR`, or reads a project's `art`, `description` and `author` keys from `project.cwproj` for the app the project names, and the cart build packs the pictures under `art/` in the `.wasc` with the manifest's `art`, `description` and `author`. A file that is not a PNG or JPEG stops the build; a picture of the wrong shape or size is a warning. docs/shipping.md, "Give the cart its art", says what to make; the templates carry the keys commented out.
+- `tests/cart-art.mjs`: the project keys parse as `cw_add_app` reads them, the pack tool packs a fixture with every picture and its label, `samples/hello` carries the fixture's art and a sample without `ART` carries none, with a control (a cover of the wrong shape) that must be reported. CI runs it on the cart shares, and the cart SDK's check packs a cart with art using the SDK's own files.
+
+### Changed
+- wasmcart 0.38.0 (from 0.36.2). 0.37.0 gives WebGPU carts a core device where the GPU has one, on every host; 0.38.0 adds the cart art fields and `wasmcart-pack --art`, and hosts ignore manifest fields they do not know.
+
+### Fixed
+- The cart SDK now ships `src/cartArt.js` beside `bin/wasmcart-pack.js`, which imports it from wasmcart 0.38.0 on: without it every cart build from the SDK would stop at the pack.
+
 ## v0.31.0 (2026-11-05)
 
 ### Added
