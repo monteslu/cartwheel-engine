@@ -96,9 +96,10 @@
  * (tools/programs.mjs) runs every preset.
  *
  * Very Low post: the height fog is applied inside the tone mapping pass instead of as its own blend over
- * the frame, and FXAA runs there too, its edge search on a display brightness estimated from the HDR
- * scene. Two full-frame passes fewer; the picture differs from the separate passes only at the edges
- * FXAA smooths (it blends HDR values, so an edge against a bright sky stays a little harder).
+ * the frame, and FXAA runs there too (FXAA 3.11's console variant: fewer reads, no edge search), its edge
+ * test on a display brightness estimated from the HDR scene and its blend weighted so a bright light's
+ * edge smooths as its display value would. Two full-frame passes fewer; the picture differs from the
+ * separate passes only at the edges FXAA smooths.
  *
  * Game settings: a game adds its own render-only levers (cw_quality_lever_add:
  * a cheaper material at distance, say) with the value each preset picks;

@@ -3,9 +3,10 @@
 // CW_QUALITY=verylow): the passes run apart (CW_TEST_NO_FUSION=1) against the fused frame. The fused run must report
 // the fog and the anti-aliasing as fused where the separate run ran them, and the picture must be the separate passes'
 // but for FXAA's edges: at most MAX_GT16 of the pixels may differ by more than 16/255 (the console variant against the
-// quality preset, blending HDR values), and the mean difference stays under MAX_MEAN.
+// quality preset), the mean difference stays under MAX_MEAN, and where FXAA ran fused the frame is as smooth as the
+// separate passes' (its edge energy, the summed differences of neighbouring pixels, at most MAX_EDGE over theirs).
 // CONTROLS, per backend: the fused pass with the fog left out (CW_TEST_VERYLOW_POST=fog) on the first case that fused
-// the fog, and with FXAA left out (CW_TEST_VERYLOW_POST=aa) on the first that fused FXAA, must each break the bound.
+// the fog, and with FXAA left out (CW_TEST_VERYLOW_POST=aa) on the first that fused FXAA, must each break the bounds.
 //
 //   node tests/quality-verylow-post.mjs [--gpus gl,webgpu] [app[:frame] ...]
 //
@@ -35,7 +36,7 @@ const CASES = (only.length ? only : ['open_world:600', 'showcase:300']).map((a) 
   const [app, frame] = a.split(':');
   return { app, frames: +frame || 600, tag: app };
 });
-const MAX_GT16 = 0.005, MAX_MEAN = 1.0; // share of pixels over 16/255; mean difference in 255ths
+const MAX_GT16 = 0.005, MAX_MEAN = 1.0, MAX_EDGE = 0.015; // share of pixels over 16/255; mean difference in 255ths; edge energy over the separate passes'
 
 const guard = armGuard('quality-verylow-post', { outFile: join(OUT, 'gpu-mem.json') });
 
@@ -68,7 +69,17 @@ function meanDiff(a, b) {
   for (let i = 0; i < a.rgba.length; i++) s += Math.abs(a.rgba[i] - b.rgba[i]);
   return s / a.rgba.length;
 }
-const broken = (d, m) => !d.comparable || d.gt16 > MAX_GT16 || m > MAX_MEAN;
+/** the summed differences of neighbouring pixels (the frame's top 10% left out: banners and HUD) */
+function edges(im) {
+  let s = 0;
+  for (let y = Math.floor(im.h * 0.1); y < im.h - 1; y++)
+    for (let x = 0; x < im.w - 1; x++) {
+      const i = (y * im.w + x) * 4;
+      for (let c = 0; c < 3; c++) s += Math.abs(im.rgba[i + c] - im.rgba[i + 4 + c]) + Math.abs(im.rgba[i + c] - im.rgba[i + im.w * 4 + c]);
+    }
+  return s;
+}
+const broken = (d, m, sep, img, aa) => !d.comparable || d.gt16 > MAX_GT16 || m > MAX_MEAN || (aa && edges(img) > edges(sep) * (1 + MAX_EDGE));
 const STEPS = { height_fog: 'fog', aa: 'aa' };
 let fail = 0;
 const ctl = {}; // per backend and step: the first case that fused it
@@ -84,10 +95,11 @@ for (const gpu of GPUS)
       if (fused.fused[k]) (ctl[gpu] ||= {})[STEPS[k]] ||= c;
     }
     const d = diffImages(sep.img, fused.img), m = d.comparable ? meanDiff(sep.img, fused.img) : 0;
-    if (broken(d, m)) problems.push(d.comparable ? `picture differs: ${(d.gt16 * 100).toFixed(3)}% of pixels over 16/255 (bound ${MAX_GT16 * 100}%), mean ${m.toFixed(3)} (bound ${MAX_MEAN})` : d.reason);
+    const aa = !!fused.fused.aa, ed = d.comparable ? edges(fused.img) / edges(sep.img) - 1 : 0;
+    if (broken(d, m, sep.img, fused.img, aa)) problems.push(d.comparable ? `picture differs: ${(d.gt16 * 100).toFixed(3)}% of pixels over 16/255 (bound ${MAX_GT16 * 100}%), mean ${m.toFixed(3)} (bound ${MAX_MEAN}), edges ${(ed * 100).toFixed(2)}% over the separate passes' (bound ${MAX_EDGE * 100}% with FXAA)` : d.reason);
     const what = Object.keys(STEPS).filter((k) => fused.fused[k]).join(', ') || 'none';
     console.log(`${problems.length ? 'FAIL' : 'ok  '} ${c.tag} ${gpu} frame ${c.frames} (fused: ${what}): ` +
-      (d.comparable ? `${(d.gt16 * 100).toFixed(3)}% px over 16, max ${d.max}, mean ${m.toFixed(3)}` : '') + (problems.length ? '\n  ' + problems.join('\n  ') : ''));
+      (d.comparable ? `${(d.gt16 * 100).toFixed(3)}% px over 16, max ${d.max}, mean ${m.toFixed(3)}, edges ${(ed * 100).toFixed(2)}%` : '') + (problems.length ? '\n  ' + problems.join('\n  ') : ''));
     if (problems.length) fail++;
   }
 for (const gpu of GPUS)
@@ -102,8 +114,9 @@ for (const gpu of GPUS)
     const sep = readImage(join(OUT, `${c.tag}-${gpu}-separate.png`));
     const r = await run(c, gpu, `without-${step}`, { CW_TEST_VERYLOW_POST: step });
     const d = diffImages(sep, r.img), m = d.comparable ? meanDiff(sep, r.img) : 0;
-    const seen = broken(d, m);
-    console.log(`${seen ? 'ok  ' : 'FAIL'} control: ${c.tag} ${gpu} without the fused ${step}: ${(d.gt16 * 100).toFixed(3)}% px over 16, mean ${m.toFixed(3)}` +
+    const seen = broken(d, m, sep, r.img, step === 'aa');
+    const ed = d.comparable ? edges(r.img) / edges(sep) - 1 : 0;
+    console.log(`${seen ? 'ok  ' : 'FAIL'} control: ${c.tag} ${gpu} without the fused ${step}: ${(d.gt16 * 100).toFixed(3)}% px over 16, mean ${m.toFixed(3)}, edges ${(ed * 100).toFixed(2)}%` +
       (seen ? '' : ' (the bound cannot see it)'));
     if (!seen) fail++;
   }
