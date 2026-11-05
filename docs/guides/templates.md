@@ -19,7 +19,7 @@ Then set `name` (the display name) and `app` (a C identifier: the executable and
 
 | File | Role |
 |---|---|
-| `project.cwproj` | `key = value` settings read by `cartwheel/project.h`: `name`, `app`, `main_scene`, `sources`, `scenes`, the input map (`input.<action> = key:space, pad:south`), physics layer names and gravity, `render.width` / `render.height` / `render.msaa` / `render.vsync`, and two export presets (`native` for linux-x64, `cart` for wasc) |
+| `project.cwproj` | `key = value` settings read by `cartwheel/project.h`: `name`, `app`, `main_scene`, `sources`, `scenes`, the input map (`input.<action> = key:space, pad:south`), physics layer names and gravity, `render.width` / `render.height` / `render.msaa` / `render.vsync`, two export presets (`native` for linux-x64, `cart` for wasc), and commented-out `art`, `description` and `author` keys: the cart's pictures and credits for launchers ([Ship your game](../shipping.md), "Give the cart its art") |
 | `CMakeLists.txt` | reads `app` from `project.cwproj` and declares the game: `cw_add_app(<app> SOURCES src/*.c PACK roots.txt)`. Nothing else; the engine tree does the rest. |
 | `roots.txt` | what ships: the asset packer follows scene references from these files, so only reachable assets are packed |
 | `main.cwscene` | the main scene, built only from engine node types |

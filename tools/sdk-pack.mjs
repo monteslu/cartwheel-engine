@@ -168,10 +168,11 @@ if (CART) {
   engineTree('cmake/cart');
   engineFile('tools/check-imports.mjs');
   engineFile('tools/stage-assets.mjs');
-  // wasmcart-pack and, for dual carts, the WebGPU tier's import list (check-imports --wgpu)
+  // wasmcart-pack (with the art checks it imports, src/cartArt.js) and, for dual carts, the WebGPU tier's
+  // import list (check-imports --wgpu)
   for (const wc of WGPU ? ['wasmcart-wgpu'] : ['wasmcart']) {
     const d = join(SRC, 'deps', wc);
-    const files = ['package.json', 'LICENSE', 'bin/wasmcart-pack.js', 'src/abi.js'];
+    const files = ['package.json', 'LICENSE', 'bin/wasmcart-pack.js', 'src/abi.js', 'src/cartArt.js'];
     if (WGPU) files.push('src/wgpu/host.js', 'src/wgpu/glue-loader.js', 'src/wgpu/emdawnwebgpu-glue.mjs', 'src/wgpu/emdawnwebgpu-glue-manifest.js', 'src/cartMemory.js', 'src/wgpu/release.js');
     for (const f of files) copyFile(join(d, f), join(OUT, 'deps', wc, f));
     for (const m of ['yazl', 'buffer-crc32']) copyTree(join(d, 'node_modules', m), join(OUT, 'deps', wc, 'node_modules', m));

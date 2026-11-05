@@ -1,0 +1,7 @@
+# a project whose app takes its cart art and credits from here (tests/cart-art.mjs)
+name = "Art Test"
+app = "arttest"
+art = ../cart-art
+description = "A test cart, with commas, an apostrophe's mark and (brackets)."
+author = The cartwheel authors
+artist = not the art key

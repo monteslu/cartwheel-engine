@@ -57,6 +57,50 @@ Only the game compiles. Carts link in seconds as dev carts
 carts leave it off. docs/sdk.md has the cross builds' and carts' configure
 lines.
 
+## Give the cart its art
+
+A `.wasc` can carry pictures of the game for launchers to show before they
+run it: an icon, a cover, a background, a logo, the title screen and
+screenshots, with a description and the author (wasmcart's `docs/art.md`
+says what each picture is, its shape and its size). Put them in a directory
+of the game, with an `art.json` naming each file and labelling each
+screenshot:
+
+```json
+{
+  "icon": "icon.png",
+  "cover": "cover.jpg",
+  "background": "background.jpg",
+  "logo": "logo.png",
+  "title": "title.png",
+  "screenshots": [
+    { "path": "harbour.png", "label": "Trading in a busy harbour" },
+    { "path": "battle.png", "label": "Three ships trading broadsides at dusk" }
+  ]
+}
+```
+
+Then name the directory and the credits in the game's `project.cwproj`:
+
+```
+art = art
+description = "Sail, trade and fight across a sunlit archipelago."
+author = "Your Name"
+```
+
+`cw_add_app` reads them for the app the project names (`app`); an app of
+its own passes them instead: `cw_add_app(mygame SOURCES ... ART art
+DESCRIPTION "..." AUTHOR "...")`. The cart build packs the pictures under
+`art/` in the `.wasc`, outside the assets (the game never loads them), and
+writes the manifest's `art`, `description` and `author`. A file that is not a
+PNG or JPEG stops the build; a picture of the wrong shape or too small, or a
+logo without transparency, is a warning in the build log. Native builds and
+exports do not use them.
+
+Make every picture from the game itself: screenshots of real play at the
+cart's resolution, a title screen as the game shows it, and a cover and a
+logo with the game's name in the game's own font.
+
 ## Tag a release
 
 Releases come from CI on a `v*` tag: build each platform with its SDK,

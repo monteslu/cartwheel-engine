@@ -1,0 +1,8 @@
+{
+  "icon": "icon.png",
+  "cover": "cover.png",
+  "background": "background.png",
+  "logo": "logo.png",
+  "title": "title.png",
+  "screenshots": [{ "path": "shot-play.png", "label": "A flat green test picture" }]
+}

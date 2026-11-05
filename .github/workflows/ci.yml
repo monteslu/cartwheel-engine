@@ -158,3 +158,6 @@ jobs:
       # a cart without WebGPU (the control cart must be caught; CW_WGPU=OFF stops at configure)
       - name: Every cart is dual
         run: node tests/no-gl-only-carts.mjs
+      # cart art: the project keys, the pack tool, and hello.wasc in the share that built it
+      - name: Cart art
+        run: node tests/cart-art.mjs --carts build/carts/carts
