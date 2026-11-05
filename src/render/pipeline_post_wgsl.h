@@ -628,6 +628,7 @@ WGSL_DECL WGSL_FXAA = S(
 /* FXAA 3.11's console variant inside the tonemap pass (pipeline_post.c FXAA_CONSOLE_GLSL; dluma is the pass's) */
 WGSL_DECL WGSL_FXAA_CONSOLE = S(
   fn T(p: vec2f) -> vec4f { return textureSampleLevel(u_src, cw_linear, p, 0.0); }
+  fn hw(c: vec3f) -> f32 { return 1.0 / (1.0 + max(dot(c, vec3f(0.299, 0.587, 0.114)), 0.0) * u.toneMappingExposure); }
   fn fxaa(uv: vec2f) -> vec4f {
     let rgbyM = T(uv);
     let lumaM = dluma(rgbyM.rgb);
@@ -639,7 +640,7 @@ WGSL_DECL WGSL_FXAA_CONSOLE = S(
     let lumaMin = min(min(lumaNe, lumaSe), min(lumaNw, lumaSw));
     let lumaMaxM = max(lumaMax, lumaM);
     let lumaMinM = min(lumaMin, lumaM);
-    if (lumaMaxM - lumaMinM < max(0.05, lumaMax * 0.125)) { return rgbyM; }
+    if (lumaMaxM - lumaMinM < max(0.0312, lumaMax * 0.125)) { return rgbyM; }
     let dirSwMinusNe = lumaSw - lumaNe;
     let dirSeMinusNw = lumaSe - lumaNw;
     let dir1 = normalize(vec2f(dirSwMinusNe + dirSeMinusNw, dirSwMinusNe - dirSeMinusNw) + vec2f(1e-8));
@@ -648,11 +649,12 @@ WGSL_DECL WGSL_FXAA_CONSOLE = S(
     let dir2 = clamp(dir1 / (min(abs(dir1.x), abs(dir1.y)) * 8.0), vec2f(-2.0), vec2f(2.0));
     let rgbyN2 = T(uv - dir2 * u.u_rcp * 2.0);
     let rgbyP2 = T(uv + dir2 * u.u_rcp * 2.0);
-    let rgbyA = rgbyN1 + rgbyP1;
-    var rgbyB = (rgbyN2 + rgbyP2) * 0.25 + rgbyA * 0.25;
-    let lumaB = dluma(rgbyB.rgb);
-    if (lumaB < lumaMin || lumaB > lumaMax) { rgbyB = vec4f(rgbyA.rgb * 0.5, rgbyB.a); }
-    return vec4f(rgbyB.rgb, rgbyM.a);
+    let wN1 = hw(rgbyN1.rgb); let wP1 = hw(rgbyP1.rgb); let wN2 = hw(rgbyN2.rgb); let wP2 = hw(rgbyP2.rgb);
+    let sumA = rgbyN1.rgb * wN1 + rgbyP1.rgb * wP1;
+    let rgbA = sumA / (wN1 + wP1);
+    let rgbB = (sumA + rgbyN2.rgb * wN2 + rgbyP2.rgb * wP2) / (wN1 + wP1 + wN2 + wP2);
+    let lumaB = dluma(rgbB);
+    return vec4f(select(rgbB, rgbA, lumaB < lumaMin || lumaB > lumaMax), rgbyM.a);
   });
 
 WGSL_DECL WGSL_DOF = S(

@@ -1316,8 +1316,11 @@ static unsigned swap_must(char *buf, size_t cap, const char *src, const char *fr
   return 1;
 }
 /* FXAA 3.11's console variant (FXAA_PC_CONSOLE): four half-texel diagonal reads and the centre, then two or four
- * reads along the edge, no search: about half the reads of the quality preset in flat areas and a third at edges */
+ * reads along the edge, no search: about half the reads of the quality preset in flat areas and a third at edges.
+ * Its reads are HDR values: they are averaged weighted by 1 / (1 + exposed luminance) (hw), so a bright light's
+ * edge is smoothed as the display values would be, not left hard by its brightness */
 static const char *FXAA_CONSOLE_GLSL = S(
+  float hw(vec3 c) { return 1.0 / (1.0 + max(dot(c, vec3(0.299, 0.587, 0.114)), 0.0) * toneMappingExposure); }
   vec4 fxaa() {
     vec2 pos = v_uv;
     vec4 rgbyM = T(pos);
@@ -1326,17 +1329,17 @@ static const char *FXAA_CONSOLE_GLSL = S(
     float lumaNe = dluma(T(pos + vec2(0.5, -0.5) * u_rcp).rgb) + 1.0 / 384.0, lumaSe = dluma(T(pos + vec2(0.5, 0.5) * u_rcp).rgb);
     float lumaMax = max(max(lumaNe, lumaSe), max(lumaNw, lumaSw)), lumaMin = min(min(lumaNe, lumaSe), min(lumaNw, lumaSw));
     float lumaMaxM = max(lumaMax, lumaM), lumaMinM = min(lumaMin, lumaM);
-    if (lumaMaxM - lumaMinM < max(0.05, lumaMax * 0.125)) return rgbyM;
+    if (lumaMaxM - lumaMinM < max(0.0312, lumaMax * 0.125)) return rgbyM;
     float dirSwMinusNe = lumaSw - lumaNe, dirSeMinusNw = lumaSe - lumaNw;
     vec2 dir1 = normalize(vec2(dirSwMinusNe + dirSeMinusNw, dirSwMinusNe - dirSeMinusNw) + 1e-8);
     vec4 rgbyN1 = T(pos - dir1 * u_rcp * 0.5), rgbyP1 = T(pos + dir1 * u_rcp * 0.5);
     vec2 dir2 = clamp(dir1 / (min(abs(dir1.x), abs(dir1.y)) * 8.0), -2.0, 2.0);
     vec4 rgbyN2 = T(pos - dir2 * u_rcp * 2.0), rgbyP2 = T(pos + dir2 * u_rcp * 2.0);
-    vec4 rgbyA = rgbyN1 + rgbyP1;
-    vec4 rgbyB = (rgbyN2 + rgbyP2) * 0.25 + rgbyA * 0.25;
-    float lumaB = dluma(rgbyB.rgb);
-    if (lumaB < lumaMin || lumaB > lumaMax) rgbyB.rgb = rgbyA.rgb * 0.5;
-    return vec4(rgbyB.rgb, rgbyM.a);
+    float wN1 = hw(rgbyN1.rgb), wP1 = hw(rgbyP1.rgb), wN2 = hw(rgbyN2.rgb), wP2 = hw(rgbyP2.rgb);
+    vec3 sumA = rgbyN1.rgb * wN1 + rgbyP1.rgb * wP1, rgbA = sumA / (wN1 + wP1);
+    vec3 rgbB = (sumA + rgbyN2.rgb * wN2 + rgbyP2.rgb * wP2) / (wN1 + wP1 + wN2 + wP2);
+    float lumaB = dluma(rgbB);
+    return vec4(lumaB < lumaMin || lumaB > lumaMax ? rgbA : rgbB, rgbyM.a);
   });
 
 /* CW_TEST_VERYLOW_POST=fog or =aa (native test runs): the Very Low tonemap pass leaves that step out while still
@@ -1366,7 +1369,7 @@ static unsigned tm_cheap_variant(bool grade, bool lens, bool aa, bool fog) {
     if (!swap_must(head, sizeof head, WGSL_TM_FUSED_HEAD, "u_frame: i32 };", fields) ||
         !swap_must(fs, sizeof fs, WGSL_TM_FUSED_FS, "var c = textureSampleLevel(u_src, cw_linear, uv, 0.0);", in))
       return 0;
-    snprintf(buf, sizeof buf, "%s%s%s%s%s%s%s%s%s%s%s%s%s%s  var o = vec4f(x, 1.0);\n%s  return o;\n}\n", head,
+    snprintf(buf, sizeof buf, "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s  var o = vec4f(x, 1.0);\n%s  return o;\n}\n", head,
              fog ? "@group(0) @binding(5) var u_depth: texture_2d<f32>;\n" : "", WGSL_COMMON, WGSL_BL_PREFILTER,
              cw__fuse_round_wgsl(), WGSL_FUSE_BLOOM_GRADE, WGSL_FUSE_LENS, fog ? WGSL_FOG_FN : "", fog ? WGSL_FUSE_FOG : "",
              WGSL_TM_FNS,
