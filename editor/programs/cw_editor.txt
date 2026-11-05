@@ -6,3 +6,9 @@ standard+map+rep+emap+l1001
 basic+map+rep
 standard+map+rep+instbig+emap+l1001
 standard+instbig+shadow+l1001
+depth+xplain
+standard+shadow+l1001+xplain
+standard+l1001+xplain
+standard+map+rep+emap+l1001+xplain
+standard+map+rep+instbig+emap+l1001+xplain
+standard+instbig+shadow+l1001+xplain

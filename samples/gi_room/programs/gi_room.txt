@@ -12,3 +12,7 @@ standard+senv+l1101+xgibuf
 standard+l0001+xgibuf
 depth+xgibuf
 standard+shadow+senv+l1101+s100+xgi
+standard+l0001+xcluster_plain_gi
+depth+xplain
+standard+shadow+senv+l1101+s100+xplain
+standard+senv+l1101+xplain
