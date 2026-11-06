@@ -4,6 +4,34 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.33.0 (2026-11-05)
+
+### Added
+- **The plain lighting model on Very Low.** On effects detail Very Low every MeshStandardMaterial and MeshPhysicalMaterial the lighting system marks carries a new shading part, `plain` (`cw_quality_scale("shading")` is 0 there, 1 on every other preset): Lambert diffuse and a Blinn-Phong highlight sized by the roughness; the environment and the probes light it with their diffuse light only (no reflection is sampled; the specular colour takes that light through an analytic estimate, so metals keep their tint); no clearcoat, sheen, iridescence or anisotropy. Colour, maps, normal map, emission, ambient occlusion and light maps are unchanged, and a material with transmission keeps the full model. Under it the light probe grid reads its first two SH bands (6 reads, not 14).
+- **Very Low post in one pass.** On Very Low the height fog and FXAA run inside the tone mapping pass: the fog blended over the HDR value as it is read, and FXAA 3.11's console variant (four diagonal reads and the centre, two or four along an edge, no search), its edge test on a brightness estimated from the HDR value and its blend of tone-mapped reads. Two full-frame passes fewer.
+- Gate `quality-verylow-post`: on Very Low the fog and FXAA are reported fused, the frame is the separate passes' but for FXAA's edges, and FXAA visibly smooths. Controls: `CW_TEST_VERYLOW_POST=fog` and `=aa` leave each step out and must fail.
+
+### Changed
+- Terrain on Very Low reads each layer once (no stochastic tiling, a third of the reads) and switches to its coarser levels from 0.6 of their distance (they still morph in, no cracks).
+- Every sample, game and test program table regenerated with its Very Low states (`x<parts>_plain`, `xterrainmin`): cw_samples 103 to 158 states, terrain_demo 53 to 72, character_skin 18 to 26, gi_room 13 to 17, the editor 7 to 13. **A game's own tables need a survey at Very Low** (`node tools/programs.mjs <app> --presets verylow`, or every preset); a state missing there is a skipped draw on Very Low.
+- `tests/quality-range-engine.json`: Very Low's share of High tightened to this release's measurements (fx_explosion 0.55 to 0.35, night_street 0.85 to 0.75, open_world 0.95 to 0.6, terrain_demo 0.97 to 0.6).
+
+### Measured
+GPU ms a frame on the Radeon 890M at 1920 x 1080 (GL / WebGPU, the pipeline's timers), Very Low in v0.32.0 against now, High unchanged:
+
+| | Very Low before | Very Low now | High |
+|---|---|---|---|
+| Pirates (more-cartwheel-examples) | 1.51 / 1.51 | 1.37 / 1.44 | 5.52 / 6.16 |
+| Jetski | 2.40 / 2.42 | 1.56 / 1.64 | 7.52 / 6.42 |
+| Arena FPS | 4.81 / 4.92 | 3.81 / 3.80 | 9.81 / 9.50 |
+| Sky Fighter | 3.26 / 3.01 | 2.21 / 2.03 | 6.84 / 5.31 |
+| the co-op platformer | 1.99 / 2.03 | 1.56 / 1.51 | 4.20 / 4.39 |
+| the fighter | 3.82 / 3.47 | 3.08 / 2.82 | 5.91 / 5.24 |
+| open_world | 2.35 / 3.08 | 1.35 / 1.44 | 2.71 / 3.28 |
+| terrain_demo | 2.42 / 3.41 | 1.50 / 1.64 | 2.95 / 4.06 |
+
+Pirates and Jetski draw Very Low at a quarter of High or less. Scenes whose High is already cheap (the brawler, the horde shooter, platformer3d, around 2 ms or less) keep a floor of about a millisecond at 1080p: the scene's pixels at full resolution and one tone mapping pass.
+
 ## v0.32.0 (2026-11-05)
 
 ### Added
