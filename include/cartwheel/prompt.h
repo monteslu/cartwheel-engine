@@ -77,14 +77,14 @@
  *
  * ── Movement ───────────────────────────────────────────────────────────
  * Two actions (left|right or up|down) or four (left|right|up|down) draw as
- * ONE glyph when their pad bindings agree: the stick when all of them are on
- * one stick, else the d-pad when all are on it. When both exist the stick is
- * shown, except on a pad whose d-pad this player has used and whose sticks
- * they never have: that is how a pad with no stick (a retro handheld, which
- * still steers through the d-pad bindings of the same actions) is told apart,
- * since no host reports which pads have sticks. Until a pad has been used it
- * shows the stick. Bindings that agree on nothing draw each action's glyph
- * side by side. On a keyboard each action's keycap is drawn, side by side.
+ * ONE glyph when their pad bindings agree: the d-pad, with those arms solid,
+ * when all of them are on it, whether or not a stick is bound too; else the
+ * stick when all of them are on one stick (right-stick aiming or looking,
+ * which has no d-pad binding). Every pad has a d-pad, so it is the glyph any
+ * player can follow, whatever they last steered with. One movement action
+ * alone on both a stick and the d-pad ({lean_fwd}) draws its d-pad arm.
+ * Bindings that agree on nothing draw each action's glyph side by side. On a
+ * keyboard each action's keycap is drawn, side by side.
  *
  * ── Shared prompts (player -1) ─────────────────────────────────────────
  * A title or instructions screen that several seats read: the pad glyph when

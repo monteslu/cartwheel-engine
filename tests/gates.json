@@ -823,7 +823,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "button prompts with synthetic input: the device each player used last, the first binding on it (keyboard and mouse standing in for each other), a rebind seen by the next query, an action with nothing on the device drawing nothing and logged once, typos counted in prompt.errors, movement pairs as one stick or d-pad glyph (the d-pad on a pad used only through its d-pad), shared prompts, markup through catalogs and cw_trf, the stream hash untouched, CW_TEST_PROMPT_DEVICE and the prompt debug request"
+    "note": "button prompts with synthetic input: the device each player used last, the first binding on it (keyboard and mouse standing in for each other), a rebind seen by the next query, an action with nothing on the device drawing nothing and logged once, typos counted in prompt.errors, movement pairs as one glyph (the d-pad when the d-pad and a stick are both bound, whatever the pad was used with; the stick for stick-only actions; one direction alone lights its d-pad arm), shared prompts, markup through catalogs and cw_trf, the stream hash untouched, CW_TEST_PROMPT_DEVICE and the prompt debug request"
   },
   { "name": "text-floor", "script": "tests/text-floor.mjs", "note": "the text size check (cartwheel/render2d.h): tools/check-text.mjs and the gate's textFloor pass the text_size sample at 100% and 200% and fail its control, a line 12 px tall at 1080 lines, naming it; the HUD block laid out from cw_font_measure is twice as tall at 200%; the fixed_size title is not counted" },
   {
@@ -852,10 +852,12 @@
     "expect": {
       "prompt.errors": 0,
       "prompt.missing": 2,
-      "prompt.count": 155,
+      "prompt.count": 157,
       "prompt.glyphs": [
         65537,
-        262384,
+        327692,
+        262193,
+        327695,
         65540,
         393216,
         458752,
@@ -864,12 +866,10 @@
         65537,
         65538,
         65537,
-        262192,
+        327683,
         196610,
         196609,
-        589868,
-        589828,
-        589831
+        589868
       ],
       "sample.dev_hist": [
         1,
@@ -882,13 +882,28 @@
         0
       ]
     },
-    "note": "every glyph on a dark and a light strip, the size ladder, player 1 on the pad (forced, so a host with no pad plugged in, wasmcart-native, draws the same), a shared prompt, each device, lanes by position, hint markup: the glyph codes drawn are exact on every host. Control: the wrong dot of the face-button diamond lit",
+    "note": "every glyph on a dark and a light strip, the size ladder, player 1 on the pad (forced, so a host with no pad plugged in, wasmcart-native, draws the same), a shared prompt, each device, lanes by position, hint markup, movement on the d-pad and a stick drawn as the d-pad and looking (the right stick alone) as the stick: the glyph codes drawn are exact on every host. Control: the wrong dot of the face-button diamond lit",
     "startCmds": [
       "prompt device 0 pad"
     ],
     "controlStartCmds": [
       "prompt device 0 pad"
     ]
+  },
+  {
+    "name": "prompts-dpad",
+    "app": "prompts",
+    "webgpu": true,
+    "frames": 10,
+    "controlFrames": 10,
+    "startCmds": ["prompt device 0 pad"],
+    "controlStartCmds": ["prompt device 0 pad"],
+    "controlEnv": { "CW_TEST_PROMPT_BREAK": "stick_first" },
+    "expect": {
+      "prompt.errors": 0,
+      "prompt.glyphs": [65537, 327692, 262193, 327695, 65540, 393216, 458752, 65537, 65540, 65537, 65538, 65537, 327683, 196610, 196609, 589868]
+    },
+    "note": "a pad player: up|down, the four directions and left|right, each bound to the d-pad and the left stick, draw the d-pad with those arms solid (5<<16 | arms), and look left|right, on the right stick alone, draws the right stick (4<<16 | 1 | arms<<4). Control: the stick drawn when both are bound (the rule before), so the codes differ"
   },
   {
     "name": "prompts-device",
@@ -1059,7 +1074,7 @@
       "prompt.errors": 0,
       "sample.text_w": [
         181.1920166015625,
-        187.7919921875,
+        178.552001953125,
         264.80078125
       ]
     },

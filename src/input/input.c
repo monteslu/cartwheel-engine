@@ -365,18 +365,11 @@ static void track_devices(const cw_raw_input *raw) {
   bool pad_used[CW_MAX_PADS] = { 0 };
   for (int p = 0; p < CW_MAX_PADS; p++) {
     const cw_pad_state *ps = &raw->pads[p], *pp = &pr->pads[p];
-    if (!ps->connected) {
-      I.pad_stick_seen[p] = I.pad_dpad_seen[p] = false;
-      continue;
-    }
+    if (!ps->connected) continue;
     uint32_t down = ps->pressed | (ps->buttons & ~pp->buttons);
     bool used = down != 0;
-    if (down & ((1u << CW_PAD_UP) | (1u << CW_PAD_DOWN) | (1u << CW_PAD_LEFT) | (1u << CW_PAD_RIGHT))) I.pad_dpad_seen[p] = true;
-    for (int a = 0; a < CW_AXIS_COUNT; a++) {
-      if (!(fabsf(ps->axes[a]) > 0.5f && !(fabsf(pp->axes[a]) > 0.5f && pp->connected))) continue;
-      used = true;
-      if (a <= CW_AXIS_RY) I.pad_stick_seen[p] = true;
-    }
+    for (int a = 0; a < CW_AXIS_COUNT; a++)
+      if (fabsf(ps->axes[a]) > 0.5f && !(fabsf(pp->axes[a]) > 0.5f && pp->connected)) used = true;
     pad_used[p] = used;
   }
   for (int pl = 0; pl < CW_INPUT_MAX_PLAYERS; pl++) {

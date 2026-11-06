@@ -110,7 +110,7 @@ The rules, each with a test in `unit-prompt` and the `prompts-*` gates:
 - **Rebinding.** A prompt reads the bindings when it draws, so a player who moves jump to the north button sees north lit, everywhere, on that frame.
 - **Nothing on the device.** An action with no binding there draws nothing and logs a warning once, naming the action and the device. It never guesses.
 - **A typo.** `{jmup}` draws nothing, logs once and counts in the debug field `prompt.errors`; `tests/gate.mjs` fails every gate whose run has one.
-- **Movement.** A pair or four directions draw one glyph when their pad bindings agree: the stick when all are on one stick, else the d-pad. No host reports whether a pad has a stick, so a pad whose d-pad the player has used and whose sticks they never have is taken to have none and shows the d-pad (a retro handheld steers through the same actions' d-pad bindings).
+- **Movement.** A pair or four directions draw one glyph when their pad bindings agree. When every action is on the d-pad the glyph is the d-pad with those arms solid, even when a stick is bound too: `{move_left|move_right}` lights left and right, `{move_up|move_down}` up and down, all four light every arm. Every pad has a d-pad, so this is the glyph any player can follow, whichever of the two they last steered with. Only actions on a stick and not the d-pad (right-stick aiming, looking round) draw the stick. One direction alone on both, such as `{lean_fwd}`, lights its one arm.
 - **Shared prompts.** Player `-1` is every present seat: a title or instructions screen shows the pad glyph if any seat is on a pad, then the keycap if any is on the keyboard, then the touch control.
 - **Determinism.** Prompts are presentation. Nothing here enters the simulation, the recording or `input.hash`. Calling them from `fixed_update` asserts in a debug build and counts in `prompt.errors` in a release build.
 - **Tests.** `CW_TEST_PROMPT_DEVICE=pad|keyboard|mouse|touch` forces every player's device in a native run; the debug request `prompt device <player|all> <device|auto>` does it in a cart (a gate's `startCmds`); an input script's first event on another device switches it as a player would.
@@ -125,7 +125,7 @@ When the design is about position (lanes, answer slots, a dance mat), lay it out
 
 Every pad the engine meets has four face buttons in a diamond, a d-pad, two shoulders, Start and Back: wasmcart's own default set (its SPEC, the manifest's `controls`). Confirm is south and back is east on every pad; the engine does not swap them for any maker.
 
-Players use the left stick and the d-pad interchangeably, so every movement action binds to both, on the same action: `move_left = key:a, key:left, pad:left, axis:lx-`. A player then steers with either, and the prompt draws whichever one they last used (see Movement above). The right stick is its own control: aiming and the camera live there with no d-pad binding.
+Players use the left stick and the d-pad interchangeably, so every movement action binds to both, on the same action: `move_left = key:a, key:left, pad:left, axis:lx-`. A player then steers with either, and the prompt draws the d-pad (see Movement above). The right stick is its own control: aiming and the camera live there with no d-pad binding.
 
 ### The rules for games
 

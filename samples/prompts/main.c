@@ -13,7 +13,7 @@
  * pad binding to it: every prompt follows on that frame. Native env:
  * PROMPTS_TYPO=1 writes {jmup} in one hint (the prompts-text gate's control).
  *
- * The debug request `ladder` swaps the page for the stick ladder: every stick glyph (a pair, four ways,
+ * The debug request `ladder` swaps the page for the stick ladder: every stick glyph (a stick-only pair, four ways,
  * one way, each stick, a press, the touch stick) and the keycaps at 16, 20, 24, 32 and 48 canvas pixels, on dark
  * and light, then in lines of HUD text at 16 and 22: the native-scale crops the stick glyph was drawn from.
  *
@@ -51,7 +51,7 @@ static const char AR[] =
 
 static struct {
   cw_font sans;
-  cw_action jump, dash, left, right, up, down, pause, back, fire, zoom, aim, look_l, look_r;
+  cw_action jump, dash, left, right, up, down, pause, back, fire, zoom, aim, look_l, look_r, stick[4];
   int32_t dev_hist[8], dev_n;
   float text_w[3];
   uint32_t rebind_code, missing_touch;
@@ -108,6 +108,13 @@ static void init(void *user) {
   S.look_r = cw_action_add("look_right", 0.3f);
   cw_action_bind_text(S.look_r, "axis:rx+");
   /* #endregion */
+  /* the stick ladder's pairs on the left stick alone (movement binds the d-pad too, so it draws the d-pad) */
+  static const char *const stick_binds[4] = { "axis:lx-", "axis:lx+", "axis:ly-", "axis:ly+" };
+  static const char *const stick_names[4] = { "stick_left", "stick_right", "stick_up", "stick_down" };
+  for (int i = 0; i < 4; i++) {
+    S.stick[i] = cw_action_add(stick_names[i], 0.3f);
+    cw_action_bind_text(S.stick[i], stick_binds[i]);
+  }
 
   /* the touch controls the touch prompts show (the overlay is off: the sheet is the picture) */
   cw_touch_add_round_button(&(cw_touch_button_desc){ .x = 110, .y = 110, .label = "Jump" });
@@ -196,8 +203,8 @@ static void ladder(float x0, float y, cw_color bg, cw_color ink, float w) {
 /* one cell of the stick ladder at size s: row r, item i (0 or 1); returns its width */
 static float ladder_cell(int r, int i, cw_vec2 at, float s, cw_color ink) {
   static const char *const one[][2] = { { "axis:lx-", "axis:ry+" }, { "pad:lstick", "pad:rstick" }, { "key:j", "key:escape" } };
-  cw_action steer[2] = { S.left, S.right }, vert[2] = { S.up, S.down }, four[4] = { S.left, S.right, S.up, S.down },
-            look[2] = { S.look_l, S.look_r };
+  cw_action steer[2] = { S.stick[0], S.stick[1] }, vert[2] = { S.stick[2], S.stick[3] }, four[4] = { S.stick[0], S.stick[1], S.stick[2], S.stick[3] },
+            look[2] = { S.look_l, S.look_r }, touch4[4] = { S.left, S.right, S.up, S.down }, touch2[2] = { S.left, S.right };
   cw_binding b;
   switch (r) {
   case 0: cw_prompt_force_device(3, CW_PROMPT_PAD); return cw_prompt_actions(i ? vert : steer, 2, 3, at, s, ink).x;
@@ -207,7 +214,7 @@ static float ladder_cell(int r, int i, cw_vec2 at, float s, cw_color ink) {
     return cw_prompt_binding(b, at, s, ink).x;
   case 4:
     cw_prompt_force_device(3, CW_PROMPT_TOUCH);
-    return cw_prompt_actions(i ? four : steer, i ? 4 : 2, 3, at, s, ink).x;
+    return cw_prompt_actions(i ? touch4 : touch2, i ? 4 : 2, 3, at, s, ink).x;
   default: return 0;
   }
 }
@@ -257,6 +264,10 @@ static void render(void *user, double alpha) {
   /* #region hint */
   cw_prompt_text(S.sans, cw_tr("hint.jump"), 0, (cw_vec2){ 220, y - 4 }, 22, INK, CW_ALIGN_LEFT);
   /* #endregion */
+  /* movement on the d-pad and the left stick draws the d-pad, those arms solid; looking (the right stick alone) the
+   * stick */
+  cw_prompt_text(S.sans, "{move_up|move_down} climb   {look_left|look_right} look", 0, (cw_vec2){ W - 16, y - 4 }, 22, INK,
+                 CW_ALIGN_RIGHT);
   if (cw_frame_index() == S.rebound_frame && S.rebound_frame) cw_prompt_action_codes(&S.jump, 1, 0, &S.rebind_code, 1);
   y += 30;
   cw_prompt_text(S.sans, S.typo ? "{move_left|move_right|move_up|move_down} move    {jmup} dash" : cw_tr("hint.move"), 0,

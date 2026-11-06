@@ -86,7 +86,6 @@ typedef struct cw__input_state {
   uint8_t prompt_last[CW_INPUT_MAX_PLAYERS];  /* cw_prompt_device each player used last (NONE: nothing yet) */
   uint8_t prompt_force[CW_INPUT_MAX_PLAYERS]; /* cw_prompt_force_device / CW_TEST_PROMPT_DEVICE (NONE: not forced) */
   bool touch_prev_active_frame[CW_MAX_TOUCHES];
-  bool pad_stick_seen[CW_MAX_PADS], pad_dpad_seen[CW_MAX_PADS]; /* this pad's sticks / d-pad were used since it connected */
   uint32_t prompt_count, prompt_codes[16];    /* glyphs drawn this frame (debug fields prompt.count, prompt.glyphs) */
 } cw__input_state;
 

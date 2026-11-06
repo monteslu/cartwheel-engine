@@ -1,7 +1,7 @@
 /* Button prompts (cartwheel/prompt.h) driven with synthetic raw input: which
  * device each player is on, which binding an action shows there, rebinding
  * on the same frame, an action with nothing on the device, typos in the
- * markup, movement pairs (and a pad with no stick), shared prompts, markup in
+ * markup, movement on the d-pad and a stick (the d-pad) or a stick alone, shared prompts, markup in
  * translated strings, the test override, and that none of it reaches the
  * simulation's input stream. */
 #include <stdlib.h>
@@ -188,30 +188,47 @@ static void test_movement(void) {
   cw_action_bind_text(m[2], "key:w, pad:up, axis:ly-");
   cw_action_bind_text(m[3], "key:s, pad:down, axis:ly+");
   uint32_t c[8];
-  /* a pair on a pad with both: one stick glyph, left and right */
-  CHECK_EQ_INT(cw_prompt_action_codes(m, 2, 0, c, 8), 1);
-  CHECK_EQ_INT(c[0], STICK((L | R) << 4));
-  CHECK_EQ_INT(cw_prompt_action_codes(m + 2, 2, 0, c, 8), 1);
-  CHECK_EQ_INT(c[0], STICK((U | D) << 4));
-  CHECK_EQ_INT(cw_prompt_action_codes(m, 4, 0, c, 8), 1);
-  CHECK_EQ_INT(c[0], STICK((L | R | U | D) << 4));
-  /* a pad used only through its d-pad (no stick): the d-pad */
-  pad_button(0, CW_PAD_LEFT);
+  /* a pair on a pad with both the d-pad and a stick: one d-pad glyph, those arms solid */
   CHECK_EQ_INT(cw_prompt_action_codes(m, 2, 0, c, 8), 1);
   CHECK_EQ_INT(c[0], DPAD(L | R));
-  /* the stick used once: the stick again */
-  raw.pads[0].axes[CW_AXIS_LY] = -1;
-  frame();
-  raw.pads[0].axes[CW_AXIS_LY] = 0;
-  frame();
+  CHECK_EQ_INT(cw_prompt_action_codes(m + 2, 2, 0, c, 8), 1);
+  CHECK_EQ_INT(c[0], DPAD(U | D));
   CHECK_EQ_INT(cw_prompt_action_codes(m, 4, 0, c, 8), 1);
-  CHECK_EQ_INT(c[0], STICK((L | R | U | D) << 4));
-  /* the right stick only */
+  CHECK_EQ_INT(c[0], DPAD(L | R | U | D));
+  /* whatever the pad was used with: the stick moved, then the d-pad, then the stick again */
+  for (int k = 0; k < 2; k++) {
+    raw.pads[0].axes[CW_AXIS_LY] = -1;
+    frame();
+    raw.pads[0].axes[CW_AXIS_LY] = 0;
+    frame();
+    CHECK_EQ_INT(cw_prompt_action_codes(m, 4, 0, c, 8), 1);
+    CHECK_EQ_INT(c[0], DPAD(L | R | U | D));
+    pad_button(0, CW_PAD_LEFT);
+  }
+  /* one direction alone on both: that arm, even with the stick bound first */
+  cw_action fwd = cw_action_add("lean_fwd", 0.3f);
+  cw_action_bind_text(fwd, "key:w, axis:ly-, pad:up");
+  CHECK_EQ_INT(code1(fwd, 0), DPAD(U));
+  /* one direction on a stick alone: the stick */
+  cw_action tilt = cw_action_add("tilt", 0.3f);
+  cw_action_bind_text(tilt, "axis:lx+");
+  CHECK_EQ_INT(code1(tilt, 0), STICK(R << 4));
+  /* a pair on the stick alone: the stick */
+  cw_action sl[2] = { cw_action_add("stick_l", 0.3f), cw_action_add("stick_r", 0.3f) };
+  cw_action_bind_text(sl[0], "axis:lx-");
+  cw_action_bind_text(sl[1], "axis:lx+");
+  CHECK_EQ_INT(cw_prompt_action_codes(sl, 2, 0, c, 8), 1);
+  CHECK_EQ_INT(c[0], STICK((L | R) << 4));
+  /* the right stick only (aim, look): the right stick */
   cw_action look[2] = { cw_action_add("look_l", 0.3f), cw_action_add("look_r", 0.3f) };
   cw_action_bind_text(look[0], "axis:rx-");
   cw_action_bind_text(look[1], "axis:rx+");
   CHECK_EQ_INT(cw_prompt_action_codes(look, 2, 0, c, 8), 1);
   CHECK_EQ_INT(c[0], STICK(1 | (L | R) << 4));
+  /* a face button first stays the face button though a d-pad arm and a stick are bound too */
+  cw_action hop = cw_action_add("hop", 0.5f);
+  cw_action_bind_text(hop, "pad:south, pad:up, axis:ly-");
+  CHECK_EQ_INT(code1(hop, 0), FACE(1));
   /* nothing in common (shoulders): each action's own glyph */
   cw_action sh[2] = { cw_action_add("prev", 0.5f), cw_action_add("next", 0.5f) };
   cw_action_bind_text(sh[0], "pad:lshoulder");
