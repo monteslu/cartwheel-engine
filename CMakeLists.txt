@@ -66,6 +66,8 @@ add_library(cartwheel STATIC ${CW_CORE_SRCS} ${CW_PLATFORM_SRCS})
 target_include_directories(cartwheel PUBLIC include ${CW_THREE_DIR}/include PRIVATE src src/resource ${DEPS}/stb ${CW_THREE_DIR}/third_party
   ${CW_RECAST_INCLUDES})
 target_compile_options(cartwheel PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
+# the engine's own text calls carry no caller for the `text` debug request (cartwheel/render2d.h)
+target_compile_definitions(cartwheel PRIVATE CW_TEXT_NO_CALLER=1)
 # the profiler's zones (cartwheel/profile.h): OFF compiles every CW_PROFILE_* macro out, the engine's and the game's
 option(CW_PROFILER "compile the profiler's zones in (off at run time until asked for)" ON)
 if(NOT CW_PROFILER)

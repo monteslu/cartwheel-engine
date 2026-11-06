@@ -85,6 +85,7 @@ An array of gate objects. Every key `tests/gate.mjs` reads:
 | `env` | environment for every native run of the gate, controls too (a control's `controlEnv` wins): how a game picks one mode for a gate, a mini-game or a skill level, say. A cart has no environment, so such a gate is for `"hosts": ["native"]` |
 | `controlEnv` | environment for the control run; a value `"repo:<path>"` names a repository file that is copied into `out/` first |
 | `webgpu` | `true` or `{hosts, skip, maxGt16, vsGl, maxArea, controls}`: the gate also runs on WebGPU (`tests/gate.mjs --gpu webgpu`): every host against native WebGPU, native GL against native WebGPU within `vsGl` (default 0.01), the dual cart on romdev told to use GL against native GL. Each of `controls` (`{"env": {...}}`) is a native WebGPU run that must fail on the picture against both references; one with `"fields": [...]` may instead fail on those state fields (each differing from both), for a feature whose effect has left the last frame (impostors switched off on WebGPU only, at the end of a sweep that ends with every mesh near: `vis-impostor`) |
+| `textFloor` | the text size floor (on by default for games: a games repository's apps and this repository's `games/`): every run of the gate fails when any frame drew text under 18 px at 1080 lines, 1.7% of the canvas height (the state's `text.run_min_share`), naming the string. `false` turns it off, `true` turns it on for a sample, a number sets another floor (a share of the canvas height). See [localization and accessibility](guide:l10n-a11y), "Text size" |
 | `script` | instead of all the above: a node script that runs its own checks and controls (exit 0 = pass) |
 | `note` | what the gate proves, for humans; not read by the runner |
 
@@ -96,6 +97,10 @@ A typical gate, from `tests/gates.json`:
  "fields":["g.state","g.score","g.hp","g.room","g.enemies","g.kills",...,"tree.nodes"],
  "expect":{"g.state":6,"g.room":3,"g.boss_hp":0,"g.deaths":0,"g.doors":2,"g.kills":9}}
 ```
+
+### Text size
+
+`node tools/check-text.mjs <screens.json> [--scales 1,2] [--pref 1280x800] [--shots DIR]` walks a game's screens (each a native run that ends on one: the title, every menu, a stretch of play, pause, results) and reports the smallest text on each from the `text` debug request: body text under 26 px at 1080 lines (2.4%) fails unless the screens file lists it as `secondary`, and nothing may be under 18 px (1.7%). `--scales` runs every screen at each text scale, `--pref` as a host that prefers that frame (1280x800 is a 7 inch handheld), `--shots` keeps each screen's last frame for a contact sheet. The `text-floor` gate runs it on `samples/text_size` and on that sample with a 12 px line, which must fail.
 
 ## Controls that must fail
 

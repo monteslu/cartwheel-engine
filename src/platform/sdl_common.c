@@ -105,9 +105,9 @@ static void missing_programs_banner(void) {
   char line[256];
   snprintf(line, sizeof line, "%d draw state(s) have no program and are not drawn. Run: %s", (int)cw__missing_programs,
            cw__programs_fix_command());
-  cw_r2d_text(cw_ui_font_sans(), line, cw_v2(10 * s, 8 * s), &(cw_text_style){ .size = 15 * s, .color = cw_rgba(1, 1, 1, 1) });
+  cw_r2d_text(cw_ui_font_sans(), line, cw_v2(10 * s, 8 * s), &(cw_text_style){ .size = 15 * s, .color = cw_rgba(1, 1, 1, 1), .fixed_size = true });
   cw_r2d_text(cw_ui_font_sans(), "(then commit the manifest and generated C; the full list is in the log)", cw_v2(10 * s, 26 * s),
-              &(cw_text_style){ .size = 11 * s, .color = cw_rgba(1, 0.85f, 0.85f, 1) });
+              &(cw_text_style){ .size = 11 * s, .color = cw_rgba(1, 0.85f, 0.85f, 1), .fixed_size = true });
   cw_r2d_end();
 }
 

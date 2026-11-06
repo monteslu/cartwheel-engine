@@ -191,11 +191,18 @@ const char *cw_captions_speaker_label(const char *speaker) {
  * speaker_color, separation. Mouse-transparent. Its minimum height fits
  * two lines so a layout reserves the space. */
 
+/* the caption size: the theme's (which follows the player's text scale), and never under the body text floor
+ * (CW_TEXT_FLOOR_BODY of the canvas height, a little over it) at that scale: captions are read in motion */
+static float cap_fs(cw_node n) {
+  float floor_px = cw_ui_canvas_size().y * CW_TEXT_FLOOR_BODY * 1.08f * cw_text_scale();
+  return fmaxf(T_FSIZE(n), floor_px);
+}
+
 static cw_vec2 cap_min(cw_node n, void *d) {
   (void)d;
   cw_ui_style st = T_STYLE(n, "panel");
   if (!st.draw) st = cw_ui_style_flat((cw_color){ 0, 0, 0, 0.78f }, 4, 10, 4);
-  float lh = cw_ui_line_height(T_FONT(n), T_FSIZE(n));
+  float lh = cw_ui_line_height(T_FONT(n), cap_fs(n));
   return (cw_vec2){ 0, ceilf((lh + SM_H(&st)) * 2 + T_CONST(n, "separation")) };
 }
 
@@ -208,7 +215,7 @@ static void cap_draw(cw_node n, void *d) {
   cw_control *c = CTL(n);
   cw_ui_style st = T_STYLE(n, "panel");
   cw_font f = T_FONT(n);
-  float fs = T_FSIZE(n), sep = T_CONST(n, "separation");
+  float fs = cap_fs(n), sep = T_CONST(n, "separation");
   float lh = cw_ui_line_height(f, fs);
   cw_color fc = T_COLOR(n, "font_color"), sc = T_COLOR(n, "speaker_color");
   /* captions read on any background: white on a dark box unless themed */
@@ -221,7 +228,7 @@ static void cap_draw(cw_node n, void *d) {
   for (int i = k - 1; i >= 0; i--) {
     const char *spk = lines[i].speaker;
     const char *head = cw_captions_speaker_label(spk);
-    float hw = *head ? cw_ui_text_width(f, fs, head) : 0, gap = *head ? cw_font_advance(f, ' ', fs) : 0;
+    float hw = *head ? cw_ui_text_width(f, fs, head) : 0, gap = *head ? cw__font_advance_raw(f, ' ', fs) : 0;
     float tw = cw_ui_text_width(f, fs, lines[i].text);
     float maxw = c->rect.w - SM_W(&st);
     if (hw + gap + tw > maxw) tw = maxw - hw - gap;

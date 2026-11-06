@@ -23,6 +23,7 @@ import { takeSuiteLock } from '../tools/lib/suite-lock.mjs';
 import { armGuard } from '../tools/lib/gpu-guard.mjs';
 import { testEnv } from '../tools/lib/wgpu-pin.mjs';
 import { enterGpuSandbox } from '../tools/lib/gpu-sandbox.mjs';
+import { textFloorProblem, FLOOR_MIN } from '../tools/lib/text-floor.mjs';
 if (process.argv.includes('--cpu')) process.env.CW_TEST_GPU = 'software'; // see the header
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
@@ -113,6 +114,23 @@ function checkPromptErrors(problems, g, runs) {
     let st;
     try { st = JSON.parse(readFileSync(file, 'utf8')); } catch { continue; }
     if (st['prompt.errors'] > 0) problems.push(`${h}: prompt.errors = ${st['prompt.errors']}: a prompt names an action that does not exist or ran in fixed_update (the run's log names it)`);
+  }
+}
+
+// The text size floor (cartwheel/render2d.h "text size"): a game's run fails when any frame drew text under
+// CW_TEXT_FLOOR_MIN of the canvas height (text.run_min_share), naming the string. On by default for games (a games
+// repository's apps, CW_PROJECT_ROOT, and this repository's games/); "textFloor": false turns it off for one gate,
+// true turns it on for a sample, a number sets another floor (a share of the canvas height).
+const isGame = (app) => PROJ !== ROOT || existsSync(join(ROOT, 'build', 'native', 'games', app));
+function checkTextFloor(problems, g, runs) {
+  const on = g.textFloor ?? isGame(g.app);
+  if (!on) return;
+  const floor = typeof on === 'number' ? on : FLOOR_MIN;
+  for (const [h, file] of runs) {
+    let st;
+    try { st = JSON.parse(readFileSync(file, 'utf8')); } catch { continue; }
+    const p = textFloorProblem(st, floor);
+    if (p) { problems.push(`${h}: ${p}`); return; } // one host says it: the runs agree on text
   }
 }
 
@@ -210,6 +228,7 @@ async function wgpuGates(list) {
       if (refState['cw.gpu.api'] !== 2) problems.push(`native run used gpu api ${refState['cw.gpu.api']}, not WebGPU`);
       checkMissing(problems, g.app, [...results.filter((r) => r.h !== 'wcnative').map((r) => [r.h + ' webgpu', r.state]), ['native gl', glq.state], ...(dual ? [['romdev dual-gl', dq.state]] : [])]);
       checkPromptErrors(problems, g, [...results.filter((r) => r.h !== 'wcnative').map((r) => [r.h + ' webgpu', r.state]), ['native gl', glq.state]]);
+      checkTextFloor(problems, g, [...results.filter((r) => r.h !== 'wcnative').map((r) => [r.h + ' webgpu', r.state]), ['native gl', glq.state]]);
       for (const [k, v] of Object.entries(g.expect || {}))
         if (JSON.stringify(refState[k]) !== JSON.stringify(v)) problems.push(`native WebGPU ${k} = ${JSON.stringify(refState[k])}, expected ${JSON.stringify(v)}`);
       const bound = w.maxGt16 ?? g.maxGt16 ?? 0.001;
@@ -357,6 +376,7 @@ for (const g of gates) {
     if (!Object.keys(refState).length) problems.push('native state is empty');
     checkMissing(problems, g.app, results.filter((r) => r.h !== 'wcnative').map((r) => [r.h, r.state]));
     checkPromptErrors(problems, g, results.filter((r) => r.h !== 'wcnative').map((r) => [r.h, r.state]));
+    checkTextFloor(problems, g, results.filter((r) => r.h !== 'wcnative').map((r) => [r.h, r.state]));
     for (const [k, v] of Object.entries(g.expect || {}))
       if (JSON.stringify(refState[k]) !== JSON.stringify(v)) problems.push(`native ${k} = ${JSON.stringify(refState[k])}, expected ${JSON.stringify(v)}`);
     for (const r of results) {

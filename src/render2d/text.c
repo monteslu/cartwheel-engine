@@ -2,10 +2,15 @@
  * (single-channel SDF into the linear atlas, or coverage bitmaps into the
  * nearest atlas), layout with kerning, wrapping and alignment; fallback font
  * chains; complex scripts (bidi, OpenType shaping) through kb_text_shape. */
+#include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "internal.h"
+#include "text_raw.h"
+#include "cartwheel/debug.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/profile.h"
 
@@ -72,7 +77,11 @@ static struct {
 static void shape_cache_clear(void);
 static uint32_t shaped_now; /* runs shaped by the complex_layout calls since the caller zeroed it */
 
-void r2d_fonts_init(void) { cw_pool_init(&R.fonts, sizeof(r2d_font), CW_MEM_RENDER2D); }
+void r2d_text_register(void);
+void r2d_fonts_init(void) {
+  cw_pool_init(&R.fonts, sizeof(r2d_font), CW_MEM_RENDER2D);
+  r2d_text_register();
+}
 
 static r2d_font *font_get(cw_font f) { return R.inited ? cw_pool_get(&R.fonts, f.id) : NULL; }
 
@@ -1000,7 +1009,7 @@ static void shape_cache_clear(void) {
 
 /* ── public layout entry points ─────────────────────────────────────── */
 
-cw_text_metrics cw_font_measure(cw_font h, const char *text, const cw_text_style *st) {
+cw_text_metrics cw__font_measure_raw(cw_font h, const char *text, const cw_text_style *st) {
   r2d_font *f = font_get(h);
   if (!f || !text) return (cw_text_metrics){ 0 };
   font_sync(f, h.id);
@@ -1040,17 +1049,17 @@ void cw_font_preload_range(cw_font h, uint32_t first, uint32_t last) {
 }
 
 void cw_font_preload_text(cw_font h, const char *utf8) {
-  (void)cw_font_measure(h, utf8, NULL);
+  (void)cw__font_measure_raw(h, utf8, NULL);
 }
 
-float cw_font_advance(cw_font h, uint32_t cp, float size) {
+float cw__font_advance_raw(cw_font h, uint32_t cp, float size) {
   r2d_font *f = font_get(h);
   if (!f) return 0;
   font_sync(f, h.id);
   return glyph(f, cp)->advance * stbtt_ScaleForMappingEmToPixels(&f->info, size > 0 ? size : f->bake_size);
 }
 
-float cw_font_caret_x(cw_font h, const char *text, int byte, float size) {
+float cw__font_caret_x_raw(cw_font h, const char *text, int byte, float size) {
   r2d_font *f = font_get(h);
   if (!f || !text) return 0;
   font_sync(f, h.id);
@@ -1157,9 +1166,13 @@ static const cw_vec2 *disc_offsets(float r, int *n) {
   return o;
 }
 
-cw_text_metrics cw_r2d_text(cw_font h, const char *text, cw_vec2 pos, const cw_text_style *st) {
+enum { TEXT_PANEL = 0x100 }; /* the Text background panel (cw_r2d_text) */
+static void text_count(r2d_font *f, const char *text, const layout *L, const cw_text_style *st, int flags);
+static void text_panel(cw_vec2 pos, float box_w, const cw_text_metrics *m, float size);
+cw_text_metrics cw__r2d_text_raw(cw_font h, const char *text, cw_vec2 pos, const cw_text_style *st, int flags) {
   r2d_font *f = font_get(h);
   if (!f || !text) return (cw_text_metrics){ 0 };
+  bool panel = (flags & TEXT_PANEL) != 0;
   font_sync(f, h.id);
   layout L;
   cw_text_align align = st ? st->align : CW_ALIGN_LEFT;
@@ -1235,6 +1248,8 @@ cw_text_metrics cw_r2d_text(cw_font h, const char *text, cw_vec2 pos, const cw_t
     }
     cw_array_free(&L.lines);
   }
+  if (pc.n) text_count(f, text, &L, st, flags);
+  if (panel && pc.n) text_panel(pos, st && st->wrap_width > 0 ? st->wrap_width : m.width, &m, L.size);
   int n = pc.n;
   placed *pl = pc.pl;
   if (!n) return m;
@@ -1339,4 +1354,281 @@ cw_text_metrics cw_r2d_text(cw_font h, const char *text, cw_vec2 pos, const cw_t
     }
   }
   return m;
+}
+
+/* ── text size: the player's scale, the background, the size check ──── */
+
+static const float SCALE_STEPS[4] = { 1.0f, 1.25f, 1.5f, 2.0f };
+static const char *const SCALE_LABELS[4] = { "100%", "125%", "150%", "200%" };
+static const char *const BACKDROP_LABELS[3] = { "Off", "Outline", "Panel" };
+enum { TEXT_LIST = 64, TEXT_WHERE = 64 };
+typedef struct text_seen { float share, px; char text[40]; char at[48]; } text_seen;
+static struct {
+  float scale;     /* 0 = 1 */
+  bool chosen;     /* set by a setting (cw_text_scale_saved writes it) */
+  int32_t backdrop;
+  float dbg_scale;
+  /* this frame, and the run */
+  float min_share, run_min;
+  char min_where[TEXT_WHERE], run_where[TEXT_WHERE];
+  text_seen list[TEXT_LIST];
+  int nlist, more;
+  uint64_t frame;
+  const char *caller_file;
+  int caller_line;
+} TS;
+
+void cw__text_caller(const char *file, int line) {
+  TS.caller_file = file;
+  TS.caller_line = line;
+}
+
+void r2d_text_frame_reset(void) {
+  TS.min_share = 0;
+  memset(TS.min_where, 0, sizeof TS.min_where);
+  TS.nlist = TS.more = 0;
+  TS.frame = cw_frame_index();
+}
+
+static bool target_pass(void) { return R.in_pass && !CW_HANDLE_IS_NULL(R.pass.target); }
+/* the canvas height the text is for: the pass's, or the last window pass's (a measure outside a pass) */
+static float text_canvas_h(void) {
+  if (R.in_pass && !target_pass()) return (float)R.view_h;
+  if (R.win_view_h > 0) return (float)R.win_view_h;
+  int w = 0, h = 0;
+  cw_window_size(&w, &h);
+  return (float)h;
+}
+static float scale_now(void) { return TS.scale > 0 ? TS.scale : 1; }
+
+/* the factor text asked for at `size` draws at: the scale, stopped at the cap, whole multiples for a bitmap font */
+static float scale_for(const r2d_font *f, float size) {
+  float k = scale_now();
+  if (k == 1 || size <= 0 || target_pass()) return 1;
+  float want = size * k;
+  float h = text_canvas_h();
+  if (k > 1 && h > 0 && want > CW_TEXT_SCALE_CAP * h) want = CW_MAX(size, CW_TEXT_SCALE_CAP * h);
+  if (f && f->mode == CW_FONT_BITMAP && f->bake_size > 0) {
+    float m = CW_MAX(1.0f, roundf(want / f->bake_size));
+    want = m * f->bake_size;
+    if (k > 1 && want < size) want = size;
+  }
+  return want / size;
+}
+float cw__text_scale_for(cw_font h, float size) { return scale_for(font_get(h), size); }
+float cw_text_drawn_size(cw_font h, float size) { return size * scale_for(font_get(h), size); }
+
+static const cw_text_style *scaled_style(const r2d_font *f, const cw_text_style *st, cw_text_style *tmp) {
+  if (st && st->fixed_size) return st;
+  float base = style_size(f, st);
+  float k = scale_for(f, base);
+  if (k == 1) return st;
+  *tmp = st ? *st : (cw_text_style){ 0 };
+  tmp->size = base * k;
+  tmp->letter_spacing *= k;
+  tmp->outline_width *= k;
+  tmp->shadow_offset.x *= k;
+  tmp->shadow_offset.y *= k;
+  tmp->shadow_spread *= k;
+  tmp->shadow_softness *= k;
+  return tmp;
+}
+
+cw_text_metrics cw_font_measure(cw_font h, const char *text, const cw_text_style *st) {
+  r2d_font *f = font_get(h);
+  if (!f || !text) return (cw_text_metrics){ 0 };
+  cw_text_style tmp;
+  return cw__font_measure_raw(h, text, scaled_style(f, st, &tmp));
+}
+float cw_font_advance(cw_font h, uint32_t cp, float size) {
+  r2d_font *f = font_get(h);
+  if (!f) return 0;
+  float s = size > 0 ? size : f->bake_size;
+  return cw__font_advance_raw(h, cp, s * scale_for(f, s));
+}
+float cw_font_caret_x(cw_font h, const char *text, int byte, float size) {
+  r2d_font *f = font_get(h);
+  if (!f || !text) return 0;
+  float s = size > 0 ? size : f->bake_size;
+  return cw__font_caret_x_raw(h, text, byte, s * scale_for(f, s));
+}
+
+cw_text_metrics cw_r2d_text(cw_font h, const char *text, cw_vec2 pos, const cw_text_style *st) {
+  r2d_font *f = font_get(h);
+  if (!f || !text) {
+    TS.caller_file = NULL;
+    return (cw_text_metrics){ 0 };
+  }
+  cw_text_style tmp;
+  const cw_text_style *use = scaled_style(f, st, &tmp);
+  int flags = 0;
+  bool own = st && (st->fixed_size || st->own_backdrop || st->outline_width > 0 || st->shadow_color.a > 0);
+  if (TS.backdrop != CW_TEXT_BACKDROP_OFF && !own && !target_pass()) {
+    if (use != &tmp) {
+      tmp = st ? *st : (cw_text_style){ 0 };
+      use = &tmp;
+    }
+    if (TS.backdrop == CW_TEXT_BACKDROP_OUTLINE) {
+      cw_color c = r2d_default_white(tmp.color);
+      tmp.outline_width = style_size(f, &tmp) * 0.09f;
+      tmp.outline_color = cw_rgba(0, 0, 0, 0.9f * c.a);
+    } else flags |= TEXT_PANEL;
+  }
+  cw_text_metrics m = cw__r2d_text_raw(h, text, pos, use, flags);
+  TS.caller_file = NULL;
+  return m;
+}
+
+static void text_panel(cw_vec2 pos, float box_w, const cw_text_metrics *m, float size) {
+  float pad = size * 0.28f;
+  cw_r2d_round_rect(cw_rect_make(pos.x - pad, pos.y - pad * 0.45f, box_w + 2 * pad, m->height + pad * 0.9f), pad, 0,
+                    cw_rgba(0.02f, 0.02f, 0.04f, 0.64f));
+}
+
+/* the first characters of a string, printable, cut on a character boundary */
+static void text_where(char *out, size_t cap, const char *text) {
+  memset(out, 0, cap); /* the whole field: the debug state carries every byte */
+  size_t n = 0;
+  for (const char *p = text; *p && n + 5 < cap;) {
+    const char *q = p;
+    uint32_t cp = utf8_next(&q);
+    size_t len = (size_t)(q - p);
+    if (cp < 32) out[n++] = ' ';
+    else if (cp == '"' || cp == '\\') out[n++] = '\'';
+    else {
+      memcpy(out + n, p, len);
+      n += len;
+    }
+    p = q;
+  }
+  out[n] = 0;
+}
+
+static void text_count(r2d_font *f, const char *text, const layout *L, const cw_text_style *st, int flags) {
+  (void)f;
+  if ((flags & CW__TEXT_UNCOUNTED) || (st && st->fixed_size) || !R.in_pass || target_pass() || R.view_h <= 0) return;
+  /* text fading in or out (alpha under 0.3) is not text a player reads yet */
+  if (r2d_default_white(st ? st->color : (cw_color){ 0 }).a < 0.3f) return;
+  if (cw_frame_index() != TS.frame) r2d_text_frame_reset();
+  float px = L->size;
+  if (R.has_xform) px *= sqrtf(fabsf(R.xform.a * R.xform.d - R.xform.b * R.xform.c));
+  const cw_r2d_layer_desc *ld = &R.layers[R.cur_layer];
+  if (ld->has_camera && ld->camera.zoom > 0) px *= ld->camera.zoom;
+  float share = px / (float)R.view_h;
+  if (TS.min_share <= 0 || share < TS.min_share) {
+    TS.min_share = share;
+    text_where(TS.min_where, sizeof TS.min_where, text);
+  }
+  if (TS.run_min <= 0 || share < TS.run_min) {
+    TS.run_min = share;
+    text_where(TS.run_where, sizeof TS.run_where, text);
+  }
+  char w[40];
+  text_where(w, sizeof w, text);
+  for (int i = 0; i < TS.nlist; i++)
+    if (fabsf(TS.list[i].share - share) < 1e-5f && !strcmp(TS.list[i].text, w)) return;
+  if (TS.nlist == TEXT_LIST) {
+    TS.more++;
+    return;
+  }
+  text_seen *e = &TS.list[TS.nlist++];
+  e->share = share;
+  e->px = px;
+  memcpy(e->text, w, sizeof w);
+  e->at[0] = 0;
+  if (TS.caller_file) {
+    const char *b = strrchr(TS.caller_file, '/');
+    snprintf(e->at, sizeof e->at, "%s:%d", b ? b + 1 : TS.caller_file, TS.caller_line);
+  }
+}
+
+static int seen_cmp(const void *a, const void *b) {
+  float x = ((const text_seen *)a)->share, y = ((const text_seen *)b)->share;
+  return x < y ? -1 : x > y;
+}
+
+static void cmd_text(int argc, const char **argv, cw_reply *r) {
+  if (argc >= 3 && !strcmp(argv[1], "scale")) cw_text_scale_set((float)atof(argv[2]));
+  else if (argc >= 3 && !strcmp(argv[1], "backdrop")) {
+    int b = -1;
+    for (int i = 0; i < 3; i++)
+      if (!strcasecmp(argv[2], BACKDROP_LABELS[i])) b = i;
+    if (b < 0) {
+      cw_reply_error(r, "text backdrop off|outline|panel");
+      return;
+    }
+    cw_text_backdrop_set((cw_text_backdrop)b);
+  } else if (argc >= 2) {
+    cw_reply_error(r, "usage: text [scale <k> | backdrop off|outline|panel]");
+    return;
+  }
+  text_seen sorted[TEXT_LIST];
+  memcpy(sorted, TS.list, sizeof(text_seen) * (size_t)TS.nlist);
+  qsort(sorted, (size_t)TS.nlist, sizeof sorted[0], seen_cmp);
+  cw_reply_printf(r, "{\"frame\":%llu,\"scale\":%g,\"backdrop\":\"%s\",\"canvas_h\":%g,\"min_share\":%g,\"min_where\":",
+                  (unsigned long long)TS.frame, (double)scale_now(), BACKDROP_LABELS[TS.backdrop], (double)R.win_view_h,
+                  (double)TS.min_share);
+  cw_reply_str(r, TS.min_where);
+  cw_reply_printf(r, ",\"run_min_share\":%g,\"run_min_where\":", (double)TS.run_min);
+  cw_reply_str(r, TS.run_where);
+  cw_reply_raw(r, ",\"sizes\":[");
+  for (int i = 0; i < TS.nlist; i++) {
+    cw_reply_printf(r, "%s{\"share\":%.5f,\"px\":%.2f,\"text\":", i ? "," : "", (double)sorted[i].share, (double)sorted[i].px);
+    cw_reply_str(r, sorted[i].text);
+    if (sorted[i].at[0]) {
+      cw_reply_raw(r, ",\"at\":");
+      cw_reply_str(r, sorted[i].at);
+    }
+    cw_reply_raw(r, "}");
+  }
+  cw_reply_printf(r, "],\"more\":%d}", TS.more);
+}
+
+void r2d_text_register(void) {
+  static bool done;
+  if (done) return;
+  done = true;
+  TS.dbg_scale = scale_now();
+  cw_debug_f32("text.min_share", &TS.min_share);
+  cw_debug_bytes("text.min_where", TS.min_where, TEXT_WHERE);
+  cw_debug_f32("text.run_min_share", &TS.run_min);
+  cw_debug_bytes("text.run_min_where", TS.run_where, TEXT_WHERE);
+  cw_debug_f32("text.scale", &TS.dbg_scale);
+  cw_debug_i32("text.backdrop", &TS.backdrop);
+  cw_debug_command("text", "text [scale <k> | backdrop off|outline|panel]: every text size drawn this frame (cartwheel/render2d.h)", cmd_text);
+}
+
+void cw_text_scale_set(float scale) {
+  TS.scale = scale > 0 ? CW_CLAMP(scale, 0.5f, 4.0f) : 1;
+  TS.chosen = true;
+  TS.dbg_scale = TS.scale;
+}
+float cw_text_scale(void) { return scale_now(); }
+static int step_now(void) {
+  int best = 0;
+  for (int i = 1; i < 4; i++)
+    if (fabsf(SCALE_STEPS[i] - scale_now()) < fabsf(SCALE_STEPS[best] - scale_now())) best = i;
+  return best;
+}
+void cw_text_scale_cycle(void) { cw_text_scale_set(SCALE_STEPS[(step_now() + 1) % 4]); }
+void cw_text_scale_cycle_back(void) { cw_text_scale_set(SCALE_STEPS[(step_now() + 3) % 4]); }
+const char *cw_text_scale_label(void) { return SCALE_LABELS[step_now()]; }
+
+void cw_text_backdrop_set(cw_text_backdrop b) {
+  TS.backdrop = CW_CLAMP((int)b, 0, 2);
+  TS.chosen = true;
+}
+cw_text_backdrop cw_text_backdrop_get(void) { return (cw_text_backdrop)TS.backdrop; }
+void cw_text_backdrop_cycle(void) { cw_text_backdrop_set((cw_text_backdrop)((TS.backdrop + 1) % 3)); }
+const char *cw_text_backdrop_label(void) { return BACKDROP_LABELS[TS.backdrop]; }
+
+uint8_t cw_text_scale_saved(void) {
+  if (!TS.chosen) return 0;
+  return (uint8_t)((step_now() + 1) | (TS.backdrop << 3));
+}
+void cw_text_scale_restore(uint8_t saved) {
+  int s = saved & 7, b = (saved >> 3) & 3;
+  if (s < 1 || s > 4) return; /* nothing chosen (or a byte from elsewhere): the defaults */
+  cw_text_scale_set(SCALE_STEPS[s - 1]);
+  cw_text_backdrop_set((cw_text_backdrop)CW_MIN(b, 2));
 }

@@ -101,7 +101,9 @@ static void render(void *user, double alpha) {
   (void)user, (void)alpha;
   cw_r2d_begin(NULL); /* the window, over the scene */
   cw_vec2 size = cw_r2d_canvas_size();
-  cw_prompt_text((cw_font){ 0 }, "{move_left|move_right} run    {jump} jump", 0, cw_v2(size.x * 0.5f, size.y - 16 * 2.2f), 16, (cw_color){ 0 }, CW_ALIGN_CENTER);
+  float hs = size.y * 0.03f; /* body text: 3% of the canvas height, over the 2.4% floor (cartwheel/render2d.h) */
+  cw_vec2 hz = cw_prompt_text_size((cw_font){ 0 }, "{move_left|move_right} run    {jump} jump", 0, hs);
+  cw_prompt_text((cw_font){ 0 }, "{move_left|move_right} run    {jump} jump", 0, cw_v2(size.x * 0.5f, size.y - hz.y - hs), hs, (cw_color){ 0 }, CW_ALIGN_CENTER);
   cw_r2d_end();
 }
 /* #endregion */

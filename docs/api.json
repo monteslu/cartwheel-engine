@@ -9098,7 +9098,7 @@
   },
   {
    "header": "cartwheel/prompt.h",
-   "summary": "cartwheel prompts: how to show a player which button, key or touch control\ndoes something, drawn for the device that player is using right now.\n\nA game never writes a button's name or colour. It names the ACTION, and the\nengine draws that action's binding on the player's current device:\n\n  cw_prompt_text(font, \"{jump}: hop a gap\", 0, pos, 24, white, CW_ALIGN_LEFT);\n\nOn a pad that is a diamond of four dots with the south one solid; on a\nkeyboard a keycap reading \"Space\"; on a phone the on-screen button's disc\nand label. Rebind jump to the north button and the north dot lights, the\nsame frame. One string covers every device and every rebinding, and it sits\nin a translation catalog like any other text.\n\n── The glyphs ─────────────────────────────────────────────────────────\nVector shapes from render2d (circles, rings, rounded rects, polygons), so\nthey are sharp at any size and identical on GL and WebGPU. Solid means\n\"this one\", an outline means \"not this one\"; nothing depends on colour,\nand no glyph carries a maker's letter, symbol or colour.\n  face buttons     a diamond of four dots: the one to press solid, three rings\n  shoulders        two flat bars side by side, the left or right one solid\n  triggers         two tall tabs side by side, the left or right one solid\n  sticks           a thumbstick from the front and a little above (a flat\n                   socket, a short post, a wide cap), the other stick smaller\n                   and dimmer beside it: the left stick has its twin on its\n                   right. Arrows beside the cap say left and right, above it\n                   up, under the socket down; a pair or four draw them all\n  stick press      the stick with its cap pushed down under an arrow\n  d-pad            a plus: the arms to press solid, the rest outlined (a\n                   pair lights two, four directions light all four)\n  Start            the word \"Start\" in a pill (every pad has that button;\n                   a keyboard binding shows its keycap, usually \"Enter\")\n  Back             two small pills side by side, the left one solid (the\n                   makers name that button differently, so no word is used)\n  keyboard         a keycap holding cw_binding_display_name's text\n                   (\"Space\", \"Enter\", \"W\"; one character larger and heavier\n                   than a word); the arrow keys draw an arrow\n  mouse            a mouse outline with the bound button solid; the wheel\n                   draws its arrow\n  touch            the on-screen control as the touch overlay draws it: a\n                   button's disc and label, a thumbstick's knob on its\n                   filled base with the arrows inside it\nEach shape has a dark edge under a light (or `color`) fill, so a glyph reads\non a light background and on a dark one. MINIMUM SIZE: 16 canvas pixels at\na pixel scale of 1, read from native-scale crops on light and dark\nbackgrounds: the face-button diamond still reads at 14 (its rings stay\nopen, the solid dot stays the only solid one), but keycap text, the word\n\"Start\" and a stick's arrows need 16. Use 18 or more for anything a player\nreads in motion. Smaller sizes still draw; the rings close up and the text\nblurs.\n\n── Which device ───────────────────────────────────────────────────────\nEach player's CURRENT device is the one they used last, read from the\ninput module's FRAME snapshot: a pad button, a stick or trigger past half\nway, a key going down, a mouse button or the wheel, a touch landing. Before\na player touches anything: their pad when it is connected, else a touch\nscreen on a touch-first device (cw_platform_touch_primary), else the\nkeyboard, else their pad even when it is unplugged. A pad that unplugs\nhands its player back to that default.\n\nWhich binding of several: the FIRST binding, in binding order, on that\ndevice. So `key:space, pad:south` draws the diamond for a pad player and\n\"Space\" for a keyboard player, with no game code. The keyboard and mouse\ncount as one desk: a keyboard player is shown a mouse binding when the\naction has no key, and the other way round.\n\nNothing on the device: an action with no binding on the player's device\ndraws NOTHING (never a guess, never a placeholder) and logs a warning ONCE\nper action and device, naming both. The debug field `prompt.missing` counts\nthose pairs.\n\n── Movement ───────────────────────────────────────────────────────────\nTwo actions (left|right or up|down) or four (left|right|up|down) draw as\nONE glyph when their pad bindings agree: the stick when all of them are on\none stick, else the d-pad when all are on it. When both exist the stick is\nshown, except on a pad whose d-pad this player has used and whose sticks\nthey never have: that is how a pad with no stick (a retro handheld, which\nstill steers through the d-pad bindings of the same actions) is told apart,\nsince no host reports which pads have sticks. Until a pad has been used it\nshows the stick. Bindings that agree on nothing draw each action's glyph\nside by side. On a keyboard each action's keycap is drawn, side by side.\n\n── Shared prompts (player -1) ─────────────────────────────────────────\nA title or instructions screen that several seats read: the pad glyph when\nany present seat is on a pad, then the keycap when any is on the keyboard\nor mouse, then the touch control when any is on touch, side by side. A\nseat is present when its pad is connected or it holds the keyboard, mouse\nor touch. A device the action has no binding on is left out while another\ndevice shows something (a menu's keys on a phone beside a pad); only when\nnothing at all is drawn is it logged. Per-seat text (a join slot, a\nsplit-screen HUD) passes the seat.\n\n── Text markup ───────────────────────────────────────────────────────\ncw_prompt_text draws text with glyphs in it, on one line or several ('\\n'):\n  {jump}                  an action's glyph, by its name\n  {pad:west} {key:space}  one binding (the cw_binding_parse text form), for a\n                          design that is about position (lanes, answer slots)\n  {move_left|move_right}  a pair as one glyph (Movement, above)\n  {left|right|up|down}    four directions as one glyph\n  {{ and }}               a literal brace\nThe markup lives inside translated strings (cw_tr(\"hint.jump\") returning\n\"{jump} : sauter\"), so a translator moves the glyph where the language\nwants it. Right-to-left text lays its runs out right to left, glyphs\nincluded. A name that is no action (a typo) draws nothing, is logged by\ncw_error ONCE naming it and the text, and counts in the debug field\n`prompt.errors`, which tests/gate.mjs fails a run on.\n\n── Determinism ───────────────────────────────────────────────────────\nPrompts are presentation. The current device comes from the frame\nsnapshot and never from the tick snapshot; nothing here enters the\nsimulation, the recorded action stream or `input.hash`. Calling any of\nthese from fixed_update is a bug (the answer would change the game as the\nplayer picks up another device): debug builds assert, release builds log\nonce and count it in `prompt.errors`.\n\n── Tests ─────────────────────────────────────────────────────────────\nCW_TEST_PROMPT_DEVICE=pad|keyboard|mouse|touch (native runs) forces every\nplayer's device, whatever they press. The debug request `prompt device\n<player|all> <pad|keyboard|mouse|touch|auto>` does the same in a cart (and\nnatively): a gate passes it with \"startCmds\". Without either, an input\nscript switches the device with its first event on another device, as a\nplayer would. `prompt` alone answers every player's device. Debug fields:\n`prompt.devices` (cw_prompt_device per player), `prompt.errors`,\n`prompt.missing`, `prompt.count` (glyphs drawn last frame) and\n`prompt.glyphs` (the first 16 of them, each kind << 16 | what was lit:\nsee cw_prompt_glyph_code).\n\nCosts: a glyph is 4 to 20 render2d shapes; text markup is one layout pass\nper call (cw_font_measure per run). Main thread only, inside an open\nrender2d pass (cw_r2d_begin), outside fixed_update.",
+   "summary": "cartwheel prompts: how to show a player which button, key or touch control\ndoes something, drawn for the device that player is using right now.\n\nA game never writes a button's name or colour. It names the ACTION, and the\nengine draws that action's binding on the player's current device:\n\n  cw_prompt_text(font, \"{jump}: hop a gap\", 0, pos, 24, white, CW_ALIGN_LEFT);\n\nOn a pad that is a diamond of four dots with the south one solid; on a\nkeyboard a keycap reading \"Space\"; on a phone the on-screen button's disc\nand label. Rebind jump to the north button and the north dot lights, the\nsame frame. One string covers every device and every rebinding, and it sits\nin a translation catalog like any other text.\n\n── The glyphs ─────────────────────────────────────────────────────────\nVector shapes from render2d (circles, rings, rounded rects, polygons), so\nthey are sharp at any size and identical on GL and WebGPU. Solid means\n\"this one\", an outline means \"not this one\"; nothing depends on colour,\nand no glyph carries a maker's letter, symbol or colour.\n  face buttons     a diamond of four dots: the one to press solid, three rings\n  shoulders        two flat bars side by side, the left or right one solid\n  triggers         two tall tabs side by side, the left or right one solid\n  sticks           a thumbstick from the front and a little above (a flat\n                   socket, a short post, a wide cap), the other stick smaller\n                   and dimmer beside it: the left stick has its twin on its\n                   right. Arrows beside the cap say left and right, above it\n                   up, under the socket down; a pair or four draw them all\n  stick press      the stick with its cap pushed down under an arrow\n  d-pad            a plus: the arms to press solid, the rest outlined (a\n                   pair lights two, four directions light all four)\n  Start            the word \"Start\" in a pill (every pad has that button;\n                   a keyboard binding shows its keycap, usually \"Enter\")\n  Back             two small pills side by side, the left one solid (the\n                   makers name that button differently, so no word is used)\n  keyboard         a keycap holding cw_binding_display_name's text\n                   (\"Space\", \"Enter\", \"W\"; one character larger and heavier\n                   than a word); the arrow keys draw an arrow\n  mouse            a mouse outline with the bound button solid; the wheel\n                   draws its arrow\n  touch            the on-screen control as the touch overlay draws it: a\n                   button's disc and label, a thumbstick's knob on its\n                   filled base with the arrows inside it\nEach shape has a dark edge under a light (or `color`) fill, so a glyph reads\non a light background and on a dark one. MINIMUM SIZE: 1.5% of the canvas\nheight (16 px at 1080 lines), read from native-scale crops on light and\ndark backgrounds: the face-button diamond still reads at 14 px (its rings\nstay open, the solid dot stays the only solid one), but keycap text, the\nword \"Start\" and a stick's arrows need 16. A prompt sits in text: give its\nline the body text size (CW_TEXT_FLOOR_BODY, cartwheel/render2d.h).\nSmaller sizes still draw; the rings close up and the text blurs.\n\nTEXT SCALE: every size here is multiplied by the player's text scale\n(cw_text_scale, cartwheel/render2d.h) once, at the call, with the same cap,\nso a prompt line grows with the text around it and cw_prompt_text_size\nanswers the size it draws at. The words of cw_prompt_text count in the\ntext size check; a glyph's own legend (a keycap's letters) does not.\n\n── Which device ───────────────────────────────────────────────────────\nEach player's CURRENT device is the one they used last, read from the\ninput module's FRAME snapshot: a pad button, a stick or trigger past half\nway, a key going down, a mouse button or the wheel, a touch landing. Before\na player touches anything: their pad when it is connected, else a touch\nscreen on a touch-first device (cw_platform_touch_primary), else the\nkeyboard, else their pad even when it is unplugged. A pad that unplugs\nhands its player back to that default.\n\nWhich binding of several: the FIRST binding, in binding order, on that\ndevice. So `key:space, pad:south` draws the diamond for a pad player and\n\"Space\" for a keyboard player, with no game code. The keyboard and mouse\ncount as one desk: a keyboard player is shown a mouse binding when the\naction has no key, and the other way round.\n\nNothing on the device: an action with no binding on the player's device\ndraws NOTHING (never a guess, never a placeholder) and logs a warning ONCE\nper action and device, naming both. The debug field `prompt.missing` counts\nthose pairs.\n\n── Movement ───────────────────────────────────────────────────────────\nTwo actions (left|right or up|down) or four (left|right|up|down) draw as\nONE glyph when their pad bindings agree: the stick when all of them are on\none stick, else the d-pad when all are on it. When both exist the stick is\nshown, except on a pad whose d-pad this player has used and whose sticks\nthey never have: that is how a pad with no stick (a retro handheld, which\nstill steers through the d-pad bindings of the same actions) is told apart,\nsince no host reports which pads have sticks. Until a pad has been used it\nshows the stick. Bindings that agree on nothing draw each action's glyph\nside by side. On a keyboard each action's keycap is drawn, side by side.\n\n── Shared prompts (player -1) ─────────────────────────────────────────\nA title or instructions screen that several seats read: the pad glyph when\nany present seat is on a pad, then the keycap when any is on the keyboard\nor mouse, then the touch control when any is on touch, side by side. A\nseat is present when its pad is connected or it holds the keyboard, mouse\nor touch. A device the action has no binding on is left out while another\ndevice shows something (a menu's keys on a phone beside a pad); only when\nnothing at all is drawn is it logged. Per-seat text (a join slot, a\nsplit-screen HUD) passes the seat.\n\n── Text markup ───────────────────────────────────────────────────────\ncw_prompt_text draws text with glyphs in it, on one line or several ('\\n'):\n  {jump}                  an action's glyph, by its name\n  {pad:west} {key:space}  one binding (the cw_binding_parse text form), for a\n                          design that is about position (lanes, answer slots)\n  {move_left|move_right}  a pair as one glyph (Movement, above)\n  {left|right|up|down}    four directions as one glyph\n  {{ and }}               a literal brace\nThe markup lives inside translated strings (cw_tr(\"hint.jump\") returning\n\"{jump} : sauter\"), so a translator moves the glyph where the language\nwants it. Right-to-left text lays its runs out right to left, glyphs\nincluded. A name that is no action (a typo) draws nothing, is logged by\ncw_error ONCE naming it and the text, and counts in the debug field\n`prompt.errors`, which tests/gate.mjs fails a run on.\n\n── Determinism ───────────────────────────────────────────────────────\nPrompts are presentation. The current device comes from the frame\nsnapshot and never from the tick snapshot; nothing here enters the\nsimulation, the recorded action stream or `input.hash`. Calling any of\nthese from fixed_update is a bug (the answer would change the game as the\nplayer picks up another device): debug builds assert, release builds log\nonce and count it in `prompt.errors`.\n\n── Tests ─────────────────────────────────────────────────────────────\nCW_TEST_PROMPT_DEVICE=pad|keyboard|mouse|touch (native runs) forces every\nplayer's device, whatever they press. The debug request `prompt device\n<player|all> <pad|keyboard|mouse|touch|auto>` does the same in a cart (and\nnatively): a gate passes it with \"startCmds\". Without either, an input\nscript switches the device with its first event on another device, as a\nplayer would. `prompt` alone answers every player's device. Debug fields:\n`prompt.devices` (cw_prompt_device per player), `prompt.errors`,\n`prompt.missing`, `prompt.count` (glyphs drawn last frame) and\n`prompt.glyphs` (the first 16 of them, each kind << 16 | what was lit:\nsee cw_prompt_glyph_code).\n\nCosts: a glyph is 4 to 20 render2d shapes; text markup is one layout pass\nper call (cw_font_measure per run). Main thread only, inside an open\nrender2d pass (cw_r2d_begin), outside fixed_update.",
    "functions": [
     {
      "name": "cw_prompt_device_of",
@@ -10291,6 +10291,84 @@
      "inline": false
     },
     {
+     "name": "cw_text_scale_set",
+     "signature": "void cw_text_scale_set(float scale)",
+     "doc": "The player's text scale (clamped 0.5..4; 1 = the sizes the game asks for).",
+     "inline": false
+    },
+    {
+     "name": "cw_text_scale",
+     "signature": "float cw_text_scale(void)",
+     "doc": "the current scale (1 when unset)",
+     "inline": false
+    },
+    {
+     "name": "cw_text_scale_cycle",
+     "signature": "void cw_text_scale_cycle(void)",
+     "doc": "The steps a settings row offers: 100%, 125%, 150%, 200%. cycle goes to the\nnext (200% wraps to 100%), cycle_back to the previous; label is \"125%\".",
+     "inline": false
+    },
+    {
+     "name": "cw_text_scale_cycle_back",
+     "signature": "void cw_text_scale_cycle_back(void)",
+     "doc": "the previous step (100% wraps to 200%)",
+     "inline": false
+    },
+    {
+     "name": "cw_text_scale_label",
+     "signature": "const char *cw_text_scale_label(void)",
+     "doc": "the nearest step: \"100%\", \"125%\", \"150%\" or \"200%\"",
+     "inline": false
+    },
+    {
+     "name": "cw_text_drawn_size",
+     "signature": "float cw_text_drawn_size(cw_font f, float size)",
+     "doc": "The size text asked for at `size` draws at now in font f (the scale, the\ncap and a bitmap font's whole multiples applied): for a layout that spaces\nlines by the size instead of measuring. A null font skips the bitmap rule.",
+     "inline": false
+    },
+    {
+     "name": "cw_text_backdrop_set",
+     "signature": "void cw_text_backdrop_set(cw_text_backdrop b)",
+     "doc": "Off (the default), Outline or Panel",
+     "inline": false
+    },
+    {
+     "name": "cw_text_backdrop_get",
+     "signature": "cw_text_backdrop cw_text_backdrop_get(void)",
+     "doc": "the current setting",
+     "inline": false
+    },
+    {
+     "name": "cw_text_backdrop_cycle",
+     "signature": "void cw_text_backdrop_cycle(void)",
+     "doc": "off, outline, panel, off",
+     "inline": false
+    },
+    {
+     "name": "cw_text_backdrop_label",
+     "signature": "const char *cw_text_backdrop_label(void)",
+     "doc": "\"Off\", \"Outline\", \"Panel\"",
+     "inline": false
+    },
+    {
+     "name": "cw_text_scale_saved",
+     "signature": "uint8_t cw_text_scale_saved(void)",
+     "doc": "Both settings in one byte for a game's save (0: nothing chosen, the\ndefaults), and back: cw_text_scale_restore at init, after the save loaded.\nThe game shell keeps it in its own save.",
+     "inline": false
+    },
+    {
+     "name": "cw_text_scale_restore",
+     "signature": "void cw_text_scale_restore(uint8_t saved)",
+     "doc": "apply a cw_text_scale_saved byte (0 or a byte from elsewhere: nothing changes)",
+     "inline": false
+    },
+    {
+     "name": "cw__text_caller",
+     "signature": "void cw__text_caller(const char *file, int line)",
+     "doc": "debug builds of a game: the caller's file and line for the `text` request",
+     "inline": false
+    },
+    {
      "name": "cw_tilemap_create",
      "signature": "cw_tilemap cw_tilemap_create(const cw_tilemap_desc *desc)",
      "doc": "Cells start empty. Null handle (logged) unless the tileset is a loaded image (not a target), sizes are\npositive and layers is 1..16.",
@@ -10452,12 +10530,17 @@
     {
      "name": "cw_text_style",
      "doc": "",
-     "decl": "typedef struct cw_text_style {\n  float size;           /* pixel size of the em (0 = the font's bake size) */\n  cw_color color;       /* {0,0,0,0} = white */\n  float wrap_width;     /* 0 = no wrapping */\n  cw_text_align align;  /* within wrap_width, or within the widest line when not wrapping */\n  float line_spacing;   /* multiple of the font's line height (0 = 1) */\n  float letter_spacing; /* extra pixels after every glyph */\n  int32_t direction;    /* cw_text_dir (complex-script text only) */\n  /* Outline and drop shadow, drawn under the text from the same layout (one\n   * submission, batched with it). SDF fonts grow and soften the glyphs in\n   * the shader: a round outline of any width up to the font's distance range\n   * (sdf_padding baked px at bake_size: 6 at 48 = 12.5% of the size by\n   * default; a wider one clamps with a warning naming the padding to load the\n   * font with). Bitmap fonts stamp the glyphs at every whole-pixel offset\n   * within the width (softness ignored). Widths in px at this size. */\n  float outline_width;      /* 0 = none */\n  cw_color outline_color;   /* {0,0,0,0} = opaque black */\n  cw_color shadow_color;    /* alpha 0 = no shadow */\n  cw_vec2 shadow_offset;    /* px */\n  float shadow_spread;      /* px the shadow grows round the glyphs */\n  float shadow_softness;    /* px of blur at the shadow's edge (SDF) */\n} cw_text_style;"
+     "decl": "typedef struct cw_text_style {\n  float size;           /* pixel size of the em (0 = the font's bake size) */\n  cw_color color;       /* {0,0,0,0} = white */\n  float wrap_width;     /* 0 = no wrapping */\n  cw_text_align align;  /* within wrap_width, or within the widest line when not wrapping */\n  float line_spacing;   /* multiple of the font's line height (0 = 1) */\n  float letter_spacing; /* extra pixels after every glyph */\n  int32_t direction;    /* cw_text_dir (complex-script text only) */\n  /* Outline and drop shadow, drawn under the text from the same layout (one\n   * submission, batched with it). SDF fonts grow and soften the glyphs in\n   * the shader: a round outline of any width up to the font's distance range\n   * (sdf_padding baked px at bake_size: 6 at 48 = 12.5% of the size by\n   * default; a wider one clamps with a warning naming the padding to load the\n   * font with). Bitmap fonts stamp the glyphs at every whole-pixel offset\n   * within the width (softness ignored). Widths in px at this size. */\n  float outline_width;      /* 0 = none */\n  cw_color outline_color;   /* {0,0,0,0} = opaque black */\n  cw_color shadow_color;    /* alpha 0 = no shadow */\n  cw_vec2 shadow_offset;    /* px */\n  float shadow_spread;      /* px the shadow grows round the glyphs */\n  float shadow_softness;    /* px of blur at the shadow's edge (SDF) */\n  /* Art, not reading: a title logo drawn as text, a word on a sign, a\n   * decorative background word. Drawn at exactly `size` (the text scale\n   * leaves it alone) and left out of the size check (Text size, below). */\n  bool fixed_size;\n  /* The game draws its own panel, outline or shadow behind this text: the\n   * player's Text background setting adds nothing to it. (Text with an\n   * outline or a shadow in this style is left alone anyway.) */\n  bool own_backdrop;\n} cw_text_style;"
     },
     {
      "name": "cw_text_metrics",
      "doc": "",
      "decl": "typedef struct cw_text_metrics {\n  float width, height;  /* box of the laid-out text (height = lines * line height) */\n  int lines;\n  float ascent, descent, line_height; /* at this size; descent is negative */\n} cw_text_metrics;"
+    },
+    {
+     "name": "cw_text_backdrop",
+     "doc": "Text background, the player's contrast setting for text over a 3D scene:\nan outline round the letters, or a dark rounded panel behind the text's\nbox. The engine adds it to text whose style has no outline and no shadow\nand is not own_backdrop or fixed_size; the UI's controls and the prompts\ndraw their own.",
+     "decl": "typedef enum { CW_TEXT_BACKDROP_OFF, CW_TEXT_BACKDROP_OUTLINE, CW_TEXT_BACKDROP_PANEL } cw_text_backdrop;"
     },
     {
      "name": "cw_tilemap_desc",
@@ -10487,6 +10570,22 @@
     {
      "name": "CW_R2D_MAX_LAYERS",
      "doc": "── canvas layers ───────────────────────────────────────────────────────\nCW_R2D_MAX_LAYERS layers, drawn in index order (0 first). Each has its own\ncamera, so a world layer and a HUD layer coexist; settings persist across\npasses and frames (a scene tree's canvas draw puts back those it used).\nLayer 0 with no camera is the default: screen space."
+    },
+    {
+     "name": "CW_TEXT_FLOOR_BODY",
+     "doc": "── text size: the player's scale, the floor, the check ───────────────\nOne scale for every piece of 2D text: cw_r2d_text, cw_font_measure,\ncw_font_advance, cw_font_caret_x, the prompts (cartwheel/prompt.h) and\nevery UI theme font (cw_ui_set_text_scale is this scale). Measuring scales\nthe same way as drawing, so a layout made from cw_font_measure grows with\nthe text and needs no code. The player picks 100%, 125%, 150% or 200%\n(the game shell's Settings has the row; cw_text_scale_cycle for a game's\nown menu).\n\nWhat scales: the em size, letter spacing, outline and shadow widths and\nthe shadow offset. wrap_width is a box and stays. Two limits:\n  - text the scale would take past CW_TEXT_SCALE_CAP of the canvas height\n    stops there (it was large already: a banner or a countdown); it never\n    shrinks below the size the game asked for;\n  - a bitmap font scales by whole multiples of its pixel size (no blur).\nText drawn into a render target (cw_r2d_begin with .target: a texture, a\nsign in the scene) is drawn as asked, and so is fixed_size text (art).\n\nThe floor, as a share of the 2D canvas height (the virtual canvas when the\ngame draws into one), measured on the em size the game asks for at 100%:\n  CW_TEXT_FLOOR_BODY  body text (HUD values, menus, hints, captions):\n                      26 px at 1080 lines (2.4%), 17.3 at 720, 19.3 at 800\n  CW_TEXT_FLOOR_MIN   the smallest text anywhere: 18 px at 1080 lines (1.7%),\n                      12 at 720, 13.3 at 800\nThe same visual angle covers a television at 3 m and a 5.5\" handheld at\n30 cm, so one rule fits both.\n\nThe check: every frame the engine records the smallest text drawn to the\nwindow (fixed_size left out), with the transform and the layer camera's\nzoom applied, as a share of the canvas height. Debug fields:\n  text.min_share        the smallest this frame (0: no text)\n  text.min_where        its first characters\n  text.run_min_share    the smallest since the run began (0: none yet)\n  text.run_min_where    its first characters\n  text.scale, text.backdrop  the settings\nThe debug request `text` lists every size drawn this frame (the caller's\nfile and line too, in a debug build of the game); `text scale <k>` and\n`text backdrop off|outline|panel` set the settings for a test. tests/gate.mjs\nfails a game's run whose text.run_min_share is under CW_TEXT_FLOOR_MIN\n(gate option textFloor); tools/check-text.mjs walks a game's screens and\nholds body text to CW_TEXT_FLOOR_BODY. Render-only: nothing here reaches\nthe simulation."
+    },
+    {
+     "name": "CW_TEXT_FLOOR_MIN",
+     "doc": ""
+    },
+    {
+     "name": "CW_TEXT_SCALE_CAP",
+     "doc": ""
+    },
+    {
+     "name": "cw_r2d_text(f, s, p, st)",
+     "doc": ""
     },
     {
      "name": "CW_TILE_CHUNK",
@@ -13699,7 +13798,7 @@
     {
      "name": "cw_ui_set_text_scale",
      "signature": "void cw_ui_set_text_scale(float scale)",
-     "doc": "Accessibility: a multiplier on every theme font size (clamped 0.5..4; 1 =\nas themed); layouts grow with the text. Reduced motion: no caret blink,\ntooltips without the hover delay, no animated UI motion; games read it\nwith cw_ui_reduced_motion for their own effects (screen shake, parallax,\ncamera bob, flashing).",
+     "doc": "Accessibility: the player's text scale (clamped 0.5..4; 1 = as themed). It\nis the engine's one text scale (cw_text_scale_set, cartwheel/render2d.h):\nevery theme font size, and the game's own 2D text and prompts too; layouts\ngrow with the text, whoever changed the scale. Reduced motion: no caret blink,\ntooltips without the hover delay, no animated UI motion; games read it\nwith cw_ui_reduced_motion for their own effects (screen shake, parallax,\ncamera bob, flashing).",
      "inline": false
     },
     {

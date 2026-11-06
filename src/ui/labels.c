@@ -29,10 +29,10 @@ static cw_vec2 label_min(cw_node n, void *d) {
   if (l->autowrap) {
     float w = l->last_w > 0 ? l->last_w : CTL(n)->rect.w;
     if (w <= 0) w = 1e6f;
-    cw_text_metrics m = cw_font_measure(f, s, &(cw_text_style){ .size = fs, .wrap_width = w });
+    cw_text_metrics m = cw__font_measure_raw(f, s, &(cw_text_style){ .size = fs, .wrap_width = w });
     return (cw_vec2){ 0, CW_MAX(m.height, lh) };
   }
-  cw_text_metrics m = cw_font_measure(f, s, &(cw_text_style){ .size = fs });
+  cw_text_metrics m = cw__font_measure_raw(f, s, &(cw_text_style){ .size = fs });
   return (cw_vec2){ (l->clip_text || l->ellipsis) ? 0 : ceilf(m.width), CW_MAX(m.height, lh) };
 }
 
@@ -67,7 +67,7 @@ static void label_draw(cw_node n, void *d) {
   if (ui_draw_rtl()) ha = ha == CW_HALIGN_LEFT ? CW_HALIGN_RIGHT : ha == CW_HALIGN_RIGHT ? CW_HALIGN_LEFT : ha;
   cw_text_style st = { .size = fs, .wrap_width = l->autowrap ? r.w : 0, .align = al[ha & 3],
                        .direction = ui_draw_rtl() ? CW_TEXT_DIR_RTL : CW_TEXT_DIR_AUTO };
-  cw_text_metrics m = cw_font_measure(f, s, &st);
+  cw_text_metrics m = cw__font_measure_raw(f, s, &st);
   float x = 0, y = 0;
   if (!l->autowrap) {
     if (ha == CW_HALIGN_CENTER) x = ui_round((r.w - m.width) * 0.5f);
@@ -304,7 +304,7 @@ static float piece_width(cw_font f, float size, const char *s, int len, bool syn
   memcpy(b, s, (size_t)len);
   b[len] = 0;
   /* caret x at the end keeps trailing spaces (measure trims them) */
-  return cw_font_caret_x(f, b, len, size) + (synth_b ? CW_MAX(0.6f, size / 22.0f) : 0);
+  return cw__font_caret_x_raw(f, b, len, size) + (synth_b ? CW_MAX(0.6f, size / 22.0f) : 0);
 }
 
 static void rich_layout_text(cw_node n, rich_data *r, float width) {
@@ -319,7 +319,7 @@ static void rich_layout_text(cw_node n, rich_data *r, float width) {
   int line_first = 0;
   const char *P = r->plain;
 #define END_LINE() do { \
-    if (line_h <= 0) { cw_font df = T_FONT(n); cw_text_metrics mm = cw_font_measure(df, "", &(cw_text_style){ .size = fs0 }); \
+    if (line_h <= 0) { cw_font df = T_FONT(n); cw_text_metrics mm = cw__font_measure_raw(df, "", &(cw_text_style){ .size = fs0 }); \
                        line_h = mm.line_height; line_asc = mm.ascent; } \
     for (int q = line_first; q < r->pieces.count; q++) { rt_piece *pc = &r->pieces.data[q]; pc->y = y + (line_asc - pc->ascent); } \
     y += line_h; x = 0; line_h = 0; line_asc = 0; line_first = r->pieces.count; \
@@ -329,7 +329,7 @@ static void rich_layout_text(cw_node n, rich_data *r, float width) {
     bool sb, si;
     cw_font f = run_font(n, ru, &sb, &si);
     float fs = ru->size > 0 ? ru->size : fs0;
-    cw_text_metrics mm = cw_font_measure(f, "", &(cw_text_style){ .size = fs });
+    cw_text_metrics mm = cw__font_measure_raw(f, "", &(cw_text_style){ .size = fs });
     int i = ru->start, end = ru->start + ru->len;
     while (i < end) {
       if (P[i] == '\n') {

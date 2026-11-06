@@ -473,8 +473,10 @@ void cw_ui_layout(cw_tree *t);
  * on cw_ui_layer() is taken back after that pass (the layer's settings are
  * as before), so a later pass on that layer is not scaled. */
 void cw_ui_render(cw_tree *t);
-/* Accessibility: a multiplier on every theme font size (clamped 0.5..4; 1 =
- * as themed); layouts grow with the text. Reduced motion: no caret blink,
+/* Accessibility: the player's text scale (clamped 0.5..4; 1 = as themed). It
+ * is the engine's one text scale (cw_text_scale_set, cartwheel/render2d.h):
+ * every theme font size, and the game's own 2D text and prompts too; layouts
+ * grow with the text, whoever changed the scale. Reduced motion: no caret blink,
  * tooltips without the hover delay, no animated UI motion; games read it
  * with cw_ui_reduced_motion for their own effects (screen shake, parallax,
  * camera bob, flashing). */

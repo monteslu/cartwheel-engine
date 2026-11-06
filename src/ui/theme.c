@@ -774,13 +774,19 @@ static void relayout_all(void) {
     ui_mark_min_dirty(s->popups.data[i].node);
   }
 }
-void cw_ui_set_text_scale(float scale) {
-  float s = scale > 0 ? CW_CLAMP(scale, 0.5f, 4.0f) : 1;
-  if (s == UI.text_scale) return;
-  UI.text_scale = s;
+/* the UI's text scale is the engine's one (cw_text_scale, cartwheel/render2d.h): a change from anywhere (the
+ * shell's Text size row, a game's own menu) lays every control out again on the next cw_ui_process */
+void ui_text_scale_sync(void) {
+  float k = cw_text_scale();
+  if (k == UI.text_scale) return;
+  UI.text_scale = k;
   relayout_all();
 }
-float cw_ui_text_scale(void) { return UI.text_scale > 0 ? UI.text_scale : 1; }
+void cw_ui_set_text_scale(float scale) {
+  cw_text_scale_set(scale);
+  ui_text_scale_sync();
+}
+float cw_ui_text_scale(void) { return cw_text_scale(); }
 void cw_ui_set_reduced_motion(bool on) { UI.reduced_motion = on; }
 bool cw_ui_reduced_motion(void) { return UI.reduced_motion; }
 
@@ -940,7 +946,7 @@ cw_font cw_control_theme_font(cw_node n, const char *type, const char *name) {
   return cw_ui_font_sans();
 }
 float cw_control_theme_font_size(cw_node n, const char *type, const char *name) {
-  float v = 0, k = UI.text_scale > 0 ? UI.text_scale : 1; /* the accessibility text size */
+  float v = 0, k = cw_text_scale(); /* the player's text size (cartwheel/render2d.h) */
   if (ui_lookup(n, type, name, TI_CONST, &v) && v > 0) return v * k;
   if (ui_lookup(n, "", "default_font_size", TI_CONST, &v) && v > 0) return v * k;
   return 15 * k;

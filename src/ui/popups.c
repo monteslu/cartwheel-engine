@@ -620,7 +620,7 @@ static dlg_geo dlg_layout_geo(cw_node n, dlg_data *g, cw_vec2 size) {
   o.title = (cw_rect){ in.x, in.y, in.w, th };
   float tw = dlg_text_w(n);
   o.text_w = CW_MIN(tw, in.w);
-  cw_text_metrics tm = cw_font_measure(f, ui_tr(n, ui_s(g->dialog_text)), &(cw_text_style){ .size = fs, .wrap_width = o.text_w });
+  cw_text_metrics tm = cw__font_measure_raw(f, ui_tr(n, ui_s(g->dialog_text)), &(cw_text_style){ .size = fs, .wrap_width = o.text_w });
   float ty = in.y + th + sep;
   o.text = (cw_rect){ in.x, ty, in.w, g->dialog_text && *g->dialog_text ? tm.height : 0 };
   cw_vec2 ob = btn_size(n, ui_tr(n, ok_t(g))), cb = btn_size(n, ui_tr(n, cancel_t(g)));
@@ -645,7 +645,7 @@ static cw_vec2 dlg_min(cw_node n, void *d) {
   float fs = T_FSIZE(n), tfs = T_CONST(n, "title_font_size");
   float th = cw_ui_line_height(f, tfs > 0 ? tfs : fs);
   float tw = cw_ui_text_width(f, tfs > 0 ? tfs : fs, ui_tr(n, ui_s(g->title)));
-  cw_text_metrics tm = cw_font_measure(f, ui_tr(n, ui_s(g->dialog_text)), &(cw_text_style){ .size = fs, .wrap_width = dlg_text_w(n) });
+  cw_text_metrics tm = cw__font_measure_raw(f, ui_tr(n, ui_s(g->dialog_text)), &(cw_text_style){ .size = fs, .wrap_width = dlg_text_w(n) });
   cw_vec2 ob = btn_size(n, ui_tr(n, ok_t(g))), cb = btn_size(n, ui_tr(n, cancel_t(g)));
   float bw = ob.x + (g->has_cancel ? cb.x + sep : 0), bh = CW_MAX(ob.y, cb.y);
   cw_node *ch;

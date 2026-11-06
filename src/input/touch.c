@@ -16,6 +16,7 @@
 #include "cartwheel/ui.h"
 #include "input_internal.h"
 #include "../platform/hooks.h"
+#include "../render2d/text_raw.h"
 
 #define I cw__in
 
@@ -315,8 +316,8 @@ static void overlay_draw(void) {
         float size = fminf(r * 0.62f, 34.0f * u * 1.2f);
         cw_text_style st = { .size = size, .color = cw_rgba(1, 1, 1, c->active ? 1.0f : 0.85f),
                              .shadow_color = cw_rgba(0, 0, 0, 0.5f), .shadow_offset = { 0, line * 0.5f } };
-        cw_text_metrics m = cw_font_measure(font, c->label, &st);
-        cw_r2d_text(font, c->label, (cw_vec2){ c->home.x - m.width * 0.5f, c->home.y - m.height * 0.5f }, &st);
+        cw_text_metrics m = cw__font_measure_raw(font, c->label, &st);
+        cw__r2d_text_raw(font, c->label, (cw_vec2){ c->home.x - m.width * 0.5f, c->home.y - m.height * 0.5f }, &st, CW__TEXT_UNCOUNTED);
       }
     }
     overlay_drawn++;

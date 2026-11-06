@@ -140,6 +140,7 @@ typedef struct r2d_state {
    * pixel ratio (cw_pixel_ratio), so text and shapes rasterize at full
    * resolution while games keep their logical coordinates */
   int view_w, view_h;
+  int win_view_h;             /* the last window pass's canvas height (text: the scale's cap, the size check) */
   float px_x, px_y;
   float win_px_x, win_px_y;   /* the last window pass: drawable pixels per logical window unit */
   cw_texture canvas_rt;       /* virtual canvas */
@@ -187,6 +188,8 @@ enum { U_PAGE };                                               /* blit */
 /* batch.c: zero the per-frame stats when a new engine frame started (the
  * first count of a frame, a pass or a text layout, calls it) */
 void r2d_stats_frame_check(void);
+/* text.c: a new frame's text sizes start empty (called from r2d_stats_frame_check) */
+void r2d_text_frame_reset(void);
 
 /* text.c: a complex text's glyphs as source byte offsets in visual (left to
  * right) order, every line; the glyph count (0 for simple text). For tests. */

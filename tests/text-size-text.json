@@ -1,0 +1,5 @@
+{
+  "app": "text_size",
+  "secondary": ["^secondary"],
+  "screens": [{ "name": "hud", "frames": 6 }]
+}

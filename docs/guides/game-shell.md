@@ -16,7 +16,9 @@ writes only its gameplay and art:
   resolution with its pixel size (the player's own: a preset never changes
   it), ambient occlusion, shadows, anti-aliasing, effects detail, and the
   game's own settings from `cw_quality_lever_add`), music and effects volume, screen shake
-  (Full, Reduced, Off) and the controls (each action and its bindings, from
+  (Full, Reduced, Off), Text size (100%, 125%, 150%, 200%: every piece of 2D text, the
+  game's HUD included, see [localization and accessibility](guide:l10n-a11y)), Text
+  background (Off, Outline, Panel: contrast for text over the scene) and the controls (each action and its bindings, from
   (header:input.h)); saved with the game's own save data in one versioned,
   checksummed block;
 - screen shake: the shell never moves a camera, the game does, so the game
@@ -54,6 +56,8 @@ writes only its gameplay and art:
   The `unit-shell` gate checks both layouts.
 
 Start plays from any pad, so one player can press Start, Start from the title and be playing. A pad with no seat takes the first free seat as it presses Start; with every seat taken the seated players play. Enter does the same for a keyboard that holds any seat, or when every seat is taken by others. South still only joins and East still only leaves. The press is answered on its own frame: the select sound, and "Starting..." over the screen. The `start` hook then runs on the next tick after that picture was drawn, so a game that loads for a long time in `start` never looks dead. Presses on this screen are counted per tick: a frame that runs no tick (a display faster than the tick rate) keeps them for the next tick, and a frame that runs several sees each once. A test or autopilot calling `cw_shell_start` gets the hook at once, as before.
+
+The shell's own text meets the body text floor at 100%, and every gap in its screens comes from the size its text draws at, so at 200% nothing overlaps: a menu that no longer fits scrolls with its selection (a mark above or below says there is more), a hint line too wide for the canvas breaks into lines, and the controls list moves into the menu's place when there is no room beside it. A game with its own menus offers the same settings with `cw_text_scale_cycle` / `cw_text_scale_label` and `cw_text_backdrop_cycle` / `cw_text_backdrop_label`, saving `cw_text_scale_saved()` (one byte, both settings) and calling `cw_text_scale_restore` at init.
 
 A game that wants its own picture behind the title, join, settings and pause screens sets `draw_background` in `cw_shell_desc`: the shell calls it inside its own 2D pass with the canvas size, then dims the result lightly and draws the menu over it (without the hook the screens sit on a dark panel).
 

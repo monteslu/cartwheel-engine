@@ -51,6 +51,10 @@ cw_prompt_text(font, "{jump}: hop a gap", player, pos, 22, white, CW_ALIGN_LEFT)
   button` and the like in strings; `prompt-ok: <reason>` on a line that
   really means it.
 
+## Text size
+
+Two numbers, as a share of the 2D canvas height at a text scale of 100%: body text (HUD values, menus, hints, captions) at least 26 px at 1080 lines (2.4%, `CW_TEXT_FLOOR_BODY`), and nothing anywhere under 18 px (1.7%, `CW_TEXT_FLOOR_MIN`). Size text as a share of the canvas height, lay out from `cw_font_measure` so the player's Text size (up to 200%) grows the layout with it, and mark art text (a title logo drawn as text) `fixed_size`. Every game gate fails a run that drew text under the smallest floor; `tools/check-text.mjs` holds each screen's body text to the body floor (guide: l10n-a11y, "Text size").
+
 ## Finding your way
 
 - `docs/api.json`: every public function, type and macro with its comment
