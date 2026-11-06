@@ -4,6 +4,33 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.36.0 (2026-11-06)
+
+### Changed
+- **Very Low and Low draw the HDR scene in R11G11B10 float** where the device renders and blends it (GL: an R11F_G11F_B10F framebuffer that is complete; WebGPU: the rg11b10ufloat-renderable feature, which the native backend now asks for and a cart gets when its host's device has it). Half the bytes of RGBA16F a pixel, no alpha (nothing those presets draw after the scene reads it), less precision in the darks. On the 890M at 1080p it took the jetski game's scene pass from 1.46 to 1.05 ms and the arena shooter's from 3.73 to 2.84 ms at Very Low (GL). `CW_TEST_SMALL_HDR=0` (native) keeps RGBA16F.
+- **Low runs the height fog and FXAA inside the tone mapping pass**, as Very Low did, with bloom's composite in the same pass (the glow is gathered from the scene before the fog, the composite adds it after). Bloom's first level on Low is made from four bilinear reads (a 4 x 4 texel footprint) instead of thirteen.
+- The fused FXAA (Very Low and Low) averages its edge reads in a compressed space (each over one plus its exposed brightness, undone after the average) and tone maps once, instead of tone mapping four reads at an edge.
+- **Low draws no volumetric fog and no distortion buffer.** A HeightFog with `volumetric` on draws as plain height fog on Low and Very Low (before, Very Low drew no fog at all for it), so the scene keeps its fog without the froxel grid's cost.
+- ProceduralSky re-renders its cube and environment at most every 8 frames on Very Low, 4 on Low and 2 on Medium while its parameters keep changing (a sun or haze easing a little each frame); High and Ultra as before. A changing sky cost a racing game about 3 ms of GL time a frame at every preset.
+- Docs: quality.h and the rendering guide's quality tables (HDR scene, sky re-render, fog, distortion, bloom), the Very Low and Low post section.
+
+### Measured (GPU time on the Radeon 890M at 1080p, as a share of High)
+
+| Game | Very Low / High, before -> after | Low / High, before -> after |
+|---|---|---|
+| Pirates | 0.22 / 0.27 -> 0.22 / 0.21 | 0.39 / 0.47 -> 0.38 / 0.34 |
+| Jetski | 0.26 / 0.21 -> 0.18 / 0.24 | 0.42 / 0.51 -> 0.35 / 0.42 |
+| Arena FPS (with its own depth prepass on Low and Very Low) | 0.48 / 0.42 -> 0.23 / 0.24 | 0.62 / 0.59 -> 0.31 / 0.32 |
+
+(GL / WebGPU, before on v0.34.3. The example repositories carry every game. The engine samples in tests/quality-range-engine.json measured Very Low 0.20 to 0.64 and Low 0.31 to 0.89 of High, bound by terrain and open-ground pixels a preset does not cut; their shares are tightened to that.)
+
+### Tests
+- `quality-verylow-post` runs Low as well as Very Low (the fused fog and FXAA against the separate passes, FXAA at work), with a third control on Low: `CW_TEST_VERYLOW_POST=bloom` leaves the glow out of the fused pass and must break the bound.
+- `quality-range`: the engine list's shares of High tightened to the new measurements.
+
+### Moving a game to v0.36.0
+- Nothing to change in code. A game's Low looks closer to Very Low's post (no volumetric fog grid, no distortion), and a game whose fog is volumetric now has height fog on Very Low. A game that keeps its own ProceduralSky parameters easing every frame re-renders the sky less often below High. Re-measure the game's quality range: Low and Very Low cost less, so its shares of High can be tightened.
+
 ## v0.35.0 (2026-11-06)
 
 ### Added
