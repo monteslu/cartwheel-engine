@@ -701,7 +701,7 @@ static cw_node create(void *user) {
   panel = cw_node_new("VBoxContainer", NULL);
   caption = cw_node_new("Label", "Caption");
   cw_node_set(caption, "ellipsis", cw_val_bool(true));
-  cw_node_set(caption, "theme_overrides", cw_val_string("font_size = 12; font_color = #8a93a3"));
+  cw_node_set(caption, "theme_overrides", cw_val_string("font_size = 13; font_color = #8a93a3"));
   view = cw_node_new("TextureRect", "View");
   cw_node_set(view, "stretch_mode", cw_val_int(0));
   cw_control_set_size_flags(view, CW_SIZE_EXPAND_FILL, CW_SIZE_EXPAND_FILL);

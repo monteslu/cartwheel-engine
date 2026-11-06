@@ -121,8 +121,8 @@ function checkPromptErrors(problems, g, runs) {
 // CW_TEXT_FLOOR_MIN of the canvas height (text.run_min_share), naming the string. On by default for games (a games
 // repository's apps, CW_PROJECT_ROOT, and this repository's games/); "textFloor": false turns it off for one gate,
 // true turns it on for a sample, a number sets another floor (a share of the canvas height).
-// (a game's editor build, <game>_editor_*, is a tool: its inspector text is not the game's)
-const isGame = (app) => !/_editor(_|$)/.test(app) && (PROJ !== ROOT || existsSync(join(ROOT, 'build', 'native', 'games', app)));
+// (a game's editor build, <game>_editor_*, is held to the floor too: the editor's text is at least 13 px on its 720-line window)
+const isGame = (app) => PROJ !== ROOT || existsSync(join(ROOT, 'build', 'native', 'games', app));
 function checkTextFloor(problems, g, runs) {
   const on = g.textFloor ?? isGame(g.app);
   if (!on) return;

@@ -9,7 +9,11 @@
  * The debug requests `text scale <k>` and `text backdrop off|outline|panel` (the engine's) change the settings;
  * the sample's own `small 1` adds a line drawn 12 px tall at 1080 lines (1.1% of the canvas height), under the
  * floor: tests/text-floor.mjs runs it as the control the check must fail. Native env TEXT_SIZE_SMALL=1 does the
- * same from the start. Debug fields: sample.hud_h (the HUD block's measured height), sample.small. */
+ * same from the start. A banner drawn on a virtual stage (1920 x 1080 units scaled to the window by the 2D
+ * transform, as a game with a fixed-size stage draws) shows the scale cap measured in canvas pixels: at 200% it
+ * stops at CW_TEXT_SCALE_CAP of the canvas height on the window, whatever the stage scale. Debug fields:
+ * sample.hud_h (the HUD block's measured height), sample.small, sample.stage_share (the banner's drawn size as a
+ * share of the canvas height). */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,7 +30,7 @@ static struct {
   cw_font font;
   cw_action jump, fire;
   int32_t small;
-  float hud_h;
+  float hud_h, stage_share;
 } S;
 
 static void cmd_small(int argc, const char **argv, cw_reply *r) {
@@ -45,6 +49,7 @@ static void init(void *user) {
   S.small = e && atoi(e);
   cw_debug_i32("sample.small", &S.small);
   cw_debug_f32("sample.hud_h", &S.hud_h);
+  cw_debug_f32("sample.stage_share", &S.stage_share);
   cw_debug_command("small", "small [1|0]: a line under the size floor (the text-floor control)", cmd_small);
 }
 
@@ -85,6 +90,20 @@ static void render(void *user, double alpha) {
   float hs = h * 0.028f;
   cw_vec2 hz = cw_prompt_text_size(S.font, "{jump}: hop    {fire}: throw", 0, hs);
   cw_prompt_text(S.font, "{jump}: hop    {fire}: throw", 0, cw_v2(sz.x * 0.5f, h - pad - hz.y), hs, CW_WHITE, CW_ALIGN_CENTER);
+
+  /* a banner on a 1920 x 1080 stage scaled to the window: 6% of the stage height asked, so 200% would take it to
+   * 12%; the cap stops it at CW_TEXT_SCALE_CAP of the window's canvas height, measured after the transform */
+  {
+    float k = h / 1080.0f;
+    cw_xform2d m = cw_xform2d_trs(cw_v2((sz.x - 1920.0f * k) * 0.5f, 0), 0, cw_v2(k, k));
+    cw_r2d_set_transform(&m);
+    cw_text_style ban = { .size = 1080.0f * 0.06f, .color = cw_hex(0xffffffff), .own_backdrop = true };
+    cw_text_metrics bm = cw_font_measure(S.font, "STAGE", &ban);
+    cw_r2d_text(S.font, "STAGE", cw_v2(1920.0f - 60.0f - bm.width, 1080.0f * 0.62f), &ban);
+    S.stage_share = cw_text_drawn_size(S.font, ban.size) * k / h;
+    cw_xform2d id = cw_xform2d_identity();
+    cw_r2d_set_transform(&id);
+  }
 
   if (S.small) { /* the control: 12 px at 1080 lines */
     cw_text_style tiny = { .size = h * (12.0f / 1080.0f), .color = CW_WHITE };

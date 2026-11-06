@@ -492,7 +492,10 @@ cw_text_metrics cw_r2d_text(cw_font f, const char *utf8, cw_vec2 pos, const cw_t
  * the shadow offset. wrap_width is a box and stays. Two limits:
  *   - text the scale would take past CW_TEXT_SCALE_CAP of the canvas height
  *     stops there (it was large already: a banner or a countdown); it never
- *     shrinks below the size the game asked for;
+ *     shrinks below the size the game asked for. The cap is in canvas pixels,
+ *     after the 2D transform and the layer camera's zoom, so text on a game's
+ *     own stage (a fixed-size virtual canvas scaled to the window by
+ *     cw_r2d_set_transform) reaches the same cap as text drawn unscaled;
  *   - a bitmap font scales by whole multiples of its pixel size (no blur).
  * Text drawn into a render target (cw_r2d_begin with .target: a texture, a
  * sign in the scene) is drawn as asked, and so is fixed_size text (art).

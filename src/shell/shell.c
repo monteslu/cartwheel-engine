@@ -75,7 +75,7 @@ static struct {
   float progress;
   cw_action act[A_COUNT];
   cw_bus music, sfx;
-  int dbg_screen, dbg_players, dbg_item, dbg_shake, dbg_starting;
+  int dbg_screen, dbg_hud, dbg_players, dbg_item, dbg_shake, dbg_starting;
   bool inited, own_audio, hooked, just_resumed;
 } S;
 
@@ -89,6 +89,7 @@ static void go(cw_shell_screen to) {
   if (to != CW_SHELL_JOIN) S.mid_join = false;
   if (to != CW_SHELL_SETTINGS) cw_quality_menu_close();
   S.dbg_screen = (int)to;
+  S.dbg_hud = to == CW_SHELL_PLAY;
   /* a scene app's tree (cw_scene_app) holds still outside play */
   cw_tree *t = cw_scene_app_tree();
   if (t) cw_tree_set_paused(t, to != CW_SHELL_PLAY);
@@ -178,9 +179,11 @@ void cw_shell_init(const cw_shell_desc *d) {
   S.dbg_shake = cw_shell_shake_level();
   cw_debug_field("shell.shake", &S.dbg_shake, CW_DBG_I32, 1);
   cw_debug_field("shell.starting", &S.dbg_starting, CW_DBG_I32, 1);
+  cw_debug_field("shell.hud", &S.dbg_hud, CW_DBG_I32, 1);
   S.inited = true;
   S.screen = S.d.loading ? CW_SHELL_LOADING : CW_SHELL_TITLE;
   S.dbg_screen = (int)S.screen;
+  S.dbg_hud = S.screen == CW_SHELL_PLAY;
   cw_tree *t = cw_scene_app_tree();
   if (t) {
     cw_tree_set_paused(t, true);
@@ -192,6 +195,7 @@ void cw_shell_init(const cw_shell_desc *d) {
 }
 
 cw_shell_screen cw_shell_screen_now(void) { return S.screen; }
+bool cw_shell_hud_shown(void) { return S.screen == CW_SHELL_PLAY; }
 int cw_shell_players(void) { return S.players; }
 cw_bus cw_shell_music_bus(void) { return S.music; }
 cw_bus cw_shell_sfx_bus(void) { return S.sfx; }

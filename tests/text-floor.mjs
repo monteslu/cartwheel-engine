@@ -5,7 +5,10 @@
 //   - the gate's check (tools/lib/text-floor.mjs, tests/gate.mjs textFloor) passes the sample's run and fails the
 //     control's, naming the string;
 //   - the scale reaches layout: the HUD block, placed line under line by cw_font_measure, is twice as tall at 200%
-//     (sample.hud_h), and the art title (fixed_size) is left out of the check at every scale.
+//     (sample.hud_h), and the art title (fixed_size) is left out of the check at every scale;
+//   - the scale cap is measured in canvas pixels: the banner on a 1920 x 1080 stage scaled to the 720-line window
+//     asks for 6% of the canvas height and reaches the cap, CW_TEXT_SCALE_CAP (8%), at 200% (sample.stage_share).
+//     Measured in the stage's own units the cap stopped it at 6%, so it did not grow at all.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -41,7 +44,10 @@ if (a && b) {
   const r = b['sample.hud_h'] / a['sample.hud_h'];
   if (!(r > 1.9 && r < 2.1)) fails.push(`the HUD block measured ${a['sample.hud_h']} at 100% and ${b['sample.hud_h']} at 200% (x${r.toFixed(2)}, want x2)`);
   if (b['text.scale'] !== 2) fails.push(`text.scale is ${b['text.scale']} after "text scale 2"`);
+  const sa = a['sample.stage_share'], sb = b['sample.stage_share'];
+  if (!(Math.abs(sa - 0.06) < 0.002)) fails.push(`the stage banner drew at ${sa} of the canvas height at 100% (want 0.06)`);
+  if (!(Math.abs(sb - 0.08) < 0.002)) fails.push(`the stage banner drew at ${sb} of the canvas height at 200% (want the cap, 0.08): the cap is not measured after the stage transform`);
   for (const s of [a, b]) if (/TEXT SIZE/.test(fieldText(s['text.min_where']))) fails.push('the fixed_size title was counted by the check');
 }
 if (fails.length) { console.log('FAIL text-floor\n  ' + fails.join('\n  ')); process.exit(1); }
-console.log(`ok text-floor: sample passes at 100% and 200%, the 12 px control fails both checks, HUD x${(b['sample.hud_h'] / a['sample.hud_h']).toFixed(2)} at 200%`);
+console.log(`ok text-floor: sample passes at 100% and 200%, the 12 px control fails both checks, HUD x${(b['sample.hud_h'] / a['sample.hud_h']).toFixed(2)} at 200%, stage banner ${(b['sample.stage_share'] * 100).toFixed(1)}% at 200% (the cap)`);
