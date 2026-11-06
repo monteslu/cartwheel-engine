@@ -138,7 +138,8 @@ function stateDiff(a, b, tol, fields) {
   const diffs = [];
   // the debug channel's mailboxes are transport, not state
   // host.* fields describe the machine (adapter, job threads), never the run
-  const keys = fields || Object.keys(a).filter((k) => !k.startsWith('dbg.') && !k.startsWith('host.'));
+  // text.*_where name the smallest string for a person (a byte field romdev's state does not carry); the shares are compared
+  const keys = fields || Object.keys(a).filter((k) => !k.startsWith('dbg.') && !k.startsWith('host.') && !/^text\..*_where$/.test(k));
   for (const k of keys) {
     const va = a[k], vb = b[k];
     if (vb === undefined) { diffs.push(`${k}: missing`); continue; }
