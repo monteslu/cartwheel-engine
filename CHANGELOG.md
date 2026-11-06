@@ -4,6 +4,11 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.33.1 (2026-11-05)
+
+### Fixed
+- Very Low in split screen: the shared post chain no longer takes the height fog into its tonemap pass (it has no one camera or depth for it, and crashed). The fog stays its own pass in each view there. Gate `quality-verylow-post` now runs fog_shafts_split too.
+
 ## v0.33.0 (2026-11-05)
 
 ### Added
