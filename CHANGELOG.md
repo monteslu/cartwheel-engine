@@ -4,6 +4,33 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.34.0 (2026-11-05)
+
+### Added
+- **One text scale for all 2D text.** `cw_text_scale_set` multiplies every cw_r2d_text, cw_font_measure, cw_font_advance and cw_font_caret_x call, the button prompts (cw_prompt_text, its size call and the glyphs) and every UI theme font: `cw_ui_set_text_scale` is now the same scale. Measuring scales as drawing does, so a layout made from cw_font_measure grows with no code. The steps a player picks are 100%, 125%, 150% and 200% (`cw_text_scale_cycle`, `_cycle_back`, `_label`). Text the scale would take past 8% of the canvas height (`CW_TEXT_SCALE_CAP`) stops there, a bitmap font scales by whole multiples of its pixel size, and text drawn into a render target is drawn as asked. `cw_text_drawn_size` answers the size a given size draws at now.
+- **The size floor.** `CW_TEXT_FLOOR_BODY` (26 px at 1080 lines, 2.4% of the canvas height: HUD values, menus, hints, captions) and `CW_TEXT_FLOOR_MIN` (18 px at 1080 lines, 1.7%: the smallest text anywhere). A new `cw_text_style` field `fixed_size` marks art text (a title logo drawn as text, a word on a sign): drawn as asked, never scaled, not checked.
+- **The check.** Every frame the engine records the smallest text drawn to the window, as a share of the canvas height (debug fields `text.min_share`, `text.min_where`, `text.run_min_share`, `text.run_min_where`, `text.scale`, `text.backdrop`). The debug request `text` lists every size the frame drew (with the caller's file and line in a debug build of the game); `text scale <k>` and `text backdrop <off|outline|panel>` set the settings. Render-only.
+- **Gate option `textFloor`**, on by default for games (a games repository's apps, this repository's `games/`): a run that drew text under the smallest floor fails, naming the string. **`tools/check-text.mjs`** walks a game's screens at any text scale and host frame size and holds body text to the body floor, with a `secondary` list for the few smaller labels; `--shots` keeps frames for a contact sheet. `run-cart.mjs --end-cmds` runs debug requests after the last frame. check-text.mjs ships in the desktop SDKs (beside run-cart.mjs).
+- **Text background**, the player's contrast setting for text over a 3D scene: Off, Outline or Panel (`cw_text_backdrop_set`, `_cycle`, `_label`). The engine adds a dark outline or a dark rounded panel to text whose style has neither an outline nor a shadow; `cw_text_style.own_backdrop` marks text on the game's own panel.
+- **The game shell's Settings has Text size and Text background rows**, saved in the shell's save (a byte that was reserved: older saves load with the defaults). Games with their own menus keep `cw_text_scale_saved()` in their save and call `cw_text_scale_restore` at init.
+- Sample `text_size` (a HUD laid out from measured text, an art title, prompts and a wrapped message), gate `text-floor` (check-text and the gate check pass the sample at 100% and 200% and fail its control, a line 12 px tall at 1080 lines; the HUD block measures twice as tall at 200%) and gate `text-size-scale` (200% with the panel background on every host). `unit-shell` checks the settings' steps and their save.
+
+### Changed
+- The game shell lays its screens out from the size its text draws at: at 200% nothing overlaps, a menu that no longer fits scrolls with its selection (a mark above or below says there is more), a hint line too wide for the canvas breaks into lines, and the controls list takes the menu's place when there is no room beside it. The settings rows are a little smaller (4.25% of the canvas height) to make room for the two new rows. The graphics page (cartwheel/quality_menu.h) scrolls the same way.
+- Captions (CaptionPanel) are never smaller than the body floor (a little over it) times the player's text scale.
+- The button prompts' minimum size is now given as a share of the canvas height (1.5%, 16 px at 1080 lines); a prompt line should have the body text size.
+- The editor templates and the first 2D and first 3D tutorials size their hint line at 3% of the canvas height and place it by its measured height.
+- Docs: localization and accessibility "Text size" (the floor, the scale, the background, the check), 2D rendering, the game shell, testing (the gate option and check-text), CONVENTIONS (the two numbers).
+
+### Moving a game to v0.34.0
+- **Gates now check text size.** Every gate of a games repository runs with `textFloor` on: a run that drew any text under 18 px at 1080 lines (1.7% of the canvas height) fails, naming the string. Make the text larger (body text 26 px at 1080 lines, 2.4%, or more), mark text that is art and not reading `.fixed_size = true` in its style, or (rarely) set `"textFloor": false` on one gate with a note why.
+- **Write `tests/<game>-text.json`** (the screens: title, every menu, play, pause, results) and run `CW_PROJECT_ROOT=$PWD node <host sdk>/tools/check-text.mjs tests/<game>-text.json --scales 1,2` (with the GPU suite lock, or `CW_TEST_GPU=software`): body text must reach the body floor; the few smaller labels go in its `secondary` list.
+- **Lay out for 200%.** Text, measuring and prompts now grow with the player's Text size. Place lines by measured height (`cw_font_measure`, the metrics `cw_r2d_text` returns, `cw_prompt_text_size`), size panels from measured widths, and where code spaces lines by a size, use `cw_text_drawn_size(font, size)`. Check every HUD, menu and results screen at 200% (`--start-cmds "text scale 2"`).
+- **Games with their own settings** add Text size (`cw_text_scale_cycle` / `_cycle_back` / `_label`) and Text background (`cw_text_backdrop_cycle` / `_label`) rows, keep `cw_text_scale_saved()` (one byte) in their save and call `cw_text_scale_restore` at init. Shell games get both rows with no code.
+- Text drawn on the game's own panel sets `.own_backdrop = true`, so the Text background setting does not add a second one.
+- A game that called `cw_ui_set_text_scale` for its own reasons now scales its HUD text too (it is the one scale).
+- The shell's settings page has two more rows (Text size, Text background before Controls): an input script that walked to Controls or Back by count needs two more downs.
+
 ## v0.33.1 (2026-11-05)
 
 ### Fixed
