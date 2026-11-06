@@ -271,7 +271,7 @@ static void fuse_off(cw_pipeline *p, int i) {
   r->active = false;
   r->stat.ran = r->stat.fused = true;
 }
-static void plan_fusion(cw_pipeline *p, const cw_post_settings *s, bool post) {
+static void plan_fusion(cw_pipeline *p, const cw_post_settings *s, bool post, bool own_view) {
   p->fuse_fog = p->fuse_bloom = p->fuse_grade = p->fuse_lens = p->fuse_lens_tm = p->fuse_distort = p->fuse_aa_tm = p->fuse_fog_tm = false;
   p->bloom_glow = NULL;
   if (!post || s->debug_view != CW_VIEW_NONE || test_no_fusion()) return;
@@ -305,7 +305,8 @@ static void plan_fusion(cw_pipeline *p, const cw_post_settings *s, bool post) {
   }
   /* effects detail Very Low (cartwheel/quality.h): the height fog read inside the tonemap pass (nothing between them
    * draws colour), one full-frame blend fewer */
-  if (!p->fuse_fog && fg >= 0 && tm >= 0 && !p->fuse_bloom && !p->fuse_distort && cw__quality_cheap_post() &&
+  /* (only in a run that drew its own view: split screen's shared post has no one camera or depth for it) */
+  if (own_view && !p->fuse_fog && fg >= 0 && tm >= 0 && !p->fuse_bloom && !p->fuse_distort && cw__quality_cheap_post() &&
       fx_post_adjacent(p, fg, tm)) {
     p->fuse_fog_tm = true;
     fuse_off(p, fg);
@@ -1007,7 +1008,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   bool post_run = mode == RUN_OVERLAY && p->post_src;
   if (post_run) offscreen = true;
   ctx.offscreen = offscreen;
-  plan_fusion(p, s, offscreen);
+  plan_fusion(p, s, offscreen, ctx.camera != NULL && !post_run);
 
   /* TAA jitter + camera matrices (offscreen only: the direct path leaves the
    * camera exactly as three.c's own path does) */

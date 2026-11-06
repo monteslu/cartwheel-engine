@@ -12,6 +12,7 @@
 //
 //   node tests/quality-verylow-post.mjs [--gpus gl,webgpu] [app[:frame] ...]
 //
+// fog_shafts_split: split screen, whose shared post has no one camera for the fog (it stays its own pass there).
 // The apps are native builds of this checkout, or of CW_PROJECT_ROOT's tree (see tests/gate.mjs).
 import { spawn } from 'node:child_process';
 import { readFileSync, mkdirSync, existsSync } from 'node:fs';
@@ -34,7 +35,7 @@ const argv = process.argv.slice(2);
 const gi = argv.indexOf('--gpus');
 const GPUS = (gi >= 0 ? argv[gi + 1] : 'gl,webgpu').split(',');
 const only = argv.filter((a, i) => !a.startsWith('-') && !(gi >= 0 && i === gi + 1));
-const CASES = (only.length ? only : ['open_world:600', 'showcase:300']).map((a) => {
+const CASES = (only.length ? only : ['open_world:600', 'showcase:300', 'fog_shafts_split:300']).map((a) => {
   const [app, frame] = a.split(':');
   return { app, frames: +frame || 600, tag: app };
 });
