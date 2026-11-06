@@ -4,6 +4,26 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.35.0 (2026-11-06)
+
+### Added
+- `cw_shell_hud_shown()` (cartwheel/shell.h): true only in play, false under the pause menu, the settings opened from it, the join screen opened during play, and on the title and loading screens. The shell draws its menus over the game's frame and dims it only lightly, so a HUD left on screen sits under the menu's lines, and at 150% and 200% text they overlap. A game draws its HUD only when this is true; the world and the views stay. Debug field `shell.hud`. The game shell guide shows it in the calls a game makes, and the shell_join sample draws a HUD line with it.
+
+### Fixed
+- The text scale cap (`CW_TEXT_SCALE_CAP`, 8% of the canvas height) is measured in canvas pixels, after the 2D transform and the layer camera's zoom. A game that draws on its own stage (a fixed-size virtual canvas scaled to the window with cw_r2d_set_transform) had the cap applied in the stage's units: on a 1080-unit stage in a 720-line window, text that asked for 6% of the canvas did not grow at all at 200%. It now grows to the cap like text drawn unscaled.
+- The editor's text is at least 13 px on its 720-line window (the 18 px at 1080 lines floor): the inspector, scene tree, file system, import, preview and viewport panels drew captions, badges and buttons at 10 to 12 px, and the 2D view's ruler numbers and the curve editor's range label 10 px (the 2D rulers are 20 px deep for them, were 18). The interface font size setting goes down to 13 (was 10).
+
+### Changed
+- The gate option `textFloor` is on again by default for a game's editor builds (`<game>_editor_*`), as for the game: v0.34.1 turned it off while the inspector's text was under the floor.
+
+### Tests
+- `text-floor`: the text_size sample draws a banner on a 1920 x 1080 stage scaled to its 720-line window; at 200% it reaches the cap (sample.stage_share 0.08), where the cap in stage units left it at 0.06.
+- New gate `shell-hud-pause`: the shell_join sample's HUD line is gone under the pause menu (`shell.hud` 0). Its control never pauses and keeps it.
+- The editor gates (editor-view3d, editor-view2d, editor-gizmo, editor-pointer, editor-pointer-keys) run with the text floor on.
+
+### Moving a game to v0.35.0
+- A game on the shell: draw the HUD only when `cw_shell_hud_shown()` is true (where it drew it on `CW_SHELL_PLAY || CW_SHELL_PAUSE`). Nothing else changes.
+
 ## v0.34.3 (2026-11-06)
 
 ### Fixed

@@ -1400,13 +1400,24 @@ static float text_canvas_h(void) {
   return (float)h;
 }
 static float scale_now(void) { return TS.scale > 0 ? TS.scale : 1; }
+/* canvas pixels per unit of the size text asks for: the 2D transform (a game's virtual stage scaled to the window)
+ * and the layer camera's zoom, as the check measures them (text_count) */
+static float text_units_px(void) {
+  float k = 1;
+  if (!R.in_pass) return k;
+  if (R.has_xform) k *= sqrtf(fabsf(R.xform.a * R.xform.d - R.xform.b * R.xform.c));
+  const cw_r2d_layer_desc *ld = &R.layers[R.cur_layer];
+  if (ld->has_camera && ld->camera.zoom > 0) k *= ld->camera.zoom;
+  return k > 1e-4f ? k : 1;
+}
 
 /* the factor text asked for at `size` draws at: the scale, stopped at the cap, whole multiples for a bitmap font */
 static float scale_for(const r2d_font *f, float size) {
   float k = scale_now();
   if (k == 1 || size <= 0 || target_pass()) return 1;
   float want = size * k;
-  float h = text_canvas_h();
+  /* the cap is a share of the canvas height in canvas pixels: on a scaled stage, in the stage's own units */
+  float h = text_canvas_h() / text_units_px();
   if (k > 1 && h > 0 && want > CW_TEXT_SCALE_CAP * h) want = CW_MAX(size, CW_TEXT_SCALE_CAP * h);
   if (f && f->mode == CW_FONT_BITMAP && f->bake_size > 0) {
     float m = CW_MAX(1.0f, roundf(want / f->bake_size));

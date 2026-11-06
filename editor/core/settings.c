@@ -308,7 +308,7 @@ void cwed__settings_init(void) {
     .doc = "Size of the whole editor UI (1 = 100%)." });
   cwed_setting_define(&(cwed_setting_desc){ .key = "interface.theme", .type = CWED_ARG_STRING, .def = "dark", .choices = "dark|light",
     .doc = "Editor color theme." });
-  cwed_setting_define(&(cwed_setting_desc){ .key = "interface.font_size", .type = CWED_ARG_INT, .def = "14", .min = 10, .max = 24,
+  cwed_setting_define(&(cwed_setting_desc){ .key = "interface.font_size", .type = CWED_ARG_INT, .def = "14", .min = 13, .max = 24,
     .doc = "Text size in the editor." });
   cwed_setting_define(&(cwed_setting_desc){ .key = "interface.accent", .type = CWED_ARG_STRING, .def = "teal",
     .choices = "teal|blue|orange|purple", .doc = "Accent color for focus, selection and active tabs." });

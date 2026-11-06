@@ -81,10 +81,13 @@ static void fixed_update(void *user, double dt) {
   /* gameplay */
 }
 static void render(void *user, double alpha) {
-  /* HUD */
+  /* the frame */
+  if (cw_shell_hud_shown()) draw_hud(); /* the HUD, only in play */
   cw_shell_draw();
 }
 ```
+
+The game's HUD goes away under the shell's menus: `cw_shell_hud_shown()` is true only in play, and false under the pause menu, the settings opened from it, the join screen opened during play and on the title and loading screens. The menus are drawn over the game's frame and dim it only lightly, so a HUD left on screen sits under the menu's lines, and at a large text size (150% and 200%) they overlap. Keep drawing the world and the views; leave out the HUD, the hint lines and the banners.
 
 In a scene app (`cw_scene_app`) the tree is paused outside play, so its
 nodes hold still under the menus, and the menus tick from a hook of the

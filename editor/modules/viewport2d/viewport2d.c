@@ -28,7 +28,7 @@
 #include "cartwheel/vfs.h"
 #include "../gizmos/gizmos.h"
 
-#define RULER 18.0f
+#define RULER 20.0f
 #define MAX_GUIDES 64
 
 typedef struct { cwed_doc *doc; cw_vec2 center; float zoom; bool init; } view_cam;
@@ -490,7 +490,7 @@ static void view_draw(cw_node n, void *data) {
       for (int k = 0; k < o->npts; k++) p[k] = cw_v2_scale(o->pts[k], 1 / s);
       cw_ui_draw_polygon(p, o->npts, o->c);
     } else {
-      cw_ui_draw_text(cw_ui_font_sans(), 10, o->text, cw_v2_scale(o->a, 1 / s), o->c);
+      cw_ui_draw_text(cw_ui_font_sans(), 13, o->text, cw_v2_scale(o->a, 1 / s), o->c);
     }
   }
   cw_ui_pop_clip();
@@ -813,7 +813,7 @@ static cw_node mkbtn(const char *text, const char *tip, const char *line, bool t
   cw_button_set_text(b, text);
   cw_control_set_tooltip(b, tip);
   cw_node_set(b, "focus_mode", cw_val_int(CW_FOCUS_NONE));
-  cw_node_set(b, "theme_overrides", cw_val_string("font_size = 12"));
+  cw_node_set(b, "theme_overrides", cw_val_string("font_size = 13"));
   if (toggle) cw_button_set_toggle_mode(b, true);
   cw_connect(b, "pressed", (cw_node){ 0 }, NULL, on_btn, (void *)line, 0);
   return b;
@@ -847,7 +847,7 @@ static cw_node create(void *user) {
   cw_node_add_child(bar, V.snap_btn);
   cw_node_add_child(bar, V.grid_btn);
   V.info = cw_node_new("Label", "Info");
-  cw_node_set(V.info, "theme_overrides", cw_val_string("font_size = 12; font_color = #8a93a3"));
+  cw_node_set(V.info, "theme_overrides", cw_val_string("font_size = 13; font_color = #8a93a3"));
   cw_node_set(V.info, "ellipsis", cw_val_bool(true));
   cw_node_set(V.info, "horizontal_alignment", cw_val_int(CW_HALIGN_RIGHT));
   cw_control_set_size_flags(V.info, CW_SIZE_EXPAND_FILL, CW_SIZE_SHRINK_CENTER);

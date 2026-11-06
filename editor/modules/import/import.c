@@ -673,7 +673,7 @@ static void rebuild_dock(void) {
     cw_node l = cw_node_new("Label", NULL);
     cw_label_set_text(l, s->key);
     cw_control_set_tooltip(l, s->doc);
-    cw_node_set(l, "theme_overrides", cw_val_string("font_size = 12; font_color = #8a93a3"));
+    cw_node_set(l, "theme_overrides", cw_val_string("font_size = 13; font_color = #8a93a3"));
     cw_control_set_size_flags(l, CW_SIZE_EXPAND_FILL, CW_SIZE_SHRINK_CENTER);
     cw_node_add_child(settings_grid, l);
     rows[r].key = s->key;
@@ -717,7 +717,7 @@ static cw_node create(void *user) {
   cw_node_set(status_l, "autowrap", cw_val_bool(true));
   note_l = cw_node_new("Label", "Note");
   cw_node_set(note_l, "autowrap", cw_val_bool(true));
-  cw_node_set(note_l, "theme_overrides", cw_val_string("font_size = 12; font_color = #8a93a3"));
+  cw_node_set(note_l, "theme_overrides", cw_val_string("font_size = 13; font_color = #8a93a3"));
   settings_grid = cw_node_new("GridContainer", "Settings");
   cw_node_set(settings_grid, "columns", cw_val_int(1)); /* label over editor: docks are narrow */
   cw_control_set_size_flags(settings_grid, CW_SIZE_EXPAND_FILL, CW_SIZE_FILL);

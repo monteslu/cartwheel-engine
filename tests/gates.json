@@ -96,6 +96,16 @@
     "note": "one-press join: one player starts, then a pad with no seat presses A during play and holds seat 2 at once, no join screen. Control: that pad presses B instead, so nobody joins"
   },
   {
+    "name": "shell-hud-pause",
+    "app": "shell_join",
+    "frames": 56,
+    "input": "shell-hud-pause.json",
+    "controlInput": "shell-hud-pause-control.json",
+    "fields": ["shell.screen", "shell.hud", "game.players"],
+    "expect": { "shell.screen": 4, "shell.hud": 0, "game.players": 1 },
+    "note": "cw_shell_hud_shown: one player starts, then Start opens the pause menu and the sample's HUD line (drawn only when cw_shell_hud_shown) is gone from under the menu (shell.hud 0). Control: no pause, the HUD stays (shell.hud 1)"
+  },
+  {
     "name": "shell-start-title",
     "app": "shell_join",
     "frames": 21,

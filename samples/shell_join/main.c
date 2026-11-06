@@ -98,6 +98,12 @@ static void render(void *user, double alpha) {
   if (cw_shell_screen_now() == CW_SHELL_PLAY || cw_shell_screen_now() == CW_SHELL_JOIN)
     for (int p = 0; p < G.players; p++)
       if ((G.seats >> p) & 1) cw_r2d_rect(cw_rect_make(G.x[p], 60.0f + 70.0f * (float)p, 50, 50), cw_hex(col[p]));
+  /* the HUD: only in play, never under the menus (cw_shell_hud_shown) */
+  if (cw_shell_hud_shown()) {
+    char line[32];
+    snprintf(line, sizeof line, "Players %d", G.players);
+    cw_r2d_text(cw_ui_font_sans(), line, cw_v2(16, 16), &(cw_text_style){ .size = 360.0f * 0.03f, .color = CW_WHITE });
+  }
   cw_r2d_end();
   cw_shell_draw(); /* the menus, in their own pass */
 }

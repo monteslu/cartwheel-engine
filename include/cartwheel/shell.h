@@ -26,6 +26,7 @@
  *   }
  *   static void render(double alpha) {
  *     ... the game's frame ...
+ *     if (cw_shell_hud_shown()) draw_hud();      // not under the menus
  *     cw_shell_draw();                           // menus and overlays on top
  *   }
  *
@@ -62,7 +63,7 @@
  *
  * Determinism: menus run in fixed_update from the input snapshot, so a
  * replay drives them like gameplay. A test or an autopilot build skips them
- * with cw_shell_start. Debug fields: shell.screen, shell.players, shell.item,
+ * with cw_shell_start. Debug fields: shell.screen, shell.hud (cw_shell_hud_shown), shell.players, shell.item,
  * shell.shake, shell.starting (1 a press to play was answered, 2 "Starting..." has been drawn). */
 #ifndef CW_SHELL_H
 #define CW_SHELL_H
@@ -134,6 +135,11 @@ bool cw_shell_update(void);
 void cw_shell_draw(void);
 
 cw_shell_screen cw_shell_screen_now(void); /* the screen showing */
+/* Should the game draw its HUD now? True only in play: false under the pause menu, the settings opened from it,
+ * the join screen opened during play, and on the title and loading screens. The shell draws its menus over the
+ * game's frame, so a HUD left on screen sits under the menu's lines (at a large text scale they overlap); draw the
+ * HUD only when this is true. The world, the views and the game's draw_background stay: only the HUD goes. */
+bool cw_shell_hud_shown(void);
 int cw_shell_players(void); /* players in the match (1..max_players) */
 /* Start a match now with n players (pads 0..n-1, player 0 also on the
  * keyboard, mouse and touch): an autopilot build or a test skips the menus. */

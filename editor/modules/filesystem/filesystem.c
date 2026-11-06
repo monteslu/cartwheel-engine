@@ -1204,7 +1204,7 @@ static cw_node create(void *user) {
   cw_node_add_child(grid_scroll, grid);
   cw_node_add_child(panel_box, grid_scroll);
   info = cw_node_new("Label", "Info");
-  cw_node_set(info, "theme_overrides", cw_val_string("font_size = 12; font_color = #8a93a3"));
+  cw_node_set(info, "theme_overrides", cw_val_string("font_size = 13; font_color = #8a93a3"));
   cw_node_set(info, "ellipsis", cw_val_bool(true));
   cw_node_add_child(panel_box, info);
   used_list = cw_node_new("ItemList", "Dependencies");

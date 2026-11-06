@@ -350,7 +350,7 @@ static void on_connect(cw_node b, const cw_value *a, int argc, void *user) {
 static cw_node small_label(const char *text, const char *color) {
   cw_node l = cw_node_new("Label", NULL);
   cw_label_set_text(l, text);
-  cw_node_set(l, "theme_overrides", cw_val_string(cw_frame_printf("font_size = 12; font_color = %s", color)));
+  cw_node_set(l, "theme_overrides", cw_val_string(cw_frame_printf("font_size = 13; font_color = %s", color)));
   cw_node_set(l, "ellipsis", cw_val_bool(true));
   cw_control_set_size_flags(l, CW_SIZE_EXPAND_FILL, CW_SIZE_SHRINK_CENTER);
   return l;
@@ -360,7 +360,7 @@ static cw_node small_button(const char *text, const char *tip, void (*fn)(cw_nod
   cw_button_set_text(b, text);
   cw_control_set_tooltip(b, tip);
   cw_node_set(b, "focus_mode", cw_val_int(CW_FOCUS_NONE));
-  cw_node_set(b, "theme_overrides", cw_val_string("font_size = 12"));
+  cw_node_set(b, "theme_overrides", cw_val_string("font_size = 13"));
   cw_connect(b, "pressed", (cw_node){ 0 }, NULL, fn, user, 0);
   return b;
 }
@@ -415,7 +415,7 @@ static void rebuild_side(void) {
     for (int i = 0; t->signals && t->signals[i]; i++) cw_option_button_add_item(sig_option, t->signals[i]), count++;
   if (!count) cw_option_button_add_item(sig_option, "(this type emits no signals)");
   cw_option_button_select(sig_option, 0);
-  cw_node_set(sig_option, "theme_overrides", cw_val_string("font_size = 12"));
+  cw_node_set(sig_option, "theme_overrides", cw_val_string("font_size = 13"));
   sig_target = cw_node_new("LineEdit", "Target");
   cw_line_edit_set_text(sig_target, ".");
   cw_control_set_custom_min_size(sig_target, (cw_vec2){ 50, 0 });
@@ -627,7 +627,7 @@ static cw_node create(void *user) {
   cw_ui_set_drop_target(tree, &(cw_ui_drop_fns){ .can_drop = can_drop, .drop = drop });
   cw_node_add_child(box, tree);
   hint = cw_node_new("Label", "Hint");
-  cw_node_set(hint, "theme_overrides", cw_val_string("font_size = 12; font_color = #8a93a3"));
+  cw_node_set(hint, "theme_overrides", cw_val_string("font_size = 13; font_color = #8a93a3"));
   cw_node_set(hint, "ellipsis", cw_val_bool(true));
   cw_node_add_child(box, hint);
   rebuild();

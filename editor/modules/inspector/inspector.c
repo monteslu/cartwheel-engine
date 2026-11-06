@@ -200,11 +200,11 @@ static cw_node mask_create(const cwed_prop_ctx *c) {
     cw_button_set_toggle_mode(b, true);
     cw_button_set_pressed(b, (m >> i) & 1);
     cw_node_set(b, "focus_mode", cw_val_int(CW_FOCUS_NONE));
-    cw_node_set(b, "theme_overrides", cw_val_string("font_size = 10; normal = style(bg=#2c313c, radius=2, margin=1 0); "
+    cw_node_set(b, "theme_overrides", cw_val_string("font_size = 13; normal = style(bg=#2c313c, radius=2, margin=1 0); "
                                                     "hover = style(bg=#3a4150, radius=2, margin=1 0); "
                                                     "pressed = style(bg=#2f8f83, radius=2, margin=1 0)"));
     cw_control_set_tooltip(b, cw_frame_printf("bit %d (layer %d)", i, i));
-    cw_control_set_custom_min_size(b, (cw_vec2){ 18, 16 });
+    cw_control_set_custom_min_size(b, (cw_vec2){ 20, 18 });
     cw_connect(b, "toggled", (cw_node){ 0 }, NULL, on_bit, (void *)c->prop, 0);
     cw_node_add_child(grid, b);
   }
@@ -296,7 +296,7 @@ static bool color_handles(cw_node n, const cw_prop *p) {
 static cw_node color_create(const cwed_prop_ctx *c) {
   cw_node b = cw_node_new("Button", NULL);
   cw_node_set(b, "focus_mode", cw_val_int(CW_FOCUS_NONE));
-  cw_node_set(b, "theme_overrides", cw_val_string("font_size = 12"));
+  cw_node_set(b, "theme_overrides", cw_val_string("font_size = 13"));
   swatch_style(b, (cw_color){ c->value.v[0], c->value.v[1], c->value.v[2], c->value.v[3] });
   cw_control_set_tooltip(b, "Pick a colour (linear values)");
   cw_connect(b, "pressed", (cw_node){ 0 }, NULL, on_swatch, (void *)c->prop, 0);
@@ -388,10 +388,10 @@ static cw_node longtext_create(const cwed_prop_ctx *c) {
   cw_node te = cw_node_new("TextEdit", NULL);
   cw_text_edit_set_text(te, c->value.s ? c->value.s : "");
   cw_control_set_custom_min_size(te, (cw_vec2){ 0, 70 });
-  cw_node_set(te, "theme_overrides", cw_val_string("font_size = 12"));
+  cw_node_set(te, "theme_overrides", cw_val_string("font_size = 13"));
   cw_node b = cw_node_new("Button", NULL);
   cw_button_set_text(b, "Apply");
-  cw_node_set(b, "theme_overrides", cw_val_string("font_size = 12"));
+  cw_node_set(b, "theme_overrides", cw_val_string("font_size = 13"));
   cw_connect(b, "pressed", (cw_node){ 0 }, NULL, on_apply_text, (void *)c->prop, 0);
   cw_node_add_child(box, te);
   cw_node_add_child(box, b);
@@ -408,7 +408,7 @@ static void path_status(cw_node box, const char *path) {
   cw_node st = cw_node_child(box, 1);
   bool ok = !path[0] || cw_vfs_exists(path);
   cw_label_set_text(st, !path[0] ? "" : ok ? "ok" : "missing");
-  cw_node_set(st, "theme_overrides", cw_val_string(ok ? "font_size = 11; font_color = #6fbf73" : "font_size = 11; font_color = #e06c6c"));
+  cw_node_set(st, "theme_overrides", cw_val_string(ok ? "font_size = 13; font_color = #6fbf73" : "font_size = 13; font_color = #e06c6c"));
 }
 static void on_path(cw_node e, const cw_value *a, int argc, void *user) {
   (void)argc;
@@ -538,7 +538,7 @@ static void curve_draw(cw_node n, void *data) {
   for (int i = 0; i < c->n; i++) cw_ui_draw_circle(curve_pt(r, c, i), i == c->drag ? 5 : 4, i == c->drag ? cw_rgba(1, 0.85f, 0.3f, 1) : CW_WHITE);
   char lab[64];
   snprintf(lab, sizeof lab, "%s .. %s", num(c->vmin), num(c->vmax));
-  cw_ui_draw_text(cw_ui_font_sans(), 10, lab, cw_v2(r.x + 2, r.y), cw_rgba(1, 1, 1, 0.45f));
+  cw_ui_draw_text(cw_ui_font_sans(), 13, lab, cw_v2(r.x + 2, r.y), cw_rgba(1, 1, 1, 0.45f));
 }
 static bool curve_input(cw_node n, void *data, const cw_ui_event *e) {
   curve_data *c = data;
@@ -603,7 +603,7 @@ static cw_node curve_create(const cwed_prop_ctx *c) {
   cw_control_set_tooltip(g, "Drag keys; double-click adds one, right-click removes one");
   cw_node l = cw_node_new("LineEdit", NULL);
   cw_line_edit_set_text(l, c->value.s ? c->value.s : "");
-  cw_node_set(l, "theme_overrides", cw_val_string("font_size = 12"));
+  cw_node_set(l, "theme_overrides", cw_val_string("font_size = 13"));
   cw_connect(l, "text_submitted", (cw_node){ 0 }, NULL, on_text, (void *)c->prop, 0);
   cw_node_add_child(box, g);
   cw_node_add_child(box, l);
@@ -820,7 +820,7 @@ static void rebuild(void) {
     cw_button_set_text(rv, "x");
     cw_node_set(rv, "focus_mode", cw_val_int(CW_FOCUS_NONE));
     cw_node_set(rv, "flat", cw_val_bool(true));
-    cw_node_set(rv, "theme_overrides", cw_val_string("font_size = 11; font_color = #9aa2b1"));
+    cw_node_set(rv, "theme_overrides", cw_val_string("font_size = 13; font_color = #9aa2b1"));
     cw_control_set_custom_min_size(rv, (cw_vec2){ 16, 0 });
     cw_node_add_child(grid, l);
     cw_node_add_child(grid, e);
@@ -908,7 +908,7 @@ static cw_node create(void *user) {
   cw_node_set(header, "ellipsis", cw_val_bool(true));
   sub_header = cw_node_new("Label", "SubHeader");
   cw_node_set(sub_header, "ellipsis", cw_val_bool(true));
-  cw_node_set(sub_header, "theme_overrides", cw_val_string("font_size = 12; font_color = #8a93a3"));
+  cw_node_set(sub_header, "theme_overrides", cw_val_string("font_size = 13; font_color = #8a93a3"));
   filter_edit = cw_node_new("LineEdit", "Filter");
   cw_node_set(filter_edit, "placeholder_text", cw_val_string("filter properties"));
   cw_connect(filter_edit, "text_changed", (cw_node){ 0 }, NULL, on_filter, NULL, 0);
