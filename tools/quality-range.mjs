@@ -13,8 +13,10 @@
 // With neither --apps nor --scenes it runs tests/quality-range-engine.json.
 //
 // --scenes: [{ "name", "app", "frames", "env": {}, "startCmds": [], "input": "<json input script, project relative>",
-// "maxVeryLow", "maxLow" }] for apps that need input or commands to reach play (a games tree keeps its list there), each
-// with its own shares of High where its floor is known (a scene bound by pixels a preset cannot cut has a higher one).
+// "maxVeryLow", "maxLow", "gpus" }] for apps that need input or commands to reach play (a games tree keeps its list there),
+// each with its own shares of High where its floor is known (a scene bound by pixels a preset cannot cut has a higher one),
+// and "gpus" (optional) the backends to measure it on: one whose timers cannot see the scene's cost (a 2D game's app pass is
+// untimed on WebGPU) is left out.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -108,7 +110,7 @@ function sweep(flat) {
   const report = {};
   let failures = 0;
   for (const sc of scenes)
-    for (const gpu of GPUS) {
+    for (const gpu of GPUS.filter((g) => !sc.gpus || sc.gpus.includes(g))) {
       const r = {};
       let err = null;
       for (const p of PRESETS) {

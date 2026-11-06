@@ -26,7 +26,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
 ### Tests
 - `quality-verylow-post` runs Low as well as Very Low (the fused fog and FXAA against the separate passes, FXAA at work), with a third control on Low: `CW_TEST_VERYLOW_POST=bloom` leaves the glow out of the fused pass and must break the bound.
-- `quality-range`: the engine list's shares of High tightened to the new measurements.
+- `quality-range`: the engine list's shares of High tightened to the new measurements. `tools/quality-range.mjs` takes a scene's `gpus` (the backends to measure it on), for a scene whose cost a backend's timers cannot see (a 2D game's app pass is untimed on WebGPU).
 
 ### Moving a game to v0.36.0
 - Nothing to change in code. A game's Low looks closer to Very Low's post (no volumetric fog grid, no distortion), and a game whose fog is volumetric now has height fog on Very Low. A game that keeps its own ProceduralSky parameters easing every frame re-renders the sky less often below High. Re-measure the game's quality range: Low and Very Low cost less, so its shares of High can be tightened.
