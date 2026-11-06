@@ -628,6 +628,8 @@ WGSL_DECL WGSL_FXAA = S(
 /* FXAA 3.11's console variant inside the tonemap pass (pipeline_post.c FXAA_CONSOLE_GLSL; dluma and D are the pass's) */
 WGSL_DECL WGSL_FXAA_CONSOLE = S(
   fn T(p: vec2f) -> vec4f { return textureSampleLevel(u_src, cw_linear, p, 0.0); }
+  fn KC(c0: vec3f) -> vec3f { let c = max(c0, vec3f(0.0)); return c / (1.0 + dot(c, vec3f(0.299, 0.587, 0.114)) * u.toneMappingExposure); }
+  fn KU(x: vec3f) -> vec3f { return x / max(1.0 - dot(x, vec3f(0.299, 0.587, 0.114)) * u.toneMappingExposure, 1e-4); }
   fn fxaa_disp(uv: vec2f) -> vec3f {
     let rgbM = T(uv).rgb;
     let lumaM = dluma(rgbM);
@@ -644,10 +646,10 @@ WGSL_DECL WGSL_FXAA_CONSOLE = S(
     let dirSeMinusNw = lumaSe - lumaNw;
     let dir1 = normalize(vec2f(dirSwMinusNe + dirSeMinusNw, dirSwMinusNe - dirSeMinusNw) + vec2f(1e-8));
     let dir2 = clamp(dir1 / (min(abs(dir1.x), abs(dir1.y)) * 8.0), vec2f(-2.0), vec2f(2.0));
-    let rgbA = (D(T(uv - dir1 * u.u_rcp * 0.5).rgb) + D(T(uv + dir1 * u.u_rcp * 0.5).rgb)) * 0.5;
-    let rgbB = rgbA * 0.5 + (D(T(uv - dir2 * u.u_rcp * 2.0).rgb) + D(T(uv + dir2 * u.u_rcp * 2.0).rgb)) * 0.25;
-    let lumaB = dot(rgbB, vec3f(0.299, 0.587, 0.114));
-    return select(rgbB, rgbA, lumaB < lumaMin || lumaB > lumaMax);
+    let rgbA = (KC(F(T(uv - dir1 * u.u_rcp * 0.5).rgb)) + KC(F(T(uv + dir1 * u.u_rcp * 0.5).rgb))) * 0.5;
+    let rgbB = rgbA * 0.5 + (KC(F(T(uv - dir2 * u.u_rcp * 2.0).rgb)) + KC(F(T(uv + dir2 * u.u_rcp * 2.0).rgb))) * 0.25;
+    let lumaB = sqrt(max(dot(rgbB, vec3f(0.299, 0.587, 0.114)), 0.0) * u.toneMappingExposure);
+    return tmap(KU(select(rgbB, rgbA, lumaB < lumaMin || lumaB > lumaMax)));
   });
 
 WGSL_DECL WGSL_DOF = S(

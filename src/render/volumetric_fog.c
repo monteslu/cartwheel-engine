@@ -126,6 +126,8 @@ bool cw__vfog_supported(void) {
   if (wgpu()) return true;
   return cw_pipeline_caps_get()->float_render;
 }
+/* volumetric fog draws this frame: supported, and effects detail above Low */
+bool cw__vfog_on(void) { return cw__vfog_supported() && cw__quality_effects() > CW_QUALITY_LOW; }
 
 static void gl_free(vf_gl *g);
 
@@ -213,7 +215,7 @@ void cw_volumetric_fog_get_state(cw_tree *t, cw_volumetric_fog_state *out) {
 typedef struct vf_preset { int gw, d, tile; bool spot_shadows; } vf_preset;
 static const vf_preset PRESETS[CW_QUALITY_COUNT] = {
   { 0, 0, 0, false },      /* Very Low: no volumetric fog */
-  { 64, 32, 256, false },  /* Low */
+  { 0, 0, 0, false },      /* Low: no volumetric fog (plain height fog, fog.c) */
   { 128, 64, 512, true },   /* Medium */
   { 160, 64, 1024, true }, /* High */
   { 240, 96, 1024, true }, /* Ultra */
@@ -797,7 +799,7 @@ static bool vf_build_active(const cw_pass_ctx *ctx, void *user) {
   vfog_rt *v = user;
   slot_of(v, ctx)->built = false;
   if (!cw__vfog_supported() || !ctx->camera || !ctx->renderer) return false;
-  if (cw__quality_effects() <= CW_QUALITY_VERY_LOW) return false; /* effects Very Low: no volumetric fog */
+  if (cw__quality_effects() <= CW_QUALITY_LOW) return false; /* effects Very Low and Low: no volumetric fog (the height fog alone) */
   bool any = medium_of(ctx->tree) != NULL || content(v);
   if (any && ctx->camera->base.type != T3_PERSPECTIVE_CAMERA) {
     if (!v->warned_ortho) cw_warn("volumetric fog needs a perspective camera; it is off for this one");
@@ -1028,7 +1030,7 @@ static bool vf_apply_active(const cw_pass_ctx *ctx, void *user) {
   vfog_rt *v = user;
   /* the grid pass runs first in the same phase and sets built; at
    * scheduling time it has not run yet, so the apply follows its activity */
-  return cw__vfog_supported() && cw__quality_effects() > CW_QUALITY_VERY_LOW && ctx->camera && ctx->renderer && ctx->camera->base.type == T3_PERSPECTIVE_CAMERA &&
+  return cw__vfog_supported() && cw__quality_effects() > CW_QUALITY_LOW && ctx->camera && ctx->renderer && ctx->camera->base.type == T3_PERSPECTIVE_CAMERA &&
          (medium_of(ctx->tree) != NULL || content(v));
 }
 

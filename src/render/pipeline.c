@@ -230,6 +230,15 @@ static bool fx_post_adjacent(cw_pipeline *p, int a, int b) {
   }
   return true;
 }
+/* the same with the pass `but` (an index, -1 none) left out of the check */
+static bool fx_post_adjacent_but(cw_pipeline *p, int a, int b, int but) {
+  if (a < 0 || b < 0 || a >= b) return false;
+  for (int i = a + 1; i < b; i++) {
+    pass_rec *r = p->passes.data[i];
+    if (i != but && r->active && r->d.phase >= CW_PHASE_SKY && r->d.phase <= CW_PHASE_POST && (r->d.writes & CW_RES_COLOR)) return false;
+  }
+  return true;
+}
 /* post fusion (pipeline_internal.h): only the built-in passes, next to each
  * other in the chain, with nothing that needs the image in between */
 static bool test_no_fusion(void) { /* CW_TEST_NO_FUSION=1 (native): the passes run separately (A/B, gate controls) */
@@ -303,18 +312,20 @@ static void plan_fusion(cw_pipeline *p, const cw_post_settings *s, bool post, bo
     p->fuse_grade = true;
     fuse_off(p, gr);
   }
-  /* effects detail Very Low (cartwheel/quality.h): the height fog read inside the tonemap pass (nothing between them
-   * draws colour), one full-frame blend fewer */
+  /* effects detail Low and Very Low (cartwheel/quality.h): the height fog read inside the tonemap pass (nothing between
+   * them draws colour but a bloom whose composite is fused there too), one full-frame blend fewer. With bloom (Low) the
+   * glow is gathered from the scene before the fog, the composite adds it after */
   /* (only in a run that drew its own view: split screen's shared post has no one camera or depth for it) */
-  if (own_view && !p->fuse_fog && fg >= 0 && tm >= 0 && !p->fuse_bloom && !p->fuse_distort && cw__quality_cheap_post() &&
-      fx_post_adjacent(p, fg, tm)) {
+  if (own_view && !p->fuse_fog && fg >= 0 && tm >= 0 && !p->fuse_distort && cw__quality_fused_post() &&
+      fx_post_adjacent_but(p, fg, tm, p->fuse_bloom ? bl : -1)) {
     p->fuse_fog_tm = true;
     fuse_off(p, fg);
   }
-  /* effects detail Very Low (cartwheel/quality.h): FXAA inside the tonemap pass, its edge search on the HDR scene
-   * (a display luma approximated from each read), one full-frame pass fewer. Not with bloom's composite or the
-   * distortion fused in (FXAA reads its neighbours, which those would have to be worked out for too) */
-  if (tm >= 0 && aa >= 0 && s->aa == CW_AA_FXAA && !p->fuse_bloom && !p->fuse_distort && cw__quality_cheap_post() &&
+  /* effects detail Low and Very Low (cartwheel/quality.h): FXAA inside the tonemap pass, its edge search on the HDR
+   * scene (a display luma approximated from each read), one full-frame pass fewer. With bloom's composite fused in
+   * (Low) each read FXAA blends takes the glow at the pixel (the glow is smooth over FXAA's few pixels). Not with the
+   * distortion fused in (FXAA reads its neighbours, which it would have to be worked out for too) */
+  if (tm >= 0 && aa >= 0 && s->aa == CW_AA_FXAA && !p->fuse_distort && cw__quality_fused_post() &&
       post_adjacent(p, tm, aa)) {
     p->fuse_aa_tm = true;
     fuse_off(p, aa);
@@ -466,6 +477,18 @@ static const cw_rt *persistent_depth(cw_pipeline *p, const char *key, int w, int
   return &e->rt;
 }
 
+/* the HDR scene's format: RGBA16F, or on effects detail Low and Very Low R11G11B10 float where the device renders it
+ * (half the bytes a pixel; no alpha, which nothing after the scene reads there: no SSAO, TAA, SSR or distortion).
+ * CW_TEST_SMALL_HDR=0 (native) keeps RGBA16F (measuring what it saves) */
+static cw_rt_format hdr_format(void) {
+#if !CW_CART
+  static int off = -1;
+  if (off < 0) off = getenv("CW_TEST_SMALL_HDR") && !atoi(getenv("CW_TEST_SMALL_HDR"));
+  if (off) return CW_RT_RGBA16F;
+#endif
+  return cw__small_hdr_render && cw__quality_small_hdr() ? CW__RT_RG11B10F : CW_RT_RGBA16F;
+}
+
 /* the scene's multisampled colour + depth, resolved into the scene target */
 static unsigned msaa_fbo(cw_pipeline *p, int w, int h, cw_rt_format f, int samples) {
   samples = CW_MIN(samples, cw__caps.max_samples);
@@ -479,7 +502,7 @@ static unsigned msaa_fbo(cw_pipeline *p, int w, int h, cw_rt_format f, int sampl
     glGenRenderbuffers(1, &p->msaa_depth);
   }
   glBindRenderbuffer(GL_RENDERBUFFER, p->msaa_color);
-  glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, f == CW_RT_RGBA16F ? GL_RGBA16F : GL_RGBA8, w, h);
+  glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, f == CW_RT_RGBA16F ? GL_RGBA16F : f == CW__RT_RG11B10F ? GL_R11F_G11F_B10F : GL_RGBA8, w, h);
   glBindRenderbuffer(GL_RENDERBUFFER, p->msaa_depth);
   glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_DEPTH_COMPONENT24, w, h);
   glBindRenderbuffer(GL_RENDERBUFFER, 0);
@@ -488,7 +511,7 @@ static unsigned msaa_fbo(cw_pipeline *p, int w, int h, cw_rt_format f, int sampl
   glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, p->msaa_depth);
   if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
     cw_error("render pipeline: %dx MSAA on a %s target is not supported here; the scene renders without MSAA",
-             samples, f == CW_RT_RGBA16F ? "RGBA16F" : "RGBA8");
+             samples, f == CW_RT_RGBA16F ? "RGBA16F" : f == CW__RT_RG11B10F ? "R11G11B10F" : "RGBA8");
     glDeleteFramebuffers(1, &p->msaa_fbo);
     glDeleteRenderbuffers(1, &p->msaa_color);
     glDeleteRenderbuffers(1, &p->msaa_depth);
@@ -880,7 +903,7 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   p->s.taa = false;
   /* a shared post chain: the views keep HDR pictures for it */
   p->view_post_split = p->views_shared_post;
-  cw_rt_format vf = p->view_post_split && p->s.hdr && cw__caps.float_render ? CW_RT_RGBA16F : CW_RT_RGBA8;
+  cw_rt_format vf = p->view_post_split && p->s.hdr && cw__caps.float_render ? hdr_format() : CW_RT_RGBA8;
   if (wgpu) cw__pw_timing_hold(true);
   const cw_rt *rts[CW_MAX_VIEWS];
   int n = 0;
@@ -1059,7 +1082,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   const cw_rt *scene = post_run ? p->post_src : NULL, *scene_draw = NULL;
   cw_rt msaa_gl;
   if (offscreen && !post_run) {
-    cw_rt_format sf = ctx.hdr ? CW_RT_RGBA16F : CW_RT_RGBA8;
+    cw_rt_format sf = ctx.hdr ? hdr_format() : CW_RT_RGBA8;
     /* a shared post chain's views each keep their own scene target: it is
      * the view's picture, laid out as it is */
     char skey[24] = "scene";

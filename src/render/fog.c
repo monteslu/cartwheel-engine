@@ -78,8 +78,9 @@ static void fog_rt_free(void *p) { cw_free(p); }
 static bool fog_active(const cw_pass_ctx *ctx, void *user) {
   fog_rt *f = user;
   (void)ctx;
-  /* volumetric mode: the froxel pass draws this fog (volumetric_fog.c) */
-  return f->present && f->p.density > 0 && !(f->p.volumetric && cw__vfog_supported());
+  /* volumetric mode: the froxel pass draws this fog (volumetric_fog.c); on effects detail Low and Very Low, which draw no
+   * volumetric fog, this pass draws it as plain height fog */
+  return f->present && f->p.density > 0 && !(f->p.volumetric && cw__vfog_on());
 }
 
 const cw__height_fog *cw__height_fog_of(cw_tree *t) {
