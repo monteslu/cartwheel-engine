@@ -843,6 +843,7 @@
   {
     "name": "quality-menu-wide",
     "app": "shell_join",
+    "fields": ["quality_menu.overflow"],
     "hosts": ["native"],
     "webgpu": { "hosts": ["native"] },
     "frames": 30,
