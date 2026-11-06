@@ -99,6 +99,8 @@ Baking on first use costs a frame the first time a glyph appears (a score's new 
 
 Layout is left to right with kerning (the kern table and GPOS pairs), greedy word wrap, wrapping between CJK ideographs with the common kinsoku rules, and left, centre or right alignment. `cw_font_measure` runs the same layout code as drawing, so measured boxes match drawn text to the pixel. Text containing right-to-left or complex-shaping scripts takes a shaping path (OpenType GSUB/GPOS and bidi runs); pure left-to-right text never pays for it. A codepoint the font lacks comes from its fallback chain, then the global chain the localization module sets per locale; see [localization](guide:l10n-a11y).
 
+**Text size.** The player's text scale multiplies every size passed to the text calls, measuring included, and the engine checks each frame that nothing is drawn under the size floor; a style's `fixed_size` marks art text that is drawn as asked and not checked, and `own_backdrop` marks text on the game's own panel (the player's Text background setting adds nothing to it). The rules, the numbers and the check are in [localization and accessibility](guide:l10n-a11y), "Text size". `samples/text_size` is a HUD laid out from measured text at every scale, with the floor's control.
+
 `samples/r2d_text` draws SDF text at several sizes from one bake, wrapped paragraphs in three alignments, a bitmap pixel font, and rotated text. Its measurements are debug fields, so the `r2d-text` gate checks that every host lays text out identically, not only that it looks alike.
 
 ## Tilemaps

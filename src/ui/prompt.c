@@ -14,6 +14,7 @@
 #include "cartwheel/platform.h"
 #include "cartwheel/ui.h"
 #include "../input/input_internal.h"
+#include "../render2d/text_raw.h"
 
 #define I cw__in
 
@@ -464,7 +465,7 @@ static cw_text_style key_style(const char *t, float s, cw_color c) {
 static float label_width(const char *t, float s) {
   if (!t[0]) return 0;
   cw_text_style st = { .size = label_size(s) };
-  return cw_font_measure(prompt_font(), t, &st).width;
+  return cw__font_measure_raw(prompt_font(), t, &st).width;
 }
 static const char *start_word(void) {
   const char *t = cw_tr_find("prompt.start");
@@ -482,7 +483,7 @@ static float glyph_width(const glyph *g, float s) {
     if (!g->label[0]) return s * 0.92f;
     if (one_char(g->label)) {
       cw_text_style st = key_style(g->label, s, cw_rgba(1, 1, 1, 1));
-      return fmaxf(s * 0.92f, cw_font_measure(prompt_font(), g->label, &st).width + s * 0.4f);
+      return fmaxf(s * 0.92f, cw__font_measure_raw(prompt_font(), g->label, &st).width + s * 0.4f);
     }
     return fmaxf(s * 0.92f, label_width(g->label, s) + s * 0.5f);
   case PK_MOUSE: return s * 0.72f;
@@ -618,8 +619,8 @@ static void draw_dpad(const pen *p, cw_vec2 o, uint32_t lit) {
 
 static void label_at(const pen *p, const char *t, cw_vec2 centre, float s) {
   cw_text_style st = { .size = label_size(s), .color = p->fill };
-  cw_text_metrics m = cw_font_measure(prompt_font(), t, &st);
-  cw_r2d_text(prompt_font(), t, (cw_vec2){ centre.x - m.width * 0.5f, centre.y - m.height * 0.5f }, &st);
+  cw_text_metrics m = cw__font_measure_raw(prompt_font(), t, &st);
+  cw__r2d_text_raw(prompt_font(), t, (cw_vec2){ centre.x - m.width * 0.5f, centre.y - m.height * 0.5f }, &st, CW__TEXT_UNCOUNTED);
 }
 
 /* r grown by the pen's dark margin: an outline drawn inside r then has dark on both sides, on any background */
@@ -659,13 +660,13 @@ static void draw_key(const pen *p, cw_vec2 o, const glyph *g) {
   cw_vec2 c = { o.x + W * 0.5f, o.y + s * 0.5f };
   if (g->label[0]) {
     cw_text_style st = key_style(g->label, s, p->fill);
-    cw_text_metrics m = cw_font_measure(prompt_font(), g->label, &st);
+    cw_text_metrics m = cw__font_measure_raw(prompt_font(), g->label, &st);
     if (one_char(g->label)) {
       /* centred on its capital height, a letter that hangs below the line (J, Q) lifted by half its tail;
        * an outline of its own colour makes the stroke heavier */
       float y = c.y + st.size * 0.35f - m.ascent - (strchr("JQgjpqy", g->label[0]) ? st.size * 0.08f : 0);
-      cw_r2d_text(prompt_font(), g->label, (cw_vec2){ c.x - m.width * 0.5f, y }, &st);
-    } else cw_r2d_text(prompt_font(), g->label, (cw_vec2){ c.x - m.width * 0.5f, c.y - m.height * 0.5f }, &st);
+      cw__r2d_text_raw(prompt_font(), g->label, (cw_vec2){ c.x - m.width * 0.5f, y }, &st, CW__TEXT_UNCOUNTED);
+    } else cw__r2d_text_raw(prompt_font(), g->label, (cw_vec2){ c.x - m.width * 0.5f, c.y - m.height * 0.5f }, &st, CW__TEXT_UNCOUNTED);
   } else { /* an arrow key */
     int i = g->lit == SC_LEFT ? 0 : g->lit == SC_RIGHT ? 1 : g->lit == SC_UP ? 2 : 3;
     cw_vec2 tip = { c.x + DIRS[i].x * s * 0.2f, c.y + DIRS[i].y * s * 0.2f };
@@ -712,11 +713,11 @@ static void draw_touch_button(const pen *p, cw_vec2 o, const glyph *g) {
   ring(p, c, s * 0.5f - p->w * 0.5f, p->fill);
   if (g->label[0]) {
     cw_text_style st = { .size = s * 0.36f, .color = p->fill, .outline_width = s * 0.03f, .outline_color = p->dark };
-    cw_text_metrics m = cw_font_measure(prompt_font(), g->label, &st);
+    cw_text_metrics m = cw__font_measure_raw(prompt_font(), g->label, &st);
     float sz = m.width > s * 0.66f ? st.size * s * 0.66f / m.width : st.size; /* a long label shrinks to fit the disc */
     st.size = sz;
-    m = cw_font_measure(prompt_font(), g->label, &st);
-    cw_r2d_text(prompt_font(), g->label, (cw_vec2){ c.x - m.width * 0.5f, c.y - m.height * 0.5f }, &st);
+    m = cw__font_measure_raw(prompt_font(), g->label, &st);
+    cw__r2d_text_raw(prompt_font(), g->label, (cw_vec2){ c.x - m.width * 0.5f, c.y - m.height * 0.5f }, &st, CW__TEXT_UNCOUNTED);
   }
 }
 
@@ -786,8 +787,12 @@ static cw_vec2 set_draw(const gset *s, cw_vec2 pos, float size, cw_color color) 
 
 /* ── the public calls ────────────────────────────────────────────────── */
 
+/* the player's text scale (cartwheel/render2d.h) applies once, here: glyphs grow with the text they sit in */
+static float scaled(cw_font f, float size) { return size * cw__text_scale_for(f.id ? f : prompt_font(), size); }
+
 cw_vec2 cw_prompt_actions_size(const cw_action *acts, int n, int player, float size) {
   check_context();
+  size = scaled((cw_font){ 0 }, size);
   if (!acts || (n != 1 && n != 2 && n != 4)) return (cw_vec2){ 0, 0 };
   gset s;
   action_set(acts, n, player, &s);
@@ -799,6 +804,7 @@ cw_vec2 cw_prompt_actions(const cw_action *acts, int n, int player, cw_vec2 pos,
     prompt_error(cw_frame_printf("prompt: cw_prompt_actions takes 1, 2 or 4 actions, not %d", n));
     return (cw_vec2){ 0, 0 };
   }
+  size = scaled((cw_font){ 0 }, size);
   gset s;
   action_set(acts, n, player, &s);
   return set_draw(&s, pos, size, color);
@@ -818,6 +824,7 @@ cw_vec2 cw_prompt_action_size(cw_action a, int player, float size) { return cw_p
 
 cw_vec2 cw_prompt_binding_size(cw_binding b, float size) {
   check_context();
+  size = scaled((cw_font){ 0 }, size);
   glyph g = glyph_of(b);
   return g.kind ? (cw_vec2){ glyph_width(&g, size), size } : (cw_vec2){ 0, 0 };
 }
@@ -825,6 +832,7 @@ cw_vec2 cw_prompt_binding(cw_binding b, cw_vec2 pos, float size, cw_color color)
   check_context();
   glyph g = glyph_of(b);
   if (!g.kind) return (cw_vec2){ 0, 0 };
+  size = scaled((cw_font){ 0 }, size);
   draw_glyph(&g, pos, size, color);
   return (cw_vec2){ glyph_width(&g, size), size };
 }
@@ -936,9 +944,9 @@ static float run_width(cw_font f, const char *run, const cw_text_style *st, floa
   char *c = cw_frame_alloc(n - a - b + 1);
   memcpy(c, run + a, n - a - b);
   c[n - a - b] = 0;
-  float sp = cw_font_advance(f, ' ', st->size);
+  float sp = cw__font_advance_raw(f, ' ', st->size);
   *lead = (float)a * sp, *trail = (float)b * sp, *core = c;
-  return *lead + *trail + (c[0] ? cw_font_measure(f, c, st).width : 0);
+  return *lead + *trail + (c[0] ? cw__font_measure_raw(f, c, st).width : 0);
 }
 
 /* the text gathered so far becomes an item */
@@ -991,7 +999,7 @@ static cw_vec2 prompt_text(cw_font f, const char *text, int player, cw_vec2 pos,
   if (!f.id) f = prompt_font();
   cw_text_style ref;
   text_style(&ref, size, color, false);
-  cw_text_metrics lm = cw_font_measure(f, "Ag", &ref);
+  cw_text_metrics lm = cw__font_measure_raw(f, "Ag", &ref);
   float lh = lm.line_height > 0 ? lm.line_height : size * 1.25f, gs = glyph_size(size), pad = size * 0.08f;
   float lineh = fmaxf(lh, gs), y = pos.y, maxw = 0;
   item *it = cw_frame_alloc(sizeof(item) * MAX_ITEMS);
@@ -1010,7 +1018,7 @@ static cw_vec2 prompt_text(cw_font f, const char *text, int player, cw_vec2 pos,
       for (int i = 0; i < n; i++) {
         float ix = rtl ? x - it[i].w : x;
         if (it[i].text && it[i].core[0]) /* the leading spaces come first in reading order: on the right in an RTL line */
-          cw_r2d_text(f, it[i].core, (cw_vec2){ ix + (rtl ? it[i].trail : it[i].lead), y + (lineh - lh) * 0.5f }, &st);
+          cw__r2d_text_raw(f, it[i].core, (cw_vec2){ ix + (rtl ? it[i].trail : it[i].lead), y + (lineh - lh) * 0.5f }, &st, 0);
         else set_draw(&it[i].set, (cw_vec2){ ix + pad, y + (lineh - gs) * 0.5f }, gs, color);
         x = rtl ? x - it[i].w : x + it[i].w;
       }
@@ -1023,8 +1031,8 @@ static cw_vec2 prompt_text(cw_font f, const char *text, int player, cw_vec2 pos,
 }
 
 cw_vec2 cw_prompt_text(cw_font f, const char *text, int player, cw_vec2 pos, float size, cw_color color, cw_text_align align) {
-  return prompt_text(f, text, player, pos, size, color, align, true);
+  return prompt_text(f, text, player, pos, scaled(f, size), color, align, true);
 }
 cw_vec2 cw_prompt_text_size(cw_font f, const char *text, int player, float size) {
-  return prompt_text(f, text, player, (cw_vec2){ 0, 0 }, size, cw_rgba(1, 1, 1, 1), CW_ALIGN_LEFT, false);
+  return prompt_text(f, text, player, (cw_vec2){ 0, 0 }, scaled(f, size), cw_rgba(1, 1, 1, 1), CW_ALIGN_LEFT, false);
 }

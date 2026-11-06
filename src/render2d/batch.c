@@ -157,6 +157,7 @@ void r2d_stats_frame_check(void) {
     R.stats.glyphs_missing = r2d_glyphs_missing();
     R.stats_frame = fr;
     R.stats_frame_valid = true;
+    r2d_text_frame_reset();
   }
 }
 
@@ -441,6 +442,7 @@ void cw_r2d_begin(const cw_r2d_pass_desc *desc) {
     R.view_w = R.canvas_w;
     R.view_h = R.canvas_h;
   }
+  if (!t) R.win_view_h = R.view_h;
   /* draw state */
   R.cur_layer = 0;
   R.cur_z = 0;

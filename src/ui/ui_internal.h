@@ -11,6 +11,7 @@
 #include "cartwheel/core.h"
 #include "cartwheel/input.h"
 #include "cartwheel/ui.h"
+#include "../render2d/text_raw.h"
 
 /* ── control flags (cw_control._flags) ─────────────────────────────── */
 enum {
@@ -131,12 +132,13 @@ typedef struct ui_system {
   cw_rect drop_highlight;   /* UI units, canvas origin */
   uint32_t drops;           /* completed drops (stats/tests) */
   /* accessibility */
-  float text_scale;         /* multiplies every theme font size (0 = 1) */
+  float text_scale;         /* the cw_text_scale the layouts were made for (ui_text_scale_sync) */
   bool reduced_motion;      /* no caret blink, no tooltip delay, no smooth motion */
   cw_node remap_capture;    /* RemapButton listening for a new binding */
 } ui_system;
 extern ui_system UI;
 
+void ui_text_scale_sync(void); /* theme.c: relayout when cw_text_scale changed */
 void ui_init_once(void);
 float ui_canvas_scale(void); /* UI units -> canvas pixels */
 

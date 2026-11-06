@@ -425,6 +425,14 @@ typedef struct cw_text_style {
   cw_vec2 shadow_offset;    /* px */
   float shadow_spread;      /* px the shadow grows round the glyphs */
   float shadow_softness;    /* px of blur at the shadow's edge (SDF) */
+  /* Art, not reading: a title logo drawn as text, a word on a sign, a
+   * decorative background word. Drawn at exactly `size` (the text scale
+   * leaves it alone) and left out of the size check (Text size, below). */
+  bool fixed_size;
+  /* The game draws its own panel, outline or shadow behind this text: the
+   * player's Text background setting adds nothing to it. (Text with an
+   * outline or a shadow in this style is left alone anyway.) */
+  bool own_backdrop;
 } cw_text_style;
 
 typedef struct cw_text_metrics {
@@ -470,6 +478,86 @@ bool cw_text_is_complex(const char *utf8);
 /* Draw with the box's top-left at pos (layer space; the first baseline sits
  * at pos.y + ascent). Returns the metrics. */
 cw_text_metrics cw_r2d_text(cw_font f, const char *utf8, cw_vec2 pos, const cw_text_style *style);
+
+/* ── text size: the player's scale, the floor, the check ───────────────
+ * One scale for every piece of 2D text: cw_r2d_text, cw_font_measure,
+ * cw_font_advance, cw_font_caret_x, the prompts (cartwheel/prompt.h) and
+ * every UI theme font (cw_ui_set_text_scale is this scale). Measuring scales
+ * the same way as drawing, so a layout made from cw_font_measure grows with
+ * the text and needs no code. The player picks 100%, 125%, 150% or 200%
+ * (the game shell's Settings has the row; cw_text_scale_cycle for a game's
+ * own menu).
+ *
+ * What scales: the em size, letter spacing, outline and shadow widths and
+ * the shadow offset. wrap_width is a box and stays. Two limits:
+ *   - text the scale would take past CW_TEXT_SCALE_CAP of the canvas height
+ *     stops there (it was large already: a banner or a countdown); it never
+ *     shrinks below the size the game asked for;
+ *   - a bitmap font scales by whole multiples of its pixel size (no blur).
+ * Text drawn into a render target (cw_r2d_begin with .target: a texture, a
+ * sign in the scene) is drawn as asked, and so is fixed_size text (art).
+ *
+ * The floor, as a share of the 2D canvas height (the virtual canvas when the
+ * game draws into one), measured on the em size the game asks for at 100%:
+ *   CW_TEXT_FLOOR_BODY  body text (HUD values, menus, hints, captions):
+ *                       26 px at 1080 lines (2.4%), 17.3 at 720, 19.3 at 800
+ *   CW_TEXT_FLOOR_MIN   the smallest text anywhere: 18 px at 1080 lines (1.7%),
+ *                       12 at 720, 13.3 at 800
+ * The same visual angle covers a television at 3 m and a 5.5" handheld at
+ * 30 cm, so one rule fits both.
+ *
+ * The check: every frame the engine records the smallest text drawn to the
+ * window (fixed_size left out), with the transform and the layer camera's
+ * zoom applied, as a share of the canvas height. Debug fields:
+ *   text.min_share        the smallest this frame (0: no text)
+ *   text.min_where        its first characters
+ *   text.run_min_share    the smallest since the run began (0: none yet)
+ *   text.run_min_where    its first characters
+ *   text.scale, text.backdrop  the settings
+ * The debug request `text` lists every size drawn this frame (the caller's
+ * file and line too, in a debug build of the game); `text scale <k>` and
+ * `text backdrop off|outline|panel` set the settings for a test. tests/gate.mjs
+ * fails a game's run whose text.run_min_share is under CW_TEXT_FLOOR_MIN
+ * (gate option textFloor); tools/check-text.mjs walks a game's screens and
+ * holds body text to CW_TEXT_FLOOR_BODY. Render-only: nothing here reaches
+ * the simulation. */
+#define CW_TEXT_FLOOR_BODY (26.0f / 1080.0f)
+#define CW_TEXT_FLOOR_MIN (18.0f / 1080.0f)
+#define CW_TEXT_SCALE_CAP 0.08f
+/* The player's text scale (clamped 0.5..4; 1 = the sizes the game asks for). */
+void cw_text_scale_set(float scale);
+float cw_text_scale(void); /* the current scale (1 when unset) */
+/* The steps a settings row offers: 100%, 125%, 150%, 200%. cycle goes to the
+ * next (200% wraps to 100%), cycle_back to the previous; label is "125%". */
+void cw_text_scale_cycle(void);
+void cw_text_scale_cycle_back(void); /* the previous step (100% wraps to 200%) */
+const char *cw_text_scale_label(void); /* the nearest step: "100%", "125%", "150%" or "200%" */
+/* The size text asked for at `size` draws at now in font f (the scale, the
+ * cap and a bitmap font's whole multiples applied): for a layout that spaces
+ * lines by the size instead of measuring. A null font skips the bitmap rule. */
+float cw_text_drawn_size(cw_font f, float size);
+
+/* Text background, the player's contrast setting for text over a 3D scene:
+ * an outline round the letters, or a dark rounded panel behind the text's
+ * box. The engine adds it to text whose style has no outline and no shadow
+ * and is not own_backdrop or fixed_size; the UI's controls and the prompts
+ * draw their own. */
+typedef enum { CW_TEXT_BACKDROP_OFF, CW_TEXT_BACKDROP_OUTLINE, CW_TEXT_BACKDROP_PANEL } cw_text_backdrop;
+void cw_text_backdrop_set(cw_text_backdrop b); /* Off (the default), Outline or Panel */
+cw_text_backdrop cw_text_backdrop_get(void); /* the current setting */
+void cw_text_backdrop_cycle(void);         /* off, outline, panel, off */
+const char *cw_text_backdrop_label(void);  /* "Off", "Outline", "Panel" */
+/* Both settings in one byte for a game's save (0: nothing chosen, the
+ * defaults), and back: cw_text_scale_restore at init, after the save loaded.
+ * The game shell keeps it in its own save. */
+uint8_t cw_text_scale_saved(void);
+void cw_text_scale_restore(uint8_t saved); /* apply a cw_text_scale_saved byte (0 or a byte from elsewhere: nothing changes) */
+
+/* debug builds of a game: the caller's file and line for the `text` request */
+void cw__text_caller(const char *file, int line);
+#if !defined(NDEBUG) && !defined(CW_TEXT_NO_CALLER)
+#define cw_r2d_text(f, s, p, st) (cw__text_caller(__FILE__, __LINE__), cw_r2d_text(f, s, p, st))
+#endif
 
 /* ── tilemaps ────────────────────────────────────────────────────────────
  * Grid maps in chunks of CW_TILE_CHUNK x CW_TILE_CHUNK tiles per layer; each

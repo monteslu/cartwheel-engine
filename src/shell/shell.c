@@ -1,6 +1,7 @@
 /* The game shell (cartwheel/shell.h): loading, title, join, pause and
  * settings screens around a game's play, its saved settings and save data,
  * split screen views. */
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -31,7 +32,8 @@ typedef struct shell_save {
   uint8_t crisp;     /* cw_crisp_ui_saved */
   uint8_t gfx[4];    /* cw_quality_saved, little-endian (0: none, or a save from before it) */
   uint8_t shake;     /* cw_shell_shake (0 Full: also what a save from before the setting holds) */
-  uint8_t reserved[7];
+  uint8_t text;      /* cw_text_scale_saved: Text size and Text background (0: none chosen, also a save from before them) */
+  uint8_t reserved[6];
   uint8_t game[CW_SHELL_GAME_SAVE_MAX];
 } shell_save;
 static shell_save SAVE;
@@ -114,6 +116,7 @@ void cw_shell_save_commit(void) {
   SAVE.quality = 0; /* the old preset byte: an older engine reading this save sees no choice (the word is in gfx) */
   for (int i = 0; i < 4; i++) SAVE.gfx[i] = (uint8_t)(q >> (8 * i));
   SAVE.crisp = cw_crisp_ui_saved();
+  SAVE.text = cw_text_scale_saved();
   SAVE.checksum = save_sum();
   cw_save_commit();
 }
@@ -153,6 +156,7 @@ void cw_shell_init(const cw_shell_desc *d) {
   uint32_t gfx = (uint32_t)SAVE.gfx[0] | (uint32_t)SAVE.gfx[1] << 8 | (uint32_t)SAVE.gfx[2] << 16 | (uint32_t)SAVE.gfx[3] << 24;
   cw_quality_restore(gfx ? gfx : SAVE.quality);
   cw_crisp_ui_restore(SAVE.crisp);
+  cw_text_scale_restore(SAVE.text);
   for (int i = 0; i < A_COUNT; i++) {
     S.act[i] = cw_action_add(ACTION_NAMES[i], 0.5f);
     cw_binding b[CW_INPUT_MAX_BINDINGS];
@@ -319,7 +323,7 @@ static void pause_items(void) {
   items[n_items++] = (item){ "Settings", "" };
   items[n_items++] = (item){ "Quit to title", "" };
 }
-enum { SET_GRAPHICS, SET_MUSIC, SET_SFX, SET_SHAKE, SET_CONTROLS, SET_BACK };
+enum { SET_GRAPHICS, SET_MUSIC, SET_SFX, SET_SHAKE, SET_TEXT, SET_TEXT_BG, SET_CONTROLS, SET_BACK };
 static const char *const SHAKE_LABELS[3] = { "Full", "Reduced", "Off" };
 static void settings_items(void) {
   n_items = 0;
@@ -331,6 +335,10 @@ static void settings_items(void) {
   snprintf(items[n_items++].value, sizeof items[0].value, "%d%%", SAVE.sfx * 10);
   items[n_items] = (item){ "Screen shake", "" };
   snprintf(items[n_items++].value, sizeof items[0].value, "%s", SHAKE_LABELS[cw_shell_shake_level()]);
+  items[n_items] = (item){ "Text size", "" };
+  snprintf(items[n_items++].value, sizeof items[0].value, "%s", cw_text_scale_label());
+  items[n_items] = (item){ "Text background", "" };
+  snprintf(items[n_items++].value, sizeof items[0].value, "%s", cw_text_backdrop_label());
   items[n_items++] = (item){ "Controls", "" };
   items[n_items++] = (item){ "Back", "" };
 }
@@ -376,6 +384,15 @@ static void settings_change(int dir) { /* dir -1 / +1: left / right; 0: accept *
   case SET_SHAKE: /* left / right step it (stopping at the ends), accept goes round */
     SAVE.shake = (uint8_t)(!dir ? ((int)cw_shell_shake_level() + 1) % 3 : CW_CLAMP((int)cw_shell_shake_level() + dir, 0, 2));
     break;
+  case SET_TEXT: /* 100, 125, 150, 200%: left / right step it (stopping at the ends), accept goes round */
+    if (dir < 0 && cw_text_scale() > 1.01f) cw_text_scale_cycle_back();
+    else if ((dir > 0 && cw_text_scale() < 1.99f) || !dir) cw_text_scale_cycle();
+    break;
+  case SET_TEXT_BG: { /* Off, Outline, Panel: the same */
+    int b = (int)cw_text_backdrop_get();
+    cw_text_backdrop_set((cw_text_backdrop)(!dir ? (b + 1) % 3 : CW_CLAMP(b + dir, 0, 2)));
+    break;
+  }
   default: return;
   }
   apply_volumes();
@@ -627,8 +644,20 @@ static void menu_tick(void) {
 
 /* ── drawing ────────────────────────────────────────────────────────── */
 
+/* Sizes are shares of the canvas height (u, below, is a twentieth of it) at a text scale of 100%. The player's
+ * Text size (cartwheel/render2d.h) grows the text, and every gap here comes from the size the text draws at
+ * (cw_text_drawn_size), so nothing overlaps at 200%: a list that no longer fits scrolls with its selection, a hint
+ * line too wide for the canvas breaks into lines. */
+static float drawn(float size) { return cw_text_drawn_size(S.d.font, size); }
+static cw_text_style tstyle(float size, cw_color c) {
+  return (cw_text_style){ .size = size, .color = c, .outline_width = size * 0.06f, .outline_color = cw_rgba(0, 0, 0, 0.8f) };
+}
+static float text_w(const char *s, float size) {
+  cw_text_style st = tstyle(size, CW_WHITE);
+  return cw_font_measure(S.d.font, s, &st).width;
+}
 static void text(const char *s, float x, float y, float size, cw_color c, int align /* 0 left 1 center 2 right */) {
-  cw_text_style st = { .size = size, .color = c, .outline_width = size * 0.06f, .outline_color = cw_rgba(0, 0, 0, 0.8f) };
+  cw_text_style st = tstyle(size, c);
   if (align) {
     cw_text_metrics m = cw_font_measure(S.d.font, s, &st);
     x -= align == 1 ? m.width * 0.5f : m.width;
@@ -649,27 +678,95 @@ static bool hints_wanted(void) {
   }
   return false;
 }
-static void hint(const char *markup, float cx, float y, float size) {
-  if (hints_wanted()) cw_prompt_text(S.d.font, markup, -1, cw_v2(cx, y), size, cw_rgba(1, 1, 1, 0.75f), CW_ALIGN_CENTER);
+/* markup that fits maxw: as it is, else broken at its wide gaps, else at every space after a glyph (frame arena) */
+static const char *fit_markup(const char *markup, float size, float maxw) {
+  if (cw_prompt_text_size(S.d.font, markup, -1, size).x <= maxw) return markup;
+  size_t n = strlen(markup);
+  char *o = cw_frame_alloc(n + 1);
+  size_t k = 0;
+  for (size_t i = 0; i < n;) {
+    if (!strncmp(markup + i, "    ", 4)) {
+      o[k++] = '\n';
+      i += 4;
+    } else o[k++] = markup[i++];
+  }
+  o[k] = 0;
+  if (cw_prompt_text_size(S.d.font, o, -1, size).x <= maxw) return o;
+  for (size_t i = 1; i < k; i++)
+    if (o[i] == ' ' && o[i - 1] == '}') o[i] = '\n';
+  return o;
+}
+/* the hint's top when its bottom sits at `bottom` (the space a menu above it must leave) */
+static float hint_top(const char *markup, float cx, float bottom, float size) {
+  (void)cx;
+  const char *m = fit_markup(markup, size, cw_r2d_canvas_size().x * 0.94f);
+  return bottom - cw_prompt_text_size(S.d.font, m, -1, size).y;
+}
+static void hint(const char *markup, float cx, float bottom, float size) {
+  if (!hints_wanted()) return;
+  const char *m = fit_markup(markup, size, cw_r2d_canvas_size().x * 0.94f);
+  float h = cw_prompt_text_size(S.d.font, m, -1, size).y;
+  cw_prompt_text(S.d.font, m, -1, cw_v2(cx, bottom - h), size, cw_rgba(1, 1, 1, 0.75f), CW_ALIGN_CENTER);
 }
 
-static void draw_menu(float cx, float y, float size) {
+/* a small triangle: more rows above (up) or below */
+static void more_mark(float cx, float y, float d, bool up) {
+  float s = d * 0.28f;
+  cw_vec2 p[3] = { { cx - s, up ? y + s * 0.5f : y - s * 0.5f }, { cx + s, up ? y + s * 0.5f : y - s * 0.5f }, { cx, up ? y - s * 0.5f : y + s * 0.5f } };
+  cw_r2d_polygon(p, 3, cw_rgba(1, 1, 1, 0.7f));
+}
+
+static void item_line(int i, char *line, size_t cap) {
+  if (items[i].value[0]) snprintf(line, cap, "%s   %s", items[i].label, items[i].value);
+  else snprintf(line, cap, "%s", items[i].label);
+}
+/* the widest row at this size */
+static float menu_width(float size) {
+  float w = 0;
   for (int i = 0; i < n_items; i++) {
+    char line[96];
+    item_line(i, line, sizeof line);
+    w = fmaxf(w, text_w(line, size));
+  }
+  return w;
+}
+/* the menu's rows from y0 down to no lower than y1, centred on cx */
+static void draw_menu(float cx, float y0, float y1, float size) {
+  float d = drawn(size), step = d * 1.45f;
+  for (int i = 0; i < MAX_ITEMS; i++) item_rects[i] = cw_rect_make(0, 0, 0, 0);
+  int first = 0, count = n_items;
+  if ((float)n_items * step > y1 - y0) { /* scroll: the selection stays in view, a mark says there is more */
+    y0 += d * 0.55f;
+    count = CW_MAX(1, (int)((y1 - y0 - d * 0.55f) / step));
+    first = CW_CLAMP(S.item - count / 2, 0, n_items - count);
+  }
+  float y = y0;
+  for (int i = first; i < first + count && i < n_items; i++) {
     bool sel = i == S.item;
     cw_color c = sel ? S.d.accent : cw_rgba(1, 1, 1, 0.85f);
     char line[96];
-    if (items[i].value[0]) snprintf(line, sizeof line, "%s   %s", items[i].label, items[i].value);
-    else snprintf(line, sizeof line, "%s", items[i].label);
+    item_line(i, line, sizeof line);
     text(line, cx, y, size, c, 1);
-    item_rects[i] = cw_rect_make(cx - size * 8, y - size * 0.15f, size * 16, size * 1.3f);
-    y += size * 1.5f;
+    float w = fmaxf(text_w(line, size) + d * 2, d * 8);
+    item_rects[i] = cw_rect_make(cx - w * 0.5f, y - d * 0.15f, w, d * 1.3f);
+    y += step;
   }
+  if (first > 0) more_mark(cx, y0 - d * 0.3f, d, true);
+  if (first + count < n_items) more_mark(cx, y + d * 0.05f, d, false);
 }
 
-static void draw_controls(float x, float y, float size) {
+/* each action and its bindings, in [x, right] from y down to bottom: names in one column, bindings wrapped in the
+ * next */
+static void draw_controls(float x, float y, float right, float bottom, float size) {
   text("Controls", x, y, size, S.d.accent, 0);
-  y += size * 1.6f;
-  for (int a = 0, shown = 0; a < cw_action_count() && shown < 14; a++) {
+  y += drawn(size) * 1.5f;
+  float s2 = size * 0.8f, d2 = drawn(s2), name_w = 0;
+  for (int a = 0; a < cw_action_count(); a++) {
+    const char *name = cw_action_name(a);
+    if (name && strncmp(name, "ui_", 3)) name_w = fmaxf(name_w, text_w(name, s2));
+  }
+  float col = x + name_w + d2 * 1.2f, wrap = fmaxf(right - col, d2 * 5);
+  for (int a = 0; a < cw_action_count(); a++) {
     const char *name = cw_action_name(a);
     if (!name || !strncmp(name, "ui_", 3)) continue;
     cw_binding b[CW_INPUT_MAX_BINDINGS];
@@ -679,12 +776,22 @@ static void draw_controls(float x, float y, float size) {
       cw_binding_format(b[i], one, sizeof one);
       snprintf(line + strlen(line), sizeof line - strlen(line), "%s%s", i ? ", " : "", one);
     }
-    text(name, x, y, size * 0.8f, cw_rgba(1, 1, 1, 0.9f), 0);
-    text(line, x + size * 7, y, size * 0.8f, cw_rgba(1, 1, 1, 0.7f), 0);
-    y += size * 1.1f;
-    shown++;
+    cw_text_style st = tstyle(s2, cw_rgba(1, 1, 1, 0.7f));
+    st.wrap_width = wrap;
+    float h = cw_font_measure(S.d.font, line, &st).height;
+    if (y + h > bottom - d2 * 1.25f) { /* no room for this row and a mark under it: the mark says there is more */
+      text("...", x, y, s2, cw_rgba(1, 1, 1, 0.7f), 0);
+      break;
+    }
+    text(name, x, y, s2, cw_rgba(1, 1, 1, 0.9f), 0);
+    cw_r2d_text(S.d.font, line, cw_v2(col, y), &st);
+    y += h + d2 * 0.25f;
   }
 }
+
+static const char *const HINT_TITLE = "{ui_up|ui_down} choose    {ui_accept} select";
+static const char *const HINT_PAUSE = "{ui_up|ui_down} choose    {ui_accept} select    {ui_back} resume";
+static const char *const HINT_SETTINGS = "{ui_up|ui_down} choose    {ui_left|ui_right} change    {ui_back} back";
 
 void cw_shell_draw(void) {
   if (S.own_audio) cw_audio_update();
@@ -696,66 +803,92 @@ void cw_shell_draw(void) {
   cw_r2d_begin(NULL);
   cw_vec2 sz = cw_r2d_canvas_size();
   float u = sz.y / 20.0f; /* the menus scale with the canvas height */
-  float cx = sz.x * 0.5f;
+  float cx = sz.x * 0.5f, margin = sz.x * 0.04f, foot = sz.y - u; /* the hint line's bottom */
   if (S.d.draw_background) S.d.draw_background(S.screen, sz, S.d.user);
   cw_r2d_rect(cw_rect_make(0, 0, sz.x, sz.y), cw_rgba(0.02f, 0.02f, 0.05f, S.d.draw_background ? 0.3f : S.screen == CW_SHELL_PAUSE ? 0.55f : 0.85f));
   build_items();
   switch (S.screen) {
-  case CW_SHELL_LOADING:
-    text("Loading", cx, sz.y * 0.42f, u * 1.2f, cw_rgba(1, 1, 1, 1), 1);
-    cw_r2d_rect(cw_rect_make(sz.x * 0.3f, sz.y * 0.55f, sz.x * 0.4f, u * 0.4f), cw_rgba(1, 1, 1, 0.2f));
-    cw_r2d_rect(cw_rect_make(sz.x * 0.3f, sz.y * 0.55f, sz.x * 0.4f * S.progress, u * 0.4f), S.d.accent);
+  case CW_SHELL_LOADING: {
+    float y = sz.y * 0.42f, bar = fmaxf(sz.y * 0.55f, y + drawn(u * 1.2f) * 1.3f);
+    text("Loading", cx, y, u * 1.2f, cw_rgba(1, 1, 1, 1), 1);
+    cw_r2d_rect(cw_rect_make(sz.x * 0.3f, bar, sz.x * 0.4f, u * 0.4f), cw_rgba(1, 1, 1, 0.2f));
+    cw_r2d_rect(cw_rect_make(sz.x * 0.3f, bar, sz.x * 0.4f * S.progress, u * 0.4f), S.d.accent);
     break;
-  case CW_SHELL_TITLE:
-    text(S.d.title, cx, sz.y * 0.2f, u * 2.4f, cw_rgba(1, 1, 1, 1), 1);
-    if (S.d.subtitle) text(S.d.subtitle, cx, sz.y * 0.2f + u * 2.8f, u * 0.9f, cw_rgba(1, 1, 1, 0.75f), 1);
-    draw_menu(cx, sz.y * 0.5f, u * 1.1f);
-    hint("{ui_up|ui_down} choose    {ui_accept} select", cx, sz.y - u * 1.9f, u * 0.75f);
+  }
+  case CW_SHELL_TITLE: {
+    float y = sz.y * 0.2f;
+    text(S.d.title, cx, y, u * 2.4f, cw_rgba(1, 1, 1, 1), 1);
+    y += drawn(u * 2.4f) * 1.17f;
+    if (S.d.subtitle) {
+      text(S.d.subtitle, cx, y, u * 0.9f, cw_rgba(1, 1, 1, 0.75f), 1);
+      y += drawn(u * 0.9f) * 1.4f;
+    }
+    float hs = u * 0.75f, top = hint_top(HINT_TITLE, cx, foot, hs);
+    draw_menu(cx, fmaxf(sz.y * 0.5f, y + u * 0.4f), top - drawn(hs) * 0.4f, u * 1.1f);
+    hint(HINT_TITLE, cx, foot, hs);
     break;
-  case CW_SHELL_PAUSE:
+  }
+  case CW_SHELL_PAUSE: {
     text("Paused", cx, sz.y * 0.22f, u * 1.8f, cw_rgba(1, 1, 1, 1), 1);
-    draw_menu(cx, sz.y * 0.45f, u * 1.1f);
-    hint("{ui_up|ui_down} choose    {ui_accept} select    {ui_back} resume", cx, sz.y - u * 1.9f, u * 0.75f);
+    float hs = u * 0.75f, top = hint_top(HINT_PAUSE, cx, foot, hs);
+    draw_menu(cx, fmaxf(sz.y * 0.45f, sz.y * 0.22f + drawn(u * 1.8f) * 1.3f), top - drawn(hs) * 0.4f, u * 1.1f);
+    hint(HINT_PAUSE, cx, foot, hs);
     break;
-  case CW_SHELL_SETTINGS:
+  }
+  case CW_SHELL_SETTINGS: {
     if (cw_quality_menu_is_open()) {
       cw_quality_menu_draw(&(cw_quality_menu_style){ .font = S.d.font, .accent = S.d.accent, .set_backdrop = true });
       break;
     }
-    text("Settings", cx, sz.y * 0.12f, u * 1.6f, cw_rgba(1, 1, 1, 1), 1);
-    draw_menu(S.item == SET_CONTROLS ? sz.x * 0.3f : cx, sz.y * 0.32f, u);
-    if (S.item == SET_CONTROLS) draw_controls(sz.x * 0.52f, sz.y * 0.32f, u);
-    hint("{ui_up|ui_down} choose    {ui_left|ui_right} change    {ui_back} back", cx, sz.y - u * 1.8f, u * 0.75f);
+    text("Settings", cx, sz.y * 0.1f, u * 1.6f, cw_rgba(1, 1, 1, 1), 1);
+    float hs = u * 0.75f, rs = u * 0.85f, top = hint_top(HINT_SETTINGS, cx, foot, hs);
+    float y0 = fmaxf(sz.y * 0.26f, sz.y * 0.1f + drawn(u * 1.6f) * 1.35f), y1 = top - drawn(hs) * 0.4f;
+    if (S.item == SET_CONTROLS) { /* the list beside the menu, or in its place when there is no room beside it */
+      float mw = menu_width(rs), mx = fmaxf(sz.x * 0.3f, margin + mw * 0.5f), lx = mx + mw * 0.5f + drawn(rs);
+      if (sz.x - margin - lx >= sz.x * 0.3f) {
+        draw_menu(mx, y0, y1, rs);
+        draw_controls(fmaxf(lx, sz.x * 0.52f), y0, sz.x - margin, y1, rs);
+      } else {
+        for (int i = 0; i < MAX_ITEMS; i++) item_rects[i] = cw_rect_make(0, 0, 0, 0);
+        draw_controls(margin, y0, sz.x - margin, y1, rs);
+      }
+    } else draw_menu(cx, y0, y1, rs);
+    hint(HINT_SETTINGS, cx, foot, hs);
     break;
+  }
   case CW_SHELL_JOIN: {
     text("Join", cx, sz.y * 0.12f, u * 1.6f, cw_rgba(1, 1, 1, 1), 1);
     float w = sz.x / 4.0f;
     for (int s = 0; s < S.d.max_players; s++) {
-      float x = w * s + w * 0.5f;
+      float x = w * s + w * 0.5f, inner = w - u * 0.8f;
       bool in = S.joined_pad[s] >= 0;
-      cw_r2d_rect(cw_rect_make(w * s + u * 0.4f, sz.y * 0.3f, w - u * 0.8f, sz.y * 0.4f),
+      cw_r2d_rect(cw_rect_make(w * s + u * 0.4f, sz.y * 0.3f, inner, sz.y * 0.4f),
                   in ? cw_rgba(S.d.accent.r, S.d.accent.g, S.d.accent.b, 0.25f) : cw_rgba(1, 1, 1, 0.06f));
       char p[16];
       snprintf(p, sizeof p, "P%d", s + 1);
-      text(p, x, sz.y * 0.36f, u * 1.4f, in ? S.d.accent : cw_rgba(1, 1, 1, 0.4f), 1);
+      float py = sz.y * 0.36f, ly = fmaxf(sz.y * 0.5f, py + drawn(u * 1.4f) * 1.25f);
+      text(p, x, py, u * 1.4f, in ? S.d.accent : cw_rgba(1, 1, 1, 0.4f), 1);
       char dev[24];
-      if (!in) cw_prompt_text(S.d.font, "{ui_accept} join", -1, cw_v2(x, sz.y * 0.5f - u * 0.1f), u, cw_rgba(1, 1, 1, 0.7f), CW_ALIGN_CENTER);
-      else {
+      if (!in) {
+        const char *m = fit_markup("{ui_accept} join", u, inner * 0.92f);
+        cw_prompt_text(S.d.font, m, -1, cw_v2(x, ly - u * 0.1f), u, cw_rgba(1, 1, 1, 0.7f), CW_ALIGN_CENTER);
+      } else {
         if (S.joined_pad[s] == CW_MAX_PADS) snprintf(dev, sizeof dev, "keyboard");
         else snprintf(dev, sizeof dev, "pad %d", S.joined_pad[s] + 1);
-        text(dev, x, sz.y * 0.5f, u * 0.8f, cw_rgba(1, 1, 1, 0.9f), 1);
+        text(dev, x, ly, u * 0.8f, cw_rgba(1, 1, 1, 0.9f), 1);
       }
     }
     hint(S.mid_join ? "{ui_accept} join    {ui_back} leave    {ui_start} back to the game" : "{ui_accept} join    {ui_back} leave    {ui_start} play",
-         cx, sz.y - u * 2.2f, u * 0.8f);
+         cx, sz.y - u * 1.2f, u * 0.8f);
     break;
   }
   default: break;
   }
   if (S.starting) {
+    float d = drawn(u * 1.8f);
     cw_r2d_rect(cw_rect_make(0, 0, sz.x, sz.y), cw_rgba(0.02f, 0.02f, 0.05f, 0.6f));
-    cw_r2d_rect(cw_rect_make(0, sz.y * 0.5f - u * 1.7f, sz.x, u * 3.4f), cw_rgba(0.02f, 0.02f, 0.05f, 0.9f));
-    text("Starting...", cx, sz.y * 0.5f - u * 0.9f, u * 1.8f, S.d.accent, 1);
+    cw_r2d_rect(cw_rect_make(0, sz.y * 0.5f - d * 0.95f, sz.x, d * 1.9f), cw_rgba(0.02f, 0.02f, 0.05f, 0.9f));
+    text("Starting...", cx, sz.y * 0.5f - d * 0.5f, u * 1.8f, S.d.accent, 1);
     S.starting_shown = true;
     S.dbg_starting = 2;
   }

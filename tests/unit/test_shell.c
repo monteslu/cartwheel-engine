@@ -7,6 +7,7 @@
 #include "cartwheel/shell.h"
 #include "cartwheel/ui.h"
 #include <stdlib.h>
+#include <string.h>
 #include "test.h"
 
 static bool same_rect(cw_rect a, cw_rect b) { return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h; }
@@ -103,5 +104,46 @@ static void test_screen_shake(void) {
   FOLD(v);
 }
 
+/* Text size and Text background (cartwheel/render2d.h): the steps go round 100, 125, 150, 200%, the shell's save
+ * keeps both (the save region holds the byte after a commit, and init applies it again), a byte of 0 (a save from
+ * before the settings) leaves the defaults, and the UI's text scale is the same number. */
+static void test_text_settings(void) {
+  cw_shell_init(&(cw_shell_desc){ .title = "t" });
+  cw_text_scale_restore(0);
+  CHECK(cw_text_scale() == 1.0f);
+  cw_text_scale_cycle();
+  CHECK(cw_text_scale() == 1.25f);
+  cw_text_scale_cycle();
+  cw_text_scale_cycle();
+  CHECK(cw_text_scale() == 2.0f);
+  CHECK(!strcmp(cw_text_scale_label(), "200%"));
+  cw_text_scale_cycle();
+  CHECK(cw_text_scale() == 1.0f); /* round to 100% */
+  cw_text_scale_cycle_back();
+  CHECK(cw_text_scale() == 2.0f);
+  cw_text_scale_set(1.5f);
+  cw_text_backdrop_set(CW_TEXT_BACKDROP_PANEL);
+  CHECK(cw_ui_text_scale() == 1.5f); /* one scale: the UI's is the engine's */
+  cw_shell_save_commit();
+  uint8_t byte = cw_text_scale_saved();
+  CHECK(byte != 0);
+  /* another run: the defaults, then the shell's init reads the save back */
+  cw_text_scale_set(1.0f);
+  cw_text_backdrop_set(CW_TEXT_BACKDROP_OFF);
+  cw_shell_init(&(cw_shell_desc){ .title = "t" });
+  CHECK(cw_text_scale() == 1.5f);
+  CHECK((int)cw_text_backdrop_get() == (int)CW_TEXT_BACKDROP_PANEL);
+  CHECK(!strcmp(cw_text_backdrop_label(), "Panel"));
+  /* a save from before the settings: nothing changes */
+  cw_text_scale_set(1.25f);
+  cw_text_scale_restore(0);
+  CHECK(cw_text_scale() == 1.25f);
+  cw_text_scale_set(1.0f);
+  cw_text_backdrop_set(CW_TEXT_BACKDROP_OFF);
+  cw_shell_save_commit();
+  uint32_t fold = byte;
+  FOLD(fold);
+}
+
 CW_TEST_SUITE("shell", { "shared and split", test_shared_and_split }, { "one player", test_one_player },
-              { "screen shake setting", test_screen_shake });
+              { "screen shake setting", test_screen_shake }, { "text settings", test_text_settings });

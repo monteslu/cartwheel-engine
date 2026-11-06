@@ -30,6 +30,9 @@
 // --log FILE: the run's log (native: the app's stderr; wcnative: the player's), what a cart
 // that reports no state (wcnative) can still say. CW_RUN_TIMEOUT_MS bounds wcnative runs too.
 //
+// --end-cmds "a;b" --end-out FILE (native): debug requests run after the last frame, one JSON reply per line
+// into FILE (how tools/check-text.mjs reads the `text` request's list of every size the last frame drew).
+//
 // --allow-skipped: a run where three.c skipped draws (debug field render.skipped) does not fail
 // (every run fails on one otherwise: a test that skips on purpose says so).
 //
@@ -83,6 +86,7 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) =>
   return acc;
 }, []));
 const host = args.host, app = args.app, frames = +args.frames || 60;
+if (args['end-cmds'] && host !== 'native') { console.error('--end-cmds is a native run'); process.exit(2); }
 // --start-cmds "a;b": debug-channel requests posted at load, request i answered at the
 // start of frame i + 2 on every host (a cart host runs frame 1 on load): how a test
 // says what a real host would (touch_primary 1 for a phone). A request written
@@ -195,6 +199,7 @@ async function runNative() {
   if (args.shot) env.CW_SCREENSHOT = resolve(args.shot);
   if (args.state) env.CW_DEBUG_DUMP = resolve(args.state);
   if (startCmds.length) env.CW_START_CMDS = startCmds.join(';');
+  if (typeof args['end-cmds'] === 'string') env.CW_DEBUG_CMDS = args['end-cmds'];
   if (script.length) {
     const f = join(tempDir(OUT, 'input-'), 'input.txt');
     // the platform applies an entry at the START of that engine frame (index frame-1)
@@ -223,6 +228,7 @@ async function runNative() {
   if (r.error) throw new Error(`native: ${r.error.code === 'ETIMEDOUT' ? `timed out after ${timeout} ms (CW_RUN_TIMEOUT_MS)` : r.error.message}: ${r.stderr || ''}`);
   if (r.status !== 0) throw new Error(`native exited ${r.status ?? r.signal}: ${r.stderr}`);
   if (args.log) writeFileSync(resolve(args.log), r.stderr || '');
+  if (args['end-out']) writeFileSync(resolve(args['end-out']), (r.stdout || '').split('\n').filter((l) => l.startsWith('{')).join('\n') + '\n');
   if (gl) gl.check('native', r.stderr);
   if (pin) {
     const m = /WebGPU adapter: (.*)/.exec(r.stderr || '');

@@ -169,7 +169,7 @@ static te_m metrics(cw_node n, te_data *t) {
 }
 
 static float line_x(te_m *m, te_data *t, int line, int col) {
-  return cw_font_caret_x(m->f, ui_str_c(L(t, line)), col, m->fs);
+  return cw__font_caret_x_raw(m->f, ui_str_c(L(t, line)), col, m->fs);
 }
 
 static float widest(te_m *m, te_data *t) {

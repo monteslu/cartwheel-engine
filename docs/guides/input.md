@@ -101,7 +101,7 @@ A prompt tells the player which button does something. Never write a button's na
 | the mouse | a mouse with the bound button solid, or the wheel and its direction |
 | touch | the on-screen control as the touch overlay draws it: a button's disc and label; a stick's knob on its filled base, the arrows inside the base |
 
-Every glyph is vector shapes from render2d, so it is sharp at any size and the same on GL and WebGPU. Solid means "this one" and an outline "not this one", so nothing depends on colour. Each glyph sits on its own dark backing, so it reads on light and dark backgrounds. The minimum size is 16 canvas pixels at a pixel scale of 1: below it keycap text, the word "Start" and stick arrows close up (the diamond alone still reads at 14). Use 18 or more for anything read in motion.
+Every glyph is vector shapes from render2d, so it is sharp at any size and the same on GL and WebGPU. Solid means "this one" and an outline "not this one", so nothing depends on colour. Each glyph sits on its own dark backing, so it reads on light and dark backgrounds. The minimum size is 1.5% of the canvas height (16 px at 1080 lines): below it keycap text, the word "Start" and stick arrows close up (the diamond alone still reads at 14 px). Prompts sit in text, so give a prompt line the body text size, 2.4% of the canvas height or more. The player's text scale grows prompts with the text they sit in.
 
 The rules, each with a test in `unit-prompt` and the `prompts-*` gates:
 

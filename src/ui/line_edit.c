@@ -14,7 +14,7 @@ int ui_byte_at_x(cw_font f, float size, const char *s, int len, float x) {
   float prev = 0;
   int pi = 0;
   for (int i = ui_utf8_next(buf, len, 0);; i = ui_utf8_next(buf, len, i)) {
-    float cx = cw_font_caret_x(f, buf, i, size);
+    float cx = cw__font_caret_x_raw(f, buf, i, size);
     if (cx >= x) return (x - prev < cx - x) ? pi : i;
     if (i >= len) return len;
     prev = cx;
@@ -154,7 +154,7 @@ static void keep_caret_visible(cw_node n, le_data *l) {
   cw_rect in = content_rect(n, l);
   int dl;
   const char *d = display(l, &dl);
-  float cx = cw_font_caret_x(T_FONT(n), d, to_display(l, l->caret), T_FSIZE(n));
+  float cx = cw__font_caret_x_raw(T_FONT(n), d, to_display(l, l->caret), T_FSIZE(n));
   if (cx - l->scroll_x > in.w - 1) l->scroll_x = cx - in.w + 1;
   if (cx - l->scroll_x < 0) l->scroll_x = cx;
   float full = cw_ui_text_width(T_FONT(n), T_FSIZE(n), d);
@@ -186,14 +186,14 @@ static void le_draw(cw_node n, void *d) {
   const char *disp = display(l, &dl);
   cw_ui_push_clip((cw_rect){ in.x - 1, all.y, in.w + 2, all.h });
   if (has_sel(l) && focused) {
-    float a = cw_font_caret_x(f, disp, to_display(l, sel_from(l)), fs), b = cw_font_caret_x(f, disp, to_display(l, sel_to(l)), fs);
+    float a = cw__font_caret_x_raw(f, disp, to_display(l, sel_from(l)), fs), b = cw__font_caret_x_raw(f, disp, to_display(l, sel_to(l)), fs);
     cw_ui_draw_rect((cw_rect){ in.x + a - l->scroll_x, ty, b - a, lh }, T_COLOR(n, "selection_color"));
   }
   if (l->text.len == 0) {
     if (l->placeholder_text) cw_ui_draw_text(f, fs, ui_tr(n, l->placeholder_text), (cw_vec2){ in.x, ty }, T_COLOR(n, "font_placeholder_color"));
   } else cw_ui_draw_text(f, fs, disp, (cw_vec2){ in.x - l->scroll_x, ty }, T_COLOR(n, "font_color"));
   if (focused && l->editable && (UI.reduced_motion || fmod(UI.time - l->blink_t0, 1.1) < 0.65)) {
-    float cx = cw_font_caret_x(f, disp, to_display(l, l->caret), fs);
+    float cx = cw__font_caret_x_raw(f, disp, to_display(l, l->caret), fs);
     cw_ui_draw_rect((cw_rect){ in.x + cx - l->scroll_x, ty, CW_MAX(1.0f, ui_round(fs / 14)), lh }, T_COLOR(n, "caret_color"));
   }
   cw_ui_pop_clip();

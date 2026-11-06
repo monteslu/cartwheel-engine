@@ -41,13 +41,19 @@
  *                    button's disc and label, a thumbstick's knob on its
  *                    filled base with the arrows inside it
  * Each shape has a dark edge under a light (or `color`) fill, so a glyph reads
- * on a light background and on a dark one. MINIMUM SIZE: 16 canvas pixels at
- * a pixel scale of 1, read from native-scale crops on light and dark
- * backgrounds: the face-button diamond still reads at 14 (its rings stay
- * open, the solid dot stays the only solid one), but keycap text, the word
- * "Start" and a stick's arrows need 16. Use 18 or more for anything a player
- * reads in motion. Smaller sizes still draw; the rings close up and the text
- * blurs.
+ * on a light background and on a dark one. MINIMUM SIZE: 1.5% of the canvas
+ * height (16 px at 1080 lines), read from native-scale crops on light and
+ * dark backgrounds: the face-button diamond still reads at 14 px (its rings
+ * stay open, the solid dot stays the only solid one), but keycap text, the
+ * word "Start" and a stick's arrows need 16. A prompt sits in text: give its
+ * line the body text size (CW_TEXT_FLOOR_BODY, cartwheel/render2d.h).
+ * Smaller sizes still draw; the rings close up and the text blurs.
+ *
+ * TEXT SCALE: every size here is multiplied by the player's text scale
+ * (cw_text_scale, cartwheel/render2d.h) once, at the call, with the same cap,
+ * so a prompt line grows with the text around it and cw_prompt_text_size
+ * answers the size it draws at. The words of cw_prompt_text count in the
+ * text size check; a glyph's own legend (a keycap's letters) does not.
  *
  * ── Which device ───────────────────────────────────────────────────────
  * Each player's CURRENT device is the one they used last, read from the

@@ -824,6 +824,7 @@ void cw_ui_process(cw_tree *t, double dt) {
     ui_roots_refresh(s);
     for (int i = 0; i < s->roots.count; i++) ui_mark_layout_dirty(s->roots.data[i]);
   }
+  ui_text_scale_sync();
   UI.time += dt;
   ui_layout_tree(s);
   if (!cw_node_valid(s->focus)) s->focus = (cw_node){ 0 };

@@ -225,10 +225,10 @@ void cw_ui_draw_nine_patch(cw_texture t, cw_rect dst, cw_rect src, float l, floa
 
 float cw_ui_text_width(cw_font f, float size, const char *s) {
   if (!s || !*s) return 0;
-  return cw_font_measure(f, s, &(cw_text_style){ .size = size }).width;
+  return cw__font_measure_raw(f, s, &(cw_text_style){ .size = size }).width;
 }
 float cw_ui_line_height(cw_font f, float size) {
-  return cw_font_measure(f, "", &(cw_text_style){ .size = size }).line_height;
+  return cw__font_measure_raw(f, "", &(cw_text_style){ .size = size }).line_height;
 }
 
 static float snap(float v) { return D.sc > 0 ? floorf(v * D.sc + 0.5f) / D.sc : v; }
@@ -238,7 +238,7 @@ float cw_ui_draw_text(cw_font f, float size, const char *s, cw_vec2 pos, cw_colo
   cw_color m = modc(c);
   if (!D.active || m.a <= 0) return cw_ui_text_width(f, size, s);
   cw_vec2 p = { snap(pos.x + D.origin.x), snap(pos.y + D.origin.y) };
-  return cw_r2d_text(f, s, p, &(cw_text_style){ .size = size, .color = m, .direction = text_dir() }).width;
+  return cw__r2d_text_raw(f, s, p, &(cw_text_style){ .size = size, .color = m, .direction = text_dir() }, 0).width;
 }
 
 void cw_ui_draw_text_in(cw_font f, float size, const char *s, cw_rect r, cw_halign al, cw_color c, bool ellipsis) {
@@ -387,7 +387,7 @@ static void draw_tooltip(void) {
   cw_font f = cw_control_theme_font(n, "TooltipLabel", "font");
   float fs = cw_control_theme_font_size(n, "TooltipLabel", "font_size");
   cw_color fc = cw_control_theme_color(n, "TooltipLabel", "font_color");
-  cw_text_metrics m = cw_font_measure(f, tip, &(cw_text_style){ .size = fs });
+  cw_text_metrics m = cw__font_measure_raw(f, tip, &(cw_text_style){ .size = fs });
   float w = m.width + SM_W(&st), h = m.height + SM_H(&st);
   cw_vec2 cs = cw_ui_canvas_size();
   float x = UI.tip_pos.x + 4, y = UI.tip_pos.y + 20;
@@ -480,5 +480,5 @@ void ui_draw_text_styled(cw_font f, const char *s, cw_vec2 global, cw_text_style
   t.color = modc(t.color);
   if (!t.direction) t.direction = text_dir();
   if (t.color.a <= 0) return;
-  cw_r2d_text(f, s, (cw_vec2){ snap(global.x), snap(global.y) }, &t);
+  cw__r2d_text_raw(f, s, (cw_vec2){ snap(global.x), snap(global.y) }, &t, 0);
 }
