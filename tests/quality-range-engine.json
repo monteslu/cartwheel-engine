@@ -1,6 +1,6 @@
 [
-  { "name": "fx_explosion", "app": "fx_explosion", "maxVeryLow": 0.35, "maxLow": 0.8 },
-  { "name": "night_street", "app": "night_street", "maxVeryLow": 0.75, "maxLow": 1.1 },
-  { "name": "open_world", "app": "open_world", "maxVeryLow": 0.6, "maxLow": 1.1 },
-  { "name": "terrain_demo", "app": "terrain_demo", "maxVeryLow": 0.6, "maxLow": 1.1 }
+  { "name": "fx_explosion", "app": "fx_explosion", "maxVeryLow": 0.3, "maxLow": 0.45 },
+  { "name": "night_street", "app": "night_street", "maxVeryLow": 0.7, "maxLow": 0.95 },
+  { "name": "open_world", "app": "open_world", "maxVeryLow": 0.51, "maxLow": 0.88 },
+  { "name": "terrain_demo", "app": "terrain_demo", "maxVeryLow": 0.51, "maxLow": 0.93 }
 ]
