@@ -156,6 +156,13 @@ void cw__fog_fused_uniforms(cw_pass_ctx *ctx, unsigned prog);
  * can render and blend it (GL: an FBO with one is complete; WebGPU: the rg11b10ufloat-renderable feature) */
 #define CW__RT_RG11B10F ((cw_rt_format)(CW_RT_FORMAT_COUNT + 2))
 extern bool cw__small_hdr_render;
+/* (GLES 3.0 names some GL headers leave out: the cart's) */
+#ifndef GL_R11F_G11F_B10F
+#define GL_R11F_G11F_B10F 0x8C3A
+#endif
+#ifndef GL_UNSIGNED_INT_10F_11F_11F_REV
+#define GL_UNSIGNED_INT_10F_11F_11F_REV 0x8C3B
+#endif
 
 extern cw_pipeline_caps cw__caps;
 /* WebGPU side of the pass helpers (pipeline_wgpu.c; stubs without CW_WGPU) */
