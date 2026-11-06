@@ -137,6 +137,7 @@ static WGPUTextureFormat rt_format(cw_rt_format f) {
   case CW_RT_R8: return WGPUTextureFormat_R8Unorm;
   case CW__RT_R32F: return WGPUTextureFormat_R32Float;
   case CW__RT_RG8: return WGPUTextureFormat_RG8Unorm;
+  case CW__RT_RG11B10F: return WGPUTextureFormat_RG11B10Ufloat;
   default: return WGPUTextureFormat_RGBA8Unorm;
   }
 }
@@ -1202,7 +1203,7 @@ unsigned cw__pw_texture_2d(int w, int h, WGPUTextureFormat f, const void *data, 
 
 unsigned cw__pw_rg8(int w, int h, const uint8_t *rg) { return cw__pw_texture_2d(w, h, WGPUTextureFormat_RG8Unorm, rg, (uint32_t)w * 2); }
 unsigned cw__pw_pass_texture(int w, int h, cw_rt_format f, const void *t) {
-  int bpp = f == CW_RT_RGBA16F ? 8 : f == CW_RT_RG16F ? 4 : f == CW_RT_R16F ? 2 : f == CW_RT_R8 ? 1 : 4;
+  int bpp = f == CW_RT_RGBA16F ? 8 : f == CW_RT_RG16F ? 4 : f == CW_RT_R16F ? 2 : f == CW_RT_R8 ? 1 : 4; /* (RG11B10F: 4) */
   return cw__pw_texture_2d(w, h, rt_format(f), t, (uint32_t)(w * bpp));
 }
 
@@ -1349,5 +1350,6 @@ void cw__pw_probe_caps(cw_pipeline_caps *caps) {
   caps->timer_query = T.avail;
   caps->max_samples = 4;
   caps->hdr_format = "RGBA16F";
+  cw__small_hdr_render = wgpuDeviceHasFeature(W.dev, WGPUFeatureName_RG11B10UfloatRenderable);
 }
 #endif

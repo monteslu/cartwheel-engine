@@ -69,9 +69,9 @@
  *   density             0.2       0.35    0.65    1            1      (grass, crowd, scatter)
  *   LOD error budget    x3        x2      x1.5    x1           x0.75  (coarser meshes sooner)
  *   clustered lights    x0.25     x0.375  x0.5    x1           x1     (of LightingSettings.max_per_cluster)
- *   bloom               off       3 lvls  5 lvls  as authored  as authored
- *   volumetric fog      off       64x32   96x48   160x64       240x96 (cells across x slices)
- *   distortion buffer   off       half    half    full         full   (cartwheel/explosions.h)
+ *   bloom               off       3 lvls  5 lvls  as authored  as authored (Low: its first level from 4 reads)
+ *   volumetric fog      off       off     96x48   160x64       240x96 (cells across x slices; off: plain height fog)
+ *   distortion buffer   off       off     half    full         full   (cartwheel/explosions.h)
  *   colour fringing     off       off     off     on           on     ("dispersion")
  *   explosion lights    0         0.25    0.5     1            1      ("flash_lights")
  *   skin shading        plain     plain   on      on           on     (cartwheel/skin_shading.h)
@@ -80,11 +80,14 @@
  *   depth of field      off       off     on      on           on
  *   SSGI                off       off     off     off          on
  *   HRTF voices         0.25      0.25    0.5     1            1      (cartwheel/audio.h)
+ *   HDR scene           R11G11B10 R11G11B10 RGBA16F RGBA16F    RGBA16F (half the bytes; where the device renders it)
+ *   sky re-render       8 frames  4       2       each change  each change (at most once per; ProceduralSky)
  *   water               Low's grid halved, no reflection, refraction or caustics on Very Low (cartwheel/water.h)
  *   terrain             the low layer set and the coarsest far ring on Very Low and Low; on Very Low each
  *                       layer read once (no stochastic tiling) and the coarser levels from 0.6 of their
  *                       distance (cartwheel/terrain.h)
- *   post passes         on Very Low the height fog and FXAA run inside the tone mapping pass (below)
+ *   post passes         on Very Low and Low the height fog and FXAA run inside the tone mapping pass, on Low
+ *                       with bloom's composite (below)
  *
  * The plain lighting model (Very Low): MeshStandardMaterial and MeshPhysicalMaterial keep their colour,
  * maps, roughness, metalness, normals, emission and light maps, and are lit with Lambert diffuse and a
@@ -95,11 +98,17 @@
  * (cartwheel/shading.h) on Very Low, so a game's program tables need those states: the survey
  * (tools/programs.mjs) runs every preset.
  *
- * Very Low post: the height fog is applied inside the tone mapping pass instead of as its own blend over
- * the frame, and FXAA runs there too (FXAA 3.11's console variant: fewer reads, no edge search), its edge
+ * Very Low and Low post: the height fog is applied inside the tone mapping pass instead of as its own blend
+ * over the frame, and FXAA runs there too (FXAA 3.11's console variant: fewer reads, no edge search), its edge
  * test on a display brightness estimated from the HDR scene and its blend weighted so a bright light's
- * edge smooths as its display value would. Two full-frame passes fewer; the picture differs from the
- * separate passes only at the edges FXAA smooths.
+ * edge smooths as its display value would. On Low bloom's glow is composited in the same pass (gathered
+ * from the scene before the fog). Two full-frame passes fewer; the picture differs from the separate passes
+ * only at the edges FXAA smooths.
+ *
+ * The small HDR scene (Very Low and Low): the scene renders into R11G11B10 float (no alpha channel, less
+ * precision in the darks than RGBA16F) where the device can render and blend it: GL with an R11F_G11F_B10F
+ * framebuffer that is complete, WebGPU with the rg11b10ufloat-renderable feature (natively the engine asks for
+ * it; in a cart the host's device decides). Elsewhere RGBA16F as above.
  *
  * Game settings: a game adds its own render-only levers (cw_quality_lever_add:
  * a cheaper material at distance, say) with the value each preset picks;

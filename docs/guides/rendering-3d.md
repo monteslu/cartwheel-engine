@@ -236,9 +236,9 @@ High draws exactly what the scene's PostProcess and lights ask for, the same fra
 | density (grass, crowds, scatter: `cw_quality_density()`) | 0.2 | 0.35 | 0.65 | 1 | 1 |
 | LOD error budget | x3 | x2 | x1.5 | x1 | x0.75 |
 | clustered lights a cluster keeps | x0.25 | x0.375 | x0.5 | x1 | x1 |
-| bloom | off | 3 levels | 5 levels | as authored | as authored |
-| volumetric fog grid | off | 64 x 32 | 96 x 48 | 160 x 64 | 240 x 96 |
-| distortion buffer, colour fringing | off | half, off | half, off | full, on | full, on |
+| bloom | off | 3 levels, the first from 4 reads | 5 levels | as authored | as authored |
+| volumetric fog grid | off (plain height fog) | off (plain height fog) | 96 x 48 | 160 x 64 | 240 x 96 |
+| distortion buffer, colour fringing | off | off | half, off | full, on | full, on |
 | explosion lights | 0 | 0.25 | 0.5 | 1 | 1 |
 | skin shading | plain | plain | on | on | on |
 | lighting model (`cw_quality_scale("shading")`) | plain | full | full | full | full |
@@ -246,11 +246,17 @@ High draws exactly what the scene's PostProcess and lights ask for, the same fra
 | HRTF voices | 0.25 | 0.25 | 0.5 | 1 | 1 |
 | water | Low's grid halved, no reflection, refraction or caustics | as before | as before | as before | as before |
 | terrain | the low layer set, the near ring at Low's reach, each layer read once, the coarser levels from 0.6 of their distance | the low layer set, the near ring at Low's reach | | | |
-| height fog, FXAA | inside the tone mapping pass | their own passes | | | |
+| height fog, FXAA | inside the tone mapping pass | inside the tone mapping pass, with bloom's composite | their own passes | | |
+| HDR scene | R11G11B10 float | R11G11B10 float | RGBA16F | RGBA16F | RGBA16F |
+| sky cube and environment (ProceduralSky) re-rendered at most every | 8 frames | 4 frames | 2 frames | frame it changes | frame it changes |
 
 **The plain lighting model** (Very Low). Every MeshStandardMaterial and MeshPhysicalMaterial that the lighting system marks (the ones that take its clustered lights and cascaded sun, cartwheel/shading.h) carries the `plain` shading part: the material keeps its colour, maps, roughness, metalness, normal map, emission, ambient occlusion and light map, and is lit with Lambert diffuse and a Blinn-Phong highlight whose sharpness follows the roughness. The environment and the GI probes light it with their diffuse light only, the reflection is not sampled (the specular colour takes the diffuse light through an analytic estimate of the split sum, so metals keep their tint, duller), the light probe grid reads its first two SH bands, and clearcoat, sheen, iridescence and anisotropy are left out. A material with transmission keeps the full model, so glass stays glass. On the 890M at 1080p this took the scene pass of open_world from 1.9 to 1.1 ms on GL and 2.7 to 1.3 ms on WebGPU (with the terrain's single reads). The states are new program states (`x<parts>_plain`): the survey (`tools/programs.mjs`) runs every preset, so a regenerated table has them.
 
-**Very Low post.** The height fog runs inside the tone mapping pass (its blend over the HDR value as it is read), and so does FXAA, as FXAA 3.11's console variant: four diagonal reads and the centre, two or four along an edge, no edge search, its edge test on a display brightness estimated from the HDR value and its reads averaged weighted by one over one plus their brightness, so a bright light's edge smooths as its display value would. Two full-frame passes fewer (about 0.15 to 0.25 ms at 1080p on the 890M). The picture is the separate passes' except at the edges FXAA smooths (gate `quality-verylow-post`). `CW_TEST_NO_FUSION=1` runs the passes apart.
+**Very Low and Low post.** The height fog runs inside the tone mapping pass (its blend over the HDR value as it is read), and so does FXAA, as FXAA 3.11's console variant: four diagonal reads and the centre, two or four along an edge, no edge search, its edge test on a display brightness estimated from the HDR value and its reads averaged in a compressed space (each over one plus its exposed brightness, undone after the average) and tone mapped once, so a bright light's edge smooths as its display value would. On Low bloom's glow is composited in the same pass (the glow is gathered from the scene before the fog), and its first level is made from four reads instead of thirteen. Two full-frame passes fewer (about 0.15 to 0.25 ms at 1080p on the 890M). The picture is the separate passes' except at the edges FXAA smooths (gate `quality-verylow-post`, Very Low and Low). `CW_TEST_NO_FUSION=1` runs the passes apart.
+
+**The small HDR scene** (Very Low and Low). The scene renders into an R11G11B10 float target, half the bytes of RGBA16F, where the device can render and blend it (GL: a complete R11F_G11F_B10F framebuffer; WebGPU: the rg11b10ufloat-renderable feature, which the engine asks for natively and a cart gets when its host's device has it). It has no alpha channel and less precision in the darks; nothing those presets draw after the scene reads its alpha. On the 890M at 1080p it took the scene pass of the jetski game from 1.46 to 1.05 ms and the arena shooter's from 3.73 to 2.84 ms at Very Low on GL. `CW_TEST_SMALL_HDR=0` (native) keeps RGBA16F.
+
+**Volumetric fog on Low and Very Low** draws as plain height fog (the analytic fog the HeightFog node draws without `volumetric`, inside the tone mapping pass), so a scene keeps its fog on the cheaper presets without the froxel grid's cost.
 
 A game adds its own render-only settings with `cw_quality_lever_add` (a name, its values' labels, the value each preset picks as a `cw_quality_lever_presets` struct: `(cw_quality_lever_presets){ .very_low = 0, .low = 0, .medium = 1, .high = 1, .ultra = 1 }`). The struct is passed by value, so a call written for the four presets before Very Low existed does not build instead of reading a shifted array. Levers show after the engine's settings, change with the presets and are saved with them. Re-apply them, and re-thin instancing, from a `cw_quality_on_change` callback. A game's own table indexed by `cw_quality` needs a Very Low entry: `CW_QUALITY_VERY_LOW` is first, so `q <= CW_QUALITY_LOW` reads "Low or cheaper", and an equality test against `CW_QUALITY_LOW` misses Very Low.
 
@@ -313,7 +319,7 @@ The cost follows the **Effects detail** setting:
 
 | Effects detail | Low | Medium | High | Ultra |
 |---|---|---|---|---|
-| grid (cells across x slices) | 64 x 32 | 128 x 64 | 160 x 64 | 240 x 96 |
+| grid (cells across x slices) | none: plain height fog | 128 x 64 | 160 x 64 | 240 x 96 |
 | shadow map per light | 256, the sun only | 512 | 1024 | 1024 |
 
 Historical measurements before v0.14.1 (Medium used 96 x 48 and reconstruction used linear filtering), on an AMD Radeon 890M (integrated) with `fog_shafts_perf` (the sample's room, two shadowed lights and the mist, a 1920 x 1080 frame), the GPU time of the fog's own passes (building the grid, then applying it to the image), in ms per frame:

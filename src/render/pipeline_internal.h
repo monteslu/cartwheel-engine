@@ -152,6 +152,10 @@ void cw__fog_fused_uniforms(cw_pass_ctx *ctx, unsigned prog);
 /* engine-internal target formats: R32F (the WebGPU linear depth), RG8 (SMAA's edges) */
 #define CW__RT_R32F ((cw_rt_format)CW_RT_FORMAT_COUNT)
 #define CW__RT_RG8 ((cw_rt_format)(CW_RT_FORMAT_COUNT + 1))
+/* and the small HDR scene (effects detail Very Low): R11G11B10 float, no alpha, half RGBA16F's bytes, where the device
+ * can render and blend it (GL: an FBO with one is complete; WebGPU: the rg11b10ufloat-renderable feature) */
+#define CW__RT_RG11B10F ((cw_rt_format)(CW_RT_FORMAT_COUNT + 2))
+extern bool cw__small_hdr_render;
 
 extern cw_pipeline_caps cw__caps;
 /* WebGPU side of the pass helpers (pipeline_wgpu.c; stubs without CW_WGPU) */

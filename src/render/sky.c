@@ -8,6 +8,9 @@
 #include "cartwheel/environment.h"
 #include "cartwheel/render3d.h"
 #include "environment_internal.h"
+#include "cartwheel/platform.h"
+#include "cartwheel/quality.h"
+#include "quality_internal.h"
 #include "bake_internal.h"
 #if CW_WGPU
 #include "fx/fx_wgpu.h"
@@ -206,6 +209,8 @@ typedef struct sky_rt {
   uint64_t built_key;
   bool built;
   int updates;
+  uint64_t built_frame;     /* cw_frame_index() of the last build */
+  int built_size;
 #if CW_WGPU
   /* WebGPU: the cube (RGBA16F, cube binding), wrapped as cube_tex
    * (t3_texture_from_wgpu: cube_tex is released before it) */
@@ -519,8 +524,17 @@ static bool sky_dirty(const sky_rt *s, uint64_t key) {
   return !s->built || key != s->built_key || moved > k->env_update_angle;
 }
 
+/* frames between two re-renders of a changing sky (effects detail: Very Low 8, Low 4, Medium 2, else every frame it
+ * changes): the cube and its environment (PMREM) are the sky's cost, and a sun or haze that eases a little each frame
+ * reads the same a few frames late */
+static uint64_t sky_cadence(void) {
+  int e = cw__quality_effects();
+  return e <= CW_QUALITY_VERY_LOW ? 8 : e == CW_QUALITY_LOW ? 4 : e == CW_QUALITY_MEDIUM ? 2 : 1;
+}
+
 static void built(sky_rt *s, uint64_t key) {
   s->built = true;
+  s->built_frame = cw_frame_index();
   s->built_key = key;
   s->built_sun = s->sun;
   s->updates++;
@@ -537,7 +551,10 @@ static void pass_sky_env(cw_pass_ctx *ctx, void *user) {
   t3_scene *sc = ctx->scene3d;
   uint64_t key = params_key(k);
   int size = CW_CLAMP(k->resolution, 16, 1024);
-  if (sky_dirty(s, key)) {
+  uint64_t cadence = sky_cadence();
+  bool due = cadence <= 1 || !s->built || size != s->built_size || cw_frame_index() - s->built_frame >= cadence;
+  if (sky_dirty(s, key) && due) {
+    s->built_size = size;
     bool gl = true;
 #if CW_WGPU
     if (cw__wgpu_on()) {

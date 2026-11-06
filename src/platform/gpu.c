@@ -677,10 +677,12 @@ bool cw__wgpu_init(void) {
   WGPUDawnTogglesDescriptor toggles = { .chain = { .sType = WGPUSType_DawnTogglesDescriptor },
                                         .enabledToggleCount = 1, .enabledToggles = skip_validation };
   const char *tse = getenv("CW_WGPU_TIMESTAMPS");
-  WGPUFeatureName feats[1];
+  WGPUFeatureName feats[2];
   size_t nfeats = 0;
   if (!(tse && !strcmp(tse, "0")) && wgpuAdapterHasFeature(G.adapter, WGPUFeatureName_TimestampQuery))
     feats[nfeats++] = WGPUFeatureName_TimestampQuery;
+  /* the small HDR scene of effects detail Low and Very Low (R11G11B10 float, src/render/pipeline.c hdr_format) */
+  if (wgpuAdapterHasFeature(G.adapter, WGPUFeatureName_RG11B10UfloatRenderable)) feats[nfeats++] = WGPUFeatureName_RG11B10UfloatRenderable;
   WGPUDeviceDescriptor dd = {
     .nextInChain = validate ? NULL : &toggles.chain,
     .label = CW_WGPU_SV("cartwheel"),

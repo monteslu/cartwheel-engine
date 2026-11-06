@@ -12,6 +12,7 @@
 #include "cartwheel/platform.h"
 #include "cartwheel/scene2d.h"
 #include "pipeline_internal.h"
+#include "quality_internal.h"
 #include "scene/render3d_internal.h"
 #if CW_WGPU
 #include "pipeline_wgpu.h"
@@ -556,7 +557,7 @@ static void taa_exec(cw_pass_ctx *ctx, void *u) {
  * finer one. Composite (energy conserving): out = src - k*B(src) +
  * k*bloom/levels, where B is the threshold/knee prefilter, so the energy
  * that blooms is taken from where it came from (threshold 0: a lerp). */
-static unsigned bl_down_prog, bl_up_prog, bl_comp_prog;
+static unsigned bl_down_prog, bl_up_prog, bl_comp_prog, bl_down4_prog;
 static const char *BL_PREFILTER =
     S(uniform vec4 u_thresh; /* threshold, threshold - knee, 2 knee, 0.25 / knee */
       vec3 prefilter(vec3 c) {
@@ -595,6 +596,31 @@ static const char *BL_DOWN_FS = S(
     }
     o = vec4(r, 1.0);
   });
+/* the light first level (effects detail Low): the four bilinear taps of BL_DOWN_FS's inner box (a 4x4 texel footprint),
+ * prefiltered and Karis-averaged, a third of the full first level's reads */
+static const char *BL_DOWN4_FS = S(
+  uniform sampler2D u_src;
+  uniform vec2 u_texel;
+  out vec4 o;
+  void main() {
+    vec2 t = u_texel;
+    vec3 D = prefilter(texture(u_src, v_uv + t * vec2(-1.0, 1.0)).rgb), E = prefilter(texture(u_src, v_uv + t * vec2(1.0, 1.0)).rgb);
+    vec3 I = prefilter(texture(u_src, v_uv + t * vec2(-1.0, -1.0)).rgb), J = prefilter(texture(u_src, v_uv + t * vec2(1.0, -1.0)).rgb);
+    float wd = 1.0 / (1.0 + luma(D)), we = 1.0 / (1.0 + luma(E)), wi = 1.0 / (1.0 + luma(I)), wj = 1.0 / (1.0 + luma(J));
+    o = vec4((D * wd + E * we + I * wi + J * wj) / (wd + we + wi + wj), 1.0);
+  });
+static const char *WGSL_BL_DOWN4 =
+    "struct U { u_thresh: vec4f, u_texel: vec2f };\n"
+    "@group(0) @binding(0) var<uniform> u: U;\n"
+    "@group(0) @binding(1) var u_src: texture_2d<f32>;\n"
+    "fn tp(p: vec2f) -> vec3f { return prefilter(textureSampleLevel(u_src, cw_linear, p, 0.0).rgb); }\n"
+    "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
+    "  let t = u.u_texel;\n"
+    "  let D = tp(uv + t * vec2f(-1.0, 1.0)); let E = tp(uv + t * vec2f(1.0, 1.0));\n"
+    "  let I = tp(uv + t * vec2f(-1.0, -1.0)); let J = tp(uv + t * vec2f(1.0, -1.0));\n"
+    "  let wd = 1.0 / (1.0 + luma(D)); let we = 1.0 / (1.0 + luma(E)); let wi = 1.0 / (1.0 + luma(I)); let wj = 1.0 / (1.0 + luma(J));\n"
+    "  return vec4f((D * wd + E * we + I * wi + J * wj) / (wd + we + wi + wj), 1.0);\n"
+    "}\n";
 static const char *BL_UP_FS = S(
   uniform sampler2D u_coarse;
   uniform sampler2D u_fine;
@@ -653,8 +679,15 @@ static void bloom_exec(cw_pass_ctx *ctx, void *u) {
     snprintf(w, sizeof w, "%s%s", WGSL_BL_COMP, WGSL_BL_PREFILTER);
     bl_comp_prog = prog_of("bloom.composite", GLSL_COMMON, BL_PREFILTER, BL_COMP_FS, WGSL_COMMON, w, NULL);
   }
+  bool light = cw__quality_light_bloom();
+  if (light && !bl_down4_prog) {
+    char w[4096];
+    snprintf(w, sizeof w, "%s%s", WGSL_BL_DOWN4, WGSL_BL_PREFILTER);
+    bl_down4_prog = prog_of("bloom.down4", GLSL_COMMON, BL_PREFILTER, BL_DOWN4_FS, WGSL_COMMON, w, NULL);
+  }
+  if (light && !bl_down4_prog) light = false;
   if (!bl_down_prog || !bl_up_prog || !bl_comp_prog) return;
-  cw_rt_format f = ctx->src->format == CW_RT_RGBA8 ? CW_RT_RGBA8 : CW_RT_RGBA16F;
+  cw_rt_format f = ctx->src->format == CW_RT_RGBA8 || ctx->src->format == CW__RT_RG11B10F ? ctx->src->format : CW_RT_RGBA16F;
   enum { MAXL = 10 };
   const cw_rt *down[MAXL] = { 0 }, *up[MAXL] = { 0 };
   /* render scale: at 2x the first level holds what the full frame held at
@@ -665,19 +698,23 @@ static void bloom_exec(cw_pass_ctx *ctx, void *u) {
   int levels = CW_CLAMP(s->bloom_levels, 1, MAXL - 3) + skip;
   int w = ctx->width, h = ctx->height, n = 0;
   const cw_rt *prev = ctx->src;
-  cw_pass_use(bl_down_prog);
-  cw_pass_uniform1i(bl_down_prog, "u_src", 0);
-  bloom_thresh(bl_down_prog, s);
   for (int i = 0; i < levels; i++) {
     w = (w + 1) / 2;
     h = (h + 1) / 2;
     if (w < 2 || h < 2) break;
     down[i] = cw_pass_rt(ctx, w, h, f, false);
     if (!down[i]) break;
+    /* the first level: the light one on effects detail Low (bloom.down4), else the 13-tap one */
+    unsigned prog = i == 0 && light ? bl_down4_prog : bl_down_prog;
+    if (i == 0 || (i == 1 && light)) {
+      cw_pass_use(prog);
+      cw_pass_uniform1i(prog, "u_src", 0);
+      bloom_thresh(prog, s);
+    }
     cw_pass_bind_target(ctx, down[i]);
     cw_pass_bind_texture(0, prev->tex);
-    cw_pass_uniform2f(bl_down_prog, "u_texel", 1.0f / (float)prev->w, 1.0f / (float)prev->h);
-    cw_pass_uniform1i(bl_down_prog, "u_first", i == 0);
+    cw_pass_uniform2f(prog, "u_texel", 1.0f / (float)prev->w, 1.0f / (float)prev->h);
+    if (prog == bl_down_prog) cw_pass_uniform1i(prog, "u_first", i == 0);
     cw_pass_fullscreen();
     prev = down[i];
     n++;
@@ -1023,13 +1060,13 @@ static const char *swap_once(char *buf, size_t cap, const char *src, const char 
   return buf;
 }
 
-static unsigned tm_cheap_variant(bool grade, bool lens, bool aa, bool fog);
+static unsigned tm_cheap_variant(bool bloom, bool grade, bool lens, bool aa, bool fog);
 /* the tonemap program: plain, or with bloom's composite, the grade, the lens and / or the distortion fused in, or FXAA
  * (tm_fxaa_variant) */
 static unsigned tm_variant(bool bloom, bool grade, bool lens, bool dist, bool aa, bool fog) {
   static unsigned progs[16];
   int k = (bloom ? 1 : 0) | (grade ? 2 : 0) | (lens ? 4 : 0) | (dist ? 8 : 0);
-  if (aa || fog) return tm_cheap_variant(grade, lens, aa, fog);
+  if (aa || fog) return tm_cheap_variant(bloom, grade, lens, aa, fog);
   if (progs[k]) return progs[k];
   static const char *const names[16] = { "tonemap", "tonemap+bloom", "tonemap+grade", "tonemap+bloom+grade",
                                          "tonemap+lens", "tonemap+bloom+lens", "tonemap+grade+lens", "tonemap+bloom+grade+lens",
@@ -1331,9 +1368,10 @@ static unsigned swap_must(char *buf, size_t cap, const char *src, const char *fr
 }
 /* FXAA 3.11's console variant (FXAA_PC_CONSOLE) on the HDR scene: four half-texel diagonal reads and the centre,
  * then two or four reads along the edge, no search (about half the reads of the quality preset in flat areas, a third
- * at edges). Its edge test runs on dluma (a display brightness estimated from the HDR value); the colour is display
- * values: the centre tone mapped (D), or at an edge the average of its reads, each tone mapped, as the separate passes
- * average the tonemap pass's output. D is the tone curve after the fog (at the centre's fog) where it is fused. */
+ * at edges). Its edge test runs on dluma (a display brightness estimated from the HDR value); the colour is the centre
+ * tone mapped (D), or at an edge the average of its reads (each after the fog and the glow, F) in a compressed space
+ * (x / (1 + exposed luminance), undone exactly after the average) tone mapped once: the separate passes average display
+ * values, which this is close to, with one run of the tone curve at an edge instead of four. */
 static const char *FXAA_CONSOLE_GLSL = S(
   vec3 fxaa_disp() {
     vec2 pos = v_uv;
@@ -1347,11 +1385,15 @@ static const char *FXAA_CONSOLE_GLSL = S(
     float dirSwMinusNe = lumaSw - lumaNe, dirSeMinusNw = lumaSe - lumaNw;
     vec2 dir1 = normalize(vec2(dirSwMinusNe + dirSeMinusNw, dirSwMinusNe - dirSeMinusNw) + 1e-8);
     vec2 dir2 = clamp(dir1 / (min(abs(dir1.x), abs(dir1.y)) * 8.0), -2.0, 2.0);
-    vec3 rgbA = (D(T(pos - dir1 * u_rcp * 0.5).rgb) + D(T(pos + dir1 * u_rcp * 0.5).rgb)) * 0.5;
-    vec3 rgbB = rgbA * 0.5 + (D(T(pos - dir2 * u_rcp * 2.0).rgb) + D(T(pos + dir2 * u_rcp * 2.0).rgb)) * 0.25;
-    float lumaB = dot(rgbB, vec3(0.299, 0.587, 0.114));
-    return lumaB < lumaMin || lumaB > lumaMax ? rgbA : rgbB;
+    vec3 rgbA = (KC(F(T(pos - dir1 * u_rcp * 0.5).rgb)) + KC(F(T(pos + dir1 * u_rcp * 0.5).rgb))) * 0.5;
+    vec3 rgbB = rgbA * 0.5 + (KC(F(T(pos - dir2 * u_rcp * 2.0).rgb)) + KC(F(T(pos + dir2 * u_rcp * 2.0).rgb))) * 0.25;
+    float lumaB = sqrt(max(dot(rgbB, vec3(0.299, 0.587, 0.114)), 0.0) * toneMappingExposure);
+    return tmap(KU(lumaB < lumaMin || lumaB > lumaMax ? rgbA : rgbB));
   });
+/* the compressed space FXAA averages in: x / (1 + k L(x)) and its inverse (k the exposure, L the luma dluma reads) */
+static const char *FXAA_K_GLSL = S(
+  vec3 KC(vec3 c) { c = max(c, vec3(0.0)); return c / (1.0 + dot(c, vec3(0.299, 0.587, 0.114)) * toneMappingExposure); }
+  vec3 KU(vec3 x) { return x / max(1.0 - dot(x, vec3(0.299, 0.587, 0.114)) * toneMappingExposure, 1e-4); });
 /* the tone curve and output transfer of TM_MAIN, as a function */
 static const char *TM_CURVE_FN_GLSL = S(
   vec3 tmap(vec3 c) {
@@ -1366,8 +1408,8 @@ static const char *TM_CURVE_FN_GLSL = S(
     return LinearTosRGB(x);
   });
 
-/* CW_TEST_VERYLOW_POST=fog or =aa (native test runs): the Very Low tonemap pass leaves that step out while still
- * reporting it fused (the controls of tests/quality-verylow-post.mjs: the picture must change) */
+/* CW_TEST_VERYLOW_POST=fog, =aa or =bloom (native test runs): the Low and Very Low tonemap pass leaves that step out
+ * while still reporting it fused (the controls of tests/quality-verylow-post.mjs: the picture must change) */
 static const char *verylow_post_test(void) {
 #if CW_CART
   return "";
@@ -1376,69 +1418,101 @@ static const char *verylow_post_test(void) {
   return v ? v : "";
 #endif
 }
-static unsigned tm_cheap_variant(bool grade, bool lens, bool aa, bool fog) {
-  static unsigned progs[16];
-  int k = (grade ? 1 : 0) | (lens ? 2 : 0) | (aa ? 4 : 0) | (fog ? 8 : 0);
+/* the glow at a pixel as bloom's composite reads it (FUSE_FS fuse_bloom's 9 taps), for the cheap variant's g_bl */
+static const char *BLOOM_AT_GLSL =
+    "vec3 bloom_at(vec2 uv) {\n"
+    "  vec2 t = u_texel * u_radius;\n"
+    "  vec3 s = texture(u_bloom, uv).rgb * 4.0;\n"
+    "  s += (texture(u_bloom, uv + vec2(-t.x, 0.0)).rgb + texture(u_bloom, uv + vec2(t.x, 0.0)).rgb +\n"
+    "        texture(u_bloom, uv + vec2(0.0, -t.y)).rgb + texture(u_bloom, uv + vec2(0.0, t.y)).rgb) * 2.0;\n"
+    "  s += texture(u_bloom, uv - t).rgb + texture(u_bloom, uv + t).rgb + texture(u_bloom, uv + vec2(-t.x, t.y)).rgb +\n"
+    "       texture(u_bloom, uv + vec2(t.x, -t.y)).rgb;\n"
+    "  return s / 16.0 * u_norm;\n"
+    "}\n";
+static const char *BLOOM_AT_WGSL =
+    "fn bloom_at(uv: vec2f) -> vec3f {\n"
+    "  let t = u.u_texel * u.u_radius;\n"
+    "  var s = BG(uv) * 4.0;\n"
+    "  s += (BG(uv + vec2f(-t.x, 0.0)) + BG(uv + vec2f(t.x, 0.0)) + BG(uv + vec2f(0.0, -t.y)) + BG(uv + vec2f(0.0, t.y))) * 2.0;\n"
+    "  s += BG(uv - t) + BG(uv + t) + BG(uv + vec2f(-t.x, t.y)) + BG(uv + vec2f(t.x, -t.y));\n"
+    "  return s / 16.0 * u.u_norm;\n"
+    "}\n";
+/* The cheap tonemap pass (effects detail Low and Very Low): the tone curve with FXAA and / or the height fog fused in,
+ * and on Low bloom's composite: the glow at the pixel (g_bl) composited into every read FXAA blends, as bloom's
+ * composite would have (the glow is smooth over FXAA's few pixels; the edge search reads the scene without it) */
+static unsigned tm_cheap_variant(bool bloom, bool grade, bool lens, bool aa, bool fog) {
+  static unsigned progs[32];
+  int k = (grade ? 1 : 0) | (lens ? 2 : 0) | (aa ? 4 : 0) | (fog ? 8 : 0) | (bloom ? 16 : 0);
   if (progs[k]) return progs[k];
   static char name[64];
-  snprintf(name, sizeof name, "tonemap%s%s%s%s", fog ? "+fog" : "", grade ? "+grade" : "", aa ? "+fxaa" : "", lens ? "+lens" : "");
+  snprintf(name, sizeof name, "tonemap%s%s%s%s%s", bloom ? "+bloom" : "", fog ? "+fog" : "", grade ? "+grade" : "", aa ? "+fxaa" : "",
+           lens ? "+lens" : "");
   /* the controls (native test runs): the step left out of the shader, the pass still reported fused */
   bool fog_on = fog && strcmp(verylow_post_test(), "fog"), aa_on = aa && strcmp(verylow_post_test(), "aa");
+  bool bl_on = bloom && strcmp(verylow_post_test(), "bloom");
   static char buf[65536];
   if (cw_gpu_backend() == CW_GPU_WEBGPU) {
     static char head[4096];
-    char fields[1024], fsrc[1536];
+    char fields[1024], fsrc[2048];
     snprintf(fields, sizeof fields, "u_frame: i32%s%s };", aa ? ", u_rcp: vec2f" : "", fog ? ", " WGSL_FOG_FIELDS "u_pz: vec4f" : "");
     if (!swap_must(head, sizeof head, WGSL_TM_FUSED_HEAD, "u_frame: i32 };", fields)) return 0;
-    /* the fragment: the fog at the pixel (g_fog), then the display colour (FXAA's, or the pixel's through the curve) */
+    /* the fragment: the glow and the fog at the pixel (g_bl, g_fog), then the display colour (FXAA's, or the pixel's
+     * through the curve) */
     snprintf(fsrc, sizeof fsrc,
              "var<private> g_fog: vec4f;\n"
-             "fn F(c: vec3f) -> vec3f { %s }\n"
+             "var<private> g_bl: vec3f;\n"
+             "fn F(c0: vec3f) -> vec3f { let c = %s; %s }\n"
              "fn D(c: vec3f) -> vec3f { return tmap(F(c)); }\n"
              "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
+             "  g_bl = %s;\n"
              "  g_fog = %s;\n"
              "  var x = %s;\n%s"
              "  var o = vec4f(x, 1.0);\n%s"
              "  return o;\n}\n",
-             fog_on ? "return fog_over(vec4f(c, 1.0), g_fog).rgb;" : "return c;",
+             fog_on ? "fog_over(vec4f(c0, 1.0), g_fog).rgb" : "c0",
+             bl_on ? "return q16(max(c + u.u_k * (g_bl - prefilter(c)), vec3f(0.0)));" : "return c;", bloom ? "bloom_at(uv)" : "vec3f(0.0)",
              fog_on ? "fog_eval(uv, win_depth(cw_load(u_depth, uv).r, u.u_pz))" : "vec4f(-1.0)",
              aa_on ? "fxaa_disp(uv)" : "D(textureSampleLevel(u_src, cw_linear, uv, 0.0).rgb)", grade ? "  x = fuse_grade(x);\n" : "",
              lens ? "  o = fuse_lens(o, uv, pos);\n" : "");
-    snprintf(buf, sizeof buf, "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s", head, fog ? "@group(0) @binding(5) var u_depth: texture_2d<f32>;\n" : "",
+    snprintf(buf, sizeof buf, "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s", head, fog ? "@group(0) @binding(5) var u_depth: texture_2d<f32>;\n" : "",
              WGSL_COMMON, WGSL_BL_PREFILTER, cw__fuse_round_wgsl(), WGSL_FUSE_BLOOM_GRADE, WGSL_FUSE_LENS, fog ? WGSL_FOG_FN : "",
              fog ? WGSL_FUSE_FOG : "", WGSL_TM_FNS,
              "fn dluma(c: vec3f) -> f32 { let y = max(dot(c, vec3f(0.299, 0.587, 0.114)), 0.0) * u.toneMappingExposure; "
              "return sqrt(y / (1.0 + y)); }\n",
              "fn tmap(cin: vec3f) -> vec3f {\n  let c = vec4f(cin, 1.0);\n", WGSL_TM_FUSED_CURVES, "  return x;\n}\n",
-             aa ? WGSL_FXAA_CONSOLE : "", fsrc);
+             bloom ? BLOOM_AT_WGSL : "", aa ? WGSL_FXAA_CONSOLE : "", fsrc);
     return progs[k] = cw_pass_program_wgsl(name, buf);
   }
-  char main_fs[1024];
+  char main_fs[1536];
   snprintf(main_fs, sizeof main_fs,
            "vec4 g_fog;\n"
-           "vec3 F(vec3 c) { %s }\n"
+           "vec3 g_bl;\n"
+           "vec3 F(vec3 c0) { vec3 c = %s; %s }\n"
            "vec3 D(vec3 c) { return tmap(F(c)); }\n"
            "vec4 T(vec2 p) { return texture(u_src, p); }\n"
            "%s"
            "void main() {\n"
+           "  g_bl = %s;\n"
            "  g_fog = %s;\n"
            "  vec3 x = %s;\n%s"
            "  o = vec4(x, 1.0);\n%s"
            "}\n",
-           fog_on ? "return fog_over(vec4(c, 1.0), g_fog).rgb;" : "return c;", aa ? "uniform vec2 u_rcp;\n" : "",
-           fog_on ? "fog_eval(v_uv, texture(u_depth, v_uv).r)" : "vec4(-1.0)", aa_on ? "fxaa_disp()" : "D(texture(u_src, v_uv).rgb)",
-           grade ? "  x = fuse_grade(x);\n" : "", lens ? "  o = fuse_lens(o);\n" : "");
+           fog_on ? "fog_over(vec4(c0, 1.0), g_fog).rgb" : "c0",
+           bl_on ? "return q16(max(c + u_k * (g_bl - prefilter(c)), vec3(0.0)));" : "return c;", aa ? "uniform vec2 u_rcp;\n" : "",
+           bloom ? "bloom_at(v_uv)" : "vec3(0.0)", fog_on ? "fog_eval(v_uv, texture(u_depth, v_uv).r)" : "vec4(-1.0)",
+           aa_on ? "fxaa_disp()" : "D(texture(u_src, v_uv).rgb)", grade ? "  x = fuse_grade(x);\n" : "", lens ? "  o = fuse_lens(o);\n" : "");
   /* the fxaa function is declared after F, D and T: it reads them */
   static char fxaa_part[8192];
-  snprintf(fxaa_part, sizeof fxaa_part, "%s", aa ? FXAA_CONSOLE_GLSL : "");
+  snprintf(fxaa_part, sizeof fxaa_part, "%s%s", aa ? FXAA_K_GLSL : "", aa ? FXAA_CONSOLE_GLSL : "");
   static char mainb[16384];
   const char *split = strstr(main_fs, "void main()");
   snprintf(mainb, sizeof mainb, "%.*s%s%s", (int)(split - main_fs), main_fs, fxaa_part, split);
   snprintf(buf, sizeof buf, "%s%s%s%s%s%s%s%s%s%s%s"
            "float dluma(vec3 c) { float y = max(dot(c, vec3(0.299, 0.587, 0.114)), 0.0) * toneMappingExposure; return sqrt(y / (1.0 + y)); }\n"
-           "%s%s",
+           "%s%s%s",
            cw__fusion_raw() ? "#define FUSE_RAW 1\n" : "", GLSL_COMMON, BL_PREFILTER, TM_FS, FUSE_ROUND, FUSE_FS, FUSE_LENS,
-           fog ? cw__fog_glsl() : "", fog ? "uniform sampler2D u_depth;\n" : "", fog ? FUSE_FOG : "", "", TM_CURVE_FN_GLSL, mainb);
+           fog ? cw__fog_glsl() : "", fog ? "uniform sampler2D u_depth;\n" : "", fog ? FUSE_FOG : "", "", TM_CURVE_FN_GLSL,
+           bloom ? BLOOM_AT_GLSL : "", mainb);
   return progs[k] = cw_pass_program(name, buf);
 }
 

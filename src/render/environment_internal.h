@@ -37,6 +37,7 @@ const cw__height_fog *cw__height_fog_of(cw_tree *t);
 /* Volumetric fog (volumetric_fog.c): whether this run draws it (a host that
  * cannot render float targets on GL falls back to the analytic fog). */
 bool cw__vfog_supported(void);
+bool cw__vfog_on(void); /* volumetric fog draws (supported, effects detail above Low): else a volumetric fog draws as height fog */
 /* A light of the tree for the froxel lighting, from its pre_render (only
  * kept when the tree has volumetric fog): kind 0 directional, 1 omni, 2
  * spot; shadow: the light casts shadows (the fog gets its own map). */

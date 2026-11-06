@@ -12,6 +12,7 @@
 static bool wg(void) { return cw_gpu_backend() == CW_GPU_WEBGPU; }
 
 cw_pipeline_caps cw__caps;
+bool cw__small_hdr_render;
 static bool caps_done;
 
 /* ── capabilities ───────────────────────────────────────────────────── */
@@ -37,6 +38,11 @@ void cw__pipeline_probe_caps(void) {
   cw_rt t;
   if (cw__rt_create(&t, 4, 4, CW_RT_RGBA16F, false)) {
     cw__caps.float_render = true;
+    cw__rt_destroy(&t);
+  }
+  while (glGetError() != GL_NO_ERROR) {}
+  if (cw__caps.float_render && cw__rt_create(&t, 4, 4, CW__RT_RG11B10F, false)) {
+    cw__small_hdr_render = true;
     cw__rt_destroy(&t);
   }
   while (glGetError() != GL_NO_ERROR) {}
@@ -82,6 +88,7 @@ static void rt_formats(cw_rt_format f, GLenum *ifmt, GLenum *fmt, GLenum *type) 
   case CW_RT_R16F: *ifmt = GL_R16F; *fmt = GL_RED; *type = GL_HALF_FLOAT; break;
   case CW_RT_R8: *ifmt = GL_R8; *fmt = GL_RED; *type = GL_UNSIGNED_BYTE; break;
   case CW__RT_RG8: *ifmt = GL_RG8; *fmt = GL_RG; *type = GL_UNSIGNED_BYTE; break;
+  case CW__RT_RG11B10F: *ifmt = GL_R11F_G11F_B10F; *fmt = GL_RGB; *type = GL_UNSIGNED_INT_10F_11F_11F_REV; break;
   default: *ifmt = GL_RGBA8; *fmt = GL_RGBA; *type = GL_UNSIGNED_BYTE; break;
   }
 }
