@@ -184,7 +184,8 @@ if (CART) {
   engineTree('cmake/export');
   // the host tools: cwpack, program-table regeneration, exports
   if (T.cwpack && existsSync(T.cwpack)) copyFile(T.cwpack, join(OUT, 'bin', basename(T.cwpack)));
-  for (const f of ['tools/programs.mjs', 'tools/run-cart.mjs', 'tools/cwexport.mjs']) engineFile(f);
+  // check-text.mjs: the text size check a game runs over its own screens (node <sdk>/tools/check-text.mjs tests/<game>-text.json)
+  for (const f of ['tools/programs.mjs', 'tools/run-cart.mjs', 'tools/cwexport.mjs', 'tools/check-text.mjs']) engineFile(f);
   engineTree('tools/lib');
   engineTree('tools/cwexport');
   // the engine's own three.c generator extensions (terrain, clustered lights, gi, mesh decals, water, ...): a
