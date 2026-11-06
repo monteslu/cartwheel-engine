@@ -828,14 +828,14 @@
   { "name": "text-floor", "script": "tests/text-floor.mjs", "note": "the text size check (cartwheel/render2d.h): tools/check-text.mjs and the gate's textFloor pass the text_size sample at 100% and 200% and fail its control, a line 12 px tall at 1080 lines, naming it; the HUD block laid out from cw_font_measure is twice as tall at 200%; the fixed_size title is not counted" },
   {
     "name": "text-size-scale",
-    "note": "the text_size sample at a text scale of 200% with the panel text background, on every host: text, prompts and the measured layout grow the same everywhere (text.* fields equal); textFloor on. Control: the same run one frame short",
+    "note": "the text_size sample at a text scale of 200% with the panel text background, on every host: text, prompts and the measured layout grow the same everywhere (text.* fields equal); textFloor on; every host draws pad prompts (a host with no pad would show keycaps). Control: the run at 150%",
     "app": "text_size",
     "webgpu": true,
     "frames": 8,
-    "startCmds": ["text scale 2", "text backdrop panel"],
+    "startCmds": ["text scale 2", "text backdrop panel", "prompt device all pad"],
     "textFloor": true,
     "maxGt16": 0.002,
-    "controlStartCmds": ["text scale 1.5", "text backdrop panel"],
+    "controlStartCmds": ["text scale 1.5", "text backdrop panel", "prompt device all pad"],
     "controlFrames": 8,
     "expect": { "text.scale": 2, "text.backdrop": 2 }
   },
