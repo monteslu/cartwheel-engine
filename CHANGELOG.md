@@ -4,6 +4,11 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.34.1 (2026-11-05)
+
+### Fixed
+- The gate option `textFloor` is no longer on by default for a game's editor builds (`<game>_editor_*`: the editor's inspector is a tool, not the game's text). CI's editor-pointer, editor-pointer-keys and editor-view2d gates failed on it in v0.34.0.
+
 ## v0.34.0 (2026-11-05)
 
 ### Added
