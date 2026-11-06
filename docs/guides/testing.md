@@ -100,7 +100,7 @@ A typical gate, from `tests/gates.json`:
 
 ### Text size
 
-`node tools/check-text.mjs <screens.json> [--scales 1,2] [--pref 1280x800] [--shots DIR]` walks a game's screens (each a native run that ends on one: the title, every menu, a stretch of play, pause, results) and reports the smallest text on each from the `text` debug request: body text under 26 px at 1080 lines (2.4%) fails unless the screens file lists it as `secondary`, and nothing may be under 18 px (1.7%). `--scales` runs every screen at each text scale, `--pref` as a host that prefers that frame (1280x800 is a 7 inch handheld), `--shots` keeps each screen's last frame for a contact sheet. The `text-floor` gate runs it on `samples/text_size` and on that sample with a 12 px line, which must fail.
+`node tools/check-text.mjs <screens.json> [--scales 1,2] [--pref 1280x800] [--shots DIR]` walks a game's screens (each a native run that ends on one: the title, every menu, a stretch of play, pause, results) and reports the smallest text on each from the `text` debug request: body text under 26 px at 1080 lines (2.4%) fails unless the screens file lists it as `secondary`, and nothing may be under 18 px (1.7%). `--scales` runs every screen at each text scale, `--pref` as a host that prefers that frame (1280x800 is a 7 inch handheld), `--shots` keeps each screen's last frame for a contact sheet. In a games repository it ships in the host SDK: `CW_PROJECT_ROOT=$PWD node <host sdk>/tools/check-text.mjs tests/<game>-text.json` (its input scripts are read from that repository's `tests/`). The `text-floor` gate runs it on `samples/text_size` and on that sample with a 12 px line, which must fail.
 
 ## Controls that must fail
 
