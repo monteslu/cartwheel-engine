@@ -7,6 +7,7 @@
   { "name": "quality-grounding", "script": "tests/quality-grounding.mjs", "note": "Very Low keeps the shadow High draws at the base of every caster big enough to read on screen (open_world, platformer3d_auto), from each caster's base on screen (shadow_contacts) against a frame with no light casting. Control: Very Low with no light casting must fail" },
   { "name": "quality-range", "script": "tools/quality-range.mjs", "note": "each preset's GPU time on the test GPU at 1080p, GL and WebGPU (tools/quality-range.mjs): no preset dearer than the one above it, Ultra not under High, Very Low and Low under their share of High where the scene has costs a preset can cut. Control: CW_TEST_QUALITY_FLAT=1 (every preset draws High) must fail" },
   { "name": "quality-verylow-post", "script": "tests/quality-verylow-post.mjs", "note": "Very Low runs the height fog and FXAA inside the tonemap pass (GL and WebGPU, open_world and showcase): both reported fused, the picture the separate passes draw (CW_TEST_NO_FUSION=1) but for FXAA's edges (at most 0.5% of pixels over 16/255, mean under 1/255), and FXAA visibly at work (against the frame without it, at least 0.05% of pixels changed by over 16/255). Controls: the fused pass without the fog, and without FXAA (CW_TEST_VERYLOW_POST=fog, =aa), must each break the bound" },
+  { "name": "post-verylow-underwater", "script": "tests/post-verylow-underwater.mjs", "note": "Very Low on WebGPU under the water (water_shore, the vignette fused into the tonemap pass, bloom off): the tonemap pass binds an empty texture to the bloom binding instead of the depth the underwater view left on that unit, 0 WebGPU errors. Control: CW_TEST_BLOOM_UNIT=stale (the unit left as it was) must log errors" },
   { "name": "quality-lock", "script": "tests/quality-lock.mjs", "note": "the harness locks quality on the cart hosts with a real clock: asking for Auto leaves Chromium on a preset and wasmcart-native logs the lock; control: --keep-auto on Chromium reaches Auto" },
   { "name": "programs-survey-fails", "script": "tests/programs-survey-fails.mjs", "note": "tools/programs.mjs --gates: a gate run that fails stops the survey with exit 1 and says why, gates and inputs come from the project and --gates-file (control: the same project with only the good gate passes)" },
   { "name": "cart-audio-ring", "script": "tests/cart-audio-ring.mjs", "note": "Cart audio ring allocation and real 100 ms host burst capacity" },
@@ -838,6 +839,21 @@
     "controlStartCmds": ["text scale 1.5", "text backdrop panel", "prompt device all pad"],
     "controlFrames": 8,
     "expect": { "text.scale": 2, "text.backdrop": 2 }
+  },
+  {
+    "name": "quality-menu-wide",
+    "app": "shell_join",
+    "hosts": ["native"],
+    "webgpu": { "hosts": ["native"] },
+    "frames": 30,
+    "input": "quality-menu-wide.json",
+    "env": { "SHELL_JOIN_FONT": "mono" },
+    "startCmds": ["text scale 2"],
+    "controlStartCmds": ["text scale 2"],
+    "controlFrames": 30,
+    "controlEnv": { "CW_TEST_QUALITY_MENU": "centre" },
+    "expect": { "quality_menu.overflow": 0 },
+    "note": "the graphics page (cartwheel/quality_menu.h) at a text scale of 200% in a wide font (the shell in the monospaced font, as a game with its own): the two columns are laid out from their measured widths, so the Resolution row (100%  1920x1080) stays on the canvas (quality_menu.overflow: canvas pixels past an edge). Control: the columns split at the centre, as before, which runs the row off the right edge"
   },
   {
     "name": "prompts-glyphs",

@@ -1062,6 +1062,16 @@ static unsigned tm_variant(bool bloom, bool grade, bool lens, bool dist, bool aa
   return progs[k] = cw_pass_program(names[k], buf);
 }
 
+/* CW_TEST_BLOOM_UNIT=stale: the stale unit left as it was (the post-verylow-underwater gate's control) */
+static bool stale_bloom_unit_test(void) {
+  static int v = -1;
+  if (v < 0) {
+    const char *e = getenv("CW_TEST_BLOOM_UNIT");
+    v = e && !strcmp(e, "stale");
+  }
+  return v;
+}
+
 static void tonemap_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
   const cw_post_settings *s = ctx->settings;
@@ -1088,7 +1098,11 @@ static void tonemap_exec(cw_pass_ctx *ctx, void *u) {
     cw_pass_uniform1f(prog, "u_k", CW_CLAMP(s->bloom_intensity, 0.0f, 1.0f));
     cw_pass_uniform1f(prog, "u_norm", pl->bloom_norm);
     bloom_thresh(prog, s);
-  }
+  } else if (cw_gpu_backend() == CW_GPU_WEBGPU && !stale_bloom_unit_test())
+    /* WebGPU: every fused variant declares u_bloom (binding 2, unit 1) and binds whatever that unit holds; with bloom
+     * off (Very Low) it held an earlier pass's texture, the underwater view's depth, which a texture_2d<f32> binding
+     * rejects. The empty unit binds a dummy 2D texture the program never samples. */
+    cw_pass_bind_texture(1, 0);
   if (grade) grade_uniforms(ctx, prog, lut, n, dmin, dmax, 2);
   /* WebGPU: every fused variant declares u_lut (binding 3, unit 2) and binds
    * whatever that unit holds; without the grade it held an earlier pass's 2D
