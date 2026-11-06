@@ -44,7 +44,7 @@ static struct {
   uint32_t errors, missing;
   uint32_t logged[128]; /* hashes of the messages logged once */
   int nlogged;
-  bool break_wrong_dot, break_ignore_force; /* CW_TEST_PROMPT_BREAK: a gate's control */
+  bool break_wrong_dot, break_ignore_force, break_stick_first; /* CW_TEST_PROMPT_BREAK: a gate's control */
 } P;
 
 static const char *const DEVICE_NAMES[CW_PROMPT_DEVICE_COUNT] = { "none", "pad", "keyboard", "mouse", "touch" };
@@ -177,6 +177,7 @@ void cw__prompt_input_init(void) {
   const char *b = getenv("CW_TEST_PROMPT_BREAK");
   P.break_wrong_dot = b && strstr(b, "wrong_dot");
   P.break_ignore_force = b && strstr(b, "ignore_force");
+  P.break_stick_first = b && strstr(b, "stick_first");
 }
 
 /* ── which binding ───────────────────────────────────────────────────── */
@@ -321,6 +322,22 @@ static bool all_dpad(const cw_action *acts, int n) {
   }
   return true;
 }
+static bool is_stick_dir(cw_binding b) { return b.kind == CW_BIND_PAD_AXIS && b.code < CW_AXIS_LT; }
+static bool is_dpad_arm(cw_binding b) { return b.kind == CW_BIND_PAD_BUTTON && b.code >= CW_PAD_UP && b.code <= CW_PAD_RIGHT; }
+/* a movement action (its first pad binding a stick direction or a d-pad arm) on both a stick and a d-pad arm draws
+ * that arm, whichever comes first: {lean_fwd} alone lights one arm */
+static bool dpad_over_stick(cw_action a, cw_binding *out) {
+  cw_binding bs[CW_INPUT_MAX_BINDINGS], first;
+  if (!binding_for(a, CW_PROMPT_PAD, &first) || !(is_stick_dir(first) || is_dpad_arm(first))) return false;
+  int k = cw_action_bindings(a, bs, CW_INPUT_MAX_BINDINGS), dpad = -1;
+  bool stick = false;
+  for (int j = 0; j < k; j++) {
+    if (is_stick_dir(bs[j])) stick = true;
+    if (dpad < 0 && is_dpad_arm(bs[j])) dpad = j;
+  }
+  if (!stick || dpad < 0) return false;
+  return *out = bs[dpad], true;
+}
 static bool touch_stick_of(const cw_action *acts, int n, int *id) {
   int found = -1;
   for (int i = 0; i < n; i++) {
@@ -331,16 +348,6 @@ static bool touch_stick_of(const cw_action *acts, int n, int *id) {
   }
   *id = found;
   return found >= 0;
-}
-
-/* the d-pad stands in for the stick on a pad used only through its d-pad (a pad with no stick); pads < 0: none known */
-static bool stickless(const int *pads, int npads) {
-  if (npads <= 0) return false;
-  for (int i = 0; i < npads; i++) {
-    int p = pads[i];
-    if (p < 0 || p >= CW_MAX_PADS || !I.pad_dpad_seen[p] || I.pad_stick_seen[p]) return false;
-  }
-  return true;
 }
 
 /* the movement bits of the action at index i of a set of n: a pair is left, right (or up, down); four are l, r, u, d */
@@ -359,14 +366,15 @@ static uint32_t move_bit(const cw_action *acts, int n, int i) {
 }
 
 /* the glyphs of n actions on one device, added to s */
-static void device_glyphs(const cw_action *acts, int n, cw_prompt_device d, const int *pads, int npads, gset *s) {
+static void device_glyphs(const cw_action *acts, int n, cw_prompt_device d, gset *s) {
   if (n >= 2 && d == CW_PROMPT_PAD) {
+    /* the d-pad whenever every action is on it, even when a stick is bound too: the stick only for stick-only actions */
     int st = common_stick(acts, n);
-    bool dp = all_dpad(acts, n);
-    if (st >= 0 && dp && stickless(pads, npads)) st = -1;
+    bool dp = all_dpad(acts, n) && !(P.break_stick_first && st >= 0); /* the control: the stick when both */
+    if (dp) st = -1;
     if (st >= 0 || dp) {
-      glyph g = { .kind = st >= 0 ? PK_STICK : PK_DPAD };
-      for (int i = 0; i < n; i++) g.lit |= st >= 0 ? move_bit(acts, n, i) << 4 : move_bit(acts, n, i);
+      glyph g = { .kind = dp ? PK_DPAD : PK_STICK };
+      for (int i = 0; i < n; i++) g.lit |= dp ? move_bit(acts, n, i) : move_bit(acts, n, i) << 4;
       if (st == 1) g.lit |= 1;
       set_add(s, g);
       return;
@@ -385,7 +393,8 @@ static void device_glyphs(const cw_action *acts, int n, cw_prompt_device d, cons
   for (int j = 0; j < n; j++) {
     int i = keys ? WASD[j] : j;
     cw_binding b;
-    if (binding_for(acts[i], d, &b)) set_add(s, glyph_of(b));
+    if (d == CW_PROMPT_PAD && !P.break_stick_first && dpad_over_stick(acts[i], &b)) set_add(s, glyph_of(b));
+    else if (binding_for(acts[i], d, &b)) set_add(s, glyph_of(b));
     else missing(acts[i], d);
   }
 }
@@ -401,17 +410,15 @@ static void action_set(const cw_action *acts, int n, int player, gset *s) {
       for (int i = 0; i < n; i++) missing(acts[i], d);
       return;
     }
-    int pad = player < CW_INPUT_MAX_PLAYERS ? I.pad[player] : -1;
-    device_glyphs(acts, n, d, &pad, 1, s);
+    device_glyphs(acts, n, d, s);
     return;
   }
   bool pad = false, desk = false, touch = false;
   cw_prompt_device desk_dev = CW_PROMPT_KEYBOARD;
-  int pads[CW_INPUT_MAX_PLAYERS], npads = 0;
   for (int p = 0; p < CW_INPUT_MAX_PLAYERS; p++) {
     if (!present(p)) continue;
     cw_prompt_device d = device_of(p);
-    if (d == CW_PROMPT_PAD) pad = true, pads[npads++] = I.pad[p];
+    if (d == CW_PROMPT_PAD) pad = true;
     else if (d == CW_PROMPT_KEYBOARD || d == CW_PROMPT_MOUSE) {
       if (!desk) desk_dev = d;
       desk = true;
@@ -419,9 +426,9 @@ static void action_set(const cw_action *acts, int n, int player, gset *s) {
   }
   /* a device with nothing for these actions is left out while another shows something (a menu's keys on a phone) */
   held.on = true, held.n = 0;
-  if (pad) device_glyphs(acts, n, CW_PROMPT_PAD, pads, npads, s);
-  if (desk) device_glyphs(acts, n, desk_dev, NULL, 0, s);
-  if (touch) device_glyphs(acts, n, CW_PROMPT_TOUCH, NULL, 0, s);
+  if (pad) device_glyphs(acts, n, CW_PROMPT_PAD, s);
+  if (desk) device_glyphs(acts, n, desk_dev, s);
+  if (touch) device_glyphs(acts, n, CW_PROMPT_TOUCH, s);
   held.on = false;
   if (!s->n)
     for (int i = 0; i < held.n; i++) missing(held.a[i], (cw_prompt_device)held.d[i]);

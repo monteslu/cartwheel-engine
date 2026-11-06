@@ -4,6 +4,20 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.34.2 (2026-11-06)
+
+### Changed
+- **Movement prompts draw the d-pad when the d-pad and a stick are both bound.** A pair or four directions whose actions are all on the d-pad draw the d-pad glyph with those arms solid, whether or not a stick is bound too and whatever the player last steered with: `{move_left|move_right}` lights left and right, `{move_up|move_down}` up and down, the four directions every arm. One movement action alone on both, such as `{lean_fwd}`, lights its one arm. Actions on a stick and not the d-pad (right-stick aiming, looking round) draw the stick as before. The old choice (the stick, unless the pad had only ever been used through its d-pad) is gone, and with it the input module's per-pad record of which was used.
+- The prompts sample adds a line with a d-pad pair and a right-stick pair, and its stick ladder uses actions on the stick alone. docs/images/prompts.png is from the new sample.
+- Docs: the input guide's Movement rule and prompt.h.
+
+### Tests
+- `unit-prompt` checks the d-pad for pairs, four directions and one direction bound to both (after the stick, the d-pad and the stick again were used), the stick for stick-only actions, and a face button first staying the face button.
+- New gate `prompts-dpad`: the sample's glyph codes for a pad player, d-pad for the pairs bound to both, the right stick for look. Its control, `CW_TEST_PROMPT_BREAK=stick_first`, draws the stick when both are bound and fails. `prompts-glyphs` has the new codes.
+
+### Moving a game to v0.34.2
+- Nothing to change in code. A game that hand-draws a stick beside movement bound to the d-pad too should use the prompt markup instead, and a game whose prompt checks compare glyph codes or pictures gets the d-pad codes (5<<16 | arms) where it had the stick (4<<16 | arms<<4).
+
 ## v0.34.1 (2026-11-05)
 
 ### Fixed
