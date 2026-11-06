@@ -8,6 +8,7 @@
  * this game with two seats (so a third pad finds them taken) and a start that takes about 300 ms, a game loading its world:
  * "Starting..." is on screen before that work begins. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "cartwheel/debug.h"
@@ -15,6 +16,7 @@
 #include "cartwheel/platform.h"
 #include "cartwheel/render2d.h"
 #include "cartwheel/shell.h"
+#include "cartwheel/ui.h"
 
 #ifndef SHELL_JOIN_SEATS
 #define SHELL_JOIN_SEATS 4
@@ -55,7 +57,11 @@ static void players_changed(int players, void *user) {
 
 static void init(void *user) {
   (void)user;
-  cw_shell_init(&(cw_shell_desc){ .title = "Join Demo", .max_players = SHELL_JOIN_SEATS, .start = start, .players_changed = players_changed });
+  /* SHELL_JOIN_FONT=mono: the shell in the wide monospaced font, as a game with a wide font of its own (the graphics page
+   * at 200% is laid out from its measured text: the quality-menu-wide gate) */
+  const char *font = getenv("SHELL_JOIN_FONT");
+  cw_shell_init(&(cw_shell_desc){ .title = "Join Demo", .max_players = SHELL_JOIN_SEATS, .start = start, .players_changed = players_changed,
+                                  .font = font && !strcmp(font, "mono") ? cw_ui_font_mono() : (cw_font){ 0 } });
   G.left = cw_action_add("left", 0.2f);
   G.right = cw_action_add("right", 0.2f);
   G.open = cw_action_add("join", 0.5f);

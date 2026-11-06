@@ -4,6 +4,16 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.34.3 (2026-11-06)
+
+### Fixed
+- WebGPU at Very Low under the water: the tonemap pass with the vignette, the grade or FXAA fused in and bloom off left its bloom texture binding holding whatever an earlier pass had bound there, the underwater view's depth, which does not fit that binding: each such frame logged a WebGPU error (a racing game's flooded track logged hundreds). The pass now binds an empty texture there when bloom is off.
+- The graphics page (cartwheel/quality_menu.h) lays its two columns out from their measured widths: at 200% text in a wide font the Resolution row (`100%  1920x1080`) ran off the right edge. The pair is centred on the canvas and its text is drawn smaller only when even that does not fit. The debug field `quality_menu.overflow` says how far a row runs past an edge (0 when it fits).
+
+### Tests
+- New gate `post-verylow-underwater`: water_shore on WebGPU at Very Low, the camera under the water and the vignette on, with 0 WebGPU errors. Its control, `CW_TEST_BLOOM_UNIT=stale`, leaves the unit as it was and must log errors.
+- New gate `quality-menu-wide`: the shell_join sample's graphics page at 200% in the monospaced font (`SHELL_JOIN_FONT=mono`) keeps every row on the canvas. Its control, `CW_TEST_QUALITY_MENU=centre`, splits the columns at the centre as before and runs past the edge.
+
 ## v0.34.2 (2026-11-06)
 
 ### Changed

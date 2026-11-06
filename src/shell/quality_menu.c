@@ -1,6 +1,7 @@
 /* The graphics settings page (cartwheel/quality_menu.h). */
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "cartwheel/quality_menu.h"
@@ -20,6 +21,7 @@ static struct {
   float prev_lx[CW_MAX_PADS], prev_ly[CW_MAX_PADS];
   cw_rect rects[MAX_ROWS];
   int n_rects;
+  float overflow; /* debug field quality_menu.overflow: canvas pixels the widest row ran past either edge (0: it fits) */
 } M = { .last_frame = UINT64_MAX };
 
 /* rows: 0 the preset, 1..count the settings, then Back */
@@ -40,6 +42,7 @@ void cw__quality_menu_register(void) {
   if (done) return;
   done = true;
   cw_debug_command("quality_menu", "quality_menu [1|0]: the graphics settings page (cartwheel/quality_menu.h)", cmd_menu);
+  cw_debug_f32("quality_menu.overflow", &M.overflow);
 }
 
 void cw_quality_menu_open(void) {
@@ -124,13 +127,30 @@ bool cw_quality_menu_update(void) {
   return true;
 }
 
+static cw_text_style text_style(float size, cw_color c) {
+  return (cw_text_style){ .size = size, .color = c, .outline_width = size * 0.06f, .outline_color = cw_rgba(0, 0, 0, 0.8f) };
+}
+static float text_w(cw_font f, const char *s, float size) {
+  cw_text_style st = text_style(size, cw_rgba(1, 1, 1, 1));
+  return cw_font_measure(f, s, &st).width;
+}
 static void text(cw_font f, const char *s, float x, float y, float size, cw_color c, int align /* 0 left 1 center 2 right */) {
-  cw_text_style st = { .size = size, .color = c, .outline_width = size * 0.06f, .outline_color = cw_rgba(0, 0, 0, 0.8f) };
+  cw_text_style st = text_style(size, c);
   if (align) {
     cw_text_metrics m = cw_font_measure(f, s, &st);
     x -= align == 1 ? m.width * 0.5f : m.width;
   }
   cw_r2d_text(f, s, cw_v2(x, y), &st);
+}
+
+/* CW_TEST_QUALITY_MENU=centre: the columns split at the centre whatever their widths (the layout before; a gate's control) */
+static bool centre_test(void) {
+  static int v = -1;
+  if (v < 0) {
+    const char *e = getenv("CW_TEST_QUALITY_MENU");
+    v = e && !strcmp(e, "centre");
+  }
+  return v;
 }
 
 /* the hint line: the shell's menu actions as button prompts, broken into lines when too wide (frame arena) */
@@ -186,7 +206,24 @@ void cw_quality_menu_draw(const cw_quality_menu_style *style) {
   }
   float y_top = y;
   M.n_rects = n < MAX_ROWS ? n : MAX_ROWS;
-  float rw = fminf(sz.x * 0.96f, fmaxf(d * 30, sz.x * 0.6f));
+  /* the two columns from their measured widths: the widest name and value side by side, the pair centred on the
+   * canvas (a long value such as "100%  1920x1080" pushes the split left), and the row text smaller only when even
+   * that is wider than the canvas */
+  float wn = 0, wv = 0;
+  for (int i = 0; i < n && i < MAX_ROWS; i++) {
+    if (i == back_row()) continue;
+    wn = fmaxf(wn, text_w(st.font, i == 0 ? "Preset" : cw_gfx_name(i - 1), u));
+    wv = fmaxf(wv, text_w(st.font, cw_frame_printf("<  %s  >", i == 0 ? cw_quality_label() : cw_gfx_value_label(i - 1)), u));
+  }
+  float avail = sz.x * 0.94f, ru = u;
+  bool centre = centre_test(); /* the control: the old split at the centre, at the full size */
+  if (!centre && wn + wv + gap * 2 > avail) {
+    float k = (avail - gap * 2) / fmaxf(wn + wv, 1.0f);
+    ru = u * k, wn *= k, wv *= k;
+  }
+  float split = centre ? cx : cx + (wn - wv) * 0.5f;
+  M.overflow = fmaxf(0.0f, fmaxf(wn - (split - gap), split + gap + wv - sz.x));
+  float rw = fminf(sz.x * 0.96f, fmaxf(fmaxf(d * 30, sz.x * 0.6f), wn + wv + gap * 2 + d));
   for (int i = 0; i < M.n_rects; i++) M.rects[i] = cw_rect_make(0, 0, 0, 0);
   for (int i = first; i < first + count && i < MAX_ROWS; i++) {
     bool sel = i == M.row;
@@ -200,8 +237,8 @@ void cw_quality_menu_draw(const cw_quality_menu_style *style) {
       char val[64];
       if (i == 0) snprintf(val, sizeof val, "<  %s  >", cw_quality_label());
       else snprintf(val, sizeof val, "<  %s  >", cw_gfx_value_label(i - 1));
-      text(st.font, name, cx - gap, y, u, c, 2);
-      text(st.font, val, cx + gap, y, u, c, 0);
+      text(st.font, name, split - gap, y, ru, c, 2);
+      text(st.font, val, split + gap, y, ru, c, 0);
     }
     M.rects[i] = r;
     y += step;
