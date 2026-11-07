@@ -4,6 +4,17 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.38.2 (2026-11-07)
+
+### Fixed
+- **The grounding gate judges each caster where it stands.** `tests/quality-grounding.mjs` took every caster's base as the lowest point under the middle of its box, and judged whatever shadow fell there. For two kinds of caster nothing of it stands there: a caster whose box stands around the camera (a ring of walls, a floor; the camera is above its footprint), and a long one (a wall, a fence, a row of stands: a footprint over 6 times as long as it is wide and as it is tall). A night arena's walls failed frames because a floodlight High casts shaded the middle of the floor. The `shadow_contacts` request now marks the first `around` (the gate leaves it out: it has no single base) and the second `along` (its base is the point of its base line nearest the camera), and keeps the old point as `cx`, `cy`. `--centre` judges every caster the old way.
+
+### Added
+- `tools/lib/grounding.mjs`: the gate's judge, on its own so it can be checked without a GPU. Gate `quality-grounding-judge`: the judge on made-up frames; controls: the old rule fails a frame wrongly over a ring of walls around the camera and a long wall, no shadows fails, and a wide caster that is neither is still judged at its middle.
+
+### Moving a game to v0.38.2
+- Nothing to change. A games repository that worked around wide casters in its own grounding check (a size cap on the bases it counts) can drop the workaround.
+
 ## v0.38.1 (2026-11-07)
 
 ### Fixed
