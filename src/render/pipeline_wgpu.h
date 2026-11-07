@@ -104,6 +104,7 @@ void cw__pw_timing_hold(bool hold);
  * and shadow passes): an empty compute pass writes its start (end false),
  * another its end; the span is the current pass's (cw__pw_timing_pass) */
 void cw__pw_timing_span(void *enc, bool end);
+void cw__pw_encoder_hook(void *user, uintptr_t enc, bool end); /* three.c's own encoders timed (t3_renderer_set_encoder_hook) */
 /* the current pass timed whole, as one span on the frame encoder (begin: end false); the profiler's GPU lane */
 void cw__pw_timing_whole(bool end);
 void cw__pw_forget(cw_pipeline *p);
