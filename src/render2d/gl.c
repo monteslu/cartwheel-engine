@@ -15,9 +15,11 @@ static const char *SPRITE_VS =
     "layout(location=4) in vec4 a_sdf;\n"
     "uniform vec4 u_layers[64];\n"
     "uniform vec2 u_target;\n"
-    "uniform vec4 u_wind;\n" /* sway px, phase (time x speed), spatial frequency, gustiness */
+    "uniform vec4 u_wind;\n"
+    "uniform vec4 u_fog[32];\n" /* per canvas layer: fog colour, amount */ /* sway px, phase (time x speed), spatial frequency, gustiness */
     "out vec2 v_uv; out vec4 v_color; flat out float v_page; flat out int v_mode; flat out float v_sdfw; flat out vec2 v_sdf;\n"
     "flat out float v_emis, v_dist;\n"
+    "flat out vec4 v_fog;\n"
     "void main() {\n"
     "  int L = int(a_info.z) * 2;\n"
     "  vec4 r0 = u_layers[L], r1 = u_layers[L + 1];\n"
@@ -40,6 +42,7 @@ static const char *SPRITE_VS =
     "  v_sdf = a_sdf.xy;\n"
     "  v_emis = a_sdf.z;\n"
     "  v_dist = r1.w;\n"
+    "  v_fog = u_fog[int(a_info.z)];\n"
     "}\n";
 
 static const char *SPRITE_FS =
@@ -47,6 +50,7 @@ static const char *SPRITE_FS =
     "#ifdef LIT\nuniform sampler2DArray u_nrm, u_mat;\nlayout(location=1) out vec4 o_nrm;\nlayout(location=2) out vec4 o_mat;\n#endif\n"
     "in vec2 v_uv; in vec4 v_color; flat in float v_page; flat in int v_mode; flat in float v_sdfw; flat in vec2 v_sdf;\n"
     "flat in float v_emis, v_dist;\n"
+    "flat in vec4 v_fog;\n"
     "layout(location=0) out vec4 o_col;\n"
     "void main() {\n"
     "  vec4 t = texture(u_tex, vec3(v_uv, v_page));\n"
@@ -59,6 +63,12 @@ static const char *SPRITE_FS =
     "    if (v_sdf.x + v_sdf.y > 0.0) lo = max(lo, 0.004);\n"
     "    c = v_color * smoothstep(lo, e + w, t.a);\n"
     "  } else c = t * v_color;\n"
+    /* flash (sprites, shapes: sdf.x): toward the vertex colour, keeping the shape's alpha */
+    "  if ((v_mode & 2) == 0 && v_sdf.x > 0.0) c.rgb = mix(c.rgb, v_color.rgb / max(v_color.a, 1e-4) * c.a, v_sdf.x);\n"
+    "#ifndef LIT\n"
+    /* the layer's fog: toward its colour by its amount (atmospheric depth) */
+    "  if (v_fog.a > 0.0) c.rgb = mix(c.rgb, v_fog.rgb * c.a, v_fog.a);\n"
+    "#endif\n"
     "#ifdef LIT\n"
     "  vec4 n = texture(u_nrm, vec3(v_uv, v_page));\n"
     "  vec3 enc = (v_mode & 3) != 0 ? vec3(0.5, 0.5, 0.0) : n.rgb;\n"

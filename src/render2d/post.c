@@ -330,3 +330,9 @@ void r2d_post_shutdown(void) {
   fx_rt_free(&P.dist);
   for (int i = 0; i <= MAX_LEVELS; i++) fx_rt_free(&P.mips[i]);
 }
+
+/* the scene runner lays its canvases out after cw_r2d_begin: the first
+ * screen-space CanvasLayer becomes the chain's hud layer then */
+void cw__r2d_set_post_hud(int layer) {
+  if (R.has_post) R.post.hud_layer = layer;
+}

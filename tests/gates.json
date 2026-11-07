@@ -1936,7 +1936,7 @@
       "normal_ok": 1,
       "r2d.lights": 3
     },
-    "note": "lit layer (offscreen colour + normal MRT), normal-mapped bricks, 3 point lights with falloff, stencil shadows from occluder polygons, ambient, unlit HUD over it"
+    "note": "lit layer (offscreen colour + normal MRT), normal-mapped bricks, 3 point lights with falloff in one instanced draw, shadows from the occluders distance field (jump flood, marched per pixel), ambient, unlit HUD over it"
   },
   {
     "name": "r2d-interop",
@@ -1971,6 +1971,93 @@
       "r2d.vertices": 400000
     },
     "note": "perf: 100k animated sprites, 3 submission variants interleaved (bulk / per-sprite / y-sorted bulk); timings are bench.* fields (not gated); one draw call per frame"
+  },
+  {
+    "name": "r2d-hdr",
+    "app": "r2d_hdr",
+    "webgpu": {
+      "vsGl": 0.01,
+      "controls": [
+        {
+          "env": {
+            "CW_R2D_HDR": "nobloom"
+          }
+        },
+        {
+          "env": {
+            "CW_R2D_HDR": "nogi"
+          }
+        },
+        {
+          "env": {
+            "CW_R2D_HDR": "noshadow"
+          }
+        },
+        {
+          "env": {
+            "CW_R2D_HDR": "nodistort"
+          }
+        },
+        {
+          "env": {
+            "CW_R2D_HDR": "nowater"
+          }
+        },
+        {
+          "env": {
+            "CW_R2D_HDR": "hard"
+          }
+        }
+      ]
+    },
+    "frames": 120,
+    "assets": "samples/r2d_assets",
+    "maxGt16": 0.003,
+    "expect": {
+      "maps_ok": 1
+    },
+    "controlFrames": 120,
+    "controlEnv": {
+      "CW_R2D_HDR": "nopost"
+    },
+    "note": "HDR 2D: the post chain (bloom, soft tone curve, grade, vignette), emission and intensity, normal and material maps, soft shadows from the occluders distance field, a spot, a directional moon with volumetric shafts, global illumination (radiance cascades), a screen-reading pool, heat haze and a shockwave in a distortion layer, a HUD after the chain; GL against WebGPU; controls leave out the chain (GL) and bloom, GI, shadows, distortion, the pool and the penumbra (WebGPU), each must change the frame"
+  },
+  {
+    "name": "r2d-motion",
+    "app": "r2d_motion",
+    "webgpu": {
+      "vsGl": 0.01,
+      "controls": [
+        {
+          "env": {
+            "CW_R2D_MOTION": "nowind"
+          }
+        },
+        {
+          "env": {
+            "CW_R2D_MOTION": "notrail"
+          }
+        },
+        {
+          "env": {
+            "CW_R2D_MOTION": "nomips"
+          }
+        }
+      ]
+    },
+    "frames": 90,
+    "assets": "samples/r2d_assets",
+    "maxGt16": 0.003,
+    "controlFrames": 90,
+    "controlEnv": {
+      "CW_R2D_MOTION": "nowind"
+    },
+    "note": "wind sway in the vertex stage (cw_r2d_set_sway), trails (cw_r2d_trail, additive, textured with uv_repeat) blooming under the post chain, a detailed image shrunk from mipmapped atlas pages against plain ones; controls: no wind, no trails, no mipmaps must each change the frame"
+  },
+  {
+    "name": "r2d-perf",
+    "script": "tests/r2d-perf.mjs",
+    "note": "samples/r2d_stress natively on GL and WebGPU at 1080p (tools/r2d-perf.mjs): every case within its WebGPU call budget (lit500 and shadow500 a few hundred calls, a lit run a fixed handful of draws whatever the light count); timings reported, never compared; control: budgets of one call must fail"
   },
   {
     "name": "arena-game",

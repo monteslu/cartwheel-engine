@@ -24,7 +24,8 @@ static inline void put(r2d_vertex *v, float x, float y, float u, float vv, const
   v->info[1] = mode;
   v->info[2] = layer;
   v->info[3] = 0;
-  v->sdf[0] = v->sdf[1] = 0;
+  v->sdf[0] = R.flash_b;
+  v->sdf[1] = 0;
   v->sdf[2] = R.emissive_b;
   v->sdf[3] = R.intensity_b;
 }

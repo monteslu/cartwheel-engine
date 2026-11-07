@@ -11,9 +11,10 @@
  *   global illumination: the crystals light the cave round them in their own
  *     colour, and light bounces off the rock
  *   the post chain: bloom, the soft tone curve, a cool grade, a vignette
- *   a pool that reflects the cave above it (a screen_read layer drawing
- *     cw_r2d_screen_texture() mirrored), rippled, with heat haze over the
- *     torches and a shockwave ring (a distortion layer)
+ *   a pool (cw_r2d_water in a screen_read layer): a spring surface that
+ *     drips ripple (cw_water2d), the cave refracted through it and mirrored
+ *     on it, caustics, a lit surface line; heat haze over the torches and a
+ *     shockwave ring in a distortion layer
  *   a HUD drawn after the chain (post.hud_layer), untouched by it
  *
  * CW_R2D_HDR picks a variant for the tests' controls (native only): "nopost"
@@ -34,6 +35,7 @@ enum { L_SKY, L_WORLD, L_WATER, L_HEAT, L_HUD };
 typedef struct {
   cw_texture stone, crystal, solid;
   cw_font font;
+  cw_water2d *pool;
   int32_t ticks;
   const char *mode;
   uint8_t maps_ok;
@@ -116,6 +118,7 @@ static void init(void *user) {
   a->font = cw_font_load("fonts/FiraSans-Regular.ttf", NULL);
   cw_r2d_layer_set(L_SKY, NULL);
   cw_r2d_layer_set(L_WORLD, &(cw_r2d_layer_desc){ .lit = true, .occluder_depth = 14 });
+  a->pool = cw_water2d_new(&(cw_water2d_desc){ .columns = 80, .width = 330 });
   cw_r2d_layer_set(L_WATER, &(cw_r2d_layer_desc){ .screen_read = !mode("nowater") });
   cw_r2d_layer_set(L_HEAT, &(cw_r2d_layer_desc){ .distortion = mode("nodistort") ? 0 : 6 });
   cw_r2d_layer_set(L_HUD, NULL);
@@ -125,8 +128,11 @@ static void init(void *user) {
 }
 
 static void fixed_update(void *user, double dt) {
-  (void)dt;
-  ((app_t *)user)->ticks++;
+  app_t *a = user;
+  a->ticks++;
+  /* a drip every 50 ticks, at a spot that walks across the pool */
+  if (a->ticks % 50 == 0) cw_water2d_splash(a->pool, (float)((a->ticks / 50 * 97) % 300 + 15), -60);
+  cw_water2d_step(a->pool, (float)dt);
 }
 
 static void rect_occluder(cw_rect r, cw_color c) {
@@ -200,15 +206,10 @@ static void render(void *user, double alpha) {
   /* the pool: the cave above mirrored about the surface, darkened and tinted */
   float wx0 = W * 0.30f, wx1 = W * 0.56f, wy0 = H * 0.80f, wy1 = H * 0.88f;
   cw_r2d_use_layer(L_WATER);
-  if (!mode("nowater")) {
-    cw_texture scr = cw_r2d_screen_texture();
-    float u0 = wx0 / W, u1 = wx1 / W, v0 = wy0 / H, v1 = (2 * wy0 - wy1) / H;
-    cw_vec2 pos[4] = { { wx0, wy0 }, { wx1, wy0 }, { wx1, wy1 }, { wx0, wy1 } };
-    cw_vec2 uv[4] = { { u0, v0 }, { u1, v0 }, { u1, v1 }, { u0, v1 } };
-    cw_r2d_rect((cw_rect){ wx0, wy0, wx1 - wx0, wy1 - wy0 }, cw_hex(0x0a1a2aff));
-    cw_r2d_quad(scr, pos, uv, cw_rgba(0.55f, 0.7f, 0.85f, 0.75f));
-    cw_r2d_rect((cw_rect){ wx0, wy0, wx1 - wx0, 2 * k }, cw_rgba(0.7f, 0.85f, 1.0f, 0.5f));
-  }
+  if (!mode("nowater"))
+    cw_r2d_water(&(cw_r2d_water_desc){ .area = { wx0, wy0, wx1 - wx0, wy1 - wy0 }, .surface = a->pool, .time = t, .wave_height = 1.5f * k,
+                                      .tint = cw_rgba(0.05f, 0.18f, 0.3f, 0.6f), .refraction = 3 * k, .reflection = 0.7f,
+                                      .caustics = 0.6f, .surface_glow = 0.8f });
   /* heat over the torches, ripples on the pool, a shockwave: the distortion layer */
   cw_r2d_use_layer(L_HEAT);
   {

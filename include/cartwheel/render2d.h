@@ -384,6 +384,10 @@ typedef struct cw_r2d_layer_desc {
    * tilemaps are ignored here. Needs float targets (WebGPU, and GL hosts
    * with float render targets: cw_pipeline_caps); elsewhere nothing is bent. */
   float distortion;
+  /* atmospheric depth: the layer's draws turn toward fog.rgb by fog.a (0..1)
+   * in the fragment stage, so far parallax layers fade into the haze (zero =
+   * none; unlit layers only: lit layers take it from their lights) */
+  cw_color fog;
 } cw_r2d_layer_desc;
 
 /* The canvas as it stood before the latest screen_read layer, as a texture
@@ -401,6 +405,46 @@ cw_texture cw_r2d_noise_texture(void);
  * a ring `width` wide centred on `radius` (layer space), strongest mid-ring,
  * by `strength` (0..1 of the layer's distortion). One submission. */
 void cw_r2d_shockwave(cw_vec2 center, float radius, float width, float strength);
+
+/* ── 2D water ────────────────────────────────────────────────────────────
+ * A surface that ripples where things splash in it (cw_water2d: springs per
+ * column, stepped on the CPU in fixed_update, deterministic), and a body
+ * drawn from the screen texture: the world behind it seen through the water
+ * and wobbling (refraction), the world above it mirrored on it and fading
+ * with depth (reflection), tinted deeper toward the bottom, with caustics
+ * (moving filaments of light) and a lit surface line. Draw it into a layer
+ * with screen_read and no camera transform (the screen texture is the canvas
+ * as drawn); add a distortion layer with cw_r2d_noise_texture over it for
+ * per-pixel ripples. All of it is ordinary submissions: a few draws. */
+typedef struct cw_water2d cw_water2d;
+typedef struct cw_water2d_desc {
+  int columns;      /* springs across the surface: 0 = 64 */
+  float width;      /* layer units the columns span: 0 = 256 */
+  float tension;    /* how fast a column springs back: 0 = 40 */
+  float damping;    /* 0 = 2.5 */
+  float spread;     /* how much neighbours pull each other (the wave's travel): 0 = 0.25 */
+} cw_water2d_desc;
+cw_water2d *cw_water2d_new(const cw_water2d_desc *d); /* a still surface */
+void cw_water2d_free(cw_water2d *w);                  /* NULL is fine */
+void cw_water2d_step(cw_water2d *w, float dt);        /* advance the springs (call with the fixed dt) */
+/* push the surface at x (layer units from its left end) up (+) or down (-) at this speed */
+void cw_water2d_splash(cw_water2d *w, float x, float speed);
+float cw_water2d_height(const cw_water2d *w, float x); /* the surface's height above rest at x (+ up) */
+int cw_water2d_columns(const cw_water2d *w, const float **heights); /* the column count; *heights = each column's height */
+/* A 256x256 tileable texture of bright caustic filaments (alpha = the light), repeat-wrapped. */
+cw_texture cw_r2d_caustics_texture(void);
+typedef struct cw_r2d_water_desc {
+  cw_rect area;            /* the body, canvas units; its top edge is the surface at rest */
+  const cw_water2d *surface; /* NULL: gentle waves only */
+  float time;              /* seconds: waves and caustics move with it */
+  float wave_height;       /* units of the gentle waves (0 = none) */
+  cw_color tint;           /* the deep colour; alpha = how much it hides what is behind (zero = a clear blue-green) */
+  float refraction;        /* units the world behind wobbles (0 = none) */
+  float reflection;        /* 0..1: the mirrored world at the surface */
+  float caustics;          /* 0..1: light filaments on the body */
+  float surface_glow;      /* 0..1: the lit surface line */
+} cw_r2d_water_desc;
+void cw_r2d_water(const cw_r2d_water_desc *d); /* the body and its surface into the current layer */
 
 /* layer 0..CW_R2D_MAX_LAYERS-1 (asserts); NULL resets it; persists until changed */
 void cw_r2d_layer_set(int layer, const cw_r2d_layer_desc *desc);
@@ -438,6 +482,10 @@ void cw_r2d_set_emissive(float share);
 /* How much later sprites' top edges sway in the pass's wind (0..1, see
  * cw_r2d_wind); 0 by default, reset by cw_r2d_begin. Sprites only. */
 void cw_r2d_set_sway(float share);
+/* Flash later sprites and shapes toward their colour by amount (0..1),
+ * keeping their shape: a white sprite colour at 1 is a white silhouette (a
+ * hit flash), red at 0.5 a red tint over the art. Reset by cw_r2d_begin. */
+void cw_r2d_set_flash(float amount);
 /* Clip to a canvas-pixel rect (intersected with the enclosing clip). Max
  * depth 32; up to 254 distinct clips per pass. */
 void cw_r2d_push_clip(cw_rect canvas_rect);
@@ -536,7 +584,7 @@ typedef struct cw_r2d_trail_desc {
   cw_texture texture;       /* null = the colours alone */
   float uv_repeat;          /* layer units per texture repeat; 0 = u 0..1 over the whole length */
 } cw_r2d_trail_desc;
-void cw_r2d_trail(const cw_r2d_trail_desc *d);
+void cw_r2d_trail(const cw_r2d_trail_desc *d); /* one ribbon along d->points (fewer than 2 points draw nothing) */
 
 /* ── text ────────────────────────────────────────────────────────────────
  * Fonts come from TTF/OTF via stb_truetype. Two modes:

@@ -146,7 +146,7 @@ void fx_pass(fx_prog *p, const fx_dst *dst, bool clear, const float cc[4], const
   if (!black_tex) {
     static const uint8_t z[4] = { 0, 0, 0, 0 };
     glGenTextures(1, &black_tex);
-    glActiveTexture(GL_TEXTURE3);
+    glActiveTexture(GL_TEXTURE0 + 3);
     glBindTexture(GL_TEXTURE_2D, black_tex);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, z);
@@ -181,7 +181,7 @@ void fx_pass(fx_prog *p, const fx_dst *dst, bool clear, const float cc[4], const
   }
   if (p->u_size >= 0) glUniform2f(p->u_size, (float)vw, (float)vh);
   for (int k = 0; k < 4; k++) {
-    glActiveTexture(GL_TEXTURE3 + k);
+    glActiveTexture(GL_TEXTURE0 + 3 + k);
     glBindTexture(GL_TEXTURE_2D, src && src[k] && src[k]->tex ? src[k]->tex : black_tex);
   }
   glActiveTexture(GL_TEXTURE0);

@@ -42,6 +42,8 @@ typedef struct stress_case {
   bool post;        /* HDR canvas + post chain */
   float softness;   /* lit cases */
   float volumetric; /* lit cases */
+  bool nobloom;     /* post without bloom */
+  bool gi;          /* global illumination of the lit layer */
 } stress_case;
 
 static const stress_case CASES[] = {
@@ -67,6 +69,10 @@ static const stress_case CASES[] = {
   /* soft shadows (softness 0.6) and 16 volumetric lights */
   { "soft64", K_LIT, 20000, 64, true, false, 0.6f },
   { "volumetric16", K_LIT, 20000, 16, true, false, 0.3f, 0.4f },
+  /* the chain without bloom: what the HDR canvas and the final pass cost alone */
+  { "postnobloom", K_SPRITES, 10000, 0, false, true, 0, 0, true },
+  /* global illumination over the lit case with 16 soft-shadowed lights */
+  { "gi16", K_LIT, 20000, 16, true, false, 0.5f, 0, false, true },
 };
 #define NCASES ((int)CW_ARRAY_LEN(CASES))
 #define NOCC 120
@@ -266,9 +272,9 @@ static void render(void *user, double alpha) {
   cw_window_size(&a->w, &a->h);
   if (a->cur->kind == K_SPRITES || a->cur->kind == K_LIT || a->cur->kind == K_ROCKS || a->cur->kind == K_PARTICLES) cw_parallel_for(a->cur->n, 4096, animate, a);
   double t0 = now_ms();
-  static const cw_r2d_post post = { .bloom = true, .bloom_threshold = 0.8f, .bloom_intensity = 0.8f, .vignette = 0.3f };
+  cw_r2d_post post = { .bloom = !a->cur->nobloom, .bloom_threshold = 0.8f, .bloom_intensity = 0.8f, .vignette = 0.3f };
   cw_r2d_begin(&(cw_r2d_pass_desc){ .clear = true, .clear_color = cw_hex(0x101420ff), .ambient = cw_rgba(0.08f, 0.08f, 0.1f, 1),
-                                    .post = a->cur->post ? &post : NULL });
+                                    .post = a->cur->post ? &post : NULL, .gi = a->cur->gi ? &(cw_r2d_gi){ .intensity = 1 } : NULL });
   if (a->cur->post) cw_r2d_set_intensity(2.5f);
   draw_case(a);
   cw_r2d_end();
