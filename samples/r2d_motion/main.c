@@ -7,7 +7,7 @@
  *             fading ribbons, additive and at intensity 3 under the post
  *             chain so their heads bloom; a textured trail with uv_repeat
  *   particles embers rising from the meadow and a fountain of sparks:
- *             cw_r2d_particles, 60k particles in two instanced draws, no CPU
+ *             cw_r2d_particles, 15k particles in two instanced draws, no CPU
  *             work per particle, additive and blooming
  *   scaling   one fine-detailed image drawn at 1/2, 1/4, 1/6 and 1/8 size,
  *             once from a mipmapped atlas page (cw_texture_desc.mipmaps) and
@@ -28,7 +28,7 @@
 enum { L_SKY, L_WORLD, L_HUD };
 
 typedef struct {
-  cw_texture blade, detail, detail_mip, streak;
+  cw_texture blade, detail, detail_mip, streak, dot;
   cw_font font;
   int32_t ticks;
   const char *mode;
@@ -75,6 +75,17 @@ static void make_art(app_t *a) {
       p[3] = (uint8_t)(255 * v * v * dash);
     }
   a->streak = cw_texture_from_pixels(SW, SH, s, &(cw_texture_desc){ .repeat = true });
+  /* a soft round dot for the particles */
+  enum { DS = 32 };
+  static uint8_t dpx[DS * DS * 4];
+  for (int y = 0; y < DS; y++)
+    for (int x = 0; x < DS; x++) {
+      float dx = ((float)x + 0.5f) / DS * 2 - 1, dy = ((float)y + 0.5f) / DS * 2 - 1, r = sqrtf(dx * dx + dy * dy);
+      float v = r < 1 ? (1 - r) * (1 - r) : 0;
+      uint8_t *p = dpx + 4 * (y * DS + x);
+      p[0] = p[1] = p[2] = 255, p[3] = (uint8_t)(v * 255);
+    }
+  a->dot = cw_texture_from_pixels(DS, DS, dpx, NULL);
 }
 
 static void init(void *user) {
@@ -150,15 +161,17 @@ static void render(void *user, double alpha) {
   if (!mode("noparticles")) {
     cw_r2d_use_layer(L_WORLD);
     cw_r2d_set_blend(CW_BLEND_ADD);
-    cw_r2d_set_intensity(2.5f);
-    cw_r2d_particles(&(cw_r2d_particles_desc){ .count = 20000, .seed = 11, .pos = { W * 0.5f, H * 0.7f }, .extent = { W * 0.5f, 10 * k },
-                                               .angle = -1.5708f, .spread = 0.3f, .speed_min = 20 * k, .speed_max = 70 * k,
-                                               .drag = 0.2f, .life_min = 3, .life_max = 6, .size_start = 3 * k, .size_end = 1 * k,
-                                               .color_start = cw_rgba(1, 0.55f, 0.15f, 0.9f), .turbulence = 30 * k });
-    cw_r2d_particles(&(cw_r2d_particles_desc){ .count = 40000, .seed = 23, .pos = { W * 0.82f, H * 0.66f }, .extent = { 4 * k, 2 * k },
-                                               .angle = -1.5708f, .spread = 0.35f, .speed_min = 220 * k, .speed_max = 380 * k,
-                                               .gravity = { 0, 420 * k }, .drag = 0.4f, .life_min = 1.2f, .life_max = 2.0f,
-                                               .size_start = 2.5f * k, .size_end = 1 * k, .color_start = cw_rgba(0.5f, 0.85f, 1, 0.6f) });
+    cw_r2d_set_intensity(2.0f);
+    cw_r2d_particles(&(cw_r2d_particles_desc){ .count = 3000, .seed = 11, .pos = { W * 0.5f, H * 0.66f }, .extent = { W * 0.5f, 30 * k },
+                                               .angle = -1.5708f, .spread = 0.4f, .speed_min = 25 * k, .speed_max = 80 * k,
+                                               .drag = 0.15f, .life_min = 4, .life_max = 8, .size_start = 9 * k, .size_end = 3 * k,
+                                               .color_start = cw_rgba(1, 0.55f, 0.15f, 0.8f), .turbulence = 40 * k, .texture = a->dot });
+    cw_r2d_set_intensity(1.5f);
+    cw_r2d_particles(&(cw_r2d_particles_desc){ .count = 12000, .seed = 23, .pos = { W * 0.82f, H * 0.66f }, .extent = { 4 * k, 2 * k },
+                                               .angle = -1.5708f, .spread = 0.3f, .speed_min = 260 * k, .speed_max = 420 * k,
+                                               .gravity = { 0, 520 * k }, .drag = 0.3f, .life_min = 1.4f, .life_max = 2.2f,
+                                               .size_start = 6 * k, .size_end = 2 * k, .color_start = cw_rgba(0.5f, 0.85f, 1, 0.25f),
+                                               .texture = a->dot });
     cw_r2d_set_intensity(1);
     cw_r2d_set_blend(CW_BLEND_ALPHA);
   }

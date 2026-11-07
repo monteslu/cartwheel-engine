@@ -150,7 +150,7 @@ static const char *WGSL_SPRITE =
     "fn rnd(s: ptr<function, u32>) -> f32 { *s = hsh(*s); return f32(*s >> 8u) / 16777216.0; }\n"
     "@vertex fn vs_particles(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VO {\n"
     "  let q = vec2f(select(0.0, 1.0, k == 1u || k == 2u || k == 4u), select(0.0, 1.0, k == 2u || k == 4u || k == 5u));\n"
-    "  var s = hsh(inst * 0x9E3779B9u ^ u32(pa.a[7].w));\n"
+    "  var s = hsh((inst * 0x9E3779B9u) ^ u32(pa.a[7].w));\n"
     "  let ph = rnd(&s); let life = max(mix(pa.a[3].x, pa.a[3].y, rnd(&s)), 1e-3);\n"
     "  let tt = pa.a[2].w + ph * life; let cyc = floor(tt / life); let age = tt - cyc * life; let f = age / life;\n"
     "  var r = hsh(s ^ (u32(cyc) * 0x85ebca6bu));\n"
