@@ -41,6 +41,7 @@ void cw__pw_timing_whole(bool end) { (void)end; }
 void cw__pw_timing_poll(void) {}
 void cw__pw_timing_hold(bool hold) { (void)hold; }
 void cw__pw_timing_span(void *enc, bool end) { (void)enc, (void)end; }
+void cw__pw_encoder_hook(void *user, uintptr_t enc, bool end) { (void)user, (void)enc, (void)end; }
 void cw__pw_forget(cw_pipeline *p) { (void)p; }
 unsigned cw__pw_program(const char *name, const char *wgsl) { (void)name, (void)wgsl; return 0; }
 void cw__pw_use(unsigned prog) { (void)prog; }
@@ -475,6 +476,7 @@ static struct {
   ts_slot rslots[TS_MAX / 2];
   int rslot_of[TS_MAX / 2];
   int rpairs;
+  int rnslots; /* the read back frame's passes (rslots[0..rnslots)) */
 } T;
 
 /* The query set, resolve and readback map cost every frame: made and used
@@ -563,6 +565,15 @@ static void on_ts_map(WGPUMapAsyncStatus st, WGPUStringView msg, void *u1, void 
         }
     for (int s = 0; s < TS_MAX / 2; s++)
       if (seen[s] && T.rslots[s].p) cw__pipeline_gpu_time(T.rslots[s].p, T.rslots[s].name, ms[s]);
+    /* a pass that ran that frame and wrote no timestamp (a probe or sky pass between its captures) cost the GPU nothing:
+     * 0, not the last frame that drew (which its average would otherwise hold) */
+    for (int s = 0; s < T.rnslots && s < TS_MAX / 2; s++) {
+      if (seen[s] || !T.rslots[s].p) continue;
+      bool any = false;
+      for (int e = 0; e < T.rnslots && e < TS_MAX / 2 && !any; e++)
+        any = e != s && T.rslots[e].p == T.rslots[s].p && T.rslots[e].name == T.rslots[s].name && (seen[e] || e < s);
+      if (!any) cw__pipeline_gpu_time(T.rslots[s].p, T.rslots[s].name, 0);
+    }
     wgpuBufferUnmap(T.readback);
   }
   T.mapping = false;
@@ -597,6 +608,36 @@ void cw__pw_timing_whole(bool end) {
   wgpuComputePassEncoderRelease(cp);
 }
 
+/* three.c's own command encoders (t3_renderer_set_encoder_hook): a PMREM capture of a probe or the sky, a mip chain,
+ * its frame encoder when no external one is set. Each gets a begin timestamp as it opens and an end one before it
+ * finishes, inside its own command buffer, so the current pass is timed with that GPU work and not with the gaps
+ * between submits (they were untimed: a scene that captures every few frames read cheaper on WebGPU than on GL) */
+static struct { uintptr_t enc; int begin; } HOOK[8];
+static int nhook;
+void cw__pw_encoder_hook(void *user, uintptr_t enc, bool end) {
+  (void)user;
+  if (!end) {
+    WGPUPassTimestampWrites tw;
+    if (nhook >= 8 || !timing_writes(&tw)) return;
+    HOOK[nhook].enc = enc, HOOK[nhook].begin = (int)tw.beginningOfPassWriteIndex, nhook++;
+    tw.endOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED;
+    WGPUComputePassEncoder cp = wgpuCommandEncoderBeginComputePass((WGPUCommandEncoder)enc, &(WGPUComputePassDescriptor){ .timestampWrites = &tw });
+    wgpuComputePassEncoderEnd(cp);
+    wgpuComputePassEncoderRelease(cp);
+    return;
+  }
+  for (int i = nhook - 1; i >= 0; i--) {
+    if (HOOK[i].enc != enc) continue;
+    WGPUPassTimestampWrites tw = { .querySet = T.qs, .beginningOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED,
+                                   .endOfPassWriteIndex = (uint32_t)HOOK[i].begin + 1 };
+    WGPUComputePassEncoder cp = wgpuCommandEncoderBeginComputePass((WGPUCommandEncoder)enc, &(WGPUComputePassDescriptor){ .timestampWrites = &tw });
+    wgpuComputePassEncoderEnd(cp);
+    wgpuComputePassEncoderRelease(cp);
+    HOOK[i] = HOOK[--nhook];
+    return;
+  }
+}
+
 void cw__pw_timing_span(void *enc, bool end) {
   static int open = -1; /* the begin query of the span being written */
   if (T.whole >= 0) return; /* inside a whole-pass span */
@@ -629,6 +670,7 @@ static void timing_resolve(void) {
   memcpy(T.rslots, T.slots, sizeof T.slots);
   memcpy(T.rslot_of, T.slot_of, sizeof T.slot_of);
   T.rpairs = T.used / 2;
+  T.rnslots = T.nslots;
   T.rframe = cw_frame_index();
   T.used = 0;
   T.nslots = 0;
