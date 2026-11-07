@@ -2057,7 +2057,7 @@
     "controlEnv": {
       "CW_R2D_MOTION": "nowind"
     },
-    "note": "wind sway in the vertex stage (cw_r2d_set_sway), trails (cw_r2d_trail, additive, textured with uv_repeat) and 60k GPU particles (cw_r2d_particles) blooming under the post chain, a detailed image shrunk from mipmapped atlas pages against plain ones; controls: no wind, no trails, no mipmaps, no particles must each change the frame"
+    "note": "wind sway in the vertex stage (cw_r2d_set_sway), trails (cw_r2d_trail, additive, textured with uv_repeat) and 15k GPU particles (cw_r2d_particles) blooming under the post chain, a detailed image shrunk from mipmapped atlas pages against plain ones; controls: no wind, no trails, no mipmaps, no particles must each change the frame"
   },
   {
     "name": "r2d-perf",
