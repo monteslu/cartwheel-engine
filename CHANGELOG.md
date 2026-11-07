@@ -15,6 +15,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - **Screen reads and distortion**: `cw_r2d_layer_desc.screen_read` with `cw_r2d_screen_texture()`; distortion layers (`cw_r2d_layer_desc.distortion`) bend the picture by their draws' red and green, with `cw_r2d_noise_texture()` for heat haze and ripples and `cw_r2d_shockwave`.
 - **2D water**: `cw_water2d` (a spring surface, splashes, deterministic on the CPU) and `cw_r2d_water` (the world refracted through the body and mirrored on it from the screen texture, a depth tint, caustics from `cw_r2d_caustics_texture()`, a lit surface line).
 - **Wind**: `cw_r2d_pass_desc.wind` and `cw_r2d_set_sway`: sprites' top edges sway in the vertex stage (grass, reeds, banners) at no CPU cost.
+- **GPU particles** (`cw_r2d_particles`): stateless emitters, one instanced draw each, every particle a closed-form function of the time (spawn box, spread, speed, gravity, drag, life, size, colour, spin, wobble); lit in lit layers, additive with intensity for blooming sparks. A million particles cost their pixels and nothing on the CPU.
 - **Trails**: `cw_r2d_trail`, a ribbon along a path tapering and fading from head to tail, textured along its length (`uv_repeat`).
 - **Occluders from art**: `cw_r2d_set_occluder(true)` makes later sprites, shapes, text and tilemaps in lit layers cast shadows (and block global illumination) wherever their alpha is over half: ground tiles and props need no polygons.
 - `CW_R2D_FEATURES` (2) in render2d.h, for code that builds against older SDKs too.

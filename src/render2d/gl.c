@@ -92,6 +92,58 @@ static const char *SPRITE_FS =
     "#endif\n"
     "}\n";
 
+/* GPU particles (cw_r2d_particles): no state anywhere. Particle i of an
+ * emitter is a pure function of the time: its own phase and life, then per
+ * life cycle a fresh spawn point, direction, speed and spin from an integer
+ * hash, and its path in closed form (launch velocity under gravity and linear
+ * drag). The vertex stage builds each quad from gl_InstanceID; the fragment
+ * stage is the sprites' (lit layers light it). u_pa: [0] pos, extent; [1]
+ * angle, spread, speed min, max; [2] gravity, drag, time; [3] life min, max,
+ * size start, end; [4] colour start; [5] colour end; [6] uv rect; [7] page,
+ * spin, turbulence, seed; [8] canvas layer, mode, intensity, emission */
+static const char *PART_VS =
+    "uniform vec4 u_layers[64];\n"
+    "uniform vec2 u_target;\n"
+    "uniform vec4 u_fog[32];\n"
+    "uniform vec4 u_pa[9];\n"
+    "out vec2 v_uv; out vec4 v_color; flat out float v_page; flat out int v_mode; flat out float v_sdfw; flat out vec2 v_sdf;\n"
+    "flat out float v_emis, v_dist;\n"
+    "flat out vec4 v_fog;\n"
+    "uint hsh(uint x) { x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16; return x; }\n"
+    "float rnd(inout uint s) { s = hsh(s); return float(s >> 8) / 16777216.0; }\n"
+    "void main() {\n"
+    "  int k = gl_VertexID;\n"
+    "  vec2 q = vec2((k == 1 || k == 2 || k == 4) ? 1.0 : 0.0, (k == 2 || k == 4 || k == 5) ? 1.0 : 0.0);\n"
+    "  uint s = hsh(uint(gl_InstanceID) * 0x9E3779B9u ^ uint(u_pa[7].w));\n"
+    "  float ph = rnd(s), life = max(mix(u_pa[3].x, u_pa[3].y, rnd(s)), 1e-3);\n"
+    "  float tt = u_pa[2].w + ph * life, cyc = floor(tt / life), age = tt - cyc * life, f = age / life;\n"
+    "  uint r = hsh(s ^ (uint(cyc) * 0x85ebca6bu));\n"
+    "  vec2 p = u_pa[0].xy + (vec2(rnd(r), rnd(r)) * 2.0 - 1.0) * u_pa[0].zw;\n"
+    "  float ang = u_pa[1].x + (rnd(r) * 2.0 - 1.0) * u_pa[1].y;\n"
+    "  vec2 v = vec2(cos(ang), sin(ang)) * mix(u_pa[1].z, u_pa[1].w, rnd(r));\n"
+    "  float dr = u_pa[2].z;\n"
+    "  if (dr > 1e-4) { float e = (1.0 - exp(-dr * age)) / dr; p += v * e + u_pa[2].xy * (age - e) / dr; }\n"
+    "  else p += v * age + 0.5 * u_pa[2].xy * age * age;\n"
+    "  float wob = rnd(r) * 6.2831853;\n"
+    "  p += vec2(sin(age * 2.7 + wob), cos(age * 2.1 + wob * 1.3)) * u_pa[7].z * f;\n"
+    "  float sz = mix(u_pa[3].z, u_pa[3].w, f), rot = u_pa[7].y * (rnd(r) * 2.0 - 1.0) * age;\n"
+    "  vec2 l = (q - 0.5) * sz;\n"
+    "  float cs = cos(rot), sn = sin(rot);\n"
+    "  vec2 w = p + vec2(cs * l.x - sn * l.y, sn * l.x + cs * l.y);\n"
+    "  int L = int(u_pa[8].x) * 2;\n"
+    "  vec4 r0 = u_layers[L], r1 = u_layers[L + 1];\n"
+    "  vec2 c = vec2(r0.x * w.x + r0.y * w.y + r0.z, r1.x * w.x + r1.y * w.y + r1.z);\n"
+    "  gl_Position = vec4(c.x / u_target.x * 2.0 - 1.0, 1.0 - c.y / u_target.y * 2.0, 0.0, 1.0);\n"
+    "  v_uv = mix(u_pa[6].xy, u_pa[6].zw, q);\n"
+    "  vec4 col = mix(u_pa[4], u_pa[5], f);\n"
+    "  v_color = vec4(col.rgb * col.a * u_pa[8].z, col.a);\n"
+    "  v_page = u_pa[7].x;\n"
+    "  v_mode = int(u_pa[8].y);\n"
+    "  v_sdfw = 0.0; v_sdf = vec2(0.0);\n"
+    "  v_emis = u_pa[8].w; v_dist = 0.0;\n"
+    "  v_fog = u_fog[int(u_pa[8].x)];\n"
+    "}\n";
+
 /* tilemap chunks: static geometry, animated in the vertex shader */
 static const char *TILE_VS =
     "layout(location=0) in vec2 a_pos;\n"
@@ -219,6 +271,7 @@ bool r2d_programs_init(void) {
             build(&R.tile, "tilemap", "", TILE_VS, TILE_FS) &&
             build(&R.tile_lit, "tilemap (lit)", "#define LIT 1\n", TILE_VS, TILE_FS) &&
             build(&R.sprite_mask, "sprite (occluder mask)", "#define MASK 1\n", SPRITE_VS, SPRITE_FS) &&
+            build(&R.part, "particles", "", PART_VS, SPRITE_FS) && build(&R.part_lit, "particles (lit)", "#define LIT 1\n", PART_VS, SPRITE_FS) &&
             build(&R.tile_mask, "tilemap (occluder mask)", "#define MASK 1\n", TILE_VS, TILE_FS) &&
             build(&R.blit, "blit", "", QUAD_VS, BLIT_FS);
   if (!ok) return false;
@@ -233,5 +286,7 @@ bool r2d_programs_init(void) {
     tiles[i]->u[U_TINT] = glGetUniformLocation(p, "u_tint");
   }
   R.blit.u[U_PAGE] = glGetUniformLocation(R.blit.prog, "u_page");
+  R.part.u[0] = glGetUniformLocation(R.part.prog, "u_pa");
+  R.part_lit.u[0] = glGetUniformLocation(R.part_lit.prog, "u_pa");
   return true;
 }

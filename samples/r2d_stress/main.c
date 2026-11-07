@@ -32,7 +32,7 @@
 #define WARM 4
 #define MAXN 200000
 
-typedef enum { K_SPRITES, K_LIT, K_TILES, K_PARTICLES, K_TEXT, K_ROCKS } kind_t;
+typedef enum { K_SPRITES, K_LIT, K_TILES, K_PARTICLES, K_TEXT, K_ROCKS, K_GPUPART } kind_t;
 typedef struct stress_case {
   const char *name;
   kind_t kind;
@@ -73,6 +73,9 @@ static const stress_case CASES[] = {
   { "postnobloom", K_SPRITES, 10000, 0, false, true, 0, 0, true },
   /* global illumination over the lit case with 16 soft-shadowed lights */
   { "gi16", K_LIT, 20000, 16, true, false, 0.5f, 0, false, true },
+  /* GPU particles (cw_r2d_particles): 100k and a million, additive, no CPU per particle */
+  { "gpupart100k", K_GPUPART, 100000, 0, false },
+  { "gpupart1m", K_GPUPART, 1000000, 0, false },
 };
 #define NCASES ((int)CW_ARRAY_LEN(CASES))
 #define NOCC 120
@@ -241,6 +244,14 @@ static void draw_case(app_t *a) {
   case K_ROCKS:
     cw_r2d_rect((cw_rect){ 0, 0, W, H }, cw_hex(0x8a8070ff));
     cw_r2d_sprites(a->spr, c->n);
+    break;
+  case K_GPUPART:
+    cw_r2d_set_blend(CW_BLEND_ADD);
+    cw_r2d_particles(&(cw_r2d_particles_desc){ .count = c->n, .seed = 7, .time = t, .pos = { W * 0.5f, H * 0.95f }, .extent = { W * 0.3f, 4 },
+                                               .angle = -1.5708f, .spread = 0.5f, .speed_min = H * 0.4f, .speed_max = H * 0.9f,
+                                               .gravity = { 0, H * 0.5f }, .drag = 0.3f, .life_min = 1.5f, .life_max = 3,
+                                               .size_start = 4, .size_end = 1, .color_start = cw_rgba(1, 0.6f, 0.2f, 0.5f), .turbulence = 20 });
+    cw_r2d_set_blend(CW_BLEND_ALPHA);
     break;
   case K_TILES: {
     cw_vec2 o = { -fmodf(t * 37, 512), -fmodf(t * 21, 256) };

@@ -110,7 +110,7 @@ void cw_r2d_shutdown(void) {
   r2d_textures_shutdown();
   if (r2d_wg()) r2d_wg_shutdown();
   else {
-    r2d_program *ps[] = { &R.sprite_mask, &R.tile_mask, &R.sprite_distort, &R.sprite, &R.sprite_lit, &R.tile, &R.tile_lit, &R.light, &R.shadow, &R.composite, &R.blit };
+    r2d_program *ps[] = { &R.part, &R.part_lit, &R.sprite_mask, &R.tile_mask, &R.sprite_distort, &R.sprite, &R.sprite_lit, &R.tile, &R.tile_lit, &R.light, &R.shadow, &R.composite, &R.blit };
   for (size_t i = 0; i < CW_ARRAY_LEN(ps); i++)
     if (ps[i]->prog) glDeleteProgram(ps[i]->prog);
   r2d_yuv_gl_shutdown();
@@ -125,6 +125,7 @@ void cw_r2d_shutdown(void) {
   cw_array_free(&R.idx);
   cw_array_free(&R.cmds);
   cw_array_free(&R.tdraws);
+  cw_array_free(&R.pdraws);
   cw_array_free(&R.lights);
   cw_array_free(&R.occluders);
   cw_array_free(&R.occ_pts);
@@ -155,7 +156,7 @@ void cw_r2d_debug_register(const char *prefix) {
 #define F(n) { #n, offsetof(cw_r2d_stats, n) }
     F(passes), F(draw_calls), F(batches), F(vertices), F(indices), F(commands), F(sorted), F(tile_chunks),
     F(chunk_rebuilds), F(lights), F(atlas_pages), F(texture_uploads), F(shaped_runs), F(glyphs_missing),
-    F(shape_cache_hits), F(gpu_calls), F(gi_cascades),
+    F(shape_cache_hits), F(gpu_calls), F(gi_cascades), F(particles),
 #undef F
   };
   for (size_t i = 0; i < CW_ARRAY_LEN(f); i++)
@@ -359,6 +360,66 @@ r2d_vertex *r2d_alloc(int nv, int ni, uint32_t **idx_out, uint32_t *base_out, ui
   return R.verts.data + v0;
 }
 
+/* ── GPU particles ───────────────────────────────────────────────────── */
+
+void cw_r2d_particles(const cw_r2d_particles_desc *d) {
+  CW_ASSERT(R.in_pass, "submit particles between cw_r2d_begin and cw_r2d_end");
+  if (!d || d->count <= 0) return;
+  const r2d_tex *t = CW_HANDLE_IS_NULL(d->texture) ? NULL : r2d_tex_get(d->texture);
+  float u0 = 0, v0 = 0, u1 = 0, v1 = 0;
+  uint8_t mode = r2d_mode(t == NULL);
+  if (t) {
+    cw_rect src = d->src.w > 0 ? d->src : (cw_rect){ 0, 0, (float)t->w, (float)t->h };
+    r2d_tex_uv(t, src, &u0, &v0, &u1, &v1);
+  }
+  cw_vec2 pos = R.has_xform ? cw_xform2d_apply(&R.xform, d->pos) : d->pos;
+  cw_color c0 = r2d_default_white(d->color_start);
+  cw_color c1 = (d->color_end.r == 0 && d->color_end.g == 0 && d->color_end.b == 0 && d->color_end.a == 0)
+                    ? (cw_color){ c0.r, c0.g, c0.b, 0 } : d->color_end;
+  float lmin = d->life_min > 0 ? d->life_min : 1, lmax = d->life_max > 0 ? d->life_max : lmin;
+  r2d_part_draw p = { .count = d->count, .array = t ? t->array : R2D_NO_ARRAY };
+  float v[9][4] = { { pos.x, pos.y, d->extent.x, d->extent.y },
+                    { d->angle, d->spread, d->speed_min, d->speed_max > 0 ? d->speed_max : d->speed_min },
+                    { d->gravity.x, d->gravity.y, d->drag, d->time != 0 ? d->time : R.pass.time },
+                    { lmin, CW_MAX(lmin, lmax), d->size_start > 0 ? d->size_start : 8, d->size_end },
+                    { c0.r, c0.g, c0.b, c0.a },
+                    { c1.r, c1.g, c1.b, c1.a },
+                    { u0, v0, u1, v1 },
+                    { t ? (float)t->page : 0, d->spin, d->turbulence, (float)(d->seed & 0xffffffu) },
+                    { (float)R.cur_layer, (float)mode, 1.0f + (float)R.intensity_b * 15.0f / 255.0f, (float)R.emissive_b / 255.0f } };
+  memcpy(p.u, v, sizeof v);
+  r2d_note_tex(t);
+  if (R.emissive_b && R.layers[R.cur_layer].lit) R.normals_used = R.material_used = true;
+  cw_array_push(&R.pdraws, p);
+  cw_blend b = R.blend == CW_BLEND_ADD ? CW_BLEND_ALPHA : R.blend;
+  cw_array_push(&R.cmds, ((r2d_cmd){ r2d_make_key(0, pos.y), R2D_STATE(p.array, b, current_clip(), R2D_KIND_PARTICLES),
+                                     (uint32_t)R.idx.count, 0, (uint32_t)(R.pdraws.count - 1) }));
+  R.stats.commands++;
+  R.stats.particles += (uint32_t)d->count;
+}
+
+void r2d_particles_gl(const r2d_part_draw *d, bool lit) {
+  const r2d_program *p = lit ? &R.part_lit : &R.part;
+  glUseProgram(p->prog);
+  r2d_upload_layer_uniforms(p);
+  glUniform4fv(p->u[0], 9, &d->u[0][0]);
+  uint32_t arr = d->array;
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D_ARRAY, arr == R2D_NO_ARRAY ? R.dummy_normal : R.arrays.data[arr].tex);
+  if (lit) {
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, arr == R2D_NO_ARRAY ? R.dummy_normal : r2d_array_normal_tex((int)arr));
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, arr == R2D_NO_ARRAY ? R.dummy_material : r2d_array_material_tex((int)arr));
+    glActiveTexture(GL_TEXTURE0);
+  }
+  if (!R.empty_vao) glGenVertexArrays(1, &R.empty_vao);
+  glBindVertexArray(R.empty_vao);
+  glDrawArraysInstanced(GL_TRIANGLES, 0, 6, d->count);
+  glBindVertexArray(0);
+  R.stats.draw_calls++;
+}
+
 void r2d_push_special(uint32_t array, float sort_y, uint32_t payload) {
   CW_ASSERT(R.in_pass, "submit between cw_r2d_begin and cw_r2d_end");
   cw_blend b = R.blend == CW_BLEND_ADD ? CW_BLEND_ALPHA : R.blend;
@@ -497,6 +558,7 @@ void cw_r2d_begin(const cw_r2d_pass_desc *desc) {
   cw_array_clear(&R.idx);
   cw_array_clear(&R.cmds);
   cw_array_clear(&R.tdraws);
+  cw_array_clear(&R.pdraws);
   cw_array_clear(&R.lights);
   cw_array_clear(&R.occluders);
   cw_array_clear(&R.occ_pts);
@@ -905,7 +967,7 @@ void cw_r2d_end(void) {
     }
     if (!in_dist && in_hdr && R.layers[b->layer].distortion > 0) continue; /* no float targets: nothing bends */
     if (in_dist) {
-      if (R2D_ST_KIND(b->state) == R2D_KIND_TILEMAP) continue;
+      if (R2D_ST_KIND(b->state) != R2D_KIND_STREAM) continue;
       uint32_t clip = R2D_ST_CLIP(b->state);
       if (clip != cur_clip) apply_clip(cur_clip = clip, R.canvas_h);
       if (prog != &R.sprite_distort) {
@@ -948,6 +1010,12 @@ void cw_r2d_end(void) {
     if (clip != cur_clip) apply_clip(cur_clip = clip, R.canvas_h);
     if (R2D_ST_KIND(b->state) == R2D_KIND_TILEMAP) {
       r2d_tilemap_render(&R.tdraws.data[b->payload], in_lit && R.normals_used, R.canvas_h);
+      prog = NULL;
+      cur_array = 0xffffffffu;
+      continue;
+    }
+    if (R2D_ST_KIND(b->state) == R2D_KIND_PARTICLES) {
+      r2d_particles_gl(&R.pdraws.data[b->payload], in_lit && R.normals_used);
       prog = NULL;
       cur_array = 0xffffffffu;
       continue;

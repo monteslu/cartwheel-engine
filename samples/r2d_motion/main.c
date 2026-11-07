@@ -6,13 +6,16 @@
  *   trails    comets on looping paths drawn with cw_r2d_trail: tapering,
  *             fading ribbons, additive and at intensity 3 under the post
  *             chain so their heads bloom; a textured trail with uv_repeat
+ *   particles embers rising from the meadow and a fountain of sparks:
+ *             cw_r2d_particles, 60k particles in two instanced draws, no CPU
+ *             work per particle, additive and blooming
  *   scaling   one fine-detailed image drawn at 1/2, 1/4, 1/6 and 1/8 size,
  *             once from a mipmapped atlas page (cw_texture_desc.mipmaps) and
  *             once without: the mipmapped row stays smooth where the other
  *             shimmers
  *
  * CW_R2D_MOTION picks a variant for the tests' controls (native only):
- * "nowind", "notrail", "nomips". A pure function of the tick. */
+ * "nowind", "notrail", "nomips", "noparticles". A pure function of the tick. */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -140,6 +143,23 @@ static void render(void *user, double alpha) {
     cw_r2d_trail(&(cw_r2d_trail_desc){ .points = wave, .count = 40, .head_width = 12 * k, .tail_width = 12 * k,
                                        .head_color = cw_hex(0x80ffd0ff), .tail_color = cw_hex(0x80ffd040), .texture = a->streak,
                                        .uv_repeat = 64 * k });
+    cw_r2d_set_blend(CW_BLEND_ALPHA);
+  }
+
+  /* GPU particles: embers drifting up off the meadow, a fountain of sparks */
+  if (!mode("noparticles")) {
+    cw_r2d_use_layer(L_WORLD);
+    cw_r2d_set_blend(CW_BLEND_ADD);
+    cw_r2d_set_intensity(2.5f);
+    cw_r2d_particles(&(cw_r2d_particles_desc){ .count = 20000, .seed = 11, .pos = { W * 0.5f, H * 0.7f }, .extent = { W * 0.5f, 10 * k },
+                                               .angle = -1.5708f, .spread = 0.3f, .speed_min = 20 * k, .speed_max = 70 * k,
+                                               .drag = 0.2f, .life_min = 3, .life_max = 6, .size_start = 3 * k, .size_end = 1 * k,
+                                               .color_start = cw_rgba(1, 0.55f, 0.15f, 0.9f), .turbulence = 30 * k });
+    cw_r2d_particles(&(cw_r2d_particles_desc){ .count = 40000, .seed = 23, .pos = { W * 0.82f, H * 0.66f }, .extent = { 4 * k, 2 * k },
+                                               .angle = -1.5708f, .spread = 0.35f, .speed_min = 220 * k, .speed_max = 380 * k,
+                                               .gravity = { 0, 420 * k }, .drag = 0.4f, .life_min = 1.2f, .life_max = 2.0f,
+                                               .size_start = 2.5f * k, .size_end = 1 * k, .color_start = cw_rgba(0.5f, 0.85f, 1, 0.6f) });
+    cw_r2d_set_intensity(1);
     cw_r2d_set_blend(CW_BLEND_ALPHA);
   }
 

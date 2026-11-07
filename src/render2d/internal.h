@@ -80,7 +80,9 @@ typedef struct r2d_cmd {
   uint32_t src;     /* sorted copies: ifirst in the submission index stream */
 } r2d_cmd;
 
-enum { R2D_KIND_STREAM = 0, R2D_KIND_TILEMAP = 1 };
+enum { R2D_KIND_STREAM = 0, R2D_KIND_TILEMAP = 1, R2D_KIND_PARTICLES = 2 };
+/* a particle emitter of the pass: its uniform block (shaders: u_pa / pa) and count */
+typedef struct r2d_part_draw { float u[9][4]; int count; uint32_t array; } r2d_part_draw;
 #define R2D_STATE(array, blend, clip, kind) \
   ((uint32_t)(array) | ((uint32_t)(blend) << 12) | ((uint32_t)(clip) << 14) | ((uint32_t)(kind) << 22))
 #define R2D_ST_ARRAY(s) ((s) & 0xfffu)
@@ -135,6 +137,9 @@ typedef struct r2d_state {
   GLuint blit_read_fbo, blit_draw_fbo;
   /* programs */
   r2d_program sprite_distort;  /* distortion layers: offsets into the distortion buffer */
+  r2d_program part, part_lit;   /* GPU particles (u[0] = u_pa) */
+  GLuint empty_vao;
+  CW_ARRAY(r2d_part_draw) pdraws; /* this pass's particle emitters */
   r2d_program sprite_mask, tile_mask; /* occluders from art: alpha over half into the occluder mask */
   bool occluder_on;            /* cw_r2d_set_occluder */
   bool mask_mode;              /* tilemap.c draws with the mask program (inside build_mask) */
@@ -250,6 +255,8 @@ void r2d_tex_uv_point(const r2d_tex *t, float sx, float sy, float *u, float *v);
 void r2d_fog_uniform(float out[CW_R2D_MAX_LAYERS * 4]); /* batch.c: the layers' fog */
 void r2d_wind_uniform(float out[4]); /* batch.c: the pass's wind for the sprite vertex stage */
 void r2d_note_tex(const r2d_tex *t);
+void r2d_particles_gl(const r2d_part_draw *d, bool lit); /* batch.c: one emitter, instanced */
+void r2d_wg_particles(const r2d_part_draw *d, bool lit); /* wgpu.c */
 void r2d_wg_mask_batches(void *mask, const r2d_batch *b, int n); /* wgpu.c: occluder batches into the mask */
 /* timers.c: GPU time of each part of cw_r2d_end (native GL, CW_R2D_TIMERS=1; no-ops otherwise) */
 enum { R2D_T_DRAW, R2D_T_FIELD, R2D_T_LIGHTS, R2D_T_GI, R2D_T_COMPOSITE, R2D_T_POST, R2D_T_COUNT };

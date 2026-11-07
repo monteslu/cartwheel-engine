@@ -58,6 +58,7 @@ void *r2d_wg_buffer(void *old, const void *data, size_t bytes, bool index) { (vo
 void r2d_wg_buffer_release(void *buf) { (void)buf; }
 void r2d_wg_tilemap_begin(const float u[24], int array, bool lit) { (void)u, (void)array, (void)lit; }
 void r2d_wg_tilemap_chunk(void *vbuf, int quads) { (void)vbuf, (void)quads; }
+void r2d_wg_particles(const r2d_part_draw *d, bool lit) { (void)d, (void)lit; }
 void *r2d_wg_yuv_new(const int pw[3], const int ph[3]) { (void)pw, (void)ph; return NULL; }
 void r2d_wg_yuv_convert(void *y, const uint8_t *const planes[3], void *target_tex, int w, int h) {
   (void)y, (void)planes, (void)target_tex, (void)w, (void)h;
@@ -140,6 +141,45 @@ static const char *WGSL_SPRITE =
     "  o.emis = a_sdf.z;\n"
     "  o.dist = r1.w;\n"
     "  o.fog = u.fog[a_info.z];\n"
+    "  return o;\n"
+    "}\n"
+    /* GPU particles (GL: gl.c PART_VS): pa as u_pa there */
+    "struct PA { a: array<vec4f, 9> };\n"
+    "@group(2) @binding(0) var<uniform> pa: PA;\n"
+    "fn hsh(x0: u32) -> u32 { var x = x0; x ^= x >> 16u; x *= 0x7feb352du; x ^= x >> 15u; x *= 0x846ca68bu; x ^= x >> 16u; return x; }\n"
+    "fn rnd(s: ptr<function, u32>) -> f32 { *s = hsh(*s); return f32(*s >> 8u) / 16777216.0; }\n"
+    "@vertex fn vs_particles(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VO {\n"
+    "  let q = vec2f(select(0.0, 1.0, k == 1u || k == 2u || k == 4u), select(0.0, 1.0, k == 2u || k == 4u || k == 5u));\n"
+    "  var s = hsh(inst * 0x9E3779B9u ^ u32(pa.a[7].w));\n"
+    "  let ph = rnd(&s); let life = max(mix(pa.a[3].x, pa.a[3].y, rnd(&s)), 1e-3);\n"
+    "  let tt = pa.a[2].w + ph * life; let cyc = floor(tt / life); let age = tt - cyc * life; let f = age / life;\n"
+    "  var r = hsh(s ^ (u32(cyc) * 0x85ebca6bu));\n"
+    "  let ra = rnd(&r); let rb = rnd(&r);\n"
+    "  var p = pa.a[0].xy + (vec2f(ra, rb) * 2.0 - 1.0) * pa.a[0].zw;\n"
+    "  let ang = pa.a[1].x + (rnd(&r) * 2.0 - 1.0) * pa.a[1].y;\n"
+    "  let v = vec2f(cos(ang), sin(ang)) * mix(pa.a[1].z, pa.a[1].w, rnd(&r));\n"
+    "  let dr = pa.a[2].z;\n"
+    "  if (dr > 1e-4) { let e = (1.0 - exp(-dr * age)) / dr; p += v * e + pa.a[2].xy * (age - e) / dr; }\n"
+    "  else { p += v * age + 0.5 * pa.a[2].xy * age * age; }\n"
+    "  let wob = rnd(&r) * 6.2831853;\n"
+    "  p += vec2f(sin(age * 2.7 + wob), cos(age * 2.1 + wob * 1.3)) * pa.a[7].z * f;\n"
+    "  let sz = mix(pa.a[3].z, pa.a[3].w, f); let rot = pa.a[7].y * (rnd(&r) * 2.0 - 1.0) * age;\n"
+    "  let l = (q - 0.5) * sz;\n"
+    "  let cs = cos(rot); let sn = sin(rot);\n"
+    "  let w = p + vec2f(cs * l.x - sn * l.y, sn * l.x + cs * l.y);\n"
+    "  let L = u32(pa.a[8].x) * 2u;\n"
+    "  let r0 = u.layers[L]; let r1 = u.layers[L + 1u];\n"
+    "  let c = vec2f(r0.x * w.x + r0.y * w.y + r0.z, r1.x * w.x + r1.y * w.y + r1.z);\n"
+    "  var o: VO;\n"
+    "  o.pos = ndc(c, u.target_size, u.flip);\n"
+    "  o.uv = mix(pa.a[6].xy, pa.a[6].zw, q);\n"
+    "  let col = mix(pa.a[4], pa.a[5], f);\n"
+    "  o.color = vec4f(col.rgb * col.a * pa.a[8].z, col.a);\n"
+    "  o.page = u32(pa.a[7].x);\n"
+    "  o.mode = u32(pa.a[8].y);\n"
+    "  o.sdfw = 0.0; o.sdf = vec2f(0.0);\n"
+    "  o.emis = pa.a[8].w; o.dist = 0.0;\n"
+    "  o.fog = u.fog[u32(pa.a[8].x)];\n"
     "  return o;\n"
     "}\n"
     "fn shade(i: VO, t: vec4f) -> vec4f {\n"
@@ -293,7 +333,7 @@ static const char *WGSL_QUAD =
 /* ── state ─────────────────────────────────────────────────────────────── */
 
 enum { P_SPRITE, P_SPRITE_LIT, P_TILE, P_TILE_LIT, P_LIGHT, P_LIGHT_ST, P_SHADOW, P_COMPOSITE, P_BLIT, P_SPRITE_DISTORT,
-       P_SPRITE_LIT_N, P_TILE_LIT_N, P_SPRITE_MASK, P_TILE_MASK, P_COUNT }; /* _N: lit with normals, no material buffer */
+       P_SPRITE_LIT_N, P_TILE_LIT_N, P_SPRITE_MASK, P_TILE_MASK, P_PART, P_PART_LIT, P_PART_LIT_N, P_COUNT }; /* _N: lit with normals, no material buffer */
 enum { B_OPAQUE, B_ALPHA, B_MULTIPLY, B_ADD };
 #define U_STREAM_SIZE 1568u
 #define U_SMALL_SIZE 112u
@@ -308,8 +348,9 @@ static struct {
   WGPUDevice dev;
   WGPUQueue q;
   WGPUShaderModule sm_sprite, sm_tile, sm_quad;
-  WGPUBindGroupLayout bgl_stream, bgl_small, bgl_tex;
-  WGPUPipelineLayout pl_stream, pl_small, pl_shadow;
+  WGPUBindGroupLayout bgl_stream, bgl_small, bgl_tex, bgl_part;
+  WGPUPipelineLayout pl_stream, pl_small, pl_shadow, pl_part;
+  WGPUBindGroup bg_part; /* over ubuf, the particle block (group 2) */
   WGPUSampler samplers[8]; /* nearest | repeat << 1 | mipmapped << 2 */
   WGPUTexture dummy;       /* 1x1x1 "no normal" array (also the solid draws' colour texture) */
   WGPUTextureView dummy_view;
@@ -557,12 +598,14 @@ static WGPURenderPipeline pipeline(int prog, int blend, WGPUTextureFormat fmt) {
   WGPUShaderModule sm;
   WGPUPipelineLayout pl;
   const char *fs = "fs";
-  bool lit = prog == P_SPRITE_LIT || prog == P_TILE_LIT || prog == P_SPRITE_LIT_N || prog == P_TILE_LIT_N;
-  bool lit_n = prog == P_SPRITE_LIT_N || prog == P_TILE_LIT_N;
-  if (prog == P_SPRITE || prog == P_SPRITE_LIT || prog == P_SPRITE_LIT_N || prog == P_SPRITE_DISTORT || prog == P_SPRITE_MASK) {
+  bool lit = prog == P_SPRITE_LIT || prog == P_TILE_LIT || prog == P_SPRITE_LIT_N || prog == P_TILE_LIT_N || prog == P_PART_LIT ||
+             prog == P_PART_LIT_N;
+  bool lit_n = prog == P_SPRITE_LIT_N || prog == P_TILE_LIT_N || prog == P_PART_LIT_N;
+  bool part = prog == P_PART || prog == P_PART_LIT || prog == P_PART_LIT_N;
+  if (prog == P_SPRITE || prog == P_SPRITE_LIT || prog == P_SPRITE_LIT_N || prog == P_SPRITE_DISTORT || prog == P_SPRITE_MASK || part) {
     vbl = (WGPUVertexBufferLayout){ .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = sizeof(r2d_vertex), .attributeCount = 5, .attributes = stream_attrs };
     sm = W.sm_sprite;
-    pl = W.pl_stream;
+    pl = part ? W.pl_part : W.pl_stream;
   } else if (prog == P_TILE || prog == P_TILE_LIT || prog == P_TILE_LIT_N || prog == P_TILE_MASK) {
     vbl = (WGPUVertexBufferLayout){ .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 16, .attributeCount = 2, .attributes = tile_attrs };
     sm = W.sm_tile;
@@ -594,7 +637,7 @@ static WGPURenderPipeline pipeline(int prog, int blend, WGPUTextureFormat fmt) {
   WGPURenderPipelineDescriptor d = {
     .label = SV("r2d"),
     .layout = pl,
-    .vertex = { .module = sm, .entryPoint = SV("vs"), .bufferCount = 1, .buffers = &vbl },
+    .vertex = { .module = sm, .entryPoint = SV(part ? "vs_particles" : "vs"), .bufferCount = part ? 0 : 1, .buffers = &vbl },
     .primitive = { .topology = WGPUPrimitiveTopology_TriangleList, .cullMode = WGPUCullMode_None },
     .depthStencil = ds ? &dss : NULL,
     .multisample = { .count = 1, .mask = 0xffffffffu },
@@ -648,6 +691,9 @@ bool r2d_wg_init(void) {
   W.bgl_tex = wgpuDeviceCreateBindGroupLayout(W.dev, &(WGPUBindGroupLayoutDescriptor){ .entryCount = 4, .entries = te });
   WGPUBindGroupLayout s2[2] = { W.bgl_stream, W.bgl_tex }, q2[2] = { W.bgl_small, W.bgl_tex };
   W.pl_stream = wgpuDeviceCreatePipelineLayout(W.dev, &(WGPUPipelineLayoutDescriptor){ .bindGroupLayoutCount = 2, .bindGroupLayouts = s2 });
+  W.bgl_part = uniform_layout(144);
+  WGPUBindGroupLayout s3[3] = { W.bgl_stream, W.bgl_tex, W.bgl_part };
+  W.pl_part = wgpuDeviceCreatePipelineLayout(W.dev, &(WGPUPipelineLayoutDescriptor){ .bindGroupLayoutCount = 3, .bindGroupLayouts = s3 });
   W.pl_small = wgpuDeviceCreatePipelineLayout(W.dev, &(WGPUPipelineLayoutDescriptor){ .bindGroupLayoutCount = 2, .bindGroupLayouts = q2 });
   W.pl_shadow = wgpuDeviceCreatePipelineLayout(W.dev, &(WGPUPipelineLayoutDescriptor){ .bindGroupLayoutCount = 1, .bindGroupLayouts = q2 });
   for (int i = 0; i < 8; i++) {
@@ -703,6 +749,9 @@ void r2d_wg_shutdown(void) {
   wgpuTextureRelease(W.dummy_mat);
   for (int i = 0; i < 8; i++) wgpuSamplerRelease(W.samplers[i]);
   wgpuPipelineLayoutRelease(W.pl_stream);
+  wgpuPipelineLayoutRelease(W.pl_part);
+  wgpuBindGroupLayoutRelease(W.bgl_part);
+  if (W.bg_part) wgpuBindGroupRelease(W.bg_part);
   wgpuPipelineLayoutRelease(W.pl_small);
   wgpuPipelineLayoutRelease(W.pl_shadow);
   wgpuBindGroupLayoutRelease(W.bgl_stream);
@@ -884,6 +933,17 @@ void r2d_wg_tilemap_begin(const float u[24], int array, bool lit) {
   wgpuRenderPassEncoderSetBindGroup(W.pass, 0, W.bg_small, 1, &off);
   wgpuRenderPassEncoderSetBindGroup(W.pass, 1, array_group(array), 0, NULL);
   wgpuRenderPassEncoderSetIndexBuffer(W.pass, W.tile_ibuf, WGPUIndexFormat_Uint16, 0, WGPU_WHOLE_SIZE);
+}
+void r2d_wg_particles(const r2d_part_draw *d, bool lit) {
+  int prog = lit ? (R.material_used ? P_PART_LIT : P_PART_LIT_N) : P_PART;
+  wgpuRenderPassEncoderSetPipeline(W.pass, pipeline(prog, cur_blend_wg, W.pass_fmt));
+  uint32_t off = W.stream_off[W.pass_flip < 0 ? 0 : 1];
+  wgpuRenderPassEncoderSetBindGroup(W.pass, 0, W.bg_stream, 1, &off);
+  wgpuRenderPassEncoderSetBindGroup(W.pass, 1, d->array == R2D_NO_ARRAY ? dummy_group : array_group((int)d->array), 0, NULL);
+  uint32_t po = ualloc(d->u, sizeof d->u);
+  wgpuRenderPassEncoderSetBindGroup(W.pass, 2, W.bg_part, 1, &po);
+  wgpuRenderPassEncoderDraw(W.pass, 6, (uint32_t)d->count, 0, 0);
+  R.stats.draw_calls++;
 }
 void r2d_wg_tilemap_chunk(void *vbuf, int quads) {
   wgpuRenderPassEncoderSetVertexBuffer(W.pass, 0, (WGPUBuffer)vbuf, 0, WGPU_WHOLE_SIZE);
@@ -1473,7 +1533,7 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
   for (int i = 0; i < nb; i++)
     if (batches[i].lit && (i == 0 || !batches[i - 1].lit)) lit_runs++;
   for (int i = 0; i < R.occluders.count; i++) edges += R.occluders.data[i].count;
-  size_t ublocks = 8 + R2D_FX_BLOCKS + (size_t)R.tdraws.count + (size_t)lit_runs * (2 + 2 * (size_t)R.lights.count);
+  size_t ublocks = 8 + R2D_FX_BLOCKS + (size_t)R.tdraws.count + (size_t)R.pdraws.count + (size_t)lit_runs * (2 + 2 * (size_t)R.lights.count);
   size_t uneed = 2 * 1280 + ublocks * UALIGN;
   size_t sneed = 4096 + ((size_t)lit_runs * ((size_t)R.lights.count * 16 + (size_t)edges * 18 + 64)) * 4;
   bool regroup = !W.ubuf || W.ucap < uneed;
@@ -1487,6 +1547,9 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
     W.bg_stream = wgpuDeviceCreateBindGroup(W.dev, &(WGPUBindGroupDescriptor){ .layout = W.bgl_stream, .entryCount = 1, .entries = &e });
     e.size = U_SMALL_SIZE;
     W.bg_small = wgpuDeviceCreateBindGroup(W.dev, &(WGPUBindGroupDescriptor){ .layout = W.bgl_small, .entryCount = 1, .entries = &e });
+    if (W.bg_part) wgpuBindGroupRelease(W.bg_part);
+    e.size = 144;
+    W.bg_part = wgpuDeviceCreateBindGroup(W.dev, &(WGPUBindGroupDescriptor){ .layout = W.bgl_part, .entryCount = 1, .entries = &e });
   }
   if (R.verts.count) {
     size_t vb = sizeof(r2d_vertex) * (size_t)R.verts.count, ib = sizeof(uint32_t) * (size_t)R.idx.count;
@@ -1589,7 +1652,7 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
     }
     if (!in_dist && in_hdr && R.layers[b->layer].distortion > 0) continue; /* no float targets: nothing bends */
     if (in_dist) {
-      if (R2D_ST_KIND(b->state) == R2D_KIND_TILEMAP) continue;
+      if (R2D_ST_KIND(b->state) != R2D_KIND_STREAM) continue;
       uint32_t clip = R2D_ST_CLIP(b->state);
       if (clip != cur_clip) set_clip(cur_clip = clip);
       if (cur_prog != P_SPRITE_DISTORT) {
@@ -1640,6 +1703,12 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
     cur_blend_wg = bl;
     if (R2D_ST_KIND(b->state) == R2D_KIND_TILEMAP) {
       r2d_tilemap_render(&R.tdraws.data[b->payload], in_lit && R.normals_used, R.canvas_h);
+      cur_prog = -1;
+      cur_array = 0xffffffffu;
+      continue;
+    }
+    if (R2D_ST_KIND(b->state) == R2D_KIND_PARTICLES) {
+      r2d_wg_particles(&R.pdraws.data[b->payload], in_lit && R.normals_used);
       cur_prog = -1;
       cur_array = 0xffffffffu;
       continue;

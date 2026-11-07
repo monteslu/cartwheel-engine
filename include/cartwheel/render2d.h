@@ -415,6 +415,41 @@ cw_texture cw_r2d_noise_texture(void);
  * by `strength` (0..1 of the layer's distortion). One submission. */
 void cw_r2d_shockwave(cw_vec2 center, float radius, float width, float strength);
 
+/* ── GPU particles ──────────────────────────────────────────────────────
+ * An emitter of count particles that the GPU draws in one instanced draw
+ * with no state anywhere: particle i is a pure function of the time (its own
+ * phase and life; each life a fresh spawn point in the extent, direction
+ * within spread of angle, speed, spin, from a hash of i, the seed and the
+ * life's number), moving in closed form under gravity and linear drag, with
+ * an optional wobble. No CPU work per particle, nothing to upload: a million
+ * sparks cost their pixels. They sort, blend (CW_BLEND_ADD for fire and
+ * sparks), take intensity and emission, and are lit in lit layers like
+ * sprites. Deterministic for a given time (pass a tick-derived one).
+ * Positions are layer space; the current transform moves the emitter (not
+ * the direction). Use the scene's GPUParticles2D (CPU, collisions, sub
+ * emitters) for gameplay particles; these are for the volume of a scene's
+ * ambience: embers, rain, snow, dust motes, fireflies, fountains. */
+typedef struct cw_r2d_particles_desc {
+  int count;                  /* particles alive at once */
+  uint32_t seed;              /* 24 bits: different seeds, different particles */
+  float time;                 /* seconds; 0 = the pass's time */
+  cw_vec2 pos;                /* the emitter, layer space */
+  cw_vec2 extent;             /* half size of the spawn box */
+  float angle, spread;        /* launch direction (radians clockwise from +x) and half-angle */
+  float speed_min, speed_max; /* layer units a second (max 0 = min) */
+  cw_vec2 gravity;            /* layer units a second squared (+y down) */
+  float drag;                 /* 1 / s: speed lost (0 = none) */
+  float life_min, life_max;   /* seconds (0 = 1; max 0 = min) */
+  float size_start, size_end; /* layer units (start 0 = 8) */
+  cw_color color_start;       /* zero = white */
+  cw_color color_end;         /* zero = the start colour fading out */
+  float spin;                 /* each particle turns at up to this, radians a second, either way */
+  float turbulence;           /* layer units of wobble, growing with age */
+  cw_texture texture;         /* null = solid squares */
+  cw_rect src;                /* texture pixels; w 0 = the whole texture */
+} cw_r2d_particles_desc;
+void cw_r2d_particles(const cw_r2d_particles_desc *d); /* one emitter into the current layer and z */
+
 /* ── 2D water ────────────────────────────────────────────────────────────
  * A surface that ripples where things splash in it (cw_water2d: springs per
  * column, stepped on the CPU in fixed_update, deterministic), and a body
@@ -938,6 +973,7 @@ typedef struct cw_r2d_stats {
    * under about 8000 a frame for the whole game, so this is the 2D share of that */
   uint32_t gpu_calls;
   uint32_t gi_cascades;    /* radiance cascades the last lit run with .gi drew (0: none) */
+  uint32_t particles;      /* GPU particles drawn (cw_r2d_particles) */
 } cw_r2d_stats;
 const cw_r2d_stats *cw_r2d_get_stats(void); /* renderer-owned, updated as passes run; never NULL */
 /* Register every stats field as a debug field "<prefix>.<name>" (u32). */
