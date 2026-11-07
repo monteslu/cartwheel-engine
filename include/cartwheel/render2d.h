@@ -102,6 +102,13 @@ typedef struct cw_texture_desc {
   bool standalone;    /* own array instead of an atlas page */
   bool repeat;        /* GL_REPEAT wrap (implies standalone): UVs past 1 tile */
   bool premultiplied; /* pixels are already premultiplied: skip conversion */
+  /* LINEAR textures drawn smaller than their pixels (HD art on a 720p screen,
+   * a zoomed-out camera, a far parallax layer): 3 smaller copies (half,
+   * quarter, eighth size, made on the CPU at load with a box filter) let the
+   * GPU blend the nearest two, so the art stays smooth instead of shimmering.
+   * These textures pack into atlas pages of their own with 8-pixel gutters;
+   * a third more memory. Ignored for NEAREST (pixel art keeps its pixels). */
+  bool mipmaps;
 } cw_texture_desc;
 
 /* PNG / JPEG from the asset bundle (cw_asset_load), decoded by stb_image to
@@ -122,6 +129,17 @@ void cw_texture_update(cw_texture t, const uint8_t *rgba);
 bool cw_texture_set_normal_map(cw_texture t, const uint8_t *rgba);
 /* as cw_texture_set_normal_map from a PNG asset; must decode to the texture's size */
 bool cw_texture_load_normal_map(cw_texture t, const char *asset_path);
+/* Attach a material map (w*h RGBA8 matching the texture's size): per texel
+ *   R  emission: the share of the colour that ignores the 2D lights (a lit
+ *      window, a glowing rune; as cw_r2d_set_emissive, per texel)
+ *   G  specular: how strongly the lights glint off it (0 = matte, as cloth
+ *      and stone are; 1 = wet rock, metal, glass)
+ *   B  gloss: how tight the glint is (0 = broad sheen, 1 = a sharp spot)
+ * (A is unused.) Lit layers shade sprites and tiles of this texture with it.
+ * Atlas textures only. Returns false (logged) on a size mismatch. */
+bool cw_texture_set_material_map(cw_texture t, const uint8_t *rgba);
+/* as cw_texture_set_material_map from a PNG asset; must decode to the texture's size */
+bool cw_texture_load_material_map(cw_texture t, const char *asset_path);
 /* pixels; 0 x 0 for a null or destroyed handle; w or h may be NULL */
 void cw_texture_size(cw_texture t, int *w, int *h);
 bool cw_texture_valid(cw_texture t); /* false for a null or destroyed handle */
@@ -197,6 +215,99 @@ typedef enum {
                      * cw_r2d_canvas_size says); Camera2D limits still hold */
 } cw_scale_mode;
 
+/* ── HDR and the post chain ─────────────────────────────────────────────
+ * A pass with .post draws its canvas layers below post->hud_layer into a
+ * high dynamic range canvas (RGBA16F where the host renders it; RGBA8 on a
+ * GL host without float targets, where nothing passes 1), so colour can go
+ * past 1: cw_r2d_set_intensity, lights brighter than 2x, additive glows.
+ * Then the chain turns that canvas into the pass's output:
+ *
+ *   exposure  x exposure
+ *   bloom     what is brighter than bloom_threshold (with a soft knee) is
+ *             blurred over bloom_levels halvings (a 13-tap filtered
+ *             downsample, a tent upsample) and added back x bloom_intensity
+ *   tone      SOFT (default): values up to tone_knee stay exactly as drawn
+ *             (art at 0..1 is untouched), above it they roll off smoothly
+ *             toward 1, each channel on its own, so hot colours go to white;
+ *             ACES (a filmic fit), REINHARD, CLAMP
+ *   grade     contrast and saturation around mid grey, lift (raises the
+ *             darks), gain (scales), gamma, tint (multiplies)
+ *   vignette  darkens the corners by vignette (0..1)
+ *   dither    the display value gets less than a level of noise, so smooth
+ *             HDR gradients do not band in 8 bits
+ *
+ * Layers from hud_layer up draw after the chain, straight into the output:
+ * a HUD over a glowing world. Each pass has its own chain, so two regions
+ * (an underwater view and a sky) can be graded differently. Zero fields
+ * take the defaults in the comments; a NULL post draws as before, exactly.
+ *
+ * Quality (cartwheel/quality.h effects detail): Very Low draws no bloom,
+ * Low at most 3 levels, Medium at most 5, High and Ultra as asked. The
+ * grade and the tone curve hold on every preset.
+ *
+ * Cost (890M, 1080p): about 0.3 ms with 6 bloom levels; 14 full-screen
+ * passes, about 100 WebGPU calls. */
+typedef enum { CW_R2D_TONE_SOFT, CW_R2D_TONE_ACES, CW_R2D_TONE_REINHARD, CW_R2D_TONE_CLAMP } cw_r2d_tone;
+typedef struct cw_r2d_post {
+  int hud_layer;          /* canvas layers >= this draw after the chain (0 = every layer goes through it) */
+  float exposure;         /* 0 = 1 */
+  bool bloom;
+  float bloom_threshold;  /* 0 = 1: what passes it blooms */
+  float bloom_knee;       /* 0 = 0.5: soft transition, a share of the threshold */
+  float bloom_intensity;  /* 0 = 0.6 */
+  float bloom_radius;     /* 0 = 1: the upsample tent's spread, in texels of each level */
+  int bloom_levels;       /* 0 = 6 (1..8) */
+  cw_r2d_tone tone;
+  float tone_knee;        /* SOFT: 0 = 0.75; values under it are unchanged */
+  float contrast;         /* 0 = 1 */
+  float saturation;       /* 0 = 1 (negative: none at all) */
+  float gamma;            /* 0 = 1 */
+  cw_color lift;          /* rgb added to the darks (fades out toward white); zero = none */
+  cw_color gain;          /* rgb multiplier; zero = white */
+  cw_color tint;          /* rgb multiplier after the grade; zero = white */
+  float vignette;         /* 0..1 darkening at the corners; 0 = none */
+  float vignette_softness;/* 0 = 0.5 */
+  bool no_dither;         /* leave out the dither (a test comparing exact values) */
+} cw_r2d_post;
+
+/* ── global illumination ────────────────────────────────────────────────
+ * A pass with .gi lights its lit layers with the light that bounces round
+ * the scene, not only the lights': what glows (cw_r2d_set_emissive, material
+ * maps' emission) lights what is near it in its own colour, light that falls
+ * on an occluder bounces off it in the occluder's colour, and occluders cast
+ * soft shadows from all of it. No light needs to be placed for any of it.
+ *
+ * How: radiance cascades (Sannikov, 2023) over a distance field of the
+ * occluders and the glowing pixels, at a share of the canvas size. Cascade N
+ * keeps a probe every 2^(N+1) field pixels with 4^(N+1) directions, each
+ * marching an interval four times longer than the one below; merged from the
+ * top down they give every pixel the light arriving from all round, with
+ * about 5 cascades at 1080p. Each frame's result feeds the next frame's
+ * bounce, so light keeps bouncing as long as the scene stands, fading by
+ * `bounce` each time.
+ *
+ * Quality (effects detail): off on Very Low, the field at 1/8 of the canvas
+ * on Low, 1/4 on Medium and High (or `resolution`), 1/2 on Ultra.
+ * Cost (890M, 1080p, High): about 0.6 ms, 25 full-screen passes. */
+typedef struct cw_r2d_gi {
+  float intensity;      /* 0 = 1: multiplies the bounced light */
+  float bounce;         /* the share of the light on an occluder that it gives back: 0 = 0.5, negative = none */
+  float resolution;     /* High and Ultra: the field's share of the canvas (0 = the preset's); smaller is cheaper and softer */
+} cw_r2d_gi;
+
+/* Wind: sprites submitted after cw_r2d_set_sway(share) bend their top edge
+ * sideways in the vertex stage (grass, reeds, banners, hanging vines,
+ * treetops): up to strength x share canvas pixels, in waves `wavelength`
+ * layer units long rolling by at `speed` per second, roughened by `gusts`.
+ * Driven by the pass's time, so pass a tick-derived time for replays. Costs
+ * nothing on the CPU and nothing for sprites that do not sway. */
+typedef struct cw_r2d_wind {
+  float strength;   /* canvas pixels at share 1; 0 = no wind */
+  float speed;      /* waves per second: 0 = 1.5 */
+  float wavelength; /* layer units between wave crests: 0 = 300 */
+  float gusts;      /* 0..1: a second, faster wave on top */
+} cw_r2d_wind;
+
 typedef struct cw_r2d_pass_desc {
   cw_texture target;    /* null = the window (framebuffer 0) */
   bool clear;
@@ -208,6 +319,9 @@ typedef struct cw_r2d_pass_desc {
   cw_color letterbox;   /* bars around a scaled canvas (alpha forced to 1) */
   float time;           /* seconds: animated tiles (pass a tick-derived time for replays) */
   cw_color ambient;     /* lit layers: light where no light reaches; all 0 = black */
+  const cw_r2d_post *post; /* HDR canvas and post chain (above); NULL = none. Copied at cw_r2d_begin */
+  const cw_r2d_gi *gi;     /* global illumination of the lit layers (above); NULL = none. Copied */
+  cw_r2d_wind wind;        /* what sways sprites submitted with cw_r2d_set_sway; zero = still air */
 } cw_r2d_pass_desc;
 
 /* Start a pass (desc NULL = window, no clear). Resets layer, z, blend, transform and clips; layer descs persist
@@ -248,7 +362,45 @@ typedef struct cw_r2d_layer_desc {
   bool y_sort;          /* within equal z: sort by y (sprite pivot / shape anchor), lower first */
   bool pixel_snap;      /* round transformed vertices to whole canvas pixels */
   bool lit;             /* drawn through the 2D light pass (see lights) */
+  /* lit layers: how deep light reaches into occluders (layer units), so solid
+   * ground and walls glow at the edge a light falls on and stay dark inside.
+   * 0 = all the way: an occluder is lit across its whole face. The run of
+   * lit layers takes its first layer's value */
+  float occluder_depth;
+  /* the canvas as drawn before this layer (the layers under it, lit runs
+   * composited) is copied first, for its draws to sample through
+   * cw_r2d_screen_texture(): water, glass, frost, a mirror. A pass with such
+   * a layer draws offscreen (the HDR canvas with .post, else an 8-bit one)
+   * and is copied to its target at the end; layers from post->hud_layer up
+   * read nothing. A lit layer here splits the run of lit layers it is in. */
+  bool screen_read;
+  /* > 0: a distortion layer. Its draws bend the picture instead of drawing
+   * colour: each pixel's red pushes the canvas right (0.5 = none, 1 = the
+   * full `distortion` canvas pixels, 0 = as far left), green pushes it down,
+   * both times its alpha; overlapping draws add up. Heat haze (scroll
+   * cw_r2d_noise_texture()), shockwaves (cw_r2d_shockwave), refraction under
+   * water. Applied once, to the whole offscreen canvas, at the end of the
+   * layers the chain covers (so draw these just under the HUD); lit and
+   * tilemaps are ignored here. Needs float targets (WebGPU, and GL hosts
+   * with float render targets: cw_pipeline_caps); elsewhere nothing is bent. */
+  float distortion;
 } cw_r2d_layer_desc;
+
+/* The canvas as it stood before the latest screen_read layer, as a texture
+ * of the canvas size (draw it with UVs 0..1 over the canvas, top-left
+ * first, as any texture: cw_r2d_quad, cw_r2d_triangles, a sprite). The handle
+ * is the same from pass to pass while the canvas size holds; call it any time
+ * during submission. Its content is the CURRENT pass's once that layer's
+ * draws run. */
+cw_texture cw_r2d_screen_texture(void);
+/* A 256x256 tileable texture of smooth noise in red and green (0.5 = no
+ * push), repeat-wrapped: scroll its UVs in a distortion layer for heat haze or
+ * a wobble under water. */
+cw_texture cw_r2d_noise_texture(void);
+/* A shockwave ring for a distortion layer: pushes the canvas outward across
+ * a ring `width` wide centred on `radius` (layer space), strongest mid-ring,
+ * by `strength` (0..1 of the layer's distortion). One submission. */
+void cw_r2d_shockwave(cw_vec2 center, float radius, float width, float strength);
 
 /* layer 0..CW_R2D_MAX_LAYERS-1 (asserts); NULL resets it; persists until changed */
 void cw_r2d_layer_set(int layer, const cw_r2d_layer_desc *desc);
@@ -274,6 +426,18 @@ void cw_r2d_set_z(int z);
 /* Local transform applied before the layer camera to everything submitted
  * (sprites, shapes, text): what the node layer pushes. NULL = identity. */
 void cw_r2d_set_transform(const cw_xform2d *m);
+/* HDR intensity of later submissions (sprites, shapes, text, geometry):
+ * their colour is multiplied by k (1..16) before blending, so in a pass
+ * with .post a glowing thing goes past 1 and blooms. Without .post the
+ * result clamps at 1. Reset to 1 by cw_r2d_begin. */
+void cw_r2d_set_intensity(float k);
+/* Emission of later submissions in lit layers: the share (0..1) of their
+ * colour that ignores the 2D lights and ambient (1 = drawn as if fully lit:
+ * a lamp, a screen, lava). 0 by default; reset by cw_r2d_begin. */
+void cw_r2d_set_emissive(float share);
+/* How much later sprites' top edges sway in the pass's wind (0..1, see
+ * cw_r2d_wind); 0 by default, reset by cw_r2d_begin. Sprites only. */
+void cw_r2d_set_sway(float share);
 /* Clip to a canvas-pixel rect (intersected with the enclosing clip). Max
  * depth 32; up to 254 distinct clips per pass. */
 void cw_r2d_push_clip(cw_rect canvas_rect);
@@ -354,6 +518,25 @@ typedef struct cw_vertex2d { cw_vec2 pos, uv; cw_color color; } cw_vertex2d;
 void cw_r2d_triangles(cw_texture tex, const cw_vertex2d *v, int nv, const uint32_t *idx, int ni);
 /* One quad: corners in order (any shape), with their UVs. */
 void cw_r2d_quad(cw_texture tex, const cw_vec2 pos[4], const cw_vec2 uv[4], cw_color c);
+
+/* A trail: a ribbon along points[0] (the head) .. points[count-1] (the
+ * tail), its width and colour going from the head's to the tail's (a fading
+ * comet, a sword swipe, a motion smear behind a dash, tyre marks). The
+ * texture's u runs along it (0 at the head, 1 at the tail; or one repeat
+ * every uv_repeat layer units on a repeat texture), v across it. Mitre-free:
+ * each point's edge is square to its neighbours' chord, so keep the points
+ * a few pixels apart. One submission, batched like sprites; additive blend
+ * (cw_r2d_set_blend) for glowing trails, cw_r2d_set_intensity to bloom. */
+typedef struct cw_r2d_trail_desc {
+  const cw_vec2 *points;    /* layer space, head first */
+  int count;                /* 2 or more */
+  float head_width, tail_width;
+  cw_color head_color;      /* {0,0,0,0} = white */
+  cw_color tail_color;      /* zero = transparent black: the usual fade */
+  cw_texture texture;       /* null = the colours alone */
+  float uv_repeat;          /* layer units per texture repeat; 0 = u 0..1 over the whole length */
+} cw_r2d_trail_desc;
+void cw_r2d_trail(const cw_r2d_trail_desc *d);
 
 /* ── text ────────────────────────────────────────────────────────────────
  * Fonts come from TTF/OTF via stb_truetype. Two modes:
@@ -614,11 +797,25 @@ void cw_tilemap_world_to_cell(cw_tilemap m, cw_vec2 origin, cw_vec2 world, int *
  * Layers marked lit are drawn into an offscreen colour buffer (and, when a
  * texture with a normal map was drawn, a normal buffer), then composited as
  * colour * light. The light buffer starts at the pass's ambient colour and
- * each light adds itself (additive, radial falloff, one quad). Shadows are
- * analytic: each occluder edge facing away from the light is extruded away
- * from it into the stencil buffer, and the light is masked by it (hard
- * shadows, exact at any resolution; 2 draws per shadowed light). The light
- * buffer is RGBA8 storing light/2, so lights can overbright up to 2x.
+ * every light of the run adds itself in ONE instanced draw (radial falloff,
+ * an optional spot cone, normal maps), however many lights there are.
+ *
+ * Shadows come from a distance field of the occluders: the occluder
+ * outlines are filled into a mask and a jump flood turns the mask into the
+ * distance to the nearest occluder at every pixel (about 12 full-screen
+ * passes at the field's size, made once per lit run whatever the light
+ * count). Each lit pixel then marches toward its light through the field
+ * (sphere tracing: big steps in open space), which gives hard or soft
+ * shadows (cw_light2d.softness) at a cost that does not grow with the
+ * number of occluder edges. An occluder's own pixels stay lit (its face),
+ * as before. Field size and march steps follow the effects detail
+ * (cartwheel/quality.h): Ultra the canvas size and 48 steps, High and
+ * Medium half the canvas and 32 / 24 steps, Low and Very Low a quarter and
+ * 16 / 12 steps (never under 320 pixels across).
+ *
+ * The light buffer is RGBA8 storing light/2 (lights overbright up to 2x);
+ * in a pass with .post it is RGBA16F holding the light itself, so lights
+ * go as bright as asked and bloom.
  *
  * Lights and occluders are submitted into the current layer (its camera
  * places them) and affect the run of consecutive lit layers they are in. */
@@ -628,8 +825,22 @@ typedef struct cw_light2d {
   cw_color color;       /* {0,0,0,0} = white */
   float energy;         /* 0 = 1 */
   float falloff;        /* exponent of (1 - d/radius); 0 = 2 */
-  float height;         /* above the plane, layer units, for normal maps; 0 = radius/4 */
+  float height;         /* above the plane, layer units, for normal maps; 0 = radius/4 (directional: the
+                         * sun's elevation 0..1 above the plane, 0 = 0.5) */
   bool shadows;         /* cast shadows from occluders */
+  /* shadow penumbra: 0 = hard edges, 1 = very soft. The penumbra widens with
+   * the distance from the occluder, as a light of some size makes it */
+  float softness;
+  float angle;          /* spot and directional lights: where the light points, radians clockwise from +x */
+  float cone;           /* spot: half-angle of the beam, radians (0 = all round) */
+  float cone_soft;      /* spot: share of the cone's edge that fades (0 = 0.2) */
+  /* a sun or moon: parallel light from `angle` over the whole layer (pos,
+   * radius and falloff unused; shadows reach across the canvas) */
+  bool directional;
+  /* light the air scatters toward the eye (0 = none): shafts where the
+   * light passes between occluders, a glow round the lamp; added on top
+   * of the lit layers, also over empty background */
+  float volumetric;
 } cw_light2d;
 /* current layer must be lit (else warned and ignored); asserts outside a pass; uses the current transform */
 void cw_r2d_light(const cw_light2d *l);
@@ -657,6 +868,11 @@ typedef struct cw_r2d_stats {
   uint32_t shaped_runs;
   uint32_t glyphs_missing; /* distinct codepoints no font in the chain had (all time) */
   uint32_t shape_cache_hits; /* complex layouts this frame served by the shape cache (no shaping) */
+  /* WebGPU calls the renderer made this frame (0 on GL): passes, pipelines, bind groups,
+   * draws, buffer writes. In a cart each is an import call: a weak host holds 60 fps
+   * under about 8000 a frame for the whole game, so this is the 2D share of that */
+  uint32_t gpu_calls;
+  uint32_t gi_cascades;    /* radiance cascades the last lit run with .gi drew (0: none) */
 } cw_r2d_stats;
 const cw_r2d_stats *cw_r2d_get_stats(void); /* renderer-owned, updated as passes run; never NULL */
 /* Register every stats field as a debug field "<prefix>.<name>" (u32). */

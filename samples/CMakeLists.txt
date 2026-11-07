@@ -145,6 +145,12 @@ cw_add_app(r2d_camera SOURCES r2d_camera/main.c ASSETS ${R2D_ASSETS})
 cw_add_app(r2d_lights SOURCES r2d_lights/main.c ASSETS ${R2D_ASSETS})
 cw_add_app(r2d_interop SOURCES r2d_interop/main.c ASSETS ${R2D_ASSETS})
 cw_add_app(r2d_bench SOURCES r2d_bench/main.c ASSETS ${R2D_ASSETS})
+# the 2D renderer under load, one case at a time (tools/r2d-perf.mjs)
+cw_add_app(r2d_stress SOURCES r2d_stress/main.c ASSETS ${R2D_ASSETS})
+# HDR 2D: the post chain, emission, material maps, soft shadows, spot, directional and volumetric lights
+cw_add_app(r2d_hdr SOURCES r2d_hdr/main.c ASSETS ${R2D_ASSETS})
+# wind sway, trails, mipmapped atlas pages
+cw_add_app(r2d_motion SOURCES r2d_motion/main.c ASSETS ${R2D_ASSETS})
 # the retained UI system (cartwheel/ui.h). Shared scenes, themes and art in ui_assets.
 set(UI_ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/ui_assets)
 cw_add_app(ui_gallery SOURCES ui_gallery/main.c ASSETS ${UI_ASSETS})

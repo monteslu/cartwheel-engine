@@ -3,12 +3,13 @@
 #include <string.h>
 
 #include "internal.h"
+#include "fx.h"
 #include "cartwheel/debug.h"
 #include "cartwheel/jobs.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/profile.h"
 
-r2d_state R = { .atlas_array = { -1, -1 } };
+r2d_state R = { .atlas_array = { -1, -1 }, .atlas_mip = -1 };
 
 /* ── init / shutdown ───────────────────────────────────────────────────── */
 
@@ -39,6 +40,7 @@ bool r2d_lazy_init(void) {
     }
     cw_pool_init(&R.textures, sizeof(r2d_tex), CW_MEM_RENDER2D);
     R.atlas_array[0] = R.atlas_array[1] = -1;
+  R.atlas_mip = -1;
     R.max_layers = CW_CLAMP(r2d_wg_max_layers(), 1, 256);
     r2d_fonts_init();
     r2d_tilemaps_init();
@@ -52,6 +54,7 @@ bool r2d_lazy_init(void) {
   }
   cw_pool_init(&R.textures, sizeof(r2d_tex), CW_MEM_RENDER2D);
   R.atlas_array[0] = R.atlas_array[1] = -1;
+  R.atlas_mip = -1;
   GLint ml = 256;
   glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &ml);
   R.max_layers = CW_CLAMP(ml, 1, 256);
@@ -79,6 +82,14 @@ bool r2d_lazy_init(void) {
   glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
   glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  /* the "no material" array: no emission, no specular */
+  glGenTextures(1, &R.dummy_material);
+  glBindTexture(GL_TEXTURE_2D_ARRAY, R.dummy_material);
+  static const uint8_t nomat[4] = { 0, 0, 0, 0 };
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, 1, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, nomat);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+  glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   r2d_fonts_init();
   r2d_tilemaps_init();
   cw_array_push(&R.clips, ((cw_rect){ 0, 0, 0, 0 })); /* clip 0 = none */
@@ -92,10 +103,14 @@ void cw_r2d_shutdown(void) {
   if (!R.inited) return;
   r2d_fonts_shutdown();
   r2d_tilemaps_shutdown();
+  r2d_lights_shutdown();
+  r2d_gi_shutdown();
+  r2d_post_shutdown();
+  fx_shutdown();
   r2d_textures_shutdown();
   if (r2d_wg()) r2d_wg_shutdown();
   else {
-    r2d_program *ps[] = { &R.sprite, &R.sprite_lit, &R.tile, &R.tile_lit, &R.light, &R.shadow, &R.composite, &R.blit };
+    r2d_program *ps[] = { &R.sprite_distort, &R.sprite, &R.sprite_lit, &R.tile, &R.tile_lit, &R.light, &R.shadow, &R.composite, &R.blit };
   for (size_t i = 0; i < CW_ARRAY_LEN(ps); i++)
     if (ps[i]->prog) glDeleteProgram(ps[i]->prog);
   r2d_yuv_gl_shutdown();
@@ -122,6 +137,7 @@ void cw_r2d_shutdown(void) {
   cw_array_free(&R.clips);
   memset(&R, 0, sizeof R);
   R.atlas_array[0] = R.atlas_array[1] = -1;
+  R.atlas_mip = -1;
 }
 
 /* ── stats ─────────────────────────────────────────────────────────────── */
@@ -138,7 +154,7 @@ void cw_r2d_debug_register(const char *prefix) {
 #define F(n) { #n, offsetof(cw_r2d_stats, n) }
     F(passes), F(draw_calls), F(batches), F(vertices), F(indices), F(commands), F(sorted), F(tile_chunks),
     F(chunk_rebuilds), F(lights), F(atlas_pages), F(texture_uploads), F(shaped_runs), F(glyphs_missing),
-    F(shape_cache_hits),
+    F(shape_cache_hits), F(gpu_calls), F(gi_cascades),
 #undef F
   };
   for (size_t i = 0; i < CW_ARRAY_LEN(f); i++)
@@ -224,6 +240,11 @@ cw_vec2 cw_r2d_layer_world_to_screen(int layer, cw_vec2 w) {
 /* ── draw state ────────────────────────────────────────────────────────── */
 
 void cw_r2d_set_blend(cw_blend b) { R.blend = b; }
+void cw_r2d_set_intensity(float k) {
+  float x = (CW_CLAMP(k, 1.0f, 16.0f) - 1.0f) / 15.0f * 255.0f;
+  R.intensity_b = (uint8_t)(x + 0.5f);
+}
+void cw_r2d_set_emissive(float e) { R.emissive_b = (uint8_t)(CW_CLAMP(e, 0.0f, 1.0f) * 255.0f + 0.5f); }
 void cw_r2d_set_z(int z) { R.cur_z = CW_CLAMP(z, -32768, 32767); }
 void cw_r2d_set_transform(const cw_xform2d *m) {
   R.has_xform = m != NULL;
@@ -313,10 +334,17 @@ void r2d_push_cmd(uint64_t key, uint32_t state, uint32_t ifirst, uint32_t icount
   R.stats.commands++;
 }
 
+void r2d_note_tex(const r2d_tex *t) {
+  if (!t || !R.layers[R.cur_layer].lit) return;
+  if (t->has_normal || t->has_material) R.normals_used = true;
+  if (t->has_material) R.material_used = true;
+}
+
 r2d_vertex *r2d_alloc(int nv, int ni, uint32_t **idx_out, uint32_t *base_out, uint32_t array, float sort_y,
                       int extra_z) {
   CW_ASSERT(R.in_pass, "submit between cw_r2d_begin and cw_r2d_end");
   int v0 = R.verts.count, i0 = R.idx.count;
+  if (R.emissive_b && R.layers[R.cur_layer].lit) R.normals_used = R.material_used = true;
   cw_array_reserve(&R.verts, v0 + nv);
   cw_array_reserve(&R.idx, i0 + ni);
   R.verts.count += nv;
@@ -446,6 +474,11 @@ void cw_r2d_begin(const cw_r2d_pass_desc *desc) {
   /* draw state */
   R.cur_layer = 0;
   R.cur_z = 0;
+  R.has_post = desc && desc->post;
+  if (R.has_post) R.post = *desc->post;
+  R.has_gi = desc && desc->gi;
+  if (R.has_gi) R.gi = *desc->gi;
+  R.intensity_b = R.emissive_b = R.sway_b = 0;
   R.blend = CW_BLEND_ALPHA;
   R.has_xform = false;
   R.xform = cw_xform2d_identity();
@@ -453,6 +486,7 @@ void cw_r2d_begin(const cw_r2d_pass_desc *desc) {
   R.cur_clip = -1;
   R.clips.count = 1;
   R.normals_used = false;
+  R.material_used = false;
   cw_array_clear(&R.verts);
   cw_array_clear(&R.idx);
   cw_array_clear(&R.cmds);
@@ -561,11 +595,28 @@ void r2d_upload_layer_uniforms(const r2d_program *p) {
     const cw_xform2d *m = &R.layer_view[l];
     float *r = u + l * 8;
     r[0] = m->a, r[1] = m->c, r[2] = m->tx, r[3] = R.layers[l].pixel_snap ? 1.0f : 0.0f;
-    r[4] = m->b, r[5] = m->d, r[6] = m->ty, r[7] = 0;
+    r[4] = m->b, r[5] = m->d, r[6] = m->ty, r[7] = R.layers[l].distortion * r2d_px();
   }
   glUniform4fv(p->u_layers, CW_R2D_MAX_LAYERS * 2, u);
   glUniform2f(p->u_target, (float)R.canvas_w, (float)R.canvas_h);
+  GLint uw = glGetUniformLocation(p->prog, "u_wind");
+  if (uw >= 0) {
+    float w[4];
+    r2d_wind_uniform(w);
+    glUniform4fv(uw, 1, w);
+  }
 }
+
+/* the pass's wind for the sprite vertex stage: sway px, phase, spatial frequency, gustiness */
+void r2d_wind_uniform(float out[4]) {
+  const cw_r2d_wind *w = &R.pass.wind;
+  float speed = w->speed > 0 ? w->speed : 1.5f, wl = w->wavelength > 0 ? w->wavelength : 300.0f;
+  out[0] = w->strength * r2d_px();
+  out[1] = R.pass.time * speed * 6.2831853f;
+  out[2] = 6.2831853f / wl;
+  out[3] = w->gusts > 0 ? w->gusts : 0.0f;
+}
+void cw_r2d_set_sway(float share) { R.sway_b = (uint8_t)(CW_CLAMP(share, 0.0f, 1.0f) * 255.0f + 0.5f); }
 
 static void apply_blend(uint32_t b) {
   switch (b) {
@@ -616,50 +667,14 @@ static GLuint canvas_fbo(void) {
   return R.target_fbo;
 }
 
-static void begin_lit_run(void) {
-  /* make (or resize) the targets BEFORE binding: creating one binds
-   * framebuffer 0 when done, and attachments / draw buffers set after that
-   * would land on the window's framebuffer */
-  ensure_rt(&R.scene_rt, R.canvas_w, R.canvas_h, CW_FILTER_NEAREST, false);
-  if (R.normals_used) ensure_rt(&R.normal_rt, R.canvas_w, R.canvas_h, CW_FILTER_NEAREST, false);
-  r2d_tex *s = r2d_tex_get(R.scene_rt);
-  glBindFramebuffer(GL_FRAMEBUFFER, s->fbo);
-  if (R.normals_used) {
-    GLuint ntex = R.arrays.data[r2d_tex_get(R.normal_rt)->array].tex;
-    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, ntex, 0, 0);
-    GLenum bufs[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
-    glDrawBuffers(2, bufs);
-  } else {
-    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, 0, 0, 0);
-    GLenum bufs[1] = { GL_COLOR_ATTACHMENT0 };
-    glDrawBuffers(1, bufs);
-  }
-  glViewport(0, 0, R.canvas_w, R.canvas_h);
-  glDisable(GL_SCISSOR_TEST);
-  glClearColor(0, 0, 0, 0);
-  glClear(GL_COLOR_BUFFER_BIT);
-}
+static void begin_lit_run(void) { r2d_lit_begin_gl(); }
 
-static void end_lit_run(int lo, int hi, GLuint canvas) {
-  /* back to one draw buffer on the scene framebuffer */
-  r2d_tex *s = r2d_tex_get(R.scene_rt);
-  glBindFramebuffer(GL_FRAMEBUFFER, s->fbo);
-  GLenum one[1] = { GL_COLOR_ATTACHMENT0 };
-  glDrawBuffers(1, one);
-  glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, 0, 0, 0);
-  r2d_lights_render(lo, hi);
-  /* composite colour * light over the canvas */
-  r2d_set_target_fbo(canvas, R.canvas_w, R.canvas_h);
+/* the run's lights and composite onto the framebuffer `dst` (the canvas or the HDR canvas) */
+static void end_lit_run(int lo, int hi, GLuint dst) {
+  fx_dst d = { .w = R.canvas_w, .h = R.canvas_h, .fbo = dst, .offscreen = dst != 0 };
+  r2d_lit_end(lo, hi, &d);
+  r2d_set_target_fbo(dst, R.canvas_w, R.canvas_h);
   base_state();
-  apply_blend(CW_BLEND_ALPHA);
-  glUseProgram(R.composite.prog);
-  glUniform2f(R.composite.u_target, (float)R.canvas_w, (float)R.canvas_h);
-  glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D_ARRAY, R.arrays.data[s->array].tex);
-  glActiveTexture(GL_TEXTURE2);
-  glBindTexture(GL_TEXTURE_2D_ARRAY, R.arrays.data[r2d_tex_get(R.light_rt)->array].tex);
-  glActiveTexture(GL_TEXTURE0);
-  r2d_draw_quad(0, 0, (float)R.canvas_w, (float)R.canvas_h, 0, 0, 1, 1);
 }
 
 static void bind_stream_program(bool lit, const r2d_program **cur) {
@@ -682,6 +697,24 @@ static void gather_range(int begin, int end, int worker, void *ctx) {
     if (c->icount == 6) for (int k = 0; k < 6; k++) d[k] = s[k];
     else memcpy(d, s, sizeof(uint32_t) * c->icount);
   }
+}
+
+/* two layers whose draws can share a batch: the same target (not across a
+ * distortion or screen-reading layer, nor across the post chain's hud layer) */
+static bool same_target(int a, int b) {
+  if (a == b) return true;
+  const cw_r2d_layer_desc *la = &R.layers[a], *lb = &R.layers[b];
+  if (la->distortion > 0 || lb->distortion > 0 || la->screen_read || lb->screen_read) return false;
+  int hud = R.has_post && R.post.hud_layer > 0 ? R.post.hud_layer : CW_R2D_MAX_LAYERS;
+  return (a < hud) == (b < hud);
+}
+
+/* the post chain from the HDR canvas onto the canvas, then back to drawing there */
+static void post_to(GLuint canvas) {
+  fx_dst d = { .w = R.canvas_w, .h = R.canvas_h, .fbo = canvas, .offscreen = canvas != 0 };
+  r2d_post_run(&d);
+  r2d_set_target_fbo(canvas, R.canvas_w, R.canvas_h);
+  base_state();
 }
 
 void cw_r2d_end(void) {
@@ -723,23 +756,33 @@ void cw_r2d_end(void) {
   for (int i = 0; i < R.cmds.count; i++) {
     const r2d_cmd *c = &cmds[i];
     int layer = (int)(c->key >> 56);
-    bool lit = R.layers[layer].lit;
+    bool lit = R.layers[layer].lit && !(R.layers[layer].distortion > 0);
     uint32_t st = c->state;
     if (R2D_ST_KIND(st) == R2D_KIND_STREAM && batches.count) {
       r2d_batch *b = &batches.data[batches.count - 1];
       uint32_t ba = R2D_ST_ARRAY(b->state), ca = R2D_ST_ARRAY(st);
-      if (R2D_ST_KIND(b->state) == R2D_KIND_STREAM && b->lit == lit && (b->state & ~0xfffu) == (st & ~0xfffu) &&
+      if (R2D_ST_KIND(b->state) == R2D_KIND_STREAM && b->lit == lit && same_target(b->layer, layer) && (b->state & ~0xfffu) == (st & ~0xfffu) &&
           (ba == ca || ba == R2D_NO_ARRAY || ca == R2D_NO_ARRAY) && b->first + b->count == c->ifirst) {
         b->count += c->icount;
+        b->layer_last = layer;
         if (ba == R2D_NO_ARRAY) b->state = (b->state & ~0xfffu) | ca;
         continue;
       }
     }
     if (R2D_ST_KIND(st) == R2D_KIND_STREAM && c->icount == 0) continue;
-    cw_array_push(&batches, ((r2d_batch){ st, c->ifirst, c->icount, c->payload, layer, lit }));
+    cw_array_push(&batches, ((r2d_batch){ st, c->ifirst, c->icount, c->payload, layer, layer, lit }));
   }
 
   CW_PROFILE_END();
+  /* a layer that reads or bends the screen makes the pass draw offscreen */
+  R.offscreen = false;
+  {
+    int hud = R.has_post && R.post.hud_layer > 0 ? R.post.hud_layer : CW_R2D_MAX_LAYERS;
+    for (int i = 0; i < batches.count && !R.offscreen; i++) {
+      const cw_r2d_layer_desc *ld = &R.layers[batches.data[i].layer];
+      if (batches.data[i].layer < hud && (ld->screen_read || ld->distortion > 0)) R.offscreen = true;
+    }
+  }
   if (r2d_wg()) { /* WebGPU: same batches, its own submission */
     r2d_wg_end(batches.data, batches.count, out);
     return;
@@ -774,8 +817,86 @@ void cw_r2d_end(void) {
   bool in_lit = false;
   int lit_lo = 0, lit_hi = 0;
   uint32_t cur_array = 0xffffffffu, cur_blend = 0xffffffffu, cur_clip = 0xffffffffu;
+  /* HDR: layers under the chain's hud layer draw into the HDR canvas, which
+   * the chain then puts on the canvas (fx.h, post.c) */
+  bool in_hdr = r2d_post_active();
+  int hud = in_hdr ? r2d_post_hud_layer() : CW_R2D_MAX_LAYERS;
+  GLuint cur = canvas;
+  if (in_hdr) {
+    r2d_post_begin_gl();
+    cur = r2d_post_fbo();
+    base_state();
+  }
+  int prev_layer = -1;
+  bool in_dist = false;
   for (int i = 0; i < batches.count; i++) {
     const r2d_batch *b = &batches.data[i];
+    if (in_hdr && b->layer >= hud) {
+      if (in_lit) end_lit_run(lit_lo, lit_hi, cur);
+      in_lit = false;
+      if (in_dist) r2d_set_target_fbo(cur, R.canvas_w, R.canvas_h);
+      in_dist = false;
+      post_to(canvas);
+      in_hdr = false;
+      cur = canvas;
+      prog = NULL;
+      cur_array = cur_blend = cur_clip = 0xffffffffu;
+    }
+    if (b->layer != prev_layer) { /* a new layer: leave a distortion layer, read the screen, enter one */
+      const cw_r2d_layer_desc *ld = &R.layers[b->layer];
+      bool dist = in_hdr && ld->distortion > 0 && r2d_dist_ok();
+      if (in_dist && !dist) {
+        r2d_set_target_fbo(cur, R.canvas_w, R.canvas_h);
+        base_state();
+        in_dist = false;
+        prog = NULL;
+        cur_array = cur_blend = cur_clip = 0xffffffffu;
+      }
+      if (in_hdr && ld->screen_read) {
+        if (in_lit) end_lit_run(lit_lo, lit_hi, cur);
+        in_lit = false;
+        r2d_screen_copy_gl(cur);
+        base_state();
+        prog = NULL;
+        cur_array = cur_blend = cur_clip = 0xffffffffu;
+      }
+      if (dist && !in_dist) {
+        if (in_lit) end_lit_run(lit_lo, lit_hi, cur);
+        in_lit = false;
+        r2d_post_dist_begin_gl();
+        base_state();
+        in_dist = true;
+        prog = NULL;
+        cur_array = cur_blend = cur_clip = 0xffffffffu;
+      }
+      prev_layer = b->layer;
+    }
+    if (!in_dist && in_hdr && R.layers[b->layer].distortion > 0) continue; /* no float targets: nothing bends */
+    if (in_dist) {
+      if (R2D_ST_KIND(b->state) == R2D_KIND_TILEMAP) continue;
+      uint32_t clip = R2D_ST_CLIP(b->state);
+      if (clip != cur_clip) apply_clip(cur_clip = clip, R.canvas_h);
+      if (prog != &R.sprite_distort) {
+        glUseProgram(R.sprite_distort.prog);
+        r2d_upload_layer_uniforms(&R.sprite_distort);
+        glBindVertexArray(R.vao[R.ring]);
+        glEnable(GL_BLEND);
+        glBlendEquation(GL_FUNC_ADD);
+        glBlendFunc(GL_ONE, GL_ONE);
+        prog = &R.sprite_distort;
+        cur_blend = 0xfffffffeu;
+      }
+      uint32_t arr = R2D_ST_ARRAY(b->state);
+      if (arr != cur_array) {
+        cur_array = arr;
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, arr == R2D_NO_ARRAY ? R.dummy_normal : R.arrays.data[arr].tex);
+      }
+      glDrawElements(GL_TRIANGLES, (GLsizei)b->count, GL_UNSIGNED_INT, (void *)((size_t)b->first * 4));
+      R.stats.draw_calls++;
+      R.stats.batches++;
+      continue;
+    }
     if (b->lit && !in_lit) {
       begin_lit_run();
       in_lit = true;
@@ -783,12 +904,12 @@ void cw_r2d_end(void) {
       prog = NULL;
       cur_array = cur_blend = cur_clip = 0xffffffffu;
     } else if (!b->lit && in_lit) {
-      end_lit_run(lit_lo, lit_hi, canvas);
+      end_lit_run(lit_lo, lit_hi, cur);
       in_lit = false;
       prog = NULL;
       cur_array = cur_blend = cur_clip = 0xffffffffu;
     }
-    if (in_lit) lit_hi = b->layer;
+    if (in_lit) lit_hi = b->layer_last;
     uint32_t blend = R2D_ST_BLEND(b->state), clip = R2D_ST_CLIP(b->state);
     if (blend != cur_blend) apply_blend(cur_blend = blend);
     if (clip != cur_clip) apply_clip(cur_clip = clip, R.canvas_h);
@@ -808,6 +929,8 @@ void cw_r2d_end(void) {
       if (prog == &R.sprite_lit) {
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D_ARRAY, arr == R2D_NO_ARRAY ? R.dummy_normal : r2d_array_normal_tex((int)arr));
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, arr == R2D_NO_ARRAY ? R.dummy_material : r2d_array_material_tex((int)arr));
         glActiveTexture(GL_TEXTURE0);
       }
     }
@@ -815,7 +938,9 @@ void cw_r2d_end(void) {
     R.stats.draw_calls++;
     R.stats.batches++;
   }
-  if (in_lit) end_lit_run(lit_lo, lit_hi, canvas);
+  if (in_lit) end_lit_run(lit_lo, lit_hi, cur);
+  if (in_dist) r2d_set_target_fbo(cur, R.canvas_w, R.canvas_h);
+  if (in_hdr) post_to(canvas);
 
   /* virtual canvas -> window */
   if (canvas != R.target_fbo) {

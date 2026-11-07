@@ -1345,7 +1345,7 @@ cw_text_metrics cw__r2d_text_raw(cw_font h, const char *text, cw_vec2 pos, const
             x = tx;
           }
           *out = (r2d_vertex){ x, y, us[j], vs[j], { c->c[0], c->c[1], c->c[2], c->c[3] }, { (uint8_t)t->page, mode, layer, sdfw },
-                               { c->sdf_grow, c->sdf_soft, 0, 0 } };
+                               { c->sdf_grow, c->sdf_soft, R.emissive_b, R.intensity_b } };
         }
         uint32_t b = basev + 4u * (uint32_t)q;
         uint32_t qi[6] = { b, b + 1, b + 2, b, b + 2, b + 3 };
