@@ -14,7 +14,6 @@ static const char *SPRITE_VS =
     "layout(location=3) in vec4 a_info;\n"
     "layout(location=4) in vec4 a_sdf;\n"
     "layout(location=5) in float a_depth;\n" /* depth culling (cull.c): 0 = nearest */
-    "invariant gl_Position;\n"
     "uniform float u_zbias;\n"
     "uniform vec4 u_layers[64];\n"
     "uniform vec2 u_target;\n"
@@ -211,7 +210,6 @@ static const char *TILE_VS =
     "uniform vec4 u_set1;\n" /* stride px (x, y), columns, page */
     "uniform vec2 u_inv_page;\n"
     "uniform float u_time;\n"
-    "invariant gl_Position;\n"
     "out vec2 v_uv; flat out float v_page;\n"
     "void main() {\n"
     "  vec2 p = vec2(u_m0.x * a_pos.x + u_m0.y * a_pos.y + u_m0.z, u_m1.x * a_pos.x + u_m1.y * a_pos.y + u_m1.z);\n"

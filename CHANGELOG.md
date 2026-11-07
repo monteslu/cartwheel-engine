@@ -7,7 +7,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 ## v0.38.0 (2026-11-07)
 
 ### Added
-- **Sprite instances** (`cw_r2d_instances`, `cw_sprite_instance`, `cw_r2d_instance_buffer_*`): many sprites of one texture in one instanced draw, 24 bytes an instance (where, turn, scale, colour, a frame of up to 32 source rects, flips) built into quads on the GPU; per frame (copied at the call, one upload a pass) or kept in a buffer written once and drawn every frame for nothing on the CPU. They blend, take intensity, emission, flash and wind sway and are lit in lit layers. 200,000 moving sprites: CPU @INSTCPU@.
+- **Sprite instances** (`cw_r2d_instances`, `cw_sprite_instance`, `cw_r2d_instance_buffer_*`): many sprites of one texture in one instanced draw, 24 bytes an instance (where, turn, scale, colour, a frame of up to 32 source rects, flips) built into quads on the GPU; per frame (copied at the call, one upload a pass) or kept in a buffer written once and drawn every frame for nothing on the CPU. They blend, take intensity, emission, flash and wind sway and are lit in lit layers. 200,000 moving sprites: 3.3 / 5.7 ms of CPU a frame as sprites, 0.36 / 0.99 ms as per-frame instances, under 0.01 / 0.07 ms from a kept buffer (GL / WebGPU, 890M, 1080p); the GPU time is the pixels', as before.
 - **Lookup tables in the 2D post chain** (`cw_r2d_post.lut`, `lut_amount`, `cw_r2d_lut_load`, `cw_r2d_lut_from_strip`, `cw_r2d_lut_pixels`): a 3D colour table applied to the finished display colour, authored as a strip image (grade a screenshot holding the identity strip in any image editor, cut the strip back out); presets `cw_r2d_lut_preset`: warm, cool, teal and orange, black and white, sepia, bleach bypass, moonlight.
 - **Light textures** (`cw_light2d.texture`, `texture_src`; Light2D `texture`): a point or spot light's colour times an image laid over its radius square and turned by its angle (window panes, a lantern's cage, stained glass).
 - **Sharp scaling of a virtual canvas** (`cw_r2d_pass_desc.scale_filter`): `SHARP` draws each canvas pixel as a crisp block of its true width and blends only the window pixel on a block's edge, so pixel art at a scale that is not whole neither shimmers nor blurs; `LINEAR` smooths.
@@ -19,7 +19,24 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - **Global illumination takes fewer passes**: last frame's bounce is part of the source pass, the flood starts from the source (no seed pass), and the composite adds the irradiance (no full-size apply pass).
 - **Low and Very Low scale the 2D lights and HDR**: the lights shade a light buffer half (Low) or a third (Very Low) of the canvas each way, upsampled by an edge-aware composite (normals and occluder edges keep their place); the HDR canvas is R11G11B10 float where the host renders it, the pass clears opaque and no layer reads the screen; GPU particles draw the effects detail's share of each emitter (0.25 Very Low, 0.4 Low, 0.7 Medium); global illumination's field never exceeds the pass's own `resolution` below High (half of it on Low). High and Ultra draw as before.
 
-@MEASURED@
+### Measured (Radeon 890M, native, GL / WebGPU; the before and after runs interleaved in one suite)
+
+| Case | v0.37.0 | v0.38.0 |
+|---|---|---|
+| explorer_bench, 1080p High, whole 2D frame to GPU completion | 4.5 / 5.1 ms | 3.1 / 3.3 ms |
+| the same, its global illumination (GPU) | 1.6 / 2.1 ms | 0.29 / 0.36 ms |
+| explorer_bench, 4K High | 15.0 / 17.6 ms | 11.1 / 12.1 ms |
+| explorer_bench, 1080p Low | 4.3 / 4.9 ms | 2.2 / 2.4 ms |
+| explorer_bench, 1080p Very Low | 2.1 / 2.2 ms | 1.6 / 1.7 ms |
+| sidescroll (r2d_stress), 1080p High, layer drawing with culling | 0.62 / 0.60 ms | 0.48 / 0.46 ms (pre-pass included) |
+| 64 shadowed lights (shadow64), the lights pass on Low | 2.0 / 1.6 ms | 0.58 / 0.47 ms |
+| the same on Very Low | 2.0 / 1.5 ms | 0.34 / 0.26 ms |
+| 200k sprites, CPU | 3.3 / 5.7 ms | instances 0.36 / 0.99 ms, kept 0.003 / 0.07 ms |
+
+The global illumination source pass was the cost at an eighth of the canvas: each field pixel read 16 filtered taps of four full-size buffers in a row, with too few pixels in flight to hide the waits. It now runs in two steps (half the canvas, then the field). Depth culling helps scenes with opaque art over other layers (sidescroll's wall over its parallax layers); explorer's walls fade and its parallax is translucent, so it has no opaque art to cull with and takes no pre-pass. Every other 2D sample draws the same pixels as v0.37.0 (r2d_hdr within 2 levels on 3 % of its pixels, from global illumination's arithmetic now in 32-bit floats).
+
+### Moving a game to v0.38.0
+- Nothing to change in code. A layer drawn above a distortion layer (and under the HUD) now stays straight; a game that relied on it bending moves that layer under the distortion layer. `CW_R2D_FEATURES >= 3` gates the new calls for code that builds against older SDKs too.
 
 ### Tests
 - `r2d-round2` (GPU, GL and WebGPU): culling changes no pixel (r2d_hdr, sidescroll), control: culling without its half step must lose opaque texels; the identity table keeps the picture within 2 levels, control: the teal and orange table must change it; light textures change the lit picture; a lattice above a distortion layer stays straight while the picture under it bends, control: the old bend-everything-at-the-end must bend the lattice; 200k instances draw the sprites' picture, control: the still kept buffer must differ; Very Low and Low near High but not equal; GL against WebGPU for every frame.
