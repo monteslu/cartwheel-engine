@@ -32,7 +32,7 @@
 #define WARM 4
 #define MAXN 200000
 
-typedef enum { K_SPRITES, K_LIT, K_TILES, K_PARTICLES, K_TEXT, K_ROCKS, K_GPUPART } kind_t;
+typedef enum { K_SPRITES, K_LIT, K_TILES, K_PARTICLES, K_TEXT, K_ROCKS, K_GPUPART, K_INST, K_INST_KEPT, K_SIDE } kind_t;
 typedef struct stress_case {
   const char *name;
   kind_t kind;
@@ -76,12 +76,20 @@ static const stress_case CASES[] = {
   /* GPU particles (cw_r2d_particles): 100k and a million, additive, no CPU per particle */
   { "gpupart100k", K_GPUPART, 100000, 0, false },
   { "gpupart1m", K_GPUPART, 1000000, 0, false },
+  /* sprite instances (cw_r2d_instances): the sprites200k scene as per-frame instances, and 200k kept (uploaded once) */
+  { "inst200k", K_INST, 200000, 0, false },
+  { "instkept200k", K_INST_KEPT, 200000, 0, false },
+  /* a side-on game screen in HDR: a sky, four full-screen fogged parallax layers, a lit full-screen back wall, ~800
+   * normal-mapped tiles, 7 soft-shadowed lights, the post chain and global illumination (the lit HDR floor) */
+  { "sidescroll", K_SIDE, 800, 7, true, true, 0.45f, 0.05f, false, true },
 };
 #define NCASES ((int)CW_ARRAY_LEN(CASES))
 #define NOCC 120
 
 typedef struct {
-  cw_texture sheet, rock, tiles;
+  cw_texture sheet, rock, tiles, wall, hill;
+  cw_sprite_instance *inst;
+  cw_r2d_instance_buffer kept;
   cw_tilemap map;
   cw_font font;
   cw_sprite *spr;
@@ -143,7 +151,34 @@ static void init(void *user) {
   a->tiles = cw_texture_load("images/tiles.png", &(cw_texture_desc){ .filter = CW_FILTER_NEAREST });
   a->font = cw_font_load("fonts/FiraSans-Regular.ttf", NULL);
   make_rock(a);
+  {
+    /* the back wall (normal mapped stone) and a parallax silhouette (soft-edged hills, opaque below) */
+    enum { S = 128 };
+    static uint8_t col[S * S * 4], nrm[S * S * 4], hill[256 * 128 * 4];
+    for (int y = 0; y < S; y++)
+      for (int x = 0; x < S; x++) {
+        uint32_t h = hash32((uint32_t)(y * S + x) + 4242u);
+        bool joint = (y % 32) < 2 || ((x + ((y / 32) & 1) * 32) % 64) < 2;
+        uint8_t *c = col + 4 * (y * S + x), *o = nrm + 4 * (y * S + x);
+        int g = joint ? 40 : 70 + (int)(h % 18);
+        c[0] = (uint8_t)g, c[1] = (uint8_t)(g - 4), c[2] = (uint8_t)(g + 6), c[3] = 255;
+        o[0] = 128, o[1] = 128, o[2] = 255, o[3] = 255;
+        if (joint) o[1] = (y % 32) < 1 ? 60 : 196;
+      }
+    a->wall = cw_texture_from_pixels(S, S, col, &(cw_texture_desc){ .repeat = true });
+    cw_texture_set_normal_map(a->wall, nrm);
+    for (int y = 0; y < 128; y++)
+      for (int x = 0; x < 256; x++) {
+        float top = 50 + 22 * sinf((float)x * 0.05f) + 10 * sinf((float)x * 0.13f + 1);
+        float d = (float)y - top;
+        uint8_t *c = hill + 4 * (y * 256 + x);
+        float al = d < 0 ? 0 : d < 1.5f ? d / 1.5f : 1;
+        c[0] = c[1] = c[2] = 255, c[3] = (uint8_t)(al * 255);
+      }
+    a->hill = cw_texture_from_pixels(256, 128, hill, &(cw_texture_desc){ .repeat = true });
+  }
   a->spr = cw_calloc(MAXN, sizeof(cw_sprite), CW_MEM_GAME);
+  a->inst = cw_calloc(MAXN, sizeof(cw_sprite_instance), CW_MEM_GAME);
   int tw = 0, th = 0;
   cw_texture_size(a->tiles, &tw, &th);
   int mw = 4096 / 16, mh = 2304 / 16;
@@ -157,6 +192,9 @@ static void init(void *user) {
       }
   cw_r2d_layer_set(0, NULL);
   cw_r2d_layer_set(1, &(cw_r2d_layer_desc){ .lit = true });
+  /* sidescroll: 2..5 parallax (fogged), 6 lit wall and tiles, 7 effects (additive) */
+  for (int l = 2; l <= 5; l++) cw_r2d_layer_set(l, &(cw_r2d_layer_desc){ .fog = cw_rgba(0.35f, 0.42f, 0.55f, 0.42f - 0.1f * (float)(l - 2)) });
+  cw_r2d_layer_set(6, &(cw_r2d_layer_desc){ .lit = true, .occluder_depth = 12 });
   cw_debug_i32("ticks", &a->ticks);
   cw_debug_i32("stress.case", &a->case_index);
   cw_debug_field("stress.frames", a->frames, CW_DBG_I32, NCASES);
@@ -194,6 +232,15 @@ static void animate(int begin, int end, int worker, void *ctx) {
     }
     float sp = 0.2f + 0.8f * fx, ph = fy * 6.2831853f;
     float x = W * 0.5f + (W * 0.45f * fx + 20) * cosf(ph + t * sp), y = H * 0.5f + (H * 0.42f * fy + 10) * sinf(ph * 1.3f + t * sp);
+    if (k == K_INST || k == K_INST_KEPT) {
+      int fr = (int)((uint32_t)(a->ticks / 6 + i) & 3u);
+      float sp2 = k == K_INST_KEPT ? 0 : sp;
+      a->inst[i] = (cw_sprite_instance){ .x = W * 0.5f + (W * 0.45f * fx + 20) * cosf(ph + t * sp2), .y = H * 0.5f + (H * 0.42f * fy + 10) * sinf(ph * 1.3f + t * sp2),
+                                         .rotation = t * (1 + fy) * (k == K_INST_KEPT ? 0 : 1) + ph, .scale = 0.75f,
+                                         .rgba = { (uint8_t)((0.6f + 0.4f * fx) * 255 + 0.5f), (uint8_t)((0.6f + 0.4f * fy) * 255 + 0.5f), 255, 255 },
+                                         .frame = (uint16_t)(k == K_INST_KEPT ? (i & 3) : fr), .flags = (uint16_t)((i & 1) ? CW_INSTANCE_FLIP_X : 0) };
+      continue;
+    }
     if (k == K_LIT || k == K_ROCKS) {
       a->spr[i] = (cw_sprite){ .texture = a->rock, .pos = { x, y }, .pivot = { 0.5f, 0.5f }, .scale = { 0.5f, 0.5f },
                                .rotation = t * (1 + fy) + ph };
@@ -253,6 +300,58 @@ static void draw_case(app_t *a) {
                                                .size_start = 4, .size_end = 1, .color_start = cw_rgba(1, 0.6f, 0.2f, 0.5f), .turbulence = 20 });
     cw_r2d_set_blend(CW_BLEND_ALPHA);
     break;
+  case K_INST:
+  case K_INST_KEPT: {
+    static const cw_rect fr[4] = { { 0, 0, 32, 32 }, { 32, 0, 32, 32 }, { 64, 0, 32, 32 }, { 96, 0, 32, 32 } };
+    cw_r2d_instances_desc d = { .texture = a->sheet, .frames = fr, .nframes = 4, .instances = a->inst, .count = c->n };
+    if (c->kind == K_INST_KEPT) {
+      if (CW_HANDLE_IS_NULL(a->kept)) {
+        a->kept = cw_r2d_instance_buffer_create(c->n);
+        cw_r2d_instance_buffer_write(a->kept, 0, a->inst, c->n);
+      }
+      d.buffer = a->kept;
+    }
+    cw_r2d_instances(&d);
+    break;
+  }
+  case K_SIDE: {
+    /* sky, four parallax layers of hills (each fully covering the screen below its ridge) */
+    cw_r2d_use_layer(0);
+    cw_r2d_rect((cw_rect){ 0, 0, W, H }, cw_rgba(0.35f, 0.45f, 0.65f, 1));
+    for (int l = 0; l < 4; l++) {
+      cw_r2d_use_layer(2 + l);
+      float y0 = H * (0.1f + 0.12f * (float)l), off = fmodf(t * (20 + 30 * (float)l), 512);
+      float g = 0.25f - 0.05f * (float)l;
+      cw_r2d_sprite(&(cw_sprite){ .texture = a->hill, .src = { off, 0, W * 0.5f, 128 }, .pos = { 0, y0 }, .size = { W, H - y0 }, .color = cw_rgba(g, g + 0.05f, g + 0.1f, 1) });
+    }
+    /* the lit wall over the whole screen and ~800 tiles (64 px) round its edges and in platforms */
+    cw_r2d_use_layer(6);
+    float ox = fmodf(t * 40, 128);
+    cw_r2d_sprite(&(cw_sprite){ .texture = a->wall, .src = { ox, 0, W, H }, .pos = { 0, 0 }, .size = { W, H } });
+    int n = 0;
+    for (int ty = 0; ty < (int)(H / 32) + 1 && n < c->n; ty++)
+      for (int tx = 0; tx < (int)(W / 32) + 1 && n < c->n; tx++) {
+        uint32_t h = hash32((uint32_t)(ty * 97 + tx));
+        bool solid = ty < 3 || ty > (int)(H / 32) - 4 || tx < 2 || tx > (int)(W / 32) - 3 || ((ty % 7) == 3 && (h & 3) != 0);
+        if (!solid) continue;
+        cw_r2d_sprite(&(cw_sprite){ .texture = a->rock, .pos = { (float)tx * 32 - ox * 0.25f, (float)ty * 32 }, .size = { 34, 34 } });
+        n++;
+      }
+    for (int i = 0; i < c->lights; i++) {
+      uint32_t h = hash32((uint32_t)(i + 31));
+      float fx = (float)(h & 0xffff) / 65535.0f, fy = (float)((h >> 16) & 0xffff) / 65535.0f;
+      cw_r2d_light(&(cw_light2d){ .pos = { W * (0.1f + 0.8f * fx), H * (0.2f + 0.6f * fy) + 20 * sinf(t + (float)i) }, .radius = H * 0.35f,
+                                  .color = cw_rgba(1, 0.7f + 0.3f * fy, 0.4f + 0.5f * fx, 1), .energy = 1.6f, .shadows = c->shadows,
+                                  .softness = c->softness, .volumetric = c->volumetric });
+    }
+    cw_r2d_set_emissive(1);
+    cw_r2d_set_intensity(3);
+    for (int i = 0; i < 6; i++) cw_r2d_circle((cw_vec2){ W * (0.15f + 0.14f * (float)i), H * 0.5f }, 6, 0, cw_rgba(1, 0.8f, 0.4f, 1));
+    cw_r2d_set_emissive(0);
+    cw_r2d_set_intensity(1);
+    cw_r2d_use_layer(0);
+    break;
+  }
   case K_TILES: {
     cw_vec2 o = { -fmodf(t * 37, 512), -fmodf(t * 21, 256) };
     for (int l = 0; l < 4; l++) cw_r2d_tilemap(a->map, l, o, CW_WHITE);
@@ -281,12 +380,14 @@ static void render(void *user, double alpha) {
   a->case_index = ci;
   a->cur = &CASES[ci];
   cw_window_size(&a->w, &a->h);
-  if (a->cur->kind == K_SPRITES || a->cur->kind == K_LIT || a->cur->kind == K_ROCKS || a->cur->kind == K_PARTICLES) cw_parallel_for(a->cur->n, 4096, animate, a);
+  if (a->cur->kind == K_SPRITES || a->cur->kind == K_LIT || a->cur->kind == K_ROCKS || a->cur->kind == K_PARTICLES ||
+      (a->cur->kind == K_INST) || (a->cur->kind == K_INST_KEPT && CW_HANDLE_IS_NULL(a->kept)))
+    cw_parallel_for(a->cur->n, 4096, animate, a);
   double t0 = now_ms();
   cw_r2d_post post = { .bloom = !a->cur->nobloom, .bloom_threshold = 0.8f, .bloom_intensity = 0.8f, .vignette = 0.3f };
   cw_r2d_begin(&(cw_r2d_pass_desc){ .clear = true, .clear_color = cw_hex(0x101420ff), .ambient = cw_rgba(0.08f, 0.08f, 0.1f, 1),
                                     .post = a->cur->post ? &post : NULL, .gi = a->cur->gi ? &(cw_r2d_gi){ .intensity = 1 } : NULL });
-  if (a->cur->post) cw_r2d_set_intensity(2.5f);
+  if (a->cur->post && a->cur->kind != K_SIDE) cw_r2d_set_intensity(2.5f);
   draw_case(a);
   cw_r2d_end();
   double t1 = now_ms();

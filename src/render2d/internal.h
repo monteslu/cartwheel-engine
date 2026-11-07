@@ -69,6 +69,7 @@ typedef struct r2d_tex {
   void *wview;             /* WebGPU: a view of the target for three.c (cw__r2d_target_three_view) */
   cw_filter filter;
   bool premultiplied;
+  bool opaque;             /* depth culling (cull.c): most texels (70 %) have alpha 1, so its draws are worth culling with */
 } r2d_tex;
 
 /* a sorted-stream command */
@@ -80,7 +81,16 @@ typedef struct r2d_cmd {
   uint32_t src;     /* sorted copies: ifirst in the submission index stream */
 } r2d_cmd;
 
-enum { R2D_KIND_STREAM = 0, R2D_KIND_TILEMAP = 1, R2D_KIND_PARTICLES = 2 };
+enum { R2D_KIND_STREAM = 0, R2D_KIND_TILEMAP = 1, R2D_KIND_PARTICLES = 2, R2D_KIND_INSTANCES = 3 };
+/* a sprite-instance draw of the pass (instances.c): its uniform block (shaders: u_in / inb), where its instances are */
+#define R2D_INST_VEC4 (3 + 2 * CW_R2D_INSTANCE_FRAMES)
+typedef struct r2d_inst_draw {
+  float u[R2D_INST_VEC4][4];
+  int count;
+  uint32_t array;
+  GLuint vbo; void *wbuf; /* the kept buffer, or 0 / NULL: the pass stream */
+  size_t offset;          /* bytes into it */
+} r2d_inst_draw;
 /* a particle emitter of the pass: its uniform block (shaders: u_pa / pa) and count */
 typedef struct r2d_part_draw { float u[9][4]; int count; uint32_t array; } r2d_part_draw;
 #define R2D_STATE(array, blend, clip, kind) \
@@ -90,6 +100,7 @@ typedef struct r2d_part_draw { float u[9][4]; int count; uint32_t array; } r2d_p
 #define R2D_ST_CLIP(s) (((s) >> 14) & 0xffu)
 #define R2D_ST_KIND(s) (((s) >> 22) & 3u)
 #define R2D_ST_OCCL (1u << 24) /* lit layers: the draw also casts shadows by its alpha (cw_r2d_set_occluder) */
+#define R2D_ST_OPQ (1u << 25)  /* depth culling: an opaque draw (opaque texture or solid colour, alpha 1): worth culling with; never splits a batch */
 
 typedef struct r2d_tilemap_draw {
   uint64_t map_id;
@@ -123,6 +134,7 @@ typedef struct r2d_batch {
   int layer;
   int layer_last; /* the last canvas layer merged into it */
   bool lit;
+  bool opq;       /* every command merged into it is opaque (R2D_ST_OPQ) */
 } r2d_batch;
 
 typedef struct r2d_state {
@@ -138,15 +150,25 @@ typedef struct r2d_state {
   /* programs */
   r2d_program sprite_distort;  /* distortion layers: offsets into the distortion buffer */
   r2d_program part, part_lit;   /* GPU particles (u[0] = u_pa) */
+  r2d_program inst, inst_lit;   /* sprite instances (u[0] = u_in) */
+  CW_ARRAY(r2d_inst_draw) idraws; /* this pass's instance draws */
+  CW_ARRAY(cw_sprite_instance) istage; /* this pass's per-frame instances (one upload) */
   GLuint empty_vao;
   CW_ARRAY(r2d_part_draw) pdraws; /* this pass's particle emitters */
   r2d_program sprite_mask, tile_mask; /* occluders from art: alpha over half into the occluder mask */
+  r2d_program sprite_pre, tile_pre;   /* depth culling: opaque texels into the depth buffer (cull.c) */
   bool occluder_on;            /* cw_r2d_set_occluder */
   bool mask_mode;              /* tilemap.c draws with the mask program (inside build_mask) */
   CW_ARRAY(r2d_batch) occ_batches; /* this lit run's batches with R2D_ST_OCCL */  /* distortion layers: offsets into the distortion buffer */
   r2d_program sprite, sprite_lit, tile, tile_lit, light, shadow, composite, blit;
   /* streams */
   GLuint vbo[R2D_RING], ibo[R2D_RING], vao[R2D_RING];
+  GLuint dvbo[R2D_RING];           /* depth culling (cull.c): each vertex's depth */
+  GLuint cull_rb; int cull_w, cull_h; /* GL: the culling depth buffer (canvas size) */
+  bool cull_on;                    /* the group now drawing culls: lit runs attach the depth buffer */
+  int depth_mode;                  /* tilemap.c: 0 as always, 1 the opaque depth pre-pass */
+  float zbias;                     /* this pass: the culling test's half step */
+  float tile_depth;                /* tilemap.c: the depth of the tilemap draw (0 = nearest) */
   size_t vbo_cap[R2D_RING], ibo_cap[R2D_RING];
   int ring;
   GLuint quad_vbo, quad_vao;       /* small scratch geometry (lights, composite, blit) */
@@ -181,6 +203,7 @@ typedef struct r2d_state {
   cw_r2d_post post;
   bool has_gi;
   bool offscreen;              /* this pass draws offscreen: a layer reads the screen or distorts it */
+  bool screen_reads;           /* a layer under the HUD reads the screen (the screen texture copies the canvas) */
   cw_texture screen_tex;       /* cw_r2d_screen_texture */
   bool next_array_hdr;        /* r2d_array_new makes RGBA16F storage (set round the call) */
   int next_array_levels;       /* r2d_array_new makes this many mip levels (0 = 1; set round the call) */
@@ -189,6 +212,7 @@ typedef struct r2d_state {
   /* draw state packed into every vertex's sdf[2], sdf[3]: emission share, intensity (1 + x * 15 / 255) */
   uint8_t emissive_b, intensity_b;
   uint8_t flash_b;             /* flash toward the vertex colour (x255): vertex sdf[0] of sprites and shapes */
+  bool next_opq;               /* the next submission is opaque (sprite and shape paths set it round r2d_alloc) */
   uint8_t sway_b;              /* wind sway share of later sprites' top edges (x255): vertex info[3] */
   /* draw state */
   int cur_layer, cur_z;
@@ -257,9 +281,31 @@ void r2d_wind_uniform(float out[4]); /* batch.c: the pass's wind for the sprite 
 void r2d_note_tex(const r2d_tex *t);
 void r2d_particles_gl(const r2d_part_draw *d, bool lit); /* batch.c: one emitter, instanced */
 void r2d_wg_particles(const r2d_part_draw *d, bool lit); /* wgpu.c */
+void r2d_instances_upload_gl(void);                         /* instances.c: the pass's per-frame instances */
+void r2d_instances_gl(const r2d_inst_draw *d, bool lit);    /* instances.c: one instanced draw */
+void r2d_instances_shutdown(void);
+void *r2d_instances_upload_wg(void);                        /* instances.c: the same into a WebGPU buffer (returned) */
+void r2d_push_special_kind(uint32_t array, float sort_y, uint32_t payload, int kind, int blend); /* batch.c */
+void r2d_wg_instances(const r2d_inst_draw *d, bool lit, void *stream_buf); /* wgpu.c */
+void *r2d_wg_instance_buffer(void *old, size_t bytes);      /* wgpu.c: a vertex buffer of this size (copy-dst) */
+void r2d_wg_buffer_write(void *buf, size_t offset, const void *data, size_t bytes);
 void r2d_wg_mask_batches(void *mask, const r2d_batch *b, int n); /* wgpu.c: occluder batches into the mask */
+/* cull.c: depth culling (the opaque fast path; cull.c says how) */
+typedef struct r2d_cull_plan {
+  bool any;              /* some group culls */
+  int ngroups;
+  const int *grp;        /* per batch: its group, -1 = none */
+  const uint8_t *gcull;  /* per group: it culls */
+  const uint8_t *occ;    /* per batch: an occluder (its opaque texels go in the pre-pass) */
+  const float *vdepth;   /* per vertex: depth (0 = nearest) */
+  float T, bias;
+} r2d_cull_plan;
+void r2d_cull_attach_gl(GLuint fbo); /* batch.c: (fbo bound) attach the culling depth buffer while a group culls */
+const r2d_cull_plan *r2d_cull_build(const r2d_batch *b, int n, const uint32_t *idx, int nidx, bool hdr, int hud);
+float r2d_cull_depth_t(float t); /* the depth of stream position t (cull.c) */
+void r2d_cull_shutdown(void);
 /* timers.c: GPU time of each part of cw_r2d_end (native GL, CW_R2D_TIMERS=1; no-ops otherwise) */
-enum { R2D_T_DRAW, R2D_T_FIELD, R2D_T_LIGHTS, R2D_T_GI, R2D_T_COMPOSITE, R2D_T_POST, R2D_T_COUNT };
+enum { R2D_T_DRAW, R2D_T_FIELD, R2D_T_LIGHTS, R2D_T_GI, R2D_T_COMPOSITE, R2D_T_POST, R2D_T_GI_SOURCE, R2D_T_CULL, R2D_T_COUNT };
 void r2d_timer_begin(int part);
 void r2d_timer_end(void);
 void r2d_timers_frame(void); /* collect finished queries (once per cw_r2d_end) */
@@ -288,6 +334,7 @@ void r2d_push_special(uint32_t array, float sort_y, uint32_t payload); /* a tile
 void r2d_tilemaps_init(void);
 void r2d_tilemap_render(const r2d_tilemap_draw *d, bool lit, int target_h);
 void r2d_tilemaps_shutdown(void);
+bool r2d_tilemap_opaque(const r2d_tilemap_draw *d); /* its tileset is opaque art and its tint alpha 1 (depth culling) */
 /* text.c */
 void r2d_fonts_init(void);
 void r2d_fonts_shutdown(void);
@@ -301,11 +348,12 @@ void r2d_lights_shutdown(void);
 /* gi2d.c: global illumination of a lit run (cw_r2d_gi) */
 struct fx_rt;
 bool r2d_gi_enabled(void); /* the pass asks for it and the effects detail allows it */
-void r2d_gi_run(const struct fx_rt *mask, const struct fx_rt *scene, const struct fx_rt *mat, struct fx_rt *light, float light_scale);
+/* the run's irradiance at the field's size (the composite adds it x intensity), NULL when off */
+const struct fx_rt *r2d_gi_run(const struct fx_rt *mask, const struct fx_rt *scene, const struct fx_rt *mat, const struct fx_rt *light, float light_scale);
 void r2d_gi_shutdown(void);
 /* wgpu.c: the instanced lights and the occluder mask */
 void r2d_wg_mask_draw(void *mask, int w, int h, const float *tris, int nverts, float canvas_w, float canvas_h);
-void r2d_wg_lights_draw(void *light, void *add, int fmt, const float amb[4], const float *data, int rows, const float up[4],
+void r2d_wg_lights_draw(int cookie_array, void *light, void *add, int fmt, const float amb[4], const float *data, int rows, const float up[4],
                         const float uq[4], const float ut[4], void *normal, void *seed, void *mask, void *mat, int w, int h);
 /* shared quad drawing (lights, composite, blit): pos in target pixels */
 void r2d_draw_quad_px(float x0, float y0, float x1, float y1, int target_w, int target_h);
@@ -320,6 +368,7 @@ void r2d_wg_shutdown(void);
 int r2d_wg_max_layers(void);
 void *r2d_wg_tex_new(int w, int h, int layers);
 void *r2d_wg_tex_new_hdr(int w, int h, int layers); /* RGBA16F */
+bool r2d_wg_small_hdr_ok(void);                      /* the device renders RG11B10Ufloat */
 void *r2d_wg_tex_new_levels(int w, int h, int layers, int levels); /* RGBA8 with mip levels */
 void r2d_wg_tex_write_level(void *tex, int level, int x, int y, int layer, int w, int h, const uint8_t *px);
 void *r2d_wg_depth_new(int w, int h);
@@ -358,6 +407,7 @@ bool r2d_canvas_hdr(void);           /* the offscreen canvas is RGBA16F */
 bool r2d_dist_ok(void);              /* distortion layers can draw (signed float targets) */
 GLuint r2d_post_dist_begin_gl(void); /* bind the distortion buffer (cleared on first use in the pass) */
 void *r2d_post_dist_wtex(bool *first); /* the same on WebGPU: the texture, and whether to clear it */
+bool r2d_post_dist_resolve(void);      /* bend the canvas drawn so far by the distortion layers under it (their buffer then starts over); false: none drawn */
 void r2d_screen_copy_gl(GLuint from); /* the offscreen canvas into the screen texture */
 void *r2d_screen_wtex(void);         /* the screen texture's WebGPU texture */
 /* video frames on WebGPU (yuv.c draws through these) */

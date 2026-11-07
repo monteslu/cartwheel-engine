@@ -2941,6 +2941,14 @@
      "min": 0,
      "max": 10,
      "doc": "Light the air scatters toward the eye (shafts)."
+    },
+    {
+     "name": "texture",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "A light texture (image asset path): the light's colour times the image over its range square, turned with the node (window panes, stained glass)."
     }
    ]
   },

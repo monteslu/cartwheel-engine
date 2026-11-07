@@ -374,6 +374,15 @@ static void upload_whole(r2d_tex *t, const uint8_t *px) {
   }
 }
 
+/* depth culling (cull.c): at least 70 % of the texels have alpha 255 (sampled on a grid of at most 64 x 64) */
+static bool mostly_opaque(int w, int h, const uint8_t *rgba) {
+  if (!rgba || w <= 0 || h <= 0) return false;
+  int sx = CW_MAX(1, w / 64), sy = CW_MAX(1, h / 64), n = 0, o = 0;
+  for (int y = 0; y < h; y += sy)
+    for (int x = 0; x < w; x += sx, n++) o += rgba[4 * ((size_t)y * (size_t)w + (size_t)x) + 3] == 255;
+  return o * 10 >= n * 7;
+}
+
 cw_texture cw_texture_from_pixels(int w, int h, const uint8_t *rgba, const cw_texture_desc *desc) {
   if (!r2d_lazy_init()) return (cw_texture){ 0 };
   cw_texture_desc d = desc ? *desc : (cw_texture_desc){ 0 };
@@ -410,6 +419,7 @@ cw_texture cw_texture_from_pixels(int w, int h, const uint8_t *rgba, const cw_te
     t->x = x;
     t->y = y;
   }
+  t->opaque = mostly_opaque(w, h, rgba);
   uint8_t *pm = premultiply_copy(w, h, rgba, d.premultiplied);
   upload_whole(t, pm);
   cw_free(pm);
@@ -444,6 +454,7 @@ cw_texture cw_texture_load(const char *path, const cw_texture_desc *desc) {
 void cw_texture_update(cw_texture h, const uint8_t *rgba) {
   r2d_tex *t = r2d_tex_get(h);
   if (!t || t->target) return;
+  t->opaque = mostly_opaque(t->w, t->h, rgba);
   uint8_t *pm = premultiply_copy(t->w, t->h, rgba, t->premultiplied);
   upload_whole(t, pm);
   cw_free(pm);

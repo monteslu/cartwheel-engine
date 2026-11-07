@@ -220,6 +220,12 @@ void cw_r2d_tilemap(cw_tilemap h, int map_layer, cw_vec2 origin, cw_color tint) 
   r2d_push_special(t->array, origin.y, (uint32_t)(R.tdraws.count - 1));
 }
 
+bool r2d_tilemap_opaque(const r2d_tilemap_draw *d) {
+  r2d_tilemap *m = map_get((cw_tilemap){ d->map_id });
+  const r2d_tex *t = m ? r2d_tex_get(m->d.tileset) : NULL;
+  return t && t->opaque && d->tint.a >= 1.0f;
+}
+
 void r2d_tilemap_render(const r2d_tilemap_draw *d, bool lit, int target_h) {
   (void)target_h;
   r2d_tilemap *m = map_get((cw_tilemap){ d->map_id });
@@ -249,7 +255,7 @@ void r2d_tilemap_render(const r2d_tilemap_draw *d, bool lit, int target_h) {
   if (x1 < x0 || y1 < y0) return;
   if (r2d_wg()) {
     float u[24] = { full.a, full.c, full.tx, R.layers[d->canvas_layer].pixel_snap ? 1.0f : 0.0f,
-                    full.b, full.d, full.ty, 0,
+                    full.b, full.d, full.ty, R.mask_mode ? 0 : R.tile_depth,
                     (float)(t->x + m->d.margin), (float)(t->y + m->d.margin), (float)m->d.tile_w, (float)m->d.tile_h,
                     (float)(m->d.tile_w + m->d.spacing), (float)(m->d.tile_h + m->d.spacing), (float)m->columns, (float)t->page,
                     1.0f / (float)arr->w, 1.0f / (float)arr->h, R.pass.time, 0,
@@ -266,10 +272,10 @@ void r2d_tilemap_render(const r2d_tilemap_draw *d, bool lit, int target_h) {
       }
     return;
   }
-  const r2d_program *p = R.mask_mode ? &R.tile_mask : lit ? &R.tile_lit : &R.tile;
+  const r2d_program *p = R.mask_mode ? &R.tile_mask : R.depth_mode == 1 ? &R.tile_pre : lit ? &R.tile_lit : &R.tile;
   glUseProgram(p->prog);
   glUniform4f(p->u[U_M0], full.a, full.c, full.tx, R.layers[d->canvas_layer].pixel_snap ? 1.0f : 0.0f);
-  glUniform4f(p->u[U_M1], full.b, full.d, full.ty, 0);
+  glUniform4f(p->u[U_M1], full.b, full.d, full.ty, R.mask_mode ? 0 : R.tile_depth);
   glUniform2f(p->u_target, (float)R.canvas_w, (float)R.canvas_h);
   glUniform4f(p->u[U_SET0], (float)(t->x + m->d.margin), (float)(t->y + m->d.margin), (float)m->d.tile_w,
               (float)m->d.tile_h);

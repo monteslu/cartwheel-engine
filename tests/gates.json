@@ -2007,6 +2007,11 @@
           "env": {
             "CW_R2D_HDR": "hard"
           }
+        },
+        {
+          "env": {
+            "CW_R2D_HDR": "lut"
+          }
         }
       ]
     },
@@ -2020,7 +2025,7 @@
     "controlEnv": {
       "CW_R2D_HDR": "nopost"
     },
-    "note": "HDR 2D: the post chain (bloom, soft tone curve, grade, vignette), emission and intensity, normal and material maps, soft shadows from the occluders distance field, a spot, a directional moon with volumetric shafts, global illumination (radiance cascades), a screen-reading pool, heat haze and a shockwave in a distortion layer, a HUD after the chain; GL against WebGPU; controls leave out the chain (GL) and bloom, GI, shadows, distortion, the pool and the penumbra (WebGPU), each must change the frame"
+    "note": "HDR 2D: the post chain (bloom, soft tone curve, grade, vignette), emission and intensity, normal and material maps, soft shadows from the occluders distance field, a spot, a directional moon with volumetric shafts, global illumination (radiance cascades), a screen-reading pool, heat haze and a shockwave in a distortion layer, a HUD after the chain; GL against WebGPU; controls leave out the chain (GL) and bloom, GI, shadows, distortion, the pool and the penumbra, and add the teal and orange lookup table (WebGPU), each must change the frame"
   },
   {
     "name": "r2d-motion",

@@ -57,6 +57,9 @@ void r2d_wg_end(const r2d_batch *b, int n, const uint32_t *idx) { (void)b, (void
 void *r2d_wg_buffer(void *old, const void *data, size_t bytes, bool index) { (void)old, (void)data, (void)bytes, (void)index; return NULL; }
 void r2d_wg_buffer_release(void *buf) { (void)buf; }
 void r2d_wg_tilemap_begin(const float u[24], int array, bool lit) { (void)u, (void)array, (void)lit; }
+void r2d_wg_instances(const r2d_inst_draw *d, bool lit, void *stream_buf) { (void)d, (void)lit, (void)stream_buf; }
+void *r2d_wg_instance_buffer(void *old, size_t bytes) { (void)old, (void)bytes; return NULL; }
+void r2d_wg_buffer_write(void *buf, size_t offset, const void *data, size_t bytes) { (void)buf, (void)offset, (void)data, (void)bytes; }
 void r2d_wg_tilemap_chunk(void *vbuf, int quads) { (void)vbuf, (void)quads; }
 void r2d_wg_particles(const r2d_part_draw *d, bool lit) { (void)d, (void)lit; }
 void *r2d_wg_yuv_new(const int pw[3], const int ph[3]) { (void)pw, (void)ph; return NULL; }
@@ -70,6 +73,7 @@ void r2d_wg_view_release(void *view) { (void)view; }
 void r2d_wg_target_rt_free(unsigned id) { (void)id; }
 void *r2d_wg_fx_tex(int w, int h, fx_fmt f) { (void)w, (void)h, (void)f; return NULL; }
 int r2d_wg_fx_format(fx_fmt f) { (void)f; return 0; }
+bool r2d_wg_small_hdr_ok(void) { return false; }
 void *r2d_wg_fx_view(void *tex) { (void)tex; return NULL; }
 void r2d_wg_fx_pass(fx_prog *p, const fx_dst *dst, bool clear, const float cc[4], const fx_rt *const src[4], const float v[8][4],
                     int blend) {
@@ -84,9 +88,9 @@ void r2d_wg_mask_draw(void *mask, int w, int h, const float *tris, int nverts, f
   (void)mask, (void)w, (void)h, (void)tris, (void)nverts, (void)cw, (void)ch;
 }
 void r2d_wg_mask_batches(void *mask, const r2d_batch *b, int n) { (void)mask, (void)b, (void)n; }
-void r2d_wg_lights_draw(void *light, void *add, int fmt, const float amb[4], const float *data, int rows, const float up[4],
+void r2d_wg_lights_draw(int cookie_array, void *light, void *add, int fmt, const float amb[4], const float *data, int rows, const float up[4],
                         const float uq[4], const float ut[4], void *normal, void *seed, void *mask, void *mat, int w, int h) {
-  (void)light, (void)add, (void)fmt, (void)amb, (void)data, (void)rows, (void)up, (void)uq, (void)ut, (void)normal, (void)seed, (void)mask,
+  (void)cookie_array, (void)light, (void)add, (void)fmt, (void)amb, (void)data, (void)rows, (void)up, (void)uq, (void)ut, (void)normal, (void)seed, (void)mask,
       (void)mat, (void)w, (void)h;
 }
 #else
@@ -100,7 +104,7 @@ void r2d_wg_lights_draw(void *light, void *add, int fmt, const float amb[4], con
 /* ── WGSL ──────────────────────────────────────────────────────────────── */
 
 static const char *WGSL_COMMON =
-    "struct U { layers: array<vec4f, 64>, target_size: vec2f, flip: f32, pad: f32, wind: vec4f, fog: array<vec4f, 32> };\n"
+    "struct U { layers: array<vec4f, 64>, target_size: vec2f, flip: f32, zbias: f32, wind: vec4f, fog: array<vec4f, 32> };\n"
     "struct Q { target_size: vec2f, flip: f32, mode: f32, a: vec4f, b: vec4f, c: vec4f, d: vec4f, e: vec4f, f: vec4f };\n"
     "@group(1) @binding(0) var t_tex: texture_2d_array<f32>;\n"
     "@group(1) @binding(1) var t_smp: sampler;\n"
@@ -114,13 +118,12 @@ static const char *WGSL_COMMON =
 /* the stream: sprites, shapes, text, geometry (GL: gl.c SPRITE_VS / FS) */
 static const char *WGSL_SPRITE =
     "@group(0) @binding(0) var<uniform> u: U;\n"
-    "struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f, @location(1) color: vec4f,\n"
+    "struct VO { @builtin(position) @invariant pos: vec4f, @location(0) uv: vec2f, @location(1) color: vec4f,\n"
     "  @location(2) @interpolate(flat, either) page: u32, @location(3) @interpolate(flat, either) mode: u32,\n"
     "  @location(4) @interpolate(flat, either) sdfw: f32, @location(5) @interpolate(flat, either) sdf: vec2f,\n"
     "  @location(6) @interpolate(flat, either) emis: f32, @location(7) @interpolate(flat, either) dist: f32,\n"
     "  @location(8) @interpolate(flat, either) fog: vec4f };\n"
-    "@vertex fn vs(@location(0) a_pos: vec2f, @location(1) a_uv: vec2f, @location(2) a_color: vec4f,\n"
-    "              @location(3) a_info: vec4u, @location(4) a_sdf: vec4f) -> VO {\n"
+    "fn sprite_vs(a_pos: vec2f, a_uv: vec2f, a_color: vec4f, a_info: vec4u, a_sdf: vec4f, a_depth: f32) -> VO {\n"
     "  let L = a_info.z * 2u;\n"
     "  let r0 = u.layers[L]; let r1 = u.layers[L + 1u];\n"
     "  var p = vec2f(r0.x * a_pos.x + r0.y * a_pos.y + r0.z, r1.x * a_pos.x + r1.y * a_pos.y + r1.z);\n"
@@ -141,7 +144,17 @@ static const char *WGSL_SPRITE =
     "  o.emis = a_sdf.z;\n"
     "  o.dist = r1.w;\n"
     "  o.fog = u.fog[a_info.z];\n"
+    "  o.pos.z = max(a_depth - u.zbias, 0.0);\n"
     "  return o;\n"
+    "}\n"
+    "@vertex fn vs(@location(0) a_pos: vec2f, @location(1) a_uv: vec2f, @location(2) a_color: vec4f,\n"
+    "              @location(3) a_info: vec4u, @location(4) a_sdf: vec4f) -> VO {\n"
+    "  return sprite_vs(a_pos, a_uv, a_color, a_info, a_sdf, 0.0);\n"
+    "}\n"
+    /* depth culling (cull.c): each vertex's depth from a second buffer */
+    "@vertex fn vs_z(@location(0) a_pos: vec2f, @location(1) a_uv: vec2f, @location(2) a_color: vec4f,\n"
+    "              @location(3) a_info: vec4u, @location(4) a_sdf: vec4f, @location(9) a_depth: f32) -> VO {\n"
+    "  return sprite_vs(a_pos, a_uv, a_color, a_info, a_sdf, a_depth);\n"
     "}\n"
     /* GPU particles (GL: gl.c PART_VS): pa as u_pa there */
     "struct PA { a: array<vec4f, 9> };\n"
@@ -182,6 +195,40 @@ static const char *WGSL_SPRITE =
     "  o.fog = u.fog[u32(pa.a[8].x)];\n"
     "  return o;\n"
     "}\n"
+    /* sprite instances (GL: gl.c INST_VS): inb as u_in there */
+    "struct INB { a: array<vec4f, 67> };\n"
+    "@group(2) @binding(1) var<uniform> inb: INB;\n"
+    "@vertex fn vs_instances(@builtin(vertex_index) k: u32, @location(0) i_a: vec4f, @location(1) i_col: vec4f, @location(2) i_fr: vec2u) -> VO {\n"
+    "  let q = vec2f(select(0.0, 1.0, k == 1u || k == 2u || k == 4u), select(0.0, 1.0, k == 2u || k == 4u || k == 5u));\n"
+    "  let f = i_fr.x; let fl = i_fr.y;\n"
+    "  let uv = inb.a[3u + 2u * f]; let fs = inb.a[4u + 2u * f];\n"
+    "  let sc = select(i_a.w, 1.0, i_a.w == 0.0);\n"
+    "  let sz = select(fs.xy, inb.a[0].zw, inb.a[0].z > 0.0) * sc;\n"
+    "  let l = (q - inb.a[0].xy) * sz;\n"
+    "  let cs = cos(i_a.z); let sn = sin(i_a.z);\n"
+    "  let w = i_a.xy + vec2f(cs * l.x - sn * l.y, sn * l.x + cs * l.y);\n"
+    "  let L = u32(inb.a[1].x) * 2u;\n"
+    "  let r0 = u.layers[L]; let r1 = u.layers[L + 1u];\n"
+    "  var p = vec2f(r0.x * w.x + r0.y * w.y + r0.z, r1.x * w.x + r1.y * w.y + r1.z);\n"
+    "  if (q.y < 0.5 && inb.a[2].z > 0.0 && u.wind.x != 0.0) {\n"
+    "    let ph = u.wind.y + w.x * u.wind.z + w.y * u.wind.z * 0.37;\n"
+    "    let s = sin(ph) + 0.45 * sin(ph * 2.3 + 1.7) * u.wind.w;\n"
+    "    p.x += inb.a[2].z * u.wind.x * s * sqrt(abs(r0.x * r1.y - r0.y * r1.x));\n"
+    "  }\n"
+    "  if (r0.w > 0.5) { p = floor(p + 0.5); }\n"
+    "  var o: VO;\n"
+    "  o.pos = ndc(p, u.target_size, u.flip);\n"
+    "  let tq = vec2f(select(q.x, 1.0 - q.x, (fl & 1u) != 0u), select(q.y, 1.0 - q.y, (fl & 2u) != 0u));\n"
+    "  o.uv = mix(uv.xy, uv.zw, tq);\n"
+    "  let col = select(i_col, vec4f(1.0), all(i_col == vec4f(0.0)));\n"
+    "  o.color = vec4f(col.rgb * col.a * inb.a[1].z, col.a);\n"
+    "  o.page = u32(inb.a[2].x);\n"
+    "  o.mode = u32(inb.a[1].y);\n"
+    "  o.sdfw = 0.0; o.sdf = vec2f(inb.a[2].y, 0.0);\n"
+    "  o.emis = inb.a[1].w; o.dist = r1.w;\n"
+    "  o.fog = u.fog[u32(inb.a[1].x)];\n"
+    "  return o;\n"
+    "}\n"
     "fn shade(i: VO, t: vec4f) -> vec4f {\n"
     "  var c: vec4f;\n"
     "  if ((i.mode & 1u) != 0u) { c = i.color; }\n"
@@ -202,6 +249,11 @@ static const char *WGSL_SPRITE =
     "  var c = fogged(i, shade(i, textureSample(t_tex, t_smp, i.uv, i.page)));\n"
     "  if ((i.mode & 4u) != 0u) { c.a = 0.0; }\n"
     "  return c;\n"
+    "}\n"
+    /* depth culling's pre-pass (GL: SPRITE_FS with PREPASS): only texels that replace what is under them */
+    "@fragment fn fs_pre(i: VO) {\n"
+    "  let c = shade(i, textureSample(t_tex, t_smp, i.uv, i.page));\n"
+    "  if ((i.mode & 4u) != 0u || c.a < 1.0) { discard; }\n"
     "}\n"
     /* occluders from art (GL: SPRITE_FS with MASK) */
     "@fragment fn fs_mask(i: VO) -> @location(0) vec4f {\n"
@@ -245,12 +297,13 @@ static const char *WGSL_SPRITE =
  * e = (inv_page, time, 0), f = tint */
 static const char *WGSL_TILE =
     "@group(0) @binding(0) var<uniform> q: Q;\n"
-    "struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f, @location(1) @interpolate(flat, either) page: u32 };\n"
+    "struct VO { @builtin(position) @invariant pos: vec4f, @location(0) uv: vec2f, @location(1) @interpolate(flat, either) page: u32 };\n"
     "@vertex fn vs(@location(0) a_pos: vec2f, @location(1) a_tile: vec4u) -> VO {\n"
     "  var p = vec2f(q.a.x * a_pos.x + q.a.y * a_pos.y + q.a.z, q.b.x * a_pos.x + q.b.y * a_pos.y + q.b.z);\n"
     "  if (q.a.w > 0.5) { p = floor(p + 0.5); }\n"
     "  var o: VO;\n"
     "  o.pos = ndc(p, q.target_size, q.flip);\n"
+    "  o.pos.z = q.b.w;\n" /* the draw's depth (depth culling, cull.c); 0 = nearest */
     "  var id = f32(a_tile.x);\n"
     "  let frames = f32(a_tile.z);\n"
     "  if (frames > 1.0) { id += gmod(floor(q.e.z * f32(a_tile.w) / 16.0), frames); }\n"
@@ -263,6 +316,10 @@ static const char *WGSL_TILE =
     "}\n"
     "@fragment fn fs(i: VO) -> @location(0) vec4f {\n"
     "  return textureSample(t_tex, t_smp, i.uv, i.page) * vec4f(q.f.rgb * q.f.a, q.f.a);\n"
+    "}\n"
+    "@fragment fn fs_pre(i: VO) {\n"
+    "  let c = textureSample(t_tex, t_smp, i.uv, i.page) * vec4f(q.f.rgb * q.f.a, q.f.a);\n"
+    "  if (c.a < 1.0) { discard; }\n"
     "}\n"
     "@fragment fn fs_mask(i: VO) -> @location(0) vec4f {\n"
     "  let c = textureSample(t_tex, t_smp, i.uv, i.page) * vec4f(q.f.rgb * q.f.a, q.f.a);\n"
@@ -328,12 +385,17 @@ static const char *WGSL_QUAD =
     "  let l = textureLoad(t_nrm, p, 0, 0).rgb * 2.0;\n"
     "  return vec4f(s.rgb * l, s.a);\n"
     "}\n"
-    "@fragment fn fs_blit(i: VO) -> @location(0) vec4f { return textureSample(t_tex, t_smp, i.uv, u32(q.a.x)); }\n";
+    /* q.a.y: sharp filtering (cw_scale_filter SHARP), q.a.zw canvas size, q.b.x window pixels per canvas pixel */
+    "@fragment fn fs_blit(i: VO) -> @location(0) vec4f {\n"
+    "  var uv = i.uv;\n"
+    "  if (q.a.y > 0.5) { let t = uv * q.a.zw; let c = floor(t) + 0.5; uv = (c + clamp((t - c) * q.b.x, vec2f(-0.5), vec2f(0.5))) / q.a.zw; }\n"
+    "  return textureSample(t_tex, t_smp, uv, u32(q.a.x));\n"
+    "}\n";
 
 /* ── state ─────────────────────────────────────────────────────────────── */
 
 enum { P_SPRITE, P_SPRITE_LIT, P_TILE, P_TILE_LIT, P_LIGHT, P_LIGHT_ST, P_SHADOW, P_COMPOSITE, P_BLIT, P_SPRITE_DISTORT,
-       P_SPRITE_LIT_N, P_TILE_LIT_N, P_SPRITE_MASK, P_TILE_MASK, P_PART, P_PART_LIT, P_PART_LIT_N, P_COUNT }; /* _N: lit with normals, no material buffer */
+       P_SPRITE_LIT_N, P_TILE_LIT_N, P_SPRITE_MASK, P_TILE_MASK, P_PART, P_PART_LIT, P_PART_LIT_N, P_INST, P_INST_LIT, P_INST_LIT_N, P_SPRITE_PRE, P_TILE_PRE, P_COUNT }; /* _N: lit with normals, no material buffer */
 enum { B_OPAQUE, B_ALPHA, B_MULTIPLY, B_ADD };
 #define U_STREAM_SIZE 1568u
 #define U_SMALL_SIZE 112u
@@ -348,8 +410,9 @@ static struct {
   WGPUDevice dev;
   WGPUQueue q;
   WGPUShaderModule sm_sprite, sm_tile, sm_quad;
-  WGPUBindGroupLayout bgl_stream, bgl_small, bgl_tex, bgl_part;
-  WGPUPipelineLayout pl_stream, pl_small, pl_shadow, pl_part;
+  WGPUBindGroupLayout bgl_stream, bgl_small, bgl_tex, bgl_part, bgl_inst;
+  WGPUPipelineLayout pl_stream, pl_small, pl_shadow, pl_part, pl_inst;
+  WGPUBindGroup bg_inst; /* over ubuf, the instance block (group 2, binding 1) */
   WGPUBindGroup bg_part; /* over ubuf, the particle block (group 2) */
   WGPUSampler samplers[8]; /* nearest | repeat << 1 | mipmapped << 2 */
   WGPUTexture dummy;       /* 1x1x1 "no normal" array (also the solid draws' colour texture) */
@@ -363,14 +426,21 @@ static struct {
   WGPUCommandEncoder enc;
   WGPURenderPassEncoder pass;
   WGPUTextureFormat pass_fmt;
-  bool pass_ds;
+  bool pass_ds;             /* the open pass has the culling depth buffer: draws test it (cull.c) */
+  bool ds_clear;            /* begin_pass clears the depth buffer (the pre-pass) */
+  bool cull_on;             /* the group now drawing culls: canvas and lit passes take the depth buffer */
+  WGPUTexture cull_tex;     /* the depth buffer (Depth32Float, canvas size) */
+  WGPUTextureView cull_view;
+  int cull_w, cull_h;
+  WGPUBuffer dbuf;          /* each vertex's depth */
+  size_t dcap;
   float pass_flip;
   int pass_w, pass_h;
   CW_ARRAY(uint8_t) ustage; /* uniforms for this end, UALIGN-aligned blocks */
   CW_ARRAY(float) sstage;   /* scratch quads (x, y, u, v) */
   WGPUBindGroup bg_stream, bg_small; /* over ubuf (remade when it grows) */
   CW_ARRAY(WGPUBindGroup) transient; /* released after the submit */
-  uint32_t stream_off[2];            /* stream uniform blocks: [0] flip -1, [1] flip +1 */
+  uint32_t stream_off[3];            /* stream uniform blocks: [0] flip -1, [1] flip +1, [2] flip -1 without the culling bias */
 } W;
 
 bool r2d_wg(void) { return cw__wgpu_on(); }
@@ -576,7 +646,10 @@ static WGPUBlendState blend_of(int b) {
 }
 
 static WGPURenderPipeline pipeline(int prog, int blend, WGPUTextureFormat fmt) {
-  uint32_t key = (uint32_t)prog | ((uint32_t)blend << 4) | ((uint32_t)fmt << 8);
+  /* the pass's depth (culling, cull.c): none, or the group's depth tested (W.pass_ds) */
+  bool pre = prog == P_SPRITE_PRE || prog == P_TILE_PRE;
+  bool zt = W.pass_ds && !pre;
+  uint32_t key = (uint32_t)prog | ((uint32_t)blend << 5) | ((uint32_t)fmt << 8) | (zt ? 1u << 24 : 0);
   for (int i = 0; i < W.pipes.count; i++)
     if (W.pipes.data[i].key == key) return W.pipes.data[i].p;
   static const WGPUVertexAttribute stream_attrs[5] = {
@@ -599,14 +672,24 @@ static WGPURenderPipeline pipeline(int prog, int blend, WGPUTextureFormat fmt) {
   WGPUPipelineLayout pl;
   const char *fs = "fs";
   bool lit = prog == P_SPRITE_LIT || prog == P_TILE_LIT || prog == P_SPRITE_LIT_N || prog == P_TILE_LIT_N || prog == P_PART_LIT ||
-             prog == P_PART_LIT_N;
-  bool lit_n = prog == P_SPRITE_LIT_N || prog == P_TILE_LIT_N || prog == P_PART_LIT_N;
+             prog == P_PART_LIT_N || prog == P_INST_LIT || prog == P_INST_LIT_N;
+  bool lit_n = prog == P_SPRITE_LIT_N || prog == P_TILE_LIT_N || prog == P_PART_LIT_N || prog == P_INST_LIT_N;
   bool part = prog == P_PART || prog == P_PART_LIT || prog == P_PART_LIT_N;
-  if (prog == P_SPRITE || prog == P_SPRITE_LIT || prog == P_SPRITE_LIT_N || prog == P_SPRITE_DISTORT || prog == P_SPRITE_MASK || part) {
+  bool inst = prog == P_INST || prog == P_INST_LIT || prog == P_INST_LIT_N;
+  static const WGPUVertexAttribute inst_attrs[3] = {
+    { .format = WGPUVertexFormat_Float32x4, .offset = 0, .shaderLocation = 0 },
+    { .format = WGPUVertexFormat_Unorm8x4, .offset = 16, .shaderLocation = 1 },
+    { .format = WGPUVertexFormat_Uint16x2, .offset = 20, .shaderLocation = 2 },
+  };
+  if (inst) {
+    vbl = (WGPUVertexBufferLayout){ .stepMode = WGPUVertexStepMode_Instance, .arrayStride = 24, .attributeCount = 3, .attributes = inst_attrs };
+    sm = W.sm_sprite;
+    pl = W.pl_inst;
+  } else if (prog == P_SPRITE || prog == P_SPRITE_LIT || prog == P_SPRITE_LIT_N || prog == P_SPRITE_DISTORT || prog == P_SPRITE_MASK || prog == P_SPRITE_PRE || part) {
     vbl = (WGPUVertexBufferLayout){ .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = sizeof(r2d_vertex), .attributeCount = 5, .attributes = stream_attrs };
     sm = W.sm_sprite;
     pl = part ? W.pl_part : W.pl_stream;
-  } else if (prog == P_TILE || prog == P_TILE_LIT || prog == P_TILE_LIT_N || prog == P_TILE_MASK) {
+  } else if (prog == P_TILE || prog == P_TILE_LIT || prog == P_TILE_LIT_N || prog == P_TILE_MASK || prog == P_TILE_PRE) {
     vbl = (WGPUVertexBufferLayout){ .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 16, .attributeCount = 2, .attributes = tile_attrs };
     sm = W.sm_tile;
     pl = W.pl_small;
@@ -619,25 +702,29 @@ static WGPURenderPipeline pipeline(int prog, int blend, WGPUTextureFormat fmt) {
   if (lit) fs = lit_n ? "fs_lit_n" : "fs_lit";
   if (prog == P_SPRITE_DISTORT) fs = "fs_distort";
   if (prog == P_SPRITE_MASK || prog == P_TILE_MASK) fs = "fs_mask";
+  if (pre) fs = "fs_pre";
+  bool stream = prog == P_SPRITE || prog == P_SPRITE_LIT || prog == P_SPRITE_LIT_N || prog == P_SPRITE_PRE;
+  static const WGPUVertexAttribute depth_attr = { .format = WGPUVertexFormat_Float32, .offset = 0, .shaderLocation = 9 };
+  WGPUVertexBufferLayout vb2[2] = { vbl, { .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 4, .attributeCount = 1, .attributes = &depth_attr } };
+  bool zvs = stream && (zt || pre); /* the stream with its depth buffer */
   WGPUBlendState bs = blend_of(blend);
   WGPUColorTargetState ct[3] = {
     { .format = fmt, .blend = blend == B_OPAQUE ? NULL : &bs, .writeMask = prog == P_SHADOW ? WGPUColorWriteMask_None : WGPUColorWriteMask_All },
     { .format = WGPUTextureFormat_RGBA8Unorm, .blend = blend == B_OPAQUE ? NULL : &bs, .writeMask = WGPUColorWriteMask_All },
     { .format = WGPUTextureFormat_RGBA8Unorm, .blend = blend == B_OPAQUE ? NULL : &bs, .writeMask = WGPUColorWriteMask_All },
   };
-  WGPUFragmentState fst = { .module = sm, .entryPoint = SV(fs), .targetCount = lit ? (lit_n ? 2 : 3) : 1, .targets = ct };
-  bool ds = prog == P_LIGHT || prog == P_LIGHT_ST || prog == P_SHADOW;
+  WGPUFragmentState fst = { .module = sm, .entryPoint = SV(fs), .targetCount = pre ? 0 : lit ? (lit_n ? 2 : 3) : 1, .targets = ct };
+  bool ds = zt || pre;
   WGPUStencilFaceState sf = { .compare = WGPUCompareFunction_Always, .failOp = WGPUStencilOperation_Keep,
                               .depthFailOp = WGPUStencilOperation_Keep, .passOp = WGPUStencilOperation_Keep };
-  if (prog == P_SHADOW) sf.passOp = WGPUStencilOperation_Replace;
-  if (prog == P_LIGHT_ST) sf.compare = WGPUCompareFunction_NotEqual;
-  WGPUDepthStencilState dss = { .format = WGPUTextureFormat_Depth24PlusStencil8, .depthWriteEnabled = WGPUOptionalBool_False,
-                                .depthCompare = WGPUCompareFunction_Always, .stencilFront = sf, .stencilBack = sf,
-                                .stencilReadMask = 0xff, .stencilWriteMask = 0xff };
+  WGPUDepthStencilState dss = { .format = WGPUTextureFormat_Depth32Float, .depthWriteEnabled = pre ? WGPUOptionalBool_True : WGPUOptionalBool_False,
+                                .depthCompare = WGPUCompareFunction_Less, .stencilFront = sf, .stencilBack = sf,
+                                .stencilReadMask = 0, .stencilWriteMask = 0 };
   WGPURenderPipelineDescriptor d = {
     .label = SV("r2d"),
     .layout = pl,
-    .vertex = { .module = sm, .entryPoint = SV(part ? "vs_particles" : "vs"), .bufferCount = part ? 0 : 1, .buffers = &vbl },
+    .vertex = { .module = sm, .entryPoint = SV(part ? "vs_particles" : inst ? "vs_instances" : zvs ? "vs_z" : "vs"), .bufferCount = part ? 0 : zvs ? 2 : 1,
+                .buffers = zvs ? vb2 : &vbl },
     .primitive = { .topology = WGPUPrimitiveTopology_TriangleList, .cullMode = WGPUCullMode_None },
     .depthStencil = ds ? &dss : NULL,
     .multisample = { .count = 1, .mask = 0xffffffffu },
@@ -694,6 +781,13 @@ bool r2d_wg_init(void) {
   W.bgl_part = uniform_layout(144);
   WGPUBindGroupLayout s3[3] = { W.bgl_stream, W.bgl_tex, W.bgl_part };
   W.pl_part = wgpuDeviceCreatePipelineLayout(W.dev, &(WGPUPipelineLayoutDescriptor){ .bindGroupLayoutCount = 3, .bindGroupLayouts = s3 });
+  {
+    WGPUBindGroupLayoutEntry ie = { .binding = 1, .visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment,
+                                    .buffer = { .type = WGPUBufferBindingType_Uniform, .hasDynamicOffset = true, .minBindingSize = R2D_INST_VEC4 * 16 } };
+    W.bgl_inst = wgpuDeviceCreateBindGroupLayout(W.dev, &(WGPUBindGroupLayoutDescriptor){ .entryCount = 1, .entries = &ie });
+    WGPUBindGroupLayout s4[3] = { W.bgl_stream, W.bgl_tex, W.bgl_inst };
+    W.pl_inst = wgpuDeviceCreatePipelineLayout(W.dev, &(WGPUPipelineLayoutDescriptor){ .bindGroupLayoutCount = 3, .bindGroupLayouts = s4 });
+  }
   W.pl_small = wgpuDeviceCreatePipelineLayout(W.dev, &(WGPUPipelineLayoutDescriptor){ .bindGroupLayoutCount = 2, .bindGroupLayouts = q2 });
   W.pl_shadow = wgpuDeviceCreatePipelineLayout(W.dev, &(WGPUPipelineLayoutDescriptor){ .bindGroupLayoutCount = 1, .bindGroupLayouts = q2 });
   for (int i = 0; i < 8; i++) {
@@ -736,7 +830,9 @@ void r2d_wg_shutdown(void) {
   if (!W.inited) return;
   for (int i = 0; i < W.pipes.count; i++) wgpuRenderPipelineRelease(W.pipes.data[i].p);
   cw_array_free(&W.pipes);
-  WGPUBuffer bufs[] = { W.vbuf, W.ibuf, W.ubuf, W.sbuf, W.tile_ibuf };
+  if (W.cull_view) wgpuTextureViewRelease(W.cull_view);
+  if (W.cull_tex) wgpuTextureRelease(W.cull_tex);
+  WGPUBuffer bufs[] = { W.vbuf, W.ibuf, W.ubuf, W.sbuf, W.tile_ibuf, W.dbuf };
   for (size_t i = 0; i < CW_ARRAY_LEN(bufs); i++)
     if (bufs[i]) wgpuBufferRelease(bufs[i]);
   if (W.bg_stream) wgpuBindGroupRelease(W.bg_stream);
@@ -750,6 +846,9 @@ void r2d_wg_shutdown(void) {
   for (int i = 0; i < 8; i++) wgpuSamplerRelease(W.samplers[i]);
   wgpuPipelineLayoutRelease(W.pl_stream);
   wgpuPipelineLayoutRelease(W.pl_part);
+  wgpuPipelineLayoutRelease(W.pl_inst);
+  wgpuBindGroupLayoutRelease(W.bgl_inst);
+  if (W.bg_inst) wgpuBindGroupRelease(W.bg_inst);
   wgpuBindGroupLayoutRelease(W.bgl_part);
   if (W.bg_part) wgpuBindGroupRelease(W.bg_part);
   wgpuPipelineLayoutRelease(W.pl_small);
@@ -861,11 +960,11 @@ static void begin_pass(WGPUTextureView color, WGPUTextureFormat fmt, int w, int 
     { .view = mat, .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED, .loadOp = WGPULoadOp_Clear, .storeOp = WGPUStoreOp_Store,
       .clearValue = { 0, 0, 0, 0 } },
   };
-  WGPURenderPassDepthStencilAttachment da = { .view = ds, .depthLoadOp = WGPULoadOp_Clear, .depthStoreOp = WGPUStoreOp_Discard,
-                                              .depthClearValue = 1.0f, .stencilLoadOp = WGPULoadOp_Clear,
-                                              .stencilStoreOp = WGPUStoreOp_Discard, .stencilClearValue = 0 };
+  /* ds: depth culling's depth buffer (cull.c), kept (W.ds_clear: cleared, the pre-pass) */
+  WGPURenderPassDepthStencilAttachment da = { .view = ds, .depthLoadOp = W.ds_clear ? WGPULoadOp_Clear : WGPULoadOp_Load,
+                                              .depthStoreOp = WGPUStoreOp_Store, .depthClearValue = 1.0f };
   WGPUPassTimestampWrites tw;
-  WGPURenderPassDescriptor rp = { .colorAttachmentCount = mat ? 3 : normal ? 2 : 1, .colorAttachments = ca, .depthStencilAttachment = ds ? &da : NULL,
+  WGPURenderPassDescriptor rp = { .colorAttachmentCount = !color ? 0 : mat ? 3 : normal ? 2 : 1, .colorAttachments = ca, .depthStencilAttachment = ds ? &da : NULL,
                                   .timestampWrites = pass_ts(&tw) };
   W.pass = wgpuCommandEncoderBeginRenderPass(W.enc, &rp);
   W.pass_fmt = fmt;
@@ -928,8 +1027,8 @@ void r2d_wg_tilemap_begin(const float u[24], int array, bool lit) {
   memcpy(b.v, u, sizeof b.v);
   uint32_t off = ualloc(&b, sizeof b);
   /* lit: the scene pass has its normal attachment (normals in use) */
-  int prog = R.mask_mode ? P_TILE_MASK : lit ? (R.material_used ? P_TILE_LIT : P_TILE_LIT_N) : P_TILE;
-  wgpuRenderPassEncoderSetPipeline(W.pass, pipeline(prog, R.mask_mode ? B_OPAQUE : cur_blend_wg, W.pass_fmt));
+  int prog = R.mask_mode ? P_TILE_MASK : R.depth_mode == 1 ? P_TILE_PRE : lit ? (R.material_used ? P_TILE_LIT : P_TILE_LIT_N) : P_TILE;
+  wgpuRenderPassEncoderSetPipeline(W.pass, pipeline(prog, R.mask_mode || R.depth_mode ? B_OPAQUE : cur_blend_wg, W.pass_fmt));
   wgpuRenderPassEncoderSetBindGroup(W.pass, 0, W.bg_small, 1, &off);
   wgpuRenderPassEncoderSetBindGroup(W.pass, 1, array_group(array), 0, NULL);
   wgpuRenderPassEncoderSetIndexBuffer(W.pass, W.tile_ibuf, WGPUIndexFormat_Uint16, 0, WGPU_WHOLE_SIZE);
@@ -945,6 +1044,28 @@ void r2d_wg_particles(const r2d_part_draw *d, bool lit) {
   wgpuRenderPassEncoderDraw(W.pass, 6, (uint32_t)d->count, 0, 0);
   R.stats.draw_calls++;
 }
+void r2d_wg_instances(const r2d_inst_draw *d, bool lit, void *stream_buf) {
+  int prog = lit ? (R.material_used ? P_INST_LIT : P_INST_LIT_N) : P_INST;
+  WGPUBuffer vb = d->wbuf ? (WGPUBuffer)d->wbuf : (WGPUBuffer)stream_buf;
+  if (!vb) return;
+  wgpuRenderPassEncoderSetPipeline(W.pass, pipeline(prog, cur_blend_wg, W.pass_fmt));
+  uint32_t off = W.stream_off[W.pass_flip < 0 ? 0 : 1];
+  wgpuRenderPassEncoderSetBindGroup(W.pass, 0, W.bg_stream, 1, &off);
+  wgpuRenderPassEncoderSetBindGroup(W.pass, 1, d->array == R2D_NO_ARRAY ? dummy_group : array_group((int)d->array), 0, NULL);
+  uint32_t io = ualloc(d->u, sizeof d->u);
+  wgpuRenderPassEncoderSetBindGroup(W.pass, 2, W.bg_inst, 1, &io);
+  wgpuRenderPassEncoderSetVertexBuffer(W.pass, 0, vb, d->offset, WGPU_WHOLE_SIZE);
+  wgpuRenderPassEncoderDraw(W.pass, 6, (uint32_t)d->count, 0, 0);
+  R.stats.draw_calls++;
+}
+void *r2d_wg_instance_buffer(void *old, size_t bytes) {
+  if (old) wgpuBufferRelease((WGPUBuffer)old);
+  return make_buffer(bytes ? bytes : 16, WGPUBufferUsage_Vertex, "r2d instances");
+}
+void r2d_wg_buffer_write(void *buf, size_t offset, const void *data, size_t bytes) {
+  if (!buf || !bytes) return;
+  wgpuQueueWriteBuffer(W.q, (WGPUBuffer)buf, offset, data, (bytes + 3) & ~(size_t)3);
+}
 void r2d_wg_tilemap_chunk(void *vbuf, int quads) {
   wgpuRenderPassEncoderSetVertexBuffer(W.pass, 0, (WGPUBuffer)vbuf, 0, WGPU_WHOLE_SIZE);
   wgpuRenderPassEncoderDrawIndexed(W.pass, (uint32_t)quads * 6, 1, 0, 0, 0);
@@ -959,7 +1080,60 @@ typedef struct canvas_target {
 } canvas_target;
 
 static void begin_canvas(const canvas_target *ct, bool clear, const double cc[4]) {
-  begin_pass(ct->view, ct->fmt, R.canvas_w, R.canvas_h, ct->offscreen, clear, cc, NULL, NULL, 0);
+  begin_pass(ct->view, ct->fmt, R.canvas_w, R.canvas_h, ct->offscreen, clear, cc, NULL, W.cull_on && ct->offscreen ? W.cull_view : NULL, 0);
+}
+
+/* depth culling (cull.c): the group's opaque texels, nearest first, into the depth buffer (no colour) */
+static void cull_prepass_wg(const r2d_cull_plan *cp, const r2d_batch *b, int from, int n, int g) {
+  if (!W.cull_tex || W.cull_w != R.canvas_w || W.cull_h != R.canvas_h) {
+    if (W.cull_view) wgpuTextureViewRelease(W.cull_view);
+    if (W.cull_tex) wgpuTextureRelease(W.cull_tex);
+    WGPUTextureDescriptor td = { .label = SV("r2d cull depth"), .usage = WGPUTextureUsage_RenderAttachment, .dimension = WGPUTextureDimension_2D,
+                                 .size = { (uint32_t)R.canvas_w, (uint32_t)R.canvas_h, 1 }, .format = WGPUTextureFormat_Depth32Float,
+                                 .mipLevelCount = 1, .sampleCount = 1 };
+    W.cull_tex = wgpuDeviceCreateTexture(W.dev, &td);
+    W.cull_view = wgpuTextureCreateView(W.cull_tex, NULL);
+    W.cull_w = R.canvas_w, W.cull_h = R.canvas_h;
+  }
+  end_pass();
+  W.ds_clear = true;
+  begin_pass(NULL, WGPUTextureFormat_Undefined, R.canvas_w, R.canvas_h, true, false, (double[4]){ 0, 0, 0, 0 }, NULL, W.cull_view, NULL);
+  W.ds_clear = false;
+  int last = from;
+  while (last < n && cp->grp[last] == g) last++;
+  int cur = -1;
+  uint32_t cur_array = 0xffffffffu, cur_clip = 0xffffffffu;
+  for (int i = last - 1; i >= from; i--) {
+    if (!cp->occ[i]) continue;
+    uint32_t clip = R2D_ST_CLIP(b[i].state);
+    if (clip != cur_clip) set_clip(cur_clip = clip);
+    if (R2D_ST_KIND(b[i].state) == R2D_KIND_TILEMAP) {
+      R.depth_mode = 1;
+      R.tile_depth = r2d_cull_depth_t(2.0f * (float)(b[i].first / 3));
+      r2d_tilemap_render(&R.tdraws.data[b[i].payload], false, R.canvas_h);
+      R.depth_mode = 0;
+      cur = -1;
+      cur_array = 0xffffffffu;
+      continue;
+    }
+    if (cur != P_SPRITE_PRE) {
+      wgpuRenderPassEncoderSetPipeline(W.pass, pipeline(P_SPRITE_PRE, B_OPAQUE, WGPUTextureFormat_Undefined));
+      uint32_t off = W.stream_off[2]; /* offscreen, no bias: each draw's own depth */
+      wgpuRenderPassEncoderSetBindGroup(W.pass, 0, W.bg_stream, 1, &off);
+      wgpuRenderPassEncoderSetVertexBuffer(W.pass, 0, W.vbuf, 0, WGPU_WHOLE_SIZE);
+      wgpuRenderPassEncoderSetVertexBuffer(W.pass, 1, W.dbuf, 0, WGPU_WHOLE_SIZE);
+      wgpuRenderPassEncoderSetIndexBuffer(W.pass, W.ibuf, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+      cur = P_SPRITE_PRE;
+    }
+    uint32_t arr = R2D_ST_ARRAY(b[i].state);
+    if (arr != cur_array) {
+      cur_array = arr;
+      wgpuRenderPassEncoderSetBindGroup(W.pass, 1, arr == R2D_NO_ARRAY ? dummy_group : array_group((int)arr), 0, NULL);
+    }
+    wgpuRenderPassEncoderDrawIndexed(W.pass, b[i].count, 1, b[i].first, 0, 0);
+    R.stats.draw_calls++;
+  }
+  end_pass();
 }
 
 /* ── fx: targets of any format and full-screen passes (fx.h) ─────────── */
@@ -972,7 +1146,9 @@ static const char *WGSL_FX_HEAD =
     "@group(1) @binding(2) var t2: texture_2d<f32>;\n"
     "@group(1) @binding(3) var t3: texture_2d<f32>;\n"
     "@group(1) @binding(4) var s_lin: sampler;\n"
-    "@group(1) @binding(5) var s_near: sampler;\n";
+    "@group(1) @binding(5) var s_near: sampler;\n"
+    "@group(1) @binding(6) var t4: texture_2d<f32>;\n"
+    "@group(1) @binding(7) var t5: texture_2d<f32>;\n";
 /* the full-screen vertex stage of fx programs */
 static const char *WGSL_FX_VS =
     "struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f };\n"
@@ -996,7 +1172,10 @@ static struct {
   CW_ARRAY(fx_pipe) pipes;
 } FX;
 
-int r2d_wg_fx_format(fx_fmt f) { return f == FX_RGBA16F ? WGPUTextureFormat_RGBA16Float : WGPUTextureFormat_RGBA8Unorm; }
+int r2d_wg_fx_format(fx_fmt f) {
+  return f == FX_RGBA16F ? WGPUTextureFormat_RGBA16Float : f == FX_RG11B10F ? WGPUTextureFormat_RG11B10Ufloat : WGPUTextureFormat_RGBA8Unorm;
+}
+bool r2d_wg_small_hdr_ok(void) { return wgpuDeviceHasFeature(W.dev, WGPUFeatureName_RG11B10UfloatRenderable); }
 
 void *r2d_wg_fx_tex(int w, int h, fx_fmt f) {
   WGPUTextureDescriptor d = { .label = SV("r2d fx"),
@@ -1020,14 +1199,14 @@ static void fx_init(void) {
   WGPUBindGroupLayoutEntry ue = { .binding = 0, .visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment,
                                   .buffer = { .type = WGPUBufferBindingType_Uniform, .hasDynamicOffset = true, .minBindingSize = U_FX_SIZE } };
   FX.bgl_u = wgpuDeviceCreateBindGroupLayout(W.dev, &(WGPUBindGroupLayoutDescriptor){ .entryCount = 1, .entries = &ue });
-  WGPUBindGroupLayoutEntry te[6];
+  WGPUBindGroupLayoutEntry te[8];
   memset(te, 0, sizeof te);
-  for (int k = 0; k < 4; k++)
+  for (int k = 0; k < 8; k++)
     te[k] = (WGPUBindGroupLayoutEntry){ .binding = (uint32_t)k, .visibility = WGPUShaderStage_Fragment,
                                         .texture = { .sampleType = WGPUTextureSampleType_Float, .viewDimension = WGPUTextureViewDimension_2D } };
   te[4] = (WGPUBindGroupLayoutEntry){ .binding = 4, .visibility = WGPUShaderStage_Fragment, .sampler = { .type = WGPUSamplerBindingType_Filtering } };
   te[5] = (WGPUBindGroupLayoutEntry){ .binding = 5, .visibility = WGPUShaderStage_Fragment, .sampler = { .type = WGPUSamplerBindingType_Filtering } };
-  FX.bgl_t = wgpuDeviceCreateBindGroupLayout(W.dev, &(WGPUBindGroupLayoutDescriptor){ .entryCount = 6, .entries = te });
+  FX.bgl_t = wgpuDeviceCreateBindGroupLayout(W.dev, &(WGPUBindGroupLayoutDescriptor){ .entryCount = 8, .entries = te });
   WGPUBindGroupLayout two[2] = { FX.bgl_u, FX.bgl_t };
   FX.pl = wgpuDeviceCreatePipelineLayout(W.dev, &(WGPUPipelineLayoutDescriptor){ .bindGroupLayoutCount = 2, .bindGroupLayouts = two });
   FX.black = r2d_wg_fx_tex(1, 1, FX_RGBA8);
@@ -1086,7 +1265,7 @@ static WGPURenderPipeline fx_pipeline(fx_prog *p, int fmt, int blend) {
   return pipe;
 }
 
-void r2d_wg_fx_pass(fx_prog *p, const fx_dst *dst, bool clear, const float cc[4], const fx_rt *const src[4], const float v[8][4],
+void r2d_wg_fx_pass(fx_prog *p, const fx_dst *dst, bool clear, const float cc[4], const fx_rt *const src[FX_SRC], const float v[8][4],
                     int blend) {
   if (!W.enc) {
     cw_warn("render2d: an fx pass outside cw_r2d_end on WebGPU is not drawn (%s)", p->name);
@@ -1116,15 +1295,15 @@ void r2d_wg_fx_pass(fx_prog *p, const fx_dst *dst, bool clear, const float cc[4]
   u.flip = dst->offscreen ? -1.0f : 1.0f;
   if (v) memcpy(u.v, v, sizeof u.v);
   uint32_t off = ualloc(&u, sizeof u);
-  WGPUBindGroupEntry e[6];
+  WGPUBindGroupEntry e[8];
   memset(e, 0, sizeof e);
-  for (int k = 0; k < 4; k++) {
+  for (int k = 0; k < FX_SRC; k++) {
     WGPUTextureView tv = src && src[k] && src[k]->wtex ? keep_view(fx_tex_view((WGPUTexture)src[k]->wtex)) : FX.black_view;
-    e[k] = (WGPUBindGroupEntry){ .binding = (uint32_t)k, .textureView = tv };
+    e[k < 4 ? k : k + 2] = (WGPUBindGroupEntry){ .binding = (uint32_t)(k < 4 ? k : k + 2), .textureView = tv };
   }
   e[4] = (WGPUBindGroupEntry){ .binding = 4, .sampler = W.samplers[0] };
   e[5] = (WGPUBindGroupEntry){ .binding = 5, .sampler = W.samplers[1] };
-  WGPUBindGroup g = keep_group(wgpuDeviceCreateBindGroup(W.dev, &(WGPUBindGroupDescriptor){ .layout = FX.bgl_t, .entryCount = 6, .entries = e }));
+  WGPUBindGroup g = keep_group(wgpuDeviceCreateBindGroup(W.dev, &(WGPUBindGroupDescriptor){ .layout = FX.bgl_t, .entryCount = 8, .entries = e }));
   wgpuRenderPassEncoderSetPipeline(W.pass, pipe);
   wgpuRenderPassEncoderSetBindGroup(W.pass, 0, FX.bg_u, 1, &off);
   wgpuRenderPassEncoderSetBindGroup(W.pass, 1, g, 0, NULL);
@@ -1148,6 +1327,8 @@ static const char *WGSL_LIGHT =
     "@group(1) @binding(2) var t2: texture_2d<f32>;\n"
     "@group(1) @binding(3) var t3: texture_2d<f32>;\n"
     "@group(1) @binding(4) var t4: texture_2d<f32>;\n"
+    "@group(1) @binding(5) var t_cookie: texture_2d_array<f32>;\n"
+    "@group(1) @binding(6) var s_cookie: sampler;\n"
     "@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n"
     "  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));\n"
     "  return vec4f(p.x * 2.0 - 1.0, (p.y * 2.0 - 1.0) * fx.flip, 0.0, 1.0);\n"
@@ -1189,7 +1370,8 @@ static const char *WGSL_LIGHT =
     "}\n"
     "struct LC { col: vec4f, add: vec4f };\n"
     "fn lights(pos: vec4f) -> LC {\n"
-    "  let fc = pos.xy;\n"
+    "  let dv = fx.v[3].w;\n" /* > 1: a smaller light buffer, each texel shades the canvas pixel at its centre (light.c) */
+    "  let fc = select(pos.xy, floor(pos.xy) * dv + floor(dv * 0.5) + 0.5, dv > 1.0);\n"
     "  let ip = vec2i(fc);\n"
     "  var N = vec3f(0.0, 0.0, 1.0); var mapped = 0.0;\n"
     "  if (fx.v[0].x > 0.5) {\n"
@@ -1207,7 +1389,7 @@ static const char *WGSL_LIGHT =
     "  for (var k = 0; k < cnt; k++) {\n"
     "    let e = first + k;\n"
     "    let li = i32(dat(i32(fx.v[2].w) + (e >> 2u))[e & 3]);\n"
-    "    let c = dat(li * 4); let col = dat(li * 4 + 1); let s = dat(li * 4 + 2); let f = dat(li * 4 + 3);\n"
+    "    let c = dat(li * 6); let col = dat(li * 6 + 1); let s = dat(li * 6 + 2); let f = dat(li * 6 + 3);\n"
     "    let dirl = f.z > 0.5;\n"
     "    let d = fc - c.xy;\n"
     "    let dl = length(d);\n"
@@ -1215,6 +1397,14 @@ static const char *WGSL_LIGHT =
     "    if (!dirl) { att = pow(clamp(1.0 - dl / c.z, 0.0, 1.0), col.w); }\n"
     "    if (!dirl && s.z <= 1.0) { att *= smoothstep(s.z, s.w, dot(d / max(dl, 1e-4), s.xy)); }\n"
     "    if (att <= 0.0) { continue; }\n"
+    "    var lc = col.rgb;\n"
+    "    if (f.w > 0.5) {\n" /* a light texture (GL: light.c) */
+    "      let tr = dat(li * 6 + 4); let tp = dat(li * 6 + 5);\n"
+    "      let lq = vec2f(dot(d, s.xy), dot(d, vec2f(-s.y, s.x))) / c.z;\n"
+    "      let tq = clamp(vec2f(0.5 + 0.5 * lq.x, 0.5 - 0.5 * lq.y), vec2f(0.0), vec2f(1.0));\n"
+    "      lc *= textureSampleLevel(t_cookie, s_cookie, mix(tr.xy, tr.zw, tq), u32(tp.x), 0.0).rgb;\n"
+    "      if (max(lc.r, max(lc.g, lc.b)) <= 0.0) { continue; }\n"
+    "    }\n"
     "    var L = normalize(vec3f(-d, c.w));\n"
     "    if (dirl) { L = normalize(vec3f(-s.xy, c.w)); }\n"
     "    let ndl = mix(1.0, max(dot(N, L), 0.0), mapped);\n"
@@ -1223,14 +1413,14 @@ static const char *WGSL_LIGHT =
     "      if (dirl) { sh = shadow(fc, -s.xy, length(fx.v[0].zw / fx.v[0].y), f.x, inside); }\n"
     "      else if (dl > 1e-3) { sh = shadow(fc, -d / dl, dl, f.x, inside); }\n"
     "    }\n"
-    "    acc += col.rgb * att * ndl * sh;\n"
+    "    acc += lc * att * ndl * sh;\n"
     "    var spv = 0.0;\n"
     "    if (spec > 0.0) {\n"
     "      let pw = exp2(2.0 + 8.0 * gloss);\n"
     "      let H = normalize(L + vec3f(0.0, 0.0, 1.0));\n"
     "      spv = spec * pow(max(dot(Nn, H), 0.0), pw) * (pw + 8.0) / 64.0 * max(dot(Nn, L), 0.0) * cov;\n"
     "    }\n"
-    "    accA += col.rgb * att * sh * (f.y + spv);\n"
+    "    accA += lc * att * sh * (f.y + spv);\n"
     "  }\n"
     "  var o: LC;\n"
     "  o.col = vec4f(acc, 1.0);\n"
@@ -1289,13 +1479,16 @@ static void lw_init(void) {
   fx_init();
   if (LW.sm_light) return;
   LW.sm_light = cw__wgpu_shader("r2d light", WGSL_LIGHT);
-  WGPUBindGroupLayoutEntry te[5];
+  WGPUBindGroupLayoutEntry te[7];
   memset(te, 0, sizeof te);
   for (int k = 0; k < 5; k++)
     te[k] = (WGPUBindGroupLayoutEntry){ .binding = (uint32_t)k, .visibility = WGPUShaderStage_Fragment,
                                         .texture = { .sampleType = k == 4 ? WGPUTextureSampleType_UnfilterableFloat : WGPUTextureSampleType_Float,
                                                      .viewDimension = WGPUTextureViewDimension_2D } };
-  LW.bgl_light = wgpuDeviceCreateBindGroupLayout(W.dev, &(WGPUBindGroupLayoutDescriptor){ .entryCount = 5, .entries = te });
+  te[5] = (WGPUBindGroupLayoutEntry){ .binding = 5, .visibility = WGPUShaderStage_Fragment,
+                                      .texture = { .sampleType = WGPUTextureSampleType_Float, .viewDimension = WGPUTextureViewDimension_2DArray } };
+  te[6] = (WGPUBindGroupLayoutEntry){ .binding = 6, .visibility = WGPUShaderStage_Fragment, .sampler = { .type = WGPUSamplerBindingType_Filtering } };
+  LW.bgl_light = wgpuDeviceCreateBindGroupLayout(W.dev, &(WGPUBindGroupLayoutDescriptor){ .entryCount = 7, .entries = te });
   WGPUBindGroupLayout two[2] = { FX.bgl_u, LW.bgl_light };
   LW.pl_light = wgpuDeviceCreatePipelineLayout(W.dev, &(WGPUPipelineLayoutDescriptor){ .bindGroupLayoutCount = 2, .bindGroupLayouts = two });
   LW.sm_mask = fx_module("r2d occluder mask", WGSL_MASK);
@@ -1397,7 +1590,7 @@ void r2d_wg_mask_batches(void *mask, const r2d_batch *b, int n) {
   end_pass();
 }
 
-void r2d_wg_lights_draw(void *light, void *add, int fmt, const float amb[4], const float *data, int rows, const float up[4],
+void r2d_wg_lights_draw(int cookie_array, void *light, void *add, int fmt, const float amb[4], const float *data, int rows, const float up[4],
                         const float uq[4], const float ut[4], void *normal, void *seed, void *mask, void *mat, int w, int h) {
   lw_init();
   fx_ubind();
@@ -1436,10 +1629,13 @@ void r2d_wg_lights_draw(void *light, void *add, int fmt, const float amb[4], con
   memcpy(uv[3], amb, sizeof(float) * 4);
   uint32_t off = fx_uniforms(w, h, true, uv);
   WGPUTexture tx[5] = { (WGPUTexture)normal, (WGPUTexture)seed, (WGPUTexture)mask, (WGPUTexture)mat, LW.data };
-  WGPUBindGroupEntry e[5];
+  WGPUBindGroupEntry e[7];
   memset(e, 0, sizeof e);
   for (int k = 0; k < 5; k++) e[k] = (WGPUBindGroupEntry){ .binding = (uint32_t)k, .textureView = tx[k] ? keep_view(fx_tex_view(tx[k])) : FX.black_view };
-  WGPUBindGroup g = keep_group(wgpuDeviceCreateBindGroup(W.dev, &(WGPUBindGroupDescriptor){ .layout = LW.bgl_light, .entryCount = 5, .entries = e }));
+  /* the light textures' array (cw_light2d.texture), or the 1x1 dummy */
+  e[5] = (WGPUBindGroupEntry){ .binding = 5, .textureView = cookie_array >= 0 ? keep_view(array_view((WGPUTexture)R.arrays.data[cookie_array].wtex)) : W.dummy_view };
+  e[6] = (WGPUBindGroupEntry){ .binding = 6, .sampler = W.samplers[0] };
+  WGPUBindGroup g = keep_group(wgpuDeviceCreateBindGroup(W.dev, &(WGPUBindGroupDescriptor){ .layout = LW.bgl_light, .entryCount = 7, .entries = e }));
   wgpuRenderPassEncoderSetPipeline(W.pass, light_pipeline(add != NULL, (WGPUTextureFormat)fmt));
   wgpuRenderPassEncoderSetBindGroup(W.pass, 0, FX.bg_u, 1, &off);
   wgpuRenderPassEncoderSetBindGroup(W.pass, 1, g, 0, NULL);
@@ -1533,8 +1729,8 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
   for (int i = 0; i < nb; i++)
     if (batches[i].lit && (i == 0 || !batches[i - 1].lit)) lit_runs++;
   for (int i = 0; i < R.occluders.count; i++) edges += R.occluders.data[i].count;
-  size_t ublocks = 8 + R2D_FX_BLOCKS + (size_t)R.tdraws.count + (size_t)R.pdraws.count + (size_t)lit_runs * (2 + 2 * (size_t)R.lights.count);
-  size_t uneed = 2 * 1280 + ublocks * UALIGN;
+  size_t ublocks = 8 + R2D_FX_BLOCKS + (size_t)R.tdraws.count + (size_t)R.pdraws.count + (size_t)R.idraws.count * 5 + (size_t)lit_runs * (2 + 2 * (size_t)R.lights.count);
+  size_t uneed = 3 * 2048 + ublocks * UALIGN;
   size_t sneed = 4096 + ((size_t)lit_runs * ((size_t)R.lights.count * 16 + (size_t)edges * 18 + 64)) * 4;
   bool regroup = !W.ubuf || W.ucap < uneed;
   ensure(&W.ubuf, &W.ucap, uneed, WGPUBufferUsage_Uniform, "r2d uniforms");
@@ -1550,6 +1746,9 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
     if (W.bg_part) wgpuBindGroupRelease(W.bg_part);
     e.size = 144;
     W.bg_part = wgpuDeviceCreateBindGroup(W.dev, &(WGPUBindGroupDescriptor){ .layout = W.bgl_part, .entryCount = 1, .entries = &e });
+    if (W.bg_inst) wgpuBindGroupRelease(W.bg_inst);
+    WGPUBindGroupEntry ie = { .binding = 1, .buffer = W.ubuf, .size = R2D_INST_VEC4 * 16 };
+    W.bg_inst = wgpuDeviceCreateBindGroup(W.dev, &(WGPUBindGroupDescriptor){ .layout = W.bgl_inst, .entryCount = 1, .entries = &ie });
   }
   if (R.verts.count) {
     size_t vb = sizeof(r2d_vertex) * (size_t)R.verts.count, ib = sizeof(uint32_t) * (size_t)R.idx.count;
@@ -1558,6 +1757,15 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
     write_padded(W.vbuf, R.verts.data, vb);
     write_padded(W.ibuf, idx, ib);
   }
+  void *inst_buf = r2d_instances_upload_wg();
+  /* depth culling (cull.c): the plan, and each vertex's depth when some group culls */
+  bool hdr_on = r2d_post_active();
+  const r2d_cull_plan *cp = r2d_cull_build(batches, nb, idx, R.idx.count, hdr_on, hdr_on ? r2d_post_hud_layer() : CW_R2D_MAX_LAYERS);
+  if (cp->any) {
+    ensure(&W.dbuf, &W.dcap, sizeof(float) * (size_t)R.verts.count, WGPUBufferUsage_Vertex, "r2d depths");
+    write_padded(W.dbuf, cp->vdepth, sizeof(float) * (size_t)R.verts.count);
+  }
+  W.cull_on = false;
   cw_array_clear(&W.ustage);
   cw_array_clear(&W.sstage);
   /* the stream's layer table, once per flip */
@@ -1574,10 +1782,14 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
     u[257] = (float)R.canvas_h;
     r2d_wind_uniform(u + 260);
     r2d_fog_uniform(u + 264);
+    u[259] = cp->bias; /* depth culling's test (cull.c) */
     u[258] = -1.0f;
     W.stream_off[0] = ualloc(u, sizeof u);
     u[258] = 1.0f;
     W.stream_off[1] = ualloc(u, sizeof u);
+    u[258] = -1.0f;
+    u[259] = 0;
+    W.stream_off[2] = ualloc(u, sizeof u);
   }
 
   W.enc = wgpuDeviceCreateCommandEncoder(W.dev, NULL);
@@ -1601,8 +1813,10 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
   int cur_prog = -1;
   int prev_layer = -1;
   bool in_dist = false;
+  int cur_g = -1;
   for (int i = 0; i < nb; i++) {
     const r2d_batch *b = &batches[i];
+    int g = cp->any ? cp->grp[i] : -1;
     if (in_hdr && b->layer >= hud) {
       if (in_lit) lit_finish(&ct, lit_lo, lit_hi);
       in_lit = false;
@@ -1619,6 +1833,8 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
       bool reset = false;
       if (in_dist && !dist) {
         end_pass();
+        /* the canvas below the distortion layers, bent now (post.c), so the layers above stay straight */
+        if (r2d_post_dist_resolve()) ct = (canvas_target){ keep_view(fx_tex_view((WGPUTexture)r2d_post_wtex())), (WGPUTextureFormat)r2d_post_wfmt(), true };
         begin_canvas(&ct, false, (double[4]){ 0, 0, 0, 0 });
         in_dist = false;
         reset = true;
@@ -1674,6 +1890,27 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
       R.stats.batches++;
       continue;
     }
+    if (cp->any && g != cur_g) { /* a new culling group (cull.c) */
+      W.cull_on = false;
+      if (in_lit) lit_finish(&ct, lit_lo, lit_hi); /* a lit run ends its group */
+      else if (W.pass_ds) { /* the canvas without the old group's depth */
+        end_pass();
+        begin_canvas(&ct, false, (double[4]){ 0, 0, 0, 0 });
+      }
+      in_lit = false;
+      cur_g = g;
+      if (g >= 0 && cp->gcull[g]) {
+        r2d_timer_end();
+        r2d_timer_begin(R2D_T_CULL);
+        cull_prepass_wg(cp, batches, i, nb, g);
+        r2d_timer_end();
+        r2d_timer_begin(R2D_T_DRAW);
+        W.cull_on = true;
+        begin_canvas(&ct, false, (double[4]){ 0, 0, 0, 0 });
+      }
+      cur_array = cur_blend = cur_clip = 0xffffffffu;
+      cur_prog = -1;
+    }
     if (b->lit && !in_lit) {
       end_pass();
       void *stex, *ntex, *mtex;
@@ -1684,7 +1921,7 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
       WGPUTextureView mv = mtex ? keep_view(fx_tex_view((WGPUTexture)mtex)) : NULL;
       double zero[4] = { 0, 0, 0, 0 };
       cw_array_clear(&R.occ_batches);
-      begin_pass(sv, (WGPUTextureFormat)sfmt, R.canvas_w, R.canvas_h, true, true, zero, nv, NULL, mv);
+      begin_pass(sv, (WGPUTextureFormat)sfmt, R.canvas_w, R.canvas_h, true, true, zero, nv, W.cull_on ? W.cull_view : NULL, mv);
       in_lit = true;
       lit_lo = b->layer;
       cur_array = cur_blend = cur_clip = 0xffffffffu;
@@ -1702,6 +1939,7 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
     if (clip != cur_clip) set_clip(cur_clip = clip);
     cur_blend_wg = bl;
     if (R2D_ST_KIND(b->state) == R2D_KIND_TILEMAP) {
+      R.tile_depth = W.pass_ds ? r2d_cull_depth_t(2.0f * (float)(b->first / 3)) - cp->bias : 0;
       r2d_tilemap_render(&R.tdraws.data[b->payload], in_lit && R.normals_used, R.canvas_h);
       cur_prog = -1;
       cur_array = 0xffffffffu;
@@ -1713,6 +1951,12 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
       cur_array = 0xffffffffu;
       continue;
     }
+    if (R2D_ST_KIND(b->state) == R2D_KIND_INSTANCES) {
+      r2d_wg_instances(&R.idraws.data[b->payload], in_lit && R.normals_used, inst_buf);
+      cur_prog = -1;
+      cur_array = 0xffffffffu;
+      continue;
+    }
     int prog = in_lit && R.normals_used ? (R.material_used ? P_SPRITE_LIT : P_SPRITE_LIT_N) : P_SPRITE;
     if (prog != cur_prog || blend != cur_blend) {
       wgpuRenderPassEncoderSetPipeline(W.pass, pipeline(prog, bl, W.pass_fmt));
@@ -1720,6 +1964,7 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
         uint32_t off = W.stream_off[W.pass_flip < 0 ? 0 : 1];
         wgpuRenderPassEncoderSetBindGroup(W.pass, 0, W.bg_stream, 1, &off);
         wgpuRenderPassEncoderSetVertexBuffer(W.pass, 0, W.vbuf, 0, WGPU_WHOLE_SIZE);
+        if (W.pass_ds) wgpuRenderPassEncoderSetVertexBuffer(W.pass, 1, W.dbuf, 0, WGPU_WHOLE_SIZE);
         wgpuRenderPassEncoderSetIndexBuffer(W.pass, W.ibuf, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
         cur_array = 0xffffffffu;
       }
@@ -1736,6 +1981,7 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
     R.stats.draw_calls++;
     R.stats.batches++;
   }
+  W.cull_on = false;
   if (in_lit) lit_finish(&ct, lit_lo, lit_hi);
   if (in_dist) end_pass();
   if (in_hdr) post_finish(&out_ct);
@@ -1753,8 +1999,12 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
       double lc[4] = { lb.r, lb.g, lb.b, 1 };
       begin_pass(fv, cw__wgpu_frame_format(), tw, th, false, !covers, lc, NULL, NULL, 0);
       WGPUTextureView cv = keep_view(array_view(tex_of(R.canvas_rt)));
-      WGPUBindGroup g = keep_group(tex_group4(cv, W.samplers[1], W.dummy_view, W.dummy_mat_view));
+      cw_scale_filter sf = R.pass.scale_filter;
+      WGPUBindGroup g = keep_group(tex_group4(cv, W.samplers[sf == CW_SCALE_FILTER_NEAREST ? 1 : 0], W.dummy_view, W.dummy_mat_view));
       qblock b = qb();
+      b.v[0][1] = sf == CW_SCALE_FILTER_SHARP ? 1.0f : 0.0f;
+      b.v[0][2] = (float)R.canvas_w, b.v[0][3] = (float)R.canvas_h;
+      b.v[1][0] = r.w / (float)CW_MAX(1, R.canvas_w);
       uint32_t off = ualloc(&b, sizeof b);
       wgpuRenderPassEncoderSetPipeline(W.pass, pipeline(P_BLIT, B_OPAQUE, W.pass_fmt));
       wgpuRenderPassEncoderSetBindGroup(W.pass, 0, W.bg_small, 1, &off);

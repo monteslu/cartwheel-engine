@@ -91,7 +91,9 @@ void cw_r2d_sprite(const cw_sprite *s) {
   const r2d_tex *t = CW_HANDLE_IS_NULL(s->texture) ? NULL : r2d_tex_get(s->texture);
   uint32_t *idx, base;
   r2d_note_tex(t);
+  R.next_opq = (!t || t->opaque) && r2d_default_white(s->color).a >= 1.0f; /* depth culling's hint (cull.c) */
   r2d_vertex *v = r2d_alloc(4, 6, &idx, &base, t ? t->array : R2D_NO_ARRAY, xf_y(s->pos.x, s->pos.y), s->z);
+  R.next_opq = false;
   sprite_fill(s, v, idx, base, r2d_mode(false) & R2D_MODE_ADD, (uint8_t)R.cur_layer);
 }
 
@@ -122,6 +124,7 @@ void cw_r2d_sprites(const cw_sprite *s, int n) {
   if (R.emissive_b && lit) R.normals_used = R.material_used = true;
   uint64_t last_tex = ~0ull;
   uint32_t array = R2D_NO_ARRAY, state = 0;
+  bool tex_opq = false;
   int last_z = 1 << 30;
   uint64_t key = 0;
   for (int i = 0; i < n; i++) {
@@ -131,12 +134,14 @@ void cw_r2d_sprites(const cw_sprite *s, int n) {
       r2d_note_tex(ti);
       array = ti ? ti->array : R2D_NO_ARRAY;
       state = r2d_current_state(array);
+      tex_opq = (!ti || ti->opaque) && R.blend == CW_BLEND_ALPHA;
     }
     if (ysort || s[i].z != last_z) {
       key = r2d_make_key(s[i].z, xf_y(s[i].pos.x, s[i].pos.y));
       last_z = s[i].z;
     }
-    r2d_push_cmd(key, state, (uint32_t)(i0 + 6 * i), 6);
+    bool opq = tex_opq && r2d_default_white(s[i].color).a >= 1.0f; /* depth culling's hint (cull.c) */
+    r2d_push_cmd(key, opq ? state | R2D_ST_OPQ : state, (uint32_t)(i0 + 6 * i), 6);
   }
   sprite_ctx c = { s, R.verts.data + v0, R.idx.data + i0, (uint32_t)v0, (uint8_t)(r2d_mode(false) & R2D_MODE_ADD),
                    (uint8_t)R.cur_layer };
@@ -197,7 +202,9 @@ void cw_r2d_nine_slice(const cw_nine_slice *n) {
 
 static void solid_quad(const cw_vec2 p[4], const uint8_t c[4], float sort_y) {
   uint32_t *idx, base;
+  R.next_opq = c[3] == 255; /* depth culling's hint (cull.c) */
   r2d_vertex *v = r2d_alloc(4, 6, &idx, &base, R2D_NO_ARRAY, sort_y, 0);
+  R.next_opq = false;
   uint8_t mode = r2d_mode(true), layer = (uint8_t)R.cur_layer;
   for (int k = 0; k < 4; k++) put(&v[k], p[k].x, p[k].y, 0, 0, c, 0, mode, layer);
   for (int k = 0; k < 6; k++) idx[k] = base + QUAD_IDX[k];
@@ -523,7 +530,9 @@ void cw_r2d_polygon(const cw_vec2 *pts, int n, cw_color col) {
   uint8_t c[4];
   r2d_pack_color(c, col);
   uint32_t *idx, base;
+  R.next_opq = c[3] == 255; /* depth culling's hint (cull.c) */
   r2d_vertex *v = r2d_alloc(n, ni, &idx, &base, R2D_NO_ARRAY, xf_y(pts[0].x, maxy), 0);
+  R.next_opq = false;
   uint8_t mode = r2d_mode(true), layer = (uint8_t)R.cur_layer;
   for (int i = 0; i < n; i++) put(&v[i], pts[i].x, pts[i].y, 0, 0, c, 0, mode, layer);
   for (int i = 0; i < ni; i++) idx[i] = base + tri[i];

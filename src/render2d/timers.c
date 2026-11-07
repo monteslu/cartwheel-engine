@@ -28,7 +28,8 @@ void r2d_timers_frame(void) {}
 void r2d_timers_wg_result(const float ms[R2D_T_COUNT], const bool seen[R2D_T_COUNT]) { (void)ms, (void)seen; }
 bool r2d_timers_on(void) { return false; }
 #else
-static const char *const NAMES[R2D_T_COUNT] = { "draw", "field", "lights", "gi", "composite", "post" };
+/* gi_source: global illumination's source pass (gi is the rest of it); cull: depth culling's pre-passes */
+static const char *const NAMES[R2D_T_COUNT] = { "draw", "field", "lights", "gi", "composite", "post", "gi_source", "cull" };
 #define POOL 256
 typedef struct pending { GLuint q; int part; uint64_t frame; } pending;
 static struct {

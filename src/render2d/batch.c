@@ -8,6 +8,7 @@
 #include "cartwheel/jobs.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/profile.h"
+#include "cartwheel/quality.h"
 
 r2d_state R = { .atlas_array = { -1, -1 }, .atlas_mip = -1 };
 
@@ -27,6 +28,10 @@ static void stream_vao(int i) {
   glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(r2d_vertex), (void *)20);
   glEnableVertexAttribArray(4);
   glVertexAttribPointer(4, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(r2d_vertex), (void *)24);
+  /* depth culling's per-vertex depth (cull.c): on in a pass that culls, else the constant 0 */
+  glBindBuffer(GL_ARRAY_BUFFER, R.dvbo[i]);
+  glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, 4, (void *)0);
+  glDisableVertexAttribArray(5);
   glBindVertexArray(0);
 }
 
@@ -60,6 +65,7 @@ bool r2d_lazy_init(void) {
   R.max_layers = CW_CLAMP(ml, 1, 256);
   glGenBuffers(R2D_RING, R.vbo);
   glGenBuffers(R2D_RING, R.ibo);
+  glGenBuffers(R2D_RING, R.dvbo);
   glGenVertexArrays(R2D_RING, R.vao);
   for (int i = 0; i < R2D_RING; i++) stream_vao(i);
   /* scratch quads: pos.xy, uv.xy */
@@ -104,18 +110,22 @@ void cw_r2d_shutdown(void) {
   r2d_fonts_shutdown();
   r2d_tilemaps_shutdown();
   r2d_lights_shutdown();
+  r2d_instances_shutdown();
+  r2d_cull_shutdown();
   r2d_gi_shutdown();
   r2d_post_shutdown();
   fx_shutdown();
   r2d_textures_shutdown();
   if (r2d_wg()) r2d_wg_shutdown();
   else {
-    r2d_program *ps[] = { &R.part, &R.part_lit, &R.sprite_mask, &R.tile_mask, &R.sprite_distort, &R.sprite, &R.sprite_lit, &R.tile, &R.tile_lit, &R.light, &R.shadow, &R.composite, &R.blit };
+    r2d_program *ps[] = { &R.sprite_pre, &R.tile_pre, &R.inst, &R.inst_lit, &R.part, &R.part_lit, &R.sprite_mask, &R.tile_mask, &R.sprite_distort, &R.sprite, &R.sprite_lit, &R.tile, &R.tile_lit, &R.light, &R.shadow, &R.composite, &R.blit };
   for (size_t i = 0; i < CW_ARRAY_LEN(ps); i++)
     if (ps[i]->prog) glDeleteProgram(ps[i]->prog);
   r2d_yuv_gl_shutdown();
   glDeleteBuffers(R2D_RING, R.vbo);
   glDeleteBuffers(R2D_RING, R.ibo);
+  glDeleteBuffers(R2D_RING, R.dvbo);
+  if (R.cull_rb) glDeleteRenderbuffers(1, &R.cull_rb);
   glDeleteVertexArrays(R2D_RING, R.vao);
   glDeleteBuffers(1, &R.quad_vbo);
   glDeleteVertexArrays(1, &R.quad_vao);
@@ -320,7 +330,7 @@ uint64_t r2d_make_key(int extra_z, float sort_y) {
 uint32_t r2d_current_state(uint32_t array) {
   cw_blend b = R.blend == CW_BLEND_ADD ? CW_BLEND_ALPHA : R.blend;
   uint32_t occ = R.occluder_on && R.layers[R.cur_layer].lit ? R2D_ST_OCCL : 0;
-  return R2D_STATE(array, b, current_clip(), R2D_KIND_STREAM) | occ;
+  return R2D_STATE(array, b, current_clip(), R2D_KIND_STREAM) | occ | (R.next_opq && R.blend == CW_BLEND_ALPHA ? R2D_ST_OPQ : 0);
 }
 
 void cw_r2d_set_occluder(bool on) { R.occluder_on = on; }
@@ -330,7 +340,8 @@ void r2d_push_cmd(uint64_t key, uint32_t state, uint32_t ifirst, uint32_t icount
    * command list (and the sort) short when a layer is not y-sorted */
   if (R.cmds.count) {
     r2d_cmd *p = &R.cmds.data[R.cmds.count - 1];
-    if (p->key == key && p->state == state && p->ifirst + p->icount == ifirst && R2D_ST_KIND(state) == R2D_KIND_STREAM) {
+    if (p->key == key && (p->state & ~R2D_ST_OPQ) == (state & ~R2D_ST_OPQ) && p->ifirst + p->icount == ifirst && R2D_ST_KIND(state) == R2D_KIND_STREAM) {
+      p->state &= state | ~R2D_ST_OPQ; /* opaque only while every merged draw is */
       p->icount += icount;
       return;
     }
@@ -377,7 +388,9 @@ void cw_r2d_particles(const cw_r2d_particles_desc *d) {
   cw_color c1 = (d->color_end.r == 0 && d->color_end.g == 0 && d->color_end.b == 0 && d->color_end.a == 0)
                     ? (cw_color){ c0.r, c0.g, c0.b, 0 } : d->color_end;
   float lmin = d->life_min > 0 ? d->life_min : 1, lmax = d->life_max > 0 ? d->life_max : lmin;
-  r2d_part_draw p = { .count = d->count, .array = t ? t->array : R2D_NO_ARRAY };
+  /* the effects detail's share (cartwheel/quality.h "particles": all on High and Ultra); the first k of a
+   * stateless emitter are the same k particles at every share */
+  r2d_part_draw p = { .count = cw_quality_count(d->count, "particles"), .array = t ? t->array : R2D_NO_ARRAY };
   float v[9][4] = { { pos.x, pos.y, d->extent.x, d->extent.y },
                     { d->angle, d->spread, d->speed_min, d->speed_max > 0 ? d->speed_max : d->speed_min },
                     { d->gravity.x, d->gravity.y, d->drag, d->time != 0 ? d->time : R.pass.time },
@@ -395,7 +408,7 @@ void cw_r2d_particles(const cw_r2d_particles_desc *d) {
   cw_array_push(&R.cmds, ((r2d_cmd){ r2d_make_key(0, pos.y), R2D_STATE(p.array, b, current_clip(), R2D_KIND_PARTICLES),
                                      (uint32_t)R.idx.count, 0, (uint32_t)(R.pdraws.count - 1) }));
   R.stats.commands++;
-  R.stats.particles += (uint32_t)d->count;
+  R.stats.particles += (uint32_t)p.count;
 }
 
 void r2d_particles_gl(const r2d_part_draw *d, bool lit) {
@@ -425,6 +438,12 @@ void r2d_push_special(uint32_t array, float sort_y, uint32_t payload) {
   cw_blend b = R.blend == CW_BLEND_ADD ? CW_BLEND_ALPHA : R.blend;
   uint32_t occ = R.occluder_on && R.layers[R.cur_layer].lit ? R2D_ST_OCCL : 0;
   cw_array_push(&R.cmds, ((r2d_cmd){ r2d_make_key(0, sort_y), R2D_STATE(array, b, current_clip(), R2D_KIND_TILEMAP) | occ,
+                                     (uint32_t)R.idx.count, 0, payload }));
+  R.stats.commands++;
+}
+
+void r2d_push_special_kind(uint32_t array, float sort_y, uint32_t payload, int kind, int blend) {
+  cw_array_push(&R.cmds, ((r2d_cmd){ r2d_make_key(0, sort_y), R2D_STATE(array, (uint32_t)blend, current_clip(), (uint32_t)kind),
                                      (uint32_t)R.idx.count, 0, payload }));
   R.stats.commands++;
 }
@@ -559,6 +578,8 @@ void cw_r2d_begin(const cw_r2d_pass_desc *desc) {
   cw_array_clear(&R.cmds);
   cw_array_clear(&R.tdraws);
   cw_array_clear(&R.pdraws);
+  cw_array_clear(&R.idraws);
+  cw_array_clear(&R.istage);
   cw_array_clear(&R.lights);
   cw_array_clear(&R.occluders);
   cw_array_clear(&R.occ_pts);
@@ -673,6 +694,8 @@ void r2d_upload_layer_uniforms(const r2d_program *p) {
     r2d_fog_uniform(f);
     glUniform4fv(uf, CW_R2D_MAX_LAYERS, f);
   }
+  GLint uz = glGetUniformLocation(p->prog, "u_zbias");
+  if (uz >= 0) glUniform1f(uz, R.zbias);
   GLint uw = glGetUniformLocation(p->prog, "u_wind");
   if (uw >= 0) {
     float w[4];
@@ -797,6 +820,77 @@ static bool same_target(int a, int b) {
   return (a < hud) == (b < hud);
 }
 
+/* depth culling (cull.c), GL: the depth buffer, alone in a framebuffer for
+ * the pre-pass and attached to the HDR canvas and a lit run's buffers */
+static GLuint cull_fbo;
+static void cull_rb_gl(void) {
+  if (R.cull_rb && R.cull_w == R.canvas_w && R.cull_h == R.canvas_h) return;
+  if (!R.cull_rb) glGenRenderbuffers(1, &R.cull_rb);
+  glBindRenderbuffer(GL_RENDERBUFFER, R.cull_rb);
+  glRenderbufferStorage(GL_RENDERBUFFER, 0x8CAC /* GL_DEPTH_COMPONENT32F */, R.canvas_w, R.canvas_h);
+  R.cull_w = R.canvas_w, R.cull_h = R.canvas_h;
+  if (!cull_fbo) glGenFramebuffers(1, &cull_fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, cull_fbo);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, R.cull_rb);
+}
+void r2d_cull_attach_gl(GLuint fbo) { /* (fbo bound) the depth buffer while a group culls, none otherwise */
+  if (fbo) glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, R.cull_on ? R.cull_rb : 0);
+}
+static void apply_clip(uint32_t clip, int fb_h);
+/* the group's opaque texels, nearest first, into the depth buffer (colour off) */
+static void cull_prepass_gl(const r2d_cull_plan *cp, const r2d_batch *b, int from, int n, int g) {
+  cull_rb_gl();
+  glBindFramebuffer(GL_FRAMEBUFFER, cull_fbo);
+  glViewport(0, 0, R.canvas_w, R.canvas_h);
+  glDisable(GL_SCISSOR_TEST);
+  glDisable(GL_BLEND);
+  glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LESS);
+  glDepthMask(GL_TRUE);
+  glClearDepthf(1.0f);
+  glClear(GL_DEPTH_BUFFER_BIT);
+  int last = from;
+  while (last < n && cp->grp[last] == g) last++;
+  bool bound = false;
+  uint32_t cur_array = 0xffffffffu, cur_clip = 0xffffffffu;
+  for (int i = last - 1; i >= from; i--) {
+    if (!cp->occ[i]) continue;
+    uint32_t clip = R2D_ST_CLIP(b[i].state);
+    if (clip != cur_clip) apply_clip(cur_clip = clip, R.canvas_h);
+    if (R2D_ST_KIND(b[i].state) == R2D_KIND_TILEMAP) {
+      R.depth_mode = 1;
+      R.tile_depth = r2d_cull_depth_t(2.0f * (float)(b[i].first / 3));
+      r2d_tilemap_render(&R.tdraws.data[b[i].payload], false, R.canvas_h);
+      R.depth_mode = 0;
+      bound = false;
+      cur_array = 0xffffffffu;
+      continue;
+    }
+    if (!bound) {
+      float zb = R.zbias;
+      R.zbias = 0; /* the pre-pass writes each draw's own depth */
+      glUseProgram(R.sprite_pre.prog);
+      r2d_upload_layer_uniforms(&R.sprite_pre);
+      R.zbias = zb;
+      glBindVertexArray(R.vao[R.ring]);
+      bound = true;
+    }
+    uint32_t arr = R2D_ST_ARRAY(b[i].state);
+    if (arr != cur_array) {
+      cur_array = arr;
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, arr == R2D_NO_ARRAY ? R.dummy_normal : R.arrays.data[arr].tex);
+    }
+    glDrawElements(GL_TRIANGLES, (GLsizei)b[i].count, GL_UNSIGNED_INT, (void *)((size_t)b[i].first * 4));
+    R.stats.draw_calls++;
+  }
+  glBindVertexArray(0);
+  glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+  glDepthMask(GL_FALSE);
+  glDisable(GL_SCISSOR_TEST);
+}
+
 /* the post chain from the HDR canvas onto the canvas, then back to drawing there */
 static void post_to(GLuint canvas) {
   fx_dst d = { .w = R.canvas_w, .h = R.canvas_h, .fbo = canvas, .offscreen = canvas != 0 };
@@ -853,26 +947,28 @@ void cw_r2d_end(void) {
     if (R2D_ST_KIND(st) == R2D_KIND_STREAM && batches.count) {
       r2d_batch *b = &batches.data[batches.count - 1];
       uint32_t ba = R2D_ST_ARRAY(b->state), ca = R2D_ST_ARRAY(st);
-      if (R2D_ST_KIND(b->state) == R2D_KIND_STREAM && b->lit == lit && same_target(b->layer, layer) && (b->state & ~0xfffu) == (st & ~0xfffu) &&
+      if (R2D_ST_KIND(b->state) == R2D_KIND_STREAM && b->lit == lit && same_target(b->layer, layer) && (b->state & ~0xfffu & ~R2D_ST_OPQ) == (st & ~0xfffu & ~R2D_ST_OPQ) &&
           (ba == ca || ba == R2D_NO_ARRAY || ca == R2D_NO_ARRAY) && b->first + b->count == c->ifirst) {
         b->count += c->icount;
         b->layer_last = layer;
+        b->opq = b->opq && (st & R2D_ST_OPQ);
         if (ba == R2D_NO_ARRAY) b->state = (b->state & ~0xfffu) | ca;
         continue;
       }
     }
     if (R2D_ST_KIND(st) == R2D_KIND_STREAM && c->icount == 0) continue;
-    cw_array_push(&batches, ((r2d_batch){ st, c->ifirst, c->icount, c->payload, layer, layer, lit }));
+    cw_array_push(&batches, ((r2d_batch){ st, c->ifirst, c->icount, c->payload, layer, layer, lit, (st & R2D_ST_OPQ) != 0 }));
   }
 
   CW_PROFILE_END();
   /* a layer that reads or bends the screen makes the pass draw offscreen */
-  R.offscreen = false;
+  R.offscreen = R.screen_reads = false;
   {
     int hud = R.has_post && R.post.hud_layer > 0 ? R.post.hud_layer : CW_R2D_MAX_LAYERS;
-    for (int i = 0; i < batches.count && !R.offscreen; i++) {
+    for (int i = 0; i < batches.count; i++) {
       const cw_r2d_layer_desc *ld = &R.layers[batches.data[i].layer];
       if (batches.data[i].layer < hud && (ld->screen_read || ld->distortion > 0)) R.offscreen = true;
+      if (batches.data[i].layer < hud && ld->screen_read) R.screen_reads = true;
     }
   }
   if (r2d_wg()) { /* WebGPU: same batches, its own submission */
@@ -893,6 +989,22 @@ void cw_r2d_end(void) {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)sizeof(uint32_t) * R.idx.count, out, GL_STREAM_DRAW);
   }
   glBindVertexArray(0);
+  r2d_instances_upload_gl();
+  /* depth culling (cull.c): the plan, and each vertex's depth when some group culls */
+  bool hdr_on = r2d_post_active();
+  const r2d_cull_plan *cp = r2d_cull_build(batches.data, batches.count, out, R.idx.count, hdr_on, hdr_on ? r2d_post_hud_layer() : CW_R2D_MAX_LAYERS);
+  R.zbias = cp->bias;
+  R.cull_on = false;
+  glBindVertexArray(R.vao[ring]);
+  if (cp->any) {
+    glBindBuffer(GL_ARRAY_BUFFER, R.dvbo[ring]);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(float) * R.verts.count, cp->vdepth, GL_STREAM_DRAW);
+    glEnableVertexAttribArray(5);
+  } else {
+    glDisableVertexAttribArray(5);
+  }
+  glBindVertexArray(0);
+  glVertexAttrib4fv(5, (const float[4]){ 0, 0, 0, 1 });
   CW_PROFILE_END();
 
   /* target */
@@ -923,8 +1035,10 @@ void cw_r2d_end(void) {
   }
   int prev_layer = -1;
   bool in_dist = false;
+  int cur_g = -1;
   for (int i = 0; i < batches.count; i++) {
     const r2d_batch *b = &batches.data[i];
+    int g = cp->any ? cp->grp[i] : -1;
     if (in_hdr && b->layer >= hud) {
       if (in_lit) end_lit_run(lit_lo, lit_hi, cur);
       in_lit = false;
@@ -940,6 +1054,8 @@ void cw_r2d_end(void) {
       const cw_r2d_layer_desc *ld = &R.layers[b->layer];
       bool dist = in_hdr && ld->distortion > 0 && r2d_dist_ok();
       if (in_dist && !dist) {
+        /* what the distortion layers bent is the canvas below them: bend it now, so the layers above stay straight */
+        if (r2d_post_dist_resolve()) cur = r2d_post_fbo();
         r2d_set_target_fbo(cur, R.canvas_w, R.canvas_h);
         base_state();
         in_dist = false;
@@ -991,8 +1107,31 @@ void cw_r2d_end(void) {
       R.stats.batches++;
       continue;
     }
+    if (cp->any && g != cur_g) { /* a new culling group (cull.c) */
+      if (in_lit) end_lit_run(lit_lo, lit_hi, cur); /* a lit run ends its group */
+      in_lit = false;
+      if (R.cull_on) glDisable(GL_DEPTH_TEST);
+      R.cull_on = false;
+      cur_g = g;
+      if (g >= 0 && cp->gcull[g]) {
+        r2d_timer_end();
+        r2d_timer_begin(R2D_T_CULL);
+        cull_prepass_gl(cp, batches.data, i, batches.count, g);
+        r2d_timer_end();
+        r2d_timer_begin(R2D_T_DRAW);
+        R.cull_on = true;
+        r2d_set_target_fbo(cur, R.canvas_w, R.canvas_h);
+        r2d_cull_attach_gl(cur);
+        base_state();
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+      }
+      prog = NULL;
+      cur_array = cur_blend = cur_clip = 0xffffffffu;
+    }
     if (b->lit && !in_lit) {
       begin_lit_run();
+      if (R.cull_on) glEnable(GL_DEPTH_TEST);
       in_lit = true;
       lit_lo = b->layer;
       prog = NULL;
@@ -1009,6 +1148,7 @@ void cw_r2d_end(void) {
     if (blend != cur_blend) apply_blend(cur_blend = blend);
     if (clip != cur_clip) apply_clip(cur_clip = clip, R.canvas_h);
     if (R2D_ST_KIND(b->state) == R2D_KIND_TILEMAP) {
+      R.tile_depth = R.cull_on ? r2d_cull_depth_t(2.0f * (float)(b->first / 3)) - R.zbias : 0;
       r2d_tilemap_render(&R.tdraws.data[b->payload], in_lit && R.normals_used, R.canvas_h);
       prog = NULL;
       cur_array = 0xffffffffu;
@@ -1016,6 +1156,12 @@ void cw_r2d_end(void) {
     }
     if (R2D_ST_KIND(b->state) == R2D_KIND_PARTICLES) {
       r2d_particles_gl(&R.pdraws.data[b->payload], in_lit && R.normals_used);
+      prog = NULL;
+      cur_array = 0xffffffffu;
+      continue;
+    }
+    if (R2D_ST_KIND(b->state) == R2D_KIND_INSTANCES) {
+      r2d_instances_gl(&R.idraws.data[b->payload], in_lit && R.normals_used);
       prog = NULL;
       cur_array = 0xffffffffu;
       continue;
@@ -1041,6 +1187,10 @@ void cw_r2d_end(void) {
   }
   if (in_lit) end_lit_run(lit_lo, lit_hi, cur);
   if (in_dist) r2d_set_target_fbo(cur, R.canvas_w, R.canvas_h);
+  if (R.cull_on) {
+    glDisable(GL_DEPTH_TEST);
+    R.cull_on = false;
+  }
   if (in_hdr) post_to(canvas);
   r2d_timer_end();
 
@@ -1059,8 +1209,14 @@ void cw_r2d_end(void) {
     glUseProgram(R.blit.prog);
     glUniform2f(R.blit.u_target, (float)R.target_w, (float)R.target_h);
     glUniform1f(R.blit.u[U_PAGE], 0);
+    cw_scale_filter sf = R.pass.scale_filter;
+    glUniform4f(R.blit.u[U_PAGE + 1], sf == CW_SCALE_FILTER_SHARP ? 1.0f : 0.0f, (float)R.canvas_w, (float)R.canvas_h,
+                r.w / (float)CW_MAX(1, R.canvas_w));
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D_ARRAY, R.arrays.data[r2d_tex_get(R.canvas_rt)->array].tex);
+    GLint flt = sf == CW_SCALE_FILTER_NEAREST ? GL_NEAREST : GL_LINEAR;
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, flt);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, flt);
     r2d_draw_quad(r.x, r.y, r.x + r.w, r.y + r.h, 0, 1, 1, 0); /* the canvas is y-up */
   }
   glBindVertexArray(0);

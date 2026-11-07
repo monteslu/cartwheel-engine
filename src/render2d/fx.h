@@ -12,7 +12,8 @@
 
 #include "internal.h"
 
-typedef enum { FX_RGBA8, FX_RGBA16F, FX_FMT_COUNT } fx_fmt;
+/* FX_RG11B10F: three floats in 32 bits, no alpha (the small HDR canvas of Low and Very Low) */
+typedef enum { FX_RGBA8, FX_RGBA16F, FX_RG11B10F, FX_FMT_COUNT } fx_fmt;
 
 typedef struct fx_rt {
   int w, h;
@@ -33,8 +34,8 @@ typedef struct fx_dst {
 
 /* a full-screen program: GLSL ES 3.00 fragment body and WGSL fragment body.
  * GLSL gets: uniform vec4 u_v[8]; uniform vec2 u_size (destination pixels);
- * uniform sampler2D t0..t3; in vec2 v_uv; out vec4 o_col.
- * WGSL gets: fx.size (vec2f), fx.v (array<vec4f, 8>), t0..t3 (texture_2d<f32>),
+ * uniform sampler2D t0..t5; in vec2 v_uv; out vec4 o_col.
+ * WGSL gets: fx.size (vec2f), fx.v (array<vec4f, 8>), t0..t5 (texture_2d<f32>),
  * s_lin / s_near (samplers), and defines @fragment fn fs(i: VO) with i.uv. */
 typedef struct fx_prog {
   const char *name, *glsl, *wgsl;
@@ -50,6 +51,8 @@ enum { FX_BLEND_NONE, FX_BLEND_PREMUL, FX_BLEND_ADD };
 
 /* the format HDR targets get: RGBA16F where the host renders it, else RGBA8 */
 fx_fmt fx_hdr_format(void);
+/* the host renders and blends FX_RG11B10F (GL: an FBO with one is complete; WebGPU: rg11b10ufloat-renderable) */
+bool fx_small_hdr_ok(void);
 /* (re)create rt at this size and format (no-op when it already is) */
 void fx_rt_ensure(fx_rt *rt, int w, int h, fx_fmt f);
 void fx_rt_free(fx_rt *rt);
@@ -58,13 +61,17 @@ fx_dst fx_dst_of(const fx_rt *rt);
  * texel); v: 8 vec4 of uniforms (may be NULL) */
 void fx_pass(fx_prog *p, const fx_dst *dst, bool clear, const float clear_rgba[4], const fx_rt *const src[4],
              const float v[8][4], int blend);
+/* the same with six sources (t0..t5) */
+#define FX_SRC 6
+void fx_pass6(fx_prog *p, const fx_dst *dst, bool clear, const float clear_rgba[4], const fx_rt *const src[FX_SRC],
+              const float v[8][4], int blend);
 void fx_shutdown(void);
 
 /* backends (fx.c GL, wgpu.c WebGPU) */
 void *r2d_wg_fx_tex(int w, int h, fx_fmt f);
 int r2d_wg_fx_format(fx_fmt f); /* its WGPUTextureFormat */
 void *r2d_wg_fx_view(void *tex); /* a render attachment view (owned by the caller of the pass: transient) */
-void r2d_wg_fx_pass(fx_prog *p, const fx_dst *dst, bool clear, const float clear_rgba[4], const fx_rt *const src[4],
+void r2d_wg_fx_pass(fx_prog *p, const fx_dst *dst, bool clear, const float clear_rgba[4], const fx_rt *const src[FX_SRC],
                     const float v[8][4], int blend);
 void r2d_wg_fx_prog_free(fx_prog *p);
 /* WebGPU: the render pass now open (r2d_wg_end's) is ended before an fx pass

@@ -19,7 +19,10 @@
  *
  * CW_R2D_HDR picks a variant for the tests' controls (native only): "nopost"
  * (no chain), "nobloom", "noshadow", "noemission", "nomaterial", "hard"
- * (every light's softness 0), "novolume", "nogi", "nowater", "nodistort". The scene is a pure function of the
+ * (every light's softness 0), "novolume", "nogi", "nowater", "nodistort", "lut" (the teal and orange
+ * lookup table), "lutid" (the identity table: the picture unchanged), "cookie" (the torches and the
+ * spot lamp shine through a window's panes: light textures), "front" (a lattice drawn above the
+ * distortion layer, which must stay straight) and "frontnodistort" (the same without distortion). The scene is a pure function of the
  * tick. */
 #include <math.h>
 #include <stdlib.h>
@@ -29,11 +32,11 @@
 #include "cartwheel/platform.h"
 #include "cartwheel/render2d.h"
 
-enum { L_SKY, L_WORLD, L_WATER, L_HEAT, L_HUD };
+enum { L_SKY, L_WORLD, L_WATER, L_HEAT, L_FRONT, L_HUD };
 #define SW 128
 
 typedef struct {
-  cw_texture stone, crystal, solid;
+  cw_texture stone, crystal, solid, panes;
   cw_font font;
   cw_water2d *pool;
   int32_t ticks;
@@ -108,6 +111,18 @@ static void make_art(app_t *a) {
       m[0] = in ? 255 : 0, m[1] = 0, m[2] = 0, m[3] = 255;
     }
   a->crystal = cw_texture_from_pixels(CW, CH, cc, NULL);
+  /* a light texture: a window of four panes, the bars dark, the glass a little warm toward its middle */
+  enum { PW = 64 };
+  static uint8_t pw[PW * PW * 4];
+  for (int y = 0; y < PW; y++)
+    for (int x = 0; x < PW; x++) {
+      bool bar = abs(x - 32) < 3 || abs(y - 32) < 3 || x < 4 || y < 4 || x > 59 || y > 59;
+      float r = sqrtf((float)((x - 32) * (x - 32) + (y - 32) * (y - 32))) / 45.0f;
+      uint8_t *p = pw + 4 * (y * PW + x);
+      float v = bar ? 0.0f : 1.0f - 0.25f * r;
+      p[0] = (uint8_t)(255 * v), p[1] = (uint8_t)(235 * v), p[2] = (uint8_t)(200 * v), p[3] = 255;
+    }
+  a->panes = cw_texture_from_pixels(PW, PW, pw, NULL);
   if (!mode("nomaterial")) cw_texture_set_material_map(a->crystal, cm);
 }
 
@@ -120,7 +135,8 @@ static void init(void *user) {
   cw_r2d_layer_set(L_WORLD, &(cw_r2d_layer_desc){ .lit = true, .occluder_depth = 14 });
   a->pool = cw_water2d_new(&(cw_water2d_desc){ .columns = 80, .width = 330 });
   cw_r2d_layer_set(L_WATER, &(cw_r2d_layer_desc){ .screen_read = !mode("nowater") });
-  cw_r2d_layer_set(L_HEAT, &(cw_r2d_layer_desc){ .distortion = mode("nodistort") ? 0 : 6 });
+  cw_r2d_layer_set(L_HEAT, &(cw_r2d_layer_desc){ .distortion = mode("nodistort") || mode("frontnodistort") ? 0 : 6 });
+  cw_r2d_layer_set(L_FRONT, NULL);
   cw_r2d_layer_set(L_HUD, NULL);
   cw_debug_i32("ticks", &a->ticks);
   cw_debug_field("maps_ok", &a->maps_ok, CW_DBG_U8, 1);
@@ -150,6 +166,8 @@ static void render(void *user, double alpha) {
   cw_r2d_post post = { .hud_layer = L_HUD, .bloom = !mode("nobloom"), .bloom_threshold = 1.0f, .bloom_intensity = 0.7f,
                        .tone_knee = 0.7f, .saturation = 1.1f, .contrast = 1.05f, .lift = { 0.01f, 0.015f, 0.03f, 0 },
                        .gain = { 0.97f, 1.0f, 1.06f, 0 }, .vignette = 0.35f };
+  if (mode("lut")) post.lut = cw_r2d_lut_preset(CW_R2D_LUT_TEAL_ORANGE);
+  if (mode("lutid")) post.lut = cw_r2d_lut_preset(CW_R2D_LUT_IDENTITY);
   cw_r2d_gi gi = { .intensity = 1.0f };
   cw_r2d_begin(&(cw_r2d_pass_desc){ .clear = true, .clear_color = cw_hex(0x05070dff), .ambient = cw_rgba(0.10f, 0.11f, 0.16f, 1),
                                     .post = mode("nopost") ? NULL : &post, .gi = mode("nogi") ? NULL : &gi });
@@ -199,11 +217,13 @@ static void render(void *user, double alpha) {
     float fl = 1 + 0.08f * sinf(t * 13 + (float)i * 3) + 0.05f * sinf(t * 31 + (float)i);
     cw_vec2 p = { W * (0.12f + 0.5f * (float)i), H * 0.55f };
     cw_r2d_light(&(cw_light2d){ .pos = p, .radius = 420 * k, .color = cw_hex(0xffa050ff), .energy = 1.6f * fl, .falloff = 1.6f,
-                                .shadows = sh, .softness = soft, .volumetric = mode("novolume") ? 0 : 0.06f });
+                                .shadows = sh, .softness = soft, .volumetric = mode("novolume") ? 0 : 0.06f,
+                                .texture = mode("cookie") ? a->panes : (cw_texture){ 0 }, .angle = 0.3f * (float)i });
   }
   /* a spot lamp from the right wall, hard shadows */
   cw_r2d_light(&(cw_light2d){ .pos = { W * 0.96f, H * 0.3f }, .radius = 700 * k, .color = cw_hex(0x90c0ffff), .energy = 1.4f,
-                              .angle = 2.6f + 0.15f * sinf(t * 0.7f), .cone = 0.32f, .cone_soft = 0.35f, .shadows = sh, .softness = 0.05f });
+                              .angle = 2.6f + 0.15f * sinf(t * 0.7f), .cone = 0.32f, .cone_soft = 0.35f, .shadows = sh, .softness = 0.05f,
+                              .texture = mode("cookie") ? a->panes : (cw_texture){ 0 } });
   /* moonlight down through the gap: directional, volumetric shafts */
   cw_r2d_light(&(cw_light2d){ .directional = true, .angle = 1.75f, .height = 0.6f, .color = cw_hex(0xa8c4ffff), .energy = 0.9f,
                               .shadows = sh, .softness = soft * 0.5f, .volumetric = mode("novolume") ? 0 : 0.35f });
@@ -234,6 +254,12 @@ static void render(void *user, double alpha) {
     cw_r2d_shockwave((cw_vec2){ W * 0.30f, H * 0.45f }, ph * 300 * k, 40 * k, 1 - ph / 2);
   }
 
+  /* a lattice in front of the distortion layer: it draws over the bent picture, straight */
+  if (mode("front") || mode("frontnodistort")) {
+    cw_r2d_use_layer(L_FRONT);
+    for (int i = 0; i < 9; i++) cw_r2d_rect((cw_rect){ W * 0.05f + (float)i * W * 0.1f, H * 0.3f, 3 * k, H * 0.5f }, cw_hex(0xe0d090ff));
+    for (int j = 0; j < 4; j++) cw_r2d_rect((cw_rect){ W * 0.05f, H * (0.32f + 0.15f * (float)j), W * 0.8f, 3 * k }, cw_hex(0xe0d090ff));
+  }
   /* HUD: after the chain */
   cw_r2d_use_layer(L_HUD);
   cw_r2d_rect((cw_rect){ 0, 0, W, 40 * k }, cw_hex(0x000000b0));
