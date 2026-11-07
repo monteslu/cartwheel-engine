@@ -109,11 +109,12 @@ writeFileSync(a[a.indexOf('--output') + 1], 'version=' + a[a.indexOf('--version'
 `);
 const cart = join(OUT, 'game.wasc');
 const vfile = join(OUT, 'game.version');
-const update = (set = '') => sh(process.execPath, [TOOL, 'update', '--out', vfile, '--dir', repo, '--set', set, '--fallback', '', '--wasc', cart]);
+const record = join(OUT, 'game.pack.json');
+const update = (set = '') => sh(process.execPath, [TOOL, 'update', '--out', vfile, '--dir', repo, '--set', set, '--fallback', '', '--wasc', cart, '--record', record]);
 const cartVersion = () => (readFileSync(cart, 'utf8').match(/version=(.*)/) || [])[1];
 let r = update();
 if (r.status !== 0) fail(`update: ${r.stderr}`);
-r = sh(process.execPath, [TOOL, 'pack', '--version-file', vfile, '--wasc', cart, '--', process.execPath, fake]);
+r = sh(process.execPath, [TOOL, 'pack', '--version-file', vfile, '--wasc', cart, '--record', record, '--', process.execPath, fake]);
 if (r.status !== 0) fail(`pack: ${r.stderr}`);
 expect('pack: the cart carries the version file', cartVersion(), `1.2.3-dev.g${sha2}`);
 git('tag', 'v1.2.4');

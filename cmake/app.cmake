@@ -317,9 +317,10 @@ function(cw_add_app name)
     # existing cart packed with another version is packed again with this one
     # (tools/cart-version.mjs); the link's pack reads the file
     set(_ver_file ${CMAKE_CURRENT_BINARY_DIR}/${name}.version)
+    set(_ver_record ${CMAKE_CURRENT_BINARY_DIR}/${name}.pack.json)
     add_custom_target(${name}_version
       COMMAND node ${CW_ROOT}/tools/cart-version.mjs update --out ${_ver_file} --dir ${CMAKE_CURRENT_SOURCE_DIR}
-              --set "${A_VERSION}" --fallback "${_cwproj_version}" --wasc ${_wasc}
+              --set "${A_VERSION}" --fallback "${_cwproj_version}" --wasc ${_wasc} --record ${_ver_record}
       BYPRODUCTS ${_ver_file} VERBATIM)
     add_dependencies(${name} ${name}_version)
     add_custom_command(TARGET ${name} POST_BUILD
@@ -327,7 +328,7 @@ function(cw_add_app name)
       ${_opt_cmd}
       ${_stage_cmd}
       COMMAND node ${CW_ROOT}/tools/check-imports.mjs $<TARGET_FILE:${name}> ${_wgpu_check}
-      COMMAND node ${CW_ROOT}/tools/cart-version.mjs pack --version-file ${_ver_file} --wasc ${_wasc}
+      COMMAND node ${CW_ROOT}/tools/cart-version.mjs pack --version-file ${_ver_file} --wasc ${_wasc} --record ${_ver_record}
               -- node ${_wc_pack} --wasm $<TARGET_FILE:${name}> --name ${name} ${_assets} ${_files} ${_meta}
       COMMENT "cart ${name}.wasc")
   endif()
