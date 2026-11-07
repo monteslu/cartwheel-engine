@@ -133,7 +133,7 @@ The field's size and the march steps follow the effects detail of the [graphics 
 
 A pass with `.post` (a `cw_r2d_post`) draws its layers under `post->hud_layer` into a high dynamic range canvas (RGBA16F where the host renders it), so colour can go past 1: `cw_r2d_set_intensity` multiplies later draws (1 to 16), lights go as bright as asked, additive glows stack. The chain then turns that canvas into the pass's output: exposure, bloom (what passes a soft-knee threshold, blurred over up to 8 halvings with a 13-tap filtered downsample and a tent upsample), a tone curve, a grade (contrast, saturation, lift, gamma, gain, tint), a vignette and a dither below one 8-bit level so smooth gradients do not band. The default tone curve, `CW_R2D_TONE_SOFT`, leaves everything under `tone_knee` exactly as drawn and rolls off above it, so 0..1 art is untouched; `ACES`, `REINHARD` and `CLAMP` are there too. Layers from `hud_layer` up draw after the chain, straight into the output: a HUD over a glowing world. Each pass has its own chain, so two regions can be graded differently. A NULL `post` draws exactly as before.
 
-Bloom follows the effects detail: none on Very Low, at most 3 levels on Low and 5 on Medium. On the 890M at 1080p the chain with 6 bloom levels costs about 0.3 ms.
+Bloom follows the effects detail: none on Very Low, at most 3 levels on Low and 5 on Medium. On the 890M at 1080p the chain with 6 bloom levels costs about 0.6 ms of GPU time, 0.16 ms without bloom.
 
 ## Reading and bending the screen
 

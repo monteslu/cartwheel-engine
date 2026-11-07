@@ -254,8 +254,8 @@ typedef enum {
  * Low at most 3 levels, Medium at most 5, High and Ultra as asked. The
  * grade and the tone curve hold on every preset.
  *
- * Cost (890M, 1080p): about 0.3 ms with 6 bloom levels; 14 full-screen
- * passes, about 100 WebGPU calls. */
+ * Cost (890M, 1080p): about 0.6 ms with 6 bloom levels (0.16 without bloom); 14 full-screen
+ * passes, about 220 WebGPU calls. */
 typedef enum { CW_R2D_TONE_SOFT, CW_R2D_TONE_ACES, CW_R2D_TONE_REINHARD, CW_R2D_TONE_CLAMP } cw_r2d_tone;
 typedef struct cw_r2d_post {
   int hud_layer;          /* canvas layers >= this draw after the chain (0 = every layer goes through it) */
@@ -297,7 +297,7 @@ typedef struct cw_r2d_post {
  *
  * Quality (effects detail): off on Very Low, the field at 1/8 of the canvas
  * on Low, 1/4 on Medium and High (or `resolution`), 1/2 on Ultra.
- * Cost (890M, 1080p, High): about 0.6 ms, 25 full-screen passes. */
+ * Cost (890M, 1080p, High): about 0.8 ms (GL) to 1.0 ms (WebGPU), about 25 full-screen passes. */
 typedef struct cw_r2d_gi {
   float intensity;      /* 0 = 1: multiplies the bounced light */
   float bounce;         /* the share of the light on an occluder that it gives back: 0 = 0.5, negative = none */

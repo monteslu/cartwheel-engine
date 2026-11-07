@@ -27,20 +27,24 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - Samples `r2d_hdr`, `r2d_motion`, `r2d_stress`; `tools/r2d-perf.mjs` (the stress cases on GL and WebGPU at any size and preset: CPU ms, frame ms, draws, WebGPU calls).
 
 ### Changed
-- **The lights of a lit run are tiled**: sorted into 32-pixel screen tiles on the CPU, then one full-screen pass shades each pixel with its tile's lights, reading its normal and material once and writing once (no blending of overlapping light quads). 500 lights: 3 draws and 63 WebGPU calls a frame, from 502 draws and 3058 calls.
-- **Shadows come from a distance field of the occluders** instead of stencil volumes rebuilt on the CPU per light per occluder edge: the outlines are filled into a mask, a jump flood makes the field once per lit run, and each lit pixel marches toward its light. 500 shadowed lights over 120 occluders: 0.8 ms of CPU and 280 WebGPU calls, from 4.8 to 8.1 ms and 6061 calls. Shadows can be soft now. The field's size and the march's steps follow the effects detail. An occluder's own pixels stay lit, as before; the other 2D samples draw the same pixels as before, and the r2d_lights sample's shadow edges move by a pixel or two (0.04% of its pixels).
+- **The lights of a lit run are tiled**: sorted into 32-pixel screen tiles on the CPU, then one full-screen pass shades each pixel with its tile's lights, reading its normal and material once and writing once (no blending of overlapping light quads). 500 lights: 3 draws and 70 WebGPU calls a frame, from 502 draws and 3058 calls.
+- **Shadows come from a distance field of the occluders** instead of stencil volumes rebuilt on the CPU per light per occluder edge: the outlines are filled into a mask, a jump flood makes the field once per lit run, and each lit pixel marches toward its light. 500 shadowed lights over 120 occluders: 1.2 ms of CPU and 231 WebGPU calls, from 4.8 to 8.1 ms and 6061 calls. Shadows can be soft now. The field's size and the march's steps follow the effects detail. An occluder's own pixels stay lit, as before; the other 2D samples draw the same pixels as before, and the r2d_lights sample's shadow edges move by a pixel or two (0.04% of its pixels).
 - The lit layers' normal and material buffers are made only when a normal map, a material map or emission is drawn into them.
 
 ### Fixed
 - Batches merged across canvas layers that draw to different targets, and a lit run merged across layers lost the lights of its later layers.
 
-### Measured (Radeon 890M, 1080p, native, frame time to GPU completion, GL / WebGPU)
+### Measured (Radeon 890M, 1080p, native, GL / WebGPU; GPU parts from CW_R2D_TIMERS)
 
 | Case | Before | After |
 |---|---|---|
-| 20k normal-mapped sprites, 500 lights | 5.5 / 5.2 ms, 502 draws, 3058 calls | 4.5 / 4.6 ms, 3 draws, 72 calls |
-| the same, 500 shadowed lights, 120 occluders | 5.9 / 12.9 ms (CPU 4.8 / 8.1), 6061 calls | 7.0 / 6.9 ms (CPU 0.8 / 0.9), 280 calls |
-| the same, 64 shadowed lights | 4.7 / 5.1 ms, 826 calls | 6.9 / 6.5 ms, 280 calls |
+| 20k normal-mapped sprites, 500 lights | 502 draws, 3058 WebGPU calls | 3 draws, 70 calls; lights 1.6 / 1.4 ms |
+| the same, 500 shadowed lights, 120 occluders | CPU 4.8 / 8.1 ms, 1002 draws, 6061 calls, hard shadows | CPU 1.2 / 1.3 ms, 13 draws, 231 calls; field 0.5 ms, lights 3.6 / 3.0 ms, soft shadows |
+| 16 shadowed lights + global illumination | (no GI) | field 0.5, lights 1.0 / 0.8, GI 0.8 / 1.0 ms, 34 draws |
+| post chain, 6 bloom levels | (none) | 0.6 ms (0.16 without bloom, as on Very Low) |
+| a million GPU particles | (none) | 9.3 / 10.9 ms, 1 draw, 0.05 ms CPU; 100k: 0.7 / 0.8 ms |
+
+Shadowed lights cost more GPU time than the old hard stencil shadows (the field and a march per light per pixel: 64 large shadowed lights 3.3 / 2.6 ms) and far less CPU and far fewer calls; the field halves on Very Low and Low (0.16 ms).
 
 ### Tests
 - `r2d-hdr` and `r2d-motion`: GL against WebGPU, with controls that leave out the chain, bloom, global illumination, shadows, distortion, the pool, the penumbra, the wind, the trails and the mipmaps, each of which must change the frame.
