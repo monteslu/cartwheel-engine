@@ -50,6 +50,20 @@ Shadowed lights cost more GPU time than the old hard stencil shadows (the field 
 - `r2d-hdr` and `r2d-motion`: GL against WebGPU, with controls that leave out the chain, bloom, global illumination, shadows, distortion, the pool, the penumbra, the wind, the trails and the mipmaps, each of which must change the frame.
 - `r2d-perf` (local): every stress case within its WebGPU call budget, the lit cases within their few draws; control: budgets of one call fail.
 
+## v0.36.1 (2026-11-07)
+
+### Fixed
+- WebGPU pass timing sees the GPU work three.c submits on command buffers of its own: a ReflectionProbe3D's or a ProceduralSky's capture (PMREM) and mip chains. three.c v0.187.5 tells the engine of each such command encoder, and the engine writes the pass's timestamps inside it. Before, that work was untimed on WebGPU, so a scene that captures a probe every few frames read far cheaper on WebGPU than on GL (the chromite game's High read 3.7 ms on WebGPU against 7.1 ms on GL).
+- WebGPU pass timing reads back through two buffers, so every frame is timed. With one, the frame after each read back went untimed, and work that runs every other frame could fall only on untimed frames.
+- A pass that ran in a frame and wrote no timestamp (a probe or sky pass between its captures) reads 0 for that frame on WebGPU, instead of holding the last frame it drew.
+
+### Changed
+- three.c v0.187.5 (its encoder hook, `t3_renderer_set_encoder_hook`).
+- `tools/quality-range.mjs` takes a frame's cost as the passes' 16-frame averages summed. The pipeline's own total is the last frame's, which a capture or a changing sky every few frames made jump by whether the last frame had one.
+
+### Moving a game to v0.36.1
+- Nothing to change in code. On WebGPU a game with a reflection probe or a changing sky now reads its real GPU time: re-measure its quality range.
+
 ## v0.36.0 (2026-11-06)
 
 ### Changed
