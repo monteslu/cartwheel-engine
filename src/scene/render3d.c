@@ -21,6 +21,7 @@
 #include "cartwheel/gl.h"
 #if CW_WGPU
 #include "platform/wgpu.h"
+#include "render/pipeline_wgpu.h"
 #endif
 
 void cw__programs_register(void); /* src/render/programs.c */
@@ -107,6 +108,7 @@ t3_renderer *cw_render3d_window_renderer(int w, int h) {
 #if CW_WGPU
   if (r && cw_gpu_backend() == CW_GPU_WEBGPU)
     t3_renderer_use_wgpu(r, cw__wgpu_device(), cw__wgpu_queue(), (int)cw__wgpu_frame_format());
+  if (r && cw_gpu_backend() == CW_GPU_WEBGPU) t3_renderer_set_encoder_hook(r, cw__pw_encoder_hook, NULL);
   if (r && cw_gpu_reversed_depth()) t3_renderer_set_forward_shadows(r, true), t3_renderer_set_reversed_depth(r, true);
 #endif
   return r;
@@ -1053,6 +1055,7 @@ t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
      * scene target on its frame encoder (the scene pass) */
     if (cw_gpu_backend() == CW_GPU_WEBGPU)
       t3_renderer_use_wgpu(s->renderer, cw__wgpu_device(), cw__wgpu_queue(), (int)WGPUTextureFormat_RGBA16Float);
+    if (cw_gpu_backend() == CW_GPU_WEBGPU) t3_renderer_set_encoder_hook(s->renderer, cw__pw_encoder_hook, NULL); /* its own command buffers timed */
     if (cw_gpu_reversed_depth()) t3_renderer_set_forward_shadows(s->renderer, true), t3_renderer_set_reversed_depth(s->renderer, true);
 #endif
     s->w = w;
