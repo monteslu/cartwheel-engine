@@ -174,7 +174,12 @@ static void render(void *user, double alpha) {
   rect_occluder((cw_rect){ 0, H * 0.88f, W, H * 0.12f }, rock);               /* floor */
   rect_occluder((cw_rect){ W * 0.22f, H * 0.42f, 34 * k, H * 0.46f }, rock);   /* pillars */
   rect_occluder((cw_rect){ W * 0.72f, H * 0.36f, 40 * k, H * 0.52f }, rock);
-  rect_occluder((cw_rect){ W * 0.40f, H * 0.60f, W * 0.14f, 14 * k }, rock);   /* a ledge */
+  /* a ledge and two hanging stones: art that casts shadows by its alpha (no polygon) */
+  cw_r2d_set_occluder(true);
+  cw_r2d_rect((cw_rect){ W * 0.40f, H * 0.60f, W * 0.14f, 14 * k }, rock);
+  cw_r2d_circle((cw_vec2){ W * 0.47f, H * 0.36f }, 18 * k, 0, rock);
+  cw_r2d_circle((cw_vec2){ W * 0.60f, H * 0.30f }, 12 * k, 0, rock);
+  cw_r2d_set_occluder(false);
   /* crystals: emission 1, intensity 4 */
   if (!mode("noemission")) {
     cw_r2d_set_emissive(1.0f);

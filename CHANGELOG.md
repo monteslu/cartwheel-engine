@@ -16,6 +16,9 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - **2D water**: `cw_water2d` (a spring surface, splashes, deterministic on the CPU) and `cw_r2d_water` (the world refracted through the body and mirrored on it from the screen texture, a depth tint, caustics from `cw_r2d_caustics_texture()`, a lit surface line).
 - **Wind**: `cw_r2d_pass_desc.wind` and `cw_r2d_set_sway`: sprites' top edges sway in the vertex stage (grass, reeds, banners) at no CPU cost.
 - **Trails**: `cw_r2d_trail`, a ribbon along a path tapering and fading from head to tail, textured along its length (`uv_repeat`).
+- **Occluders from art**: `cw_r2d_set_occluder(true)` makes later sprites, shapes, text and tilemaps in lit layers cast shadows (and block global illumination) wherever their alpha is over half: ground tiles and props need no polygons.
+- `CW_R2D_FEATURES` (2) in render2d.h, for code that builds against older SDKs too.
+- `CW_R2D_TIMERS=1` (native): the GPU time of each part of `cw_r2d_end` (draw, field, lights, gi, composite, post) as debug fields `r2d_gpu.*`, on GL and WebGPU; `tools/r2d-perf.mjs --timers`.
 - **Fog and flash**: `cw_r2d_layer_desc.fog` turns a layer toward a colour (atmospheric depth for parallax layers); `cw_r2d_set_flash` turns sprites and shapes toward their colour (hit flashes, silhouettes).
 - **Mipmapped atlas pages** (`cw_texture_desc.mipmaps`): three box-filtered halvings made at load, 8-pixel gutters, so HD art drawn small stays smooth.
 - Scene nodes: Light2D `softness`, `cone`, `cone_soft`, `directional`, `volumetric`; Sprite2D `sway`, `emissive`, `intensity`; CanvasSettings `occluder_depth`, `post` (with `exposure`, `bloom`, `bloom_threshold`, `bloom_intensity`, `tone`, `contrast`, `saturation`, `vignette`; screen-space CanvasLayers draw after the chain), `gi` (`gi_intensity`, `gi_bounce`), `wind_strength`, `wind_speed`, `wind_wavelength`, `wind_gusts`.
@@ -23,7 +26,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - Samples `r2d_hdr`, `r2d_motion`, `r2d_stress`; `tools/r2d-perf.mjs` (the stress cases on GL and WebGPU at any size and preset: CPU ms, frame ms, draws, WebGPU calls).
 
 ### Changed
-- **Every light of a lit run is one instanced draw.** 500 lights: 3 draws and 72 WebGPU calls a frame, from 502 draws and 3058 calls.
+- **The lights of a lit run are tiled**: sorted into 32-pixel screen tiles on the CPU, then one full-screen pass shades each pixel with its tile's lights, reading its normal and material once and writing once (no blending of overlapping light quads). 500 lights: 3 draws and 63 WebGPU calls a frame, from 502 draws and 3058 calls.
 - **Shadows come from a distance field of the occluders** instead of stencil volumes rebuilt on the CPU per light per occluder edge: the outlines are filled into a mask, a jump flood makes the field once per lit run, and each lit pixel marches toward its light. 500 shadowed lights over 120 occluders: 0.8 ms of CPU and 280 WebGPU calls, from 4.8 to 8.1 ms and 6061 calls. Shadows can be soft now. The field's size and the march's steps follow the effects detail. An occluder's own pixels stay lit, as before; the other 2D samples draw the same pixels as before, and the r2d_lights sample's shadow edges move by a pixel or two (0.04% of its pixels).
 - The lit layers' normal and material buffers are made only when a normal map, a material map or emission is drawn into them.
 

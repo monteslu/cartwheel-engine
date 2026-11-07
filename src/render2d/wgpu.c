@@ -75,6 +75,19 @@ void r2d_wg_fx_pass(fx_prog *p, const fx_dst *dst, bool clear, const float cc[4]
   (void)p, (void)dst, (void)clear, (void)cc, (void)src, (void)v, (void)blend;
 }
 void r2d_wg_fx_prog_free(fx_prog *p) { (void)p; }
+bool r2d_wg_timers_init(void) { return false; }
+bool r2d_wg_timer_mark(int part, bool end) { (void)part, (void)end; return false; }
+void r2d_wg_timers_resolve(void) {}
+void r2d_wg_timers_map(void) {}
+void r2d_wg_mask_draw(void *mask, int w, int h, const float *tris, int nverts, float cw, float ch) {
+  (void)mask, (void)w, (void)h, (void)tris, (void)nverts, (void)cw, (void)ch;
+}
+void r2d_wg_mask_batches(void *mask, const r2d_batch *b, int n) { (void)mask, (void)b, (void)n; }
+void r2d_wg_lights_draw(void *light, void *add, int fmt, const float amb[4], const float *data, int rows, const float up[4],
+                        const float uq[4], const float ut[4], void *normal, void *seed, void *mask, void *mat, int w, int h) {
+  (void)light, (void)add, (void)fmt, (void)amb, (void)data, (void)rows, (void)up, (void)uq, (void)ut, (void)normal, (void)seed, (void)mask,
+      (void)mat, (void)w, (void)h;
+}
 #else
 
 #include "platform/wgpu.h"
@@ -150,6 +163,12 @@ static const char *WGSL_SPRITE =
     "  if ((i.mode & 4u) != 0u) { c.a = 0.0; }\n"
     "  return c;\n"
     "}\n"
+    /* occluders from art (GL: SPRITE_FS with MASK) */
+    "@fragment fn fs_mask(i: VO) -> @location(0) vec4f {\n"
+    "  let c = shade(i, textureSample(t_tex, t_smp, i.uv, i.page));\n"
+    "  if (c.a < 0.5) { discard; }\n"
+    "  return vec4f(1.0);\n"
+    "}\n"
     /* distortion layers (GL: SPRITE_FS with DISTORT) */
     "@fragment fn fs_distort(i: VO) -> @location(0) vec4f {\n"
     "  var c = shade(i, textureSample(t_tex, t_smp, i.uv, i.page));\n"
@@ -204,6 +223,11 @@ static const char *WGSL_TILE =
     "}\n"
     "@fragment fn fs(i: VO) -> @location(0) vec4f {\n"
     "  return textureSample(t_tex, t_smp, i.uv, i.page) * vec4f(q.f.rgb * q.f.a, q.f.a);\n"
+    "}\n"
+    "@fragment fn fs_mask(i: VO) -> @location(0) vec4f {\n"
+    "  let c = textureSample(t_tex, t_smp, i.uv, i.page) * vec4f(q.f.rgb * q.f.a, q.f.a);\n"
+    "  if (c.a < 0.5) { discard; }\n"
+    "  return vec4f(1.0);\n"
     "}\n"
     "struct LitOut { @location(0) col: vec4f, @location(1) nrm: vec4f, @location(2) mat: vec4f };\n"
     "fn lit_body(i: VO) -> LitOut {\n"
@@ -269,7 +293,7 @@ static const char *WGSL_QUAD =
 /* ── state ─────────────────────────────────────────────────────────────── */
 
 enum { P_SPRITE, P_SPRITE_LIT, P_TILE, P_TILE_LIT, P_LIGHT, P_LIGHT_ST, P_SHADOW, P_COMPOSITE, P_BLIT, P_SPRITE_DISTORT,
-       P_SPRITE_LIT_N, P_TILE_LIT_N, P_COUNT }; /* _N: lit with normals, no material buffer */
+       P_SPRITE_LIT_N, P_TILE_LIT_N, P_SPRITE_MASK, P_TILE_MASK, P_COUNT }; /* _N: lit with normals, no material buffer */
 enum { B_OPAQUE, B_ALPHA, B_MULTIPLY, B_ADD };
 #define U_STREAM_SIZE 1568u
 #define U_SMALL_SIZE 112u
@@ -535,11 +559,11 @@ static WGPURenderPipeline pipeline(int prog, int blend, WGPUTextureFormat fmt) {
   const char *fs = "fs";
   bool lit = prog == P_SPRITE_LIT || prog == P_TILE_LIT || prog == P_SPRITE_LIT_N || prog == P_TILE_LIT_N;
   bool lit_n = prog == P_SPRITE_LIT_N || prog == P_TILE_LIT_N;
-  if (prog == P_SPRITE || prog == P_SPRITE_LIT || prog == P_SPRITE_LIT_N || prog == P_SPRITE_DISTORT) {
+  if (prog == P_SPRITE || prog == P_SPRITE_LIT || prog == P_SPRITE_LIT_N || prog == P_SPRITE_DISTORT || prog == P_SPRITE_MASK) {
     vbl = (WGPUVertexBufferLayout){ .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = sizeof(r2d_vertex), .attributeCount = 5, .attributes = stream_attrs };
     sm = W.sm_sprite;
     pl = W.pl_stream;
-  } else if (prog == P_TILE || prog == P_TILE_LIT || prog == P_TILE_LIT_N) {
+  } else if (prog == P_TILE || prog == P_TILE_LIT || prog == P_TILE_LIT_N || prog == P_TILE_MASK) {
     vbl = (WGPUVertexBufferLayout){ .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 16, .attributeCount = 2, .attributes = tile_attrs };
     sm = W.sm_tile;
     pl = W.pl_small;
@@ -551,6 +575,7 @@ static WGPURenderPipeline pipeline(int prog, int blend, WGPUTextureFormat fmt) {
   }
   if (lit) fs = lit_n ? "fs_lit_n" : "fs_lit";
   if (prog == P_SPRITE_DISTORT) fs = "fs_distort";
+  if (prog == P_SPRITE_MASK || prog == P_TILE_MASK) fs = "fs_mask";
   WGPUBlendState bs = blend_of(blend);
   WGPUColorTargetState ct[3] = {
     { .format = fmt, .blend = blend == B_OPAQUE ? NULL : &bs, .writeMask = prog == P_SHADOW ? WGPUColorWriteMask_None : WGPUColorWriteMask_All },
@@ -728,6 +753,55 @@ static uint32_t squad(float x0, float y0, float x1, float y1, float u0, float v0
   return first;
 }
 
+/* ── GPU timers (CW_R2D_TIMERS, timers.c): each render pass of a part writes
+ * timestamps at its beginning and end; a part's time is its passes' sum ── */
+
+#define TQ 128
+static struct {
+  WGPUQuerySet qs;
+  WGPUBuffer resolve, readback;
+  int used, part[TQ / 2], open; /* open: the part now marked (-1 none) */
+  int rpairs, rpart[TQ / 2];
+  bool mapping, requested;
+} TW = { .open = -1 };
+
+bool r2d_wg_timers_init(void) {
+  if (!cw__wgpu_timestamps()) {
+    cw_warn("render2d: CW_R2D_TIMERS on a WebGPU device without timestamps: no GPU times");
+    return false;
+  }
+  TW.qs = wgpuDeviceCreateQuerySet(W.dev, &(WGPUQuerySetDescriptor){ .label = SV("r2d timers"), .type = WGPUQueryType_Timestamp, .count = TQ });
+  TW.resolve = wgpuDeviceCreateBuffer(W.dev, &(WGPUBufferDescriptor){ .usage = WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc, .size = TQ * 8 });
+  TW.readback = wgpuDeviceCreateBuffer(W.dev, &(WGPUBufferDescriptor){ .usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst, .size = TQ * 8 });
+  return true;
+}
+
+bool r2d_wg_timer_mark(int part, bool end) {
+  if (!TW.qs || TW.mapping) return false;
+  TW.open = end ? -1 : part;
+  return true;
+}
+
+/* timestamp writes for a render pass about to begin (NULL when untimed) */
+static const WGPUPassTimestampWrites *pass_ts(WGPUPassTimestampWrites *tw) {
+  if (!TW.qs || TW.mapping || TW.open < 0 || TW.used + 2 > TQ) return NULL;
+  TW.part[TW.used / 2] = TW.open;
+  *tw = (WGPUPassTimestampWrites){ .querySet = TW.qs, .beginningOfPassWriteIndex = (uint32_t)TW.used, .endOfPassWriteIndex = (uint32_t)TW.used + 1 };
+  TW.used += 2;
+  return tw;
+}
+
+void r2d_wg_timers_resolve(void) {
+  if (!TW.qs || TW.mapping || !TW.used) return;
+  wgpuCommandEncoderResolveQuerySet(W.enc, TW.qs, 0, (uint32_t)TW.used, TW.resolve, 0);
+  wgpuCommandEncoderCopyBufferToBuffer(W.enc, TW.resolve, 0, TW.readback, 0, (uint64_t)TW.used * 8);
+  TW.rpairs = TW.used / 2;
+  memcpy(TW.rpart, TW.part, sizeof TW.part);
+  TW.used = 0;
+  TW.mapping = true;
+  TW.requested = false;
+}
+
 static void begin_pass(WGPUTextureView color, WGPUTextureFormat fmt, int w, int h, bool offscreen, bool clear, const double cc[4],
                        WGPUTextureView normal, WGPUTextureView ds, WGPUTextureView mat) {
   WGPURenderPassColorAttachment ca[3] = {
@@ -741,7 +815,9 @@ static void begin_pass(WGPUTextureView color, WGPUTextureFormat fmt, int w, int 
   WGPURenderPassDepthStencilAttachment da = { .view = ds, .depthLoadOp = WGPULoadOp_Clear, .depthStoreOp = WGPUStoreOp_Discard,
                                               .depthClearValue = 1.0f, .stencilLoadOp = WGPULoadOp_Clear,
                                               .stencilStoreOp = WGPUStoreOp_Discard, .stencilClearValue = 0 };
-  WGPURenderPassDescriptor rp = { .colorAttachmentCount = mat ? 3 : normal ? 2 : 1, .colorAttachments = ca, .depthStencilAttachment = ds ? &da : NULL };
+  WGPUPassTimestampWrites tw;
+  WGPURenderPassDescriptor rp = { .colorAttachmentCount = mat ? 3 : normal ? 2 : 1, .colorAttachments = ca, .depthStencilAttachment = ds ? &da : NULL,
+                                  .timestampWrites = pass_ts(&tw) };
   W.pass = wgpuCommandEncoderBeginRenderPass(W.enc, &rp);
   W.pass_fmt = fmt;
   W.pass_ds = ds != NULL;
@@ -803,7 +879,8 @@ void r2d_wg_tilemap_begin(const float u[24], int array, bool lit) {
   memcpy(b.v, u, sizeof b.v);
   uint32_t off = ualloc(&b, sizeof b);
   /* lit: the scene pass has its normal attachment (normals in use) */
-  wgpuRenderPassEncoderSetPipeline(W.pass, pipeline(lit ? (R.material_used ? P_TILE_LIT : P_TILE_LIT_N) : P_TILE, cur_blend_wg, W.pass_fmt));
+  int prog = R.mask_mode ? P_TILE_MASK : lit ? (R.material_used ? P_TILE_LIT : P_TILE_LIT_N) : P_TILE;
+  wgpuRenderPassEncoderSetPipeline(W.pass, pipeline(prog, R.mask_mode ? B_OPAQUE : cur_blend_wg, W.pass_fmt));
   wgpuRenderPassEncoderSetBindGroup(W.pass, 0, W.bg_small, 1, &off);
   wgpuRenderPassEncoderSetBindGroup(W.pass, 1, array_group(array), 0, NULL);
   wgpuRenderPassEncoderSetIndexBuffer(W.pass, W.tile_ibuf, WGPUIndexFormat_Uint16, 0, WGPU_WHOLE_SIZE);
@@ -902,8 +979,10 @@ static void fx_init(void) {
 }
 
 static void lw_shutdown(void);
+static void timers_shutdown(void);
 static void fx_shutdown_wg(void) {
   lw_shutdown();
+  timers_shutdown();
   for (int i = 0; i < FX.pipes.count; i++) wgpuRenderPipelineRelease(FX.pipes.data[i].pipe);
   cw_array_free(&FX.pipes);
   if (FX.bg_u) wgpuBindGroupRelease(FX.bg_u);
@@ -997,22 +1076,23 @@ void r2d_wg_fx_pass(fx_prog *p, const fx_dst *dst, bool clear, const float cc[4]
 
 /* ── lights and the occluder mask (light.c) ────────────────────────────── */
 
-/* the instanced light (GL: light.c GL_LIGHT_VS / FS); fx.v[0] = normals,
- * field scale, field size; fx.v[1] = march steps */
+/* the tiled lights (GL: light.c GL_LIGHT_VS / FS): fx.v[0] = normals, field
+ * scale, field size; [1] = march steps, occluder depth, field reach; [2] =
+ * tiles across, tile pixels, the tile table's first texel, the lists' first
+ * texel; [3] = ambient. Its own bindings: t4 is the RGBA32F table */
 static const char *WGSL_LIGHT =
-    "struct LO { @builtin(position) pos: vec4f, @location(0) @interpolate(flat, either) c: vec4f,\n"
-    "  @location(1) @interpolate(flat, either) col: vec4f, @location(2) @interpolate(flat, either) s: vec4f,\n"
-    "  @location(3) @interpolate(flat, either) f: vec4f };\n"
-    "@vertex fn vs(@builtin(vertex_index) k: u32, @location(0) a_c: vec4f, @location(1) a_col: vec4f,\n"
-    "              @location(2) a_s: vec4f, @location(3) a_f: vec4f) -> LO {\n"
-    "  let q = vec2f(select(0.0, 1.0, k == 1u || k == 2u || k == 4u), select(0.0, 1.0, k == 2u || k == 4u || k == 5u));\n"
-    "  var p = a_c.xy + (q * 2.0 - 1.0) * a_c.z;\n"
-    "  if (a_f.z > 0.5) { p = q * fx.size; }\n"
-    "  var o: LO;\n"
-    "  o.pos = vec4f(p.x / fx.size.x * 2.0 - 1.0, (p.y / fx.size.y * 2.0 - 1.0) * fx.flip, 0.0, 1.0);\n"
-    "  o.c = a_c; o.col = a_col; o.s = a_s; o.f = a_f;\n"
-    "  return o;\n"
+    "struct FX { size: vec2f, flip: f32, pad: f32, v: array<vec4f, 8> };\n"
+    "@group(0) @binding(0) var<uniform> fx: FX;\n"
+    "@group(1) @binding(0) var t0: texture_2d<f32>;\n"
+    "@group(1) @binding(1) var t1: texture_2d<f32>;\n"
+    "@group(1) @binding(2) var t2: texture_2d<f32>;\n"
+    "@group(1) @binding(3) var t3: texture_2d<f32>;\n"
+    "@group(1) @binding(4) var t4: texture_2d<f32>;\n"
+    "@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n"
+    "  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));\n"
+    "  return vec4f(p.x * 2.0 - 1.0, (p.y * 2.0 - 1.0) * fx.flip, 0.0, 1.0);\n"
     "}\n"
+    "fn dat(i: i32) -> vec4f { return textureLoad(t4, vec2i(i & 1023, i >> 10u), 0); }\n"
     "fn field(p: vec2f) -> f32 {\n"
     "  let q = p * fx.v[0].y;\n"
     "  let iq = clamp(vec2i(q), vec2i(0), vec2i(fx.v[0].zw) - 1);\n"
@@ -1020,10 +1100,10 @@ static const char *WGSL_LIGHT =
     "  let sp = vec2f(s.r * 255.0 + s.g * 65280.0, s.b * 255.0 + s.a * 65280.0) + 0.5;\n"
     "  return min(length(sp - q) / fx.v[0].y, fx.v[1].z);\n"
     "}\n"
-    "fn shadow(p: vec2f, rd: vec2f, maxt: f32, k: f32) -> f32 {\n"
+    "fn shadow(p0: vec2f, rd: vec2f, maxt0: f32, k: f32, inside: bool) -> f32 {\n"
     "  let px = 0.75 / fx.v[0].y; let skip = 1.5 / fx.v[0].y;\n"
-    "  var depth = 1.0; var q = p; var mt = maxt;\n"
-    "  if (textureLoad(t2, vec2i(p), 0).r > 0.5) {\n"
+    "  var depth = 1.0; var p = p0; var maxt = maxt0;\n"
+    "  if (inside) {\n"
     "    if (fx.v[1].y <= 0.0) { return 1.0; }\n"
     "    var s = 0.0; let D = fx.v[1].y;\n"
     "    for (var j = 0; j < 8; j++) {\n"
@@ -1033,13 +1113,13 @@ static const char *WGSL_LIGHT =
     "    if (s >= D) { return 0.0; }\n"
     "    depth = 1.0 - s / D;\n"
     "    depth *= depth;\n"
-    "    q = p + rd * s; mt = maxt - s;\n"
+    "    p = p + rd * s; maxt = maxt - s;\n"
     "  }\n"
     "  var res = 1.0; var t = px;\n"
     "  let n = i32(fx.v[1].x);\n"
     "  for (var i = 0; i < 64; i++) {\n"
-    "    if (i >= n || t >= mt) { break; }\n"
-    "    let h = field(q + rd * t);\n"
+    "    if (i >= n || t >= maxt) { break; }\n"
+    "    let h = field(p + rd * t);\n"
     "    if (h < px) { if (t > skip) { return 0.0; } t += px; continue; }\n"
     "    res = min(res, k * h / t);\n"
     "    t += max(h, px);\n"
@@ -1048,52 +1128,58 @@ static const char *WGSL_LIGHT =
     "  return res * res * (3.0 - 2.0 * res) * depth;\n"
     "}\n"
     "struct LC { col: vec4f, add: vec4f };\n"
-    "fn light(i: LO) -> LC {\n"
-    "  let fc = i.pos.xy;\n"
-    "  let dirl = i.f.z > 0.5;\n"
-    "  let d = fc - i.c.xy;\n"
-    "  var att = 1.0;\n"
-    "  if (!dirl) { att = pow(clamp(1.0 - length(d) / i.c.z, 0.0, 1.0), i.col.w); }\n"
-    "  if (!dirl && i.s.z <= 1.0) {\n"
-    "    let cd = dot(d / max(length(d), 1e-4), i.s.xy);\n"
-    "    att *= smoothstep(i.s.z, i.s.w, cd);\n"
+    "fn lights(pos: vec4f) -> LC {\n"
+    "  let fc = pos.xy;\n"
+    "  let ip = vec2i(fc);\n"
+    "  var N = vec3f(0.0, 0.0, 1.0); var mapped = 0.0;\n"
+    "  if (fx.v[0].x > 0.5) {\n"
+    "    let n = textureLoad(t0, ip, 0);\n"
+    "    if (n.a > 0.004) { let e = n.rgb / n.a; mapped = smoothstep(0.0, 0.5, e.z); N = normalize(e * 2.0 - 1.0); }\n"
     "  }\n"
-    "  var ndl = 1.0;\n"
-    "  var Nn = vec3f(0.0, 0.0, 1.0);\n"
-    "  var L = normalize(vec3f(-d, i.c.w));\n"
-    "  if (dirl) { L = normalize(vec3f(-i.s.xy, i.c.w)); }\n"
-    "  if (fx.v[0].x > 0.5 && att > 0.0) {\n"
-    "    let n = textureLoad(t0, vec2i(fc), 0);\n"
-    "    if (n.a > 0.004) {\n"
-    "      let e = n.rgb / n.a;\n"
-    "      let mapped = smoothstep(0.0, 0.5, e.z);\n"
-    "      let N = normalize(e * 2.0 - 1.0);\n"
-    "      ndl = mix(1.0, max(dot(N, L), 0.0), mapped);\n"
-    "      Nn = normalize(mix(Nn, N, mapped));\n"
+    "  let Nn = normalize(mix(vec3f(0.0, 0.0, 1.0), N, mapped));\n"
+    "  var spec = 0.0; var gloss = 0.0; var cov = 0.0;\n"
+    "  if (fx.v[0].x > 0.5) { let mt = textureLoad(t3, ip, 0); if (mt.a > 0.004) { spec = mt.g / mt.a; gloss = mt.b / mt.a; cov = mt.a; } }\n"
+    "  let inside = fx.v[0].y > 0.0 && textureLoad(t2, ip, 0).r > 0.5;\n"
+    "  var acc = fx.v[3].rgb; var accA = vec3f(0.0);\n"
+    "  let tl = ip / i32(fx.v[2].y);\n"
+    "  let hd = dat(i32(fx.v[2].z) + tl.y * i32(fx.v[2].x) + tl.x);\n"
+    "  let first = i32(hd.x); let cnt = i32(hd.y);\n"
+    "  for (var k = 0; k < cnt; k++) {\n"
+    "    let e = first + k;\n"
+    "    let li = i32(dat(i32(fx.v[2].w) + (e >> 2u))[e & 3]);\n"
+    "    let c = dat(li * 4); let col = dat(li * 4 + 1); let s = dat(li * 4 + 2); let f = dat(li * 4 + 3);\n"
+    "    let dirl = f.z > 0.5;\n"
+    "    let d = fc - c.xy;\n"
+    "    let dl = length(d);\n"
+    "    var att = 1.0;\n"
+    "    if (!dirl) { att = pow(clamp(1.0 - dl / c.z, 0.0, 1.0), col.w); }\n"
+    "    if (!dirl && s.z <= 1.0) { att *= smoothstep(s.z, s.w, dot(d / max(dl, 1e-4), s.xy)); }\n"
+    "    if (att <= 0.0) { continue; }\n"
+    "    var L = normalize(vec3f(-d, c.w));\n"
+    "    if (dirl) { L = normalize(vec3f(-s.xy, c.w)); }\n"
+    "    let ndl = mix(1.0, max(dot(N, L), 0.0), mapped);\n"
+    "    var sh = 1.0;\n"
+    "    if (f.x > 0.0) {\n"
+    "      if (dirl) { sh = shadow(fc, -s.xy, length(fx.v[0].zw / fx.v[0].y), f.x, inside); }\n"
+    "      else if (dl > 1e-3) { sh = shadow(fc, -d / dl, dl, f.x, inside); }\n"
     "    }\n"
-    "  }\n"
-    "  var sh = 1.0;\n"
-    "  if (i.f.x > 0.0 && att > 0.0) {\n"
-    "    if (dirl) { sh = shadow(fc, -i.s.xy, length(fx.v[0].zw / fx.v[0].y), i.f.x); }\n"
-    "    else { let dl = length(d); if (dl > 1e-3) { sh = shadow(fc, -d / dl, dl, i.f.x); } }\n"
+    "    acc += col.rgb * att * ndl * sh;\n"
+    "    var spv = 0.0;\n"
+    "    if (spec > 0.0) {\n"
+    "      let pw = exp2(2.0 + 8.0 * gloss);\n"
+    "      let H = normalize(L + vec3f(0.0, 0.0, 1.0));\n"
+    "      spv = spec * pow(max(dot(Nn, H), 0.0), pw) * (pw + 8.0) / 64.0 * max(dot(Nn, L), 0.0) * cov;\n"
+    "    }\n"
+    "    accA += col.rgb * att * sh * (f.y + spv);\n"
     "  }\n"
     "  var o: LC;\n"
-    "  o.col = vec4f(i.col.rgb * att * ndl * sh, 0.0);\n"
-    "  var spv = 0.0;\n"
-    "  if (fx.v[0].x > 0.5 && att > 0.0) {\n"
-    "    let mt = textureLoad(t3, vec2i(fc), 0);\n"
-    "    if (mt.a > 0.004 && mt.g > 0.0) {\n"
-    "      let g = mt.b / mt.a; let pw = exp2(2.0 + 8.0 * g);\n"
-    "      let H = normalize(L + vec3f(0.0, 0.0, 1.0));\n"
-    "      spv = mt.g / mt.a * pow(max(dot(Nn, H), 0.0), pw) * (pw + 8.0) / 64.0 * max(dot(Nn, L), 0.0) * mt.a;\n"
-    "    }\n"
-    "  }\n"
-    "  o.add = vec4f(i.col.rgb * att * sh * (i.f.y + spv), 0.0);\n"
+    "  o.col = vec4f(acc, 1.0);\n"
+    "  o.add = vec4f(accA, 0.0);\n"
     "  return o;\n"
     "}\n"
-    "@fragment fn fs(i: LO) -> @location(0) vec4f { return light(i).col; }\n"
+    "@fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f { return lights(pos).col; }\n"
     "struct LT2 { @location(0) col: vec4f, @location(1) add: vec4f };\n"
-    "@fragment fn fs_add(i: LO) -> LT2 { let l = light(i); var o: LT2; o.col = l.col; o.add = l.add; return o; }\n";
+    "@fragment fn fs_add(@builtin(position) pos: vec4f) -> LT2 { let l = lights(pos); var o: LT2; o.col = l.col; o.add = l.add; return o; }\n";
 
 /* the occluder mask: solid triangles in canvas pixels (y down); fx.v[0].xy = canvas size */
 static const char *WGSL_MASK =
@@ -1104,7 +1190,10 @@ static const char *WGSL_MASK =
 
 static struct {
   WGPUShaderModule sm_light, sm_mask;
-  WGPUPipelineLayout pl_u;
+  WGPUPipelineLayout pl_u, pl_light;
+  WGPUBindGroupLayout bgl_light; /* t0..t3 filterable, t4 the RGBA32F table */
+  WGPUTexture data;
+  int data_rows;
   WGPURenderPipeline mask;
   WGPURenderPipeline light[2][2]; /* [add][format: 0 RGBA8, 1 RGBA16F] */
 } LW;
@@ -1136,20 +1225,19 @@ static uint32_t fx_uniforms(int w, int h, bool offscreen, const float v[8][4]) {
   return ualloc(&u, sizeof u);
 }
 
-static WGPUBindGroup fx_tex_group(WGPUTexture a, WGPUTexture b, WGPUTexture c, WGPUTexture d) {
-  WGPUBindGroupEntry e[6];
-  memset(e, 0, sizeof e);
-  WGPUTexture t[4] = { a, b, c, d };
-  for (int k = 0; k < 4; k++) e[k] = (WGPUBindGroupEntry){ .binding = (uint32_t)k, .textureView = t[k] ? keep_view(fx_tex_view(t[k])) : FX.black_view };
-  e[4] = (WGPUBindGroupEntry){ .binding = 4, .sampler = W.samplers[0] };
-  e[5] = (WGPUBindGroupEntry){ .binding = 5, .sampler = W.samplers[1] };
-  return keep_group(wgpuDeviceCreateBindGroup(W.dev, &(WGPUBindGroupDescriptor){ .layout = FX.bgl_t, .entryCount = 6, .entries = e }));
-}
-
 static void lw_init(void) {
   fx_init();
   if (LW.sm_light) return;
-  LW.sm_light = fx_module("r2d light", WGSL_LIGHT);
+  LW.sm_light = cw__wgpu_shader("r2d light", WGSL_LIGHT);
+  WGPUBindGroupLayoutEntry te[5];
+  memset(te, 0, sizeof te);
+  for (int k = 0; k < 5; k++)
+    te[k] = (WGPUBindGroupLayoutEntry){ .binding = (uint32_t)k, .visibility = WGPUShaderStage_Fragment,
+                                        .texture = { .sampleType = k == 4 ? WGPUTextureSampleType_UnfilterableFloat : WGPUTextureSampleType_Float,
+                                                     .viewDimension = WGPUTextureViewDimension_2D } };
+  LW.bgl_light = wgpuDeviceCreateBindGroupLayout(W.dev, &(WGPUBindGroupLayoutDescriptor){ .entryCount = 5, .entries = te });
+  WGPUBindGroupLayout two[2] = { FX.bgl_u, LW.bgl_light };
+  LW.pl_light = wgpuDeviceCreatePipelineLayout(W.dev, &(WGPUPipelineLayoutDescriptor){ .bindGroupLayoutCount = 2, .bindGroupLayouts = two });
   LW.sm_mask = fx_module("r2d occluder mask", WGSL_MASK);
   LW.pl_u = wgpuDeviceCreatePipelineLayout(W.dev, &(WGPUPipelineLayoutDescriptor){ .bindGroupLayoutCount = 1, .bindGroupLayouts = &FX.bgl_u });
 }
@@ -1160,6 +1248,9 @@ static void lw_shutdown(void) {
       if (LW.light[a][f]) wgpuRenderPipelineRelease(LW.light[a][f]);
   if (LW.mask) wgpuRenderPipelineRelease(LW.mask);
   if (LW.pl_u) wgpuPipelineLayoutRelease(LW.pl_u);
+  if (LW.pl_light) wgpuPipelineLayoutRelease(LW.pl_light);
+  if (LW.bgl_light) wgpuBindGroupLayoutRelease(LW.bgl_light);
+  if (LW.data) wgpuTextureRelease(LW.data);
   if (LW.sm_light) wgpuShaderModuleRelease(LW.sm_light);
   if (LW.sm_mask) wgpuShaderModuleRelease(LW.sm_mask);
   memset(&LW, 0, sizeof LW);
@@ -1168,15 +1259,11 @@ static void lw_shutdown(void) {
 static WGPURenderPipeline light_pipeline(bool add, WGPUTextureFormat fmt) {
   int fi = fmt == WGPUTextureFormat_RGBA16Float ? 1 : 0;
   if (LW.light[add][fi]) return LW.light[add][fi];
-  static WGPUVertexAttribute at[4];
-  for (int a = 0; a < 4; a++) at[a] = (WGPUVertexAttribute){ .format = WGPUVertexFormat_Float32x4, .offset = (uint64_t)a * 16, .shaderLocation = (uint32_t)a };
-  WGPUVertexBufferLayout vbl = { .stepMode = WGPUVertexStepMode_Instance, .arrayStride = 64, .attributeCount = 4, .attributes = at };
-  WGPUBlendState bs = blend_of(B_ADD);
-  WGPUColorTargetState ct[2] = { { .format = fmt, .blend = &bs, .writeMask = WGPUColorWriteMask_All },
-                                 { .format = fmt, .blend = &bs, .writeMask = WGPUColorWriteMask_All } };
+  WGPUColorTargetState ct[2] = { { .format = fmt, .writeMask = WGPUColorWriteMask_All },
+                                 { .format = fmt, .writeMask = WGPUColorWriteMask_All } };
   WGPUFragmentState fs = { .module = LW.sm_light, .entryPoint = SV(add ? "fs_add" : "fs"), .targetCount = add ? 2 : 1, .targets = ct };
-  WGPURenderPipelineDescriptor d = { .label = SV("r2d light"), .layout = FX.pl,
-                                     .vertex = { .module = LW.sm_light, .entryPoint = SV("vs"), .bufferCount = 1, .buffers = &vbl },
+  WGPURenderPipelineDescriptor d = { .label = SV("r2d light"), .layout = LW.pl_light,
+                                     .vertex = { .module = LW.sm_light, .entryPoint = SV("vs") },
                                      .primitive = { .topology = WGPUPrimitiveTopology_TriangleList, .cullMode = WGPUCullMode_None },
                                      .multisample = { .count = 1, .mask = 0xffffffffu }, .fragment = &fs };
   return LW.light[add][fi] = wgpuDeviceCreateRenderPipeline(W.dev, &d);
@@ -1221,39 +1308,116 @@ void r2d_wg_mask_draw(void *mask, int w, int h, const float *tris, int nverts, f
   end_pass();
 }
 
-void r2d_wg_lights_draw(void *light, void *add, int fmt, const float amb[4], const float *inst, int n, const float up[4],
-                        const float uq[4], void *normal, void *seed, void *mask, void *mat, int w, int h) {
+void r2d_wg_mask_batches(void *mask, const r2d_batch *b, int n) {
+  end_pass();
+  double zero[4] = { 0, 0, 0, 0 };
+  begin_pass(keep_view(fx_tex_view((WGPUTexture)mask)), WGPUTextureFormat_RGBA8Unorm, R.canvas_w, R.canvas_h, true, false, zero, NULL, NULL, NULL);
+  int cur = -1;
+  for (int i = 0; i < n; i++) {
+    if (R2D_ST_KIND(b[i].state) == R2D_KIND_TILEMAP) {
+      R.mask_mode = true;
+      r2d_tilemap_render(&R.tdraws.data[b[i].payload], false, R.canvas_h);
+      R.mask_mode = false;
+      cur = -1;
+      continue;
+    }
+    if (cur != P_SPRITE_MASK) {
+      wgpuRenderPassEncoderSetPipeline(W.pass, pipeline(P_SPRITE_MASK, B_OPAQUE, WGPUTextureFormat_RGBA8Unorm));
+      uint32_t off = W.stream_off[0];
+      wgpuRenderPassEncoderSetBindGroup(W.pass, 0, W.bg_stream, 1, &off);
+      wgpuRenderPassEncoderSetVertexBuffer(W.pass, 0, W.vbuf, 0, WGPU_WHOLE_SIZE);
+      wgpuRenderPassEncoderSetIndexBuffer(W.pass, W.ibuf, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+      cur = P_SPRITE_MASK;
+    }
+    uint32_t arr = R2D_ST_ARRAY(b[i].state);
+    wgpuRenderPassEncoderSetBindGroup(W.pass, 1, arr == R2D_NO_ARRAY ? dummy_group : array_group((int)arr), 0, NULL);
+    wgpuRenderPassEncoderDrawIndexed(W.pass, b[i].count, 1, b[i].first, 0, 0);
+    R.stats.draw_calls++;
+  }
+  end_pass();
+}
+
+void r2d_wg_lights_draw(void *light, void *add, int fmt, const float amb[4], const float *data, int rows, const float up[4],
+                        const float uq[4], const float ut[4], void *normal, void *seed, void *mask, void *mat, int w, int h) {
   lw_init();
   fx_ubind();
   end_pass();
+  /* the table, grown in rows as needed */
+  if (!LW.data || LW.data_rows < rows) {
+    if (LW.data) wgpuTextureRelease(LW.data);
+    LW.data_rows = CW_MAX(rows, LW.data_rows * 2);
+    WGPUTextureDescriptor td = { .label = SV("r2d light table"), .usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst,
+                                 .dimension = WGPUTextureDimension_2D, .size = { 1024, (uint32_t)LW.data_rows, 1 },
+                                 .format = WGPUTextureFormat_RGBA32Float, .mipLevelCount = 1, .sampleCount = 1 };
+    LW.data = wgpuDeviceCreateTexture(W.dev, &td);
+  }
+  WGPUTexelCopyTextureInfo dst = { .texture = LW.data, .aspect = WGPUTextureAspect_All };
+  WGPUTexelCopyBufferLayout lay = { .bytesPerRow = 1024 * 16, .rowsPerImage = (uint32_t)rows };
+  wgpuQueueWriteTexture(W.q, &dst, data, (size_t)rows * 1024 * 16, &lay, &(WGPUExtent3D){ 1024, (uint32_t)rows, 1 });
   WGPURenderPassColorAttachment ca[2] = {
     { .view = keep_view(fx_tex_view((WGPUTexture)light)), .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED, .loadOp = WGPULoadOp_Clear,
       .storeOp = WGPUStoreOp_Store, .clearValue = { amb[0], amb[1], amb[2], amb[3] } },
     { .view = add ? keep_view(fx_tex_view((WGPUTexture)add)) : NULL, .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED,
       .loadOp = WGPULoadOp_Clear, .storeOp = WGPUStoreOp_Store, .clearValue = { 0, 0, 0, 0 } },
   };
-  WGPURenderPassDescriptor rp = { .colorAttachmentCount = add ? 2 : 1, .colorAttachments = ca };
+  WGPUPassTimestampWrites tsw;
+  WGPURenderPassDescriptor rp = { .colorAttachmentCount = add ? 2 : 1, .colorAttachments = ca, .timestampWrites = pass_ts(&tsw) };
   W.pass = wgpuCommandEncoderBeginRenderPass(W.enc, &rp);
   W.pass_fmt = (WGPUTextureFormat)fmt;
   W.pass_ds = false;
   W.pass_w = w;
   W.pass_h = h;
   W.pass_flip = -1.0f;
-  if (n) {
-    float uv[8][4];
-    memset(uv, 0, sizeof uv);
-    memcpy(uv[0], up, sizeof(float) * 4);
-    memcpy(uv[1], uq, sizeof(float) * 4);
-    uint32_t off = fx_uniforms(w, h, true, uv);
-    uint32_t first = scratch_push(inst, n * 16);
-    wgpuRenderPassEncoderSetPipeline(W.pass, light_pipeline(add != NULL, (WGPUTextureFormat)fmt));
-    wgpuRenderPassEncoderSetBindGroup(W.pass, 0, FX.bg_u, 1, &off);
-    wgpuRenderPassEncoderSetBindGroup(W.pass, 1, fx_tex_group((WGPUTexture)normal, (WGPUTexture)seed, (WGPUTexture)mask, (WGPUTexture)mat), 0, NULL);
-    wgpuRenderPassEncoderSetVertexBuffer(W.pass, 0, W.sbuf, (uint64_t)first * 4, (uint64_t)n * 64);
-    wgpuRenderPassEncoderDraw(W.pass, 6, (uint32_t)n, 0, 0);
-    R.stats.draw_calls++;
-  }
+  float uv[8][4];
+  memset(uv, 0, sizeof uv);
+  memcpy(uv[0], up, sizeof(float) * 4);
+  memcpy(uv[1], uq, sizeof(float) * 4);
+  memcpy(uv[2], ut, sizeof(float) * 4);
+  memcpy(uv[3], amb, sizeof(float) * 4);
+  uint32_t off = fx_uniforms(w, h, true, uv);
+  WGPUTexture tx[5] = { (WGPUTexture)normal, (WGPUTexture)seed, (WGPUTexture)mask, (WGPUTexture)mat, LW.data };
+  WGPUBindGroupEntry e[5];
+  memset(e, 0, sizeof e);
+  for (int k = 0; k < 5; k++) e[k] = (WGPUBindGroupEntry){ .binding = (uint32_t)k, .textureView = tx[k] ? keep_view(fx_tex_view(tx[k])) : FX.black_view };
+  WGPUBindGroup g = keep_group(wgpuDeviceCreateBindGroup(W.dev, &(WGPUBindGroupDescriptor){ .layout = LW.bgl_light, .entryCount = 5, .entries = e }));
+  wgpuRenderPassEncoderSetPipeline(W.pass, light_pipeline(add != NULL, (WGPUTextureFormat)fmt));
+  wgpuRenderPassEncoderSetBindGroup(W.pass, 0, FX.bg_u, 1, &off);
+  wgpuRenderPassEncoderSetBindGroup(W.pass, 1, g, 0, NULL);
+  wgpuRenderPassEncoderDraw(W.pass, 3, 1, 0, 0);
+  R.stats.draw_calls++;
   end_pass();
+}
+
+static void on_r2d_ts(WGPUMapAsyncStatus st, WGPUStringView msg, void *u1, void *u2) {
+  (void)msg, (void)u1, (void)u2;
+  if (st == WGPUMapAsyncStatus_Success) {
+    const uint64_t *v = wgpuBufferGetConstMappedRange(TW.readback, 0, (size_t)TW.rpairs * 16);
+    float ms[R2D_T_COUNT] = { 0 };
+    bool seen[R2D_T_COUNT] = { 0 };
+    for (int i = 0; v && i < TW.rpairs; i++) {
+      int p = TW.rpart[i];
+      if (v[2 * i + 1] >= v[2 * i]) ms[p] += (float)(v[2 * i + 1] - v[2 * i]) / 1e6f;
+      seen[p] = true;
+    }
+    r2d_timers_wg_result(ms, seen);
+    wgpuBufferUnmap(TW.readback);
+  }
+  TW.mapping = false;
+}
+
+void r2d_wg_timers_map(void) {
+  if (!TW.mapping || TW.requested) return;
+  TW.requested = true;
+  wgpuBufferMapAsync(TW.readback, WGPUMapMode_Read, 0, (size_t)TW.rpairs * 16,
+                     (WGPUBufferMapCallbackInfo){ .mode = WGPUCallbackMode_AllowProcessEvents, .callback = on_r2d_ts });
+}
+
+static void timers_shutdown(void) {
+  if (TW.qs) wgpuQuerySetRelease(TW.qs);
+  if (TW.resolve) wgpuBufferRelease(TW.resolve);
+  if (TW.readback) wgpuBufferRelease(TW.readback);
+  memset(&TW, 0, sizeof TW);
+  TW.open = -1;
 }
 
 /* an fx destination for a canvas target */
@@ -1263,16 +1427,22 @@ static fx_dst ct_dst(const canvas_target *ct) {
 /* a lit run's lights and composite onto ct, then the canvas pass again (loaded) */
 static void lit_finish(const canvas_target *ct, int lo, int hi) {
   end_pass();
+  r2d_timer_end();
   fx_dst d = ct_dst(ct);
   r2d_lit_end(lo, hi, &d);
+  r2d_timer_begin(R2D_T_DRAW);
   double none[4] = { 0, 0, 0, 0 };
   begin_canvas(ct, false, none);
 }
 /* the post chain onto the pass's own canvas, which then takes the layers above it */
 static void post_finish(const canvas_target *out) {
   end_pass();
+  r2d_timer_end();
+  r2d_timer_begin(R2D_T_POST);
   fx_dst d = ct_dst(out);
   r2d_post_run(&d);
+  r2d_timer_end();
+  r2d_timer_begin(R2D_T_DRAW);
   double none[4] = { 0, 0, 0, 0 };
   begin_canvas(out, false, none);
 }
@@ -1348,6 +1518,7 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
   }
 
   W.enc = wgpuDeviceCreateCommandEncoder(W.dev, NULL);
+  r2d_timer_begin(R2D_T_DRAW);
   cw_color cc0 = R.pass.clear_color;
   double cc[4] = { cc0.r * cc0.a, cc0.g * cc0.a, cc0.b * cc0.a, cc0.a };
   begin_canvas(&ct, R.pass.clear, cc);
@@ -1449,6 +1620,7 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
       WGPUTextureView nv = ntex ? keep_view(fx_tex_view((WGPUTexture)ntex)) : NULL;
       WGPUTextureView mv = mtex ? keep_view(fx_tex_view((WGPUTexture)mtex)) : NULL;
       double zero[4] = { 0, 0, 0, 0 };
+      cw_array_clear(&R.occ_batches);
       begin_pass(sv, (WGPUTextureFormat)sfmt, R.canvas_w, R.canvas_h, true, true, zero, nv, NULL, mv);
       in_lit = true;
       lit_lo = b->layer;
@@ -1461,6 +1633,7 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
       cur_prog = -1;
     }
     if (in_lit) lit_hi = b->layer_last;
+    if (in_lit && (b->state & R2D_ST_OCCL)) cw_array_push(&R.occ_batches, *b);
     uint32_t blend = R2D_ST_BLEND(b->state), clip = R2D_ST_CLIP(b->state);
     int bl = blend == CW_BLEND_OPAQUE ? B_OPAQUE : blend == CW_BLEND_MULTIPLY ? B_MULTIPLY : B_ALPHA;
     if (clip != cur_clip) set_clip(cur_clip = clip);
@@ -1498,6 +1671,7 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
   if (in_dist) end_pass();
   if (in_hdr) post_finish(&out_ct);
   end_pass();
+  r2d_timer_end();
 
   /* virtual canvas -> window (letterboxed) */
   if (virt) {
@@ -1528,8 +1702,10 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
     write_padded(W.ubuf, W.ustage.data, (size_t)W.ustage.count);
     write_padded(W.sbuf, W.sstage.data, (size_t)W.sstage.count * 4);
   }
+  r2d_wg_timers_resolve();
   submit(W.enc);
   W.enc = NULL;
+  r2d_wg_timers_map();
   for (int i = 0; i < W.transient.count; i++) wgpuBindGroupRelease(W.transient.data[i]);
   cw_array_clear(&W.transient);
   for (int i = 0; i < transient_views.count; i++) wgpuTextureViewRelease(transient_views.data[i]);

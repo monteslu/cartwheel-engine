@@ -48,41 +48,44 @@ static struct {
   int steps;             /* shadow march steps */
   /* GL */
   GLuint mrt_fbo, light_fbo;
-  GLuint prog[2], vao, vbo;
-  GLint u_target[2], u_p[2], u_q[2];
+  GLuint prog[2], vao;
+  GLint u_p[2], u_q[2], u_t[2], u_amb[2];
+  GLuint data_tex;       /* the tiled lights' table (RGBA32F, 1024 wide) */
+  int data_rows;
   GLuint mask_prog, mask_vao, mask_vbo;
   GLint mask_u_target;
 } LT;
 
 #define INST_FLOATS 16
+#define LIGHT_TILE 32 /* pixels: the tiled light pass's tile */
 #define FIELD_REACH 128 /* field pixels the shadow flood reaches (its largest step is half) */
 
 /* ── shaders ───────────────────────────────────────────────────────────── */
 
-/* the instanced light: a_c = centre (GL rows), radius, height; a_col = rgb
- * (light buffer units), falloff; a_s = spot direction (GL rows), cos of the
- * cone's outer and inner edge (outer > 1: no cone); a_f = shadow hardness
- * (0: no shadow), volumetric, directional, 0. u_p = normals, field scale,
- * field size; u_q = march steps, 0, 0, 0 */
+/* the lights, tiled: one full-screen pass writes ambient plus every light
+ * of the pixel's 32-pixel tile, once (no blending of overlapping quads).
+ * t_data (RGBA32F, 1024 wide) holds, from texel 0: each light's 4 texels
+ * (c = centre in GL rows, radius, height; col = rgb in light buffer units,
+ * falloff; s = spot direction in GL rows, cos of the cone's outer and inner
+ * edge (outer > 1: none); f = shadow hardness (0: none), volumetric,
+ * directional, 0), then a texel per tile (first list entry, count), then the
+ * tiles' light lists, 4 indices a texel. u_p = normals, field scale, field
+ * size; u_q = march steps, occluder depth, field reach; u_t = tiles across,
+ * tile pixels, the tile table's first texel, the lists' first texel;
+ * u_amb = ambient in light buffer units */
 static const char *GL_LIGHT_VS =
     "#version 300 es\nprecision highp float;\n"
-    "layout(location=0) in vec4 a_c;\nlayout(location=1) in vec4 a_col;\nlayout(location=2) in vec4 a_s;\nlayout(location=3) in vec4 a_f;\n"
-    "uniform vec2 u_target;\n"
-    "flat out vec4 v_c, v_col, v_s, v_f;\n"
     "void main() {\n"
-    "  int k = gl_VertexID;\n"
-    "  vec2 q = vec2((k == 1 || k == 2 || k == 4) ? 1.0 : 0.0, (k == 2 || k == 4 || k == 5) ? 1.0 : 0.0);\n"
-    "  vec2 p = a_f.z > 0.5 ? q * u_target : a_c.xy + (q * 2.0 - 1.0) * a_c.z;\n"
-    "  gl_Position = vec4(p / u_target * 2.0 - 1.0, 0.0, 1.0);\n"
-    "  v_c = a_c; v_col = a_col; v_s = a_s; v_f = a_f;\n"
+    "  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
+    "  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
     "}\n";
 
 #define GL_LIGHT_FS_BODY                                                                                         \
-  "uniform sampler2D t_nrm, t_seed, t_mask, t_mat;\n"                                                                           \
-  "uniform vec4 u_p, u_q;\n"                                                                                     \
-  "flat in vec4 v_c, v_col, v_s, v_f;\n"                                                                         \
+  "uniform sampler2D t_nrm, t_seed, t_mask, t_mat, t_data;\n"                                                    \
+  "uniform vec4 u_p, u_q, u_t, u_amb;\n"                                                                        \
   "layout(location=0) out vec4 o_col;\n"                                                                         \
   "#ifdef ADD\nlayout(location=1) out vec4 o_add;\n#endif\n"                                                     \
+  "vec4 dat(int i) { return texelFetch(t_data, ivec2(i & 1023, i >> 10), 0); }\n"                               \
   "float field(vec2 p) {\n"                                                                                      \
   "  vec2 q = p * u_p.y;\n"                                                                                      \
   "  ivec2 iq = clamp(ivec2(q), ivec2(0), ivec2(u_p.zw) - 1);\n"                                                 \
@@ -90,10 +93,10 @@ static const char *GL_LIGHT_VS =
   "  vec2 sp = vec2(s.r * 255.0 + s.g * 65280.0, s.b * 255.0 + s.a * 65280.0) + 0.5;\n"                         \
   "  return min(length(sp - q) / u_p.y, u_q.z);\n"                                                               \
   "}\n"                                                                                                          \
-  "float shadow(vec2 p, vec2 rd, float maxt, float k) {\n"                                                       \
-  "  float px = 0.75 / u_p.y, skip = 1.5 / u_p.y;\n"                                                          \
+  "float shadow(vec2 p, vec2 rd, float maxt, float k, bool inside) {\n"                                          \
+  "  float px = 0.75 / u_p.y, skip = 1.5 / u_p.y;\n"                                                             \
   "  float depth = 1.0;\n"                                                                                       \
-  "  if (texelFetch(t_mask, ivec2(p), 0).r > 0.5) {\n"                                                          \
+  "  if (inside) {\n"                                                                                            \
   "    if (u_q.y <= 0.0) return 1.0;\n"                                                                          \
   "    float s = 0.0, D = u_q.y;\n"                                                                              \
   "    for (int j = 0; j < 8; j++) {\n"                                                                          \
@@ -119,44 +122,53 @@ static const char *GL_LIGHT_VS =
   "}\n"                                                                                                          \
   "void main() {\n"                                                                                              \
   "  vec2 fc = gl_FragCoord.xy;\n"                                                                               \
-  "  bool dirl = v_f.z > 0.5;\n"                                                                                 \
-  "  vec2 d = fc - v_c.xy;\n"                                                                                    \
-  "  float att = dirl ? 1.0 : pow(clamp(1.0 - length(d) / v_c.z, 0.0, 1.0), v_col.w);\n"                       \
-  "  if (!dirl && v_s.z <= 1.0) {\n"                                                                             \
-  "    float cd = dot(d / max(length(d), 1e-4), v_s.xy);\n"                                                      \
-  "    att *= smoothstep(v_s.z, v_s.w, cd);\n"                                                                   \
+  "  ivec2 ip = ivec2(fc);\n"                                                                                    \
+  /* the surface, read once: its normal and material */                                                       \
+  "  vec3 N = vec3(0.0, 0.0, 1.0); float mapped = 0.0;\n"                                                       \
+  "  if (u_p.x > 0.5) {\n"                                                                                       \
+  "    vec4 n = texelFetch(t_nrm, ip, 0);\n"                                                                     \
+  "    if (n.a > 0.004) { vec3 e = n.rgb / n.a; mapped = smoothstep(0.0, 0.5, e.z); N = normalize(e * 2.0 - 1.0); }\n" \
   "  }\n"                                                                                                        \
-  "  float ndl = 1.0;\n"                                                                                         \
-  "  vec3 Nn = vec3(0.0, 0.0, 1.0);\n"                                                                          \
-  "  vec3 L = dirl ? normalize(vec3(-v_s.xy, v_c.w)) : normalize(vec3(-d, v_c.w));\n"                           \
-  "  if (u_p.x > 0.5 && att > 0.0) {\n"                                                                          \
-  "    vec4 n = texelFetch(t_nrm, ivec2(fc), 0);\n"                                                              \
-  "    if (n.a > 0.004) {\n"                                                                                     \
-  "      vec3 e = n.rgb / n.a;\n"                                                                                \
-  "      float mapped = smoothstep(0.0, 0.5, e.z);\n"                                                            \
-  "      vec3 N = normalize(e * 2.0 - 1.0);\n"                                                                   \
-  "      ndl = mix(1.0, max(dot(N, L), 0.0), mapped);\n"                                                         \
-  "      Nn = normalize(mix(Nn, N, mapped));\n"                                                                  \
-  "    }\n"                                                                                                      \
-  "  }\n"                                                                                                        \
-  "  float sh = 1.0;\n"                                                                                          \
-  "  if (v_f.x > 0.0 && att > 0.0) {\n"                                                                          \
-  "    if (dirl) sh = shadow(fc, -v_s.xy, length(u_p.zw / u_p.y), v_f.x);\n"                                    \
-  "    else { float dl = length(d); sh = dl > 1e-3 ? shadow(fc, -d / dl, dl, v_f.x) : 1.0; }\n"                  \
-  "  }\n"                                                                                                        \
-  "  o_col = vec4(v_col.rgb * att * ndl * sh, 0.0);\n"                                                           \
+  "  vec3 Nn = normalize(mix(vec3(0.0, 0.0, 1.0), N, mapped));\n"                                               \
+  "  float spec = 0.0, gloss = 0.0, cov = 0.0;\n"                                                               \
   "#ifdef ADD\n"                                                                                                 \
-  "  float spv = 0.0;\n"                                                                                        \
-  "  if (u_p.x > 0.5 && att > 0.0) {\n"                                                                          \
-  "    vec4 mt = texelFetch(t_mat, ivec2(fc), 0);\n"                                                             \
-  "    if (mt.a > 0.004 && mt.g > 0.0) {\n"                                                                      \
-  "      float g = mt.b / mt.a, pw = exp2(2.0 + 8.0 * g);\n"                                                     \
-  "      vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));\n"                                                         \
-  "      spv = mt.g / mt.a * pow(max(dot(Nn, H), 0.0), pw) * (pw + 8.0) / 64.0 * max(dot(Nn, L), 0.0) * mt.a;\n" \
-  "    }\n"                                                                                                      \
-  "  }\n"                                                                                                        \
-  "  o_add = vec4(v_col.rgb * att * sh * (v_f.y + spv), 0.0);\n"                                                \
+  "  if (u_p.x > 0.5) { vec4 mt = texelFetch(t_mat, ip, 0); if (mt.a > 0.004) { spec = mt.g / mt.a; gloss = mt.b / mt.a; cov = mt.a; } }\n" \
   "#endif\n"                                                                                                     \
+  "  bool inside = u_p.y > 0.0 && texelFetch(t_mask, ip, 0).r > 0.5;\n"                                         \
+  "  vec3 acc = u_amb.rgb, accA = vec3(0.0);\n"                                                                  \
+  "  ivec2 tl = ip / int(u_t.y);\n"                                                                              \
+  "  vec4 hd = dat(int(u_t.z) + tl.y * int(u_t.x) + tl.x);\n"                                                   \
+  "  int first = int(hd.x), cnt = int(hd.y);\n"                                                                 \
+  "  for (int k = 0; k < cnt; k++) {\n"                                                                          \
+  "    int e = first + k;\n"                                                                                     \
+  "    int li = int(dat(int(u_t.w) + (e >> 2))[e & 3]);\n"                                                       \
+  "    vec4 c = dat(li * 4), col = dat(li * 4 + 1), s = dat(li * 4 + 2), f = dat(li * 4 + 3);\n"                \
+  "    bool dirl = f.z > 0.5;\n"                                                                                 \
+  "    vec2 d = fc - c.xy;\n"                                                                                    \
+  "    float dl = length(d);\n"                                                                                  \
+  "    float att = dirl ? 1.0 : pow(clamp(1.0 - dl / c.z, 0.0, 1.0), col.w);\n"                                \
+  "    if (!dirl && s.z <= 1.0) att *= smoothstep(s.z, s.w, dot(d / max(dl, 1e-4), s.xy));\n"                   \
+  "    if (att <= 0.0) continue;\n"                                                                              \
+  "    vec3 L = dirl ? normalize(vec3(-s.xy, c.w)) : normalize(vec3(-d, c.w));\n"                               \
+  "    float ndl = mix(1.0, max(dot(N, L), 0.0), mapped);\n"                                                    \
+  "    float sh = 1.0;\n"                                                                                        \
+  "    if (f.x > 0.0) {\n"                                                                                       \
+  "      if (dirl) sh = shadow(fc, -s.xy, length(u_p.zw / u_p.y), f.x, inside);\n"                              \
+  "      else if (dl > 1e-3) sh = shadow(fc, -d / dl, dl, f.x, inside);\n"                                      \
+  "    }\n"                                                                                                      \
+  "    acc += col.rgb * att * ndl * sh;\n"                                                                       \
+  "#ifdef ADD\n"                                                                                                 \
+  "    float spv = 0.0;\n"                                                                                       \
+  "    if (spec > 0.0) {\n"                                                                                      \
+  "      float pw = exp2(2.0 + 8.0 * gloss);\n"                                                                \
+  "      vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));\n"                                                        \
+  "      spv = spec * pow(max(dot(Nn, H), 0.0), pw) * (pw + 8.0) / 64.0 * max(dot(Nn, L), 0.0) * cov;\n"       \
+  "    }\n"                                                                                                      \
+  "    accA += col.rgb * att * sh * (f.y + spv);\n"                                                              \
+  "#endif\n"                                                                                                     \
+  "  }\n"                                                                                                        \
+  "  o_col = vec4(acc, 1.0);\n"                                                                                  \
+  "#ifdef ADD\n  o_add = vec4(accA, 0.0);\n#endif\n"                                                           \
   "}\n"
 
 static const char *GL_LIGHT_FS = "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n" GL_LIGHT_FS_BODY;
@@ -313,24 +325,17 @@ static bool gl_init(void) {
     LT.prog[i] = gl_program("light", GL_LIGHT_VS, fs[i]);
     if (!LT.prog[i]) return false;
     glUseProgram(LT.prog[i]);
-    LT.u_target[i] = glGetUniformLocation(LT.prog[i], "u_target");
     LT.u_p[i] = glGetUniformLocation(LT.prog[i], "u_p");
     LT.u_q[i] = glGetUniformLocation(LT.prog[i], "u_q");
+    LT.u_t[i] = glGetUniformLocation(LT.prog[i], "u_t");
+    LT.u_amb[i] = glGetUniformLocation(LT.prog[i], "u_amb");
+    glUniform1i(glGetUniformLocation(LT.prog[i], "t_data"), 7);
     glUniform1i(glGetUniformLocation(LT.prog[i], "t_nrm"), 3);
     glUniform1i(glGetUniformLocation(LT.prog[i], "t_seed"), 4);
     glUniform1i(glGetUniformLocation(LT.prog[i], "t_mask"), 5);
     glUniform1i(glGetUniformLocation(LT.prog[i], "t_mat"), 6);
   }
-  glGenVertexArrays(1, &LT.vao);
-  glGenBuffers(1, &LT.vbo);
-  glBindVertexArray(LT.vao);
-  glBindBuffer(GL_ARRAY_BUFFER, LT.vbo);
-  for (int a = 0; a < 4; a++) {
-    glEnableVertexAttribArray((GLuint)a);
-    glVertexAttribPointer((GLuint)a, 4, GL_FLOAT, GL_FALSE, INST_FLOATS * 4, (void *)(size_t)(a * 16));
-    glVertexAttribDivisor((GLuint)a, 1);
-  }
-  glBindVertexArray(0);
+  glGenVertexArrays(1, &LT.vao); /* the full-screen triangle needs no buffers */
   LT.mask_prog = gl_program("occluder mask", GL_MASK_VS, GL_MASK_FS);
   if (!LT.mask_prog) return false;
   LT.mask_u_target = glGetUniformLocation(LT.mask_prog, "u_target");
@@ -444,8 +449,10 @@ static void build_mask(int lo, int hi) {
   float *tris = NULL;
   int nv = occluder_tris(lo, hi, 1.0f, &tris);
   fx_rt_ensure(&LT.mask, R.canvas_w, R.canvas_h, FX_RGBA8);
-  if (r2d_wg()) r2d_wg_mask_draw(LT.mask.wtex, R.canvas_w, R.canvas_h, tris, nv, (float)R.canvas_w, (float)R.canvas_h);
-  else {
+  if (r2d_wg()) {
+    r2d_wg_mask_draw(LT.mask.wtex, R.canvas_w, R.canvas_h, tris, nv, (float)R.canvas_w, (float)R.canvas_h);
+    if (R.occ_batches.count) r2d_wg_mask_batches(LT.mask.wtex, R.occ_batches.data, R.occ_batches.count);
+  } else {
     glBindFramebuffer(GL_FRAMEBUFFER, LT.mask.fbo);
     glViewport(0, 0, R.canvas_w, R.canvas_h);
     glDisable(GL_SCISSOR_TEST);
@@ -462,6 +469,25 @@ static void build_mask(int lo, int hi) {
       R.stats.draw_calls++;
       glBindVertexArray(0);
     }
+    /* art that casts shadows (cw_r2d_set_occluder): its alpha over half */
+    for (int i = 0; i < R.occ_batches.count; i++) {
+      const r2d_batch *b = &R.occ_batches.data[i];
+      if (R2D_ST_KIND(b->state) == R2D_KIND_TILEMAP) {
+        R.mask_mode = true;
+        r2d_tilemap_render(&R.tdraws.data[b->payload], false, R.canvas_h);
+        R.mask_mode = false;
+        continue;
+      }
+      glUseProgram(R.sprite_mask.prog);
+      r2d_upload_layer_uniforms(&R.sprite_mask);
+      glBindVertexArray(R.vao[R.ring]);
+      uint32_t arr = R2D_ST_ARRAY(b->state);
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, arr == R2D_NO_ARRAY ? R.dummy_normal : R.arrays.data[arr].tex);
+      glDrawElements(GL_TRIANGLES, (GLsizei)b->count, GL_UNSIGNED_INT, (void *)((size_t)b->first * 4));
+      R.stats.draw_calls++;
+    }
+    glBindVertexArray(0);
   }
 }
 
@@ -574,8 +600,44 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
   const cw_r2d_layer_desc *ld = &R.layers[lo];
   float od = ld->occluder_depth > 0 ? ld->occluder_depth * xform_scale(&R.layer_view[lo]) : 0;
   float uq[4] = { (float)LT.steps, od, (float)FIELD_REACH * 0.5f / (shadows ? LT.field_scale : 1.0f), 0 };
+  /* the table: the lights, then a texel per tile (first entry, count), then the
+   * tiles' lists (4 light indices a texel); tiles count in GL rows, as the pass's
+   * fragment coordinates do */
+  int tx = (R.canvas_w + LIGHT_TILE - 1) / LIGHT_TILE, ty = (R.canvas_h + LIGHT_TILE - 1) / LIGHT_TILE, nt = tx * ty;
+  int *cnt = cw_frame_alloc(sizeof(int) * (size_t)nt);
+  int (*span)[4] = cw_frame_alloc(sizeof(int[4]) * (size_t)CW_MAX(1, n));
+  memset(cnt, 0, sizeof(int) * (size_t)nt);
+  int entries = 0;
+  for (int i = 0; i < n; i++) {
+    const float *L = inst + INST_FLOATS * i;
+    int x0 = 0, y0 = 0, x1 = tx - 1, y1 = ty - 1;
+    if (L[14] < 0.5f) { /* a point or spot: the tiles its radius covers */
+      x0 = CW_MAX(0, (int)floorf((L[0] - L[2]) / LIGHT_TILE)), x1 = CW_MIN(tx - 1, (int)floorf((L[0] + L[2]) / LIGHT_TILE));
+      y0 = CW_MAX(0, (int)floorf((L[1] - L[2]) / LIGHT_TILE)), y1 = CW_MIN(ty - 1, (int)floorf((L[1] + L[2]) / LIGHT_TILE));
+    }
+    span[i][0] = x0, span[i][1] = y0, span[i][2] = x1, span[i][3] = y1;
+    for (int y = y0; y <= y1; y++)
+      for (int x = x0; x <= x1; x++) cnt[y * tx + x]++;
+    if (x1 >= x0 && y1 >= y0) entries += (x1 - x0 + 1) * (y1 - y0 + 1);
+  }
+  int head0 = 4 * n, list0 = head0 + nt, texels = list0 + (entries + 3) / 4;
+  int rows = CW_MAX(1, (texels + 1023) / 1024);
+  float *data = cw_frame_alloc(sizeof(float) * 4 * 1024 * (size_t)rows);
+  memset(data + 4 * (size_t)head0, 0, sizeof(float) * 4 * ((size_t)rows * 1024 - (size_t)head0));
+  memcpy(data, inst, sizeof(float) * INST_FLOATS * (size_t)n);
+  int *fill = cw_frame_alloc(sizeof(int) * (size_t)nt);
+  for (int t = 0, e = 0; t < nt; t++) {
+    data[4 * (head0 + t)] = (float)e;
+    data[4 * (head0 + t) + 1] = (float)cnt[t];
+    fill[t] = e;
+    e += cnt[t];
+  }
+  for (int i = 0; i < n; i++)
+    for (int y = span[i][1]; y <= span[i][3]; y++)
+      for (int x = span[i][0]; x <= span[i][2]; x++) data[4 * list0 + fill[y * tx + x]++] = (float)i;
+  float ut[4] = { (float)tx, (float)LIGHT_TILE, (float)head0, (float)list0 };
   if (r2d_wg()) {
-    r2d_wg_lights_draw(LT.light.wtex, add ? LT.add.wtex : NULL, r2d_wg_fx_format(lf), amb, inst, n, up, uq,
+    r2d_wg_lights_draw(LT.light.wtex, add ? LT.add.wtex : NULL, r2d_wg_fx_format(lf), amb, data, rows, up, uq, ut,
                        R.normals_used ? LT.normal.wtex : NULL, seed ? seed->wtex : NULL, seed ? LT.mask.wtex : NULL,
                        R.material_used ? LT.mat.wtex : NULL, R.canvas_w, R.canvas_h);
   } else {
@@ -591,20 +653,27 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
     glDisable(GL_STENCIL_TEST);
     glDisable(GL_CULL_FACE);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glClearBufferfv(GL_COLOR, 0, amb);
-    if (add) {
-      static const float zero[4] = { 0, 0, 0, 0 };
-      glClearBufferfv(GL_COLOR, 1, zero);
-    }
-    if (n) {
-      glEnable(GL_BLEND);
-      glBlendEquation(GL_FUNC_ADD);
-      glBlendFunc(GL_ONE, GL_ONE);
+    {
+      glDisable(GL_BLEND);
+      /* the table */
+      glActiveTexture(GL_TEXTURE0 + 7);
+      if (!LT.data_tex || LT.data_rows < rows) {
+        if (!LT.data_tex) glGenTextures(1, &LT.data_tex);
+        glBindTexture(GL_TEXTURE_2D, LT.data_tex);
+        LT.data_rows = CW_MAX(rows, LT.data_rows * 2);
+        glTexImage2D(GL_TEXTURE_2D, 0, 0x8814 /* GL_RGBA32F */, 1024, LT.data_rows, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+      }
+      glBindTexture(GL_TEXTURE_2D, LT.data_tex);
+      glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+      glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 1024, rows, GL_RGBA, GL_FLOAT, data);
       int pi = add ? 1 : 0;
       glUseProgram(LT.prog[pi]);
-      glUniform2f(LT.u_target[pi], (float)R.canvas_w, (float)R.canvas_h);
       glUniform4fv(LT.u_p[pi], 1, up);
       glUniform4fv(LT.u_q[pi], 1, uq);
+      glUniform4fv(LT.u_t[pi], 1, ut);
+      glUniform4fv(LT.u_amb[pi], 1, amb);
       glActiveTexture(GL_TEXTURE0 + 3);
       glBindTexture(GL_TEXTURE_2D, R.normals_used ? LT.normal.tex : 0);
       glActiveTexture(GL_TEXTURE0 + 4);
@@ -615,9 +684,7 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
       glBindTexture(GL_TEXTURE_2D, R.material_used ? LT.mat.tex : 0);
       glActiveTexture(GL_TEXTURE0);
       glBindVertexArray(LT.vao);
-      glBindBuffer(GL_ARRAY_BUFFER, LT.vbo);
-      glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)n * INST_FLOATS * 4, inst, GL_STREAM_DRAW);
-      glDrawArraysInstanced(GL_TRIANGLES, 0, 6, n);
+      glDrawArrays(GL_TRIANGLES, 0, 3);
       R.stats.draw_calls++;
       glBindVertexArray(0);
     }
@@ -640,9 +707,10 @@ void r2d_lights_shutdown(void) {
     for (int i = 0; i < 2; i++)
       if (LT.prog[i]) glDeleteProgram(LT.prog[i]);
     if (LT.mask_prog) glDeleteProgram(LT.mask_prog);
-    GLuint vaos[2] = { LT.vao, LT.mask_vao }, vbos[2] = { LT.vbo, LT.mask_vbo }, fbos[2] = { LT.mrt_fbo, LT.light_fbo };
+    GLuint vaos[2] = { LT.vao, LT.mask_vao }, fbos[2] = { LT.mrt_fbo, LT.light_fbo };
     glDeleteVertexArrays(2, vaos);
-    glDeleteBuffers(2, vbos);
+    glDeleteBuffers(1, &LT.mask_vbo);
+    if (LT.data_tex) glDeleteTextures(1, &LT.data_tex);
     glDeleteFramebuffers(2, fbos);
   }
   memset(&LT, 0, sizeof LT);

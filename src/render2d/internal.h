@@ -87,6 +87,7 @@ enum { R2D_KIND_STREAM = 0, R2D_KIND_TILEMAP = 1 };
 #define R2D_ST_BLEND(s) (((s) >> 12) & 3u)
 #define R2D_ST_CLIP(s) (((s) >> 14) & 0xffu)
 #define R2D_ST_KIND(s) (((s) >> 22) & 3u)
+#define R2D_ST_OCCL (1u << 24) /* lit layers: the draw also casts shadows by its alpha (cw_r2d_set_occluder) */
 
 typedef struct r2d_tilemap_draw {
   uint64_t map_id;
@@ -115,6 +116,13 @@ typedef struct r2d_program {
   GLint u[16]; /* program-specific */
 } r2d_program;
 
+typedef struct r2d_batch {
+  uint32_t state, first, count, payload;
+  int layer;
+  int layer_last; /* the last canvas layer merged into it */
+  bool lit;
+} r2d_batch;
+
 typedef struct r2d_state {
   bool inited, failed;
   /* resources */
@@ -127,6 +135,10 @@ typedef struct r2d_state {
   GLuint blit_read_fbo, blit_draw_fbo;
   /* programs */
   r2d_program sprite_distort;  /* distortion layers: offsets into the distortion buffer */
+  r2d_program sprite_mask, tile_mask; /* occluders from art: alpha over half into the occluder mask */
+  bool occluder_on;            /* cw_r2d_set_occluder */
+  bool mask_mode;              /* tilemap.c draws with the mask program (inside build_mask) */
+  CW_ARRAY(r2d_batch) occ_batches; /* this lit run's batches with R2D_ST_OCCL */  /* distortion layers: offsets into the distortion buffer */
   r2d_program sprite, sprite_lit, tile, tile_lit, light, shadow, composite, blit;
   /* streams */
   GLuint vbo[R2D_RING], ibo[R2D_RING], vao[R2D_RING];
@@ -238,11 +250,19 @@ void r2d_tex_uv_point(const r2d_tex *t, float sx, float sy, float *u, float *v);
 void r2d_fog_uniform(float out[CW_R2D_MAX_LAYERS * 4]); /* batch.c: the layers' fog */
 void r2d_wind_uniform(float out[4]); /* batch.c: the pass's wind for the sprite vertex stage */
 void r2d_note_tex(const r2d_tex *t);
+void r2d_wg_mask_batches(void *mask, const r2d_batch *b, int n); /* wgpu.c: occluder batches into the mask */
 /* timers.c: GPU time of each part of cw_r2d_end (native GL, CW_R2D_TIMERS=1; no-ops otherwise) */
 enum { R2D_T_DRAW, R2D_T_FIELD, R2D_T_LIGHTS, R2D_T_GI, R2D_T_COMPOSITE, R2D_T_POST, R2D_T_COUNT };
 void r2d_timer_begin(int part);
 void r2d_timer_end(void);
-void r2d_timers_frame(void); /* collect finished queries (once per cw_r2d_end) */ /* a lit layer draws this texture: normals and materials on when it has maps */
+void r2d_timers_frame(void); /* collect finished queries (once per cw_r2d_end) */
+bool r2d_timers_on(void);    /* CW_R2D_TIMERS asked for them and the host has them */
+void r2d_timers_wg_result(const float ms[R2D_T_COUNT], const bool seen[R2D_T_COUNT]);
+/* wgpu.c: timestamps written by empty compute passes between render passes (no pass may be open) */
+bool r2d_wg_timers_init(void);
+bool r2d_wg_timer_mark(int part, bool end);
+void r2d_wg_timers_resolve(void); /* before the submit */
+void r2d_wg_timers_map(void);     /* after the submit */ /* a lit layer draws this texture: normals and materials on when it has maps */
 r2d_vertex *r2d_alloc(int nv, int ni, uint32_t **idx_out, uint32_t *base_out, uint32_t array, float sort_y,
                       int extra_z);
 void r2d_pack_color(uint8_t out[4], cw_color c);
@@ -278,8 +298,8 @@ void r2d_gi_run(const struct fx_rt *mask, const struct fx_rt *scene, const struc
 void r2d_gi_shutdown(void);
 /* wgpu.c: the instanced lights and the occluder mask */
 void r2d_wg_mask_draw(void *mask, int w, int h, const float *tris, int nverts, float canvas_w, float canvas_h);
-void r2d_wg_lights_draw(void *light, void *add, int fmt, const float amb[4], const float *inst, int n, const float up[4],
-                        const float uq[4], void *normal, void *seed, void *mask, void *mat, int w, int h);
+void r2d_wg_lights_draw(void *light, void *add, int fmt, const float amb[4], const float *data, int rows, const float up[4],
+                        const float uq[4], const float ut[4], void *normal, void *seed, void *mask, void *mat, int w, int h);
 /* shared quad drawing (lights, composite, blit): pos in target pixels */
 void r2d_draw_quad_px(float x0, float y0, float x1, float y1, int target_w, int target_h);
 void r2d_set_target_fbo(GLuint fbo, int w, int h);
@@ -307,12 +327,6 @@ void r2d_wg_target_rt_free(unsigned id);
 void *r2d_wg_layer_view(void *tex);
 void r2d_wg_view_release(void *view);
 void r2d_wg_array_changed(r2d_array *a);
-typedef struct r2d_batch {
-  uint32_t state, first, count, payload;
-  int layer;
-  int layer_last; /* the last canvas layer merged into it */
-  bool lit;
-} r2d_batch;
 void r2d_wg_end(const r2d_batch *b, int n, const uint32_t *idx);
 /* tilemaps on WebGPU (tilemap.c draws through these inside r2d_wg_end) */
 void *r2d_wg_buffer(void *old, const void *data, size_t bytes, bool index); /* (re)fill a static buffer */

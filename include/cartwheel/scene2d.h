@@ -40,7 +40,8 @@
  *                     '.' = empty, N = tile id (0-based index into the tileset
  *                     grid), suffix x / y / d = flip x / flip y / transpose,
  *                     "N*k" (or ".*k") repeats a cell k times:
- *                     "0*20 / . . 3 3x / 1*4". The map's size is the largest
+ *                     "0*20 / . . 3 3x / 1*4"; occluder_layers (bit k: map
+ *                     layer k casts shadows by its alpha). The map's size is the largest
  *                     row count and row length over all layers.
  *   Camera2D          current, zoom, offset, anchor_top_left, smoothing,
  *                     smoothing_speed, limit_left/top/right/bottom, rotating.

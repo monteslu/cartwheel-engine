@@ -266,7 +266,7 @@ void r2d_tilemap_render(const r2d_tilemap_draw *d, bool lit, int target_h) {
       }
     return;
   }
-  const r2d_program *p = lit ? &R.tile_lit : &R.tile;
+  const r2d_program *p = R.mask_mode ? &R.tile_mask : lit ? &R.tile_lit : &R.tile;
   glUseProgram(p->prog);
   glUniform4f(p->u[U_M0], full.a, full.c, full.tx, R.layers[d->canvas_layer].pixel_snap ? 1.0f : 0.0f);
   glUniform4f(p->u[U_M1], full.b, full.d, full.ty, 0);
