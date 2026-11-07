@@ -171,6 +171,7 @@ typedef struct r2d_state {
   cw_r2d_gi gi;
   /* draw state packed into every vertex's sdf[2], sdf[3]: emission share, intensity (1 + x * 15 / 255) */
   uint8_t emissive_b, intensity_b;
+  uint8_t flash_b;             /* flash toward the vertex colour (x255): vertex sdf[0] of sprites and shapes */
   uint8_t sway_b;              /* wind sway share of later sprites' top edges (x255): vertex info[3] */
   /* draw state */
   int cur_layer, cur_z;
@@ -234,8 +235,14 @@ GLuint r2d_array_material_tex(int a); /* the material mirror, or the "no materia
 void r2d_tex_uv(const r2d_tex *t, cw_rect src, float *u0, float *v0, float *u1, float *v1);
 void r2d_tex_uv_point(const r2d_tex *t, float sx, float sy, float *u, float *v);
 /* batch.c */
+void r2d_fog_uniform(float out[CW_R2D_MAX_LAYERS * 4]); /* batch.c: the layers' fog */
 void r2d_wind_uniform(float out[4]); /* batch.c: the pass's wind for the sprite vertex stage */
-void r2d_note_tex(const r2d_tex *t); /* a lit layer draws this texture: normals and materials on when it has maps */
+void r2d_note_tex(const r2d_tex *t);
+/* timers.c: GPU time of each part of cw_r2d_end (native GL, CW_R2D_TIMERS=1; no-ops otherwise) */
+enum { R2D_T_DRAW, R2D_T_FIELD, R2D_T_LIGHTS, R2D_T_GI, R2D_T_COMPOSITE, R2D_T_POST, R2D_T_COUNT };
+void r2d_timer_begin(int part);
+void r2d_timer_end(void);
+void r2d_timers_frame(void); /* collect finished queries (once per cw_r2d_end) */ /* a lit layer draws this texture: normals and materials on when it has maps */
 r2d_vertex *r2d_alloc(int nv, int ni, uint32_t **idx_out, uint32_t *base_out, uint32_t array, float sort_y,
                       int extra_z);
 void r2d_pack_color(uint8_t out[4], cw_color c);

@@ -115,6 +115,7 @@ typedef struct sprite2d {
   bool region_enabled;
   float region[4];
   int hframes, vframes, frame;
+  float sway, emissive, intensity;
 } sprite2d;
 
 static void sprite_init(cw_node n, void *d) {
@@ -131,7 +132,13 @@ static void sprite_draw(cw_node n, void *d, const cw_canvas_item *it) {
   cw_rect src = { 0 };
   if (s->region_enabled) src = cw_rect_make(s->region[0], s->region[1], s->region[2], s->region[3]);
   else if ((s->hframes > 1 || s->vframes > 1) && cw_texture_valid(tex)) src = grid_cell(tex, s->hframes, s->vframes, s->frame);
+  if (s->sway > 0) cw_r2d_set_sway(s->sway);
+  if (s->emissive > 0) cw_r2d_set_emissive(s->emissive);
+  if (s->intensity > 1) cw_r2d_set_intensity(s->intensity);
   draw_tex_rect(tex, src, s->centered, s->offset, s->flip_h, s->flip_v, it->modulate);
+  if (s->sway > 0) cw_r2d_set_sway(0);
+  if (s->emissive > 0) cw_r2d_set_emissive(0);
+  if (s->intensity > 1) cw_r2d_set_intensity(1);
 }
 
 static const cw_prop sprite_props[] = {
@@ -147,6 +154,9 @@ static const cw_prop sprite_props[] = {
   CW_PROP_FIELD(sprite2d, hframes, CW_T_INT, CW_PROP_DEFAULT, "Atlas grid columns."),
   CW_PROP_FIELD(sprite2d, vframes, CW_T_INT, CW_PROP_DEFAULT, "Atlas grid rows."),
   CW_PROP_FIELD(sprite2d, frame, CW_T_INT, CW_PROP_DEFAULT, "Atlas grid cell drawn (row-major)."),
+  CW_PROP_FIELD_RANGE(sprite2d, sway, CW_T_FLOAT, 0, 1, "How much its top edge sways in the CanvasSettings wind (0 = none)."),
+  CW_PROP_FIELD_RANGE(sprite2d, emissive, CW_T_FLOAT, 0, 1, "Lit canvases: the share of its colour that ignores the lights."),
+  CW_PROP_FIELD_RANGE(sprite2d, intensity, CW_T_FLOAT, 0, 16, "HDR multiplier of its colour (with CanvasSettings post: past 1 blooms); 0 or 1 = as drawn."),
   CW_PROP_END,
 };
 static cw_node_type sprite_type = { .name = "Sprite2D", .parent = "Node2D", .data_size = sizeof(sprite2d), .props = sprite_props,
@@ -592,6 +602,11 @@ static void light_draw(cw_node n, void *d, const cw_canvas_item *it) {
   L.falloff = l->falloff;
   L.height = l->height;
   L.shadows = l->shadow;
+  L.softness = l->softness;
+  L.cone = l->cone;
+  L.cone_soft = l->cone_soft;
+  L.volumetric = l->volumetric;
+  L.directional = l->directional;
   cw_r2d_light(&L);
 }
 static const cw_prop light_props[] = {
@@ -602,6 +617,11 @@ static const cw_prop light_props[] = {
   CW_PROP_FIELD_RANGE(cw__light2d, falloff, CW_T_FLOAT, 0, 16, "Exponent of (1 - d/range)."),
   CW_PROP_FIELD_RANGE(cw__light2d, height, CW_T_FLOAT, 0, 1e6, "Height above the plane for normal maps (0 = range/4)."),
   CW_PROP_FIELD(cw__light2d, shadow, CW_T_BOOL, CW_PROP_DEFAULT, "Cast shadows from LightOccluder2Ds."),
+  CW_PROP_FIELD_RANGE(cw__light2d, softness, CW_T_FLOAT, 0, 1, "Shadow penumbra: 0 hard, 1 very soft."),
+  CW_PROP_FIELD_RANGE(cw__light2d, cone, CW_T_FLOAT, 0, 3.15, "Spot: half-angle of the beam, radians (0 = all round); the node's rotation points it."),
+  CW_PROP_FIELD_RANGE(cw__light2d, cone_soft, CW_T_FLOAT, 0, 1, "Spot: share of the cone's edge that fades (0 = 0.2)."),
+  CW_PROP_FIELD(cw__light2d, directional, CW_T_BOOL, CW_PROP_DEFAULT, "A sun or moon: parallel light over the whole canvas along the node's rotation."),
+  CW_PROP_FIELD_RANGE(cw__light2d, volumetric, CW_T_FLOAT, 0, 10, "Light the air scatters toward the eye (shafts)."),
   CW_PROP_END,
 };
 static cw_node_type light_type = { .name = "Light2D", .parent = "Node2D", .data_size = sizeof(cw__light2d), .props = light_props,
@@ -725,6 +745,7 @@ static cw_node_type pl_type = { .name = "ParallaxLayer", .parent = "Node2D", .da
                                 .props = pl_props, .doc = "Its children scroll at motion_scale of the camera.", .init = pl_init };
 
 static const char *const scale_names[] = { "NONE", "INTEGER", "FIT", "STRETCH", "EXPAND", NULL };
+static const char *const tone_names[] = { "SOFT", "ACES", "REINHARD", "CLAMP", NULL };
 static void cs_init(cw_node n, void *d) {
   (void)n;
   cw__canvas_settings *s = d;
@@ -742,6 +763,24 @@ static const cw_prop cs_props[] = {
   CW_PROP_FIELD(cw__canvas_settings, ambient, CW_T_COLOR, CW_PROP_DEFAULT, "Light on lit canvases where no Light2D reaches."),
   CW_PROP_FIELD(cw__canvas_settings, pixel_snap, CW_T_BOOL, CW_PROP_DEFAULT, "Snap vertices to whole canvas pixels."),
   CW_PROP_FIELD(cw__canvas_settings, y_sort, CW_T_BOOL, CW_PROP_DEFAULT, "Y-sort the default canvas."),
+  CW_PROP_FIELD_RANGE(cw__canvas_settings, occluder_depth, CW_T_FLOAT, 0, 1e6, "Lit canvases: how deep light reaches into occluders, pixels (0 = all through)."),
+  CW_PROP_FIELD(cw__canvas_settings, post, CW_T_BOOL, CW_PROP_DEFAULT, "HDR and the post chain over the world (screen-space CanvasLayers draw after it)."),
+  CW_PROP_FIELD_RANGE(cw__canvas_settings, exposure, CW_T_FLOAT, 0, 64, "Post: exposure multiplier (0 = 1)."),
+  CW_PROP_FIELD(cw__canvas_settings, bloom, CW_T_BOOL, CW_PROP_DEFAULT, "Post: bloom."),
+  CW_PROP_FIELD_RANGE(cw__canvas_settings, bloom_threshold, CW_T_FLOAT, 0, 64, "Post: what is brighter blooms (0 = 1)."),
+  CW_PROP_FIELD_RANGE(cw__canvas_settings, bloom_intensity, CW_T_FLOAT, 0, 8, "Post: bloom strength (0 = 0.6)."),
+  { .name = "tone", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(cw__canvas_settings, tone), .size = sizeof(int),
+    .enum_names = tone_names, .doc = "Post: tone curve (SOFT keeps 0..1 art as drawn)." },
+  CW_PROP_FIELD_RANGE(cw__canvas_settings, contrast, CW_T_FLOAT, 0, 4, "Post: contrast (0 = 1)."),
+  CW_PROP_FIELD_RANGE(cw__canvas_settings, saturation, CW_T_FLOAT, 0, 4, "Post: saturation (0 = 1)."),
+  CW_PROP_FIELD_RANGE(cw__canvas_settings, vignette, CW_T_FLOAT, 0, 1, "Post: darkening at the corners."),
+  CW_PROP_FIELD(cw__canvas_settings, gi, CW_T_BOOL, CW_PROP_DEFAULT, "Global illumination of lit canvases (glowing things light the world, light bounces)."),
+  CW_PROP_FIELD_RANGE(cw__canvas_settings, gi_intensity, CW_T_FLOAT, 0, 16, "GI: strength (0 = 1)."),
+  CW_PROP_FIELD_RANGE(cw__canvas_settings, gi_bounce, CW_T_FLOAT, -1, 0.95, "GI: share of light occluders give back (0 = 0.5, negative = none)."),
+  CW_PROP_FIELD_RANGE(cw__canvas_settings, wind_strength, CW_T_FLOAT, 0, 1e4, "Wind: sway of Sprite2Ds with sway, pixels (0 = still)."),
+  CW_PROP_FIELD_RANGE(cw__canvas_settings, wind_speed, CW_T_FLOAT, 0, 100, "Wind: waves per second (0 = 1.5)."),
+  CW_PROP_FIELD_RANGE(cw__canvas_settings, wind_wavelength, CW_T_FLOAT, 0, 1e6, "Wind: pixels between wave crests (0 = 300)."),
+  CW_PROP_FIELD_RANGE(cw__canvas_settings, wind_gusts, CW_T_FLOAT, 0, 1, "Wind: a second, faster wave on top."),
   CW_PROP_END,
 };
 static cw_node_type cs_type = { .name = "CanvasSettings", .parent = "Node", .data_size = sizeof(cw__canvas_settings),

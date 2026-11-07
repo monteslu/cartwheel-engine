@@ -4,6 +4,44 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.37.0 (2026-11-07)
+
+### Added
+- **HDR 2D and a post chain** (`cw_r2d_pass_desc.post`, `cw_r2d_post`): the layers under `hud_layer` draw into an RGBA16F canvas, then bloom (a soft-knee threshold, up to 8 halvings, a 13-tap filtered downsample and a tent upsample), exposure, a tone curve (`SOFT` by default: everything under its knee exactly as drawn), a grade (contrast, saturation, lift, gamma, gain, tint), a vignette and a dither below one 8-bit level. Layers from `hud_layer` up draw after it. A NULL `post` draws exactly as before.
+- **Intensity and emission**: `cw_r2d_set_intensity` (colour x 1..16, so glowing things pass 1 and bloom) and `cw_r2d_set_emissive` (the share of the colour lit layers leave unlit).
+- **Material maps** (`cw_texture_set_material_map`, `cw_texture_load_material_map`): emission, specular and gloss per texel; the lights add a glint on specular texels.
+- **Lights**: spot cones (`cone`, `angle`, `cone_soft`), directional lights (a sun or moon over the whole layer), volumetric scatter (shafts between occluders, a glow round a lamp), soft shadows (`softness`), and `cw_r2d_layer_desc.occluder_depth` (light reaches only that deep into occluders).
+- **Global illumination** (`cw_r2d_pass_desc.gi`, `cw_r2d_gi`): radiance cascades over a distance field of the occluders and the glowing pixels; glowing things light the world round them, light bounces off occluders frame after frame, occluders shadow all of it. Off on Very Low; the field at 1/8, 1/4, 1/4, 1/2 of the canvas from Low to Ultra.
+- **Screen reads and distortion**: `cw_r2d_layer_desc.screen_read` with `cw_r2d_screen_texture()`; distortion layers (`cw_r2d_layer_desc.distortion`) bend the picture by their draws' red and green, with `cw_r2d_noise_texture()` for heat haze and ripples and `cw_r2d_shockwave`.
+- **2D water**: `cw_water2d` (a spring surface, splashes, deterministic on the CPU) and `cw_r2d_water` (the world refracted through the body and mirrored on it from the screen texture, a depth tint, caustics from `cw_r2d_caustics_texture()`, a lit surface line).
+- **Wind**: `cw_r2d_pass_desc.wind` and `cw_r2d_set_sway`: sprites' top edges sway in the vertex stage (grass, reeds, banners) at no CPU cost.
+- **Trails**: `cw_r2d_trail`, a ribbon along a path tapering and fading from head to tail, textured along its length (`uv_repeat`).
+- **Fog and flash**: `cw_r2d_layer_desc.fog` turns a layer toward a colour (atmospheric depth for parallax layers); `cw_r2d_set_flash` turns sprites and shapes toward their colour (hit flashes, silhouettes).
+- **Mipmapped atlas pages** (`cw_texture_desc.mipmaps`): three box-filtered halvings made at load, 8-pixel gutters, so HD art drawn small stays smooth.
+- Scene nodes: Light2D `softness`, `cone`, `cone_soft`, `directional`, `volumetric`; Sprite2D `sway`, `emissive`, `intensity`; CanvasSettings `occluder_depth`, `post` (with `exposure`, `bloom`, `bloom_threshold`, `bloom_intensity`, `tone`, `contrast`, `saturation`, `vignette`; screen-space CanvasLayers draw after the chain), `gi` (`gi_intensity`, `gi_bounce`), `wind_strength`, `wind_speed`, `wind_wavelength`, `wind_gusts`.
+- Stats: `gpu_calls` (the WebGPU calls the 2D renderer made this frame: in a cart each is an import call) and `gi_cascades`.
+- Samples `r2d_hdr`, `r2d_motion`, `r2d_stress`; `tools/r2d-perf.mjs` (the stress cases on GL and WebGPU at any size and preset: CPU ms, frame ms, draws, WebGPU calls).
+
+### Changed
+- **Every light of a lit run is one instanced draw.** 500 lights: 3 draws and 72 WebGPU calls a frame, from 502 draws and 3058 calls.
+- **Shadows come from a distance field of the occluders** instead of stencil volumes rebuilt on the CPU per light per occluder edge: the outlines are filled into a mask, a jump flood makes the field once per lit run, and each lit pixel marches toward its light. 500 shadowed lights over 120 occluders: 0.8 ms of CPU and 280 WebGPU calls, from 4.8 to 8.1 ms and 6061 calls. Shadows can be soft now. The field's size and the march's steps follow the effects detail. An occluder's own pixels stay lit, as before; the other 2D samples draw the same pixels as before, and the r2d_lights sample's shadow edges move by a pixel or two (0.04% of its pixels).
+- The lit layers' normal and material buffers are made only when a normal map, a material map or emission is drawn into them.
+
+### Fixed
+- Batches merged across canvas layers that draw to different targets, and a lit run merged across layers lost the lights of its later layers.
+
+### Measured (Radeon 890M, 1080p, native, frame time to GPU completion, GL / WebGPU)
+
+| Case | Before | After |
+|---|---|---|
+| 20k normal-mapped sprites, 500 lights | 5.5 / 5.2 ms, 502 draws, 3058 calls | 4.5 / 4.6 ms, 3 draws, 72 calls |
+| the same, 500 shadowed lights, 120 occluders | 5.9 / 12.9 ms (CPU 4.8 / 8.1), 6061 calls | 7.0 / 6.9 ms (CPU 0.8 / 0.9), 280 calls |
+| the same, 64 shadowed lights | 4.7 / 5.1 ms, 826 calls | 6.9 / 6.5 ms, 280 calls |
+
+### Tests
+- `r2d-hdr` and `r2d-motion`: GL against WebGPU, with controls that leave out the chain, bloom, global illumination, shadows, distortion, the pool, the penumbra, the wind, the trails and the mipmaps, each of which must change the frame.
+- `r2d-perf` (local): every stress case within its WebGPU call budget, the lit cases within their few draws; control: budgets of one call fail.
+
 ## v0.36.0 (2026-11-06)
 
 ### Changed

@@ -9913,6 +9913,18 @@
      "inline": false
     },
     {
+     "name": "cw_texture_set_material_map",
+     "signature": "bool cw_texture_set_material_map(cw_texture t, const uint8_t *rgba)",
+     "doc": "Attach a material map (w*h RGBA8 matching the texture's size): per texel\n  R  emission: the share of the colour that ignores the 2D lights (a lit\n     window, a glowing rune; as cw_r2d_set_emissive, per texel)\n  G  specular: how strongly the lights glint off it (0 = matte, as cloth\n     and stone are; 1 = wet rock, metal, glass)\n  B  gloss: how tight the glint is (0 = broad sheen, 1 = a sharp spot)\n(A is unused.) Lit layers shade sprites and tiles of this texture with it.\nAtlas textures only. Returns false (logged) on a size mismatch.",
+     "inline": false
+    },
+    {
+     "name": "cw_texture_load_material_map",
+     "signature": "bool cw_texture_load_material_map(cw_texture t, const char *asset_path)",
+     "doc": "as cw_texture_set_material_map from a PNG asset; must decode to the texture's size",
+     "inline": false
+    },
+    {
      "name": "cw_texture_size",
      "signature": "void cw_texture_size(cw_texture t, int *w, int *h)",
      "doc": "pixels; 0 x 0 for a null or destroyed handle; w or h may be NULL",
@@ -10027,6 +10039,72 @@
      "inline": false
     },
     {
+     "name": "cw_r2d_screen_texture",
+     "signature": "cw_texture cw_r2d_screen_texture(void)",
+     "doc": "The canvas as it stood before the latest screen_read layer, as a texture\nof the canvas size (draw it with UVs 0..1 over the canvas, top-left\nfirst, as any texture: cw_r2d_quad, cw_r2d_triangles, a sprite). The handle\nis the same from pass to pass while the canvas size holds; call it any time\nduring submission. Its content is the CURRENT pass's once that layer's\ndraws run.",
+     "inline": false
+    },
+    {
+     "name": "cw_r2d_noise_texture",
+     "signature": "cw_texture cw_r2d_noise_texture(void)",
+     "doc": "A 256x256 tileable texture of smooth noise in red and green (0.5 = no\npush), repeat-wrapped: scroll its UVs in a distortion layer for heat haze or\na wobble under water.",
+     "inline": false
+    },
+    {
+     "name": "cw_r2d_shockwave",
+     "signature": "void cw_r2d_shockwave(cw_vec2 center, float radius, float width, float strength)",
+     "doc": "A shockwave ring for a distortion layer: pushes the canvas outward across\na ring `width` wide centred on `radius` (layer space), strongest mid-ring,\nby `strength` (0..1 of the layer's distortion). One submission.",
+     "inline": false
+    },
+    {
+     "name": "cw_water2d_new",
+     "signature": "cw_water2d *cw_water2d_new(const cw_water2d_desc *d)",
+     "doc": "a still surface",
+     "inline": false
+    },
+    {
+     "name": "cw_water2d_free",
+     "signature": "void cw_water2d_free(cw_water2d *w)",
+     "doc": "NULL is fine",
+     "inline": false
+    },
+    {
+     "name": "cw_water2d_step",
+     "signature": "void cw_water2d_step(cw_water2d *w, float dt)",
+     "doc": "advance the springs (call with the fixed dt)",
+     "inline": false
+    },
+    {
+     "name": "cw_water2d_splash",
+     "signature": "void cw_water2d_splash(cw_water2d *w, float x, float speed)",
+     "doc": "push the surface at x (layer units from its left end) up (+) or down (-) at this speed",
+     "inline": false
+    },
+    {
+     "name": "cw_water2d_height",
+     "signature": "float cw_water2d_height(const cw_water2d *w, float x)",
+     "doc": "the surface's height above rest at x (+ up)",
+     "inline": false
+    },
+    {
+     "name": "cw_water2d_columns",
+     "signature": "int cw_water2d_columns(const cw_water2d *w, const float **heights)",
+     "doc": "the column count; *heights = each column's height",
+     "inline": false
+    },
+    {
+     "name": "cw_r2d_caustics_texture",
+     "signature": "cw_texture cw_r2d_caustics_texture(void)",
+     "doc": "A 256x256 tileable texture of bright caustic filaments (alpha = the light), repeat-wrapped.",
+     "inline": false
+    },
+    {
+     "name": "cw_r2d_water",
+     "signature": "void cw_r2d_water(const cw_r2d_water_desc *d)",
+     "doc": "the body and its surface into the current layer",
+     "inline": false
+    },
+    {
      "name": "cw_r2d_layer_set",
      "signature": "void cw_r2d_layer_set(int layer, const cw_r2d_layer_desc *desc)",
      "doc": "layer 0..CW_R2D_MAX_LAYERS-1 (asserts); NULL resets it; persists until changed",
@@ -10078,6 +10156,30 @@
      "name": "cw_r2d_set_transform",
      "signature": "void cw_r2d_set_transform(const cw_xform2d *m)",
      "doc": "Local transform applied before the layer camera to everything submitted\n(sprites, shapes, text): what the node layer pushes. NULL = identity.",
+     "inline": false
+    },
+    {
+     "name": "cw_r2d_set_intensity",
+     "signature": "void cw_r2d_set_intensity(float k)",
+     "doc": "HDR intensity of later submissions (sprites, shapes, text, geometry):\ntheir colour is multiplied by k (1..16) before blending, so in a pass\nwith .post a glowing thing goes past 1 and blooms. Without .post the\nresult clamps at 1. Reset to 1 by cw_r2d_begin.",
+     "inline": false
+    },
+    {
+     "name": "cw_r2d_set_emissive",
+     "signature": "void cw_r2d_set_emissive(float share)",
+     "doc": "Emission of later submissions in lit layers: the share (0..1) of their\ncolour that ignores the 2D lights and ambient (1 = drawn as if fully lit:\na lamp, a screen, lava). 0 by default; reset by cw_r2d_begin.",
+     "inline": false
+    },
+    {
+     "name": "cw_r2d_set_sway",
+     "signature": "void cw_r2d_set_sway(float share)",
+     "doc": "How much later sprites' top edges sway in the pass's wind (0..1, see\ncw_r2d_wind); 0 by default, reset by cw_r2d_begin. Sprites only.",
+     "inline": false
+    },
+    {
+     "name": "cw_r2d_set_flash",
+     "signature": "void cw_r2d_set_flash(float amount)",
+     "doc": "Flash later sprites and shapes toward their colour by amount (0..1),\nkeeping their shape: a white sprite colour at 1 is a white silhouette (a\nhit flash), red at 0.5 a red tint over the art. Reset by cw_r2d_begin.",
      "inline": false
     },
     {
@@ -10198,6 +10300,12 @@
      "name": "cw_r2d_quad",
      "signature": "void cw_r2d_quad(cw_texture tex, const cw_vec2 pos[4], const cw_vec2 uv[4], cw_color c)",
      "doc": "One quad: corners in order (any shape), with their UVs.",
+     "inline": false
+    },
+    {
+     "name": "cw_r2d_trail",
+     "signature": "void cw_r2d_trail(const cw_r2d_trail_desc *d)",
+     "doc": "one ribbon along d->points (fewer than 2 points draw nothing)",
      "inline": false
     },
     {
@@ -10460,7 +10568,7 @@
     {
      "name": "cw_texture_desc",
      "doc": "",
-     "decl": "typedef struct cw_texture_desc {\n  cw_filter filter;   /* NEAREST for pixel art */\n  bool standalone;    /* own array instead of an atlas page */\n  bool repeat;        /* GL_REPEAT wrap (implies standalone): UVs past 1 tile */\n  bool premultiplied; /* pixels are already premultiplied: skip conversion */\n} cw_texture_desc;"
+     "decl": "typedef struct cw_texture_desc {\n  cw_filter filter;   /* NEAREST for pixel art */\n  bool standalone;    /* own array instead of an atlas page */\n  bool repeat;        /* GL_REPEAT wrap (implies standalone): UVs past 1 tile */\n  bool premultiplied; /* pixels are already premultiplied: skip conversion */\n  /* LINEAR textures drawn smaller than their pixels (HD art on a 720p screen,\n   * a zoomed-out camera, a far parallax layer): 3 smaller copies (half,\n   * quarter, eighth size, made on the CPU at load with a box filter) let the\n   * GPU blend the nearest two, so the art stays smooth instead of shimmering.\n   * These textures pack into atlas pages of their own with 8-pixel gutters;\n   * a third more memory. Ignored for NEAREST (pixel art keeps its pixels). */\n  bool mipmaps;\n} cw_texture_desc;"
     },
     {
      "name": "cw_target_desc",
@@ -10478,14 +10586,49 @@
      "decl": "typedef enum {\n  CW_SCALE_NONE,    /* canvas = the target's pixels */\n  CW_SCALE_INTEGER, /* virtual canvas, scaled by the largest whole factor that fits, centred (pixel-perfect) */\n  CW_SCALE_FIT,     /* virtual canvas, scaled to fit keeping aspect, centred */\n  CW_SCALE_STRETCH, /* virtual canvas stretched over the whole window */\n  CW_SCALE_EXPAND,  /* FIT's scale over the whole window: the canvas grows to the window's aspect\n                     * instead of bars (a 320x180 canvas is 240x180 on 4:3, 432x180 on 21:9;\n                     * cw_r2d_canvas_size says); Camera2D limits still hold */\n} cw_scale_mode;"
     },
     {
+     "name": "cw_r2d_tone",
+     "doc": "── HDR and the post chain ─────────────────────────────────────────────\nA pass with .post draws its canvas layers below post->hud_layer into a\nhigh dynamic range canvas (RGBA16F where the host renders it; RGBA8 on a\nGL host without float targets, where nothing passes 1), so colour can go\npast 1: cw_r2d_set_intensity, lights brighter than 2x, additive glows.\nThen the chain turns that canvas into the pass's output:\n\n  exposure  x exposure\n  bloom     what is brighter than bloom_threshold (with a soft knee) is\n            blurred over bloom_levels halvings (a 13-tap filtered\n            downsample, a tent upsample) and added back x bloom_intensity\n  tone      SOFT (default): values up to tone_knee stay exactly as drawn\n            (art at 0..1 is untouched), above it they roll off smoothly\n            toward 1, each channel on its own, so hot colours go to white;\n            ACES (a filmic fit), REINHARD, CLAMP\n  grade     contrast and saturation around mid grey, lift (raises the\n            darks), gain (scales), gamma, tint (multiplies)\n  vignette  darkens the corners by vignette (0..1)\n  dither    the display value gets less than a level of noise, so smooth\n            HDR gradients do not band in 8 bits\n\nLayers from hud_layer up draw after the chain, straight into the output:\na HUD over a glowing world. Each pass has its own chain, so two regions\n(an underwater view and a sky) can be graded differently. Zero fields\ntake the defaults in the comments; a NULL post draws as before, exactly.\n\nQuality (cartwheel/quality.h effects detail): Very Low draws no bloom,\nLow at most 3 levels, Medium at most 5, High and Ultra as asked. The\ngrade and the tone curve hold on every preset.\n\nCost (890M, 1080p): about 0.3 ms with 6 bloom levels; 14 full-screen\npasses, about 100 WebGPU calls.",
+     "decl": "typedef enum { CW_R2D_TONE_SOFT, CW_R2D_TONE_ACES, CW_R2D_TONE_REINHARD, CW_R2D_TONE_CLAMP } cw_r2d_tone;"
+    },
+    {
+     "name": "cw_r2d_post",
+     "doc": "",
+     "decl": "typedef struct cw_r2d_post {\n  int hud_layer;          /* canvas layers >= this draw after the chain (0 = every layer goes through it) */\n  float exposure;         /* 0 = 1 */\n  bool bloom;\n  float bloom_threshold;  /* 0 = 1: what passes it blooms */\n  float bloom_knee;       /* 0 = 0.5: soft transition, a share of the threshold */\n  float bloom_intensity;  /* 0 = 0.6 */\n  float bloom_radius;     /* 0 = 1: the upsample tent's spread, in texels of each level */\n  int bloom_levels;       /* 0 = 6 (1..8) */\n  cw_r2d_tone tone;\n  float tone_knee;        /* SOFT: 0 = 0.75; values under it are unchanged */\n  float contrast;         /* 0 = 1 */\n  float saturation;       /* 0 = 1 (negative: none at all) */\n  float gamma;            /* 0 = 1 */\n  cw_color lift;          /* rgb added to the darks (fades out toward white); zero = none */\n  cw_color gain;          /* rgb multiplier; zero = white */\n  cw_color tint;          /* rgb multiplier after the grade; zero = white */\n  float vignette;         /* 0..1 darkening at the corners; 0 = none */\n  float vignette_softness;/* 0 = 0.5 */\n  bool no_dither;         /* leave out the dither (a test comparing exact values) */\n} cw_r2d_post;"
+    },
+    {
+     "name": "cw_r2d_gi",
+     "doc": "── global illumination ────────────────────────────────────────────────\nA pass with .gi lights its lit layers with the light that bounces round\nthe scene, not only the lights': what glows (cw_r2d_set_emissive, material\nmaps' emission) lights what is near it in its own colour, light that falls\non an occluder bounces off it in the occluder's colour, and occluders cast\nsoft shadows from all of it. No light needs to be placed for any of it.\n\nHow: radiance cascades (Sannikov, 2023) over a distance field of the\noccluders and the glowing pixels, at a share of the canvas size. Cascade N\nkeeps a probe every 2^(N+1) field pixels with 4^(N+1) directions, each\nmarching an interval four times longer than the one below; merged from the\ntop down they give every pixel the light arriving from all round, with\nabout 5 cascades at 1080p. Each frame's result feeds the next frame's\nbounce, so light keeps bouncing as long as the scene stands, fading by\n`bounce` each time.\n\nQuality (effects detail): off on Very Low, the field at 1/8 of the canvas\non Low, 1/4 on Medium and High (or `resolution`), 1/2 on Ultra.\nCost (890M, 1080p, High): about 0.6 ms, 25 full-screen passes.",
+     "decl": "typedef struct cw_r2d_gi {\n  float intensity;      /* 0 = 1: multiplies the bounced light */\n  float bounce;         /* the share of the light on an occluder that it gives back: 0 = 0.5, negative = none */\n  float resolution;     /* High and Ultra: the field's share of the canvas (0 = the preset's); smaller is cheaper and softer */\n} cw_r2d_gi;"
+    },
+    {
+     "name": "cw_r2d_wind",
+     "doc": "Wind: sprites submitted after cw_r2d_set_sway(share) bend their top edge\nsideways in the vertex stage (grass, reeds, banners, hanging vines,\ntreetops): up to strength x share canvas pixels, in waves `wavelength`\nlayer units long rolling by at `speed` per second, roughened by `gusts`.\nDriven by the pass's time, so pass a tick-derived time for replays. Costs\nnothing on the CPU and nothing for sprites that do not sway.",
+     "decl": "typedef struct cw_r2d_wind {\n  float strength;   /* canvas pixels at share 1; 0 = no wind */\n  float speed;      /* waves per second: 0 = 1.5 */\n  float wavelength; /* layer units between wave crests: 0 = 300 */\n  float gusts;      /* 0..1: a second, faster wave on top */\n} cw_r2d_wind;"
+    },
+    {
      "name": "cw_r2d_pass_desc",
      "doc": "",
-     "decl": "typedef struct cw_r2d_pass_desc {\n  cw_texture target;    /* null = the window (framebuffer 0) */\n  bool clear;\n  cw_color clear_color;\n  /* window passes: draw at virtual_width x virtual_height (nearest-filtered\n   * canvas) and scale it to the window by `scale`; 0 = no virtual canvas */\n  int virtual_width, virtual_height;\n  cw_scale_mode scale;\n  cw_color letterbox;   /* bars around a scaled canvas (alpha forced to 1) */\n  float time;           /* seconds: animated tiles (pass a tick-derived time for replays) */\n  cw_color ambient;     /* lit layers: light where no light reaches; all 0 = black */\n} cw_r2d_pass_desc;"
+     "decl": "typedef struct cw_r2d_pass_desc {\n  cw_texture target;    /* null = the window (framebuffer 0) */\n  bool clear;\n  cw_color clear_color;\n  /* window passes: draw at virtual_width x virtual_height (nearest-filtered\n   * canvas) and scale it to the window by `scale`; 0 = no virtual canvas */\n  int virtual_width, virtual_height;\n  cw_scale_mode scale;\n  cw_color letterbox;   /* bars around a scaled canvas (alpha forced to 1) */\n  float time;           /* seconds: animated tiles (pass a tick-derived time for replays) */\n  cw_color ambient;     /* lit layers: light where no light reaches; all 0 = black */\n  const cw_r2d_post *post; /* HDR canvas and post chain (above); NULL = none. Copied at cw_r2d_begin */\n  const cw_r2d_gi *gi;     /* global illumination of the lit layers (above); NULL = none. Copied */\n  cw_r2d_wind wind;        /* what sways sprites submitted with cw_r2d_set_sway; zero = still air */\n} cw_r2d_pass_desc;"
     },
     {
      "name": "cw_r2d_layer_desc",
      "doc": "",
-     "decl": "typedef struct cw_r2d_layer_desc {\n  bool has_camera;      /* false = screen space (identity) */\n  cw_camera2d camera;\n  cw_vec2 parallax;     /* camera position factor; (0,0) = (1,1) */\n  cw_rect viewport;     /* canvas pixels; w == 0 = the whole canvas. Draws are clipped to it. */\n  bool y_sort;          /* within equal z: sort by y (sprite pivot / shape anchor), lower first */\n  bool pixel_snap;      /* round transformed vertices to whole canvas pixels */\n  bool lit;             /* drawn through the 2D light pass (see lights) */\n} cw_r2d_layer_desc;"
+     "decl": "typedef struct cw_r2d_layer_desc {\n  bool has_camera;      /* false = screen space (identity) */\n  cw_camera2d camera;\n  cw_vec2 parallax;     /* camera position factor; (0,0) = (1,1) */\n  cw_rect viewport;     /* canvas pixels; w == 0 = the whole canvas. Draws are clipped to it. */\n  bool y_sort;          /* within equal z: sort by y (sprite pivot / shape anchor), lower first */\n  bool pixel_snap;      /* round transformed vertices to whole canvas pixels */\n  bool lit;             /* drawn through the 2D light pass (see lights) */\n  /* lit layers: how deep light reaches into occluders (layer units), so solid\n   * ground and walls glow at the edge a light falls on and stay dark inside.\n   * 0 = all the way: an occluder is lit across its whole face. The run of\n   * lit layers takes its first layer's value */\n  float occluder_depth;\n  /* the canvas as drawn before this layer (the layers under it, lit runs\n   * composited) is copied first, for its draws to sample through\n   * cw_r2d_screen_texture(): water, glass, frost, a mirror. A pass with such\n   * a layer draws offscreen (the HDR canvas with .post, else an 8-bit one)\n   * and is copied to its target at the end; layers from post->hud_layer up\n   * read nothing. A lit layer here splits the run of lit layers it is in. */\n  bool screen_read;\n  /* > 0: a distortion layer. Its draws bend the picture instead of drawing\n   * colour: each pixel's red pushes the canvas right (0.5 = none, 1 = the\n   * full `distortion` canvas pixels, 0 = as far left), green pushes it down,\n   * both times its alpha; overlapping draws add up. Heat haze (scroll\n   * cw_r2d_noise_texture()), shockwaves (cw_r2d_shockwave), refraction under\n   * water. Applied once, to the whole offscreen canvas, at the end of the\n   * layers the chain covers (so draw these just under the HUD); lit and\n   * tilemaps are ignored here. Needs float targets (WebGPU, and GL hosts\n   * with float render targets: cw_pipeline_caps); elsewhere nothing is bent. */\n  float  ..."
+    },
+    {
+     "name": "cw_water2d",
+     "doc": "── 2D water ────────────────────────────────────────────────────────────\nA surface that ripples where things splash in it (cw_water2d: springs per\ncolumn, stepped on the CPU in fixed_update, deterministic), and a body\ndrawn from the screen texture: the world behind it seen through the water\nand wobbling (refraction), the world above it mirrored on it and fading\nwith depth (reflection), tinted deeper toward the bottom, with caustics\n(moving filaments of light) and a lit surface line. Draw it into a layer\nwith screen_read and no camera transform (the screen texture is the canvas\nas drawn); add a distortion layer with cw_r2d_noise_texture over it for\nper-pixel ripples. All of it is ordinary submissions: a few draws.",
+     "decl": "typedef struct cw_water2d cw_water2d;"
+    },
+    {
+     "name": "cw_water2d_desc",
+     "doc": "",
+     "decl": "typedef struct cw_water2d_desc {\n  int columns;      /* springs across the surface: 0 = 64 */\n  float width;      /* layer units the columns span: 0 = 256 */\n  float tension;    /* how fast a column springs back: 0 = 40 */\n  float damping;    /* 0 = 2.5 */\n  float spread;     /* how much neighbours pull each other (the wave's travel): 0 = 0.25 */\n} cw_water2d_desc;"
+    },
+    {
+     "name": "cw_r2d_water_desc",
+     "doc": "",
+     "decl": "typedef struct cw_r2d_water_desc {\n  cw_rect area;            /* the body, canvas units; its top edge is the surface at rest */\n  const cw_water2d *surface; /* NULL: gentle waves only */\n  float time;              /* seconds: waves and caustics move with it */\n  float wave_height;       /* units of the gentle waves (0 = none) */\n  cw_color tint;           /* the deep colour; alpha = how much it hides what is behind (zero = a clear blue-green) */\n  float refraction;        /* units the world behind wobbles (0 = none) */\n  float reflection;        /* 0..1: the mirrored world at the surface */\n  float caustics;          /* 0..1: light filaments on the body */\n  float surface_glow;      /* 0..1: the lit surface line */\n} cw_r2d_water_desc;"
     },
     {
      "name": "cw_blend",
@@ -10506,6 +10649,11 @@
      "name": "cw_vertex2d",
      "doc": "── arbitrary geometry ─────────────────────────────────────────────────\nuv is 0..1 over the texture's whole rect (past 1 only on repeat\ntextures). A null texture draws vertex colours.",
      "decl": "typedef struct cw_vertex2d { cw_vec2 pos, uv; cw_color color; } cw_vertex2d;"
+    },
+    {
+     "name": "cw_r2d_trail_desc",
+     "doc": "A trail: a ribbon along points[0] (the head) .. points[count-1] (the\ntail), its width and colour going from the head's to the tail's (a fading\ncomet, a sword swipe, a motion smear behind a dash, tyre marks). The\ntexture's u runs along it (0 at the head, 1 at the tail; or one repeat\nevery uv_repeat layer units on a repeat texture), v across it. Mitre-free:\neach point's edge is square to its neighbours' chord, so keep the points\na few pixels apart. One submission, batched like sprites; additive blend\n(cw_r2d_set_blend) for glowing trails, cw_r2d_set_intensity to bloom.",
+     "decl": "typedef struct cw_r2d_trail_desc {\n  const cw_vec2 *points;    /* layer space, head first */\n  int count;                /* 2 or more */\n  float head_width, tail_width;\n  cw_color head_color;      /* {0,0,0,0} = white */\n  cw_color tail_color;      /* zero = transparent black: the usual fade */\n  cw_texture texture;       /* null = the colours alone */\n  float uv_repeat;          /* layer units per texture repeat; 0 = u 0..1 over the whole length */\n} cw_r2d_trail_desc;"
     },
     {
      "name": "cw_font_mode",
@@ -10549,13 +10697,13 @@
     },
     {
      "name": "cw_light2d",
-     "doc": "── 2D lights ───────────────────────────────────────────────────────────\nLayers marked lit are drawn into an offscreen colour buffer (and, when a\ntexture with a normal map was drawn, a normal buffer), then composited as\ncolour * light. The light buffer starts at the pass's ambient colour and\neach light adds itself (additive, radial falloff, one quad). Shadows are\nanalytic: each occluder edge facing away from the light is extruded away\nfrom it into the stencil buffer, and the light is masked by it (hard\nshadows, exact at any resolution; 2 draws per shadowed light). The light\nbuffer is RGBA8 storing light/2, so lights can overbright up to 2x.\n\nLights and occluders are submitted into the current layer (its camera\nplaces them) and affect the run of consecutive lit layers they are in.",
-     "decl": "typedef struct cw_light2d {\n  cw_vec2 pos;          /* layer space */\n  float radius;         /* layer units; light is 0 at the radius */\n  cw_color color;       /* {0,0,0,0} = white */\n  float energy;         /* 0 = 1 */\n  float falloff;        /* exponent of (1 - d/radius); 0 = 2 */\n  float height;         /* above the plane, layer units, for normal maps; 0 = radius/4 */\n  bool shadows;         /* cast shadows from occluders */\n} cw_light2d;"
+     "doc": "── 2D lights ───────────────────────────────────────────────────────────\nLayers marked lit are drawn into an offscreen colour buffer (and, when a\ntexture with a normal map was drawn, a normal buffer), then composited as\ncolour * light. The light buffer starts at the pass's ambient colour and\nevery light of the run adds itself in ONE instanced draw (radial falloff,\nan optional spot cone, normal maps), however many lights there are.\n\nShadows come from a distance field of the occluders: the occluder\noutlines are filled into a mask and a jump flood turns the mask into the\ndistance to the nearest occluder at every pixel (about 12 full-screen\npasses at the field's size, made once per lit run whatever the light\ncount). Each lit pixel then marches toward its light through the field\n(sphere tracing: big steps in open space), which gives hard or soft\nshadows (cw_light2d.softness) at a cost that does not grow with the\nnumber of occluder edges. An occluder's own pixels stay lit (its face),\nas before. Field size and march steps follow the effects detail\n(cartwheel/quality.h): Ultra the canvas size and 48 steps, High and\nMedium half the canvas and 32 / 24 steps, Low and Very Low a quarter and\n16 / 12 steps (never under 320 pixels across).\n\nThe light buffer is RGBA8 storing light/2 (lights overbright up to 2x);\nin a pass with .post it is RGBA16F holding the light itself, so lights\ngo as bright as asked and bloom.\n\nLights and occluders are submitted into the current layer (its camera\nplaces them) and affect the run of consecutive lit layers they are in.",
+     "decl": "typedef struct cw_light2d {\n  cw_vec2 pos;          /* layer space */\n  float radius;         /* layer units; light is 0 at the radius */\n  cw_color color;       /* {0,0,0,0} = white */\n  float energy;         /* 0 = 1 */\n  float falloff;        /* exponent of (1 - d/radius); 0 = 2 */\n  float height;         /* above the plane, layer units, for normal maps; 0 = radius/4 (directional: the\n                         * sun's elevation 0..1 above the plane, 0 = 0.5) */\n  bool shadows;         /* cast shadows from occluders */\n  /* shadow penumbra: 0 = hard edges, 1 = very soft. The penumbra widens with\n   * the distance from the occluder, as a light of some size makes it */\n  float softness;\n  float angle;          /* spot and directional lights: where the light points, radians clockwise from +x */\n  float cone;           /* spot: half-angle of the beam, radians (0 = all round) */\n  float cone_soft;      /* spot: share of the cone's edge that fades (0 = 0.2) */\n  /* a sun or moon: parallel light from `angle` over the whole layer (pos,\n   * radius and falloff unused; shadows reach across the canvas) */\n  bool directional;\n  /* light the air scatters toward the eye (0 = none): shafts where the\n   * light passes between occluders, a glow round the lamp; added on top\n   * of the lit layers, also over empty background */\n  float volumetric;\n} cw_light2d;"
     },
     {
      "name": "cw_r2d_stats",
      "doc": "── stats ───────────────────────────────────────────────────────────────\nTotals for the current frame (reset by the first cw_r2d_begin of each\nengine frame), complete once the frame's last pass ended.",
-     "decl": "typedef struct cw_r2d_stats {\n  uint32_t passes;\n  uint32_t draw_calls;     /* every glDraw* the renderer issued */\n  uint32_t batches;        /* draws of the sorted stream (sprites/shapes/text) */\n  uint32_t vertices;       /* submitted to the stream */\n  uint32_t indices;\n  uint32_t commands;       /* sprites + shapes + text runs + tilemap layers */\n  uint32_t sorted;         /* passes that needed the sort */\n  uint32_t tile_chunks;    /* chunks drawn */\n  uint32_t chunk_rebuilds;\n  uint32_t lights;\n  uint32_t atlas_pages;    /* pages across atlas arrays (all time) */\n  uint32_t texture_uploads;\n  /* complex-script runs laid out this frame, by every measure and draw:\n   * shaped now or reused from the shape cache (cached text still counts) */\n  uint32_t shaped_runs;\n  uint32_t glyphs_missing; /* distinct codepoints no font in the chain had (all time) */\n  uint32_t shape_cache_hits; /* complex layouts this frame served by the shape cache (no shaping) */\n} cw_r2d_stats;"
+     "decl": "typedef struct cw_r2d_stats {\n  uint32_t passes;\n  uint32_t draw_calls;     /* every glDraw* the renderer issued */\n  uint32_t batches;        /* draws of the sorted stream (sprites/shapes/text) */\n  uint32_t vertices;       /* submitted to the stream */\n  uint32_t indices;\n  uint32_t commands;       /* sprites + shapes + text runs + tilemap layers */\n  uint32_t sorted;         /* passes that needed the sort */\n  uint32_t tile_chunks;    /* chunks drawn */\n  uint32_t chunk_rebuilds;\n  uint32_t lights;\n  uint32_t atlas_pages;    /* pages across atlas arrays (all time) */\n  uint32_t texture_uploads;\n  /* complex-script runs laid out this frame, by every measure and draw:\n   * shaped now or reused from the shape cache (cached text still counts) */\n  uint32_t shaped_runs;\n  uint32_t glyphs_missing; /* distinct codepoints no font in the chain had (all time) */\n  uint32_t shape_cache_hits; /* complex layouts this frame served by the shape cache (no shaping) */\n  /* WebGPU calls the renderer made this frame (0 on GL): passes, pipelines, bind groups,\n   * draws, buffer writes. In a cart each is an import call: a weak host holds 60 fps\n   * under about 8000 a frame for the whole game, so this is the 2D share of that */\n  uint32_t gpu_calls;\n  uint32_t gi_cascades;    /* radiance cascades the last lit run with .gi drew (0: none) */\n} cw_r2d_stats;"
     }
    ],
    "macros": [
@@ -12075,7 +12223,7 @@
   },
   {
    "header": "cartwheel/scene2d.h",
-   "summary": "2D for the scene tree: the canvas node types over the batched 2D renderer\n(render2d.h), and the tree's 2D pass.\n\n── node types (all properties reflected: .cwscene, inspector, debug channel) ──\nEvery type below except CanvasLayer and CanvasSettings extends Node2D\n(position, rotation, scale, skew, z_index, z_relative, visible,\ninterpolate, modulate, self_modulate). Pixels, y down, radians clockwise.\nPoint lists (\"points\", \"polygon\") are strings of numbers taken in pairs:\n\"0 0, 32 0, 32 16\". Textures and fonts are asset paths, loaded (and cached\nby path) on first draw, so scenes instance without a GL context.\n\n  Sprite2D          texture, filter (LINEAR|NEAREST), centered, offset,\n                    flip_h, flip_v, region_enabled, region (vec4 x y w h),\n                    hframes, vframes, frame (atlas grid cell)\n  AnimatedSprite2D  texture, filter, hframes, vframes (the atlas grid),\n                    regions (\"x y w h, x y w h ...\" : an explicit frame list\n                    that replaces the grid when set), animations\n                    (\"idle@4:0-1; run@10:2-5; jump:6!\" : name, optional fps,\n                    frames as indices and ranges, '!' = play once),\n                    animation (current name; empty = the first), fps\n                    (default for animations without @fps), speed_scale,\n                    playing, frame, process (FIXED: advances on fixed ticks\n                    by the fixed dt, deterministic for replays; FRAME: by\n                    the frame dt), centered, offset, flip_h, flip_v.\n                    Signals: frame_changed, animation_finished.\n  NinePatch2D       texture, filter, region, size, patch_left/top/right/bottom,\n                    margin_scale, draw_center, centered\n  Line2D            points, width, color, closed\n  Polygon2D         polygon, color, texture (optional; uv = point / texture size), offset\n  Label2D           text, font, font_mode (SDF|BITMAP), bake_size, size, color,\n                    align (LEFT|CENTER|RIGHT), wrap_width, line_spacing, letter_spacing\n                    (the text box's top-left sits at the node's origin)\n  TileMap2D         tileset (texture), filter, tile_size, margin, spacing,\n                    columns, cell_size, layers (1..8), cells0..cells7,\n                    animations (\"4:2@6; 10:4@8\" : tile id, frame count, fps).\n                    Cells text form: rows separated by '/', cells by spaces;\n                    '.' = empty, N = tile id (0-based index into the tileset\n                    grid), suffix x / y / d = flip x / flip y / transpose,\n                    \"N*k\" (or \".*k\") repeats a cell k times:\n                    \"0*20 / . . 3 3x / 1*4\". The map's size is the largest\n                    row count and row length over all layers.\n  Camera2D          current, zoom, offset, anchor_top_left, smoothing,\n                    smoothing_speed, limit_left/top/right/bottom, rotating.\n                    The first current Camera2D in tree order drives every\n                    canvas that follows the viewport (the default canvas,\n                    ParallaxLayers, CanvasLayers with follow_viewport).\n                    Smoothing runs on fixed ticks (cw_camera2d_follow,\n                    deterministic) after physics; rendering interpolates.\n  CanvasLayer       (a Node) layer (draw order; the default canvas is 0),\n                    offset, rotation, scale, follow_viewport, visible, y_sort.\n                    Defaults (as in Godot): layer 1 (above the default\n                    canvas), follow_viewport false (screen space: a HUD;\n                    set it for a layer that scrolls with the Camera2D),\n                    offset 0, rotation 0, scale 1, visible, no y_sort.\n                    Its descendants' transforms start fresh at the layer.\n  ParallaxLayer     motion_scale (camera factor), motion_offset; its\n                    descendants draw in their own render layer just above\n                    the canvas they are in (put them under a CanvasLayer\n                    with a negative layer for a background).\n  Light2D           enabled, color, energy, range (radius px), falloff,\n                    height, shadow. A canvas holding a light is drawn lit.\n  LightOccluder2D   polygon, closed (casts shadows for lights with shadow)\n  CanvasSettings    (a Node; the first one in tree order counts)\n                    virtual_width/virtual_height (0 = window pixels),\n                    scale_mode (NONE|INTEGER|FIT|STRETCH|EXPAND), clear_color,\n                    letterbox, ambient (light where no Light2D reaches on\n                    lit canvases), pixel_snap, y_sort (default canvas).\n                    Defaults: no virtual canvas, scale_mode NONE, clear\n                    and letterbox opaque black, ambient white (lit canvases\n                    fully lit), no pixel_snap, no y_sort. A tree with no\n                    CanvasSettings draws the same way: window pixels,\n                    cleared to black, ambient white.\n\n── two coordinate spaces: Node2D vs Control ─────────────────────────────\nNode2Ds (everything above) live on the VIRTUAL canvas when CanvasSettings\nsets one: positions, sizes and camera are virtual pixels, scaled to the\nwindow by scale_mode. Controls (cartwheel/ui.h: Label, Button, ...) do\nnot: the scene runner draws the UI in its own window pass, so their\nanchors and offsets are UI units, window pixels divided by cw_ui_scale,\neven under a CanvasLayer and even with a virtual canvas. With a 320x180\nvirtual canvas in a 640x360 window, a Label at offset_left 8 sits 8\nwindow pixels (4 virtual pixels) from the edge. This is deliberate: UI\ntext stays sharp and keeps its size whatever the game's resolution. To\nlay UI out in virtual pixels instead, set cw_ui_set_scale(window height /\nvirtual height), or draw the UI inside your own virtual pass with\ncw_ui_draw (pixel-art UI that scales with the game; see ui.h).\n\n── the 2D pass ─────────────────────────────────────────────────────────\ncw_canvas_draw walks the tree once in tree order: hidden Node2Ds and\nCanvasLayers hide their subtrees, transforms compose (interpolated between\nthe last two fixed ticks for nodes with `interpolate`), modulate\nmultiplies down, z_index adds down while z_relative. Every canvas item is\nsubmitted to render2d in its canvas's render layer at its z, so the\nrenderer's stable sort draws by (canvas layer, z, tree order) and y within\ny-sorted canvases. Canvases get render layers 0.. in (layer, tree order)\norder; a frame may hold up to 30.\n\nWho draws on top (the UI hook): after the tree's 2D pass ends,\ncw_canvas_draw runs the tree's registered overlay passes\n(cw_canvas_add_pass) in `order`. Each runs its OWN render2d pass\n(cw_r2d_begin with clear = false ... cw_r2d_end) over the frame, so UI\n(Control nodes) composites over 3D and 2D without sharing layer slots.\n\nThe scene runner draws: 3D (only when a Camera3D exists; a 2D-only tree\nnever creates a three.c renderer), then cw_canvas_draw. When nothing in\nthe tree is a canvas item and no overlay pass is registered, the 2D pass\nis skipped entirely.",
+   "summary": "2D for the scene tree: the canvas node types over the batched 2D renderer\n(render2d.h), and the tree's 2D pass.\n\n── node types (all properties reflected: .cwscene, inspector, debug channel) ──\nEvery type below except CanvasLayer and CanvasSettings extends Node2D\n(position, rotation, scale, skew, z_index, z_relative, visible,\ninterpolate, modulate, self_modulate). Pixels, y down, radians clockwise.\nPoint lists (\"points\", \"polygon\") are strings of numbers taken in pairs:\n\"0 0, 32 0, 32 16\". Textures and fonts are asset paths, loaded (and cached\nby path) on first draw, so scenes instance without a GL context.\n\n  Sprite2D          texture, filter (LINEAR|NEAREST), centered, offset,\n                    flip_h, flip_v, region_enabled, region (vec4 x y w h),\n                    hframes, vframes, frame (atlas grid cell), sway (0..1:\n                    its top edge in the CanvasSettings wind), emissive (lit\n                    canvases: the share that ignores lights), intensity\n                    (HDR multiplier; with post, past 1 blooms)\n  AnimatedSprite2D  texture, filter, hframes, vframes (the atlas grid),\n                    regions (\"x y w h, x y w h ...\" : an explicit frame list\n                    that replaces the grid when set), animations\n                    (\"idle@4:0-1; run@10:2-5; jump:6!\" : name, optional fps,\n                    frames as indices and ranges, '!' = play once),\n                    animation (current name; empty = the first), fps\n                    (default for animations without @fps), speed_scale,\n                    playing, frame, process (FIXED: advances on fixed ticks\n                    by the fixed dt, deterministic for replays; FRAME: by\n                    the frame dt), centered, offset, flip_h, flip_v.\n                    Signals: frame_changed, animation_finished.\n  NinePatch2D       texture, filter, region, size, patch_left/top/right/bottom,\n                    margin_scale, draw_center, centered\n  Line2D            points, width, color, closed\n  Polygon2D         polygon, color, texture (optional; uv = point / texture size), offset\n  Label2D           text, font, font_mode (SDF|BITMAP), bake_size, size, color,\n                    align (LEFT|CENTER|RIGHT), wrap_width, line_spacing, letter_spacing\n                    (the text box's top-left sits at the node's origin)\n  TileMap2D         tileset (texture), filter, tile_size, margin, spacing,\n                    columns, cell_size, layers (1..8), cells0..cells7,\n                    animations (\"4:2@6; 10:4@8\" : tile id, frame count, fps).\n                    Cells text form: rows separated by '/', cells by spaces;\n                    '.' = empty, N = tile id (0-based index into the tileset\n                    grid), suffix x / y / d = flip x / flip y / transpose,\n                    \"N*k\" (or \".*k\") repeats a cell k times:\n                    \"0*20 / . . 3 3x / 1*4\". The map's size is the largest\n                    row count and row length over all layers.\n  Camera2D          current, zoom, offset, anchor_top_left, smoothing,\n                    smoothing_speed, limit_left/top/right/bottom, rotating.\n                    The first current Camera2D in tree order drives every\n                    canvas that follows the viewport (the default canvas,\n                    ParallaxLayers, CanvasLayers with follow_viewport).\n                    Smoothing runs on fixed ticks (cw_camera2d_follow,\n                    deterministic) after physics; rendering interpolates.\n  CanvasLayer       (a Node) layer (draw order; the default canvas is 0),\n                    offset, rotation, scale, follow_viewport, visible, y_sort.\n                    Defaults (as in Godot): layer 1 (above the default\n                    canvas), follow_viewport false (screen space: a HUD;\n                    set it for a layer that scrolls with the Camera2D),\n                    offset 0, rotation 0, scale 1, visible, no y_sort.\n                    Its descendants' transforms start fresh at the layer.\n  ParallaxLayer     motion_scale (camera factor), motion_offset; its\n                    descendants draw in their own render layer just above\n                    the canvas they are in (put them under a CanvasLayer\n                    with a negative layer for a background).\n  Light2D           enabled, color, energy, range (radius px), falloff,\n                    height, shadow, softness (penumbra 0..1), cone (spot\n                    half-angle, radians; the node's rotation points it),\n                    cone_soft, directional (a sun or moon along the node's\n                    rotation), volumetric (shafts). A canvas holding a light\n                    is drawn lit (cartwheel/render2d.h \"2D lights\").\n  LightOccluder2D   polygon, closed (casts shadows for lights with shadow)\n  CanvasSettings    (a Node; the first one in tree order counts)\n                    virtual_width/virtual_height (0 = window pixels),\n                    scale_mode (NONE|INTEGER|FIT|STRETCH|EXPAND), clear_color,\n                    letterbox, ambient (light where no Light2D reaches on\n                    lit canvases), pixel_snap, y_sort (default canvas),\n                    occluder_depth (how deep light reaches into occluders),\n                    post (HDR and the post chain over the canvases that\n                    follow the camera; screen-space CanvasLayers draw after\n                    it) with exposure, bloom, bloom_threshold,\n                    bloom_intensity, tone (SOFT|ACES|REINHARD|CLAMP),\n                    contrast, saturation, vignette; gi (global illumination\n                    of lit canvases) with gi_intensity, gi_bounce; wind_strength,\n                    wind_speed, wind_wavelength, wind_gusts (Sprite2D sway).\n                    Defaults: no virtual canvas, scale_mode NONE, clear\n                    and letterbox opaque black, ambient white (lit canvases\n                    fully lit), no pixel_snap, no y_sort. A tree with no\n                    CanvasSettings draws the same way: window pixels,\n                    cleared to black, ambient white.\n\n── two coordinate spaces: Node2D vs Control ─────────────────────────────\nNode2Ds (everything above) live on the VIRTUAL canvas when CanvasSettings\nsets one: positions, sizes and camera are virtual pixels, scaled to the\nwindow by scale_mode. Controls (cartwheel/ui.h: Label, Button, ...) do\nnot: the scene runner draws the UI in its own window pass, so their\nanchors and offsets are UI units, window pixels divided by cw_ui_scale,\neven under a CanvasLayer and even with a virtual canvas. With a 320x180\nvirtual canvas in a 640x360 window, a Label at offset_left 8 sits 8\nwindow pixels (4 virtual pixels) from the edge. This is deliberate: UI\ntext stays sharp and keeps its size whatever the game's resolution. To\nlay UI out in virtual pixels instead, set cw_ui_set_scale(window height /\nvirtual height), or draw the UI inside your own virtual pass with\ncw_ui_draw (pixel-art UI that scales with the game; see ui.h).\n\n── the 2D pass ─────────────────────────────────────────────────────────\ncw_canvas_draw walks the tree once in tree order: hidden Node2Ds and\nCanvasLayers hide their subtrees, transforms compose (interpolated between\nthe last two fixed ticks for nodes with `interpolate`), modulate\nmultiplies down, z_index adds down while z_relative. Every canvas item is\nsubmitted to render2d in its canvas's render layer at its z, so the\nrenderer's stable sort draws by (canvas layer, z, tree order) and y within\ny-sorted canvases. Canvases get render layers 0.. in (layer, tree order)\norder; a frame may hold up to 30.\n\nWho draws on top (the UI hook): after the tree's 2D pass ends,\ncw_canvas_draw runs the tree's registered overlay passes\n(cw_canvas_add_pass) in `order`. Each runs its OWN render2d pass\n(cw_r2d_begin with clear = false ... cw_r2d_end) over the frame, so UI\n(Control nodes) composites over 3D and 2D without sharing layer slots.\n\nThe scene runner draws: 3D (only when a Camera3D exists; a 2D-only tree\nnever creates a three.c renderer), then cw_canvas_draw. When nothing in\nthe tree is a canvas item and no overlay pass is registered, the 2D pass\nis skipped entirely.",
    "functions": [
     {
      "name": "cw_canvas_register_type",

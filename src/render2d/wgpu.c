@@ -86,7 +86,7 @@ void r2d_wg_fx_prog_free(fx_prog *p) { (void)p; }
 /* ── WGSL ──────────────────────────────────────────────────────────────── */
 
 static const char *WGSL_COMMON =
-    "struct U { layers: array<vec4f, 64>, target_size: vec2f, flip: f32, pad: f32, wind: vec4f };\n"
+    "struct U { layers: array<vec4f, 64>, target_size: vec2f, flip: f32, pad: f32, wind: vec4f, fog: array<vec4f, 32> };\n"
     "struct Q { target_size: vec2f, flip: f32, mode: f32, a: vec4f, b: vec4f, c: vec4f, d: vec4f, e: vec4f, f: vec4f };\n"
     "@group(1) @binding(0) var t_tex: texture_2d_array<f32>;\n"
     "@group(1) @binding(1) var t_smp: sampler;\n"
@@ -103,7 +103,8 @@ static const char *WGSL_SPRITE =
     "struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f, @location(1) color: vec4f,\n"
     "  @location(2) @interpolate(flat, either) page: u32, @location(3) @interpolate(flat, either) mode: u32,\n"
     "  @location(4) @interpolate(flat, either) sdfw: f32, @location(5) @interpolate(flat, either) sdf: vec2f,\n"
-    "  @location(6) @interpolate(flat, either) emis: f32, @location(7) @interpolate(flat, either) dist: f32 };\n"
+    "  @location(6) @interpolate(flat, either) emis: f32, @location(7) @interpolate(flat, either) dist: f32,\n"
+    "  @location(8) @interpolate(flat, either) fog: vec4f };\n"
     "@vertex fn vs(@location(0) a_pos: vec2f, @location(1) a_uv: vec2f, @location(2) a_color: vec4f,\n"
     "              @location(3) a_info: vec4u, @location(4) a_sdf: vec4f) -> VO {\n"
     "  let L = a_info.z * 2u;\n"
@@ -125,6 +126,7 @@ static const char *WGSL_SPRITE =
     "  o.sdf = a_sdf.xy;\n"
     "  o.emis = a_sdf.z;\n"
     "  o.dist = r1.w;\n"
+    "  o.fog = u.fog[a_info.z];\n"
     "  return o;\n"
     "}\n"
     "fn shade(i: VO, t: vec4f) -> vec4f {\n"
@@ -136,10 +138,15 @@ static const char *WGSL_SPRITE =
     "    if (i.sdf.x + i.sdf.y > 0.0) { lo = max(lo, 0.004); }\n"
     "    c = i.color * smoothstep(lo, e + w, t.a);\n"
     "  } else { c = t * i.color; }\n"
+    "  if ((i.mode & 2u) == 0u && i.sdf.x > 0.0) { c = vec4f(mix(c.rgb, i.color.rgb / max(i.color.a, 1e-4) * c.a, i.sdf.x), c.a); }\n"
+    "  return c;\n"
+    "}\n"
+    "fn fogged(i: VO, c: vec4f) -> vec4f {\n"
+    "  if (i.fog.a > 0.0) { return vec4f(mix(c.rgb, i.fog.rgb * c.a, i.fog.a), c.a); }\n"
     "  return c;\n"
     "}\n"
     "@fragment fn fs(i: VO) -> @location(0) vec4f {\n"
-    "  var c = shade(i, textureSample(t_tex, t_smp, i.uv, i.page));\n"
+    "  var c = fogged(i, shade(i, textureSample(t_tex, t_smp, i.uv, i.page)));\n"
     "  if ((i.mode & 4u) != 0u) { c.a = 0.0; }\n"
     "  return c;\n"
     "}\n"
@@ -152,7 +159,7 @@ static const char *WGSL_SPRITE =
     "  return vec4f(off, 0.0, 0.0);\n"
     "}\n"
     "struct LitOut { @location(0) col: vec4f, @location(1) nrm: vec4f, @location(2) mat: vec4f };\n"
-    "@fragment fn fs_lit(i: VO) -> LitOut {\n"
+    "fn lit_body(i: VO) -> LitOut {\n"
     "  var c = shade(i, textureSample(t_tex, t_smp, i.uv, i.page));\n"
     "  let n = textureSample(t_nrm, t_smp, i.uv, i.page);\n"
     "  var m = textureSample(t_mat, t_smp, i.uv, i.page).rgb;\n"
@@ -163,6 +170,15 @@ static const char *WGSL_SPRITE =
     "  o.mat = vec4f(max(i.emis, m.r), m.g, m.b, 1.0) * c.a;\n"
     "  if ((i.mode & 4u) != 0u) { o.nrm = vec4f(0.0); o.mat = vec4f(0.0); c.a = 0.0; }\n"
     "  o.col = c;\n"
+    "  return o;\n"
+    "}\n"
+    /* normals without a material buffer (no material map or emission drawn) */
+    "@fragment fn fs_lit(i: VO) -> LitOut { return lit_body(i); }\n"
+    "struct LitOutN { @location(0) col: vec4f, @location(1) nrm: vec4f };\n"
+    "@fragment fn fs_lit_n(i: VO) -> LitOutN {\n"
+    "  let l = lit_body(i);\n"
+    "  var o: LitOutN;\n"
+    "  o.col = l.col; o.nrm = l.nrm;\n"
     "  return o;\n"
     "}\n";
 
@@ -190,7 +206,7 @@ static const char *WGSL_TILE =
     "  return textureSample(t_tex, t_smp, i.uv, i.page) * vec4f(q.f.rgb * q.f.a, q.f.a);\n"
     "}\n"
     "struct LitOut { @location(0) col: vec4f, @location(1) nrm: vec4f, @location(2) mat: vec4f };\n"
-    "@fragment fn fs_lit(i: VO) -> LitOut {\n"
+    "fn lit_body(i: VO) -> LitOut {\n"
     "  let c = textureSample(t_tex, t_smp, i.uv, i.page) * vec4f(q.f.rgb * q.f.a, q.f.a);\n"
     "  let n = textureSample(t_nrm, t_smp, i.uv, i.page);\n"
     "  let m = textureSample(t_mat, t_smp, i.uv, i.page);\n"
@@ -198,6 +214,14 @@ static const char *WGSL_TILE =
     "  o.col = c;\n"
     "  o.nrm = vec4f(n.rgb, 1.0) * c.a;\n"
     "  o.mat = vec4f(m.rgb, 1.0) * c.a;\n"
+    "  return o;\n"
+    "}\n"
+    "@fragment fn fs_lit(i: VO) -> LitOut { return lit_body(i); }\n"
+    "struct LitOutN { @location(0) col: vec4f, @location(1) nrm: vec4f };\n"
+    "@fragment fn fs_lit_n(i: VO) -> LitOutN {\n"
+    "  let l = lit_body(i);\n"
+    "  var o: LitOutN;\n"
+    "  o.col = l.col; o.nrm = l.nrm;\n"
     "  return o;\n"
     "}\n";
 
@@ -244,9 +268,10 @@ static const char *WGSL_QUAD =
 
 /* ── state ─────────────────────────────────────────────────────────────── */
 
-enum { P_SPRITE, P_SPRITE_LIT, P_TILE, P_TILE_LIT, P_LIGHT, P_LIGHT_ST, P_SHADOW, P_COMPOSITE, P_BLIT, P_SPRITE_DISTORT, P_COUNT };
+enum { P_SPRITE, P_SPRITE_LIT, P_TILE, P_TILE_LIT, P_LIGHT, P_LIGHT_ST, P_SHADOW, P_COMPOSITE, P_BLIT, P_SPRITE_DISTORT,
+       P_SPRITE_LIT_N, P_TILE_LIT_N, P_COUNT }; /* _N: lit with normals, no material buffer */
 enum { B_OPAQUE, B_ALPHA, B_MULTIPLY, B_ADD };
-#define U_STREAM_SIZE 1056u
+#define U_STREAM_SIZE 1568u
 #define U_SMALL_SIZE 112u
 
 typedef struct pipe_rec {
@@ -508,12 +533,13 @@ static WGPURenderPipeline pipeline(int prog, int blend, WGPUTextureFormat fmt) {
   WGPUShaderModule sm;
   WGPUPipelineLayout pl;
   const char *fs = "fs";
-  bool lit = prog == P_SPRITE_LIT || prog == P_TILE_LIT;
-  if (prog == P_SPRITE || prog == P_SPRITE_LIT || prog == P_SPRITE_DISTORT) {
+  bool lit = prog == P_SPRITE_LIT || prog == P_TILE_LIT || prog == P_SPRITE_LIT_N || prog == P_TILE_LIT_N;
+  bool lit_n = prog == P_SPRITE_LIT_N || prog == P_TILE_LIT_N;
+  if (prog == P_SPRITE || prog == P_SPRITE_LIT || prog == P_SPRITE_LIT_N || prog == P_SPRITE_DISTORT) {
     vbl = (WGPUVertexBufferLayout){ .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = sizeof(r2d_vertex), .attributeCount = 5, .attributes = stream_attrs };
     sm = W.sm_sprite;
     pl = W.pl_stream;
-  } else if (prog == P_TILE || prog == P_TILE_LIT) {
+  } else if (prog == P_TILE || prog == P_TILE_LIT || prog == P_TILE_LIT_N) {
     vbl = (WGPUVertexBufferLayout){ .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 16, .attributeCount = 2, .attributes = tile_attrs };
     sm = W.sm_tile;
     pl = W.pl_small;
@@ -523,7 +549,7 @@ static WGPURenderPipeline pipeline(int prog, int blend, WGPUTextureFormat fmt) {
     pl = prog == P_SHADOW ? W.pl_shadow : W.pl_small;
     fs = prog == P_LIGHT || prog == P_LIGHT_ST ? "fs_light" : prog == P_SHADOW ? "fs_shadow" : prog == P_COMPOSITE ? "fs_composite" : "fs_blit";
   }
-  if (lit) fs = "fs_lit";
+  if (lit) fs = lit_n ? "fs_lit_n" : "fs_lit";
   if (prog == P_SPRITE_DISTORT) fs = "fs_distort";
   WGPUBlendState bs = blend_of(blend);
   WGPUColorTargetState ct[3] = {
@@ -531,7 +557,7 @@ static WGPURenderPipeline pipeline(int prog, int blend, WGPUTextureFormat fmt) {
     { .format = WGPUTextureFormat_RGBA8Unorm, .blend = blend == B_OPAQUE ? NULL : &bs, .writeMask = WGPUColorWriteMask_All },
     { .format = WGPUTextureFormat_RGBA8Unorm, .blend = blend == B_OPAQUE ? NULL : &bs, .writeMask = WGPUColorWriteMask_All },
   };
-  WGPUFragmentState fst = { .module = sm, .entryPoint = SV(fs), .targetCount = lit ? 3 : 1, .targets = ct };
+  WGPUFragmentState fst = { .module = sm, .entryPoint = SV(fs), .targetCount = lit ? (lit_n ? 2 : 3) : 1, .targets = ct };
   bool ds = prog == P_LIGHT || prog == P_LIGHT_ST || prog == P_SHADOW;
   WGPUStencilFaceState sf = { .compare = WGPUCompareFunction_Always, .failOp = WGPUStencilOperation_Keep,
                               .depthFailOp = WGPUStencilOperation_Keep, .passOp = WGPUStencilOperation_Keep };
@@ -777,7 +803,7 @@ void r2d_wg_tilemap_begin(const float u[24], int array, bool lit) {
   memcpy(b.v, u, sizeof b.v);
   uint32_t off = ualloc(&b, sizeof b);
   /* lit: the scene pass has its normal attachment (normals in use) */
-  wgpuRenderPassEncoderSetPipeline(W.pass, pipeline(lit ? P_TILE_LIT : P_TILE, cur_blend_wg, W.pass_fmt));
+  wgpuRenderPassEncoderSetPipeline(W.pass, pipeline(lit ? (R.material_used ? P_TILE_LIT : P_TILE_LIT_N) : P_TILE, cur_blend_wg, W.pass_fmt));
   wgpuRenderPassEncoderSetBindGroup(W.pass, 0, W.bg_small, 1, &off);
   wgpuRenderPassEncoderSetBindGroup(W.pass, 1, array_group(array), 0, NULL);
   wgpuRenderPassEncoderSetIndexBuffer(W.pass, W.tile_ibuf, WGPUIndexFormat_Uint16, 0, WGPU_WHOLE_SIZE);
@@ -992,7 +1018,7 @@ static const char *WGSL_LIGHT =
     "  let iq = clamp(vec2i(q), vec2i(0), vec2i(fx.v[0].zw) - 1);\n"
     "  let s = textureLoad(t1, iq, 0);\n"
     "  let sp = vec2f(s.r * 255.0 + s.g * 65280.0, s.b * 255.0 + s.a * 65280.0) + 0.5;\n"
-    "  return length(sp - q) / fx.v[0].y;\n"
+    "  return min(length(sp - q) / fx.v[0].y, fx.v[1].z);\n"
     "}\n"
     "fn shadow(p: vec2f, rd: vec2f, maxt: f32, k: f32) -> f32 {\n"
     "  let px = 0.75 / fx.v[0].y; let skip = 1.5 / fx.v[0].y;\n"
@@ -1314,6 +1340,7 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
     u[256] = (float)R.canvas_w;
     u[257] = (float)R.canvas_h;
     r2d_wind_uniform(u + 260);
+    r2d_fog_uniform(u + 264);
     u[258] = -1.0f;
     W.stream_off[0] = ualloc(u, sizeof u);
     u[258] = 1.0f;
@@ -1444,7 +1471,7 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
       cur_array = 0xffffffffu;
       continue;
     }
-    int prog = in_lit && R.normals_used ? P_SPRITE_LIT : P_SPRITE;
+    int prog = in_lit && R.normals_used ? (R.material_used ? P_SPRITE_LIT : P_SPRITE_LIT_N) : P_SPRITE;
     if (prog != cur_prog || blend != cur_blend) {
       wgpuRenderPassEncoderSetPipeline(W.pass, pipeline(prog, bl, W.pass_fmt));
       if (prog != cur_prog) {

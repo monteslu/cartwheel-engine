@@ -478,7 +478,7 @@ void cw_r2d_begin(const cw_r2d_pass_desc *desc) {
   if (R.has_post) R.post = *desc->post;
   R.has_gi = desc && desc->gi;
   if (R.has_gi) R.gi = *desc->gi;
-  R.intensity_b = R.emissive_b = R.sway_b = 0;
+  R.intensity_b = R.emissive_b = R.sway_b = R.flash_b = 0;
   R.blend = CW_BLEND_ALPHA;
   R.has_xform = false;
   R.xform = cw_xform2d_identity();
@@ -599,6 +599,12 @@ void r2d_upload_layer_uniforms(const r2d_program *p) {
   }
   glUniform4fv(p->u_layers, CW_R2D_MAX_LAYERS * 2, u);
   glUniform2f(p->u_target, (float)R.canvas_w, (float)R.canvas_h);
+  GLint uf = glGetUniformLocation(p->prog, "u_fog");
+  if (uf >= 0) {
+    float f[CW_R2D_MAX_LAYERS * 4];
+    r2d_fog_uniform(f);
+    glUniform4fv(uf, CW_R2D_MAX_LAYERS, f);
+  }
   GLint uw = glGetUniformLocation(p->prog, "u_wind");
   if (uw >= 0) {
     float w[4];
@@ -616,6 +622,15 @@ void r2d_wind_uniform(float out[4]) {
   out[2] = 6.2831853f / wl;
   out[3] = w->gusts > 0 ? w->gusts : 0.0f;
 }
+/* every canvas layer's fog for the sprite stage: rgb, amount */
+void r2d_fog_uniform(float out[CW_R2D_MAX_LAYERS * 4]) {
+  for (int l = 0; l < CW_R2D_MAX_LAYERS; l++) {
+    cw_color f = R.layers[l].fog;
+    bool on = f.a > 0 && !R.layers[l].lit;
+    out[4 * l] = f.r, out[4 * l + 1] = f.g, out[4 * l + 2] = f.b, out[4 * l + 3] = on ? CW_MIN(f.a, 1.0f) : 0.0f;
+  }
+}
+void cw_r2d_set_flash(float amount) { R.flash_b = (uint8_t)(CW_CLAMP(amount, 0.0f, 1.0f) * 255.0f + 0.5f); }
 void cw_r2d_set_sway(float share) { R.sway_b = (uint8_t)(CW_CLAMP(share, 0.0f, 1.0f) * 255.0f + 0.5f); }
 
 static void apply_blend(uint32_t b) {
@@ -672,7 +687,9 @@ static void begin_lit_run(void) { r2d_lit_begin_gl(); }
 /* the run's lights and composite onto the framebuffer `dst` (the canvas or the HDR canvas) */
 static void end_lit_run(int lo, int hi, GLuint dst) {
   fx_dst d = { .w = R.canvas_w, .h = R.canvas_h, .fbo = dst, .offscreen = dst != 0 };
+  r2d_timer_end();
   r2d_lit_end(lo, hi, &d);
+  r2d_timer_begin(R2D_T_DRAW);
   r2d_set_target_fbo(dst, R.canvas_w, R.canvas_h);
   base_state();
 }
@@ -712,7 +729,11 @@ static bool same_target(int a, int b) {
 /* the post chain from the HDR canvas onto the canvas, then back to drawing there */
 static void post_to(GLuint canvas) {
   fx_dst d = { .w = R.canvas_w, .h = R.canvas_h, .fbo = canvas, .offscreen = canvas != 0 };
+  r2d_timer_end();
+  r2d_timer_begin(R2D_T_POST);
   r2d_post_run(&d);
+  r2d_timer_end();
+  r2d_timer_begin(R2D_T_DRAW);
   r2d_set_target_fbo(canvas, R.canvas_w, R.canvas_h);
   base_state();
 }
@@ -804,6 +825,8 @@ void cw_r2d_end(void) {
   CW_PROFILE_END();
 
   /* target */
+  r2d_timers_frame();
+  r2d_timer_begin(R2D_T_DRAW);
   GLuint canvas = canvas_fbo();
   r2d_set_target_fbo(canvas, R.canvas_w, R.canvas_h);
   base_state();
@@ -941,6 +964,7 @@ void cw_r2d_end(void) {
   if (in_lit) end_lit_run(lit_lo, lit_hi, cur);
   if (in_dist) r2d_set_target_fbo(cur, R.canvas_w, R.canvas_h);
   if (in_hdr) post_to(canvas);
+  r2d_timer_end();
 
   /* virtual canvas -> window */
   if (canvas != R.target_fbo) {

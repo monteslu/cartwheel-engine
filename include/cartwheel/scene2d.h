@@ -11,7 +11,10 @@
  *
  *   Sprite2D          texture, filter (LINEAR|NEAREST), centered, offset,
  *                     flip_h, flip_v, region_enabled, region (vec4 x y w h),
- *                     hframes, vframes, frame (atlas grid cell)
+ *                     hframes, vframes, frame (atlas grid cell), sway (0..1:
+ *                     its top edge in the CanvasSettings wind), emissive (lit
+ *                     canvases: the share that ignores lights), intensity
+ *                     (HDR multiplier; with post, past 1 blooms)
  *   AnimatedSprite2D  texture, filter, hframes, vframes (the atlas grid),
  *                     regions ("x y w h, x y w h ..." : an explicit frame list
  *                     that replaces the grid when set), animations
@@ -58,13 +61,25 @@
  *                     the canvas they are in (put them under a CanvasLayer
  *                     with a negative layer for a background).
  *   Light2D           enabled, color, energy, range (radius px), falloff,
- *                     height, shadow. A canvas holding a light is drawn lit.
+ *                     height, shadow, softness (penumbra 0..1), cone (spot
+ *                     half-angle, radians; the node's rotation points it),
+ *                     cone_soft, directional (a sun or moon along the node's
+ *                     rotation), volumetric (shafts). A canvas holding a light
+ *                     is drawn lit (cartwheel/render2d.h "2D lights").
  *   LightOccluder2D   polygon, closed (casts shadows for lights with shadow)
  *   CanvasSettings    (a Node; the first one in tree order counts)
  *                     virtual_width/virtual_height (0 = window pixels),
  *                     scale_mode (NONE|INTEGER|FIT|STRETCH|EXPAND), clear_color,
  *                     letterbox, ambient (light where no Light2D reaches on
- *                     lit canvases), pixel_snap, y_sort (default canvas).
+ *                     lit canvases), pixel_snap, y_sort (default canvas),
+ *                     occluder_depth (how deep light reaches into occluders),
+ *                     post (HDR and the post chain over the canvases that
+ *                     follow the camera; screen-space CanvasLayers draw after
+ *                     it) with exposure, bloom, bloom_threshold,
+ *                     bloom_intensity, tone (SOFT|ACES|REINHARD|CLAMP),
+ *                     contrast, saturation, vignette; gi (global illumination
+ *                     of lit canvases) with gi_intensity, gi_bounce; wind_strength,
+ *                     wind_speed, wind_wavelength, wind_gusts (Sprite2D sway).
  *                     Defaults: no virtual canvas, scale_mode NONE, clear
  *                     and letterbox opaque black, ambient white (lit canvases
  *                     fully lit), no pixel_snap, no y_sort. A tree with no

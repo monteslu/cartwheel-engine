@@ -55,6 +55,7 @@ static struct {
 } LT;
 
 #define INST_FLOATS 16
+#define FIELD_REACH 128 /* field pixels the shadow flood reaches (its largest step is half) */
 
 /* ── shaders ───────────────────────────────────────────────────────────── */
 
@@ -87,7 +88,7 @@ static const char *GL_LIGHT_VS =
   "  ivec2 iq = clamp(ivec2(q), ivec2(0), ivec2(u_p.zw) - 1);\n"                                                 \
   "  vec4 s = texelFetch(t_seed, iq, 0);\n"                                                                      \
   "  vec2 sp = vec2(s.r * 255.0 + s.g * 65280.0, s.b * 255.0 + s.a * 65280.0) + 0.5;\n"                         \
-  "  return length(sp - q) / u_p.y;\n"                                                                           \
+  "  return min(length(sp - q) / u_p.y, u_q.z);\n"                                                               \
   "}\n"                                                                                                          \
   "float shadow(vec2 p, vec2 rd, float maxt, float k) {\n"                                                       \
   "  float px = 0.75 / u_p.y, skip = 1.5 / u_p.y;\n"                                                          \
@@ -350,24 +351,24 @@ static fx_fmt scene_format(void) { return R.has_post ? fx_hdr_format() : FX_RGBA
 void r2d_lit_targets(void **scene_tex, void **normal_tex, void **mat_tex, int *scene_wfmt) {
   fx_rt_ensure(&LT.scene, R.canvas_w, R.canvas_h, scene_format());
   if (R.normals_used) fx_rt_ensure(&LT.normal, R.canvas_w, R.canvas_h, FX_RGBA8);
-  if (R.normals_used) fx_rt_ensure(&LT.mat, R.canvas_w, R.canvas_h, FX_RGBA8);
+  if (R.material_used) fx_rt_ensure(&LT.mat, R.canvas_w, R.canvas_h, FX_RGBA8);
   *scene_tex = LT.scene.wtex;
   *normal_tex = R.normals_used ? LT.normal.wtex : NULL;
-  *mat_tex = R.normals_used ? LT.mat.wtex : NULL;
+  *mat_tex = R.material_used ? LT.mat.wtex : NULL;
   *scene_wfmt = r2d_wg_fx_format(LT.scene.fmt);
 }
 
 void r2d_lit_begin_gl(void) {
   fx_rt_ensure(&LT.scene, R.canvas_w, R.canvas_h, scene_format());
   if (R.normals_used) fx_rt_ensure(&LT.normal, R.canvas_w, R.canvas_h, FX_RGBA8);
-  if (R.normals_used) fx_rt_ensure(&LT.mat, R.canvas_w, R.canvas_h, FX_RGBA8);
+  if (R.material_used) fx_rt_ensure(&LT.mat, R.canvas_w, R.canvas_h, FX_RGBA8);
   if (!LT.mrt_fbo) glGenFramebuffers(1, &LT.mrt_fbo);
   glBindFramebuffer(GL_FRAMEBUFFER, LT.mrt_fbo);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, LT.scene.tex, 0);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, R.normals_used ? LT.normal.tex : 0, 0);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, R.normals_used ? LT.mat.tex : 0, 0);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, R.material_used ? LT.mat.tex : 0, 0);
   GLenum bufs[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
-  glDrawBuffers(R.normals_used ? 3 : 1, bufs);
+  glDrawBuffers(R.normals_used ? (R.material_used ? 3 : 2) : 1, bufs);
   glViewport(0, 0, R.canvas_w, R.canvas_h);
   glDisable(GL_SCISSOR_TEST);
   glClearColor(0, 0, 0, 0);
@@ -478,7 +479,9 @@ static bool build_field(void) {
   fx_pass(&prog_seed, &d0, false, NULL, in, sv, FX_BLEND_NONE);
   int cur = 0;
   int st = 1;
-  while (st * 2 < CW_MAX(fw, fh)) st *= 2;
+  /* the flood reaches FIELD_REACH field pixels; past that the field reads the
+   * reach (a march step never jumps further than the flood looked) */
+  while (st * 2 < CW_MIN(CW_MAX(fw, fh), FIELD_REACH)) st *= 2;
   for (;; st /= 2) {
     int s = st < 1 ? 1 : st;
     float v[8][4] = { { (float)s, 0, 0, 0 } };
@@ -496,7 +499,7 @@ static bool build_field(void) {
 
 static void composite_to(const fx_dst *dst, float scale_back, bool add) {
   float v[8][4] = { { scale_back, add ? 1.0f : 0.0f, 0, 0 } };
-  const fx_rt *in[4] = { &LT.scene, &LT.light, add ? &LT.add : NULL, R.normals_used ? &LT.mat : NULL };
+  const fx_rt *in[4] = { &LT.scene, &LT.light, add ? &LT.add : NULL, R.material_used ? &LT.mat : NULL };
   fx_pass(&prog_comp, dst, false, NULL, in, v, FX_BLEND_PREMUL);
 }
 
@@ -554,8 +557,11 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
     memcpy(w, v, sizeof v);
   }
   bool gi = r2d_gi_enabled();
+  r2d_timer_begin(R2D_T_FIELD);
   if (shadows || gi) build_mask(lo, hi);
   if (shadows) build_field();
+  r2d_timer_end();
+  r2d_timer_begin(R2D_T_LIGHTS);
   fx_fmt lf = hdr ? FX_RGBA16F : FX_RGBA8;
   fx_rt_ensure(&LT.light, R.canvas_w, R.canvas_h, lf);
   if (add) fx_rt_ensure(&LT.add, R.canvas_w, R.canvas_h, hdr ? FX_RGBA16F : FX_RGBA8);
@@ -567,11 +573,11 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
   /* how deep light reaches into occluders (canvas pixels; 0 = all through, as an occluder's face) */
   const cw_r2d_layer_desc *ld = &R.layers[lo];
   float od = ld->occluder_depth > 0 ? ld->occluder_depth * xform_scale(&R.layer_view[lo]) : 0;
-  float uq[4] = { (float)LT.steps, od, 0, 0 };
+  float uq[4] = { (float)LT.steps, od, (float)FIELD_REACH * 0.5f / (shadows ? LT.field_scale : 1.0f), 0 };
   if (r2d_wg()) {
     r2d_wg_lights_draw(LT.light.wtex, add ? LT.add.wtex : NULL, r2d_wg_fx_format(lf), amb, inst, n, up, uq,
                        R.normals_used ? LT.normal.wtex : NULL, seed ? seed->wtex : NULL, seed ? LT.mask.wtex : NULL,
-                       R.normals_used ? LT.mat.wtex : NULL, R.canvas_w, R.canvas_h);
+                       R.material_used ? LT.mat.wtex : NULL, R.canvas_w, R.canvas_h);
   } else {
     if (!LT.light_fbo) glGenFramebuffers(1, &LT.light_fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, LT.light_fbo);
@@ -599,14 +605,14 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
       glUniform2f(LT.u_target[pi], (float)R.canvas_w, (float)R.canvas_h);
       glUniform4fv(LT.u_p[pi], 1, up);
       glUniform4fv(LT.u_q[pi], 1, uq);
-      glActiveTexture(GL_TEXTURE3);
+      glActiveTexture(GL_TEXTURE0 + 3);
       glBindTexture(GL_TEXTURE_2D, R.normals_used ? LT.normal.tex : 0);
-      glActiveTexture(GL_TEXTURE4);
+      glActiveTexture(GL_TEXTURE0 + 4);
       glBindTexture(GL_TEXTURE_2D, seed ? seed->tex : 0);
-      glActiveTexture(GL_TEXTURE5);
+      glActiveTexture(GL_TEXTURE0 + 5);
       glBindTexture(GL_TEXTURE_2D, seed ? LT.mask.tex : 0);
-      glActiveTexture(GL_TEXTURE6);
-      glBindTexture(GL_TEXTURE_2D, R.normals_used ? LT.mat.tex : 0);
+      glActiveTexture(GL_TEXTURE0 + 6);
+      glBindTexture(GL_TEXTURE_2D, R.material_used ? LT.mat.tex : 0);
       glActiveTexture(GL_TEXTURE0);
       glBindVertexArray(LT.vao);
       glBindBuffer(GL_ARRAY_BUFFER, LT.vbo);
@@ -618,8 +624,13 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
     GLenum one[1] = { GL_COLOR_ATTACHMENT0 };
     glDrawBuffers(1, one);
   }
-  if (gi) r2d_gi_run(&LT.mask, &LT.scene, R.normals_used ? &LT.mat : NULL, &LT.light, k);
+  r2d_timer_end();
+  r2d_timer_begin(R2D_T_GI);
+  if (gi) r2d_gi_run(&LT.mask, &LT.scene, R.material_used ? &LT.mat : NULL, &LT.light, k);
+  r2d_timer_end();
+  r2d_timer_begin(R2D_T_COMPOSITE);
   composite_to(dst, 1.0f / k, add);
+  r2d_timer_end();
 }
 
 void r2d_lights_shutdown(void) {

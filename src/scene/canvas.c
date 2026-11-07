@@ -49,6 +49,8 @@ static const item_type *item_type_of(const cw_node_type *t) {
 
 /* ── per-tree state ──────────────────────────────────────────────────── */
 
+void cw__r2d_set_post_hud(int layer); /* render2d post.c: the hud layer once the canvases are laid out */
+
 typedef struct canvas_ctx {
   int layer, seq;
   bool follow, y_sort, lit;
@@ -335,6 +337,7 @@ static bool canvas_draw(cw_tree *t, int w, int h, double alpha, bool clear, cons
     pd.scale = (cw_scale_mode)cs->scale_mode;
     pd.letterbox = cw__col4(cs->letterbox);
     pd.ambient = cw__col4(cs->ambient);
+    pd.wind = (cw_r2d_wind){ cs->wind_strength, cs->wind_speed, cs->wind_wavelength, cs->wind_gusts };
   } else {
     pd.clear_color = CW_BLACK;
     pd.ambient = CW_WHITE;
@@ -349,6 +352,19 @@ static bool canvas_draw(cw_tree *t, int w, int h, double alpha, bool clear, cons
   }
   (void)w;
   (void)h;
+  /* the post chain and global illumination (CanvasSettings) */
+  static cw_r2d_post post;
+  static cw_r2d_gi gi;
+  if (cs && cs->post) {
+    post = (cw_r2d_post){ .exposure = cs->exposure, .bloom = cs->bloom, .bloom_threshold = cs->bloom_threshold,
+                          .bloom_intensity = cs->bloom_intensity, .tone = (cw_r2d_tone)cs->tone, .contrast = cs->contrast,
+                          .saturation = cs->saturation, .vignette = cs->vignette, .hud_layer = CW_R2D_MAX_LAYERS };
+    pd.post = &post;
+  }
+  if (cs && cs->gi) {
+    gi = (cw_r2d_gi){ .intensity = cs->gi_intensity, .bounce = cs->gi_bounce };
+    pd.gi = &gi;
+  }
   if ((s->items.count && world) || (v && (world || clear))) {
     cw_r2d_begin(&pd);
     cw_vec2 csz = cw_r2d_canvas_size();
@@ -385,8 +401,12 @@ static bool canvas_draw(cw_tree *t, int w, int h, double alpha, bool clear, cons
       ld.y_sort = c->y_sort;
       ld.pixel_snap = cs && cs->pixel_snap;
       ld.lit = c->lit;
+      ld.occluder_depth = cs ? cs->occluder_depth : 0;
       cw_r2d_layer_set(c->r2d, &ld);
+      /* the chain covers what follows the camera; the first screen-space CanvasLayer above the world starts the HUD */
+      if (pd.post && c->layer >= 1 && !c->follow && c->r2d < post.hud_layer) post.hud_layer = c->r2d;
     }
+    if (pd.post) cw__r2d_set_post_hud(post.hud_layer);
     s->stats.layers = used;
     for (int i = 0; i < (world ? s->items.count : 0); i++) {
       item *it = &s->items.data[i];

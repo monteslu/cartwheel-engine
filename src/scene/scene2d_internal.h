@@ -44,6 +44,18 @@ typedef struct cw__canvas_settings {
   float ambient[4];
   bool pixel_snap;
   bool y_sort;
+  /* lit canvases: how deep light reaches into occluders */
+  float occluder_depth;
+  /* the post chain (cw_r2d_post) over the canvases that follow the camera; CanvasLayers in screen space draw after it */
+  bool post;
+  float exposure, bloom_threshold, bloom_intensity, contrast, saturation, vignette;
+  bool bloom;
+  int tone;
+  /* global illumination (cw_r2d_gi) of the lit canvases */
+  bool gi;
+  float gi_intensity, gi_bounce;
+  /* wind (cw_r2d_wind) for Sprite2Ds with sway */
+  float wind_strength, wind_speed, wind_wavelength, wind_gusts;
 } cw__canvas_settings;
 
 typedef struct cw__light2d {
@@ -51,6 +63,8 @@ typedef struct cw__light2d {
   float color[4];
   float energy, range, falloff, height;
   bool shadow;
+  float softness, cone, cone_soft, volumetric;
+  bool directional;
 } cw__light2d;
 
 extern const cw_node_type *cw__node2d_t, *cw__parallax_t, *cw__camera2d_t, *cw__settings2d_t, *cw__light2d_t;

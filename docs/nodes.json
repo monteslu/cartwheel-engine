@@ -2337,6 +2337,36 @@
      "stored": true,
      "readonly": false,
      "doc": "Atlas grid cell drawn (row-major)."
+    },
+    {
+     "name": "sway",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "How much its top edge sways in the CanvasSettings wind (0 = none)."
+    },
+    {
+     "name": "emissive",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Lit canvases: the share of its colour that ignores the lights."
+    },
+    {
+     "name": "intensity",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 16,
+     "doc": "HDR multiplier of its colour (with CanvasSettings post: past 1 blooms); 0 or 1 = as drawn."
     }
    ]
   },
@@ -2863,6 +2893,54 @@
      "stored": true,
      "readonly": false,
      "doc": "Cast shadows from LightOccluder2Ds."
+    },
+    {
+     "name": "softness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Shadow penumbra: 0 hard, 1 very soft."
+    },
+    {
+     "name": "cone",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 3.15,
+     "doc": "Spot: half-angle of the beam, radians (0 = all round); the node's rotation points it."
+    },
+    {
+     "name": "cone_soft",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Spot: share of the cone's edge that fades (0 = 0.2)."
+    },
+    {
+     "name": "directional",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "A sun or moon: parallel light over the whole canvas along the node's rotation."
+    },
+    {
+     "name": "volumetric",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Light the air scatters toward the eye (shafts)."
     }
    ]
   },
@@ -3154,6 +3232,174 @@
      "stored": true,
      "readonly": false,
      "doc": "Y-sort the default canvas."
+    },
+    {
+     "name": "occluder_depth",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Lit canvases: how deep light reaches into occluders, pixels (0 = all through)."
+    },
+    {
+     "name": "post",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "HDR and the post chain over the world (screen-space CanvasLayers draw after it)."
+    },
+    {
+     "name": "exposure",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 64,
+     "doc": "Post: exposure multiplier (0 = 1)."
+    },
+    {
+     "name": "bloom",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Post: bloom."
+    },
+    {
+     "name": "bloom_threshold",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 64,
+     "doc": "Post: what is brighter blooms (0 = 1)."
+    },
+    {
+     "name": "bloom_intensity",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 8,
+     "doc": "Post: bloom strength (0 = 0.6)."
+    },
+    {
+     "name": "tone",
+     "type": "enum",
+     "default": "SOFT",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "SOFT",
+      "ACES",
+      "REINHARD",
+      "CLAMP"
+     ],
+     "doc": "Post: tone curve (SOFT keeps 0..1 art as drawn)."
+    },
+    {
+     "name": "contrast",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 4,
+     "doc": "Post: contrast (0 = 1)."
+    },
+    {
+     "name": "saturation",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 4,
+     "doc": "Post: saturation (0 = 1)."
+    },
+    {
+     "name": "vignette",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Post: darkening at the corners."
+    },
+    {
+     "name": "gi",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Global illumination of lit canvases (glowing things light the world, light bounces)."
+    },
+    {
+     "name": "gi_intensity",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 16,
+     "doc": "GI: strength (0 = 1)."
+    },
+    {
+     "name": "gi_bounce",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": -1,
+     "max": 0.95,
+     "doc": "GI: share of light occluders give back (0 = 0.5, negative = none)."
+    },
+    {
+     "name": "wind_strength",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10000,
+     "doc": "Wind: sway of Sprite2Ds with sway, pixels (0 = still)."
+    },
+    {
+     "name": "wind_speed",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Wind: waves per second (0 = 1.5)."
+    },
+    {
+     "name": "wind_wavelength",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Wind: pixels between wave crests (0 = 300)."
+    },
+    {
+     "name": "wind_gusts",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Wind: a second, faster wave on top."
     }
    ]
   },
