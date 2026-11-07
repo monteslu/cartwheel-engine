@@ -256,8 +256,10 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   };
 
   // a layer's albedo (rgb + height in a) and normal-roughness at a world point, planar or (steep) triplanar;
-  // g holds the derivatives, taken before any branch (WGSL allows them only in uniform control flow)
-  const layerAt = (id, ctl, g) => {
+  // g holds the derivatives, taken before any branch (WGSL allows them only in uniform control flow).
+  // deferTop: the top-down projection's normal is not read here; finishNrm() reads it later and makes nrm, with the same
+  // arithmetic (the second layer reads it only where the height blend gives it a share)
+  const layerAt = (id, ctl, g, deferTop = false) => {
     const sc = layerScale(id).mul(scaleOf(ctl.scl));
     const uv = rot(wp.xz.mul(sc), ctl.angle);
     const gx = rot(g.dx.mul(sc), ctl.angle), gy = rot(g.dy.mul(sc), ctl.angle);
@@ -270,10 +272,12 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     const alb = vec4(0, 0, 0, 0.5).toVar();
     const nrm = vec4(0, 0, 0, 0.9).toVar();
     // the top-down projection, unless the ground is steep enough that the sides carry it all
+    const topNrm = () => toTop(sampleLayer(true, id, uv, gx, gy, mode === 'min'));
     If(g.tri.lessThan(0.999), () => {
       alb.assign(sampleLayer(false, id, uv, gx, gy, mode === 'min'));
-      nrm.assign(toTop(sampleLayer(true, id, uv, gx, gy, mode === 'min')));
+      if (!deferTop) nrm.assign(topNrm());
     });
+    const sideNrm = deferTop ? vec4(0).toVar() : null;
     // steep: the side projections, weighted by the normal (medium and up). Only the facing one is read, both only
     // across the band where they hand over (a cliff read all of them: 18 texture reads a layer, most of a
     // canyon's frame time)
@@ -303,9 +307,15 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
       const tone = float(1).add(macro.mul(0.2).add(strat.mul(0.14)).mul(dt));
       sideA.assign(vec4(sideA.rgb.mul(tone), sideA.a));
       alb.assign(mix(alb, sideA, g.tri));
-      nrm.assign(mix(nrm, sideN, g.tri));
+      if (deferTop) sideNrm.assign(sideN);
+      else nrm.assign(mix(nrm, sideN, g.tri));
     });
-    return { alb, nrm };
+    const finishNrm = () => {
+      If(g.tri.lessThan(0.999), () => { nrm.assign(topNrm()); });
+      If(g.tri.greaterThan(0), () => { nrm.assign(mix(nrm, sideNrm, g.tri)); });
+      return nrm;
+    };
+    return { alb, nrm, finishNrm };
   };
 
   // height blend (Terrain3D's): the layer whose height (albedo alpha) stands out wins the blend
@@ -364,11 +374,16 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
       pAlb.assign(a.alb);
       pNrm.assign(a.nrm);
       // the second layer only where it has a share (away from transitions the four texels agree)
+      // Its top-down normal is read only where the height blend gives it a share: across much of a transition
+      // one layer's height stands out by more than the blend's sharpness, and there the other has none (tb is exactly
+      // 0, where the mix gave the first layer's normal anyway): half its top-down reads skipped there.
       If(wB.greaterThan(0.004), () => {
-        const b = layerAt(B, near, g);
-        const tb = heightBlend(a, b, wB.div(max(wA.add(wB), 1e-4)));
+        const b = layerAt(B, near, g, true);
+        const tb = heightBlend(a, b, wB.div(max(wA.add(wB), 1e-4))).toVar();
         pAlb.assign(mix(a.alb, b.alb, tb));
-        pNrm.assign(mix(a.nrm, b.nrm, tb));
+        If(tb.greaterThan(0), () => {
+          pNrm.assign(mix(a.nrm, b.finishNrm(), tb));
+        });
       });
     });
     return fade;

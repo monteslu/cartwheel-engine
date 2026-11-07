@@ -9,6 +9,18 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 ### Fixed
 - **Terrain3D obeys `visible`**: the terrain and its scatter are drawn, and cast shadows, only while the node and every Node3D above it are visible. Its meshes now sit in one group the pass shows or hides; before, they were added straight to the scene root and a hidden node drew anyway. A hidden terrain is not selected or posed either (no CPU time per frame), and it still collides. `terrain-coverage` checks a hidden terrain, a hidden parent and a terrain shown again (v0.38.0 fails the first two).
 - **A Terrain3D owns its terrain's origin**, and now says so: the node set the origin every tick, so `cw_terrain_set_origin` on a node's terrain was silently undone. It is still undone (move the node instead), with a warning naming the node, and the header and the terrain guide state the rule. `unit-terrain` checks both directions.
+- **The terrain's second layer reads less**: where two layers blend, the second layer's top-down normal is read only where the height blend gives it a share (none where one layer's height stands out by more than the blend's sharpness). WebGPU frames are the same to the bit; GL frames move by one to eleven levels at about 20 pixels of a 1080p frame (the GL compiler rounds the reordered code differently).
+
+### Measured (Radeon 890M, native, 1080p High; a ground that blends two layers across the view; scene pass GPU time)
+
+| Case | GL | WebGPU |
+|---|---|---|
+| whole scene pass, v0.38.0 | 3.96 ms | 4.86 ms |
+| whole scene pass, v0.38.1 | 3.79 ms | 4.52 ms |
+| the second layer alone, v0.38.0 | 1.0 ms | 2.1 ms |
+| the second layer alone, anisotropic filtering forced off in the driver | 0.2 ms | 0.3 ms |
+
+The WebGPU excess is the driver's: the generated shaders have the same structure on both backends and compile to code of the same size, and the cost is in 8x anisotropic fetches from a different layer of the layer array (the terrain guide's Performance section has the details).
 
 ## v0.38.0 (2026-11-07)
 
