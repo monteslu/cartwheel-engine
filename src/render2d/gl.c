@@ -78,6 +78,11 @@ static const char *SPRITE_FS =
     "  o_mat = (v_mode & 4) != 0 ? vec4(0.0) : vec4(max(v_emis, m.r), m.g, m.b, 1.0) * c.a;\n"
     "#endif\n"
     "  if ((v_mode & 4) != 0) c.a = 0.0;\n"
+    "#ifdef MASK\n"
+    "  if (c.a < 0.5) discard;\n"
+    "  o_col = vec4(1.0);\n"
+    "  return;\n"
+    "#endif\n"
     "#ifdef DISTORT\n"
     /* distortion layers: red / green (0.5 = none) x alpha x the layer's reach, added up */
     "  vec2 off = c.a > 1e-4 ? (c.rg / c.a * 2.0 - 1.0) * c.a * v_dist : vec2(0.0);\n"
@@ -122,6 +127,10 @@ static const char *TILE_FS =
     "#ifdef LIT\n"
     "  o_nrm = vec4(texture(u_nrm, vec3(v_uv, v_page)).rgb, 1.0) * c.a;\n"
     "  o_mat = vec4(texture(u_mat, vec3(v_uv, v_page)).rgb, 1.0) * c.a;\n"
+    "#endif\n"
+    "#ifdef MASK\n"
+    "  if (c.a < 0.5) discard;\n"
+    "  c = vec4(1.0);\n"
     "#endif\n"
     "  o_col = c;\n"
     "}\n";
@@ -209,10 +218,12 @@ bool r2d_programs_init(void) {
             build(&R.sprite_lit, "sprite (lit)", "#define LIT 1\n", SPRITE_VS, SPRITE_FS) &&
             build(&R.tile, "tilemap", "", TILE_VS, TILE_FS) &&
             build(&R.tile_lit, "tilemap (lit)", "#define LIT 1\n", TILE_VS, TILE_FS) &&
+            build(&R.sprite_mask, "sprite (occluder mask)", "#define MASK 1\n", SPRITE_VS, SPRITE_FS) &&
+            build(&R.tile_mask, "tilemap (occluder mask)", "#define MASK 1\n", TILE_VS, TILE_FS) &&
             build(&R.blit, "blit", "", QUAD_VS, BLIT_FS);
   if (!ok) return false;
-  r2d_program *tiles[2] = { &R.tile, &R.tile_lit };
-  for (int i = 0; i < 2; i++) {
+  r2d_program *tiles[3] = { &R.tile, &R.tile_lit, &R.tile_mask };
+  for (int i = 0; i < 3; i++) {
     GLuint p = tiles[i]->prog;
     tiles[i]->u[U_M0] = glGetUniformLocation(p, "u_m0");
     tiles[i]->u[U_M1] = glGetUniformLocation(p, "u_m1");

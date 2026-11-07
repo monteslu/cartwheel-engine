@@ -14,6 +14,7 @@ typedef struct tilemap2d {
   int margin, spacing, columns;
   int layers;
   const char *animations;
+  int occluder_layers; /* bit k: map layer k casts shadows by its alpha in lit canvases */
   /* cells: w*h per layer, render2d cell values (id+1 | flags) */
   int w, h;
   uint32_t *cells[TM_LAYERS];
@@ -202,7 +203,9 @@ static void tm_draw(cw_node n, void *d, const cw_canvas_item *it) {
   if (CW_HANDLE_IS_NULL(m->map)) return;
   for (int l = 0; l < CW_CLAMP(m->layers, 1, TM_LAYERS); l++) {
     cw_r2d_set_z(it->z + l);
+    if (m->occluder_layers & (1 << l)) cw_r2d_set_occluder(true);
     cw_r2d_tilemap(m->map, l, cw_v2(0, 0), it->modulate);
+    if (m->occluder_layers & (1 << l)) cw_r2d_set_occluder(false);
   }
 }
 
@@ -239,6 +242,7 @@ static const cw_prop tm_props[] = {
   CW_PROP_ACCESSOR("columns", CW_T_INT, CW_PROP_DEFAULT, get_columns, set_columns, "Tileset columns (0 = from the width)."),
   CW_PROP_ACCESSOR("layers", CW_T_INT, CW_PROP_DEFAULT, get_layers, set_layers, "Map layers drawn, 1..8 (layer k at z + k)."),
   CW_PROP_ACCESSOR("animations", CW_T_STRING, CW_PROP_DEFAULT, get_anims, set_anims, "Animated tiles \"id:frames@fps; ...\"."),
+  CW_PROP_FIELD(tilemap2d, occluder_layers, CW_T_INT, CW_PROP_DEFAULT, "Bit k: map layer k casts shadows (and blocks GI) by its alpha on lit canvases."),
   CELLS_PROP(0), CELLS_PROP(1), CELLS_PROP(2), CELLS_PROP(3), CELLS_PROP(4), CELLS_PROP(5), CELLS_PROP(6), CELLS_PROP(7),
   CW_PROP_END,
 };

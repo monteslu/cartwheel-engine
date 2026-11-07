@@ -42,6 +42,15 @@
 #include "base.h"
 #include "math.h"
 
+/* What this render2d offers, for code that builds against older SDKs too:
+ *   1  sprites, shapes, text, tilemaps, lit layers with stencil shadows
+ *   2  HDR and the post chain, intensity, emission, material maps, distance
+ *      field shadows (soft, spot, directional, volumetric), occluder_depth,
+ *      global illumination, screen reads, distortion, water, wind, trails,
+ *      layer fog, flash, mipmapped atlas pages (engine v0.37)
+ *   #if defined(CW_R2D_FEATURES) && CW_R2D_FEATURES >= 2 */
+#define CW_R2D_FEATURES 2
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -486,6 +495,12 @@ void cw_r2d_set_sway(float share);
  * keeping their shape: a white sprite colour at 1 is a white silhouette (a
  * hit flash), red at 0.5 a red tint over the art. Reset by cw_r2d_begin. */
 void cw_r2d_set_flash(float amount);
+/* Later sprites, shapes, text and tilemaps in lit layers also cast shadows
+ * (and block global illumination) wherever their alpha is over half: the
+ * ground tiles, a crate, a character, with no occluder polygon. They fill
+ * the occluder mask at the canvas size, as polygons do. Off by default; reset
+ * by cw_r2d_begin. */
+void cw_r2d_set_occluder(bool on);
 /* Clip to a canvas-pixel rect (intersected with the enclosing clip). Max
  * depth 32; up to 254 distinct clips per pass. */
 void cw_r2d_push_clip(cw_rect canvas_rect);
@@ -844,9 +859,11 @@ void cw_tilemap_world_to_cell(cw_tilemap m, cw_vec2 origin, cw_vec2 world, int *
 /* ── 2D lights ───────────────────────────────────────────────────────────
  * Layers marked lit are drawn into an offscreen colour buffer (and, when a
  * texture with a normal map was drawn, a normal buffer), then composited as
- * colour * light. The light buffer starts at the pass's ambient colour and
- * every light of the run adds itself in ONE instanced draw (radial falloff,
- * an optional spot cone, normal maps), however many lights there are.
+ * colour * light. The lights are tiled: the CPU sorts the run's lights into
+ * 32-pixel screen tiles, and ONE full-screen pass gives each pixel the
+ * ambient colour plus every light of its tile (radial falloff, an optional
+ * spot cone, normal maps, specular), reading the pixel's normal and material
+ * once and writing it once, however many lights overlap there.
  *
  * Shadows come from a distance field of the occluders: the occluder
  * outlines are filled into a mask and a jump flood turns the mask into the

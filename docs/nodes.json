@@ -3486,6 +3486,14 @@
      "doc": "Animated tiles \"id:frames@fps; ...\"."
     },
     {
+     "name": "occluder_layers",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bit k: map layer k casts shadows (and blocks GI) by its alpha on lit canvases."
+    },
+    {
      "name": "cells0",
      "type": "string",
      "default": "\"\"",

@@ -110,7 +110,7 @@ void cw_r2d_shutdown(void) {
   r2d_textures_shutdown();
   if (r2d_wg()) r2d_wg_shutdown();
   else {
-    r2d_program *ps[] = { &R.sprite_distort, &R.sprite, &R.sprite_lit, &R.tile, &R.tile_lit, &R.light, &R.shadow, &R.composite, &R.blit };
+    r2d_program *ps[] = { &R.sprite_mask, &R.tile_mask, &R.sprite_distort, &R.sprite, &R.sprite_lit, &R.tile, &R.tile_lit, &R.light, &R.shadow, &R.composite, &R.blit };
   for (size_t i = 0; i < CW_ARRAY_LEN(ps); i++)
     if (ps[i]->prog) glDeleteProgram(ps[i]->prog);
   r2d_yuv_gl_shutdown();
@@ -135,6 +135,7 @@ void cw_r2d_shutdown(void) {
   cw_array_free(&R.keys_tmp);
   cw_array_free(&R.out_idx);
   cw_array_free(&R.clips);
+  cw_array_free(&R.occ_batches);
   memset(&R, 0, sizeof R);
   R.atlas_array[0] = R.atlas_array[1] = -1;
   R.atlas_mip = -1;
@@ -317,8 +318,11 @@ uint64_t r2d_make_key(int extra_z, float sort_y) {
 
 uint32_t r2d_current_state(uint32_t array) {
   cw_blend b = R.blend == CW_BLEND_ADD ? CW_BLEND_ALPHA : R.blend;
-  return R2D_STATE(array, b, current_clip(), R2D_KIND_STREAM);
+  uint32_t occ = R.occluder_on && R.layers[R.cur_layer].lit ? R2D_ST_OCCL : 0;
+  return R2D_STATE(array, b, current_clip(), R2D_KIND_STREAM) | occ;
 }
+
+void cw_r2d_set_occluder(bool on) { R.occluder_on = on; }
 
 void r2d_push_cmd(uint64_t key, uint32_t state, uint32_t ifirst, uint32_t icount) {
   /* extend the previous command when nothing about it differs: keeps the
@@ -358,7 +362,8 @@ r2d_vertex *r2d_alloc(int nv, int ni, uint32_t **idx_out, uint32_t *base_out, ui
 void r2d_push_special(uint32_t array, float sort_y, uint32_t payload) {
   CW_ASSERT(R.in_pass, "submit between cw_r2d_begin and cw_r2d_end");
   cw_blend b = R.blend == CW_BLEND_ADD ? CW_BLEND_ALPHA : R.blend;
-  cw_array_push(&R.cmds, ((r2d_cmd){ r2d_make_key(0, sort_y), R2D_STATE(array, b, current_clip(), R2D_KIND_TILEMAP),
+  uint32_t occ = R.occluder_on && R.layers[R.cur_layer].lit ? R2D_ST_OCCL : 0;
+  cw_array_push(&R.cmds, ((r2d_cmd){ r2d_make_key(0, sort_y), R2D_STATE(array, b, current_clip(), R2D_KIND_TILEMAP) | occ,
                                      (uint32_t)R.idx.count, 0, payload }));
   R.stats.commands++;
 }
@@ -479,6 +484,7 @@ void cw_r2d_begin(const cw_r2d_pass_desc *desc) {
   R.has_gi = desc && desc->gi;
   if (R.has_gi) R.gi = *desc->gi;
   R.intensity_b = R.emissive_b = R.sway_b = R.flash_b = 0;
+  R.occluder_on = false;
   R.blend = CW_BLEND_ALPHA;
   R.has_xform = false;
   R.xform = cw_xform2d_identity();
@@ -682,7 +688,10 @@ static GLuint canvas_fbo(void) {
   return R.target_fbo;
 }
 
-static void begin_lit_run(void) { r2d_lit_begin_gl(); }
+static void begin_lit_run(void) {
+  cw_array_clear(&R.occ_batches);
+  r2d_lit_begin_gl();
+}
 
 /* the run's lights and composite onto the framebuffer `dst` (the canvas or the HDR canvas) */
 static void end_lit_run(int lo, int hi, GLuint dst) {
@@ -933,6 +942,7 @@ void cw_r2d_end(void) {
       cur_array = cur_blend = cur_clip = 0xffffffffu;
     }
     if (in_lit) lit_hi = b->layer_last;
+    if (in_lit && (b->state & R2D_ST_OCCL)) cw_array_push(&R.occ_batches, *b);
     uint32_t blend = R2D_ST_BLEND(b->state), clip = R2D_ST_CLIP(b->state);
     if (blend != cur_blend) apply_blend(cur_blend = blend);
     if (clip != cur_clip) apply_clip(cur_clip = clip, R.canvas_h);

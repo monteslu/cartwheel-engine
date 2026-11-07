@@ -1,7 +1,7 @@
-/* render2d GPU timers (native GL, CW_R2D_TIMERS=1): GL time-elapsed
- * queries round each part of cw_r2d_end, read back a few frames later and
- * averaged into debug fields "r2d_gpu.<part>" (ms per frame). Off by
- * default: queries cost a little, and a cart (and WebGPU) never has them,
+/* render2d GPU timers (native, CW_R2D_TIMERS=1): GL time-elapsed queries,
+ * or WebGPU timestamps (wgpu.c), round each part of cw_r2d_end, read back a
+ * few frames later and averaged into debug fields "r2d_gpu.<part>" (ms per
+ * frame). Off by default: queries cost a little, and a cart never has them,
  * so the fields exist only when asked for and never reach a gate's
  * cross-host comparison. */
 #include <stdlib.h>
@@ -21,13 +21,14 @@
 #define GL_QUERY_RESULT 0x8866
 #endif
 
-static const char *const NAMES[R2D_T_COUNT] = { "draw", "field", "lights", "gi", "composite", "post" };
-
 #if defined(__wasm__)
 void r2d_timer_begin(int part) { (void)part; }
 void r2d_timer_end(void) {}
 void r2d_timers_frame(void) {}
+void r2d_timers_wg_result(const float ms[R2D_T_COUNT], const bool seen[R2D_T_COUNT]) { (void)ms, (void)seen; }
+bool r2d_timers_on(void) { return false; }
 #else
+static const char *const NAMES[R2D_T_COUNT] = { "draw", "field", "lights", "gi", "composite", "post" };
 #define POOL 256
 typedef struct pending { GLuint q; int part; uint64_t frame; } pending;
 static struct {
@@ -47,9 +48,10 @@ static struct {
 static bool timers_on(void) {
   if (T.on < 0) {
     const char *e = getenv("CW_R2D_TIMERS");
-    T.on = e && atoi(e) && !r2d_wg() ? 1 : 0;
+    T.on = e && atoi(e) ? 1 : 0;
+    if (T.on && r2d_wg() && !r2d_wg_timers_init()) T.on = 0; /* WebGPU: the device has no timestamps */
     if (T.on) {
-      glGenQueries(POOL, T.free_q);
+      if (!r2d_wg()) glGenQueries(POOL, T.free_q);
       T.nfree = POOL;
       for (int i = 0; i < R2D_T_COUNT; i++)
         cw_debug_f32(cw_intern(cw_frame_printf("r2d_gpu.%s", NAMES[i])), &T.avg[i]);
@@ -58,8 +60,15 @@ static bool timers_on(void) {
   return T.on == 1;
 }
 
+bool r2d_timers_on(void) { return timers_on(); }
+
 void r2d_timer_begin(int part) {
-  if (!timers_on() || T.open_part >= 0 || !T.nfree || T.npend >= POOL) return;
+  if (!timers_on() || T.open_part >= 0) return;
+  if (r2d_wg()) {
+    if (r2d_wg_timer_mark(part, false)) T.open_part = part;
+    return;
+  }
+  if (!T.nfree || T.npend >= POOL) return;
   GLuint q = T.free_q[--T.nfree];
   glBeginQuery(GL_TIME_ELAPSED_EXT, q);
   T.open_part = part;
@@ -68,13 +77,24 @@ void r2d_timer_begin(int part) {
 
 void r2d_timer_end(void) {
   if (T.on != 1 || T.open_part < 0) return;
+  if (r2d_wg()) {
+    r2d_wg_timer_mark(T.open_part, true);
+    T.open_part = -1;
+    return;
+  }
   glEndQuery(GL_TIME_ELAPSED_EXT);
   T.open_part = -1;
 }
 
 /* collect finished queries; each finished frame's sums feed the averages */
+/* WebGPU: a frame's parts, read back (wgpu.c's map callback) */
+void r2d_timers_wg_result(const float ms[R2D_T_COUNT], const bool seen[R2D_T_COUNT]) {
+  for (int k = 0; k < R2D_T_COUNT; k++)
+    if (seen[k]) T.avg[k] = T.avg[k] == 0 ? ms[k] : T.avg[k] * 0.9f + ms[k] * 0.1f;
+}
+
 void r2d_timers_frame(void) {
-  if (!timers_on()) return;
+  if (!timers_on() || r2d_wg()) return;
   int keep = 0;
   for (int i = 0; i < T.npend; i++) {
     pending p = T.pend[i];
