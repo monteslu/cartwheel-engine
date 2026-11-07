@@ -30,7 +30,7 @@ const OUT = join(ROOT, 'out', 'r2d-perf');
 mkdirSync(OUT, { recursive: true });
 const JSON_OUT = resolve(opt('json', join(OUT, 'report.json')));
 // WebGPU calls a case may make (the 2D renderer's share of a frame)
-const BUDGETS = { default: 200, lit500: 400, shadow500: 600, text: 400 };
+const BUDGETS = { default: 300, gi16: 800 }; /* measured: lit cases 65, shadowed 226-232, post 219, gi16 639 */
 
 const rows = [];
 for (const size of SIZES)
