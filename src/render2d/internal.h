@@ -15,6 +15,9 @@
 #ifndef GL_COLOR_ATTACHMENT1
 #define GL_COLOR_ATTACHMENT1 0x8CE1
 #endif
+#ifndef GL_COLOR_ATTACHMENT2
+#define GL_COLOR_ATTACHMENT2 0x8CE2
+#endif
 #ifndef GL_DEPTH_STENCIL_ATTACHMENT
 #define GL_DEPTH_STENCIL_ATTACHMENT 0x821A
 #endif
@@ -25,6 +28,8 @@
 #define R2D_PAGE 2048       /* atlas page size (GLES 3.0 guarantees 2048) */
 #define R2D_NO_ARRAY 0xfffu /* state: no texture (solid), joins any batch */
 #define R2D_RING 3
+#define R2D_MIP_LEVELS 4 /* level 0 and three halvings */
+#define R2D_MIP_PAD 8    /* gutter of mipmapped atlas images: 1 texel at the smallest level */
 
 /* vertex mode bits (a_info.y) */
 enum { R2D_MODE_SOLID = 1, R2D_MODE_SDF = 2, R2D_MODE_ADD = 4, R2D_MODE_YUP = 8 };
@@ -41,8 +46,12 @@ CW_STATIC_ASSERT(sizeof(r2d_vertex) == 28, "stream vertex is 28 bytes");
 /* a texture array: an atlas (many images, packed) or a standalone image */
 typedef struct r2d_array {
   bool live, atlas, repeat, nearest;
+  bool hdr;                /* RGBA16F storage (targets of the HDR canvas: the screen texture) */
+  int levels;              /* mip levels (1 = none; mipmapped atlas pages have R2D_MIP_LEVELS) */
   GLuint tex, normal_tex;  /* normal_tex: mirror of the atlas layout, lazily made */
+  GLuint mat_tex;          /* material mirror (emission, specular, gloss), lazily made */
   void *wtex, *wntex;      /* WebGPU: WGPUTexture (colour, normal mirror) */
+  void *wmtex;             /* WebGPU: the material mirror */
   void *wbg;               /* WebGPU: cached bind group (colour, sampler, normal-or-dummy) */
   int w, h, layers;
   void *packers;           /* atlas: stbrp_context per layer */
@@ -52,7 +61,8 @@ typedef struct r2d_tex {
   uint16_t array, page;
   int x, y, w, h;          /* pixel rect inside the page */
   bool y_up;               /* GL orientation (render targets) */
-  bool target, has_normal;
+  bool target, has_normal, has_material;
+  bool hdr;                /* a target with RGBA16F storage */
   GLuint fbo, depth_rb;
   void *wdepth;            /* WebGPU: depth-stencil texture of a target made with depth */
   void *rt;                /* cw_target_rt: the cw_rt naming this target (made on first ask) */
@@ -112,9 +122,11 @@ typedef struct r2d_state {
   CW_ARRAY(r2d_array) arrays;
   int atlas_array[2];   /* per cw_filter, -1 until made */
   GLuint dummy_normal;  /* 1x1x1 "no normal" array */
+  GLuint dummy_material; /* 1x1x1 "no material" array (zeros) */
   int max_layers;
   GLuint blit_read_fbo, blit_draw_fbo;
   /* programs */
+  r2d_program sprite_distort;  /* distortion layers: offsets into the distortion buffer */
   r2d_program sprite, sprite_lit, tile, tile_lit, light, shadow, composite, blit;
   /* streams */
   GLuint vbo[R2D_RING], ibo[R2D_RING], vao[R2D_RING];
@@ -145,7 +157,21 @@ typedef struct r2d_state {
   float win_px_x, win_px_y;   /* the last window pass: drawable pixels per logical window unit */
   cw_texture canvas_rt;       /* virtual canvas */
   cw_texture scene_rt, normal_rt, light_rt; /* lit layers */
-  bool normals_used;          /* a normal-mapped texture was drawn into a lit layer */
+  bool normals_used;          /* lit layers draw normals and materials: a normal or material map, or emission, was drawn into one */
+  bool material_used;         /* a material map or emission was drawn into a lit layer (the lights add specular) */
+  /* HDR and post (cw_r2d_post): the pass's chain, copied at begin */
+  bool has_post;
+  cw_r2d_post post;
+  bool has_gi;
+  bool offscreen;              /* this pass draws offscreen: a layer reads the screen or distorts it */
+  cw_texture screen_tex;       /* cw_r2d_screen_texture */
+  bool next_array_hdr;        /* r2d_array_new makes RGBA16F storage (set round the call) */
+  int next_array_levels;       /* r2d_array_new makes this many mip levels (0 = 1; set round the call) */
+  int atlas_mip;               /* the mipmapped atlas page being filled, -1 until made */
+  cw_r2d_gi gi;
+  /* draw state packed into every vertex's sdf[2], sdf[3]: emission share, intensity (1 + x * 15 / 255) */
+  uint8_t emissive_b, intensity_b;
+  uint8_t sway_b;              /* wind sway share of later sprites' top edges (x255): vertex info[3] */
   /* draw state */
   int cur_layer, cur_z;
   cw_blend blend;
@@ -200,12 +226,16 @@ r2d_tex *r2d_tex_get(cw_texture t);
 int r2d_array_new(int w, int h, int layers, bool nearest, bool repeat, bool atlas);
 void r2d_array_free(int a);
 cw_texture r2d_texture_new_internal(int w, int h, cw_filter filter, bool depth); /* a render target */
+cw_texture r2d_texture_new_hdr(int w, int h); /* a render target with RGBA16F storage, linear, no depth */
 void r2d_textures_shutdown(void);
 GLuint r2d_array_normal_tex(int a);
+GLuint r2d_array_material_tex(int a); /* the material mirror, or the "no material" texture */
 /* UV rect of a source rect (texture pixels) in page UVs, honouring y_up */
 void r2d_tex_uv(const r2d_tex *t, cw_rect src, float *u0, float *v0, float *u1, float *v1);
 void r2d_tex_uv_point(const r2d_tex *t, float sx, float sy, float *u, float *v);
 /* batch.c */
+void r2d_wind_uniform(float out[4]); /* batch.c: the pass's wind for the sprite vertex stage */
+void r2d_note_tex(const r2d_tex *t); /* a lit layer draws this texture: normals and materials on when it has maps */
 r2d_vertex *r2d_alloc(int nv, int ni, uint32_t **idx_out, uint32_t *base_out, uint32_t array, float sort_y,
                       int extra_z);
 void r2d_pack_color(uint8_t out[4], cw_color c);
@@ -228,8 +258,21 @@ void r2d_tilemaps_shutdown(void);
 void r2d_fonts_init(void);
 void r2d_fonts_shutdown(void);
 uint32_t r2d_glyphs_missing(void); /* distinct codepoints no font in a chain had */
-/* light.c */
-void r2d_lights_render(int layer_lo, int layer_hi);
+/* light.c: a lit run (the scene buffers, the distance field, the lights, the composite) */
+void r2d_lit_begin_gl(void);                                   /* bind and clear the scene buffers (GL) */
+void r2d_lit_targets(void **scene_tex, void **normal_tex, void **mat_tex, int *scene_wfmt); /* the same, WebGPU textures */
+struct fx_dst;
+void r2d_lit_end(int layer_lo, int layer_hi, const struct fx_dst *dst); /* lights + composite onto dst */
+void r2d_lights_shutdown(void);
+/* gi2d.c: global illumination of a lit run (cw_r2d_gi) */
+struct fx_rt;
+bool r2d_gi_enabled(void); /* the pass asks for it and the effects detail allows it */
+void r2d_gi_run(const struct fx_rt *mask, const struct fx_rt *scene, const struct fx_rt *mat, struct fx_rt *light, float light_scale);
+void r2d_gi_shutdown(void);
+/* wgpu.c: the instanced lights and the occluder mask */
+void r2d_wg_mask_draw(void *mask, int w, int h, const float *tris, int nverts, float canvas_w, float canvas_h);
+void r2d_wg_lights_draw(void *light, void *add, int fmt, const float amb[4], const float *inst, int n, const float up[4],
+                        const float uq[4], void *normal, void *seed, void *mask, void *mat, int w, int h);
 /* shared quad drawing (lights, composite, blit): pos in target pixels */
 void r2d_draw_quad_px(float x0, float y0, float x1, float y1, int target_w, int target_h);
 void r2d_set_target_fbo(GLuint fbo, int w, int h);
@@ -242,6 +285,9 @@ bool r2d_wg_init(void);
 void r2d_wg_shutdown(void);
 int r2d_wg_max_layers(void);
 void *r2d_wg_tex_new(int w, int h, int layers);
+void *r2d_wg_tex_new_hdr(int w, int h, int layers); /* RGBA16F */
+void *r2d_wg_tex_new_levels(int w, int h, int layers, int levels); /* RGBA8 with mip levels */
+void r2d_wg_tex_write_level(void *tex, int level, int x, int y, int layer, int w, int h, const uint8_t *px);
 void *r2d_wg_depth_new(int w, int h);
 void r2d_wg_tex_fill(void *tex, int from, int to, const uint8_t rgba[4]);
 void r2d_wg_tex_copy(void *src, void *dst, int layers);
@@ -257,6 +303,7 @@ void r2d_wg_array_changed(r2d_array *a);
 typedef struct r2d_batch {
   uint32_t state, first, count, payload;
   int layer;
+  int layer_last; /* the last canvas layer merged into it */
   bool lit;
 } r2d_batch;
 void r2d_wg_end(const r2d_batch *b, int n, const uint32_t *idx);
@@ -268,10 +315,26 @@ void r2d_wg_tilemap_chunk(void *vbuf, int quads);
 /* batch.c / light.c helpers the WebGPU backend shares */
 void r2d_ensure_rt(cw_texture *rt, int w, int h, cw_filter f, bool depth);
 void r2d_yuv_gl_shutdown(void); /* yuv.c: its GL program */
+/* post.c: the HDR canvas and the post chain */
+bool r2d_post_active(void);          /* this pass has a chain (and the host can draw it) */
+int r2d_post_hud_layer(void);        /* first canvas layer drawn after the chain */
+void r2d_post_begin_gl(void);        /* bind the HDR canvas (GL), cleared like the pass */
+GLuint r2d_post_fbo(void);           /* the HDR canvas framebuffer (GL) */
+void *r2d_post_wtex(void);           /* the HDR canvas texture (WebGPU) */
+int r2d_post_wfmt(void);             /* its WGPUTextureFormat */
+void r2d_post_ensure(void);          /* (re)make the HDR canvas at the pass's size */
+struct fx_dst;
+void r2d_post_run(const struct fx_dst *out); /* the chain: HDR canvas -> out (premultiplied over) */
+void r2d_post_shutdown(void);
+bool r2d_canvas_hdr(void);           /* the offscreen canvas is RGBA16F */
+bool r2d_dist_ok(void);              /* distortion layers can draw (signed float targets) */
+GLuint r2d_post_dist_begin_gl(void); /* bind the distortion buffer (cleared on first use in the pass) */
+void *r2d_post_dist_wtex(bool *first); /* the same on WebGPU: the texture, and whether to clear it */
+void r2d_screen_copy_gl(GLuint from); /* the offscreen canvas into the screen texture */
+void *r2d_screen_wtex(void);         /* the screen texture's WebGPU texture */
 /* video frames on WebGPU (yuv.c draws through these) */
 void *r2d_wg_yuv_new(const int pw[3], const int ph[3]);
 void r2d_wg_yuv_convert(void *y, const uint8_t *const planes[3], void *target_tex, int w, int h);
 void r2d_wg_yuv_free(void *y);
-int r2d_shadow_tris(int lo, int hi, cw_vec2 L, float reach, float **out);
 
 #endif

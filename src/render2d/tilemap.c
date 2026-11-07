@@ -214,7 +214,7 @@ void cw_r2d_tilemap(cw_tilemap h, int map_layer, cw_vec2 origin, cw_color tint) 
   if (!m || map_layer < 0 || map_layer >= m->d.layers) return;
   const r2d_tex *t = r2d_tex_get(m->d.tileset);
   if (!t) return;
-  if (t->has_normal && R.layers[R.cur_layer].lit) R.normals_used = true;
+  r2d_note_tex(t);
   cw_array_push(&R.tdraws, ((r2d_tilemap_draw){ h.id, map_layer, origin, r2d_default_white(tint),
                                                 R.has_xform ? R.xform : cw_xform2d_identity(), R.cur_layer }));
   r2d_push_special(t->array, origin.y, (uint32_t)(R.tdraws.count - 1));
@@ -283,6 +283,8 @@ void r2d_tilemap_render(const r2d_tilemap_draw *d, bool lit, int target_h) {
   if (lit) {
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D_ARRAY, r2d_array_normal_tex(t->array));
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, r2d_array_material_tex(t->array));
     glActiveTexture(GL_TEXTURE0);
   }
   for (int cy = y0; cy <= y1; cy++)

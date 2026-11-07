@@ -111,11 +111,41 @@ A tilemap stores up to 16 layers in 32x32-tile chunks. Each chunk is static geom
 
 ## 2D lights
 
-A layer marked lit draws into an offscreen colour buffer (and a normal buffer when a normal-mapped texture was drawn), then composites as colour times light. The light buffer starts at the pass's ambient colour, and each light adds a radial falloff quad. Shadows are analytic: each occluder edge facing away from a light is extruded into the stencil buffer, which gives hard shadows exact at any resolution for two draws per shadowed light. The light buffer stores light at half intensity in RGBA8, so lights can overbright up to 2x. Normal maps attach to atlas textures with `cw_texture_set_normal_map`; without one a sprite is lit flat.
+A layer marked lit draws into an offscreen colour buffer (plus a normal and a material buffer when a normal map, a material map or emission was drawn into it), then composites as colour times light. The light buffer starts at the pass's ambient colour, and every light of the run adds itself in one instanced draw, however many lights there are: 500 lights are one draw and about 70 WebGPU calls, where they were 500 draws and over 3000 calls.
 
-`samples/r2d_lights` lights normal-mapped bricks and flat critters with three moving coloured lights (two shadowed) over a dim ambient, with an unlit HUD layer on top. In a scene, a canvas holding a `Light2D` is drawn lit, and `LightOccluder2D` polygons cast its shadows. Pillars and a torch in action2d's first room:
+A `cw_light2d` is a point light by default: a radial falloff (`falloff` is the exponent of 1 minus distance over radius), normal-mapped shading from its `height` above the plane, an optional `cone` (with `angle` and `cone_soft`) for a spot, and `directional` for a sun or moon whose parallel light covers the whole layer from `angle`.
+
+**Shadows** come from a distance field of the occluders. The occluder outlines of the run are filled into a mask at the canvas size, and a jump flood (about 12 full-screen passes at the field's size) turns the mask into the nearest occluder pixel at every pixel, once per run whatever the number of lights. Each lit pixel then marches toward its light through the field, taking big steps in open space (sphere tracing). `softness` widens the penumbra the further the pixel is from the occluder, as a light of some size makes it; 0 is a hard edge. The cost no longer grows with occluder edges: 500 shadowed lights over 120 occluders went from 8 ms of CPU and 6000 WebGPU calls a frame to about 1 ms and 280 calls. An occluder's own pixels stay lit, as its face; set the layer's `occluder_depth` to let light reach only that deep into occluders, so ground and walls glow at the edge a light falls on and stay dark inside.
+
+The field's size and the march steps follow the effects detail of the [graphics settings](guide:rendering-3d): Ultra the canvas size and 48 steps, High and Medium half the canvas and 32 or 24 steps, Low and Very Low a quarter (never under 320 pixels across) and 16 or 12 steps.
+
+`volumetric` adds the light the air scatters toward the eye: shafts where a light passes between occluders, a glow round a lamp, added on top of the lit layers and over empty background too.
+
+**Materials.** Normal maps attach to atlas textures with `cw_texture_set_normal_map`; without one a sprite is lit flat. A material map (`cw_texture_set_material_map`) adds per texel emission (red: the share of the colour that ignores the lights), specular (green: how strongly lights glint off it) and gloss (blue: how tight the glint is). `cw_r2d_set_emissive` gives later draws emission without a map: a lamp, a screen, lava. Keep cloth, stone and skin near zero specular; wet rock, metal and glass carry it.
+
+**Global illumination.** A pass with `.gi` lights its lit layers with the light that bounces round the scene: what glows lights what is near it in its own colour, light that falls on an occluder bounces off in the occluder's colour, and occluders cast soft shadows from all of it, with no light placed. It uses radiance cascades over a distance field of the occluders and the glowing pixels, at a share of the canvas size (off on Very Low, an eighth on Low, a quarter on Medium and High, half on Ultra). Each frame's result feeds the next frame's bounce.
+
+`samples/r2d_lights` lights normal-mapped bricks and flat critters with three moving coloured lights (two shadowed) over a dim ambient, with an unlit HUD layer on top. `samples/r2d_hdr` puts the rest together: a stone wall with normal and material maps, glowing crystals, torches with soft shadows, a spot lamp, moonlight through a gap in the ceiling, global illumination, a reflecting pool, heat haze and a shockwave, under the post chain. In a scene, a canvas holding a `Light2D` is drawn lit, and `LightOccluder2D` polygons cast its shadows. Pillars and a torch in action2d's first room:
 
 @include games/action2d/assets/rooms/room1.cwscene#Pillar1..Torch1
+
+## HDR and the post chain
+
+A pass with `.post` (a `cw_r2d_post`) draws its layers under `post->hud_layer` into a high dynamic range canvas (RGBA16F where the host renders it), so colour can go past 1: `cw_r2d_set_intensity` multiplies later draws (1 to 16), lights go as bright as asked, additive glows stack. The chain then turns that canvas into the pass's output: exposure, bloom (what passes a soft-knee threshold, blurred over up to 8 halvings with a 13-tap filtered downsample and a tent upsample), a tone curve, a grade (contrast, saturation, lift, gamma, gain, tint), a vignette and a dither below one 8-bit level so smooth gradients do not band. The default tone curve, `CW_R2D_TONE_SOFT`, leaves everything under `tone_knee` exactly as drawn and rolls off above it, so 0..1 art is untouched; `ACES`, `REINHARD` and `CLAMP` are there too. Layers from `hud_layer` up draw after the chain, straight into the output: a HUD over a glowing world. Each pass has its own chain, so two regions can be graded differently. A NULL `post` draws exactly as before.
+
+Bloom follows the effects detail: none on Very Low, at most 3 levels on Low and 5 on Medium. On the 890M at 1080p the chain with 6 bloom levels costs about 0.3 ms.
+
+## Reading and bending the screen
+
+A layer with `screen_read` copies the canvas as drawn before it into `cw_r2d_screen_texture()`, which its draws can sample (UVs 0..1 over the canvas): a pool that mirrors the world above it, frosted glass, a lens. A layer with `distortion` set bends the picture instead of drawing colour: each pixel's red pushes the canvas right (0.5 is no push), green pushes it down, both times its alpha, up to `distortion` canvas pixels, and overlapping draws add up. Scroll `cw_r2d_noise_texture()` over a fire for heat haze or over water for ripples; `cw_r2d_shockwave` draws a ring that pushes outward. Either flag makes the pass draw offscreen (the HDR canvas with `.post`) and copy to its target at the end; distortion applies once, to the whole region under the HUD, so draw distortion layers last.
+
+## Motion: wind and trails
+
+Sprites submitted after `cw_r2d_set_sway(share)` bend their top edge in the pass's `wind` (strength in pixels, wave speed and length, gusts): grass, reeds, banners, treetops sway in the vertex stage at no CPU cost. `cw_r2d_trail` draws a ribbon along a path, its width and colour going from the head's to the tail's, with an optional texture along it: comet tails, sword swipes, tyre marks, the smear behind a dash. `samples/r2d_motion` shows a meadow in the wind, glowing comets and a dashed trail.
+
+## Scaling HD art
+
+A LINEAR texture made with `cw_texture_desc.mipmaps` packs into atlas pages that carry three smaller copies (half, quarter and eighth size, box filtered on the CPU at load), so art drawn smaller than its pixels (HD art on a 720p screen, a zoomed-out camera, a far parallax layer) stays smooth instead of shimmering. These pages leave 8-pixel gutters round each image so the smaller copies never take a neighbour's colour. `samples/r2d_motion` draws one fine-detailed image at 1/2 to 1/8 size with and without them.
 
 ## Sharing GL with 3D
 
@@ -123,7 +153,7 @@ render2d needs a current GL context (call it from `init` onward) and sets every 
 
 ## Seeing what it did
 
-`cw_r2d_get_stats` reports the frame's passes, draw calls, batches, vertices, sorts, chunk draws and rebuilds, lights, atlas pages and missing glyphs. `cw_r2d_debug_register("r2d")` publishes them as debug fields, which is how the gates compare batching across hosts. `cw_canvas_get_stats` counts the tree's canvas items, layers, lights and occluders. The [debug channel](guide:debug-channel) can screenshot the world layer alone, and the [profiling](guide:profiling) guide covers GPU timings.
+`cw_r2d_get_stats` reports the frame's passes, draw calls, batches, vertices, sorts, chunk draws and rebuilds, lights, atlas pages, missing glyphs, the WebGPU calls the renderer made (`gpu_calls`: in a cart each is an import call, and a weak host holds 60 fps under about 8000 a frame for the whole game) and the global illumination's cascades. `tools/r2d-perf.mjs` runs `samples/r2d_stress` case by case (sprites from 10k to 200k, lit sprites under 1 to 500 lights with and without shadows, tilemaps, particles, text, the post chain) on GL and WebGPU at any size and reports the CPU time, the frame time, the draws and the WebGPU calls of each. `cw_r2d_debug_register("r2d")` publishes them as debug fields, which is how the gates compare batching across hosts. `cw_canvas_get_stats` counts the tree's canvas items, layers, lights and occluders. The [debug channel](guide:debug-channel) can screenshot the world layer alone, and the [profiling](guide:profiling) guide covers GPU timings.
 
 ## Samples
 
@@ -134,6 +164,9 @@ render2d needs a current GL context (call it from `init` onward) and sets every 
 | `r2d_tilemap` | chunked tilemaps, animated tiles, flips, cell edits |
 | `r2d_camera` | canvas layers, cameras, parallax, minimap, `INTEGER` scaling |
 | `r2d_lights` | lit layers, normal maps, shadows, ambient |
+| `r2d_hdr` | the post chain, emission, material maps, soft shadows, spot, directional and volumetric lights, global illumination, screen reads, distortion |
+| `r2d_motion` | wind sway, trails, mipmapped atlas pages |
+| `r2d_stress` | the perf cases of `tools/r2d-perf.mjs` |
 | `r2d_interop` | three.c into a render target, 2D over 3D |
 | `r2d_bench` | 100,000 sprites, bulk vs single submission |
 | `fx_particles2d` | `GPUParticles2D` |

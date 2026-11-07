@@ -1,5 +1,6 @@
 /* render2d: sprites, nine-slice, shapes, arbitrary geometry. Everything
  * here becomes vertices in the stream at submission time. */
+#include <math.h>
 #include <string.h>
 
 #include "internal.h"
@@ -23,7 +24,9 @@ static inline void put(r2d_vertex *v, float x, float y, float u, float vv, const
   v->info[1] = mode;
   v->info[2] = layer;
   v->info[3] = 0;
-  memset(v->sdf, 0, 4);
+  v->sdf[0] = v->sdf[1] = 0;
+  v->sdf[2] = R.emissive_b;
+  v->sdf[3] = R.intensity_b;
 }
 
 static inline float xf_y(float x, float y) { return R.has_xform ? R.xform.b * x + R.xform.d * y + R.xform.ty : y; }
@@ -79,13 +82,14 @@ static void sprite_fill(const cw_sprite *s, r2d_vertex *v, uint32_t *idx, uint32
   float uu[4] = { u0, u1, u1, u0 }, vv[4] = { v0, v0, v1, v1 };
   for (int k = 0; k < 4; k++)
     put(&v[k], px + cs * lx[k] - sn * ly[k], py + sn * lx[k] + cs * ly[k], uu[k], vv[k], c, page, mode, layer);
+  if (R.sway_b) v[0].info[3] = v[1].info[3] = R.sway_b; /* the top edge sways in the wind */
   for (int k = 0; k < 6; k++) idx[k] = base + QUAD_IDX[k];
 }
 
 void cw_r2d_sprite(const cw_sprite *s) {
   const r2d_tex *t = CW_HANDLE_IS_NULL(s->texture) ? NULL : r2d_tex_get(s->texture);
   uint32_t *idx, base;
-  if (t && t->has_normal && R.layers[R.cur_layer].lit) R.normals_used = true;
+  r2d_note_tex(t);
   r2d_vertex *v = r2d_alloc(4, 6, &idx, &base, t ? t->array : R2D_NO_ARRAY, xf_y(s->pos.x, s->pos.y), s->z);
   sprite_fill(s, v, idx, base, r2d_mode(false) & R2D_MODE_ADD, (uint8_t)R.cur_layer);
 }
@@ -114,6 +118,7 @@ void cw_r2d_sprites(const cw_sprite *s, int n) {
   R.verts.count += 4 * n;
   R.idx.count += 6 * n;
   bool lit = R.layers[R.cur_layer].lit, ysort = R.layers[R.cur_layer].y_sort;
+  if (R.emissive_b && lit) R.normals_used = R.material_used = true;
   uint64_t last_tex = ~0ull;
   uint32_t array = R2D_NO_ARRAY, state = 0;
   int last_z = 1 << 30;
@@ -122,7 +127,7 @@ void cw_r2d_sprites(const cw_sprite *s, int n) {
     if (s[i].texture.id != last_tex) {
       last_tex = s[i].texture.id;
       const r2d_tex *ti = CW_HANDLE_IS_NULL(s[i].texture) ? NULL : r2d_tex_get(s[i].texture);
-      if (ti && ti->has_normal && lit) R.normals_used = true;
+      r2d_note_tex(ti);
       array = ti ? ti->array : R2D_NO_ARRAY;
       state = r2d_current_state(array);
     }
@@ -171,7 +176,7 @@ void cw_r2d_nine_slice(const cw_nine_slice *n) {
   r2d_pack_color(c, r2d_default_white(n->color));
   int quads = n->hollow ? 8 : 9;
   uint32_t *idx, base;
-  if (t->has_normal && R.layers[R.cur_layer].lit) R.normals_used = true;
+  r2d_note_tex(t);
   r2d_vertex *v = r2d_alloc(16, quads * 6, &idx, &base, t->array, xf_y(d.x, d.y + d.h), 0);
   uint8_t mode = r2d_mode(false), layer = (uint8_t)R.cur_layer;
   for (int j = 0; j < 4; j++)
@@ -532,7 +537,7 @@ void cw_r2d_triangles(cw_texture tex, const cw_vertex2d *src, int nv, const uint
   const r2d_tex *t = r2d_tex_get(tex);
   float u0 = 0, v0 = 0, u1 = 1, v1 = 1;
   if (t) r2d_tex_uv(t, (cw_rect){ 0, 0, (float)t->w, (float)t->h }, &u0, &v0, &u1, &v1);
-  if (t && t->has_normal && R.layers[R.cur_layer].lit) R.normals_used = true;
+  r2d_note_tex(t);
   float maxy = src[0].pos.y;
   for (int i = 1; i < nv; i++) maxy = CW_MAX(maxy, src[i].pos.y);
   uint32_t *idx, base;
@@ -555,4 +560,114 @@ void cw_r2d_quad(cw_texture tex, const cw_vec2 pos[4], const cw_vec2 uv[4], cw_c
   cw_color col = r2d_default_white(c);
   for (int i = 0; i < 4; i++) v[i] = (cw_vertex2d){ pos[i], uv[i], col };
   cw_r2d_triangles(tex, v, 4, QUAD_IDX, 6);
+}
+
+/* ── distortion helpers (distortion layers, cartwheel/render2d.h) ──────── */
+
+static cw_texture noise_tex;
+
+static float nz_hash(int x, int y) {
+  uint32_t h = (uint32_t)(x & 255) * 73856093u ^ (uint32_t)(y & 255) * 19349663u;
+  h ^= h >> 13;
+  h *= 0x5bd1e995u;
+  h ^= h >> 15;
+  return (float)(h & 0xffff) / 65535.0f;
+}
+
+/* smooth value noise, tileable at `period` cells */
+static float nz_value(float x, float y, int period, int salt) {
+  int xi = (int)floorf(x), yi = (int)floorf(y);
+  float fx = x - (float)xi, fy = y - (float)yi;
+  fx = fx * fx * (3 - 2 * fx);
+  fy = fy * fy * (3 - 2 * fy);
+  int x0 = ((xi % period) + period) % period, y0 = ((yi % period) + period) % period;
+  int x1 = (x0 + 1) % period, y1 = (y0 + 1) % period;
+  float a = nz_hash(x0 + salt, y0), b = nz_hash(x1 + salt, y0), c = nz_hash(x0 + salt, y1), d = nz_hash(x1 + salt, y1);
+  return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+}
+
+cw_texture cw_r2d_noise_texture(void) {
+  if (!CW_HANDLE_IS_NULL(noise_tex) && r2d_tex_get(noise_tex)) return noise_tex;
+  enum { S = 256 };
+  uint8_t *px = cw_alloc(S * S * 4, CW_MEM_RENDER2D);
+  for (int y = 0; y < S; y++)
+    for (int x = 0; x < S; x++) {
+      float v[2];
+      for (int ch = 0; ch < 2; ch++) {
+        float s = 0, amp = 0.5f;
+        for (int o = 0; o < 3; o++) {
+          int period = 8 << o;
+          s += amp * nz_value((float)x * (float)period / S, (float)y * (float)period / S, period, ch * 97 + o * 31);
+          amp *= 0.5f;
+        }
+        v[ch] = s / 0.875f;
+      }
+      uint8_t *p = px + 4 * (y * S + x);
+      p[0] = (uint8_t)(CW_CLAMP(v[0], 0.0f, 1.0f) * 255.0f + 0.5f);
+      p[1] = (uint8_t)(CW_CLAMP(v[1], 0.0f, 1.0f) * 255.0f + 0.5f);
+      p[2] = 128;
+      p[3] = 255;
+    }
+  noise_tex = cw_texture_from_pixels(S, S, px, &(cw_texture_desc){ .repeat = true, .premultiplied = true });
+  cw_free(px);
+  return noise_tex;
+}
+
+void cw_r2d_shockwave(cw_vec2 c, float radius, float width, float strength) {
+  if (radius <= 0 || width <= 0) return;
+  int seg = CW_CLAMP((int)(radius * 0.5f), 24, 128);
+  float r[3] = { CW_MAX(0.0f, radius - width * 0.5f), radius, radius + width * 0.5f };
+  cw_vertex2d *v = cw_frame_alloc(sizeof(cw_vertex2d) * 3 * (size_t)seg);
+  uint32_t *ix = cw_frame_alloc(sizeof(uint32_t) * 12 * (size_t)seg);
+  float k = CW_CLAMP(strength, 0.0f, 1.0f) * 0.5f;
+  for (int i = 0; i < seg; i++) {
+    float a = (float)i / (float)seg * 6.2831853f, sn, cs;
+    cw_sincos(a, &sn, &cs);
+    for (int j = 0; j < 3; j++) {
+      float push = j == 1 ? k : 0;
+      v[3 * i + j] = (cw_vertex2d){ { c.x + cs * r[j], c.y + sn * r[j] }, { 0, 0 }, { 0.5f + cs * push, 0.5f + sn * push, 0.5f, 1 } };
+    }
+    int n = (i + 1) % seg;
+    uint32_t q[12] = { 3u * i, 3u * n, 3u * n + 1, 3u * i, 3u * n + 1, 3u * i + 1,
+                       3u * i + 1, 3u * n + 1, 3u * n + 2, 3u * i + 1, 3u * n + 2, 3u * i + 2 };
+    memcpy(ix + 12 * i, q, sizeof q);
+  }
+  cw_r2d_triangles((cw_texture){ 0 }, v, 3 * seg, ix, 12 * seg);
+}
+
+/* ── trails (ribbons along a path) ─────────────────────────────────────── */
+
+void cw_r2d_trail(const cw_r2d_trail_desc *d) {
+  int n = d->count;
+  if (n < 2 || !d->points) return;
+  cw_vertex2d *v = cw_frame_alloc(sizeof(cw_vertex2d) * 2 * (size_t)n);
+  uint32_t *ix = cw_frame_alloc(sizeof(uint32_t) * 6 * (size_t)(n - 1));
+  /* length along the path, for the texture's u and the taper */
+  float *s = cw_frame_alloc(sizeof(float) * (size_t)n);
+  s[0] = 0;
+  for (int i = 1; i < n; i++) s[i] = s[i - 1] + cw_v2_length(cw_v2_sub(d->points[i], d->points[i - 1]));
+  float total = s[n - 1] > 1e-6f ? s[n - 1] : 1;
+  cw_color head = r2d_default_white(d->head_color), tail = d->tail_color;
+  float rep = d->uv_repeat > 0 ? d->uv_repeat : 0;
+  for (int i = 0; i < n; i++) {
+    /* the tangent at a point: the neighbours' chord (ends: their one edge) */
+    cw_vec2 a = d->points[i > 0 ? i - 1 : 0], b = d->points[i < n - 1 ? i + 1 : n - 1];
+    cw_vec2 t = cw_v2_sub(b, a);
+    float tl = cw_v2_length(t);
+    t = tl > 1e-6f ? cw_v2_scale(t, 1.0f / tl) : (cw_vec2){ 1, 0 };
+    float f = s[i] / total; /* 0 at the head (points[0]) .. 1 at the tail */
+    float w = (d->head_width + (d->tail_width - d->head_width) * f) * 0.5f;
+    cw_vec2 nrm = { -t.y * w, t.x * w };
+    cw_color c = { head.r + (tail.r - head.r) * f, head.g + (tail.g - head.g) * f, head.b + (tail.b - head.b) * f,
+                   head.a + (tail.a - head.a) * f };
+    float u = rep > 0 ? s[i] / rep : f;
+    v[2 * i] = (cw_vertex2d){ cw_v2_add(d->points[i], nrm), { u, 0 }, c };
+    v[2 * i + 1] = (cw_vertex2d){ cw_v2_sub(d->points[i], nrm), { u, 1 }, c };
+    if (i < n - 1) {
+      uint32_t k = 2u * (uint32_t)i;
+      uint32_t q[6] = { k, k + 2, k + 3, k, k + 3, k + 1 };
+      memcpy(ix + 6 * i, q, sizeof q);
+    }
+  }
+  cw_r2d_triangles(d->texture, v, 2 * n, ix, 6 * (n - 1));
 }

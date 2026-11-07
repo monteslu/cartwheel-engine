@@ -41,14 +41,24 @@ static void set_params(bool nearest, bool repeat) {
   glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, w);
 }
 
-static GLuint make_array_tex(int w, int h, int layers, bool nearest, bool repeat) {
+static GLuint make_array_tex_lv(int w, int h, int layers, bool nearest, bool repeat, bool hdr, int levels) {
   GLuint t;
   glGenTextures(1, &t);
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D_ARRAY, t);
-  glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, w, h, layers);
+  glTexStorage3D(GL_TEXTURE_2D_ARRAY, levels, hdr ? 0x881A /* GL_RGBA16F */ : GL_RGBA8, w, h, layers);
   set_params(nearest, repeat);
+  if (levels > 1) {
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, 0x813D /* GL_TEXTURE_MAX_LEVEL */, levels - 1);
+  }
   return t;
+}
+static GLuint make_array_tex_fmt(int w, int h, int layers, bool nearest, bool repeat, bool hdr) {
+  return make_array_tex_lv(w, h, layers, nearest, repeat, hdr, 1);
+}
+static GLuint make_array_tex(int w, int h, int layers, bool nearest, bool repeat) {
+  return make_array_tex_fmt(w, h, layers, nearest, repeat, false);
 }
 
 /* fill layers [from, to) of an array with one colour (new atlas pages start
@@ -87,6 +97,7 @@ static void copy_layers(GLuint src, GLuint dst, int w, int h, int n) {
 
 static const uint8_t CLEAR0[4] = { 0, 0, 0, 0 };
 static const uint8_t NO_NORMAL[4] = { 128, 128, 0, 255 };
+static const uint8_t NO_MATERIAL[4] = { 0, 0, 0, 0 };
 
 typedef struct r2d_packer {
   stbrp_context ctx;
@@ -117,8 +128,24 @@ int r2d_array_new(int w, int h, int layers, bool nearest, bool repeat, bool atla
   a->w = w;
   a->h = h;
   a->layers = layers;
-  if (r2d_wg()) a->wtex = r2d_wg_tex_new(w, h, layers);
-  else a->tex = make_array_tex(w, h, layers, nearest, repeat);
+  a->hdr = R.next_array_hdr;
+  a->levels = R.next_array_levels > 1 ? R.next_array_levels : 1;
+  if (r2d_wg())
+    a->wtex = a->hdr ? r2d_wg_tex_new_hdr(w, h, layers) : a->levels > 1 ? r2d_wg_tex_new_levels(w, h, layers, a->levels) : r2d_wg_tex_new(w, h, layers);
+  else a->tex = make_array_tex_lv(w, h, layers, nearest, repeat, a->hdr, a->levels);
+  if (a->levels > 1 && !r2d_wg()) { /* every level starts transparent (GL leaves new storage undefined) */
+    if (!R.blit_draw_fbo) glGenFramebuffers(1, &R.blit_draw_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, R.blit_draw_fbo);
+    glDisable(GL_SCISSOR_TEST);
+    glClearColor(0, 0, 0, 0);
+    for (int lv = 0; lv < a->levels; lv++)
+      for (int l = 0; l < layers; l++) {
+        glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, a->tex, lv, l);
+        glClear(GL_COLOR_BUFFER_BIT);
+      }
+    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 0, 0, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  }
   if (atlas) {
     if (r2d_wg()) r2d_wg_tex_fill(a->wtex, 0, layers, CLEAR0);
     else fill_layers(a->tex, w, h, 0, layers, CLEAR0);
@@ -136,9 +163,11 @@ void r2d_array_free(int i) {
     r2d_wg_array_changed(a);
     r2d_wg_tex_release(a->wtex);
     r2d_wg_tex_release(a->wntex);
+    r2d_wg_tex_release(a->wmtex);
   } else {
     glDeleteTextures(1, &a->tex);
     if (a->normal_tex) glDeleteTextures(1, &a->normal_tex);
+    if (a->mat_tex) glDeleteTextures(1, &a->mat_tex);
   }
   if (a->packers)
     for (int l = 0; l < a->layers; l++) cw_free(((r2d_packer **)a->packers)[l]);
@@ -165,6 +194,13 @@ static bool atlas_grow(int i) {
       r2d_wg_tex_release(a->wntex);
       a->wntex = nt;
     }
+    if (a->wmtex) {
+      void *mt = r2d_wg_tex_new(a->w, a->h, n);
+      r2d_wg_tex_copy(a->wmtex, mt, old);
+      r2d_wg_tex_fill(mt, old, n, NO_MATERIAL);
+      r2d_wg_tex_release(a->wmtex);
+      a->wmtex = mt;
+    }
   } else {
   GLuint t = make_array_tex(a->w, a->h, n, a->nearest, a->repeat);
   copy_layers(a->tex, t, a->w, a->h, old);
@@ -177,6 +213,13 @@ static bool atlas_grow(int i) {
     fill_layers(nt, a->w, a->h, old, n, NO_NORMAL);
     glDeleteTextures(1, &a->normal_tex);
     a->normal_tex = nt;
+  }
+  if (a->mat_tex) {
+    GLuint mt = make_array_tex(a->w, a->h, n, a->nearest, false);
+    copy_layers(a->mat_tex, mt, a->w, a->h, old);
+    fill_layers(mt, a->w, a->h, old, n, NO_MATERIAL);
+    glDeleteTextures(1, &a->mat_tex);
+    a->mat_tex = mt;
   }
   }
   /* packers are separate blocks (a context points into its own nodes), so
@@ -241,6 +284,72 @@ static uint8_t *premultiply_copy(int w, int h, const uint8_t *rgba, bool already
   return p;
 }
 
+/* mipmapped images: an image with an R2D_MIP_PAD gutter of its own edge
+ * texels at 8-aligned spots of a page, and its three box-filtered halvings
+ * at the same spot of each level. A full page starts a new one-page array
+ * (no growing: growth would copy every level). */
+static bool mip_place(int w, int h, int *array, int *page, int *x, int *y) {
+  int bw = (w + 2 * R2D_MIP_PAD + 7) & ~7, bh = (h + 2 * R2D_MIP_PAD + 7) & ~7;
+  if (bw > R2D_PAGE || bh > R2D_PAGE) return false;
+  for (int tries = 0; tries < 2; tries++) {
+    if (R.atlas_mip < 0) {
+      R.next_array_levels = R2D_MIP_LEVELS;
+      R.atlas_mip = r2d_array_new(R2D_PAGE, R2D_PAGE, 1, false, false, true);
+      R.next_array_levels = 0;
+    }
+    r2d_array *a = &R.arrays.data[R.atlas_mip];
+    stbrp_rect r = { .w = bw, .h = bh };
+    stbrp_pack_rects(&((r2d_packer **)a->packers)[0]->ctx, &r, 1);
+    if (r.was_packed && !(r.x & 7) && !(r.y & 7)) {
+      *array = R.atlas_mip;
+      *page = 0;
+      *x = r.x + R2D_MIP_PAD;
+      *y = r.y + R2D_MIP_PAD;
+      return true;
+    }
+    R.atlas_mip = -1; /* full (or the packer would misalign): a fresh page */
+  }
+  return false;
+}
+
+/* upload a mipmapped image at (x, y) of its page: the padded block, then its halvings */
+static void upload_mips(r2d_array *a, int page, int x, int y, int w, int h, const uint8_t *px) {
+  int P = R2D_MIP_PAD, bw = (w + 2 * P + 7) & ~7, bh = (h + 2 * P + 7) & ~7;
+  uint8_t *lv = cw_alloc((size_t)bw * (size_t)bh * 4, CW_MEM_RENDER2D);
+  for (int yy = 0; yy < bh; yy++) {
+    int sy = CW_CLAMP(yy - P, 0, h - 1);
+    for (int xx = 0; xx < bw; xx++) {
+      int sx = CW_CLAMP(xx - P, 0, w - 1);
+      memcpy(lv + ((size_t)yy * bw + xx) * 4, px + ((size_t)sy * w + sx) * 4, 4);
+    }
+  }
+  int x0 = x - P, y0 = y - P, cw = bw, ch = bh;
+  for (int l = 0; l < a->levels; l++) {
+    if (l > 0) { /* box filter of the premultiplied texels */
+      int nw = CW_MAX(1, cw / 2), nh = CW_MAX(1, ch / 2);
+      for (int yy = 0; yy < nh; yy++)
+        for (int xx = 0; xx < nw; xx++)
+          for (int k = 0; k < 4; k++) {
+            int s = lv[((size_t)(2 * yy) * cw + 2 * xx) * 4 + k] + lv[((size_t)(2 * yy) * cw + 2 * xx + 1) * 4 + k] +
+                    lv[((size_t)(2 * yy + 1) * cw + 2 * xx) * 4 + k] + lv[((size_t)(2 * yy + 1) * cw + 2 * xx + 1) * 4 + k];
+            lv[((size_t)yy * nw + xx) * 4 + k] = (uint8_t)((s + 2) / 4);
+          }
+      cw = nw, ch = nh;
+    }
+    int lx = x0 >> l, ly = y0 >> l;
+    if (r2d_wg()) r2d_wg_tex_write_level(a->wtex, l, lx, ly, page, cw, ch, lv);
+    else {
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, a->tex);
+      glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+      glTexSubImage3D(GL_TEXTURE_2D_ARRAY, l, lx, ly, page, cw, ch, 1, GL_RGBA, GL_UNSIGNED_BYTE, lv);
+      glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    }
+  }
+  cw_free(lv);
+  R.stats.texture_uploads++;
+}
+
 static int atlas_for(cw_filter f) {
   if (R.atlas_array[f] < 0) R.atlas_array[f] = r2d_array_new(R2D_PAGE, R2D_PAGE, 1, f == CW_FILTER_NEAREST, false, true);
   return R.atlas_array[f];
@@ -248,7 +357,9 @@ static int atlas_for(cw_filter f) {
 
 static void upload_whole(r2d_tex *t, const uint8_t *px) {
   r2d_array *a = &R.arrays.data[t->array];
-  if (a->atlas) {
+  if (a->atlas && a->levels > 1) {
+    upload_mips(a, t->page, t->x, t->y, t->w, t->h, px);
+  } else if (a->atlas) {
     upload_extruded(a->tex, a->wtex, t->page, t->x, t->y, t->w, t->h, px);
   } else if (r2d_wg()) {
     r2d_wg_tex_write(a->wtex, 0, 0, 0, t->w, t->h, px);
@@ -278,7 +389,13 @@ cw_texture cw_texture_from_pixels(int w, int h, const uint8_t *rgba, const cw_te
   t->h = h;
   t->filter = d.filter;
   t->premultiplied = d.premultiplied;
-  if (standalone) {
+  int ma, mpage, mx, my;
+  if (d.mipmaps && d.filter == CW_FILTER_LINEAR && !d.standalone && !d.repeat && mip_place(w, h, &ma, &mpage, &mx, &my)) {
+    t->array = (uint16_t)ma;
+    t->page = (uint16_t)mpage;
+    t->x = mx;
+    t->y = my;
+  } else if (standalone) {
     t->array = (uint16_t)r2d_array_new(w, h, 1, d.filter == CW_FILTER_NEAREST, d.repeat, false);
   } else {
     int a = atlas_for(d.filter), page, x, y;
@@ -369,6 +486,63 @@ bool cw_texture_set_normal_map(cw_texture h, const uint8_t *rgba) {
   return true;
 }
 
+GLuint r2d_array_material_tex(int i) {
+  r2d_array *a = &R.arrays.data[i];
+  return a->mat_tex ? a->mat_tex : R.dummy_material;
+}
+
+bool cw_texture_set_material_map(cw_texture h, const uint8_t *rgba) {
+  r2d_tex *t = r2d_tex_get(h);
+  if (!t) return false;
+  r2d_array *a = &R.arrays.data[t->array];
+  if (!a->atlas) {
+    cw_error("cw_texture_set_material_map: only atlas textures take material maps (this one is standalone or a target)");
+    return false;
+  }
+  if (r2d_wg() && !a->wmtex) {
+    a->wmtex = r2d_wg_tex_new(a->w, a->h, a->layers);
+    r2d_wg_tex_fill(a->wmtex, 0, a->layers, NO_MATERIAL);
+    r2d_wg_array_changed(a);
+  } else if (!r2d_wg() && !a->mat_tex) {
+    a->mat_tex = make_array_tex(a->w, a->h, a->layers, a->nearest, false);
+    fill_layers(a->mat_tex, a->w, a->h, 0, a->layers, NO_MATERIAL);
+  }
+  size_t n = (size_t)t->w * (size_t)t->h;
+  uint8_t *p = cw_alloc(n * 4, CW_MEM_RENDER2D);
+  for (size_t i = 0; i < n; i++) {
+    p[4 * i] = rgba[4 * i];
+    p[4 * i + 1] = rgba[4 * i + 1];
+    p[4 * i + 2] = rgba[4 * i + 2];
+    p[4 * i + 3] = 255;
+  }
+  upload_extruded(a->mat_tex, a->wmtex, t->page, t->x, t->y, t->w, t->h, p);
+  cw_free(p);
+  t->has_material = true;
+  return true;
+}
+
+bool cw_texture_load_material_map(cw_texture h, const char *path) {
+  r2d_tex *t = r2d_tex_get(h);
+  if (!t) return false;
+  size_t len;
+  void *data = cw_asset_load(path, &len);
+  if (!data) {
+    cw_error("cw_texture_load_material_map: asset '%s' not found", path);
+    return false;
+  }
+  int w, hh, n;
+  uint8_t *px = stbi_load_from_memory(data, (int)len, &w, &hh, &n, 4);
+  free(data);
+  if (!px || w != t->w || hh != t->h) {
+    cw_error("cw_texture_load_material_map: '%s' must decode to the texture's size %dx%d", path, t->w, t->h);
+    if (px) stbi_image_free(px);
+    return false;
+  }
+  bool ok = cw_texture_set_material_map(h, px);
+  stbi_image_free(px);
+  return ok;
+}
+
 bool cw_texture_load_normal_map(cw_texture h, const char *path) {
   r2d_tex *t = r2d_tex_get(h);
   if (!t) return false;
@@ -423,7 +597,9 @@ void cw_texture_destroy(cw_texture h) {
 }
 
 static void target_alloc(r2d_tex *t, bool depth) {
+  R.next_array_hdr = t->hdr;
   t->array = (uint16_t)r2d_array_new(t->w, t->h, 1, t->filter == CW_FILTER_NEAREST, false, false);
+  R.next_array_hdr = false;
   if (r2d_wg()) { /* WebGPU: the array is the target; a depth-stencil texture beside it; starts transparent */
     r2d_wg_tex_fill(R.arrays.data[t->array].wtex, 0, 1, CLEAR0);
     if (depth) t->wdepth = r2d_wg_depth_new(t->w, t->h);
@@ -458,6 +634,20 @@ cw_texture r2d_texture_new_internal(int w, int h, cw_filter filter, bool depth) 
   t->y_up = true;
   t->premultiplied = true;
   target_alloc(t, depth);
+  return (cw_texture){ id };
+}
+
+cw_texture r2d_texture_new_hdr(int w, int h) {
+  uint64_t id;
+  r2d_tex *t = cw_pool_alloc(&R.textures, &id);
+  t->w = w;
+  t->h = h;
+  t->filter = CW_FILTER_LINEAR;
+  t->target = true;
+  t->y_up = true;
+  t->premultiplied = true;
+  t->hdr = true;
+  target_alloc(t, false);
   return (cw_texture){ id };
 }
 
@@ -554,4 +744,5 @@ void r2d_textures_shutdown(void) {
   if (R.blit_draw_fbo) glDeleteFramebuffers(1, &R.blit_draw_fbo);
   R.dummy_normal = R.blit_read_fbo = R.blit_draw_fbo = 0;
   R.atlas_array[0] = R.atlas_array[1] = -1;
+  R.atlas_mip = -1;
 }

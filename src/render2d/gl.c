@@ -15,27 +15,38 @@ static const char *SPRITE_VS =
     "layout(location=4) in vec4 a_sdf;\n"
     "uniform vec4 u_layers[64];\n"
     "uniform vec2 u_target;\n"
+    "uniform vec4 u_wind;\n" /* sway px, phase (time x speed), spatial frequency, gustiness */
     "out vec2 v_uv; out vec4 v_color; flat out float v_page; flat out int v_mode; flat out float v_sdfw; flat out vec2 v_sdf;\n"
+    "flat out float v_emis, v_dist;\n"
     "void main() {\n"
     "  int L = int(a_info.z) * 2;\n"
     "  vec4 r0 = u_layers[L], r1 = u_layers[L + 1];\n"
     "  vec2 p = vec2(r0.x * a_pos.x + r0.y * a_pos.y + r0.z, r1.x * a_pos.x + r1.y * a_pos.y + r1.z);\n"
+    "  if ((int(a_info.y) & 2) == 0 && a_info.w > 0.0 && u_wind.x != 0.0) {\n"
+    /* wind: the sprite's top edge sways (a_info.w = its share x 255), phased by where it stands in the world */
+    "    float ph = u_wind.y + a_pos.x * u_wind.z + a_pos.y * u_wind.z * 0.37;\n"
+    "    float s = sin(ph) + 0.45 * sin(ph * 2.3 + 1.7) * u_wind.w;\n"
+    "    p.x += a_info.w / 255.0 * u_wind.x * s * sqrt(abs(r0.x * r1.y - r0.y * r1.x));\n"
+    "  }\n"
     "  if (r0.w > 0.5) p = floor(p + 0.5);\n"
     "  gl_Position = vec4(p.x / u_target.x * 2.0 - 1.0, 1.0 - p.y / u_target.y * 2.0, 0.0, 1.0);\n"
     "  v_uv = a_uv;\n"
-    "  v_color = vec4(a_color.rgb * a_color.a, a_color.a);\n"
+    "  v_color = vec4(a_color.rgb * a_color.a * (1.0 + a_sdf.w * 15.0), a_color.a);\n"
     "  v_page = a_info.x;\n"
     "  v_mode = int(a_info.y);\n"
     /* SDF: a_info.w = distance change per screen pixel at layer scale 1 (x255);
      * the layer's zoom shrinks it. No derivatives: hosts disagree on fwidth. */
     "  v_sdfw = 0.6 * a_info.w / 255.0 / max(sqrt(abs(r0.x * r1.y - r0.y * r1.x)), 1e-4);\n"
     "  v_sdf = a_sdf.xy;\n"
+    "  v_emis = a_sdf.z;\n"
+    "  v_dist = r1.w;\n"
     "}\n";
 
 static const char *SPRITE_FS =
     "uniform sampler2DArray u_tex;\n"
-    "#ifdef LIT\nuniform sampler2DArray u_nrm;\nlayout(location=1) out vec4 o_nrm;\n#endif\n"
+    "#ifdef LIT\nuniform sampler2DArray u_nrm, u_mat;\nlayout(location=1) out vec4 o_nrm;\nlayout(location=2) out vec4 o_mat;\n#endif\n"
     "in vec2 v_uv; in vec4 v_color; flat in float v_page; flat in int v_mode; flat in float v_sdfw; flat in vec2 v_sdf;\n"
+    "flat in float v_emis, v_dist;\n"
     "layout(location=0) out vec4 o_col;\n"
     "void main() {\n"
     "  vec4 t = texture(u_tex, vec3(v_uv, v_page));\n"
@@ -52,9 +63,18 @@ static const char *SPRITE_FS =
     "  vec4 n = texture(u_nrm, vec3(v_uv, v_page));\n"
     "  vec3 enc = (v_mode & 3) != 0 ? vec3(0.5, 0.5, 0.0) : n.rgb;\n"
     "  o_nrm = (v_mode & 4) != 0 ? vec4(0.0) : vec4(enc, 1.0) * c.a;\n"
+    /* material: emission (the larger of the draw state's and the map's), specular, gloss */
+    "  vec3 m = (v_mode & 3) != 0 ? vec3(0.0) : texture(u_mat, vec3(v_uv, v_page)).rgb;\n"
+    "  o_mat = (v_mode & 4) != 0 ? vec4(0.0) : vec4(max(v_emis, m.r), m.g, m.b, 1.0) * c.a;\n"
     "#endif\n"
     "  if ((v_mode & 4) != 0) c.a = 0.0;\n"
+    "#ifdef DISTORT\n"
+    /* distortion layers: red / green (0.5 = none) x alpha x the layer's reach, added up */
+    "  vec2 off = c.a > 1e-4 ? (c.rg / c.a * 2.0 - 1.0) * c.a * v_dist : vec2(0.0);\n"
+    "  o_col = vec4(off, 0.0, 0.0);\n"
+    "#else\n"
     "  o_col = c;\n"
+    "#endif\n"
     "}\n";
 
 /* tilemap chunks: static geometry, animated in the vertex shader */
@@ -84,13 +104,14 @@ static const char *TILE_VS =
 static const char *TILE_FS =
     "uniform sampler2DArray u_tex;\n"
     "uniform vec4 u_tint;\n"
-    "#ifdef LIT\nuniform sampler2DArray u_nrm;\nlayout(location=1) out vec4 o_nrm;\n#endif\n"
+    "#ifdef LIT\nuniform sampler2DArray u_nrm, u_mat;\nlayout(location=1) out vec4 o_nrm;\nlayout(location=2) out vec4 o_mat;\n#endif\n"
     "in vec2 v_uv; flat in float v_page;\n"
     "layout(location=0) out vec4 o_col;\n"
     "void main() {\n"
     "  vec4 c = texture(u_tex, vec3(v_uv, v_page)) * vec4(u_tint.rgb * u_tint.a, u_tint.a);\n"
     "#ifdef LIT\n"
     "  o_nrm = vec4(texture(u_nrm, vec3(v_uv, v_page)).rgb, 1.0) * c.a;\n"
+    "  o_mat = vec4(texture(u_mat, vec3(v_uv, v_page)).rgb, 1.0) * c.a;\n"
     "#endif\n"
     "  o_col = c;\n"
     "}\n";
@@ -104,46 +125,6 @@ static const char *QUAD_VS =
     "void main() {\n"
     "  gl_Position = vec4(a_pos.x / u_target.x * 2.0 - 1.0, 1.0 - a_pos.y / u_target.y * 2.0, 0.0, 1.0);\n"
     "  v_uv = a_uv;\n"
-    "}\n";
-
-/* one point light into the light buffer (stores light / 2) */
-static const char *LIGHT_FS =
-    "uniform sampler2DArray u_nrm;\n"
-    "uniform vec2 u_center;\n" /* GL window coordinates (y up) */
-    "uniform vec4 u_light;\n"  /* rgb = colour * energy / 2, a = radius px */
-    "uniform vec3 u_params;\n" /* falloff, height px, use normals */
-    "in vec2 v_uv;\n"
-    "out vec4 o_col;\n"
-    "void main() {\n"
-    "  vec2 d = gl_FragCoord.xy - u_center;\n"
-    "  float att = pow(clamp(1.0 - length(d) / u_light.a, 0.0, 1.0), u_params.x);\n"
-    "  float ndl = 1.0;\n"
-    "  if (u_params.z > 0.5) {\n"
-    "    vec4 n = texelFetch(u_nrm, ivec3(ivec2(gl_FragCoord.xy), 0), 0);\n"
-    "    if (n.a > 0.004) {\n"
-    "      vec3 e = n.rgb / n.a;\n"
-    "      float mapped = smoothstep(0.0, 0.5, e.z);\n"
-    "      vec3 N = normalize(e * 2.0 - 1.0);\n"
-    "      vec3 L = normalize(vec3(-d, u_params.y));\n"
-    "      ndl = mix(1.0, max(dot(N, L), 0.0), mapped);\n"
-    "    }\n"
-    "  }\n"
-    "  o_col = vec4(u_light.rgb * att * ndl, 0.0);\n"
-    "}\n";
-
-static const char *SHADOW_FS = "out vec4 o_col;\nvoid main() { o_col = vec4(0.0); }\n";
-
-/* colour * light into the target, premultiplied over */
-static const char *COMPOSITE_FS =
-    "uniform sampler2DArray u_tex;\n"
-    "uniform sampler2DArray u_light;\n"
-    "in vec2 v_uv;\n"
-    "out vec4 o_col;\n"
-    "void main() {\n"
-    "  ivec3 p = ivec3(ivec2(gl_FragCoord.xy), 0);\n"
-    "  vec4 s = texelFetch(u_tex, p, 0);\n"
-    "  vec3 l = texelFetch(u_light, p, 0).rgb * 2.0;\n"
-    "  o_col = vec4(s.rgb * l, s.a);\n"
     "}\n";
 
 static const char *BLIT_FS =
@@ -204,6 +185,8 @@ static bool build(r2d_program *p, const char *name, const char *defines, const c
   /* fixed units: 0 = colour, 1 = normals, 2 = light buffer */
   if (p->u_tex >= 0) glUniform1i(p->u_tex, 0);
   if (p->u_nrm >= 0) glUniform1i(p->u_nrm, 1);
+  GLint um = glGetUniformLocation(prog, "u_mat");
+  if (um >= 0) glUniform1i(um, 2);
   GLint ul = glGetUniformLocation(prog, "u_light");
   if (ul >= 0 && strstr(fs, "sampler2DArray u_light")) glUniform1i(ul, 2);
   return true;
@@ -212,11 +195,11 @@ static bool build(r2d_program *p, const char *name, const char *defines, const c
 
 bool r2d_programs_init(void) {
   bool ok = build(&R.sprite, "sprite", "", SPRITE_VS, SPRITE_FS) &&
+            build(&R.sprite_distort, "sprite (distortion)", "#define DISTORT 1\n", SPRITE_VS, SPRITE_FS) &&
             build(&R.sprite_lit, "sprite (lit)", "#define LIT 1\n", SPRITE_VS, SPRITE_FS) &&
             build(&R.tile, "tilemap", "", TILE_VS, TILE_FS) &&
             build(&R.tile_lit, "tilemap (lit)", "#define LIT 1\n", TILE_VS, TILE_FS) &&
-            build(&R.light, "light", "", QUAD_VS, LIGHT_FS) && build(&R.shadow, "shadow", "", QUAD_VS, SHADOW_FS) &&
-            build(&R.composite, "composite", "", QUAD_VS, COMPOSITE_FS) && build(&R.blit, "blit", "", QUAD_VS, BLIT_FS);
+            build(&R.blit, "blit", "", QUAD_VS, BLIT_FS);
   if (!ok) return false;
   r2d_program *tiles[2] = { &R.tile, &R.tile_lit };
   for (int i = 0; i < 2; i++) {
@@ -228,9 +211,6 @@ bool r2d_programs_init(void) {
     tiles[i]->u[U_INV_PAGE] = glGetUniformLocation(p, "u_inv_page");
     tiles[i]->u[U_TINT] = glGetUniformLocation(p, "u_tint");
   }
-  R.light.u[U_CENTER] = glGetUniformLocation(R.light.prog, "u_center");
-  R.light.u[U_LIGHT] = glGetUniformLocation(R.light.prog, "u_light");
-  R.light.u[U_PARAMS] = glGetUniformLocation(R.light.prog, "u_params");
   R.blit.u[U_PAGE] = glGetUniformLocation(R.blit.prog, "u_page");
   return true;
 }
