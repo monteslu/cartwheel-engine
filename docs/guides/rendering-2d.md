@@ -143,6 +143,10 @@ A layer with `screen_read` copies the canvas as drawn before it into `cw_r2d_scr
 
 Sprites submitted after `cw_r2d_set_sway(share)` bend their top edge in the pass's `wind` (strength in pixels, wave speed and length, gusts): grass, reeds, banners, treetops sway in the vertex stage at no CPU cost. `cw_r2d_trail` draws a ribbon along a path, its width and colour going from the head's to the tail's, with an optional texture along it: comet tails, sword swipes, tyre marks, the smear behind a dash. `samples/r2d_motion` shows a meadow in the wind, glowing comets and a dashed trail.
 
+## GPU particles
+
+`cw_r2d_particles` draws an emitter's particles in one instanced draw with no state anywhere: each particle is a pure function of the time (its own phase and life, then per life a spawn point, direction, speed and spin from a hash), moving in closed form under gravity and linear drag, with an optional wobble. Nothing is simulated or uploaded per particle, so a million sparks cost only their pixels; they sort, blend, take intensity and emission, and are lit in lit layers like sprites. Use them for a scene's ambience (embers, rain, snow, dust, fireflies, fountains); the scene's `GPUParticles2D` (simulated on the CPU, with collisions and sub-emitters) stays the tool for gameplay particles.
+
 ## Scaling HD art
 
 A LINEAR texture made with `cw_texture_desc.mipmaps` packs into atlas pages that carry three smaller copies (half, quarter and eighth size, box filtered on the CPU at load), so art drawn smaller than its pixels (HD art on a 720p screen, a zoomed-out camera, a far parallax layer) stays smooth instead of shimmering. These pages leave 8-pixel gutters round each image so the smaller copies never take a neighbour's colour. `samples/r2d_motion` draws one fine-detailed image at 1/2 to 1/8 size with and without them.

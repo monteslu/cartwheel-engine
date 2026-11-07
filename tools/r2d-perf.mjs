@@ -19,7 +19,7 @@ const argv = process.argv.slice(2);
 const opt = (k, d) => (argv.includes('--' + k) ? argv[argv.indexOf('--' + k) + 1] : d);
 const flag = (k) => argv.includes('--' + k);
 const ALL = ['sprites10k', 'sprites50k', 'sprites100k', 'sprites200k', 'lit1', 'lit16', 'lit64', 'lit500', 'shadow1', 'shadow16',
-  'shadow64', 'shadow500', 'tiles', 'particles50k', 'text', 'rocks20k', 'post', 'soft64', 'volumetric16', 'postnobloom', 'gi16'];
+  'shadow64', 'shadow500', 'tiles', 'particles50k', 'text', 'rocks20k', 'post', 'soft64', 'volumetric16', 'postnobloom', 'gi16', 'gpupart100k', 'gpupart1m'];
 const CASES = opt('cases', ALL.join(',')).split(',');
 const GPUS = opt('gpus', 'gl,webgpu').split(',');
 const SIZES = opt('sizes', '1920x1080').split(',');
