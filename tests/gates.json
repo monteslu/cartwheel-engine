@@ -1620,7 +1620,7 @@
   {
     "name": "terrain-coverage",
     "script": "tests/terrain-coverage.mjs",
-    "note": "the terrain covers the ground: terrain_demo's cracks flight (magenta clear colour) natively on GL and WebGPU, at most 0.5% of the frame's lower 40% magenta (terrain-drive compares hosts, so a terrain no host draws passes it: three.c 0.186.12-0.186.15 skipped every near patch, 88% magenta). Control: the terrain freed must fail"
+    "note": "the terrain covers the ground: terrain_demo's cracks flight (magenta clear colour) natively on GL and WebGPU, at most 0.5% of the frame's lower 40% magenta (terrain-drive compares hosts, so a terrain no host draws passes it: three.c 0.186.12-0.186.15 skipped every near patch, 88% magenta). Control: the terrain freed must fail. Visibility: the terrain hidden, or a Node3D above it hidden, shows the clear colour (v0.38.0 drew it anyway: those two fail there), and hidden then shown again covers the ground"
   },
   {
     "name": "open-world-drive",

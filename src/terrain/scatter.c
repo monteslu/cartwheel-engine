@@ -49,7 +49,7 @@ struct tr_scatter {
   sc_cell *cells;                 /* cnx * cnz, generated lazily */
   float radius;                   /* the finest mesh's bounding radius */
   float cell;                     /* cell size, metres: 32 x a power of two (TR_SCATTER_CELL) */
-  t3_scene *scene;
+  t3_object *parent;              /* the terrain's group (cw__terrain_parent), NULL out of a scene */
   /* cells being placed on the job pool (one batch at a time; the main thread never waits for it) */
   cw_job *gen;
   struct gen_job *gen_ctx;
@@ -176,7 +176,7 @@ static void cell_free_gpu(tr_scatter *s, sc_cell *c) {
   for (int l = 0; l < CW_SCATTER_LODS; l++)
     for (int p = 0; p < CW_SCATTER_PARTS; p++)
       if (c->im[l][p]) {
-        if (s->scene) t3_object_remove(&s->scene->base, c->im[l][p]);
+        if (s->parent) t3_object_remove(s->parent, c->im[l][p]);
         t3_release(c->im[l][p]);
         c->im[l][p] = NULL;
       }
@@ -206,10 +206,10 @@ void cw__scatter_free(tr_scatter *s) {
 }
 
 void cw__scatter_attach(cw_terrain *t, tr_scatter *s) {
-  t3_scene *scene = cw__terrain_scene(t);
-  if (s->scene == scene) return;
+  t3_object *parent = cw__terrain_parent(t);
+  if (s->parent == parent) return;
   for (int i = 0; i < s->cnx * s->cnz; i++) cell_free_gpu(s, &s->cells[i]), s->cells[i].posed_state = -2;
-  s->scene = scene;
+  s->parent = parent;
 }
 
 int cw_terrain_scatter_add(cw_terrain *t, const cw_scatter_def *def) {
@@ -499,7 +499,7 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
             sph.radius = sqrtf(ex * ex + ey * ey + ez * ez);
             t3_instanced_mesh_set_bounding_sphere(im, &sph);
             c->im[l][p] = im;
-            if (s->scene) t3_object_add(&s->scene->base, im);
+            if (s->parent) t3_object_add(s->parent, im);
           }
         c->live = true;
         c->posed_state = -2;

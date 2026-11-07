@@ -53,7 +53,11 @@ static cw_terrain *terrain_of_obj(const void *obj) {
 }
 
 static tr_gpu *gpu(cw_terrain *t) {
-  if (!t->gpu) t->gpu = cw_calloc(1, sizeof(tr_gpu), CW_MEM_RENDER);
+  if (!t->gpu) {
+    tr_gpu *g = cw_calloc(1, sizeof(tr_gpu), CW_MEM_RENDER);
+    g->root = t3_group_new();
+    t->gpu = g;
+  }
   return t->gpu;
 }
 
@@ -257,13 +261,13 @@ static void make_mesh(cw_terrain *t, int far, int half, int cap) {
   im->mesh.base.render_order = far ? 1 : 0;
   if (old) {
     unreg_obj(old);
-    if (g->scene) t3_object_remove(&g->scene->base, old);
+    t3_object_remove(g->root, old);
     t3_release(old);
   }
   g->im[far][half] = im;
   g->cap[far][half] = cap;
   reg_obj(im, t);
-  if (g->scene) t3_object_add(&g->scene->base, im);
+  t3_object_add(g->root, im);
 }
 
 static void ensure_gpu(cw_terrain *t) {
@@ -302,7 +306,7 @@ void cw__terrain_gpu_free(cw_terrain *t) {
     for (int h = 0; h < 2; h++)
       if (g->im[f][h]) {
         unreg_obj(g->im[f][h]);
-        if (g->scene) t3_object_remove(&g->scene->base, g->im[f][h]);
+        t3_object_remove(g->root, g->im[f][h]);
         t3_release(g->im[f][h]);
       }
   t3_texture *tx[] = { g->heights, g->normals, g->control, g->macro, g->albedo, g->lnormal };
@@ -312,6 +316,8 @@ void cw__terrain_gpu_free(cw_terrain *t) {
   if (g->grid[1]) t3_release(g->grid[1]);
   if (g->mat_near) t3_release(g->mat_near);
   if (g->mat_far) t3_release(g->mat_far);
+  if (g->scene) t3_object_remove(&g->scene->base, g->root);
+  t3_release(g->root);
   cw_free(g);
   t->gpu = NULL;
 }
@@ -321,17 +327,18 @@ void cw_terrain_add_to_scene(cw_terrain *t, t3_scene *scene) {
   ensure_gpu(t);
   tr_gpu *g = t->gpu;
   if (g->scene == scene) return;
-  for (int f = 0; f < 2; f++)
-    for (int h = 0; h < 2; h++) {
-      if (g->scene) t3_object_remove(&g->scene->base, g->im[f][h]);
-      if (scene) t3_object_add(&scene->base, g->im[f][h]);
-    }
+  if (g->scene) t3_object_remove(&g->scene->base, g->root);
+  if (scene) t3_object_add(&scene->base, g->root);
   g->scene = scene;
   for (int i = 0; i < TR_MAX_SCATTER; i++)
     if (t->scatter[i]) cw__scatter_attach(t, t->scatter[i]);
 }
 
-t3_scene *cw__terrain_scene(cw_terrain *t) { return t->gpu ? ((tr_gpu *)t->gpu)->scene : NULL; }
+t3_object *cw__terrain_parent(cw_terrain *t) { return t->gpu && ((tr_gpu *)t->gpu)->scene ? ((tr_gpu *)t->gpu)->root : NULL; }
+
+void cw__terrain_set_shown(cw_terrain *t, bool shown) {
+  if (t) gpu(t)->root->visible = shown;
+}
 
 t3_material *cw_terrain_material(cw_terrain *t) {
   if (!t) return NULL;

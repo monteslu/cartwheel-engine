@@ -80,6 +80,13 @@ Every level weighs the two strongest layers from the four control texels round a
 
 Scatter density follows `cw_quality_scale("grass")` or `("scatter")`. [cw_terrain_set_quality](api:cw_terrain_set_quality) pins a terrain to one level.
 
+## The node
+
+A [Terrain3D](node:Terrain3D) node owns its terrain's place and visibility, like any other 3D node:
+
+- **Place.** The terrain is centred on the node, and moving the node moves it (translation only), physics bodies and scatter included. Move the node, not the terrain: the node sets the terrain's origin every tick, so [cw_terrain_set_origin](api:cw_terrain_set_origin) on a node's terrain is undone at the next tick, and the engine warns once, naming the node.
+- **Visibility.** The terrain and its scatter are drawn, and cast shadows, only while the node and every Node3D above it are visible. A hidden terrain is not selected or posed either, so it costs no CPU time per frame. It still collides, and the height queries still answer.
+
 ## Collision and queries
 
 [cw_terrain_attach_physics](api:cw_terrain_attach_physics) makes one static body per region (`region_size` quads square). Regions share their edge samples and one height range, so they line up exactly. The `Terrain3D` node attaches to the tree's 3D world itself. [cw_terrain_height_at](api:cw_terrain_height_at) runs Box3D's own ray cast in the order a world ray cast does its arithmetic, so it equals a physics ray to the bit; the `unit-terrain` gate checks 10 000 points. [cw_terrain_raycast](api:cw_terrain_raycast) and [cw_terrain_normal_at](api:cw_terrain_normal_at) answer the rest.

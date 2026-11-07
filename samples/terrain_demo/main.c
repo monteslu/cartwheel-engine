@@ -35,6 +35,8 @@
  *          45 m (tests/terrain-lights.mjs). The terrain_lights build
  *          defaults to it.
  * TERRAIN_QUALITY=low|medium|high|ultra picks the graphics preset.
+ * TERRAIN_WRAP=1 (native) puts the terrain under a Node3D of its own,
+ * World/Ground (tests/terrain-coverage.mjs hides it).
  *
  * Debug state: terrain.tick, terrain.patches, terrain.far, terrain.hash
  * (the selection's hash), terrain.scatter (instances drawn), terrain.cells,
@@ -460,6 +462,14 @@ static void init(void *u) {
   cw_node root = cw_tree_root(tree);
   cam = cw_node_get(root, "World/Camera");
   terrain_node = cw_node_get(root, "World/Terrain");
+#if !CW_CART
+  /* TERRAIN_WRAP=1: the terrain under a Node3D World/Ground of its own (tests/terrain-coverage.mjs hides that parent) */
+  if (getenv("TERRAIN_WRAP")) {
+    cw_node ground = cw_node_new("Node3D", "Ground");
+    cw_node_add_child(cw_node_get(root, "World"), ground);
+    cw_node_reparent(terrain_node, ground);
+  }
+#endif
   cw_terrain *t = cw_terrain_of(terrain_node);
   if (t) paint(t);
   car_body = cw_node_get(root, "World/Car");

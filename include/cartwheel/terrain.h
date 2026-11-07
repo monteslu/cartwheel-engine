@@ -85,7 +85,12 @@
  *                     word's bytes, big end in R) or splat (an RGBA weight
  *                     image for layers 0..3), layer0_albedo .. layer7_*,
  *                     sizes, heights, LOD settings, physics. Placing the
- *                     node moves the terrain (translation only).
+ *                     node moves the terrain (translation only): the node
+ *                     owns the origin, so move the node, not the terrain
+ *                     (cw_terrain_set_origin on its terrain is undone at
+ *                     the next tick, with a warning). It is drawn, and casts
+ *                     shadows, while it and every Node3D above it are
+ *                     visible; a hidden terrain still collides.
  *   TerrainScatter3D  (Node) a scatter layer of its parent Terrain3D: mesh
  *                     (a primitive or a glTF resource), density, density_map,
  *                     layers (bit mask of the control layers it grows on),
@@ -135,7 +140,9 @@ void cw_terrain_set_side_detile(cw_terrain *t, float amount);
 void cw_terrain_destroy(cw_terrain *t);
 /* The definition it was made with, the levels and ranges it settled on filled in. */
 const cw_terrain_def *cw_terrain_get_def(const cw_terrain *t);
-/* Moves the terrain (its sample (0, 0) to origin); physics bodies follow. */
+/* Moves the terrain (its sample (0, 0) to origin); physics bodies follow.
+ * A Terrain3D node's terrain follows its node instead: move the node (this
+ * is undone at the next tick, with a warning). */
 void cw_terrain_set_origin(cw_terrain *t, t3_vec3 origin);
 
 /* ── heights and control ──────────────────────────────────────────────── */
@@ -357,7 +364,8 @@ typedef struct cw_terrain_set_stats {
 void cw_terrain_set_get_stats(const cw_terrain_set *s, cw_terrain_set_stats *out);
 
 /* The Terrain3D node's terrain (NULL before it entered a tree or for
- * another node). */
+ * another node). The node keeps its origin and its visibility: move or hide
+ * the node, not the terrain. */
 cw_terrain *cw_terrain_of(cw_node terrain3d);
 
 #ifdef __cplusplus

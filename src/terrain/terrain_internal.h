@@ -13,6 +13,7 @@
 
 typedef struct tr_gpu {
   t3_scene *scene;
+  t3_object *root;             /* a group in the scene holding every mesh of the terrain (patches, scatter): hiding it hides them all */
   t3_geometry *grid[2];
   t3_material *mat_near, *mat_far;
   t3_instanced_mesh *im[2][2]; /* [far][half] */
@@ -152,7 +153,9 @@ static inline double tr_now_ms(void) {
   return (double)ts.tv_sec * 1e3 + (double)ts.tv_nsec / 1e6;
 }
 
-/* the scene node (terrain_node.c) */
-t3_scene *cw__terrain_scene(cw_terrain *t);
+/* the group the terrain's meshes go under while it is in a scene (NULL when it is in none) */
+t3_object *cw__terrain_parent(cw_terrain *t);
+/* shown or hidden as a whole (the Terrain3D node's visible, with its ancestors'): physics is untouched */
+void cw__terrain_set_shown(cw_terrain *t, bool shown);
 
 #endif
