@@ -4,8 +4,12 @@
 # every engine file it names (src/platform/native_entry.c, tools/*.mjs,
 # deps/wasmcart*) sits at the same path under both.
 
+# A version for every cart's manifest that passes no VERSION (cw_add_app
+# below); empty (the default), each cart takes its git checkout's version.
+set(CW_APP_VERSION "" CACHE STRING "the version in each cart's manifest (semver); empty: the app's git checkout's (tools/lib/app-version.mjs)")
+
 # ── cw_add_app(name SOURCES ... [ASSETS dir] [NET domain...] [PLUGINS dir] [NO_PLUGINS] [PROGRAMS table.txt...]
-#               [ART dir] [DESCRIPTION text] [AUTHOR text]) ──
+#               [ART dir] [DESCRIPTION text] [AUTHOR text] [VERSION semver]) ──
 # Native: an executable. Cart: <name>.wasm packed into <name>.wasc (with the
 # asset directory) by wasmcart-pack, after the import audit. Every cart is
 # the dual GL + WebGPU one, and every app draws through the engine on both
@@ -20,10 +24,20 @@
 # beside them. Without them, the app a project names (`app` in
 # project.cwproj) takes the project's `art` (a directory relative to the
 # project), `description` and `author` keys. Native builds do not use them.
+# The manifest's version is semver (1.4.2, 1.5.0-rc.1, 1.4.2-dev.g1a2b3c4),
+# worked out on every build (tools/cart-version.mjs, the rule in
+# tools/lib/app-version.mjs): VERSION, else CW_APP_VERSION, else the git
+# checkout holding the calling directory (at a v<semver> tag with no changes
+# to tracked files: the tag without its v; otherwise the last v* tag plus
+# -dev.g<commit>, 0.0.0-dev.g<commit> before any tag), else the `version` key
+# of the project.cwproj beside the call, else 0.1.0. When it changes (a new
+# tag, a commit, an edit to a tagged tree) the cart is packed again with it,
+# without a relink. A version that is not semver stops the configure or the
+# build.
 # Plugins (cmake/plugins.cmake): the runtime plugins of PLUGINS <dir>,
 # default <the calling directory>/plugins when it exists, are compiled in.
 function(cw_add_app name)
-  cmake_parse_arguments(A "NO_PLUGINS;QUIET_PLUGINS;NO_PROJECT_EDITOR" "ASSETS;PACK;PLUGINS;ART;DESCRIPTION;AUTHOR" "SOURCES;NET;PROGRAMS" ${ARGN})
+  cmake_parse_arguments(A "NO_PLUGINS;QUIET_PLUGINS;NO_PROJECT_EDITOR" "ASSETS;PACK;PLUGINS;ART;DESCRIPTION;AUTHOR;VERSION" "SOURCES;NET;PROGRAMS" ${ARGN})
   if(A_UNPARSED_ARGUMENTS)
     message(FATAL_ERROR "cw_add_app(${name}): unknown arguments ${A_UNPARSED_ARGUMENTS} (every app is a dual GL + WebGPU cart: there is no opt-out)")
   endif()
@@ -50,6 +64,21 @@ function(cw_add_app name)
         endif()
       endforeach()
     endif()
+  endif()
+  # the manifest's version: VERSION or CW_APP_VERSION when given (checked here); else the
+  # git checkout's or project.cwproj's, worked out every build (tools/cart-version.mjs)
+  if(NOT A_VERSION)
+    set(A_VERSION "${CW_APP_VERSION}")
+  endif()
+  if(A_VERSION)
+    cw__check_semver(_bad "${A_VERSION}")
+    if(_bad)
+      message(FATAL_ERROR "cw_add_app(${name}): version \"${A_VERSION}\" is not semver (${_bad}): use MAJOR.MINOR.PATCH, optionally -prerelease and +build, such as 1.4.2 or 1.4.2-dev.g1a2b3c4")
+    endif()
+  endif()
+  set(_cwproj_version "")
+  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/project.cwproj)
+    cw__project_value(_cwproj_version version)
   endif()
   if(A_ART AND NOT IS_ABSOLUTE "${A_ART}")
     set(A_ART ${CMAKE_CURRENT_SOURCE_DIR}/${A_ART})
@@ -284,17 +313,47 @@ function(cw_add_app name)
     # wasmcart keeps the archive open and reads assets on demand. Replacing the
     # file in place can invalidate a running cart's ZIP offsets mid-ride.
     set(_wasc ${CMAKE_BINARY_DIR}/carts/${name}.wasc)
-    set(_wasc_tmp ${_wasc}.tmp)
+    # the version, every build before the link: written to <name>.version, and an
+    # existing cart packed with another version is packed again with this one
+    # (tools/cart-version.mjs); the link's pack reads the file
+    set(_ver_file ${CMAKE_CURRENT_BINARY_DIR}/${name}.version)
+    add_custom_target(${name}_version
+      COMMAND node ${CW_ROOT}/tools/cart-version.mjs update --out ${_ver_file} --dir ${CMAKE_CURRENT_SOURCE_DIR}
+              --set "${A_VERSION}" --fallback "${_cwproj_version}" --wasc ${_wasc}
+      BYPRODUCTS ${_ver_file} VERBATIM)
+    add_dependencies(${name} ${name}_version)
     add_custom_command(TARGET ${name} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/carts
       ${_opt_cmd}
       ${_stage_cmd}
       COMMAND node ${CW_ROOT}/tools/check-imports.mjs $<TARGET_FILE:${name}> ${_wgpu_check}
-      COMMAND node ${_wc_pack} --wasm $<TARGET_FILE:${name}> --name ${name}
-              ${_assets} ${_files} ${_meta} --version 0.1.0 --output ${_wasc_tmp} > /dev/null
-      COMMAND ${CMAKE_COMMAND} -E rename ${_wasc_tmp} ${_wasc}
+      COMMAND node ${CW_ROOT}/tools/cart-version.mjs pack --version-file ${_ver_file} --wasc ${_wasc}
+              -- node ${_wc_pack} --wasm $<TARGET_FILE:${name}> --name ${name} ${_assets} ${_files} ${_meta}
       COMMENT "cart ${name}.wasc")
   endif()
+endfunction()
+
+# cw__check_semver(<out> <version>): empty when <version> is a semver 2.0.0
+# string, else what is wrong with it
+function(cw__check_semver out v)
+  set(_why "")
+  set(_core "(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)")
+  set(_ident "[0-9A-Za-z-]+")
+  if(NOT v MATCHES "^${_core}(-(${_ident}(\\.${_ident})*))?(\\+(${_ident}(\\.${_ident})*))?$")
+    set(_why "not MAJOR.MINOR.PATCH[-prerelease][+build], or a number with a leading zero")
+  else()
+    # a numeric prerelease identifier has no leading zero (1.0.0-01 is not semver)
+    string(REGEX REPLACE "\\+.*$" "" _pre "${v}")
+    if(_pre MATCHES "^[^-]*-(.*)$")
+      string(REPLACE "." ";" _ids "${CMAKE_MATCH_1}")
+      foreach(_id ${_ids})
+        if(_id MATCHES "^0[0-9]+$")
+          set(_why "prerelease identifier ${_id} is a number with a leading zero")
+        endif()
+      endforeach()
+    endif()
+  endif()
+  set(${out} "${_why}" PARENT_SCOPE)
 endfunction()
 
 # cw__project_value(<out> <key>): a key's value in the calling directory's
