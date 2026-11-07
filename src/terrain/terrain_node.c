@@ -3,7 +3,11 @@
  * Terrain3D builds its cw_terrain when it becomes ready (so its physics is
  * there before the first tick) and again whenever a property changes (at
  * the next fixed update or frame). The terrain is centred on the node
- * (translation only). Each frame the pipeline's "terrain" SHADOW-phase pass
+ * (translation only): the node owns the terrain's origin, so a game moves
+ * the node, never the terrain (cw_terrain_set_origin on it is undone at the
+ * next tick, with a warning). The terrain is drawn while the node and every
+ * Node3D above it are visible (its meshes sit in one group the pass shows or
+ * hides); a hidden terrain still collides. Each frame the pipeline's "terrain" SHADOW-phase pass
  * (order 1500, before the visibility pass) updates it for the rendering
  * camera: uploads, patch selection, scatter posing.
  *
@@ -315,6 +319,9 @@ typedef struct terrain3d {
   bool dirty;
   t3_renderer *bound;
   cw_tree *tree;
+  t3_vec3 origin;      /* the origin last given to the terrain (node_origin) */
+  bool origin_warned;  /* the terrain was moved by other code: said once */
+  bool shown;          /* it and every Node3D above it visible (terrain_sync) */
 } terrain3d;
 
 #define LAYER_FIELD(i, fld, nm, ty, docstr)                                                                    \
@@ -376,6 +383,7 @@ static void build(cw_node n, terrain3d *d) {
   cw_terrain *t = cw_terrain_create(&def);
   if (!t) return;
   d->t = t;
+  d->origin = t->def.origin;
   if (d->heightmap && *d->heightmap) cw_terrain_import_heightmap(t, d->heightmap);
   else if (d->generate_seed) cw_terrain_generate(t, (uint32_t)d->generate_seed, d->generate_feature, d->generate_octaves, d->generate_amplitude);
   if (d->control && *d->control) cw_terrain_import_control(t, d->control);
@@ -402,10 +410,29 @@ static bool find_dirty_scatter(cw_node c, void *u) {
   return false;
 }
 
+/* the node and every Node3D above it visible (as three.c draws a mesh under a hidden group: not at all) */
+static bool visible_in_tree(cw_node n) {
+  for (cw_node p = n; cw_node_valid(p); p = cw_node_parent(p)) {
+    const cw_node3d *nd = cw_node_data(p, "Node3D");
+    if (nd && !nd->visible) return false;
+  }
+  return true;
+}
+
+static bool same_point(t3_vec3 a, t3_vec3 b) { return a.x == b.x && a.y == b.y && a.z == b.z; }
+
 static void terrain_sync(cw_node n, terrain3d *d) {
   if (d->dirty) build(n, d);
   if (!d->t) return;
-  cw_terrain_set_origin(d->t, node_origin(n, d));
+  /* the node owns the origin: a cw_terrain_set_origin from elsewhere is undone here, and said once */
+  if (!same_point(d->t->def.origin, d->origin) && !d->origin_warned) {
+    cw_warn("Terrain3D %s: its terrain was moved with cw_terrain_set_origin; it follows its node, so move the node instead", cw_node_name(n));
+    d->origin_warned = true;
+  }
+  d->origin = node_origin(n, d);
+  cw_terrain_set_origin(d->t, d->origin);
+  d->shown = visible_in_tree(n);
+  cw__terrain_set_shown(d->t, d->shown);
   for (int i = 0; i < cw_node_child_count(n); i++) find_dirty_scatter(cw_node_child(n, i), d);
 }
 
@@ -461,6 +488,7 @@ static void terrain_exec(cw_pass_ctx *ctx, void *u) {
     terrain_sync(tt->nodes.data[i], d);
     if (!d->t) continue;
     cw_terrain_add_to_scene(d->t, ctx->scene3d);
+    if (!d->shown) continue; /* hidden: nothing of it is drawn or cast, and nothing is selected or posed for this view */
     if (ctx->renderer && d->bound != ctx->renderer) {
       cw_terrain_bind_renderer(d->t, ctx->renderer);
       d->bound = ctx->renderer;

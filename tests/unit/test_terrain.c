@@ -488,6 +488,29 @@ static void test_scene_file(void) {
     CHECK(fabsf(hit.point.y - cw_terrain_height_at(t, x, z)) < 1e-4f);
     CHECK(t->scatter[0] != NULL); /* the Stones layer */
     FOLD(hit.point.y);
+    /* the node owns the origin: moving the terrain itself is undone at the next tick, moving the node moves it */
+    cw_terrain_set_origin(t, (t3_vec3){ 0, 0, 0 });
+    cw_tree_fixed_update(tree, 1.0 / 60);
+    CHECK(d->origin.x == 100 - 32 && d->origin.z == -50 - 32 && d->origin.y == 5);
+    cw_node3d_set_position(ground, (t3_vec3){ 120, 5, -50 });
+    cw_tree_fixed_update(tree, 1.0 / 60);
+    CHECK(d->origin.x == 120 - 32 && d->origin.z == -50 - 32);
+    /* hidden with its node or any Node3D above it (the group holding its meshes), shown again with them */
+    t3_object *group = ((tr_gpu *)t->gpu)->root;
+    CHECK(group && group->visible);
+    cw_node_set(ground, "visible", cw_val_bool(false));
+    cw_tree_fixed_update(tree, 1.0 / 60);
+    CHECK(group && !group->visible);
+    cw_node_set(ground, "visible", cw_val_bool(true));
+    cw_node_set(root, "visible", cw_val_bool(false));
+    cw_tree_fixed_update(tree, 1.0 / 60);
+    CHECK(group && !group->visible);
+    cw_node_set(root, "visible", cw_val_bool(true));
+    cw_tree_fixed_update(tree, 1.0 / 60);
+    CHECK(group && group->visible);
+    /* every patch mesh and scatter cell is in that group */
+    for (int f = 0; f < 2; f++)
+      for (int h = 0; h < 2; h++) CHECK(((tr_gpu *)t->gpu)->im[f][h]->mesh.base.parent == group);
   }
   char *text = cw_scene_save(root);
   CHECK(text && strstr(text, "heightmap = \"heights.r16\"") && strstr(text, "type=\"TerrainScatter3D\"") &&

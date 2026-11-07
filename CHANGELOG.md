@@ -4,6 +4,12 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.38.1 (2026-11-07)
+
+### Fixed
+- **Terrain3D obeys `visible`**: the terrain and its scatter are drawn, and cast shadows, only while the node and every Node3D above it are visible. Its meshes now sit in one group the pass shows or hides; before, they were added straight to the scene root and a hidden node drew anyway. A hidden terrain is not selected or posed either (no CPU time per frame), and it still collides. `terrain-coverage` checks a hidden terrain, a hidden parent and a terrain shown again (v0.38.0 fails the first two).
+- **A Terrain3D owns its terrain's origin**, and now says so: the node set the origin every tick, so `cw_terrain_set_origin` on a node's terrain was silently undone. It is still undone (move the node instead), with a warning naming the node, and the header and the terrain guide state the rule. `unit-terrain` checks both directions.
+
 ## v0.38.0 (2026-11-07)
 
 ### Added
