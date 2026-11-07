@@ -1,6 +1,6 @@
 // The quality range gate: each app's GPU time at every graphics preset (cartwheel/quality.h), natively on GL and
 // WebGPU at 1080p, from the pipeline's per-pass GPU timers (CW_GPU_TIMERS=1, the "pipeline" debug command after the
-// last frame). Pass, per app and backend:
+// last frame; each pass's 16-frame average, summed). Pass, per app and backend:
 //   Very Low at most 0.3 x High, Low at most 0.45 x High (a scene's own shares where it has them),
 //   each preset no dearer than the one above it, Ultra at least High (10% slack each: GPU timings vary run to run).
 // The control runs the same apps with CW_TEST_QUALITY_FLAT=1 (every preset draws High's settings) and must fail.
@@ -84,7 +84,10 @@ function measure(sc, gpu, preset, flat) {
     if (r.status !== 0 || !pipe) return { error: `exit ${r.status ?? r.signal}: ${(r.stderr || '').trim().split('\n').slice(-3).join(' | ')}` };
     const s = existsSync(state) ? JSON.parse(readFileSync(state, 'utf8')) : {};
     if (s['cw.view'] && !lh[sc.name]) lh[sc.name] = s['cw.view'][1];
-    const run = { ms: pipe.gpu_ms, passes: Object.fromEntries(pipe.passes.filter((p) => p.ran && p.gpu_ms > 0).map((p) => [p.name, +p.gpu_ms.toFixed(3)])),
+    /* the frame's cost: every pass's 16-frame average summed (the pipeline's own total is the last frame's, which a pass that
+     * draws every few frames, a probe capture or a sky that keeps changing, makes jump by whether that frame had it) */
+    const avg = pipe.passes.filter((p) => p.ran && !p.fused && p.gpu_ms > 0).reduce((t, p) => t + p.gpu_ms, 0);
+    const run = { ms: avg, passes: Object.fromEntries(pipe.passes.filter((p) => p.ran && p.gpu_ms > 0).map((p) => [p.name, +p.gpu_ms.toFixed(3)])),
       preset: q && q.preset, view: s['cw.view'], skipped: s['render.skipped'] || 0, culled: s['shadow.culled'] };
     if (!best || run.ms < best.ms) best = run;
   }
