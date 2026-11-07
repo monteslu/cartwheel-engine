@@ -156,7 +156,7 @@ void cw_r2d_debug_register(const char *prefix) {
 #define F(n) { #n, offsetof(cw_r2d_stats, n) }
     F(passes), F(draw_calls), F(batches), F(vertices), F(indices), F(commands), F(sorted), F(tile_chunks),
     F(chunk_rebuilds), F(lights), F(atlas_pages), F(texture_uploads), F(shaped_runs), F(glyphs_missing),
-    F(shape_cache_hits), F(gpu_calls), F(gi_cascades), F(particles),
+    F(shape_cache_hits), F(gi_cascades), F(particles),
 #undef F
   };
   for (size_t i = 0; i < CW_ARRAY_LEN(f); i++)

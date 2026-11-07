@@ -10557,7 +10557,7 @@
     {
      "name": "cw_r2d_debug_register",
      "signature": "void cw_r2d_debug_register(const char *prefix)",
-     "doc": "Register every stats field as a debug field \"<prefix>.<name>\" (u32).",
+     "doc": "Register every stats field as a debug field \"<prefix>.<name>\" (u32). gpu_calls is left out: it\nis 0 on GL by nature, and a gate compares GL and WebGPU states.",
      "inline": false
     }
    ],
