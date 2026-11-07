@@ -14,9 +14,16 @@
  *             (merged top down, bilinear between probes)
  *   gather    each field pixel averages cascade 0's directions of its four
  *             probes: the light arriving there from every direction
- *   apply     that irradiance x intensity is added to the light buffer, so
- *             it lights colour as a light does (and is shadowed by nothing
- *             but the occluders it was traced against)
+ *   apply     the lit composite (light.c) adds that irradiance x
+ *             intensity to the light, so it lights colour as a light does
+ *             (and is shadowed by nothing but the occluders it was traced
+ *             against); no pass of its own
+ *
+ * Every pass is a dependent full-screen draw, and at a field of an eighth of
+ * the canvas each costs more in the wait between passes than in its pixels,
+ * so the passes are as few as they can be: the bounce is part of the source
+ * pass, the flood starts from the source itself (no seed pass), the apply is
+ * part of the composite.
  *
  * The result of each frame feeds the next one's bounce: light bounces off
  * occluders as many times as frames go by, fading by `bounce` each time. */
@@ -30,6 +37,7 @@
 
 static struct {
   fx_rt src, seed[2], casc[2], gi[2];
+  fx_rt half; /* the source at half the canvas, when the field is an eighth or less */
   int cur; /* gi[cur] is this frame's */
   int w, h;
   bool valid_prev;
@@ -38,7 +46,10 @@ static struct {
 /* ── shaders ───────────────────────────────────────────────────────────── */
 
 /* source: t0 occluder mask (canvas), t1 scene colour, t2 material, t3 direct
- * light; u_v[0] = light buffer scale back, footprint taps per axis */
+ * light, t4 last frame's irradiance; u_v[0] = light buffer scale back,
+ * footprint taps per axis, bounce (0: none). The bounce: last frame's
+ * irradiance off the occluders (not off what glows: that would feed itself),
+ * the occluder's colour (its albedo, 1 at most) x bounce */
 static const char *GL_SRC =
     "void main() {\n"
     "  vec2 q = floor(v_uv * u_size);\n"
@@ -52,6 +63,7 @@ static const char *GL_SRC =
     "    float e = mt.a > 0.004 ? mt.r / mt.a : 0.0;\n"
     "    vec3 l = texture(t3, uv).rgb * u_v[0].x;\n"
     "    rad += s.rgb * e * step(0.1, e) + s.rgb * l * m * (1.0 - e);\n"
+    "    if (u_v[0].z > 0.0) rad += min(s.rgb, vec3(1.0)) * texture(t4, uv).rgb * u_v[0].z * m * (1.0 - clamp(e, 0.0, 1.0));\n"
     "    occ = max(occ, max(m, step(0.1, e) * s.a));\n"
     "    cnt += 1.0;\n"
     "  }\n"
@@ -71,49 +83,15 @@ static const char *WG_SRC =
     "    if (mt.a > 0.004) { e = mt.r / mt.a; }\n"
     "    let l = textureSampleLevel(t3, s_lin, uv, 0.0).rgb * fx.v[0].x;\n"
     "    rad += s.rgb * e * step(0.1, e) + s.rgb * l * m * (1.0 - e);\n"
+    "    if (fx.v[0].z > 0.0) { rad += min(s.rgb, vec3f(1.0)) * textureSampleLevel(t4, s_lin, uv, 0.0).rgb * fx.v[0].z * m * (1.0 - clamp(e, 0.0, 1.0)); }\n"
     "    occ = max(occ, max(m, step(0.1, e) * s.a));\n"
     "    cnt += 1.0;\n"
     "  } }\n"
     "  return vec4f(rad / cnt, occ);\n"
     "}\n";
 
-/* last frame's bounce off the occluders (not off what glows: that would feed
- * itself): t0 occluder mask, t1 scene colour (its albedo, 1 at most), t2
- * last frame's irradiance, t3 material; u_v[0].x = bounce. Added. */
-static const char *GL_BOUNCE =
-    "void main() {\n"
-    "  float m = texture(t0, v_uv).r;\n"
-    "  vec4 s = texture(t1, v_uv), mt = texture(t3, v_uv);\n"
-    "  float e = mt.a > 0.004 ? clamp(mt.r / mt.a, 0.0, 1.0) : 0.0;\n"
-    "  vec3 g = texture(t2, v_uv).rgb;\n"
-    "  o_col = vec4(min(s.rgb, vec3(1.0)) * g * u_v[0].x * m * (1.0 - e), 0.0);\n"
-    "}\n";
-static const char *WG_BOUNCE =
-    "@fragment fn fs(i: VO) -> @location(0) vec4f {\n"
-    "  let m = textureSampleLevel(t0, s_lin, i.uv, 0.0).r;\n"
-    "  let s = textureSampleLevel(t1, s_lin, i.uv, 0.0); let mt = textureSampleLevel(t3, s_lin, i.uv, 0.0);\n"
-    "  var e = 0.0;\n"
-    "  if (mt.a > 0.004) { e = clamp(mt.r / mt.a, 0.0, 1.0); }\n"
-    "  let g = textureSampleLevel(t2, s_lin, i.uv, 0.0).rgb;\n"
-    "  return vec4f(min(s.rgb, vec3f(1.0)) * g * fx.v[0].x * m * (1.0 - e), 0.0);\n"
-    "}\n";
-
-/* seeds from the source's occupancy (alpha) */
-static const char *GL_SEED =
-    "void main() {\n"
-    "  vec2 q = floor(v_uv * u_size);\n"
-    "  if (texelFetch(t0, ivec2(q), 0).a < 0.5) { o_col = vec4(1.0); return; }\n"
-    "  vec2 hi = floor(q / 256.0); vec2 lo = q - hi * 256.0;\n"
-    "  o_col = vec4(lo.x, hi.x, lo.y, hi.y) / 255.0;\n"
-    "}\n";
-static const char *WG_SEED =
-    "@fragment fn fs(i: VO) -> @location(0) vec4f {\n"
-    "  let q = floor(i.uv * fx.size);\n"
-    "  if (textureLoad(t0, vec2i(q), 0).a < 0.5) { return vec4f(1.0); }\n"
-    "  let hi = floor(q / 256.0); let lo = q - hi * 256.0;\n"
-    "  return vec4f(lo.x, hi.x, lo.y, hi.y) / 255.0;\n"
-    "}\n";
-static const char *GL_JFA = /* the same flood as the shadows' (light.c) */
+/* the flood (the shadows' one, light.c); u_v[0].y 1: the first step, seeds from the source's occupancy (alpha) */
+static const char *GL_JFA =
     "void main() {\n"
     "  ivec2 q = ivec2(v_uv * u_size), sz = ivec2(u_size);\n"
     "  int st = int(u_v[0].x);\n"
@@ -123,6 +101,7 @@ static const char *GL_JFA = /* the same flood as the shadows' (light.c) */
     "      ivec2 n = clamp(q + ivec2(i, j) * st, ivec2(0), sz - 1);\n"
     "      vec4 s = texelFetch(t0, n, 0);\n"
     "      vec2 sp = vec2(s.r * 255.0 + s.g * 65280.0, s.b * 255.0 + s.a * 65280.0);\n"
+    "      if (u_v[0].y > 0.5) sp = s.a < 0.5 ? vec2(65535.0) : vec2(n);\n" /* the first step: seeds straight from the source */
     "      if (sp.x > 65534.0) continue;\n"
     "      vec2 dd = sp - vec2(q);\n"
     "      float d = dot(dd, dd);\n"
@@ -141,7 +120,8 @@ static const char *WG_JFA =
     "    for (var i = -1; i <= 1; i++) {\n"
     "      let n = clamp(q + vec2i(i, j) * st, vec2i(0), sz - 1);\n"
     "      let s = textureLoad(t0, n, 0);\n"
-    "      let sp = vec2f(s.r * 255.0 + s.g * 65280.0, s.b * 255.0 + s.a * 65280.0);\n"
+    "      var sp = vec2f(s.r * 255.0 + s.g * 65280.0, s.b * 255.0 + s.a * 65280.0);\n"
+    "      if (fx.v[0].y > 0.5) { sp = select(vec2f(n), vec2f(65535.0), s.a < 0.5); }\n"
     "      if (sp.x > 65534.0) { continue; }\n"
     "      let dd = sp - vec2f(q);\n"
     "      let d = dot(dd, dd);\n"
@@ -278,28 +258,49 @@ static const char *WG_GATHER =
     "  return vec4f(g, 1.0);\n"
     "}\n";
 
-/* apply: the irradiance (bilinear) x intensity x light buffer scale, added */
-static const char *GL_APPLY = "void main() { o_col = vec4(texture(t0, v_uv).rgb * u_v[0].x, 0.0); }\n";
-static const char *WG_APPLY =
-    "@fragment fn fs(i: VO) -> @location(0) vec4f { return vec4f(textureSampleLevel(t0, s_lin, i.uv, 0.0).rgb * fx.v[0].x, 0.0); }\n";
-
+/* the source's second step (a field of an eighth of the canvas or less): each field pixel the mean radiance
+ * and the largest occupancy of its n x n texels of the half-size source (t0); u_v[0].y = n */
+static const char *GL_SRC2 =
+    "void main() {\n"
+    "  vec2 q = floor(v_uv * u_size);\n"
+    "  int n = int(u_v[0].y);\n"
+    "  ivec2 hs = textureSize(t0, 0);\n"
+    "  vec3 rad = vec3(0.0); float occ = 0.0, cnt = 0.0;\n"
+    "  for (int j = 0; j < 4; j++) for (int i = 0; i < 4; i++) {\n"
+    "    if (i >= n || j >= n) continue;\n"
+    "    vec2 uv = (q + (vec2(i, j) + 0.5) / float(n)) / u_size;\n"
+    "    vec4 s = texelFetch(t0, clamp(ivec2(uv * vec2(hs)), ivec2(0), hs - 1), 0);\n"
+    "    rad += s.rgb; occ = max(occ, s.a); cnt += 1.0;\n"
+    "  }\n"
+    "  o_col = vec4(rad / cnt, occ);\n"
+    "}\n";
+static const char *WG_SRC2 =
+    "@fragment fn fs(i0: VO) -> @location(0) vec4f {\n"
+    "  let q = floor(i0.uv * fx.size);\n"
+    "  let n = i32(fx.v[0].y);\n"
+    "  let hs = vec2i(textureDimensions(t0, 0));\n"
+    "  var rad = vec3f(0.0); var occ = 0.0; var cnt = 0.0;\n"
+    "  for (var j = 0; j < 4; j++) { for (var i = 0; i < 4; i++) {\n"
+    "    if (i >= n || j >= n) { continue; }\n"
+    "    let uv = (q + (vec2f(f32(i), f32(j)) + 0.5) / f32(n)) / fx.size;\n"
+    "    let s = textureLoad(t0, clamp(vec2i(uv * vec2f(hs)), vec2i(0), hs - 1), 0);\n"
+    "    rad += s.rgb; occ = max(occ, s.a); cnt += 1.0;\n"
+    "  } }\n"
+    "  return vec4f(rad / cnt, occ);\n"
+    "}\n";
 static fx_prog p_src = { "r2d gi source", NULL, NULL, 0, 0, 0, NULL, false };
-static fx_prog p_bounce = { "r2d gi bounce", NULL, NULL, 0, 0, 0, NULL, false };
-static fx_prog p_seed = { "r2d gi seed", NULL, NULL, 0, 0, 0, NULL, false };
+static fx_prog p_src2 = { "r2d gi source (second step)", NULL, NULL, 0, 0, 0, NULL, false };
 static fx_prog p_jfa = { "r2d gi flood", NULL, NULL, 0, 0, 0, NULL, false };
 static fx_prog p_casc = { "r2d gi cascade", NULL, NULL, 0, 0, 0, NULL, false };
 static fx_prog p_gather = { "r2d gi gather", NULL, NULL, 0, 0, 0, NULL, false };
-static fx_prog p_apply = { "r2d gi apply", NULL, NULL, 0, 0, 0, NULL, false };
 
 static void progs_init(void) {
   if (p_src.glsl) return;
   p_src.glsl = GL_SRC, p_src.wgsl = WG_SRC;
-  p_bounce.glsl = GL_BOUNCE, p_bounce.wgsl = WG_BOUNCE;
-  p_seed.glsl = GL_SEED, p_seed.wgsl = WG_SEED;
+  p_src2.glsl = GL_SRC2, p_src2.wgsl = WG_SRC2;
   p_jfa.glsl = GL_JFA, p_jfa.wgsl = WG_JFA;
   p_casc.glsl = GL_CASCADE, p_casc.wgsl = WG_CASCADE;
   p_gather.glsl = GL_GATHER, p_gather.wgsl = WG_GATHER;
-  p_apply.glsl = GL_APPLY, p_apply.wgsl = WG_APPLY;
 }
 
 /* the field's share of the canvas and the march steps, by effects detail;
@@ -310,7 +311,9 @@ static void gi_quality(const cw_r2d_gi *g, float *share, int *steps) {
   static const int st[5] = { 0, 8, 12, 16, 24 };
   *share = sh[e];
   *steps = st[e];
+  /* the pass's own resolution: High and Ultra take it, Medium and Low never more than it (half of it on Low) */
   if (g->resolution > 0 && e >= CW_QUALITY_HIGH) *share = CW_CLAMP(g->resolution, 0.0625f, 1.0f);
+  else if (g->resolution > 0 && e > 0) *share = CW_MAX(0.0625f, CW_MIN(*share, g->resolution * (e == CW_QUALITY_LOW ? 0.5f : 1.0f)));
 }
 
 bool r2d_gi_enabled(void) {
@@ -321,12 +324,12 @@ bool r2d_gi_enabled(void) {
   return s > 0;
 }
 
-void r2d_gi_run(const fx_rt *mask, const fx_rt *scene, const fx_rt *mat, fx_rt *light, float light_scale) {
+const fx_rt *r2d_gi_run(const fx_rt *mask, const fx_rt *scene, const fx_rt *mat, const fx_rt *light, float light_scale) {
   progs_init();
   float share;
   int steps;
   gi_quality(&R.gi, &share, &steps);
-  if (share <= 0) return;
+  if (share <= 0) return NULL;
   /* even sizes: cascade 0 holds 2x2 directions per probe */
   int w = CW_MAX(16, ((int)lroundf((float)R.canvas_w * share) + 1) & ~1);
   int h = CW_MAX(16, ((int)lroundf((float)R.canvas_h * share) + 1) & ~1);
@@ -341,34 +344,46 @@ void r2d_gi_run(const fx_rt *mask, const fx_rt *scene, const fx_rt *mat, fx_rt *
   fx_rt_ensure(&G.gi[0], w, h, hf);
   fx_rt_ensure(&G.gi[1], w, h, hf);
   float bounce = R.gi.bounce < 0 ? 0 : R.gi.bounce > 0 ? CW_MIN(R.gi.bounce, 0.95f) : 0.5f;
-  /* source */
+  /* source, with last frame's bounce */
+  r2d_timer_end();
+  r2d_timer_begin(R2D_T_GI_SOURCE);
   {
-    float v[8][4] = { { 1.0f / light_scale, (float)CW_CLAMP((int)lroundf(1.0f / share / 2.0f), 1, 4), 0, 0 } };
-    fx_dst d = fx_dst_of(&G.src);
-    const fx_rt *in[4] = { mask, scene, mat, light };
-    fx_pass(&p_src, &d, false, NULL, in, v, FX_BLEND_NONE);
-    if (G.valid_prev && bounce > 0) {
-      float bv[8][4] = { { bounce, 0, 0, 0 } };
-      const fx_rt *bin[4] = { mask, scene, &G.gi[G.cur], mat };
-      fx_dst td = fx_dst_of(&G.casc[0]);
-      fx_pass(&p_bounce, &td, true, NULL, bin, bv, FX_BLEND_NONE);
-      const fx_rt *ain[4] = { &G.casc[0], NULL, NULL, NULL };
-      fx_pass(&p_apply, &d, false, NULL, ain, (float[8][4]){ { 1, 0, 0, 0 } }, FX_BLEND_ADD);
+    bool b = G.valid_prev && bounce > 0;
+    int n = CW_CLAMP((int)lroundf(1.0f / share / 2.0f), 1, 4);
+    const fx_rt *in[FX_SRC] = { mask, scene, mat, light, b ? &G.gi[G.cur] : NULL, NULL };
+    if (n >= 3) {
+      /* a field of an eighth or less: one pass over n x n taps of the canvas would keep only a few thousand
+       * pixels in flight, each waiting on 4 n^2 reads in a row; two steps keep the GPU full: the source at
+       * half the canvas (one filtered read a buffer, each the mean of a 2 x 2 block, as each tap was), then
+       * each field pixel gathers its n x n of those */
+      fx_rt_ensure(&G.half, (R.canvas_w + 1) / 2, (R.canvas_h + 1) / 2, hf);
+      float va[8][4] = { { 1.0f / light_scale, 1, b ? bounce : 0, 0 } };
+      fx_dst da = fx_dst_of(&G.half);
+      fx_pass6(&p_src, &da, false, NULL, in, va, FX_BLEND_NONE);
+      float vb[8][4] = { { 0, (float)n, 0, 0 } };
+      fx_dst d = fx_dst_of(&G.src);
+      const fx_rt *hin[4] = { &G.half, NULL, NULL, NULL };
+      fx_pass(&p_src2, &d, false, NULL, hin, vb, FX_BLEND_NONE);
+    } else {
+      float v[8][4] = { { 1.0f / light_scale, (float)n, b ? bounce : 0, 0 } };
+      fx_dst d = fx_dst_of(&G.src);
+      fx_pass6(&p_src, &d, false, NULL, in, v, FX_BLEND_NONE);
     }
   }
-  /* field */
+  r2d_timer_end();
+  r2d_timer_begin(R2D_T_GI);
+  /* field: the flood's first step reads the source's occupancy itself */
   {
-    fx_dst d0 = fx_dst_of(&G.seed[0]);
-    const fx_rt *in[4] = { &G.src, NULL, NULL, NULL };
-    fx_pass(&p_seed, &d0, false, NULL, in, NULL, FX_BLEND_NONE);
-    int cur = 0, st = 1;
+    int cur = 1, st = 1;
+    bool first = true;
     while (st * 2 < CW_MAX(w, h)) st *= 2;
     for (;; st /= 2) {
-      float v[8][4] = { { (float)(st < 1 ? 1 : st), 0, 0, 0 } };
+      float v[8][4] = { { (float)(st < 1 ? 1 : st), first ? 1.0f : 0.0f, 0, 0 } };
       fx_dst d = fx_dst_of(&G.seed[cur ^ 1]);
-      const fx_rt *src[4] = { &G.seed[cur], NULL, NULL, NULL };
+      const fx_rt *src[4] = { first ? &G.src : &G.seed[cur], NULL, NULL, NULL };
       fx_pass(&p_jfa, &d, false, NULL, src, v, FX_BLEND_NONE);
       cur ^= 1;
+      first = false;
       if (st < 1) break;
     }
     if (cur != 0) { fx_rt t = G.seed[0]; G.seed[0] = G.seed[1]; G.seed[1] = t; }
@@ -399,15 +414,12 @@ void r2d_gi_run(const fx_rt *mask, const fx_rt *scene, const fx_rt *mat, fx_rt *
   fx_pass(&p_gather, &gd, false, NULL, gin, NULL, FX_BLEND_NONE);
   G.cur = next;
   G.valid_prev = true;
-  float k = (R.gi.intensity != 0 ? R.gi.intensity : 1.0f) * light_scale;
-  fx_dst ld = fx_dst_of(light);
-  const fx_rt *ain[4] = { &G.gi[G.cur], NULL, NULL, NULL };
-  fx_pass(&p_apply, &ld, false, NULL, ain, (float[8][4]){ { k, 0, 0, 0 } }, FX_BLEND_ADD);
   R.stats.gi_cascades = (uint32_t)nc;
+  return &G.gi[G.cur];
 }
 
 void r2d_gi_shutdown(void) {
-  fx_rt *rts[] = { &G.src, &G.seed[0], &G.seed[1], &G.casc[0], &G.casc[1], &G.gi[0], &G.gi[1] };
+  fx_rt *rts[] = { &G.half, &G.src, &G.seed[0], &G.seed[1], &G.casc[0], &G.casc[1], &G.gi[0], &G.gi[1] };
   for (size_t i = 0; i < CW_ARRAY_LEN(rts); i++) fx_rt_free(rts[i]);
   memset(&G, 0, sizeof G);
 }

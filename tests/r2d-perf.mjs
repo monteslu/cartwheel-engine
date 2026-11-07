@@ -9,7 +9,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const CASES = 'sprites100k,lit500,shadow500,soft64,volumetric16,tiles,text,post';
+const CASES = 'sprites100k,lit500,shadow500,soft64,volumetric16,tiles,text,post,inst200k,instkept200k,sidescroll';
 const run = (extra) =>
   spawnSync('node', [join(ROOT, 'tools/r2d-perf.mjs'), '--sizes', '1920x1080', '--frames', '30', ...extra], {
     encoding: 'utf8', timeout: 900000,
@@ -21,7 +21,7 @@ let ok = r.status === 0;
 const rows = JSON.parse(readFileSync(join(ROOT, 'out/r2d-perf/gate.json'), 'utf8'));
 for (const row of rows) {
   if (row.failed) continue;
-  const max = row.case === 'lit500' ? 3 : row.case.startsWith('shadow') || row.case === 'soft64' || row.case === 'volumetric16' ? 16 : 0;
+  const max = row.case === 'lit500' || row.case.startsWith('inst') ? (row.case === 'lit500' ? 3 : 1) : row.case.startsWith('shadow') || row.case === 'soft64' || row.case === 'volumetric16' ? 16 : 0;
   if (max && row.draws > max) { console.log(`FAIL ${row.case} ${row.gpu}: ${row.draws} draws (at most ${max})`); ok = false; }
 }
 console.log(ok ? 'ok   r2d-perf: every case within its WebGPU call budget' : 'FAIL r2d-perf');

@@ -13,6 +13,9 @@ static const char *SPRITE_VS =
     "layout(location=2) in vec4 a_color;\n"
     "layout(location=3) in vec4 a_info;\n"
     "layout(location=4) in vec4 a_sdf;\n"
+    "layout(location=5) in float a_depth;\n" /* depth culling (cull.c): 0 = nearest */
+    "invariant gl_Position;\n"
+    "uniform float u_zbias;\n"
     "uniform vec4 u_layers[64];\n"
     "uniform vec2 u_target;\n"
     "uniform vec4 u_wind;\n"
@@ -31,7 +34,7 @@ static const char *SPRITE_VS =
     "    p.x += a_info.w / 255.0 * u_wind.x * s * sqrt(abs(r0.x * r1.y - r0.y * r1.x));\n"
     "  }\n"
     "  if (r0.w > 0.5) p = floor(p + 0.5);\n"
-    "  gl_Position = vec4(p.x / u_target.x * 2.0 - 1.0, 1.0 - p.y / u_target.y * 2.0, 0.0, 1.0);\n"
+    "  gl_Position = vec4(p.x / u_target.x * 2.0 - 1.0, 1.0 - p.y / u_target.y * 2.0, max(a_depth - u_zbias, 0.0) * 2.0 - 1.0, 1.0);\n"
     "  v_uv = a_uv;\n"
     "  v_color = vec4(a_color.rgb * a_color.a * (1.0 + a_sdf.w * 15.0), a_color.a);\n"
     "  v_page = a_info.x;\n"
@@ -65,6 +68,11 @@ static const char *SPRITE_FS =
     "  } else c = t * v_color;\n"
     /* flash (sprites, shapes: sdf.x): toward the vertex colour, keeping the shape's alpha */
     "  if ((v_mode & 2) == 0 && v_sdf.x > 0.0) c.rgb = mix(c.rgb, v_color.rgb / max(v_color.a, 1e-4) * c.a, v_sdf.x);\n"
+    "#ifdef PREPASS\n" /* depth culling: only texels that replace what is under them */
+    "  if ((v_mode & 4) != 0 || c.a < 1.0) discard;\n"
+    "  o_col = vec4(0.0);\n"
+    "  return;\n"
+    "#endif\n"
     "#ifndef LIT\n"
     /* the layer's fog: toward its colour by its amount (atmospheric depth) */
     "  if (v_fog.a > 0.0) c.rgb = mix(c.rgb, v_fog.rgb * c.a, v_fog.a);\n"
@@ -133,7 +141,7 @@ static const char *PART_VS =
     "  int L = int(u_pa[8].x) * 2;\n"
     "  vec4 r0 = u_layers[L], r1 = u_layers[L + 1];\n"
     "  vec2 c = vec2(r0.x * w.x + r0.y * w.y + r0.z, r1.x * w.x + r1.y * w.y + r1.z);\n"
-    "  gl_Position = vec4(c.x / u_target.x * 2.0 - 1.0, 1.0 - c.y / u_target.y * 2.0, 0.0, 1.0);\n"
+    "  gl_Position = vec4(c.x / u_target.x * 2.0 - 1.0, 1.0 - c.y / u_target.y * 2.0, -1.0, 1.0);\n"
     "  v_uv = mix(u_pa[6].xy, u_pa[6].zw, q);\n"
     "  vec4 col = mix(u_pa[4], u_pa[5], f);\n"
     "  v_color = vec4(col.rgb * col.a * u_pa[8].z, col.a);\n"
@@ -142,6 +150,55 @@ static const char *PART_VS =
     "  v_sdfw = 0.0; v_sdf = vec2(0.0);\n"
     "  v_emis = u_pa[8].w; v_dist = 0.0;\n"
     "  v_fog = u_fog[int(u_pa[8].x)];\n"
+    "}\n";
+
+/* sprite instances (cw_r2d_instances): the quad from gl_VertexID, the rest
+ * from the 24-byte instance (x, y, rotation, scale; colour; frame, flags)
+ * and u_in: [0] pivot, size override; [1] canvas layer, mode, intensity,
+ * emission; [2] page, flash, sway, 0; then per frame its uv rect and pixel
+ * size. The fragment stage is the sprites'. */
+CW_STATIC_ASSERT(R2D_INST_VEC4 == 67, "INST_VS declares u_in[67]");
+static const char *INST_VS =
+    "layout(location=0) in vec4 i_a;\n"
+    "layout(location=1) in vec4 i_col;\n"
+    "layout(location=2) in vec2 i_fr;\n"
+    "uniform vec4 u_layers[64];\n"
+    "uniform vec2 u_target;\n"
+    "uniform vec4 u_wind;\n"
+    "uniform vec4 u_fog[32];\n"
+    "uniform vec4 u_in[67];\n"
+    "out vec2 v_uv; out vec4 v_color; flat out float v_page; flat out int v_mode; flat out float v_sdfw; flat out vec2 v_sdf;\n"
+    "flat out float v_emis, v_dist;\n"
+    "flat out vec4 v_fog;\n"
+    "void main() {\n"
+    "  int k = gl_VertexID;\n"
+    "  vec2 q = vec2((k == 1 || k == 2 || k == 4) ? 1.0 : 0.0, (k == 2 || k == 4 || k == 5) ? 1.0 : 0.0);\n"
+    "  int f = int(i_fr.x), fl = int(i_fr.y);\n"
+    "  vec4 uv = u_in[3 + 2 * f], fs = u_in[4 + 2 * f];\n"
+    "  float sc = i_a.w == 0.0 ? 1.0 : i_a.w;\n"
+    "  vec2 sz = (u_in[0].z > 0.0 ? u_in[0].zw : fs.xy) * sc;\n"
+    "  vec2 l = (q - u_in[0].xy) * sz;\n"
+    "  float cs = cos(i_a.z), sn = sin(i_a.z);\n"
+    "  vec2 w = i_a.xy + vec2(cs * l.x - sn * l.y, sn * l.x + cs * l.y);\n"
+    "  int L = int(u_in[1].x) * 2;\n"
+    "  vec4 r0 = u_layers[L], r1 = u_layers[L + 1];\n"
+    "  vec2 p = vec2(r0.x * w.x + r0.y * w.y + r0.z, r1.x * w.x + r1.y * w.y + r1.z);\n"
+    "  if (q.y < 0.5 && u_in[2].z > 0.0 && u_wind.x != 0.0) {\n"
+    "    float ph = u_wind.y + w.x * u_wind.z + w.y * u_wind.z * 0.37;\n"
+    "    float s = sin(ph) + 0.45 * sin(ph * 2.3 + 1.7) * u_wind.w;\n"
+    "    p.x += u_in[2].z * u_wind.x * s * sqrt(abs(r0.x * r1.y - r0.y * r1.x));\n"
+    "  }\n"
+    "  if (r0.w > 0.5) p = floor(p + 0.5);\n"
+    "  gl_Position = vec4(p.x / u_target.x * 2.0 - 1.0, 1.0 - p.y / u_target.y * 2.0, -1.0, 1.0);\n"
+    "  vec2 tq = vec2((fl & 1) != 0 ? 1.0 - q.x : q.x, (fl & 2) != 0 ? 1.0 - q.y : q.y);\n"
+    "  v_uv = mix(uv.xy, uv.zw, tq);\n"
+    "  vec4 col = i_col == vec4(0.0) ? vec4(1.0) : i_col;\n"
+    "  v_color = vec4(col.rgb * col.a * u_in[1].z, col.a);\n"
+    "  v_page = u_in[2].x;\n"
+    "  v_mode = int(u_in[1].y);\n"
+    "  v_sdfw = 0.0; v_sdf = vec2(u_in[2].y, 0.0);\n"
+    "  v_emis = u_in[1].w; v_dist = r1.w;\n"
+    "  v_fog = u_fog[int(u_in[1].x)];\n"
     "}\n";
 
 /* tilemap chunks: static geometry, animated in the vertex shader */
@@ -154,11 +211,13 @@ static const char *TILE_VS =
     "uniform vec4 u_set1;\n" /* stride px (x, y), columns, page */
     "uniform vec2 u_inv_page;\n"
     "uniform float u_time;\n"
+    "invariant gl_Position;\n"
     "out vec2 v_uv; flat out float v_page;\n"
     "void main() {\n"
     "  vec2 p = vec2(u_m0.x * a_pos.x + u_m0.y * a_pos.y + u_m0.z, u_m1.x * a_pos.x + u_m1.y * a_pos.y + u_m1.z);\n"
     "  if (u_m0.w > 0.5) p = floor(p + 0.5);\n"
-    "  gl_Position = vec4(p.x / u_target.x * 2.0 - 1.0, 1.0 - p.y / u_target.y * 2.0, 0.0, 1.0);\n"
+    /* u_m1.w: the draw's depth (depth culling, cull.c); 0 = nearest */
+    "  gl_Position = vec4(p.x / u_target.x * 2.0 - 1.0, 1.0 - p.y / u_target.y * 2.0, u_m1.w > 0.0 ? u_m1.w * 2.0 - 1.0 : -1.0, 1.0);\n"
     "  float id = a_tile.x;\n"
     "  if (a_tile.z > 1.0) id += mod(floor(u_time * a_tile.w / 16.0), a_tile.z);\n"
     "  float col = mod(id, u_set1.z), row = floor(id / u_set1.z);\n"
@@ -184,6 +243,9 @@ static const char *TILE_FS =
     "  if (c.a < 0.5) discard;\n"
     "  c = vec4(1.0);\n"
     "#endif\n"
+    "#ifdef PREPASS\n"
+    "  if (c.a < 1.0) discard;\n"
+    "#endif\n"
     "  o_col = c;\n"
     "}\n";
 
@@ -198,12 +260,18 @@ static const char *QUAD_VS =
     "  v_uv = a_uv;\n"
     "}\n";
 
+/* u_sharp: sharp filtering (cw_scale_filter SHARP): x on, yz canvas size, w window pixels per canvas pixel */
 static const char *BLIT_FS =
     "uniform sampler2DArray u_tex;\n"
     "uniform float u_page;\n"
+    "uniform vec4 u_sharp;\n"
     "in vec2 v_uv;\n"
     "out vec4 o_col;\n"
-    "void main() { o_col = texture(u_tex, vec3(v_uv, u_page)); }\n";
+    "void main() {\n"
+    "  vec2 uv = v_uv;\n"
+    "  if (u_sharp.x > 0.5) { vec2 t = uv * u_sharp.yz, c = floor(t) + 0.5; uv = (c + clamp((t - c) * u_sharp.w, -0.5, 0.5)) / u_sharp.yz; }\n"
+    "  o_col = texture(u_tex, vec3(uv, u_page));\n"
+    "}\n";
 
 static GLuint compile_stage(const char *name, GLenum type, const char *defines, const char *src) {
   GLuint s = glCreateShader(type);
@@ -271,12 +339,15 @@ bool r2d_programs_init(void) {
             build(&R.tile, "tilemap", "", TILE_VS, TILE_FS) &&
             build(&R.tile_lit, "tilemap (lit)", "#define LIT 1\n", TILE_VS, TILE_FS) &&
             build(&R.sprite_mask, "sprite (occluder mask)", "#define MASK 1\n", SPRITE_VS, SPRITE_FS) &&
-            build(&R.part, "particles", "", PART_VS, SPRITE_FS) && build(&R.part_lit, "particles (lit)", "#define LIT 1\n", PART_VS, SPRITE_FS) &&
+            build(&R.part, "particles", "", PART_VS, SPRITE_FS) &&
+            build(&R.inst, "instances", "", INST_VS, SPRITE_FS) && build(&R.inst_lit, "instances (lit)", "#define LIT 1\n", INST_VS, SPRITE_FS) && build(&R.part_lit, "particles (lit)", "#define LIT 1\n", PART_VS, SPRITE_FS) &&
             build(&R.tile_mask, "tilemap (occluder mask)", "#define MASK 1\n", TILE_VS, TILE_FS) &&
+            build(&R.sprite_pre, "sprite (depth pre-pass)", "#define PREPASS 1\n", SPRITE_VS, SPRITE_FS) &&
+            build(&R.tile_pre, "tilemap (depth pre-pass)", "#define PREPASS 1\n", TILE_VS, TILE_FS) &&
             build(&R.blit, "blit", "", QUAD_VS, BLIT_FS);
   if (!ok) return false;
-  r2d_program *tiles[3] = { &R.tile, &R.tile_lit, &R.tile_mask };
-  for (int i = 0; i < 3; i++) {
+  r2d_program *tiles[4] = { &R.tile, &R.tile_lit, &R.tile_mask, &R.tile_pre };
+  for (int i = 0; i < 4; i++) {
     GLuint p = tiles[i]->prog;
     tiles[i]->u[U_M0] = glGetUniformLocation(p, "u_m0");
     tiles[i]->u[U_M1] = glGetUniformLocation(p, "u_m1");
@@ -286,7 +357,10 @@ bool r2d_programs_init(void) {
     tiles[i]->u[U_TINT] = glGetUniformLocation(p, "u_tint");
   }
   R.blit.u[U_PAGE] = glGetUniformLocation(R.blit.prog, "u_page");
+  R.blit.u[U_PAGE + 1] = glGetUniformLocation(R.blit.prog, "u_sharp");
   R.part.u[0] = glGetUniformLocation(R.part.prog, "u_pa");
   R.part_lit.u[0] = glGetUniformLocation(R.part_lit.prog, "u_pa");
+  R.inst.u[0] = glGetUniformLocation(R.inst.prog, "u_in");
+  R.inst_lit.u[0] = glGetUniformLocation(R.inst_lit.prog, "u_in");
   return true;
 }

@@ -4,6 +4,27 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.38.0 (2026-11-07)
+
+### Added
+- **Sprite instances** (`cw_r2d_instances`, `cw_sprite_instance`, `cw_r2d_instance_buffer_*`): many sprites of one texture in one instanced draw, 24 bytes an instance (where, turn, scale, colour, a frame of up to 32 source rects, flips) built into quads on the GPU; per frame (copied at the call, one upload a pass) or kept in a buffer written once and drawn every frame for nothing on the CPU. They blend, take intensity, emission, flash and wind sway and are lit in lit layers. 200,000 moving sprites: CPU @INSTCPU@.
+- **Lookup tables in the 2D post chain** (`cw_r2d_post.lut`, `lut_amount`, `cw_r2d_lut_load`, `cw_r2d_lut_from_strip`, `cw_r2d_lut_pixels`): a 3D colour table applied to the finished display colour, authored as a strip image (grade a screenshot holding the identity strip in any image editor, cut the strip back out); presets `cw_r2d_lut_preset`: warm, cool, teal and orange, black and white, sepia, bleach bypass, moonlight.
+- **Light textures** (`cw_light2d.texture`, `texture_src`; Light2D `texture`): a point or spot light's colour times an image laid over its radius square and turned by its angle (window panes, a lantern's cage, stained glass).
+- **Sharp scaling of a virtual canvas** (`cw_r2d_pass_desc.scale_filter`): `SHARP` draws each canvas pixel as a crisp block of its true width and blends only the window pixel on a block's edge, so pixel art at a scale that is not whole neither shimmers nor blurs; `LINEAR` smooths.
+- `CW_R2D_FEATURES` 3. `CW_R2D_TIMERS` parts `cull` and `gi_source`. Stat `instances`. `r2d_stress` cases `inst200k`, `instkept200k` and `sidescroll` (a side-scrolling HDR screen: sky, four fogged parallax layers, a lit back wall, about 800 normal-mapped tiles, 7 soft-shadowed lights, the chain, global illumination). `r2d_hdr` modes `lut`, `lutid`, `cookie`, `front`, `frontnodistort`; `r2d_camera` mode `sharp`.
+
+### Changed
+- **Covered pixels are not shaded** in the offscreen canvases (the HDR canvas, a lit run's buffers): each submission gets a depth from its place in the sorted order, a group of layers first draws its fully opaque texels nearest first into a depth buffer (colour off), then draws as always testing it, so a pixel behind an opaque one is never shaded. The picture is the same to the bit. Groups end where something reads what was drawn (screen reads, distortion, the end of a lit run, the HUD layer). `CW_R2D_CULL=0` (native) turns it off.
+- **A distortion layer bends only what is under it**: a layer above it (under the HUD) draws over the bent picture straight (one extra full-screen pass, only then). Before, every layer under the HUD bent.
+- **Global illumination takes fewer passes**: last frame's bounce is part of the source pass, the flood starts from the source (no seed pass), and the composite adds the irradiance (no full-size apply pass).
+- **Low and Very Low scale the 2D lights and HDR**: the lights shade a light buffer half (Low) or a third (Very Low) of the canvas each way, upsampled by an edge-aware composite (normals and occluder edges keep their place); the HDR canvas is R11G11B10 float where the host renders it, the pass clears opaque and no layer reads the screen; GPU particles draw the effects detail's share of each emitter (0.25 Very Low, 0.4 Low, 0.7 Medium); global illumination's field never exceeds the pass's own `resolution` below High (half of it on Low). High and Ultra draw as before.
+
+@MEASURED@
+
+### Tests
+- `r2d-round2` (GPU, GL and WebGPU): culling changes no pixel (r2d_hdr, sidescroll), control: culling without its half step must lose opaque texels; the identity table keeps the picture within 2 levels, control: the teal and orange table must change it; light textures change the lit picture; a lattice above a distortion layer stays straight while the picture under it bends, control: the old bend-everything-at-the-end must bend the lattice; 200k instances draw the sprites' picture, control: the still kept buffer must differ; Very Low and Low near High but not equal; GL against WebGPU for every frame.
+- `r2d-hdr`: a lookup table control. `r2d-perf`: the instance and sidescroll cases, instances one draw.
+
 ## v0.37.0 (2026-11-07)
 
 ### Added

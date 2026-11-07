@@ -56,7 +56,7 @@ static struct {
   GLint mask_u_target;
 } LT;
 
-#define INST_FLOATS 16
+#define INST_FLOATS 24 /* 6 texels a light */
 #define LIGHT_TILE 32 /* pixels: the tiled light pass's tile */
 #define FIELD_REACH 128 /* field pixels the shadow flood reaches (its largest step is half) */
 
@@ -82,6 +82,7 @@ static const char *GL_LIGHT_VS =
 
 #define GL_LIGHT_FS_BODY                                                                                         \
   "uniform sampler2D t_nrm, t_seed, t_mask, t_mat, t_data;\n"                                                    \
+  "uniform highp sampler2DArray t_cookie;\n"                                                                      \
   "uniform vec4 u_p, u_q, u_t, u_amb;\n"                                                                        \
   "layout(location=0) out vec4 o_col;\n"                                                                         \
   "#ifdef ADD\nlayout(location=1) out vec4 o_add;\n#endif\n"                                                     \
@@ -121,7 +122,8 @@ static const char *GL_LIGHT_VS =
   "  return res * res * (3.0 - 2.0 * res) * depth;\n"                                                            \
   "}\n"                                                                                                          \
   "void main() {\n"                                                                                              \
-  "  vec2 fc = gl_FragCoord.xy;\n"                                                                               \
+  /* u_amb.w > 1: the light buffer is that many times smaller; each texel shades the canvas pixel at its centre */ \
+  "  vec2 fc = u_amb.w > 1.0 ? floor(gl_FragCoord.xy) * u_amb.w + floor(u_amb.w * 0.5) + 0.5 : gl_FragCoord.xy;\n" \
   "  ivec2 ip = ivec2(fc);\n"                                                                                    \
   /* the surface, read once: its normal and material */                                                       \
   "  vec3 N = vec3(0.0, 0.0, 1.0); float mapped = 0.0;\n"                                                       \
@@ -142,13 +144,21 @@ static const char *GL_LIGHT_VS =
   "  for (int k = 0; k < cnt; k++) {\n"                                                                          \
   "    int e = first + k;\n"                                                                                     \
   "    int li = int(dat(int(u_t.w) + (e >> 2))[e & 3]);\n"                                                       \
-  "    vec4 c = dat(li * 4), col = dat(li * 4 + 1), s = dat(li * 4 + 2), f = dat(li * 4 + 3);\n"                \
+  "    vec4 c = dat(li * 6), col = dat(li * 6 + 1), s = dat(li * 6 + 2), f = dat(li * 6 + 3);\n"                \
   "    bool dirl = f.z > 0.5;\n"                                                                                 \
   "    vec2 d = fc - c.xy;\n"                                                                                    \
   "    float dl = length(d);\n"                                                                                  \
   "    float att = dirl ? 1.0 : pow(clamp(1.0 - dl / c.z, 0.0, 1.0), col.w);\n"                                \
   "    if (!dirl && s.z <= 1.0) att *= smoothstep(s.z, s.w, dot(d / max(dl, 1e-4), s.xy));\n"                   \
   "    if (att <= 0.0) continue;\n"                                                                              \
+  "    vec3 lc = col.rgb;\n"                                                                                     \
+  "    if (f.w > 0.5) {\n" /* a light texture over the radius square, turned by the light's direction */       \
+  "      vec4 tr = dat(li * 6 + 4), tp = dat(li * 6 + 5);\n"                                                    \
+  "      vec2 lq = vec2(dot(d, s.xy), dot(d, vec2(-s.y, s.x))) / c.z;\n"                                     \
+  "      vec2 tq = clamp(vec2(0.5 + 0.5 * lq.x, 0.5 - 0.5 * lq.y), 0.0, 1.0);\n"                              \
+  "      lc *= textureLod(t_cookie, vec3(mix(tr.xy, tr.zw, tq), tp.x), 0.0).rgb;\n"                           \
+  "      if (max(lc.r, max(lc.g, lc.b)) <= 0.0) continue;\n"                                                     \
+  "    }\n"                                                                                                      \
   "    vec3 L = dirl ? normalize(vec3(-s.xy, c.w)) : normalize(vec3(-d, c.w));\n"                               \
   "    float ndl = mix(1.0, max(dot(N, L), 0.0), mapped);\n"                                                    \
   "    float sh = 1.0;\n"                                                                                        \
@@ -156,7 +166,7 @@ static const char *GL_LIGHT_VS =
   "      if (dirl) sh = shadow(fc, -s.xy, length(u_p.zw / u_p.y), f.x, inside);\n"                              \
   "      else if (dl > 1e-3) sh = shadow(fc, -d / dl, dl, f.x, inside);\n"                                      \
   "    }\n"                                                                                                      \
-  "    acc += col.rgb * att * ndl * sh;\n"                                                                       \
+  "    acc += lc * att * ndl * sh;\n"                                                                       \
   "#ifdef ADD\n"                                                                                                 \
   "    float spv = 0.0;\n"                                                                                       \
   "    if (spec > 0.0) {\n"                                                                                      \
@@ -164,7 +174,7 @@ static const char *GL_LIGHT_VS =
   "      vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));\n"                                                        \
   "      spv = spec * pow(max(dot(Nn, H), 0.0), pw) * (pw + 8.0) / 64.0 * max(dot(Nn, L), 0.0) * cov;\n"       \
   "    }\n"                                                                                                      \
-  "    accA += col.rgb * att * sh * (f.y + spv);\n"                                                              \
+  "    accA += lc * att * sh * (f.y + spv);\n"                                                              \
   "#endif\n"                                                                                                     \
   "  }\n"                                                                                                        \
   "  o_col = vec4(acc, 1.0);\n"                                                                                  \
@@ -249,12 +259,15 @@ static const char *WG_JFA =
     "}\n";
 
 /* colour * light (+ scattered light) over the canvas: t0 scene, t1 light,
- * t2 scattered; u_v[0].x = light buffer scale back (2: RGBA8 holds light/2) */
+ * t2 scattered, t3 material, t4 global illumination (the field's size,
+ * bilinear); u_v[0].x = light buffer scale back (2: RGBA8 holds light/2),
+ * .y = scattered light on, .z = global illumination x intensity (0: none) */
 static const char *GL_COMPOSITE =
     "void main() {\n"
     "  ivec2 q = ivec2(v_uv * u_size);\n"
     "  vec4 s = texelFetch(t0, q, 0);\n"
     "  vec3 l = texelFetch(t1, q, 0).rgb * u_v[0].x;\n"
+    "  if (u_v[0].z > 0.0) l += texture(t4, v_uv).rgb * u_v[0].z;\n"
     "  vec3 a = u_v[0].y > 0.5 ? texelFetch(t2, q, 0).rgb : vec3(0.0);\n"
     "  vec4 m = texelFetch(t3, q, 0);\n"
     "  float e = m.a > 0.004 ? clamp(m.r / m.a, 0.0, 1.0) : 0.0;\n"
@@ -264,7 +277,8 @@ static const char *WG_COMPOSITE =
     "@fragment fn fs(i: VO) -> @location(0) vec4f {\n"
     "  let q = vec2i(i.uv * fx.size);\n"
     "  let s = textureLoad(t0, q, 0);\n"
-    "  let l = textureLoad(t1, q, 0).rgb * fx.v[0].x;\n"
+    "  var l = textureLoad(t1, q, 0).rgb * fx.v[0].x;\n"
+    "  if (fx.v[0].z > 0.0) { l += textureSampleLevel(t4, s_lin, i.uv, 0.0).rgb * fx.v[0].z; }\n"
     "  var a = vec3f(0.0);\n"
     "  if (fx.v[0].y > 0.5) { a = textureLoad(t2, q, 0).rgb; }\n"
     "  let m = textureLoad(t3, q, 0);\n"
@@ -273,15 +287,82 @@ static const char *WG_COMPOSITE =
     "  return vec4f(s.rgb * mix(l, vec3f(1.0), e) + a, s.a);\n"
     "}\n";
 
+/* the composite from a light buffer `div` times smaller (Low and Very Low): each
+ * canvas pixel takes the four nearest light texels, bilinear, each weighed by
+ * how alike its surface is (the normal, inside or outside an occluder) to the
+ * surface the texel was shaded at, so light does not bleed across a shadow's
+ * edge or a bevel. t0 scene, t1 light, t2 scattered, t3 material, t4
+ * normals, t5 occluder mask; u_v[0] = scale back, scattered on, div, normals
+ * on; u_v[1] = mask on, light buffer size */
+static const char *GL_COMPOSITE_UP =
+    "vec3 nrm(ivec2 p) { vec4 n = texelFetch(t4, p, 0); return n.a > 0.004 ? normalize(n.rgb / n.a * 2.0 - 1.0) : vec3(0.0, 0.0, 1.0); }\n"
+    "void main() {\n"
+    "  ivec2 q = ivec2(v_uv * u_size), lsz = ivec2(u_v[1].yz);\n"
+    "  vec4 s = texelFetch(t0, q, 0);\n"
+    "  float dv = u_v[0].z; int di = int(dv);\n"
+    "  vec2 f = (vec2(q) - floor(dv * 0.5)) / dv;\n"
+    "  ivec2 k0 = ivec2(floor(f)); vec2 fw = f - vec2(k0);\n"
+    "  bool hn = u_v[0].w > 0.5, hm = u_v[1].x > 0.5;\n"
+    "  vec3 N0 = hn ? nrm(q) : vec3(0.0, 0.0, 1.0);\n"
+    "  float m0 = hm ? texelFetch(t5, q, 0).r : 0.0;\n"
+    "  vec3 L = vec3(0.0), A = vec3(0.0); float ws = 0.0;\n"
+    "  for (int j = 0; j < 2; j++) for (int i = 0; i < 2; i++) {\n"
+    "    ivec2 k = clamp(k0 + ivec2(i, j), ivec2(0), lsz - 1);\n"
+    "    ivec2 rp = min(k * di + di / 2, ivec2(u_size) - 1);\n"
+    "    float w = (i == 0 ? 1.0 - fw.x : fw.x) * (j == 0 ? 1.0 - fw.y : fw.y) + 1e-3;\n"
+    "    if (hn) w *= pow(max(dot(N0, nrm(rp)), 0.0), 8.0) + 1e-3;\n"
+    "    if (hm) w *= abs(texelFetch(t5, rp, 0).r - m0) < 0.5 ? 1.0 : 0.01;\n"
+    "    L += texelFetch(t1, k, 0).rgb * w; A += texelFetch(t2, k, 0).rgb * w; ws += w;\n"
+    "  }\n"
+    "  vec3 l = L / ws * u_v[0].x, a = u_v[0].y > 0.5 ? A / ws : vec3(0.0);\n"
+    "  vec4 m = texelFetch(t3, q, 0);\n"
+    "  float e = m.a > 0.004 ? clamp(m.r / m.a, 0.0, 1.0) : 0.0;\n"
+    "  o_col = vec4(s.rgb * mix(l, vec3(1.0), e) + a, s.a);\n"
+    "}\n";
+static const char *WG_COMPOSITE_UP =
+    "fn nrm(p: vec2i) -> vec3f { let n = textureLoad(t4, p, 0); if (n.a > 0.004) { return normalize(n.rgb / n.a * 2.0 - 1.0); } return vec3f(0.0, 0.0, 1.0); }\n"
+    "@fragment fn fs(i0: VO) -> @location(0) vec4f {\n"
+    "  let q = vec2i(i0.uv * fx.size); let lsz = vec2i(fx.v[1].yz);\n"
+    "  let s = textureLoad(t0, q, 0);\n"
+    "  let dv = fx.v[0].z; let di = i32(dv);\n"
+    "  let f = (vec2f(q) - floor(dv * 0.5)) / dv;\n"
+    "  let k0 = vec2i(floor(f)); let fw = f - vec2f(k0);\n"
+    "  let hn = fx.v[0].w > 0.5; let hm = fx.v[1].x > 0.5;\n"
+    "  var N0 = vec3f(0.0, 0.0, 1.0); if (hn) { N0 = nrm(q); }\n"
+    "  var m0 = 0.0; if (hm) { m0 = textureLoad(t5, q, 0).r; }\n"
+    "  var L = vec3f(0.0); var A = vec3f(0.0); var ws = 0.0;\n"
+    "  for (var j = 0; j < 2; j++) { for (var i = 0; i < 2; i++) {\n"
+    "    let k = clamp(k0 + vec2i(i, j), vec2i(0), lsz - 1);\n"
+    "    let rp = min(k * di + di / 2, vec2i(fx.size) - 1);\n"
+    "    var w = select(fw.x, 1.0 - fw.x, i == 0) * select(fw.y, 1.0 - fw.y, j == 0) + 1e-3;\n"
+    "    if (hn) { w *= pow(max(dot(N0, nrm(rp)), 0.0), 8.0) + 1e-3; }\n"
+    "    if (hm) { w *= select(0.01, 1.0, abs(textureLoad(t5, rp, 0).r - m0) < 0.5); }\n"
+    "    L += textureLoad(t1, k, 0).rgb * w; A += textureLoad(t2, k, 0).rgb * w; ws += w;\n"
+    "  } }\n"
+    "  let l = L / ws * fx.v[0].x;\n"
+    "  var a = vec3f(0.0); if (fx.v[0].y > 0.5) { a = A / ws; }\n"
+    "  let m = textureLoad(t3, q, 0);\n"
+    "  var e = 0.0; if (m.a > 0.004) { e = clamp(m.r / m.a, 0.0, 1.0); }\n"
+    "  return vec4f(s.rgb * mix(l, vec3f(1.0), e) + a, s.a);\n"
+    "}\n";
+/* global illumination into a smaller light buffer (t0 irradiance, bilinear; u_v[0].x = intensity x light buffer scale) */
+static const char *GL_APPLY = "void main() { o_col = vec4(texture(t0, v_uv).rgb * u_v[0].x, 0.0); }\n";
+static const char *WG_APPLY =
+    "@fragment fn fs(i: VO) -> @location(0) vec4f { return vec4f(textureSampleLevel(t0, s_lin, i.uv, 0.0).rgb * fx.v[0].x, 0.0); }\n";
+
 static fx_prog prog_seed = { "r2d field seed", NULL, NULL, 0, 0, 0, NULL, false };
 static fx_prog prog_jfa = { "r2d field flood", NULL, NULL, 0, 0, 0, NULL, false };
 static fx_prog prog_comp = { "r2d lit composite", NULL, NULL, 0, 0, 0, NULL, false };
+static fx_prog prog_comp_up = { "r2d lit composite (smaller light buffer)", NULL, NULL, 0, 0, 0, NULL, false };
+static fx_prog prog_apply = { "r2d gi apply (smaller light buffer)", NULL, NULL, 0, 0, 0, NULL, false };
 
 static void progs_init(void) {
   if (prog_seed.glsl) return;
   prog_seed.glsl = GL_SEED, prog_seed.wgsl = WG_SEED;
   prog_jfa.glsl = GL_JFA, prog_jfa.wgsl = WG_JFA;
   prog_comp.glsl = GL_COMPOSITE, prog_comp.wgsl = WG_COMPOSITE;
+  prog_comp_up.glsl = GL_COMPOSITE_UP, prog_comp_up.wgsl = WG_COMPOSITE_UP;
+  prog_apply.glsl = GL_APPLY, prog_apply.wgsl = WG_APPLY;
 }
 
 /* ── GL programs ───────────────────────────────────────────────────────── */
@@ -334,6 +415,7 @@ static bool gl_init(void) {
     glUniform1i(glGetUniformLocation(LT.prog[i], "t_seed"), 4);
     glUniform1i(glGetUniformLocation(LT.prog[i], "t_mask"), 5);
     glUniform1i(glGetUniformLocation(LT.prog[i], "t_mat"), 6);
+    glUniform1i(glGetUniformLocation(LT.prog[i], "t_cookie"), 8);
   }
   glGenVertexArrays(1, &LT.vao); /* the full-screen triangle needs no buffers */
   LT.mask_prog = gl_program("occluder mask", GL_MASK_VS, GL_MASK_FS);
@@ -372,6 +454,7 @@ void r2d_lit_begin_gl(void) {
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, LT.scene.tex, 0);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, R.normals_used ? LT.normal.tex : 0, 0);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, R.material_used ? LT.mat.tex : 0, 0);
+  r2d_cull_attach_gl(LT.mrt_fbo); /* depth culling: the group's depth buffer (cull.c) */
   GLenum bufs[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
   glDrawBuffers(R.normals_used ? (R.material_used ? 3 : 2) : 1, bufs);
   glViewport(0, 0, R.canvas_w, R.canvas_h);
@@ -431,6 +514,15 @@ static int occluder_tris(int lo, int hi, float w, float **out) {
   }
   *out = v;
   return nv;
+}
+
+/* the light buffer's divisor: Low shades every second pixel each way, Very Low every third */
+static int light_div(void) {
+  int e = cw_gfx_effective(CW_GFX_EFFECTS);
+  int d = e <= CW_QUALITY_VERY_LOW ? 3 : e == CW_QUALITY_LOW ? 2 : 1;
+  /* never under 320 light texels across (pixel-art canvases keep their pixels) */
+  while (d > 1 && R.canvas_w / d < 320) d--;
+  return d;
 }
 
 static void quality_of_field(int *steps, float *scale) {
@@ -523,10 +615,24 @@ static bool build_field(void) {
 
 /* ── lights ────────────────────────────────────────────────────────────── */
 
-static void composite_to(const fx_dst *dst, float scale_back, bool add) {
-  float v[8][4] = { { scale_back, add ? 1.0f : 0.0f, 0, 0 } };
-  const fx_rt *in[4] = { &LT.scene, &LT.light, add ? &LT.add : NULL, R.material_used ? &LT.mat : NULL };
-  fx_pass(&prog_comp, dst, false, NULL, in, v, FX_BLEND_PREMUL);
+static void composite_to(const fx_dst *dst, float scale_back, bool add, const fx_rt *gi, int div, bool masked) {
+  float gk = gi ? (R.gi.intensity != 0 ? R.gi.intensity : 1.0f) : 0.0f;
+  if (div > 1) { /* a smaller light buffer: global illumination into it, then the edge-aware composite */
+    if (gi) {
+      fx_dst ld = fx_dst_of(&LT.light);
+      const fx_rt *ain[4] = { gi, NULL, NULL, NULL };
+      fx_pass(&prog_apply, &ld, false, NULL, ain, (float[8][4]){ { gk / scale_back, 0, 0, 0 } }, FX_BLEND_ADD);
+    }
+    float v[8][4] = { { scale_back, add ? 1.0f : 0.0f, (float)div, R.normals_used ? 1.0f : 0.0f },
+                      { masked ? 1.0f : 0.0f, (float)LT.light.w, (float)LT.light.h, 0 } };
+    const fx_rt *in[FX_SRC] = { &LT.scene, &LT.light, add ? &LT.add : NULL, R.material_used ? &LT.mat : NULL,
+                                R.normals_used ? &LT.normal : NULL, masked ? &LT.mask : NULL };
+    fx_pass6(&prog_comp_up, dst, false, NULL, in, v, FX_BLEND_PREMUL);
+    return;
+  }
+  float v[8][4] = { { scale_back, add ? 1.0f : 0.0f, gk, 0 } };
+  const fx_rt *in[FX_SRC] = { &LT.scene, &LT.light, add ? &LT.add : NULL, R.material_used ? &LT.mat : NULL, gi, NULL };
+  fx_pass6(&prog_comp, dst, false, NULL, in, v, FX_BLEND_PREMUL);
 }
 
 void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
@@ -543,6 +649,8 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
   float *inst = cw_frame_alloc(sizeof(float) * INST_FLOATS * (size_t)CW_MAX(1, R.lights.count));
   int n = 0;
   bool shadows = false, add = false;
+  int cookie_array = -1;
+  static bool cookie_warned;
   for (int i = 0; i < R.lights.count; i++) {
     const r2d_light *rl = &R.lights.data[i];
     if (rl->layer < lo || rl->layer > hi) continue;
@@ -575,11 +683,27 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
       hard = 64.0f * powf(1.0f / 64.0f, CW_CLAMP(l->softness, 0.0f, 1.0f)) + 1.0f; /* 65 (hard) .. 2 (soft) */
     }
     if (l->volumetric > 0 || R.material_used) add = true;
+    /* a light texture: the run's first textured light picks the texture array the pass binds */
+    float tu0 = 0, tv0 = 0, tu1 = 0, tv1 = 0, tpage = 0, tex_on = 0;
+    const r2d_tex *ct = CW_HANDLE_IS_NULL(l->texture) || l->directional ? NULL : r2d_tex_get(l->texture);
+    if (ct) {
+      if (cookie_array < 0) cookie_array = ct->array;
+      if (ct->array == cookie_array) {
+        cw_rect src = l->texture_src.w > 0 ? l->texture_src : (cw_rect){ 0, 0, (float)ct->w, (float)ct->h };
+        r2d_tex_uv(ct, src, &tu0, &tv0, &tu1, &tv1);
+        tpage = (float)ct->page, tex_on = 1;
+      } else if (!cookie_warned) {
+        cw_warn("cw_light2d.texture: a lit run's light textures must share one texture array; this light draws without its texture");
+        cookie_warned = true;
+      }
+    }
     float *w = inst + INST_FLOATS * n++;
     float v[INST_FLOATS] = { c.x, (float)R.canvas_h - c.y, r, hgt,
                              col.r * e, col.g * e, col.b * e, l->falloff > 0 ? l->falloff : 2.0f,
                              dir.x, -dir.y, outer, inner,
-                             hard, l->volumetric > 0 ? l->volumetric : 0, l->directional ? 1.0f : 0.0f, 0 };
+                             hard, l->volumetric > 0 ? l->volumetric : 0, l->directional ? 1.0f : 0.0f, tex_on,
+                             tu0, tv0, tu1, tv1,
+                             tpage, 0, 0, 0 };
     memcpy(w, v, sizeof v);
   }
   bool gi = r2d_gi_enabled();
@@ -589,10 +713,12 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
   r2d_timer_end();
   r2d_timer_begin(R2D_T_LIGHTS);
   fx_fmt lf = hdr ? FX_RGBA16F : FX_RGBA8;
-  fx_rt_ensure(&LT.light, R.canvas_w, R.canvas_h, lf);
-  if (add) fx_rt_ensure(&LT.add, R.canvas_w, R.canvas_h, hdr ? FX_RGBA16F : FX_RGBA8);
+  int div = light_div();
+  int lw = (R.canvas_w + div - 1) / div, lh = (R.canvas_h + div - 1) / div;
+  fx_rt_ensure(&LT.light, lw, lh, lf);
+  if (add) fx_rt_ensure(&LT.add, lw, lh, hdr ? FX_RGBA16F : FX_RGBA8);
   cw_color a = R.pass.ambient;
-  float amb[4] = { a.r * k, a.g * k, a.b * k, 1 };
+  float amb[4] = { a.r * k, a.g * k, a.b * k, (float)div }; /* .w: the divisor (the shader's pixel of each texel) */
   const fx_rt *seed = shadows ? &LT.seed[LT.seed_out] : NULL;
   float up[4] = { R.normals_used ? 1.0f : 0.0f, shadows ? LT.field_scale : 1.0f, seed ? (float)seed->w : 1.0f,
                   seed ? (float)seed->h : 1.0f };
@@ -620,7 +746,7 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
       for (int x = x0; x <= x1; x++) cnt[y * tx + x]++;
     if (x1 >= x0 && y1 >= y0) entries += (x1 - x0 + 1) * (y1 - y0 + 1);
   }
-  int head0 = 4 * n, list0 = head0 + nt, texels = list0 + (entries + 3) / 4;
+  int head0 = INST_FLOATS / 4 * n, list0 = head0 + nt, texels = list0 + (entries + 3) / 4;
   int rows = CW_MAX(1, (texels + 1023) / 1024);
   float *data = cw_frame_alloc(sizeof(float) * 4 * 1024 * (size_t)rows);
   memset(data + 4 * (size_t)head0, 0, sizeof(float) * 4 * ((size_t)rows * 1024 - (size_t)head0));
@@ -637,9 +763,9 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
       for (int x = span[i][0]; x <= span[i][2]; x++) data[4 * list0 + fill[y * tx + x]++] = (float)i;
   float ut[4] = { (float)tx, (float)LIGHT_TILE, (float)head0, (float)list0 };
   if (r2d_wg()) {
-    r2d_wg_lights_draw(LT.light.wtex, add ? LT.add.wtex : NULL, r2d_wg_fx_format(lf), amb, data, rows, up, uq, ut,
+    r2d_wg_lights_draw(cookie_array, LT.light.wtex, add ? LT.add.wtex : NULL, r2d_wg_fx_format(lf), amb, data, rows, up, uq, ut,
                        R.normals_used ? LT.normal.wtex : NULL, seed ? seed->wtex : NULL, seed ? LT.mask.wtex : NULL,
-                       R.material_used ? LT.mat.wtex : NULL, R.canvas_w, R.canvas_h);
+                       R.material_used ? LT.mat.wtex : NULL, lw, lh);
   } else {
     if (!LT.light_fbo) glGenFramebuffers(1, &LT.light_fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, LT.light_fbo);
@@ -647,7 +773,7 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, add ? LT.add.tex : 0, 0);
     GLenum bufs[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
     glDrawBuffers(add ? 2 : 1, bufs);
-    glViewport(0, 0, R.canvas_w, R.canvas_h);
+    glViewport(0, 0, lw, lh);
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_STENCIL_TEST);
@@ -682,6 +808,8 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
       glBindTexture(GL_TEXTURE_2D, seed ? LT.mask.tex : 0);
       glActiveTexture(GL_TEXTURE0 + 6);
       glBindTexture(GL_TEXTURE_2D, R.material_used ? LT.mat.tex : 0);
+      glActiveTexture(GL_TEXTURE0 + 8);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, cookie_array >= 0 ? R.arrays.data[cookie_array].tex : R.dummy_normal);
       glActiveTexture(GL_TEXTURE0);
       glBindVertexArray(LT.vao);
       glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -693,10 +821,10 @@ void r2d_lit_end(int lo, int hi, const fx_dst *dst) {
   }
   r2d_timer_end();
   r2d_timer_begin(R2D_T_GI);
-  if (gi) r2d_gi_run(&LT.mask, &LT.scene, R.material_used ? &LT.mat : NULL, &LT.light, k);
+  const fx_rt *girr = gi ? r2d_gi_run(&LT.mask, &LT.scene, R.material_used ? &LT.mat : NULL, &LT.light, k) : NULL;
   r2d_timer_end();
   r2d_timer_begin(R2D_T_COMPOSITE);
-  composite_to(dst, 1.0f / k, add);
+  composite_to(dst, 1.0f / k, add, girr, div, shadows || gi);
   r2d_timer_end();
 }
 

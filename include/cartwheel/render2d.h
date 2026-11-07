@@ -48,8 +48,11 @@
  *      field shadows (soft, spot, directional, volumetric), occluder_depth,
  *      global illumination, screen reads, distortion, water, wind, trails,
  *      layer fog, flash, mipmapped atlas pages (engine v0.37)
- *   #if defined(CW_R2D_FEATURES) && CW_R2D_FEATURES >= 2 */
-#define CW_R2D_FEATURES 2
+ *   3  sprite instances (cw_r2d_instances), lookup tables (cw_r2d_lut_*,
+ *      cw_r2d_post.lut), cw_r2d_pass_desc.scale_filter, distortion that bends
+ *      only the layers under it (engine v0.38)
+ *   #if defined(CW_R2D_FEATURES) && CW_R2D_FEATURES >= 3 */
+#define CW_R2D_FEATURES 3
 
 #ifdef __cplusplus
 extern "C" {
@@ -103,6 +106,7 @@ void cw_r2d_shutdown(void);
  * batch together. Standalone textures (repeat wrap, images bigger than a
  * page, render targets) get an array of their own. */
 CW_HANDLE_TYPE(cw_texture);
+CW_HANDLE_TYPE(cw_r2d_lut); /* a colour lookup table of the 2D post chain (cw_r2d_lut_*) */
 
 typedef enum { CW_FILTER_LINEAR, CW_FILTER_NEAREST } cw_filter;
 
@@ -223,6 +227,11 @@ typedef enum {
                      * instead of bars (a 320x180 canvas is 240x180 on 4:3, 432x180 on 21:9;
                      * cw_r2d_canvas_size says); Camera2D limits still hold */
 } cw_scale_mode;
+/* How a virtual canvas is filtered onto the window. NEAREST: hard pixels (shimmer when the scale is not whole:
+ * some canvas pixels draw a window pixel wider than others as the camera moves). SHARP: each canvas pixel a
+ * crisp block of its true width, only the window pixel on a block's edge blended with its neighbour (pixel art
+ * at any scale without shimmer or blur). LINEAR: smooth (a painted or photographic canvas). */
+typedef enum { CW_SCALE_FILTER_NEAREST, CW_SCALE_FILTER_SHARP, CW_SCALE_FILTER_LINEAR } cw_scale_filter;
 
 /* ── HDR and the post chain ─────────────────────────────────────────────
  * A pass with .post draws its canvas layers below post->hud_layer into a
@@ -277,7 +286,41 @@ typedef struct cw_r2d_post {
   float vignette;         /* 0..1 darkening at the corners; 0 = none */
   float vignette_softness;/* 0 = 0.5 */
   bool no_dither;         /* leave out the dither (a test comparing exact values) */
+  cw_r2d_lut lut;         /* a colour lookup table over the graded picture (below); null = none */
+  float lut_amount;       /* 0 = 1: how much of the table's colour replaces the picture's (0..1) */
 } cw_r2d_post;
+
+/* ── colour lookup tables ───────────────────────────────────────────────
+ * A lookup table maps every display colour to another: the whole grade of a
+ * film still in one image. The post chain applies cw_r2d_post.lut to the
+ * finished display colour (after the tone curve, the grade and the vignette,
+ * before the dither), blended in by lut_amount; colours between the table's
+ * entries are interpolated in all three channels.
+ *
+ * The table is a strip image: `size` square slices side by side (size*size
+ * pixels wide, size high). In each slice red grows left to right and green
+ * top to bottom; blue picks the slice, left (0) to right (1). Authoring: draw
+ * the identity strip (cw_r2d_lut_pixels with CW_R2D_LUT_IDENTITY) into a
+ * screenshot, grade the screenshot in any image editor, cut the strip back
+ * out and load it. 16 and 32 are the usual sizes (2..64).
+ *
+ * Presets are tables made in code (cw_r2d_lut_preset), each a look: warm
+ * sunset, cold night, teal and orange, black and white, sepia, bleach
+ * bypass (washed out, hard contrast), moonlight. */
+typedef enum {
+  CW_R2D_LUT_IDENTITY, CW_R2D_LUT_WARM, CW_R2D_LUT_COOL, CW_R2D_LUT_TEAL_ORANGE, CW_R2D_LUT_NOIR, CW_R2D_LUT_SEPIA,
+  CW_R2D_LUT_BLEACH, CW_R2D_LUT_MOONLIGHT, CW_R2D_LUT_PRESET_COUNT
+} cw_r2d_lut_kind;
+/* A table from a strip image's pixels (RGBA8, w = size*size, h = size); null on a bad shape. */
+cw_r2d_lut cw_r2d_lut_from_strip(int w, int h, const uint8_t *rgba);
+/* A table from a strip image asset (PNG or JPEG). */
+cw_r2d_lut cw_r2d_lut_load(const char *path);
+/* A preset's table (32 entries a channel); the same handle every call. */
+cw_r2d_lut cw_r2d_lut_preset(cw_r2d_lut_kind kind);
+/* A preset's strip image: size*size*size RGBA8 pixels into out (size*size wide, size high). */
+void cw_r2d_lut_pixels(cw_r2d_lut_kind kind, int size, uint8_t *out);
+/* Free a lookup table (presets too: the next cw_r2d_lut_preset makes it again). */
+void cw_r2d_lut_destroy(cw_r2d_lut lut);
 
 /* ── global illumination ────────────────────────────────────────────────
  * A pass with .gi lights its lit layers with the light that bounces round
@@ -325,6 +368,7 @@ typedef struct cw_r2d_pass_desc {
    * canvas) and scale it to the window by `scale`; 0 = no virtual canvas */
   int virtual_width, virtual_height;
   cw_scale_mode scale;
+  cw_scale_filter scale_filter; /* how the virtual canvas is filtered onto the window (above) */
   cw_color letterbox;   /* bars around a scaled canvas (alpha forced to 1) */
   float time;           /* seconds: animated tiles (pass a tick-derived time for replays) */
   cw_color ambient;     /* lit layers: light where no light reaches; all 0 = black */
@@ -449,6 +493,55 @@ typedef struct cw_r2d_particles_desc {
   cw_rect src;                /* texture pixels; w 0 = the whole texture */
 } cw_r2d_particles_desc;
 void cw_r2d_particles(const cw_r2d_particles_desc *d); /* one emitter into the current layer and z */
+
+/* ── sprite instances ───────────────────────────────────────────────────
+ * Huge counts of sprites of one texture in one instanced draw: a forest of
+ * grass, a field of stars, a swarm, bullets, debris, a crowd. Each instance
+ * is 24 bytes (where, turn, scale, colour, frame) instead of a sprite's four
+ * vertices and six indices (136 bytes) built on the CPU; the GPU builds the
+ * quads. The instances of one call draw in array order (later on top) and
+ * sort as one submission at the current layer and z (no y-sorting inside).
+ * They blend, take intensity, emission, flash and wind sway, and are lit in
+ * lit layers like sprites.
+ *
+ * Two ways to feed them:
+ *   per frame: .instances / .count, copied at the call (one upload per pass)
+ *   kept: a cw_r2d_instance_buffer filled once (or now and then: rewrite a
+ *         range), drawn every frame for nothing on the CPU; a static
+ *         background of 200k sprites costs one draw.
+ *
+ * Frames: up to CW_R2D_INSTANCE_FRAMES source rects of the texture; an
+ * instance picks one (an animation steps its frame index). A frame draws at
+ * its own pixel size times the instance's scale (desc.size overrides). */
+#define CW_R2D_INSTANCE_FRAMES 32
+typedef struct cw_sprite_instance {
+  float x, y;        /* where the pivot lands (layer space) */
+  float rotation;    /* radians clockwise about the pivot */
+  float scale;       /* 0 = 1 */
+  uint8_t rgba[4];   /* modulate (straight alpha); all 0 = white */
+  uint16_t frame;    /* index into the desc's frames */
+  uint16_t flags;    /* CW_INSTANCE_FLIP_X | CW_INSTANCE_FLIP_Y */
+} cw_sprite_instance;
+enum { CW_INSTANCE_FLIP_X = 1, CW_INSTANCE_FLIP_Y = 2 };
+CW_HANDLE_TYPE(cw_r2d_instance_buffer);
+/* A kept instance buffer of `capacity` instances (GPU memory, 24 bytes each). */
+cw_r2d_instance_buffer cw_r2d_instance_buffer_create(int capacity);
+/* Rewrite instances [first, first + count) (an upload of those bytes); grows the drawn count to cover them. */
+void cw_r2d_instance_buffer_write(cw_r2d_instance_buffer b, int first, const cw_sprite_instance *inst, int count);
+void cw_r2d_instance_buffer_set_count(cw_r2d_instance_buffer b, int count); /* how many draw (<= capacity) */
+/* Free a kept instance buffer (a null or stale handle is a no-op). */
+void cw_r2d_instance_buffer_destroy(cw_r2d_instance_buffer b);
+typedef struct cw_r2d_instances_desc {
+  cw_texture texture;                  /* null = solid squares of desc.size */
+  const cw_rect *frames; int nframes;  /* texture pixels; none = the whole texture */
+  cw_vec2 size;                        /* layer units at scale 1; 0 = the frame's pixel size */
+  cw_vec2 pivot;                       /* 0..1, (0,0) = top-left; zero = the centre */
+  const cw_sprite_instance *instances; /* per frame: copied now */
+  int count;
+  cw_r2d_instance_buffer buffer;       /* kept: drawn instead of .instances when not null */
+  float sway;                          /* wind sway share of the top edges (cw_r2d_set_sway), 0 = none */
+} cw_r2d_instances_desc;
+void cw_r2d_instances(const cw_r2d_instances_desc *d); /* one instanced draw into the current layer and z */
 
 /* ── 2D water ────────────────────────────────────────────────────────────
  * A surface that ripples where things splash in it (cw_water2d: springs per
@@ -911,7 +1004,12 @@ void cw_tilemap_world_to_cell(cw_tilemap m, cw_vec2 origin, cw_vec2 world, int *
  * as before. Field size and march steps follow the effects detail
  * (cartwheel/quality.h): Ultra the canvas size and 48 steps, High and
  * Medium half the canvas and 32 / 24 steps, Low and Very Low a quarter and
- * 16 / 12 steps (never under 320 pixels across).
+ * 16 / 12 steps (never under 320 pixels across). On Low the lights shade a
+ * light buffer half the canvas each way, on Very Low a third (each texel the
+ * canvas pixel at its centre), and the composite takes each pixel's four
+ * nearest texels weighed by how alike their surfaces are (normal, inside or
+ * outside an occluder), so shadow edges stay put; High and Ultra shade every
+ * pixel.
  *
  * The light buffer is RGBA8 storing light/2 (lights overbright up to 2x);
  * in a pass with .post it is RGBA16F holding the light itself, so lights
@@ -941,6 +1039,13 @@ typedef struct cw_light2d {
    * light passes between occluders, a glow round the lamp; added on top
    * of the lit layers, also over empty background */
   float volumetric;
+  /* a light texture: the light's colour times the texture laid over the light's radius square, turned by
+   * angle (+x of the texture along angle): window panes, a lantern's cage, stained glass, a torch's
+   * pattern. Point and spot lights; the textures of a lit run's lights must share one texture array (atlas
+   * images of one filter, loaded like any sprite); a light whose texture is in another draws without it,
+   * warned once. Null = none */
+  cw_texture texture;
+  cw_rect texture_src;  /* texture pixels; w 0 = the whole texture */
 } cw_light2d;
 /* current layer must be lit (else warned and ignored); asserts outside a pass; uses the current transform */
 void cw_r2d_light(const cw_light2d *l);
@@ -974,6 +1079,7 @@ typedef struct cw_r2d_stats {
   uint32_t gpu_calls;
   uint32_t gi_cascades;    /* radiance cascades the last lit run with .gi drew (0: none) */
   uint32_t particles;      /* GPU particles drawn (cw_r2d_particles) */
+  uint32_t instances;      /* sprite instances drawn (cw_r2d_instances) */
 } cw_r2d_stats;
 const cw_r2d_stats *cw_r2d_get_stats(void); /* renderer-owned, updated as passes run; never NULL */
 /* Register every stats field as a debug field "<prefix>.<name>" (u32). gpu_calls is left out: it

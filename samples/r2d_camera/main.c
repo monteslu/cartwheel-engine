@@ -4,9 +4,14 @@
  * camera that follows a moving target (smoothing + limits), zooms and
  * rotates; a minimap layer with its own viewport and camera; a screen-space
  * HUD. Camera math (follow, screen<->world, window<->canvas) is published as
- * debug state: it is deterministic and must match on every host. */
+ * debug state: it is deterministic and must match on every host.
+ * CW_R2D_CAMERA (native only): "sharp" scales the canvas to fit (not a whole
+ * factor) with the sharp filter, "fit" the same with the nearest filter (the
+ * shimmer the sharp filter removes). */
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "cartwheel/core.h"
 #include "cartwheel/debug.h"
@@ -81,8 +86,14 @@ static void render(void *user, double alpha) {
   app_t *a = user;
   cw_r2d_layer_set_camera(L_SKY, &(cw_camera2d){ .position = a->cam.position });
   cw_r2d_layer_set_camera(L_WORLD, &a->cam);
+  const char *mode = NULL;
+#ifndef __wasm__
+  mode = getenv("CW_R2D_CAMERA");
+#endif
+  bool fit = mode && (!strcmp(mode, "sharp") || !strcmp(mode, "fit"));
   cw_r2d_begin(&(cw_r2d_pass_desc){ .clear = true, .clear_color = cw_hex(0x6080b0ff), .virtual_width = 300,
-                                    .virtual_height = 170, .scale = CW_SCALE_INTEGER, .letterbox = cw_hex(0x080808ff) });
+                                    .virtual_height = 170, .scale = fit ? CW_SCALE_FIT : CW_SCALE_INTEGER, .letterbox = cw_hex(0x080808ff),
+                                    .scale_filter = mode && !strcmp(mode, "sharp") ? CW_SCALE_FILTER_SHARP : CW_SCALE_FILTER_NEAREST });
   cw_vec2 wc = cw_r2d_window_to_canvas((cw_vec2){ 320, 180 });
   a->win_to_canvas[0] = wc.x, a->win_to_canvas[1] = wc.y;
 

@@ -65,6 +65,7 @@ typedef struct cw__light2d {
   bool shadow;
   float softness, cone, cone_soft, volumetric;
   bool directional;
+  const char *texture; /* a light texture (cw_light2d.texture), asset path */
 } cw__light2d;
 
 extern const cw_node_type *cw__node2d_t, *cw__parallax_t, *cw__camera2d_t, *cw__settings2d_t, *cw__light2d_t;

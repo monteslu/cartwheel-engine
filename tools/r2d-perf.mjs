@@ -19,7 +19,7 @@ const argv = process.argv.slice(2);
 const opt = (k, d) => (argv.includes('--' + k) ? argv[argv.indexOf('--' + k) + 1] : d);
 const flag = (k) => argv.includes('--' + k);
 const ALL = ['sprites10k', 'sprites50k', 'sprites100k', 'sprites200k', 'lit1', 'lit16', 'lit64', 'lit500', 'shadow1', 'shadow16',
-  'shadow64', 'shadow500', 'tiles', 'particles50k', 'text', 'rocks20k', 'post', 'soft64', 'volumetric16', 'postnobloom', 'gi16', 'gpupart100k', 'gpupart1m'];
+  'shadow64', 'shadow500', 'tiles', 'particles50k', 'text', 'rocks20k', 'post', 'soft64', 'volumetric16', 'postnobloom', 'gi16', 'gpupart100k', 'gpupart1m', 'inst200k', 'instkept200k', 'sidescroll'];
 const CASES = opt('cases', ALL.join(',')).split(',');
 const GPUS = opt('gpus', 'gl,webgpu').split(',');
 const SIZES = opt('sizes', '1920x1080').split(',');
@@ -30,7 +30,7 @@ const OUT = join(ROOT, 'out', 'r2d-perf');
 mkdirSync(OUT, { recursive: true });
 const JSON_OUT = resolve(opt('json', join(OUT, 'report.json')));
 // WebGPU calls a case may make (the 2D renderer's share of a frame)
-const BUDGETS = { default: 300, gi16: 800 }; /* measured: lit cases 65, shadowed 226-232, post 219, gi16 639 */
+const BUDGETS = { default: 300, gi16: 800, sidescroll: 950 }; /* measured: lit cases 65, shadowed 226-232, post 219, gi16 542, instances 21-22, sidescroll 765 (GI, shadows, post and depth culling's pre-pass) */
 
 const rows = [];
 for (const size of SIZES)

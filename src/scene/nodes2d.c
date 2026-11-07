@@ -607,6 +607,7 @@ static void light_draw(cw_node n, void *d, const cw_canvas_item *it) {
   L.cone_soft = l->cone_soft;
   L.volumetric = l->volumetric;
   L.directional = l->directional;
+  if (l->texture && *l->texture) L.texture = cw__tex_get(l->texture, 0);
   cw_r2d_light(&L);
 }
 static const cw_prop light_props[] = {
@@ -622,6 +623,8 @@ static const cw_prop light_props[] = {
   CW_PROP_FIELD_RANGE(cw__light2d, cone_soft, CW_T_FLOAT, 0, 1, "Spot: share of the cone's edge that fades (0 = 0.2)."),
   CW_PROP_FIELD(cw__light2d, directional, CW_T_BOOL, CW_PROP_DEFAULT, "A sun or moon: parallel light over the whole canvas along the node's rotation."),
   CW_PROP_FIELD_RANGE(cw__light2d, volumetric, CW_T_FLOAT, 0, 10, "Light the air scatters toward the eye (shafts)."),
+  CW_PROP_FIELD(cw__light2d, texture, CW_T_STRING, CW_PROP_DEFAULT,
+                "A light texture (image asset path): the light's colour times the image over its range square, turned with the node (window panes, stained glass)."),
   CW_PROP_END,
 };
 static cw_node_type light_type = { .name = "Light2D", .parent = "Node2D", .data_size = sizeof(cw__light2d), .props = light_props,
