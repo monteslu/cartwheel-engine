@@ -4,6 +4,21 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.38.1 (2026-11-07)
+
+### Fixed
+- **A cart's manifest carries its game's real version.** Every cart was packed with `"version": "0.1.0"` whatever its release. `cw_add_app` now works the version out on every build, from the game's git checkout: at a clean `v1.4.2` tag it is `1.4.2`, so a tag build is the release by construction; anywhere else it is the last tag plus `-dev.g<commit>` (`1.4.2-dev.g1a2b3c4`, `0.0.0-dev.g<commit>` before the first tag), so a dev cart is never taken for a release; outside git it is `project.cwproj`'s `version`, else `0.1.0`. When the version moves (a new tag, a commit) the next build packs the cart again with it, without relinking (`tools/cart-version.mjs`). The engine's own sample and test carts follow the same rule. See docs/shipping.md, "The version".
+
+### Added
+- `cw_add_app(... VERSION <semver>)` for one app, and `-DCW_APP_VERSION=<semver>` for every app of a build, to set the version by hand. Both must be semver; anything else stops the configure.
+- `tests/app-version.mjs`: the semver rule (cmake and JavaScript agree), the git rule in a scratch repository, the repack when the version moves, and a built cart's manifest, with controls that must fail.
+
+### Changed
+- `cwexport` takes the same version as the cart build (`--version`, else the preset's `version`, else the git checkout's, else the project's `version`, else `0.1.0`), so an export's package names and its `.wasc` always agree; an explicit version reaches the cart as `CW_APP_VERSION` for that build only. The version must be semver (`1` and `1.2` in `project.cwproj` still mean `1.0.0` and `1.2.0`).
+
+### Moving a game to v0.38.1
+- Nothing to change. A `version` key in `project.cwproj` no longer sets a game's version inside a git checkout (the tags do); remove it, or keep it for builds outside git. A CI that builds carts from a shallow clone of a branch has no tags, so those carts say `0.0.0-dev.g<commit>`; a tag push checks its tag out and gets the release version.
+
 ## v0.38.0 (2026-11-07)
 
 ### Added

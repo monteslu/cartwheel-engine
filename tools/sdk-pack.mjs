@@ -168,6 +168,9 @@ if (CART) {
   engineTree('cmake/cart');
   engineFile('tools/check-imports.mjs');
   engineFile('tools/stage-assets.mjs');
+  // the manifest version every build (cw_add_app): the tool and its rule
+  engineFile('tools/cart-version.mjs');
+  engineFile('tools/lib/app-version.mjs');
   // wasmcart-pack (with the art checks it imports, src/cartArt.js) and, for dual carts, the WebGPU tier's
   // import list (check-imports --wgpu)
   for (const wc of WGPU ? ['wasmcart-wgpu'] : ['wasmcart']) {

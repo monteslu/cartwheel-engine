@@ -23,12 +23,19 @@ same function is a library: `exportPresets()` in `tools/cwexport/index.mjs`.
 ```
 name = "My Game"
 app = "mygame"                       ; the cw_add_app target
-version = "1.0.0"                    ; default 0.1.0
+version = "1.0.0"                    ; only outside a git checkout (see below)
 export.linux.platform = "linux-x64"
 export.web.platform = "web"
 export.android.platform = "android-arm64"
 export.android.app_id = "com.example.mygame"
 ```
+
+The version an export carries (its packages' names, its `.wasc`'s manifest) is
+`--version`, else the preset's `version`, else the project's git checkout's (a
+`v<semver>` tag at a clean HEAD: the tag; otherwise `<last tag>-dev.g<commit>`),
+else the project's `version`, else `0.1.0`: the rule `cw_add_app` gives every
+cart (docs/shipping.md, "The version"). It must be semver; `1` and `1.2`
+mean `1.0.0` and `1.2.0`.
 
 Per preset: `platform` (required), `output` (default `exports/<preset>`,
 relative to the project), and any of `version`, `title`, `app_id` (Android
