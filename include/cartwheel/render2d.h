@@ -976,7 +976,8 @@ typedef struct cw_r2d_stats {
   uint32_t particles;      /* GPU particles drawn (cw_r2d_particles) */
 } cw_r2d_stats;
 const cw_r2d_stats *cw_r2d_get_stats(void); /* renderer-owned, updated as passes run; never NULL */
-/* Register every stats field as a debug field "<prefix>.<name>" (u32). */
+/* Register every stats field as a debug field "<prefix>.<name>" (u32). gpu_calls is left out: it
+ * is 0 on GL by nature, and a gate compares GL and WebGPU states. */
 void cw_r2d_debug_register(const char *prefix);
 
 #ifdef __cplusplus
