@@ -30,10 +30,12 @@ export function semverProblem(v) {
 /**
  * A git checkout's version: at a v<semver> tag with no changes to tracked
  * files, the tag without its v (a tag build is the release by construction);
- * otherwise the last v* tag reachable from HEAD plus -dev.g<commit>
- * (0.0.0-dev.g<commit> before the first tag), so a dev build is never taken
+ * otherwise the nearest v<semver> tag reachable from HEAD plus -dev.g<commit>
+ * (0.0.0-dev.g<commit> before the first), so a dev build is never taken
  * for a release. The g keeps the identifier valid semver when the abbreviated
- * commit is all digits with a leading zero. Null outside a git checkout.
+ * commit is all digits with a leading zero. A nearer v tag that is not semver
+ * (v1.4, v1.5.02) is passed over, not taken for no tag at all. Null outside a
+ * git checkout.
  * @param {string} dir
  * @returns {string|null}
  */
@@ -48,7 +50,15 @@ export function gitVersion(dir) {
   const exact = (git('tag', '--points-at', 'HEAD', '--list', 'v[0-9]*') || '').split('\n').map(semverTag).filter(Boolean);
   const dirty = git('status', '--porcelain', '--untracked-files=no');
   if (exact.length && dirty === '') return exact.sort(compareSemver).at(-1);
-  const last = semverTag(git('describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*'));
+  // the nearest v* tag, then the nearest without it, until one is semver (or none is left)
+  const skip = [];
+  let last = null;
+  for (let i = 0; i < 64 && !last; i++) {
+    const t = git('describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*', ...skip.flatMap((x) => ['--exclude', x.replace(/[*?[\]\\]/g, (c) => '\\' + c)]));
+    if (!t) break;
+    last = semverTag(t);
+    if (!last) skip.push(t);
+  }
   return `${last || '0.0.0'}-dev.g${sha}`;
 }
 

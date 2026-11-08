@@ -4,6 +4,11 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.38.4 (2026-11-08)
+
+### Fixed
+- **A dev build counts from the nearest semver tag.** `tools/lib/app-version.mjs` took the nearest `v*` tag reachable from HEAD; when that tag was not semver (`v1.4`, `v1.5.02`) it gave up and a dev cart said `0.0.0-dev.g<commit>`. It now passes over such tags (`git describe --exclude` each one) and counts from the nearest `v<semver>` tag, as wasmcart v0.39.1 does. `tests/app-version.mjs` puts two such tags nearer than `v1.2.3` (the old code fails it).
+
 ## v0.38.3 (2026-11-07)
 
 ### Fixed
