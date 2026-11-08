@@ -7,15 +7,16 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 ## v0.38.5 (2026-11-08)
 
 ### Fixed
-- **The terrain's second layer is not read where it cannot show.** Where two layers blend, the height blend gives the second layer exactly nothing wherever the first layer's weighted height stands out over the second's share by more than the blend's sharpness, since a layer's height is at most 1. The second layer's albedo (three to six texture reads, more on a steep face) was still read there to learn its height. That bound is now tested first, and the second layer is read only where it could get a share. WebGPU frames are the same to the bit (terrain_demo, open_world, Ember Throne at three places, jetski, skyfighter, tuxracer). GL frames move at a few scattered pixels: none in open_world, tuxracer and Ember Throne's wood, 5 to 16 pixels by one to four levels in Ember Throne's meadow and spire and in skyfighter, 134 pixels (up to 30 levels, along hill silhouettes) in terrain_demo and 566 (up to 11) in jetski, of a 1080p frame. They are pixels whose neighbours now skip the second layer: the second layer's side projection reads the normal map with derivatives the hardware takes across the pixel's neighbours, which GLSL leaves undefined inside a branch that differs pixel to pixel. A build with the same branch that never skips matches the old GL frames to the bit, and WebGPU (where the math is the same) does everywhere, so nothing else moved. The terrain guide's Performance section has the attribution of the terrain's cost.
+- **The terrain's second layer is not read where it cannot show.** Where two layers blend, the height blend gives the second layer exactly nothing wherever the first layer's weighted height stands out over the second's share by more than the blend's sharpness, since a layer's height is at most 1. The second layer's albedo (three to six texture reads, more on a steep face) was still read there to learn its height. That bound is now tested first, and the second layer is read only where it could get a share. WebGPU frames are the same to the bit as before (terrain_demo, open_world, Ember Throne at three places, jetski, skyfighter, tuxracer). The skip itself is exact on GL too: against a build with the same shader that never skips, every GL and WebGPU frame checked matches to the bit.
+- **The terrain's side projections read the normal map with gradients taken before any branch.** The triplanar weights read the terrain's normal map inside branches that differ pixel to pixel, with the derivatives the hardware takes across a pixel's neighbours; GLSL leaves those undefined there (WGSL's uniformity rule forbids them, and r187 programs turn its check off), so a driver may return anything at the edges of such a branch. They now read it with explicit gradients (`textureGrad`, `textureSampleGrad`) of the same coordinates, taken before the branches. WebGPU frames are unchanged; GL frames move where the old reads were undefined: none in open_world, tuxracer and Ember Throne's wood, 24 to 164 pixels by one or two levels in Ember Throne's spire and skyfighter, 51 pixels (up to 21 levels) in Ember Throne's meadow, 213 (up to 25, along hill silhouettes) in terrain_demo and 1664 (up to 7) in jetski, of a 1080p frame. The terrain guide's Performance section has the attribution of the terrain's cost.
 
 ### Measured (Radeon 890M, native, 1080p High, Ember Throne's bench; scene pass GPU time, median of 7 interleaved runs)
 
 | Place | GL before | GL after | WebGPU before | WebGPU after |
 |---|---|---|---|---|
-| meadow | 2.87 ms | 2.78 ms | 3.01 ms | 2.85 ms |
-| wood | 2.90 ms | 2.78 ms | 3.01 ms | 2.90 ms |
-| spire | 2.74 ms | 2.71 ms | 2.75 ms | 2.65 ms |
+| meadow | 3.27 ms | 3.16 ms | 3.51 ms | 3.30 ms |
+| wood | 3.22 ms | 3.13 ms | 3.65 ms | 3.44 ms |
+| spire | 3.07 ms | 3.00 ms | 3.29 ms | 3.20 ms |
 
 ### Moving a game to v0.38.5
 - Regenerate the program tables of any app that draws a Terrain3D (`ninja programs`, or `tools/programs.mjs --table`): the terrain states' shaders changed.
