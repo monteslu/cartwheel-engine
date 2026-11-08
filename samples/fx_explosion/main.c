@@ -5,7 +5,8 @@
  * Debris (one BOX mesh per piece), DebrisTrail (a sub-emitter: smoke born at
  * the debris in flight), Haze (heat distortion) and two shockwave rings. The
  * node also borrows a pooled light for the flash, stamps a scorch mark that
- * cools, and records a camera shake the camera node below reads.
+ * cools, and records a shake value (for the pads' rumble; the camera never applies it
+ * unless FXE_SHAKE asks).
  *
  * Environment (the tests' controls and variants):
  *   FXE_NEVER=1     the explosion never fires (the baseline)
@@ -13,7 +14,8 @@
  *                   inside 4 seconds (the "nothing leaks" test compares with
  *                   FXE_NEVER afterwards)
  *   FXE_NOFLASH=1   no flash light        FXE_NODISTORT=1  no haze or rings
- *   FXE_SHAKE=1     the camera applies the shake
+ *   FXE_SHAKE=1     the camera applies the shake (a test variant only: no game moves a camera, the
+ *                   shake value is for the pads' rumble)
  *   FXE_TRACE=1     print the flash energy every frame to stderr ("fxe.flash <tick> <energy>"):
  *                   tests/explosion.mjs holds the flash to a swell and a fall, no flicker
 

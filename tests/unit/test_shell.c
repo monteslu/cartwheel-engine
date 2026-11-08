@@ -70,38 +70,31 @@ static void test_one_player(void) {
   CHECK(same_rect(cw_shell_player_rect(0), cw_rect_make(0, 0, sz.x, sz.y)));
 }
 
-/* Screen shake setting: Full gives 1, Reduced a fraction, Off 0, and reduced motion caps Full at Reduced. Each
- * level is checked against the others (a shell that ignored the setting returns one value for all three and fails),
- * and the level survives a save commit and a fresh init (the setting is saved). CW_TEST_SHAKE_IGNORED (the gate's
- * second control) checks Off as if the setting were not applied: that check must fail. */
+/* No screen shake: cw_shell_screen_shake is 0 at every stored level, with reduced motion on or off, so a game that
+ * multiplies its shake by it shakes nothing; the stored level still survives a save commit and a fresh init (an older
+ * save keeps its layout and a migration can read it). CW_TEST_SHAKE_IGNORED (the gate's second control) checks Full as
+ * the old shell answered it (1): that check must fail. */
 static void test_screen_shake(void) {
   cw_shell_init(&(cw_shell_desc){ .title = "t", .max_players = 4 });
-  CHECK_EQ_INT((int)cw_shell_shake_level(), (int)CW_SHELL_SHAKE_FULL); /* a fresh save: Full */
-  float full = cw_shell_screen_shake();
-  cw_shell_set_shake_level(CW_SHELL_SHAKE_REDUCED);
-  float reduced = cw_shell_screen_shake();
-  cw_shell_set_shake_level(CW_SHELL_SHAKE_OFF);
-  float off = cw_shell_screen_shake();
-  CHECK(full == 1.0f);
-  CHECK(reduced > 0.0f && reduced < full);
-  CHECK(getenv("CW_TEST_SHAKE_IGNORED") ? off == full : off == 0.0f);
-  /* saved: a new init over the same save region keeps Off */
-  cw_shell_init(&(cw_shell_desc){ .title = "t", .max_players = 4 });
-  CHECK_EQ_INT((int)cw_shell_shake_level(), (int)CW_SHELL_SHAKE_OFF);
-  CHECK(cw_shell_screen_shake() == 0.0f);
-  /* reduced motion caps Full at Reduced, and leaves Off alone */
-  cw_shell_set_shake_level(CW_SHELL_SHAKE_FULL);
-  cw_ui_set_reduced_motion(true);
-  float capped = cw_shell_screen_shake();
-  cw_shell_set_shake_level(CW_SHELL_SHAKE_OFF);
-  float capped_off = cw_shell_screen_shake();
+  float k[6];
+  int n = 0;
+  for (int rm = 0; rm < 2; rm++) {
+    cw_ui_set_reduced_motion(rm != 0);
+    for (int l = CW_SHELL_SHAKE_FULL; l <= CW_SHELL_SHAKE_OFF; l++) {
+      cw_shell_set_shake_level((cw_shell_shake)l);
+      k[n++] = cw_shell_screen_shake();
+    }
+  }
   cw_ui_set_reduced_motion(false);
-  CHECK(capped == reduced);
-  CHECK(capped_off == 0.0f);
+  for (int i = 0; i < n; i++) CHECK(k[i] == 0.0f);
+  if (getenv("CW_TEST_SHAKE_IGNORED")) CHECK(k[0] == 1.0f);
+  /* the stored level is kept: a new init over the same save region reads Reduced back */
+  cw_shell_set_shake_level(CW_SHELL_SHAKE_REDUCED);
+  cw_shell_init(&(cw_shell_desc){ .title = "t", .max_players = 4 });
+  CHECK_EQ_INT((int)cw_shell_shake_level(), (int)CW_SHELL_SHAKE_REDUCED);
+  CHECK(cw_shell_screen_shake() == 0.0f);
   cw_shell_set_shake_level(CW_SHELL_SHAKE_FULL);
-  CHECK(cw_shell_screen_shake() == 1.0f);
-  uint32_t v = (uint32_t)(full * 100) * 10000u + (uint32_t)(reduced * 100) * 100u + (uint32_t)(off * 100);
-  FOLD(v);
+  FOLD((uint32_t)(k[0] * 100) + (uint32_t)(k[5] * 100));
 }
 
 /* Text size and Text background (cartwheel/render2d.h): the steps go round 100, 125, 150, 200%, the shell's save

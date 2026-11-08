@@ -87,9 +87,9 @@ bool cw_shockwave_active(cw_node n);
  *                                  that cools from orange to nothing over
  *                                  scorch_time (12 marks pooled, the oldest
  *                                  recycled)
- *     shake_amount, shake_radius,  camera shake: cw_explosion_shake gives the
- *     shake_time                   shake at a place; cw_shake_offset turns it
- *                                  into a camera offset
+ *     shake_amount, shake_radius,  how hard the ground shakes at a place
+ *     shake_time                   (cw_explosion_shake): drive a pad's rumble
+ *                                  with it. Never move a camera with it
  * Sub-emitters: a GPUParticles3D with emission_shape PARENT spawns at the
  * living particles of another GPUParticles3D (particles.h).
  * Flipbooks: GPUParticles3D motion_texture blends flipbook frames along
@@ -106,10 +106,10 @@ bool cw_explosion_playing(cw_node n);
  * each adds shake_amount x (1 - distance / shake_radius)^2 x (1 - age /
  * shake_time)^2; 0 when none is near, at most 4. */
 float cw_explosion_shake(cw_tree *t, t3_vec3 at);
-/* A deterministic camera offset for a shake value: three numbers hashed from
- * the tick, each in [-max_offset, max_offset] x min(shake, 1). Add it to the
- * camera's position (and scale it to its rotation if you like); the same
- * tick gives the same offset on every host. */
+/* Deprecated: screen shake is gone, no camera shakes (use the shake value for a
+ * pad's rumble). Three numbers hashed from the tick, each in [-max_offset,
+ * max_offset] x min(shake, 1): kept for older games, and for a camera check's
+ * control that has to show it would see a shake. */
 static inline t3_vec3 cw_shake_offset(float shake, uint32_t tick, float max_offset) {
   float k = (shake < 1 ? shake : 1) * max_offset;
   return (t3_vec3){ ((float)(cw_particle_hash(tick * 3u + 1u) >> 8) / 8388608.0f - 1.0f) * k,
