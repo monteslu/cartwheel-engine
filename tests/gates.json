@@ -1,4 +1,5 @@
 [
+  { "name": "flash-check", "script": "tests/flash-check.mjs", "note": "tools/lib/flash.mjs against synthetic runs with known answers (a moving picture, swells, sparkles pass; a full-screen strobe, a red strobe, lights switching together, a regular flicker, a hard onset with maxRise and a frozen run fail on their measure), then fx_explosion through CW_FRAME_DUMP: passes, every frame dumped, its 8 Hz strobe control fails" },
   { "name": "gate-cpu", "script": "tests/gate-cpu.mjs", "note": "gate.mjs --cpu runs without the GPU suite lock (control: the plain gate queues on the same held lock)" },
   { "name": "sdk-rebuild", "script": "tests/sdk-rebuild.mjs", "note": "a game built against a prebuilt SDK recompiles when another SDK is unpacked in its place with older file times; control: the v0.18.0 package misses the swap" },
   { "name": "unit-weakgpu-auto", "script": "tests/unit-weakgpu-auto.mjs", "note": "Auto outside a deterministic run: a game's Auto default saves the level it stepped to, and a saved level is retried one up, kept on budget and unchanged over it (control: an injected failure must fail the run)" },
