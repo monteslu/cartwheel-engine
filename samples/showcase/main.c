@@ -6,7 +6,7 @@
  *                coloured grass / rock / road from the height and slope
  *   forest       ~1400 instanced trees (trunk + two crowns), casting shadows
  *   village      16 houses (hip roofs, chimneys), 96 windows that light up at
- *                dusk, a campfire with a shadowed flickering light
+ *                dusk, a campfire with a shadowed, slowly wavering light
  *   lights       128 lamp posts that come on one by one as the sun sets, 64
  *                fireflies over the meadows at night, the campfire. three.c
  *                lights with at most 8 point lights: the campfire and the 7

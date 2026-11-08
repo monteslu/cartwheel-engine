@@ -14,6 +14,7 @@
 #include "bake_internal.h"
 #if CW_WGPU
 #include "fx/fx_wgpu.h"
+#include "render/pipeline_wgpu.h"
 #endif
 
 /* ── the atmosphere (C and GLSL agree) ──────────────────────────────── */
@@ -847,12 +848,14 @@ static void pass_sky_sun_wgpu(cw_pass_ctx *ctx, sky_rt *s) {
   cw__wg_write(ubo, 0, u, sizeof u);
   cw__wg_entry e = { .buffer = ubo };
   WGPUBindGroup bg = cw__wg_group(bgl, &e, 1);
+  cw__pw_timing_span((void *)cw__pw_encoder(), false); /* its own render pass: timed as a span of its pass */
   WGPURenderPassEncoder p = cw__wg_scene_pass(tg, true, "sky_sun");
   wgpuRenderPassEncoderSetPipeline(p, pipe);
   wgpuRenderPassEncoderSetBindGroup(p, 0, bg, 0, NULL);
   wgpuRenderPassEncoderDraw(p, 3, 1, 0, 0);
   wgpuRenderPassEncoderEnd(p);
   wgpuRenderPassEncoderRelease(p);
+  cw__pw_timing_span((void *)cw__pw_encoder(), true);
   wgpuBindGroupRelease(bg);
 }
 

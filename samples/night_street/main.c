@@ -1,7 +1,9 @@
 /* night_street: hundreds of lights through clustered shading
  * (cartwheel/lighting.h). A city street at night, 240 m long: 58 street
  * lamps, 96 neon signs, 48 shop-window spot lights, 12 muzzle flashes down
- * the road (flashing on and off by tick) and four floodlights casting
+ * the road (each swells over 5 ticks and fades over 15, once every 40 ticks:
+ * 1.5 times a second, never on and off from one frame to the next, which is
+ * a strobe) and four floodlights casting
  * shadows over it: 218 clustered lights, the floodlights' shadows tiles of
  * the shadow atlas. A dim moon.
  * The camera drives down the street at 15 m/s.
@@ -332,8 +334,9 @@ static void fixed_update(void *u, double dt) {
     }
   }
   for (int i = 0; i < FLASHES && cw_node_valid(flashes[i]); i++) {
-    bool on = (tick + i * 5) % 17 < 3;
-    cw_node_set(flashes[i], "energy", cw_val_float(on ? 60.0f : 0.0f));
+    int ph = (int)((tick + (uint32_t)i * 7u) % 40u);
+    float k = ph < 5 ? cw_smoothstep(0, 5, (float)ph) : ph < 20 ? (1 - (float)(ph - 5) / 15) * (1 - (float)(ph - 5) / 15) : 0;
+    cw_node_set(flashes[i], "energy", cw_val_float(60.0f * k));
   }
   if (getenv("NS_SIMPLE") || getenv("NS_TOPCAM")) {
     cw_node cam = cw_node_get(cw_tree_root(t), "Street/Camera");

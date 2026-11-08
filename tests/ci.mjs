@@ -74,6 +74,9 @@ export const LOCAL_ONLY = {
   spikes: 'WebGPU timestamp queries on the test GPU',
   'fx-explosion-kit': 'the pinned GPU sandbox (renders on GL and WebGPU and diffs them)',
   'fx-distort-regions': 'the pinned GPU sandbox (renders on GL and WebGPU and diffs them)',
+  'pass-timing': 'WebGPU timestamp queries on the test GPU',
+  'r2d-normal-turn': 'the pinned GPU sandbox (renders on GL and WebGPU and compares them)',
+  'r2d-big-stream': 'the pinned GPU sandbox (renders on GL and WebGPU and diffs them)',
 };
 
 /** measured seconds per gate in CI on llvmpipe / lavapipe (tools/ci-times.mjs), for balancing the shares */

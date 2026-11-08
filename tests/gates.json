@@ -3435,8 +3435,11 @@
   {
     "name": "fx-explosion-kit",
     "script": "tests/explosion.mjs",
-    "note": "Explosion3D on GL and WebGPU: pooled flash light (pool size per preset), scorch mark, shake, particles; after its life the frame equals the never-fired frame (control: early it differs); GL and WebGPU agree"
+    "note": "Explosion3D on GL and WebGPU: pooled flash light (pool size per preset), scorch mark, shake, particles; after its life the frame equals the never-fired frame (control: early it differs); GL and WebGPU agree; the flash light swells over at least 3 frames from under a quarter of its peak and then only falls, no flicker (control: the old curve, full on the first frame times 0.9 + 0.1 sin(70 t), fails the same judge)"
   },
+  { "name": "r2d-normal-turn", "script": "tests/r2d-normal-turn.mjs", "note": "turned and flipped normal-mapped sprites and instances (30, 90, 137, 200 degrees, flip x, flip y, both, flip then turn) are lit by their turned normals: each matches an unturned sprite whose normal map holds the turned normal (3 levels), GL and WebGPU agree; control: the unturned normals (what the old renderer lit them as) are at least 12 levels off in every row" },
+  { "name": "pass-timing", "script": "tests/pass-timing.mjs", "note": "WebGPU pass timestamps time every pass GL's timer queries do: fx_pipeline with 600 draws in its scene pass, and post_stack's full segment (velocity, taa, tonemap); control: CW_TEST_TIMING_SPLIT=1 (a render pass and timestamp pair per draw) runs the frame out of timestamps and leaves passes untimed" },
+  { "name": "r2d-big-stream", "script": "tests/r2d-big-stream.mjs", "note": "a 22 MB 2D stream (r2d_stress sprites200k) uploads in pieces and draws on WebGPU as on GL; a stream over the device's largest buffer (CW_TEST_R2D_STREAM_MAX) is not drawn, logs one clear error and keeps the device; control: that undrawn frame fails the GL bound the drawn one meets" },
   {"name":"fx-camera-fade","app":"fx_explosion","frames":70,"startCmds":["set World/Boom/Smoke camera_fade 20","set World/Boom/Fire camera_fade 20"],"fields":["fxe.tick"],"controlFrames":70,"note":"camera_fade on the blast's smoke and fire (20 m, the camera stands about 11 m off): both thin out toward the lens on every host and both backends, GL and WebGPU alike; control: the same frame without it must differ","webgpu":{"hosts":["native","romdev","chromium","wcnative"],"vsGl":0.01}},
   {
     "name": "fx-distort-regions",

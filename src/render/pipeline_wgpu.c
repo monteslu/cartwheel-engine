@@ -261,8 +261,11 @@ static void init(void) {
  * when the target changes or anything else records on the frame's encoder
  * (cw__pw_encoder: three.c, particles' compute, copies, the submit). Each
  * render pass costs the host several microseconds; the commands and their
- * order are the same, so the picture is too. Not while pass timers run (each
- * engine pass keeps its own timestamps). */
+ * order are the same, so the picture is too. While pass timers run, the open
+ * pass also closes when the timed engine pass changes (cw__pw_timing_pass), so
+ * each engine pass keeps its own timestamps: one pair per run of draws into a
+ * target, where a pass of many draws once took a pair per draw and ran the
+ * frame out of timestamps before the post passes (TAA, velocity, tonemap). */
 static struct {
   WGPURenderPassEncoder p;
   unsigned target;
@@ -457,7 +460,7 @@ static bool target_att(unsigned id, att *a) {
 
 /* ── GPU timing (native: timestamp queries) ─────────────────────────── */
 
-#define TS_MAX 256
+#define TS_MAX 1024
 typedef struct ts_slot { cw_pipeline *p; const char *name, *lane; } ts_slot; /* lane: the profiler's name (split screen: "ssao@v1") */
 static struct {
   bool avail, on, checked; /* avail: the device has timestamps; on: requested too (cw__gpu_timing_wanted) */
@@ -509,6 +512,7 @@ void cw__pw_timing_pass(cw_pipeline *p, const char *name, const char *lane) {
   init();
   timing_check();
   if (!T.on) return;
+  close_open(); /* the open render pass's timestamps belong to the pass that opened it */
   if (!name) {
     T.cur = -1;
     return;
@@ -530,7 +534,15 @@ void cw__pw_forget(cw_pipeline *p) {
 }
 
 static bool timing_writes(WGPUPassTimestampWrites *tw) {
-  if (!T.on || T.whole >= 0 || RB[rb_wr].mapping || !T.frame_ok || T.cur < 0 || T.used + 2 > TS_MAX) return false;
+  if (!T.on || T.whole >= 0 || RB[rb_wr].mapping || !T.frame_ok || T.cur < 0) return false;
+  if (T.used + 2 > TS_MAX) {
+    static bool said;
+    if (!said) {
+      said = true;
+      cw_warn("GPU pass timing (WebGPU): a frame wrote more than %d timestamps; later passes of such a frame are not timed", TS_MAX);
+    }
+    return false;
+  }
   T.slot_of[T.used / 2] = T.cur;
   *tw = (WGPUPassTimestampWrites){ .querySet = T.qs, .beginningOfPassWriteIndex = (uint32_t)T.used,
                                    .endOfPassWriteIndex = (uint32_t)T.used + 1 };
@@ -733,15 +745,17 @@ static void clear_target(unsigned target, bool depth) {
 }
 
 /* a render pass for the next draw into the current target: the open one, or a new one */
-static bool keep_open(void) { return !T.on; }
 static WGPURenderPassEncoder pass_for(const att *a, const WGPUColor *clear, bool clear_depth, bool timed) {
   if (!clear && !clear_depth && OP.p && OP.target == W.target) return OP.p;
   close_open();
   WGPURenderPassEncoder p = begin(a, clear, clear_depth, timed);
-  if (keep_open()) {
-    OP.p = p;
-    OP.target = W.target;
-  }
+  /* CW_TEST_TIMING_SPLIT=1 (tests/pass-timing.mjs's control, native): while timing, every draw its own render pass
+   * and timestamp pair again, as the timers once did */
+  static int split = -1;
+  if (split < 0) split = getenv("CW_TEST_TIMING_SPLIT") && atoi(getenv("CW_TEST_TIMING_SPLIT")) > 0;
+  if (T.on && split) return p;
+  OP.p = p;
+  OP.target = W.target;
   return p;
 }
 static void pass_done(WGPURenderPassEncoder p) {
@@ -1242,7 +1256,7 @@ void cw__pw_clear(float r, float g, float b, float a, bool depth) {
   att t;
   if (!target_att(W.target, &t)) return;
   WGPUColor c = { r, g, b, a };
-  pass_done(pass_for(&t, &c, depth && t.depth, false)); /* the next draws into this target go on in the same pass */
+  pass_done(pass_for(&t, &c, depth && t.depth, true)); /* the next draws into this target go on in the same pass (timed with them) */
 }
 
 /* ── textures for LUTs and tables ───────────────────────────────────── */

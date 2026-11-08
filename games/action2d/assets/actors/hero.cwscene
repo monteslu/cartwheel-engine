@@ -59,20 +59,10 @@ shadow = true
 [node name="Shake" parent="." type="AnimationPlayer"]
 
 [animation name="hurt" player="Fx" length=0.9]
-[track type=value path="Sprite:visible" interp=NEAREST]
-0 = false
-0.1 = true
-0.2 = false
-0.3 = true
-0.4 = false
-0.5 = true
-0.6 = false
-0.7 = true
-0.8 = false
-0.9 = true
 [track type=value path="Sprite:self_modulate"]
-0 = color(1, 0.35, 0.35, 1)
-0.45 = color(1, 1, 1, 1)
+0 = color(1, 0.35, 0.35, 0.55)
+0.45 = color(1, 1, 1, 0.55)
+0.9 = color(1, 1, 1, 1)
 [animation name="shake" player="Shake" length=0.25]
 [track type=value path="Camera:offset" interp=NEAREST]
 0 = vec2(3, -2)

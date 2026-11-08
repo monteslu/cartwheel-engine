@@ -4,10 +4,12 @@
  * like any scene (GPUParticles3D fire, smoke, sparks and debris with
  * emitting off and one_shot on, a Shockwave3D with autostart off); firing it
  *   - restarts every GPUParticles3D and Shockwave3D under it,
- *   - borrows a light from a small shared pool for a flash that dies away
- *     quickly (the pool is bounded: the effects preset sets its size, a
- *     busy scene takes the oldest flash back, so a chain of blasts or a
- *     four-way split screen never grows the light count),
+ *   - borrows a light from a small shared pool for a flash that swells over
+ *     flash_rise and dies away: one smooth rise and fall, never a jump to
+ *     full brightness or a flicker (either is a strobe). The pool is
+ *     bounded: the effects preset sets its size, a busy scene takes the
+ *     oldest flash back, so a chain of blasts or a four-way split screen
+ *     never grows the light count,
  *   - stamps a scorch mark on the ground under it: a dark layer that fades
  *     out and a glowing layer that cools from orange to nothing (two pooled
  *     Decal3D nodes, the oldest recycled),
@@ -30,7 +32,7 @@ enum { MAX_FLASH = 8, MAX_SCORCH = 12, MAX_SHAKE = 16 };
 typedef struct explo {
   bool autostart, loop;
   float duration;
-  float flash_energy, flash_color[4], flash_range, flash_duration;
+  float flash_energy, flash_color[4], flash_range, flash_duration, flash_rise;
   const char *scorch_texture;
   float scorch_size, scorch_time, scorch_life, scorch_glow, scorch_depth, scorch_offset;
   float shake_amount, shake_radius, shake_time;
@@ -38,13 +40,15 @@ typedef struct explo {
   float age;
   /* runtime */
   bool pending;
-  int flash_slot, scorch_slot;
-  uint64_t flash_stamp, scorch_stamp; /* the pool slot's fire stamp this node holds */
+  int scorch_slot;
+  uint64_t scorch_stamp; /* the pool slot's fire stamp this node holds */
+  double last_flash;     /* pool time this node last took a flash light (at most three flashes a second) */
   t3_vec3 fire_pos;
 } explo;
 static const cw_node_type *explo_t;
 
-typedef struct flash_slot { cw_node light; uint64_t stamp; bool busy; float age; float peak; } flash_slot;
+/* a borrowed flash light runs its own curve, so firing its explosion again does not cut it short */
+typedef struct flash_slot { cw_node light; uint64_t stamp; bool busy, fresh; float age, peak, rise, duration; } flash_slot;
 typedef struct scorch_slot {
   cw_node dark, glow;
   uint64_t stamp;
@@ -162,25 +166,31 @@ static float smoothstep01(float x) {
   return x * x * (3 - 2 * x);
 }
 
-static void drive_flash(pool *p, explo *e, float dt) {
-  (void)dt;
-  if (e->flash_slot < 0) return;
-  flash_slot *f = &p->fl[e->flash_slot];
-  if (f->stamp != e->flash_stamp || !f->busy) {
-    e->flash_slot = -1; /* a later explosion took it */
-    return;
+/* The flash's share of its peak `age` seconds after the blast: an eased swell over `rise` seconds (at most half the
+ * flash), then a fall that is fast at first, to 0 at `duration`. One rise and one fall, nothing that oscillates: a
+ * light that jumps to full on one frame, or flickers, is a strobe (docs/guides/accessibility.md, flashes). */
+static float flash_curve(float age, float rise, float duration) {
+  if (duration <= 0 || age >= duration) return 0;
+  float r = CW_CLAMP(rise, 0.0f, duration * 0.5f);
+  if (age < r) return smoothstep01(age / r);
+  float u = (age - r) / (duration - r);
+  return (1 - u) * (1 - u);
+}
+
+/* every borrowed light, on its own curve; a light ends at 0 and goes back to the pool */
+static void drive_flashes(pool *p, float dt) {
+  for (int i = 0; i < p->nfl; i++) {
+    flash_slot *f = &p->fl[i];
+    if (!f->busy) continue;
+    if (f->fresh) f->fresh = false; /* the blast's own tick: age 0 */
+    else f->age += dt;
+    if (f->age >= f->duration) {
+      set_f(f->light, "energy", 0);
+      f->busy = false;
+      continue;
+    }
+    set_f(f->light, "energy", f->peak * flash_curve(f->age, f->rise, f->duration));
   }
-  f->age = e->age;
-  float u = e->flash_duration > 0 ? e->age / e->flash_duration : 1;
-  if (u >= 1) {
-    set_f(f->light, "energy", 0);
-    f->busy = false;
-    e->flash_slot = -1;
-    return;
-  }
-  float fall = (1 - u) * (1 - u);
-  float flicker = 0.9f + 0.1f * cw_sin(e->age * 70.0f);
-  set_f(f->light, "energy", f->peak * fall * flicker);
 }
 
 static void drive_scorch(pool *p, explo *e) {
@@ -228,16 +238,19 @@ static void explosions_hook(cw_tree *t, double dt, void *user) {
     if (e->playing) {
       if (e->pending) { /* just fired: take a light, a scorch and shake slot */
         e->pending = false;
-        if (e->flash_energy > 0 && p->nfl > 0) {
+        /* one flash per node at most every third of a second: a looping or refired blast never strobes */
+        if (e->flash_energy > 0 && p->nfl > 0 && p->time - e->last_flash >= 1.0 / 3.0) {
           int s = take_flash(p, active);
           if (s >= 0) {
             flash_slot *f = &p->fl[s];
             f->busy = true;
+            f->fresh = true;
             f->stamp = ++p->stamp;
             f->peak = e->flash_energy;
+            f->rise = e->flash_rise;
+            f->duration = e->flash_duration;
             f->age = 0;
-            e->flash_slot = s;
-            e->flash_stamp = f->stamp;
+            e->last_flash = p->time;
             cw_node3d_set_position(f->light, (t3_vec3){ e->fire_pos.x, e->fire_pos.y + 0.6f, e->fire_pos.z });
             cw_node_set(f->light, "color", cw_val_color(e->flash_color[0], e->flash_color[1], e->flash_color[2], 1));
             set_f(f->light, "range", e->flash_range);
@@ -289,7 +302,6 @@ static void explosions_hook(cw_tree *t, double dt, void *user) {
       } else {
         e->age += (float)dt;
       }
-      drive_flash(p, e, (float)dt);
       drive_scorch(p, e);
       if (e->age >= e->duration) {
         if (e->loop) cw_explosion_fire(n);
@@ -298,10 +310,10 @@ static void explosions_hook(cw_tree *t, double dt, void *user) {
     } else {
       /* the blast is over but its scorch mark goes on cooling and fading: the age keeps counting */
       if (e->started) e->age += (float)dt;
-      drive_flash(p, e, (float)dt);
       drive_scorch(p, e);
     }
   }
+  drive_flashes(p, (float)dt);
 }
 
 /* ── node ─────────────────────────────────────────────────────────────── */
@@ -318,6 +330,7 @@ static void explo_init(cw_node n, void *data) {
   e->flash_color[3] = 1;
   e->flash_range = 14;
   e->flash_duration = 0.45f;
+  e->flash_rise = 0.08f;
   e->scorch_texture = cw_intern("scorch.png");
   e->scorch_size = 4;
   e->scorch_time = 7;
@@ -327,7 +340,8 @@ static void explo_init(cw_node n, void *data) {
   e->shake_amount = 1;
   e->shake_radius = 25;
   e->shake_time = 0.9f;
-  e->flash_slot = e->scorch_slot = -1;
+  e->scorch_slot = -1;
+  e->last_flash = -1e9;
 }
 
 static void explo_enter(cw_node n, void *data) {
@@ -356,7 +370,8 @@ static const cw_prop explo_props[] = {
   ER(flash_energy, 0, 100000, "Peak light of the flash (0 = no flash light)."),
   CW_PROP_FIELD(explo, flash_color, CW_T_COLOR, CW_PROP_DEFAULT, "Flash colour (linear)."),
   ER(flash_range, 0, 1e4, "Reach of the flash light, world units."),
-  ER(flash_duration, 0.01, 60, "Seconds the flash takes to die away (fast at first)."),
+  ER(flash_duration, 0.01, 60, "Seconds the whole flash lasts: it swells over flash_rise, then dies away (fast at first) to nothing at flash_duration."),
+  ER(flash_rise, 0, 10, "Seconds the flash takes to swell to its peak (eased; at most half of flash_duration). A light that jumps to full on one frame is a strobe: keep it at 0.05 or more."),
   EF(scorch_texture, CW_T_STRING, "Image of the scorch marks: a 2 x 2 sheet of four 256 pixel shapes (tools/fx/bake-flipbooks.mjs writes scorch.png). Each mark picks one, turns it and stretches it. Empty: a plain round mark."),
   ER(scorch_size, 0, 1e3, "Width of the scorch mark on the ground under the node (0 = no mark). The node stands at ground level."),
   ER(scorch_time, 0.1, 3600, "Seconds the mark takes to cool from glowing to dark."),

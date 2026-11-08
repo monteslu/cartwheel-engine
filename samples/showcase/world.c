@@ -400,7 +400,7 @@ static bool build_village(sc_world *w, cw_node root, t3_object *parent) {
   }
   t3_release(posts); t3_release(post); t3_release(iron); t3_release(bulb); t3_release(glow);
 
-  /* the campfire on the square: logs, stones, a shadowed flickering light */
+  /* the campfire on the square: logs, stones, a shadowed wavering light */
   w->campfire_pos = (t3_vec3){ 0, sc_height(0, 0), 0 };
   for (int i = 0; i < 4; i++) {
     char name[16];
@@ -618,9 +618,10 @@ void sc_world_tick(sc_world *w, uint64_t tick, float elev) {
     place(w->fly_glow, i, (t3_vec3){ x, y, z }, 0, (t3_vec3){ sz, sz, sz });
     t3_instanced_mesh_set_color_at(w->fly_glow, i, (t3_color){ 0.02f + 6 * e, 0.02f + 12 * e, 0.02f + 3 * e });
   }
-  /* campfire: lit from late afternoon; flicker from two hashed noises */
+  /* campfire: lit from late afternoon; a slow waver from two hashed noises (1.5 and 2.7 new values a second:
+   * nothing that changes three or more times a second, which is a strobe) */
   float fire = 1.0f - cw_smoothstep(8, 20, elev);
-  float fl = 0.75f + 0.15f * value_noise(t * 0.21f, 0.5f, 99u) + 0.1f * value_noise(t * 0.67f, 3.5f, 98u);
+  float fl = 0.75f + 0.15f * value_noise(t * 0.025f, 0.5f, 99u) + 0.1f * value_noise(t * 0.045f, 3.5f, 98u);
   cw_node_set(w->campfire, "energy", cw_val_float(60.0f * fire * fl));
   /* particles are unlit: smoke takes the daylight's level (quantized so the
    * property is not rewritten every tick) */
