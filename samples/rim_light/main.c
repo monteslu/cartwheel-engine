@@ -4,7 +4,8 @@
  * Two lines of figures (a capsule body and a sphere head each) walk away from
  * the camera down a dim street at 3, 8, 15, 25 and 40 m: the left line has a
  * red rim, the right line a blue one, the middle figure a white rim that
- * pulses (a "protected" shimmer: its strength set every tick). Close to the
+ * pulses slowly (a "protected" glow: its strength set every tick, about once
+ * a second; a pulse three or more times a second is a strobe). Close to the
  * camera the rim is faint (`close` 0.15 of it, below `near` 6 m), by 20 m it
  * is at full strength, so the far figures read as red or blue outlines
  * against the dark, where without the rim they are grey shapes.
@@ -110,7 +111,7 @@ static void fixed(void *u, double dt) {
     cw_rim_light_desc w = cw_rim_light_default();
     w.color = (t3_color){ 0.6f, 0.85f, 1.0f };
     w.close = 1.0f, w.power = 1.6f;
-    pulse = w.strength = 1.2f + 2.4f * (0.5f + 0.5f * cw_sin((float)tick32 * 0.45f)); /* applied again each tick: a shimmer */
+    pulse = w.strength = 1.2f + 2.4f * (0.5f + 0.5f * cw_sin((float)tick32 * 0.1f)); /* applied again each tick: about 0.95 pulses a second */
     rim_on(shimmer, &w);
   }
   if (remove_late && tick32 == 30) {

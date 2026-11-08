@@ -8730,7 +8730,17 @@
      "readonly": false,
      "min": 0.01,
      "max": 60,
-     "doc": "Seconds the flash takes to die away (fast at first)."
+     "doc": "Seconds the whole flash lasts: it swells over flash_rise, then dies away (fast at first) to nothing at flash_duration."
+    },
+    {
+     "name": "flash_rise",
+     "type": "float",
+     "default": "0.08",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Seconds the flash takes to swell to its peak (eased; at most half of flash_duration). A light that jumps to full on one frame is a strobe: keep it at 0.05 or more."
     },
     {
      "name": "scorch_texture",

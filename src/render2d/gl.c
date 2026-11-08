@@ -21,11 +21,13 @@ static const char *SPRITE_VS =
     "uniform vec4 u_fog[32];\n" /* per canvas layer: fog colour, amount */ /* sway px, phase (time x speed), spatial frequency, gustiness */
     "out vec2 v_uv; out vec4 v_color; flat out float v_page; flat out int v_mode; flat out float v_sdfw; flat out vec2 v_sdf;\n"
     "flat out float v_emis, v_dist;\n"
+    "out vec2 v_fp;\n" /* the canvas position, y up, before wind and snapping (lit layers turn normal maps by it) */
     "flat out vec4 v_fog;\n"
     "void main() {\n"
     "  int L = int(a_info.z) * 2;\n"
     "  vec4 r0 = u_layers[L], r1 = u_layers[L + 1];\n"
     "  vec2 p = vec2(r0.x * a_pos.x + r0.y * a_pos.y + r0.z, r1.x * a_pos.x + r1.y * a_pos.y + r1.z);\n"
+    "  v_fp = vec2(p.x, -p.y);\n"
     "  if ((int(a_info.y) & 2) == 0 && a_info.w > 0.0 && u_wind.x != 0.0) {\n"
     /* wind: the sprite's top edge sways (a_info.w = its share x 255), phased by where it stands in the world */
     "    float ph = u_wind.y + a_pos.x * u_wind.z + a_pos.y * u_wind.z * 0.37;\n"
@@ -47,14 +49,38 @@ static const char *SPRITE_VS =
     "  v_fog = u_fog[int(a_info.z)];\n"
     "}\n";
 
+/* A normal map's x and y lie along its texture's +u and up (-v); the light pass reads them as the canvas's x and up.
+ * A turned, flipped or sheared sprite (rotation, flip_x / flip_y, an instance's rotation and flags, a particle's spin,
+ * a turned camera) carries its texture axes with it: where +u and -v point on the canvas comes from the screen
+ * derivatives of the uv and of the canvas position (v_fp, y up: the framebuffer's row order and the wind's sway do not
+ * count), and the normal is turned into them. An unturned, unflipped sprite (+u along +x, -v along +y) keeps its
+ * value bit for bit. WebGPU: wgpu.c WGSL_SPRITE turn_normal, the same arithmetic. */
+#define TURN_NORMAL_GLSL \
+  "vec3 turn_normal(vec3 enc, vec2 uvx, vec2 uvy, vec2 fpx, vec2 fpy) {\n" \
+  "  float det = uvx.x * uvy.y - uvy.x * uvx.y;\n" \
+  "  if (det == 0.0) return enc;\n" \
+  "  vec2 du = (fpx * uvy.y - fpy * uvx.y) * sign(det), dv = (fpy * uvx.x - fpx * uvy.x) * sign(det);\n" \
+  "  float lu = length(du), lv = length(dv);\n" \
+  "  if (!(lu > 0.0) || !(lv > 0.0)) return enc;\n" \
+  "  vec2 T = du / lu, U = -dv / lv;\n" \
+  "  if (T.x > 0.0 && U.y > 0.0 && abs(T.y) < 1e-3 && abs(U.x) < 1e-3) return enc;\n" \
+  "  vec3 e = enc * 2.0 - 1.0;\n" \
+  "  return vec3(T * e.x + U * e.y, e.z) * 0.5 + 0.5;\n" \
+  "}\n"
+
 static const char *SPRITE_FS =
     "uniform sampler2DArray u_tex;\n"
-    "#ifdef LIT\nuniform sampler2DArray u_nrm, u_mat;\nlayout(location=1) out vec4 o_nrm;\nlayout(location=2) out vec4 o_mat;\n#endif\n"
+    "#ifdef LIT\nuniform sampler2DArray u_nrm, u_mat;\nlayout(location=1) out vec4 o_nrm;\nlayout(location=2) out vec4 o_mat;\nin vec2 v_fp;\n"
+    TURN_NORMAL_GLSL
+    "#endif\n"
     "in vec2 v_uv; in vec4 v_color; flat in float v_page; flat in int v_mode; flat in float v_sdfw; flat in vec2 v_sdf;\n"
     "flat in float v_emis, v_dist;\n"
     "flat in vec4 v_fog;\n"
     "layout(location=0) out vec4 o_col;\n"
     "void main() {\n"
+    "#ifdef LIT\n" /* derivatives before any branch (undefined in non-uniform control flow) */
+    "  vec2 uvx = dFdx(v_uv), uvy = dFdy(v_uv), fpx = dFdx(v_fp), fpy = dFdy(v_fp);\n"
+    "#endif\n"
     "  vec4 t = texture(u_tex, vec3(v_uv, v_page));\n"
     "  vec4 c;\n"
     "  if ((v_mode & 1) != 0) c = v_color;\n"
@@ -78,7 +104,7 @@ static const char *SPRITE_FS =
     "#endif\n"
     "#ifdef LIT\n"
     "  vec4 n = texture(u_nrm, vec3(v_uv, v_page));\n"
-    "  vec3 enc = (v_mode & 3) != 0 ? vec3(0.5, 0.5, 0.0) : n.rgb;\n"
+    "  vec3 enc = (v_mode & 3) != 0 ? vec3(0.5, 0.5, 0.0) : turn_normal(n.rgb, uvx, uvy, fpx, fpy);\n"
     "  o_nrm = (v_mode & 4) != 0 ? vec4(0.0) : vec4(enc, 1.0) * c.a;\n"
     /* material: emission (the larger of the draw state's and the map's), specular, gloss */
     "  vec3 m = (v_mode & 3) != 0 ? vec3(0.0) : texture(u_mat, vec3(v_uv, v_page)).rgb;\n"
@@ -115,6 +141,7 @@ static const char *PART_VS =
     "uniform vec4 u_pa[9];\n"
     "out vec2 v_uv; out vec4 v_color; flat out float v_page; flat out int v_mode; flat out float v_sdfw; flat out vec2 v_sdf;\n"
     "flat out float v_emis, v_dist;\n"
+    "out vec2 v_fp;\n" /* the canvas position, y up, before wind and snapping (lit layers turn normal maps by it) */
     "flat out vec4 v_fog;\n"
     "uint hsh(uint x) { x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16; return x; }\n"
     "float rnd(inout uint s) { s = hsh(s); return float(s >> 8) / 16777216.0; }\n"
@@ -140,6 +167,7 @@ static const char *PART_VS =
     "  int L = int(u_pa[8].x) * 2;\n"
     "  vec4 r0 = u_layers[L], r1 = u_layers[L + 1];\n"
     "  vec2 c = vec2(r0.x * w.x + r0.y * w.y + r0.z, r1.x * w.x + r1.y * w.y + r1.z);\n"
+    "  v_fp = vec2(c.x, -c.y);\n"
     "  gl_Position = vec4(c.x / u_target.x * 2.0 - 1.0, 1.0 - c.y / u_target.y * 2.0, -1.0, 1.0);\n"
     "  v_uv = mix(u_pa[6].xy, u_pa[6].zw, q);\n"
     "  vec4 col = mix(u_pa[4], u_pa[5], f);\n"
@@ -168,6 +196,7 @@ static const char *INST_VS =
     "uniform vec4 u_in[67];\n"
     "out vec2 v_uv; out vec4 v_color; flat out float v_page; flat out int v_mode; flat out float v_sdfw; flat out vec2 v_sdf;\n"
     "flat out float v_emis, v_dist;\n"
+    "out vec2 v_fp;\n" /* the canvas position, y up, before wind and snapping (lit layers turn normal maps by it) */
     "flat out vec4 v_fog;\n"
     "void main() {\n"
     "  int k = gl_VertexID;\n"
@@ -182,6 +211,7 @@ static const char *INST_VS =
     "  int L = int(u_in[1].x) * 2;\n"
     "  vec4 r0 = u_layers[L], r1 = u_layers[L + 1];\n"
     "  vec2 p = vec2(r0.x * w.x + r0.y * w.y + r0.z, r1.x * w.x + r1.y * w.y + r1.z);\n"
+    "  v_fp = vec2(p.x, -p.y);\n"
     "  if (q.y < 0.5 && u_in[2].z > 0.0 && u_wind.x != 0.0) {\n"
     "    float ph = u_wind.y + w.x * u_wind.z + w.y * u_wind.z * 0.37;\n"
     "    float s = sin(ph) + 0.45 * sin(ph * 2.3 + 1.7) * u_wind.w;\n"

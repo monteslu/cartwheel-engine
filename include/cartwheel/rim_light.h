@@ -9,8 +9,9 @@
  * of it, smooth in between. That is what a split-screen shooter wants for
  * telling teams apart: a fighter 30 m away reads as a red or blue outline,
  * one at arm's length is not painted over. Also: a highlight on pickups or
- * interactive objects, a "spawn protected" shimmer (pulse the strength from
- * code), a selection glow in a menu scene.
+ * interactive objects, a "spawn protected" glow (pulse the strength from
+ * code, slowly: under three pulses a second, faster is a strobe), a
+ * selection glow in a menu scene.
  *
  * Per material: every mesh drawing the material gets the same rim (glTF
  * instances share their file's materials: clone a material per character,

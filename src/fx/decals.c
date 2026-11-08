@@ -10,6 +10,9 @@
 #include "cartwheel/render3d.h"
 #include "fx_internal.h"
 #include "fx_wgpu.h"
+#if CW_WGPU
+#include "render/pipeline_wgpu.h"
+#endif
 #include "cartwheel/shading.h"
 
 unsigned char *stbi_load_from_memory(const unsigned char *buffer, int len, int *x, int *y, int *channels_in_file,
@@ -700,6 +703,8 @@ static void draw_wgpu(cw_pass_ctx *ctx, decal_tree *dt, const struct vis *list, 
   cw__wg_entry e[4] = { { .buffer = dt->wu }, { .view = tg->linear_depth }, { .view = atlas.wview },
                         { .sampler = cw__wg_sampler(true, false, true) } };
   WGPUBindGroup bg = cw__wg_group(dbgl, e, 4);
+  /* its own render pass: timed as a span of the decals pass (pass timers) */
+  cw__pw_timing_span((void *)cw__pw_encoder(), false);
   WGPURenderPassEncoder rp = cw__wg_scene_pass(tg, false, "decals");
   wgpuRenderPassEncoderSetBindGroup(rp, 0, bg, 0, NULL);
   wgpuRenderPassEncoderSetVertexBuffer(rp, 1, dcube, 0, WGPU_WHOLE_SIZE);
@@ -715,6 +720,7 @@ static void draw_wgpu(cw_pass_ctx *ctx, decal_tree *dt, const struct vis *list, 
   }
   wgpuRenderPassEncoderEnd(rp);
   wgpuRenderPassEncoderRelease(rp);
+  cw__pw_timing_span((void *)cw__pw_encoder(), true);
   wgpuBindGroupRelease(bg);
 }
 #endif

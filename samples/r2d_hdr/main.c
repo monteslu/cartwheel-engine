@@ -212,9 +212,9 @@ static void render(void *user, double alpha) {
   cw_r2d_set_intensity(1);
   float soft = mode("hard") ? 0.0f : 0.55f;
   bool sh = !mode("noshadow");
-  /* torches: flickering, soft shadows */
+  /* torches: a slow waver (nothing three or more times a second: that is a strobe), soft shadows */
   for (int i = 0; i < 2; i++) {
-    float fl = 1 + 0.08f * sinf(t * 13 + (float)i * 3) + 0.05f * sinf(t * 31 + (float)i);
+    float fl = 1 + 0.08f * sinf(t * 13 + (float)i * 3) + 0.05f * sinf(t * 7.3f + (float)i);
     cw_vec2 p = { W * (0.12f + 0.5f * (float)i), H * 0.55f };
     cw_r2d_light(&(cw_light2d){ .pos = p, .radius = 420 * k, .color = cw_hex(0xffa050ff), .energy = 1.6f * fl, .falloff = 1.6f,
                                 .shadows = sh, .softness = soft, .volumetric = mode("novolume") ? 0 : 0.06f,

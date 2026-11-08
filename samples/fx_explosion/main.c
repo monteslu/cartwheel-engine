@@ -14,6 +14,8 @@
  *                   FXE_NEVER afterwards)
  *   FXE_NOFLASH=1   no flash light        FXE_NODISTORT=1  no haze or rings
  *   FXE_SHAKE=1     the camera applies the shake
+ *   FXE_TRACE=1     print the flash energy every frame to stderr ("fxe.flash <tick> <energy>"):
+ *                   tests/explosion.mjs holds the flash to a swell and a fall, no flicker
 
  * With no environment (a cart) the blast fires again every 5 seconds.
  *   FXE_PRESET=low|medium|high|ultra   the quality preset
@@ -22,7 +24,7 @@
  * Debug state: fxe.tick, fxe.lit (flash lights with energy now), fxe.pool
  * (flash lights made), fxe.scorch (scorch marks in use), fxe.shake (x 1000,
  * at the camera), fxe.alive (every particle system's alive count),
- * fxe.playing. */
+ * fxe.playing, fxe.flash (the brightest pooled flash light's energy now). */
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -37,10 +39,10 @@
 
 static uint32_t tick;
 static int32_t lit, pool, scorch, shake_x1000, alive, playing;
-static float dark_alpha, glow_energy;
+static float dark_alpha, glow_energy, flash_energy;
 static int32_t decal_visible, decal_total, decal_culled;
 static t3_vec3 cam_home;
-static bool apply_shake, no_refire;
+static bool apply_shake, no_refire, trace;
 
 static cw_node node(const char *path) { return cw_node_get(cw_tree_root(cw_scene_app_tree()), path); }
 
@@ -55,6 +57,7 @@ static void init(void *u) {
   cw_debug_i32("fxe.playing", &playing);
   cw_debug_f32("fxe.dark_alpha", &dark_alpha);
   cw_debug_f32("fxe.glow_energy", &glow_energy);
+  cw_debug_f32("fxe.flash", &flash_energy);
   cw_debug_i32("fxe.decal_visible", &decal_visible);
   cw_debug_i32("fxe.decal_total", &decal_total);
   cw_debug_i32("fxe.decal_culled", &decal_culled);
@@ -76,6 +79,7 @@ static void init(void *u) {
     cw_node_set(node("World/Boom/WaveAir"), "strength", cw_val_float(0));
   }
   apply_shake = getenv("FXE_SHAKE") != NULL;
+  trace = getenv("FXE_TRACE") != NULL;
   no_refire = getenv("FXE_NEVER") || getenv("FXE_SHORT");
   cam_home = cw_node3d_global_position(node("World/Camera"));
 }
@@ -113,6 +117,14 @@ static void render(void *u, double a) {
   scorch = st.scorches_active;
   playing = cw_explosion_playing(node("World/Boom"));
   { cw_decal_stats ds; cw_decals_get_stats(cw_scene_app_tree(), &ds); decal_visible = ds.visible; decal_total = ds.decals; decal_culled = ds.culled; }
+  flash_energy = 0;
+  cw_node root = cw_tree_root(cw_scene_app_tree());
+  for (int i = 0; i < cw_node_child_count(root); i++) {
+    cw_node c = cw_node_child(root, i);
+    cw_value e;
+    if (strcmp(cw_node_name(c), "ExplosionFlash") == 0 && cw_node_get_prop(c, "energy", &e) && (float)e.f > flash_energy) flash_energy = (float)e.f;
+  }
+  if (trace) fprintf(stderr, "fxe.flash %u %.5f\n", tick, (double)flash_energy);
   cw_node dk = node("ScorchDark"), gl = node("ScorchGlow");
   cw_value v;
   if (cw_node_valid(dk) && cw_node_get_prop(dk, "color", &v)) dark_alpha = v.v[3];

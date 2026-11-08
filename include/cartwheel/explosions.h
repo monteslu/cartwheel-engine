@@ -65,8 +65,17 @@ bool cw_shockwave_active(cw_node n);
  *                          (autostart off). The node's properties:
  *     autostart, loop, duration    fires when it enters the tree; loop fires
  *                                  again every `duration` seconds
- *     flash_energy, flash_color,   a light that flashes at the blast and dies
- *     flash_range, flash_duration  away fast. The lights come from a pool the
+ *     flash_energy, flash_color,   a light that swells at the blast over
+ *     flash_range, flash_duration, flash_rise (eased, 0.08 s by default) and
+ *     flash_rise                   dies away by flash_duration: one smooth
+ *                                  rise and fall, never a jump to full
+ *                                  brightness or a flicker (either is a
+ *                                  strobe), and one flash per node at most
+ *                                  every third of a second, so a looping or
+ *                                  refired blast cannot strobe. Each flash
+ *                                  runs to its end even when its node fires
+ *                                  again or leaves the tree. The lights come
+ *                                  from a pool the
  *                                  effects preset sizes (cw_quality_scale
  *                                  "flash_lights": 2, 4, 8, 8 lights); a
  *                                  busy scene takes the oldest flash back, so

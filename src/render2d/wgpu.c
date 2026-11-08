@@ -28,6 +28,7 @@
  * identical blend on both attachments of the lit pass, depthClearValue set. */
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "internal.h"
@@ -122,11 +123,12 @@ static const char *WGSL_SPRITE =
     "  @location(2) @interpolate(flat, either) page: u32, @location(3) @interpolate(flat, either) mode: u32,\n"
     "  @location(4) @interpolate(flat, either) sdfw: f32, @location(5) @interpolate(flat, either) sdf: vec2f,\n"
     "  @location(6) @interpolate(flat, either) emis: f32, @location(7) @interpolate(flat, either) dist: f32,\n"
-    "  @location(8) @interpolate(flat, either) fog: vec4f };\n"
+    "  @location(8) @interpolate(flat, either) fog: vec4f, @location(9) fp: vec2f };\n" /* fp: gl.c v_fp */
     "fn sprite_vs(a_pos: vec2f, a_uv: vec2f, a_color: vec4f, a_info: vec4u, a_sdf: vec4f, a_depth: f32) -> VO {\n"
     "  let L = a_info.z * 2u;\n"
     "  let r0 = u.layers[L]; let r1 = u.layers[L + 1u];\n"
     "  var p = vec2f(r0.x * a_pos.x + r0.y * a_pos.y + r0.z, r1.x * a_pos.x + r1.y * a_pos.y + r1.z);\n"
+    "  let fp = vec2f(p.x, -p.y);\n"
     "  if ((a_info.y & 2u) == 0u && a_info.w > 0u && u.wind.x != 0.0) {\n"
     "    let ph = u.wind.y + a_pos.x * u.wind.z + a_pos.y * u.wind.z * 0.37;\n"
     "    let s = sin(ph) + 0.45 * sin(ph * 2.3 + 1.7) * u.wind.w;\n"
@@ -145,6 +147,7 @@ static const char *WGSL_SPRITE =
     "  o.dist = r1.w;\n"
     "  o.fog = u.fog[a_info.z];\n"
     "  o.pos.z = max(a_depth - u.zbias, 0.0);\n"
+    "  o.fp = fp;\n"
     "  return o;\n"
     "}\n"
     "@vertex fn vs(@location(0) a_pos: vec2f, @location(1) a_uv: vec2f, @location(2) a_color: vec4f,\n"
@@ -184,6 +187,7 @@ static const char *WGSL_SPRITE =
     "  let r0 = u.layers[L]; let r1 = u.layers[L + 1u];\n"
     "  let c = vec2f(r0.x * w.x + r0.y * w.y + r0.z, r1.x * w.x + r1.y * w.y + r1.z);\n"
     "  var o: VO;\n"
+    "  o.fp = vec2f(c.x, -c.y);\n"
     "  o.pos = ndc(c, u.target_size, u.flip);\n"
     "  o.uv = mix(pa.a[6].xy, pa.a[6].zw, q);\n"
     "  let col = mix(pa.a[4], pa.a[5], f);\n"
@@ -210,6 +214,7 @@ static const char *WGSL_SPRITE =
     "  let L = u32(inb.a[1].x) * 2u;\n"
     "  let r0 = u.layers[L]; let r1 = u.layers[L + 1u];\n"
     "  var p = vec2f(r0.x * w.x + r0.y * w.y + r0.z, r1.x * w.x + r1.y * w.y + r1.z);\n"
+    "  let fp = vec2f(p.x, -p.y);\n"
     "  if (q.y < 0.5 && inb.a[2].z > 0.0 && u.wind.x != 0.0) {\n"
     "    let ph = u.wind.y + w.x * u.wind.z + w.y * u.wind.z * 0.37;\n"
     "    let s = sin(ph) + 0.45 * sin(ph * 2.3 + 1.7) * u.wind.w;\n"
@@ -227,6 +232,7 @@ static const char *WGSL_SPRITE =
     "  o.sdfw = 0.0; o.sdf = vec2f(inb.a[2].y, 0.0);\n"
     "  o.emis = inb.a[1].w; o.dist = r1.w;\n"
     "  o.fog = u.fog[u32(inb.a[1].x)];\n"
+    "  o.fp = fp;\n"
     "  return o;\n"
     "}\n"
     "fn shade(i: VO, t: vec4f) -> vec4f {\n"
@@ -269,12 +275,25 @@ static const char *WGSL_SPRITE =
     "  if (c.a > 1e-4) { off = (c.rg / c.a * 2.0 - 1.0) * c.a * i.dist; }\n"
     "  return vec4f(off, 0.0, 0.0);\n"
     "}\n"
+    /* a turned or flipped sprite's normals turned with it (gl.c TURN_NORMAL_GLSL) */
+    "fn turn_normal(enc: vec3f, uvx: vec2f, uvy: vec2f, fpx: vec2f, fpy: vec2f) -> vec3f {\n"
+    "  let det = uvx.x * uvy.y - uvy.x * uvx.y;\n"
+    "  if (det == 0.0) { return enc; }\n"
+    "  let du = (fpx * uvy.y - fpy * uvx.y) * sign(det); let dv = (fpy * uvx.x - fpx * uvy.x) * sign(det);\n"
+    "  let lu = length(du); let lv = length(dv);\n"
+    "  if (!(lu > 0.0) || !(lv > 0.0)) { return enc; }\n"
+    "  let T = du / lu; let U = -dv / lv;\n"
+    "  if (T.x > 0.0 && U.y > 0.0 && abs(T.y) < 1e-3 && abs(U.x) < 1e-3) { return enc; }\n"
+    "  let e = enc * 2.0 - 1.0;\n"
+    "  return vec3f(T * e.x + U * e.y, e.z) * 0.5 + 0.5;\n"
+    "}\n"
     "struct LitOut { @location(0) col: vec4f, @location(1) nrm: vec4f, @location(2) mat: vec4f };\n"
     "fn lit_body(i: VO) -> LitOut {\n"
+    "  let uvx = dpdx(i.uv); let uvy = dpdy(i.uv); let fpx = dpdx(i.fp); let fpy = dpdy(i.fp);\n" /* before any branch (uniform control flow) */
     "  var c = shade(i, textureSample(t_tex, t_smp, i.uv, i.page));\n"
     "  let n = textureSample(t_nrm, t_smp, i.uv, i.page);\n"
     "  var m = textureSample(t_mat, t_smp, i.uv, i.page).rgb;\n"
-    "  var enc = n.rgb;\n"
+    "  var enc = turn_normal(n.rgb, uvx, uvy, fpx, fpy);\n"
     "  if ((i.mode & 3u) != 0u) { enc = vec3f(0.5, 0.5, 0.0); m = vec3f(0.0); }\n"
     "  var o: LitOut;\n"
     "  o.nrm = vec4f(enc, 1.0) * c.a;\n"
@@ -598,21 +617,44 @@ static void ensure(WGPUBuffer *b, size_t *cap, size_t need, WGPUBufferUsage usag
   if (*b && *cap >= need) return;
   size_t n = *cap ? *cap : 4096;
   while (n < need) n *= 2;
+  uint64_t max = cw__wgpu_limits()->maxBufferSize; /* doubling past the device's largest buffer: stop at it */
+  if (max && n > max && need <= max) n = (size_t)max & ~(size_t)3;
   if (*b) wgpuBufferRelease(*b);
   *b = make_buffer(n, usage, label);
   *cap = n;
 }
 
+/* A big stream goes up in pieces of at most WRITE_PIECE bytes (one wgpuQueueWriteBuffer of a ~6 MB index stream was
+ * seen to abort inside Dawn on a native run); queue order still lands every piece before the draws. */
+#define WRITE_PIECE ((size_t)4 << 20)
 static void write_padded(WGPUBuffer b, const void *data, size_t bytes) {
   if (!bytes) return;
-  if (bytes & 3) { /* writeBuffer sizes are multiples of 4 */
-    uint8_t *tmp = cw_frame_alloc(bytes + 4);
-    memcpy(tmp, data, bytes);
-    memset(tmp + bytes, 0, 4);
-    wgpuQueueWriteBuffer(W.q, b, 0, tmp, (bytes + 3) & ~(size_t)3);
-  } else {
-    wgpuQueueWriteBuffer(W.q, b, 0, data, bytes);
+  size_t whole = bytes & ~(size_t)3;
+  for (size_t at = 0; at < whole; at += WRITE_PIECE)
+    wgpuQueueWriteBuffer(W.q, b, at, (const uint8_t *)data + at, CW_MIN(WRITE_PIECE, whole - at));
+  if (bytes & 3) { /* writeBuffer sizes are multiples of 4: the tail padded with zeros */
+    uint8_t tail[4] = { 0 };
+    memcpy(tail, (const uint8_t *)data + whole, bytes - whole);
+    wgpuQueueWriteBuffer(W.q, b, whole, tail, 4);
   }
+}
+
+/* A stream larger than the device's largest buffer cannot be drawn in one pass: say so (the first time) and draw
+ * nothing, where creating the buffer would lose the device. */
+static bool stream_fits(size_t vb, size_t ib) {
+  uint64_t max = cw__wgpu_limits()->maxBufferSize;
+  static long long test_max = -1; /* CW_TEST_R2D_STREAM_MAX=<bytes>: a smaller limit (tests/r2d-big-stream.mjs) */
+  if (test_max < 0) test_max = getenv("CW_TEST_R2D_STREAM_MAX") ? atoll(getenv("CW_TEST_R2D_STREAM_MAX")) : 0;
+  if (test_max > 0) max = (uint64_t)test_max;
+  if (!max || (vb <= max && ib <= max)) return true;
+  static bool said;
+  if (!said) {
+    said = true;
+    cw_error("render2d: a 2D pass of %d vertices (%.1f MB) and %d indices (%.1f MB) is larger than this device's largest buffer "
+             "(%.1f MB): the pass was not drawn; split it into several passes or draw fewer things",
+             R.verts.count, (double)vb / 1048576.0, R.idx.count, (double)ib / 1048576.0, (double)max / 1048576.0);
+  }
+  return false;
 }
 
 void *r2d_wg_buffer(void *old, const void *data, size_t bytes, bool index) {
@@ -1752,6 +1794,7 @@ void r2d_wg_end(const r2d_batch *batches, int nb, const uint32_t *idx) {
   }
   if (R.verts.count) {
     size_t vb = sizeof(r2d_vertex) * (size_t)R.verts.count, ib = sizeof(uint32_t) * (size_t)R.idx.count;
+    if (!stream_fits(vb, ib)) return;
     ensure(&W.vbuf, &W.vcap, vb, WGPUBufferUsage_Vertex, "r2d stream vertices");
     ensure(&W.ibuf, &W.icap, ib, WGPUBufferUsage_Index, "r2d stream indices");
     write_padded(W.vbuf, R.verts.data, vb);

@@ -129,7 +129,7 @@ The field's size and the march steps follow the effects detail of the [graphics 
 
 `volumetric` adds the light the air scatters toward the eye: shafts where a light passes between occluders, a glow round a lamp, added on top of the lit layers and over empty background too.
 
-**Materials.** Normal maps attach to atlas textures with `cw_texture_set_normal_map`; without one a sprite is lit flat. A material map (`cw_texture_set_material_map`) adds per texel emission (red: the share of the colour that ignores the lights), specular (green: how strongly lights glint off it) and gloss (blue: how tight the glint is). `cw_r2d_set_emissive` gives later draws emission without a map: a lamp, a screen, lava. Keep cloth, stone and skin near zero specular; wet rock, metal and glass carry it.
+**Materials.** Normal maps attach to atlas textures with `cw_texture_set_normal_map`; without one a sprite is lit flat. A normal map turns with what draws it: a sprite's `rotation`, `flip_x` and `flip_y`, an instance's rotation and flip flags, a particle's spin and a turned camera all turn its normals with the picture, so a torch on the left lights the left edge of a sprite however it is turned (`samples/r2d_normal_turn` and its test hold turned sprites and instances to sprites drawn unturned with the normals turned beforehand, on GL and WebGPU). An unturned sprite's normals are written exactly as before. A material map (`cw_texture_set_material_map`) adds per texel emission (red: the share of the colour that ignores the lights), specular (green: how strongly lights glint off it) and gloss (blue: how tight the glint is). `cw_r2d_set_emissive` gives later draws emission without a map: a lamp, a screen, lava. Keep cloth, stone and skin near zero specular; wet rock, metal and glass carry it.
 
 **Global illumination.** A pass with `.gi` lights its lit layers with the light that bounces round the scene: what glows lights what is near it in its own colour, light that falls on an occluder bounces off in the occluder's colour, and occluders cast soft shadows from all of it, with no light placed. It uses radiance cascades over a distance field of the occluders and the glowing pixels, at a share of the canvas size (off on Very Low, an eighth on Low, a quarter on Medium and High, half on Ultra). Each frame's result feeds the next frame's bounce.
 
@@ -178,6 +178,7 @@ Natively, `CW_R2D_TIMERS=1` times each part of `cw_r2d_end` on the GPU (GL time 
 | `r2d_tilemap` | chunked tilemaps, animated tiles, flips, cell edits |
 | `r2d_camera` | canvas layers, cameras, parallax, minimap, `INTEGER` scaling, the sharp filter at any scale |
 | `r2d_lights` | lit layers, normal maps, shadows, ambient |
+| `r2d_normal_turn` | turned and flipped normal-mapped sprites and instances, lit by their turned normals |
 | `r2d_hdr` | the post chain, emission, material maps, soft shadows, spot, directional and volumetric lights, global illumination, screen reads, distortion (and layers above it), lookup tables |
 | `r2d_motion` | wind sway, trails, mipmapped atlas pages |
 | `r2d_stress` | the perf cases of `tools/r2d-perf.mjs`, sprite instances, a side-scrolling HDR scene (`sidescroll`) |

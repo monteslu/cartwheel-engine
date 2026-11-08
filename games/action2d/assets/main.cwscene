@@ -342,11 +342,13 @@ focus_mode = ALL
 text = "BACK TO TITLE"
 alignment = CENTER
 
-[animation name="flash" player="ScreenFx" length=0.6]
+[animation name="flash" player="ScreenFx" length=0.8]
 [track type=value path="Overlay/Flash:modulate"]
-0 = color(1, 1, 1, 0.95)
-0.6 = color(1, 1, 1, 0)
-[animation name="hurt" player="ScreenFx" length=0.3]
+0 = color(1, 0.85, 0.6, 0)
+0.12 = color(1, 0.85, 0.6, 0.16)
+0.8 = color(1, 0.85, 0.6, 0)
+[animation name="hurt" player="ScreenFx" length=0.4]
 [track type=value path="Overlay/Flash:modulate"]
-0 = color(1, 0.15, 0.1, 0.35)
-0.3 = color(1, 0.15, 0.1, 0)
+0 = color(0.7, 0.12, 0.1, 0)
+0.06 = color(0.7, 0.12, 0.1, 0.14)
+0.4 = color(0.7, 0.12, 0.1, 0)

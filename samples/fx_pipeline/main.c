@@ -17,7 +17,9 @@
  *
  * Debug state: fxp.<system>.alive / gpu_alive / gpu_sum, fxp.rain_mean_y
  * (x1000), fxp.rain_on_top, fxp.draws, fxp.sort_passes, fxp.decals,
- * fxp.tick. FXP_NO_DECALS=1 / FXP_NO_COLLIDE=1 (the gates' controls). */
+ * fxp.tick. FXP_NO_DECALS=1 / FXP_NO_COLLIDE=1 (the gates' controls).
+ * FXP_DRAWS=N draws the boxes N times over (the same picture, N draws in the
+ * pass: tests/pass-timing.mjs). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -122,7 +124,9 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
     cw_pass_uniform_mat4(prog, mn[i], &m);
     cw_pass_uniform4f(prog, cn[i], boxes[i].c[0], boxes[i].c[1], boxes[i].c[2], boxes[i].c[3]);
   }
-  cw_pass_draw(3 * 36);
+  static int times = -1;
+  if (times < 0) times = getenv("FXP_DRAWS") ? CW_MAX(atoi(getenv("FXP_DRAWS")), 1) : 1;
+  for (int i = 0; i < times; i++) cw_pass_draw(3 * 36);
   cw_pass_set_depth(false, false);
 }
 
