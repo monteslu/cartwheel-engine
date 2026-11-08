@@ -115,6 +115,35 @@ git tag v1.0.0 && git push origin v1.0.0
 packages a tree a build already made; the presets live in the game's
 `project.cwproj` (docs/export.md).
 
+### The version
+
+Every cart's manifest carries a version, and the build works it out by
+itself on every build, from the game's git checkout:
+
+| The checkout | The cart's `version` |
+|---|---|
+| at a `v1.4.2` tag, no changes to tracked files | `1.4.2` |
+| at that tag with a tracked file changed | `1.4.2-dev.g1a2b3c4` |
+| any commit after the last tag | `1.4.2-dev.g1a2b3c4` (the commit) |
+| no tag yet | `0.0.0-dev.g1a2b3c4` |
+| not a git checkout | `version` in `project.cwproj` (`1.2` means `1.2.0`), else `0.1.0` |
+
+So a tag build is the release by construction, and a cart built anywhere else
+says it is a dev build. Tags are `v` plus semver (`v1.4.2`, `v2.0.0-rc.1`); a
+tag of another shape is ignored. When the version moves (a new tag, a commit)
+the next build packs the cart again with it, without relinking.
+
+To set it yourself: `cw_add_app(mygame ... VERSION 1.4.2)` for one app, or
+`-DCW_APP_VERSION=1.4.2` for every app of a build. Either must be semver
+(`MAJOR.MINOR.PATCH`, optionally `-prerelease` and `+build`), or the
+configure stops. `cwexport` follows the same rule (`--version` and a preset's
+`version` count as setting it), so a release's packages and its `.wasc`
+carry the same version.
+
+A CI checkout must have the tag: a tag push checks it out, and a shallow clone
+of a branch has no tags, so its carts say `0.0.0-dev.g<commit>` unless the
+checkout fetches them (`fetch-depth: 0`).
+
 ## What each platform gets
 
 | Platform | Package | Renders with |

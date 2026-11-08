@@ -161,3 +161,7 @@ jobs:
       # cart art: the project keys, the pack tool, and hello.wasc in the share that built it
       - name: Cart art
         run: node tests/cart-art.mjs --carts build/carts/carts
+      # the manifest version: the semver rule (cmake and tools/lib/app-version.mjs), the git rule, the repack
+      # when the version moves, and hello.wasc carrying this checkout's version; the controls must fail
+      - name: Cart version
+        run: node tests/app-version.mjs --tree build/carts

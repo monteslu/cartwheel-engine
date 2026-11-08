@@ -230,8 +230,21 @@ export async function buildApp(ctx, platform) {
       if (dual) args.push('-DCW_WGPU=ON', `-DCW_CWPACK=${cwpack}`);
       await run('cmake', args, { log: ctx.log, quiet: true });
     }
+    // the cart's manifest version (cw_add_app): an export's explicit version is
+    // CW_APP_VERSION; without one the build works out the same version as
+    // ctx.version (tools/lib/app-version.mjs), so the packages' names and the
+    // .wasc agree
+    // (the tree's own setting comes back after the build: the export does not stick to it)
+    const want = ctx.explicitVersion ? ctx.version : '';
+    const cached = /^CW_APP_VERSION:STRING=(.*)$/m.exec(readFileSync(join(buildDir, 'CMakeCache.txt'), 'utf8'));
+    const had = cached ? cached[1] : '';
+    if (had !== want) await run('cmake', [buildDir, `-DCW_APP_VERSION=${want}`], { log: ctx.log, quiet: true });
     ctx.progress(20, `build ${ctx.app} (${platform})`);
-    await run('ninja', ['-C', buildDir, ctx.app], { log: ctx.log, quiet: !ctx.verbose });
+    try {
+      await run('ninja', ['-C', buildDir, ctx.app], { log: ctx.log, quiet: !ctx.verbose });
+    } finally {
+      if (had !== want) await run('cmake', [buildDir, `-DCW_APP_VERSION=${had}`], { log: ctx.log, quiet: true });
+    }
   });
   if (cart) {
     const wasc = join(buildDir, 'carts', `${ctx.app}.wasc`);

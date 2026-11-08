@@ -4,7 +4,7 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## v0.38.1 (2026-11-07)
+## v0.38.3 (2026-11-07)
 
 ### Fixed
 - **Terrain3D obeys `visible`**: the terrain and its scatter are drawn, and cast shadows, only while the node and every Node3D above it are visible. Its meshes now sit in one group the pass shows or hides; before, they were added straight to the scene root and a hidden node drew anyway. A hidden terrain is not selected or posed either (no CPU time per frame), and it still collides. `terrain-coverage` checks a hidden terrain, a hidden parent and a terrain shown again (v0.38.0 fails the first two).
@@ -17,11 +17,37 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 | Case | GL | WebGPU |
 |---|---|---|
 | whole scene pass, v0.38.0 | 3.96 ms | 4.86 ms |
-| whole scene pass, v0.38.1 | 3.79 ms | 4.52 ms |
+| whole scene pass, v0.38.3 | 3.79 ms | 4.52 ms |
 | the second layer alone, v0.38.0 | 1.0 ms | 2.1 ms |
 | the second layer alone, anisotropic filtering forced off in the driver | 0.2 ms | 0.3 ms |
 
 The WebGPU excess is the driver's: the generated shaders have the same structure on both backends and compile to code of the same size, and the cost is in 8x anisotropic fetches from a different layer of the layer array (the terrain guide's Performance section has the details).
+
+## v0.38.2 (2026-11-07)
+
+### Fixed
+- **The grounding gate judges each caster where it stands.** `tests/quality-grounding.mjs` took every caster's base as the lowest point under the middle of its box, and judged whatever shadow fell there. For two kinds of caster nothing of it stands there: a caster whose box stands around the camera (a ring of walls, a floor; the camera is above its footprint), and a long one (a wall, a fence, a row of stands: a footprint over 6 times as long as it is wide and as it is tall). A night arena's walls failed frames because a floodlight High casts shaded the middle of the floor. The `shadow_contacts` request now marks the first `around` (the gate leaves it out: it has no single base) and the second `along` (its base is the point of its base line nearest the camera), and keeps the old point as `cx`, `cy`. `--centre` judges every caster the old way.
+
+### Added
+- `tools/lib/grounding.mjs`: the gate's judge, on its own so it can be checked without a GPU. Gate `quality-grounding-judge`: the judge on made-up frames; controls: the old rule fails a frame wrongly over a ring of walls around the camera and a long wall, no shadows fails, and a wide caster that is neither is still judged at its middle.
+
+### Moving a game to v0.38.2
+- Nothing to change. A games repository that worked around wide casters in its own grounding check (a size cap on the bases it counts) can drop the workaround.
+
+## v0.38.1 (2026-11-07)
+
+### Fixed
+- **A cart's manifest carries its game's real version.** Every cart was packed with `"version": "0.1.0"` whatever its release. `cw_add_app` now works the version out on every build, from the game's git checkout: at a clean `v1.4.2` tag it is `1.4.2`, so a tag build is the release by construction; anywhere else it is the last tag plus `-dev.g<commit>` (`1.4.2-dev.g1a2b3c4`, `0.0.0-dev.g<commit>` before the first tag), so a dev cart is never taken for a release; outside git it is `project.cwproj`'s `version`, else `0.1.0`. When the version moves (a new tag, a commit) the next build packs the cart again with it, without relinking (`tools/cart-version.mjs`). The engine's own sample and test carts follow the same rule. See docs/shipping.md, "The version".
+
+### Added
+- `cw_add_app(... VERSION <semver>)` for one app, and `-DCW_APP_VERSION=<semver>` for every app of a build, to set the version by hand. Both must be semver; anything else stops the configure.
+- `tests/app-version.mjs`: the semver rule (cmake and JavaScript agree), the git rule in a scratch repository, the repack when the version moves, and a built cart's manifest, with controls that must fail.
+
+### Changed
+- `cwexport` takes the same version as the cart build (`--version`, else the preset's `version`, else the git checkout's, else the project's `version`, else `0.1.0`), so an export's package names and its `.wasc` always agree; an explicit version reaches the cart as `CW_APP_VERSION` for that build only. The version must be semver (`1` and `1.2` in `project.cwproj` still mean `1.0.0` and `1.2.0`).
+
+### Moving a game to v0.38.1
+- Nothing to change. A `version` key in `project.cwproj` no longer sets a game's version inside a git checkout (the tags do); remove it, or keep it for builds outside git. A CI that builds carts from a shallow clone of a branch has no tags, so those carts say `0.0.0-dev.g<commit>`; a tag push checks its tag out and gets the release version.
 
 ## v0.38.0 (2026-11-07)
 
