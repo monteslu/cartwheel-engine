@@ -8,7 +8,8 @@
 //   2. the git rule, in a scratch repository: before any tag
 //      0.0.0-dev.g<commit>; at a clean v1.2.3 tag 1.2.3; the same tree with a
 //      tracked file changed 1.2.3-dev.g<commit>; a commit after the tag
-//      1.2.3-dev.g<commit>; an explicit version wins; outside git the
+//      1.2.3-dev.g<commit>, also with tags that are not semver (v1.4, v1.5.02)
+//      nearer than v1.2.3 (they are passed over); an explicit version wins; outside git the
 //      project.cwproj version (1.2 means 1.2.0), else 0.1.0;
 //   3. tools/cart-version.mjs: pack writes the cart with the version file's
 //      version; update repacks it when the version moves (a new tag) and
@@ -93,6 +94,11 @@ git('add', 'one.txt');
 git('commit', '-q', '-m', 'two');
 const sha2 = git('rev-parse', '--short=7', 'HEAD');
 expect('git, a commit after v1.2.3', v(), `1.2.3-dev.g${sha2}`);
+git('tag', 'v1.4');
+git('tag', 'v1.5.02');
+expect('git, tags that are not semver (v1.4, v1.5.02) nearer than v1.2.3', v(), `1.2.3-dev.g${sha2}`);
+git('tag', '-d', 'v1.4');
+git('tag', '-d', 'v1.5.02');
 expect('an explicit version wins', v({ set: '2.0.0' }), '2.0.0');
 const nogit = join(OUT, 'nogit');
 mkdirSync(nogit, { recursive: true });
