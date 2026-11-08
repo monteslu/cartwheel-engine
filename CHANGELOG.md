@@ -4,6 +4,22 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.38.5 (2026-11-08)
+
+### Fixed
+- **The terrain's second layer is not read where it cannot show.** Where two layers blend, the height blend gives the second layer exactly nothing wherever the first layer's weighted height stands out over the second's share by more than the blend's sharpness, since a layer's height is at most 1. The second layer's albedo (three to six texture reads, more on a steep face) was still read there to learn its height. That bound is now tested first, and the second layer is read only where it could get a share. WebGPU frames are the same to the bit (terrain_demo, open_world, Ember Throne at three places, jetski, skyfighter, tuxracer). GL frames move at a few scattered pixels: none in open_world, tuxracer and Ember Throne's wood, 5 to 16 pixels by one to four levels in Ember Throne's meadow and spire and in skyfighter, 134 pixels (up to 30 levels, along hill silhouettes) in terrain_demo and 566 (up to 11) in jetski, of a 1080p frame. They are pixels whose neighbours now skip the second layer: the second layer's side projection reads the normal map with derivatives the hardware takes across the pixel's neighbours, which GLSL leaves undefined inside a branch that differs pixel to pixel. A build with the same branch that never skips matches the old GL frames to the bit, and WebGPU (where the math is the same) does everywhere, so nothing else moved. The terrain guide's Performance section has the attribution of the terrain's cost.
+
+### Measured (Radeon 890M, native, 1080p High, Ember Throne's bench; scene pass GPU time, median of 7 interleaved runs)
+
+| Place | GL before | GL after | WebGPU before | WebGPU after |
+|---|---|---|---|---|
+| meadow | 2.87 ms | 2.78 ms | 3.01 ms | 2.85 ms |
+| wood | 2.90 ms | 2.78 ms | 3.01 ms | 2.90 ms |
+| spire | 2.74 ms | 2.71 ms | 2.75 ms | 2.65 ms |
+
+### Moving a game to v0.38.5
+- Regenerate the program tables of any app that draws a Terrain3D (`ninja programs`, or `tools/programs.mjs --table`): the terrain states' shaders changed.
+
 ## v0.38.4 (2026-11-08)
 
 ### Fixed
