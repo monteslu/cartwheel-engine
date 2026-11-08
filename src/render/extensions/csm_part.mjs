@@ -13,10 +13,13 @@
 // DirectionalLight3D out of three.c's light list and this part adds it to the
 // material's lighting (LightsNode.setupDirectLight with the sun's direction
 // and colour, times mix(1, shadow, intensity)), so its BRDF is r187's own.
-// The texture reads run in uniform control flow (no branch around them), as
-// WGSL requires of textureSampleCompare: every cascade's coordinate is
-// computed, the cascade holding the fragment and its fade partner selected,
-// and both filtered (ten taps).
+// The cascade holding the fragment and its fade partner are selected and each
+// is filtered only where it weighs in (five taps each): a fragment past the
+// last cascade's far edge, or outside every cascade's map, reads nothing and
+// is lit unshadowed, the value the full filter gave it there. The shadow
+// atlas has one level and no anisotropy, so its compare reads inside a branch
+// (r187 programs turn off WGSL's derivative uniformity check) read what they
+// read outside one.
 //
 // What the fill hook (src/render/lighting.c) sets:
 //   ext.csmMap      DepthTexture (compare LessEqual, linear): the cascades in a
@@ -41,7 +44,7 @@ export async function apply(ctx, next) {
   const { TSL, THREE, mat, props, sentinel, kind } = ctx;
   if (kind === 'depth' || !LIT_KINDS.has(kind)) return next ? next(ctx) : undefined;
   const {
-    Fn, uniform, sharedUniformGroup, texture, positionView, positionWorld, normalWorld, screenCoordinate,
+    Fn, If, uniform, sharedUniformGroup, texture, positionView, positionWorld, normalWorld, screenCoordinate,
     vec2, vec4, float, int, select, clamp, min, max, mix, interleavedGradientNoise, vogelDiskSample,
   } = TSL;
 
@@ -140,17 +143,26 @@ export async function apply(ctx, next) {
         const a = index.toVar();
         // its fade partner: the neighbour on the side of the nearer edge
         const b = clamp(select(linear.lessThan(pick(center, a)), a.sub(1), a.add(1)), 0, 3).toVar();
-        const coords = [0, 1, 2, 3].map((c) => cascadeCoord(c));
-        const quarters = [0, 1, 2, 3].map(quarter);
-        const ca = pick(coords, a).toVar(), cb = pick(coords, b).toVar();
-        const qa = pick(quarters, a), qb = pick(quarters, b);
-        // two filters, always run (the texture reads stay in uniform control flow)
-        // (filtered into variables first: TSL turns a select around a call into a branch)
-        const fa = pcf(ca, qa, qa.add(0.5)).toVar(), fb = pcf(cb, qb, qb.add(0.5)).toVar();
-        const sa = select(ca.w.greaterThan(0.5), fa, float(1));
-        const sb = select(cb.w.greaterThan(0.5), fb, float(1));
-        const wb = select(b.equal(a), float(0), pick(weight, b));
-        const ret = float(1).sub(float(1).sub(sa).mul(pick(weight, a))).sub(float(1).sub(sb).mul(wb));
+        const wa = pick(weight, a).toVar();
+        const wb = select(b.equal(a), float(0), pick(weight, b)).toVar();
+        // the filters only where a cascade weighs in; elsewhere 1 (unshadowed), what the weights gave the full filter
+        // there: past the last cascade's far edge nothing is read (most of a wide view)
+        const sa = float(1).toVar(), sb = float(1).toVar();
+        If(wa.greaterThan(0).or(wb.greaterThan(0)), () => {
+          const coords = [0, 1, 2, 3].map((c) => cascadeCoord(c));
+          const quarters = [0, 1, 2, 3].map(quarter);
+          const ca = pick(coords, a).toVar(), cb = pick(coords, b).toVar();
+          const qa = pick(quarters, a), qb = pick(quarters, b);
+          // (filtered into variables first: TSL turns a select around a call into a branch)
+          const fa = pcf(ca, qa, qa.add(0.5)).toVar();
+          sa.assign(select(ca.w.greaterThan(0.5), fa, float(1)));
+          // the fade partner's filter only across the band where it fades in (elsewhere its weight is 0)
+          If(wb.greaterThan(0), () => {
+            const fb = pcf(cb, qb, qb.add(0.5)).toVar();
+            sb.assign(select(cb.w.greaterThan(0.5), fb, float(1)));
+          });
+        });
+        const ret = float(1).sub(float(1).sub(sa).mul(wa)).sub(float(1).sub(sb).mul(wb));
         const shadow = mix(float(1), clamp(ret, 0, 1), dir.w.mul(receive));
         lightsNode.setupDirectLight(builder, this, { lightDirection: dir.xyz, lightColor: color.rgb.mul(shadow) });
       }, 'void')();
