@@ -4,6 +4,11 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.38.7 (2026-11-08)
+
+### Fixed
+- **The flash check no longer calls a 3 Hz pulse flicker.** Three flashes a second is the bound itself, but the one-second spectrum's 1 Hz bins put any slow wobble of a game scene (a light swaying, a camera bob) at 3 Hz, so real games failed on it. The flicker measure now reads two-second windows every half second (half-hertz bins) and counts a peak from 3.5 Hz up; a peak that drifts one bin between windows still counts as held. The `flash-check` gate adds a small light pulsing at exactly 3 Hz (passes) and at 4 Hz (fails), and `node tests/flash-check.mjs --synthetic` runs the synthetic cases without a GPU.
+
 ## v0.38.6 (2026-11-08)
 
 ### Added
