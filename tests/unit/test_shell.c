@@ -94,7 +94,8 @@ static void test_screen_shake(void) {
   CHECK_EQ_INT((int)cw_shell_shake_level(), (int)CW_SHELL_SHAKE_REDUCED);
   CHECK(cw_shell_screen_shake() == 0.0f);
   cw_shell_set_shake_level(CW_SHELL_SHAKE_FULL);
-  FOLD((uint32_t)(k[0] * 100) + (uint32_t)(k[5] * 100));
+  uint32_t v = (uint32_t)(k[0] * 100) + (uint32_t)(k[5] * 100);
+  FOLD(v);
 }
 
 /* Text size and Text background (cartwheel/render2d.h): the steps go round 100, 125, 150, 200%, the shell's save
