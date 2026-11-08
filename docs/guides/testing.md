@@ -124,7 +124,7 @@ node tools/flash-check.mjs --dir frames/         # a directory of PNG frames, on
 
 - **General and red flashes** over every block of a sixth by a sixth of the screen (at every twelfth): at most 3 in any second.
 - **Flashes together**: over every 10-degree field (a third by a third), a quarter of its pixels making the same change at once counts as a flash of the field, so small lights switching together add up while a moving picture does not.
-- **Regular flicker** from 3 to 30 Hz (60 frames a second sees up to 30) in any twelfth by twelfth of the screen, whatever the flashes count.
+- **Regular flicker** above 3 Hz and up to 30 Hz (60 frames a second sees up to 30) in any twelfth by twelfth of the screen, whatever the flashes count. Each cell is read over two-second windows (half-hertz bins), so a pulse at exactly 3 Hz is the bound and passes, and 3.5 Hz is the first rate that fails.
 - `--max-rise X` also bounds the hardest two-frame rise of a block's luminance (a hard onset rather than a swell).
 - The run must move (a frozen capture proves nothing), and every check runs its **control**: the same frames with an 8 Hz full-screen strobe laid over them must fail.
 

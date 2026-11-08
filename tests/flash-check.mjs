@@ -5,7 +5,7 @@
 // Then a real run when the native samples are built: tools/flash-check.mjs on fx_explosion (its blasts' pooled flash
 // lights, smoke and sparks) through CW_FRAME_DUMP must pass, with its control (an 8 Hz strobe over it) failing, and
 // the dump must hold every frame asked for.
-//   node tests/flash-check.mjs
+//   node tests/flash-check.mjs [--synthetic]     (--synthetic: no GPU, the synthetic runs only)
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -59,6 +59,8 @@ expect('a strobe at 5 Hz on a quarter of the screen', paint(base, (x, y, t) => x
 expect('a red strobe at 5 Hz on a quarter of the screen', paint(base.map((f) => f.map((v, i) => (i % 3 ? v >> 3 : v >> 1))), (x, y, t) => x < W / 2 && y < H / 2 && Math.floor(t * 10 / FPS) % 2 ? 0.9 : 0, [255, 0, 0]), 'red:');
 expect('dots over 44% of the screen switching together at 6 Hz', paint(base, (x, y, t) => (x % 3 < 2 && y % 3 < 2 && Math.floor(t * 12 / FPS) % 2 ? 0.8 : 0)), '10-degree field together');
 expect('a small light (a twelfth by a twelfth) flickering at 8.6 Hz', paint(base, (x, y, t) => x >= 96 && x < 112 && y >= 45 && y < 54 ? 0.4 + 0.4 * Math.sin(2 * Math.PI * 8.6 * t / FPS) : 0), 'regular flicker');
+expect('the same small light pulsing at 3 Hz (the bound itself)', paint(base, (x, y, t) => x >= 96 && x < 112 && y >= 45 && y < 54 ? 0.4 + 0.4 * Math.sin(2 * Math.PI * 3 * t / FPS) : 0), 'pass');
+expect('the same small light flickering at 4 Hz', paint(base, (x, y, t) => x >= 96 && x < 112 && y >= 45 && y < 54 ? 0.4 + 0.4 * Math.sin(2 * Math.PI * 4 * t / FPS) : 0), 'regular flicker');
 expect('the same small light, steady', paint(base, (x, y) => x >= 96 && x < 112 && y >= 45 && y < 54 ? 0.5 : 0), 'pass');
 expect('a hard onset, with maxRise 0.3', paint(base, (x, y, t) => (t >= 100 && t < 140 ? 0.8 : 0)), 'a hard onset', { maxRise: 0.3 });
 expect('a frozen run', Array.from({ length: N }, () => base[0]), 'proves nothing');
@@ -70,7 +72,8 @@ if (!g.ok) { console.log('FAIL the gate did not pass the moving scene with a fai
 const g2 = flashGate(W, H, withStrobe(base, { hz: 8 }), { fps: FPS }, { label: 'gate on a strobing run' });
 if (g2.ok) { console.log('FAIL the gate passed a strobing run'); bad++; } else console.log('ok   the gate fails a strobing run');
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-if (existsSync(join(ROOT, 'build/native/samples/fx_explosion'))) {
+if (process.argv.includes('--synthetic')) console.log('note --synthetic: the fx_explosion leg did not run');
+else if (existsSync(join(ROOT, 'build/native/samples/fx_explosion'))) {
   const r = spawnSync('node', [join(ROOT, 'tools/flash-check.mjs'), '--app', 'fx_explosion', '--frames', '300', '--from', '2'], { encoding: 'utf8' });
   process.stdout.write(r.stdout || '');
   if (r.status !== 0) { console.log(`FAIL fx_explosion's run: ${(r.stderr || '').slice(-1500)}`); bad++; }

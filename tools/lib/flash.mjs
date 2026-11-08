@@ -20,12 +20,13 @@
 //            quarter of its pixels made the same transition within the last 3 frames, net of those that went the
 //            other way (scattered small lights switching together count, a moving picture, whose pixels go up and
 //            down in equal numbers, does not)
-//   flicker  regular flicker (WCAG asks to avoid it, the Harding test looks for it at 3 Hz and up): each cell of the
+//   flicker  regular flicker (WCAG asks to avoid it, the Harding test looks for it above 3 Hz): each cell of the
 //            grid's in-place change (the cell's mean change, weighted by how much its pixels change together, so a
-//            picture moving through the cell is not a light flickering in it) over one-second windows (a Hann
-//            window, every quarter second); flicker is a spectral peak between 3 and 30 Hz (60 frames a second sees
-//            up to 30) holding most of the window's varying power, with an amplitude of `flickerAmp` or more, at the
-//            same rate in two windows in a row
+//            picture moving through the cell is not a light flickering in it) over two-second windows (a Hann
+//            window, every half second, half-hertz bins); flicker is a spectral peak from 3.5 to 30 Hz (60 frames a
+//            second sees up to 30; three flashes a second is the bound itself, so a 3 Hz pulse is not flicker) holding
+//            most of the window's varying power, with an amplitude of `flickerAmp` or more, at the same rate in two
+//            windows in a row
 //   rise     the largest rise of a block's mean Y over two frames (how hard the hardest onset is; a swell rises over a
 //            tenth of a second or more). Reported; bounded only when `maxRise` is set
 //   motion   the mean change of a pixel between frames: a run whose frames never change proves nothing
@@ -49,7 +50,8 @@ export const FLASH_DEFAULTS = {
   syncFrames: 3, // how close together (frames) its pixels' transitions must be
   flickerAmp: 0.02, // the smallest regular flicker (sine amplitude of a cell's mean Y) that fails
   flickerShare: 0.6, // the share of a window's varying power the peak (3 bins) must hold
-  flickerLo: 3, flickerHi: 30, // Hz
+  flickerLo: 3.5, flickerHi: 30, // Hz: flicker counts above 3 Hz (three flashes a second is the bound itself), up to what 60 frames show
+  flickerWindow: 2, // seconds of each spectrum (half-hertz bins)
   maxRise: null, // optional bound on rise
   minMotion: 0.0005, // a run must change at least this much (mean |delta Y| per pixel per frame) or it proves nothing
 };
@@ -185,10 +187,10 @@ export function createFlashAnalyser(w, h, opts = {}) {
   }
 
   function flicker() {
-    const N = o.fps, hop = Math.max(1, N >> 2), C = G * G;
+    const N = Math.round(o.fps * o.flickerWindow), hop = Math.max(1, o.fps >> 1), C = G * G;
     const hann = Float64Array.from({ length: N }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1)));
     const wsum = hann.reduce((a, b) => a + b, 0);
-    const kLo = Math.max(1, Math.round(o.flickerLo * N / o.fps)), kHi = Math.min(N >> 1, Math.round(o.flickerHi * N / o.fps));
+    const kLo = Math.max(1, Math.ceil(o.flickerLo * N / o.fps)), kHi = Math.min(N >> 1, Math.round(o.flickerHi * N / o.fps));
     const cosT = [], sinT = [];
     for (let k = 0; k <= N >> 1; k++) { cosT.push(Float64Array.from({ length: N }, (_, i) => Math.cos((2 * Math.PI * k * i) / N))); sinT.push(Float64Array.from({ length: N }, (_, i) => Math.sin((2 * Math.PI * k * i) / N))); }
     let worst = { amp: 0, hz: 0, cell: -1, at: -1, held: false };
@@ -218,7 +220,7 @@ export function createFlashAnalyser(w, h, opts = {}) {
         const amp = (2 * Math.sqrt(near)) / wsum; // the sine amplitude, the peak's power spread over its neighbours put back
         const regular = near / total >= o.flickerShare && amp >= o.flickerAmp;
         if (regular) {
-          const held = Math.abs(prevPeak[c] - pk) <= 1;
+          const held = Math.abs(prevPeak[c] - pk) <= 2;
           if (held && amp > worst.amp) worst = { amp, hz: (pk * o.fps) / N, cell: c, at: a, held };
           prevPeak[c] = pk;
         } else prevPeak[c] = -99;
