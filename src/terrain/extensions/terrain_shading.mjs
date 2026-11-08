@@ -131,10 +131,11 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     const t = wp.xz.sub(grid.xy).mul(grid.z);
     return t.add(0.5).div(vec2(hgt.z.add(1), hgt.w.add(1)));
   }).once()();
-  const worldNormal = Fn(() => {
-    const e = texture(normalMap, gridUv).xy.mul(2).sub(1);
+  const normalOf = (t) => {
+    const e = t.xy.mul(2).sub(1);
     return normalize(vec3(e.x, sqrt(max(float(1).sub(dot(e, e)), 0)), e.y));
-  }).once()();
+  };
+  const worldNormal = Fn(() => normalOf(texture(normalMap, gridUv))).once()();
   const dist = length(wp.sub(cam.xyz));
   // Smooth hash noise avoids the periodic crosshatch of multiplied sines.
   const hash2 = (p) => fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453));
@@ -282,7 +283,9 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     // across the band where they hand over (a cliff read all of them: 18 texture reads a layer, most of a
     // canyon's frame time)
     If(g.tri.greaterThan(0), () => {
-      const n = worldNormal;
+      // (read with the gradients taken before any branch: these branches differ pixel to pixel, where a read's own
+      // derivatives are undefined)
+      const n = normalOf(texture(normalMap, gridUv).grad(g.ux, g.uy));
       const ax = abs(n.x), az = abs(n.z);
       const sx = smoothstep(0.35, 0.65, ax.div(ax.add(az).add(1e-4))).toVar();
       const dt = slope.z;
@@ -333,6 +336,7 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   const shade = Fn(() => {
     const g = {
       dx: dFdx(wp.xz).toVar(), dy: dFdy(wp.xz).toVar(), dx3: dFdx(wp).toVar(), dy3: dFdy(wp).toVar(),
+      ux: dFdx(gridUv).toVar(), uy: dFdy(gridUv).toVar(),
       // triplanar weight: 0 on gentle slopes and at low quality
       tri: select(far.w.greaterThan(0.5), clamp(slope.x.sub(worldNormal.y).div(max(slope.y, 1e-3)), 0, 1), float(0)).toVar(),
     };
