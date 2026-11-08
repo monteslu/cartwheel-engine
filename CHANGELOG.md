@@ -4,6 +4,11 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.38.9 (2026-11-08)
+
+### Removed
+- **Screen shake.** No camera shakes in cartwheel: a hit, a landing or a blast is felt in the pads (`cw_input_rumble`) and seen in the effects. The shell's Settings page has no Screen shake row. `cw_shell_screen_shake()` is deprecated and returns 0 at any stored level, so a game that multiplied its shake by it shakes nothing. `cw_shell_shake_level` and `cw_shell_set_shake_level` are deprecated and only keep the level an older save stored (a save keeps its layout and a game's save migration can still read it). `cw_shake_offset` is deprecated: `cw_explosion_shake` is now documented as a strength for a pad's rumble, never a camera offset. The shell unit test checks 0 at every level with reduced motion on and off, and that the stored level survives an init; its control (the old Full answer of 1) fails. The explosions, game shell and accessibility guides say so.
+
 ## v0.38.8 (2026-11-08)
 
 ### Fixed

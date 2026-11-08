@@ -6,9 +6,9 @@
  *
  * Settings: graphics (cartwheel/quality.h; left / right step the preset,
  * accept opens the graphics page of cartwheel/quality_menu.h with every
- * setting), music and effects volume, screen shake (Full, Reduced, Off: games
- * scale their camera shake by cw_shell_screen_shake) and the controls (each
- * action's bindings). They are saved, with the game's own save data, in one
+ * setting), music and effects volume, text size and background, and the
+ * controls (each action's bindings). There is no screen shake setting: no camera
+ * shakes (a hit or a blast is felt in the pads, cw_input_rumble). They are saved, with the game's own save data, in one
  * versioned, checksummed block the shell keeps in cw_app_desc.save.
  *
  *   static cw_app_desc desc = { ... };
@@ -169,17 +169,15 @@ void cw_shell_to_title(void); /* end the match and show the title (every pad dri
 void cw_shell_loading(float progress);
 void cw_shell_loaded(void); /* loading done: on to the title */
 
-/* What Reduced screen shake scales a game's shake by (cw_shell_screen_shake). */
-#define CW_SHELL_SHAKE_REDUCED_SCALE 0.35f
-/* The player's Screen shake setting (Settings > Screen shake), saved with the other settings; Full by default and
- * for a save from before the setting. */
+/* Deprecated: screen shake is gone. No camera shakes, so the shell has no Screen shake setting any more; a hit or a
+ * blast is felt in the pads (cw_input_rumble). These stay so older games build and older saves load. */
+#define CW_SHELL_SHAKE_REDUCED_SCALE 0.35f /* deprecated: unused */
 typedef enum { CW_SHELL_SHAKE_FULL, CW_SHELL_SHAKE_REDUCED, CW_SHELL_SHAKE_OFF } cw_shell_shake;
-/* The factor a game multiplies every camera shake, kick and bob by: 1 for Full, CW_SHELL_SHAKE_REDUCED_SCALE for
- * Reduced, 0 for Off. Reduced motion (cw_ui_set_reduced_motion) caps it at Reduced. */
+/* Deprecated: always 0, at any stored level (a game that multiplies its shake by it shakes nothing). */
 float cw_shell_screen_shake(void);
-/* The Screen shake level the player chose. */
+/* Deprecated: the level an older save stored (a save keeps its layout; migrations may read it). Nothing applies it. */
 cw_shell_shake cw_shell_shake_level(void);
-/* Set the Screen shake level as the settings menu does: it applies at once and is saved. */
+/* Deprecated: stores a level in the save; nothing applies it. */
 void cw_shell_set_shake_level(cw_shell_shake level);
 
 cw_bus cw_shell_music_bus(void); /* play music here: it follows the Music volume */

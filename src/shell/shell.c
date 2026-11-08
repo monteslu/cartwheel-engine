@@ -31,7 +31,7 @@ typedef struct shell_save {
   uint8_t music, sfx; /* volume steps 0..10 */
   uint8_t crisp;     /* cw_crisp_ui_saved */
   uint8_t gfx[4];    /* cw_quality_saved, little-endian (0: none, or a save from before it) */
-  uint8_t shake;     /* cw_shell_shake (0 Full: also what a save from before the setting holds) */
+  uint8_t shake;     /* the old Screen shake setting, kept so saves keep their layout; no longer applied (screen shake is gone) */
   uint8_t text;      /* cw_text_scale_saved: Text size and Text background (0: none chosen, also a save from before them) */
   uint8_t reserved[6];
   uint8_t game[CW_SHELL_GAME_SAVE_MAX];
@@ -125,11 +125,8 @@ void cw_shell_save_commit(void) {
 void *cw_shell_game_save(void) { return SAVE.game; }
 
 cw_shell_shake cw_shell_shake_level(void) { return SAVE.shake <= CW_SHELL_SHAKE_OFF ? (cw_shell_shake)SAVE.shake : CW_SHELL_SHAKE_FULL; }
-float cw_shell_screen_shake(void) {
-  cw_shell_shake l = cw_shell_shake_level();
-  float s = l == CW_SHELL_SHAKE_OFF ? 0.0f : l == CW_SHELL_SHAKE_REDUCED ? CW_SHELL_SHAKE_REDUCED_SCALE : 1.0f;
-  return cw_ui_reduced_motion() && s > CW_SHELL_SHAKE_REDUCED_SCALE ? CW_SHELL_SHAKE_REDUCED_SCALE : s;
-}
+/* screen shake is gone: no camera shakes, at any setting (a hit or a blast is felt in the pads, cw_input_rumble) */
+float cw_shell_screen_shake(void) { return 0.0f; }
 void cw_shell_set_shake_level(cw_shell_shake level) {
   SAVE.shake = (uint8_t)CW_CLAMP((int)level, 0, 2);
   S.dbg_shake = SAVE.shake;
@@ -327,8 +324,7 @@ static void pause_items(void) {
   items[n_items++] = (item){ "Settings", "" };
   items[n_items++] = (item){ "Quit to title", "" };
 }
-enum { SET_GRAPHICS, SET_MUSIC, SET_SFX, SET_SHAKE, SET_TEXT, SET_TEXT_BG, SET_CONTROLS, SET_BACK };
-static const char *const SHAKE_LABELS[3] = { "Full", "Reduced", "Off" };
+enum { SET_GRAPHICS, SET_MUSIC, SET_SFX, SET_TEXT, SET_TEXT_BG, SET_CONTROLS, SET_BACK }; /* no Screen shake row: nothing shakes */
 static void settings_items(void) {
   n_items = 0;
   items[n_items] = (item){ "Graphics", "" };
@@ -337,8 +333,6 @@ static void settings_items(void) {
   snprintf(items[n_items++].value, sizeof items[0].value, "%d%%", SAVE.music * 10);
   items[n_items] = (item){ "Effects", "" };
   snprintf(items[n_items++].value, sizeof items[0].value, "%d%%", SAVE.sfx * 10);
-  items[n_items] = (item){ "Screen shake", "" };
-  snprintf(items[n_items++].value, sizeof items[0].value, "%s", SHAKE_LABELS[cw_shell_shake_level()]);
   items[n_items] = (item){ "Text size", "" };
   snprintf(items[n_items++].value, sizeof items[0].value, "%s", cw_text_scale_label());
   items[n_items] = (item){ "Text background", "" };
@@ -385,9 +379,6 @@ static void settings_change(int dir) { /* dir -1 / +1: left / right; 0: accept *
     break;
   case SET_MUSIC: SAVE.music = step(SAVE.music, dir); break;
   case SET_SFX: SAVE.sfx = step(SAVE.sfx, dir); break;
-  case SET_SHAKE: /* left / right step it (stopping at the ends), accept goes round */
-    SAVE.shake = (uint8_t)(!dir ? ((int)cw_shell_shake_level() + 1) % 3 : CW_CLAMP((int)cw_shell_shake_level() + dir, 0, 2));
-    break;
   case SET_TEXT: /* 100, 125, 150, 200%: left / right step it (stopping at the ends), accept goes round */
     if (dir < 0 && cw_text_scale() > 1.01f) cw_text_scale_cycle_back();
     else if ((dir > 0 && cw_text_scale() < 1.99f) || !dir) cw_text_scale_cycle();

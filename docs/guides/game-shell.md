@@ -15,20 +15,17 @@ writes only its gameplay and art:
   graphics page of (header:quality_menu.h) with every setting, the render
   resolution with its pixel size (the player's own: a preset never changes
   it), ambient occlusion, shadows, anti-aliasing, effects detail, and the
-  game's own settings from `cw_quality_lever_add`), music and effects volume, screen shake
-  (Full, Reduced, Off), Text size (100%, 125%, 150%, 200%: every piece of 2D text, the
+  game's own settings from `cw_quality_lever_add`), music and effects volume, Text size (100%, 125%, 150%, 200%: every piece of 2D text, the
   game's HUD included, see [localization and accessibility](guide:l10n-a11y)), Text
   background (Off, Outline, Panel: contrast for text over the scene) and the controls (each action and its bindings, from
   (header:input.h)); saved with the game's own save data in one versioned,
   checksummed block;
-- screen shake: the shell never moves a camera, the game does, so the game
-  multiplies every camera shake, kick and bob by `cw_shell_screen_shake()`
-  (1 for Full, `CW_SHELL_SHAKE_REDUCED_SCALE` for Reduced, 0 for Off; reduced
-  motion caps it at Reduced). Shake only for real events the camera can see
-  (a big landing, a boss hit, an explosion), keep it short and let it fade:
-  a shake that is set again every tick, or set by something off screen, makes
-  the whole picture tremble all the time. `cw_shell_shake_level` and
-  `cw_shell_set_shake_level` read and set the level itself;
+- no screen shake: no camera shakes, at any setting, so there is no Screen
+  shake row. A big landing, a boss hit or an explosion is felt in the pads
+  (`cw_input_rumble`, the explosion kit's `cw_explosion_shake` as its
+  strength) and seen in the effects. `cw_shell_screen_shake()` is deprecated
+  and returns 0; `cw_shell_shake_level` and `cw_shell_set_shake_level` only
+  keep the level an older save stored, so a save keeps its layout;
 - input: menus answer pads, the keyboard and pointer taps (mouse or touch);
   joined players are assigned their pad and devices in join order, so
   gameplay asks `cw_action_*` for players 0 to n-1;
