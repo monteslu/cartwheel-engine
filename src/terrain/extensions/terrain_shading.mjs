@@ -377,12 +377,20 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
       // Its top-down normal is read only where the height blend gives it a share: across much of a transition
       // one layer's height stands out by more than the blend's sharpness, and there the other has none (tb is exactly
       // 0, where the mix gave the first layer's normal anyway): half its top-down reads skipped there.
+      // And the second layer is not read at all where the height blend cannot give it a share whatever its height:
+      // a layer's height (its albedo's alpha) is at most 1, so its weighted height is at most its share t, and
+      // where the first layer's weighted height stands out over t by more than the sharpness the blend gives the
+      // second exactly 0 (the 1e-3 margin is far above the rounding of either). There the old mix with a weight of
+      // 0 gave the first layer itself: the same picture, without its three to six texture reads.
       If(wB.greaterThan(0.004), () => {
-        const b = layerAt(B, near, g, true);
-        const tb = heightBlend(a, b, wB.div(max(wA.add(wB), 1e-4))).toVar();
-        pAlb.assign(mix(a.alb, b.alb, tb));
-        If(tb.greaterThan(0), () => {
-          pNrm.assign(mix(a.nrm, b.finishNrm(), tb));
+        const t = wB.div(max(wA.add(wB), 1e-4)).toVar();
+        If(a.alb.a.mul(float(1).sub(t)).sub(slope.w).sub(t).lessThan(1e-3), () => {
+          const b = layerAt(B, near, g, true);
+          const tb = heightBlend(a, b, t).toVar();
+          pAlb.assign(mix(a.alb, b.alb, tb));
+          If(tb.greaterThan(0), () => {
+            pNrm.assign(mix(a.nrm, b.finishNrm(), tb));
+          });
         });
       });
     });
