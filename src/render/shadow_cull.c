@@ -23,11 +23,24 @@ static struct {
   /* CW_SHADOW_CONTACTS=1 (native, tests/quality-grounding.mjs): each caster's base on screen, the last view's */
   int record; /* -1 not read yet */
   t3_mat4 view, proj;
-  struct contact { float x, y, size; bool culled, front; } contacts[512];
+  struct contact { float x, y, cx, cy, size; bool culled, front, cfront, around, along; } contacts[512];
   int n_contacts;
 } C = { .record = -1 };
 
-/* the caster's lowest point under its middle (its world box), on screen 0..1 from the top left */
+/* a point of the world on screen, 0..1 from the top left; false behind the camera */
+static bool on_screen(t3_vec3 p, float *x, float *y) {
+  t3_vec3 v = t3_vec3_apply_mat4(p, &C.view);
+  t3_vec3 n = t3_vec3_apply_mat4(v, &C.proj);
+  *x = n.x * 0.5f + 0.5f, *y = 0.5f - n.y * 0.5f;
+  return v.z < 0;
+}
+/* the caster's base on screen: the lowest point under the middle of its world box. Two kinds of caster have no base
+ * there (the middle of the box is where nothing of it stands):
+ *   around: its box stands around the camera (the camera above its footprint: a ring of walls, a floor, a merged
+ *     set of stands); it has no single base and the grounding gate leaves it out;
+ *   along: a long caster (its footprint more than 6 times as long as it is wide and as it is tall: a wall, a fence,
+ *     a row of stands) stands on a line; its base is the point of that line nearest the camera.
+ * cx, cy keep the box's middle (the old rule) for the gate's control. */
 static void contact(t3_object *o, t3_geometry *g, float size, bool culled) {
   if (C.n_contacts >= (int)CW_ARRAY_LEN(C.contacts)) return;
   if (!g->has_bounding_box) t3_geometry_compute_bounding_box(g);
@@ -39,11 +52,15 @@ static void contact(t3_object *o, t3_geometry *g, float size, bool culled) {
     lo.x = fminf(lo.x, c.x), lo.y = fminf(lo.y, c.y), lo.z = fminf(lo.z, c.z);
     hi.x = fmaxf(hi.x, c.x), hi.y = fmaxf(hi.y, c.y), hi.z = fmaxf(hi.z, c.z);
   }
-  t3_vec3 base = { (lo.x + hi.x) * 0.5f, lo.y, (lo.z + hi.z) * 0.5f };
-  t3_vec3 v = t3_vec3_apply_mat4(base, &C.view);
-  t3_vec3 n = t3_vec3_apply_mat4(v, &C.proj);
   struct contact *c = &C.contacts[C.n_contacts++];
-  c->x = n.x * 0.5f + 0.5f, c->y = 0.5f - n.y * 0.5f, c->size = size, c->culled = culled, c->front = v.z < 0;
+  c->size = size, c->culled = culled;
+  c->around = C.eye.x >= lo.x && C.eye.x <= hi.x && C.eye.z >= lo.z && C.eye.z <= hi.z;
+  float dx = hi.x - lo.x, dz = hi.z - lo.z;
+  c->along = !c->around && fmaxf(dx, dz) > 6 * fmaxf(fmaxf(fminf(dx, dz), hi.y - lo.y), 0.01f);
+  t3_vec3 mid = { (lo.x + hi.x) * 0.5f, lo.y, (lo.z + hi.z) * 0.5f };
+  c->cfront = on_screen(mid, &c->cx, &c->cy);
+  t3_vec3 base = c->along ? (t3_vec3){ CW_CLAMP(C.eye.x, lo.x, hi.x), lo.y, CW_CLAMP(C.eye.z, lo.z, hi.z) } : mid;
+  c->front = on_screen(base, &c->x, &c->y);
 }
 
 static void cmd_contacts(int argc, const char **argv, cw_reply *r) {
@@ -51,8 +68,9 @@ static void cmd_contacts(int argc, const char **argv, cw_reply *r) {
   cw_reply_printf(r, "{\"shadow_contacts\":[");
   for (int i = 0; i < C.n_contacts; i++) {
     const struct contact *c = &C.contacts[i];
-    cw_reply_printf(r, "%s{\"x\":%.4f,\"y\":%.4f,\"size\":%.4f,\"culled\":%s,\"front\":%s}", i ? "," : "", (double)c->x, (double)c->y,
-                    (double)c->size, c->culled ? "true" : "false", c->front ? "true" : "false");
+    cw_reply_printf(r, "%s{\"x\":%.4f,\"y\":%.4f,\"size\":%.4f,\"culled\":%s,\"front\":%s,\"around\":%s,\"along\":%s,\"cx\":%.4f,\"cy\":%.4f,\"cfront\":%s}",
+                    i ? "," : "", (double)c->x, (double)c->y, (double)c->size, c->culled ? "true" : "false", c->front ? "true" : "false",
+                    c->around ? "true" : "false", c->along ? "true" : "false", (double)c->cx, (double)c->cy, c->cfront ? "true" : "false");
   }
   cw_reply_printf(r, "]}");
 }
@@ -96,7 +114,7 @@ void cw__shadow_cull_begin(t3_scene *scene, const t3_camera *cam) {
     C.fields = true;
     cw_debug_i32("shadow.culled", &C.culled);
     cw_debug_i32("shadow.casters", &C.kept);
-    cw_debug_command("shadow_contacts", "shadow_contacts: each shadow caster's base on screen in the last view (CW_SHADOW_CONTACTS=1), its size (radius / distance) and whether the Shadows setting culled it", cmd_contacts);
+    cw_debug_command("shadow_contacts", "shadow_contacts: each shadow caster's base on screen in the last view (CW_SHADOW_CONTACTS=1), its size (radius / distance), whether the Shadows setting culled it and whether it stands around the camera (no single base) or along a line (its base the line's point nearest the camera), and the old base under its box's middle (cx, cy)", cmd_contacts);
   }
   if (C.record < 0) {
 #if !CW_CART

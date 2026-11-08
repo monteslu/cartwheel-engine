@@ -7,7 +7,13 @@
 // A project is a directory holding project.cwproj (flat key = value lines):
 //   app = "<cw_add_app target>"          required
 //   name = "<display name>"              the title (default: app)
-//   version = "1.0.0"                    default 0.1.0 (a preset may override)
+//   version = "1.0.0"                    semver; the version is --version, else the preset's
+//                                        version, else the project's git checkout's (a
+//                                        v<semver> tag at a clean HEAD: the tag; otherwise
+//                                        <last tag>-dev.g<commit>), else this key (1 and 1.2
+//                                        mean 1.0.0 and 1.2.0), else 0.1.0: the rule
+//                                        cw_add_app gives the cart's manifest
+//                                        (tools/lib/app-version.mjs), so they agree.
 //   export.<preset>.platform = "<platform>"   one per preset (PLATFORMS below)
 //   export.<preset>.output = "<dir>"     default exports/<preset> (relative to the project)
 //   export.<preset>.<key> = ...          per platform: app_id, version, title, icon,
@@ -19,6 +25,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve, isAbsolute, relative } from 'node:path';
 import { parseCwproj, mkdirp, ExportError, ROOT } from './util.mjs';
+import { resolveAppVersion, normalizeVersion } from '../lib/app-version.mjs';
 import * as linux from './linux.mjs';
 import * as windows from './windows.mjs';
 import * as android from './android.mjs';
@@ -57,28 +64,38 @@ export function readProject(project) {
   return { dir, keys, presets, isProject: existsSync(join(dir, 'CMakeLists.txt')) };
 }
 
+/**
+ * The version an export carries (its packages' names, its cart's manifest).
+ * @returns {{version: string, explicit: boolean, error: string|null}}
+ */
+function exportVersion(proj, preset, opts) {
+  const set = opts.version || proj.presets[preset].version;
+  const r = resolveAppVersion({ set: set && normalizeVersion(set), dir: proj.dir, fallback: proj.keys.version });
+  return { version: r.version, explicit: !!set, error: r.error };
+}
+
 function makeCtx(proj, preset, opts) {
+  const v = exportVersion(proj, preset, opts);
   const p = proj.presets[preset];
   const app = proj.keys.app;
   const opt = (k, d) => (p[k] !== undefined ? p[k] : proj.keys[k] !== undefined && !['platform', 'output'].includes(k) ? proj.keys[k] : d);
   const out = opts.out ? resolve(opts.out, preset) : resolve(proj.dir, p.output || join('exports', preset));
   return {
     preset, platform: p.platform, app, projectDir: proj.dir, isProject: proj.isProject, keys: proj.keys,
-    title: opt('title', proj.keys.name || app), version: opts.version || opt('version', '0.1.0'), opt, outDir: out,
+    title: opt('title', proj.keys.name || app), version: v.version, explicitVersion: v.explicit, opt, outDir: out,
     verbose: !!opts.verbose, threeBuilder: !!opts.threeBuilder, buildDir: opts.build || null, log: opts.onLog || (() => {}), progress: (pct, stage) => (opts.onProgress || (() => {}))(preset, pct, stage),
   };
 }
 
 /** Problems with one preset that need no build, as a message (null when fine). */
-function check(proj, preset) {
+function check(proj, preset, opts) {
   if (!PRESET_RE.test(preset)) return `preset name "${preset}": use [a-z0-9_-]`;
   const p = proj.presets[preset];
   if (!p) return `no preset "${preset}" in project.cwproj (have: ${Object.keys(proj.presets).join(', ') || 'none'}; add export.${preset}.platform = "<platform>")`;
   if (!p.platform) return `preset "${preset}" has no platform (export.${preset}.platform = one of ${Object.keys(PLATFORMS).join(', ')})`;
   if (!PLATFORMS[p.platform]) return `preset "${preset}": unknown platform "${p.platform}" (one of ${Object.keys(PLATFORMS).join(', ')})`;
   if (!proj.keys.app || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(proj.keys.app)) return 'project.cwproj needs app = "<the cw_add_app target name>"';
-  if (proj.presets[preset].version && !/^\d+(\.\d+){0,2}$/.test(proj.presets[preset].version)) return `version "${proj.presets[preset].version}": use 1, 1.2 or 1.2.3`;
-  return null;
+  return exportVersion(proj, preset, opts).error;
 }
 
 /**
@@ -95,7 +112,7 @@ export async function exportPresets(o) {
   if (!presets.length) return [{ preset: '*', ok: false, error: 'project.cwproj defines no export presets (export.<preset>.platform = ...)' }];
   const results = [];
   for (const preset of presets) {
-    const bad = check(proj, preset);
+    const bad = check(proj, preset, o);
     if (bad) { results.push({ preset, ok: false, error: bad }); continue; }
     const ctx = makeCtx(proj, preset, o);
     const plat = PLATFORMS[ctx.platform];
