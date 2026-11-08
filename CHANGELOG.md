@@ -4,6 +4,13 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.38.6 (2026-11-08)
+
+### Added
+- **A flash check: `tools/flash-check.mjs`.** It runs an app natively for N frames on the fixed clock (with a gate's input script and start requests) and holds every frame to the photosensitive flash thresholds of WCAG 2.2 success criterion 2.3.1 and the Harding test: at most three general flashes and three red flashes in any second over a sixth by a sixth of the screen, the same for small lights that switch together over a quarter of a 10-degree field, and no regular flicker from 3 to 30 Hz in any twelfth by twelfth of the screen. `--max-rise` can also bound the hardest two-frame onset. A frozen capture fails (it proves nothing), and every check runs its control: the same frames with an 8 Hz full-screen strobe laid over them must fail. `tools/lib/flash.mjs` is the analyser for a games repository's own sweep (`flashGate`, `analyseFrames`, `readFrameDump`, `withStrobe`); it also reads a directory of PNG frames. The `flash-check` gate holds it to synthetic runs with known answers (a moving high-contrast picture, a swell and fade, a 2 Hz pulse and random sparkles pass; a full-screen strobe, a red strobe, dots switching together, a small light flickering at 8.6 Hz, a hard onset and a frozen run each fail on their measure) and checks fx_explosion's blasts, which pass.
+- **`CW_FRAME_DUMP`** (native, with `CW_FRAMES`): every frame from `CW_FRAME_DUMP_FROM` on, box-filtered down by `CW_FRAME_DUMP_SCALE` (default 8) in linear light and appended raw to one file, on GL and WebGPU. It is how the flash check sees every frame of a run.
+- **The accessibility guide has a section on flashes**: the thresholds, and how to make a flash that passes (rise over a few frames and fade over many, rate-cap anything that retriggers, blink slowly and softly, no regular flicker on lights). The testing guide documents the check.
+
 ## v0.38.5 (2026-11-08)
 
 ### Fixed

@@ -7,6 +7,11 @@
  *                      loads finish when their decode is done, under the millisecond budget, as
  *                      in a player's game, so frame times measure what a player gets
  *   CW_SCREENSHOT=f    with CW_FRAMES: write the last frame to f (PNG)
+ *   CW_FRAME_DUMP=f    with CW_FRAMES: append every frame from CW_FRAME_DUMP_FROM (default 1) to f,
+ *                      box-filtered down by CW_FRAME_DUMP_SCALE (default 8; averaged in linear light,
+ *                      stored as sRGB bytes): a 16-byte header ("CWFD", u32 width, u32 height, u32 0,
+ *                      little-endian), then width * height * 3 bytes (RGB, top row first) per frame.
+ *                      What tools/flash-check.mjs reads (tools/lib/flash.mjs)
  *   CW_DEBUG_DUMP=f    write the debug fields as JSON at the end of a CW_FRAMES run,
  *                      or when the game quits (cw_quit)
  *   CW_DEBUG_CMDS="a;b" with CW_FRAMES only: after the last frame, run each debug
@@ -18,6 +23,7 @@
  *                      cartwheel/remote.h launches games with); turns the
  *                      channel on even without .debug; EOF on it quits
  *   CW_START_PAUSED=1  the debugger's pause after frame 1 (cartwheel/debug.h) */
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -406,6 +412,61 @@ static void write_screenshot(const char *path) {
   free(px);
 }
 
+/* CW_FRAME_DUMP: every frame from CW_FRAME_DUMP_FROM on, box-filtered down, appended raw (see the header) */
+static FILE *dump_file;
+static int dump_w, dump_h;
+static float dump_lin[256];
+static void dump_frame(const char *path, int scale) {
+  int w, h;
+  unsigned char *px = NULL;
+  bool top_down = true;
+  if (cw_gpu_backend() == CW_GPU_WEBGPU) {
+    if (!cw__wgpu_readback(&px, &w, &h)) { cw_error("frame dump: WebGPU readback failed"); return; }
+  } else {
+    cw_drawable_size(&w, &h);
+    px = malloc((size_t)w * h * 4);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px);
+    top_down = false;
+  }
+  if (scale < 1) scale = 1;
+  int ow = w / scale, oh = h / scale;
+  if (!dump_file) {
+    dump_file = fopen(path, "wb");
+    if (!dump_file) { cw_error("frame dump: cannot open %s", path); free(px); return; }
+    for (int i = 0; i < 256; i++) {
+      float c = i / 255.0f;
+      dump_lin[i] = c <= 0.04045f ? c / 12.92f : powf((c + 0.055f) / 1.055f, 2.4f);
+    }
+    dump_w = ow, dump_h = oh;
+    uint32_t head[4] = { 0x44465743u /* "CWFD" */, (uint32_t)ow, (uint32_t)oh, 0 };
+    fwrite(head, 4, 4, dump_file);
+  }
+  if (ow != dump_w || oh != dump_h) { cw_error("frame dump: the frame size changed (%dx%d)", w, h); free(px); return; }
+  unsigned char *row = malloc((size_t)ow * 3);
+  for (int oy = 0; oy < oh; oy++) {
+    for (int ox = 0; ox < ow; ox++) {
+      float acc[3] = { 0, 0, 0 };
+      for (int y = 0; y < scale; y++) {
+        int sy = oy * scale + y;
+        const unsigned char *src = px + ((size_t)(top_down ? sy : h - 1 - sy) * w + (size_t)ox * scale) * 4;
+        for (int x = 0; x < scale; x++, src += 4)
+          for (int c = 0; c < 3; c++) acc[c] += dump_lin[src[c]];
+      }
+      for (int c = 0; c < 3; c++) {
+        float v = acc[c] / (float)(scale * scale);
+        v = v <= 0.0031308f ? v * 12.92f : 1.055f * powf(v, 1 / 2.4f) - 0.055f;
+        int b = (int)lroundf(v * 255.0f);
+        row[ox * 3 + c] = (unsigned char)(b < 0 ? 0 : b > 255 ? 255 : b);
+      }
+    }
+    fwrite(row, 1, (size_t)ow * 3, dump_file);
+  }
+  free(row);
+  free(px);
+}
+
 /* Called once per frame before the frame runs (the hot-reload host checks
  * for new code here). */
 void (*cw__native_frame_hook)(void);
@@ -561,6 +622,10 @@ int cw_native_main(int argc, char **argv, cw_app_desc (*app_fn)(int, char **)) {
     /* CW_START_PAUSED: the debugger's pause after the first frame, the frame a
      * cart's host runs on load, so play-in-editor starts at tick 1 everywhere */
     if (p->frame == 1 && getenv("CW_START_PAUSED") && atoi(getenv("CW_START_PAUSED"))) cw_debug_pause(true);
+    if (fixed_frames > 0 && getenv("CW_FRAME_DUMP")) {
+      const char *from = getenv("CW_FRAME_DUMP_FROM"), *sc = getenv("CW_FRAME_DUMP_SCALE");
+      if ((long)p->frame >= (from ? strtol(from, NULL, 0) : 1)) dump_frame(getenv("CW_FRAME_DUMP"), sc ? atoi(sc) : 8);
+    }
     if (fixed_frames > 0 && (long)p->frame >= fixed_frames) {
       const char *cmds = getenv("CW_DEBUG_CMDS");
       if (cmds) { /* "cmd1;cmd2": run each, print one JSON reply per line */
@@ -597,6 +662,7 @@ int cw_native_main(int argc, char **argv, cw_app_desc (*app_fn)(int, char **)) {
   }
   /* a game that quit by itself (cw_quit) still leaves its state behind */
   if (!dumped && getenv("CW_DEBUG_DUMP")) cw_debug_dump_json(getenv("CW_DEBUG_DUMP"));
+  if (dump_file) fclose(dump_file), dump_file = NULL;
   cw__shutdown();
   cw_save_commit();
   return 0;

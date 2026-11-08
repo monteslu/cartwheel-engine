@@ -112,6 +112,24 @@ A comparison of two broken runs looks like success, so every gate carries a cont
 
 Scripted gates run their own controls and print `CONTROL PASSED` (a failure) when one does not fail.
 
+## Flash check
+
+`tools/flash-check.mjs` checks that a run never strobes ([Localization and accessibility](guide:l10n-a11y) has the rules and how to make flashes that pass). It runs an app natively for N frames on the fixed clock, with an input script like any gate, and checks every frame from frame K (by default 2) in one-second windows:
+
+```text
+node tools/flash-check.mjs --app fx_explosion --frames 600 [--from 60] [--input script.json] [--gpu webgpu]
+node tools/flash-check.mjs --dump run.cwfd       # frames captured already (CW_FRAME_DUMP)
+node tools/flash-check.mjs --dir frames/         # a directory of PNG frames, one a frame
+```
+
+- **General and red flashes** over every block of a sixth by a sixth of the screen (at every twelfth): at most 3 in any second.
+- **Flashes together**: over every 10-degree field (a third by a third), a quarter of its pixels making the same change at once counts as a flash of the field, so small lights switching together add up while a moving picture does not.
+- **Regular flicker** from 3 to 30 Hz (60 frames a second sees up to 30) in any twelfth by twelfth of the screen, whatever the flashes count.
+- `--max-rise X` also bounds the hardest two-frame rise of a block's luminance (a hard onset rather than a swell).
+- The run must move (a frozen capture proves nothing), and every check runs its **control**: the same frames with an 8 Hz full-screen strobe laid over them must fail.
+
+`CW_FRAME_DUMP=file` (native, with `CW_FRAMES`) is how the frames are captured: every frame from `CW_FRAME_DUMP_FROM` on, box-filtered down by `CW_FRAME_DUMP_SCALE` (default 8) in linear light, appended raw. A games repository calls the same tool with `CW_PROJECT_ROOT` set, or imports `tools/lib/flash.mjs` (`flashGate`, `readFrameDump`, `analyseFrames`, `withStrobe`) for its own sweep. `tests/flash-check.mjs` holds the analyser to synthetic runs whose answers are known.
+
 ## Unit suites
 
 A unit suite is an app (`tests/unit/test_*.c`) that runs every test in `init` and publishes the counts as debug fields, so the gate compares them across hosts like any other state. `tests/unit/test.h` provides `CHECK(cond)`, `CHECK_EQ_INT(a, b)`, `FOLD(v)` (fold a result that must agree across hosts into `unit.checksum`) and `CW_TEST_SUITE("name", {"case", fn}, ...)`, which defines `cw_main`. Each suite publishes `unit.passed`, `unit.failed`, `unit.checksum` and `unit.done`; a failing check logs `file:line`.
