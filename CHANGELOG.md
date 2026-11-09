@@ -31,6 +31,14 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   Gate `env-romdev` runs each such
   environment on its cart through romdev (0 of 161 refused; control: a variable a unit suite reads in its init on
   purpose is refused).
+- **LightmapGI `shading` set after the bake applies.** It was read only when the bake landed, so a change in play (the
+  lightmap-yard control's `LIT`) did nothing; a lightmapped mesh now keeps its original material and is remade from it.
+- `unit_resource`'s GPU-resident check holds on WebGPU (the texels go to three.c, which uploads them at the first draw;
+  there is no GL texture).
+- The romdev mode's WebGPU leg (`gate.mjs --hosts romdev --gpu both`) runs gates written for GL alone: gate keys
+  `glOnlyFields` (state measured on GL only: viewmodel's `vm.wall_ok`), `vsGlTol` (a GPU readback that rounds differently:
+  fx-collide's mean height, 1 mm) and a top-level `vsGl` (lightmap-bake's ball covers 0.1% of the frame). All 121 gates of
+  the samples changed here pass on romdev GL and WebGPU with their controls failing; 4 are native only.
 
 ## v0.41.0 (2026-11-09)
 
