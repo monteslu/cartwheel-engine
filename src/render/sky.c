@@ -594,6 +594,13 @@ static void pass_sky_env(cw_pass_ctx *ctx, void *user) {
 static void pass_sky_sun_wgpu(cw_pass_ctx *ctx, sky_rt *s);
 #endif
 
+#ifndef GL_VIEWPORT
+#define GL_VIEWPORT 0x0BA2
+#endif
+#ifndef GL_SCISSOR_BOX
+#define GL_SCISSOR_BOX 0x0C10
+#endif
+
 /* The part of the screen the sun's disk can cover, in NDC (x0, y0, x1, y1; y up): the disk's rim, a polygon round the
  * cone of radius r about the sun's direction, projected as points at infinity. The pass draws a full-screen
  * triangle whose every pixel works out its own direction and discards outside the disk; scissored to this box, the
@@ -652,7 +659,8 @@ static void pass_sky_sun(cw_pass_ctx *ctx, void *user) {
   glGetIntegerv(GL_VIEWPORT, vp);
   sun_px_box(box, vp[2], vp[3], false, sc);
   if (sc[2] <= 0 || sc[3] <= 0) return;
-  GLboolean had_scissor = glIsEnabled(GL_SCISSOR_TEST);
+  GLint had_scissor = 0;
+  glGetIntegerv(GL_SCISSOR_TEST, &had_scissor); /* (a capability's glGet is its state: glIsEnabled is not on every host) */
   int old_sc[4];
   glGetIntegerv(GL_SCISSOR_BOX, old_sc);
   glEnable(GL_SCISSOR_TEST);
