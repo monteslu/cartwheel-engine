@@ -46,22 +46,35 @@ static void init(void *u) {
   cw_debug_i32("vm.wall_ok", &wall_ok);
   cw_debug_field("vm.wall_px", wall_px, CW_DBG_I32, 3);
   cw_node cam = node("World/Camera"), gun = node("World/Camera/Gun");
-  const char *e;
-  if ((e = getenv("VIEWMODEL_MSAA")) && *e) cw_node_set(node("World/Post"), "msaa", cw_val_int(atoi(e)));
-  if ((e = getenv("VIEWMODEL_PREPASS")) && *e) cw_node_set(node("World/Post"), "depth_prepass", cw_val_bool(atoi(e) != 0));
-  if (getenv("VIEWMODEL_OFF")) {
-    cw_node_set(gun, "layers", cw_val_int(1));
-    cw_node_set(cam, "viewmodel_layers", cw_val_int(0));
-  }
   cw_value v;
   if (cw_node_get_prop(cam, "viewmodel_layers", &v)) on = v.i != 0;
   if (cw_node_get_prop(gun, "layers", &v)) gun_layers = (int32_t)v.i;
   if (cw_node_get_prop(cam, "viewmodel_fov", &v)) vm_fov = (float)v.f;
 }
 
+/* the gate switches, read with cw_test_env (cartwheel/debug.h) on the first frame they can be set on every host
+ * (frame 2: a cart host delivers them with its first request), applied once */
+static void test_switches(void) {
+  static bool done;
+  if (done || cw_frame_index() < 1) return;
+  done = true;
+  cw_node cam = node("World/Camera"), gun = node("World/Camera/Gun");
+  const char *e;
+  if ((e = cw_test_env("VIEWMODEL_MSAA")) && *e) cw_node_set(node("World/Post"), "msaa", cw_val_int(atoi(e)));
+  if ((e = cw_test_env("VIEWMODEL_PREPASS")) && *e) cw_node_set(node("World/Post"), "depth_prepass", cw_val_bool(atoi(e) != 0));
+  if (cw_test_env("VIEWMODEL_OFF")) {
+    cw_node_set(gun, "layers", cw_val_int(1));
+    cw_node_set(cam, "viewmodel_layers", cw_val_int(0));
+  }
+  cw_value v;
+  if (cw_node_get_prop(cam, "viewmodel_layers", &v)) on = v.i != 0;
+  if (cw_node_get_prop(gun, "layers", &v)) gun_layers = (int32_t)v.i;
+}
+
 static void fixed_update(void *u, double dt) {
   (void)u;
   (void)dt;
+  test_switches();
   tick++;
 }
 

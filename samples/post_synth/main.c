@@ -288,7 +288,7 @@ static void apply_props(const char *props, float fog) {
       "chromatic_aberration=false;ca_intensity=0.004;debug_view=NONE";
   /* POST_SYNTH_EXTRA: more properties after every segment's (a gate
    * control: "msaa=0" shows the MSAA gate can see MSAA missing) */
-  const char *extra = getenv("POST_SYNTH_EXTRA");
+  const char *extra = cw_test_env("POST_SYNTH_EXTRA"); /* from frame 2 on every host: update applies it again then */
   for (int pass = 0; pass < 3; pass++) {
     const char *s = pass == 0 ? base : pass == 1 ? props : extra ? extra : "";
     while (*s) {
@@ -347,7 +347,7 @@ static void update(void *u, double dt) {
       start += segs[k].frames;
     }
   }
-  if (k != seg_index) {
+  if (k != seg_index || (cw_frame_index() == 1 && cw_test_env("POST_SYNTH_EXTRA"))) {
     seg_index = k;
     apply_props(segs[k].props, segs[k].fog);
   }

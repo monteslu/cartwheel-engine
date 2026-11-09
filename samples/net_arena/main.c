@@ -317,7 +317,7 @@ static void make_peer(peer_t *p, const char *label, cw_net_transport *tr, int sl
   p->session = cw_net_session_new(&(cw_net_session_desc){ tr, slot, PROTOCOL, 3.0 });
   p->rb = cw_rollback_new(&(cw_rollback_desc){ .session = p->session, .tree = p->tree, .players = 2, .input_size = 2,
                                                .input_delay = 2, .max_prediction = 10, .hash_interval = 10, .dt = 1.0 / 60,
-                                               .sample_input = sample, .user = p, .no_rollback = env_num("CW_NET_NO_ROLLBACK", 0) != 0 });
+                                               .sample_input = sample, .user = p });
 }
 /* #endregion */
 
@@ -448,6 +448,14 @@ static void stats_out(peer_t *p, uint32_t *hash, int32_t *rb, int32_t *resim, in
 
 static void fixed(void *u, double dt) {
   (void)u;
+  /* CW_NET_NO_ROLLBACK=1 (a gate's control) from frame 2, when every host has it (cw_test_env); each tick, so peers
+   * made later (udp mode) take it too */
+  if (cw_frame_index() >= 1) {
+    const char *nr = cw_test_env("CW_NET_NO_ROLLBACK");
+    bool off = nr && atof(nr) != 0;
+    cw_rollback_set_no_rollback(G.a.rb, off);
+    cw_rollback_set_no_rollback(G.b.rb, off);
+  }
   /* #region advance */
   double now = G.mode == 1 ? cw_time() : (double)cw_tick_index() * dt; /* pair: a virtual clock */
   if (G.a.rb) cw_rollback_advance(G.a.rb, now);

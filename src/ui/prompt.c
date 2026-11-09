@@ -44,8 +44,13 @@ static struct {
   uint32_t errors, missing;
   uint32_t logged[128]; /* hashes of the messages logged once */
   int nlogged;
-  bool break_wrong_dot, break_ignore_force, break_stick_first; /* CW_TEST_PROMPT_BREAK: a gate's control */
 } P;
+/* CW_TEST_PROMPT_BREAK (a gate's control: wrong_dot, ignore_force, stick_first), read where it acts through cw_test_env,
+ * so a cart host's env request reaches it from frame 2 */
+static bool brk(const char *what) {
+  const char *b = cw_test_env("CW_TEST_PROMPT_BREAK");
+  return b && strstr(b, what);
+}
 
 static const char *const DEVICE_NAMES[CW_PROMPT_DEVICE_COUNT] = { "none", "pad", "keyboard", "mouse", "touch" };
 const char *cw_prompt_device_name(cw_prompt_device d) {
@@ -97,7 +102,7 @@ static bool pad_connected(int pad) { return pad >= 0 && pad < CW_MAX_PADS && I.p
 
 static cw_prompt_device device_of(int p) {
   if (!I.init || p < 0 || p >= CW_INPUT_MAX_PLAYERS) return CW_PROMPT_NONE;
-  if (I.prompt_force[p] && !P.break_ignore_force) return (cw_prompt_device)I.prompt_force[p];
+  if (I.prompt_force[p] && !brk("ignore_force")) return (cw_prompt_device)I.prompt_force[p];
   uint32_t dev = I.devices[p];
   int pad = I.pad[p];
   switch ((cw_prompt_device)I.prompt_last[p]) {
@@ -174,10 +179,6 @@ void cw__prompt_input_init(void) {
     d = CW_PROMPT_NONE;
   }
   for (int p = 0; p < CW_INPUT_MAX_PLAYERS; p++) I.prompt_force[p] = (uint8_t)d;
-  const char *b = getenv("CW_TEST_PROMPT_BREAK");
-  P.break_wrong_dot = b && strstr(b, "wrong_dot");
-  P.break_ignore_force = b && strstr(b, "ignore_force");
-  P.break_stick_first = b && strstr(b, "stick_first");
 }
 
 /* ── which binding ───────────────────────────────────────────────────── */
@@ -370,7 +371,7 @@ static void device_glyphs(const cw_action *acts, int n, cw_prompt_device d, gset
   if (n >= 2 && d == CW_PROMPT_PAD) {
     /* the d-pad whenever every action is on it, even when a stick is bound too: the stick only for stick-only actions */
     int st = common_stick(acts, n);
-    bool dp = all_dpad(acts, n) && !(P.break_stick_first && st >= 0); /* the control: the stick when both */
+    bool dp = all_dpad(acts, n) && !(brk("stick_first") && st >= 0); /* the control: the stick when both */
     if (dp) st = -1;
     if (st >= 0 || dp) {
       glyph g = { .kind = dp ? PK_DPAD : PK_STICK };
@@ -393,7 +394,7 @@ static void device_glyphs(const cw_action *acts, int n, cw_prompt_device d, gset
   for (int j = 0; j < n; j++) {
     int i = keys ? WASD[j] : j;
     cw_binding b;
-    if (d == CW_PROMPT_PAD && !P.break_stick_first && dpad_over_stick(acts[i], &b)) set_add(s, glyph_of(b));
+    if (d == CW_PROMPT_PAD && !brk("stick_first") && dpad_over_stick(acts[i], &b)) set_add(s, glyph_of(b));
     else if (binding_for(acts[i], d, &b)) set_add(s, glyph_of(b));
     else missing(acts[i], d);
   }
@@ -758,7 +759,7 @@ static void record(const glyph *g, uint32_t lit) {
 static void draw_glyph(const glyph *g, cw_vec2 o, float s, cw_color color) {
   pen p = pen_of(s, color);
   uint32_t lit = g->lit;
-  if (g->kind == PK_FACE && P.break_wrong_dot) lit = ((lit << 1) | (lit >> 3)) & 15; /* a gate's control: the wrong dot */
+  if (g->kind == PK_FACE && brk("wrong_dot")) lit = ((lit << 1) | (lit >> 3)) & 15; /* a gate's control: the wrong dot */
   switch (g->kind) {
   case PK_FACE: draw_face(&p, o, lit); break;
   case PK_SHOULDER: draw_shoulder(&p, o, lit, false); break;

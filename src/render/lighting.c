@@ -379,8 +379,8 @@ static int index_mark(lighting *L, int on) {
   CW_PROFILE_SCOPE("lighting.materials");
   int n = 0;
   bool all = on != L->ix_on;
-  static int once = -1; /* CW_TEST_NO_REMARK=1 (a test control): materials are marked the first frame only */
-  if (once < 0) once = getenv("CW_TEST_NO_REMARK") != NULL;
+  /* CW_TEST_NO_REMARK=1 (a test control): materials are not marked again (cw_test_env: from frame 2 on every host) */
+  bool once = cw_test_env("CW_TEST_NO_REMARK") != NULL;
   if (once && L->marked && on == L->ix_on) return L->materials;
   for (int i = 0; i < L->ix_meshes.count; i++) {
     ix_mesh *x = &L->ix_meshes.data[i];
@@ -470,8 +470,9 @@ static void frame_part(lighting *L, cw_pass_ctx *ctx) {
   }
   if (ctx->scene3d->auto_update) t3_object_update_matrix_world(ctx->scene3d, false);
   if (L->ix_scene != ctx->scene3d) L->ix_on = -1;
-  static int stale = -1; /* CW_TEST_LIGHTS_STALE=1 (a test control): the first index is kept */
-  if (stale < 0) stale = getenv("CW_TEST_LIGHTS_STALE") != NULL;
+  /* CW_TEST_LIGHTS_STALE=1 (a test control): the index is not rebuilt (read each frame through cw_test_env, so a cart
+   * host's env request reaches it from frame 2) */
+  bool stale = cw_test_env("CW_TEST_LIGHTS_STALE") != NULL;
   if (!stale || L->ix_scene != ctx->scene3d) index_build(L, ctx->scene3d);
   /* the parts as most views want them: cluster, and csm with a sun (a view
    * whose sun is on other layers, or whose cascades cannot be made, marks

@@ -41,15 +41,24 @@ static void init(void *u) {
   cw_debug_f32_array("rip.h", rip_h, 3);
   cw_debug_f32_array("boat.pos", boat_pos, 2);
   cw_debug_f32("water.gpu_ms", &frame_ms);
+}
+
+/* the gate switches, read with cw_test_env (cartwheel/debug.h) on the first frame they can be set on every host
+ * (frame 2: a cart host delivers them with its first request), applied once */
+static void test_switches(void) {
+  static bool done;
+  if (done || cw_frame_index() < 1) return;
+  done = true;
   cw_node w = node("Water");
-  if (getenv("WATER_RIPPLES_OFF")) cw_node_set(w, "ripple_cells", cw_val_int(0));
-  if (getenv("WATER_DEBUG")) cw_node_set(w, "debug_view", cw_val_int(atoi(getenv("WATER_DEBUG"))));
-  if (getenv("WATER_RAIN")) cw_node_set(w, "rain", cw_val_float((float)atof(getenv("WATER_RAIN"))));
+  if (cw_test_env("WATER_RIPPLES_OFF")) cw_node_set(w, "ripple_cells", cw_val_int(0));
+  if (cw_test_env("WATER_DEBUG")) cw_node_set(w, "debug_view", cw_val_int(atoi(cw_test_env("WATER_DEBUG"))));
+  if (cw_test_env("WATER_RAIN")) cw_node_set(w, "rain", cw_val_float((float)atof(cw_test_env("WATER_RAIN"))));
 }
 
 static void update(void *u, double dt) {
   (void)u;
   (void)dt;
+  test_switches();
   tick++;
   cw_node water = node("Water");
   /* the boat is driven round a circle (the water does the rest) */

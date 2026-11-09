@@ -58,8 +58,6 @@ static void init(void *u) {
   cw_debug_i32("yard.light", &light);
   cw_debug_i32("yard.splats", &nsplats);
   cw_node yard = node("Yard");
-  /* YARD_LIT=1 (the gate's control): the lightmapped meshes keep their lit material, so the bake-only floodlights' pools are gone */
-  if (getenv("YARD_LIT")) cw_node_set(node("Yard/GI"), "shading", cw_val_enum("LIT"));
   /* aim the camera and the lights (they shine down their -Z) */
   cw_node3d_look_at(node("Yard/Camera"), (t3_vec3){ 0, 0, 0.5f }, (t3_vec3){ 0, 1, 0 });
   cw_node3d_look_at(node("Yard/Sun"), (t3_vec3){ 6, -2.2f, -3 }, (t3_vec3){ 0, 1, 0 }); /* low, from the left and behind */
@@ -118,9 +116,20 @@ static void init(void *u) {
 
 static t3_vec3 ball_at(int t) { return (t3_vec3){ -4 + 8 * (float)(t % 240) / 240.0f, 0.5f, 1.5f - 3.0f * cw_sin((float)t * 0.026f) }; }
 
+/* the gate switches, read with cw_test_env (cartwheel/debug.h) on the first frame they can be set on every host
+ * (frame 2: a cart host delivers them with its first request), applied once */
+static void test_switches(void) {
+  static bool done;
+  if (done || cw_frame_index() < 1) return;
+  done = true;
+  /* YARD_LIT=1 (the gate's control): the lightmapped meshes keep their lit material, so the bake-only floodlights' pools are gone */
+  if (cw_test_env("YARD_LIT")) cw_node_set(node("Yard/GI"), "shading", cw_val_enum("LIT"));
+}
+
 static void fixed_update(void *u, double dt) {
   (void)u;
   (void)dt;
+  test_switches();
   tick++;
   t3_vec3 b = ball_at(tick);
   cw_node3d_set_position(node("Yard/Ball"), b);

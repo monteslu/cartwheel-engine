@@ -65,7 +65,7 @@ static void fixed(void *u, double dt) {
   boat_x -= v * (float)dt;
   if (boat_x < -160) boat_x = 120;
   /* #region follow */
-  if (!getenv("WATER_OPEN_SEA_OFF")) cw_water_ripple_follow(water, boat_x, 0);
+  if (!cw_test_env("WATER_OPEN_SEA_OFF")) /* the gate's control, from frame 2 on every host */ cw_water_ripple_follow(water, boat_x, 0);
   cw_water_wake(water, boat_x, 0, -v, 0, 1.1f, 0.05f, 0.9f);
   /* #endregion */
   rip_hash = cw_water_ripple_hash(water);

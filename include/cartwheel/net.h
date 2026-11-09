@@ -314,6 +314,9 @@ typedef struct cw_rollback_desc {
  * Hooks the session's rollback messages and becomes the tree's cw_rollback_of. */
 cw_rollback *cw_rollback_new(const cw_rollback_desc *desc);
 void cw_rollback_free(cw_rollback *rb); /* unhooks the session and tree; frees neither. NULL is a no-op */
+/* The desc's no_rollback test control, set after creation (a gate's switch that arrives in play: cw_test_env).
+ * NULL is a no-op. */
+void cw_rollback_set_no_rollback(cw_rollback *rb, bool on);
 /* One platform tick: poll the session (at `now` seconds), correct
  * mispredictions (restore + re-simulate), then simulate one new tick unless
  * stalled. Returns the number of NEW ticks simulated (0 or 1). */

@@ -152,6 +152,9 @@ static void cmd_level(int argc, const char **argv, cw_reply *r) { want_level = a
   cw_reply_printf(r, "{\"level\":%d}", want_level); }   /* set state; the work happens over the next ticks */
 ```
 
+A test switch (a gate's `env`, a control) is read with `cw_test_env("NAME")` where it acts, from frame 2: a cart host
+delivers it with its first request, so a variable read in `init` or the first frame runs unset there and the run fails.
+
 ## Build, run, check
 
 In the starter (and every games repository built the same way):

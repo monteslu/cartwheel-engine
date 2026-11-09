@@ -135,7 +135,7 @@ static void build(app_t *a) {
   t3_object_add((t3_object *)a->scene, a->floor);
   t3_release(a->floor);
   a->triangles += 2;
-  const char *lin = getenv("GLTF_SCENE_LINEAR_COLOR");
+  const char *lin = cw_test_env("GLTF_SCENE_LINEAR_COLOR") /* built at tick LOAD_BARRIER, after frame 1 */;
   if (lin && *lin == '1') t3_object_traverse(a->scene, linear_color, NULL);
   split(man->mesh_hash, a->man_hash);
   split(box->mesh_hash, a->box_hash);

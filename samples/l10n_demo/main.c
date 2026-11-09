@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cartwheel/platform.h"
 #include "cartwheel/gpu.h"
 #include "cartwheel/a11y.h"
 #include "cartwheel/debug.h"
@@ -181,8 +182,7 @@ static void publish(void) {
 
 static void init(void *u) {
   (void)u;
-  D.fault = getenv("CW_L10N_FAULT");
-  D.nav_control = getenv("CW_L10N_NAV_CONTROL") != NULL;
+  /* CW_L10N_FAULT and CW_L10N_NAV_CONTROL (the gates' controls) arrive at frame 2: update */
 #ifdef L10N_NAV
   D.nav = true;
 #endif
@@ -191,7 +191,6 @@ static void init(void *u) {
   cw_set_current_tree(D.tree);
   /* #region load */
   if (!cw_l10n_load_project("l10n/project.cwl10n")) cw_error("l10n_demo: the localization project did not load");
-  if (D.fault && !strcmp(D.fault, "no_fallback")) cw_l10n_set_default_locale("xx"); /* control: no English to fall back on */
   cw_l10n_debug_register("l10n");
   D.track = cw_captions_load("captions/intro.cwcap");
   /* #endregion */
@@ -262,7 +261,6 @@ static void init(void *u) {
   D.brand = label("Brand", "app.brand", buttons); /* only the English catalog has it: every locale falls back */
   cw_control_set_size_flags(D.brand, CW_SIZE_EXPAND_FILL, CW_SIZE_SHRINK_CENTER);
   cw_node_set(D.brand, "horizontal_alignment", cw_val_enum("RIGHT"));
-  if (D.fault && !strcmp(D.fault, "missing_key")) cw_button_set_text(D.play, "menu.plya"); /* control: a typo'd key */
   D.captions = node("CaptionPanel", "Captions", v);
   cw_control_set_size_flags(D.captions, CW_SIZE_EXPAND_FILL, CW_SIZE_EXPAND_FILL);
 
@@ -298,9 +296,23 @@ static void init(void *u) {
   cw_debug_i32("demo.text_scale_pct", &D.text_scale_pct);
 }
 
+/* the gates' controls from frame 2, when every host has them (cw_test_env, cartwheel/debug.h) */
+static void controls(void) {
+  static bool done;
+  if (done || cw_frame_index() < 1) return;
+  done = true;
+  D.fault = cw_test_env("CW_L10N_FAULT");
+  D.nav_control = cw_test_env("CW_L10N_NAV_CONTROL") != NULL;
+  if (!D.fault) return;
+  if (!strcmp(D.fault, "no_fallback")) cw_l10n_set_default_locale("xx"); /* no English to fall back on */
+  if (!strcmp(D.fault, "missing_key")) cw_button_set_text(D.play, "menu.plya"); /* a typo'd key */
+  set_locale(D.locale_index); /* the texts again (no_font: without the CJK/Arabic fonts) */
+}
+
 static void update(void *u, double dt) {
   (void)u;
   D.frame++;
+  controls();
   if (D.fixed_locale < 0) {
     int seg = ((D.frame - 1) / 60) % ((int)CW_ARRAY_LEN(LOCALES) + 1);
     if (seg != D.segment) {

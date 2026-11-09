@@ -81,10 +81,7 @@ static void init(void *u) {
     cw_node_set(c, "cast_shadow", cw_val_bool(true));
     cw_node_set(c, "receive_shadow", cw_val_bool(true));
   }
-  const char *e = getenv("DW_NO_DECALS");
-  if (e && *e == '1') return;
-  e = getenv("DW_CONTROL_WGPU");
-  bool nofade = e && *e == '1' && cw_gpu_backend() == CW_GPU_WEBGPU;
+  bool nofade = false; /* DW_CONTROL_WGPU: set from frame 2 (test_switches) */
   /* about two hundred: one or two per face tile, a few on the tops */
   for (int i = 0; i < COLS; i++) {
     float x = (float)(i - COLS / 2);
@@ -99,9 +96,28 @@ static void init(void *u) {
   }
 }
 
+/* the gates' controls from frame 2, when every host has them (cw_test_env, cartwheel/debug.h): DW_NO_DECALS=1 removes
+ * every decal, DW_CONTROL_WGPU=1 turns their edge and normal fades off on WebGPU */
+static void test_switches(void) {
+  static bool done;
+  if (done || cw_frame_index() < 1) return;
+  done = true;
+  const char *no = cw_test_env("DW_NO_DECALS"), *nf = cw_test_env("DW_CONTROL_WGPU");
+  bool none = no && *no == '1', nofade = nf && *nf == '1' && cw_gpu_backend() == CW_GPU_WEBGPU;
+  if (!none && !nofade) return;
+  cw_node w = cw_node_get(cw_tree_root(cw_scene_app_tree()), "World");
+  for (int i = cw_node_child_count(w) - 1; i >= 0; i--) {
+    cw_node d = cw_node_child(w, i);
+    if (!cw_node_is(d, "Decal3D")) continue;
+    if (none) cw_node_free(d);
+    else cw_node_set(d, "edge_fade", cw_val_float(0)), cw_node_set(d, "normal_fade", cw_val_float(0));
+  }
+}
+
 static void fixed(void *u, double dt) {
   (void)u;
   (void)dt;
+  test_switches();
   tick++;
 }
 

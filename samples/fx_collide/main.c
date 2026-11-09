@@ -24,13 +24,22 @@ static void init(void *u) {
   cw_debug_i32("collide.gpu_alive", &gpu_alive);
   cw_debug_i32("collide.mean_y_x1000", &mean_y);
   cw_debug_i32("collide.on_top", &on_top);
-  const char *e = getenv("FX_NO_COLLIDE");
+}
+
+/* the gate switches, read with cw_test_env (cartwheel/debug.h) on the first frame they can be set on every host
+ * (frame 2: a cart host delivers them with its first request), applied once */
+static void test_switches(void) {
+  static bool done;
+  if (done || cw_frame_index() < 1) return;
+  done = true;
+  const char *e = cw_test_env("FX_NO_COLLIDE");
   if (e && *e == '1') cw_node_set(rain(), "collide_depth", cw_val_bool(false));
 }
 
 static void render(void *u, double a) {
   (void)u;
   (void)a;
+  test_switches();
   cw_value v;
   alive = cw_particles_alive(rain());
   if (cw_node_get_prop(rain(), "gpu_alive", &v)) gpu_alive = (int32_t)v.i;

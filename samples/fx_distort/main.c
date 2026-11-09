@@ -33,9 +33,17 @@ static void init(void *u) {
   cw_debug_i32("fxd.haze_alive", &haze_alive);
   cw_debug_i32("fxd.wave_active", &wave_active);
   cw_debug_f32("fxd.wave_radius", &wave_radius);
-  if (getenv("FXD_POLE_BACK")) /* the control for the depth rule: the pole behind the haze is bent like the wall */
+}
+
+/* the gate switches, read with cw_test_env (cartwheel/debug.h) on the first frame they can be set on every host
+ * (frame 2: a cart host delivers them with its first request), applied once */
+static void test_switches(void) {
+  static bool done;
+  if (done || cw_frame_index() < 1) return;
+  done = true;
+  if (cw_test_env("FXD_POLE_BACK")) /* the control for the depth rule: the pole behind the haze is bent like the wall */
     cw_node_set(node("World/Pole"), "position", cw_val_vec3(-1.43f, 1.4f, -1.2f));
-  if (getenv("FXD_OFF")) {
+  if (cw_test_env("FXD_OFF")) {
     cw_node_set(node("World/Haze"), "distort_strength", cw_val_float(0));
     cw_node_set(node("World/Lens"), "distort_strength", cw_val_float(0));
     cw_node_set(node("World/Wave"), "strength", cw_val_float(0));
@@ -45,6 +53,7 @@ static void init(void *u) {
 static void fixed(void *u, double dt) {
   (void)u;
   (void)dt;
+  test_switches();
   tick++;
 }
 

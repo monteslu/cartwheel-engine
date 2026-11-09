@@ -4,6 +4,29 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.42.0 (2026-11-09)
+
+### Added
+- `cw_rollback_set_no_rollback` (cartwheel/net.h): the desc's `no_rollback` test control, set after creation (a gate's
+  switch that arrives in play).
+
+### Fixed
+- **Every engine gate's switches reach its cart on romdev.** A gate's `env`, `controlEnv` and WebGPU controls' `env`
+  go to a cart as the debug channel's env request, answered at frame 2; 93 of 161 such runs failed because the switch
+  was read in `init` or the first frame (`fx_distort` read `FXD_OFF` in its init, so its romdev control failed). Each
+  is now read with `cw_test_env` where it acts and applied from frame 2, natively the same: 35 samples (`fx_distort`,
+  `gi_room`, `gi_probe_check`, `vertex_colors`, `instanced_attributes`, `character_skin`, `texture_filtering`,
+  `perf_nodes`, `audio_3d`, `audio_play`, `nav_links` (the links removed and the region baked again), `r2d_hdr`,
+  `r2d_motion`, `ui_scene`, `water_open_sea`, `water_ripples`, `night_street`, `fx_pipeline`, `fx_decals`,
+  `fx_bursts`, `fx_collide`, `fx_sub_emitters`, `decal_walls`, `fx_mesh_decals`, `vis_impostor`, `vis_city`,
+  `viewmodel_demo`, `lightmap_yard`, `rim_light`, `prompts`, `gltf_scene`, `post_synth`, `l10n_demo`,
+  `triggers_demo`, `net_arena`), the unit suites (the injected failure and a suite's `cw_test_late()` case run at
+  frame 2; `unit.done` waits for them), `fx_gpu`, and the engine's own switches (`CW_TEST_PROMPT_BREAK`,
+  `CW_TEST_LIGHTS_STALE`, `CW_TEST_NO_REMARK`). Only control runs change: a gate's main run reads nothing new.
+  Gate `env-romdev` runs each such
+  environment on its cart through romdev (0 of 161 refused; control: a variable a unit suite reads in its init on
+  purpose is refused).
+
 ## v0.41.0 (2026-11-09)
 
 ### Added

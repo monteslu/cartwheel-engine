@@ -12,7 +12,7 @@
  * deck. debug_draw shows the navmesh and the links (green arcs: paths can use
  * them).
  *
- * NAV_LINKS_OFF=1 removes the links before the bake (the gate's control):
+ * NAV_LINKS_OFF=1 removes the links at frame 2 and bakes again (the gate's control):
  * nobody can reach the ledge or the deck.
  *
  * Debug fields (equal on every host):
@@ -121,11 +121,6 @@ static void init(void *u) {
   cw_tree *t = cw_scene_app_tree();
   cw_node root = cw_tree_root(t);
   G.region = cw_node_get(root, "Level/Nav");
-  const char *off = getenv("NAV_LINKS_OFF");
-  if (off && off[0] == '1') {
-    const char *names[] = { "LedgeJump", "Pad", "Drop" };
-    for (int i = 0; i < 3; i++) cw_node_free(cw_node_get(G.region, names[i]));
-  }
   build_level(G.region);
   spawn_agents(cw_node_get(root, "Level/Agents"));
   cw_debug_i32("links.count", &G.count);
@@ -143,6 +138,17 @@ static void init(void *u) {
 
 static void fixed(void *u, double dt) {
   (void)u, (void)dt;
+  /* the control from frame 2, when every host has it (cw_test_env): the links removed and the region baked again */
+  static bool control_read;
+  if (!control_read && cw_frame_index() >= 1) {
+    control_read = true;
+    const char *off = cw_test_env("NAV_LINKS_OFF");
+    if (off && off[0] == '1') {
+      const char *names[] = { "LedgeJump", "Pad", "Drop" };
+      for (int i = 0; i < 3; i++) cw_node_free(cw_node_get(G.region, names[i]));
+      cw_nav_region_bake(G.region);
+    }
+  }
   cw_navmesh nm = cw_nav_region_navmesh(G.region);
   cw_crowd cr = cw_nav_region_crowd(G.region);
   if (!cw_navmesh_valid(nm)) return;

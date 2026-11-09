@@ -2,7 +2,7 @@
  * (four, what glTF exporters write for COLOR_0 by default). Both quads draw the same gradient: the alpha channel is
  * read as nothing (the left quad's alpha is 1, the right one's is 0.2, and neither fades). A colour attribute the
  * renderer cannot use (two floats a vertex) is not drawn and counts in `skipped`, which is what the control run
- * (CW_VCOL_CONTROL=1, native only) does to the right quad so the check can see the difference. Debug fields:
+ * (CW_VCOL_CONTROL=1, from frame 2 on every host) does to the right quad so the check can see the difference. Debug fields:
  * calls (draw calls last frame), skipped (draws the renderer refused). */
 #include <stdlib.h>
 
@@ -16,6 +16,8 @@ typedef struct {
   t3_scene *scene;
   t3_camera *camera;
   int32_t calls, skipped;
+  t3_mesh *right; /* the rgba quad (the control swaps it for a two-float one) */
+  bool switched;
 } app_t;
 static app_t app;
 
@@ -50,7 +52,7 @@ static void init(void *user) {
   a->camera = t3_orthographic_camera_new(-2, 2, 1.125f, -1.125f, 0.1f, 10);
   t3_object_set_position(a->camera, 0, 0, 5);
   t3_object_add((t3_object *)a->scene, quad(-1, 3));
-  t3_object_add((t3_object *)a->scene, quad(1, getenv("CW_VCOL_CONTROL") ? 2 : 4));
+  t3_object_add((t3_object *)a->scene, a->right = quad(1, 4));
   cw_debug_i32("calls", &a->calls);
   cw_debug_i32("skipped", &a->skipped);
 }
@@ -58,6 +60,14 @@ static void init(void *user) {
 static void render(void *user, double alpha) {
   (void)alpha;
   app_t *a = user;
+  /* the control from frame 2, when every host has it (cw_test_env): the right quad with a two-float colour */
+  if (!a->switched && cw_frame_index() >= 1) {
+    a->switched = true;
+    if (cw_test_env("CW_VCOL_CONTROL")) {
+      t3_object_remove((t3_object *)a->scene, (t3_object *)a->right);
+      t3_object_add((t3_object *)a->scene, quad(1, 2));
+    }
+  }
   cw_render3d_window_target(a->renderer);
   t3_renderer_render(a->renderer, a->scene, a->camera);
   const t3_render_info *i = t3_renderer_info(a->renderer);

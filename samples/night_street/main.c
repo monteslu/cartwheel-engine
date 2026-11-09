@@ -299,22 +299,24 @@ static void fixed_update(void *u, double dt) {
     const char *pa = getenv("NS_PARITY");
     parity = pa ? atoi(pa) : 0;
     build(t);
-    const char *f = getenv("NS_FORWARD");
     /* street_sun's control: one shadow map around the sun instead of cascades */
     const char *nc = getenv("NS_NO_CASCADES");
     const char *na = getenv("NS_NO_ATLAS"); /* shadowed lights back on three.c's own maps */
     if (na && *na == '1') cw_node_set(cw_node_get(cw_tree_root(t), "Street/Lighting"), "shadow_atlas", cw_val_bool(false));
-    const char *ns = getenv("NS_NO_SHADOW");
-    if (NS_DAY && ns && *ns == '1') cw_node_set(cw_node_get(cw_tree_root(t), "Street/Sun"), "shadow", cw_val_bool(false));
     if (NS_DAY && nc && *nc == '1') {
       cw_node sun = cw_node_get(cw_tree_root(t), "Street/Sun");
       cw_node_set(sun, "shadow_cascades", cw_val_int(0));
       cw_node_set(sun, "shadow_extent", cw_val_float(60));
 
     }
-    if (f && *f == '1') cw_node_set(cw_node_get(cw_tree_root(t), "Street/Lighting"), "mode", cw_val_enum("FORWARD"));
   }
   tick++;
+  if (tick == 2) { /* the gates' controls from frame 2, when every host has them (cw_test_env) */
+    const char *f = cw_test_env("NS_FORWARD");
+    if (f && *f == '1') cw_node_set(cw_node_get(cw_tree_root(t), "Street/Lighting"), "mode", cw_val_enum("FORWARD"));
+    const char *ns = cw_test_env("NS_NO_SHADOW");
+    if (NS_DAY && ns && *ns == '1') cw_node_set(cw_node_get(cw_tree_root(t), "Street/Sun"), "shadow", cw_val_bool(false));
+  }
   if (NS_DAY && tick == 2 && getenv("NS_NO_CASCADES")) {
     /* the control's sun 200 m up its light from (0, 0, -40), its map covering 120 m */
     cw_node sun = cw_node_get(cw_tree_root(t), "Street/Sun");

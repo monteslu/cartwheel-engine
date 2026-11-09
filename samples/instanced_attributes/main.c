@@ -7,7 +7,7 @@
  * geometry's attributes, the instance matrix (one buffer) and the instance colours, inside the 8 every
  * WebGPU device has. GL and WebGPU draw the same picture.
  *
- * CW_IATTR_CONTROL=1 (the gate's control): every instance colour white, so the picture differs.
+ * CW_IATTR_CONTROL=1 (the gate's control, from frame 2): every instance colour white, so the picture differs.
  *
  * Debug fields: calls (draw calls last frame), skipped (draws the renderer refused), instances. */
 #include <stdlib.h>
@@ -26,6 +26,8 @@ typedef struct {
   t3_scene *scene;
   t3_camera *camera;
   int32_t calls, skipped, instances;
+  t3_instanced_mesh *im;
+  bool switched;
 } app_t;
 static app_t app;
 
@@ -66,7 +68,6 @@ static t3_texture *map_tex(int kind) {
 
 static void init(void *user) {
   app_t *a = user;
-  bool control = getenv("CW_IATTR_CONTROL") != NULL;
   int w, h;
   cw_drawable_size(&w, &h);
   a->renderer = cw_render3d_window_renderer(w, h);
@@ -133,9 +134,10 @@ static void init(void *user) {
       t3_quat q = { 0, 0.2588190f, 0, 0.9659258f }; /* 30 degrees about y */
       t3_mat4_compose(&mx, (t3_vec3){ (float)(c - 2) * 1.6f, 0, (float)(r - 1.5f) * 1.6f }, q, (t3_vec3){ 1, 1, 1 });
       t3_instanced_mesh_set_matrix_at(im, i, &mx);
-      t3_instanced_mesh_set_color_at(im, i, t3_color_hex(control ? 0xffffff : hues[i % 6]));
+      t3_instanced_mesh_set_color_at(im, i, t3_color_hex(hues[i % 6]));
     }
   t3_object_add((t3_object *)a->scene, im);
+  a->im = im;
   a->instances = COLS * ROWS;
   cw_debug_i32("calls", &a->calls);
   cw_debug_i32("skipped", &a->skipped);
@@ -145,6 +147,14 @@ static void init(void *user) {
 static void render(void *user, double alpha) {
   (void)alpha;
   app_t *a = user;
+  /* the control from frame 2, when every host has it (cw_test_env): every instance colour white */
+  if (!a->switched && cw_frame_index() >= 1) {
+    a->switched = true;
+    if (cw_test_env("CW_IATTR_CONTROL")) {
+      for (int i = 0; i < COLS * ROWS; i++) t3_instanced_mesh_set_color_at(a->im, i, t3_color_hex(0xffffff));
+      a->im->instance_color->version++; /* needsUpdate */
+    }
+  }
   cw_render3d_window_target(a->renderer);
   t3_renderer_render(a->renderer, a->scene, a->camera);
   const t3_render_info *i = t3_renderer_info(a->renderer);
