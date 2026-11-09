@@ -238,7 +238,7 @@ High draws exactly what the scene's PostProcess and lights ask for, the same fra
 | clustered lights a cluster keeps | x0.25 | x0.375 | x0.5 | x1 | x1 |
 | bloom | off | 3 levels, the first from 4 reads | 5 levels | as authored | as authored |
 | volumetric fog grid | off (plain height fog) | off (plain height fog) | 96 x 48 | 160 x 64 | 240 x 96 |
-| distortion buffer, colour fringing | off | off | half, off | full, on | full, on |
+| distortion buffer | off | off | half | full | full |
 | explosion lights | 0 | 0.25 | 0.5 | 1 | 1 |
 | skin shading | plain | plain | on | on | on |
 | lighting model (`cw_quality_scale("shading")`) | plain | full | full | full | full |

@@ -3447,6 +3447,11 @@
     "note": "distortion footprints: the haze, ring and lens change the picture, nothing leaks outside, a pole in front of the haze stays sharp (control: behind it, it bends), GL and WebGPU agree"
   },
   {
+    "name": "fx-distort-fringe",
+    "script": "tests/distort-fringe.mjs",
+    "note": "distortion is colourless on romdev, GL and WebGPU: the pixels the haze, ring and lens change hold colours the unbent frame has nearby (no rainbow fringe); control: red and blue moved 3 pixels apart must fail the same measure"
+  },
+  {
     "name": "water-shore",
     "app": "water_shore",
     "frames": 240,

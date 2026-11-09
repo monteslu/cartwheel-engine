@@ -72,7 +72,6 @@
  *   bloom               off       3 lvls  5 lvls  as authored  as authored (Low: its first level from 4 reads)
  *   volumetric fog      off       off     96x48   160x64       240x96 (cells across x slices; off: plain height fog)
  *   distortion buffer   off       off     half    full         full   (cartwheel/explosions.h)
- *   colour fringing     off       off     off     on           on     ("dispersion")
  *   explosion lights    0         0.25    0.5     1            1      ("flash_lights")
  *   skin shading        plain     plain   on      on           on     (cartwheel/skin_shading.h)
  *   lighting model      plain     full    full    full         full   ("shading": 0 plain, 1 full)
@@ -263,8 +262,8 @@ void cw_quality_keep_msaa(bool on);
 
 /* A scale for a named knob, from effects detail: "particles", "density",
  * "grass", "crowd", "scatter" (the last three are density), "lights",
- * "distortion", "dispersion", "flash_lights", "skin", "hrtf_voices" (the
- * table above), 1 for any other name. */
+ * "distortion", "flash_lights", "skin", "hrtf_voices" (the table above), 1
+ * for any other name; "dispersion" is 0 (distortion is colourless). */
 float cw_quality_scale(const char *knob);
 float cw_quality_density(void); /* cw_quality_scale("density") */
 /* n scaled by a knob, at least 1 when n > 0, at most n */

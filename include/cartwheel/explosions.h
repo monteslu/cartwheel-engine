@@ -19,8 +19,8 @@
  * the pass will not pull in colour from geometry nearer than the haze.
  * Render only: nothing here feeds the simulation. Both backends run the same
  * passes, the buffer is drawn at the share of the frame the effects preset
- * sets (cw_quality_scale("distortion"): 0.5, 0.5, 1, 1) and colour fringing
- * (cw_quality_scale("dispersion"): 0, 0, 1, 1) is High and Ultra.
+ * sets (cw_quality_scale("distortion"): 0.5, 0.5, 1, 1). It moves the
+ * picture without splitting its colours: no rainbow fringe on any preset.
  *
  * ── refraction for particles ────────────────────────────────────────────
  * GPUParticles3D with blend REFRACT: the engine copies the scene colour once
