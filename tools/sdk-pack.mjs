@@ -192,6 +192,9 @@ if (CART) {
   // check-text.mjs: the text size check a game runs over its own screens (node <sdk>/tools/check-text.mjs tests/<game>-text.json)
   // flash-check.mjs: the strobe check a game runs over its own effects (node <sdk>/tools/flash-check.mjs --app <app> --frames N)
   for (const f of ['tools/programs.mjs', 'tools/run-cart.mjs', 'tools/cwexport.mjs', 'tools/check-text.mjs', 'tools/flash-check.mjs']) engineFile(f);
+  // the gate runner a game's tests/gates.json runs with (CW_PROJECT_ROOT=<game> node <sdk>/tests/gate.mjs); it reads
+  // tools/lib and tools/run-cart.mjs beside it
+  engineFile('tests/gate.mjs');
   engineTree('tools/lib');
   engineTree('tools/cwexport');
   // the engine's own three.c generator extensions (terrain, clustered lights, gi, mesh decals, water, ...): a

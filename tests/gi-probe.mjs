@@ -10,7 +10,9 @@
 //      GI_PROBE=0 (intensity 0) must fail the same checks. The same with
 //      captures spread over frames (GI_EVERY=3), which must also match the
 //      whole capture's frame (the control: against the probe off it cannot),
-//      and with a 64 cube (GI_RES=64).
+//      and with a 64 cube (GI_RES=64). And with FORWARD lighting and a cascaded sun
+//      (GI_CSM=1): the ball still shows the walls and gi.materials > 0; control:
+//      CW_TEST_GI_SKIP_CSM=1 (the csm part kept gi off) must fail both.
 //   2. gi_room: the light probe grid's bounce light tints the ceiling red by
 //      the red wall and green by the green one; with the grid's intensity at
 //      0 (the control) the tint must be gone.
@@ -37,10 +39,11 @@ mkdirSync(OUT, { recursive: true });
 let failed = false;
 const report = (ok, what) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed = true; };
 
-function run(app, gpu, frames, tag, env = {}, startCmds = null) {
+function run(app, gpu, frames, tag, env = {}, startCmds = null, extra = []) {
   const shot = join(OUT, `${tag}.png`), state = join(OUT, `${tag}.json`);
   const args = [join(ROOT, 'tools', 'run-cart.mjs'), '--host', 'native', '--gpu', gpu, '--app', app, '--frames', String(frames), '--shot', shot, '--state', state];
   if (startCmds) args.push('--start-cmds', startCmds);
+  args.push(...extra);
   const r = spawnSync(process.execPath, args, { encoding: 'utf8', env: { ...process.env, ...env } });
   if (r.status !== 0) return { err: (r.stderr || r.stdout).trim().split('\n').slice(-3).join(' | ') };
   return { img: readImage(shot), state: JSON.parse(readFileSync(state, 'utf8')) };
@@ -89,6 +92,17 @@ for (const gpu of ['gl', 'webgpu']) {
       `${gpu}: captures spread over 3 frames (${sliced.state['gi.captures']} in 40 frames) show the walls where they are and match the whole capture (${(d.gt16 * 100).toFixed(3)}% over 16 levels)${s.length ? ': ' + s.join('; ') : ''}`);
     report(dOff && dOff.gt16 >= 0.002, `${gpu}: control: the same comparison against the probe off sees a difference (${dOff ? (dOff.gt16 * 100).toFixed(3) : '?'}%)`);
   }
+  // FORWARD lighting with a cascaded sun: the materials carry the forward sun's csm part, and the gi part composes
+  // after it (the probe once silently did nothing there: gi.materials 0). Control: CW_TEST_GI_SKIP_CSM=1, the old rule
+  const fwd = run('gi_probe_check', gpu, 10, `check.csm.${gpu}`, { GI_CSM: '1' });
+  const fp = fwd.err ? [fwd.err] : ballProblems(fwd.img, BALL);
+  report(!fp.length && fwd.state['gi.materials'] > 0,
+    `${gpu}: forward lighting with a cascaded sun: the ball shows the walls, ${fwd.state ? fwd.state['gi.materials'] : '?'} material(s) carry gi${fp.length ? ': ' + fp.join('; ') : ''}`);
+  // (its walls draw with xcsm alone, a state the table has no need of: skipped draws allowed in the control)
+  const fwdOld = run('gi_probe_check', gpu, 10, `check.csm.old.${gpu}`, { GI_CSM: '1', CW_TEST_GI_SKIP_CSM: '1' }, null, ['--allow-skipped']);
+  const fo = fwdOld.err ? [fwdOld.err] : ballProblems(fwdOld.img, BALL);
+  report(!fwdOld.err && fo.length > 0 && fwdOld.state['gi.materials'] === 0,
+    `${gpu}: control (the cascaded sun's part keeps gi off, as before) fails: ${fo.length} of ${BALL.length} wrong, gi.materials ${fwdOld.state ? fwdOld.state['gi.materials'] : '?'}`);
   const small = run('gi_probe_check', gpu, 10, `check.res64.${gpu}`, { GI_RES: '64' });
   const sp = small.err ? [small.err] : ballProblems(small.img, BALL);
   report(!sp.length, `${gpu}: a 64-pixel capture shows the six walls where they are${sp.length ? ': ' + sp.join('; ') : ''}`);

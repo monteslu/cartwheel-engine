@@ -41,6 +41,8 @@ typedef struct probe_grid {
 typedef struct gi_tree {
   CW_ARRAY(cw_node) probes;
   CW_ARRAY(cw_node) grids;
+  const t3_material *warned[8]; /* materials the gi part could not join, said once each (cw__gi_tag) */
+  int warned_mats;
   /* the grid's capture: six faces, the projection quad */
   t3_render_target *face[6];
   int face_size, proj_group;

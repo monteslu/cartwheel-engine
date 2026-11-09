@@ -165,7 +165,7 @@ In the starter (and every games repository built the same way):
 | program table | `./programs.sh` after a new material, light setup or preset-dependent content |
 
 In an engine checkout: `scripts/fetch-deps.sh`, then `DEV=1 scripts/build.sh <app>` for the edit loop (a release
-build is `scripts/build.sh`); `node tests/gate.mjs <gate>`; the SDK tools are the same files under `tools/`.
+build is `scripts/build.sh`); `node tests/gate.mjs <gate>`. The SDK carries the same `tools/` and `tests/gate.mjs`.
 
 **Every check that runs the cart goes through romdev** (the MCP server on 127.0.0.1:7331; send
 `x-romdev-session` on every call). Send ranges, never loops: one call steps many frames on an input schedule; never
@@ -188,8 +188,11 @@ does the same from a script (`--gpu gl --dual-gl` for the GL leg), and the gates
 Checks a game should run (all shipped in the SDK under `tools/`):
 
 - `node tools/check-prompts.mjs src *.cwscene`: no text names a button.
-- `node tools/check-text.mjs tests/<game>-text.json`: every screen's text is at or above the size floor.
-- `node tools/flash-check.mjs --app <app>_auto --frames 1200`: no strobe; its control (an 8 Hz strobe) must fail.
+- `node tools/check-text.mjs tests/<game>-text.json`: every screen's text is at or above the size floor (on romdev).
+- `node tools/flash-check.mjs --app <app>_auto --frames 1200 --host native`: no strobe; its control (an 8 Hz strobe)
+  must fail.
+- `CW_PROJECT_ROOT=. node <sdk>/tests/gate.mjs --hosts romdev --gpu both`: the game's `tests/gates.json` on the cart,
+  GL and WebGPU.
 - `node tools/programs.mjs <app>`, then `node tools/programs.mjs --carts <app>`: the program table covers every
   preset, a preset switched in play, and the cart's own states.
 

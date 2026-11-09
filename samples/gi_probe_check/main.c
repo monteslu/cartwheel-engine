@@ -18,9 +18,11 @@
  *
  * The tree runs clustered lighting with one lamp, so its materials draw with
  * the gi part composed after the cluster part (xcluster_gi,
- * cartwheel/shading.h).
+ * cartwheel/shading.h). GI_CSM=1 runs it with FORWARD lighting and a sun with
+ * cascaded shadows instead, so the materials carry the forward sun's csm part
+ * and the gi part composes after it (xcsm_gi): the probe must still reflect.
  *
- * Debug state: gi.captures, gi.bound. */
+ * Debug state: gi.captures, gi.bound, gi.materials. */
 #include <stdlib.h>
 #include <string.h>
 
@@ -30,7 +32,7 @@
 #include "cartwheel/render3d.h"
 #include "cartwheel/scene_file.h"
 
-static int32_t captures, bound;
+static int32_t captures, bound, materials;
 static bool set;
 
 static cw_node node(const char *p) { return cw_node_get(cw_tree_root(cw_scene_app_tree()), p); }
@@ -39,6 +41,7 @@ static void init(void *u) {
   (void)u;
   cw_debug_i32("gi.captures", &captures);
   cw_debug_i32("gi.bound", &bound);
+  cw_debug_i32("gi.materials", &materials);
 }
 
 static void fixed_update(void *u, double dt) {
@@ -46,7 +49,17 @@ static void fixed_update(void *u, double dt) {
   (void)dt;
   if (set) return;
   set = true;
-  const char *e = getenv("GI_BOX");
+  const char *e = getenv("GI_CSM");
+  if (e && !strcmp(e, "1")) { /* forward lighting with a cascaded sun (outside the box: it lights nothing in it) */
+    cw_node_set(node("Box/Lighting"), "mode", cw_val_enum("FORWARD"));
+    cw_node sun = cw_node_new("DirectionalLight3D", "Sun");
+    cw_node_add_child(node("Box"), sun);
+    cw_node_set(sun, "shadow", cw_val_bool(true));
+    cw_node_set(sun, "shadow_cascades", cw_val_int(2));
+    cw_node_set(sun, "energy", cw_val_float(0.5f));
+    cw_node3d_look_at(sun, (t3_vec3){ 0.3f, -1, -0.2f }, (t3_vec3){ 0, 1, 0 });
+  }
+  e = getenv("GI_BOX");
   if (e && !strcmp(e, "0")) cw_node_set(node("Box/Probe"), "box_projection", cw_val_bool(false));
   e = getenv("GI_PROBE");
   if (e && !strcmp(e, "0")) cw_node_set(node("Box/Probe"), "intensity", cw_val_float(0));
@@ -72,6 +85,7 @@ static void render(void *u, double alpha) {
   cw_gi_get_stats(cw_scene_app_tree(), &s);
   captures = s.captures_total;
   bound = s.probes_bound_max;
+  materials = s.materials;
 }
 
 cw_app_desc cw_main(int argc, char **argv) {

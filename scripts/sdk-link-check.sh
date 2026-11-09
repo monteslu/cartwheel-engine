@@ -19,6 +19,16 @@ W="$ROOT/out/sdk-link-check/$T"
 rm -rf "$W"
 mkdir -p "$W/sdk" "$W/game"
 tar -xzf "$TGZ" -C "$W/sdk" --strip-components=1
+# the files a game's scripts and AGENTS.md name, and every module they import from the SDK itself
+need=(AGENTS.md)
+if [ "$T" = cart-wgpu ]; then need+=(tools/cart-version.mjs tools/lib/wasc-splice.mjs tools/lib/app-version.mjs)
+else need+=(tests/gate.mjs tools/run-cart.mjs tools/programs.mjs tools/check-text.mjs tools/check-prompts.mjs tools/flash-check.mjs); fi
+for f in "${need[@]}"; do
+  [ -f "$W/sdk/$f" ] || { echo "sdk-link-check $T: the SDK has no $f" >&2; exit 1; }
+  for imp in $(grep -oE "from '\.\.?/[^']+'" "$W/sdk/$f" | sed -E "s/from '(.*)'/\1/"); do
+    [ -f "$(dirname "$W/sdk/$f")/$imp" ] || { echo "sdk-link-check $T: $f imports $imp, which the SDK lacks" >&2; exit 1; }
+  done
+done
 if [ "$T" = cart-wgpu ]; then
   node "$ROOT/tests/cart-art.mjs" --pack "$W/sdk/deps/wasmcart-wgpu/bin/wasmcart-pack.js" --carts "$W/no-carts"
   rm -rf "$W"
