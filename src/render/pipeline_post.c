@@ -1043,7 +1043,7 @@ void cw__lens_uniforms(cw_pass_ctx *ctx, unsigned prog, bool ca) {
  * value rounded as the separate pass's RGBA16F target rounded it */
 static const char *TM_DIST_GLSL =
     "uniform sampler2D u_dist, u_depth;\n"
-    "uniform vec4 u_dp;    /* dispersion, how much nearer than the haze a sample may be, max shift, on */\n"
+    "uniform vec4 u_dp;    /* (unused), how much nearer than the haze a sample may be, max shift, on */\n"
     "uniform vec4 u_dsoft; /* near, far, ortho */\n"
     "float dlin(float d) { return u_dsoft.z > 0.5 ? u_dsoft.x + d * (u_dsoft.y - u_dsoft.x) : u_dsoft.x * u_dsoft.y / (u_dsoft.y - d * (u_dsoft.y - u_dsoft.x)); }\n"
     "vec4 distort_src(vec2 uv) {\n"
@@ -1057,7 +1057,6 @@ static const char *TM_DIST_GLSL =
     "  vec2 uv2 = uv + off;\n"
     "  if (dlin(texture(u_depth, uv2).r) < hz - u_dp.y) return s0;\n"
     "  vec3 c = texture(u_src, uv2).rgb;\n"
-    "  if (u_dp.x > 0.0) c = vec3(texture(u_src, uv2 + off * u_dp.x).r, c.g, texture(u_src, uv2 - off * u_dp.x).b);\n"
     "  return vec4(q16(c), s0.a);\n"
     "}\n";
 static const char *TM_DIST_WGSL =
@@ -1073,11 +1072,7 @@ static const char *TM_DIST_WGSL =
     "  let off = clamp(d.rg, vec2f(-u.u_dp.z), vec2f(u.u_dp.z));\n"
     "  let uv2 = uv + off;\n"
     "  if (cw_load(u_depth, uv2).r < hz - u.u_dp.y) { return s0; }\n"
-    "  var c = textureSampleLevel(u_src, cw_linear, uv2, 0.0).rgb;\n"
-    "  if (u.u_dp.x > 0.0) {\n"
-    "    c = vec3f(textureSampleLevel(u_src, cw_linear, uv2 + off * u.u_dp.x, 0.0).r, c.g,\n"
-    "              textureSampleLevel(u_src, cw_linear, uv2 - off * u.u_dp.x, 0.0).b);\n"
-    "  }\n"
+    "  let c = textureSampleLevel(u_src, cw_linear, uv2, 0.0).rgb;\n"
     "  return vec4f(q16(c), s0.a);\n"
     "}\n";
 

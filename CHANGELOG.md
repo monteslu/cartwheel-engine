@@ -4,6 +4,11 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.40.1 (2026-11-09)
+
+### Fixed
+- **Heat haze, shockwaves and blasts no longer paint rainbow fringes.** The distortion pass split the picture's colours on High and Ultra (red sampled further along the bend than green, blue the other way, a third of the shift apart), which drew oil-slick colour round every haze column and blast ring over a high-contrast background. It now moves the picture without splitting it: a colourless shimmer on every preset, the same on GL and WebGPU, with two texture reads a pixel fewer where it bends. `cw_quality_scale("dispersion")` is 0 (it no longer appears in the effects table). New gate `fx-distort-fringe` (`tests/distort-fringe.mjs`, romdev, GL and WebGPU): fx_distort with its scene turned grey, the share of the pixels the distortion changed that come out coloured; 0 % now, 24.8 % on v0.39.1's build, and a frame with red and blue moved 3 pixels apart fails it as its control.
+
 ## v0.40.0 (2026-11-09)
 
 ### Added

@@ -30,7 +30,7 @@ Set `blend` to `REFRACT` and each particle shows the scene through a lens: the e
 
 ## Cost and presets
 
-The distortion buffer is drawn at a share of the frame that follows the effects preset (half on Low and Medium, full on High and Ultra) and filtered up; colour fringing along bent edges is High and Ultra only. The passes run only while something distorts: a scene without haze pays nothing. Everything here is render only and reads the frame's own depth; nothing reaches the simulation.
+The distortion buffer is drawn at a share of the frame that follows the effects preset (half on Low and Medium, full on High and Ultra) and filtered up. It moves the picture without splitting its colours, so a blast's haze is a colourless shimmer on every preset (`tests/distort-fringe.mjs` holds it to that). The passes run only while something distorts: a scene without haze pays nothing. Everything here is render only and reads the frame's own depth; nothing reaches the simulation.
 
 ## Testing
 

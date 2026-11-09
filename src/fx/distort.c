@@ -231,7 +231,7 @@ static const char RING_WGSL[] =
 
 static const char APPLY_GLSL[] =
     "uniform sampler2D u_src, u_dist, u_depth;\n"
-    "uniform vec4 u_p;    /* dispersion, how much nearer than the haze a sample may be, max shift */\n"
+    "uniform vec4 u_p;    /* (unused), how much nearer than the haze a sample may be, max shift */\n"
     "uniform vec4 u_soft; /* near, far, ortho */\n"
     "out vec4 o;\n"
     "float lin(float d) { return u_soft.z > 0.5 ? u_soft.x + d * (u_soft.y - u_soft.x) : u_soft.x * u_soft.y / (u_soft.y - d * (u_soft.y - u_soft.x)); }\n"
@@ -245,7 +245,6 @@ static const char APPLY_GLSL[] =
     "  vec2 uv2 = v_uv + off;\n"
     "  if (lin(texture(u_depth, uv2).r) < hz - u_p.y) { o = s0; return; }\n"
     "  vec3 c = texture(u_src, uv2).rgb;\n"
-    "  if (u_p.x > 0.0) c = vec3(texture(u_src, uv2 + off * u_p.x).r, c.g, texture(u_src, uv2 - off * u_p.x).b);\n"
     "  o = vec4(c, s0.a);\n"
     "}\n";
 
@@ -264,11 +263,7 @@ static const char APPLY_WGSL[] =
     "  let off = clamp(d.rg, vec2f(-u.u_p.z), vec2f(u.u_p.z));\n"
     "  let uv2 = uv + off;\n"
     "  if (cw_load(u_depth, uv2).r < hz - u.u_p.y) { return s0; }\n"
-    "  var c = textureSampleLevel(u_src, cw_linear, uv2, 0.0).rgb;\n"
-    "  if (u.u_p.x > 0.0) {\n"
-    "    c = vec3f(textureSampleLevel(u_src, cw_linear, uv2 + off * u.u_p.x, 0.0).r, c.g,\n"
-    "              textureSampleLevel(u_src, cw_linear, uv2 - off * u.u_p.x, 0.0).b);\n"
-    "  }\n"
+    "  let c = textureSampleLevel(u_src, cw_linear, uv2, 0.0).rgb;\n"
     "  return vec4f(c, s0.a);\n"
     "}\n";
 
@@ -380,7 +375,7 @@ static void apply_exec(cw_pass_ctx *ctx, void *user) {
   cw_pass_uniform1i(prog, "u_src", 0);
   cw_pass_uniform1i(prog, "u_dist", 1);
   cw_pass_uniform1i(prog, "u_depth", 2);
-  cw_pass_uniform4f(prog, "u_p", cw_quality_scale("dispersion") * 0.35f, 0.25f, 0.08f, 0);
+  cw_pass_uniform4f(prog, "u_p", 0, 0.25f, 0.08f, 0);
   cw_pass_uniform4f(prog, "u_soft", lp[0], lp[1], lp[2], 0);
   cw_pass_fullscreen();
 }
@@ -395,7 +390,7 @@ const cw_rt *cw__fx_take_distortion(cw_tree *t) {
 void cw__fx_distortion_uniforms(cw_pass_ctx *ctx, unsigned prog, bool on) {
   float lp[3];
   cw_pass_linear_depth_params(ctx, lp);
-  cw_pass_uniform4f(prog, "u_dp", cw_quality_scale("dispersion") * 0.35f, 0.25f, 0.08f, on ? 1.0f : 0.0f);
+  cw_pass_uniform4f(prog, "u_dp", 0, 0.25f, 0.08f, on ? 1.0f : 0.0f);
   cw_pass_uniform4f(prog, "u_dsoft", lp[0], lp[1], lp[2], 0);
 }
 
