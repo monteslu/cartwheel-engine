@@ -10,6 +10,11 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - `cw_rollback_set_no_rollback` (cartwheel/net.h): the desc's `no_rollback` test control, set after creation (a gate's
   switch that arrives in play).
 
+### Changed
+- `AGENTS.md`: every check goes through romdev. The no-strobe check is a game's own flash meter (debug fields read over
+  a ranged romdev run, at most 3 flashes a second, with a control) until romdev can hand over frames in ranges for
+  `tools/flash-check.mjs`; the engine checkout's gate command is `--hosts romdev --gpu both`.
+
 ### Fixed
 - **Every engine gate's switches reach its cart on romdev.** A gate's `env`, `controlEnv` and WebGPU controls' `env`
   go to a cart as the debug channel's env request, answered at frame 2; 93 of 161 such runs failed because the switch

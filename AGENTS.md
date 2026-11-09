@@ -62,7 +62,7 @@ Every game here is complete, runs on GL and WebGPU, and has its own gates. Paths
 | `project.cwproj` | name, input map (`input.<action> = key:space, pad:south`), render size, export presets ([app-platform](docs/guides/app-platform.md)) |
 | `roots.txt` / `assets/` | what gets packed into the game; scenes reach the rest ([resources](docs/guides/resources.md)) |
 | `programs/<app>.txt` | the three.c program table: every material, light and shadow state the game draws ([Program tables](docs/guides/rendering-3d.md#program-tables)) |
-| `tests/gates.json` | the gates: runs on GL and WebGPU, natively and as a cart, that must agree ([testing](docs/guides/testing.md)) |
+| `tests/gates.json` | the gates: runs of the cart on romdev, GL and WebGPU, that must agree ([testing](docs/guides/testing.md)) |
 | `<app>_auto` | the same game with an autopilot: the gates, screenshots and soaks run it |
 
 The game shell (`cartwheel/shell.h`, [game-shell](docs/guides/game-shell.md)) gives every game its title, player
@@ -168,7 +168,8 @@ In the starter (and every games repository built the same way):
 | program table | `./programs.sh` after a new material, light setup or preset-dependent content |
 
 In an engine checkout: `scripts/fetch-deps.sh`, then `DEV=1 scripts/build.sh <app>` for the edit loop (a release
-build is `scripts/build.sh`); `node tests/gate.mjs <gate>`. The SDK carries the same `tools/` and `tests/gate.mjs`.
+build is `scripts/build.sh`); `node tests/gate.mjs <gate> --hosts romdev --gpu both`. The SDK carries the same `tools/`
+and `tests/gate.mjs`.
 
 **Every check that runs the cart goes through romdev** (the MCP server on 127.0.0.1:7331; send
 `x-romdev-session` on every call). Send ranges, never loops: one call steps many frames on an input schedule; never
@@ -192,8 +193,12 @@ Checks a game should run (all shipped in the SDK under `tools/`):
 
 - `node tools/check-prompts.mjs src *.cwscene`: no text names a button.
 - `node tools/check-text.mjs tests/<game>-text.json`: every screen's text is at or above the size floor (on romdev).
-- `node tools/flash-check.mjs --app <app>_auto --frames 1200 --host native`: no strobe; its control (an 8 Hz strobe)
-  must fail.
+- No strobe: a flash meter of the game's own. `tools/flash-check.mjs` reads every frame and romdev cannot hand frames
+  over in ranges yet, so until it can a game measures each effect that can flash (a damage tint, a muzzle light, a
+  blast's light) where it draws it: the value it draws each frame, a flash for every pair of opposing changes of 0.1 or
+  more, and the most flashes in any one second, published as debug fields (`fl.<effect>_flashes`, `fl.<effect>_peak`)
+  and read over a ranged romdev run. A gate holds them to at most 3 flashes a second; its control (the effect switched
+  on and off every few ticks) must fail.
 - `CW_PROJECT_ROOT=. node <sdk>/tests/gate.mjs --hosts romdev --gpu both`: the game's `tests/gates.json` on the cart,
   GL and WebGPU.
 - `node tools/programs.mjs <app>`, then `node tools/programs.mjs --carts <app>`: the program table covers every
@@ -206,7 +211,8 @@ Checks a game should run (all shipped in the SDK under `tools/`):
   tick behind the chassis). Keep sun shadows on every preset (Minimal keeps them) and add a contact shadow
   (a MULTIPLY `Decal3D`) under anything that moves. Particles belong to their emitter, not to a light.
 - **No strobe, no screen shake.** Flashes swell and fade over 6 to 10 ticks; nothing jumps to full brightness in
-  one frame or flickers. Run `tools/flash-check.mjs` ([Flash check](docs/guides/testing.md#flash-check)).
+  one frame or flickers. Hold it with the game's flash meter (above; the rules are in
+  [Flash check](docs/guides/testing.md#flash-check)).
   No camera ever shakes: hits and blasts rumble the pad (`cw_input_rumble`).
 - **A newcomer must finish level 1.** Gate it with a bot that plays only from what the screen shows, with human
   error (reaction delay, aim error that grows with distance, missed presses), and with a second pad that joins and
