@@ -4,6 +4,11 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.39.1 (2026-11-09)
+
+### Fixed
+- **The sun's shadow maps are drawn once a frame with screen-space reflections or SSGI on, not twice.** The "gi" pass draws the half-resolution G-buffer before the view's own render, and that render drew every armed shadow map (with the surfaces the G-buffer leaves out missing), so the pass re-armed them and the view's render drew them again. The G-buffer now draws holding the maps (`t3_renderer_set_shadow_hold`, as the probe faces have since v0.39.0): it reads none of them, and the view's render draws them once. The frame looks the same (the maps it samples were always the second drawing). arenafps's Foundry in four-view split screen (a 2048 sun map, SSR on): 2 shadow-map draws a frame before, 1 after; the "gi" pass's GPU time 1.75 to 1.16 ms on GL on the 890M (mean of two runs each, on a machine under load: indicative). `CW_TEST_GBUF_SHADOWS=1` (native) draws them in the G-buffer as before, the timing control.
+
 ## v0.39.0 (2026-11-09)
 
 ### Changed

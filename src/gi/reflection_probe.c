@@ -273,10 +273,10 @@ static void probes_exec(cw_pass_ctx *ctx, void *user) {
   bool want = ctx->settings->ssr || ctx->settings->ssgi;
   g->gbuf_ok = want && cw__gi_gbuffer(ctx, g, hw, hh, 1);
   g->albedo_ok = ctx->settings->ssgi && g->gbuf_ok && cw__gi_gbuffer(ctx, g, hw, hh, 2);
-  /* The first render of a frame draws the sun's shadow maps (the view armed them), and these
-   * renders came first: with the objects a probe's cull_mask hides, or the surfaces the
-   * G-buffer leaves out, missing from them. Arm them again, so the frame's own render draws
-   * them with everything in. (A later view of a split screen keeps the first view's maps.) */
+  /* The first render of a frame draws the sun's shadow maps (the view armed them). The probe faces and the G-buffer
+   * hold them (their renders draw only a map never drawn before, the first frame's, with the objects a probe's cull_mask
+   * hides or the surfaces the G-buffer leaves out missing): arm them again, so the frame's own render draws them with
+   * everything in. (A later view of a split screen keeps the first view's maps.) */
   if (((!later_view && (g->faces_drawn || g->stats.grid_updates)) || g->gbuf_ok) && !cw__render3d_shadows_kept(ctx->tree))
     t3_renderer_shadow_needs_update(ctx->renderer);
 }

@@ -399,6 +399,16 @@ bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, int w, int h, int mode) {
   if (bg) t3_retain(bg), t3_scene_set_background_texture(sc, NULL);
   sc->has_background = false;
   g->mode = mode;
+  /* the shadow maps are held: the G-buffer reads none of them, and a map drawn here would miss the surfaces the G-buffer
+   * leaves out, so the view's own render draws them (once a frame, where they were drawn here and again there) */
+#if !CW_CART
+  /* CW_TEST_GBUF_SHADOWS=1 (a timing and gate control): the G-buffer draws the maps as it did before 0.39.1 */
+  static int draw_maps = -1;
+  if (draw_maps < 0) draw_maps = getenv("CW_TEST_GBUF_SHADOWS") != NULL;
+#else
+  const int draw_maps = 0;
+#endif
+  if (!draw_maps) t3_renderer_set_shadow_hold(r, true);
   bool ok = true;
   /* the G-buffer target, cleared to 0 (metalness 0: no reflection) and depth 1 */
 #if CW_WGPU
@@ -442,6 +452,7 @@ bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, int w, int h, int mode) {
     t3_renderer_set_framebuffer(r, ctx->pipeline->bound_fbo);
     t3_renderer_reset_bindings(r);
   }
+  t3_renderer_set_shadow_hold(r, false);
   g->mode = 0;
   for (int i = 0; i < g->mats.count; i++) t3_material_set_extension(g->mats.data[i], saved[i][0] ? saved[i] : NULL);
   cw_free(saved);
