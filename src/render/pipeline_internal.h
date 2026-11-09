@@ -11,6 +11,7 @@
 /* program states no table had (src/render/programs.c) */
 extern int32_t cw__missing_programs;
 const char *cw__programs_fix_command(void);
+const char *cw__app_target_name(void); /* the app's target (its generated <app>_programs.c), src/render/programs.c */
 
 #define CW__QUERY_RING 64 /* a pass's queries in flight: up to four views a frame, many frames deep (a run flat out queues a lot) */
 

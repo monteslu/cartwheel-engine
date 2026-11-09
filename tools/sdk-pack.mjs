@@ -142,7 +142,8 @@ function setProps(name, props) {
 // ── the engine's own files a game build uses ──────────────────────────
 const engineFile = (rel) => copyFile(join(SRC, rel), join(OUT, rel));
 const engineTree = (rel, filter) => copyTree(join(SRC, rel), join(OUT, rel), filter);
-for (const f of ['cmake/flags.cmake', 'cmake/app.cmake', 'cmake/programs.cmake', 'cmake/plugins.cmake', 'LICENSE', 'NOTICE'])
+// AGENTS.md: the page a coding agent reads first (it links into docs/ and include/, both shipped)
+for (const f of ['cmake/flags.cmake', 'cmake/app.cmake', 'cmake/programs.cmake', 'cmake/plugins.cmake', 'LICENSE', 'NOTICE', 'AGENTS.md'])
   engineFile(f);
 engineTree('include');
 engineTree('docs', (r, dir) => dir ? !r.startsWith('tutorials') : /\.md$/.test(r) && !r.includes('/'));
@@ -171,6 +172,7 @@ if (CART) {
   // the manifest version every build (cw_add_app): the tool and its rule
   engineFile('tools/cart-version.mjs');
   engineFile('tools/lib/app-version.mjs');
+  engineFile('tools/lib/wasc-splice.mjs'); // a dev cart's fast pack (cart-version.mjs --reuse-assets)
   // wasmcart-pack (with the art checks it imports, src/cartArt.js) and, for dual carts, the WebGPU tier's
   // import list (check-imports --wgpu)
   for (const wc of WGPU ? ['wasmcart-wgpu'] : ['wasmcart']) {
@@ -188,7 +190,8 @@ if (CART) {
   // the host tools: cwpack, program-table regeneration, exports
   if (T.cwpack && existsSync(T.cwpack)) copyFile(T.cwpack, join(OUT, 'bin', basename(T.cwpack)));
   // check-text.mjs: the text size check a game runs over its own screens (node <sdk>/tools/check-text.mjs tests/<game>-text.json)
-  for (const f of ['tools/programs.mjs', 'tools/run-cart.mjs', 'tools/cwexport.mjs', 'tools/check-text.mjs']) engineFile(f);
+  // flash-check.mjs: the strobe check a game runs over its own effects (node <sdk>/tools/flash-check.mjs --app <app> --frames N)
+  for (const f of ['tools/programs.mjs', 'tools/run-cart.mjs', 'tools/cwexport.mjs', 'tools/check-text.mjs', 'tools/flash-check.mjs']) engineFile(f);
   engineTree('tools/lib');
   engineTree('tools/cwexport');
   // the engine's own three.c generator extensions (terrain, clustered lights, gi, mesh decals, water, ...): a

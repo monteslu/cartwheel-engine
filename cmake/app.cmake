@@ -320,6 +320,13 @@ function(cw_add_app name)
     # (tools/cart-version.mjs); the link's pack reads the file
     set(_ver_file ${CMAKE_CURRENT_BINARY_DIR}/${name}.version)
     set(_ver_record ${CMAKE_CURRENT_BINARY_DIR}/${name}.pack.json)
+    # a dev cart whose assets did not change gets its new cart.wasm spliced into the last archive
+    # instead of every asset deflated again (tools/cart-version.mjs --reuse-assets); a release cart is
+    # always packed in full
+    set(_reuse "")
+    if(CW_CART_DEV)
+      set(_reuse --reuse-assets)
+    endif()
     add_custom_target(${name}_version
       COMMAND node ${CW_ROOT}/tools/cart-version.mjs update --out ${_ver_file} --dir ${CMAKE_CURRENT_SOURCE_DIR}
               --set "${A_VERSION}" --fallback "${_cwproj_version}" --wasc ${_wasc} --record ${_ver_record}
@@ -330,7 +337,7 @@ function(cw_add_app name)
       ${_opt_cmd}
       ${_stage_cmd}
       COMMAND node ${CW_ROOT}/tools/check-imports.mjs $<TARGET_FILE:${name}> ${_wgpu_check}
-      COMMAND node ${CW_ROOT}/tools/cart-version.mjs pack --version-file ${_ver_file} --wasc ${_wasc} --record ${_ver_record}
+      COMMAND node ${CW_ROOT}/tools/cart-version.mjs pack --version-file ${_ver_file} --wasc ${_wasc} --record ${_ver_record} ${_reuse}
               -- node ${_wc_pack} --wasm $<TARGET_FILE:${name}> --name ${name} ${_assets} ${_files} ${_meta}
       COMMENT "cart ${name}.wasc")
   endif()

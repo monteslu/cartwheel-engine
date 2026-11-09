@@ -1,0 +1,22 @@
+[scene format=1]
+
+[node name="Level" type="Node3D"]
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 2, 6)
+rotation = vec3(-0.3, 0, 0)
+
+[node name="Ground" parent="." type="MeshInstance3D"]
+primitive = BOX
+scale = vec3(8, 0.2, 8)
+position = vec3(0, -0.6, 0)
+receive_shadow = true
+
+[node name="Box" parent="." type="MeshInstance3D"]
+primitive = BOX
+cast_shadow = true
+receive_shadow = true
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+rotation = vec3(-1, 0.5, 0)
+shadow = true

@@ -1,0 +1,5 @@
+# unit_programs_switch (tests/programs-switch.mjs): tools/programs.mjs unit_programs_switch
+depth+xplain
+standard+instbig+shadow+l1000
+standard+instbig+shadow+l1200
+standard+instbig+shadow+l1200+s100+xplain
