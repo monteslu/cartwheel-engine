@@ -2,6 +2,7 @@
 // a slow pulse must pass; a full-screen strobe, a red strobe on a quarter of the screen, small lights switching
 // together over a third of the screen, a small light flickering regularly, a hard onset (with maxRise) and a frozen
 // run must each fail, on the measure that should catch it.
+// The box filter a cart host's frames go through (boxDown) against sums worked by hand.
 // Then a real run when the native samples are built: tools/flash-check.mjs on fx_explosion (its blasts' pooled flash
 // lights, smoke and sparks) through CW_FRAME_DUMP must pass, with its control (an 8 Hz strobe over it) failing, and
 // the dump must hold every frame asked for.
@@ -10,7 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { analyseFrames, judgeFlash, describeFlash, flashGate, withStrobe } from '../tools/lib/flash.mjs';
+import { analyseFrames, judgeFlash, describeFlash, flashGate, withStrobe, boxDown } from '../tools/lib/flash.mjs';
 
 const W = 192, H = 108, FPS = 60, N = 240;
 // a scrolling, high-contrast textured scene: bright and dark stripes and blobs moving 2 px a frame
@@ -71,10 +72,19 @@ console.log(g.lines.join('\n'));
 if (!g.ok) { console.log('FAIL the gate did not pass the moving scene with a failing control'); bad++; }
 const g2 = flashGate(W, H, withStrobe(base, { hz: 8 }), { fps: FPS }, { label: 'gate on a strobing run' });
 if (g2.ok) { console.log('FAIL the gate passed a strobing run'); bad++; } else console.log('ok   the gate fails a strobing run');
+// boxDown: a 2x2 block of black and white averages to half the light (188 in sRGB), not half the code (128); a solid
+// colour stays itself; a 4x2 frame halves to 2x1
+{
+  const px = Uint8Array.from([0, 0, 0, 255, 255, 255, 255, 255, 10, 20, 30, 255, 10, 20, 30, 255, 255, 255, 255, 255, 0, 0, 0, 255, 10, 20, 30, 255, 10, 20, 30, 255]);
+  const d = boxDown(px, 4, 2, 2);
+  const want = [188, 188, 188, 10, 20, 30];
+  if (d.w !== 2 || d.h !== 1 || want.some((v, i) => Math.abs(d.rgb[i] - v) > 0)) { console.log(`FAIL boxDown: ${d.w}x${d.h} ${Array.from(d.rgb)}, want 2x1 ${want}`); bad++; }
+  else console.log('ok   boxDown averages in linear light (black and white to 188, a solid colour unchanged)');
+}
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 if (process.argv.includes('--synthetic')) console.log('note --synthetic: the fx_explosion leg did not run');
 else if (existsSync(join(ROOT, 'build/native/samples/fx_explosion'))) {
-  const r = spawnSync('node', [join(ROOT, 'tools/flash-check.mjs'), '--app', 'fx_explosion', '--frames', '300', '--from', '2'], { encoding: 'utf8' });
+  const r = spawnSync('node', [join(ROOT, 'tools/flash-check.mjs'), '--host', 'native', '--app', 'fx_explosion', '--frames', '300', '--from', '2'], { encoding: 'utf8' });
   process.stdout.write(r.stdout || '');
   if (r.status !== 0) { console.log(`FAIL fx_explosion's run: ${(r.stderr || '').slice(-1500)}`); bad++; }
   else if (!/299 frames/.test(r.stdout)) { console.log('FAIL fx_explosion: the dump did not hold frames 2-300'); bad++; }

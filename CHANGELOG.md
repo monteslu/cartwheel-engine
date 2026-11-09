@@ -4,6 +4,19 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.40.0 (2026-11-09)
+
+### Added
+- **Gates run on romdev alone, GL and WebGPU.** `node tests/gate.mjs --hosts romdev [--gpu webgpu|both]` runs no native leg: the game's dual cart on romdev with GL is the reference (a real picture, `expect`, the text floor, missing program states, prompt errors) and its control on romdev GL must differ from it; with `--gpu webgpu` or `both` the same cart runs on WebGPU with the same checks, its named state exact against the GL run, its frame within `webgpu.vsGl` and `maxArea`, and its own control must differ from both. Gates that leave romdev out, tool gates and `webgpu.controls` are listed as skipped, never counted as passing. Before, `--hosts romdev` crashed reading a native reference shot, and `--gpu webgpu` ran only gates with a `webgpu` block. The mode takes no GPU suite lock (it runs no GPU work of its own). `--gates-file` takes an absolute path too.
+- **A gate's environment reaches a cart.** The debug channel's new built-in `env NAME=VALUE ... [-- request]` sets variables in the running game on any host; every cart link wraps `getenv`, so a game's own `getenv` calls read them unchanged. `tools/run-cart.mjs --env '{"NAME":"v"}'` (the gate runner passes a gate's `env` and `controlEnv`) sends it riding on a request each host sends anyway, so no host's frames move: before frame 1 on Chromium and wasmcart-native, at frame 2 with the first start request on romdev. A variable the game read before the request arrived fails the run, naming it, rather than running unset. `cw_test_env(name)` (cartwheel/debug.h) reads a test switch alike on every host: NULL in the first frame, the variable from frame 2. derby's `DERBY_NO_MUD` control and partypack's `PP_ROUNDS` boards (read from frame 2) pass on romdev GL and WebGPU against the values measured natively.
+- **`tools/check-text.mjs` runs on romdev** (the default; `--host native` for the native build): each screen is a run of the cart, its `env` sent as the env request, the text sizes read from the `text` request after the last frame. `--pref` needs `--host native` (romdev takes no preferred frame size from a client).
+- `tools/lib/flash.mjs` `boxDown` (a cart host's RGBA frame filtered down in linear light as a native frame dump is) and `frameDumpHeader`; `tests/flash-check.mjs` checks the filter against sums worked by hand.
+
+### Changed
+- **`tools/run-cart.mjs` sends romdev ranges, never a request per frame.** A pad-only input script goes to romdev as one `input` `sequence` call (each entry held until the next, the last to the run's end) instead of a step and a set per entry: a 700-frame derby run with a 10-entry script took 25 requests and now takes 5, with the same frame and state byte for byte. Only mouse, touch or wheel entries take requests per entry. The result reports `romdevCalls`, and every request names its caller (`x-romdev-agent`, `CW_ROMDEV_AGENT`).
+- **`tools/flash-check.mjs --app` defaults to romdev and stops there** (exit 2, saying why): romdev cannot hand over every frame of a run in ranged requests yet, and a request per frame floods the shared server. `--host native` runs the engine's own samples natively as before; `--dump` and `--dir` are unchanged.
+- `tools/quality-range.mjs` says it is native only: a cart on romdev has no GPU timer (`pipeline` reports `timer_query` false on GL and WebGPU), so a game's gates leave the timing out until romdev can time a cart.
+
 ## v0.39.2 (2026-11-09)
 
 ### Changed

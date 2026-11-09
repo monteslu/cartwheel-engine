@@ -315,6 +315,31 @@ export function flashGate(w, h, frames, opts = {}, { label = 'run', control = {}
 }
 
 /**
+ * One RGBA frame (top row first) box-filtered down by `scale` in linear light, as RGB bytes: what a native run's
+ * CW_FRAME_DUMP writes (src/platform/native.c dump_frame), for frames taken from a cart host (romdev).
+ * @returns {{w: number, h: number, rgb: Uint8Array}}
+ */
+export function boxDown(rgba, w, h, scale = 8) {
+  const ow = Math.floor(w / scale), oh = Math.floor(h / scale), out = new Uint8Array(ow * oh * 3), n = scale * scale;
+  for (let oy = 0; oy < oh; oy++)
+    for (let ox = 0; ox < ow; ox++) {
+      let r = 0, g = 0, b = 0;
+      for (let y = oy * scale; y < oy * scale + scale; y++)
+        for (let x = ox * scale, i = (y * w + x) * 4; x < ox * scale + scale; x++, i += 4) r += LIN[rgba[i]], g += LIN[rgba[i + 1]], b += LIN[rgba[i + 2]];
+      const o = (oy * ow + ox) * 3, enc = (v) => Math.max(0, Math.min(255, Math.round(255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055))));
+      out[o] = enc(r / n), out[o + 1] = enc(g / n), out[o + 2] = enc(b / n);
+    }
+  return { w: ow, h: oh, rgb: out };
+}
+
+/** A CW_FRAME_DUMP file's 16-byte header ("CWFD", width, height, 0); the RGB frames follow it. */
+export function frameDumpHeader(w, h) {
+  const head = Buffer.alloc(16);
+  head.writeUInt32LE(0x44465743, 0), head.writeUInt32LE(w, 4), head.writeUInt32LE(h, 8);
+  return head;
+}
+
+/**
  * Read a CW_FRAME_DUMP file (src/platform/native.c): "CWFD", u32 width, u32 height, u32 0, then RGB frames.
  * @param {string} path @returns {{w: number, h: number, frames: Uint8Array[]}}
  */

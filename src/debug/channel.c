@@ -502,6 +502,7 @@ void cw__debug_frame_end(void) {
 void cw__vfs_register_commands(void); /* core/vfs.c */
 void cw__debug_cmd_fields(int argc, const char **argv, cw_reply *r); /* debug/fields.c */
 
+static void cmd_env(int argc, const char **argv, cw_reply *r);
 static void ensure_builtins(void) {
   static bool builtin;
   if (builtin) return;
@@ -522,6 +523,9 @@ static void ensure_builtins(void) {
   command_default("record", "record start|stop|status|fetch|replay: the input stream (games with input actions)", cmd_no_record);
   command_default("fields", "fields [name...]: debug fields' values (cw_debug_field), all of them when none is named",
                   cw__debug_cmd_fields);
+  command_default("env", "env NAME=VALUE ... [-- request]: set a test's environment variables in the running game on any host "
+                         "(a cart's getenv reads them; setting one the game read before this request fails it); with -- the "
+                         "rest runs as a request in the same frame, its reply the reply", cmd_env);
   command_default("quit", "quit: end the game cleanly", cmd_quit);
   command_default("debug_crash", "debug_crash abort|trap|segv: kill the game on purpose (crash-isolation tests)", cmd_crash);
   cw__vfs_register_commands();
@@ -541,6 +545,52 @@ static bool must_wait(const char *request) {
   return true;
 }
 
+static void dispatch(int argc, const char **argv, cw_reply *r) {
+  for (int i = 0; i < cmds.count; i++)
+    if (!strcmp(cmds.data[i].name, argv[0])) {
+      cmds.data[i].fn(argc, argv, r);
+      return;
+    }
+  cw_reply_error(r, "unknown command '%s' (help lists this game's commands)", argv[0]);
+}
+
+/* env NAME=VALUE ... [-- request]: a test's environment on any host (src/core/env.c); with "--" the rest is a
+ * request run in the same frame, whose reply is the reply (a cart host's first start request carries both) */
+const char *cw__env_set(const char *name, const char *value, bool check_only); /* core/env.c */
+void cw__env_delivered(void);
+static void cmd_env(int argc, const char **argv, cw_reply *r) {
+  int end = argc;
+  for (int i = 1; i < argc; i++)
+    if (!strcmp(argv[i], "--")) { end = i; break; }
+  if (end == 1) {
+    cw_reply_error(r, "usage: env NAME=VALUE ... [-- request]");
+    return;
+  }
+  /* every name checked before any is set: the request sets all of them or none */
+  for (int pass = 0; pass < 2; pass++)
+    for (int i = 1; i < end; i++) {
+      const char *eq = strchr(argv[i], '=');
+      if (!eq || eq == argv[i]) {
+        cw_reply_error(r, "env: '%s' is not NAME=VALUE", argv[i]);
+        return;
+      }
+      char name[80];
+      size_t n = (size_t)(eq - argv[i]);
+      if (n >= sizeof name) n = sizeof name - 1;
+      memcpy(name, argv[i], n);
+      name[n] = 0;
+      const char *why = cw__env_set(name, eq + 1, pass == 0);
+      if (why) {
+        cw_reply_error(r, "env: %s", why);
+        return;
+      }
+    }
+  cw__env_delivered();
+  cw_log(CW_LOG_INFO, "debug: env: %d variable(s) set", end - 1);
+  if (end + 1 < argc) dispatch(argc - end - 1, argv + end + 1, r);
+  else cw_reply_printf(r, "{\"env\":%d}", end - 1);
+}
+
 /* Runs a request into r. Returns false when the command deferred its reply. */
 static bool run_into(const char *request, cw_reply *r) {
   ensure_builtins();
@@ -549,17 +599,8 @@ static bool run_into(const char *request, cw_reply *r) {
   memcpy(copy, request, n + 1);
   const char *argv[32];
   int argc = split(copy, argv, 32);
-  if (!argc) {
-    cw_reply_error(r, "empty request (try help)");
-  } else {
-    bool found = false;
-    for (int i = 0; i < cmds.count && !found; i++)
-      if (!strcmp(cmds.data[i].name, argv[0])) {
-        found = true;
-        cmds.data[i].fn(argc, argv, r);
-      }
-    if (!found) cw_reply_error(r, "unknown command '%s' (help lists this game's commands)", argv[0]);
-  }
+  if (!argc) cw_reply_error(r, "empty request (try help)");
+  else dispatch(argc, argv, r);
   cw_free(copy);
   if (r->wait && !r->error) {
     r->len = 0;

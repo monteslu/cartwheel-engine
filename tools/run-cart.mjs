@@ -102,6 +102,14 @@ const startPlan = startCmds.map((c, i) => {
   return m ? [+m[1] - 1, m[2]] : [i + 1, c];
 });
 const timedCmds = startCmds.some((c) => c.startsWith('@'));
+// --env '{"NAME":"value"}': a test's environment variables on every host. Native runs get them in their process
+// environment; a cart gets the debug channel's env request (src/core/env.c), riding on a request it is sent anyway
+// so no host's frames move: before frame 1 with the first request on Chromium and wasmcart-native, at frame 2 with
+// the first start request on romdev (its load runs frame 1), where a variable the game read in frame 1 fails the run
+const cartEnv = typeof args.env === 'string' ? JSON.parse(args.env) : {};
+const envQuote = (v) => (/^[^\s"\\()]+$/.test(v) ? v : `"${v.replace(/[\\"]/g, (c) => '\\' + c)}"`);
+const envReq = Object.keys(cartEnv).length ? 'env ' + Object.entries(cartEnv).map(([k, v]) => `${k}=${envQuote(String(v))}`).join(' ') : null;
+const withEnv = (cmd) => (envReq ? (cmd ? `${envReq} -- ${cmd}` : envReq) : cmd);
 // --frame-hz: the virtual render rate (default 60); fixed ticks stay at the app's rate
 const frameHz = +args['frame-hz'] || 60;
 // --warmup-spread: the warm-up spread over frames under the loading screen, as a player gets it
@@ -111,7 +119,7 @@ const spread = !!args['warmup-spread'];
 // the request a cart host with a real clock posts before frame 1, for what a deterministic run gets from its flag: the whole
 // warm-up in that frame (not with --warmup-spread) and quality locked, so Auto cannot step by how fast this machine ran.
 // --keep-auto leaves quality alone (the control of tests/quality-lock.mjs)
-const firstCmd = args['keep-auto'] ? (spread ? null : 'warmup_spread 0') : spread ? 'quality lock' : 'test_run';
+const firstCmd = withEnv(args['keep-auto'] ? (spread ? null : 'warmup_spread 0') : spread ? 'quality lock' : 'test_run');
 const gpu = args.gpu === 'webgpu' || args.gpu === 'wgpu' ? 'webgpu' : 'gl';
 if (args.gpu && args.gpu !== true && !['gl', 'webgpu', 'wgpu'].includes(args.gpu)) { console.error('--gpu gl|webgpu'); process.exit(2); }
 const pin = gpu === 'webgpu' ? wgpuPin() : null;
@@ -200,6 +208,7 @@ async function runNative() {
   else delete env.SDL_VIDEODRIVER;
   if (args.shot) env.CW_SCREENSHOT = resolve(args.shot);
   if (args.state) env.CW_DEBUG_DUMP = resolve(args.state);
+  Object.assign(env, cartEnv); /* --env: the process environment, read from the start */
   if (startCmds.length) env.CW_START_CMDS = startCmds.join(';');
   if (typeof args['end-cmds'] === 'string') env.CW_DEBUG_CMDS = args['end-cmds'];
   if (script.length) {
@@ -244,14 +253,19 @@ async function runNative() {
 // and a long frame step on a busy GPU pool runs past that (2400 frames of a crowded game: 4-10 minutes).
 // The wait scales with the frames a call steps: CW_ROMDEV_TIMEOUT_MS (default 300000) for the call plus
 // CW_ROMDEV_FRAME_MS (default 500) per frame stepped; a call that runs past it fails, naming both.
+let romdevCalls = 0; // HTTP requests this run sent romdev (the result reports it)
 function romdevPost(tool, a, session) {
+  romdevCalls++;
   const body = JSON.stringify(a);
-  const steps = tool === 'frame' && a && a.op === 'step' ? Math.max(0, +a.frames || 0) : 0;
+  const steps = tool === 'frame' && a && a.op === 'step' ? Math.max(0, +a.frames || 0)
+    : tool === 'input' && a && a.op === 'sequence' ? a.steps.reduce((t, x) => t + x.frames, 0) : 0;
   const base = +(process.env.CW_ROMDEV_TIMEOUT_MS || 300000), perFrame = +(process.env.CW_ROMDEV_FRAME_MS || 500);
   const limit = base + steps * perFrame;
   return new Promise((ok, fail) => {
     const req = httpRequest({ host: '127.0.0.1', port: 7331, path: `/tool/${tool}`, method: 'POST', agent: false,
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'x-romdev-session': session } }, (res) => {
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'x-romdev-session': session,
+        // who is calling (romdev lists sessions by agent): CW_ROMDEV_AGENT, default cartwheel-run-cart
+        'x-romdev-agent': process.env.CW_ROMDEV_AGENT || 'cartwheel-run-cart' } }, (res) => {
       let text = '';
       res.setEncoding('utf8');
       res.on('data', (c) => { text += c; });
@@ -299,6 +313,13 @@ async function runRomdev() {
     }
   }
   let at = 1; // engine frames already run
+  // RANGES, never a loop over frames: romdev is shared, and a request per frame flooded it (2026-11-09). Frames run in
+  // one frame step; a pad-only input script goes as ONE input sequence call (each entry held until the next); only a
+  // script with pointer or wheel entries takes calls per entry. The result's romdevCalls counts them.
+  const stepTo = async (target) => {
+    if (target > at) await romdevCall('frame', { op: 'step', frames: target - at }, session);
+    at = Math.max(at, target);
+  };
   // input scripts are in the cart's LOGICAL pixels (as natively); the host's
   // pointer is in framebuffer pixels (cw_app_desc.render_scale): cw.view = [lw, lh, picture w, h, x, y]
   let sx = 1, sy = 1, ox = 0, oy = 0; // cw.view [4], [5]: the picture's origin (pixel_scale bars)
@@ -311,9 +332,17 @@ async function runRomdev() {
   const fbx = (x) => Math.round(ox + x * sx), fby = (y) => Math.round(oy + y * sy);
   if (timedCmds) throw new Error('romdev: --start-cmds "@N cmd" (a request at a frame) is not supported here; skip romdev for such gates');
   const cmdReplies = [];
-  for (const text of startCmds) { /* answered at the start of the frame the request runs */
-    cmdReplies.push({ text, reply: await romdevCall('wasm', { op: 'command', text }, session) });
+  // --env rides on the first start request (or is the only one): answered at the start of frame 2
+  const romdevCmds = envReq ? [withEnv(startCmds[0]), ...startCmds.slice(1)] : startCmds;
+  for (const text of romdevCmds) { /* answered at the start of the frame the request runs */
+    const reply = await romdevCall('wasm', { op: 'command', text }, session);
+    cmdReplies.push({ text, reply });
     at++;
+    const answer = reply && typeof reply === 'object' && 'reply' in reply ? reply.reply : reply; /* romdev wraps it: {framesRun, reply} */
+    if (envReq && text === romdevCmds[0] && answer && typeof answer === 'object' && answer.error) {
+      await romdevCall('host', { op: 'shutdown' }, session).catch(() => {});
+      throw new Error(`romdev: the --env request failed: ${answer.error}`);
+    }
   }
   if (args['cmd-out']) writeFileSync(resolve(args['cmd-out']), JSON.stringify(cmdReplies, null, 1));
   const romdevPad = (s) => {
@@ -340,13 +369,24 @@ async function runRomdev() {
   if (script.some((s) => scancodes(s.keys).length))
     throw new Error('romdev: keyboard input cannot be injected (its input tool has no wasmcart key op); skip romdev for keyboard gates');
   let mouse = null, touches = new Map();
-  for (const s of script) {
+  const live = script.filter((s) => s.frame <= frames); // entries after the last frame never apply (as natively)
+  if (live.length && !live.some((s) => s.mouse || (s.touches || []).length || s.wheel != null)) {
+    // the whole schedule in one call: entry i is held from frame s.frame (frames 1..s.frame-1 run before it) until the
+    // next entry, the last until the run's end; an entry a later one replaces in the same frame is never held
+    const steps = [];
+    if (live[0].frame - 1 > at) steps.push({ input: { ports: [{}] }, frames: live[0].frame - 1 - at });
+    live.forEach((s, i) => {
+      const from = Math.max(s.frame - 1, at), to = i + 1 < live.length ? Math.max(live[i + 1].frame - 1, at) : frames;
+      if (to > from) steps.push({ input: { ports: romdevPad(s) }, frames: to - from });
+    });
+    if (steps.length) await romdevCall('input', { op: 'sequence', steps }, session);
+    at = Math.max(at, frames);
+  }
+  for (const s of at >= frames ? [] : script) {
     if (s.frame > frames) break; // entries after the last frame never apply (as natively)
     // the entry applies from engine frame s.frame (1-based) on: frames 1..s.frame-1 run before it
     const before = s.frame - 1;
-    if (before > at) {
-      await romdevCall('frame', { op: 'step', frames: before - at }, session); at = before;
-    }
+    if (before > at) await stepTo(before);
     // pointer and wheel ops reset the held pad in romdev's host: send them first, the pad last
     if (s.mouse || mouse) {
       const m = s.mouse || mouse, b = mouseMask(s.mouse);
@@ -365,7 +405,7 @@ async function runRomdev() {
   // turn between every two stepped frames, so asynchronous results (buffer
   // maps, error scopes) arrive between frames as on every other host; stepping
   // one frame per call for that cost thousands of calls a run
-  if (frames > at) await romdevCall('frame', { op: 'step', frames: frames - at }, session);
+  if (frames > at) await stepTo(frames);
   // --cmd-end "cmd" (romdev): one debug-channel request after the last frame, its reply to --cmd-out (the survey of
   // tools/programs.mjs --carts asks "pipeline" there: the states the cart's last frames lacked a program for)
   if (typeof args['cmd-end'] === 'string') {
@@ -381,7 +421,7 @@ async function runRomdev() {
     checkWgpuState('romdev', o);
   }
   await romdevCall('host', { op: 'shutdown' }, session).catch(() => {});
-  result({ host, frames, shot: args.shot, state: args.state });
+  result({ host, frames, shot: args.shot, state: args.state, romdevCalls });
 }
 
 // CW_WGPU_FEATURE_LEVEL=compat|core (the native run reads it itself, cartwheel/gpu.h): the WebGPU feature level
