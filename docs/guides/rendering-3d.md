@@ -82,7 +82,7 @@ A frame runs the tree's active passes phase by phase, and inside a phase by `ord
 | Phase | Built-in and module passes |
 |---|---|
 | SHADOW | "sky_env" (100: sky cube), "visibility" (2000: culling, LOD, impostor bakes) |
-| PREPASS | "depth_prepass" when `depth_prepass` is on (depth of the opaque queue, alpha-tested cutouts still discarding; transparent and transmissive surfaces, colour and the sky are left out) |
+| PREPASS | "depth_prepass" when `depth_prepass` is on (depth of the opaque queue, alpha-tested cutouts still discarding; transparent and transmissive surfaces, colour and the sky are left out; on GL it draws into a framebuffer holding only the scene's depth, so no driver runs colour work for it) |
 | OPAQUE | "scene" (0: three.c renders the tree), "impostors" (100), "occlusion_queries" (900) |
 | SKY | "sky_sun" (0: the sun disk) |
 | EFFECTS | "decals" (100), "particles" (200), "height_fog" (300) |

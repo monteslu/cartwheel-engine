@@ -72,6 +72,44 @@ static bool prepass_shift(void) {
 #endif
 }
 
+/* GL: the prepass draws into an FBO that holds only the scene target's depth. With the scene's colour attachment
+ * bound and colour writes masked off, Mesa's radeonsi still runs much of each colour program's fragment work (the
+ * sun's cascaded shadow filter above all: Ember Throne's meadow prepass 0.50 ms on the 890M, 0.35 with the sun's
+ * shadow off), where WebGPU's pipelines know at creation that no colour is written (0.34 either way). With no colour
+ * buffer at all the driver skips that work. The depth written is the same, so the picture is too.
+ * CW_TEST_PREPASS_COLOR=1 (native test runs) draws into the scene target as before: the timing control. */
+static bool prepass_color(void) {
+#if CW_CART
+  return false;
+#else
+  static int v = -1;
+  if (v < 0) v = getenv("CW_TEST_PREPASS_COLOR") && atoi(getenv("CW_TEST_PREPASS_COLOR")) ? 1 : 0;
+  return v == 1;
+#endif
+}
+static unsigned prepass_depth_fbo(unsigned scene_fbo) {
+  static unsigned fbo;
+  if (prepass_color()) return scene_fbo;
+  GLint type = 0, name = 0;
+  glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo);
+  glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, &type);
+  glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &name);
+  if (!name || (type != GL_TEXTURE && type != GL_RENDERBUFFER)) return scene_fbo; /* (the default framebuffer: no prepass target of its own) */
+  if (!fbo) glGenFramebuffers(1, &fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  /* attached every time: the scene target may be another one (split screen, a resize) or a new object under an old name */
+  if (type == GL_TEXTURE) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, (GLuint)name, 0);
+  else glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, (GLuint)name);
+  static bool drawbuf;
+  if (!drawbuf) {
+    GLenum none = GL_NONE;
+    glDrawBuffers(1, &none);
+    drawbuf = true;
+  }
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) return scene_fbo;
+  return fbo;
+}
+
 static void prepass_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
   t3_renderer *r = ctx->renderer;
@@ -101,7 +139,7 @@ static void prepass_exec(cw_pass_ctx *ctx, void *u) {
   }
 #endif
   t3_renderer_reset_bindings(r);
-  t3_renderer_set_framebuffer(r, ctx->pipeline->bound_fbo);
+  t3_renderer_set_framebuffer(r, prepass_depth_fbo(ctx->pipeline->bound_fbo));
   /* Blended/transmissive surfaces must not occlude their backgrounds before
    * the colour pass. Opaque alpha-tested cutouts retain their normal discard. */
   if (prepass_shift()) glDepthRangef(0, 0.5f);
