@@ -73,11 +73,15 @@ bool cw__water_refr_wgpu(cw_pass_ctx *ctx, water3d *d, t3_camera *cam, int w, in
     .load_color = false, .load_depth = false, .clear_rgba = { 0, 0, 0, 1 }, .clear_depth = cw_gpu_reversed_depth() ? 0.0f : 1.0f,
     .x = 0, .y = 0, .w = w, .h = h, .flip_y = false,
   };
+  /* three.c's render passes carry no timestamps of their own: timed as one span of the pass (the GPU timers
+   * read only the depth copy below without it, a few hundredths of a millisecond where GL read the whole render) */
+  cw__pw_timing_span((void *)cw__pw_encoder(), false);
   t3_renderer_set_external_encoder(r, (uintptr_t)cw__pw_encoder());
   t3_renderer_set_external_target(r, &et);
   t3_renderer_render(r, ctx->scene3d, cam);
   t3_renderer_set_external_target(r, NULL);
   t3_renderer_set_external_encoder(r, 0);
+  cw__pw_timing_span((void *)cw__pw_encoder(), true);
   /* z rows (2, 1, 0, -1): the copy's view distance comes out as the window depth itself */
   static const float raw[4] = { 2, 1, 0, -1 };
   cw__pw_depth_copy(ctx, c, z, raw);

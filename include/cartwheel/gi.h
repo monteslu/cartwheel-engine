@@ -23,7 +23,8 @@
  *                   blurriest level along the surface normal), in place of
  *                   the sky's
  *   resolution      the capture's face size in pixels (16 .. 1024, a power of
- *                   two; 128). The quality preset scales it (below).
+ *                   two; 128), the size drawn (r187's fromScene would raise
+ *                   it to 256). The quality preset scales it (below).
  *   update_mode     ONCE (on its first frame, and again when the sky's
  *                   environment is re-rendered), ON_DEMAND (after
  *                   cw_reflection_probe_update / `call <probe> update`) or
@@ -49,7 +50,14 @@
  * first, then the nearest to the camera, then by node id. A capture renders
  * the scene six times at `resolution` and runs PMREM's filter passes; each
  * probe keeps two targets (it is drawn into one while the scene samples the
- * other), so nothing is allocated after its first capture. Render only:
+ * other), so nothing is allocated after its first capture. An EVERY_N_FRAMES
+ * probe refreshed every 2 frames or more (after the preset's scaling) that
+ * has a capture to show spreads each new one over those frames (three.c's
+ * t3_pmrem_scene_job: a few faces of the scene a frame, the filter in a frame
+ * of its own), so no frame pays for a whole capture; the scene samples the
+ * last finished one meanwhile. A first capture, a new size or a request
+ * (ONCE, ON_DEMAND) is made whole in its frame. The faces use the shadow
+ * maps as the last frame drew them (t3_renderer_set_shadow_hold). Render only:
  * nothing here reaches the simulation.
  *
  * Quality (effects detail): Low captures at half `resolution` (at least 32),

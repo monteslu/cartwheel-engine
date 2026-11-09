@@ -4,7 +4,9 @@
 // the sun's shadow maps, and a capture is that render, so on every capture frame the maps
 // lacked the crate and the frame lost its shadow. Checked natively, on GL and WebGPU:
 //   1. the shadow is there: dark floor pixels beside the crate, on two consecutive frames,
-//      one of which is a capture frame (gi.captures counts them);
+//      both of which draw the probe's faces: its captures are spread over the two frames
+//      (a capture finishes every second frame, gi.captures counts them, and the frames
+//      between draw the rest of the faces);
 //   2. the two frames are the same picture (pixels over 16 levels apart < 0.1 %);
 //   control: with the sun's shadow off the dark floor is gone, so check 1 can fail.
 //
@@ -48,7 +50,9 @@ for (const gpu of ['gl', 'webgpu']) {
   const a = run(gpu, 20, `a.${gpu}`), b = run(gpu, 21, `b.${gpu}`);
   if (a.err || b.err) { report(false, `${gpu}: ${a.err || b.err}`); continue; }
   const sa = shadowPixels(a.img), sb = shadowPixels(b.img);
-  report(b.captures === a.captures + 1 || a.captures === b.captures + 1, `${gpu}: one of the two frames is a capture frame (${a.captures}, ${b.captures} captures so far)`);
+  const n = run(gpu, 22, `n.${gpu}`);
+  report(!n.err && Math.abs(b.captures - a.captures) <= 1 && n.captures === a.captures + 1,
+    `${gpu}: a capture finishes every second frame, spread over both (${a.captures}, ${b.captures}, ${n.captures} captures by frames 20, 21, 22)`);
   report(sa > 0.02 && sb > 0.02, `${gpu}: the crate's shadow is on the floor on both frames (${(sa * 100).toFixed(1)}%, ${(sb * 100).toFixed(1)}% of the picture)`);
   const d = diffImages(a.img, b.img);
   report(d.comparable && d.gt16 < 0.001, `${gpu}: the capture frame and its neighbour are the same picture (${(d.gt16 * 100).toFixed(3)}% over 16 levels apart)`);

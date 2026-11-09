@@ -179,4 +179,16 @@ One run of A and one run of B tells you about the machine, not the change. The m
 4. Check a count that proves A and B differ in what they do (256 lights binned in A, none in B); a report that cannot tell the variants apart fails.
 5. Note the machine's load and measure again when it is quiet before claiming a win. Measure both sides before naming a difference.
 
+### GPU timing on an integrated GPU
+
+An integrated GPU such as the 890M chooses its shader clock from how busy it has been, between 600 and 2900 MHz, and nothing a test may touch pins it: the driver's `power_dpm_force_performance_level` needs root, and neither `CW_WGPU_POWER` (which adapter WebGPU asks for) nor a pool's `CW_GPU_POWER` label reaches the clock. A run whose frames wait on the CPU (a game's simulation, a machine loaded by other builds) leaves the GPU idle for part of every frame, the clock sinks to its floor, and every pass then reads two to three times its time at speed. The pass timers are not wrong: the GPU really took that long at that clock. They measure the machine as much as the frame.
+
+`tools/lib/gpu-clock.mjs` samples the pinned GPU's clock (`pp_dpm_sclk`) while a run measures: `const clk = gpuClock(); spawnSync(...); console.log(clockLine(await clk.stop()))` prints the mean clock and the share of samples at the floor. Read every GPU time beside it, and beside `uptime`. What makes a GPU comparison trustworthy:
+
+1. A and B run back to back, round after round, in one hold of the GPU suite lock (one `tools/with-gpu-suite.mjs` around the whole comparison, never one per variant), so a change in the machine lands on both.
+2. Each run's clock is printed. Compare rounds whose clocks agree; a round where A sat at the floor and B did not says nothing.
+3. The median over rounds, of window means (a probe that captures every third frame must be averaged over its frames, not read in one).
+4. A control that must fail (a variant known to differ by more than the claimed change), so the comparison can see a change of that size at all.
+5. On a loaded machine a CPU-heavy game reads its GPU times at the floor clock throughout; a light one (most frames GPU-bound) runs at speed. Quote the clock, and measure again when the machine is quiet before quoting an absolute time.
+
 Profile the build you ship: `scripts/build.sh` defaults to Release. Sanitizer and Debug builds (`BUILD_TYPE=Debug`, `scripts/sanitize.sh`) are for correctness, not timing.
