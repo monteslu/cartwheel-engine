@@ -4,6 +4,14 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.39.2 (2026-11-09)
+
+### Changed
+- **GL's depth prepass costs about a fifth less.** It draws into a framebuffer that holds only the scene's depth. With the scene's colour target bound and colour writes masked off, Mesa's radeonsi still ran much of each colour program's fragment work for the prepass (the sun's cascaded shadow filter above all: the prepass read 0.35 ms with the sun's shadow off and 0.50 with it on, where WebGPU's pipelines, which know at creation that they write no colour, read 0.33 to 0.34 either way). The depth written is the same, so the picture is too (Ember Throne's meadow, native GL frames 300 and 420 byte-identical with and without; the romdev GL and WebGPU frames of its cart identical to the last release's). Ember Throne's meadow on the 890M at 1080p High, six interleaved rounds (load 2 to 3, the GPU at 1380 to 1450 MHz): the GL prepass 0.50 to 0.40 ms. `CW_TEST_PREPASS_COLOR=1` (native) draws the prepass into the scene target as before, the timing control (0.50 ms in the same rounds).
+
+### Fixed
+- **`tools/run-cart.mjs`: a long romdev run is no longer cut off at five minutes.** Its romdev calls went through Node's fetch, which stops waiting for a reply after 300 s, so a 2400-frame step on a busy GPU pool failed with "fetch failed". The calls now go over node:http and wait `CW_ROMDEV_TIMEOUT_MS` (default 300000) plus `CW_ROMDEV_FRAME_MS` (default 500) for each frame a call steps; a call past that fails naming both (the testing guide says so). Control: `CW_ROMDEV_TIMEOUT_MS=2000 CW_ROMDEV_FRAME_MS=1` fails the load at 2 s.
+
 ## v0.39.1 (2026-11-09)
 
 ### Fixed
