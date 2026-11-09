@@ -737,6 +737,8 @@ static void run_pass(cw_pipeline *p, pass_rec *r, cw_pass_ctx *ctx) {
 /* bind the target a phase draws into */
 static void bind_phase_target(cw_pass_ctx *ctx, const cw_rt *rt) {
   ctx->pipeline->bound_fbo = rt->fbo;
+  ctx->pipeline->bound_depth_tex = rt->depth_tex;
+  ctx->pipeline->bound_depth_rb = rt->fbo && rt->fbo == ctx->pipeline->msaa_fbo ? ctx->pipeline->msaa_depth : 0;
   if (cw_gpu_backend() == CW_GPU_WEBGPU) {
     cw__pw_bind_target(rt);
     return;

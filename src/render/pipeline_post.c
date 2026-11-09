@@ -87,26 +87,20 @@ static bool prepass_color(void) {
   return v == 1;
 #endif
 }
-static unsigned prepass_depth_fbo(unsigned scene_fbo) {
+static unsigned prepass_depth_fbo(const cw_pipeline *p) {
   static unsigned fbo;
-  if (prepass_color()) return scene_fbo;
-  GLint type = 0, name = 0;
-  glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo);
-  glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, &type);
-  glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &name);
-  if (!name || (type != GL_TEXTURE && type != GL_RENDERBUFFER)) return scene_fbo; /* (the default framebuffer: no prepass target of its own) */
-  if (!fbo) glGenFramebuffers(1, &fbo);
-  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-  /* attached every time: the scene target may be another one (split screen, a resize) or a new object under an old name */
-  if (type == GL_TEXTURE) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, (GLuint)name, 0);
-  else glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, (GLuint)name);
-  static bool drawbuf;
-  if (!drawbuf) {
+  if (prepass_color() || (!p->bound_depth_tex && !p->bound_depth_rb)) return p->bound_fbo;
+  if (!fbo) {
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     GLenum none = GL_NONE;
     glDrawBuffers(1, &none);
-    drawbuf = true;
-  }
-  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) return scene_fbo;
+  } else
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  /* attached every time: the scene target may be another one (split screen, a resize, MSAA on or off) */
+  if (p->bound_depth_rb) glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, p->bound_depth_rb);
+  else glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, p->bound_depth_tex, 0);
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) return p->bound_fbo;
   return fbo;
 }
 
@@ -139,7 +133,7 @@ static void prepass_exec(cw_pass_ctx *ctx, void *u) {
   }
 #endif
   t3_renderer_reset_bindings(r);
-  t3_renderer_set_framebuffer(r, prepass_depth_fbo(ctx->pipeline->bound_fbo));
+  t3_renderer_set_framebuffer(r, prepass_depth_fbo(ctx->pipeline));
   /* Blended/transmissive surfaces must not occlude their backgrounds before
    * the colour pass. Opaque alpha-tested cutouts retain their normal discard. */
   if (prepass_shift()) glDepthRangef(0, 0.5f);

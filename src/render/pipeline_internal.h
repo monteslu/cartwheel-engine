@@ -102,6 +102,7 @@ struct cw_pipeline {
   /* the jittered inverse view-projection, for the velocity pass */
   t3_mat4 inv_view_proj_jittered, inv_proj_jittered;
   unsigned bound_fbo; /* the FBO the current pass was handed */
+  unsigned bound_depth_tex, bound_depth_rb; /* GL: its depth (a texture, or the multisampled scene's renderbuffer), 0 for none */
   bool taa_reset;     /* drop the TAA history next frame */
   cw_view views[CW_MAX_VIEWS]; /* cw_pipeline_set_views (nviews >= 2: splitscreen) */
   int nviews;
