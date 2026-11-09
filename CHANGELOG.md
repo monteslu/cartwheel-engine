@@ -4,6 +4,57 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.41.0 (2026-11-09)
+
+### Added
+- **`AGENTS.md`**: the page a coding agent reads first, shipped in every SDK. Where to start (the template and the
+  example game closest to the brief, by game type), how a game is laid out, the APIs most games use with examples
+  that compile against the headers, the build, run and check loop through romdev (ranged calls), the rules that keep
+  a game from failing and the mistakes made most often with their fixes. The SDK also ships `tools/flash-check.mjs`.
+- **`DEV=1 scripts/build.sh [targets]`** in an engine checkout: dev carts (no ThinLTO, no wasm-opt) for the
+  edit-build-run loop, and the named ninja targets only (`scripts/build.sh platformer3d`). platformer3d after a
+  one-line change: 11.2 s (release cart: wasm-opt is 12 s of it) to 1.9 s for the native build and the cart.
+- `tools/run-cart.mjs` answers `--start-cmds "@N cmd"` on romdev too (the frames before N in one step, the
+  request on frame N), and sends `x-romdev-agent` from `ROMDEV_AGENT`.
+
+### Changed
+- **A dev cart's pack after a code change splices the new `cart.wasm` into the last archive** when the assets,
+  art, version and pack command are what the last pack had (`tools/cart-version.mjs pack --reuse-assets`, which
+  `cw_add_app` passes with `CW_CART_DEV`; `tools/lib/wasc-splice.mjs`). Packing deflated every asset again: 4.2 s
+  of fighter's 4.5 s cart link (130 MB of models). The archive has the same entries in the same order with the same
+  bytes as a fresh pack; a release cart is always packed in full. A games repository's fighter after a one-line
+  change, native and dev cart: 6.0 to 7.6 s before, 2.5 to 2.7 s after. Gate `cart-repack` (a stored and a
+  deflated wasm against fresh packs, `unzip -t`; an asset changed, added or a new version packs in full; controls:
+  a splice past a changed asset and a splice of the old wasm are caught). The cart loaded in romdev draws the same
+  frame and debug state as a fully packed one.
+- **`tools/programs.mjs` also surveys each preset switched in play**: High to each other preset half way through a
+  run, and each back to High, natively and with `--carts` (`--no-switch` leaves them out). Content a game builds
+  for the preset it starts on, drawn with another preset's renderer state, asks for states no run started on one
+  preset asks for; those draws vanished after a player changed the preset or Auto stepped down ("1 draw state(s) have
+  no program" mid-race). Gate `programs-switch`: a scene that adds shadow-casting omni lights on High draws
+  everything after a switch to Very Low, natively and as the dual cart through romdev on GL and WebGPU; control: the
+  same scene with a table surveyed `--no-switch` misses `standard+instbig+shadow+l1200+s100+xplain`.
+- three.c v0.187.7 (`t3_renderer_set_missing_hook`).
+
+### Fixed
+- **A draw with no program says what it is and how to fix it.** Each missing state logs `render: NOT DRAWN: node
+  "/root/Level/Crate" (mesh "..."), MeshStandardMaterial "...": its program state ... is in none of the app's
+  program tables`, naming the nearest node holding the drawn object, the glTF mesh and the material; the pipeline's
+  error then gives the command for this app (and the SDK form, and `--carts`), says a preset changed in play is a
+  cause, and names the guide section (rendering-3d.md, "Program tables"); the banner points at the log. render3d's
+  error named `<app>` instead of the app; its extension error names the call (`t3_extension_set_texture`). Gate
+  `programs-switch` checks the node, material, command and guide in the log (control: a run with nothing missing
+  logs no NOT DRAWN).
+- **`cw_volumetric_fog_get_state` reads inactive once a preset turns the fog off in play.** It kept the last grid's
+  `active` and `volumes` after the effects detail dropped to Very Low or Low, so a game that swaps in a stand-in
+  when the fog is off showed neither. Gate `fog-volumetric-off` (High, then `quality verylow` at frame 20, natively
+  and through romdev on GL and WebGPU; control `CW_TEST_VFOG_STALE=1`, the old state, fails).
+- **The first rebuild after a clean configure no longer recompiles every cart object.** `cmake/cart.cmake` included
+  wasi-sdk's toolchain file, which appends `-pthread` and the memory flags to the cached flags; CMake reads a
+  toolchain file twice on a first configure, so the flags changed on the second configure and every object (the
+  whole engine in an engine checkout) rebuilt once. The flags are now `CMAKE_*_FLAGS_INIT`; the wasm is byte
+  for byte the same. Gate `cart-toolchain` (control: wasi-sdk's own file changes the flags).
+
 ## v0.40.1 (2026-11-09)
 
 ### Fixed
