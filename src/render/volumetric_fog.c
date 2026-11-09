@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cartwheel/debug.h"
 #include "cartwheel/environment.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/quality.h"
@@ -799,9 +800,8 @@ static const cw__height_fog *medium_of(cw_tree *t) {
  * stand-in when the fog is off sees it go off when a preset turns the pass off in play, not only at start.
  * CW_TEST_VFOG_STALE=1 keeps the last grid's state (the old behaviour: the control of gate fog-volumetric-off) */
 static bool vf_off(vfog_rt *v) {
-  static int stale = -1;
-  if (stale < 0) stale = getenv("CW_TEST_VFOG_STALE") && atoi(getenv("CW_TEST_VFOG_STALE"));
-  if (!stale) v->st = (cw_volumetric_fog_state){ 0 };
+  const char *stale = cw_test_env("CW_TEST_VFOG_STALE"); /* read alike on every host (cartwheel/debug.h) */
+  if (!(stale && atoi(stale))) v->st = (cw_volumetric_fog_state){ 0 };
   return false;
 }
 

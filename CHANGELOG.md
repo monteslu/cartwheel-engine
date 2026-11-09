@@ -15,7 +15,10 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   edit-build-run loop, and the named ninja targets only (`scripts/build.sh platformer3d`). platformer3d after a
   one-line change: 11.2 s (release cart: wasm-opt is 12 s of it) to 1.9 s for the native build and the cart.
 - `tools/run-cart.mjs` answers `--start-cmds "@N cmd"` on romdev too (the frames before N in one step, the
-  request on frame N), and sends `x-romdev-agent` from `ROMDEV_AGENT`.
+  request on frame N).
+- **The SDK ships `tests/gate.mjs`** (a game runs its `tests/gates.json` with `CW_PROJECT_ROOT=<game> node
+  <sdk>/tests/gate.mjs`), `tools/flash-check.mjs` and `AGENTS.md`; `scripts/sdk-link-check.sh` fails an SDK that lacks
+  any file a game's scripts name or a module one of them imports (control: the v0.39.1 SDKs lack `AGENTS.md`).
 
 ### Changed
 - **A dev cart's pack after a code change splices the new `cart.wasm` into the last archive** when the assets,
@@ -37,6 +40,13 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - three.c v0.187.7 (`t3_renderer_set_missing_hook`).
 
 ### Fixed
+- **Reflection probes and the probe grid act on FORWARD lighting with a cascaded sun.** The GI part joined only bare
+  materials and those with the clustered lights' part, so with FORWARD lighting and sun cascades (every material
+  carrying the sun's `csm` part) no material took it: `cw_gi_get_stats` read 0 materials and the probes did nothing,
+  silently. It now composes after `csm` too (`xcsm_gi`, `xcsm_plain_gi` on Very Low). A material the GI part still
+  cannot join while the tree has probes is named in an error with the parts it composes with. Gate `gi-probe`: the
+  mirror ball in `gi_probe_check` with `GI_CSM=1` shows the six walls and 7 materials carry gi, on GL and WebGPU;
+  control `CW_TEST_GI_SKIP_CSM=1` (the old rule) reads 0 materials and fails the ball.
 - **A draw with no program says what it is and how to fix it.** Each missing state logs `render: NOT DRAWN: node
   "/root/Level/Crate" (mesh "..."), MeshStandardMaterial "...": its program state ... is in none of the app's
   program tables`, naming the nearest node holding the drawn object, the glTF mesh and the material; the pipeline's

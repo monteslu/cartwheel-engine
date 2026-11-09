@@ -218,10 +218,33 @@ void cw__gi_tag(gi_tree *g, t3_object *o) {
       if (!mat || (mat->type != T3_MESH_STANDARD_MATERIAL && mat->type != T3_MESH_PHYSICAL_MATERIAL)) continue;
       if (cw_shading_has(mat, "gi")) continue;
       /* a surface extension of its own (terrain) stays alone: only bare
-       * materials, the lighting part, a lit mesh decal and skin shading
-       * compose with gi */
+       * materials, the lighting parts (clustered lights, the forward sun's
+       * cascades), a lit mesh decal and skin shading compose with gi.
+       * CW_TEST_GI_SKIP_CSM=1: the cascaded sun's part kept gi off, as before
+       * (the control of tests/gi-probe.mjs's forward-cascades check) */
+      /* (getenv, not cw_test_env: the switch must hold from the first frame, when the materials are first tagged;
+       * the control runs natively) */
+      const char *skip_env = getenv("CW_TEST_GI_SKIP_CSM");
+      bool skip_csm = skip_env && atoi(skip_env);
       const char *ext = t3_material_get_extension(mat);
-      if (ext && !cw_shading_has(mat, "cluster") && !cw_shading_has(mat, "meshdecal") && !cw_shading_has(mat, "skinshade")) continue;
+      if (ext && !cw_shading_has(mat, "cluster") && !(cw_shading_has(mat, "csm") && !skip_csm) && !cw_shading_has(mat, "meshdecal") &&
+          !cw_shading_has(mat, "skinshade")) {
+        /* said once per material: reflection probes and the probe grid have no effect on it */
+        if ((g->probes.count || g->grids.count) && g->warned_mats < 8 && !cw_shading_has(mat, "terrain") &&
+            !cw_shading_has(mat, "terrainlow") && !cw_shading_has(mat, "terrainfar") && !cw_shading_has(mat, "water")) {
+          bool said = false;
+          for (int k = 0; k < g->warned_mats; k++) said |= g->warned[k] == mat;
+          if (!said) {
+            g->warned[g->warned_mats++] = mat;
+            cw_error("gi: material%s%s%s (extension x%s) gets no reflections or probe-grid light: the gi shading part does not "
+                     "compose with its extension, so ReflectionProbe3D and LightProbeGrid3D have no effect on it. Fix: use a "
+                     "plain MeshStandardMaterial / MeshPhysicalMaterial, or one whose parts are cluster, csm, meshdecal or "
+                     "skinshade (cartwheel/shading.h); cw_gi_get_stats(tree, &s) counts the materials that carry it in s.materials",
+                     mat->name && *mat->name ? " \"" : "", mat->name && *mat->name ? mat->name : "", mat->name && *mat->name ? "\"" : "", ext);
+          }
+        }
+        continue;
+      }
       if (!cw_shading_add(mat, "gi")) continue;
       t3_retain(mat);
       cw_array_push(&g->mats, mat);

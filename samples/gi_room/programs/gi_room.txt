@@ -16,3 +16,8 @@ standard+l0001+xcluster_plain_gi
 depth+xplain
 standard+shadow+senv+l1101+s100+xplain
 standard+senv+l1101+xplain
+standard+l0101+xcsm_plain_gi
+standard+l0101+xcsm_gi
+depth+xplain_gi
+standard+shadow+senv+l1101+s100+xplain_gi
+standard+senv+l1101+xplain_gi
