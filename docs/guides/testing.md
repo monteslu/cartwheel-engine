@@ -96,6 +96,9 @@ An array of gate objects. Every key `tests/gate.mjs` reads:
 | `maxGt16` | the share of pixels allowed to differ by more than 16 levels (default 0.001) |
 | `fields` | the state fields to compare (default: every field except the `dbg.*` mailbox) |
 | `tol` | relative tolerance for numeric fields (default 0: exact) |
+| `vsGl` | (top level) the romdev mode's bound on pixels over 16 levels apart between its GL and WebGPU runs, for a gate with no `webgpu` block (default 0.01) |
+| `vsGlTol` | the tolerance between the GL and WebGPU runs of the romdev mode (`--hosts romdev`), for state a GPU readback rounds differently on each backend (default `tol`) |
+| `glOnlyFields` | state the game measures on GL alone (a `glReadPixels` probe): the romdev mode's WebGPU run is not held to it, by `expect` or against GL |
 | `expect` | `{field: value}` the native run must report exactly |
 | `controlFrames` | frames for the control run (default: `frames - 1`, or `frames` with a control input) |
 | `controlInput` | a different input script for the control |

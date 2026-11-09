@@ -252,6 +252,8 @@ typedef struct mesh3d {
   int lightmap_uv;          /* GENERATED, UV0 */
   mesh_look look;           /* what m->mat draws (a primitive's material, shared by look) */
   t3_material *lm_mat;      /* the mesh's material, cloned to carry its own lightmap */
+  t3_material *lm_src;      /* the material lm_mat was made from (a LightmapGI shading change remakes it from this) */
+  bool lm_baked;            /* lm_mat is the unlit BAKED form */
   bool lightmapped;         /* its geometry is the lightmap's uv2 copy: no LOD switching */
 } mesh3d;
 static const char *const gi_names[] = { "DYNAMIC", "STATIC", NULL };
@@ -515,6 +517,8 @@ static void mesh_destroy(cw_node n, void *data) {
   m->mat = NULL;
   if (m->lm_mat) t3_release(m->lm_mat);
   m->lm_mat = NULL;
+  if (m->lm_src) t3_release(m->lm_src);
+  m->lm_src = NULL;
   cw_res_release(m->res);
   m->res = (cw_res){ 0 };
 }
@@ -594,6 +598,8 @@ bool cw_mesh3d_set_procedural(cw_node n, t3_mesh *mesh) {
    * selection when the caller later clears the procedural mesh. */
   if (m->lm_mat) t3_release(m->lm_mat);
   m->lm_mat = NULL;
+  if (m->lm_src) t3_release(m->lm_src);
+  m->lm_src = NULL;
   m->lightmapped = false;
   m->built_mesh = 0; m->built_version = 0;
   m->built_primitive = -1; m->lod = 0;
@@ -1282,11 +1288,19 @@ void cw__mesh3d_set_lightmap(cw_node n, t3_geometry *g, t3_texture *lm, float in
     mesh->geometry = g;
   }
   t3_material *mat = mesh->materials[0];
-  if (mat != m->lm_mat) {
+  if (mat != m->lm_mat || m->lm_baked != baked) {
     /* a resource's material is shared with its other users, a primitive's
-     * with every primitive of the same look: this mesh gets its own */
+     * with every primitive of the same look: this mesh gets its own, made
+     * from the original (kept), so a shading change can remake it */
+    if (mat != m->lm_mat) {
+      t3_retain(mat);
+      if (m->lm_src) t3_release(m->lm_src);
+      m->lm_src = mat;
+    }
+    mat = m->lm_src;
     if (m->lm_mat) t3_release(m->lm_mat);
     m->lm_mat = baked ? baked_material(mat) : t3_material_clone(mat);
+    m->lm_baked = baked;
     t3_retain(m->lm_mat);
     t3_release(mesh->materials[0]);
     mesh->materials[0] = m->lm_mat;

@@ -1610,6 +1610,22 @@ static void ro_ms(cw_node n, void *d, cw_value *o) { (void)n; *o = cw_val_float(
 static void ro_same(cw_node n, void *d, cw_value *o) { (void)n; *o = cw_val_bool(((gi_node *)d)->same); }
 
 static const char *const shading_names[] = { "LIT", "BAKED", NULL };
+static void shading_get(cw_node n, void *d, cw_value *o) {
+  (void)n;
+  o->type = CW_T_ENUM;
+  o->i = ((gi_node *)d)->shading;
+}
+/* a change after the bake applies to the lightmapped meshes at once (it was read only when the bake landed) */
+static void shading_set(cw_node n, void *d, const cw_value *v) {
+  gi_node *g = d;
+  if (g->shading == (int)v->i) return;
+  g->shading = (int)v->i;
+  cw_tree *t = cw_node_tree(n);
+  if (!g->result || !t) return;
+  cw_node root = cw_node_parent(n);
+  if (CW_HANDLE_IS_NULL(root)) root = n;
+  cw_lightmap_apply_shaded(t, root, g->result, g->s.intensity, (cw_lightmap_shading)g->shading);
+}
 static const cw_prop gi_props[] = {
   GF(texel_density, 0.01, 1000, "Lightmap texels per world unit (times each mesh's lightmap_scale)."),
   GI(min_size, 4, 4096, "Smallest lightmap side, texels."),
@@ -1629,7 +1645,7 @@ static const cw_prop gi_props[] = {
   GI(reflection_size, 0, 256, "Face side of the reflection cube traced through the bake (0 = none; cw_lightmap_use_reflection)."),
   { .name = "reflection_origin", .type = CW_T_VEC3, .flags = CW_PROP_DEFAULT, .offset = (int)offsetof(gi_node, s.reflection_origin),
     .size = (int)sizeof(float[3]), .doc = "Where the reflection cube is traced from (world)." },
-  { .name = "shading", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = (int)offsetof(gi_node, shading), .size = sizeof(int),
+  { .name = "shading", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = -1, .get = shading_get, .set = shading_set,
     .enum_names = shading_names,
     .doc = "LIT: lightmapped meshes keep their material (real-time lights add the direct light). BAKED: they draw unlit "
            "from the lightmap alone (lights with bake_direct put their direct light in it)." },

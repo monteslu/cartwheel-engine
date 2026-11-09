@@ -318,7 +318,10 @@ static void test_textures(void) {
   cw_texture_info ti;
   CHECK(cw_res_texture_info(t, &ti));
   CHECK(ti.width == 64 && ti.height == 64 && !ti.from_ktx2 && !strcmp(ti.format, "rgba8"));
-  CHECK(tex && tex->pixels == NULL && tex->_gl != NULL); /* GPU-resident */
+  /* GL: GPU-resident, the texels uploaded into its GL object and gone from the CPU. WebGPU: the texels handed to the
+   * texture, which three.c uploads at its first draw (src/resource/texture.c), with no GL object */
+  if (cw_gpu_backend() == CW_GPU_WEBGPU) CHECK(tex && tex->pixels != NULL && tex->_gl == NULL);
+  else CHECK(tex && tex->pixels == NULL && tex->_gl != NULL);
   cw_res k = cw_res_load("textures/checker_k.png", 0); /* KTX2 inside (its sidecar) */
   CHECK(cw_res_texture_info(k, &ti));
   CHECK(ti.width == 64 && ti.height == 64 && ti.from_ktx2 && ti.levels == 7);

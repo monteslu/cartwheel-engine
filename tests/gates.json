@@ -3821,7 +3821,8 @@
     "maxGt16": 0.003,
     "fields": [],
     "expect": {},
-    "note": "baked lighting: generated uv2 charts, 64 rays a texel, 2 bounces, sky + sunlight bounced off the red and green walls, an SH probe grid lighting the rolling ball; baked twice on the first frame (lm.same: the bytes match) and the bake's FNV-1a fingerprint is equal on every host (deterministic across x86 and wasm, any thread count). Control: one frame early (the ball rolls)"
+    "vsGl": 0.0005,
+    "note": "baked lighting: generated uv2 charts, 64 rays a texel, 2 bounces, sky + sunlight bounced off the red and green walls, an SH probe grid lighting the rolling ball; baked twice on the first frame (lm.same: the bytes match) and the bake's FNV-1a fingerprint is equal on every host (deterministic across x86 and wasm, any thread count). Control: one frame early (the ball rolls; it covers about 0.1% of the frame, so the romdev mode holds WebGPU to GL within 0.05%: they differ by 0.0004%)"
   },
   {
     "name": "lightmap-tool",
@@ -4250,6 +4251,7 @@
     "frames": 240,
     "maxGt16": 0.002,
     "tol": 0.0001,
+    "vsGlTol": 2,
     "fields": [
       "collide.alive",
       "collide.gpu_alive",
@@ -4609,6 +4611,7 @@
     "name": "viewmodel",
     "app": "viewmodel_demo",
     "frames": 30,
+    "glOnlyFields": ["vm.wall_ok"],
     "minColors": 100,
     "maxGt16": 0.002,
     "fields": [
