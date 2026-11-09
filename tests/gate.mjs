@@ -372,8 +372,10 @@ async function romdevGates(list) {
       checkMissing(problems, g.app, [[`romdev ${gpu}`, q.state]]);
       checkPromptErrors(problems, g, [[`romdev ${gpu}`, q.state]]);
       checkTextFloor(problems, g, [[`romdev ${gpu}`, q.state]]);
+      // glOnlyFields: state the game measures on GL alone (a glReadPixels probe): not expected of, or compared with, WebGPU
+      const glOnly = new Set(gpu === 'webgpu' ? g.glOnlyFields || [] : []);
       for (const [k, v] of Object.entries(g.expect || {}))
-        if (JSON.stringify(L.st[k]) !== JSON.stringify(v)) problems.push(`romdev ${gpu} ${k} = ${JSON.stringify(L.st[k])}, expected ${JSON.stringify(v)}`);
+        if (!glOnly.has(k) && JSON.stringify(L.st[k]) !== JSON.stringify(v)) problems.push(`romdev ${gpu} ${k} = ${JSON.stringify(L.st[k])}, expected ${JSON.stringify(v)}`);
       // the control on the same backend: it must differ from this run
       const c = { shot: join(OUT, `${g.name}.romdev-${gpu}.control.png`), state: join(OUT, `${g.name}.romdev-${gpu}.control.json`) };
       const cr = await run([...common, '--gpu', gpu, ...ctlArgs, '--shot', c.shot, '--state', c.state]);
@@ -386,8 +388,11 @@ async function romdevGates(list) {
     }
     // WebGPU against GL, the same cart on the same host
     if (leg.gl && leg.webgpu) {
-      const vsGl = w.vsGl ?? 0.01;
-      const fields = g.fields || Object.keys(leg.gl.st).filter((k) => !/^(dbg|host|cw\.gpu)\./.test(k) && !/^text\..*_where$/.test(k));
+      const vsGl = w.vsGl ?? g.vsGl ?? 0.01; // a gate with no webgpu block can bound it too (top-level vsGl)
+      const fields = (g.fields || Object.keys(leg.gl.st).filter((k) => !/^(dbg|host|cw\.gpu)\./.test(k) && !/^text\..*_where$/.test(k)))
+        .filter((k) => !(g.glOnlyFields || []).includes(k));
+      // vsGlTol: how far a number may differ between the backends (GPU readbacks round differently), else the gate's tol
+      const tolW = g.vsGlTol ?? g.tol ?? 0;
       const dg = diffImages(leg.gl.img, leg.webgpu.img);
       if (!dg.comparable) problems.push(`WebGPU vs GL: ${dg.reason}`);
       else if (dg.gt16 > vsGl) problems.push(`WebGPU vs GL: ${(dg.gt16 * 100).toFixed(3)}% pixels differ by >16 (bound ${vsGl * 100}%)`);
@@ -396,11 +401,11 @@ async function romdevGates(list) {
         const da = diffAreas(leg.gl.img, leg.webgpu.img);
         if (da.comparable && da.share > w.maxArea) problems.push(`WebGPU vs GL: ${(da.share * 100).toFixed(3)}% of the frame in solid areas that differ (bound ${w.maxArea * 100}%)`);
       }
-      const sg = stateDiff(leg.gl.st, leg.webgpu.st, g.tol ?? 0, fields);
+      const sg = stateDiff(leg.gl.st, leg.webgpu.st, tolW, fields);
       if (sg.length) problems.push(`WebGPU vs GL: state ${sg.slice(0, 4).join('; ')}`);
       // the WebGPU control against GL: the GL-vs-WebGPU comparison must see it too
       if (leg.webgpu.ctl) {
-        const dv = diffImages(leg.gl.img, leg.webgpu.ctl.img), sv = stateDiff(leg.gl.st, leg.webgpu.ctl.st, g.tol ?? 0, fields);
+        const dv = diffImages(leg.gl.img, leg.webgpu.ctl.img), sv = stateDiff(leg.gl.st, leg.webgpu.ctl.st, tolW, fields);
         if (dv.comparable && dv.gt16 <= vsGl && !sv.length) problems.push('CONTROL PASSED: the WebGPU-vs-GL check cannot tell the WebGPU control apart');
       }
     }
