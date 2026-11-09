@@ -3608,19 +3608,19 @@
       "ns.cam_z"
     ],
     "expect": {
-      "ns.clustered": 207,
+      "ns.clustered": 212,
       "ns.spots": 52,
       "ns.forward": 0,
       "ns.shadowed": 4,
-      "ns.refs": 195673,
-      "ns.grid_hash": -1334376855,
+      "ns.refs": 203533,
+      "ns.grid_hash": -191935708,
       "ns.overflow": 0
     },
     "controlEnv": {
       "NS_FORWARD": "1"
     },
     "webgpu": true,
-    "note": "clustered lighting (cartwheel/lighting.h): a night street with 58 street lamps, 96 neon signs, 48 shop spot lights and flickering muzzle flashes binned into r187 ClusteredLighting clusters on the CPU and shaded with r187 BRDF per cluster, and 4 floodlights whose shadows are tiles of the shadow atlas; the binned lists hash equal on every host and backend. Control: FORWARD (three.c lights at most 8 of a kind: nothing clustered, the image differs)"
+    "note": "clustered lighting (cartwheel/lighting.h): a night street with 58 street lamps, 96 neon signs, 48 shop spot lights and muzzle flashes that swell and fade (v0.38.8: lit for longer than the old on/off flicker, so more of them are binned on the gate's frame), binned into r187 ClusteredLighting clusters on the CPU and shaded with r187 BRDF per cluster, and 4 floodlights whose shadows are tiles of the shadow atlas; the binned lists hash equal on every host and backend. Control: FORWARD (three.c lights at most 8 of a kind: nothing clustered, the image differs)"
   },
   {
     "name": "lighting-changes",
