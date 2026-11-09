@@ -161,9 +161,9 @@ static void init(void *user) {
 
   /* #region setup */
   cw_audio_set_listener((t3_vec3){ 0, 0, 0 }, (t3_vec3){ 0 }, (t3_vec3){ 0, 0, -1 }, (t3_vec3){ 0, 1, 0 });
-  /* CW_AUDIO_3D_SPEAKERS=1 (the gate's control) stays on speakers: the mix must differ */
-  bool speakers = getenv("CW_AUDIO_3D_SPEAKERS") != NULL;
-  cw_audio_set_output(speakers ? CW_AUDIO_SPEAKERS : CW_AUDIO_HEADPHONES); /* headphones loads the built-in HRTF table */
+  /* CW_AUDIO_3D_SPEAKERS=1 (the gate's control) goes to speakers from frame 2 (cw_test_env, read in the tick) and
+   * stays there: the mix must differ */
+  cw_audio_set_output(CW_AUDIO_HEADPHONES); /* headphones loads the built-in HRTF table */
   cw_audio_set_hrtf_voice_limit(8);
   place(a, 0);
   cw_voice_3d near = { .model = CW_ATTEN_INVERSE, .ref_distance = 1, .max_distance = 50 };
@@ -240,6 +240,11 @@ static void walk(app3d *a, int t) {
 /* #endregion */
 
 static void script(app3d *a, int t) {
+  static bool control_read; /* the gate's control from frame 2 (cw_test_env): speakers from then on */
+  if (!control_read && cw_frame_index() >= 1) {
+    control_read = true;
+    if (cw_test_env("CW_AUDIO_3D_SPEAKERS")) cw_audio_set_output(CW_AUDIO_SPEAKERS);
+  }
   if (t >= WALK) {
     walk(a, t);
     return;
@@ -250,7 +255,7 @@ static void script(app3d *a, int t) {
   cw_voice_set_position(a->v_hum, a->p_hum, (t3_vec3){ 0 });
   /* #region switch */
   if (t == 180) cw_audio_set_output(CW_AUDIO_SPEAKERS);
-  if (t == 240 && !getenv("CW_AUDIO_3D_SPEAKERS")) cw_audio_set_output(CW_AUDIO_HEADPHONES);
+  if (t == 240 && !cw_test_env("CW_AUDIO_3D_SPEAKERS")) cw_audio_set_output(CW_AUDIO_HEADPHONES);
   /* #endregion */
 }
 

@@ -17,7 +17,7 @@
  *     shockwave ring in a distortion layer
  *   a HUD drawn after the chain (post.hud_layer), untouched by it
  *
- * CW_R2D_HDR picks a variant for the tests' controls (native only): "nopost"
+ * CW_R2D_HDR picks a variant for the tests' controls (from frame 2 on every host): "nopost"
  * (no chain), "nobloom", "noshadow", "noemission", "nomaterial", "hard"
  * (every light's softness 0), "novolume", "nogi", "nowater", "nodistort", "lut" (the teal and orange
  * lookup table), "lutid" (the identity table: the picture unchanged), "cookie" (the torches and the
@@ -40,12 +40,15 @@ typedef struct {
   cw_font font;
   cw_water2d *pool;
   int32_t ticks;
-  const char *mode;
   uint8_t maps_ok;
 } app_t;
 static app_t app;
 
-static bool mode(const char *m) { return app.mode && !strcmp(app.mode, m); }
+/* the tests' variant, read through cw_test_env (cartwheel/debug.h): NULL in frame 1, from frame 2 on every host */
+static bool mode(const char *m) {
+  const char *v = cw_test_env("CW_R2D_HDR");
+  return v && !strcmp(v, m);
+}
 
 static uint32_t hash32(uint32_t h) {
   h *= 2654435761u;
@@ -128,14 +131,11 @@ static void make_art(app_t *a) {
 
 static void init(void *user) {
   app_t *a = user;
-  a->mode = getenv("CW_R2D_HDR");
   make_art(a);
   a->font = cw_font_load("fonts/FiraSans-Regular.ttf", NULL);
   cw_r2d_layer_set(L_SKY, NULL);
   cw_r2d_layer_set(L_WORLD, &(cw_r2d_layer_desc){ .lit = true, .occluder_depth = 14 });
   a->pool = cw_water2d_new(&(cw_water2d_desc){ .columns = 80, .width = 330 });
-  cw_r2d_layer_set(L_WATER, &(cw_r2d_layer_desc){ .screen_read = !mode("nowater") });
-  cw_r2d_layer_set(L_HEAT, &(cw_r2d_layer_desc){ .distortion = mode("nodistort") || mode("frontnodistort") ? 0 : 6 });
   cw_r2d_layer_set(L_FRONT, NULL);
   cw_r2d_layer_set(L_HUD, NULL);
   cw_debug_i32("ticks", &a->ticks);
@@ -163,6 +163,9 @@ static void render(void *user, double alpha) {
   float t = (float)a->ticks / 60.0f;
   cw_vec2 cs = cw_r2d_canvas_size();
   float W = cs.x, H = cs.y, k = H / 720.0f;
+  /* the layers the variants change, set each frame (a variant arrives at frame 2) */
+  cw_r2d_layer_set(L_WATER, &(cw_r2d_layer_desc){ .screen_read = !mode("nowater") });
+  cw_r2d_layer_set(L_HEAT, &(cw_r2d_layer_desc){ .distortion = mode("nodistort") || mode("frontnodistort") ? 0 : 6 });
   cw_r2d_post post = { .hud_layer = L_HUD, .bloom = !mode("nobloom"), .bloom_threshold = 1.0f, .bloom_intensity = 0.7f,
                        .tone_knee = 0.7f, .saturation = 1.1f, .contrast = 1.05f, .lift = { 0.01f, 0.015f, 0.03f, 0 },
                        .gain = { 0.97f, 1.0f, 1.06f, 0 }, .vignette = 0.35f };

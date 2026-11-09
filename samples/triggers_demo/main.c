@@ -13,8 +13,8 @@
  *   Goal body_entered           (disabled) SET Lamp.visible false: never runs
  *   Exit body_entered [player]  CHANGE_SCENE won.cwscene
  * The only C here is the Counter node type (a signal and a method a rule can
- * use) and the probes. CW_TRIGGERS_OFF=1 disables every trigger (the gate's
- * control). */
+ * use) and the probes. CW_TRIGGERS_OFF=1 disables every trigger from tick 1 (the
+ * gate's control). */
 #include <stdlib.h>
 #include <string.h>
 
@@ -69,7 +69,8 @@ static void fixed(void *u, double dt) {
   (void)u, (void)dt;
   cw_tree *t = cw_scene_app_tree();
   cw_node level = cw_node_get(cw_tree_root(t), "/root/Level");
-  if (P.tick == 0 && getenv("CW_TRIGGERS_OFF") && cw_node_valid(level)) cw_node_walk(level, disable, &P.disabled);
+  /* the control from tick 1 (frame 2), when every host has it (cw_test_env) */
+  if (P.tick == 1 && cw_test_env("CW_TRIGGERS_OFF") && cw_node_valid(level)) cw_node_walk(level, disable, &P.disabled);
   P.tick++;
   const char *scene = cw_scene_app_current_scene();
   if (scene && !strcmp(scene, "won.cwscene")) {

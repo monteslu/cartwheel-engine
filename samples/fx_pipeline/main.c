@@ -150,23 +150,32 @@ static void init(void *u) {
   cw_debug_i32("fxp.decals", &decals);
   cw_debug_u32("fxp.tick", &tick);
   for (int i = 0; i < NSYS; i++) cw_node_set(sys(i), "gpu_stats", cw_val_bool(true));
-  const char *e = getenv("FXP_NO_COLLIDE");
-  if (e && *e == '1') cw_node_set(node("World/Rain"), "collide_depth", cw_val_bool(false));
-  e = getenv("FXP_NO_DECALS");
-  if (e && *e == '1')
-    for (int i = 0; i < 4; i++) {
-      static const char *const d[4] = { "World/DecalTop", "World/DecalBump", "World/DecalFloor", "World/DecalWall" };
-      cw_node_set(node(d[i]), "color", cw_val_color(1, 1, 1, 0));
-    }
   cw_pipeline *p = cw_pipeline_of(cw_scene_app_tree());
   cw_pipeline_set_pass_enabled(p, "scene", false);
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "fxp_scene", .phase = CW_PHASE_OPAQUE, .order = 0, .webgpu = true,
                                            .writes = CW_RES_COLOR | CW_RES_DEPTH, .execute = scene_exec });
 }
 
+/* the gate switches, read with cw_test_env (cartwheel/debug.h) on the first frame they can be set on every host
+ * (frame 2: a cart host delivers them with its first request), applied once */
+static void test_switches(void) {
+  static bool done;
+  if (done || cw_frame_index() < 1) return;
+  done = true;
+  const char *e = cw_test_env("FXP_NO_COLLIDE");
+  if (e && *e == '1') cw_node_set(node("World/Rain"), "collide_depth", cw_val_bool(false));
+  e = cw_test_env("FXP_NO_DECALS");
+  if (e && *e == '1')
+    for (int i = 0; i < 4; i++) {
+      static const char *const d[4] = { "World/DecalTop", "World/DecalBump", "World/DecalFloor", "World/DecalWall" };
+      cw_node_set(node(d[i]), "color", cw_val_color(1, 1, 1, 0));
+    }
+}
+
 static void fixed(void *u, double dt) {
   (void)u;
   (void)dt;
+  test_switches();
   if (tick >= FREEZE) {
     cw_tree_set_paused(cw_scene_app_tree(), true);
     return;

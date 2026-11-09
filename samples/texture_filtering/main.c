@@ -33,6 +33,7 @@ typedef struct {
   t3_material *wall_mat;
   cw_res wall_albedo, wall_normal;
   int32_t aniso, mips, wall_ready, calls;
+  bool switched;
   bool flat;
 } app_t;
 static app_t app;
@@ -89,8 +90,7 @@ static void init(void *user) {
   app_t *a = user;
   int w, h;
   cw_drawable_size(&w, &h);
-  a->aniso = env_int("TF_ANISO", 8);
-  if (getenv("TF_CONTROL_WGPU") && cw_gpu_backend() == CW_GPU_WEBGPU) a->aniso = 1;
+  a->aniso = 8; /* TF_ANISO and TF_CONTROL_WGPU (the gates' controls) change it at frame 2: render */
   a->mips = getenv("TF_MIN") && !strcmp(getenv("TF_MIN"), "linear") ? 0 : 1;
   a->flat = env_int("TF_FLAT", 0) != 0;
   a->renderer = cw_render3d_window_renderer(w, h);
@@ -148,9 +148,29 @@ static void init(void *user) {
   cw_debug_i32("calls", &a->calls);
 }
 
+/* every texture of the scene's materials to anisotropy n (a sampler field: the next draw uses it) */
+static void set_aniso(t3_object *o, float n) {
+  if (o->type == T3_MESH) {
+    t3_material *m = ((t3_mesh *)o)->materials[0];
+    t3_texture *ts[3] = { m->map, m->normal_map, m->roughness_map };
+    for (int i = 0; i < 3; i++)
+      if (ts[i]) ts[i]->anisotropy = n;
+  }
+  for (int i = 0; i < o->child_count; i++) set_aniso(o->children[i], n);
+}
+
 static void render(void *user, double alpha) {
   (void)alpha;
   app_t *a = user;
+  /* the gates' controls from frame 2, when every host has them (cw_test_env): another anisotropy level */
+  if (!a->switched && cw_frame_index() >= 1) {
+    a->switched = true;
+    int n = a->aniso;
+    const char *e = cw_test_env("TF_ANISO");
+    if (e && *e) n = atoi(e);
+    if (cw_test_env("TF_CONTROL_WGPU") && cw_gpu_backend() == CW_GPU_WEBGPU) n = 1;
+    if (n != a->aniso) a->aniso = n, set_aniso((t3_object *)a->scene, (float)n);
+  }
   cw_render3d_window_target(a->renderer);
   t3_renderer_render(a->renderer, a->scene, a->camera);
   a->calls = (int32_t)t3_renderer_info(a->renderer)->calls;

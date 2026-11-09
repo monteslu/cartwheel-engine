@@ -5365,6 +5365,12 @@
      "inline": false
     },
     {
+     "name": "cw_rollback_set_no_rollback",
+     "signature": "void cw_rollback_set_no_rollback(cw_rollback *rb, bool on)",
+     "doc": "The desc's no_rollback test control, set after creation (a gate's switch that arrives in play: cw_test_env).\nNULL is a no-op.",
+     "inline": false
+    },
+    {
      "name": "cw_rollback_advance",
      "signature": "int cw_rollback_advance(cw_rollback *rb, double now)",
      "doc": "One platform tick: poll the session (at `now` seconds), correct\nmispredictions (restore + re-simulate), then simulate one new tick unless\nstalled. Returns the number of NEW ticks simulated (0 or 1).",

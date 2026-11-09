@@ -47,9 +47,9 @@ static void init(void *u) {
 static void fixed_update(void *u, double dt) {
   (void)u;
   (void)dt;
-  if (set) return;
+  if (set || cw_frame_index() < 1) return; /* the switches from frame 2, when every host has them (cw_test_env) */
   set = true;
-  const char *e = getenv("GI_CSM");
+  const char *e = cw_test_env("GI_CSM");
   if (e && !strcmp(e, "1")) { /* forward lighting with a cascaded sun (outside the box: it lights nothing in it) */
     cw_node_set(node("Box/Lighting"), "mode", cw_val_enum("FORWARD"));
     cw_node sun = cw_node_new("DirectionalLight3D", "Sun");
@@ -59,14 +59,14 @@ static void fixed_update(void *u, double dt) {
     cw_node_set(sun, "energy", cw_val_float(0.5f));
     cw_node3d_look_at(sun, (t3_vec3){ 0.3f, -1, -0.2f }, (t3_vec3){ 0, 1, 0 });
   }
-  e = getenv("GI_BOX");
+  e = cw_test_env("GI_BOX");
   if (e && !strcmp(e, "0")) cw_node_set(node("Box/Probe"), "box_projection", cw_val_bool(false));
-  e = getenv("GI_PROBE");
+  e = cw_test_env("GI_PROBE");
   if (e && !strcmp(e, "0")) cw_node_set(node("Box/Probe"), "intensity", cw_val_float(0));
   /* GI_EVERY=n: captured every n frames, each capture spread over those frames; GI_RES: the face size */
-  e = getenv("GI_EVERY");
+  e = cw_test_env("GI_EVERY");
   if (e) cw_node_set(node("Box/Probe"), "update_mode", cw_val_enum("EVERY_N_FRAMES")), cw_node_set(node("Box/Probe"), "update_every", cw_val_int(atoi(e)));
-  e = getenv("GI_RES");
+  e = cw_test_env("GI_RES");
   if (e) cw_node_set(node("Box/Probe"), "resolution", cw_val_int(atoi(e)));
 }
 

@@ -57,13 +57,13 @@ static void fixed_update(void *u, double dt) {
   (void)u;
   (void)dt;
   tick++;
-  if (tick == 1) {
-    const char *e = getenv("GI_PROBES");
+  if (tick == 2) { /* the gate switches from frame 2, when every host has them (cw_test_env, cartwheel/debug.h) */
+    const char *e = cw_test_env("GI_PROBES");
     if (e && !strcmp(e, "0")) {
       cw_node_set(node("Room/RoomProbe"), "intensity", cw_val_float(0));
       cw_node_set(node("Room/PorchProbe"), "intensity", cw_val_float(0));
     }
-    e = getenv("GI_NONE");
+    e = cw_test_env("GI_NONE");
     if (e && !strcmp(e, "1")) {
       cw_node_free(node("Room/RoomProbe"));
       cw_node_free(node("Room/PorchProbe"));
@@ -71,7 +71,7 @@ static void fixed_update(void *u, double dt) {
       cw_node_set(node("Room/Post"), "ssr", cw_val_bool(false));
       cw_node_set(node("Room/Post"), "ssgi", cw_val_bool(false));
     }
-    e = getenv("GI_GRID");
+    e = cw_test_env("GI_GRID");
     if (e && !strcmp(e, "0")) cw_node_set(node("Room/Bounce"), "intensity", cw_val_float(0));
   }
   /* render-only motion: the angle comes from the tick count (cw_ trig) */

@@ -25,7 +25,7 @@ static cw_tree *make_tree(cw_node *cams, int n) {
 /* returns the views the shell asked the pipeline for (3 players), and fills the rects */
 static int run(bool shared, cw_rect *rects, cw_rect *shared_rect, cw_rect *canvas) {
   /* CW_TEST_NO_SHARED: the gate control, the option is left off so the shared checks must fail */
-  if (getenv("CW_TEST_NO_SHARED")) shared = false;
+  if (cw_test_env("CW_TEST_NO_SHARED")) shared = false; /* from frame 2 on every host: the case runs late (CW_TEST_LATE) */
   cw_shell_init(&(cw_shell_desc){ .title = "t", .max_players = 4, .shared_screen = shared });
   cw_shell_start(3);
   cw_node cams[4];
@@ -139,5 +139,7 @@ static void test_text_settings(void) {
   FOLD(fold);
 }
 
-CW_TEST_SUITE("shell", { "shared and split", test_shared_and_split }, { "one player", test_one_player },
+/* reads the gate's switch (CW_TEST_NO_SHARED): runs at frame 2, when every host has it */
+void cw_test_late(void) { test_shared_and_split(); }
+CW_TEST_SUITE("shell", { "one player", test_one_player },
               { "screen shake setting", test_screen_shake }, { "text settings", test_text_settings });

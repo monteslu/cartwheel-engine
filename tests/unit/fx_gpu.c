@@ -624,10 +624,14 @@ static double wall_s(void) {
 static void init(void *u) {
   (void)u;
   build_cube();
+  /* CW_FXGPU_FAULT natively from the start (fault 1 breaks the shader the first frame compiles); a cart host delivers
+   * it at frame 2 (cw_test_env, read in fixed), where faults 2 and 3 (applied each dispatch) still act */
+#ifndef __wasm__
   const char *f = getenv("CW_FXGPU_FAULT");
   fault = f ? atoi(f) : 0;
 #if CW_WGPU
   if (fault) cw__fx_wgpu_test_fault(fault);
+#endif
 #endif
   perf = getenv("CW_FXGPU_PERF") && atoi(getenv("CW_FXGPU_PERF"));
   if (perf) boxes = perf_boxes;
@@ -682,6 +686,17 @@ static void init(void *u) {
 
 static void fixed(void *u, double dt) {
   (void)u;
+#ifdef __wasm__
+  static bool fault_read;
+  if (!fault_read && cw_frame_index() >= 1) {
+    fault_read = true;
+    const char *f = cw_test_env("CW_FXGPU_FAULT");
+    fault = f ? atoi(f) : 0;
+#if CW_WGPU
+    if (fault) cw__fx_wgpu_test_fault(fault);
+#endif
+  }
+#endif
   if (tick >= FREEZE && !perf) return;
   tick++;
   float s, c;

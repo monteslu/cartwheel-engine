@@ -38,14 +38,26 @@ extern uint32_t cw_test_checksum; /* results that must agree across hosts fold i
 typedef void (*cw_test_fn)(void);
 typedef struct { const char *name; cw_test_fn fn; } cw_test_case;
 
-/* Define the suite: CW_TEST_SUITE("core", {"pool", test_pool}, ...) */
+/* Define the suite: CW_TEST_SUITE("core", {"pool", test_pool}, ...). The cases run in init. A case that reads a
+ * gate's switch (cw_test_env, which a cart host delivers at frame 2) goes in the suite's cw_test_late() instead,
+ * which runs once at frame 2; unit.done waits for it. */
+void cw_test_late(void) __attribute__((weak));
 #define CW_TEST_SUITE(suite_name, ...) \
   int32_t cw_test_passed, cw_test_failed; \
   uint32_t cw_test_checksum = CW_HASH32_INIT; \
   static const cw_test_case cw__cases[] = { __VA_ARGS__ }; \
   static int32_t cw__done; \
+  static int32_t cw__injected; \
   static void cw__test_render(void *u, double a) { /* green = passed, red = failed (GL or WebGPU) */ \
     (void)u; (void)a; \
+    /* the gate control's injected failure, from the first frame every host can set it (cw_test_env: frame 2, a cart \
+     * host's first request) */ \
+    if (!cw__injected && cw_frame_index() >= 1) { \
+      cw__injected = 1; \
+      if (cw_test_late) cw_test_late(); \
+      if (cw_test_env("CW_TEST_INJECT_FAIL")) CHECK(!"injected failure (the gate control)"); \
+      cw__done = 1; \
+    } \
     cw_gpu_clear_window(cw_test_failed ? 0.8f : 0.1f, cw_test_failed ? 0.1f : 0.7f, 0.2f, 1); \
   } \
   static void cw__test_init(void *u) { \
@@ -54,14 +66,14 @@ typedef struct { const char *name; cw_test_fn fn; } cw_test_case;
     cw_debug_i32("unit.failed", &cw_test_failed); \
     cw_debug_u32("unit.checksum", &cw_test_checksum); \
     cw_debug_i32("unit.done", &cw__done); \
+    /* read in init on purpose: the control of tests/env-romdev.mjs (a cart must refuse it as an env request) */ \
+    if (getenv("CW_TEST_EARLY_READ")) cw_info("CW_TEST_EARLY_READ set (read in init)"); \
     for (size_t i = 0; i < CW_ARRAY_LEN(cw__cases); i++) { \
       int before = cw_test_failed; \
       cw__cases[i].fn(); \
       cw_info("%s.%s: %s", suite_name, cw__cases[i].name, cw_test_failed == before ? "ok" : "FAILED"); \
     } \
-    if (getenv("CW_TEST_INJECT_FAIL")) CHECK(!"injected failure (the gate control)"); \
     cw_info("%s: %d passed, %d failed", suite_name, cw_test_passed, cw_test_failed); \
-    cw__done = 1; \
   } \
   cw_app_desc cw_main(int argc, char **argv) { \
     (void)argc; (void)argv; \

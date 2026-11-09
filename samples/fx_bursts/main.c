@@ -49,11 +49,21 @@ static void init(void *u) {
   cw_node_set(pool, "energy", cw_val_float(6));
   cw_node_set(pool, "color", cw_val_color(1, 0.7f, 0.3f, 1));
   cw_node_set(pool, "seed", cw_val_int(7));
-  if (!getenv("FX_BURSTS_OFF")) cw_node_set(pool, "bursts", cw_val_int(8));
+  cw_node_set(pool, "bursts", cw_val_int(8));
+}
+
+/* the gate switches, read with cw_test_env (cartwheel/debug.h) on the first frame they can be set on every host
+ * (frame 2: a cart host delivers them with its first request), applied once */
+static void test_switches(void) {
+  static bool done;
+  if (done || cw_frame_index() < 1) return;
+  done = true;
+  if (cw_test_env("FX_BURSTS_OFF")) cw_node_set(pool, "bursts", cw_val_int(0)); /* the control: no burst slots, bursts are dropped */
 }
 
 static void fixed_update(void *u, double dt) {
   (void)u, (void)dt;
+  test_switches();
   if (tick % 9 == 0) { /* the next point of a ring, thrown outward and up */
     float a = (float)(tick / 9) * 0.785398f, s, c;
     cw_sincos(a, &s, &c);

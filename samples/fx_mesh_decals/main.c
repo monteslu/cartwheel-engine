@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cartwheel/platform.h"
 #include "cartwheel/anim.h"
 #include "cartwheel/debug.h"
 #include "cartwheel/decals.h"
@@ -50,7 +51,7 @@ static int32_t clip_n, hero_src_tris;
 
 static cw_node world(void) { return cw_node_get(cw_tree_root(cw_scene_app_tree()), "World"); }
 
-/* the controls change a decal before it enters the tree */
+/* the controls change a decal (the scene's at frame 2, each hole before it enters the tree) */
 static void adjust(cw_node d) {
   if (shift) {
     t3_vec3 p = cw_node3d_position(d);
@@ -61,11 +62,7 @@ static void adjust(cw_node d) {
 
 static void init(void *u) {
   (void)u;
-  const char *e = getenv("FX_MESH_SHIFT");
-  shift = e && *e == '1';
-  e = getenv("FX_MESH_OFF");
-  off = e && *e == '1';
-  e = getenv("FX_MESH_BENCH");
+  const char *e = getenv("FX_MESH_BENCH");
   bench = e && *e == '1';
   cw_rng_seed(&rng, 77);
   cw_node w = world();
@@ -101,9 +98,6 @@ static void init(void *u) {
   cw_anim_release(walk);
   cw_anim_player_play(anim, "walk", 0);
 
-  /* the scene's decals spawn at the first render: the controls apply now */
-  for (int i = 0; i < cw_node_child_count(w); i++)
-    if (cw_node_is(cw_node_child(w, i), "Decal3D")) adjust(cw_node_child(w, i));
 
   cw_debug_u32("md.tick", &tick);
   cw_debug_i32("md.decals", &n_decals);
@@ -140,6 +134,19 @@ static void make_glass(void) {
 static void fixed(void *u, double dt) {
   (void)u;
   (void)dt;
+  /* the controls from frame 2, when every host has them (cw_test_env): the scene's decals and every hole after */
+  static bool controls_read;
+  if (!controls_read && cw_frame_index() >= 1) {
+    controls_read = true;
+    const char *e = cw_test_env("FX_MESH_SHIFT");
+    shift = e && *e == '1';
+    e = cw_test_env("FX_MESH_OFF");
+    off = e && *e == '1';
+    cw_node w = world();
+    if (shift || off)
+      for (int i = 0; i < cw_node_child_count(w); i++)
+        if (cw_node_is(cw_node_child(w, i), "Decal3D")) adjust(cw_node_child(w, i));
+  }
   tick++;
   if (!glass_done) make_glass();
   cw_node crate = cw_node_get(world(), "Crate");

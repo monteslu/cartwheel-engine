@@ -14,7 +14,7 @@
  *             once without: the mipmapped row stays smooth where the other
  *             shimmers
  *
- * CW_R2D_MOTION picks a variant for the tests' controls (native only):
+ * CW_R2D_MOTION picks a variant for the tests' controls (from frame 2 on every host):
  * "nowind", "notrail", "nomips", "noparticles". A pure function of the tick. */
 #include <math.h>
 #include <stdlib.h>
@@ -31,11 +31,14 @@ typedef struct {
   cw_texture blade, detail, detail_mip, streak, dot;
   cw_font font;
   int32_t ticks;
-  const char *mode;
 } app_t;
 static app_t app;
 
-static bool mode(const char *m) { return app.mode && !strcmp(app.mode, m); }
+/* the tests' variant, read through cw_test_env (cartwheel/debug.h): NULL in frame 1, from frame 2 on every host */
+static bool mode(const char *m) {
+  const char *v = cw_test_env("CW_R2D_MOTION");
+  return v && !strcmp(v, m);
+}
 
 static void make_art(app_t *a) {
   /* a grass blade: a tapered green wedge, lighter at the tip */
@@ -62,7 +65,7 @@ static void make_art(app_t *a) {
       p[0] = v, p[1] = (uint8_t)(v * 0.85f), p[2] = (uint8_t)(255 - v / 2), p[3] = 255;
     }
   a->detail = cw_texture_from_pixels(D, D, d, NULL);
-  a->detail_mip = cw_texture_from_pixels(D, D, d, &(cw_texture_desc){ .mipmaps = !mode("nomips") });
+  a->detail_mip = cw_texture_from_pixels(D, D, d, &(cw_texture_desc){ .mipmaps = true });
   cw_free(d);
   /* a streak for the textured trail: bright core, soft edges, repeating dashes */
   enum { SW = 64, SH = 16 };
@@ -90,7 +93,6 @@ static void make_art(app_t *a) {
 
 static void init(void *user) {
   app_t *a = user;
-  a->mode = getenv("CW_R2D_MOTION");
   make_art(a);
   a->font = cw_font_load("fonts/FiraSans-Regular.ttf", NULL);
   cw_debug_i32("ticks", &a->ticks);
@@ -182,7 +184,7 @@ static void render(void *user, double alpha) {
   float x = 20 * k;
   for (int i = 0; i < 4; i++) {
     float s = 512 * sizes[i] * k;
-    cw_r2d_sprite(&(cw_sprite){ .texture = a->detail_mip, .pos = { x, H * 0.04f }, .size = { s, s } });
+    cw_r2d_sprite(&(cw_sprite){ .texture = mode("nomips") ? a->detail : a->detail_mip, .pos = { x, H * 0.04f }, .size = { s, s } });
     cw_r2d_sprite(&(cw_sprite){ .texture = a->detail, .pos = { x + W * 0.5f, H * 0.04f }, .size = { s, s } });
     x += s + 12 * k;
   }

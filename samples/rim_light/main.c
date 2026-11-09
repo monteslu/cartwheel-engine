@@ -75,8 +75,6 @@ static void rim_off(cw_node fig) {
 
 static void init(void *u) {
   (void)u;
-  off = getenv("RIM_OFF") != NULL;
-  remove_late = getenv("RIM_REMOVE") != NULL;
   cw_debug_i32("rim.materials", &materials);
   cw_debug_i32("rim.tick", &tick32);
   cw_debug_f32("rim.pulse", &pulse);
@@ -101,6 +99,10 @@ static void fixed(void *u, double dt) {
   (void)u;
   (void)dt;
   tick32++;
+  if (tick32 == 2) { /* the gate switches, from the first frame every host can set them (cw_test_env, cartwheel/debug.h) */
+    off = cw_test_env("RIM_OFF") != NULL;
+    remove_late = cw_test_env("RIM_REMOVE") != NULL;
+  }
   if (off) return;
   if (tick32 == 2) { /* the meshes exist once the tree has run: give them their rims */
     cw_rim_light_desc red = cw_rim_light_default(), blue = red;

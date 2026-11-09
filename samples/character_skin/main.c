@@ -19,7 +19,7 @@
  *   CHARACTER_COUNT=n        characters (1 to 64)
  *   CHARACTER_CLOSEUP=1      the camera on the first character's face
  *   CHARACTER_QUALITY=low|medium|high|ultra  the quality preset (Low draws skin as plain PBR)
- *   CHARACTER_NO_SKIN=1      the skin shading removed (the gate's control: state and picture differ)
+ *   CHARACTER_NO_SKIN=1      the skin shading removed at frame 2 (the gate's control: state and picture differ)
  *   CHARACTER_NO_MORPH=1     no weights driven (all faces at rest)
  * Debug fields: skin.* (materials shaded, enabled), mat.* (what the loader
  * read from the file's extensions), morph.* (weights of the first character
@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cartwheel/platform.h"
 #include "cartwheel/anim.h"
 #include "cartwheel/debug.h"
 #include "cartwheel/morph.h"
@@ -120,10 +121,6 @@ static void init(void *u) {
     cw_anim_player_play_ex(anim, "talk", 0, 0.8f + 0.07f * (float)(i % 5), false);
     cw_anim_player_seek(anim, 0.31f * (float)i, true);
   }
-  if (env_f("CHARACTER_NO_SKIN", 0) != 0) {
-    t3_material *s = material(inst[0], "Skin");
-    if (s) cw_skin_shading_remove(s);
-  }
   if (env_f("CHARACTER_CLOSEUP", 0) != 0) {
     cw_node cam = cw_node_get(level, "Camera");
     t3_vec3 p = cw_node3d_position(chars[0]);
@@ -159,6 +156,16 @@ static void init(void *u) {
 static void fixed(void *u, double dt) {
   (void)u;
   (void)dt;
+  /* the gate's control from frame 2, when every host has it (cw_test_env): the skin shading removed */
+  static bool control_read;
+  if (!control_read && cw_frame_index() >= 1 && count > 0 && inst[0]) {
+    control_read = true;
+    const char *e = cw_test_env("CHARACTER_NO_SKIN");
+    if (e && atof(e) != 0) {
+      t3_material *sk = material(inst[0], "Skin");
+      if (sk) cw_skin_shading_remove(sk);
+    }
+  }
   ticks++;
   if (!cw_res_gltf(model)) return;
   float t = (float)ticks / 60.0f;

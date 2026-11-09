@@ -339,8 +339,14 @@ static void init(void *u) {
   cw_debug_f32("city.tris_k", &tris_k);
   cw_debug_f32("city.gpu_ms", &gpu_ms);
   cw_debug_i32("city.lights", &n_lights);
+  /* VIS_MODE builds the city another way (native runs: tools and benches); a cart takes the default mode, and the
+   * check gate's control (VIS_MODE=naive: no occlusion guard) at frame 2, when every host has it (fixed) */
+#ifdef __wasm__
+  const char *m = VIS_DEFAULT_MODE;
+#else
   const char *m = getenv("VIS_MODE");
   m = m ? m : VIS_DEFAULT_MODE;
+#endif
   lights = !strcmp(m, "lights");
   bool off = !strcmp(m, "off");
   check = !strcmp(m, "check") || !strcmp(m, "naive");
@@ -373,6 +379,14 @@ static void init(void *u) {
 static void fixed(void *u, double dt) {
   (void)u;
   (void)dt;
+#ifdef __wasm__
+  static bool control_read;
+  if (!control_read && cw_frame_index() >= 1) {
+    control_read = true;
+    const char *vm = cw_test_env("VIS_MODE");
+    if (vm && !strcmp(vm, "naive") && cw_node_valid(mgr)) cw_node_set(mgr, "occlusion_guard", cw_val_bool(false));
+  }
+#endif
   tick++;
   place_camera(cam, (float)tick);
   if (ref_tree) {

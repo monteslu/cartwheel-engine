@@ -61,10 +61,6 @@ static void init(void *u) {
   cw_debug_f32("vimp.ms_scene", &ms_scene);
   cw_debug_f32("vimp.ms_impostors", &ms_impostors);
   cw_debug_f32("vimp.ms_frame", &ms_frame);
-  const char *e = getenv("VIS_NO_FADE");
-  no_fade = e && *e == '1';
-  e = getenv("VIS_NO_IMPOSTORS");
-  no_impostors = e && *e == '1';
   cw_node root = cw_tree_root(tree);
   cw_node w = add(root, "Node3D", "World");
   cw_node env = add(w, "WorldEnvironment", "Env");
@@ -99,9 +95,33 @@ static void init(void *u) {
   cur = cw_alloc((size_t)W * H * 4, CW_MEM_GAME);
 }
 
+/* the gate switches, read with cw_test_env (cartwheel/debug.h) on the first frame they can be set on every host
+ * (frame 2: a cart host delivers them with its first request), applied once */
+static void test_switches(void) {
+  static bool done;
+  if (done || cw_frame_index() < 1) return;
+  done = true;
+  const char *e = cw_test_env("VIS_NO_FADE");
+  no_fade = e && *e == '1';
+  e = cw_test_env("VIS_NO_IMPOSTORS");
+  no_impostors = e && *e == '1';
+  if (no_fade || no_impostors) {
+    cw_node w = cw_node_get(cw_tree_root(tree), "World");
+    for (int i = 0; i < cw_node_child_count(w); i++) {
+      cw_node t = cw_node_child(w, i);
+      if (!cw_node_is(t, "MeshInstance3D")) continue;
+      cw_value v;
+      if (!cw_node_get_prop(t, "impostor_distance", &v) || v.f <= 0) continue; /* the trees */
+      if (no_impostors) cw_node_set(t, "impostor", cw_val_bool(false));
+      if (no_fade) cw_node_set(t, "impostor_fade", cw_val_float(0));
+    }
+  }
+}
+
 static void fixed(void *u, double dt) {
   (void)u;
   (void)dt;
+  test_switches();
   tick++;
   /* the camera stays; the impostor distance sweeps from 60 m down to 6 m
    * over 240 ticks and back, so every tree crosses the band both ways while

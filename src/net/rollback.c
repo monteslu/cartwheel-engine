@@ -183,6 +183,10 @@ cw_rollback *cw_rollback_new(const cw_rollback_desc *desc) {
   return rb;
 }
 
+void cw_rollback_set_no_rollback(cw_rollback *rb, bool on) {
+  if (rb) rb->d.no_rollback = on;
+}
+
 void cw_rollback_free(cw_rollback *rb) {
   if (!rb) return;
   if (cw_tree_slot(rb->d.tree, "cw.rollback") == rb) cw_tree_set_slot(rb->d.tree, "cw.rollback", NULL, NULL);

@@ -25,7 +25,7 @@ static void run_bench(const char *type, float *spawn, float *process, float *fr)
   cw_node_add_child(cw_tree_root(t), parent);
   /* CW_PERF_COUNT overrides the size (the gate's control uses it to prove a
    * different run is detected) */
-  int count = getenv("CW_PERF_COUNT") ? atoi(getenv("CW_PERF_COUNT")) : 100000;
+  int count = cw_test_env("CW_PERF_COUNT") ? atoi(cw_test_env("CW_PERF_COUNT")) : 100000;
   for (int i = 0; i < count; i++) {
     cw_node n = cw_node_new(type, "N");
     cw_node_add_child(parent, n);
@@ -61,18 +61,22 @@ static void init(void *u) {
   cw_debug_i32("peak_nodes", &peak_nodes);
   cw_debug_i32("after_free", &after_free);
   cw_debug_i32("done", &done);
-  run_bench("Node", &spawn_ms, NULL, &free_ms);
-  run_bench("Node3D", &spawn3d_ms, &process3d_ms, &free3d_ms);
-  done = 1;
-  cw_info("100k Node: spawn %.1f ms free %.1f ms | 100k Node3D: spawn %.1f ms, phases %.2f ms/frame, free %.1f ms",
-          spawn_ms, free_ms, spawn3d_ms, process3d_ms, free3d_ms);
 }
 
 static void render(void *u, double a) {
   (void)u;
   (void)a;
+  /* the bench at frame 2, when every host has the gate's CW_PERF_COUNT (cw_test_env, cartwheel/debug.h) */
+  if (!done && cw_frame_index() >= 1) {
+    run_bench("Node", &spawn_ms, NULL, &free_ms);
+    run_bench("Node3D", &spawn3d_ms, &process3d_ms, &free3d_ms);
+    done = 1;
+    cw_info("100k Node: spawn %.1f ms free %.1f ms | 100k Node3D: spawn %.1f ms, phases %.2f ms/frame, free %.1f ms",
+            spawn_ms, free_ms, spawn3d_ms, process3d_ms, free3d_ms);
+  }
   cw_gpu_clear_window(0.1f, 0.3f, 0.5f, 1);
 }
+
 
 cw_app_desc cw_main(int argc, char **argv) {
   (void)argc;

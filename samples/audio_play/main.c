@@ -8,7 +8,7 @@
  * host's clock, so the published state is only what must hold everywhere:
  * a device is open, the mixer is producing frames, they are not silent, the
  * stream is playing and its clock moves. The picture is a pure function of
- * the frame number. CW_PLAY_NO_AUDIO=1 skips audio (the gate's control).
+ * the frame number. CW_PLAY_NO_AUDIO=1 shuts the audio down at frame 2 (the gate's control).
  *
  * A native test run (CW_FRAMES) does not pace frames in real time, so 120
  * frames can be over before SDL's audio thread has asked for much. Natively
@@ -50,7 +50,6 @@ static void init(void *user) {
   cw_debug_i32("play.audible", &a->audible);
   cw_debug_i32("play.music_playing", &a->music_playing);
   cw_debug_i32("play.clock_moves", &a->clock_moves);
-  if (getenv("CW_PLAY_NO_AUDIO")) return;
   /* #region init */
   a->on = cw_audio_init(NULL);
   a->music = cw_sound_load("music.ogg", &(cw_sound_desc){ .mode = CW_SOUND_STREAM, .volume = 0.5f });
@@ -89,6 +88,12 @@ static void update(void *user, double dt) {
   (void)dt;
   play_app *a = user;
   a->frame++;
+  /* CW_PLAY_NO_AUDIO=1 (the gate's control) shuts the audio down at frame 2, when every host has it (cw_test_env) */
+  if (a->on && cw_frame_index() >= 1 && cw_test_env("CW_PLAY_NO_AUDIO")) {
+    cw_audio_shutdown();
+    a->on = false;
+    a->device = a->mixing = a->audible = a->music_playing = a->clock_moves = 0;
+  }
   if (!a->on) return;
   if (a->frame % 30 == 0) cw_audio_play(a->blip, &(cw_play_desc){ .pan = (a->frame / 30) % 2 ? -0.7f : 0.7f });
   t3_vec3 p = orbit(a->frame), q = orbit(a->frame + 1);

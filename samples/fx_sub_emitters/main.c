@@ -24,12 +24,21 @@ static void init(void *u) {
   cw_debug_i32("fxs.child.gpu_alive", &child_gpu_alive);
   cw_debug_i32("fxs.parent.alive", &parent_alive);
   cw_debug_f32_array("fxs.child.mean", child_mean, 3);
-  if (getenv("FXS_OFF")) cw_node_set(node("World/Child"), "emission_shape", cw_val_enum("POINT"));
+}
+
+/* the gate switches, read with cw_test_env (cartwheel/debug.h) on the first frame they can be set on every host
+ * (frame 2: a cart host delivers them with its first request), applied once */
+static void test_switches(void) {
+  static bool done;
+  if (done || cw_frame_index() < 1) return;
+  done = true;
+  if (cw_test_env("FXS_OFF")) cw_node_set(node("World/Child"), "emission_shape", cw_val_enum("POINT"));
 }
 
 static void render(void *u, double a) {
   (void)u;
   (void)a;
+  test_switches();
   cw_node c = node("World/Child");
   child_alive = cw_particles_alive(c);
   parent_alive = cw_particles_alive(node("World/Parent"));

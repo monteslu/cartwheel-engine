@@ -54,7 +54,15 @@ static void init(void *u) {
   }
   /* #endregion */
 
-  const char *e = getenv("FX_NO_DECALS");
+}
+
+/* the gate switches, read with cw_test_env (cartwheel/debug.h) on the first frame they can be set on every host
+ * (frame 2: a cart host delivers them with its first request), applied once */
+static void test_switches(void) {
+  static bool done;
+  if (done || cw_frame_index() < 1) return;
+  done = true;
+  const char *e = cw_test_env("FX_NO_DECALS");
   if (e && *e == '1') {
     cw_node w = world();
     for (int i = cw_node_child_count(w) - 1; i >= 0; i--)
@@ -65,6 +73,7 @@ static void init(void *u) {
 static void fixed(void *u, double dt) {
   (void)u;
   (void)dt;
+  test_switches();
   tick++;
   cw_node g = cw_node_get(world(), "Glow");
   if (cw_node_valid(g)) cw_node3d_set_rotation(g, (t3_vec3){ -CW_PI / 2, 0, (float)tick * 0.03f });

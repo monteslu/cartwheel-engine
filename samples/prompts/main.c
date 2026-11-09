@@ -55,7 +55,7 @@ static struct {
   int32_t dev_hist[8], dev_n;
   float text_w[3];
   uint32_t rebind_code, missing_touch;
-  bool listening, typo, ladder;
+  bool listening, ladder;
   uint64_t rebound_frame;
 } S;
 
@@ -78,7 +78,7 @@ static void init(void *user) {
   cw_l10n_add_catalog(EN, sizeof EN - 1, "en");
   cw_l10n_add_catalog(AR, sizeof AR - 1, "ar");
   cw_l10n_set_locale("en");
-  S.typo = getenv("PROMPTS_TYPO") != NULL;
+  /* PROMPTS_TYPO (a gate control) is read where it is drawn: cw_test_env has it from frame 2 on every host */
 
   /* #region actions */
   S.jump = cw_action_add("jump", 0.5f);
@@ -270,7 +270,7 @@ static void render(void *user, double alpha) {
                  CW_ALIGN_RIGHT);
   if (cw_frame_index() == S.rebound_frame && S.rebound_frame) cw_prompt_action_codes(&S.jump, 1, 0, &S.rebind_code, 1);
   y += 30;
-  cw_prompt_text(S.sans, S.typo ? "{move_left|move_right|move_up|move_down} move    {jmup} dash" : cw_tr("hint.move"), 0,
+  cw_prompt_text(S.sans, cw_test_env("PROMPTS_TYPO") ? "{move_left|move_right|move_up|move_down} move    {jmup} dash" : cw_tr("hint.move"), 0,
                  (cw_vec2){ 220, y }, 22, INK, CW_ALIGN_LEFT);
   y += 30;
   cw_prompt_text(S.sans, cw_tr("hint.menu"), 0, (cw_vec2){ 220, y }, 22, INK, CW_ALIGN_LEFT);
