@@ -28,6 +28,10 @@
 //       table changes; no carts to survey (a project's carts need CW_PROJECT_ROOT) is an error too.
 //   --presets a,b   the graphics presets each native app run goes through (default every one: verylow, low, medium,
 //       high, ultra; cartwheel/quality.h), since each asks for states of its own
+//   Every survey (native and --carts) also switches the preset half way through a run, from High to each other
+//   preset and from each back to High: what a game built on one preset draws on another (a player's settings
+//   change, or Auto stepping down in play) asks for states neither preset asks for from the start (High's
+//   lights on Very Low's shadows, say), and those draws vanished mid-game. --no-switch leaves these runs out.
 //   --scenes NAME=a,b,c   runs each app once per value with environment NAME set to it (on GL and on WebGPU), for a
 //       game that picks its scene from the environment or runs a different scene per level: the table gets the
 //       union of every scene's states (a runtime-created light or particle needs its state in the table, and a
@@ -290,6 +294,10 @@ if (argv.includes('--projects')) {
 // ── run the apps ──────────────────────────────────────────────────────
 if (!argv.includes('--no-run')) await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 const frames = one('--frames') || '120';
+// the preset switch half way through a run (see --presets): [from, to] pairs, High to each other preset and back
+const switchAt = Math.max(3, Math.floor(+frames / 2));
+const switches = (presets) => argv.includes('--no-switch') ? [] :
+  presets.filter((p) => p !== 'high').flatMap((p) => [['high', p], [p, 'high']]);
 const runDir = join(BUILD, 'programs-logs');
 const CARTS = argv.includes('--carts');
 const logDirs = all('--logs').map((d) => resolve(d));
@@ -343,6 +351,9 @@ if (CARTS && !argv.includes('--no-run')) {
   for (const app of todo) {
     // every preset but the default High, switched to at frame 2 (cartwheel/quality.h: each asks for states of its own)
     const runs = [{ tag: app, args: ['--frames', frames] }, ...PRESETS.filter((p) => p !== 'high').map((p) => ({ tag: `${app}.${p}`, args: ['--frames', frames, '--start-cmds', `quality ${p}`] }))];
+    // the preset switched in play, both ways (the cart starts on High)
+    for (const [from, to] of switches(PRESETS))
+      runs.push({ tag: `${app}.${from}-to-${to}`, args: ['--frames', frames, '--start-cmds', [...(from !== 'high' ? [`quality ${from}`] : []), `@${switchAt} quality ${to}`].join(';')] });
     for (const g of gates.filter((x) => x.app === app))
       runs.push({ tag: g.name, args: ['--frames', String(g.frames), ...(g.input ? ['--input', join(PROJ, 'tests', g.input)] : [])] });
     const seen = new Set();
@@ -381,13 +392,16 @@ if (!CARTS && !argv.includes('--no-run')) {
   const presets = (one('--presets') || PRESETS.join(',')).split(',');
   for (const a of list) {
     for (const [leg, extra] of legs.filter(([l]) => l === 'gl' || a.name !== 'unit_pipeline')) {
-      for (const scene of sceneEnvs) for (const preset of presets) {
+      // each preset from the start, then each switch in play (CW_START_CMDS "@N quality <to>", src/platform/native.c)
+      const runs = [...presets.map((p) => [p, null]), ...switches(presets)];
+      for (const scene of sceneEnvs) for (const [preset, to] of runs) {
         const r = spawnSync(a.binary, [], {
           cwd: dirname(a.binary), encoding: 'utf8', timeout: 180000,
-          env: testEnv({ ...process.env, ...extra, ...scene, CW_FRAMES: frames, SDL_AUDIODRIVER: 'dummy', CW_PROGRAMS_LOG_DIR: runDir, CW_QUALITY: preset }),
+          env: testEnv({ ...process.env, ...extra, ...scene, CW_FRAMES: frames, SDL_AUDIODRIVER: 'dummy', CW_PROGRAMS_LOG_DIR: runDir, CW_QUALITY: preset,
+            ...(to ? { CW_START_CMDS: `@${switchAt} quality ${to}` } : {}) }),
         });
         if (r.status !== 0) {
-          const run = `${a.name} (${leg} ${preset}${sc ? ' ' + Object.values(scene)[0] : ''}): ${r.signal || 'exit ' + r.status}`;
+          const run = `${a.name} (${leg} ${preset}${to ? ' to ' + to : ''}${sc ? ' ' + Object.values(scene)[0] : ''}): ${r.signal || 'exit ' + r.status}`;
           failed.push(run);
           console.log(run);
         }

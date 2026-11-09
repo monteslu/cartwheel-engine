@@ -18,6 +18,40 @@
 #include "scene/render3d_internal.h"
 #include "lighting_internal.h"
 
+#ifdef T3_MISSING_HOOK
+/* A draw whose program state no table has (three.c skips it): say which node, mesh and material it is, once per
+ * state, so the log names what vanished and not only the state. The node is the nearest Node3D whose object is
+ * the drawn object or one of its ancestors (a glTF instance's meshes sit under the node that holds it). */
+struct missing_find { const t3_object *chain[32]; int n, best_depth; cw_node best; };
+static bool missing_visit(cw_node n, void *user) {
+  struct missing_find *f = user;
+  t3_object *o = cw_node3d_object(n);
+  if (!o) return true;
+  for (int i = 0; i < f->n && i < f->best_depth; i++)
+    if (f->chain[i] == o) { f->best = n, f->best_depth = i; break; }
+  return true;
+}
+static void missing_hook(void *user, const char *state, const t3_object *o, const t3_material *m) {
+  cw_tree *t = user;
+  struct missing_find f = { .best_depth = 1 << 30 };
+  for (const t3_object *p = o; p && f.n < 32; p = p->parent) f.chain[f.n++] = p;
+  if (t && f.n) cw_node_walk(cw_tree_root(t), missing_visit, &f);
+  char path[256] = "";
+  if (f.best_depth < (1 << 30)) cw_node_path(f.best, (cw_node){ 0 }, path, sizeof path);
+  static const char *const kinds[] = { [T3_MESH_BASIC_MATERIAL] = "MeshBasicMaterial", [T3_MESH_LAMBERT_MATERIAL] = "MeshLambertMaterial",
+    [T3_MESH_PHONG_MATERIAL] = "MeshPhongMaterial", [T3_MESH_STANDARD_MATERIAL] = "MeshStandardMaterial",
+    [T3_MESH_PHYSICAL_MATERIAL] = "MeshPhysicalMaterial", [T3_MESH_NORMAL_MATERIAL] = "MeshNormalMaterial",
+    [T3_POINTS_MATERIAL] = "PointsMaterial", [T3_LINE_BASIC_MATERIAL] = "LineBasicMaterial", [T3_SPRITE_MATERIAL] = "SpriteMaterial" };
+  const char *kind = m && (int)m->type >= 0 && (size_t)m->type < sizeof kinds / sizeof kinds[0] && kinds[m->type] ? kinds[m->type] : "material";
+  cw_error("render: NOT DRAWN: %s%s%s%s%s%s, %s%s%s%s: its program state %s is in none of the app's program tables "
+           "(the fix is in the next error)",
+           path[0] ? "node \"" : "an object", path, path[0] ? "\"" : "", o && o->name && *o->name ? " (mesh \"" : "",
+           o && o->name && *o->name ? o->name : "", o && o->name && *o->name ? "\")" : "", kind,
+           m && m->name && *m->name ? " \"" : "", m && m->name && *m->name ? m->name : "", m && m->name && *m->name ? "\"" : "",
+           state);
+}
+#endif
+
 /* ── settings ───────────────────────────────────────────────────────── */
 
 static void settings_default(cw_post_settings *s) {
@@ -986,6 +1020,9 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
     ctx.scene3d = cw_render3d_scene(t);
     ctx.camera_node = cw_render3d_camera(t);
     ctx.renderer = cw_render3d_renderer(t);
+#ifdef T3_MISSING_HOOK
+    if (ctx.renderer) t3_renderer_set_missing_hook(ctx.renderer, missing_hook, t); /* names a draw with no program */
+#endif
     if (ctx.scene3d) cw__shadow_cull_begin(ctx.scene3d, ctx.camera); /* the Shadows setting: small casters off for this run */
   }
   ctx.hdr = s->hdr && cw__caps.float_render;
@@ -1361,10 +1398,15 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
         if (*c == '\n' || !c[1]) n++;
       cw__missing_programs = n;
       if (n) {
-        cw_error("render pipeline: %d draw state(s) are in none of the app's program tables, so those draws are NOT DRAWN "
-                 "(a new material, light count or shadow combination needs its program). Fix: from the engine checkout run\n"
-                 "    %s\nthen commit the changed programs/ manifest and generated C and rebuild (a project outside the tree: "
-                 "node tools/programs.mjs --projects <dir>). Missing:\n%s", (int)n, cw__programs_fix_command(), p->missing_states);
+        cw_error("render pipeline: %d draw state(s) have no program, so those draws are NOT DRAWN (the errors above name "
+                 "each node and material). A material, light count or shadow setup the app's program table was not "
+                 "surveyed with needs its program; so does content built on one graphics preset and drawn on another "
+                 "(a preset changed in play). Fix: run\n"
+                 "    %s\n"
+                 "(a game built against the SDK: node <sdk>/tools/programs.mjs %s --build build/native, or its programs "
+                 "script; add --carts for the cart's own states), then rebuild and commit the programs/ manifest and its "
+                 "generated C. Guide: docs/guides/rendering-3d.md, \"Program tables\". Missing:\n%s",
+                 (int)n, cw__programs_fix_command(), cw__app_target_name(), p->missing_states);
         const char *strict = getenv("CW_PROGRAMS_STRICT");
         if (strict && *strict && atoi(strict)) { /* CI and authors: an incomplete table is an exit (4), not a blank screen */
           fprintf(stderr, "CW_PROGRAMS_STRICT: exiting, the program table is incomplete\n");

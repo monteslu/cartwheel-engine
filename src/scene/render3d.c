@@ -1095,6 +1095,7 @@ void cw__render3d_frame_begin(cw_tree *t) {
  * fails a run where it is not 0 (every host skipping the same draws would
  * agree with itself) */
 static int32_t skipped_all;
+const char *cw__programs_fix_command(void); /* "node tools/programs.mjs <the app>" (src/render/programs.c) */
 static void note_skipped(render3d_state *s, const t3_render_info *i) {
   static bool registered;
   if (!registered) registered = true, cw_debug_i32("render.skipped", &skipped_all);
@@ -1113,12 +1114,16 @@ static void note_skipped(render3d_state *s, const t3_render_info *i) {
   if (strstr(e, "no table state") || strstr(e, "the runtime builder failed")) {
     if (!said_table) {
       said_table = true;
-      cw_error("render3d: draws are being skipped because this app's program table lacks a state it needs. Regenerate it with: node tools/programs.mjs <app>  (see docs/guides/rendering-3d.md, program tables)");
+      cw_error("render3d: draws are being skipped because this app's program table lacks a state it needs (the NOT DRAWN "
+               "errors name each node and material). Regenerate it with: %s, then rebuild (guide: docs/guides/rendering-3d.md, "
+               "\"Program tables\")", cw__programs_fix_command());
     }
   } else if (strstr(e, "left texture") || strstr(e, "no hook for extension")) {
     if (!said_ext) {
       said_ext = true;
-      cw_error("render3d: draws are being skipped because a material extension's fill hook left a texture its program samples unset (the table has the state: the node that owns the extension did not bind the texture this frame)");
+      cw_error("render3d: draws are being skipped because a material extension's fill hook left a texture its program samples "
+               "unset (%s). The table has the state: the node that owns the extension must bind every texture its program "
+               "samples in its fill hook each frame (t3_extension_set_texture), or not set the extension on the material", e);
     }
   } else if (!said_other) {
     said_other = true;

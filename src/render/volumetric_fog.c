@@ -795,18 +795,28 @@ static const cw__height_fog *medium_of(cw_tree *t) {
   return f && f->volumetric && f->density > 0 ? f : NULL;
 }
 
+/* a frame with no grid: the state says so (cw_volumetric_fog_get_state), so a game that swaps in a cheap
+ * stand-in when the fog is off sees it go off when a preset turns the pass off in play, not only at start.
+ * CW_TEST_VFOG_STALE=1 keeps the last grid's state (the old behaviour: the control of gate fog-volumetric-off) */
+static bool vf_off(vfog_rt *v) {
+  static int stale = -1;
+  if (stale < 0) stale = getenv("CW_TEST_VFOG_STALE") && atoi(getenv("CW_TEST_VFOG_STALE"));
+  if (!stale) v->st = (cw_volumetric_fog_state){ 0 };
+  return false;
+}
+
 static bool vf_build_active(const cw_pass_ctx *ctx, void *user) {
   vfog_rt *v = user;
   slot_of(v, ctx)->built = false;
-  if (!cw__vfog_supported() || !ctx->camera || !ctx->renderer) return false;
-  if (cw__quality_effects() <= CW_QUALITY_LOW) return false; /* effects Very Low and Low: no volumetric fog (the height fog alone) */
+  if (!cw__vfog_supported() || !ctx->camera || !ctx->renderer) return vf_off(v);
+  if (cw__quality_effects() <= CW_QUALITY_LOW) return vf_off(v); /* effects Very Low and Low: no volumetric fog (the height fog alone) */
   bool any = medium_of(ctx->tree) != NULL || content(v);
   if (any && ctx->camera->base.type != T3_PERSPECTIVE_CAMERA) {
     if (!v->warned_ortho) cw_warn("volumetric fog needs a perspective camera; it is off for this one");
     v->warned_ortho = true;
-    return false;
+    return vf_off(v);
   }
-  return any;
+  return any ? true : vf_off(v);
 }
 
 /* a depth tile of the atlas from cam (three.c's caster programs) */

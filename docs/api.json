@@ -2329,7 +2329,7 @@
     {
      "name": "cw_volumetric_fog_get_state",
      "signature": "void cw_volumetric_fog_get_state(cw_tree *t, cw_volumetric_fog_state *out)",
-     "doc": "The tree's volumetric fog last frame (zeroed when it has none).",
+     "doc": "The tree's volumetric fog last frame: zeroed when it has none, and as soon as the pass stops running (a\npreset that turns the fog off in play, effects Very Low or Low; an orthographic camera).",
      "inline": false
     },
     {

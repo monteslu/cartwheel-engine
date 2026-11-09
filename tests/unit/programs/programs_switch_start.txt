@@ -1,0 +1,5 @@
+# unit_programs_switch_start (tests/programs-switch.mjs): tools/programs.mjs unit_programs_switch_start --no-switch
+depth+xplain
+standard+instbig+shadow+l1000+xplain
+standard+instbig+shadow+l1000
+standard+instbig+shadow+l1200

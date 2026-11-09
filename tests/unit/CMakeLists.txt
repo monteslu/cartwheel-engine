@@ -104,6 +104,12 @@ foreach(_px n2:2:3.125f:540 n3:3:3.125f:540 auto3:3:0:540 auto3_low:3:0:0)
 endforeach()
 # leaves a program state no table has, for tests/programs-carts.mjs (a dual cart: tools/programs.mjs --carts surveys it)
 cw_add_app(unit_programs_missing SOURCES test_programs_missing.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/programs_missing_assets)
+# content built on one preset drawn on another (tests/programs-switch.mjs): one scene, two tables, one surveyed with
+# the preset switched in play (tools/programs.mjs as it ships), one without (--no-switch, the control)
+cw_add_app(unit_programs_switch SOURCES test_programs_switch.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/programs_switch_assets
+           PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/programs/programs_switch.txt)
+cw_add_app(unit_programs_switch_start SOURCES test_programs_switch.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/programs_switch_assets
+           PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/programs/programs_switch_start.txt)
 # clustered lighting over a changing scene: lights added, reparented, hidden, removed, a material swapped, in
 # two-view split screen with a cascaded sun (the pass's scene index and material marking, cartwheel/lighting.h)
 cw_add_app(lighting_changes SOURCES lighting_changes.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/lighting_changes_assets)

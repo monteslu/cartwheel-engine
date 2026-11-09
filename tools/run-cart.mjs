@@ -93,7 +93,7 @@ if (args['end-cmds'] && host !== 'native') { console.error('--end-cmds is a nati
 // start of frame i + 2 on every host (a cart host runs frame 1 on load): how a test
 // says what a real host would (touch_primary 1 for a phone). A request written
 // "@N cmd" is answered at the start of frame N instead (N >= 2; native, chromium,
-// wcnative): a mid-run change such as a graphics preset
+// wcnative, romdev): a mid-run change such as a graphics preset
 const startCmds = typeof args['start-cmds'] === 'string' ? args['start-cmds'].split(';').filter(Boolean) : [];
 // [k, text]: request posted before loop step k (0-based; answered at the start of frame k + 1)
 const startPlan = startCmds.map((c, i) => {
@@ -316,10 +316,6 @@ async function runRomdev() {
   // RANGES, never a loop over frames: romdev is shared, and a request per frame flooded it (2026-11-09). Frames run in
   // one frame step; a pad-only input script goes as ONE input sequence call (each entry held until the next); only a
   // script with pointer or wheel entries takes calls per entry. The result's romdevCalls counts them.
-  const stepTo = async (target) => {
-    if (target > at) await romdevCall('frame', { op: 'step', frames: target - at }, session);
-    at = Math.max(at, target);
-  };
   // input scripts are in the cart's LOGICAL pixels (as natively); the host's
   // pointer is in framebuffer pixels (cw_app_desc.render_scale): cw.view = [lw, lh, picture w, h, x, y]
   let sx = 1, sy = 1, ox = 0, oy = 0; // cw.view [4], [5]: the picture's origin (pixel_scale bars)
@@ -330,10 +326,10 @@ async function runRomdev() {
     if (Array.isArray(vv) && vv[0] > 0 && vv[1] > 0) { sx = vv[2] / vv[0]; sy = vv[3] / vv[1]; ox = vv[4] || 0; oy = vv[5] || 0; }
   }
   const fbx = (x) => Math.round(ox + x * sx), fby = (y) => Math.round(oy + y * sy);
-  if (timedCmds) throw new Error('romdev: --start-cmds "@N cmd" (a request at a frame) is not supported here; skip romdev for such gates');
   const cmdReplies = [];
   // --env rides on the first start request (or is the only one): answered at the start of frame 2
-  const romdevCmds = envReq ? [withEnv(startCmds[0]), ...startCmds.slice(1)] : startCmds;
+  const plainCmds = startCmds.filter((c) => !c.startsWith('@')); // "@N cmd" runs on its frame (stepTo below)
+  const romdevCmds = envReq ? [withEnv(plainCmds[0] || ''), ...plainCmds.slice(1)].filter((c, i) => c || i === 0) : plainCmds;
   for (const text of romdevCmds) { /* answered at the start of the frame the request runs */
     const reply = await romdevCall('wasm', { op: 'command', text }, session);
     cmdReplies.push({ text, reply });
@@ -344,6 +340,19 @@ async function runRomdev() {
       throw new Error(`romdev: the --env request failed: ${answer.error}`);
     }
   }
+  // "@N cmd": romdev answers a request with the frame it runs, so the frames before N are stepped first and the
+  // request runs frame N (a mid-run change such as a graphics preset, as natively)
+  const timed = startPlan.filter((_, i) => startCmds[i].startsWith('@')).map(([k, text]) => [k + 1, text]).sort((a, b) => a[0] - b[0]);
+  const stepTo = async (target) => { // run frames until `at` is target, posting each timed request on its frame
+    while (timed.length && timed[0][0] - 1 < target) {
+      const [n, text] = timed.shift();
+      if (n - 1 < at) throw new Error(`romdev: --start-cmds "@${n} ${text}": frame ${n} already ran (the start requests run frames 2 to ${at})`);
+      if (n - 1 > at) { await romdevCall('frame', { op: 'step', frames: n - 1 - at }, session); at = n - 1; }
+      cmdReplies.push({ text, reply: await romdevCall('wasm', { op: 'command', text }, session) });
+      at++;
+    }
+    if (target > at) { await romdevCall('frame', { op: 'step', frames: target - at }, session); at = target; }
+  };
   if (args['cmd-out']) writeFileSync(resolve(args['cmd-out']), JSON.stringify(cmdReplies, null, 1));
   const romdevPad = (s) => {
     const p = {};
@@ -370,7 +379,7 @@ async function runRomdev() {
     throw new Error('romdev: keyboard input cannot be injected (its input tool has no wasmcart key op); skip romdev for keyboard gates');
   let mouse = null, touches = new Map();
   const live = script.filter((s) => s.frame <= frames); // entries after the last frame never apply (as natively)
-  if (live.length && !live.some((s) => s.mouse || (s.touches || []).length || s.wheel != null)) {
+  if (live.length && !timed.length && !live.some((s) => s.mouse || (s.touches || []).length || s.wheel != null)) {
     // the whole schedule in one call: entry i is held from frame s.frame (frames 1..s.frame-1 run before it) until the
     // next entry, the last until the run's end; an entry a later one replaces in the same frame is never held
     const steps = [];
@@ -386,7 +395,7 @@ async function runRomdev() {
     if (s.frame > frames) break; // entries after the last frame never apply (as natively)
     // the entry applies from engine frame s.frame (1-based) on: frames 1..s.frame-1 run before it
     const before = s.frame - 1;
-    if (before > at) await stepTo(before);
+    await stepTo(before);
     // pointer and wheel ops reset the held pad in romdev's host: send them first, the pad last
     if (s.mouse || mouse) {
       const m = s.mouse || mouse, b = mouseMask(s.mouse);
@@ -405,7 +414,8 @@ async function runRomdev() {
   // turn between every two stepped frames, so asynchronous results (buffer
   // maps, error scopes) arrive between frames as on every other host; stepping
   // one frame per call for that cost thousands of calls a run
-  if (frames > at) await stepTo(frames);
+  await stepTo(frames);
+  if (args['cmd-out'] && timedCmds) writeFileSync(resolve(args['cmd-out']), JSON.stringify(cmdReplies, null, 1));
   // --cmd-end "cmd" (romdev): one debug-channel request after the last frame, its reply to --cmd-out (the survey of
   // tools/programs.mjs --carts asks "pipeline" there: the states the cart's last frames lacked a program for)
   if (typeof args['cmd-end'] === 'string') {
