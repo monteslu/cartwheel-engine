@@ -6,6 +6,9 @@
 // The control runs the same apps with CW_TEST_QUALITY_FLAT=1 (every preset draws High's settings) and must fail.
 // Runs inside the GPU suite (the machine's test GPU, never the desktop): node tools/with-gpu-suite.mjs quality-range
 // node tools/quality-range.mjs ...
+// Native only, and so not a game check: a cart on romdev gets no GPU timer (GL has no timer queries there, the WebGPU
+// device no timestamp-query feature: `pipeline` reports timer_query false), so the range cannot be measured through
+// romdev yet and stays out of the games' gates until romdev can time a cart's GPU work.
 //
 //   node tools/quality-range.mjs [--apps open_world,terrain_demo] [--gpus gl,webgpu] [--frames 400] [--lines 1080]
 //        [--project <a games tree built with this engine>] [--scenes <file.json>] [--json out/quality-range/report.json]

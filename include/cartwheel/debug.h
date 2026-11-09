@@ -54,7 +54,7 @@ void cw_debug_dump_json(const char *path);
  * that fixes it. `help` lists a game's commands. Enabled with .debug = true.
  * Built in: help, status, stats, pause [1|0], resume, step [ticks],
  * screenshot <layers> [scale], screenshot_get, fields [name...] (debug field
- * values), record, quit, debug_crash, vfs;
+ * values), record, env (a test's environment, below), quit, debug_crash, vfs;
  * scene apps add tree, node, changes, get, set, props, methods, call, emit,
  * spawn, free, save, types, group, tree_pause, change_scene, reload_scene;
  * modules add res, reload, phys, impulse, anim*, animtree*, pipeline,
@@ -89,6 +89,22 @@ void cw__debug_channel_poll(void); /* platform: start of every frame */
 void cw__debug_channel_app_ready(void); /* platform: after the app's init (answers requests held for its commands) */
 void cw__debug_frame_end(void);    /* platform: after the frame rendered (captures) */
 bool cw__debug_remote_requested(void); /* platform: CW_REMOTE is set (native) */
+
+/* ── a test's environment on every host ────────────────────────────────
+ * A gate picks a mode with environment variables (a gate file's "env"). A
+ * native run has them in its process environment; a cart host gets them as
+ * the built-in `env NAME=VALUE ... [-- request]` request, which a cart's
+ * getenv then reads (every cart link wraps getenv). romdev answers a request
+ * at the start of frame 2 at the earliest (its load runs frame 1), so a name
+ * the game read in its init or first frame would run unset there: setting
+ * one fails the request, naming it.
+ * cw_test_env reads a test switch the same way on every host: NULL in the
+ * first frame (cw_frame_index() 0, while no cart host can have delivered
+ * it), the variable from frame 2 on. A game reads its gate switches with it
+ * where it first needs them, never in its init, and never caches a NULL from
+ * the first frame; a mode its init sets up (a match length, a level) is
+ * applied when the switch is first seen, on every host alike. */
+const char *cw_test_env(const char *name);
 
 /* ── the debugger's pause (play-in-editor) ─────────────────────────────
  * Freezes the whole simulation, unlike the game's own tree pause

@@ -39,6 +39,7 @@ node tests/gate.mjs hello-input unit-scene           # some gates
 node tests/gate.mjs --cpu platformer2d               # CPU only: no GPU, no suite lock (see below)
 node tests/gate.mjs --gates-file mygame-gates.json   # another file in tests/ (comma separated for several; env CW_GATES_FILE)
 node tests/gate.mjs unit-scene --hosts native,romdev # narrow the hosts (never adds one a gate cannot run on)
+node tests/gate.mjs hello-input --hosts romdev --gpu both # romdev alone, GL and WebGPU (below)
 ```
 
 ```text
@@ -56,6 +57,24 @@ For each gate the runner starts `tools/run-cart.mjs` on every eligible host in p
 4. Runs the **control** natively, which must differ from the reference in frame or state. A gate whose control passes cannot see anything, and fails.
 
 Hosts by default: `native`, `romdev`, `chromium`, plus `wcnative` for gates without an input script (wasmcart-run takes no input and reports no state, so it is compared on frames only), plus `angle` when `CW_ANGLE_DIR` is set. Outputs land in `out/gate/<name>.<host>.png` and `.json`. A WebGPU run in Chromium waits for the GPU to finish each frame (and for the frame's readbacks to land) before it starts the next, as native runs and romdev do, so occlusion query counts and pixel reads arrive on the same frame on every host even after a frame of heavy GPU work such as an impostor bake. The romdev launcher explicitly selects the requested backend even for dual-capable carts; a GL gate must not rely on automatic backend selection. A romdev leg steps its frames in one call to the server and waits for the reply as long as the call can take: `CW_ROMDEV_TIMEOUT_MS` (default 300000) plus `CW_ROMDEV_FRAME_MS` (default 500) for each frame the call steps, so a 2400-frame run on a busy GPU is not cut off at five minutes. A call that runs past it fails with both names in the message.
+
+A romdev leg sends ranges, never a request per frame (romdev is a shared server): the start requests (one each, each runs a frame), one `input` `sequence` call that holds each pad entry of the script until the next and runs to the last frame, then the frame, the state and a shutdown. A 700-frame run with a 10-entry pad script is 5 requests. Only a script with mouse, touch or wheel entries takes requests per entry. `run-cart` reports the count as `romdevCalls`, and `CW_ROMDEV_AGENT` names the caller to romdev (default `cartwheel-run-cart`).
+
+### On romdev alone
+
+A game's checks run through romdev, with no native run. `--hosts romdev` is that mode:
+
+1. The game's dual cart on romdev with GL is the reference: its frame a real picture, `expect` against its state, the text floor, missing program states and prompt errors.
+2. The control on romdev GL must differ from it in frame or state.
+3. With `--gpu webgpu` (or `both`) the same cart runs again on WebGPU: the same checks on its own state, the named state exact against the GL run, the frame within `webgpu.vsGl` (default 0.01) and `webgpu.maxArea`, and its own control must differ from it and from GL.
+
+The gate's `env` and `controlEnv` reach the cart as the debug channel's `env` request (below). Skipped, and said so, never counted as passing: gates whose `hosts` or `skip` leave romdev out, tool gates (`script`: they pick their hosts), `webgpu.controls` (native fault injections) and gates without a cart. The mode runs no GPU work of its own, so it does not take the GPU suite lock.
+
+### A gate's environment on a cart host
+
+A native run gets a gate's `env` in its process environment. A cart has none, so `run-cart --env '{"NAME":"value"}'` sends the built-in debug request `env NAME=value ... -- <request>` instead, riding on a request the host sends anyway so no host's frames move: before frame 1 with the first request on Chromium and wasmcart-native, with the first start request at frame 2 on romdev (its load runs frame 1). Every cart link wraps `getenv`, so the game's own `getenv` calls read the values with no change to the game.
+
+A name the game read before the request arrived would run unset on romdev and agree with no other host, so the cart remembers the names read before the first `env` request and setting one fails the request, naming it (`romdev: the --env request failed: PP_ROUNDS was read before ...`). A game reads its gate switches with `cw_test_env(name)` (cartwheel/debug.h): NULL in the first frame on every host, the variable from frame 2 on, so a switch read where the mode is first needed behaves the same everywhere. A mode the game sets up in its init (a match length, a level) is applied when the switch is first seen, or given its own debug command (as coopplatformer's `level <n>`). Never cache a NULL from the first frame.
 
 `CW_WORKERS=n` runs every host with the same job pool (n workers besides the main thread). Native runs read it directly. A cart has no environment, so Chromium's page reports n + 1 as `navigator.hardwareConcurrency`, and the GPU sandbox shows wasmcart-run n + 1 online CPUs, the hardware threads it hands the cart. `tests/nav-determinism.mjs` runs gates this way at several pool sizes.
 
@@ -82,7 +101,7 @@ An array of gate objects. Every key `tests/gate.mjs` reads:
 | `controlInput` | a different input script for the control |
 | `startCmds` | debug-channel requests every host posts at load (`run-cart --start-cmds`), request i answered at the start of frame i + 2: how a test says what a real host would, e.g. `["touch_primary 1"]` for a phone |
 | `controlStartCmds` | the control run's start requests (default: none, so a `startCmds` gate's control runs without them) |
-| `env` | environment for every native run of the gate, controls too (a control's `controlEnv` wins): how a game picks one mode for a gate, a mini-game or a skill level, say. A cart has no environment, so such a gate is for `"hosts": ["native"]` |
+| `env` | environment for every run of the gate, controls too (a control's `controlEnv` wins): how a game picks one mode for a gate, a mini-game or a skill level, say. Native runs get it as their environment, a cart as the debug channel's `env` request (a game reads the switch from frame 2: `cw_test_env`, above) |
 | `controlEnv` | environment for the control run; a value `"repo:<path>"` names a repository file that is copied into `out/` first |
 | `webgpu` | `true` or `{hosts, skip, maxGt16, vsGl, maxArea, controls}`: the gate also runs on WebGPU (`tests/gate.mjs --gpu webgpu`): every host against native WebGPU, native GL against native WebGPU within `vsGl` (default 0.01), the dual cart on romdev told to use GL against native GL. Each of `controls` (`{"env": {...}}`) is a native WebGPU run that must fail on the picture against both references; one with `"fields": [...]` may instead fail on those state fields (each differing from both), for a feature whose effect has left the last frame (impostors switched off on WebGPU only, at the end of a sweep that ends with every mesh near: `vis-impostor`) |
 | `textFloor` | the text size floor (on by default for games: a games repository's apps, this repository's `games/` and a game's editor builds, `<game>_editor_*`): every run of the gate fails when any frame drew text under 18 px at 1080 lines, 1.7% of the canvas height (the state's `text.run_min_share`), naming the string. `false` turns it off, `true` turns it on for a sample, a number sets another floor (a share of the canvas height). See [localization and accessibility](guide:l10n-a11y), "Text size" |
@@ -100,7 +119,7 @@ A typical gate, from `tests/gates.json`:
 
 ### Text size
 
-`node tools/check-text.mjs <screens.json> [--scales 1,2] [--pref 1280x800] [--shots DIR]` walks a game's screens (each a native run that ends on one: the title, every menu, a stretch of play, pause, results) and reports the smallest text on each from the `text` debug request: body text under 26 px at 1080 lines (2.4%) fails unless the screens file lists it as `secondary`, and nothing may be under 18 px (1.7%). `--scales` runs every screen at each text scale, `--pref` as a host that prefers that frame (1280x800 is a 7 inch handheld), `--shots` keeps each screen's last frame for a contact sheet. In a games repository it ships in the host SDK: `CW_PROJECT_ROOT=$PWD node <host sdk>/tools/check-text.mjs tests/<game>-text.json` (its input scripts are read from that repository's `tests/`). The `text-floor` gate runs it on `samples/text_size` and on that sample with a 12 px line, which must fail.
+`node tools/check-text.mjs <screens.json> [--scales 1,2] [--shots DIR] [--gpu gl|webgpu]` walks a game's screens (each a run of the game's cart on romdev that ends on one, its `env` sent as the `env` request: the title, every menu, a stretch of play, pause, results) and reports the smallest text on each from the `text` debug request: body text under 26 px at 1080 lines (2.4%) fails unless the screens file lists it as `secondary`, and nothing may be under 18 px (1.7%). `--scales` runs every screen at each text scale, `--pref WxH` as a host that prefers that frame (1280x800 is a 7 inch handheld; romdev takes no preferred size from a client, so `--pref` needs `--host native`), `--shots` keeps each screen's last frame for a contact sheet. In a games repository it ships in the host SDK: `CW_PROJECT_ROOT=$PWD node <host sdk>/tools/check-text.mjs tests/<game>-text.json` (its input scripts are read from that repository's `tests/`). The `text-floor` gate runs it on `samples/text_size` and on that sample with a 12 px line, which must fail.
 
 ## Controls that must fail
 
@@ -114,10 +133,10 @@ Scripted gates run their own controls and print `CONTROL PASSED` (a failure) whe
 
 ## Flash check
 
-`tools/flash-check.mjs` checks that a run never strobes ([Localization and accessibility](guide:l10n-a11y) has the rules and how to make flashes that pass). It runs an app natively for N frames on the fixed clock, with an input script like any gate, and checks every frame from frame K (by default 2) in one-second windows:
+`tools/flash-check.mjs` checks that a run never strobes ([Localization and accessibility](guide:l10n-a11y) has the rules and how to make flashes that pass). It checks every frame of a run from frame K (by default 2) in one-second windows. A game's run belongs on romdev, which cannot hand over every frame of a run in ranged requests yet (a ranged frame capture is filed with romdev); taking frames one request at a time floods the shared server, so `--host romdev` (the default for `--app`) says so and exits 2. Until romdev has it, `--app <app> --host native` runs the engine's own samples natively, and `--dump` / `--dir` check frames captured already:
 
 ```text
-node tools/flash-check.mjs --app fx_explosion --frames 600 [--from 60] [--input script.json] [--gpu webgpu]
+node tools/flash-check.mjs --host native --app fx_explosion --frames 600 [--from 60] [--input script.json] [--gpu webgpu]
 node tools/flash-check.mjs --dump run.cwfd       # frames captured already (CW_FRAME_DUMP)
 node tools/flash-check.mjs --dir frames/         # a directory of PNG frames, one a frame
 ```
@@ -128,7 +147,7 @@ node tools/flash-check.mjs --dir frames/         # a directory of PNG frames, on
 - `--max-rise X` also bounds the hardest two-frame rise of a block's luminance (a hard onset rather than a swell).
 - The run must move (a frozen capture proves nothing), and every check runs its **control**: the same frames with an 8 Hz full-screen strobe laid over them must fail.
 
-`CW_FRAME_DUMP=file` (native, with `CW_FRAMES`) is how the frames are captured: every frame from `CW_FRAME_DUMP_FROM` on, box-filtered down by `CW_FRAME_DUMP_SCALE` (default 8) in linear light, appended raw. A games repository calls the same tool with `CW_PROJECT_ROOT` set, or imports `tools/lib/flash.mjs` (`flashGate`, `readFrameDump`, `analyseFrames`, `withStrobe`) for its own sweep. `tests/flash-check.mjs` holds the analyser to synthetic runs whose answers are known.
+`CW_FRAME_DUMP=file` (native, with `CW_FRAMES`) is how the frames are captured: every frame from `CW_FRAME_DUMP_FROM` on, box-filtered down by `CW_FRAME_DUMP_SCALE` (default 8) in linear light, appended raw. A games repository calls the same tool with `CW_PROJECT_ROOT` set, or imports `tools/lib/flash.mjs` (`flashGate`, `readFrameDump`, `analyseFrames`, `withStrobe`, and `boxDown`: a cart host's RGBA frame filtered as the native dump filters it) for its own sweep. `tests/flash-check.mjs` holds the analyser to synthetic runs whose answers are known.
 
 ## Unit suites
 
@@ -151,7 +170,7 @@ Some checks need more than one run: several processes, a tool, a timing report. 
 - `quality-sim-same`: the same replay at Very Low and High simulates the same bits. Control: `CW_TEST_QUALITY_INTO_SIM`.
 - `quality-grounding`: Very Low keeps the shadows High draws at the base of each caster (`CW_SHADOW_CONTACTS=1` and the `shadow_contacts` request put each caster's base on screen; `CW_TEST_NO_SHADOWS=1` draws the frame without them). A caster whose box stands around the camera (a ring of walls, a floor: the request marks it `around`) has no single base and is not judged; a long one (a wall, a fence, a row of stands: `along`) is judged at the point of its base line nearest the camera; `--centre` judges every caster at its box's middle, the old rule. `--preset` judges another preset than Very Low. Control: Very Low with no shadows.
 - `quality-grounding-judge`: the judge (`tools/lib/grounding.mjs`) on made-up frames, no GPU. Controls: the old rule fails a frame wrongly over a ring of walls around the camera and a long wall; no shadows fails; a wide caster that is neither is still judged at its middle.
-- `quality-range`: each preset's GPU time ([Profiling](guide:profiling)). Control: `CW_TEST_QUALITY_FLAT=1`.
+- `quality-range`: each preset's GPU time ([Profiling](guide:profiling)). Control: `CW_TEST_QUALITY_FLAT=1`. Native only: a cart on romdev has no GPU timer yet (the `pipeline` request reports `timer_query` false on both backends), so a game's gates leave the timing out until romdev can time a cart.
 - `quality-verylow-post`: on Very Low the height fog and FXAA run inside the tonemap pass, reported as fused, and the frame is the separate passes' (`CW_TEST_NO_FUSION=1`) but for FXAA's edges. Controls: `CW_TEST_VERYLOW_POST=fog` and `=aa` leave each step out of the fused pass and must break the bound.
 
 ## Gates of another repository

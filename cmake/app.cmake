@@ -262,7 +262,9 @@ function(cw_add_app name)
       # thread's view of the memory's size can lag another thread's growth,
       # and memset into the block would trap (src/core/mem.c)
       -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=aligned_alloc
-      -Wl,--wrap=posix_memalign)
+      -Wl,--wrap=posix_memalign
+      # a test's environment on a cart host: the debug channel's env request sets variables getenv reads (src/core/env.c)
+      -Wl,--wrap=getenv)
     # the asset dir is staged with its bundle manifest (cwfiles.txt: the file
     # list cw_vfs_list_dir reads, since a cart cannot list its bundle)
     set(_assets "")

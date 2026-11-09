@@ -6,7 +6,10 @@
 // native run one frame early (or with the control input) compared against
 // the reference must differ, or the gate cannot detect anything.
 //
-//   node tests/gate.mjs [gate-name ...] [--hosts native,romdev,chromium] [--gpu gl|webgpu] [--cpu]
+//   node tests/gate.mjs [gate-name ...] [--hosts native,romdev,chromium] [--gpu gl|webgpu|both] [--cpu]
+//
+// --hosts romdev: the romdev mode, every leg through romdev and no native run (romdevGates below): the dual cart
+// on GL is the reference, --gpu webgpu (or both) adds its WebGPU leg against it.
 //
 // --cpu: the CPU-only mode for state checks. No GPU is used and no GPU suite lock is taken (so it never queues
 // behind other suites): the native host runs on Mesa's software renderer (CW_TEST_GPU=software), only gates with
@@ -27,7 +30,10 @@ import { textFloorProblem, FLOOR_MIN } from '../tools/lib/text-floor.mjs';
 if (process.argv.includes('--cpu')) process.env.CW_TEST_GPU = 'software'; // see the header
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
-await takeSuiteLock('gate.mjs');
+// the romdev mode runs nothing on this machine's GPU itself (romdev's server does, as for every other client of it):
+// it does not queue behind the native suites
+const romdevMode = process.argv.includes('--hosts') && process.argv[process.argv.indexOf('--hosts') + 1] === 'romdev';
+if (!romdevMode) await takeSuiteLock('gate.mjs');
 // nothing a gate starts can reach the desktop (SDL offscreen, no DISPLAY / WAYLAND_DISPLAY / XAUTHORITY);
 // the guards watch the kernel log, the card's memory and the budgets (tools/lib/gpu-guard.mjs)
 testEnv(process.env);
@@ -68,12 +74,15 @@ const glHosts = (hosts, name, app) => usesHosts(hosts).filter((h) => !['chromium
 // --gates-file a.json,b.json (or CW_GATES_FILE): gate files in the project's tests/ in place of gates.json, so a
 // repository of several games keeps one file per game and they never collide
 const gatesArg = argv.includes('--gates-file') ? argv[argv.indexOf('--gates-file') + 1] : process.env.CW_GATES_FILE || 'gates.json';
-const gates = gatesArg.split(',').flatMap((f) => JSON.parse(readFileSync(join(PROJ, 'tests', f.trim()), 'utf8'))).filter((g) => !only.length || only.includes(g.name));
+const gates = gatesArg.split(',').flatMap((f) => JSON.parse(readFileSync(resolve(PROJ, 'tests', f.trim()), 'utf8'))).filter((g) => !only.length || only.includes(g.name));
 
 // the current gate's "env" (every native run of it, controls too; a control's controlEnv wins): how a game picks one
-// mode for a gate (a game, a skill level) without a build of its own. Carts have no environment, so such a gate
-// is for "hosts": ["native"].
+// mode for a gate (a game, a skill level) without a build of its own. A cart has no environment: the gate's "env"
+// reaches it as the debug channel's env request (run-cart --env), which fails a run whose game read a variable
+// before the request arrived (romdev: frame 2).
 let gateEnv = {};
+// the same environment as run-cart --env: a cart host gets it as the debug channel's env request (src/core/env.c)
+const envArg = (e) => (e && Object.keys(e).length ? ['--env', JSON.stringify(e)] : []);
 function run(args, env = {}) {
   return new Promise((res) => {
     const p = spawn('node', [join(ROOT, 'tools', 'run-cart.mjs'), ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...gateEnv, ...env } });
@@ -202,7 +211,7 @@ async function wgpuGates(list) {
     warnDropped(g.name + ' [webgpu]', hosts);
     await guard.gate(g.name + ' [webgpu]');
     gateEnv = g.env || {};
-    const common = ['--app', g.app, '--frames', String(g.frames), ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : [])];
+    const common = ['--app', g.app, '--frames', String(g.frames), ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : []), ...envArg(g.env)];
     if (g.input) common.push('--input', join(PROJ, 'tests', g.input));
     if (g.startCmds) common.push('--start-cmds', g.startCmds.join(';'));
     if (g.assets) common.push('--assets', join(PROJ, g.assets));
@@ -314,6 +323,101 @@ async function wgpuGates(list) {
   }
   return failedW;
 }
+// ── the romdev mode (--hosts romdev) ─────────────────────────────────────
+// Every leg on romdev, no native run: the dual cart on GL is the reference (its state against the gate's expect
+// block, its frame a real picture, the text floor, missing program states, prompt errors), and the control (one
+// frame short, or the control input, start requests and environment) on romdev GL must differ from it. With
+// --gpu webgpu (or both) the same cart runs again on WebGPU: the same checks on its own state, named state EXACT
+// against the GL run (the gate's fields), frames within webgpu.vsGl (default 0.01) and webgpu.maxArea, and its own
+// control must differ from it. The gate's "env" reaches the cart through the debug channel's env request
+// (run-cart --env), so a gate whose game reads a variable before frame 2 fails, naming it.
+// A gate whose hosts / skip list leaves romdev out is skipped (said, never counted as passing); so are tool
+// gates (a script picks its own hosts) and webgpu.controls (native fault injections).
+async function romdevGates(list) {
+  const gpus = gpuArg === 'gl' ? ['gl'] : ['gl', 'webgpu'];
+  let failedR = 0, ran = 0;
+  const skipped = [];
+  for (const g of list) {
+    if (g.script) { skipped.push(`${g.name} (a tool gate: run ${g.script})`); continue; }
+    const eligible = g.hosts || ['native', 'romdev', 'chromium'];
+    if (!eligible.includes('romdev') || (g.skip || []).includes('romdev')) { skipped.push(`${g.name} (its hosts / skip list leaves romdev out)`); continue; }
+    if (!dualCart(g.app)) { skipped.push(`${g.name} (no cart: build/cart-wgpu/carts/${g.app}.wasc)`); continue; }
+    const legs = g.gl === false ? ['webgpu'] : gpus.filter((x) => x === 'gl' || g.webgpu !== false);
+    await guard.gate(g.name + ' [romdev]');
+    ran++;
+    gateEnv = {}; // nothing native runs: the environment goes to the cart as an env request
+    const w = g.webgpu && g.webgpu !== true ? g.webgpu : {};
+    const common = ['--host', 'romdev', '--app', g.app, ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : [])];
+    const runArgs = ['--frames', String(g.frames), ...(g.input ? ['--input', join(PROJ, 'tests', g.input)] : []),
+      ...(g.startCmds ? ['--start-cmds', g.startCmds.join(';')] : []), ...envArg(g.env)];
+    const ctlFrames = g.controlFrames ?? (g.controlInput ? g.frames : g.frames - 1);
+    const ctlInput = g.controlInput || g.input;
+    const ctlCmds = g.controlStartCmds || g.startCmds;
+    const ctlEnvObj = { ...(g.env || {}), ...(g.controlEnv || {}) };
+    const problems = [], notes = [];
+    if (Object.values(ctlEnvObj).some((v) => typeof v === 'string' && v.startsWith('repo:'))) problems.push('controlEnv names a repository file (repo:): a cart cannot read the host\'s files');
+    const ctlArgs = ['--frames', String(ctlFrames), ...(ctlInput ? ['--input', join(PROJ, 'tests', ctlInput)] : []),
+      ...(ctlCmds ? ['--start-cmds', ctlCmds.join(';')] : []), ...envArg(ctlEnvObj)];
+    if (w.controls && w.controls.length) notes.push(`${w.controls.length} webgpu.controls not run (native fault injections)`);
+    const leg = {};
+    for (const gpu of legs) {
+      const q = { shot: join(OUT, `${g.name}.romdev-${gpu}.png`), state: join(OUT, `${g.name}.romdev-${gpu}.json`) };
+      const r = await run([...common, '--gpu', gpu, ...runArgs, '--shot', q.shot, '--state', q.state]);
+      if (r.code !== 0) { problems.push(`romdev ${gpu}: run failed: ${r.err.trim().split('\n').slice(-3).join(' | ')}`); continue; }
+      leg[gpu] = { ...q, img: readImage(q.shot), st: JSON.parse(readFileSync(q.state, 'utf8')) };
+      const L = leg[gpu];
+      if (uniqueColors(L.img) < (g.minColors || 2)) problems.push(`romdev ${gpu} frame has ${uniqueColors(L.img)} colours: not a real picture`);
+      if (!Object.keys(L.st).length) problems.push(`romdev ${gpu} state is empty`);
+      if (gpu === 'webgpu' && L.st['cw.gpu.api'] !== 2) problems.push(`romdev webgpu run used gpu api ${L.st['cw.gpu.api']}, not WebGPU`);
+      checkMissing(problems, g.app, [[`romdev ${gpu}`, q.state]]);
+      checkPromptErrors(problems, g, [[`romdev ${gpu}`, q.state]]);
+      checkTextFloor(problems, g, [[`romdev ${gpu}`, q.state]]);
+      for (const [k, v] of Object.entries(g.expect || {}))
+        if (JSON.stringify(L.st[k]) !== JSON.stringify(v)) problems.push(`romdev ${gpu} ${k} = ${JSON.stringify(L.st[k])}, expected ${JSON.stringify(v)}`);
+      // the control on the same backend: it must differ from this run
+      const c = { shot: join(OUT, `${g.name}.romdev-${gpu}.control.png`), state: join(OUT, `${g.name}.romdev-${gpu}.control.json`) };
+      const cr = await run([...common, '--gpu', gpu, ...ctlArgs, '--shot', c.shot, '--state', c.state]);
+      if (cr.code !== 0) { problems.push(`romdev ${gpu} control run failed: ${cr.err.trim().split('\n').slice(-3).join(' | ')}`); continue; }
+      const ci = readImage(c.shot), cs = JSON.parse(readFileSync(c.state, 'utf8'));
+      const d = diffImages(L.img, ci), sd = stateDiff(L.st, cs, g.tol ?? 0, g.fields);
+      if (d.comparable && d.any === 0 && !sd.length) problems.push(`CONTROL PASSED (romdev ${gpu}): the gate cannot tell a different run apart`);
+      else notes.push(`${gpu} control differs: ${d.comparable ? (d.gt16 * 100).toFixed(2) + '% of pixels > 16' : d.reason}${sd.length ? `, state ${sd.slice(0, 2).join('; ')}` : ''}`);
+      leg[gpu].ctl = { img: ci, st: cs };
+    }
+    // WebGPU against GL, the same cart on the same host
+    if (leg.gl && leg.webgpu) {
+      const vsGl = w.vsGl ?? 0.01;
+      const fields = g.fields || Object.keys(leg.gl.st).filter((k) => !/^(dbg|host|cw\.gpu)\./.test(k) && !/^text\..*_where$/.test(k));
+      const dg = diffImages(leg.gl.img, leg.webgpu.img);
+      if (!dg.comparable) problems.push(`WebGPU vs GL: ${dg.reason}`);
+      else if (dg.gt16 > vsGl) problems.push(`WebGPU vs GL: ${(dg.gt16 * 100).toFixed(3)}% pixels differ by >16 (bound ${vsGl * 100}%)`);
+      else notes.push(`WebGPU vs GL ${(dg.gt16 * 100).toFixed(2)}% (bound ${(vsGl * 100).toFixed(1)}%)`);
+      if (w.maxArea !== undefined) {
+        const da = diffAreas(leg.gl.img, leg.webgpu.img);
+        if (da.comparable && da.share > w.maxArea) problems.push(`WebGPU vs GL: ${(da.share * 100).toFixed(3)}% of the frame in solid areas that differ (bound ${w.maxArea * 100}%)`);
+      }
+      const sg = stateDiff(leg.gl.st, leg.webgpu.st, g.tol ?? 0, fields);
+      if (sg.length) problems.push(`WebGPU vs GL: state ${sg.slice(0, 4).join('; ')}`);
+      // the WebGPU control against GL: the GL-vs-WebGPU comparison must see it too
+      if (leg.webgpu.ctl) {
+        const dv = diffImages(leg.gl.img, leg.webgpu.ctl.img), sv = stateDiff(leg.gl.st, leg.webgpu.ctl.st, g.tol ?? 0, fields);
+        if (dv.comparable && dv.gt16 <= vsGl && !sv.length) problems.push('CONTROL PASSED: the WebGPU-vs-GL check cannot tell the WebGPU control apart');
+      }
+    }
+    if (problems.length) { failedR++; console.log(`FAIL ${g.name} [romdev ${legs.join('+')}]\n  ${problems.join('\n  ')}`); }
+    else console.log(`ok   ${g.name} [romdev ${legs.join('+')}]: ${notes.join('; ')}`);
+  }
+  for (const s of skipped) console.log(`SKIP ${s}`);
+  if (!ran) { console.log('FAIL --hosts romdev ran no gate'); return 1; }
+  return failedR;
+}
+if (hostsArg && !hostsArg.includes('native')) {
+  if (hostsArg.join() !== 'romdev') { console.log('FAIL without native, --hosts takes romdev alone (the romdev mode: its GL run is the reference)'); guard.finish(); process.exit(2); }
+  const f = await romdevGates(gates);
+  guard.finish();
+  process.exit(f ? 1 : 0);
+}
+
 if (gpuArg === 'webgpu') {
   // a gate named on the command line that has no "webgpu" entry would be skipped in silence, and a run of nothing but
   // such gates would pass: say which, and fail when none of the named gates has a WebGPU leg
@@ -358,7 +462,7 @@ for (const g of gates) {
   const hosts = glHosts((hostsArg ? hostsArg.filter((h) => eligible.includes(h)) : eligible).filter((h) => !(g.skip || []).includes(h)), g.name, g.app);
   if (chromiumOnly && !hosts.includes('chromium')) continue;
   warnDropped(g.name, hosts);
-  const common = ['--app', g.app, '--frames', String(g.frames), ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : [])];
+  const common = ['--app', g.app, '--frames', String(g.frames), ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : []), ...envArg(g.env)];
   if (g.input) common.push('--input', join(PROJ, 'tests', g.input));
   if (g.startCmds) common.push('--start-cmds', g.startCmds.join(';'));
   if (g.assets) common.push('--assets', join(PROJ, g.assets)); // native asset root when it is not samples/<app>/assets
