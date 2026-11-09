@@ -142,7 +142,7 @@ Water follows the effects detail setting of the graphics settings ([cartwheel/qu
 
 The view from under the water (its fog and waterline) is the same on every preset: it is one cheap full-screen pass, and it keeps what a player can see the same.
 
-Each planar view is one more render of the scene at that size, so its cost is the scene's cost times the share of pixels.
+Each planar view is one more render of the scene at that size, so its cost is the scene's cost times the share of pixels. The pass timers put that render in the "water" pass on both backends (on WebGPU it was untimed before 0.39.0, so the pass read a few hundredths of a millisecond). On GL the water pass can also carry the frame's three.c shadow maps: the refraction is then the frame's first render, which draws them, and without it the depth prepass does. In Ember Throne's marsh the GL water pass read 0.40 ms, about half of it the refraction and half the shadow maps that otherwise land in the prepass; the refraction alone cost about the same on both backends (0.2 ms).
 
 Measured on the 890M with `water_boat` (a 120 m water of 400 subdivisions, the 1080p output at each preset's resolution), GPU ms per frame:
 

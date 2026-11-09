@@ -22,6 +22,9 @@ typedef struct refl_probe {
   int age;                 /* frames since the last capture */
   bool requested;
   int captures;
+  /* a capture spread over frames (EVERY_N_FRAMES): three.c's scene job, drawing into rt[front ^ 1] */
+  t3_pmrem_scene_job *job;
+  int job_size, job_per_frame; /* its cube size, steps a frame */
 } refl_probe;
 
 typedef struct probe_grid {
@@ -55,6 +58,7 @@ typedef struct gi_tree {
   bool gbuf_ok, albedo_ok; /* drawn this frame */
   int mode;
   int bound_max;
+  bool faces_drawn; /* this frame drew scene faces for a probe (a capture or a job's step) */
   cw_gi_stats stats;
 } gi_tree;
 

@@ -446,17 +446,17 @@ Both read a G-buffer the "gi" pass draws after the probes: the scene a second ti
 | SSR | off | half the march steps | as authored | 1.5 x the steps |
 | SSGI | off | off | off | as authored |
 
-The cost, GPU ms per frame on an AMD Radeon 890M (integrated) at 1280 x 720, `samples/gi_room` through `tests/gi-perf.mjs` (GL, the probes' pass averaged over frames with and without a capture; measured on a quiet machine (load 3)):
+The cost, GPU ms per frame on an AMD Radeon 890M (integrated) at 1280 x 720, `samples/gi_room` through `tests/gi-perf.mjs` (GL, the probes' pass averaged over frames with and without a capture). Measured on a loaded machine (load 18, the GPU's clock lower than on a quiet one: the frame without probes took 2.85 ms here and 1.8 on a quiet machine, so read the rows against that one; [Profiling](guide:profiling) says why):
 
 | Preset | gi pass (probes, grid, G-buffer) | SSR | SSGI | Whole frame |
 |---|---|---|---|---|
-| Low | 0.5 | off | off | 1.8 |
-| Medium | 1.2 | 0.5 | off | 3.1 |
-| High | 2.0 | 1.1 | off | 5.0 |
-| Ultra | 3.8 | 1.4 | 6.5 | 16.5 |
-| No probes, grid, SSR or SSGI (High) | | | | 1.8 |
+| Low | 0.1 | off | off | 2.9 |
+| Medium | 1.1 | 1.1 | off | 4.8 |
+| High | 1.4 | 1.5 | off | 5.6 |
+| Ultra | 4.7 | 1.7 | 7.4 | 19.8 |
+| No probes, grid, SSR or SSGI (High) | | | | 2.85 |
 
-The gi pass on High is two probe captures every other frame (r187's PMREM makes them at least 256 pixels a face) and the half-resolution G-buffer; Ultra doubles the capture size and budget and draws the G-buffer twice (SSGI needs the diffuse colour). Most of SSGI's time is the trace's fetches of the lit colour and the normal at the scattered steps, so it reads the colour from a half-resolution copy and the normals from a two-channel one, and its loops have fixed counts the compiler unrolls. A Vega 8 has about half the 890M's shader rate: expect about twice these numbers, so Low to High fit a 60 Hz frame there and Ultra (SSGI above all) is for discrete GPUs.
+The gi pass on High is two probe captures every other frame, each at the probe's own `resolution` (r187's PMREM would make it at least 256 pixels a face) and each spread over the two frames, and the half-resolution G-buffer. A capture's filtered levels are drawn together in one target (three.c 0.187.6), which with the honoured size and the spreading took a mirror-ball table's worst frame (a probe of 128 refreshed every third frame) from 8.5 to 4.3 ms on GL and from 10.0 to 4.9 ms on WebGPU at 1080p, and the probe's share of the average frame from 1.24 to 0.33 ms (GL) and 1.74 to 0.38 ms (WebGPU); Ultra doubles the capture size and budget and draws the G-buffer twice (SSGI needs the diffuse colour). Most of SSGI's time is the trace's fetches of the lit colour and the normal at the scattered steps, so it reads the colour from a half-resolution copy and the normals from a two-channel one, and its loops have fixed counts the compiler unrolls. A Vega 8 has about half the 890M's shader rate: expect about twice these numbers, so Low to High fit a 60 Hz frame there and Ultra (SSGI above all) is for discrete GPUs.
 
 
 ## Far views: the reversed depth buffer

@@ -55,8 +55,8 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
 
   // textures: what the C side binds by these names
   // the C side's textures must be made with these settings (r187 bakes filters and wrapping into the code)
-  const uintTex = (name) => {
-    const t = new THREE.DataTexture(new Uint32Array(4), 2, 2, THREE.RedIntegerFormat, THREE.UnsignedIntType);
+  const uintTex = (name, rgba = false) => {
+    const t = new THREE.DataTexture(new Uint32Array(rgba ? 16 : 4), 2, 2, rgba ? THREE.RGBAIntegerFormat : THREE.RedIntegerFormat, THREE.UnsignedIntType);
     t.name = 'ext.' + name;
     t.needsUpdate = true;
     return t;
@@ -168,6 +168,7 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   }
 
   const ctlMap = uintTex('terrainControl');
+  const pairMap = uintTex('terrainPair', true);
   // the layers: albedo + height (sRGB-encoded data, decoded here) and normal + roughness, one array
   // layer each
   const albedoArr = arrayTex('terrainAlbedo'), normalArr = arrayTex('terrainLayerNormals');
@@ -189,6 +190,9 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   };
 
   // Terrain3D's uv scale steps: 0 = 1x, then +20 % .. -60 %
+  // the share of a stochastic cell's barycentric weight that fades it out early (sampleLayer)
+  const CELL_EDGE = float(0.2);
+
   const scaleOf = (s) => select(s.lessThan(0.5), float(1), select(s.lessThan(4.5), float(1).add(s.mul(0.2)), float(1).sub(s.sub(4).mul(0.2))));
 
   // one layer sample, by explicit gradients (legal in non-uniform control flow on WebGPU)
@@ -212,7 +216,20 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
       vec3(float(1).sub(f.x).sub(f.y), f.x, f.y));
     const offset = (p) => fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))).mul(43758.5453));
     const tex = (p) => texture(image, uv.add(offset(p))).depth(int(id)).grad(gx, gy);
-    const t = tex(a).mul(w.x).add(tex(b).mul(w.y)).add(tex(c).mul(w.z));
+    // Two reads in place of three: each cell's share is its barycentric weight less a floor, renormalized, and the
+    // floor is CELL_EDGE or the least of the three weights, whichever is more, so the least-weighted cell's share
+    // is always 0 and it is never read. Away from a triangle's middle (the least weight under CELL_EDGE) that is
+    // the three-cell blend with each cell fading out a little sooner; round the middle the two others carry it,
+    // meeting at the very centre. The shares stay continuous (where two weights tie for least, both shares are 0),
+    // the cells and their offsets are the same, and the two reads are issued together (no branch between them).
+    const leastA = w.x.lessThanEqual(w.y).and(w.x.lessThanEqual(w.z)), leastB = leastA.not().and(w.y.lessThanEqual(w.z));
+    const p = select(leastA, b, a), q = select(leastA.or(leastB), c, b);
+    const wp = select(leastA, w.y, w.x), wq = select(leastA.or(leastB), w.z, w.y);
+    const floorW = max(CELL_EDGE, min(min(w.x, w.y), w.z));
+    const kp = max(wp.sub(floorW), 0), kq = max(wq.sub(floorW), 0), ks = kp.add(kq);
+    // (the exact centre, where both are 0: an even mix of the two)
+    const sp = select(ks.greaterThan(1e-6), kp.div(max(ks, 1e-6)), float(0.5)).toVar();
+    const t = tex(p).mul(sp).add(tex(q).mul(float(1).sub(sp)));
     return nrm ? t : vec4(sRGBTransferEOTF(t.rgb), t.a);
   };
 
@@ -352,28 +369,33 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
       // bilinearly: where layers met, that drew diamonds the size of a control texel).
       const t = tcoord.sub(0.5);
       const i0 = floor(t), f = fract(t);
-      const ld = (ix, iz) => {
-        const c = decode(textureLoad(ctlMap, ivec2(clamp(i0.x.add(ix), 0, hgt.z), clamp(i0.y.add(iz), 0, hgt.w))));
-        return { base: c.base.toVar(), over: c.over.toVar(), blend: c.blend.toVar(), angle: c.angle, scl: c.scl };
-      };
-      const taps = [ld(0, 0), ld(1, 0), ld(0, 1), ld(1, 1)];
       const fx = f.x, fz = f.y, gx1 = float(1).sub(fx), gz1 = float(1).sub(fz);
-      const w = [gx1.mul(gz1), fx.mul(gz1), gx1.mul(fz), fx.mul(fz)];
-      // the nearest texel (the weights' largest)
-      const nx = fx.greaterThan(0.5), nz = fz.greaterThan(0.5);
-      const pick = (k) => select(nz, select(nx, k(taps[3]), k(taps[2])), select(nx, k(taps[1]), k(taps[0])));
-      const near = { base: pick((c) => c.base), over: pick((c) => c.over), angle: pick((c) => c.angle), scl: pick((c) => c.scl) };
-      const share = (c, L) => select(c.base.equal(L), float(1).sub(c.blend), float(0)).add(select(c.over.equal(L), c.blend, float(0)));
-      const weight = (L) => share(taps[0], L).mul(w[0]).add(share(taps[1], L).mul(w[1])).add(share(taps[2], L).mul(w[2])).add(share(taps[3], L).mul(w[3]));
+      const w4 = vec4(gx1.mul(gz1), fx.mul(gz1), gx1.mul(fz), fx.mul(fz));
+      // the nearest texel (the weights' largest): its base layer is A, its uv angle and scale the point's
+      const nx = select(fx.greaterThan(0.5), float(1), float(0)), nz = select(fz.greaterThan(0.5), float(1), float(0));
+      const nc = decode(textureLoad(ctlMap, ivec2(clamp(i0.x.add(nx), 0, hgt.z), clamp(i0.y.add(nz), 0, hgt.w))));
+      const near = { base: nc.base, angle: nc.angle, scl: nc.scl };
+      // every layer's share at the cell's four texels, made on the CPU (terrain_render.c, pair_rows): up to three
+      // layers, each with its share at the four corners (a byte each, the texels in w4's order), so a layer's weight
+      // is one dot product. The cell of i0 is texel i0 + 1 (the one past the edge, i0 = -1, has its own)
+      const pc = textureLoad(pairMap, ivec2(clamp(i0.x.add(1), 0, hgt.z.add(1)), clamp(i0.y.add(1), 0, hgt.w.add(1))));
+      const ids = pc.x;
+      const count = float(ids.bitAnd(uint(3)));
+      const lw = (word) => dot(vec4(float(word.bitAnd(uint(255))), float(word.shiftRight(uint(8)).bitAnd(uint(255))),
+        float(word.shiftRight(uint(16)).bitAnd(uint(255))), float(word.shiftRight(uint(24)))).div(255), w4);
+      const lid = (j) => float(ids.shiftRight(uint(2 + 3 * j)).bitAnd(uint(7)));
       const A = near.base.toVar();
-      const wA = weight(A).toVar();
+      const wA = float(0).toVar();
       const B = A.toVar(), wB = float(0).toVar();
-      for (const cand of [near.over, taps[0].base, taps[1].base, taps[2].base, taps[3].base, taps[0].over, taps[3].over]) {
-        const wc = weight(cand);
-        const better = cand.notEqual(A).and(wc.greaterThan(wB));
-        B.assign(select(better, cand, B));
-        wB.assign(select(better, wc, wB));
-      }
+      [pc.y, pc.z, pc.w].forEach((word, j) => {
+        const L = lid(j), wl = lw(word);
+        const live = count.greaterThan(j + 0.5);
+        wA.addAssign(select(live.and(L.equal(A)), wl, float(0)));
+        // B: the strongest other layer (the first of equals, in the list's order)
+        const better = live.and(L.notEqual(A)).and(wl.greaterThan(wB));
+        B.assign(select(better, L, B));
+        wB.assign(select(better, wl, wB));
+      });
       const a = layerAt(A, near, g);
       pAlb.assign(a.alb);
       pNrm.assign(a.nrm);

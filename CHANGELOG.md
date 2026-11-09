@@ -4,6 +4,20 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.39.0 (2026-11-09)
+
+### Changed
+- **Reflection probe captures cost a fraction of what they did, and no frame pays for a whole one.** three.c 0.187.6 draws a capture's filtered levels side by side in one target and copies them into the cube (each of the 30 face-and-level passes used to wait for the one before it), and copies level 0 instead of filtering it. A ReflectionProbe3D now captures at its own `resolution` (r187's `fromScene` raised every capture to 256 a face, so a 64 or 128 probe paid for 256). An EVERY_N_FRAMES probe refreshed every 2 frames or more spreads each capture over those frames (a few faces of the scene a frame, the filter in a frame of its own); a first capture, a new size or a request is still made whole. The faces use the shadow maps as the last frame drew them (`t3_renderer_set_shadow_hold`), so a capture draws no shadow pass of its own. A mirror-ball pinball table at 1080p High on the 890M (a 128 probe every third frame): the worst frame from 8.5 to 4.3 ms on GL and from 10.0 to 4.9 ms on WebGPU, the window's mean from 3.5 to 3.0 ms (GL) and 4.3 to 3.3 ms (WebGPU). A 128 capture reflects a little less sharply than the 256 it used to be raised to; set `resolution = 256` to keep that, now at about two thirds of its old cost.
+- **Terrain: two reads a map for the stochastic tiling, not three.** The least-weighted of a point's three cells has no share and is not read; the other two are read together. The cells and their offsets are unchanged, the ground looks the same (a pebbled path or a flagstone floor is a little crisper: no ghost of a third offset under it), and Ember Throne's meadow scene pass went from 4.43 to 3.71 ms on GL and 4.06 to 3.80 ms on WebGPU (interleaved rounds, a loaded machine, the GPU near 900 MHz). Which two layers a point blends is worked out on the CPU per control cell (a new `pair` texture, rebuilt with the control map): the shader reads one control texel and that cell instead of searching seven candidates over four texels. Projects with terrain regenerate their program tables to get both (an older table still draws as before).
+- **The sun disk is drawn only where it can be** (the scissored box round its disk), on GL and WebGPU: the same pixels lit, nothing else shaded. Ember Throne's meadow: `sky_sun` 0.07 to 0.04 ms on GL, 0.29 to 0.11 ms on WebGPU. What WebGPU's pass timers still give `sky_sun` beyond that is the wait for the scene before it: with the sun's pass skipped, that time shows in the next pass instead.
+
+### Fixed
+- **WebGPU pass timers time the water's refraction.** three.c's render of the scene under the water ran on the frame encoder with no timestamps, so the "water" pass read only its depth copy (0.03 ms) where GL read the whole render; it is now timed as a span of the pass (0.22 ms in Ember Throne's marsh). GL's water pass there (0.40 ms) is that render and the frame's shadow maps, which the frame's first render draws (the depth prepass when there is no refraction).
+
+### Added
+- **`tools/lib/gpu-clock.mjs`**: the test GPU's shader clock sampled while a run measures GPU time (`gpuClock`, `clockLine`). An integrated GPU's clock follows how busy it is, so a CPU-bound run on a loaded machine reads every pass at the floor clock (600 to 700 MHz of the 890M's 2900) and two to three times slower. The profiling guide's new section says how to time GPU work so the numbers hold: A and B back to back in one hold of the suite lock, the clock and the load beside every time, medians of window means, a control that must fail. Neither `CW_WGPU_POWER` nor a pool's `CW_GPU_POWER` moves the clock (measured: the same runs at the same clocks).
+- `samples/gi_probe_check`: `GI_EVERY` and `GI_RES`; `tests/gi-probe.mjs` checks captures spread over frames against a whole one, and a 64 capture against the known walls.
+
 ## v0.38.9 (2026-11-08)
 
 ### Removed

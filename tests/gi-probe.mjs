@@ -7,7 +7,10 @@
 //      ceiling, bottom floor), with box projection; a point left of the
 //      ball's middle reaches the +z wall with box projection and the -x wall
 //      without it (GI_BOX=0), so box projection is seen to act. Control:
-//      GI_PROBE=0 (intensity 0) must fail the same checks.
+//      GI_PROBE=0 (intensity 0) must fail the same checks. The same with
+//      captures spread over frames (GI_EVERY=3), which must also match the
+//      whole capture's frame (the control: against the probe off it cannot),
+//      and with a 64 cube (GI_RES=64).
 //   2. gi_room: the light probe grid's bounce light tints the ceiling red by
 //      the red wall and green by the green one; with the grid's intensity at
 //      0 (the control) the tint must be gone.
@@ -75,6 +78,20 @@ for (const gpu of ['gl', 'webgpu']) {
   const off = run('gi_probe_check', gpu, 10, `check.off.${gpu}`, { GI_PROBE: '0' });
   const c = off.err ? [off.err] : ballProblems(off.img, BALL);
   report(c.length > 0, `${gpu}: control (probe intensity 0) fails the ball checks (${c.length} of ${BALL.length} wrong)`);
+  // captures spread over frames (EVERY_N_FRAMES 3: a few faces a frame, the filter in a frame of its own) make the
+  // capture a whole one makes: the same walls, the same picture of this still box; and a 64 cube (below r187's 256)
+  // still shows every wall where it is
+  const sliced = run('gi_probe_check', gpu, 40, `check.every3.${gpu}`, { GI_EVERY: '3' });
+  if (sliced.err || box.err) report(false, `${gpu}: sliced captures: ${sliced.err}`);
+  else {
+    const s = ballProblems(sliced.img, BALL), d = diffImages(box.img, sliced.img), dOff = off.err ? null : diffImages(off.img, sliced.img);
+    report(!s.length && sliced.state['gi.captures'] >= 8 && d.gt16 < 0.002,
+      `${gpu}: captures spread over 3 frames (${sliced.state['gi.captures']} in 40 frames) show the walls where they are and match the whole capture (${(d.gt16 * 100).toFixed(3)}% over 16 levels)${s.length ? ': ' + s.join('; ') : ''}`);
+    report(dOff && dOff.gt16 >= 0.002, `${gpu}: control: the same comparison against the probe off sees a difference (${dOff ? (dOff.gt16 * 100).toFixed(3) : '?'}%)`);
+  }
+  const small = run('gi_probe_check', gpu, 10, `check.res64.${gpu}`, { GI_RES: '64' });
+  const sp = small.err ? [small.err] : ballProblems(small.img, BALL);
+  report(!sp.length, `${gpu}: a 64-pixel capture shows the six walls where they are${sp.length ? ': ' + sp.join('; ') : ''}`);
 }
 
 // ── 2. bounce light ──

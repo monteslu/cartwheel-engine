@@ -19,6 +19,7 @@ typedef struct tr_gpu {
   t3_instanced_mesh *im[2][2]; /* [far][half] */
   int cap[2][2];
   t3_texture *heights, *normals, *control, *macro, *albedo, *lnormal;
+  t3_texture *pair; /* (nx + 1) x (nz + 1) RGBA32UI: each control cell's layers and their shares (terrain_render.c, pair_rows) */
   int mw, mh, mdiv;
   int near_q;                  /* the quality the near material's program is for */
 } tr_gpu;

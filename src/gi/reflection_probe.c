@@ -122,34 +122,82 @@ static void mask_walk(t3_object *o, uint32_t mask, mask_list *changed) {
   for (int i = 0; i < o->child_count; i++) mask_walk(o->children[i], mask, changed);
 }
 
-static bool capture(gi_tree *g, cw_pass_ctx *ctx, cw_node n, refl_probe *p) {
+/* around three.c's drawing for a probe: its own command buffers (WebGPU) or its own GL state, so the cached state is
+ * forgotten either way; the probe's cull_mask applied, and put back after. The shadow maps are held: the faces use
+ * the maps as the last frame drew them (with every caster, where a map drawn here would miss what cull_mask hides)
+ * and the frame's own render draws this frame's, so a capture costs no shadow pass of its own */
+static void capture_begin(gi_tree *g, cw_pass_ctx *ctx, refl_probe *p, mask_list *changed) {
   t3_renderer *r = ctx->renderer;
-  float c[3], h[3], o[3];
-  probe_box(n, p, c, h, o);
-  bool wgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
-  /* three.c draws the capture on command buffers of its own (WebGPU) or with
-   * its own GL state: forget the cached state either way */
-  if (wgpu) t3_renderer_set_external_encoder(r, 0);
+  t3_renderer_set_shadow_hold(r, true);
+  if (cw_gpu_backend() == CW_GPU_WEBGPU) t3_renderer_set_external_encoder(r, 0);
   else t3_renderer_reset_bindings(r);
   if (!g->pmrem) g->pmrem = t3_pmrem_generator_new(r);
-  mask_list changed = { 0 };
-  if (p->cull_mask != -1) mask_walk(&ctx->scene3d->base, (uint32_t)p->cull_mask, &changed);
-  int size = probe_size(p);
+  if (p->cull_mask != -1) mask_walk(&ctx->scene3d->base, (uint32_t)p->cull_mask, changed);
+}
+static void capture_end(cw_pass_ctx *ctx, mask_list *changed) {
+  for (int i = 0; i < changed->count; i++) changed->data[i].o->layers = changed->data[i].layers, changed->data[i].o->visible = changed->data[i].visible;
+  cw_array_free(changed);
+  t3_renderer_set_shadow_hold(ctx->renderer, false);
+  if (cw_gpu_backend() != CW_GPU_WEBGPU) t3_renderer_reset_bindings(ctx->renderer);
+}
+/* a finished PMREM becomes the front target (the scene sampled the old one while it was drawn) */
+static void capture_done(refl_probe *p, t3_render_target *next, int size) {
   int back = p->front ^ 1;
-  /* drawn into the back target while the scene samples the front one */
-  t3_render_target *next = t3_pmrem_from_scene_ex(g->pmrem, ctx->scene3d, 0, p->near, p->far,
-                                                  &(t3_pmrem_scene_options){ .size = size, .position = { o[0], o[1], o[2] },
-                                                                             .render_target = p->rt[back] });
-  for (int i = 0; i < changed.count; i++) changed.data[i].o->layers = changed.data[i].layers, changed.data[i].o->visible = changed.data[i].visible;
-  cw_array_free(&changed);
-  if (!wgpu) t3_renderer_reset_bindings(r);
-  if (!next) return false;
   if (p->rt[back]) t3_release(p->rt[back]);
   p->rt[back] = next;
   p->front = back;
   p->size_now = size;
   p->captures++;
+}
+/* the cube below 256 too: the probe's resolution (as its quality preset scales it) is the size drawn */
+static t3_pmrem_scene_options capture_options(cw_node n, refl_probe *p, int size) {
+  float c[3], h[3], o[3];
+  probe_box(n, p, c, h, o);
+  return (t3_pmrem_scene_options){ .size = size, .position = { o[0], o[1], o[2] }, .render_target = p->rt[p->front ^ 1], .min_size = 16 };
+}
+
+/* a whole capture in this frame */
+static bool capture(gi_tree *g, cw_pass_ctx *ctx, cw_node n, refl_probe *p) {
+  mask_list changed = { 0 };
+  capture_begin(g, ctx, p, &changed);
+  int size = probe_size(p);
+  /* drawn into the back target while the scene samples the front one */
+  t3_pmrem_scene_options so = capture_options(n, p, size);
+  t3_render_target *next = t3_pmrem_from_scene_ex(g->pmrem, ctx->scene3d, 0, p->near, p->far, &so);
+  capture_end(ctx, &changed);
+  g->faces_drawn = true;
+  if (!next) return false;
+  capture_done(p, next, size);
   return true;
+}
+
+/* a capture spread over the frames until the probe is due again (EVERY_N_FRAMES): a face or a few of the scene a
+ * frame, then the filtered levels in a frame of their own, so no frame carries the whole capture. The faces are
+ * drawn in the frames of their steps; the scene samples the last finished capture until the new one is done. */
+static void job_start(gi_tree *g, cw_pass_ctx *ctx, cw_node n, refl_probe *p, int frames) {
+  if (!g->pmrem) g->pmrem = t3_pmrem_generator_new(ctx->renderer);
+  if (!p->job) p->job = t3_pmrem_scene_job_new(g->pmrem);
+  p->job_size = probe_size(p);
+  t3_pmrem_scene_options so = capture_options(n, p, p->job_size);
+  t3_pmrem_scene_job_start(p->job, 0, p->near, p->far, &so);
+  int steps = t3_pmrem_scene_job_steps_left(p->job);
+  if (frames > steps) frames = steps;
+  p->job_per_frame = (steps + frames - 1) / frames;
+}
+/* this frame's steps of a probe's job; true when it finished the capture */
+static bool job_step(gi_tree *g, cw_pass_ctx *ctx, refl_probe *p) {
+  mask_list changed = { 0 };
+  capture_begin(g, ctx, p, &changed);
+  /* the faces' steps come first: a step with any of them draws the scene */
+  if (t3_pmrem_scene_job_steps_left(p->job) > 1) g->faces_drawn = true;
+  t3_render_target *next = t3_pmrem_scene_job_step(p->job, ctx->scene3d, p->job_per_frame);
+  capture_end(ctx, &changed);
+  if (!next) return false;
+  capture_done(p, next, p->job_size);
+  return true;
+}
+static void job_free(refl_probe *p) {
+  if (p->job) t3_pmrem_scene_job_free(p->job), p->job = NULL;
 }
 
 typedef struct due { cw_node n; refl_probe *p; int overdue; float dist2; } due;
@@ -193,6 +241,7 @@ static void probes_exec(cw_pass_ctx *ctx, void *user) {
   bool later_view = ctx->pipeline && ctx->pipeline->view_i > 0;
   if (!later_view) {
     g->stats.captures = 0;
+    g->faces_drawn = false;
     g->stats.probes_bound_max = g->bound_max;
     g->bound_max = 0;
   }
@@ -228,13 +277,29 @@ static void probes_exec(cw_pass_ctx *ctx, void *user) {
    * renders came first: with the objects a probe's cull_mask hides, or the surfaces the
    * G-buffer leaves out, missing from them. Arm them again, so the frame's own render draws
    * them with everything in. (A later view of a split screen keeps the first view's maps.) */
-  if (((!later_view && (g->stats.captures || g->stats.grid_updates)) || g->gbuf_ok) && !cw__render3d_shadows_kept(ctx->tree))
+  if (((!later_view && (g->faces_drawn || g->stats.grid_updates)) || g->gbuf_ok) && !cw__render3d_shadows_kept(ctx->tree))
     t3_renderer_shadow_needs_update(ctx->renderer);
 }
 
 static void captures(gi_tree *g, cw_pass_ctx *ctx) {
   if (!g->probes.count) return;
   t3_vec3 cam = ctx->camera ? t3_mat4_get_position(&ctx->camera->base.matrix_world) : (t3_vec3){ 0, 0, 0 };
+  int budget = capture_budget();
+  /* captures in flight go on first, each one of the frame's budget */
+  for (int i = 0; i < g->probes.count; i++) {
+    refl_probe *p = cw_node_data_t(g->probes.data[i], probe_t);
+    if (!p || !p->job || !t3_pmrem_scene_job_steps_left(p->job)) continue;
+    /* the quality preset moved the probe's size: what was drawn is the wrong size, start again */
+    if (p->job_size != probe_size(p)) {
+      job_free(p);
+      continue;
+    }
+    if (budget > 0) budget--;
+    if (job_step(g, ctx, p)) {
+      g->stats.captures++;
+      g->stats.captures_total++;
+    }
+  }
   due list[64];
   int nd = 0;
   for (int i = 0; i < g->probes.count && nd < 64; i++) {
@@ -242,6 +307,7 @@ static void captures(gi_tree *g, cw_pass_ctx *ctx) {
     refl_probe *p = cw_node_data_t(n, probe_t);
     if (!p) continue;
     p->age++;
+    if (p->job && t3_pmrem_scene_job_steps_left(p->job)) continue;
     int over = 0;
     if (!p->rt[p->front] || p->size_now != probe_size(p)) over = 1 << 20;
     else if (p->requested) over = 1 << 19;
@@ -257,11 +323,24 @@ static void captures(gi_tree *g, cw_pass_ctx *ctx) {
   }
   if (!nd) return;
   qsort(list, (size_t)nd, sizeof list[0], due_cmp);
-  int budget = capture_budget();
   for (int i = 0; i < nd && i < budget; i++) {
-    if (!capture(g, ctx, list[i].n, list[i].p)) continue;
-    list[i].p->age = 0;
-    list[i].p->requested = false;
+    refl_probe *p = list[i].p;
+    int every = (p->update_every < 1 ? 1 : p->update_every) * every_scale();
+    /* a probe refreshed every few frames that has a capture to show spreads the next one over those frames (from
+     * now, so it is due again as it finishes); a first capture, a new size or a request is made whole */
+    if (p->update_mode == CW_PROBE_UPDATE_EVERY_N_FRAMES && every > 1 && !p->requested && p->rt[p->front] && p->size_now == probe_size(p)) {
+      job_start(g, ctx, list[i].n, p, every);
+      p->age = 0;
+      if (job_step(g, ctx, p)) {
+        g->stats.captures++;
+        g->stats.captures_total++;
+      }
+      continue;
+    }
+    job_free(p);
+    if (!capture(g, ctx, list[i].n, p)) continue;
+    p->age = 0;
+    p->requested = false;
     g->stats.captures++;
     g->stats.captures_total++;
   }
@@ -420,6 +499,7 @@ static void probe_init(cw_node n, void *data) {
 }
 
 static void probe_free_targets(refl_probe *p) {
+  job_free(p);
   for (int k = 0; k < 2; k++)
     if (p->rt[k]) t3_release(p->rt[k]), p->rt[k] = NULL;
 }

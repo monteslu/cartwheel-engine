@@ -2,8 +2,9 @@
  * take the object's shadow with it. A crate casts a shadow from a shadowed sun
  * onto a floor; the probe (captured every second frame) has cull_mask 2, which
  * the crate (layer 1 only) does not share, so every capture draws the scene
- * without the crate. The frame is the same on a capture frame and on the one
- * after (tests/gi-shadow.mjs compares them).
+ * without the crate (each capture spread over the two frames, gi.h). The
+ * frame is the same on the frame a capture finishes and on the one after
+ * (tests/gi-shadow.mjs compares them).
  *
  * Debug state: gi.captures (probe captures so far). */
 #include "cartwheel/debug.h"

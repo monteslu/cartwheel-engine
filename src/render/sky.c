@@ -594,6 +594,42 @@ static void pass_sky_env(cw_pass_ctx *ctx, void *user) {
 static void pass_sky_sun_wgpu(cw_pass_ctx *ctx, sky_rt *s);
 #endif
 
+/* The part of the screen the sun's disk can cover, in NDC (x0, y0, x1, y1; y up): the disk's rim, a polygon round the
+ * cone of radius r about the sun's direction, projected as points at infinity. The pass draws a full-screen
+ * triangle whose every pixel works out its own direction and discards outside the disk; scissored to this box, the
+ * same pixels are lit and nothing else is shaded. False: the disk is wholly off screen. A rim that crosses the
+ * camera's plane gives the whole screen. */
+static bool sun_ndc_box(const cw_pass_ctx *ctx, t3_vec3 sun, float r, float box[4]) {
+  enum { N = 16 };
+  /* the circumscribed polygon: its edges touch the rim circle, so it holds the disk */
+  float rr = atanf(tanf(r) / cosf(CW_PI / N));
+  t3_vec3 d = sun, a = fabsf(d.y) < 0.9f ? (t3_vec3){ 0, 1, 0 } : (t3_vec3){ 1, 0, 0 };
+  t3_vec3 u = t3_vec3_normalize(t3_vec3_cross(a, d)), v = t3_vec3_cross(d, u);
+  const float *m = ctx->view_proj.e;
+  float cr = cosf(rr), sr = sinf(rr);
+  box[0] = box[1] = 1e30f, box[2] = box[3] = -1e30f;
+  for (int i = 0; i < N; i++) {
+    float t = 2 * CW_PI * (float)i / N, ct = cosf(t) * sr, st = sinf(t) * sr;
+    float p[3] = { d.x * cr + u.x * ct + v.x * st, d.y * cr + u.y * ct + v.y * st, d.z * cr + u.z * ct + v.z * st };
+    float cx = m[0] * p[0] + m[4] * p[1] + m[8] * p[2], cy = m[1] * p[0] + m[5] * p[1] + m[9] * p[2];
+    float cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2];
+    if (cw <= 1e-6f) { box[0] = box[1] = -1, box[2] = box[3] = 1; return true; }
+    float x = cx / cw, y = cy / cw;
+    box[0] = CW_MIN(box[0], x), box[1] = CW_MIN(box[1], y), box[2] = CW_MAX(box[2], x), box[3] = CW_MAX(box[3], y);
+  }
+  if (box[0] > 1 || box[1] > 1 || box[2] < -1 || box[3] < -1) return false;
+  for (int k = 0; k < 4; k++) box[k] = CW_CLAMP(box[k], -1.0f, 1.0f);
+  return true;
+}
+/* that box in a w x h target's pixels, a pixel of margin round it (x, y from the top when top_down) */
+static void sun_px_box(const float box[4], int w, int h, bool top_down, int out[4]) {
+  int x0 = (int)floorf((box[0] * 0.5f + 0.5f) * (float)w) - 1, x1 = (int)ceilf((box[2] * 0.5f + 0.5f) * (float)w) + 1;
+  int y0 = (int)floorf((box[1] * 0.5f + 0.5f) * (float)h) - 1, y1 = (int)ceilf((box[3] * 0.5f + 0.5f) * (float)h) + 1;
+  x0 = CW_CLAMP(x0, 0, w), x1 = CW_CLAMP(x1, 0, w), y0 = CW_CLAMP(y0, 0, h), y1 = CW_CLAMP(y1, 0, h);
+  if (top_down) { int t = h - y1; y1 = h - y0; y0 = t; }
+  out[0] = x0, out[1] = y0, out[2] = x1 - x0, out[3] = y1 - y0;
+}
+
 static void pass_sky_sun(cw_pass_ctx *ctx, void *user) {
   sky_rt *s = user;
 #if CW_WGPU
@@ -610,6 +646,17 @@ static void pass_sky_sun(cw_pass_ctx *ctx, void *user) {
   /* physical disk radiance: the irradiance it gives over its solid angle */
   float solid = CW_PI * r * r;
   float scale = k->sun_disk_intensity * s->sun_light / solid;
+  float box[4];
+  if (!sun_ndc_box(ctx, s->sun, r, box)) return;
+  int vp[4], sc[4];
+  glGetIntegerv(GL_VIEWPORT, vp);
+  sun_px_box(box, vp[2], vp[3], false, sc);
+  if (sc[2] <= 0 || sc[3] <= 0) return;
+  GLboolean had_scissor = glIsEnabled(GL_SCISSOR_TEST);
+  int old_sc[4];
+  glGetIntegerv(GL_SCISSOR_BOX, old_sc);
+  glEnable(GL_SCISSOR_TEST);
+  glScissor(vp[0] + sc[0], vp[1] + sc[1], sc[2], sc[3]);
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LEQUAL);
   glDepthMask(GL_FALSE);
@@ -624,7 +671,8 @@ static void pass_sky_sun(cw_pass_ctx *ctx, void *user) {
   glDepthMask(GL_TRUE);
   glDisable(GL_BLEND);
   glDisable(GL_DEPTH_TEST);
-  (void)ctx;
+  glScissor(old_sc[0], old_sc[1], old_sc[2], old_sc[3]);
+  if (!had_scissor) glDisable(GL_SCISSOR_TEST);
 }
 
 #if CW_WGPU
@@ -831,6 +879,12 @@ static void pass_sky_sun_wgpu(cw_pass_ctx *ctx, sky_rt *s) {
   const sky_node *k = &s->params;
   float r = CW_MAX(k->sun_size, 0.01f) * 0.5f * CW_PI / 180.0f;
   float solid = CW_PI * r * r;
+  float box[4];
+  if (!sun_ndc_box(ctx, s->sun, r, box)) return;
+  int sc[4];
+  /* (rows top-down in the pass unless the target is drawn flipped, as the shader's uv reads it) */
+  sun_px_box(box, tg->w, tg->h, !tg->flip_y, sc);
+  if (sc[2] <= 0 || sc[3] <= 0) return;
   float u[32] = { 0 };
   memcpy(u, ctx->inv_view_proj.e, 64);
   u[16] = s->sun.x;
@@ -851,6 +905,7 @@ static void pass_sky_sun_wgpu(cw_pass_ctx *ctx, sky_rt *s) {
   cw__pw_timing_span((void *)cw__pw_encoder(), false); /* its own render pass: timed as a span of its pass */
   WGPURenderPassEncoder p = cw__wg_scene_pass(tg, true, "sky_sun");
   wgpuRenderPassEncoderSetPipeline(p, pipe);
+  wgpuRenderPassEncoderSetScissorRect(p, (uint32_t)sc[0], (uint32_t)sc[1], (uint32_t)sc[2], (uint32_t)sc[3]);
   wgpuRenderPassEncoderSetBindGroup(p, 0, bg, 0, NULL);
   wgpuRenderPassEncoderDraw(p, 3, 1, 0, 0);
   wgpuRenderPassEncoderEnd(p);

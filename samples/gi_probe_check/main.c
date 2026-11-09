@@ -12,7 +12,9 @@
  * box projection; tests/gi-probe.mjs reads those pixels. GI_BOX=0 turns box
  * projection off (the plate then reads the capture point's view, which the
  * test can tell apart only where the walls differ) and GI_PROBE=0 the probe's
- * intensity (the must-fail control: every reflection is black).
+ * intensity (the must-fail control: every reflection is black). GI_EVERY=n
+ * captures every n frames (each capture spread over them), GI_RES sets the
+ * face size.
  *
  * The tree runs clustered lighting with one lamp, so its materials draw with
  * the gi part composed after the cluster part (xcluster_gi,
@@ -48,6 +50,11 @@ static void fixed_update(void *u, double dt) {
   if (e && !strcmp(e, "0")) cw_node_set(node("Box/Probe"), "box_projection", cw_val_bool(false));
   e = getenv("GI_PROBE");
   if (e && !strcmp(e, "0")) cw_node_set(node("Box/Probe"), "intensity", cw_val_float(0));
+  /* GI_EVERY=n: captured every n frames, each capture spread over those frames; GI_RES: the face size */
+  e = getenv("GI_EVERY");
+  if (e) cw_node_set(node("Box/Probe"), "update_mode", cw_val_enum("EVERY_N_FRAMES")), cw_node_set(node("Box/Probe"), "update_every", cw_val_int(atoi(e)));
+  e = getenv("GI_RES");
+  if (e) cw_node_set(node("Box/Probe"), "resolution", cw_val_int(atoi(e)));
 }
 
 static void render(void *u, double alpha) {

@@ -16,6 +16,10 @@
  *             textureLoad: exact; r187 types only 32-bit textures as integer)
  *   normals   (size + 1)^2 RGBA8, linear + mipmaps: normal x, z in R, G
  *   control   (size + 1)^2 R32UI, nearest: the Terrain3D control words
+ *   pair      (size + 2)^2 RGBA32UI, nearest: per control cell (the four texels
+ *             a point between their centres blends), the layers in it (up to
+ *             three) and each one's share at the four texels (pair_rows): the
+ *             shader's choice of a point's two layers, made here
  *   macro     at most 1024^2 RGBA8, linear + mipmaps, sRGB data decoded in
  *             the shader: the layers' mean colours blended by the control
  *             map (the distant colour)
@@ -134,6 +138,61 @@ static void control_rows(int begin, int end, int worker, void *u) {
     for (int x = j->x0; x <= j->x1; x++) {
       ((uint32_t *)g->control->pixels)[tr_idx(t, x, z)] = t->ctl[tr_idx(t, x, z)];
     }
+}
+
+/* the pair texture's cells for control texels x0..x1, z0..z1 (cell c holds texels c - 1 and c, clamped to the map:
+ * the shader's i0 + 1). Word 0: the count (bits 0-1) and the layer ids (3 bits each from bit 2); words 1-3: each
+ * layer's share at the four texels, a byte each (255 = all of the texel), in the order (i0, i0) (i0 + 1, i0)
+ * (i0, i0 + 1) (i0 + 1, i0 + 1). A layer's share at a texel is 1 - blend as its base, blend as its overlay (Terrain3D's
+ * blend); more than three layers in one cell keep the three with the most share (four or more meet in a cell
+ * almost never). */
+static void pair_rows(int begin, int end, int worker, void *u) {
+  (void)worker;
+  rect_job *j = u;
+  cw_terrain *t = j->t;
+  tr_gpu *g = t->gpu;
+  uint32_t *out = (uint32_t *)g->pair->pixels;
+  int pw = t->nx + 1;
+  for (int pz = j->z0 + begin; pz < j->z0 + end; pz++)
+    for (int px = j->x0; px <= j->x1; px++) {
+      int lay[8], nl = 0, sh[8][4], tot[8];
+      for (int k = 0; k < 4; k++) {
+        int x = CW_CLAMP(px - 1 + (k & 1), 0, t->nx - 1), z = CW_CLAMP(pz - 1 + (k >> 1), 0, t->nz - 1);
+        uint32_t c = t->ctl[tr_idx(t, x, z)];
+        int base = CW_MIN((int)(c >> 27) & 31, 7), over = CW_MIN((int)(c >> 22) & 31, 7), blend = (int)(c >> 14) & 255;
+        int ids[2] = { base, over }, s[2] = { 255 - blend, blend };
+        for (int q = 0; q < 2; q++) {
+          if (!s[q]) continue;
+          int i = 0;
+          while (i < nl && lay[i] != ids[q]) i++;
+          if (i == nl) { lay[nl] = ids[q], tot[nl] = 0, memset(sh[nl], 0, sizeof sh[nl]), nl++; }
+          sh[i][k] += s[q], tot[i] += s[q];
+        }
+      }
+      /* the three with the most share, in that order (equals by layer id) */
+      for (int a = 1; a < nl; a++)
+        for (int b = a; b > 0 && (tot[b] > tot[b - 1] || (tot[b] == tot[b - 1] && lay[b] < lay[b - 1])); b--) {
+          int tl = lay[b], tt = tot[b], ts[4];
+          memcpy(ts, sh[b], sizeof ts);
+          lay[b] = lay[b - 1], tot[b] = tot[b - 1], memcpy(sh[b], sh[b - 1], sizeof ts);
+          lay[b - 1] = tl, tot[b - 1] = tt, memcpy(sh[b - 1], ts, sizeof ts);
+        }
+      if (nl > 3) nl = 3;
+      uint32_t *p = &out[4 * ((size_t)pz * pw + px)];
+      p[0] = (uint32_t)nl;
+      for (int i = 0; i < 3; i++) {
+        p[1 + i] = 0;
+        if (i >= nl) continue;
+        p[0] |= (uint32_t)lay[i] << (2 + 3 * i);
+        for (int k = 0; k < 4; k++) p[1 + i] |= (uint32_t)CW_MIN(sh[i][k], 255) << (8 * k);
+      }
+    }
+}
+static void rect_parallel(cw_terrain *t, const int *r, cw_range_fn fn);
+/* the pair cells a change of control texels r touches */
+static void pair_update(cw_terrain *t, const int *r) {
+  int q[4] = { r[0], r[1], CW_MIN(r[2] + 1, t->nx), CW_MIN(r[3] + 1, t->nz) };
+  rect_parallel(t, q, pair_rows);
 }
 
 static float linear_to_srgb(float c) {
@@ -288,6 +347,7 @@ static void ensure_gpu(cw_terrain *t) {
   g->heights = t3_data_texture_new_format(t->nx, t->nz, NULL, T3_RED_INTEGER_FORMAT, T3_UNSIGNED_INT_TYPE);
   g->normals = data_tex(t->nx, t->nz, true, false);
   g->control = t3_data_texture_new_format(t->nx, t->nz, NULL, T3_RED_INTEGER_FORMAT, T3_UNSIGNED_INT_TYPE);
+  g->pair = t3_data_texture_new_format(t->nx + 1, t->nz + 1, NULL, T3_RGBA_INTEGER_FORMAT, T3_UNSIGNED_INT_TYPE);
   g->mdiv = 1;
   while ((t->nx - 1) / g->mdiv + 1 > 1025 || (t->nz - 1) / g->mdiv + 1 > 1025) g->mdiv *= 2;
   g->mw = (t->nx - 1) / g->mdiv + 1;
@@ -309,7 +369,7 @@ void cw__terrain_gpu_free(cw_terrain *t) {
         t3_object_remove(g->root, g->im[f][h]);
         t3_release(g->im[f][h]);
       }
-  t3_texture *tx[] = { g->heights, g->normals, g->control, g->macro, g->albedo, g->lnormal };
+  t3_texture *tx[] = { g->heights, g->normals, g->control, g->pair, g->macro, g->albedo, g->lnormal };
   for (int i = 0; i < (int)CW_ARRAY_LEN(tx); i++)
     if (tx[i]) t3_release(tx[i]);
   if (g->grid[0]) t3_release(g->grid[0]);
@@ -386,7 +446,8 @@ void cw__terrain_gpu_update(cw_terrain *t) {
   }
   if (t->dirty_c[0] <= t->dirty_c[2]) {
     rect_parallel(t, t->dirty_c, control_rows);
-    g->control->version++;
+    pair_update(t, t->dirty_c);
+    g->control->version++, g->pair->version++;
     t->dirty_c[0] = 1, t->dirty_c[2] = 0;
   }
   if (t->macro_dirty) {
@@ -480,6 +541,7 @@ static void fill(t3_extension_ctx *c, void *user) {
   t3_extension_set_texture(c, "terrainHeights", g->heights);
   t3_extension_set_texture(c, "terrainMacro", g->macro);
   t3_extension_set_texture(c, "terrainControl", g->control);
+  t3_extension_set_texture(c, "terrainPair", g->pair);
   t3_extension_set_texture(c, "terrainNormals", g->normals);
   t3_extension_set_texture(c, "terrainAlbedo", g->albedo);
   t3_extension_set_texture(c, "terrainLayerNormals", g->lnormal);
@@ -526,7 +588,7 @@ void cw__terrain_gpu_fill(cw_terrain *t) {
                  CW_MIN(t->dirty_h[3] + 1, t->nz - 1) };
     rect_parallel(t, r, normal_rows);
   }
-  if (t->dirty_c[0] <= t->dirty_c[2]) rect_parallel(t, t->dirty_c, control_rows);
+  if (t->dirty_c[0] <= t->dirty_c[2]) rect_parallel(t, t->dirty_c, control_rows), pair_update(t, t->dirty_c);
   if (t->macro_dirty) cw_parallel_for(g->mh, 8, macro_rows, t);
 }
 
@@ -534,7 +596,7 @@ void cw__terrain_gpu_fill(cw_terrain *t) {
 void cw__terrain_gpu_filled(cw_terrain *t) {
   tr_gpu *g = t->gpu;
   if (t->dirty_h[0] <= t->dirty_h[2]) g->heights->version++, g->normals->version++;
-  if (t->dirty_c[0] <= t->dirty_c[2]) g->control->version++;
+  if (t->dirty_c[0] <= t->dirty_c[2]) g->control->version++, g->pair->version++;
   if (t->macro_dirty) g->macro->version++;
   t->dirty_h[0] = 1, t->dirty_h[2] = 0;
   t->dirty_c[0] = 1, t->dirty_c[2] = 0;
