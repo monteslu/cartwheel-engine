@@ -9,7 +9,9 @@
 // Frame N means "after N engine frames": the app's frame counter reads N.
 //   native    build/native/samples/<app>, CW_FRAMES / CW_SCREENSHOT / CW_DEBUG_DUMP / CW_INPUT
 //   romdev    the MCP server's HTTP tool route (127.0.0.1:7331), deterministic load
-//             (its load runs frame 1, so N-1 steps follow); one session per run
+//             (its load runs frame 1, so N-1 steps follow); one session per run. A call
+//             waits CW_ROMDEV_TIMEOUT_MS (default 300000) plus CW_ROMDEV_FRAME_MS (default 500)
+//             for each frame it steps
 //   chromium  wasmcart's CartHostWeb in headless Chromium (Playwright), served
 //             cross-origin isolated (threads need SharedArrayBuffer); the host's
 //             clock is pinned to frame*1000/60. CW_CHROMIUM_GPU=<PCI address>
@@ -60,7 +62,7 @@
 // romdev uses input({op:'pointer'}) and input({op:'wheel'}) but has no
 // wasmcart keyboard op, so a script with keys fails there (gates skip romdev).
 import { spawn, spawnSync } from 'node:child_process';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { readFileSync, writeFileSync, mkdtempSync, existsSync, realpathSync, statSync, copyFileSync, rmSync } from 'node:fs';
 import { join, resolve, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -238,13 +240,33 @@ async function runNative() {
   result({ host, frames, shot: args.shot, state: args.state });
 }
 
-async function romdevCall(tool, a, session) {
-  const res = await fetch(`http://127.0.0.1:7331/tool/${tool}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-romdev-session': session },
-    body: JSON.stringify(a),
+// One tool call over plain HTTP. Not fetch: Node's fetch gives up on a reply after 300 s (its headers timeout),
+// and a long frame step on a busy GPU pool runs past that (2400 frames of a crowded game: 4-10 minutes).
+// The wait scales with the frames a call steps: CW_ROMDEV_TIMEOUT_MS (default 300000) for the call plus
+// CW_ROMDEV_FRAME_MS (default 500) per frame stepped; a call that runs past it fails, naming both.
+function romdevPost(tool, a, session) {
+  const body = JSON.stringify(a);
+  const steps = tool === 'frame' && a && a.op === 'step' ? Math.max(0, +a.frames || 0) : 0;
+  const base = +(process.env.CW_ROMDEV_TIMEOUT_MS || 300000), perFrame = +(process.env.CW_ROMDEV_FRAME_MS || 500);
+  const limit = base + steps * perFrame;
+  return new Promise((ok, fail) => {
+    const req = httpRequest({ host: '127.0.0.1', port: 7331, path: `/tool/${tool}`, method: 'POST', agent: false,
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'x-romdev-session': session } }, (res) => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { text += c; });
+      res.on('end', () => { clearTimeout(timer); ok({ ok: res.statusCode >= 200 && res.statusCode < 300, text }); });
+      res.on('error', (e) => { clearTimeout(timer); fail(e); });
+    });
+    const timer = setTimeout(() => req.destroy(new Error(`romdev ${tool}: no reply in ${limit} ms (${steps} frames; CW_ROMDEV_TIMEOUT_MS + CW_ROMDEV_FRAME_MS per frame)`)), limit);
+    req.on('error', (e) => { clearTimeout(timer); fail(e); });
+    req.end(body);
   });
-  const text = await res.text();
+}
+
+async function romdevCall(tool, a, session) {
+  const res = await romdevPost(tool, a, session);
+  const text = res.text;
   let body;
   try { body = JSON.parse(text); } catch { body = text; }
   if (!res.ok || (body && body.isError)) throw new Error(`romdev ${tool}: ${typeof body === 'string' ? body : JSON.stringify(body).slice(0, 2000)}`);
