@@ -8,6 +8,7 @@
 //
 //   spliceWasm(oldWasc, wasmPath, outPath) -> true, or a string saying why it could not
 //   readEntries(wasc) -> [{ name, data }] in archive order (decompressed), for checks
+//   readNamedEntries(wasc, names) -> Map name -> data, only those entries (tools/check-art.mjs)
 import { closeSync, openSync, readFileSync, statSync, writeSync } from 'node:fs';
 import { deflateRawSync, inflateRawSync } from 'node:zlib';
 
@@ -71,6 +72,22 @@ export function readEntries(wasc) {
     const raw = buf.subarray(e.offset + 30 + nameLen + extraLen, e.offset + 30 + nameLen + extraLen + e.csize);
     return { name: e.name, data: e.method === 8 ? inflateRawSync(raw) : Buffer.from(raw) };
   });
+}
+
+/** the named entries' decompressed bytes (a Map; a name the archive lacks is left out), inflating
+ *  nothing else: a cart's manifest and art without its assets */
+export function readNamedEntries(wasc, names) {
+  const buf = readFileSync(wasc);
+  const cd = centralDirectory(buf);
+  if (typeof cd === 'string') throw new Error(cd);
+  const want = new Set(names), out = new Map();
+  for (const e of cd.entries) {
+    if (!want.has(e.name)) continue;
+    const nameLen = buf.readUInt16LE(e.offset + 26), extraLen = buf.readUInt16LE(e.offset + 28);
+    const raw = buf.subarray(e.offset + 30 + nameLen + extraLen, e.offset + 30 + nameLen + extraLen + e.csize);
+    out.set(e.name, e.method === 8 ? inflateRawSync(raw) : Buffer.from(raw));
+  }
+  return out;
 }
 
 /** write oldWasc with its cart.wasm replaced by wasmPath to outPath: true, or why not */

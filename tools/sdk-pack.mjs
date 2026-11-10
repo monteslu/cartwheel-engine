@@ -160,6 +160,10 @@ engineFile('scripts/fetch-deps.sh');
 engineFile('scripts/deps.lock');
 // the button-prompt check a game runs over its own sources (node <sdk>/tools/check-prompts.mjs src)
 engineFile('tools/check-prompts.mjs');
+// the launcher art check a game runs over its built cart (node <sdk>/tools/check-art.mjs <cart.wasc>), with its zip
+// reader, also a dev cart's fast pack (cart-version.mjs --reuse-assets)
+engineFile('tools/check-art.mjs');
+engineFile('tools/lib/wasc-splice.mjs');
 
 const lock = readFileSync(join(SRC, 'scripts/deps.lock'), 'utf8').split('\n').filter((l) => l && !l.startsWith('#')).map((l) => l.trim().split(/\s+/));
 const lockRev = (name) => { const l = lock.find((x) => x[0] === name); return l ? l[2] : null; };
@@ -172,7 +176,6 @@ if (CART) {
   // the manifest version every build (cw_add_app): the tool and its rule
   engineFile('tools/cart-version.mjs');
   engineFile('tools/lib/app-version.mjs');
-  engineFile('tools/lib/wasc-splice.mjs'); // a dev cart's fast pack (cart-version.mjs --reuse-assets)
   // wasmcart-pack (with the art checks it imports, src/cartArt.js) and, for dual carts, the WebGPU tier's
   // import list (check-imports --wgpu)
   for (const wc of WGPU ? ['wasmcart-wgpu'] : ['wasmcart']) {

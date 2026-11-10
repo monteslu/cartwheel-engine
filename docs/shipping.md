@@ -80,21 +80,31 @@ screenshot:
 }
 ```
 
-Then name the directory and the credits in the game's `project.cwproj`:
+Then name the directory, the game's title and the credits in the game's
+`project.cwproj`:
 
 ```
 art = art
+title = "Sunlit Isles"
 description = "Sail, trade and fight across a sunlit archipelago."
 author = "Your Name"
 ```
 
 `cw_add_app` reads them for the app the project names (`app`); an app of
 its own passes them instead: `cw_add_app(mygame SOURCES ... ART art
-DESCRIPTION "..." AUTHOR "...")`. The cart build packs the pictures under
+TITLE "..." DESCRIPTION "..." AUTHOR "...")`. The title is the game's name
+as people read it (the manifest's `title`); the app's name stays the cart's id. The cart build packs the pictures under
 `art/` in the `.wasc`, outside the assets (the game never loads them), and
-writes the manifest's `art`, `description` and `author`. A file that is not a
-PNG or JPEG stops the build; a picture of the wrong shape or too small, or a
-logo without transparency, is a warning in the build log. Native builds and
+writes the manifest's `art`, `title`, `description` and `author`. A file that
+is not a PNG or JPEG stops the build; a picture of the wrong shape or too
+small, or a logo without transparency, is a warning in the build log.
+`node tools/check-art.mjs <cart.wasc | carts dir>` holds a built cart to all
+of it and fails on any problem: a missing title or picture (icon, cover,
+background, logo, title screen and at least one labelled screenshot), a file
+that is not a whole PNG or JPEG, a wrong shape or a size under the minimum, a
+logo with no real transparency. It cannot read text in a picture, so it
+prints `cover: name not machine-checked` for each cart: look at the covers
+(the name on each) and the backgrounds (no text) yourself. Native builds and
 exports do not use them.
 
 Make every picture from the game itself: screenshots of real play at the
