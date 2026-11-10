@@ -5,8 +5,9 @@
 // The box filter a cart host's frames go through (boxDown) against sums worked by hand.
 // Then a real run when the native samples are built: tools/flash-check.mjs on fx_explosion (its blasts' pooled flash
 // lights, smoke and sparks) through CW_FRAME_DUMP must pass, with its control (an 8 Hz strobe over it) failing, and
-// the dump must hold every frame asked for.
-//   node tests/flash-check.mjs [--synthetic]     (--synthetic: no GPU, the synthetic runs only)
+// the dump must hold every frame asked for. And with the cart built, the same check through romdev on GL and WebGPU
+// (tools/flash-check.mjs --host romdev, frames kept): romdev's numbers must be this library's on the same frames.
+//   node tests/flash-check.mjs [--synthetic]     (--synthetic: no GPU, the synthetic runs only; ROMDEV_URL: another romdev)
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -89,4 +90,29 @@ else if (existsSync(join(ROOT, 'build/native/samples/fx_explosion'))) {
   if (r.status !== 0) { console.log(`FAIL fx_explosion's run: ${(r.stderr || '').slice(-1500)}`); bad++; }
   else if (!/299 frames/.test(r.stdout)) { console.log('FAIL fx_explosion: the dump did not hold frames 2-300'); bad++; }
 } else console.log('note no native build: the fx_explosion leg did not run');
+// romdev: the same check of the dual cart on GL and WebGPU in one frame({op:'flash'}) call each, its frames kept; the
+// numbers romdev's analysis gives must be the ones this library gives on those same frames (the two are one check)
+const CART = join(ROOT, 'build/cart-wgpu/carts/fx_explosion.wasc');
+if (process.argv.includes('--synthetic')) console.log('note --synthetic: the romdev legs did not run');
+else if (existsSync(CART)) {
+  const { readFrameDump } = await import('../tools/lib/flash.mjs');
+  const { mkdirSync, readFileSync, rmSync } = await import('node:fs');
+  mkdirSync(join(ROOT, 'out/flash'), { recursive: true });
+  for (const gpu of ['gl', 'webgpu']) {
+    const dump = join(ROOT, 'out/flash', `fx_explosion-${gpu}-${process.pid}.cwfd`), json = `${dump}.json`;
+    const r = spawnSync('node', [join(ROOT, 'tools/flash-check.mjs'), '--host', 'romdev', '--app', 'fx_explosion', '--frames', '300', '--from', '2',
+      '--gpu', gpu, '--keep', dump, '--json', json], { encoding: 'utf8' });
+    process.stdout.write(r.stdout || '');
+    if (r.status !== 0) { console.log(`FAIL fx_explosion on romdev ${gpu}: ${(r.stderr || '').slice(-1500)}`); bad++; continue; }
+    const theirs = JSON.parse(readFileSync(json, 'utf8')), d = await readFrameDump(dump);
+    const ours = analyseFrames(d.w, d.h, d.frames, {});
+    const pairs = [['flashes', ours.regions.flashes, theirs.result.regions.flashes], ['red flashes', ours.regionsRed.flashes, theirs.result.regionsRed.flashes],
+      ['fields', ours.fields.flashes, theirs.result.fields.flashes], ['flicker', +ours.flicker.amp.toFixed(3), theirs.result.flicker.amp],
+      ['rise', +ours.rise.amount.toFixed(3), theirs.result.rise.amount], ['motion', Math.round(ours.motion * 1e5) / 1e5, theirs.result.motion], ['frames', d.frames.length, 299]];
+    const off = pairs.filter(([, a, b]) => a !== b);
+    if (off.length) { console.log(`FAIL romdev ${gpu} and tools/lib/flash.mjs disagree on the same frames: ${off.map(([k, a, b]) => `${k} ${a} here, ${b} on romdev`).join('; ')}`); bad++; }
+    else console.log(`ok   romdev ${gpu}: its analysis and tools/lib/flash.mjs agree on the same 299 frames (${describeFlash(ours)})`);
+    rmSync(dump, { force: true }); rmSync(json, { force: true });
+  }
+} else console.log('note no cart build: the romdev legs did not run');
 process.exit(bad ? 1 : 0);

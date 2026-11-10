@@ -136,10 +136,11 @@ Scripted gates run their own controls and print `CONTROL PASSED` (a failure) whe
 
 ## Flash check
 
-`tools/flash-check.mjs` checks that a run never strobes ([Localization and accessibility](guide:l10n-a11y) has the rules and how to make flashes that pass). It checks every frame of a run from frame K (by default 2) in one-second windows. A game's run belongs on romdev, which cannot hand over every frame of a run in ranged requests yet (a ranged frame capture is filed with romdev); taking frames one request at a time floods the shared server, so `--host romdev` (the default for `--app`) says so and exits 2. Until romdev has it, `--app <app> --host native` runs the engine's own samples natively, and `--dump` / `--dir` check frames captured already:
+`tools/flash-check.mjs` checks that a run never strobes ([Localization and accessibility](guide:l10n-a11y) has the rules and how to make flashes that pass). It checks every frame of a run from frame K (by default 2) in one-second windows. A game's run goes through romdev (`--host romdev`, the default for `--app`): the dual cart (`build/cart-wgpu`) is loaded on GL or WebGPU (`--gpu`), run to frame K-1 with the gate's start requests, environment and input script (`tools/run-cart.mjs --flash-from`), and then ONE `frame({op:'flash'})` call steps frames K to N, filters each frame as a native dump is and runs the same analysis and control on the server; a run of 1800 frames is three requests, never one a frame. Pad input and `@N` start requests inside the checked frames ride on that call; pointer or wheel input inside them cannot. `ROMDEV_URL` picks another server than 127.0.0.1:7331. `--host native` runs the native build, and `--dump` / `--dir` check frames captured already:
 
 ```text
-node tools/flash-check.mjs --host native --app fx_explosion --frames 600 [--from 60] [--input script.json] [--gpu webgpu]
+node tools/flash-check.mjs --app fx_explosion --frames 600 [--from 60] [--input script.json] [--start-cmds "a;@300 b"] [--env '{"K":"v"}'] [--gpu webgpu]
+node tools/flash-check.mjs --host native --app fx_explosion --frames 600     # the native build
 node tools/flash-check.mjs --dump run.cwfd       # frames captured already (CW_FRAME_DUMP)
 node tools/flash-check.mjs --dir frames/         # a directory of PNG frames, one a frame
 ```
@@ -150,7 +151,7 @@ node tools/flash-check.mjs --dir frames/         # a directory of PNG frames, on
 - `--max-rise X` also bounds the hardest two-frame rise of a block's luminance (a hard onset rather than a swell).
 - The run must move (a frozen capture proves nothing), and every check runs its **control**: the same frames with an 8 Hz full-screen strobe laid over them must fail.
 
-`CW_FRAME_DUMP=file` (native, with `CW_FRAMES`) is how the frames are captured: every frame from `CW_FRAME_DUMP_FROM` on, box-filtered down by `CW_FRAME_DUMP_SCALE` (default 8) in linear light, appended raw. A games repository calls the same tool with `CW_PROJECT_ROOT` set, or imports `tools/lib/flash.mjs` (`flashGate`, `readFrameDump`, `analyseFrames`, `withStrobe`, and `boxDown`: a cart host's RGBA frame filtered as the native dump filters it) for its own sweep. `tests/flash-check.mjs` holds the analyser to synthetic runs whose answers are known.
+`CW_FRAME_DUMP=file` (native, with `CW_FRAMES`) is how the frames are captured: every frame from `CW_FRAME_DUMP_FROM` on, box-filtered down by `CW_FRAME_DUMP_SCALE` (default 8) in linear light, appended raw. A games repository calls the same tool with `CW_PROJECT_ROOT` set, or imports `tools/lib/flash.mjs` (`flashGate`, `readFrameDump`, `analyseFrames`, `withStrobe`, and `boxDown`: a cart host's RGBA frame filtered as the native dump filters it) for its own sweep. `tests/flash-check.mjs` holds the analyser to synthetic runs whose answers are known, and runs `fx_explosion` through romdev on GL and WebGPU with its frames kept (`--keep`): the numbers romdev gives must be the ones `tools/lib/flash.mjs` gives on those same frames.
 
 ## Unit suites
 

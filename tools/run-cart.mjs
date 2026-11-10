@@ -12,6 +12,8 @@
 //             (its load runs frame 1, so N-1 steps follow); one session per run. A call
 //             waits CW_ROMDEV_TIMEOUT_MS (default 300000) plus CW_ROMDEV_FRAME_MS (default 500)
 //             for each frame it steps
+//             (ROMDEV_URL: another server). --flash-from K --flash-out FILE: frames K..N are one
+//             frame({op:'flash'}) call, its result in FILE (tools/flash-check.mjs --host romdev)
 //   chromium  wasmcart's CartHostWeb in headless Chromium (Playwright), served
 //             cross-origin isolated (threads need SharedArrayBuffer); the host's
 //             clock is pinned to frame*1000/60. CW_CHROMIUM_GPU=<PCI address>
@@ -102,10 +104,17 @@ const startPlan = startCmds.map((c, i) => {
   return m ? [+m[1] - 1, m[2]] : [i + 1, c];
 });
 const timedCmds = startCmds.some((c) => c.startsWith('@'));
+// --flash-from K --flash-out FILE (romdev): the photosensitive flash check of frames K..N (romdev frame({op:'flash'}),
+// tools/flash-check.mjs reads FILE); --flash-keep F keeps the checked frames there (CW_FRAME_DUMP), --flash-opts JSON
+// its bounds ({maxRise, ...}), --scale its box filter (default about 240 wide: 8 at 1920)
+const flashFrom = args['flash-from'] ? +args['flash-from'] : 0;
+if (flashFrom && (host !== 'romdev' || !args['flash-out'] || !(flashFrom >= 2 && flashFrom <= frames))) {
+  console.error('--flash-from K (2 <= K <= --frames) --flash-out FILE is a romdev run'); process.exit(2);
+}
 // --env '{"NAME":"value"}': a test's environment variables on every host. Native runs get them in their process
 // environment; a cart gets the debug channel's env request (src/core/env.c), riding on a request it is sent anyway
-// so no host's frames move: before frame 1 with the first request on Chromium and wasmcart-native, at frame 2 with
-// the first start request on romdev (its load runs frame 1), where a variable the game read in frame 1 fails the run
+// so no host's frames move: before frame 1 with the first request on Chromium and wasmcart-native, with the load on romdev
+// (loadMedia firstCommand, answered in frame 1, which its load runs)
 const cartEnv = typeof args.env === 'string' ? JSON.parse(args.env) : {};
 const envQuote = (v) => (/^[^\s"\\()]+$/.test(v) ? v : `"${v.replace(/[\\"]/g, (c) => '\\' + c)}"`);
 const envReq = Object.keys(cartEnv).length ? 'env ' + Object.entries(cartEnv).map(([k, v]) => `${k}=${envQuote(String(v))}`).join(' ') : null;
@@ -252,16 +261,18 @@ async function runNative() {
 // and a long frame step on a busy GPU pool runs past that (2400 frames of a crowded game: 4-10 minutes).
 // The wait scales with the frames a call steps: CW_ROMDEV_TIMEOUT_MS (default 300000) for the call plus
 // CW_ROMDEV_FRAME_MS (default 500) per frame stepped; a call that runs past it fails, naming both.
+// ROMDEV_URL: another romdev server than 127.0.0.1:7331 (a test server on a spare port)
+const ROMDEV = new URL(process.env.ROMDEV_URL || 'http://127.0.0.1:7331');
 let romdevCalls = 0; // HTTP requests this run sent romdev (the result reports it)
 function romdevPost(tool, a, session) {
   romdevCalls++;
   const body = JSON.stringify(a);
-  const steps = tool === 'frame' && a && a.op === 'step' ? Math.max(0, +a.frames || 0)
+  const steps = tool === 'frame' && a && ['step', 'flash', 'record'].includes(a.op) ? Math.max(0, +a.frames || 0) + (+a.warmup || 0)
     : tool === 'input' && a && a.op === 'sequence' ? a.steps.reduce((t, x) => t + x.frames, 0) : 0;
   const base = +(process.env.CW_ROMDEV_TIMEOUT_MS || 300000), perFrame = +(process.env.CW_ROMDEV_FRAME_MS || 500);
   const limit = base + steps * perFrame;
   return new Promise((ok, fail) => {
-    const req = httpRequest({ host: '127.0.0.1', port: 7331, path: `/tool/${tool}`, method: 'POST', agent: false,
+    const req = httpRequest({ host: ROMDEV.hostname, port: ROMDEV.port || 80, path: `/tool/${tool}`, method: 'POST', agent: false,
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'x-romdev-session': session,
         // who is calling (romdev lists sessions by agent): CW_ROMDEV_AGENT, default cartwheel-run-cart
         'x-romdev-agent': process.env.CW_ROMDEV_AGENT || 'cartwheel-run-cart' } }, (res) => {
@@ -298,7 +309,12 @@ async function runRomdev() {
   const loaded = await romdevCall('loadMedia', { platform: 'wasmcart', path: cart, ...(spread ? {} : { deterministicSeed: +(args.seed || 1), deterministicStepMs: 1000 / frameHz }),
     // the power preference of the test GPU on every load, GL included: without it romdev's host picks the
     // high-performance adapter, which on a two-GPU machine is the desktop's display GPU
-    gpuPower: (pin || wgpuPin()).power, wgpu: gpu === 'webgpu', ...(gpu === 'webgpu' && cartFeatureLevel() ? { wgpuFeatureLevel: cartFeatureLevel() } : {}) }, session);
+    gpuPower: (pin || wgpuPin()).power, wgpu: gpu === 'webgpu', ...(envReq ? { firstCommand: envReq } : {}), ...(gpu === 'webgpu' && cartFeatureLevel() ? { wgpuFeatureLevel: cartFeatureLevel() } : {}) }, session);
+  if (envReq) { /* the environment request rode on the load (romdev firstCommand, answered in frame 1) */
+    const fr = loaded && loaded.firstCommandReply;
+    const bad = fr === undefined ? 'romdev did not deliver it (firstCommand needs romdev 0.153.0 or later)' : fr && typeof fr === 'object' && fr.error ? fr.error : null;
+    if (bad) { await romdevCall('host', { op: 'shutdown' }, session).catch(() => {}); throw new Error(`romdev: the --env request failed: ${bad}`); }
+  }
   if (gpu === 'gl' && loaded && loaded.gpu !== 'gl') {
     await romdevCall('host', { op: 'shutdown' }, session).catch(() => {});
     throw new Error(`romdev: requested GL but the cart runs on ${loaded && loaded.gpu} (loadMedia wgpu:false needs romdev 65237621+)`);
@@ -314,6 +330,8 @@ async function runRomdev() {
     }
   }
   let at = 1; // engine frames already run
+  // --flash-from K (romdev): run to frame K-1 as below, then frames K..N in ONE frame({op:'flash'}) call
+  const end = flashFrom ? flashFrom - 1 : frames;
   // RANGES, never a loop over frames: romdev is shared, and a request per frame flooded it (2026-11-09). Frames run in
   // one frame step; a pad-only input script goes as ONE input sequence call (each entry held until the next); only a
   // script with pointer or wheel entries takes calls per entry. The result's romdevCalls counts them.
@@ -328,18 +346,13 @@ async function runRomdev() {
   }
   const fbx = (x) => Math.round(ox + x * sx), fby = (y) => Math.round(oy + y * sy);
   const cmdReplies = [];
-  // --env rides on the first start request (or is the only one): answered at the start of frame 2
   const plainCmds = [...(spread && !args['keep-auto'] ? ['quality lock'] : []), ...startCmds.filter((c) => !c.startsWith('@'))]; // "@N cmd" runs on its frame (stepTo below)
-  const romdevCmds = envReq ? [withEnv(plainCmds[0] || ''), ...plainCmds.slice(1)].filter((c, i) => c || i === 0) : plainCmds;
+  // --env went with the load (firstCommand): answered in frame 1, before the game reads it, as natively
+  const romdevCmds = plainCmds;
   for (const text of romdevCmds) { /* answered at the start of the frame the request runs */
     const reply = await romdevCall('wasm', { op: 'command', text }, session);
     cmdReplies.push({ text, reply });
     at++;
-    const answer = reply && typeof reply === 'object' && 'reply' in reply ? reply.reply : reply; /* romdev wraps it: {framesRun, reply} */
-    if (envReq && text === romdevCmds[0] && answer && typeof answer === 'object' && answer.error) {
-      await romdevCall('host', { op: 'shutdown' }, session).catch(() => {});
-      throw new Error(`romdev: the --env request failed: ${answer.error}`);
-    }
   }
   // "@N cmd": romdev answers a request with the frame it runs, so the frames before N are stepped first and the
   // request runs frame N (a mid-run change such as a graphics preset, as natively)
@@ -379,21 +392,21 @@ async function runRomdev() {
   if (script.some((s) => scancodes(s.keys).length))
     throw new Error('romdev: keyboard input cannot be injected (its input tool has no wasmcart key op); skip romdev for keyboard gates');
   let mouse = null, touches = new Map();
-  const live = script.filter((s) => s.frame <= frames); // entries after the last frame never apply (as natively)
+  const live = script.filter((s) => s.frame <= end); // entries after the last frame never apply (as natively)
   if (live.length && !timed.length && !live.some((s) => s.mouse || (s.touches || []).length || s.wheel != null)) {
     // the whole schedule in one call: entry i is held from frame s.frame (frames 1..s.frame-1 run before it) until the
     // next entry, the last until the run's end; an entry a later one replaces in the same frame is never held
     const steps = [];
     if (live[0].frame - 1 > at) steps.push({ input: { ports: [{}] }, frames: live[0].frame - 1 - at });
     live.forEach((s, i) => {
-      const from = Math.max(s.frame - 1, at), to = i + 1 < live.length ? Math.max(live[i + 1].frame - 1, at) : frames;
+      const from = Math.max(s.frame - 1, at), to = i + 1 < live.length ? Math.max(live[i + 1].frame - 1, at) : end;
       if (to > from) steps.push({ input: { ports: romdevPad(s) }, frames: to - from });
     });
     if (steps.length) await romdevCall('input', { op: 'sequence', steps }, session);
-    at = Math.max(at, frames);
+    at = Math.max(at, end);
   }
-  for (const s of at >= frames ? [] : script) {
-    if (s.frame > frames) break; // entries after the last frame never apply (as natively)
+  for (const s of at >= end ? [] : script) {
+    if (s.frame > end) break; // entries after the last frame never apply (as natively)
     // the entry applies from engine frame s.frame (1-based) on: frames 1..s.frame-1 run before it
     const before = s.frame - 1;
     await stepTo(before);
@@ -415,7 +428,28 @@ async function runRomdev() {
   // turn between every two stepped frames, so asynchronous results (buffer
   // maps, error scopes) arrive between frames as on every other host; stepping
   // one frame per call for that cost thousands of calls a run
-  await stepTo(frames);
+  await stepTo(end);
+  if (flashFrom) {
+    // the checked range in one call: the pad entries inside it go as input sequence steps (each held until the next,
+    // the pad held at frame K-1 until the first), an "@N cmd" request inside it is posted before frame N in the same
+    // call (romdev commandsAt); pointer and wheel entries inside it cannot ride on one call
+    const inside = script.filter((s) => s.frame > end && s.frame <= frames);
+    if (inside.some((s) => s.mouse || (s.touches || []).length || s.wheel != null))
+      throw new Error(`romdev --flash-from ${flashFrom}: the input script points or scrolls inside the checked frames; start the check after it`);
+    const commandsAt = timed.splice(0).filter(([n]) => n <= frames).map(([n, text]) => ({ frame: n - flashFrom, command: text }));
+    const before = script.filter((s) => s.frame <= end).at(-1);
+    const steps = [];
+    if (inside.length) {
+      if (inside[0].frame - 1 > end) steps.push({ input: { ports: before ? romdevPad(before) : [{}] }, frames: inside[0].frame - 1 - end });
+      inside.forEach((s, i) => steps.push({ input: { ports: romdevPad(s) }, frames: (i + 1 < inside.length ? inside[i + 1].frame - 1 : frames) - (s.frame - 1) }));
+    }
+    const fo = typeof args['flash-opts'] === 'string' ? JSON.parse(args['flash-opts']) : {};
+    const r = await romdevCall('frame', { op: 'flash', frames: frames - end, ...(steps.length ? { steps } : {}), ...(commandsAt.length ? { commandsAt } : {}),
+      ...(typeof args['flash-keep'] === 'string' ? { path: resolve(args['flash-keep']) } : {}),
+      ...(Object.keys(fo).length ? { flash: fo } : {}), ...(args.scale ? { downscale: +args.scale } : {}) }, session);
+    at = frames;
+    writeFileSync(resolve(args['flash-out']), JSON.stringify({ ...r, romdevCalls }, null, 1));
+  }
   if (args['cmd-out'] && timedCmds) writeFileSync(resolve(args['cmd-out']), JSON.stringify(cmdReplies, null, 1));
   // --cmd-end "cmd" (romdev): one debug-channel request after the last frame, its reply to --cmd-out (the survey of
   // tools/programs.mjs --carts asks "pipeline" there: the states the cart's last frames lacked a program for)

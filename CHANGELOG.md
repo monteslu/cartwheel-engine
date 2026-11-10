@@ -4,6 +4,25 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.46.0 (2026-11-10)
+
+### Added
+- **The flash check runs through romdev.** `tools/flash-check.mjs --host romdev` (the default for `--app`) checks a
+  game's built dual cart on GL or WebGPU (`--gpu`) with no native run: `tools/run-cart.mjs --flash-from K` loads the
+  cart and runs the start requests, environment and input script to frame K-1, then one romdev
+  `frame({op:'flash'})` call steps frames K to N, filters every frame as a native dump is (a box in linear light, by 8)
+  and runs the same photosensitive analysis and its 8 Hz strobe control on the server. A run of 1800 frames is three
+  requests, never one a frame. Pad input and `@N` start requests inside the checked frames ride on that call. The
+  output adds the worst second's frames and numbers and the romdev request count; `ROMDEV_URL` picks another server.
+  `tests/flash-check.mjs` runs fx_explosion through romdev on GL and WebGPU with the frames kept and checks that
+  romdev's numbers equal `tools/lib/flash.mjs`'s on those same frames (they agree to the last digit on both).
+
+### Changed
+- **A romdev run's `--env` reaches the game in frame 1.** `tools/run-cart.mjs --host romdev` sends a test's
+  environment with the load (romdev's `firstCommand`, answered in the frame the load runs), as a native run has it
+  in its process environment, instead of with the first start request at frame 2, where a switch the game read in
+  frame 1 was missed. Needs romdev 0.153.0 or later; an older one, or a request the cart refuses, fails the run.
+
 ## v0.45.1 (2026-11-10)
 
 ### Fixed
