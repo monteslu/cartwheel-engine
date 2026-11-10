@@ -4,6 +4,26 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.46.3 (2026-11-10)
+
+### Fixed
+- **Gate scripts with keys run through romdev; run-cart sends them as the cart's keyboard.** A gate whose input
+  script held keys (`input-keys`, `action2d-keys`) skipped romdev, so a game's keyboard bindings were checked natively
+  and in Chromium only, and a game that runs its checks on romdev alone (the starter's `./test.sh`) could not check
+  them at all. `tools/run-cart.mjs` now sends a script's keys as SDL scancodes on romdev's pad sets and input sequence
+  steps, where a real host's keyboard delivers them (key down and up events with modifiers, the held mask every
+  frame); a cart that never asked for a keyboard (`WC_FLAG_KEYBOARD`) fails the run, naming it, and so does an older
+  romdev (before 0.155.0) that drops the keys. `input-keys` and `action2d-keys` run through romdev on GL and WebGPU
+  in the same requests as the pad script of the same play (`input-keys`: 5 for its 62 frames, the keys on one input
+  sequence; `action2d-keys`: 1288, as `action2d`, since its mouse entries take one each); `action2d-keys` reaches the
+  pad run's exact state (`g.score` 3530, `g.state` 6) and both controls still differ (32% of pixels, `g.score` 50). Scripts
+  with `text` entries still skip romdev: it has no text op.
+- **The romdev mode's control ran the gate's own start requests.** `tests/gate.mjs --hosts romdev` gave a gate's
+  control the gate's `startCmds` when it had no `controlStartCmds`, so the control of a gate whose control is the same
+  frames without its requests (`fx-camera-fade`, `quality-scope-ssao`) was the gate's run itself and CONTROL PASSED
+  on romdev GL and WebGPU since v0.40.0. The control gets `controlStartCmds` alone, as the native legs do; both gates
+  pass through romdev with their controls differing (1.3% and 3.3% of pixels).
+
 ## v0.46.2 (2026-11-10)
 
 ### Fixed
