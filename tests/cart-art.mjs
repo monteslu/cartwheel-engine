@@ -1,16 +1,16 @@
-// Cart art (wasmcart's manifest `art`, `description`, `author`): what
-// cw_add_app packs for launchers.
+// Cart art (wasmcart's manifest `art`, `title`, `description`, `author`):
+// what cw_add_app packs for launchers.
 //
-//   1. project.cwproj's `art`, `description` and `author` keys parse as
+//   1. project.cwproj's `art`, `title`, `description` and `author` keys parse as
 //      cw_add_app reads them (cmake/app.cmake cw__project_value), quotes,
 //      commas and an apostrophe kept; `artist` is not `art`;
 //   2. the pack tool packs tests/fixtures/cart-art: every picture under art/,
-//      the manifest naming each, a screenshot's label, the credits, and
-//      wasmcart's describeArtProblems finds nothing wrong;
-//   3. built carts: hello.wasc (cw_add_app ART/DESCRIPTION/AUTHOR) carries
-//      the same, and a sample without ART carries no art.
-// CONTROL that must fail: a cover of the wrong shape is reported by
-// describeArtProblems.
+//      the manifest naming each, a screenshot's label, the title, the
+//      credits, and wasmcart's describeArtProblems finds nothing wrong;
+//   3. built carts: hello.wasc (cw_add_app ART/TITLE/DESCRIPTION/AUTHOR)
+//      carries the same, and a sample without ART carries no art or title.
+// CONTROLS that must fail: a cover of the wrong shape is reported by
+// describeArtProblems; the fixture packed without --title has no title.
 //
 //   node tests/cart-art.mjs [--pack <wasmcart-pack.js>] [--carts <dir>]
 //
@@ -47,10 +47,9 @@ function openCart(file) {
   return { manifest: m ? JSON.parse(Buffer.from(m).toString('utf8')) : null, read };
 }
 
-// manifest `title` needs a wasmcart-pack that knows --title (after wasmcart 0.40.0); an older one ignores the flag,
-// so the title is checked only where the pack tool lists it
-const PACK_TITLE = /--title/.test(spawnSync('node', [PACK, '--help'], { encoding: 'utf8' }).stdout);
-if (!PACK_TITLE) console.log(`skip title: ${PACK} predates --title`);
+// manifest `title` needs a wasmcart-pack that knows --title (wasmcart 0.41.0, the pin); an older one ignores
+// the flag and every cart goes without a title, so a pack tool without it fails here
+if (!/--title/.test(spawnSync('node', [PACK, '--help'], { encoding: 'utf8' }).stdout)) fail(`${PACK} predates --title: no cart gets a title`);
 const fixture = JSON.parse(readFileSync(join(FIX, 'art.json'), 'utf8'));
 const DESC = 'A test cart, with commas, an apostrophe\'s mark and (brackets).';
 /** the cart's manifest names every fixture picture under art/, each in the archive and sound */
@@ -70,9 +69,9 @@ function checkArt(what, cart, desc, author, title) {
   const problems = describeArtProblems(art, read);
   if (problems.length) fail(`${what}: describeArtProblems: ${problems.join('; ')}`);
   if (manifest.description !== desc) fail(`${what}: description is ${JSON.stringify(manifest.description)}`);
-  if (PACK_TITLE && manifest.title !== title) fail(`${what}: title is ${JSON.stringify(manifest.title)}, not ${JSON.stringify(title)}`);
+  if (manifest.title !== title) fail(`${what}: title is ${JSON.stringify(manifest.title)}, not ${JSON.stringify(title)}`);
   if (manifest.author !== author) fail(`${what}: author is ${JSON.stringify(manifest.author)}`);
-  if (failed === before) ok(`${what}: art, description and author packed, no art problems`);
+  if (failed === before) ok(`${what}: art, title ${JSON.stringify(title)}, description and author packed, no art problems`);
 }
 
 // 1. project.cwproj keys as cw_add_app reads them
@@ -85,7 +84,7 @@ function checkArt(what, cart, desc, author, title) {
   const want = { app: 'arttest', art: '../cart-art', title: 'Art Test: the Cart', description: DESC, author: 'The cartwheel authors' };
   const bad = Object.keys(want).filter((k) => got[k] !== want[k]);
   if (r.status !== 0 || bad.length) fail(`project keys: ${bad.map((k) => `${k} read as ${JSON.stringify(got[k])}`).join(', ') || r.stderr}`);
-  else ok('project.cwproj art, description and author read as cw_add_app reads them');
+  else ok('project.cwproj art, title, description and author read as cw_add_app reads them');
 }
 
 // 2. the pack tool packs the fixture
@@ -98,6 +97,13 @@ function checkArt(what, cart, desc, author, title) {
   if (r.status !== 0) fail(`pack: ${(r.stderr || r.stdout).trim()}`);
   else if (/art /.test(r.stderr)) fail(`pack warned about the fixture's art: ${r.stderr.trim()}`);
   else checkArt('pack --art', cart, DESC, 'The cartwheel authors', 'Art Test: the Cart');
+  // control: without --title the manifest has none, so the title above came from the flag
+  const bare = join(OUT, 'arttest-untitled.wasc');
+  const u = spawnSync('node', [PACK, '--wasm', wasm, '--name', 'arttest', '--art', FIX, '--output', bare], { encoding: 'utf8' });
+  const m = u.status === 0 ? openCart(bare).manifest : null;
+  if (!m) fail(`control: pack without --title: ${(u.stderr || u.stdout).trim()}`);
+  else if (m.title !== undefined) fail(`control: packed without --title, the manifest's title is ${JSON.stringify(m.title)}`);
+  else ok('control: packed without --title, the manifest has no title');
 }
 
 // control: a cover of the wrong shape must be reported
@@ -117,7 +123,7 @@ if (existsSync(join(CARTS, 'hello.wasc'))) {
     const other = openCart(join(CARTS, 'vertex_colors.wasc')).manifest;
     if (!other) fail('vertex_colors.wasc: no manifest');
     else if (other.art || other.title || other.description || other.author) fail('vertex_colors.wasc (no ART) carries art or credits');
-    else ok('a sample without ART carries no art');
+    else ok('a sample without ART carries no art or title');
   }
 } else {
   console.log(`skip built carts: no ${join(CARTS, 'hello.wasc')}`);

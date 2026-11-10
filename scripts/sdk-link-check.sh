@@ -9,7 +9,7 @@
 # A cart SDK (cart-wgpu) has no native link: its wasmcart-pack packs a cart
 # with art from the SDK's own files instead (tests/cart-art.mjs --pack), so a
 # file the pack tool imports and the SDK left out fails here (wasmcart
-# 0.38.0's pack tool imports src/cartArt.js).
+# 0.38.0's pack tool imports src/cartArt.js, 0.39.0's src/cartVersion.js).
 set -euo pipefail
 
 T="${1:?target}"
