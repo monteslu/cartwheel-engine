@@ -1,6 +1,6 @@
 // Writes action2d's gate inputs from one recorded playthrough:
 //   tests/action2d-pad.json          pad 0 + mouse (every host, romdev included)
-//   tests/action2d-keys.json         the same play on the keyboard + mouse (romdev cannot inject keys)
+//   tests/action2d-keys.json         the same play on the keyboard + mouse
 //   tests/action2d-pad-control.json  / action2d-keys-control.json: the attack rebinding press
 //                                    removed, so the hero never swings: must FAIL the gate
 //   games/action2d/script.inc        the pad script compiled into action2d_auto

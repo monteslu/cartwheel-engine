@@ -91,7 +91,7 @@ An array of gate objects. Every key `tests/gate.mjs` reads:
 | `input` | an input script in `tests/` |
 | `assets` | a native asset root when it is not `samples/<app>/assets` |
 | `hosts` | the hosts this gate may run on (replaces the default list) |
-| `skip` | hosts to leave out (for example `romdev` for a keyboard script) |
+| `skip` | hosts to leave out (for example `romdev` for a text script) |
 | `minColors` | unique colours the native frame must have (default 2) |
 | `maxGt16` | the share of pixels allowed to differ by more than 16 levels (default 0.001) |
 | `fields` | the state fields to compare (default: every field except the `dbg.*` mailbox) |
@@ -222,7 +222,7 @@ An input script is JSON: a list of entries, each setting the WHOLE input state f
 | `text` | text typed this frame (needs text input started, as a focused text field does) |
 | `pad2`, `pad3`, `pad4` | pads 1, 2 and 3 (players 2, 3 and 4): `{"buttons":["south"],"axes":{"lx":-1}}`, the same names as pad 0's `buttons` and `axes`. A pad key absent from an entry means that pad is unplugged from that frame on |
 
-An entry without `keys`, `mouse` or `touches` means none held. Pad 0 is always connected; a 4-player script names `pad2`..`pad4` on every entry where those players play (`tests/input-players.json`). romdev's input ports are all connected, so a script that unplugs a pad while a later one stays (`pad2` absent, `pad3` given) fails there (`input-players-hotplug` skips romdev). romdev has no keyboard op, so gates with key scripts skip it. Natively the script travels in `CW_INPUT`; a game can also drive itself from `cw_set_raw_input_filter`, which runs at the same point on every host.
+An entry without `keys`, `mouse` or `touches` means none held. Pad 0 is always connected; a 4-player script names `pad2`..`pad4` on every entry where those players play (`tests/input-players.json`). romdev's input ports are all connected, so a script that unplugs a pad while a later one stays (`pad2` absent, `pad3` given) fails there (`input-players-hotplug` skips romdev). romdev holds a script's keys on its input sequence steps (romdev 0.155.0 or later; an older server drops them and the run fails saying so); it has no text op, so gates with `text` entries skip it. Natively the script travels in `CW_INPUT`; a game can also drive itself from `cw_set_raw_input_filter`, which runs at the same point on every host.
 
 ## Naming debug state
 

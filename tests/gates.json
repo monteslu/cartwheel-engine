@@ -819,9 +819,6 @@
     "input": "input-keys.json",
     "controlInput": "input-keys-control.json",
     "maxGt16": 0.0005,
-    "skip": [
-      "romdev"
-    ],
     "expect": {
       "sim.jump_jp": 1,
       "sim.jump_ticks": 2,
@@ -833,7 +830,7 @@
       "replay.match": 1,
       "replay.hash_match": 1
     },
-    "note": "keyboard-driven actions (a one-frame tap, held keys, a user-override binding, capture-rebinding to key:x). romdev is skipped: its input tool cannot inject wasmcart keys"
+    "note": "keyboard-driven actions (a one-frame tap, held keys, a user-override binding, capture-rebinding to key:x); on romdev the keys ride on its input sequence (romdev 0.155.0 or later)"
   },
   {
     "name": "input-pointer",
@@ -4154,9 +4151,6 @@
     "input": "action2d-keys.json",
     "controlInput": "action2d-keys-control.json",
     "maxGt16": 0.003,
-    "skip": [
-      "romdev"
-    ],
     "fields": [
       "g.state",
       "g.score",
