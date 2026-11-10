@@ -3,6 +3,12 @@
 
 #include "cartwheel/physics_tasks.h"
 
+int cw_physics_workers(int workers) {
+  int n = cw_jobs_thread_count();
+  if (workers > 0) return workers < n ? workers : n;
+  return n < CW_PHYSICS_DEFAULT_MAX_WORKERS ? n : CW_PHYSICS_DEFAULT_MAX_WORKERS;
+}
+
 /* Box2D: one callback per task, as Box3D (since v3.2 the library splits its own
  * range work into per-worker tasks and indexes its workers itself). */
 typedef struct b2_world_tasks {
@@ -25,8 +31,7 @@ static void b2_finish(void *userTask, void *userContext) {
 }
 
 void cw_box2d_tasks(b2WorldDef *def, int workers) {
-  int n = cw_jobs_thread_count();
-  int k = workers > 0 && workers < n ? workers : n;
+  int k = cw_physics_workers(workers);
   if (k > B2_MAX_WORKERS) k = B2_MAX_WORKERS;
   def->workerCount = k;
   def->enqueueTask = b2_enqueue;
@@ -64,8 +69,7 @@ static void b3_finish(void *userTask, void *userContext) {
 }
 
 void cw_box3d_tasks(b3WorldDef *def, int workers) {
-  int n = cw_jobs_thread_count();
-  def->workerCount = (uint32_t)(workers > 0 && workers < n ? workers : n);
+  def->workerCount = (uint32_t)cw_physics_workers(workers);
   def->enqueueTask = b3_enqueue;
   def->finishTask = b3_finish;
   def->userTaskContext = calloc(1, sizeof(b3_world_tasks));

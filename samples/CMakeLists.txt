@@ -44,6 +44,10 @@ set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/box2d_determinism.c PROP
 set_source_files_properties(${DEPS}/box3d/shared/determinism.c ${DEPS}/box3d/shared/human.c
   ${DEPS}/box3d/shared/utils.c ${DEPS}/box3d/shared/benchmarks.c PROPERTIES COMPILE_OPTIONS "-w")
 target_include_directories(physics_determinism PRIVATE ${DEPS}/box3d/shared)
+# the default physics worker count (the pool, at most 12) against every pool thread: Box3D and Box2D large pyramids
+cw_add_app(physics_workers SOURCES physics_workers/main.c ${DEPS}/box3d/shared/benchmarks.c ${DEPS}/box3d/shared/human.c
+  ${DEPS}/box3d/shared/utils.c)
+target_include_directories(physics_workers PRIVATE ${DEPS}/box3d/shared)
 
 # physics module samples (cartwheel/physics.h)
 cw_add_app(physics3d_stack SOURCES physics3d_stack/main.c)

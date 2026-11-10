@@ -127,6 +127,7 @@
   "hrtf-tool": 6,
   "physics-determinism": 6,
   "physics-scaling": 6,
+  "physics-workers": 6,
   "physics2d-joints": 6,
   "r2d-lights": 6,
   "l10n-a11y": 5,

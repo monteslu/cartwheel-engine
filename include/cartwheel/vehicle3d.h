@@ -48,7 +48,7 @@
  *
  * Determinism: only + - * / sqrt and cartwheel/math.h, sorted world queries,
  * wheels in index order: the same inputs give the same bits on every host
- * and with any number of step workers (cw_world3d_def.workers, 0 = all).
+ * and with any number of step workers (cw_world3d_def.workers).
  * Threads: main thread, outside the step, like the rest of physics3d.h.
  * A cw_vehicle3d is a plain struct owned by the caller (no allocation); it
  * holds the chassis handle but does not own the body. */

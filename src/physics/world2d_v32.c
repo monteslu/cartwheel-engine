@@ -68,8 +68,7 @@ void cw_world2d_set_hit_speed(cw_world2d wh, float speed) {
 void cw_world2d_set_workers(cw_world2d wh, int workers) {
   cw__world2 *w = cw__w2(wh);
   if (!w) return;
-  int n = cw_jobs_thread_count();
-  int k = workers > 0 && workers < n ? workers : n;
+  int k = cw_physics_workers(workers);
   if (k > B2_MAX_WORKERS) k = B2_MAX_WORKERS;
   b2World_SetWorkerCount(w->id, k);
 }

@@ -4,6 +4,21 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.46.1 (2026-11-10)
+
+### Fixed
+- **A physics step uses at most 12 threads by default.** A Box3D or Box2D world made with `workers = 0` (the default,
+  `cw_world3d_def`, `cw_world2d_def`, `cw_world2d_set_workers`, `cw_box3d_tasks`, `cw_box2d_tasks`) was handed
+  every job-pool thread, and past about 12 a step gets no faster and, with a frame's other jobs on the pool, slower:
+  6000 awake Box3D bodies in a cart on a 24-thread machine stepped in 5.8 ms on 12 threads and 5.35 on 24, and a blast
+  under load took 6.2 to 7.1 ms on 24 against 4.0 to 4.2 on 12. The default is now the pool, at most
+  `CW_PHYSICS_DEFAULT_MAX_WORKERS` (12); a count of your own still overrides it, up to the whole pool.
+  `cw_physics_workers` says what a count resolves to. The cap is a fixed count because a cart sees only the host's
+  hardware threads (logical CPUs) and cannot learn its physical cores. The new `physics_workers` sample steps Box3D's
+  and Box2D's large pyramids both ways on the host's own pool (through romdev on a busy 24-thread machine: Box3D 3.6
+  to 5.3 ms per step on the default against 4.7 to 7.7 on every thread, Box2D 1.3 to 3.0 against 2.7 to 4.8), and the
+  `physics-workers` gate checks the counts and that both ways give the same bits ([physics](docs/guides/physics.md)).
+
 ## v0.46.0 (2026-11-10)
 
 ### Added

@@ -45,7 +45,7 @@ cw_xform3 cw_xform3_lerp(cw_xform3 a, cw_xform3 b, float t);
 typedef struct cw_world3d_def {
   t3_vec3 gravity;             /* (0, -10, 0) */
   int substeps;                /* solver sub-steps per step: 4 */
-  int workers;                 /* job-pool threads the step may use: 0 = all */
+  int workers;                 /* job-pool threads the step may use: 0 = the pool, at most 12 (physics_tasks.h) */
   float hit_speed;             /* hit events above this approach speed: 1 m/s */
   float restitution_threshold; /* bounce above this speed: 1 m/s */
   bool sleep, continuous;      /* true, true */
