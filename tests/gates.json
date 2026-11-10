@@ -541,6 +541,25 @@
     "note": "upstream Box3D/Box2D determinism scenes on the job pool, 1..5 workers; every host must reproduce upstream's 64-bit hashes"
   },
   {
+    "name": "physics-workers",
+    "app": "physics_workers",
+    "webgpu": true,
+    "frames": 600,
+    "minColors": 1,
+    "controlFrames": 100,
+    "fields": [
+      "done",
+      "cap_ok",
+      "b3_hash",
+      "b2_hash"
+    ],
+    "expect": {
+      "done": 1,
+      "cap_ok": 1
+    },
+    "note": "a physics world def's workers = 0 steps on the job pool, at most 12 threads (CW_PHYSICS_DEFAULT_MAX_WORKERS), on the host's own pool size; workers = every pool thread still gets them all, and Box3D's and Box2D's large pyramids give the same bits both ways. Control: an early frame, before the runs finish"
+  },
+  {
     "name": "physics-scaling",
     "app": "physics_determinism",
     "webgpu": true,

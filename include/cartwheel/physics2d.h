@@ -82,7 +82,7 @@ typedef struct cw_phys_capacity2d {
 typedef struct cw_world2d_def {
   cw_vec2 gravity;             /* (0, -10) */
   int substeps;                /* 4 */
-  int workers;                 /* job-pool threads the step may use: 0 = all */
+  int workers;                 /* job-pool threads the step may use: 0 = the pool, at most 12 (physics_tasks.h) */
   float hit_speed;             /* 1 m/s */
   float restitution_threshold; /* 1 m/s */
   int restitution_iterations;  /* 0 = Box2D's default */
@@ -169,7 +169,7 @@ void cw_world2d_set_restitution_propagation(cw_world2d w, bool on);
 bool cw_world2d_restitution_propagation(cw_world2d w);
 /* Hit events fire above this approach speed, m/s. */
 void cw_world2d_set_hit_speed(cw_world2d w, float speed);
-/* Threads the step uses (1..32, and the job pool's size at most). */
+/* Threads the step uses (1..32, and the job pool's size at most; 0 = the default, as cw_world2d_def.workers). */
 void cw_world2d_set_workers(cw_world2d w, int workers);
 /* Threads the step uses. */
 int cw_world2d_workers(cw_world2d w);
