@@ -4,6 +4,21 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.43.1 (2026-11-09)
+
+### Fixed
+- **Carts get their title.** wasmcart moves to v0.41.0 (both the GL test host pin and the WebGPU tier pin), whose
+  wasmcart-pack packs `--title`, so `project.cwproj`'s `title` / `cw_add_app(... TITLE "...")` now reaches the
+  manifest's `title` and `tools/check-art.mjs` no longer reports `title: missing` on a cart that sets one. The cart's
+  version is unchanged: cw_add_app still works it out (`tools/cart-version.mjs`) and passes it as `--version`, which
+  the newer pack's own git rule never overrides.
+- Cart SDKs ship wasmcart's `src/cartVersion.js`, which wasmcart-pack imports since 0.39.0; without it the SDK's pack
+  tool could not start.
+
+### Changed
+- `tests/cart-art.mjs` checks the title on every run: a pack tool without `--title` fails instead of being skipped,
+  and a new control packs the fixture without `--title` and must find no title.
+
 ## v0.43.0 (2026-11-09)
 
 ### Added
