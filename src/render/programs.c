@@ -37,6 +37,8 @@ __attribute__((weak)) const char *cw__app_target_name(void) { return "<app>"; }
 
 /* states no table has, as the last frame left it: 0 when none. Set by the pipeline; the platform draws the banner. */
 int32_t cw__missing_programs;
+/* a warm-up slice is rendering part of the scene (src/scene/runner.c; read by the gi pass, pipeline_internal.h) */
+bool cw__warm_partial;
 const char *cw__programs_fix_command(void);
 const char *cw__programs_fix_command(void) {
   static char buf[160];

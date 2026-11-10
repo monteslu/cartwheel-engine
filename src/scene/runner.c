@@ -10,6 +10,7 @@
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/render3d.h"
+#include "render/pipeline_internal.h"
 #include "cartwheel/scene2d.h"
 #include "cartwheel/scene_file.h"
 #include "cartwheel/vfs.h"
@@ -142,7 +143,7 @@ static void r_update(void *u, double dt) {
   run.node_count = cw_tree_node_count(run.tree);
 }
 
-static void warm_render(int w, int h);
+static void warm_render(int w, int h, double alpha);
 
 static void r_render(void *u, double alpha) {
   /* A paused scene holds still: its tick is frozen but the platform's accumulator keeps cycling, and an alpha that
@@ -154,7 +155,7 @@ static void r_render(void *u, double alpha) {
   cw_drawable_size(&w, &h);
   if (cw_gpu_backend() != CW_GPU_WEBGPU) glViewport(0, 0, w, h);
   if (cw_loading_active()) { /* the warm-up's shader phase (below) */
-    warm_render(w, h);
+    warm_render(w, h, alpha);
     return;
   }
   /* the tree's render pipeline (pipeline.h): 3D (only when a Camera3D
@@ -312,16 +313,27 @@ static void warm_slice(int w, int h) {
     warm.objs[i]->frustum_culled = false;
     if (i >= show) warm.objs[i]->visible = false;
   }
+  /* (what a slice of the scene would capture into the probe grid or a reflection probe stays out until the full render) */
+  cw__warm_partial = show < warm.n;
   cw_pipeline_render(run.tree, w, h, 0);
+  cw__warm_partial = false;
   for (int i = 0; i < warm.n; i++) warm.objs[i]->visible = was[i * 2], warm.objs[i]->frustum_culled = was[i * 2 + 1];
   free(was);
   if (last) warm.final = true;
 }
-static void warm_render(int w, int h) {
+static void warm_render(int w, int h, double alpha) {
   if (warm.frame < 2) return;
   double t0 = warm_now_ms();
-  do warm_slice(w, h);
-  while (!warm.final && warm_now_ms() - t0 < WARM_BUDGET_MS);
+  /* each slice is a pipeline render of its own, and each render takes what the tree registers before it (the cascaded
+   * sun, fog lights): a later slice of the frame without its pre-render drew the sun as a plain shadowed light, program
+   * states play never draws, and a table surveyed in play (or in a deterministic run, which has no slices) lacked them */
+  bool first = true;
+  do {
+    /* CW_TEST_WARM_NO_PRERENDER=1: a later slice without it, as before (the control of gate warm-states) */
+    if (!first && !cw_test_env("CW_TEST_WARM_NO_PRERENDER")) cw_tree_pre_render(run.tree, alpha);
+    first = false;
+    warm_slice(w, h);
+  } while (!warm.final && warm_now_ms() - t0 < WARM_BUDGET_MS);
   /* the bar: the objects shown so far */
   cw_load_stage st;
   int done, total;

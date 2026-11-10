@@ -1381,7 +1381,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
    * the app's program table (cmake/programs.cmake, tools/programs.mjs). The
    * gates fail on a non-empty list and print the lines. */
   static int32_t missing_count;
-  static char missing_text[1024]; /* the states, one per line (truncated) */
+  static char missing_text[16384]; /* the states, one per line (a list cut short hid states from the checks that read it) */
   static bool missing_field;
   if (!missing_field) {
     missing_field = true;

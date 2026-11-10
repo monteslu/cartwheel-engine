@@ -59,6 +59,9 @@ typedef struct cw__input_state {
    * faster than the tick rate) or several (a slow one), cw_input_raw holds a frame's presses for just that frame */
   uint32_t pend_pad[CW_MAX_PADS], tick_pad[CW_MAX_PADS], pend_mouse, tick_mouse;
   uint8_t pend_keys[CW_KEY_COUNT], tick_keys[CW_KEY_COUNT];
+  /* the first pointer tap a frame saw (a left click, or any finger landing), kept for the next tick the same way */
+  bool pend_tap, tick_tap;
+  float pend_tap_x, pend_tap_y, tick_tap_x, tick_tap_y;
   cw_input_context ctx;
   cw_raw_input prev_raw;
   /* touch */
@@ -109,6 +112,9 @@ void cw__input_replay_free(void);
 uint32_t cw__input_pad_pressed(int pad); /* a bit per CW_PAD_*; 0 for a pad not connected */
 bool cw__input_key_pressed(int key);     /* a scancode */
 uint32_t cw__input_mouse_pressed(void);  /* a bit per mouse button */
+/* a pointer tap: the left mouse button or any finger went down (logical window coordinates in *x, *y). Every finger
+ * counts, whether or not the app has cw_app_desc.touch_pointer: menus take a tap from a touch screen as from a mouse. */
+bool cw__input_tap(float *x, float *y);
 
 /* src/ui/prompt.c: the prompt module's debug request and test switches (called from cw__input_ensure_init) */
 void cw__prompt_input_init(void);

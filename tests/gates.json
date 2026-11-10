@@ -112,6 +112,42 @@
     "note": "cw_shell_hud_shown: one player starts, then Start opens the pause menu and the sample's HUD line (drawn only when cw_shell_hud_shown) is gone from under the menu (shell.hud 0). Control: no pause, the HUD stays (shell.hud 1)"
   },
   {
+    "name": "shell-touch",
+    "app": "shell_join",
+    "frames": 90,
+    "input": "shell-touch.json",
+    "controlInput": "shell-touch-control.json",
+    "hosts": ["romdev"],
+    "webgpu": true,
+    "fields": ["shell.screen", "shell.players", "shell.item", "game.players"],
+    "expect": { "shell.screen": 3, "shell.players": 1, "game.players": 1 },
+    "note": "the shell menus by touch alone (a finger, wasmcart pointer slot 1, in an app without touch_pointer): a tap on Settings opens it, a tap on Back returns to the title, a tap on Play opens the join screen and a tap there seats the touch player and plays. Control: the same taps in an empty corner, which leave the title as it was"
+  },
+  {
+    "name": "shell-touch-pause",
+    "app": "shell_join",
+    "frames": 80,
+    "input": "shell-touch-pause.json",
+    "controlInput": "shell-touch-pause-control.json",
+    "hosts": ["romdev"],
+    "webgpu": true,
+    "fields": ["shell.screen", "shell.players", "shell.item", "game.players"],
+    "expect": { "shell.screen": 5, "shell.players": 1 },
+    "note": "the pause menu by touch: a pad plays and pauses, then a finger taps Settings, which opens. Control: the tap lands in an empty corner, so the pause menu stays"
+  },
+  {
+    "name": "shell-mouse",
+    "app": "shell_join",
+    "frames": 90,
+    "input": "shell-mouse.json",
+    "controlInput": "shell-mouse-control.json",
+    "hosts": ["romdev"],
+    "webgpu": true,
+    "fields": ["shell.screen", "shell.players", "shell.item", "game.players"],
+    "expect": { "shell.screen": 3, "shell.players": 1, "game.players": 1 },
+    "note": "shell-touch with the mouse: clicks on Settings, Back, Play and the join screen reach play. Control: the clicks in an empty corner"
+  },
+  {
     "name": "shell-start-title",
     "app": "shell_join",
     "frames": 21,
@@ -3503,6 +3539,11 @@
       ],
       "vsGl": 0.002
     }
+  },
+  {
+    "name": "warm-states",
+    "script": "tests/warm-states.mjs",
+    "note": "the warm-up draws only the program states play draws: samples/warm_states (a cascaded sun, a probe grid, many meshes over few materials) loaded through romdev as a player's host runs it (no seed, the warm-up spread, several slices a frame) has no missing state on GL and WebGPU; control: CW_TEST_WARM_NO_PRERENDER=1, a frame's later slices without their pre-render, draws the sun as a plain shadowed light and misses states"
   },
   {
     "name": "warm-culled",

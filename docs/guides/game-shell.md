@@ -26,7 +26,14 @@ writes only its gameplay and art:
   strength) and seen in the effects. `cw_shell_screen_shake()` is deprecated
   and returns 0; `cw_shell_shake_level` and `cw_shell_set_shake_level` only
   keep the level an older save stored, so a save keeps its layout;
-- input: menus answer pads, the keyboard and pointer taps (mouse or touch);
+- input: menus answer pads, the keyboard and pointer taps: a mouse click, or a
+  finger on a touch screen (any of wasmcart's pointer slots 1 to 9, whether or
+  not the app sets `cw_app_desc.touch_pointer`). A tap on an item of the title,
+  pause or settings page (and on the graphics page) chooses it; a tap on the
+  join screen seats the keyboard's player, who holds the mouse and touch, and
+  plays (in a match, goes back to it), and with no pad seated the screen says
+  "tap to play". Gates `shell-touch`, `shell-touch-pause` and `shell-mouse`
+  hold it on GL and WebGPU, each with taps in an empty corner as the control;
   joined players are assigned their pad and devices in join order, so
   gameplay asks `cw_action_*` for players 0 to n-1;
 - prompts: every hint the shell draws is a button prompt ((header:prompt.h))

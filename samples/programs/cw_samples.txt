@@ -157,3 +157,5 @@ standard+fog+l0001+xcluster_csm_plain
 standard+fog+trans+l0001+xcluster_csm_plain
 physical+cc+l1000+xplain
 standard+instbig+senv+l1000+xplain
+standard+l0001+xcsm_gi
+standard+l0001+xcsm_plain_gi

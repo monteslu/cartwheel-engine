@@ -33,8 +33,9 @@
  * Input: menus read the actions ui_up, ui_down, ui_left, ui_right,
  * ui_accept, ui_back and pause, which the shell defines (keyboard arrows and
  * WASD, Enter / Space, Escape; pad d-pad and left stick, South, East,
- * Start), and pointer taps (mouse or touch) on menu items; Start on any pad
- * also accepts on the title. On the join screen each pad joins with South and
+ * Start), and pointer taps on menu items: a mouse click or any finger (pointer slots 1-9, with or without
+ * cw_app_desc.touch_pointer); a tap on the join screen seats the keyboard's player (who holds the mouse and touch)
+ * and plays. Start on any pad also accepts on the title. On the join screen each pad joins with South and
  * leaves with East, the keyboard joins with Enter and leaves with Esc. Start
  * on any pad plays: a pad with no seat takes the first free one first, and
  * with no seat free the seated players play. Enter plays from a keyboard that

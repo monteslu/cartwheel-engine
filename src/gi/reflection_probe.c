@@ -287,7 +287,7 @@ static void probes_exec(cw_pass_ctx *ctx, void *user) {
    * scene's objects) */
   cw__gi_tag(g, &ctx->scene3d->base);
   /* the grid first: probes captured after it see its bounce light */
-  if (!later_view) {
+  if (!later_view && !cw__warm_partial) {
     cw__gi_grids_exec(g, ctx);
     captures(g, ctx);
   }
