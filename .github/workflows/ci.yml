@@ -29,7 +29,9 @@ jobs:
           node-version: 24
       - name: System packages
         run: |
-          sudo apt-get update
+          # a stalled mirror once held apt-get update for the job's whole time limit: each try times out and retries
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-timeouts > /dev/null
+          for i in 1 2 3; do timeout 300 sudo apt-get update && break; [ "$i" = 3 ] && exit 1; sleep 10; done
           sudo apt-get install -y --no-install-recommends cmake ninja-build libsdl2-dev libegl-dev libgles-dev
       - name: Cache dependencies
         uses: actions/cache@v6
@@ -75,7 +77,9 @@ jobs:
           node-version: 24
       - name: System packages
         run: |
-          sudo apt-get update
+          # a stalled mirror once held apt-get update for the job's whole time limit: each try times out and retries
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-timeouts > /dev/null
+          for i in 1 2 3; do timeout 300 sudo apt-get update && break; [ "$i" = 3 ] && exit 1; sleep 10; done
           sudo apt-get install -y --no-install-recommends cmake ninja-build libsdl2-dev \
             libegl-dev libgles-dev libegl-mesa0 libgl1-mesa-dri mesa-vulkan-drivers libvulkan1
       - name: Cache dependencies
@@ -127,7 +131,9 @@ jobs:
           node-version: 24
       - name: System packages
         run: |
-          sudo apt-get update
+          # a stalled mirror once held apt-get update for the job's whole time limit: each try times out and retries
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-timeouts > /dev/null
+          for i in 1 2 3; do timeout 300 sudo apt-get update && break; [ "$i" = 3 ] && exit 1; sleep 10; done
           sudo apt-get install -y --no-install-recommends cmake ninja-build libsdl2-dev libegl-dev libgles-dev
       - name: Cache dependencies
         uses: actions/cache@v6
