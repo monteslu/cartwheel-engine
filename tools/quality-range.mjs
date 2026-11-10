@@ -36,7 +36,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { enterGpuSandbox } from './lib/gpu-sandbox.mjs';
 import { wgpuPin, glPin, scrubDisplay } from './lib/wgpu-pin.mjs';
-import { romdevTiming, scheduleFrom } from './lib/romdev-timing.mjs';
+import { romdevTiming, scheduleFrom, timingScale, scaleMs, inBand } from './lib/romdev-timing.mjs';
 const HOST = process.argv.includes('--host') ? process.argv[process.argv.indexOf('--host') + 1] : 'native';
 if (!['native', 'romdev'].includes(HOST)) { console.error('--host native|romdev'); process.exit(2); }
 if (HOST === 'native') await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
@@ -157,7 +157,9 @@ async function measureRomdev(sc, gpu, preset, flat) {
     if (!(ms > 0)) { lastErr = `no GPU time: ${JSON.stringify(t.gpuMs)}`; continue; }
     const run = { ms, passes, passSumMs: pt.totalGpuMs, preset: (t.setup || []).map((x) => x.reply && x.reply.preset).find(Boolean),
       skipped: (t.fields && t.fields['render.skipped'] && t.fields['render.skipped'].max) || 0, clockMhz: t.gpu && t.gpu.clockMhz && t.gpu.clockMhz.mean,
-      gpu: t.gpuSeen, size: t.size, ...(romdevSized[sc.name] === 'pref' ? { seeded: false } : {}) };
+      gpu: t.gpuSeen, size: t.size, ...(romdevSized[sc.name] === 'pref' ? { seeded: false } : {}),
+      // a timing scale set for this backend (tools/lib/romdev-timing.mjs): the reference-GPU equivalent beside the raw ms
+      ...(t.timingScale ? { scaledMs: t.scaledMs ? t.scaledMs.mean : null, timingScale: t.timingScale, ...(t.scaleNote ? { scaleNote: t.scaleNote } : {}) } : {}) };
     if (!best || run.ms < best.ms) best = run;
   }
   return best || { error: lastErr || 'no run' };
@@ -205,7 +207,11 @@ async function sweep(flat) {
       report[key] = { ...Object.fromEntries(PRESETS.map((p) => [p, r[p]])), bad };
       if (bad.length) failures++;
       const row = PRESETS.map((p) => `${p} ${r[p].ms.toFixed(2)}`).join('  ');
-      console.log(`${bad.length ? 'FAIL' : 'ok  '} ${key}${flat ? ' (control)' : ''}: ${row} ms (VL ${(r.verylow.ms / r.high.ms).toFixed(2)}, L ${(r.low.ms / r.high.ms).toFixed(2)} x High)${bad.length ? '\n       ' + bad.join('\n       ') : ''}${bad.note ? '\n       (' + bad.note + ')' : ''}`);
+      // with a timing scale for the backend (romdev runs on another test GPU): the reference-GPU row beside the raw one
+      // ('-' where a preset's time lies outside the fit's band); the shares and the order are judged on the raw ms
+      const sc_ = HOST === 'romdev' ? timingScale(gpu) : null;
+      const scaled = sc_ ? `\n       scaled to the reference GPU (from ${sc_.gpuName}, ${sc_.residual === null ? 'residual unknown' : 'residual ' + (sc_.residual * 100).toFixed(0) + '%'}${sc_.unreliable ? ', UNRELIABLE' : ''}${sc_.validMs ? ', - outside its band of ' + sc_.validMs.join(' to ') + ' ms' : ''}): ${PRESETS.map((p) => { const v = scaleMs(r[p].ms, sc_); return `${p} ${inBand(v, sc_) ? v.toFixed(2) : '-'}`; }).join('  ')} ms` : '';
+      console.log(`${bad.length ? 'FAIL' : 'ok  '} ${key}${flat ? ' (control)' : ''}: ${row} ms (VL ${(r.verylow.ms / r.high.ms).toFixed(2)}, L ${(r.low.ms / r.high.ms).toFixed(2)} x High)${scaled}${bad.length ? '\n       ' + bad.join('\n       ') : ''}${bad.note ? '\n       (' + bad.note + ')' : ''}`);
     }
   return { report, failures, errors };
 }
