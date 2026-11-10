@@ -4,7 +4,7 @@ set(CW_PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/programs/cw_samples.txt)
 
 # hello carries cart art and credits (the fixture tests/cart-art.mjs checks it packs)
 cw_add_app(hello SOURCES hello/main.c ART ${CW_ROOT}/tests/fixtures/cart-art
-  DESCRIPTION "A spinning cube that moves with the stick and plays a tone while the south button is held." AUTHOR "The cartwheel authors")
+  TITLE "Hello Cube" DESCRIPTION "A spinning cube that moves with the stick and plays a tone while the south button is held." AUTHOR "The cartwheel authors")
 # vertex colours as rgb and as rgba attributes (glTF writes four floats): both draw, alpha is not used
 cw_add_app(vertex_colors SOURCES vertex_colors/main.c)
 # one InstancedMesh with every optional vertex attribute (two uv sets, vertex and instance colours, tangents) and five maps: GL and WebGPU agree

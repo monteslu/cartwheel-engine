@@ -9,7 +9,7 @@
 set(CW_APP_VERSION "" CACHE STRING "the version in each cart's manifest (semver); empty: the app's git checkout's (tools/lib/app-version.mjs)")
 
 # ── cw_add_app(name SOURCES ... [ASSETS dir] [NET domain...] [PLUGINS dir] [NO_PLUGINS] [PROGRAMS table.txt...]
-#               [ART dir] [DESCRIPTION text] [AUTHOR text] [VERSION semver]) ──
+#               [ART dir] [TITLE text] [DESCRIPTION text] [AUTHOR text] [VERSION semver]) ──
 # Native: an executable. Cart: <name>.wasm packed into <name>.wasc (with the
 # asset directory) by wasmcart-pack, after the import audit. Every cart is
 # the dual GL + WebGPU one, and every app draws through the engine on both
@@ -20,10 +20,11 @@ set(CW_APP_VERSION "" CACHE STRING "the version in each cart's manifest (semver)
 # without NET, a project's `net.domains` key in project.cwproj gives them.
 # ART <dir> is the cart's pictures for launchers (an icon, a cover, a
 # background, a logo, a title screen, screenshots: wasmcart's docs/art.md),
-# packed under art/ in the .wasc; DESCRIPTION and AUTHOR go in its manifest
-# beside them. Without them, the app a project names (`app` in
-# project.cwproj) takes the project's `art` (a directory relative to the
-# project), `description` and `author` keys. Native builds do not use them.
+# packed under art/ in the .wasc; TITLE (the game's name as people read it,
+# the manifest's `title`; the cart's `name` stays its id), DESCRIPTION and
+# AUTHOR go in its manifest beside them. Without them, the app a project names
+# (`app` in project.cwproj) takes the project's `art` (a directory relative
+# to the project), `title`, `description` and `author` keys. Native builds do not use them.
 # The manifest's version is semver (1.4.2, 1.5.0-rc.1, 1.4.2-dev.g1a2b3c4),
 # worked out on every build (tools/cart-version.mjs, the rule in
 # tools/lib/app-version.mjs): VERSION, else CW_APP_VERSION, else the git
@@ -37,7 +38,7 @@ set(CW_APP_VERSION "" CACHE STRING "the version in each cart's manifest (semver)
 # Plugins (cmake/plugins.cmake): the runtime plugins of PLUGINS <dir>,
 # default <the calling directory>/plugins when it exists, are compiled in.
 function(cw_add_app name)
-  cmake_parse_arguments(A "NO_PLUGINS;QUIET_PLUGINS;NO_PROJECT_EDITOR" "ASSETS;PACK;PLUGINS;ART;DESCRIPTION;AUTHOR;VERSION" "SOURCES;NET;PROGRAMS" ${ARGN})
+  cmake_parse_arguments(A "NO_PLUGINS;QUIET_PLUGINS;NO_PROJECT_EDITOR" "ASSETS;PACK;PLUGINS;ART;TITLE;DESCRIPTION;AUTHOR;VERSION" "SOURCES;NET;PROGRAMS" ${ARGN})
   if(A_UNPARSED_ARGUMENTS)
     message(FATAL_ERROR "cw_add_app(${name}): unknown arguments ${A_UNPARSED_ARGUMENTS} (every app is a dual GL + WebGPU cart: there is no opt-out)")
   endif()
@@ -53,11 +54,11 @@ function(cw_add_app name)
     endif()
   endif()
   # the project's own app takes its cart art and credits from project.cwproj
-  # (art = art, description = ..., author = ...) when the call passes none
+  # (art = art, title = ..., description = ..., author = ...) when the call passes none
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/project.cwproj)
     cw__project_value(_cw_app app)
     if(_cw_app STREQUAL name)
-      foreach(_k art description author)
+      foreach(_k art title description author)
         string(TOUPPER ${_k} _K)
         if(NOT A_${_K})
           cw__project_value(A_${_K} ${_k})
@@ -284,12 +285,15 @@ function(cw_add_app name)
     foreach(_d ${A_NET})
       list(APPEND _assets --ws ${_d})
     endforeach()
-    # the cart's pictures and credits for launchers (manifest art, description, author)
+    # the cart's pictures, title and credits for launchers (manifest art, title, description, author)
     set(_meta "")
     if(A_ART)
       list(APPEND _meta --art ${A_ART})
       file(GLOB_RECURSE _art_files CONFIGURE_DEPENDS ${A_ART}/*)
       set_property(TARGET ${name} APPEND PROPERTY LINK_DEPENDS ${_art_files})
+    endif()
+    if(A_TITLE)
+      list(APPEND _meta --title "${A_TITLE}")
     endif()
     if(A_DESCRIPTION)
       list(APPEND _meta --description "${A_DESCRIPTION}")
