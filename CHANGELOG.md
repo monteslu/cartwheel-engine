@@ -4,6 +4,19 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.45.1 (2026-11-10)
+
+### Fixed
+- **A native run's scripted finger never tapped.** The native input script (`CW_INPUT`, written by
+  `tools/run-cart.mjs` from a gate's `touches`) held a finger down and lifted it, but never marked the frame it
+  landed as a tap, the edge SDL's finger-down event gives a real device and a cart host's pointer slots give a cart.
+  Anything that reads a tap (`cw__input_tap`: the shell's menus and join screen, the graphics page) saw none on a
+  native run, so `shell-touch` stayed on the title there while it passed through romdev on GL and WebGPU. Real touch
+  screens (Android, a touch laptop) were never affected: their fingers arrive as SDL events. A scripted finger now
+  taps on the frame it lands, on GL and WebGPU alike, and `shell-touch`, `shell-touch-pause` and `shell-mouse` run
+  natively again (CI on llvmpipe and lavapipe) as well as through romdev; each keeps its control (the taps in an empty
+  corner), which the unfixed script could not tell from the real run.
+
 ## v0.45.0 (2026-11-10)
 
 ### Added

@@ -216,7 +216,7 @@ An input script is JSON: a list of entries, each setting the WHOLE input state f
 | `axes` | `lx ly rx ry lt rt`, -1..1 (triggers 0..1) |
 | `keys` | held keys: names (`space`, `return`, `escape`, `left`, `a`..`z`, `0`..`9`, `f1`..`f12`, `lshift`, ...) or SDL scancodes |
 | `mouse` | `{"x":320,"y":180,"buttons":["left"]}` in integer cart pixels (pointer slot 0) |
-| `touches` | `[{"id":1,"x":100,"y":280}]`, ids 1..9 |
+| `touches` | `[{"id":1,"x":100,"y":280}]`, ids 1..9; a finger absent on the entry before lands (a tap) on this one, on every host |
 | `wheel` | notches this frame only: `1` or `{"x":0,"y":-2}` |
 | `text` | text typed this frame (needs text input started, as a focused text field does) |
 | `pad2`, `pad3`, `pad4` | pads 1, 2 and 3 (players 2, 3 and 4): `{"buttons":["south"],"axes":{"lx":-1}}`, the same names as pad 0's `buttons` and `axes`. A pad key absent from an entry means that pad is unplugged from that frame on |

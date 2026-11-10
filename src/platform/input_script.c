@@ -42,6 +42,7 @@ static int nsteps, cursor;
 /* the state applied on the previous frame, for the press edges */
 static uint32_t prev_pad[4], prev_mouse;
 static uint8_t prev_keys[CW_KEY_COUNT];
+static bool prev_touch[CW_MAX_TOUCHES];
 static bool loaded, active;
 static step current;
 
@@ -196,4 +197,11 @@ void cw__input_script_apply(cw_raw_input *in, uint64_t frame) {
     in->wheel_y = current.wheel_y;
   }
   memcpy(in->touches, current.touches, sizeof in->touches);
+  /* a finger that lands: the edge SDL_FINGERDOWN gives a real run (sdl_common.c) and a cart host's pointer slots give
+   * a cart. Without it a scripted finger was held and lifted but never tapped, so nothing that reads a tap (the
+   * shell's menus, cw__input_tap) saw one on a native run */
+  for (int i = 0; i < CW_MAX_TOUCHES; i++) {
+    in->touches[i].tapped = in->touches[i].active && !prev_touch[i];
+    prev_touch[i] = in->touches[i].active;
+  }
 }

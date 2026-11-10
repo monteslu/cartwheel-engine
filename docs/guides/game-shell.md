@@ -33,7 +33,8 @@ writes only its gameplay and art:
   join screen seats the keyboard's player, who holds the mouse and touch, and
   plays (in a match, goes back to it), and with no pad seated the screen says
   "tap to play". Gates `shell-touch`, `shell-touch-pause` and `shell-mouse`
-  hold it on GL and WebGPU, each with taps in an empty corner as the control;
+  hold it natively and through romdev on GL and WebGPU, each with taps in an
+  empty corner as the control;
   joined players are assigned their pad and devices in join order, so
   gameplay asks `cw_action_*` for players 0 to n-1;
 - prompts: every hint the shell draws is a button prompt ((header:prompt.h))
