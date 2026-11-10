@@ -47,10 +47,14 @@ function openCart(file) {
   return { manifest: m ? JSON.parse(Buffer.from(m).toString('utf8')) : null, read };
 }
 
+// manifest `title` needs a wasmcart-pack that knows --title (after wasmcart 0.40.0); an older one ignores the flag,
+// so the title is checked only where the pack tool lists it
+const PACK_TITLE = /--title/.test(spawnSync('node', [PACK, '--help'], { encoding: 'utf8' }).stdout);
+if (!PACK_TITLE) console.log(`skip title: ${PACK} predates --title`);
 const fixture = JSON.parse(readFileSync(join(FIX, 'art.json'), 'utf8'));
 const DESC = 'A test cart, with commas, an apostrophe\'s mark and (brackets).';
 /** the cart's manifest names every fixture picture under art/, each in the archive and sound */
-function checkArt(what, cart, desc, author) {
+function checkArt(what, cart, desc, author, title) {
   const before = failed;
   const { manifest, read } = openCart(cart);
   if (!manifest) return fail(`${what}: no manifest.json in ${cart}`);
@@ -66,6 +70,7 @@ function checkArt(what, cart, desc, author) {
   const problems = describeArtProblems(art, read);
   if (problems.length) fail(`${what}: describeArtProblems: ${problems.join('; ')}`);
   if (manifest.description !== desc) fail(`${what}: description is ${JSON.stringify(manifest.description)}`);
+  if (PACK_TITLE && manifest.title !== title) fail(`${what}: title is ${JSON.stringify(manifest.title)}, not ${JSON.stringify(title)}`);
   if (manifest.author !== author) fail(`${what}: author is ${JSON.stringify(manifest.author)}`);
   if (failed === before) ok(`${what}: art, description and author packed, no art problems`);
 }
@@ -74,10 +79,10 @@ function checkArt(what, cart, desc, author) {
 {
   const script = join(OUT, 'read-keys.cmake');
   writeFileSync(script, `include(${join(ROOT, 'cmake', 'app.cmake')})\n` +
-    'foreach(k app art description author)\n  cw__project_value(v ${k})\n  message(STATUS "${k}=[${v}]")\nendforeach()\n');
+    'foreach(k app art title description author)\n  cw__project_value(v ${k})\n  message(STATUS "${k}=[${v}]")\nendforeach()\n');
   const r = spawnSync('cmake', ['-P', script], { cwd: join(ROOT, 'tests', 'fixtures', 'cart-art-project'), encoding: 'utf8' });
   const got = Object.fromEntries([...(r.stdout + r.stderr).matchAll(/-- (\w+)=\[(.*)\]/g)].map((m) => [m[1], m[2]]));
-  const want = { app: 'arttest', art: '../cart-art', description: DESC, author: 'The cartwheel authors' };
+  const want = { app: 'arttest', art: '../cart-art', title: 'Art Test: the Cart', description: DESC, author: 'The cartwheel authors' };
   const bad = Object.keys(want).filter((k) => got[k] !== want[k]);
   if (r.status !== 0 || bad.length) fail(`project keys: ${bad.map((k) => `${k} read as ${JSON.stringify(got[k])}`).join(', ') || r.stderr}`);
   else ok('project.cwproj art, description and author read as cw_add_app reads them');
@@ -88,11 +93,11 @@ function checkArt(what, cart, desc, author) {
   const wasm = join(OUT, 'cart.wasm');
   writeFileSync(wasm, Buffer.from([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
   const cart = join(OUT, 'arttest.wasc');
-  const r = spawnSync('node', [PACK, '--wasm', wasm, '--name', 'arttest', '--art', FIX, '--description', DESC,
+  const r = spawnSync('node', [PACK, '--wasm', wasm, '--name', 'arttest', '--art', FIX, '--title', 'Art Test: the Cart', '--description', DESC,
     '--author', 'The cartwheel authors', '--output', cart], { encoding: 'utf8' });
   if (r.status !== 0) fail(`pack: ${(r.stderr || r.stdout).trim()}`);
   else if (/art /.test(r.stderr)) fail(`pack warned about the fixture's art: ${r.stderr.trim()}`);
-  else checkArt('pack --art', cart, DESC, 'The cartwheel authors');
+  else checkArt('pack --art', cart, DESC, 'The cartwheel authors', 'Art Test: the Cart');
 }
 
 // control: a cover of the wrong shape must be reported
@@ -107,11 +112,11 @@ function checkArt(what, cart, desc, author) {
 if (existsSync(join(CARTS, 'hello.wasc'))) {
   const before = failed;
   checkArt('hello.wasc', join(CARTS, 'hello.wasc'),
-    'A spinning cube that moves with the stick and plays a tone while the south button is held.', 'The cartwheel authors');
+    'A spinning cube that moves with the stick and plays a tone while the south button is held.', 'The cartwheel authors', 'Hello Cube');
   if (failed === before) {
     const other = openCart(join(CARTS, 'vertex_colors.wasc')).manifest;
     if (!other) fail('vertex_colors.wasc: no manifest');
-    else if (other.art || other.description || other.author) fail('vertex_colors.wasc (no ART) carries art or credits');
+    else if (other.art || other.title || other.description || other.author) fail('vertex_colors.wasc (no ART) carries art or credits');
     else ok('a sample without ART carries no art');
   }
 } else {

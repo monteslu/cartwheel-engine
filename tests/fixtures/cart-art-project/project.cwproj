@@ -2,6 +2,7 @@
 name = "Art Test"
 app = "arttest"
 art = ../cart-art
+title = "Art Test: the Cart"
 description = "A test cart, with commas, an apostrophe's mark and (brackets)."
 author = The cartwheel authors
 artist = not the art key
