@@ -68,6 +68,7 @@ export const LOCAL_ONLY = {
   docs: 'Chromium',
   tutorials: 'romdev and wasmcart-native',
   'noise-gpu': 'romdev and Chromium legs',
+  'warm-states': 'romdev (a cart loaded with no seed, as a player\'s host runs it)',
   'water-surface': 'romdev and Chromium legs',
   'water-open-sea-surface': 'romdev and Chromium legs',
   'boom-perf': 'GPU timing reports (GL and WebGPU on the test GPU)',
@@ -88,7 +89,7 @@ const unknown = Object.keys(LOCAL_ONLY).filter((n) => !gates.some((g) => g.name 
 if (unknown.length) { console.error(`tests/ci.mjs: LOCAL_ONLY names no gate: ${unknown.join(', ')}`); process.exit(2); }
 const native = (g) => !g.hosts || g.hosts.includes('native');
 const gl = gates.filter((g) => g.app && g.gl !== false && native(g)).map((g) => g.name);
-const wgpu = gates.filter((g) => g.app && g.webgpu).map((g) => g.name);
+const wgpu = gates.filter((g) => g.app && g.webgpu && native(g)).map((g) => g.name); // a romdev-only gate stays local
 const scripts = gates.filter((g) => g.script && !LOCAL_ONLY[g.name]).map((g) => g.name);
 
 function gate(args) {
