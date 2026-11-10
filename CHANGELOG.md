@@ -4,6 +4,27 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.43.0 (2026-11-09)
+
+### Added
+- **`tools/check-art.mjs`: a built cart's launcher art, checked.** `node tools/check-art.mjs <cart.wasc | carts dir>`
+  reads the manifest and art out of each `.wasc` (nothing else is inflated) and prints one line per problem, exit 1 on
+  any: a missing `title`, a missing picture (icon, cover, background, logo, title screen, at least one screenshot), a
+  screenshot without a label, a file that is not a whole PNG or JPEG (every PNG chunk's CRC, its image data inflating
+  to the full picture, a JPEG's frame, scan and end marker) or whose extension names the other format, an icon not
+  square or under 256 x 256, a cover not 2:3 or under 600 x 900, a background not 16:9 or under 1920 x 1080, a logo
+  that is not a PNG, not wider than tall, under 1280 wide and 720 tall, or without real transparency (under 5% of its
+  pixels at most half opaque), a title screen or screenshot under the cart's size (1920 x 1080 when the manifest
+  declares none). It cannot read text in a picture, so each cart prints `cover: name not machine-checked`: look at
+  the covers. Shipped in every SDK; `tests/check-art.mjs` runs it with 18 controls that must fail, a 16:9 cover first.
+- **A game's title.** `project.cwproj`'s `title` (or `cw_add_app(... TITLE "...")`) goes to the cart's manifest
+  `title`: the game's name as people read it, for launchers and frontends; the app's name stays the cart's id. It
+  needs a wasmcart-pack that knows `--title` (after wasmcart 0.40.0); the pinned one ignores it until the pin moves.
+- `tools/lib/wasc-splice.mjs` `readNamedEntries(wasc, names)`: the named entries of an archive, inflating nothing else.
+
+### Changed
+- The `hello` sample's art fixture has a 1920 x 1080 title screen and screenshot, so the sample passes the art check.
+
 ## v0.42.0 (2026-11-09)
 
 ### Added
