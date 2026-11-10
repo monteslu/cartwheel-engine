@@ -4,6 +4,23 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.44.2 (2026-11-10)
+
+v0.44.1 was never released: its tag points at the commit after v0.44.0 (a CI change only) by mistake. Use v0.44.2.
+
+### Fixed
+- **Split screen's volumetric fog state said the fog was off.** Since v0.41.0 a run without the fog grid zeroes
+  `cw_volumetric_fog_get_state`, so a game sees the fog go off when a preset turns it off in play. Split screen ends
+  each frame with its overlay run, which has no camera and so no grid, and it zeroed the state the views had just
+  set: every split-screen frame reported no fog (gate `fog-split` failed on every host). The views still drew their
+  fog; only the state was wrong. A run with no grid now keeps a grid built earlier in the same frame, and a frame with
+  none still reports off (gate `fog-volumetric-off`).
+- CI: `warm-states`, `text-floor` (tools/check-text.mjs runs its screens on romdev) and `fx-distort-fringe` are
+  local gates (they need romdev), and the WebGPU run leaves out romdev-only gates as the GL run does (`shell-touch`,
+  `shell-touch-pause`, `shell-mouse`); `unit-weakgpu-auto` reads the run's `unit.failed` at the end
+  (`CW_DEBUG_DUMP`), so its control sees the injected failure, which runs at frame 2, after the suite's summary line
+  it read before; a stalled apt mirror times out and retries instead of holding a job until its time limit.
+
 ## v0.44.0 (2026-11-09)
 
 ### Added

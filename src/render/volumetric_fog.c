@@ -89,6 +89,7 @@ typedef struct vfog_rt {
   int nv;
   bool warned_lights, warned_vols, warned_ortho;
   cw_volumetric_fog_state st;
+  uint64_t st_frame; /* cw_frame_index() a view last built the grid (st) */
   t3_camera *cam_dir, *cam_spot[3];
   vf_slot slot[CW_MAX_VIEWS]; /* [0] a single view's; [i] splitscreen view i's */
 } vfog_rt;
@@ -798,10 +799,12 @@ static const cw__height_fog *medium_of(cw_tree *t) {
 
 /* a frame with no grid: the state says so (cw_volumetric_fog_get_state), so a game that swaps in a cheap
  * stand-in when the fog is off sees it go off when a preset turns the pass off in play, not only at start.
+ * A run with no grid in a frame a view built one keeps it: split screen's overlay run (no camera) comes after
+ * the views and would otherwise say every frame of a split screen had no fog (gate fog-split).
  * CW_TEST_VFOG_STALE=1 keeps the last grid's state (the old behaviour: the control of gate fog-volumetric-off) */
 static bool vf_off(vfog_rt *v) {
   const char *stale = cw_test_env("CW_TEST_VFOG_STALE"); /* read alike on every host (cartwheel/debug.h) */
-  if (!(stale && atoi(stale))) v->st = (cw_volumetric_fog_state){ 0 };
+  if (!(stale && atoi(stale)) && v->st_frame != cw_frame_index()) v->st = (cw_volumetric_fog_state){ 0 };
   return false;
 }
 
@@ -1031,6 +1034,7 @@ static void vf_build_exec(cw_pass_ctx *ctx, void *user) {
   S->have_history = temporal > 0;
   v->st = (cw_volumetric_fog_state){ .active = true, .grid = { gw, gh, gd }, .lights = n, .shadowed_lights = nsh,
                                      .volumes = nvol, .distance = dist, .shadow_map = nsh ? ts : 0 };
+  v->st_frame = cw_frame_index();
 }
 
 /* ── apply ──────────────────────────────────────────────────────────── */
