@@ -711,8 +711,15 @@ void cw__pw_timing_poll(void) {
     ts_read *r = &RB[b];
     if (r->mapping && !r->requested && !W.enc) {
       r->requested = true;
+      /* a cart never processes events: its map lands spontaneously between frames (gpu_read.c does the same) */
       wgpuBufferMapAsync(r->buf, WGPUMapMode_Read, 0, (size_t)r->rpairs * 16,
-                         (WGPUBufferMapCallbackInfo){ .mode = WGPUCallbackMode_AllowProcessEvents, .callback = on_ts_map, .userdata1 = r });
+                         (WGPUBufferMapCallbackInfo){
+#if CW_CART
+                           .mode = WGPUCallbackMode_AllowSpontaneous,
+#else
+                           .mode = WGPUCallbackMode_AllowProcessEvents,
+#endif
+                           .callback = on_ts_map, .userdata1 = r });
     }
   }
 }

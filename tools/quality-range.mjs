@@ -6,11 +6,21 @@
 // The control runs the same apps with CW_TEST_QUALITY_FLAT=1 (every preset draws High's settings) and must fail.
 // Runs inside the GPU suite (the machine's test GPU, never the desktop): node tools/with-gpu-suite.mjs quality-range
 // node tools/quality-range.mjs ...
-// Native only, and so not a game check: a cart on romdev gets no GPU timer (GL has no timer queries there, the WebGPU
-// device no timestamp-query feature: `pipeline` reports timer_query false), so the range cannot be measured through
-// romdev yet and stays out of the games' gates until romdev can time a cart's GPU work.
+// --host romdev: the same range from the built cart (build/cart-wgpu/carts/<app>.wasc) through romdev's
+// frame({op:'timing'}) on the server's pinned test GPU (tools/lib/romdev-timing.mjs), each preset a fresh
+// deterministic load run to the same frame. The cost is romdev's GPU time of the last 60 frames before frame
+// --frames, measured by the host around the cart's work (WebGPU: the union of every pass's timestamps; GL: a
+// GL_TIME_ELAPSED query around each frame, as a cart never times GL passes), the same measure on both backends. It
+// tracked the native pass sums within about 10% at every preset of night_street on the 890M (GL and WebGPU,
+// 2026-11-10). The pipeline's own pass times (WebGPU) are kept in the report beside it (their 16-frame averages at one
+// frame swing more than the host's 60-frame mean). The host's time includes the frame's fixed GPU costs (UI, the
+// final copy) that the pass sums leave out and no preset cuts, so on romdev Very Low and Low may each be
+// --romdev-slack (0.05) more of High than the scene's native share. The control asks every preset for High
+// (`quality high`), what CW_TEST_QUALITY_FLAT does natively. The cart draws at its own size: --lines must be its height.
+// A run romdev reports as noisy (contention.noisy: another process on the GPU, a playtest window) counts as a
+// failed rep. Native runs use the GPU suite; romdev runs need no sandbox (the server is pinned).
 //
-//   node tools/quality-range.mjs [--apps open_world,terrain_demo] [--gpus gl,webgpu] [--frames 400] [--lines 1080]
+//   node tools/quality-range.mjs [--host native|romdev] [--romdev-slack 0.05] [--apps open_world,terrain_demo] [--gpus gl,webgpu] [--frames 400] [--lines 1080]
 //        [--project <a games tree built with this engine>] [--scenes <file.json>] [--json out/quality-range/report.json]
 //        [--no-control] [--reps 2] [--max-very-low 0.3] [--max-low 0.45] [--slack 0.1]
 // With neither --apps nor --scenes it runs tests/quality-range-engine.json.
@@ -26,7 +36,10 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { enterGpuSandbox } from './lib/gpu-sandbox.mjs';
 import { wgpuPin, glPin, scrubDisplay } from './lib/wgpu-pin.mjs';
-await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
+import { romdevTiming, scheduleFrom } from './lib/romdev-timing.mjs';
+const HOST = process.argv.includes('--host') ? process.argv[process.argv.indexOf('--host') + 1] : 'native';
+if (!['native', 'romdev'].includes(HOST)) { console.error('--host native|romdev'); process.exit(2); }
+if (HOST === 'native') await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -35,6 +48,7 @@ const PROJ = resolve(opt('project', ROOT));
 const GPUS = opt('gpus', 'gl,webgpu').split(',');
 const FRAMES = +opt('frames', '400'), LINES = +opt('lines', '1080'), REPS = +opt('reps', '2');
 const MAX_VL_ARG = +opt('max-very-low', '0.3'), MAX_L_ARG = +opt('max-low', '0.45'), SLACK = +opt('slack', '0.1');
+const ROMDEV_SLACK = HOST === 'romdev' ? +opt('romdev-slack', '0.05') : 0;
 const PRESETS = ['verylow', 'low', 'medium', 'high', 'ultra'];
 const OUT = join(PROJ, 'out', 'quality-range');
 mkdirSync(OUT, { recursive: true });
@@ -97,13 +111,69 @@ function measure(sc, gpu, preset, flat) {
   return best;
 }
 
+/** one run through romdev: a fresh deterministic load, the preset, the pipeline's timers, and the last 60 frames
+ *  before frame FRAMES timed; the best of REPS */
+const romdevSized = {};
+async function measureRomdev(sc, gpu, preset, flat) {
+  const cart = join(PROJ, 'build/cart-wgpu/carts', `${sc.app}.wasc`);
+  if (!existsSync(cart)) return { error: `no cart ${cart} (build the cart tree)` };
+  const frames = sc.frames || FRAMES;
+  const env = Object.entries(sc.env || {});
+  const commands = [...(env.length ? [`env ${env.map(([k, v]) => `${k}=${v}`).join(' ')}`] : []), 'test_run', `quality ${flat ? 'high' : preset}`, 'pipeline', ...(sc.startCmds || [])];
+  const at = 1 + commands.length; // the load runs frame 1, each request one more
+  const MEASURED = 60;
+  const warmup = frames - at - MEASURED;
+  if (warmup < 16) return { error: `--frames ${frames} leaves no warmup after ${at} setup frames` };
+  // a cart that draws another size than --lines (a 720p sample) is loaded with no seed and the host's preferred size,
+  // as natively it gets CW_RENDER_SCALE: a deterministic run keeps its own size
+  // (one with a fixed cw_app_desc.render_scale ignores a host's preference: it is measured at its own size, and says so;
+  // its presets must still order by cost, its shares of High are not checked)
+  const sized = romdevSized[sc.name] === 'pref' ? { seed: null, preferredSize: { width: Math.round(LINES * 16 / 9), height: LINES } } : {};
+  let best = null, lastErr = null, noisy = 0;
+  for (let rep = 0; rep < REPS; rep++) {
+    let t;
+    if (noisy) await new Promise((r) => setTimeout(r, 5000)); // a noisy run is run again, after a pause
+    try {
+      t = await romdevTiming({ cart, gpu, commands, ...sized, warmup, frames: MEASURED, window: MEASURED, passTimers: true, debugFields: ['render.skipped', 'shadow.culled'],
+        ...(sc.input ? { input: scheduleFrom(JSON.parse(readFileSync(join(PROJ, sc.input), 'utf8')), at) } : {}) });
+    } catch (e) { lastErr = e.message; continue; }
+    if (t.size && t.size.height !== LINES && !romdevSized[sc.name]) {
+      romdevSized[sc.name] = 'pref';
+      return measureRomdev(sc, gpu, preset, flat);
+    }
+    if (t.size && t.size.height !== LINES && romdevSized[sc.name] === 'pref') {
+      romdevSized[sc.name] = 'own';
+      console.log(`note ${sc.name}: the cart draws ${t.size.width}x${t.size.height} whatever the host prefers (a fixed render scale): measured at that size`);
+      return measureRomdev(sc, gpu, preset, flat);
+    }
+    if (t.contention && t.contention.noisy) {
+      lastErr = `noisy: ${t.contention.reasons.join('; ')}`;
+      if (noisy++ < 5) rep--; // up to five more tries for noise, beside the reps
+      continue;
+    }
+    const pt = (t.passTimers || []).at(-1) || {};
+    const passes = Object.fromEntries(Object.entries(pt.passes || {}).filter(([, p]) => p.ran && p.gpuMs > 0).map(([n, p]) => [n, +p.gpuMs.toFixed(3)]));
+    const ms = t.gpuMs && t.gpuMs.mean;
+    if (!(ms > 0)) { lastErr = `no GPU time: ${JSON.stringify(t.gpuMs)}`; continue; }
+    const run = { ms, passes, passSumMs: pt.totalGpuMs, preset: (t.setup || []).map((x) => x.reply && x.reply.preset).find(Boolean),
+      skipped: (t.fields && t.fields['render.skipped'] && t.fields['render.skipped'].max) || 0, clockMhz: t.gpu && t.gpu.clockMhz && t.gpu.clockMhz.mean,
+      gpu: t.gpuSeen, size: t.size, ...(romdevSized[sc.name] === 'pref' ? { seeded: false } : {}) };
+    if (!best || run.ms < best.ms) best = run;
+  }
+  return best || { error: lastErr || 'no run' };
+}
+
 /** the checks on one app and backend; [] when it passes */
 function judge(r, sc) {
   const bad = [], H = r.high.ms;
-  const MAX_VL = sc.maxVeryLow ?? MAX_VL_ARG, MAX_L = sc.maxLow ?? MAX_L_ARG;
+  const MAX_VL = (sc.maxVeryLow ?? MAX_VL_ARG) + ROMDEV_SLACK, MAX_L = (sc.maxLow ?? MAX_L_ARG) + ROMDEV_SLACK;
   if (!(H > 0)) return ['no GPU time at High'];
-  if (r.verylow.ms > MAX_VL * H) bad.push(`Very Low ${r.verylow.ms.toFixed(2)} ms is ${(r.verylow.ms / H).toFixed(2)} x High (at most ${MAX_VL})`);
-  if (r.low.ms > MAX_L * H) bad.push(`Low ${r.low.ms.toFixed(2)} ms is ${(r.low.ms / H).toFixed(2)} x High (at most ${MAX_L})`);
+  // a cart measured at its own size (romdev, a fixed render scale) has no share of High at --lines to hold: its
+  // presets must still order by cost
+  const ownSize = r.high.size && r.high.size.height !== LINES;
+  if (ownSize) bad.note = `shares not checked: the cart draws ${r.high.size.width}x${r.high.size.height} on romdev, its shares are for ${LINES} lines`;
+  if (!ownSize && r.verylow.ms > MAX_VL * H) bad.push(`Very Low ${r.verylow.ms.toFixed(2)} ms is ${(r.verylow.ms / H).toFixed(2)} x High (at most ${MAX_VL})`);
+  if (!ownSize && r.low.ms > MAX_L * H) bad.push(`Low ${r.low.ms.toFixed(2)} ms is ${(r.low.ms / H).toFixed(2)} x High (at most ${MAX_L})`);
   for (let i = 0; i + 1 < PRESETS.length - 1; i++) {
     const a = r[PRESETS[i]], b = r[PRESETS[i + 1]];
     if (a.ms > b.ms * (1 + SLACK)) bad.push(`${PRESETS[i]} ${a.ms.toFixed(2)} ms is dearer than ${PRESETS[i + 1]} ${b.ms.toFixed(2)} ms`);
@@ -112,20 +182,21 @@ function judge(r, sc) {
   return bad;
 }
 
-function sweep(flat) {
+async function sweep(flat) {
   const report = {};
-  let failures = 0;
+  let failures = 0, errors = 0; // errors: a run that could not measure (a control failing that way proves nothing)
   for (const sc of scenes)
     for (const gpu of GPUS.filter((g) => !sc.gpus || sc.gpus.includes(g))) {
       const r = {};
       let err = null;
       for (const p of PRESETS) {
-        r[p] = measure(sc, gpu, p, flat);
+        r[p] = HOST === 'romdev' ? await measureRomdev(sc, gpu, p, flat) : measure(sc, gpu, p, flat);
         if (r[p].error) { err = `${p}: ${r[p].error}`; break; }
       }
       const key = `${sc.name}/${gpu}`;
       if (err) {
         failures++;
+        errors++;
         report[key] = { error: err };
         console.log(`FAIL ${key}${flat ? ' (control)' : ''}: ${err}`);
         continue;
@@ -134,23 +205,27 @@ function sweep(flat) {
       report[key] = { ...Object.fromEntries(PRESETS.map((p) => [p, r[p]])), bad };
       if (bad.length) failures++;
       const row = PRESETS.map((p) => `${p} ${r[p].ms.toFixed(2)}`).join('  ');
-      console.log(`${bad.length ? 'FAIL' : 'ok  '} ${key}${flat ? ' (control)' : ''}: ${row} ms (VL ${(r.verylow.ms / r.high.ms).toFixed(2)}, L ${(r.low.ms / r.high.ms).toFixed(2)} x High)${bad.length ? '\n       ' + bad.join('\n       ') : ''}`);
+      console.log(`${bad.length ? 'FAIL' : 'ok  '} ${key}${flat ? ' (control)' : ''}: ${row} ms (VL ${(r.verylow.ms / r.high.ms).toFixed(2)}, L ${(r.low.ms / r.high.ms).toFixed(2)} x High)${bad.length ? '\n       ' + bad.join('\n       ') : ''}${bad.note ? '\n       (' + bad.note + ')' : ''}`);
     }
-  return { report, failures };
+  return { report, failures, errors };
 }
 
-const main = sweep(false);
+const main = await sweep(false);
 let control = null;
 if (!argv.includes('--no-control')) {
   // the control: one app per backend is enough to show the gate can fail (every preset drawing High is flat)
   const keep = scenes;
-  scenes = scenes.slice(0, 1);
-  control = sweep(true);
+  // (on romdev, the first whose cart draws --lines: a cart measured at its own size has no shares to fail)
+  scenes = scenes.filter((sc) => romdevSized[sc.name] !== 'own').slice(0, 1);
+  control = await sweep(true);
   scenes = keep;
 }
-writeFileSync(JSON_OUT, JSON.stringify({ lines: LINES, frames: FRAMES, main: main.report, control: control && control.report }, null, 1));
+writeFileSync(JSON_OUT, JSON.stringify({ host: HOST, lines: LINES, frames: FRAMES, main: main.report, control: control && control.report }, null, 1));
 let fail = main.failures;
-if (control && control.failures === 0) {
+if (control && control.errors) {
+  fail++;
+  console.log('CONTROL COULD NOT RUN: a control that fails by not measuring proves nothing');
+} else if (control && control.failures === 0) {
   fail++;
   console.log('CONTROL PASSED: with every preset drawing High the gate still passed; it cannot see a flat range');
 } else if (control) console.log('ok   control: every preset drawing High fails the range');

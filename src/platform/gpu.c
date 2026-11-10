@@ -600,6 +600,10 @@ bool cw__wgpu_init(void) {
   }
   wgpuDeviceGetLimits(G.device, &G.limits);
   read_level();
+  /* pass timing in a cart: the host's device has timestamp queries when the
+   * host made it with them (romdev: loadMedia gpuTiming:true); a browser
+   * host's floor device has none, and the timers then report no GPU times */
+  G.timestamps = wgpuDeviceHasFeature(G.device, WGPUFeatureName_TimestampQuery);
   G.instance = wgpuCreateInstance(NULL);
   WGPUEmscriptenSurfaceSourceCanvasHTMLSelector canvas = {
     .chain = { .sType = WGPUSType_EmscriptenSurfaceSourceCanvasHTMLSelector }, .selector = CW_WGPU_SV("#canvas") };

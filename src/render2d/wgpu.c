@@ -1706,8 +1706,15 @@ static void on_r2d_ts(WGPUMapAsyncStatus st, WGPUStringView msg, void *u1, void 
 void r2d_wg_timers_map(void) {
   if (!TW.mapping || TW.requested) return;
   TW.requested = true;
+  /* a cart never processes events: its map lands spontaneously between frames */
   wgpuBufferMapAsync(TW.readback, WGPUMapMode_Read, 0, (size_t)TW.rpairs * 16,
-                     (WGPUBufferMapCallbackInfo){ .mode = WGPUCallbackMode_AllowProcessEvents, .callback = on_r2d_ts });
+                     (WGPUBufferMapCallbackInfo){
+#if CW_CART
+                       .mode = WGPUCallbackMode_AllowSpontaneous,
+#else
+                       .mode = WGPUCallbackMode_AllowProcessEvents,
+#endif
+                       .callback = on_r2d_ts });
 }
 
 static void timers_shutdown(void) {

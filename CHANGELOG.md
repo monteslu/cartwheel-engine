@@ -4,6 +4,22 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.45.0 (2026-11-10)
+
+### Added
+- **GPU timing through romdev.** `tools/quality-range.mjs --host romdev` measures every preset's GPU time from the
+  built cart through romdev's `frame({op:'timing'})` on the server's pinned test GPU, GL and WebGPU, with no native
+  run: each preset a fresh deterministic load run to the same frame, the last 60 frames timed. On the 890M it read
+  night_street within about 10% of the native pass sums at every preset on both backends. A 720p sample is loaded at
+  romdev's preferred 1080 lines, as natively it gets `CW_RENDER_SCALE`; the control asks every preset for High; a
+  noisy run (another process on the GPU) is run again. `tools/lib/romdev-timing.mjs` is the client a game's perf
+  gates use: one load (with an optional first-frame request such as `env NAME=value`), setup requests, a warmup and
+  the measured frames, checked against the test GPU.
+- **A cart's pass timers on WebGPU.** A cart now times its passes when the host's WebGPU device has timestamp queries
+  (romdev with `gpuTiming:true`): the `pipeline` request reports `timer_query` true and each pass's GPU ms, as a
+  native run does (their readbacks, and 2D's, complete between frames, as a cart's pixel reads do). A browser host's
+  device has none and nothing changes there.
+
 ## v0.44.2 (2026-11-10)
 
 v0.44.1 was never released: its tag points at the commit after v0.44.0 (a CI change only) by mistake. Use v0.44.2.
