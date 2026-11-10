@@ -61,8 +61,9 @@
 //              text input started, as a focused text field does)
 // Absent keys/mouse/touches mean none held. Per host: native writes them into
 // the CW_INPUT file; chromium calls CartHostWeb keyDown/keyUp/setPointer/wheel;
-// romdev uses input({op:'pointer'}) and input({op:'wheel'}) but has no
-// wasmcart keyboard op, so a script with keys fails there (gates skip romdev).
+// romdev holds keys on its pad sets and sequence steps (input keys, scancodes; romdev 0.155.0 or later,
+// an older server drops them and the run fails saying so) and uses input({op:'pointer'}) and
+// input({op:'wheel'}); text cannot be injected there (gates with text skip romdev).
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer, request as httpRequest } from 'node:http';
 import { readFileSync, writeFileSync, mkdtempSync, existsSync, realpathSync, statSync, copyFileSync, rmSync } from 'node:fs';
@@ -389,8 +390,11 @@ async function runRomdev() {
   };
   if (script.some((s) => s.text))
     throw new Error('romdev: text input cannot be injected (no wasmcart text op); skip romdev for text gates');
-  if (script.some((s) => scancodes(s.keys).length))
-    throw new Error('romdev: keyboard input cannot be injected (its input tool has no wasmcart key op); skip romdev for keyboard gates');
+  // keys ride on the pad set or sequence step as scancodes; romdev answers `keyboard` for a step that held keys
+  const romdevKeys = (s) => { const k = scancodes(s.keys); return k.length ? { keys: k } : {}; };
+  const keysLanded = (r, what) => {
+    if (r && r.keyboard === false) throw new Error(`romdev: ${what} held keys but the cart did not ask for a keyboard (WC_FLAG_KEYBOARD)`);
+  };
   let mouse = null, touches = new Map();
   const live = script.filter((s) => s.frame <= end); // entries after the last frame never apply (as natively)
   if (live.length && !timed.length && !live.some((s) => s.mouse || (s.touches || []).length || s.wheel != null)) {
@@ -400,9 +404,13 @@ async function runRomdev() {
     if (live[0].frame - 1 > at) steps.push({ input: { ports: [{}] }, frames: live[0].frame - 1 - at });
     live.forEach((s, i) => {
       const from = Math.max(s.frame - 1, at), to = i + 1 < live.length ? Math.max(live[i + 1].frame - 1, at) : end;
-      if (to > from) steps.push({ input: { ports: romdevPad(s) }, frames: to - from });
+      if (to > from) steps.push({ input: { ports: romdevPad(s), ...romdevKeys(s) }, frames: to - from });
     });
-    if (steps.length) await romdevCall('input', { op: 'sequence', steps }, session);
+    if (steps.length) {
+      const r = await romdevCall('input', { op: 'sequence', steps }, session);
+      if (steps.some((st) => st.input.keys) && r.keyboard === undefined) throw new Error('romdev: the input sequence dropped its keys (keys on romdev need romdev 0.155.0 or later)');
+      keysLanded(r, 'the input sequence');
+    }
     at = Math.max(at, end);
   }
   for (const s of at >= end ? [] : script) {
@@ -422,7 +430,9 @@ async function runRomdev() {
     touches = now;
     const w = wheelOf(s.wheel);
     if (w && (w.x || w.y)) await romdevCall('input', { op: 'wheel', dx: Math.round(w.x * 120), dy: Math.round(w.y * 120) }, session);
-    await romdevCall('input', { op: 'set', ports: romdevPad(s) }, session);
+    const setR = await romdevCall('input', { op: 'set', ports: romdevPad(s), ...romdevKeys(s) }, session);
+    if (romdevKeys(s).keys && setR.keyboard === undefined) throw new Error(`romdev: the pad set at frame ${s.frame} dropped its keys (keys on romdev need romdev 0.155.0 or later)`);
+    keysLanded(setR, `the pad set at frame ${s.frame}`);
   }
   // One call for the rest of the run. romdev gives a WebGPU cart an event-loop
   // turn between every two stepped frames, so asynchronous results (buffer
@@ -440,8 +450,8 @@ async function runRomdev() {
     const before = script.filter((s) => s.frame <= end).at(-1);
     const steps = [];
     if (inside.length) {
-      if (inside[0].frame - 1 > end) steps.push({ input: { ports: before ? romdevPad(before) : [{}] }, frames: inside[0].frame - 1 - end });
-      inside.forEach((s, i) => steps.push({ input: { ports: romdevPad(s) }, frames: (i + 1 < inside.length ? inside[i + 1].frame - 1 : frames) - (s.frame - 1) }));
+      if (inside[0].frame - 1 > end) steps.push({ input: { ports: before ? romdevPad(before) : [{}], ...(before ? romdevKeys(before) : {}) }, frames: inside[0].frame - 1 - end });
+      inside.forEach((s, i) => steps.push({ input: { ports: romdevPad(s), ...romdevKeys(s) }, frames: (i + 1 < inside.length ? inside[i + 1].frame - 1 : frames) - (s.frame - 1) }));
     }
     const fo = typeof args['flash-opts'] === 'string' ? JSON.parse(args['flash-opts']) : {};
     const r = await romdevCall('frame', { op: 'flash', frames: frames - end, ...(steps.length ? { steps } : {}), ...(commandsAt.length ? { commandsAt } : {}),
