@@ -351,9 +351,9 @@ static void build_items(void) {
 
 /* a pointer tap (mouse or touch, canvas units) on an item: that item, chosen */
 static int tapped_item(void) {
-  const cw_raw_input *in = cw_input_raw();
-  if (!in || !(cw__input_mouse_pressed() & 1)) return -1;
-  cw_vec2 p = cw_r2d_window_to_canvas(cw_v2(in->mouse_x, in->mouse_y));
+  float tx, ty;
+  if (!cw__input_tap(&tx, &ty)) return -1;
+  cw_vec2 p = cw_r2d_window_to_canvas(cw_v2(tx, ty));
   for (int i = 0; i < n_items; i++) {
     cw_rect r = item_rects[i];
     if (p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h) return i;
@@ -491,6 +491,17 @@ static int free_seat(void) {
  * on a keyboard that holds a seat plays, and with every seat taken by others. */
 static void join_update(void) {
   bool play = false;
+  /* a tap (the mouse, or a finger on a touch screen): the keyboard's seat, which holds the mouse and touch, joins if it
+   * has none, and the game starts (in a match, goes back to it) */
+  float tx, ty;
+  if (cw__input_tap(&tx, &ty)) {
+    bool seated = false;
+    for (int s = 0; s < 4; s++) seated |= S.joined_pad[s] == CW_MAX_PADS;
+    int s = seated ? -1 : free_seat();
+    if (s >= 0) S.joined_pad[s] = CW_MAX_PADS, sound(CW_SHELL_SND_JOIN);
+    join_go();
+    return;
+  }
   for (int pad = 0; pad <= CW_MAX_PADS; pad++) {
     bool kb = pad == CW_MAX_PADS;
     uint32_t pressed = kb ? 0 : cw__input_pad_pressed(pad);
@@ -610,8 +621,8 @@ static void menu_tick(void) {
   if (S.screen == CW_SHELL_SETTINGS && cw_quality_menu_is_open()) { /* the graphics page */
     int dy = any_pressed(A_DOWN) - any_pressed(A_UP), dx = any_pressed(A_RIGHT) - any_pressed(A_LEFT);
     bool acc = any_pressed(A_ACCEPT), bk = any_pressed(A_BACK);
-    const cw_raw_input *in = cw_input_raw();
-    bool tap = in && (cw__input_mouse_pressed() & 1) && cw_quality_menu_tap(cw_r2d_window_to_canvas(cw_v2(in->mouse_x, in->mouse_y)));
+    float tx, ty;
+    bool tap = cw__input_tap(&tx, &ty) && cw_quality_menu_tap(cw_r2d_window_to_canvas(cw_v2(tx, ty)));
     if (!tap) cw_quality_menu_input(dy, dx, acc, bk);
     if (dy || dx || acc || tap) sound(CW_SHELL_SND_MOVE);
     if (!cw_quality_menu_is_open()) {
@@ -875,6 +886,8 @@ void cw_shell_draw(void) {
     }
     hint(S.mid_join ? "{ui_accept} join    {ui_back} leave    {ui_start} back to the game" : "{ui_accept} join    {ui_back} leave    {ui_start} play",
          cx, sz.y - u * 1.2f, u * 0.8f);
+    /* a touch screen has no buttons to name: a tap plays (join_update) */
+    if (!hints_wanted()) text(S.mid_join ? "tap to go back to the game" : "tap to play", cx, sz.y - u * 1.2f - drawn(u * 0.9f), u * 0.9f, cw_rgba(1, 1, 1, 0.8f), 1);
     break;
   }
   default: break;

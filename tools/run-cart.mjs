@@ -27,7 +27,7 @@
 //             CW_WORKERS gives its cart the job pool a native run gets (tools/lib/gpu-sandbox.mjs)
 //
 // --warmup-spread: the app's warm-up spread over frames under the loading screen, as a player
-// gets it (native, chromium, wcnative; test runs otherwise do it all in frame 1).
+// gets it (native, chromium, wcnative, and romdev, loaded with no seed; test runs otherwise do it all in frame 1).
 //
 // --log FILE: the run's log (native: the app's stderr; wcnative: the player's), what a cart
 // that reports no state (wcnative) can still say. CW_RUN_TIMEOUT_MS bounds wcnative runs too.
@@ -123,7 +123,6 @@ const firstCmd = withEnv(args['keep-auto'] ? (spread ? null : 'warmup_spread 0')
 const gpu = args.gpu === 'webgpu' || args.gpu === 'wgpu' ? 'webgpu' : 'gl';
 if (args.gpu && args.gpu !== true && !['gl', 'webgpu', 'wgpu'].includes(args.gpu)) { console.error('--gpu gl|webgpu'); process.exit(2); }
 const pin = gpu === 'webgpu' ? wgpuPin() : null;
-if (spread && host === 'romdev') { console.error('--warmup-spread: romdev loads deterministically (no spread)'); process.exit(2); }
 if (!host || !app) { console.error('usage: run-cart.mjs --host <native|romdev|chromium|wcnative> --app <name> --frames N'); process.exit(2); }
 // (a project built in the tree, samples/<app>/ with its own CMakeLists.txt, has its executable inside that directory)
 const isFile = (p) => existsSync(p) && statSync(p).isFile();
@@ -294,7 +293,9 @@ async function romdevCall(tool, a, session) {
 
 async function runRomdev() {
   const session = `cartwheel-run-${app}-${process.pid}`;
-  const loaded = await romdevCall('loadMedia', { platform: 'wasmcart', path: cart, deterministicSeed: +(args.seed || 1), deterministicStepMs: 1000 / frameHz,
+  // --warmup-spread: a load with no seed, as a player's host runs the cart (its warm-up spread under the loading screen,
+  // its real clock), so its frames are not reproducible; quality locked to High (unless --keep-auto) as on other hosts
+  const loaded = await romdevCall('loadMedia', { platform: 'wasmcart', path: cart, ...(spread ? {} : { deterministicSeed: +(args.seed || 1), deterministicStepMs: 1000 / frameHz }),
     // the power preference of the test GPU on every load, GL included: without it romdev's host picks the
     // high-performance adapter, which on a two-GPU machine is the desktop's display GPU
     gpuPower: (pin || wgpuPin()).power, wgpu: gpu === 'webgpu', ...(gpu === 'webgpu' && cartFeatureLevel() ? { wgpuFeatureLevel: cartFeatureLevel() } : {}) }, session);
@@ -328,7 +329,7 @@ async function runRomdev() {
   const fbx = (x) => Math.round(ox + x * sx), fby = (y) => Math.round(oy + y * sy);
   const cmdReplies = [];
   // --env rides on the first start request (or is the only one): answered at the start of frame 2
-  const plainCmds = startCmds.filter((c) => !c.startsWith('@')); // "@N cmd" runs on its frame (stepTo below)
+  const plainCmds = [...(spread && !args['keep-auto'] ? ['quality lock'] : []), ...startCmds.filter((c) => !c.startsWith('@'))]; // "@N cmd" runs on its frame (stepTo below)
   const romdevCmds = envReq ? [withEnv(plainCmds[0] || ''), ...plainCmds.slice(1)].filter((c, i) => c || i === 0) : plainCmds;
   for (const text of romdevCmds) { /* answered at the start of the frame the request runs */
     const reply = await romdevCall('wasm', { op: 'command', text }, session);

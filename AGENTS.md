@@ -237,8 +237,10 @@ Checks a game should run (all shipped in the SDK under `tools/`):
 
 1. **Draws vanish after a preset change** (red banner "N draw state(s) have no program"). Content built on High
    and drawn on Very Low asks for states no single-preset run asks for. `tools/programs.mjs` surveys each preset and
-   the preset switched in play both ways; run it with `--carts` too so the cart's own states are in. The log names each node
-   and material that is not drawn.
+   the preset switched in play both ways; run it with `--carts` too so the cart's own states are in (it also loads each
+   cart as a player's host does, with no seed, for the loading screen's warm-up). Check the shipped cart the same ways
+   in your own tests (every preset, and a load with no seed through the menus), not only deterministic runs: those never
+   show a player's first frames. The log names each node and material that is not drawn.
 2. **Props, wheels and fire floating.** See the grounding rule; check from the game camera and from the side.
 3. **The sun's shadow stops short.** `shadow_far` is depth from the light: a sun parked 80 m back with
    `shadow_far = 70` casts nothing. Use cascades with `shadow_distance`, or a `shadow_far` past the far edge of the

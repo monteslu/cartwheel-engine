@@ -10,6 +10,9 @@
 
 /* program states no table had (src/render/programs.c) */
 extern int32_t cw__missing_programs;
+/* A warm-up slice is rendering (src/scene/runner.c): only part of the scene is shown, so what the gi pass would capture
+ * (the probe grid's bake, reflection probes) would keep a partial scene's light for good: it waits for a full render. */
+extern bool cw__warm_partial;
 const char *cw__programs_fix_command(void);
 const char *cw__app_target_name(void); /* the app's target (its generated <app>_programs.c), src/render/programs.c */
 

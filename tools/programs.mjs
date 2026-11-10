@@ -22,7 +22,9 @@
 //       reports (debug field cw.three.missing_states) and merges them into the app's table like a native
 //       survey; --gates also runs each gate's input scripts. Carts are named by their file, which is
 //       the app's name (the cart must be built: scripts/build.sh). --webgpu-only skips the GL host leg (a cart
-//       that cannot be loaded on romdev's GL path is still surveyed where it ships on WebGPU).
+//       that cannot be loaded on romdev's GL path is still surveyed where it ships on WebGPU). Each cart (and each gate's run with
+//       --gates) is also run as a player's host runs it, with no seed (run-cart --warmup-spread): the warm-up under the
+//       loading screen, which a deterministic run never shows.
 //       Every run must survey something: one that fails, never renders a frame or has no state list to read (a cart
 //       that draws without the engine's pipeline) stops the survey with exit 1, naming the app and the host, and no
 //       table changes; no carts to survey (a project's carts need CW_PROJECT_ROOT) is an error too.
@@ -356,6 +358,11 @@ if (CARTS && !argv.includes('--no-run')) {
       runs.push({ tag: `${app}.${from}-to-${to}`, args: ['--frames', frames, '--start-cmds', [...(from !== 'high' ? [`quality ${from}`] : []), `@${switchAt} quality ${to}`].join(';')] });
     for (const g of gates.filter((x) => x.app === app))
       runs.push({ tag: g.name, args: ['--frames', String(g.frames), ...(g.input ? ['--input', join(PROJ, 'tests', g.input)] : [])] });
+    // as a player's host runs it: no seed, so the warm-up spreads over frames under the loading screen (its slices draw
+    // the scene in parts) and the clock is real; a deterministic run does the warm-up in one frame and never shows them
+    runs.push({ tag: `${app}.player`, args: ['--frames', frames, '--warmup-spread'] });
+    for (const g of gates.filter((x) => x.app === app))
+      runs.push({ tag: `${g.name}.player`, args: ['--frames', String(g.frames), '--warmup-spread', ...(g.input ? ['--input', join(PROJ, 'tests', g.input)] : [])] });
     const seen = new Set();
     let surveyed = 0;
     for (const run of runs) for (const [leg, legArgs] of legs) {

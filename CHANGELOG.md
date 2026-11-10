@@ -4,6 +4,37 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.44.0 (2026-11-09)
+
+### Added
+- **The shell's menus take touch.** A finger on a touch screen (any of wasmcart's pointer slots 1 to 9) taps menu
+  items on the title, pause, settings and graphics pages as a mouse click does, whether or not the app sets
+  `cw_app_desc.touch_pointer`; before, only the mouse reached them, so a tap on Play did nothing on a phone. A tap (or
+  click) on the join screen seats the keyboard's player, who holds the mouse and touch, and plays (in a match, goes
+  back to it), and with no pad seated the screen says "tap to play". Gates `shell-touch`, `shell-touch-pause` and
+  `shell-mouse` (sample `shell_join`, through romdev on GL and WebGPU), each with its taps in an empty corner as the
+  control.
+- `tools/run-cart.mjs --warmup-spread` runs on romdev too: the cart loads with no seed, as a player's host runs it
+  (the warm-up spread under the loading screen, the real clock), quality locked to High unless `--keep-auto`.
+- `tools/programs.mjs --carts` also runs each cart, and each gate's run with `--gates`, that way, so a survey sees what
+  a player's first frames draw; a deterministic load does the whole warm-up inside frame 1 and never showed it.
+- Sample `warm_states` and gate `warm-states` (below).
+
+### Fixed
+- **A player's first frames drew program states play never asks for, and the red "no program" banner stayed up.**
+  The warm-up's shader phase renders the scene a slice at a time, several slices a frame, and each slice is a pipeline
+  render of its own; only a frame's first slice had the tree's pre-render, so the later ones had no cascaded sun and
+  drew it as a plain shadowed light (`standard+...+shadow+l1501+s100+xgi` and the like). No survey found those states
+  (a deterministic run has no slices), so a cart whose table was complete in every check still showed the banner on a
+  player's machine and left those draws out. Every slice now gets its pre-render. Gate `warm-states`: sample
+  `warm_states` (a cascaded sun, a probe grid, many meshes over few materials) loaded through romdev as a player's
+  host runs it has no missing state on GL and WebGPU; its control, `CW_TEST_WARM_NO_PRERENDER=1`, drops the later
+  slices' pre-render and must miss states.
+- The probe grid and reflection probes no longer capture during a warm-up slice, which showed only part of the scene:
+  a grid baked there kept that partial scene's light. They wait for the warm-up's full render.
+- The debug field `cw.three.missing_states` holds the whole list (up to 16 KB); it was cut at 1 KB, which hid states
+  from the gates and checks that read it.
+
 ## v0.43.2 (2026-11-09)
 
 v0.43.1 was never released: its tag points at the v0.43.0 commit by mistake. Use v0.43.2.

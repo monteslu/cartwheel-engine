@@ -353,6 +353,22 @@ static int16_t eval_binding(int player, cw_binding b, const cw_raw_input *raw, b
 
 static void capture_update(const cw_raw_input *raw);
 
+/* a frame's pointer tap: the left button went down (the mouse, or a finger an app's touch_pointer made the mouse), else
+ * the first finger that landed */
+static bool raw_tap(const cw_raw_input *raw, float *x, float *y) {
+  if (!raw) return false;
+  if (raw->mouse_pressed & 1u) {
+    *x = raw->mouse_x, *y = raw->mouse_y;
+    return true;
+  }
+  for (int i = 0; i < CW_MAX_TOUCHES; i++)
+    if (raw->touches[i].tapped) {
+      *x = raw->touches[i].x, *y = raw->touches[i].y;
+      return true;
+    }
+  return false;
+}
+
 /* Which device each player used last (cartwheel/prompt.h): from this frame's raw input against the last frame's.
  * Presentation only: it never touches a snapshot, a recording or the stream hash. */
 static void track_devices(const cw_raw_input *raw) {
@@ -413,6 +429,10 @@ void cw_input_frame_begin(const cw_raw_input *raw) {
   for (int i = 0; i < CW_MAX_PADS; i++) I.pend_pad[i] |= raw->pads[i].pressed;
   for (int k = 0; k < CW_KEY_COUNT; k++) I.pend_keys[k] |= raw->keys_pressed[k];
   I.pend_mouse |= raw->mouse_pressed;
+  if (!I.pend_tap) {
+    float tx, ty;
+    if (raw_tap(raw, &tx, &ty)) I.pend_tap = true, I.pend_tap_x = tx, I.pend_tap_y = ty;
+  }
   if (I.capture.on) capture_update(raw);
   I.prev_raw = *raw;
   I.ctx = CW_INPUT_FRAME;
@@ -454,6 +474,8 @@ void cw_input_tick_begin(void) {
   memset(I.pend_keys, 0, sizeof I.pend_keys);
   I.tick_mouse = I.pend_mouse;
   I.pend_mouse = 0;
+  I.tick_tap = I.pend_tap, I.tick_tap_x = I.pend_tap_x, I.tick_tap_y = I.pend_tap_y;
+  I.pend_tap = false;
   I.tick = &I.tick_live;
   if (cw__input_replay_next()) I.tick = &I.tick_replay;
   I.stream_hash = cw__snapshot_hash(I.tick, I.count, I.stream_hash);
@@ -476,6 +498,12 @@ bool cw__input_key_pressed(int key) {
   return I.ctx == CW_INPUT_TICK ? I.tick_keys[key] != 0 : cw_input_raw()->keys_pressed[key] != 0;
 }
 uint32_t cw__input_mouse_pressed(void) { return I.ctx == CW_INPUT_TICK ? I.tick_mouse : cw_input_raw()->mouse_pressed; }
+bool cw__input_tap(float *x, float *y) {
+  if (I.ctx != CW_INPUT_TICK) return raw_tap(cw_input_raw(), x, y);
+  if (!I.tick_tap) return false;
+  *x = I.tick_tap_x, *y = I.tick_tap_y;
+  return true;
+}
 
 uint32_t cw_input_stream_hash(void) { return I.stream_hash; }
 
