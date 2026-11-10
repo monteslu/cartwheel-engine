@@ -42,6 +42,9 @@ const uint8_t *cw__fx_noise3d_rgba(void);
 /* A 64x64 soft round dot (RGBA8, premultiplied white). */
 unsigned cw__fx_dot_texture(void);
 const uint8_t *cw__fx_dot_rgba(void); /* its 64x64 texels */
+/* the next mip of w x h RGBA8 texels by a 2x2 box filter (glGenerateMipmap's), into dst of
+ * max(w/2,1) x max(h/2,1); an odd edge repeats its last texel */
+void cw__fx_mip_box(const uint8_t *src, int w, int h, uint8_t *dst);
 /* An RGBA8 texture from an image asset (straight alpha), cached by path.
  * 0 when missing (logged once). */
 unsigned cw__fx_texture_asset(const char *path, int *w, int *h);

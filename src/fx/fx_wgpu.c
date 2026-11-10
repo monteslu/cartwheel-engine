@@ -312,14 +312,7 @@ void cw__fx_wg_write_mips(WGPUTexture t, int w, int h, int mips, const uint8_t *
   for (int l = 1; l < mips; l++) {
     int nw = w > 1 ? w / 2 : 1, nh = h > 1 ? h / 2 : 1;
     uint8_t *dst = cw_alloc((size_t)nw * nh * 4, CW_MEM_RENDER);
-    for (int y = 0; y < nh; y++)
-      for (int x = 0; x < nw; x++)
-        for (int c = 0; c < 4; c++) {
-          int x0 = CW_MIN(2 * x, w - 1), x1 = CW_MIN(2 * x + 1, w - 1), y0 = CW_MIN(2 * y, h - 1), y1 = CW_MIN(2 * y + 1, h - 1);
-          int s = src[4 * (y0 * w + x0) + c] + src[4 * (y0 * w + x1) + c] + src[4 * (y1 * w + x0) + c] +
-                  src[4 * (y1 * w + x1) + c];
-          dst[4 * (y * nw + x) + c] = (uint8_t)((s + 2) / 4);
-        }
+    cw__fx_mip_box(src, w, h, dst);
     cw__wg_tex_write(t, l, 0, 0, 0, nw, nh, 4, dst);
     if (owned) cw_free(owned);
     owned = dst;

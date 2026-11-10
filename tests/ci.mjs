@@ -77,6 +77,7 @@ export const LOCAL_ONLY = {
   'fx-explosion-kit': 'the pinned GPU sandbox (renders on GL and WebGPU and diffs them)',
   'fx-distort-regions': 'the pinned GPU sandbox (renders on GL and WebGPU and diffs them)',
   'fx-distort-fringe': 'romdev (fx_distort\'s cart on GL and WebGPU)',
+  'decal-first-image': 'romdev (frame timing of decal_late\'s cart on the test GPU, GL and WebGPU)',
   'pass-timing': 'WebGPU timestamp queries on the test GPU',
   'r2d-normal-turn': 'the pinned GPU sandbox (renders on GL and WebGPU and compares them)',
   'r2d-big-stream': 'the pinned GPU sandbox (renders on GL and WebGPU and diffs them)',

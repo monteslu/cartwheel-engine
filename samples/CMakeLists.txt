@@ -213,6 +213,13 @@ file(MAKE_DIRECTORY ${CW_DECAL_WALLS_ASSETS}/decals)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/decal_walls/assets/main.cwscene ${CW_DECAL_WALLS_ASSETS}/main.cwscene COPYONLY)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/fx_decals/assets/decals/sheet.png ${CW_DECAL_WALLS_ASSETS}/decals/sheet.png COPYONLY)
 cw_add_app(decal_walls SOURCES decal_walls/main.c ASSETS ${CW_DECAL_WALLS_ASSETS})
+# the first image into the decal atlas mid-run must not cost its frame (gate decal-first-image); the scorch image is
+# fx_decals' generated CC0 art
+set(CW_DECAL_LATE_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/decal_late_assets)
+file(MAKE_DIRECTORY ${CW_DECAL_LATE_ASSETS}/decals)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/decal_late/assets/main.cwscene ${CW_DECAL_LATE_ASSETS}/main.cwscene COPYONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/fx_decals/assets/decals/scorch.png ${CW_DECAL_LATE_ASSETS}/decals/scorch.png COPYONLY)
+cw_add_app(decal_late SOURCES decal_late/main.c ASSETS ${CW_DECAL_LATE_ASSETS})
 # an HDR scene with 4x MSAA and passes that read the depth (fence, wires, grass, decals, the sun disc): GL and
 # WebGPU must smooth the same edges (gate msaa-hdr)
 set(CW_MSAA_HDR_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/msaa_hdr_assets)

@@ -7,7 +7,15 @@
  *             and decals face their -Z; aim one at a floor with rotation
  *             (-90 deg, 0, 0) or cw_node3d_look_at). Properties:
  *     texture       image asset (PNG / JPEG; empty = a soft round splat);
- *                   every decal image lives in one shared 2048x2048 atlas
+ *                   every decal image lives in one shared 2048x2048 atlas.
+ *                   A SCREEN decal's image is decoded and uploaded (with
+ *                   its mips) when the decal gets it in the tree or enters
+ *                   the tree with it, so a decal set up before play loads
+ *                   under the loading screen; one stamped mid-play with an
+ *                   image the atlas has not seen costs that decode in the
+ *                   frame it is stamped (cw_decal_preload moves it to
+ *                   loading). A new image touches only its own cell of the
+ *                   atlas, never the rest
  *     region        vec4 x y w h in image pixels (0 = the whole image): one
  *                   image can hold a sheet of decals
  *     color         tint (alpha = opacity)
@@ -97,6 +105,8 @@ typedef struct cw_decal_stats {
   int culled;      /* outside the frustum */
   int draw_calls;  /* instanced draws */
   int atlas_images; /* images in the shared atlas */
+  float atlas_load_ms;   /* CPU ms the last image into the atlas took: decode, cell, mips, upload */
+  float atlas_decode_ms; /* of which decoding it (PNG / JPEG) */
   /* mesh mode */
   int mesh_decals;    /* mesh decals with geometry, now */
   int mesh_triangles; /* their triangles */
@@ -125,6 +135,12 @@ bool cw_decal_get_mesh_info(cw_node decal, cw_decal_mesh_info *out);
 /* Clip again at the next render (a character in a new pose, a mesh that
  * changed): mesh mode only, otherwise nothing. */
 void cw_decal_restamp(cw_node decal);
+/* Put an image (a Decal3D `texture` path; "" = the built-in splat) into the
+ * shared atlas now, with its mips, so a decal stamped with it later costs
+ * nothing to load: call it from init or a warm-up for the images decals will
+ * be given in play (the explosion kit does for its scorch sheet). An image
+ * the atlas has is nothing; a missing one is logged once. */
+void cw_decal_preload(const char *texture);
 
 #ifdef __cplusplus
 }

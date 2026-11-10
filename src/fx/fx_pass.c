@@ -43,6 +43,18 @@ void cw__fx_test_exec(cw_pass_ctx *ctx) {
   particles_exec(ctx, NULL);
 }
 
+void cw__fx_mip_box(const uint8_t *src, int w, int h, uint8_t *dst) {
+  int nw = w > 1 ? w / 2 : 1, nh = h > 1 ? h / 2 : 1;
+  for (int y = 0; y < nh; y++)
+    for (int x = 0; x < nw; x++) {
+      int x0 = CW_MIN(2 * x, w - 1), x1 = CW_MIN(2 * x + 1, w - 1), y0 = CW_MIN(2 * y, h - 1), y1 = CW_MIN(2 * y + 1, h - 1);
+      const uint8_t *a = src + 4 * ((size_t)y0 * w + x0), *b = src + 4 * ((size_t)y0 * w + x1);
+      const uint8_t *c = src + 4 * ((size_t)y1 * w + x0), *d = src + 4 * ((size_t)y1 * w + x1);
+      uint8_t *o = dst + 4 * ((size_t)y * nw + x);
+      for (int k = 0; k < 4; k++) o[k] = (uint8_t)((a[k] + b[k] + c[k] + d[k] + 2) / 4);
+    }
+}
+
 bool cw__fx_wgpu_on(void) {
 #if CW_WGPU
   return cw__wgpu_on();

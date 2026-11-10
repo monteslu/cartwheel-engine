@@ -5,8 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cartwheel/debug.h"
 #include "cartwheel/decals.h"
 #include "cartwheel/platform.h"
+#include "cartwheel/profile.h"
 #include "cartwheel/render3d.h"
 #include "fx_internal.h"
 #include "fx_wgpu.h"
@@ -65,23 +67,47 @@ static const cw_node_type *decal_t;
 
 #define ATLAS 2048
 #define PAD 4
+/* 3 mip levels (PAD = 4 keeps neighbours apart down to mip 2). Every cell
+ * (an image with its border) is placed and sized on the mip 2 grid, so its
+ * three levels are built from the cell's own texels when it is uploaded: a
+ * new image never touches the rest of the atlas, and nothing is rebuilt at
+ * draw time. */
+#define MIPS 3
+#define MIP_ALIGN (1 << (MIPS - 1))
 typedef struct atlas_img { const char *path; int x, y, w, h; bool ok; } atlas_img;
 static struct {
   GLuint tex;
   CW_ARRAY(atlas_img) imgs;
   int shelf_x, shelf_y, shelf_h;
+  /* test controls (cartwheel/debug.h), read once a frame can carry them:
+   * CW_TEST_DECAL_FULL_MIPS=1 is the path before v0.46.2 (an image loads at
+   * its first draw and the whole atlas's mips are rebuilt then: on WebGPU
+   * from a CPU copy, on GL with glGenerateMipmap; the copy starts when the
+   * switch is read, so mips of cells uploaded before it are not kept);
+   * CW_TEST_DECAL_NO_MIPS=1 leaves a new cell's mips 1 and 2 empty */
+  int full_mips, no_mips;
+  float load_ms, decode_ms; /* the last image's CPU cost (cw_decal_stats) */
   bool dirty;
+  uint8_t *cpu;
 #if CW_WGPU
-  /* WebGPU: the atlas (3 mip levels, as GL's MAX_LEVEL 2) and its texels on
-   * the CPU, so mips are rebuilt by box filtering (glGenerateMipmap's) */
   WGPUTexture wtex;
   WGPUTextureView wview;
-  uint8_t *cpu;
 #endif
 } atlas;
 
+/* *slot: 0 unread, 1 off, 2 on */
+static bool test_switch(int *slot, const char *name) {
+  if (*slot == 0) {
+    if (cw_frame_index() < 1) return false; /* no host has delivered it yet: not cached */
+    const char *e = cw_test_env(name);
+    *slot = e && *e == '1' ? 2 : 1;
+  }
+  return *slot == 2;
+}
+static bool full_mips_control(void) { return test_switch(&atlas.full_mips, "CW_TEST_DECAL_FULL_MIPS"); }
+
 static bool atlas_alloc(int w, int h, int *x, int *y) {
-  int pw = w + 2 * PAD, ph = h + 2 * PAD;
+  int pw = (w + 2 * PAD + MIP_ALIGN - 1) & ~(MIP_ALIGN - 1), ph = (h + 2 * PAD + MIP_ALIGN - 1) & ~(MIP_ALIGN - 1);
   if (pw > ATLAS || ph > ATLAS) return false;
   if (atlas.shelf_x + pw > ATLAS) {
     atlas.shelf_y += atlas.shelf_h;
@@ -96,55 +122,89 @@ static bool atlas_alloc(int w, int h, int *x, int *y) {
   return true;
 }
 
-/* upload w x h RGBA at (x, y) with the border extruded PAD pixels */
+/* one level of the atlas: a cell's texels at (x, y), w x h, level l */
+static void atlas_write(int l, int x, int y, int w, int h, const uint8_t *px) {
+#if CW_WGPU
+  if (cw__fx_wgpu_on()) {
+    cw__wg_tex_write(atlas.wtex, l, x, y, 0, w, h, 4, px);
+    return;
+  }
+#endif
+  glBindTexture(GL_TEXTURE_2D, atlas.tex);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glTexSubImage2D(GL_TEXTURE_2D, l, x, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+}
+
+/* upload w x h RGBA at (x, y) with the border extruded PAD pixels (and on to
+ * the cell's mip-aligned edge), then the cell's own mips 1 and 2 */
 static void atlas_upload(int x, int y, int w, int h, const uint8_t *px) {
-  int pw = w + 2 * PAD, ph = h + 2 * PAD;
+  int cx = x - PAD, cy = y - PAD;
+  int pw = (w + 2 * PAD + MIP_ALIGN - 1) & ~(MIP_ALIGN - 1), ph = (h + 2 * PAD + MIP_ALIGN - 1) & ~(MIP_ALIGN - 1);
   uint8_t *buf = cw_alloc((size_t)pw * ph * 4, CW_MEM_RENDER);
   for (int j = 0; j < ph; j++)
     for (int i = 0; i < pw; i++) {
       int sx = CW_CLAMP(i - PAD, 0, w - 1), sy = CW_CLAMP(j - PAD, 0, h - 1);
       memcpy(buf + 4 * ((size_t)j * pw + i), px + 4 * ((size_t)sy * w + sx), 4);
     }
-#if CW_WGPU
-  if (cw__fx_wgpu_on()) {
-    cw__wg_tex_write(atlas.wtex, 0, x - PAD, y - PAD, 0, pw, ph, 4, buf);
-    for (int j = 0; j < ph; j++) memcpy(atlas.cpu + 4 * ((size_t)(y - PAD + j) * ATLAS + (x - PAD)), buf + 4 * (size_t)j * pw, (size_t)pw * 4);
-    cw_free(buf);
+  atlas_write(0, cx, cy, pw, ph, buf);
+  if (full_mips_control()) {
+    /* the control: level 0 only, the whole atlas's mips rebuilt at the next draw */
+    if (!atlas.cpu) atlas.cpu = cw_calloc((size_t)ATLAS * ATLAS * 4, 1, CW_MEM_RENDER);
+    for (int j = 0; j < ph; j++) memcpy(atlas.cpu + 4 * ((size_t)(cy + j) * ATLAS + cx), buf + 4 * (size_t)j * pw, (size_t)pw * 4);
     atlas.dirty = true;
-    return;
+  } else if (!test_switch(&atlas.no_mips, "CW_TEST_DECAL_NO_MIPS")) {
+    /* the cell is on the mip grid: each level's box filter reads only the cell */
+    uint8_t *src = buf;
+    for (int l = 1; l < MIPS; l++) {
+      int nw = pw >> l, nh = ph >> l;
+      uint8_t *dst = cw_alloc((size_t)nw * nh * 4, CW_MEM_RENDER);
+      cw__fx_mip_box(src, nw * 2, nh * 2, dst);
+      atlas_write(l, cx >> l, cy >> l, nw, nh, dst);
+      if (src != buf) cw_free(src);
+      src = dst;
+    }
+    if (src != buf) cw_free(src);
   }
-#endif
-  glBindTexture(GL_TEXTURE_2D, atlas.tex);
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  glTexSubImage2D(GL_TEXTURE_2D, 0, x - PAD, y - PAD, pw, ph, GL_RGBA, GL_UNSIGNED_BYTE, buf);
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
   cw_free(buf);
-  atlas.dirty = true;
 }
 
 static void atlas_init(void) {
 #if CW_WGPU
   if (cw__fx_wgpu_on()) {
     if (atlas.wtex) return;
-    atlas.wtex = cw__wg_texture(WGPUTextureDimension_2D, ATLAS, ATLAS, 1, 3, WGPUTextureFormat_RGBA8Unorm,
+    atlas.wtex = cw__wg_texture(WGPUTextureDimension_2D, ATLAS, ATLAS, 1, MIPS, WGPUTextureFormat_RGBA8Unorm,
                                 WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst, WGPUTextureViewDimension_Undefined,
                                 "decal atlas");
-    atlas.wview = cw__wg_view(atlas.wtex, WGPUTextureViewDimension_2D, 0, 3, 0, 1);
-    atlas.cpu = cw_calloc((size_t)ATLAS * ATLAS * 4, 1, CW_MEM_RENDER);
+    atlas.wview = cw__wg_view(atlas.wtex, WGPUTextureViewDimension_2D, 0, MIPS, 0, 1);
     return;
   }
 #endif
   if (atlas.tex) return;
   glGenTextures(1, &atlas.tex);
   glBindTexture(GL_TEXTURE_2D, atlas.tex);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, ATLAS, ATLAS, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+  for (int l = 0; l < MIPS; l++)
+    glTexImage2D(GL_TEXTURE_2D, l, GL_RGBA8, ATLAS >> l, ATLAS >> l, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  /* PAD = 4 keeps neighbours apart down to mip 2 */
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 2);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, MIPS - 1);
   glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+/* the control's draw-time rebuild of every mip (the path before v0.46.2) */
+static void atlas_full_mips(void) {
+  if (!atlas.dirty) return;
+  atlas.dirty = false;
+#if CW_WGPU
+  if (cw__fx_wgpu_on()) {
+    if (atlas.cpu) cw__fx_wg_write_mips(atlas.wtex, ATLAS, ATLAS, MIPS, atlas.cpu);
+    return;
+  }
+#endif
+  glBindTexture(GL_TEXTURE_2D, atlas.tex);
+  glGenerateMipmap(GL_TEXTURE_2D);
 }
 
 /* RGBA8 texels of an interned image path ("" = the built-in soft splat);
@@ -188,10 +248,16 @@ static const atlas_img *atlas_get(const char *path) {
     if (atlas.imgs.data[i].path == ip) return &atlas.imgs.data[i];
   atlas_img e = { .path = ip };
   bool from_stb = false;
+  uint64_t t0 = cw_profile_now_ns();
+  cw_profile_begin("decal.image");
   uint8_t *px = decode_image(ip, &e.w, &e.h, &from_stb);
+  cw_profile_end();
+  atlas.decode_ms = (float)(cw_profile_now_ns() - t0) * 1e-6f;
   if (px) {
     if (atlas_alloc(e.w, e.h, &e.x, &e.y)) {
+      cw_profile_begin("decal.atlas");
       atlas_upload(e.x, e.y, e.w, e.h, px);
+      cw_profile_end();
       e.ok = true;
     } else
       cw_error("Decal3D: the decal atlas (%dx%d) has no room for '%s' (%dx%d); use smaller images or sheets with "
@@ -200,8 +266,23 @@ static const atlas_img *atlas_get(const char *path) {
     if (from_stb) stbi_image_free(px);
     else cw_free(px);
   }
+  atlas.load_ms = (float)(cw_profile_now_ns() - t0) * 1e-6f;
   cw_array_push(&atlas.imgs, e);
   return &atlas.imgs.data[atlas.imgs.count - 1];
+}
+
+void cw_decal_preload(const char *texture) {
+  atlas_get(texture);
+}
+
+/* a screen-space decal's image goes into the atlas as the decal gets it (in
+ * the tree, or on entering it), not at its first draw: a decal set up before
+ * play loads under the loading screen, and one stamped mid-play costs its
+ * decode in the frame it is stamped, never a rebuild of the atlas. The
+ * control keeps the old first-draw load. */
+static void decal_load_image(cw_node n, decal3d *d) {
+  if (d->mode != DM_SCREEN || !cw_node_tree(n) || full_mips_control()) return;
+  atlas_get(d->texture);
 }
 
 /* ── GL ─────────────────────────────────────────────────────────────── */
@@ -356,6 +437,8 @@ void cw_decals_get_stats(cw_tree *t, cw_decal_stats *out) {
   if (!dt) memset(out, 0, sizeof *out);
   else *out = dt->stats;
   out->atlas_images = atlas.imgs.count;
+  out->atlas_load_ms = atlas.load_ms;
+  out->atlas_decode_ms = atlas.decode_ms;
   if (!dt) return;
   /* mesh mode: what exists now, in the order the decals entered the tree */
   out->mesh_recycled = dt->mesh_recycled;
@@ -590,11 +673,7 @@ static void decals_exec(cw_pass_ctx *ctx, void *user) {
     return;
   }
 #endif
-  if (atlas.dirty) {
-    glBindTexture(GL_TEXTURE_2D, atlas.tex);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    atlas.dirty = false;
-  }
+  atlas_full_mips();
   glBindBuffer(GL_ARRAY_BUFFER, inst_vbo);
   if (inst_cap < nv) inst_cap = nv + 64;
   /* Each viewport can still be consuming the previous instance stream.
@@ -655,10 +734,7 @@ void cw__decals_test_exec(cw_pass_ctx *ctx) {
 static void draw_wgpu(cw_pass_ctx *ctx, decal_tree *dt, const struct vis *list, int nv, const float *buf, int stride,
                       const t3_mat4 *vp, bool linear) {
   const cw__wgpu_pass_targets *tg = cw__fx_pass_targets(ctx);
-  if (atlas.dirty) {
-    cw__fx_wg_write_mips(atlas.wtex, ATLAS, ATLAS, 3, atlas.cpu);
-    atlas.dirty = false;
-  }
+  atlas_full_mips();
   if (!dcube) {
     /* the GL path's unit cube */
     static const float f[6][4][3] = {
@@ -1256,6 +1332,7 @@ static void decal_enter(cw_node n, void *data) {
                                                .active = decals_active, .execute = decals_exec });
     dt->pass_added = true;
   }
+  decal_load_image(n, d);
 }
 
 static void decal_exit(cw_node n, void *data) {
@@ -1304,6 +1381,7 @@ static void decal_prop_changed(cw_node n, void *data, const cw_prop *p) {
     }
     return;
   }
+  if (!strcmp(p->name, "texture") || !strcmp(p->name, "mode")) decal_load_image(n, d);
   d->mesh.dirty = true;
 }
 
