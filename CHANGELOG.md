@@ -4,7 +4,9 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## v0.43.1 (2026-11-09)
+## v0.43.2 (2026-11-09)
+
+v0.43.1 was never released: its tag points at the v0.43.0 commit by mistake. Use v0.43.2.
 
 ### Fixed
 - **Carts get their title.** wasmcart moves to v0.41.0 (both the GL test host pin and the WebGPU tier pin), whose
