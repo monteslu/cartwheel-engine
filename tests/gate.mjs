@@ -352,7 +352,10 @@ async function romdevGates(list) {
       ...(g.startCmds ? ['--start-cmds', g.startCmds.join(';')] : []), ...envArg(g.env)];
     const ctlFrames = g.controlFrames ?? (g.controlInput ? g.frames : g.frames - 1);
     const ctlInput = g.controlInput || g.input;
-    const ctlCmds = g.controlStartCmds || g.startCmds;
+    // the control's start requests are controlStartCmds alone, as on the native legs: a gate whose control is "the
+    // same frames without the gate's requests" (fx-camera-fade, quality-scope-ssao) names none, and falling back
+    // to startCmds here made that control the gate's own run (CONTROL PASSED on every backend)
+    const ctlCmds = g.controlStartCmds;
     const ctlEnvObj = { ...(g.env || {}), ...(g.controlEnv || {}) };
     const problems = [], notes = [];
     if (Object.values(ctlEnvObj).some((v) => typeof v === 'string' && v.startsWith('repo:'))) problems.push('controlEnv names a repository file (repo:): a cart cannot read the host\'s files');
