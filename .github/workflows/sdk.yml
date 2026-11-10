@@ -87,7 +87,46 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: write # the tagged commit's CI run on main, rerun when a later push cancelled it
     steps:
+      # tag only commits whose push to main has a green CI run (never release an unchecked commit). The tag is
+      # usually pushed right after main, while that run is still going: wait for it, a look a minute, up to 3 hours.
+      # A run cancelled by a later push (the group keeps one run pending) is run again, twice at most; a failure,
+      # a commit that is not on main, or the time running out fails this job.
+      - name: The tagged commit is green on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$GITHUB_SHA"
+          case "$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$sha" --jq .status 2>/dev/null)" in
+            behind|identical) ;;
+            *) echo "$sha is not on main: push it to main and let CI pass before tagging it" >&2; exit 1 ;;
+          esac
+          deadline=$(( $(date +%s) + 10800 )); reruns=0
+          look() {
+            gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --event push --commit "$sha" \
+              --limit 1 --json databaseId,status,conclusion,url \
+              --jq '.[0] // empty | [.databaseId, .status, (.conclusion // "" | if . == "" then "-" else . end), .url] | join(" ")'
+          }
+          while :; do
+            set -- $(look)
+            if [ $# -eq 0 ]; then
+              echo "$(date -u +%H:%M:%S) no CI run on main for $sha yet"
+            else
+              case "$2:$3" in
+                completed:success) echo "green: run $1 ($4)"; exit 0 ;;
+                completed:cancelled)
+                  [ $reruns -lt 2 ] || { echo "the CI run on main for $sha was cancelled again ($4): rerun it, then rerun this one" >&2; exit 1; }
+                  reruns=$((reruns + 1)); echo "$(date -u +%H:%M:%S) run $1 was cancelled: rerunning it ($reruns of 2) $4"
+                  gh run rerun "$1" -R "$GITHUB_REPOSITORY" || exit 1
+                  for i in 1 2 3 4 5 6; do sleep 10; set -- $(look); [ "$2" = completed ] || break; done ;;
+                completed:*) echo "the CI run on main for $sha ended $3 ($4): fix main (or rerun that run), then rerun this one" >&2; exit 1 ;;
+                *) echo "$(date -u +%H:%M:%S) waiting on run $1 ($2) $4" ;;
+              esac
+            fi
+            [ "$(date +%s)" -lt "$deadline" ] || { echo "no green CI run on main for $sha after 3 hours" >&2; exit 1; }
+            sleep 60
+          done
       - uses: actions/download-artifact@v8
         with:
           path: sdk
