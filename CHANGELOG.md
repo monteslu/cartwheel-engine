@@ -4,6 +4,31 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.46.2 (2026-11-10)
+
+### Fixed
+- **The first image into the decal atlas cost its frame 13 to 21 ms on WebGPU.** A Decal3D's image went into the
+  shared 2048 x 2048 atlas at the decal's first draw, and on WebGPU the whole atlas's mips 1 and 2 were rebuilt on
+  the CPU then (4M texels box filtered in the cart) and uploaded; GL did it with glGenerateMipmap (about 4 ms
+  natively, 10 ms and more through a cart host). A game whose first scorch mark landed mid-play paid it in that
+  frame, and a near-clear decal with the image drawn at load was the workaround. Now every cell of the atlas (an
+  image with its 4 pixel border) sits on the mip 2 grid, and its three levels are built from the cell alone when it
+  is uploaded: a new image touches nothing else and nothing is rebuilt at draw time, on GL and WebGPU alike (GL no
+  longer calls glGenerateMipmap on the atlas; WebGPU keeps no 16 MB CPU copy of it). And a screen-space decal's
+  image is loaded when the decal gets it in the tree or enters the tree with it, not at its first draw, so decals
+  set up before play load under the loading screen with everything else; the explosion kit puts its scorch sheet in
+  as the Explosion3D enters the tree (or gets `scorch_texture` or `scorch_size` there). [cw_decal_preload](api:cw_decal_preload)
+  does it ahead of time for any image a game stamps in play; a decal stamped with an image the atlas has not seen
+  costs that image's decode in its frame (about 2 ms for a 128 x 128 PNG in a cart) and nothing more.
+  `cw_decal_stats.atlas_load_ms` and `atlas_decode_ms` say what the last image cost. Through romdev on the test
+  GPU (`samples/decal_late`: a decal with the atlas's first image stamped at tick 60, the stamp's frame against the
+  run's usual frame): +0.2 ms of CPU on GL and WebGPU with the image preloaded, +2 to 3 ms when the stamp decodes
+  it; the old path, kept as the gate's control under `CW_TEST_DECAL_FULL_MIPS=1`, +8 to 12 ms on GL and +13 to
+  17 ms on WebGPU. `fx_decals` draws the same picture as before (WebGPU identical; GL within 2 levels on the
+  minified splats, which glGenerateMipmap filtered). Gate `decal-first-image` (romdev, GL and WebGPU, every frame
+  timed with `frame({op:'timing'})`, a frame's cost its least over three runs; its second control
+  `CW_TEST_DECAL_NO_MIPS=1` leaves a new cell's mips empty and must lose the far mark, which samples mip 2).
+
 ## v0.46.1 (2026-11-10)
 
 ### Fixed

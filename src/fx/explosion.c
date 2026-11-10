@@ -21,6 +21,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "cartwheel/decals.h"
 #include "cartwheel/explosions.h"
 #include "cartwheel/math.h"
 #include "cartwheel/particles.h"
@@ -344,8 +345,14 @@ static void explo_init(cw_node n, void *data) {
   e->last_flash = -1e9;
 }
 
+/* the scorch sheet goes into the decal atlas as the node enters the tree (or
+ * is given a sheet there), under the loading screen for a kit set up before
+ * play, not in the frame of its first blast */
+static void preload_scorch(cw_node n, explo *e) {
+  if (cw_node_tree(n) && e->scorch_size > 0 && e->scorch_texture && *e->scorch_texture) cw_decal_preload(e->scorch_texture);
+}
+
 static void explo_enter(cw_node n, void *data) {
-  (void)data;
   cw_tree *t = cw_node_tree(n);
   cw__fx_tree *ft = cw__fx_tree_of(t);
   cw_array_push(&ft->explosions, n);
@@ -353,6 +360,11 @@ static void explo_enter(cw_node n, void *data) {
     ft->explosion_hook = true;
     cw_tree_add_hook(t, 0, -20, explosions_hook, NULL);
   }
+  preload_scorch(n, data);
+}
+
+static void explo_prop_changed(cw_node n, void *data, const cw_prop *p) {
+  if (!strcmp(p->name, "scorch_texture") || !strcmp(p->name, "scorch_size")) preload_scorch(n, data);
 }
 
 static void explo_exit(cw_node n, void *data) {
@@ -389,7 +401,7 @@ static const cw_prop explo_props[] = {
 static cw_node_type explo_type = {
   .name = "Explosion3D", .parent = "Node3D", .data_size = sizeof(explo), .props = explo_props,
   .doc = "Fires a whole explosion: restarts the particle systems and shockwave under it, flashes a pooled light, stamps a cooling scorch mark, records a camera shake (explosions.h).",
-  .init = explo_init, .enter_tree = explo_enter, .exit_tree = explo_exit,
+  .init = explo_init, .enter_tree = explo_enter, .exit_tree = explo_exit, .prop_changed = explo_prop_changed,
 };
 
 void cw__register_explosion_types(void) {

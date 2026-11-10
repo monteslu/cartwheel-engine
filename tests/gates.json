@@ -4763,6 +4763,11 @@
     "note": "about two hundred MULTIPLY decals from regions of a non-square sheet on the faces and tops of a side-on cliff (boxes 0.7 deep around the face, edge_fade 0.3, normal_fade 0.5, spun), through the full pipeline (HDR, ambient occlusion, bloom, tone mapping): GL and WebGPU draw the same picture. Controls: no decals; and on WebGPU alone every decal without its fades (DW_CONTROL_WGPU), which must fail the GL-vs-WebGPU bound"
   },
   {
+    "name": "decal-first-image",
+    "script": "tests/decal-first-image.mjs",
+    "note": "the first image into the decal atlas mid-run costs no frame: samples/decal_late through romdev on GL and WebGPU, every frame timed (frame({op:'timing'}), window 1; a frame's cost is its least over three runs, which drops a shared machine's noise); with the image preloaded (DECAL_PRELOAD=1, cw_decal_preload at tick 1) the frame that stamps two decals with it at tick 60 costs at most 1.5 ms of CPU (and wall, when no other process used the GPU) over the run's usual frame, and no other frame does; not preloaded, that frame costs the image's decode and no more (4 ms); stamped at the start instead (DECAL_AT_LOAD=1) the last frame is the same picture; the far mark samples mip 2 (far_ok). Controls: CW_TEST_DECAL_FULL_MIPS=1 (the engine's path before v0.46.2: the image loads at its first draw and every mip of the whole atlas is rebuilt then) must cost that frame at least 4 ms (GL) / 6 ms (WebGPU) more; CW_TEST_DECAL_NO_MIPS=1 must fail far_ok"
+  },
+  {
     "name": "msaa-hdr",
     "webgpu": {
       "vsGl": 0.0004,
