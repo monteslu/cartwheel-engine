@@ -192,6 +192,8 @@ does the same from a script (`--gpu gl --dual-gl` for the GL leg), and the gates
 Checks a game should run (all shipped in the SDK under `tools/`):
 
 - `node tools/check-prompts.mjs src *.cwscene`: no text names a button.
+- `node tools/check-art.mjs build/cart-wgpu/carts/<game>.wasc`: the cart's title and launcher art are all there, the
+  right shapes and sizes (then look at the cover for the game's name: no tool reads it).
 - `node tools/check-text.mjs tests/<game>-text.json`: every screen's text is at or above the size floor (on romdev).
 - No strobe: a flash meter of the game's own. `tools/flash-check.mjs` reads every frame and romdev cannot hand frames
   over in ranges yet, so until it can a game measures each effect that can flash (a damage tint, a muzzle light, a

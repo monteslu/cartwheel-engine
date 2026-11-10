@@ -32,7 +32,9 @@ Inside each SDK:
 - `tools/`: in desktop SDKs `cwexport` (packaging), `programs.mjs`, `run-cart.mjs`,
   `check-text.mjs` (the text size check over a game's screens, guide: testing) and
   three.c's generator (`deps/three.c/tools`) for program tables; in cart SDKs
-  the import checker and asset stager the cart link runs.
+  the import checker and asset stager the cart link runs; in both,
+  `check-art.mjs` (a built cart's title and launcher art against wasmcart's
+  SPEC).
 - `scripts/fetch-deps.sh` and `scripts/deps.lock`: fetch the pinned toolchain
   into the SDK (`--only export/llvm-mingw,export/sysroot-linux-x64`, or
   `--only wasi-sdk,binaryen` for carts).
