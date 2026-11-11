@@ -15,6 +15,7 @@
 //   4. rollback cost per frame (printed, never a pass/fail: the machine is shared).
 //
 //   node tests/net.mjs [--only pair,udp,romdev,wcnative,chromium,perf]
+import { ROMDEV_URL } from '../tools/lib/romdev-url.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, mkdirSync, rmSync } from 'node:fs';
 import { createSocket } from 'node:dgram';
@@ -109,7 +110,7 @@ if (want('udp')) {
 // the dual carts (build/cart-wgpu), run on GL: romdev and Chromium with wgpu: false, wasmcart-native with WASMCART_NO_WGPU=1
 const cartPath = (name) => join(ROOT, 'build/cart-wgpu/carts', `${name}.wasc`);
 async function romdevCall(tool, a, session) {
-  const res = await fetch(`http://127.0.0.1:${process.env.ROMDEV_PORT || 7331}/tool/${tool}`, { method: 'POST',
+  const res = await fetch(`${ROMDEV_URL}/tool/${tool}`, { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-romdev-session': session }, body: JSON.stringify(a) });
   const text = await res.text();
   let body;

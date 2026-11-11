@@ -17,6 +17,7 @@
 //     saying so and the Game panel must show the reason. Control: the native
 //     editor shows no such banner.
 //   node tests/editor-play.mjs [native|romdev ...]     ROMDEV_PORT (default 7331)
+import { ROMDEV_PORT } from '../tools/lib/romdev-url.mjs';
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -224,7 +225,7 @@ for (const t of which) {
 
 // ── 3. the cart editor has no transport, and says so ─────────────────────
 if (which.includes('romdev')) {
-  const port = process.env.ROMDEV_PORT || 7331;
+  const port = ROMDEV_PORT;
   const S = `cw-editor-play-${process.pid}`;
   const call = async (tool, a) => {
     const res = await fetch(`http://127.0.0.1:${port}/tool/${tool}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-romdev-session': S }, body: JSON.stringify(a) });

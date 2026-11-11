@@ -22,6 +22,7 @@
 // corrupt glTF reports an error, fs.place of a missing file is refused.
 //
 //   node tests/editor-import.mjs [--hosts native,romdev,chromium,wcnative]
+import { ROMDEV_PORT } from '../tools/lib/romdev-url.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -38,7 +39,7 @@ mkdirSync(OUT, { recursive: true });
 const argv = process.argv.slice(2);
 const HOSTS = argv.includes('--hosts') ? argv[argv.indexOf('--hosts') + 1].split(',') : ['native', 'romdev', 'chromium', 'wcnative'];
 const FRAMES = 50;
-const port = process.env.ROMDEV_PORT || 7331;
+const port = ROMDEV_PORT;
 let fail = 0;
 const bad = (m) => { fail++; console.log('FAIL ' + m); };
 

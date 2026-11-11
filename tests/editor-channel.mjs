@@ -7,6 +7,7 @@
 // (CW_EDITOR_SETTINGS), in the cart through the project layer (export, then
 // import into a fresh cart).
 //   node tests/editor-channel.mjs        ROMDEV_PORT (default 7331)
+import { ROMDEV_PORT } from '../tools/lib/romdev-url.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -18,7 +19,7 @@ await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'out', 'editor-channel');
 mkdirSync(OUT, { recursive: true });
-const port = process.env.ROMDEV_PORT || 7331;
+const port = ROMDEV_PORT;
 const exe = join(ROOT, 'build/native/editor/editor');
 const cart = join(ROOT, 'build/cart-wgpu/carts/editor.wasc');
 for (const f of [exe, cart]) if (!existsSync(f)) { console.error('missing', f); process.exit(1); }

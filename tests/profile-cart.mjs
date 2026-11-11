@@ -8,6 +8,7 @@
 // Controls that must fail: trace_get before any trace, a state one tick
 // short, an impossible budget.
 //   node tests/profile-cart.mjs
+import { ROMDEV_PORT } from '../tools/lib/romdev-url.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -20,7 +21,7 @@ await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'out/gate');
 mkdirSync(OUT, { recursive: true });
-const port = process.env.ROMDEV_PORT || 7331;
+const port = ROMDEV_PORT;
 const cart = join(ROOT, 'build/cart-wgpu/carts/profile_demo.wasc') // the dual cart, run on GL (wgpu: false);
 const exe = join(ROOT, 'build/native/samples/profile_demo');
 if (!existsSync(cart)) { console.error('no cart', cart); process.exit(1); }

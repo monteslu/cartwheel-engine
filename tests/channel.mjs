@@ -2,6 +2,7 @@
 // (cart) and CW_DEBUG_CMDS (native) after the same number of frames must
 // give the same replies. Also checks a request that must FAIL fails.
 //   node tests/channel.mjs [app] [frames]     ROMDEV_PORT (default 7331)
+import { ROMDEV_PORT } from '../tools/lib/romdev-url.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -12,7 +13,7 @@ await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const app = process.argv[2] || 'scene3d', frames = +(process.argv[3] || 30);
-const port = process.env.ROMDEV_PORT || 7331;
+const port = ROMDEV_PORT;
 const requests = ['tree /root', 'get /root/Level/Ball position', 'props /root/Level/Floor', 'group crates', 'types',
   'set /root/Level/Floor color color(1, 0, 0)', 'save /root/Level'];
 const mustFail = 'get /root/Nope position';

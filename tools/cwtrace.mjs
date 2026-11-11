@@ -10,6 +10,7 @@
 // already running in that romdev session instead (it is left running).
 // A native executable is run with CW_PROFILE_TRACE (offscreen; --gpu adds the
 // render passes' GPU times, native only).
+import { ROMDEV_PORT } from './lib/romdev-url.mjs';
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -33,7 +34,7 @@ const frames = +opt('--frames', '60');
 const start = +opt('--start', '60');
 const session = opt('--session', '');
 const gpu = flag('--gpu');
-const port = process.env.ROMDEV_PORT || 7331;
+const port = ROMDEV_PORT;
 const target = argv[0];
 if ((!target && !session) || !(frames >= 1)) {
   console.error('usage: cwtrace.mjs <app.wasc | native executable> [-o trace.json] [--frames 60] [--start 60] [--gpu]\n'

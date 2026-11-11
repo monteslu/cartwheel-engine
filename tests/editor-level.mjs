@@ -26,6 +26,7 @@
 //      different state.
 //
 //   node tests/editor-level.mjs [--hosts native,romdev,chromium,wcnative]
+import { ROMDEV_PORT } from '../tools/lib/romdev-url.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, copyFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -40,7 +41,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'out', 'editor-level');
 const argv = process.argv.slice(2);
 const HOSTS = argv.includes('--hosts') ? argv[argv.indexOf('--hosts') + 1].split(',') : ['native', 'romdev', 'chromium', 'wcnative'];
-const port = process.env.ROMDEV_PORT || 7331;
+const port = ROMDEV_PORT;
 const P3D = join(ROOT, 'games/platformer3d/assets');
 const LEVEL = 'scenes/level1.cwscene';
 const SOURCE = process.env.CW_EDLEVEL_SOURCE || join(P3D, LEVEL); // the hand-written level

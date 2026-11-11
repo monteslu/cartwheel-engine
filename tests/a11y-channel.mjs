@@ -4,6 +4,7 @@
 // (wasm({op:'command'})) at the same frame, must be identical and must say
 // what the Arabic screen shows. Requests that must FAIL fail.
 //   node tests/a11y-channel.mjs [frames]     ROMDEV_PORT (default 7331)
+import { ROMDEV_PORT } from '../tools/lib/romdev-url.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -14,7 +15,7 @@ await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const app = 'l10n_demo', frames = +(process.argv[2] || 170); // frame 170: the Arabic screen
-const port = process.env.ROMDEV_PORT || 7331;
+const port = ROMDEV_PORT;
 const requests = ['a11y tree', 'a11y focus', 'l10n', 'l10n tr menu.play', 'a11y events 0'];
 const mustFail = ['l10n tr no.such.key', 'a11y set bogus 1'];
 

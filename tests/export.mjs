@@ -38,6 +38,7 @@
 //                 project.cwproj, CW_PROJECT_DIR) exported for linux-x64 and run.
 //                 Control: the same project with a broken asset path must fail
 //                 to export.
+import { ROMDEV_URL } from '../tools/lib/romdev-url.mjs';
 import { spawnSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, statSync, cpSync, renameSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -402,7 +403,7 @@ async function wasc(g) {
   const [cart] = await exportOne(g.project, 'cart', join(OUT, g.game));
   const S = `cw-export-test-${process.pid}`;
   const call = async (tool, a) => {
-    const res = await fetch(`http://127.0.0.1:7331/tool/${tool}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-romdev-session': S }, body: JSON.stringify(a) });
+    const res = await fetch(`${ROMDEV_URL}/tool/${tool}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-romdev-session': S }, body: JSON.stringify(a) });
     return JSON.parse(await res.text());
   };
   let conf;
