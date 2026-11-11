@@ -10582,6 +10582,26 @@
      "doc": "Metres of water over which the shallow colour has become deep_color."
     },
     {
+     "name": "see_through",
+     "type": "float",
+     "default": "0.4",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 20,
+     "doc": "Metres of water over which a submerged object (a hull, a rider's legs) fades out of sight through the surface, blurred and tinted by the water: about 0.4 for slightly cloudy water, more for clear water (0: objects are not drawn through the surface blurred and faded, the old look). Needs the floor map and the refraction (High and up); scaled by the light reaching the water, so night shows far less."
+    },
+    {
+     "name": "see_night",
+     "type": "float",
+     "default": "0.05",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "The share of see_through's visibility that stays with no sun (night): the light reaching the water scales it between this (plus a little for the sky's own night light) and 1 by day. 1 ignores the light."
+    },
+    {
      "name": "shore_foam",
      "type": "float",
      "default": "0.7",

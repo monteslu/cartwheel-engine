@@ -62,6 +62,10 @@
  *                          it blends to deep_color as the depth grows
  *     clarity              metres of water over which the shallow colour has
  *                          become deep_color (5)
+ *     see_through          metres of water over which a submerged object (a hull, legs) fades out of
+ *                          sight through the surface, blurred and tinted (0.4; 0 = off). Needs the
+ *                          floor map and the refraction (High and up)
+ *     see_night            the share of that visibility that stays at night (0.05)
  *     shore_foam           width in metres of the foam where the water meets
  *                          the floor (0.7; 0 = none)
  *     crest_foam           0..1: foam on the wave crests where the surface
@@ -235,6 +239,7 @@ typedef struct cw_water_stats {
   int triangles;          /* of the surfaces' grids */
   int buoyant;            /* Buoyancy3D nodes that pushed last tick */
   int underwater;         /* 1 when the last frame was drawn from under a Water3D's surface (its fog, caustics, waterline) */
+  float see_light;        /* 0..1: the light reaching the last surface drawn, which scales what shows through it (see_through) */
 } cw_water_stats;
 /* Zeroed when t is NULL or has no water. */
 void cw_water_get_stats(cw_tree *t, cw_water_stats *out);

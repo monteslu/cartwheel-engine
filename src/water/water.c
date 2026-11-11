@@ -169,6 +169,9 @@ static void water_init(cw_node n, void *data) {
   d->floor_map_size = 128;
   d->floor_range = 40;
   d->clarity = 5;
+  d->see_through = 0.4f;
+  d->see_night = 0.05f;
+  d->see_light = 1;
   d->shore_foam = 0.7f;
   d->crest_foam = 0.35f;
   d->foam_scale = 1;
@@ -890,7 +893,7 @@ static void fill(t3_extension_ctx *c, void *user) {
   }
   t3_extension_set_uniform(c, "waterSteep", d->ev.q, 4);
   t3_extension_set_uniform(c, "waterPhase", d->ev.ph, 4);
-  v[0] = d->crest_light, v[1] = v[2] = v[3] = 0;
+  v[0] = d->crest_light, v[1] = d->refr_on ? d->see_through : 0.0f, v[2] = d->see_light, v[3] = d->cam_tan2;
   t3_extension_set_uniform(c, "waterCrest", v, 4);
   v[0] = d->grid_off[0], v[1] = d->grid_off[1], v[2] = d->grid_mode == 1 ? 1.0f : 0.0f, v[3] = d->foam_scale;
   t3_extension_set_uniform(c, "waterGrid", v, 4);
@@ -948,6 +951,16 @@ static void fill(t3_extension_ctx *c, void *user) {
     v[2] = 1.0f / cs, v[3] = d->refr_above ? 1.0f : 0.0f;
     t3_extension_set_uniform(c, "waterRefr", v, 4);
     t3_extension_set_uniform(c, "waterRefrInv", d->refr_inv, 16);
+    {
+      /* the world height of a refraction point as two dot products: with M the inverse projection (column-major), W the
+       * camera's world matrix, row_i of M and w = row 3: y = (sum_i W[1][i] row_i + W[1][3] w) . clip / (w . clip) */
+      const float *m = d->refr_inv, *w = d->cam_world;
+      float rw[4], ry[4];
+      for (int k = 0; k < 4; k++) rw[k] = m[4 * k + 3];
+      for (int k = 0; k < 4; k++) ry[k] = w[1] * m[4 * k + 0] + w[5] * m[4 * k + 1] + w[9] * m[4 * k + 2] + w[13] * rw[k];
+      t3_extension_set_uniform(c, "waterRefrRowY", ry, 4);
+      t3_extension_set_uniform(c, "waterRefrRowW", rw, 4);
+    }
     {
       int tw = 1, th = 1;
       if (cw__wgpu_on() && d->wg_dep) tw = d->wg_dep->w, th = d->wg_dep->h;
@@ -1039,6 +1052,25 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
       float on = sk.active ? 1.0f : 0.0f;
       d->sun_col[0] = sk.sun_color.r * sk.sun_energy * on, d->sun_col[1] = sk.sun_color.g * sk.sun_energy * on;
       d->sun_col[2] = sk.sun_color.b * sk.sun_energy * on, d->sun_col[3] = d->scatter;
+      /* the light reaching the water, for what shows through it: the sun's share (nothing under the horizon, full a few
+       * degrees up, smooth between so dusk neither pops nor snaps) plus the sky's own light at night (its horizon
+       * colour, which holds the moon's level) as a small residual */
+      if (sk.active) {
+        float e = sk.sun_elevation;
+        float s = CW_CLAMP((e + 4.0f) / 16.0f, 0.0f, 1.0f);
+        s = s * s * (3.0f - 2.0f * s);
+        if (sk.sun_energy <= 0.0f) s = 0.0f;
+        float hl = 0.2126f * sk.horizon.r + 0.7152f * sk.horizon.g + 0.0722f * sk.horizon.b;
+        float resid = CW_MIN(1.0f, d->see_night + CW_CLAMP(hl * 2.0f, 0.0f, 0.15f));
+        d->see_light = resid + (1.0f - resid) * s;
+      } else {
+        d->see_light = 1;
+      }
+      {
+        float tn = tanf(ctx->camera->fov * 0.00872664626f) / (ctx->camera->zoom > 0 ? ctx->camera->zoom : 1.0f);
+        d->cam_tan2 = 2.0f * tn;
+        memcpy(d->cam_world, ctx->camera->base.matrix_world.e, sizeof d->cam_world);
+      }
     }
     d->mat->roughness = d->roughness;
     /* the environment's specular is the reflection when no planar one is drawn (this intensity is only a material's own
@@ -1049,6 +1081,7 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     d->mat->env_map_intensity = d->refl_on || d->cam_under ? 0.0f : 1.0f;
     tri += d->triangles;
     wt->stats.surfaces++;
+    wt->stats.see_light = d->see_light;
   }
   wt->stats.triangles = tri;
 }
@@ -1131,6 +1164,8 @@ static const cw_prop water_props[] = {
   CW_PROP_FIELD_RANGE(water3d, floor_range, CW_T_FLOAT, 1, 1000, "Metres under the rest level the floor rays probe."),
   CW_PROP_FIELD(water3d, shallow_color, CW_T_COLOR, CW_PROP_DEFAULT, "Colour of the water over a shallow floor (linear)."),
   CW_PROP_FIELD_RANGE(water3d, clarity, CW_T_FLOAT, 0.01, 1000, "Metres of water over which the shallow colour has become deep_color."),
+  CW_PROP_FIELD_RANGE(water3d, see_through, CW_T_FLOAT, 0, 20, "Metres of water over which a submerged object (a hull, a rider's legs) fades out of sight through the surface, blurred and tinted by the water: about 0.4 for slightly cloudy water, more for clear water (0: objects are not drawn through the surface blurred and faded, the old look). Needs the floor map and the refraction (High and up); scaled by the light reaching the water, so night shows far less."),
+  CW_PROP_FIELD_RANGE(water3d, see_night, CW_T_FLOAT, 0, 1, "The share of see_through's visibility that stays with no sun (night): the light reaching the water scales it between this (plus a little for the sky's own night light) and 1 by day. 1 ignores the light."),
   CW_PROP_FIELD_RANGE(water3d, shore_foam, CW_T_FLOAT, 0, 20, "Width in metres of the foam where the water meets the floor (0: none)."),
   CW_PROP_FIELD_RANGE(water3d, crest_foam, CW_T_FLOAT, 0, 1, "Foam on crests where the surface bunches up (0: none)."),
   CW_PROP_FIELD_RANGE(water3d, foam_scale, CW_T_FLOAT, 0.05, 32, "How much finer the foam's pattern is than its default (1: cells of a few metres, for a view from far above)."),

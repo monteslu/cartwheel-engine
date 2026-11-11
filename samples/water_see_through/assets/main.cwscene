@@ -1,0 +1,113 @@
+[scene format=1]
+
+[node name="Root" type="Node3D"]
+
+[node name="Post" parent="." type="PostProcess"]
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 12.5
+latitude = 40
+declination = 15
+north = 60
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+shadow_extent = 40
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 3.2, 9)
+rotation = vec3(-0.42, 0, 0)
+fov = 50
+far = 400
+
+[node name="Water" parent="." type="Water3D"]
+size = vec2(120, 120)
+subdivisions = 300
+floor_map_size = 256
+wave_count = 1
+wave0 = vec4(0, 14, 0.03, 0.3)
+shore_foam = 1.6
+see_through = 0.4
+
+[node name="Floor" parent="." type="StaticBody3D"]
+position = vec3(0, -8.25, 0)
+
+[node name="Shape" parent="Floor" type="CollisionShape3D"]
+shape = BOX
+size = vec3(120, 0.5, 120)
+
+[node name="Mesh" parent="Floor" type="MeshInstance3D"]
+size = vec3(120, 0.5, 120)
+color = color(0.5, 0.42, 0.26, 1)
+receive_shadow = true
+
+[node name="P005" parent="." type="MeshInstance3D"]
+position = vec3(-6, -0.1, 0)
+size = vec3(1.6, 0.1, 1.6)
+color = color(0.85, 0.12, 0.08, 1)
+roughness = 0.6
+
+[node name="P02" parent="." type="MeshInstance3D"]
+position = vec3(-3, -0.25, 0)
+size = vec3(1.6, 0.1, 1.6)
+color = color(0.85, 0.12, 0.08, 1)
+roughness = 0.6
+
+[node name="P05" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.55, 0)
+size = vec3(1.6, 0.1, 1.6)
+color = color(0.85, 0.12, 0.08, 1)
+roughness = 0.6
+
+[node name="P10" parent="." type="MeshInstance3D"]
+position = vec3(3, -1.05, 0)
+size = vec3(1.6, 0.1, 1.6)
+color = color(0.85, 0.12, 0.08, 1)
+roughness = 0.6
+
+[node name="P20" parent="." type="MeshInstance3D"]
+position = vec3(6, -2.05, 0)
+size = vec3(1.6, 0.1, 1.6)
+color = color(0.85, 0.12, 0.08, 1)
+roughness = 0.6
+
+[node name="Box" parent="." type="MeshInstance3D"]
+position = vec3(10, 0, 0)
+size = vec3(2, 1.6, 2)
+color = color(0.9, 0.9, 0.85, 1)
+roughness = 0.5
+cast_shadow = true
+
+[node name="Stern" parent="." type="MeshInstance3D"]
+position = vec3(-9, -0.12, -2)
+rotation = vec3(0.12, 0.3, 0)
+size = vec3(1.3, 0.55, 2.6)
+color = color(0.85, 0.65, 0.05, 1)
+roughness = 0.4
+cast_shadow = true
+
+[node name="LegL" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(-9, -0.3, -6.2)
+size = vec3(0.2, 1.0, 0.2)
+color = color(0.1, 0.2, 0.6, 1)
+
+[node name="LegR" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(-8.6, -0.3, -6.2)
+size = vec3(0.2, 1.0, 0.2)
+color = color(0.1, 0.2, 0.6, 1)
+
+[node name="Torso" parent="." type="MeshInstance3D"]
+position = vec3(-8.8, 0.85, -6.2)
+size = vec3(0.6, 0.7, 0.3)
+color = color(0.9, 0.9, 0.9, 1)
+
+[node name="Float" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(10, -0.35, -4)
+size = vec3(0.6, 0.6, 0.6)
+color = color(1, 0.45, 0.05, 1)
+emissive = color(30, 11, 1, 1)
+

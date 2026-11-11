@@ -2,7 +2,7 @@
 
 {{name}} draws water as three.js r187's water add-ons do (planar reflection and refraction, scrolling ripples, flow maps) on a surface that Gerstner waves really move, and floats rigid bodies on it with the same waves, computed the same way on every host.
 
-Header: [cartwheel/water.h](header:water.h). Node types: [Water3D](node:Water3D) and [Buoyancy3D](node:Buoyancy3D). Samples: `water_boat`, a boat and two crates bobbing beside a pier, and `water_open_sea`, an open sea with a sheltered bay. Gates: `unit-water`, `water-boat` and `water-surface`.
+Header: [cartwheel/water.h](header:water.h). Node types: [Water3D](node:Water3D) and [Buoyancy3D](node:Buoyancy3D). Samples: `water_boat`, a boat and two crates bobbing beside a pier, `water_open_sea`, an open sea with a sheltered bay, and `water_see_through`, slabs under the surface at five depths. Gates: `unit-water`, `water-boat`, `water-surface` and `water-see-through`.
 
 ## A body of water
 
@@ -83,9 +83,23 @@ The `water-under` gate puts the beach sample's camera under the surface and chec
 
 `crest_light` (0 to 1, off by default) lets light through the thin top of a wave: it mixes lighter water over whatever the refraction shows and breaks the very top into foam, however gently the wave bunches, so a low camera reads a swell as a crest and not as a dark band. `crest_foam` is separate: it answers how sharply the surface bunches, which a long swell never does much.
 
+## Seeing what is just under the surface
+
+Water that is not clear shows what lies in it cloudy: a hull's stern, a rider's legs, a post or a swimmer, seen through the surface, are blurred by the water's scattering, tinted toward the water's colour and fade with the water over them, until a metre or so down they are gone.
+
+@include samples/water_see_through/assets/main.cwscene#Water
+
+- `see_through` is the depth scale in metres (0.4 by default, slightly cloudy water). What shows of an object is `exp(-depth / see_through)`, with the depth measured straight down from the surface: 0.4 m of water leaves a third, 1 m under a tenth, 1.5 m nothing. Clear water wants more, murky water less; 0 turns it off. The blur grows with the depth too (about a tenth of it), and each tap of it counts by its own depth, so an object's edge goes soft as it sinks. What does not show is the water's own colour.
+- `see_night` is the share of that visibility that stays with no light (0.05). The scene's light reaching the water scales it: the sky's sun (full a few degrees up, nothing under the horizon, smooth between, so dusk neither pops nor snaps) plus the sky's own night light (its horizon colour, which holds the moon's level) as a small residual. `cw_water_get_stats` reports it as `see_light`. A lit surface at night (a lamp, a glowing hull) still shows a little. 1 ignores the light.
+- It draws on High and Ultra, where the refraction does. Open water pays for three reads of the refraction's depth; the blur and the picture are a branch that only the pixels of an object take. Measured on the 890M at High with `water_boat` and `water_shore`: 0.23 to 0.34 ms a frame, on GL and WebGPU alike. Lower presets draw no refraction, so what is under the surface is not seen there at all (as before).
+- It is for objects, not the floor. A point is an object when it is much shallower than the ground two metres to each side of it and up the screen (the middle one of three taps, so a slope, which is shallower on one side, and a neighbouring object do not make the ground look shallow); a floor, a quay, a hull wider than the ring keep the old look. An object is never read as a shoal: its own depth makes no shore colour and no shore foam, those read the ground's.
+- The picture it takes from the refraction is capped (a lit float's very bright colour read as lime patches through a wake), and caustics stay on the floor.
+
+Put the craft and the rider in the refraction, not in [cw_water_refraction_hide](api:cw_water_refraction_hide), for this: what the refraction does not draw cannot show through the surface. Before v0.47.0 the surface was opaque to anything hidden from the refraction, which is why a hull that dips below the surface vanished at it.
+
 ## Hulls in the refraction
 
-The refraction is clipped at the rest level, not at the moving surface, so a hull riding the waves can have a part under the rest level while it is above the water, and from a low camera that part shows through the surface as a large ghost. [cw_water_refraction_hide](api:cw_water_refraction_hide) leaves a node out of the refraction; the reflection still has it.
+The refraction is clipped at the rest level, not at the moving surface, so a hull riding the waves can have a part under the rest level while it is above the water, and from a low camera that part shows through the surface as a large ghost. [cw_water_refraction_hide](api:cw_water_refraction_hide) leaves a node out of the refraction; the reflection still has it. With `see_through` on, that ghost is faint: the part of the hull above the real surface is seen through water over it only as deep as the wave is high, and fades with it. A game that hid its craft for the ghost's sake can stop hiding it. The list holds 16 nodes: hide one group node and hang the rest under it.
 
 ## Things that float
 

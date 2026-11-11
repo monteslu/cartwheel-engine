@@ -42,6 +42,7 @@ typedef struct water3d {
   float debug_range[2];
   /* shore and depth shading, foam */
   int floor_map_size;
+  float see_through, see_night, see_light, cam_tan2; /* see_through: property; the others are this frame's */
   float floor_range, clarity, shore_foam, crest_foam, foam_scale, foam_lace, foam_soft, crest_light;
   float shallow_color[4];
   /* the look */
@@ -89,6 +90,7 @@ typedef struct water3d {
   uint32_t fx_next;
   t3_texture *rip_tex;
   float sun[4], sun_col[4];
+  float cam_world[16]; /* the view's camera world matrix this frame (the refraction's points back to the world) */
   float refr_inv[16]; /* the refraction camera's inverse projection (its depth texture reads back to view space) */
   bool refr_depth_ok;
   bool refr_above;      /* the camera is under the water: the refraction target holds the view up through the surface */

@@ -3597,6 +3597,11 @@
     "note": "a ripple grid following a boat 200 m across the map, the same bits on every host; the swell is held down in the bay (swell.a); control: the grid does not follow"
   },
   {
+    "name": "water-see-through",
+    "script": "tests/water-see-through.mjs",
+    "note": "what lies just under the water shows through the surface cloudy and fades with depth, by day and much less by night, on GL and WebGPU through romdev (water_see_through: slabs 0.05 to 2 m down read against the open water beside them, no shore foam over a slab, a bright float not blown out, the light reaching the water smooth through dusk); controls: refraction off (opaque), see_through 0 (the old look) and see_night 1 (the light ignored) must each break their check"
+  },
+  {
     "name": "water-surface",
     "script": "tests/water-surface.mjs",
     "note": "the drawn water is where cw_water_height_at says, on every host and backend (debug_view HEIGHT read back at 48 probes, 1.5 cm); control: the water drawn 0.25 s late"
