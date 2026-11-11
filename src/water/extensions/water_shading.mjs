@@ -25,7 +25,7 @@
 // Names after "ext." are what the C fill hook sets (water.c); a name the low program lacks is skipped there.
 export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   const {
-    Fn, uniform, texture, sharedUniformGroup, positionLocal, positionWorld, cameraViewMatrix,
+    Fn, If, uniform, texture, sharedUniformGroup, positionLocal, positionWorld, cameraViewMatrix,
     modelWorldMatrix, screenUV, vec2, vec3, vec4, float, normalize, dot, max, min, mix, pow, abs, sin, cos, clamp,
     floor, length, smoothstep, varying, step, exp, sqrt, output, sRGBTransferEOTF, materialColor, materialEmissive,
     textureLoad, ivec2, int, select,
@@ -61,7 +61,7 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   const refrSize = low ? null : v4('waterRefrSize'); // x, y: the refraction depth texture's size in texels; z: the foam's lace; w: soft foam
   const grid = v4('waterGrid');     // x, y: the grid's centre (water-local; the camera's foot on a VIEW grid); z: VIEW grid on; w: the foam pattern's scale
   const shelter = v4('waterShelter'); // per wave: how much the wave mask holds it down
-  const crestLight = v4('waterCrest'); // x: how much lighter crests are (0: as before)
+  const crestLight = v4('waterCrest'); // x: how much lighter crests are (0: as before); y: see_through (m, 0: off); z: the light reaching the water (0..1); w: 2 x tan(half the view's height angle)
   const cam = v4('waterCam');       // xyz: the camera's world position (three.c fills no cameraPosition); w: 1 when the view is drawn rows bottom-up (cartwheel's WebGPU scene target) but the planar targets top-down
 
   const m4 = (n) => {
@@ -71,6 +71,8 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
     props['ext.' + n] = { kind: 'mat4', value: sv };
     return u;
   };
+  const refrRowY = low ? null : v4('waterRefrRowY'); // the world height of a refraction point: row 1 of the camera's world matrix through the inverse projection, over refrRowW
+  const refrRowW = low ? null : v4('waterRefrRowW'); // the inverse projection's w row
   const refrInv = low ? null : m4('waterRefrInv'); // the refraction camera's inverse projection (oblique near plane included)
 
   const tex = (n, linear, repeat, half) => {
@@ -264,7 +266,85 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   const ray = clamp(length(scenePos).sub(length(surfPos)), 0, 1000);
   const zDepth = mix(float(100), ray.mul(max(toEye.y, 0.15)), hit);
   const useZ = refrInfo.x.mul(deep.w);
-  const depth = mix(bakedDepth, zDepth, useZ);
+  // What is under the surface and is not the floor (a hull, a rider's legs, a post in deep water): a point the
+  // refraction saw that is much shallower than the ground two metres to each side of it on the screen (all four
+  // ways: a slope or a floor is shallower on one side, a wide hull has no ground around it). It is seen through the
+  // water cloudy (below), and never as a shoal: its own depth must not make shore colour or foam, so those read
+  // the ground's depth there.
+  const seeT = max(crestLight.y, 0.001);
+  const seeOn = step(0.001, crestLight.y).mul(useZ);
+  const surfDist = max(length(surfPos), 0.1);
+  const aspect = refrSize.x.div(refrSize.y);
+  const tap = (uvK) => {
+    const tcK = clamp(floor(uvK.mul(refrSize.xy)), vec2(0), refrSize.xy.sub(1));
+    const dzK = min(textureLoad(refrDepth, ivec2(int(tcK.x), int(tcK.y))).x, 1);
+    const hitK = float(1).sub(step(0.99999, dzK));
+    // (the depth under the surface straight down: the point's height in the world. Two rows of the refraction's
+    // inverse projection and the camera's world matrix, folded on the CPU: a height is two dot products)
+    const clipK = vec4(uvK.x.mul(2).sub(1), float(1).sub(uvK.y.mul(2)), min(dzK, 0.999).mul(2).sub(1), 1);
+    const pwY = dot(refrRowY, clipK).div(max(dot(refrRowW, clipK), 1e-6));
+    return { hit: hitK, z: mix(bakedDepth, clamp(positionWorld.y.sub(pwY), 0, 1000), hitK) }; // (nothing seen: the floor map's floor, so land is shallow and open water deep)
+  };
+  // the ground around: three taps two metres out to the sides and up the screen (depths only), the middle one of which
+  // is the ground's depth (a slope is shallower on one side, another object may stand beside this one, and neither
+  // makes the ground look shallow). Only a pixel that sees something within a few metres of the surface asks; open
+  // water, where nothing is drawn or the floor is far, pays for the one depth it reads anyway
+  const rFy = float(2).div(surfDist.mul(max(crestLight.w, 0.01)));
+  const rF = vec2(rFy.div(aspect), rFy);
+  const ringUv = [[-1, 0], [1, 0], [0, 1]].map(([x, y]) => clamp(uvS.add(rF.mul(vec2(x, y))), vec2(0), vec2(1)));
+  const median3 = (a, b, c) => max(min(a, b), min(max(a, b), c));
+  const tapC = tap(uvS);
+  const near = tapC.hit.mul(step(tapC.z, 3.5)).mul(seeOn).greaterThan(0.5);
+  const ground = Fn(() => {
+    const o = float(0).toVar();
+    If(near, () => { o.assign(median3(tap(ringUv[0]).z, tap(ringUv[1]).z, tap(ringUv[2]).z)); });
+    return o;
+  })();
+  const zRef = ground;
+  // this pixel's own part of an object; the rest of the work is for these pixels only
+  const objB = near.select(smoothstep(0.5, 1.2, zRef.sub(tapC.z)), float(0));
+  const objOf = (t) => t.hit.mul(smoothstep(0.5, 1.2, zRef.sub(t.z))).mul(seeOn);
+  const isObj = objB.greaterThan(0.001);
+  // The submerged object's picture: five taps (the centre and four around it) over a disc whose radius grows with
+  // the water over the object (scattering: about a tenth of the depth), each tap counting by its own depth: the
+  // fraction of the object that shows is exp(-depth / see_through) times the light reaching the water. What does
+  // not show is the water's own colour. Colours are capped (a lit float's HDR value, with the red eaten on the way,
+  // read as lime patches through a wake on WebGPU). The blur and the picture's work is for the pixels of an object
+  // only: a branch, so that open water pays for the three depth taps above and nothing else.
+  const zr = min(tapC.z, 1.5);
+  const rM = float(0.04).add(zr.mul(0.12));
+  const rUvY = rM.div(surfDist.mul(max(crestLight.w, 0.01)));
+  const rUv = vec2(rUvY.div(aspect), rUvY);
+  const seeObj = Fn(() => {
+    const o = vec4(0).toVar();
+    If(isObj, () => {
+      let sumV = float(0), sumC = vec3(0);
+      for (let k = 0; k < 5; k++) {
+        const d = k === 0 ? [0, 0] : [[1, 0], [-1, 0], [0, 1], [0, -1]][k - 1];
+        const uvK = clamp(uvS.add(rUv.mul(vec2(d[0] * 0.8, d[1] * 0.8))), vec2(0), vec2(1));
+        const t = tap(uvK);
+        const vK = objOf(t).mul(exp(t.z.negate().div(seeT)));
+        sumV = sumV.add(vK);
+        sumC = sumC.add(min(texture(refractMap, uvK).level(0).rgb, vec3(2)).mul(vK));
+      }
+      // (the red goes first on the way up and down: by the object's own depth)
+      o.assign(vec4(sumC.div(5).mul(tint.rgb).mul(exp(vec3(-0.9, -0.15, -0.08).mul(min(tapC.z, 4)))).mul(crestLight.z), sumV.div(5).mul(crestLight.z)));
+    });
+    return o;
+  })();
+  const objV = seeObj.w;
+  const objCol = seeObj.xyz;
+  // what the object hides is the floor: the picture of the ring tap whose depth is the ground's, else (nothing there) the water's colour alone
+  const seeFloor = Fn(() => {
+    const o = vec3(0).toVar();
+    If(isObj, () => {
+      const pick = select(tap(ringUv[0]).z.equal(zRef), ringUv[0], select(tap(ringUv[1]).z.equal(zRef), ringUv[1], ringUv[2]));
+      o.assign(min(texture(refractMap, pick).level(0).rgb, vec3(2)));
+    });
+    return o;
+  })();
+  const texC = mix(texture(refractMap, uvS).rgb, seeFloor, objB);
+  const depth = mix(mix(bakedDepth, zDepth, useZ), bakedDepth, objB);
   const dOn = max(mapOn, useZ);
   // Beer-Lambert style: the shallow colour turns into the deep one with depth, red first (water eats red light)
   const absorb = mix(float(1), float(1).sub(exp(depth.negate().mul(shore.z))), dOn);
@@ -281,7 +361,7 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   // what is seen through the water lost its light on the way down to it and back up along the view, per colour (pure
   // water eats red ten times faster than green, green twice as fast as blue: clarity 5 m is clear sea water), and the
   // water's own lit colour scattered in over the same path (murk: how much)
-  const viewPath = mix(depth.div(max(toEye.y, 0.15)), ray, useZ.mul(hit));
+  const viewPath = mix(mix(depth.div(max(toEye.y, 0.15)), ray, useZ.mul(hit)), bakedDepth.div(max(toEye.y, 0.15)), objB);
   const path = mix(float(4), depth.add(viewPath), dOn);
   const sig = vec3(0.45, 0.065, 0.035).mul(shore.z).mul(5);
   const trans = exp(sig.mul(path).negate());
@@ -302,8 +382,9 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   // smoothstep's 0 is NaN, which reaches the picture as black. A wave standing above the eye line hit it)
   const cfade = smoothstep(0.02, 0.5, below).mul(exp(max(below, 0).negate().mul(shore.z).mul(1.6))).mul(smoothstep(0, 0.25, toSun0.y))
     .mul(hit).mul(useZ).mul(hasSun);
-  const caus = float(1).add(refrInfo.y.mul(cfade).mul(kc.mul(2.2).sub(1)));
-  const seen = texture(refractMap, uvS).rgb.mul(tint.rgb).mul(trans).mul(caus).add(body.mul(inscatter));
+  const caus = float(1).add(refrInfo.y.mul(cfade).mul(float(1).sub(objB)).mul(kc.mul(2.2).sub(1)));
+  const seenFloor = texC.mul(tint.rgb).mul(trans).mul(caus).add(body.mul(inscatter));
+  const seen = seenFloor.mul(float(1).sub(objV)).add(objCol);
   // crest_light: light comes through the thin top of a wave whatever lies under it, so it is mixed in after the refraction
   const refr = mix(mix(body, seen, deep.w), shallow.rgb.mul(lit).mul(1.5), crestTop.mul(0.75));
   // light through the crests toward the eye: the turquoise glow of a wave against the sun

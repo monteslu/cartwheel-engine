@@ -4,6 +4,46 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.47.0 (2026-11-11)
+
+### Added
+- **Water shows what is just under its surface, blurred and fading with depth, by day and much less by night.** The
+  surface was opaque to a hull that dips below it, a rider's legs or a post: a game that hid them from the refraction
+  (the way to keep their ghost off the water) saw them vanish at the surface, and what the refraction did draw read
+  as a copy at full strength to a metre or more. A Water3D with the refraction (High and Ultra) now draws a
+  submerged object through the surface as cloudy water does: blurred by a radius that grows with its depth (about a
+  tenth of it, five taps over a disc, each by its own depth), tinted toward the water's colour, red eaten first, and
+  faded by `exp(-depth / see_through)` with the depth straight down from the surface. `see_through` (metres, 0.4 by
+  default; 0 is the old look) is the new property: 0.4 m of water leaves a third of the object, 1 m under a tenth,
+  1.5 m nothing. `see_night` (0.05) is the share that stays with no light: the sun's light reaching the water
+  (smooth through dusk, no pop) and the sky's night light scale the rest (`cw_water_get_stats`: `see_light`).
+  What counts as an object is a point much shallower than the ground two metres around it on the screen (the second
+  deepest of three taps), so the floor, a slope, a quay or a hull wider than that keep the old look, and an object is
+  never read as a shoal: its depth makes no shore colour and no shore foam (a deck seen through the water read as a
+  shoal with a hard foam edge). The colour taken from the refraction is capped, since a lit float's very bright
+  colour went through the red-eating absorption as lime patches. Same shader on GL and WebGPU (a frame differs
+  from the other backend in under 0.0002% of its pixels by more than 16 levels). New sample `water_see_through`
+  (five slabs 0.05, 0.2, 0.5, 1 and 2 m under the surface, a half-sunk box, a stern, legs, a lit float) and gate
+  `water-see-through` on GL and WebGPU: the slab's difference from the open water beside it is at least 40 at 0.05
+  m and 30 at 0.2 m, under a quarter of that at 1 m and an eighth at 2 m, no foam over a slab, a bright float
+  not blown out, 0.2 m under a quarter at night, and the light reaching the water with no step over 0.45 across
+  dusk. Controls that must fail: refraction off (opaque), `see_through 0` (the old look: 1 m still 33, foam over
+  57% of the slab, the float blown out) and `see_night 1` (night as bright as day). Cost on the 890M at High
+  (frame({op:'timing'}), GPU mean, 3 interleaved rounds of the before and after carts and the before cart twice as the A/A
+  control, whose difference was under 0.03 ms): `water_boat` +0.29 ms on GL (1.83 to 2.12) and +0.23 ms on WebGPU (1.83
+  to 2.05), `water_shore` +0.34 ms on GL (1.80 to 2.13) and +0.24 ms on WebGPU (1.80 to 2.04). Open water pays for three
+  depth reads and nothing else; the blur and the picture are a branch taken by the pixels of an object only (a first
+  form, nine taps and four ground taps for every pixel, cost 1.2 to 1.7 ms). The effect is in the High and Ultra presets
+  only, as the refraction is. Other water scenes: `water_ripples` and `water_open_sea` draw the same
+  pixels as before; in `water_boat` and `water_shore` only what is under the surface changes (crates, hulls, pier
+  legs: under 1.4% of the frame by more than 16 levels).
+- **A game that hid its craft from the refraction can stop** (`cw_water_refraction_hide`, still 16 nodes): with
+  `see_through` on the ghost of a hull part above the real surface is faint, and the part below it shows.
+
+### Changed
+- Games link a new program table: the water's surface program changed. Regenerate it (`node tools/programs.mjs`,
+  or `./programs.sh` in a project) after taking this release.
+
 ## v0.46.3 (2026-11-10)
 
 ### Fixed
