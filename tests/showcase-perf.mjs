@@ -20,6 +20,7 @@
 //
 // Chromium runs on CW_CHROMIUM_GPU (a PCI address) when set, on that GPU alone (tools/lib/chromium.mjs);
 // the report names the GPU it got.
+import { ROMDEV_URL } from '../tools/lib/romdev-url.mjs';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFileSync, mkdirSync, writeFileSync, existsSync, mkdtempSync } from 'node:fs';
@@ -81,7 +82,7 @@ function runNative() {
 }
 
 async function romdevCall(tool, a, session) {
-  const r = await fetch(`http://127.0.0.1:7331/tool/${tool}`, { method: 'POST',
+  const r = await fetch(`${ROMDEV_URL}/tool/${tool}`, { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-romdev-session': session }, body: JSON.stringify(a) });
   const text = await r.text();
   let body;

@@ -37,6 +37,7 @@
 // Every check that could pass by accident has a control that MUST fail.
 //
 //   node tests/plugins.mjs      (romdev on 127.0.0.1:7331; wasmcart-native beside the checkout)
+import { ROMDEV_URL } from '../tools/lib/romdev-url.mjs';
 import { spawnSync, spawn } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync, mkdtempSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -128,7 +129,7 @@ async function runWcnative(wasc, frames, cmds) {
 }
 
 async function romdev(tool, a, session) {
-  const res = await fetch(`http://127.0.0.1:7331/tool/${tool}`, { method: 'POST',
+  const res = await fetch(`${ROMDEV_URL}/tool/${tool}`, { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-romdev-session': session }, body: JSON.stringify(a) });
   const text = await res.text();
   let body;

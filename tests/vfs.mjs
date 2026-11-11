@@ -5,6 +5,7 @@
 //   2. A native run imports that archive with CW_PROJECT=<dir> set, so the
 //      file is written to disk; we compare it with the cart's text.
 //   3. Control: an archive with one byte flipped must not import as the same file.
+import { ROMDEV_PORT } from '../tools/lib/romdev-url.mjs';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, mkdirSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -14,7 +15,7 @@ import { wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 await enterGpuSandbox(); // only the test GPU is visible, no desktop (tools/lib/gpu-sandbox.mjs)
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const port = process.env.ROMDEV_PORT || 7331;
+const port = ROMDEV_PORT;
 const S = `cw-vfs-${process.pid}`;
 const call = async (tool, a) => {
   const res = await fetch(`http://127.0.0.1:${port}/tool/${tool}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-romdev-session': S }, body: JSON.stringify(a) });

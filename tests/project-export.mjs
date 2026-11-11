@@ -25,6 +25,7 @@
 //   node tests/project-export.mjs     (romdev on 127.0.0.1:7331; wcnative beside the checkout)
 // It needs the exporter (tools/cwexport.mjs); tests/gates.json lists it
 // once that is in main.
+import { ROMDEV_URL } from '../tools/lib/romdev-url.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync, statSync, mkdtempSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
@@ -102,7 +103,7 @@ function runNative(exe, frames, input, cmds) {
 }
 
 async function romdev(tool, a, session) {
-  const res = await fetch(`http://127.0.0.1:7331/tool/${tool}`, { method: 'POST',
+  const res = await fetch(`${ROMDEV_URL}/tool/${tool}`, { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-romdev-session': session }, body: JSON.stringify(a) });
   const text = await res.text();
   let body;
