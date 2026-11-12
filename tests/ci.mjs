@@ -72,6 +72,7 @@ export const LOCAL_ONLY = {
   'warm-states': 'romdev (a cart loaded with no seed, as a player\'s host runs it)',
   'water-surface': 'romdev and Chromium legs',
   'water-open-sea-surface': 'romdev and Chromium legs',
+  'water-see-through': 'romdev (GL and WebGPU frames of the water_see_through sample)',
   'boom-perf': 'GPU timing reports (GL and WebGPU on the test GPU)',
   spikes: 'WebGPU timestamp queries on the test GPU',
   'fx-explosion-kit': 'the pinned GPU sandbox (renders on GL and WebGPU and diffs them)',

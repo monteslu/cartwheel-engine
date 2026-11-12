@@ -3,11 +3,13 @@
 // samples/water_ripples sets no foam, swell or grid option, and it has what the look is made of: a boat's wake, a
 // splash and foam on the ripple grid over Gerstner waves. tests/water-default-look/water_ripples.png is its frame 260,
 // rows 440 to 759 and columns 320 to 1119 (the wake), drawn by the engine at tag v0.25.4, the release before those
-// options, natively on GL on the test GPU. This run must match it on GL and on WebGPU, on the test GPU and on a software
+// options, and drawn again at v0.47.1 on a software renderer (GL on llvmpipe) because v0.47.0 made water show a
+// submerged crate through its surface (Water3D see_through): that moved the 1.5% of these pixels where the crates stand
+// at the waterline, and nothing else. This run must match it on GL and on WebGPU, on the test GPU and on a software
 // renderer: those differ from each other by under 0.05% of these pixels over 16 levels. Reading the floor map and the
 // ripple grid at a surface point's rest position (the fault in v0.26.0 to v0.28.4) moves 3.8% of them.
 //
-// CONTROL: the foam's lace a little lower (foam_lace 1.2, the default 1.4: 0.24% to 0.30%) must break the bound of 0.1%, or the gate
+// CONTROL: the foam's lace a little lower (foam_lace 1.2, the default 1.4: about 0.22%) must break the bound of 0.1%, or the gate
 // could not see the foam.
 //
 // A change that means to change how water looks by default writes a new reference with --write and says so in the
