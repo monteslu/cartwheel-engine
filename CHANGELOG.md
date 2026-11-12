@@ -4,6 +4,16 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.47.1 (2026-11-12)
+
+### Fixed
+- **v0.47.0's CI was red, so it has no release; this is the same water change with CI green.** The water-see-through
+  gate drives romdev, which CI does not have, so it is now listed as local only (`tests/ci.mjs`, the testing guide).
+  The water-default-look reference was drawn again: a crate standing at the waterline in `water_ripples` now shows
+  through the surface, which moved 1.5% of the wake region and nothing else. The CI shares were balanced with water
+  gates counted at the default time, which put them all in one job that ran past its 90 minutes; the times in
+  `tests/ci-times.json` are measured again from the last runs, so the water gates spread over the jobs.
+
 ## v0.47.0 (2026-11-11)
 
 ### Added
