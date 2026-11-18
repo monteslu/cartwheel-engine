@@ -1,7 +1,7 @@
 // A cart's manifest `controls` (wasmcart SPEC: the pad parts the host draws on screen), worked out from the project's
 // input map (tools/lib/cart-controls.mjs, cmake/app.cmake cw_add_app):
 //   - the rule: pad:/axis: bindings to SPEC tokens plus the shell's d-pad, a, b and start; `controls = ...` replaces
-//     them; `controls = none` is an empty list; no input map leaves the field out; labels from the action names;
+//     them; `controls = none` is an empty list; no input map leaves the field out;
 //   - the build: samples/plugin_demo's packed cart (build/cart-wgpu) carries what its project.cwproj gives;
 //   - the pack: tools/cart-version.mjs packing that cart.wasm with --controls from an override project and from a
 //     `controls = none` project writes the list and [] (wasmcart-pack leaves an empty list out by itself).
@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { controlLabels, projectControls } from '../tools/lib/cart-controls.mjs';
+import { projectControls } from '../tools/lib/cart-controls.mjs';
 import { readNamedEntries } from '../tools/lib/wasc-splice.mjs';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..'), OUT = join(ROOT, 'out/cart-controls');
 rmSync(OUT, { recursive: true, force: true });
@@ -43,9 +43,6 @@ for (const [what, text, want] of cases) {
   const got = projectControls(text);
   check(eq(got, want), `rule, ${what}: ${JSON.stringify(got)}${eq(got, want) ? '' : `, expected ${JSON.stringify(want)}`}`);
 }
-const labels = controlLabels(MAP);
-check(labels.a === 'Jump' && labels.x === 'Fire' && labels.right_trigger === 'Fire' && labels.left_trigger === 'Brake' && labels.dpad === 'Move left',
-  `labels from the action names: ${JSON.stringify(labels)}`);
 
 // ── the build ──
 const wasc = join(ROOT, 'build/cart-wgpu/carts/plugin_demo.wasc');

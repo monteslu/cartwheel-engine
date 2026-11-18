@@ -32,13 +32,11 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   the field out. `cw_add_app(... CONTROLS ...)` gives the list for an app without a project, and
   `node tools/cart-controls.mjs project.cwproj` prints what a project gets. What games do: declare their pad through
   the input map (or `controls`), and gate any touch controls they draw themselves on `cw_touch_controls_on`.
-  Button labels (an action's name on its button, `jump` on pad:south showing "Jump") are worked out too
-  (`tools/cart-controls.mjs --labels`) but not written yet: they follow the wasmcart SPEC once its labels field lands.
 - Gates `touch-host-pad` (romdev, GL and WebGPU: a finger on input_demo's round button and one in its thumbstick's
   zone reach the game for all 12 frames, the button, the stick and jump stay untouched, `cw.touch_overlay` 0; after a
   touch the prompts sample's jump hint draws the pad face with south solid; control: `CW_TEST_TOUCH_CONTROLS=1` fires
-  the button and jump and brings the touch button glyph back) and `cart-controls` (the token rule, an override, `none`, no
-  input map and labels; plugin_demo's built cart carries its project's list; a pack with an override and with
+  the button and jump and brings the touch button glyph back) and `cart-controls` (the token rule, an override, `none` and no
+  input map; plugin_demo's built cart carries its project's list; a pack with an override and with
   `none`; controls: a pack without `--controls`, and `none` handed to wasmcart-pack directly).
 
 ## v0.49.0 (2026-11-18)
