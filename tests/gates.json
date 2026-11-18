@@ -3567,6 +3567,11 @@
     "note": "the warm-up draws only the program states play draws: samples/warm_states (a cascaded sun, a probe grid, many meshes over few materials) loaded through romdev as a player's host runs it (no seed, the warm-up spread, several slices a frame) has no missing state on GL and WebGPU; control: CW_TEST_WARM_NO_PRERENDER=1, a frame's later slices without their pre-render, draws the sun as a plain shadowed light and misses states"
   },
   {
+    "name": "loading-phase",
+    "script": "tests/loading-phase.mjs",
+    "note": "a level loaded in play under the loading screen (cw_loading_begin, samples/loading_phase), on GL and WebGPU through romdev: as a player gets it the screen shows for every step, no tick runs while it loads and the bar never steps back; a test run does the whole phase in one frame, its ticks equal to the level built in its tick; controls: LP_SYNC=1 (built in one frozen frame) fails the player bound, CW_TEST_LOADING_NO_SHARE=1 steps the bar back"
+  },
+  {
     "name": "warm-culled",
     "script": "tests/warm-culled.mjs",
     "note": "the warm-up builds the programs of what the camera cannot see yet, on GL and WebGPU, spread as a player gets it; control: a mesh with a new program appears in play and its program arrives then"

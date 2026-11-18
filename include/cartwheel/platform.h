@@ -285,8 +285,22 @@ typedef enum {
 void cw_loading_set(int done, int total, cw_load_stage stage);
 /* The progress last reported (any pointer may be NULL). */
 void cw_loading_get(int *done, int *total, cw_load_stage *stage);
-/* True from start-up until a warm-up (if any) has finished. */
+/* True from start-up until a warm-up (if any) has finished, and while a
+ * loading phase (cw_loading_begin) runs. */
 bool cw_loading_active(void);
+/* A loading phase in play: a new level, race or map loaded under the same
+ * loading screen as the warm-up instead of in one frozen frame. From the
+ * frame after this call (no more ticks run in this one) the engine calls
+ * step(user) once a frame, before any tick, until it returns true, drawing
+ * the loading screen meanwhile; report progress with cw_loading_set. A scene
+ * app (cw_scene_app) then compiles the tree's new programs a slice a frame,
+ * as the warm-up's shader phase does, the bar going on from where step left
+ * it (step's part is the first half of the bar). No ticks run while it
+ * loads, and the frames it takes are not game time. A test (no spread
+ * warm-up) runs the whole phase inside one frame. step NULL: the shader
+ * phase alone (for a scene built already). A call while a phase runs
+ * replaces its step and starts the phase over. */
+void cw_loading_begin(bool (*step)(void *user), void *user);
 void cw_window_size(int *w, int *h);   /* logical */
 void cw_design_size(int *w, int *h);   /* cw_app_desc width x height: what the game was laid out for */
 /* The logical size the app settles on for a screen of screen_w x screen_h
