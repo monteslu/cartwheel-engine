@@ -44,6 +44,17 @@ for (const [what, text, want] of cases) {
   check(eq(got, want), `rule, ${what}: ${JSON.stringify(got)}${eq(got, want) ? '' : `, expected ${JSON.stringify(want)}`}`);
 }
 
+// ── the CLI cw_add_app runs: the packed project (the game's input map) then the one beside CMakeLists.txt ──
+const packed = join(OUT, 'packed.cwproj'), rootOnly = join(OUT, 'root.cwproj'), rootNone = join(OUT, 'root-none.cwproj');
+writeFileSync(packed, MAP);
+writeFileSync(rootOnly, 'app = demo\nname = Demo\n');
+writeFileSync(rootNone, 'app = demo\ncontrols = none\n');
+const cli = (...files) => spawnSync('node', [join(ROOT, 'tools/cart-controls.mjs'), ...files], { encoding: 'utf8' }).stdout.trim();
+const mapFlag = projectControls(MAP).join(',');
+check(cli(packed, rootOnly) === mapFlag, `cli, the input map only in the packed project: ${cli(packed, rootOnly)}`);
+check(cli(packed, rootNone) === 'none', `cli, the root project's controls = none wins: ${cli(packed, rootNone)}`);
+check(cli(rootOnly) === '', `control (the root project alone, no input map): "${cli(rootOnly)}", must not pass as the derived list`);
+
 // ── the build ──
 const wasc = join(ROOT, 'build/cart-wgpu/carts/plugin_demo.wasc');
 const manifestOf = (f) => JSON.parse(readNamedEntries(f, ['manifest.json']).get('manifest.json').toString('utf8'));

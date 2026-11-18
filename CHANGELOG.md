@@ -4,6 +4,16 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.50.1 (2026-11-18)
+
+### Fixed
+- **A game whose input map is in its packed `project.cwproj` gets its manifest `controls`.** v0.50.0 read only the
+  `project.cwproj` beside `CMakeLists.txt`, so a game with the usual layout (the export project at its root, the
+  input map in `assets/project.cwproj` beside the `PACK` list) shipped with no `controls` field and the host fell back
+  to its default pad. cw_add_app now reads both, the packed one first, so a `controls = ...` key at the root still
+  wins; `tools/cart-controls.mjs` takes several projects. tests/cart-controls.mjs checks the split layout, the root
+  override winning, and a control (the root project alone) that must not give the list.
+
 ## v0.50.0 (2026-11-18)
 
 ### Changed
