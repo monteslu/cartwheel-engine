@@ -4,6 +4,38 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.50.0 (2026-11-18)
+
+### Changed
+- **In a cart the wasmcart host draws every on-screen pad control; the engine draws none and claims no touch.** A phone
+  playing a cart used to show two sets of controls, the host's pad and the engine's overlay, each catching touches.
+  Now one place draws the pad. In a cart (CW_CART) the touch controls, anchored (`cw_touch_add_thumbstick`,
+  `cw_touch_add_round_button`) and rect (`cw_touch_add_button`, `cw_touch_add_stick`), never claim a touch, so every
+  touch reaches the game as gameplay (the pointer with `touch_pointer`, and the raw touches); the overlay is never
+  drawn and `cw_touch_overlay_visible` is false. Native builds (desktop, Android, iOS) keep the controls and the
+  overlay as before. New query `bool cw_touch_controls_on(void)` (`cartwheel/input.h`): true natively, false in a
+  cart. A game that draws its own touch controls (rect controls, or anchored ones marked `hidden`) draws them only
+  while it is true. `CW_TEST_TOUCH_CONTROLS=1` keeps the controls on in a cart, for tests.
+
+### Added
+- **Each cart's manifest says which pad parts the host draws: `controls`, worked out from the project's input map.**
+  `cw_add_app` reads `project.cwproj` and passes the list to wasmcart-pack as `--controls`: every `pad:` and
+  `axis:` binding of every `input.<action> = ...` line (south `a`, east `b`, west `x`, north `y`, the d-pad
+  `dpad`, lx/ly `left_stick`, rx/ry `right_stick`, lt `left_trigger`, rt `right_trigger`, lshoulder `l`,
+  rshoulder `r`, start `start`, back `select`, lstick `l3`, rstick `r3`), plus the d-pad, `a`, `b` and `start`
+  the shell's menus and pause read. A project key `controls = a, b, start` replaces the list and `controls = none`
+  writes an empty one (a game played by touch alone: the host draws no pad). A project without an input map leaves
+  the field out. `cw_add_app(... CONTROLS ...)` gives the list for an app without a project, and
+  `node tools/cart-controls.mjs project.cwproj` prints what a project gets. What games do: declare their pad through
+  the input map (or `controls`), and gate any touch controls they draw themselves on `cw_touch_controls_on`.
+  Button labels (an action's name on its button, `jump` on pad:south showing "Jump") are worked out too
+  (`tools/cart-controls.mjs --labels`) but not written yet: they follow the wasmcart SPEC once its labels field lands.
+- Gates `touch-host-pad` (romdev, GL and WebGPU: a finger on input_demo's round button and one in its thumbstick's
+  zone reach the game for all 12 frames, the button, the stick and jump stay untouched, `cw.touch_overlay` 0; control:
+  `CW_TEST_TOUCH_CONTROLS=1` fires the button and jump) and `cart-controls` (the token rule, an override, `none`, no
+  input map and labels; plugin_demo's built cart carries its project's list; a pack with an override and with
+  `none`; controls: a pack without `--controls`, and `none` handed to wasmcart-pack directly).
+
 ## v0.49.0 (2026-11-18)
 
 ### Added

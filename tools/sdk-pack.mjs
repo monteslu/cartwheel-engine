@@ -176,6 +176,9 @@ if (CART) {
   // the manifest version every build (cw_add_app): the tool and its rule
   engineFile('tools/cart-version.mjs');
   engineFile('tools/lib/app-version.mjs');
+  // the manifest controls from a project's input map (cw_add_app)
+  engineFile('tools/cart-controls.mjs');
+  engineFile('tools/lib/cart-controls.mjs');
   // wasmcart-pack (with the art checks and the version rule it imports, src/cartArt.js and src/cartVersion.js)
   // and, for dual carts, the WebGPU tier's import list (check-imports --wgpu)
   for (const wc of WGPU ? ['wasmcart-wgpu'] : ['wasmcart']) {

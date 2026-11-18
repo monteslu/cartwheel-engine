@@ -55,6 +55,24 @@ The usual way is a **thumbstick** with a home in the bottom left corner and **ro
 
 The older rect controls, [cw_touch_add_button](api:cw_touch_add_button) and [cw_touch_add_stick](api:cw_touch_add_stick), are regions in logical window coordinates that the game lays out and draws itself (the engine does not draw them). A rect stick added with `floating` keeps its ring at a home two radii in from the rect's bottom left corner and steers from there, like a thumbstick; [cw_touch_set_floating](api:cw_touch_set_floating) brings back the older feel, the ring centred where the touch started. [cw_touch_home](api:cw_touch_home), [cw_touch_stick_center](api:cw_touch_stick_center), `cw_touch_stick_value` and `cw_touch_control_active` give a HUD what it needs to draw one.
 
+### In a cart the host draws the pad
+
+In a cart (a `.wasc`) the wasmcart host draws every on-screen pad control, so one place draws the pad and a phone never shows two sets. There the touch controls above claim no touch, so every touch reaches the game as gameplay (the pointer with `touch_pointer`, and `touches[]` of [cw_input_raw](api:cw_input_raw)); the engine draws no overlay, and [cw_touch_overlay_visible](api:cw_touch_overlay_visible) is false. [cw_touch_controls_on](api:cw_touch_controls_on) says which case a build is in: true natively (desktop, Android, iOS), where everything above holds, false in a cart. A game that draws its own controls (rect controls, or anchored ones marked `hidden`) draws them only while it is true. The gate switch `CW_TEST_TOUCH_CONTROLS=1` turns them back on in a cart (a test's control, not for shipping).
+
+The host draws what the cart's manifest asks for: its `controls` field (wasmcart SPEC), the parts of the standard pad the game reads. `cw_add_app` (cmake/app.cmake) works it out from the project's input map in `project.cwproj`:
+
+| binding | manifest token |
+|---|---|
+| `pad:south`, `pad:east`, `pad:west`, `pad:north` | `a`, `b`, `x`, `y` |
+| `pad:up`, `pad:down`, `pad:left`, `pad:right` | `dpad` |
+| `axis:lx`, `axis:ly` / `axis:rx`, `axis:ry` | `left_stick` / `right_stick` |
+| `axis:lt` / `axis:rt` | `left_trigger` / `right_trigger` |
+| `pad:lshoulder` / `pad:rshoulder` | `l` / `r` |
+| `pad:start` / `pad:back` | `start` / `select` |
+| `pad:lstick` / `pad:rstick` | `l3` / `r3` |
+
+Every `pad:` and `axis:` binding of every `input.<action> = ...` line counts, and so do the shell's menus and pause (the d-pad, `a`, `b` and `start`). A project key `controls = a, b, start` replaces the list; `controls = none` writes an empty list, for a game whose touch is all its own (a drawing game, a puzzle played by tapping), so the host draws no pad. A project without an input map leaves the field out and the host picks its default. An app without a project passes the list to `cw_add_app(... CONTROLS dpad a b start)` (or `CONTROLS none`). `node tools/cart-controls.mjs project.cwproj` prints what a project gets.
+
 ### Touch as the pointer
 
 A game built around the mouse (drag, click, release) can take touch without adding controls: set `touch_pointer` in [cw_app_desc](api:cw_app_desc). The first finger down becomes the mouse's left button at that finger's position, drags with it and releases when it lifts; it stays the pointer until then, whatever other fingers do. A tap that lands and lifts within one frame still clicks (held for that frame, released on the next). Other fingers stay in `touches[]` of [cw_input_raw](api:cw_input_raw), so a second finger can pinch, and `mouse_from_touch` says the pointer came from a finger this frame (show touch prompts). The mapping happens in the platform layer after the devices are read, so it is the same on every host: SDL touch natively, a cart host's pointer slots 1 to 9 (slot 0 stays the mouse), and the `t<id>=` fields of the CW_INPUT test script (`"touches"` in run-cart scripts).
@@ -63,7 +81,6 @@ A game built around the mouse (drag, click, release) can take touch without addi
 
 [cw_platform_touch_primary](api:cw_platform_touch_primary) says the device is a phone or tablet and no gamepad has been used, so a game can show touch prompts or controls from the first frame instead of waiting for a tap. Android and iOS builds report it; a desktop does not (SDL2 cannot tell whether a mouse is attached; `CW_TOUCH_PRIMARY=1` forces it natively). A cart cannot ask its host, so the host tells it through the debug channel: the web export's player sends `touch_primary 1` before the first frame when the browser's pointer is coarse and no fine pointer exists, and tests pass it with `run-cart --start-cmds "touch_primary 1"` (a gate's `startCmds`). Other cart hosts (romdev, wasmcart-run, wasmcart-android) leave it false. Any pad button or stick turns it false for the rest of the run; a pad merely reported present does not.
 
-wasmcart's own doctrine (its SPEC, the manifest `controls` field) is that the host draws on-screen touch controls from the manifest's hint and carts do not adapt to it; wasmcart-android draws such an overlay. A {{name}} game that draws its own touch controls can double up with one, so keep them behind a single switch the game (or a later host hint) can turn off.
 
 ## Rebinding and persistence
 

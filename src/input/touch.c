@@ -6,9 +6,17 @@
  * its zone steers by the thumb's offset from HOME, so what is drawn is where
  * the stick is (mobile games' fixed stick with a large activation zone). The
  * floating flag keeps the older feel, the ring centred where the touch
- * landed, for games that want it. */
+ * landed, for games that want it.
+ *
+ * In a cart the wasmcart host draws every on-screen pad control (from the
+ * manifest's controls): the controls here claim no touch, so every touch
+ * reaches the game as a pointer, and nothing is drawn (cw_touch_controls_on).
+ * CW_TEST_TOUCH_CONTROLS=1 (cw_test_env) keeps them on in a cart: the old
+ * behaviour, a gate's control. */
 #include <math.h>
 #include <string.h>
+
+#include <stdlib.h>
 
 #include "cartwheel/core.h"
 #include "cartwheel/debug.h"
@@ -23,6 +31,15 @@
 static uint32_t overlay_drawn; /* debug field cw.touch_overlay: controls drawn last frame */
 
 static bool valid_id(int id) { return I.init && id >= 0 && id < I.ncontrols; }
+
+bool cw_touch_controls_on(void) {
+#if CW_CART
+  const char *e = cw_test_env("CW_TEST_TOUCH_CONTROLS"); /* NULL in the first frame (cartwheel/debug.h) */
+  return e && atoi(e) > 0;
+#else
+  return true;
+#endif
+}
 
 /* ── layout ───────────────────────────────────────────────────────── */
 
@@ -165,7 +182,7 @@ void cw_touch_set_overlay(cw_touch_overlay_mode mode) {
   I.overlay = (uint8_t)mode;
 }
 bool cw_touch_overlay_visible(void) {
-  if (!I.init || I.overlay == CW_TOUCH_OVERLAY_OFF) return false;
+  if (!I.init || I.overlay == CW_TOUCH_OVERLAY_OFF || !cw_touch_controls_on()) return false;
   return I.overlay == CW_TOUCH_OVERLAY_ALWAYS || cw_platform_touch_primary() || I.touch_seen;
 }
 
@@ -229,6 +246,7 @@ static float fit(const cw__touch_control *c, float x, float y) {
 
 void cw__touch_update(const cw_raw_input *raw) {
   layout();
+  bool claim = cw_touch_controls_on(); /* off in a cart: the host draws the pad, every touch is the game's */
   for (int c = 0; c < I.ncontrols; c++) {
     cw__touch_control *tc = &I.controls[c];
     tc->active = tc->tapped = false;
@@ -252,7 +270,7 @@ void cw__touch_update(const cw_raw_input *raw) {
       I.touch_seen = true;
       I.touch_owner[i] = -1;
       float best = 0;
-      for (int c = 0; c < I.ncontrols; c++) {
+      for (int c = 0; claim && c < I.ncontrols; c++) {
         float f = fit(&I.controls[c], t->x, t->y);
         if (f >= 0 && (I.touch_owner[i] < 0 || f < best)) I.touch_owner[i] = (int8_t)c, best = f;
         if (f == 0) break;

@@ -92,23 +92,31 @@ export function readNamedEntries(wasc, names) {
 
 /** write oldWasc with its cart.wasm replaced by wasmPath to outPath: true, or why not */
 export function spliceWasm(oldWasc, wasmPath, outPath) {
+  let wasm;
+  try { wasm = readFileSync(wasmPath); } catch (e) { return `cannot read ${wasmPath}: ${e.message}`; }
+  return spliceEntry(oldWasc, 'cart.wasm', wasm, statSync(wasmPath).mtime, wasm.length > WASM_COMPRESS_THRESHOLD, outPath);
+}
+
+/** write oldWasc with the entry `entryName` holding `bytes` (deflated when compress; stamped with the Date
+ *  mtime) to outPath, every other entry copied byte for byte: true, or why not. The manifest is rewritten
+ *  this way when the pack cannot write a field itself (tools/cart-version.mjs, an empty controls list). */
+export function spliceEntry(oldWasc, entryName, bytes, mtime, compress, outPath) {
   let buf;
   try { buf = readFileSync(oldWasc); } catch (e) { return `cannot read ${oldWasc}: ${e.message}`; }
   const cd = centralDirectory(buf);
   if (typeof cd === 'string') return cd;
   const byOffset = [...cd.entries].sort((a, b) => a.offset - b.offset);
-  const wasmEntry = cd.entries.find((e) => e.name === 'cart.wasm');
-  if (!wasmEntry) return 'no cart.wasm in the old archive';
+  const wasmEntry = cd.entries.find((e) => e.name === entryName);
+  if (!wasmEntry) return `no ${entryName} in the old archive`;
   // each entry's bytes run from its local header to the next one's (or the central directory)
   const span = new Map(byOffset.map((e, i) => [e, [e.offset, i + 1 < byOffset.length ? byOffset[i + 1].offset : cd.cdOff]]));
 
-  const wasm = readFileSync(wasmPath);
-  const compress = wasm.length > WASM_COMPRESS_THRESHOLD;
+  const wasm = bytes;
   const data = compress ? deflateRawSync(wasm) : wasm;
   const crc = crc32(wasm);
-  const { date, time } = dosDateTime(statSync(wasmPath).mtime);
+  const { date, time } = dosDateTime(mtime);
   const flags = (1 << 11) | (1 << 3); // UTF-8 name; crc and sizes in the data descriptor (as yazl's addFile)
-  const name = Buffer.from('cart.wasm');
+  const name = Buffer.from(entryName);
   const local = Buffer.alloc(30);
   local.writeUInt32LE(0x04034b50, 0);
   local.writeUInt16LE(20, 4);

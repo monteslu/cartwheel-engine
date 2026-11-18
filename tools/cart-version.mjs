@@ -18,13 +18,16 @@
 //     --assets and --art directories (path and bytes; size and time above 1 MiB) are what the last pack had, the new cart.wasm is
 //     spliced into the last archive instead (tools/lib/wasc-splice.mjs): the same entries and contents
 //     without deflating every asset again, the slowest step of a dev cart's link after a code change.
+//     --controls none in the pack command (cw_add_app, a project with `controls = none`): the manifest gets an
+//     empty controls list, which wasmcart-pack cannot write itself (it leaves an empty list out); the flag is
+//     taken out of the command the packer runs and the manifest is rewritten after it (tools/lib/wasc-splice.mjs).
 // A version that is not semver fails either step.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveAppVersion, semverProblem } from './lib/app-version.mjs';
-import { spliceWasm } from './lib/wasc-splice.mjs';
+import { readNamedEntries, spliceEntry, spliceWasm } from './lib/wasc-splice.mjs';
 
 const argv = process.argv.slice(2);
 const mode = argv[0];
@@ -77,10 +80,26 @@ function pack(cmd, version, wasc, record, reuse = false) {
     }
     console.log(`cart-version: ${wasc}: packing in full (${ok})`);
   }
-  const r = spawnSync(cmd[0], [...cmd.slice(1), '--version', version, '--output', tmp], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const c = cmd.indexOf('--controls');
+  const noControls = c >= 0 && cmd[c + 1] === 'none';
+  const run = noControls ? [...cmd.slice(0, c), ...cmd.slice(c + 2)] : cmd;
+  const r = spawnSync(run[0], [...run.slice(1), '--version', version, '--output', tmp], { stdio: ['ignore', 'ignore', 'inherit'] });
   if (r.status !== 0) die(`packing ${wasc} failed (${r.error ? r.error.message : `exit ${r.status}`})`);
+  if (noControls) emptyControls(tmp);
   renameSync(tmp, wasc);
   writeFileSync(record, JSON.stringify({ version, command: cmd, ...(key ? { key } : {}) }) + '\n');
+}
+
+/** the packed cart at <file> with `controls: []` in its manifest (written as wasmcart-pack writes it) */
+function emptyControls(file) {
+  const m = readNamedEntries(file, ['manifest.json']).get('manifest.json');
+  if (!m) die(`${file}: no manifest.json`);
+  const manifest = JSON.parse(m.toString('utf8'));
+  manifest.controls = [];
+  const out = `${file}.controls`;
+  const ok = spliceEntry(file, 'manifest.json', Buffer.from(JSON.stringify(manifest, null, 2)), new Date(), true, out);
+  if (ok !== true) die(`${file}: writing controls [] failed (${ok})`);
+  renameSync(out, file);
 }
 
 if (mode === 'update') {
