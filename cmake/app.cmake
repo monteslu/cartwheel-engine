@@ -9,7 +9,7 @@
 set(CW_APP_VERSION "" CACHE STRING "the version in each cart's manifest (semver); empty: the app's git checkout's (tools/lib/app-version.mjs)")
 
 # ── cw_add_app(name SOURCES ... [ASSETS dir] [NET domain...] [PLUGINS dir] [NO_PLUGINS] [PROGRAMS table.txt...]
-#               [ART dir] [TITLE text] [DESCRIPTION text] [AUTHOR text] [VERSION semver]) ──
+#               [ART dir] [TITLE text] [DESCRIPTION text] [AUTHOR text] [VERSION semver] [CONTROLS token... | none]) ──
 # Native: an executable. Cart: <name>.wasm packed into <name>.wasc (with the
 # asset directory) by wasmcart-pack, after the import audit. Every cart is
 # the dual GL + WebGPU one, and every app draws through the engine on both
@@ -38,7 +38,7 @@ set(CW_APP_VERSION "" CACHE STRING "the version in each cart's manifest (semver)
 # Plugins (cmake/plugins.cmake): the runtime plugins of PLUGINS <dir>,
 # default <the calling directory>/plugins when it exists, are compiled in.
 function(cw_add_app name)
-  cmake_parse_arguments(A "NO_PLUGINS;QUIET_PLUGINS;NO_PROJECT_EDITOR" "ASSETS;PACK;PLUGINS;ART;TITLE;DESCRIPTION;AUTHOR;VERSION" "SOURCES;NET;PROGRAMS" ${ARGN})
+  cmake_parse_arguments(A "NO_PLUGINS;QUIET_PLUGINS;NO_PROJECT_EDITOR" "ASSETS;PACK;PLUGINS;ART;TITLE;DESCRIPTION;AUTHOR;VERSION" "SOURCES;NET;PROGRAMS;CONTROLS" ${ARGN})
   if(A_UNPARSED_ARGUMENTS)
     message(FATAL_ERROR "cw_add_app(${name}): unknown arguments ${A_UNPARSED_ARGUMENTS} (every app is a dual GL + WebGPU cart: there is no opt-out)")
   endif()
@@ -66,6 +66,22 @@ function(cw_add_app name)
       endforeach()
     endif()
   endif()
+  # the manifest's controls (wasmcart SPEC: the pad parts a host drawing on-screen controls shows; in a
+  # cart the host draws every on-screen control, cartwheel/input.h): CONTROLS <token>... or none, else the
+  # project's own app works them out from project.cwproj (its input map, the shell's menus, or a
+  # `controls = ...` key; tools/cart-controls.mjs); else the field is left out
+  if(CW_CART AND NOT A_CONTROLS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/project.cwproj)
+    cw__project_value(_cw_app app)
+    if(_cw_app STREQUAL name)
+      set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/project.cwproj)
+      execute_process(COMMAND node ${CW_ROOT}/tools/cart-controls.mjs ${CMAKE_CURRENT_SOURCE_DIR}/project.cwproj
+        OUTPUT_VARIABLE A_CONTROLS OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE _cw_rc)
+      if(NOT _cw_rc EQUAL 0)
+        message(FATAL_ERROR "cw_add_app(${name}): tools/cart-controls.mjs failed on project.cwproj")
+      endif()
+    endif()
+  endif()
+  string(REPLACE ";" "," A_CONTROLS "${A_CONTROLS}")
   # the manifest's version: VERSION or CW_APP_VERSION when given (checked here); else the
   # git checkout's or project.cwproj's, worked out every build (tools/cart-version.mjs)
   if(NOT A_VERSION)
@@ -300,6 +316,9 @@ function(cw_add_app name)
     endif()
     if(A_AUTHOR)
       list(APPEND _meta --author "${A_AUTHOR}")
+    endif()
+    if(A_CONTROLS)
+      list(APPEND _meta --controls "${A_CONTROLS}") # "none": an empty list (tools/cart-version.mjs writes it)
     endif()
     # The .wasc is written after the link, so an asset-only change must relink
     # too, or the cart keeps the old assets (a regenerated sound reached the

@@ -45,7 +45,7 @@ typedef struct {
   sim_state sim, replayed;
   /* frame (UI) side */
   int32_t ui_jump_jp, ui_jump_jr, ui_jump_frames, ui_fire_jp, ui_touch_button;
-  int32_t ui_stick_frames, ui_home_moved, ui_overlay_frames;
+  int32_t ui_stick_frames, ui_home_moved, ui_overlay_frames, ui_free_touch_frames;
   float vec_axial[2], vec_radial[2], vec_scaled[2], stick[2];
   /* bindings */
   int32_t bind_changes;
@@ -139,6 +139,7 @@ static void init(void *user) {
   cw_debug_i32("ui.stick_frames", &d->ui_stick_frames);
   cw_debug_i32("ui.home_moved", &d->ui_home_moved);
   cw_debug_i32("ui.overlay_frames", &d->ui_overlay_frames);
+  cw_debug_i32("ui.free_touch_frames", &d->ui_free_touch_frames);
   cw_debug_f32_array("ui.vec_axial", d->vec_axial, 2);
   cw_debug_f32_array("ui.vec_radial", d->vec_radial, 2);
   cw_debug_f32_array("ui.vec_scaled", d->vec_scaled, 2);
@@ -204,6 +205,12 @@ static void update(void *user, double dt) {
   if (cw_touch_control_active(0)) d->ui_stick_frames++;
   if (sc.x != sh.x || sc.y != sh.y) d->ui_home_moved++;
   if (cw_touch_overlay_visible()) d->ui_overlay_frames++;
+  { /* a touch down that no control holds: the game's own (every touch, in a cart: the host draws the pad) */
+    const cw_raw_input *raw = cw_input_raw();
+    bool down = false;
+    for (int i = 0; i < CW_MAX_TOUCHES; i++) down |= raw->touches[i].active || raw->touches[i].tapped;
+    if (down && !cw_touch_control_active(0) && !cw_touch_control_active(1)) d->ui_free_touch_frames++;
+  }
   for (int p = 0; p < CW_INPUT_MAX_PLAYERS; p++) {
     if (cw_action_just_pressed(p, d->jump)) d->pl_jump_jp[p]++;
     if (cw_action_pressed(p, d->jump)) d->pl_jump_frames[p]++;

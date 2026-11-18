@@ -21,7 +21,7 @@ mkdir -p "$W/sdk" "$W/game"
 tar -xzf "$TGZ" -C "$W/sdk" --strip-components=1
 # the files a game's scripts and AGENTS.md name, and every module they import from the SDK itself
 need=(AGENTS.md)
-if [ "$T" = cart-wgpu ]; then need+=(tools/cart-version.mjs tools/lib/wasc-splice.mjs tools/lib/app-version.mjs tools/check-art.mjs)
+if [ "$T" = cart-wgpu ]; then need+=(tools/cart-version.mjs tools/cart-controls.mjs tools/lib/cart-controls.mjs tools/lib/wasc-splice.mjs tools/lib/app-version.mjs tools/check-art.mjs)
 else need+=(tests/gate.mjs tools/run-cart.mjs tools/programs.mjs tools/check-text.mjs tools/check-prompts.mjs tools/flash-check.mjs tools/check-art.mjs); fi
 for f in "${need[@]}"; do
   [ -f "$W/sdk/$f" ] || { echo "sdk-link-check $T: the SDK has no $f" >&2; exit 1; }

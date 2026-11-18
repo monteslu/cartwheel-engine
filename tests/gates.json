@@ -839,6 +839,7 @@
     "frames": 62,
     "input": "input-pointer.json",
     "controlInput": "input-pointer-control.json",
+    "env": { "CW_TEST_TOUCH_CONTROLS": "1" },
     "maxGt16": 0.0005,
     "expect": {
       "sim.jump_jp": 3,
@@ -850,7 +851,7 @@
       "replay.match": 1,
       "replay.hash_match": 1
     },
-    "note": "mouse buttons, wheel notches and touch controls (an on-screen stick and button, wasmcart pointer slots 1-9) as actions"
+    "note": "mouse buttons, wheel notches and touch controls (an on-screen stick and button, wasmcart pointer slots 1-9) as actions; CW_TEST_TOUCH_CONTROLS=1 keeps the touch controls on in the carts (a cart leaves them to the host: touch-host-pad)"
   },
   {
     "name": "unit-input",
@@ -3565,6 +3566,16 @@
     "name": "warm-states",
     "script": "tests/warm-states.mjs",
     "note": "the warm-up draws only the program states play draws: samples/warm_states (a cascaded sun, a probe grid, many meshes over few materials) loaded through romdev as a player's host runs it (no seed, the warm-up spread, several slices a frame) has no missing state on GL and WebGPU; control: CW_TEST_WARM_NO_PRERENDER=1, a frame's later slices without their pre-render, draws the sun as a plain shadowed light and misses states"
+  },
+  {
+    "name": "touch-host-pad",
+    "script": "tests/touch-host-pad.mjs",
+    "note": "in a cart the host draws the on-screen pad: through romdev on GL and WebGPU, a finger on input_demo's round button and one in its thumbstick's zone reach the game (12 frames of its own touch), the button, the stick and jump stay untouched and nothing is drawn (cw.touch_overlay 0); control: CW_TEST_TOUCH_CONTROLS=1 (the controls on, the old behaviour) fires the button and jump"
+  },
+  {
+    "name": "cart-controls",
+    "script": "tests/cart-controls.mjs",
+    "note": "the manifest controls from a project's input map (tools/cart-controls.mjs): the token rule, an override, controls = none, no input map, labels from action names; plugin_demo's built cart carries its project's list; cart-version.mjs packs an override and none ([]); controls: no --controls (field missing) and --controls none straight to wasmcart-pack ([\"none\"])"
   },
   {
     "name": "loading-phase",

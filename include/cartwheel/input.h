@@ -259,7 +259,23 @@ bool cw_input_capturing(void); /* still waiting for a press */
  *
  * The rect controls (cw_touch_add_button / cw_touch_add_stick) are the
  * older form: regions in logical window coordinates that the game lays out
- * and draws itself; the engine never draws them. */
+ * and draws itself; the engine never draws them.
+ *
+ * In a cart (a .wasc) the wasmcart host draws every on-screen pad control,
+ * so one place draws the pad and a phone never shows two sets. There the
+ * controls below claim no touch (every touch reaches the game as a pointer
+ * or a raw touch, as gameplay), the engine draws no overlay and
+ * cw_touch_overlay_visible is false: cw_touch_controls_on says which. A cart
+ * tells the host what to draw with its manifest's `controls` (wasmcart
+ * SPEC), which cw_add_app works out from the project's input map: every
+ * pad: and axis: binding of an `input.<action> = ...` line (south a, east b,
+ * west x, north y, up/down/left/right dpad, lx/ly left_stick, rx/ry
+ * right_stick, lt left_trigger, rt right_trigger, lshoulder l, rshoulder r,
+ * start, back select, lstick l3, rstick r3) plus the d-pad, a, b and start
+ * the shell's menus read; a project key `controls = a, b, start` replaces
+ * them and `controls = none` declares no pad (cw_add_app CONTROLS does the
+ * same for an app without a project). Native builds (desktop, Android, iOS)
+ * keep the controls and the overlay as described above. */
 #define CW_TOUCH_UNITS 540.0f /* touch units on the shorter side of the touch area */
 typedef enum {
   CW_TOUCH_CORNER_AUTO,  /* a thumbstick's bottom left, a button's bottom right */
@@ -318,8 +334,14 @@ typedef enum {
 } cw_touch_overlay_mode;
 void cw_touch_set_overlay(cw_touch_overlay_mode mode); /* when the engine draws its touch controls (default AUTO) */
 /* Whether the overlay is drawing the controls this frame (in AUTO, the same
- * rule a game can use to show touch prompts). */
+ * rule a game can use to show touch prompts). Always false in a cart. */
 bool cw_touch_overlay_visible(void);
+/* Whether the touch controls are on: they claim touches and the engine may
+ * draw them. True natively; false in a cart, where the host draws the pad
+ * (above). A game drawing its own controls (the rect ones, or anchored ones
+ * marked hidden) draws them only while this is true, so a cart never shows
+ * a second set over the host's. */
+bool cw_touch_controls_on(void);
 
 /* The older rect controls: regions in logical window coordinates. */
 int cw_touch_add_button(float x, float y, float w, float h);

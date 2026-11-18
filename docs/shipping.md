@@ -111,6 +111,17 @@ Make every picture from the game itself: screenshots of real play at the
 cart's resolution, a title screen as the game shows it, and a cover and a
 logo with the game's name in the game's own font.
 
+## Declare the on-screen pad
+
+On a phone the wasmcart host draws the on-screen pad, from the manifest's
+`controls` (the parts of the pad the game reads); a cart draws none of its own
+and every touch reaches the game. The build writes the field from the
+project's input map: every `pad:` and `axis:` binding, plus the d-pad, `a`,
+`b` and `start` the shell's menus use. `controls = a, b, start` in
+`project.cwproj` replaces the list and `controls = none` declares no pad (the
+game plays by touch alone); `cw_add_app(... CONTROLS ...)` does the same for an
+app without a project. The input guide (Touch controls) has the full mapping.
+
 ## Tag a release
 
 Releases come from CI on a `v*` tag: build each platform with its SDK,
