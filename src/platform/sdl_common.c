@@ -71,7 +71,29 @@ void cw_loading_get(int *done, int *total, cw_load_stage *stage) {
   if (total) *total = loading[1];
   if (stage) *stage = (cw_load_stage)loading[2];
 }
-bool cw_loading_active(void) { return cw__plat.app.warmup && !warmed; }
+/* a loading phase in play (cw_loading_begin): its step, until it is done, and the phase until the frame path ends it */
+static bool (*mid_step)(void *);
+static void *mid_user;
+static bool mid_on;
+static void (*mid_restart_hook)(void); /* the scene runner's: its shader phase starts over (src/scene/runner.c) */
+void cw__loading_set_restart_hook(void (*fn)(void)) { mid_restart_hook = fn; }
+bool cw_loading_active(void) { return (cw__plat.app.warmup || mid_on) && !warmed; }
+void cw_loading_begin(bool (*step)(void *user), void *user) {
+  mid_step = step, mid_user = user, mid_on = true;
+  loading[0] = loading[1] = 0, loading[2] = CW_LOAD_NONE;
+  warmed = false;
+  if (mid_restart_hook) mid_restart_hook();
+}
+/* The loading phase's own step (the scene runner calls it where the warm-up calls the app's): true once it is done,
+ * or when no phase is loading */
+bool cw__loading_mid_step(void) {
+  if (!mid_step) return true;
+  if (!mid_step(mid_user)) return false;
+  mid_step = NULL;
+  return true;
+}
+bool cw__loading_mid(void) { return mid_on; }
+bool cw__loading_mid_has_step(void) { return mid_step != NULL; }
 static const char *const LOAD_LABEL[CW_LOAD_STAGE_COUNT] = { "Loading", "Loading assets", "Making textures",
                                                              "Building meshes", "Compiling shaders", "Building the scene" };
 /* the built-in loading screen: the stage and a thin bar, centred on a dark
@@ -886,12 +908,16 @@ static void frame_body(double now) {
     CW_PROFILE_END();
   }
   if (input_hooks.frame_begin) input_hooks.frame_begin(&p->input);
-  if (p->app.warmup && !warmed) {
+  if ((p->app.warmup || mid_on) && !warmed) {
     /* one step per frame, the loading screen between them; a test does it
-     * all in this frame (the same work, and frames line up with no warm-up) */
+     * all in this frame (the same work, and frames line up with no warm-up).
+     * A loading phase in play (cw_loading_begin) runs here the same way: a
+     * scene app's warm-up hook runs its step, then the shader phase; an app
+     * with no warm-up hook runs the step alone */
     CW_PROFILE_BEGIN("app.warmup");
-    do warmed = p->app.warmup(p->app.user);
+    do warmed = p->app.warmup ? p->app.warmup(p->app.user) : cw__loading_mid_step();
     while (!warmed && !warmup_spread);
+    if (warmed) mid_on = false;
     CW_PROFILE_END();
     if (!warmed) {
       /* the shader stage renders the app under the loading screen: its
@@ -919,6 +945,11 @@ static void frame_body(double now) {
    * 1/60 s frame on every host (native, romdev, browser) */
   const double eps = 1e-6;
   while (p->accumulator >= p->fixed_dt - eps && steps < max_sub) {
+    /* a tick began a loading phase (cw_loading_begin): no more ticks until it has loaded */
+    if (mid_on && !warmed) {
+      p->accumulator = 0;
+      break;
+    }
     CW_PROFILE_SCOPE("fixed_update");
     if (input_hooks.tick_begin) input_hooks.tick_begin(); /* the per-tick action snapshot */
     if (p->app.fixed_update) p->app.fixed_update(p->app.user, p->fixed_dt);

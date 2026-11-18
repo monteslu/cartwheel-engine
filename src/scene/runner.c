@@ -177,17 +177,50 @@ static void r_render(void *u, double alpha) {
  * slice draws no objects (the pipeline's own programs: sky, shadows, post);
  * then objects are revealed in drawing order, one a slice while each slice
  * still builds new programs (one heavy lit program can take 100 ms on a
- * slow phone), doubling up to 16 a slice while none appear; a frame renders
+ * slow phone), doubling up to 16 a slice while none appear, and once the first
+ * object of each kind (materials, object type, vertex layout, shadow passes)
+ * has shown, the rest in doubling bites; a frame renders
  * slices until its time budget is spent (warm_render). The last
  * frame adds the app's own render (its HUD: fonts bake, 2D programs). */
 enum { WARM_MAX_FRAMES = 240 }; /* a backstop: the rest goes in one frame */
 static struct {
   bool app_done, done, all_shown, final, started;
-  int frame, base_done, base_total;
-  int shown, step, programs;
+  bool mid; /* a loading phase in play (cw_loading_begin): its step runs where the app's warm-up ran */
+  bool whole_bar; /* a loading phase with no step: the shader phase has the whole bar, not its second half */
+  double last_ms; /* the last slice's time: a slow one (a big program, several at once) starts the bites small again */
+  int frame;
+  int shown, step, programs, reps;
+  int put[3]; /* the bar last written for the app's part (warm_app_share) */
   t3_object **objs;
   int n, cap;
 } warm;
+
+/* the platform's side of a loading phase in play (src/platform/sdl_common.c) */
+bool cw__loading_mid_step(void);
+bool cw__loading_mid_has_step(void);
+void cw__loading_set_restart_hook(void (*fn)(void));
+/* cw_loading_begin: the phase starts over (the step, then the new scene's programs) */
+static void warm_restart(void) {
+  free(warm.objs);
+  memset(&warm, 0, sizeof warm);
+  warm.mid = true;
+  warm.whole_bar = !cw__loading_mid_has_step();
+}
+
+/* The bar: the app's part (its warm-up, or a loading phase's step) is the first half, the shader phase the second, so
+ * it never steps back when the shader phase takes over (an app that reached 100% of its own steps used to drop to
+ * about half). The app's numbers are rescaled as it writes them; one that writes nothing new is left as it is. */
+enum { WARM_BAR = 100 }; /* parts of each half */
+static void warm_app_share(void) {
+  /* CW_TEST_LOADING_NO_SHARE=1: the app's numbers as it wrote them (the control of gate loading-phase: the bar steps back) */
+  if (cw_test_env("CW_TEST_LOADING_NO_SHARE")) return;
+  int d, t;
+  cw_load_stage st;
+  cw_loading_get(&d, &t, &st);
+  if (t <= 0 || (d == warm.put[0] && t == warm.put[1] && (int)st == warm.put[2])) return;
+  warm.put[0] = (int)((long long)WARM_BAR * (d > t ? t : d) / t), warm.put[1] = 2 * WARM_BAR, warm.put[2] = (int)st;
+  cw_loading_set(warm.put[0], warm.put[1], st);
+}
 
 static void warm_collect(t3_object *o, void *ctx) {
   (void)ctx;
@@ -221,7 +254,14 @@ static uint64_t warm_key(const t3_object *o) {
     for (int a = 0; a < T3_ATTR_COUNT; a++) attrs |= (uint64_t)(m->geometry->attributes[a] != NULL) << a;
     attrs |= (uint64_t)(m->geometry->morph_position != NULL) << 40 | (uint64_t)(m->geometry->morph_normal != NULL) << 41;
     h = (h ^ attrs) * 1099511628211ull;
+    /* a WebGPU pipeline is also keyed on each attribute's layout (its type and size: the vertex buffer's stride) */
+    for (int a = 0; a < T3_ATTR_COUNT; a++) {
+      const t3_attribute *at = m->geometry->attributes[a];
+      if (at) h = (h ^ ((uint64_t)a << 32 | (uint64_t)at->type << 8 | (uint64_t)at->item_size << 1 | at->normalized)) * 1099511628211ull;
+    }
   }
+  /* and on the passes it is drawn in (a shadow caster has shadow pipelines) */
+  h = (h ^ ((uint64_t)o->cast_shadow << 1 | (uint64_t)o->receive_shadow)) * 1099511628211ull;
   return h ? h : 1;
 }
 static int warm_order(void) {
@@ -254,14 +294,16 @@ static int warm_order(void) {
 static bool r_warmup(void *u) {
   (void)u;
   if (!warm.app_done) {
-    if (run.base.warmup && !run.base.warmup(run.base.user)) return false;
+    bool done = warm.mid ? cw__loading_mid_step() : !run.base.warmup || run.base.warmup(run.base.user);
+    if (!done) {
+      warm_app_share();
+      return false;
+    }
     warm.app_done = true;
-    cw_load_stage st;
-    cw_loading_get(&warm.base_done, &warm.base_total, &st);
   }
   if (warm.done || !cw_node_valid(cw_render3d_camera(run.tree))) return true;
-  /* the bar: the objects shown so far, in 100 parts after the app's steps */
-  int total = warm.base_total + 101;
+  /* the bar: the app's half, then the objects shown so far */
+  const int base = warm.whole_bar ? 0 : WARM_BAR, total = base + WARM_BAR;
   /* (a deterministic run calls this to the end inside one frame, with no renders between) */
   if (warm.final || warm.frame > WARM_MAX_FRAMES) {
     warm.done = true;
@@ -272,7 +314,7 @@ static bool r_warmup(void *u) {
     return true;
   }
   /* frame 0 only names the stage (it shows before the first compile) */
-  cw_loading_set(warm.base_total + (warm.n ? 100 * warm.shown / warm.n : 0), total, CW_LOAD_SHADERS);
+  cw_loading_set(base + (warm.n ? WARM_BAR * warm.shown / warm.n : 0), total, CW_LOAD_SHADERS);
   warm.frame++;
   return false;
 }
@@ -281,7 +323,7 @@ static bool r_warmup(void *u) {
  * keeps rendering slices while it has time left (WARM_BUDGET_MS of wall
  * clock), so a fast machine is through the phase in a few frames while a slow
  * one still shows the bar move; at least one slice a frame either way. */
-enum { WARM_BUDGET_MS = 12 };
+enum { WARM_BUDGET_MS = 12, WARM_SLOW_MS = 40 };
 static double warm_now_ms(void) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -292,7 +334,12 @@ static void warm_slice(int w, int h) {
   cw_render3d_get_stats(run.tree, &st);
   if (!warm.started) warm.started = true, warm.shown = 0, warm.step = 1;
   else if (!warm.all_shown) {
-    warm.step = st.programs != warm.programs ? 1 : warm.step < 16 ? warm.step * 2 : 16;
+    /* past the first of each kind, the rest in doubling bites: on WebGPU a pipeline is keyed on more than the program
+     * (cull, blend, depth, the target's samples), and all of the rest in one slice built every pipeline left in one
+     * frame (300 to 430 ms in a WebGPU cart, nothing on GL) */
+    if (warm.last_ms > WARM_SLOW_MS) warm.step = warm.step > 1 ? warm.step / 2 : 1; /* a slow slice: smaller bites */
+    else if (warm.reps > 0 && warm.shown >= warm.reps) warm.step *= 2;
+    else warm.step = st.programs != warm.programs ? 1 : warm.step < 16 ? warm.step * 2 : 16;
     warm.shown += warm.step;
   }
   warm.programs = st.programs;
@@ -301,9 +348,7 @@ static void warm_slice(int w, int h) {
   t3_scene *sc = cw_render3d_scene(run.tree);
   warm.n = 0;
   if (sc) t3_object_traverse(sc, warm_collect, NULL);
-  int reps = warm_order();
-  /* every program has had its first object: the rest can add none */
-  if (!last && warm.shown >= reps) warm.shown = warm.n;
+  warm.reps = warm_order();
   int show = last ? warm.n : warm.shown;
   if (show >= warm.n) warm.shown = warm.n, warm.all_shown = true;
   /* (culling off: what is outside the view now still needs its program, or the first turn of the camera compiles it in play) */
@@ -332,13 +377,15 @@ static void warm_render(int w, int h, double alpha) {
     /* CW_TEST_WARM_NO_PRERENDER=1: a later slice without it, as before (the control of gate warm-states) */
     if (!first && !cw_test_env("CW_TEST_WARM_NO_PRERENDER")) cw_tree_pre_render(run.tree, alpha);
     first = false;
+    double s0 = warm_now_ms();
     warm_slice(w, h);
+    warm.last_ms = warm_now_ms() - s0;
   } while (!warm.final && warm_now_ms() - t0 < WARM_BUDGET_MS);
   /* the bar: the objects shown so far */
   cw_load_stage st;
   int done, total;
   cw_loading_get(&done, &total, &st);
-  if (!warm.final && warm.n) cw_loading_set(warm.base_total + 100 * warm.shown / warm.n, total, st);
+  if (!warm.final && warm.n) cw_loading_set((warm.whole_bar ? 0 : WARM_BAR) + WARM_BAR * warm.shown / warm.n, total, st);
 }
 
 static void r_shutdown(void *u) {
@@ -358,6 +405,7 @@ cw_app_desc cw_scene_app(const char *main_scene, const cw_app_desc *base) {
   d.render = r_render;
   d.shutdown = r_shutdown;
   d.warmup = r_warmup; /* the app's warm-up (if any), then the shader phase */
+  cw__loading_set_restart_hook(warm_restart); /* a loading phase in play runs the same way (cw_loading_begin) */
   d.user = NULL;
   return d;
 }

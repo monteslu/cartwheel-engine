@@ -4,6 +4,35 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.49.0 (2026-11-18)
+
+### Added
+- **A level loaded in play shows the loading screen instead of freezing the window: `cw_loading_begin(step, user)`**
+  (`cartwheel/platform.h`). From the next frame the engine calls the step once a frame, before any tick, under the
+  same loading screen as the warm-up (progress through `cw_loading_set`); a scene app then compiles the new scene's
+  programs a slice a frame as the warm-up's shader phase does. No tick runs while it loads and its frames are not game
+  time; a test run does the whole phase in one frame, so its ticks are the same as a level built in one go. A racing
+  game measured on the Radeon 890M (WebGPU, 1080p) loaded a race in one 1.2 s frame followed by two 670 ms frames of
+  shader compiles. Gate `loading-phase` (the `loading_phase` sample on romdev, GL and WebGPU): the screen shows for
+  every step (14 and 15 frames for 12 steps), no tick runs while it loads, the bar never steps back, and a test run
+  ends with the same 150 ticks as the level built in its tick. Controls: `LP_SYNC=1` (the level built in one frame)
+  shows no loading frame; `CW_TEST_LOADING_NO_SHARE=1` steps the bar back.
+
+### Fixed
+- **The loading bar no longer steps back when a scene app's shader phase takes over from the app's warm-up.** The
+  shader phase appended 101 parts to the app's total, so an app that reported 12 of 12 steps (a full bar) dropped to
+  about half. The app's part is now the first half of the bar and the shader phase the second.
+- **The shader phase no longer builds every remaining WebGPU pipeline in its last slice.** It showed the first object of
+  each material and object type, then all the rest at once; a WebGPU pipeline is also keyed on the vertex layout, the
+  shadow passes and the render state, so the pipelines the first objects did not cover were all built in that one
+  frame (300 to 430 ms in a WebGPU cart, nothing on GL). The first-of-each key now includes each attribute's type and
+  size and the shadow flags, and the rest come in doubling bites a slice. Gates `warm-states`, `warm-culled` and
+  `loading-phase` pass on GL and WebGPU.
+- **A slow shader-phase slice makes the next one smaller.** The slices grew while no new program appeared, so one could
+  reach several new programs at once (a 226 ms slice in a game's stadium load); a slice over 40 ms now halves the next.
+  A loading phase with no step (`cw_loading_begin(NULL, NULL)`, the shader phase alone) has the whole bar instead of
+  starting at half.
+
 ## v0.48.0 (2026-11-18)
 
 ### Added
