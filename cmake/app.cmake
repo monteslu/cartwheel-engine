@@ -69,15 +69,25 @@ function(cw_add_app name)
   # the manifest's controls (wasmcart SPEC: the pad parts a host drawing on-screen controls shows; in a
   # cart the host draws every on-screen control, cartwheel/input.h): CONTROLS <token>... or none, else the
   # project's own app works them out from project.cwproj (its input map, the shell's menus, or a
-  # `controls = ...` key; tools/cart-controls.mjs); else the field is left out
+  # `controls = ...` key; tools/cart-controls.mjs): the packed one beside the PACK list (the project the
+  # game runs with, where its input map usually is) and the one beside CMakeLists.txt, whose `controls`
+  # key wins; else the field is left out
   if(CW_CART AND NOT A_CONTROLS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/project.cwproj)
     cw__project_value(_cw_app app)
     if(_cw_app STREQUAL name)
-      set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/project.cwproj)
-      execute_process(COMMAND node ${CW_ROOT}/tools/cart-controls.mjs ${CMAKE_CURRENT_SOURCE_DIR}/project.cwproj
+      set(_cw_projects "")
+      if(A_PACK)
+        get_filename_component(_cw_packdir "${A_PACK}" DIRECTORY)
+        if(EXISTS ${_cw_packdir}/project.cwproj AND NOT _cw_packdir STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+          list(APPEND _cw_projects ${_cw_packdir}/project.cwproj)
+        endif()
+      endif()
+      list(APPEND _cw_projects ${CMAKE_CURRENT_SOURCE_DIR}/project.cwproj)
+      set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_cw_projects})
+      execute_process(COMMAND node ${CW_ROOT}/tools/cart-controls.mjs ${_cw_projects}
         OUTPUT_VARIABLE A_CONTROLS OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE _cw_rc)
       if(NOT _cw_rc EQUAL 0)
-        message(FATAL_ERROR "cw_add_app(${name}): tools/cart-controls.mjs failed on project.cwproj")
+        message(FATAL_ERROR "cw_add_app(${name}): tools/cart-controls.mjs failed on ${_cw_projects}")
       endif()
     endif()
   endif()
