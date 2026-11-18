@@ -6,6 +6,9 @@
 //     (ui.free_touch_frames 12), nothing drawn (cw.touch_overlay 0, cw_touch_overlay_visible never true);
 //   - the control, CW_TEST_TOUCH_CONTROLS=1 (the controls kept on in a cart: the old behaviour): the tap must fire
 //     the button and jump, so the check above fails on it.
+// And the prompts (samples/prompts, jump bound to pad:south and touch:0): after a touch, player 1's device is touch and
+// the first glyph cw_prompt_text draws (its jump hint, prompt.glyphs[0]) is the pad's face button with south solid,
+// the host's button; control CW_TEST_TOUCH_CONTROLS=1: the engine's touch button glyph comes back.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -19,10 +22,13 @@ writeFileSync(script, JSON.stringify([
   { frame: 10, touches: [{ id: 1, ...BUTTON }] }, { frame: 16 },
   { frame: 20, touches: [{ id: 2, ...STICK }] }, { frame: 26 },
 ]));
-function run(gpu, tag, env = {}) {
+const promptScript = join(OUT, 'prompts-input.json');
+writeFileSync(promptScript, JSON.stringify([{ frame: 10, touches: [{ id: 1, x: 480, y: 200 }] }, { frame: 11 }]));
+const FACE_SOUTH = 1 << 16 | 1, TOUCH_BUTTON_0 = 11 << 16, DEV_TOUCH = 4; // src/ui/prompt.c: kind << 16 | lit
+function run(gpu, tag, env = {}, app = 'input_demo', input = script, frames = FRAMES) {
   const state = join(OUT, `${gpu}-${tag}.json`);
-  const r = spawnSync('node', [join(ROOT, 'tools/run-cart.mjs'), '--host', 'romdev', '--gpu', gpu, '--app', 'input_demo', '--frames', String(FRAMES),
-    '--input', script, ...(Object.keys(env).length ? ['--env', JSON.stringify(env)] : []), '--state', state, '--shot', state.replace(/json$/, 'png')],
+  const r = spawnSync('node', [join(ROOT, 'tools/run-cart.mjs'), '--host', 'romdev', '--gpu', gpu, '--app', app, '--frames', String(frames),
+    '--input', input, ...(Object.keys(env).length ? ['--env', JSON.stringify(env)] : []), '--state', state, '--shot', state.replace(/json$/, 'png')],
   { encoding: 'utf8', cwd: ROOT, maxBuffer: 1 << 26 });
   if (r.status !== 0) { console.error(r.stdout.slice(-400), r.stderr.slice(-400)); process.exit(3); }
   return JSON.parse(readFileSync(state, 'utf8'));
@@ -38,5 +44,12 @@ for (const gpu of gpus) {
   console.log(`${okA ? 'ok  ' : 'FAIL'} touch-host-pad ${gpu} cart: ${desc(a)}`);
   console.log(`${okC ? 'ok  ' : 'FAIL'} touch-host-pad ${gpu} control (CW_TEST_TOUCH_CONTROLS=1, the controls on): ${desc(c)}, the tap must fire the button`);
   if (!okA || !okC) fail++;
+  const p = run(gpu, 'prompts', {}, 'prompts', promptScript, 20), pc = run(gpu, 'prompts-control', { CW_TEST_TOUCH_CONTROLS: '1' }, 'prompts', promptScript, 20);
+  const g = (s) => `device ${s['prompt.devices']?.[0]}, jump glyph 0x${(s['prompt.glyphs']?.[0] ?? 0).toString(16)}`;
+  const okP = p['prompt.devices'][0] === DEV_TOUCH && p['prompt.glyphs'][0] === FACE_SOUTH && p['prompt.errors'] === 0;
+  const okPC = pc['prompt.devices'][0] === DEV_TOUCH && pc['prompt.glyphs'][0] === TOUCH_BUTTON_0;
+  console.log(`${okP ? 'ok  ' : 'FAIL'} touch-host-pad ${gpu} prompts: ${g(p)} (touch, the pad face with south solid wanted: 0x${FACE_SOUTH.toString(16)})`);
+  console.log(`${okPC ? 'ok  ' : 'FAIL'} touch-host-pad ${gpu} prompts control (CW_TEST_TOUCH_CONTROLS=1): ${g(pc)}, the touch button glyph (0x${TOUCH_BUTTON_0.toString(16)}) must come back`);
+  if (!okP || !okPC) fail++;
 }
 process.exit(fail ? 1 : 0);

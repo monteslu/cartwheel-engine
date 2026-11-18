@@ -16,6 +16,10 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   overlay as before. New query `bool cw_touch_controls_on(void)` (`cartwheel/input.h`): true natively, false in a
   cart. A game that draws its own touch controls (rect controls, or anchored ones marked `hidden`) draws them only
   while it is true. `CW_TEST_TOUCH_CONTROLS=1` keeps the controls on in a cart, for tests.
+- **In a cart a touch player's button prompts show the host's pad buttons.** The engine's touch controls are not drawn
+  there, so a prompt pointing at them (`cw_prompt_text`, `cw_prompt_action`) named a control the player could not see.
+  For a player on touch in a cart the prompt is now the pad glyph of the action's pad binding (an action on pad:south
+  draws the face-button diamond with south solid), the button the host draws. The device is still reported as touch.
 
 ### Added
 - **Each cart's manifest says which pad parts the host draws: `controls`, worked out from the project's input map.**
@@ -31,8 +35,9 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   Button labels (an action's name on its button, `jump` on pad:south showing "Jump") are worked out too
   (`tools/cart-controls.mjs --labels`) but not written yet: they follow the wasmcart SPEC once its labels field lands.
 - Gates `touch-host-pad` (romdev, GL and WebGPU: a finger on input_demo's round button and one in its thumbstick's
-  zone reach the game for all 12 frames, the button, the stick and jump stay untouched, `cw.touch_overlay` 0; control:
-  `CW_TEST_TOUCH_CONTROLS=1` fires the button and jump) and `cart-controls` (the token rule, an override, `none`, no
+  zone reach the game for all 12 frames, the button, the stick and jump stay untouched, `cw.touch_overlay` 0; after a
+  touch the prompts sample's jump hint draws the pad face with south solid; control: `CW_TEST_TOUCH_CONTROLS=1` fires
+  the button and jump and brings the touch button glyph back) and `cart-controls` (the token rule, an override, `none`, no
   input map and labels; plugin_demo's built cart carries its project's list; a pack with an override and with
   `none`; controls: a pack without `--controls`, and `none` handed to wasmcart-pack directly).
 

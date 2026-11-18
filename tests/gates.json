@@ -932,6 +932,7 @@
     "frames": 10,
     "maxGt16": 0.001,
     "controlFrames": 10,
+    "env": { "CW_TEST_TOUCH_CONTROLS": "1" },
     "controlEnv": {
       "CW_TEST_PROMPT_BREAK": "wrong_dot"
     },
@@ -968,7 +969,7 @@
         0
       ]
     },
-    "note": "every glyph on a dark and a light strip, the size ladder, player 1 on the pad (forced, so a host with no pad plugged in, wasmcart-native, draws the same), a shared prompt, each device, lanes by position, hint markup, movement on the d-pad and a stick drawn as the d-pad and looking (the right stick alone) as the stick: the glyph codes drawn are exact on every host. Control: the wrong dot of the face-button diamond lit",
+    "note": "every glyph on a dark and a light strip, the size ladder, player 1 on the pad (forced, so a host with no pad plugged in, wasmcart-native, draws the same), a shared prompt, each device, lanes by position, hint markup, movement on the d-pad and a stick drawn as the d-pad and looking (the right stick alone) as the stick: the glyph codes drawn are exact on every host. Control: the wrong dot of the face-button diamond lit; CW_TEST_TOUCH_CONTROLS=1 keeps the touch row the touch controls in the carts (a cart draws the host's pad glyphs there: touch-host-pad)",
     "startCmds": [
       "prompt device 0 pad"
     ],
@@ -3570,7 +3571,7 @@
   {
     "name": "touch-host-pad",
     "script": "tests/touch-host-pad.mjs",
-    "note": "in a cart the host draws the on-screen pad: through romdev on GL and WebGPU, a finger on input_demo's round button and one in its thumbstick's zone reach the game (12 frames of its own touch), the button, the stick and jump stay untouched and nothing is drawn (cw.touch_overlay 0); control: CW_TEST_TOUCH_CONTROLS=1 (the controls on, the old behaviour) fires the button and jump"
+    "note": "in a cart the host draws the on-screen pad: through romdev on GL and WebGPU, a finger on input_demo's round button and one in its thumbstick's zone reach the game (12 frames of its own touch), the button, the stick and jump stay untouched and nothing is drawn (cw.touch_overlay 0); after a touch the prompts sample's jump hint (pad:south) draws the pad face with south solid, not the touch button; control: CW_TEST_TOUCH_CONTROLS=1 (the controls on, the old behaviour) fires the button and jump and brings the touch button glyph back"
   },
   {
     "name": "cart-controls",
