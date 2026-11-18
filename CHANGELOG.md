@@ -4,6 +4,31 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.48.0 (2026-11-18)
+
+### Added
+- **A game sets the 3D scene's share of the output itself, below the Resolution setting's 50% floor:
+  `cw_quality_scene_scale(s)`** (`cartwheel/quality.h`, s from 0.1 to 1; 0 gives the scene back to the setting;
+  `cw_quality_scene_scale_get` reads it). A look that wants a small scene on purpose (a stylized post effect that
+  pixelates, posterizes or redraws the picture, a retro look) renders the scene and its post at that share and has it
+  scaled up with the Resolution setting's filter, while the HUD and every overlay pass stay at full size. It replaces
+  the setting while it is set; the player's Resolution choice stays in the menu and the save and applies again at 0.
+  `cw_render_size` reports the scene's size. Measured on a game with such a look at 1920 x 1080 on the Radeon 890M,
+  WebGPU, GPU time a frame: 4.38 and 4.33 ms at 100% (two runs), 1.79 ms at 50%.
+
+### Changed
+- **Every overlay pass draws at the output's full size when the scene renders at a share of it** (the Resolution
+  setting, `cw_quality_scene_scale`, `pixel_scale` with crisp UI). The scene used to be scaled up only at the first
+  2D window pass, so a game's own `CW_PHASE_OVERLAY` pass that ran before the 2D canvas pass (order below -100) drew
+  into the reduced scene target: `ctx->output` was 960 x 540 at 50% of 1080p, and what it drew was scaled up with the
+  scene. The scene is now scaled up as the overlay phase starts, on GL and WebGPU, so every overlay pass, raw pass
+  code included (`cw_pass_bind_target(ctx, NULL)`, `cw_pass_fullscreen`), sees the full-size output in `ctx->output`,
+  `ctx->width` and `ctx->height`. A custom output (`cw_pipeline_set_output`) and split-screen views keep their own
+  sizes. Gate `overlay-full-res` (the `overlay_full_res` sample on romdev, GL and WebGPU, its scene at 25% of 1080p):
+  an overlay pass at order -200 sees 1920 x 1080 and its one-pixel checker alternates on 100% of the neighbour pairs,
+  and `cw_render_size` is 480 x 270. Controls: `CW_TEST_OVERLAY_SCALED=1` (the old scaled target) gives the pass
+  480 x 270 and 0% of the pairs alternate; `scene_scale 0` gives back 1920 x 1080.
+
 ## v0.47.1 (2026-11-12)
 
 ### Fixed

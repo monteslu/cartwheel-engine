@@ -798,6 +798,16 @@ static bool test_skipped(const char *name) {
 #endif
 }
 
+/* src/platform/pixel.c: the scene's target and the switch to the output's */
+int cw__pixel_target(void);
+void cw__pixel_ui_begin(void);
+/* a gate control (tests/overlay-full-res.mjs): CW_TEST_OVERLAY_SCALED=1 leaves
+ * the overlays on the scene's scaled target, as engines before 0.48 did */
+static bool overlay_scaled_test(void) {
+  const char *v = cw_test_env("CW_TEST_OVERLAY_SCALED");
+  return v && atoi(v) != 0;
+}
+
 /* what one run of the passes draws: everything (one camera fills the
  * output), one view's 3D picture (no overlays), or only the overlays over
  * the views already laid out */
@@ -1296,6 +1306,26 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
     if (wgpu && ph == CW_PHASE_OVERLAY) {
       cw__pw_flush();
       if (ctx.renderer) t3_renderer_wgpu_submit(ctx.renderer);
+    }
+    /* the scene drew at a share of the output (the Resolution setting,
+     * cw_quality_scene_scale, pixel_scale with crisp UI): the overlays draw
+     * at the output's full size. The scene is scaled up into the output (or
+     * the picture's UI target) now, as the first 2D window pass would do it,
+     * so every overlay pass, raw pass code included (cw_pass_bind_target(ctx,
+     * NULL), cw_pass_fullscreen), sees the full-size output in ctx->output,
+     * ctx->width and ctx->height. A custom output (cw_pipeline_set_output)
+     * keeps its own size. */
+    if (ph == CW_PHASE_OVERLAY && output == &p->screen && cw__pixel_target() == 1 && !overlay_scaled_test()) {
+      cw__pixel_ui_begin();
+      if (cw__pixel_target() != 1) {
+        int ow = 0, oh = 0;
+        cw_drawable_size(&ow, &oh);
+        p->screen.fbo = cw__gl_window_fbo;
+        p->screen.w = ow;
+        p->screen.h = oh;
+        ctx.width = ow;
+        ctx.height = oh;
+      }
     }
     if (ph == CW_PHASE_OVERLAY) {
       ctx.depth_tex = 0;

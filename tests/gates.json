@@ -3508,6 +3508,11 @@
     "note": "distortion is colourless on romdev, GL and WebGPU: the pixels the haze, ring and lens change hold colours the unbent frame has nearby (no rainbow fringe); control: red and blue moved 3 pixels apart must fail the same measure"
   },
   {
+    "name": "overlay-full-res",
+    "script": "tests/overlay-full-res.mjs",
+    "note": "overlays at the output's full size over a scene at 25% (cw_quality_scene_scale) on romdev, GL and WebGPU: an OVERLAY pass before the canvas pass sees the full output and its one-pixel checker is pixel exact, cw_render_size is a quarter; controls: CW_TEST_OVERLAY_SCALED=1 (the old scaled target) fails the checker, scene_scale 0 fails the quarter size"
+  },
+  {
     "name": "water-shore",
     "app": "water_shore",
     "frames": 240,

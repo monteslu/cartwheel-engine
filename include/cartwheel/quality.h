@@ -29,9 +29,12 @@
  *
  * Resolution: the 3D scene (and its post) renders at that share of the
  * output's size and is scaled up with a filter (Catmull-Rom); the 2D window
- * passes (HUD, menus, text) draw at the output's full size over it. It
- * applies on top of cw_app_desc.render_scale (the output size); an app with
- * pixel_scale draws at its own size and ignores it.
+ * passes (HUD, menus, text) and every overlay pass (CW_PHASE_OVERLAY,
+ * cartwheel/pipeline.h) draw at the output's full size over it. It applies
+ * on top of cw_app_desc.render_scale (the output size); an app with
+ * pixel_scale draws at its own size and ignores it. A game whose look wants
+ * a smaller scene than the setting's 50% sets its own share with
+ * cw_quality_scene_scale (below).
  *
  * Ambient occlusion: GTAO as the scene's PostProcess asks for it (On) or
  * none (Off); its sample count follows effects detail (1 slice of 4 steps on
@@ -221,6 +224,21 @@ void cw_gfx_set(int s, int value);
 void cw_gfx_step(int s, int dir);
 /* The resolution setting's share of the output (0.5 .. 1), as drawn now (a scope may lower it). */
 float cw_gfx_render_scale(void);
+
+/* The game's own share of the output for the 3D scene, for a look that wants
+ * a small scene on purpose (a stylized post effect that pixelates, posterizes
+ * or redraws the picture, a retro look): s in 0.1 .. 1 (clamped) replaces the
+ * Resolution setting while it is set, below its 50% floor too; 0 gives the
+ * scene back to the setting. The scene and its post render at that share
+ * (cw_render_size reports it) and are scaled up with the same filter as the
+ * Resolution setting's; the overlays (the 2D window passes and every
+ * CW_PHASE_OVERLAY pass, cartwheel/pipeline.h) draw at the output's full
+ * size over it. The player's Resolution choice is kept (cw_gfx_get, the
+ * save) and applies again at 0. Not in the save; an app with pixel_scale
+ * ignores it as it does the setting. Takes effect from the next frame. */
+void cw_quality_scene_scale(float s);
+/* the share cw_quality_scene_scale set (0: none, the Resolution setting decides) */
+float cw_quality_scene_scale_get(void);
 
 /* A setting as it is drawn now: cw_gfx_get lowered by the open scopes (below); the same for a game lever. */
 int cw_gfx_effective(int s);

@@ -53,7 +53,14 @@
  *                      HUD lands on top). Debug draw at 1000 is the
  *                      convention. render2d draws to the window: with a
  *                      custom output (cw_pipeline_set_output) an overlay pass
- *                      targets ctx->output itself.
+ *                      targets ctx->output itself. When the scene renders at
+ *                      a share of the output (cartwheel/quality.h:
+ *                      Resolution, cw_quality_scene_scale; pixel_scale with
+ *                      crisp UI) it is scaled up into the output as this
+ *                      phase starts, so every overlay pass draws at the
+ *                      output's full size: ctx->output, ctx->width and
+ *                      ctx->height describe it, and cw_pass_bind_target(ctx,
+ *                      NULL) binds it.
  *   CW_PHASE_PRESENT   last: readbacks, captures, a final scale when the
  *                      output is not the screen. Module pass:
  *                      "visibility_restore" (1000) shows what "visibility"
