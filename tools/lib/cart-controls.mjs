@@ -11,9 +11,6 @@
 //   - a project without an input map gets no field (the host picks its default).
 //
 //   projectControls(text) -> string[] (possibly empty), or null for "leave the field out"
-//   controlLabels(text)   -> { token: label }: each pad part's first action, as a label ("jump" on
-//                            pad:south gives { a: 'Jump' }). Not written to any manifest yet: the field
-//                            that carries labels is not in the wasmcart SPEC.
 //   parseProject(text)    -> [[key, value], ...] in file order
 
 /** The SPEC's tokens, in the SPEC's order (the order a derived list is written in). */
@@ -89,17 +86,3 @@ export function projectControls(text) {
   return ordered(set);
 }
 
-/** "move_left" -> "Move left" */
-export function actionLabel(action) {
-  const words = action.replace(/^ui_/, '').split(/[_\s]+/).filter(Boolean).join(' ');
-  return words ? words[0].toUpperCase() + words.slice(1) : action;
-}
-
-export function controlLabels(text) {
-  const out = {};
-  for (const [action, binds] of inputMap(parseProject(text))) for (const b of binds) {
-    const t = bindingToken(b);
-    if (t && !(t in out)) out[t] = actionLabel(action);
-  }
-  return out;
-}
