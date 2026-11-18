@@ -368,6 +368,9 @@ static uint32_t move_bit(const cw_action *acts, int n, int i) {
 
 /* the glyphs of n actions on one device, added to s */
 static void device_glyphs(const cw_action *acts, int n, cw_prompt_device d, gset *s) {
+  /* in a cart the host draws the on-screen pad (cartwheel/input.h): a touch player presses the host's buttons, so the
+   * prompt is the pad glyph; the engine's touch controls are not there to point at */
+  if (d == CW_PROMPT_TOUCH && !cw_touch_controls_on()) d = CW_PROMPT_PAD;
   if (n >= 2 && d == CW_PROMPT_PAD) {
     /* the d-pad whenever every action is on it, even when a stick is bound too: the stick only for stick-only actions */
     int st = common_stick(acts, n);

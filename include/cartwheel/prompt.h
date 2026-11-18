@@ -40,6 +40,9 @@
  *   touch            the on-screen control as the touch overlay draws it: a
  *                    button's disc and label, a thumbstick's knob on its
  *                    filled base with the arrows inside it
+ *                    (natively; in a cart the host draws the on-screen pad,
+ *                    cw_touch_controls_on is false, and a touch player's
+ *                    prompts are the pad glyphs of the action's pad bindings)
  * Each shape has a dark edge under a light (or `color`) fill, so a glyph reads
  * on a light background and on a dark one. MINIMUM SIZE: 1.5% of the canvas
  * height (16 px at 1080 lines), read from native-scale crops on light and
