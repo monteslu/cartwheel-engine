@@ -200,6 +200,16 @@ static void auto_start(int rung);
 static void apply_preset(cw_quality q);
 static void changed(void);
 
+/* cw_quality_scene_scale: the game's own share of the output for the 3D scene (0: the Resolution setting's) */
+static float scene_scale;
+/* the scene's share of the output into the platform: the game's, else the Resolution setting's */
+static void scale_apply(void) { cw__render_scale_apply(scene_scale > 0 ? scene_scale : RES[ev(CW_GFX_RESOLUTION)]); }
+void cw_quality_scene_scale(float s) {
+  scene_scale = s > 0 ? CW_CLAMP(s, 0.1f, 1.0f) : 0;
+  scale_apply();
+}
+float cw_quality_scene_scale_get(void) { return scene_scale; }
+
 /* Auto and a saved choice locked out as in a deterministic run, for a test host (Chromium, wasmcart-native) that keeps its
  * real clock: Auto steps by how fast this machine ran, and a test's picture must not depend on that */
 void cw__quality_lock(void) {
@@ -214,7 +224,7 @@ void cw__quality_lock(void) {
 
 /* the settings took effect: the platform's scene size, the game's callback */
 static void changed(void) {
-  cw__render_scale_apply(RES[ev(CW_GFX_RESOLUTION)]);
+  scale_apply();
   Q.frames = 0;
   Q.avg = 0;
   if (Q.fn) Q.fn((cw_quality)Q.level, Q.fn_user);
@@ -278,7 +288,7 @@ void cw__quality_init(void) {
   flat = fl && atoi(fl) > 0;
   if (flat) cw_warn("CW_TEST_QUALITY_FLAT: every preset draws High's settings (a gate control)");
 #endif
-  cw__render_scale_apply(RES[ev(CW_GFX_RESOLUTION)]);
+  scale_apply();
 }
 
 cw_quality cw_quality_get(void) { return (cw_quality)Q.level; }
