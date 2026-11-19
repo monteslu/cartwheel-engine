@@ -61,7 +61,9 @@ check(cli('--bindings', cfg, rootNone) === 'none', `cli, the root project's cont
 check(cli(rootOnly) === '',`control (the root project alone, no input map): "${cli(rootOnly)}", must not pass as the derived list`);
 
 // ── the build ──
-const wasc = join(ROOT, 'build/cart-wgpu/carts/plugin_demo.wasc');
+// the built carts: --carts <dir> (CI's carts job: build/carts/carts), else scripts/build.sh's cart tree
+const ci = process.argv.indexOf('--carts');
+const wasc = join(ci > 0 ? resolve(process.argv[ci + 1]) : join(ROOT, 'build/cart-wgpu/carts'), 'plugin_demo.wasc');
 const manifestOf = (f) => JSON.parse(readNamedEntries(f, ['manifest.json']).get('manifest.json').toString('utf8'));
 let built;
 try { built = manifestOf(wasc); } catch (e) { console.log(`FAIL cart-controls: ${wasc}: ${e.message} (build it: TARGETS=cart-wgpu scripts/build.sh plugin_demo)`); process.exit(1); }

@@ -4,6 +4,14 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.50.3 (2026-11-18)
+
+### Fixed
+- **CI runs the cart-controls gate where the carts are built.** It reads plugin_demo's packed cart, which the native
+  gates job never builds, so v0.50.1 and v0.50.2 failed CI there and published no SDKs. The gate now runs in the
+  carts job (`node tests/cart-controls.mjs --carts build/carts/carts`) and tests/ci.mjs leaves it out of the native
+  shares. v0.50.1 and v0.50.2 have no prebuilt SDKs: use v0.50.3, which carries both.
+
 ## v0.50.2 (2026-11-18)
 
 ### Fixed

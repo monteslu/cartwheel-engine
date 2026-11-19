@@ -171,3 +171,6 @@ jobs:
       # when the version moves, and hello.wasc carrying this checkout's version; the controls must fail
       - name: Cart version
         run: node tests/app-version.mjs --tree build/carts
+      # the manifest controls from a project's input map: the rule, plugin_demo's built cart, the pack; controls must fail
+      - name: Cart controls
+        run: node tests/cart-controls.mjs --carts build/carts/carts
