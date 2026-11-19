@@ -41,6 +41,7 @@ typedef struct explo {
   float age;
   /* runtime */
   bool pending;
+  bool scorch_due; /* its scorch sheet goes into the decal atlas at the next pre-render (preload_scorch) */
   int scorch_slot;
   uint64_t scorch_stamp; /* the pool slot's fire stamp this node holds */
   double last_flash;     /* pool time this node last took a flash light (at most three flashes a second) */
@@ -345,11 +346,25 @@ static void explo_init(cw_node n, void *data) {
   e->last_flash = -1e9;
 }
 
-/* the scorch sheet goes into the decal atlas as the node enters the tree (or
- * is given a sheet there), under the loading screen for a kit set up before
- * play, not in the frame of its first blast */
+/* the scorch sheet goes into the decal atlas soon after the node enters the
+ * tree (or is given a sheet there), under the loading screen for a kit set up
+ * before play, not in the frame of its first blast. Not at the moment it
+ * enters: a game that adds the node and then names its own sheet would load
+ * the default one first, and a game that does not pack scorch.png logged
+ * "texture not found" for an image it never uses. The next pre-render (which
+ * the warm-up's shader phase runs too) loads what the node names by then. */
 static void preload_scorch(cw_node n, explo *e) {
-  if (cw_node_tree(n) && e->scorch_size > 0 && e->scorch_texture && *e->scorch_texture) cw_decal_preload(e->scorch_texture);
+  if (cw_node_tree(n)) e->scorch_due = true;
+}
+static void scorch_preload_hook(cw_tree *t, double dt, void *user) {
+  (void)dt, (void)user;
+  cw__fx_tree *ft = cw__fx_tree_of(t);
+  for (int i = 0; i < ft->explosions.count; i++) {
+    explo *e = cw_node_data_t(ft->explosions.data[i], explo_t);
+    if (!e || !e->scorch_due) continue;
+    e->scorch_due = false;
+    if (e->scorch_size > 0 && e->scorch_texture && *e->scorch_texture) cw_decal_preload(e->scorch_texture);
+  }
 }
 
 static void explo_enter(cw_node n, void *data) {
@@ -359,6 +374,7 @@ static void explo_enter(cw_node n, void *data) {
   if (!ft->explosion_hook) {
     ft->explosion_hook = true;
     cw_tree_add_hook(t, 0, -20, explosions_hook, NULL);
+    cw_tree_add_hook(t, 2, -20, scorch_preload_hook, NULL);
   }
   preload_scorch(n, data);
 }
