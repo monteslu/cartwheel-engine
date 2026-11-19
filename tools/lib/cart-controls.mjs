@@ -11,6 +11,7 @@
 //   - a project without an input map gets no field (the host picks its default).
 //
 //   projectControls(text) -> string[] (possibly empty), or null for "leave the field out"
+//   bindingsAsInputMap(text) -> a bindings file (cw_input_load_bindings: `action = bindings`) as input map lines
 //   parseProject(text)    -> [[key, value], ...] in file order
 
 /** The SPEC's tokens, in the SPEC's order (the order a derived list is written in). */
@@ -53,6 +54,11 @@ export function bindingToken(binding) {
   m = /^axis:([a-z]+)[+-](@[0-9.]+)?$/.exec(b);
   if (m) return AXIS_TOKEN[m[1]] ?? null;
   return null;
+}
+
+/** a bindings file's `action = bindings` lines as the project's `input.action = bindings` lines */
+export function bindingsAsInputMap(text) {
+  return parseProject(text).map(([k, v]) => `input.${k} = ${v.replace(/(^|\s)#.*$/, "")}\n`).join("");
 }
 
 const ordered = (set) => SPEC_CONTROLS.filter((t) => set.has(t));

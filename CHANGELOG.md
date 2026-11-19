@@ -4,6 +4,16 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.50.2 (2026-11-18)
+
+### Fixed
+- **A game that loads its bindings from `input.cfg` gets its manifest `controls`.** Games that keep their bindings in
+  a bindings file they load themselves (`cw_input_load_bindings_asset("input.cfg")`, `action = bindings` lines) and
+  have no `input.` lines in a project shipped with no `controls` field. cw_add_app now also reads `input.cfg` beside
+  the `PACK` list as the input map; a `controls = ...` key still wins, and a bindings file by another name needs
+  one. `tools/cart-controls.mjs` takes `--bindings <file>`. tests/cart-controls.mjs checks a bindings file with
+  inline comments and the override winning over it.
+
 ## v0.50.1 (2026-11-18)
 
 ### Fixed
