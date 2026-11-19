@@ -117,7 +117,7 @@ On a phone the wasmcart host draws the on-screen pad, from the manifest's
 `controls` (the parts of the pad the game reads); a cart draws none of its own
 and every touch reaches the game. The build writes the field from the
 project's input map (the packed `project.cwproj` and the one beside
-`CMakeLists.txt`): every `pad:` and `axis:` binding, plus the d-pad, `a`,
+`CMakeLists.txt`, and an `input.cfg` bindings file beside the `PACK` list): every `pad:` and `axis:` binding, plus the d-pad, `a`,
 `b` and `start` the shell's menus use. `controls = a, b, start` in
 `project.cwproj` replaces the list and `controls = none` declares no pad (the
 game plays by touch alone); `cw_add_app(... CONTROLS ...)` does the same for an

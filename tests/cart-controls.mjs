@@ -44,7 +44,7 @@ for (const [what, text, want] of cases) {
   check(eq(got, want), `rule, ${what}: ${JSON.stringify(got)}${eq(got, want) ? '' : `, expected ${JSON.stringify(want)}`}`);
 }
 
-// ── the CLI cw_add_app runs: the packed project (the game's input map) then the one beside CMakeLists.txt ──
+// ── the CLI cw_add_app runs: input.cfg (a bindings file), the packed project (the input map), then the one beside CMakeLists.txt ──
 const packed = join(OUT, 'packed.cwproj'), rootOnly = join(OUT, 'root.cwproj'), rootNone = join(OUT, 'root-none.cwproj');
 writeFileSync(packed, MAP);
 writeFileSync(rootOnly, 'app = demo\nname = Demo\n');
@@ -53,7 +53,12 @@ const cli = (...files) => spawnSync('node', [join(ROOT, 'tools/cart-controls.mjs
 const mapFlag = projectControls(MAP).join(',');
 check(cli(packed, rootOnly) === mapFlag, `cli, the input map only in the packed project: ${cli(packed, rootOnly)}`);
 check(cli(packed, rootNone) === 'none', `cli, the root project's controls = none wins: ${cli(packed, rootNone)}`);
-check(cli(rootOnly) === '', `control (the root project alone, no input map): "${cli(rootOnly)}", must not pass as the derived list`);
+const cfg = join(OUT, 'input.cfg');
+writeFileSync(cfg, '# a bindings file\nfire = pad:west, key:j # inline comment\nboost = axis:rt+@0.5, deadzone:0.3\nspecial =   # unbound\n');
+const CFG_WANT = 'dpad,a,b,x,start,right_trigger';
+check(cli('--bindings', cfg, rootOnly) === CFG_WANT, `cli, a bindings file (input.cfg) as the input map: ${cli('--bindings', cfg, rootOnly)}`);
+check(cli('--bindings', cfg, rootNone) === 'none', `cli, the root project's controls = none wins over input.cfg: ${cli('--bindings', cfg, rootNone)}`);
+check(cli(rootOnly) === '',`control (the root project alone, no input map): "${cli(rootOnly)}", must not pass as the derived list`);
 
 // ── the build ──
 const wasc = join(ROOT, 'build/cart-wgpu/carts/plugin_demo.wasc');
