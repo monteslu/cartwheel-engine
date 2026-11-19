@@ -4,6 +4,25 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.50.4 (2026-11-18)
+
+### Fixed
+- **Distant ground no longer shows the sky through holes on Macs (three.c 0.187.8).** With a depth prepass on, the
+  prepass and the colour pass computed the clip position a last bit apart on Metal (Chrome on macOS, native WebGPU
+  there), and the colour pass failed its depth test on about half the pixels of far terrain: a racing game's
+  mountains looked bright, blotchy and shiny in Chrome on a Mac while every Linux host drew them whole. Every vertex
+  program now declares its position invariant (WebGPU `@invariant`, GL `invariant gl_Position`, for WebGL on a Mac
+  through ANGLE). Found and proved on a macOS runner with an Apple GPU: the cart draws the mountains whole with
+  this, with holes without it; three.c's test checks all 340 WebGPU and 340 GL vertex programs, with a control.
+- **An Explosion3D added to the tree before its `scorch_texture` is set no longer logs "texture not found" for
+  the default sheet.** It loaded its scorch sheet the moment it entered the tree, so a game that added the node
+  and then named its own sheet loaded the default `scorch.png` first, and a game that does not pack that file
+  logged `Decal3D: texture 'scorch.png' not found in the assets` (an error: two games' CI smoke tests failed on
+  it). The sheet now goes into the decal atlas at the next pre-render, which the warm-up's shader phase runs too,
+  so it still loads under the loading screen, and it is the sheet the node names by then. Proved on such a game:
+  its cart built against this engine logs nothing; built against v0.50.3 it logs the error. Gate `fx-explosion-kit`
+  passes on GL and WebGPU.
+
 ## v0.50.3 (2026-11-18)
 
 ### Fixed
