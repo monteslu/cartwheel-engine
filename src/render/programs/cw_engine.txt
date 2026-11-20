@@ -5,3 +5,11 @@ normal
 basic+xgiproj
 basic+map+trans+xmeshdecal
 basic+map+trans+skin+xmeshdecal
+basic+ds+xvelbuf
+basic+skin+ds+xvelbuf
+basic+skin+morph+ds+xvelbuf
+basic+skin+morph+morphn+ds+xvelbuf
+basic+morph+ds+xvelbuf
+basic+morph+morphn+ds+xvelbuf
+basic+instbig+ds+xvelbuf
+basic+instbig+ds+icol+xvelbuf

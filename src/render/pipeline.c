@@ -1254,7 +1254,8 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
        * render pass resolves); a multisampled depth (core WebGPU) resolves
        * into the scene's for the SKY / EFFECTS passes that depth-test against
        * it; the linear depth for passes that sample it */
-      bool resolve_depth = scene_draw != scene && fx_any;
+      /* (the velocity pass depth-tests the meshes that moved against it too: velocity.c) */
+      bool resolve_depth = scene_draw != scene && (fx_any || (velocity && velocity->active));
 #if !CW_CART
       /* CW_TEST_WGPU_NO_DEPTH_RESOLVE=1: the resolve left out (a gate control: SKY / EFFECTS passes then
        * test against a scene depth nothing wrote) */

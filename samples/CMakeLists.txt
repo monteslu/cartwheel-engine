@@ -111,6 +111,13 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/anim_skinned/assets/main.cwscene ${CW
 configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.glb ${CW_SKINNED_ASSETS}/CesiumMan.glb COPYONLY)
 configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.LICENSE.md ${CW_SKINNED_ASSETS}/CesiumMan.LICENSE.md COPYONLY)
 cw_add_app(anim_skinned SOURCES anim_skinned/main.c ASSETS ${CW_SKINNED_ASSETS})
+# object motion vectors: a turning mesh, a skinned character and an instanced swarm in the velocity target, under TAA
+set(CW_MV_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/motion_vectors_assets)
+file(MAKE_DIRECTORY ${CW_MV_ASSETS})
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/motion_vectors/assets/main.cwscene ${CW_MV_ASSETS}/main.cwscene COPYONLY)
+configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.glb ${CW_MV_ASSETS}/CesiumMan.glb COPYONLY)
+configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.LICENSE.md ${CW_MV_ASSETS}/CesiumMan.LICENSE.md COPYONLY)
+cw_add_app(motion_vectors SOURCES motion_vectors/main.c ASSETS ${CW_MV_ASSETS})
 # limbs that reach and plant (cartwheel/ik.h): RobotExpressive (CC0, committed with its license)
 cw_add_app(anim_ik SOURCES anim_ik/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/anim_ik/assets)
 # knocked down, falls, gets up (cartwheel/ragdoll.h): RobotExpressive (CC0) staged from anim_ik with its license

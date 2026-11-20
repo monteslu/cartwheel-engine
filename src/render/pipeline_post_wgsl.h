@@ -112,11 +112,12 @@ WGSL_DECL WGSL_FUSE_BLOOM_GRADE = S(
   });
 
 WGSL_DECL WGSL_VEL = S(
-  struct U { u_inv_vp_j: mat4x4f, u_vp: mat4x4f, u_prev_vp: mat4x4f, u_pz: vec4f };
+  struct U { u_inv_vp_j: mat4x4f, u_vp: mat4x4f, u_prev_vp: mat4x4f, u_pz: vec4f, u_vm_depth: f32 };
   @group(0) @binding(0) var<uniform> u: U;
   @group(0) @binding(1) var u_depth: texture_2d<f32>;
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
     let d = win_depth(cw_load(u_depth, uv).r, u.u_pz);
+    if (d < u.u_vm_depth) { return vec4f(0.0, 0.0, 0.0, 1.0); }
     var w = u.u_inv_vp_j * vec4f(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
     w = w / w.w;
     let c = u.u_vp * w;
@@ -261,6 +262,7 @@ WGSL_DECL WGSL_TAA = S(
   @group(0) @binding(1) var u_src: texture_2d<f32>;
   @group(0) @binding(2) var u_hist: texture_2d<f32>;
   @group(0) @binding(3) var u_vel: texture_2d<f32>;
+  @group(0) @binding(4) var u_depth: texture_2d<f32>;
   fn to_ycocg(c: vec3f) -> vec3f { return vec3f(0.25 * c.r + 0.5 * c.g + 0.25 * c.b, 0.5 * c.r - 0.5 * c.b, -0.25 * c.r + 0.5 * c.g - 0.25 * c.b); }
   fn from_ycocg(c: vec3f) -> vec3f { return vec3f(c.x + c.y - c.z, c.x + c.z, c.x - c.y - c.z); }
   fn H(p: vec2f) -> vec3f { return textureSampleLevel(u_hist, cw_linear, p, 0.0).rgb; }
@@ -300,7 +302,16 @@ WGSL_DECL WGSL_TAA = S(
     let sigma = sqrt(max(m2 / 9.0 - m1 * m1, vec3f(0.0)));
     let bmin = max(mn, m1 - sigma * 1.25);
     let bmax = min(mx, m1 + sigma * 1.25);
-    let prev = uv - textureSampleLevel(u_vel, cw_linear, uv, 0.0).xy;
+    var near_uv = uv;
+    var near_d = cw_load(u_depth, uv).r;
+    for (var j = -1; j <= 1; j++) {
+      for (var i = -1; i <= 1; i++) {
+        let q = uv + vec2f(f32(i), f32(j)) * px;
+        let d = cw_load(u_depth, q).r;
+        if (d < near_d) { near_d = d; near_uv = q; }
+      }
+    }
+    let prev = uv - textureSampleLevel(u_vel, cw_linear, near_uv, 0.0).xy;
     let c0 = to_ycocg(cur.rgb);
     var h: vec3f;
     if (any(prev < vec2f(0.0)) || any(prev > vec2f(1.0))) { h = c0; }

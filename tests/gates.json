@@ -3582,6 +3582,111 @@
     }
   },
   {
+    "name": "post-motion-taa",
+    "webgpu": true,
+    "app": "post_stack",
+    "frames": 496,
+    "maxGt16": 0.003,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "cw.velocity.objects"
+    ],
+    "controlFrames": 496,
+    "controlEnv": {
+      "CW_TEST_VELOCITY_OBJECTS": "0"
+    },
+    "expect": {
+      "post.seg": 23,
+      "cw.velocity.objects": 1
+    },
+    "note": "a bar spinning 0.21 rad a frame under TAA, its own motion in the velocity target (cw.velocity.objects 1): its edges stay whole. Control: only the camera's motion (CW_TEST_VELOCITY_OBJECTS=0), the picture and the count must differ"
+  },
+  {
+    "name": "post-motion-plain",
+    "webgpu": true,
+    "app": "post_stack",
+    "frames": 472,
+    "maxGt16": 0.003,
+    "fields": [
+      "post.seg",
+      "post.passes"
+    ],
+    "controlFrames": 20,
+    "expect": {
+      "post.seg": 22
+    },
+    "note": "the spinning bar with the plain settings (no TAA: no velocity pass). Control: the base segment, where the bar is hidden"
+  },
+  {
+    "name": "post-motion-velocity",
+    "webgpu": true,
+    "app": "post_stack",
+    "frames": 508,
+    "maxGt16": 0.003,
+    "fields": [
+      "post.seg",
+      "post.passes",
+      "cw.velocity.objects"
+    ],
+    "controlFrames": 508,
+    "controlEnv": {
+      "CW_TEST_VELOCITY_OBJECTS": "0"
+    },
+    "expect": {
+      "post.seg": 24,
+      "cw.velocity.objects": 1
+    },
+    "note": "the velocity buffer (debug_view VELOCITY) with the spinning bar's motion over the still camera's grey. Control: camera motion only, an all-grey frame"
+  },
+  {
+    "name": "motion-vectors-taa",
+    "webgpu": true,
+    "app": "motion_vectors",
+    "frames": 60,
+    "maxGt16": 0.003,
+    "fields": [
+      "mv.frame",
+      "cw.velocity.objects",
+      "cw.three.missing"
+    ],
+    "controlFrames": 60,
+    "controlEnv": {
+      "CW_TEST_VELOCITY_OBJECTS": "0"
+    },
+    "expect": {
+      "cw.velocity.objects": 3,
+      "cw.three.missing": 0
+    },
+    "note": "a turning mesh, a skinned character and an instanced swarm under TAA, each drawn into the velocity target (3 meshes). Control: camera motion only: the movers smear"
+  },
+  {
+    "name": "motion-vectors-view",
+    "webgpu": true,
+    "app": "motion_vectors",
+    "frames": 75,
+    "maxGt16": 0.003,
+    "fields": [
+      "mv.frame",
+      "cw.velocity.objects",
+      "cw.three.missing"
+    ],
+    "controlFrames": 75,
+    "controlEnv": {
+      "CW_TEST_VELOCITY_OBJECTS": "0"
+    },
+    "expect": {
+      "cw.velocity.objects": 3,
+      "cw.three.missing": 0
+    },
+    "note": "the velocity buffer of the same scene: the bar's turn, the character's limbs and the two counter-turning rings. Control: camera motion only, an all-grey frame"
+  },
+  {
+    "name": "motion-vectors",
+    "script": "tests/motion-vectors.mjs",
+    "note": "TAA error against a 36-sample picture of the same frame over each mover (a turning mesh, a skinned character, an instanced swarm, post_stack's bar), GL and WebGPU: with the mover's own motion at most 0.8 of the error with camera motion only; control: camera motion only in both runs must fail"
+  },
+  {
     "name": "pipeline-perf",
     "script": "tests/pipeline-perf.mjs",
     "note": "per-pass GPU ms at 1280x720 full quality (reported, not compared); every running pass timed natively, idle passes untimed"

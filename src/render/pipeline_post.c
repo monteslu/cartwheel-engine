@@ -266,7 +266,7 @@ static void viewmodel_exec(cw_pass_ctx *ctx, void *u) {
   cw__render3d_count(ctx->tree);
 }
 
-/* ── velocity (camera motion from depth) ────────────────────────────── */
+/* ── velocity (camera motion from depth, then the meshes that moved: velocity.c) ── */
 
 static unsigned vel_prog;
 static const char *VEL_FS = S(
@@ -274,9 +274,12 @@ static const char *VEL_FS = S(
   uniform mat4 u_inv_vp_j;   /* this frame, jittered (what the depth was drawn with) */
   uniform mat4 u_vp;         /* this frame, unjittered */
   uniform mat4 u_prev_vp;    /* last frame, unjittered */
+  uniform float u_vm_depth;  /* window depth below which a pixel is the viewmodel's (0: none) */
   out vec4 o;
   void main() {
     float d = texture(u_depth, v_uv).r;
+    /* the first person viewmodel is drawn by its own camera and stays put on the screen */
+    if (d < u_vm_depth) { o = vec4(0.0, 0.0, 0.0, 1.0); return; }
     vec4 w = u_inv_vp_j * vec4(v_uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
     w /= w.w;
     vec4 c = u_vp * w, p = u_prev_vp * w;
@@ -296,7 +299,9 @@ static void velocity_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_uniform_mat4(vel_prog, "u_inv_vp_j", &ctx->pipeline->inv_view_proj_jittered);
   cw_pass_uniform_mat4(vel_prog, "u_vp", &ctx->view_proj);
   cw_pass_uniform_mat4(vel_prog, "u_prev_vp", &ctx->prev_view_proj);
+  cw_pass_uniform1f(vel_prog, "u_vm_depth", cw__render3d_viewmodel_camera(ctx->tree) ? VIEWMODEL_DEPTH : 0.0f);
   cw_pass_fullscreen();
+  cw__velocity_objects(ctx, v);
   ctx->velocity = v;
 }
 
@@ -485,7 +490,7 @@ static void ssao_exec(cw_pass_ctx *ctx, void *u) {
 
 /* ── TAA ────────────────────────────────────────────────────────────────
  * History reprojected by the velocity target, sampled with a 5-tap
- * Catmull-Rom, clipped toward the 3x3 neighbourhood's YCoCg variance box;
+ * Catmull-Rom from where the nearest surface of the 3x3 neighbourhood was, clipped toward the 3x3 neighbourhood's YCoCg variance box;
  * luma-weighted blend (stable HDR highlights). The history alternates
  * between two persistent targets and becomes the chain's image. */
 static unsigned taa_prog;
@@ -493,6 +498,7 @@ static const char *TAA_FS = S(
   uniform sampler2D u_src;
   uniform sampler2D u_hist;
   uniform sampler2D u_vel;
+  uniform sampler2D u_depth;
   uniform vec2 u_size;
   uniform float u_feedback;
   uniform int u_fresh;
@@ -530,7 +536,17 @@ static const char *TAA_FS = S(
     m1 /= 9.0;
     vec3 sigma = sqrt(max(m2 / 9.0 - m1 * m1, vec3(0.0)));
     vec3 bmin = max(mn, m1 - sigma * 1.25), bmax = min(mx, m1 + sigma * 1.25);
-    vec2 prev = v_uv - texture(u_vel, v_uv).xy;
+    /* the motion of the nearest surface in the 3x3 neighbourhood: a moving object's antialiased edge follows
+     * the object, on both sides of the edge */
+    vec2 near_uv = v_uv;
+    float near_d = texture(u_depth, v_uv).r;
+    for (int j = -1; j <= 1; j++)
+      for (int i = -1; i <= 1; i++) {
+        vec2 q = v_uv + vec2(float(i), float(j)) * px;
+        float d = texture(u_depth, q).r;
+        if (d < near_d) { near_d = d; near_uv = q; }
+      }
+    vec2 prev = v_uv - texture(u_vel, near_uv).xy;
     vec3 c0 = to_ycocg(cur.rgb);
     vec3 h;
     if (any(lessThan(prev, vec2(0.0))) || any(greaterThan(prev, vec2(1.0)))) h = c0;
@@ -575,6 +591,8 @@ static void taa_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_uniform1i(taa_prog, "u_src", 0);
   cw_pass_uniform1i(taa_prog, "u_hist", 1);
   cw_pass_uniform1i(taa_prog, "u_vel", 2);
+  cw_pass_bind_texture(3, ctx->depth_tex);
+  cw_pass_uniform1i(taa_prog, "u_depth", 3);
   cw_pass_uniform2f(taa_prog, "u_size", (float)ctx->width, (float)ctx->height);
   cw_pass_uniform1f(taa_prog, "u_feedback", CW_CLAMP(ctx->settings->taa_feedback, 0.0f, 0.98f));
   cw_pass_uniform1i(taa_prog, "u_fresh", fresh ? 1 : 0);
@@ -1769,7 +1787,7 @@ void cw__pipeline_add_builtin_passes(cw_pipeline *p) {
   void cw__gi_add_post_passes(cw_pipeline *p); /* src/gi: the "gi" SHADOW pass, SSGI (120), SSR (150) */
   cw__gi_add_post_passes(p);
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "taa", .phase = CW_PHASE_POST, .order = 200,
-                                           .reads = CW_RES_COLOR | CW_RES_VELOCITY, .writes = CW_RES_COLOR,
+                                           .reads = CW_RES_COLOR | CW_RES_VELOCITY | CW_RES_DEPTH, .writes = CW_RES_COLOR,
                                            .active = taa_active, .execute = taa_exec, .webgpu = true });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "dof", .phase = CW_PHASE_POST, .order = 250,
                                            .reads = CW_RES_COLOR | CW_RES_DEPTH, .writes = CW_RES_COLOR,
