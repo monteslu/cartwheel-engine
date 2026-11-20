@@ -4,6 +4,50 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## NEXT (r187): static batches, thousands of different props in a few draws (three.c 0.187.12 BatchedMesh)
+
+### Added
+- **Static batches (three.c 0.187.12, three.js r187's BatchedMesh).** `batch = true` on a `MeshInstance3D` draws the
+  mesh through its tree's static batches: every batched mesh that shares a material (and its shadow flags) lives
+  in one BatchedMesh, whatever its geometry, and the props in view that follow each other in its buffer are one
+  draw. Automatic instancing only merges meshes that share a geometry; this is for the thousands of rocks, crates
+  and bits of rubble that do not. Each prop is still frustum culled on its own, against the camera and each shadow
+  pass's light; hiding, moving or freeing a node updates its prop. Primitives, mesh resources, glTF scenes and
+  procedural meshes batch; transparent materials and meshes with a lightmap of their own stay out. A batched mesh
+  gives up level of detail, occlusion culling, impostors and `visibility_range`.
+  [cartwheel/static_batch.h](include/cartwheel/static_batch.h): `cw_static_batch_get_stats`.
+  `samples/static_batch`: 5,000 boulders and crates, each a geometry of its own, in three materials under a
+  cascaded sun. Measured on a Radeon 890M, 1920 x 1080, High, the release cart, three interleaved rounds of 110
+  frames (machine load 36): the scene pass goes from about 3,200 draws to 4; a frame's CPU time from 57 ms to 14 ms
+  on WebGPU and from 37 ms to 14 ms on GL; GPU time from 3.7 ms to 2.1 ms on WebGPU and from 2.8 ms to 2.5 ms on
+  GL. The batches form the same way when the material carries the engine's shading parts: `static_batch_lit` is the
+  same field under clustered lighting (sixteen omni lights), the cascaded sun and a probe grid (the props' material
+  carries cluster, csm and gi): about 3,200 draws to 4, CPU 52 ms to 11 ms on WebGPU and 48 ms to 13 ms on GL, GPU
+  time unchanged (2.6 ms WebGPU, 3.1 ms GL: with these lights the pixels cost more than the draws; machine load 12).
+  Gates `static-batch` and `static-batch-lit` on GL and WebGPU (native and the cart); their control turns batching
+  off and the state differs. Guide: [Thousands of different props: static batches](docs/guides/rendering-3d.md#thousands-of-different-props-static-batches).
+  three.c's BatchedMesh feeds the instance id from a vertex attribute where r187 feeds it per draw, so a run of
+  visible instances is one draw on both backends (r187 issues one draw an instance); the picture is r187's.
+
+## v0.52.0 (2026-11-19)
+
+### Added
+- **IES light profiles (three.c 0.187.11, three.js r187's IESSpotLight and IESLoader).** `ies_profile` on a
+  `SpotLight3D` or an `OmniLight3D` names an IES photometric file (`.ies`), and the light takes the fixture's
+  measured shape: rings, hot spots, a street lamp's forward throw, a lantern's bars. The profile is read around the
+  light's own axes (the tilt off its -Z, the twist from its +Y, so turning a lamp turns its light), replaces a spot
+  light's cone and covers the whole sphere on an omni light; shadows, range and decay work as before. `cwpack`
+  takes `.ies` files, checks each one when it packs it and stops with the reason on one it cannot read. Profiles
+  with a single horizontal angle and with a measured range (mirrored to the circle as the file asks) both work.
+  IES lights are drawn by the clustered lights: the scene's profiles sit in one atlas and, while a clustered light
+  has one, lit materials draw with the new `clusteries` part in place of `cluster` (a scene without profiles
+  keeps its programs and its cost). `cw_lighting_stats.ies` counts them. With FORWARD lighting a spot light's
+  profile is three.c's own IESSpotLight; an omni light's needs CLUSTERED (a warning says so).
+  `samples/ies_lights`: a ring downlight with a shadow, a street lamp turning about its axis, a lantern on an omni
+  light, a plain spot light. Gate `ies-lights` on GL and WebGPU (native and the cart); its control takes the
+  profiles away, and the state and the picture differ. Guide:
+  [Real fixtures: IES profiles](docs/guides/rendering-3d.md#real-fixtures-ies-profiles).
+
 ## v0.51.0 (2026-11-19)
 ## NEXT (post stack): star glints on bright points
 

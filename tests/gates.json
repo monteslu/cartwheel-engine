@@ -501,6 +501,48 @@
     "note": "three lamps shaped by IES photometric files over a floor and a wall at night: a spot light with a ring profile casting a crate's shadow, a spot light with a street lamp's forward throw turning about its axis, an omni light with a lantern's four bright faces; a plain spot light beside them. The control takes the profiles away: the state (ies.lights 0) and the picture differ"
   },
   {
+    "name": "static-batch",
+    "webgpu": true,
+    "app": "static_batch",
+    "frames": 200,
+    "fields": [
+      "static.props",
+      "static.meshes",
+      "static.batches",
+      "static.geometries"
+    ],
+    "expect": {
+      "static.props": 5000,
+      "static.meshes": 5000,
+      "static.batches": 3,
+      "static.geometries": 5000
+    },
+    "controlEnv": {
+      "STATIC_BATCH_OFF": "1"
+    },
+    "note": "5,000 boulders and crates, each a geometry of its own, in three materials under a cascaded sun, drawn through three static batches (MeshInstance3D batch) while the camera swings to one side: the same picture on GL and WebGPU, native and the cart. The control turns batching off: every prop draws on its own and the state differs (static.meshes 0)"
+  },
+  {
+    "name": "static-batch-lit",
+    "webgpu": true,
+    "app": "static_batch_lit",
+    "frames": 200,
+    "fields": [
+      "static.meshes",
+      "static.batches",
+      "static.clustered"
+    ],
+    "expect": {
+      "static.meshes": 5000,
+      "static.batches": 3,
+      "static.clustered": 16
+    },
+    "controlEnv": {
+      "STATIC_BATCH_OFF": "1"
+    },
+    "note": "the static-batch field in a game's lighting: clustered lighting with sixteen omni lights, the cascaded sun and a probe grid, so the props' materials carry the cluster, csm and gi shading parts. The three batches still form and draw the 5,000 props; GL and WebGPU, native and the cart agree. The control turns batching off (static.meshes 0)"
+  },
+  {
     "name": "character-skin",
     "webgpu": true,
     "app": "character_skin",

@@ -189,9 +189,10 @@ static uint64_t mixf(uint64_t h, float f) {
  * cascade is redrawn here when this or its matrix changed) */
 static uint64_t casters_key(const t3_object *o, uint64_t h) {
   if (!o->visible) return h;
-  if ((o->type == T3_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_SKINNED_MESH) && o->cast_shadow) {
+  if ((o->type == T3_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_SKINNED_MESH || o->type == T3_BATCHED_MESH) && o->cast_shadow) {
     const t3_mesh *m = (const t3_mesh *)o;
     h = mix64(h, (uint64_t)(uintptr_t)o);
+    if (o->type == T3_BATCHED_MESH) h = mix64(h, cw__batched_key((const t3_batched_mesh *)o));
     for (int i = 0; i < 16; i++) h = mixf(h, o->matrix_world.e[i]);
     if (m->geometry) h = mix64(mix64(h, (uint64_t)(uintptr_t)m->geometry), m->geometry->version);
     for (int i = 0; i < m->material_count; i++)

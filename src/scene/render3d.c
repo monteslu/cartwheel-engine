@@ -19,6 +19,7 @@
 #include "cartwheel/gpu.h"
 #include "cartwheel/shading.h"
 #include "cartwheel/toon.h"
+#include "render/static_batch_internal.h"
 #include "cartwheel/gl.h"
 #if CW_WGPU
 #include "platform/wgpu.h"
@@ -243,6 +244,8 @@ typedef struct mesh3d {
   float iridescence, iridescence_ior;
   float anisotropy;
   float diffuse_roughness;
+  bool batch;     /* draws through the tree's static batches (cartwheel/static_batch.h) */
+  cw__sbatch_rec *batch_rec;
   int shading;    /* STANDARD, TOON (cartwheel/toon.h) */
   int toon_bands; /* TOON: tones of the light ramp (below 2: three.js's two) */
   bool cast_shadow, receive_shadow;
@@ -548,10 +551,22 @@ static bool mesh_physical(const mesh3d *m) {
          m->specular_intensity != 1;
 }
 
+/* a static batch draws it (cartwheel/static_batch.h); a mesh with a lightmap of its own keeps its own draw */
+static void mesh_batch(cw_node n, mesh3d *m) {
+  if (m->batch && !m->lm_mat && !m->lightmapped) {
+    t3_object *drawn = m->res_obj ? m->res_obj : m->t3 ? &m->t3->base : NULL;
+    bool cast = m->procedural && m->t3 ? m->t3->base.cast_shadow : m->cast_shadow;
+    bool receive = m->procedural && m->t3 ? m->t3->base.receive_shadow : m->receive_shadow;
+    cw__sbatch_sync(cw_node_tree(n), &m->batch_rec, drawn, cast, receive);
+  } else if (m->batch_rec) {
+    cw__sbatch_remove(&m->batch_rec);
+  }
+}
+
 static void mesh_pre_render(cw_node n, void *data, double alpha) {
   (void)alpha;
   mesh3d *m = data;
-  if (m->procedural) return;
+  if (m->procedural) { mesh_batch(n, m); return; }
   mesh_rebuild(n, m);
   if (m->mat) {
     mesh_look k = look_of_node(n, m);
@@ -567,11 +582,13 @@ static void mesh_pre_render(cw_node n, void *data, double alpha) {
     m->t3->base.cast_shadow = m->cast_shadow;
     m->t3->base.receive_shadow = m->receive_shadow;
   }
+  mesh_batch(n, m);
 }
 
 static void mesh_destroy(cw_node n, void *data) {
   (void)n;
   mesh3d *m = data;
+  cw__sbatch_remove(&m->batch_rec);
   if (m->mat) t3_release(m->mat);
   m->mat = NULL;
   if (m->lm_mat) t3_release(m->lm_mat);
@@ -613,6 +630,8 @@ static const cw_prop mesh_props[] = {
   CW_PROP_FIELD(mesh3d, cast_shadow, CW_T_BOOL, CW_PROP_DEFAULT, "Casts shadows."),
   CW_PROP_FIELD(mesh3d, receive_shadow, CW_T_BOOL, CW_PROP_DEFAULT, "Receives shadows."),
   CW_PROP_FIELD(mesh3d, mesh, CW_T_RES, CW_PROP_DEFAULT, "Mesh resource (overrides the primitive)."),
+  CW_PROP_FIELD(mesh3d, batch, CW_T_BOOL, CW_PROP_DEFAULT,
+                "Draw through the tree's static batches: every batched mesh sharing a material is one three.js BatchedMesh, and props in view that follow each other in it are one draw, whatever their geometry (cartwheel/static_batch.h). For props that stay put. Still frustum culled one by one; gives up LOD, occlusion culling, impostors and visibility_range."),
   { .name = "static", .type = CW_T_BOOL, .flags = CW_PROP_DEFAULT, .offset = offsetof(mesh3d, vis.is_static),
     .size = sizeof(bool), .doc = "Does not move: joins the visibility BVH (visibility.h)." },
   { .name = "lod_bias", .type = CW_T_FLOAT, .flags = CW_PROP_DEFAULT, .offset = offsetof(mesh3d, vis.lod_bias),
@@ -690,6 +709,7 @@ static uint64_t float_bits(float f) {
 bool cw__mesh3d_info(cw_node n, cw__mesh_info *out) {
   mesh3d *m = cw_node_data_t(n, mesh3d_t);
   if (!m) return false;
+  if (m->batch_rec) return false; /* a static batch draws it: no LOD, occlusion or impostor of its own */
   mesh_rebuild(n, m);
   memset(out, 0, sizeof *out);
   out->vis = &m->vis;

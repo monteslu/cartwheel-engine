@@ -780,6 +780,22 @@ Costs per frame: the BVH walk, one pass over moving meshes and one over visible 
 
 `samples/vis_city` is about 4500 meshes (buildings, lamps with visibility ranges, LOD'd trees with impostors, houses with portal doorways) walked by a camera; its `check` mode renders a second, unculled copy of the city and counts pixels that differ, so a cull that pops fails the gate. `samples/vis_impostor` sweeps the impostor distance across a grove and measures the largest frame-to-frame change. The showcase also uses three.c's own `LOD` objects directly for its terrain chunks (`samples/showcase/world.c`).
 
+### Thousands of different props: static batches
+
+Automatic instancing merges meshes that share a geometry. A level dressed with thousands of props that are all different (rocks, crates, rubble, fence posts, market stalls) still pays one draw call a prop in the scene pass and one more in every shadow cascade that holds it, and draw calls are what a weak GPU's driver and a WebGPU host run out of first. `batch = true` on a `MeshInstance3D` ([static_batch.h](header:static_batch.h)) puts the mesh into its tree's static batches instead:
+
+```
+[node name="Boulder17" parent="Props" type="MeshInstance3D"]
+mesh = res(0x51fb660a18596cee)
+batch = true
+```
+
+Every batched mesh that shares a material (and its shadow flags) lives in one three.js r187 BatchedMesh, whatever its geometry, and the props in view that follow each other in the batch's buffer are one draw. Props join in tree order, so props that are neighbours in the scene are neighbours in the buffer and a view draws a few long runs (a hidden prop in the middle of a run splits it in two; a few props that are merely out of view are drawn and clipped instead, which costs less than another draw call). Each prop is still frustum culled on its own, against the camera and against each shadow pass's light, and hiding or freeing a node takes its prop out. Primitives, mesh resources, glTF scenes (each mesh of the file, by its material) and procedural meshes all batch.
+
+A batched mesh is no longer a draw of its own, so it gives up level of detail, occlusion culling, impostors and `visibility_range` (it draws its full mesh whenever it is in view) and a lightmap of its own; transparent materials stay out (they are sorted one by one). It may move: its matrix is written to the batch's texture when its world transform changes, a frame late, at the cost of uploading that texture, so it is for props that stay put. A batch holds a copy of each prop's vertices and 64 bytes a prop. `cw_static_batch_get_stats` reports batches, meshes, and the draws and props of the last pass.
+
+Measured on a Radeon 890M at 1920 x 1080, High, with `samples/static_batch` (5,000 boulders and crates, each a geometry of its own, three materials, a cascaded sun; about 3,200 of them in view), the release cart, three interleaved rounds of 110 frames each way on a busy machine (load 36): the scene pass goes from about 3,200 draws to 4. On WebGPU a frame's CPU time falls from 57 ms to 14 ms and its GPU time from 3.7 ms to 2.1 ms; on GL from 37 ms to 14 ms of CPU and 2.8 ms to 2.5 ms of GPU. What is left of the CPU time is the 5,000 nodes themselves, not their draws. With the engine's shading parts on the material (`static_batch_lit`: clustered lighting with sixteen omni lights, the cascaded sun and a probe grid) the batches form the same way: 3,200 draws to 4, CPU 52 ms to 11 ms on WebGPU and 48 ms to 13 ms on GL, GPU time unchanged. A Vega 8 class GPU gains the same way: its limit here is draw calls, not triangles. The gates are `static-batch` and `static-batch-lit`.
+
 ## Render layers and a first person weapon
 
 Every `Node3D` has `layers`: a bit mask, bit n = layer n, 1 by default, -1 for every layer (lights are on every layer: a camera's layers pick what it draws, never what is lit). Setting it applies to the node and everything under it, including nodes added later, unless they set their own. A `Camera3D` draws the layers in its `cull_layers` (1 by default).

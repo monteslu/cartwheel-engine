@@ -346,7 +346,7 @@ static void give_back(lighting *L) {
 }
 
 static bool mesh_kind(const t3_object *o) {
-  return o->type == T3_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_SKINNED_MESH;
+  return o->type == T3_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_SKINNED_MESH || o->type == T3_BATCHED_MESH;
 }
 
 /* what a mesh's slots are now: their materials and extensions */
