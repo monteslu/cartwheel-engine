@@ -23,6 +23,7 @@
 #include "cartwheel/quality.h"
 #include "cartwheel/render3d.h"
 #include "lighting_internal.h"
+#include "pipeline_internal.h"
 #include "quality_internal.h"
 #if CW_WGPU
 #include "pipeline_wgpu.h"
@@ -106,6 +107,13 @@ typedef struct lighting {
   float grid_u[4], depth_u[4];
   t3_texture *rec_tex, *item_tex;
   int n_tex; /* the lights in light_tex (its first columns) */
+  /* one-pass split screen: views after the first keep their clustered lights here (the first uses the fields above),
+   * swapped in while the pass runs for that view; the scene's draws pick a view's by the draw's camera */
+  struct lview { cw_froxel_grid *grid; t3_texture *light_tex, *rec_tex, *item_tex; float grid_u[4], depth_u[4]; int n_tex;
+                 const t3_camera *cam; } lv[CW_MAX_VIEWS];
+  const t3_camera *lv0_cam;
+  uint64_t lv_frame; /* the pipeline frame (+ 1) the slots were filled for */
+  int lv_n;
   /* capture mode (cw__lighting_capture): a light texture per capture camera, made from light_tex for the version it
    * had (cap_src, cap_ver); the one record and the item list every capture draw reads */
   bool capture;
@@ -157,6 +165,10 @@ static void lighting_free(void *p) {
   if (L->cap_rec) t3_release(L->cap_rec);
   if (L->cap_items) t3_release(L->cap_items);
   cw_froxel_grid_free(L->grid);
+  for (int i = 0; i < CW_MAX_VIEWS; i++) {
+    if (L->lv[i].grid) cw_froxel_grid_free(L->lv[i].grid);
+    if (L->lv[i].light_tex) t3_release(L->lv[i].light_tex);
+  }
   cw__csm_free(L->csm);
   cw__atlas_free(L->atlas);
   cw_free(L->reqs);
@@ -394,6 +406,21 @@ static void fill_cluster(t3_extension_ctx *c, void *user) {
     t3_extension_set_texture(c, "clusterItems", L->cap_items);
     t3_extension_set_texture(c, "clusterShadows", L->shadow_tex);
     return;
+  }
+  if (L->lv_n > 1) { /* one-pass split screen: the draw's view */
+    const t3_camera *dc = t3_extension_camera(c);
+    for (int k = 1; k < L->lv_n; k++)
+      if (dc && dc == L->lv[k].cam && L->lv[k].light_tex) {
+        const struct lview *v = &L->lv[k];
+        t3_extension_set_uniform(c, "clusterGrid", v->grid_u, 4);
+        t3_extension_set_uniform(c, "clusterDepth", v->depth_u, 4);
+        t3_extension_set_texture(c, "clusterLights", v->light_tex);
+        t3_extension_set_texture(c, "clusterRecords", v->rec_tex);
+        t3_extension_set_texture(c, "clusterItems", v->item_tex);
+        t3_extension_set_texture(c, "clusterShadows", L->shadow_tex);
+        if (L->ies_tex) t3_extension_set_texture(c, "clusterIes", L->ies_tex);
+        return;
+      }
   }
   t3_extension_set_uniform(c, "clusterGrid", L->grid_u, 4);
   t3_extension_set_uniform(c, "clusterDepth", L->depth_u, 4);
@@ -681,7 +708,45 @@ static void first_inputs(lighting *L, cw_pass_ctx *ctx) {
   }
 }
 
+static void pass_lights_view(cw_pass_ctx *ctx, void *user);
+static void lv_swap(lighting *L, struct lview *v) {
+  cw_froxel_grid *g = L->grid; L->grid = v->grid; v->grid = g;
+  t3_texture *t = L->light_tex; L->light_tex = v->light_tex; v->light_tex = t;
+  t = L->rec_tex; L->rec_tex = v->rec_tex; v->rec_tex = t;
+  t = L->item_tex; L->item_tex = v->item_tex; v->item_tex = t;
+  float f[4];
+  memcpy(f, L->grid_u, sizeof f); memcpy(L->grid_u, v->grid_u, sizeof f); memcpy(v->grid_u, f, sizeof f);
+  memcpy(f, L->depth_u, sizeof f); memcpy(L->depth_u, v->depth_u, sizeof f); memcpy(v->depth_u, f, sizeof f);
+  int n = L->n_tex; L->n_tex = v->n_tex; v->n_tex = n;
+}
+/* One-pass split screen (ctx->view_count > 0): each view's clusters over its own rectangle, a view after the first in
+ * its own slot. The cascaded sun is fitted to one camera and drawn by the csm part for every draw, so a frame that
+ * uses it cannot be drawn in one pass: the pass says so for the next frame (and starts out saying it cannot). */
 static void pass_lights(cw_pass_ctx *ctx, void *user) {
+  lighting *L = user;
+  int k = ctx->view_count > 0 ? ctx->view_index : -1;
+  if (k < 0) {
+    L->lv_n = 0;
+    pass_lights_view(ctx, user);
+  } else {
+    int keep_w = ctx->width, keep_h = ctx->height;
+    ctx->width = ctx->view_rect[2], ctx->height = ctx->view_rect[3];
+    if (k > 0) {
+      if (!L->lv[k].grid) L->lv[k].grid = cw_froxel_grid_new();
+      lv_swap(L, &L->lv[k]);
+    }
+    pass_lights_view(ctx, user);
+    if (k > 0) {
+      lv_swap(L, &L->lv[k]);
+      L->lv[k].cam = ctx->camera;
+    } else L->lv0_cam = ctx->camera;
+    L->lv_n = ctx->view_count;
+    ctx->width = keep_w, ctx->height = keep_h;
+  }
+  bool csm = L->stats.cascades > 0 || L->sun_taken;
+  cw__pipeline_set_pass_views(ctx->pipeline, "lights", csm ? CW_PASS_VIEWS_NONE : CW_PASS_VIEWS_EACH);
+}
+static void pass_lights_view(cw_pass_ctx *ctx, void *user) {
   CW_PROFILE_SCOPE("lighting.pass");
   lighting *L = user;
   double t0 = wall_ms(), tg = 0, tb = 0, tt = 0;
