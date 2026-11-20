@@ -5515,6 +5515,432 @@
    ]
   },
   {
+   "header": "cartwheel/nav2d.h",
+   "summary": "cartwheel 2D navigation: grids of walkable cells, path queries, flow fields, obstacles and crowds.\n\n  grid:    cw_navgrid g = cw_navgrid_new(&(cw_navgrid_desc){ .width = 64, .height = 64, .cell = { 16, 16 } });\n           cw_navgrid_set_cost(g, x, y, 0);                       (0 blocks a cell)\n           or cw_navgrid_from_tilemap(map, &bake): the cells a TileMap2D's tile shapes leave free\n  query:   n = cw_navgrid_find_path(g, from, to, NULL, pts, 64, &partial);\n  field:   cw_flowfield f = cw_flowfield_new(g); cw_flowfield_build(f, &goal, 1);\n           dir = cw_flowfield_direction(f, position);             (every agent heading to one goal reads it)\n  crowd:   cw_crowd2d c = cw_crowd2d_new(g, 500);\n           a = cw_crowd2d_add(c, p, NULL); cw_crowd2d_set_target(c, a, goal);\n           cw_crowd2d_step(c, dt);  (every fixed tick)\n\nPositions are cw_vec2 in the grid's own units (pixels for a grid made from a tile map, y down like every 2D\nnode). The 3D side, navmeshes for meshes and colliders, is cartwheel/nav.h; the names here mirror it.\n\nPaths: A* over the cells, moving to the eight neighbours (a diagonal step needs both cells beside it free,\nso nothing cuts a corner). On a grid where every walkable cell costs the same, the search is jump point\nsearch (Harabor and Grastien, 2011; the no-corner-cutting rules as in PathFinding.js, MIT, see NOTICE): the\nsame shortest paths, visiting a fraction of the cells. Cells with their own cost (mud, a road) switch the\ngrid to plain A*. The cell path is then pulled straight where cells are in sight of one another (on a grid\nwith costs, only across cells of cost 1: a straight line through mud is no short cut).\n\nFlow fields: one search outward from the goals gives every cell its distance and the neighbour to step to.\nBuilding costs one pass over the grid whatever the number of agents; reading is one lookup. Use it for a\ncrowd with one goal (a horde, a stream of creeps); use paths for agents with goals of their own.\n\nDeterminism: costs are integers (10 a straight step, 14 a diagonal, times the cell's cost), ties are broken\nby a fixed order (lower total, then nearer the goal, then lower cell index), and nothing reads a clock: the\nsame grid and request give the same path on every host and at any worker count. Crowd steps read the state\nof the step's start and write only their own agent. Budgets count requests and iterations, never time.\n\nThreads: build, edit and step from one thread at a time. cw_navgrid_find_path, cw_navgrid_raycast,\ncw_navgrid_nearest and cw_flowfield_direction are safe from job-pool threads while nothing changes the grid\n(each pool thread has its own search memory); cw_navgrid_find_paths runs a batch on the pool.\n\nMemory: CW_MEM_NAV. A grid is 1 byte a cell, plus 13 bytes a cell for each pool thread that has searched it;\na flow field is 5 bytes a cell.",
+   "functions": [
+    {
+     "name": "cw_navgrid_new",
+     "signature": "cw_navgrid cw_navgrid_new(const cw_navgrid_desc *desc)",
+     "doc": "A grid with every cell walkable at cost 1. Null (logged) for a size outside 1..4096.",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_free",
+     "signature": "void cw_navgrid_free(cw_navgrid g)",
+     "doc": "frees its flow fields and crowds too; null or stale: no-op",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_valid",
+     "signature": "bool cw_navgrid_valid(cw_navgrid g)",
+     "doc": "false for a null or freed grid",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_size",
+     "signature": "void cw_navgrid_size(cw_navgrid g, int *width, int *height)",
+     "doc": "0 x 0 when invalid",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_cell_size",
+     "signature": "cw_vec2 cw_navgrid_cell_size(cw_navgrid g)",
+     "doc": "zero when invalid",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_set_cost",
+     "signature": "void cw_navgrid_set_cost(cw_navgrid g, int x, int y, uint8_t cost)",
+     "doc": "A cell's cost: 0 = blocked, 1 = plain ground, up to 255 = that many times as long to cross. Out of range\nreads as blocked and writes are ignored. Cost: O(1); a change raises the grid's version, and crowds plan\ntheir paths again.",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_cost",
+     "signature": "uint8_t cw_navgrid_cost(cw_navgrid g, int x, int y)",
+     "doc": "the cost set for the cell (obstacles aside); 0 outside",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_set_costs",
+     "signature": "void cw_navgrid_set_costs(cw_navgrid g, const uint8_t *costs)",
+     "doc": "Every cell at once: width * height costs, row by row.",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_walkable",
+     "signature": "bool cw_navgrid_walkable(cw_navgrid g, int x, int y)",
+     "doc": "Is the cell walkable now (its cost is not 0 and no obstacle covers it).",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_cell_at",
+     "signature": "void cw_navgrid_cell_at(cw_navgrid g, cw_vec2 p, int *x, int *y)",
+     "doc": "The cell a position is in (floor); it may lie outside the grid.",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_cell_center",
+     "signature": "cw_vec2 cw_navgrid_cell_center(cw_navgrid g, int x, int y)",
+     "doc": "the middle of a cell",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_version",
+     "signature": "uint32_t cw_navgrid_version(cw_navgrid g)",
+     "doc": "Raised by every change to costs or obstacles.",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_hash",
+     "signature": "uint64_t cw_navgrid_hash(cw_navgrid g)",
+     "doc": "A hash of the size, costs and obstacle cover: the same grid on every host has the same hash.",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_obstacle_add_circle",
+     "signature": "uint32_t cw_navgrid_obstacle_add_circle(cw_navgrid g, cw_vec2 center, float radius)",
+     "doc": "── obstacles ─────────────────────────────────────────────────────────\nShapes that block the cells whose middle they cover, until removed: a crate dropped in a corridor, a door.\nIds are never 0 (0: the grid is invalid). Covers add up, so two obstacles over one cell must both go before\nit opens. Cost: the cells of the shape's bounds.",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_obstacle_add_rect",
+     "signature": "uint32_t cw_navgrid_obstacle_add_rect(cw_navgrid g, cw_vec2 center, cw_vec2 half, float rotation)",
+     "doc": "half sizes; radians",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_obstacle_remove",
+     "signature": "bool cw_navgrid_obstacle_remove(cw_navgrid g, uint32_t id)",
+     "doc": "false for an unknown id",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_from_tilemap",
+     "signature": "cw_navgrid cw_navgrid_from_tilemap(cw_node tilemap, const cw_navgrid_bake *bake)",
+     "doc": "bake NULL = defaults; null when not a TileMap2D",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_rebake",
+     "signature": "void cw_navgrid_rebake(cw_navgrid g, cw_node tilemap, const cw_navgrid_bake *bake, int x0, int y0, int x1, int y1)",
+     "doc": "Bakes the cells x0..x1, y0..y1 (inclusive) again into a grid made by cw_navgrid_from_tilemap with the same\nbake (after cell edits: the cells edited and those within agent_radius of them).",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_find_path",
+     "signature": "int cw_navgrid_find_path(cw_navgrid g, cw_vec2 from, cw_vec2 to, const cw_navgrid_query *q, cw_vec2 *pts, int max, bool *partial)",
+     "doc": "The shortest path from `from` to `to`: up to max waypoints in pts, the first `from`, the last `to` (each\nmoved to the nearest walkable cell when inside a blocked one). Returns the count: 0 when an end has no\nwalkable cell near it. *partial (may be NULL): the path ends short of `to` (unreachable, or out of\niterations). When the path has more corners than max, the last waypoint is the max-th corner and *partial\nis set. q NULL = defaults.",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_path_length",
+     "signature": "float cw_navgrid_path_length(const cw_vec2 *pts, int count)",
+     "doc": "The length of a waypoint list.",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_find_paths",
+     "signature": "void cw_navgrid_find_paths(cw_navgrid g, const cw_navgrid_path_req *reqs, int count, const cw_navgrid_query *q, cw_vec2 *pts, int max_points, int *counts)",
+     "doc": "see cw_navgrid_path_req",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_raycast",
+     "signature": "bool cw_navgrid_raycast(cw_navgrid g, cw_vec2 from, cw_vec2 to, float radius, cw_vec2 *hit)",
+     "doc": "Walks from `from` toward `to` over walkable cells, `radius` wide: false and *hit (may be NULL) = the last\npoint before a blocked cell when something is in the way, true when `to` is in sight.",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_nearest",
+     "signature": "bool cw_navgrid_nearest(cw_navgrid g, cw_vec2 p, float max_distance, cw_vec2 *out)",
+     "doc": "The middle of the walkable cell nearest p within max_distance (p itself when its cell is walkable).",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_get_stats",
+     "signature": "cw_navgrid_stats cw_navgrid_get_stats(cw_navgrid g)",
+     "doc": "all zero for an invalid grid",
+     "inline": false
+    },
+    {
+     "name": "cw_flowfield_new",
+     "signature": "cw_flowfield cw_flowfield_new(cw_navgrid g)",
+     "doc": "── flow fields ───────────────────────────────────────────────────────\nA field belongs to its grid and is freed with it. cw_flowfield_build searches outward from the goals over\nthe grid as it is now (one pass, a few ms for 256 x 256; the directions are filled on the job pool) and\nremembers the grid's version: cw_flowfield_stale says when the grid has changed since.",
+     "inline": false
+    },
+    {
+     "name": "cw_flowfield_free",
+     "signature": "void cw_flowfield_free(cw_flowfield f)",
+     "doc": "null or stale: no-op",
+     "inline": false
+    },
+    {
+     "name": "cw_flowfield_valid",
+     "signature": "bool cw_flowfield_valid(cw_flowfield f)",
+     "doc": "false for a null or freed field (freeing its grid frees it)",
+     "inline": false
+    },
+    {
+     "name": "cw_flowfield_build",
+     "signature": "void cw_flowfield_build(cw_flowfield f, const cw_vec2 *goals, int count)",
+     "doc": "Goals inside blocked cells are skipped.",
+     "inline": false
+    },
+    {
+     "name": "cw_flowfield_stale",
+     "signature": "bool cw_flowfield_stale(cw_flowfield f)",
+     "doc": "the grid changed since the build (or it was never built)",
+     "inline": false
+    },
+    {
+     "name": "cw_flowfield_direction",
+     "signature": "cw_vec2 cw_flowfield_direction(cw_flowfield f, cw_vec2 p)",
+     "doc": "The way to walk from p: a unit vector toward the neighbour cell nearest a goal; zero in a goal's cell, in a\nblocked cell and where no goal can be reached.",
+     "inline": false
+    },
+    {
+     "name": "cw_flowfield_distance",
+     "signature": "float cw_flowfield_distance(cw_flowfield f, cw_vec2 p)",
+     "doc": "The walking distance from a cell to the nearest goal in the grid's units along cell steps; negative when\nunreachable.",
+     "inline": false
+    },
+    {
+     "name": "cw_flowfield_hash",
+     "signature": "uint64_t cw_flowfield_hash(cw_flowfield f)",
+     "doc": "of every cell's distance and direction",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_agent_params_default",
+     "signature": "cw_crowd2d_agent_params cw_crowd2d_agent_params_default(void)",
+     "doc": "the defaults noted above",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_new",
+     "signature": "cw_crowd2d cw_crowd2d_new(cw_navgrid g, int max_agents)",
+     "doc": "null when g is invalid",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_free",
+     "signature": "void cw_crowd2d_free(cw_crowd2d c)",
+     "doc": "null or stale: no-op",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_valid",
+     "signature": "bool cw_crowd2d_valid(cw_crowd2d c)",
+     "doc": "false for a null or freed crowd (freeing its grid frees it)",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_set_plan_budget",
+     "signature": "void cw_crowd2d_set_plan_budget(cw_crowd2d c, int paths_per_step, int max_iters)",
+     "doc": "Paths planned per step (oldest waiting agents first; 8) and search iterations each (0 = no limit).",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_add",
+     "signature": "cw_crowd2d_agent cw_crowd2d_add(cw_crowd2d c, cw_vec2 p, const cw_crowd2d_agent_params *params)",
+     "doc": "Adds an agent at p (moved to the nearest walkable cell when inside a blocked one); params NULL = defaults.\nNull when the crowd is full or nothing walkable is near p.",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_remove",
+     "signature": "void cw_crowd2d_remove(cw_crowd2d c, cw_crowd2d_agent a)",
+     "doc": "stale handle: no-op; the slot is reused lowest first",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_agent_valid",
+     "signature": "bool cw_crowd2d_agent_valid(cw_crowd2d c, cw_crowd2d_agent a)",
+     "doc": "false once removed",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_agent_slot",
+     "signature": "int cw_crowd2d_agent_slot(cw_crowd2d c, cw_crowd2d_agent a)",
+     "doc": "0..max_agents-1, stable while it lives; -1 when invalid",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_set_params",
+     "signature": "void cw_crowd2d_set_params(cw_crowd2d c, cw_crowd2d_agent a, const cw_crowd2d_agent_params *params)",
+     "doc": "NULL = defaults",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_set_target",
+     "signature": "void cw_crowd2d_set_target(cw_crowd2d c, cw_crowd2d_agent a, cw_vec2 target)",
+     "doc": "a path is planned at a coming step",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_set_flow",
+     "signature": "void cw_crowd2d_set_flow(cw_crowd2d c, cw_crowd2d_agent a, cw_flowfield f)",
+     "doc": "Follows a flow field instead of a path of its own (no search at all); the field must belong to the crowd's\ngrid. Arrives in a goal's cell.",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_clear_target",
+     "signature": "void cw_crowd2d_clear_target(cw_crowd2d c, cw_crowd2d_agent a)",
+     "doc": "stops (IDLE)",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_set_velocity",
+     "signature": "void cw_crowd2d_set_velocity(cw_crowd2d c, cw_crowd2d_agent a, cw_vec2 v)",
+     "doc": "moves at v, avoiding others, until a target is set",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_teleport",
+     "signature": "void cw_crowd2d_teleport(cw_crowd2d c, cw_crowd2d_agent a, cw_vec2 p)",
+     "doc": "its path is planned again",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_set_position",
+     "signature": "void cw_crowd2d_set_position(cw_crowd2d c, cw_crowd2d_agent a, cw_vec2 p)",
+     "doc": "Puts the agent at p, keeping its path: for an agent whose body something else moves (a CharacterBody2D\nfollowing its velocity).",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_get_state",
+     "signature": "bool cw_crowd2d_get_state(cw_crowd2d c, cw_crowd2d_agent a, cw_crowd2d_agent_state *out)",
+     "doc": "false for an invalid agent",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_position",
+     "signature": "cw_vec2 cw_crowd2d_position(cw_crowd2d c, cw_crowd2d_agent a)",
+     "doc": "zero when invalid",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_step",
+     "signature": "void cw_crowd2d_step(cw_crowd2d c, float dt)",
+     "doc": "one fixed tick (the same dt every tick for replays)",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_count",
+     "signature": "int cw_crowd2d_count(cw_crowd2d c)",
+     "doc": "live agents",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_hash",
+     "signature": "uint64_t cw_crowd2d_hash(cw_crowd2d c)",
+     "doc": "of every live agent's position, velocity and status, in index order",
+     "inline": false
+    },
+    {
+     "name": "cw_navgrid_debug_draw",
+     "signature": "void cw_navgrid_debug_draw(cw_navgrid g, cw_phys_lines *out, uint32_t flags)",
+     "doc": "blocked cells (red; orange under an obstacle)",
+     "inline": false
+    },
+    {
+     "name": "cw_crowd2d_debug_draw",
+     "signature": "void cw_crowd2d_debug_draw(cw_crowd2d c, cw_phys_lines *out, uint32_t flags)",
+     "doc": "agents and paths",
+     "inline": false
+    },
+    {
+     "name": "cw_flowfield_debug_draw",
+     "signature": "void cw_flowfield_debug_draw(cw_flowfield f, cw_phys_lines *out)",
+     "doc": "a tick along each cell's direction",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_region2d_grid",
+     "signature": "cw_navgrid cw_nav_region2d_grid(cw_node region)",
+     "doc": "── scene nodes ───────────────────────────────────────────────────────\nThe 2D mirrors of nav.h's nodes, with the same property and signal names where the thing exists in 2D.\nNavigationRegion2D (Node2D): owns a grid and its crowd, baked from a TileMap2D (`tilemap`, a path from the\n  node, default \"..\": make it the map's child) on its first tick or on the `bake` method: `layers` (bit k:\n  map layer k blocks; 0 = every layer), `agent_radius`, `cost_data`, `diagonals`, `bake_on_ready`,\n  `max_agents`, `paths_per_tick`, `debug_draw`; read-only `cell_count`, `walkable_count`, `agent_count`,\n  `build_ms`, `crowd_step_ms`. Signal `baked`. Cell edits of the map (cw_tilemap2d_set_cell, terrains) are\n  baked in at the next tick: only the cells edited and those within agent_radius of them.\nNavigationAgent2D (Node): a crowd agent that moves its parent Node2D. `target_position` (the region's map\n  pixels) sets where it goes; `radius`, `max_speed`, `max_accel`, `neighbor_dist`, `max_neighbors`,\n  `time_horizon`, `arrive_dist`, `slowdown_dist`, `avoidance`, `avoidance_priority`, `drive_parent` (off:\n  the parent moves by velocity_computed, a CharacterBody2D's move_and_slide say, and the agent follows it),\n  `region` (a path; empty = the tree's first NavigationRegion2D); read-only `status`, `velocity`,\n  `is_navigation_finished`. Signals path_changed, target_reached, velocity_computed (vec2). Methods\n  set_velocity (vec2), stop, and follow_flow (the region's flow field toward the `flow_target` it was last\n  built for: see cw_nav_region2d_set_flow_target).\nNavigationObstacle2D (Node2D): a CIRCLE (`radius`) or RECT (`size`) that blocks the region's cells under\n  it while it is in the tree; moving it moves the hole. `region` as for agents.\nOne fixed-tick hook per tree (order -50, as in 3D) bakes, applies map edits and obstacles, takes targets,\nsteps every region's crowd and moves the agents' parents, in the order the nodes entered the tree.\nnull until baked",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_region2d_crowd",
+     "signature": "cw_crowd2d cw_nav_region2d_crowd(cw_node region)",
+     "doc": "null until baked",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_region2d_bake",
+     "signature": "bool cw_nav_region2d_bake(cw_node region)",
+     "doc": "bakes now (agents are re-added); false when it has no map",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_region2d_set_flow_target",
+     "signature": "void cw_nav_region2d_set_flow_target(cw_node region, cw_vec2 goal)",
+     "doc": "The region's flow field toward a goal (the region's map pixels), built now and again whenever the grid\nchanges; agents told to follow_flow walk it.",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_region2d_flow",
+     "signature": "cw_flowfield cw_nav_region2d_flow(cw_node region)",
+     "doc": "null until a flow target is set",
+     "inline": false
+    },
+    {
+     "name": "cw_nav_agent2d_handle",
+     "signature": "cw_crowd2d_agent cw_nav_agent2d_handle(cw_node agent)",
+     "doc": "null while not in a crowd",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_navgrid_desc",
+     "doc": "── grids ───────────────────────────────────────────────────────────────",
+     "decl": "typedef struct cw_navgrid_desc {\n  int width, height;   /* cells; at most 4096 each */\n  cw_vec2 cell;        /* a cell's size (zero: 1 x 1) */\n  cw_vec2 origin;      /* the position of cell (0, 0)'s top-left corner */\n  bool no_diagonals;   /* false: eight neighbours; true: four */\n  cw_tile_layout layout; /* how cells sit (render2d.h): SQUARE unless set. ISOMETRIC: the same searches over\n                          * diamonds (a step along a diamond's side costs 10, across its corner 14). HEX_ROWS and\n                          * HEX_COLUMNS: six neighbours, plain A* (no jump points), paths through cell middles\n                          * (no straightening), and cw_navgrid_raycast only sees within one cell */\n} cw_navgrid_desc;"
+    },
+    {
+     "name": "cw_navgrid_bake",
+     "doc": "── a grid from a tile map ────────────────────────────────────────────\nThe grid has the map's cells: a cell is blocked when a tile on one of `layers` (bit k: map layer k; 0 = every\nlayer) has a solid tile shape there (TileMap2D tile_shapes: any solid shape blocks the whole cell; one-way\nplatforms do not block). `agent_radius` (the map's pixels) also blocks every cell whose middle is nearer than\nthat to a blocked cell, so an agent wider than a cell keeps off the walls (a radius of half a cell or less\nblocks nothing more). `cost_data` names a tile_data\nvalue that gives a cell its cost (1..255, a tile without one costs 1; NULL: every free cell costs 1).\nPositions are the map node's local pixels, and the grid takes the map's layout (isometric, hexagons).",
+     "decl": "typedef struct cw_navgrid_bake {\n  uint32_t layers;\n  float agent_radius;\n  const char *cost_data;\n  bool no_diagonals;\n} cw_navgrid_bake;"
+    },
+    {
+     "name": "cw_navgrid_query",
+     "doc": "── queries ─────────────────────────────────────────────────────────────",
+     "decl": "typedef struct cw_navgrid_query {\n  int max_iters;        /* cells (or jump points) expanded at most; 0 = no limit. A search that runs out returns\n                         * the path to the cell nearest the goal it reached: partial */\n  float agent_radius;   /* keeps a pulled-straight path this far from blocked cells' corners (0: a point) */\n  bool keep_cells;      /* true: the path's corners stay on cell middles (no straightening) */\n  float max_snap;       /* an end inside a blocked cell moves to the nearest walkable cell within this distance\n                         * (0 = 4 cells) */\n} cw_navgrid_query;"
+    },
+    {
+     "name": "cw_navgrid_path_req",
+     "doc": "Many paths at once, in parallel on the job pool: request i writes up to max_points waypoints at\npts[i * max_points] and its count at counts[i] (the same answer as cw_navgrid_find_path).",
+     "decl": "typedef struct cw_navgrid_path_req {\n  cw_vec2 from, to;\n} cw_navgrid_path_req;"
+    },
+    {
+     "name": "cw_navgrid_stats",
+     "doc": "",
+     "decl": "typedef struct cw_navgrid_stats {\n  int32_t cells, walkable;\n  bool jump_points;      /* searches use jump point search (every walkable cell costs 1 and diagonals are on) */\n  int32_t last_expanded; /* cells or jump points the calling thread's last search expanded */\n} cw_navgrid_stats;"
+    },
+    {
+     "name": "cw_crowd2d_agent_params",
+     "doc": "── crowds ────────────────────────────────────────────────────────────\nAgents on a grid that follow paths (or a flow field) and avoid each other with the 3D crowd's ORCA solver.\ncw_crowd2d_step advances every agent one fixed tick: the oldest agents waiting for a path get one (the plan\nbudget, searched in parallel), each agent finds its neighbours, steers along its path or field and avoids,\nthen moves, sliding along blocked cells. Agent work runs on the job pool in index order per agent, so a\nstep's result is the same at any worker count.",
+     "decl": "typedef struct cw_crowd2d_agent_params {\n  float radius;         /* 6 */\n  float max_speed;      /* 60 (units/s) */\n  float max_accel;      /* 480 (units/s²; 0 = no limit) */\n  float neighbor_dist;  /* 48: neighbours within this distance are avoided */\n  int max_neighbors;    /* 8 (at most CW_CROWD2D_MAX_NEIGHBORS) */\n  float time_horizon;   /* 1 s: how far ahead other agents are avoided */\n  float arrive_dist;    /* 3: the target counts as reached within this distance */\n  float slowdown_dist;  /* 12: speed falls off within this distance of the target */\n  bool avoidance;       /* true: ORCA against other agents (others avoid this one either way) */\n  float avoidance_priority; /* 0.5: as cw_crowd_agent_params (nav.h) */\n} cw_crowd2d_agent_params;"
+    },
+    {
+     "name": "cw_crowd2d_agent_status",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_CROWD2D_IDLE,     /* no target */\n  CW_CROWD2D_WAITING,  /* target set, its path not planned yet */\n  CW_CROWD2D_MOVING,\n  CW_CROWD2D_ARRIVED,  /* within arrive_dist of the target (or in a flow field's goal cell) */\n  CW_CROWD2D_NO_PATH,  /* target unreachable (the agent stays put) */\n  CW_CROWD2D_VELOCITY, /* moving by cw_crowd2d_set_velocity */\n} cw_crowd2d_agent_status;"
+    },
+    {
+     "name": "cw_crowd2d_agent_state",
+     "doc": "",
+     "decl": "typedef struct cw_crowd2d_agent_state {\n  cw_vec2 position, velocity;\n  cw_vec2 desired_velocity; /* before avoidance */\n  cw_vec2 target, next_corner;\n  cw_crowd2d_agent_status status;\n  bool partial;             /* the path ends short of the target */\n  int path_points;          /* waypoints left */\n  uint32_t path_version;    /* bumped whenever a new path is taken */\n} cw_crowd2d_agent_state;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_CROWD2D_MAX_NEIGHBORS",
+     "doc": ""
+    }
+   ]
+  },
+  {
    "header": "cartwheel/net.h",
    "summary": "cartwheel networking: transports, sessions, channels, RPC, replication,\ntree snapshots and rollback netcode.\n\nLayers, bottom up:\n\n  transport   moves datagrams over LINKS (one link per remote endpoint):\n              UDP sockets (native), the wasmcart peer connection\n              (wc_peer_*, carts), an in-process loopback hub (tests, local\n              split-screen), a room relay on top of any of them, and a\n              deterministic network simulator wrapping any of them\n              (latency, jitter, loss, duplication).\n  session     players by SLOT (0..CW_NET_MAX_PEERS-1) instead of links: a\n              handshake, reliable-ordered and unreliable channels, acks,\n              resends, RTT, timeouts. Games send typed messages.\n  scene       RPC on nodes (methods called by name on every peer),\n              authority per node, NetSynchronizer (replicates reflected\n              properties) and NetSpawner (replicates node creation and\n              removal): the Godot MultiplayerSynchronizer / Spawner model.\n  state       a snapshot of a whole tree through reflection (structure,\n              every writable property, the tree's tick and random state),\n              restorable in place, with a host-stable hash.\n  rollback    GGPO-style netcode on the deterministic fixed step: input\n              delay, prediction (repeat the last input), rollback +\n              re-simulation from a tree snapshot when a prediction was\n              wrong, time sync, and in-band desync detection by hashing\n              confirmed states.\n\nThe wire format is engine-defined and the same on every host, so a native\nbuild and a cart talk to each other wherever a transport reaches both.\nEverything here runs on the main thread. Times are seconds on whatever\nclock the caller passes to cw_net_poll (a test passes a virtual clock, so\na simulated network is reproducible bit for bit).\n\nPhysics: a tree snapshot carries each physics world. A 2D world is Box2D's own image of it (v3.2 snapshots):\ndynamic bodies come back with their velocities, contact warm-start caches and sleeping islands, and Area2D overlaps\nwith their sensor state, so a restored pile re-simulates bit for bit like one that never rolled back (tests/unit/\ntest_net.c proves it, and fails the same run when the image is left out). The desync hash folds in Box2D's own\nhost-stable state hash of the world. Box3D has no snapshot: a 3D world is restored through the tree, the physics\nnodes put back what they keep beside the properties (a CharacterBody3D's mover state and its on_floor / normals\noutputs travel in the snapshot as private state, every body is moved back to its node's pose), so 3D characters\n(move_and_slide) against static and kinematic bodies, and the engine's own math, re-simulate bit-exactly, and\ntwo things do not, because the library keeps their state where no restore reaches: DYNAMIC rigid bodies (contact\nwarm-start caches: a restored pile diverges from one that never rolled back) and Area3D overlap signals. A 3D\nrollback game keeps its simulated objects out of dynamic rigid bodies and detects overlaps with queries or its own\nmath; cosmetic debris outside the rolled-back tree is fine.",
    "functions": [
@@ -8173,7 +8599,7 @@
   },
   {
    "header": "cartwheel/physics_nodes.h",
-   "summary": "Physics nodes: the scene tree's layer over the Box2D / Box3D wrappers\n(physics.h). The 2D and 3D sets mirror each other name for name.\n\n── node types ───────────────────────────────────────────────────────────\n  CollisionObject2D/3D  (abstract) collision_layer is an INDEX 0..31 (a\n                        body's shapes sit on ONE layer, physics.h) while\n                        collision_mask is a BIT SET: layer = 1, mask = 5\n                        means \"on layer 1, collides with layers 0 and 2\"\n                        (Godot uses bits for both). Prefer the name forms\n                        collision_layer_name / collision_mask_names\n                        (\"world|enemy\"), resolved against the project's\n                        layer names (below). An unknown name is logged as\n                        an error (cw_error): the layer stays as it was, a\n                        mask leaves that name out.\n  PhysicsBody2D/3D      (abstract) friction, bounce, rolling_resistance,\n                        tangent_speed (2D conveyor, px/s) / tangent_velocity\n                        (3D, m/s, shape-local), user_material,\n                        contact_monitor (emit body_entered/body_exited on\n                        contact begin/end), hit_events (emit body_hit(other,\n                        speed) above the world's hit speed).\n  StaticBody2D/3D       never moves by itself; moving the node teleports it.\n  KinematicBody2D/3D    follows the node's global transform: every tick\n                        the body is given the velocity that reaches it\n                        (pushes rigid bodies, carries characters).\n  RigidBody2D/3D        density, mass (0 = from density), gravity_scale,\n                        linear_damp, angular_damp, lock_rotation, bullet,\n                        can_sleep, freeze + freeze_mode (STATIC|KINEMATIC:\n                        the runtime body-type switch), linear_velocity,\n                        angular_velocity (live), sleeping (read-only).\n                        Its transform is written into the node after every\n                        step; setting position/rotation teleports it.\n  CharacterBody2D/3D    velocity, floor_max_angle, floor_snap_length,\n                        step_height, max_slides, push_mass, ride_platforms;\n                        read-only on_floor, on_wall, on_ceiling,\n                        floor_normal, wall_normal, platform_velocity.\n                        Moves only through cw_character*_move_and_slide\n                        (call it from fixed_update). Its shape (the first\n                        CollisionShape child: capsule, circle/sphere or\n                        rect/box) sizes the mover; a kinematic proxy body\n                        with the same shapes sits at the mover each step so\n                        areas, rays and other characters see it.\n  Area2D/3D             monitoring, monitorable; sensor shapes. Signals\n                        body_entered(node), body_exited(node),\n                        area_entered(node), area_exited(node); read-only\n                        overlap_count; cw_area2d_overlapping_bodies and its\n                        siblings list what is inside. Areas move with their node.\n                        DETECTION IS TWO-SIDED: an area sees a body only\n                        when the area's mask has the body's layer AND the\n                        body's mask has the area's layer (Box2D/Box3D\n                        filter both ways; Godot checks one side). Give a\n                        player a mask such as \"world|pickups|hazards\".\n                        A shape's `disabled` (and any shape property) may\n                        change at run time: the body is rebuilt before the\n                        next step and overlaps begin / end then.\n  CollisionShape2D      shape (RECT|CIRCLE|CAPSULE|POLYGON|SEGMENT|CHAIN),\n                        size, radius, height, points (\"x y, x y, ...\" local\n                        pixels; POLYGON may be concave: it is triangulated),\n                        loop (CHAIN), disabled. Direct child of a body or\n                        area; its own position/rotation/scale place it.\n                        CHAIN: one-sided segments. Open: walking the points\n                        on screen the solid side is on your LEFT (a ground\n                        line is listed right to left), and every authored\n                        segment collides (Box2D's ghost end vertices are\n                        added past the ends). loop: solid inside whatever\n                        the winding.\n  CollisionShape3D      shape (BOX|SPHERE|CAPSULE|CONVEX|TRIMESH), size,\n                        radius, height, points (\"x y z, ...\"), mesh (path\n                        to a MeshInstance3D or a baked CSG root, whose\n                        geometry CONVEX/TRIMESH use when points is\n                        empty), disabled. TRIMESH: static bodies only.\n  Joint2D/3D            joint_type (2D: PIN HINGE SLIDER DISTANCE SPRING\n                        WELD WHEEL MOTOR; 3D adds CONE (ball and socket\n                        with a cone limit)), node_a, node_b (paths relative\n                        to the joint; empty node_a = the world), anchor =\n                        the joint's global position, axis = its local x\n                        (2D) / z (3D: hinge axis) / x (3D slider);\n                        collide_connected, break_force, break_torque,\n                        limit_enabled, lower, upper, motor_enabled,\n                        motor_speed, max_motor, stiffness (Hz), damping,\n                        length (0 = current), cone_angle. Signal broken.\n                        Motor/limit/spring changes apply in place; other\n                        changes rebuild the joint.\n  RayCast2D/3D          enabled, target_position (local), collision_mask,\n                        collide_with_bodies, collide_with_areas,\n                        exclude_parent; read-only colliding, collider,\n                        collision_point, collision_normal, collision_fraction.\n  ShapeCast2D/3D        shape (2D: CIRCLE RECT CAPSULE; 3D: SPHERE BOX\n                        CAPSULE), radius, size, height, target_position\n                        (zero = overlap test), max_results, the ray's\n                        filters; read-only colliding, collision_count and\n                        the closest hit's collider/point/normal/fraction.\n\nUnits: 2D nodes are canvas pixels with y DOWN; the Box2D world runs in\nmeters with y up (pixels_per_meter, default 32). 3D nodes are meters.\n\n── worlds and the frame order ───────────────────────────────────────────\nOne 2D and one 3D world per tree (tree slots \"physics2d\" / \"physics3d\"),\ncreated when the first physics node enters. Each fixed tick:\n  1. hook (order -100): bodies' nodes snapshot their transform (render\n     interpolation start)\n  2. nodes' fixed_update in tree order: scripts read last step's results,\n     set velocities, call move_and_slide (characters move NOW against the\n     current world), move kinematic nodes\n  3. deferred structural changes and signals of phase 2 are applied\n  4. hook (order 100): node -> body (new/changed shapes, teleports,\n     kinematic targets, joints), step 2D then 3D, body -> node for rigid\n     bodies, ray/shape casts refresh, then contact / sensor / hit / break\n     events become signals, delivered in the library's event order; node\n     frees and adds from those handlers are deferred until all are sent\n  5. hook (order 200): Camera2D smoothing\nThis is Godot's order (physics_process, then the physics step), so a\nscript sees signals from the step that followed its last fixed_update.\nConsequence: a character riding a KinematicBody platform follows it with\none tick of lag (it moved in step 2, the platform moves in step 4); it is\nconsistent and deterministic. Snap length + step height also carry a\nrunning character across small gaps (about 1 m at default settings):\nlevel designers should make gaps wider or lower snap/step on the body.\nThe world does not step while the tree is paused.\n\nProject layer names / settings: an optional asset `project.cwproj` with\nlines `layer_names_2d = \"world, player, coins\"`, `layer_names_3d = ...`,\n`gravity_2d = vec2(0, 980)` (px/s^2, y down), `gravity_3d = vec3(0, -9.8,\n0)`, `pixels_per_meter = 32`, `substeps = 4`; or cw_physics_nodes_config\nbefore the first physics node enters a tree.",
+   "summary": "Physics nodes: the scene tree's layer over the Box2D / Box3D wrappers\n(physics.h). The 2D and 3D sets mirror each other name for name.\n\n── node types ───────────────────────────────────────────────────────────\n  CollisionObject2D/3D  (abstract) collision_layer is an INDEX 0..31 (a\n                        body's shapes sit on ONE layer, physics.h) while\n                        collision_mask is a BIT SET: layer = 1, mask = 5\n                        means \"on layer 1, collides with layers 0 and 2\"\n                        (Godot uses bits for both). Prefer the name forms\n                        collision_layer_name / collision_mask_names\n                        (\"world|enemy\"), resolved against the project's\n                        layer names (below). An unknown name is logged as\n                        an error (cw_error): the layer stays as it was, a\n                        mask leaves that name out.\n  PhysicsBody2D/3D      (abstract) friction, bounce, rolling_resistance,\n                        tangent_speed (2D conveyor, px/s) / tangent_velocity\n                        (3D, m/s, shape-local), user_material,\n                        contact_monitor (emit body_entered/body_exited on\n                        contact begin/end), hit_events (emit body_hit(other,\n                        speed) above the world's hit speed).\n  StaticBody2D/3D       never moves by itself; moving the node teleports it.\n  KinematicBody2D/3D    follows the node's global transform: every tick\n                        the body is given the velocity that reaches it\n                        (pushes rigid bodies, carries characters).\n  RigidBody2D/3D        density, mass (0 = from density), gravity_scale,\n                        linear_damp, angular_damp, lock_rotation, bullet,\n                        can_sleep, freeze + freeze_mode (STATIC|KINEMATIC:\n                        the runtime body-type switch), linear_velocity,\n                        angular_velocity (live), sleeping (read-only).\n                        Its transform is written into the node after every\n                        step; setting position/rotation teleports it.\n  CharacterBody2D/3D    velocity, floor_max_angle, floor_snap_length,\n                        step_height, max_slides, push_mass, ride_platforms;\n                        read-only on_floor, on_wall, on_ceiling,\n                        floor_normal, wall_normal, platform_velocity.\n                        CharacterBody2D also: one_way_mask (bits: the\n                        layers whose shapes are one-way platforms for it,\n                        landed on from above, passed from below and from\n                        the side), drop_through (while set, a move falls\n                        through the platform it stands on), read-only\n                        on_one_way.\n                        Moves only through cw_character*_move_and_slide\n                        (call it from fixed_update). Its shape (the first\n                        CollisionShape child: capsule, circle/sphere or\n                        rect/box) sizes the mover; a kinematic proxy body\n                        with the same shapes sits at the mover each step so\n                        areas, rays and other characters see it.\n  Area2D/3D             monitoring, monitorable; sensor shapes. Signals\n                        body_entered(node), body_exited(node),\n                        area_entered(node), area_exited(node); read-only\n                        overlap_count; cw_area2d_overlapping_bodies and its\n                        siblings list what is inside. Areas move with their node.\n                        DETECTION IS TWO-SIDED: an area sees a body only\n                        when the area's mask has the body's layer AND the\n                        body's mask has the area's layer (Box2D/Box3D\n                        filter both ways; Godot checks one side). Give a\n                        player a mask such as \"world|pickups|hazards\".\n                        A shape's `disabled` (and any shape property) may\n                        change at run time: the body is rebuilt before the\n                        next step and overlaps begin / end then.\n  CollisionShape2D      shape (RECT|CIRCLE|CAPSULE|POLYGON|SEGMENT|CHAIN),\n                        size, radius, height, points (\"x y, x y, ...\" local\n                        pixels; POLYGON may be concave: it is triangulated),\n                        loop (CHAIN), disabled. Direct child of a body or\n                        area; its own position/rotation/scale place it.\n                        CHAIN: one-sided segments. Open: walking the points\n                        on screen the solid side is on your LEFT (a ground\n                        line is listed right to left), and every authored\n                        segment collides (Box2D's ghost end vertices are\n                        added past the ends). loop: solid inside whatever\n                        the winding.\n  CollisionShape3D      shape (BOX|SPHERE|CAPSULE|CONVEX|TRIMESH), size,\n                        radius, height, points (\"x y z, ...\"), mesh (path\n                        to a MeshInstance3D or a baked CSG root, whose\n                        geometry CONVEX/TRIMESH use when points is\n                        empty), disabled. TRIMESH: static bodies only.\n  Joint2D/3D            joint_type (2D: PIN HINGE SLIDER DISTANCE SPRING\n                        WELD WHEEL MOTOR; 3D adds CONE (ball and socket\n                        with a cone limit)), node_a, node_b (paths relative\n                        to the joint; empty node_a = the world), anchor =\n                        the joint's global position, axis = its local x\n                        (2D) / z (3D: hinge axis) / x (3D slider);\n                        collide_connected, break_force, break_torque,\n                        limit_enabled, lower, upper, motor_enabled,\n                        motor_speed, max_motor, stiffness (Hz), damping,\n                        length (0 = current), cone_angle. Signal broken.\n                        Motor/limit/spring changes apply in place; other\n                        changes rebuild the joint.\n  RayCast2D/3D          enabled, target_position (local), collision_mask,\n                        collide_with_bodies, collide_with_areas,\n                        exclude_parent; read-only colliding, collider,\n                        collision_point, collision_normal, collision_fraction.\n  ShapeCast2D/3D        shape (2D: CIRCLE RECT CAPSULE; 3D: SPHERE BOX\n                        CAPSULE), radius, size, height, target_position\n                        (zero = overlap test), max_results, the ray's\n                        filters; read-only colliding, collision_count and\n                        the closest hit's collider/point/normal/fraction.\n\nUnits: 2D nodes are canvas pixels with y DOWN; the Box2D world runs in\nmeters with y up (pixels_per_meter, default 32). 3D nodes are meters.\n\n── worlds and the frame order ───────────────────────────────────────────\nOne 2D and one 3D world per tree (tree slots \"physics2d\" / \"physics3d\"),\ncreated when the first physics node enters. Each fixed tick:\n  1. hook (order -100): bodies' nodes snapshot their transform (render\n     interpolation start)\n  2. nodes' fixed_update in tree order: scripts read last step's results,\n     set velocities, call move_and_slide (characters move NOW against the\n     current world), move kinematic nodes\n  3. deferred structural changes and signals of phase 2 are applied\n  4. hook (order 100): node -> body (new/changed shapes, teleports,\n     kinematic targets, joints), step 2D then 3D, body -> node for rigid\n     bodies, ray/shape casts refresh, then contact / sensor / hit / break\n     events become signals, delivered in the library's event order; node\n     frees and adds from those handlers are deferred until all are sent\n  5. hook (order 200): Camera2D smoothing\nThis is Godot's order (physics_process, then the physics step), so a\nscript sees signals from the step that followed its last fixed_update.\nConsequence: a character riding a KinematicBody platform follows it with\none tick of lag (it moved in step 2, the platform moves in step 4); it is\nconsistent and deterministic. Snap length + step height also carry a\nrunning character across small gaps (about 1 m at default settings):\nlevel designers should make gaps wider or lower snap/step on the body.\nThe world does not step while the tree is paused.\n\nProject layer names / settings: an optional asset `project.cwproj` with\nlines `layer_names_2d = \"world, player, coins\"`, `layer_names_3d = ...`,\n`gravity_2d = vec2(0, 980)` (px/s^2, y down), `gravity_3d = vec3(0, -9.8,\n0)`, `pixels_per_meter = 32`, `substeps = 4`; or cw_physics_nodes_config\nbefore the first physics node enters a tree.",
    "functions": [
     {
      "name": "cw_physics_nodes_get_config",
@@ -11079,6 +11505,18 @@
      "inline": false
     },
     {
+     "name": "cw_tile_layout_cell_origin",
+     "signature": "cw_vec2 cw_tile_layout_cell_origin(cw_tile_layout layout, float cell_w, float cell_h, int x, int y)",
+     "doc": "The top-left corner of cell (x, y)'s quad, relative to the map's origin. Pure arithmetic: any cell, in the\nmap or not.",
+     "inline": false
+    },
+    {
+     "name": "cw_tile_layout_cell_at",
+     "signature": "void cw_tile_layout_cell_at(cw_tile_layout layout, float cell_w, float cell_h, cw_vec2 p, int *x, int *y)",
+     "doc": "The cell whose shape (square, diamond or hexagon) holds p, relative to the map's origin; a point on a\nshared edge goes to one of the two cells, the same one on every host.",
+     "inline": false
+    },
+    {
      "name": "cw_tilemap_create",
      "signature": "cw_tilemap cw_tilemap_create(const cw_tilemap_desc *desc)",
      "doc": "Cells start empty. Null handle (logged) unless the tileset is a loaded image (not a target), sizes are\npositive and layers is 1..16.",
@@ -11123,7 +11561,7 @@
     {
      "name": "cw_tilemap_world_to_cell",
      "signature": "void cw_tilemap_world_to_cell(cw_tilemap m, cw_vec2 origin, cw_vec2 world, int *x, int *y)",
-     "doc": "World position -> cell coordinates (floor).",
+     "doc": "World position -> the cell whose shape holds it (cw_tile_layout_cell_at with the map's layout).",
      "inline": false
     },
     {
@@ -11318,9 +11756,14 @@
      "decl": "typedef enum { CW_TEXT_BACKDROP_OFF, CW_TEXT_BACKDROP_OUTLINE, CW_TEXT_BACKDROP_PANEL } cw_text_backdrop;"
     },
     {
+     "name": "cw_tile_layout",
+     "doc": "How cells are laid out. Every tile is still drawn as a cell_w x cell_h quad of its tileset image; the layout\nsays where each cell's quad sits (flat layouts: a tile's picture fills its cell and no more).\n  SQUARE       cell (x, y)'s quad at (x * cell_w, y * cell_h).\n  ISOMETRIC    diamonds: cell (x, y)'s middle at ((x - y) * cell_w / 2, (x + y + 1) * cell_h / 2), so +x runs\n               down and to the right, +y down and to the left, and cell (0, 0)'s top corner is the origin.\n               A tile's picture is the diamond inside its quad (cell_w twice cell_h is the usual shape).\n  HEX_ROWS     pointy-top hexagons in rows: a row is 3/4 of cell_h below the last, odd rows sit half a cell\n               to the right.\n  HEX_COLUMNS  flat-top hexagons in columns: a column is 3/4 of cell_w right of the last, odd columns sit\n               half a cell down.",
+     "decl": "typedef enum cw_tile_layout {\n  CW_TILE_LAYOUT_SQUARE,\n  CW_TILE_LAYOUT_ISOMETRIC,\n  CW_TILE_LAYOUT_HEX_ROWS,\n  CW_TILE_LAYOUT_HEX_COLUMNS,\n} cw_tile_layout;"
+    },
+    {
      "name": "cw_tilemap_desc",
      "doc": "",
-     "decl": "typedef struct cw_tilemap_desc {\n  int width, height;      /* tiles */\n  int layers;             /* 1..16 */\n  cw_texture tileset;     /* an image texture (not a render target) */\n  int tile_w, tile_h;     /* tileset cell size, texture pixels */\n  int margin, spacing;    /* tileset border / gap between cells, pixels */\n  int columns;            /* tiles per tileset row; 0 = from the texture width */\n  float cell_w, cell_h;   /* world size of one tile; 0 = tile_w/tile_h */\n} cw_tilemap_desc;"
+     "decl": "typedef struct cw_tilemap_desc {\n  int width, height;      /* tiles */\n  int layers;             /* 1..16 */\n  cw_texture tileset;     /* an image texture (not a render target) */\n  int tile_w, tile_h;     /* tileset cell size, texture pixels */\n  int margin, spacing;    /* tileset border / gap between cells, pixels */\n  int columns;            /* tiles per tileset row; 0 = from the texture width */\n  float cell_w, cell_h;   /* world size of one tile; 0 = tile_w/tile_h */\n  cw_tile_layout layout;  /* SQUARE (0) unless set */\n} cw_tilemap_desc;"
     },
     {
      "name": "cw_light2d",
@@ -13098,7 +13541,7 @@
   },
   {
    "header": "cartwheel/scene2d.h",
-   "summary": "2D for the scene tree: the canvas node types over the batched 2D renderer\n(render2d.h), and the tree's 2D pass.\n\n── node types (all properties reflected: .cwscene, inspector, debug channel) ──\nEvery type below except CanvasLayer and CanvasSettings extends Node2D\n(position, rotation, scale, skew, z_index, z_relative, visible,\ninterpolate, modulate, self_modulate). Pixels, y down, radians clockwise.\nPoint lists (\"points\", \"polygon\") are strings of numbers taken in pairs:\n\"0 0, 32 0, 32 16\". Textures and fonts are asset paths, loaded (and cached\nby path) on first draw, so scenes instance without a GL context.\n\n  Sprite2D          texture, filter (LINEAR|NEAREST), centered, offset,\n                    flip_h, flip_v, region_enabled, region (vec4 x y w h),\n                    hframes, vframes, frame (atlas grid cell), sway (0..1:\n                    its top edge in the CanvasSettings wind), emissive (lit\n                    canvases: the share that ignores lights), intensity\n                    (HDR multiplier; with post, past 1 blooms)\n  AnimatedSprite2D  texture, filter, hframes, vframes (the atlas grid),\n                    regions (\"x y w h, x y w h ...\" : an explicit frame list\n                    that replaces the grid when set), animations\n                    (\"idle@4:0-1; run@10:2-5; jump:6!\" : name, optional fps,\n                    frames as indices and ranges, '!' = play once),\n                    animation (current name; empty = the first), fps\n                    (default for animations without @fps), speed_scale,\n                    playing, frame, process (FIXED: advances on fixed ticks\n                    by the fixed dt, deterministic for replays; FRAME: by\n                    the frame dt), centered, offset, flip_h, flip_v.\n                    Signals: frame_changed, animation_finished.\n  NinePatch2D       texture, filter, region, size, patch_left/top/right/bottom,\n                    margin_scale, draw_center, centered\n  Line2D            points, width, color, closed\n  Polygon2D         polygon, color, texture (optional; uv = point / texture size), offset\n  Label2D           text, font, font_mode (SDF|BITMAP), bake_size, size, color,\n                    align (LEFT|CENTER|RIGHT), wrap_width, line_spacing, letter_spacing\n                    (the text box's top-left sits at the node's origin)\n  TileMap2D         tileset (texture), filter, tile_size, margin, spacing,\n                    columns, cell_size, layers (1..8), cells0..cells7,\n                    animations (\"4:2@6; 10:4@8\" : tile id, frame count, fps).\n                    Cells text form: rows separated by '/', cells by spaces;\n                    '.' = empty, N = tile id (0-based index into the tileset\n                    grid), suffix x / y / d = flip x / flip y / transpose,\n                    \"N*k\" (or \".*k\") repeats a cell k times:\n                    \"0*20 / . . 3 3x / 1*4\"; occluder_layers (bit k: map\n                    layer k casts shadows by its alpha). The map's size is the largest\n                    row count and row length over all layers.\n  Camera2D          current, zoom, offset, anchor_top_left, smoothing,\n                    smoothing_speed, limit_left/top/right/bottom, rotating.\n                    The first current Camera2D in tree order drives every\n                    canvas that follows the viewport (the default canvas,\n                    ParallaxLayers, CanvasLayers with follow_viewport).\n                    Smoothing runs on fixed ticks (cw_camera2d_follow,\n                    deterministic) after physics; rendering interpolates.\n  CanvasLayer       (a Node) layer (draw order; the default canvas is 0),\n                    offset, rotation, scale, follow_viewport, visible, y_sort.\n                    Defaults (as in Godot): layer 1 (above the default\n                    canvas), follow_viewport false (screen space: a HUD;\n                    set it for a layer that scrolls with the Camera2D),\n                    offset 0, rotation 0, scale 1, visible, no y_sort.\n                    Its descendants' transforms start fresh at the layer.\n  ParallaxLayer     motion_scale (camera factor), motion_offset; its\n                    descendants draw in their own render layer just above\n                    the canvas they are in (put them under a CanvasLayer\n                    with a negative layer for a background).\n  Light2D           enabled, color, energy, range (radius px), falloff,\n                    height, shadow, softness (penumbra 0..1), cone (spot\n                    half-angle, radians; the node's rotation points it),\n                    cone_soft, directional (a sun or moon along the node's\n                    rotation), volumetric (shafts). A canvas holding a light\n                    is drawn lit (cartwheel/render2d.h \"2D lights\").\n  LightOccluder2D   polygon, closed (casts shadows for lights with shadow)\n  CanvasSettings    (a Node; the first one in tree order counts)\n                    virtual_width/virtual_height (0 = window pixels),\n                    scale_mode (NONE|INTEGER|FIT|STRETCH|EXPAND), clear_color,\n                    letterbox, ambient (light where no Light2D reaches on\n                    lit canvases), pixel_snap, y_sort (default canvas),\n                    occluder_depth (how deep light reaches into occluders),\n                    post (HDR and the post chain over the canvases that\n                    follow the camera; screen-space CanvasLayers draw after\n                    it) with exposure, bloom, bloom_threshold,\n                    bloom_intensity, tone (SOFT|ACES|REINHARD|CLAMP),\n                    contrast, saturation, vignette; gi (global illumination\n                    of lit canvases) with gi_intensity, gi_bounce; wind_strength,\n                    wind_speed, wind_wavelength, wind_gusts (Sprite2D sway).\n                    Defaults: no virtual canvas, scale_mode NONE, clear\n                    and letterbox opaque black, ambient white (lit canvases\n                    fully lit), no pixel_snap, no y_sort. A tree with no\n                    CanvasSettings draws the same way: window pixels,\n                    cleared to black, ambient white.\n\n── two coordinate spaces: Node2D vs Control ─────────────────────────────\nNode2Ds (everything above) live on the VIRTUAL canvas when CanvasSettings\nsets one: positions, sizes and camera are virtual pixels, scaled to the\nwindow by scale_mode. Controls (cartwheel/ui.h: Label, Button, ...) do\nnot: the scene runner draws the UI in its own window pass, so their\nanchors and offsets are UI units, window pixels divided by cw_ui_scale,\neven under a CanvasLayer and even with a virtual canvas. With a 320x180\nvirtual canvas in a 640x360 window, a Label at offset_left 8 sits 8\nwindow pixels (4 virtual pixels) from the edge. This is deliberate: UI\ntext stays sharp and keeps its size whatever the game's resolution. To\nlay UI out in virtual pixels instead, set cw_ui_set_scale(window height /\nvirtual height), or draw the UI inside your own virtual pass with\ncw_ui_draw (pixel-art UI that scales with the game; see ui.h).\n\n── the 2D pass ─────────────────────────────────────────────────────────\ncw_canvas_draw walks the tree once in tree order: hidden Node2Ds and\nCanvasLayers hide their subtrees, transforms compose (interpolated between\nthe last two fixed ticks for nodes with `interpolate`), modulate\nmultiplies down, z_index adds down while z_relative. Every canvas item is\nsubmitted to render2d in its canvas's render layer at its z, so the\nrenderer's stable sort draws by (canvas layer, z, tree order) and y within\ny-sorted canvases. Canvases get render layers 0.. in (layer, tree order)\norder; a frame may hold up to 30.\n\nWho draws on top (the UI hook): after the tree's 2D pass ends,\ncw_canvas_draw runs the tree's registered overlay passes\n(cw_canvas_add_pass) in `order`. Each runs its OWN render2d pass\n(cw_r2d_begin with clear = false ... cw_r2d_end) over the frame, so UI\n(Control nodes) composites over 3D and 2D without sharing layer slots.\n\nThe scene runner draws: 3D (only when a Camera3D exists; a 2D-only tree\nnever creates a three.c renderer), then cw_canvas_draw. When nothing in\nthe tree is a canvas item and no overlay pass is registered, the 2D pass\nis skipped entirely.",
+   "summary": "2D for the scene tree: the canvas node types over the batched 2D renderer\n(render2d.h), and the tree's 2D pass.\n\n── node types (all properties reflected: .cwscene, inspector, debug channel) ──\nEvery type below except CanvasLayer and CanvasSettings extends Node2D\n(position, rotation, scale, skew, z_index, z_relative, visible,\ninterpolate, modulate, self_modulate). Pixels, y down, radians clockwise.\nPoint lists (\"points\", \"polygon\") are strings of numbers taken in pairs:\n\"0 0, 32 0, 32 16\". Textures and fonts are asset paths, loaded (and cached\nby path) on first draw, so scenes instance without a GL context.\n\n  Sprite2D          texture, filter (LINEAR|NEAREST), centered, offset,\n                    flip_h, flip_v, region_enabled, region (vec4 x y w h),\n                    hframes, vframes, frame (atlas grid cell), sway (0..1:\n                    its top edge in the CanvasSettings wind), emissive (lit\n                    canvases: the share that ignores lights), intensity\n                    (HDR multiplier; with post, past 1 blooms)\n  AnimatedSprite2D  texture, filter, hframes, vframes (the atlas grid),\n                    regions (\"x y w h, x y w h ...\" : an explicit frame list\n                    that replaces the grid when set), animations\n                    (\"idle@4:0-1; run@10:2-5; jump:6!\" : name, optional fps,\n                    frames as indices and ranges, '!' = play once),\n                    animation (current name; empty = the first), fps\n                    (default for animations without @fps), speed_scale,\n                    playing, frame, process (FIXED: advances on fixed ticks\n                    by the fixed dt, deterministic for replays; FRAME: by\n                    the frame dt), centered, offset, flip_h, flip_v.\n                    Signals: frame_changed, animation_finished.\n  NinePatch2D       texture, filter, region, size, patch_left/top/right/bottom,\n                    margin_scale, draw_center, centered\n  Line2D            points, width, color, closed\n  Polygon2D         polygon, color, texture (optional; uv = point / texture size), offset\n  Label2D           text, font, font_mode (SDF|BITMAP), bake_size, size, color,\n                    align (LEFT|CENTER|RIGHT), wrap_width, line_spacing, letter_spacing\n                    (the text box's top-left sits at the node's origin)\n  TileMap2D         layout (SQUARE | ISOMETRIC | HEX_ROWS | HEX_COLUMNS: where\n                    cells sit, cartwheel/render2d.h cw_tile_layout; the\n                    cell is cell_size, the diamond's or hexagon's box),\n                    tileset (texture), filter, tile_size, margin, spacing,\n                    columns, cell_size, layers (1..8), cells0..cells7,\n                    animations (\"4:2@6; 10:4@8\" : tile id, frame count, fps).\n                    Cells text form: rows separated by '/', cells by spaces;\n                    '.' = empty, N = tile id (0-based index into the tileset\n                    grid), suffix x / y / d = flip x / flip y / transpose,\n                    \"N*k\" (or \".*k\") repeats a cell k times:\n                    \"0*20 / . . 3 3x / 1*4\"; occluder_layers (bit k: map\n                    layer k casts shadows by its alpha). The map's size is the largest\n                    row count and row length over all layers.\n                    tile_shapes: a collision shape per tile id, in tile\n                    pixels (y down, origin the tile's top-left), entries\n                    separated by ';', ids as lists and ranges:\n                      \"1-4, 9: full\"            the whole cell (the diamond of an\n                                                isometric map, the hexagon of a\n                                                hex map)\n                      \"5: slope 0 16\"           a floor whose height over the\n                                                cell's bottom is 0 at the left\n                                                edge and 16 at the right\n                                                (\"slope 0 8\" and \"slope 8 16\"\n                                                are the halves of a gentle one)\n                      \"6: rect 0 8 16 8\"        x y w h\n                      \"8: poly 0 0, 16 0, 8 16\" any simple polygon, 3..12 points\n                      \"7: oneway\"               a platform along the tile's top,\n                                                solid only from above (\"oneway 4\":\n                                                4 pixels down; \"oneway 0 8 16 0\":\n                                                a sloped one, x0 y0 x1 y1)\n                    A cell's flips and transpose turn its shape with its\n                    picture. A TileCollision2D child turns the shapes into\n                    colliders; cw_tilemap2d_cell_solid and\n                    cw_tilemap2d_point_solid answer from them without physics.\n                    terrains: autotile sets, \"name: kind tiles\" entries\n                    separated by ';' (see \"terrains\" below), and\n                    autotile: when set, a cells text may name a terrain\n                    by any of its tiles and the right tile of each cell\n                    is picked from its neighbours as the text is set.\n                    tile_data: named values per tile id that the game reads,\n                    \"damage: 5=1, 6-7=2; sound: 1-4=stone, 5=wood\" (a value\n                    is a number or a word; cw_tilemap2d_tile_data).\n  TileCollision2D   (a StaticBody2D, in cartwheel/physics_nodes.h's terms)\n                    tilemap (path to the TileMap2D, default \"..\" : make it\n                    the map's child), layers (bit k: map layer k collides;\n                    -1 = every layer), one_way_layer (the physics layer of\n                    one-way platforms, 0..31; -1 = collision_layer). Its\n                    collision_layer, collision_mask, friction and bounce are\n                    the StaticBody2D's, so two of them over one map give two\n                    map layers their own physics layers. See \"tile\n                    collision\" below.\n  Camera2D          current, zoom, offset, anchor_top_left, smoothing,\n                    smoothing_speed, limit_left/top/right/bottom, rotating.\n                    The first current Camera2D in tree order drives every\n                    canvas that follows the viewport (the default canvas,\n                    ParallaxLayers, CanvasLayers with follow_viewport).\n                    Smoothing runs on fixed ticks (cw_camera2d_follow,\n                    deterministic) after physics; rendering interpolates.\n  CanvasLayer       (a Node) layer (draw order; the default canvas is 0),\n                    offset, rotation, scale, follow_viewport, visible, y_sort.\n                    Defaults (as in Godot): layer 1 (above the default\n                    canvas), follow_viewport false (screen space: a HUD;\n                    set it for a layer that scrolls with the Camera2D),\n                    offset 0, rotation 0, scale 1, visible, no y_sort.\n                    Its descendants' transforms start fresh at the layer.\n  ParallaxLayer     motion_scale (camera factor), motion_offset; its\n                    descendants draw in their own render layer just above\n                    the canvas they are in (put them under a CanvasLayer\n                    with a negative layer for a background).\n  Light2D           enabled, color, energy, range (radius px), falloff,\n                    height, shadow, softness (penumbra 0..1), cone (spot\n                    half-angle, radians; the node's rotation points it),\n                    cone_soft, directional (a sun or moon along the node's\n                    rotation), volumetric (shafts). A canvas holding a light\n                    is drawn lit (cartwheel/render2d.h \"2D lights\").\n  LightOccluder2D   polygon, closed (casts shadows for lights with shadow)\n  CanvasSettings    (a Node; the first one in tree order counts)\n                    virtual_width/virtual_height (0 = window pixels),\n                    scale_mode (NONE|INTEGER|FIT|STRETCH|EXPAND), clear_color,\n                    letterbox, ambient (light where no Light2D reaches on\n                    lit canvases), pixel_snap, y_sort (default canvas),\n                    occluder_depth (how deep light reaches into occluders),\n                    post (HDR and the post chain over the canvases that\n                    follow the camera; screen-space CanvasLayers draw after\n                    it) with exposure, bloom, bloom_threshold,\n                    bloom_intensity, tone (SOFT|ACES|REINHARD|CLAMP),\n                    contrast, saturation, vignette; gi (global illumination\n                    of lit canvases) with gi_intensity, gi_bounce; wind_strength,\n                    wind_speed, wind_wavelength, wind_gusts (Sprite2D sway).\n                    Defaults: no virtual canvas, scale_mode NONE, clear\n                    and letterbox opaque black, ambient white (lit canvases\n                    fully lit), no pixel_snap, no y_sort. A tree with no\n                    CanvasSettings draws the same way: window pixels,\n                    cleared to black, ambient white.\n\n── two coordinate spaces: Node2D vs Control ─────────────────────────────\nNode2Ds (everything above) live on the VIRTUAL canvas when CanvasSettings\nsets one: positions, sizes and camera are virtual pixels, scaled to the\nwindow by scale_mode. Controls (cartwheel/ui.h: Label, Button, ...) do\nnot: the scene runner draws the UI in its own window pass, so their\nanchors and offsets are UI units, window pixels divided by cw_ui_scale,\neven under a CanvasLayer and even with a virtual canvas. With a 320x180\nvirtual canvas in a 640x360 window, a Label at offset_left 8 sits 8\nwindow pixels (4 virtual pixels) from the edge. This is deliberate: UI\ntext stays sharp and keeps its size whatever the game's resolution. To\nlay UI out in virtual pixels instead, set cw_ui_set_scale(window height /\nvirtual height), or draw the UI inside your own virtual pass with\ncw_ui_draw (pixel-art UI that scales with the game; see ui.h).\n\n── the 2D pass ─────────────────────────────────────────────────────────\ncw_canvas_draw walks the tree once in tree order: hidden Node2Ds and\nCanvasLayers hide their subtrees, transforms compose (interpolated between\nthe last two fixed ticks for nodes with `interpolate`), modulate\nmultiplies down, z_index adds down while z_relative. Every canvas item is\nsubmitted to render2d in its canvas's render layer at its z, so the\nrenderer's stable sort draws by (canvas layer, z, tree order) and y within\ny-sorted canvases. Canvases get render layers 0.. in (layer, tree order)\norder; a frame may hold up to 30.\n\nWho draws on top (the UI hook): after the tree's 2D pass ends,\ncw_canvas_draw runs the tree's registered overlay passes\n(cw_canvas_add_pass) in `order`. Each runs its OWN render2d pass\n(cw_r2d_begin with clear = false ... cw_r2d_end) over the frame, so UI\n(Control nodes) composites over 3D and 2D without sharing layer slots.\n\nThe scene runner draws: 3D (only when a Camera3D exists; a 2D-only tree\nnever creates a three.c renderer), then cw_canvas_draw. When nothing in\nthe tree is a canvas item and no overlay pass is registered, the 2D pass\nis skipped entirely.",
    "functions": [
     {
      "name": "cw_canvas_register_type",
@@ -13199,7 +13642,151 @@
     {
      "name": "cw_tilemap2d_local_to_cell",
      "signature": "void cw_tilemap2d_local_to_cell(cw_node n, cw_vec2 local, int *x, int *y)",
-     "doc": "Local node position -> cell (floor), using cell_size.",
+     "doc": "Local node position -> the cell whose shape (square, diamond, hexagon: the map's layout) holds it.",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_get_raw",
+     "signature": "uint32_t cw_tilemap2d_get_raw(cw_node n, int layer, int x, int y)",
+     "doc": "A cell's raw value: tile id + 1 in the low 24 bits (0 = empty) and the CW_TILE_FLIP_* flags (render2d.h);\n0 for an empty cell or one outside the map.",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_set_raw",
+     "signature": "void cw_tilemap2d_set_raw(cw_node n, int layer, int x, int y, uint32_t cell)",
+     "doc": "Sets a cell from a raw value (cw_tilemap2d_get_raw's); grows the map like cw_tilemap2d_set_cell.",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_cell_size",
+     "signature": "cw_vec2 cw_tilemap2d_cell_size(cw_node n)",
+     "doc": "a cell's size in the node's pixels: cell_size, else tile_size",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_cell_center",
+     "signature": "cw_vec2 cw_tilemap2d_cell_center(cw_node n, int x, int y)",
+     "doc": "local node position of a cell's middle, in the map's layout",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_tile_shape",
+     "signature": "cw_tile_shape_kind cw_tilemap2d_tile_shape(cw_node n, int tile, cw_vec2 *points, int cap, int *count)",
+     "doc": "The collision shape tile_shapes gives a tile id, unflipped, in tile pixels: writes up to cap points and the\nshape's point count (points and count may be NULL).",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_cell_solid",
+     "signature": "bool cw_tilemap2d_cell_solid(cw_node n, int layer, int x, int y)",
+     "doc": "The cell holds a tile with a solid shape (a one-way platform is not solid).",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_point_solid",
+     "signature": "bool cw_tilemap2d_point_solid(cw_node n, int layer, cw_vec2 local)",
+     "doc": "A local node position lies inside the solid shape of its cell (its edge counts), flips applied.",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_tile_data",
+     "signature": "bool cw_tilemap2d_tile_data(cw_node n, int tile, const char *name, float *value)",
+     "doc": "Custom data (tile_data): the number a name gives a tile id. False (value untouched) when the tile has none;\na word value reads as 0 here and as text below.",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_tile_data_text",
+     "signature": "const char *cw_tilemap2d_tile_data_text(cw_node n, int tile, const char *name)",
+     "doc": "\"\" when none or a number",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_cell_data",
+     "signature": "float cw_tilemap2d_cell_data(cw_node n, int layer, int x, int y, const char *name, float fallback)",
+     "doc": "The value for the tile in a cell, or fallback (empty cell, no value).",
+     "inline": false
+    },
+    {
+     "name": "cw_tile_collision2d_stats_get",
+     "signature": "cw_tile_collision2d_stats cw_tile_collision2d_stats_get(cw_node n)",
+     "doc": "zeros unless a TileCollision2D in a tree",
+     "inline": false
+    },
+    {
+     "name": "cw_tile_collision2d_map",
+     "signature": "cw_node cw_tile_collision2d_map(cw_node n)",
+     "doc": "The TileMap2D a TileCollision2D builds from (null before it entered the tree or when the path is wrong).",
+     "inline": false
+    },
+    {
+     "name": "cw_tile_collision2d_update",
+     "signature": "void cw_tile_collision2d_update(cw_node n)",
+     "doc": "Bring the colliders up to date with the map now instead of at the next physics step (after edits that a\nquery in the same tick must see).",
+     "inline": false
+    },
+    {
+     "name": "cw_tile_collision2d_cell_at",
+     "signature": "void cw_tile_collision2d_cell_at(cw_node n, cw_vec2 global, cw_vec2 normal, int *x, int *y)",
+     "doc": "The map cell under a world position nudged against a contact normal (pixels, y down; the normal points out\nof the tiles): what a body touching the tiles stands on or ran into.",
+     "inline": false
+    },
+    {
+     "name": "cw_tile_terrain_tiles",
+     "signature": "int cw_tile_terrain_tiles(cw_tile_terrain_mode mode)",
+     "doc": "How many tiles a kind's set has (1, 16, 16, 47; 0 for an unknown kind).",
+     "inline": false
+    },
+    {
+     "name": "cw_tile_terrain_mask",
+     "signature": "int cw_tile_terrain_mask(cw_tile_terrain_mode mode, int index)",
+     "doc": "The neighbour mask (bits as above) of tile `index` of a kind's set; -1 outside it.",
+     "inline": false
+    },
+    {
+     "name": "cw_tile_terrain_index",
+     "signature": "int cw_tile_terrain_index(cw_tile_terrain_mode mode, int mask)",
+     "doc": "The tile of a kind's set for a neighbour mask (a blob mask's unusable corners are dropped first).",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_terrain",
+     "signature": "int cw_tilemap2d_terrain(cw_node n, const char *name)",
+     "doc": "A terrain of the map by name: 1.. in the order of `terrains`, 0 when there is none of that name.",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_terrain_count",
+     "signature": "int cw_tilemap2d_terrain_count(cw_node n)",
+     "doc": "how many terrains the map's `terrains` defines",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_terrain_name",
+     "signature": "const char *cw_tilemap2d_terrain_name(cw_node n, int terrain)",
+     "doc": "\"\" outside 1..count",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_set_terrain",
+     "signature": "void cw_tilemap2d_set_terrain(cw_node n, int layer, int x, int y, int terrain)",
+     "doc": "Paints a cell with a terrain (1..; 0 erases the terrain tile there), picks its tile and fixes the cells\nround it. Painting outside the map grows it. No-op for an unknown terrain or a map without terrains.",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_set_terrain_rect",
+     "signature": "void cw_tilemap2d_set_terrain_rect(cw_node n, int layer, int x0, int y0, int x1, int y1, int terrain)",
+     "doc": "The same for every cell of x0..x1, y0..y1 (inclusive), fixing the ring round the rectangle once.",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_get_terrain",
+     "signature": "int cw_tilemap2d_get_terrain(cw_node n, int layer, int x, int y)",
+     "doc": "The terrain (1..) of the tile in a cell; 0 when its tile belongs to none, or the cell is empty or outside.",
+     "inline": false
+    },
+    {
+     "name": "cw_tilemap2d_fix_terrain",
+     "signature": "void cw_tilemap2d_fix_terrain(cw_node n, int layer, int x0, int y0, int x1, int y1)",
+     "doc": "Picks the tile of every terrain cell in x0..x1, y0..y1 again from what the cells hold (after cells set with\ncw_tilemap2d_set_cell by any tile of a terrain: a generated level). Doing it twice changes nothing.",
      "inline": false
     },
     {
@@ -13234,6 +13821,21 @@
      "name": "cw_canvas_stats",
      "doc": "",
      "decl": "typedef struct cw_canvas_stats {\n  int32_t items, layers, lights, occluders;\n} cw_canvas_stats;"
+    },
+    {
+     "name": "cw_tile_shape_kind",
+     "doc": "── tile collision ────────────────────────────────────────────────────\nThe tile set says what each tile is made of (TileMap2D tile_shapes), and\na TileCollision2D child of the map builds Box2D static geometry from the\ncells:\n\n  [node name=\"Map\" type=\"TileMap2D\"]\n  tile_shapes = \"1-4: full; 5: slope 0 16; 6: slope 16 0; 7: oneway\"\n  cells0 = \"...\"\n  [node name=\"Solid\" type=\"TileCollision2D\" parent=\"Map\"]\n  one_way_layer = 2\n\nHow it is built: per map layer and per chunk of CW_TILE_CHUNK x\nCW_TILE_CHUNK cells, the outline of the union of the cells' shapes, as\nBox2D chain shapes. Edges two cells share are removed (also where only\npart of an edge is shared, a half-height slope against a full block), the\nrest joins into loops, and straight runs become one segment each. A chunk's\nchains carry ghost vertices from the cells of the next chunk, so a floor\nthat crosses tiles, or chunks, is one smooth surface: a body sliding along\nit never catches on a seam. One-way platforms become chain segments that\nface up, on one_way_layer: rigid bodies land on them from above and pass\nthrough from below (a chain collides on one side), and a CharacterBody2D\nwhose one_way_mask has that layer lands on them, jumps up through them and\ndrops through with drop_through.\n\nEdits: cw_tilemap2d_set_cell rebuilds only the chunk of the cell (and the\nneighbour chunk when the cell is on a chunk's edge) before the next\nphysics step. Setting a cells text, tile_shapes or the sizes rebuilds\nevery chunk. Cost: a chunk build is linear in its 34 x 34 cells; the\ntile_collision sample measures it (cw_tile_collision2d_stats counts).\n\nChains are outlines, not filled shapes: a body that starts inside solid\ntiles is not pushed out, and overlap queries see the surface only. Ask\nthe map (cw_tilemap2d_point_solid) where \"is this point inside a wall\"\nmatters. Contacts and hits name the TileCollision2D node as the other\nbody; cw_tile_collision2d_cell_at turns a contact point into the cell.",
+     "decl": "typedef enum cw_tile_shape_kind {\n  CW_TILE_SHAPE_NONE,\n  CW_TILE_SHAPE_SOLID,   /* a polygon */\n  CW_TILE_SHAPE_ONE_WAY, /* a segment: points[0] to points[1] */\n} cw_tile_shape_kind;"
+    },
+    {
+     "name": "cw_tile_collision2d_stats",
+     "doc": "What a TileCollision2D holds now, and how many chunk builds it has done.",
+     "decl": "typedef struct cw_tile_collision2d_stats {\n  int32_t chunks;   /* chunks holding at least one chain */\n  int32_t chains;   /* Box2D chains alive */\n  int32_t segments; /* their segments */\n  int32_t builds;   /* chunk builds since the node entered the tree (an edit adds one or two) */\n} cw_tile_collision2d_stats;"
+    },
+    {
+     "name": "cw_tile_terrain_mode",
+     "doc": "── terrains (autotiling) ─────────────────────────────────────────────\nA terrain is a set of tiles that draw one material with the right edges:\npaint cells with the terrain and the map picks each cell's tile from its\nneighbours. TileMap2D `terrains` lists them:\n\n  terrains = \"grass: blob47 16 x3; wall: edge16 64 outside; path: corner16 80; floor: single 1 x4\"\n\neach entry a name, a kind, and the tiles: one id (the first of a run of\nconsecutive tile ids in the kind's order) or every id of the set (ranges\nallowed: \"16-62\"). The kinds, and the order of their tiles:\n\n  single    1 tile. No matching: a floor that only varies (give variants).\n  edge16    16 tiles, matched by the four sides. Tile k is the one whose\n            neighbours of the same terrain are the bits of k: north 1,\n            east 2, south 4, west 8 (tile 0 stands alone, tile 15 is\n            surrounded). Fences, pipes, roads, thin walls.\n  corner16  16 tiles, matched by the four corners (two-corner Wang tiles).\n            The terrain lives on the map's vertices; tile k covers the\n            corners that are bits of k: north-east 1, south-east 2,\n            south-west 4, north-west 8 (tile 15 is all terrain, tile 0 is\n            never drawn). Painting a cell fills its four corners, so the\n            eight cells round it get the transitions.\n  blob47    47 tiles, matched by sides and corners: every look a cell can\n            have when a corner only counts between two sides that are\n            set. The neighbour bits, clockwise from north: N 1, NE 2, E 4,\n            SE 8, S 16, SW 32, W 64, NW 128; the 47 tiles are the masks\n            that remain, in ascending order (0, 1, 4, 5, 7, 16, 17, 20, 21,\n            23, 28, 29, 31, 64, ... 255). cw_tile_terrain_mask gives the\n            mask of each tile, for an art tool that lays the sheet out.\n\nOptions after the tiles: \"xN\" (with one id) says N variant sets follow one\nanother, each a whole set in the kind's order; several whole sets written\nout are variants too (up to 8). \"outside\" makes cells beyond the map's\nedge count as the terrain (walls that run off the map). \"seed N\" changes\nwhich variant each cell gets.\n\nA cell belongs to a terrain when its tile is one of the terrain's tiles:\nnothing is stored beside the cells, so a saved scene's cells text is the\nwhole state. Variants are chosen by a cw_rng seeded from the terrain's\nseed, the layer and the cell, so a cell shows the same variant on every\nhost and whatever order the map was painted in. Painting edits cells\nthrough cw_tilemap2d_set_cell, so a TileCollision2D rebuilds the chunks\ntouched (give the terrain's tiles shapes by range: \"16-62: full\").\nCost: painting one cell reads and may rewrite the 25 cells round it.",
+     "decl": "typedef enum cw_tile_terrain_mode {\n  CW_TILE_TERRAIN_SINGLE,\n  CW_TILE_TERRAIN_EDGE16,\n  CW_TILE_TERRAIN_CORNER16,\n  CW_TILE_TERRAIN_BLOB47,\n} cw_tile_terrain_mode;"
     }
    ],
    "macros": []

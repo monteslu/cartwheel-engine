@@ -4,76 +4,59 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## v0.52.0 (2026-11-19)
-## NEXT (tile2d): isometric and hexagon tile maps, with collision and navigation on them
-
-### Added
-- **Isometric and hexagon tile maps.** `layout` on a TileMap2D (`cw_tilemap_desc.layout` in the immediate API):
-  `ISOMETRIC` diamonds, `HEX_ROWS` (pointy-top hexagons, odd rows shifted) and `HEX_COLUMNS` (flat-top, odd
-  columns shifted), beside `SQUARE`. The chunk renderer places each cell's quad by the layout and culls chunks
-  by the box of their quads; a square map's vertices are what they were, to the bit.
-  `cw_tilemap2d_local_to_cell` finds the cell whose diamond or hexagon holds a point and
-  `cw_tilemap2d_cell_center` its middle; `cw_tile_layout_cell_at` and `cw_tile_layout_cell_origin` are the same
-  arithmetic without a map. These are flat layouts: a tile's picture fills its cell.
-- **Collision and navigation follow the layout.** `full` in `tile_shapes` is the cell's diamond or hexagon, and
-  a TileCollision2D joins neighbouring cells into one outline (two hexagons side by side: one loop of ten
-  segments; six diamonds in a block: four). `cw_navgrid_desc.layout`, and a NavigationRegion2D on such a map:
-  diamonds are searched as squares (jump point search, straightened paths, the crowd); hexagons have six
-  neighbours, plain A* with the hexagon distance, paths through cell middles, flow fields and the crowd.
-- Sample `tiles2d_layouts`: an island of each layout with collision outlines and walkers trading places
-  through a wall's gap. Gates `tiles2d-layouts` (GL and WebGPU, every host), and layout cases in `unit-tiles2d`
-  and `unit-nav2d`. Guides: 2D rendering ("Isometric and hexagon layouts"), navigation, porting from Godot.
-
-## NEXT (tile2d): terrains (autotile) and 2D navigation (nav2d.h, NavigationRegion2D / Agent2D / Obstacle2D)
-
-### Added
-- **2D navigation: grids, paths, flow fields and crowds (`cartwheel/nav2d.h`).** A `cw_navgrid` is a grid of
-  cells with a cost each (0 blocks). `cw_navgrid_find_path` is A* with eight neighbours and no corner cutting,
-  jump point search on grids where every walkable cell costs the same (the same shortest paths, a fraction of the
-  cells visited), with the cell path pulled straight where its corners are in sight; `cw_navgrid_find_paths`
-  answers a batch on the job pool; unreachable goals and exhausted budgets return the nearest cell reached and
-  say partial. `cw_flowfield_build` gives every cell its distance to the goals and the neighbour to step to, for
-  crowds heading to one place. `cw_crowd2d` mirrors the 3D crowd on a grid with the same ORCA solver. Circle
-  and rectangle obstacles block and free cells. Costs are integers and ties break in a fixed order, so the same
-  grid and request give the same path on every host and at any worker count.
-- **NavigationRegion2D, NavigationAgent2D and NavigationObstacle2D**, with the 3D nodes' property and signal
-  names. A region bakes its grid from a TileMap2D's `tile_shapes` (the cells with a solid tile on its `layers`;
-  `agent_radius` for agents wider than a cell; `cost_data` for cells that are dearer to cross) and bakes map
-  edits in per cell at the next tick: painting a wall or cutting a door changes the paths without a whole bake.
-  An agent walks its parent Node2D to `target_position` (`path_changed`, `target_reached`,
-  `velocity_computed`; `drive_parent` off for a body that moves itself), or follows the region's flow field
-  (`follow_flow`, `cw_nav_region2d_set_flow_target`).
-- Sample `tiles2d`'s room gains a region, four scouts patrolling between the chambers on paths of their own
-  (they take the other doorway when one is painted shut) and ten followers on one flow field toward the hero.
-  Gates: `unit-nav2d` (jump point search held to plain A* on 720 seeded pairs, flow distances held to path
-  costs, crowds through a doorway, the nodes on a map; checksum pinned), `tiles2d-room` (crowd and field
-  hashes on every host), `nav-determinism` now runs both at four pool sizes, `tiles2d-perf-report` times a
-  256x256 map (paths, a flow field, a crowd of 500) and holds every host to the same hashes. Guide: navigation,
-  "2D navigation: grids, tile maps and flow fields"; porting from Godot.
-- **Terrains: tile maps that pick their own tiles.** `terrains` on a TileMap2D lists autotile sets as text:
-  `"floor: single 12 x4; wall: blob47 16 x2 outside; moss: corner16 112; fence: edge16 128"`. The kinds are the
-  47-tile blob set (sides and corners), 16 tiles matched by sides, 16 matched by corners (two-corner Wang tiles,
-  the terrain living on the map's vertices) and a single tile that only varies; each set's tiles sit in a fixed
-  order the header gives (`cw_tile_terrain_mask` hands it to an art tool). `cw_tilemap2d_set_terrain` paints a
-  cell, picks its tile and fixes the cells round it; `cw_tilemap2d_set_terrain_rect` paints a rectangle;
-  `cw_tilemap2d_fix_terrain` picks tiles again after raw cell writes (a generated level);
-  `cw_tilemap2d_get_terrain` reads a cell's terrain. `xN` gives a set N variants, chosen by a `cw_rng` seeded
-  from the terrain's seed, the layer and the cell, so a cell shows the same variant on every host and whatever
-  order the map was painted in. `outside` makes cells past the map's edge count as the terrain.
-- **`autotile` in a scene.** With it set, a cells text names a terrain by any of its tiles and every cell's tile
-  is picked as the text is set, so a hand-written or generated scene never spells out edge tiles. A cell belongs
-  to a terrain when its tile is one of the terrain's, so nothing is stored beside the cells and a saved scene
-  loads to the same map. Painting goes through the cell edits a TileCollision2D follows: the colliders of the
-  chunks touched are rebuilt.
-- Sample `tiles2d` gains a room seen from above built only from terrains (Start swaps the scenes), with a
-  doorway painted shut in play. Gate `tiles2d-room` (GL and WebGPU, every host; the control leaves the doorway
-  open and the hero walks back through); `unit-tiles2d` covers the 47 masks, painting and erasing each kind,
-  variants in any paint order, fixing twice, the scene form and collider rebuilds. Guide: 2D rendering,
-  "Terrains (autotiling)"; porting from Godot.
-
 ## v0.51.0 (2026-11-19)
 
 ### Added
+
+**Animation, skeletons and retargeting**
+
+- **Skeleton3D: a skinned glTF model's bones as a node; BoneAttachment3D: a node that rides a bone.** A Skeleton3D
+  under the model's node (or holding the model) gives bone count, names, parents, rest and pose transforms to read
+  and set from C (`cw_skeleton3d_*`, `cartwheel/skeleton.h`) and over the debug channel (`skeleton <node> ...`),
+  `show_rest_only`, a `cw_pose` for the solvers and ragdolls and a pose hash. It is a view of the bones glTF loaded,
+  so bone tracks, AnimationTree, skeleton modifiers and ragdolls drive it and scenes without one are unchanged;
+  modifiers may be its children and bone tracks may name it. A BoneAttachment3D takes its bone's transform each tick
+  and again before each frame's draw, so a sword or a hat is drawn where the bone is drawn the same frame. Sample
+  `skeleton_attach`; gates `skeleton-attach` (the sword held to the palm bone to 0.1 mm; its control lags one tick
+  and fails) and `unit-skeleton`. Guide: [animation](docs/guides/animation.md#skeleton3d-and-boneattachment3d),
+  "Skeleton3D and BoneAttachment3D".
+- **An AnimationTree's blend graph is text in the scene file: `[animtree tree="..."]` sections.** One statement
+  per line (`param`, `clip`, `blend1d`, `blend2d`, `point`, `blend2`, `add`, `layer`, `oneshot`, `timescale`,
+  `machine`, `state`, `transition`, `filter`, `root`), nodes named and usable before they are defined, so an agent
+  or a person writes a character's whole animation logic with no tool and no C. An attribute a statement does
+  not know, a name that matches nothing or a machine without states is an error with the file and the line. A
+  loaded scene saves byte for byte; a section that names a tree inside an instanced scene replaces that instance's
+  graph and is saved only while it differs. From C: `cw_animtree_to_text`, `cw_animtree_load_text`,
+  `cw_animtree_find` (a node's id by name), `cw_animtree_declare_param`, `cw_animtree_set_stored`; on the debug
+  channel `animtree_text <tree>`, and `animtree_travel` takes a machine's name.
+  [Guide](docs/guides/animation.md): "Blend graphs in scene files".
+- **Animation layers with bone masks, one-shots and time scale.** `cw_animtree_layer`: the base plays in full and
+  an overlay replaces it only on the bones it writes, so an upper body aims while the legs run (a `blend2` with
+  the same mask fades every bone toward its rest pose; the unit test keeps that as the control).
+  `cw_animtree_oneshot`: setting a parameter plays a clip once over the base with a fade in and out (an attack, a
+  hit reaction). `cw_animtree_time_scale`. A mask name ending in `+` is the bone and every bone below it
+  (`Spine+`).
+- **Synced blend spaces and transitions.** `sync` on a blend space runs its clips through their cycles together,
+  so a walk and a run of different lengths keep their feet in step while they blend; `sync` on a transition starts
+  the new state where the old one was in its cycle. Controls: the same graphs without `sync`.
+- **Retargeting: one set of clips for every humanoid (`cartwheel/retarget.h`).** A clip made for one skeleton plays
+  on another with other proportions, another rest pose and other bone names. Bone maps fill themselves from the
+  names of Mixamo, VRM, Unreal, Rigify and Biped rigs and plain names with a side, with a text override
+  (`left_hand = Palm2L`). Rotations go across relative to the rest poses in model space (a T-pose and an A-pose
+  line up), the hips travel by the ratio of the leg lengths, and each foot is put where the source's is by two-bone
+  IK; `plant_feet` takes the slide out of planted feet. At import, a model's `.cwimport` names another model
+  (`retarget.source`, `retarget.clips`, `retarget.plant`, `retarget.map.<slot>`) and `cwpack` bakes its clips into
+  this one; at load, `cw_retarget_clip`; per frame, `cw_retarget_apply`. `cw_anim_ground_velocity` gives the speed
+  to walk a character at. Sample `anim_retarget`: a robot's walk and punch on three generated people (1.86 m, 1.58 m
+  and 1.78 m; Mixamo, VRM and Unreal names), the punch layered over the walk by a tree from scene text. Gate
+  `anim-retarget`: a planted foot travels at most 2.7 mm over the ground in a stance (bound 5 mm; the robot's own
+  clip slides 266 mm; without the planting pass 313 to 397 mm, without foot IK 58 to 67 mm, the gate's control),
+  the cwpack bake and the clip made at load agree to 0.0003 mm, and the pose hashes match across hosts.
+- **`cw_animtree_set_update_divisor`**: a far character's tree is evaluated on every Nth tick with the time since,
+  as an AnimationPlayer already could.
+
+**Gameplay nodes, sound players and saves**
+
 - **Gameplay nodes a game no longer writes by hand** ([gameplay nodes](docs/guides/gameplay-nodes.md)). Each is a
   registered node type with reflected properties, a scene-file round trip and an entry in `docs/nodes.json`, and each
   is deterministic: it counts fixed ticks and reads the tree, never a clock.
@@ -119,12 +102,8 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - Sample `gameplay_nodes`: all of the above from one scene file. Gates `gameplay-nodes`, `unit-gameplay`,
   `unit-curve`, `unit-audio-nodes`, `unit-save`, each with a control that must fail.
 
-### Changed
-- **A game on the shell whose save struct changes size keeps its players' progress.** Before, a save whose
-  `game_save_size` differed from the build's was thrown away whole, settings included. Now the bytes both sizes have
-  are kept and the rest reads zero, so a struct that grows at its end loses nothing; a different
-  `game_save_version` with no migrate hook starts the game's data over and keeps the settings (volumes, graphics,
-  text size). Existing saves load unchanged.
+**2D tile maps: collision, autotile, navigation, isometric and hexagon layouts**
+
 - **Tile maps collide: `tile_shapes` on a TileMap2D and the new TileCollision2D node.** The tile set says what
   each tile id is made of, as text in tile pixels: `"1-4: full; 5: slope 0 16; 6: rect 0 8 16 8; 7: oneway;
   8: poly 0 0, 16 0, 8 16"` (whole cells, slopes by their floor height at each edge, rects, any simple polygon,
@@ -145,7 +124,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   neighbour's when the cell is on a chunk's edge) before the next physics step, or at once with
   `cw_tile_collision2d_update`; a cells text, new shapes or a resize rebuild every chunk. A tree snapshot restored
   over an edit (rollback) gets the colliders of the snapshot's moment. On a 256x256 map with slopes all 64 chunks
-  build in 12.6 ms natively and 23 ms in a cart (0.2 and 0.36 ms a chunk); gate `tiles2d-perf-report` holds a
+  build in 7.9 ms natively and 13.8 ms in a cart (0.12 and 0.22 ms a chunk); gate `tiles2d-perf-report` holds a
   budget and the same chains on every host.
 - **Custom data per tile.** `tile_data = "damage: 5=1, 6-7=2; sound: 1-4=stone, 9=wood"` gives tile ids named
   numbers or words; `cw_tilemap2d_tile_data`, `cw_tilemap2d_tile_data_text` and `cw_tilemap2d_cell_data` read
@@ -158,9 +137,69 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   never jumps and so never stands on a plank) and `unit-tiles2d` (outlines by segment count, a frictionless box
   sliding 60 cells, slopes, one-way platforms for characters and rigid bodies, rebuild counts, rollback). Guides:
   2D rendering ("Tile shapes and collision", "Custom tile data"), physics ("Tile maps"), porting from Godot.
-## NEXT (post stack): moving things carry their own motion vectors, so TAA no longer smears them
+- **2D navigation: grids, paths, flow fields and crowds (`cartwheel/nav2d.h`).** A `cw_navgrid` is a grid of
+  cells with a cost each (0 blocks). `cw_navgrid_find_path` is A* with eight neighbours and no corner cutting,
+  jump point search on grids where every walkable cell costs the same (the same shortest paths, a fraction of the
+  cells visited), with the cell path pulled straight where its corners are in sight; `cw_navgrid_find_paths`
+  answers a batch on the job pool; unreachable goals and exhausted budgets return the nearest cell reached and
+  say partial. `cw_flowfield_build` gives every cell its distance to the goals and the neighbour to step to, for
+  crowds heading to one place. `cw_crowd2d` mirrors the 3D crowd on a grid with the same ORCA solver. Circle
+  and rectangle obstacles block and free cells. Costs are integers and ties break in a fixed order, so the same
+  grid and request give the same path on every host and at any worker count.
+- **NavigationRegion2D, NavigationAgent2D and NavigationObstacle2D**, with the 3D nodes' property and signal
+  names. A region bakes its grid from a TileMap2D's `tile_shapes` (the cells with a solid tile on its `layers`;
+  `agent_radius` for agents wider than a cell; `cost_data` for cells that are dearer to cross) and bakes map
+  edits in per cell at the next tick: painting a wall or cutting a door changes the paths without a whole bake.
+  An agent walks its parent Node2D to `target_position` (`path_changed`, `target_reached`,
+  `velocity_computed`; `drive_parent` off for a body that moves itself), or follows the region's flow field
+  (`follow_flow`, `cw_nav_region2d_set_flow_target`).
+- Sample `tiles2d`'s room gains a region, four scouts patrolling between the chambers on paths of their own
+  (they take the other doorway when one is painted shut) and ten followers on one flow field toward the hero.
+  Gates: `unit-nav2d` (jump point search held to plain A* on 720 seeded pairs, flow distances held to path
+  costs, crowds through a doorway, the nodes on a map; checksum pinned), `tiles2d-room` (crowd and field
+  hashes on every host), `nav-determinism` now runs both at four pool sizes, `tiles2d-perf-report` times a
+  256x256 map and holds every host to the same hashes: the navigation grid bakes in 3.6 ms natively and 4.2 ms
+  in a cart, 1000 batched paths take 13.9 and 38 ms, a flow field 5.3 and 9.3 ms, a step of a 500-agent crowd
+  0.23 and 0.31 ms (measured on a loaded machine, so upper bounds). Guide: navigation,
+  "2D navigation: grids, tile maps and flow fields"; porting from Godot.
+- **Terrains: tile maps that pick their own tiles.** `terrains` on a TileMap2D lists autotile sets as text:
+  `"floor: single 12 x4; wall: blob47 16 x2 outside; moss: corner16 112; fence: edge16 128"`. The kinds are the
+  47-tile blob set (sides and corners), 16 tiles matched by sides, 16 matched by corners (two-corner Wang tiles,
+  the terrain living on the map's vertices) and a single tile that only varies; each set's tiles sit in a fixed
+  order the header gives (`cw_tile_terrain_mask` hands it to an art tool). `cw_tilemap2d_set_terrain` paints a
+  cell, picks its tile and fixes the cells round it; `cw_tilemap2d_set_terrain_rect` paints a rectangle;
+  `cw_tilemap2d_fix_terrain` picks tiles again after raw cell writes (a generated level);
+  `cw_tilemap2d_get_terrain` reads a cell's terrain. `xN` gives a set N variants, chosen by a `cw_rng` seeded
+  from the terrain's seed, the layer and the cell, so a cell shows the same variant on every host and whatever
+  order the map was painted in. `outside` makes cells past the map's edge count as the terrain.
+- **`autotile` in a scene.** With it set, a cells text names a terrain by any of its tiles and every cell's tile
+  is picked as the text is set, so a hand-written or generated scene never spells out edge tiles. A cell belongs
+  to a terrain when its tile is one of the terrain's, so nothing is stored beside the cells and a saved scene
+  loads to the same map. Painting goes through the cell edits a TileCollision2D follows: the colliders of the
+  chunks touched are rebuilt.
+- Sample `tiles2d` gains a room seen from above built only from terrains (Start swaps the scenes), with a
+  doorway painted shut in play. Gate `tiles2d-room` (GL and WebGPU, every host; the control leaves the doorway
+  open and the hero walks back through); `unit-tiles2d` covers the 47 masks, painting and erasing each kind,
+  variants in any paint order, fixing twice, the scene form and collider rebuilds. Guide: 2D rendering,
+  "Terrains (autotiling)"; porting from Godot.
+- **Isometric and hexagon tile maps.** `layout` on a TileMap2D (`cw_tilemap_desc.layout` in the immediate API):
+  `ISOMETRIC` diamonds, `HEX_ROWS` (pointy-top hexagons, odd rows shifted) and `HEX_COLUMNS` (flat-top, odd
+  columns shifted), beside `SQUARE`. The chunk renderer places each cell's quad by the layout and culls chunks
+  by the box of their quads; a square map's vertices are what they were, to the bit.
+  `cw_tilemap2d_local_to_cell` finds the cell whose diamond or hexagon holds a point and
+  `cw_tilemap2d_cell_center` its middle; `cw_tile_layout_cell_at` and `cw_tile_layout_cell_origin` are the same
+  arithmetic without a map. These are flat layouts: a tile's picture fills its cell.
+- **Collision and navigation follow the layout.** `full` in `tile_shapes` is the cell's diamond or hexagon, and
+  a TileCollision2D joins neighbouring cells into one outline (two hexagons side by side: one loop of ten
+  segments; six diamonds in a block: four). `cw_navgrid_desc.layout`, and a NavigationRegion2D on such a map:
+  diamonds are searched as squares (jump point search, straightened paths, the crowd); hexagons have six
+  neighbours, plain A* with the hexagon distance, paths through cell middles, flow fields and the crowd.
+- Sample `tiles2d_layouts`: an island of each layout with collision outlines and walkers trading places
+  through a wall's gap. Gates `tiles2d-layouts` (GL and WebGPU, every host), and layout cases in `unit-tiles2d`
+  and `unit-nav2d`. Guides: 2D rendering ("Isometric and hexagon layouts"), navigation, porting from Godot.
 
-### Added
+**Rendering**
+
 - **Object motion vectors.** The velocity target held the camera's motion only, so under TAA a walking character
   smeared and the edges of anything moving broke up: its history was read from where the background had been. The
   velocity pass now draws every mesh that moved since the last frame over the camera's motion: a node that moved
@@ -178,25 +217,6 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   docs/guides/rendering-3d.md, "Motion vectors". Gates `post-motion-taa`, `post-motion-plain`,
   `post-motion-velocity`, `motion-vectors-taa`, `motion-vectors-view` on GL and WebGPU, and the scripted
   `motion-vectors` (the measurement above; its control, camera motion only, must fail).
-- **IES light profiles (three.c 0.187.11, three.js r187's IESSpotLight and IESLoader).** `ies_profile` on a
-  `SpotLight3D` or an `OmniLight3D` names an IES photometric file (`.ies`), and the light takes the fixture's
-  measured shape: rings, hot spots, a street lamp's forward throw, a lantern's bars. The profile is read around the
-  light's own axes (the tilt off its -Z, the twist from its +Y, so turning a lamp turns its light), replaces a spot
-  light's cone and covers the whole sphere on an omni light; shadows, range and decay work as before. `cwpack`
-  takes `.ies` files, checks each one when it packs it and stops with the reason on one it cannot read. Profiles
-  with a single horizontal angle and with a measured range (mirrored to the circle as the file asks) both work.
-  IES lights are drawn by the clustered lights: the scene's profiles sit in one atlas and, while a clustered light
-  has one, lit materials draw with the new `clusteries` part in place of `cluster` (a scene without profiles
-  keeps its programs and its cost). `cw_lighting_stats.ies` counts them. With FORWARD lighting a spot light's
-  profile is three.c's own IESSpotLight; an omni light's needs CLUSTERED (a warning says so).
-  `samples/ies_lights`: a ring downlight with a shadow, a street lamp turning about its axis, a lantern on an omni
-  light, a plain spot light. Gate `ies-lights` on GL and WebGPU (native and the cart); its control takes the
-  profiles away, and the state and the picture differ. Guide:
-  [Real fixtures: IES profiles](docs/guides/rendering-3d.md#real-fixtures-ies-profiles).
-
-## v0.51.0 (2026-11-19)
-
-### Added
 - **Toon shading (three.c 0.187.9, three.js r187's MeshToonMaterial).** A surface lit in flat tones with hard edges
   between them. In a scene it is one property: `MeshInstance3D` `shading = TOON` with `toon_bands` (2 to 16
   tones; below 2, three.js's own two soft-edged tones), on the node's primitive or on every material of its mesh
@@ -212,6 +232,95 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   interleaved rounds of 180 frames: the sample's frame takes 1.62 ms of GPU time toon shaded against 1.92 ms with
   the same meshes physically based. Guide:
   [Toon shading](docs/guides/rendering-3d.md#toon-shading).
+- **IES light profiles (three.c 0.187.11, three.js r187's IESSpotLight and IESLoader).** `ies_profile` on a
+  `SpotLight3D` or an `OmniLight3D` names an IES photometric file (`.ies`), and the light takes the fixture's
+  measured shape: rings, hot spots, a street lamp's forward throw, a lantern's bars. The profile is read around the
+  light's own axes (the tilt off its -Z, the twist from its +Y, so turning a lamp turns its light), replaces a spot
+  light's cone and covers the whole sphere on an omni light; shadows, range and decay work as before. `cwpack`
+  takes `.ies` files, checks each one when it packs it and stops with the reason on one it cannot read. Profiles
+  with a single horizontal angle and with a measured range (mirrored to the circle as the file asks) both work.
+  IES lights are drawn by the clustered lights: the scene's profiles sit in one atlas and, while a clustered light
+  has one, lit materials draw with the new `clusteries` part in place of `cluster` (a scene without profiles
+  keeps its programs and its cost). `cw_lighting_stats.ies` counts them. With FORWARD lighting a spot light's
+  profile is three.c's own IESSpotLight; an omni light's needs CLUSTERED (a warning says so).
+  `samples/ies_lights`: a ring downlight with a shadow, a street lamp turning about its axis, a lantern on an omni
+  light, a plain spot light. Gate `ies-lights` on GL and WebGPU (native and the cart); its control takes the
+  profiles away, and the state and the picture differ. Guide:
+  [Real fixtures: IES profiles](docs/guides/rendering-3d.md#real-fixtures-ies-profiles).
+- **A surface of your own that keeps the engine's lighting** ([surface.h](include/cartwheel/surface.h), guide
+  "Writing your own surface" in docs/guides/rendering-3d.md). A game writes how one kind of surface looks (a
+  dissolve, triplanar rock, grass leaning in the wind, a force field, lava) as a small three.js r187 TSL module,
+  `shaders/<name>.mjs`, that exports `name`, `params` and `surface()` and returns only what it changes: `color`,
+  `normal`, `roughness`, `metalness`, `emissive`, `ao`, `opacity`, `mask` (cut-outs, in the shadow too),
+  `position` (vertices) and `output` (a last word on the lit colour). Everything that lights a surface stays the
+  engine's: three.c's lights and shadows, the clustered lamps, the sun's cascades, reflection probes and the light
+  probe grid, screen-space reflections, fog and decals. With its effect at zero a surface draws the pixels the
+  plain material draws.
+  - C side: `cw_surface_register` (the same parameter list: floats, vectors, colours, a 4x4 matrix, arrays of up
+    to 32 vec4, textures), `cw_surface_apply` / `_apply_tree` / `_remove`, `cw_surface_set`, `_set_float`,
+    `_set_at` (one array element), `_set_texture`, `cw_surface_set_global` (one value for every material of the
+    surface: time, wind), `cw_surface_get`, `_unset`. A value is a memory write sent with each draw; a texture can
+    be replaced, or its pixels changed in place (`t->version++`).
+  - A surface can be a **node type** whose properties are its parameters (`node_type = "DissolveSurface3D"`): put
+    one under a MeshInstance3D in a scene file and an AnimationPlayer keys it like any property.
+  - Program tables: name the module in the manifest (`# extend: ../shaders/dissolve.mjs`); `tools/programs.mjs`
+    captures the composed states the game draws (`standard+l0001+xcluster_csm_dissolve_gi`) like any others.
+  - Meshes that share geometry and a material with a surface are one instanced draw wherever plain ones are.
+  - `samples/custom_surface`: a dissolving chrome orb, a triplanar slab with moss and a sticker, forty swaying
+    reeds among eight clustered lamps, three cascades, a reflection probe and a probe grid;
+    `custom_surface_field`: two hundred reeds as one draw. Gates `custom-surface` (every host, GL and WebGPU) and
+    `custom-surface-lighting` (plain materials against surfaces, pixel for pixel).
+- `cw_shading_part_traits` / `CW_PART_SURFACE`, `CW_PART_MOVES_VERTICES` ([shading.h](include/cartwheel/shading.h)):
+  a part a game wrote by hand can say it is a surface and get the same treatment. `cw_shading_part_everywhere`
+  registers a part's hook for every renderer, present and future.
+
+### Fixed
+
+- **A material takes up to 8 shading parts and a 63 character composed name (was 4 and 31; three.c 0.187.10).** A
+  game part on the Very Low preset with clustered lamps and cascades is five parts
+  (`cluster_csm_plain_<part>_gi`): the fifth was refused without a word, so the game's part, or the probes, went
+  missing on that preset (4.0 % of the sample's 1080p pixels were wrong on GL, 3.0 % on WebGPU; 0.000 % now). A material that still cannot take a
+  part now says so in the log, once, naming the parts.
+- **Reflection probes and the light probe grid light a game's surface on forward lighting.** A material that
+  carried only a game's part was left out of the probes unless a lighting part happened to be on it too
+  (4.9 % of the sample's pixels on GL, 3.6 % on WebGPU; 0.000 % now).
+- **A mesh decal is clipped from a mesh whose material carries a surface** that leaves its vertices alone. It was
+  refused for any extension but the engine's lighting parts, so a decal placed after the part was on the material
+  never appeared.
+- **Screen-space reflections and bounce light see a surface's vertices and cut-outs.** Their G-buffer replaced each
+  material's extension with its own, so a dissolving or swaying mesh was reflected whole and still; the G-buffer
+  program now keeps the surface (`<surface>_gibuf`).
+
+### Changed
+
+- **three.c 0.187.11** (was 0.187.8): three.js r187's MeshToonMaterial (0.187.9), extension names up to 63
+  characters and up to 4096 of them, each with its own hook (0.187.10), and IESSpotLight with IESLoader (0.187.11).
+  Every program table is regenerated against it.
+- **A game on the shell whose save struct changes size keeps its players' progress.** Before, a save whose
+  `game_save_size` differed from the build's was thrown away whole, settings included. Now the bytes both sizes have
+  are kept and the rest reads zero, so a struct that grows at its end loses nothing; a different
+  `game_save_version` with no migrate hook starts the game's data over and keeps the settings (volumes, graphics,
+  text size). Existing saves load unchanged.
+- **The 3D platformer's hero keeps its state machine in `scenes/player.cwscene`**, not in C. Its gates carry a new
+  field, `anim.hash` (every pose the hero's tree wrote, folded each tick): the same with the graph built in C and
+  loaded from the scene, on the input, auto and fall runs.
+- **After upgrading, run your program survey** (`./programs.sh` / `node tools/programs.mjs <app>`): a material that
+  needed more than four parts used to drop one silently and now asks for the state it should have had (a
+  character with feathers and skin shading under the cascades on Very Low, say), and a game part registered as a
+  surface asks for its `_gi` and `_gibuf` states.
+
+### Measured
+
+- 890M, 1920 x 1080, `samples/custom_surface`: a frame takes 1.4 to 2.4 ms of GPU time on GL and 1.2 to 2.3 ms on
+  WebGPU from Very Low to Ultra; the three surfaces add between nothing and 0.14 ms against the same room with
+  plain materials (medians of four interleaved rounds, a round varies by about 0.2 ms; load 23, GPU clock 998 MHz
+  mean). `tests/custom-surface-perf.mjs` prints the table. Estimate for a Vega 8: under 0.6 ms.
+- Program tables: the sample's table is 99 states with three surfaces across every lighting mode and preset (29
+  for the same room with plain materials); its cart is 3.11 MB against 2.85 MB, under 4 KB a state. Raising the
+  part limit adds no program by itself: a state exists only when a game draws it.
+- AnimationTree: a tree that walks and layers a one-shot over it on a 22-bone character takes 5.7 to 10.9 us per
+  character per tick natively on the 890M laptop (a hundred characters: 0.6 to 1.1 ms; the machine was under heavy
+  load from other work).
 
 ## v0.50.4 (2026-11-18)
 
