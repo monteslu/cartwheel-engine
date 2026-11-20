@@ -463,7 +463,7 @@ static void t_spring_arm(void) {
   cw_node wall = body3(root, "StaticBody3D", "Wall", (t3_vec3){ 0, 0, 2.5f }, (t3_vec3){ 10, 10, 1 });
   cw_node arm = add(root, "SpringArm3D", "Arm");
   cw_node cam = add(arm, "Camera3D", "Cam");
-  CHECK(cw_node3d_position(cam).z == 4); /* at the end of the arm as it enters */
+  CHECK(cw_node3d_position(cam).z == 0); /* loading a scene moves nothing: the first tick places it */
   step(t, 2);
   /* the 0.2 m sphere stops with its centre 0.2 m from the wall, and the arm 0.05 m short of that */
   float len = cw_spring_arm_length(arm);

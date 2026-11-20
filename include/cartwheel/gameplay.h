@@ -46,7 +46,8 @@
  *   exclude_parent  ignore the nearest body above the arm in the tree: the character it follows (true)
  *   extend_speed    the arm shortens at once; it grows back at this many meters a second (0 = at once)
  *   hit_length      read-only: the length now
- * Children are drawn smoothly between ticks. There is no shake of any kind: for impact use the pad's rumble.
+ * Children are placed from the first fixed tick on (loading a scene moves nothing) and drawn smoothly between
+ * ticks. There is no shake of any kind: for impact use the pad's rumble.
  * Cost: one shape cast per arm per tick. */
 #ifndef CW_GAMEPLAY_H
 #define CW_GAMEPLAY_H

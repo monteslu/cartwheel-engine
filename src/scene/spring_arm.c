@@ -85,16 +85,14 @@ static void arm_init(cw_node n, void *d) {
   a->exclude_parent = true;
   a->hit_length = 4;
 }
+/* Children are placed by the fixed tick only (the first one snaps them to the end of the arm): loading or
+ * editing a scene never moves them, so a scene saves back as it was written. */
 static void arm_enter(cw_node n, void *d) {
+  (void)n;
   spring_arm *a = d;
   a->started = false;
   a->hit_length = a->spring_length;
-  place_children(n, a->hit_length, true);
 }
-static void arm_children(cw_node n, void *d) {
-  place_children(n, ((spring_arm *)d)->hit_length, true); /* a camera added later starts at the end of the arm */
-}
-
 #define AF(field, lo, hi, docs) CW_PROP_FIELD_RANGE(spring_arm, field, CW_T_FLOAT, lo, hi, docs)
 static const cw_prop arm_props[] = {
   AF(spring_length, 0, 1e4, "The arm's full length, along the node's +Z."),
@@ -108,7 +106,7 @@ static const cw_prop arm_props[] = {
 };
 static cw_node_type arm_type = { .name = "SpringArm3D", .parent = "Node3D", .data_size = sizeof(spring_arm), .props = arm_props,
                                  .doc = "A camera boom: its Node3D children sit at the end of an arm along +Z that shortens when the 3D physics world is in the way (cartwheel/gameplay.h).",
-                                 .init = arm_init, .enter_tree = arm_enter, .fixed_update = arm_fixed, .children_changed = arm_children };
+                                 .init = arm_init, .enter_tree = arm_enter, .fixed_update = arm_fixed };
 
 void cw__register_spring_arm_type(void);
 void cw__register_spring_arm_type(void) { cw_node_type_register(&arm_type); }
