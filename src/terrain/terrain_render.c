@@ -34,6 +34,7 @@
 #include "cartwheel/quality.h"
 #include "cartwheel/shading.h"
 #include "terrain_internal.h"
+#include "../render/view_layers.h"
 
 
 
@@ -307,14 +308,20 @@ static t3_geometry *grid_geometry(int n) {
   return g;
 }
 
-static void make_mesh(cw_terrain *t, int far, int half, int cap) {
+/* the meshes view k draws (k > 0: a one-pass split screen's later views) */
+static t3_instanced_mesh **view_im(tr_gpu *g, int view, int far, int half) { return view ? &g->view[view].im[far][half] : &g->im[far][half]; }
+static int *view_cap(tr_gpu *g, int view, int far, int half) { return view ? &g->view[view].cap[far][half] : &g->cap[far][half]; }
+
+static void make_mesh(cw_terrain *t, int view, int far, int half, int cap) {
   tr_gpu *g = t->gpu;
-  t3_instanced_mesh *old = g->im[far][half];
+  t3_instanced_mesh *old = *view_im(g, view, far, half);
   t3_instanced_mesh *im = t3_instanced_mesh_new(g->grid[half], far ? g->mat_far : g->mat_near, cap);
   im->count = 0;
   im->instance_matrix->usage = T3_DYNAMIC_DRAW;
   im->mesh.base.frustum_culled = false;
-  im->mesh.base.cast_shadow = !far && !t->def.no_shadow_cast;
+  /* the shadow maps are drawn once a frame, from the first view's selection (as the views drawn one at a time have them) */
+  im->mesh.base.cast_shadow = !far && !t->def.no_shadow_cast && view == 0;
+  im->mesh.base.layers = view ? cw__view_layer(view) : g->views ? cw__view_layer(0) : 1;
   im->mesh.base.receive_shadow = true;
   im->mesh.base.visible = false;
   im->mesh.base.render_order = far ? 1 : 0;
@@ -323,8 +330,8 @@ static void make_mesh(cw_terrain *t, int far, int half, int cap) {
     t3_object_remove(g->root, old);
     t3_release(old);
   }
-  g->im[far][half] = im;
-  g->cap[far][half] = cap;
+  *view_im(g, view, far, half) = im;
+  *view_cap(g, view, far, half) = cap;
   reg_obj(im, t);
   t3_object_add(g->root, im);
 }
@@ -356,18 +363,20 @@ static void ensure_gpu(cw_terrain *t) {
   if (!g->albedo) g->albedo = layer_array();   /* (shared ones are set already) */
   if (!g->lnormal) g->lnormal = layer_array();
   for (int f = 0; f < 2; f++)
-    for (int h = 0; h < 2; h++) make_mesh(t, f, h, 256);
+    for (int h = 0; h < 2; h++) make_mesh(t, 0, f, h, 256);
 }
 
 void cw__terrain_gpu_free(cw_terrain *t) {
   tr_gpu *g = t->gpu;
   if (!g) return;
-  for (int f = 0; f < 2; f++)
-    for (int h = 0; h < 2; h++)
-      if (g->im[f][h]) {
-        unreg_obj(g->im[f][h]);
-        t3_object_remove(g->root, g->im[f][h]);
-        t3_release(g->im[f][h]);
+  for (int v = 0; v < TR_VIEWS; v++)
+    for (int f = 0; f < 2; f++)
+      for (int h = 0; h < 2; h++) {
+        t3_instanced_mesh *im = *view_im(g, v, f, h);
+        if (!im) continue;
+        unreg_obj(im);
+        t3_object_remove(g->root, im);
+        t3_release(im);
       }
   t3_texture *tx[] = { g->heights, g->normals, g->control, g->pair, g->macro, g->albedo, g->lnormal };
   for (int i = 0; i < (int)CW_ARRAY_LEN(tx); i++)
@@ -471,23 +480,41 @@ void cw__terrain_gpu_update(cw_terrain *t) {
   t->stats.upload_ms = (float)(tr_now_ms() - t0);
 }
 
-/* the selected patches into the four meshes' instances */
-void cw__terrain_gpu_draw_setup(cw_terrain *t) {
+/* one-pass split screen: the first view's meshes on its layer while views draw together (each later view's are made
+ * as it first draws); the later views' meshes out of sight while the views draw one at a time */
+void cw__terrain_gpu_views(cw_terrain *t, int views) {
   tr_gpu *g = t->gpu;
+  if (!g || !g->grid[0]) return;
+  g->views = views;
+  for (int f = 0; f < 2; f++)
+    for (int h = 0; h < 2; h++) {
+      if (g->im[f][h]) g->im[f][h]->mesh.base.layers = views ? cw__view_layer(0) : 1;
+      for (int v = CW_MAX(views, 1); v < TR_VIEWS; v++)
+        if (g->view[v].im[f][h]) g->view[v].im[f][h]->mesh.base.visible = false, g->view[v].im[f][h]->count = 0;
+    }
+}
+
+/* the selected patches into the four meshes' instances (view k's: a one-pass split screen) */
+void cw__terrain_gpu_draw_setup(cw_terrain *t, int view) {
+  tr_gpu *g = t->gpu;
+  if (view)
+    for (int f = 0; f < 2; f++)
+      for (int h = 0; h < 2; h++)
+        if (!g->view[view].im[f][h]) make_mesh(t, view, f, h, 256);
   int need[2][2] = { { 0, 0 }, { 0, 0 } };
   for (int i = 0; i < t->patches.count; i++) need[t->patches.data[i].far][t->patches.data[i].half]++;
   for (int f = 0; f < 2; f++)
     for (int h = 0; h < 2; h++)
-      if (need[f][h] > g->cap[f][h]) {
-        int c = g->cap[f][h];
+      if (need[f][h] > *view_cap(g, view, f, h)) {
+        int c = *view_cap(g, view, f, h);
         while (c < need[f][h]) c *= 2;
-        make_mesh(t, f, h, c);
+        make_mesh(t, view, f, h, c);
       }
   int fill[2][2] = { { 0, 0 }, { 0, 0 } };
   float sp = t->def.vertex_spacing;
   for (int i = 0; i < t->patches.count; i++) {
     const tr_patch *p = &t->patches.data[i];
-    t3_instanced_mesh *im = g->im[p->far][p->half];
+    t3_instanced_mesh *im = *view_im(g, view, p->far, p->half);
     float *m = t3_attribute_f32(im->instance_matrix) + 16 * fill[p->far][p->half]++;
     float s = (float)p->size * sp;
     /* column major: x scaled to the patch, Y column = the level + 1, z scaled, translation to its corner */
@@ -498,7 +525,7 @@ void cw__terrain_gpu_draw_setup(cw_terrain *t) {
   }
   for (int f = 0; f < 2; f++)
     for (int h = 0; h < 2; h++) {
-      t3_instanced_mesh *im = g->im[f][h];
+      t3_instanced_mesh *im = *view_im(g, view, f, h);
       im->count = fill[f][h];
       im->mesh.base.visible = fill[f][h] > 0;
       if (fill[f][h]) {
@@ -519,8 +546,14 @@ static void fill(t3_extension_ctx *c, void *user) {
   const cw_terrain_def *d = &t->def;
   int q = cw__terrain_quality(t);
   float far = cw__terrain_far(t), fade = CW_MIN(d->far_fade, far * 0.5f);
+  /* the camera the drawn patches were selected for: a later view's own meshes in a one-pass split screen */
+  t3_vec3 cam = t->camera;
+  const void *obj = t3_extension_object(c);
+  for (int k = 1; k < g->views && obj; k++)
+    for (int m = 0; m < 4; m++)
+      if (obj == g->view[k].im[m >> 1][m & 1]) cam = g->view[k].cam;
   float v[4];
-  v[0] = t->camera.x, v[1] = t->camera.y, v[2] = t->camera.z, v[3] = 0;
+  v[0] = cam.x, v[1] = cam.y, v[2] = cam.z, v[3] = 0;
   t3_extension_set_uniform(c, "terrainCam", v, 4);
   v[0] = d->origin.x, v[1] = d->origin.z, v[2] = 1.0f / d->vertex_spacing, v[3] = d->vertex_spacing;
   t3_extension_set_uniform(c, "terrainGrid", v, 4);
@@ -572,8 +605,24 @@ void cw_terrain_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp) {
   }
   cw__terrain_gpu_update(t);
   cw__terrain_select(t, cam, vp);
-  cw__terrain_gpu_draw_setup(t);
-  cw__scatter_update(t, cam, vp);
+  cw__terrain_gpu_draw_setup(t, 0);
+  cw__scatter_update(t, cam, vp, 0, t->gpu ? ((tr_gpu *)t->gpu)->views : 0);
+}
+
+void cw__terrain_update_view(cw_terrain *t, int view, int views, t3_vec3 cam, const t3_mat4 *vp) {
+  if (!t) return;
+  if (view == 0) {
+    if (t->gpu) cw__terrain_gpu_views(t, views);
+    cw_terrain_update(t, cam, vp);
+    return;
+  }
+  tr_gpu *g = t->gpu;
+  if (!g) return;
+  if (view >= TR_VIEWS || t->build) return; /* (still building: view 0 drew nothing either) */
+  g->view[view].cam = cam;
+  cw__terrain_select(t, cam, vp);
+  cw__terrain_gpu_draw_setup(t, view);
+  cw__scatter_update(t, cam, vp, view, views);
 }
 
 /* ── the background build's GPU share (terrain.c: cw__terrain_build_start) ── */

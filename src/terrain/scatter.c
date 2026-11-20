@@ -23,22 +23,30 @@
 #include "cartwheel/math.h"
 #include "cartwheel/quality.h"
 #include "terrain_internal.h"
+#include "../render/view_layers.h"
 
 #define INST_F 9 /* x y z scale qx qy qz qw rank */
 #define CELL_MAX 8192
 
-typedef struct sc_cell {
-  int cx, cz;
-  bool generated, live;
-  bool generating;                /* in the batch the job pool is placing */
-  int n;                          /* instances */
-  float *inst;                    /* n * INST_F */
+/* a cell as one view draws it: its GPU copies posed for that view's camera (a one-pass split screen's later views
+ * keep their own, on their view's layer: src/render/view_layers.h) */
+typedef struct sc_view {
+  bool live;
   t3_instanced_mesh *im[CW_SCATTER_LODS][CW_SCATTER_PARTS]; /* parts share part 0's instance matrices */
-  float sphere[4];
-  float ymin, ymax;
   int posed_state;                /* -2 never; -1 dynamic; else the LOD it was posed whole at */
   float posed_density;
   int drawn;
+} sc_view;
+
+typedef struct sc_cell {
+  int cx, cz;
+  bool generated;
+  bool generating;                /* in the batch the job pool is placing */
+  int n;                          /* instances */
+  float *inst;                    /* n * INST_F */
+  float sphere[4];
+  float ymin, ymax;
+  sc_view v[TR_VIEWS];
 } sc_cell;
 
 struct tr_scatter {
@@ -53,6 +61,7 @@ struct tr_scatter {
   /* cells being placed on the job pool (one batch at a time; the main thread never waits for it) */
   cw_job *gen;
   struct gen_job *gen_ctx;
+  bool view_used[TR_VIEWS];       /* a later view has GPU copies of some cells (freed when the views draw one at a time) */
 };
 
 static bool gen_collect(tr_scatter *s, bool wait);
@@ -172,14 +181,21 @@ int cw_terrain_scatter_cell(cw_terrain *t, int layer, int cx, int cz, float *out
 
 /* ── layers ─────────────────────────────────────────────────────────── */
 
-static void cell_free_gpu(tr_scatter *s, sc_cell *c) {
+static void cell_free_view(tr_scatter *s, sc_cell *c, int view) {
+  sc_view *cv = &c->v[view];
   for (int l = 0; l < CW_SCATTER_LODS; l++)
     for (int p = 0; p < CW_SCATTER_PARTS; p++)
-      if (c->im[l][p]) {
-        if (s->parent) t3_object_remove(s->parent, c->im[l][p]);
-        t3_release(c->im[l][p]);
-        c->im[l][p] = NULL;
+      if (cv->im[l][p]) {
+        if (s->parent) t3_object_remove(s->parent, cv->im[l][p]);
+        t3_release(cv->im[l][p]);
+        cv->im[l][p] = NULL;
       }
+  cv->live = false;
+  cv->posed_state = -2;
+  cv->drawn = 0;
+}
+static void cell_free_gpu(tr_scatter *s, sc_cell *c) {
+  for (int v = 0; v < TR_VIEWS; v++) cell_free_view(s, c, v);
 }
 
 static void cell_reset(tr_scatter *s, sc_cell *c) {
@@ -188,7 +204,7 @@ static void cell_reset(tr_scatter *s, sc_cell *c) {
   int cx = c->cx, cz = c->cz;
   memset(c, 0, sizeof *c);
   c->cx = cx, c->cz = cz;
-  c->posed_state = -2;
+  for (int v = 0; v < TR_VIEWS; v++) c->v[v].posed_state = -2;
 }
 
 void cw__scatter_free(tr_scatter *s) {
@@ -208,7 +224,7 @@ void cw__scatter_free(tr_scatter *s) {
 void cw__scatter_attach(cw_terrain *t, tr_scatter *s) {
   t3_object *parent = cw__terrain_parent(t);
   if (s->parent == parent) return;
-  for (int i = 0; i < s->cnx * s->cnz; i++) cell_free_gpu(s, &s->cells[i]), s->cells[i].posed_state = -2;
+  for (int i = 0; i < s->cnx * s->cnz; i++) cell_free_gpu(s, &s->cells[i]);
   s->parent = parent;
 }
 
@@ -277,7 +293,8 @@ int cw_terrain_scatter_add(cw_terrain *t, const cw_scatter_def *def) {
   for (int z = 0; z < s->cnz; z++)
     for (int x = 0; x < s->cnx; x++) {
       sc_cell *c = &s->cells[z * s->cnx + x];
-      c->cx = x, c->cz = z, c->posed_state = -2;
+      c->cx = x, c->cz = z;
+      for (int v = 0; v < TR_VIEWS; v++) c->v[v].posed_state = -2;
     }
   t->scatter[slot] = s;
   cw__scatter_attach(t, s);
@@ -354,6 +371,7 @@ typedef struct pose_job {
   float cam[3];
   float origin[2]; /* the terrain's x, z: instances are stored relative to it */
   float density;
+  int view;
 } pose_job;
 
 /* instance i's matrix (column major) at scale k */
@@ -376,7 +394,8 @@ static void pose_cells(int begin, int end, int worker, void *u) {
     sc_cell *c = j->list[ci];
     float *dst[CW_SCATTER_LODS] = { 0 };
     int cnt[CW_SCATTER_LODS] = { 0 };
-    for (int l = 0; l < nl; l++) dst[l] = t3_attribute_f32(c->im[l][0]->instance_matrix);
+    sc_view *cv = &c->v[j->view];
+    for (int l = 0; l < nl; l++) dst[l] = t3_attribute_f32(cv->im[l][0]->instance_matrix);
     tr_v4f cx = { j->cam[0], j->cam[0], j->cam[0], j->cam[0] }, cy = { j->cam[1], j->cam[1], j->cam[1], j->cam[1] },
            cz = { j->cam[2], j->cam[2], j->cam[2], j->cam[2] };
     for (int i = 0; i < c->n; i += 4) {
@@ -402,12 +421,12 @@ static void pose_cells(int begin, int end, int worker, void *u) {
     int drawn = 0;
     for (int l = 0; l < nl; l++) {
       for (int p = 0; p < j->s->nparts[l]; p++) {
-        c->im[l][p]->count = cnt[l];
-        c->im[l][p]->mesh.base.visible = cnt[l] > 0; /* no draw for an empty LOD */
+        cv->im[l][p]->count = cnt[l];
+        cv->im[l][p]->mesh.base.visible = cnt[l] > 0; /* no draw for an empty LOD */
       }
       drawn += cnt[l];
     }
-    c->drawn = drawn;
+    cv->drawn = drawn;
   }
 }
 
@@ -420,7 +439,10 @@ static float cell_dist2(const float cam[3], const float mn[3], const float mx[3]
   return d;
 }
 
-static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frustum *fr) {
+static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frustum *fr, int view, int views) {
+  /* the layer this view's copies are on: layer 0 while the views draw one at a time */
+  uint32_t layer = views ? cw__view_layer(view) : 1;
+  if (view) s->view_used[view] = true;
   const cw_scatter_def *d = &s->def;
   float sp = t->def.vertex_spacing;
   float vr = d->visible_range;
@@ -432,11 +454,10 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
   /* cells that left the range drop their GPU copies (their placement stays: it is cheap to keep) */
   for (int i = 0; i < s->cnx * s->cnz; i++) {
     sc_cell *c = &s->cells[i];
-    if (c->live && (c->cx < x0 - 1 || c->cx > x1 + 1 || c->cz < z0 - 1 || c->cz > z1 + 1)) {
-      cell_free_gpu(s, c);
-      c->live = false;
-      c->posed_state = -2;
-    }
+    if (c->v[view].live && (c->cx < x0 - 1 || c->cx > x1 + 1 || c->cz < z0 - 1 || c->cz > z1 + 1)) cell_free_view(s, c, view);
+    if (c->v[view].live)
+      for (int l = 0; l < s->nlod; l++)
+        for (int p = 0; p < s->nparts[l]; p++) c->v[view].im[l][p]->mesh.base.layers = layer;
   }
   if (x1 < x0 || z1 < z0) return;
   int span = (x1 - x0 + 1) * (z1 - z0 + 1);
@@ -480,7 +501,7 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
           if (far < 0) vis = false;
         }
       }
-      if (!c->live && vis) {
+      if (!c->v[view].live && vis) {
         /* GPU copies for a cell coming into view */
         for (int l = 0; l < s->nlod; l++)
           for (int p = 0; p < s->nparts[l]; p++) {
@@ -489,27 +510,28 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
             if (p) {
               /* the parts draw part 0's instances: one pose, one upload */
               t3_release(im->instance_matrix);
-              im->instance_matrix = t3_retain(c->im[l][0]->instance_matrix);
+              im->instance_matrix = t3_retain(c->v[view].im[l][0]->instance_matrix);
             }
             im->instance_matrix->usage = T3_DYNAMIC_DRAW;
-            im->mesh.base.cast_shadow = l == 0 && d->cast_shadow;
+            im->mesh.base.cast_shadow = l == 0 && d->cast_shadow && view == 0; /* (the first view's draw the shadow maps) */
             im->mesh.base.receive_shadow = true;
             t3_sphere sph = { { (mn[0] + mx[0]) * 0.5f, (mn[1] + mx[1]) * 0.5f, (mn[2] + mx[2]) * 0.5f }, 0 };
             float ex = (mx[0] - mn[0]) * 0.5f, ey = (mx[1] - mn[1]) * 0.5f, ez = (mx[2] - mn[2]) * 0.5f;
             sph.radius = sqrtf(ex * ex + ey * ey + ez * ez);
             t3_instanced_mesh_set_bounding_sphere(im, &sph);
-            c->im[l][p] = im;
+            im->mesh.base.layers = layer;
+            c->v[view].im[l][p] = im;
             if (s->parent) t3_object_add(s->parent, im);
           }
-        c->live = true;
-        c->posed_state = -2;
+        c->v[view].live = true;
+        c->v[view].posed_state = -2;
       }
-      if (!c->live) continue;
+      if (!c->v[view].live) continue;
       if (!vis) {
         for (int l = 0; l < s->nlod; l++)
-          for (int p = 0; p < s->nparts[l]; p++) c->im[l][p]->mesh.base.visible = false;
-        c->drawn = 0;
-        c->posed_state = -2; /* posed again when it comes back into view */
+          for (int p = 0; p < s->nparts[l]; p++) c->v[view].im[l][p]->mesh.base.visible = false;
+        c->v[view].drawn = 0;
+        c->v[view].posed_state = -2; /* posed again when it comes back into view */
         continue;
       }
       /* a cell wholly in one LOD band, short of the fade, keeps its pose */
@@ -525,17 +547,17 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
       while (la + 1 < s->nlod && dmin >= d->lod_distance[la]) la++;
       while (lb + 1 < s->nlod && dmax >= d->lod_distance[lb]) lb++;
       int state = la == lb && dmax < vr - d->fade ? la : -1;
-      if (state >= 0 && state == c->posed_state && c->posed_density == density) continue;
-      c->posed_state = state;
-      c->posed_density = density;
+      if (state >= 0 && state == c->v[view].posed_state && c->v[view].posed_density == density) continue;
+      c->v[view].posed_state = state;
+      c->v[view].posed_density = density;
       pose[np++] = c;
     }
   if (np) {
-    pose_job pj = { t, s, pose, { cam.x, cam.y, cam.z }, { t->def.origin.x, t->def.origin.z }, density };
+    pose_job pj = { t, s, pose, { cam.x, cam.y, cam.z }, { t->def.origin.x, t->def.origin.z }, density, view };
     cw_parallel_for(np, 1, pose_cells, &pj);
     for (int i = 0; i < np; i++)
       for (int l = 0; l < s->nlod; l++) {
-        t3_instanced_mesh *im = pose[i]->im[l][0];
+        t3_instanced_mesh *im = pose[i]->v[view].im[l][0];
         if (im->count) {
           im->instance_matrix->version++;
           t3_attribute_add_update_range(im->instance_matrix, 0, im->count);
@@ -545,12 +567,12 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
   for (int z = z0; z <= z1; z++)
     for (int x = x0; x <= x1; x++) {
       sc_cell *c = &s->cells[z * s->cnx + x];
-      if (!c->live) continue;
+      if (!c->v[view].live) continue;
       t->stats.scatter_cells++;
-      if (c->drawn) {
+      if (c->v[view].drawn) {
         t->stats.scatter_cells_visible++;
-        t->stats.scatter_instances += c->drawn;
-        for (int l = 0; l < s->nlod; l++) t->stats.scatter_draws += (c->im[l][0]->count > 0) * s->nparts[l];
+        t->stats.scatter_instances += c->v[view].drawn;
+        for (int l = 0; l < s->nlod; l++) t->stats.scatter_draws += (c->v[view].im[l][0]->count > 0) * s->nparts[l];
       }
     }
   cw_free(gen);
@@ -558,15 +580,26 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
   (void)sp;
 }
 
-void cw__scatter_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp) {
+void cw__scatter_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp, int view, int views) {
   double t0 = tr_now_ms();
+  /* the views draw one at a time: later views' copies go (the first view's are the ones drawn) */
+  if (view == 0 && views == 0)
+    for (int i = 0; i < TR_MAX_SCATTER; i++) {
+      tr_scatter *s = t->scatter[i];
+      if (!s) continue;
+      for (int v = 1; v < TR_VIEWS; v++)
+        if (s->view_used[v]) {
+          for (int k = 0; k < s->cnx * s->cnz; k++) cell_free_view(s, &s->cells[k], v);
+          s->view_used[v] = false;
+        }
+    }
   t->stats.scatter_cells = t->stats.scatter_cells_visible = t->stats.scatter_instances = t->stats.scatter_draws = 0;
   t3_frustum fr;
   if (vp) t3_frustum_from_matrix(&fr, vp);
   for (int i = 0; i < TR_MAX_SCATTER; i++)
     if (t->scatter[i]) {
       cw__scatter_attach(t, t->scatter[i]);
-      scatter_one(t, t->scatter[i], cam, vp ? &fr : NULL);
+      scatter_one(t, t->scatter[i], cam, vp ? &fr : NULL, view, views);
     }
   t->stats.scatter_ms = (float)(tr_now_ms() - t0);
 }
@@ -586,14 +619,16 @@ void cw__scatter_shift(cw_terrain *t, t3_vec3 d) {
       if (d.y != 0)
         for (int n = 0; n < c->n; n++) c->inst[INST_F * n + 1] += d.y; /* x, z are relative to the terrain already */
       c->ymin += d.y, c->ymax += d.y;
-      for (int l = 0; l < CW_SCATTER_LODS; l++)
-        for (int p = 0; p < CW_SCATTER_PARTS; p++) {
-          t3_instanced_mesh *im = c->im[l][p];
-          if (!im) continue;
-          t3_sphere sph = { { im->_isph[0] + d.x, im->_isph[1] + d.y, im->_isph[2] + d.z }, im->_isph[3] };
-          t3_instanced_mesh_set_bounding_sphere(im, &sph);
-        }
-      c->posed_state = -2;
+      for (int v = 0; v < TR_VIEWS; v++) {
+        for (int l = 0; l < CW_SCATTER_LODS; l++)
+          for (int p = 0; p < CW_SCATTER_PARTS; p++) {
+            t3_instanced_mesh *im = c->v[v].im[l][p];
+            if (!im) continue;
+            t3_sphere sph = { { im->_isph[0] + d.x, im->_isph[1] + d.y, im->_isph[2] + d.z }, im->_isph[3] };
+            t3_instanced_mesh_set_bounding_sphere(im, &sph);
+          }
+        c->v[v].posed_state = -2;
+      }
     }
   }
 }

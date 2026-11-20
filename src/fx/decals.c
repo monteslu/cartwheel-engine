@@ -11,6 +11,7 @@
 #include "cartwheel/profile.h"
 #include "cartwheel/render3d.h"
 #include "fx_internal.h"
+#include "render/pipeline_internal.h"
 #include "fx_wgpu.h"
 #if CW_WGPU
 #include "render/pipeline_wgpu.h"
@@ -324,6 +325,7 @@ static const char *const fs =
     "uniform sampler2D u_atlas;\n"
     "uniform mat4 u_ivp;\n"
     "uniform vec2 u_inv_size;\n"
+    "uniform vec4 u_view;\n" /* the view's rectangle in uv: a one-pass split screen's (0, 0, 1, 1 otherwise) */
     "uniform vec3 u_campos;\n"
     "uniform int u_linear;\n"
     "out vec4 frag;\n"
@@ -332,7 +334,8 @@ static const char *const fs =
     "  vec2 uv = gl_FragCoord.xy * u_inv_size;\n"
     "  float d = texture(u_depth, uv).r;\n"
     "  if (d >= 1.0) discard;\n"
-    "  vec4 w = u_ivp * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);\n"
+    "  vec2 q = (uv - u_view.xy) / u_view.zw;\n"
+    "  vec4 w = u_ivp * vec4(q * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);\n"
     "  vec3 wp = w.xyz / w.w;\n"
     "  vec3 lp = (v_inv * vec4(wp, 1.0)).xyz;\n"
     "  if (any(greaterThan(abs(lp), vec3(0.5)))) discard;\n"
@@ -405,8 +408,10 @@ typedef struct decal_tree {
   uint64_t mesh_seq;
   int mesh_recycled, mesh_builds;
 #if CW_WGPU
-  WGPUBuffer winst, wu; /* this tree's instances and uniforms (one write a frame) */
-  int winst_cap;
+  /* this tree's instances and uniforms (one write a frame; a one-pass split screen's views each their own, all
+   * written before the frame's one submit) */
+  WGPUBuffer winst_v[CW_MAX_VIEWS], wu_v[CW_MAX_VIEWS];
+  int winst_cap_v[CW_MAX_VIEWS];
 #endif
 } decal_tree;
 
@@ -416,8 +421,10 @@ static void dtree_free(void *p) {
   cw_array_free(&dt->mesh_texs);
   cw_array_free(&dt->mesh_order);
 #if CW_WGPU
-  if (dt->winst) wgpuBufferRelease(dt->winst);
-  if (dt->wu) wgpuBufferRelease(dt->wu);
+  for (int v = 0; v < CW_MAX_VIEWS; v++) {
+    if (dt->winst_v[v]) wgpuBufferRelease(dt->winst_v[v]);
+    if (dt->wu_v[v]) wgpuBufferRelease(dt->wu_v[v]);
+  }
 #endif
   cw_array_free(&dt->decals);
   cw_free(dt);
@@ -480,7 +487,7 @@ static bool box_visible(const t3_frustum *f, const t3_mat4 *w) {
 
 #if CW_WGPU
 static const char WGSL_DECALS[] =
-    "struct U { vp: mat4x4f, ivp: mat4x4f, proj: mat4x4f, campos: vec4f, p: vec4f }\n" /* p: 1/w, 1/h, flip, linear */
+    "struct U { vp: mat4x4f, ivp: mat4x4f, proj: mat4x4f, campos: vec4f, p: vec4f, r: vec4f }\n" /* p: 1/w, 1/h, flip, linear (the view's w, h); r: the view's corner */
     "@group(0) @binding(0) var<uniform> u: U;\n"
     "@group(0) @binding(1) var depth: texture_2d<f32>;\n"
     "@group(0) @binding(2) var atlas: texture_2d<f32>;\n"
@@ -505,7 +512,7 @@ static const char WGSL_DECALS[] =
     "fn to_linear(c: vec3f) -> vec3f { return select(c / 12.92, pow((c + 0.055) / 1.055, vec3f(2.4)), c >= vec3f(0.04045)); }\n"
     "@fragment fn fs(in: VO) -> @location(0) vec4f {\n"
     /* GL\x27s window coordinates (y up): the row is the GL y on a bottom-up target */
-    "  var uv = in.pos.xy * u.p.xy;\n"
+    "  var uv = (in.pos.xy - u.r.xy) * u.p.xy;\n"
     "  if (u.p.z < 0.5) { uv.y = 1.0 - uv.y; }\n"
     "  let z = textureLoad(depth, vec2i(in.pos.xy), 0).r;\n"
     "  let empty = z <= 0.0 || z > 1e30;\n"
@@ -550,7 +557,7 @@ static WGPURenderPipeline decal_pipe(int blend, const cw__wgpu_pass_targets *tg)
     const char *const parts[] = { WGSL_DECALS, NULL };
     dsm = cw__wg_module("decals", parts);
     WGPUShaderStage VF = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment, F = WGPUShaderStage_Fragment;
-    const cw__wg_slot sl[4] = { { CW_WB_UNIFORM, VF, 0, 224 }, { CW_WB_TEX_UNFILT, F, 0, 0 }, { CW_WB_TEX, F, 0, 0 },
+    const cw__wg_slot sl[4] = { { CW_WB_UNIFORM, VF, 0, 240 }, { CW_WB_TEX_UNFILT, F, 0, 0 }, { CW_WB_TEX, F, 0, 0 },
                                 { CW_WB_SAMPLER, F, 0, 0 } };
     dbgl = cw__wg_layout(sl, 4);
   }
@@ -682,10 +689,16 @@ static void decals_exec(cw_pass_ctx *ctx, void *user) {
   glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(sizeof(float) * stride * (size_t)nv), buf);
 
   cw_pass_bind_target(ctx, ctx->scene);
+  cw_pass_view_viewport(ctx); /* (a one-pass split screen's view: its rectangle) */
   glUseProgram(prog);
   cw__fx_mat4(prog, "u_vp", vp.e);
   cw__fx_mat4(prog, "u_ivp", ctx->inv_view_proj.e);
   cw__fx_u2f(prog, "u_inv_size", 1.0f / (float)ctx->width, 1.0f / (float)ctx->height);
+  {
+    float vu[4];
+    cw_pass_view_uv(ctx, vu);
+    glUniform4f(glGetUniformLocation(prog, "u_view"), vu[0], vu[1], vu[2], vu[3]);
+  }
   t3_vec3 cp = t3_mat4_get_position(&ctx->camera->base.matrix_world);
   cw__fx_u3f(prog, "u_campos", cp.x, cp.y, cp.z);
   cw__fx_u1i(prog, "u_linear", linear ? 1 : 0);
@@ -754,15 +767,19 @@ static void draw_wgpu(cw_pass_ctx *ctx, decal_tree *dt, const struct vis *list, 
     dcube = cw__wg_buffer(sizeof v, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst, "decal cube");
     cw__wg_write(dcube, 0, v, sizeof v);
   }
-  if (dt->winst_cap < nv) {
-    if (dt->winst) wgpuBufferRelease(dt->winst);
-    dt->winst_cap = nv + 64;
-    dt->winst = cw__wg_buffer(sizeof(float) * (size_t)stride * (size_t)dt->winst_cap,
+  int vk = ctx->view_count > 0 ? CW_CLAMP(ctx->view_index, 0, CW_MAX_VIEWS - 1) : 0;
+  WGPUBuffer *winst = &dt->winst_v[vk], *wu = &dt->wu_v[vk];
+  if (dt->winst_cap_v[vk] < nv) {
+    if (*winst) wgpuBufferRelease(*winst);
+    dt->winst_cap_v[vk] = nv + 64;
+    *winst = cw__wg_buffer(sizeof(float) * (size_t)stride * (size_t)dt->winst_cap_v[vk],
                               WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst, "decal instances");
   }
-  cw__wg_write(dt->winst, 0, buf, sizeof(float) * (size_t)stride * (size_t)nv);
-  if (!dt->wu) dt->wu = cw__wg_buffer(224, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst, "decal u");
-  float u[56] = { 0 };
+  cw__wg_write(*winst, 0, buf, sizeof(float) * (size_t)stride * (size_t)nv);
+  if (!*wu) *wu = cw__wg_buffer(240, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst, "decal u");
+  float u[60] = { 0 };
+  int vr[4]; /* a one-pass split screen's view: its rectangle */
+  cw__view_fb_rect(ctx, tg->w, tg->h, !tg->flip_y, vr);
   memcpy(u, vp->e, 64);
   memcpy(u + 16, ctx->inv_view_proj.e, 64);
   memcpy(u + 32, ctx->proj.e, 64);
@@ -770,25 +787,29 @@ static void draw_wgpu(cw_pass_ctx *ctx, decal_tree *dt, const struct vis *list, 
   u[48] = cp.x;
   u[49] = cp.y;
   u[50] = cp.z;
-  u[52] = 1.0f / (float)tg->w;
-  u[53] = 1.0f / (float)tg->h;
+  u[52] = 1.0f / (float)vr[2];
+  u[53] = 1.0f / (float)vr[3];
   u[54] = tg->flip_y ? 1.0f : 0.0f;
   u[55] = linear ? 1.0f : 0.0f;
-  cw__wg_write(dt->wu, 0, u, sizeof u);
+  u[56] = (float)vr[0];
+  u[57] = (float)vr[1];
+  cw__wg_write(*wu, 0, u, sizeof u);
   decal_pipe(DB_MIX, tg); /* makes the module and layout */
-  cw__wg_entry e[4] = { { .buffer = dt->wu }, { .view = tg->linear_depth }, { .view = atlas.wview },
+  cw__wg_entry e[4] = { { .buffer = *wu }, { .view = tg->linear_depth }, { .view = atlas.wview },
                         { .sampler = cw__wg_sampler(true, false, true) } };
   WGPUBindGroup bg = cw__wg_group(dbgl, e, 4);
   /* its own render pass: timed as a span of the decals pass (pass timers) */
   cw__pw_timing_span((void *)cw__pw_encoder(), false);
   WGPURenderPassEncoder rp = cw__wg_scene_pass(tg, false, "decals");
+  wgpuRenderPassEncoderSetViewport(rp, (float)vr[0], (float)vr[1], (float)vr[2], (float)vr[3], 0, 1);
+  wgpuRenderPassEncoderSetScissorRect(rp, (uint32_t)vr[0], (uint32_t)vr[1], (uint32_t)vr[2], (uint32_t)vr[3]);
   wgpuRenderPassEncoderSetBindGroup(rp, 0, bg, 0, NULL);
   wgpuRenderPassEncoderSetVertexBuffer(rp, 1, dcube, 0, WGPU_WHOLE_SIZE);
   for (int start = 0; start < nv;) {
     int b = list[start].d->blend, end = start + 1;
     while (end < nv && list[end].d->blend == b) end++;
     wgpuRenderPassEncoderSetPipeline(rp, decal_pipe(b, tg));
-    wgpuRenderPassEncoderSetVertexBuffer(rp, 0, dt->winst, sizeof(float) * (size_t)stride * (size_t)start,
+    wgpuRenderPassEncoderSetVertexBuffer(rp, 0, *winst, sizeof(float) * (size_t)stride * (size_t)start,
                                          sizeof(float) * (size_t)stride * (size_t)(end - start));
     wgpuRenderPassEncoderDraw(rp, 36, (uint32_t)(end - start), 0, 0);
     dt->stats.draw_calls++;
@@ -1334,7 +1355,7 @@ static void decal_enter(cw_node n, void *data) {
   if (!dt->pass_added) {
     cw_pipeline *p = cw_pipeline_of(t);
     if (!cw_pipeline_has_pass(p, "decals"))
-      cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "decals", .phase = CW_PHASE_EFFECTS, .order = 100,
+      cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "decals", .phase = CW_PHASE_EFFECTS, .order = 100, .views = CW_PASS_VIEWS_EACH,
                                                .reads = CW_RES_DEPTH, .writes = CW_RES_COLOR,
                                                .active = decals_active, .execute = decals_exec });
     dt->pass_added = true;

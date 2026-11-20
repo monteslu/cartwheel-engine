@@ -16,6 +16,7 @@
 #include "fx/fx_wgpu.h"
 #include "render/pipeline_wgpu.h"
 #endif
+#include "render/pipeline_internal.h"
 
 /* ── the atmosphere (C and GLSL agree) ──────────────────────────────── */
 
@@ -162,10 +163,12 @@ static const char SUN_FS[] =
     "uniform vec3 u_sun;\n"
     "uniform vec4 u_disk; /* cos(radius), cos(inner), radiance scale, 0 */\n"
     "uniform vec3 u_color;\n"
+    "uniform vec4 u_view; /* the view's rectangle in uv (one-pass split screen; 0, 0, 1, 1 otherwise) */\n"
     "out vec4 o;\n"
     "void main() {\n"
-    "\tvec4 a = u_inv_view_proj * vec4( v_uv * 2.0 - 1.0, -1.0, 1.0 );\n"
-    "\tvec4 b = u_inv_view_proj * vec4( v_uv * 2.0 - 1.0, 1.0, 1.0 );\n"
+    "\tvec2 q = ( v_uv - u_view.xy ) / u_view.zw;\n"
+    "\tvec4 a = u_inv_view_proj * vec4( q * 2.0 - 1.0, -1.0, 1.0 );\n"
+    "\tvec4 b = u_inv_view_proj * vec4( q * 2.0 - 1.0, 1.0, 1.0 );\n"
     "\tvec3 dir = normalize( b.xyz / b.w - a.xyz / a.w );\n"
     "\tfloat c = dot( dir, u_sun );\n"
     "\tif ( c < u_disk.x ) discard;\n"
@@ -257,7 +260,7 @@ static sky_rt *sky_of(cw_tree *t) {
   cw_pipeline *p = cw_pipeline_of(t);
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "sky_env", .phase = CW_PHASE_SHADOW, .order = 100, .views = CW_PASS_VIEWS_ONCE /* the sky's cube: no view's */,
                                            .active = sky_env_active, .execute = pass_sky_env, .user = s });
-  cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "sky_sun", .phase = CW_PHASE_SKY, .order = 0, .writes = CW_RES_COLOR,
+  cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "sky_sun", .phase = CW_PHASE_SKY, .order = 0, .writes = CW_RES_COLOR, .views = CW_PASS_VIEWS_EACH,
                                            .active = sky_sun_active, .execute = pass_sky_sun, .user = s });
   return s;
 }
@@ -657,8 +660,12 @@ static void pass_sky_sun(cw_pass_ctx *ctx, void *user) {
   if (!sun_ndc_box(ctx, s->sun, r, box)) return;
   int vp[4], sc[4];
   glGetIntegerv(GL_VIEWPORT, vp);
-  sun_px_box(box, vp[2], vp[3], false, sc);
+  /* one-pass split screen: the box within the view's rectangle */
+  int rect[4] = { 0, 0, vp[2], vp[3] };
+  if (ctx->view_count > 0) cw__view_clip_rect(vp[2], vp[3], rect);
+  sun_px_box(box, rect[2], rect[3], false, sc);
   if (sc[2] <= 0 || sc[3] <= 0) return;
+  sc[0] += rect[0], sc[1] += rect[1];
   GLint had_scissor = 0;
   glGetIntegerv(GL_SCISSOR_TEST, &had_scissor); /* (a capability's glGet is its state: glIsEnabled is not on every host) */
   int old_sc[4];
@@ -675,7 +682,13 @@ static void pass_sky_sun(cw_pass_ctx *ctx, void *user) {
   glUniform3f(glGetUniformLocation(prog, "u_sun"), s->sun.x, s->sun.y, s->sun.z);
   cw_pass_uniform4f(prog, "u_disk", cosf(r), cosf(r * 0.7f), scale, 0);
   glUniform3f(glGetUniformLocation(prog, "u_color"), s->sun_color.r, s->sun_color.g, s->sun_color.b);
+  float vu[4];
+  cw_pass_view_uv(ctx, vu);
+  cw_pass_uniform4f(prog, "u_view", vu[0], vu[1], vu[2], vu[3]);
+  bool clip = cw__vclip.on;
+  cw__vclip.on = false; /* (the box above is within the view's rectangle already) */
   cw_pass_fullscreen();
+  cw__vclip.on = clip;
   glDepthMask(GL_TRUE);
   glDisable(GL_BLEND);
   glDisable(GL_DEPTH_TEST);
@@ -832,13 +845,13 @@ static bool wgpu_build_cube(sky_rt *s, int size) {
 /* the sun disk: SUN_FS in WGSL, at the far plane, additive, where nothing
  * was drawn (depth test against the scene depth, no depth writes) */
 static const char WGSL_SUN[] =
-    "struct U { ivp: mat4x4f, sun: vec4f, disk: vec4f, color: vec4f, p: vec4f }\n" /* p: 1/w, 1/h, flip */
+    "struct U { ivp: mat4x4f, sun: vec4f, disk: vec4f, color: vec4f, p: vec4f, r: vec4f }\n" /* p: 1/w, 1/h, flip (the view's w, h); r: the view's corner */
     "@group(0) @binding(0) var<uniform> u: U;\n"
     "@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n"
     "  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u)); return vec4f(p * 2.0 - 1.0, 0.0, 1.0); }\n"
     "struct FO { @location(0) c: vec4f, @builtin(frag_depth) d: f32 }\n"
     "@fragment fn fs(@builtin(position) fp: vec4f) -> FO {\n"
-    "  var uv = fp.xy * u.p.xy;\n"
+    "  var uv = (fp.xy - u.r.xy) * u.p.xy;\n"
     "  if (u.p.z < 0.5) { uv.y = 1.0 - uv.y; }\n"
     "  let a = u.ivp * vec4f(uv * 2.0 - 1.0, -1.0, 1.0);\n"
     "  let b = u.ivp * vec4f(uv * 2.0 - 1.0, 1.0, 1.0);\n"
@@ -855,15 +868,14 @@ static void pass_sky_sun_wgpu(cw_pass_ctx *ctx, sky_rt *s) {
   static WGPURenderPipeline pipe;
   static uint32_t pipe_key;
   static WGPUBindGroupLayout bgl;
-  static WGPUBuffer ubo;
+  static WGPUBuffer ubos[CW_MAX_VIEWS]; /* (a one-pass split screen's views each their own: one submit for all) */
   uint32_t key = (uint32_t)tg->color_format | (uint32_t)tg->depth_format << 12 | (uint32_t)(tg->samples > 1 ? tg->samples : 1) << 24;
   if (!pipe || key != pipe_key) {
     const char *const parts[] = { WGSL_SUN, NULL };
     WGPUShaderModule sm = cw__wg_module("sky.sun", parts);
     if (!bgl) {
-      cw__wg_slot sl = { CW_WB_UNIFORM, WGPUShaderStage_Fragment, 0, 128 };
+      cw__wg_slot sl = { CW_WB_UNIFORM, WGPUShaderStage_Fragment, 0, 144 };
       bgl = cw__wg_layout(&sl, 1);
-      ubo = cw__wg_buffer(128, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst, "sky sun u");
     }
     WGPUColorTargetState ct = { .format = tg->color_format, .blend = cw__wg_blend(CW_WG_BLEND_ADD), .writeMask = WGPUColorWriteMask_All };
     WGPUFragmentState fs = { .module = sm, .entryPoint = CW_WGPU_SV("fs"), .targetCount = 1, .targets = &ct };
@@ -890,10 +902,20 @@ static void pass_sky_sun_wgpu(cw_pass_ctx *ctx, sky_rt *s) {
   float box[4];
   if (!sun_ndc_box(ctx, s->sun, r, box)) return;
   int sc[4];
+  /* one-pass split screen: the view's rectangle in the pass's rows (bottom-up when flipped, as GL's) */
+  int rect[4] = { 0, 0, tg->w, tg->h };
+  if (ctx->view_count > 0) {
+    cw__view_clip_rect(tg->w, tg->h, rect);
+    if (!tg->flip_y) rect[1] = tg->h - rect[1] - rect[3];
+  }
   /* (rows top-down in the pass unless the target is drawn flipped, as the shader's uv reads it) */
-  sun_px_box(box, tg->w, tg->h, !tg->flip_y, sc);
+  sun_px_box(box, rect[2], rect[3], !tg->flip_y, sc);
   if (sc[2] <= 0 || sc[3] <= 0) return;
-  float u[32] = { 0 };
+  sc[0] += rect[0], sc[1] += rect[1];
+  int vk = ctx->view_count > 0 ? CW_CLAMP(ctx->view_index, 0, CW_MAX_VIEWS - 1) : 0;
+  if (!ubos[vk]) ubos[vk] = cw__wg_buffer(144, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst, "sky sun u");
+  WGPUBuffer ubo = ubos[vk];
+  float u[36] = { 0 };
   memcpy(u, ctx->inv_view_proj.e, 64);
   u[16] = s->sun.x;
   u[17] = s->sun.y;
@@ -904,9 +926,11 @@ static void pass_sky_sun_wgpu(cw_pass_ctx *ctx, sky_rt *s) {
   u[24] = s->sun_color.r;
   u[25] = s->sun_color.g;
   u[26] = s->sun_color.b;
-  u[28] = 1.0f / (float)tg->w;
-  u[29] = 1.0f / (float)tg->h;
+  u[28] = 1.0f / (float)rect[2];
+  u[29] = 1.0f / (float)rect[3];
   u[30] = tg->flip_y ? 1.0f : 0.0f;
+  u[32] = (float)rect[0];
+  u[33] = (float)rect[1];
   cw__wg_write(ubo, 0, u, sizeof u);
   cw__wg_entry e = { .buffer = ubo };
   WGPUBindGroup bg = cw__wg_group(bgl, &e, 1);

@@ -9,6 +9,7 @@
 
 #define TR_TILE 1024                /* layer texture size: a layer of the array textures */
 #define TR_MAX_SCATTER 16
+#define TR_VIEWS 4                  /* one-pass split screen: the views a terrain keeps a selection for (CW_MAX_VIEWS) */
 #define TR_SCATTER_CELL 32.0f      /* metres */
 
 typedef struct tr_gpu {
@@ -22,6 +23,15 @@ typedef struct tr_gpu {
   t3_texture *pair; /* (nx + 1) x (nz + 1) RGBA32UI: each control cell's layers and their shares (terrain_render.c, pair_rows) */
   int mw, mh, mdiv;
   int near_q;                  /* the quality the near material's program is for */
+  /* one-pass split screen (src/render/view_layers.h): views after the first draw their own selection with meshes of
+   * their own, each on its view's layer (the first view's are im above); cam is the camera the view's patches morph
+   * for. views: how many views the last frame drew this way (0: none, im on layer 0) */
+  struct tr_view {
+    t3_instanced_mesh *im[2][2];
+    int cap[2][2];
+    t3_vec3 cam;
+  } view[TR_VIEWS];
+  int views;
 } tr_gpu;
 
 typedef struct tr_region {
@@ -116,7 +126,11 @@ void cw__terrain_select(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp);
 /* terrain_render.c */
 void cw__terrain_gpu_free(cw_terrain *t);
 void cw__terrain_gpu_update(cw_terrain *t);
-void cw__terrain_gpu_draw_setup(cw_terrain *t);
+void cw__terrain_gpu_draw_setup(cw_terrain *t, int view);
+/* one-pass split screen: the frame's views (0 when the views draw one at a time, or there is one) */
+void cw__terrain_gpu_views(cw_terrain *t, int views);
+/* view k's selection, patches and scatter for its camera (k > 0: after view 0's cw_terrain_update this frame) */
+void cw__terrain_update_view(cw_terrain *t, int view, int views, t3_vec3 cam, const t3_mat4 *vp);
 void cw__terrain_gpu_set_origin(cw_terrain *t);
 void cw__terrain_gpu_share_layers(cw_terrain *t, cw_terrain *src);
 void cw__terrain_gpu_prepare(cw_terrain *t);
@@ -130,7 +144,7 @@ float cw__terrain_far(const cw_terrain *t);
 
 /* scatter.c */
 void cw__scatter_free(tr_scatter *s);
-void cw__scatter_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp);
+void cw__scatter_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp, int view, int views);
 void cw__scatter_attach(cw_terrain *t, tr_scatter *s);
 void cw__scatter_shift(cw_terrain *t, t3_vec3 d);
 void cw__scatter_sync(cw_terrain *t); /* placement in flight done (before heights, control or origin change) */
