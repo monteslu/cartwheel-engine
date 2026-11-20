@@ -4,6 +4,16 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.53.4 (2026-11-20)
+
+### Fixed
+- **CI builds every app as a dev cart, in one job again.** The cart checks (every cart is dual, art, version,
+  controls) read imports and manifests, which are the same in a dev cart (no ThinLTO, no wasm-opt), and building
+  all 213 apps as release carts took 54 to 60 minutes. Four release carts (hello, plugin_demo, platformer3d,
+  tiles2d) are still built as games ship them, with ThinLTO's cache kept between runs, and pass the dual check. This
+  also ends v0.53.3's two shares, whose second share failed the art check (it needs hello and vertex_colors
+  from one build).
+
 ## v0.53.3 (2026-11-20)
 
 ### Fixed
