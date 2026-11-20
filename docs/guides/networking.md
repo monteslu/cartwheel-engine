@@ -61,7 +61,7 @@ Sessions do not forward traffic between peers. With UDP, every peer connects to 
 
 **[NetSpawner](node:NetSpawner)** replicates creation and removal of the children of `spawn_path`. When its authority adds a child instanced from a listed `*.cwscene` (or of a listed node type), every peer creates the same child with the same name and the `spawn_properties`; freeing it frees it everywhere. Peers that join later receive every live child.
 
-This is the same model as Godot's MultiplayerSynchronizer and MultiplayerSpawner. No sample uses it yet; [tests/unit/test_net.c](repo:tests/unit/test_net.c) builds a host and a client over a lossy loopback, spawns scenes with a synchronizer inside, hands one of them to the client, calls an any-peer RPC, checks that an authority-only one is refused, and despawns a node everywhere.
+No sample uses it yet; [tests/unit/test_net.c](repo:tests/unit/test_net.c) builds a host and a client over a lossy loopback, spawns scenes with a synchronizer inside, hands one of them to the client, calls an any-peer RPC, checks that an authority-only one is refused, and despawns a node everywhere.
 
 ## Tree snapshots
 

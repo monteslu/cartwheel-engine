@@ -68,6 +68,5 @@ Every public header, with its one-line summary:
 - [Your first 2D game](tutorial:first-2d) and [your first 3D game](tutorial:first-3d): a small game from an empty template.
 - [Multiplayer with rollback](tutorial:multiplayer-rollback) and [Localizing a game](tutorial:localize).
 - [The debug channel](guide:debug-channel): inspect and drive a running game.
-- [Coming from Godot](guide:porting-from-godot): the concept map.
 - [Working on {{name}}](guide:conventions): the rules for changing the engine itself.
 - `CHANGELOG.md` in the repository: what each release added.

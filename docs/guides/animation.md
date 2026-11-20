@@ -350,7 +350,7 @@ bone_name = "Palm2L"
 bone = "Head"
 ```
 
-Under the model's node, as above, the skeleton is its parent's. A Skeleton3D can also hold the model itself (its own `mesh`-carrying child, or `cw_node3d_set_object` on the Skeleton3D), which is the layout Godot scenes have; `model` names another node by path when neither fits. The skeleton binds as soon as the model's bones exist (a mesh resource may arrive a few frames after the scene loads), and binds again if the model is replaced. Until then `bone_count` is 0. The signal `skeleton_bound` says when.
+Under the model's node, as above, the skeleton is its parent's. A Skeleton3D can also hold the model itself (its own `mesh`-carrying child, or `cw_node3d_set_object` on the Skeleton3D), a common layout of imported scenes; `model` names another node by path when neither fits. The skeleton binds as soon as the model's bones exist (a mesh resource may arrive a few frames after the scene loads), and binds again if the model is replaced. Until then `bone_count` is 0. The signal `skeleton_bound` says when.
 
 | Call | What it does |
 |---|---|

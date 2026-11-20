@@ -7,8 +7,8 @@
  *                        transform feedback: per particle position, age,
  *                        velocity and its spawn cycle, ping-ponged between two
  *                        buffer pairs every fixed tick. Emission is a pure
- *                        function of the particle index and sim time (Godot's
- *                        model): particle i spawns at
+ *                        function of the particle index and sim time:
+ *                        particle i spawns at
  *                          start + i / amount * lifetime * (1 - explosiveness)
  *                        and again every `lifetime` seconds while emitting, with
  *                        its random values hashed from (seed, i, cycle) by an

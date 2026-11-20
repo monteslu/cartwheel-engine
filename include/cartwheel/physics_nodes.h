@@ -6,7 +6,7 @@
  *                         body's shapes sit on ONE layer, physics.h) while
  *                         collision_mask is a BIT SET: layer = 1, mask = 5
  *                         means "on layer 1, collides with layers 0 and 2"
- *                         (Godot uses bits for both). Prefer the name forms
+ *                         (bits for both). Prefer the name forms
  *                         collision_layer_name / collision_mask_names
  *                         ("world|enemy"), resolved against the project's
  *                         layer names (below). An unknown name is logged as
@@ -53,7 +53,7 @@
  *                         DETECTION IS TWO-SIDED: an area sees a body only
  *                         when the area's mask has the body's layer AND the
  *                         body's mask has the area's layer (Box2D/Box3D
- *                         filter both ways; Godot checks one side). Give a
+ *                         filter both ways). Give a
  *                         player a mask such as "world|pickups|hazards".
  *                         A shape's `disabled` (and any shape property) may
  *                         change at run time: the body is rebuilt before the
@@ -114,7 +114,7 @@
  *      events become signals, delivered in the library's event order; node
  *      frees and adds from those handlers are deferred until all are sent
  *   5. hook (order 200): Camera2D smoothing
- * This is Godot's order (physics_process, then the physics step), so a
+ * This order (the fixed update, then the physics step) means a
  * script sees signals from the step that followed its last fixed_update.
  * Consequence: a character riding a KinematicBody platform follows it with
  * one tick of lag (it moved in step 2, the platform moves in step 4); it is

@@ -25,6 +25,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 ### Changed
 - In such a frame the geometry the engine draws for one view only (a terrain's patches and scatter) is on layers 28
   to 31: keep a game's own objects off those layers.
+- The guides and headers describe the engine on its own terms; the porting guide is removed.
 
 ### Fixed
 - Split screen with a shared post chain at Very Low and Low lost its height fog: it was fused into the tonemap pass,
@@ -33,10 +34,10 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 ## v0.54.0 (2026-11-20)
 
 ### Added
-- **Randomized sounds** (`cw_randomizer`, Godot's `AudioStreamRandomizer`): several sounds, one picked per play,
+- **Randomized sounds** (`cw_randomizer`): several sounds, one picked per play,
   weighted with no repeats, weighted with repeats, or in order, with each play's pitch and volume varied within
   `random_pitch` and `random_volume_db`. Seeded, so the same calls pick the same sounds on every host.
-- **Interactive music** (`cw_music`, Godot's `AudioStreamInteractive`): clips with a beat grid (bpm, bar beats,
+- **Interactive music** (`cw_music`): clips with a beat grid (bpm, bar beats,
   length in beats, loop, auto advance to a next clip or back to a held one) and transitions between them (at once,
   on the next beat, the next bar or the clip's end; a cut, a fade in, a fade out or a cross fade over some beats;
   from the start or at the same position; through a filler clip; holding the clip left). Switches are on the mixer's
@@ -58,8 +59,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
 ### Changed
 - A WAV with a sampler chunk now loops by its chunk's points (none of the engine's or the example games' WAVs have
-  one). `docs/guides/audio.md` covers the new parts; `porting-from-godot.md` maps the two Godot streams and a
-  stream's loop, and no longer lists them as missing.
+  one). `docs/guides/audio.md` covers the new parts.
 
 ## v0.53.5 (2026-11-20)
 
@@ -437,7 +437,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   one-way planks, crates, a ledge removed in play). Gates `tiles2d` (GL and WebGPU, every host; the control
   never jumps and so never stands on a plank) and `unit-tiles2d` (outlines by segment count, a frictionless box
   sliding 60 cells, slopes, one-way platforms for characters and rigid bodies, rebuild counts, rollback). Guides:
-  2D rendering ("Tile shapes and collision", "Custom tile data"), physics ("Tile maps"), porting from Godot.
+  2D rendering ("Tile shapes and collision", "Custom tile data"), physics ("Tile maps").
 - **2D navigation: grids, paths, flow fields and crowds (`cartwheel/nav2d.h`).** A `cw_navgrid` is a grid of
   cells with a cost each (0 blocks). `cw_navgrid_find_path` is A* with eight neighbours and no corner cutting,
   jump point search on grids where every walkable cell costs the same (the same shortest paths, a fraction of the
@@ -462,7 +462,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   256x256 map and holds every host to the same hashes: the navigation grid bakes in 3.6 ms natively and 4.2 ms
   in a cart, 1000 batched paths take 13.9 and 38 ms, a flow field 5.3 and 9.3 ms, a step of a 500-agent crowd
   0.23 and 0.31 ms (measured on a loaded machine, so upper bounds). Guide: navigation,
-  "2D navigation: grids, tile maps and flow fields"; porting from Godot.
+  "2D navigation: grids, tile maps and flow fields".
 - **Terrains: tile maps that pick their own tiles.** `terrains` on a TileMap2D lists autotile sets as text:
   `"floor: single 12 x4; wall: blob47 16 x2 outside; moss: corner16 112; fence: edge16 128"`. The kinds are the
   47-tile blob set (sides and corners), 16 tiles matched by sides, 16 matched by corners (two-corner Wang tiles,
@@ -482,7 +482,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   doorway painted shut in play. Gate `tiles2d-room` (GL and WebGPU, every host; the control leaves the doorway
   open and the hero walks back through); `unit-tiles2d` covers the 47 masks, painting and erasing each kind,
   variants in any paint order, fixing twice, the scene form and collider rebuilds. Guide: 2D rendering,
-  "Terrains (autotiling)"; porting from Godot.
+  "Terrains (autotiling)".
 - **Isometric and hexagon tile maps.** `layout` on a TileMap2D (`cw_tilemap_desc.layout` in the immediate API):
   `ISOMETRIC` diamonds, `HEX_ROWS` (pointy-top hexagons, odd rows shifted) and `HEX_COLUMNS` (flat-top, odd
   columns shifted), beside `SQUARE`. The chunk renderer places each cell's quad by the layout and culls chunks
@@ -497,7 +497,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   neighbours, plain A* with the hexagon distance, paths through cell middles, flow fields and the crowd.
 - Sample `tiles2d_layouts`: an island of each layout with collision outlines and walkers trading places
   through a wall's gap. Gates `tiles2d-layouts` (GL and WebGPU, every host), and layout cases in `unit-tiles2d`
-  and `unit-nav2d`. Guides: 2D rendering ("Isometric and hexagon layouts"), navigation, porting from Godot.
+  and `unit-nav2d`. Guides: 2D rendering ("Isometric and hexagon layouts"), navigation.
 
 **Rendering**
 
