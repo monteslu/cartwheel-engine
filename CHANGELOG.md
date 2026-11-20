@@ -94,6 +94,14 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   (`patches/box2d/0004`): it zeroed each of those arrays with `memset` even when empty, on a null pointer, which
   UBSan stops on (unit_net, under the sanitizer build). unit_net passes under ASan and UBSan with the patch (66
   checks) and stops at `snapshot.c:713` without it.
+## NEXT (surface-ies): a game's surface under an IES lamp is gated (the clustered lights' IES part composes with it)
+
+### Changed
+- `tests/custom-surface.mjs` (gate `custom-surface-lighting`) has a fifth lighting setup: the sample's spot lamp
+  shaped by an IES profile (`CS_IES=1`), where every lit material carries the clustered lights' IES part. Surfaces
+  at zero must draw what plain materials draw under it (0.000 % of 1080p pixels on GL and WebGPU), and the profile
+  must change the picture against the lamp without one (0.33 % GL, 0.37 % WebGPU). The sample's table gains the 10
+  states that setup draws.
 
 ## v0.51.0 (2026-11-19)
 ## NEXT (post stack): star glints on bright points
