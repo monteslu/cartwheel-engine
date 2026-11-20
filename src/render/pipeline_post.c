@@ -301,7 +301,10 @@ static void velocity_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_uniform_mat4(vel_prog, "u_inv_vp_j", &ctx->pipeline->inv_view_proj_jittered);
   cw_pass_uniform_mat4(vel_prog, "u_vp", &ctx->view_proj);
   cw_pass_uniform_mat4(vel_prog, "u_prev_vp", &ctx->prev_view_proj);
-  cw_pass_uniform1f(vel_prog, "u_vm_depth", cw__render3d_viewmodel_camera(ctx->tree) ? VIEWMODEL_DEPTH : 0.0f);
+  /* CW_TEST_VIEWMODEL_MOTION=camera (a gate control): the viewmodel's pixels take the camera's motion like the rest */
+  const char *vm_test = cw_test_env("CW_TEST_VIEWMODEL_MOTION");
+  bool vm_still = cw__render3d_viewmodel_camera(ctx->tree) && !(vm_test && !strcmp(vm_test, "camera"));
+  cw_pass_uniform1f(vel_prog, "u_vm_depth", vm_still ? VIEWMODEL_DEPTH : 0.0f);
   cw_pass_fullscreen();
   cw__velocity_objects(ctx, v);
   ctx->velocity = v;

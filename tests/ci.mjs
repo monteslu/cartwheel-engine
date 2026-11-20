@@ -33,6 +33,7 @@ export const LOCAL_ONLY = {
   'quality-grounding': 'reads pixels of native runs at 1080p on the test GPU, High against Very Low',
   'quality-verylow-post': 'reads pixels of native runs on the test GPU, the passes fused against apart',
   'auto-exposure': 'reads every frame of native runs on the test GPU, GL against WebGPU',
+  'viewmodel-blur': 'reads pixels of native runs on the test GPU, blurred against plain',
   'motion-vectors': 'reads pixels of native runs on the test GPU against a frame rendered at 36 times the pixels',
   'gi-probe': 'reads pixels of native runs on the test GPU (GL and WebGPU) against known answers',
   'reversed-depth': 'reads pixels of WebGPU runs on the test GPU, forward depth against reversed',
