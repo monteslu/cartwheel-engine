@@ -5349,6 +5349,24 @@
     "note": "Decal3D mode MESH: a badge and paint clipped from a walking skinned character (drawn skinned on its skeleton), a crack on a transparent glass pane, an ADD ring stamped on a spinning crate (no target), bullet holes pooled at 12 (8 recycled). md.hash is FNV over every mesh decal's vertex bits: the clip must agree bit for bit on every host. Control: every decal 0.2 m to the right (other geometry, other hashes); WebGPU control: the decals back in screen space (no crack on the glass, nothing stuck to the character)"
   },
   {
+    "name": "custom-surface",
+    "webgpu": { "vsGl": 0.02, "controls": [{ "env": { "CS_MODE": "stock" } }] },
+    "app": "custom_surface",
+    "frames": 60,
+    "maxGt16": 0.005,
+    "fields": ["cs.tick", "cs.surfaces", "cs.api_ok", "cs.mesh_decals", "cs.skipped", "cs.tex_updates", "cs.amount"],
+    "expect": { "cs.surfaces": 3, "cs.api_ok": 1, "cs.mesh_decals": 1, "cs.skipped": 0, "cs.tex_updates": 1 },
+    "tol": 0.0001,
+    "controlFrames": 60,
+    "controlEnv": { "CS_MODE": "stock" },
+    "note": "three surfaces of the game's own (a dissolving chrome orb, a triplanar slab with moss and a sticker, forty swaying reeds; cartwheel/surface.h) among clustered lamps, cascades, a reflection probe and a probe grid: the same picture and state on every host, the parameter calls answer, a texture changed in place is uploaded. The control takes the surfaces off (plain materials): the picture must differ"
+  },
+  {
+    "name": "custom-surface-lighting",
+    "script": "tests/custom-surface.mjs",
+    "note": "a surface of the game's own keeps the engine's lighting (samples/custom_surface, cartwheel/surface.h): with their effects at zero, three surfaces (dissolve, triplanar rock, wind sway) among clustered lamps, cascades, a reflection probe, a probe grid and a mesh decal draw the pixels plain materials draw, on clustered and forward lighting, the Very Low preset and with the decal placed late, on GL and WebGPU; the effects draw on every host (holes in the orb and its shadow, the stone, reeds and their shadows moving, a texture changed in place); the screen-space G-buffer keeps the surface; the parameter calls answer; forty reeds with a surface are one instanced draw. Controls: CW_TEST_SURFACE_ALONE=1 (a surface treated as any game part was before) must fail forward, verylow, late-decal and the G-buffer check"
+  },
+  {
     "name": "fx-lit-decals",
     "script": "tests/lit-decals.mjs",
     "note": "mesh decals take the light of their surface: three stickers (dark, under a lamp, in the sun) and two skinned badges are compared with the wall around them, in CLUSTERED and FORWARD lighting, on GL and WebGPU (and the cart hosts with --hosts). Control: CW_DECAL_UNLIT=1 draws them unlit and must be caught"

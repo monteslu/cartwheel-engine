@@ -209,6 +209,23 @@ static int due_cmp(const void *a, const void *b) {
   return x->n.id < y->n.id ? -1 : x->n.id > y->n.id;
 }
 
+/* every part of an extension is a surface of the game's own (cartwheel/surface.h, CW_PART_SURFACE): gi composes
+ * with it as it does with the lighting parts */
+static bool surface_only(const char *ext) {
+  for (const char *p = ext; p && *p;) {
+    const char *e = strchr(p, '_');
+    size_t len = e ? (size_t)(e - p) : strlen(p);
+    char part[16];
+    if (len >= sizeof part) return false;
+    memcpy(part, p, len);
+    part[len] = 0;
+    if (!(cw_shading_part_traits_of(part) & CW_PART_SURFACE)) return false;
+    if (!e) break;
+    p = e + 1;
+  }
+  return true;
+}
+
 /* every Standard / Physical material of the scene carries the gi part */
 void cw__gi_tag(gi_tree *g, t3_object *o) {
   if (o->type == T3_MESH || o->type == T3_SKINNED_MESH || o->type == T3_INSTANCED_MESH) {
@@ -227,8 +244,8 @@ void cw__gi_tag(gi_tree *g, t3_object *o) {
       const char *skip_env = getenv("CW_TEST_GI_SKIP_CSM");
       bool skip_csm = skip_env && atoi(skip_env);
       const char *ext = t3_material_get_extension(mat);
-      if (ext && !cw_shading_has(mat, "cluster") && !cw_shading_has(mat, "clusteries") && !(cw_shading_has(mat, "csm") && !skip_csm) && !cw_shading_has(mat, "meshdecal") &&
-          !cw_shading_has(mat, "skinshade")) {
+      if (ext && !cw_shading_has(mat, "cluster") && !cw_shading_has(mat, "clusteries") && !(cw_shading_has(mat, "csm") && !skip_csm) &&
+          !cw_shading_has(mat, "meshdecal") && !cw_shading_has(mat, "skinshade") && !surface_only(ext)) {
         /* said once per material: reflection probes and the probe grid have no effect on it */
         if ((g->probes.count || g->grids.count) && g->warned_mats < 8 && !cw_shading_has(mat, "terrain") &&
             !cw_shading_has(mat, "terrainlow") && !cw_shading_has(mat, "terrainfar") && !cw_shading_has(mat, "water")) {
@@ -238,8 +255,8 @@ void cw__gi_tag(gi_tree *g, t3_object *o) {
             g->warned[g->warned_mats++] = mat;
             cw_error("gi: material%s%s%s (extension x%s) gets no reflections or probe-grid light: the gi shading part does not "
                      "compose with its extension, so ReflectionProbe3D and LightProbeGrid3D have no effect on it. Fix: use a "
-                     "plain MeshStandardMaterial / MeshPhysicalMaterial, or one whose parts are cluster, csm, meshdecal or "
-                     "skinshade (cartwheel/shading.h); cw_gi_get_stats(tree, &s) counts the materials that carry it in s.materials",
+                     "plain MeshStandardMaterial / MeshPhysicalMaterial, or register the part as a surface "
+                     "(cw_surface_register, cartwheel/surface.h; or cw_shading_part_traits CW_PART_SURFACE); cw_gi_get_stats(tree, &s) counts the materials that carry it in s.materials",
                      mat->name && *mat->name ? " \"" : "", mat->name && *mat->name ? mat->name : "", mat->name && *mat->name ? "\"" : "", ext);
           }
         }

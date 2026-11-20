@@ -923,6 +923,13 @@ static bool extension_keeps_vertices(const t3_material *mt) {
     size_t len = e ? (size_t)(e - p) : strlen(p);
     bool shading = (len == 7 && !strncmp(p, "cluster", len)) || (len == 10 && !strncmp(p, "clusteries", len)) || (len == 3 && !strncmp(p, "csm", len)) ||
                    (len == 2 && !strncmp(p, "gi", len)) || (len == 9 && !strncmp(p, "meshdecal", len));
+    if (!shading && len < 16) { /* a surface of the game's own that leaves its vertices alone (cartwheel/surface.h) */
+      char part[16];
+      memcpy(part, p, len);
+      part[len] = 0;
+      unsigned tr = cw_shading_part_traits_of(part);
+      shading = (tr & CW_PART_SURFACE) && !(tr & CW_PART_MOVES_VERTICES);
+    }
     if (!shading) return false;
     if (!e) break;
     p = e + 1;

@@ -1,0 +1,184 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.02, 0.025, 0.04, 1)
+ambient_energy = 0.04
+sky_color = color(0.5, 0.6, 0.9, 1)
+ground_color = color(0.3, 0.28, 0.25, 1)
+hemi_energy = 0.08
+
+[node name="Lighting" parent="." type="LightingSettings"]
+mode = CLUSTERED
+
+# a low sun from the front right: the pillar's shadow falls across the slab
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(6, 7, 9)
+rotation = vec3(-0.62, 0.55, 0)
+energy = 2.2
+color = color(1, 0.93, 0.82, 1)
+shadow = true
+shadow_cascades = 3
+shadow_distance = 40
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 2.7, 9.6)
+rotation = vec3(-0.17, 0, 0)
+fov = 50
+near = 0.1
+far = 80
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.1, 0)
+size = vec3(18, 0.2, 14)
+color = color(0.35, 0.35, 0.36, 1)
+roughness = 0.7
+receive_shadow = true
+
+[node name="Back" parent="." type="MeshInstance3D"]
+position = vec3(0, 2.5, -4.1)
+size = vec3(18, 5, 0.2)
+color = color(0.5, 0.5, 0.52, 1)
+roughness = 0.9
+receive_shadow = true
+cast_shadow = true
+
+# the bounce source: a red wall the sun lights
+[node name="Left" parent="." type="MeshInstance3D"]
+position = vec3(-6.1, 2.5, 0)
+size = vec3(0.2, 5, 10)
+color = color(0.8, 0.05, 0.03, 1)
+roughness = 0.85
+receive_shadow = true
+cast_shadow = true
+
+[node name="Pillar" parent="." type="MeshInstance3D"]
+position = vec3(1.5, 1.4, 0.6)
+size = vec3(0.35, 2.8, 0.35)
+color = color(0.3, 0.3, 0.32, 1)
+roughness = 0.8
+cast_shadow = true
+receive_shadow = true
+
+# a polished patch of floor in front of the orb: with screen-space reflections on it mirrors what is left of the orb
+[node name="Polish" parent="." type="MeshInstance3D"]
+position = vec3(-3.1, 0.012, 2.4)
+size = vec3(3.6, 0.02, 2.6)
+color = color(0.06, 0.06, 0.07, 1)
+roughness = 0.08
+metalness = 0.6
+receive_shadow = true
+
+# the three surfaces of the sample (main.c gives each its part)
+[node name="Orb" parent="." type="MeshInstance3D"]
+position = vec3(-3.1, 1.15, 0.6)
+primitive = SPHERE
+size = vec3(2.1, 2.1, 2.1)
+color = color(0.93, 0.93, 0.94, 1)
+metalness = 1
+roughness = 0.1
+cast_shadow = true
+receive_shadow = true
+
+# the orb's surface: a node whose properties are the surface's parameters
+[node name="Dissolve" parent="Orb" type="DissolveSurface3D"]
+amount = 0.42
+edge = color(6.0, 1.6, 0.2, 0.06)
+
+[node name="Slab" parent="." type="MeshInstance3D"]
+position = vec3(0.4, 1.3, -1.2)
+size = vec3(3.6, 2.6, 0.5)
+color = color(0.56, 0.54, 0.5, 1)
+roughness = 0.92
+cast_shadow = true
+receive_shadow = true
+
+[node name="Rock" parent="Slab" type="RockSurface3D"]
+amount = 1.0
+
+[node name="Reeds" parent="." type="Node3D"]
+position = vec3(4.4, 0, 0.3)
+
+# clustered lamps
+[node name="LampOrb" parent="." type="OmniLight3D"]
+position = vec3(-3.4, 2.9, 2.6)
+color = color(1, 0.75, 0.45, 1)
+energy = 14
+range = 5
+
+[node name="LampSlab" parent="." type="OmniLight3D"]
+position = vec3(-0.5, 1.0, 0.3)
+color = color(0.3, 0.8, 1, 1)
+energy = 9
+range = 3.2
+
+[node name="LampReeds" parent="." type="OmniLight3D"]
+position = vec3(4.3, 1.5, 2.2)
+color = color(1, 0.35, 0.8, 1)
+energy = 10
+range = 4
+
+[node name="LampBackA" parent="." type="OmniLight3D"]
+position = vec3(-5, 3.6, -3)
+color = color(0.5, 0.6, 1, 1)
+energy = 8
+range = 4.5
+
+[node name="LampBackB" parent="." type="OmniLight3D"]
+position = vec3(5.5, 3.6, -3)
+color = color(1, 0.6, 0.3, 1)
+energy = 8
+range = 4.5
+
+[node name="LampFloorA" parent="." type="OmniLight3D"]
+position = vec3(-1, 0.6, 4)
+color = color(0.4, 1, 0.5, 1)
+energy = 4
+range = 3
+
+[node name="LampFloorB" parent="." type="OmniLight3D"]
+position = vec3(2.4, 0.6, 3.6)
+color = color(1, 0.9, 0.4, 1)
+energy = 4
+range = 3
+
+[node name="LampSpot" parent="." type="SpotLight3D"]
+position = vec3(0.6, 4.2, 2.4)
+rotation = vec3(-1.05, 0, 0)
+color = color(0.9, 0.9, 1, 1)
+energy = 18
+range = 8
+angle = 0.5
+
+[node name="Probe" parent="." type="ReflectionProbe3D"]
+position = vec3(0, 2.5, 0)
+size = vec3(18.4, 5.4, 14.4)
+box_projection = true
+update_mode = EVERY_N_FRAMES
+update_every = 6
+far = 40
+
+[node name="Bounce" parent="." type="LightProbeGrid3D"]
+position = vec3(0, 2.4, 0)
+size = vec3(11.6, 4.6, 9)
+probes = vec3(6, 3, 5)
+bounces = 1
+
+# a sticker on the slab (clipped from its mesh, lit as the slab is) and one projected across the orb
+[node name="DecalSlab" parent="." type="Decal3D"]
+position = vec3(-0.6, 1.9, -0.95)
+size = vec3(0.8, 0.8, 0.6)
+texture = "decals/white.png"
+color = color(0.9, 0.45, 0.1, 1)
+blend = MIX
+normal_fade = 0.0
+edge_fade = 0.0
+mode = MESH
+
+[node name="DecalOrb" parent="." type="Decal3D"]
+position = vec3(-3.1, 1.3, 1.5)
+size = vec3(0.7, 0.7, 1.4)
+texture = "decals/white.png"
+color = color(0.1, 0.5, 0.9, 1)
+blend = MIX

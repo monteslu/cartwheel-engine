@@ -383,3 +383,10 @@ cw_add_app(fx_pipeline SOURCES fx_pipeline/main.c ASSETS ${CMAKE_CURRENT_SOURCE_
 cw_add_app(lightmap_yard SOURCES lightmap_yard/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/lightmap_yard/assets)
 # burst slots: a pool of one-shot sparks as one GPUParticles3D (bursts, cw_particles_burst)
 cw_add_app(fx_bursts SOURCES fx_bursts/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_bursts/assets)
+# a game's own surfaces (dissolve, triplanar rock, wind sway) that keep the engine's lighting: clustered lamps, the sun's
+# cascades, a reflection probe, a light probe grid and decals
+cw_add_app(custom_surface SOURCES custom_surface/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/custom_surface/assets
+  PROGRAMS custom_surface/programs/custom_surface.txt)
+cw_add_app(custom_surface_field SOURCES custom_surface/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/custom_surface/assets
+  PROGRAMS custom_surface/programs/custom_surface.txt)
+target_compile_definitions(custom_surface_field PRIVATE CS_FIELD=1)

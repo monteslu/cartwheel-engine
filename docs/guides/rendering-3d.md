@@ -41,7 +41,7 @@ To add the states, run the app through the tool, which merges what it lacked int
 
 then commit the manifest and the generated C. Every native and cart survey runs each graphics preset from the start and then switches the preset half way through a run, from High to each other preset and from each back to High (`--no-switch` leaves those runs out): a game builds content for the preset it starts on (more lights, a denser scatter, a different build of a level on High), and that content drawn with another preset's renderer state (Very Low's plain lighting model and sun-only shadows under High's omni lights, say) asks for states that no run started on one preset asks for. Those were the draws that vanished after a player changed the preset, or Auto stepped down, in play. `tests/programs-switch.mjs` holds it: a scene that adds shadow-casting omni lights on High draws everything after a switch to Very Low with a table surveyed as the tool ships, natively and as the dual cart through romdev on GL and WebGPU, and the same scene with a table surveyed `--no-switch` (the control) misses `standard+instbig+shadow+l1200+s100+xplain` and its error names the node. A cart is asked for states a native run is not (the host's quality and capabilities differ, so a native survey can miss them and the shipped cart shows the red banner): survey the dual cart that ships with `node tools/programs.mjs --carts <app> [--gates]`, which runs `build/cart-wgpu/carts/<app>.wasc` on a GL host (romdev's dual cart told to render with GL, `run-cart.mjs --dual-gl`) and on a WebGPU host, reads the states the cart reports and merges them into the app's table (`tests/programs-carts.mjs` checks it, with a fully covered cart as the control). Each cart (and each gate's run with `--gates`) is also run once as a player's host runs it, loaded with no seed (`run-cart.mjs --warmup-spread`, which on romdev now loads the cart unseeded): its warm-up spreads over frames under the loading screen and the clock is real, which a deterministic load (the whole warm-up inside frame 1) never shows. The warm-up's shader phase draws the scene a slice at a time, several slices a frame; each slice is a pipeline render of its own and now gets its own pre-render, so the cascaded sun (and anything else the tree registers before a render) is there for every slice. Before, only a frame's first slice had it: the later ones drew the sun as a plain shadowed light, states play never asks for (`standard+...+shadow+l1501+s100+xgi`), which no survey found and which kept a player's red banner up for good; and the probe grid baked during the first slice, from a scene still mostly hidden. The probe grid and reflection probes now wait for the warm-up's full render. Gate `warm-states` (sample `warm_states`: a cascaded sun, a probe grid, many meshes over few materials) loads the cart that way through romdev on GL and WebGPU and finds no missing state; its control, `CW_TEST_WARM_NO_PRERENDER=1`, drops the later slices' pre-render and must find one. A project's carts are surveyed from its own tree: set `CW_PROJECT_ROOT` to it. The survey fails, naming the app and the host, when a run surveyed nothing (the cart did not load, never rendered a frame, or draws without the engine's pipeline, so it has no state list to read) and when there is no cart to survey; a run that surveyed nothing never reads as "no missing states". Generating captures on three.c's mock GPU (byte-identical to a real one), so it needs Node but no GPU. The tool minimizes a manifest: a program captured for more lights of each kind (and the same shadow casters) also draws scenes with fewer, so `standard+fog+l1701` replaces `standard+fog+l1001`.
 
-Because the mock GPU accepts any shader, every regeneration then compiles the table's WebGPU programs with the WGSL compiler a WebGPU host uses (Tint, inside Dawn), on Mesa's software Vulkan (no GPU needed), and fails naming the state and the compiler's message when one is rejected: a table never ships a program that draws nothing on WebGPU (`tests/programs-wgsl.mjs`, with controls that must fail). Run it by hand on a capture directory with `node tools/lib/wgsl-check.mjs build/native/programs-cache/<table>-<hash>`. It builds each pipeline with the vertex buffers three.c binds (one per geometry attribute, the instance matrix in one buffer, the instance colour in its own; three.c's `vertexBufferLayout`), so the most a program can need, an `InstancedMesh` with vertex colours, tangents and instance colours, is 7 of the 8 every WebGPU device has; a program that needs more vertex buffers or attributes than a device allows is reported as over the device limits, naming its attributes, before it ships (sample `instanced_attributes` draws every optional attribute at once on GL and WebGPU). Two things to know when writing shading code of your own (an extension under `src/*/extensions` or `--extend`):
+Because the mock GPU accepts any shader, every regeneration then compiles the table's WebGPU programs with the WGSL compiler a WebGPU host uses (Tint, inside Dawn), on Mesa's software Vulkan (no GPU needed), and fails naming the state and the compiler's message when one is rejected: a table never ships a program that draws nothing on WebGPU (`tests/programs-wgsl.mjs`, with controls that must fail). Run it by hand on a capture directory with `node tools/lib/wgsl-check.mjs build/native/programs-cache/<table>-<hash>`. It builds each pipeline with the vertex buffers three.c binds (one per geometry attribute, the instance matrix in one buffer, the instance colour in its own; three.c's `vertexBufferLayout`), so the most a program can need, an `InstancedMesh` with vertex colours, tangents and instance colours, is 7 of the 8 every WebGPU device has; a program that needs more vertex buffers or attributes than a device allows is reported as over the device limits, naming its attributes, before it ships (sample `instanced_attributes` draws every optional attribute at once on GL and WebGPU). Two things to know when writing shading code of your own (a surface, [Writing your own surface](#writing-your-own-surface), or an extension under `src/*/extensions`):
 
 - The Dawn the engine ships stops with an internal compiler error ("swizzle view instruction still has usages after lowering") on a swizzle of a swizzle of a variable, which TSL writes for `texture(t, uv).rg` followed by `.x`. Swizzle once (`texture(t, uv).x`, or `dot(k, vec2(a, b))` for a weighted sum).
 - WGSL leaves the result of arithmetic on infinity and NaN to each implementation. Never pick between two whole results with `mix(a, b, w)` where `w` is 0 or 1 and the unused side can overflow: infinity times 0 is NaN, and a NaN in one channel comes out as black in that channel (the water once lost its green this way on WebGPU only, where a raw depth texel overflowed in a debug view mixed in by 0). Use `select(cond, b, a)`, and clamp texels that hold a large "nothing here" value (a depth copy holds 3e38 where nothing was drawn) before any use.
@@ -162,7 +162,7 @@ CLUSTERED is three.js r187's `ClusteredLighting`, on GL and WebGPU alike:
 
 Three things go beyond r187. Spot lights are clustered too (r187 clusters only point lights), with a cone test when binning and r187's spot cone in the loop; `cluster_spot_lights` turns that off. A full cell keeps its nearest lights. And a light with `range` 0, which r187 would put in every cell, gets the range where its intensity over distance squared falls under `light_cutoff` (0.005), and fades out there as a range does: give lights a range for full control.
 
-Costs: binning is O(cells each light reaches); the GPU pays a cell lookup per fragment plus each light of the fragment's cell, so the cost follows how many lights overlap on screen, not how many exist. Each frame uploads 64 bytes a light, 4 bytes a cell and 2 bytes a light reference. A mesh whose material carries the cluster part is drawn on its own (three.c does not auto-instance it), and a material with an extension of its own (terrain) sees only three.c's lights. Effects detail keeps 24 lights a cell on Low and 32 on Medium (64 on High and Ultra). The debug command `lighting` reports the light counts, the grid and the binning time; `cw_lighting_get_stats` gives the same in code.
+Costs: binning is O(cells each light reaches); the GPU pays a cell lookup per fragment plus each light of the fragment's cell, so the cost follows how many lights overlap on screen, not how many exist. Each frame uploads 64 bytes a light, 4 bytes a cell and 2 bytes a light reference. A mesh whose material carries the cluster part is drawn on its own unless `batching` is on (below). The part composes with the terrain's surface parts, with the engine's other parts and with a game's own parts and surfaces ([Writing your own surface](#writing-your-own-surface)): such a material is lit by the clustered lamps like any other. Effects detail keeps 24 lights a cell on Low and 32 on Medium (64 on High and Ultra). The debug command `lighting` reports the light counts, the grid and the binning time; `cw_lighting_get_stats` gives the same in code.
 
 The grid is public ([cartwheel/froxel.h](header:froxel.h)): `cw_lighting_froxels` returns the tree's, and any pass can build its own and bin its own volumes (fog volumes, decals, probes) into the same cells.
 
@@ -212,7 +212,7 @@ IES lights are drawn by the clustered lights (`LightingSettings` `mode = CLUSTER
 
 ### Terrain under lamps and cascades
 
-A Terrain3D's materials carry their own surface part (`terrain`, `terrainlow`, `terrainfar`), and the cluster and csm parts compose with it (`terrain_cluster_csm`), so lamps light the ground and the sun's cascades fall on it. The terrain also casts into the cascades with its own vertex displacement. Any other extension a material carries keeps it alone, unlit by the parts. `terrain_lights` (terrain_demo's `lights` run) drives the car at dusk past seven clustered lamps with the sun casting four cascades. Its `terrain-lights-parity` gate checks on GL and WebGPU that the clustered lamps light the ground exactly as three.c's own lights do, and that the cascades put the terrain's shadows where one wide shadow map puts them.
+A Terrain3D's materials carry their own surface part (`terrain`, `terrainlow`, `terrainfar`), and the cluster and csm parts compose with it (`terrain_cluster_csm`), so lamps light the ground and the sun's cascades fall on it. The terrain also casts into the cascades with its own vertex displacement. A game's own surfaces and parts compose the same way ([Writing your own surface](#writing-your-own-surface)). `terrain_lights` (terrain_demo's `lights` run) drives the car at dusk past seven clustered lamps with the sun casting four cascades. Its `terrain-lights-parity` gate checks on GL and WebGPU that the clustered lamps light the ground exactly as three.c's own lights do, and that the cascades put the terrain's shadows where one wide shadow map puts them.
 
 The two parts share one uniform group (`lightingFrame`), so a terrain under both still fits WebGPU's four bind groups.
 
@@ -428,7 +428,7 @@ The room in `samples/gi_room` has both:
 How it fits together:
 
 - Captures run in the SHADOW phase (the "gi" pass, after the sky's environment is made), so this frame's scene draws with them. Each probe keeps two targets, drawn into one while the scene samples the other, and nothing is allocated after the first capture. `update_mode` picks when a probe captures: ONCE (its first frame, and again when the sky is re-rendered), ON_DEMAND (`cw_reflection_probe_update` or `call <probe> update`), or EVERY_N_FRAMES (`update_every`). A capture sees what `cull_mask` lets it see (three.c object layers): give a cheap stand-in of a level a layer the camera does not draw and the probe captures the stand-in. A split-screen frame captures probes and updates the probe grid once, in its first view (frames, not views, count for EVERY_N_FRAMES and the grid budget); each view still draws its own screen-space G-buffer.
-- The shading is r187 TSL in a three.c extension, the "gi" shading part ([shading.h](header:shading.h)): every Standard and Physical material in a tree with a probe or a grid carries it, and the app's program tables need its states (`standard+senv+l1101+xgi`; `tools/programs.mjs` adds them like any other). A material carries more than one engine part this way, composed by name (`xterrain_gi`). The gi part composes after the lighting parts, the clustered lights' `cluster` and the forward sun's cascades `csm` (`xcluster_gi`, `xcsm_gi`, `xcsm_plain_gi` on Very Low), and with lit mesh decals and skin shading; a material with any other extension of its own (a game's) cannot take it, and while the tree has a probe or a grid the log names each such material, which the probes then leave alone. three.c never auto-instances a mesh whose material carries an extension, so each such mesh is a draw of its own.
+- The shading is r187 TSL in a three.c extension, the "gi" shading part ([shading.h](header:shading.h)): every Standard and Physical material in a tree with a probe or a grid carries it, and the app's program tables need its states (`standard+senv+l1101+xgi`; `tools/programs.mjs` adds them like any other). A material carries more than one engine part this way, composed by name (`xterrain_gi`). The gi part composes after the lighting parts, the clustered lights' `cluster` and the forward sun's cascades `csm` (`xcluster_gi`, `xcsm_gi`, `xcsm_plain_gi` on Very Low), and with lit mesh decals, skin shading and a game's own surfaces ([Writing your own surface](#writing-your-own-surface): `xdissolve_gi` on forward lighting, `xcluster_csm_dissolve_gi` on clustered). A part a game wrote by hand without saying it is a surface (`cw_shading_part` alone) takes the probes only together with a lighting part; while the tree has a probe or a grid the log names each material the probes leave alone, with the fix. A mesh whose material carries the gi part is a draw of its own: each mesh picks its own probes, so the part's hook reads the object.
 - One LightProbeGrid3D lights a tree (the first one). Probe boxes are axis aligned: a node's rotation is ignored, its scale applies.
 - Everything here is render only: nothing reaches the simulation, and `samples/gi_probe_check` and `tests/gi-probe.mjs` check the pictures against known answers (a mirror ball in a box of six coloured walls must show each wall where it is).
 
@@ -571,6 +571,160 @@ t3_material *m = cw_toon_material(src, 4);    /* one material; yours to release 
 A toon material keeps the surface's colour and colour map, emissive colour, map and intensity (a glow that ignores the light: fuses, eyes, signs), normal map, ambient occlusion, light map, alpha map and cutout, vertex colours, transparency and sides. It has no roughness, metalness, reflections or highlights. Every light lights it, with shadows: ambient and hemisphere light, three.c's lights, the clustered omni and spot lights and the cascaded sun. Each light is banded on its own, so two lights give two sets of bands, and a lamp's falloff with distance stays smooth inside a band. For a ramp of your own (uneven steps), set `gradient_map` on the material: a DataTexture with both filters nearest, as three.js asks; its red channel scales the light.
 
 It is cheaper than the physically based materials (no highlight, no environment lookup; one texture read per light). The plain lighting model of the Very Low preset, rim lights and skin shading are for the physically based materials and leave a toon one as it is. `samples/toon_shading` shows banded spheres, an emissive cylinder and two toon trees from one glTF beside their physically based twins; its gate is `toon-shading`.
+### Writing your own surface
+
+A game often needs a surface no stock material has: something that burns away, rock with no uv layout, grass that leans in the wind, a force field, lava, a toon ramp. A **surface** ([surface.h](header:surface.h)) is the way to write one and keep everything the engine does with light. You write what the surface *is* (its colour, normal, roughness, glow, holes and vertex positions) as three.js r187 TSL; the engine goes on lighting it: three.c's lights and shadows, the hundreds of clustered lamps, the sun's cascades, reflection probes and the light probe grid, screen-space reflections, fog and decals. A material with a surface whose effect is at zero draws the same pixels as the plain material (`tests/custom-surface.mjs` holds that on GL and WebGPU, on forward and clustered lighting and down to the Very Low preset).
+
+A surface has two sides with the same name and the same parameter list.
+
+**The module**, `shaders/<name>.mjs` in the game, exports `name`, `params` and `surface()`:
+
+```js
+// shaders/dissolve.mjs: the mesh burns away along a noise field, with a glowing edge
+export const name = 'dissolve';
+export const params = { amount: 'float', edge: 'color', scale: 'float' };
+
+export function surface({ TSL, p, base, caster }) {
+  const { float, vec3, floor, fract, sin, dot, mix, smoothstep, positionGeometry } = TSL;
+  const hash = (q) => fract(sin(dot(q, vec3(127.1, 311.7, 74.7))).mul(43758.5453));
+  const noise = (q) => {                                  // value noise of the mesh's own position
+    const i = floor(q), f = fract(q), w = f.mul(f).mul(float(3).sub(f.mul(2)));
+    const c = (x, y, z) => hash(i.add(vec3(x, y, z)));
+    return mix(mix(mix(c(0, 0, 0), c(1, 0, 0), w.x), mix(c(0, 1, 0), c(1, 1, 0), w.x), w.y),
+      mix(mix(c(0, 0, 1), c(1, 0, 1), w.x), mix(c(0, 1, 1), c(1, 1, 1), w.x), w.y), w.z);
+  };
+  const n = noise(positionGeometry.mul(p.scale)).mul(0.98).add(0.01).toVar();
+  const mask = n.greaterThan(p.amount);                   // false cuts the pixel out
+  if (caster) return { mask };                            // the shadow has the same holes
+  const glow = float(1).sub(smoothstep(p.amount, p.amount.add(p.edge.a), n)).mul(smoothstep(0, 0.02, p.amount));
+  return { mask, emissive: base.emissive.add(p.edge.rgb.mul(glow)) };
+}
+```
+
+`surface()` gets `p` (the parameters as nodes), `base` (what the material or an earlier part gives: `color`, `normal`, `roughness`, `metalness`, `emissive`, `opacity`, and `position`, the vertex before this surface moved it), `caster` (true while the shadow caster's program is being made: only `position` and `mask` count there), `instanced`, `worldPosition` and `toLocal(v)` (below), `TSL` and `THREE`. It returns any of:
+
+| key | what it sets | r187 |
+|---|---|---|
+| `color` | the albedo, vec3 or vec4 (alpha is the opacity) | `colorNode` |
+| `normal` | the shading normal, view space | `normalNode` |
+| `roughness`, `metalness` | float | `roughnessNode`, `metalnessNode` |
+| `emissive` | light the surface gives off, vec3 (above 1 blooms) | `emissiveNode` |
+| `ao` | ambient occlusion, float | `aoNode` |
+| `opacity` | float (the material must be `transparent`, or use `mask`) | `opacityNode` |
+| `mask` | bool: false cuts the pixel out of the picture, the depth prepass and the shadow | `maskNode` |
+| `position` | the vertex, in the mesh's own space | `positionNode` |
+| `output` | vec4, the last word on the lit and fogged colour (read `TSL.output`) | `outputNode` |
+
+Everything else is the lighting's. Return only what the surface changes: a key left out keeps the material's own value, so a surface composes with the material's maps and with rim light, skin shading and the other parts. Anything not in the table is refused when the table is generated, by name.
+
+Parameter types: `'float'`, `'vec2'`, `'vec3'`, `'vec4'`, `'color'` (linear rgba, a vec4 in the module), `'mat4'`, an array `{ type: 'vec4', count: N }` (2 to 32; `p.spots` is then a JavaScript array of nodes: read `p.spots[i]` or `p.spots.element(i)` with a number, and write the loop in JavaScript), and a texture `{ texture: true, wrap: 'repeat' | 'clamp' | 'mirror', filter: 'linear' | 'nearest', mipmaps: true, srgb: true }` (read with `TSL.texture(p.albedo, uv)`; filtering and wrapping are part of the program, so give the texture you set from C the same settings). A parameter is in a program only if `surface()` read it there.
+
+**The C side** registers the same list once, at start, and then puts the surface on materials:
+
+```c
+#include "cartwheel/surface.h"
+
+static const cw_surface_param dissolve[] = {
+  { "amount", CW_SURFACE_FLOAT },
+  { "edge", CW_SURFACE_COLOR, .value = { 6.0f, 1.6f, 0.2f, 0.06f } },   /* the default */
+  { "scale", CW_SURFACE_FLOAT, .value = { 7.0f } },
+};
+cw_surface_register(&(cw_surface_desc){ .name = "dissolve", .params = dissolve, .param_count = 3,
+                                        .node_type = "DissolveSurface3D" });
+...
+cw_surface_apply(material, "dissolve");                        /* or cw_surface_apply_tree(model_root, "dissolve") */
+cw_surface_set_float(material, "dissolve", "amount", 0.4f);    /* any time: a memory write, sent with each draw */
+```
+
+Each parameter has its registered default, one value for every material of the surface (`cw_surface_set_global`: time, wind, a shared texture) and a value per material (`cw_surface_set`, `cw_surface_set_float`, `cw_surface_set_at` for one element of an array, `cw_surface_set_texture`), which wins; `cw_surface_unset` goes back. A texture can be replaced at any time, and its pixels changed in place: write `t->pixels`, then `t->version++`, and the next draw uploads it. A wrong name or width is refused and logged once.
+
+With `node_type` the surface is also a **node type** whose properties are the parameters (floats, vectors, colours; a texture is a resource). Put one under a `MeshInstance3D` (or any `Node3D`) and that node's meshes draw with the surface on materials of their own, driven by the node's properties, so a scene file sets them and an AnimationPlayer keys them like any other property:
+
+```
+[node name="Orb" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+metalness = 1
+roughness = 0.1
+
+[node name="Dissolve" parent="Orb" type="DissolveSurface3D"]
+amount = 0.42
+edge = color(6.0, 1.6, 0.2, 0.06)
+```
+
+Register surfaces in `cw_main`, before `cw_scene_app` returns, when a scene file uses their node types. Freeing the node gives the meshes their plain materials back. A matrix or an array parameter has no property: set it from code. While a surface node is on a mesh, change the mesh's look through the surface's parameters: the node holds a copy of the material made when it first saw it.
+
+**The program table** names the module, and `tools/programs.mjs` does the rest: it finds the states the game draws with the surface in them and captures their programs like any others ([Program tables](#program-tables)).
+
+```
+# programs/mygame.txt
+# extend: ../shaders/dissolve.mjs
+# extend: ../shaders/rock.mjs
+```
+
+A surface's name is part of every state it draws (`standard+l0001+xcluster_csm_dissolve_gi`), which is why it is short: lower-case letters and digits, at most 10.
+
+**A second example: triplanar rock with wind sway.** Two surfaces, since one decides the fragment and the other the vertices. The rock reads a tiling texture from three sides by world position, so a mesh needs no uv layout and the stone does not stretch on any face; moss patches come from an array:
+
+```js
+// shaders/rock.mjs
+export const name = 'rock';
+export const params = {
+  amount: 'float', repeat: 'float', sharp: 'float',
+  albedo: { texture: true, wrap: 'repeat', filter: 'linear', mipmaps: true, srgb: true },
+  moss: { type: 'vec4', count: 4 },              // xyz: a patch's centre in the world, w: its radius
+  mossTint: 'color',
+};
+export function surface({ TSL, p, base, caster }) {
+  if (caster) return {};                         // nothing of it changes the shadow
+  const { texture, vec4, float, mix, abs, pow, max, smoothstep, length, positionWorld, normalWorld } = TSL;
+  const q = positionWorld.mul(p.repeat);
+  const w0 = pow(abs(normalWorld), p.sharp), w = w0.div(w0.x.add(w0.y).add(w0.z));
+  const stone = texture(p.albedo, q.zy).rgb.mul(w.x).add(texture(p.albedo, q.xz).rgb.mul(w.y)).add(texture(p.albedo, q.xy).rgb.mul(w.z));
+  let cover = float(0);
+  for (let i = 0; i < 4; i++) {
+    const m = p.moss[i], r = max(m.w, 0.0001);   // (a radius of 0 is no patch; never smoothstep between equal edges)
+    cover = max(cover, float(1).sub(smoothstep(r.mul(0.6), r, length(positionWorld.sub(m.xyz)))));
+  }
+  const rock = mix(base.color.rgb, base.color.rgb.mul(stone).mul(2.2), p.amount);
+  return { color: vec4(mix(rock, p.mossTint.rgb, cover.mul(p.amount).mul(0.85)), 1),
+           roughness: mix(base.roughness, float(1), cover.mul(p.amount)) };
+}
+```
+
+```js
+// shaders/sway.mjs: each vertex leans with a gust that travels over the world, more the higher it sits
+export const name = 'sway';
+export const params = { time: 'float', wind: 'vec3' };   // wind: lean in metres, gusts a second, share of the lean along z
+export function surface({ TSL, p, base, toLocal, worldPosition }) {
+  const { vec3, float, sin, positionGeometry } = TSL;
+  const h = positionGeometry.y.add(0.5).clamp();         // 0 at the foot, 1 at the top of a unit-high mesh
+  const phase = worldPosition.x.mul(0.9).add(worldPosition.z.mul(0.6));
+  const push = sin(p.time.mul(p.wind.y).mul(6.2832).add(phase)).mul(p.wind.x).mul(h.mul(h));
+  return { position: base.position.add(toLocal(vec3(push, float(0), push.mul(p.wind.z)))) };
+}
+```
+
+```c
+cw_surface_register(&(cw_surface_desc){ .name = "sway", .params = sway, .param_count = 2, .moves_vertices = true });
+...
+float t = (float)tick / 60.0f;
+cw_surface_set_global("sway", "time", &t, 1);            /* once a frame, for every swaying material */
+```
+
+Things to know when a surface moves vertices:
+
+- Say so (`moves_vertices = true`). The shadow caster and the depth prepass run the same `position`, so shadows and early depth follow the motion. A mesh decal cannot be clipped from such a mesh (the CPU does not see the moved surface); a screen decal still lands on it.
+- `base.position` is in the mesh's own space, where a displacement is scaled and turned with the mesh: a reed scaled to 9 cm across would lean 9 % of what you asked. Write the displacement in world metres and pass it through `toLocal()`. Meshes the renderer draws as instances are placed after `position`, so there `toLocal` returns the vector as it is; `instanced` says which program is being made. An `InstancedMesh` of your own that is itself rotated or scaled needs its own conversion.
+- Use `positionGeometry` (the mesh's own, unmoved vertex) for things that must not depend on how the mesh is drawn, such as the height along a reed, and `worldPosition` for a field that spans meshes, such as the gust.
+- Bounds are the unmoved mesh's. Keep displacements small against the mesh, or grow its bounding sphere, or culling will drop it at the screen's edge.
+
+**What composes, and what it costs.** A surface is a shading part ([shading.h](header:shading.h)) with the trait `CW_PART_SURFACE`, joined by name with the engine's own parts on the same material: `xcluster_csm_dissolve_gi` is the clustered lamps, the cascades, the surface and the probes in one program. A material takes up to 8 parts and the name up to 63 characters; a material that would pass either keeps what it had and the log says which parts it could not take. One program is captured per combination the game really draws, per backend, not per combination that could exist. The sample is close to a worst case, since its gate walks every lighting mode: three surfaces on forward and clustered lighting, with and without cascades and probes, on every preset, with screen-space reflections, come to 99 states, 70 of them with a surface in their name (half of those are the small shadow caster programs). That is 2.2 MB of generated C for GL and WebGPU together against 0.85 MB for the same room with plain materials, and 264 KB more in the cart (3.11 MB against 2.85 MB): under 4 KB a state. A game that stays on one lighting mode draws a fraction of that: per surface and material kind, a lit program and a caster program for each preset family it runs on. Per frame a surface costs its own shader work and one hook call a draw. On a Radeon 890M at 1920 x 1080 the sample's frame takes 1.9 to 3.1 ms of GPU time on every preset, GL and WebGPU, with the surfaces or with plain materials: the difference stayed inside the run-to-run noise of a loaded machine (three interleaved rounds, between -0.5 and +0.7 ms with the sign changing from round to round; `tests/custom-surface-perf.mjs` prints the table with the load and the GPU clock). What you write in `surface()` is what you pay for: the triplanar rock is three texture reads a pixel, the dissolve eight hashes.
+
+Meshes that share geometry and a material with a surface are drawn as one instanced draw when every part on the material allows it. A surface does. The clustered lamps' and cascades' parts do when `LightingSettings.batching` is on, and the gi part (a scene with a reflection probe or a probe grid) never does, since each mesh picks its own probes: in such a scene every mesh is a draw of its own, with or without a surface. `custom_surface_field` (the same program on a scene with no probes) draws two hundred reeds with the sway surface as one instanced draw, as it draws two hundred plain ones. Their shadow casters are still drawn one by one: three.c does not batch casters yet.
+
+Limits, said plainly: a surface is for the lit mesh materials (Standard, Physical, Lambert, Phong); a mesh decal on a surface that cuts holes is drawn over the holes too; the G-buffer of screen-space reflections and bounce light keeps a surface's vertices, cut-outs, normal and roughness; lightmap-baked meshes (`gi_mode = STATIC`) take their own copy of the material and are not a place for an animated surface. The older way of writing a part by hand (an `apply()` module and a fill hook through `cw_shading_part`, which the engine's own parts use) still works and still composes with the clustered lamps and the cascades; give it `cw_shading_part_traits(name, CW_PART_SURFACE)` for the probes, the G-buffer and decals to take it too.
+
+`samples/custom_surface` is all of this in one room: the dissolving chrome orb, the triplanar slab with its sticker, forty swaying reeds, eight clustered lamps, a sun with three cascades, a reflection probe and a probe grid. Its gates: `custom-surface` (the same picture and state on every host, GL and WebGPU) and `custom-surface-lighting` (`tests/custom-surface.mjs`: plain materials against surfaces pixel for pixel on four lighting setups, the effects, the G-buffer, the draw counts, each with a control that must fail).
 
 ## Visibility: culling, LOD and impostors
 

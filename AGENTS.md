@@ -101,6 +101,16 @@ A sun covering a level uses cascades: `shadow_cascades = 4`, `shadow_distance = 
 `emissive`, `cast_shadow`, `receive_shadow`; three.c `t3_mesh_standard_material_new` from code). Characters:
 `skin_shading.h`, [Characters](docs/guides/rendering-3d.md#characters-skin-gltf-materials-faces).
 
+**A surface of your own** (a dissolve, triplanar rock, wind on vertices, a force field, lava, toon ramps): never
+write a material from scratch and never give up the engine's lighting for it. Write a surface (`surface.h`,
+[Writing your own surface](docs/guides/rendering-3d.md#writing-your-own-surface)): `shaders/<name>.mjs` exports
+`name`, `params` and `surface()` returning only what it changes (`color`, `normal`, `roughness`, `metalness`,
+`emissive`, `opacity`, `mask`, `position`, `output`); C registers the same parameter list
+(`cw_surface_register`), puts it on materials (`cw_surface_apply`) and sets values (`cw_surface_set_float`,
+`cw_surface_set_global` for time and wind); `# extend: ../shaders/<name>.mjs` in `programs/<app>.txt`, then
+`./programs.sh`. Clustered lamps, cascades, probes, fog and decals keep working on it. `samples/custom_surface`
+has three.
+
 **glTF** (`resource.h`, [resources](docs/guides/resources.md)):
 
 ```c

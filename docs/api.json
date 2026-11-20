@@ -13204,12 +13204,18 @@
   },
   {
    "header": "cartwheel/shading.h",
-   "summary": "cartwheel/shading.h: shading parts, three.c generator extensions that\nstack on one material.\n\nthree.c gives a material one generator extension (t3_material_set_extension,\nstate x<name>): r187 TSL captured into a program, filled at run time by a C\nhook. Several engine features change how every surface shades (terrain or\nwater decide the surface, clustered lights add direct light, the GI module\nadds reflections and bounce light), so one material often needs more than\none. A part is one such extension; a material carries a list of parts, and\nits extension is the composed name: the parts in the fixed order below,\njoined by '_' (\"terrain_gi\", \"cluster_gi\"). Nothing is written by hand per\ncombination:\n\n  - the generator side: a part is a module src/<module>/extensions/<part>.mjs\n    (export name, apply()), as any extension. tools/programs.mjs writes, for\n    every composed state a manifest names (standard+senv+xcluster_gi), a\n    module that applies the parts in that order to the capture's material,\n    and hands it to three.c's generator. Surface parts set colorNode,\n    normalNode, positionNode; lighting parts add an r187 LightingNode to the\n    material's lights; the GI part sets envNode (reflections) and adds a\n    LightingNode (the probe grid's irradiance). So parts compose without\n    knowing each other, as long as each names its uniforms and textures\n    \"ext.<unique name>\" and its shared uniform groups uniquely.\n  - the run-time side: each part registers its fill hook on a renderer\n    (cw_shading_part); a composed extension's hook calls every part's hook\n    in order on the same draw.\n\nOrder (fixed, global): surface parts (terrain, terrainlow, terrainfar,\nwater), then lighting (cluster), then indirect light (gi); any other part\nbetween lighting and indirect, by name.\n\nCost: none per part beyond its own hook. three.c does not auto-instance a\nmesh whose material carries an extension (each such mesh is its own draw)\nunless every part of it says its hook reads nothing of the object\n(cw_shading_part_batching): then meshes sharing geometry and material are\none instanced draw, as plain ones are.",
+   "summary": "cartwheel/shading.h: shading parts, three.c generator extensions that\nstack on one material.\n\nthree.c gives a material one generator extension (t3_material_set_extension,\nstate x<name>): r187 TSL captured into a program, filled at run time by a C\nhook. Several engine features change how every surface shades (terrain or\nwater decide the surface, clustered lights add direct light, the GI module\nadds reflections and bounce light), so one material often needs more than\none. A part is one such extension; a material carries a list of parts, and\nits extension is the composed name: the parts in the fixed order below,\njoined by '_' (\"terrain_gi\", \"cluster_gi\"). Nothing is written by hand per\ncombination:\n\n  - the generator side: a part is a module src/<module>/extensions/<part>.mjs\n    (export name, apply()), as any extension. tools/programs.mjs writes, for\n    every composed state a manifest names (standard+senv+xcluster_gi), a\n    module that applies the parts in that order to the capture's material,\n    and hands it to three.c's generator. Surface parts set colorNode,\n    normalNode, positionNode; lighting parts add an r187 LightingNode to the\n    material's lights; the GI part sets envNode (reflections) and adds a\n    LightingNode (the probe grid's irradiance). So parts compose without\n    knowing each other, as long as each names its uniforms and textures\n    \"ext.<unique name>\" and its shared uniform groups uniquely.\n  - the run-time side: each part registers its fill hook on a renderer\n    (cw_shading_part); a composed extension's hook calls every part's hook\n    in order on the same draw.\n\nOrder (fixed, global): the engine's surface parts (terrain, terrainlow,\nterrainfar, water), then lighting (cluster), then indirect light (gi, and\ngibuf for the screen-space passes' G-buffer); any other part, a game's own\nsurfaces among them (cartwheel/surface.h), between lighting and indirect,\nby name. A material takes up to CW_SHADING_MAX_PARTS parts and a composed\nname of up to 63 characters.\n\nA game's part. cw_shading_part with a fill hook of the game's own composes\nwith the lighting parts (cluster, csm, plain). Say what the part is with\ncw_shading_part_traits and the rest of the engine takes it too:\nCW_PART_SURFACE lets the probes (gi), the G-buffer and mesh decals compose\nwith it. cartwheel/surface.h does all of that for a surface written as a\nmodule with named parameters, with no hook to write.\n\nCost: none per part beyond its own hook. three.c does not auto-instance a\nmesh whose material carries an extension (each such mesh is its own draw)\nunless every part of it says its hook reads nothing of the object\n(cw_shading_part_batching): then meshes sharing geometry and material are\none instanced draw, as plain ones are.",
    "functions": [
     {
      "name": "cw_shading_part",
      "signature": "void cw_shading_part(t3_renderer *r, const char *name, t3_extension_fill fill, void *user)",
      "doc": "The renderer's hook for part `name` ([a-z0-9], up to 15 characters): it\nfills that part's \"ext.\" values for each draw of any material carrying the\npart, alone or composed. fill NULL removes it. Also installs every composed\nextension that includes the part.",
+     "inline": false
+    },
+    {
+     "name": "cw_shading_part_everywhere",
+     "signature": "void cw_shading_part_everywhere(const char *name, t3_extension_fill fill, void *user, bool batching)",
+     "doc": "The same for every renderer there is and every one made later (a part a\ngame registers once at start, before or after its trees exist).",
      "inline": false
     },
     {
@@ -13225,6 +13231,18 @@
      "inline": false
     },
     {
+     "name": "cw_shading_part_traits",
+     "signature": "void cw_shading_part_traits(const char *name, unsigned traits)",
+     "doc": "Part `name`'s traits (cw_part_traits, or'ed), for every renderer.",
+     "inline": false
+    },
+    {
+     "name": "cw_shading_part_traits_of",
+     "signature": "unsigned cw_shading_part_traits_of(const char *name)",
+     "doc": "The traits given to part `name` (0 for none, or an unknown part).",
+     "inline": false
+    },
+    {
      "name": "cw_shading_forget",
      "signature": "void cw_shading_forget(t3_renderer *r)",
      "doc": "Forget a renderer (before t3_renderer_destroy).",
@@ -13233,7 +13251,7 @@
     {
      "name": "cw_shading_add",
      "signature": "bool cw_shading_add(t3_material *m, const char *name)",
-     "doc": "Add part `name` to material m (no-op when it has it): m's extension becomes\nthe composed name. false when m would carry more than CW_SHADING_MAX_PARTS\nparts or the composed name would pass 31 characters.",
+     "doc": "Add part `name` to material m (no-op when it has it): m's extension becomes\nthe composed name. false when m would carry more than CW_SHADING_MAX_PARTS\nparts or the composed name would pass 63 characters (said once in the log,\nnaming the material's parts: the material keeps what it had).",
      "inline": false
     },
     {
@@ -13255,7 +13273,13 @@
      "inline": false
     }
    ],
-   "types": [],
+   "types": [
+    {
+     "name": "cw_part_traits",
+     "doc": "What the engine may assume of a part (cw_shading_part_traits). A part with\nno traits is composed with the lighting parts only, as before.",
+     "decl": "typedef enum cw_part_traits {\n  /* a surface of the game's own (cartwheel/surface.h): it decides what the\n   * lighting shades (colour, normal, roughness, emissive, cut-outs, vertex\n   * positions) and leaves the lighting to the engine. Reflection probes and\n   * the light probe grid compose with it (gi), the screen-space passes'\n   * G-buffer keeps it, and a mesh decal is clipped from its meshes. */\n  CW_PART_SURFACE = 1 << 0,\n  /* it moves vertices on the GPU: the CPU cannot see where the surface is,\n   * so no mesh decal is clipped from it (a screen decal still lands on it) */\n  CW_PART_MOVES_VERTICES = 1 << 1,\n} cw_part_traits;"
+    }
+   ],
    "macros": []
   },
   {
@@ -13846,6 +13870,120 @@
      "name": "cw_stream_stats",
      "doc": "",
      "decl": "typedef struct cw_stream_stats {\n  int loading, loaded, active;      /* cells now (active cells are loaded too) */\n  uint64_t loads, activations, deactivations, unloads; /* so far */\n  int start_cells;                  /* cells the first tick activated (waiting for them: the start position's load) */\n  double start_ms;                  /* how long that took (wall clock) */\n  int stalls;                       /* later activations that had to wait for their cell (should stay 0) */\n  double stall_ms, stall_ms_max;    /* wall clock spent waiting (reported, never fed back) */\n  double prepare_ms_max;            /* the longest on_load so far (wall clock) */\n  int rebases;\n  uint64_t activation_hash;         /* FNV-1a 64 over (tick, cell id, on/off) events */\n  uint64_t ticks;\n} cw_stream_stats;"
+    }
+   ],
+   "macros": []
+  },
+  {
+   "header": "cartwheel/surface.h",
+   "summary": "cartwheel/surface.h: a surface of the game's own that keeps the engine's\nlighting.\n\nA game writes how one kind of surface looks (a dissolve, triplanar rock,\ngrass that sways, a force field, lava) as r187 TSL in a module of its own,\nshaders/<name>.mjs: the module names its parameters and returns the\nsurface's inputs (colour, normal, roughness, metalness, emissive, opacity,\na cut-out mask, vertex positions) and, if it wants, a last word on the lit\ncolour. Everything that lights a surface stays the engine's: three.c's\nlights and shadows, the clustered lamps, the sun's cascades, reflection\nprobes and the light probe grid, screen-space reflections, fog, decals.\nA material with a surface is shaded by all of them exactly as a plain\nMeshStandardMaterial is; with its effect at zero it draws the same pixels.\n\n  // once, at start (before or after the scene exists)\n  static const cw_surface_param dissolve_params[] = {\n    { \"amount\", CW_SURFACE_FLOAT },\n    { \"edge\", CW_SURFACE_VEC4, .value = { 6, 1.6f, 0.2f, 0.06f } },\n  };\n  cw_surface_register(&(cw_surface_desc){ .name = \"dissolve\", .params = dissolve_params, .param_count = 2,\n                                          .node_type = \"DissolveSurface3D\" });\n  // on a material\n  cw_surface_apply(material, \"dissolve\");\n  cw_surface_set_float(material, \"dissolve\", \"amount\", 0.4f);\n\nThe module's parameter list and this one must agree in names and types\n(docs/guides/rendering-3d.md, \"Writing your own surface\", has both sides\nand two worked examples). A surface is a shading part (cartwheel/shading.h)\nwith the trait CW_PART_SURFACE: a material's program is the composed state\n(standard+l0001+xcluster_csm_dissolve_gi), captured offline into the app's\nprogram table by tools/programs.mjs like any other state. Name the module in\nthe table's manifest (\"# extend: ../shaders/dissolve.mjs\").\n\nValues. Each parameter has the registered default, a value for every\nmaterial of the surface (cw_surface_set_global: time, wind), and a value\nper material (cw_surface_set...), which wins. Setting one is a memory\nwrite; the values travel with each draw. A texture may be replaced at any\ntime, and its pixels changed in place (write t->pixels, then t->version++).\n\nNodes. With `node_type`, the surface is also a node type whose properties\nare the parameters: put one under a MeshInstance3D (or any Node3D) in a\nscene file and that node's meshes get the surface on materials of their\nown, driven by the node's properties, which an AnimationPlayer can key\nlike any other.\n\nDraws. Meshes that share geometry and a material with a surface are one\ninstanced draw when every part on the material allows it: a surface does;\nthe clustered lights' and cascades' parts do when LightingSettings.batching\nis on; the gi part (a scene with probes) never does, since each mesh picks\nits own probes.",
+   "functions": [
+    {
+     "name": "cw_surface_register",
+     "signature": "bool cw_surface_register(const cw_surface_desc *d)",
+     "doc": "Register a surface (once; again with the same name replaces the defaults).\nfalse, with the reason logged, for a bad name or parameter list.",
+     "inline": false
+    },
+    {
+     "name": "cw_surface_known",
+     "signature": "bool cw_surface_known(const char *surface)",
+     "doc": "A surface of that name is registered.",
+     "inline": false
+    },
+    {
+     "name": "cw_surface_apply",
+     "signature": "bool cw_surface_apply(t3_material *m, const char *surface)",
+     "doc": "Put the surface on m (a MeshStandardMaterial, MeshPhysicalMaterial,\nMeshLambertMaterial or MeshPhongMaterial); a no-op when it is on it. The\nmaterial is retained until cw_surface_remove.",
+     "inline": false
+    },
+    {
+     "name": "cw_surface_remove",
+     "signature": "void cw_surface_remove(t3_material *m, const char *surface)",
+     "doc": "Take the surface off m and drop its values (a no-op when m lacks it).",
+     "inline": false
+    },
+    {
+     "name": "cw_surface_has",
+     "signature": "bool cw_surface_has(const t3_material *m, const char *surface)",
+     "doc": "m carries the surface (through cw_surface_apply or a surface node).",
+     "inline": false
+    },
+    {
+     "name": "cw_surface_apply_tree",
+     "signature": "int cw_surface_apply_tree(t3_object *root, const char *surface)",
+     "doc": "The same for every material under root (each once); returns how many took it.",
+     "inline": false
+    },
+    {
+     "name": "cw_surface_set",
+     "signature": "bool cw_surface_set(t3_material *m, const char *surface, const char *param, const float *v, int n)",
+     "doc": "A parameter of m's surface from n floats: 1 to 4 for FLOAT to COLOR, 16\nfor a MAT4, 4 x count for an array. false (logged once) for a material\nwithout the surface, an unknown parameter or a wrong n.",
+     "inline": false
+    },
+    {
+     "name": "cw_surface_set_float",
+     "signature": "bool cw_surface_set_float(t3_material *m, const char *surface, const char *param, float v)",
+     "doc": "The same for a FLOAT parameter.",
+     "inline": false
+    },
+    {
+     "name": "cw_surface_set_at",
+     "signature": "bool cw_surface_set_at(t3_material *m, const char *surface, const char *param, int index, const float v[4])",
+     "doc": "One element of a VEC4 array.",
+     "inline": false
+    },
+    {
+     "name": "cw_surface_set_texture",
+     "signature": "bool cw_surface_set_texture(t3_material *m, const char *surface, const char *param, t3_texture *t)",
+     "doc": "A TEXTURE parameter (retained; NULL goes back to the surface's value).",
+     "inline": false
+    },
+    {
+     "name": "cw_surface_get",
+     "signature": "int cw_surface_get(const t3_material *m, const char *surface, const char *param, float *out, int cap)",
+     "doc": "What a draw of m gets for the parameter (its own value, else the surface's,\nelse the default): up to cap floats into out, the count returned (0: unknown).",
+     "inline": false
+    },
+    {
+     "name": "cw_surface_unset",
+     "signature": "void cw_surface_unset(t3_material *m, const char *surface, const char *param)",
+     "doc": "Back to the surface's value.",
+     "inline": false
+    },
+    {
+     "name": "cw_surface_set_global",
+     "signature": "bool cw_surface_set_global(const char *surface, const char *param, const float *v, int n)",
+     "doc": "The value every material of the surface draws with unless it has its own.",
+     "inline": false
+    },
+    {
+     "name": "cw_surface_set_global_texture",
+     "signature": "bool cw_surface_set_global_texture(const char *surface, const char *param, t3_texture *t)",
+     "doc": "The texture every material of the surface samples unless it has its own (retained; NULL: white).",
+     "inline": false
+    },
+    {
+     "name": "cw_surface_material_count",
+     "signature": "int cw_surface_material_count(const char *surface)",
+     "doc": "How many materials carry the surface now.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_surface_type",
+     "doc": "",
+     "decl": "typedef enum cw_surface_type {\n  CW_SURFACE_FLOAT,   /* 'float' */\n  CW_SURFACE_VEC2,    /* 'vec2' */\n  CW_SURFACE_VEC3,    /* 'vec3' */\n  CW_SURFACE_VEC4,    /* 'vec4'; with count > 1 an array, { type: 'vec4', count: N } */\n  CW_SURFACE_COLOR,   /* 'color': linear rgba, a vec4 in the module */\n  CW_SURFACE_MAT4,    /* 'mat4', column-major */\n  CW_SURFACE_TEXTURE, /* { texture: ... } */\n} cw_surface_type;"
+    },
+    {
+     "name": "cw_surface_param",
+     "doc": "",
+     "decl": "typedef struct cw_surface_param {\n  const char *name;     /* [a-zA-Z0-9]: the module's parameter name */\n  cw_surface_type type;\n  int count;            /* VEC4 only: elements of an array (0 or 1: one value), at most 32 */\n  float value[4];       /* the default (an array's every element; a MAT4's is the identity, a TEXTURE's white) */\n} cw_surface_param;"
+    },
+    {
+     "name": "cw_surface_desc",
+     "doc": "",
+     "decl": "typedef struct cw_surface_desc {\n  const char *name;               /* the module's name ([a-z0-9], at most 10 characters: it is part of every state's name) */\n  const cw_surface_param *params; /* copied */\n  int param_count;                /* at most 32 */\n  bool moves_vertices;            /* the module returns `position`: no mesh decal is clipped from its meshes */\n  const char *node_type;          /* NULL, or the node type to register for it (\"DissolveSurface3D\") */\n} cw_surface_desc;"
     }
    ],
    "macros": []

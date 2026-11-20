@@ -25,9 +25,19 @@
  *     (cw_shading_part); a composed extension's hook calls every part's hook
  *     in order on the same draw.
  *
- * Order (fixed, global): surface parts (terrain, terrainlow, terrainfar,
- * water), then lighting (cluster), then indirect light (gi); any other part
- * between lighting and indirect, by name.
+ * Order (fixed, global): the engine's surface parts (terrain, terrainlow,
+ * terrainfar, water), then lighting (cluster), then indirect light (gi, and
+ * gibuf for the screen-space passes' G-buffer); any other part, a game's own
+ * surfaces among them (cartwheel/surface.h), between lighting and indirect,
+ * by name. A material takes up to CW_SHADING_MAX_PARTS parts and a composed
+ * name of up to 63 characters.
+ *
+ * A game's part. cw_shading_part with a fill hook of the game's own composes
+ * with the lighting parts (cluster, csm, plain). Say what the part is with
+ * cw_shading_part_traits and the rest of the engine takes it too:
+ * CW_PART_SURFACE lets the probes (gi), the G-buffer and mesh decals compose
+ * with it. cartwheel/surface.h does all of that for a surface written as a
+ * module with named parameters, with no hook to write.
  *
  * Cost: none per part beyond its own hook. three.c does not auto-instance a
  * mesh whose material carries an extension (each such mesh is its own draw)
@@ -44,13 +54,30 @@
 extern "C" {
 #endif
 
-enum { CW_SHADING_MAX_PARTS = 4 };
+enum { CW_SHADING_MAX_PARTS = 8 };
+
+/* What the engine may assume of a part (cw_shading_part_traits). A part with
+ * no traits is composed with the lighting parts only, as before. */
+typedef enum cw_part_traits {
+  /* a surface of the game's own (cartwheel/surface.h): it decides what the
+   * lighting shades (colour, normal, roughness, emissive, cut-outs, vertex
+   * positions) and leaves the lighting to the engine. Reflection probes and
+   * the light probe grid compose with it (gi), the screen-space passes'
+   * G-buffer keeps it, and a mesh decal is clipped from its meshes. */
+  CW_PART_SURFACE = 1 << 0,
+  /* it moves vertices on the GPU: the CPU cannot see where the surface is,
+   * so no mesh decal is clipped from it (a screen decal still lands on it) */
+  CW_PART_MOVES_VERTICES = 1 << 1,
+} cw_part_traits;
 
 /* The renderer's hook for part `name` ([a-z0-9], up to 15 characters): it
  * fills that part's "ext." values for each draw of any material carrying the
  * part, alone or composed. fill NULL removes it. Also installs every composed
  * extension that includes the part. */
 void cw_shading_part(t3_renderer *r, const char *name, t3_extension_fill fill, void *user);
+/* The same for every renderer there is and every one made later (a part a
+ * game registers once at start, before or after its trees exist). */
+void cw_shading_part_everywhere(const char *name, t3_extension_fill fill, void *user, bool batching);
 /* Part `name`'s hook on r reads nothing of the object it fills for (only
  * per-frame values, or ones a batch keeps equal: receive_shadow, render
  * order), so meshes whose material carries it may be auto-instanced. A
@@ -59,12 +86,17 @@ void cw_shading_part_batching(t3_renderer *r, const char *name, bool on);
 /* A part named `name` was registered (cw_shading_part) on some renderer: the
  * engine's lighting composes its own parts (cluster, csm) with it. */
 bool cw_shading_part_known(const char *name);
+/* Part `name`'s traits (cw_part_traits, or'ed), for every renderer. */
+void cw_shading_part_traits(const char *name, unsigned traits);
+/* The traits given to part `name` (0 for none, or an unknown part). */
+unsigned cw_shading_part_traits_of(const char *name);
 /* Forget a renderer (before t3_renderer_destroy). */
 void cw_shading_forget(t3_renderer *r);
 
 /* Add part `name` to material m (no-op when it has it): m's extension becomes
  * the composed name. false when m would carry more than CW_SHADING_MAX_PARTS
- * parts or the composed name would pass 31 characters. */
+ * parts or the composed name would pass 63 characters (said once in the log,
+ * naming the material's parts: the material keeps what it had). */
 bool cw_shading_add(t3_material *m, const char *name);
 /* Remove part `name` from m (no-op when it lacks it). */
 void cw_shading_remove(t3_material *m, const char *name);
