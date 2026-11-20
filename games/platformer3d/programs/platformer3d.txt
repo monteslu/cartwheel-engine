@@ -9,3 +9,4 @@ standard+fog+shadow+l1801+s100+xplain
 standard+fog+l1801+xplain
 standard+fog+instbig+shadow+l1801+s100+xplain
 standard+fog+instbig+l1801+xplain
+depth+instbig+xplain

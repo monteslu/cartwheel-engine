@@ -4,3 +4,5 @@ standard+shadow+l1001+xgi
 standard+l1001+xgi
 depth+xplain
 standard+shadow+l1001+xplain
+depth+xplain_gi
+standard+shadow+l1001+xplain_gi
