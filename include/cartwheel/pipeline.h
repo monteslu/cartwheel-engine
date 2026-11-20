@@ -500,8 +500,11 @@ void cw_pipeline_set_views_shared_post(cw_pipeline *p, bool shared);
 /* Split screen in one pass (needs the shared post chain): the views are drawn into one target, the scene in one
  * three.c render with a t3_array_camera (each view culled and sorted by its own camera, one render pass, the
  * frame's uploads once) and every other pass that reads a view's camera once per view inside its rectangle. The
- * picture is the per-view one. A frame where an active pass cannot (CW_PASS_VIEWS_NONE, a view hook) draws each
- * view on its own, as without it. Off by default. cw_pipeline_views_array_used says what the last frame did. */
+ * picture is the per-view one. A frame where an active pass cannot draws each view on its own, as without it: a pass
+ * with CW_PASS_VIEWS_NONE (a game's own pass that does not say), a view hook, the sun's cascades, a planar water
+ * reflection or refraction, the view under water. On by default. Geometry the engine draws for one view only (a
+ * terrain's patches and scatter) sits on layers 28 to 31 in such a frame: keep a game's own objects off them.
+ * cw_pipeline_views_array_used says what the last frame did. */
 void cw_pipeline_set_views_array(cw_pipeline *p, bool on);
 /* The last frame's split screen ran in one pass (false: each view on its own, or no split); why not names the
  * first pass that could not (NULL when it ran, or for a view hook / no split). */

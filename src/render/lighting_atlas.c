@@ -94,6 +94,7 @@ void cw__atlas_free(cw__atlas *a) {
 }
 
 t3_texture *cw__atlas_texture(cw__atlas *a) { return a->tex; }
+uint64_t cw__atlas_layout_key(const cw__atlas *a) { return a ? a->layout_key : 0; }
 void cw__atlas_get_info(const cw__atlas *a, cw__atlas_info *out) { *out = a->info; }
 
 /* a depth texture read by hand (no compare mode), drawn into with an FBO on GL */
@@ -253,6 +254,20 @@ static tile *find_tile(cw__atlas *a, const t3_light *l) {
   for (int i = 0; i < a->tiles.count; i++)
     if (a->tiles.data[i].light == l) return &a->tiles.data[i];
   return NULL;
+}
+
+bool cw__atlas_lookup(cw__atlas *a, const t3_light *l, cw__shadow_out *o) {
+  tile *t = a ? find_tile(a, l) : NULL;
+  if (!t) return false;
+  for (int f = 0; f < (t->omni ? 6 : 1); f++)
+    if (!t->valid[f]) return false;
+  o->type = t->omni ? 2 : 1;
+  memcpy(o->mat, t->mat, sizeof o->mat);
+  o->pos = t->pos;
+  o->near = t->near;
+  o->far = t->far;
+  o->rect[0] = (float)t->x, o->rect[1] = (float)t->y, o->rect[2] = (float)t->size, o->rect[3] = 0;
+  return true;
 }
 
 static void layout(cw__atlas *a, const cw__shadow_req *req, int n) {

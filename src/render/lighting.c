@@ -114,6 +114,11 @@ typedef struct lighting {
   const t3_camera *lv0_cam;
   uint64_t lv_frame; /* the pipeline frame (+ 1) the slots were filled for */
   int lv_n;
+  /* one-pass split screen: each view's shadowed lights and their columns in its light texture, so an earlier view's
+   * rows follow the shadow atlas when a later view's update moves or redraws its tiles (every view draws after all
+   * of them) */
+  struct vshadow { int n, cap; const t3_light **l; int *col; } vsh[CW_MAX_VIEWS];
+  int cur_view;
   /* capture mode (cw__lighting_capture): a light texture per capture camera, made from light_tex for the version it
    * had (cap_src, cap_ver); the one record and the item list every capture draw reads */
   bool capture;
@@ -169,6 +174,7 @@ static void lighting_free(void *p) {
     if (L->lv[i].grid) cw_froxel_grid_free(L->lv[i].grid);
     if (L->lv[i].light_tex) t3_release(L->lv[i].light_tex);
   }
+  for (int i = 0; i < CW_MAX_VIEWS; i++) cw_free(L->vsh[i].l), cw_free(L->vsh[i].col);
   cw__csm_free(L->csm);
   cw__atlas_free(L->atlas);
   cw_free(L->reqs);
@@ -722,6 +728,39 @@ static void lv_swap(lighting *L, struct lview *v) {
 /* One-pass split screen (ctx->view_count > 0): each view's clusters over its own rectangle, a view after the first in
  * its own slot. The cascaded sun is fitted to one camera and drawn by the csm part for every draw, so a frame that
  * uses it cannot be drawn in one pass: the pass says so for the next frame (and starts out saying it cannot). */
+/* one-pass split screen: view j's shadowed lights' rows as the atlas holds them now (a later view laid the tiles out
+ * again or drew some anew); false when one of them lost its tile */
+static bool vshadow_follow(lighting *L, int j) {
+  t3_texture *tex = j ? L->lv[j].light_tex : L->light_tex;
+  if (!tex) return true;
+  const struct vshadow *vs = &L->vsh[j];
+  float *px = (float *)tex->pixels;
+  int w = tex->width;
+  bool soft = cw__quality_soft_shadows();
+  for (int k = 0; k < vs->n; k++) {
+    int i = vs->col[k];
+    float *row[10];
+    for (int r = 0; r < 10; r++) row[r] = px + 4 * ((size_t)i + (size_t)r * (size_t)w);
+    cw__shadow_out o;
+    if (!cw__atlas_lookup(L->atlas, vs->l[k], &o)) {
+      if (row[3][1] != 0) return false;
+      continue;
+    }
+    const t3_light_shadow *sh = vs->l[k]->shadow;
+    row[3][1] = (float)o.type, row[3][2] = sh->bias, row[3][3] = sh->normal_bias;
+    if (o.type == 1) memcpy(row[4], o.mat, 4 * sizeof(float)), memcpy(row[5], o.mat + 4, 4 * sizeof(float)),
+                     memcpy(row[6], o.mat + 8, 4 * sizeof(float)), memcpy(row[7], o.mat + 12, 4 * sizeof(float));
+    else {
+      row[4][0] = o.pos.x, row[4][1] = o.pos.y, row[4][2] = o.pos.z, row[4][3] = o.near;
+      row[5][0] = o.far;
+    }
+    row[8][0] = o.rect[0], row[8][1] = o.rect[1], row[8][2] = o.rect[2], row[8][3] = soft ? sh->radius : 0;
+    row[9][0] = sh->intensity;
+  }
+  tex->version++;
+  return true;
+}
+
 static void pass_lights(cw_pass_ctx *ctx, void *user) {
   lighting *L = user;
   int k = ctx->view_count > 0 ? ctx->view_index : -1;
@@ -735,6 +774,9 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
       if (!L->lv[k].grid) L->lv[k].grid = cw_froxel_grid_new();
       lv_swap(L, &L->lv[k]);
     }
+    uint64_t layout0 = cw__atlas_layout_key(L->atlas);
+    L->cur_view = k;
+    L->vsh[k].n = 0;
     pass_lights_view(ctx, user);
     if (k > 0) {
       lv_swap(L, &L->lv[k]);
@@ -742,8 +784,21 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
     } else L->lv0_cam = ctx->camera;
     L->lv_n = ctx->view_count;
     ctx->width = keep_w, ctx->height = keep_h;
+    /* the atlas this view left is the one every view samples: the earlier views' rows follow it */
+    cw__atlas_info ai = { 0 };
+    if (L->atlas) cw__atlas_get_info(L->atlas, &ai);
+    if (k > 0 && (ai.faces_rendered > 0 || cw__atlas_layout_key(L->atlas) != layout0))
+      for (int j = 0; j < k; j++)
+        if (!vshadow_follow(L, j)) {
+          cw__pipeline_array_refuse(ctx, "lights");
+          break;
+        }
   }
+  /* the cascaded sun is fitted to each view's camera and its maps drawn for it: a view's cascades would have to be
+   * kept until the one scene render, a set of maps a view, for no saving in their drawing. A frame that uses it is
+   * drawn view by view (this frame's views from the first that met it; the pass says so for the frames after it) */
   bool csm = L->stats.cascades > 0 || L->sun_taken;
+  if (csm && k >= 0) cw__pipeline_array_refuse(ctx, "lights");
   cw__pipeline_set_pass_views(ctx->pipeline, "lights", csm ? CW_PASS_VIEWS_NONE : CW_PASS_VIEWS_EACH);
 }
 static void pass_lights_view(cw_pass_ctx *ctx, void *user) {
@@ -958,6 +1013,16 @@ static void pass_lights_view(cw_pass_ctx *ctx, void *user) {
   shadow_span(false);
   cw__atlas_update(L->atlas, ctx, L->reqs, nreq, asize, L->s.shadow_updates_per_frame, L->s.shadow_cache, L->outs);
   shadow_span(true);
+  if (ctx->view_count > 0) { /* (one-pass split screen: this view's shadowed lights, for the later views' updates) */
+    struct vshadow *vs = &L->vsh[CW_CLAMP(L->cur_view, 0, CW_MAX_VIEWS - 1)];
+    if (vs->cap < nreq) {
+      vs->cap = nreq + 16;
+      vs->l = cw_realloc(vs->l, (size_t)vs->cap * sizeof *vs->l, CW_MEM_RENDER);
+      vs->col = cw_realloc(vs->col, (size_t)vs->cap * sizeof *vs->col, CW_MEM_RENDER);
+    }
+    vs->n = nreq;
+    for (int k = 0; k < nreq; k++) vs->l[k] = L->reqs[k].light, vs->col[k] = L->req_light[k];
+  }
   bool soft = cw__quality_soft_shadows();
   for (int k = 0; k < nreq; k++) {
     const cw__shadow_out *o = &L->outs[k];

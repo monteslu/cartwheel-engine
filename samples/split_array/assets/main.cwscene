@@ -1,0 +1,150 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+ambient_energy = 0.2
+hemi_energy = 0.3
+
+[node name="Post" parent="." type="PostProcess"]
+bloom = true
+bloom_intensity = 0.04
+ssao = true
+
+[node name="Lighting" parent="." type="LightingSettings"]
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 17.2
+latitude = 40
+declination = 15
+north = 10
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+shadow_extent = 120
+
+[node name="Fog" parent="." type="HeightFog"]
+density = 0.004
+height_falloff = 0.12
+base_height = 0
+sun_scatter = 0.8
+sun_g = 0.7
+sky_distance = 500
+
+[node name="Land" parent="." type="Terrain3D"]
+position = vec3(0, -2.2, 0)
+size_x = 256
+size_z = 256
+vertex_spacing = 1
+min_height = 0
+max_height = 4
+grid_quads = 16
+generate_seed = 7
+generate_feature = 90
+generate_amplitude = 0.5
+far_distance = 120
+cast_shadow = true
+
+[node name="Rocks" parent="Land" type="TerrainScatter3D"]
+shape = ROCK
+color = color(0.55, 0.5, 0.45, 1)
+density = 0.08
+scale_min = 0.4
+scale_max = 1.4
+align = true
+visible_range = 90
+fade = 15
+lod_distance = 30
+cast_shadow = true
+seed = 3
+
+[node name="Grass" parent="Land" type="TerrainScatter3D"]
+shape = GRASS
+color = color(0.35, 0.5, 0.2, 1)
+density = 1.5
+visible_range = 40
+fade = 8
+lod_distance = 15
+knob = GRASS
+seed = 5
+
+[node name="Pond" parent="." type="Water3D"]
+position = vec3(10, 0.3, -18)
+size = vec2(30, 24)
+subdivisions = 64
+reflection = false
+refraction = false
+wave_count = 1
+wave0 = vec4(30, 4, 0.05, 0.3)
+
+[node name="Lamp" parent="." type="OmniLight3D"]
+position = vec3(-3, 3.5, -6)
+color = color(1, 0.7, 0.4, 1)
+energy = 40
+range = 14
+shadow = true
+
+[node name="Lamp2" parent="." type="OmniLight3D"]
+position = vec3(6, 2.5, 4)
+color = color(0.4, 0.7, 1, 1)
+energy = 25
+range = 10
+
+[node name="Fountain" parent="." type="GPUParticles3D"]
+position = vec3(-6, 2.5, -2)
+amount = 4000
+lifetime = 2.5
+emission_shape = SPHERE
+emission_radius = 0.2
+spread = 20
+speed_min = 5
+speed_max = 7
+gravity = vec3(0, -9.8, 0)
+collide_depth = true
+depth_thickness = 0.8
+bounce = 0.4
+size = 0.08
+sort = true
+color_ramp = "0 1 0.7 0.3 0, 0.05 1 0.8 0.4 1, 1 0.9 0.5 0.3 0"
+energy = 2
+seed = 1
+
+[node name="Scorch" parent="." type="Decal3D"]
+position = vec3(0, 3, 2)
+rotation = vec3(-1.5707963, 0, 0)
+size = vec3(6, 6, 8)
+texture = "decals/scorch.png"
+blend = MULTIPLY
+normal_fade = 0.0
+
+[node name="Block0" parent="." type="MeshInstance3D"]
+position = vec3(-8, 3, -8)
+size = vec3(3, 6, 3)
+color = color(0.7, 0.68, 0.6, 1)
+roughness = 0.8
+cast_shadow = true
+receive_shadow = true
+
+[node name="Block1" parent="." type="MeshInstance3D"]
+position = vec3(4, 2.5, -6)
+size = vec3(2, 5, 2)
+color = color(0.6, 0.62, 0.7, 1)
+roughness = 0.6
+cast_shadow = true
+receive_shadow = true
+
+[node name="Ball" parent="." type="MeshInstance3D"]
+position = vec3(1, 3, 0)
+primitive = SPHERE
+size = vec3(2, 2, 2)
+color = color(0.8, 0.5, 0.3, 1)
+roughness = 0.4
+cast_shadow = true
+receive_shadow = true
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 7, 18)
+fov = 60
+near = 0.1
+far = 600

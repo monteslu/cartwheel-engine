@@ -250,6 +250,9 @@ void cw__view_fb_rect(const cw_pass_ctx *ctx, int w, int h, bool top_down, int o
 void cw__pw_set_scissor(const int *rect); /* WebGPU: NULL = the whole target */
 /* a pass's split screen capability, from the next frame (cw_pass_desc.views: a pass that can only sometimes) */
 void cw__pipeline_set_pass_views(cw_pipeline *p, const char *name, uint8_t views);
+/* a one-pass split screen's pass that finds it cannot do this frame (in the SHADOW phase, before anything is drawn):
+ * the frame is drawn view by view instead. Does nothing outside such a run. */
+void cw__pipeline_array_refuse(cw_pass_ctx *ctx, const char *why);
 /* copy a texture into a target with a plain shader (any formats) */
 void cw__pass_copy(cw_pass_ctx *ctx, unsigned src_tex, const cw_rt *dst);
 /* the LUT texture of a LUT id (0 when unknown) */

@@ -100,6 +100,10 @@ typedef struct water3d {
   t3_texture *wg_col_tex, *wg_dep_tex;
   bool wg_fresh;
   bool cam_under; /* this view's camera is under the surface */
+  /* one-pass split screen (no planar reflection or refraction): each view's camera values, which the fill hook puts in
+   * for the draw's camera (every view draws after every view's pass) */
+  struct water_view { const void *camera; float cam[4], grid_off[2], cam_tan2, cam_world[16]; bool cam_under; } wv[4];
+  int wv_n;
 } water3d;
 
 /* the waves at time t, phases reduced (water.c) */
