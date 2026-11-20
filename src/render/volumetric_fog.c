@@ -864,7 +864,15 @@ static void shadow_matrix(t3_camera *cam, float out[16]) {
   memcpy(out, m.e, sizeof m.e);
 }
 
+static void vf_build_exec_view(cw_pass_ctx *ctx, void *user);
+/* the grid is the view's own (its own targets, whole): a one-pass split screen's rectangle does not clip it */
 static void vf_build_exec(cw_pass_ctx *ctx, void *user) {
+  bool clip = cw__vclip.on;
+  cw__vclip.on = false;
+  vf_build_exec_view(ctx, user);
+  cw__vclip.on = clip;
+}
+static void vf_build_exec_view(cw_pass_ctx *ctx, void *user) {
   vfog_rt *v = user;
   vf_slot *S = slot_of(v, ctx);
   const cw__height_fog *hf = cw__height_fog_of(ctx->tree), *med = medium_of(ctx->tree);
