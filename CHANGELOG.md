@@ -22,6 +22,15 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   `CW_TEST_TAA_STILL_ONLY=1`, fails it) and the still yard as sharp as before (`MV_REF=3`; control: every pixel
   taken as moving fails it). The TAA pass costs 0.04 to 0.07 ms more at post_stack's size on a Radeon 890M
   (GL 0.42 to 0.49 ms, WebGPU 0.41 to 0.45 ms on a still frame; 0.44 to 0.50 and 0.46 to 0.50 on the spinning bar).
+## NEXT (fixes2): the retargeting sample's people are athletic
+
+### Changed
+
+- **`samples/anim_retarget`: the four generated people are built athletic.** Narrower hips (the hip joints under the
+  pelvis instead of outside it, the pelvis narrower, the waist a little wider), leaner thighs, and a heavy build
+  (the lifter) carried in the shoulders and arms, its legs only a little thicker. Same generator
+  (`samples/anim_retarget/make-characters.mjs`), same bones, names and rest poses; the walk and the punch retarget as
+  before: planted feet slide 0.002 to 0.003 mm (gate bound 5 mm), the control (rotations only) 411 to 697 mm.
 
 ## v0.52.0 (2026-11-20)
 

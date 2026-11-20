@@ -220,11 +220,11 @@ The sample measures what matters by eye: while a foot is planted, how far does i
 
 | | Runner (1.86 m) | Gymnast (1.58 m) | Lifter (1.78 m) | Coach (the source clip) |
 |---|---|---|---|---|
-| retargeted with `plant_feet` | 0.006 mm | 0.006 mm | 0.005 mm | 460 mm |
-| control: foot IK, no planting | 513 mm | 405 mm | 431 mm | |
-| control: rotations only, no foot IK | 510 mm | 551 mm | 398 mm | |
+| retargeted with `plant_feet` | 0.002 mm | 0.002 mm | 0.003 mm | 617 mm |
+| control: foot IK, no planting | 688 mm | 542 mm | 577 mm | |
+| control: rotations only, no foot IK | 697 mm | 567 mm | 411 mm | |
 
-The gate holds the people under 5 mm. The coach's own walk is keyed from joint angles and slides a great deal (its planted feet travel unevenly, and no walking speed takes that out); foot IK alone reproduces the source's feet exactly, slide included, at each person's size, which is the middle row. The clips `cwpack` baked and the same clips made at load agree to 0.0005 mm at the feet.
+The gate holds the people under 5 mm. The coach's own walk is keyed from joint angles and slides a great deal (its planted feet travel unevenly, and no walking speed takes that out); foot IK alone reproduces the source's feet exactly, slide included, at each person's size, which is the middle row. The clips `cwpack` baked and the same clips made at load agree to 0.0004 mm at the feet.
 
 `RETARGET_SHEET=walk`, `walk_side`, `attack` or `attack_side` stands the coach and the three people in a row, facing the camera or side on, with that clip on the whole body: the view to judge a retarget against its source by eye.
 
