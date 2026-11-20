@@ -14,7 +14,8 @@ add_library(cw_importers STATIC ${_cwp_srcs})
 target_include_directories(cw_importers PUBLIC ${_cwp} ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src/resource
   ${CW_THREE_DIR}/include)
 target_compile_options(cw_importers PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers>)
-target_link_libraries(cw_importers PUBLIC three meshoptimizer cw_opus cw_ogg cw_miniaudio)
+# cartwheel: import_retarget.c bakes clips with the engine's retargeting (src/anim/retarget.c)
+target_link_libraries(cw_importers PUBLIC cartwheel three meshoptimizer cw_opus cw_ogg cw_miniaudio)
 if(NOT CW_CART)
   target_link_libraries(cw_importers PUBLIC cw_basisu_encoder) # defined in tools/cwpack/CMakeLists.txt
   # The encoder archive carries its own (full) Basis transcoder and the whole
