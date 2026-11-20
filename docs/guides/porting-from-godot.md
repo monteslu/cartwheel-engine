@@ -85,6 +85,7 @@ See [Physics](guide:physics) and [Navigation](guide:navigation).
 | `SpringArm3D` | [SpringArm3D](node:SpringArm3D) | `spring_length`, `margin`, a sphere `radius` in place of a shape resource, `collision_mask`, plus `extend_speed`; the arm runs along +Z as in Godot |
 | project stretch settings | `CanvasSettings` | virtual size, scale mode, letterbox, clear colour |
 | `Node3D`, `MeshInstance3D`, `Camera3D`, `DirectionalLight3D`, `OmniLight3D`, `SpotLight3D`, `WorldEnvironment`, `LightmapGI` | same names | three.c (three.js r187) renders: linear HDR, physical light units |
+| `StandardMaterial3D` with `diffuse_mode = Toon`, toon shaders | `MeshInstance3D` `shading = TOON`, `toon_bands`; `cw_toon_apply_tree` for a loaded model ([toon.h](header:toon.h)) | three.js MeshToonMaterial: banded light from a ramp, emissive, every light and shadow; no toon specular or rim term |
 | `Environment` effects (glow, SSAO, tonemap) | `PostProcess` | one per tree |
 | TAA with motion vectors (`use_taa`) | `PostProcess` `taa` | moving, skinned and instanced meshes carry their own motion, with no per-mesh setting |
 | sky, fog | `ProceduralSky`, `HeightFog` | |

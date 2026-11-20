@@ -454,6 +454,28 @@
      "doc": "Emitted light colour."
     },
     {
+     "name": "shading",
+     "type": "enum",
+     "default": "STANDARD",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "STANDARD",
+      "TOON"
+     ],
+     "doc": "STANDARD: physically based. TOON: flat tones with hard edges between them (three.js MeshToonMaterial); the primitive, or every material of the mesh resource, keeps its colour, maps and emissive and loses roughness, metalness and reflections."
+    },
+    {
+     "name": "toon_bands",
+     "type": "int",
+     "default": "3",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 16,
+     "doc": "TOON: tones of the light ramp, 2 to 16 (below 2: two soft-edged tones, 0.7 and 1 of the light)."
+    },
+    {
      "name": "cast_shadow",
      "type": "bool",
      "default": "false",

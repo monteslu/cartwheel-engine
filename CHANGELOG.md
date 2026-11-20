@@ -158,6 +158,24 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   docs/guides/rendering-3d.md, "Motion vectors". Gates `post-motion-taa`, `post-motion-plain`,
   `post-motion-velocity`, `motion-vectors-taa`, `motion-vectors-view` on GL and WebGPU, and the scripted
   `motion-vectors` (the measurement above; its control, camera motion only, must fail).
+## v0.51.0 (2026-11-19)
+
+### Added
+- **Toon shading (three.c 0.187.9, three.js r187's MeshToonMaterial).** A surface lit in flat tones with hard edges
+  between them. In a scene it is one property: `MeshInstance3D` `shading = TOON` with `toon_bands` (2 to 16
+  tones; below 2, three.js's own two soft-edged tones), on the node's primitive or on every material of its mesh
+  resource or glTF scene (nodes showing the same file still share materials). From code,
+  [cartwheel/toon.h](include/cartwheel/toon.h): `cw_toon_apply_tree` and `cw_toon_restore_tree` for a loaded
+  model, `cw_toon_material` for one material, `cw_toon_ramp` for the shared ramps. A toon material keeps colour
+  and colour map, emissive colour, map and intensity, normal map, ambient occlusion, light map, alpha map and
+  cutout, vertex colours, transparency and sides; every light lights it with shadows (ambient, hemisphere,
+  three.c's lights, the clustered omni and spot lights, the cascaded sun), each light banded on its own.
+  `samples/toon_shading` shows banded spheres, an emissive cylinder and two toon trees from one glTF beside their
+  physically based twins. Gate `toon-shading` on GL and WebGPU (native and the cart): its control sets every mesh
+  back to STANDARD, and the state and the picture differ. Measured on a Radeon 890M, GL, 1920 x 1080, High, three
+  interleaved rounds of 180 frames: the sample's frame takes 1.62 ms of GPU time toon shaded against 1.92 ms with
+  the same meshes physically based. Guide:
+  [Toon shading](docs/guides/rendering-3d.md#toon-shading).
 
 ## v0.50.4 (2026-11-18)
 

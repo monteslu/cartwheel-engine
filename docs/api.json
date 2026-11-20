@@ -14232,6 +14232,44 @@
    ]
   },
   {
+   "header": "cartwheel/toon.h",
+   "summary": "cartwheel/toon.h: toon (cel) shading, three.js r187's MeshToonMaterial.\n\nA toon surface is lit in flat tones instead of a smooth falloff: the light\na surface gets is read from a gradient map, a ramp with one tone a texel\n(its left end faces away from the light), so a ramp of three texels paints\nshadow, mid tone and light with hard edges between them. With no ramp the\nmaterial has three.js's own two tones (0.7 and 1). The material keeps its\ncolour and colour map, emissive colour, map and intensity (a glow that\nignores the light: fuses, eyes, signs), normal map, ambient occlusion,\nlight map, alpha map and cutout, vertex colours, transparency and sides;\nit has no roughness, metalness, reflections or highlights.\n\nEvery light lights it: ambient and hemisphere light, three.c's lights,\nthe clustered omni and spot lights and the cascaded sun, each with its\nshadows (cartwheel/lighting.h). Each light is banded on its own, so two\nlights give two sets of bands. The plain lighting model of the Very Low\npreset, rim lights and skin shading are for the physically based\nmaterials and leave a toon one as it is.\n\nFrom a scene: MeshInstance3D `shading = TOON` and `toon_bands` (the\nnode's primitive, or every material of its mesh resource or glTF scene).\nFrom code: cw_toon_material for one material, cw_toon_apply_tree for a\nloaded model.\n\nCost: cheaper than the physically based materials (no specular, no\nenvironment lookup); one texture read per light. Program tables: a toon\nmaterial draws states of kind \"toon\" (toon+gmap+...): tools/programs.mjs\nfinds and adds them like any other state.",
+   "functions": [
+    {
+     "name": "cw_toon_ramp",
+     "signature": "t3_texture *cw_toon_ramp(int bands)",
+     "doc": "The shared ramp of `bands` equal tones (2 to CW_TOON_MAX_BANDS: texel i of\nn is (i + 1) / n of the light, nearest filtered as three.js asks of a\ngradient map). Borrowed: retain it to keep it. NULL for fewer than 2\nbands (three.js's two tones need no map).",
+     "inline": false
+    },
+    {
+     "name": "cw_toon_material",
+     "signature": "t3_material *cw_toon_material(const t3_material *src, int bands)",
+     "doc": "A new MeshToonMaterial with src's surface (the list above) and the ramp\nof `bands` tones (below 2: three.js's two tones). src is left as it is;\nits shading parts are not carried over. The caller owns the result. For a\nramp of your own (uneven steps, a tinted shadow tone is not possible: the\nmap's red channel scales the light), set gradient_map on the result with\nt3_material_set_texture(m, T3_GRADIENT_MAP, tex): a DataTexture with both\nfilters T3_NEAREST.",
+     "inline": false
+    },
+    {
+     "name": "cw_toon_apply_tree",
+     "signature": "int cw_toon_apply_tree(t3_object *root, int bands)",
+     "doc": "Every lit material (Lambert, Phong, Standard, Physical) of every mesh\nunder root is replaced by its toon counterpart. Meshes that shared a\nmaterial share its toon copy, across calls too (two instances of one\nglTF, each given to this, still draw with the same materials). Returns\nhow many material slots changed.",
+     "inline": false
+    },
+    {
+     "name": "cw_toon_restore_tree",
+     "signature": "int cw_toon_restore_tree(t3_object *root)",
+     "doc": "The reverse: every toon material cw_toon_apply_tree put under root gives\nway to the material it was made from. Returns how many slots changed.",
+     "inline": false
+    },
+    {
+     "name": "cw_toon_is_applied",
+     "signature": "bool cw_toon_is_applied(const t3_material *m)",
+     "doc": "m is a toon material made by cw_toon_apply_tree (and still drawn).",
+     "inline": false
+    }
+   ],
+   "types": [],
+   "macros": []
+  },
+  {
    "header": "cartwheel/triggers.h",
    "summary": "Triggers: data-driven \"when X then Y\" rules stored in scenes (the tier-3\nlayer of SUBSYSTEMS 8.3 that needs no script VM). A Trigger is a node:\n\n  [node name=\"OnGoal\" type=\"Trigger\" parent=\"Goal\"]\n  signal = \"body_entered\"\n  filter_group = \"player\"\n  action = SET\n  target = \"../Lamp\"\n  member = \"color\"\n  value = \"color(0.2, 1, 0.3, 1)\"\n\nreads \"when Goal emits body_entered with a node of group player, set\nLamp.color\". Being a node, a trigger round-trips through .cwscene text,\nshows in the editor's scene tree and inspector, undoes like any edit and\nis readable and writable as plain text.\n\nSemantics (deliberately small):\n  - source (default \"..\", the trigger's parent): the node whose `signal`\n    fires the rule. Paths are relative to the Trigger node (\"..\",\n    \"../Lamp\", \"/root/Level/Door\", \"%Unique\").\n  - The rule connects when the trigger becomes ready (its source is\n    resolved then; a missing source or a signal the source's type does not\n    declare is a warning naming the fix) and disconnects when it leaves the\n    tree. Changing source/signal/enabled at runtime reconnects.\n  - Firing is DEFERRED: actions run at the end of the phase that emitted\n    the signal, in emission order, so a rule may free, spawn or change the\n    scene safely from a physics callback.\n  - filter_group: fire only when the signal's first argument is a node in\n    that group (body_entered from the player, not from a crate). Empty =\n    always.\n  - once: fire at most once per trigger life (a pickup, a cutscene).\n  - enabled: false = never fire (another trigger may SET it true).\n  - Several triggers on one signal fire in tree order; one trigger does one\n    action (chain more by adding triggers, or EMIT a signal another trigger\n    listens to).\n  - Actions (member and value are text; target defaults to \"..\"):\n      SET           target.member = value (parsed for the property: enums\n                    by name, \"color(1, 0, 0, 1)\", vec2(...), 3.5, true, text)\n      CALL          the method `member` of target (cw_node_type_add_method or\n                    the method resolver); with value empty the signal's\n                    arguments are passed, else value parsed as the method's\n                    first argument type\n      EMIT          target emits signal `member` with the signal's arguments\n      SPAWN         instance the scene file `value` as a child of target\n                    (member, when set, names the new node)\n      FREE          free target (and its subtree)\n      CHANGE_SCENE  the scene app's main scene becomes `value`\n  - fired (read-only, not saved): how many times the rule ran; the debug\n    channel reads it (`get <trigger> fired`).\nAnything per entity or per frame belongs in C (tier 1/2): triggers are for\nthe handful of \"when this happens, do that\" rules a human tweaks.",
    "functions": [

@@ -463,6 +463,26 @@
     "note": "two lines of grey figures walking away down a dark street at 3 to 40 m, a red rim on the left line, a blue one on the right, a white one pulsing on the middle figure: faint close to the camera, full strength by 20 m. Apply, get and remove leave a spare material as it was. The control gives no figure a rim: the state (rim.materials 0) and the picture differ"
   },
   {
+    "name": "toon-shading",
+    "webgpu": true,
+    "app": "toon_shading",
+    "frames": 150,
+    "fields": [
+      "toon.materials",
+      "toon.meshes",
+      "toon.shared"
+    ],
+    "expect": {
+      "toon.materials": 7,
+      "toon.meshes": 9,
+      "toon.shared": 1
+    },
+    "controlEnv": {
+      "TOON_OFF": "1"
+    },
+    "note": "toon shaded spheres (three.js's two tones, ramps of three and five tones, one changed to eight tones and back from code), an emissive cylinder, a toon ground and two toon trees from one glTF (their toon materials shared), beside a physically based sphere and tree, under a cascaded sun with shadows, a clustered omni light and a clustered spot light. The control sets every mesh back to STANDARD: the state (toon.materials 0) and the picture differ"
+  },
+  {
     "name": "character-skin",
     "webgpu": true,
     "app": "character_skin",

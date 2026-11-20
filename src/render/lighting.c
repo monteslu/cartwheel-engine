@@ -205,7 +205,7 @@ static void cmd_lighting(int argc, const char **argv, cw_reply *r) {
 
 static bool lit_type(t3_material_type t) {
   return t == T3_MESH_LAMBERT_MATERIAL || t == T3_MESH_PHONG_MATERIAL || t == T3_MESH_STANDARD_MATERIAL ||
-         t == T3_MESH_PHYSICAL_MATERIAL;
+         t == T3_MESH_PHYSICAL_MATERIAL || t == T3_MESH_TOON_MATERIAL;
 }
 
 /* every lit material in the scene carries the parts that are on (cluster,
