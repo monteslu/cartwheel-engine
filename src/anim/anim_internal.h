@@ -144,6 +144,10 @@ void cw__register_anim_scene_section(void);
 void cw__register_player_type(void);
 void cw__register_tree_type(void);
 void cw__register_ik_types(void); /* skeleton modifiers (ik_nodes.c) */
+void cw__register_skeleton_types(void); /* Skeleton3D, BoneAttachment3D (skeleton_nodes.c) */
+/* Where a node's bones are: for a bound Skeleton3D its model's three.c object (and *frame = the model's
+ * Node3D); for any other Node3D its own object (*frame = the node). frame may be NULL. */
+t3_object *cw__skeleton_bone_root(cw_node holder, cw_node *frame);
 struct cw_pose;
 void cw__pose_capture_locals(struct cw_pose *p); /* cw_pose_capture without the model transforms */
 /* the player's library and root for an AnimationTree */

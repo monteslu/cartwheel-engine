@@ -7063,7 +7063,7 @@
   {
    "name": "SkeletonModifier3D",
    "parent": "Node",
-   "doc": "Base of the skeleton modifiers: children of a skinned model's Node3D that adjust its animated pose each tick.",
+   "doc": "Base of the skeleton modifiers: children of a skinned model's Node3D, or of its Skeleton3D, that adjust its animated pose each tick.",
    "signals": [],
    "properties": [
     {
@@ -7467,6 +7467,80 @@
      "stored": true,
      "readonly": false,
      "doc": "Physics layers the rays hit."
+    }
+   ]
+  },
+  {
+   "name": "Skeleton3D",
+   "parent": "Node3D",
+   "doc": "The bones of a skinned glTF model as a node: names, parents, rest and pose transforms to read and set. Skeleton modifiers and BoneAttachment3D nodes go under it.",
+   "signals": [
+    "skeleton_bound"
+   ],
+   "properties": [
+    {
+     "name": "model",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Node3D (path from this node) holding the skinned model; empty: this node when it holds the bones, else its parent."
+    },
+    {
+     "name": "show_rest_only",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hold every bone at its rest transform each tick, after animation and modifiers."
+    },
+    {
+     "name": "bone_count",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Bones in the skeleton (0 until the model's bones exist)."
+    },
+    {
+     "name": "bound",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "The model's bones were found."
+    }
+   ]
+  },
+  {
+   "name": "BoneAttachment3D",
+   "parent": "Node3D",
+   "doc": "A Node3D that takes a bone's transform each tick and each frame: its children ride the bone (a sword in a hand, a hat on a head).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "bone_name",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The bone this node follows."
+    },
+    {
+     "name": "skeleton",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Skeleton3D (path from this node); empty: the nearest Skeleton3D above."
+    },
+    {
+     "name": "bone_idx",
+     "type": "int",
+     "default": "-1",
+     "stored": false,
+     "readonly": true,
+     "doc": "Index of the bone followed; -1 while it is not found."
     }
    ]
   },

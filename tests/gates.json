@@ -2324,6 +2324,27 @@
     "note": "pose layer, two-bone reach / pole plane / soften / reached, aim limits, CCD against three.js r187 CCDIKSolver (tests/unit/ccdik_r186.h), FABRIK reach with cone and hinge limits, modifier nodes in a tree (no accumulation, influence), foot placement on Box3D ground; every solved pose folds into unit.checksum"
   },
   {
+    "name": "unit-skeleton",
+    "app": "unit_skeleton",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "Skeleton3D and BoneAttachment3D: binding under a model, holding a model and by path, late binding and rebinding when the model changes, bone names and parents, rest and pose read and set, show_rest_only, attachments on a bone within 0.02 mm through a moving model (tick and pre_render), modifiers under a skeleton solving as under the model, bone tracks addressed to a skeleton, the scene-file round trip, bones released when a skeleton is freed; poses and the saved text fold into unit.checksum"
+  },
+  {
     "name": "anim-props",
     "app": "anim_props",
     "frames": 270,
@@ -2437,6 +2458,17 @@
     "fields": ["tree.tick", "made", "rested", "got_up", "follow_err", "follow_ok", "hinge_max", "limits_ok", "on_crate", "hash_win"],
     "expect": { "made": 4, "got_up": 4, "follow_ok": 1, "limits_ok": 1, "on_crate": 1 },
     "note": "four skinned robots (RobotExpressive, CC0) knocked over one after another (cartwheel/ragdoll.h): capsules per bone with cone, twist and hinge limits, seeded from the idle pose and a blow, onto a floor, a kerb and a crate; each comes to rest and blends back into its idle. The probe holds every part bone of the written pose within 2 cm of its body (follow_ok), every hinge within 0.2 rad of its limits (limits_ok), one robot resting on the crate (on_crate); the ragdoll hash per 60-tick window is compared across hosts. The control stops writing the ragdoll into the pose at frame 10: the bones stay standing while the bodies fall and follow_ok fails"
+  },
+  {
+    "name": "skeleton-attach",
+    "app": "skeleton_attach",
+    "frames": 480,
+    "controlInput": "skeleton-attach-control.json",
+    "maxGt16": 0.003,
+    "webgpu": { "vsGl": 0.02 },
+    "fields": ["tree.tick", "bones", "attach_ok", "attach_frames", "rest_bad", "puppet_ok", "tip", "hash_win", "puppet_win"],
+    "expect": { "bones": 60, "attach_ok": 1, "rest_bad": 0, "puppet_ok": 1 },
+    "note": "three skinned robots (RobotExpressive, CC0) through Skeleton3D (cartwheel/skeleton.h): one walks with a sword on its palm bone and a hat on its head (BoneAttachment3D), a LookAtModifier3D under the skeleton and bone tracks addressed to the skeleton node; one holds its rest pose under a playing clip (show_rest_only); one is posed from game code. The probe compares the sword's world matrix with the palm bone's after each frame's 3D draw, to a tenth of a millimetre (attach_ok); the sword tip's world position and both skeleton hashes per 60-tick window are compared across hosts. The control places the sword by hand from the bone transform read a tick earlier (a one-tick lag) from frame 10: attach_ok fails"
   },
   {
     "name": "physics3d-nodes",

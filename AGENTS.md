@@ -110,6 +110,8 @@ t3_object_add(cw_node3d_object(level), hero);
 t3_release(hero);                               /* the parent holds it */
 ```
 
+**Bones** (`skeleton.h`, [Skeleton3D and BoneAttachment3D](docs/guides/animation.md#skeleton3d-and-boneattachment3d)): a `Skeleton3D` node under the model's node gives bone names, rest and pose (`cw_skeleton3d_find_bone`, `cw_skeleton3d_set_bone_pose`, `cw_skeleton3d_bone_global_transform`); a `BoneAttachment3D` under it with `bone_name = "Hand"` carries a sword or a hat with no lag.
+
 **Physics** (`physics_nodes.h`, [physics](docs/guides/physics.md)): `StaticBody3D`, `RigidBody3D`,
 `CharacterBody3D` and `Area3D` nodes with collision shapes in the scene. A player:
 `cw_node_set(p, "velocity", cw_val_vec3(vx, vy, vz)); cw_character3d_move_and_slide(p, (float)dt);` then read

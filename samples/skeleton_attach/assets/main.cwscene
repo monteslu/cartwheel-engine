@@ -1,0 +1,133 @@
+[scene format=1]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.0181, 0.0232, 0.0382, 1)
+ambient_energy = 0.7
+hemi_energy = 1.1
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 1.25, 4.6)
+rotation = vec3(-0.12, 0, 0)
+fov = 45
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(3, 7, 5)
+rotation = vec3(-0.95, 0.5, 0)
+energy = 4.0
+shadow = true
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.5, -1)
+size = vec3(24, 1, 14)
+color = color(0.0637, 0.0835, 0.0732, 1)
+receive_shadow = true
+
+[node name="Firefly" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(0, 1.4, 1.5)
+size = vec3(0.1, 0.1, 0.1)
+color = color(1, 0.85, 0.3, 1)
+emissive = color(4, 3.2, 1.0, 1)
+
+[node name="Mover" parent="." type="Node3D"]
+position = vec3(-1.6, 0, 0)
+interpolate = true
+
+[node name="Model" parent="Mover" type="Node3D"]
+scale = vec3(0.38, 0.38, 0.38)
+
+[node name="Skeleton" parent="Mover/Model" type="Skeleton3D"]
+
+[node name="Sword" parent="Mover/Model/Skeleton" type="BoneAttachment3D"]
+bone_name = "Palm2L"
+
+[node name="Blade" parent="Mover/Model/Skeleton/Sword" type="MeshInstance3D"]
+position = vec3(0, 0.014, 0)
+size = vec3(0.0028, 0.024, 0.0008)
+color = color(0.75, 0.78, 0.82, 1)
+metalness = 0.4
+roughness = 0.3
+cast_shadow = true
+
+[node name="Guard" parent="Mover/Model/Skeleton/Sword" type="MeshInstance3D"]
+position = vec3(0, 0.002, 0)
+size = vec3(0.008, 0.0012, 0.0016)
+color = color(0.80, 0.42, 0.08, 1)
+cast_shadow = true
+
+[node name="Tip" parent="Mover/Model/Skeleton/Sword" type="Node3D"]
+position = vec3(0, 0.026, 0)
+
+[node name="Hat" parent="Mover/Model/Skeleton" type="BoneAttachment3D"]
+bone_name = "Head"
+
+[node name="Brim" parent="Mover/Model/Skeleton/Hat" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.0155, 0)
+size = vec3(0.023, 0.0008, 0.023)
+color = color(0.55, 0.07, 0.07, 1)
+cast_shadow = true
+
+[node name="Crown" parent="Mover/Model/Skeleton/Hat" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.0195, 0)
+size = vec3(0.013, 0.008, 0.013)
+color = color(0.55, 0.07, 0.07, 1)
+cast_shadow = true
+
+[node name="Look" parent="Mover/Model/Skeleton" type="LookAtModifier3D"]
+bone = "Head"
+target = "../../../../Firefly"
+limit_angle = 1.0
+
+[node name="Statue" parent="." type="Skeleton3D"]
+position = vec3(0.3, 0, -0.6)
+scale = vec3(0.38, 0.38, 0.38)
+show_rest_only = true
+
+[node name="Hat" parent="Statue" type="BoneAttachment3D"]
+bone_name = "Head"
+
+[node name="Brim" parent="Statue/Hat" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.0155, 0)
+size = vec3(0.023, 0.0008, 0.023)
+color = color(0.07, 0.25, 0.55, 1)
+cast_shadow = true
+
+[node name="Crown" parent="Statue/Hat" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.0195, 0)
+size = vec3(0.013, 0.008, 0.013)
+color = color(0.07, 0.25, 0.55, 1)
+cast_shadow = true
+
+[node name="Puppet" parent="." type="Node3D"]
+position = vec3(1.9, 0, 0)
+rotation = vec3(0, -0.5, 0)
+scale = vec3(0.38, 0.38, 0.38)
+
+[node name="Skeleton" parent="Puppet" type="Skeleton3D"]
+
+[node name="Flag" parent="Puppet/Skeleton" type="BoneAttachment3D"]
+bone_name = "Palm2L"
+
+[node name="Pole" parent="Puppet/Skeleton/Flag" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.0025, 0.009)
+rotation = vec3(1.5708, 0, 0)
+size = vec3(0.0008, 0.024, 0.0008)
+color = color(0.6, 0.6, 0.62, 1)
+cast_shadow = true
+
+[node name="Cloth" parent="Puppet/Skeleton/Flag" type="MeshInstance3D"]
+position = vec3(0, 0.0075, 0.0175)
+size = vec3(0.0004, 0.01, 0.007)
+color = color(0.10, 0.50, 0.16, 1)
+cast_shadow = true
+
+[node name="Anim" parent="." type="AnimationPlayer"]
+
+[node name="StatueAnim" parent="." type="AnimationPlayer"]
