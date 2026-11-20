@@ -61,12 +61,6 @@
       ]
     },
     {
-      "title": "Coming from elsewhere",
-      "guides": [
-        "porting-from-godot"
-      ]
-    },
-    {
       "title": "Contributing",
       "guides": [
         "conventions",

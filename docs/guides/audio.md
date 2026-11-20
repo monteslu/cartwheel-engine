@@ -53,11 +53,11 @@ Stopping takes a fade time ([cw_voice_stop](api:cw_voice_stop)); [cw_voice_fade]
 
 ## A sound's own loop
 
-A sound can carry its loop (Godot's loop on a stream resource): set `loop`, `loop_start` and `loop_end` in its `cw_sound_desc` (source frames at the file's own rate; end 0 is the end of the file), or call [cw_sound_set_loop](api:cw_sound_set_loop) after loading. Every voice of it then loops: the first pass plays from the start (an intro), and each pass after it from `loop_start` to `loop_end`. A play that gives its own points uses those, and `cw_play_desc.once` plays it through once. A WAV file's sampler chunk (`smpl`, written by most audio editors) gives a sound its points with no code. Samples and streams loop alike: a stream's decoder seeks back to `loop_start`, a sample's points are moved to the mix rate it was resampled to.
+A sound can carry its loop: set `loop`, `loop_start` and `loop_end` in its `cw_sound_desc` (source frames at the file's own rate; end 0 is the end of the file), or call [cw_sound_set_loop](api:cw_sound_set_loop) after loading. Every voice of it then loops: the first pass plays from the start (an intro), and each pass after it from `loop_start` to `loop_end`. A play that gives its own points uses those, and `cw_play_desc.once` plays it through once. A WAV file's sampler chunk (`smpl`, written by most audio editors) gives a sound its points with no code. Samples and streams loop alike: a stream's decoder seeks back to `loop_start`, a sample's points are moved to the mix rate it was resampled to.
 
 ## Randomized sounds
 
-A [cw_randomizer](api:cw_randomizer_new) (Godot's `AudioStreamRandomizer`) holds several sounds and picks one per play: weighted with no sound twice in a row (`CW_RANDOM_NO_REPEAT`, the default), weighted with repeats (`CW_RANDOM_ANY`), or in order (`CW_RANDOM_SEQUENCE`), with each play's pitch scaled by a value in `[1 / random_pitch, random_pitch]` and its volume moved by up to `random_volume_db` either way. Footsteps, impacts and barks stop sounding like a loop of one recording:
+A [cw_randomizer](api:cw_randomizer_new) holds several sounds and picks one per play: weighted with no sound twice in a row (`CW_RANDOM_NO_REPEAT`, the default), weighted with repeats (`CW_RANDOM_ANY`), or in order (`CW_RANDOM_SEQUENCE`), with each play's pitch scaled by a value in `[1 / random_pitch, random_pitch]` and its volume moved by up to `random_volume_db` either way. Footsteps, impacts and barks stop sounding like a loop of one recording:
 
 ```c
 cw_randomizer steps = cw_randomizer_new(&(cw_randomizer_desc){ .random_pitch = 1.1f, .random_volume_db = 2, .seed = 7 });
@@ -69,7 +69,7 @@ The picks come from the randomizer's own `cw_rng`, seeded from `seed`, so the sa
 
 ## Interactive music
 
-A [cw_music](api:cw_music_new) (Godot's `AudioStreamInteractive`) is a set of clips (sounds with a beat grid: `bpm`, `bar_beats`, a length in `beats`, `loop`) and the transitions between them. [cw_music_play](api:cw_music_play) asks for a clip; the transition from the clip playing to it says where the switch happens (`CW_MUSIC_AT_NOW`, `_BEAT`, `_BAR` or `_END` of the clip), how (a cut, a fade in, a fade out, or a cross fade over `fade_beats`), whether the new clip starts from its start or at the same position, and an optional filler clip played between the two. A clip can advance by itself at its end, to the clip named in `next` or back to the clip a transition held (`hold_previous`). The most specific transition wins: from and to, then any clip to this one, then this one to any, then any to any; with none, the switch waits for the next bar and cross fades over a beat.
+A [cw_music](api:cw_music_new) is a set of clips (sounds with a beat grid: `bpm`, `bar_beats`, a length in `beats`, `loop`) and the transitions between them. [cw_music_play](api:cw_music_play) asks for a clip; the transition from the clip playing to it says where the switch happens (`CW_MUSIC_AT_NOW`, `_BEAT`, `_BAR` or `_END` of the clip), how (a cut, a fade in, a fade out, or a cross fade over `fade_beats`), whether the new clip starts from its start or at the same position, and an optional filler clip played between the two. A clip can advance by itself at its end, to the clip named in `next` or back to the clip a transition held (`hold_previous`). The most specific transition wins: from and to, then any clip to this one, then this one to any, then any to any; with none, the switch waits for the next bar and cross fades over a beat.
 
 The switches are on the mixer's frame clock: a clip's beat 0 is the frame its voice started on, a beat is `60 * rate / bpm` frames from there, and a switch is the new clip's voice started on that frame with the old one ended on it. They are scheduled at least `CW_MUSIC_LEAD` frames (4096, 85 ms at 48 kHz) ahead, so they stay exact with the device's buffering; that is also the latency of a switch `AT_NOW`. [cw_music_current](api:cw_music_current), [cw_music_pending](api:cw_music_pending) and [cw_music_switch_frame](api:cw_music_switch_frame) say where it is.
 
@@ -211,6 +211,6 @@ Real-time output is the same mix, but how many frames get mixed by a given game 
 ## Not available yet
 
 - Ogg, MP3 and FLAC files carry no loop points the loader reads (a WAV's sampler chunk only): give them with `cw_sound_set_loop` or a `.cwaudio` clip's `loop_start` / `loop_end`.
-- Interactive music switches between clips; it does not mix layers of one clip in and out (Godot's `AudioStreamSynchronized`): play the layers as voices started on the same frame.
+- Interactive music switches between clips; it does not mix layers of one clip in and out: play the layers as voices started on the same frame.
 - Effects are the six above; there is no per-voice effect chain (route a voice to a bus instead).
 - Microphone input and audio capture are not part of the API.

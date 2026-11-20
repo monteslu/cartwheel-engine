@@ -99,7 +99,7 @@ static void box_layout(cw_node n, void *d, cw_vec2 s) {
   if (diff < 0) diff = 0;
   stretch_avail += diff;
   /* children whose share would be below their minimum keep the minimum and
-   * leave the share to the others (Godot's refit) */
+   * leave the share to the others */
   while (ratio_total > 0) {
     bool refit = true;
     for (int i = 0; i < k; i++) {
@@ -199,7 +199,7 @@ static void spread(float *sz, const bool *ex, int n, float total) {
     if (ex[i]) ne++;
   }
   if (!ne || total <= used) return;
-  /* expanding tracks all become equal (at least their min), Godot-style */
+  /* expanding tracks all become equal (at least their min) */
   bool *fixed = cw_frame_calloc((size_t)n, sizeof(bool));
   for (;;) {
     float rest = total;

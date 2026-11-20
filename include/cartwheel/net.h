@@ -15,7 +15,7 @@
  *   scene       RPC on nodes (methods called by name on every peer),
  *               authority per node, NetSynchronizer (replicates reflected
  *               properties) and NetSpawner (replicates node creation and
- *               removal): the Godot MultiplayerSynchronizer / Spawner model.
+ *               removal).
  *   state       a snapshot of a whole tree through reflection (structure,
  *               every writable property, the tree's tick and random state),
  *               restorable in place, with a host-stable hash.
@@ -202,7 +202,7 @@ cw_net_session *cw_net_session_of(cw_tree *t); /* the attached session, or NULL 
 
 /* Authority: which player owns a node (simulates it, may change its
  * replicated state). Inherited from the parent; the session root defaults
- * to player 0 (the host). Setting it is local, as in Godot: every peer
+ * to player 0 (the host). Setting it is local: every peer
  * makes the same call (a NetSpawner's children carry theirs with the spawn). */
 void cw_net_set_authority(cw_node n, int player);
 int cw_net_authority(cw_node n); /* nearest set authority up the parents; 0 when none or no session */

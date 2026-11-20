@@ -156,7 +156,7 @@ typedef struct cw_sound_desc {
   int priority;      /* default voice priority (higher wins a full mixer); 0 = 0 */
   float volume;      /* default voice volume; 0 = 1 */
   cw_bus bus;        /* default bus; 0 = master */
-  /* The sound's own loop (Godot's loop on a stream resource): every voice of it loops, from loop_start to loop_end
+  /* The sound's own loop : every voice of it loops, from loop_start to loop_end
    * (source frames at the file's own rate; loop_end 0 = the end) after its first pass, unless a play asks for one
    * pass (cw_play_desc.once) or gives points of its own. Set loop or either point. Left unset, a WAV file's sampler
    * chunk ("smpl", its first loop) gives it; other formats get theirs from cw_sound_set_loop or a .cwaudio clip's
@@ -272,12 +272,12 @@ int64_t cw_voice_started_at(cw_voice v);
  * frame cancels an end set before. */
 void cw_voice_stop_at(cw_voice v, int64_t mixer_frame, float fade);
 
-/* ── randomized sounds (Godot's AudioStreamRandomizer) ──────────────
+/* ── randomized sounds ──────────────────────────────────────────────
  * One of several sounds per play, with a little pitch and volume variation: footsteps, impacts, barks. The
  * choice uses its own cw_rng from desc.seed, so the same seed and calls pick the same sounds on every host. */
 CW_HANDLE_TYPE(cw_randomizer);
 typedef enum {
-  CW_RANDOM_NO_REPEAT, /* weighted, never the one played last (Godot's PLAYBACK_RANDOM_NO_REPEATS) */
+  CW_RANDOM_NO_REPEAT, /* weighted, never the one played last */
   CW_RANDOM_ANY,       /* weighted, repeats allowed (PLAYBACK_RANDOM) */
   CW_RANDOM_SEQUENCE,  /* in the order added, round and round (PLAYBACK_SEQUENTIAL) */
 } cw_random_mode;
@@ -299,7 +299,7 @@ cw_sound cw_randomizer_next(cw_randomizer r, float *pitch, float *volume);
 cw_voice cw_randomizer_play(cw_randomizer r, const cw_play_desc *desc);
 int cw_randomizer_last(cw_randomizer r); /* index of the last pick, -1 before any */
 
-/* ── interactive music (Godot's AudioStreamInteractive) ─────────────
+/* ── interactive music ──────────────────────────────────────────────
  * Clips (sounds with a beat grid) and the transitions between them. cw_music_play asks for a clip; the switch
  * happens where the transition says (at once, on the next beat, the next bar, or the end of the clip), to the
  * mixer sample, with a cut, a fade in, a fade out or a cross fade over some beats, optionally through a filler
@@ -314,7 +314,7 @@ CW_HANDLE_TYPE(cw_music);
 #define CW_MUSIC_LEAD 4096
 typedef enum {
   CW_MUSIC_ADVANCE_NONE,   /* plays to its end (or loops) */
-  CW_MUSIC_ADVANCE_NEXT,   /* at its end, the clip named in next (Godot's AUTO_ADVANCE_ENABLED) */
+  CW_MUSIC_ADVANCE_NEXT,   /* at its end, the clip named in next */
   CW_MUSIC_ADVANCE_RETURN, /* at its end, back to the clip a transition held (AUTO_ADVANCE_RETURN_TO_HOLD) */
 } cw_music_advance;
 typedef struct cw_music_clip {

@@ -4,7 +4,7 @@
  *
  * The algorithm is Wronski's ("Volumetric fog", SIGGRAPH 2014) and
  * Hillaire's ("Physically based and unified volumetric rendering in
- * Frostbite", SIGGRAPH 2015), as Godot's volumetric_fog*.glsl (MIT) lays it
+ * Frostbite", SIGGRAPH 2015), as an MIT-licensed implementation (NOTICE) lays it
  * out (NOTICE):
  *   1. shadows: the sun and up to three spot lights get depth maps of their
  *      own (tiles of one atlas), fitted to the grid's reach, drawn with

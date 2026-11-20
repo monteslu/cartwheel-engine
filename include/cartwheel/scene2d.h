@@ -93,7 +93,7 @@
  *                     deterministic) after physics; rendering interpolates.
  *   CanvasLayer       (a Node) layer (draw order; the default canvas is 0),
  *                     offset, rotation, scale, follow_viewport, visible, y_sort.
- *                     Defaults (as in Godot): layer 1 (above the default
+ *                     Defaults: layer 1 (above the default
  *                     canvas), follow_viewport false (screen space: a HUD;
  *                     set it for a layer that scrolls with the Camera2D),
  *                     offset 0, rotation 0, scale 1, visible, no y_sort.

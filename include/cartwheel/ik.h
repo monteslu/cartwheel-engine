@@ -232,7 +232,7 @@ int cw_ik_fabrik(cw_pose *p, const int *chain, int n, t3_vec3 target, const cw_c
 
 /* ── skeleton modifier nodes ───────────────────────────────────────────
  * Children of the Node3D that holds a skinned model (its three.c object has
- * the bones), Godot 4.6's model. They run in child order after animation
+ * the bones). They run in child order after animation
  * (see PIPELINE). Common properties (SkeletonModifier3D, the base type):
  *   active (bool, true)       skipped when false
  *   influence (float, 1)      blend of this modifier's result with the pose

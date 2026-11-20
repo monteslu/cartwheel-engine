@@ -108,7 +108,7 @@ if (!process.argv.includes('--no-browser')) {
       await page.waitForTimeout(50);
       return page.$$eval('#results a', (as) => as.map((a) => ({ text: a.textContent, href: a.getAttribute('href') })));
     };
-    for (const [q, want] of [['cw_body2d_create', 'cw_body2d_create'], ['CharacterBody2D', 'CharacterBody2D'], ['rollback', null], ['porting godot', null]]) {
+    for (const [q, want] of [['cw_body2d_create', 'cw_body2d_create'], ['CharacterBody2D', 'CharacterBody2D'], ['rollback', null], ['split screen', null]]) {
       const r = await search(q);
       check(`search "${q}" finds ${want || 'something'} (${r.length} results, first "${(r[0]?.text || '').slice(0, 60)}")`, r.length > 0 && r[0].href && (!want || r[0].text.includes(want)));
     }

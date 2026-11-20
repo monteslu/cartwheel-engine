@@ -195,7 +195,7 @@ static bool sibling_has_name(node_rec *parent, const char *name, cw_node except)
   return name && cw_map_get(&parent->child_names, (uint64_t)(uintptr_t)name, &id) && id != except.id;
 }
 
-/* Godot-style: "Enemy" -> "Enemy2", "Enemy3"... when a sibling has the name */
+/* "Enemy" -> "Enemy2", "Enemy3"... when a sibling has the name */
 static void make_unique_name(node_rec *parent, cw_node n, node_rec *r) {
   if (!parent || !sibling_has_name(parent, r->name, n)) return;
   char base[256];

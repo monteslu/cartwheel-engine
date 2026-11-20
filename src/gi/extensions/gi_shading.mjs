@@ -14,16 +14,16 @@
 //   - Box projection: r187's getParallaxCorrectNormal (the ray from the
 //     surface along the reflection, cut by the probe's box), measured from
 //     the capture point rather than the box centre so a probe captured off
-//     centre (Godot's origin_offset) still lines up; with the capture at the
+//     centre (origin_offset) still lines up; with the capture at the
 //     centre it is r187's function exactly.
-//   - Blending (Godot's ReflectionProbe): a probe's weight is 1 inside its box
+//   - Blending: a probe's weight is 1 inside its box
 //     and falls to 0 over blend_distance at its faces, per pixel. The probes'
 //     reflections are averaged by weight, and the sky's (the material's
 //     envMap or scene.environment, as r187 would use) fills what the probes'
 //     total weight leaves.
 //   - Diffuse: a probe also gives the ambient light (r187's irradiance
-//     context: the blurriest level along the normal, not box projected, as
-//     Godot does), weighted the same way, unless its flags say not to.
+//     context: the blurriest level along the normal, not box projected),
+//     weighted the same way, unless its flags say not to.
 //
 // The values the C side sets, by name ("ext." + name):
 //   giA0, giB0  vec4  box centre (world), blend distance
@@ -53,7 +53,7 @@ export function giShading({ TSL, THREE, mat, props, sentinel, plain }) {
   const probe = (k) => ({ c: v4(`gi${k}0`), h: v4(`gi${k}1`), o: v4(`gi${k}2`), s: v4(`gi${k}3`), tex: probeTex(`giProbe${k}`) });
   const A = probe('A'), B = probe('B');
 
-  // Godot's blend: 1 inside, 0 at the faces, linear over blend_distance
+  // the blend: 1 inside, 0 at the faces, linear over blend_distance
   const weight = (P) => {
     const d = P.h.xyz.sub(abs(positionWorld.sub(P.c.xyz)));
     const w = clamp(min(min(d.x, d.y), d.z).div(max(P.c.w, 1e-4)), 0, 1);

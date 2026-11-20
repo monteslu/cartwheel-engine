@@ -18,7 +18,7 @@
  *
  *   - Under a plain Control (or the canvas) a child's rect comes from its
  *     ANCHORS (0..1 of the parent's size, per side) plus OFFSETS (UI units,
- *     per side), Godot-style: left = anchor_left * parent_w + offset_left,
+ *     per side): left = anchor_left * parent_w + offset_left,
  *     right = anchor_right * parent_w + offset_right. If that is smaller than
  *     the minimum size the rect grows (grow_horizontal / grow_vertical say
  *     which way).
@@ -591,7 +591,7 @@ cw_rect cw_tab_container_tab_rect(cw_node tabs, int index); /* zero rect when ou
  *   `selected`; emits item_selected.
  * HSlider / VSlider / SpinBox / ProgressBar extend Range: `min_value`,
  *   `max_value`, `step` (0 = continuous), `value`, `page` (the value
- *   stops at max_value - page, as in Godot: a scrollbar thumb of size page
+ *   stops at max_value - page: a scrollbar thumb of size page
  *   ends at max_value). SpinBox: arrows,
  *   typed numbers, `suffix`, `prefix`. ProgressBar: `show_percentage`.
  * LineEdit: `text`, `placeholder_text`, `max_length` (characters, 0 = no

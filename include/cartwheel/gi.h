@@ -9,15 +9,15 @@
  *
  *   size            the box the probe affects, world units (axis aligned:
  *                   the node's rotation is ignored, its scale applies)
- *   origin_offset   where the capture is taken, from the box centre (Godot's
- *                   origin_offset: lift it off the floor, out of a pillar)
+ *   origin_offset   where the capture is taken, from the box centre
+ *                   (lift it off the floor, out of a pillar)
  *   box_projection  reflections are traced to the box's faces (r187's
  *                   getParallaxCorrectNormal) instead of being at infinity:
  *                   right for rooms and corridors, where the walls are near;
  *                   leave it off outdoors
  *   blend_distance  inside the box the probe's weight falls from 1 to 0 over
  *                   this distance at its faces, so overlapping probes and the
- *                   sky outside fade into each other (Godot's blending)
+ *                   sky outside fade into each other
  *   intensity       multiplier of what it reflects
  *   ambient         the probe also gives the diffuse ambient light (its
  *                   blurriest level along the surface normal), in place of
