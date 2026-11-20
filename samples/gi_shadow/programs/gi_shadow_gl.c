@@ -569,10 +569,10 @@ static t3_gen_text_cache text_cache;
 static const t3_gen_text text = { text_z, 10634, 54056, &text_cache };
 
 static const t3_gen_program programs[] = {
-  { "depth+xgi", T3_GEN_DEPTH, 0ull, { 1, 0, 0, 0 }, "gi", T3_GEN_GL, groups_depth_xgi, 2, p_depth_xgi, 3, a_depth_xgi, 1, k_depth_xgi, 1, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 0, 1 },
-  { "depth+xplain", T3_GEN_DEPTH, 0ull, { 1, 0, 0, 0 }, "plain", T3_GEN_GL, groups_depth_xplain, 2, p_depth_xplain, 3, a_depth_xplain, 1, k_depth_xplain, 1, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 0, 1 },
-  { "standard+l1001+xgi", T3_GEN_STANDARD, 0ull, { 1, 0, 0, 1 }, "gi", T3_GEN_GL, groups_standard_l1001_xgi, 2, p_standard_l1001_xgi, 44, a_standard_l1001_xgi, 2, k_standard_l1001_xgi, 2, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 2, 3 },
-  { "standard+shadow+l1001+xgi", T3_GEN_STANDARD, 131072ull, { 1, 0, 0, 1 }, "gi", T3_GEN_GL, groups_standard_shadow_l1001_xgi, 2, p_standard_shadow_l1001_xgi, 56, a_standard_shadow_l1001_xgi, 2, k_standard_shadow_l1001_xgi, 2, { 0, 0, 0 }, { 1, 0, 0 }, NULL, NULL, &text, 4, 5 },
-  { "standard+shadow+l1001+xplain", T3_GEN_STANDARD, 131072ull, { 1, 0, 0, 1 }, "plain", T3_GEN_GL, groups_standard_shadow_l1001_xplain, 2, p_standard_shadow_l1001_xplain, 29, a_standard_shadow_l1001_xplain, 2, NULL, 0, { 0, 0, 0 }, { 1, 0, 0 }, NULL, NULL, &text, 6, 7 },
+  { "depth+xgi", T3_GEN_DEPTH, 0ull, { 1, 0, 0, 0 }, "gi", T3_GEN_GL, groups_depth_xgi, 2, p_depth_xgi, 3, a_depth_xgi, 1, k_depth_xgi, 1, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 0, 1, 0 },
+  { "depth+xplain", T3_GEN_DEPTH, 0ull, { 1, 0, 0, 0 }, "plain", T3_GEN_GL, groups_depth_xplain, 2, p_depth_xplain, 3, a_depth_xplain, 1, k_depth_xplain, 1, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 0, 1, 0 },
+  { "standard+l1001+xgi", T3_GEN_STANDARD, 0ull, { 1, 0, 0, 1 }, "gi", T3_GEN_GL, groups_standard_l1001_xgi, 2, p_standard_l1001_xgi, 44, a_standard_l1001_xgi, 2, k_standard_l1001_xgi, 2, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 2, 3, 0 },
+  { "standard+shadow+l1001+xgi", T3_GEN_STANDARD, 131072ull, { 1, 0, 0, 1 }, "gi", T3_GEN_GL, groups_standard_shadow_l1001_xgi, 2, p_standard_shadow_l1001_xgi, 56, a_standard_shadow_l1001_xgi, 2, k_standard_shadow_l1001_xgi, 2, { 0, 0, 0 }, { 1, 0, 0 }, NULL, NULL, &text, 4, 5, 0 },
+  { "standard+shadow+l1001+xplain", T3_GEN_STANDARD, 131072ull, { 1, 0, 0, 1 }, "plain", T3_GEN_GL, groups_standard_shadow_l1001_xplain, 2, p_standard_shadow_l1001_xplain, 29, a_standard_shadow_l1001_xplain, 2, NULL, 0, { 0, 0, 0 }, { 1, 0, 0 }, NULL, NULL, &text, 6, 7, 0 },
 };
 const t3_gen_table gi_shadow_gl = { programs, 5 };

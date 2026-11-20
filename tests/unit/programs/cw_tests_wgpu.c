@@ -799,13 +799,13 @@ static t3_gen_text_cache text_cache;
 static const t3_gen_text text = { text_z, 16894, 91178, &text_cache };
 
 static const t3_gen_program programs[] = {
-  { "depth+xcluster_csm", T3_GEN_DEPTH, 0ull, { 1, 0, 0, 0 }, "cluster_csm", T3_GEN_WGPU, groups_depth_xcluster_csm, 2, p_depth_xcluster_csm, 3, a_depth_xcluster_csm, 1, k_depth_xcluster_csm, 1, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 0, 1 },
-  { "depth+xcluster_csm_plain", T3_GEN_DEPTH, 0ull, { 1, 0, 0, 0 }, "cluster_csm_plain", T3_GEN_WGPU, groups_depth_xcluster_csm_plain, 2, p_depth_xcluster_csm_plain, 3, a_depth_xcluster_csm_plain, 1, k_depth_xcluster_csm_plain, 1, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 0, 1 },
-  { "standard+l0001", T3_GEN_STANDARD, 0ull, { 0, 0, 0, 1 }, NULL, T3_GEN_WGPU, groups_standard_l0001, 2, p_standard_l0001, 14, a_standard_l0001, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 2, 3 },
-  { "standard+l0001+xcluster_csm_plain", T3_GEN_STANDARD, 0ull, { 0, 0, 0, 1 }, "cluster_csm_plain", T3_GEN_WGPU, groups_standard_l0001_xcluster_csm_plain, 3, p_standard_l0001_xcluster_csm_plain, 27, a_standard_l0001_xcluster_csm_plain, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 4, 5 },
-  { "standard+l0001+xplain", T3_GEN_STANDARD, 0ull, { 0, 0, 0, 1 }, "plain", T3_GEN_WGPU, groups_standard_l0001_xplain, 2, p_standard_l0001_xplain, 14, a_standard_l0001_xplain, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 6, 7 },
-  { "standard+l0301+xcluster_csm", T3_GEN_STANDARD, 0ull, { 0, 3, 0, 1 }, "cluster_csm", T3_GEN_WGPU, groups_standard_l0301_xcluster_csm, 3, p_standard_l0301_xcluster_csm, 39, a_standard_l0301_xcluster_csm, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 8, 9 },
-  { "standard+l1000", T3_GEN_STANDARD, 0ull, { 1, 0, 0, 0 }, NULL, T3_GEN_WGPU, groups_standard_l1000, 2, p_standard_l1000, 14, a_standard_l1000, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 10, 11 },
-  { "standard+l1110+xplain", T3_GEN_STANDARD, 0ull, { 1, 1, 1, 0 }, "plain", T3_GEN_WGPU, groups_standard_l1110_xplain, 2, p_standard_l1110_xplain, 26, a_standard_l1110_xplain, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 12, 13 },
+  { "depth+xcluster_csm", T3_GEN_DEPTH, 0ull, { 1, 0, 0, 0 }, "cluster_csm", T3_GEN_WGPU, groups_depth_xcluster_csm, 2, p_depth_xcluster_csm, 3, a_depth_xcluster_csm, 1, k_depth_xcluster_csm, 1, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 0, 1, 0 },
+  { "depth+xcluster_csm_plain", T3_GEN_DEPTH, 0ull, { 1, 0, 0, 0 }, "cluster_csm_plain", T3_GEN_WGPU, groups_depth_xcluster_csm_plain, 2, p_depth_xcluster_csm_plain, 3, a_depth_xcluster_csm_plain, 1, k_depth_xcluster_csm_plain, 1, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 0, 1, 0 },
+  { "standard+l0001", T3_GEN_STANDARD, 0ull, { 0, 0, 0, 1 }, NULL, T3_GEN_WGPU, groups_standard_l0001, 2, p_standard_l0001, 14, a_standard_l0001, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 2, 3, 0 },
+  { "standard+l0001+xcluster_csm_plain", T3_GEN_STANDARD, 0ull, { 0, 0, 0, 1 }, "cluster_csm_plain", T3_GEN_WGPU, groups_standard_l0001_xcluster_csm_plain, 3, p_standard_l0001_xcluster_csm_plain, 27, a_standard_l0001_xcluster_csm_plain, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 4, 5, 0 },
+  { "standard+l0001+xplain", T3_GEN_STANDARD, 0ull, { 0, 0, 0, 1 }, "plain", T3_GEN_WGPU, groups_standard_l0001_xplain, 2, p_standard_l0001_xplain, 14, a_standard_l0001_xplain, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 6, 7, 0 },
+  { "standard+l0301+xcluster_csm", T3_GEN_STANDARD, 0ull, { 0, 3, 0, 1 }, "cluster_csm", T3_GEN_WGPU, groups_standard_l0301_xcluster_csm, 3, p_standard_l0301_xcluster_csm, 39, a_standard_l0301_xcluster_csm, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 8, 9, 0 },
+  { "standard+l1000", T3_GEN_STANDARD, 0ull, { 1, 0, 0, 0 }, NULL, T3_GEN_WGPU, groups_standard_l1000, 2, p_standard_l1000, 14, a_standard_l1000, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 10, 11, 0 },
+  { "standard+l1110+xplain", T3_GEN_STANDARD, 0ull, { 1, 1, 1, 0 }, "plain", T3_GEN_WGPU, groups_standard_l1110_xplain, 2, p_standard_l1110_xplain, 26, a_standard_l1110_xplain, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 12, 13, 0 },
 };
 const t3_gen_table cw_tests_wgpu = { programs, 8 };

@@ -383,9 +383,9 @@ static t3_gen_text_cache text_cache;
 static const t3_gen_text text = { text_z, 6264, 34061, &text_cache };
 
 static const t3_gen_program programs[] = {
-  { "depth+xplain", T3_GEN_DEPTH, 0ull, { 1, 0, 0, 0 }, "plain", T3_GEN_WGPU, groups_depth_xplain, 2, p_depth_xplain, 3, a_depth_xplain, 1, k_depth_xplain, 1, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 0, 1 },
-  { "standard+instbig+shadow+l1000", T3_GEN_STANDARD, 131328ull, { 1, 0, 0, 0 }, NULL, T3_GEN_WGPU, groups_standard_instbig_shadow_l1000, 2, p_standard_instbig_shadow_l1000, 20, a_standard_instbig_shadow_l1000, 6, NULL, 0, { 0, 0, 0 }, { 1, 0, 0 }, NULL, NULL, &text, 2, 3 },
-  { "standard+instbig+shadow+l1200", T3_GEN_STANDARD, 131328ull, { 1, 2, 0, 0 }, NULL, T3_GEN_WGPU, groups_standard_instbig_shadow_l1200, 2, p_standard_instbig_shadow_l1200, 50, a_standard_instbig_shadow_l1200, 6, NULL, 0, { 0, 0, 0 }, { 1, 2, 0 }, NULL, NULL, &text, 4, 5 },
-  { "standard+instbig+shadow+l1200+s100+xplain", T3_GEN_STANDARD, 131328ull, { 1, 2, 0, 0 }, "plain", T3_GEN_WGPU, groups_standard_instbig_shadow_l1200_s100_xplain, 2, p_standard_instbig_shadow_l1200_s100_xplain, 28, a_standard_instbig_shadow_l1200_s100_xplain, 6, NULL, 0, { 0, 0, 0 }, { 1, 0, 0 }, NULL, NULL, &text, 6, 7 },
+  { "depth+xplain", T3_GEN_DEPTH, 0ull, { 1, 0, 0, 0 }, "plain", T3_GEN_WGPU, groups_depth_xplain, 2, p_depth_xplain, 3, a_depth_xplain, 1, k_depth_xplain, 1, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 0, 1, 0 },
+  { "standard+instbig+shadow+l1000", T3_GEN_STANDARD, 131328ull, { 1, 0, 0, 0 }, NULL, T3_GEN_WGPU, groups_standard_instbig_shadow_l1000, 2, p_standard_instbig_shadow_l1000, 20, a_standard_instbig_shadow_l1000, 6, NULL, 0, { 0, 0, 0 }, { 1, 0, 0 }, NULL, NULL, &text, 2, 3, 0 },
+  { "standard+instbig+shadow+l1200", T3_GEN_STANDARD, 131328ull, { 1, 2, 0, 0 }, NULL, T3_GEN_WGPU, groups_standard_instbig_shadow_l1200, 2, p_standard_instbig_shadow_l1200, 50, a_standard_instbig_shadow_l1200, 6, NULL, 0, { 0, 0, 0 }, { 1, 2, 0 }, NULL, NULL, &text, 4, 5, 0 },
+  { "standard+instbig+shadow+l1200+s100+xplain", T3_GEN_STANDARD, 131328ull, { 1, 2, 0, 0 }, "plain", T3_GEN_WGPU, groups_standard_instbig_shadow_l1200_s100_xplain, 2, p_standard_instbig_shadow_l1200_s100_xplain, 28, a_standard_instbig_shadow_l1200_s100_xplain, 6, NULL, 0, { 0, 0, 0 }, { 1, 0, 0 }, NULL, NULL, &text, 6, 7, 0 },
 };
 const t3_gen_table programs_switch_wgpu = { programs, 4 };
