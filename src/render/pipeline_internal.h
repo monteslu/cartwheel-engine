@@ -198,6 +198,9 @@ bool cw__gl_uniform_held(unsigned prog, int loc, const void *bytes, int n);
 void cw__gl_program_born(unsigned prog);
 uint32_t cw__gl_program_epoch(unsigned prog);
 void cw__pipeline_probe_caps(void);
+/* velocity.c: the meshes that moved since the last frame, drawn over the camera's motion in the velocity
+ * target (the scene's depth tests them); returns how many were drawn */
+int cw__velocity_objects(cw_pass_ctx *ctx, const cw_rt *vel);
 /* built-in passes (pipeline_post.c) */
 void cw__pipeline_add_builtin_passes(cw_pipeline *p);
 /* GL helpers (pipeline_gl.c) */

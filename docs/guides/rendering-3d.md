@@ -112,7 +112,7 @@ Each tree renders through its own pipeline; `cw_pipeline_set_output` sends it in
 
 ## The post stack
 
-The post settings are the fields of `cw_post_settings`, mirrored as PostProcess properties: MSAA, depth prepass, exposure (a multiplier and stops), tone curve (r187's: AGX by default, NEUTRAL, ACES_FILMIC, CINEON, REINHARD, LINEAR), energy-conserving bloom, GTAO at half resolution, TAA (Halton jitter, velocity reprojection, neighbourhood clip), FXAA or SMAA 1x, a 3D LUT grade loaded from a `.cube` file (`cw_lut_load_cube`), vignette, grain and chromatic aberration. `debug_view` shows depth, normals, AO, velocity or the bloom chain instead of the image. Nothing is lowered automatically: quality settings are the developer's.
+The post settings are the fields of `cw_post_settings`, mirrored as PostProcess properties: MSAA, depth prepass, exposure (a multiplier and stops), tone curve (r187's: AGX by default, NEUTRAL, ACES_FILMIC, CINEON, REINHARD, LINEAR), energy-conserving bloom, GTAO at half resolution, TAA (Halton jitter, reprojection by the camera's and each moving mesh's motion, neighbourhood clip), FXAA or SMAA 1x, a 3D LUT grade loaded from a `.cube` file (`cw_lut_load_cube`), vignette, grain and chromatic aberration. `debug_view` shows depth, normals, AO, velocity or the bloom chain instead of the image. Nothing is lowered automatically: quality settings are the developer's.
 
 **Depth of field** (`dof`, PostProcess properties `dof_focus_distance`, `dof_focus_range`, `dof_blur`, `dof_near_blur`) blurs what is nearer or farther than the focus, as a long lens does: a character select screen, a portrait, a cut scene. It runs on the HDR image before bloom, at full resolution: each pixel works out its blur from its view depth and gathers 32 samples on a golden-angle disk. A sample that lies behind the pixel counts only up to the pixel's own blur, so a sharp face never picks up the blurred wall behind it, while a blurred foreground still spreads over what is behind. `dof_blur` is the largest radius in pixels of a 1080 line image (it scales with the output height); `dof_near_blur` is the share of it used in front of the focus. A game usually turns it on for a menu or a close camera and off in play (set the properties on its PostProcess node from code). Very Low and Low effects detail turn it off. Cost: 32 colour and 32 depth reads a pixel at full resolution. On the Radeon 890M at 1920 x 1080 (post_stack, its depth of field segment against its plain segment, tools/perf-frame.mjs --gpu-timers, load average 10 to 12) it added about 0.5 ms of GPU time on GL and 1.2 ms on WebGPU; a Vega 8 (about a quarter of an 890M) should expect 2 to 5 ms, so keep it to menus and close cameras. Its gate is `post-dof`.
 
@@ -120,9 +120,28 @@ The post settings are the fields of `cw_post_settings`, mirrored as PostProcess 
 
 **Distortion inside the tone curve.** Heat haze and shockwaves (cartwheel/explosions.h) bend the finished frame in a full-frame pass of their own. `fuse_distortion` (off by default) does the same bending inside the tonemap pass, with the same guards and rounding, and saves that pass's read and write of the HDR frame (about 0.45 ms at 1080p on the 890M); bloom then glows from the unbent frame, which is the one difference.
 
-Two limits stated in the header: TAA reprojects camera motion only (moving objects rely on the neighbourhood clip), and SMAA has no diagonal pattern search yet.
+One limit stated in the header: SMAA has no diagonal pattern search yet.
 
-`samples/post_stack` steps one static room through every effect in turn, one schedule segment each (its gates are `post-bloom`, `post-ssao`, `post-taa` and so on, each against the plain AgX segment), and measures TAA convergence over one jitter cycle.
+### Motion vectors
+
+The velocity target (`CW_RES_VELOCITY`, an RG16F image of each pixel's motion since the last frame in uv units) holds two things. The camera's motion is rebuilt from depth for the whole frame, which is exact for everything that stood still. Then every mesh that moved since the last frame is drawn over it with the scene's depth for the depth test: a node that moved or turned, a skinned mesh whose bones moved, and an instanced mesh whose instance matrices were written. Each is drawn with one small program that places the vertex where it is now and where it was a frame ago (the previous world matrix, the previous bone matrices, the previous instance matrices), so a walking character's limbs, a spinning prop and every box of an instanced swarm carry their own motion.
+
+Nothing is tracked or drawn for what stands still: the pass compares each mesh's matrices with the last frame's, keeps the previous pose by swapping two buffers when it changed, and uploads bone and instance data only for the meshes it draws. A scene with no moving mesh pays the comparison and no draw. In `samples/motion_vectors` at 1920 x 1080 on a Radeon 890M (WebGPU) the whole velocity pass takes 0.17 ms of GPU time with the three movers drawn (a 19-bone character, 48 instances, one mesh), the same within noise as with the camera's motion alone; drawing them costs about 0.5 ms of CPU time in a development cart. The debug fields `cw.velocity.objects` and `cw.velocity.tracked` report how many meshes were drawn and how many are followed.
+
+TAA reads it: a pixel reprojects its history along the motion of the nearest surface in its 3 x 3 neighbourhood, so the antialiased edge of a moving object follows the object. With only the camera's motion a moving character smeared and its edges broke up, because its history was read from where the background had been. Measured against a picture of the same frame rendered with 36 samples a pixel (`tests/motion-vectors.mjs`, mean error in display levels over the mover's pixels, 640 x 360, the same on GL and WebGPU):
+
+| mover | its own motion | camera motion only |
+|---|---|---|
+| a bar turning 0.21 rad a frame (`samples/post_stack`) | 3.4 | 6.4 |
+| a mesh turning 0.17 rad a frame | 6.1 | 8.4 |
+| a skinned character walking and sliding | 6.6 | 10.4 |
+| an instanced swarm on two counter-turning rings | 5.3 | 8.4 |
+
+What keeps the camera's motion: blended materials (they write no depth), sprites, points and lines, and a morph target's change of shape (a morphed mesh still moves with its node and bones). A first person viewmodel is treated as still on the screen. A mesh seen for the first time, or again after being hidden, has no previous pose for one frame.
+
+The pass runs only when something reads the velocity target (TAA, the VELOCITY debug view, a pass of your own that declares `CW_RES_VELOCITY`), so the Very Low and Low presets, which draw without TAA, never pay for it. `samples/motion_vectors` shows the three kinds of mover under TAA and then the velocity buffer itself (`debug_view = VELOCITY`: grey is still).
+
+`samples/post_stack` steps one static room through every effect in turn, one schedule segment each (its gates are `post-bloom`, `post-ssao`, `post-taa` and so on, each against the plain AgX segment), and measures TAA convergence over one jitter cycle. Its last segments spin a bar in front of the camera: plain, under TAA, and as the velocity buffer.
 
 ## Lights and shadows
 

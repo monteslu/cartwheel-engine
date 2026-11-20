@@ -86,6 +86,7 @@ See [Physics](guide:physics) and [Navigation](guide:navigation).
 | project stretch settings | `CanvasSettings` | virtual size, scale mode, letterbox, clear colour |
 | `Node3D`, `MeshInstance3D`, `Camera3D`, `DirectionalLight3D`, `OmniLight3D`, `SpotLight3D`, `WorldEnvironment`, `LightmapGI` | same names | three.c (three.js r187) renders: linear HDR, physical light units |
 | `Environment` effects (glow, SSAO, tonemap) | `PostProcess` | one per tree |
+| TAA with motion vectors (`use_taa`) | `PostProcess` `taa` | moving, skinned and instanced meshes carry their own motion, with no per-mesh setting |
 | sky, fog | `ProceduralSky`, `HeightFog` | |
 | `GPUParticles2D` / `3D`, `Decal` | `GPUParticles2D` / `GPUParticles3D`, `Decal3D`, plus `Trail3D` | |
 | occlusion culling | `VisibilityManager`, `Room3D`, `Portal3D` | |

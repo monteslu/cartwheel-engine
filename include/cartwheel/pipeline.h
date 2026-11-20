@@ -39,7 +39,9 @@
  *                      the output as dst. A pass that only reads sees the
  *                      current image as src (after the last writer that is
  *                      the output: tex 0 when it is the screen). Built-ins:
- *                      "velocity" (0, when something reads CW_RES_VELOCITY),
+ *                      "velocity" (0, when something reads CW_RES_VELOCITY: the
+ *                      camera's motion rebuilt from depth, then every mesh
+ *                      that moved since the last frame drawn over it),
  *                      "ssao" (100), "taa" (200), "dof" (250), "bloom" (300), "tonemap"
  *                      (500, HDR to display), "grade" (550, 3D LUT), "aa"
  *                      (600, FXAA or SMAA), "lens" (700: chromatic
@@ -158,7 +160,13 @@ typedef enum {
 enum {
   CW_RES_COLOR = 1 << 0,    /* the scene HDR colour (POST: the chain's current image) */
   CW_RES_DEPTH = 1 << 1,    /* the scene depth texture */
-  CW_RES_VELOCITY = 1 << 2, /* screen-space motion, RG16F, uv units (current - previous) */
+  /* screen-space motion, RG16F, uv units (current - previous): the camera's
+   * everywhere, and their own for the meshes that moved since the last frame (a
+   * node that moved or turned, a skinned mesh whose bones did, an instanced
+   * mesh whose instance matrices were written). Blended materials, sprites,
+   * points and lines keep the camera's; so does a morph target's change of
+   * shape. A first person viewmodel (Camera3D viewmodel_layers) is still */
+  CW_RES_VELOCITY = 1 << 2,
   CW_RES_OUTPUT = 1 << 3,   /* the final image (overlays, present) */
   CW_RES_SHADOW = 1 << 4,   /* shadow maps a SHADOW pass made (for documentation / ordering) */
 };
@@ -195,7 +203,8 @@ typedef enum { CW_AA_NONE, CW_AA_FXAA, CW_AA_SMAA } cw_aa_mode;
 /* Show an intermediate buffer instead of the image (the "debug_view" POST
  * pass, last in the chain): linear depth (1 / (1 + z / 4)), view-space
  * normals rebuilt from depth, the GTAO visibility (needs ssao), the velocity
- * (x 20, 0.5 = still), or the bloom chain's result (needs bloom). */
+ * (x 20, 0.5 = still; moving meshes show their own motion), or the bloom
+ * chain's result (needs bloom). */
 typedef enum {
   CW_VIEW_NONE, CW_VIEW_DEPTH, CW_VIEW_NORMALS, CW_VIEW_AO, CW_VIEW_VELOCITY, CW_VIEW_BLOOM, CW_VIEW_COUNT
 } cw_debug_view;
@@ -234,9 +243,10 @@ typedef struct cw_post_settings {
   int ssao_slices;          /* 2 directions per pixel (x2 sides) */
   int ssao_steps;           /* 6 horizon steps per side */
   /* temporal antialiasing: jittered projection (Halton 2,3), reprojection by
-   * the velocity target (camera motion rebuilt from depth; moving objects
-   * have no velocity of their own yet and rely on the YCoCg neighbourhood
-   * clip), Catmull-Rom history fetch */
+   * the velocity target (the camera's motion and each moving mesh's own; a
+   * pixel takes the motion of the nearest surface in its 3x3 neighbourhood, so
+   * a moving object's edge follows the object), Catmull-Rom history fetch,
+   * YCoCg neighbourhood clip */
   bool taa;
   float taa_feedback;       /* 0.9: history weight */
   int taa_samples;          /* 8 jitter positions */

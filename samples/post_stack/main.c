@@ -5,7 +5,9 @@
  * properties (the same reflection path a scene file or the debug channel
  * uses) for a number of frames, so one cart shows every effect in turn and
  * each gate captures the end of one segment, with the baseline segment
- * (AgX, nothing else) as its "effect off" control. The TAA segment
+ * (AgX, nothing else) as its "effect off" control. The last segments show a
+ * bar spinning in front of the camera (hidden in every other segment): under
+ * TAA, and as the velocity buffer (the bar's own motion over the camera's). The TAA segment
  * also measures convergence: a 64x64 crop over edges is read back every
  * frame and compared with the one 8 frames (one jitter cycle) earlier.
  *
@@ -58,6 +60,9 @@ static const seg segs[] = {
   { "view_depth", 10, "debug_view=DEPTH" },
   { "view_ao", 10, "ssao=true;ssao_radius=0.7;debug_view=AO" },
   { "dof", 20, "dof=true;dof_focus_distance=4.5;dof_focus_range=1;dof_blur=10;dof_near_blur=0.6" },
+  { "motion_plain", 24, "" },
+  { "motion_taa", 24, "taa=true" },
+  { "motion_velocity", 12, "taa=true;debug_view=VELOCITY" },
 };
 #define NSEG ((int)(sizeof segs / sizeof segs[0]))
 
@@ -132,9 +137,18 @@ static void update(void *u, double dt) {
       start += segs[k].frames;
     }
   }
+  /* the spinning bar: its angle from the frame number, so every host poses it alike */
+  bool motion = !strncmp(segs[k].name, "motion", 6);
+  cw_node spinner = cw_node_get(cw_tree_root(cw_scene_app_tree()), "Room/Spinner");
+  const char *mref = cw_test_env("POST_MOTION_REF"); /* 2: the same frames without the bar (the measurement's mask) */
+  cw_node_set(spinner, "visible", cw_val_bool(motion && !(mref && *mref == '2')));
+  if (motion) cw_node3d_set_rotation(spinner, (t3_vec3){ 0, 0, (float)frame_no * 0.21f });
   if (k != seg_index) {
     seg_index = k;
-    apply_props(segs[k].props);
+    /* POST_MOTION_REF=1 (tests/motion-vectors.mjs): the TAA motion segment without TAA, the same poses: with
+     * CW_RENDER_SCALE it is the supersampled picture the TAA frame is measured against */
+    const char *ref = cw_test_env("POST_MOTION_REF");
+    apply_props(ref && *ref != '0' && !strcmp(segs[k].name, "motion_taa") ? "" : segs[k].props);
     crop_count = 0;
     taa_delta = 0;
     taa_converged = 0;
