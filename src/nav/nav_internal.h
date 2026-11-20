@@ -61,6 +61,7 @@ void cw__nav_each_obstacle(cw_navmesh nm, void (*fn)(int kind, const float a[3],
 void cw__nav_geom_add_geometry(cw_nav_geom *g, const t3_geometry *geo, const t3_mat4 *xf, uint8_t area);
 /* The nav node types (nodes.c; cw_scene_register_builtin_types calls it). */
 void cw__register_nav_types(void);
+void cw__register_nav2d_types(void); /* nodes2d.c: after the 2D node types */
 
 double cw__nav_now_ms(void); /* wall time for stats only */
 

@@ -450,5 +450,194 @@ static void t_rollback(void) {
   cw_tree_free(t);
 }
 
-CW_TEST_SUITE("tiles2d", { "shapes", t_shapes }, { "merge", t_merge }, { "slide", t_slide }, { "slopes", t_slopes },
+/* ── terrains ───────────────────────────────────────────────────────── */
+
+#define BLOB(mask) (100 + cw_tile_terrain_index(CW_TILE_TERRAIN_BLOB47, mask))
+enum { N = 1, NE = 2, E = 4, SE = 8, S = 16, SW = 32, W = 64, NW = 128 };
+
+static uint32_t map_hash(cw_node map, int w, int h) {
+  uint32_t hh = CW_HASH32_INIT;
+  for (int y = 0; y < h; y++)
+    for (int x = 0; x < w; x++) {
+      int c = cw_tilemap2d_get_cell(map, 0, x, y);
+      hh = cw_hash32(&c, sizeof c, hh);
+    }
+  return hh;
+}
+
+static void t_terrain_sets(void) {
+  setup();
+  CHECK_EQ_INT(cw_tile_terrain_tiles(CW_TILE_TERRAIN_BLOB47), 47);
+  CHECK_EQ_INT(cw_tile_terrain_tiles(CW_TILE_TERRAIN_EDGE16), 16);
+  CHECK_EQ_INT(cw_tile_terrain_tiles(CW_TILE_TERRAIN_CORNER16), 16);
+  CHECK_EQ_INT(cw_tile_terrain_tiles(CW_TILE_TERRAIN_SINGLE), 1);
+  CHECK_EQ_INT(cw_tile_terrain_mask(CW_TILE_TERRAIN_BLOB47, 0), 0);
+  CHECK_EQ_INT(cw_tile_terrain_mask(CW_TILE_TERRAIN_BLOB47, 4), 7);
+  CHECK_EQ_INT(cw_tile_terrain_mask(CW_TILE_TERRAIN_BLOB47, 10), 28);
+  CHECK_EQ_INT(cw_tile_terrain_mask(CW_TILE_TERRAIN_BLOB47, 46), 255);
+  CHECK_EQ_INT(cw_tile_terrain_mask(CW_TILE_TERRAIN_BLOB47, 47), -1);
+  /* every mask lands on a tile whose mask is the usable part of it, and the 47 are all different */
+  int seen[47] = { 0 }, distinct = 0;
+  for (int m = 0; m < 256; m++) {
+    int i = cw_tile_terrain_index(CW_TILE_TERRAIN_BLOB47, m);
+    CHECK(i >= 0 && i < 47);
+    if (i < 0 || i >= 47) continue;
+    if (!seen[i]++) distinct++;
+    int back = cw_tile_terrain_mask(CW_TILE_TERRAIN_BLOB47, i);
+    CHECK((back & m) == back && ((back ^ m) & (N | E | S | W)) == 0); /* the same sides, only unusable corners dropped */
+  }
+  CHECK_EQ_INT(distinct, 47);
+  CHECK_EQ_INT(cw_tile_terrain_index(CW_TILE_TERRAIN_BLOB47, NE), 0);           /* a lone corner shows nothing */
+  CHECK_EQ_INT(cw_tile_terrain_index(CW_TILE_TERRAIN_BLOB47, N | NE | E), 4);
+  CHECK_EQ_INT(cw_tile_terrain_index(CW_TILE_TERRAIN_BLOB47, N | NE), 1);       /* a corner without both its sides */
+  CHECK_EQ_INT(cw_tile_terrain_index(CW_TILE_TERRAIN_EDGE16, 5), 5);
+}
+
+static void t_terrain_paint(void) {
+  setup();
+  cw_tree *t = cw_tree_new();
+  cw_node root = cw_tree_root(t);
+  cw_node map = add(root, "TileMap2D", "Map");
+  cw_node_set(map, "terrains", cw_val_string("grass: blob47 100; wall: edge16 200 outside; path: corner16 300; floor: single 400 x4 seed 3"));
+  CHECK_EQ_INT(cw_tilemap2d_terrain_count(map), 4);
+  int grass = cw_tilemap2d_terrain(map, "grass"), wall = cw_tilemap2d_terrain(map, "wall"), path = cw_tilemap2d_terrain(map, "path"),
+      floor_t = cw_tilemap2d_terrain(map, "floor");
+  CHECK(grass == 1 && wall == 2 && path == 3 && floor_t == 4 && cw_tilemap2d_terrain(map, "lava") == 0);
+  CHECK(strcmp(cw_tilemap2d_terrain_name(map, 2), "wall") == 0 && strcmp(cw_tilemap2d_terrain_name(map, 9), "") == 0);
+  cw_tilemap2d_set_cell(map, 0, 23, 23, -1, 0); /* a 24 x 24 map */
+
+  /* blob: a 3 x 3 patch */
+  cw_tilemap2d_set_terrain_rect(map, 0, 2, 2, 4, 4, grass);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 3, 3), 146);                       /* surrounded */
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 2, 2), BLOB(E | SE | S));
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 2, 2), 110);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 3, 2), BLOB(W | E | S | SW | SE));
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 4, 4), BLOB(W | NW | N));
+  CHECK_EQ_INT(cw_tilemap2d_get_terrain(map, 0, 3, 3), grass);
+  CHECK_EQ_INT(cw_tilemap2d_get_terrain(map, 0, 5, 3), 0);
+  /* one more cell beside it: the patch's edge opens toward it */
+  cw_tilemap2d_set_terrain(map, 0, 5, 3, grass);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 5, 3), BLOB(W));
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 4, 3), BLOB(N | S | W | E | NW | SW));
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 4, 2), BLOB(W | SW | S));           /* the corner cell: its SE is not between two sides */
+  /* erase the middle: the ring closes round the hole */
+  cw_tilemap2d_set_terrain(map, 0, 3, 3, 0);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 3, 3), -1);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 3, 2), BLOB(W | E));
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 2, 2), BLOB(E | S));
+  /* a lone cell */
+  cw_tilemap2d_set_terrain(map, 0, 10, 2, grass);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 10, 2), 100);
+
+  /* edge16 with "outside": a wall along the top row joins the map's edge */
+  cw_tilemap2d_set_terrain_rect(map, 0, 8, 0, 10, 0, wall);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 8, 0), 200 + (1 | 2));             /* north (outside) and east */
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 9, 0), 200 + (1 | 2 | 8));
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 10, 0), 200 + (1 | 8));
+  cw_tilemap2d_set_terrain(map, 0, 9, 1, wall);                                  /* a T junction */
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 9, 0), 200 + 15);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 9, 1), 200 + 1);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 10, 2), 100);                       /* another terrain beside it is no neighbour */
+
+  /* corner16: one painted cell fills its four corners: nine tiles */
+  cw_tilemap2d_set_terrain(map, 0, 15, 15, path);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 15, 15), 315);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 14, 14), 300 + 2);                  /* its south-east corner */
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 15, 14), 300 + (2 | 4));
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 16, 14), 300 + 4);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 14, 15), 300 + (1 | 2));
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 16, 16), 300 + 8);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 13, 15), -1);
+  /* a second cell two to the right: the cell between them is covered from both sides */
+  cw_tilemap2d_set_terrain(map, 0, 17, 15, path);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 16, 15), 315);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 16, 14), 300 + (2 | 4));
+  /* erasing the first takes its corners away, the second keeps its own */
+  cw_tilemap2d_set_terrain(map, 0, 15, 15, 0);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 14, 14), -1);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 15, 15), -1);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 16, 15), 300 + (1 | 2));
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 17, 15), 315);
+
+  /* variants: the same cell gets the same one whatever the order, and they do vary */
+  cw_tilemap2d_set_terrain_rect(map, 0, 0, 18, 7, 23, floor_t);
+  int counts[4] = { 0 };
+  for (int y = 18; y <= 23; y++)
+    for (int x = 0; x <= 7; x++) {
+      int c = cw_tilemap2d_get_cell(map, 0, x, y);
+      CHECK(c >= 400 && c <= 403);
+      if (c >= 400 && c <= 403) counts[c - 400]++;
+    }
+  CHECK(counts[0] > 3 && counts[1] > 3 && counts[2] > 3 && counts[3] > 3);
+  uint32_t h1 = map_hash(map, 24, 24);
+  cw_tilemap2d_set_terrain_rect(map, 0, 0, 18, 7, 23, 0);
+  CHECK(map_hash(map, 24, 24) != h1);
+  for (int y = 23; y >= 18; y--)
+    for (int x = 7; x >= 0; x--) cw_tilemap2d_set_terrain(map, 0, x, y, floor_t);
+  CHECK(map_hash(map, 24, 24) == h1);
+  FOLD(h1);
+  /* fixing again changes nothing */
+  cw_tilemap2d_fix_terrain(map, 0, 0, 0, 23, 23);
+  CHECK(map_hash(map, 24, 24) == h1);
+  /* cells set raw by any tile of a terrain, then fixed: a generated level */
+  for (int x = 12; x <= 16; x++) cw_tilemap2d_set_cell(map, 0, x, 6, 100, 0);
+  cw_tilemap2d_fix_terrain(map, 0, 0, 0, 23, 23);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 12, 6), BLOB(E));
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 14, 6), BLOB(E | W));
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 16, 6), BLOB(W));
+  cw_tree_free(t);
+}
+
+/* the scene form: cells name a terrain by any of its tiles and autotile picks; painting rebuilds colliders */
+static void t_terrain_scene(void) {
+  setup();
+  cw_tree *t = cw_tree_new();
+  cw_node root = cw_tree_root(t);
+  cw_node map = cw_node_new("TileMap2D", "Map");
+  /* cells before the rules, as a hand-written file may have them */
+  cw_node_set(map, "cells0", cw_val_string("100*4 / 100*4 / 100*4 / . / . . 315 . / . / ."));
+  cw_node_set(map, "terrains", cw_val_string("rock: blob47 100 x2; moss: corner16 300"));
+  cw_node_set(map, "tile_shapes", cw_val_string("100-193: full"));
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 1, 1), 100);                        /* not yet: autotile is off */
+  cw_node_set(map, "autotile", cw_val_bool(true));
+  int mid = cw_tilemap2d_get_cell(map, 0, 1, 1);
+  CHECK(mid == 146 || mid == 146 + 47);                                          /* one of the two variants of "surrounded" */
+  int c00 = cw_tilemap2d_get_cell(map, 0, 0, 0);
+  CHECK(c00 == BLOB(E | SE | S) || c00 == BLOB(E | SE | S) + 47);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 2, 4), 315);
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 1, 3), 300 + 2);                    /* the whole tile grew its transitions */
+  CHECK_EQ_INT(cw_tilemap2d_get_cell(map, 0, 3, 5), 300 + 8);
+  cw_node col = cw_node_new("TileCollision2D", "Solid");
+  cw_node_add_child(map, col);
+  cw_node_add_child(root, map);
+  step(t, 1);
+  cw_tile_collision2d_stats s = cw_tile_collision2d_stats_get(col);
+  CHECK_EQ_INT(s.chains, 1);
+  CHECK_EQ_INT(s.segments, 4); /* the 4 x 3 block, whichever variants drew it */
+  /* paint a cell onto the block's side: one chunk rebuilt, a six-sided... an eight-cornered outline */
+  cw_tilemap2d_set_terrain(map, 0, 4, 1, cw_tilemap2d_terrain(map, "rock"));
+  step(t, 1);
+  s = cw_tile_collision2d_stats_get(col);
+  CHECK_EQ_INT(s.chains, 1);
+  CHECK_EQ_INT(s.segments, 8);
+  CHECK_EQ_INT(s.builds, 2);
+  /* a saved scene holds the picked tiles and loads to the same map, autotile and all */
+  uint32_t h = map_hash(map, 6, 7);
+  char *text = cw_scene_save(map);
+  CHECK(strstr(text, "terrains = \"rock: blob47 100 x2; moss: corner16 300\"") != NULL);
+  CHECK(strstr(text, "autotile = true") != NULL);
+  cw_packed_scene *ps = cw_scene_parse(text, "saved.cwscene");
+  cw_free(text);
+  cw_node again = ps ? cw_scene_instance(ps) : (cw_node){ 0 };
+  CHECK(cw_node_valid(again));
+  if (cw_node_valid(again)) {
+    CHECK(map_hash(again, 6, 7) == h);
+    cw_node_free(again);
+  }
+  if (ps) cw_packed_scene_free(ps);
+  FOLD(h);
+  cw_tree_free(t);
+}
+
+CW_TEST_SUITE("tiles2d", { "terrain_sets", t_terrain_sets }, { "terrain_paint", t_terrain_paint }, { "terrain_scene", t_terrain_scene }, { "shapes", t_shapes }, { "merge", t_merge }, { "slide", t_slide }, { "slopes", t_slopes },
               { "one_way", t_one_way }, { "edits", t_edits }, { "rollback", t_rollback })

@@ -3518,6 +3518,22 @@
      "doc": "Named values per tile id that the game reads: \"damage: 5=1, 6-7=2; sound: 1-4=stone\" (cw_tilemap2d_tile_data)."
     },
     {
+     "name": "terrains",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Autotile sets: \"grass: blob47 16 x3; wall: edge16 64 outside; path: corner16 80; floor: single 1 x4\" (cw_tilemap2d_set_terrain)."
+    },
+    {
+     "name": "autotile",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Pick every terrain cell's tile from its neighbours when cells are set as text (write any tile of a terrain)."
+    },
+    {
      "name": "cells0",
      "type": "string",
      "default": "\"\"",
@@ -12175,6 +12191,346 @@
      "min": 0,
      "max": 1000,
      "doc": "Height of the crossing's arc at its middle, m."
+    }
+   ]
+  },
+  {
+   "name": "NavigationRegion2D",
+   "parent": "Node2D",
+   "doc": "A navigation grid baked from a TileMap2D's solid tiles, and the crowd that walks it.",
+   "signals": [
+    "baked"
+   ],
+   "properties": [
+    {
+     "name": "tilemap",
+     "type": "string",
+     "default": "\"..\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path to the TileMap2D, from this node (\"..\": the parent)."
+    },
+    {
+     "name": "layers",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bit k: map layer k's solid tiles block (0 = every layer)."
+    },
+    {
+     "name": "agent_radius",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10000,
+     "doc": "Cells whose middle is nearer than this to a blocked cell are blocked too, pixels."
+    },
+    {
+     "name": "cost_data",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "A tile_data name whose value is a cell's cost (1..255; empty: every free cell costs 1)."
+    },
+    {
+     "name": "diagonals",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Paths step diagonally where both cells beside the step are free."
+    },
+    {
+     "name": "bake_on_ready",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bake on the first tick in the tree."
+    },
+    {
+     "name": "max_agents",
+     "type": "int",
+     "default": "256",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 65536,
+     "doc": "Crowd capacity (set before baking)."
+    },
+    {
+     "name": "paths_per_tick",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 4096,
+     "doc": "Agent paths planned per tick (oldest requests first)."
+    },
+    {
+     "name": "debug_draw",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Draw the blocked cells, agents, paths and flow field."
+    },
+    {
+     "name": "cell_count",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Grid cells."
+    },
+    {
+     "name": "walkable_count",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Walkable grid cells."
+    },
+    {
+     "name": "agent_count",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Agents in the crowd."
+    },
+    {
+     "name": "build_ms",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "The last bake or map update, ms."
+    },
+    {
+     "name": "crowd_step_ms",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "The last crowd step, ms."
+    }
+   ]
+  },
+  {
+   "name": "NavigationAgent2D",
+   "parent": "Node",
+   "doc": "A crowd agent that walks its parent Node2D along grid paths or a flow field, avoiding other agents.",
+   "signals": [
+    "path_changed",
+    "target_reached",
+    "velocity_computed"
+   ],
+   "properties": [
+    {
+     "name": "target_position",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Where to go (the region's map pixels); setting it plans a path."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "6",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 10000,
+     "doc": "Avoidance radius, pixels."
+    },
+    {
+     "name": "max_speed",
+     "type": "float",
+     "default": "60",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100000,
+     "doc": "px/s."
+    },
+    {
+     "name": "max_accel",
+     "type": "float",
+     "default": "480",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "px/s² (0 = no limit)."
+    },
+    {
+     "name": "neighbor_dist",
+     "type": "float",
+     "default": "48",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100000,
+     "doc": "Neighbours within this distance are avoided, pixels."
+    },
+    {
+     "name": "max_neighbors",
+     "type": "int",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 16,
+     "doc": "Neighbours avoided at most."
+    },
+    {
+     "name": "time_horizon",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 100,
+     "doc": "How far ahead other agents are avoided, s."
+    },
+    {
+     "name": "arrive_dist",
+     "type": "float",
+     "default": "3",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10000,
+     "doc": "The target counts as reached within this distance, pixels."
+    },
+    {
+     "name": "slowdown_dist",
+     "type": "float",
+     "default": "12",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10000,
+     "doc": "Slows down within this distance of the target, pixels."
+    },
+    {
+     "name": "avoidance",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Avoid other agents (ORCA). Others avoid it either way."
+    },
+    {
+     "name": "avoidance_priority",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Higher: others give way more."
+    },
+    {
+     "name": "drive_parent",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Move the parent Node2D every tick. Off: the parent moves by velocity_computed and the agent follows it."
+    },
+    {
+     "name": "region",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path to its NavigationRegion2D (empty = the tree's first)."
+    },
+    {
+     "name": "status",
+     "type": "enum",
+     "default": "IDLE",
+     "stored": false,
+     "readonly": true,
+     "enum": [
+      "IDLE",
+      "WAITING",
+      "MOVING",
+      "ARRIVED",
+      "NO_PATH",
+      "VELOCITY"
+     ],
+     "doc": "IDLE, WAITING (for a path), MOVING, ARRIVED, NO_PATH or VELOCITY."
+    },
+    {
+     "name": "velocity",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "The velocity it moved with last tick, px/s."
+    },
+    {
+     "name": "is_navigation_finished",
+     "type": "bool",
+     "default": "true",
+     "stored": false,
+     "readonly": true,
+     "doc": "Arrived, unreachable or idle."
+    }
+   ]
+  },
+  {
+   "name": "NavigationObstacle2D",
+   "parent": "Node2D",
+   "doc": "A circle or rectangle that blocks its region's grid cells while it is in the tree.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "shape",
+     "type": "enum",
+     "default": "CIRCLE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "CIRCLE",
+      "RECT"
+     ],
+     "doc": "CIRCLE or RECT."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100000,
+     "doc": "CIRCLE radius, pixels."
+    },
+    {
+     "name": "size",
+     "type": "vec2",
+     "default": "vec2(16, 16)",
+     "stored": true,
+     "readonly": false,
+     "doc": "RECT full size, pixels."
+    },
+    {
+     "name": "region",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path to its NavigationRegion2D (empty = the tree's first)."
     }
    ]
   },

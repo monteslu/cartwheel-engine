@@ -4,6 +4,53 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.52.0 (2026-11-19)
+
+### Added
+- **2D navigation: grids, paths, flow fields and crowds (`cartwheel/nav2d.h`).** A `cw_navgrid` is a grid of
+  cells with a cost each (0 blocks). `cw_navgrid_find_path` is A* with eight neighbours and no corner cutting,
+  jump point search on grids where every walkable cell costs the same (the same shortest paths, a fraction of the
+  cells visited), with the cell path pulled straight where its corners are in sight; `cw_navgrid_find_paths`
+  answers a batch on the job pool; unreachable goals and exhausted budgets return the nearest cell reached and
+  say partial. `cw_flowfield_build` gives every cell its distance to the goals and the neighbour to step to, for
+  crowds heading to one place. `cw_crowd2d` mirrors the 3D crowd on a grid with the same ORCA solver. Circle
+  and rectangle obstacles block and free cells. Costs are integers and ties break in a fixed order, so the same
+  grid and request give the same path on every host and at any worker count.
+- **NavigationRegion2D, NavigationAgent2D and NavigationObstacle2D**, with the 3D nodes' property and signal
+  names. A region bakes its grid from a TileMap2D's `tile_shapes` (the cells with a solid tile on its `layers`;
+  `agent_radius` for agents wider than a cell; `cost_data` for cells that are dearer to cross) and bakes map
+  edits in per cell at the next tick: painting a wall or cutting a door changes the paths without a whole bake.
+  An agent walks its parent Node2D to `target_position` (`path_changed`, `target_reached`,
+  `velocity_computed`; `drive_parent` off for a body that moves itself), or follows the region's flow field
+  (`follow_flow`, `cw_nav_region2d_set_flow_target`).
+- Sample `tiles2d`'s room gains a region, four scouts patrolling between the chambers on paths of their own
+  (they take the other doorway when one is painted shut) and ten followers on one flow field toward the hero.
+  Gates: `unit-nav2d` (jump point search held to plain A* on 720 seeded pairs, flow distances held to path
+  costs, crowds through a doorway, the nodes on a map; checksum pinned), `tiles2d-room` (crowd and field
+  hashes on every host), `nav-determinism` now runs both at four pool sizes, `tiles2d-perf-report` times a
+  256x256 map (paths, a flow field, a crowd of 500) and holds every host to the same hashes. Guide: navigation,
+  "2D navigation: grids, tile maps and flow fields"; porting from Godot.
+- **Terrains: tile maps that pick their own tiles.** `terrains` on a TileMap2D lists autotile sets as text:
+  `"floor: single 12 x4; wall: blob47 16 x2 outside; moss: corner16 112; fence: edge16 128"`. The kinds are the
+  47-tile blob set (sides and corners), 16 tiles matched by sides, 16 matched by corners (two-corner Wang tiles,
+  the terrain living on the map's vertices) and a single tile that only varies; each set's tiles sit in a fixed
+  order the header gives (`cw_tile_terrain_mask` hands it to an art tool). `cw_tilemap2d_set_terrain` paints a
+  cell, picks its tile and fixes the cells round it; `cw_tilemap2d_set_terrain_rect` paints a rectangle;
+  `cw_tilemap2d_fix_terrain` picks tiles again after raw cell writes (a generated level);
+  `cw_tilemap2d_get_terrain` reads a cell's terrain. `xN` gives a set N variants, chosen by a `cw_rng` seeded
+  from the terrain's seed, the layer and the cell, so a cell shows the same variant on every host and whatever
+  order the map was painted in. `outside` makes cells past the map's edge count as the terrain.
+- **`autotile` in a scene.** With it set, a cells text names a terrain by any of its tiles and every cell's tile
+  is picked as the text is set, so a hand-written or generated scene never spells out edge tiles. A cell belongs
+  to a terrain when its tile is one of the terrain's, so nothing is stored beside the cells and a saved scene
+  loads to the same map. Painting goes through the cell edits a TileCollision2D follows: the colliders of the
+  chunks touched are rebuilt.
+- Sample `tiles2d` gains a room seen from above built only from terrains (Start swaps the scenes), with a
+  doorway painted shut in play. Gate `tiles2d-room` (GL and WebGPU, every host; the control leaves the doorway
+  open and the hero walks back through); `unit-tiles2d` covers the 47 masks, painting and erasing each kind,
+  variants in any paint order, fixing twice, the scene form and collider rebuilds. Guide: 2D rendering,
+  "Terrains (autotiling)"; porting from Godot.
+
 ## v0.51.0 (2026-11-19)
 
 ### Added

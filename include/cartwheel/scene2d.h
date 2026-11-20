@@ -62,6 +62,11 @@
  *                     picture. A TileCollision2D child turns the shapes into
  *                     colliders; cw_tilemap2d_cell_solid and
  *                     cw_tilemap2d_point_solid answer from them without physics.
+ *                     terrains: autotile sets, "name: kind tiles" entries
+ *                     separated by ';' (see "terrains" below), and
+ *                     autotile: when set, a cells text may name a terrain
+ *                     by any of its tiles and the right tile of each cell
+ *                     is picked from its neighbours as the text is set.
  *                     tile_data: named values per tile id that the game reads,
  *                     "damage: 5=1, 6-7=2; sound: 1-4=stone, 5=wood" (a value
  *                     is a number or a word; cw_tilemap2d_tile_data).
@@ -321,6 +326,77 @@ void cw_tile_collision2d_update(cw_node n);
 /* The map cell under a world position nudged against a contact normal (pixels, y down; the normal points out
  * of the tiles): what a body touching the tiles stands on or ran into. */
 void cw_tile_collision2d_cell_at(cw_node n, cw_vec2 global, cw_vec2 normal, int *x, int *y);
+
+/* ── terrains (autotiling) ─────────────────────────────────────────────
+ * A terrain is a set of tiles that draw one material with the right edges:
+ * paint cells with the terrain and the map picks each cell's tile from its
+ * neighbours. TileMap2D `terrains` lists them:
+ *
+ *   terrains = "grass: blob47 16 x3; wall: edge16 64 outside; path: corner16 80; floor: single 1 x4"
+ *
+ * each entry a name, a kind, and the tiles: one id (the first of a run of
+ * consecutive tile ids in the kind's order) or every id of the set (ranges
+ * allowed: "16-62"). The kinds, and the order of their tiles:
+ *
+ *   single    1 tile. No matching: a floor that only varies (give variants).
+ *   edge16    16 tiles, matched by the four sides. Tile k is the one whose
+ *             neighbours of the same terrain are the bits of k: north 1,
+ *             east 2, south 4, west 8 (tile 0 stands alone, tile 15 is
+ *             surrounded). Fences, pipes, roads, thin walls.
+ *   corner16  16 tiles, matched by the four corners (two-corner Wang tiles).
+ *             The terrain lives on the map's vertices; tile k covers the
+ *             corners that are bits of k: north-east 1, south-east 2,
+ *             south-west 4, north-west 8 (tile 15 is all terrain, tile 0 is
+ *             never drawn). Painting a cell fills its four corners, so the
+ *             eight cells round it get the transitions.
+ *   blob47    47 tiles, matched by sides and corners: every look a cell can
+ *             have when a corner only counts between two sides that are
+ *             set. The neighbour bits, clockwise from north: N 1, NE 2, E 4,
+ *             SE 8, S 16, SW 32, W 64, NW 128; the 47 tiles are the masks
+ *             that remain, in ascending order (0, 1, 4, 5, 7, 16, 17, 20, 21,
+ *             23, 28, 29, 31, 64, ... 255). cw_tile_terrain_mask gives the
+ *             mask of each tile, for an art tool that lays the sheet out.
+ *
+ * Options after the tiles: "xN" (with one id) says N variant sets follow one
+ * another, each a whole set in the kind's order; several whole sets written
+ * out are variants too (up to 8). "outside" makes cells beyond the map's
+ * edge count as the terrain (walls that run off the map). "seed N" changes
+ * which variant each cell gets.
+ *
+ * A cell belongs to a terrain when its tile is one of the terrain's tiles:
+ * nothing is stored beside the cells, so a saved scene's cells text is the
+ * whole state. Variants are chosen by a cw_rng seeded from the terrain's
+ * seed, the layer and the cell, so a cell shows the same variant on every
+ * host and whatever order the map was painted in. Painting edits cells
+ * through cw_tilemap2d_set_cell, so a TileCollision2D rebuilds the chunks
+ * touched (give the terrain's tiles shapes by range: "16-62: full").
+ * Cost: painting one cell reads and may rewrite the 25 cells round it. */
+typedef enum cw_tile_terrain_mode {
+  CW_TILE_TERRAIN_SINGLE,
+  CW_TILE_TERRAIN_EDGE16,
+  CW_TILE_TERRAIN_CORNER16,
+  CW_TILE_TERRAIN_BLOB47,
+} cw_tile_terrain_mode;
+/* How many tiles a kind's set has (1, 16, 16, 47; 0 for an unknown kind). */
+int cw_tile_terrain_tiles(cw_tile_terrain_mode mode);
+/* The neighbour mask (bits as above) of tile `index` of a kind's set; -1 outside it. */
+int cw_tile_terrain_mask(cw_tile_terrain_mode mode, int index);
+/* The tile of a kind's set for a neighbour mask (a blob mask's unusable corners are dropped first). */
+int cw_tile_terrain_index(cw_tile_terrain_mode mode, int mask);
+/* A terrain of the map by name: 1.. in the order of `terrains`, 0 when there is none of that name. */
+int cw_tilemap2d_terrain(cw_node n, const char *name);
+int cw_tilemap2d_terrain_count(cw_node n); /* how many terrains the map's `terrains` defines */
+const char *cw_tilemap2d_terrain_name(cw_node n, int terrain); /* "" outside 1..count */
+/* Paints a cell with a terrain (1..; 0 erases the terrain tile there), picks its tile and fixes the cells
+ * round it. Painting outside the map grows it. No-op for an unknown terrain or a map without terrains. */
+void cw_tilemap2d_set_terrain(cw_node n, int layer, int x, int y, int terrain);
+/* The same for every cell of x0..x1, y0..y1 (inclusive), fixing the ring round the rectangle once. */
+void cw_tilemap2d_set_terrain_rect(cw_node n, int layer, int x0, int y0, int x1, int y1, int terrain);
+/* The terrain (1..) of the tile in a cell; 0 when its tile belongs to none, or the cell is empty or outside. */
+int cw_tilemap2d_get_terrain(cw_node n, int layer, int x, int y);
+/* Picks the tile of every terrain cell in x0..x1, y0..y1 again from what the cells hold (after cells set with
+ * cw_tilemap2d_set_cell by any tile of a terrain: a generated level). Doing it twice changes nothing. */
+void cw_tilemap2d_fix_terrain(cw_node n, int layer, int x0, int y0, int x1, int y1);
 
 /* Parse a point list ("0 0, 32 0, 32 16") into out (frame arena); returns
  * the point count. */

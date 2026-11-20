@@ -33,6 +33,10 @@ typedef struct tilemap2d {
   int occluder_layers; /* bit k: map layer k casts shadows by its alpha in lit canvases */
   /* per-tile collision shapes and custom data (text forms: cartwheel/scene2d.h) */
   const char *tile_shapes, *tile_data;
+  /* terrains: autotiling rules (tile_terrain2d.c) */
+  const char *terrains;
+  cw__terrains *terrain_set;
+  bool autotile;
   CW_ARRAY(tm_shape) shapes;
   CW_ARRAY(tm_datum) data;
   /* what changed, for whoever builds from the cells (TileCollision2D, the navigation bake): every cell edit
@@ -65,6 +69,7 @@ static void tm_destroy(cw_node n, void *d) {
   for (int l = 0; l < TM_LAYERS; l++) cw_free(m->cells[l]);
   cw_array_free(&m->shapes);
   cw_array_free(&m->data);
+  cw__terrains_free(m->terrain_set);
   if (!CW_HANDLE_IS_NULL(m->map)) cw_tilemap_destroy(m->map);
 }
 
@@ -175,9 +180,13 @@ static const char *format_cells(tilemap2d *m, int layer) {
   return s;
 }
 
+/* autotile: a cells text names terrains by any of their tiles; the right ones are picked as it is set */
+static void autotile_layer(cw_node n, tilemap2d *m, int layer) {
+  if (m->autotile && m->terrain_set && m->w && m->h) cw_tilemap2d_fix_terrain(n, layer, 0, 0, m->w - 1, m->h - 1);
+}
 #define CELLS_ACCESSORS(L) \
   static void cells_get##L(cw_node n, void *d, cw_value *o) { (void)n; *o = cw_val_string(format_cells(d, L)); } \
-  static void cells_set##L(cw_node n, void *d, const cw_value *v) { (void)n; parse_cells(d, L, v->s); }
+  static void cells_set##L(cw_node n, void *d, const cw_value *v) { parse_cells(d, L, v->s); autotile_layer(n, d, L); }
 CELLS_ACCESSORS(0)
 CELLS_ACCESSORS(1)
 CELLS_ACCESSORS(2)
@@ -450,6 +459,25 @@ static void set_tile_shapes(cw_node n, void *d, const cw_value *v) { (void)n; ti
 static void get_tile_data(cw_node n, void *d, cw_value *o) { (void)n; tilemap2d *m = d; *o = cw_val_string(m->tile_data ? m->tile_data : ""); }
 static void set_tile_data(cw_node n, void *d, const cw_value *v) { (void)n; tilemap2d *m = d; m->tile_data = cw_intern(v->s ? v->s : ""); parse_tile_data(m); }
 
+static void get_terrains(cw_node n, void *d, cw_value *o) { (void)n; tilemap2d *m = d; *o = cw_val_string(m->terrains ? m->terrains : ""); }
+static void set_terrains(cw_node n, void *d, const cw_value *v) {
+  tilemap2d *m = d;
+  m->terrains = cw_intern(v->s ? v->s : "");
+  cw__terrains_free(m->terrain_set);
+  m->terrain_set = cw__terrains_parse(m->terrains);
+  for (int l = 0; l < TM_LAYERS; l++) autotile_layer(n, m, l);
+}
+static void get_autotile(cw_node n, void *d, cw_value *o) { (void)n; *o = cw_val_bool(((tilemap2d *)d)->autotile); }
+static void set_autotile(cw_node n, void *d, const cw_value *v) {
+  tilemap2d *m = d;
+  m->autotile = v->b;
+  for (int l = 0; l < TM_LAYERS; l++) autotile_layer(n, m, l);
+}
+cw__terrains *cw__tilemap2d_terrains(cw_node n) {
+  tilemap2d *m = cw_node_data_t(n, tm_t);
+  return m ? m->terrain_set : NULL;
+}
+
 static const char *const filter_names[] = { "LINEAR", "NEAREST", NULL };
 #define CELLS_PROP(L) CW_PROP_ACCESSOR("cells" #L, CW_T_STRING, CW_PROP_STORED | CW_PROP_EDITOR, cells_get##L, cells_set##L, "Layer " #L " cells (text form).")
 static const cw_prop tm_props[] = {
@@ -468,6 +496,10 @@ static const cw_prop tm_props[] = {
                    "Collision shape per tile id, tile pixels: \"1-4: full; 5: slope 0 16; 6: rect 0 8 16 8; 7: oneway; 8: poly 0 0, 16 0, 8 16\" (a TileCollision2D child builds the colliders)."),
   CW_PROP_ACCESSOR("tile_data", CW_T_STRING, CW_PROP_DEFAULT, get_tile_data, set_tile_data,
                    "Named values per tile id that the game reads: \"damage: 5=1, 6-7=2; sound: 1-4=stone\" (cw_tilemap2d_tile_data)."),
+  CW_PROP_ACCESSOR("terrains", CW_T_STRING, CW_PROP_DEFAULT, get_terrains, set_terrains,
+                   "Autotile sets: \"grass: blob47 16 x3; wall: edge16 64 outside; path: corner16 80; floor: single 1 x4\" (cw_tilemap2d_set_terrain)."),
+  CW_PROP_ACCESSOR("autotile", CW_T_BOOL, CW_PROP_DEFAULT, get_autotile, set_autotile,
+                   "Pick every terrain cell's tile from its neighbours when cells are set as text (write any tile of a terrain)."),
   CELLS_PROP(0), CELLS_PROP(1), CELLS_PROP(2), CELLS_PROP(3), CELLS_PROP(4), CELLS_PROP(5), CELLS_PROP(6), CELLS_PROP(7),
   CW_PROP_END,
 };

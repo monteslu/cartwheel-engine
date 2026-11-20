@@ -114,4 +114,10 @@ void cw__tilemap2d_cell_shape(cw_node n, int layer, int x, int y, cw__tile_shape
  * (the caller then treats every cell as changed). */
 int cw__tilemap2d_edits_since(cw_node n, uint32_t since, cw__tile_edit *out, int cap);
 
+/* terrains (tile_terrain2d.c): the parsed `terrains` text of a TileMap2D */
+typedef struct cw__terrains cw__terrains;
+cw__terrains *cw__terrains_parse(const char *text);
+void cw__terrains_free(cw__terrains *t);
+cw__terrains *cw__tilemap2d_terrains(cw_node n); /* NULL when n is not a TileMap2D or has none */
+
 #endif

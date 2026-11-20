@@ -116,7 +116,7 @@ t3_release(hero);                               /* the parent holds it */
 `CharacterBody3D` and `Area3D` nodes with collision shapes in the scene. A player:
 `cw_node_set(p, "velocity", cw_val_vec3(vx, vy, vz)); cw_character3d_move_and_slide(p, (float)dt);` then read
 `on_floor`. Pickups: `cw_connect(area, "body_entered", area, NULL, on_enter, NULL, 0)`. Vehicles `vehicle3d.h`,
-ragdolls `ragdoll.h`, navigation `nav.h`.
+ragdolls `ragdoll.h`, navigation `nav.h` (3D navmeshes) and `nav2d.h` (2D grids, flow fields, agents on tile maps).
 
 **Animation** (`anim.h`, nodes `AnimationPlayer` and `AnimationTree`, [animation](docs/guides/animation.md)):
 a character's animation logic is text in its scene, never a tool's output. Clips come from the glTF

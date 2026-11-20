@@ -1,9 +1,12 @@
 // 2D tile timings: samples/tiles2d_perf natively and as a cart on romdev (GL and WebGPU carts run the same
 // code; the timings are CPU work). Reported per host:
 //   - TileCollision2D building a 256 x 256 map (64 chunks, best of 5), per chunk, and one chunk rebuilt after
-//     a cell edit.
+//     a cell edit;
+//   - navigation on the same map: the grid's bake, 1000 paths as one batch on the job pool (and how many a
+//     millisecond that is), a flow field toward one goal, a crowd of 500 (mean step of 600).
 // Checks:
-//   - what was built (chunks, chains, segments) is the same on every host;
+//   - what was built (chunks, chains, segments; the grid, path, field and crowd hashes) is the same on every
+//     host;
 //   - the budgets below;
 // control: the same budget check against impossible budgets must fail.
 //
@@ -26,10 +29,11 @@ const FRAMES = 12; // the benchmark runs on tick 5
 
 // ms; a cart runs the same C as wasm
 const BUDGET = {
-  native: { 'perf.col_chunk_ms': 1, 'perf.col_edit_ms': 1.5 },
-  romdev: { 'perf.col_chunk_ms': 3, 'perf.col_edit_ms': 4 },
+  native: { 'perf.col_chunk_ms': 1, 'perf.col_edit_ms': 1.5, 'perf.paths_ms': 400, 'perf.flow_ms': 30, 'perf.crowd_step_ms': 2 },
+  romdev: { 'perf.col_chunk_ms': 3, 'perf.col_edit_ms': 4, 'perf.paths_ms': 1200, 'perf.flow_ms': 90, 'perf.crowd_step_ms': 6 },
 };
-const SAME = ['perf.col_chunks', 'perf.col_chains', 'perf.col_segments'];
+const SAME = ['perf.col_chunks', 'perf.col_chains', 'perf.col_segments', 'perf.nav_walkable', 'perf.grid_hash', 'perf.paths_hash',
+  'perf.paths_found', 'perf.flow_hash', 'perf.crowd_hash'];
 
 function run(host) {
   return new Promise((res) => {
@@ -50,7 +54,10 @@ for (const h of hosts) results.push(await run(h));
 const pad = (s, n) => String(s).padEnd(n);
 const num = (v, d = 2) => (typeof v === 'number' ? v.toFixed(d) : '-');
 const rows = [['collision chunks', 'perf.col_chunks', 0], ['chains', 'perf.col_chains', 0], ['segments', 'perf.col_segments', 0],
-  ['build all ms', 'perf.col_build_ms', 2], ['per chunk ms', 'perf.col_chunk_ms', 3], ['one edit ms', 'perf.col_edit_ms', 3]];
+  ['build all ms', 'perf.col_build_ms', 2], ['per chunk ms', 'perf.col_chunk_ms', 3], ['one edit ms', 'perf.col_edit_ms', 3],
+  ['pool threads', 'perf.threads', 0], ['walkable cells', 'perf.nav_walkable', 0], ['grid bake ms', 'perf.nav_bake_ms', 2],
+  ['1000 paths ms', 'perf.paths_ms', 2], ['paths per ms', 'perf.paths_per_ms', 1], ['flow field ms', 'perf.flow_ms', 2],
+  ['crowd 500 step ms', 'perf.crowd_step_ms', 3]];
 const lines = ['tiles2d_perf: a 256 x 256 map', pad('', 20) + results.map((r) => pad(r.host, 14)).join('')];
 for (const [label, key, d] of rows) lines.push(pad(label, 20) + results.map((r) => pad(r.error ? '(failed)' : num(r.state[key], d), 14)).join(''));
 console.log(lines.join('\n'));

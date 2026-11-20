@@ -1531,7 +1531,7 @@
   {
     "name": "nav-determinism",
     "script": "tests/nav-determinism.mjs",
-    "note": "unit-nav, nav-demo and nav-links on native, Chromium and wcnative at CW_WORKERS 0, 1, 3 and the default: every host and pool size gives the pinned hashes"
+    "note": "unit-nav, nav-demo, nav-links, unit-nav2d and tiles2d-room on native, Chromium and wcnative at CW_WORKERS 0, 1, 3 and the default: every host and pool size gives the pinned hashes"
   },
   {
     "name": "ik-determinism",
@@ -1546,7 +1546,7 @@
   {
     "name": "tiles2d-perf-report",
     "script": "tests/tiles2d-perf.mjs",
-    "note": "2D tile timings on a 256 x 256 map, natively and as a cart on romdev (reported): TileCollision2D building 64 chunks, per chunk, and one chunk after a cell edit; the same chunks, chains and segments on every host; budgets; control: an impossible budget must fail"
+    "note": "2D tile timings on a 256 x 256 map, natively and as a cart on romdev (reported): TileCollision2D building 64 chunks, per chunk, and one chunk after a cell edit; a navigation grid baked from the map, 1000 batched paths, a flow field, a crowd of 500; the same chunks, chains, segments and navigation hashes on every host; budgets; control: an impossible budget must fail"
   },
   {
     "name": "unit-vehicle3d",
@@ -1999,6 +1999,50 @@
       "tc.chunks": 2
     },
     "note": "tile collision from the tile set, as a scene: a CharacterBody2D runs a side-scroller strip built by a TileCollision2D from TileMap2D tile_shapes (gentle and steep slopes up and down, a cliff, half blocks stepped over, wedges overhead), jumps up through two one-way planks, falls onto a third and drops through it; crates rest on tiles and on a plank; three cells of a ledge are removed at tick 420 (one chunk rebuilt: tc.builds 5) and the crate on it falls. The control holds right without jumping: it never stands on a plank"
+  },
+  {
+    "name": "tiles2d-room",
+    "app": "tiles2d",
+    "webgpu": true,
+    "frames": 900,
+    "input": "tiles2d-room.json",
+    "env": {
+      "TILES2D_SCENE": "room"
+    },
+    "controlFrames": 900,
+    "controlEnv": {
+      "TILES2D_NO_PAINT": "1"
+    },
+    "fields": [
+      "room.pos",
+      "room.door_tile",
+      "room.wall_tile",
+      "room.painted",
+      "room.east",
+      "room.moss_ticks",
+      "room.variants",
+      "room.map_hash",
+      "tc.chains",
+      "tc.segments",
+      "tc.chunks",
+      "tc.builds",
+      "phys.hash",
+      "nav.walkable",
+      "nav.reached",
+      "nav.path_changes",
+      "nav.near_hero",
+      "nav.crowd_hash",
+      "nav.flow_hash"
+    ],
+    "expect": {
+      "room.painted": 1,
+      "room.east": 1,
+      "room.variants": 6,
+      "tc.builds": 2,
+      "nav.walkable": 368,
+      "nav.near_hero": 10
+    },
+    "note": "terrains: a top-down room whose scene names terrains by their first tile and autotile picks every tile at load (a single-tile floor with 4 variants, walls from a 47-tile blob set with 2 variants, moss from a 16-tile corner set on its own layer, a fence from a 16-tile edge set; variants by a cw_rng seeded per cell, the same map hash on every host). The hero walks through the upper doorway; at tick 300 cw_tilemap2d_set_terrain_rect paints it shut (the wall tiles round it join, one collision chunk rebuilt) and the hero, walking back, stays in the east chamber. A NavigationRegion2D bakes the walls and fence into a grid: four scouts patrol between the chambers on paths of their own and path again when the doorway shuts, ten followers walk one flow field to the hero and all end within three cells of it. Control: TILES2D_NO_PAINT leaves the doorway open and the hero walks back through"
   },
   {
     "name": "r2d-text",
@@ -2637,6 +2681,29 @@
       "CW_TEST_INJECT_FAIL": "1"
     },
     "note": "tile collision: tile_shapes and tile_data text forms (full, slope, rect, poly, oneway; flips), TileCollision2D outlines (a block is one loop of four segments, a floor across a chunk edge is one chain per chunk joined by ghost vertices, partly shared edges, touching corners, rings), a frictionless box sliding 60 cells without catching a seam, a character up and down slopes, one-way platforms for characters (jump up through, land, drop through) and rigid bodies (rest from above, pass from below), physics layers and masks, chunk rebuild counts on cell edits (one chunk, two on a chunk edge, all on a resize or new shapes), a tree snapshot restored over an edit"
+  },
+  {
+    "name": "unit-nav2d",
+    "webgpu": true,
+    "app": "unit_nav2d",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.checksum": 719255199,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "2D navigation: grids, costs and obstacles; jump point search held to plain A* (the same path cost for 720 seeded pairs on 12 random maps, fewer expansions, 14 against 91 in an open hall); paths pulled straight with every leg clear of blocked cells, wide agents, a goal inside a wall, budgets and unreachable goals ending partial, cells with costs (the dry way round a swamp, no straightening through it), four-neighbour grids; flow fields (every cell's distance equal to its shortest path, walking the field reaches the goal, two goals, stale after an edit); batched paths equal to single ones; a crowd of 24 swapping chambers through a doorway (all arrive, none in a wall, none stacked), replanning when a wall closes it, a horde of 40 on one flow field; the nodes on a tile map (bake, a doorway bricked up in the map baked in as one cell, an obstacle node moved in and out, agent_radius, costs from tile_data, follow_flow, a region leaving and returning). The checksum is pinned: every host and pool size gives it"
   },
   {
     "name": "unit-gameplay",
