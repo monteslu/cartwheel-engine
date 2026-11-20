@@ -1383,12 +1383,15 @@ static void tonemap_exec(cw_pass_ctx *ctx, void *u) {
   unsigned prog = tm_variant(bloom, grade, lens, dist, aa, fog);
   if (!prog) return;
   const cw_rt *dbuf = dist ? cw__fx_take_distortion(ctx->tree) : NULL;
+  /* the exposure state before any texture is bound: the neutral one is made on first use, and making a texture
+   * binds it, which would replace the unit already bound (the first frame came out black) */
+  unsigned auto_tex = s->auto_exposure && pl->auto_exposure_tex ? pl->auto_exposure_tex : exposure_neutral();
   cw_pass_use(prog);
   cw_pass_bind_texture(0, ctx->src->tex);
   cw_pass_uniform1i(prog, "u_src", 0);
   cw_pass_uniform1f(prog, "u_tm_exposure", s->exposure * exp2f(s->exposure_ev));
   /* unit 5 (WebGPU binding 6): the automatic exposure's state, or zeros (2^0) when it is off or did not run */
-  cw_pass_bind_texture(5, s->auto_exposure && pl->auto_exposure_tex ? pl->auto_exposure_tex : exposure_neutral());
+  cw_pass_bind_texture(5, auto_tex);
   cw_pass_uniform1i(prog, "u_auto", 5);
   pl->auto_exposure_tex = 0;
   cw_pass_uniform1i(prog, "u_curve", (int)CW_CLAMP((int)s->tonemap, 0, CW_TONEMAP_COUNT - 1));

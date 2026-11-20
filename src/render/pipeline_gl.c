@@ -553,6 +553,8 @@ unsigned cw_pass_texture_new(int w, int h, cw_rt_format f, const void *texels) {
   if (wg()) return cw__pw_pass_texture(w, h, f, texels);
   GLenum ifmt, fmt, type;
   rt_formats(f, &ifmt, &fmt, &type);
+  GLint prev = 0; /* the texture bound to the active unit: put back, so a pass that makes one mid-draw keeps its inputs */
+  glGetIntegerv(GL_TEXTURE_BINDING_2D, &prev);
   GLuint t;
   glGenTextures(1, &t);
   glBindTexture(GL_TEXTURE_2D, t);
@@ -563,7 +565,7 @@ unsigned cw_pass_texture_new(int w, int h, cw_rt_format f, const void *texels) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glBindTexture(GL_TEXTURE_2D, 0);
+  glBindTexture(GL_TEXTURE_2D, (GLuint)prev);
   return t;
 }
 
