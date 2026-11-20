@@ -62,7 +62,9 @@ See [Input](guide:input).
 | joints | `Joint2D`, `Joint3D` (`joint_type` selects the kind) | |
 | collision layers and masks | `collision_layer`, `collision_mask` on every collision object; names in `layer_names_2d` / `layer_names_3d` | |
 | `PhysicsDirectSpaceState.intersect_ray` | `cw_world2d_raycast`, `cw_world3d_raycast` and the batch and overlap queries | |
-| `NavigationRegion3D`, `NavigationAgent3D`, `NavigationObstacle3D` | same names | `target_position`, signals `path_changed`, `target_reached`, `velocity_computed`; avoidance is ORCA as in Godot; obstacles carve the navmesh of a `dynamic` region; no 2D navigation nodes yet |
+| `NavigationRegion3D`, `NavigationAgent3D`, `NavigationObstacle3D` | same names | `target_position`, signals `path_changed`, `target_reached`, `velocity_computed`; avoidance is ORCA as in Godot; obstacles carve the navmesh of a `dynamic` region |
+| `NavigationRegion2D`, `NavigationAgent2D`, `NavigationObstacle2D`, TileMap navigation layers | same names ([cartwheel/nav2d.h](header:nav2d.h)) | a grid baked from the tile map's `tile_shapes` instead of navigation polygons; the same properties and signals as the 3D nodes; map edits baked in per cell; `follow_flow` for crowds with one goal |
+| `AStarGrid2D` | `cw_navgrid_new`, `cw_navgrid_set_cost`, `cw_navgrid_find_path` | jump point search on uniform grids; integer costs, the same path on every host |
 | `NavigationServer3D` map and path queries | `cw_nav_find_path`, `cw_nav_raycast`, `cw_nav_nearest`, crowds in C ([cartwheel/nav.h](header:nav.h)) | |
 
 See [Physics](guide:physics) and [Navigation](guide:navigation).
@@ -75,6 +77,7 @@ See [Physics](guide:physics) and [Navigation](guide:navigation).
 | `ParallaxBackground` + `ParallaxLayer` | `ParallaxLayer` | |
 | `TileMap` / `TileMapLayer` | `TileMap2D` | layers and animated tiles |
 | `TileSet` physics layers, collision polygons, one-way collision | `tile_shapes` on the `TileMap2D` and a [TileCollision2D](node:TileCollision2D) child | shapes per tile id as text (full, slope, rect, poly, oneway); one `TileCollision2D` per physics layer and mask (`layers` picks the map layers); a character sees one-way platforms through `one_way_mask`; see [2D rendering](guide:rendering-2d) |
+| `TileSet` terrain sets (match corners and sides, corners, sides), `set_cells_terrain_connect` | `terrains` on the `TileMap2D` (`blob47`, `corner16`, `edge16`, `single`), `cw_tilemap2d_set_terrain`, `cw_tilemap2d_set_terrain_rect`, `autotile` | a set is laid out in a fixed tile order instead of peering bits per tile; variants are picked per cell from a seeded `cw_rng`, the same on every host |
 | `TileSet` custom data layers, `TileData.get_custom_data` | `tile_data`, `cw_tilemap2d_tile_data`, `cw_tilemap2d_cell_data` | named numbers or words per tile id |
 | `Label` in 2D space | `Label2D` | |
 | `Path2D` + `PathFollow2D`, `Curve2D` | [Path2D](node:Path2D), [PathFollow2D](node:PathFollow2D), `cw_curve` | `points` text, `closed`; `progress`, `progress_ratio`, `loop`, `rotates`, `h_offset`, `v_offset`, plus `speed` and the signal `end_reached`. See [Gameplay nodes](guide:gameplay-nodes). |
@@ -119,4 +122,4 @@ See [Animation](guide:animation), [Audio](guide:audio), [Networking](guide:netwo
 
 ## Not there yet
 
-No equivalent today: 2D navigation nodes, `MultiMeshInstance3D`, `SubViewport` and render-to-texture nodes, autoload nodes (global state lives in the app or in tree slots), stream resources with their own loop points (`AudioStreamRandomizer`, `AudioStreamInteractive`), and any scripting language.
+No equivalent today: `MultiMeshInstance3D`, `SubViewport` and render-to-texture nodes, autoload nodes (global state lives in the app or in tree slots), stream resources with their own loop points (`AudioStreamRandomizer`, `AudioStreamInteractive`), and any scripting language.

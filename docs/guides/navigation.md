@@ -103,6 +103,41 @@ A [NavigationObstacle3D](node:NavigationObstacle3D) is a cylinder (standing on i
 
 One fixed-tick hook per tree, at order -50, runs all of this. It bakes, applies obstacle changes, adds new agents and targets, steps every region's crowd and moves the agents' parents, in the order the nodes entered the tree.
 
+## 2D navigation: grids, tile maps and flow fields
+
+[cartwheel/nav2d.h](header:nav2d.h) is the 2D side: a grid of walkable cells instead of a navmesh, with the same shape of API and the same node names. Positions are `cw_vec2` in the grid's units (pixels for a grid made from a tile map, y down).
+
+**From a tile map.** A [NavigationRegion2D](node:NavigationRegion2D) child of a [TileMap2D](node:TileMap2D) bakes a grid from the map's tile shapes (the same `tile_shapes` that give it collision, see [2D rendering](guide:rendering-2d)): a cell is blocked where a tile on one of its `layers` has a solid shape. `agent_radius` also blocks the cells whose middle is nearer than that to a blocked cell, for agents wider than a cell, and `cost_data` names a `tile_data` value that makes cells dearer to cross (mud, tall grass). Cell edits of the map, by `cw_tilemap2d_set_cell` or by painting terrains, are baked in at the next tick: only the cells edited, never the whole map. From `samples/tiles2d`:
+
+@include samples/tiles2d/assets/room.cwscene#Nav..Scout0
+
+A [NavigationAgent2D](node:NavigationAgent2D) walks its parent Node2D to its `target_position` and has the 3D agent's properties, signals (`path_changed`, `target_reached`, `velocity_computed`) and methods (`set_velocity`, `stop`). With `drive_parent` off, the parent moves itself by `velocity_computed` (a `CharacterBody2D` calling `cw_character2d_move_and_slide`) and the agent follows it. A [NavigationObstacle2D](node:NavigationObstacle2D) is a circle or a rectangle that blocks the cells under it while it is in the tree. The sample's scouts patrol between two posts:
+
+@include samples/tiles2d/main.c#patrol
+
+**Paths.** [cw_navgrid_find_path](api:cw_navgrid_find_path) is A* over the cells with eight neighbours; a diagonal step needs both cells beside it free, so nothing cuts a corner. On a grid where every walkable cell costs the same the search is jump point search: the same shortest paths, visiting a fraction of the cells (the `unit-nav2d` gate holds it to plain A*'s cost on 720 seeded pairs). Cells with their own cost switch the grid to plain A*. The cell path is then pulled straight where its corners are in sight of one another, `agent_radius` wide. A goal that cannot be reached, or a search that runs out of `max_iters`, returns the path to the nearest cell it found and says `partial`. [cw_navgrid_find_paths](api:cw_navgrid_find_paths) answers a batch on the job pool:
+
+@include samples/tiles2d_perf/main.c#nav
+
+**Flow fields.** When many agents head for one goal, search once instead of once per agent: [cw_flowfield_build](api:cw_flowfield_build) spreads outward from the goals and gives every cell its distance and the neighbour to step to; [cw_flowfield_direction](api:cw_flowfield_direction) is then one lookup per agent. `cw_nav_region2d_set_flow_target` keeps a region's field (built again when the grid changes) and an agent's `follow_flow` method walks it. The sample's ten followers share one field toward the hero, built again only when the hero stands in another cell:
+
+@include samples/tiles2d/main.c#flow
+
+**Crowds.** [cw_crowd2d_new](api:cw_crowd2d_new) and `cw_crowd2d_step` mirror the 3D crowd on a grid, with the same ORCA solver: a budget of paths per step (oldest request first), neighbours by a total order, steering along the path or the field, movement that slides along blocked cells. A grid change plans every path again. An agent held still for a third of a second leans aside, first to its right and then to the other side, which gets two streams through a doorway and walkers round one who has arrived; like the 3D crowd, two dense streams can still jam in a passage one or two agents wide.
+
+**Determinism.** Step costs are integers (10 straight, 14 diagonal, times the cell's cost), the open list is ordered by total, then distance to go, then cell index, and nothing reads a clock: the same grid and request give the same path on every host and at any worker count. `unit-nav2d` pins its checksum, `tiles2d-room` compares the sample's crowd and field hashes on every host, and `tests/nav-determinism.mjs` runs both at `CW_WORKERS` 0, 1, 3 and the default.
+
+**Cost.** `node tests/tiles2d-perf.mjs` runs `samples/tiles2d_perf` on a 256 x 256 map a quarter full of blocks (48,880 walkable cells), natively and as a cart:
+
+| | native, 24 threads | cart (romdev), 24 threads |
+|---|---|---|
+| grid baked from the tile map | 3.6 ms | 4.2 ms |
+| 1000 batched paths (about 170 cells long each) | 13.9 ms, 72 a ms | 38 ms, 26 a ms |
+| flow field, one goal | 5.3 ms | 9.3 ms |
+| crowd step, 500 agents on paths (mean of 600) | 0.23 ms | 0.31 ms |
+
+On one thread the same 1000 paths take about 160 ms natively (6 a ms): jump point search expands about 200 points a path there, where plain A* expands 2600 cells and takes 4.5 times as long. The figures were taken on a Ryzen AI 9 HX 370 while other work loaded the machine, so they are upper bounds. The gate holds every host to the same grid, path, field and crowd hashes, and to budgets.
+
 ## Debug draw
 
 [cw_nav_debug_draw](api:cw_nav_debug_draw), [cw_crowd_debug_draw](api:cw_crowd_debug_draw) and [cw_nav_debug_draw_path](api:cw_nav_debug_draw_path) append line segments to a [cw_phys_lines](api:cw_phys_lines), the same list physics debug drawing uses. Polygon edges are dim and walls bright, obstacles are outlined, links are arcs from start to end (green when paths can use them, red when an end missed the navmesh, with barbs at the end of a one-way link), agents are circles with their velocity, and paths are polylines through their corners. Regions draw it themselves with `debug_draw`.

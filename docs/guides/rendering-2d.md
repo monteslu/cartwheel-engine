@@ -144,7 +144,28 @@ The `TileCollision2D` is a `StaticBody2D`, so `collision_layer`, `collision_mask
 
 @include samples/tiles2d/main.c#edit
 
-**Cost.** On a 256x256 map with slopes (`samples/tiles2d_perf`), building all 64 chunks takes 12.6 ms natively and 23 ms in a cart, 0.2 and 0.36 ms a chunk, and a cell edit costs one chunk. The chains are outlines: a body that starts inside solid tiles is not pushed out, and overlap queries see the surface only. Ask the map where "is this point inside a wall" matters: `cw_tilemap2d_cell_solid` and `cw_tilemap2d_point_solid` answer from the shapes without physics.
+**Cost.** On a 256x256 map with slopes (`samples/tiles2d_perf`), building all 64 chunks takes 7.9 ms natively and 13.8 ms in a cart, 0.12 and 0.22 ms a chunk, and a cell edit costs one chunk. The chains are outlines: a body that starts inside solid tiles is not pushed out, and overlap queries see the surface only. Ask the map where "is this point inside a wall" matters: `cw_tilemap2d_cell_solid` and `cw_tilemap2d_point_solid` answer from the shapes without physics.
+
+### Terrains (autotiling)
+
+A terrain is a set of tiles that draw one material with the right edges. Paint cells with the terrain and the map picks each cell's tile from its neighbours. `terrains` on a `TileMap2D` lists them, each a name, a kind and its tiles (the first tile id of a run in the kind's order, or every id):
+
+| Kind | Tiles | Matches |
+|---|---|---|
+| `single` | 1 | nothing: a floor that only varies (give it variants) |
+| `edge16` | 16 | the four sides. Tile k has neighbours on the sides that are bits of k: north 1, east 2, south 4, west 8. Fences, pipes, roads |
+| `corner16` | 16 | the four corners (two-corner Wang tiles). The terrain lives on the map's vertices; tile k covers the corners that are bits of k: north-east 1, south-east 2, south-west 4, north-west 8. Painting a cell fills its four corners, so the cells round it get the transitions |
+| `blob47` | 47 | sides and corners. Neighbour bits clockwise from north (N 1, NE 2, E 4, SE 8, S 16, SW 32, W 64, NW 128), a corner counting only between two set sides; the 47 masks that remain, in ascending order. `cw_tile_terrain_mask` gives each tile's mask to a tool that lays the sheet out |
+
+After the tiles, `xN` says N variant sets follow one another, `outside` makes cells beyond the map's edge count as the terrain, and `seed N` changes which variant each cell gets. The room of `samples/tiles2d` names every terrain by its first tile and sets `autotile`, which picks each cell's tile as the cells text is set, so a level written by hand or by a generator never spells out edge tiles:
+
+@include samples/tiles2d/assets/room.cwscene#Map
+
+In play, `cw_tilemap2d_set_terrain` paints one cell and fixes the cells round it, `cw_tilemap2d_set_terrain_rect` a rectangle, and `cw_tilemap2d_fix_terrain` picks tiles again after cells were set raw. The sample shuts a doorway:
+
+@include samples/tiles2d/main.c#paint
+
+A cell belongs to a terrain when its tile is one of the terrain's tiles. Nothing is stored beside the cells, so a saved scene's cells are the whole state and fixing twice changes nothing. Variants come from a `cw_rng` seeded by the terrain's seed, the layer and the cell: a cell shows the same variant on every host, whatever order the map was painted in. Painting goes through `cw_tilemap2d_set_cell`, so a `TileCollision2D` rebuilds the chunks touched; give a terrain's tiles their shape by range (`"16-109: full"`). One layer holds one corner terrain's transitions per cell, so put a corner terrain that overlays another material (moss on a floor) on its own map layer, as the sample does.
 
 ### Custom tile data
 
@@ -219,7 +240,7 @@ Natively, `CW_R2D_TIMERS=1` times each part of `cw_r2d_end` on the GPU (GL time 
 | `r2d_sprites` | sprites, shapes, blend modes, nine-slice, clip, render targets |
 | `r2d_text` | SDF and bitmap fonts, wrap, alignment, measurement |
 | `r2d_tilemap` | chunked tilemaps, animated tiles, flips, cell edits |
-| `tiles2d` | tile shapes, `TileCollision2D` (slopes, one-way planks, half blocks), custom tile data, a ledge removed in play |
+| `tiles2d` | tile shapes, `TileCollision2D` (slopes, one-way planks, half blocks), custom tile data, a ledge removed in play; a room of terrains (blob, corner, edge and single sets with variants), a doorway painted shut |
 | `r2d_camera` | canvas layers, cameras, parallax, minimap, `INTEGER` scaling, the sharp filter at any scale |
 | `r2d_lights` | lit layers, normal maps, shadows, ambient |
 | `r2d_normal_turn` | turned and flipped normal-mapped sprites and instances, lit by their turned normals |

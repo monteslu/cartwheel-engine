@@ -8,6 +8,12 @@ RVO2 Library (ORCA collision avoidance), ported to C in src/nav/third_party/rvo2
   Licensed under the Apache License, Version 2.0 (src/nav/third_party/rvo2/LICENSE)
   https://gamma.cs.unc.edu/RVO2/
 
+PathFinding.js (the jump point search rules for grids without corner cutting), written anew in C in
+src/nav/grid2d.c after its JPFMoveDiagonallyIfNoObstacles
+  Copyright (c) 2011-2012 Xueqiao Xu
+  MIT licensed
+  https://github.com/qiao/PathFinding.js
+
 Recast & Detour (navmesh generation and queries), built from scripts/deps.lock
 with the changes in patches/recastnavigation/
   Copyright (c) 2009 Mikko Mononen memon@inside.org
