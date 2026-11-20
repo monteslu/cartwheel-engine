@@ -33,6 +33,7 @@
 #include "cartwheel/quality.h"
 #include "cartwheel/shading.h"
 #include "gi_internal.h"
+void cw__shading_gbuf_name(const char *ext, char out[64]); /* src/render/shading.c */
 #include "render/pipeline_internal.h"
 #if CW_WGPU
 #include "render/pipeline_wgpu.h"
@@ -379,7 +380,7 @@ bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, int w, int h, int mode) {
     g->hook_renderer = r;
   }
   if (g->gbuf_hook != r) {
-    t3_renderer_set_extension(r, "gibuf", cw__gi_fill_gbuf, g);
+    cw_shading_part(r, "gibuf", cw__gi_fill_gbuf, g); /* (a part: it composes after a surface of the game's own) */
     g->gbuf_hook = r;
   }
   cw__gi_tag(g, &ctx->scene3d->base);
@@ -387,11 +388,15 @@ bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, int w, int h, int mode) {
   gb_walk(&ctx->scene3d->base, &hidden);
   /* every material of the G-buffer draws the lighting-free "gibuf" program (gibuf.mjs); their own
    * extensions are put back after */
-  char (*saved)[32] = g->mats.count ? cw_alloc((size_t)g->mats.count * 32, CW_MEM_RENDER) : NULL;
+  /* (a surface of the game's own stays on, before gibuf: it moves the vertices, cuts the holes and sets the normal
+   * and roughness the G-buffer holds, "dissolve_gibuf") */
+  char (*saved)[64] = g->mats.count ? cw_alloc((size_t)g->mats.count * 64, CW_MEM_RENDER) : NULL;
   for (int i = 0; i < g->mats.count; i++) {
     const char *e = t3_material_get_extension(g->mats.data[i]);
-    snprintf(saved[i], 32, "%s", e ? e : "");
-    t3_material_set_extension(g->mats.data[i], "gibuf");
+    snprintf(saved[i], 64, "%s", e ? e : "");
+    char gb[64];
+    cw__shading_gbuf_name(e, gb);
+    t3_material_set_extension(g->mats.data[i], gb);
   }
   t3_scene *sc = ctx->scene3d;
   t3_texture *bg = sc->background_texture;

@@ -7,7 +7,7 @@
 
 #include "cartwheel/shading.h"
 
-enum { NAME_MAX_ = 32, PART_MAX_ = 16 };
+enum { NAME_MAX_ = 64, PART_MAX_ = 16 };
 
 /* the fixed order: surface, lighting, (others by name), indirect */
 static int rank_of(const char *p) {
@@ -15,7 +15,7 @@ static int rank_of(const char *p) {
   for (size_t i = 0; i < sizeof surface / sizeof surface[0]; i++)
     if (!strcmp(p, surface[i])) return 0;
   if (!strcmp(p, "cluster") || !strcmp(p, "clusteries")) return 1;
-  if (!strcmp(p, "gi")) return 3;
+  if (!strcmp(p, "gi") || !strcmp(p, "gibuf")) return 3;
   return 2;
 }
 static int part_cmp(const void *a, const void *b) {
@@ -70,6 +70,7 @@ static struct {
   int nnames, cap_names;
 } S;
 
+static void note_name_fwd(const char *name);
 static const part_reg *find_part(t3_renderer *r, const char *name) {
   for (int i = 0; i < S.nparts; i++)
     if (S.parts[i].r == r && !strcmp(S.parts[i].name, name)) return &S.parts[i];
@@ -174,6 +175,90 @@ void cw_shading_part(t3_renderer *r, const char *name, t3_extension_fill fill, v
   reinstall(r, name);
 }
 
+/* ── traits and parts for every renderer ──────────────────────────────── */
+typedef struct global_part { char name[PART_MAX_]; unsigned traits; t3_extension_fill fill; void *user; bool batching, everywhere; } global_part;
+static global_part *G;
+static int nG, capG;
+static t3_renderer **R; /* every renderer cw__shading_renderer_init saw */
+static int nR, capR;
+
+static global_part *global_of(const char *name, bool make) {
+  for (int i = 0; i < nG; i++)
+    if (!strcmp(G[i].name, name)) return &G[i];
+  if (!make) return NULL;
+  if (nG == capG) {
+    capG = capG ? capG * 2 : 8;
+    G = realloc(G, sizeof *G * (size_t)capG);
+  }
+  global_part *g = &G[nG++];
+  memset(g, 0, sizeof *g);
+  snprintf(g->name, sizeof g->name, "%s", name);
+  return g;
+}
+
+/* CW_TEST_SURFACE_ALONE=1 (native test runs: the control of tests/custom-surface.mjs): a game's surface part
+ * is treated as any part was before traits existed (no probes, no decals, dropped from the G-buffer), and a
+ * material takes four parts at most */
+static bool surfaces_alone(void) {
+  static int v = -1;
+  if (v < 0) {
+    const char *e = getenv("CW_TEST_SURFACE_ALONE");
+    v = e && atoi(e);
+  }
+  return v;
+}
+static int max_parts(void) { return surfaces_alone() ? 4 : CW_SHADING_MAX_PARTS; }
+
+void cw_shading_part_traits(const char *name, unsigned traits) {
+  if (!part_name_ok("cw_shading_part_traits", name)) return;
+  global_of(name, true)->traits = traits;
+}
+unsigned cw_shading_part_traits_of(const char *name) {
+  const global_part *g = name && !surfaces_alone() ? global_of(name, false) : NULL;
+  return g ? g->traits : 0;
+}
+
+void cw_shading_part_everywhere(const char *name, t3_extension_fill fill, void *user, bool batching) {
+  if (!part_name_ok("cw_shading_part_everywhere", name)) return;
+  global_part *g = global_of(name, true);
+  g->fill = fill, g->user = user, g->batching = batching, g->everywhere = fill != NULL;
+  for (int i = 0; i < nR; i++) {
+    cw_shading_part(R[i], name, fill, user);
+    cw_shading_part_batching(R[i], name, batching);
+  }
+}
+
+/* a renderer was made (src/scene/render3d.c): it takes the parts registered for every renderer */
+void cw__shading_renderer_init(t3_renderer *r);
+void cw__shading_renderer_init(t3_renderer *r) {
+  if (!r) return;
+  for (int i = 0; i < nR; i++)
+    if (R[i] == r) return;
+  if (nR == capR) {
+    capR = capR ? capR * 2 : 4;
+    R = realloc(R, sizeof *R * (size_t)capR);
+  }
+  R[nR++] = r;
+  for (int i = 0; i < nG; i++)
+    if (G[i].everywhere) {
+      cw_shading_part(r, G[i].name, G[i].fill, G[i].user);
+      cw_shading_part_batching(r, G[i].name, G[i].batching);
+    }
+}
+
+/* the G-buffer program of a material whose extension is `ext` (src/gi/ssr.c): its surface parts, then gibuf
+ * ("dissolve_gibuf"; "gibuf" alone for a material with none) */
+void cw__shading_gbuf_name(const char *ext, char out[64]);
+void cw__shading_gbuf_name(const char *ext, char out[64]) {
+  char parts[CW_SHADING_MAX_PARTS + 1][PART_MAX_];
+  int n = split(ext, parts);
+  out[0] = 0;
+  for (int i = 0; i < n; i++)
+    if (cw_shading_part_traits_of(parts[i]) & CW_PART_SURFACE) strcat(out, parts[i]), strcat(out, "_");
+  strcat(out, "gibuf");
+  if (strlen(out) > 5) note_name_fwd(out);
+}
+
 bool cw_shading_part_known(const char *name) {
   if (!name || !name[0]) return false;
   for (int i = 0; i < S.nparts; i++)
@@ -192,6 +277,10 @@ void cw_shading_forget(t3_renderer *r) {
     else S.comps[w++] = S.comps[i];
   }
   S.ncomps = w;
+  w = 0;
+  for (int i = 0; i < nR; i++)
+    if (R[i] != r) R[w++] = R[i];
+  nR = w;
 }
 
 /* a composed name seen for the first time: install it on every renderer
@@ -205,6 +294,8 @@ static void note_name(const char *name) {
     S.names = realloc(S.names, sizeof *S.names * (size_t)S.cap_names);
   }
   snprintf(S.names[S.nnames++], NAME_MAX_, "%s", name);
+  /* (a name is made of the parts of some renderer: every renderer there is, and the parts' own) */
+  for (int i = 0; i < nR; i++) install(R[i], name);
   t3_renderer *seen[64];
   int ns = 0;
   for (int i = 0; i < S.nparts; i++) {
@@ -214,6 +305,24 @@ static void note_name(const char *name) {
     if (ns < 64) seen[ns++] = S.parts[i].r;
     install(S.parts[i].r, name);
   }
+}
+
+static void note_name_fwd(const char *name) { note_name(name); }
+
+/* a material that cannot take a part says so once per composed name: it keeps the parts it had, so a
+ * light, a probe or the game's own surface is missing from it */
+static void refuse(const t3_material *m, char parts[][PART_MAX_], int k, const char *why) {
+  static char said[16][NAME_MAX_ * 2];
+  static int nsaid;
+  char list[NAME_MAX_ * 2] = "";
+  for (int i = 0; i < k && strlen(list) + PART_MAX_ + 2 < sizeof list; i++) strcat(list, i ? " " : ""), strcat(list, parts[i]);
+  for (int i = 0; i < nsaid; i++)
+    if (!strcmp(said[i], list)) return;
+  if (nsaid < 16) snprintf(said[nsaid++], sizeof said[0], "%s", list);
+  cw_error("shading: material%s%s%s cannot carry the parts [%s]: %s. It keeps the parts it had (x%s), so part of its "
+           "shading is missing (cartwheel/shading.h)",
+           m->name && *m->name ? " \"" : "", m->name && *m->name ? m->name : "", m->name && *m->name ? "\"" : "", list, why,
+           t3_material_get_extension(m) ? t3_material_get_extension(m) : "");
 }
 
 /* ── materials ────────────────────────────────────────────────────────── */
@@ -227,19 +336,29 @@ bool cw_shading_set(t3_material *m, const char *const *names, int n) {
     bool dup = false;
     for (int j = 0; j < k; j++) dup |= !strcmp(parts[j], names[i]);
     if (dup) continue;
-    if (k == CW_SHADING_MAX_PARTS) return false;
+    if (k == max_parts()) {
+      snprintf(parts[k], PART_MAX_, "%s", names[i]);
+      refuse(m, parts, k + 1, "a material takes at most CW_SHADING_MAX_PARTS parts");
+      return false;
+    }
     snprintf(parts[k++], PART_MAX_, "%s", names[i]);
   }
   qsort(parts, (size_t)k, PART_MAX_, part_cmp);
-  char name[NAME_MAX_ + PART_MAX_] = "";
+  char name[(CW_SHADING_MAX_PARTS + 1) * PART_MAX_] = "";
   for (int i = 0; i < k; i++) {
     if (i) strcat(name, "_");
     strcat(name, parts[i]);
   }
-  if (strlen(name) >= NAME_MAX_) return false;
+  if (strlen(name) >= NAME_MAX_) {
+    refuse(m, parts, k, "the composed name passes 63 characters (shorter part names)");
+    return false;
+  }
   const char *cur = t3_material_get_extension(m);
   if (cur ? !strcmp(cur, name) : !name[0]) return true;
-  if (!t3_material_set_extension(m, k ? name : NULL)) return false;
+  if (!t3_material_set_extension(m, k ? name : NULL)) {
+    refuse(m, parts, k, "three.c refused the name");
+    return false;
+  }
   if (k > 1) note_name(name);
   return true;
 }
@@ -264,7 +383,6 @@ bool cw_shading_add(t3_material *m, const char *name) {
   char store[CW_SHADING_MAX_PARTS + 1][PART_MAX_];
   const char *p[CW_SHADING_MAX_PARTS + 2];
   int n = parts_of(m, p, store);
-  if (n >= CW_SHADING_MAX_PARTS) return false;
   p[n++] = name;
   return cw_shading_set(m, p, n);
 }
