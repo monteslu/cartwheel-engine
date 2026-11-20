@@ -12,6 +12,7 @@
 #include "cartwheel/debug.h"
 #include "cartwheel/core.h"
 #include "cartwheel/profile.h"
+#include "cartwheel/save.h"
 #include "hooks.h"
 #include "render/quality_internal.h"
 #include "cartwheel/render2d.h"
@@ -1075,6 +1076,21 @@ uint64_t cw_frame_index(void) { return cw__plat.frame; }
 uint64_t cw_tick_index(void) { return cw__plat.tick; }
 double cw_fixed_dt(void) { return cw__plat.fixed_dt; }
 bool cw_is_deterministic_run(void) { return cw__plat.deterministic_run; }
+void *cw_save_data(size_t *size) {
+  if (size) *size = cw__plat.app.save ? cw__plat.app.save_size : 0;
+  return cw__plat.app.save;
+}
+cw_save_store *cw_save_app_store(cw_save_legacy_fn legacy, void *user) {
+  static cw_save_store st;
+  size_t size;
+  void *block = cw_save_data(&size);
+  if (st.base == block && st.size == size && block) return &st; /* opened already, over the same data */
+  if (!block || size < 16) {
+    cw_error("save store: the app has no save data (set cw_app_desc.save and save_size, at least 16 bytes)");
+    return NULL;
+  }
+  return cw_save_open(&st, block, size, legacy, user) ? &st : NULL;
+}
 uint32_t cw_host_seed(void) { return cw__plat.host_seed; }
 void cw_quit(void) { cw__plat.quit = true; }
 void cw_set_title(const char *title) {

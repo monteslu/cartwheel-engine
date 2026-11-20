@@ -128,6 +128,33 @@ In `samples/audio_3d` the listener walks out of a cave, along a passage with no 
 
 In a scene, a `ReverbZone3D` node does the same ([node reference](node:ReverbZone3D)): its world position is the zone's centre (rotation and scale are not applied), its properties are the zone's, and the zone exists while the node is in a tree and audio is running.
 
+## Players in a scene
+
+Sounds can be nodes ([cartwheel/audio_nodes.h](header:audio_nodes.h)), so a scene file says what plays where and a game writes no voice bookkeeping:
+
+| Node | What it does |
+|---|---|
+| [AudioStreamPlayer](node:AudioStreamPlayer) | plays a sound as it is: music, UI, anything without a place |
+| [AudioStreamPlayer2D](node:AudioStreamPlayer2D) | pans and fades it by where the node is on the 2D view |
+| [AudioStreamPlayer3D](node:AudioStreamPlayer3D) | a spatial voice at the node: distance, cone, doppler, reverb zones |
+| [AudioListener3D](node:AudioListener3D) | the ears; with none in the tree the current camera listens |
+
+From the `gameplay_nodes` sample, a looping sound on a beacon, heard from the camera that rides the cart:
+
+@include samples/gameplay_nodes/assets/main.cwscene#Beacon/Horn
+
+Every player has `stream` (an asset path, loaded on first play and shared), `volume_db`, `pitch_scale`, `autoplay`, `loop`, `bus` (a bus by name), `max_polyphony` (how many copies may sound at once: one more stops the oldest; the default 1 makes `play` restart the sound), `stream_paused` and `playing`, the methods `play` and `stop`, and the signal `finished`. In C: `cw_audio_player_play`, `cw_audio_player_stop`, `cw_audio_player_is_playing`, `cw_audio_player_position`, and `cw_audio_player_voice` for anything a property does not cover. `cw_audio_player_set_sound` gives a player a sound made in code (`cw_sound_from_pcm`) instead of a file.
+
+The 3D player's properties are the fields of `cw_voice_3d`: `attenuation_model`, `unit_size` (the distance of full volume), `max_distance`, `rolloff`, the cone (`cone_inner_angle`, `cone_outer_angle`, `cone_outer_gain`, along the node's -Z), `doppler`, `air_absorption`, `reverb_send` and `occlusion`. Every fixed tick it gives its voices the node's world position, its velocity (its movement since the last tick) and its facing. The 2D player has `max_distance` (pixels from the middle of the view to silence), `attenuation` and `panning_strength`.
+
+**The listener.** A tree with a 3D player or an `AudioListener3D` sets the mixer's listeners each tick: from its current listener nodes (several for split screen, up to four, each voice heard by the nearest), else from the current [Camera3D](node:Camera3D). `cw_audio_nodes_set_auto_listener(tree, false)` hands the listener back to the game.
+
+**Timing.** Players are stepped on the fixed tick, after physics. `finished` is counted in ticks from the sound's length and the pitch, not read back from the mixer, so it arrives on the same tick on every host and in a replay, with or without an audio device (a tracker module, whose length is unknown, finishes when its voice ends). A paused tree holds the voices of the players it pauses, by their pause mode: music on a player set to run always keeps playing under a pause menu.
+
+**The mixer.** A game that calls `cw_audio_init`, or uses the game shell, owns the mixer as before. If nothing started it by the time a player first plays, the player starts it with the defaults and the tree runs `cw_audio_update` each frame.
+
+Checked by the `unit_audio_nodes` suite (the offline mixer: side, distance, cone, decibels, polyphony, pause) and the `gameplay-nodes` gate, which holds every host to the same samples.
+
 ## Sample-exact across hosts
 
 The mixer uses only arithmetic, `sqrt` and the deterministic functions in `cartwheel/math.h`, never libm. In offline mode (`offline = true`, no device) the game pulls samples with [cw_audio_render](api:cw_audio_render), which applies every queued command first and waits for stream decoding before each block, so the output depends only on the calls made, never on timing. `audio_mix` renders one 1/60 s slice per frame:
@@ -149,7 +176,6 @@ Real-time output is the same mix, but how many frames get mixed by a given game 
 
 ## Not available yet
 
-- The only audio node type is `ReverbZone3D`: a scene cannot declare a sound player, and the editor has no audio UI. Voices are started from code.
+- A player's `stream` is an asset path; there is no stream resource with its own loop points or random pitch yet (set `loop` and `pitch_scale` on the player, or play from code).
 - Effects are the six above; there is no per-voice effect chain (route a voice to a bus instead).
-- One listener; no split-screen listeners.
 - Microphone input and audio capture are not part of the API.

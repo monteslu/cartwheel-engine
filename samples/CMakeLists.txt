@@ -341,6 +341,9 @@ target_compile_definitions(net_arena_peer PRIVATE NET_ARENA_JOIN="ws://localhost
 # the cart-side control: the same peer with a score miscounted once (tests/net.mjs)
 cw_add_app(net_arena_peer_desync SOURCES net_arena/main.c ASSETS ${R2D_ASSETS} NET localhost)
 target_compile_definitions(net_arena_peer_desync PRIVATE NET_ARENA_JOIN="ws://localhost:47731/arena" NET_ARENA_DESYNC=1)
+# gameplay nodes from one scene file: Path3D + PathFollow3D, SpringArm3D, on-screen notifiers, Area3D lists, Timer, audio players
+# (cartwheel/gameplay.h, curve.h, audio_nodes.h)
+cw_add_app(gameplay_nodes SOURCES gameplay_nodes/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/gameplay_nodes/assets)
 # Trigger nodes ("when X then Y" rules in scene files, cartwheel/triggers.h)
 cw_add_app(triggers_demo SOURCES triggers_demo/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/triggers_demo/assets)
 # localization and accessibility. One UI in English, the en-XA

@@ -184,6 +184,10 @@ void cw_canvas_remove_pass(cw_tree *t, cw_canvas_pass_fn fn, void *user);
 cw_node cw_canvas_camera(cw_tree *t);
 cw_vec2 cw_canvas_screen_to_world(cw_tree *t, cw_vec2 canvas_px); /* identity when no camera drew */
 cw_vec2 cw_canvas_world_to_screen(cw_tree *t, cw_vec2 world); /* identity when no camera drew */
+/* The default canvas as the last frame drew it: its rectangle in canvas pixels (the virtual canvas when
+ * CanvasSettings sets one). false before the tree has drawn a 2D frame. With cw_canvas_screen_to_world this
+ * gives the part of the world that was on screen. */
+bool cw_canvas_viewport(cw_tree *t, cw_rect *out);
 /* The camera2d value the last frame used (zoom, limits applied). */
 cw_camera2d cw_canvas_camera_value(cw_tree *t);
 

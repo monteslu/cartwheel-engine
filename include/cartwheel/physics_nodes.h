@@ -42,7 +42,8 @@
  *   Area2D/3D             monitoring, monitorable; sensor shapes. Signals
  *                         body_entered(node), body_exited(node),
  *                         area_entered(node), area_exited(node); read-only
- *                         overlap_count. Areas move with their node.
+ *                         overlap_count; cw_area2d_overlapping_bodies and its
+ *                         siblings list what is inside. Areas move with their node.
  *                         DETECTION IS TWO-SIDED: an area sees a body only
  *                         when the area's mask has the body's layer AND the
  *                         body's mask has the area's layer (Box2D/Box3D
@@ -171,6 +172,30 @@ cw_node cw_physics3d_body_node(cw_body3d b);
 void cw_rigid_body2d_apply_impulse(cw_node n, cw_vec2 impulse_px);
 /* Impulse (N*s) at the center of mass of a RigidBody3D node; ignored for other nodes. */
 void cw_rigid_body3d_apply_impulse(cw_node n, t3_vec3 impulse);
+
+/* What is inside an area now: the bodies (or the areas) whose shapes overlap its shapes, in the order they came
+ * in (oldest first; the order two enter in on the same step is the physics library's event order, the same on
+ * every host and after a snapshot restore). Returns how many there are and fills out with up to cap of them
+ * (out may be NULL to count). The list is as of the last physics step: something that entered this tick is in it
+ * when the area's body_entered arrives. An area lists another area only while that one is monitorable. 0 for a
+ * node that is not an area. The methods get_overlapping_bodies / get_overlapping_areas give the same lists to
+ * the debug channel as names. */
+int cw_area2d_overlapping_bodies(cw_node area, cw_node *out, int cap);
+/* see cw_area2d_overlapping_bodies */
+int cw_area2d_overlapping_areas(cw_node area, cw_node *out, int cap);
+/* true while other (a body or an area) is inside the area; O(1) */
+bool cw_area2d_overlaps(cw_node area, cw_node other);
+/* The 3D twins. */
+int cw_area3d_overlapping_bodies(cw_node area, cw_node *out, int cap);
+/* see cw_area2d_overlapping_bodies */
+int cw_area3d_overlapping_areas(cw_node area, cw_node *out, int cap);
+/* see cw_area2d_overlaps */
+bool cw_area3d_overlaps(cw_node area, cw_node other);
+/* The bodies touching a PhysicsBody whose contact_monitor is on, oldest contact first (the list behind its
+ * body_entered / body_exited). Same contract as the area lists; 0 with contact_monitor off. */
+int cw_physics_body2d_colliding_bodies(cw_node body, cw_node *out, int cap);
+/* The 3D twin of cw_physics_body2d_colliding_bodies. */
+int cw_physics_body3d_colliding_bodies(cw_node body, cw_node *out, int cap);
 
 /* Re-run a cast now (normally refreshed after each step). */
 void cw_raycast2d_force_update(cw_node n);

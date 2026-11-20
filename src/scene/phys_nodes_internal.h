@@ -26,6 +26,12 @@ static inline void cw__psig_push(cw__psig_list *l, cw_node emitter, const char *
 /* overlap pair counting (several shapes per pair): returns the new count */
 int cw__pair_add(cw_map *m, uint64_t other, int delta);
 
+/* The other nodes of an overlap map in the order they came in (oldest first): want 0 = not of type area_t
+ * (bodies), 1 = of type area_t (areas). Returns how many there are; fills out up to cap (out may be NULL). */
+int cw__pairs_list(const cw_map *pairs, const cw_node_type *area_t, int want, cw_node *out, int cap);
+/* the same list as node names, comma separated, interned (the debug channel's view) */
+const char *cw__pairs_names(const cw_map *pairs, const cw_node_type *area_t, int want);
+
 /* layer name helpers against the project's names */
 int cw__layer_index(const char *const names[CW_PHYS_LAYERS], const char *name);
 uint32_t cw__layer_bits(const char *const names[CW_PHYS_LAYERS], const char *list);

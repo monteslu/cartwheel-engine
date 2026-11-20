@@ -4,6 +4,61 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.51.0 (2026-11-19)
+
+### Added
+- **Gameplay nodes a game no longer writes by hand** ([gameplay nodes](docs/guides/gameplay-nodes.md)). Each is a
+  registered node type with reflected properties, a scene-file round trip and an entry in `docs/nodes.json`, and each
+  is deterministic: it counts fixed ticks and reads the tree, never a clock.
+  - `Timer`: `wait_time`, `one_shot`, `autostart`, `paused`, `time_left`, signal `timeout`, methods `start` and
+    `stop`. It counts whole fixed ticks, and its live count travels in tree snapshots, so a replay and a rollback
+    fire on the same tick. `cw_timer_start`, `cw_timer_stop`, `cw_timer_ticks_left`.
+  - `Path3D` / `Path2D` with `PathFollow3D` / `PathFollow2D`: a Bezier curve as `points` text and a child that
+    sits on it at `progress` (or `progress_ratio`), with `loop`, offsets, a rotation mode (`NONE`, `Y`, `XY`, `XYZ`,
+    `ORIENTED`; `rotates` in 2D), a `speed` that moves it every tick and the signal `end_reached`.
+  - The curve in C, with no node: `cw_curve_*` (`cartwheel/curve.h`): points with in and out handles and a tilt, a
+    baked length, `cw_curve_sample_baked` by distance, `cw_curve_sample_frame` (forward, up and right carried along
+    the curve without twisting, upside down through a loop, meeting at the seam of a closed curve),
+    `cw_curve_closest_offset` and `cw_curve_closest_point`. Float arithmetic and the engine's own trigonometry in a
+    fixed order: the same bits natively and in a cart.
+  - `SpringArm3D`: a camera boom along the node's +Z that shortens when the 3D physics world is in the way
+    (`spring_length`, `radius`, `margin`, `collision_mask`, `exclude_parent`, `extend_speed`). It never shakes.
+  - `VisibleOnScreenNotifier3D` / `VisibleOnScreenNotifier2D`: `screen_entered` and `screen_exited` as a box comes
+    into and leaves the current camera's view; `cw_view3d_sees_box` and `cw_view2d_sees_rect` are the tests alone.
+- **Sound players as nodes** (`cartwheel/audio_nodes.h`, [audio](docs/guides/audio.md#players-in-a-scene)):
+  `AudioStreamPlayer`, `AudioStreamPlayer2D` and `AudioStreamPlayer3D` over the existing mixer, with `stream`,
+  `volume_db`, `pitch_scale`, `autoplay`, `loop`, `bus`, `max_polyphony`, `stream_paused`, `playing` and the signal
+  `finished`. The 3D player feeds a spatial voice (attenuation, cone, doppler, reverb send, occlusion) from the
+  node's world transform every fixed tick; the 2D player pans and fades by where the node is on the view.
+  `AudioListener3D` is the ears (several for split screen); with none the current camera listens. `finished` is
+  counted in fixed ticks from the sound's length, so it arrives on the same tick on every host. A paused tree holds
+  the voices of the players it pauses.
+- **What is inside an area.** `cw_area2d_overlapping_bodies`, `cw_area2d_overlapping_areas`, `cw_area2d_overlaps`
+  and the `cw_area3d_` set list the bodies and areas inside an `Area2D` / `Area3D`, oldest first, in an order that
+  is the same on every host and after a snapshot restore. `cw_physics_body2d_colliding_bodies` and the 3D twin list
+  what touches a body with `contact_monitor` on. Methods `get_overlapping_bodies`, `get_overlapping_areas`,
+  `overlaps` and `get_colliding_bodies` answer the debug channel.
+- **Saves that survive a game update** ([saves](docs/guides/saves.md)).
+  - The save store (`cartwheel/save.h`): named slots in a game's save data, each with a version, a size and its own
+    checksum. `cw_save_read` always fills the caller's struct: a slot that grew or shrank keeps the bytes both have,
+    an older version goes through a migrate hook, a damaged slot is dropped without taking the others with it.
+    `cw_save_write`, `cw_save_erase`, `cw_save_info`, `cw_save_count`, `cw_save_name`, `cw_save_room`;
+    `cw_save_app_store` over the app's own save data, `cw_shell_save_store` on the game shell
+    (`cw_shell_desc.game_save_slots`). The store is plain bytes in the save data every app already has.
+  - `cw_shell_desc.game_save_migrate` converts the game's struct from an older `game_save_version`, and
+    `game_save_import` turns an existing struct into slots.
+  - `cw_save_data` returns the app's save data and its size.
+- `cw_canvas_viewport`: the canvas rectangle the last 2D frame drew.
+- Sample `gameplay_nodes`: all of the above from one scene file. Gates `gameplay-nodes`, `unit-gameplay`,
+  `unit-curve`, `unit-audio-nodes`, `unit-save`, each with a control that must fail.
+
+### Changed
+- **A game on the shell whose save struct changes size keeps its players' progress.** Before, a save whose
+  `game_save_size` differed from the build's was thrown away whole, settings included. Now the bytes both sizes have
+  are kept and the rest reads zero, so a struct that grows at its end loses nothing; a different
+  `game_save_version` with no migrate hook starts the game's data over and keeps the settings (volumes, graphics,
+  text size). Existing saves load unchanged.
+
 ## v0.50.4 (2026-11-18)
 
 ### Fixed

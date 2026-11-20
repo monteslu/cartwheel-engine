@@ -341,6 +341,9 @@ bool cw_is_deterministic_run(void);    /* cart: host requested a replay run */
 /* Write the app's save data now (natively; a cart's host keeps the region
  * itself). No effect in a deterministic run or without save data. */
 void cw_save_commit(void);
+/* The app's save data (cw_app_desc.save) and its size; NULL and 0 when it has none. cartwheel/save.h lays it out
+ * as named slots (cw_save_app_store). */
+void *cw_save_data(size_t *size);
 uint32_t cw_host_seed(void);           /* seed the host delivered (0 = none) */
 void cw_quit(void);                    /* native: leave the loop; cart: no-op */
 void cw_set_title(const char *title); /* window title (native); ignored before the window exists */

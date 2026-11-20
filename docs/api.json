@@ -1392,6 +1392,56 @@
    ]
   },
   {
+   "header": "cartwheel/audio_nodes.h",
+   "summary": "Audio nodes: sounds placed in a scene, over the mixer of cartwheel/audio.h.\n\n  AudioStreamPlayer    (Node)   plays a sound as it is: music, UI, anything without a place\n  AudioStreamPlayer2D  (Node2D) pans and fades it by where the node is on the 2D view\n  AudioStreamPlayer3D  (Node3D) a spatial voice at the node: distance, cone, doppler, reverb zones\n  AudioListener3D      (Node3D) the ears. With none in the tree, the current Camera3D is the listener.\n\n── every player ─────────────────────────────────────────────────────\n  stream         the sound: an asset path (WAV, FLAC, MP3, Ogg Vorbis, Ogg Opus, modules). Loaded on first\n                 play and shared by every player that names it.\n  volume_db      gain in decibels (0 = as recorded, -6 halves the amplitude, -80 and below is silence)\n  pitch_scale    playback rate (1 = as recorded)\n  autoplay       start on the first fixed tick after the node is ready\n  loop           repeat until stopped\n  bus            the mixer bus by name (\"Master\", or a name given to cw_bus_create); an unknown name plays\n                 into the master\n  max_polyphony  how many copies may sound at once (1..8). play while that many are sounding stops the\n                 oldest first. Default 1: play restarts the sound.\n  stream_paused  hold every voice where it is\n  playing        true while a voice is sounding or held; set it true to play, false to stop (not saved)\n  signal finished()   a voice played to its end (never for a looping, stopped or stolen one)\n  methods play (an optional float: seconds into the sound to start from), stop\n\n── AudioStreamPlayer2D ──────────────────────────────────────────────\n  max_distance      pixels from the middle of the view at which the sound is silent (2000)\n  attenuation       the fade's exponent: gain = (1 - distance / max_distance) ^ attenuation (1 = linear)\n  panning_strength  how far a sound at the edge of the view is panned: 0 none, 1 hard left/right (1)\nThe view is the one the last frame drew (the current Camera2D); before a frame is drawn the sound plays\ncentred at full volume.\n\n── AudioStreamPlayer3D ──────────────────────────────────────────────\n  attenuation_model  NONE, INVERSE (default), LINEAR, EXPONENTIAL (cw_atten_model)\n  unit_size          the distance at which the sound is at full volume (cw_voice_3d.ref_distance; 1)\n  max_distance       beyond this it gets no quieter (0 = 1000)\n  rolloff            how fast it fades with distance (1)\n  cone_inner_angle, cone_outer_angle, cone_outer_gain   a directional sound along the node's -Z: full\n                     volume inside the inner angle (degrees, full width), cone_outer_gain outside the\n                     outer one. 360 / 360 (the default) is every direction.\n  doppler            0 = none, 1 = physical. The node's velocity is its movement between fixed ticks.\n  air_absorption     distance low-pass (cw_voice_3d.air_absorption; 0 = none)\n  reverb_send        level into the reverb zones (1; 0 = none)\n  occlusion          0 clear .. 1 blocked: a low-pass the game sets (a ray cast to the listener)\n  panning_only       always pan, never the head-related filter (cw_spatial_mode PAN)\nEvery fixed tick the player gives its voices the node's world position, its velocity and its facing.\n\n── AudioListener3D ──────────────────────────────────────────────────\n  current        this node is a listener (true). Several current listeners (split screen, up to\n                 CW_AUDIO_MAX_LISTENERS) become listeners 0.. in the order they entered the tree; each\n                 spatial voice is heard by the nearest.\nA tree with a 3D player or a listener node sets the mixer's listeners every fixed tick: from its current\nAudioListener3D nodes, else from the current Camera3D. cw_audio_nodes_set_auto_listener(tree, false) leaves\nthe listener to the game (cw_audio_set_listener).\n\n── the mixer ────────────────────────────────────────────────────────\nPlayers need the mixer running. A game that calls cw_audio_init (or uses the game shell, which does) owns it\nas before. If nothing has started it when a player first plays, the player starts it with the defaults and\nthe tree then calls cw_audio_update each frame.\n\n── timing ───────────────────────────────────────────────────────────\nPlayers are stepped once per fixed tick, after the physics step, in the order they entered the tree. For a\nsound whose length is known, `finished` is counted in fixed ticks from the sound's length and the pitch, not\nread back from the mixer: it is emitted on the same tick on every host and in a replay, with or without an\naudio device. A sound of unknown length (a tracker module) finishes when the mixer says its voice ended.\nA paused tree holds the voices of players it pauses (their pause mode) and their count.",
+   "functions": [
+    {
+     "name": "cw_audio_player_play",
+     "signature": "cw_voice cw_audio_player_play(cw_node player, double from_seconds)",
+     "doc": "Play a player node's stream from from_seconds (0 = the start). Returns the voice (null when the node is not\na player, has no stream, the stream does not load, or the mixer has no free voice). The voice starts at the\nnext mixed block; a player in a tree is also given its place (2D pan, 3D position) on the same call.",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_player_set_sound",
+     "signature": "void cw_audio_player_set_sound(cw_node player, cw_sound sound)",
+     "doc": "Give a player a sound made in code (cw_sound_from_pcm, cw_res_audio_sound, cw_sound_load with a desc of your\nown): it plays that instead of its stream until given the null handle. What was playing stops. The caller\nkeeps the sound alive.",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_player_stop",
+     "signature": "void cw_audio_player_stop(cw_node player)",
+     "doc": "Stop every voice of the player at once. No `finished`.",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_player_is_playing",
+     "signature": "bool cw_audio_player_is_playing(cw_node player)",
+     "doc": "true while a voice of the player is sounding or held paused; false for other nodes",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_player_position",
+     "signature": "double cw_audio_player_position(cw_node player)",
+     "doc": "Seconds into the sound of the player's newest voice, counted in fixed ticks (pitch applied; a looping sound\nkeeps counting past its length); 0 when nothing plays.",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_player_voice",
+     "signature": "cw_voice cw_audio_player_voice(cw_node player)",
+     "doc": "The player's newest voice, for anything the node has no property for (cw_voice_fade, ...); null when none.",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_nodes_set_auto_listener",
+     "signature": "void cw_audio_nodes_set_auto_listener(cw_tree *t, bool on)",
+     "doc": "false: the tree's audio nodes stop setting the mixer's listeners (the game calls cw_audio_set_listener).",
+     "inline": false
+    }
+   ],
+   "types": [],
+   "macros": []
+  },
+  {
    "header": "cartwheel/base.h",
    "summary": "cartwheel base: fixed-width types, asserts, logging, handles.\n\nEvery public header includes this. Nothing here touches SDL, GL or the\nwasmcart ABI.",
    "functions": [
@@ -2195,6 +2245,216 @@
    "macros": []
   },
   {
+   "header": "cartwheel/curve.h",
+   "summary": "Curves and paths: a Bezier curve you can walk by distance, and the nodes that put one in a scene.\n\n── cw_curve ─────────────────────────────────────────────────────────\nA curve is a list of points, each with an `in` and an `out` handle (offsets from the point; zero handles make\nstraight segments) and a tilt (a roll about the direction of travel, radians). Between two points it is a\ncubic Bezier: p0, p0 + out0, p1 + in1, p1. A closed curve adds the segment from the last point back to the\nfirst. One type serves 2D and 3D: a 2D curve keeps z at 0 (the *2d calls).\n\nWalking it by distance needs the curve BAKED: cut into short straight pieces with the distance to each. That\nhappens on the first query after a change (cw_curve_length, cw_curve_sample_baked, cw_curve_closest_offset,\n...) and costs about one Bezier evaluation per bake_interval of length; queries after it are a binary search.\nEach baked point also carries a frame (forward, up) carried along the curve without twisting about it (the\ndouble reflection method), so a loop or a corkscrew has a sensible \"up\" everywhere; a closed curve's frames\nmeet at the seam. Tilt rolls that frame.\n\nDeterminism: everything here is float + - * / and sqrt plus cartwheel/math.h (cw_sincos, cw_atan2), in a fixed\norder, so baking and sampling give the same bits natively and in a cart. Simulation may depend on it.\n\nThreads: a curve is not thread safe (a query may bake); use it from one thread at a time.\n\n── text form ────────────────────────────────────────────────────────\nPoints separated by commas, numbers by spaces. 3D: \"x y z\", \"x y z  ix iy iz  ox oy oz\" or the same plus a\ntilt in radians. 2D: \"x y\" or \"x y  ix iy  ox oy\". The Path nodes' `points` property is this text.\n\n── nodes ────────────────────────────────────────────────────────────\n  Path3D (Node3D), Path2D (Node2D)\n    points         the curve as text (above), in the node's local space\n    closed         join the last point to the first\n    bake_interval  the length of a baked piece: 0.2 (3D, meters), 5 (2D, pixels)\n    up             Path3D: the reference up the first frame is built from (0, 1, 0)\n    length         read-only\n    signal curve_changed()\n  PathFollow3D (Node3D), PathFollow2D (Node2D): a child of a Path that sits ON the curve. Setting progress\n  (or anything below) moves the node at once: its position, and its rotation by the rotation mode, in the\n  Path's space.\n    progress       distance along the curve\n    progress_ratio the same as 0..1 of the length (not saved: progress is)\n    loop           true: progress wraps around the length; false: it stops at the ends\n    speed          units a second added to progress every fixed tick (0 = the game moves it). The node is\n                   drawn smoothly between ticks.\n    h_offset, v_offset   3D: sideways (the frame's right) and up; 2D: along the curve and across it\n    rotation_mode  PathFollow3D: NONE (keep the node's rotation), Y (turn to face along the curve, level),\n                   XY (also pitch up and down it), XYZ (also roll by the curve's tilt), ORIENTED (the\n                   curve's own carried frame with its tilt: right through loops and corkscrews)\n    tilt_enabled   PathFollow3D: apply the curve's tilt (XYZ and ORIENTED)\n    use_model_front  PathFollow3D: the node's +Z faces along the curve instead of its -Z\n    rotates        PathFollow2D: turn the node along the curve\n    signal end_reached()   a follower with loop off and a speed arrived at an end (once per arrival)\nA follower under a node that is not a Path does nothing.",
+   "functions": [
+    {
+     "name": "cw_curve_new",
+     "signature": "cw_curve *cw_curve_new(void)",
+     "doc": "empty, open, bake_interval 0.2, up (0, 1, 0); free with cw_curve_free",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_free",
+     "signature": "void cw_curve_free(cw_curve *c)",
+     "doc": "NULL is a no-op",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_clear",
+     "signature": "void cw_curve_clear(cw_curve *c)",
+     "doc": "drops every point; settings stay",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_point_count",
+     "signature": "int cw_curve_point_count(const cw_curve *c)",
+     "doc": "points in the curve",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_add_point",
+     "signature": "void cw_curve_add_point(cw_curve *c, t3_vec3 position, t3_vec3 in, t3_vec3 out, int index)",
+     "doc": "Insert a point before index (index < 0 or >= count appends).",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_remove_point",
+     "signature": "void cw_curve_remove_point(cw_curve *c, int index)",
+     "doc": "out of range is ignored",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_get_point",
+     "signature": "cw_curve_point cw_curve_get_point(const cw_curve *c, int index)",
+     "doc": "zeros when out of range",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_set_point",
+     "signature": "void cw_curve_set_point(cw_curve *c, int index, cw_curve_point p)",
+     "doc": "out of range is ignored",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_set_closed",
+     "signature": "void cw_curve_set_closed(cw_curve *c, bool closed)",
+     "doc": "join the last point back to the first",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_closed",
+     "signature": "bool cw_curve_closed(const cw_curve *c)",
+     "doc": "as set (false by default)",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_set_bake_interval",
+     "signature": "void cw_curve_set_bake_interval(cw_curve *c, float interval)",
+     "doc": "The length of a baked piece (clamped to at least 0.0001). Smaller follows tight bends closer and costs more\nmemory: 16 bytes times length / interval, about.",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_bake_interval",
+     "signature": "float cw_curve_bake_interval(const cw_curve *c)",
+     "doc": "as set (0.2 by default)",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_set_up",
+     "signature": "void cw_curve_set_up(cw_curve *c, t3_vec3 up)",
+     "doc": "The reference up the first frame is made from (made perpendicular to the first direction).",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_version",
+     "signature": "uint32_t cw_curve_version(const cw_curve *c)",
+     "doc": "Counts every change to the curve (points, closed, interval, up): compare to know a curve moved.",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_sample",
+     "signature": "t3_vec3 cw_curve_sample(const cw_curve *c, int segment, float t)",
+     "doc": "The Bezier itself, not baked: segment in [0, point_count - 1) (one more when closed), t in [0, 1]. Zero when\nthe curve has no point; the point when it has one.",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_length",
+     "signature": "float cw_curve_length(cw_curve *c)",
+     "doc": "Baked queries (the first one after a change bakes). offset is a distance from the start, clamped to\n[0, length].",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_sample_baked",
+     "signature": "t3_vec3 cw_curve_sample_baked(cw_curve *c, float offset)",
+     "doc": "The point at that distance along the curve; zero for an empty curve.",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_sample_frame",
+     "signature": "cw_curve_frame cw_curve_sample_frame(cw_curve *c, float offset, bool apply_tilt)",
+     "doc": "Position and frame at offset; apply_tilt rolls up and right by the tilt there.",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_closest_offset",
+     "signature": "float cw_curve_closest_offset(cw_curve *c, t3_vec3 p)",
+     "doc": "The offset of the point on the curve nearest to p, and that point. O(baked pieces).",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_closest_point",
+     "signature": "t3_vec3 cw_curve_closest_point(cw_curve *c, t3_vec3 p)",
+     "doc": "see cw_curve_closest_offset",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_baked",
+     "signature": "int cw_curve_baked(cw_curve *c, const t3_vec3 **positions, const float **offsets)",
+     "doc": "The baked polyline: positions and the distance to each (for drawing a path or building a mesh along it).\nReturns the count; the arrays live until the next change to the curve. Either pointer may be NULL.",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_hash",
+     "signature": "uint32_t cw_curve_hash(cw_curve *c)",
+     "doc": "A hash of the baked curve (positions, distances, frames): equal on every host for the same points.",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_parse",
+     "signature": "bool cw_curve_parse(cw_curve *c, const char *text, int dims)",
+     "doc": "Text form (see the top). dims is 2 or 3. parse replaces the points; false (points cleared, logged) on text\nthat is not numbers or has a wrong count per point. format follows the snprintf contract: the full length is\nreturned, at most cap - 1 bytes + NUL written.",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_format",
+     "signature": "int cw_curve_format(const cw_curve *c, char *buf, int cap, int dims)",
+     "doc": "see cw_curve_parse; whole numbers are written as digits, others as the shortest text that reads back the same",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_add_point2d",
+     "signature": "void cw_curve_add_point2d(cw_curve *c, cw_vec2 position, cw_vec2 in, cw_vec2 out, int index)",
+     "doc": "2D forms of the same calls (z = 0).",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_sample_baked2d",
+     "signature": "cw_vec2 cw_curve_sample_baked2d(cw_curve *c, float offset)",
+     "doc": "cw_curve_sample_baked without z",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_sample_dir2d",
+     "signature": "void cw_curve_sample_dir2d(cw_curve *c, float offset, cw_vec2 *position, cw_vec2 *direction)",
+     "doc": "Position and unit direction of travel at offset (direction (1, 0) for a curve with no length).",
+     "inline": false
+    },
+    {
+     "name": "cw_curve_closest_offset2d",
+     "signature": "float cw_curve_closest_offset2d(cw_curve *c, cw_vec2 p)",
+     "doc": "cw_curve_closest_offset for a 2D point",
+     "inline": false
+    },
+    {
+     "name": "cw_path_curve",
+     "signature": "cw_curve *cw_path_curve(cw_node path)",
+     "doc": "The curve a Path2D or Path3D owns (NULL for other nodes). After changing it through this pointer call\ncw_path_curve_changed, which rewrites the node's `points` text, moves its followers and emits curve_changed.",
+     "inline": false
+    },
+    {
+     "name": "cw_path_curve_changed",
+     "signature": "void cw_path_curve_changed(cw_node path)",
+     "doc": "see cw_path_curve; no-op for a node that is not a Path",
+     "inline": false
+    },
+    {
+     "name": "cw_path_follow_update",
+     "signature": "void cw_path_follow_update(cw_node follow)",
+     "doc": "Move a PathFollow2D / PathFollow3D to its progress now (it does so by itself whenever one of its properties\nor its Path's curve changes; call this after moving it under another Path by hand).",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_curve",
+     "doc": "",
+     "decl": "typedef struct cw_curve cw_curve;"
+    },
+    {
+     "name": "cw_curve_point",
+     "doc": "",
+     "decl": "typedef struct cw_curve_point {\n  t3_vec3 position;\n  t3_vec3 in, out; /* handles, relative to position */\n  float tilt;      /* radians about the direction of travel */\n} cw_curve_point;"
+    },
+    {
+     "name": "cw_curve_frame",
+     "doc": "A place on a baked curve: forward is the direction of travel, up and right complete the frame (unit length,\nperpendicular; right = forward x up). tilt is the interpolated tilt, already applied to up and right when the\nsample asked for it.",
+     "decl": "typedef struct cw_curve_frame {\n  t3_vec3 position, forward, up, right;\n  float tilt;\n} cw_curve_frame;"
+    }
+   ],
+   "macros": []
+  },
+  {
    "header": "cartwheel/debug.h",
    "summary": "Named debug state: values a game (or the engine) exposes BY NAME to romdev,\nthe editor and tests.\n\nCarts publish the registry through the wasmcart debug ABI (WC_FLAG_DEBUG +\nwc_debug_state(), read pull-only by the host); set cw_app_desc.debug to\nopt in. Natively, CW_DEBUG_DUMP=path writes every field as JSON when the\napp exits, so a native run and a cart run can be compared field by field.\n\nRegister in init() (the table is built once, on first read). Pointers must\nstay valid for the app's lifetime.",
    "functions": [
@@ -2669,6 +2929,68 @@
      "doc": ""
     }
    ]
+  },
+  {
+   "header": "cartwheel/gameplay.h",
+   "summary": "Gameplay nodes: small node types a game would otherwise hand-roll.\n\n── Timer ────────────────────────────────────────────────────────────\nCounts down and emits `timeout`. It counts FIXED TICKS, never a clock: wait_time is turned into a whole\nnumber of ticks (wait_time / dt, rounded to the nearest, at least 1), so a replay, a rollback re-simulation\nand every host fire on the same tick. A timer runs in its node's fixed_update, in tree order, and follows the\nnode's pause mode (a paused tree stops it unless its pause mode says otherwise).\n\n  [node name=\"Spawn\" type=\"Timer\" parent=\".\"]\n  wait_time = 2.5\n  autostart = true\n\n  wait_time   seconds between timeouts (default 1). Changing it while running keeps the ticks already counted.\n  one_shot    stop after the first timeout (default false: repeat).\n  autostart   start when the node becomes ready.\n  paused      hold the count without stopping.\n  time_left   read-only: seconds until the next timeout, 0 when stopped.\n  running, elapsed_ticks   the live state (not saved in scenes; tree snapshots carry them, so a rollback\n              restores a timer mid-count).\n  signal timeout()   emitted from the timer's fixed_update. A timer started on tick T by a node that runs\n              BEFORE it in tree order counts tick T; started by a later node (or from outside the tick) its\n              first counted tick is T + 1. wait_time = 1 at 60 ticks a second fires 60 counted ticks later.\n  methods start (an optional float: a new wait_time), stop.\n\nCost: one integer compare per running timer per tick.\n\n── VisibleOnScreenNotifier3D / VisibleOnScreenNotifier2D ────────────\nEmits screen_entered when its box comes into view and screen_exited when it leaves: wake an enemy as the\nplayer sees it, free a bullet that flew off screen.\n  center, size   the box (3D) or rectangle (2D) in the node's space; size 2 x 2 x 2 m / 20 x 20 px\n  on_screen      read-only: the answer as of the last fixed tick\n  signals screen_entered(), screen_exited()\nThe test runs in the node's fixed_update. 3D: the box against the view volume of the tree's current Camera3D\n(cw_render3d_camera: its place, fov, near and far, and the render size's aspect); walls in between do not\ncount, a box is \"on screen\" while it is inside the view volume. 2D: the rectangle against the view the last\nframe drew (the current Camera2D). A hidden notifier (visible false) and one that leaves the tree are off\nscreen. A node that starts in view emits screen_entered on its first tick (2D: on the first tick after a\nframe was drawn).\n\n── SpringArm3D ──────────────────────────────────────────────────────\nA camera boom. The arm runs from the node along its +Z for spring_length; every fixed tick a sphere of\n`radius` (a ray at 0) is swept along it through the tree's 3D physics world, and the node's Node3D children\n(the camera) are put at the end of the arm, or `margin` short of the first thing hit. So a camera behind a\ncharacter slides in toward it instead of showing the inside of a wall.\n  spring_length, margin, radius, collision_mask\n  exclude_parent  ignore the nearest body above the arm in the tree: the character it follows (true)\n  extend_speed    the arm shortens at once; it grows back at this many meters a second (0 = at once)\n  hit_length      read-only: the length now\nChildren are drawn smoothly between ticks. There is no shake of any kind: for impact use the pad's rumble.\nCost: one shape cast per arm per tick.",
+   "functions": [
+    {
+     "name": "cw_timer_start",
+     "signature": "void cw_timer_start(cw_node timer, double wait_time)",
+     "doc": "Start (or restart from zero) a Timer node. wait_time > 0 also sets the property; <= 0 keeps it. No-op for a\nnode that is not a Timer.",
+     "inline": false
+    },
+    {
+     "name": "cw_timer_stop",
+     "signature": "void cw_timer_stop(cw_node timer)",
+     "doc": "Stop a Timer: no timeout until it is started again.",
+     "inline": false
+    },
+    {
+     "name": "cw_timer_is_stopped",
+     "signature": "bool cw_timer_is_stopped(cw_node timer)",
+     "doc": "true when the timer is not counting (never started, stopped, or a one_shot that fired); true for other nodes",
+     "inline": false
+    },
+    {
+     "name": "cw_timer_time_left",
+     "signature": "double cw_timer_time_left(cw_node timer)",
+     "doc": "Seconds until the next timeout (whole ticks times the fixed dt); 0 when stopped.",
+     "inline": false
+    },
+    {
+     "name": "cw_timer_ticks_left",
+     "signature": "int64_t cw_timer_ticks_left(cw_node timer)",
+     "doc": "Fixed ticks until the next timeout; 0 when stopped. The exact form of cw_timer_time_left.",
+     "inline": false
+    },
+    {
+     "name": "cw_notifier_is_on_screen",
+     "signature": "bool cw_notifier_is_on_screen(cw_node notifier)",
+     "doc": "true while a VisibleOnScreenNotifier3D / 2D is in view (its on_screen); false for other nodes",
+     "inline": false
+    },
+    {
+     "name": "cw_view3d_sees_box",
+     "signature": "bool cw_view3d_sees_box(cw_node camera, const t3_mat4 *box_world, t3_vec3 center, t3_vec3 size)",
+     "doc": "The tests behind the notifiers, for code that wants the answer without a node. 3D: does the box (centre and\nfull size in the space of box_world) reach into the camera node's view volume? 2D: does the rectangle (in the\nspace of the 6-float transform) reach into the view the tree's last frame drew (false before one was)?",
+     "inline": false
+    },
+    {
+     "name": "cw_view2d_sees_rect",
+     "signature": "bool cw_view2d_sees_rect(cw_tree *t, const float *xform, cw_vec2 center, cw_vec2 size)",
+     "doc": "see cw_view3d_sees_box",
+     "inline": false
+    },
+    {
+     "name": "cw_spring_arm_length",
+     "signature": "float cw_spring_arm_length(cw_node arm)",
+     "doc": "A SpringArm3D's length as of the last fixed tick (its hit_length); 0 for other nodes.",
+     "inline": false
+    }
+   ],
+   "types": [],
+   "macros": []
   },
   {
    "header": "cartwheel/gi.h",
@@ -7839,7 +8161,7 @@
   },
   {
    "header": "cartwheel/physics_nodes.h",
-   "summary": "Physics nodes: the scene tree's layer over the Box2D / Box3D wrappers\n(physics.h). The 2D and 3D sets mirror each other name for name.\n\n── node types ───────────────────────────────────────────────────────────\n  CollisionObject2D/3D  (abstract) collision_layer is an INDEX 0..31 (a\n                        body's shapes sit on ONE layer, physics.h) while\n                        collision_mask is a BIT SET: layer = 1, mask = 5\n                        means \"on layer 1, collides with layers 0 and 2\"\n                        (Godot uses bits for both). Prefer the name forms\n                        collision_layer_name / collision_mask_names\n                        (\"world|enemy\"), resolved against the project's\n                        layer names (below). An unknown name is logged as\n                        an error (cw_error): the layer stays as it was, a\n                        mask leaves that name out.\n  PhysicsBody2D/3D      (abstract) friction, bounce, rolling_resistance,\n                        tangent_speed (2D conveyor, px/s) / tangent_velocity\n                        (3D, m/s, shape-local), user_material,\n                        contact_monitor (emit body_entered/body_exited on\n                        contact begin/end), hit_events (emit body_hit(other,\n                        speed) above the world's hit speed).\n  StaticBody2D/3D       never moves by itself; moving the node teleports it.\n  KinematicBody2D/3D    follows the node's global transform: every tick\n                        the body is given the velocity that reaches it\n                        (pushes rigid bodies, carries characters).\n  RigidBody2D/3D        density, mass (0 = from density), gravity_scale,\n                        linear_damp, angular_damp, lock_rotation, bullet,\n                        can_sleep, freeze + freeze_mode (STATIC|KINEMATIC:\n                        the runtime body-type switch), linear_velocity,\n                        angular_velocity (live), sleeping (read-only).\n                        Its transform is written into the node after every\n                        step; setting position/rotation teleports it.\n  CharacterBody2D/3D    velocity, floor_max_angle, floor_snap_length,\n                        step_height, max_slides, push_mass, ride_platforms;\n                        read-only on_floor, on_wall, on_ceiling,\n                        floor_normal, wall_normal, platform_velocity.\n                        Moves only through cw_character*_move_and_slide\n                        (call it from fixed_update). Its shape (the first\n                        CollisionShape child: capsule, circle/sphere or\n                        rect/box) sizes the mover; a kinematic proxy body\n                        with the same shapes sits at the mover each step so\n                        areas, rays and other characters see it.\n  Area2D/3D             monitoring, monitorable; sensor shapes. Signals\n                        body_entered(node), body_exited(node),\n                        area_entered(node), area_exited(node); read-only\n                        overlap_count. Areas move with their node.\n                        DETECTION IS TWO-SIDED: an area sees a body only\n                        when the area's mask has the body's layer AND the\n                        body's mask has the area's layer (Box2D/Box3D\n                        filter both ways; Godot checks one side). Give a\n                        player a mask such as \"world|pickups|hazards\".\n                        A shape's `disabled` (and any shape property) may\n                        change at run time: the body is rebuilt before the\n                        next step and overlaps begin / end then.\n  CollisionShape2D      shape (RECT|CIRCLE|CAPSULE|POLYGON|SEGMENT|CHAIN),\n                        size, radius, height, points (\"x y, x y, ...\" local\n                        pixels; POLYGON may be concave: it is triangulated),\n                        loop (CHAIN), disabled. Direct child of a body or\n                        area; its own position/rotation/scale place it.\n                        CHAIN: one-sided segments. Open: walking the points\n                        on screen the solid side is on your LEFT (a ground\n                        line is listed right to left), and every authored\n                        segment collides (Box2D's ghost end vertices are\n                        added past the ends). loop: solid inside whatever\n                        the winding.\n  CollisionShape3D      shape (BOX|SPHERE|CAPSULE|CONVEX|TRIMESH), size,\n                        radius, height, points (\"x y z, ...\"), mesh (path\n                        to a MeshInstance3D or a baked CSG root, whose\n                        geometry CONVEX/TRIMESH use when points is\n                        empty), disabled. TRIMESH: static bodies only.\n  Joint2D/3D            joint_type (2D: PIN HINGE SLIDER DISTANCE SPRING\n                        WELD WHEEL MOTOR; 3D adds CONE (ball and socket\n                        with a cone limit)), node_a, node_b (paths relative\n                        to the joint; empty node_a = the world), anchor =\n                        the joint's global position, axis = its local x\n                        (2D) / z (3D: hinge axis) / x (3D slider);\n                        collide_connected, break_force, break_torque,\n                        limit_enabled, lower, upper, motor_enabled,\n                        motor_speed, max_motor, stiffness (Hz), damping,\n                        length (0 = current), cone_angle. Signal broken.\n                        Motor/limit/spring changes apply in place; other\n                        changes rebuild the joint.\n  RayCast2D/3D          enabled, target_position (local), collision_mask,\n                        collide_with_bodies, collide_with_areas,\n                        exclude_parent; read-only colliding, collider,\n                        collision_point, collision_normal, collision_fraction.\n  ShapeCast2D/3D        shape (2D: CIRCLE RECT CAPSULE; 3D: SPHERE BOX\n                        CAPSULE), radius, size, height, target_position\n                        (zero = overlap test), max_results, the ray's\n                        filters; read-only colliding, collision_count and\n                        the closest hit's collider/point/normal/fraction.\n\nUnits: 2D nodes are canvas pixels with y DOWN; the Box2D world runs in\nmeters with y up (pixels_per_meter, default 32). 3D nodes are meters.\n\n── worlds and the frame order ───────────────────────────────────────────\nOne 2D and one 3D world per tree (tree slots \"physics2d\" / \"physics3d\"),\ncreated when the first physics node enters. Each fixed tick:\n  1. hook (order -100): bodies' nodes snapshot their transform (render\n     interpolation start)\n  2. nodes' fixed_update in tree order: scripts read last step's results,\n     set velocities, call move_and_slide (characters move NOW against the\n     current world), move kinematic nodes\n  3. deferred structural changes and signals of phase 2 are applied\n  4. hook (order 100): node -> body (new/changed shapes, teleports,\n     kinematic targets, joints), step 2D then 3D, body -> node for rigid\n     bodies, ray/shape casts refresh, then contact / sensor / hit / break\n     events become signals, delivered in the library's event order; node\n     frees and adds from those handlers are deferred until all are sent\n  5. hook (order 200): Camera2D smoothing\nThis is Godot's order (physics_process, then the physics step), so a\nscript sees signals from the step that followed its last fixed_update.\nConsequence: a character riding a KinematicBody platform follows it with\none tick of lag (it moved in step 2, the platform moves in step 4); it is\nconsistent and deterministic. Snap length + step height also carry a\nrunning character across small gaps (about 1 m at default settings):\nlevel designers should make gaps wider or lower snap/step on the body.\nThe world does not step while the tree is paused.\n\nProject layer names / settings: an optional asset `project.cwproj` with\nlines `layer_names_2d = \"world, player, coins\"`, `layer_names_3d = ...`,\n`gravity_2d = vec2(0, 980)` (px/s^2, y down), `gravity_3d = vec3(0, -9.8,\n0)`, `pixels_per_meter = 32`, `substeps = 4`; or cw_physics_nodes_config\nbefore the first physics node enters a tree.",
+   "summary": "Physics nodes: the scene tree's layer over the Box2D / Box3D wrappers\n(physics.h). The 2D and 3D sets mirror each other name for name.\n\n── node types ───────────────────────────────────────────────────────────\n  CollisionObject2D/3D  (abstract) collision_layer is an INDEX 0..31 (a\n                        body's shapes sit on ONE layer, physics.h) while\n                        collision_mask is a BIT SET: layer = 1, mask = 5\n                        means \"on layer 1, collides with layers 0 and 2\"\n                        (Godot uses bits for both). Prefer the name forms\n                        collision_layer_name / collision_mask_names\n                        (\"world|enemy\"), resolved against the project's\n                        layer names (below). An unknown name is logged as\n                        an error (cw_error): the layer stays as it was, a\n                        mask leaves that name out.\n  PhysicsBody2D/3D      (abstract) friction, bounce, rolling_resistance,\n                        tangent_speed (2D conveyor, px/s) / tangent_velocity\n                        (3D, m/s, shape-local), user_material,\n                        contact_monitor (emit body_entered/body_exited on\n                        contact begin/end), hit_events (emit body_hit(other,\n                        speed) above the world's hit speed).\n  StaticBody2D/3D       never moves by itself; moving the node teleports it.\n  KinematicBody2D/3D    follows the node's global transform: every tick\n                        the body is given the velocity that reaches it\n                        (pushes rigid bodies, carries characters).\n  RigidBody2D/3D        density, mass (0 = from density), gravity_scale,\n                        linear_damp, angular_damp, lock_rotation, bullet,\n                        can_sleep, freeze + freeze_mode (STATIC|KINEMATIC:\n                        the runtime body-type switch), linear_velocity,\n                        angular_velocity (live), sleeping (read-only).\n                        Its transform is written into the node after every\n                        step; setting position/rotation teleports it.\n  CharacterBody2D/3D    velocity, floor_max_angle, floor_snap_length,\n                        step_height, max_slides, push_mass, ride_platforms;\n                        read-only on_floor, on_wall, on_ceiling,\n                        floor_normal, wall_normal, platform_velocity.\n                        Moves only through cw_character*_move_and_slide\n                        (call it from fixed_update). Its shape (the first\n                        CollisionShape child: capsule, circle/sphere or\n                        rect/box) sizes the mover; a kinematic proxy body\n                        with the same shapes sits at the mover each step so\n                        areas, rays and other characters see it.\n  Area2D/3D             monitoring, monitorable; sensor shapes. Signals\n                        body_entered(node), body_exited(node),\n                        area_entered(node), area_exited(node); read-only\n                        overlap_count; cw_area2d_overlapping_bodies and its\n                        siblings list what is inside. Areas move with their node.\n                        DETECTION IS TWO-SIDED: an area sees a body only\n                        when the area's mask has the body's layer AND the\n                        body's mask has the area's layer (Box2D/Box3D\n                        filter both ways; Godot checks one side). Give a\n                        player a mask such as \"world|pickups|hazards\".\n                        A shape's `disabled` (and any shape property) may\n                        change at run time: the body is rebuilt before the\n                        next step and overlaps begin / end then.\n  CollisionShape2D      shape (RECT|CIRCLE|CAPSULE|POLYGON|SEGMENT|CHAIN),\n                        size, radius, height, points (\"x y, x y, ...\" local\n                        pixels; POLYGON may be concave: it is triangulated),\n                        loop (CHAIN), disabled. Direct child of a body or\n                        area; its own position/rotation/scale place it.\n                        CHAIN: one-sided segments. Open: walking the points\n                        on screen the solid side is on your LEFT (a ground\n                        line is listed right to left), and every authored\n                        segment collides (Box2D's ghost end vertices are\n                        added past the ends). loop: solid inside whatever\n                        the winding.\n  CollisionShape3D      shape (BOX|SPHERE|CAPSULE|CONVEX|TRIMESH), size,\n                        radius, height, points (\"x y z, ...\"), mesh (path\n                        to a MeshInstance3D or a baked CSG root, whose\n                        geometry CONVEX/TRIMESH use when points is\n                        empty), disabled. TRIMESH: static bodies only.\n  Joint2D/3D            joint_type (2D: PIN HINGE SLIDER DISTANCE SPRING\n                        WELD WHEEL MOTOR; 3D adds CONE (ball and socket\n                        with a cone limit)), node_a, node_b (paths relative\n                        to the joint; empty node_a = the world), anchor =\n                        the joint's global position, axis = its local x\n                        (2D) / z (3D: hinge axis) / x (3D slider);\n                        collide_connected, break_force, break_torque,\n                        limit_enabled, lower, upper, motor_enabled,\n                        motor_speed, max_motor, stiffness (Hz), damping,\n                        length (0 = current), cone_angle. Signal broken.\n                        Motor/limit/spring changes apply in place; other\n                        changes rebuild the joint.\n  RayCast2D/3D          enabled, target_position (local), collision_mask,\n                        collide_with_bodies, collide_with_areas,\n                        exclude_parent; read-only colliding, collider,\n                        collision_point, collision_normal, collision_fraction.\n  ShapeCast2D/3D        shape (2D: CIRCLE RECT CAPSULE; 3D: SPHERE BOX\n                        CAPSULE), radius, size, height, target_position\n                        (zero = overlap test), max_results, the ray's\n                        filters; read-only colliding, collision_count and\n                        the closest hit's collider/point/normal/fraction.\n\nUnits: 2D nodes are canvas pixels with y DOWN; the Box2D world runs in\nmeters with y up (pixels_per_meter, default 32). 3D nodes are meters.\n\n── worlds and the frame order ───────────────────────────────────────────\nOne 2D and one 3D world per tree (tree slots \"physics2d\" / \"physics3d\"),\ncreated when the first physics node enters. Each fixed tick:\n  1. hook (order -100): bodies' nodes snapshot their transform (render\n     interpolation start)\n  2. nodes' fixed_update in tree order: scripts read last step's results,\n     set velocities, call move_and_slide (characters move NOW against the\n     current world), move kinematic nodes\n  3. deferred structural changes and signals of phase 2 are applied\n  4. hook (order 100): node -> body (new/changed shapes, teleports,\n     kinematic targets, joints), step 2D then 3D, body -> node for rigid\n     bodies, ray/shape casts refresh, then contact / sensor / hit / break\n     events become signals, delivered in the library's event order; node\n     frees and adds from those handlers are deferred until all are sent\n  5. hook (order 200): Camera2D smoothing\nThis is Godot's order (physics_process, then the physics step), so a\nscript sees signals from the step that followed its last fixed_update.\nConsequence: a character riding a KinematicBody platform follows it with\none tick of lag (it moved in step 2, the platform moves in step 4); it is\nconsistent and deterministic. Snap length + step height also carry a\nrunning character across small gaps (about 1 m at default settings):\nlevel designers should make gaps wider or lower snap/step on the body.\nThe world does not step while the tree is paused.\n\nProject layer names / settings: an optional asset `project.cwproj` with\nlines `layer_names_2d = \"world, player, coins\"`, `layer_names_3d = ...`,\n`gravity_2d = vec2(0, 980)` (px/s^2, y down), `gravity_3d = vec3(0, -9.8,\n0)`, `pixels_per_meter = 32`, `substeps = 4`; or cw_physics_nodes_config\nbefore the first physics node enters a tree.",
    "functions": [
     {
      "name": "cw_physics_nodes_get_config",
@@ -7917,6 +8239,54 @@
      "name": "cw_rigid_body3d_apply_impulse",
      "signature": "void cw_rigid_body3d_apply_impulse(cw_node n, t3_vec3 impulse)",
      "doc": "Impulse (N*s) at the center of mass of a RigidBody3D node; ignored for other nodes.",
+     "inline": false
+    },
+    {
+     "name": "cw_area2d_overlapping_bodies",
+     "signature": "int cw_area2d_overlapping_bodies(cw_node area, cw_node *out, int cap)",
+     "doc": "What is inside an area now: the bodies (or the areas) whose shapes overlap its shapes, in the order they came\nin (oldest first; the order two enter in on the same step is the physics library's event order, the same on\nevery host and after a snapshot restore). Returns how many there are and fills out with up to cap of them\n(out may be NULL to count). The list is as of the last physics step: something that entered this tick is in it\nwhen the area's body_entered arrives. An area lists another area only while that one is monitorable. 0 for a\nnode that is not an area. The methods get_overlapping_bodies / get_overlapping_areas give the same lists to\nthe debug channel as names.",
+     "inline": false
+    },
+    {
+     "name": "cw_area2d_overlapping_areas",
+     "signature": "int cw_area2d_overlapping_areas(cw_node area, cw_node *out, int cap)",
+     "doc": "see cw_area2d_overlapping_bodies",
+     "inline": false
+    },
+    {
+     "name": "cw_area2d_overlaps",
+     "signature": "bool cw_area2d_overlaps(cw_node area, cw_node other)",
+     "doc": "true while other (a body or an area) is inside the area; O(1)",
+     "inline": false
+    },
+    {
+     "name": "cw_area3d_overlapping_bodies",
+     "signature": "int cw_area3d_overlapping_bodies(cw_node area, cw_node *out, int cap)",
+     "doc": "The 3D twins.",
+     "inline": false
+    },
+    {
+     "name": "cw_area3d_overlapping_areas",
+     "signature": "int cw_area3d_overlapping_areas(cw_node area, cw_node *out, int cap)",
+     "doc": "see cw_area2d_overlapping_bodies",
+     "inline": false
+    },
+    {
+     "name": "cw_area3d_overlaps",
+     "signature": "bool cw_area3d_overlaps(cw_node area, cw_node other)",
+     "doc": "see cw_area2d_overlaps",
+     "inline": false
+    },
+    {
+     "name": "cw_physics_body2d_colliding_bodies",
+     "signature": "int cw_physics_body2d_colliding_bodies(cw_node body, cw_node *out, int cap)",
+     "doc": "The bodies touching a PhysicsBody whose contact_monitor is on, oldest contact first (the list behind its\nbody_entered / body_exited). Same contract as the area lists; 0 with contact_monitor off.",
+     "inline": false
+    },
+    {
+     "name": "cw_physics_body3d_colliding_bodies",
+     "signature": "int cw_physics_body3d_colliding_bodies(cw_node body, cw_node *out, int cap)",
+     "doc": "The 3D twin of cw_physics_body2d_colliding_bodies.",
      "inline": false
     },
     {
@@ -8536,6 +8906,12 @@
      "name": "cw_save_commit",
      "signature": "void cw_save_commit(void)",
      "doc": "Write the app's save data now (natively; a cart's host keeps the region\nitself). No effect in a deterministic run or without save data.",
+     "inline": false
+    },
+    {
+     "name": "cw_save_data",
+     "signature": "void *cw_save_data(size_t *size)",
+     "doc": "The app's save data (cw_app_desc.save) and its size; NULL and 0 when it has none. cartwheel/save.h lays it out\nas named slots (cw_save_app_store).",
      "inline": false
     },
     {
@@ -11711,6 +12087,101 @@
    "macros": []
   },
   {
+   "header": "cartwheel/save.h",
+   "summary": "The save store: named, versioned slots inside a game's save data, so a game can grow what it saves without\nlosing what players already have.\n\nA game's save data is one block of bytes the host keeps (cw_app_desc.save: a file natively, the wasmcart\nsave region in a cart). Laid out as one C struct, any change to that struct orphans every existing save.\nThe store lays the same block out as SLOTS instead: each has a name (\"progress\", \"options\", \"slot1\"), a\nversion number, a size and its own checksum, and is read and written by name.\n\n  static uint8_t region[8192];                       // cw_app_desc.save = region, .save_size = sizeof region\n  cw_save_store st;\n  cw_save_open(&st, region, sizeof region, NULL, NULL);\n  progress p;\n  cw_save_read(&st, \"progress\", PROGRESS_VERSION, &p, sizeof p, migrate_progress, NULL);\n  ...\n  cw_save_write(&st, \"progress\", PROGRESS_VERSION, &p, sizeof p);\n  cw_save_commit();                                  // cartwheel/platform.h: flush the block now\n\nA game on the game shell (cartwheel/shell.h) sets cw_shell_desc.game_save_slots and uses\ncw_shell_save_store(): the store then lives in the shell's block beside the settings.\n\n── growing a save ───────────────────────────────────────────────────\nReading a slot fills the caller's struct whatever was stored:\n  - no such slot: zeros (CW_SAVE_NONE). A new game.\n  - the same version and size: the bytes (CW_SAVE_OK).\n  - the same version, another size: the bytes both have, zeros for the rest (CW_SAVE_RESIZED). So a struct\n    that only GROWS AT ITS END needs no version change and no code: old saves load, the new fields read 0.\n  - an older version: the migrate hook gets the old version and bytes and fills the new struct\n    (CW_SAVE_MIGRATED). Without a hook, or when the hook returns false, the struct is zeros\n    (CW_SAVE_DISCARDED); the stored bytes stay until the slot is next written, so a later build with a hook\n    can still read them.\n  - a newer version (a save from a later build of the game): zeros (CW_SAVE_NEWER), stored bytes left alone.\nChange a slot's version only when its layout changes in a way a prefix copy cannot follow (a field removed,\nreordered or resized), and write the hook that reads each older version.\n\n── damage ───────────────────────────────────────────────────────────\nEvery slot has its own checksum. Opening the store drops a slot whose checksum fails and everything after a\nslot whose bounds make no sense; the slots before it survive. A block that is not a store at all (zeros: a\nfirst run; or a game's older raw struct) is formatted empty, after the `legacy` hook has had the old bytes\nto turn into slots.\n\n── the format (little-endian, fixed) ────────────────────────────────\n  0   \"CWS1\"\n  4   u32  bytes used, this header included\n  8   slots, each: u8 name length, u8 0, u16 version, u32 size, u32 checksum (FNV-1a of name then data),\n      name, zeros to a multiple of 4, data, zeros to a multiple of 4\nA slot costs 12 bytes plus its name and data, each rounded up to 4. Names are 1..63 bytes.\n\nNothing here allocates beyond a temporary copy of a slot being migrated (cw_frame_alloc), reads a clock or\ntouches a file: the store is plain memory the caller owns, the same on every host. Not thread safe.",
+   "functions": [
+    {
+     "name": "cw_save_open",
+     "signature": "bool cw_save_open(cw_save_store *st, void *block, size_t size, cw_save_legacy_fn legacy, void *user)",
+     "doc": "Bind a store to a block of size bytes (at least 16) and check it: a valid store keeps its slots (damaged\nones are dropped, see above), anything else becomes an empty store (after `legacy`, when given and the block\nwas not all zeros). Returns false (logged) only for a NULL or too small block.",
+     "inline": false
+    },
+    {
+     "name": "cw_save_read",
+     "signature": "cw_save_result cw_save_read(cw_save_store *st, const char *slot, uint16_t version, void *out, size_t size, cw_save_migrate_fn migrate, void *user)",
+     "doc": "Read a slot into out (size bytes, always fully written): see the rules at the top.",
+     "inline": false
+    },
+    {
+     "name": "cw_save_write",
+     "signature": "bool cw_save_write(cw_save_store *st, const char *slot, uint16_t version, const void *data, size_t size)",
+     "doc": "Write (or replace) a slot. false (logged, the store unchanged) when it does not fit or the name is not 1..63\nbytes. Call cw_save_commit (platform.h) or cw_shell_save_commit to flush the block.",
+     "inline": false
+    },
+    {
+     "name": "cw_save_erase",
+     "signature": "bool cw_save_erase(cw_save_store *st, const char *slot)",
+     "doc": "false when there was no such slot",
+     "inline": false
+    },
+    {
+     "name": "cw_save_info",
+     "signature": "bool cw_save_info(const cw_save_store *st, const char *slot, uint16_t *version, size_t *size)",
+     "doc": "A slot's stored version and size without reading it; false when absent. Either pointer may be NULL.",
+     "inline": false
+    },
+    {
+     "name": "cw_save_count",
+     "signature": "int cw_save_count(const cw_save_store *st)",
+     "doc": "slots in the store",
+     "inline": false
+    },
+    {
+     "name": "cw_save_name",
+     "signature": "bool cw_save_name(const cw_save_store *st, int index, char *buf, size_t cap)",
+     "doc": "The i-th slot's name (storage order: oldest write first), copied into buf; false when out of range.",
+     "inline": false
+    },
+    {
+     "name": "cw_save_used",
+     "signature": "size_t cw_save_used(const cw_save_store *st)",
+     "doc": "bytes used, header included",
+     "inline": false
+    },
+    {
+     "name": "cw_save_room",
+     "signature": "size_t cw_save_room(const cw_save_store *st, const char *slot)",
+     "doc": "The largest data size a NEW slot with this name could still be given.",
+     "inline": false
+    },
+    {
+     "name": "cw_save_clear",
+     "signature": "void cw_save_clear(cw_save_store *st)",
+     "doc": "erase every slot",
+     "inline": false
+    },
+    {
+     "name": "cw_save_app_store",
+     "signature": "cw_save_store *cw_save_app_store(cw_save_legacy_fn legacy, void *user)",
+     "doc": "A store over the app's own save data (cw_app_desc.save), opened on first use; NULL (logged) when the app\nhas none or it is under 16 bytes. For games that do not use the game shell. `legacy` as in cw_save_open, used\nby the call that opens it.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_save_store",
+     "doc": "",
+     "decl": "typedef struct cw_save_store {\n  uint8_t *base;  /* the block; NULL until opened */\n  size_t size;    /* its size in bytes */\n} cw_save_store;"
+    },
+    {
+     "name": "cw_save_result",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_SAVE_NONE,      /* no such slot: out is zeros */\n  CW_SAVE_OK,        /* read as stored */\n  CW_SAVE_RESIZED,   /* same version, another size: the shared prefix, zeros after it */\n  CW_SAVE_MIGRATED,  /* an older version, converted by the hook */\n  CW_SAVE_DISCARDED, /* an older version with no hook (or the hook refused): out is zeros */\n  CW_SAVE_NEWER,     /* written by a later version of the game: out is zeros */\n} cw_save_result;"
+    },
+    {
+     "name": "cw_save_migrate_fn",
+     "doc": "Convert an older version of a slot: old/old_size are the stored bytes (version old_version), out/out_size\nthe struct being read, zeroed. Return false to give up (the read then reports CW_SAVE_DISCARDED).",
+     "decl": "typedef bool (*cw_save_migrate_fn)(uint16_t old_version, const void *old, size_t old_size, void *out, size_t out_size,\n                                   void *user);"
+    },
+    {
+     "name": "cw_save_legacy_fn",
+     "doc": "The block held something that is not a store (a game's save from before it used one): old/old_size are\nthose bytes. Write what should be kept into slots of st (already formatted empty).",
+     "decl": "typedef void (*cw_save_legacy_fn)(cw_save_store *st, const void *old, size_t old_size, void *user);"
+    }
+   ],
+   "macros": []
+  },
+  {
    "header": "cartwheel/scene.h",
    "summary": "cartwheel scene model: nodes, the scene tree, groups, signals, reflection.\n\nA node is a named element of a tree. Its TYPE (registered once) says what\ndata it carries, which properties it exposes by name (reflection), which\nsignals it can emit and which lifecycle callbacks it has. Node types\ninherit: Node3D extends Node, MeshInstance3D extends Node3D. Users hold\nnodes by generational handle (cw_node); a freed node's handle reads as\nnull, never as another node.\n\nProcessing order is tree order (depth first, children in order), so a run\nis deterministic. Adding or removing nodes while the tree is being\nprocessed is queued and applied at the end of the current phase.\n\nEvery property is reachable by name (cw_node_set / cw_node_get) with typed\nvalues (cw_value). That one path serves the editor's inspector, the text\nscene format, animation tracks, romdev's debug channel and script bindings.",
    "functions": [
@@ -12521,6 +12992,12 @@
      "inline": false
     },
     {
+     "name": "cw_canvas_viewport",
+     "signature": "bool cw_canvas_viewport(cw_tree *t, cw_rect *out)",
+     "doc": "The default canvas as the last frame drew it: its rectangle in canvas pixels (the virtual canvas when\nCanvasSettings sets one). false before the tree has drawn a 2D frame. With cw_canvas_screen_to_world this\ngives the part of the world that was on screen.",
+     "inline": false
+    },
+    {
      "name": "cw_canvas_camera_value",
      "signature": "cw_camera2d cw_canvas_camera_value(cw_tree *t)",
      "doc": "The camera2d value the last frame used (zoom, limits applied).",
@@ -12806,13 +13283,19 @@
     {
      "name": "cw_shell_game_save",
      "signature": "void *cw_shell_game_save(void)",
-     "doc": "The game's save data: game_save_size bytes, zeroed when the save was\nmissing or from another version. Write it, then cw_shell_save_commit.",
+     "doc": "The game's save data: game_save_size bytes, zeroed when the save was\nmissing or from another version with no migration (see cw_shell_desc). Write it, then cw_shell_save_commit.",
      "inline": false
     },
     {
      "name": "cw_shell_save_commit",
      "signature": "void cw_shell_save_commit(void)",
      "doc": "write the settings and the game's save data now",
+     "inline": false
+    },
+    {
+     "name": "cw_shell_save_store",
+     "signature": "cw_save_store *cw_shell_save_store(void)",
+     "doc": "The game's save data as a slot store (cw_shell_desc.game_save_slots): CW_SHELL_GAME_SAVE_MAX bytes of named,\nversioned slots. NULL (logged) when the game did not ask for slots. cw_save_write, then cw_shell_save_commit.",
      "inline": false
     },
     {
@@ -12956,7 +13439,7 @@
     {
      "name": "cw_shell_desc",
      "doc": "",
-     "decl": "typedef struct cw_shell_desc {\n  const char *title;      /* the title screen's heading (default \"cartwheel\") */\n  const char *subtitle;   /* a line under it (optional) */\n  int max_players;        /* 1..4 (default 1); more than 1 adds the join screen */\n  bool shared_screen;     /* every player plays in one shared view (one camera, a scrolling brawler or a co-op\n                           * platformer): cw_shell_split draws a single view and cw_shell_player_rect gives each\n                           * player the whole canvas */\n  bool loading;           /* start on the loading screen until cw_shell_loaded */\n  size_t game_save_size;  /* bytes of the game's own save data (cw_shell_game_save) */\n  uint16_t game_save_version; /* change it when that layout changes: an older save starts over */\n  void (*start)(int players, void *user);   /* Play: the players joined; set the match up */\n  void (*quit)(void *user);                 /* Quit to title, from the pause menu */\n  void (*sound)(cw_shell_sound s, void *user);\n  void (*screen_changed)(cw_shell_screen from, cw_shell_screen to, void *user);\n  /* Draws behind the title, join, settings and loading screens and the pause menu (in the shell's own 2D pass,\n   * canvas units): the game's backdrop, so these screens are not a dark panel. The shell then dims it lightly\n   * and draws the menu over it. NULL: the dark panel. */\n  void (*draw_background)(cw_shell_screen screen, cw_vec2 canvas, void *user);\n  /* The join screen was opened during play (cw_shell_join_open) and confirmed: the match now has this many\n   * players (the highest seat held plus one; see cw_shell_seat_taken for which seats are held). The game adapts\n   * its roster; it is not started again. Not called when the screen is cancelled. */\n  void (*players_changed)(int players, void *user);\n  cw_font font;           /* default: the built-in sans (cw_ui_font_sans) */\n  cw_color accent;        /* the selected item's colour (default a warm yellow) */\n  void *user;\n} ..."
+     "decl": "typedef struct cw_shell_desc {\n  const char *title;      /* the title screen's heading (default \"cartwheel\") */\n  const char *subtitle;   /* a line under it (optional) */\n  int max_players;        /* 1..4 (default 1); more than 1 adds the join screen */\n  bool shared_screen;     /* every player plays in one shared view (one camera, a scrolling brawler or a co-op\n                           * platformer): cw_shell_split draws a single view and cw_shell_player_rect gives each\n                           * player the whole canvas */\n  bool loading;           /* start on the loading screen until cw_shell_loaded */\n  size_t game_save_size;  /* bytes of the game's own save data (cw_shell_game_save). A save from a build where it\n                           * was another size (same version) keeps the bytes both have, zeros after them: a\n                           * struct that only grows at its end loses nothing. */\n  uint16_t game_save_version; /* change it when the layout changes in a way that cannot follow (a field removed or\n                               * moved): game_save_migrate then converts an older save, or it starts over */\n  /* Convert the game's save data from an older game_save_version: old/old_size are the stored bytes, out (zeroed,\n   * out_size = game_save_size) the data to fill. Return false to start over. NULL: an older version starts over.\n   * The settings (volumes, graphics, text size) are kept either way. */\n  bool (*game_save_migrate)(uint16_t old_version, const void *old, size_t old_size, void *out, size_t out_size, void *user);\n  /* The game keeps its save data as named, versioned slots (cartwheel/save.h) instead of one struct: use\n   * cw_shell_save_store, and leave game_save_size / game_save_version / game_save_migrate unset. The first run\n   * over a save from before the game used slots calls game_save_import with the old struct (its version and\n   * bytes) and the empty store to write slots into. */\n  bool game_save_slots;\n  void (*game_save_impo ..."
     },
     {
      "name": "cw_shell_shake",

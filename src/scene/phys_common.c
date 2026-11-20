@@ -49,6 +49,35 @@ int cw__pair_add(cw_map *m, uint64_t other, int delta) {
   return (int)c;
 }
 
+int cw__pairs_list(const cw_map *pairs, const cw_node_type *area_t, int want, cw_node *out, int cap) {
+  int k = 0;
+  if (!pairs || !pairs->slot_cap) return 0;
+  for (int i = 0; i < pairs->count; i++) {
+    if (!cw_map_live(pairs, i)) continue;
+    cw_node o = { pairs->keys[i] };
+    if (!cw_node_valid(o) || (cw_node_data_t(o, area_t) != NULL) != (want == 1)) continue;
+    if (out && k < cap) out[k] = o;
+    k++;
+  }
+  return k;
+}
+
+const char *cw__pairs_names(const cw_map *pairs, const cw_node_type *area_t, int want) {
+  char buf[1024];
+  int len = 0;
+  buf[0] = 0;
+  if (pairs && pairs->slot_cap)
+    for (int i = 0; i < pairs->count; i++) {
+      if (!cw_map_live(pairs, i)) continue;
+      cw_node o = { pairs->keys[i] };
+      if (!cw_node_valid(o) || (cw_node_data_t(o, area_t) != NULL) != (want == 1)) continue;
+      int w = snprintf(buf + len, sizeof buf - (size_t)len, "%s%s", len ? "," : "", cw_node_name(o));
+      if (w < 0 || w >= (int)sizeof buf - len) break;
+      len += w;
+    }
+  return cw_intern(buf);
+}
+
 int cw__layer_index(const char *const names[CW_PHYS_LAYERS], const char *name) {
   const char *in = cw_intern(name);
   for (int i = 0; i < CW_PHYS_LAYERS; i++)

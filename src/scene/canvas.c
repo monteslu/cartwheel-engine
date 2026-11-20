@@ -453,4 +453,10 @@ cw_vec2 cw_canvas_world_to_screen(cw_tree *t, cw_vec2 w) {
   if (!s->has_cam) return w;
   return cw_camera2d_world_to_screen(&s->cam, s->viewport, w);
 }
+bool cw_canvas_viewport(cw_tree *t, cw_rect *out) {
+  canvas_state *s = t ? cw_tree_slot(t, "canvas") : NULL;
+  if (!s || !(s->viewport.w > 0)) return false;
+  if (out) *out = s->viewport;
+  return true;
+}
 cw_canvas_stats cw_canvas_get_stats(cw_tree *t) { return cstate(t)->stats; }

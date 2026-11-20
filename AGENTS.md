@@ -170,7 +170,18 @@ cw_input_rumble(player, 0.8f, 0.4f, 120);             /* hits and blasts: the pa
 
 **Audio** (`audio.h`, [audio](docs/guides/audio.md)): `cw_sound s = cw_sound_load("res://sfx/hit.wav", NULL);`
 `cw_audio_play(s, &(cw_play_desc){ .bus = cw_shell_sfx_bus() });` music on `cw_shell_music_bus()`; 3D sound and
-reverb zones in the guide.
+reverb zones in the guide. In a scene: `AudioStreamPlayer`, `AudioStreamPlayer2D`, `AudioStreamPlayer3D` nodes
+(`stream`, `autoplay`, `loop`, `bus`, signal `finished`; `audio_nodes.h`).
+
+**Gameplay nodes** (`gameplay.h`, `curve.h`, [gameplay nodes](docs/guides/gameplay-nodes.md)): do not hand-roll these.
+`Timer` (`wait_time`, `one_shot`, `autostart`, signal `timeout`; counts fixed ticks). `Path3D` / `Path2D` with a
+`PathFollow3D` / `PathFollow2D` child (`progress`, `speed`, `loop`; `cw_curve_*` in C: sample by distance, nearest
+point). `SpringArm3D` for a follow camera that does not go through walls. `VisibleOnScreenNotifier3D` / `2D`
+(`screen_entered`, `screen_exited`). What is inside an area: `cw_area3d_overlapping_bodies(area, out, cap)`.
+
+**Saves** (`save.h`, `shell.h`, [saves](docs/guides/saves.md)): the shell keeps the game's struct beside the settings
+(`game_save_size`); grow that struct only at its end and old saves keep loading. A changed layout needs
+`game_save_version` + `game_save_migrate`. Several records: `game_save_slots` and `cw_save_read` / `cw_save_write`.
 
 **Text and HUD** (`render2d.h`, `ui.h`, [ui](docs/guides/ui.md)): in `render`, `cw_r2d_begin(NULL)`, then
 `cw_r2d_text(cw_ui_font_sans(), "3 laps", pos, &(cw_text_style){ .size = h * 0.03f })`, `cw_r2d_end()`, then

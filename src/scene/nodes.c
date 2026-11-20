@@ -474,6 +474,8 @@ void cw_scene_register_builtin_types(void) {
   cw__register_water_types();
   void cw_triggers_register(void); /* src/scene/triggers.c: data-driven rules (cartwheel/triggers.h) */
   cw_triggers_register();
+  void cw__register_gameplay_types(void); /* src/scene/gameplay.c: Timer and the other gameplay nodes (cartwheel/gameplay.h) */
+  cw__register_gameplay_types();
   void cw__register_nav_types(void); /* src/nav: regions, agents, obstacles (cartwheel/nav.h) */
   cw__register_nav_types();
   void cw__register_audio_types(void); /* src/audio: ReverbZone3D */
