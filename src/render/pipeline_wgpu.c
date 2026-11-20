@@ -207,6 +207,7 @@ static struct {
   unsigned prog;
   unsigned target;      /* 0 = the window */
   int target_w, target_h;
+  bool view_vp; /* a one-pass split screen's geometry: the viewport is the view's rectangle (cw_pass_view_viewport) */
   unsigned units[MAX_UNITS];
   cw_pass_blend blend;
   bool depth_test, depth_write;
@@ -1112,12 +1113,16 @@ void cw__pw_set_depth(bool test, bool write) {
   W.depth_write = write;
 }
 
+void cw__pw_set_scissor(const int *rect) { W.view_vp = rect != NULL; }
+
 void cw__pw_state_reset(void) {
+  W.view_vp = false;
   W.blend = CW_PASS_BLEND_NONE;
   W.depth_test = W.depth_write = false;
 }
 
 void cw__pw_bind_target(const cw_rt *rt) {
+  if (rt) cw__vclip.bound_w = rt->w, cw__vclip.bound_h = rt->h;
   W.target = rt ? rt->fbo : 0;
   W.target_w = rt ? rt->w : 0;
   W.target_h = rt ? rt->h : 0;
@@ -1259,6 +1264,12 @@ static void draw(bool nocolor_depth_only, int vertices) {
   wgpuRenderPassEncoderSetPipeline(p, pipe);
   wgpuRenderPassEncoderSetBindGroup(p, 0, g0, (size_t)nd0, dyn0);
   wgpuRenderPassEncoderSetBindGroup(p, 1, g1, 1, dyn1);
+  /* a view of a one-pass split screen: only its rectangle (the open pass is shared by draws: set every time) */
+  int r[4] = { 0, 0, a.w, a.h };
+  if (cw__vclip.on) cw__view_clip_rect(a.w, a.h, r);
+  wgpuRenderPassEncoderSetScissorRect(p, (uint32_t)r[0], (uint32_t)r[1], (uint32_t)r[2], (uint32_t)r[3]);
+  if (W.view_vp && cw__vclip.on) wgpuRenderPassEncoderSetViewport(p, (float)r[0], (float)r[1], (float)r[2], (float)r[3], 0, 1);
+  else wgpuRenderPassEncoderSetViewport(p, 0, 0, (float)a.w, (float)a.h, 0, 1);
   wgpuRenderPassEncoderDraw(p, (uint32_t)vertices, 1, 0, 0);
   pass_done(p);
 }

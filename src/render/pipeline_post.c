@@ -2244,7 +2244,8 @@ void cw__pipeline_add_builtin_passes(cw_pipeline *p) {
 #endif
                                          });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "scene", .phase = CW_PHASE_OPAQUE, .order = 0,
-                                           .writes = CW_RES_COLOR | CW_RES_DEPTH, .execute = scene_exec, .webgpu = true });
+                                           .writes = CW_RES_COLOR | CW_RES_DEPTH, .execute = scene_exec, .webgpu = true,
+                                           .views = CW_PASS_VIEWS_ONCE /* a t3_array_camera: every view in one render */ });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "viewmodel", .phase = CW_PHASE_OPAQUE, .order = 10,
                                            .writes = CW_RES_COLOR | CW_RES_DEPTH,
                                            .active = viewmodel_active, .execute = viewmodel_exec, .webgpu = true });

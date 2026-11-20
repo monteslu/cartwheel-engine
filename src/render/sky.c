@@ -255,7 +255,7 @@ static sky_rt *sky_of(cw_tree *t) {
   s->tree = t;
   cw_tree_set_slot(t, "sky", s, sky_rt_free);
   cw_pipeline *p = cw_pipeline_of(t);
-  cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "sky_env", .phase = CW_PHASE_SHADOW, .order = 100,
+  cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "sky_env", .phase = CW_PHASE_SHADOW, .order = 100, .views = CW_PASS_VIEWS_ONCE /* the sky's cube: no view's */,
                                            .active = sky_env_active, .execute = pass_sky_env, .user = s });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "sky_sun", .phase = CW_PHASE_SKY, .order = 0, .writes = CW_RES_COLOR,
                                            .active = sky_sun_active, .execute = pass_sky_sun, .user = s });
