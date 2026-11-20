@@ -946,6 +946,29 @@ void cw__text_caller(const char *file, int line);
 #define CW_TILE_CHUNK 32
 CW_HANDLE_TYPE(cw_tilemap);
 
+/* How cells are laid out. Every tile is still drawn as a cell_w x cell_h quad of its tileset image; the layout
+ * says where each cell's quad sits (flat layouts: a tile's picture fills its cell and no more).
+ *   SQUARE       cell (x, y)'s quad at (x * cell_w, y * cell_h).
+ *   ISOMETRIC    diamonds: cell (x, y)'s middle at ((x - y) * cell_w / 2, (x + y + 1) * cell_h / 2), so +x runs
+ *                down and to the right, +y down and to the left, and cell (0, 0)'s top corner is the origin.
+ *                A tile's picture is the diamond inside its quad (cell_w twice cell_h is the usual shape).
+ *   HEX_ROWS     pointy-top hexagons in rows: a row is 3/4 of cell_h below the last, odd rows sit half a cell
+ *                to the right.
+ *   HEX_COLUMNS  flat-top hexagons in columns: a column is 3/4 of cell_w right of the last, odd columns sit
+ *                half a cell down. */
+typedef enum cw_tile_layout {
+  CW_TILE_LAYOUT_SQUARE,
+  CW_TILE_LAYOUT_ISOMETRIC,
+  CW_TILE_LAYOUT_HEX_ROWS,
+  CW_TILE_LAYOUT_HEX_COLUMNS,
+} cw_tile_layout;
+/* The top-left corner of cell (x, y)'s quad, relative to the map's origin. Pure arithmetic: any cell, in the
+ * map or not. */
+cw_vec2 cw_tile_layout_cell_origin(cw_tile_layout layout, float cell_w, float cell_h, int x, int y);
+/* The cell whose shape (square, diamond or hexagon) holds p, relative to the map's origin; a point on a
+ * shared edge goes to one of the two cells, the same one on every host. */
+void cw_tile_layout_cell_at(cw_tile_layout layout, float cell_w, float cell_h, cw_vec2 p, int *x, int *y);
+
 /* Cell value: tile id + 1 in the low 24 bits (0 = empty), transform flags in
  * the high bits (Tiled's convention, so Tiled maps load unchanged). */
 #define CW_TILE_FLIP_X 0x80000000u
@@ -965,6 +988,7 @@ typedef struct cw_tilemap_desc {
   int margin, spacing;    /* tileset border / gap between cells, pixels */
   int columns;            /* tiles per tileset row; 0 = from the texture width */
   float cell_w, cell_h;   /* world size of one tile; 0 = tile_w/tile_h */
+  cw_tile_layout layout;  /* SQUARE (0) unless set */
 } cw_tilemap_desc;
 
 /* Cells start empty. Null handle (logged) unless the tileset is a loaded image (not a target), sizes are
@@ -981,7 +1005,7 @@ void cw_tilemap_set_animation(cw_tilemap m, int id, int frames, float fps);
 /* Submit one map layer at `origin` (layer space) into the current canvas
  * layer, z and clip. Tint multiplies. */
 void cw_r2d_tilemap(cw_tilemap m, int map_layer, cw_vec2 origin, cw_color tint);
-/* World position -> cell coordinates (floor). */
+/* World position -> the cell whose shape holds it (cw_tile_layout_cell_at with the map's layout). */
 void cw_tilemap_world_to_cell(cw_tilemap m, cw_vec2 origin, cw_vec2 world, int *x, int *y);
 
 /* ── 2D lights ───────────────────────────────────────────────────────────

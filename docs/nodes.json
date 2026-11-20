@@ -3468,6 +3468,20 @@
      "doc": "Texture filtering (NEAREST default)."
     },
     {
+     "name": "layout",
+     "type": "enum",
+     "default": "SQUARE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "SQUARE",
+      "ISOMETRIC",
+      "HEX_ROWS",
+      "HEX_COLUMNS"
+     ],
+     "doc": "How cells are laid out: SQUARE, ISOMETRIC (diamonds), HEX_ROWS (pointy-top) or HEX_COLUMNS (flat-top)."
+    },
+    {
      "name": "tile_size",
      "type": "vec2",
      "default": "vec2(16, 16)",

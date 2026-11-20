@@ -175,7 +175,8 @@ static void gather(cw_node map, const cw__tilemap_info *in, int layer, int cx, i
       cw__tilemap2d_cell_shape(map, layer, x, y, &s);
       if (!s.kind) continue;
       bool owned = x >= x0 && x < x1 && y >= y0 && y < y1;
-      int32_t ox = x * ex, oy = y * ey;
+      int32_t ox, oy;
+      cw__tile_cell_offset(in, x, y, &ox, &oy);
       if (s.kind == 2) {
         push_edge(oneway, ox + s.pt[0][0], oy + s.pt[0][1], ox + s.pt[1][0], oy + s.pt[1][1], owned);
         continue;
@@ -184,7 +185,8 @@ static void gather(cw_node map, const cw__tilemap_info *in, int layer, int cx, i
       bool have[5] = { false, false, false, false, false };
       for (int i = 0; i < s.n; i++) {
         const int32_t *a = s.pt[i], *b = s.pt[(i + 1) % s.n];
-        int side = side_of(a, b, ex, ey);
+        /* diamonds and hexagons meet along whole edges of any direction: cancel_opposites pairs them up */
+        int side = in->layout == CW_TILE_LAYOUT_SQUARE ? side_of(a, b, ex, ey) : SIDE_NONE;
         if (side == SIDE_NONE) {
           push_edge(solid, ox + a[0], oy + a[1], ox + b[0], oy + b[1], owned);
           continue;
@@ -215,6 +217,42 @@ static void gather(cw_node map, const cw__tilemap_info *in, int layer, int cx, i
 }
 
 /* ── joining edges end to start ───────────────────────────────────────── */
+
+/* Layouts whose cells are not squares: two cells that touch share an edge end to end, one walking it each
+ * way. Every such pair goes (an edge and its exact reverse), which leaves the outline of the union. */
+static const tc_edge *cancel_edges;
+static int by_ends(const void *pa, const void *pb) {
+  int32_t ia = *(const int32_t *)pa, ib = *(const int32_t *)pb;
+  const tc_edge *a = &cancel_edges[ia], *b = &cancel_edges[ib];
+  /* an edge's key is its two ends, the lower first */
+  bool sa = a->ax < a->bx || (a->ax == a->bx && a->ay < a->by), sb = b->ax < b->bx || (b->ax == b->bx && b->ay < b->by);
+  int32_t ka[4] = { sa ? a->ax : a->bx, sa ? a->ay : a->by, sa ? a->bx : a->ax, sa ? a->by : a->ay };
+  int32_t kb[4] = { sb ? b->ax : b->bx, sb ? b->ay : b->by, sb ? b->bx : b->ax, sb ? b->by : b->ay };
+  for (int i = 0; i < 4; i++)
+    if (ka[i] != kb[i]) return ka[i] < kb[i] ? -1 : 1;
+  return ia < ib ? -1 : ia > ib ? 1 : 0;
+}
+static void cancel_opposites(tc_edges *e) {
+  int n = e->count;
+  if (n < 2) return;
+  int32_t *order = cw_frame_alloc(sizeof(int32_t) * (size_t)n);
+  uint8_t *dead = cw_frame_alloc((size_t)n);
+  memset(dead, 0, (size_t)n);
+  for (int i = 0; i < n; i++) order[i] = i;
+  cancel_edges = e->data;
+  qsort(order, (size_t)n, sizeof(int32_t), by_ends);
+  for (int i = 0; i + 1 < n; i++) {
+    const tc_edge *a = &e->data[order[i]], *b = &e->data[order[i + 1]];
+    if (a->ax == b->bx && a->ay == b->by && a->bx == b->ax && a->by == b->ay) {
+      dead[order[i]] = dead[order[i + 1]] = 1;
+      i++;
+    }
+  }
+  int k = 0;
+  for (int i = 0; i < n; i++)
+    if (!dead[i]) e->data[k++] = e->data[i];
+  e->count = k;
+}
 
 static const tc_edge *sort_edges;
 static int by_start(const void *pa, const void *pb) {
@@ -376,6 +414,7 @@ static void build_chunk(cw__body_ctx *x, tilecol *t, const cw__tilemap_info *in,
   emit em = { .x = x, .t = t, .chunk = c, .to_body = to_body, .ux = in->cell_size.x / (float)in->ext_x,
               .uy = in->cell_size.y / (float)in->ext_y, .def = x->def };
   if (solid.count) {
+    if (in->layout != CW_TILE_LAYOUT_SQUARE) cancel_opposites(&solid);
     stitch(&solid);
     emit_runs(&em, &solid);
   }

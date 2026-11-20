@@ -128,8 +128,74 @@ void cw_tilemap_world_to_cell(cw_tilemap h, cw_vec2 origin, cw_vec2 w, int *x, i
     *x = *y = 0;
     return;
   }
-  *x = (int)floorf((w.x - origin.x) / m->d.cell_w);
-  *y = (int)floorf((w.y - origin.y) / m->d.cell_h);
+  cw_tile_layout_cell_at(m->d.layout, m->d.cell_w, m->d.cell_h, cw_v2(w.x - origin.x, w.y - origin.y), x, y);
+}
+
+/* ── layouts ──────────────────────────────────────────────────────────── */
+
+cw_vec2 cw_tile_layout_cell_origin(cw_tile_layout layout, float cw, float ch, int x, int y) {
+  switch (layout) {
+  case CW_TILE_LAYOUT_ISOMETRIC: return cw_v2((float)(x - y - 1) * cw * 0.5f, (float)(x + y) * ch * 0.5f);
+  case CW_TILE_LAYOUT_HEX_ROWS: return cw_v2(((float)x + ((y & 1) ? 0.5f : 0.0f)) * cw, (float)y * ch * 0.75f);
+  case CW_TILE_LAYOUT_HEX_COLUMNS: return cw_v2((float)x * cw * 0.75f, ((float)y + ((x & 1) ? 0.5f : 0.0f)) * ch);
+  default: return cw_v2((float)x * cw, (float)y * ch);
+  }
+}
+
+void cw_tile_layout_cell_at(cw_tile_layout layout, float cw, float ch, cw_vec2 p, int *x, int *y) {
+  if (cw <= 0 || ch <= 0) {
+    *x = *y = 0;
+    return;
+  }
+  switch (layout) {
+  case CW_TILE_LAYOUT_ISOMETRIC: {
+    float a = p.x / (cw * 0.5f), b = p.y / (ch * 0.5f);
+    *x = (int)floorf((a + b) * 0.5f);
+    *y = (int)floorf((b - a) * 0.5f);
+    return;
+  }
+  case CW_TILE_LAYOUT_HEX_ROWS: case CW_TILE_LAYOUT_HEX_COLUMNS: {
+    /* the hexagon whose middle is nearest, measured where the hexagons are regular; candidates are the
+     * cells round a first guess, and equal distances go to the lower row, then the lower column */
+    bool rows = layout == CW_TILE_LAYOUT_HEX_ROWS;
+    float along = rows ? cw : ch, across = rows ? ch : cw; /* along a row (or column); across them */
+    float pa = rows ? p.x : p.y, pc = rows ? p.y : p.x;
+    int r0 = (int)floorf(pc / (across * 0.75f));
+    int best_a = 0, best_r = 0;
+    float best = 1e30f;
+    for (int r = r0 - 1; r <= r0 + 1; r++) {
+      float shift = (r & 1) ? 0.5f : 0.0f;
+      int a0 = (int)floorf(pa / along - shift);
+      for (int a = a0 - 1; a <= a0 + 1; a++) {
+        float da = (pa - ((float)a + 0.5f + shift) * along) / along;
+        float dc = (pc - ((float)r * 0.75f + 0.5f) * across) / across * 1.1547005f; /* 2 / sqrt(3) */
+        float d = da * da + dc * dc;
+        if (d < best) best = d, best_a = a, best_r = r;
+      }
+    }
+    *x = rows ? best_a : best_r;
+    *y = rows ? best_r : best_a;
+    return;
+  }
+  default:
+    *x = (int)floorf(p.x / cw);
+    *y = (int)floorf(p.y / ch);
+  }
+}
+
+/* the map-space box of a chunk's quads (any layout) */
+static void chunk_box(const r2d_tilemap *m, int cx, int cy, float *x0, float *y0, float *x1, float *y1) {
+  int ax = cx * CW_TILE_CHUNK, ay = cy * CW_TILE_CHUNK;
+  int bx = CW_MIN(ax + CW_TILE_CHUNK, m->d.width) - 1, by = CW_MIN(ay + CW_TILE_CHUNK, m->d.height) - 1;
+  int cs[4][2] = { { ax, ay }, { bx, ay }, { ax, by }, { bx, by } };
+  *x0 = *y0 = 1e30f, *x1 = *y1 = -1e30f;
+  for (int i = 0; i < 4; i++) {
+    cw_vec2 o = cw_tile_layout_cell_origin(m->d.layout, m->d.cell_w, m->d.cell_h, cs[i][0], cs[i][1]);
+    *x0 = CW_MIN(*x0, o.x), *y0 = CW_MIN(*y0, o.y), *x1 = CW_MAX(*x1, o.x + m->d.cell_w), *y1 = CW_MAX(*y1, o.y + m->d.cell_h);
+  }
+  /* odd rows and columns of a hex map reach half a cell further */
+  if (m->d.layout == CW_TILE_LAYOUT_HEX_ROWS) *x1 += m->d.cell_w * 0.5f;
+  if (m->d.layout == CW_TILE_LAYOUT_HEX_COLUMNS) *y1 += m->d.cell_h * 0.5f;
 }
 
 static void ensure_tile_ibo(void) {
@@ -177,8 +243,13 @@ static void rebuild(r2d_tilemap *m, int layer, int cx, int cy, r2d_chunk *ch) {
           cu = cv;
           cv = t;
         }
-        v[4 * q + k] = (r2d_tvert){ ((float)x + (float)px[k]) * m->d.cell_w, ((float)y + (float)py[k]) * m->d.cell_h,
-                                    (uint16_t)id, (uint16_t)(cu | (cv << 1)), frames, fps16 };
+        /* the square layout keeps its own arithmetic: its vertices are what they always were, to the bit */
+        float vx = ((float)x + (float)px[k]) * m->d.cell_w, vy = ((float)y + (float)py[k]) * m->d.cell_h;
+        if (m->d.layout != CW_TILE_LAYOUT_SQUARE) {
+          cw_vec2 o = cw_tile_layout_cell_origin(m->d.layout, m->d.cell_w, m->d.cell_h, x, y);
+          vx = o.x + (float)px[k] * m->d.cell_w, vy = o.y + (float)py[k] * m->d.cell_h;
+        }
+        v[4 * q + k] = (r2d_tvert){ vx, vy, (uint16_t)id, (uint16_t)(cu | (cv << 1)), frames, fps16 };
       }
       q++;
     }
@@ -252,6 +323,8 @@ void r2d_tilemap_render(const r2d_tilemap_draw *d, bool lit, int target_h) {
   float chw = m->d.cell_w * CW_TILE_CHUNK, chh2 = m->d.cell_h * CW_TILE_CHUNK;
   int x0 = CW_MAX(0, (int)floorf(minx / chw)), y0 = CW_MAX(0, (int)floorf(miny / chh2));
   int x1 = CW_MIN(m->ccx - 1, (int)floorf(maxx / chw)), y1 = CW_MIN(m->ccy - 1, (int)floorf(maxy / chh2));
+  bool boxed = m->d.layout != CW_TILE_LAYOUT_SQUARE; /* other layouts: every chunk's own box against the view */
+  if (boxed) x0 = 0, y0 = 0, x1 = m->ccx - 1, y1 = m->ccy - 1;
   if (x1 < x0 || y1 < y0) return;
   if (r2d_wg()) {
     float u[24] = { full.a, full.c, full.tx, R.layers[d->canvas_layer].pixel_snap ? 1.0f : 0.0f,
@@ -263,6 +336,11 @@ void r2d_tilemap_render(const r2d_tilemap_draw *d, bool lit, int target_h) {
     r2d_wg_tilemap_begin(u, t->array, lit);
     for (int cy = y0; cy <= y1; cy++)
       for (int cx = x0; cx <= x1; cx++) {
+        if (boxed) {
+          float bx0, by0, bx1, by1;
+          chunk_box(m, cx, cy, &bx0, &by0, &bx1, &by1);
+          if (bx1 < minx || bx0 > maxx || by1 < miny || by0 > maxy) continue;
+        }
         r2d_chunk *ch = chunk_at(m, d->map_layer, cx, cy);
         if (ch->dirty || (!ch->wvbo && !ch->quads)) rebuild(m, d->map_layer, cx, cy, ch);
         if (!ch->quads) continue;
@@ -295,6 +373,11 @@ void r2d_tilemap_render(const r2d_tilemap_draw *d, bool lit, int target_h) {
   }
   for (int cy = y0; cy <= y1; cy++)
     for (int cx = x0; cx <= x1; cx++) {
+      if (boxed) {
+        float bx0, by0, bx1, by1;
+        chunk_box(m, cx, cy, &bx0, &by0, &bx1, &by1);
+        if (bx1 < minx || bx0 > maxx || by1 < miny || by0 > maxy) continue;
+      }
       r2d_chunk *ch = chunk_at(m, d->map_layer, cx, cy);
       if (ch->dirty || (!ch->vbo && !ch->quads)) rebuild(m, d->map_layer, cx, cy, ch);
       if (!ch->quads) continue;

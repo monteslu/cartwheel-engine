@@ -61,7 +61,8 @@ cw_navgrid cw_navgrid_from_tilemap(cw_node map, const cw_navgrid_bake *bake) {
   if (!bake) bake = &defaults;
   cw__tilemap_info in;
   if (!cw__tilemap2d_info(map, &in) || !in.w || !in.h) return (cw_navgrid){ 0 };
-  cw_navgrid g = cw_navgrid_new(&(cw_navgrid_desc){ .width = in.w, .height = in.h, .cell = in.cell_size, .no_diagonals = bake->no_diagonals });
+  cw_navgrid g = cw_navgrid_new(&(cw_navgrid_desc){ .width = in.w, .height = in.h, .cell = in.cell_size, .no_diagonals = bake->no_diagonals,
+                                                .layout = (cw_tile_layout)in.layout });
   if (cw_navgrid_valid(g)) bake_cells(g, map, bake, 0, 0, in.w - 1, in.h - 1);
   return g;
 }

@@ -5,6 +5,26 @@ prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
 ## v0.52.0 (2026-11-19)
+## NEXT (tile2d): isometric and hexagon tile maps, with collision and navigation on them
+
+### Added
+- **Isometric and hexagon tile maps.** `layout` on a TileMap2D (`cw_tilemap_desc.layout` in the immediate API):
+  `ISOMETRIC` diamonds, `HEX_ROWS` (pointy-top hexagons, odd rows shifted) and `HEX_COLUMNS` (flat-top, odd
+  columns shifted), beside `SQUARE`. The chunk renderer places each cell's quad by the layout and culls chunks
+  by the box of their quads; a square map's vertices are what they were, to the bit.
+  `cw_tilemap2d_local_to_cell` finds the cell whose diamond or hexagon holds a point and
+  `cw_tilemap2d_cell_center` its middle; `cw_tile_layout_cell_at` and `cw_tile_layout_cell_origin` are the same
+  arithmetic without a map. These are flat layouts: a tile's picture fills its cell.
+- **Collision and navigation follow the layout.** `full` in `tile_shapes` is the cell's diamond or hexagon, and
+  a TileCollision2D joins neighbouring cells into one outline (two hexagons side by side: one loop of ten
+  segments; six diamonds in a block: four). `cw_navgrid_desc.layout`, and a NavigationRegion2D on such a map:
+  diamonds are searched as squares (jump point search, straightened paths, the crowd); hexagons have six
+  neighbours, plain A* with the hexagon distance, paths through cell middles, flow fields and the crowd.
+- Sample `tiles2d_layouts`: an island of each layout with collision outlines and walkers trading places
+  through a wall's gap. Gates `tiles2d-layouts` (GL and WebGPU, every host), and layout cases in `unit-tiles2d`
+  and `unit-nav2d`. Guides: 2D rendering ("Isometric and hexagon layouts"), navigation, porting from Godot.
+
+## NEXT (tile2d): terrains (autotile) and 2D navigation (nav2d.h, NavigationRegion2D / Agent2D / Obstacle2D)
 
 ### Added
 - **2D navigation: grids, paths, flow fields and crowds (`cartwheel/nav2d.h`).** A `cw_navgrid` is a grid of
