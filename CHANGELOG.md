@@ -323,6 +323,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   load from other work).
 ## NEXT (fixes): meshes batch again after the last probe leaves; a gi gate control that bites; Box2D snapshot UB
 ## NEXT (fixes): ONCE probes on WebGPU; meshes batch again after the last probe leaves; a gi control that bites; Box2D snapshot UB
+## NEXT (fixes): editor play sees romdev crashes; ONCE probes on WebGPU; meshes batch again after the last probe leaves; a gi control that bites; Box2D snapshot UB
 
 ### Fixed
 - **Meshes auto-instance again once the last ReflectionProbe3D and LightProbeGrid3D leave the tree.** The gi shading
@@ -342,6 +343,12 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   sun's part keeping gi off) stopped changing anything once the gi part composed with that part, so it passed
   along with the check. The control is now `CW_TEST_GI_NO_PART=1`, no material gets the gi part: 6 of 6 ball
   checks wrong and gi.materials 0 on GL and WebGPU, while the check itself passes with 7 materials.
+- **Play in the editor sees a game crash in romdev again.** romdev now reports a cart trap during a debug command
+  after the tool's name (`wasm({op:'command'}): unreachable`), and the editor's romdev client read anything under
+  that prefix as a failed request, so a crashed game looked alive (the editor-play gate failed 7 of 90 checks). The
+  prefix is now taken off and the rest read: a WebAssembly trap's message is a crash in the old wording and the new.
+  tests/remote.mjs runs tests/remote/classify_test.c (11 wordings) and its control, the old rule, which misreads 4;
+  editor-play's romdev leg passes 90 of 90.
 - **Restoring a Box2D world snapshot with no chain shapes, sensors or islands is no longer undefined behaviour**
   (`patches/box2d/0004`): it zeroed each of those arrays with `memset` even when empty, on a null pointer, which
   UBSan stops on (unit_net, under the sanitizer build). unit_net passes under ASan and UBSan with the patch (66

@@ -26,6 +26,15 @@ for (const p of [driver, ...which.map((t) => game[t])])
 
 let fail = 0;
 const results = {};
+// a failed romdev command, read: a cart trap in romdev's old and new wording is a crash, the tool's own failures are
+// not; the old rule (CW_TEST_REMOTE_OLD_CLASSIFY=1, the control) reads the new wording's trap as a request error
+{
+  const exe = join(ROOT, 'build/native/tests/remote_classify_test');
+  const ok = spawnSync(exe, [], { encoding: 'utf8' }), old = spawnSync(exe, [], { encoding: 'utf8', env: { ...process.env, CW_TEST_REMOTE_OLD_CLASSIFY: '1' } });
+  if (ok.status !== 0) { fail++; console.log(`FAIL remote classify\n${ok.stdout}${ok.stderr}`); } else console.log(ok.stdout.trim());
+  if (old.status === 0) { fail++; console.log('CONTROL PASSED: the old classify rule read every romdev wording right'); }
+  else console.log(`ok   remote classify control: the old rule misreads ${(old.stdout.match(/^FAIL classify "/mg) || []).length} wording(s), as it must`);
+}
 const run = (t, control) => spawnSync(driver, [t, game[t], ...(control ? ['--control'] : [])],
   { encoding: 'utf8', timeout: 300000, env: { ...process.env, SDL_VIDEODRIVER: 'offscreen', SDL_AUDIODRIVER: 'dummy' } });
 for (const t of which) {
