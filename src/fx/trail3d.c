@@ -25,8 +25,8 @@ typedef struct trail3d {
   /* runtime */
   t3_vec3 *pts;
   int cap, head, count;
-  GLuint vbo;
-  int vbo_cap;
+  GLuint vbo_v[CW_MAX_VIEWS]; /* (a one-pass split screen's views each their own: none waits on another's draw) */
+  int vbo_cap_v[CW_MAX_VIEWS];
   /* WebGPU: vertices, uniforms (a one-pass split screen's views each their own: one submit for all) */
   void *wvbo_v[CW_MAX_VIEWS], *wubo_v[CW_MAX_VIEWS];
   int wvbo_cap_v[CW_MAX_VIEWS];
@@ -70,8 +70,8 @@ static void trail_destroy(cw_node n, void *data) {
   trail3d *t = data;
   cw_free(t->pts);
   t->pts = NULL;
-  if (t->vbo) glDeleteBuffers(1, &t->vbo);
-  t->vbo = 0;
+  for (int k = 0; k < CW_MAX_VIEWS; k++)
+    if (t->vbo_v[k]) glDeleteBuffers(1, &t->vbo_v[k]), t->vbo_v[k] = 0;
 #if CW_WGPU
   for (int k = 0; k < CW_MAX_VIEWS; k++) {
     if (t->wvbo_v[k]) wgpuBufferRelease(t->wvbo_v[k]);
@@ -255,11 +255,12 @@ void cw__trail3d_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
     return;
   }
 #endif
-  if (!t->vbo) glGenBuffers(1, &t->vbo);
-  glBindBuffer(GL_ARRAY_BUFFER, t->vbo);
-  if (t->vbo_cap < nv) {
+  int vk = ctx->view_count > 0 ? CW_CLAMP(ctx->view_index, 0, CW_MAX_VIEWS - 1) : 0;
+  if (!t->vbo_v[vk]) glGenBuffers(1, &t->vbo_v[vk]);
+  glBindBuffer(GL_ARRAY_BUFFER, t->vbo_v[vk]);
+  if (t->vbo_cap_v[vk] < nv) {
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(sizeof(float) * 7 * (size_t)nv), v, GL_DYNAMIC_DRAW);
-    t->vbo_cap = nv;
+    t->vbo_cap_v[vk] = nv;
   } else glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(sizeof(float) * 7 * (size_t)nv), v);
   cw_pass_bind_target(ctx, ctx->scene);
   cw_pass_view_viewport(ctx);

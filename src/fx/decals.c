@@ -356,7 +356,8 @@ static const char *const fs =
     "  else frag = vec4(c.rgb * c.a, c.a);\n"
     "}\n";
 
-static GLuint prog, cube_vbo, inst_vbo, vao;
+static GLuint prog, cube_vbo, vao;
+static GLuint inst_vbos[CW_MAX_VIEWS]; /* a one-pass split screen's views each their own: none waits on another's draws */
 static int inst_cap;
 static bool prog_failed;
 
@@ -386,7 +387,7 @@ static bool gl_init(void) {
   glGenBuffers(1, &cube_vbo);
   glBindBuffer(GL_ARRAY_BUFFER, cube_vbo);
   glBufferData(GL_ARRAY_BUFFER, sizeof v, v, GL_STATIC_DRAW);
-  glGenBuffers(1, &inst_vbo);
+  glGenBuffers(CW_MAX_VIEWS, inst_vbos);
   glGenVertexArrays(1, &vao);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   return true;
@@ -681,6 +682,7 @@ static void decals_exec(cw_pass_ctx *ctx, void *user) {
   }
 #endif
   atlas_full_mips();
+  GLuint inst_vbo = inst_vbos[ctx->view_count > 0 ? CW_CLAMP(ctx->view_index, 0, CW_MAX_VIEWS - 1) : 0];
   glBindBuffer(GL_ARRAY_BUFFER, inst_vbo);
   if (inst_cap < nv) inst_cap = nv + 64;
   /* Each viewport can still be consuming the previous instance stream.
