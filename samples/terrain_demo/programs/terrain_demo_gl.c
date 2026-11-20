@@ -399,6 +399,100 @@ static const t3_gen_attribute a_depth_instbig_xterrain_cluster_csm[] = {
   { "nodeAttribute3", "vec4", 6, false },
 };
 
+/* ── depth+instbig+xterrain_cluster_csm_plain ── */
+static const t3_bk_group_layout g_depth_instbig_xterrain_cluster_csm_plain_terrainFrame = { "terrainFrame", 0, 128, 0, NULL, 0, NULL, 0 };
+static const t3_bk_group_layout g_depth_instbig_xterrain_cluster_csm_plain_render = { "render", 1, 128, 0, NULL, 0, NULL, 0 };
+static const t3_bk_texture_layout t_depth_instbig_xterrain_cluster_csm_plain_object[] = {
+  { "nodeUniform12", 0, T3_BK_SAMPLE_FLOAT, T3_BK_DIM_2D, false, false, false, "ext.terrainMacro", 0 },
+  { "nodeUniform19", 2, T3_BK_SAMPLE_FLOAT, T3_BK_DIM_2D, false, false, false, "ext.terrainNormals", 0 },
+  { "nodeUniform22", 3, T3_BK_SAMPLE_UINT, T3_BK_DIM_2D, false, false, false, "ext.terrainControl", 0 },
+  { "nodeUniform24", 4, T3_BK_SAMPLE_UINT, T3_BK_DIM_2D, false, false, false, "ext.terrainPair", 0 },
+  { "nodeUniform28", 5, T3_BK_SAMPLE_FLOAT, T3_BK_DIM_2D_ARRAY, false, false, false, "ext.terrainAlbedo", 0 },
+  { "nodeUniform31", 6, T3_BK_SAMPLE_FLOAT, T3_BK_DIM_2D_ARRAY, false, false, false, "ext.terrainLayerNormals", 0 },
+  { "nodeUniform5", 7, T3_BK_SAMPLE_UINT, T3_BK_DIM_2D, false, false, false, "ext.terrainHeights", 0 },
+};
+static const t3_bk_group_layout g_depth_instbig_xterrain_cluster_csm_plain_object = { "object", 2, 288, 1, t_depth_instbig_xterrain_cluster_csm_plain_object, 7, NULL, 0 };
+static const t3_bk_group_layout *const groups_depth_instbig_xterrain_cluster_csm_plain[] = { &g_depth_instbig_xterrain_cluster_csm_plain_terrainFrame, &g_depth_instbig_xterrain_cluster_csm_plain_render, &g_depth_instbig_xterrain_cluster_csm_plain_object };
+static const t3_gen_property p_depth_instbig_xterrain_cluster_csm_plain[] = {
+  { "object.matrixWorld", 2, 16, 64, false },
+  { "ext.terrainCam", 0, 0, 16, false },
+  { "ext.terrainGrid", 0, 16, 16, false },
+  { "ext.terrainHeight", 0, 32, 16, false },
+  { "ext.terrainLod", 0, 48, 16, false },
+  { "ext.terrainFar", 0, 64, 16, false },
+  { "ext.terrainUv0", 0, 80, 16, false },
+  { "ext.terrainUv1", 0, 96, 16, false },
+  { "ext.terrainSlope", 0, 112, 16, false },
+  { "camera.projectionMatrix", 1, 0, 64, false },
+  { "camera.matrixWorldInverse", 1, 64, 64, false },
+  { "ext.terrainMacro.flipY", 2, 80, 4, false },
+  { "ext.terrainNormals.flipY", 2, 84, 4, false },
+  { "ext.terrainControl.flipY", 2, 88, 4, false },
+  { "ext.terrainPair.flipY", 2, 92, 4, false },
+  { "ext.terrainAlbedo.flipY", 2, 96, 4, false },
+  { "ext.terrainAlbedo.flipY#1", 2, 100, 4, false },
+  { "ext.terrainLayerNormals.flipY", 2, 104, 4, false },
+  { "ext.terrainLayerNormals.flipY#1", 2, 108, 4, false },
+  { "ext.terrainNormals.flipY#1", 2, 112, 4, false },
+  { "ext.terrainAlbedo.flipY#2", 2, 116, 4, false },
+  { "ext.terrainLayerNormals.flipY#2", 2, 120, 4, false },
+  { "ext.terrainAlbedo.flipY#3", 2, 124, 4, false },
+  { "ext.terrainAlbedo.flipY#4", 2, 128, 4, false },
+  { "ext.terrainAlbedo.flipY#5", 2, 132, 4, false },
+  { "ext.terrainAlbedo.flipY#6", 2, 136, 4, false },
+  { "ext.terrainLayerNormals.flipY#3", 2, 140, 4, false },
+  { "ext.terrainLayerNormals.flipY#4", 2, 144, 4, false },
+  { "ext.terrainLayerNormals.flipY#5", 2, 148, 4, false },
+  { "ext.terrainAlbedo.flipY#7", 2, 152, 4, false },
+  { "ext.terrainLayerNormals.flipY#6", 2, 156, 4, false },
+  { "ext.terrainAlbedo.flipY#8", 2, 160, 4, false },
+  { "ext.terrainAlbedo.flipY#9", 2, 164, 4, false },
+  { "ext.terrainAlbedo.flipY#10", 2, 168, 4, false },
+  { "ext.terrainAlbedo.flipY#11", 2, 172, 4, false },
+  { "ext.terrainLayerNormals.flipY#7", 2, 176, 4, false },
+  { "ext.terrainLayerNormals.flipY#8", 2, 180, 4, false },
+  { "ext.terrainLayerNormals.flipY#9", 2, 184, 4, false },
+  { "ext.terrainAlbedo.flipY#12", 2, 188, 4, false },
+  { "ext.terrainAlbedo.flipY#13", 2, 192, 4, false },
+  { "ext.terrainNormals.flipY#2", 2, 196, 4, false },
+  { "ext.terrainAlbedo.flipY#14", 2, 200, 4, false },
+  { "ext.terrainLayerNormals.flipY#10", 2, 204, 4, false },
+  { "ext.terrainAlbedo.flipY#15", 2, 208, 4, false },
+  { "ext.terrainAlbedo.flipY#16", 2, 212, 4, false },
+  { "ext.terrainAlbedo.flipY#17", 2, 216, 4, false },
+  { "ext.terrainAlbedo.flipY#18", 2, 220, 4, false },
+  { "ext.terrainLayerNormals.flipY#11", 2, 224, 4, false },
+  { "ext.terrainLayerNormals.flipY#12", 2, 228, 4, false },
+  { "ext.terrainLayerNormals.flipY#13", 2, 232, 4, false },
+  { "ext.terrainAlbedo.flipY#19", 2, 236, 4, false },
+  { "ext.terrainLayerNormals.flipY#14", 2, 240, 4, false },
+  { "ext.terrainAlbedo.flipY#20", 2, 244, 4, false },
+  { "ext.terrainAlbedo.flipY#21", 2, 248, 4, false },
+  { "ext.terrainAlbedo.flipY#22", 2, 252, 4, false },
+  { "ext.terrainAlbedo.flipY#23", 2, 256, 4, false },
+  { "ext.terrainLayerNormals.flipY#15", 2, 260, 4, false },
+  { "ext.terrainLayerNormals.flipY#16", 2, 264, 4, false },
+  { "ext.terrainLayerNormals.flipY#17", 2, 268, 4, false },
+  { "ext.terrainLayerNormals.flipY#18", 2, 272, 4, false },
+  { "ext.terrainLayerNormals.flipY#19", 2, 276, 4, false },
+};
+static const uint8_t kb_depth_instbig_xterrain_cluster_csm_plain[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x3f };
+static const t3_gen_constant k_depth_instbig_xterrain_cluster_csm_plain[] = {
+  { 2, 0, 4, kb_depth_instbig_xterrain_cluster_csm_plain + 0 },
+  { 2, 4, 4, kb_depth_instbig_xterrain_cluster_csm_plain + 4 },
+  { 2, 8, 4, kb_depth_instbig_xterrain_cluster_csm_plain + 8 },
+  { 2, 280, 4, kb_depth_instbig_xterrain_cluster_csm_plain + 12 },
+};
+static const t3_gen_attribute a_depth_instbig_xterrain_cluster_csm_plain[] = {
+  { "position", "vec3", 0, false },
+  { "normal", "vec3", 1, false },
+  { "uv", "vec2", 2, false },
+  { "nodeAttribute0", "vec4", 3, false },
+  { "nodeAttribute1", "vec4", 4, false },
+  { "nodeAttribute2", "vec4", 5, false },
+  { "nodeAttribute3", "vec4", 6, false },
+};
+
 /* ── depth+instbig+xterrain_csm ── */
 static const t3_bk_group_layout g_depth_instbig_xterrain_csm_terrainFrame = { "terrainFrame", 0, 128, 0, NULL, 0, NULL, 0 };
 static const t3_bk_group_layout g_depth_instbig_xterrain_csm_render = { "render", 1, 128, 0, NULL, 0, NULL, 0 };
@@ -672,6 +766,96 @@ static const t3_gen_constant k_depth_instbig_xterrainlow_cluster_csm[] = {
   { 2, 280, 4, kb_depth_instbig_xterrainlow_cluster_csm + 12 },
 };
 static const t3_gen_attribute a_depth_instbig_xterrainlow_cluster_csm[] = {
+  { "position", "vec3", 0, false },
+  { "normal", "vec3", 1, false },
+  { "uv", "vec2", 2, false },
+  { "nodeAttribute0", "vec4", 3, false },
+  { "nodeAttribute1", "vec4", 4, false },
+  { "nodeAttribute2", "vec4", 5, false },
+  { "nodeAttribute3", "vec4", 6, false },
+};
+
+/* ── depth+instbig+xterrainmin_cluster_csm ── */
+static const t3_bk_group_layout g_depth_instbig_xterrainmin_cluster_csm_terrainFrame = { "terrainFrame", 0, 128, 0, NULL, 0, NULL, 0 };
+static const t3_bk_group_layout g_depth_instbig_xterrainmin_cluster_csm_render = { "render", 1, 128, 0, NULL, 0, NULL, 0 };
+static const t3_bk_texture_layout t_depth_instbig_xterrainmin_cluster_csm_object[] = {
+  { "nodeUniform12", 0, T3_BK_SAMPLE_FLOAT, T3_BK_DIM_2D, false, false, false, "ext.terrainMacro", 0 },
+  { "nodeUniform19", 2, T3_BK_SAMPLE_FLOAT, T3_BK_DIM_2D, false, false, false, "ext.terrainNormals", 0 },
+  { "nodeUniform22", 3, T3_BK_SAMPLE_UINT, T3_BK_DIM_2D, false, false, false, "ext.terrainControl", 0 },
+  { "nodeUniform24", 4, T3_BK_SAMPLE_UINT, T3_BK_DIM_2D, false, false, false, "ext.terrainPair", 0 },
+  { "nodeUniform26", 5, T3_BK_SAMPLE_FLOAT, T3_BK_DIM_2D_ARRAY, false, false, false, "ext.terrainAlbedo", 0 },
+  { "nodeUniform30", 6, T3_BK_SAMPLE_FLOAT, T3_BK_DIM_2D_ARRAY, false, false, false, "ext.terrainLayerNormals", 0 },
+  { "nodeUniform5", 7, T3_BK_SAMPLE_UINT, T3_BK_DIM_2D, false, false, false, "ext.terrainHeights", 0 },
+};
+static const t3_bk_group_layout g_depth_instbig_xterrainmin_cluster_csm_object = { "object", 2, 272, 1, t_depth_instbig_xterrainmin_cluster_csm_object, 7, NULL, 0 };
+static const t3_bk_group_layout *const groups_depth_instbig_xterrainmin_cluster_csm[] = { &g_depth_instbig_xterrainmin_cluster_csm_terrainFrame, &g_depth_instbig_xterrainmin_cluster_csm_render, &g_depth_instbig_xterrainmin_cluster_csm_object };
+static const t3_gen_property p_depth_instbig_xterrainmin_cluster_csm[] = {
+  { "object.matrixWorld", 2, 16, 64, false },
+  { "ext.terrainCam", 0, 0, 16, false },
+  { "ext.terrainGrid", 0, 16, 16, false },
+  { "ext.terrainHeight", 0, 32, 16, false },
+  { "ext.terrainLod", 0, 48, 16, false },
+  { "ext.terrainFar", 0, 64, 16, false },
+  { "ext.terrainUv0", 0, 80, 16, false },
+  { "ext.terrainUv1", 0, 96, 16, false },
+  { "ext.terrainSlope", 0, 112, 16, false },
+  { "camera.projectionMatrix", 1, 0, 64, false },
+  { "camera.matrixWorldInverse", 1, 64, 64, false },
+  { "ext.terrainMacro.flipY", 2, 80, 4, false },
+  { "ext.terrainNormals.flipY", 2, 84, 4, false },
+  { "ext.terrainControl.flipY", 2, 88, 4, false },
+  { "ext.terrainPair.flipY", 2, 92, 4, false },
+  { "ext.terrainAlbedo.flipY", 2, 96, 4, false },
+  { "ext.terrainLayerNormals.flipY", 2, 100, 4, false },
+  { "ext.terrainNormals.flipY#1", 2, 104, 4, false },
+  { "ext.terrainAlbedo.flipY#1", 2, 108, 4, false },
+  { "ext.terrainLayerNormals.flipY#1", 2, 112, 4, false },
+  { "ext.terrainAlbedo.flipY#2", 2, 116, 4, false },
+  { "ext.terrainAlbedo.flipY#3", 2, 120, 4, false },
+  { "ext.terrainAlbedo.flipY#4", 2, 124, 4, false },
+  { "ext.terrainAlbedo.flipY#5", 2, 128, 4, false },
+  { "ext.terrainLayerNormals.flipY#2", 2, 132, 4, false },
+  { "ext.terrainLayerNormals.flipY#3", 2, 136, 4, false },
+  { "ext.terrainLayerNormals.flipY#4", 2, 140, 4, false },
+  { "ext.terrainAlbedo.flipY#6", 2, 144, 4, false },
+  { "ext.terrainLayerNormals.flipY#5", 2, 148, 4, false },
+  { "ext.terrainAlbedo.flipY#7", 2, 152, 4, false },
+  { "ext.terrainAlbedo.flipY#8", 2, 156, 4, false },
+  { "ext.terrainAlbedo.flipY#9", 2, 160, 4, false },
+  { "ext.terrainAlbedo.flipY#10", 2, 164, 4, false },
+  { "ext.terrainLayerNormals.flipY#6", 2, 168, 4, false },
+  { "ext.terrainLayerNormals.flipY#7", 2, 172, 4, false },
+  { "ext.terrainLayerNormals.flipY#8", 2, 176, 4, false },
+  { "ext.terrainAlbedo.flipY#11", 2, 180, 4, false },
+  { "ext.terrainNormals.flipY#2", 2, 184, 4, false },
+  { "ext.terrainAlbedo.flipY#12", 2, 188, 4, false },
+  { "ext.terrainLayerNormals.flipY#9", 2, 192, 4, false },
+  { "ext.terrainAlbedo.flipY#13", 2, 196, 4, false },
+  { "ext.terrainAlbedo.flipY#14", 2, 200, 4, false },
+  { "ext.terrainAlbedo.flipY#15", 2, 204, 4, false },
+  { "ext.terrainAlbedo.flipY#16", 2, 208, 4, false },
+  { "ext.terrainLayerNormals.flipY#10", 2, 212, 4, false },
+  { "ext.terrainLayerNormals.flipY#11", 2, 216, 4, false },
+  { "ext.terrainLayerNormals.flipY#12", 2, 220, 4, false },
+  { "ext.terrainAlbedo.flipY#17", 2, 224, 4, false },
+  { "ext.terrainLayerNormals.flipY#13", 2, 228, 4, false },
+  { "ext.terrainAlbedo.flipY#18", 2, 232, 4, false },
+  { "ext.terrainAlbedo.flipY#19", 2, 236, 4, false },
+  { "ext.terrainAlbedo.flipY#20", 2, 240, 4, false },
+  { "ext.terrainAlbedo.flipY#21", 2, 244, 4, false },
+  { "ext.terrainLayerNormals.flipY#14", 2, 248, 4, false },
+  { "ext.terrainLayerNormals.flipY#15", 2, 252, 4, false },
+  { "ext.terrainLayerNormals.flipY#16", 2, 256, 4, false },
+  { "ext.terrainLayerNormals.flipY#17", 2, 260, 4, false },
+};
+static const uint8_t kb_depth_instbig_xterrainmin_cluster_csm[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x3f };
+static const t3_gen_constant k_depth_instbig_xterrainmin_cluster_csm[] = {
+  { 2, 0, 4, kb_depth_instbig_xterrainmin_cluster_csm + 0 },
+  { 2, 4, 4, kb_depth_instbig_xterrainmin_cluster_csm + 4 },
+  { 2, 8, 4, kb_depth_instbig_xterrainmin_cluster_csm + 8 },
+  { 2, 264, 4, kb_depth_instbig_xterrainmin_cluster_csm + 12 },
+};
+static const t3_gen_attribute a_depth_instbig_xterrainmin_cluster_csm[] = {
   { "position", "vec3", 0, false },
   { "normal", "vec3", 1, false },
   { "uv", "vec2", 2, false },
@@ -11857,9 +12041,11 @@ static const t3_gen_program programs[] = {
   { "depth+instbig+xterrain", T3_GEN_DEPTH, 256ull, { 1, 0, 0, 0 }, "terrain", T3_GEN_GL, groups_depth_instbig_xterrain, 3, p_depth_instbig_xterrain, 61, a_depth_instbig_xterrain, 7, k_depth_instbig_xterrain, 4, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 2, 3, 0 },
   { "depth+instbig+xterrain_cluster", T3_GEN_DEPTH, 256ull, { 1, 0, 0, 0 }, "terrain_cluster", T3_GEN_GL, groups_depth_instbig_xterrain_cluster, 3, p_depth_instbig_xterrain_cluster, 61, a_depth_instbig_xterrain_cluster, 7, k_depth_instbig_xterrain_cluster, 4, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 2, 3, 0 },
   { "depth+instbig+xterrain_cluster_csm", T3_GEN_DEPTH, 256ull, { 1, 0, 0, 0 }, "terrain_cluster_csm", T3_GEN_GL, groups_depth_instbig_xterrain_cluster_csm, 3, p_depth_instbig_xterrain_cluster_csm, 61, a_depth_instbig_xterrain_cluster_csm, 7, k_depth_instbig_xterrain_cluster_csm, 4, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 2, 3, 0 },
+  { "depth+instbig+xterrain_cluster_csm_plain", T3_GEN_DEPTH, 256ull, { 1, 0, 0, 0 }, "terrain_cluster_csm_plain", T3_GEN_GL, groups_depth_instbig_xterrain_cluster_csm_plain, 3, p_depth_instbig_xterrain_cluster_csm_plain, 61, a_depth_instbig_xterrain_cluster_csm_plain, 7, k_depth_instbig_xterrain_cluster_csm_plain, 4, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 2, 3, 0 },
   { "depth+instbig+xterrain_csm", T3_GEN_DEPTH, 256ull, { 1, 0, 0, 0 }, "terrain_csm", T3_GEN_GL, groups_depth_instbig_xterrain_csm, 3, p_depth_instbig_xterrain_csm, 61, a_depth_instbig_xterrain_csm, 7, k_depth_instbig_xterrain_csm, 4, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 2, 3, 0 },
   { "depth+instbig+xterrainlow", T3_GEN_DEPTH, 256ull, { 1, 0, 0, 0 }, "terrainlow", T3_GEN_GL, groups_depth_instbig_xterrainlow, 3, p_depth_instbig_xterrainlow, 61, a_depth_instbig_xterrainlow, 7, k_depth_instbig_xterrainlow, 4, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 2, 3, 0 },
   { "depth+instbig+xterrainlow_cluster_csm", T3_GEN_DEPTH, 256ull, { 1, 0, 0, 0 }, "terrainlow_cluster_csm", T3_GEN_GL, groups_depth_instbig_xterrainlow_cluster_csm, 3, p_depth_instbig_xterrainlow_cluster_csm, 61, a_depth_instbig_xterrainlow_cluster_csm, 7, k_depth_instbig_xterrainlow_cluster_csm, 4, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 2, 3, 0 },
+  { "depth+instbig+xterrainmin_cluster_csm", T3_GEN_DEPTH, 256ull, { 1, 0, 0, 0 }, "terrainmin_cluster_csm", T3_GEN_GL, groups_depth_instbig_xterrainmin_cluster_csm, 3, p_depth_instbig_xterrainmin_cluster_csm, 57, a_depth_instbig_xterrainmin_cluster_csm, 7, k_depth_instbig_xterrainmin_cluster_csm, 4, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 4, 5, 0 },
   { "depth+instbig+xterrainmin_cluster_csm_plain", T3_GEN_DEPTH, 256ull, { 1, 0, 0, 0 }, "terrainmin_cluster_csm_plain", T3_GEN_GL, groups_depth_instbig_xterrainmin_cluster_csm_plain, 3, p_depth_instbig_xterrainmin_cluster_csm_plain, 57, a_depth_instbig_xterrainmin_cluster_csm_plain, 7, k_depth_instbig_xterrainmin_cluster_csm_plain, 4, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 4, 5, 0 },
   { "depth+instbig+xterrainmin_plain", T3_GEN_DEPTH, 256ull, { 1, 0, 0, 0 }, "terrainmin_plain", T3_GEN_GL, groups_depth_instbig_xterrainmin_plain, 3, p_depth_instbig_xterrainmin_plain, 57, a_depth_instbig_xterrainmin_plain, 7, k_depth_instbig_xterrainmin_plain, 4, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 4, 5, 0 },
   { "depth+xcluster", T3_GEN_DEPTH, 0ull, { 1, 0, 0, 0 }, "cluster", T3_GEN_GL, groups_depth_xcluster, 2, p_depth_xcluster, 3, a_depth_xcluster, 1, k_depth_xcluster, 1, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 6, 7, 0 },
@@ -11922,4 +12108,4 @@ static const t3_gen_program programs[] = {
   { "standard+vcol+instbig+shadow+senv+l1001+xcluster", T3_GEN_STANDARD, 2228482ull, { 1, 0, 0, 1 }, "cluster", T3_GEN_GL, groups_standard_vcol_instbig_shadow_senv_l1001_xcluster, 3, p_standard_vcol_instbig_shadow_senv_l1001_xcluster, 54, a_standard_vcol_instbig_shadow_senv_l1001_xcluster, 7, NULL, 0, { 0, 0, 0 }, { 1, 0, 0 }, NULL, NULL, &text, 96, 101, 0 },
   { "standard+vcol+instbig+shadow+senv+l1001+xplain", T3_GEN_STANDARD, 2228482ull, { 1, 0, 0, 1 }, "plain", T3_GEN_GL, groups_standard_vcol_instbig_shadow_senv_l1001_xplain, 2, p_standard_vcol_instbig_shadow_senv_l1001_xplain, 33, a_standard_vcol_instbig_shadow_senv_l1001_xplain, 7, NULL, 0, { 0, 0, 0 }, { 1, 0, 0 }, NULL, NULL, &text, 98, 102, 0 },
 };
-const t3_gen_table terrain_demo_gl = { programs, 72 };
+const t3_gen_table terrain_demo_gl = { programs, 74 };
