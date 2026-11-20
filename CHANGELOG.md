@@ -4,6 +4,20 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## NEXT (fixes2): the TAA gate's velocity control bites again
+
+### Fixed
+
+- **Gate `wgpu-post-taa`: its broken-velocity control runs with TAA's moving-pixel terms off.** Since v0.53.0 TAA
+  takes the frame's unjittered picture wherever the motion it reads is wrong, so a broken velocity program alone
+  costs only the history (mean 0.04 levels on post_synth's orbiting-camera segment) and passed the control. The
+  control is now `CW_TEST_BREAK_PROGRAM=velocity` with `CW_TEST_TAA_STILL_ONLY=1`, where the history follows the
+  broken velocity and the picture breaks. Measured on that camera pan (frames 92 to 96, against a 36-sample
+  picture of each, GL and WebGPU alike): v0.53 TAA error 0.47 levels and frame-to-frame change of that error
+  (shimmer) 0.68; v0.51's TAA 0.87 and 1.26; no TAA 0.59 and 1.06. Keeping the full history for the camera's own
+  motion and weighing only motion against the camera was tried and is worse on the pan (0.61 and 0.88): a history
+  resampled every frame softens and lags a pan as it does a mover.
+
 ## v0.53.1 (2026-11-20)
 
 ### Fixed

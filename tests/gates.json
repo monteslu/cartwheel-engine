@@ -7379,7 +7379,7 @@
       "cam.z"
     ],
     "controlFrames": 95,
-    "note": "post_synth (the app ray traces the scene on both backends): TAA: Halton jitter, velocity from depth, Catmull-Rom history, moving camera",
+    "note": "post_synth (the app ray traces the scene on both backends): TAA: Halton jitter, velocity from depth, Catmull-Rom history, moving camera. The velocity control runs with TAA's moving-pixel terms off (CW_TEST_TAA_STILL_ONLY=1, see its why)",
     "expect": {
       "post.seg": 13
     },
@@ -7399,8 +7399,10 @@
         },
         {
           "env": {
-            "CW_TEST_BREAK_PROGRAM": "velocity"
-          }
+            "CW_TEST_BREAK_PROGRAM": "velocity",
+            "CW_TEST_TAA_STILL_ONLY": "1"
+          },
+          "why": "TAA takes this frame's unjittered picture wherever the motion it reads is wrong, so a broken velocity program alone costs only the history (mean 0.04 levels on this segment, under the gate's bound); with TAA's moving-pixel terms off the history follows the broken velocity, and the picture must break"
         },
         {
           "env": {
