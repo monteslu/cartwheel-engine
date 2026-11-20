@@ -9,6 +9,8 @@
 //      forward        three.c's own lights, no cascades: the surface alone on its material, probes on top
 //      verylow        the Very Low preset: one more lighting part on every material
 //      late-decal     the sticker placed after the surface is on its material
+//      ies            the spot lamp shaped by an IES profile (the clustered lights' part in its IES form), which must
+//                     also change the picture against the lamp without one
 //    natively on GL and WebGPU. Control: CW_TEST_SURFACE_ALONE=1 treats a surface part as any game part was
 //    treated before surfaces existed (the probes refuse it, no decal is clipped from it, a material takes four
 //    parts): forward, verylow and late-decal must then FAIL.
@@ -77,6 +79,7 @@ const CONFIGS = [
   ['forward', { CS_LIGHTING: 'forward', CS_CASCADES: '0' }],
   ['verylow', { CS_QUALITY: 'verylow' }],
   ['late-decal', { CS_LATE_DECAL: '1' }],
+  ['ies', { CS_IES: '1' }],
 ];
 const ALONE = { CW_TEST_SURFACE_ALONE: '1' };
 
@@ -92,13 +95,18 @@ for (const host of hosts) {
       report(d <= SAME, `${T} ${name}: surfaces at zero draw what plain materials draw (${pct(d)} of the pixels differ; surfaces ${n.st['cs.surfaces']}, ` +
         `with probes ${n.st['cs.gi_materials']} of ${s.st['cs.gi_materials']}, mesh decals ${n.st['cs.mesh_decals']} of ${s.st['cs.mesh_decals']})`);
       report(n.st['cs.surfaces'] === 3 && s.st['cs.surfaces'] === 0, `${T} ${name}: three surfaces in use, none in the reference (${n.st['cs.surfaces']}, ${s.st['cs.surfaces']})`);
-      if (host === 'native' && name !== 'clustered' && !SURVEY) {
+      if (name === 'ies') {
+        // the profile really shapes the light: the reference differs from the clustered reference without one
+        const plain = run(host, gpu, `${T}.clustered.stock`, { CS_MODE: 'stock' });
+        const d2 = plain.err ? 0 : differ(plain.img, s.img);
+        report(d2 > 0.001, `${T} ies: the IES profile changes the spot lamp's light (${pct(d2)} of the pixels differ from the lamp without one)`);
+      } else if (host === 'native' && name !== 'clustered' && !SURVEY) {
         const c = run(host, gpu, `${T}.${name}.neutral.control`, { ...env, ...ALONE, CS_MODE: 'neutral' });
         if (c.err) { report(false, `${T} ${name} control: ${c.err}`); continue; }
         const dc = differ(s.img, c.img);
         report(dc > 4 * SAME, `${T} ${name} control (a surface treated as a part was before) is caught: ${pct(dc)} of the pixels differ ` +
           `(with probes ${c.st['cs.gi_materials']}, mesh decals ${c.st['cs.mesh_decals']})`);
-      } else if (SURVEY && host === 'native' && name !== 'clustered') {
+      } else if (SURVEY && host === 'native' && name !== 'clustered' && name !== 'ies') {
         run(host, gpu, `${T}.${name}.neutral.control`, { ...env, ...ALONE, CS_MODE: 'neutral' });
         run(host, gpu, `${T}.${name}.fx`, env);
       }

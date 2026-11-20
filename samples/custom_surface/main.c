@@ -32,7 +32,7 @@
  *                     must be the reference's, on every preset and lighting
  *                     mode (tests/custom-surface.mjs)
  *   CS_LIGHTING=forward|clustered, CS_CASCADES=<n>, CS_SSR=1, CS_BATCH=1 (LightingSettings.batching),
- *   CS_QUALITY=<preset>, CS_LATE_DECAL=1 (the slab's sticker placed at tick 8,
+ *   CS_IES=1 (the spot lamp takes an IES profile), CS_QUALITY=<preset>, CS_LATE_DECAL=1 (the slab's sticker placed at tick 8,
  *   after the surface is on)
  *
  * Debug state: cs.tick, cs.mode, cs.surfaces (surfaces in use), cs.surface_materials (materials carrying one),
@@ -52,6 +52,7 @@
 #include "cartwheel/platform.h"
 #include "cartwheel/quality.h"
 #include "cartwheel/render3d.h"
+#include "cartwheel/resource.h"
 #include "cartwheel/scene_file.h"
 #include "cartwheel/surface.h"
 
@@ -217,6 +218,13 @@ static void fixed(void *u, double dt) {
     cw_node post = cw_node_new("PostProcess", "Post");
     cw_node_set(post, "ssr", cw_val_bool(true));
     cw_node_add_child(node("World"), post);
+  }
+  e = cw_test_env("CS_IES");
+  if (e && *e == '1') { /* the spot lamp shaped by an IES profile: the clustered lights' part is then its IES form */
+    cw_value v = { CW_T_RES };
+    v.res = cw_res_path_uid("lights/ring.ies");
+    cw_res_index_set(v.res, "lights/ring.ies"); /* (the sample's assets are loose files: no pack, so no index of UIDs) */
+    cw_node_set(node("World/LampSpot"), "ies_profile", v);
   }
   e = cw_test_env("CS_BATCH");
   if (e && *e == '1') cw_node_set(node("World/Lighting"), "batching", cw_val_bool(true));
