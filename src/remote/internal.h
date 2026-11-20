@@ -68,6 +68,10 @@ void cw__remote_fail_all(cw_remote *r, const char *why);
 bool cw__json_find(const char *json, const char *key, const char **start, const char **end);
 char *cw__json_escape(const char *s); /* "..." with quotes, malloc'd */
 
+/* what a failed romdev wasm({op:'command'}) means: 0 the request failed (the game lives on), 1 the cart trapped
+ * (crashed), 2 the host is gone (evicted, shut down), 3 not a cartwheel debug cart (romdev.c) */
+int cw__remote_romdev_classify(const char *err);
+
 extern const rtransport cw__remote_native;
 extern const rtransport cw__remote_romdev;
 

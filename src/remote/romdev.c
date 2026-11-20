@@ -190,10 +190,33 @@ static char *dupz(const char *x) {
 }
 
 /* what an error from romdev means for the game */
-static int classify(const char *err) {
+/* the messages a WebAssembly trap comes back with (V8's RuntimeError texts) */
+static bool wasm_trap(const char *m) {
+  static const char *const traps[] = { "unreachable", "memory access out of bounds", "divide by zero", "integer divide by zero",
+                                       "integer overflow", "float unrepresentable in integer range", "invalid conversion to integer",
+                                       "remainder by zero", "table index is out of bounds", "null function or function signature mismatch",
+                                       "indirect call", "call stack exhausted", "Maximum call stack size exceeded", "RuntimeError",
+                                       "data segment out of bounds", "element segment out of bounds", "array element access out of bounds",
+                                       "dereferencing a null pointer", "illegal cast" };
+  while (*m == ' ') m++;
+  for (size_t i = 0; i < sizeof traps / sizeof traps[0]; i++)
+    if (strstr(m, traps[i])) return true;
+  return false;
+}
+/* romdev reports a trap during a command as the trap's text: once alone ("unreachable"), now after the tool's name
+ * ("wasm({op:'command'}): unreachable"). The tool's own failures (a request it refused, no reply in time) carry the
+ * same prefix, so the prefix is taken off and the rest read: a trap's text is a crash, anything else the request's */
+int cw__remote_romdev_classify(const char *err) {
   if (strstr(err, "No ROM loaded")) return 2;                                          /* host evicted / shut down */
   if (strstr(err, "no debug channel")) return 3;                                       /* not a cartwheel debug cart */
-  if (!strncmp(err, "wasm({op:'command'})", 20) || strstr(err, "romdev is not reachable")) return 0; /* request-level */
+  if (strstr(err, "romdev is not reachable")) return 0;                                /* request-level */
+  static const char prefix[] = "wasm({op:'command'})";
+  if (!getenv("CW_TEST_REMOTE_OLD_CLASSIFY") && !strncmp(err, prefix, sizeof prefix - 1)) {
+    const char *rest = err + sizeof prefix - 1;
+    if (*rest == ':') rest++;
+    return wasm_trap(rest) ? 1 : 0;
+  }
+  if (!strncmp(err, prefix, sizeof prefix - 1)) return 0; /* (CW_TEST_REMOTE_OLD_CLASSIFY: the old rule, the control) */
   return 1; /* a trap ("unreachable", "memory access out of bounds", ...) */
 }
 
@@ -206,7 +229,7 @@ static void run_command(rom *s, cw_remote *r, job *j) {
   char *body = tool(s, r, "wasm", args, err, sizeof err);
   free(args);
   if (!body) {
-    int v = classify(err);
+    int v = cw__remote_romdev_classify(err);
     if (v) {
       pthread_mutex_lock(&s->mu);
       s->dead = true;
@@ -285,7 +308,7 @@ static void *worker(void *u) {
       free(body);
       pthread_mutex_lock(&s->mu);
     } else {
-      int v = classify(err);
+      int v = cw__remote_romdev_classify(err);
       pthread_mutex_lock(&s->mu);
       if (v) {
         s->dead = true;
