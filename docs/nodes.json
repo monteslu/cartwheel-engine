@@ -1454,6 +1454,64 @@
      "doc": "Longest blur in pixels of a 1080 line image."
     },
     {
+     "name": "glints",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Star rays on what is brighter than glint_threshold (off on the Very Low and Low presets)."
+    },
+    {
+     "name": "glint_threshold",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Scene-linear brightness above which a pixel throws rays."
+    },
+    {
+     "name": "glint_intensity",
+     "type": "float",
+     "default": "0.2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "The rays' strength."
+    },
+    {
+     "name": "glint_length",
+     "type": "float",
+     "default": "0.12",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 1,
+     "doc": "A ray's reach, as a share of the frame's height."
+    },
+    {
+     "name": "glint_points",
+     "type": "int",
+     "default": "4",
+     "stored": true,
+     "readonly": false,
+     "min": 2,
+     "max": 8,
+     "doc": "Rays a light throws (4, 6 or 8)."
+    },
+    {
+     "name": "glint_rotation",
+     "type": "float",
+     "default": "0.35",
+     "stored": true,
+     "readonly": false,
+     "min": -6.3,
+     "max": 6.3,
+     "doc": "The star's turn, radians."
+    },
+    {
      "name": "vignette",
      "type": "bool",
      "default": "false",

@@ -5,6 +5,18 @@ prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
 ## v0.51.0 (2026-11-19)
+## NEXT (post stack): star glints on bright points
+
+### Added
+- **Glints.** `PostProcess` `glints` gives what is brighter than `glint_threshold` thin star rays, as a camera's
+  star filter does: lamps, sparks, a gem's highlight, sun glitter. `glint_points` (4, 6 or 8 rays),
+  `glint_length`, `glint_rotation`, `glint_intensity`. The rays keep the light's colour and are added in
+  scene-linear light before the tone curve. Drawn at a quarter of the frame's size (two passes of 7 reads a ray);
+  a one-pixel light does not flicker (the bright part is a 4 x 4 box of the frame), and a whole bright wall
+  does not wash the frame out (what is over the threshold counts up to twice it). Off on the Very Low and Low
+  presets. A game that drew its own sparkle sprites on highlights can use this instead. Guide:
+  docs/guides/rendering-3d.md, "Glints". Gate `post-glints` on GL and WebGPU. Lens dirt is not in this release.
+
 ## NEXT (post stack): automatic exposure and motion blur
 
 ### Added

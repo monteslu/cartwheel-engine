@@ -256,6 +256,47 @@ WGSL_DECL WGSL_AO_COMP_BODY = S(
     return vec4f(c.rgb * mix(1.0, ao, u.u_intensity), c.a);
   });
 
+/* glints (pipeline_post.c): the bright part of the frame at a quarter of its size, a streak along one direction
+ * (7 reads back toward the light; run twice a ray, the second with 7 times the step), and the sum added to the frame */
+WGSL_DECL WGSL_GLINT_BRIGHT = S(
+  struct U { u_texel: vec2f, u_threshold: f32 };
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var u_src: texture_2d<f32>;
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    var c = vec3f(0.0);
+    for (var j = 0; j < 2; j++) {
+      for (var i = 0; i < 2; i++) {
+        c += textureSampleLevel(u_src, cw_linear, uv + (vec2f(f32(i), f32(j)) * 2.0 - 1.0) * u.u_texel, 0.0).rgb;
+      }
+    }
+    c = max(c * 0.25, vec3f(0.0));
+    let l = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+    return vec4f(c * (clamp(l - u.u_threshold, 0.0, 2.0 * u.u_threshold) / max(l, 1e-4)), 1.0);
+  });
+WGSL_DECL WGSL_GLINT_STREAK = S(
+  struct U { u_step: vec2f, u_fall: f32 };
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var u_src: texture_2d<f32>;
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    var s = vec3f(0.0);
+    var ws = 0.0;
+    for (var i = 0; i < 7; i++) {
+      let w = pow(u.u_fall, f32(i));
+      s += textureSampleLevel(u_src, cw_linear, uv + u.u_step * f32(i), 0.0).rgb * w;
+      ws += w;
+    }
+    return vec4f(s / ws, 1.0);
+  });
+WGSL_DECL WGSL_GLINT_ADD = S(
+  struct U { u_k: f32 };
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var u_src: texture_2d<f32>;
+  @group(0) @binding(2) var u_glint: texture_2d<f32>;
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    let c = textureSampleLevel(u_src, cw_linear, uv, 0.0);
+    return vec4f(c.rgb + textureSampleLevel(u_glint, cw_linear, uv, 0.0).rgb * u.u_k, c.a);
+  });
+
 /* motion blur (pipeline_post.c): the largest motion of each 4 x 4 block (run twice: 16 x 16 pixel tiles), the
  * largest of a tile's 3 x 3 neighbours, then the gather along it */
 WGSL_DECL WGSL_MB_TILE = S(

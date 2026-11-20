@@ -44,7 +44,7 @@
  *                      that moved since the last frame drawn over it),
  *                      "ssao" (100), "taa" (200), "dof" (250), "motion_blur"
  *                      (270), "exposure" (290:
- *                      automatic exposure), "bloom" (300), "tonemap"
+ *                      automatic exposure), "bloom" (300), "glints" (320), "tonemap"
  *                      (500, HDR to display), "grade" (550, 3D LUT), "aa"
  *                      (600, FXAA or SMAA), "lens" (700: chromatic
  *                      aberration, vignette, film grain), "debug_view"
@@ -322,6 +322,15 @@ typedef struct cw_post_settings {
   float motion_blur_shutter;      /* 0.5: the share of the frame time the shutter is open (a film camera's 180 degrees) */
   int motion_blur_samples;        /* 10: reads along the motion, a pixel (1..32) */
   float motion_blur_max;          /* 32: the longest blur, in pixels of a 1080 line image (scaled with the height) */
+  /* glints: what is brighter than glint_threshold (a lamp, a spark, a gem's highlight, sun glitter on water)
+   * throws thin star rays, as a camera's star filter does. Drawn at a quarter of the frame's size and added in
+   * scene-linear light before the tone curve; a light's rays keep its colour. Off on the Very Low and Low presets */
+  bool glints;                    /* false */
+  float glint_threshold;          /* 2: scene-linear brightness above which a pixel throws rays */
+  float glint_intensity;          /* 0.2: the rays' strength */
+  float glint_length;             /* 0.12: a ray's reach, as a share of the frame's height */
+  int glint_points;               /* 4: rays a light throws (4, 6 or 8) */
+  float glint_rotation;           /* 0.35: the star's turn, radians */
 } cw_post_settings;
 
 /* ── the pass context ──────────────────────────────────────────────── */

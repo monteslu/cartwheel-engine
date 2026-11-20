@@ -81,6 +81,7 @@
  *   SSR                 off       off     half    as authored  x1.5   (march steps)
  *   depth of field      off       off     on      on           on
  *   motion blur         off       off     x0.6    as authored  x1.5   (reads along the motion)
+ *   glints              off       off     on      on           on
  *   SSGI                off       off     off     off          on
  *   HRTF voices         0.25      0.25    0.5     1            1      (cartwheel/audio.h)
  *   HDR scene           R11G11B10 R11G11B10 RGBA16F RGBA16F    RGBA16F (half the bytes; where the device renders it)
