@@ -617,7 +617,8 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     }
-  },  {
+  },
+  {
     "name": "unit-noise",
     "app": "unit_noise",
     "frames": 2,
@@ -638,7 +639,8 @@
       "CW_TEST_INJECT_FAIL": "1"
     },
     "note": "cw_noise (FastNoiseLite): every pattern, fractal, cellular mode and domain warp, the job-pool fill, gen://noise textures; the checksum is pinned, so the noise is the same bits on every host and a library change shows"
-  },  {
+  },
+  {
     "name": "unit-water",
     "app": "unit_water",
     "frames": 2,
@@ -659,8 +661,6 @@
     },
     "note": "Gerstner waves on the CPU: the height query inverts the sideways motion to 0.2 mm, phases stay exact an hour in; the checksum of heights over a minute is compared across hosts"
   },
-
-
   {
     "name": "unit-scene",
     "app": "unit_scene",
@@ -1544,6 +1544,11 @@
     "note": "navmesh build (324 tiles, static and dynamic), 64 obstacles, 1000 batched paths and crowd steps for 500 and 2000 agents, on one thread and the default pool, natively and in Chromium (reported); equal result hashes in every run; budgets on the default pool; a 2x parallel build natively; control: impossible budgets must fail"
   },
   {
+    "name": "tiles2d-perf-report",
+    "script": "tests/tiles2d-perf.mjs",
+    "note": "2D tile timings on a 256 x 256 map, natively and as a cart on romdev (reported): TileCollision2D building 64 chunks, per chunk, and one chunk after a cell edit; the same chunks, chains and segments on every host; budgets; control: an impossible budget must fail"
+  },
+  {
     "name": "unit-vehicle3d",
     "app": "unit_vehicle3d",
     "frames": 2,
@@ -1961,6 +1966,39 @@
     "assets": "samples/r2d_assets",
     "maxGt16": 0.002,
     "note": "chunked tilemap, 3 layers, animated tiles (time uniform), 8 tile transforms, edit + rebuild, camera pan across chunks, culling"
+  },
+  {
+    "name": "tiles2d",
+    "app": "tiles2d",
+    "webgpu": true,
+    "frames": 700,
+    "input": "tiles2d-strip.json",
+    "controlInput": "tiles2d-strip-control.json",
+    "fields": [
+      "hero.pos",
+      "hero.floor",
+      "hero.one_way",
+      "hero.max_x",
+      "hero.min_y",
+      "hero.plank_lands",
+      "hero.drops",
+      "hero.wood_ticks",
+      "tc.chains",
+      "tc.segments",
+      "tc.chunks",
+      "tc.builds",
+      "crate.c_y",
+      "phys.hash"
+    ],
+    "expect": {
+      "hero.plank_lands": 3,
+      "hero.drops": 1,
+      "hero.floor": 1,
+      "hero.one_way": 0,
+      "tc.builds": 5,
+      "tc.chunks": 2
+    },
+    "note": "tile collision from the tile set, as a scene: a CharacterBody2D runs a side-scroller strip built by a TileCollision2D from TileMap2D tile_shapes (gentle and steep slopes up and down, a cliff, half blocks stepped over, wedges overhead), jumps up through two one-way planks, falls onto a third and drops through it; crates rest on tiles and on a plank; three cells of a ledge are removed at tick 420 (one chunk rebuilt: tc.builds 5) and the crate on it falls. The control holds right without jumping: it never stands on a plank"
   },
   {
     "name": "r2d-text",
@@ -2578,6 +2616,27 @@
       "CW_TEST_INJECT_FAIL": "1"
     },
     "note": "node layer: body lifecycle (enter/exit/reparent/free mid-step), runtime property changes (shape size, mask, freeze, teleport, live velocity), area signal order and the frame order (signals after fixed_update, seen next tick), characters (floor, wall, proxy seen by areas and rays), joints (rebuild, drop, break), the 3D mirror (TRIMESH from a mesh, areas, kinematic, pin), canvas data paths (animation stepping, tile cells text, save/load round trip)"
+  },
+  {
+    "name": "unit-tiles2d",
+    "app": "unit_tiles2d",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "tile collision: tile_shapes and tile_data text forms (full, slope, rect, poly, oneway; flips), TileCollision2D outlines (a block is one loop of four segments, a floor across a chunk edge is one chain per chunk joined by ghost vertices, partly shared edges, touching corners, rings), a frictionless box sliding 60 cells without catching a seam, a character up and down slopes, one-way platforms for characters (jump up through, land, drop through) and rigid bodies (rest from above, pass from below), physics layers and masks, chunk rebuild counts on cell edits (one chunk, two on a chunk edge, all on a resize or new shapes), a tree snapshot restored over an edit"
   },
   {
     "name": "unit-gameplay",
@@ -3596,7 +3655,8 @@
     "name": "noise-gpu",
     "script": "tests/noise-gpu.mjs",
     "note": "the GPU noise ports agree with cw_noise on every host and backend (difference rows of noise_demo); control: another seed on the GPU must fail"
-  },  {
+  },
+  {
     "name": "water-boat",
     "app": "water_boat",
     "frames": 240,
@@ -3794,7 +3854,6 @@
     "script": "tests/water-surface.mjs",
     "note": "the drawn water is where cw_water_height_at says, on every host and backend (debug_view HEIGHT read back at 48 probes, 1.5 cm); control: the water drawn 0.25 s late"
   },
-
   {
     "name": "fog-height",
     "app": "fog_valley",

@@ -3502,6 +3502,22 @@
      "doc": "Bit k: map layer k casts shadows (and blocks GI) by its alpha on lit canvases."
     },
     {
+     "name": "tile_shapes",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Collision shape per tile id, tile pixels: \"1-4: full; 5: slope 0 16; 6: rect 0 8 16 8; 7: oneway; 8: poly 0 0, 16 0, 8 16\" (a TileCollision2D child builds the colliders)."
+    },
+    {
+     "name": "tile_data",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Named values per tile id that the game reads: \"damage: 5=1, 6-7=2; sound: 1-4=stone\" (cw_tilemap2d_tile_data)."
+    },
+    {
      "name": "cells0",
      "type": "string",
      "default": "\"\"",
@@ -5364,6 +5380,22 @@
      "doc": "Carried by the floor body's motion."
     },
     {
+     "name": "one_way_mask",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layers (bits) whose shapes are one-way platforms for it: landed on from above, passed from below and the side."
+    },
+    {
+     "name": "drop_through",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "While set, moves fall through the one-way platform it stands on."
+    },
+    {
      "name": "on_floor",
      "type": "bool",
      "default": "false",
@@ -5386,6 +5418,14 @@
      "stored": false,
      "readonly": true,
      "doc": "Touching a ceiling."
+    },
+    {
+     "name": "on_one_way",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "The floor is a one-way platform."
     },
     {
      "name": "floor_normal",
@@ -5978,6 +6018,40 @@
      "stored": true,
      "readonly": false,
      "doc": "Hits kept (1..32)."
+    }
+   ]
+  },
+  {
+   "name": "TileCollision2D",
+   "parent": "StaticBody2D",
+   "doc": "Static colliders built from a TileMap2D's cells and tile_shapes: merged outlines per chunk, rebuilt where cells change.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "tilemap",
+     "type": "string",
+     "default": "\"..\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path to the TileMap2D, from this node (\"..\": the parent)."
+    },
+    {
+     "name": "layers",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bit k: map layer k collides (-1 = every layer)."
+    },
+    {
+     "name": "one_way_layer",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "min": -1,
+     "max": 31,
+     "doc": "Physics layer of one-way platforms (-1 = collision_layer)."
     }
    ]
   },

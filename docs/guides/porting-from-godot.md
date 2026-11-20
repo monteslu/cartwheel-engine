@@ -53,7 +53,7 @@ See [Input](guide:input).
 
 | Godot | {{name}} | Notes |
 |---|---|---|
-| `CharacterBody2D` / `3D`, `move_and_slide()` | [CharacterBody2D](node:CharacterBody2D) / [CharacterBody3D](node:CharacterBody3D), `cw_character2d_move_and_slide` / `cw_character3d_move_and_slide` | `velocity`, `on_floor`, `on_wall`, `floor_normal`, `step_height`, `ride_platforms` |
+| `CharacterBody2D` / `3D`, `move_and_slide()` | [CharacterBody2D](node:CharacterBody2D) / [CharacterBody3D](node:CharacterBody3D), `cw_character2d_move_and_slide` / `cw_character3d_move_and_slide` | `velocity`, `on_floor`, `on_wall`, `floor_normal`, `step_height`, `ride_platforms`; in 2D `one_way_mask` and `drop_through` for one-way platforms (Godot's per-shape `one_way_collision`) |
 | `RigidBody2D` / `3D`, `apply_impulse` | `RigidBody2D` / `RigidBody3D`, `cw_rigid_body2d_apply_impulse` / `cw_rigid_body3d_apply_impulse` | Box2D v3 / Box3D underneath |
 | `StaticBody2D` / `3D`, `AnimatableBody2D` / `3D` | `StaticBody2D` / `3D`, `KinematicBody2D` / `3D` | |
 | `Area2D` / `3D` | [Area2D](node:Area2D) / `Area3D` | signals `body_entered`, `body_exited`, `area_entered`, `area_exited`; `overlap_count` |
@@ -73,7 +73,9 @@ See [Physics](guide:physics) and [Navigation](guide:navigation).
 |---|---|---|
 | `Node2D`, `Sprite2D`, `AnimatedSprite2D`, `Line2D`, `Polygon2D`, `Light2D`, `LightOccluder2D`, `Camera2D`, `CanvasLayer` | same names | `Camera2D` has `zoom`, `smoothing`, `limit_*` |
 | `ParallaxBackground` + `ParallaxLayer` | `ParallaxLayer` | |
-| `TileMap` / `TileMapLayer` | `TileMap2D` | layers and animated tiles; no tile physics layers yet |
+| `TileMap` / `TileMapLayer` | `TileMap2D` | layers and animated tiles |
+| `TileSet` physics layers, collision polygons, one-way collision | `tile_shapes` on the `TileMap2D` and a [TileCollision2D](node:TileCollision2D) child | shapes per tile id as text (full, slope, rect, poly, oneway); one `TileCollision2D` per physics layer and mask (`layers` picks the map layers); a character sees one-way platforms through `one_way_mask`; see [2D rendering](guide:rendering-2d) |
+| `TileSet` custom data layers, `TileData.get_custom_data` | `tile_data`, `cw_tilemap2d_tile_data`, `cw_tilemap2d_cell_data` | named numbers or words per tile id |
 | `Label` in 2D space | `Label2D` | |
 | `Path2D` + `PathFollow2D`, `Curve2D` | [Path2D](node:Path2D), [PathFollow2D](node:PathFollow2D), `cw_curve` | `points` text, `closed`; `progress`, `progress_ratio`, `loop`, `rotates`, `h_offset`, `v_offset`, plus `speed` and the signal `end_reached`. See [Gameplay nodes](guide:gameplay-nodes). |
 | `Path3D` + `PathFollow3D`, `Curve3D` | [Path3D](node:Path3D), [PathFollow3D](node:PathFollow3D), `cw_curve` | `rotation_mode` `NONE`, `Y`, `XY`, `XYZ`, `ORIENTED`; `tilt_enabled`, `use_model_front`; `cw_curve_sample_baked`, `cw_curve_sample_frame`, `cw_curve_closest_offset` |

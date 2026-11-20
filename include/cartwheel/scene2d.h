@@ -43,6 +43,37 @@
  *                     "0*20 / . . 3 3x / 1*4"; occluder_layers (bit k: map
  *                     layer k casts shadows by its alpha). The map's size is the largest
  *                     row count and row length over all layers.
+ *                     tile_shapes: a collision shape per tile id, in tile
+ *                     pixels (y down, origin the tile's top-left), entries
+ *                     separated by ';', ids as lists and ranges:
+ *                       "1-4, 9: full"            the whole cell
+ *                       "5: slope 0 16"           a floor whose height over the
+ *                                                 cell's bottom is 0 at the left
+ *                                                 edge and 16 at the right
+ *                                                 ("slope 0 8" and "slope 8 16"
+ *                                                 are the halves of a gentle one)
+ *                       "6: rect 0 8 16 8"        x y w h
+ *                       "8: poly 0 0, 16 0, 8 16" any simple polygon, 3..12 points
+ *                       "7: oneway"               a platform along the tile's top,
+ *                                                 solid only from above ("oneway 4":
+ *                                                 4 pixels down; "oneway 0 8 16 0":
+ *                                                 a sloped one, x0 y0 x1 y1)
+ *                     A cell's flips and transpose turn its shape with its
+ *                     picture. A TileCollision2D child turns the shapes into
+ *                     colliders; cw_tilemap2d_cell_solid and
+ *                     cw_tilemap2d_point_solid answer from them without physics.
+ *                     tile_data: named values per tile id that the game reads,
+ *                     "damage: 5=1, 6-7=2; sound: 1-4=stone, 5=wood" (a value
+ *                     is a number or a word; cw_tilemap2d_tile_data).
+ *   TileCollision2D   (a StaticBody2D, in cartwheel/physics_nodes.h's terms)
+ *                     tilemap (path to the TileMap2D, default ".." : make it
+ *                     the map's child), layers (bit k: map layer k collides;
+ *                     -1 = every layer), one_way_layer (the physics layer of
+ *                     one-way platforms, 0..31; -1 = collision_layer). Its
+ *                     collision_layer, collision_mask, friction and bounce are
+ *                     the StaticBody2D's, so two of them over one map give two
+ *                     map layers their own physics layers. See "tile
+ *                     collision" below.
  *   Camera2D          current, zoom, offset, anchor_top_left, smoothing,
  *                     smoothing_speed, limit_left/top/right/bottom, rotating.
  *                     The first current Camera2D in tree order drives every
@@ -211,6 +242,85 @@ int cw_tilemap2d_get_cell(cw_node n, int layer, int x, int y); /* -1 empty or ou
 void cw_tilemap2d_size(cw_node n, int *w, int *h); /* in cells, over all layers; 0 x 0 when not a TileMap2D */
 /* Local node position -> cell (floor), using cell_size. */
 void cw_tilemap2d_local_to_cell(cw_node n, cw_vec2 local, int *x, int *y);
+
+/* A cell's raw value: tile id + 1 in the low 24 bits (0 = empty) and the CW_TILE_FLIP_* flags (render2d.h);
+ * 0 for an empty cell or one outside the map. */
+uint32_t cw_tilemap2d_get_raw(cw_node n, int layer, int x, int y);
+/* Sets a cell from a raw value (cw_tilemap2d_get_raw's); grows the map like cw_tilemap2d_set_cell. */
+void cw_tilemap2d_set_raw(cw_node n, int layer, int x, int y, uint32_t cell);
+cw_vec2 cw_tilemap2d_cell_size(cw_node n); /* a cell's size in the node's pixels: cell_size, else tile_size */
+cw_vec2 cw_tilemap2d_cell_center(cw_node n, int x, int y); /* local node position of a cell's middle */
+
+/* ── tile collision ────────────────────────────────────────────────────
+ * The tile set says what each tile is made of (TileMap2D tile_shapes), and
+ * a TileCollision2D child of the map builds Box2D static geometry from the
+ * cells:
+ *
+ *   [node name="Map" type="TileMap2D"]
+ *   tile_shapes = "1-4: full; 5: slope 0 16; 6: slope 16 0; 7: oneway"
+ *   cells0 = "..."
+ *   [node name="Solid" type="TileCollision2D" parent="Map"]
+ *   one_way_layer = 2
+ *
+ * How it is built: per map layer and per chunk of CW_TILE_CHUNK x
+ * CW_TILE_CHUNK cells, the outline of the union of the cells' shapes, as
+ * Box2D chain shapes. Edges two cells share are removed (also where only
+ * part of an edge is shared, a half-height slope against a full block), the
+ * rest joins into loops, and straight runs become one segment each. A chunk's
+ * chains carry ghost vertices from the cells of the next chunk, so a floor
+ * that crosses tiles, or chunks, is one smooth surface: a body sliding along
+ * it never catches on a seam. One-way platforms become chain segments that
+ * face up, on one_way_layer: rigid bodies land on them from above and pass
+ * through from below (a chain collides on one side), and a CharacterBody2D
+ * whose one_way_mask has that layer lands on them, jumps up through them and
+ * drops through with drop_through.
+ *
+ * Edits: cw_tilemap2d_set_cell rebuilds only the chunk of the cell (and the
+ * neighbour chunk when the cell is on a chunk's edge) before the next
+ * physics step. Setting a cells text, tile_shapes or the sizes rebuilds
+ * every chunk. Cost: a chunk build is linear in its 34 x 34 cells; the
+ * tile_collision sample measures it (cw_tile_collision2d_stats counts).
+ *
+ * Chains are outlines, not filled shapes: a body that starts inside solid
+ * tiles is not pushed out, and overlap queries see the surface only. Ask
+ * the map (cw_tilemap2d_point_solid) where "is this point inside a wall"
+ * matters. Contacts and hits name the TileCollision2D node as the other
+ * body; cw_tile_collision2d_cell_at turns a contact point into the cell. */
+typedef enum cw_tile_shape_kind {
+  CW_TILE_SHAPE_NONE,
+  CW_TILE_SHAPE_SOLID,   /* a polygon */
+  CW_TILE_SHAPE_ONE_WAY, /* a segment: points[0] to points[1] */
+} cw_tile_shape_kind;
+/* The collision shape tile_shapes gives a tile id, unflipped, in tile pixels: writes up to cap points and the
+ * shape's point count (points and count may be NULL). */
+cw_tile_shape_kind cw_tilemap2d_tile_shape(cw_node n, int tile, cw_vec2 *points, int cap, int *count);
+/* The cell holds a tile with a solid shape (a one-way platform is not solid). */
+bool cw_tilemap2d_cell_solid(cw_node n, int layer, int x, int y);
+/* A local node position lies inside the solid shape of its cell (its edge counts), flips applied. */
+bool cw_tilemap2d_point_solid(cw_node n, int layer, cw_vec2 local);
+/* Custom data (tile_data): the number a name gives a tile id. False (value untouched) when the tile has none;
+ * a word value reads as 0 here and as text below. */
+bool cw_tilemap2d_tile_data(cw_node n, int tile, const char *name, float *value);
+const char *cw_tilemap2d_tile_data_text(cw_node n, int tile, const char *name); /* "" when none or a number */
+/* The value for the tile in a cell, or fallback (empty cell, no value). */
+float cw_tilemap2d_cell_data(cw_node n, int layer, int x, int y, const char *name, float fallback);
+
+/* What a TileCollision2D holds now, and how many chunk builds it has done. */
+typedef struct cw_tile_collision2d_stats {
+  int32_t chunks;   /* chunks holding at least one chain */
+  int32_t chains;   /* Box2D chains alive */
+  int32_t segments; /* their segments */
+  int32_t builds;   /* chunk builds since the node entered the tree (an edit adds one or two) */
+} cw_tile_collision2d_stats;
+cw_tile_collision2d_stats cw_tile_collision2d_stats_get(cw_node n); /* zeros unless a TileCollision2D in a tree */
+/* The TileMap2D a TileCollision2D builds from (null before it entered the tree or when the path is wrong). */
+cw_node cw_tile_collision2d_map(cw_node n);
+/* Bring the colliders up to date with the map now instead of at the next physics step (after edits that a
+ * query in the same tick must see). */
+void cw_tile_collision2d_update(cw_node n);
+/* The map cell under a world position nudged against a contact normal (pixels, y down; the normal points out
+ * of the tiles): what a body touching the tiles stands on or ran into. */
+void cw_tile_collision2d_cell_at(cw_node n, cw_vec2 global, cw_vec2 normal, int *x, int *y);
 
 /* Parse a point list ("0 0, 32 0, 32 16") into out (frame arena); returns
  * the point count. */

@@ -152,6 +152,10 @@ endif()
 set(R2D_ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/r2d_assets)
 cw_add_app(r2d_sprites SOURCES r2d_sprites/main.c ASSETS ${R2D_ASSETS})
 cw_add_app(r2d_tilemap SOURCES r2d_tilemap/main.c ASSETS ${R2D_ASSETS})
+# tile collision from the tile set: a side-scroller strip (slopes, one-way planks, half blocks) as merged Box2D chains per chunk
+cw_add_app(tiles2d SOURCES tiles2d/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/tiles2d/assets)
+# 2D tile timings on a 256 x 256 map (tests/tiles2d-perf.mjs): collision chunk builds
+cw_add_app(tiles2d_perf SOURCES tiles2d_perf/main.c)
 cw_add_app(r2d_text SOURCES r2d_text/main.c ASSETS ${R2D_ASSETS})
 # the player's text scale, the size floor and the text background (cartwheel/render2d.h "text size"); TEXT_SIZE_SMALL=1 or
 # the request `small 1` draws a line under the floor (the control of tests/text-floor.mjs)

@@ -58,6 +58,39 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   are kept and the rest reads zero, so a struct that grows at its end loses nothing; a different
   `game_save_version` with no migrate hook starts the game's data over and keeps the settings (volumes, graphics,
   text size). Existing saves load unchanged.
+- **Tile maps collide: `tile_shapes` on a TileMap2D and the new TileCollision2D node.** The tile set says what
+  each tile id is made of, as text in tile pixels: `"1-4: full; 5: slope 0 16; 6: rect 0 8 16 8; 7: oneway;
+  8: poly 0 0, 16 0, 8 16"` (whole cells, slopes by their floor height at each edge, rects, any simple polygon,
+  one-way platforms). A cell's flips and transpose turn its shape with its picture. A `TileCollision2D` child of
+  the map (a StaticBody2D: its layer, mask, friction and bounce are the body's) builds Box2D static geometry from
+  the cells, per map layer and per chunk of 32x32 cells: the outline of the union of the tiles as chain shapes.
+  Edges two cells share are removed, also where only part of an edge is shared (a half slope against a block), a
+  straight run of any length is one segment, and a chunk's chains carry ghost vertices from the next chunk, so a
+  body sliding along a floor never catches on a tile seam or a chunk seam. A 10x2 block of cells is one loop of
+  four segments. `layers` picks the map layers that collide, so two TileCollision2D nodes over one map give two
+  map layers their own physics layers and masks.
+- **One-way platforms from tiles, and for CharacterBody2D.** A `oneway` tile becomes a chain segment that faces
+  up on the physics layer `one_way_layer` names: rigid bodies rest on it from above and pass it from below.
+  CharacterBody2D has `one_way_mask` (the layers whose shapes are one-way platforms for it: landed on from above,
+  passed from below and from the side), `drop_through` (while set, a move falls through the platform it stands
+  on) and read-only `on_one_way`; the 2D mover had these, the node did not.
+- **Only the chunk of an edited cell is rebuilt.** `cw_tilemap2d_set_cell` rebuilds that cell's chunk (and the
+  neighbour's when the cell is on a chunk's edge) before the next physics step, or at once with
+  `cw_tile_collision2d_update`; a cells text, new shapes or a resize rebuild every chunk. A tree snapshot restored
+  over an edit (rollback) gets the colliders of the snapshot's moment. On a 256x256 map with slopes all 64 chunks
+  build in 12.6 ms natively and 23 ms in a cart (0.2 and 0.36 ms a chunk); gate `tiles2d-perf-report` holds a
+  budget and the same chains on every host.
+- **Custom data per tile.** `tile_data = "damage: 5=1, 6-7=2; sound: 1-4=stone, 9=wood"` gives tile ids named
+  numbers or words; `cw_tilemap2d_tile_data`, `cw_tilemap2d_tile_data_text` and `cw_tilemap2d_cell_data` read
+  them, and `cw_tile_collision2d_cell_at` turns a contact point and normal into the cell that was touched.
+- **Queries without physics:** `cw_tilemap2d_cell_solid`, `cw_tilemap2d_point_solid` (exact against the shape,
+  flips applied), `cw_tilemap2d_tile_shape`, `cw_tilemap2d_get_raw` / `set_raw` (a cell with its flip bits),
+  `cw_tilemap2d_cell_size`, `cw_tilemap2d_cell_center`.
+- Sample `tiles2d`: a side-scroller strip from one scene file (gentle and steep slopes, a cliff, half blocks,
+  one-way planks, crates, a ledge removed in play). Gates `tiles2d` (GL and WebGPU, every host; the control
+  never jumps and so never stands on a plank) and `unit-tiles2d` (outlines by segment count, a frictionless box
+  sliding 60 cells, slopes, one-way platforms for characters and rigid bodies, rebuild counts, rollback). Guides:
+  2D rendering ("Tile shapes and collision", "Custom tile data"), physics ("Tile maps"), porting from Godot.
 
 ## v0.50.4 (2026-11-18)
 

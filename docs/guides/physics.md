@@ -142,7 +142,7 @@ The 8-wide contact solver (for CPUs with the AVX2 vector instructions) is picked
 
 | Node | What it is |
 |---|---|
-| [StaticBody3D](node:StaticBody3D) | never moves by itself; moving the node teleports it |
+| [StaticBody3D](node:StaticBody3D) | never moves by itself; moving the node teleports it (in 2D, [TileCollision2D](node:TileCollision2D) is one built from a tile map) |
 | [KinematicBody3D](node:KinematicBody3D) | follows its node: each tick the body gets the velocity that reaches it, so it pushes and carries |
 | [RigidBody3D](node:RigidBody3D) | simulated; its transform is written into the node after every step |
 | [CharacterBody3D](node:CharacterBody3D) | the mover as a node: moves only through `cw_character3d_move_and_slide` |
@@ -207,6 +207,10 @@ The same command with `--host romdev` must print the same hash. `physics_determi
 [cw_world3d_debug_draw](api:cw_world3d_debug_draw) appends shapes, joints, bounds, contacts or mass as a flat line list ([cw_phys_lines](api:cw_phys_lines)) any renderer can draw as `GL_LINES`; clearing keeps the capacity, so it does not allocate once warm. [cw_world2d_debug_draw](api:cw_world2d_debug_draw) does the same for a 2D world and takes the extra 2D-only flags Box2D v3.2 draws (3D ignores them): `CW_PHYS_DRAW_JOINT_EXTRAS` (limits and springs), `CW_PHYS_DRAW_ANCHOR_A`, `CW_PHYS_DRAW_CHAIN_NORMALS` (which side of a chain is solid), `CW_PHYS_DRAW_CONTACT_FORCES`, `CW_PHYS_DRAW_FRICTION_FORCES`, `CW_PHYS_DRAW_ISLANDS` (the groups of touching bodies that sleep together) and `CW_PHYS_DRAW_GRAPH_COLORS` (contacts tinted by the solver colour that holds them). The `phys` debug command reports the tree's worlds over the debug channel.
 
 A 2D world reports more than [cw_world2d_stats](api:cw_world2d_stats): [cw_world2d_profile_get](api:cw_world2d_profile_get) splits the last step's milliseconds by phase (pairs, collide, solve and the solver's stages, sleep, sensors), [cw_world2d_counters_get](api:cw_world2d_counters_get) gives Box2D's counters (bodies, shapes, contacts awake and recycled, islands, tree heights, tasks, constraints per solver colour), and [cw_physics2d_memory_bytes](api:cw_physics2d_memory_bytes) the bytes Box2D holds across all worlds. Box2D's own log lines arrive as engine warnings prefixed `Box2D:`, and a failed Box2D assertion is logged as an engine error before Box2D halts on it.
+
+## Tile maps
+
+A [TileMap2D](node:TileMap2D) carries a collision shape per tile id (`tile_shapes`: whole cells, slopes, rects, polygons, one-way platforms), and a [TileCollision2D](node:TileCollision2D) child builds the static geometry from the cells: per chunk of 32x32 cells, the merged outline of the tiles as Box2D chain shapes with ghost vertices across tile and chunk seams, so nothing catches on a seam. One-way platforms go on their own physics layer (`one_way_layer`): rigid bodies rest on them from above and pass from below, and a [CharacterBody2D](node:CharacterBody2D) names that layer in `one_way_mask` and sets `drop_through` to fall through. Editing a cell rebuilds one chunk. [2D rendering](guide:rendering-2d), "Tile shapes and collision", has the text form, the sample (`samples/tiles2d`) and the cost.
 
 ## Platformer feel and one-way platforms
 
