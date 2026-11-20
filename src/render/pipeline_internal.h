@@ -245,6 +245,8 @@ extern cw__view_clip cw__vclip;
 /* the rectangle scaled to a target of w x h */
 void cw__view_clip_rect(int w, int h, int out[4]);
 void cw__pw_set_scissor(const int *rect); /* WebGPU: NULL = the whole target */
+/* a pass's split screen capability, from the next frame (cw_pass_desc.views: a pass that can only sometimes) */
+void cw__pipeline_set_pass_views(cw_pipeline *p, const char *name, uint8_t views);
 /* copy a texture into a target with a plain shader (any formats) */
 void cw__pass_copy(cw_pass_ctx *ctx, unsigned src_tex, const cw_rt *dst);
 /* the LUT texture of a LUT id (0 when unknown) */
