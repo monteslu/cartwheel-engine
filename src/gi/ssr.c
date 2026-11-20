@@ -350,10 +350,10 @@ static const char *COMP_WGSL = S(
 typedef struct gb_hidden { t3_object *o; } gb_hidden;
 typedef CW_ARRAY(gb_hidden) gb_list;
 static void gb_walk(t3_object *o, gb_list *out) {
-  bool drawable = o->type == T3_MESH || o->type == T3_SKINNED_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_SPRITE ||
+  bool drawable = o->type == T3_MESH || o->type == T3_SKINNED_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_BATCHED_MESH || o->type == T3_SPRITE ||
                   o->type == T3_POINTS || o->type == T3_LINE || o->type == T3_LINE_SEGMENTS || o->type == T3_LINE_LOOP;
   if (drawable && o->visible) {
-    bool keep = o->type == T3_MESH || o->type == T3_SKINNED_MESH || o->type == T3_INSTANCED_MESH;
+    bool keep = o->type == T3_MESH || o->type == T3_SKINNED_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_BATCHED_MESH;
     if (keep) {
       const t3_mesh *m = (const t3_mesh *)o;
       for (int i = 0; i < m->material_count && keep; i++)

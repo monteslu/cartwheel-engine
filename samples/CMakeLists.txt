@@ -16,6 +16,11 @@ cw_add_app(character_skin SOURCES character_skin/main.c ASSETS ${CMAKE_CURRENT_S
 cw_add_app(rim_light SOURCES rim_light/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/rim_light/assets)
 # IES photometric profiles on spot and omni lights (Light3D ies_profile; cartwheel/lighting.h)
 cw_add_app(ies_lights SOURCES ies_lights/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/ies_lights/project/roots.txt)
+# static batches: 5,000 different props in a handful of draws (MeshInstance3D batch; cartwheel/static_batch.h)
+cw_add_app(static_batch SOURCES static_batch/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/static_batch/assets)
+# the same field under clustered lights, the cascaded sun and a probe grid (the props' material carries cluster, csm and gi)
+cw_add_app(static_batch_lit SOURCES static_batch/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/static_batch/assets)
+target_compile_definitions(static_batch_lit PRIVATE STATIC_BATCH_LIT=1)
 # toon (cel) shading: MeshInstance3D shading = TOON on primitives and a glTF, under a cascaded sun and clustered lights (cartwheel/toon.h)
 cw_add_app(toon_shading SOURCES toon_shading/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/toon_shading/project/roots.txt)
 # fine texture detail at grazing angles (anisotropic filtering, mip chains, sRGB albedo, normal maps): GL and WebGPU draw the same picture

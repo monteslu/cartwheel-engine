@@ -129,8 +129,8 @@ static void probe_box(cw_node n, const refl_probe *p, float c[3], float h[3], fl
 typedef struct masked { t3_object *o; uint32_t layers; bool visible; } masked;
 typedef CW_ARRAY(masked) mask_list;
 static void mask_walk(t3_object *o, uint32_t mask, mask_list *changed) {
-  bool drawable = o->type == T3_MESH || o->type == T3_SKINNED_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_SPRITE ||
-                  o->type == T3_POINTS || o->type == T3_LINE || o->type == T3_LINE_SEGMENTS || o->type == T3_LINE_LOOP;
+  bool drawable = o->type == T3_MESH || o->type == T3_SKINNED_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_BATCHED_MESH ||
+                  o->type == T3_SPRITE || o->type == T3_POINTS || o->type == T3_LINE || o->type == T3_LINE_SEGMENTS || o->type == T3_LINE_LOOP;
   if (drawable && o->visible) {
     if ((o->layers & mask) == 0) {
       cw_array_push(changed, (masked){ o, o->layers, true });
@@ -251,7 +251,7 @@ static bool surface_only(const char *ext) {
 
 /* every Standard / Physical material of the scene carries the gi part */
 void cw__gi_tag(gi_tree *g, t3_object *o) {
-  if (o->type == T3_MESH || o->type == T3_SKINNED_MESH || o->type == T3_INSTANCED_MESH) {
+  if (o->type == T3_MESH || o->type == T3_SKINNED_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_BATCHED_MESH) {
     t3_mesh *m = (t3_mesh *)o;
     for (int i = 0; i < m->material_count; i++) {
       t3_material *mat = m->materials[i];

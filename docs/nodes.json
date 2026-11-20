@@ -500,6 +500,14 @@
      "doc": "Mesh resource (overrides the primitive)."
     },
     {
+     "name": "batch",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Draw through the tree's static batches: every batched mesh sharing a material is one three.js BatchedMesh, and props in view that follow each other in it are one draw, whatever their geometry (cartwheel/static_batch.h). For props that stay put. Still frustum culled one by one; gives up LOD, occlusion culling, impostors and visibility_range."
+    },
+    {
      "name": "static",
      "type": "bool",
      "default": "false",

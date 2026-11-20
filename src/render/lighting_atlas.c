@@ -170,7 +170,7 @@ static uint64_t mixf(uint64_t h, float f) {
 
 static void gather_casters(cw__atlas *a, const t3_object *o) {
   if (!o->visible) return;
-  if ((o->type == T3_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_SKINNED_MESH) && o->cast_shadow) {
+  if ((o->type == T3_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_SKINNED_MESH || o->type == T3_BATCHED_MESH) && o->cast_shadow) {
     const t3_mesh *m = (const t3_mesh *)o;
     t3_geometry *g = m->geometry;
     if (g && g->attributes[T3_ATTR_POSITION]) {
@@ -188,6 +188,10 @@ static void gather_casters(cw__atlas *a, const t3_object *o) {
         const t3_instanced_mesh *im = (const t3_instanced_mesh *)o;
         k = mix64(mix64(k, (uint64_t)im->count), im->instance_matrix ? im->instance_matrix->version : 0);
         c.r = -1; /* instances spread anywhere */
+      }
+      if (o->type == T3_BATCHED_MESH) {
+        k = mix64(k, cw__batched_key((const t3_batched_mesh *)o));
+        c.r = -1; /* its instances spread anywhere */
       }
       if (o->type == T3_SKINNED_MESH) {
         const t3_skinned_mesh *sm = (const t3_skinned_mesh *)o;

@@ -6,6 +6,9 @@
 #include "cartwheel/lighting.h"
 #include "cartwheel/pipeline.h"
 
+/* what a BatchedMesh casts, as one number: it moves when an instance is added, moved, hidden or deleted */
+static inline uint64_t cw__batched_key(const t3_batched_mesh *b) { return ((uint64_t)(uintptr_t)b << 20) ^ b->version; }
+
 /* a DirectionalLight3D's cascades, as its node asks (render3d.c) */
 typedef struct cw__csm_cfg {
   int cascades;        /* 1..4 */
