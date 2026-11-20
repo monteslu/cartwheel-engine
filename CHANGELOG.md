@@ -149,6 +149,18 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - The tonemap programs take their exposure as `u_tm_exposure` times the automatic exposure's state (a texture
   of zero stops when it is off): the same picture as before with automatic exposure off (`tests/post-fusion.mjs`
   and `tests/quality-verylow-post.mjs` pass unchanged).
+## NEXT (fixes2): a gate that the cascaded sun keeps its specular highlight
+
+### Added
+
+- **Gate `csm-specular`: the sun's highlight under cascades.** gi_room's chrome ball, the ceiling taken away, lit
+  by the sun through three cascades and by the same sun with three.c's one shadow map fitted over the room, on GL
+  and WebGPU: the highlight is there under cascades (brightest pixel 255 on both) and matches the one map's (mean
+  3.3 levels on GL, 2.5 on WebGPU, bound 12). Control: with the ceiling in place the ball's highlight point lies
+  in the ceiling's shadow, under cascades and under the fitted map alike (peak 193 and 199), and the presence check
+  fails there. The room's default one map starts at the light and leaves the ceiling out of it, which is why that
+  map showed a highlight the cascades did not: the cascades were right. gi_room takes `GI_SUN_CASCADES`,
+  `GI_SUN_FIT` and `GI_NO_CEILING` for it.
 
 ## v0.51.0 (2026-11-19)
 

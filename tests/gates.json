@@ -4480,6 +4480,11 @@
     "note": "street_sun from above on GL and WebGPU: four cascades against three.c single shadow map covering the same ground agree (at most 0.5% of pixels off by more than 16 levels); control: no shadows must differ"
   },
   {
+    "name": "csm-specular",
+    "script": "tests/csm-specular.mjs",
+    "note": "gi_room without its ceiling on GL and WebGPU: the sun through three cascades puts its highlight on the chrome ball as bright as three.c single shadow map fitted over the room (peak >= 240, mean difference <= 12 levels over the highlight); control: with the ceiling the point is in shadow and the presence check must fail"
+  },
+  {
     "name": "fog-volumetric",
     "app": "fog_shafts",
     "frames": 40,

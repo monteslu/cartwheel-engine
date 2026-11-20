@@ -20,7 +20,11 @@
  * GI_ONCE=every: the same lighting with RoomProbe left captured every other
  * frame. GI_ONCE=forward: the same with FORWARD lighting (the lamp three.c's
  * own light, the sun still in cascades), the reference a capture's lighting
- * is compared with.
+ * is compared with. GI_SUN_CASCADES=n gives the sun
+ * n cascades (30 m); GI_SUN_FIT=1 moves its one shadow map up the sun's ray and
+ * widens it over the room (the default map starts at the light and leaves the
+ * ceiling out); GI_NO_CEILING=1 takes the ceiling away so the sun reaches the
+ * chrome ball's highlight point (tests/csm-specular.mjs).
  *
  * Debug state: gi.tick, gi.probes, gi.captures (since the start), gi.bound
  * (the most probes one draw had bound last frame), gi.materials (materials
@@ -80,6 +84,19 @@ static void fixed_update(void *u, double dt) {
     }
     e = cw_test_env("GI_GRID");
     if (e && !strcmp(e, "0")) cw_node_set(node("Room/Bounce"), "intensity", cw_val_float(0));
+    e = cw_test_env("GI_SUN_CASCADES");
+    if (e) {
+      cw_node_set(node("Room/Sun"), "shadow_cascades", cw_val_int(atoi(e)));
+      cw_node_set(node("Room/Sun"), "shadow_distance", cw_val_float(30));
+    }
+    e = cw_test_env("GI_SUN_FIT");
+    if (e) { /* one shadow map up the sun's ray, covering the room */
+      cw_node3d_set_position(node("Room/Sun"), (t3_vec3){ -0.396f * 20, 0.565f * 20, 0.724f * 20 });
+      cw_node_set(node("Room/Sun"), "shadow_extent", cw_val_float(12));
+      cw_node_set(node("Room/Sun"), "shadow_far", cw_val_float(60));
+    }
+    e = cw_test_env("GI_NO_CEILING");
+    if (e) cw_node_free(node("Room/Ceiling"));
   }
   /* render-only motion: the angle comes from the tick count (cw_ trig) */
   float a = (float)tick * 0.03f;
