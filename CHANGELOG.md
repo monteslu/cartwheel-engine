@@ -4,6 +4,13 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.53.3 (2026-11-20)
+
+### Fixed
+- **CI builds the carts in two shares.** One job building every app's cart took 54 minutes on v0.51.0, 57 on v0.52.0
+  and passed its 60 minute limit on v0.53.2, so the run never went green and the release waited on it. The carts
+  are split over two jobs (every other cart each); the share that builds plugin_demo checks its manifest controls.
+
 ## v0.53.2 (2026-11-20)
 
 ### Fixed
