@@ -117,7 +117,7 @@ Ownership is simple: a finished tween frees itself and its handle reads as stale
 
 Clips play as authored. Skeleton modifiers make them react to the world: feet that land on stairs and slopes, a hand that grabs a handle, a head that follows something moving. The module is `cartwheel/ik.h` ([reference](header:ik.h)).
 
-Modifiers are nodes, children of the Node3D that holds a skinned model, and they run in child order every fixed tick:
+Modifiers are nodes, children of the Node3D that holds a skinned model (or of its [Skeleton3D](node:Skeleton3D), below), and they run in child order every fixed tick:
 
 1. The AnimationPlayer or AnimationTree writes the animated pose onto the bones, as usual.
 2. After every node's `fixed_update` and the physics step, the model's pose is captured into a `cw_pose`: local translation, rotation and scale per bone, parent indices and model-space transforms.
@@ -194,6 +194,47 @@ node tests/ik-determinism.mjs
 `unit-ik` checks the solvers (reach accuracy, the pole plane, limits, FABRIK constraints) and compares CCD against three.js r187 run in Node (`tools/gen-ccdik-fixture.mjs` writes the reference). It also runs the nodes in a tree (no accumulation across ticks, influence, foot placement on Box3D ground, a 12-rig crowd through the job pool).
 
 The debug command `ik <model path>` lists a model's modifiers with their last results (`reached`, `in_limit`, foot offsets, pelvis offset), the pose hash and the microseconds the last tick took.
+
+## Skeleton3D and BoneAttachment3D
+
+A [Skeleton3D](node:Skeleton3D) is a skinned model's bones as a node: count, names, parents, and each bone's rest and pose transform to read and set, from C and over the debug channel. A [BoneAttachment3D](node:BoneAttachment3D) is a Node3D that rides one bone, so whatever you put under it (a sword, a hat, a muzzle flash, a hit shape) follows the hand or the head. The module is `cartwheel/skeleton.h` ([reference](header:skeleton.h)).
+
+A Skeleton3D is a view of the model's bones, not a copy. The bones stay the three.c objects glTF loaded, and bone tracks, AnimationTree, skeleton modifiers and ragdolls write them exactly as before; a scene without a Skeleton3D behaves as it always did. Put the node in either place:
+
+```text
+[node name="Hero" type="MeshInstance3D"]          ; a skinned glTF in `mesh`, or cw_node3d_set_object from code
+[node name="Skeleton" parent="Hero" type="Skeleton3D"]
+[node name="Sword" parent="Hero/Skeleton" type="BoneAttachment3D"]
+bone_name = "Palm2L"
+[node name="Blade" parent="Hero/Skeleton/Sword" type="MeshInstance3D"]
+[node name="Look" parent="Hero/Skeleton" type="LookAtModifier3D"]
+bone = "Head"
+```
+
+Under the model's node, as above, the skeleton is its parent's. A Skeleton3D can also hold the model itself (its own `mesh`-carrying child, or `cw_node3d_set_object` on the Skeleton3D), which is the layout Godot scenes have; `model` names another node by path when neither fits. The skeleton binds as soon as the model's bones exist (a mesh resource may arrive a few frames after the scene loads), and binds again if the model is replaced. Until then `bone_count` is 0. The signal `skeleton_bound` says when.
+
+| Call | What it does |
+|---|---|
+| [cw_skeleton3d_bone_count](api:cw_skeleton3d_bone_count), [cw_skeleton3d_find_bone](api:cw_skeleton3d_find_bone), [cw_skeleton3d_bone_name](api:cw_skeleton3d_bone_name), [cw_skeleton3d_bone_parent](api:cw_skeleton3d_bone_parent) | the bones, parents before children |
+| [cw_skeleton3d_bone_pose](api:cw_skeleton3d_bone_pose), [cw_skeleton3d_set_bone_pose](api:cw_skeleton3d_set_bone_pose) | a bone's local translation, rotation and scale now; setting one takes effect at once |
+| [cw_skeleton3d_bone_rest](api:cw_skeleton3d_bone_rest), [cw_skeleton3d_set_bone_rest](api:cw_skeleton3d_set_bone_rest), [cw_skeleton3d_reset_bone_pose](api:cw_skeleton3d_reset_bone_pose) | the rest transform (the bone as the file has it), and back to it |
+| [cw_skeleton3d_bone_model_transform](api:cw_skeleton3d_bone_model_transform), [cw_skeleton3d_bone_global_transform](api:cw_skeleton3d_bone_global_transform) | the bone in the model's space and in the world |
+| [cw_skeleton3d_pose](api:cw_skeleton3d_pose) | the whole skeleton as a `cw_pose`, for the solvers below and for ragdolls |
+| [cw_skeleton3d_hash](api:cw_skeleton3d_hash) | a hash of every bone's pose, for tests that compare hosts |
+
+Who wins when several things write a bone: an animation with a track on that bone writes it every tick, so pose a bone from code only where no playing clip has a track for it, or after the animation in your own `fixed_update`. `show_rest_only` holds the whole skeleton at rest each tick whatever played. Bone tracks may name the Skeleton3D (`Hero/Skeleton@Head:quaternion`) or, as before, the model's node.
+
+A BoneAttachment3D takes its bone's transform after animation, modifiers and physics each tick, and again just before each frame is drawn, from the bones as they are then. It is drawn exactly where the bone is drawn, the same frame: there is no tick of lag behind a fast swing, an `UPDATE`-mode player or a ragdoll your own code writes. It is placed relative to the model, so a character that is drawn interpolated between ticks carries its attachments with it. The bone's scale comes along: a rig authored in centimetres under a x100 armature (common from Blender) gives the attachment a scale of 100, so size what you hang on it in the bone's units, or put a scaled Node3D between. The attachment's own transform is overwritten every tick; offset the sword with a child node.
+
+`samples/skeleton_attach` has three robots. One walks with a sword on its palm and a hat on its head, a look-at modifier under its skeleton and its walk clip addressed to the skeleton node. One holds its rest pose under a playing clip (`show_rest_only`). One has no animation and is posed from code each tick:
+
+@include samples/skeleton_attach/main.c#puppet
+
+The gate `skeleton-attach` compares the sword's world matrix with the palm bone's after every frame's 3D draw, to a tenth of a millimetre, on GL and WebGPU; its control places the sword from the bone transform read one tick earlier and fails. `unit-skeleton` covers binding in both layouts, late binding and rebinding, rest and pose, attachments through a moving model, modifiers and tracks through a skeleton, the scene-file round trip and that a freed skeleton lets go of its bones.
+
+Cost: there is no GPU cost and no second pose. A bound skeleton costs one short check per tick and per frame, an attachment one bone transform (the chain of bones above it) per tick and per frame. 200 skeletons with 400 attachments on a 5-bone rig cost 0.23 ms per tick and 0.28 ms per frame natively on the 890M laptop (Ryzen AI 9 HX 370) at a load average of 20, about 0.6 microseconds per attachment each time; a Zen+ laptop is about twice that. The quality presets do not change it: attachments carry game state.
+
+Over the debug channel: `skeleton <node>` (bound, bone count, hash), `skeleton <node> bones`, `skeleton <node> bone <name>` (pose, rest, world position), `skeleton <node> set <name> position|quaternion|scale <value>`, `skeleton <node> rest [<name>]`.
 
 ## Ragdolls
 

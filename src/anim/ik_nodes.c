@@ -43,7 +43,8 @@ static inline t3_vec3 qrot(t3_quat q, t3_vec3 v) {
 /* ── per-model state ───────────────────────────────────────────────── */
 
 typedef struct skel {
-  cw_node model;
+  cw_node model;           /* the node whose children are the modifiers */
+  cw_node frame;           /* the Node3D whose space is model space (model, or a Skeleton3D's model) */
   t3_object *obj;          /* the object the pose is bound to */
   bool bound, bind_failed;
   uint32_t gen;            /* bumped on every bind: modifiers re-resolve bones */
@@ -165,11 +166,11 @@ static modbase *MB(cw_node n) { return cw_node_data_t(n, mod_t); }
 /* ── world <-> model ───────────────────────────────────────────────── */
 
 static void model_frame(skel *s) {
-  const t3_mat4 *g = cw_node3d_global_transform(s->model);
+  const t3_mat4 *g = cw_node3d_global_transform(s->frame);
   if (g) s->world = *g;
   else t3_mat4_identity(&s->world);
   t3_quat q = { 0, 0, 0, 1 };
-  for (cw_node n = s->model; !CW_HANDLE_IS_NULL(n); n = cw_node_parent(n))
+  for (cw_node n = s->frame; !CW_HANDLE_IS_NULL(n); n = cw_node_parent(n))
     if (cw_node_is(n, "Node3D")) q = qmul(cw_node3d_quaternion(n), q);
   s->world_rot = q;
   const float *e = s->world.e;
@@ -510,7 +511,8 @@ static void skel_free(skel *s) {
 }
 
 static bool skel_bind(skel *s) {
-  t3_object *obj = cw_node3d_object(s->model);
+  /* a Skeleton3D holder: the bones of its model (cartwheel/skeleton.h); any other Node3D: its own object */
+  t3_object *obj = cw__skeleton_bone_root(s->model, &s->frame);
   if (s->bound && obj == s->obj) return true;
   if (!s->bound && s->bind_failed && obj == s->obj) return false;
   skel_unbind(s);
@@ -625,7 +627,7 @@ static void phase_hook(cw_tree *tree, double dt, void *u) {
     }
     if (!s->nmods) {
       /* every modifier off: give the bones their animated pose back once */
-      if (s->bound && s->flushed && cw_node3d_object(s->model) == s->obj) {
+      if (s->bound && s->flushed && cw__skeleton_bone_root(s->model, NULL) == s->obj) {
         skel_capture(s);
         cw_pose_flush(&s->pose);
         s->flushed = false;
@@ -683,6 +685,7 @@ static skel *skel_of(cw_node model, bool create) {
   if (!create) return NULL;
   skel *s = cw_calloc(1, sizeof *s, CW_MEM_ANIM);
   s->model = model;
+  s->frame = model;
   s->hash = CW_HASH32_INIT;
   cw_array_push(&W->skels, s);
   return s;
@@ -745,7 +748,7 @@ static void mod_enter(cw_node n, void *data) {
   (void)data;
   cw_node model = cw_node_parent(n);
   if (CW_HANDLE_IS_NULL(model) || !cw_node_is(model, "Node3D")) {
-    cw_warn("%s '%s': a skeleton modifier is a child of the Node3D holding the skinned model", cw_node_get_type(n)->name,
+    cw_warn("%s '%s': a skeleton modifier is a child of the Node3D holding the skinned model, or of its Skeleton3D", cw_node_get_type(n)->name,
             cw_node_name(n));
     return;
   }
@@ -759,7 +762,7 @@ static const cw_prop mod_props[] = {
 };
 static cw_node_type mod_type = {
   .name = "SkeletonModifier3D", .parent = "Node", .data_size = sizeof(modbase), .props = mod_props,
-  .doc = "Base of the skeleton modifiers: children of a skinned model's Node3D that adjust its animated pose each tick.",
+  .doc = "Base of the skeleton modifiers: children of a skinned model's Node3D, or of its Skeleton3D, that adjust its animated pose each tick.",
   .init = mod_init, .enter_tree = mod_enter,
 };
 

@@ -120,6 +120,13 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/ragdoll/assets/main.cwscene ${CW_RAGD
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/anim_ik/assets/RobotExpressive.glb ${CW_RAGDOLL_ASSETS}/RobotExpressive.glb COPYONLY)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/anim_ik/assets/RobotExpressive.LICENSE.md ${CW_RAGDOLL_ASSETS}/RobotExpressive.LICENSE.md COPYONLY)
 cw_add_app(ragdoll SOURCES ragdoll/main.c ASSETS ${CW_RAGDOLL_ASSETS})
+# bones as a node, and nodes that ride them (cartwheel/skeleton.h): RobotExpressive (CC0) staged from anim_ik with its license
+set(CW_SKELETON_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/skeleton_attach_assets)
+file(MAKE_DIRECTORY ${CW_SKELETON_ASSETS})
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/skeleton_attach/assets/main.cwscene ${CW_SKELETON_ASSETS}/main.cwscene COPYONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/anim_ik/assets/RobotExpressive.glb ${CW_SKELETON_ASSETS}/RobotExpressive.glb COPYONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/anim_ik/assets/RobotExpressive.LICENSE.md ${CW_SKELETON_ASSETS}/RobotExpressive.LICENSE.md COPYONLY)
+cw_add_app(skeleton_attach SOURCES skeleton_attach/main.c ASSETS ${CW_SKELETON_ASSETS})
 cw_add_app(project_edit SOURCES project_edit/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/scene3d/assets)
 # play-in-editor: the game tests/remote.mjs drives through cartwheel/remote.h
 cw_add_app(remote_target SOURCES remote_target/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/remote_target/assets)

@@ -116,7 +116,7 @@ static int bind_track(cw__amix *m, const anim_track *t, const char *anim_name) {
   b.rot = t->rot;
   uint64_t key;
   if (t->bone) {
-    t3_object *root = cw_node3d_object(node);
+    t3_object *root = cw__skeleton_bone_root(node, NULL); /* a Skeleton3D: its model's bones */
     t3_object *bone = root ? t3_object_get_by_name(root, t->bone) : NULL;
     if (!bone) {
       cw_warn("animation '%s': track '%s': '%s' has no three.c object named '%s'", anim_name, t->path, t->node, t->bone);
@@ -339,11 +339,12 @@ static void track_parent_world(mix_binding *b, t3_mat4 *out) {
   if (b->kind == 1) {
     /* bone: objects between the node's own object and the bone's parent,
      * from their fields (glTF data), under the node's global transform */
-    t3_object *top = cw_node3d_object(b->node);
+    cw_node frame = b->node;
+    t3_object *top = cw__skeleton_bone_root(b->node, &frame);
     t3_object *chain[32];
     int n = 0;
     for (t3_object *o = b->obj->parent; o && o != top && n < 32; o = o->parent) chain[n++] = o;
-    const t3_mat4 *g = cw_node3d_global_transform(b->node);
+    const t3_mat4 *g = cw_node3d_global_transform(frame);
     if (g) *out = *g;
     for (int i = n - 1; i >= 0; i--) {
       t3_mat4 l, r;

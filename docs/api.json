@@ -12886,6 +12886,134 @@
    ]
   },
   {
+   "header": "cartwheel/skeleton.h",
+   "summary": "cartwheel skeleton nodes: Skeleton3D (the bones of a skinned glTF model as\na node: names, parents, rest and pose transforms to read and set) and\nBoneAttachment3D (a Node3D that rides a bone: a sword in a hand, a hat on a\nhead).\n\nWHAT A Skeleton3D IS. A view of a model's bones, not a second copy of them.\nThe bones stay the three.c objects glTF loaded (T3_BONE and the non-mesh\nobjects hanging off them, the set cartwheel/ik.h's cw_pose binds); bone\ntracks, AnimationTree, skeleton modifiers and ragdolls keep writing those\nobjects exactly as before, and the Skeleton3D reads and writes the same\nobjects. Nothing changes for a scene that has no Skeleton3D.\n\nWHERE IT GOES. Either layout works:\n  Hero (MeshInstance3D, mesh = a skinned glTF)      Skeleton (Skeleton3D)\n    Skeleton (Skeleton3D)                             Hero (MeshInstance3D, mesh = ...)\n      Hat (BoneAttachment3D, bone_name = \"Head\")      Hat (BoneAttachment3D)\n      Reach (TwoBoneIK3D)                             Reach (TwoBoneIK3D)\nThe model is the Skeleton3D's own subtree when it holds bones (the right\ncolumn, or cw_node3d_set_object on the Skeleton3D itself), else its parent\nNode3D (the left column: add a Skeleton3D to a model that already exists).\n`model` (a node path from the Skeleton3D) names another Node3D instead.\nSkeleton modifier nodes may be children of the Skeleton3D or, as before,\nof the model's Node3D.\n\nBINDING. The skeleton binds when the model's bones exist (a glTF mesh\nresource may load a few frames after the node enters the tree): at the\nstart of each fixed tick and before each render until it does, on any\nquery below made before that, and again when the model's objects are\nreplaced (another mesh, a hot reload). Bone\nindices are stable while bound; `bone_count` is 0 and every query answers\n\"no bone\" until then. Bones are ordered parents before children, depth\nfirst, the same order as cw_pose_bind on the model.\n\nREST AND POSE. A bone's pose is its local translation, rotation and scale\nnow (the bone object's own fields: always current, whoever wrote them).\nIts rest is the local transform it had when the skeleton bound: the glTF\nfile's node transforms when the Skeleton3D is in the scene before any\nanimation plays. Setting a pose writes the bone at once; an animation that\nhas a track on that bone overwrites it on its next tick (animate, then set,\nor leave the bone untracked). `show_rest_only` holds every bone at rest\neach tick, after animation and modifiers.\n\nSPACES. Local: relative to the bone's parent bone. Model: the model\nNode3D's space (what cw_pose calls model space). Global: world space,\nthrough the model node's current transform.\n\nOWNERSHIP. A bound Skeleton3D retains its bone objects (and nothing above\nthem), so a query never touches a freed bone; it lets go of them when it\nunbinds or is freed. It holds no reference to a mesh or a three.c\nskeleton, so it cannot keep a model alive.\n\nCOST. Queries by index are O(1) (local) or O(depth of the bone) (model and\nglobal). cw_skeleton3d_find_bone is O(bones). Each bound skeleton costs one\nO(depth) check per tick and per frame; each BoneAttachment3D one bone\ntransform per tick and per frame.\n\nDETERMINISM. Poses are the bones' float bits; model transforms use + - * /\nand sqrt only. cw_skeleton3d_hash folds every bone's local pose, so tests\ncompare skeletons across hosts.\n\nDebug command: `skeleton <node> [bones | bone <name> | set <name>\nposition|quaternion|scale <value> | rest [<name>] | hash]`.",
+   "functions": [
+    {
+     "name": "cw_skeleton3d_bone_count",
+     "signature": "int cw_skeleton3d_bone_count(cw_node skeleton)",
+     "doc": "Bones in the skeleton; 0 until bound (and for a node that is not a Skeleton3D).",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_model",
+     "signature": "cw_node cw_skeleton3d_model(cw_node skeleton)",
+     "doc": "The Node3D whose space is model space (null handle until bound).",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_find_bone",
+     "signature": "int cw_skeleton3d_find_bone(cw_node skeleton, const char *name)",
+     "doc": "Bone index by name, -1 when absent or not bound. O(bones).",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_bone_name",
+     "signature": "const char *cw_skeleton3d_bone_name(cw_node skeleton, int bone)",
+     "doc": "The bone's name (the glTF node's; owned by three.c, valid while bound); NULL when out of range.",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_bone_parent",
+     "signature": "int cw_skeleton3d_bone_parent(cw_node skeleton, int bone)",
+     "doc": "Parent bone index; -1 for a root bone or when out of range.",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_bone_object",
+     "signature": "t3_object *cw_skeleton3d_bone_object(cw_node skeleton, int bone)",
+     "doc": "The bone's three.c object (borrowed; valid while bound); NULL when out of range.",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_bone_pose",
+     "signature": "bool cw_skeleton3d_bone_pose(cw_node skeleton, int bone, cw_bone_xform *out)",
+     "doc": "The bone's local pose now. false (out untouched) when out of range.",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_set_bone_pose",
+     "signature": "void cw_skeleton3d_set_bone_pose(cw_node skeleton, int bone, const t3_vec3 *position, const t3_quat *rotation, const t3_vec3 *scale)",
+     "doc": "Write a bone's local pose; a NULL part keeps what the bone has. Takes\neffect at once (the next draw skins from it).",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_bone_rest",
+     "signature": "bool cw_skeleton3d_bone_rest(cw_node skeleton, int bone, cw_bone_xform *out)",
+     "doc": "The bone's local rest transform. false when out of range.",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_set_bone_rest",
+     "signature": "void cw_skeleton3d_set_bone_rest(cw_node skeleton, int bone, const cw_bone_xform *rest)",
+     "doc": "Replace a bone's rest transform (the pose is not touched).",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_reset_bone_pose",
+     "signature": "void cw_skeleton3d_reset_bone_pose(cw_node skeleton, int bone)",
+     "doc": "Put one bone (bone >= 0) or every bone (bone < 0) back at rest.",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_bone_model_transform",
+     "signature": "bool cw_skeleton3d_bone_model_transform(cw_node skeleton, int bone, t3_mat4 *out)",
+     "doc": "The bone in model space, from the bones' current fields. false when out of range. O(depth).",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_bone_global_transform",
+     "signature": "bool cw_skeleton3d_bone_global_transform(cw_node skeleton, int bone, t3_mat4 *out)",
+     "doc": "The bone in world space: the model node's global transform times the above.",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_bone_rest_model_transform",
+     "signature": "bool cw_skeleton3d_bone_rest_model_transform(cw_node skeleton, int bone, t3_mat4 *out)",
+     "doc": "The rest pose's model-space transform of a bone (every bone above it at rest too).",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_pose",
+     "signature": "cw_pose *cw_skeleton3d_pose(cw_node skeleton)",
+     "doc": "The whole skeleton as a cw_pose (cartwheel/ik.h), captured from the bones\nnow: for the solvers, ragdolls (cartwheel/ragdoll.h) and bulk reads. Owned\nby the node; valid until the next call or until it unbinds. Change it and\ncall cw_pose_flush to write it back. NULL until bound. O(bones).",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_hash",
+     "signature": "uint32_t cw_skeleton3d_hash(cw_node skeleton)",
+     "doc": "FNV-1a over every bone's local pose bits (0 until bound). O(bones).",
+     "inline": false
+    },
+    {
+     "name": "cw_skeleton3d_generation",
+     "signature": "uint32_t cw_skeleton3d_generation(cw_node skeleton)",
+     "doc": "Bumped each time the skeleton binds (indices may have changed).",
+     "inline": false
+    },
+    {
+     "name": "cw_bone_attachment3d_bone",
+     "signature": "int cw_bone_attachment3d_bone(cw_node attachment)",
+     "doc": "The bone index the attachment follows, -1 when unresolved.",
+     "inline": false
+    },
+    {
+     "name": "cw_bone_attachment3d_skeleton",
+     "signature": "cw_node cw_bone_attachment3d_skeleton(cw_node attachment)",
+     "doc": "The Skeleton3D it follows (null handle when none).",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_bone_xform",
+     "doc": "A bone's local transform.",
+     "decl": "typedef struct cw_bone_xform {\n  t3_vec3 position;\n  t3_quat rotation;\n  t3_vec3 scale;\n} cw_bone_xform;"
+    }
+   ],
+   "macros": []
+  },
+  {
    "header": "cartwheel/skin_shading.h",
    "summary": "cartwheel/skin_shading.h: skin shading, a cheap subsurface look for\ncharacters (a shading part, cartwheel/shading.h).\n\nReal skin scatters light under its surface: the shadow side of a face goes\nsoft and warm instead of dark grey, and thin parts (ears, nostrils, finger\nwebs) glow when lit from behind. Plain PBR shades skin like painted\nplastic. This part adds two cheap terms to the material's own lighting\n(MeshStandardMaterial or MeshPhysicalMaterial, so sheen, clear coat and\nthe rest still apply), for every light that reaches it (the scene's own\nlights, clustered lights, the cascaded sun):\n\n  - wrap: diffuse light reaches past the line where the surface turns away\n    from the light, each colour channel by `wrap` times its `scatter`\n    component, so red bleeds furthest (a warm, soft terminator). The lit\n    side is unchanged; the extra light is (N.L + w) / (1 + w) - N.L.\n  - translucency: light from behind the surface, seen through it: strongest\n    looking toward a light past a thin edge. r187's MeshSSSNodeMaterial\n    term (fast translucency): pow(saturate(V . -(L + N * distortion)),\n    power) + ambient, times `translucency`, the scatter colour, the\n    surface's diffuse colour and the light's colour.\n\nNo screen-space pass, no extra render targets, no textures: a few ALU\noperations per light per skin pixel. A light's shadow darkens both terms\nas it darkens the rest of the light, so translucency needs the light not\nto be blocked by the body itself (a rim light behind a head, say).\n\nQuality: on Low (cw_quality_scale(\"skin\") is 0) every skin material draws\nas its plain PBR material (the part is removed, so Low pays nothing); the\nother presets draw it. The engine switches when the setting changes.\n\nFrom glTF: a material loaded through the resource system (CW_RES_GLTF)\ngets skin shading when the file asks for it:\n  - KHR_materials_diffuse_transmission: translucency = its\n    diffuseTransmissionFactor, scatter = its diffuseTransmissionColorFactor\n    (the rest as cw_skin_shading_default);\n  - extras \"skin_shading\": true (the defaults) or an object with any of\n    \"scatter\" [r, g, b], \"wrap\", \"translucency\", \"distortion\", \"power\",\n    \"ambient\" (over the defaults, or over what the extension gave).\nOr by material name after loading: cw_skin_shading_apply_named.\n\nCost: see docs/guides/rendering-3d.md, \"Characters\".",
    "functions": [

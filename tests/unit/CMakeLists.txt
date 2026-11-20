@@ -58,6 +58,8 @@ cw_add_app(unit_anim SOURCES test_anim.c ASSETS ${CW_ANIM_TEST_ASSETS})
 cw_add_app(unit_character SOURCES test_character.c ASSETS ${CMAKE_SOURCE_DIR}/samples/character_skin/assets)
 # inverse kinematics: pose layer, solvers (CCD against three.js r187: ccdik_r186.h), modifier nodes
 cw_add_app(unit_ik SOURCES test_ik.c)
+# Skeleton3D and BoneAttachment3D: binding, bone queries, rest and pose, attachments, modifiers and tracks through a skeleton, scene files
+cw_add_app(unit_skeleton SOURCES test_skeleton.c)
 cw_add_app(unit_ui SOURCES test_ui.c)
 # project.cwproj editing and settings (cartwheel/project.h), child processes (cartwheel/process.h)
 cw_add_app(unit_project SOURCES test_project.c)
