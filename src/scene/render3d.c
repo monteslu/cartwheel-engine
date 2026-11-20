@@ -67,12 +67,15 @@ typedef struct render3d_state {
 typedef struct mesh_look {
   int physical;
   int toon, bands; /* shading TOON: a MeshToonMaterial with the ramp of that many tones */
+  int pad_; /* explicit, so no byte of a look is padding: looks are compared with memcmp, and a copy need not keep padding */
   t3_texture *vp_tex; /* a SubViewport's picture (viewport_texture), NULL: none */
   int vp_slot;        /* 0 emissive map, 1 colour map */
   t3_color color, emissive, sheen_color;
   float metalness, roughness, ior, specular_intensity, clearcoat, clearcoat_roughness, sheen, sheen_roughness, iridescence,
       iridescence_ior, anisotropy, diffuse_roughness;
 } mesh_look;
+_Static_assert(offsetof(mesh_look, vp_tex) == 4 * sizeof(int) && sizeof(mesh_look) == offsetof(mesh_look, diffuse_roughness) + sizeof(float),
+               "mesh_look must have no padding (looks are compared with memcmp)");
 struct look_mat { mesh_look look; t3_material *mat; };
 
 static void state_free(void *p) {
