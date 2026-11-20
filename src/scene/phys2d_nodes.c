@@ -168,8 +168,10 @@ typedef struct char2d {
   int max_slides;
   float push_mass;
   bool ride_platforms;
+  int32_t one_way_mask;
+  bool drop_through;
   /* outputs */
-  bool on_floor, on_wall, on_ceiling;
+  bool on_floor, on_wall, on_ceiling, on_one_way;
   cw_vec2 floor_normal, wall_normal, platform_velocity;
   /* runtime */
   cw_mover2d mover;
@@ -214,6 +216,7 @@ static uint32_t config_hash(cw_node n, co2d *c) {
   if (rb) h = cw_hash32(&rb->density, sizeof rb->density, h), h = cw_hash32(&rb->mass, sizeof rb->mass, h);
   area2d *ar = cw_node_data_t(n, area_t);
   if (ar) h = cw_hash32(ar, sizeof *ar, h);
+  if (cw_node_data_t(n, cw__tilecol_t)) h = cw__tilecol_hash(n, h);
   for (int i = 0; i < cw_node_child_count(n); i++) {
     cw_node ch = cw_node_child(n, i);
     shape2d *s = cw_node_data_t(ch, shape_t);
@@ -280,6 +283,10 @@ static void build_shapes(p2w *W, cw_node n, co2d *c) {
   if (ar) {
     sd.sensor = true;
     sd.sensor_events = ar->monitoring || ar->monitorable;
+  }
+  if (cw_node_data_t(n, cw__tilecol_t)) {
+    cw__body_ctx x = { n, c->body, sd, W->ppm, W, c };
+    cw__tilecol_build(&x);
   }
   for (int i = 0; i < cw_node_child_count(n); i++) {
     cw_node ch = cw_node_child(n, i);
@@ -478,9 +485,77 @@ static bool g_changed(const float a[6], const float b[6]) { return memcmp(a, b, 
 
 static void ensure_mover(p2w *W, cw_node n, co2d *c, char2d *ch);
 
+static cw_shape2d_def body_shape_def(p2w *W, cw_node n, co2d *c) {
+  cw_shape2d_def sd = cw_shape2d_default_def();
+  pb2d *pb = cw_node_data_t(n, pb_t);
+  if (pb) {
+    sd.material.friction = pb->friction;
+    sd.material.restitution = pb->bounce;
+    sd.material.rolling_resistance = pb->rolling_resistance;
+    sd.material.tangent_speed = pb->tangent_speed / W->ppm;
+    sd.material.user_material = (uint64_t)(uint32_t)pb->user_material;
+    sd.hit_events = pb->hit_events;
+  }
+  sd.layer = c->collision_layer & 31;
+  sd.mask = (uint32_t)c->collision_mask;
+  return sd;
+}
+
+/* colliders up to date with the node: everything when its configuration changed, else what its builder says */
+static void sync_shapes(p2w *W, cw_node n, co2d *c) {
+  if (c->dirty || config_hash(n, c) != c->cfg_hash) build_shapes(W, n, c);
+  else if (cw_node_data_t(n, cw__tilecol_t)) {
+    cw__body_ctx x = { n, c->body, body_shape_def(W, n, c), W->ppm, W, c };
+    cw__tilecol_update(&x);
+  }
+}
+
+uint64_t cw__phys2d_ctx_chain(cw__body_ctx *x, const cw_shape2d_def *def, const cw_vec2 *points, int count, bool loop, int *segments) {
+  p2w *W = x->world;
+  co2d *c = x->object;
+  cw_chain2d ch = cw_chain2d_create(x->body, def, points, count, loop);
+  if (CW_HANDLE_IS_NULL(ch)) return 0;
+  cw_array_push(&c->chains, ch.id);
+  b2ChainId cid = cw_chain2d_raw(ch);
+  int sc = b2Chain_GetSegmentCount(cid);
+  b2ShapeId *segs = cw_frame_alloc(sizeof(b2ShapeId) * (size_t)(sc + 1));
+  sc = b2Chain_GetSegments(cid, segs, sc);
+  for (int q = 0; q < sc; q++) cw_map_set(&W->shape_owner, b2StoreShapeId(segs[q]), x->node.id);
+  if (segments) *segments = sc;
+  return ch.id;
+}
+
+void cw__phys2d_ctx_chain_destroy(cw__body_ctx *x, uint64_t chain) {
+  p2w *W = x->world;
+  co2d *c = x->object;
+  b2ChainId cid = b2LoadChainId(chain);
+  if (!chain || !b2Chain_IsValid(cid)) return;
+  /* its segments may still be named by this step's events */
+  int sc = b2Chain_GetSegmentCount(cid);
+  b2ShapeId *segs = cw_frame_alloc(sizeof(b2ShapeId) * (size_t)(sc + 1));
+  sc = b2Chain_GetSegments(cid, segs, sc);
+  for (int q = 0; q < sc; q++) {
+    dead_shape d = { b2StoreShapeId(segs[q]), W->steps };
+    cw_array_push(&W->dead, d);
+  }
+  cw_chain2d_destroy((cw_chain2d){ chain });
+  for (int i = 0; i < c->chains.count; i++)
+    if (c->chains.data[i] == chain) {
+      c->chains.data[i] = c->chains.data[--c->chains.count];
+      break;
+    }
+}
+
+void cw__phys2d_sync_shapes(cw_node n) {
+  co2d *c = cw_node_data_t(n, co_t);
+  p2w *W = c ? cw_tree_slot(cw_node_tree(n), "physics2d") : NULL;
+  if (!W || CW_HANDLE_IS_NULL(c->body) || !cw_body2d_valid(c->body)) return;
+  sync_shapes(W, n, c);
+}
+
 static void sync_in(p2w *W, cw_node n, co2d *c, float dt) {
   if (CW_HANDLE_IS_NULL(c->body) || !cw_body2d_valid(c->body)) create_body(W, n, c);
-  if (c->dirty || config_hash(n, c) != c->cfg_hash) build_shapes(W, n, c);
+  sync_shapes(W, n, c);
   cw_body_type want = body_type_for(n, c);
   if (cw_body2d_type(c->body) != want) cw_body2d_set_type(c->body, want);
   cw_node2d *d = cw_node_data_t(n, node2d_t);
@@ -564,6 +639,7 @@ static void ensure_mover(p2w *W, cw_node n, co2d *c, char2d *ch) {
   md.mask = (uint32_t)c->collision_mask;
   md.push_mass = ch->push_mass;
   md.ride_platforms = ch->ride_platforms;
+  md.one_way_mask = (uint32_t)ch->one_way_mask;
   uint32_t h = cw_hash32(&md, sizeof md, CW_HASH32_INIT);
   h = cw_hash32(&feet, sizeof feet, h);
   if (ch->mover_ready && h == ch->mover_hash) return;
@@ -590,6 +666,7 @@ bool cw_character2d_move_and_slide(cw_node n, float dt) {
   sync_in(W, n, c, dt); /* shapes, teleports, the mover */
   cw_mover2d *m = &ch->mover;
   m->velocity = cw_v2(ch->velocity.x / W->ppm, -ch->velocity.y / W->ppm);
+  m->drop_through = ch->drop_through;
   /* the proxy body must not block its own mover: park it out of the way */
   cw_xform2 home = cw_body2d_transform(c->body);
   cw_body2d_set_transform(c->body, (cw_xform2){ cw_v2(home.p.x, home.p.y - 100000.0f), home.q });
@@ -604,6 +681,7 @@ bool cw_character2d_move_and_slide(cw_node n, float dt) {
   ch->on_floor = m->on_floor;
   ch->on_wall = m->on_wall;
   ch->on_ceiling = m->on_ceiling;
+  ch->on_one_way = m->on_one_way;
   ch->floor_normal = cw_v2(m->floor_normal.x, -m->floor_normal.y);
   ch->wall_normal = cw_v2(m->wall_normal.x, -m->wall_normal.y);
   ch->platform_velocity = cw_v2(m->platform_velocity.x * W->ppm, -m->platform_velocity.y * W->ppm);
@@ -1226,9 +1304,12 @@ static const cw_prop char_props[] = {
   CW_PROP_FIELD(char2d, max_slides, CW_T_INT, CW_PROP_DEFAULT, "Slide iterations per move."),
   CW_PROP_FIELD_RANGE(char2d, push_mass, CW_T_FLOAT, 0, 1e9, ">0: pushes rigid bodies as this mass."),
   CW_PROP_FIELD(char2d, ride_platforms, CW_T_BOOL, CW_PROP_DEFAULT, "Carried by the floor body's motion."),
+  CW_PROP_FIELD(char2d, one_way_mask, CW_T_INT, CW_PROP_DEFAULT, "Layers (bits) whose shapes are one-way platforms for it: landed on from above, passed from below and the side."),
+  CW_PROP_FIELD(char2d, drop_through, CW_T_BOOL, CW_PROP_DEFAULT, "While set, moves fall through the one-way platform it stands on."),
   RO(char2d, on_floor, CW_T_BOOL, "Touching a floor after the last move."),
   RO(char2d, on_wall, CW_T_BOOL, "Touching a wall."),
   RO(char2d, on_ceiling, CW_T_BOOL, "Touching a ceiling."),
+  RO(char2d, on_one_way, CW_T_BOOL, "The floor is a one-way platform."),
   RO(char2d, floor_normal, CW_T_VEC2, "Floor normal (y down)."),
   RO(char2d, wall_normal, CW_T_VEC2, "Wall normal (y down)."),
   RO(char2d, platform_velocity, CW_T_VEC2, "The floor's velocity, px/s."),
@@ -1379,6 +1460,7 @@ void cw__register_physics2d_types(void) {
   cw_node_type_register(&scast_type);
   scast_t = &scast_type;
   register_overlap_methods();
+  cw__register_tile_collision_type();
 }
 
 cw_body2d cw_collision_object2d_body(cw_node n) {
@@ -1446,7 +1528,7 @@ static void register_overlap_methods(void) {
  * (on_floor... feed the next move), and every body's place in the Box2D
  * world (a restored tree must not query bodies at their future poses). */
 typedef struct char2d_snap {
-  uint8_t ready, on_floor, on_wall, on_ceiling, m_floor, m_wall, m_ceiling, m_stepped, m_snapped, pad[7];
+  uint8_t ready, on_floor, on_wall, on_ceiling, m_floor, m_wall, m_ceiling, m_stepped, m_snapped, on_one_way, m_one_way, pad[5];
   cw_vec2 floor_normal, wall_normal, platform_velocity, m_vel, m_floor_n, m_wall_n, m_platform_v;
   cw_pos2 m_pos, m_prev;
   uint64_t m_floor_body;
@@ -1461,6 +1543,7 @@ int cw__char2d_state_save(cw_node n, void *data, uint8_t *out, int cap) {
   s.on_floor = ch->on_floor;
   s.on_wall = ch->on_wall;
   s.on_ceiling = ch->on_ceiling;
+  s.on_one_way = ch->on_one_way;
   s.floor_normal = ch->floor_normal;
   s.wall_normal = ch->wall_normal;
   s.platform_velocity = ch->platform_velocity;
@@ -1471,6 +1554,7 @@ int cw__char2d_state_save(cw_node n, void *data, uint8_t *out, int cap) {
     s.m_ceiling = m->on_ceiling;
     s.m_stepped = m->stepped;
     s.m_snapped = m->snapped;
+    s.m_one_way = m->on_one_way;
     s.m_pos = m->position;
     s.m_prev = m->prev_position;
     s.m_vel = m->velocity;
@@ -1490,6 +1574,7 @@ void cw__char2d_state_load(cw_node n, void *data, const uint8_t *in, int len) {
   ch->on_floor = s.on_floor;
   ch->on_wall = s.on_wall;
   ch->on_ceiling = s.on_ceiling;
+  ch->on_one_way = s.on_one_way;
   ch->floor_normal = s.floor_normal;
   ch->wall_normal = s.wall_normal;
   ch->platform_velocity = s.platform_velocity;
@@ -1509,6 +1594,7 @@ void cw__char2d_state_load(cw_node n, void *data, const uint8_t *in, int len) {
   m->on_ceiling = s.m_ceiling;
   m->stepped = s.m_stepped;
   m->snapped = s.m_snapped;
+  m->on_one_way = s.m_one_way;
   m->position = s.m_pos;
   m->prev_position = s.m_prev;
   m->velocity = s.m_vel;
@@ -1527,6 +1613,9 @@ void cw__phys2d_state_restored(cw_tree *t) {
     co2d *c = cw_node_data_t(n, co_t);
     if (!c) continue;
     if (CW_HANDLE_IS_NULL(c->body) || !cw_body2d_valid(c->body)) create_body(W, n, c);
+    /* a tile body's chains are named per chunk beside the node: an image from before an edit brings back chains
+     * those lists do not have, so the body starts over */
+    if (image && cw_node_data_t(n, cw__tilecol_t) && !cw__tilecol_restored(n, c->chains.count)) c->dirty = true;
     if (c->dirty || config_hash(n, c) != c->cfg_hash) build_shapes(W, n, c);
     if (image) continue; /* the Box2D image has every body exactly where it was, velocities and caches too */
     /* every body at its node's pose now (the mover state came with the snapshot) */

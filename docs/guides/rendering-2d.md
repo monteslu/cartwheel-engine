@@ -74,7 +74,8 @@ Every 2D type except `CanvasLayer` and `CanvasSettings` extends `Node2D` (positi
 - `AnimatedSprite2D`: named animations written as one string (`"idle@3:0-1; run@12:2-5; jump:6!"`: name, optional fps, frame indices and ranges, `!` to play once). By default it advances on fixed ticks, so it is deterministic in replays. Signals `frame_changed` and `animation_finished`.
 - `NinePatch2D`, `Line2D`, `Polygon2D`: panels, strokes and filled shapes. Point lists are strings of number pairs (`"0 0, 32 0, 32 16"`).
 - `Label2D`: text with a font asset, SDF or bitmap mode, wrap, alignment and spacing.
-- `TileMap2D`: up to 8 layers of cells in a compact text form, plus animated tile ids.
+- `TileMap2D`: up to 8 layers of cells in a compact text form, animated tile ids, a collision shape and custom data per tile id.
+- `TileCollision2D`: a static body built from a `TileMap2D`'s cells and tile shapes (see Tilemaps below).
 - `Camera2D`: the first current one in tree order drives every canvas that follows the viewport. Smoothing runs on fixed ticks after physics; rendering interpolates.
 - `CanvasLayer`: a separate canvas in `layer` order (the default canvas is 0). It is screen space unless `follow_viewport` is set, which makes it the natural home for a HUD.
 - `ParallaxLayer`: its descendants scroll at `motion_scale` of the camera. Put it under a `CanvasLayer` with a negative layer for a background.
@@ -114,6 +115,48 @@ Layout is left to right with kerning (the kern table and GPOS pairs), greedy wor
 A tilemap stores up to 16 layers in 32x32-tile chunks. Each chunk is static geometry in its own buffer, rebuilt only when one of its cells changes, and drawing culls chunks to the layer's view. Animated tiles cycle in the vertex shader from the pass time, so animation never rebuilds a chunk. Cells use Tiled's flag convention (flip x, flip y, transpose in the high bits), so Tiled maps load unchanged. Pass a tick-derived time in the pass desc when a replay must show the same tile frame.
 
 `samples/r2d_tilemap` pans a zoomed camera over a 96x48 three-layer map, animates water and lava, shows every flip and rotation of an asymmetric tile, and edits one cell mid-run (one chunk rebuild, visible in the `r2d.chunk_rebuilds` stat). The `TileMap2D` node wraps the same renderer with a text cell format (`"0*20 / . . 3 3x / 1*4"`) and `cw_tilemap2d_set_cell` for code.
+
+### Tile shapes and collision
+
+The tile set says what each tile is made of, and the engine builds the colliders. `tile_shapes` on a `TileMap2D` gives tile ids a collision shape in tile pixels (y down, the origin at the tile's top-left), entries separated by `;`:
+
+| Entry | Shape |
+|---|---|
+| `1-4, 9: full` | the whole cell (ids as lists and ranges) |
+| `5: slope 0 16` | a floor whose height over the cell's bottom is 0 at the left edge and 16 at the right; `slope 0 8` and `slope 8 16` are the two halves of a gentle one |
+| `6: rect 0 8 16 8` | x, y, width, height |
+| `8: poly 0 0, 16 0, 8 16` | any simple polygon of 3 to 12 points, concave ones too |
+| `7: oneway` | a platform along the tile's top, solid only from above; `oneway 4` sits 4 pixels down, `oneway 0 8 16 0` is a sloped one |
+
+A cell's flips and transpose turn its shape with its picture, so one slope tile serves all four directions. A [TileCollision2D](node:TileCollision2D) child of the map turns the shapes into Box2D static geometry. From `samples/tiles2d`, a side-scroller strip:
+
+@include samples/tiles2d/assets/strip.cwscene#Map..Solid
+
+What gets built is the outline of the tiles, not a box per tile. Per map layer and per chunk of 32x32 cells, the edges two cells share are removed (also where only part of an edge is shared: a half-height slope against a full block), the rest joins into loops, and a straight run of any length becomes one segment of a Box2D chain. A chunk's chains carry ghost vertices from the cells of the next chunk. The result is one smooth surface: a body that slides along a floor never catches on a tile seam, which is what a box per tile does. A block of 10x2 cells is one loop of four segments.
+
+One-way platforms become chain segments that face up, on the physics layer named by `one_way_layer`. Rigid bodies land on them from above and pass through from below. A [CharacterBody2D](node:CharacterBody2D) whose `one_way_mask` has that layer's bit lands on them, jumps up through them, and falls through while its `drop_through` is set (`on_one_way` says it stands on one):
+
+@include samples/tiles2d/main.c#hero
+
+The `TileCollision2D` is a `StaticBody2D`, so `collision_layer`, `collision_mask`, `friction` and `bounce` are set on it, and contacts name it as the other body. Its `layers` property picks the map layers that collide (bit k for layer k), so two of them over one map give two map layers their own physics layers and masks.
+
+**Edits.** `cw_tilemap2d_set_cell` rebuilds only the chunk of that cell, and the neighbouring chunk when the cell lies on a chunk's edge, before the next physics step (`cw_tile_collision2d_update` does it at once, for a query in the same tick). Setting a whole cells text, `tile_shapes` or the sizes rebuilds every chunk. `cw_tile_collision2d_stats_get` counts chunks, chains, segments and builds. The sample removes a ledge under a crate:
+
+@include samples/tiles2d/main.c#edit
+
+**Cost.** On a 256x256 map with slopes (`samples/tiles2d_perf`), building all 64 chunks takes 12.6 ms natively and 23 ms in a cart, 0.2 and 0.36 ms a chunk, and a cell edit costs one chunk. The chains are outlines: a body that starts inside solid tiles is not pushed out, and overlap queries see the surface only. Ask the map where "is this point inside a wall" matters: `cw_tilemap2d_cell_solid` and `cw_tilemap2d_point_solid` answer from the shapes without physics.
+
+### Custom tile data
+
+`tile_data` gives tile ids named values the game reads: damage, friction, a footstep sound. A value is a number or a word:
+
+```text
+tile_data = "damage: 5=1, 6-7=2; sound: 1-4=stone, 9=wood"
+```
+
+`cw_tilemap2d_tile_data` reads a number by tile id, `cw_tilemap2d_tile_data_text` a word, and `cw_tilemap2d_cell_data` the number for whatever tile a cell holds. `cw_tile_collision2d_cell_at` turns a contact point and normal into the cell that was touched. The sample asks what its hero stands on:
+
+@include samples/tiles2d/main.c#data
 
 ## 2D lights
 
@@ -176,6 +219,7 @@ Natively, `CW_R2D_TIMERS=1` times each part of `cw_r2d_end` on the GPU (GL time 
 | `r2d_sprites` | sprites, shapes, blend modes, nine-slice, clip, render targets |
 | `r2d_text` | SDF and bitmap fonts, wrap, alignment, measurement |
 | `r2d_tilemap` | chunked tilemaps, animated tiles, flips, cell edits |
+| `tiles2d` | tile shapes, `TileCollision2D` (slopes, one-way planks, half blocks), custom tile data, a ledge removed in play |
 | `r2d_camera` | canvas layers, cameras, parallax, minimap, `INTEGER` scaling, the sharp filter at any scale |
 | `r2d_lights` | lit layers, normal maps, shadows, ambient |
 | `r2d_normal_turn` | turned and flipped normal-mapped sprites and instances, lit by their turned normals |

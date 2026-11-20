@@ -42,6 +42,8 @@ cw_add_app(unit_curve SOURCES test_curve.c)
 cw_add_app(unit_save SOURCES test_save.c)
 # audio player and listener nodes over the offline mixer (cartwheel/audio_nodes.h)
 cw_add_app(unit_audio_nodes SOURCES test_audio_nodes.c ASSETS ${CMAKE_SOURCE_DIR}/samples/audio_play/assets)
+# tile collision: tile shapes and custom data, merged chain outlines per chunk, slopes, one-way platforms, edits, rollback
+cw_add_app(unit_tiles2d SOURCES test_tiles2d.c)
 # navigation: navmesh builds at several pool sizes, queries, obstacles, crowds (cartwheel/nav.h)
 cw_add_app(unit_nav SOURCES test_nav.c)
 cw_add_app(unit_resource SOURCES test_resource.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/res_project/roots.txt)

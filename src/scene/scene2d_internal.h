@@ -88,4 +88,30 @@ typedef struct cw__points {
 } cw__points;
 const cw_vec2 *cw__points_get(cw__points *p, const char *text, int *n);
 
+/* ── TileMap2D for whoever builds from its cells (TileCollision2D, the navigation bake) ──────────────────
+ * Shapes are integers, CW__TILE_SUB units to a tile pixel, so shared edges of neighbouring cells compare exactly. */
+#define CW__TILE_SUB 16
+#define CW__TILE_SHAPE_PTS 12
+typedef struct cw__tile_shape {
+  uint8_t kind;  /* 0 none, 1 a polygon wound with a negative shoelace sum (y down), 2 a one-way segment a -> b (a left of b) */
+  uint8_t n;
+  int32_t pt[CW__TILE_SHAPE_PTS][2]; /* inside the cell: 0..cell extent, flips applied */
+} cw__tile_shape;
+typedef struct cw__tile_edit {
+  int32_t x, y, layer;
+} cw__tile_edit;
+typedef struct cw__tilemap_info {
+  int w, h, layers;
+  cw_vec2 tile_size, cell_size; /* cell_size already resolved (never 0) */
+  int32_t ext_x, ext_y;         /* a cell's extent in shape units: tile size * CW__TILE_SUB */
+  uint32_t serial, epoch;
+  const char *tile_shapes;      /* interned: a change means every shape may have changed */
+} cw__tilemap_info;
+bool cw__tilemap2d_info(cw_node n, cw__tilemap_info *out); /* false when n is not a TileMap2D */
+/* The shape of the tile in a cell with the cell's flips applied; kind 0 when empty, outside or shapeless. */
+void cw__tilemap2d_cell_shape(cw_node n, int layer, int x, int y, cw__tile_shape *out);
+/* Cell edits with a serial in [since, serial): returns how many it wrote, or -1 when some have left the log
+ * (the caller then treats every cell as changed). */
+int cw__tilemap2d_edits_since(cw_node n, uint32_t since, cw__tile_edit *out, int cap);
+
 #endif

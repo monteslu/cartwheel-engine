@@ -46,4 +46,30 @@ extern const char *cw__s_body_entered, *cw__s_body_exited, *cw__s_area_entered, 
   *cw__s_broken;
 void cw__phys_signals_init(void);
 
+/* ── bodies whose colliders come from code instead of CollisionShape2D children (TileCollision2D) ─────────
+ * The 2D physics layer owns the body; the builder adds and removes chains through these, so events, snapshots
+ * and the node's layers and material work as for any body. */
+#include "cartwheel/physics2d.h"
+typedef struct cw__body_ctx {
+  cw_node node;
+  cw_body2d body;
+  cw_shape2d_def def; /* the node's material, layer and mask */
+  float ppm;
+  void *world, *object; /* the physics layer's own */
+} cw__body_ctx;
+/* points in the body's frame, metres, y up (cw_chain2d_create's contract); returns the chain id (0 = failed) */
+uint64_t cw__phys2d_ctx_chain(cw__body_ctx *x, const cw_shape2d_def *def, const cw_vec2 *points, int count, bool loop, int *segments);
+void cw__phys2d_ctx_chain_destroy(cw__body_ctx *x, uint64_t chain);
+/* build or update the node's colliders now (what the tick does before the step) */
+void cw__phys2d_sync_shapes(cw_node n);
+
+/* tile_collision2d.c */
+extern const cw_node_type *cw__tilecol_t;
+void cw__register_tile_collision_type(void);
+uint32_t cw__tilecol_hash(cw_node n, uint32_t h); /* a change rebuilds every chunk */
+void cw__tilecol_build(cw__body_ctx *x);          /* everything; the body's old chains are destroyed already */
+void cw__tilecol_update(cw__body_ctx *x);         /* the chunks of the cells edited since the last build */
+/* after a world image came back: do the chains the node remembers match the body's (body_chains of them)? */
+bool cw__tilecol_restored(cw_node n, int body_chains);
+
 #endif

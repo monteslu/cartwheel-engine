@@ -33,6 +33,12 @@
  *                         step_height, max_slides, push_mass, ride_platforms;
  *                         read-only on_floor, on_wall, on_ceiling,
  *                         floor_normal, wall_normal, platform_velocity.
+ *                         CharacterBody2D also: one_way_mask (bits: the
+ *                         layers whose shapes are one-way platforms for it,
+ *                         landed on from above, passed from below and from
+ *                         the side), drop_through (while set, a move falls
+ *                         through the platform it stands on), read-only
+ *                         on_one_way.
  *                         Moves only through cw_character*_move_and_slide
  *                         (call it from fixed_update). Its shape (the first
  *                         CollisionShape child: capsule, circle/sphere or
