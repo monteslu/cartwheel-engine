@@ -13,7 +13,12 @@
  *
  * GI_PROBES=0 turns both probes' intensity to 0 and GI_GRID=0 the grid's
  * (the gates' controls); GI_NONE=1 removes the probes and the grid and turns SSR
- * and SSGI off (the timing report's baseline).
+ * and SSGI off (the timing report's baseline). GI_ONCE=1 captures RoomProbe
+ * once, in the first frame, under CLUSTERED lighting with the sun's shadow in
+ * three cascades and no sky: that one capture must see the room lit as GL's
+ * does, cascades and atlas drawn (tests/gi-probe.mjs, GL against WebGPU).
+ * GI_ONCE=every: the same lighting with RoomProbe left captured every other
+ * frame (the bound the ONCE comparison is held to).
  *
  * Debug state: gi.tick, gi.probes, gi.captures (since the start), gi.bound
  * (the most probes one draw had bound last frame), gi.materials (materials
@@ -82,6 +87,21 @@ static void fixed_update(void *u, double dt) {
 static void render(void *u, double alpha) {
   (void)u;
   (void)alpha;
+  static bool once_set;
+  if (!once_set) { /* (before the first capture: the tick-2 switches come too late for it, so getenv, natively) */
+    once_set = true;
+    const char *e = getenv("GI_ONCE");
+    if (e && (!strcmp(e, "1") || !strcmp(e, "every"))) {
+      if (!strcmp(e, "1")) cw_node_set(node("Room/RoomProbe"), "update_mode", cw_val_enum("ONCE"));
+      cw_node ls = cw_node_new("LightingSettings", "Lighting");
+      cw_node_add_child(node("Room"), ls);
+      cw_node_set(ls, "mode", cw_val_enum("CLUSTERED"));
+      /* the sun's light through three cascades, and no sky (its environment would change and capture the probe again) */
+      cw_node_set(node("Room/Sun"), "shadow_cascades", cw_val_int(3));
+      cw_node_set(node("Room/Sun"), "shadow_distance", cw_val_float(30));
+      cw_node_free(node("Room/Sky"));
+    }
+  }
   cw_gi_stats s;
   cw_gi_get_stats(cw_scene_app_tree(), &s);
   probes = s.reflection_probes;

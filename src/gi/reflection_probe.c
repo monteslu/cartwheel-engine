@@ -15,12 +15,19 @@
 #include "scene/render3d_internal.h"
 #include "render/pipeline_internal.h"
 #include "render/quality_internal.h"
+#include "render/pipeline_wgpu.h"
 
 static const char *const update_names[] = { "ONCE", "ON_DEMAND", "EVERY_N_FRAMES", NULL };
 
 static const cw_node_type *probe_t;
 
 /* ── per tree ─────────────────────────────────────────────────────────── */
+
+void cw__gi_wgpu_order(void) {
+  static int skip = -1;
+  if (skip < 0) { const char *e = getenv("CW_TEST_GI_NO_FLUSH"); skip = e && atoi(e); }
+  if (!skip) cw__pw_flush();
+}
 
 static void untag_all(gi_tree *g) {
   for (int i = 0; i < g->mats.count; i++) {
@@ -145,7 +152,7 @@ static void mask_walk(t3_object *o, uint32_t mask, mask_list *changed) {
 static void capture_begin(gi_tree *g, cw_pass_ctx *ctx, refl_probe *p, mask_list *changed) {
   t3_renderer *r = ctx->renderer;
   t3_renderer_set_shadow_hold(r, true);
-  if (cw_gpu_backend() == CW_GPU_WEBGPU) t3_renderer_set_external_encoder(r, 0);
+  if (cw_gpu_backend() == CW_GPU_WEBGPU) cw__gi_wgpu_order(), t3_renderer_set_external_encoder(r, 0);
   else t3_renderer_reset_bindings(r);
   if (!g->pmrem) g->pmrem = t3_pmrem_generator_new(r);
   if (p->cull_mask != -1) mask_walk(&ctx->scene3d->base, (uint32_t)p->cull_mask, changed);

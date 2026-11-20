@@ -79,6 +79,11 @@ void cw__register_probe_grid(void);
 void cw__gi_tag(gi_tree *g, t3_object *o);
 /* the last probe and grid left the tree: the gi part comes off every material it was put on (reflection_probe.c) */
 void cw__gi_untag_if_idle(gi_tree *g);
+/* WebGPU, before three.c draws a capture with its own command buffers: the frame's encoder is submitted first, so the
+ * work this frame recorded into it (the sun's cascades, the clustered shadow atlas, the sky) reaches the GPU before the
+ * capture that samples it. Without this a capture drawn in the first frame (a ONCE probe) saw maps not yet drawn.
+ * CW_TEST_GI_NO_FLUSH=1 skips it (the control of tests/gi-probe.mjs's ONCE check). (reflection_probe.c) */
+void cw__gi_wgpu_order(void);
 void cw__gi_add_post_passes(cw_pipeline *p);
 void cw__gi_add_shadow_pass(cw_pipeline *p);
 bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, int w, int h, int mode);
