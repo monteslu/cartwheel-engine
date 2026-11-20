@@ -227,7 +227,7 @@ void cw__gi_tag(gi_tree *g, t3_object *o) {
       const char *skip_env = getenv("CW_TEST_GI_SKIP_CSM");
       bool skip_csm = skip_env && atoi(skip_env);
       const char *ext = t3_material_get_extension(mat);
-      if (ext && !cw_shading_has(mat, "cluster") && !(cw_shading_has(mat, "csm") && !skip_csm) && !cw_shading_has(mat, "meshdecal") &&
+      if (ext && !cw_shading_has(mat, "cluster") && !cw_shading_has(mat, "clusteries") && !(cw_shading_has(mat, "csm") && !skip_csm) && !cw_shading_has(mat, "meshdecal") &&
           !cw_shading_has(mat, "skinshade")) {
         /* said once per material: reflection probes and the probe grid have no effect on it */
         if ((g->probes.count || g->grids.count) && g->warned_mats < 8 && !cw_shading_has(mat, "terrain") &&

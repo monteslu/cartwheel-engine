@@ -38,11 +38,14 @@ static void shadow_span(bool end) {
 #endif
 }
 
-#define ROWS 10 /* texels a light (cluster_part.mjs LIGHT_ROWS) */
+#define ROWS 12 /* texels a light (cluster_part.mjs LIGHT_ROWS, and the two an IES profile adds) */
 #define PART "cluster" /* the clustered lights' shading part; the sun's is "csm" (cartwheel/shading.h) */
 /* the parts a material is marked with: the clustered lights, the cascaded sun, and the plain lighting model
  * (effects detail Very Low: cw_quality_scale("shading") 0; src/render/extensions/plain.mjs) */
-enum { ON_CLUSTER = 1, ON_CSM = 2, ON_PLAIN = 4 };
+enum { ON_CLUSTER = 1, ON_CSM = 2, ON_PLAIN = 4, ON_IES = 8 };
+/* the clustered lights' part when a clustered light has an IES profile: the same loop, and a light's shape read
+ * from the profile atlas (src/render/extensions/clusteries.mjs). Scenes without a profile keep the cheaper program. */
+#define PART_IES "clusteries"
 static bool plain_wanted(void) { return cw_quality_scale("shading") < 0.5f; }
 
 typedef struct taken { t3_light *light; uint32_t layers; } taken;
@@ -61,6 +64,11 @@ typedef struct ix_mesh {
   uint64_t sum;
   int counts; /* its slots that draw with a part */
 } ix_mesh;
+
+/* an IES profile's place in the atlas: columns of 180 texels (the tilt), IES_COL_ROWS rows; a 2D profile (360 rows
+ * of twist and a copy of the first after them, so the filter wraps) takes a column, one-row profiles stack in one */
+enum { IES_W = 180, IES_COL_ROWS = 361 };
+typedef struct ies_slot { const t3_texture *tex; uint32_t version; int x, y, rows; } ies_slot;
 
 typedef struct lighting {
   cw_tree *tree;
@@ -104,6 +112,11 @@ typedef struct lighting {
   cw__atlas *atlas;
   t3_texture *shadow_tex;
   float atlas_px;
+  /* IES profiles (cartwheel/lighting.h): the distinct iesMap textures of the scene's clustered lights, side by side
+   * in one atlas the clusteries part samples; made again when the set changes */
+  CW_ARRAY(ies_slot) ies_slots;
+  t3_texture *ies_tex;
+  bool ies_on; /* a clustered light of the scene has a profile this frame */
   cw__shadow_req *reqs;
   cw__shadow_out *outs;
   int *req_light;
@@ -213,7 +226,7 @@ static bool lit_type(t3_material_type t) {
  * (cartwheel/shading.h): terrain's surface parts and the GI parts compose
  * with them; a material with any other extension of its own keeps it alone */
 static bool composes(const char *ext) {
-  static const char *const ok[] = { "terrain", "terrainlow", "terrainmin", "terrainfar", PART, "csm", "plain", "gi", "meshdecal", "foliage" };
+  static const char *const ok[] = { "terrain", "terrainlow", "terrainmin", "terrainfar", PART, PART_IES, "csm", "plain", "gi", "meshdecal", "foliage" };
   if (!ext) return true;
   for (const char *p = ext; *p;) {
     const char *e = strchr(p, '_');
@@ -239,12 +252,12 @@ static bool composes(const char *ext) {
  * A city's thousands of materials then cost an array read each, not a
  * composed name each. (Extension ids are small: three.c numbers them as
  * they are first named.) */
-typedef struct mark_memo { uint8_t known, counts; } mark_memo; /* known, counts: bit `on` (ON_CLUSTER | ON_CSM | ON_PLAIN) */
+typedef struct mark_memo { uint16_t known, counts; } mark_memo; /* known, counts: bit `on` (ON_CLUSTER | ON_CSM | ON_PLAIN | ON_IES) */
 static mark_memo *memo;
 static int memo_cap;
 
 static int mark_one(t3_material *mt, int on) {
-  bool cluster = on & ON_CLUSTER, csm = on & ON_CSM;
+  bool ies = (on & ON_CLUSTER) && (on & ON_IES), cluster = (on & ON_CLUSTER) && !ies, csm = on & ON_CSM;
   /* the plain part (effects detail Very Low): the physically based materials only, whose model it replaces */
   bool plain = (on & ON_PLAIN) && (mt->type == T3_MESH_STANDARD_MATERIAL || mt->type == T3_MESH_PHYSICAL_MATERIAL);
   uint16_t from = mt->extension;
@@ -252,13 +265,16 @@ static int mark_one(t3_material *mt, int on) {
   int counts = 0;
   const char *ext = t3_material_get_extension(mt);
   if (composes(ext)) {
+    /* (the one going first: a material holds a bounded number of parts) */
+    if (!cluster) cw_shading_remove(mt, PART);
+    if (!ies) cw_shading_remove(mt, PART_IES);
     if (cluster) cw_shading_add(mt, PART);
-    else cw_shading_remove(mt, PART);
+    if (ies) cw_shading_add(mt, PART_IES);
     if (csm) cw_shading_add(mt, "csm");
     else cw_shading_remove(mt, "csm");
     if (plain) cw_shading_add(mt, "plain");
     else cw_shading_remove(mt, "plain");
-    counts = cluster || csm;
+    counts = cluster || ies || csm;
   }
   /* (only a fixed point is remembered: one that marking leaves as it is) */
   if (mt->extension == from) {
@@ -268,8 +284,8 @@ static int mark_one(t3_material *mt, int on) {
       memset(memo + memo_cap, 0, (size_t)(cap - memo_cap) * sizeof *memo);
       memo_cap = cap;
     }
-    memo[from].known |= (uint8_t)(1u << on);
-    memo[from].counts |= (uint8_t)((unsigned)counts << on);
+    memo[from].known |= (uint16_t)(1u << on);
+    memo[from].counts |= (uint16_t)((unsigned)counts << on);
   }
   return counts;
 }
@@ -284,6 +300,7 @@ static void fill_cluster(t3_extension_ctx *c, void *user) {
   t3_extension_set_texture(c, "clusterRecords", L->rec_tex);
   t3_extension_set_texture(c, "clusterItems", L->item_tex);
   t3_extension_set_texture(c, "clusterShadows", L->shadow_tex);
+  if (L->ies_tex) t3_extension_set_texture(c, "clusterIes", L->ies_tex); /* (the clusteries program alone samples it) */
 }
 static void fill_plain(t3_extension_ctx *c, void *user) {
   (void)c;
@@ -450,6 +467,65 @@ static double wall_ms(void) {
   return (double)ts.tv_sec * 1e3 + (double)ts.tv_nsec * 1e-6;
 }
 
+/* The IES atlas: the distinct profile textures (three.c IESLoader textures: RGBA half floats, 180 wide, 1 or 360
+ * rows) of the scene's clustered lights. True when there is one. */
+static const ies_slot *ies_find(const lighting *L, const t3_texture *t) {
+  for (int i = 0; i < L->ies_slots.count; i++)
+    if (L->ies_slots.data[i].tex == t) return &L->ies_slots.data[i];
+  return NULL;
+}
+static bool ies_usable(const t3_texture *t) {
+  return t && t->pixels && t->type == T3_HALF_FLOAT_TYPE && t->width == IES_W && (t->height == 1 || t->height == 360);
+}
+static bool ies_update(lighting *L) {
+  const t3_texture *want[64];
+  int n = 0;
+  bool same = true;
+  for (int i = 0; i < L->ix_lights.count; i++) {
+    const t3_light *l = L->ix_lights.data[i];
+    const t3_texture *t = l->ies_map;
+    if (!ies_usable(t) || !clusters(L, l)) continue;
+    bool dup = false;
+    for (int k = 0; k < n; k++) dup |= want[k] == t;
+    if (dup) continue;
+    if (n == 64) {
+      static bool said;
+      if (!said) cw_warn("lighting: more than 64 different IES profiles in one scene: the rest light as plain lights");
+      said = true;
+      break;
+    }
+    const ies_slot *s = ies_find(L, t);
+    same &= s && s->version == t->version;
+    want[n++] = t;
+  }
+  if (!n) return false;
+  if (same && n == L->ies_slots.count && L->ies_tex) return true;
+  /* lay the profiles out again: the 2D ones a column each, then the one-row ones */
+  cw_array_clear(&L->ies_slots);
+  int cols = 0, ones = 0;
+  for (int k = 0; k < n; k++) {
+    if (want[k]->height > 1) cw_array_push(&L->ies_slots, ((ies_slot){ want[k], want[k]->version, IES_W * cols++, 0, 360 }));
+  }
+  for (int k = 0; k < n; k++) {
+    if (want[k]->height > 1) continue;
+    if (ones % IES_COL_ROWS == 0) cols++;
+    cw_array_push(&L->ies_slots, ((ies_slot){ want[k], want[k]->version, IES_W * (cols - 1), ones % IES_COL_ROWS, 1 }));
+    ones++;
+  }
+  if (L->ies_tex) t3_release(L->ies_tex);
+  L->ies_tex = t3_data_texture_new_typed(IES_W * cols, IES_COL_ROWS, NULL, T3_HALF_FLOAT_TYPE);
+  L->ies_tex->min_filter = L->ies_tex->mag_filter = T3_LINEAR;
+  uint16_t *dst = (uint16_t *)L->ies_tex->pixels;
+  int aw = IES_W * cols;
+  for (int i = 0; i < L->ies_slots.count; i++) {
+    const ies_slot *s = &L->ies_slots.data[i];
+    const uint16_t *src = (const uint16_t *)s->tex->pixels;
+    for (int r = 0; r < s->rows + (s->rows > 1); r++) /* (the row after a 2D profile's last is its first again) */
+      memcpy(dst + 4 * ((size_t)(s->y + r) * aw + s->x), src + 4 * (size_t)IES_W * (r % s->rows), 4 * IES_W * sizeof *dst);
+  }
+  return true;
+}
+
 /* What does not depend on the view, once a frame (split screen runs the
  * pass once per view): the lights given back and taken again, the scene
  * index and the materials' parts. False: nothing to do this frame. */
@@ -477,7 +553,8 @@ static void frame_part(lighting *L, cw_pass_ctx *ctx) {
   /* the parts as most views want them: cluster, and csm with a sun (a view
    * whose sun is on other layers, or whose cascades cannot be made, marks
    * again for itself) */
-  L->materials = index_mark(L, (clustered ? ON_CLUSTER : 0) | (L->sun ? ON_CSM : 0) | (plain ? ON_PLAIN : 0));
+  L->ies_on = clustered && ies_update(L);
+  L->materials = index_mark(L, (clustered ? ON_CLUSTER : 0) | (L->sun ? ON_CSM : 0) | (plain ? ON_PLAIN : 0) | (L->ies_on ? ON_IES : 0));
   L->marked = true;
   if (clustered) take_lights(L);
 }
@@ -534,6 +611,7 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
   if (!clustered && !L->sun) return;
   if (L->hooked != ctx->renderer) {
     cw_shading_part(ctx->renderer, PART, fill_cluster, L);
+    cw_shading_part(ctx->renderer, PART_IES, fill_cluster, L);
     cw_shading_part(ctx->renderer, "csm", fill_csm, L);
     L->hooked = ctx->renderer;
     L->batching = -1;
@@ -541,6 +619,7 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
   if (L->batching != (int)L->s.batching) {
     /* neither hook reads the object beyond receive_shadow, which a batch shares */
     cw_shading_part_batching(ctx->renderer, PART, L->s.batching);
+    cw_shading_part_batching(ctx->renderer, PART_IES, L->s.batching);
     cw_shading_part_batching(ctx->renderer, "csm", L->s.batching);
     L->batching = L->s.batching;
   }
@@ -577,7 +656,7 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
     t3_release(L->sun);
     L->sun_taken = false;
   }
-  int on = (clustered ? ON_CLUSTER : 0) | (csm ? ON_CSM : 0) | (plain_wanted() ? ON_PLAIN : 0);
+  int on = (clustered ? ON_CLUSTER : 0) | (csm ? ON_CSM : 0) | (plain_wanted() ? ON_PLAIN : 0) | (L->ies_on ? ON_IES : 0);
   if (on != L->ix_on) {
     /* this view's parts differ from the frame's: every material again (the
      * index may be out of date: a walk) */
@@ -665,6 +744,21 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
       v->cos_angle = cc;
       v->sin_angle = cw_sin(l->angle);
       spots++;
+    }
+    /* an IES profile: the light's shape comes from the atlas (the cone test and the cone go), read around the light's
+     * own axes: the tilt off its -Z, the twist around it from its +Y (three.js r187's IESSpotLightNode reads the
+     * same angles from the shadow camera's axes, which are these when the light has no roll) */
+    const ies_slot *ies = L->ies_on && l->ies_map ? ies_find(L, l->ies_map) : NULL;
+    if (ies) {
+      const float *m = l->base.matrix_world.e;
+      t3_vec3 z = t3_vec3_normalize(t3_vec3_transform_direction(t3_v3(m[8], m[9], m[10]), view));
+      t3_vec3 y = t3_vec3_normalize(t3_vec3_transform_direction(t3_v3(m[4], m[5], m[6]), view));
+      float *t10 = t3 + 28 * (size_t)w, *t11 = t10 + 4 * (size_t)w;
+      t2[0] = z.x, t2[1] = z.y, t2[2] = z.z, t2[3] = -3;
+      t10[0] = y.x, t10[1] = y.y, t10[2] = y.z, t10[3] = (float)ies->x;
+      t11[0] = (float)ies->y, t11[1] = ies->rows > 1 ? 360.0f : 0.0f;
+      v->cos_angle = -2; /* binned as a sphere: a profile may light outside the cone */
+      L->stats.ies++;
     }
   }
   /* the shadowed ones: a tile each in the atlas, sized by how big the light

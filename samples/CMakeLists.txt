@@ -14,6 +14,8 @@ cw_add_app(character_skin SOURCES character_skin/main.c ASSETS ${CMAKE_CURRENT_S
   PROGRAMS character_skin/programs/character_skin.txt)
 # a coloured glow along silhouettes that fades in with distance (team colours at range, a pulsing shimmer)
 cw_add_app(rim_light SOURCES rim_light/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/rim_light/assets)
+# IES photometric profiles on spot and omni lights (Light3D ies_profile; cartwheel/lighting.h)
+cw_add_app(ies_lights SOURCES ies_lights/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/ies_lights/project/roots.txt)
 # toon (cel) shading: MeshInstance3D shading = TOON on primitives and a glTF, under a cascaded sun and clustered lights (cartwheel/toon.h)
 cw_add_app(toon_shading SOURCES toon_shading/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/toon_shading/project/roots.txt)
 # fine texture detail at grazing angles (anisotropic filtering, mip chains, sRGB albedo, normal maps): GL and WebGPU draw the same picture

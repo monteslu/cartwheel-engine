@@ -158,6 +158,22 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   docs/guides/rendering-3d.md, "Motion vectors". Gates `post-motion-taa`, `post-motion-plain`,
   `post-motion-velocity`, `motion-vectors-taa`, `motion-vectors-view` on GL and WebGPU, and the scripted
   `motion-vectors` (the measurement above; its control, camera motion only, must fail).
+- **IES light profiles (three.c 0.187.11, three.js r187's IESSpotLight and IESLoader).** `ies_profile` on a
+  `SpotLight3D` or an `OmniLight3D` names an IES photometric file (`.ies`), and the light takes the fixture's
+  measured shape: rings, hot spots, a street lamp's forward throw, a lantern's bars. The profile is read around the
+  light's own axes (the tilt off its -Z, the twist from its +Y, so turning a lamp turns its light), replaces a spot
+  light's cone and covers the whole sphere on an omni light; shadows, range and decay work as before. `cwpack`
+  takes `.ies` files, checks each one when it packs it and stops with the reason on one it cannot read. Profiles
+  with a single horizontal angle and with a measured range (mirrored to the circle as the file asks) both work.
+  IES lights are drawn by the clustered lights: the scene's profiles sit in one atlas and, while a clustered light
+  has one, lit materials draw with the new `clusteries` part in place of `cluster` (a scene without profiles
+  keeps its programs and its cost). `cw_lighting_stats.ies` counts them. With FORWARD lighting a spot light's
+  profile is three.c's own IESSpotLight; an omni light's needs CLUSTERED (a warning says so).
+  `samples/ies_lights`: a ring downlight with a shadow, a street lamp turning about its axis, a lantern on an omni
+  light, a plain spot light. Gate `ies-lights` on GL and WebGPU (native and the cart); its control takes the
+  profiles away, and the state and the picture differ. Guide:
+  [Real fixtures: IES profiles](docs/guides/rendering-3d.md#real-fixtures-ies-profiles).
+
 ## v0.51.0 (2026-11-19)
 
 ### Added

@@ -728,6 +728,14 @@
      "doc": "Spot: soft edge fraction."
     },
     {
+     "name": "ies_profile",
+     "type": "res",
+     "default": "res(0x0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Omni/spot: an IES photometric file (.ies) that shapes the light: rings, hot spots and cut-offs of a real fixture, read around the light's -Z (the twist from its +Y). It replaces a spot's cone (angle still sizes its shadow). An omni light's needs clustered lighting."
+    },
+    {
      "name": "bake",
      "type": "bool",
      "default": "false",

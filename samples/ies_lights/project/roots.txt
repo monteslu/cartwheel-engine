@@ -1,0 +1,5 @@
+# ies_lights: what cwpack packs. The .ies files are generated (CC0) by ../gen.mjs.
+main.cwscene
+lights/ring.ies
+lights/street.ies
+lights/lantern.ies

@@ -192,6 +192,24 @@ The view from the camera's near to `shadow_distance` (r187's `maxFar`; 0 is the 
 
 `samples/street_sun` is the night street by day: the sun alone, four cascades reaching 250 m down the street. Its `csm-parity` gate checks, on GL and on WebGPU, that the cascades put shadows where one big shadow map over the same ground puts them.
 
+### Real fixtures: IES profiles
+
+A real lamp does not throw a clean cone. Its reflector and glass give it rings, hot spots and a cut-off, and manufacturers publish that shape as an IES photometric file (`.ies`, the LM-63 text format). `ies_profile` on a `SpotLight3D` or an `OmniLight3D` gives the light that shape, as three.js r187's IESSpotLight does:
+
+```
+[node name="StreetLamp" parent="." type="SpotLight3D"]
+rotation = vec3(-1.5707963, 0, 0)
+energy = 420
+range = 16
+ies_profile = res(0xf6905d0e2b1859a7)
+```
+
+The value is the file's resource (its UID is `cw_res_path_uid("lights/street.ies")`). `cwpack` checks every `.ies` file when it packs it and stops with the reason on one it cannot read; the file is read by three.js's own IESLoader rules (three.c `t3_ies_texture_parse`): the candela values normalized to the brightest direction, a single horizontal angle for a shape that is the same all the way round, or a measured range mirrored to the full circle. `energy` and `color` still set how bright and what colour the light is; the profile only shapes it.
+
+The profile is read around the light's own axes: the tilt off its -Z (where the light points), the twist around that axis from its +Y, so turning a lamp about its axis turns its pool of light. It replaces a spot light's cone (`angle` and `penumbra` no longer shape the light; `angle` still sizes its shadow map, so keep it wide enough for the profile). On an omni light the profile covers the whole sphere, down to the up-light a lantern throws at the ceiling. Shadows, range and decay work as for any light.
+
+IES lights are drawn by the clustered lights (`LightingSettings` `mode = CLUSTERED`): the scene's distinct profiles sit in one small atlas (a profile is 180 texels by 1 or 361 rows of half floats), and while a clustered light has a profile the lit materials draw with the `clusteries` part instead of `cluster`, so a scene without profiles pays nothing for the feature and `tools/programs.mjs` finds the new states like any other. A light with a profile costs one more row read and one filtered read of the atlas per pixel it lights, and is binned as a sphere, not a cone. With FORWARD lighting a spot light's profile is drawn by three.c's own IESSpotLight (the same shape for a light without roll), and an omni light's is not drawn (a warning says so). At most 64 different profiles a scene. `samples/ies_lights` shows a ring downlight with a shadow, a street lamp turning about its axis, a lantern on an omni light and a plain spot light; its gate is `ies-lights`.
+
 ### Terrain under lamps and cascades
 
 A Terrain3D's materials carry their own surface part (`terrain`, `terrainlow`, `terrainfar`), and the cluster and csm parts compose with it (`terrain_cluster_csm`), so lamps light the ground and the sun's cascades fall on it. The terrain also casts into the cascades with its own vertex displacement. Any other extension a material carries keeps it alone, unlit by the parts. `terrain_lights` (terrain_demo's `lights` run) drives the car at dusk past seven clustered lamps with the sun casting four cascades. Its `terrain-lights-parity` gate checks on GL and WebGPU that the clustered lamps light the ground exactly as three.c's own lights do, and that the cascades put the terrain's shadows where one wide shadow map puts them.
