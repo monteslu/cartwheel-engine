@@ -256,6 +256,118 @@ WGSL_DECL WGSL_AO_COMP_BODY = S(
     return vec4f(c.rgb * mix(1.0, ao, u.u_intensity), c.a);
   });
 
+/* motion blur (pipeline_post.c): the largest motion of each 4 x 4 block (run twice: 16 x 16 pixel tiles), the
+ * largest of a tile's 3 x 3 neighbours, then the gather along it */
+WGSL_DECL WGSL_MB_TILE = S(
+  struct U { u_texel: vec2f, u_span: f32 };
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var u_vel: texture_2d<f32>;
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    var best = vec2f(0.0);
+    var bl = -1.0;
+    let n = i32(u.u_span);
+    for (var j = 0; j < n; j++) {
+      for (var i = 0; i < n; i++) {
+        let v = textureSampleLevel(u_vel, cw_linear, uv + (vec2f(f32(i), f32(j)) - 0.5 * (u.u_span - 1.0)) * u.u_texel, 0.0).rg;
+        let l = dot(v, v);
+        if (l > bl) { bl = l; best = v; }
+      }
+    }
+    return vec4f(best, 0.0, 1.0);
+  });
+WGSL_DECL WGSL_MB = S(
+  struct U { u_pz: vec4f, u_mb: vec4f, u_size: vec2f, u_tiles: vec2f, u_frame: i32 };
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var u_src: texture_2d<f32>;
+  @group(0) @binding(2) var u_vel: texture_2d<f32>;
+  @group(0) @binding(3) var u_tile: texture_2d<f32>;
+  @group(0) @binding(4) var u_depth: texture_2d<f32>;
+  fn vdepth(uv: vec2f) -> f32 {
+    let zl = cw_load(u_depth, uv).r;
+    return select(zl, 1e6, zl > 1e30);
+  }
+  /* a pixel's motion over the open shutter, in pixels, held to the longest blur */
+  fn motion(v: vec2f) -> vec2f {
+    let p = v * u.u_mb.x * u.u_size;
+    let l = length(p);
+    return select(p, p * (u.u_mb.y / max(l, 1e-6)), l > u.u_mb.y);
+  }
+  fn cone(d: f32, l: f32) -> f32 { return clamp(1.0 - d / (0.5 * l + 1e-4), 0.0, 1.0); }
+  fn cyl(d: f32, l: f32) -> f32 { return 1.0 - smoothstep(0.475 * l, 0.525 * l + 1e-4, d); }
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    let c0 = textureSampleLevel(u_src, cw_linear, uv, 0.0);
+    let tuv = (floor(uv * u.u_tiles) + 0.5) / u.u_tiles;
+    let vmax = motion(textureSampleLevel(u_tile, cw_linear, tuv, 0.0).rg);
+    let len = length(vmax);
+    if (len < 0.5) { return c0; }
+    let lp = length(motion(cw_load(u_vel, uv).rg));
+    let zp = vdepth(uv);
+    let ext = max(0.02 * zp, 0.01);
+    let n = i32(u.u_mb.z);
+    let fc = cw_frag_coord(pos);
+    let jit = hash01(vec3u(u32(fc.x), u32(fc.y), u32(u.u_frame))) - 0.5;
+    let w0 = 1.0 / max(lp, 1.0);
+    var sum = c0.rgb * w0;
+    var wsum = w0;
+    let step_uv = vmax / u.u_size;
+    for (var i = 0; i < 32; i++) {
+      if (i >= n) { break; }
+      let t = ((f32(i) + 0.5 + jit) / f32(n)) * 2.0 - 1.0;
+      let q = uv + step_uv * (t * 0.5);
+      let d = abs(t) * len * 0.5;
+      let ls = length(motion(cw_load(u_vel, q).rg));
+      let zs = vdepth(q);
+      let fore = clamp(1.0 - (zs - zp) / ext, 0.0, 1.0);
+      let back = clamp(1.0 - (zp - zs) / ext, 0.0, 1.0);
+      let w = fore * cone(d, ls) + back * cone(d, lp) + cyl(d, ls) * cyl(d, lp) * 2.0;
+      sum += textureSampleLevel(u_src, cw_linear, q, 0.0).rgb * w;
+      wsum += w;
+    }
+    return vec4f(sum / wsum, c0.a);
+  });
+
+/* automatic exposure (pipeline_post.c): the picture's average log2 luminance through a chain of 8x reductions
+ * (16 bilinear reads each: an 8 x 8 box), then the 1x1 adaptation state */
+WGSL_DECL WGSL_EXP_LOG = S(
+  struct U { u_texel: vec2f, u_first: i32 };
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var u_src: texture_2d<f32>;
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    var s = 0.0;
+    if (u.u_first != 0) {
+      for (var j = 0; j < 2; j++) {
+        for (var i = 0; i < 2; i++) {
+          let c = textureSampleLevel(u_src, cw_linear, uv + (vec2f(f32(i), f32(j)) * 4.0 - 2.0) * u.u_texel, 0.0);
+          s += log2(max(dot(c.rgb, vec3f(0.2126, 0.7152, 0.0722)), 1.0 / 65536.0)) * 4.0;
+        }
+      }
+    } else {
+      for (var j = 0; j < 4; j++) {
+        for (var i = 0; i < 4; i++) {
+          s += textureSampleLevel(u_src, cw_linear, uv + (vec2f(f32(i), f32(j)) * 2.0 - 3.0) * u.u_texel, 0.0).r;
+        }
+      }
+    }
+    return vec4f(clamp(s / 16.0, -16.0, 16.0), 0.0, 0.0, 1.0);
+  });
+WGSL_DECL WGSL_EXP_ADAPT = S(
+  struct U { u_p: vec4f, u_k: vec4f };
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var u_avg: texture_2d<f32>;
+  @group(0) @binding(2) var u_prev: texture_2d<f32>;
+  @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    let avg = textureLoad(u_avg, vec2i(0), 0).r;
+    let goal = clamp(log2(u.u_p.x) - avg, u.u_p.y, u.u_p.z);
+    let pr = textureLoad(u_prev, vec2i(0), 0).rg;
+    let prev = pr.r + pr.g / 1024.0;
+    var k = u.u_k.y;
+    if (goal < prev) { k = u.u_k.x; }
+    var ev = prev + (goal - prev) * k;
+    if (u.u_p.w > 0.5) { ev = goal; }
+    let hi = floor(ev * 16.0 + 0.5) / 16.0;
+    return vec4f(hi, (ev - hi) * 1024.0, 0.0, 1.0);
+  });
+
 WGSL_DECL WGSL_TAA = S(
   struct U { u_size: vec2f, u_feedback: f32, u_fresh: i32 };
   @group(0) @binding(0) var<uniform> u: U;
@@ -401,14 +513,19 @@ WGSL_DECL WGSL_BL_COMP = S(
     return vec4f(max(c.rgb + u.u_k * (bloom - prefilter(c.rgb)), vec3f(0.0)), c.a);
   });
 
+/* the exposure the curves use: the settings' (u_tm_exposure) times 2^(automatic exposure), read from the 1x1
+ * adaptation state (r + g / 1024 stops; a texture of zeros when automatic exposure is off) */
 #define WGSL_TM_FNS_SRC S(\
-  fn LinearToneMapping(color: vec3f) -> vec3f { return u.toneMappingExposure * color; } \
+  @group(0) @binding(6) var u_auto: texture_2d<f32>; \
+  var<private> tm_exp: f32; \
+  fn tm_exposure_set() { tm_exp = u.u_tm_exposure * exp2(dot(textureLoad(u_auto, vec2i(0), 0).rg, vec2f(1.0, 1.0 / 1024.0))); } \
+  fn LinearToneMapping(color: vec3f) -> vec3f { return tm_exp * color; } \
   fn ReinhardToneMapping(c0: vec3f) -> vec3f { \
-    let color = c0 * u.toneMappingExposure; \
+    let color = c0 * tm_exp; \
     return clamp(color / (vec3f(1.0) + color), vec3f(0.0), vec3f(1.0)); \
   } \
   fn OptimizedCineonToneMapping(c0: vec3f) -> vec3f { \
-    var color = c0 * u.toneMappingExposure; \
+    var color = c0 * tm_exp; \
     color = max(vec3f(0.0), color - 0.004); \
     return pow((color * (6.2 * color + 0.5)) / (color * (6.2 * color + 1.7) + 0.06), vec3f(2.2)); \
   } \
@@ -420,7 +537,7 @@ WGSL_DECL WGSL_BL_COMP = S(
   fn ACESFilmicToneMapping(c0: vec3f) -> vec3f { \
     let ACESInputMat = mat3x3f(vec3f(0.59719, 0.07600, 0.02840), vec3f(0.35458, 0.90834, 0.13383), vec3f(0.04823, 0.01566, 0.83777)); \
     let ACESOutputMat = mat3x3f(vec3f(1.60475, -0.10208, -0.00327), vec3f(-0.53108, 1.10813, -0.07276), vec3f(-0.07367, -0.00605, 1.07602)); \
-    var color = c0 * (u.toneMappingExposure / 0.6); \
+    var color = c0 * (tm_exp / 0.6); \
     color = ACESInputMat * color; \
     color = RRTAndODTFit(color); \
     color = ACESOutputMat * color; \
@@ -442,7 +559,7 @@ WGSL_DECL WGSL_BL_COMP = S(
                                   vec3f(-0.016493938717834573, -0.016493938717834257, 1.2519364065950405)); \
     let AgxMinEv = -12.47393; \
     let AgxMaxEv = 4.026069; \
-    var color = c0 * u.toneMappingExposure; \
+    var color = c0 * tm_exp; \
     color = LINEAR_SRGB_TO_LINEAR_REC2020 * color; \
     color = AgXInsetMatrix * color; \
     color = max(color, vec3f(1e-10)); \
@@ -458,7 +575,7 @@ WGSL_DECL WGSL_BL_COMP = S(
   fn NeutralToneMapping(c0: vec3f) -> vec3f { \
     let StartCompression = 0.8 - 0.04; \
     let Desaturation = 0.15; \
-    var color = c0 * u.toneMappingExposure; \
+    var color = c0 * tm_exp; \
     let x = min(color.r, min(color.g, color.b)); \
     let offset = select(0.04, x - 6.25 * x * x, x < 0.08); \
     color -= offset; \
@@ -475,15 +592,16 @@ WGSL_DECL WGSL_BL_COMP = S(
   } \
 )
 WGSL_DECL WGSL_TM = S(
-  struct U { toneMappingExposure: f32, u_curve: i32 };
+  struct U { u_tm_exposure: f32, u_curve: i32 };
   @group(0) @binding(0) var<uniform> u: U;
   @group(0) @binding(1) var u_src: texture_2d<f32>;
 ) WGSL_TM_FNS_SRC S(
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    tm_exposure_set();
     let c = textureSampleLevel(u_src, cw_linear, uv, 0.0);
     var x = max(c.rgb, vec3f(0.0));
     let k = u.u_curve;
-    if (k == 0) { x = clamp(x * u.toneMappingExposure, vec3f(0.0), vec3f(1.0)); }
+    if (k == 0) { x = clamp(x * tm_exp, vec3f(0.0), vec3f(1.0)); }
     else if (k == 1) { x = clamp(LinearToneMapping(x), vec3f(0.0), vec3f(1.0)); }
     else if (k == 2) { x = ReinhardToneMapping(x); }
     else if (k == 3) { x = OptimizedCineonToneMapping(x); }
@@ -496,7 +614,7 @@ WGSL_DECL WGSL_TM = S(
 WGSL_DECL WGSL_TM_FNS = WGSL_TM_FNS_SRC;
 /* the tonemap pass with bloom's composite, the grade and / or the lens fused in (pipeline_post.c tm_variant) */
 WGSL_DECL WGSL_TM_FUSED_HEAD = S(
-  struct U { toneMappingExposure: f32, u_curve: i32, u_thresh: vec4f, u_texel: vec2f, u_radius: f32, u_k: f32, u_norm: f32,
+  struct U { u_tm_exposure: f32, u_curve: i32, u_thresh: vec4f, u_texel: vec2f, u_radius: f32, u_k: f32, u_norm: f32,
              u_scale: vec4f, u_dmin: vec3f, u_dinv: vec3f, u_on: vec4f, u_amt: vec4f, u_frame: i32 };
   @group(0) @binding(0) var<uniform> u: U;
   @group(0) @binding(1) var u_src: texture_2d<f32>;
@@ -504,11 +622,12 @@ WGSL_DECL WGSL_TM_FUSED_HEAD = S(
   @group(0) @binding(3) var u_lut: texture_3d<f32>;);
 WGSL_DECL WGSL_TM_FUSED_FS = S(
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
+    tm_exposure_set();
     var c = textureSampleLevel(u_src, cw_linear, uv, 0.0););
 WGSL_DECL WGSL_TM_FUSED_CURVES = S(
     var x = max(c.rgb, vec3f(0.0));
     let k = u.u_curve;
-    if (k == 0) { x = clamp(x * u.toneMappingExposure, vec3f(0.0), vec3f(1.0)); }
+    if (k == 0) { x = clamp(x * tm_exp, vec3f(0.0), vec3f(1.0)); }
     else if (k == 1) { x = clamp(LinearToneMapping(x), vec3f(0.0), vec3f(1.0)); }
     else if (k == 2) { x = ReinhardToneMapping(x); }
     else if (k == 3) { x = OptimizedCineonToneMapping(x); }
@@ -639,8 +758,8 @@ WGSL_DECL WGSL_FXAA = S(
 /* FXAA 3.11's console variant inside the tonemap pass (pipeline_post.c FXAA_CONSOLE_GLSL; dluma and D are the pass's) */
 WGSL_DECL WGSL_FXAA_CONSOLE = S(
   fn T(p: vec2f) -> vec4f { return textureSampleLevel(u_src, cw_linear, p, 0.0); }
-  fn KC(c0: vec3f) -> vec3f { let c = max(c0, vec3f(0.0)); return c / (1.0 + dot(c, vec3f(0.299, 0.587, 0.114)) * u.toneMappingExposure); }
-  fn KU(x: vec3f) -> vec3f { return x / max(1.0 - dot(x, vec3f(0.299, 0.587, 0.114)) * u.toneMappingExposure, 1e-4); }
+  fn KC(c0: vec3f) -> vec3f { let c = max(c0, vec3f(0.0)); return c / (1.0 + dot(c, vec3f(0.299, 0.587, 0.114)) * tm_exp); }
+  fn KU(x: vec3f) -> vec3f { return x / max(1.0 - dot(x, vec3f(0.299, 0.587, 0.114)) * tm_exp, 1e-4); }
   fn fxaa_disp(uv: vec2f) -> vec3f {
     let rgbM = T(uv).rgb;
     let lumaM = dluma(rgbM);
@@ -659,7 +778,7 @@ WGSL_DECL WGSL_FXAA_CONSOLE = S(
     let dir2 = clamp(dir1 / (min(abs(dir1.x), abs(dir1.y)) * 8.0), vec2f(-2.0), vec2f(2.0));
     let rgbA = (KC(F(T(uv - dir1 * u.u_rcp * 0.5).rgb)) + KC(F(T(uv + dir1 * u.u_rcp * 0.5).rgb))) * 0.5;
     let rgbB = rgbA * 0.5 + (KC(F(T(uv - dir2 * u.u_rcp * 2.0).rgb)) + KC(F(T(uv + dir2 * u.u_rcp * 2.0).rgb))) * 0.25;
-    let lumaB = sqrt(max(dot(rgbB, vec3f(0.299, 0.587, 0.114)), 0.0) * u.toneMappingExposure);
+    let lumaB = sqrt(max(dot(rgbB, vec3f(0.299, 0.587, 0.114)), 0.0) * tm_exp);
     return tmap(KU(select(rgbB, rgbA, lumaB < lumaMin || lumaB > lumaMax)));
   });
 

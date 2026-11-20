@@ -23,6 +23,14 @@ static void post_init(cw_node n, void *data) {
   memset(s, 0, sizeof *s);
   s->hdr = true;
   s->exposure = 1;
+  s->auto_exposure_key = 0.18f;
+  s->auto_exposure_min_ev = -3;
+  s->auto_exposure_max_ev = 3;
+  s->auto_exposure_speed_up = 3;
+  s->auto_exposure_speed_down = 1;
+  s->motion_blur_shutter = 0.5f;
+  s->motion_blur_samples = 10;
+  s->motion_blur_max = 32;
   s->tonemap = CW_TONEMAP_AGX;
   s->bloom_intensity = 0.05f;
   s->bloom_knee = 0.5f;
@@ -102,6 +110,12 @@ static const cw_prop post_props[] = {
   FB(depth_prepass, "Depth-only pass before the scene (early-z for heavy fragment shaders; the same picture). GL only with three.c v0.186.22; WebGPU comes with the next three.c."),
   FR(exposure, 0, 1000, "Linear exposure multiplier (toneMappingExposure)."),
   FR(exposure_ev, -20, 20, "Exposure in stops (multiplies by 2^ev)."),
+  FB(auto_exposure, "Automatic exposure (eye adaptation): the picture's average brightness is brought to auto_exposure_key, gradually; exposure and exposure_ev stay the base (exposure_ev is the compensation)."),
+  FR(auto_exposure_key, 0.001, 10, "The average scene-linear brightness the picture is brought to (0.18: middle grey)."),
+  FR(auto_exposure_min_ev, -20, 20, "The most automatic exposure may darken, in stops."),
+  FR(auto_exposure_max_ev, -20, 20, "The most it may brighten, in stops."),
+  FR(auto_exposure_speed_up, 0, 100, "How fast it follows a picture that got brighter (1 / seconds)."),
+  FR(auto_exposure_speed_down, 0, 100, "How fast it follows a picture that got darker (1 / seconds)."),
   FE(tonemap, tonemap_names, "Tone curve (three.js r187's: AGX by default)."),
   FB(bloom, "Bloom (dual-filter, energy conserving)."),
   FR(bloom_intensity, 0, 1, "Share of the bright energy spread by bloom."),
@@ -139,6 +153,10 @@ static const cw_prop post_props[] = {
   FR(dof_focus_range, 0, 1e6, "Depth around the focus distance that stays sharp."),
   FR(dof_blur, 0, 32, "Largest blur radius in pixels of a 1080 line image."),
   FR(dof_near_blur, 0, 1, "Blur in front of the focus, as a share of dof_blur."),
+  FB(motion_blur, "Motion blur along the camera's and each moving mesh's motion (off on the Very Low and Low presets, and while reduced motion is on)."),
+  FR(motion_blur_shutter, 0, 2, "Share of the frame time the shutter is open (0.5: a film camera's 180 degrees)."),
+  FI(motion_blur_samples, 1, 32, "Reads along the motion, a pixel."),
+  FR(motion_blur_max, 1, 256, "Longest blur in pixels of a 1080 line image."),
   FB(vignette, "Darken toward the corners."),
   FR(vignette_intensity, 0, 1, "Vignette strength."),
   FR(vignette_smoothness, 0.01, 1, "Vignette falloff width."),
@@ -153,7 +171,7 @@ static const cw_prop post_props[] = {
 static cw_node_type post_type = {
   .name = "PostProcess", .parent = "Node", .data_size = sizeof(post_node), .props = post_props,
   .doc = "The render pipeline's settings for this tree (one per tree; the last in tree order wins): HDR, "
-         "MSAA, exposure, tone curve, bloom, SSAO, TAA, FXAA/SMAA, LUT grading, vignette, grain, chromatic aberration.",
+         "MSAA, exposure (fixed or automatic), tone curve, bloom, SSAO, TAA, FXAA/SMAA, LUT grading, vignette, grain, chromatic aberration.",
   .init = post_init, .pre_render = post_pre_render, .destroy = post_destroy,
 };
 

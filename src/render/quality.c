@@ -59,14 +59,15 @@ typedef struct {
   float skin;         /* skin shading (cartwheel/skin_shading.h): 0 = plain PBR */
   float ssr;          /* SSR march quality scale (0 = off) */
   bool dof, ssgi;
+  float motion_blur; /* share of the authored motion blur samples (0 = off) */
   float shading; /* the lit materials' model: 1 = r187's physical one, 0 = the plain part (src/render/extensions/plain.mjs) */
 } effects;
 static const effects FX[CW_QUALITY_COUNT] = {
-  [CW_QUALITY_VERY_LOW] = { 0.25f, 0.2f, 3.0f, 0.25f, -1, 1, 0.25f, 0, 0, 0, 0, false, false, 0 },
-  [CW_QUALITY_LOW] = { 0.4f, 0.35f, 2.0f, 0.25f, 3, 1, 0.375f, 0, 0.25f, 0, 0, false, false, 1 },
-  [CW_QUALITY_MEDIUM] = { 0.7f, 0.65f, 1.5f, 0.5f, 5, 1, 0.5f, 0.5f, 0.5f, 1, 0.5f, true, false, 1 },
-  [CW_QUALITY_HIGH] = { 1, 1, 1, 1, 0, 2, 1, 1, 1, 1, 1, true, false, 1 },
-  [CW_QUALITY_ULTRA] = { 1, 1, 0.75f, 1, 0, 3, 1, 1, 1, 1, 1.5f, true, true, 1 },
+  [CW_QUALITY_VERY_LOW] = { 0.25f, 0.2f, 3.0f, 0.25f, -1, 1, 0.25f, 0, 0, 0, 0, false, false, 0, 0 },
+  [CW_QUALITY_LOW] = { 0.4f, 0.35f, 2.0f, 0.25f, 3, 1, 0.375f, 0, 0.25f, 0, 0, false, false, 0, 1 },
+  [CW_QUALITY_MEDIUM] = { 0.7f, 0.65f, 1.5f, 0.5f, 5, 1, 0.5f, 0.5f, 0.5f, 1, 0.5f, true, false, 0.6f, 1 },
+  [CW_QUALITY_HIGH] = { 1, 1, 1, 1, 0, 2, 1, 1, 1, 1, 1, true, false, 1, 1 },
+  [CW_QUALITY_ULTRA] = { 1, 1, 0.75f, 1, 0, 3, 1, 1, 1, 1, 1.5f, true, true, 1.5f, 1 },
 };
 
 /* the shadows setting: caster culling (bounding sphere radius / distance under this skips the caster), cascades */
@@ -824,6 +825,11 @@ void cw__quality_post(cw_post_settings *s) {
     else s->ssr_quality = CW_MIN(1.0f, s->ssr_quality * e->ssr);
   }
   if (s->dof && !e->dof) s->dof = false;
+  /* motion blur: off below Medium, fewer reads on Medium, more on Ultra */
+  if (s->motion_blur) {
+    if (e->motion_blur <= 0) s->motion_blur = false;
+    else s->motion_blur_samples = CW_CLAMP((int)((float)s->motion_blur_samples * e->motion_blur + 0.5f), 1, 32);
+  }
   /* SSGI: Ultra only (several ms of an integrated GPU even at half resolution) */
   if (s->ssgi && !e->ssgi) s->ssgi = false;
   if (s->bloom && e->bloom_levels < 0) s->bloom = false;

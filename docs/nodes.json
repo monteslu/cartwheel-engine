@@ -936,7 +936,7 @@
   {
    "name": "PostProcess",
    "parent": "Node",
-   "doc": "The render pipeline's settings for this tree (one per tree; the last in tree order wins): HDR, MSAA, exposure, tone curve, bloom, SSAO, TAA, FXAA/SMAA, LUT grading, vignette, grain, chromatic aberration.",
+   "doc": "The render pipeline's settings for this tree (one per tree; the last in tree order wins): HDR, MSAA, exposure (fixed or automatic), tone curve, bloom, SSAO, TAA, FXAA/SMAA, LUT grading, vignette, grain, chromatic aberration.",
    "signals": [],
    "properties": [
     {
@@ -992,6 +992,64 @@
      "min": -20,
      "max": 20,
      "doc": "Exposure in stops (multiplies by 2^ev)."
+    },
+    {
+     "name": "auto_exposure",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Automatic exposure (eye adaptation): the picture's average brightness is brought to auto_exposure_key, gradually; exposure and exposure_ev stay the base (exposure_ev is the compensation)."
+    },
+    {
+     "name": "auto_exposure_key",
+     "type": "float",
+     "default": "0.18",
+     "stored": true,
+     "readonly": false,
+     "min": 0.001,
+     "max": 10,
+     "doc": "The average scene-linear brightness the picture is brought to (0.18: middle grey)."
+    },
+    {
+     "name": "auto_exposure_min_ev",
+     "type": "float",
+     "default": "-3",
+     "stored": true,
+     "readonly": false,
+     "min": -20,
+     "max": 20,
+     "doc": "The most automatic exposure may darken, in stops."
+    },
+    {
+     "name": "auto_exposure_max_ev",
+     "type": "float",
+     "default": "3",
+     "stored": true,
+     "readonly": false,
+     "min": -20,
+     "max": 20,
+     "doc": "The most it may brighten, in stops."
+    },
+    {
+     "name": "auto_exposure_speed_up",
+     "type": "float",
+     "default": "3",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "How fast it follows a picture that got brighter (1 / seconds)."
+    },
+    {
+     "name": "auto_exposure_speed_down",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "How fast it follows a picture that got darker (1 / seconds)."
     },
     {
      "name": "tonemap",
@@ -1356,6 +1414,44 @@
      "min": 0,
      "max": 1,
      "doc": "Blur in front of the focus, as a share of dof_blur."
+    },
+    {
+     "name": "motion_blur",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Motion blur along the camera's and each moving mesh's motion (off on the Very Low and Low presets, and while reduced motion is on)."
+    },
+    {
+     "name": "motion_blur_shutter",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 2,
+     "doc": "Share of the frame time the shutter is open (0.5: a film camera's 180 degrees)."
+    },
+    {
+     "name": "motion_blur_samples",
+     "type": "int",
+     "default": "10",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 32,
+     "doc": "Reads along the motion, a pixel."
+    },
+    {
+     "name": "motion_blur_max",
+     "type": "float",
+     "default": "32",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 256,
+     "doc": "Longest blur in pixels of a 1080 line image."
     },
     {
      "name": "vignette",
