@@ -92,6 +92,7 @@ See [Physics](guide:physics) and [Navigation](guide:navigation).
 | `Environment` effects (glow, SSAO, tonemap) | `PostProcess` | one per tree |
 | TAA with motion vectors (`use_taa`) | `PostProcess` `taa` | moving, skinned and instanced meshes carry their own motion, with no per-mesh setting |
 | sky, fog | `ProceduralSky`, `HeightFog` | |
+| `MultiMeshInstance3D`, `MultiMesh` | [MultiMeshInstance3D](node:MultiMeshInstance3D) | the mesh is a `source` node (a MeshInstance3D child), not a resource; the buffer is filled from C (`cw_multimesh_set_transform`, `cw_multimesh_transforms`) or by `fill = GRID`; culled by `chunk_size` cells; `use_colors`; custom data is for game code only |
 | `SubViewport`, `ViewportTexture`, `SubViewportContainer` | [SubViewport](node:SubViewport); `"viewport://Name"` in any 2D or UI `texture`, `viewport_texture` on a MeshInstance3D | renders a `camera` of the scene, or a `scene` in a world of its own (its children are not the world: the scene file is); `update_mode` as in Godot; no transparent background yet; see "Rendering to a texture" in [3D rendering](guide:rendering-3d) |
 | `GPUParticles2D` / `3D`, `Decal` | `GPUParticles2D` / `GPUParticles3D`, `Decal3D`, plus `Trail3D` | |
 | occlusion culling | `VisibilityManager`, `Room3D`, `Portal3D` | |
@@ -129,4 +130,4 @@ See [Animation](guide:animation), [Audio](guide:audio), [Networking](guide:netwo
 
 ## Not there yet
 
-No equivalent today: `MultiMeshInstance3D`, autoload nodes (global state lives in the app or in tree slots), stream resources with their own loop points (`AudioStreamRandomizer`, `AudioStreamInteractive`), and any scripting language.
+No equivalent today: autoload nodes (global state lives in the app or in tree slots), stream resources with their own loop points (`AudioStreamRandomizer`, `AudioStreamInteractive`), and any scripting language.

@@ -122,6 +122,8 @@ t3_release(hero);                               /* the parent holds it */
 
 **Bones** (`skeleton.h`, [Skeleton3D and BoneAttachment3D](docs/guides/animation.md#skeleton3d-and-boneattachment3d)): a `Skeleton3D` node under the model's node gives bone names, rest and pose (`cw_skeleton3d_find_bone`, `cw_skeleton3d_set_bone_pose`, `cw_skeleton3d_bone_global_transform`); a `BoneAttachment3D` under it with `bone_name = "Hand"` carries a sword or a hat with no lag.
 
+**Thousands of copies** (`multimesh.h`, [MultiMeshInstance3D](docs/guides/rendering-3d.md#many-copies-of-one-mesh-multimeshinstance3d)): a `MultiMeshInstance3D` with a MeshInstance3D child as the stamp; `cw_multimesh_set_instance_count`, then write `cw_multimesh_transforms` and `cw_multimesh_touch`; `chunk_size` metres per culled cell (0 for a swarm rewritten every tick).
+
 **Render to a texture** (`subviewport.h`, [SubViewport](docs/guides/rendering-3d.md#rendering-to-a-texture-subviewport)): a `SubViewport` node with `camera = "../Level/SecurityCam"` (a view of this world) or `scene = "portrait.cwscene"` (a world of its own); show it with `texture = "viewport://Name"` on any 2D node or UI control, or `viewport_texture` on a MeshInstance3D. `update_mode = WHEN_VISIBLE` for a monitor, `ONCE` for a still.
 
 **Physics** (`physics_nodes.h`, [physics](docs/guides/physics.md)): `StaticBody3D`, `RigidBody3D`,

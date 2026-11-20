@@ -2673,6 +2673,28 @@
     "note": "SubViewport: names and viewport:// references, the update modes (ALWAYS, ONCE and its request, DISABLED, WHEN_VISIBLE by asking for the texture, update_every), size changes and clamping, one three.c texture across a resize, worlds of their own ticking with the owner and never taking the current-tree seat, camera views drawn after the frame (the tree's camera restored, one extra pass run per view, none when disabled, a wrong camera path never rendered), the scene-file round trip of SubViewport, viewport_texture and viewport:// texture properties"
   },
   {
+    "name": "multimesh",
+    "app": "multimesh",
+    "frames": 480,
+    "controlInput": "multimesh-control.json",
+    "maxGt16": 0.004,
+    "webgpu": { "vsGl": 0.02 },
+    "fields": ["tree.tick", "instances", "chunks", "posts", "all_drawn", "culled", "swarm_live", "buffer_hash"],
+    "expect": { "instances": 20000, "posts": 18, "all_drawn": 1, "culled": 1, "swarm_live": 1 },
+    "note": "three MultiMeshInstance3D nodes (cartwheel/multimesh.h): 20000 coloured blocks filled in code and sorted into 24 m cells, a grid filled by the scene file, a 400-sphere swarm rewritten every tick in one draw, all under a shadowed sun. Held: every instance is in a cell from one build (a still buffer is never rebuilt), the camera's pan changes how many are in view and never shows all or none (culled), the swarm stays one draw and is rebuilt each tick; the buffer's hash and the cell count agree across hosts, the picture across hosts and GL against WebGPU. The control sets the field's visible_instance_count to 0 at frame 10: nothing of it is drawn and all_drawn fails"
+  },
+  {
+    "name": "unit-multimesh",
+    "app": "unit_multimesh",
+    "frames": 2,
+    "minColors": 1,
+    "fields": ["unit.passed", "unit.failed", "unit.checksum", "unit.done"],
+    "controlFrames": 2,
+    "expect": { "unit.failed": 0, "unit.done": 1 },
+    "controlEnv": { "CW_TEST_INJECT_FAIL": "1" },
+    "note": "MultiMeshInstance3D: the buffer (count, transforms, custom data, out of range refused), the stamp (hidden, its transform in every instance, restamped when it changes), cells by chunk_size with bounds that hold their instances, no rebuild without a change and one per touch, visible_instance_count, the one-draw path rewritten in place (the same three.c mesh), the cells and instances a camera sees, the GRID fill and the scene-file round trip"
+  },
+  {
     "name": "physics3d-nodes",
     "app": "physics3d_nodes",
     "frames": 720,

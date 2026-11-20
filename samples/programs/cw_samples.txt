@@ -168,3 +168,4 @@ standard+emap+l1001+xplain
 standard+map+shadow+l1001+xplain
 standard+emap+l1001
 standard+map+shadow+l1001
+standard+instbig+shadow+icol+l1001+xplain

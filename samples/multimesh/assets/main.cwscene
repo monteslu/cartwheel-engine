@@ -1,0 +1,63 @@
+[scene format=1]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.05, 0.09, 0.16, 1)
+ambient_energy = 0.8
+hemi_energy = 1.0
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 7, 34)
+fov = 55
+far = 400
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(20, 40, 25)
+rotation = vec3(-0.9, 0.55, 0)
+energy = 4.0
+shadow = true
+shadow_extent = 45
+shadow_far = 120
+
+[node name="Ground" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.5, 0)
+size = vec3(400, 1, 400)
+color = color(0.07, 0.10, 0.06, 1)
+receive_shadow = true
+
+[node name="Field" parent="." type="MultiMeshInstance3D"]
+chunk_size = 24
+cast_shadow = true
+use_colors = true
+
+[node name="Stamp" parent="Field" type="MeshInstance3D"]
+position = vec3(0, 0.6, 0)
+size = vec3(0.5, 1.2, 0.5)
+color = color(0.55, 0.55, 0.55, 1)
+
+[node name="Posts" parent="." type="MultiMeshInstance3D"]
+position = vec3(0, 0, 14)
+chunk_size = 0
+cast_shadow = true
+fill = GRID
+fill_count = vec3(9, 1, 2)
+fill_spacing = vec3(4, 1, 5)
+
+[node name="Stamp" parent="Posts" type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 1.5, 0)
+size = vec3(0.5, 3, 0.5)
+color = color(0.75, 0.35, 0.08, 1)
+
+[node name="Swarm" parent="." type="MultiMeshInstance3D"]
+position = vec3(0, 7, 6)
+chunk_size = 0
+cast_shadow = true
+use_colors = true
+
+[node name="Stamp" parent="Swarm" type="MeshInstance3D"]
+primitive = SPHERE
+size = vec3(0.35, 0.35, 0.35)
+color = color(1, 1, 1, 1)
+emissive = color(0.15, 0.15, 0.15, 1)

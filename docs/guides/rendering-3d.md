@@ -756,6 +756,48 @@ After the scene, the `viewmodel` pass draws those layers with a second camera at
 
 In a split screen, hide the other players' weapons for each view with the pipeline's view hook (`cw_pipeline_set_view_hook`): each view draws every object on its layers.
 
+## Many copies of one mesh: MultiMeshInstance3D
+
+A [MultiMeshInstance3D](node:MultiMeshInstance3D) draws many instances of one mesh from a buffer the game fills: a forest, a field of rocks, a stadium of seats, a swarm. It is one node where the alternative is one [MeshInstance3D](node:MeshInstance3D) per copy, each with a node, a three.c object and a transform to update. The module is `cartwheel/multimesh.h` ([reference](header:multimesh.h)).
+
+```text
+[node name="Field" parent="." type="MultiMeshInstance3D"]
+chunk_size = 24
+cast_shadow = true
+use_colors = true
+
+[node name="Stamp" parent="Field" type="MeshInstance3D"]
+position = vec3(0, 0.6, 0)
+size = vec3(0.5, 1.2, 0.5)
+```
+
+The mesh is a node: `source` names it, or it is the first MeshInstance3D child. Every mesh under the source is drawn per instance with its own material, so a primitive, a mesh resource and a glTF scene of several meshes all work, and the source's own transform applies to every instance. The source itself is hidden. The buffer is filled from C:
+
+@include samples/multimesh/main.c#fill
+
+[cw_multimesh_set_transform](api:cw_multimesh_set_transform), [cw_multimesh_set_color](api:cw_multimesh_set_color) and [cw_multimesh_set_custom](api:cw_multimesh_set_custom) write one instance; [cw_multimesh_transforms](api:cw_multimesh_transforms) is the array to write in a loop, followed by [cw_multimesh_touch](api:cw_multimesh_touch). `fill = GRID` with `fill_count` and `fill_spacing` fills a grid from the scene file alone.
+
+How it compares with what was already there. The engine already merges identical MeshInstance3D nodes into instanced draws by itself, and [TerrainScatter3D](node:TerrainScatter3D) generates ground cover from a density rule. Use automatic instancing when the copies are real nodes you move and query one by one, up to a few thousand; TerrainScatter3D when a rule places them on terrain; MultiMeshInstance3D when your code owns the list and it is long.
+
+**Culling.** The instances are sorted into cubic cells of `chunk_size` metres. Each cell is one draw per mesh with its own bounds, culled against the camera and against every shadow light's view, so cells out of sight cost nothing but their test. `visible_instances`, `chunks` and `visible_chunks` report what the main camera saw last frame ([cw_multimesh_get_stats](api:cw_multimesh_get_stats) has the draws and the last rebuild time too). Small cells cull tightly and cost more draws; 16 to 32 m suits things seen from eye height. `chunk_size = 0` is one draw for everything, for a swarm that moves every tick and is all on screen: its buffer is rewritten in place with no sort:
+
+@include samples/multimesh/main.c#swarm
+
+**Lighting.** Instances are ordinary instanced meshes: lit by the scene's lights in forward and clustered mode, casting and receiving shadows from single maps, the atlas and cascades, and taking reflection probes and the probe grid like any moving mesh. They are not lightmapped. `use_colors` multiplies each instance's colour into the material's. Custom data is four floats an instance for game code; no built-in material reads it.
+
+**Cost.** 100000 instances of a box (12 triangles each), about 56000 of them in view, under a shadowed sun at 1920 x 1080, on the 890M (Ryzen AI 9 HX 370) through romdev, High preset; milliseconds a frame the field adds over the same scene without it. The machine was shared while measuring (load average 25 to 35, other GPU work running), so read these to about 0.2 ms:
+
+| | GL | WebGPU |
+|---|---|---|
+| GPU, 24 m cells (196 cells, 104 in view, casting shadows) | +0.7 | +1.0 |
+| GPU, the same without casting shadows | +0.3 | (not measured cleanly) |
+| GPU, one draw for all 100000 (`chunk_size = 0`: nothing culled) | +1.2 | +2.0 |
+| CPU in the cart, 24 m cells | +0.2 | +0.7 |
+
+A buffer that does not change costs no CPU beyond one sphere test per cell and the draws. Changing it rebuilds the cells at the next render: a sort and a copy of every instance, 36 to 55 ms for 20000 and about 96 ms for 100000 in a development cart on that machine (a one-off; do it at load, or keep what changes every tick in a `chunk_size = 0` node, whose rewrite in place is a copy with no sort: the 400-instance swarm costs under 0.05 ms a tick). The quality presets do not change a MultiMesh: thin a field yourself with `cw_quality_count` and `visible_instance_count` (instances are drawn in buffer order, so the first N of a shuffled buffer is an even thinning). On a Vega 8 (about a third of the 890M) expect about 3 ms of GPU for this field with shadows; fewer, larger cells trade culling for draws there.
+
+`samples/multimesh` has a 20000-instance field panned by the camera, a grid filled by the scene file and a 400-instance swarm rewritten every tick. The gate `multimesh` holds that every instance is drawn from one build, that the pan changes what is in view and never shows all or none of the field, and that the swarm stays one draw; its control sets `visible_instance_count = 0` and fails. `unit-multimesh` covers the buffer, the cells and their bounds, what rebuilds when, the cells a camera sees and the scene-file round trip.
+
 ## Rendering to a texture: SubViewport
 
 A [SubViewport](node:SubViewport) renders a picture into a texture, and that texture goes wherever a texture goes: on a mesh in the world, on a sprite, in a UI panel. It is how a security monitor, a rear-view mirror, a minimap, a portal's far side, a character portrait in a menu and a 3D model turning inside a UI panel are made. The module is `cartwheel/subviewport.h` ([reference](header:subviewport.h)).
