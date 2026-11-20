@@ -1506,7 +1506,10 @@ void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft) {
    * pixels: no draw reads another system's state, and the two targets are drawn in their own order. */
   int n = ft->systems.count;
   psys_prep *pp = cw_frame_alloc(sizeof(psys_prep) * (size_t)(n ? n : 1));
+  bool clip = cw__vclip.on; /* (the simulation, scatter and sort draw into the system's own textures, whole) */
+  cw__vclip.on = false;
   for (int i = 0; i < n; i++) psys_prepare(ft->systems.data[i], ctx, ft, &pp[i]);
+  cw__vclip.on = clip;
   for (int pass = 0; pass < 2; pass++)
     for (int i = 0; i < n; i++)
       if (pp[i].ok && pp[i].distort == (pass == 1)) psys_draw(ft->systems.data[i], ctx, ft, &pp[i]);
@@ -1514,7 +1517,10 @@ void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft) {
 
 void cw__psys_frame(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
   psys_prep p;
+  bool clip = cw__vclip.on;
+  cw__vclip.on = false;
   psys_prepare(n, ctx, ft, &p);
+  cw__vclip.on = clip;
   if (p.ok) psys_draw(n, ctx, ft, &p);
 }
 
