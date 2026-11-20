@@ -12,7 +12,10 @@
 //      whole capture's frame (the control: against the probe off it cannot),
 //      and with a 64 cube (GI_RES=64). And with FORWARD lighting and a cascaded sun
 //      (GI_CSM=1): the ball still shows the walls and gi.materials > 0; control:
-//      CW_TEST_GI_SKIP_CSM=1 (the csm part kept gi off) must fail both.
+//      CW_TEST_GI_NO_PART=1 (no material gets the gi part) must fail both. And
+//      the last probe leaving the tree (GI_LEAVE=1) takes the gi part off every
+//      material (gi.materials 0) so look-alike meshes batch again (fewer draws);
+//      control: CW_TEST_GI_KEEP_PART=1 (the part stays, as before) must fail.
 //   2. gi_room: the light probe grid's bounce light tints the ceiling red by
 //      the red wall and green by the green one; with the grid's intensity at
 //      0 (the control) the tint must be gone.
@@ -93,19 +96,32 @@ for (const gpu of ['gl', 'webgpu']) {
     report(dOff && dOff.gt16 >= 0.002, `${gpu}: control: the same comparison against the probe off sees a difference (${dOff ? (dOff.gt16 * 100).toFixed(3) : '?'}%)`);
   }
   // FORWARD lighting with a cascaded sun: the materials carry the forward sun's csm part, and the gi part composes
-  // after it (the probe once silently did nothing there: gi.materials 0). Control: CW_TEST_GI_SKIP_CSM=1, the old rule
+  // after it (the probe once silently did nothing there: gi.materials 0). Control: CW_TEST_GI_NO_PART=1, no material
+  // gets the part (the old control, the csm part keeping gi off, stopped biting when the tagging order changed)
   const fwd = run('gi_probe_check', gpu, 10, `check.csm.${gpu}`, { GI_CSM: '1' });
   const fp = fwd.err ? [fwd.err] : ballProblems(fwd.img, BALL);
   report(!fp.length && fwd.state['gi.materials'] > 0,
     `${gpu}: forward lighting with a cascaded sun: the ball shows the walls, ${fwd.state ? fwd.state['gi.materials'] : '?'} material(s) carry gi${fp.length ? ': ' + fp.join('; ') : ''}`);
   // (its walls draw with xcsm alone, a state the table has no need of: skipped draws allowed in the control)
-  const fwdOld = run('gi_probe_check', gpu, 10, `check.csm.old.${gpu}`, { GI_CSM: '1', CW_TEST_GI_SKIP_CSM: '1' }, null, ['--allow-skipped']);
+  const fwdOld = run('gi_probe_check', gpu, 10, `check.csm.old.${gpu}`, { GI_CSM: '1', CW_TEST_GI_NO_PART: '1' }, null, ['--allow-skipped']);
   const fo = fwdOld.err ? [fwdOld.err] : ballProblems(fwdOld.img, BALL);
   report(!fwdOld.err && fo.length > 0 && fwdOld.state['gi.materials'] === 0,
-    `${gpu}: control (the cascaded sun's part keeps gi off, as before) fails: ${fo.length} of ${BALL.length} wrong, gi.materials ${fwdOld.state ? fwdOld.state['gi.materials'] : '?'}`);
+    `${gpu}: control (no material gets the gi part) fails: ${fo.length} of ${BALL.length} wrong, gi.materials ${fwdOld.state ? fwdOld.state['gi.materials'] : '?'}`);
   const small = run('gi_probe_check', gpu, 10, `check.res64.${gpu}`, { GI_RES: '64' });
   const sp = small.err ? [small.err] : ballProblems(small.img, BALL);
   report(!sp.length, `${gpu}: a 64-pixel capture shows the six walls where they are${sp.length ? ': ' + sp.join('; ') : ''}`);
+  // the probe leaves the tree (GI_LEAVE=1, freed at frame 6, the last probe and no grid): the gi part comes off every
+  // material and the 24 look-alike boxes batch again (fewer draws). Control: CW_TEST_GI_KEEP_PART=1 leaves the part on
+  const left = run('gi_probe_check', gpu, 12, `check.leave.${gpu}`, { GI_LEAVE: '1' });
+  const kept = run('gi_probe_check', gpu, 12, `check.leave.keep.${gpu}`, { GI_LEAVE: '1', CW_TEST_GI_KEEP_PART: '1' });
+  if (left.err || kept.err) report(false, `${gpu}: probe leaving: ${left.err || kept.err}`);
+  else {
+    const L = left.state, K = kept.state;
+    report(L['gi.materials'] === 0 && L['gi.draws'] > 0 && L['gi.draws'] + 5 <= K['gi.draws'],
+      `${gpu}: the last probe left: gi.materials ${L['gi.materials']}, ${L['gi.draws']} draws (the part kept: ${K['gi.draws']})`);
+    report(!(K['gi.materials'] === 0 && K['gi.draws'] + 5 <= L['gi.draws']),
+      `${gpu}: control (the part kept) fails it: gi.materials ${K['gi.materials']}, ${K['gi.draws']} draws`);
+  }
 }
 
 // ── 2. bounce light ──

@@ -321,6 +321,23 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - AnimationTree: a tree that walks and layers a one-shot over it on a 22-bone character takes 5.7 to 10.9 us per
   character per tick natively on the 890M laptop (a hundred characters: 0.6 to 1.1 ms; the machine was under heavy
   load from other work).
+## NEXT (fixes): meshes batch again after the last probe leaves; a gi gate control that bites; Box2D snapshot UB
+
+### Fixed
+- **Meshes auto-instance again once the last ReflectionProbe3D and LightProbeGrid3D leave the tree.** The gi shading
+  part stayed on every material it had been put on, and a material carrying it is drawn one mesh at a time, so a
+  level that unloaded its probes kept paying a draw per mesh. The part now comes off every material when the last
+  probe or grid exits (a new one, SSR or SSGI put it back). `gi_probe_check` with `GI_LEAVE=1` adds 24 look-alike
+  boxes and frees the probe: 9 draws after, 20 with the part kept (`CW_TEST_GI_KEEP_PART=1`, the control, which
+  fails), on GL and WebGPU (tests/gi-probe.mjs).
+- **The forward-cascades check of tests/gi-probe.mjs has a control that fails again.** Its control (the cascaded
+  sun's part keeping gi off) stopped changing anything once the gi part composed with that part, so it passed
+  along with the check. The control is now `CW_TEST_GI_NO_PART=1`, no material gets the gi part: 6 of 6 ball
+  checks wrong and gi.materials 0 on GL and WebGPU, while the check itself passes with 7 materials.
+- **Restoring a Box2D world snapshot with no chain shapes, sensors or islands is no longer undefined behaviour**
+  (`patches/box2d/0004`): it zeroed each of those arrays with `memset` even when empty, on a null pointer, which
+  UBSan stops on (unit_net, under the sanitizer build). unit_net passes under ASan and UBSan with the patch (66
+  checks) and stops at `snapshot.c:713` without it.
 
 ## v0.50.4 (2026-11-18)
 
