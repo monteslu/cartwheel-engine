@@ -138,6 +138,26 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   never jumps and so never stands on a plank) and `unit-tiles2d` (outlines by segment count, a frictionless box
   sliding 60 cells, slopes, one-way platforms for characters and rigid bodies, rebuild counts, rollback). Guides:
   2D rendering ("Tile shapes and collision", "Custom tile data"), physics ("Tile maps"), porting from Godot.
+## NEXT (post stack): moving things carry their own motion vectors, so TAA no longer smears them
+
+### Added
+- **Object motion vectors.** The velocity target held the camera's motion only, so under TAA a walking character
+  smeared and the edges of anything moving broke up: its history was read from where the background had been. The
+  velocity pass now draws every mesh that moved since the last frame over the camera's motion: a node that moved
+  or turned, a skinned mesh whose bones moved, and an instanced mesh whose instance matrices were written, each
+  placed where it was a frame ago (previous world matrix, bone matrices, instance matrices). Nothing is tracked,
+  uploaded or drawn for a mesh that stood still, and nothing to turn on: any scene with TAA gets it. TAA also
+  takes the motion of the nearest surface in each pixel's 3 x 3 neighbourhood, so a moving object's antialiased
+  edge follows the object. Measured against a picture of the same frame rendered with 36 samples a pixel (mean
+  error in display levels over the mover, 640 x 360, the same on GL and WebGPU): a fast-turning bar 3.4 with its
+  own motion against 6.4 with the camera's alone, a skinned character 6.6 against 10.4, an instanced swarm 5.3
+  against 8.4. The whole velocity pass takes 0.17 ms of GPU time at 1920 x 1080 on a Radeon 890M with three movers
+  drawn, the same within noise as before. Blended materials, sprites, points and lines keep the camera's motion,
+  and a first person viewmodel counts as still on the screen. `PostProcess` `debug_view = VELOCITY` shows it.
+  New sample `samples/motion_vectors`; `samples/post_stack` gains three motion segments. Guide:
+  docs/guides/rendering-3d.md, "Motion vectors". Gates `post-motion-taa`, `post-motion-plain`,
+  `post-motion-velocity`, `motion-vectors-taa`, `motion-vectors-view` on GL and WebGPU, and the scripted
+  `motion-vectors` (the measurement above; its control, camera motion only, must fail).
 
 ## v0.50.4 (2026-11-18)
 
