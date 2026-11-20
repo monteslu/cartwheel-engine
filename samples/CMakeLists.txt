@@ -167,6 +167,8 @@ cw_add_app(r2d_tilemap SOURCES r2d_tilemap/main.c ASSETS ${R2D_ASSETS})
 cw_add_app(tiles2d SOURCES tiles2d/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/tiles2d/assets)
 # 2D tile timings on a 256 x 256 map (tests/tiles2d-perf.mjs): collision chunk builds
 cw_add_app(tiles2d_perf SOURCES tiles2d_perf/main.c)
+# TileMap2D layouts: isometric diamonds and both kinds of hexagons, each with collision outlines and navigation
+cw_add_app(tiles2d_layouts SOURCES tiles2d_layouts/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/tiles2d_layouts/assets)
 cw_add_app(r2d_text SOURCES r2d_text/main.c ASSETS ${R2D_ASSETS})
 # the player's text scale, the size floor and the text background (cartwheel/render2d.h "text size"); TEXT_SIZE_SMALL=1 or
 # the request `small 1` draws a line under the floor (the control of tests/text-floor.mjs)

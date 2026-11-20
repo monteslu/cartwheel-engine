@@ -115,6 +115,8 @@ A [NavigationAgent2D](node:NavigationAgent2D) walks its parent Node2D to its `ta
 
 @include samples/tiles2d/main.c#patrol
 
+**Layouts.** A grid takes its map's layout. An isometric map is searched exactly as a square one (its diamonds are squares in cell space: a step along a diamond's side costs 10, across its corner 14), with straightened paths and the same crowd. A hexagon map has six neighbours a cell: plain A* with the hexagon distance as its estimate, paths that run from cell middle to cell middle, and flow fields; `cw_navgrid_raycast` only sees within one hexagon. `agent_radius` widens walls by whole cells as on a square grid. `samples/tiles2d_layouts` walks agents round a wall on one map of each kind.
+
 **Paths.** [cw_navgrid_find_path](api:cw_navgrid_find_path) is A* over the cells with eight neighbours; a diagonal step needs both cells beside it free, so nothing cuts a corner. On a grid where every walkable cell costs the same the search is jump point search: the same shortest paths, visiting a fraction of the cells (the `unit-nav2d` gate holds it to plain A*'s cost on 720 seeded pairs). Cells with their own cost switch the grid to plain A*. The cell path is then pulled straight where its corners are in sight of one another, `agent_radius` wide. A goal that cannot be reached, or a search that runs out of `max_iters`, returns the path to the nearest cell it found and says `partial`. [cw_navgrid_find_paths](api:cw_navgrid_find_paths) answers a batch on the job pool:
 
 @include samples/tiles2d_perf/main.c#nav

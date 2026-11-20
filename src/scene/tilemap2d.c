@@ -26,6 +26,7 @@ typedef struct tm_datum {
 typedef struct tilemap2d {
   const char *tileset;
   int filter;
+  int layout; /* cw_tile_layout */
   cw_vec2 tile_size, cell_size;
   int margin, spacing, columns;
   int layers;
@@ -204,7 +205,8 @@ static void ensure_map(tilemap2d *m) {
     if (!CW_HANDLE_IS_NULL(m->map)) cw_tilemap_destroy(m->map);
     cw_tilemap_desc d = { .width = m->w, .height = m->h, .layers = CW_CLAMP(m->layers, 1, TM_LAYERS), .tileset = tex,
                           .tile_w = (int)m->tile_size.x, .tile_h = (int)m->tile_size.y, .margin = m->margin,
-                          .spacing = m->spacing, .columns = m->columns, .cell_w = m->cell_size.x, .cell_h = m->cell_size.y };
+                          .spacing = m->spacing, .columns = m->columns, .cell_w = m->cell_size.x, .cell_h = m->cell_size.y,
+                          .layout = (cw_tile_layout)m->layout };
     m->map = cw_tilemap_create(&d);
     m->built_tileset = m->tileset;
     m->rebuild = false;
@@ -344,9 +346,25 @@ static void parse_tile_shapes(tilemap2d *m) {
     if (ok) {
       p = skip_ws(p + 1);
       if (word_is(p, "full", &q)) {
-        sh.kind = 1, sh.n = 4;
-        float r[4][2] = { { 0, 0 }, { tw, 0 }, { tw, th }, { 0, th } };
-        memcpy(sh.pt, r, sizeof r);
+        /* the cell's own shape: a square, a diamond or a hexagon */
+        sh.kind = 1;
+        if (m->layout == CW_TILE_LAYOUT_ISOMETRIC) {
+          float r[4][2] = { { tw / 2, 0 }, { tw, th / 2 }, { tw / 2, th }, { 0, th / 2 } };
+          sh.n = 4;
+          memcpy(sh.pt, r, sizeof r);
+        } else if (m->layout == CW_TILE_LAYOUT_HEX_ROWS) {
+          float r[6][2] = { { tw / 2, 0 }, { tw, th / 4 }, { tw, th * 3 / 4 }, { tw / 2, th }, { 0, th * 3 / 4 }, { 0, th / 4 } };
+          sh.n = 6;
+          memcpy(sh.pt, r, sizeof r);
+        } else if (m->layout == CW_TILE_LAYOUT_HEX_COLUMNS) {
+          float r[6][2] = { { tw / 4, 0 }, { tw * 3 / 4, 0 }, { tw, th / 2 }, { tw * 3 / 4, th }, { tw / 4, th }, { 0, th / 2 } };
+          sh.n = 6;
+          memcpy(sh.pt, r, sizeof r);
+        } else {
+          float r[4][2] = { { 0, 0 }, { tw, 0 }, { tw, th }, { 0, th } };
+          sh.n = 4;
+          memcpy(sh.pt, r, sizeof r);
+        }
       } else if (word_is(p, "none", &q)) {
         sh.kind = 0;
       } else if (word_is(p, "rect", &q)) {
@@ -478,12 +496,27 @@ cw__terrains *cw__tilemap2d_terrains(cw_node n) {
   return m ? m->terrain_set : NULL;
 }
 
+static void get_layout(cw_node n, void *d, cw_value *o) {
+  (void)n;
+  *o = (cw_value){ CW_T_ENUM };
+  o->i = ((tilemap2d *)d)->layout;
+}
+static void set_layout(cw_node n, void *d, const cw_value *v) {
+  (void)n;
+  tilemap2d *m = d;
+  m->layout = (int)CW_CLAMP(v->i, 0, 3);
+  m->rebuild = true;
+  parse_tile_shapes(m); /* "full" is the layout's cell shape */
+}
+static const char *const layout_names[] = { "SQUARE", "ISOMETRIC", "HEX_ROWS", "HEX_COLUMNS", NULL };
 static const char *const filter_names[] = { "LINEAR", "NEAREST", NULL };
 #define CELLS_PROP(L) CW_PROP_ACCESSOR("cells" #L, CW_T_STRING, CW_PROP_STORED | CW_PROP_EDITOR, cells_get##L, cells_set##L, "Layer " #L " cells (text form).")
 static const cw_prop tm_props[] = {
   CW_PROP_FIELD(tilemap2d, tileset, CW_T_STRING, CW_PROP_DEFAULT, "Tileset image asset path."),
   { .name = "filter", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(tilemap2d, filter), .size = sizeof(int),
     .enum_names = filter_names, .doc = "Texture filtering (NEAREST default)." },
+  { .name = "layout", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = -1, .get = get_layout, .set = set_layout,
+    .enum_names = layout_names, .doc = "How cells are laid out: SQUARE, ISOMETRIC (diamonds), HEX_ROWS (pointy-top) or HEX_COLUMNS (flat-top)." },
   CW_PROP_ACCESSOR("tile_size", CW_T_VEC2, CW_PROP_DEFAULT, get_tile_size, set_tile_size, "Tileset cell size, texture pixels."),
   CW_PROP_ACCESSOR("cell_size", CW_T_VEC2, CW_PROP_DEFAULT, get_cell_size, set_cell_size, "World size of a cell (0 = tile_size)."),
   CW_PROP_ACCESSOR("margin", CW_T_INT, CW_PROP_DEFAULT, get_margin, set_margin, "Tileset border, pixels."),
@@ -547,8 +580,7 @@ void cw_tilemap2d_local_to_cell(cw_node n, cw_vec2 p, int *x, int *y) {
     cw = m->cell_size.x > 0 ? m->cell_size.x : m->tile_size.x;
     ch = m->cell_size.y > 0 ? m->cell_size.y : m->tile_size.y;
   }
-  *x = (int)floorf(p.x / cw);
-  *y = (int)floorf(p.y / ch);
+  cw_tile_layout_cell_at(m ? (cw_tile_layout)m->layout : CW_TILE_LAYOUT_SQUARE, cw, ch, p, x, y);
 }
 
 /* ── raw cells, shapes, custom data ─────────────────────────────────── */
@@ -572,7 +604,9 @@ cw_vec2 cw_tilemap2d_cell_size(cw_node n) {
 
 cw_vec2 cw_tilemap2d_cell_center(cw_node n, int x, int y) {
   cw_vec2 cs = cw_tilemap2d_cell_size(n);
-  return cw_v2(((float)x + 0.5f) * cs.x, ((float)y + 0.5f) * cs.y);
+  tilemap2d *m = cw_node_data_t(n, tm_t);
+  cw_vec2 o = cw_tile_layout_cell_origin(m ? (cw_tile_layout)m->layout : CW_TILE_LAYOUT_SQUARE, cs.x, cs.y, x, y);
+  return cw_v2(o.x + 0.5f * cs.x, o.y + 0.5f * cs.y);
 }
 
 cw_tile_shape_kind cw_tilemap2d_tile_shape(cw_node n, int tile, cw_vec2 *points, int cap, int *count) {
@@ -594,6 +628,7 @@ bool cw__tilemap2d_info(cw_node n, cw__tilemap_info *o) {
   o->ext_y = (int32_t)lroundf(m->tile_size.y * TM_SUB);
   o->serial = m->serial, o->epoch = m->epoch;
   o->tile_shapes = m->tile_shapes;
+  o->layout = m->layout;
   return true;
 }
 
@@ -689,7 +724,8 @@ bool cw_tilemap2d_point_solid(cw_node n, int layer, cw_vec2 local) {
   if (s.kind != 1) return false;
   cw_vec2 cs = cw_tilemap2d_cell_size(n);
   /* cell pixels -> tile pixels -> shape units */
-  float fx = (local.x - (float)x * cs.x) * m->tile_size.x / cs.x, fy = (local.y - (float)y * cs.y) * m->tile_size.y / cs.y;
+  cw_vec2 org = cw_tile_layout_cell_origin((cw_tile_layout)m->layout, cs.x, cs.y, x, y);
+  float fx = (local.x - org.x) * m->tile_size.x / cs.x, fy = (local.y - org.y) * m->tile_size.y / cs.y;
   return shape_has_point(&s, (int32_t)lroundf(fx * TM_SUB), (int32_t)lroundf(fy * TM_SUB));
 }
 

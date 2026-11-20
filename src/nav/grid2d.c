@@ -50,6 +50,8 @@ typedef struct grid {
   int w, h;
   cw_vec2 cell, origin;
   bool diag;
+  int layout; /* cw_tile_layout */
+  int nn;     /* neighbours of a cell: 4, 8 or 6 (hexagons) */
   uint8_t *cost;   /* what the game or the bake set */
   uint16_t *cover; /* obstacles over each cell */
   uint8_t *walk;   /* the cost searches use: 0 where blocked or covered */
@@ -92,6 +94,10 @@ cw_navgrid cw_navgrid_new(const cw_navgrid_desc *d) {
   g->cell = cw_v2(d->cell.x > 0 ? d->cell.x : 1, d->cell.y > 0 ? d->cell.y : 1);
   g->origin = d->origin;
   g->diag = !d->no_diagonals;
+  g->layout = (int)d->layout;
+  bool hex = g->layout == CW_TILE_LAYOUT_HEX_ROWS || g->layout == CW_TILE_LAYOUT_HEX_COLUMNS;
+  if (hex) g->diag = false; /* a hexagon has no corner neighbours */
+  g->nn = hex ? 6 : g->diag ? 8 : 4;
   size_t n = (size_t)g->w * (size_t)g->h;
   g->cost = cw_alloc(n, CW_MEM_NAV);
   g->walk = cw_alloc(n, CW_MEM_NAV);
@@ -183,12 +189,61 @@ bool cw_navgrid_walkable(cw_navgrid h, int x, int y) {
   return g && W(g, x, y);
 }
 
+static inline bool is_hex(const grid *g) { return g->layout == CW_TILE_LAYOUT_HEX_ROWS || g->layout == CW_TILE_LAYOUT_HEX_COLUMNS; }
 static inline void cell_of(const grid *g, cw_vec2 p, int *x, int *y) {
+  if (g->layout != CW_TILE_LAYOUT_SQUARE) {
+    cw_tile_layout_cell_at((cw_tile_layout)g->layout, g->cell.x, g->cell.y, cw_v2(p.x - g->origin.x, p.y - g->origin.y), x, y);
+    return;
+  }
   *x = (int)floorf((p.x - g->origin.x) / g->cell.x);
   *y = (int)floorf((p.y - g->origin.y) / g->cell.y);
 }
 static inline cw_vec2 center_of(const grid *g, int x, int y) {
+  if (g->layout != CW_TILE_LAYOUT_SQUARE) {
+    cw_vec2 o = cw_tile_layout_cell_origin((cw_tile_layout)g->layout, g->cell.x, g->cell.y, x, y);
+    return cw_v2(g->origin.x + o.x + 0.5f * g->cell.x, g->origin.y + o.y + 0.5f * g->cell.y);
+  }
   return cw_v2(g->origin.x + ((float)x + 0.5f) * g->cell.x, g->origin.y + ((float)y + 0.5f) * g->cell.y);
+}
+/* a position in cell space, where cell (x, y) is the unit square at (x, y): squares and diamonds only */
+static inline void cell_space(const grid *g, cw_vec2 p, float *fx, float *fy) {
+  float px = p.x - g->origin.x, py = p.y - g->origin.y;
+  if (g->layout == CW_TILE_LAYOUT_ISOMETRIC) {
+    float a = px / (g->cell.x * 0.5f), b = py / (g->cell.y * 0.5f);
+    *fx = (a + b) * 0.5f, *fy = (b - a) * 0.5f;
+  } else {
+    *fx = px / g->cell.x, *fy = py / g->cell.y;
+  }
+}
+static inline cw_vec2 from_cell_space(const grid *g, float fx, float fy) {
+  if (g->layout == CW_TILE_LAYOUT_ISOMETRIC)
+    return cw_v2(g->origin.x + (fx - fy) * g->cell.x * 0.5f, g->origin.y + (fx + fy) * g->cell.y * 0.5f);
+  return cw_v2(g->origin.x + fx * g->cell.x, g->origin.y + fy * g->cell.y);
+}
+/* Neighbour k (1..g->nn) of a cell and what a step to it costs before the cell's own cost; false when the
+ * step is not allowed (off the grid, blocked, or a diagonal past a blocked cell). Squares and diamonds: N, E,
+ * S, W, then NE, SE, SW, NW. Hexagons: the two of its row (or column), then the four of the rows beside it. */
+static inline bool neighbour(const grid *g, int x, int y, int k, int *nx, int *ny, uint32_t *step) {
+  static const int sq[9][2] = { { 0, 0 }, { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 }, { 1, -1 }, { 1, 1 }, { -1, 1 }, { -1, -1 } };
+  if (g->layout == CW_TILE_LAYOUT_HEX_ROWS) {
+    static const int even[7][2] = { { 0, 0 }, { 1, 0 }, { -1, 0 }, { -1, -1 }, { 0, -1 }, { -1, 1 }, { 0, 1 } };
+    static const int odd[7][2] = { { 0, 0 }, { 1, 0 }, { -1, 0 }, { 0, -1 }, { 1, -1 }, { 0, 1 }, { 1, 1 } };
+    const int (*t)[2] = (y & 1) ? odd : even;
+    *nx = x + t[k][0], *ny = y + t[k][1];
+  } else if (g->layout == CW_TILE_LAYOUT_HEX_COLUMNS) {
+    static const int even[7][2] = { { 0, 0 }, { 0, 1 }, { 0, -1 }, { -1, -1 }, { -1, 0 }, { 1, -1 }, { 1, 0 } };
+    static const int odd[7][2] = { { 0, 0 }, { 0, 1 }, { 0, -1 }, { -1, 0 }, { -1, 1 }, { 1, 0 }, { 1, 1 } };
+    const int (*t)[2] = (x & 1) ? odd : even;
+    *nx = x + t[k][0], *ny = y + t[k][1];
+  } else {
+    *nx = x + sq[k][0], *ny = y + sq[k][1];
+    if (k > 4) {
+      *step = 14u;
+      return W(g, *nx, *ny) && W(g, *nx, y) && W(g, x, *ny);
+    }
+  }
+  *step = 10u;
+  return W(g, *nx, *ny);
 }
 
 void cw_navgrid_cell_at(cw_navgrid h, cw_vec2 p, int *x, int *y) {
@@ -224,7 +279,7 @@ cw_navgrid_stats cw_navgrid_get_stats(cw_navgrid h) {
   if (!g) return s;
   s.cells = g->w * g->h;
   s.walkable = g->walkable;
-  s.jump_points = g->diag && g->costly == 0;
+  s.jump_points = g->diag && g->costly == 0 && !is_hex(g);
   int wi = cw_jobs_worker_index();
   s.last_expanded = wi >= 0 && wi < g->nsearch ? g->searches[wi].expanded : 0;
   return s;
@@ -243,9 +298,14 @@ static bool obstacle_has(const obstacle *o, cw_vec2 p) {
 
 static void obstacle_stamp(grid *g, const obstacle *o, int delta) {
   float r = o->kind == 0 ? o->radius : sqrtf(o->half.x * o->half.x + o->half.y * o->half.y);
-  int x0, y0, x1, y1;
-  cell_of(g, cw_v2(o->center.x - r, o->center.y - r), &x0, &y0);
-  cell_of(g, cw_v2(o->center.x + r, o->center.y + r), &x1, &y1);
+  /* the cells of the shape's box: of its four corners (a box is not a box of cells on diamonds), and one more */
+  int x0 = g->w, y0 = g->h, x1 = -1, y1 = -1;
+  for (int k = 0; k < 4; k++) {
+    int cx, cy;
+    cell_of(g, cw_v2(o->center.x + ((k & 1) ? r : -r), o->center.y + ((k & 2) ? r : -r)), &cx, &cy);
+    x0 = CW_MIN(x0, cx), y0 = CW_MIN(y0, cy), x1 = CW_MAX(x1, cx), y1 = CW_MAX(y1, cy);
+  }
+  if (g->layout != CW_TILE_LAYOUT_SQUARE) x0--, y0--, x1++, y1++;
   x0 = CW_MAX(x0, 0), y0 = CW_MAX(y0, 0), x1 = CW_MIN(x1, g->w - 1), y1 = CW_MIN(y1, g->h - 1);
   for (int y = y0; y <= y1; y++)
     for (int x = x0; x <= x1; x++) {
@@ -349,6 +409,15 @@ static inline uint32_t octile(int dx, int dy) {
   return DIAGONAL * (uint32_t)lo + STRAIGHT * (uint32_t)(hi - lo);
 }
 static inline uint32_t heuristic(const grid *g, int x, int y, int gx, int gy) {
+  if (is_hex(g)) {
+    /* offset to axial coordinates, then the hexagon distance */
+    bool rows = g->layout == CW_TILE_LAYOUT_HEX_ROWS;
+    int q0 = rows ? x - (y - (y & 1)) / 2 : x, r0 = rows ? y : y - (x - (x & 1)) / 2;
+    int q1 = rows ? gx - (gy - (gy & 1)) / 2 : gx, r1 = rows ? gy : gy - (gx - (gx & 1)) / 2;
+    int dq = q0 - q1, dr = r0 - r1, ds = dq + dr;
+    dq = dq < 0 ? -dq : dq, dr = dr < 0 ? -dr : dr, ds = ds < 0 ? -ds : ds;
+    return STRAIGHT * (uint32_t)((dq + dr + ds) / 2);
+  }
   int dx = x - gx, dy = y - gy;
   if (g->diag) return octile(dx, dy);
   return STRAIGHT * (uint32_t)((dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy));
@@ -444,16 +513,10 @@ static void jps_expand(const grid *g, search *s, int idx, int gx, int gy) {
 static void astar_expand(const grid *g, search *s, int idx, int gx, int gy) {
   int x = idx % g->w, y = idx / g->w;
   uint32_t gi = s->g[idx];
-  static const int d4[4][2] = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
-  static const int d8[4][2] = { { 1, -1 }, { 1, 1 }, { -1, 1 }, { -1, -1 } };
-  for (int k = 0; k < 4; k++) {
-    int nx = x + d4[k][0], ny = y + d4[k][1];
-    if (W(g, nx, ny)) relax(g, s, idx, gi, nx, ny, STRAIGHT * g->walk[ny * g->w + nx], gx, gy);
-  }
-  if (!g->diag) return;
-  for (int k = 0; k < 4; k++) {
-    int nx = x + d8[k][0], ny = y + d8[k][1];
-    if (W(g, nx, ny) && W(g, nx, y) && W(g, x, ny)) relax(g, s, idx, gi, nx, ny, DIAGONAL * g->walk[ny * g->w + nx], gx, gy);
+  for (int k = 1; k <= g->nn; k++) {
+    int nx, ny;
+    uint32_t step;
+    if (neighbour(g, x, y, k, &nx, &ny, &step)) relax(g, s, idx, gi, nx, ny, step * g->walk[ny * g->w + nx], gx, gy);
   }
 }
 
@@ -464,7 +527,7 @@ static uint32_t find_cells(grid *g, search *s, int sx, int sy, int ex, int ey, i
   cw_array_clear(&s->chain);
   *partial = false;
   if (!W(g, sx, sy)) return UNREACHED;
-  bool jps = g->diag && g->costly == 0 && !force_astar;
+  bool jps = g->diag && g->costly == 0 && !force_astar && !is_hex(g);
   int si = sy * g->w + sx, ei = ey * g->w + ex;
   s->stamp[si] = s->epoch;
   s->closed[si] = 0;
@@ -500,10 +563,20 @@ static uint32_t find_cells(grid *g, search *s, int sx, int sy, int ex, int ey, i
 /* walks the cells from a to b; false at the first blocked one (*t: how far along it got, 0..1). plain: cells
  * with a cost of their own stop it too */
 static bool sight(const grid *g, cw_vec2 a, cw_vec2 b, bool plain, float *t_hit) {
-  float ax = (a.x - g->origin.x) / g->cell.x, ay = (a.y - g->origin.y) / g->cell.y;
-  float bx = (b.x - g->origin.x) / g->cell.x, by = (b.y - g->origin.y) / g->cell.y;
-  int x = (int)floorf(ax), y = (int)floorf(ay), ex = (int)floorf(bx), ey = (int)floorf(by);
   if (t_hit) *t_hit = 0;
+  if (is_hex(g)) {
+    /* hexagons: only within one cell (paths keep their cell middles) */
+    int hx0, hy0, hx1, hy1;
+    cell_of(g, a, &hx0, &hy0);
+    cell_of(g, b, &hx1, &hy1);
+    bool same = hx0 == hx1 && hy0 == hy1 && P(g, hx0, hy0, plain);
+    if (same && t_hit) *t_hit = 1;
+    return same;
+  }
+  float ax, ay, bx, by;
+  cell_space(g, a, &ax, &ay);
+  cell_space(g, b, &bx, &by);
+  int x = (int)floorf(ax), y = (int)floorf(ay), ex = (int)floorf(bx), ey = (int)floorf(by);
   if (!P(g, x, y, plain)) return false;
   float dx = bx - ax, dy = by - ay;
   int stepx = dx > 0 ? 1 : dx < 0 ? -1 : 0, stepy = dy > 0 ? 1 : dy < 0 ? -1 : 0;
@@ -713,7 +786,7 @@ typedef struct field {
   CW_ARRAY(heap_item) heap;
 } field;
 
-static const int DIRS[9][2] = { { 0, 0 }, { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 }, { 1, -1 }, { 1, 1 }, { -1, 1 }, { -1, -1 } };
+
 
 static field *fget(cw_flowfield h) { return g_fields.elem_size ? cw_pool_get(&g_fields, h.id) : NULL; }
 
@@ -769,10 +842,10 @@ static void dir_range(int b, int e, int w, void *ctx) {
       uint8_t best = 0;
       uint32_t bd = j->f->dist[i];
       if (bd != UNREACHED && bd != 0)
-        for (int k = 1; k <= (g->diag ? 8 : 4); k++) {
-          int nx = x + DIRS[k][0], ny = y + DIRS[k][1];
-          if (!W(g, nx, ny)) continue;
-          if (k > 4 && !(W(g, nx, y) && W(g, x, ny))) continue;
+        for (int k = 1; k <= g->nn; k++) {
+          int nx, ny;
+          uint32_t step;
+          if (!neighbour(g, x, y, k, &nx, &ny, &step)) continue;
           uint32_t d = j->f->dist[ny * g->w + nx];
           if (d < bd) bd = d, best = (uint8_t)k; /* the first of equals wins: straight steps before diagonal ones */
         }
@@ -802,11 +875,11 @@ void cw_flowfield_build(cw_flowfield h, const cw_vec2 *goals, int count) {
     int x = it.idx % g->w, y = it.idx / g->w;
     /* outward from the goals: stepping from a neighbour INTO this cell costs this cell's cost */
     uint32_t step_cost = g->walk[it.idx];
-    for (int k = 1; k <= (g->diag ? 8 : 4); k++) {
-      int nx = x + DIRS[k][0], ny = y + DIRS[k][1];
-      if (!W(g, nx, ny)) continue;
-      if (k > 4 && !(W(g, nx, y) && W(g, x, ny))) continue;
-      uint32_t nd = it.f + (k > 4 ? DIAGONAL : STRAIGHT) * step_cost;
+    for (int k = 1; k <= g->nn; k++) {
+      int nx, ny;
+      uint32_t step;
+      if (!neighbour(g, x, y, k, &nx, &ny, &step)) continue;
+      uint32_t nd = it.f + step * step_cost;
       int ni = ny * g->w + nx;
       if (nd < f->dist[ni]) {
         f->dist[ni] = nd;
@@ -839,7 +912,14 @@ cw_vec2 cw_flowfield_direction(cw_flowfield h, cw_vec2 p) {
   if (x < 0 || y < 0 || x >= g->w || y >= g->h) return cw_v2(0, 0);
   int k = f->dir[y * g->w + x];
   (void)DIAG;
-  return cw_v2(UNIT[k][0], UNIT[k][1]);
+  if (g->layout == CW_TILE_LAYOUT_SQUARE || !k) return cw_v2(UNIT[k][0], UNIT[k][1]);
+  /* other layouts: toward the middle of the neighbour it names */
+  int nx, ny;
+  uint32_t step;
+  neighbour(g, x, y, k, &nx, &ny, &step);
+  cw_vec2 a = center_of(g, x, y), b = center_of(g, nx, ny);
+  float dx = b.x - a.x, dy = b.y - a.y, d = sqrtf(dx * dx + dy * dy);
+  return d > 0 ? cw_v2(dx / d, dy / d) : cw_v2(0, 0);
 }
 
 float cw_flowfield_distance(cw_flowfield h, cw_vec2 p) {
@@ -1240,7 +1320,10 @@ static void steer(crowd *c, const grid *g, int i) {
       int k = f->dir[y * g->w + x];
       /* toward the middle of the next cell, so agents round corners instead of scraping them */
       if (k) {
-        cw_vec2 next = center_of(g, x + DIRS[k][0], y + DIRS[k][1]);
+        int nx, ny;
+        uint32_t step;
+        neighbour(g, x, y, k, &nx, &ny, &step);
+        cw_vec2 next = center_of(g, nx, ny);
         float dx = next.x - a->pos.x, dy = next.y - a->pos.y, d = sqrtf(dx * dx + dy * dy);
         if (d > 0) a->dvel = cw_v2(dx / d * a->p.max_speed, dy / d * a->p.max_speed);
       }
@@ -1255,7 +1338,7 @@ static void steer(crowd *c, const grid *g, int i) {
     }
     /* avoidance may have pushed it round a corner of the walls: with the next corner out of sight, walking at
      * it would only press it into the wall */
-    if (!a->need_plan && !sight(g, a->pos, a->path[a->ipath], false, NULL)) a->lost = true;
+    if (!a->need_plan && !is_hex(g) && !sight(g, a->pos, a->path[a->ipath], false, NULL)) a->lost = true;
     float dx = a->path[a->ipath].x - a->pos.x, dy = a->path[a->ipath].y - a->pos.y, d = sqrtf(dx * dx + dy * dy);
     bool last = a->ipath == a->npath - 1;
     if (last && d <= a->p.arrive_dist) {
@@ -1333,7 +1416,42 @@ static void steer_range(int b, int e, int w, void *ctx) {
 
 /* phase 4: movement. A circle against the blocked cells round it: pushed out of each along the shortest way,
  * twice over so a corner between two cells settles. */
+static cw_vec2 slide_square(const grid *g, cw_vec2 p, float radius);
 static cw_vec2 slide(const grid *g, cw_vec2 p, float radius) {
+  if (g->layout == CW_TILE_LAYOUT_SQUARE) return slide_square(g, p, radius);
+  if (g->layout == CW_TILE_LAYOUT_ISOMETRIC) {
+    /* diamonds are squares in cell space: slide there, with the radius in cells (measured along a diamond's
+     * side), and come back */
+    float fx, fy, side = 0.5f * sqrtf(g->cell.x * g->cell.x + g->cell.y * g->cell.y);
+    cell_space(g, p, &fx, &fy);
+    grid unit = *g;
+    unit.layout = CW_TILE_LAYOUT_SQUARE, unit.cell = cw_v2(1, 1), unit.origin = cw_v2(0, 0);
+    cw_vec2 q = slide_square(&unit, cw_v2(fx, fy), radius / side);
+    return q.x == fx && q.y == fy ? p : from_cell_space(g, q.x, q.y);
+  }
+  /* hexagons: a blocked cell pushes out as the circle inside it */
+  float in = 0.5f * CW_MIN(g->cell.x, g->cell.y) * (g->cell.x < g->cell.y ? 1.0f : 1.0f);
+  float r = CW_MIN(radius, 0.45f * CW_MIN(g->cell.x, g->cell.y));
+  for (int pass = 0; pass < 2; pass++) {
+    int cx, cy;
+    cell_of(g, p, &cx, &cy);
+    for (int k = 0; k <= 6; k++) {
+      int nx = cx, ny = cy;
+      if (k) {
+        uint32_t step;
+        neighbour(g, cx, cy, k, &nx, &ny, &step);
+      }
+      if (W(g, nx, ny)) continue;
+      cw_vec2 c = center_of(g, nx, ny);
+      float dx = p.x - c.x, dy = p.y - c.y, d2 = dx * dx + dy * dy, keep = in + r;
+      if (d2 >= keep * keep || d2 <= 0) continue;
+      float d = sqrtf(d2);
+      p = cw_v2(c.x + dx / d * keep, c.y + dy / d * keep);
+    }
+  }
+  return p;
+}
+static cw_vec2 slide_square(const grid *g, cw_vec2 p, float radius) {
   float r = CW_MIN(radius, 0.49f * CW_MIN(g->cell.x, g->cell.y)); /* wider agents keep off walls through the bake's agent_radius */
   for (int pass = 0; pass < 2; pass++) {
     int x0, y0, x1, y1;
@@ -1481,7 +1599,8 @@ void cw_flowfield_debug_draw(cw_flowfield h, cw_phys_lines *out) {
       int k = f->dir[y * g->w + x];
       if (!k) continue;
       cw_vec2 c = center_of(g, x, y);
-      line(out, c, cw_v2(c.x + UNIT[k][0] * g->cell.x * 0.4f, c.y + UNIT[k][1] * g->cell.y * 0.4f), 0x40c0ff);
+      cw_vec2 dir = cw_flowfield_direction(h, c);
+      line(out, c, cw_v2(c.x + dir.x * g->cell.x * 0.4f, c.y + dir.y * g->cell.y * 0.4f), 0x40c0ff);
     }
 }
 

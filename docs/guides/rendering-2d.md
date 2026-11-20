@@ -116,6 +116,25 @@ A tilemap stores up to 16 layers in 32x32-tile chunks. Each chunk is static geom
 
 `samples/r2d_tilemap` pans a zoomed camera over a 96x48 three-layer map, animates water and lava, shows every flip and rotation of an asymmetric tile, and edits one cell mid-run (one chunk rebuild, visible in the `r2d.chunk_rebuilds` stat). The `TileMap2D` node wraps the same renderer with a text cell format (`"0*20 / . . 3 3x / 1*4"`) and `cw_tilemap2d_set_cell` for code.
 
+### Isometric and hexagon layouts
+
+`layout` on a `TileMap2D` (`cw_tilemap_desc.layout` in the immediate API) says where cells sit. Every tile is still drawn as a `cell_size` quad of its tileset image; the layout places the quads:
+
+| Layout | Cells |
+|---|---|
+| `SQUARE` | a grid: cell (x, y) at (x, y) times the cell size |
+| `ISOMETRIC` | diamonds: +x runs down and to the right, +y down and to the left, and cell (0, 0)'s top corner is the map's origin. A tile's picture is the diamond inside its quad (a cell twice as wide as tall is the usual shape) |
+| `HEX_ROWS` | pointy-top hexagons in rows: each row three quarters of a cell below the last, odd rows half a cell to the right |
+| `HEX_COLUMNS` | flat-top hexagons in columns: each column three quarters of a cell right of the last, odd columns half a cell down |
+
+`cw_tilemap2d_local_to_cell` finds the cell whose diamond or hexagon holds a point and `cw_tilemap2d_cell_center` gives a cell's middle (`cw_tile_layout_cell_at` and `cw_tile_layout_cell_origin` are the same arithmetic without a map). Chunks are culled by the box of their quads. The rest of the tile systems follow the layout: in `tile_shapes`, `full` is the cell's diamond or hexagon, and a `TileCollision2D` joins neighbouring cells into outlines (two hexagons side by side are one loop of ten segments); a [NavigationRegion2D](node:NavigationRegion2D) searches diamonds exactly as squares and hexagons with six neighbours ([Navigation](guide:navigation)). From `samples/tiles2d_layouts`, three islands, one of each:
+
+@include samples/tiles2d_layouts/assets/main.cwscene#Iso..Iso/Walker0
+
+@include samples/tiles2d_layouts/main.c#cells
+
+These are flat layouts: a tile's picture fills its cell and no more. Tiles taller than their cell (walls and trees of an isometric map that characters walk behind) are not sorted against sprites; draw such things as sprites on a y-sorted canvas over a flat ground map.
+
 ### Tile shapes and collision
 
 The tile set says what each tile is made of, and the engine builds the colliders. `tile_shapes` on a `TileMap2D` gives tile ids a collision shape in tile pixels (y down, the origin at the tile's top-left), entries separated by `;`:
@@ -240,6 +259,7 @@ Natively, `CW_R2D_TIMERS=1` times each part of `cw_r2d_end` on the GPU (GL time 
 | `r2d_sprites` | sprites, shapes, blend modes, nine-slice, clip, render targets |
 | `r2d_text` | SDF and bitmap fonts, wrap, alignment, measurement |
 | `r2d_tilemap` | chunked tilemaps, animated tiles, flips, cell edits |
+| `tiles2d_layouts` | isometric and hexagon maps (both kinds), their collision outlines and navigation |
 | `tiles2d` | tile shapes, `TileCollision2D` (slopes, one-way planks, half blocks), custom tile data, a ledge removed in play; a room of terrains (blob, corner, edge and single sets with variants), a doorway painted shut |
 | `r2d_camera` | canvas layers, cameras, parallax, minimap, `INTEGER` scaling, the sharp filter at any scale |
 | `r2d_lights` | lit layers, normal maps, shadows, ambient |

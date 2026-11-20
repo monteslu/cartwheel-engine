@@ -2083,6 +2083,39 @@
     "note": "terrains: a top-down room whose scene names terrains by their first tile and autotile picks every tile at load (a single-tile floor with 4 variants, walls from a 47-tile blob set with 2 variants, moss from a 16-tile corner set on its own layer, a fence from a 16-tile edge set; variants by a cw_rng seeded per cell, the same map hash on every host). The hero walks through the upper doorway; at tick 300 cw_tilemap2d_set_terrain_rect paints it shut (the wall tiles round it join, one collision chunk rebuilt) and the hero, walking back, stays in the east chamber. A NavigationRegion2D bakes the walls and fence into a grid: four scouts patrol between the chambers on paths of their own and path again when the doorway shuts, ten followers walk one flow field to the hero and all end within three cells of it. Control: TILES2D_NO_PAINT leaves the doorway open and the hero walks back through"
   },
   {
+    "name": "tiles2d-layouts",
+    "app": "tiles2d_layouts",
+    "webgpu": true,
+    "frames": 900,
+    "fields": [
+      "lay.reached",
+      "lay.chains",
+      "lay.segments",
+      "lay.walkable",
+      "lay.probe",
+      "lay.round_trip",
+      "lay.crowd_hash"
+    ],
+    "expect": {
+      "lay.round_trip": [
+        100,
+        48,
+        48
+      ],
+      "lay.chains": [
+        2,
+        2,
+        2
+      ],
+      "lay.segments": [
+        16,
+        100,
+        100
+      ]
+    },
+    "note": "TileMap2D layouts: an isometric island of diamonds and two of hexagons (pointy-top rows, flat-top columns) drawn by the chunk renderer, each with a TileCollision2D (the outlines of its solid cells: the rim of water and a wall of rock, 2 chains each) and a NavigationRegion2D whose two walkers trade places through the wall's gap (jump point search on the diamonds, six-neighbour A* on the hexagons); every cell's middle maps back to its cell. The crowd hashes are compared on every host; the control is a frame earlier"
+  },
+  {
     "name": "r2d-text",
     "webgpu": true,
     "app": "r2d_text",
@@ -2735,7 +2768,7 @@
     "controlFrames": 2,
     "expect": {
       "unit.failed": 0,
-      "unit.checksum": 719255199,
+      "unit.checksum": 881304046,
       "unit.done": 1
     },
     "controlEnv": {

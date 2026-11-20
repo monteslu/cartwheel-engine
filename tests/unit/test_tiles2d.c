@@ -639,5 +639,106 @@ static void t_terrain_scene(void) {
   cw_tree_free(t);
 }
 
-CW_TEST_SUITE("tiles2d", { "terrain_sets", t_terrain_sets }, { "terrain_paint", t_terrain_paint }, { "terrain_scene", t_terrain_scene }, { "shapes", t_shapes }, { "merge", t_merge }, { "slide", t_slide }, { "slopes", t_slopes },
+/* ── layouts ────────────────────────────────────────────────────────── */
+
+static void t_layouts(void) {
+  setup();
+  /* the arithmetic: a cell's middle lies in the cell, for cells on both sides of the origin */
+  static const cw_tile_layout kinds[4] = { CW_TILE_LAYOUT_SQUARE, CW_TILE_LAYOUT_ISOMETRIC, CW_TILE_LAYOUT_HEX_ROWS, CW_TILE_LAYOUT_HEX_COLUMNS };
+  static const float sizes[4][2] = { { 16, 16 }, { 32, 16 }, { 28, 32 }, { 32, 28 } };
+  for (int k = 0; k < 4; k++) {
+    int ok = 0, near = 0;
+    for (int y = -4; y < 9; y++)
+      for (int x = -4; x < 9; x++) {
+        cw_vec2 o = cw_tile_layout_cell_origin(kinds[k], sizes[k][0], sizes[k][1], x, y);
+        cw_vec2 mid = cw_v2(o.x + sizes[k][0] * 0.5f, o.y + sizes[k][1] * 0.5f);
+        int cx, cy;
+        cw_tile_layout_cell_at(kinds[k], sizes[k][0], sizes[k][1], mid, &cx, &cy);
+        ok += cx == x && cy == y;
+        /* a quarter of the way toward the cell's left and its top is still inside every one of the shapes */
+        cw_tile_layout_cell_at(kinds[k], sizes[k][0], sizes[k][1], cw_v2(mid.x - sizes[k][0] * 0.2f, mid.y - sizes[k][1] * 0.2f), &cx, &cy);
+        near += cx == x && cy == y;
+        FOLD(o);
+      }
+    CHECK_EQ_INT(ok, 169);
+    CHECK_EQ_INT(near, 169);
+  }
+  int cx, cy;
+  /* the top corner of an isometric map is cell (0, 0)'s; just left of it is nobody's first row */
+  cw_tile_layout_cell_at(CW_TILE_LAYOUT_ISOMETRIC, 32, 16, cw_v2(0, 1), &cx, &cy);
+  CHECK(cx == 0 && cy == 0);
+  cw_tile_layout_cell_at(CW_TILE_LAYOUT_ISOMETRIC, 32, 16, cw_v2(20, 12), &cx, &cy);
+  CHECK(cx == 1 && cy == 0);
+  cw_tile_layout_cell_at(CW_TILE_LAYOUT_ISOMETRIC, 32, 16, cw_v2(-20, 12), &cx, &cy);
+  CHECK(cx == 0 && cy == 1);
+  /* a hexagon's box corner belongs to a neighbour */
+  cw_tile_layout_cell_at(CW_TILE_LAYOUT_HEX_ROWS, 28, 32, cw_v2(29, 33), &cx, &cy);
+  CHECK(cx == 0 && cy == 1); /* the corner of cell (1, 0)'s box next to (0, 0): row 1 reaches up between them */
+
+  /* the node: "full" is the cell's shape, and collision outlines join diamonds and hexagons */
+  struct { const char *layout; float tw, th; const char *cells; int chains, segments, corners; } cases[] = {
+    { "ISOMETRIC", 32, 16, "1 1 1 / 1 1 1", 1, 4, 4 },                 /* six diamonds: one slanted block */
+    { "ISOMETRIC", 32, 16, "1 . / . 1", 2, 8, 4 },                      /* two that touch at a corner */
+    { "HEX_ROWS", 28, 32, "1", 1, 6, 6 },
+    { "HEX_ROWS", 28, 32, "1 1", 1, 10, 6 },                            /* two hexagons side by side: the shared side gone */
+    { "HEX_ROWS", 28, 32, ". 1 1 / 1 1 1 / . 1 1", 1, 18, 6 },         /* a ring of six round one */
+    { "HEX_COLUMNS", 32, 28, "1 / 1", 1, 10, 6 },
+    { "HEX_COLUMNS", 32, 28, ". 1 . / 1 1 1 / 1 1 1", 1, 18, 6 },          /* the same ring, flat tops: odd columns sit lower */
+  };
+  for (size_t i = 0; i < CW_ARRAY_LEN(cases); i++) {
+    cw_tree *t = cw_tree_new();
+    cw_node map = cw_node_new("TileMap2D", "Map");
+    cw_node_set(map, "tile_size", cw_val_vec2(cases[i].tw, cases[i].th));
+    cw_node_set(map, "tile_shapes", cw_val_string("1: full")); /* before the layout: it is read again when that is set */
+    cw_node_set(map, "layout", cw_val_enum(cases[i].layout));
+    cw_node_set(map, "cells0", cw_val_string(cases[i].cells));
+    int n = 0;
+    CHECK(cw_tilemap2d_tile_shape(map, 1, NULL, 0, &n) == CW_TILE_SHAPE_SOLID && n == cases[i].corners);
+    /* every cell's middle maps back, is solid where a tile is, and the corner of its box is not */
+    int w, h, bad = 0;
+    cw_tilemap2d_size(map, &w, &h);
+    for (int y = 0; y < h; y++)
+      for (int x = 0; x < w; x++) {
+        cw_vec2 mid = cw_tilemap2d_cell_center(map, x, y);
+        cw_tilemap2d_local_to_cell(map, mid, &cx, &cy);
+        bad += cx != x || cy != y;
+        bool tile = cw_tilemap2d_get_cell(map, 0, x, y) == 1;
+        bad += cw_tilemap2d_point_solid(map, 0, mid) != tile;
+        bad += cw_tilemap2d_cell_solid(map, 0, x, y) != tile;
+      }
+    CHECK_EQ_INT(bad, 0);
+    cw_node col = cw_node_new("TileCollision2D", "Solid");
+    cw_node_add_child(map, col);
+    cw_node_add_child(cw_tree_root(t), map);
+    step(t, 1);
+    cw_tile_collision2d_stats s = cw_tile_collision2d_stats_get(col);
+    CHECK_EQ_INT(s.chains, cases[i].chains);
+    CHECK_EQ_INT(s.segments, cases[i].segments);
+    if (s.chains != cases[i].chains || s.segments != cases[i].segments) cw_error("layout case %d: %d chains, %d segments", (int)i, s.chains, s.segments);
+    /* a contact point names the cell through the layout */
+    cw_vec2 mid = cw_tilemap2d_cell_center(map, w - 1, 0);
+    cw_tile_collision2d_cell_at(col, mid, cw_v2(0, 0), &cx, &cy);
+    CHECK(cx == w - 1 && cy == 0);
+    char *text = cw_scene_save(map);
+    CHECK(strstr(text, cw_frame_printf("layout = %s", cases[i].layout)) != NULL);
+    cw_free(text);
+    cw_tree_free(t);
+  }
+  /* a ball dropped on a hexagon rests on its top corner's sides... on a flat-top one, on its top: y = 0 */
+  cw_tree *t = cw_tree_new();
+  cw_node map = cw_node_new("TileMap2D", "Map");
+  cw_node_set(map, "tile_size", cw_val_vec2(32, 28));
+  cw_node_set(map, "layout", cw_val_enum("HEX_COLUMNS"));
+  cw_node_set(map, "tile_shapes", cw_val_string("1: full"));
+  cw_node_set(map, "cells0", cw_val_string("1"));
+  cw_node_add_child(map, cw_node_new("TileCollision2D", "Solid"));
+  cw_node_add_child(cw_tree_root(t), map);
+  cw_node b = box(cw_tree_root(t), "Box", 16, -30, 8);
+  step(t, 120);
+  CHECK(fabsf(cw_node2d_position(b).y - (-4)) < 0.6f); /* the hexagon's flat top is 16 wide at y = 0 */
+  { cw_vec2 p = cw_node2d_position(b); FOLD(p); }
+  cw_tree_free(t);
+}
+
+CW_TEST_SUITE("tiles2d", { "layouts", t_layouts }, { "terrain_sets", t_terrain_sets }, { "terrain_paint", t_terrain_paint }, { "terrain_scene", t_terrain_scene }, { "shapes", t_shapes }, { "merge", t_merge }, { "slide", t_slide }, { "slopes", t_slopes },
               { "one_way", t_one_way }, { "edits", t_edits }, { "rollback", t_rollback })

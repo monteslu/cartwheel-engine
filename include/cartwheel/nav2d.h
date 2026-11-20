@@ -41,6 +41,7 @@
 #include "core.h"
 #include "math.h"
 #include "physics.h"
+#include "render2d.h"
 #include "scene.h"
 
 #ifdef __cplusplus
@@ -59,6 +60,10 @@ typedef struct cw_navgrid_desc {
   cw_vec2 cell;        /* a cell's size (zero: 1 x 1) */
   cw_vec2 origin;      /* the position of cell (0, 0)'s top-left corner */
   bool no_diagonals;   /* false: eight neighbours; true: four */
+  cw_tile_layout layout; /* how cells sit (render2d.h): SQUARE unless set. ISOMETRIC: the same searches over
+                          * diamonds (a step along a diamond's side costs 10, across its corner 14). HEX_ROWS and
+                          * HEX_COLUMNS: six neighbours, plain A* (no jump points), paths through cell middles
+                          * (no straightening), and cw_navgrid_raycast only sees within one cell */
 } cw_navgrid_desc;
 
 /* A grid with every cell walkable at cost 1. Null (logged) for a size outside 1..4096. */
@@ -99,7 +104,7 @@ bool cw_navgrid_obstacle_remove(cw_navgrid g, uint32_t id); /* false for an unkn
  * that to a blocked cell, so an agent wider than a cell keeps off the walls (a radius of half a cell or less
  * blocks nothing more). `cost_data` names a tile_data
  * value that gives a cell its cost (1..255, a tile without one costs 1; NULL: every free cell costs 1).
- * Positions are the map node's local pixels. */
+ * Positions are the map node's local pixels, and the grid takes the map's layout (isometric, hexagons). */
 typedef struct cw_navgrid_bake {
   uint32_t layers;
   float agent_radius;

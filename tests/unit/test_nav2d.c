@@ -566,5 +566,119 @@ static void t_nodes(void) {
   cw_tree_free(t);
 }
 
-CW_TEST_SUITE("nav2d", { "grid", t_grid }, { "jps_equals_astar", t_jps_equals_astar }, { "paths", t_paths }, { "costs", t_costs },
+/* ── grids that are not squares ─────────────────────────────────────── */
+
+static void t_layouts(void) {
+  /* diamonds: the same searches, positions through the layout */
+  cw_navgrid iso = cw_navgrid_new(&(cw_navgrid_desc){ .width = 10, .height = 10, .cell = { 32, 16 }, .layout = CW_TILE_LAYOUT_ISOMETRIC });
+  for (int y = 0; y < 8; y++) cw_navgrid_set_cost(iso, 5, y, 0); /* a wall with its gap at the far end */
+  int x, y, round = 0;
+  for (int cy = 0; cy < 10; cy++)
+    for (int cx = 0; cx < 10; cx++) {
+      cw_navgrid_cell_at(iso, cw_navgrid_cell_center(iso, cx, cy), &x, &y);
+      round += x == cx && y == cy;
+    }
+  CHECK_EQ_INT(round, 100);
+  cw_vec2 c = cw_navgrid_cell_center(iso, 3, 1);
+  CHECK(c.x == (3 - 1) * 16 && c.y == (3 + 1 + 1) * 8);
+  CHECK(cw_navgrid_get_stats(iso).jump_points);
+  cw_vec2 pts[48], from = cw_navgrid_cell_center(iso, 2, 2), to = cw_navgrid_cell_center(iso, 8, 2);
+  bool partial;
+  int n = cw_navgrid_find_path(iso, from, to, NULL, pts, 48, &partial);
+  CHECK(n >= 3 && !partial && legs_clear(iso, pts, n));
+  bool through_gap = false;
+  for (int i = 0; i < n; i++) {
+    cw_navgrid_cell_at(iso, pts[i], &x, &y);
+    through_gap = through_gap || (y >= 8 && x >= 4 && x <= 6);
+  }
+  CHECK(through_gap);
+  CHECK(!cw_navgrid_raycast(iso, from, to, 0, NULL));
+  CHECK(cw_navgrid_raycast(iso, from, cw_navgrid_cell_center(iso, 2, 7), 0, NULL));
+  for (int i = 0; i < n; i++) FOLD(pts[i]);
+  /* a crowd agent walks it and never stands in the wall */
+  cw_crowd2d crowd = cw_crowd2d_new(iso, 4);
+  cw_crowd2d_agent ag = cw_crowd2d_add(crowd, from, NULL);
+  cw_crowd2d_set_target(crowd, ag, to);
+  int in_wall = 0;
+  for (int t = 0; t < 900; t++) {
+    cw_crowd2d_step(crowd, DT);
+    cw_navgrid_cell_at(iso, cw_crowd2d_position(crowd, ag), &x, &y);
+    in_wall += !cw_navgrid_walkable(iso, x, y);
+  }
+  cw_crowd2d_agent_state s;
+  cw_crowd2d_get_state(crowd, ag, &s);
+  CHECK(s.status == CW_CROWD2D_ARRIVED && in_wall == 0);
+  FOLD(s.position);
+  cw_navgrid_free(iso);
+
+  /* hexagons, both ways up: six neighbours, paths from middle to middle */
+  for (int kind = 0; kind < 2; kind++) {
+    cw_tile_layout layout = kind ? CW_TILE_LAYOUT_HEX_COLUMNS : CW_TILE_LAYOUT_HEX_ROWS;
+    cw_vec2 cell = kind ? cw_v2(32, 28) : cw_v2(28, 32);
+    cw_navgrid hex = cw_navgrid_new(&(cw_navgrid_desc){ .width = 9, .height = 9, .cell = cell, .layout = layout });
+    CHECK(!cw_navgrid_get_stats(hex).jump_points);
+    round = 0;
+    for (int cy = 0; cy < 9; cy++)
+      for (int cx = 0; cx < 9; cx++) {
+        cw_navgrid_cell_at(hex, cw_navgrid_cell_center(hex, cx, cy), &x, &y);
+        round += x == cx && y == cy;
+      }
+    CHECK_EQ_INT(round, 81);
+    /* on open ground the cost is the hexagon distance: across a row (or column) it is the cell count */
+    CHECK_EQ_INT(cw__navgrid_path_cost(hex, 0, 0, kind ? 0 : 6, kind ? 6 : 0, true, NULL), 60);
+    CHECK_EQ_INT(cw__navgrid_path_cost(hex, 1, 1, 7, 7, true, NULL), 90); /* six rows down take three columns with them */
+    /* a wall with one gap; every leg of the path joins two neighbouring cells */
+    for (int k = 0; k < 9; k++)
+      if (k != 7) cw_navgrid_set_cost(hex, kind ? k : 4, kind ? 4 : k, 0);
+    from = cw_navgrid_cell_center(hex, 1, 1), to = cw_navgrid_cell_center(hex, 7, 7);
+    if (kind) to = cw_navgrid_cell_center(hex, 1, 7);
+    else to = cw_navgrid_cell_center(hex, 7, 1);
+    n = cw_navgrid_find_path(hex, from, to, NULL, pts, 48, &partial);
+    CHECK(n >= 8 && !partial);
+    float pitch = kind ? 28 : 28; /* neighbours' middles are 28 apart both ways here (a row of 28-wide cells; 3/4 of 32 and half of 28 along a slant: sqrt(24^2 + 14^2) = 27.8) */
+    bool stepwise = true, crossed = false;
+    for (int i = 1; i < n; i++) {
+      float dx = pts[i].x - pts[i - 1].x, dy = pts[i].y - pts[i - 1].y, d = sqrtf(dx * dx + dy * dy);
+      stepwise = stepwise && d > pitch - 0.5f && d < pitch + 0.5f;
+      cw_navgrid_cell_at(hex, pts[i], &x, &y);
+      stepwise = stepwise && cw_navgrid_walkable(hex, x, y);
+      crossed = crossed || (kind ? (y == 4 && x == 7) : (x == 4 && y == 7));
+    }
+    CHECK(stepwise && crossed);
+    for (int i = 0; i < n; i++) FOLD(pts[i]);
+    /* a flow field: each cell points at a neighbour's middle, and its distance is its path's cost */
+    cw_flowfield f = cw_flowfield_new(hex);
+    cw_flowfield_build(f, &to, 1);
+    cw_vec2 d = cw_flowfield_direction(f, from);
+    CHECK(fabsf(d.x * d.x + d.y * d.y - 1) < 1e-4f);
+    int tx, ty;
+    cw_navgrid_cell_at(hex, to, &tx, &ty);
+    uint32_t cost = cw__navgrid_path_cost(hex, 1, 1, tx, ty, true, NULL);
+    CHECK((uint32_t)(cw_flowfield_distance(f, from) / (0.05f * (cell.x + cell.y)) + 0.5f) == cost);
+    uint64_t fh = cw_flowfield_hash(f);
+    FOLD(fh);
+    /* an agent walks it */
+    crowd = cw_crowd2d_new(hex, 4);
+    ag = cw_crowd2d_add(crowd, from, NULL);
+    cw_crowd2d_set_target(crowd, ag, to);
+    in_wall = 0;
+    for (int t = 0; t < 1200; t++) {
+      cw_crowd2d_step(crowd, DT);
+      cw_navgrid_cell_at(hex, cw_crowd2d_position(crowd, ag), &x, &y);
+      in_wall += !cw_navgrid_walkable(hex, x, y);
+    }
+    cw_crowd2d_get_state(crowd, ag, &s);
+    CHECK(s.status == CW_CROWD2D_ARRIVED && in_wall == 0);
+    if (s.status != CW_CROWD2D_ARRIVED) cw_error("hex %d agent status %d at %g %g, %d in wall", kind, s.status, (double)s.position.x, (double)s.position.y, in_wall);
+    FOLD(s.position);
+    /* an obstacle covers the hexagons whose middle it holds */
+    uint32_t ob = cw_navgrid_obstacle_add_circle(hex, cw_navgrid_cell_center(hex, 2, 2), 6);
+    CHECK(!cw_navgrid_walkable(hex, 2, 2) && cw_navgrid_walkable(hex, 3, 2) && cw_navgrid_walkable(hex, 2, 3));
+    cw_navgrid_obstacle_remove(hex, ob);
+    CHECK(cw_navgrid_walkable(hex, 2, 2));
+    cw_navgrid_free(hex);
+  }
+}
+
+CW_TEST_SUITE("nav2d", { "layouts", t_layouts }, { "grid", t_grid }, { "jps_equals_astar", t_jps_equals_astar }, { "paths", t_paths }, { "costs", t_costs },
               { "flow", t_flow }, { "crowd", t_crowd }, { "nodes", t_nodes })

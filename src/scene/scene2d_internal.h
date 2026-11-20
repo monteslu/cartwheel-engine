@@ -106,7 +106,17 @@ typedef struct cw__tilemap_info {
   int32_t ext_x, ext_y;         /* a cell's extent in shape units: tile size * CW__TILE_SUB */
   uint32_t serial, epoch;
   const char *tile_shapes;      /* interned: a change means every shape may have changed */
+  int layout;                   /* cw_tile_layout */
 } cw__tilemap_info;
+/* Where cell (x, y)'s box starts, in shape units (what cw_tile_layout_cell_origin gives in pixels). */
+static inline void cw__tile_cell_offset(const cw__tilemap_info *in, int x, int y, int32_t *ox, int32_t *oy) {
+  switch (in->layout) {
+  case CW_TILE_LAYOUT_ISOMETRIC: *ox = (x - y - 1) * (in->ext_x / 2), *oy = (x + y) * (in->ext_y / 2); break;
+  case CW_TILE_LAYOUT_HEX_ROWS: *ox = x * in->ext_x + ((y & 1) ? in->ext_x / 2 : 0), *oy = y * (in->ext_y / 4 * 3); break;
+  case CW_TILE_LAYOUT_HEX_COLUMNS: *ox = x * (in->ext_x / 4 * 3), *oy = y * in->ext_y + ((x & 1) ? in->ext_y / 2 : 0); break;
+  default: *ox = x * in->ext_x, *oy = y * in->ext_y;
+  }
+}
 bool cw__tilemap2d_info(cw_node n, cw__tilemap_info *out); /* false when n is not a TileMap2D */
 /* The shape of the tile in a cell with the cell's flips applied; kind 0 when empty, outside or shapeless. */
 void cw__tilemap2d_cell_shape(cw_node n, int layer, int x, int y, cw__tile_shape *out);

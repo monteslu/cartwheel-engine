@@ -33,7 +33,10 @@
  *   Label2D           text, font, font_mode (SDF|BITMAP), bake_size, size, color,
  *                     align (LEFT|CENTER|RIGHT), wrap_width, line_spacing, letter_spacing
  *                     (the text box's top-left sits at the node's origin)
- *   TileMap2D         tileset (texture), filter, tile_size, margin, spacing,
+ *   TileMap2D         layout (SQUARE | ISOMETRIC | HEX_ROWS | HEX_COLUMNS: where
+ *                     cells sit, cartwheel/render2d.h cw_tile_layout; the
+ *                     cell is cell_size, the diamond's or hexagon's box),
+ *                     tileset (texture), filter, tile_size, margin, spacing,
  *                     columns, cell_size, layers (1..8), cells0..cells7,
  *                     animations ("4:2@6; 10:4@8" : tile id, frame count, fps).
  *                     Cells text form: rows separated by '/', cells by spaces;
@@ -46,7 +49,9 @@
  *                     tile_shapes: a collision shape per tile id, in tile
  *                     pixels (y down, origin the tile's top-left), entries
  *                     separated by ';', ids as lists and ranges:
- *                       "1-4, 9: full"            the whole cell
+ *                       "1-4, 9: full"            the whole cell (the diamond of an
+ *                                                 isometric map, the hexagon of a
+ *                                                 hex map)
  *                       "5: slope 0 16"           a floor whose height over the
  *                                                 cell's bottom is 0 at the left
  *                                                 edge and 16 at the right
@@ -245,7 +250,7 @@ void cw_animated_sprite2d_stop(cw_node n); /* pauses on the current frame; no-op
 void cw_tilemap2d_set_cell(cw_node n, int layer, int x, int y, int tile, uint32_t flags);
 int cw_tilemap2d_get_cell(cw_node n, int layer, int x, int y); /* -1 empty or outside */
 void cw_tilemap2d_size(cw_node n, int *w, int *h); /* in cells, over all layers; 0 x 0 when not a TileMap2D */
-/* Local node position -> cell (floor), using cell_size. */
+/* Local node position -> the cell whose shape (square, diamond, hexagon: the map's layout) holds it. */
 void cw_tilemap2d_local_to_cell(cw_node n, cw_vec2 local, int *x, int *y);
 
 /* A cell's raw value: tile id + 1 in the low 24 bits (0 = empty) and the CW_TILE_FLIP_* flags (render2d.h);
@@ -254,7 +259,7 @@ uint32_t cw_tilemap2d_get_raw(cw_node n, int layer, int x, int y);
 /* Sets a cell from a raw value (cw_tilemap2d_get_raw's); grows the map like cw_tilemap2d_set_cell. */
 void cw_tilemap2d_set_raw(cw_node n, int layer, int x, int y, uint32_t cell);
 cw_vec2 cw_tilemap2d_cell_size(cw_node n); /* a cell's size in the node's pixels: cell_size, else tile_size */
-cw_vec2 cw_tilemap2d_cell_center(cw_node n, int x, int y); /* local node position of a cell's middle */
+cw_vec2 cw_tilemap2d_cell_center(cw_node n, int x, int y); /* local node position of a cell's middle, in the map's layout */
 
 /* ── tile collision ────────────────────────────────────────────────────
  * The tile set says what each tile is made of (TileMap2D tile_shapes), and
