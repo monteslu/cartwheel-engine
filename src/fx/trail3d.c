@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "fx_internal.h"
+#include "render/pipeline_internal.h"
 #include "fx_wgpu.h"
 
 #define TRAIL3D_MAX 1024
@@ -26,8 +27,9 @@ typedef struct trail3d {
   int cap, head, count;
   GLuint vbo;
   int vbo_cap;
-  void *wvbo, *wubo; /* WebGPU: vertices, uniforms */
-  int wvbo_cap;
+  /* WebGPU: vertices, uniforms (a one-pass split screen's views each their own: one submit for all) */
+  void *wvbo_v[CW_MAX_VIEWS], *wubo_v[CW_MAX_VIEWS];
+  int wvbo_cap_v[CW_MAX_VIEWS];
   const char *baked;
   float ramp[RAMP_N * 4];
 } trail3d;
@@ -71,9 +73,11 @@ static void trail_destroy(cw_node n, void *data) {
   if (t->vbo) glDeleteBuffers(1, &t->vbo);
   t->vbo = 0;
 #if CW_WGPU
-  if (t->wvbo) wgpuBufferRelease(t->wvbo);
-  if (t->wubo) wgpuBufferRelease(t->wubo);
-  t->wvbo = t->wubo = NULL;
+  for (int k = 0; k < CW_MAX_VIEWS; k++) {
+    if (t->wvbo_v[k]) wgpuBufferRelease(t->wvbo_v[k]);
+    if (t->wubo_v[k]) wgpuBufferRelease(t->wubo_v[k]);
+    t->wvbo_v[k] = t->wubo_v[k] = NULL;
+  }
 #endif
 }
 
@@ -166,26 +170,34 @@ static void draw_wgpu(trail3d *t, cw_pass_ctx *ctx, const float *v, int nv) {
   if (!tg || !tg->enc) return;
   WGPURenderPipeline pipe = trail_pipe(t->blend, tg);
   if (!pipe) return;
-  if (t->wvbo_cap < nv) {
-    if (t->wvbo) wgpuBufferRelease(t->wvbo);
-    t->wvbo_cap = nv + 64;
-    t->wvbo = cw__wg_buffer(sizeof(float) * 7 * (size_t)t->wvbo_cap, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst, "trail3d");
+  int vk = ctx->view_count > 0 ? CW_CLAMP(ctx->view_index, 0, CW_MAX_VIEWS - 1) : 0;
+  void **wvbo = &t->wvbo_v[vk], **wubo = &t->wubo_v[vk];
+  if (t->wvbo_cap_v[vk] < nv) {
+    if (*wvbo) wgpuBufferRelease(*wvbo);
+    t->wvbo_cap_v[vk] = nv + 64;
+    *wvbo = cw__wg_buffer(sizeof(float) * 7 * (size_t)t->wvbo_cap_v[vk], WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst, "trail3d");
   }
-  if (!t->wubo) t->wubo = cw__wg_buffer(80, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst, "trail3d u");
-  cw__wg_write(t->wvbo, 0, v, sizeof(float) * 7 * (size_t)nv);
+  if (!*wubo) *wubo = cw__wg_buffer(80, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst, "trail3d u");
+  cw__wg_write(*wvbo, 0, v, sizeof(float) * 7 * (size_t)nv);
   float u[20] = { 0 };
   t3_mat4 vp;
   t3_mat4_multiply(&vp, &ctx->camera->projection_matrix, &ctx->view);
   memcpy(u, vp.e, 64);
   u[16] = (float)t->blend;
   u[17] = tg->flip_y ? -1.0f : 1.0f;
-  cw__wg_write(t->wubo, 0, u, sizeof u);
-  cw__wg_entry e = { .buffer = t->wubo };
+  cw__wg_write(*wubo, 0, u, sizeof u);
+  cw__wg_entry e = { .buffer = *wubo };
   WGPUBindGroup bg = cw__wg_group(tbgl, &e, 1);
   WGPURenderPassEncoder rp = cw__wg_scene_pass(tg, true, "trail3d");
+  if (ctx->view_count > 0) { /* a one-pass split screen's view: its rectangle */
+    int vr[4];
+    cw__view_fb_rect(ctx, tg->w, tg->h, !tg->flip_y, vr);
+    wgpuRenderPassEncoderSetViewport(rp, (float)vr[0], (float)vr[1], (float)vr[2], (float)vr[3], 0, 1);
+    wgpuRenderPassEncoderSetScissorRect(rp, (uint32_t)vr[0], (uint32_t)vr[1], (uint32_t)vr[2], (uint32_t)vr[3]);
+  }
   wgpuRenderPassEncoderSetPipeline(rp, pipe);
   wgpuRenderPassEncoderSetBindGroup(rp, 0, bg, 0, NULL);
-  wgpuRenderPassEncoderSetVertexBuffer(rp, 0, t->wvbo, 0, WGPU_WHOLE_SIZE);
+  wgpuRenderPassEncoderSetVertexBuffer(rp, 0, *wvbo, 0, WGPU_WHOLE_SIZE);
   wgpuRenderPassEncoderDraw(rp, (uint32_t)nv, 1, 0, 0);
   wgpuRenderPassEncoderEnd(rp);
   wgpuRenderPassEncoderRelease(rp);
@@ -250,6 +262,7 @@ void cw__trail3d_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
     t->vbo_cap = nv;
   } else glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(sizeof(float) * 7 * (size_t)nv), v);
   cw_pass_bind_target(ctx, ctx->scene);
+  cw_pass_view_viewport(ctx);
   glBindVertexArray(cw__fx_empty_vao());
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 28, 0);

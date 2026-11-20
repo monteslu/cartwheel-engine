@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "particles3d_internal.h"
+#include "render/pipeline_internal.h"
 #include "cartwheel/quality.h"
 #include "cartwheel/profile.h"
 
@@ -143,11 +144,12 @@ static const char WGSL_SIM[] =
     "  }\n"
     "}\n"
     /* GL window depth at uv (GL convention: y up) from the linear depth */
+    /* (a one-pass split screen's view: its rectangle, corner at campos.w, depth.w in GL rows) */
     "fn wdepth(uv: vec2f) -> f32 {\n"
     "  let w = i32(S.depth.x); let h = i32(S.depth.y);\n"
-    "  let x = clamp(i32(floor(uv.x * S.depth.x)), 0, w - 1);\n"
-    "  var y = clamp(i32(floor(uv.y * S.depth.y)), 0, h - 1);\n"
-    "  if (S.depth.z < 0.5) { y = h - 1 - y; }\n"
+    "  let x = clamp(i32(floor(uv.x * S.depth.x)), 0, w - 1) + i32(S.campos.w);\n"
+    "  var y = clamp(i32(floor(uv.y * S.depth.y)), 0, h - 1) + i32(S.depth.w);\n"
+    "  if (S.depth.z < 0.5) { y = i32(textureDimensions(depth).y) - 1 - y; }\n"
     "  let z = textureLoad(depth, vec2i(x, y), 0).r;\n"
     "  if (z <= 0.0 || z > 1e30) { return 1.0; }\n"
     "  let cz = S.proj[2].z * -z + S.proj[3].z; let cw = S.proj[2].w * -z + S.proj[3].w;\n"
@@ -708,6 +710,7 @@ typedef struct pw {
   /* sort */
   int sort_n, npass;
   WGPUBuffer keys, sorted, sort_u, pass_u;
+  WGPUBuffer sort_uv[CW_MAX_VIEWS]; /* a one-pass split screen's later views: their own sort uniforms (one submit for all) */
   /* stats */
   int groups;
   WGPUBuffer part, red_u;
@@ -745,6 +748,7 @@ static void free_pw(pw *w) {
   WGPUBuffer *bufs[] = { &w->state, &w->sys_u, &w->step_u, &w->draw_u, &w->emit, &w->keys, &w->sorted,
                          &w->sort_u, &w->pass_u, &w->part, &w->red_u, &w->mesh_vb, &w->mesh_ib };
   for (size_t i = 0; i < CW_ARRAY_LEN(bufs); i++) rel_buf(bufs[i]);
+  for (int v = 0; v < CW_MAX_VIEWS; v++) rel_buf(&w->sort_uv[v]);
   free_hist(w);
   rel_tex(&w->stex, &w->stex_v);
   rel_tex(&w->curve, &w->curve_v);
@@ -1047,9 +1051,13 @@ bool cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, W
       f[32] = c3.x;
       f[33] = c3.y;
       f[34] = c3.z;
-      f[36] = (float)tg->w;
-      f[37] = (float)tg->h;
+      int vr[4]; /* a one-pass split screen's view: its rectangle, in GL rows */
+      cw__view_fb_rect(ctx, tg->w, tg->h, false, vr);
+      f[35] = (float)vr[0];
+      f[36] = (float)vr[2];
+      f[37] = (float)vr[3];
       f[38] = tg->flip_y ? 1.0f : 0.0f;
+      f[39] = (float)vr[1];
       put_mat(f + 40, &ctx->view_proj);
       put_mat(f + 56, &ctx->inv_view_proj);
       put_mat(f + 72, &ctx->proj);
@@ -1141,9 +1149,14 @@ bool cw__psys_frame_wgpu(cw_node n, p3d *d, cw_pass_ctx *ctx, cw__fx_tree *ft, W
     uint32_t a[4] = { (uint32_t)d->amount, (uint32_t)w->sort_n, G.fault == 2 ? 1u : 0u, 0 };
     memcpy(su, a, 16);
     memcpy(su + 4, mv.e, 64);
-    cw__wg_write(w->sort_u, 0, su, sizeof su);
+    WGPUBuffer sort_u = w->sort_u;
+    if (ctx->view_count > 0 && ctx->view_index > 0 && ctx->view_index < CW_MAX_VIEWS) {
+      if (!w->sort_uv[ctx->view_index]) w->sort_uv[ctx->view_index] = cw__wg_buffer(80, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst, "particles sort u");
+      sort_u = w->sort_uv[ctx->view_index];
+    }
+    cw__wg_write(sort_u, 0, su, sizeof su);
     if (!cp) cp = wgpuCommandEncoderBeginComputePass(enc, &(WGPUComputePassDescriptor){ .label = SV("particles") });
-    cw__wg_entry e[5] = { { .buffer = w->sort_u }, { .buffer = w->pass_u, .size = 16 }, { .buffer = w->keys },
+    cw__wg_entry e[5] = { { .buffer = sort_u }, { .buffer = w->pass_u, .size = 16 }, { .buffer = w->keys },
                           { .buffer = w->state }, { .buffer = w->sorted } };
     WGPUBindGroup bg = cw__wg_group(G.sort_bgl, e, 5);
     uint32_t zero = 0;

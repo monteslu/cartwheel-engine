@@ -12,6 +12,7 @@
 #include "cartwheel/platform.h"
 #include "cartwheel/render3d.h"
 #include "pipeline_internal.h"
+#include "view_layers.h"
 #include "quality_internal.h"
 #include "shadow_cull.h"
 #include "pipeline_wgpu.h"
@@ -824,7 +825,11 @@ static bool test_skipped(const char *name) {
     skip = getenv("CW_TEST_SKIP_PASS");
     if (skip && *skip) cw_warn("CW_TEST_SKIP_PASS: pass '%s' never runs (a gate control)", skip);
   }
-  return skip && !strcmp(skip, name);
+  if (!skip) return false;
+  size_t n = strlen(name); /* a comma separated list */
+  for (const char *q = skip; (q = strstr(q, name)) != NULL; q += n)
+    if ((q == skip || q[-1] == ',') && (q[n] == 0 || q[n] == ',')) return true;
+  return false;
 #endif
 }
 
@@ -1034,9 +1039,15 @@ static const cw_rt *array_run(cw_tree *t, cw_pipeline *p, const cw_rt *out, doub
     p->arr_nodes[k] = v->camera;
     p->arr_cams[k] = cw__render3d_view_camera(v->camera, vw, vh);
     if (!p->arr_cams[k]) return NULL;
+    /* the geometry drawn for this view only (src/render/view_layers.h): its layer, where a view drawn alone sees
+     * layer 0 (the camera's other layers as they are) */
+    uint32_t L = p->arr_cams[k]->base.layers & ~CW__VIEW_LAYERS;
+    p->arr_cams[k]->base.layers = L | ((p->arr_cams[k]->base.layers & 1u) ? cw__view_layer(k) : 0);
     int r[4] = { x0, H - ytop - vh, vw, vh };
     memcpy(p->arr_rect[k], r, sizeof r);
-    t3_array_camera_add(p->arr_cam, p->arr_cams[k], x0, ytop, vw, vh);
+    /* (three.c places a viewport from the target's top row; the WebGPU scene target is drawn flipped, its rows
+     * bottom-up as GL's, so there the top row of the picture is the target's last) */
+    t3_array_camera_add(p->arr_cam, p->arr_cams[k], x0, cw_gpu_backend() == CW_GPU_WEBGPU ? r[1] : ytop, vw, vh);
   }
   p->arr_n = n;
   const cw_rt *pic = cw_pipeline_rt_persistent(p, "views.arr", W, H, vf, NULL);
@@ -1179,7 +1190,7 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   p->output_user = keep_out;
   p->s.taa = keep_taa;
   /* shared post: the views laid out into one HDR picture, the chain's input */
-  const cw_rt *laid = p->view_post_split && n ? cw_pipeline_rt_persistent(p, "views.post", out_copy.w, out_copy.h, vf, NULL) : NULL;
+  const cw_rt *laid = p->view_post_split && (n || arr_pic) ? cw_pipeline_rt_persistent(p, "views.post", out_copy.w, out_copy.h, vf, NULL) : NULL;
   if (arr_pic) views_composite_array(p, t, laid ? laid : &out_copy, arr_pic, p->nviews);
   else if (n) views_composite(p, t, laid ? laid : &out_copy, rts, n);
   p->post_src = laid;
@@ -1205,13 +1216,31 @@ static void array_view(cw_pass_ctx *ctx, cw_pipeline *p, int k) {
   ctx->prev_view_proj = vp->have && vp->w == p->arr_rect[k][2] && vp->h == p->arr_rect[k][3] ? vp->vp : ctx->view_proj;
   ctx->view_index = k;
   memcpy(ctx->view_rect, p->arr_rect[k], sizeof ctx->view_rect);
+  /* a gate control (CW_TEST_VIEWS_ARRAY_SHIFT=1): each view's passes draw a rectangle off by its width (its height
+   * for a view as wide as the target; wrapped round the target), the scene where it belongs */
+  static int shift = -1;
+  if (shift < 0) {
+    const char *e = cw_test_env("CW_TEST_VIEWS_ARRAY_SHIFT");
+    shift = e && *e ? atoi(e) != 0 : 0;
+    if (!e) shift = -1; /* (not read yet on a cart's first frame: ask again) */
+  }
+  if (shift > 0 && ctx->view_rect[2] < ctx->width) ctx->view_rect[0] = (ctx->view_rect[0] + ctx->view_rect[2]) % CW_MAX(ctx->width, 1);
+  else if (shift > 0) ctx->view_rect[1] = (ctx->view_rect[1] + ctx->view_rect[3]) % CW_MAX(ctx->height, 1);
   cw__vclip.on = true;
-  memcpy(cw__vclip.rect, p->arr_rect[k], sizeof cw__vclip.rect);
+  memcpy(cw__vclip.rect, ctx->view_rect, sizeof cw__vclip.rect);
   cw__vclip.full_w = ctx->width;
   cw__vclip.full_h = ctx->height;
+  if (cw_gpu_backend() != CW_GPU_WEBGPU) { /* (each view's pass starts from the whole target, as a lone view's) */
+    glViewport(0, 0, cw__vclip.bound_w, cw__vclip.bound_h);
+    glDisable(GL_SCISSOR_TEST);
+  }
 }
 static void array_view_end(cw_pass_ctx *ctx, cw_pipeline *p) {
   cw__vclip.on = false;
+  if (cw_gpu_backend() != CW_GPU_WEBGPU) {
+    glViewport(0, 0, cw__vclip.bound_w, cw__vclip.bound_h);
+    glDisable(GL_SCISSOR_TEST);
+  }
   ctx->view_index = -1;
   ctx->camera = p->arr_cams[0];
   ctx->camera_node = p->arr_nodes[0];

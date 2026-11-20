@@ -482,9 +482,16 @@ static void terrain_exec(cw_pass_ctx *ctx, void *u) {
   if (!tt || !ctx->camera) return;
   t3_object *cam = &ctx->camera->base;
   t3_vec3 cp = { cam->matrix_world.e[12], cam->matrix_world.e[13], cam->matrix_world.e[14] };
+  /* one-pass split screen: the pass runs once per view, each selecting its own patches and scatter (its own meshes,
+   * on its view's layer); the first view's run does the frame's work (uploads, physics) as a lone view's does */
+  int view = ctx->view_count > 0 ? ctx->view_index : 0, views = ctx->view_count > 0 ? ctx->view_count : 0;
   for (int i = 0; i < tt->nodes.count; i++) {
     terrain3d *d = cw_node_data_t(tt->nodes.data[i], terrain_t);
     if (!d) continue;
+    if (view > 0) {
+      if (d->t && d->shown) cw__terrain_update_view(d->t, view, views, cp, &ctx->view_proj);
+      continue;
+    }
     terrain_sync(tt->nodes.data[i], d);
     if (!d->t) continue;
     cw_terrain_add_to_scene(d->t, ctx->scene3d);
@@ -493,7 +500,7 @@ static void terrain_exec(cw_pass_ctx *ctx, void *u) {
       cw_terrain_bind_renderer(d->t, ctx->renderer);
       d->bound = ctx->renderer;
     }
-    cw_terrain_update(d->t, cp, &ctx->view_proj);
+    cw__terrain_update_view(d->t, 0, views, cp, &ctx->view_proj);
   }
 }
 
@@ -509,7 +516,7 @@ static void terrain_enter(cw_node n, void *data) {
   cw_pipeline *p = cw_pipeline_of(t);
   if (!cw_pipeline_has_pass(p, "terrain"))
     cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "terrain", .phase = CW_PHASE_SHADOW, .order = 1500,
-                                             .execute = terrain_exec });
+                                             .execute = terrain_exec, .views = CW_PASS_VIEWS_EACH });
   d->tree = t;
 }
 

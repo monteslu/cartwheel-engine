@@ -313,6 +313,12 @@ void cw__view_clip_rect(int w, int h, int out[4]) {
   int x1 = (int)((long long)(v->rect[0] + v->rect[2]) * w / v->full_w), y1 = (int)((long long)(v->rect[1] + v->rect[3]) * h / v->full_h);
   out[0] = x0, out[1] = y0, out[2] = CW_MAX(1, x1 - x0), out[3] = CW_MAX(1, y1 - y0);
 }
+void cw__view_fb_rect(const cw_pass_ctx *ctx, int w, int h, bool top_down, int out[4]) {
+  out[0] = out[1] = 0, out[2] = w, out[3] = h;
+  if (!ctx || ctx->view_count <= 0 || !cw__vclip.on) return;
+  cw__view_clip_rect(w, h, out);
+  if (top_down) out[1] = h - out[1] - out[3];
+}
 void cw_pass_view_uv(const cw_pass_ctx *ctx, float out[4]) {
   if (!ctx || ctx->view_count <= 0 || ctx->width <= 0 || ctx->height <= 0) {
     out[0] = out[1] = 0, out[2] = out[3] = 1;

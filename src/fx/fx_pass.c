@@ -69,7 +69,7 @@ void cw__fx_ensure_pass(cw_tree *t) {
   cw_pipeline *p = cw_pipeline_of(t);
   cw__fx_ensure_distort(t);
   if (!cw_pipeline_has_pass(p, "particles"))
-    cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "particles", .phase = CW_PHASE_EFFECTS, .order = 200,
+    cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "particles", .phase = CW_PHASE_EFFECTS, .order = 200, .views = CW_PASS_VIEWS_EACH,
                                              .reads = CW_RES_DEPTH, .writes = CW_RES_COLOR,
                                              .active = particles_active, .execute = particles_exec });
   ft->pass_added = true;

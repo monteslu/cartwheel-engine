@@ -244,6 +244,9 @@ typedef struct cw__view_clip { bool on; int rect[4]; int full_w, full_h; int bou
 extern cw__view_clip cw__vclip;
 /* the rectangle scaled to a target of w x h */
 void cw__view_clip_rect(int w, int h, int out[4]);
+/* the view's rectangle in a w x h target's framebuffer rows (top_down: row 0 at the top, as a WebGPU pass on a target
+ * not drawn flipped); the whole target outside a one-pass split screen's view */
+void cw__view_fb_rect(const cw_pass_ctx *ctx, int w, int h, bool top_down, int out[4]);
 void cw__pw_set_scissor(const int *rect); /* WebGPU: NULL = the whole target */
 /* a pass's split screen capability, from the next frame (cw_pass_desc.views: a pass that can only sometimes) */
 void cw__pipeline_set_pass_views(cw_pipeline *p, const char *name, uint8_t views);

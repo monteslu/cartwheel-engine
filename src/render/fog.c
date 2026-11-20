@@ -61,9 +61,10 @@ static const char FOG_FN[] =
     "}\n";
 static const char FOG_MAIN[] =
     "uniform sampler2D u_depth;\n"
+    "uniform vec4 u_view; /* the view's rectangle in uv (a one-pass split screen's; 0, 0, 1, 1 otherwise) */\n"
     "out vec4 o;\n"
     "void main() {\n"
-    "\tvec4 f = fog_eval( v_uv, texture( u_depth, v_uv ).r );\n"
+    "\tvec4 f = fog_eval( ( v_uv - u_view.xy ) / u_view.zw, texture( u_depth, v_uv ).r );\n"
     "\tif ( f.a < 0.0 ) discard;\n"
     "\to = f;\n"
     "}\n";
@@ -134,6 +135,9 @@ static void fog_exec(cw_pass_ctx *ctx, void *user) {
   cw_pass_bind_texture(0, ctx->depth_tex);
   cw_pass_uniform1i(pr, "u_depth", 0);
   fog_uniforms(ctx, pr, p, color, sun, sun_color);
+  float vu[4];
+  cw_pass_view_uv(ctx, vu);
+  cw_pass_uniform4f(pr, "u_view", vu[0], vu[1], vu[2], vu[3]);
   cw_pass_set_blend(CW_PASS_BLEND_PREMUL);
   cw_pass_fullscreen();
   cw_pass_set_blend(CW_PASS_BLEND_NONE);
@@ -158,7 +162,7 @@ static fog_rt *fog_of(cw_tree *t) {
   cw_pipeline_add_pass(cw_pipeline_of(t), &(cw_pass_desc){ .name = "height_fog", .phase = CW_PHASE_EFFECTS, .order = 300,
                                                            .reads = CW_RES_DEPTH, .writes = CW_RES_COLOR,
                                                            .active = fog_active, .execute = fog_exec, .user = f,
-                                                           .webgpu = true });
+                                                           .webgpu = true, .views = CW_PASS_VIEWS_EACH });
   return f;
 }
 

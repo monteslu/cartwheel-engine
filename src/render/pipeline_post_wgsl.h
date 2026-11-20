@@ -1208,11 +1208,11 @@ WGSL_DECL WGSL_FOG_FN = S(
     return vec4f(inscatter, fog);
   });
 
-WGSL_DECL WGSL_FOG = "struct U { " WGSL_FOG_FIELDS "u_pz: vec4f };\n" S(
+WGSL_DECL WGSL_FOG = "struct U { " WGSL_FOG_FIELDS "u_pz: vec4f, u_view: vec4f };\n" S(
   @group(0) @binding(0) var<uniform> u: U;
   @group(0) @binding(1) var u_depth: texture_2d<f32>;
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
-    let f = fog_eval(uv, win_depth(cw_load(u_depth, uv).r, u.u_pz));
+    let f = fog_eval((uv - u.u_view.xy) / u.u_view.zw, win_depth(cw_load(u_depth, uv).r, u.u_pz));
     if (f.a < 0.0) { discard; }
     return f;
   });

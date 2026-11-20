@@ -8,6 +8,7 @@
 
 #include "cartwheel/jobs.h"
 #include "particles3d_internal.h"
+#include "render/pipeline_internal.h"
 #include "cartwheel/quality.h"
 
 t3_mesh *cw__mesh3d_t3(cw_node n); /* src/scene/render3d.c */
@@ -146,6 +147,7 @@ static const char *const sim_vs =
     "uniform sampler2D u_depth;\n"
     "uniform mat4 u_vp, u_ivp;\n"
     "uniform vec2 u_texel;\n"
+    "uniform vec4 u_dview;\n" /* the view's rectangle in the depth's uv (a one-pass split screen's; 0, 0, 1, 1 otherwise) */
     "uniform float u_thick;\n"
     "uniform vec3 u_campos;\n"
     "uniform sampler2D u_emit;\n"
@@ -239,20 +241,21 @@ static const char *const sim_vs =
     "  vec4 w = u_ivp * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);\n"
     "  return w.xyz / w.w;\n"
     "}\n"
+    "float dsamp(vec2 uv) { return texture(u_depth, u_dview.xy + uv * u_dview.zw).r; }\n"
     "void depth_collide(inout vec3 p, inout vec3 v) {\n"
     "  vec4 c = u_vp * vec4(p, 1.0);\n"
     "  if (c.w <= 0.0) return;\n"
     "  vec3 ndc = c.xyz / c.w;\n"
     "  if (abs(ndc.x) >= 0.995 || abs(ndc.y) >= 0.995) return;\n"
     "  vec2 uv = ndc.xy * 0.5 + 0.5;\n"
-    "  float ds = texture(u_depth, uv).r;\n"
+    "  float ds = dsamp(uv);\n"
     "  if (ds >= 1.0) return;\n"
     "  vec3 S = unproject(uv, ds);\n"
     "  float dp = distance(u_campos, p), dsur = distance(u_campos, S);\n"
     "  if (dp < dsur - 2.0 * u_coll.z - 0.05 || dp > dsur + u_thick) return;\n"
     "  vec2 ox = vec2(u_texel.x, 0.0), oy = vec2(0.0, u_texel.y);\n"
-    "  vec3 Sx1 = unproject(uv + ox, texture(u_depth, uv + ox).r), Sx0 = unproject(uv - ox, texture(u_depth, uv - ox).r);\n"
-    "  vec3 Sy1 = unproject(uv + oy, texture(u_depth, uv + oy).r), Sy0 = unproject(uv - oy, texture(u_depth, uv - oy).r);\n"
+    "  vec3 Sx1 = unproject(uv + ox, dsamp(uv + ox)), Sx0 = unproject(uv - ox, dsamp(uv - ox));\n"
+    "  vec3 Sy1 = unproject(uv + oy, dsamp(uv + oy)), Sy0 = unproject(uv - oy, dsamp(uv - oy));\n"
     "  vec3 dx = distance(Sx1, S) < distance(Sx0, S) ? Sx1 - S : S - Sx0;\n"
     "  vec3 dy = distance(Sy1, S) < distance(Sy0, S) ? Sy1 - S : S - Sy0;\n"
     "  vec3 n = cross(dx, dy);\n"
@@ -1189,7 +1192,10 @@ static void run_steps(cw_node n, p3d *d, cw__psys *r, cw_pass_ctx *ctx, cw__fx_t
   if (depth) {
     cw__fx_mat4(p, "u_vp", ctx->view_proj.e);
     cw__fx_mat4(p, "u_ivp", ctx->inv_view_proj.e);
-    cw__fx_u2f(p, "u_texel", 1.0f / (float)ctx->width, 1.0f / (float)ctx->height);
+    float vu[4];
+    cw_pass_view_uv(ctx, vu);
+    cw__fx_u2f(p, "u_texel", 1.0f / ((float)ctx->width * vu[2]), 1.0f / ((float)ctx->height * vu[3]));
+    cw__fx_u4f(p, "u_dview", vu[0], vu[1], vu[2], vu[3]);
     cw__fx_u1f(p, "u_thick", d->depth_thickness);
     t3_vec3 cp3 = t3_mat4_get_position(&ctx->camera->base.matrix_world);
     cw__fx_u3f(p, "u_campos", cp3.x, cp3.y, cp3.z);
@@ -1407,6 +1413,16 @@ typedef struct psys_prep { bool ok, sorted, have_state, want_trail, distort; t3_
 static void psys_prepare(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, psys_prep *out);
 static void psys_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, const psys_prep *pp);
 
+#if CW_WGPU
+/* a one-pass split screen's view: its draws into its rectangle */
+static void view_rect_wgpu(WGPURenderPassEncoder rp, const cw_pass_ctx *ctx, const cw__wgpu_pass_targets *tg) {
+  if (ctx->view_count <= 0) return;
+  int vr[4];
+  cw__view_fb_rect(ctx, tg->w, tg->h, !tg->flip_y, vr);
+  wgpuRenderPassEncoderSetViewport(rp, (float)vr[0], (float)vr[1], (float)vr[2], (float)vr[3], 0, 1);
+  wgpuRenderPassEncoderSetScissorRect(rp, (uint32_t)vr[0], (uint32_t)vr[1], (uint32_t)vr[2], (uint32_t)vr[3]);
+}
+#endif
 void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft) {
   ft->copy = NULL;
   for (int i = 0; i < ft->systems.count; i++)
@@ -1454,6 +1470,7 @@ void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft) {
     }
     if (main_any) {
       WGPURenderPassEncoder rp = cw__wg_scene_pass(base, true, "particles");
+      view_rect_wgpu(rp, ctx, base);
       for (int i = 0; i < n; i++) {
         p3d *d = cw_node_data_t(ft->systems.data[i], p3d_t);
         if (draws[i] && d->blend != BLEND_DISTORT) cw__psys_draw_wgpu(rp, ft->systems.data[i], d, ctx, ft, base);
@@ -1471,6 +1488,7 @@ void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft) {
       dt.samples = 1;
       dt.resolve = NULL;
       WGPURenderPassEncoder rp = cw__wg_scene_pass(&dt, false, "particles.distort");
+      view_rect_wgpu(rp, ctx, &dt);
       for (int i = 0; i < n; i++) {
         p3d *d = cw_node_data_t(ft->systems.data[i], p3d_t);
         if (draws[i] && d->blend == BLEND_DISTORT) cw__psys_draw_wgpu(rp, ft->systems.data[i], d, ctx, ft, &dt);
@@ -1563,6 +1581,7 @@ static void psys_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, const psys_p
   if (d->blend == BLEND_REFRACT && !ft->copy) return;
   /* draw into the scene target (DISTORT: the distortion buffer, depth tested in the shader) */
   cw_pass_bind_target(ctx, dist ? dist : ctx->scene);
+  cw_pass_view_viewport(ctx); /* (a one-pass split screen's view: its rectangle) */
   glEnable(GL_DEPTH_TEST);
   if (dist) glDisable(GL_DEPTH_TEST);
   glDepthFunc(GL_LEQUAL);
