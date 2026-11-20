@@ -17,6 +17,10 @@
  * (tests/split-gpu-share.mjs: the same picture with fewer resolves, and with
  * the prepass).
  *
+ * VIEWMODEL_PAN=1 turns the camera 0.04 rad a tick (the gun turns with it and stays where it is on the screen),
+ * VIEWMODEL_BLUR=1 turns motion blur on and VIEWMODEL_HIDE=1 hides the gun (tests/viewmodel-blur.mjs: the world
+ * blurs, the gun does not).
+ *
  * Debug state: vm.on (1 with the viewmodel layers), vm.layers (the gun's
  * Node3D layers), vm.fov (the viewmodel lens), vm.tick, and on GL vm.wall_ok:
  * a point of the low wall left of the gun reads its light stone colour (1; 0
@@ -34,6 +38,7 @@
 static int32_t on, gun_layers, wall_ok = -1, wall_px[3];
 static float vm_fov;
 static uint32_t tick;
+static bool pan;
 
 static cw_node node(const char *path) { return cw_node_get(cw_tree_root(cw_scene_app_tree()), path); }
 
@@ -66,6 +71,9 @@ static void test_switches(void) {
     cw_node_set(gun, "layers", cw_val_int(1));
     cw_node_set(cam, "viewmodel_layers", cw_val_int(0));
   }
+  if ((e = cw_test_env("VIEWMODEL_BLUR")) && *e == '1') cw_node_set(node("World/Post"), "motion_blur", cw_val_bool(true));
+  if ((e = cw_test_env("VIEWMODEL_HIDE")) && *e == '1') cw_node_set(gun, "visible", cw_val_bool(false));
+  pan = (e = cw_test_env("VIEWMODEL_PAN")) && *e == '1';
   cw_value v;
   if (cw_node_get_prop(cam, "viewmodel_layers", &v)) on = v.i != 0;
   if (cw_node_get_prop(gun, "layers", &v)) gun_layers = (int32_t)v.i;
@@ -76,6 +84,7 @@ static void fixed_update(void *u, double dt) {
   (void)dt;
   test_switches();
   tick++;
+  if (pan) cw_node3d_set_rotation(node("World/Camera"), (t3_vec3){ 0, (float)tick * 0.04f, 0 });
 }
 
 /* after the frame is drawn (GL): the line to (-1.5, 0, -2.5) on the floor meets the low wall, left of the gun */

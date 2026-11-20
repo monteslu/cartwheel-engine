@@ -3927,6 +3927,11 @@
     "note": "the player's reduced motion setting turns motion blur off: the pass does not run (post.passes without its bit) and the bar is sharp. Control: the setting off, the blurred picture"
   },
   {
+    "name": "viewmodel-blur",
+    "script": "tests/viewmodel-blur.mjs",
+    "note": "motion blur under a fast camera turn leaves the first person viewmodel sharp (its pixels within 3 levels of the unblurred frame) while the world blurs, GL and WebGPU; control: the viewmodel's pixels given the camera's motion must smear it"
+  },
+  {
     "name": "pipeline-perf",
     "script": "tests/pipeline-perf.mjs",
     "note": "per-pass GPU ms at 1280x720 full quality (reported, not compared); every running pass timed natively, idle passes untimed"
