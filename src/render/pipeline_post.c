@@ -10,6 +10,7 @@
 
 #include "cartwheel/debug.h"
 #include "cartwheel/gpu.h"
+#include "cartwheel/math.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/scene2d.h"
 #include "cartwheel/ui.h"
@@ -1913,6 +1914,111 @@ static void motion_blur_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_rt_release(ctx, tile);
 }
 
+/* ── glints: star streaks on bright points ───────────────────────────────
+ * What is brighter than glint_threshold (a lamp, a spark, a sun glitter, a gem's highlight) throws thin rays, as a
+ * star filter or an iris does. At a quarter of the frame's size: the bright part (4 reads a texel: a 4 x 4 box of
+ * the frame, so a one-pixel light does not flicker), then for each of glint_points rays two streak passes of 7
+ * reads back toward the light (the second with 7 times the step: 49 evenly spaced taps, their weights one
+ * exponential falling to 2% at the ray's end), summed, and one pass adds the sum to the frame in scene-linear
+ * light before the tone curve. */
+static unsigned glint_bright_prog, glint_streak_prog, glint_add_prog;
+static const char *GLINT_BRIGHT_FS = S(
+  uniform sampler2D u_src;
+  uniform vec2 u_texel;
+  uniform float u_threshold;
+  out vec4 o;
+  void main() {
+    vec3 c = vec3(0.0);
+    for (int j = 0; j < 2; j++)
+      for (int i = 0; i < 2; i++) c += texture(u_src, v_uv + (vec2(float(i), float(j)) * 2.0 - 1.0) * u_texel).rgb;
+    c = max(c * 0.25, vec3(0.0));
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    /* (what is over the threshold, up to twice it: a whole bright wall does not wash the frame out) */
+    o = vec4(c * (clamp(l - u_threshold, 0.0, 2.0 * u_threshold) / max(l, 1e-4)), 1.0);
+  });
+static const char *GLINT_STREAK_FS = S(
+  uniform sampler2D u_src;
+  uniform vec2 u_step;  /* uv a read apart, along the ray */
+  uniform float u_fall; /* a read's weight against the one before it */
+  out vec4 o;
+  void main() {
+    vec3 s = vec3(0.0);
+    float ws = 0.0;
+    for (int i = 0; i < 7; i++) {
+      float w = pow(u_fall, float(i));
+      s += texture(u_src, v_uv + u_step * float(i)).rgb * w;
+      ws += w;
+    }
+    o = vec4(s / ws, 1.0);
+  });
+static const char *GLINT_ADD_FS = S(
+  uniform sampler2D u_src;
+  uniform sampler2D u_glint;
+  uniform float u_k;
+  out vec4 o;
+  void main() {
+    vec4 c = texture(u_src, v_uv);
+    o = vec4(c.rgb + texture(u_glint, v_uv).rgb * u_k, c.a);
+  });
+
+static bool glints_active(const cw_pass_ctx *ctx, void *u) {
+  (void)u;
+  return ctx->settings->glints && ctx->settings->glint_intensity > 0 && cw__caps.float_render && cw__caps.float_blend;
+}
+
+static void glints_exec(cw_pass_ctx *ctx, void *u) {
+  (void)u;
+  const cw_post_settings *s = ctx->settings;
+  if (!glint_bright_prog) glint_bright_prog = prog_of("glint_bright", GLINT_BRIGHT_FS, NULL, NULL, WGSL_GLINT_BRIGHT, NULL, NULL);
+  if (!glint_streak_prog) glint_streak_prog = prog_of("glint_streak", GLINT_STREAK_FS, NULL, NULL, WGSL_GLINT_STREAK, NULL, NULL);
+  if (!glint_add_prog) glint_add_prog = prog_of("glint_add", GLINT_ADD_FS, NULL, NULL, WGSL_GLINT_ADD, NULL, NULL);
+  if (!glint_bright_prog || !glint_streak_prog || !glint_add_prog || !ctx->dst) return;
+  int w = CW_MAX(1, ctx->width / 4), h = CW_MAX(1, ctx->height / 4);
+  cw_rt_format f = ctx->src->format;
+  const cw_rt *bright = cw_pass_rt(ctx, w, h, f, false), *tmp = cw_pass_rt(ctx, w, h, f, false), *sum = cw_pass_rt(ctx, w, h, f, false);
+  if (!bright || !tmp || !sum) return;
+  cw_pass_bind_target(ctx, bright);
+  cw_pass_use(glint_bright_prog);
+  cw_pass_bind_texture(0, ctx->src->tex);
+  cw_pass_uniform1i(glint_bright_prog, "u_src", 0);
+  cw_pass_uniform2f(glint_bright_prog, "u_texel", 1.0f / (float)ctx->src->w, 1.0f / (float)ctx->src->h);
+  cw_pass_uniform1f(glint_bright_prog, "u_threshold", CW_MAX(s->glint_threshold, 0.0f));
+  cw_pass_fullscreen();
+  /* the rays: reach texels from the light, the first pass's reads reach / 49 apart */
+  int dirs = CW_CLAMP(s->glint_points, 2, 8);
+  float reach = CW_CLAMP(s->glint_length, 0.01f, 1.0f) * (float)h, base = reach / 49.0f;
+  cw_pass_bind_target(ctx, sum);
+  cw_pass_clear(0, 0, 0, 0, false);
+  for (int d = 0; d < dirs; d++) {
+    float sn, cs;
+    cw_sincos(s->glint_rotation + (float)d * 6.2831853f / (float)dirs, &sn, &cs);
+    for (int k = 0; k < 2; k++) {
+      float step = k ? base * 7.0f : base;
+      cw_pass_bind_target(ctx, k ? sum : tmp);
+      cw_pass_use(glint_streak_prog);
+      if (k) cw_pass_set_blend(CW_PASS_BLEND_ADD);
+      cw_pass_bind_texture(0, k ? tmp->tex : bright->tex);
+      cw_pass_uniform1i(glint_streak_prog, "u_src", 0);
+      cw_pass_uniform2f(glint_streak_prog, "u_step", cs * step / (float)w, sn * step / (float)h);
+      /* 2% left at the ray's end: 0.02^(step / reach) a read */
+      cw_pass_uniform1f(glint_streak_prog, "u_fall", k ? 0.5719f : 0.9233f); /* 0.02^(7/49), 0.02^(1/49) */
+      cw_pass_fullscreen();
+      cw_pass_set_blend(CW_PASS_BLEND_NONE);
+    }
+  }
+  cw_pass_bind_target(ctx, ctx->dst);
+  cw_pass_use(glint_add_prog);
+  cw_pass_bind_texture(0, ctx->src->tex);
+  cw_pass_bind_texture(1, sum->tex);
+  cw_pass_uniform1i(glint_add_prog, "u_src", 0);
+  cw_pass_uniform1i(glint_add_prog, "u_glint", 1);
+  cw_pass_uniform1f(glint_add_prog, "u_k", s->glint_intensity * 2.5f);
+  cw_pass_fullscreen();
+  cw_pass_rt_release(ctx, bright);
+  cw_pass_rt_release(ctx, tmp);
+  cw_pass_rt_release(ctx, sum);
+}
+
 /* ── lens: chromatic aberration, vignette, film grain ───────────────── */
 
 static unsigned lens_prog;
@@ -2089,6 +2195,8 @@ void cw__pipeline_add_builtin_passes(cw_pipeline *p) {
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "bloom", .phase = CW_PHASE_POST, .order = 300,
                                            .reads = CW_RES_COLOR, .writes = CW_RES_COLOR,
                                            .active = bloom_active, .execute = bloom_exec, .webgpu = true });
+  cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "glints", .phase = CW_PHASE_POST, .order = 320, .reads = CW_RES_COLOR,
+                                           .writes = CW_RES_COLOR, .active = glints_active, .execute = glints_exec, .webgpu = true });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "tonemap", .phase = CW_PHASE_POST, .order = 500,
                                            .reads = CW_RES_COLOR, .writes = CW_RES_COLOR, .ldr_output = true,
                                            .active = tonemap_active, .execute = tonemap_exec, .webgpu = true });

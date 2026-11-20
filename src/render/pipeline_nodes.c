@@ -31,6 +31,11 @@ static void post_init(cw_node n, void *data) {
   s->motion_blur_shutter = 0.5f;
   s->motion_blur_samples = 10;
   s->motion_blur_max = 32;
+  s->glint_threshold = 2;
+  s->glint_intensity = 0.2f;
+  s->glint_length = 0.12f;
+  s->glint_points = 4;
+  s->glint_rotation = 0.35f;
   s->tonemap = CW_TONEMAP_AGX;
   s->bloom_intensity = 0.05f;
   s->bloom_knee = 0.5f;
@@ -157,6 +162,12 @@ static const cw_prop post_props[] = {
   FR(motion_blur_shutter, 0, 2, "Share of the frame time the shutter is open (0.5: a film camera's 180 degrees)."),
   FI(motion_blur_samples, 1, 32, "Reads along the motion, a pixel."),
   FR(motion_blur_max, 1, 256, "Longest blur in pixels of a 1080 line image."),
+  FB(glints, "Star rays on what is brighter than glint_threshold (off on the Very Low and Low presets)."),
+  FR(glint_threshold, 0, 1e6, "Scene-linear brightness above which a pixel throws rays."),
+  FR(glint_intensity, 0, 10, "The rays' strength."),
+  FR(glint_length, 0.01, 1, "A ray's reach, as a share of the frame's height."),
+  FI(glint_points, 2, 8, "Rays a light throws (4, 6 or 8)."),
+  FR(glint_rotation, -6.3, 6.3, "The star's turn, radians."),
   FB(vignette, "Darken toward the corners."),
   FR(vignette_intensity, 0, 1, "Vignette strength."),
   FR(vignette_smoothness, 0.01, 1, "Vignette falloff width."),

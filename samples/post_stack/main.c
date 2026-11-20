@@ -72,11 +72,13 @@ static const seg segs[] = {
   { "auto_dim", 150, "auto_exposure=true;auto_exposure_min_ev=-8;auto_exposure_max_ev=8" },
   /* motion blur on the spinning bar (its own motion: the camera is still) */
   { "motion_blur", 24, "motion_blur=true" },
+  /* star rays on the lamp and the light strip */
+  { "glints", 20, "glints=true;glint_threshold=3" },
 };
 #define NSEG ((int)(sizeof segs / sizeof segs[0]))
 
 static const char *const pass_names[] = { "depth_prepass", "scene", "velocity", "ssao", "taa", "bloom", "tonemap", "grade",
-                                          "aa", "lens", "app", "dof", "exposure", "motion_blur" };
+                                          "aa", "lens", "app", "dof", "exposure", "motion_blur", "glints" };
 static int32_t seg_index = -1, passes_mask, fused_mask, float_ok, taa_delta, taa_max, taa_converged;
 static uint32_t frame_no;
 static float gpu_ms[24];
@@ -94,7 +96,7 @@ static void apply_props(const char *props) {
       "hdr=true;tonemap=AGX;exposure=1;exposure_ev=0;msaa=0;depth_prepass=false;bloom=false;"
       "bloom_intensity=0.05;ssao=false;ssao_radius=0.5;taa=false;aa=NONE;grade=false;grade_intensity=1;vignette=false;"
       "vignette_intensity=0.35;grain=false;grain_intensity=0.04;chromatic_aberration=false;ca_intensity=0.004;"
-      "debug_view=NONE;bloom_threshold=0;dof=false;auto_exposure=false;auto_exposure_min_ev=-3;auto_exposure_max_ev=3;motion_blur=false";
+      "debug_view=NONE;bloom_threshold=0;dof=false;auto_exposure=false;auto_exposure_min_ev=-3;auto_exposure_max_ev=3;motion_blur=false;glints=false";
   for (int pass = 0; pass < 2; pass++) {
     const char *s = pass ? props : base;
     while (*s) {

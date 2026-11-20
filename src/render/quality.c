@@ -826,6 +826,7 @@ void cw__quality_post(cw_post_settings *s) {
   }
   if (s->dof && !e->dof) s->dof = false;
   /* motion blur: off below Medium, fewer reads on Medium, more on Ultra */
+  if (s->glints && e->motion_blur <= 0) s->glints = false; /* glints: off below Medium, as motion blur */
   if (s->motion_blur) {
     if (e->motion_blur <= 0) s->motion_blur = false;
     else s->motion_blur_samples = CW_CLAMP((int)((float)s->motion_blur_samples * e->motion_blur + 0.5f), 1, 32);

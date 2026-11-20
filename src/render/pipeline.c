@@ -86,6 +86,11 @@ static void settings_default(cw_post_settings *s) {
   s->motion_blur_shutter = 0.5f;
   s->motion_blur_samples = 10;
   s->motion_blur_max = 32;
+  s->glint_threshold = 2;
+  s->glint_intensity = 0.2f;
+  s->glint_length = 0.12f;
+  s->glint_points = 4;
+  s->glint_rotation = 0.35f;
   s->ssgi_intensity = 10;
   s->ssgi_ao_intensity = 1;
   s->ssgi_thickness = 1;

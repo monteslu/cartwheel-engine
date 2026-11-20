@@ -92,6 +92,7 @@ See [Physics](guide:physics) and [Navigation](guide:navigation).
 | `Environment` effects (glow, SSAO, tonemap) | `PostProcess` | one per tree |
 | `CameraAttributes` auto exposure (`auto_exposure_enabled`, scale, speed, min / max sensitivity) | `PostProcess` `auto_exposure`, `auto_exposure_key`, `auto_exposure_speed_up` / `_down`, `auto_exposure_min_ev` / `_max_ev` | per tree, not per camera; separate speeds toward brighter and darker; `cw_pipeline_exposure_reset` at a cut |
 | motion blur (Godot has none built in; add-ons) | `PostProcess` `motion_blur`, `motion_blur_shutter`, `motion_blur_samples` | camera and per-object; off with reduced motion |
+| star / streak highlights (no built-in equivalent) | `PostProcess` `glints`, `glint_threshold`, `glint_points`, `glint_length` | thin rays on bright points |
 | TAA with motion vectors (`use_taa`) | `PostProcess` `taa` | moving, skinned and instanced meshes carry their own motion, with no per-mesh setting |
 | sky, fog | `ProceduralSky`, `HeightFog` | |
 | `MultiMeshInstance3D`, `MultiMesh` | [MultiMeshInstance3D](node:MultiMeshInstance3D) | the mesh is a `source` node (a MeshInstance3D child), not a resource; the buffer is filled from C (`cw_multimesh_set_transform`, `cw_multimesh_transforms`) or by `fill = GRID`; culled by `chunk_size` cells; `use_colors`; custom data is for game code only |

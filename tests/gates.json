@@ -3932,6 +3932,22 @@
     "note": "motion blur under a fast camera turn leaves the first person viewmodel sharp (its pixels within 3 levels of the unblurred frame) while the world blurs, GL and WebGPU; control: the viewmodel's pixels given the camera's motion must smear it"
   },
   {
+    "name": "post-glints",
+    "webgpu": true,
+    "app": "post_stack",
+    "frames": 822,
+    "maxGt16": 0.003,
+    "fields": [
+      "post.seg",
+      "post.passes"
+    ],
+    "controlFrames": 20,
+    "expect": {
+      "post.seg": 29
+    },
+    "note": "star rays on the lamp, the light strip and the ball's highlight (glints, threshold 3, four rays). Control: the base segment, no rays"
+  },
+  {
     "name": "pipeline-perf",
     "script": "tests/pipeline-perf.mjs",
     "note": "per-pass GPU ms at 1280x720 full quality (reported, not compared); every running pass timed natively, idle passes untimed"

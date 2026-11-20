@@ -86,7 +86,7 @@ A frame runs the tree's active passes phase by phase, and inside a phase by `ord
 | OPAQUE | "scene" (0: three.c renders the tree), "impostors" (100), "occlusion_queries" (900) |
 | SKY | "sky_sun" (0: the sun disk) |
 | EFFECTS | "decals" (100), "particles" (200), "height_fog" (300) |
-| POST | "velocity", "ssao" (100), "taa" (200), "exposure" (290), "bloom" (300), "tonemap" (500), "grade" (550), "aa" (600), "lens" (700), "debug_view" (10000) |
+| POST | "velocity", "ssao" (100), "taa" (200), "exposure" (290), "bloom" (300), "glints" (320), "tonemap" (500), "grade" (550), "aa" (600), "lens" (700), "debug_view" (10000) |
 | OVERLAY | "canvas" (-100: the tree's 2D and UI), "app" (0: your render callback), debug draw at 1000 by convention |
 | PRESENT | "visibility_restore" (1000), readbacks |
 
@@ -141,6 +141,12 @@ It always moves by a share of the way (1 - e^(-seconds x speed)), so a change of
 The state never leaves the GPU: two 1 x 1 targets alternate, and the tonemap pass reads the latest. Nothing is read back, so there is no stall and no delay that differs by host, and the adaptation's clock is the frame clock, so a deterministic run makes the same sequence on every host and both backends. In split screen each view adapts on its own. It runs on every graphics preset, Very Low included, because a preset must not change how bright the picture is; it costs four tiny passes (the largest an eighth of the frame's size): 0.09 to 0.15 ms of GPU time at 1920 x 1080 on a Radeon 890M (WebGPU, every preset).
 
 `samples/post_stack` ends on it: the room, its lamps turned up 30 times, and back down.
+
+### Glints
+
+`glints` on the PostProcess gives what is brighter than `glint_threshold` thin star rays, as a camera's star filter or a stopped-down iris does: a lamp, a spark, a gem's highlight, sun glitter on water. `glint_points` picks 4, 6 or 8 rays, `glint_length` their reach as a share of the frame's height (0.12), `glint_rotation` the star's turn and `glint_intensity` their strength. The rays keep the light's colour and are added in scene-linear light before the tone curve, so they bloom and tone map with the rest.
+
+The work is done at a quarter of the frame's size: the bright part is cut out (a 4 x 4 box of the frame per texel, so a one-pixel light does not flicker; what is over the threshold counts up to twice it, so a whole bright wall does not wash the frame out), each ray is two passes of 7 reads, and one full-size pass adds the sum. Small bright things make the best stars; a large light makes a soft cross as wide as itself. Off on the Very Low and Low presets.
 
 ### Motion blur
 
