@@ -23,3 +23,5 @@ standard+shadow+senv+l1101+s100+xplain_gi
 standard+senv+l1101+xplain_gi
 standard+l0101
 standard+instbig+l0101
+depth+xcluster_csm_gi
+standard+l0001+xcluster_csm_gi

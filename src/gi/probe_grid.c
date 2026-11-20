@@ -208,7 +208,7 @@ void cw__gi_grids_exec(gi_tree *g, cw_pass_ctx *ctx) {
   else budget = 0;
   if (budget <= 0) return;
   bool wgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
-  if (wgpu) t3_renderer_set_external_encoder(r, 0);
+  if (wgpu) cw__gi_wgpu_order(), t3_renderer_set_external_encoder(r, 0);
   else t3_renderer_reset_bindings(r);
   shared_ready(g, face_size(p));
   if (g->proj_hook != r) {

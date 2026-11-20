@@ -322,6 +322,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   character per tick natively on the 890M laptop (a hundred characters: 0.6 to 1.1 ms; the machine was under heavy
   load from other work).
 ## NEXT (fixes): meshes batch again after the last probe leaves; a gi gate control that bites; Box2D snapshot UB
+## NEXT (fixes): ONCE probes on WebGPU; meshes batch again after the last probe leaves; a gi control that bites; Box2D snapshot UB
 
 ### Fixed
 - **Meshes auto-instance again once the last ReflectionProbe3D and LightProbeGrid3D leave the tree.** The gi shading
@@ -330,6 +331,13 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   probe or grid exits (a new one, SSR or SSGI put it back). `gi_probe_check` with `GI_LEAVE=1` adds 24 look-alike
   boxes and frees the probe: 9 draws after, 20 with the part kept (`CW_TEST_GI_KEEP_PART=1`, the control, which
   fails), on GL and WebGPU (tests/gi-probe.mjs).
+- **A ReflectionProbe3D captured once (update_mode ONCE) no longer reflects a darker room on WebGPU under clustered
+  lighting and cascaded sun shadows.** Its one capture is drawn in the first frame, with command buffers of its own,
+  while that frame's cascades and clustered shadow atlas were still waiting in the frame's encoder: the capture went
+  to the GPU first and sampled maps not drawn yet. The frame's encoder is now submitted before a probe or probe-grid
+  capture. `gi_room` with `GI_ONCE=1` (clustered, three cascades, no sky): GL against WebGPU 2.70% of pixels over 16
+  levels apart, within the 3.89% of the same scene with the probe captured every other frame; the old ordering
+  (`CW_TEST_GI_NO_FLUSH=1`, the control) 5.19% (tests/gi-probe.mjs).
 - **The forward-cascades check of tests/gi-probe.mjs has a control that fails again.** Its control (the cascaded
   sun's part keeping gi off) stopped changing anything once the gi part composed with that part, so it passed
   along with the check. The control is now `CW_TEST_GI_NO_PART=1`, no material gets the gi part: 6 of 6 ball

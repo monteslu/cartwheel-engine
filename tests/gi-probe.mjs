@@ -26,6 +26,10 @@
 //      tints the ceiling by the coloured walls;
 //      off (the control) it does not.
 //   4. GL and WebGPU draw the same gi_room (pixels over 16 levels apart < 0.5 %).
+//   5. A probe captured once in the first frame under clustered lighting and a
+//      cascaded sun (GI_ONCE=1) is no further apart between GL and WebGPU than
+//      one captured every other frame; control: CW_TEST_GI_NO_FLUSH=1 (the
+//      capture submitted ahead of the frame's cascades and atlas) is.
 //
 //   node tests/gi-probe.mjs
 import { spawnSync } from 'node:child_process';
@@ -160,5 +164,27 @@ for (const gpu of ['gl', 'webgpu']) {
 if (rooms.gl && rooms.webgpu) {
   const d = diffImages(rooms.gl, rooms.webgpu);
   report(d.comparable && d.gt16 < 0.005, `gi_room GL vs WebGPU: ${(d.gt16 * 100).toFixed(3)}% of pixels over 16 levels apart`);
+}
+
+// ── 5. a probe captured once, in the first frame, under clustered lighting and cascades ──
+// GI_ONCE=1: RoomProbe captures once, in the frame the sun's cascades and the clustered shadow atlas are first
+// drawn. On WebGPU those are recorded into the frame's encoder while the capture draws with command buffers of its
+// own, so the capture must be submitted after them, or it samples maps not drawn yet (a darker room in the
+// reflections). GL against WebGPU must then be no further apart than the same scene with the probe captured every
+// other frame (GI_ONCE=every). Control: CW_TEST_GI_NO_FLUSH=1, the old ordering, must be further apart.
+{
+  const cmds = 'set Room/Post ssgi false;set Room/Post ssr false';
+  const shot = (gpu, tag, env) => run('gi_room', gpu, 30, `room.once.${tag}.${gpu}`, env, cmds);
+  const legs = {};
+  for (const [tag, env] of [['every', { GI_ONCE: 'every' }], ['once', { GI_ONCE: '1' }], ['old', { GI_ONCE: '1', CW_TEST_GI_NO_FLUSH: '1' }]]) {
+    const g = shot('gl', tag, env), w = shot('webgpu', tag, env);
+    if (g.err || w.err) { report(false, `gi_room ${tag}: ${g.err || w.err}`); continue; }
+    legs[tag] = diffImages(g.img, w.img).gt16;
+  }
+  if (legs.every !== undefined && legs.once !== undefined && legs.old !== undefined) {
+    const pc = (v) => (v * 100).toFixed(3) + '%';
+    report(legs.once <= legs.every, `a ONCE probe under clustered lighting and cascades: GL vs WebGPU ${pc(legs.once)}, within the ${pc(legs.every)} of one captured every other frame`);
+    report(legs.old > legs.every, `control (the capture submitted before the frame's cascades and atlas) is further apart: ${pc(legs.old)}`);
+  }
 }
 process.exit(failed ? 1 : 0);
