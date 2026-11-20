@@ -41,6 +41,11 @@ Cloth and ropes (src/physics/cloth.c) follow published algorithms; no code was c
   https://github.com/matthias-research/pages) and Jolt Physics' soft bodies (Jorrit Rouwe,
   MIT license, https://github.com/jrouwe/JoltPhysics).
 
+Retargeting (src/anim/retarget.c): the rest-pose-relative rotation transfer and
+the hips scaled by a body ratio follow the approach of the three-vrm Mixamo
+retarget example (pixiv, MIT); re-implemented in C on model-space rotations,
+with direction alignment of differing rest poses, foot IK and foot planting.
+
 Sample assets
   samples/anim_ik/assets/RobotExpressive.glb: model by Tomas Laulhe (Quaternius),
   modifications by Don McCurdy, from the three.js examples. CC0 1.0.

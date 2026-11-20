@@ -4,7 +4,7 @@
 # the engine. In a cart the Basis Universal encoder is a stub that reports
 # why KTX2 encoding is unavailable (basis_stub.c).
 set(_cwp ${CMAKE_SOURCE_DIR}/tools/cwpack)
-set(_cwp_srcs ${_cwp}/import_gltf.c ${_cwp}/import_texture.c ${_cwp}/import_audio.c ${_cwp}/util.c)
+set(_cwp_srcs ${_cwp}/import_gltf.c ${_cwp}/import_retarget.c ${_cwp}/import_texture.c ${_cwp}/import_audio.c ${_cwp}/util.c)
 if(CW_CART)
   list(APPEND _cwp_srcs ${_cwp}/basis_stub.c)
 else()

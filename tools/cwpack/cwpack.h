@@ -55,9 +55,19 @@ void cwp_set_reporter(void (*fn)(const char *msg, void *user), void *user);
 typedef void *(*cwp_read_fn)(void *ctx, const char *uri, size_t *len);
 typedef struct cwp_gltf_stats {
   int prims, prims_optimized, lods, vertices_in, vertices_out, triangles, lod_triangles, compressed_views, images_ktx2;
+  int retargeted_clips;
 } cwp_gltf_stats;
 uint8_t *cwp_import_gltf(const char *name, const uint8_t *src, size_t len, cwp_read_fn read, void *ctx,
                          const cwp_settings *set, size_t *out_len, cwp_gltf_stats *st);
+/* The same, with clips of another model baked onto this one's skeleton (import_retarget.c: the
+ * retarget.* settings). retarget_src: the bytes of the model retarget.source names (a GLB, or a .gltf
+ * with its buffers inline); NULL: no retargeting. st->retargeted_clips counts what was baked. */
+uint8_t *cwp_import_gltf_ex(const char *name, const uint8_t *src, size_t len, cwp_read_fn read, void *ctx,
+                            const cwp_settings *set, const uint8_t *retarget_src, size_t retarget_len, size_t *out_len,
+                            cwp_gltf_stats *st);
+struct cw_gltf_doc;
+bool cwp_retarget_bake(struct cw_gltf_doc *dst, const char *name, const uint8_t *src_file, size_t src_len,
+                       const cwp_settings *set, int *clips_out);
 
 /* The sub-resources the engine registers for a glTF/GLB (see
  * cartwheel/resource.h): cb(name, type) per "mesh/<m>/<p>" (type "mesh"),

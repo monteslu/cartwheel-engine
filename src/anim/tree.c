@@ -75,6 +75,10 @@ typedef struct atree {
   anim_event_hook hook;
   CW_ARRAY(fired_span) spans;
   CW_ARRAY(const char *) entered;
+  /* update rate (cw_animtree_set_update_divisor): evaluate every divisor-th tick with the time since */
+  int divisor;
+  uint32_t ticks;
+  double pending;
   /* scene files */
   bool graph_stored;       /* written to scene files (a graph loaded from text) */
   const char *loaded_text; /* the graph as the last scene section left it (interned) */
@@ -935,7 +939,24 @@ static void t_destroy(cw_node n, void *d) {
 
 static void t_fixed(cw_node n, void *d, double dt) {
   atree *t = d;
-  if (t->process == CW_ANIM_PROCESS_FIXED) advance(n, t, dt);
+  if (t->process != CW_ANIM_PROCESS_FIXED) return;
+  if (t->divisor > 1) {
+    /* trees are spread over the ticks by their slot, as players are, so a crowd does not evaluate in step */
+    t->pending += dt;
+    if ((t->ticks++ + (uint32_t)(n.id & 0xffff)) % (uint32_t)t->divisor) return;
+    dt = t->pending;
+    t->pending = 0;
+  }
+  advance(n, t, dt);
+}
+
+void cw_animtree_set_update_divisor(cw_node n, int divisor) {
+  atree *t = T(n, "cw_animtree_set_update_divisor");
+  if (t) t->divisor = divisor < 1 ? 1 : divisor > 64 ? 64 : divisor;
+}
+int cw_animtree_update_divisor(cw_node n) {
+  atree *t = T(n, NULL);
+  return t && t->divisor > 1 ? t->divisor : 1;
 }
 static void t_update(cw_node n, void *d, double dt) {
   atree *t = d;
