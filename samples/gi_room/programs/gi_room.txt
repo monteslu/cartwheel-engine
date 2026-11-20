@@ -29,3 +29,6 @@ standard+shadow+l1101+xgibuf
 depth+xcsm_gi
 standard+shadow+l0101+xcsm_gi
 standard+shadow+l0101+xgibuf
+standard+shadow+senv+l0101+xcsm_gi
+standard+senv+l0101+xcsm_gi
+standard+shadow+senv+l0101+xgibuf
