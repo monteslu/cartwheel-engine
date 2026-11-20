@@ -1252,6 +1252,20 @@ t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
   return c->cam;
 }
 
+/* a split screen view's camera at its own size, as cw_render3d_prepare sets the current one (the renderer keeps the
+ * whole target's size: one-pass split screen, src/render/pipeline.c) */
+t3_camera *cw__render3d_view_camera(cw_node cam, int w, int h) {
+  camera3d *c = cw_node_data_t(cam, camera3d_t);
+  if (!c) return NULL;
+  c->cam->fov = c->fov;
+  c->cam->near = c->near;
+  c->cam->far = c->far;
+  c->cam->aspect = h > 0 ? (float)w / (float)h : 1;
+  c->cam->base.layers = (uint32_t)c->cull_layers;
+  t3_camera_update_projection_matrix(c->cam);
+  return c->cam;
+}
+
 void cw__render3d_frame_begin(cw_tree *t) {
   render3d_state *s = cw_tree_slot(t, "render3d");
   if (s) s->frame_calls = s->frame_triangles = 0, s->frame_counted = false;

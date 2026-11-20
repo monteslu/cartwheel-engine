@@ -301,11 +301,52 @@ void cw_pass_clear(float r, float g, float b, float a, bool depth) {
 }
 
 static GLuint fs_vao;
+cw__view_clip cw__vclip;
+void cw__view_clip_rect(int w, int h, int out[4]) {
+  const cw__view_clip *v = &cw__vclip;
+  if (w == v->full_w && h == v->full_h) {
+    memcpy(out, v->rect, sizeof v->rect);
+    return;
+  }
+  /* a target of another size: the edges scaled and rounded, so neighbouring views tile it */
+  int x0 = (int)((long long)v->rect[0] * w / v->full_w), y0 = (int)((long long)v->rect[1] * h / v->full_h);
+  int x1 = (int)((long long)(v->rect[0] + v->rect[2]) * w / v->full_w), y1 = (int)((long long)(v->rect[1] + v->rect[3]) * h / v->full_h);
+  out[0] = x0, out[1] = y0, out[2] = CW_MAX(1, x1 - x0), out[3] = CW_MAX(1, y1 - y0);
+}
+void cw_pass_view_uv(const cw_pass_ctx *ctx, float out[4]) {
+  if (!ctx || ctx->view_count <= 0 || ctx->width <= 0 || ctx->height <= 0) {
+    out[0] = out[1] = 0, out[2] = out[3] = 1;
+    return;
+  }
+  out[0] = (float)ctx->view_rect[0] / (float)ctx->width;
+  out[1] = (float)ctx->view_rect[1] / (float)ctx->height;
+  out[2] = (float)ctx->view_rect[2] / (float)ctx->width;
+  out[3] = (float)ctx->view_rect[3] / (float)ctx->height;
+}
+void cw_pass_view_viewport(const cw_pass_ctx *ctx) {
+  if (!ctx || ctx->view_count <= 0) return;
+  int r[4];
+  cw__view_clip_rect(cw__vclip.bound_w, cw__vclip.bound_h, r);
+  if (wg()) {
+    cw__pw_set_scissor(r);
+    return;
+  }
+  glViewport(r[0], r[1], r[2], r[3]);
+  glEnable(GL_SCISSOR_TEST);
+  glScissor(r[0], r[1], r[2], r[3]);
+}
+
 void cw_pass_draw(int vertices) {
   if (vertices <= 0) return;
   if (wg()) {
     cw__pw_draw(vertices);
     return;
+  }
+  if (cw__vclip.on) { /* a view of a one-pass split screen: only its rectangle */
+    int r[4];
+    cw__view_clip_rect(cw__vclip.bound_w, cw__vclip.bound_h, r);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(r[0], r[1], r[2], r[3]);
   }
   if (!fs_vao) glGenVertexArrays(1, &fs_vao);
   glBindVertexArray(fs_vao);
@@ -333,6 +374,8 @@ void cw_pass_bind_texture_3d(int unit, unsigned tex) {
 
 void cw_pass_bind_target(cw_pass_ctx *ctx, const cw_rt *rt) {
   if (!rt) rt = ctx->output;
+  cw__vclip.bound_w = rt->w;
+  cw__vclip.bound_h = rt->h;
   if (wg()) {
     cw__pw_bind_target(rt);
     return;

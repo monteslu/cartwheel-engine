@@ -130,6 +130,7 @@ static void pipeline_free(void *ptr) {
   }
   cw_array_free(&p->persist);
   if (p->msaa_rt.fbo) cw__rt_destroy(&p->msaa_rt);
+  if (p->arr_cam) t3_release(p->arr_cam);
   cw__pw_forget(p);
   if (p->msaa_fbo) {
     glDeleteFramebuffers(1, &p->msaa_fbo);
@@ -196,6 +197,8 @@ static void cmd_pipeline(int argc, const char **argv, cw_reply *r) {
                     st->gpu_ms_avg, st->cpu_ms_avg);
   }
   cw_reply_raw(r, "]");
+  cw_reply_printf(r, ",\"views_array\":%s,\"views_array_why\":\"%s\"", p->arr_used ? "true" : "false",
+                  !p->arr_used && p->arr_why ? p->arr_why : "");
   {
     /* the states three.c's generated table lacked (a JSON string, one per line) */
     cw_reply_raw(r, ",\"missing_states\":\"");
@@ -795,6 +798,8 @@ static void run_pass(cw_pipeline *p, pass_rec *r, cw_pass_ctx *ctx) {
 
 /* bind the target a phase draws into */
 static void bind_phase_target(cw_pass_ctx *ctx, const cw_rt *rt) {
+  cw__vclip.bound_w = rt->w;
+  cw__vclip.bound_h = rt->h;
   ctx->pipeline->bound_fbo = rt->fbo;
   ctx->pipeline->bound_depth_tex = rt->depth_tex;
   ctx->pipeline->bound_depth_rb = rt->fbo && rt->fbo == ctx->pipeline->msaa_fbo ? ctx->pipeline->msaa_depth : 0;
@@ -836,7 +841,7 @@ static bool overlay_scaled_test(void) {
 /* what one run of the passes draws: everything (one camera fills the
  * output), one view's 3D picture (no overlays), or only the overlays over
  * the views already laid out */
-enum { RUN_FULL, RUN_VIEW, RUN_OVERLAY };
+enum { RUN_FULL, RUN_VIEW, RUN_OVERLAY, RUN_ARRAY }; /* RUN_ARRAY: every view's 3D picture in one run (one-pass split screen) */
 static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, int mode);
 
 void cw_pipeline_set_views(cw_pipeline *p, const cw_view *views, int n) {
@@ -850,9 +855,15 @@ void cw_pipeline_set_views_shared_post(cw_pipeline *p, bool shared) { p->views_s
  * when it reads the view's depth or motion, else to the one run over the
  * laid-out views */
 static bool post_in_run(const cw_pipeline *p, const pass_rec *r, int mode) {
+  if (mode == RUN_ARRAY) mode = RUN_VIEW; /* the views' part of the chain, as each view's run has it */
   if (!p->view_post_split || r->d.phase != CW_PHASE_POST) return true;
   bool per_view = (r->d.reads & (CW_RES_DEPTH | CW_RES_VELOCITY)) != 0;
   return mode == RUN_VIEW ? per_view : !per_view;
+}
+void cw_pipeline_set_views_array(cw_pipeline *p, bool on) { p->views_array = on; }
+bool cw_pipeline_views_array_used(cw_pipeline *p, const char **why_not) {
+  if (why_not) *why_not = p->arr_used ? NULL : p->arr_why;
+  return p->arr_used;
 }
 int cw_pipeline_views(cw_pipeline *p, const cw_view **views) {
   if (views) *views = p->views;
@@ -939,6 +950,106 @@ static void views_composite(cw_pipeline *p, cw_tree *t, const cw_rt *output, con
   int ts = step_begin(p, "views");
   cw_pass_fullscreen();
   step_end(ts);
+}
+
+/* one-pass split screen: the views already lie in one picture; laid into the output as views_composite lays the
+ * per-view pictures (the same rectangles, the same seam and the same colour where no view is), from that one
+ * texture */
+static unsigned views_arr_prog;
+static void views_composite_array(cw_pipeline *p, cw_tree *t, const cw_rt *output, const cw_rt *pic, int n) {
+  if (!views_arr_prog)
+    views_arr_prog = cw__pass_program2("views_array",
+      "uniform sampler2D u_t0;\nuniform vec4 u_r0;\nuniform vec4 u_r1;\nuniform vec4 u_r2;\nuniform vec4 u_r3;\nuniform vec4 u_misc;\nout vec4 o;\n"
+      "bool inr(vec4 r, vec2 q) { return q.x >= r.x && q.y >= r.y && q.x < r.x + r.z && q.y < r.y + r.w; }\n"
+      "float seam(vec4 r, vec2 q) { vec2 d = min(q - r.xy, r.xy + r.zw - q) * u_misc.xy; return min(d.x, d.y); }\n"
+      "void main() {\n"
+      "  vec2 q = v_uv; o = vec4(0.02, 0.018, 0.015, 1.0); float e = 99.0; vec4 c = texelFetch(u_t0, ivec2(gl_FragCoord.xy), 0);\n"
+      "  if (inr(u_r0, q)) { o = c; e = seam(u_r0, q); }\n"
+      "  else if (u_misc.z > 1.5 && inr(u_r1, q)) { o = c; e = seam(u_r1, q); }\n"
+      "  else if (u_misc.z > 2.5 && inr(u_r2, q)) { o = c; e = seam(u_r2, q); }\n"
+      "  else if (u_misc.z > 3.5 && inr(u_r3, q)) { o = c; e = seam(u_r3, q); }\n"
+      "  if (e < u_misc.w) o.rgb *= 0.08;\n"
+      "  o.a = 1.0;\n}\n",
+      "struct U { u_r0: vec4f, u_r1: vec4f, u_r2: vec4f, u_r3: vec4f, u_misc: vec4f };\n"
+      "@group(0) @binding(0) var<uniform> u: U;\n"
+      "@group(0) @binding(1) var u_t0: texture_2d<f32>;\n"
+      "fn inr(r: vec4f, q: vec2f) -> bool { return q.x >= r.x && q.y >= r.y && q.x < r.x + r.z && q.y < r.y + r.w; }\n"
+      "fn seam(r: vec4f, q: vec2f) -> f32 { let d = min(q - r.xy, r.xy + r.zw - q) * u.u_misc.xy; return min(d.x, d.y); }\n"
+      "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
+      "  let q = uv;\n"
+      "  let c = textureLoad(u_t0, vec2i(floor(q * u.u_misc.xy)), 0);\n"
+      "  var o = vec4f(0.02, 0.018, 0.015, 1.0); var e = 99.0;\n"
+      "  if (inr(u.u_r0, q)) { o = c; e = seam(u.u_r0, q); }\n"
+      "  else if (u.u_misc.z > 1.5 && inr(u.u_r1, q)) { o = c; e = seam(u.u_r1, q); }\n"
+      "  else if (u.u_misc.z > 2.5 && inr(u.u_r2, q)) { o = c; e = seam(u.u_r2, q); }\n"
+      "  else if (u.u_misc.z > 3.5 && inr(u.u_r3, q)) { o = c; e = seam(u.u_r3, q); }\n"
+      "  if (e < u.u_misc.w) { o = vec4f(o.rgb * 0.08, o.a); }\n"
+      "  return vec4f(o.rgb, 1.0);\n}\n");
+  if (!views_arr_prog) return;
+  cw_pass_ctx ctx;
+  memset(&ctx, 0, sizeof ctx);
+  ctx.tree = t;
+  ctx.pipeline = p;
+  ctx.settings = &p->s;
+  ctx.width = output->w;
+  ctx.height = output->h;
+  ctx.output = output;
+  cw_pass_bind_target(&ctx, output);
+  cw__pass_state_reset();
+  cw_pass_use(views_arr_prog);
+  cw_pass_bind_texture(0, pic->tex);
+  cw_pass_uniform1i(views_arr_prog, "u_t0", 0);
+  static const char *const R[4] = { "u_r0", "u_r1", "u_r2", "u_r3" };
+  for (int i = 0; i < 4; i++) {
+    const cw_view *v = &p->views[i < n ? i : 0];
+    cw_pass_uniform4f(views_arr_prog, R[i], v->x, 1 - v->y - v->h, v->w, v->h);
+  }
+  cw_pass_uniform4f(views_arr_prog, "u_misc", (float)output->w, (float)output->h, (float)n, 1.5f);
+  int ts = step_begin(p, "views");
+  cw_pass_fullscreen();
+  step_end(ts);
+}
+
+/* One-pass split screen: every view's 3D picture in one run over one full-size target, then laid out with the
+ * same seams as the per-view runs. NULL (nothing drawn) when a camera is missing or an active pass cannot. */
+static const cw_rt *array_run(cw_tree *t, cw_pipeline *p, const cw_rt *out, double alpha, cw_rt_format vf) {
+  int W = out->w, H = out->h, n = p->nviews;
+  p->arr_why = NULL;
+  for (int k = 0; k < n; k++)
+    if (!cw_node_valid(p->views[k].camera)) return NULL;
+  cw_render3d_set_camera(t, p->views[0].camera);
+  cw__render3d_keep_shadows(t, false);
+  if (!cw_render3d_prepare(t, W, H)) return NULL; /* the renderer at the whole target's size; the shadow maps once */
+  if (!p->arr_cam) p->arr_cam = t3_array_camera_new();
+  for (int i = 0; i < p->arr_cam->count; i++) t3_release(p->arr_cam->cameras[i]);
+  p->arr_cam->count = 0;
+  for (int k = 0; k < n; k++) {
+    const cw_view *v = &p->views[k];
+    int vw = CW_MAX(1, (int)(v->w * (float)W + 0.5f)), vh = CW_MAX(1, (int)(v->h * (float)H + 0.5f));
+    int x0 = (int)(v->x * (float)W + 0.5f), ytop = (int)(v->y * (float)H + 0.5f);
+    p->arr_nodes[k] = v->camera;
+    p->arr_cams[k] = cw__render3d_view_camera(v->camera, vw, vh);
+    if (!p->arr_cams[k]) return NULL;
+    int r[4] = { x0, H - ytop - vh, vw, vh };
+    memcpy(p->arr_rect[k], r, sizeof r);
+    t3_array_camera_add(p->arr_cam, p->arr_cams[k], x0, ytop, vw, vh);
+  }
+  p->arr_n = n;
+  const cw_rt *pic = cw_pipeline_rt_persistent(p, "views.arr", W, H, vf, NULL);
+  if (!pic) return NULL;
+  const cw_rt *keep_out = p->output_user;
+  p->output_user = pic;
+  p->view_i = -1;
+  p->view_pic = NULL;
+  p->arr_refused = NULL;
+  render_run(t, p, W, H, alpha, RUN_ARRAY);
+  cw__visibility_end_view(t);
+  p->output_user = keep_out;
+  if (p->arr_refused) {
+    p->arr_why = p->arr_refused;
+    return NULL;
+  }
+  return p->view_pic ? p->view_pic : pic;
 }
 
 /* ── extra views ─────────────────────────────────────────────────────── */
@@ -1031,7 +1142,17 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   if (wgpu) cw__pw_timing_hold(true);
   const cw_rt *rts[CW_MAX_VIEWS];
   int n = 0;
-  for (int i = 0; i < p->nviews; i++) {
+  /* one-pass split screen when every pass that draws a view's part can (else each view on its own) */
+  const cw_rt *arr_pic = NULL;
+  p->arr_used = false;
+  bool want_array = p->views_array;
+  const char *va = cw_test_env("CW_TEST_VIEWS_ARRAY"); /* 1 / 0: one pass or per view whatever the app set (gates) */
+  if (va && *va) want_array = atoi(va) != 0;
+  if (want_array && p->view_post_split && !p->view_hook) {
+    arr_pic = array_run(t, p, &out_copy, alpha, vf);
+    p->arr_used = arr_pic != NULL;
+  } else p->arr_why = NULL;
+  for (int i = 0; i < p->nviews && !arr_pic; i++) {
     const cw_view *v = &p->views[i];
     int vw = CW_MAX(1, (int)(v->w * (float)out_copy.w + 0.5f)), vh = CW_MAX(1, (int)(v->h * (float)out_copy.h + 0.5f));
     char key[16];
@@ -1055,7 +1176,8 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   p->s.taa = keep_taa;
   /* shared post: the views laid out into one HDR picture, the chain's input */
   const cw_rt *laid = p->view_post_split && n ? cw_pipeline_rt_persistent(p, "views.post", out_copy.w, out_copy.h, vf, NULL) : NULL;
-  if (n) views_composite(p, t, laid ? laid : &out_copy, rts, n);
+  if (arr_pic) views_composite_array(p, t, laid ? laid : &out_copy, arr_pic, p->nviews);
+  else if (n) views_composite(p, t, laid ? laid : &out_copy, rts, n);
   p->post_src = laid;
   /* the overlays once, over the whole output (the HUD reads cw_pipeline_views);
    * WebGPU reads the frame's pass timestamps back after it, not per view */
@@ -1069,6 +1191,30 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
 }
 
 static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, int mode);
+/* one-pass split screen: the context of view k (its camera, matrices, history and rectangle; the pass helpers
+ * scissor to it), and back to the run's own after the views */
+static void array_view(cw_pass_ctx *ctx, cw_pipeline *p, int k) {
+  ctx->camera = p->arr_cams[k];
+  ctx->camera_node = p->arr_nodes[k];
+  mat4_from_camera(ctx);
+  const struct cw__view_prev *vp = &p->view_prev[k];
+  ctx->prev_view_proj = vp->have && vp->w == p->arr_rect[k][2] && vp->h == p->arr_rect[k][3] ? vp->vp : ctx->view_proj;
+  ctx->view_index = k;
+  memcpy(ctx->view_rect, p->arr_rect[k], sizeof ctx->view_rect);
+  cw__vclip.on = true;
+  memcpy(cw__vclip.rect, p->arr_rect[k], sizeof cw__vclip.rect);
+  cw__vclip.full_w = ctx->width;
+  cw__vclip.full_h = ctx->height;
+}
+static void array_view_end(cw_pass_ctx *ctx, cw_pipeline *p) {
+  cw__vclip.on = false;
+  ctx->view_index = -1;
+  ctx->camera = p->arr_cams[0];
+  ctx->camera_node = p->arr_nodes[0];
+  mat4_from_camera(ctx);
+  ctx->prev_view_proj = ctx->view_proj;
+}
+
 /* a view's run, its shadow caster culling (src/render/shadow_cull.c) undone after it */
 static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, int mode) {
   render_run_inner(t, p, w, h, alpha, mode);
@@ -1103,7 +1249,8 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
    * WebGPU three.c renders with its WebGPU backend (cw_render3d_prepare
    * made the renderer with t3_renderer_use_wgpu) */
   CW_PROFILE_BEGIN("render3d.prepare");
-  ctx.camera = mode == RUN_OVERLAY ? NULL : cw_render3d_prepare(t, w, h);
+  ctx.camera = mode == RUN_OVERLAY ? NULL : mode == RUN_ARRAY ? p->arr_cams[0] : cw_render3d_prepare(t, w, h);
+  if (mode == RUN_ARRAY) ctx.view_count = p->arr_n, ctx.view_index = -1;
   CW_PROFILE_END();
   if (ctx.camera) {
     ctx.scene3d = cw_render3d_scene(t);
@@ -1148,6 +1295,18 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   }
   if (s->debug_view == CW_VIEW_VELOCITY) reads |= CW_RES_VELOCITY;
   if (velocity) velocity->active = velocity->enabled && !test_skipped(velocity->name) && (reads & CW_RES_VELOCITY) != 0;
+  /* one-pass split screen: every pass that draws a view's part must take the views over one target; the first that
+   * cannot sends the frame back to the per-view runs (nothing drawn yet) */
+  if (mode == RUN_ARRAY) {
+    for (int i = 0; i < p->passes.count; i++) {
+      pass_rec *r = p->passes.data[i];
+      if (!r->active || r->d.phase >= CW_PHASE_OVERLAY || !post_in_run(p, r, mode)) continue;
+      if (r->d.views == CW_PASS_VIEWS_NONE) {
+        p->arr_refused = r->name;
+        return;
+      }
+    }
+  }
   /* screenshot by layer (cartwheel/debug.h): without WORLD no 3D phase runs */
   uint32_t layers = cw_render_layers();
   bool has_scene = ctx.camera && (ctx.renderer != NULL || (wgpu && wgpu_opaque)) && (layers & CW_LAYER_WORLD);
@@ -1166,7 +1325,8 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   bool taa = offscreen && s->taa && !post_run;
   if (offscreen && !post_run) {
     mat4_from_camera(&ctx);
-    if (mode == RUN_VIEW && p->view_i >= CW_MAX_VIEWS) ctx.prev_view_proj = ctx.view_proj; /* an extra view past the view slots: no history */
+    if (mode == RUN_ARRAY) ctx.prev_view_proj = ctx.view_proj; /* each view's own, as its passes run (array_view) */
+    else if (mode == RUN_VIEW && p->view_i >= CW_MAX_VIEWS) ctx.prev_view_proj = ctx.view_proj; /* an extra view past the view slots: no history */
     else if (mode == RUN_VIEW && p->view_i >= 0) {
       const struct cw__view_prev *vp = &p->view_prev[p->view_i];
       ctx.prev_view_proj = vp->have && vp->w == w && vp->h == h ? vp->vp : ctx.view_proj;
@@ -1318,9 +1478,9 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   const cw_rt *chain = scene; /* POST: the current image */
   for (int ph = 0; ph < CW_PHASE_COUNT; ph++) {
     if (ph <= CW_PHASE_POST && !has_scene && !(post_run && ph == CW_PHASE_POST)) continue;
-    if (mode == RUN_VIEW && ph >= CW_PHASE_OVERLAY) { /* a view draws no overlays: just its picture into its target */
+    if ((mode == RUN_VIEW || mode == RUN_ARRAY) && ph >= CW_PHASE_OVERLAY) { /* a view draws no overlays: just its picture into its target */
       if (ph == CW_PHASE_OVERLAY && offscreen && last_writer < 0) {
-        if (p->view_post_split && p->view_i >= 0 && scene->format == output->format) p->view_pic = scene; /* (no copy) */
+        if (p->view_post_split && (p->view_i >= 0 || mode == RUN_ARRAY) && scene->format == output->format) p->view_pic = scene; /* (no copy) */
         else cw__pass_copy(&ctx, scene->tex, output);
       }
       if (ph == CW_PHASE_OVERLAY && has_scene) {
@@ -1353,7 +1513,21 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
           bool plain = ctx.camera->base.type == T3_PERSPECTIVE_CAMERA && e[10] == (float)(-(f + n) / (f - n));
           pz[0] = plain ? (float)(-2 * n / (f - n)) : (float)((double)e[10] - e[11]);
         }
-        if (lin) {
+        if (lin && mode == RUN_ARRAY) { /* each view's rectangle through its own projection */
+          for (int k = 0; k < p->arr_n; k++) {
+            const float *ek = p->arr_cams[k]->projection_matrix.e;
+            float pzk[4] = { ek[10], ek[14], ek[11], ek[15] };
+            if (cw_gpu_reversed_depth()) {
+              double n = p->arr_cams[k]->near, f = p->arr_cams[k]->far;
+              bool plain = p->arr_cams[k]->base.type == T3_PERSPECTIVE_CAMERA && ek[10] == (float)(-(f + n) / (f - n));
+              pzk[0] = plain ? (float)(-2 * n / (f - n)) : (float)((double)ek[10] - ek[11]);
+            }
+            array_view(&ctx, p, k);
+            cw__pw_depth_copy(&ctx, scene_draw, lin, pzk);
+          }
+          array_view_end(&ctx, p);
+          ctx.depth_tex = lin->tex;
+        } else if (lin) {
           cw__pw_depth_copy(&ctx, scene_draw, lin, pz);
           ctx.depth_tex = lin->tex;
         }
@@ -1451,7 +1625,17 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
       case CW_PHASE_PRESENT: bind_phase_target(&ctx, output); break;
       default: break;
       }
-      run_pass(p, r, &ctx);
+      if (mode == RUN_ARRAY && r->d.views == CW_PASS_VIEWS_EACH && ph < CW_PHASE_OVERLAY) {
+        for (int k = 0; k < p->arr_n; k++) {
+          array_view(&ctx, p, k);
+          run_pass(p, r, &ctx);
+        }
+        array_view_end(&ctx, p);
+      } else if (mode == RUN_ARRAY && ph < CW_PHASE_OVERLAY) {
+        if (r->name == cw_intern("scene") || r->name == cw_intern("depth_prepass")) ctx.camera = &p->arr_cam->base; /* every view in one render */
+        run_pass(p, r, &ctx);
+        ctx.camera = p->arr_cams[0];
+      } else run_pass(p, r, &ctx);
       if (ph == CW_PHASE_PREPASS) p->prepass_ran = true;
       /* any opaque pass drew the 3D picture (the overlays then keep it) */
       if (ph == CW_PHASE_OPAQUE) p->drew3d = true;
@@ -1533,6 +1717,18 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   /* undo the jitter so game code sees the camera's real projection */
   if (taa) t3_camera_update_projection_matrix(ctx.camera);
   if (mode == RUN_OVERLAY) return; /* the views' history stands */
+  if (mode == RUN_ARRAY) {
+    for (int k = 0; k < p->arr_n && k < CW_MAX_VIEWS; k++) {
+      array_view(&ctx, p, k);
+      p->view_prev[k].vp = ctx.view_proj;
+      p->view_prev[k].have = offscreen;
+      p->view_prev[k].w = p->arr_rect[k][2];
+      p->view_prev[k].h = p->arr_rect[k][3];
+    }
+    array_view_end(&ctx, p);
+    p->have_prev = false;
+    return;
+  }
   if (mode == RUN_VIEW && p->view_i >= CW_MAX_VIEWS) return;
   if (mode == RUN_VIEW && p->view_i >= 0) {
     p->view_prev[p->view_i].vp = ctx.view_proj;

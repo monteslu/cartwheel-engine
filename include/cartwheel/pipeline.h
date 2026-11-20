@@ -370,6 +370,14 @@ typedef struct cw_pass_ctx {
    * buffer) sets this: the chain continues from it. */
   const cw_rt *result;
   void *user;
+  /* Split screen in one pass (cw_pipeline_set_views_array): view_count > 0 in that run. A pass with
+   * views = CW_PASS_VIEWS_EACH runs once per view: camera, camera_node and the matrices are that view's,
+   * view_index its index and view_rect its rectangle in the target (pixels, x and y from the bottom left, the
+   * target rows as every offscreen target holds them); its fullscreen draws are scissored to the rectangle
+   * (cw_pass_fullscreen keeps v_uv in target space: rebuild positions from cw_pass_view_uv's mapping) and
+   * geometry it draws itself goes through cw_pass_view_viewport. width and height stay the target's. */
+  int view_count, view_index;
+  int view_rect[4];
 } cw_pass_ctx;
 
 typedef struct cw_pass_desc {
@@ -393,7 +401,13 @@ typedef struct cw_pass_desc {
    * run a pass without it is skipped (logged once): GL calls there would
    * trap. Ignored on GL. */
   bool webgpu;
+  /* Split screen in one pass: how the pass takes several views over one target (cw_pipeline_set_views_array).
+   * NONE (the default): it cannot, and a frame with it active draws each view on its own as before. EACH: it runs
+   * once per view and draws only in that view's rectangle (cw_pass_ctx.view_rect). ONCE: it runs once for every
+   * view (camera independent work, or the scene pass, which draws through a t3_array_camera). */
+  uint8_t views;
 } cw_pass_desc;
+enum { CW_PASS_VIEWS_NONE, CW_PASS_VIEWS_EACH, CW_PASS_VIEWS_ONCE };
 
 /* The tree's pipeline (created on first call; freed with the tree). */
 cw_pipeline *cw_pipeline_of(cw_tree *t);
@@ -483,6 +497,15 @@ void cw_pipeline_set_view_hook(cw_pipeline *p, void (*hook)(int view, void *user
  * the bloom are the screen's then, not each view's: a glow can cross a seam.
  * Off by default. */
 void cw_pipeline_set_views_shared_post(cw_pipeline *p, bool shared);
+/* Split screen in one pass (needs the shared post chain): the views are drawn into one target, the scene in one
+ * three.c render with a t3_array_camera (each view culled and sorted by its own camera, one render pass, the
+ * frame's uploads once) and every other pass that reads a view's camera once per view inside its rectangle. The
+ * picture is the per-view one. A frame where an active pass cannot (CW_PASS_VIEWS_NONE, a view hook) draws each
+ * view on its own, as without it. Off by default. cw_pipeline_views_array_used says what the last frame did. */
+void cw_pipeline_set_views_array(cw_pipeline *p, bool on);
+/* The last frame's split screen ran in one pass (false: each view on its own, or no split); why not names the
+ * first pass that could not (NULL when it ran, or for a view hook / no split). */
+bool cw_pipeline_views_array_used(cw_pipeline *p, const char **why_not);
 
 /* ── targets ───────────────────────────────────────────────────────── */
 
@@ -557,6 +580,13 @@ void cw_pass_set_depth(bool test, bool write);
 /* Clear the bound target's colour (and depth to 1). */
 void cw_pass_clear(float r, float g, float b, float a, bool depth);
 /* One full-screen triangle (no buffers; needs a bound program). */
+/* Split screen in one pass (cw_pass_ctx.view_count > 0): the view's rectangle as a uv transform of the target,
+ * (x, y, w, h) with local = (v_uv - xy) / wh, for a shader that rebuilds a position from its uv; (0, 0, 1, 1) in
+ * any other run. */
+void cw_pass_view_uv(const cw_pass_ctx *ctx, float out[4]);
+/* Geometry a pass draws itself (not cw_pass_fullscreen) into the bound target, from the view's camera: the
+ * viewport and scissor to the view's rectangle. Does nothing outside a one-pass split screen run. */
+void cw_pass_view_viewport(const cw_pass_ctx *ctx);
 void cw_pass_fullscreen(void);
 /* Procedural geometry without buffers: `vertices` vertices as a triangle
  * list, positioned by the program's own vertex stage from the vertex index

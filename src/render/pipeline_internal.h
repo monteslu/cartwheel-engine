@@ -128,6 +128,15 @@ struct cw_pipeline {
   const cw_rt *view_pic;    /* a shared post chain's view: its scene target is its picture (no copy) */
   bool views_shared_post; /* cw_pipeline_set_views_shared_post */
   bool view_post_split;   /* this frame: the views run the depth-reading post passes, the overlay run the rest */
+  /* split screen in one pass (cw_pipeline_set_views_array) */
+  bool views_array, arr_used;
+  const char *arr_why;      /* the first active pass that could not (interned), last frame */
+  t3_array_camera *arr_cam;
+  t3_camera *arr_cams[CW_MAX_VIEWS];
+  cw_node arr_nodes[CW_MAX_VIEWS];
+  int arr_rect[CW_MAX_VIEWS][4]; /* pixels from the bottom left */
+  int arr_n;
+  const char *arr_refused;  /* set by a RUN_ARRAY run that found such a pass (nothing drawn) */
   const cw_rt *post_src;  /* the overlay run's input: the views laid out (shared post) */
   int taa_frames;     /* frames accumulated in the TAA history */
   /* post fusion this frame, GL and WebGPU (pipeline.c decides,
@@ -228,6 +237,14 @@ const cw_rt *cw__pipeline_rt_find(cw_pipeline *p, const char *key);
 bool cw__pipeline_queue_view(cw_pipeline *p, cw_node camera, const cw_rt *rt, int slot, void (*done)(void *user, float cpu_ms), void *user);
 void cw__rt_destroy(cw_rt *rt);
 void cw__pass_state_reset(void);
+/* split screen in one pass: the view rectangle the pass helpers scissor to (pixels of a full_w x full_h target,
+ * from the bottom left); on = false outside a view run. A bound target of another size gets the rectangle scaled
+ * (a half-size intermediate: half the rectangle). */
+typedef struct cw__view_clip { bool on; int rect[4]; int full_w, full_h; int bound_w, bound_h; } cw__view_clip;
+extern cw__view_clip cw__vclip;
+/* the rectangle scaled to a target of w x h */
+void cw__view_clip_rect(int w, int h, int out[4]);
+void cw__pw_set_scissor(const int *rect); /* WebGPU: NULL = the whole target */
 /* copy a texture into a target with a plain shader (any formats) */
 void cw__pass_copy(cw_pass_ctx *ctx, unsigned src_tex, const cw_rt *dst);
 /* the LUT texture of a LUT id (0 when unknown) */
