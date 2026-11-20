@@ -69,7 +69,8 @@ by rewriting it from the tree (`cw_scene_save`), and comments do not
 survive that. Select their sections by node instead: `#Player` takes the
 node `Player` and its whole subtree (a path from the scene root such as
 `#Goal/Lamp`, or a name that is unique in the file; named sections such as
-`[animation name="spin"]` match by name too), `#Gem1..Gem4` takes
+`[animation name="spin"]` match by name too, and the blend graph of the
+AnimationTree at `Tree` is `#animtree:Tree`), `#Gem1..Gem4` takes
 everything from `Gem1` through the end of `Gem4`'s subtree, and
 `#ext_scene` the `[ext_scene]` lines. `--check` fails on a region marker
 in a `.cwscene`.

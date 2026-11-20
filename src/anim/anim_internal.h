@@ -100,6 +100,14 @@ typedef struct mix_cache {
   int n;
 } mix_cache;
 
+/* one overlay level's accumulation (cw__amix_layer_begin): per binding */
+typedef struct mix_scratch { cw_value acc; float weight; bool touched; } mix_scratch;
+typedef struct mix_level {
+  CW_ARRAY(mix_scratch) s;   /* by binding index */
+  CW_ARRAY(int) touched;     /* binding indices, in first-touch order */
+} mix_level;
+#define CW__AMIX_MAX_LEVELS 4
+
 typedef struct cw__amix {
   cw_node owner;      /* player or tree node */
   cw_node root;       /* node track paths resolve from */
@@ -116,6 +124,9 @@ typedef struct cw__amix {
   float rm_weight;
   t3_vec3 rm_last;      /* last tick's motion, target parent space */
   int rm_binding;
+  /* overlay levels (layer and one-shot nodes) */
+  int depth;
+  mix_level lv[CW__AMIX_MAX_LEVELS];
 } cw__amix;
 
 void cw__amix_init(cw__amix *m, cw_node owner);
@@ -126,6 +137,14 @@ void cw__amix_set_root(cw__amix *m, cw_node root);
  * for root motion segments (may be NULL). */
 void cw__amix_sample(cw__amix *m, cw_anim anim, float time, float w, const cw_map *filter, bool additive,
                       const anim_cursor *cursor);
+/* An overlay: samples between begin and end accumulate on their own (a
+ * weighted average, as the main level), then replace `amount` (0..1) of what
+ * the level below holds on every binding they touched; bindings they did not
+ * touch keep what they had. w is the weight of the node the overlay sits on
+ * (its base input's weight). Levels nest up to CW__AMIX_MAX_LEVELS; false
+ * (and nothing begun) past that. Additive samples ignore levels. */
+bool cw__amix_layer_begin(cw__amix *m);
+void cw__amix_layer_end(cw__amix *m, float amount, float w);
 /* Write every touched binding, fold into the hash, apply root motion. */
 void cw__amix_apply(cw__amix *m);
 
@@ -141,6 +160,7 @@ cw_node cw__anim_debug_node(const char *path, void *reply, const char *type);
 void cw__register_player_debug_commands(void);
 void cw__register_tree_debug_commands(void);
 void cw__register_anim_scene_section(void);
+void cw__register_animtree_scene_section(void);
 void cw__register_player_type(void);
 void cw__register_tree_type(void);
 void cw__register_ik_types(void); /* skeleton modifiers (ik_nodes.c) */

@@ -2279,7 +2279,7 @@
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
     },
-    "note": "interpolation, loop-edge key firing, speed/seek, cross-fade, queue, .cwscene animation round trips, tweens, AnimationTree blends/state machines, root motion, glTF skeletal sampling vs three.c mixer; sampled values fold into unit.checksum"
+    "note": "interpolation, loop-edge key firing, speed/seek, cross-fade, queue, .cwscene animation round trips, tweens, AnimationTree blends/state machines, blend graphs as text and in [animtree] scene sections (byte-exact round trips, errors, instance overrides), layers with bone masks (control: blend2), one-shots, time scale, synced blend spaces and transitions (controls: unsynced), root motion, glTF skeletal sampling vs three.c mixer; sampled values fold into unit.checksum"
   },
   {
     "name": "unit-character",
@@ -4009,6 +4009,7 @@
       "player.dashes",
       "player.floor",
       "anim.state",
+      "anim.hash",
       "player.pos",
       "player.vel",
       "cam.pos",
@@ -4052,6 +4053,7 @@
       "player.dashes",
       "player.floor",
       "anim.state",
+      "anim.hash",
       "player.pos",
       "player.vel",
       "cam.pos",
@@ -4097,6 +4099,7 @@
       "player.dashes",
       "player.floor",
       "anim.state",
+      "anim.hash",
       "player.pos",
       "player.vel",
       "cam.pos",

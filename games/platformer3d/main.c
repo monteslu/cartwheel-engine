@@ -16,7 +16,7 @@
  * (fixed ticks, the tick action snapshot, cartwheel/math.h, Box3D). The
  * debug fields name the state the gate compares across hosts: game.state,
  * level, score, coins, gems, lives, deaths, checkpoint, timer, player.pos,
- * player.vel, cam.pos, anim.state, props.hash (every rigid prop's transform
+ * player.vel, cam.pos, anim.state, anim.hash (the hero's animated poses), props.hash (every rigid prop's transform
  * each tick), phys.hash and state.hash (all of it folded every tick).
  *
  * Built twice: `platformer3d` reads devices (gate input:
@@ -285,6 +285,7 @@ static void init(void *u) {
   cw_debug_i32("player.dashes", &G.dashes);
   cw_debug_i32("player.floor", &G.floor);
   cw_debug_i32("anim.state", &G.anim_state);
+  cw_debug_u32("anim.hash", &G.anim_hash);
   cw_debug_f32_array("player.pos", G.player_pos, 3);
   cw_debug_f32_array("player.vel", G.player_vel, 3);
   cw_debug_f32_array("cam.pos", G.cam_pos, 3);

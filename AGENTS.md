@@ -118,6 +118,46 @@ t3_release(hero);                               /* the parent holds it */
 `on_floor`. Pickups: `cw_connect(area, "body_entered", area, NULL, on_enter, NULL, 0)`. Vehicles `vehicle3d.h`,
 ragdolls `ragdoll.h`, navigation `nav.h`.
 
+**Animation** (`anim.h`, nodes `AnimationPlayer` and `AnimationTree`, [animation](docs/guides/animation.md)):
+a character's animation logic is text in its scene, never a tool's output. Clips come from the glTF
+(`cw_anim_from_t3_clip`, added to the player) or from `[animation]` sections; the blend graph is an `[animtree]`
+section, one statement per line:
+
+```text
+[node name="Anim" parent="Model" type="AnimationPlayer"]
+[node name="Tree" parent="." type="AnimationTree"]
+player = "../Model/Anim"
+
+[animtree tree="Tree"]
+clip name="idle" anim="idle"
+clip name="run" anim="run"
+blend1d name="move" param="speed" sync=true
+point of="move" node="idle" x=0
+point of="move" node="run" x=6
+clip name="jump" anim="jump"
+machine name="body"
+state of="body" name="ground" node="move"
+state of="body" name="jump" node="jump"
+transition of="body" from="ground" to="jump" xfade=0.06 if="!floor"
+transition of="body" from="jump" to="ground" xfade=0.1 if="floor"
+clip name="swing" anim="attack"
+oneshot name="top" base="body" shot="swing" param="attack" fadein=0.08 fadeout=0.15 bones="Spine+"
+root node="top"
+```
+
+```c
+cw_node tree = cw_node_get(hero, "Tree");
+cw_animtree_set_param(tree, "speed", speed);          /* every tick, in fixed_update */
+cw_animtree_set_param(tree, "floor", on_floor ? 1 : 0);
+if (attack_pressed) cw_animtree_set_param(tree, "attack", 1);   /* one set = one swing over the running legs */
+const char *state = cw_animtree_sm_current(tree, cw_animtree_find(tree, "body"));
+```
+
+`layer` (base, over, param, bones) holds a pose on masked bones (`bones="Spine+"` = Spine and everything below it)
+while the rest keeps playing; a statement the format does not know is a load error with the line. Look at a running
+tree with the debug requests `animtree <path>` and `animtree_text <path>`. Hit windows and footsteps are event keys
+on the clip (`cw_anim_add_event`, `cw_animtree_on_event`), not tick tables.
+
 **Input and prompts** (`input.h`, `prompt.h`, [input](docs/guides/input.md)):
 
 ```c

@@ -283,45 +283,11 @@ static void from_f(cw_value *v, cw_type t, const float f[4]) {
   else memcpy(v->v, f, 16);
 }
 
-void cw_quat_slerp_det(float out[4], const float a[4], const float b[4], float t) {
-  /* three.js Quaternion.slerpFlat with cw_atan2 / cw_sin (deterministic) */
-  float x0 = a[0], y0 = a[1], z0 = a[2], w0 = a[3];
-  const float x1 = b[0], y1 = b[1], z1 = b[2], w1 = b[3];
-  if (t == 0) { out[0] = x0; out[1] = y0; out[2] = z0; out[3] = w0; return; }
-  if (t == 1) { out[0] = x1; out[1] = y1; out[2] = z1; out[3] = w1; return; }
-  if (w0 != w1 || x0 != x1 || y0 != y1 || z0 != z1) {
-    float s = 1 - t;
-    const float cs = x0 * x1 + y0 * y1 + z0 * z1 + w0 * w1, dir = cs >= 0 ? 1.0f : -1.0f, sqr_sin = 1 - cs * cs;
-    if (sqr_sin > 2.220446049250313e-16f) {
-      const float sn = sqrtf(sqr_sin), len = cw_atan2(sn, cs * dir);
-      s = cw_sin(s * len) / sn;
-      t = cw_sin(t * len) / sn;
-    }
-    const float tdir = t * dir;
-    x0 = x0 * s + x1 * tdir;
-    y0 = y0 * s + y1 * tdir;
-    z0 = z0 * s + z1 * tdir;
-    w0 = w0 * s + w1 * tdir;
-    if (s == 1 - t) {
-      const float f = 1 / sqrtf(x0 * x0 + y0 * y0 + z0 * z0 + w0 * w0);
-      x0 *= f; y0 *= f; z0 *= f; w0 *= f;
-    }
-  }
-  out[0] = x0; out[1] = y0; out[2] = z0; out[3] = w0;
-}
-
 static void quat_normalize(float q[4]) {
   float l = sqrtf(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
   if (l == 0) { q[0] = q[1] = q[2] = 0; q[3] = 1; return; }
   l = 1 / l;
   for (int i = 0; i < 4; i++) q[i] *= l;
-}
-
-void cw_quat_nlerp(float out[4], const float a[4], const float b[4], float t) {
-  float d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3], sb = d < 0 ? -1.0f : 1.0f, r[4];
-  for (int i = 0; i < 4; i++) r[i] = a[i] + (b[i] * sb - a[i]) * t;
-  quat_normalize(r);
-  memcpy(out, r, sizeof r);
 }
 
 void cw__value_mix(cw_value *dst, const cw_value *src, float w, cw_rot_mode rot) {
