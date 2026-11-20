@@ -10,7 +10,8 @@
  * VELOCITY: 0.5 grey is still), then the picture again.
  *
  * MV_REF (tests/motion-vectors.mjs, read as cw_test_env reads): 1 draws the frames without TAA (with
- * CW_RENDER_SCALE: the supersampled picture a TAA frame is measured against), 2 the same without the movers.
+ * CW_RENDER_SCALE: the supersampled picture a TAA frame is measured against), 2 the same without the movers,
+ * 3 the yard without the movers under TAA (a still picture: TAA must not soften it).
  *
  * Debug fields: cw.velocity.objects (meshes drawn into the velocity target), mv.frame. */
 #include <math.h>
@@ -62,10 +63,10 @@ static void update(void *u, double dt) {
   const char *ref = cw_test_env("MV_REF");
   int mode = ref ? atoi(ref) : 0;
   cw_node post = cw_node_get(yard, "Post");
-  cw_node_set(post, "taa", cw_val_bool(mode == 0));
+  cw_node_set(post, "taa", cw_val_bool(mode == 0 || mode == 3));
   cw_node_set(post, "debug_view", cw_val_enum(frame_no > 60 && frame_no <= 90 && mode == 0 ? "VELOCITY" : "NONE"));
   const char *const movers[] = { "Spinner", "Walker", "Swarm" };
-  for (int i = 0; i < 3; i++) cw_node_set(cw_node_get(yard, movers[i]), "visible", cw_val_bool(mode != 2));
+  for (int i = 0; i < 3; i++) cw_node_set(cw_node_get(yard, movers[i]), "visible", cw_val_bool(mode != 2 && mode != 3));
 
   float t = (float)frame_no;
   cw_node3d_set_rotation(cw_node_get(yard, "Spinner"), (t3_vec3){ 0, 0, t * 0.17f });

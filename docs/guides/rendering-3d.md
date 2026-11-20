@@ -168,14 +168,18 @@ The velocity target (`CW_RES_VELOCITY`, an RG16F image of each pixel's motion si
 
 Nothing is tracked or drawn for what stands still: the pass compares each mesh's matrices with the last frame's, keeps the previous pose by swapping two buffers when it changed, and uploads bone and instance data only for the meshes it draws. A scene with no moving mesh pays the comparison and no draw. In `samples/motion_vectors` at 1920 x 1080 on a Radeon 890M (WebGPU) the whole velocity pass takes 0.17 ms of GPU time with the three movers drawn (a 19-bone character, 48 instances, one mesh), the same within noise as with the camera's motion alone; drawing them costs about 0.5 ms of CPU time in a development cart. The debug fields `cw.velocity.objects` and `cw.velocity.tracked` report how many meshes were drawn and how many are followed.
 
-TAA reads it: a pixel reprojects its history along the motion of the nearest surface in its 3 x 3 neighbourhood, so the antialiased edge of a moving object follows the object. With only the camera's motion a moving character smeared and its edges broke up, because its history was read from where the background had been. Measured against a picture of the same frame rendered with 36 samples a pixel (`tests/motion-vectors.mjs`, mean error in display levels over the mover's pixels, 640 x 360, the same on GL and WebGPU):
+TAA reads it: a pixel reprojects its history along the motion of the nearest surface in its 3 x 3 neighbourhood, so the antialiased edge of a moving object follows the object. With only the camera's motion a moving character smeared and its edges broke up, because its history was read from where the background had been.
 
-| mover | its own motion | camera motion only |
-|---|---|---|
-| a bar turning 0.21 rad a frame (`samples/post_stack`) | 3.4 | 6.4 |
-| a mesh turning 0.17 rad a frame | 6.1 | 8.4 |
-| a skinned character walking and sliding | 6.6 | 10.4 |
-| an instanced swarm on two counter-turning rings | 5.3 | 8.4 |
+Following the motion was not enough on its own: on a fast mover TAA was still twice as far from the true picture as no TAA at all. Three things caused it. The frame is drawn with a sub-pixel jitter, and where little history survives that jitter shows: a turning bar sat up to half a pixel off where it was. A history resampled every frame softens what moves, and a turning thing's shading moves on. And the ground a mover uncovers still held the mover in its history, which the neighbourhood clip lets through next to the mover's edge. So a pixel that moves now takes the frame unjittered (a 4 x 4 Catmull-Rom of the jittered frame at the pixel's own centre, in a tonemapped space so bright edges do not grow, held inside its 2 x 2 neighbours), its history weight falls with its speed (from the PostProcess's `taa_feedback` to 0.25 by one pixel a frame), and a pixel whose history surface left (the last frame's motion there is not this pixel's) drops its history. Still pixels are as they were: the jittered frame into a full-weight history, so a still picture is exactly as sharp. Measured against a picture of the same frame rendered with 36 samples a pixel (`tests/motion-vectors.mjs`, mean error in display levels over the mover's pixels, 640 x 360, GL and WebGPU within 0.02):
+
+| mover | TAA | no TAA | TAA before the moving-pixel terms | camera motion only |
+|---|---|---|---|---|
+| a bar turning 0.21 rad a frame (`samples/post_stack`) | 1.37 | 1.70 | 3.40 | 6.4 |
+| a mesh turning 0.17 rad a frame | 1.58 | 2.17 | 6.13 | 8.4 |
+| a skinned character walking and sliding | 3.99 | 4.02 | 6.55 | 10.4 |
+| an instanced swarm on two counter-turning rings | 2.92 | 3.43 | 5.29 | 8.4 |
+
+The test holds TAA at or under no TAA on every mover (its control, TAA without the moving-pixel terms, `CW_TEST_TAA_STILL_ONLY=1`, must fail that) and the still yard under TAA as sharp as before (error within 2 %, mean gradient at least 98 %; its control treats every pixel as moving and must fail). The velocity pass keeps the last frame's velocity target (two targets by frame parity) for the uncovered-ground test.
 
 What keeps the camera's motion: blended materials (they write no depth), sprites, points and lines, and a morph target's change of shape (a morphed mesh still moves with its node and bones). A first person viewmodel is treated as still on the screen. A mesh seen for the first time, or again after being hidden, has no previous pose for one frame.
 

@@ -4,6 +4,25 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## NEXT (fixes2): TAA on fast movers no worse than no TAA
+
+### Fixed
+
+- **TAA on things that move.** With object motion vectors a fast mover under TAA was still about twice as far
+  from a 36-sample picture as no TAA at all. Three causes: where little history survives, the frame's sub-pixel
+  jitter showed (a turning bar sat up to half a pixel off); a history resampled every frame softened what moves
+  and lagged its shading; and the ground a mover uncovered still held the mover in its history. A moving pixel
+  now takes the frame unjittered (a 4 x 4 Catmull-Rom at the pixel's centre in a tonemapped space, held inside
+  its 2 x 2 neighbours), its history weight falls with its speed (to 0.25 by one pixel a frame), and a pixel whose
+  history surface left (the last frame's motion there is not its own; the velocity pass keeps the last frame's
+  target) drops its history. Still pixels are unchanged. Error over the mover (display levels, 640 x 360, GL and
+  WebGPU within 0.02), before, after and with no TAA: post_stack's bar 3.40, 1.37, 1.70; a turning mesh 6.13,
+  1.58, 2.17; a skinned character 6.55, 3.99, 4.02; an instanced swarm 5.29, 2.92, 3.43. `tests/motion-vectors.mjs`
+  now also holds TAA at or under no TAA on every mover (control: TAA without the moving-pixel terms,
+  `CW_TEST_TAA_STILL_ONLY=1`, fails it) and the still yard as sharp as before (`MV_REF=3`; control: every pixel
+  taken as moving fails it). The TAA pass costs 0.04 to 0.07 ms more at post_stack's size on a Radeon 890M
+  (GL 0.42 to 0.49 ms, WebGPU 0.41 to 0.45 ms on a still frame; 0.44 to 0.50 and 0.46 to 0.50 on the spinning bar).
+
 ## v0.52.0 (2026-11-20)
 
 ### Added
