@@ -45,7 +45,7 @@ static size_t blob_size(const void *p, void *u) { return ((const cw_blob *)p)->l
     .discard = blob_unload, .reload = blob_reload, .size = blob_size }
 const cw_res_type_desc cw__res_font_type = BLOB_TYPE("font", ".ttf .otf .ttc", blob_decode);
 const cw_res_type_desc cw__res_json_type = BLOB_TYPE("json", ".json", json_decode);
-const cw_res_type_desc cw__res_text_type = BLOB_TYPE("text", ".txt .csv .md .cfg .ini .glsl .vert .frag .cwproj .cwscene", blob_decode);
+const cw_res_type_desc cw__res_text_type = BLOB_TYPE("text", ".txt .csv .md .cfg .ini .glsl .vert .frag .cwproj .cwscene .ies", blob_decode);
 const cw_res_type_desc cw__res_binary_type = BLOB_TYPE("binary", ".bin", blob_decode);
 
 const cw_blob *cw_res_blob(cw_res h) {

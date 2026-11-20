@@ -22,6 +22,10 @@
 //                       4: omni shadow: world position, near; 5: far
 //                       8: the shadow's tile in the atlas (texels, rows top-down): x, y, face size; PCF radius (texels)
 //                       9: shadow intensity
+//                       (the "clusteries" part only) 10: view-space +Y of the light, the profile's column in the atlas (texels)
+//                       11: the profile's first row, its rows of twist (360, or 0 for a one-row profile)
+//                       row 2 of a light with a profile: its view-space +Z, cone cos -3
+//   ext.clusterIes      (the "clusteries" part only) RGBA16F, linear: the IES profiles, columns of 180 texels
 //   ext.clusterShadows  R32F (WebGPU: a copy of the depth; GLES: the depth texture), the atlas (src/render/lighting_atlas.c), read with textureLoad:
 //                       r187's PCF filter (five Vogel-disk taps rotated by interleaved gradient
 //                       noise), each tap a 2 x 2 bilinear depth compare done by hand (WGSL forbids
@@ -67,7 +71,8 @@ export function froxelRecord(TSL, { records, grid, depth }) {
   return textureLoad(records, ivec2(f.mod(w), f.div(w))).r;
 }
 
-export async function apply(ctx, next) {
+// opts.ies: the "clusteries" part, the same loop with IES profiles (clusteries.mjs)
+export async function apply(ctx, next, opts = {}) {
   const { TSL, THREE, mat, props, sentinel, kind } = ctx;
   // only lit surfaces gather lights; a caster (depth+x...) carries nothing of this part
   if (kind === 'depth' || !LIT_KINDS.has(kind)) return next ? next(ctx) : undefined;
@@ -75,6 +80,7 @@ export async function apply(ctx, next) {
     Fn, If, Loop, uniform, sharedUniformGroup, textureLoad, directPointLight, positionView, positionWorld, normalWorld,
     screenCoordinate, interleavedGradientNoise, vogelDiskSample,
     int, uint, float, vec2, vec3, vec4, mat4, ivec2, smoothstep, dot, normalize, select, abs, floor, clamp, mix, min, max,
+    texture, textureSize, acos, atan, cross,
   } = TSL;
 
   const frame = sharedUniformGroup('lightingFrame', 0, THREE.NodeUpdateType.RENDER);
@@ -105,6 +111,31 @@ export async function apply(ctx, next) {
   const lights = new THREE.DataTexture(new Float32Array(2 * LIGHT_ROWS * 4), 2, LIGHT_ROWS, THREE.RGBAFormat, THREE.FloatType);
   lights.name = 'ext.clusterLights';
   lights.needsUpdate = true;
+  // clusteries: the profile atlas (src/render/lighting.c ies_update): RGBA half floats, linear, columns of 180
+  // texels of tilt; a light's rows 10 and 11 say where its profile sits
+  let iesAtlas = null;
+  if (opts.ies) {
+    iesAtlas = new THREE.DataTexture(new Uint16Array(180 * 2 * 4), 180, 2, THREE.RGBAFormat, THREE.HalfFloatType);
+    iesAtlas.magFilter = iesAtlas.minFilter = THREE.LinearFilter;
+    iesAtlas.name = 'ext.clusterIes';
+    iesAtlas.needsUpdate = true;
+  }
+  // An IES profile in place of the cone, as three.js r187's IESSpotLightNode.getSpotAttenuation reads it: the tilt off
+  // the light's axis along x (0 to 180 degrees over the texel centres), the twist around the axis along y (360 rows
+  // and the first again, or one row for a profile that is the same all the way round). The axes are the light's own:
+  // c.xyz its +Z (from the target to the light), row 10 its +Y. r187 takes the twist from the shadow camera's
+  // projection, which mirrors it for directions behind the light; here it runs on around the axis, so an omni light
+  // can carry a whole sphere.
+  const iesShape = (li, c, lightVector) => {
+    const r10 = textureLoad(lights, ivec2(li, 10)).toVar();
+    const r11 = textureLoad(lights, ivec2(li, 11));
+    const toLight = normalize(lightVector).toVar();
+    const tilt = acos(clamp(dot(toLight, c.xyz), -1, 1)).mul(1 / Math.PI);
+    const out = toLight.negate();
+    const twist = atan(dot(out, r10.xyz), dot(out, cross(r10.xyz, c.xyz))).mul(0.5 / Math.PI).add(0.5);
+    const texel = vec2(r10.w.add(0.5).add(tilt.mul(179)), r11.x.add(0.5).add(twist.mul(r11.y)));
+    return texture(iesAtlas, texel.div(vec2(textureSize(texture(iesAtlas))))).level(0).r;
+  };
 
   // one tap of the filter: the 2 x 2 texels around pt (atlas texels, rows top-down), each
   // compared with z (LessEqual: lit when z <= the stored depth) and blended bilinearly, as a
@@ -194,7 +225,13 @@ export async function apply(ctx, next) {
             const d = textureLoad(lights, ivec2(li, 3));
             const point = directPointLight({ color: b.rgb, lightVector, cutoffDistance: cutoff, decayExponent: b.w });
             // a spot light's cone (r187 SpotLightNode.getSpotAttenuation); omni lights carry cone cos -2
-            const cone = select(c.w.lessThan(-1.5), float(1), smoothstep(c.w, d.x, dot(normalize(lightVector), c.xyz)));
+            let cone = select(c.w.lessThan(-1.5), float(1), smoothstep(c.w, d.x, dot(normalize(lightVector), c.xyz)));
+            if (opts.ies) {
+              // (cone cos -3: the light has a profile)
+              const shaped = float(cone).toVar();
+              If(c.w.lessThan(-2.5), () => shaped.assign(iesShape(li, c, lightVector)));
+              cone = shaped;
+            }
             const shadow = float(1).toVar();
             If(d.y.greaterThan(0.5), () => shadow.assign(lightShadow(li, d)));
             lightsNode.setupDirectLight(builder, this, { lightDirection: point.lightDirection, lightColor: point.lightColor.mul(cone).mul(shadow) });

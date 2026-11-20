@@ -921,7 +921,7 @@ static bool extension_keeps_vertices(const t3_material *mt) {
   for (const char *p = ext; *p;) {
     const char *e = strchr(p, '_');
     size_t len = e ? (size_t)(e - p) : strlen(p);
-    bool shading = (len == 7 && !strncmp(p, "cluster", len)) || (len == 3 && !strncmp(p, "csm", len)) ||
+    bool shading = (len == 7 && !strncmp(p, "cluster", len)) || (len == 10 && !strncmp(p, "clusteries", len)) || (len == 3 && !strncmp(p, "csm", len)) ||
                    (len == 2 && !strncmp(p, "gi", len)) || (len == 9 && !strncmp(p, "meshdecal", len));
     if (!shading) return false;
     if (!e) break;

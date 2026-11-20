@@ -95,7 +95,7 @@ enum {
   CW_RES_AUDIO_CLIP,  /* .wav .ogg .opus .mp3 .flac .xm .mod .s3m .it -> cw_audio_clip * */
   CW_RES_FONT,        /* .ttf .otf                  -> cw_blob *         */
   CW_RES_JSON,        /* .json (validated at load)  -> cw_blob *         */
-  CW_RES_TEXT,        /* .txt .csv .md .cfg .ini .cwproj .cwscene -> cw_blob * */
+  CW_RES_TEXT,        /* .txt .csv .md .cfg .ini .cwproj .cwscene .ies -> cw_blob * */
   CW_RES_BINARY,      /* anything else (.bin)       -> cw_blob *         */
   CW_RES_BUILTIN_COUNT
 };

@@ -760,6 +760,11 @@ typedef struct light3d {
   float shadow_distance;    /* directional cascades: where the last ends (r187 maxFar; 0 = the camera's far) */
   bool cascade_fade;        /* directional cascades: cross-fade between them (r187 CSMShadowNode.fade) */
   float fog_energy;         /* strength in volumetric fog (src/render/volumetric_fog.c) */
+  uint64_t ies_profile;     /* omni / spot: an .ies resource (uid), the light's shape; 0 = none */
+  uint64_t ies_built;       /* the uid ies_res was loaded for */
+  uint32_t ies_version;
+  bool ies_set, ies_warned;
+  cw_res ies_res;
 } light3d;
 static const cw_node_type *light3d_t;
 
@@ -801,9 +806,67 @@ static void light_enter(cw_node n, void *data) {
   if (t && l->shadow) state(t)->shadows_enabled = true;
 }
 
+/* the IES profile (cartwheel/lighting.h): the .ies text resource parsed by three.c's IESLoader into the texture the
+ * light carries (light.iesMap). Lights naming the same file share one texture. */
+typedef struct ies_cached { uint64_t uid; uint32_t version; t3_texture *tex; } ies_cached;
+static CW_ARRAY(ies_cached) ies_cache;
+static t3_texture *ies_texture(uint64_t uid, uint32_t version, const cw_blob *b) {
+  for (int i = 0; i < ies_cache.count; i++)
+    if (ies_cache.data[i].uid == uid && ies_cache.data[i].version == version) return ies_cache.data[i].tex;
+  t3_texture *t = t3_ies_texture_parse((const char *)b->data, b->len);
+  if (!t) return NULL;
+  for (int i = 0; i < ies_cache.count; i++)
+    if (ies_cache.data[i].uid == uid) { /* reloaded: the new one takes its place */
+      t3_release(ies_cache.data[i].tex);
+      ies_cache.data[i] = (ies_cached){ uid, version, t };
+      return t;
+    }
+  cw_array_push(&ies_cache, ((ies_cached){ uid, version, t }));
+  return t;
+}
+static void light_ies(cw_node n, light3d *l) {
+  if (l->kind == 0) return;
+  if (l->ies_profile != l->ies_built) {
+    cw_res_release(l->ies_res);
+    l->ies_res = l->ies_profile ? cw_res_load_uid(l->ies_profile, 0) : (cw_res){ 0 };
+    l->ies_built = l->ies_profile;
+    l->ies_set = false;
+    t3_light_set_ies_map(l->light, NULL);
+  }
+  if (!l->ies_profile) return;
+  cw_res_state st = cw_res_get_state(l->ies_res);
+  if (st == CW_RES_STATE_READY && (!l->ies_set || l->ies_version != cw_res_version(l->ies_res))) {
+    const cw_blob *b = cw_res_blob(l->ies_res);
+    t3_texture *t = b ? ies_texture(l->ies_profile, cw_res_version(l->ies_res), b) : NULL;
+    if (!t && !l->ies_warned)
+      cw_error("%s: ies_profile %016llx is not an IES photometric file (it needs a TILT line and the angle and candela lists); the light keeps its plain shape",
+               cw_node_name(n), (unsigned long long)l->ies_profile);
+    l->ies_warned |= !t;
+    t3_light_set_ies_map(l->light, t);
+    l->ies_set = true;
+    l->ies_version = cw_res_version(l->ies_res);
+  } else if (st == CW_RES_STATE_FAILED && !l->ies_warned) {
+    cw_error("%s: ies_profile %016llx did not load (is the .ies file in the pack?)", cw_node_name(n), (unsigned long long)l->ies_profile);
+    l->ies_warned = true;
+  }
+  /* an omni light's profile is drawn by the clustered lights alone (three.js has no IES point light) */
+  cw_tree *t = cw_node_tree(n);
+  if (l->kind == 1 && l->light->ies_map && t && !(cw__lighting_cluster_kinds(t) & 1) && !l->ies_warned) {
+    cw_warn("%s: an OmniLight3D's ies_profile needs clustered lighting (LightingSettings mode = CLUSTERED); it lights as a plain omni light", cw_node_name(n));
+    l->ies_warned = true;
+  }
+}
+static void light_destroy(cw_node n, void *data) {
+  (void)n;
+  light3d *l = data;
+  cw_res_release(l->ies_res);
+  l->ies_res = (cw_res){ 0 };
+}
+
 static void light_pre_render(cw_node n, void *data, double alpha) {
   (void)alpha;
   light3d *l = data;
+  light_ies(n, l);
   l->light->color = l->color;
   l->light->intensity = l->realtime ? l->energy : 0; /* not real time: dark to three.c and the clusters, the bake still reads energy */
   l->light->distance = l->range;
@@ -867,6 +930,8 @@ static const cw_prop light_props[] = {
   CW_PROP_FIELD_RANGE(light3d, decay, CW_T_FLOAT, 0, 10, "Omni/spot: falloff exponent."),
   CW_PROP_FIELD_RANGE(light3d, angle, CW_T_FLOAT, 0, 1.5707963, "Spot: cone half-angle, radians."),
   CW_PROP_FIELD_RANGE(light3d, penumbra, CW_T_FLOAT, 0, 1, "Spot: soft edge fraction."),
+  CW_PROP_FIELD(light3d, ies_profile, CW_T_RES, CW_PROP_DEFAULT,
+                "Omni/spot: an IES photometric file (.ies) that shapes the light: rings, hot spots and cut-offs of a real fixture, read around the light's -Z (the twist from its +Y). It replaces a spot's cone (angle still sizes its shadow). An omni light's needs clustered lighting."),
   CW_PROP_FIELD(light3d, bake, CW_T_BOOL, CW_PROP_DEFAULT, "Contributes to baked lightmaps and ambient probes (LightmapGI)."),
   CW_PROP_FIELD(light3d, realtime, CW_T_BOOL, CW_PROP_DEFAULT,
                 "Lights the scene in real time (default). Off: only the bake has it (with bake_direct, the lightmaps "
@@ -886,7 +951,7 @@ static const cw_prop light_props[] = {
 
 static cw_node_type light3d_base = {
   .name = "Light3D", .parent = "Node3D", .data_size = sizeof(light3d), .props = light_props,
-  .doc = "Base of the light types.", .enter_tree = light_enter, .pre_render = light_pre_render,
+  .doc = "Base of the light types.", .enter_tree = light_enter, .pre_render = light_pre_render, .destroy = light_destroy,
 };
 
 static cw_node_type dir_type = { .name = "DirectionalLight3D", .parent = "Light3D", .init = NULL, .doc = "Sun-like light along -Z." };

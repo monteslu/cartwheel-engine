@@ -161,3 +161,6 @@ standard+l0001+xcsm_gi
 standard+l0001+xcsm_plain_gi
 toon+l0001+xcluster_csm
 toon+gmap+l0001+xcluster_csm
+standard+l0001+xclusteries_plain
+depth+xclusteries
+standard+l0001+xclusteries

@@ -483,6 +483,24 @@
     "note": "toon shaded spheres (three.js's two tones, ramps of three and five tones, one changed to eight tones and back from code), an emissive cylinder, a toon ground and two toon trees from one glTF (their toon materials shared), beside a physically based sphere and tree, under a cascaded sun with shadows, a clustered omni light and a clustered spot light. The control sets every mesh back to STANDARD: the state (toon.materials 0) and the picture differ"
   },
   {
+    "name": "ies-lights",
+    "webgpu": true,
+    "app": "ies_lights",
+    "frames": 150,
+    "fields": [
+      "ies.lights",
+      "ies.clustered"
+    ],
+    "expect": {
+      "ies.lights": 3,
+      "ies.clustered": 4
+    },
+    "controlEnv": {
+      "IES_OFF": "1"
+    },
+    "note": "three lamps shaped by IES photometric files over a floor and a wall at night: a spot light with a ring profile casting a crate's shadow, a spot light with a street lamp's forward throw turning about its axis, an omni light with a lantern's four bright faces; a plain spot light beside them. The control takes the profiles away: the state (ies.lights 0) and the picture differ"
+  },
+  {
     "name": "character-skin",
     "webgpu": true,
     "app": "character_skin",

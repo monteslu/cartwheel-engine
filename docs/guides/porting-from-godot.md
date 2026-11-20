@@ -86,6 +86,7 @@ See [Physics](guide:physics) and [Navigation](guide:navigation).
 | project stretch settings | `CanvasSettings` | virtual size, scale mode, letterbox, clear colour |
 | `Node3D`, `MeshInstance3D`, `Camera3D`, `DirectionalLight3D`, `OmniLight3D`, `SpotLight3D`, `WorldEnvironment`, `LightmapGI` | same names | three.c (three.js r187) renders: linear HDR, physical light units |
 | `StandardMaterial3D` with `diffuse_mode = Toon`, toon shaders | `MeshInstance3D` `shading = TOON`, `toon_bands`; `cw_toon_apply_tree` for a loaded model ([toon.h](header:toon.h)) | three.js MeshToonMaterial: banded light from a ramp, emissive, every light and shadow; no toon specular or rim term |
+| light projectors, `light_projector` | `ies_profile` on `SpotLight3D` / `OmniLight3D`: an IES photometric file shapes the light ([Real fixtures: IES profiles](guide:rendering-3d)) | measured fixture shapes (Godot has no IES import); no arbitrary projected texture yet |
 | `Environment` effects (glow, SSAO, tonemap) | `PostProcess` | one per tree |
 | TAA with motion vectors (`use_taa`) | `PostProcess` `taa` | moving, skinned and instanced meshes carry their own motion, with no per-mesh setting |
 | sky, fog | `ProceduralSky`, `HeightFog` | |

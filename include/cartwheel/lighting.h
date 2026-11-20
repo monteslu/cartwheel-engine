@@ -27,6 +27,10 @@
  *     r187's PCF (five Vogel-disk taps, each a 2 x 2 compare) and its bias,
  *     normal bias, radius and intensity. Without shadow_atlas they stay on
  *     three.c's path, as r187 keeps them.
+ *   - a light with an IES profile (Light3D ies_profile, an .ies file): its shape is the fixture's measured
+ *     one, read from an atlas of the scene's profiles as three.js r187's IESSpotLight reads its iesMap (the tilt
+ *     off the light's -Z, the twist around it from its +Y), on spot and omni lights alike. Materials then draw
+ *     with the "clusteries" part; a scene without a profile keeps the cheaper "cluster" program.
  * Directional, hemisphere and ambient lights stay on three.c's path. Beyond
  * r187: r187 clusters only shadowless point lights; spot lights here get SpotLightNode's cone in the same loop, and
  * are binned with a cone test (Filament's Froxelizer). A light with range 0
@@ -116,6 +120,7 @@ typedef struct cw_lighting_stats {
   int cascades;              /* the cascaded sun's cascades (0: none) */
   int cascades_rendered;     /* of which re-rendered this frame (the rest were unchanged) */
   int shadowed;              /* clustered lights with an atlas tile */
+  int ies;                   /* clustered lights shaped by an IES profile */
   int shadow_faces_rendered; /* atlas faces redrawn this frame */
   int shadow_faces_cached;   /* atlas faces kept from earlier frames */
   cw_froxel_stats grid;      /* cells, references, overflow, bin time */

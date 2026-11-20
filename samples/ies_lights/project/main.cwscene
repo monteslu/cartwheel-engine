@@ -1,0 +1,82 @@
+[scene format=1]
+
+; three lamps shaped by IES photometric files and a plain spot light for comparison. ies_profile is the
+; UID of the .ies file: cw_res_path_uid("lights/ring.ies"), the FNV-1a 64 hash of its path
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.004, 0.005, 0.008, 1)
+sky_color = color(0.02, 0.03, 0.05, 1)
+ground_color = color(0.01, 0.01, 0.01, 1)
+hemi_energy = 0.4
+ambient_energy = 0.02
+
+[node name="Lighting" parent="." type="LightingSettings"]
+mode = "CLUSTERED"
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0.5, 6.5, 17)
+rotation = vec3(-0.3, 0, 0)
+fov = 55
+near = 0.2
+far = 120
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+primitive = PLANE
+size = vec3(44, 1, 26)
+color = color(0.33, 0.32, 0.3, 1)
+roughness = 0.9
+receive_shadow = true
+
+[node name="Wall" parent="." type="MeshInstance3D"]
+position = vec3(0, 5, -4)
+size = vec3(44, 10, 0.3)
+color = color(0.36, 0.34, 0.32, 1)
+roughness = 0.9
+receive_shadow = true
+
+[node name="Crate" parent="." type="MeshInstance3D"]
+position = vec3(-8.4, 0.5, 0.4)
+size = vec3(1, 1, 1)
+color = color(0.5, 0.12, 0.08, 1)
+roughness = 0.7
+cast_shadow = true
+receive_shadow = true
+
+[node name="Ring" parent="." type="SpotLight3D"]
+position = vec3(-9, 5, 0.5)
+rotation = vec3(-1.5707963, 0, 0)
+color = color(1, 0.9, 0.75, 1)
+energy = 300
+range = 14
+angle = 1.1
+ies_profile = res(0x51fb660a18596cee)
+shadow = true
+shadow_bias = -0.0005
+
+[node name="Street" parent="." type="SpotLight3D"]
+position = vec3(-3, 5.5, 2)
+rotation = vec3(-1.5707963, 0, 0)
+color = color(0.8, 0.9, 1, 1)
+energy = 800
+range = 16
+angle = 1.2
+ies_profile = res(0xf6905d0e2b1859a7)
+
+[node name="Lantern" parent="." type="OmniLight3D"]
+position = vec3(4, 2.2, -1.6)
+rotation = vec3(-1.5707963, 0, 0)
+color = color(1, 0.7, 0.4, 1)
+energy = 60
+range = 12
+ies_profile = res(0x75f9844dd6823e82)
+
+[node name="Plain" parent="." type="SpotLight3D"]
+position = vec3(10, 5, 0.5)
+rotation = vec3(-1.5707963, 0, 0)
+color = color(1, 0.9, 0.75, 1)
+energy = 200
+range = 14
+angle = 0.5
+penumbra = 0.3

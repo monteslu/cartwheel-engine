@@ -69,6 +69,7 @@
 
 #include "cartwheel/resource.h"
 #include "cwpack.h"
+#include "three.h"
 #include "cwpak.h"
 #include "gltf_doc.h"
 #include "json.h"
@@ -140,6 +141,7 @@ static const char *type_of(const char *res) {
     { ".txt", "text" }, { ".csv", "text" }, { ".md", "text" }, { ".cfg", "text" }, { ".ini", "text" },
     { ".cwproj", "text" }, { ".cwscene", "text" }, /* key = value lines / scene text (scene_file.h) */
     { ".glsl", "text" }, { ".vert", "text" }, { ".frag", "text" },
+    { ".ies", "text" }, /* an IES photometric profile (Light3D ies_profile): checked below, packed as it is */
   };
   for (size_t i = 0; i < CW_ARRAY_LEN(map); i++)
     if (!strcmp(e, map[i].ext)) return map[i].type;
@@ -341,6 +343,12 @@ static bool scene_refs(const char *res, const uint8_t *text, size_t len, str_lis
 
 /* localization helpers (below) */
 static bool rl_is(const char *path, const char *ext);
+/* an .ies file three.c's IESLoader (three.js r187's) reads: checked at pack time, loaded as text at run time */
+static bool ies_ok(const void *bytes, size_t len) {
+  t3_texture *t = t3_ies_texture_parse(bytes, len);
+  if (t) t3_release(t);
+  return t != NULL;
+}
 static bool enqueue_list(const char *res, const char *list, str_list *qr, str_list *qs, str_list *deps);
 static bool l10n_project_refs(const char *res, const char *text, size_t len, str_list *qr, str_list *qs, str_list *deps);
 
@@ -556,6 +564,9 @@ static bool process(const char *res, const char *src, const char *referrer, str_
     e->data = bytes;
     e->len = len;
     bytes = NULL;
+  } else if (rl_is(res, ".ies") && !ies_ok(bytes, len)) {
+    fprintf(stderr, "cwpack: %s: not an IES photometric file three.js\'s IESLoader reads (a TILT line, then the lamp values, the angle lists and one candela value for every pair of angles)\n", res);
+    ok = false;
   } else {
     /* everything else is packed as it is (no cache: copying is the import) */
     canon = cw_strdup("", CW_MEM_GENERAL);

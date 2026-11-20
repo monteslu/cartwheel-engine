@@ -14,7 +14,7 @@ static int rank_of(const char *p) {
   static const char *const surface[] = { "terrain", "terrainlow", "terrainmin", "terrainfar", "water", "waterlow" };
   for (size_t i = 0; i < sizeof surface / sizeof surface[0]; i++)
     if (!strcmp(p, surface[i])) return 0;
-  if (!strcmp(p, "cluster")) return 1;
+  if (!strcmp(p, "cluster") || !strcmp(p, "clusteries")) return 1;
   if (!strcmp(p, "gi")) return 3;
   return 2;
 }
