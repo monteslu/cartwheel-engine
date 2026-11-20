@@ -1,0 +1,7 @@
+# the control: the same clips switching at once, off the beat grid
+interactive initial="calm"
+clip name="calm" path="calm.wav" bpm=120 bar_beats=4 beats=8 loop=true
+clip name="sting" path="sting.wav" bpm=120 beats=1
+clip name="battle" path="battle.wav" bpm=120 bar_beats=4 beats=8 loop=true
+transition from="calm" to="battle" at=now fade=none filler="sting"
+transition from="battle" to="calm" at=now fade=cross fade_beats=1

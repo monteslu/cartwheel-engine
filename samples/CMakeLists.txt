@@ -102,6 +102,7 @@ set_property(TARGET open_world APPEND PROPERTY LINK_DEPENDS ${_ow}/stamp)
 # audio: an offline-rendered scripted mix (the cross-host hash gate) and
 # a sample that plays through the real device path.
 cw_add_app(audio_mix SOURCES audio_mix/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/audio_mix/assets)
+cw_add_app(audio_streams SOURCES audio_streams/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/audio_streams/assets)
 cw_add_app(audio_play SOURCES audio_play/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/audio_play/assets)
 cw_add_app(audio_3d SOURCES audio_3d/main.c)
 # the profiler: something in every engine phase (physics jobs, animation, audio, passes, a game zone)

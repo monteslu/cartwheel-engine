@@ -4,6 +4,37 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.54.0 (2026-11-20)
+
+### Added
+- **Randomized sounds** (`cw_randomizer`, Godot's `AudioStreamRandomizer`): several sounds, one picked per play,
+  weighted with no repeats, weighted with repeats, or in order, with each play's pitch and volume varied within
+  `random_pitch` and `random_volume_db`. Seeded, so the same calls pick the same sounds on every host.
+- **Interactive music** (`cw_music`, Godot's `AudioStreamInteractive`): clips with a beat grid (bpm, bar beats,
+  length in beats, loop, auto advance to a next clip or back to a held one) and transitions between them (at once,
+  on the next beat, the next bar or the clip's end; a cut, a fade in, a fade out or a cross fade over some beats;
+  from the start or at the same position; through a filler clip; holding the clip left). Switches are on the mixer's
+  frame clock, scheduled `CW_MUSIC_LEAD` (4096) frames ahead, and exact to the sample.
+- **A sound's own loop points**: `cw_sound_desc.loop`, `loop_start`, `loop_end` and `cw_sound_set_loop`; every
+  voice of the sound loops (an intro, then the loop), samples and streams alike (a stream's decoder seeks back to the
+  loop start). A WAV file's sampler chunk (`smpl`) gives a sound its points. `cw_play_desc.once` plays such a sound
+  through once.
+- **Stream resources**: a `.cwaudio` text file holding a randomizer or an interactive music, named as an
+  AudioStreamPlayer's `stream` (any of the three players). A randomizer player picks per play; an interactive
+  player has its own music, a `clip` property that switches by the file's transitions, `current_clip`, and
+  `cw_audio_player_music` for C.
+- `cw_voice_stop_at` (end a voice on a mixer frame, to the sample, or fade it from there) and
+  `cw_voice_started_at` (the mixer frame a voice really started on).
+- Sample `audio_streams` and gates `audio-streams`, `audio-streams-random`, `audio-streams-loop` (the offline
+  mixer, the same samples on every host): loop points as a sample and as a stream, the randomizer, and a calm to
+  battle to calm music through a one-beat filler, each switch on its clip's grid. Controls: every switch at once,
+  a randomizer that may repeat, the whole file looping instead of its points.
+
+### Changed
+- A WAV with a sampler chunk now loops by its chunk's points (none of the engine's or the example games' WAVs have
+  one). `docs/guides/audio.md` covers the new parts; `porting-from-godot.md` maps the two Godot streams and a
+  stream's loop, and no longer lists them as missing.
+
 ## v0.53.5 (2026-11-20)
 
 ### Fixed

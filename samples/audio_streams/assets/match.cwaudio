@@ -1,0 +1,8 @@
+# a match's music: calm until play heats up; on the next bar a one-beat sting leads into battle,
+# and battle eases back into calm on its next beat
+interactive initial="calm"
+clip name="calm" path="calm.wav" bpm=120 bar_beats=4 beats=8 loop=true
+clip name="sting" path="sting.wav" bpm=120 beats=1
+clip name="battle" path="battle.wav" bpm=120 bar_beats=4 beats=8 loop=true
+transition from="calm" to="battle" at=bar fade=none filler="sting"
+transition from="battle" to="calm" at=beat fade=cross fade_beats=1

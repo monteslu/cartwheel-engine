@@ -1,0 +1,11 @@
+[scene format=1]
+
+[node name="Main" type="Node"]
+
+[node name="Steps" parent="." type="AudioStreamPlayer"]
+stream = "steps.cwaudio"
+max_polyphony = 4
+
+[node name="Music" parent="." type="AudioStreamPlayer"]
+stream = "match.cwaudio"
+volume_db = -3

@@ -61,7 +61,13 @@
  * sound whose length is known, `finished` is counted in fixed ticks from the sound's length and the pitch, not
  * read back from the mixer: it is emitted on the same tick on every host and in a replay, with or without an
  * audio device. A sound of unknown length (a tracker module) finishes when the mixer says its voice ended.
- * A paused tree holds the voices of players it pauses (their pause mode) and their count. */
+ * A paused tree holds the voices of players it pauses (their pause mode) and their count.
+ *
+ * A stream that is a .cwaudio resource (cartwheel/audio.h, "stream resources"): a randomizer picks a sound per play;
+ * an interactive music is the player's own, started on its `clip` (or the resource's initial clip), and setting
+ * `clip` while it plays switches by the resource's transitions; `current_clip` reads the clip sounding now. A
+ * sound that loops by itself (its own loop points) never counts as finished; an interactive stream emits `finished`
+ * when its music stops by itself (a last clip that does not loop or advance). */
 #ifndef CW_AUDIO_NODES_H
 #define CW_AUDIO_NODES_H
 
@@ -89,6 +95,11 @@ bool cw_audio_player_is_playing(cw_node player);
 double cw_audio_player_position(cw_node player);
 /* The player's newest voice, for anything the node has no property for (cw_voice_fade, ...); null when none. */
 cw_voice cw_audio_player_voice(cw_node player);
+/* A player whose stream is an interactive .cwaudio resource: its music (cw_music_play to switch clips by the
+ * resource's transitions, as setting the node's clip property does; cw_music_current, cw_music_switch_frame). Null
+ * before its first play, or for any other stream. A randomizer resource needs nothing: each play (and each copy up to
+ * max_polyphony) picks its sound, pitch and volume. */
+cw_music cw_audio_player_music(cw_node player);
 /* false: the tree's audio nodes stop setting the mixer's listeners (the game calls cw_audio_set_listener). */
 void cw_audio_nodes_set_auto_listener(cw_tree *t, bool on);
 

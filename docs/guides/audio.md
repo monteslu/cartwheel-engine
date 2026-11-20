@@ -49,7 +49,39 @@ Two clocks make audio timing exact:
 - [cw_audio_mixed_frames](api:cw_audio_mixed_frames) is the mixer's output clock. Passing a future value as `start_frame` starts the voice on exactly that frame, which is how rhythm and music cues line up regardless of frame timing.
 - [cw_voice_frames_played](api:cw_voice_frames_played) is a voice's source clock, exact to the sample and counting every loop pass. Divide by [cw_sound_source_rate](api:cw_sound_source_rate) for seconds. Use it, not the frame counter, to sync gameplay to music.
 
-Stopping takes a fade time ([cw_voice_stop](api:cw_voice_stop)); [cw_voice_fade](api:cw_voice_fade) ramps to any level.
+Stopping takes a fade time ([cw_voice_stop](api:cw_voice_stop)); [cw_voice_fade](api:cw_voice_fade) ramps to any level. [cw_voice_stop_at](api:cw_voice_stop_at) ends a voice on a given mixer frame, to the sample, or starts its fade in the block that holds that frame, and [cw_voice_started_at](api:cw_voice_started_at) says which mixer frame a voice really started on: together they make a seam with nothing missing and nothing doubled.
+
+## A sound's own loop
+
+A sound can carry its loop (Godot's loop on a stream resource): set `loop`, `loop_start` and `loop_end` in its `cw_sound_desc` (source frames at the file's own rate; end 0 is the end of the file), or call [cw_sound_set_loop](api:cw_sound_set_loop) after loading. Every voice of it then loops: the first pass plays from the start (an intro), and each pass after it from `loop_start` to `loop_end`. A play that gives its own points uses those, and `cw_play_desc.once` plays it through once. A WAV file's sampler chunk (`smpl`, written by most audio editors) gives a sound its points with no code. Samples and streams loop alike: a stream's decoder seeks back to `loop_start`, a sample's points are moved to the mix rate it was resampled to.
+
+## Randomized sounds
+
+A [cw_randomizer](api:cw_randomizer_new) (Godot's `AudioStreamRandomizer`) holds several sounds and picks one per play: weighted with no sound twice in a row (`CW_RANDOM_NO_REPEAT`, the default), weighted with repeats (`CW_RANDOM_ANY`), or in order (`CW_RANDOM_SEQUENCE`), with each play's pitch scaled by a value in `[1 / random_pitch, random_pitch]` and its volume moved by up to `random_volume_db` either way. Footsteps, impacts and barks stop sounding like a loop of one recording:
+
+```c
+cw_randomizer steps = cw_randomizer_new(&(cw_randomizer_desc){ .random_pitch = 1.1f, .random_volume_db = 2, .seed = 7 });
+for (int i = 0; i < 4; i++) cw_randomizer_add(steps, step_sound[i], 1);
+cw_randomizer_play(steps, &(cw_play_desc){ .bus = cw_shell_sfx_bus() });   /* one step: a new pick, pitch and volume */
+```
+
+The picks come from the randomizer's own `cw_rng`, seeded from `seed`, so the same calls pick the same sounds on every host and in a replay.
+
+## Interactive music
+
+A [cw_music](api:cw_music_new) (Godot's `AudioStreamInteractive`) is a set of clips (sounds with a beat grid: `bpm`, `bar_beats`, a length in `beats`, `loop`) and the transitions between them. [cw_music_play](api:cw_music_play) asks for a clip; the transition from the clip playing to it says where the switch happens (`CW_MUSIC_AT_NOW`, `_BEAT`, `_BAR` or `_END` of the clip), how (a cut, a fade in, a fade out, or a cross fade over `fade_beats`), whether the new clip starts from its start or at the same position, and an optional filler clip played between the two. A clip can advance by itself at its end, to the clip named in `next` or back to the clip a transition held (`hold_previous`). The most specific transition wins: from and to, then any clip to this one, then this one to any, then any to any; with none, the switch waits for the next bar and cross fades over a beat.
+
+The switches are on the mixer's frame clock: a clip's beat 0 is the frame its voice started on, a beat is `60 * rate / bpm` frames from there, and a switch is the new clip's voice started on that frame with the old one ended on it. They are scheduled at least `CW_MUSIC_LEAD` frames (4096, 85 ms at 48 kHz) ahead, so they stay exact with the device's buffering; that is also the latency of a switch `AT_NOW`. [cw_music_current](api:cw_music_current), [cw_music_pending](api:cw_music_pending) and [cw_music_switch_frame](api:cw_music_switch_frame) say where it is.
+
+## Stream resources: .cwaudio
+
+A randomizer or an interactive music can be a text asset, so a scene's player names it as its `stream`. One statement a line, `key=value` pairs, `#` comments. From the `audio_streams` sample:
+
+@include samples/audio_streams/assets/steps.cwaudio
+
+@include samples/audio_streams/assets/match.cwaudio
+
+A clip's `loop_start=` and `loop_end=` set its sound's own points (for an Ogg or MP3 file, which carries none). A statement or value the format does not know is a load error naming the line. In C, [cw_audio_stream_load](api:cw_audio_stream_load) loads one (cached by path) and [cw_audio_stream_music](api:cw_audio_stream_music) makes a music from it.
 
 ## Buses and effects
 
@@ -143,7 +175,7 @@ From the `gameplay_nodes` sample, a looping sound on a beacon, heard from the ca
 
 @include samples/gameplay_nodes/assets/main.cwscene#Beacon/Horn
 
-Every player has `stream` (an asset path, loaded on first play and shared), `volume_db`, `pitch_scale`, `autoplay`, `loop`, `bus` (a bus by name), `max_polyphony` (how many copies may sound at once: one more stops the oldest; the default 1 makes `play` restart the sound), `stream_paused` and `playing`, the methods `play` and `stop`, and the signal `finished`. In C: `cw_audio_player_play`, `cw_audio_player_stop`, `cw_audio_player_is_playing`, `cw_audio_player_position`, and `cw_audio_player_voice` for anything a property does not cover. `cw_audio_player_set_sound` gives a player a sound made in code (`cw_sound_from_pcm`) instead of a file.
+Every player has `stream` (an asset path, loaded on first play and shared, or a `.cwaudio` stream resource), `volume_db`, `pitch_scale`, `autoplay`, `loop`, `bus` (a bus by name), `max_polyphony` (how many copies may sound at once: one more stops the oldest; the default 1 makes `play` restart the sound), `stream_paused` and `playing`, the methods `play` and `stop`, and the signal `finished`. In C: `cw_audio_player_play`, `cw_audio_player_stop`, `cw_audio_player_is_playing`, `cw_audio_player_position`, and `cw_audio_player_voice` for anything a property does not cover. `cw_audio_player_set_sound` gives a player a sound made in code (`cw_sound_from_pcm`) instead of a file.
 
 The 3D player's properties are the fields of `cw_voice_3d`: `attenuation_model`, `unit_size` (the distance of full volume), `max_distance`, `rolloff`, the cone (`cone_inner_angle`, `cone_outer_angle`, `cone_outer_gain`, along the node's -Z), `doppler`, `air_absorption`, `reverb_send` and `occlusion`. Every fixed tick it gives its voices the node's world position, its velocity (its movement since the last tick) and its facing. The 2D player has `max_distance` (pixels from the middle of the view to silence), `attenuation` and `panning_strength`.
 
@@ -151,9 +183,11 @@ The 3D player's properties are the fields of `cw_voice_3d`: `attenuation_model`,
 
 **Timing.** Players are stepped on the fixed tick, after physics. `finished` is counted in ticks from the sound's length and the pitch, not read back from the mixer, so it arrives on the same tick on every host and in a replay, with or without an audio device (a tracker module, whose length is unknown, finishes when its voice ends). A paused tree holds the voices of the players it pauses, by their pause mode: music on a player set to run always keeps playing under a pause menu.
 
+**Stream resources.** A player of a randomizer resource picks a sound, pitch and volume on every play (each copy up to `max_polyphony`). A player of an interactive resource has its own music: `play` starts it on its `clip` (empty: the resource's initial clip), setting `clip` while it plays switches by the resource's transitions, `current_clip` reads the clip sounding now, and [cw_audio_player_music](api:cw_audio_player_music) gives the music to C. A 3D player places every voice of its music at the node. A sound that loops by itself never counts as finished; an interactive player emits `finished` when its music stops by itself.
+
 **The mixer.** A game that calls `cw_audio_init`, or uses the game shell, owns the mixer as before. If nothing started it by the time a player first plays, the player starts it with the defaults and the tree runs `cw_audio_update` each frame.
 
-Checked by the `unit_audio_nodes` suite (the offline mixer: side, distance, cone, decibels, polyphony, pause) and the `gameplay-nodes` gate, which holds every host to the same samples.
+Checked by the `unit_audio_nodes` suite (the offline mixer: side, distance, cone, decibels, polyphony, pause) and the `gameplay-nodes` gate, which holds every host to the same samples. The `audio-streams` gates (the `audio_streams` sample, offline) hold the loop points (a sampler chunk's loop as a sample and as a stream, every frame past the loop end repeating the one a loop length before, to the bit), the randomizer (no repeats, pitch and volume in range, the same picks everywhere) and the interactive music (calm to battle on calm's next bar through a one-beat filler, battle starting exactly a beat after it, back to calm on battle's next beat), each with a control that must fail.
 
 ## Sample-exact across hosts
 
@@ -176,6 +210,7 @@ Real-time output is the same mix, but how many frames get mixed by a given game 
 
 ## Not available yet
 
-- A player's `stream` is an asset path; there is no stream resource with its own loop points or random pitch yet (set `loop` and `pitch_scale` on the player, or play from code).
+- Ogg, MP3 and FLAC files carry no loop points the loader reads (a WAV's sampler chunk only): give them with `cw_sound_set_loop` or a `.cwaudio` clip's `loop_start` / `loop_end`.
+- Interactive music switches between clips; it does not mix layers of one clip in and out (Godot's `AudioStreamSynchronized`): play the layers as voices started on the same frame.
 - Effects are the six above; there is no per-voice effect chain (route a voice to a bus instead).
 - Microphone input and audio capture are not part of the API.

@@ -37,6 +37,11 @@ typedef struct player {
   int64_t length[MAX_POLY];  /* source frames; -1 unknown */
   int rate[MAX_POLY];        /* source frames a second */
   cw_sound sound;            /* a sound given in code (cw_audio_player_set_sound): played instead of stream */
+  const char *clip;          /* an interactive stream's clip to play (interned; "" = its initial clip) */
+  const cw_audio_stream_res *res; /* stream is a .cwaudio resource: a randomizer or an interactive music */
+  const char *res_path;
+  cw_music music;            /* this player's own music of an interactive resource */
+  bool music_on;
   bool have_prev;
   t3_vec3 prev_pos;          /* 3D: last tick's world position (velocity) */
   float gain2d, pan2d;       /* 2D: what the voices were last given */
@@ -208,6 +213,25 @@ static bool effective_hold(cw_node n, const player *p) {
   return p->stream_paused || (p->in_tree && !cw_node_can_process(n));
 }
 
+static bool is_res_path(const char *path) {
+  size_t L = path ? strlen(path) : 0;
+  return L > 8 && !strcmp(path + L - 8, ".cwaudio");
+}
+/* the player's .cwaudio resource, loaded once per stream path */
+static const cw_audio_stream_res *res_of(player *p) {
+  if (!is_res_path(p->stream)) return NULL;
+  if (p->res_path != p->stream) {
+    p->res = cw_audio_stream_load(p->stream);
+    p->res_path = p->stream;
+  }
+  return p->res;
+}
+static cw_music_desc music_desc(const player *p) {
+  int bus = p->bus && *p->bus ? cw_bus_find(p->bus) : 0;
+  float g = voice_gain(p);
+  return (cw_music_desc){ .bus = bus > 0 ? bus : 0, .volume = g > 0 ? g : 0.00001f };
+}
+
 cw_voice cw_audio_player_play(cw_node n, double from_seconds) {
   player *p = player_of(n);
   if (!p) return (cw_voice){ 0 };
@@ -219,7 +243,25 @@ cw_voice cw_audio_player_play(cw_node n, double from_seconds) {
     return (cw_voice){ 0 };
   }
   if (!ensure_audio(cw_node_tree(n))) return (cw_voice){ 0 };
-  cw_sound s = given ? p->sound : sound_for(p->stream);
+  const cw_audio_stream_res *res = given ? NULL : res_of(p);
+  if (!given && is_res_path(p->stream) && !res) return (cw_voice){ 0 };
+  if (res && cw_audio_stream_is_interactive(res)) { /* music: the player's own, started (or switched) to its clip */
+    if (CW_HANDLE_IS_NULL(p->music)) {
+      cw_music_desc md = music_desc(p);
+      p->music = cw_audio_stream_music(res, &md);
+    }
+    if (p->kind == P_3D) {
+      cw_voice_3d sp = space_of(n, p, (t3_vec3){ 0, 0, 0 });
+      cw_music_set_3d(p->music, &sp);
+    }
+    cw_music_set_paused(p->music, effective_hold(n, p));
+    p->held = effective_hold(n, p);
+    cw_music_play(p->music, p->clip && *p->clip ? p->clip : cw_audio_stream_initial(res));
+    p->music_on = true;
+    return cw_music_voice(p->music);
+  }
+  float rnd_pitch = 1, rnd_gain = 1;
+  cw_sound s = given ? p->sound : res ? cw_randomizer_next(cw_audio_stream_randomizer(res), &rnd_pitch, &rnd_gain) : sound_for(p->stream);
   if (CW_HANDLE_IS_NULL(s)) return (cw_voice){ 0 };
   int poly = p->max_polyphony < 1 ? 1 : p->max_polyphony > MAX_POLY ? MAX_POLY : p->max_polyphony;
   while (p->nvoices >= poly) {
@@ -228,7 +270,7 @@ cw_voice cw_audio_player_play(cw_node n, double from_seconds) {
   }
   int rate = cw_sound_source_rate(s);
   if (!(from_seconds > 0)) from_seconds = 0;
-  cw_play_desc d = { .pitch = p->pitch_scale > 0 ? p->pitch_scale : 1, .loop = p->loop, .offset = (int64_t)(from_seconds * rate),
+  cw_play_desc d = { .pitch = (p->pitch_scale > 0 ? p->pitch_scale : 1) * rnd_pitch, .loop = p->loop, .offset = (int64_t)(from_seconds * rate),
                      .paused = effective_hold(n, p) };
   int bus = p->bus && *p->bus ? cw_bus_find(p->bus) : 0;
   if (bus < 0 && p->bus && (!strcmp(p->bus, "Master") || !strcmp(p->bus, "master"))) bus = 0;
@@ -240,17 +282,18 @@ cw_voice cw_audio_player_play(cw_node n, double from_seconds) {
     d.spatial = true;
     d.space = space_of(n, p, (t3_vec3){ 0, 0, 0 });
   }
-  float g = voice_gain(p);
+  float g = voice_gain(p) * rnd_gain;
   d.volume = g > 0 ? g : 1;
   cw_voice v = cw_audio_play(s, &d);
   if (CW_HANDLE_IS_NULL(v)) return v;
-  if (!(g > 0)) apply_gain(p, v);
+  if (!(g > 0)) cw_voice_set_volume(v, 0);
   if (p->kind == P_3D && p->occlusion > 0) cw_voice_set_occlusion(v, p->occlusion);
   p->held = d.paused;
   int i = p->nvoices++;
   p->voices[i] = v;
   p->played[i] = (double)d.offset;
-  p->length[i] = cw_sound_length_frames(s);
+  /* a sound that loops by itself (its own loop points) never ends on its own */
+  p->length[i] = cw_sound_get_loop(s, NULL, NULL) ? -2 : cw_sound_length_frames(s);
   p->rate[i] = rate;
   return v;
 }
@@ -268,10 +311,16 @@ void cw_audio_player_stop(cw_node n) {
   for (int i = 0; i < p->nvoices; i++) cw_voice_stop(p->voices[i], 0);
   p->nvoices = 0;
   p->want_autoplay = false;
+  if (p->music_on) cw_music_stop(p->music, 0);
+  p->music_on = false;
 }
 bool cw_audio_player_is_playing(cw_node n) {
   player *p = player_of(n);
-  return p && p->nvoices > 0;
+  return p && (p->nvoices > 0 || (p->music_on && cw_music_is_playing(p->music)));
+}
+cw_music cw_audio_player_music(cw_node n) {
+  player *p = player_of(n);
+  return p ? p->music : (cw_music){ 0 };
 }
 double cw_audio_player_position(cw_node n) {
   player *p = player_of(n);
@@ -281,6 +330,7 @@ double cw_audio_player_position(cw_node n) {
 }
 cw_voice cw_audio_player_voice(cw_node n) {
   player *p = player_of(n);
+  if (p && p->music_on) return cw_music_voice(p->music);
   return p && p->nvoices ? p->voices[p->nvoices - 1] : (cw_voice){ 0 };
 }
 
@@ -331,6 +381,26 @@ static void player_tick(cw_node n, player *p, double dt) {
     p->want_autoplay = false;
     cw_audio_player_play(n, 0);
   }
+  if (p->music_on) { /* an interactive stream: held with the tree, placed in 3D; finished once when it stops by itself */
+    bool hold = effective_hold(n, p);
+    if (hold != p->held) {
+      p->held = hold;
+      cw_music_set_paused(p->music, hold);
+    }
+    if (!hold && p->kind == P_3D) {
+      const t3_mat4 *m = cw_node3d_global_transform(n);
+      t3_vec3 pos = { m->e[12], m->e[13], m->e[14] };
+      cw_voice_3d sp = space_of(n, p, velocity(pos, p->prev_pos, p->have_prev, dt));
+      p->prev_pos = pos;
+      p->have_prev = true;
+      cw_music_set_3d(p->music, &sp);
+    }
+    if (!hold && !cw_music_is_playing(p->music)) {
+      p->music_on = false;
+      cw_emit(n, s_finished, NULL, 0);
+    }
+    return;
+  }
   if (!p->nvoices) {
     p->have_prev = false;
     return;
@@ -363,7 +433,7 @@ static void player_tick(cw_node n, player *p, double dt) {
   for (int i = 0; i < p->nvoices;) {
     p->played[i] += (double)pitch * p->rate[i] * dt;
     bool done = false;
-    if (!p->loop) done = p->length[i] >= 0 ? p->played[i] >= (double)p->length[i] : !cw_voice_is_playing(p->voices[i]);
+    if (!p->loop && p->length[i] != -2) done = p->length[i] >= 0 ? p->played[i] >= (double)p->length[i] : !cw_voice_is_playing(p->voices[i]);
     if (done) {
       drop_voice(p, i);
       ended++;
@@ -399,6 +469,7 @@ static void frame_hook(cw_tree *t, double dt, void *user) {
 static void init_common(player *p, int kind) {
   p->kind = kind;
   p->stream = cw_intern("");
+  p->clip = cw_intern("");
   p->bus = cw_intern("Master");
   p->pitch_scale = 1;
   p->max_polyphony = 1;
@@ -440,12 +511,18 @@ static void p_destroy(cw_node n, void *d) {
   player *p = d;
   for (int i = 0; i < p->nvoices; i++) cw_voice_stop(p->voices[i], 0);
   p->nvoices = 0;
+  if (!CW_HANDLE_IS_NULL(p->music)) cw_music_free(p->music);
+  p->music = (cw_music){ 0 };
+  p->music_on = false;
 }
 static void p_changed(cw_node n, void *d, const cw_prop *prop) {
   player *p = d;
   const char *nm = prop->name;
-  if (!strcmp(nm, "volume_db")) {
+  if (!strcmp(nm, "clip")) {
+    if (p->music_on && p->clip && *p->clip) cw_music_play(p->music, p->clip); /* the transition table decides when */
+  } else if (!strcmp(nm, "volume_db")) {
     for (int i = 0; i < p->nvoices; i++) apply_gain(p, p->voices[i]);
+    if (p->music_on) cw_music_set_volume(p->music, music_desc(p).volume);
   } else if (!strcmp(nm, "pitch_scale")) {
     for (int i = 0; i < p->nvoices; i++) cw_voice_set_pitch(p->voices[i], p->pitch_scale > 0 ? p->pitch_scale : 1);
   } else if (!strcmp(nm, "bus")) {
@@ -460,12 +537,20 @@ static void p_changed(cw_node n, void *d, const cw_prop *prop) {
   } else if (!strcmp(nm, "occlusion")) {
     for (int i = 0; i < p->nvoices; i++) cw_voice_set_occlusion(p->voices[i], p->occlusion);
   } else if (!strcmp(nm, "stream")) {
-    if (p->nvoices) cw_audio_player_stop(n); /* another sound: what was playing stops */
+    if (p->nvoices || p->music_on) cw_audio_player_stop(n); /* another sound: what was playing stops */
+    if (!CW_HANDLE_IS_NULL(p->music)) cw_music_free(p->music);
+    p->music = (cw_music){ 0 };
   }
 }
 static void playing_get(cw_node n, void *d, cw_value *o) {
+  *o = cw_val_bool(cw_audio_player_is_playing(n));
+  (void)d;
+}
+static void current_clip_get(cw_node n, void *d, cw_value *o) {
   (void)n;
-  *o = cw_val_bool(((player *)d)->nvoices > 0);
+  const player *p = d;
+  const char *c = p->music_on ? cw_music_current(p->music) : NULL;
+  *o = cw_val_string(c ? c : "");
 }
 static void playing_set(cw_node n, void *d, const cw_value *in) {
   player *p = d;
@@ -492,7 +577,9 @@ static bool m_stop(cw_node self, const cw_value *args, int argc, cw_value *ret, 
 #define PF(field, ty, docs) CW_PROP_FIELD(player, field, ty, CW_PROP_DEFAULT, docs)
 #define PR(field, lo, hi, docs) CW_PROP_FIELD_RANGE(player, field, CW_T_FLOAT, lo, hi, docs)
 #define COMMON_PROPS \
-  PF(stream, CW_T_STRING, "The sound: an asset path. Loaded on first play, shared by every player naming it."), \
+  PF(stream, CW_T_STRING, "The sound: an asset path, or a .cwaudio stream resource (a randomizer or an interactive music, cartwheel/audio.h). Loaded on first play, shared by every player naming it."), \
+  PF(clip, CW_T_STRING, "An interactive stream: the clip to play; set while it plays to switch by its transitions (empty = its initial clip)."), \
+  CW_PROP_ACCESSOR("current_clip", CW_T_STRING, CW_PROP_EDITOR, current_clip_get, NULL, "An interactive stream: the clip sounding now (not saved)."), \
   PR(volume_db, -80, 24, "Gain in decibels: 0 as recorded, -6 half the amplitude, -80 and below silent."), \
   PR(pitch_scale, 0.01, 4, "Playback rate (1 = as recorded)."), \
   PF(autoplay, CW_T_BOOL, "Start on the first fixed tick after the node is ready."), \

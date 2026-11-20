@@ -114,9 +114,12 @@ See [Physics](guide:physics) and [Navigation](guide:navigation).
 | `SkeletonIK3D`, `SkeletonModifier3D`, `LookAtModifier3D` | `TwoBoneIK3D`, `CCDIK3D`, `FABRIK3D`, `LookAtModifier3D`, `FootPlacement3D` | children of the model's node or of its Skeleton3D |
 | `SkeletonProfileHumanoid`, `BoneMap`, retargeting at import | `retarget.*` lines in a model's `.cwimport` (cwpack bakes the clips), `cw_retarget_clip` at load ([Retargeting](guide:animation)) | bone names are matched automatically for the common rigs; feet are planted by IK |
 | `Tween` | `cw_tween_new`, `cw_tween_property`, ... | a handle, not a node, like Godot 4's |
-| `AudioStreamPlayer`, `2D`, `3D` | [AudioStreamPlayer](node:AudioStreamPlayer), [AudioStreamPlayer2D](node:AudioStreamPlayer2D), [AudioStreamPlayer3D](node:AudioStreamPlayer3D) | `stream` is an asset path; `volume_db`, `pitch_scale`, `autoplay`, `bus`, `max_polyphony`, `stream_paused`, `playing`, signal `finished`; `loop` is on the player, not the stream. 3D: `attenuation_model`, `unit_size`, `max_distance`, a cone, `doppler`. `finished` is counted in fixed ticks. |
+| `AudioStreamPlayer`, `2D`, `3D` | [AudioStreamPlayer](node:AudioStreamPlayer), [AudioStreamPlayer2D](node:AudioStreamPlayer2D), [AudioStreamPlayer3D](node:AudioStreamPlayer3D) | `stream` is an asset path or a `.cwaudio` stream resource; `clip` and `current_clip` for an interactive one; `volume_db`, `pitch_scale`, `autoplay`, `bus`, `max_polyphony`, `stream_paused`, `playing`, signal `finished`; `loop` is on the player, and a sound can loop by itself too (its own loop points). 3D: `attenuation_model`, `unit_size`, `max_distance`, a cone, `doppler`. `finished` is counted in fixed ticks. |
 | `AudioListener3D` | [AudioListener3D](node:AudioListener3D) | without one the current camera listens; several current listeners serve split screen |
 | `AudioServer` buses and effects | `cw_bus_create`, `cw_bus_set_volume`, `cw_bus_add_fx` | |
+| `AudioStreamRandomizer` | `cw_randomizer_new`, or a `.cwaudio` file with a `random` statement as a player's `stream` | modes no_repeat, any, sequence; `random_pitch`, `random_volume_db`; seeded, the same picks on every host |
+| `AudioStreamInteractive` | `cw_music_new`, or a `.cwaudio` file with an `interactive` statement as a player's `stream` | clips with bpm, bar beats, beats, loop, auto advance (next, return to hold); transitions at now, beat, bar or end, cut / fade in / fade out / cross fade, same position, filler clip, hold previous; the player's `clip` property switches |
+| a stream's loop (`loop_mode`, `loop_begin`, `loop_end`, `loop_offset`) | `cw_sound_desc.loop`, `loop_start`, `loop_end`, `cw_sound_set_loop`; a WAV's sampler chunk | the first pass plays from the start, later passes from loop_start; `cw_play_desc.once` plays it through once |
 | `MultiplayerAPI`, `@rpc` | `cw_net_session`, `cw_net_rpc` | UDP, a relay and wasmcart peer connections; rollback with `cw_rollback_*` |
 | `MultiplayerSynchronizer`, `MultiplayerSpawner` | [NetSynchronizer](node:NetSynchronizer), [NetSpawner](node:NetSpawner) | |
 | `TranslationServer`, `tr()` | `cw_tr`, `cw_trn`, `cw_l10n_set_locale` | catalogs and PO files, plurals, pseudo-locales, RTL and CJK shaping |
@@ -134,4 +137,4 @@ See [Animation](guide:animation), [Audio](guide:audio), [Networking](guide:netwo
 
 ## Not there yet
 
-No equivalent today: autoload nodes (global state lives in the app or in tree slots), stream resources with their own loop points (`AudioStreamRandomizer`, `AudioStreamInteractive`), and any scripting language.
+No equivalent today: autoload nodes (global state lives in the app or in tree slots), `AudioStreamSynchronized` (layers of one clip mixed in and out), and any scripting language.

@@ -69,16 +69,21 @@ void cw__stream_fill(cw__stream *st) {
     uint32_t at = (uint32_t)(w & (st->cap - 1));
     int n = (int)CW_MIN(space, (uint64_t)(st->cap - at));
     n = CW_MIN(n, 4096);
-    int got = cw__dec_read(&st->dec, st->ring + (size_t)at * st->channels, n);
+    /* a loop end before the source's: read up to it */
+    bool at_loop_end = st->loop && st->loop_end > 0 && st->pos >= st->loop_end;
+    if (st->loop && st->loop_end > 0 && !at_loop_end) n = (int)CW_MIN((int64_t)n, st->loop_end - st->pos);
+    int got = at_loop_end ? 0 : cw__dec_read(&st->dec, st->ring + (size_t)at * st->channels, n);
     if (got > 0) {
       w += (uint64_t)got;
+      st->pos += got;
       atomic_store_explicit(&st->write, w, memory_order_release);
       restarted = false;
       continue;
     }
     /* the source ended */
-    if (st->loop && !restarted && cw__dec_seek(&st->dec, 0)) {
+    if (st->loop && !restarted && cw__dec_seek(&st->dec, st->loop_start)) {
       restarted = true; /* a second empty read right after a restart = empty source */
+      st->pos = st->loop_start;
       continue;
     }
     atomic_store_explicit(&st->end, w, memory_order_release);
@@ -166,6 +171,11 @@ static cw__sound *sound_new(const cw_sound_desc *desc, uint64_t *id) {
   snd->priority = d.priority;
   snd->volume = d.volume > 0 ? d.volume : 1.0f;
   snd->bus = d.bus;
+  if (d.loop || d.loop_start > 0 || d.loop_end > 0) {
+    snd->loop = true;
+    snd->loop_start = d.loop_start > 0 ? d.loop_start : 0;
+    snd->loop_end = d.loop_end > snd->loop_start ? d.loop_end : 0;
+  }
   return snd;
 }
 
@@ -236,6 +246,26 @@ static int64_t decode_all(cw__decoder *dec, float **pcm) {
   return n;
 }
 
+/* ── a file's own loop points ──────────────────────────────────────────
+ * A WAV's sampler chunk ("smpl": its first loop, start and end inclusive). False when the file names none. */
+static uint32_t rd32(const uint8_t *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
+static bool file_loop(const uint8_t *d, size_t len, int64_t *start, int64_t *end) {
+  if (len >= 12 && !memcmp(d, "RIFF", 4) && !memcmp(d + 8, "WAVE", 4)) {
+    for (size_t at = 12; at + 8 <= len;) {
+      uint32_t sz = rd32(d + at + 4);
+      if (!memcmp(d + at, "smpl", 4) && sz >= 60 && at + 8 + 60 <= len && rd32(d + at + 8 + 28) > 0) {
+        const uint8_t *l = d + at + 8 + 36;
+        *start = rd32(l + 8);
+        *end = (int64_t)rd32(l + 12) + 1; /* inclusive in the file */
+        return *end > *start;
+      }
+      at += 8 + (size_t)sz + (sz & 1);
+    }
+    return false;
+  }
+  return false;
+}
+
 cw_sound cw_sound_load_memory(const void *data, size_t len, const cw_sound_desc *desc) {
   if (!cw__au.ready) {
     cw_error("audio: cw_sound_load before cw_audio_init");
@@ -255,6 +285,13 @@ cw_sound cw_sound_load_memory(const void *data, size_t len, const cw_sound_desc 
     mode = dec.length >= 0 && dec.length * dec.channels * 4 <= 2 * 1024 * 1024 ? CW_SOUND_SAMPLE : CW_SOUND_STREAM;
   uint64_t id;
   cw__sound *snd = sound_new(desc, &id);
+  snd->src_rate = dec.rate;
+  int64_t ls = 0, le = 0;
+  if (!snd->loop && file_loop(data, len, &ls, &le)) {
+    snd->loop = true;
+    snd->loop_start = ls;
+    snd->loop_end = le;
+  }
   if (mode == CW_SOUND_STREAM) {
     snd->stream = true;
     snd->data = copy;
@@ -302,6 +339,7 @@ cw_sound cw_sound_from_pcm(const float *pcm, int frames, int channels, int rate,
   memcpy(copy, pcm, (size_t)frames * channels * sizeof(float));
   uint64_t id;
   cw__sound *snd = sound_new(desc, &id);
+  snd->src_rate = rate;
   if (!make_sample(snd, copy, frames, channels, rate)) {
     cw_pool_release(&cw__au.sounds, id);
     return (cw_sound){ 0 };
@@ -328,6 +366,46 @@ int cw_sound_source_rate(cw_sound s) {
   cw__sound *snd = sound_get(s);
   return snd ? snd->rate : 0;
 }
+void cw_sound_set_loop(cw_sound s, bool loop, int64_t loop_start, int64_t loop_end) {
+  cw__sound *snd = sound_get(s);
+  if (!snd) return;
+  snd->loop = loop;
+  snd->loop_start = loop_start > 0 ? loop_start : 0;
+  snd->loop_end = loop_end > snd->loop_start ? loop_end : 0;
+}
+bool cw_sound_get_loop(cw_sound s, int64_t *loop_start, int64_t *loop_end) {
+  cw__sound *snd = sound_get(s);
+  if (loop_start) *loop_start = snd ? snd->loop_start : 0;
+  if (loop_end) *loop_end = snd ? snd->loop_end : 0;
+  return snd && snd->loop;
+}
+
+static int voice_slot(cw_voice v);
+static void send(const cw__cmd *c);
+/* the mixer frame a voice started on (-1: not yet, or a stale handle) */
+int64_t cw_voice_started_at(cw_voice v) {
+  int slot = voice_slot(v);
+  if (slot < 0) return -1;
+  cw__mixer *m = &cw__au.mix;
+  for (int tries = 0; tries < 4; tries++) {
+    uint32_t g1 = atomic_load_explicit(&m->clock_gen[slot], memory_order_acquire);
+    int64_t val = atomic_load_explicit(&m->started[slot], memory_order_acquire);
+    uint32_t g2 = atomic_load_explicit(&m->clock_gen[slot], memory_order_acquire);
+    if (g1 != g2) continue;
+    return g1 == cw__au.gvoices[slot].gen ? val : -1;
+  }
+  return -1;
+}
+
+void cw_voice_stop_at(cw_voice v, int64_t mixer_frame, float fade) {
+  int slot = voice_slot(v);
+  if (slot < 0) return;
+  cw__cmd c = { .type = CW__CMD_STOP_AT, .slot = (int16_t)slot, .gen = cw__au.gvoices[slot].gen };
+  c.stop_at.frame = mixer_frame;
+  c.stop_at.fade = fade;
+  send(&c);
+}
+
 bool cw_sound_is_stream(cw_sound s) {
   cw__sound *snd = sound_get(s);
   return snd && snd->stream;
@@ -378,6 +456,18 @@ cw_voice cw_audio_play(cw_sound s, const cw_play_desc *desc) {
   cw__sound *snd = sound_get(s);
   if (!snd) return (cw_voice){ 0 };
   cw_play_desc d = desc ? *desc : (cw_play_desc){ 0 };
+  /* the sound's own loop: it loops unless this play asks for one pass; its points unless this play gives some */
+  if (snd->loop && !d.once) d.loop = true;
+  if (d.once) d.loop = false;
+  if (d.loop && d.loop_start == 0 && d.loop_end == 0 && (snd->loop_start > 0 || snd->loop_end > 0)) {
+    if (snd->stream || snd->src_rate == snd->rate || snd->src_rate <= 0) {
+      d.loop_start = snd->loop_start;
+      d.loop_end = snd->loop_end;
+    } else { /* a sample was resampled to the mix rate at load */
+      d.loop_start = (int64_t)((double)snd->loop_start * snd->rate / snd->src_rate + 0.5);
+      d.loop_end = snd->loop_end > 0 ? (int64_t)((double)snd->loop_end * snd->rate / snd->src_rate + 0.5) : 0;
+    }
+  }
   if (d.volume <= 0) d.volume = snd->volume;
   if (d.pitch <= 0) d.pitch = 1.0f;
   if (d.bus <= 0) d.bus = snd->bus;
@@ -406,6 +496,9 @@ cw_voice cw_audio_play(cw_sound s, const cw_play_desc *desc) {
     st->in_use = true;
     st->voice_slot = slot;
     st->loop = d.loop;
+    st->pos = d.offset > 0 ? d.offset : 0;
+    st->loop_start = d.loop_start > 0 ? d.loop_start : 0;
+    st->loop_end = d.loop_end > st->loop_start ? d.loop_end : 0;
     st->channels = st->dec.channels;
     atomic_store(&st->write, 0);
     atomic_store(&st->read, 0);
@@ -869,6 +962,7 @@ void cw_audio_shutdown(void) {
   a->ready = false;
 }
 
+void cw__music_update(void); /* music.c */
 int cw_audio_sample_rate(void) { return cw__au.ready ? cw__au.mix.rate : 0; }
 
 void cw_audio_update(void) {
@@ -909,6 +1003,7 @@ void cw_audio_update(void) {
   a->dbg_underruns = a->stats.underruns;
   a->dbg_voices = a->stats.voices;
   a->dbg_dropped = a->dropped;
+  cw__music_update(); /* interactive music schedules its switches on the mixer clock (music.c) */
 }
 
 void cw_audio_render(float *out, int frames) {

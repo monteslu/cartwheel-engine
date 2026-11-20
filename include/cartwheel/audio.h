@@ -156,6 +156,13 @@ typedef struct cw_sound_desc {
   int priority;      /* default voice priority (higher wins a full mixer); 0 = 0 */
   float volume;      /* default voice volume; 0 = 1 */
   cw_bus bus;        /* default bus; 0 = master */
+  /* The sound's own loop (Godot's loop on a stream resource): every voice of it loops, from loop_start to loop_end
+   * (source frames at the file's own rate; loop_end 0 = the end) after its first pass, unless a play asks for one
+   * pass (cw_play_desc.once) or gives points of its own. Set loop or either point. Left unset, a WAV file's sampler
+   * chunk ("smpl", its first loop) gives it; other formats get theirs from cw_sound_set_loop or a .cwaudio clip's
+   * loop_start / loop_end. Samples and streams alike. */
+  bool loop;
+  int64_t loop_start, loop_end;
 } cw_sound_desc;
 
 /* Load from the asset bundle (cw_asset_load). The format is detected from
@@ -169,6 +176,10 @@ cw_sound cw_sound_load_memory(const void *data, size_t len, const cw_sound_desc 
 cw_sound cw_sound_from_pcm(const float *pcm, int frames, int channels, int sample_rate, const cw_sound_desc *desc);
 /* Stops its voices; the memory goes once the mixer lets go of it. */
 void cw_sound_free(cw_sound s);
+/* The sound's own loop, set after load (see cw_sound_desc.loop); loop false: one pass unless a play loops it. */
+void cw_sound_set_loop(cw_sound s, bool loop, int64_t loop_start, int64_t loop_end);
+/* Whether it loops by itself, and its points (source frames at the file's rate; end 0 = the end). */
+bool cw_sound_get_loop(cw_sound s, int64_t *loop_start, int64_t *loop_end);
 /* Length in frames at cw_sound_source_rate (-1 when unknown: modules). */
 int64_t cw_sound_length_frames(cw_sound s);
 /* The rate of the frames a voice of this sound counts (cw_voice_frames_played):
@@ -223,6 +234,7 @@ typedef struct cw_play_desc {
   bool paused;         /* start paused */
   bool spatial;        /* use `space` */
   cw_voice_3d space;
+  bool once;           /* one pass of a sound that loops by itself (cw_sound_desc.loop) */
 } cw_play_desc;
 
 /* Starts a voice. NULL desc = defaults. Returns the null handle when the
@@ -252,6 +264,138 @@ bool cw_voice_is_playing(cw_voice v);
 int64_t cw_voice_frames_played(cw_voice v);
 /* Mixer frames produced so far: the clock start_frame is scheduled on. */
 int64_t cw_audio_mixed_frames(void);
+/* The mixer frame the voice started on (its start_frame when scheduled, else the start of the block that took it),
+ * as of the last mixed block; -1 while it waits, or for a stale handle. */
+int64_t cw_voice_started_at(cw_voice v);
+/* End the voice on mixer frame `mixer_frame`, to the sample (fade 0), or fade it out over `fade` seconds from
+ * the block (CW_AUDIO_BLOCK frames) that holds that frame. A frame already past ends it at once; a negative
+ * frame cancels an end set before. */
+void cw_voice_stop_at(cw_voice v, int64_t mixer_frame, float fade);
+
+/* ── randomized sounds (Godot's AudioStreamRandomizer) ──────────────
+ * One of several sounds per play, with a little pitch and volume variation: footsteps, impacts, barks. The
+ * choice uses its own cw_rng from desc.seed, so the same seed and calls pick the same sounds on every host. */
+CW_HANDLE_TYPE(cw_randomizer);
+typedef enum {
+  CW_RANDOM_NO_REPEAT, /* weighted, never the one played last (Godot's PLAYBACK_RANDOM_NO_REPEATS) */
+  CW_RANDOM_ANY,       /* weighted, repeats allowed (PLAYBACK_RANDOM) */
+  CW_RANDOM_SEQUENCE,  /* in the order added, round and round (PLAYBACK_SEQUENTIAL) */
+} cw_random_mode;
+typedef struct cw_randomizer_desc {
+  cw_random_mode mode;
+  float random_pitch;     /* >= 1: each play's pitch scaled by a value in [1 / random_pitch, random_pitch]; 0 = 1 */
+  float random_volume_db; /* each play's volume moved by up to this many decibels either way; 0 = none */
+  uint64_t seed;
+} cw_randomizer_desc;
+#define CW_RANDOMIZER_MAX 64 /* sounds in one randomizer */
+cw_randomizer cw_randomizer_new(const cw_randomizer_desc *desc); /* empty; NULL desc = defaults (no repeats, no variation, seed 0) */
+void cw_randomizer_free(cw_randomizer r); /* its sounds are the caller's */
+/* Adds a sound with a weight (0 = 1). Returns its index, -1 when full or stale. */
+int cw_randomizer_add(cw_randomizer r, cw_sound s, float weight);
+int cw_randomizer_count(cw_randomizer r); /* sounds added (0 for a stale handle) */
+/* The next pick: the sound, and the pitch and volume factors for it (NULL ignored). The null sound when empty. */
+cw_sound cw_randomizer_next(cw_randomizer r, float *pitch, float *volume);
+/* Picks and plays: desc's pitch and volume (0 = 1) are multiplied by the pick's. */
+cw_voice cw_randomizer_play(cw_randomizer r, const cw_play_desc *desc);
+int cw_randomizer_last(cw_randomizer r); /* index of the last pick, -1 before any */
+
+/* ── interactive music (Godot's AudioStreamInteractive) ─────────────
+ * Clips (sounds with a beat grid) and the transitions between them. cw_music_play asks for a clip; the switch
+ * happens where the transition says (at once, on the next beat, the next bar, or the end of the clip), to the
+ * mixer sample, with a cut, a fade in, a fade out or a cross fade over some beats, optionally through a filler
+ * clip, and the new clip starts from its start or at the same position. A clip can advance by itself at its end
+ * (to the next clip, or back to the clip a transition held). Runs in cw_audio_update; a switch is scheduled at
+ * least CW_MUSIC_LEAD mixer frames ahead (so it is sample exact even with the device's buffering), which is the
+ * latency of an immediate switch. Everything is in mixer frames from cw_audio_mixed_frames, so an offline mixer
+ * (cw_audio_render) switches on the same samples on every host. */
+CW_HANDLE_TYPE(cw_music);
+#define CW_MUSIC_MAX_CLIPS 32
+#define CW_MUSIC_MAX_TRANSITIONS 64
+#define CW_MUSIC_LEAD 4096
+typedef enum {
+  CW_MUSIC_ADVANCE_NONE,   /* plays to its end (or loops) */
+  CW_MUSIC_ADVANCE_NEXT,   /* at its end, the clip named in next (Godot's AUTO_ADVANCE_ENABLED) */
+  CW_MUSIC_ADVANCE_RETURN, /* at its end, back to the clip a transition held (AUTO_ADVANCE_RETURN_TO_HOLD) */
+} cw_music_advance;
+typedef struct cw_music_clip {
+  cw_sound sound;
+  float bpm;           /* the beat grid; 0 = none (beats and bars then switch at once) */
+  int bar_beats;       /* beats in a bar; 0 = 4 */
+  int beats;           /* the clip's length in beats (its loop length too); 0 = the sound's own length */
+  bool loop;           /* repeats (from the sound's loop start when it has one) */
+  cw_music_advance advance;
+  const char *next;    /* ADVANCE_NEXT: the clip after this one */
+} cw_music_clip;
+typedef enum { CW_MUSIC_AT_NOW, CW_MUSIC_AT_BEAT, CW_MUSIC_AT_BAR, CW_MUSIC_AT_END } cw_music_at;
+typedef enum { CW_MUSIC_FADE_CROSS, CW_MUSIC_FADE_NONE, CW_MUSIC_FADE_IN, CW_MUSIC_FADE_OUT } cw_music_fade;
+typedef struct cw_music_transition {
+  cw_music_at at;        /* where in the playing clip the switch happens */
+  bool same_position;    /* the new clip starts where the old one is (its time in the clip), else from its start */
+  cw_music_fade fade;    /* 0 = a cross fade */
+  float fade_beats;      /* the fade's length in the playing clip's beats (a clip with no grid: half seconds); 0 = 1 */
+  const char *filler;    /* a clip played between the two (to its end), or NULL */
+  bool hold_previous;    /* remember the clip left, for a clip with ADVANCE_RETURN */
+} cw_music_transition;
+typedef struct cw_music_desc {
+  cw_bus bus;            /* 0 = master */
+  float volume;          /* 0 = 1 */
+} cw_music_desc;
+cw_music cw_music_new(const cw_music_desc *desc); /* no clips yet; NULL desc = the master bus at volume 1 */
+void cw_music_free(cw_music m); /* stops it at once; its sounds are the caller's */
+/* Adds a clip under a name (copied). Returns its index, -1 when full, a duplicate name, or a null sound. */
+int cw_music_add_clip(cw_music m, const char *name, const cw_music_clip *clip);
+/* How a switch from `from` to `to` goes (names; NULL = any). The most specific rule wins: from and to, then any
+ * to `to`, then `from` to any, then any to any. With none: on the next bar of a clip with a beat grid (else at
+ * once), a cross fade over one beat. Returns false when a name is unknown or the table is full. */
+bool cw_music_add_transition(cw_music m, const char *from, const char *to, const cw_music_transition *t);
+/* Start a clip, or switch to it from the one playing by the transition table. Asking for the clip already playing
+ * (or already on its way) does nothing. False when the name is unknown. */
+bool cw_music_play(cw_music m, const char *clip);
+/* Stops over `fade` seconds (0 = at once). */
+void cw_music_stop(cw_music m, float fade);
+void cw_music_set_volume(cw_music m, float volume); /* linear gain of every voice it plays, now and later */
+/* Spatial music (an AudioStreamPlayer3D): every voice of it placed as space says; NULL plays it flat again. */
+void cw_music_set_3d(cw_music m, const cw_voice_3d *space);
+/* Holds every voice where it is; on resume the beat grid follows the current clip's own clock (to the block). */
+void cw_music_set_paused(cw_music m, bool paused);
+/* The clip sounding now (NULL when stopped). */
+const char *cw_music_current(cw_music m);
+const char *cw_music_pending(cw_music m);     /* the clip a switch is on its way to (NULL when none) */
+int64_t cw_music_switch_frame(cw_music m);    /* the mixer frame that switch happens on (-1 when none or not yet scheduled) */
+/* The current clip's voice (to read its clock). */
+cw_voice cw_music_voice(cw_music m);
+int64_t cw_music_clip_start(cw_music m); /* the mixer frame of the current clip's beat 0 (-1 before its voice starts) */
+bool cw_music_is_playing(cw_music m);    /* a clip sounds or one is about to start */
+
+/* ── stream resources (.cwaudio files) ──────────────────────────────
+ * A randomizer or an interactive music as a text asset, so a scene's player can name it as its stream
+ * (AudioStreamPlayer stream = "music/match.cwaudio"). One statement a line, key=value pairs, # comments:
+ *
+ *   random mode=no_repeat pitch=1.1 volume_db=2 seed=7
+ *   sound path="sfx/step1.wav" weight=2
+ *   sound path="sfx/step2.wav"
+ *
+ *   interactive initial="calm"
+ *   clip name="calm" path="music/calm.ogg" bpm=120 bar_beats=4 beats=32 loop=true
+ *   clip name="sting" path="music/sting.ogg" bpm=120 beats=4 advance=next next="battle"
+ *   clip name="battle" path="music/battle.ogg" bpm=120 beats=16 loop=true
+ *   transition from="calm" to="battle" at=bar fade=cross fade_beats=1 filler="sting"
+ *   transition to="calm" at=end fade=cross fade_beats=2 same_position=false
+ *
+ * random's mode: no_repeat, any, sequence. clip advance: none, next, return. transition at: now, beat, bar, end;
+ * fade: cross, none, in, out; from / to absent = any; hold_previous=true. A clip's path may carry its own loop
+ * (cw_sound_desc.loop); a clip's loop_start= and loop_end= (source frames) set its sound's own points. A
+ * statement the format does not know is a load error naming the line. */
+typedef struct cw_audio_stream_res cw_audio_stream_res;
+/* Loads and parses (its sounds too, through cw_sound_load). NULL (logged with the line) on an error. Cached by
+ * path: a second load returns the same resource. */
+const cw_audio_stream_res *cw_audio_stream_load(const char *asset_path);
+bool cw_audio_stream_is_interactive(const cw_audio_stream_res *res); /* an interactive music (else a randomizer) */
+/* A randomizer resource's randomizer (shared by every player of it); the null handle for an interactive one. */
+cw_randomizer cw_audio_stream_randomizer(const cw_audio_stream_res *res);
+/* A new music from an interactive resource (each player has its own), its initial clip not yet started. */
+cw_music cw_audio_stream_music(const cw_audio_stream_res *res, const cw_music_desc *desc);
+const char *cw_audio_stream_initial(const cw_audio_stream_res *res); /* the interactive resource's initial clip */
 
 /* ── listener ───────────────────────────────────────────────────────── */
 
