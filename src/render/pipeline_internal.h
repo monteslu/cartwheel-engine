@@ -108,6 +108,11 @@ struct cw_pipeline {
   unsigned bound_fbo; /* the FBO the current pass was handed */
   unsigned bound_depth_tex, bound_depth_rb; /* GL: its depth (a texture, or the multisampled scene's renderbuffer), 0 for none */
   bool taa_reset;     /* drop the TAA history next frame */
+  /* automatic exposure (pipeline_post.c): the state the tonemap pass reads this run (0: none), the frame each view's
+   * state was last moved on, and cw_pipeline_exposure_reset */
+  unsigned auto_exposure_tex;
+  uint64_t auto_exposure_seen[CW_MAX_VIEWS];
+  bool auto_exposure_reset;
   cw_view views[CW_MAX_VIEWS]; /* cw_pipeline_set_views (nviews >= 2: splitscreen) */
   int nviews;
   int view_i;               /* splitscreen: the view being drawn (-1: none); an extra view (below) draws as a later one */

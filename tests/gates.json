@@ -3829,6 +3829,104 @@
     "note": "TAA error against a 36-sample picture of the same frame over each mover (a turning mesh, a skinned character, an instanced swarm, post_stack's bar), GL and WebGPU: with the mover's own motion at most 0.8 of the error with camera motion only; control: camera motion only in both runs must fail"
   },
   {
+    "name": "post-auto-exposure",
+    "webgpu": true,
+    "app": "post_stack",
+    "frames": 538,
+    "maxGt16": 0.003,
+    "fields": [
+      "post.seg",
+      "post.passes"
+    ],
+    "controlFrames": 20,
+    "expect": {
+      "post.seg": 25
+    },
+    "note": "automatic exposure adapted to the room: its average brought to middle grey. Control: the base segment (automatic exposure off), a darker picture"
+  },
+  {
+    "name": "post-auto-exposure-swell",
+    "webgpu": true,
+    "app": "post_stack",
+    "frames": 560,
+    "maxGt16": 0.003,
+    "fields": [
+      "post.seg",
+      "post.passes"
+    ],
+    "controlFrames": 560,
+    "controlEnv": {
+      "CW_TEST_AUTO_EXPOSURE": "snap"
+    },
+    "expect": {
+      "post.seg": 26
+    },
+    "note": "21 frames after the room's lamps turned up 30 times: automatic exposure part of the way down, the same part on every host (the adaptation's clock is the frame clock, its state stays on the GPU). Control: no adaptation (the state at its goal every frame), a darker picture"
+  },
+  {
+    "name": "post-auto-exposure-return",
+    "webgpu": true,
+    "app": "post_stack",
+    "frames": 680,
+    "maxGt16": 0.003,
+    "fields": [
+      "post.seg",
+      "post.passes"
+    ],
+    "controlFrames": 680,
+    "controlEnv": {
+      "CW_TEST_AUTO_EXPOSURE": "snap"
+    },
+    "expect": {
+      "post.seg": 27
+    },
+    "note": "51 frames after the lamps turned back down: automatic exposure part of the way back up (the slower direction). Control: no adaptation, a brighter picture"
+  },
+  {
+    "name": "auto-exposure",
+    "script": "tests/auto-exposure.mjs",
+    "note": "automatic exposure over post_stack's lamp steps, every frame's mean brightness, GL and WebGPU: it comes back to the adapted room's, never moves more than 8% a frame or turns back while adapting, comes down faster than it comes up, and the two backends agree within 2%; control: no adaptation (CW_TEST_AUTO_EXPOSURE=snap) must fail the smoothness check"
+  },
+  {
+    "name": "post-motion-blur",
+    "webgpu": true,
+    "app": "post_stack",
+    "frames": 802,
+    "maxGt16": 0.003,
+    "fields": [
+      "post.seg",
+      "post.passes"
+    ],
+    "controlFrames": 472,
+    "expect": {
+      "post.seg": 28
+    },
+    "note": "motion blur on the bar spinning 0.21 rad a frame: its ends smear along their arcs, the hub and the room stay sharp. Control: the plain motion segment (no blur)"
+  },
+  {
+    "name": "post-motion-blur-reduced",
+    "webgpu": true,
+    "app": "post_stack",
+    "frames": 802,
+    "maxGt16": 0.003,
+    "env": {
+      "POST_REDUCED_MOTION": "1"
+    },
+    "fields": [
+      "post.seg",
+      "post.passes"
+    ],
+    "controlFrames": 802,
+    "controlEnv": {
+      "POST_REDUCED_MOTION": "0"
+    },
+    "expect": {
+      "post.seg": 28,
+      "post.passes": 1090
+    },
+    "note": "the player's reduced motion setting turns motion blur off: the pass does not run (post.passes without its bit) and the bar is sharp. Control: the setting off, the blurred picture"
+  },
+  {
     "name": "pipeline-perf",
     "script": "tests/pipeline-perf.mjs",
     "note": "per-pass GPU ms at 1280x720 full quality (reported, not compared); every running pass timed natively, idle passes untimed"

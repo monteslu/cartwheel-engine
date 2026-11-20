@@ -8,9 +8,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cartwheel/debug.h"
 #include "cartwheel/gpu.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/scene2d.h"
+#include "cartwheel/ui.h"
 #include "pipeline_internal.h"
 #include "quality_internal.h"
 #include "scene/render3d_internal.h"
@@ -821,11 +823,149 @@ static void bloom_exec(cw_pass_ctx *ctx, void *u) {
   }
 }
 
+/* ── automatic exposure (eye adaptation) ────────────────────────────────
+ * The picture's average log2 luminance (the geometric mean, which a few very bright pixels do not drag) through a
+ * chain of 8x reductions (the first reads the frame four times a texel, the rest every texel), then one 1x1 pass that moves the adaptation state toward
+ *   goal = clamp(log2(key) - average, min_ev, max_ev)   (stops)
+ * by 1 - e^(-dt x speed): the speed toward a brighter picture when the goal is below the state, else the speed toward
+ * a darker one. The state stays on the GPU (two 1x1 RG16F targets, r + g / 1024 stops, alternating by frame) and the
+ * tonemap pass reads it, so nothing is read back: no stall, no latency that differs by host. dt is the frame's time
+ * on the engine clock (the fixed step in a deterministic run), so every host makes the same sequence. A new state
+ * (the first frame, cw_pipeline_exposure_reset) starts at its goal. */
+static unsigned exp_log_prog, exp_adapt_prog;
+static const char *EXP_LOG_FS = S(
+  uniform sampler2D u_src;
+  uniform vec2 u_texel;
+  uniform int u_first;
+  out vec4 o;
+  void main() {
+    float s = 0.0;
+    if (u_first != 0) {
+      /* the frame itself: four reads spread over the 8 x 8 block (each the mean of 2 x 2 pixels) */
+      for (int j = 0; j < 2; j++)
+        for (int i = 0; i < 2; i++) {
+          vec4 c = texture(u_src, v_uv + (vec2(float(i), float(j)) * 4.0 - 2.0) * u_texel);
+          s += log2(max(dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)), 1.0 / 65536.0)) * 4.0;
+        }
+    } else {
+      for (int j = 0; j < 4; j++)
+        for (int i = 0; i < 4; i++) s += texture(u_src, v_uv + (vec2(float(i), float(j)) * 2.0 - 3.0) * u_texel).r;
+    }
+    o = vec4(clamp(s / 16.0, -16.0, 16.0), 0.0, 0.0, 1.0);
+  });
+static const char *EXP_ADAPT_FS = S(
+  uniform sampler2D u_avg;
+  uniform sampler2D u_prev;
+  uniform vec4 u_p; /* key, min stops, max stops, 1: start at the goal */
+  uniform vec4 u_k; /* this frame's blend toward a brighter picture, toward a darker one */
+  out vec4 o;
+  void main() {
+    float avg = texelFetch(u_avg, ivec2(0), 0).r;
+    float goal = clamp(log2(u_p.x) - avg, u_p.y, u_p.z);
+    vec2 pr = texelFetch(u_prev, ivec2(0), 0).rg;
+    float prev = pr.r + pr.g / 1024.0;
+    float ev = u_p.w > 0.5 ? goal : prev + (goal - prev) * (goal < prev ? u_k.x : u_k.y);
+    float hi = floor(ev * 16.0 + 0.5) / 16.0;
+    o = vec4(hi, (ev - hi) * 1024.0, 0.0, 1.0);
+  });
+
+/* a 1x1 state of 0 stops, for the tonemap pass when automatic exposure is off */
+static unsigned exposure_neutral(void) {
+  static unsigned tex;
+  if (!tex) {
+    static const uint16_t zero[2] = { 0, 0 };
+    tex = cw_pass_texture_new(1, 1, CW_RT_RG16F, zero);
+  }
+  return tex;
+}
+
+static bool exposure_active(const cw_pass_ctx *ctx, void *u) {
+  (void)u;
+  return ctx->settings->auto_exposure && cw__caps.float_render;
+}
+
+/* 1 - e^(-x) for a frame's small x, from + - * / alone (the same bits on every host) */
+static float adapt_blend(float x) {
+  x = CW_CLAMP(x, 0.0f, 4.0f);
+  return 1.0f - 1.0f / (1.0f + x + x * x * 0.5f + x * x * x * (1.0f / 6.0f) + x * x * x * x * (1.0f / 24.0f));
+}
+
+static void exposure_exec(cw_pass_ctx *ctx, void *u) {
+  (void)u;
+  const cw_post_settings *s = ctx->settings;
+  cw_pipeline *pl = ctx->pipeline;
+  if (!exp_log_prog) exp_log_prog = prog_of("exposure_average", EXP_LOG_FS, NULL, NULL, WGSL_EXP_LOG, NULL, NULL);
+  if (!exp_adapt_prog) exp_adapt_prog = prog_of("exposure_adapt", EXP_ADAPT_FS, NULL, NULL, WGSL_EXP_ADAPT, NULL, NULL);
+  if (!exp_log_prog || !exp_adapt_prog || !ctx->src) return;
+  const cw_rt *cur = ctx->src;
+  int w = cur->w, h = cur->h;
+  bool first = true;
+  do {
+    w = CW_MAX(1, (w + 7) / 8);
+    h = CW_MAX(1, (h + 7) / 8);
+    const cw_rt *rt = cw_pass_rt(ctx, w, h, CW_RT_R16F, false);
+    if (!rt) return;
+    cw_pass_bind_target(ctx, rt);
+    cw_pass_use(exp_log_prog);
+    cw_pass_bind_texture(0, cur->tex);
+    cw_pass_uniform1i(exp_log_prog, "u_src", 0);
+    cw_pass_uniform2f(exp_log_prog, "u_texel", 1.0f / (float)cur->w, 1.0f / (float)cur->h);
+    cw_pass_uniform1i(exp_log_prog, "u_first", first ? 1 : 0);
+    cw_pass_fullscreen();
+    if (!first) cw_pass_rt_release(ctx, cur);
+    cur = rt;
+    first = false;
+  } while (w > 1 || h > 1);
+  /* the state: each split screen view its own (they look at different things) */
+  char ka[32], kb[32];
+  int view = pl->view_i >= 0 ? pl->view_i : 0;
+  snprintf(ka, sizeof ka, "exposure.%d.a", view);
+  snprintf(kb, sizeof kb, "exposure.%d.b", view);
+  bool fresh_a = false, fresh_b = false;
+  const cw_rt *a = cw_pipeline_rt_persistent(pl, ka, 1, 1, CW_RT_RG16F, &fresh_a);
+  const cw_rt *b = cw_pipeline_rt_persistent(pl, kb, 1, 1, CW_RT_RG16F, &fresh_b);
+  if (!a || !b) {
+    cw_pass_rt_release(ctx, cur);
+    return;
+  }
+  bool odd = (ctx->frame & 1) != 0;
+  const cw_rt *dst = odd ? a : b, *prev = odd ? b : a;
+  /* (a state not updated last frame, the pass off for a while, starts over at its goal) */
+  if (pl->auto_exposure_reset) {
+    pl->auto_exposure_reset = false;
+    for (int i = 0; i < CW_MAX_VIEWS; i++) pl->auto_exposure_seen[i] = UINT64_MAX - 1;
+  }
+  bool fresh = fresh_a || fresh_b || pl->auto_exposure_seen[view] + 1 != ctx->frame;
+  pl->auto_exposure_seen[view] = ctx->frame;
+  float dt = (float)CW_CLAMP(cw_frame_dt(), 0.0, 0.1);
+  float k_bright = adapt_blend(dt * CW_MAX(s->auto_exposure_speed_up, 0.0f)), k_dark = adapt_blend(dt * CW_MAX(s->auto_exposure_speed_down, 0.0f));
+  /* CW_TEST_AUTO_EXPOSURE=snap (a gate control): no adaptation, the state jumps to its goal every frame */
+  const char *t = cw_test_env("CW_TEST_AUTO_EXPOSURE");
+  if (t && !strcmp(t, "snap")) fresh = true;
+  cw_pass_bind_target(ctx, dst);
+  cw_pass_use(exp_adapt_prog);
+  cw_pass_bind_texture(0, cur->tex);
+  cw_pass_bind_texture(1, prev->tex);
+  cw_pass_uniform1i(exp_adapt_prog, "u_avg", 0);
+  cw_pass_uniform1i(exp_adapt_prog, "u_prev", 1);
+  cw_pass_uniform4f(exp_adapt_prog, "u_p", CW_MAX(s->auto_exposure_key, 1e-4f), CW_MIN(s->auto_exposure_min_ev, s->auto_exposure_max_ev),
+                    s->auto_exposure_max_ev, fresh ? 1.0f : 0.0f);
+  cw_pass_uniform4f(exp_adapt_prog, "u_k", k_bright, k_dark, 0, 0);
+  cw_pass_fullscreen();
+  cw_pass_rt_release(ctx, cur);
+  pl->auto_exposure_tex = dst->tex;
+}
+
 /* ── tonemap: exposure, tone curve, sRGB transfer ────────────────────── */
 
 static const char *TM_FS = S(
   uniform sampler2D u_src;
-  uniform float toneMappingExposure;
+  /* the exposure the curves use: the settings' times 2^(automatic exposure), read from the 1x1 adaptation state
+   * (r + g / 1024 stops; a texture of zeros when automatic exposure is off) */
+  uniform float u_tm_exposure;
+  uniform sampler2D u_auto;
+  float toneMappingExposure;
+  void tm_exposure_set() { toneMappingExposure = u_tm_exposure * exp2(dot(texelFetch(u_auto, ivec2(0), 0).rg, vec2(1.0, 1.0 / 1024.0))); }
   uniform int u_curve;
   out vec4 o;
   /* three.js r187's curves (ToneMappingFunctions; the GLSL tonemapping_pars_fragment) */
@@ -907,6 +1047,7 @@ static const char *TM_FS = S(
 /* the tonemap pass's main, also the fused pass's middle (FINAL_FS) */
 static const char *TM_MAIN = S(
   void main() {
+    tm_exposure_set();
     vec4 c = TM_SRC;
     TM_FUSED_IN
     vec3 x = max(c.rgb, vec3(0.0));
@@ -1170,7 +1311,11 @@ static void tonemap_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_use(prog);
   cw_pass_bind_texture(0, ctx->src->tex);
   cw_pass_uniform1i(prog, "u_src", 0);
-  cw_pass_uniform1f(prog, "toneMappingExposure", s->exposure * exp2f(s->exposure_ev));
+  cw_pass_uniform1f(prog, "u_tm_exposure", s->exposure * exp2f(s->exposure_ev));
+  /* unit 5 (WebGPU binding 6): the automatic exposure's state, or zeros (2^0) when it is off or did not run */
+  cw_pass_bind_texture(5, s->auto_exposure && pl->auto_exposure_tex ? pl->auto_exposure_tex : exposure_neutral());
+  cw_pass_uniform1i(prog, "u_auto", 5);
+  pl->auto_exposure_tex = 0;
   cw_pass_uniform1i(prog, "u_curve", (int)CW_CLAMP((int)s->tonemap, 0, CW_TONEMAP_COUNT - 1));
   if (bloom) {
     cw_pass_bind_texture(1, pl->bloom_glow->tex);
@@ -1509,6 +1654,7 @@ static unsigned tm_cheap_variant(bool bloom, bool grade, bool lens, bool aa, boo
              "fn F(c0: vec3f) -> vec3f { let c = %s; %s }\n"
              "fn D(c: vec3f) -> vec3f { return tmap(F(c)); }\n"
              "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
+             "  tm_exposure_set();\n"
              "  g_bl = %s;\n"
              "  g_fog = %s;\n"
              "  var x = %s;\n%s"
@@ -1522,7 +1668,7 @@ static unsigned tm_cheap_variant(bool bloom, bool grade, bool lens, bool aa, boo
     snprintf(buf, sizeof buf, "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s", head, fog ? "@group(0) @binding(5) var u_depth: texture_2d<f32>;\n" : "",
              WGSL_COMMON, WGSL_BL_PREFILTER, cw__fuse_round_wgsl(), WGSL_FUSE_BLOOM_GRADE, WGSL_FUSE_LENS, fog ? WGSL_FOG_FN : "",
              fog ? WGSL_FUSE_FOG : "", WGSL_TM_FNS,
-             "fn dluma(c: vec3f) -> f32 { let y = max(dot(c, vec3f(0.299, 0.587, 0.114)), 0.0) * u.toneMappingExposure; "
+             "fn dluma(c: vec3f) -> f32 { let y = max(dot(c, vec3f(0.299, 0.587, 0.114)), 0.0) * tm_exp; "
              "return sqrt(y / (1.0 + y)); }\n",
              "fn tmap(cin: vec3f) -> vec3f {\n  let c = vec4f(cin, 1.0);\n", WGSL_TM_FUSED_CURVES, "  return x;\n}\n",
              bloom ? BLOOM_AT_WGSL : "", aa ? WGSL_FXAA_CONSOLE : "", fsrc);
@@ -1537,6 +1683,7 @@ static unsigned tm_cheap_variant(bool bloom, bool grade, bool lens, bool aa, boo
            "vec4 T(vec2 p) { return texture(u_src, p); }\n"
            "%s"
            "void main() {\n"
+           "  tm_exposure_set();\n"
            "  g_bl = %s;\n"
            "  g_fog = %s;\n"
            "  vec3 x = %s;\n%s"
@@ -1622,6 +1769,145 @@ static void dof_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_uniform4f(dof_prog, "u_dof", s->dof_focus_distance, s->dof_focus_range * 0.5f, px, px * CW_CLAMP(s->dof_near_blur, 0.0f, 1.0f));
   cw_pass_uniform2f(dof_prog, "u_texel", 1.0f / (float)ctx->width, 1.0f / (float)ctx->height);
   cw_pass_fullscreen();
+}
+
+/* ── motion blur ────────────────────────────────────────────────────────
+ * A reconstruction filter over the velocity target (McGuire, Hennessy, Bukowski, Osman 2012, "A Reconstruction
+ * Filter for Plausible Motion Blur"), so the camera's motion and every moving mesh's own blur alike:
+ *   tiles     the largest motion of each 16 x 16 pixel tile (two 4 x 4 reductions), then of its 3 x 3 neighbours
+ *   gather    each pixel reads `samples` taps along its tile's largest motion, centred on itself and as long as
+ *             that motion over the open shutter; a tap counts by how far its own motion (when it is in front)
+ *             or the pixel's (when the pixel is in front) would smear it over this pixel, so a moving thing
+ *             blurs past its outline over what stands still behind it, and nothing still in front is blurred
+ *             by what moves behind it
+ * A pixel whose tile holds no motion over half a pixel is copied. The first person viewmodel has no motion in
+ * the velocity target and is the nearest thing on its pixels, so it stays sharp; the UI is drawn after POST. */
+static unsigned mb_tile_prog, mb_prog;
+static const char *MB_TILE_FS = S(
+  uniform sampler2D u_vel;
+  uniform vec2 u_texel;
+  uniform float u_span; /* 4: a 4 x 4 block of the source; 3: the tile and its neighbours */
+  out vec4 o;
+  void main() {
+    vec2 best = vec2(0.0);
+    float bl = -1.0;
+    int n = int(u_span);
+    for (int j = 0; j < n; j++)
+      for (int i = 0; i < n; i++) {
+        vec2 v = texture(u_vel, v_uv + (vec2(float(i), float(j)) - 0.5 * (u_span - 1.0)) * u_texel).rg;
+        float l = dot(v, v);
+        if (l > bl) { bl = l; best = v; }
+      }
+    o = vec4(best, 0.0, 1.0);
+  });
+static const char *MB_FS = S(
+  uniform sampler2D u_src;
+  uniform sampler2D u_vel;
+  uniform sampler2D u_tile;
+  uniform sampler2D u_depth;
+  uniform vec4 u_pz;    /* the projection's z rows (window depth to view depth) */
+  uniform vec4 u_mb;    /* shutter, longest blur (pixels), samples, 0 */
+  uniform vec2 u_size;  /* the frame, pixels */
+  uniform vec2 u_tiles; /* the tile target, texels */
+  uniform int u_frame;
+  out vec4 o;
+  float vdepth(vec2 uv) {
+    ivec2 sz = textureSize(u_depth, 0);
+    float d = texelFetch(u_depth, clamp(ivec2(uv * vec2(sz)), ivec2(0), sz - 1), 0).r;
+    if (d >= 1.0) return 1e6;
+    float ndc = d * 2.0 - 1.0;
+    return -(u_pz.y - ndc * u_pz.w) / (ndc * u_pz.z - u_pz.x);
+  }
+  vec2 vel_at(vec2 uv) {
+    ivec2 sz = textureSize(u_vel, 0);
+    return texelFetch(u_vel, clamp(ivec2(uv * vec2(sz)), ivec2(0), sz - 1), 0).rg;
+  }
+  /* a pixel's motion over the open shutter, in pixels, held to the longest blur */
+  vec2 motion(vec2 v) {
+    vec2 p = v * u_mb.x * u_size;
+    float l = length(p);
+    return l > u_mb.y ? p * (u_mb.y / max(l, 1e-6)) : p;
+  }
+  float cone(float d, float l) { return clamp(1.0 - d / (0.5 * l + 1e-4), 0.0, 1.0); }
+  float cyl(float d, float l) { return 1.0 - smoothstep(0.475 * l, 0.525 * l + 1e-4, d); }
+  void main() {
+    vec4 c0 = texture(u_src, v_uv);
+    vec2 tuv = (floor(v_uv * u_tiles) + 0.5) / u_tiles;
+    vec2 vmax = motion(texture(u_tile, tuv).rg);
+    float len = length(vmax);
+    if (len < 0.5) { o = c0; return; }
+    float lp = length(motion(vel_at(v_uv)));
+    float zp = vdepth(v_uv);
+    float ext = max(0.02 * zp, 0.01);
+    int n = int(u_mb.z);
+    float jit = hash01(uvec3(uint(gl_FragCoord.x), uint(gl_FragCoord.y), uint(u_frame))) - 0.5;
+    float w0 = 1.0 / max(lp, 1.0);
+    vec3 sum = c0.rgb * w0;
+    float wsum = w0;
+    vec2 step_uv = vmax / u_size;
+    for (int i = 0; i < 32; i++) {
+      if (i >= n) break;
+      float t = ((float(i) + 0.5 + jit) / float(n)) * 2.0 - 1.0;
+      vec2 q = v_uv + step_uv * (t * 0.5);
+      float d = abs(t) * len * 0.5;
+      float ls = length(motion(vel_at(q)));
+      float zs = vdepth(q);
+      float fore = clamp(1.0 - (zs - zp) / ext, 0.0, 1.0);
+      float back = clamp(1.0 - (zp - zs) / ext, 0.0, 1.0);
+      float w = fore * cone(d, ls) + back * cone(d, lp) + cyl(d, ls) * cyl(d, lp) * 2.0;
+      sum += texture(u_src, q).rgb * w;
+      wsum += w;
+    }
+    o = vec4(sum / wsum, c0.a);
+  });
+
+static bool motion_blur_active(const cw_pass_ctx *ctx, void *u) {
+  (void)u;
+  /* reduced motion (the player's accessibility setting, cartwheel/ui.h) turns it off */
+  return ctx->settings->motion_blur && ctx->settings->motion_blur_samples > 0 && ctx->settings->motion_blur_shutter > 0 &&
+         !cw_ui_reduced_motion() && cw__caps.float_render;
+}
+
+static void motion_blur_exec(cw_pass_ctx *ctx, void *u) {
+  (void)u;
+  const cw_post_settings *s = ctx->settings;
+  if (!mb_tile_prog) mb_tile_prog = prog_of("motion_blur_tiles", MB_TILE_FS, NULL, NULL, WGSL_MB_TILE, NULL, NULL);
+  if (!mb_prog) mb_prog = prog_of("motion_blur", GLSL_COMMON, MB_FS, NULL, WGSL_COMMON, WGSL_MB, NULL);
+  if (!mb_tile_prog || !mb_prog || !ctx->velocity || !ctx->dst) return;
+  /* the tiles: 4 x 4 blocks twice, then each tile's neighbourhood */
+  const cw_rt *from = ctx->velocity, *tile = NULL;
+  for (int k = 0; k < 3; k++) {
+    int w = k < 2 ? CW_MAX(1, (from->w + 3) / 4) : from->w, h = k < 2 ? CW_MAX(1, (from->h + 3) / 4) : from->h;
+    const cw_rt *rt = cw_pass_rt(ctx, w, h, CW_RT_RG16F, false);
+    if (!rt) return;
+    cw_pass_bind_target(ctx, rt);
+    cw_pass_use(mb_tile_prog);
+    cw_pass_bind_texture(0, from->tex);
+    cw_pass_uniform1i(mb_tile_prog, "u_vel", 0);
+    cw_pass_uniform2f(mb_tile_prog, "u_texel", 1.0f / (float)from->w, 1.0f / (float)from->h);
+    cw_pass_uniform1f(mb_tile_prog, "u_span", k < 2 ? 4.0f : 3.0f);
+    cw_pass_fullscreen();
+    if (from != ctx->velocity) cw_pass_rt_release(ctx, from);
+    from = tile = rt;
+  }
+  cw_pass_bind_target(ctx, ctx->dst);
+  cw_pass_use(mb_prog);
+  set_pz(mb_prog, ctx);
+  cw_pass_bind_texture(0, ctx->src->tex);
+  cw_pass_bind_texture(1, ctx->velocity->tex);
+  cw_pass_bind_texture(2, tile->tex);
+  cw_pass_bind_texture(3, ctx->depth_tex);
+  cw_pass_uniform1i(mb_prog, "u_src", 0);
+  cw_pass_uniform1i(mb_prog, "u_vel", 1);
+  cw_pass_uniform1i(mb_prog, "u_tile", 2);
+  cw_pass_uniform1i(mb_prog, "u_depth", 3);
+  cw_pass_uniform4f(mb_prog, "u_mb", CW_CLAMP(s->motion_blur_shutter, 0.0f, 2.0f), CW_MAX(s->motion_blur_max, 1.0f) * (float)ctx->height / 1080.0f,
+                    (float)CW_CLAMP(s->motion_blur_samples, 1, 32), 0);
+  cw_pass_uniform2f(mb_prog, "u_size", (float)ctx->width, (float)ctx->height);
+  cw_pass_uniform2f(mb_prog, "u_tiles", (float)tile->w, (float)tile->h);
+  cw_pass_uniform1i(mb_prog, "u_frame", (int)(ctx->frame & 0x7fffffff));
+  cw_pass_fullscreen();
+  cw_pass_rt_release(ctx, tile);
 }
 
 /* ── lens: chromatic aberration, vignette, film grain ───────────────── */
@@ -1792,6 +2078,11 @@ void cw__pipeline_add_builtin_passes(cw_pipeline *p) {
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "dof", .phase = CW_PHASE_POST, .order = 250,
                                            .reads = CW_RES_COLOR | CW_RES_DEPTH, .writes = CW_RES_COLOR,
                                            .active = dof_active, .execute = dof_exec, .webgpu = true });
+  cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "motion_blur", .phase = CW_PHASE_POST, .order = 270,
+                                           .reads = CW_RES_COLOR | CW_RES_VELOCITY | CW_RES_DEPTH, .writes = CW_RES_COLOR,
+                                           .active = motion_blur_active, .execute = motion_blur_exec, .webgpu = true });
+  cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "exposure", .phase = CW_PHASE_POST, .order = 290, .reads = CW_RES_COLOR,
+                                           .active = exposure_active, .execute = exposure_exec, .webgpu = true });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "bloom", .phase = CW_PHASE_POST, .order = 300,
                                            .reads = CW_RES_COLOR, .writes = CW_RES_COLOR,
                                            .active = bloom_active, .execute = bloom_exec, .webgpu = true });

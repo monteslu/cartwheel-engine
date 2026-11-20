@@ -42,7 +42,9 @@
  *                      "velocity" (0, when something reads CW_RES_VELOCITY: the
  *                      camera's motion rebuilt from depth, then every mesh
  *                      that moved since the last frame drawn over it),
- *                      "ssao" (100), "taa" (200), "dof" (250), "bloom" (300), "tonemap"
+ *                      "ssao" (100), "taa" (200), "dof" (250), "motion_blur"
+ *                      (270), "exposure" (290:
+ *                      automatic exposure), "bloom" (300), "tonemap"
  *                      (500, HDR to display), "grade" (550, 3D LUT), "aa"
  *                      (600, FXAA or SMAA), "lens" (700: chromatic
  *                      aberration, vignette, film grain), "debug_view"
@@ -296,6 +298,30 @@ typedef struct cw_post_settings {
   float dof_focus_range;    /* 1: depth around it that stays sharp */
   float dof_blur;           /* 8: largest blur radius, in pixels of a 1080 line image (scaled with the height) */
   float dof_near_blur;      /* 0.5: the blur in front of the focus, as a share of dof_blur (a lens blurs both sides) */
+  /* automatic exposure (eye adaptation): the picture's average brightness (the mean of log luminance over the
+   * frame) is brought to auto_exposure_key, within auto_exposure_min_ev .. auto_exposure_max_ev stops of the
+   * exposure set above, which stays the base: exposure_ev is the exposure compensation. It moves there
+   * gradually, by 1 - e^(-seconds x speed) of the way, never in a step: fast when the picture got brighter
+   * (stepping out into daylight), slower when it got darker (eyes getting used to a cave). The first frame,
+   * and the frame after cw_pipeline_exposure_reset, start adapted. It runs on every graphics preset (it is a
+   * few tiny passes), since a preset must not change how bright the picture is, and its clock is the frame
+   * clock, so a deterministic run adapts the same on every host */
+  bool auto_exposure;             /* false */
+  float auto_exposure_key;        /* 0.18: the average scene-linear brightness the picture is brought to (middle grey) */
+  float auto_exposure_min_ev;     /* -3: the most the automatic part may darken, in stops */
+  float auto_exposure_max_ev;     /* 3: the most it may brighten */
+  float auto_exposure_speed_up;   /* 3: toward a brighter picture (the exposure falling), 1 / seconds */
+  float auto_exposure_speed_down; /* 1: toward a darker picture (the exposure rising), 1 / seconds */
+  /* motion blur: what moved while the shutter was open is smeared along its motion, from the velocity target,
+   * so the camera's motion and each moving mesh's own blur alike (a spinning wheel, a swung arm, a fast pan). A
+   * moving thing blurs past its outline over what stands still behind it; nothing still is blurred by what
+   * moves behind it, the first person viewmodel stays sharp, and the UI is drawn after it. Off on the Very Low
+   * and Low presets, 0.6 of the samples on Medium, 1.5 times on Ultra. Off while the player's reduced motion
+   * setting is on (cw_ui_set_reduced_motion, cartwheel/ui.h) */
+  bool motion_blur;               /* false */
+  float motion_blur_shutter;      /* 0.5: the share of the frame time the shutter is open (a film camera's 180 degrees) */
+  int motion_blur_samples;        /* 10: reads along the motion, a pixel (1..32) */
+  float motion_blur_max;          /* 32: the longest blur, in pixels of a 1080 line image (scaled with the height) */
 } cw_post_settings;
 
 /* ── the pass context ──────────────────────────────────────────────── */
@@ -393,6 +419,10 @@ const char *cw_pipeline_missing_states(cw_tree *t);
  * Sensible values with exposure 1 and AgX: a sun of 3-5, room lamps of
  * 10-50 a few metres away, ambient 0.05-0.3. Real photometric values (a sun
  * of 100000 lux) work too with exposure_ev around -14 (a camera's EV100). */
+
+/* Automatic exposure starts over: the next frame is fully adapted to what it shows (after a cut to another
+ * place, a level load, a fade from black), instead of adapting from where the last picture left it. */
+void cw_pipeline_exposure_reset(cw_pipeline *p);
 
 /* Render one frame of the tree into the output (the bound default
  * framebuffer unless cw_pipeline_set_output), w x h pixels. The scene runner

@@ -86,7 +86,7 @@ A frame runs the tree's active passes phase by phase, and inside a phase by `ord
 | OPAQUE | "scene" (0: three.c renders the tree), "impostors" (100), "occlusion_queries" (900) |
 | SKY | "sky_sun" (0: the sun disk) |
 | EFFECTS | "decals" (100), "particles" (200), "height_fog" (300) |
-| POST | "velocity", "ssao" (100), "taa" (200), "bloom" (300), "tonemap" (500), "grade" (550), "aa" (600), "lens" (700), "debug_view" (10000) |
+| POST | "velocity", "ssao" (100), "taa" (200), "exposure" (290), "bloom" (300), "tonemap" (500), "grade" (550), "aa" (600), "lens" (700), "debug_view" (10000) |
 | OVERLAY | "canvas" (-100: the tree's 2D and UI), "app" (0: your render callback), debug draw at 1000 by convention |
 | PRESENT | "visibility_restore" (1000), readbacks |
 
@@ -112,7 +112,7 @@ Each tree renders through its own pipeline; `cw_pipeline_set_output` sends it in
 
 ## The post stack
 
-The post settings are the fields of `cw_post_settings`, mirrored as PostProcess properties: MSAA, depth prepass, exposure (a multiplier and stops), tone curve (r187's: AGX by default, NEUTRAL, ACES_FILMIC, CINEON, REINHARD, LINEAR), energy-conserving bloom, GTAO at half resolution, TAA (Halton jitter, reprojection by the camera's and each moving mesh's motion, neighbourhood clip), FXAA or SMAA 1x, a 3D LUT grade loaded from a `.cube` file (`cw_lut_load_cube`), vignette, grain and chromatic aberration. `debug_view` shows depth, normals, AO, velocity or the bloom chain instead of the image. Nothing is lowered automatically: quality settings are the developer's.
+The post settings are the fields of `cw_post_settings`, mirrored as PostProcess properties: MSAA, depth prepass, exposure (a multiplier and stops, and automatic exposure that follows the picture), tone curve (r187's: AGX by default, NEUTRAL, ACES_FILMIC, CINEON, REINHARD, LINEAR), energy-conserving bloom, GTAO at half resolution, TAA (Halton jitter, reprojection by the camera's and each moving mesh's motion, neighbourhood clip), FXAA or SMAA 1x, a 3D LUT grade loaded from a `.cube` file (`cw_lut_load_cube`), vignette, grain and chromatic aberration. `debug_view` shows depth, normals, AO, velocity or the bloom chain instead of the image. Nothing is lowered automatically: quality settings are the developer's.
 
 **Depth of field** (`dof`, PostProcess properties `dof_focus_distance`, `dof_focus_range`, `dof_blur`, `dof_near_blur`) blurs what is nearer or farther than the focus, as a long lens does: a character select screen, a portrait, a cut scene. It runs on the HDR image before bloom, at full resolution: each pixel works out its blur from its view depth and gathers 32 samples on a golden-angle disk. A sample that lies behind the pixel counts only up to the pixel's own blur, so a sharp face never picks up the blurred wall behind it, while a blurred foreground still spreads over what is behind. `dof_blur` is the largest radius in pixels of a 1080 line image (it scales with the output height); `dof_near_blur` is the share of it used in front of the focus. A game usually turns it on for a menu or a close camera and off in play (set the properties on its PostProcess node from code). Very Low and Low effects detail turn it off. Cost: 32 colour and 32 depth reads a pixel at full resolution. On the Radeon 890M at 1920 x 1080 (post_stack, its depth of field segment against its plain segment, tools/perf-frame.mjs --gpu-timers, load average 10 to 12) it added about 0.5 ms of GPU time on GL and 1.2 ms on WebGPU; a Vega 8 (about a quarter of an 890M) should expect 2 to 5 ms, so keep it to menus and close cameras. Its gate is `post-dof`.
 
@@ -121,6 +121,40 @@ The post settings are the fields of `cw_post_settings`, mirrored as PostProcess 
 **Distortion inside the tone curve.** Heat haze and shockwaves (cartwheel/explosions.h) bend the finished frame in a full-frame pass of their own. `fuse_distortion` (off by default) does the same bending inside the tonemap pass, with the same guards and rounding, and saves that pass's read and write of the HDR frame (about 0.45 ms at 1080p on the 890M); bloom then glows from the unbent frame, which is the one difference.
 
 One limit stated in the header: SMAA has no diagonal pattern search yet.
+
+### Automatic exposure
+
+`auto_exposure` on the PostProcess (or `cw_post_settings`) makes the picture follow what it shows, as an eye or a camera does: walk out of a cave into daylight and the picture is bright for a moment, then settles; walk back in and it is dark for a moment longer, then the cave comes up.
+
+Each frame the "exposure" pass takes the average of the frame's log luminance (the geometric mean, which a few very bright pixels do not drag) through four small reductions, and moves a state toward the exposure that would put that average at `auto_exposure_key` (0.18, middle grey):
+
+| property | default | |
+|---|---|---|
+| `auto_exposure_key` | 0.18 | the average scene-linear brightness the picture is brought to: lower for a night look, higher for a bright one |
+| `auto_exposure_min_ev`, `auto_exposure_max_ev` | -3, 3 | how far the automatic part may darken and brighten, in stops, so a black screen is not lifted to grey and a white one not crushed |
+| `auto_exposure_speed_up` | 3 | how fast it follows a picture that got brighter (1 / seconds) |
+| `auto_exposure_speed_down` | 1 | how fast it follows a picture that got darker |
+| `exposure`, `exposure_ev` | 1, 0 | still the base: `exposure_ev` is the exposure compensation, in stops, on top of the automatic part |
+
+It always moves by a share of the way (1 - e^(-seconds x speed)), so a change of light swells in and out and never steps or flickers; `tests/auto-exposure.mjs` holds it to at most 8% of the mean brightness a frame and one direction until it has settled, and `tools/flash-check.mjs` passes over the transitions. The first frame starts adapted, and so does the frame after `cw_pipeline_exposure_reset`: call it at a cut to another place, a level load or a fade from black, where adapting from the last picture would be wrong.
+
+The state never leaves the GPU: two 1 x 1 targets alternate, and the tonemap pass reads the latest. Nothing is read back, so there is no stall and no delay that differs by host, and the adaptation's clock is the frame clock, so a deterministic run makes the same sequence on every host and both backends. In split screen each view adapts on its own. It runs on every graphics preset, Very Low included, because a preset must not change how bright the picture is; it costs four tiny passes (the largest an eighth of the frame's size): 0.09 to 0.15 ms of GPU time at 1920 x 1080 on a Radeon 890M (WebGPU, every preset).
+
+`samples/post_stack` ends on it: the room, its lamps turned up 30 times, and back down.
+
+### Motion blur
+
+`motion_blur` on the PostProcess smears what moved while the shutter was open along its motion. It reads the velocity target, so the camera's motion and every moving mesh's own blur alike: a fast pan, a spinning wheel, a swung arm, each box of an instanced swarm.
+
+| property | default | |
+|---|---|---|
+| `motion_blur_shutter` | 0.5 | the share of the frame time the shutter is open: 0.5 is a film camera's 180 degrees, 1 the whole frame |
+| `motion_blur_samples` | 10 | reads along the motion, a pixel |
+| `motion_blur_max` | 32 | the longest blur, in pixels of a 1080 line image |
+
+The pass first finds the largest motion in each 16 x 16 pixel tile and its neighbours, and copies every pixel whose tile holds none, so a still picture costs almost nothing. Elsewhere each pixel reads its samples along that motion and weighs each by depth and by how far the sample's own motion (or the pixel's) would carry it: a moving thing blurs past its outline over what stands still behind it, and nothing still is blurred by what moves behind it.
+
+What it leaves alone: the UI and every overlay (they draw after the post chain), and a first person viewmodel (`Camera3D` `viewmodel_layers`), which has no motion in the velocity target and is the nearest thing on its pixels. It is off on the Very Low and Low presets, reads 0.6 of its samples on Medium and 1.5 times on Ultra. At 1920 x 1080 on a Radeon 890M (WebGPU) the pass took 0.6 to 0.9 ms with `samples/post_stack`'s bar sweeping the frame (Medium, High and Ultra within each other's noise on a busy machine), on top of the velocity pass's 0.15. It is also off while the player's reduced motion setting is on (`cw_ui_set_reduced_motion`, [Localization and accessibility](guide:l10n-a11y)): the pass does not run at all.
 
 ### Motion vectors
 

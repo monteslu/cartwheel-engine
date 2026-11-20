@@ -7,7 +7,8 @@
  * each gate captures the end of one segment, with the baseline segment
  * (AgX, nothing else) as its "effect off" control. The last segments show a
  * bar spinning in front of the camera (hidden in every other segment): under
- * TAA, and as the velocity buffer (the bar's own motion over the camera's). The TAA segment
+ * TAA, and as the velocity buffer (the bar's own motion over the camera's). Then
+ * automatic exposure: the room, its lamps turned up 30 times, and back down. The TAA segment
  * also measures convergence: a 64x64 crop over edges is read back every
  * frame and compared with the one 8 frames (one jitter cycle) earlier.
  *
@@ -29,6 +30,7 @@
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/scene_file.h"
+#include "cartwheel/ui.h"
 
 #ifndef POST_PERF
 #define POST_PERF 0
@@ -63,11 +65,18 @@ static const seg segs[] = {
   { "motion_plain", 24, "" },
   { "motion_taa", 24, "taa=true" },
   { "motion_velocity", 12, "taa=true;debug_view=VELOCITY" },
+  /* automatic exposure: adapted to the room, then the room's lamps 30 times as bright (the picture swells
+   * back over about a second), then the lamps as before (it comes back more slowly) */
+  { "auto_room", 30, "auto_exposure=true;auto_exposure_min_ev=-8;auto_exposure_max_ev=8" },
+  { "auto_bright", 90, "auto_exposure=true;auto_exposure_min_ev=-8;auto_exposure_max_ev=8" },
+  { "auto_dim", 150, "auto_exposure=true;auto_exposure_min_ev=-8;auto_exposure_max_ev=8" },
+  /* motion blur on the spinning bar (its own motion: the camera is still) */
+  { "motion_blur", 24, "motion_blur=true" },
 };
 #define NSEG ((int)(sizeof segs / sizeof segs[0]))
 
 static const char *const pass_names[] = { "depth_prepass", "scene", "velocity", "ssao", "taa", "bloom", "tonemap", "grade",
-                                          "aa", "lens", "app", "dof" };
+                                          "aa", "lens", "app", "dof", "exposure", "motion_blur" };
 static int32_t seg_index = -1, passes_mask, fused_mask, float_ok, taa_delta, taa_max, taa_converged;
 static uint32_t frame_no;
 static float gpu_ms[24];
@@ -85,7 +94,7 @@ static void apply_props(const char *props) {
       "hdr=true;tonemap=AGX;exposure=1;exposure_ev=0;msaa=0;depth_prepass=false;bloom=false;"
       "bloom_intensity=0.05;ssao=false;ssao_radius=0.5;taa=false;aa=NONE;grade=false;grade_intensity=1;vignette=false;"
       "vignette_intensity=0.35;grain=false;grain_intensity=0.04;chromatic_aberration=false;ca_intensity=0.004;"
-      "debug_view=NONE;bloom_threshold=0;dof=false";
+      "debug_view=NONE;bloom_threshold=0;dof=false;auto_exposure=false;auto_exposure_min_ev=-3;auto_exposure_max_ev=3;motion_blur=false";
   for (int pass = 0; pass < 2; pass++) {
     const char *s = pass ? props : base;
     while (*s) {
@@ -139,11 +148,19 @@ static void update(void *u, double dt) {
   }
   /* the spinning bar: its angle from the frame number, so every host poses it alike */
   bool motion = !strncmp(segs[k].name, "motion", 6);
+  /* POST_REDUCED_MOTION=1 (the motion blur gate's control): the player's reduced motion setting, on */
+  const char *rm = cw_test_env("POST_REDUCED_MOTION");
+  cw_ui_set_reduced_motion(rm && *rm == '1');
   cw_node spinner = cw_node_get(cw_tree_root(cw_scene_app_tree()), "Room/Spinner");
   const char *mref = cw_test_env("POST_MOTION_REF"); /* 2: the same frames without the bar (the measurement's mask) */
   cw_node_set(spinner, "visible", cw_val_bool(motion && !(mref && *mref == '2')));
   if (motion) cw_node3d_set_rotation(spinner, (t3_vec3){ 0, 0, (float)frame_no * 0.21f });
   if (k != seg_index) {
+    /* the lamps' brightness for the automatic exposure segments */
+    static const char *const lamps[] = { "Room/LampLight", "Room/Fill", "Room/Spot" };
+    static const float energy[] = { 14, 6, 30 };
+    float gain = !strcmp(segs[k].name, "auto_bright") ? 30.0f : 1.0f;
+    for (int i = 0; i < 3; i++) cw_node_set(cw_node_get(cw_tree_root(cw_scene_app_tree()), lamps[i]), "energy", cw_val_float(energy[i] * gain));
     seg_index = k;
     /* POST_MOTION_REF=1 (tests/motion-vectors.mjs): the TAA motion segment without TAA, the same poses: with
      * CW_RENDER_SCALE it is the supersampled picture the TAA frame is measured against */

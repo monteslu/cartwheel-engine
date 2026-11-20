@@ -78,6 +78,14 @@ static void settings_default(cw_post_settings *s) {
   s->dof_focus_range = 1;
   s->dof_blur = 8;
   s->dof_near_blur = 0.5f;
+  s->auto_exposure_key = 0.18f;
+  s->auto_exposure_min_ev = -3;
+  s->auto_exposure_max_ev = 3;
+  s->auto_exposure_speed_up = 3;
+  s->auto_exposure_speed_down = 1;
+  s->motion_blur_shutter = 0.5f;
+  s->motion_blur_samples = 10;
+  s->motion_blur_max = 32;
   s->ssgi_intensity = 10;
   s->ssgi_ao_intensity = 1;
   s->ssgi_thickness = 1;
@@ -215,6 +223,10 @@ cw_pipeline *cw_pipeline_of(cw_tree *t) {
 }
 
 cw_post_settings *cw_pipeline_settings(cw_pipeline *p) { return &p->s; }
+
+void cw_pipeline_exposure_reset(cw_pipeline *p) {
+  if (p) p->auto_exposure_reset = true;
+}
 
 const char *cw_pipeline_missing_states(cw_tree *t) {
   cw_pipeline *p = t ? cw_tree_slot(t, "pipeline") : NULL;
