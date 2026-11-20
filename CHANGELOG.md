@@ -4,6 +4,32 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.55.0 (2026-11-20)
+
+### Added
+- **Split screen in one pass** (`cw_pipeline_set_views_array`, on by default): with a shared post chain the views
+  are drawn into one target, the scene in one three.c render through an array camera (each view culled and sorted
+  by its own camera, one render pass, the frame's uploads once) and every per-view pass once per view inside its
+  rectangle: clustered lights, terrain and its scatter (each view's own patches), the sun disk, decals, particles
+  and trails, height fog, water, volumetric fog and SSAO. The picture is the one each view drawn on its own gives.
+  In a four-player race on a Radeon 890M (High, 1920 x 1080) GL went from 12.7 to 10.0 ms of CPU and 7.1 to 6.4 ms
+  of GPU a frame, WebGPU from 16.6 to 15.2 and 7.2 to 6.3. A frame with a game's own per-view pass, a view hook,
+  the sun's cascades, a planar water reflection or refraction, or the views on both sides of a water surface is
+  drawn view by view as before. `cw_pipeline_views_array_used` and the `pipeline` debug request
+  (`views_array`, `views_array_why`; `pipeline views_array 0|1` switches it) say what a frame did.
+- For passes: `cw_pass_desc.views` (`CW_PASS_VIEWS_NONE` / `EACH` / `ONCE`), `cw_pass_ctx.view_count`,
+  `view_index`, `view_rect`, `cw_pass_view_uv` and `cw_pass_view_viewport`.
+- Sample `split_array` and gate `views-array` (native GL and WebGPU, two and four views, Very Low, volumetric
+  fog, the cascaded sun's fallback; control: each view's passes a view over).
+
+### Changed
+- In such a frame the geometry the engine draws for one view only (a terrain's patches and scatter) is on layers 28
+  to 31: keep a game's own objects off those layers.
+
+### Fixed
+- Split screen with a shared post chain at Very Low and Low lost its height fog: it was fused into the tonemap pass,
+  which runs over the laid-out views and drew no fog. It is drawn per view again.
+
 ## v0.54.0 (2026-11-20)
 
 ### Added
