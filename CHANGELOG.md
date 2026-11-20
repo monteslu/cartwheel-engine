@@ -4,10 +4,9 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## NEXT (fixes2): the TAA gate's velocity control bites again
+## v0.53.2 (2026-11-20)
 
 ### Fixed
-
 - **Gate `wgpu-post-taa`: its broken-velocity control runs with TAA's moving-pixel terms off.** Since v0.53.0 TAA
   takes the frame's unjittered picture wherever the motion it reads is wrong, so a broken velocity program alone
   costs only the history (mean 0.04 levels on post_synth's orbiting-camera segment) and passed the control. The
