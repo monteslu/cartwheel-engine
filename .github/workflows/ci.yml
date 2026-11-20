@@ -123,7 +123,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        share: [1of1]
+        # two shares: one share building every cart passed the 60 minute limit (58 min on v0.52.0, over 60 on v0.53.2)
+        share: [1of2, 2of2]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -172,5 +173,7 @@ jobs:
       - name: Cart version
         run: node tests/app-version.mjs --tree build/carts
       # the manifest controls from a project's input map: the rule, plugin_demo's built cart, the pack; controls must fail
+      # the share that built plugin_demo checks its cart (exactly one share does: the shares split carts.txt)
       - name: Cart controls
+        if: hashFiles('build/carts/carts/plugin_demo.wasc') != ''
         run: node tests/cart-controls.mjs --carts build/carts/carts
