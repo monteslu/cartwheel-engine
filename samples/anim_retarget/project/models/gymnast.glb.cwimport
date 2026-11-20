@@ -1,0 +1,9 @@
+# the coach's walk and punch, baked onto this skeleton when the model is packed
+retarget.source = models/coach.glb
+retarget.clips = walk=Walk attack=Punch
+retarget.fps = 60
+# the walk repeats: take the slide out of its planted feet
+retarget.plant = walk
+# the coach's hand bones are called Grip: its names do not say "hand"
+retarget.source_map.left_hand = Grip.L
+retarget.source_map.right_hand = Grip.R

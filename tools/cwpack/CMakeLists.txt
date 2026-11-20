@@ -16,12 +16,14 @@ target_link_libraries(cw_basisu_encoder PUBLIC pthread)
 
 file(GLOB _core ${CMAKE_SOURCE_DIR}/src/core/*.c)
 add_library(cw_toolcore STATIC ${_core} ${CMAKE_SOURCE_DIR}/src/resource/json.c ${CMAKE_SOURCE_DIR}/src/l10n/catalog.c
-  ${CMAKE_SOURCE_DIR}/src/resource/gltf_doc.c ${CMAKE_SOURCE_DIR}/src/resource/uid.c)
+  ${CMAKE_SOURCE_DIR}/src/resource/gltf_doc.c ${CMAKE_SOURCE_DIR}/src/resource/uid.c
+  # poses and retargeting (clips baked onto another skeleton at import): no scene tree behind them
+  ${CMAKE_SOURCE_DIR}/src/anim/ik.c ${CMAKE_SOURCE_DIR}/src/anim/quat.c ${CMAKE_SOURCE_DIR}/src/anim/retarget.c)
 target_include_directories(cw_toolcore PUBLIC ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src/resource ${CMAKE_SOURCE_DIR}/src/l10n
   ${CW_THREE_DIR}/include)
 target_link_libraries(cw_toolcore PUBLIC meshoptimizer m pthread)
 
-add_executable(cwpack main.c util.c import_gltf.c import_texture.c import_audio.c import_font.c basis_enc.cpp)
+add_executable(cwpack main.c util.c import_gltf.c import_retarget.c import_texture.c import_audio.c import_font.c basis_enc.cpp)
 target_include_directories(cwpack PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${DEPS}/meshoptimizer/extern ${_bu}/zstd)
 target_compile_options(cwpack PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers>)
 # three's archive itself, not its target: cwpack uses its loaders and math,

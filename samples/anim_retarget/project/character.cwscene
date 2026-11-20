@@ -1,0 +1,16 @@
+[scene format=1]
+
+[node name="Character" type="Node3D"]
+
+[node name="Model" parent="." type="Node3D"]
+
+[node name="Anim" parent="." type="AnimationPlayer"]
+
+[node name="Tree" parent="." type="AnimationTree"]
+player = "../Anim"
+
+[animtree tree="Tree"]
+clip name="walk" anim="walk"
+clip name="attack" anim="attack"
+oneshot name="top" base="walk" shot="attack" param="attack" fadein=0.12 fadeout=0.25 bones="mixamorigSpine+"
+root node="top"

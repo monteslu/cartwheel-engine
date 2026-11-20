@@ -168,6 +168,23 @@ while the rest keeps playing; a statement the format does not know is a load err
 tree with the debug requests `animtree <path>` and `animtree_text <path>`. Hit windows and footsteps are event keys
 on the clip (`cw_anim_add_event`, `cw_animtree_on_event`), not tick tables.
 
+**One set of clips for every character** (`retarget.h`, [retargeting](docs/guides/animation.md#retargeting)): a model
+without clips gets another model's, baked onto its own skeleton when the project is packed. Put a sidecar beside
+the model, `models/guard.glb.cwimport`:
+
+```text
+retarget.source = models/hero.glb
+retarget.clips = walk=Walk run=Run attack=Slash
+retarget.plant = walk run
+retarget.map.left_hand = Wrist_L
+```
+
+Bone names are matched by themselves for Mixamo, VRM, Unreal, Rigify and Biped rigs and plain names with a side
+(`UpperLegL`); `retarget.map.<slot>` and `retarget.source_map.<slot>` name what they miss (the pack stops and says
+which slot). `retarget.plant` takes the slide out of planted feet; walk the character at
+`-cw_anim_ground_velocity(clip, &pose, left_foot, right_foot, true).z` times its scale and its feet stay where they
+land. The same at load from C is `cw_retarget_clip`.
+
 **Input and prompts** (`input.h`, `prompt.h`, [input](docs/guides/input.md)):
 
 ```c

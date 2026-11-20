@@ -24,7 +24,9 @@
  * FNV-1a 64 hash, or a glTF sub-resource's, found under roots.txt's
  * directory). So a main scene alone can be the manifest. Per-file settings
  * and the UID come from a sidecar (key = value lines; uid = 0x...):
- * "<res path>.cwimport" beside roots.txt, else "<source>.cwimport".
+ * "<res path>.cwimport" beside roots.txt, else "<source>.cwimport". A model's
+ * sidecar may name another model whose clips are baked onto its skeleton
+ * (retarget.source and the other retarget.* settings: import_retarget.c).
  *
  * Imports are cached in .cwcache/ beside roots.txt (or --cache) by (importer and its
  * version, the settings it reads, every input byte), so a rerun only imports
@@ -400,11 +402,26 @@ static bool process(const char *res, const char *src, const char *referrer, str_
   uint64_t key;
   if (!strcmp(e->type, "gltf")) {
     imp = "gltf";
-    static const char *pre[] = { "mesh.", "texture." };
-    canon = cwp_settings_canon(&set, pre, 2);
+    static const char *pre[] = { "mesh.", "texture.", "retarget." };
+    canon = cwp_settings_canon(&set, pre, 3);
     key = cw_hash_bytes("gltf", 4, CWP_IMPORT_GLTF_VERSION);
     key = cw_hash_bytes(canon, strlen(canon), key);
     key = cw_hash_bytes(bytes, len, key);
+    /* retarget.source: the model whose clips are baked onto this one (an input, not packed by this) */
+    const char *rt_res = cwp_settings_get(&set, "retarget.source", NULL);
+    uint8_t *rt_bytes = NULL;
+    size_t rt_len = 0;
+    if (rt_res) {
+      char rt_path[CWP_PATH_MAX];
+      source_of(rt_res, rt_path, sizeof rt_path);
+      rt_bytes = cwp_read_file(rt_path, &rt_len);
+      if (!rt_bytes) { fprintf(stderr, "cwpack: res://%s: retarget.source = %s: not found (%s)\n", res, rt_res, rt_path); ok = false; }
+      else {
+        add_source(rt_path);
+        key = cw_hash_bytes("retarget", 8, key);
+        key = cw_hash_bytes(rt_bytes, rt_len, key);
+      }
+    }
     /* references: buffers are inputs, images become their own entries */
     extra_files x = { 0 };
     const char *json;
@@ -450,18 +467,19 @@ static bool process(const char *res, const char *src, const char *referrer, str_
       e->cached = e->data != NULL;
       if (!e->data) {
         cwp_gltf_stats st;
-        e->data = cwp_import_gltf(res, bytes, len, read_extra, &x, &set, &e->len, &st);
+        e->data = cwp_import_gltf_ex(res, bytes, len, read_extra, &x, &set, rt_bytes, rt_len, &e->len, &st);
         if (!e->data) ok = false;
         else {
           cache_put(key, imp, e->data, e->len);
           char note[256];
-          snprintf(note, sizeof note, "%d/%d prims optimized, verts %d->%d, %d LODs (%d tris -> %d), %d compressed views, %d KTX2",
+          snprintf(note, sizeof note, "%d/%d prims optimized, verts %d->%d, %d LODs (%d tris -> %d), %d compressed views, %d KTX2, %d retargeted clips",
                    st.prims_optimized, st.prims, st.vertices_in, st.vertices_out, st.lods, st.triangles, st.lod_triangles,
-                   st.compressed_views, st.images_ktx2);
+                   st.compressed_views, st.images_ktx2, st.retargeted_clips);
           e->note = cw_strdup(note, CW_MEM_GENERAL);
         }
       }
     }
+    cw_free(rt_bytes);
     for (int i = 0; i < x.n; i++) { cw_free(x.uris[i]); cw_free(x.bytes[i]); }
     cw_free(x.uris);
     cw_free(x.bytes);

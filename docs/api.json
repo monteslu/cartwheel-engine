@@ -700,6 +700,18 @@
      "inline": false
     },
     {
+     "name": "cw_animtree_set_update_divisor",
+     "signature": "void cw_animtree_set_update_divisor(cw_node tree, int divisor)",
+     "doc": "Animation level of detail for a tree far from the camera (as cw_anim_player_set_update_divisor): in the\nFIXED phase the graph is evaluated, and the bones written, only on every divisor-th tick, with all the time\nsince. Clip times and event counts come out as at full rate; poses step, and a transition or a one-shot\nstarts up to divisor-1 ticks late. 1 (default) is every tick; at most 64. cw_anim_lod_divisor turns a\ndistance into a divisor. Deterministic.",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_update_divisor",
+     "signature": "int cw_animtree_update_divisor(cw_node tree)",
+     "doc": "1 when at full rate",
+     "inline": false
+    },
+    {
      "name": "cw_animtree_hash",
      "signature": "uint32_t cw_animtree_hash(cw_node tree)",
      "doc": "running hash of every value the tree wrote",
@@ -12026,6 +12038,151 @@
     },
     {
      "name": "CW_RES_HOTRELOAD_FROM_BUILD(interval_frames)",
+     "doc": ""
+    }
+   ]
+  },
+  {
+   "header": "cartwheel/retarget.h",
+   "summary": "cartwheel retargeting: play a clip made for one humanoid skeleton on\nanother with different proportions, rest pose and bone names.\n\nHOW. Both skeletons are described by a bone map: which bone fills each\nslot of a standard humanoid (hips, spine, chest, neck, head, shoulders,\narms, hands, legs, feet, toes, fingers). cw_bone_map_auto fills a map from\nthe bone names of the common rigs; a few lines of text override it.\nFor every frame:\n  1. Rotations go across relative to the rest poses, in model space: a\n     target bone turns from its rest orientation by the turn the source\n     bone made from its own. Where the rest poses differ (a T-pose and an\n     A-pose), the spine, arms and fingers are first lined up by direction\n     (align_rest), so an arm that points down in the source points down in\n     the target. Legs turn from their own rest pose unless align_legs asks.\n  2. The hips move by the source's motion from rest times the ratio of the\n     leg lengths, so a short character takes short steps.\n  3. foot_ik: each foot is put where the source's foot is, scaled by the\n     same ratio (its height above the ground and its travel forward and\n     sideways from where it rests, so the target keeps its own stance\n     width), with the leg solved as two-bone IK (the knee keeps its plane)\n     and the foot keeping its transferred rotation. A leg that cannot\n     reach lowers the hips until it can, by at most half a leg; a stride\n     longer than the target's legs is then left short.\n     A planted source foot is a planted target foot, whatever the thigh\n     and shin proportions. hand_ik does the same for the hands, relative\n     to the chest and scaled by arm length (two hands on a prop).\nBones no slot names keep their rest pose; source bones between mapped ones\n(twist bones, extra spine joints) are carried by the model-space transfer.\n\nWHERE. At import: a model's .cwimport sidecar names a source model and\ncwpack bakes the retargeted clips into the packed model (docs/guides/\nanimation.md \"Retargeting\"), so the game loads them like any glTF clip.\nAt load from C: cw_retarget_clip turns a cw_anim into a new one for the\ntarget. Per frame: cw_retarget_apply on two poses (a live puppet).\n\nDETERMINISM. + - * / sqrt and cartwheel/math.h only, fixed iteration\ncounts: the same input gives the same bits on every host. Nothing here\nneeds a scene tree: poses are cw_pose (cartwheel/ik.h), bound to a glTF\n(cw_pose_bind, or a Skeleton3D's pose) or free-standing.",
+   "functions": [
+    {
+     "name": "cw_humanoid_bone_name",
+     "signature": "const char *cw_humanoid_bone_name(cw_humanoid_bone slot)",
+     "doc": "A slot's name as map text writes it: \"hips\", \"left_upper_arm\", \"right_index_2\"; NULL out of range.",
+     "inline": false
+    },
+    {
+     "name": "cw_humanoid_bone_find",
+     "signature": "int cw_humanoid_bone_find(const char *name)",
+     "doc": "The slot of that name, -1 when there is none.",
+     "inline": false
+    },
+    {
+     "name": "cw_bone_map_auto",
+     "signature": "int cw_bone_map_auto(cw_bone_map *m, const cw_pose *p)",
+     "doc": "Fill a map from the pose's bone names. Understood: Mixamo (\"mixamorig:LeftUpLeg\"), VRM and glTF\nhumanoid names (\"leftUpperLeg\", \"J_Bip_L_UpperLeg\"), Blender Rigify and Unreal style (\"thigh.L\",\n\"thigh_l\", \"upperarm_r\", \"spine_01\"), 3ds Max Biped (\"Bip001 L Thigh\") and plain names with a side\n(\"UpperLegL\", \"Upper_Leg.L\", \"LeftFoot\"). Spine bones numbered in a row fill spine, chest and\nupper_chest in order. Returns the number of slots filled; slots it cannot place stay -1.",
+     "inline": false
+    },
+    {
+     "name": "cw_bone_map_apply_text",
+     "signature": "bool cw_bone_map_apply_text(cw_bone_map *m, const cw_pose *p, const char *text)",
+     "doc": "Change a map from text, one `slot = BoneName` per line (`#` comments, blank lines; an empty name\nclears the slot): the override for what cw_bone_map_auto gets wrong or cannot know.\n  left_hand = GripL\n  left_toes =\nfalse (logged with the line) on a slot or bone that does not exist; the lines before it stay applied.",
+     "inline": false
+    },
+    {
+     "name": "cw_bone_map_set",
+     "signature": "bool cw_bone_map_set(cw_bone_map *m, const cw_pose *p, const char *slot, const char *bone)",
+     "doc": "One slot by name; bone NULL or \"\" clears it. false (logged) on an unknown slot or bone.",
+     "inline": false
+    },
+    {
+     "name": "cw_bone_map_to_text",
+     "signature": "char *cw_bone_map_to_text(const cw_bone_map *m, const cw_pose *p)",
+     "doc": "The map as that text, every filled slot (cw_alloc'd).",
+     "inline": false
+    },
+    {
+     "name": "cw_bone_map_usable",
+     "signature": "bool cw_bone_map_usable(const cw_bone_map *m, char *missing, int cap)",
+     "doc": "Can it be retargeted: hips and both legs to the feet are there. When not, `missing` (if given) gets the\nnames of the slots that are not, separated by spaces.",
+     "inline": false
+    },
+    {
+     "name": "cw_foot_plant",
+     "signature": "t3_vec3 cw_foot_plant(t3_vec3 *left, t3_vec3 *right, const float *times, int count, float length, const cw_foot_plant_opts *opts)",
+     "doc": "The planted-feet pass described above; opts NULL: the defaults. Returns the planted feet's mean velocity.",
+     "inline": false
+    },
+    {
+     "name": "cw_retarget_new",
+     "signature": "cw_retarget *cw_retarget_new(const cw_pose *src, const cw_bone_map *src_map, const cw_pose *dst, const cw_bone_map *dst_map, const cw_retarget_opts *opts)",
+     "doc": "NULL (logged, naming the missing slots) when either map is not usable. opts NULL: the defaults.",
+     "inline": false
+    },
+    {
+     "name": "cw_retarget_free",
+     "signature": "void cw_retarget_free(cw_retarget *r)",
+     "doc": "NULL is fine",
+     "inline": false
+    },
+    {
+     "name": "cw_retarget_apply",
+     "signature": "void cw_retarget_apply(const cw_retarget *r, const cw_pose *src, cw_pose *dst)",
+     "doc": "The source's current pose (its model transforms up to date: cw_pose_capture or cw_pose_update_model)\nonto dst: writes dst's local transforms and model transforms. The poses must be the ones the pairing\nwas made from (same bone order). Does not touch the bones: cw_pose_flush(dst) does.",
+     "inline": false
+    },
+    {
+     "name": "cw_retarget_foot_target",
+     "signature": "t3_vec3 cw_retarget_foot_target(const cw_retarget *r, const cw_pose *src, int side)",
+     "doc": "Where the pairing puts a foot for the source's current pose (side 0 left, 1 right), in the target's model space.",
+     "inline": false
+    },
+    {
+     "name": "cw_retarget_apply_feet",
+     "signature": "void cw_retarget_apply_feet(const cw_retarget *r, const cw_pose *src, cw_pose *dst, const t3_vec3 *feet)",
+     "doc": "cw_retarget_apply with the two foot positions given (left, right; model space) in place of the source's:\nwhat a foot planting pass, or a game that puts a foot on a ledge, hands in. NULL feet: cw_retarget_apply.",
+     "inline": false
+    },
+    {
+     "name": "cw_retarget_scale",
+     "signature": "float cw_retarget_scale(const cw_retarget *r)",
+     "doc": "the hips and foot scale in use (target leg length over source)",
+     "inline": false
+    },
+    {
+     "name": "cw_retarget_foot_error",
+     "signature": "float cw_retarget_foot_error(const cw_retarget *r, int side)",
+     "doc": "How far the last cw_retarget_apply left a foot from where it was asked to be, in model units (0 with\nfoot_ik and the target in reach; the proportion error without it). side 0 left, 1 right.",
+     "inline": false
+    },
+    {
+     "name": "cw_retarget_clip",
+     "signature": "cw_anim cw_retarget_clip(cw_anim clip, cw_pose *src, const cw_bone_map *src_map, cw_pose *dst, const cw_bone_map *dst_map, const char *dst_model_path, const cw_retarget_opts *opts)",
+     "doc": "A new clip for the target skeleton from one made for the source: `clip` is sampled at opts.fps, each\nframe goes through cw_retarget_apply, and the result has a quaternion track per mapped target bone and\na position track for the hips, at \"<dst_model_path>@<bone>:<prop>\" (dst_model_path as in\ncw_anim_from_t3_clip). The clip's bone tracks are matched to source bones by bone name, whatever\ntheir model path. Length, loop mode, name and event keys carry over; other tracks do not. Both poses\nare left in their rest pose. The caller holds the new clip's reference; null (logged) on an error.",
+     "inline": false
+    },
+    {
+     "name": "cw_anim_ground_velocity",
+     "signature": "t3_vec3 cw_anim_ground_velocity(cw_anim clip, cw_pose *pose, int left_foot_bone, int right_foot_bone, bool cyclic)",
+     "doc": "The velocity of a clip's planted feet over the ground, in the pose's model units per second (x and z):\nmove a character at the opposite of it (times its node scale) and its feet stay where they land. The clip's\nbone tracks are matched to the pose's bones by name; the pose is left in its rest pose. cyclic as above.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_humanoid_bone",
+     "doc": "The humanoid slots. L/R are the character's own left and right.",
+     "decl": "typedef enum cw_humanoid_bone {\n  CW_HB_HIPS, CW_HB_SPINE, CW_HB_CHEST, CW_HB_UPPER_CHEST, CW_HB_NECK, CW_HB_HEAD,\n  CW_HB_LEFT_SHOULDER, CW_HB_LEFT_UPPER_ARM, CW_HB_LEFT_LOWER_ARM, CW_HB_LEFT_HAND,\n  CW_HB_RIGHT_SHOULDER, CW_HB_RIGHT_UPPER_ARM, CW_HB_RIGHT_LOWER_ARM, CW_HB_RIGHT_HAND,\n  CW_HB_LEFT_UPPER_LEG, CW_HB_LEFT_LOWER_LEG, CW_HB_LEFT_FOOT, CW_HB_LEFT_TOES,\n  CW_HB_RIGHT_UPPER_LEG, CW_HB_RIGHT_LOWER_LEG, CW_HB_RIGHT_FOOT, CW_HB_RIGHT_TOES,\n  /* fingers: thumb, index, middle, ring, little; three joints each, from the palm out */\n  CW_HB_LEFT_THUMB_1, CW_HB_LEFT_THUMB_2, CW_HB_LEFT_THUMB_3,\n  CW_HB_LEFT_INDEX_1, CW_HB_LEFT_INDEX_2, CW_HB_LEFT_INDEX_3,\n  CW_HB_LEFT_MIDDLE_1, CW_HB_LEFT_MIDDLE_2, CW_HB_LEFT_MIDDLE_3,\n  CW_HB_LEFT_RING_1, CW_HB_LEFT_RING_2, CW_HB_LEFT_RING_3,\n  CW_HB_LEFT_LITTLE_1, CW_HB_LEFT_LITTLE_2, CW_HB_LEFT_LITTLE_3,\n  CW_HB_RIGHT_THUMB_1, CW_HB_RIGHT_THUMB_2, CW_HB_RIGHT_THUMB_3,\n  CW_HB_RIGHT_INDEX_1, CW_HB_RIGHT_INDEX_2, CW_HB_RIGHT_INDEX_3,\n  CW_HB_RIGHT_MIDDLE_1, CW_HB_RIGHT_MIDDLE_2, CW_HB_RIGHT_MIDDLE_3,\n  CW_HB_RIGHT_RING_1, CW_HB_RIGHT_RING_2, CW_HB_RIGHT_RING_3,\n  CW_HB_RIGHT_LITTLE_1, CW_HB_RIGHT_LITTLE_2, CW_HB_RIGHT_LITTLE_3,\n  CW_HB_COUNT\n} cw_humanoid_bone;"
+    },
+    {
+     "name": "cw_bone_map",
+     "doc": "Which bone of one skeleton fills each slot: a pose bone index, -1 for none.",
+     "decl": "typedef struct cw_bone_map {\n  int bone[CW_HB_COUNT];\n} cw_bone_map;"
+    },
+    {
+     "name": "cw_retarget_opts",
+     "doc": "",
+     "decl": "typedef struct cw_retarget_opts {\n  bool align_rest;   /* line the spine, arms and fingers up by direction where the rest poses differ (default true) */\n  bool align_legs;   /* the legs too (default false: each leg turns from its own rest, so a source that stands\n                      * with its legs apart or bent does not bow the target's knees; the feet are placed by IK) */\n  bool foot_ik;      /* put each foot where the source's foot is (default true) */\n  bool hand_ik;      /* put each hand where the source's is, relative to the chest (default false) */\n  float hips_scale;  /* hips travel per unit of the source's; <= 0: the ratio of the leg lengths (default) */\n  float fps;         /* cw_retarget_clip: keys per second in the new clip; <= 0: 30 */\n  bool plant_feet;   /* cw_retarget_clip: take the slide out of planted feet (cw_foot_plant), for walks and runs:\n                      * a foot on the ground travels at one steady speed however uneven the source's is (default false) */\n  bool cyclic;       /* plant_feet: the clip repeats (its last frame is its first), so a stance may span its end */\n} cw_retarget_opts;"
+    },
+    {
+     "name": "cw_foot_plant_opts",
+     "doc": "Planted feet. Given where the two feet are in every frame of a clip (model space; left[i] and right[i] at\ntimes[i], count frames, the clip length seconds long), a foot is planted while it is within height (a\nshare of its own lowest to highest travel) of its lowest point. Returns the mean velocity of planted feet\nover the ground (x and z, units per second): a character moved at the opposite of it walks without\nsliding, as far as the clip allows. With adjust, the positions are rewritten so that it does not slide\nat all: every planted frame moves onto a straight line at that velocity through its stance, and the\nframes around a stance ease in and out over blend seconds. Heights are left alone. Deterministic.",
+     "decl": "typedef struct cw_foot_plant_opts {\n  float height;  /* 0..1 (default 0.1) */\n  float blend;   /* seconds (default 0.1) */\n  bool adjust;   /* rewrite the positions (default true) */\n  bool cyclic;   /* the last frame repeats the first: a stance may span the end of the clip */\n} cw_foot_plant_opts;"
+    },
+    {
+     "name": "cw_retarget",
+     "doc": "A prepared pairing of two skeletons. Made from their rest poses (the poses' rest_* arrays; cw_pose_bind\ncaptures them, cw_pose_set_rest sets them) and their maps. It keeps no pointer to either pose.",
+     "decl": "typedef struct cw_retarget cw_retarget;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_RETARGET_OPTS_DEFAULT",
+     "doc": ""
+    },
+    {
+     "name": "CW_FOOT_PLANT_OPTS_DEFAULT",
      "doc": ""
     }
    ]

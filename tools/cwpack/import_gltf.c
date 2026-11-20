@@ -524,6 +524,12 @@ static bool validate(cw_gltf_doc *d, char *err, size_t cap) {
 
 uint8_t *cwp_import_gltf(const char *name, const uint8_t *src, size_t len, cwp_read_fn read, void *ctx,
                          const cwp_settings *set, size_t *out_len, cwp_gltf_stats *st) {
+  return cwp_import_gltf_ex(name, src, len, read, ctx, set, NULL, 0, out_len, st);
+}
+
+uint8_t *cwp_import_gltf_ex(const char *name, const uint8_t *src, size_t len, cwp_read_fn read, void *ctx,
+                            const cwp_settings *set, const uint8_t *retarget_src, size_t retarget_len, size_t *out_len,
+                            cwp_gltf_stats *st) {
   char err[512];
   cw_gltf_doc d;
   memset(st, 0, sizeof *st);
@@ -543,6 +549,10 @@ uint8_t *cwp_import_gltf(const char *name, const uint8_t *src, size_t len, cwp_r
   }
   process_meshes(&d, set, st);
   process_images(&d, name, set, st);
+  if (retarget_src && !cwp_retarget_bake(&d, name, retarget_src, retarget_len, set, &st->retargeted_clips)) {
+    cw_gltf_doc_free(&d);
+    return NULL;
+  }
   uint8_t *out = cw_gltf_doc_write_glb(&d, out_len);
   cw_gltf_doc_free(&d);
   return out;

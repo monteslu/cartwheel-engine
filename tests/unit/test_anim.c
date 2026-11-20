@@ -1024,6 +1024,34 @@ static void test_tree_text(void) {
 #undef NEW_TREE
   free_scene();
 
+  /* the update divisor: the graph runs every 4th fixed tick with the time of all four, so the clip is where
+   * a full-rate tree's is after the same ticks */
+  make_scene();
+  {
+    cw_anim ramp = cw_anim_new("ra", 1, CW_LOOP_LINEAR);
+    int rt = cw_anim_add_value_track(ramp, "Box:position.x", CW_INTERP_LINEAR);
+    cw_anim_add_key(ramp, rt, 0, cw_val_float(0));
+    cw_anim_add_key(ramp, rt, 1, cw_val_float(1));
+    cw_anim_player_add(anim, NULL, ramp);
+    cw_anim_release(ramp);
+    cw_node dv = cw_node_new("AnimationTree", "Div");
+    cw_node_add_child(root, dv);
+    cw_node_set(dv, "player", cw_val_string("../Anim"));
+    CHECK(cw_animtree_load_text(dv, "clip name=\"a\" anim=\"ra\"\n"));
+    cw_animtree_set_update_divisor(dv, 4);
+    CHECK_EQ_INT(cw_animtree_update_divisor(dv), 4);
+    int writes = 0;
+    float last = -1;
+    for (int i = 0; i < 24; i++) {
+      cw_tree_fixed_update(tree, 1.0 / 60);
+      if (box_x() != last) { writes++; last = box_x(); }
+    }
+    CHECK(writes == 6 || writes == 7); /* 24 ticks, every 4th, from wherever its slot starts */
+    CHECK(box_x() > 0.33f && box_x() <= 0.4f + 1e-5f); /* 21 to 24 ticks of a 1 s ramp, by where its slot falls */
+    FOLD(last);
+  }
+  free_scene();
+
   /* scene files: the graph loads with its scene, saves byte for byte, and an enclosing scene can replace it */
   cw_packed_scene *inner = cw_scene_parse(tree_scene_text, "tree_inner.cwscene");
   CHECK(inner != NULL);
@@ -1066,6 +1094,216 @@ static void test_tree_text(void) {
   /* a section that names no tree, and a statement the format does not have, fail the parse or the instance */
   CHECK(cw_scene_parse("[scene format=1]\n[node name=\"A\" type=\"Node\"]\n[animtree]\n", "bad3.cwscene") == NULL);
   CHECK(cw_scene_parse("[scene format=1]\n[node name=\"A\" type=\"AnimationTree\"]\n[animtree tree=\".\"]\nwobble name=\"x\"\n", "bad4.cwscene") == NULL);
+}
+
+/* ── retargeting ────────────────────────────────────────────────────── */
+
+#include "cartwheel/retarget.h"
+
+/* a free pose from a list: name, parent index, model-space rest position (bones unrotated unless turned) */
+typedef struct { const char *name; int parent; float x, y, z; } rbone;
+static void rig(cw_pose *p, const rbone *b, int n, t3_quat frame) {
+  cw_pose_init(p, n);
+  t3_quat inv = { -frame.x, -frame.y, -frame.z, frame.w };
+  for (int i = 0; i < n; i++) {
+    p->parent[i] = b[i].parent;
+    p->name[i] = b[i].name;
+    t3_vec3 d = { b[i].x, b[i].y, b[i].z };
+    if (b[i].parent >= 0) { d.x -= b[b[i].parent].x; d.y -= b[b[i].parent].y; d.z -= b[b[i].parent].z; }
+    /* every bone's frame is turned by frame: the root carries it, children are unrotated in it */
+    if (b[i].parent < 0) { p->pos[i] = d; p->rot[i] = frame; }
+    else {
+      /* d in the parent's (turned) frame: inv * d */
+      float tx = 2 * (inv.y * d.z - inv.z * d.y), ty = 2 * (inv.z * d.x - inv.x * d.z), tz = 2 * (inv.x * d.y - inv.y * d.x);
+      p->pos[i] = (t3_vec3){ d.x + inv.w * tx + inv.y * tz - inv.z * ty, d.y + inv.w * ty + inv.z * tx - inv.x * tz, d.z + inv.w * tz + inv.x * ty - inv.y * tx };
+    }
+  }
+  cw_pose_set_rest(p);
+  cw_pose_update_model(p);
+}
+static void to_rest(cw_pose *p) {
+  for (int i = 0; i < p->count; i++) { p->pos[i] = p->rest_pos[i]; p->rot[i] = p->rest_rot[i]; }
+  cw_pose_update_model(p);
+}
+static t3_vec3 dir_between(const cw_pose *p, int a, int b) {
+  t3_vec3 x = cw_pose_model_position(p, a), y = cw_pose_model_position(p, b);
+  t3_vec3 d = { y.x - x.x, y.y - x.y, y.z - x.z };
+  float l = sqrtf(d.x * d.x + d.y * d.y + d.z * d.z);
+  return (t3_vec3){ d.x / l, d.y / l, d.z / l };
+}
+static void check_map(const char *const *names, int n, const int *slots) {
+  cw_pose p;
+  cw_pose_init(&p, n);
+  for (int i = 0; i < n; i++) p.name[i] = names[i];
+  cw_bone_map m;
+  cw_bone_map_auto(&m, &p);
+  for (int i = 0; i < n; i++) {
+    bool ok = slots[i] < 0 ? true : m.bone[slots[i]] == i;
+    if (slots[i] < 0)
+      for (int s = 0; s < CW_HB_COUNT; s++) ok &= m.bone[s] != i;
+    CHECK(ok);
+    if (!ok) cw_error("bone map: '%s' did not land in %s", names[i], slots[i] < 0 ? "no slot" : cw_humanoid_bone_name((cw_humanoid_bone)slots[i]));
+  }
+  cw_pose_free(&p);
+}
+
+static void test_retarget(void) {
+  /* names of the common rigs land in their slots; twist bones and extras in none */
+  static const char *const mixamo[] = { "mixamorigHips", "mixamorigSpine", "mixamorigSpine1", "mixamorigSpine2", "mixamorigNeck", "mixamorigHead",
+    "mixamorigLeftShoulder", "mixamorigLeftArm", "mixamorigLeftForeArm", "mixamorigLeftHand", "mixamorigLeftHandIndex1", "mixamorigLeftHandThumb2",
+    "mixamorigRightUpLeg", "mixamorigRightLeg", "mixamorigRightFoot", "mixamorigRightToeBase", "mixamorigHeadTop_End" };
+  static const int mixamo_s[] = { CW_HB_HIPS, CW_HB_SPINE, CW_HB_CHEST, CW_HB_UPPER_CHEST, CW_HB_NECK, CW_HB_HEAD,
+    CW_HB_LEFT_SHOULDER, CW_HB_LEFT_UPPER_ARM, CW_HB_LEFT_LOWER_ARM, CW_HB_LEFT_HAND, CW_HB_LEFT_INDEX_1, CW_HB_LEFT_THUMB_2,
+    CW_HB_RIGHT_UPPER_LEG, CW_HB_RIGHT_LOWER_LEG, CW_HB_RIGHT_FOOT, CW_HB_RIGHT_TOES, -1 };
+  check_map(mixamo, 17, mixamo_s);
+  static const char *const vrm[] = { "hips", "spine", "chest", "upperChest", "neck", "head", "leftShoulder", "leftUpperArm", "leftLowerArm", "leftHand",
+    "rightUpperLeg", "rightLowerLeg", "rightFoot", "rightToes", "leftThumbMetacarpal", "leftIndexProximal", "leftLittleDistal", "J_Bip_L_UpperLeg", "J_Bip_C_Head" };
+  static const int vrm_s[] = { CW_HB_HIPS, CW_HB_SPINE, CW_HB_CHEST, CW_HB_UPPER_CHEST, CW_HB_NECK, CW_HB_HEAD, CW_HB_LEFT_SHOULDER, CW_HB_LEFT_UPPER_ARM,
+    CW_HB_LEFT_LOWER_ARM, CW_HB_LEFT_HAND, CW_HB_RIGHT_UPPER_LEG, CW_HB_RIGHT_LOWER_LEG, CW_HB_RIGHT_FOOT, CW_HB_RIGHT_TOES,
+    CW_HB_LEFT_THUMB_1, CW_HB_LEFT_INDEX_1, CW_HB_LEFT_LITTLE_3, CW_HB_LEFT_UPPER_LEG, -1 /* head is taken by "head" */ };
+  check_map(vrm, 19, vrm_s);
+  static const char *const unreal[] = { "root", "pelvis", "spine_01", "spine_02", "spine_03", "neck_01", "head", "clavicle_l", "upperarm_l", "lowerarm_l",
+    "hand_l", "upperarm_twist_01_l", "thigh_r", "calf_r", "foot_r", "ball_r", "thigh_twist_01_r", "index_01_l", "pinky_03_r", "ik_foot_root" };
+  static const int unreal_s[] = { -1, CW_HB_HIPS, CW_HB_SPINE, CW_HB_CHEST, CW_HB_UPPER_CHEST, CW_HB_NECK, CW_HB_HEAD, CW_HB_LEFT_SHOULDER,
+    CW_HB_LEFT_UPPER_ARM, CW_HB_LEFT_LOWER_ARM, CW_HB_LEFT_HAND, -1, CW_HB_RIGHT_UPPER_LEG, CW_HB_RIGHT_LOWER_LEG, CW_HB_RIGHT_FOOT, CW_HB_RIGHT_TOES, -1,
+    CW_HB_LEFT_INDEX_1, CW_HB_RIGHT_LITTLE_3, -1 };
+  check_map(unreal, 20, unreal_s);
+  static const char *const rigify[] = { "spine", "spine001", "spine002", "shoulderL", "upper_armL", "forearmL", "handL", "thighR", "shinR", "footR", "toeR",
+    "Bip001_L_Thigh", "Bip001_L_Calf", "Bip001_L_Foot", "UpperLegL", "Upper_Arm_R", "RightForeArm" };
+  static const int rigify_s[] = { CW_HB_SPINE, CW_HB_CHEST, CW_HB_UPPER_CHEST, CW_HB_LEFT_SHOULDER, CW_HB_LEFT_UPPER_ARM, CW_HB_LEFT_LOWER_ARM, CW_HB_LEFT_HAND,
+    CW_HB_RIGHT_UPPER_LEG, CW_HB_RIGHT_LOWER_LEG, CW_HB_RIGHT_FOOT, CW_HB_RIGHT_TOES, CW_HB_LEFT_UPPER_LEG, CW_HB_LEFT_LOWER_LEG, CW_HB_LEFT_FOOT,
+    -1 /* the Biped thigh came first */, CW_HB_RIGHT_UPPER_ARM, CW_HB_RIGHT_LOWER_ARM };
+  check_map(rigify, 17, rigify_s);
+
+  /* two skeletons: A is 1 unit of leg with equal thigh and shin, arms out (T); B has 0.6 of leg with a short
+   * shin, arms down 45 degrees (A-pose), other names, and every bone frame turned a quarter turn */
+  static const rbone A[] = {
+    { "Hips", -1, 0, 1.0f, 0 }, { "Spine", 0, 0, 1.2f, 0 }, { "Chest", 1, 0, 1.4f, 0 }, { "Head", 2, 0, 1.7f, 0 },
+    { "UpperLegL", 0, 0.1f, 1.0f, 0 }, { "LowerLegL", 4, 0.1f, 0.5f, 0 }, { "FootL", 5, 0.1f, 0.0f, 0 },
+    { "UpperLegR", 0, -0.1f, 1.0f, 0 }, { "LowerLegR", 7, -0.1f, 0.5f, 0 }, { "FootR", 8, -0.1f, 0.0f, 0 },
+    { "UpperArmL", 2, 0.2f, 1.4f, 0 }, { "LowerArmL", 10, 0.5f, 1.4f, 0 }, { "Grip", 11, 0.8f, 1.4f, 0 },
+  };
+  static const rbone Bs[] = {
+    { "pelvis", -1, 0, 0.62f, 0 }, { "spine_01", 0, 0, 0.75f, 0 }, { "spine_02", 1, 0, 0.9f, 0 }, { "head", 2, 0, 1.1f, 0 },
+    { "thigh_l", 0, 0.08f, 0.6f, 0 }, { "calf_l", 4, 0.08f, 0.2f, 0 }, { "foot_l", 5, 0.08f, 0.0f, 0 },
+    { "thigh_r", 0, -0.08f, 0.6f, 0 }, { "calf_r", 7, -0.08f, 0.2f, 0 }, { "foot_r", 8, -0.08f, 0.0f, 0 },
+    { "upperarm_l", 2, 0.15f, 0.9f, 0 }, { "lowerarm_l", 10, 0.15f + 0.1414f, 0.9f - 0.1414f, 0 }, { "hand_l", 11, 0.15f + 0.2828f, 0.9f - 0.2828f, 0 },
+  };
+  cw_pose a, b;
+  rig(&a, A, 13, (t3_quat){ 0, 0, 0, 1 });
+  rig(&b, Bs, 13, (t3_quat){ 0.5f, 0.5f, 0.5f, 0.5f });
+  cw_bone_map ma, mb;
+  CHECK_EQ_INT(cw_bone_map_auto(&ma, &a), 12); /* everything but Grip */
+  CHECK_EQ_INT(cw_bone_map_auto(&mb, &b), 13);
+  CHECK(ma.bone[CW_HB_LEFT_HAND] < 0);
+  /* the text override, its errors, and the text back */
+  CHECK(cw_bone_map_apply_text(&ma, &a, "# the wrist\nleft_hand = Grip\n\nright_toes =\n"));
+  CHECK(ma.bone[CW_HB_LEFT_HAND] == 12);
+  CHECK(!cw_bone_map_apply_text(&ma, &a, "left_elbow = Grip\n"));
+  CHECK(!cw_bone_map_apply_text(&ma, &a, "left_hand = Wrist\n"));
+  char *mt = cw_bone_map_to_text(&ma, &a);
+  CHECK(strstr(mt, "hips = Hips\n") && strstr(mt, "left_hand = Grip\n"));
+  cw_bone_map again;
+  for (int i = 0; i < CW_HB_COUNT; i++) again.bone[i] = -1;
+  CHECK(cw_bone_map_apply_text(&again, &a, mt) && !memcmp(&again, &ma, sizeof ma));
+  cw_free(mt);
+  cw_bone_map broken = ma;
+  broken.bone[CW_HB_LEFT_FOOT] = -1;
+  char miss[64];
+  CHECK(!cw_bone_map_usable(&broken, miss, sizeof miss) && !strcmp(miss, "left_foot"));
+  CHECK(cw_retarget_new(&a, &broken, &b, &mb, NULL) == NULL);
+
+  cw_retarget *rt = cw_retarget_new(&a, &ma, &b, &mb, NULL);
+  CHECK(rt != NULL);
+  NEAR(cw_retarget_scale(rt), 0.6, 1e-5);
+  /* the source at rest: the target's legs are at rest, and its arm takes the source's direction (straight
+   * out), not its own rest (45 degrees down) */
+  to_rest(&a);
+  cw_retarget_apply(rt, &a, &b);
+  t3_vec3 arm = dir_between(&b, 10, 11);
+  NEAR(arm.x, 1, 1e-5);
+  NEAR(arm.y, 0, 1e-5);
+  NEAR(cw_pose_model_position(&b, 6).y, 0, 1e-5);
+  /* a step: the left thigh swings forward, the knee bends, the hips drop and move forward */
+  float s25, c25, s50, c50;
+  cw_sincos(-0.35f, &s25, &c25);
+  cw_sincos(0.5f, &s50, &c50);
+  a.rot[4] = (t3_quat){ s25, 0, 0, c25 };
+  a.rot[5] = (t3_quat){ s50, 0, 0, c50 };
+  a.pos[0] = (t3_vec3){ 0, 0.95f, 0.1f };
+  cw_pose_update_model(&a);
+  cw_retarget_apply(rt, &a, &b);
+  /* the hips moved by the source's move times the leg ratio, and no higher than that: the shorter shin
+   * cannot reach its foot from there, so the hips come down until it can */
+  t3_vec3 hb = cw_pose_model_position(&b, 0);
+  CHECK(hb.y < 0.62 - 0.05 * 0.6 && hb.y > 0.5);
+  NEAR(hb.z, 0.1 * 0.6, 1e-5);
+  /* each foot is where the source's is, scaled about the ground, although the shin is shorter */
+  for (int side = 0; side < 2; side++) {
+    t3_vec3 fa = cw_pose_model_position(&a, side ? 9 : 6), fb = cw_pose_model_position(&b, side ? 9 : 6);
+    NEAR(fb.x, side ? -0.08 : 0.08, 1e-4); /* its own stance width */
+    NEAR(fb.y, fa.y * 0.6, 1e-4);
+    NEAR(fb.z, fa.z * 0.6, 1e-4);
+    NEAR(cw_retarget_foot_error(rt, side), 0, 1e-4);
+    FOLD(fb);
+  }
+  for (int i = 0; i < b.count; i++) FOLD(b.rot[i]);
+  /* the control: without the foot pass the same step leaves the left foot centimetres away */
+  cw_retarget_opts no_ik = CW_RETARGET_OPTS_DEFAULT;
+  no_ik.foot_ik = false;
+  cw_retarget *rt2 = cw_retarget_new(&a, &ma, &b, &mb, &no_ik);
+  cw_retarget_apply(rt2, &a, &b);
+  CHECK(cw_retarget_foot_error(rt2, 0) > 0.02f);
+  NEAR(cw_pose_model_position(&b, 0).y, 0.62 - 0.05 * 0.6, 1e-5); /* the hips exactly at the scaled height */
+  /* rotations alone still carry the directions over: the thigh points where the source's does */
+  t3_vec3 ta = dir_between(&a, 4, 5), tb = dir_between(&b, 4, 5);
+  NEAR(ta.y, tb.y, 1e-5);
+  NEAR(ta.z, tb.z, 1e-5);
+  cw_retarget_free(rt2);
+  /* the control for rest alignment: without it the target's arm stays in its own rest direction */
+  cw_retarget_opts no_align = CW_RETARGET_OPTS_DEFAULT;
+  no_align.align_rest = false;
+  cw_retarget *rt3 = cw_retarget_new(&a, &ma, &b, &mb, &no_align);
+  to_rest(&a);
+  cw_retarget_apply(rt3, &a, &b);
+  arm = dir_between(&b, 10, 11);
+  CHECK(arm.y < -0.6f);
+  cw_retarget_free(rt3);
+
+  /* a clip: the same step keyed on the source, baked for the target */
+  cw_anim step = cw_anim_new("step", 1, CW_LOOP_LINEAR);
+  int t0 = cw_anim_add_value_track(step, "Src@UpperLegL:quaternion", CW_INTERP_LINEAR);
+  cw_anim_add_key(step, t0, 0, (cw_value){ CW_T_QUAT, .v = { 0, 0, 0, 1 } });
+  cw_anim_add_key(step, t0, 1, (cw_value){ CW_T_QUAT, .v = { s25, 0, 0, c25 } });
+  int t1 = cw_anim_add_value_track(step, "Src@Hips:position", CW_INTERP_LINEAR);
+  cw_anim_add_key(step, t1, 0, cw_val_vec3(0, 1, 0));
+  cw_anim_add_key(step, t1, 1, cw_val_vec3(0, 0.95f, 0.1f));
+  cw_anim_add_event(step, 0.5f, "footstep");
+  cw_anim baked = cw_retarget_clip(step, &a, &ma, &b, &mb, "Dst", NULL);
+  CHECK(cw_anim_valid(baked));
+  NEAR(cw_anim_length(baked), 1, 0);
+  CHECK(cw_anim_loop(baked) == CW_LOOP_LINEAR);
+  CHECK(cw_anim_track_find(baked, "Dst@thigh_l:quaternion") >= 0);
+  CHECK(cw_anim_track_find(baked, "Dst@pelvis:position") >= 0);
+  CHECK(cw_anim_track_find(baked, "Dst@UpperLegL:quaternion") < 0);
+  CHECK_EQ_INT(cw_anim_event_count(baked, "footstep"), 1);
+  CHECK_EQ_INT(cw_anim_key_count(baked, cw_anim_track_find(baked, "Dst@pelvis:position")), 31);
+  cw_value hv;
+  cw_anim_sample(baked, cw_anim_track_find(baked, "Dst@pelvis:position"), 1, &hv);
+  /* the pelvis is the root: its local position is its model position */
+  NEAR(hv.v[1], hb.y, 1e-4);
+  NEAR(hv.v[2], 0.06, 1e-4);
+  FOLD(hv.v);
+  /* a clip none of whose tracks name a source bone is refused */
+  cw_anim other = cw_anim_new("other", 1, CW_LOOP_NONE);
+  cw_anim_add_key(other, cw_anim_add_value_track(other, "Src@Tail:quaternion", CW_INTERP_LINEAR), 0, (cw_value){ CW_T_QUAT, .v = { 0, 0, 0, 1 } });
+  CHECK(!cw_anim_valid(cw_retarget_clip(other, &a, &ma, &b, &mb, "Dst", NULL)));
+  cw_anim_release(other);
+  cw_anim_release(baked);
+  cw_anim_release(step);
+  cw_retarget_free(rt);
+  cw_pose_free(&a);
+  cw_pose_free(&b);
 }
 
 /* ── root motion (node tracks) ──────────────────────────────────────── */
@@ -1264,5 +1502,5 @@ static void test_events_and_lod(void) {
 
 CW_TEST_SUITE("anim", { "interpolation", test_interpolation }, { "loop_edges", test_loop_edges },
               { "player_values", test_player_values }, { "scene_format", test_scene_format }, { "tweens", test_tweens },
-              { "tree", test_tree }, { "tree_text", test_tree_text }, { "root_motion", test_root_motion }, { "skeletal", test_skeletal },
+              { "tree", test_tree }, { "tree_text", test_tree_text }, { "retarget", test_retarget }, { "root_motion", test_root_motion }, { "skeletal", test_skeletal },
               { "events_and_lod", test_events_and_lod })

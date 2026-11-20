@@ -1,0 +1,55 @@
+[scene format=1]
+[ext_scene id=1 path="character.cwscene"]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.32, 0.42, 0.55, 1)
+ambient_energy = 0.5
+hemi_energy = 0.75
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0.3, 1.6, 7.6)
+rotation = vec3(-0.1, 0, 0)
+fov = 40
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(4, 8, 6)
+rotation = vec3(-0.95, 0.5, 0)
+energy = 3.6
+shadow = true
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+primitive = PLANE
+size = vec3(40, 1, 40)
+color = color(0.33, 0.35, 0.33, 1)
+roughness = 0.95
+receive_shadow = true
+
+[node name="Coach" parent="." type="Node3D"]
+position = vec3(-3, 0, -2.6)
+
+[node name="Model" parent="Coach" type="Node3D"]
+
+[node name="Anim" parent="Coach" type="AnimationPlayer"]
+
+[node name="Runner" parent="." instance=1]
+position = vec3(-3, 0, -1.2)
+
+[node name="Gymnast" parent="." instance=1]
+position = vec3(-3, 0, -0.1)
+
+[node name="Lifter" parent="." instance=1]
+position = vec3(-3, 0, 1)
+
+[animtree tree="Gymnast/Tree"]
+clip name="walk" anim="walk"
+clip name="attack" anim="attack"
+oneshot name="top" base="walk" shot="attack" param="attack" fadein=0.12 fadeout=0.25 bones="spine+"
+root node="top"
+
+[animtree tree="Lifter/Tree"]
+clip name="walk" anim="walk"
+clip name="attack" anim="attack"
+oneshot name="top" base="walk" shot="attack" param="attack" fadein=0.12 fadeout=0.25 bones="spine_01+"
+root node="top"

@@ -2,7 +2,7 @@
 
 {{name}} animates any reflected node property, glTF skeletons and method calls with keyframed clips, blends clips through graphs and state machines, and runs one-off tweens from code. Everything runs in the fixed step by default and produces the same values on every host.
 
-The module is `cartwheel/anim.h` ([reference](header:anim.h)). It has three layers, and you can use any one without the others:
+The module is `cartwheel/anim.h` ([reference](header:anim.h)); skeleton modifiers are in `cartwheel/ik.h` and retargeting in `cartwheel/retarget.h`. It has three layers, and you can use any one without the others:
 
 | Layer | What it is | Owned by |
 |---|---|---|
@@ -66,7 +66,7 @@ Each instance from [cw_gltf_instantiate](api:cw_gltf_instantiate) has its own we
 
 ### Many characters: cheap clones and animation detail
 
-A crowd of skinned characters does not need one glTF parse each. Load the model once as a resource and make each character with [cw_gltf_instantiate](api:cw_gltf_instantiate): every instance shares the geometry and materials and gets its own skeleton, and [cw_gltf_instance_auto_lod](api:cw_gltf_instance_auto_lod) picks a coarser mesh for a far one (see Resources). Animation has a matching knob: [cw_anim_player_set_update_divisor](api:cw_anim_player_set_update_divisor) makes a far character sample its clip and write its bones on every 2nd, 4th or 8th tick only, with all the time since the last sample, so the clip's time, loops and event count are exactly those of full rate while the pose steps; characters are spread over the ticks by their slot so they do not all sample together. [cw_anim_lod_divisor](api:cw_anim_lod_divisor) turns a distance into the divisor (full rate within a distance, then half, a quarter, an eighth as the distance doubles).
+A crowd of skinned characters does not need one glTF parse each. Load the model once as a resource and make each character with [cw_gltf_instantiate](api:cw_gltf_instantiate): every instance shares the geometry and materials and gets its own skeleton, and [cw_gltf_instance_auto_lod](api:cw_gltf_instance_auto_lod) picks a coarser mesh for a far one (see Resources). Animation has a matching knob: [cw_anim_player_set_update_divisor](api:cw_anim_player_set_update_divisor) makes a far character sample its clip and write its bones on every 2nd, 4th or 8th tick only, with all the time since the last sample, so the clip's time, loops and event count are exactly those of full rate while the pose steps; characters are spread over the ticks by their slot so they do not all sample together. [cw_anim_lod_divisor](api:cw_anim_lod_divisor) turns a distance into the divisor (full rate within a distance, then half, a quarter, an eighth as the distance doubles). An AnimationTree has the same knob, [cw_animtree_set_update_divisor](api:cw_animtree_set_update_divisor): the whole graph is evaluated on every Nth tick with the time since. Clips are shared too: every character of a crowd can hold the same `cw_anim` in its player, since bone tracks name bones by a path relative to the character.
 
 ## AnimationTree
 
@@ -156,6 +156,85 @@ A layer is not a `blend2`: bones outside the mask, and bones the overlay has no 
 **Instances.** A scene that instances another may carry an `[animtree]` section for a tree inside the instance (`tree="Enemy3/Tree"`). It replaces that instance's graph and leaves the other instances alone; it is saved only while it differs from the instanced scene's own graph.
 
 **From C and from the debug channel.** [cw_animtree_find](api:cw_animtree_find) gives a node's id by name, [cw_animtree_set_param](api:cw_animtree_set_param) and [cw_animtree_get_param](api:cw_animtree_get_param) use parameter names, and [cw_animtree_load_text](api:cw_animtree_load_text) and [cw_animtree_to_text](api:cw_animtree_to_text) read and write the body of a section, so a tool or a test can swap a graph at run time. A graph built with the C calls is not stored unless [cw_animtree_set_stored](api:cw_animtree_set_stored) asks for it. On a running game, `animtree_text <tree>` prints the graph, `animtree <tree>` its parameters, machines, one-shots and clip weights, `animtree_param <tree> <name> <value>` sets a parameter and `animtree_travel <tree> <machine> <state>` travels.
+
+## Retargeting
+
+A clip is made for one skeleton. Retargeting plays it on another with different proportions, a different rest pose and different bone names, so one set of walk, run and attack clips serves every humanoid in a game. The module is `cartwheel/retarget.h` ([reference](header:retarget.h)). It needs no tool: the settings are a few lines of text.
+
+Both skeletons are described by a **bone map**: which bone fills each slot of a standard humanoid (`hips`, `spine`, `chest`, `upper_chest`, `neck`, `head`, and for each side `shoulder`, `upper_arm`, `lower_arm`, `hand`, `upper_leg`, `lower_leg`, `foot`, `toes` and three joints per finger). [cw_bone_map_auto](api:cw_bone_map_auto) fills a map from the bone names of the common rigs:
+
+| Rig | Names it reads |
+|---|---|
+| Mixamo | `mixamorig:Hips`, `mixamorig:LeftUpLeg`, `mixamorig:LeftForeArm`, `mixamorig:Spine1` |
+| VRM and glTF humanoid | `hips`, `leftUpperLeg`, `leftLowerArm`, `upperChest`, `J_Bip_L_UpperLeg` |
+| Unreal style | `pelvis`, `thigh_l`, `calf_l`, `upperarm_r`, `spine_01`, `ball_l` (twist bones are left out) |
+| Blender Rigify | `thigh.L`, `shin.L`, `upper_arm.L`, `forearm.L`, `spine.001` |
+| 3ds Max Biped | `Bip001 L Thigh`, `Bip001 L Calf` |
+| plain names with a side | `UpperLegL`, `Upper_Leg.L`, `LeftFoot`, `RightForeArm` |
+
+Only the hips and both legs down to the feet are required; everything else is carried over where both skeletons have it. What the names do not say, a line of text does: `left_hand = GripL`, or `left_toes =` to clear a slot ([cw_bone_map_apply_text](api:cw_bone_map_apply_text); [cw_bone_map_to_text](api:cw_bone_map_to_text) prints a map).
+
+For every frame the transfer does three things:
+
+1. **Rotations, relative to the rest poses.** A target bone turns from its rest orientation by the turn the source bone made from its own, in model space, so it does not matter how either rig orients its bones or how many twist and helper bones sit between the mapped ones. Where the rest poses differ (a T-pose and an A-pose), the spine, arms and fingers are first lined up by direction: an arm that points down in the source points down in the target. Legs turn from their own rest pose (`align_legs` lines them up too), so a source that stands with its legs apart does not bow the target's knees.
+2. **Hips travel scaled by leg length.** The hips move by the source's motion from rest times the ratio of the leg lengths, so a short character takes short steps and crouches a short way.
+3. **Feet by IK.** Each foot is put where the source's foot is at the target's size, keeping the target's own stance width, with the leg solved by the two-bone solver above (the knee keeps its plane) and the foot keeping its transferred rotation. A leg that cannot reach lowers the hips until it can. Without this pass a different thigh-to-shin ratio moves the feet wherever the rotations happen to put them. `hand_ik` does the same for hands, measured from the chest and scaled by arm length, for two hands on a prop.
+
+**Planted feet.** A walk only looks right when a foot on the ground stays where it landed. Many clips do not quite manage that themselves (their planted feet travel at an uneven speed), and no walking speed fixes it. With `plant_feet`, [cw_retarget_clip](api:cw_retarget_clip) finds each stance (the foot within the lowest tenth of its travel), moves every planted frame onto a straight line at the stance's mean speed, and eases the frames around it in and out. [cw_anim_ground_velocity](api:cw_anim_ground_velocity) returns the velocity of a clip's planted feet: move the character at the opposite of it. [cw_foot_plant](api:cw_foot_plant) is the same pass on bare arrays.
+
+### At import: clips baked into the model
+
+The usual place for retargeting is the pack step. A model's `.cwimport` sidecar names the model that has the clips, and `cwpack` bakes them onto this model's skeleton and writes them into it as ordinary glTF animations. The game loads them like the model's own clips and never sees the source skeleton. This is `samples/anim_retarget/project/models/runner.glb.cwimport`, the whole of the setup for one character:
+
+@include samples/anim_retarget/project/models/runner.glb.cwimport
+
+| Setting | Meaning |
+|---|---|
+| `retarget.source` | the model with the clips, a path from the project root |
+| `retarget.clips` | which clips: `new name=source name`, or just a name; left out, every clip |
+| `retarget.fps` | keys per second in the baked clips (30) |
+| `retarget.plant` | the clips, by their new names, whose planted feet get their slide taken out (walk and run cycles) |
+| `retarget.foot_ik`, `retarget.hand_ik`, `retarget.align_rest`, `retarget.align_legs`, `retarget.hips_scale` | as the options above (true, false, true, false, the leg ratio) |
+| `retarget.map.<slot>` | this model's bone for a slot the names do not give (`none` clears one) |
+| `retarget.source_map.<slot>` | the same for the source model |
+
+A slot or a bone that does not exist, or a model whose legs cannot be found, stops the pack with a message that names the setting to add.
+
+### At load, and per frame
+
+[cw_retarget_clip](api:cw_retarget_clip) does the same from C: it takes a clip, the two skeletons as [cw_pose](api:cw_pose_bind) (bound to a glTF, a Skeleton3D's pose, or free-standing) and their maps, and returns a new clip with a rotation track per mapped bone and a position track for the hips:
+
+@include samples/anim_retarget/main.c#load
+
+For a puppet that follows another skeleton live, [cw_retarget_new](api:cw_retarget_new) prepares a pairing once and [cw_retarget_apply](api:cw_retarget_apply) writes one pose onto another each tick; [cw_retarget_apply_feet](api:cw_retarget_apply_feet) takes the two foot positions from the game instead (a foot on a ledge).
+
+### The sample
+
+`samples/anim_retarget` plays one walk cycle and one punch, keyed for a 1.74 m coach with plain bone names, on three other people (all four are generated by the sample's `make-characters.mjs`): a 1.86 m runner with long legs, Mixamo bone names and a T-pose; a 1.58 m gymnast with short shins, VRM names and an A-pose; a 1.78 m lifter with a broad build, short legs, Unreal names and bones that point along +X. The first two get their clips from `cwpack`, the third at load. Each is an instance of one scene whose AnimationTree walks and layers the punch over the walk from the spine up, so the legs keep walking while the arms punch; the two instances with other bone names carry their own `[animtree]` override.
+
+Everyone walks across the floor at the speed their own clip gives ([cw_anim_ground_velocity](api:cw_anim_ground_velocity)):
+
+@include samples/anim_retarget/main.c#speed
+
+The sample measures what matters by eye: while a foot is planted, how far does it travel over the ground? The figure is the furthest any planted foot moved during one stance, over seven seconds of walking:
+
+| | Runner (1.86 m) | Gymnast (1.58 m) | Lifter (1.78 m) | Coach (the source clip) |
+|---|---|---|---|---|
+| retargeted with `plant_feet` | 0.006 mm | 0.006 mm | 0.005 mm | 460 mm |
+| control: foot IK, no planting | 513 mm | 405 mm | 431 mm | |
+| control: rotations only, no foot IK | 510 mm | 551 mm | 398 mm | |
+
+The gate holds the people under 5 mm. The coach's own walk is keyed from joint angles and slides a great deal (its planted feet travel unevenly, and no walking speed takes that out); foot IK alone reproduces the source's feet exactly, slide included, at each person's size, which is the middle row. The clips `cwpack` baked and the same clips made at load agree to 0.0005 mm at the feet.
+
+`RETARGET_SHEET=walk`, `walk_side`, `attack` or `attack_side` stands the coach and the three people in a row, facing the camera or side on, with that clip on the whole body: the view to judge a retarget against its source by eye.
+
+**Cost.** Retargeting a clip is a load-time or pack-time cost: one pose transfer and two two-bone solves per key. At run time a retargeted clip is an ordinary clip. For the trees themselves, `RETARGET_CROWD=100` adds a hundred more lifters, cheap clones that share the model and the two clips, each with its own tree (a walk with the punch layered over it by a one-shot, 22 bones). On the 890M laptop (Ryzen AI 9 HX 370, native, load average about 49 from other work) a tree costs 9.1 us per character per tick on average and 4.4 us on the quietest tick: 0.9 ms and 0.44 ms for the hundred. The same cart on a WebGPU host measured 10.3 us and 5.9 us. On a Vega 8 laptop (about half the per-core speed) expect about twice that. There is no GPU cost, and the quality presets do not change it; for a far crowd, [cw_animtree_set_update_divisor](api:cw_animtree_set_update_divisor) evaluates a tree on every Nth tick.
+
+```sh
+node tests/gate.mjs anim-retarget unit-anim
+```
+
+Everything here uses only arithmetic, `sqrt` and the `cartwheel/math.h` functions, so the same clip retargets to the same bits on every host; the gate compares the people's pose hashes across hosts.
 
 ## Root motion
 
