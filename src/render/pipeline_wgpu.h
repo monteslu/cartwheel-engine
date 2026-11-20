@@ -53,6 +53,7 @@ WGPUTextureFormat cw__pw_format(unsigned id);
  * the id); the registry owns tex / view from then on */
 unsigned cw__pw_register(WGPUTexture tex, WGPUTextureView view);
 void cw__pw_release(unsigned id);
+void cw__pw_unregister(unsigned id); /* an id from cw__pw_register whose texture is someone else's: the texture stays */
 /* a target drawing into layer 0 of an embedder's colour texture (no depth), and its release */
 unsigned cw__pw_target_wrap(WGPUTexture color, int w, int h);
 void cw__pw_target_unwrap(unsigned target);

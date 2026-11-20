@@ -810,6 +810,9 @@ static bool vf_off(vfog_rt *v) {
 
 static bool vf_build_active(const cw_pass_ctx *ctx, void *user) {
   vfog_rt *v = user;
+  /* an extra view past the per-view grids (cartwheel/subviewport.h): it has no grid of its own, and another view's
+   * holds that view's history */
+  if (ctx->pipeline && ctx->pipeline->view_i >= CW_MAX_VIEWS) return false;
   slot_of(v, ctx)->built = false;
   if (!cw__vfog_supported() || !ctx->camera || !ctx->renderer) return vf_off(v);
   if (cw__quality_effects() <= CW_QUALITY_LOW) return vf_off(v); /* effects Very Low and Low: no volumetric fog (the height fog alone) */
@@ -1040,8 +1043,8 @@ static void vf_build_exec(cw_pass_ctx *ctx, void *user) {
 /* ── apply ──────────────────────────────────────────────────────────── */
 
 static bool vf_apply_active(const cw_pass_ctx *ctx, void *user) {
-  (void)ctx;
   vfog_rt *v = user;
+  if (ctx->pipeline && ctx->pipeline->view_i >= CW_MAX_VIEWS) return false;
   /* the grid pass runs first in the same phase and sets built; at
    * scheduling time it has not run yet, so the apply follows its activity */
   return cw__vfog_supported() && cw__quality_effects() > CW_QUALITY_LOW && ctx->camera && ctx->renderer && ctx->camera->base.type == T3_PERSPECTIVE_CAMERA &&

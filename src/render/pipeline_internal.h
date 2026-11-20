@@ -110,7 +110,12 @@ struct cw_pipeline {
   bool taa_reset;     /* drop the TAA history next frame */
   cw_view views[CW_MAX_VIEWS]; /* cw_pipeline_set_views (nviews >= 2: splitscreen) */
   int nviews;
-  int view_i;               /* splitscreen: the view being drawn (-1: none) */
+  int view_i;               /* splitscreen: the view being drawn (-1: none); an extra view (below) draws as a later one */
+  /* extra views (cartwheel/subviewport.h): cameras drawn into targets of their own after the frame's views, as
+   * later splitscreen views are (the frame's shadow maps and world work are reused). Queued each frame. */
+  struct cw__extra_view { cw_node camera; const cw_rt *rt; int slot; void (*done)(void *user, float cpu_ms); void *user; } extra[16];
+  int nextra;
+  const char *rt_scope;     /* an extra view's run: its persistent targets are its own (the key gets this suffix) */
   const cw_rt *view_pic;    /* a shared post chain's view: its scene target is its picture (no copy) */
   bool views_shared_post; /* cw_pipeline_set_views_shared_post */
   bool view_post_split;   /* this frame: the views run the depth-reading post passes, the overlay run the rest */
@@ -208,6 +213,10 @@ bool cw__rt_create(cw_rt *rt, int w, int h, cw_rt_format f, bool depth);
 /* the persistent target `key` as it is now (any size and format), NULL when there is none:
  * for a reader that must not resize or recreate what its writer kept */
 const cw_rt *cw__pipeline_rt_find(cw_pipeline *p, const char *key);
+/* Queue an extra view for this frame (drawn at the end of cw_pipeline_render, see struct cw_pipeline): camera into
+ * rt (its size), slot naming its own set of persistent targets; done runs after it with the CPU ms it took to
+ * issue. false when the frame's queue is full. */
+bool cw__pipeline_queue_view(cw_pipeline *p, cw_node camera, const cw_rt *rt, int slot, void (*done)(void *user, float cpu_ms), void *user);
 void cw__rt_destroy(cw_rt *rt);
 void cw__pass_state_reset(void);
 /* copy a texture into a target with a plain shader (any formats) */

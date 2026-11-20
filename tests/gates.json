@@ -2651,6 +2651,28 @@
     "note": "three skinned robots (RobotExpressive, CC0) through Skeleton3D (cartwheel/skeleton.h): one walks with a sword on its palm bone and a hat on its head (BoneAttachment3D), a LookAtModifier3D under the skeleton and bone tracks addressed to the skeleton node; one holds its rest pose under a playing clip (show_rest_only); one is posed from game code. The probe compares the sword's world matrix with the palm bone's after each frame's 3D draw, to a tenth of a millimetre (attach_ok); the sword tip's world position and both skeleton hashes per 60-tick window are compared across hosts. The control places the sword by hand from the bone transform read a tick earlier (a one-tick lag) from frame 10: attach_ok fails"
   },
   {
+    "name": "subviewport",
+    "app": "subviewport",
+    "frames": 480,
+    "controlInput": "subviewport-control.json",
+    "maxGt16": 0.003,
+    "webgpu": { "vsGl": 0.02 },
+    "fields": ["tree.tick", "monitor_live", "photo_once", "hidden_idle", "hidden_woke"],
+    "expect": { "monitor_live": 1, "photo_once": 1, "hidden_idle": 1, "hidden_woke": 1 },
+    "note": "five SubViewports (cartwheel/subviewport.h) in one scene: a camera of the scene looking straight down, each frame, on a screen (MeshInstance3D viewport_texture, emissive); a camera rendered ONCE as a still; a 2D canvas world of its own as the colour of a sign the sun lights; a 3D world of its own (its own camera, light and background) in a TextureRect and a Sprite2D by viewport://Name; a WHEN_VISIBLE one on a panel that starts behind the camera and comes into view at tick 240. Held: the monitor keeps rendering, the still rendered once, the hidden one rendered once to fill and then not until shown, then it runs; the picture agrees across hosts and GL against WebGPU. The control sets the monitor DISABLED at frame 10: its screen holds a stale picture and monitor_live fails"
+  },
+  {
+    "name": "unit-subviewport",
+    "app": "unit_subviewport",
+    "frames": 2,
+    "minColors": 1,
+    "fields": ["unit.passed", "unit.failed", "unit.checksum", "unit.done"],
+    "controlFrames": 2,
+    "expect": { "unit.failed": 0, "unit.done": 1 },
+    "controlEnv": { "CW_TEST_INJECT_FAIL": "1" },
+    "note": "SubViewport: names and viewport:// references, the update modes (ALWAYS, ONCE and its request, DISABLED, WHEN_VISIBLE by asking for the texture, update_every), size changes and clamping, one three.c texture across a resize, worlds of their own ticking with the owner and never taking the current-tree seat, camera views drawn after the frame (the tree's camera restored, one extra pass run per view, none when disabled, a wrong camera path never rendered), the scene-file round trip of SubViewport, viewport_texture and viewport:// texture properties"
+  },
+  {
     "name": "physics3d-nodes",
     "app": "physics3d_nodes",
     "frames": 720,

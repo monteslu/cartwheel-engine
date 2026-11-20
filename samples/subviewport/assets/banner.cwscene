@@ -1,0 +1,23 @@
+[scene format=1]
+
+[node name="Banner" type="Node2D"]
+
+[node name="Settings" parent="." type="CanvasSettings"]
+clear_color = color(0.02, 0.05, 0.12, 1)
+
+[node name="TopStripe" parent="." type="Polygon2D"]
+polygon = "0 0, 512 0, 512 14, 0 14"
+color = color(0.1, 0.8, 0.9, 1)
+
+[node name="Block" parent="." type="Polygon2D"]
+polygon = "24 34, 120 34, 120 108, 24 108"
+color = color(0.9, 0.1, 0.1, 1)
+
+[node name="Arrow" parent="." type="Polygon2D"]
+polygon = "170 44, 380 44, 380 24, 480 71, 380 118, 380 98, 170 98"
+color = color(0.95, 0.8, 0.1, 1)
+
+[node name="Slider" parent="." type="Polygon2D"]
+polygon = "0 0, 20 0, 20 10, 0 10"
+position = vec2(130, 112)
+color = color(1, 1, 1, 1)

@@ -484,6 +484,8 @@ void cw_scene_register_builtin_types(void) {
   cw__register_audio_types();
   void cw__register_gi_types(void); /* src/gi: reflection probes (cartwheel/gi.h) */
   cw__register_gi_types();
+  void cw__register_subviewport_types(void); /* src/render/subviewport.c: SubViewport (cartwheel/subviewport.h) */
+  cw__register_subviewport_types();
   void cw__register_csg_types(void); /* src/scene/csg.c: CSG block-out shapes (cartwheel/csg.h) */
   cw__register_csg_types();
 }

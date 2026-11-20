@@ -164,3 +164,7 @@ toon+gmap+l0001+xcluster_csm
 standard+l0001+xclusteries_plain
 depth+xclusteries
 standard+l0001+xclusteries
+standard+emap+l1001+xplain
+standard+map+shadow+l1001+xplain
+standard+emap+l1001
+standard+map+shadow+l1001
