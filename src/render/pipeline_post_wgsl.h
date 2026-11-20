@@ -126,22 +126,22 @@ WGSL_DECL WGSL_VEL = S(
   });
 
 WGSL_DECL WGSL_AO = S(
-  struct U { u_inv_proj: mat4x4f, u_proj_scale: vec4f, u_params: vec4f, u_pz: vec4f, u_frame: i32 };
+  struct U { u_inv_proj: mat4x4f, u_proj_scale: vec4f, u_params: vec4f, u_pz: vec4f, u_frame: i32, u_vrect: vec4f };
   @group(0) @binding(0) var<uniform> u: U;
   @group(0) @binding(1) var u_depth: texture_2d<f32>;
   fn view_pos_px(q0: vec2i) -> vec3f {
     let q = clamp(q0, vec2i(0), vec2i(u.u_proj_scale.zw) - 1);
-    let d = win_depth(textureLoad(u_depth, q, 0).r, u.u_pz);
+    let d = win_depth(textureLoad(u_depth, q + vec2i(u.u_vrect.xy), 0).r, u.u_pz);
     let uv = (vec2f(q) + 0.5) / u.u_proj_scale.zw;
     let p = u.u_inv_proj * vec4f(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
     return p.xyz / p.w;
   }
   fn view_pos(uv: vec2f) -> vec3f { return view_pos_px(vec2i(floor(uv * u.u_proj_scale.zw))); }
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv0: vec2f) -> @location(0) vec4f {
-    let fc = cw_frag_coord(pos);
-    let q = vec2i(fc) * 2;
+    let fc = vec2i(cw_frag_coord(pos)) - vec2i(u.u_vrect.zw);
+    let q = fc * 2;
     let uv = (vec2f(q) + 0.5) / u.u_proj_scale.zw;
-    let d = win_depth(textureLoad(u_depth, clamp(q, vec2i(0), vec2i(u.u_proj_scale.zw) - 1), 0).r, u.u_pz);
+    let d = win_depth(textureLoad(u_depth, clamp(q, vec2i(0), vec2i(u.u_proj_scale.zw) - 1) + vec2i(u.u_vrect.xy), 0).r, u.u_pz);
     if (d >= 1.0) { return vec4f(1.0, 1e6, 0.0, 1.0); }
     let P = view_pos_px(q);
     let pr = view_pos_px(q + vec2i(1, 0));
@@ -162,7 +162,7 @@ WGSL_DECL WGSL_AO = S(
     let ruv = vec2f(u.u_proj_scale.x, u.u_proj_scale.y) * 0.5 * R / max(-P.z, 1e-4);
     let slices = i32(u.u_params.z);
     let steps = i32(u.u_params.w);
-    let ip = vec2i(fc) & vec2i(3);
+    let ip = fc & vec2i(3);
     let idx = ip.x + ip.y * 4;
     var perm = array<i32, 16>(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
     let rot = (f32(perm[idx]) + 0.5) / 16.0;
@@ -216,7 +216,7 @@ WGSL_DECL WGSL_AO = S(
     @group(0) @binding(1) var u_src: texture_2d<f32>; \
     @group(0) @binding(2) var u_ao: texture_2d<f32>; \
     @group(0) @binding(3) var u_depth: texture_2d<f32>;)
-WGSL_DECL WGSL_AO_COMP_HEAD = "struct U { u_inv_proj: mat4x4f, u_ao_size: vec2f, u_intensity: f32, u_pz: vec4f };\n"
+WGSL_DECL WGSL_AO_COMP_HEAD = "struct U { u_inv_proj: mat4x4f, u_ao_size: vec2f, u_intensity: f32, u_pz: vec4f, u_view: vec4f, u_ao_rect: vec4f };\n"
   WGSL_AO_COMP_BINDINGS S(
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
     let d = win_depth(cw_load(u_depth, uv).r, u.u_pz);
@@ -224,16 +224,17 @@ WGSL_DECL WGSL_AO_COMP_HEAD = "struct U { u_inv_proj: mat4x4f, u_ao_size: vec2f,
   });
 /* the composite with the height fog fused in (pipeline_post.c ao_fog_program) */
 WGSL_DECL WGSL_AO_COMP_FOG_HEAD = "struct U { u_inv_proj: mat4x4f, u_ao_size: vec2f, u_intensity: f32, " WGSL_FOG_FIELDS
-  "u_pz: vec4f };\n" WGSL_AO_COMP_BINDINGS;
+  "u_pz: vec4f, u_view: vec4f, u_ao_rect: vec4f };\n" WGSL_AO_COMP_BINDINGS;
 WGSL_DECL WGSL_AO_COMP_FOG_IN = S(
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
     let d = win_depth(cw_load(u_depth, uv).r, u.u_pz);
-    return ao_composite(uv, fog_over(textureSampleLevel(u_src, cw_linear, uv, 0.0), fog_eval(uv, d)), d);
+    return ao_composite(uv, fog_over(textureSampleLevel(u_src, cw_linear, uv, 0.0), fog_eval((uv - u.u_view.xy) / u.u_view.zw, d)), d);
   });
 WGSL_DECL WGSL_AO_COMP_BODY = S(
   fn ao_composite(uv: vec2f, c: vec4f, d: f32) -> vec4f {
     if (d >= 1.0) { return c; }
-    let p = u.u_inv_proj * vec4f(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+    let lq = (uv - u.u_view.xy) / u.u_view.zw;
+    let p = u.u_inv_proj * vec4f(lq * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
     let z = -p.z / p.w;
     let base = uv * u.u_ao_size - 0.5;
     let f = floor(base);
@@ -241,7 +242,7 @@ WGSL_DECL WGSL_AO_COMP_BODY = S(
     var wsum = 0.0;
     for (var j = -1; j <= 2; j++) {
       for (var i = -1; i <= 2; i++) {
-        let t = f + vec2f(f32(i), f32(j));
+        let t = clamp(f + vec2f(f32(i), f32(j)), u.u_ao_rect.xy, u.u_ao_rect.zw);
         let a = textureSampleLevel(u_ao, cw_linear, (t + 0.5) / u.u_ao_size, 0.0).rg;
         let dd = base - t;
         let ws = exp(-dot(dd, dd) * 0.35);

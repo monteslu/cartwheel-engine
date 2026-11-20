@@ -328,7 +328,8 @@ static unsigned ao_fog_program(void);
 static const char *AO_FS = S(
   uniform sampler2D u_depth;
   uniform mat4 u_inv_proj;
-  uniform vec4 u_proj_scale;  /* proj[0][0], proj[1][1], full w, full h */
+  uniform vec4 u_proj_scale;  /* proj[0][0], proj[1][1], full w, full h (the view's) */
+  uniform vec4 u_vrect;       /* the view's corner in the depth, in the AO target (a one-pass split screen's; 0 otherwise) */
   uniform vec4 u_params;      /* radius, power, slices, steps */
   uniform int u_frame;
   out vec4 o;
@@ -336,16 +337,17 @@ static const char *AO_FS = S(
    * half-res pixel centre sits between full-res texels) */
   vec3 view_pos_px(ivec2 q) {
     q = clamp(q, ivec2(0), ivec2(u_proj_scale.zw) - 1);
-    float d = texelFetch(u_depth, q, 0).r;
+    float d = texelFetch(u_depth, q + ivec2(u_vrect.xy), 0).r;
     vec2 uv = (vec2(q) + 0.5) / u_proj_scale.zw;
     vec4 p = u_inv_proj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
     return p.xyz / p.w;
   }
   vec3 view_pos(vec2 uv) { return view_pos_px(ivec2(floor(uv * u_proj_scale.zw))); }
   void main() {
-    ivec2 q = ivec2(gl_FragCoord.xy) * 2;
+    ivec2 fc = ivec2(gl_FragCoord.xy) - ivec2(u_vrect.zw);
+    ivec2 q = fc * 2;
     vec2 uv = (vec2(q) + 0.5) / u_proj_scale.zw;
-    float d = texelFetch(u_depth, q, 0).r;
+    float d = texelFetch(u_depth, q + ivec2(u_vrect.xy), 0).r;
     if (d >= 1.0) { o = vec4(1.0, 1e6, 0.0, 1.0); return; }
     vec3 P = view_pos_px(q);
     vec3 pr = view_pos_px(q + ivec2(1, 0)), pl = view_pos_px(q - ivec2(1, 0));
@@ -365,7 +367,7 @@ static const char *AO_FS = S(
     vec2 ruv = vec2(u_proj_scale.x, u_proj_scale.y) * 0.5 * R / max(-P.z, 1e-4);
     int slices = int(u_params.z), steps = int(u_params.w);
     /* 4x4 pattern of slice rotations and step offsets (exact on every GPU) */
-    ivec2 ip = ivec2(gl_FragCoord.xy) & 3;
+    ivec2 ip = fc & 3;
     int idx = ip.x + ip.y * 4;
     int perm[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
     float rot = (float(perm[idx]) + 0.5) / 16.0;
@@ -423,20 +425,23 @@ static const char *AO_COMP_FS = S(
   uniform mat4 u_inv_proj;
   uniform vec2 u_ao_size;
   uniform float u_intensity;
+  uniform vec4 u_view;     /* the view's rectangle in uv (a one-pass split screen's; 0, 0, 1, 1 otherwise) */
+  uniform vec4 u_ao_rect;  /* and in the AO target's texels, x0, y0, x1, y1 (its texels outside are another view's) */
   out vec4 o;
   void main() {
     float d = texture(u_depth, v_uv).r;
     vec4 c = texture(u_src, v_uv);
+    vec2 lq = (v_uv - u_view.xy) / u_view.zw;
     AO_FUSED_IN
     if (d >= 1.0) { o = c; return; }
-    vec4 p = u_inv_proj * vec4(v_uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+    vec4 p = u_inv_proj * vec4(lq * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
     float z = -p.z / p.w;
     vec2 base = v_uv * u_ao_size - 0.5;
     vec2 f = floor(base);
     float sum = 0.0, wsum = 0.0;
     for (int j = -1; j <= 2; j++)
       for (int i = -1; i <= 2; i++) {
-        vec2 t = f + vec2(float(i), float(j));
+        vec2 t = clamp(f + vec2(float(i), float(j)), u_ao_rect.xy, u_ao_rect.zw);
         vec2 a = texture(u_ao, (t + 0.5) / u_ao_size).rg;
         vec2 dd = base - t;
         float ws = exp(-dot(dd, dd) * 0.35);
@@ -470,7 +475,14 @@ static void ssao_exec(cw_pass_ctx *ctx, void *u) {
   int hw = (ctx->width + 1) / 2, hh = (ctx->height + 1) / 2;
   const cw_rt *ao = cw_pipeline_rt_persistent(ctx->pipeline, "ssao.ao", hw, hh, CW_RT_RG16F, NULL);
   if (!ao) return;
-  const t3_mat4 *ip = &ctx->pipeline->inv_proj_jittered;
+  /* a one-pass split screen's view: its rectangle in the depth and in the AO target (the views' AO side by side, as
+   * each view's own would be) */
+  int vr[4] = { 0, 0, ctx->width, ctx->height }, ar[4] = { 0, 0, hw, hh };
+  if (ctx->view_count > 0) {
+    memcpy(vr, ctx->view_rect, sizeof vr);
+    cw__view_clip_rect(hw, hh, ar);
+  }
+  const t3_mat4 *ip = ctx->view_count > 0 ? &ctx->inv_proj : &ctx->pipeline->inv_proj_jittered;
   cw_pass_bind_target(ctx, ao);
   cw_pass_use(ao_prog);
   set_pz(ao_prog, ctx);
@@ -478,7 +490,8 @@ static void ssao_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_uniform1i(ao_prog, "u_depth", 0);
   cw_pass_uniform_mat4(ao_prog, "u_inv_proj", ip);
   cw_pass_uniform4f(ao_prog, "u_proj_scale", ctx->camera->projection_matrix.e[0], ctx->camera->projection_matrix.e[5],
-                    (float)ctx->width, (float)ctx->height);
+                    (float)vr[2], (float)vr[3]);
+  cw_pass_uniform4f(ao_prog, "u_vrect", (float)vr[0], (float)vr[1], (float)ar[0], (float)ar[1]);
   cw_pass_uniform4f(ao_prog, "u_params", s->ssao_radius, s->ssao_power, (float)CW_CLAMP(s->ssao_slices, 1, 8),
                     (float)CW_CLAMP(s->ssao_steps, 1, 16));
   cw_pass_uniform1i(ao_prog, "u_frame", s->taa ? (int)(ctx->frame & 15) : 0);
@@ -495,6 +508,12 @@ static void ssao_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_uniform_mat4(comp, "u_inv_proj", ip);
   cw_pass_uniform2f(comp, "u_ao_size", (float)hw, (float)hh);
   cw_pass_uniform1f(comp, "u_intensity", s->ssao_intensity);
+  {
+    float vu[4];
+    cw_pass_view_uv(ctx, vu);
+    cw_pass_uniform4f(comp, "u_view", vu[0], vu[1], vu[2], vu[3]);
+    cw_pass_uniform4f(comp, "u_ao_rect", (float)ar[0], (float)ar[1], (float)(ar[0] + ar[2] - 1), (float)(ar[1] + ar[3] - 1));
+  }
   if (fog) cw__fog_fused_uniforms(ctx, comp); /* the fog pass's own uniforms (fog.c) */
   cw_pass_fullscreen();
 }
@@ -1245,7 +1264,7 @@ static unsigned ao_fog_program(void) {
     return cw_pass_program_wgsl("ssao.composite+fog", w);
   }
   static char g[24576];
-  snprintf(g, sizeof g, "#define AO_FUSED_IN c = fog_over(c, fog_eval(v_uv, d));\n%s%s%s%s%s", cw__fusion_raw() ? "#define FUSE_RAW 1\n" : "", FUSE_ROUND, cw__fog_glsl(), FUSE_FOG, AO_COMP_FS);
+  snprintf(g, sizeof g, "#define AO_FUSED_IN c = fog_over(c, fog_eval(lq, d));\n%s%s%s%s%s", cw__fusion_raw() ? "#define FUSE_RAW 1\n" : "", FUSE_ROUND, cw__fog_glsl(), FUSE_FOG, AO_COMP_FS);
   return cw_pass_program("ssao.composite+fog", g);
 }
 
@@ -2253,7 +2272,7 @@ void cw__pipeline_add_builtin_passes(cw_pipeline *p) {
                                            .reads = CW_RES_DEPTH, .writes = CW_RES_VELOCITY, .execute = velocity_exec, .webgpu = true });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "ssao", .phase = CW_PHASE_POST, .order = 100,
                                            .reads = CW_RES_COLOR | CW_RES_DEPTH, .writes = CW_RES_COLOR,
-                                           .active = ssao_active, .execute = ssao_exec, .webgpu = true });
+                                           .active = ssao_active, .execute = ssao_exec, .webgpu = true, .views = CW_PASS_VIEWS_EACH });
   void cw__gi_add_post_passes(cw_pipeline *p); /* src/gi: the "gi" SHADOW pass, SSGI (120), SSR (150) */
   cw__gi_add_post_passes(p);
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "taa", .phase = CW_PHASE_POST, .order = 200,

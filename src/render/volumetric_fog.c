@@ -108,17 +108,23 @@ static bool one_grid(void) {
 #endif
 }
 
+/* the split screen view being drawn: the pipeline's view run, or a one-pass split screen's view (-1: none) */
+static int view_of(const cw_pass_ctx *ctx) {
+  if (ctx->view_count > 0) return ctx->view_index;
+  return ctx->pipeline ? ctx->pipeline->view_i : -1;
+}
 /* the grid of the view being drawn */
 static vf_slot *slot_of(vfog_rt *v, const cw_pass_ctx *ctx) {
-  int i = ctx->pipeline && !one_grid() ? ctx->pipeline->view_i : -1;
+  int i = ctx->pipeline && !one_grid() ? view_of(ctx) : -1;
   return &v->slot[i >= 0 && i < CW_MAX_VIEWS ? i : 0];
 }
 /* the view's share of the output's width (1 without splitscreen): its grid and shadow tile shrink with it, so a
  * cell covers as many pixels in a quarter-screen view as in a full one */
 static float view_share(const cw_pass_ctx *ctx) {
   const cw_pipeline *p = ctx->pipeline;
-  if (!p || one_grid() || p->view_i < 0 || p->view_i >= p->nviews) return 1;
-  float w = p->views[p->view_i].w;
+  int i = view_of(ctx);
+  if (!p || one_grid() || i < 0 || i >= p->nviews) return 1;
+  float w = p->views[i].w;
   return w > 0 && w < 1 ? w : 1;
 }
 
@@ -159,10 +165,11 @@ static vfog_rt *vfog_of(cw_tree *t, bool make) {
   /* the grid first (shadow maps, inject, integrate: targets of its own), then
    * the apply over the scene, where the analytic height fog would draw */
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "volumetric_fog.grid", .phase = CW_PHASE_EFFECTS, .order = 290,
-                                           .active = vf_build_active, .execute = vf_build_exec, .user = v, .webgpu = true });
+                                           .active = vf_build_active, .execute = vf_build_exec, .user = v, .webgpu = true,
+                                           .views = CW_PASS_VIEWS_EACH });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "volumetric_fog", .phase = CW_PHASE_EFFECTS, .order = 300,
                                            .reads = CW_RES_DEPTH, .writes = CW_RES_COLOR, .active = vf_apply_active,
-                                           .execute = vf_apply_exec, .user = v, .webgpu = true });
+                                           .execute = vf_apply_exec, .user = v, .webgpu = true, .views = CW_PASS_VIEWS_EACH });
   return v;
 }
 
@@ -389,6 +396,7 @@ static const char VF_GLSL_APPLY[] = S(
   uniform vec3 u_sun_dir;
   uniform vec3 u_sun_color;
   uniform float u_g;
+  uniform vec4 u_view; /* the view's rectangle in uv (a one-pass split screen's; 0, 0, 1, 1 otherwise) */
   out vec4 o;
   float vf_od(vec3 v, float l) {
     float a = u_fog.x * exp(-u_fog.y * (u_cam.y - u_fog.z));
@@ -415,7 +423,8 @@ static const char VF_GLSL_APPLY[] = S(
   }
   void main() {
     float d = texture(u_depth, v_uv).r;
-    vec4 a = u_inv_view_proj * vec4(v_uv * 2.0 - 1.0, -1.0, 1.0);
+    vec2 q = (v_uv - u_view.xy) / u_view.zw;
+    vec4 a = u_inv_view_proj * vec4(q * 2.0 - 1.0, -1.0, 1.0);
     vec3 v = normalize(a.xyz / a.w - u_cam);
     float vz = max(dot(v, u_fwd), 1e-4);
     bool sky = d >= 1.0;
@@ -423,7 +432,7 @@ static const char VF_GLSL_APPLY[] = S(
     float dist = sky ? 1e30 : -((u_pz.y - z * u_pz.w) / (z * u_pz.z - u_pz.x));
     /* a slice nearer than the depth: the cell that holds a surface also holds air behind it (lit outside a wall) */
     float c = max(u_grid.x * pow(clamp(dist / u_grid.y, 1e-10, 1.0), u_grid.z) - 1.0, 0.0);
-    vec4 vol = vf_smooth_volume(vec3(v_uv, (c - 0.5) / u_grid.x));
+    vec4 vol = vf_smooth_volume(vec3(q, (c - 0.5) / u_grid.x));
     float k = clamp(c, 0.0, 1.0);
     vec3 rgb = vol.rgb * k;
     float tr = mix(1.0, vol.a, k);
@@ -490,7 +499,7 @@ const char CW__VF_WGSL_COMMON[] =
 static const char VF_WGSL_APPLY[] =
     S(struct U {
         u_inv_view_proj: mat4x4f, u_cam: vec3f, u_fwd: vec3f, u_pz: vec4f, u_grid: vec4f, u_fog: vec4f, u_dist: vec4f,
-        u_color: vec3f, u_sun_dir: vec3f, u_sun_color: vec3f, u_g: f32
+        u_color: vec3f, u_sun_dir: vec3f, u_sun_color: vec3f, u_g: f32, u_view: vec4f
       };
       @group(0) @binding(0) var<uniform> u: U;
       @group(0) @binding(1) var u_depth: texture_2d<f32>;
@@ -520,13 +529,14 @@ static const char VF_WGSL_APPLY[] =
       }
       @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
         let zl = cw_load(u_depth, uv).r;
-        let a = u.u_inv_view_proj * vec4f(uv * 2.0 - 1.0, -1.0, 1.0);
+        let q = (uv - u.u_view.xy) / u.u_view.zw;
+        let a = u.u_inv_view_proj * vec4f(q * 2.0 - 1.0, -1.0, 1.0);
         let v = normalize(a.xyz / a.w - u.u_cam);
         let vz = max(dot(v, u.u_fwd), 1e-4);
         let sky = zl > 1e30;
         let dist = select(zl, 1e30, sky);
         let c = max(u.u_grid.x * pow(clamp(dist / u.u_grid.y, 1e-10, 1.0), u.u_grid.z) - 1.0, 0.0);
-        let vol = vf_smooth_volume(vec3f(uv, (c - 0.5) / u.u_grid.x));
+        let vol = vf_smooth_volume(vec3f(q, (c - 0.5) / u.u_grid.x));
         let k = clamp(c, 0.0, 1.0);
         var rgb = vol.rgb * k;
         var tr = mix(1.0, vol.a, k);
@@ -862,7 +872,9 @@ static void vf_build_exec(cw_pass_ctx *ctx, void *user) {
   const vf_preset *pr = &PRESETS[q];
   float share = view_share(ctx);
   int gw = CW_MAX(32, (int)lroundf((float)pr->gw * share));
-  int gh = CW_MAX(1, (int)lroundf((float)gw * (float)ctx->height / (float)CW_MAX(ctx->width, 1)));
+  /* (the view's own shape: a one-pass split screen's is its rectangle in the shared target) */
+  int vw_ = ctx->view_count > 0 ? ctx->view_rect[2] : ctx->width, vh_ = ctx->view_count > 0 ? ctx->view_rect[3] : ctx->height;
+  int gh = CW_MAX(1, (int)lroundf((float)gw * (float)vh_ / (float)CW_MAX(vw_, 1)));
   int gd = pr->d, ts = CW_MAX(256, (int)lroundf((float)pr->tile * share)), atlas = ts * 2;
   float dist = hf ? CW_MAX(hf->volumetric_distance, 1.0f) : 64.0f;
   float spread = hf ? CW_CLAMP(hf->volumetric_detail_spread, 1.0f, 4.0f) : 2.0f;
@@ -1101,6 +1113,9 @@ static void vf_apply_exec(cw_pass_ctx *ctx, void *user) {
   cw_pass_uniform3f(pr, "u_sun_dir", S->apply_sun[0], S->apply_sun[1], S->apply_sun[2]);
   cw_pass_uniform3f(pr, "u_sun_color", S->apply_sun[3], S->apply_sun[4], S->apply_sun[5]);
   cw_pass_uniform1f(pr, "u_g", S->u.medium[3]);
+  float vu[4];
+  cw_pass_view_uv(ctx, vu);
+  cw_pass_uniform4f(pr, "u_view", vu[0], vu[1], vu[2], vu[3]);
   cw_pass_set_blend(CW_PASS_BLEND_PREMUL);
   cw_pass_fullscreen();
   cw_pass_set_blend(CW_PASS_BLEND_NONE);

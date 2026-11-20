@@ -83,6 +83,10 @@ void cw__atlas_free(cw__atlas *a);
 void cw__atlas_update(cw__atlas *a, cw_pass_ctx *ctx, const cw__shadow_req *req, int n, int atlas_size, int budget,
                       bool cache, cw__shadow_out *out);
 t3_texture *cw__atlas_texture(cw__atlas *a);
+/* what a light's tile holds now (false: no tile, or not every face drawn yet), as cw__atlas_update's out */
+bool cw__atlas_lookup(cw__atlas *a, const t3_light *l, cw__shadow_out *out);
+/* changes whenever the tiles are laid out again */
+uint64_t cw__atlas_layout_key(const cw__atlas *a);
 void cw__atlas_get_info(const cw__atlas *a, cw__atlas_info *out);
 
 #endif

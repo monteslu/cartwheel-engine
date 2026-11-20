@@ -15,6 +15,7 @@
 #include "cartwheel/physics3d.h"
 #include "cartwheel/physics_nodes.h"
 #include "cartwheel/pipeline.h"
+#include "render/pipeline_internal.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/quality.h"
 #include "cartwheel/render3d.h"
@@ -880,11 +881,28 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
 
 /* ── the extension's fill hook ──────────────────────────────────────── */
 
+/* view k's camera values into the surface (one-pass split screen) */
+static void wv_put(water3d *d, int k) {
+  const struct water_view *v = &d->wv[k];
+  memcpy(d->cam, v->cam, sizeof d->cam);
+  memcpy(d->grid_off, v->grid_off, sizeof d->grid_off);
+  d->cam_tan2 = v->cam_tan2;
+  memcpy(d->cam_world, v->cam_world, sizeof d->cam_world);
+  d->cam_under = v->cam_under;
+}
+
 static void fill(t3_extension_ctx *c, void *user) {
   (void)user;
   const t3_object *o = t3_extension_object(c);
   water3d *d = o ? o->user_data : NULL;
   if (!d) return;
+  if (d->wv_n > 0) { /* a one-pass split screen: the draw's view's camera (the shadow maps and others: the first view's) */
+    const void *cam = t3_extension_camera(c);
+    int k = 0;
+    for (int i = 1; i < d->wv_n; i++)
+      if (cam == d->wv[i].camera) k = i;
+    wv_put(d, k);
+  }
   float v[4];
   static const char *const wn[4] = { "waterWave0", "waterWave1", "waterWave2", "waterWave3" };
   for (int i = 0; i < 4; i++) {
@@ -990,6 +1008,7 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     wt->bound = ctx->renderer;
   }
   int tri = 0;
+  bool planar_any = false;
   wt->stats.surfaces = 0;
   t3_object_update_matrix_world(ctx->camera, true);
   for (int i = 0; i < wt->nodes.count; i++) {
@@ -1082,8 +1101,27 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     tri += d->triangles;
     wt->stats.surfaces++;
     wt->stats.see_light = d->see_light;
+    /* one-pass split screen: this view's camera values kept for the draws; a planar reflection or refraction is a
+     * render of each view's own, which this frame and the next are drawn view by view for; a surface one view sees
+     * from below and another from above (its material's environment term is the frame's) is too */
+    planar_any |= d->refl_on || d->refr_on;
+    if (ctx->view_count > 0 && ctx->view_index < 4) {
+      int k = ctx->view_index;
+      struct water_view *v = &d->wv[k];
+      v->camera = ctx->camera;
+      memcpy(v->cam, d->cam, sizeof v->cam);
+      memcpy(v->grid_off, d->grid_off, sizeof v->grid_off);
+      v->cam_tan2 = d->cam_tan2;
+      memcpy(v->cam_world, d->cam_world, sizeof v->cam_world);
+      v->cam_under = d->cam_under;
+      d->wv_n = ctx->view_count;
+      if (k > 0 && v->cam_under != d->wv[0].cam_under) cw__pipeline_array_refuse(ctx, "water");
+      if (k == ctx->view_count - 1) wv_put(d, 0); /* (what a draw with no view's camera gets: the first view's) */
+    } else d->wv_n = 0;
   }
   wt->stats.triangles = tri;
+  if (planar_any) cw__pipeline_array_refuse(ctx, "water");
+  cw__pipeline_set_pass_views(ctx->pipeline, "water", planar_any ? CW_PASS_VIEWS_NONE : CW_PASS_VIEWS_EACH);
 }
 
 static void water_fixed(cw_node n, void *data, double dt) {
@@ -1105,7 +1143,7 @@ static void water_enter(cw_node n, void *data) {
   cw_pipeline *p = cw_pipeline_of(t);
   if (!cw_pipeline_has_pass(p, "water"))
     cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "water", .phase = CW_PHASE_SHADOW, .order = 1600,
-                                             .execute = water_exec });
+                                             .execute = water_exec, .views = CW_PASS_VIEWS_EACH });
 }
 
 static void water_exit(cw_node n, void *data) {

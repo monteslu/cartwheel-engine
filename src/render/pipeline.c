@@ -178,8 +178,6 @@ static void cmd_pipeline_test(int argc, const char **argv, cw_reply *r) {
 }
 
 static void cmd_pipeline(int argc, const char **argv, cw_reply *r) {
-  (void)argc;
-  (void)argv;
   gpu_timing = 1;
   cw_tree *t = cw_current_tree();
   cw_pipeline *p = t ? cw_tree_slot(t, "pipeline") : NULL;
@@ -187,6 +185,8 @@ static void cmd_pipeline(int argc, const char **argv, cw_reply *r) {
     cw_reply_error(r, "no pipeline on the current tree (it is made on the first 3D frame)");
     return;
   }
+  /* pipeline views_array 0|1: split screen in one pass or view by view (cw_pipeline_set_views_array; A/B timing) */
+  if (argc >= 3 && !strcmp(argv[1], "views_array")) cw_pipeline_set_views_array(p, atoi(argv[2]) != 0);
   static const char *const phases[] = { "shadow", "prepass", "opaque", "sky", "effects", "post", "overlay", "present" };
   cw_reply_printf(r, "{\"hdr_format\":\"%s\",\"timer_query\":%s,\"max_samples\":%d,\"gpu_ms\":%.4f,\"passes\":[",
                   cw__caps.hdr_format ? cw__caps.hdr_format : "?",
@@ -219,12 +219,13 @@ cw_pipeline *cw_pipeline_of(cw_tree *t) {
   p = cw_calloc(1, sizeof *p, CW_MEM_RENDER);
   p->tree = t;
   settings_default(&p->s);
+  p->views_array = true; /* split screen with a shared post chain: one pass when every per-view pass can */
   cw_tree_set_slot(t, "pipeline", p, pipeline_free);
   cw__pipeline_add_builtin_passes(p);
   static bool cmd_done;
   if (!cmd_done) {
     cmd_done = true;
-    cw_debug_command("pipeline", "pipeline: render passes (phase, ran, GPU ms), HDR format, timer support, missing three.c states", cmd_pipeline);
+    cw_debug_command("pipeline", "pipeline [views_array 0|1]: render passes (phase, ran, GPU ms), HDR format, timer support, missing three.c states; views_array sets split screen in one pass on or off first", cmd_pipeline);
     cw_debug_command("pipeline_test", "pipeline_test gl_msaa_on_webgpu: a test control: puts back a GL call on WebGPU runs that the dual-cart check must catch",
                      cmd_pipeline_test);
   }
@@ -870,6 +871,9 @@ void cw__pipeline_set_pass_views(cw_pipeline *p, const char *name, uint8_t views
   pass_rec *r = find_pass(p, cw_intern(name));
   if (r) r->d.views = views;
 }
+void cw__pipeline_array_refuse(cw_pass_ctx *ctx, const char *why) {
+  if (ctx && ctx->view_count > 0 && ctx->pipeline && !ctx->pipeline->arr_refused) ctx->pipeline->arr_refused = cw_intern(why);
+}
 bool cw_pipeline_views_array_used(cw_pipeline *p, const char **why_not) {
   if (why_not) *why_not = p->arr_used ? NULL : p->arr_why;
   return p->arr_used;
@@ -1351,7 +1355,9 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   bool post_run = mode == RUN_OVERLAY && p->post_src;
   if (post_run) offscreen = true;
   ctx.offscreen = offscreen;
-  plan_fusion(p, s, offscreen, ctx.camera != NULL && !post_run);
+  /* (a view of split screen's shared post chain is not its own: the tonemap pass runs over the laid-out views, so a
+   * height fog fused into it would be drawn by no run) */
+  plan_fusion(p, s, offscreen, ctx.camera != NULL && !post_run && !(p->view_post_split && (mode == RUN_VIEW || mode == RUN_ARRAY)));
 
   /* TAA jitter + camera matrices (offscreen only: the direct path leaves the
    * camera exactly as three.c's own path does) */
@@ -1659,11 +1665,17 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
       default: break;
       }
       if (mode == RUN_ARRAY && r->d.views == CW_PASS_VIEWS_EACH && ph < CW_PHASE_OVERLAY) {
-        for (int k = 0; k < p->arr_n; k++) {
+        for (int k = 0; k < p->arr_n && !p->arr_refused; k++) {
           array_view(&ctx, p, k);
           run_pass(p, r, &ctx);
         }
         array_view_end(&ctx, p);
+        /* a pass found it cannot this frame (cw__pipeline_array_refuse): nothing is drawn yet, the views go one at a
+         * time instead */
+        if (p->arr_refused) {
+          CW_ASSERT(ph == CW_PHASE_SHADOW, "a one-pass split screen is refused only before anything is drawn");
+          return;
+        }
       } else if (mode == RUN_ARRAY && ph < CW_PHASE_OVERLAY) {
         if (r->name == cw_intern("scene") || r->name == cw_intern("depth_prepass")) ctx.camera = &p->arr_cam->base; /* every view in one render */
         run_pass(p, r, &ctx);

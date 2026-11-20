@@ -2045,6 +2045,11 @@
     "note": "the clustered lighting pass in split screen, from the profile trace (lighting_changes LC_STRESS=40: 1600 boxes with a material each, 64 lights a game added, a cascaded sun), GL and WebGPU: with four views the scene index and the material marking run once a frame, and the pass costs under 2.5 times one view. Controls: CW_TEST_LIGHTS_EACH_VIEW=1 (the scene work each view, as before) fails the once-a-frame check; an impossible ratio fails the cost check"
   },
   {
+    "name": "views-array",
+    "script": "tests/views-array.mjs",
+    "note": "split screen in one pass, native GL and WebGPU: samples/split_array (terrain and scatter, the sun disk, height fog, a pond, clustered lamps with a shadow atlas tile, sorted colliding particles, a decal, SSAO, bloom) draws with its views in one target (CW_TEST_VIEWS_ARRAY=1) the picture each view drawn on its own draws (=0), within 0.3% of pixels over 16 levels, at two and four views, at Very Low and with volumetric fog; the one-pass runs ran in one pass (sa.array). The cascaded sun's frame falls back to view by view. At Very Low the height fog is drawn in split screen. Controls: CW_TEST_VIEWS_ARRAY_SHIFT=1 (each view's passes a view over) fails the bound; a Very Low frame without the fog pass differs"
+  },
+  {
     "name": "split-gpu-share",
     "script": "tests/split-gpu-share.mjs",
     "note": "GPU work done once where it was done twice, with the same picture, native GL and WebGPU: viewmodel_demo at 4x MSAA resolves the scene colour once a frame on WebGPU (cw.msaa_resolves 1; the scene pass keeps its samples, the viewmodel pass resolves) and draws the frame two resolves drew, to the bit; the depth prepass (GL and WebGPU) draws the frame drawn without it, to the bit; msaa_hdr in four views times each view's scene pass and the pipeline's steps (views, resolve) in the profiler's GPU lane. Controls: CW_TEST_WGPU_RESOLVE_TWICE=1 resolves twice; CW_TEST_PREPASS_SHIFT=1 (the prepass depth squeezed into 0..0.5) changes the frame; a run without CW_PROFILE_GPU has no GPU lane"
