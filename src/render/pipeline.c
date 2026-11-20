@@ -1517,6 +1517,12 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   const cw_rt *chain = scene; /* POST: the current image */
   for (int ph = 0; ph < CW_PHASE_COUNT; ph++) {
     if (ph <= CW_PHASE_POST && !has_scene && !(post_run && ph == CW_PHASE_POST)) continue;
+    /* WebGPU, one-pass split screen: every view's scene goes to the GPU before the views' effects are recorded, so
+     * the GPU starts on it while the CPU records the rest (the per-view runs submitted each view's run as it ended) */
+    if (wgpu && mode == RUN_ARRAY && ph == CW_PHASE_SKY && !p->arr_refused) {
+      cw__pw_flush();
+      if (ctx.renderer) t3_renderer_wgpu_submit(ctx.renderer);
+    }
     if ((mode == RUN_VIEW || mode == RUN_ARRAY) && ph >= CW_PHASE_OVERLAY) { /* a view draws no overlays: just its picture into its target */
       if (ph == CW_PHASE_OVERLAY && offscreen && last_writer < 0) {
         if (p->view_post_split && (p->view_i >= 0 || mode == RUN_ARRAY) && scene->format == output->format) p->view_pic = scene; /* (no copy) */
