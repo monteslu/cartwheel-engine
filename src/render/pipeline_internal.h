@@ -108,6 +108,10 @@ struct cw_pipeline {
   unsigned bound_fbo; /* the FBO the current pass was handed */
   unsigned bound_depth_tex, bound_depth_rb; /* GL: its depth (a texture, or the multisampled scene's renderbuffer), 0 for none */
   bool taa_reset;     /* drop the TAA history next frame */
+  /* the last frame's velocity target (the velocity pass alternates two), NULL when there is none: TAA tells
+   * a surface the history saw move away (disocclusion) from one it follows */
+  const cw_rt *velocity_prev;
+  uint64_t velocity_frame;
   /* automatic exposure (pipeline_post.c): the state the tonemap pass reads this run (0: none), the frame each view's
    * state was last moved on, and cw_pipeline_exposure_reset */
   unsigned auto_exposure_tex;

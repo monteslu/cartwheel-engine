@@ -410,12 +410,13 @@ WGSL_DECL WGSL_EXP_ADAPT = S(
   });
 
 WGSL_DECL WGSL_TAA = S(
-  struct U { u_size: vec2f, u_feedback: f32, u_fresh: i32 };
+  struct U { u_size: vec2f, u_jit: vec2f, u_motion: vec4f, u_feedback: f32, u_fresh: i32, u_has_prev: i32 };
   @group(0) @binding(0) var<uniform> u: U;
   @group(0) @binding(1) var u_src: texture_2d<f32>;
   @group(0) @binding(2) var u_hist: texture_2d<f32>;
   @group(0) @binding(3) var u_vel: texture_2d<f32>;
   @group(0) @binding(4) var u_depth: texture_2d<f32>;
+  @group(0) @binding(5) var u_vel_prev: texture_2d<f32>;
   fn to_ycocg(c: vec3f) -> vec3f { return vec3f(0.25 * c.r + 0.5 * c.g + 0.25 * c.b, 0.5 * c.r - 0.5 * c.b, -0.25 * c.r + 0.5 * c.g - 0.25 * c.b); }
   fn from_ycocg(c: vec3f) -> vec3f { return vec3f(c.x + c.y - c.z, c.x + c.z, c.x - c.y - c.z); }
   fn H(p: vec2f) -> vec3f { return textureSampleLevel(u_hist, cw_linear, p, 0.0).rgb; }
@@ -436,6 +437,30 @@ WGSL_DECL WGSL_TAA = S(
             H(vec2f(t12.x, t3.y)) * (w12.x * w3.y);
     let ws = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
     return max(r / ws, vec3f(0.0));
+  }
+  fn unjittered(uv: vec2f) -> vec3f {
+    let pos = uv * u.u_size - u.u_jit - 0.5;
+    let b0 = floor(pos);
+    let f = pos - b0;
+    var w: array<vec2f, 4>;
+    w[0] = f * (-0.5 + f * (1.0 - 0.5 * f));
+    w[1] = 1.0 + f * f * (-2.5 + 1.5 * f);
+    w[2] = f * (0.5 + f * (2.0 - 1.5 * f));
+    w[3] = f * f * (-0.5 + 0.5 * f);
+    var acc = vec3f(0.0);
+    var lo = vec3f(1e9);
+    var hi = vec3f(-1e9);
+    let top = vec2i(u.u_size) - 1;
+    for (var j = 0; j < 4; j++) {
+      for (var i = 0; i < 4; i++) {
+        var s = textureLoad(u_src, clamp(vec2i(b0) + vec2i(i - 1, j - 1), vec2i(0), top), 0).rgb;
+        s = s / (1.0 + max(s.r, max(s.g, s.b)));
+        acc += (w[i].x * w[j].y) * s;
+        if (i >= 1 && i <= 2 && j >= 1 && j <= 2) { lo = min(lo, s); hi = max(hi, s); }
+      }
+    }
+    acc = clamp(acc, lo, hi);
+    return acc / max(1.0 - max(acc.r, max(acc.g, acc.b)), 1e-4);
   }
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
     let cur = textureSampleLevel(u_src, cw_linear, uv, 0.0);
@@ -464,10 +489,25 @@ WGSL_DECL WGSL_TAA = S(
         if (d < near_d) { near_d = d; near_uv = q; }
       }
     }
-    let prev = uv - textureSampleLevel(u_vel, cw_linear, near_uv, 0.0).xy;
-    let c0 = to_ycocg(cur.rgb);
+    let vel = textureSampleLevel(u_vel, cw_linear, near_uv, 0.0).xy;
+    let prev = uv - vel;
+    let speed = length(vel * u.u_size);
+    var gone = false;
+    if (u.u_has_prev != 0 && u.u_motion.w > 0.0) {
+      let vq = textureSampleLevel(u_vel_prev, cw_linear, prev, 0.0).xy;
+      gone = length((vel - vq) * u.u_size) > max(0.5, u.u_motion.w * max(speed, length(vq * u.u_size)));
+    }
+    var moving = clamp(speed * u.u_motion.z, 0.0, 1.0);
+    if (u.u_motion.z < 0.0) { moving = 1.0; }
+    var now = cur.rgb;
+    if (moving > 0.0 || gone) {
+      var k = moving;
+      if (gone) { k = 1.0; }
+      now = mix(cur.rgb, unjittered(uv), k);
+    }
+    let c0 = to_ycocg(now);
     var h: vec3f;
-    if (any(prev < vec2f(0.0)) || any(prev > vec2f(1.0))) { h = c0; }
+    if (gone || any(prev < vec2f(0.0)) || any(prev > vec2f(1.0))) { h = c0; }
     else {
       h = to_ycocg(hist_catmull(prev));
       let ctr = 0.5 * (bmax + bmin);
@@ -477,8 +517,11 @@ WGSL_DECL WGSL_TAA = S(
       let m = max(a.x, max(a.y, a.z));
       if (m > 1.0) { h = ctr + v / m; }
     }
-    let wc = (1.0 - u.u_feedback) / (1.0 + c0.x);
-    let wh = u.u_feedback / (1.0 + h.x);
+    var slow = clamp(speed * u.u_motion.x, 0.0, 1.0);
+    if (u.u_motion.x < 0.0) { slow = 1.0; }
+    let fb = mix(u.u_feedback, min(u.u_feedback, u.u_motion.y), slow);
+    let wc = (1.0 - fb) / (1.0 + c0.x);
+    let wh = fb / (1.0 + h.x);
     let r = (c0 * wc + h * wh) / (wc + wh);
     return vec4f(from_ycocg(r), cur.a);
   });

@@ -292,8 +292,13 @@ static const char *VEL_FS = S(
 static void velocity_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
   if (!vel_prog) vel_prog = prog_of("velocity", VEL_FS, NULL, NULL, WGSL_COMMON, WGSL_VEL, NULL);
-  const cw_rt *v = cw_pipeline_rt_persistent(ctx->pipeline, "velocity", ctx->width, ctx->height, CW_RT_RG16F, NULL);
-  if (!v || !vel_prog) return;
+  /* two targets by frame parity: this frame's and the last one's (TAA reads both) */
+  bool odd = (ctx->frame & 1) != 0, fresh = false;
+  const cw_rt *v = cw_pipeline_rt_persistent(ctx->pipeline, odd ? "velocity.b" : "velocity", ctx->width, ctx->height, CW_RT_RG16F, NULL);
+  const cw_rt *vp = cw_pipeline_rt_persistent(ctx->pipeline, odd ? "velocity" : "velocity.b", ctx->width, ctx->height, CW_RT_RG16F, &fresh);
+  if (!v || !vp || !vel_prog) return;
+  ctx->pipeline->velocity_prev = !fresh && ctx->pipeline->velocity_frame + 1 == ctx->frame ? vp : NULL;
+  ctx->pipeline->velocity_frame = ctx->frame;
   cw_pass_bind_target(ctx, v);
   cw_pass_use(vel_prog);
   set_pz(vel_prog, ctx);
@@ -498,14 +503,28 @@ static void ssao_exec(cw_pass_ctx *ctx, void *u) {
  * History reprojected by the velocity target, sampled with a 5-tap
  * Catmull-Rom from where the nearest surface of the 3x3 neighbourhood was, clipped toward the 3x3 neighbourhood's YCoCg variance box;
  * luma-weighted blend (stable HDR highlights). The history alternates
- * between two persistent targets and becomes the chain's image. */
+ * between two persistent targets and becomes the chain's image.
+ *
+ * Things that move: the frame is drawn with a sub-pixel jitter, and where the history is used little that
+ * jitter would be in the picture (a mover would sit up to half a pixel off where it is). So a pixel that moves
+ * takes this frame unjittered: a 4x4 Catmull-Rom of the jittered frame at the pixel's own centre, in a
+ * tonemapped space (c / (1 + max c), so a bright edge does not grow) and held inside its 2x2 neighbours (no
+ * ringing). Its history weight falls with its speed (u_motion.x per pixel, down to u_motion.y): a history
+ * resampled every frame softens what moves, and a turning thing's shading moves on. A pixel whose history
+ * surface left (the last frame's velocity there is not this pixel's: the ground a mover uncovered) drops its
+ * history. Still pixels are as before: the jittered frame into a full-weight history. */
 static unsigned taa_prog;
 static const char *TAA_FS = S(
   uniform sampler2D u_src;
   uniform sampler2D u_hist;
   uniform sampler2D u_vel;
   uniform sampler2D u_depth;
+  uniform sampler2D u_vel_prev;
+  uniform int u_has_prev;
   uniform vec2 u_size;
+  uniform vec2 u_jit;     /* this frame's projection jitter, pixels */
+  uniform vec4 u_motion;  /* x: history weight falloff per pixel of motion, y: its floor, z: unjittered frame per pixel of motion,
+                           * w: disocclusion, the velocity change allowed as a share of the speed */
   uniform float u_feedback;
   uniform int u_fresh;
   out vec4 o;
@@ -528,6 +547,27 @@ static const char *TAA_FS = S(
            + texture(u_hist, vec2(t12.x, t3.y)).rgb * (w12.x * w3.y);
     float ws = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
     return max(r / ws, vec3(0.0));
+  }
+  /* this frame at the pixel's centre without the jitter: the jittered texel t shows what is at t + jitter */
+  vec3 unjittered() {
+    vec2 pos = v_uv * u_size - u_jit - 0.5;
+    vec2 b0 = floor(pos), f = pos - b0;
+    vec2 w[4];
+    w[0] = f * (-0.5 + f * (1.0 - 0.5 * f));
+    w[1] = 1.0 + f * f * (-2.5 + 1.5 * f);
+    w[2] = f * (0.5 + f * (2.0 - 1.5 * f));
+    w[3] = f * f * (-0.5 + 0.5 * f);
+    vec3 acc = vec3(0.0), lo = vec3(1e9), hi = vec3(-1e9);
+    ivec2 top = ivec2(u_size) - 1;
+    for (int j = 0; j < 4; j++)
+      for (int i = 0; i < 4; i++) {
+        vec3 s = texelFetch(u_src, clamp(ivec2(b0) + ivec2(i - 1, j - 1), ivec2(0), top), 0).rgb;
+        s = s / (1.0 + max(s.r, max(s.g, s.b)));
+        acc += (w[i].x * w[j].y) * s;
+        if (i >= 1 && i <= 2 && j >= 1 && j <= 2) { lo = min(lo, s); hi = max(hi, s); }
+      }
+    acc = clamp(acc, lo, hi);
+    return acc / max(1.0 - max(acc.r, max(acc.g, acc.b)), 1e-4);
   }
   void main() {
     vec4 cur = texture(u_src, v_uv);
@@ -552,10 +592,21 @@ static const char *TAA_FS = S(
         float d = texture(u_depth, q).r;
         if (d < near_d) { near_d = d; near_uv = q; }
       }
-    vec2 prev = v_uv - texture(u_vel, near_uv).xy;
-    vec3 c0 = to_ycocg(cur.rgb);
+    vec2 vel = texture(u_vel, near_uv).xy;
+    vec2 prev = v_uv - vel;
+    float speed = length(vel * u_size);
+    /* the history surface left: the last frame's motion where the history is read is not this pixel's */
+    bool gone = false;
+    if (u_has_prev != 0 && u_motion.w > 0.0) {
+      vec2 vq = texture(u_vel_prev, prev).xy;
+      gone = length((vel - vq) * u_size) > max(0.5, u_motion.w * max(speed, length(vq * u_size)));
+    }
+    float moving = u_motion.z < 0.0 ? 1.0 : clamp(speed * u_motion.z, 0.0, 1.0);
+    vec3 now = cur.rgb;
+    if (moving > 0.0 || gone) now = mix(cur.rgb, unjittered(), gone ? 1.0 : moving);
+    vec3 c0 = to_ycocg(now);
     vec3 h;
-    if (any(lessThan(prev, vec2(0.0))) || any(greaterThan(prev, vec2(1.0)))) h = c0;
+    if (gone || any(lessThan(prev, vec2(0.0))) || any(greaterThan(prev, vec2(1.0)))) h = c0;
     else {
       h = to_ycocg(hist_catmull(prev));
       /* clip the history toward the box centre (not a per-axis clamp) */
@@ -565,7 +616,8 @@ static const char *TAA_FS = S(
       float m = max(a.x, max(a.y, a.z));
       if (m > 1.0) h = ctr + v / m;
     }
-    float wc = (1.0 - u_feedback) / (1.0 + c0.x), wh = u_feedback / (1.0 + h.x);
+    float fb = mix(u_feedback, min(u_feedback, u_motion.y), u_motion.x < 0.0 ? 1.0 : clamp(speed * u_motion.x, 0.0, 1.0));
+    float wc = (1.0 - fb) / (1.0 + c0.x), wh = fb / (1.0 + h.x);
     vec3 r = (c0 * wc + h * wh) / (wc + wh);
     o = vec4(from_ycocg(r), cur.a);
   });
@@ -573,6 +625,17 @@ static const char *TAA_FS = S(
 static bool taa_active(const cw_pass_ctx *ctx, void *u) {
   (void)u;
   return ctx->settings->taa;
+}
+
+/* the moving-pixel terms (the TAA comment above), measured by tests/motion-vectors.mjs against a 36-sample picture.
+ * Its controls: CW_TEST_TAA_STILL_ONLY=1 turns them off (TAA as it was before them); CW_TEST_TAA_STILL_ONLY=soft treats
+ * every pixel as moving, still ones too: the unjittered frame and the low history weight (the loss its still-picture
+ * check must catch) */
+static void taa_motion(float m[4]) {
+  m[0] = 1.0f, m[1] = 0.25f, m[2] = 2.0f, m[3] = 0.25f;
+  const char *t = cw_test_env("CW_TEST_TAA_STILL_ONLY");
+  if (t && !strcmp(t, "1")) m[0] = m[2] = m[3] = 0;
+  if (t && !strcmp(t, "soft")) m[0] = m[2] = -1;
 }
 
 static void taa_exec(cw_pass_ctx *ctx, void *u) {
@@ -589,6 +652,9 @@ static void taa_exec(cw_pass_ctx *ctx, void *u) {
   const cw_rt *dst = odd ? a : b, *hist = odd ? b : a;
   bool fresh = fresh_a || fresh_b || ctx->pipeline->taa_reset;
   ctx->pipeline->taa_reset = false;
+  const cw_rt *vprev = ctx->pipeline->velocity_prev;
+  float m[4];
+  taa_motion(m);
   cw_pass_bind_target(ctx, dst);
   cw_pass_use(taa_prog);
   cw_pass_bind_texture(0, ctx->src->tex);
@@ -599,7 +665,12 @@ static void taa_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_uniform1i(taa_prog, "u_vel", 2);
   cw_pass_bind_texture(3, ctx->depth_tex);
   cw_pass_uniform1i(taa_prog, "u_depth", 3);
+  cw_pass_bind_texture(4, vprev ? vprev->tex : ctx->velocity->tex);
+  cw_pass_uniform1i(taa_prog, "u_vel_prev", 4);
+  cw_pass_uniform1i(taa_prog, "u_has_prev", vprev ? 1 : 0);
   cw_pass_uniform2f(taa_prog, "u_size", (float)ctx->width, (float)ctx->height);
+  cw_pass_uniform2f(taa_prog, "u_jit", ctx->jitter[0], ctx->jitter[1]);
+  cw_pass_uniform4f(taa_prog, "u_motion", m[0], m[1], m[2], m[3]);
   cw_pass_uniform1f(taa_prog, "u_feedback", CW_CLAMP(ctx->settings->taa_feedback, 0.0f, 0.98f));
   cw_pass_uniform1i(taa_prog, "u_fresh", fresh ? 1 : 0);
   cw_pass_fullscreen();

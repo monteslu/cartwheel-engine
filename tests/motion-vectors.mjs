@@ -14,8 +14,14 @@
 // movers' motion it must be at most RATIO of the error with the camera's motion alone. The CONTROL is that
 // same check with the "on" run made as "off" (camera motion only in both): it must fail, or the test could
 // not see the motion vectors at all. A wrong vector (the sign turned, the previous pose not the previous
-// one) sends the history somewhere else on the mover and fails the same way. Crops land in
-// out/gate/motion-vectors/.
+// one) sends the history somewhere else on the mover and fails the same way.
+// TAA must also be no worse than no TAA on every mover: the "on" error at most the "plain" one. Its CONTROL is
+// TAA without its moving-pixel terms (CW_TEST_TAA_STILL_ONLY=1: the jittered frame and a full-weight history on
+// movers too, as TAA was before them), which must fail it.
+// Still picture: the yard without the movers under TAA (MV_REF=3) must be as sharp as TAA without the moving-pixel
+// terms: its error against the 36-sample still picture at most STILL_SLACK over that one's, and its mean gradient at
+// least STILL_GRAD of it. Its CONTROL treats every pixel as moving (CW_TEST_TAA_STILL_ONLY=soft: the unjittered
+// frame and the low history weight on still pixels too) and must fail. Crops land in out/gate/motion-vectors/.
 //
 //   node tests/motion-vectors.mjs [--gpus gl,webgpu]
 import { spawn } from 'node:child_process';
@@ -36,7 +42,7 @@ mkdirSync(OUT, { recursive: true });
 const argv = process.argv.slice(2);
 const gi = argv.indexOf('--gpus');
 const GPUS = (gi >= 0 ? argv[gi + 1] : 'gl,webgpu').split(',');
-const SS = 6, W = 640, H = 360, RATIO = 0.8;
+const SS = 6, W = 640, H = 360, RATIO = 0.8, STILL_SLACK = 1.02, STILL_GRAD = 0.98;
 // crops (at 640 x 360) bound each mover's sweep; the mask inside them is the mover's own pixels
 const CASES = [
   { app: 'post_stack', frame: 496, ref: 'POST_MOTION_REF', name: 'bar', crop: { x: 250, y: 5, w: 216, h: 216 } },
@@ -119,14 +125,49 @@ for (const gpu of GPUS) for (const c of CASES) {
   const plain = crop(await run(c, gpu, 'plain', { [c.ref]: '1', CW_RENDER_SCALE: '1' }), CROP);
   const on = crop(await run(c, gpu, 'on', { CW_RENDER_SCALE: '1' }), CROP);
   const off = crop(await run(c, gpu, 'off', { CW_TEST_VELOCITY_OBJECTS: '0', CW_RENDER_SCALE: '1' }), CROP);
-  for (const [n, im] of [['ref', ref], ['plain', plain], ['on', on], ['off', off]]) writePng(join(OUT, `${gpu}-${c.name}-crop-${n}.png`), im.width, im.height, im.data);
-  const eOn = error(on, ref, mask), eOff = error(off, ref, mask), ePlain = error(plain, ref, mask);
+  const old = crop(await run(c, gpu, 'still-only', { CW_TEST_TAA_STILL_ONLY: '1', CW_RENDER_SCALE: '1' }), CROP);
+  for (const [n, im] of [['ref', ref], ['plain', plain], ['on', on], ['off', off], ['still-only', old]]) writePng(join(OUT, `${gpu}-${c.name}-crop-${n}.png`), im.width, im.height, im.data);
+  const eOn = error(on, ref, mask), eOff = error(off, ref, mask), ePlain = error(plain, ref, mask), eOld = error(old, ref, mask);
   const f = (e) => `${e.mae.toFixed(3)} levels, ${(e.gt16 * 100).toFixed(2)}% over 16`;
   console.log(`${tag}: error against the ${SS * SS}-sample reference over the mover (${covered} pixels): its own motion ${f(eOn)}; camera motion only ${f(eOff)}; no TAA ${f(ePlain)}`);
   const check = (e) => e.mae <= RATIO * eOff.mae;
   if (!check(eOn)) { console.log(`FAIL ${tag}: with the mover's motion the error is ${eOn.mae.toFixed(3)}, over ${RATIO} of ${eOff.mae.toFixed(3)}`); fail++; }
   if (check(eOff)) { console.log(`FAIL ${tag}: CONTROL PASSED: camera motion only passes the check`); fail++; }
   else console.log(`ok   ${tag}: ${(eOn.mae / eOff.mae).toFixed(2)} of the camera-only error; the control (camera motion only in both runs) fails`);
+  if (eOn.mae > ePlain.mae) { console.log(`FAIL ${tag}: TAA ${eOn.mae.toFixed(3)} is over no TAA ${ePlain.mae.toFixed(3)}`); fail++; }
+  else console.log(`ok   ${tag}: TAA ${eOn.mae.toFixed(3)} at or under no TAA ${ePlain.mae.toFixed(3)} (${(eOn.mae / ePlain.mae).toFixed(3)})`);
+  if (eOld.mae <= ePlain.mae) { console.log(`FAIL ${tag}: CONTROL PASSED: TAA without its moving-pixel terms (${eOld.mae.toFixed(3)}) is at or under no TAA`); fail++; }
+  else console.log(`ok   ${tag}: the control (TAA without its moving-pixel terms, ${eOld.mae.toFixed(3)}) is over no TAA`);
+}
+
+// the still picture: the yard without movers under TAA, against the 36-sample picture of it
+/** mean absolute difference over the whole frame, and the mean gradient (sharpness) */
+function stillStats(img, ref) {
+  let e = 0, g = 0, n = 0, m = 0;
+  for (let y = 0; y < img.height - 1; y++)
+    for (let x = 0; x < img.width - 1; x++) {
+      const i = (y * img.width + x) * 4;
+      for (let c = 0; c < 3; c++) {
+        e += Math.abs(img.data[i + c] - ref.data[i + c]); n++;
+        g += Math.abs(img.data[i + c] - img.data[i + 4 + c]) + Math.abs(img.data[i + c] - img.data[i + img.width * 4 + c]); m++;
+      }
+    }
+  return { mae: e / n, grad: g / m };
+}
+for (const gpu of GPUS) {
+  const c = CASES.find((k) => k.app === 'motion_vectors');
+  const bare = shots.get(`${c.app}-${gpu}-bare`);
+  if (!bare) throw new Error(`no still reference for ${gpu}`);
+  const now = stillStats(await run(c, gpu, 'still', { MV_REF: '3', CW_RENDER_SCALE: '1' }), bare);
+  const was = stillStats(await run(c, gpu, 'still-old', { MV_REF: '3', CW_TEST_TAA_STILL_ONLY: '1', CW_RENDER_SCALE: '1' }), bare);
+  const soft = stillStats(await run(c, gpu, 'still-soft', { MV_REF: '3', CW_TEST_TAA_STILL_ONLY: 'soft', CW_RENDER_SCALE: '1' }), bare);
+  const sharp = (s) => s.mae <= was.mae * STILL_SLACK && s.grad >= was.grad * STILL_GRAD;
+  const f = (s) => `error ${s.mae.toFixed(3)}, gradient ${s.grad.toFixed(3)}`;
+  console.log(`${gpu} still: TAA ${f(now)}; TAA without the moving-pixel terms ${f(was)}; every pixel taken as moving ${f(soft)}`);
+  if (!sharp(now)) { console.log(`FAIL ${gpu} still: TAA softens the still picture`); fail++; }
+  else console.log(`ok   ${gpu} still: as sharp as before (error within ${STILL_SLACK}x, gradient at least ${STILL_GRAD}x)`);
+  if (sharp(soft)) { console.log(`FAIL ${gpu} still: CONTROL PASSED: every pixel taken as moving passes the sharpness check`); fail++; }
+  else console.log(`ok   ${gpu} still: the control (every pixel taken as moving) fails it`);
 }
 console.log(fail ? `FAIL motion-vectors (${fail})` : 'ok   motion-vectors');
 process.exit(fail ? 1 : 0);
