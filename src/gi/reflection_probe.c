@@ -12,6 +12,7 @@
 #include "cartwheel/render3d.h"
 #include "cartwheel/shading.h"
 #include "gi_internal.h"
+#include "render/lighting_internal.h"
 #include "scene/render3d_internal.h"
 #include "render/pipeline_internal.h"
 #include "render/quality_internal.h"
@@ -152,6 +153,7 @@ static void mask_walk(t3_object *o, uint32_t mask, mask_list *changed) {
 static void capture_begin(gi_tree *g, cw_pass_ctx *ctx, refl_probe *p, mask_list *changed) {
   t3_renderer *r = ctx->renderer;
   t3_renderer_set_shadow_hold(r, true);
+  cw__lighting_capture(ctx->tree, true);
   if (cw_gpu_backend() == CW_GPU_WEBGPU) cw__gi_wgpu_order(), t3_renderer_set_external_encoder(r, 0);
   else t3_renderer_reset_bindings(r);
   if (!g->pmrem) g->pmrem = t3_pmrem_generator_new(r);
@@ -161,6 +163,7 @@ static void capture_end(cw_pass_ctx *ctx, mask_list *changed) {
   for (int i = 0; i < changed->count; i++) changed->data[i].o->layers = changed->data[i].layers, changed->data[i].o->visible = changed->data[i].visible;
   cw_array_free(changed);
   t3_renderer_set_shadow_hold(ctx->renderer, false);
+  cw__lighting_capture(ctx->tree, false);
   if (cw_gpu_backend() != CW_GPU_WEBGPU) t3_renderer_reset_bindings(ctx->renderer);
 }
 /* a finished PMREM becomes the front target (the scene sampled the old one while it was drawn) */

@@ -47,6 +47,53 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   light, a plain spot light. Gate `ies-lights` on GL and WebGPU (native and the cart); its control takes the
   profiles away, and the state and the picture differ. Guide:
   [Real fixtures: IES profiles](docs/guides/rendering-3d.md#real-fixtures-ies-profiles).
+## NEXT (fixes): reflections right under clustered lights and cascades; editor play sees romdev crashes; ONCE probes on WebGPU; meshes batch again after the last probe leaves; a gi control that bites; Box2D snapshot UB
+
+### Fixed
+- **Reflection probes and the probe grid capture rooms lit by clustered lights and cascaded sun shadows as they
+  are (three.c 0.187.18).** A capture's cube faces were shaded with the view's light data: the clustered lights' view
+  space positions and froxel grid, and the sun's view space direction and cascade splits, all of the main camera.
+  Every face got a wrong answer, and a different one on GL and WebGPU (the room's floor reflection under the chrome
+  ball in `gi_room`: a dark disc on one, a light ring on the other, 3.9% of the frame apart). A capture is now lit
+  with its own camera's light data, as r187 lights any render: the clustered lights in the face's view space, all of
+  them in one cluster, and the sun's direction in it with every point in the widest cascade (three.c 0.187.18's
+  `t3_extension_camera` tells the hooks which camera a draw is for). `gi_room` with clustered lights and three
+  cascades (`GI_ONCE`): GL against WebGPU 0.000% captured every other frame and once (forward lighting with the
+  sky: 0.000%), and the reflections' light matches FORWARD lighting's (0.000% GL, 0.001% WebGPU around the ball and
+  the floor); the control, the view's light data in the captures (`CW_TEST_LIGHTING_NO_CAPTURE_MODE=1`), is 3.9% and
+  2.7% apart and 72% off FORWARD's (tests/gi-probe.mjs). Cost: the gi pass on GL 0.62 to 0.63 ms against 0.58 to 0.65
+  ms before (1920 x 1080, 890M, two interleaved rounds, load 9-10), the same within noise; with many lamps a face
+  shades all of them.
+- **three.c 0.187.18** also brings extensions reading an r187 `uniformArray` (a buffer binding no longer drawn
+  silently wrong: refused when nothing fills it, filled by the hook when the extension names its elements), and
+  auto-instanced meshes casting their shadows as one instanced draw (200 boxes: 4 draws a frame instead of 203).
+- **Meshes auto-instance again once the last ReflectionProbe3D and LightProbeGrid3D leave the tree.** The gi shading
+  part stayed on every material it had been put on, and a material carrying it is drawn one mesh at a time, so a
+  level that unloaded its probes kept paying a draw per mesh. The part now comes off every material when the last
+  probe or grid exits (a new one, SSR or SSGI put it back). `gi_probe_check` with `GI_LEAVE=1` adds 24 look-alike
+  boxes and frees the probe: 9 draws after, 20 with the part kept (`CW_TEST_GI_KEEP_PART=1`, the control, which
+  fails), on GL and WebGPU (tests/gi-probe.mjs).
+- **A ReflectionProbe3D captured once (update_mode ONCE) no longer reflects a darker room on WebGPU under clustered
+  lighting and cascaded sun shadows.** Its one capture is drawn in the first frame, with command buffers of its own,
+  while that frame's cascades and clustered shadow atlas were still waiting in the frame's encoder: the capture went
+  to the GPU first and sampled maps not drawn yet. The frame's encoder is now submitted before a probe or probe-grid
+  capture. `gi_room` with `GI_ONCE=1` (clustered, three cascades, no sky): GL against WebGPU 2.70% of pixels over 16
+  levels apart, within the 3.89% of the same scene with the probe captured every other frame; the old ordering
+  (`CW_TEST_GI_NO_FLUSH=1`, the control) 5.19% (tests/gi-probe.mjs).
+- **The forward-cascades check of tests/gi-probe.mjs has a control that fails again.** Its control (the cascaded
+  sun's part keeping gi off) stopped changing anything once the gi part composed with that part, so it passed
+  along with the check. The control is now `CW_TEST_GI_NO_PART=1`, no material gets the gi part: 6 of 6 ball
+  checks wrong and gi.materials 0 on GL and WebGPU, while the check itself passes with 7 materials.
+- **Play in the editor sees a game crash in romdev again.** romdev now reports a cart trap during a debug command
+  after the tool's name (`wasm({op:'command'}): unreachable`), and the editor's romdev client read anything under
+  that prefix as a failed request, so a crashed game looked alive (the editor-play gate failed 7 of 90 checks). The
+  prefix is now taken off and the rest read: a WebAssembly trap's message is a crash in the old wording and the new.
+  tests/remote.mjs runs tests/remote/classify_test.c (11 wordings) and its control, the old rule, which misreads 4;
+  editor-play's romdev leg passes 90 of 90.
+- **Restoring a Box2D world snapshot with no chain shapes, sensors or islands is no longer undefined behaviour**
+  (`patches/box2d/0004`): it zeroed each of those arrays with `memset` even when empty, on a null pointer, which
+  UBSan stops on (unit_net, under the sanitizer build). unit_net passes under ASan and UBSan with the patch (66
+  checks) and stops at `snapshot.c:713` without it.
 
 ## v0.51.0 (2026-11-19)
 ## NEXT (post stack): star glints on bright points

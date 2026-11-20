@@ -18,7 +18,9 @@
  * three cascades and no sky: that one capture must see the room lit as GL's
  * does, cascades and atlas drawn (tests/gi-probe.mjs, GL against WebGPU).
  * GI_ONCE=every: the same lighting with RoomProbe left captured every other
- * frame (the bound the ONCE comparison is held to).
+ * frame. GI_ONCE=forward: the same with FORWARD lighting (the lamp three.c's
+ * own light, the sun still in cascades), the reference a capture's lighting
+ * is compared with.
  *
  * Debug state: gi.tick, gi.probes, gi.captures (since the start), gi.bound
  * (the most probes one draw had bound last frame), gi.materials (materials
@@ -91,11 +93,11 @@ static void render(void *u, double alpha) {
   if (!once_set) { /* (before the first capture: the tick-2 switches come too late for it, so getenv, natively) */
     once_set = true;
     const char *e = getenv("GI_ONCE");
-    if (e && (!strcmp(e, "1") || !strcmp(e, "every"))) {
+    if (e && (!strcmp(e, "1") || !strcmp(e, "every") || !strcmp(e, "forward"))) {
       if (!strcmp(e, "1")) cw_node_set(node("Room/RoomProbe"), "update_mode", cw_val_enum("ONCE"));
       cw_node ls = cw_node_new("LightingSettings", "Lighting");
       cw_node_add_child(node("Room"), ls);
-      cw_node_set(ls, "mode", cw_val_enum("CLUSTERED"));
+      cw_node_set(ls, "mode", cw_val_enum(strcmp(e, "forward") ? "CLUSTERED" : "FORWARD"));
       /* the sun's light through three cascades, and no sky (its environment would change and capture the probe again) */
       cw_node_set(node("Room/Sun"), "shadow_cascades", cw_val_int(3));
       cw_node_set(node("Room/Sun"), "shadow_distance", cw_val_float(30));

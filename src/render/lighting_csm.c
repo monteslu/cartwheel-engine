@@ -39,6 +39,7 @@ struct cw__csm {
   float ranges[8];
   float near, far;
   float dir[4], color[4], bias[4];
+  float wdir[3]; /* the direction to the sun in world space (a capture's camera turns it into its view space) */
   uint64_t key[4];
   bool valid[4];
   int rendered;
@@ -391,6 +392,10 @@ bool cw__csm_update(cw__csm *c, cw_pass_ctx *ctx, t3_light *sun, const cw__csm_c
    * light, view space), colour x intensity, shadow intensity */
   t3_vec3 d = t3_vec3_normalize(t3_vec3_transform_direction(t3_vec3_sub(lp, tp), &ctx->view));
   c->dir[0] = d.x, c->dir[1] = d.y, c->dir[2] = d.z, c->dir[3] = ls ? ls->intensity : 1;
+  {
+    t3_vec3 wd = t3_vec3_normalize(t3_vec3_sub(lp, tp));
+    c->wdir[0] = wd.x, c->wdir[1] = wd.y, c->wdir[2] = wd.z;
+  }
   c->color[0] = sun->color.r * sun->intensity, c->color[1] = sun->color.g * sun->intensity;
   c->color[2] = sun->color.b * sun->intensity, c->color[3] = (float)n;
   float radius = ls ? ls->radius : 1;
@@ -398,16 +403,32 @@ bool cw__csm_update(cw__csm *c, cw_pass_ctx *ctx, t3_light *sun, const cw__csm_c
   return true;
 }
 
-void cw__csm_fill(cw__csm *c, t3_extension_ctx *x) {
+void cw__csm_fill(cw__csm *c, t3_extension_ctx *x, const t3_camera *cam) {
   static const char *const names[4] = { "csmMatrix0", "csmMatrix1", "csmMatrix2", "csmMatrix3" };
   for (int i = 0; i < 4; i++) t3_extension_set_uniform(x, names[i], c->mats[i < c->count ? i : 0], 16);
-  t3_extension_set_uniform(x, "csmDir", c->dir, 4);
   t3_extension_set_uniform(x, "csmColor", c->color, 4);
   t3_extension_set_uniform(x, "csmBias", c->bias, 4);
-  float depth[4] = { c->near, c->far, c->fade ? 1.0f : 0.0f, 0 };
-  t3_extension_set_uniform(x, "csmDepth", depth, 4);
-  t3_extension_set_uniform(x, "csmRanges0", c->ranges, 4);
-  t3_extension_set_uniform(x, "csmRanges1", c->ranges + 4, 4);
+  if (cam) {
+    /* a capture's camera: the sun's direction in its view space; the cascades follow the view's camera, so a capture's
+     * depth says nothing of which one holds a point: every point reads the widest (the last), no fade */
+    t3_vec3 d = t3_vec3_normalize(t3_vec3_transform_direction(t3_v3(c->wdir[0], c->wdir[1], c->wdir[2]), &cam->matrix_world_inverse));
+    float dir[4] = { d.x, d.y, d.z, c->dir[3] };
+    t3_extension_set_uniform(x, "csmDir", dir, 4);
+    float depth[4] = { 0, 1, 0, 0 }, ranges[8];
+    for (int i = 0; i < 4; i++) {
+      bool widest = i == CW_MAX(c->count, 1) - 1;
+      ranges[2 * i] = widest ? -1e30f : 1e30f, ranges[2 * i + 1] = 1e30f;
+    }
+    t3_extension_set_uniform(x, "csmDepth", depth, 4);
+    t3_extension_set_uniform(x, "csmRanges0", ranges, 4);
+    t3_extension_set_uniform(x, "csmRanges1", ranges + 4, 4);
+  } else {
+    t3_extension_set_uniform(x, "csmDir", c->dir, 4);
+    float depth[4] = { c->near, c->far, c->fade ? 1.0f : 0.0f, 0 };
+    t3_extension_set_uniform(x, "csmDepth", depth, 4);
+    t3_extension_set_uniform(x, "csmRanges0", c->ranges, 4);
+    t3_extension_set_uniform(x, "csmRanges1", c->ranges + 4, 4);
+  }
   const t3_object *o = t3_extension_object(x);
   float rec = o && o->receive_shadow ? 1.0f : 0.0f;
   t3_extension_set_uniform(x, "csmReceive", &rec, 1);
