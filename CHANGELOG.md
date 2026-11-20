@@ -4,6 +4,25 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.53.5 (2026-11-20)
+
+### Fixed
+- **GL pass timers report passes that start late in a run.** With no display (SDL's offscreen driver, every test and
+  tool run) or with vsync off, nothing paced the native loop, and the CPU queued frames 100 and more ahead of the GPU
+  on the 890M. A pass's timer queries came back that late, so a pass that ran for fewer frames (`exposure`,
+  `motion_blur` and `dof` in post_stack) never reported a GPU time on GL, while WebGPU did. The native loop now
+  holds the GPU at most two frames behind the CPU (a fence after each swap, as a swap chain does). Native runs with
+  no display now wait for the GPU like a windowed game, so their wall time includes it. Gate `pass-timing` checks
+  dof, exposure and motion_blur on GL and WebGPU a few frames after they start; its control
+  (`CW_TEST_GL_FRAMES_AHEAD=0`, the queue unbounded) leaves exposure untimed.
+- **A version change no longer repacks a cart while its asset pack is being written.** After a version change the
+  `<app>_version` step packs the existing cart again from the app's asset pack, and nothing ordered it after
+  `<app>_pack`: when the same build rebuilt the packs (an engine pin move does), the packer could read an asset
+  while cwpack rewrote it and stop with "file data stream has unexpected number of bytes" (a rebuild then passed).
+  The version step now runs after the pack. New gate `cart-version-order` (in CI's carts job): every app with an
+  asset pack is ordered so in the cart tree's graph, and a repack with still inputs carries the new version; its
+  control, the same repack with an asset rewritten under it, fails with the packer's error.
+
 ## v0.53.4 (2026-11-20)
 
 ### Fixed
