@@ -14,7 +14,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   scene-linear light before the tone curve. Drawn at a quarter of the frame's size (two passes of 7 reads a ray);
   a one-pixel light does not flicker (the bright part is a 4 x 4 box of the frame), and a whole bright wall
   does not wash the frame out (what is over the threshold counts up to twice it). Off on the Very Low and Low
-  presets. A game that drew its own sparkle sprites on highlights can use this instead. Guide:
+  presets; 0.52 to 0.60 ms of GPU time at 1920 x 1080 on a Radeon 890M with four rays. A game that drew its own sparkle sprites on highlights can use this instead. Guide:
   docs/guides/rendering-3d.md, "Glints". Gate `post-glints` on GL and WebGPU. Lens dirt is not in this release.
 
 ## NEXT (post stack): automatic exposure and motion blur
