@@ -4,9 +4,41 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## NEXT (r187): static batches, thousands of different props in a few draws (three.c 0.187.12 BatchedMesh)
+## v0.52.0 (2026-11-20)
 
 ### Added
+
+**Scenes and nodes**
+
+- **SubViewport: render a camera of the scene, or a scene of its own, into a texture, and show it on a mesh, a sprite
+  or a UI control.** Security monitors, mirrors, minimaps, a portal's far side (`camera`: a Camera3D of the same
+  scene, drawn by the whole pipeline after the frame's own picture, the way a later splitscreen view is); character
+  portraits, a 3D model turning in a menu panel, an off-screen 2D canvas (`scene`: a .cwscene instanced into a world
+  of its own, with its own cameras, lights, environment and canvas). `update_mode` is ALWAYS, WHEN_VISIBLE (only
+  while something shows the texture), ONCE or DISABLED; `update_every` spreads the cost, and the Low and Very Low
+  effects presets render every second and third due frame. Scenes name the texture as `"viewport://Name"` in any
+  2D node's or UI control's `texture`, and as `viewport_texture` on a MeshInstance3D (emissive by default, or
+  the colour map with `viewport_slot = COLOR`); C has `cw_subviewport_texture` and `cw_subviewport_t3_texture`.
+  The main picture is what it was without the node. Cost on the 890M at 1080p in `samples/subviewport`: a
+  512 x 288 camera view adds about 0.1 ms of GPU a frame, a 1920 x 1080 one about 1.4 ms (a light scene; the table
+  per preset is in the guide). Guide: rendering-3d, "Rendering to a texture: SubViewport". Gates `subviewport`
+  (five viewports, every mode, GL against WebGPU; its control freezes the monitor and fails) and
+  `unit-subviewport`. Games add the new material states with `tools/programs.mjs` as for any new material.
+- **MultiMeshInstance3D: many instances of one mesh from a buffer the game fills.** A forest, a field of rocks, a
+  swarm: one node, with a MeshInstance3D child as the stamp (a primitive, a mesh resource or a glTF scene of several
+  meshes). Fill it with `cw_multimesh_set_instance_count`, `cw_multimesh_set_transform` / `_set_color` /
+  `_set_custom`, or write `cw_multimesh_transforms` in a loop and `cw_multimesh_touch`; `fill = GRID` fills a
+  grid from the scene file alone. Instances are sorted into `chunk_size` cells, each culled as one draw against
+  the camera and every shadow light; `chunk_size = 0` is one draw rewritten in place for a buffer that changes
+  every tick. They take the scene's lights (forward and clustered), single-map, atlas and cascaded shadows and
+  probes like any mesh. `visible_instance_count`, per-instance colour (`use_colors`), and
+  `cw_multimesh_get_stats` (cells and instances in view, draws, rebuild time). 100000 boxes, 56000 in view, with
+  sun shadows at 1080p on the 890M: about 0.7 ms (GL) and 1.0 ms (WebGPU) of GPU a frame. Guide: rendering-3d,
+  "Many copies of one mesh". Gates `multimesh` (its control draws none of the field and fails) and
+  `unit-multimesh`.
+
+**Rendering**
+
 - **Static batches (three.c 0.187.12, three.js r187's BatchedMesh).** `batch = true` on a `MeshInstance3D` draws the
   mesh through its tree's static batches: every batched mesh that shares a material (and its shadow flags) lives
   in one BatchedMesh, whatever its geometry, and the props in view that follow each other in its buffer are one
@@ -28,28 +60,41 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   off and the state differs. Guide: [Thousands of different props: static batches](docs/guides/rendering-3d.md#thousands-of-different-props-static-batches).
   three.c's BatchedMesh feeds the instance id from a vertex attribute where r187 feeds it per draw, so a run of
   visible instances is one draw on both backends (r187 issues one draw an instance); the picture is r187's.
-
-## v0.52.0 (2026-11-19)
-
-### Added
-- **IES light profiles (three.c 0.187.11, three.js r187's IESSpotLight and IESLoader).** `ies_profile` on a
-  `SpotLight3D` or an `OmniLight3D` names an IES photometric file (`.ies`), and the light takes the fixture's
-  measured shape: rings, hot spots, a street lamp's forward throw, a lantern's bars. The profile is read around the
-  light's own axes (the tilt off its -Z, the twist from its +Y, so turning a lamp turns its light), replaces a spot
-  light's cone and covers the whole sphere on an omni light; shadows, range and decay work as before. `cwpack`
-  takes `.ies` files, checks each one when it packs it and stops with the reason on one it cannot read. Profiles
-  with a single horizontal angle and with a measured range (mirrored to the circle as the file asks) both work.
-  IES lights are drawn by the clustered lights: the scene's profiles sit in one atlas and, while a clustered light
-  has one, lit materials draw with the new `clusteries` part in place of `cluster` (a scene without profiles
-  keeps its programs and its cost). `cw_lighting_stats.ies` counts them. With FORWARD lighting a spot light's
-  profile is three.c's own IESSpotLight; an omni light's needs CLUSTERED (a warning says so).
-  `samples/ies_lights`: a ring downlight with a shadow, a street lamp turning about its axis, a lantern on an omni
-  light, a plain spot light. Gate `ies-lights` on GL and WebGPU (native and the cart); its control takes the
-  profiles away, and the state and the picture differ. Guide:
-  [Real fixtures: IES profiles](docs/guides/rendering-3d.md#real-fixtures-ies-profiles).
-## NEXT (fixes): reflections right under clustered lights and cascades; editor play sees romdev crashes; ONCE probes on WebGPU; meshes batch again after the last probe leaves; a gi control that bites; Box2D snapshot UB
+- **Automatic exposure (eye adaptation).** `PostProcess` `auto_exposure` makes the picture follow what it shows:
+  step out of a cave and it is bright for a moment, then settles; step back in and the dark comes up more slowly.
+  The frame's average log luminance is brought to `auto_exposure_key` (0.18), within `auto_exposure_min_ev` and
+  `auto_exposure_max_ev` stops of the exposure you set (`exposure_ev` stays the compensation), at
+  `auto_exposure_speed_up` toward a brighter picture and `auto_exposure_speed_down` toward a darker one. It
+  always moves by a share of the way, never in a step: over a 30 times jump of the lamps in `samples/post_stack`
+  the mean brightness never moves more than 6% a frame and never turns back, and `tools/flash-check.mjs` passes
+  on GL and WebGPU. The adapted value stays on the GPU and the tonemap pass reads it there, so nothing is read
+  back (no stall) and its clock is the frame clock: a deterministic run adapts the same on every host, and GL
+  and WebGPU agree within 0.01% on every frame's mean. `cw_pipeline_exposure_reset` starts over at a cut. It
+  runs on every graphics preset (a preset must not change how bright the picture is) and costs 0.09 to 0.15 ms
+  of GPU time at 1920 x 1080 on a Radeon 890M. Guide: docs/guides/rendering-3d.md, "Automatic exposure". Gates
+  `post-auto-exposure`, `post-auto-exposure-swell`, `post-auto-exposure-return` and the scripted
+  `auto-exposure` (control: no adaptation must fail).
+- **Motion blur.** `PostProcess` `motion_blur` smears what moved while the shutter was open, from the velocity
+  target, so a fast pan, a spinning wheel, a swung arm and each box of an instanced swarm blur alike
+  (`motion_blur_shutter` 0.5, `motion_blur_samples` 10, `motion_blur_max` 32 pixels at 1080 lines). A moving
+  thing blurs past its outline over what stands still behind it; nothing still is blurred by what moves behind
+  it. The UI and a first person viewmodel stay sharp: under a fast camera turn the viewmodel's pixels are within
+  1 level of the unblurred frame (`tests/viewmodel-blur.mjs`, with a control that smears it). Off on the Very
+  Low and Low presets, 0.6 of the samples on Medium, 1.5 times on Ultra, and off while the player's reduced
+  motion setting is on (`cw_ui_set_reduced_motion`). 0.6 to 0.9 ms of GPU time at 1920 x 1080 on a Radeon 890M
+  with a bar sweeping the frame. Guide: "Motion blur". Gates `post-motion-blur`, `post-motion-blur-reduced`,
+  `viewmodel-blur`.
+- **Glints.** `PostProcess` `glints` gives what is brighter than `glint_threshold` thin star rays, as a camera's
+  star filter does: lamps, sparks, a gem's highlight, sun glitter. `glint_points` (4, 6 or 8 rays),
+  `glint_length`, `glint_rotation`, `glint_intensity`. The rays keep the light's colour and are added in
+  scene-linear light before the tone curve. Drawn at a quarter of the frame's size (two passes of 7 reads a ray);
+  a one-pixel light does not flicker (the bright part is a 4 x 4 box of the frame), and a whole bright wall
+  does not wash the frame out (what is over the threshold counts up to twice it). Off on the Very Low and Low
+  presets; 0.52 to 0.60 ms of GPU time at 1920 x 1080 on a Radeon 890M with four rays. A game that drew its own sparkle sprites on highlights can use this instead. Guide:
+  docs/guides/rendering-3d.md, "Glints". Gate `post-glints` on GL and WebGPU. Lens dirt is not in this release.
 
 ### Fixed
+
 - **Reflection probes and the probe grid capture rooms lit by clustered lights and cascaded sun shadows as they
   are (three.c 0.187.18).** A capture's cube faces were shaded with the view's light data: the clustered lights' view
   space positions and froxel grid, and the sun's view space direction and cascade splits, all of the main camera.
@@ -94,62 +139,18 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   (`patches/box2d/0004`): it zeroed each of those arrays with `memset` even when empty, on a null pointer, which
   UBSan stops on (unit_net, under the sanitizer build). unit_net passes under ASan and UBSan with the patch (66
   checks) and stops at `snapshot.c:713` without it.
-## NEXT (surface-ies): a game's surface under an IES lamp is gated (the clustered lights' IES part composes with it)
 
 ### Changed
-- `tests/custom-surface.mjs` (gate `custom-surface-lighting`) has a fifth lighting setup: the sample's spot lamp
-  shaped by an IES profile (`CS_IES=1`), where every lit material carries the clustered lights' IES part. Surfaces
-  at zero must draw what plain materials draw under it (0.000 % of 1080p pixels on GL and WebGPU), and the profile
-  must change the picture against the lamp without one (0.33 % GL, 0.37 % WebGPU). The sample's table gains the 10
-  states that setup draws.
 
-## v0.51.0 (2026-11-19)
-## NEXT (post stack): star glints on bright points
-
-### Added
-- **Glints.** `PostProcess` `glints` gives what is brighter than `glint_threshold` thin star rays, as a camera's
-  star filter does: lamps, sparks, a gem's highlight, sun glitter. `glint_points` (4, 6 or 8 rays),
-  `glint_length`, `glint_rotation`, `glint_intensity`. The rays keep the light's colour and are added in
-  scene-linear light before the tone curve. Drawn at a quarter of the frame's size (two passes of 7 reads a ray);
-  a one-pixel light does not flicker (the bright part is a 4 x 4 box of the frame), and a whole bright wall
-  does not wash the frame out (what is over the threshold counts up to twice it). Off on the Very Low and Low
-  presets; 0.52 to 0.60 ms of GPU time at 1920 x 1080 on a Radeon 890M with four rays. A game that drew its own sparkle sprites on highlights can use this instead. Guide:
-  docs/guides/rendering-3d.md, "Glints". Gate `post-glints` on GL and WebGPU. Lens dirt is not in this release.
-
-## NEXT (post stack): automatic exposure and motion blur
-
-### Added
-- **Automatic exposure (eye adaptation).** `PostProcess` `auto_exposure` makes the picture follow what it shows:
-  step out of a cave and it is bright for a moment, then settles; step back in and the dark comes up more slowly.
-  The frame's average log luminance is brought to `auto_exposure_key` (0.18), within `auto_exposure_min_ev` and
-  `auto_exposure_max_ev` stops of the exposure you set (`exposure_ev` stays the compensation), at
-  `auto_exposure_speed_up` toward a brighter picture and `auto_exposure_speed_down` toward a darker one. It
-  always moves by a share of the way, never in a step: over a 30 times jump of the lamps in `samples/post_stack`
-  the mean brightness never moves more than 6% a frame and never turns back, and `tools/flash-check.mjs` passes
-  on GL and WebGPU. The adapted value stays on the GPU and the tonemap pass reads it there, so nothing is read
-  back (no stall) and its clock is the frame clock: a deterministic run adapts the same on every host, and GL
-  and WebGPU agree within 0.01% on every frame's mean. `cw_pipeline_exposure_reset` starts over at a cut. It
-  runs on every graphics preset (a preset must not change how bright the picture is) and costs 0.09 to 0.15 ms
-  of GPU time at 1920 x 1080 on a Radeon 890M. Guide: docs/guides/rendering-3d.md, "Automatic exposure". Gates
-  `post-auto-exposure`, `post-auto-exposure-swell`, `post-auto-exposure-return` and the scripted
-  `auto-exposure` (control: no adaptation must fail).
-- **Motion blur.** `PostProcess` `motion_blur` smears what moved while the shutter was open, from the velocity
-  target, so a fast pan, a spinning wheel, a swung arm and each box of an instanced swarm blur alike
-  (`motion_blur_shutter` 0.5, `motion_blur_samples` 10, `motion_blur_max` 32 pixels at 1080 lines). A moving
-  thing blurs past its outline over what stands still behind it; nothing still is blurred by what moves behind
-  it. The UI and a first person viewmodel stay sharp: under a fast camera turn the viewmodel's pixels are within
-  1 level of the unblurred frame (`tests/viewmodel-blur.mjs`, with a control that smears it). Off on the Very
-  Low and Low presets, 0.6 of the samples on Medium, 1.5 times on Ultra, and off while the player's reduced
-  motion setting is on (`cw_ui_set_reduced_motion`). 0.6 to 0.9 ms of GPU time at 1920 x 1080 on a Radeon 890M
-  with a bar sweeping the frame. Guide: "Motion blur". Gates `post-motion-blur`, `post-motion-blur-reduced`,
-  `viewmodel-blur`.
-
-### Changed
+- **three.c 0.187.18** (was 0.187.11): three.js r187's BatchedMesh (0.187.12), uniform arrays for extensions
+  (0.187.13 to 0.187.15), ArrayCamera and a second renderer in one process drawing lit materials right (0.187.16),
+  auto-instanced meshes casting their shadows as one instanced draw (0.187.17), and `t3_extension_camera` (0.187.18).
+  Every program table is regenerated against it.
 - The tonemap programs take their exposure as `u_tm_exposure` times the automatic exposure's state (a texture
   of zero stops when it is off): the same picture as before with automatic exposure off (`tests/post-fusion.mjs`
   and `tests/quality-verylow-post.mjs` pass unchanged).
 
-## NEXT (post stack): moving things carry their own motion vectors, so TAA no longer smears them
+## v0.51.0 (2026-11-19)
 
 ### Added
 
@@ -466,71 +467,6 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - AnimationTree: a tree that walks and layers a one-shot over it on a 22-bone character takes 5.7 to 10.9 us per
   character per tick natively on the 890M laptop (a hundred characters: 0.6 to 1.1 ms; the machine was under heavy
   load from other work).
-## NEXT (fixes): meshes batch again after the last probe leaves; a gi gate control that bites; Box2D snapshot UB
-## NEXT (fixes): ONCE probes on WebGPU; meshes batch again after the last probe leaves; a gi control that bites; Box2D snapshot UB
-## NEXT (fixes): editor play sees romdev crashes; ONCE probes on WebGPU; meshes batch again after the last probe leaves; a gi control that bites; Box2D snapshot UB
-
-### Fixed
-- **Meshes auto-instance again once the last ReflectionProbe3D and LightProbeGrid3D leave the tree.** The gi shading
-  part stayed on every material it had been put on, and a material carrying it is drawn one mesh at a time, so a
-  level that unloaded its probes kept paying a draw per mesh. The part now comes off every material when the last
-  probe or grid exits (a new one, SSR or SSGI put it back). `gi_probe_check` with `GI_LEAVE=1` adds 24 look-alike
-  boxes and frees the probe: 9 draws after, 20 with the part kept (`CW_TEST_GI_KEEP_PART=1`, the control, which
-  fails), on GL and WebGPU (tests/gi-probe.mjs).
-- **A ReflectionProbe3D captured once (update_mode ONCE) no longer reflects a darker room on WebGPU under clustered
-  lighting and cascaded sun shadows.** Its one capture is drawn in the first frame, with command buffers of its own,
-  while that frame's cascades and clustered shadow atlas were still waiting in the frame's encoder: the capture went
-  to the GPU first and sampled maps not drawn yet. The frame's encoder is now submitted before a probe or probe-grid
-  capture. `gi_room` with `GI_ONCE=1` (clustered, three cascades, no sky): GL against WebGPU 2.70% of pixels over 16
-  levels apart, within the 3.89% of the same scene with the probe captured every other frame; the old ordering
-  (`CW_TEST_GI_NO_FLUSH=1`, the control) 5.19% (tests/gi-probe.mjs).
-- **The forward-cascades check of tests/gi-probe.mjs has a control that fails again.** Its control (the cascaded
-  sun's part keeping gi off) stopped changing anything once the gi part composed with that part, so it passed
-  along with the check. The control is now `CW_TEST_GI_NO_PART=1`, no material gets the gi part: 6 of 6 ball
-  checks wrong and gi.materials 0 on GL and WebGPU, while the check itself passes with 7 materials.
-- **Play in the editor sees a game crash in romdev again.** romdev now reports a cart trap during a debug command
-  after the tool's name (`wasm({op:'command'}): unreachable`), and the editor's romdev client read anything under
-  that prefix as a failed request, so a crashed game looked alive (the editor-play gate failed 7 of 90 checks). The
-  prefix is now taken off and the rest read: a WebAssembly trap's message is a crash in the old wording and the new.
-  tests/remote.mjs runs tests/remote/classify_test.c (11 wordings) and its control, the old rule, which misreads 4;
-  editor-play's romdev leg passes 90 of 90.
-- **Restoring a Box2D world snapshot with no chain shapes, sensors or islands is no longer undefined behaviour**
-  (`patches/box2d/0004`): it zeroed each of those arrays with `memset` even when empty, on a null pointer, which
-  UBSan stops on (unit_net, under the sanitizer build). unit_net passes under ASan and UBSan with the patch (66
-  checks) and stops at `snapshot.c:713` without it.
-## NEXT (render-skeleton): SubViewport, a node that renders into a texture
-
-### Added
-- **SubViewport: render a camera of the scene, or a scene of its own, into a texture, and show it on a mesh, a sprite
-  or a UI control.** Security monitors, mirrors, minimaps, a portal's far side (`camera`: a Camera3D of the same
-  scene, drawn by the whole pipeline after the frame's own picture, the way a later splitscreen view is); character
-  portraits, a 3D model turning in a menu panel, an off-screen 2D canvas (`scene`: a .cwscene instanced into a world
-  of its own, with its own cameras, lights, environment and canvas). `update_mode` is ALWAYS, WHEN_VISIBLE (only
-  while something shows the texture), ONCE or DISABLED; `update_every` spreads the cost, and the Low and Very Low
-  effects presets render every second and third due frame. Scenes name the texture as `"viewport://Name"` in any
-  2D node's or UI control's `texture`, and as `viewport_texture` on a MeshInstance3D (emissive by default, or
-  the colour map with `viewport_slot = COLOR`); C has `cw_subviewport_texture` and `cw_subviewport_t3_texture`.
-  The main picture is what it was without the node. Cost on the 890M at 1080p in `samples/subviewport`: a
-  512 x 288 camera view adds about 0.1 ms of GPU a frame, a 1920 x 1080 one about 1.4 ms (a light scene; the table
-  per preset is in the guide). Guide: rendering-3d, "Rendering to a texture: SubViewport". Gates `subviewport`
-  (five viewports, every mode, GL against WebGPU; its control freezes the monitor and fails) and
-  `unit-subviewport`. Games add the new material states with `tools/programs.mjs` as for any new material.
-
-## NEXT (render-skeleton): MultiMeshInstance3D, many instances from a buffer
-
-### Added
-- **MultiMeshInstance3D: many instances of one mesh from a buffer the game fills.** A forest, a field of rocks, a
-  swarm: one node, with a MeshInstance3D child as the stamp (a primitive, a mesh resource or a glTF scene of several
-  meshes). Fill it with `cw_multimesh_set_instance_count`, `cw_multimesh_set_transform` / `_set_color` /
-  `_set_custom`, or write `cw_multimesh_transforms` in a loop and `cw_multimesh_touch`; `fill = GRID` fills a
-  grid from the scene file alone. Instances are sorted into `chunk_size` cells, each culled as one draw against
-  the camera and every shadow light; `chunk_size = 0` is one draw rewritten in place for a buffer that changes
-  every tick. They take the scene's lights (forward and clustered), single-map, atlas and cascaded shadows and
-  probes like any mesh. `visible_instance_count`, per-instance colour (`use_colors`), and
-  `cw_multimesh_get_stats` (cells and instances in view, draws, rebuild time). 100000 boxes, 56000 in view, with
-  sun shadows at 1080p on the 890M: about 0.7 ms (GL) and 1.0 ms (WebGPU) of GPU a frame. Guide: rendering-3d,
-  "Many copies of one mesh". Gates `multimesh` (its control draws none of the field and fails) and
-  `unit-multimesh`.
 
 ## v0.50.4 (2026-11-18)
 

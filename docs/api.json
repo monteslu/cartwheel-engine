@@ -14734,6 +14734,68 @@
    "macros": []
   },
   {
+   "header": "cartwheel/subviewport.h",
+   "summary": "cartwheel SubViewport: a node that renders a picture into a texture, and\nthe ways to show that texture: on a 3D material, on a Sprite2D or any other\n2D node, and on a UI control (TextureRect, NinePatchRect).\n\nWHAT IT RENDERS. One of two things:\n\n  A camera of this world (`camera` = a node path to a Camera3D of the\n  same tree): a security monitor, a rear-view mirror, a minimap from\n  above, a portal's far side. The whole render pipeline draws the view\n  (lights and shadows, sky, fog, particles, decals, the post chain and\n  tone mapping), without the 2D canvas and the HUD.\n\n  A world of its own (`scene` = a .cwscene asset): a character portrait,\n  a 3D model turning inside a menu panel, a 2D canvas drawn off screen.\n  The scene is instanced into a tree the SubViewport owns, with its own\n  three.c scene, cameras, lights, WorldEnvironment, PostProcess and 2D\n  canvas; nothing in it shows in the main picture and no light crosses.\n  It ticks with the main tree. cw_subviewport_tree gives the tree and\n  cw_subviewport_root the instanced scene's root, so game code can turn\n  the model or swap it; node paths do not cross between the two trees.\n\nWHEN. `update_mode`: ALWAYS (each frame), WHEN_VISIBLE (each frame\nsomething showed the texture: a 2D node or control drew it, or a mesh that\nwears it was inside a camera's view), ONCE (one render, then it holds the\npicture; cw_subviewport_request_update asks for another), DISABLED.\n`update_every` spreads the cost: 2 renders every other frame. On the Low\nand Very Low effects presets (cartwheel/quality.h) ALWAYS and WHEN_VISIBLE\nviewports render every second and every third due frame.\n\nTIMING. A world of its own is rendered just before the frame that shows\nit. A camera of this world is rendered right after the frame's own\npicture, reusing that frame's shadow maps, light clusters and probe\ncaptures as a splitscreen view does, so the texture shows the previous\nframe's view (16 ms late: fine for a monitor or a minimap; a portal seen\nwhile the camera turns fast lags by that frame). The main picture is\nexactly what it would be without the SubViewport, apart from the surfaces\nthat show the texture.\n\nTHE TEXTURE. RGBA8, the size of `size`, display colours (tone mapped,\nsRGB), opaque. Ways to use it:\n  scene files  any `texture` property of a 2D node or UI control takes\n               \"viewport://Name\" (Name is the SubViewport's `texture_name`,\n               or its node name when that is empty; names are global);\n               a MeshInstance3D takes it in `viewport_texture`, as its\n               emissive map by default (a screen that glows by itself) or\n               as its colour map (`viewport_slot = COLOR`: lit by the\n               scene's lights like paint)\n  C, 2D / UI   cw_subviewport_texture: a cw_texture for cw_r2d_sprite,\n               cw_ui_draw_texture, cw_texture_rect_set_texture\n  C, 3D        cw_subviewport_t3_texture: a three.c texture for any\n               material map (t3_material_set_texture)\n2D and UI draw the render target itself. A 3D material samples a copy\ndecoded to linear light (half float where the host renders it), made after\neach render once a material has asked for the texture: one small\nfull-screen pass.\n\nLIMITS. A camera view runs every pass of the pipeline again at the\nviewport's size. Passes that keep one set of targets per tree for a view's\nsize (water reflections and refractions) re-allocate when the sizes\ndiffer, each frame both draw; keep water out of a camera view's sight or\ngive it its own world. Volumetric fog keeps a grid for up to 3 camera\nviews besides the main one (fewer in splitscreen); a view past that is\ndrawn without it. TAA never runs in a SubViewport. A mesh that wears a\nviewport's texture and is seen by that same viewport's camera shows the\nprevious frame's picture (a monitor in a monitor), which is correct.\n\nCOST. See docs/guides/rendering-3d.md, \"SubViewport\": a camera view costs\nabout what a splitscreen view of its size costs, less the shadow maps; a\nworld of its own costs its own content. Nothing is allocated per frame.\n\nDebug command: `subviewport [<node>]` (size, mode, renders, last CPU ms,\nwhether the texture was shown last frame).",
+   "functions": [
+    {
+     "name": "cw_subviewport_texture",
+     "signature": "cw_texture cw_subviewport_texture(cw_node viewport)",
+     "doc": "The picture as a 2D texture (a render target: draw it as a sprite or a UI\nimage, the right way up). Asking counts as showing it (WHEN_VISIBLE).\nNull handle for a node that is not a SubViewport or before the GPU exists.\nOwned by the node; a new handle after `size` changes.",
+     "inline": false
+    },
+    {
+     "name": "cw_subviewport_t3_texture",
+     "signature": "t3_texture *cw_subviewport_t3_texture(cw_node viewport)",
+     "doc": "The picture as a three.c texture for a material map (linear light, as\nthree.c's materials expect of a colour or emissive map). Borrowed: the\nnode owns it, and it stays the same object when `size` changes. NULL as\nabove.",
+     "inline": false
+    },
+    {
+     "name": "cw_subviewport_tree",
+     "signature": "cw_tree *cw_subviewport_tree(cw_node viewport)",
+     "doc": "The viewport's own tree (`scene` set, or made on this call so code can\nbuild the world itself: add nodes under cw_tree_root of it). NULL for a\nnode that is not a SubViewport. Owned by the node.",
+     "inline": false
+    },
+    {
+     "name": "cw_subviewport_root",
+     "signature": "cw_node cw_subviewport_root(cw_node viewport)",
+     "doc": "The root of the instanced `scene` in that tree (null handle when none).",
+     "inline": false
+    },
+    {
+     "name": "cw_subviewport_request_update",
+     "signature": "void cw_subviewport_request_update(cw_node viewport)",
+     "doc": "Render once more at the next frame, whatever the mode but DISABLED: the\nway to refresh a ONCE viewport after its content changed.",
+     "inline": false
+    },
+    {
+     "name": "cw_subviewport_renders",
+     "signature": "int cw_subviewport_renders(cw_node viewport)",
+     "doc": "Renders so far (0 for a node that is not a SubViewport).",
+     "inline": false
+    },
+    {
+     "name": "cw_subviewport_last_cpu_ms",
+     "signature": "float cw_subviewport_last_cpu_ms(cw_node viewport)",
+     "doc": "CPU milliseconds the last render took to issue (the pipeline run for a\nworld of its own, the extra view for a camera; a profiling figure from the\nhost clock: never feed it into game state).",
+     "inline": false
+    },
+    {
+     "name": "cw_subviewport_find",
+     "signature": "cw_node cw_subviewport_find(const char *ref)",
+     "doc": "The SubViewport a \"viewport://Name\" reference (or a bare name) names, or a\nnull handle. O(viewports).",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_subviewport_update",
+     "doc": "SubViewport properties:\n  size (vec2, 512 x 512)       the texture's size in pixels (1 to 4096)\n  update_mode (enum, ALWAYS)   DISABLED, ONCE, ALWAYS, WHEN_VISIBLE\n  update_every (int, 1)        frames between renders (ALWAYS, WHEN_VISIBLE)\n  camera (string)              node path to a Camera3D of this tree\n  scene (string)               a .cwscene asset: a world of its own (wins over camera)\n  texture_name (string)        the name in \"viewport://Name\"; empty: the node's name\n  renders (int, read-only)     renders so far\nSignal: rendered (after each render).",
+     "decl": "typedef enum {\n  CW_SUBVIEWPORT_DISABLED, CW_SUBVIEWPORT_ONCE, CW_SUBVIEWPORT_ALWAYS, CW_SUBVIEWPORT_WHEN_VISIBLE\n} cw_subviewport_update;"
+    }
+   ],
+   "macros": []
+  },
+  {
    "header": "cartwheel/surface.h",
    "summary": "cartwheel/surface.h: a surface of the game's own that keeps the engine's\nlighting.\n\nA game writes how one kind of surface looks (a dissolve, triplanar rock,\ngrass that sways, a force field, lava) as r187 TSL in a module of its own,\nshaders/<name>.mjs: the module names its parameters and returns the\nsurface's inputs (colour, normal, roughness, metalness, emissive, opacity,\na cut-out mask, vertex positions) and, if it wants, a last word on the lit\ncolour. Everything that lights a surface stays the engine's: three.c's\nlights and shadows, the clustered lamps, the sun's cascades, reflection\nprobes and the light probe grid, screen-space reflections, fog, decals.\nA material with a surface is shaded by all of them exactly as a plain\nMeshStandardMaterial is; with its effect at zero it draws the same pixels.\n\n  // once, at start (before or after the scene exists)\n  static const cw_surface_param dissolve_params[] = {\n    { \"amount\", CW_SURFACE_FLOAT },\n    { \"edge\", CW_SURFACE_VEC4, .value = { 6, 1.6f, 0.2f, 0.06f } },\n  };\n  cw_surface_register(&(cw_surface_desc){ .name = \"dissolve\", .params = dissolve_params, .param_count = 2,\n                                          .node_type = \"DissolveSurface3D\" });\n  // on a material\n  cw_surface_apply(material, \"dissolve\");\n  cw_surface_set_float(material, \"dissolve\", \"amount\", 0.4f);\n\nThe module's parameter list and this one must agree in names and types\n(docs/guides/rendering-3d.md, \"Writing your own surface\", has both sides\nand two worked examples). A surface is a shading part (cartwheel/shading.h)\nwith the trait CW_PART_SURFACE: a material's program is the composed state\n(standard+l0001+xcluster_csm_dissolve_gi), captured offline into the app's\nprogram table by tools/programs.mjs like any other state. Name the module in\nthe table's manifest (\"# extend: ../shaders/dissolve.mjs\").\n\nValues. Each parameter has the registered default, a value for every\nmaterial of the surface (cw_surface_set_global: time, wind), and a value\nper material (cw_surface_set...), which wins. Setting one is a memory\nwrite; the values travel with each draw. A texture may be replaced at any\ntime, and its pixels changed in place (write t->pixels, then t->version++).\n\nNodes. With `node_type`, the surface is also a node type whose properties\nare the parameters: put one under a MeshInstance3D (or any Node3D) in a\nscene file and that node's meshes get the surface on materials of their\nown, driven by the node's properties, which an AnimationPlayer can key\nlike any other.\n\nDraws. Meshes that share geometry and a material with a surface are one\ninstanced draw when every part on the material allows it: a surface does;\nthe clustered lights' and cascades' parts do when LightingSettings.batching\nis on; the gi part (a scene with probes) never does, since each mesh picks\nits own probes.",
    "functions": [
