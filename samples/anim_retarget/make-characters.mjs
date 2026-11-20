@@ -9,7 +9,7 @@
 //                 clips "Walk" (a 1 s cycle, in place) and "Punch" (0.9 s)
 //   runner.glb    1.86 m, long legs, narrow; Mixamo names (mixamorig:LeftUpLeg), T-pose, bones along +Y
 //   gymnast.glb   1.58 m, compact, short shins; VRM names (leftUpperLeg), A-pose, bones unrotated
-//   lifter.glb    1.78 m, broad shoulders over a narrow waist, thick limbs, short legs; Unreal names (thigh_l), A-pose, bones along +X
+//   lifter.glb    1.78 m, broad shoulders over a narrow waist, muscular arms, short legs; Unreal names (thigh_l), A-pose, bones along +X
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -137,7 +137,7 @@ function build(ch) {
     bone(k('lowerArm'), k('upperArm'), n(N.lowerArm), rotZ(el0, sh, ang));
     bone(k('hand'), k('lowerArm'), n(N.hand), rotZ(wr0, sh, ang));
     J[k('handTip')] = rotZ(tip0, sh, ang);
-    const hx = sx * ch.hipW * H * 0.5 + sx * 0.035 * H;
+    const hx = sx * ch.hipW * H * 0.5 + sx * 0.008 * H; // hip joints under the pelvis: an athletic stance, not a wide one
     const ankleY = 0.048 * H, kneeY = ankleY + (hipY - ankleY) * ch.knee;
     bone(k('upperLeg'), 'hips', n(N.upperLeg), [hx, hipY, 0]);
     bone(k('lowerLeg'), k('upperLeg'), n(N.lowerLeg), [hx, kneeY, 0.006 * H]);
@@ -167,7 +167,7 @@ function build(ch) {
   const torsoRing = (y) => {
     const t = (y - y0) / (shY + 0.012 * H - y0);
     // widths: hips, waist, chest, shoulders
-    const hipsRx = (ch.hipW * 0.5 + 0.062 * Math.sqrt(B)) * H, waistRx = 0.072 * H * Math.pow(B, 0.3), chestRx = ch.shoulderW * H * 0.5 * 0.86, topRx = ch.shoulderW * H * 0.5 * 0.7;
+    const hipsRx = (ch.hipW * 0.5 + 0.04 * Math.sqrt(B)) * H, waistRx = 0.08 * H * Math.pow(B, 0.3), chestRx = ch.shoulderW * H * 0.5 * 0.86, topRx = ch.shoulderW * H * 0.5 * 0.7;
     const rx = t < 0.2 ? lerp(hipsRx * 0.9, hipsRx, smooth(0, 0.2, t)) : t < 0.42 ? lerp(hipsRx, waistRx, smooth(0.2, 0.42, t))
       : t < 0.8 ? lerp(waistRx, chestRx, smooth(0.42, 0.8, t)) : lerp(chestRx, topRx, smooth(0.8, 1, t));
     // front to back: a flat waist under a deep chest, whatever the build (a heavy build reads as muscle, not belly)
@@ -229,10 +229,12 @@ function build(ch) {
     const hp = J['upperLeg' + S], kn = J['lowerLeg' + S], an = J['foot' + S];
     const legPt = (t) => {
       const p = t <= 1 ? lerp3(hp, kn, t) : lerp3(kn, an, t - 1);
-      const r = t <= 1 ? lerp(0.058, 0.038, Math.pow(t, 0.9)) + 0.004 * Math.sin(Math.PI * t) : lerp(0.037, 0.024, t - 1) + 0.011 * Math.sin(Math.PI * Math.min(1, (t - 1) * 1.45)) * (1 - (t - 1) * 0.3);
+      const r = t <= 1 ? lerp(0.047, 0.035, Math.pow(t, 0.9)) + 0.005 * Math.sin(Math.PI * t) : lerp(0.037, 0.024, t - 1) + 0.011 * Math.sin(Math.PI * Math.min(1, (t - 1) * 1.45)) * (1 - (t - 1) * 0.3);
       const wk = smooth(0.84, 1.16, t), wa = smooth(1.88, 2.04, t);
       const wh = 1 - smooth(-0.05, 0.22, t); // the top of the thigh follows the pelvis a little
-      return { p, rx: r * H * B * (t < 0.15 ? 0.96 : 1), rz: r * H * B * 1.04,
+      // legs lean: a heavy build is broad shoulders and arms (muscle), its legs only a little thicker
+      const LB = Math.sqrt(B);
+      return { p, rx: r * H * LB * (t < 0.15 ? 0.96 : 1), rz: r * H * LB * 1.04,
         ...jw([['hips', wh * 0.45], ['upperLeg' + S, (1 - wh * 0.45) * (1 - wk)], ['lowerLeg' + S, wk * (1 - wa)], ['foot' + S, wa + 0.0001]]) };
     };
     const lsteps = (a, b, n) => Array.from({ length: n + 1 }, (_, k) => legPt(lerp(a, b, k / n)));
