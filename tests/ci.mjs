@@ -55,6 +55,7 @@ export const LOCAL_ONLY = {
   'froxel-determinism': 'Chromium and wasmcart-native',
   'vis-city-batch': 'Chromium (the leg compares against the native run on one machine)',
   'no-gl-only-carts': 'the built cart tree: it runs in the carts job, after the carts are built',
+  'cart-version-order': 'the cart tree build graph: it runs in the carts job',
   'cart-controls': 'a built cart (plugin_demo.wasc): it runs in the carts job, after the carts are built',
   'showcase-perf': 'GPU timings on romdev, Chromium and wasmcart-native',
   'profile-lighting': 'CPU timings of the lights pass against the test GPU (with software rendering the cascades\' shadow draws are CPU work and swamp the ratio)',

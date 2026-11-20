@@ -4,6 +4,10 @@
 //   too (gpu_ms > 0), so the pipeline's total (gpu_ms, the sum of its passes) leaves none out.
 //   post_stack's full segment (MSAA, TAA, bloom, SSAO, grade and the rest): velocity, taa and tonemap are timed on
 //   WebGPU as on GL.
+//   post_stack's passes that start late in the run (dof from about frame 428, exposure 508, motion_blur 778) are
+//   timed on GL a few frames after they start, as on WebGPU: the native loop holds the GPU at most two frames behind
+//   the CPU (src/platform/native.c), so a timer query's result is read back within the poll after its frame.
+//   CONTROL: CW_TEST_GL_FRAMES_AHEAD=0 (the queue unbounded, as before) leaves exposure untimed 12 frames in on GL.
 //   CONTROL: CW_TEST_TIMING_SPLIT=1 (every draw its own render pass and timestamp pair, as the timers once did) runs
 //   the frame out of timestamps in fx_pipeline's scene pass and must leave later passes untimed.
 // Holds the GPU suite lock. Run: node tests/pass-timing.mjs
@@ -51,5 +55,12 @@ for (const n of ['velocity', 'taa', 'tonemap'])
   check(pg.by[n] > 0 && pw.by[n] > 0, `post_stack: ${n} is timed on GL (${(pg.by[n] ?? 0).toFixed(3)} ms) and on WebGPU (${(pw.by[n] ?? 0).toFixed(3)} ms)`);
 const pmiss = untimed(pg, pw);
 check(pmiss.length === 0, `post_stack: every pass GL times is timed on WebGPU${pmiss.length ? ` (untimed: ${pmiss.join(', ')})` : ''}`);
+// passes that start late: a few frames of each are enough on GL now
+for (const [n, frames] of [['dof', 440], ['exposure', 520], ['motion_blur', 800]]) {
+  const g = stats('post_stack', 'gl', frames, {}, `-late${frames}`), w = stats('post_stack', 'webgpu', frames, {}, `-late${frames}`);
+  check(g.by[n] > 0 && w.by[n] > 0, `post_stack at frame ${frames}: ${n}, started late, is timed on GL (${(g.by[n] ?? -1).toFixed(3)} ms) and on WebGPU (${(w.by[n] ?? -1).toFixed(3)} ms)`);
+}
+const late = stats('post_stack', 'gl', 520, { CW_TEST_GL_FRAMES_AHEAD: '0' }, '-unbounded');
+check(!(late.by.exposure > 0), `CONTROL: with the GL queue unbounded exposure is not timed 12 frames in (${(late.by.exposure ?? -1).toFixed(3)} ms)`);
 console.log(fail ? `pass-timing: ${fail} failures` : 'ok   pass-timing');
 process.exit(fail ? 1 : 0);

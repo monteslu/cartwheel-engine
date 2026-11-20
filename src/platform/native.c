@@ -61,6 +61,8 @@ int stbi_zlib_decode_noheader_buffer(char *obuffer, int olen, const char *ibuffe
 
 #include "stb_image_write.h" /* compiled once, in src/debug/png.c */
 
+static void gl_frame_latency(void); /* GL frames in flight, after a swap (below) */
+
 void cw__profile_thread_name(const char *name); /* debug/profile.c */
 static void audio_cb(void *user, Uint8 *stream, int len) {
   (void)user;
@@ -647,7 +649,10 @@ int cw_native_main(int argc, char **argv, cw_app_desc (*app_fn)(int, char **)) {
     }
     CW_PROFILE_BEGIN("present");
     if (cw_gpu_backend() == CW_GPU_WEBGPU) cw__wgpu_frame_end(true);
-    else SDL_GL_SwapWindow(p->window);
+    else {
+      SDL_GL_SwapWindow(p->window);
+      gl_frame_latency();
+    }
     CW_PROFILE_END();
     cw__perf_mark(CW_PERF_PRESENT);
     /* no spinning where nothing paces the loop: a frozen game (the
@@ -666,6 +671,31 @@ int cw_native_main(int argc, char **argv, cw_app_desc (*app_fn)(int, char **)) {
   cw__shutdown();
   cw_save_commit();
   return 0;
+}
+
+/* ── GL frames in flight ────────────────────────────────────────────────
+ * A swap paces the loop only where something waits on it: on a window with vsync, or a driver that holds a
+ * few frames back. With no display (SDL's offscreen driver, every test and tool run) or a run with vsync off,
+ * nothing does, and the CPU queued frames far ahead of the GPU: 100 and more on the 890M (Mesa), so a GPU
+ * timer read back a hundred frames late, a pass that ran for less than that never reported a time, and every
+ * input reached the screen that late. A fence after each swap holds the GPU at most GL_FRAMES_AHEAD frames
+ * behind, as a swap chain does. CW_TEST_GL_FRAMES_AHEAD=0 (a gate's control) leaves the queue unbounded. */
+#define GL_FRAMES_AHEAD 2
+static GLsync gl_fences[GL_FRAMES_AHEAD];
+static unsigned gl_fence_i;
+static int gl_frames_ahead = -1;
+static void gl_frame_latency(void) {
+  if (gl_frames_ahead < 0) {
+    const char *e = getenv("CW_TEST_GL_FRAMES_AHEAD");
+    gl_frames_ahead = e && atoi(e) == 0 ? 0 : 1;
+  }
+  if (!gl_frames_ahead) return;
+  GLsync *slot = &gl_fences[gl_fence_i++ % GL_FRAMES_AHEAD];
+  if (*slot) {
+    glClientWaitSync(*slot, GL_SYNC_FLUSH_COMMANDS_BIT, 2000000000ull); /* the frame GL_FRAMES_AHEAD back is done */
+    glDeleteSync(*slot);
+  }
+  *slot = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 }
 
 /* ── text input ─────────────────────────────────────────────────────── */

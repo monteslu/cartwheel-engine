@@ -372,6 +372,12 @@ function(cw_add_app name)
               --set "${A_VERSION}" --fallback "${_cwproj_version}" --wasc ${_wasc} --record ${_ver_record}
       BYPRODUCTS ${_ver_file} VERBATIM)
     add_dependencies(${name} ${name}_version)
+    # a version change packs the cart again before the link, from the asset pack: never while cwpack is still
+    # writing that pack (a pin move rebuilds every pack), or the packer reads a file whose size changed under it
+    # ("file data stream has unexpected number of bytes") and the build fails once
+    if(TARGET ${name}_pack)
+      add_dependencies(${name}_version ${name}_pack)
+    endif()
     add_custom_command(TARGET ${name} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/carts
       ${_opt_cmd}
