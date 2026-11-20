@@ -105,6 +105,16 @@ typedef struct lighting {
   bool warned_max;
   float grid_u[4], depth_u[4];
   t3_texture *rec_tex, *item_tex;
+  int n_tex; /* the lights in light_tex (its first columns) */
+  /* capture mode (cw__lighting_capture): a light texture per capture camera, made from light_tex for the version it
+   * had (cap_src, cap_ver); the one record and the item list every capture draw reads */
+  bool capture;
+  struct capv { float view[16]; t3_texture *tex; } *capv;
+  int capv_n, capv_cap;
+  const t3_texture *cap_src;
+  unsigned cap_ver;
+  t3_texture *cap_rec, *cap_items;
+  int cap_items_w;
   /* the cascaded sun: the one its node registered this frame (render3d.c) */
   t3_light *sun_next;
   cw__csm_cfg cfg_next;
@@ -141,6 +151,11 @@ static void lighting_free(void *p) {
   cw_array_free(&L->ix_meshes);
   cw_free(L->vols);
   if (L->light_tex) t3_release(L->light_tex);
+  for (int i = 0; i < L->capv_cap; i++)
+    if (L->capv[i].tex) t3_release(L->capv[i].tex);
+  cw_free(L->capv);
+  if (L->cap_rec) t3_release(L->cap_rec);
+  if (L->cap_items) t3_release(L->cap_items);
   cw_froxel_grid_free(L->grid);
   cw__csm_free(L->csm);
   cw__atlas_free(L->atlas);
@@ -292,8 +307,94 @@ static int mark_one(t3_material *mt, int on) {
 
 /* ── the fill hook ──────────────────────────────────────────────────── */
 
+static bool capture_mode_off(void) {
+  static int off = -1;
+  if (off < 0) { const char *e = getenv("CW_TEST_LIGHTING_NO_CAPTURE_MODE"); off = e && atoi(e); }
+  return off;
+}
+void cw__lighting_capture(cw_tree *t, bool on) {
+  lighting *L = t ? cw_tree_slot(t, "lighting") : NULL;
+  if (L) L->capture = on && !capture_mode_off();
+}
+/* the capture's lights: one record of every light in light_tex (at most 255, a record's count), their items in order */
+static int pow2_at_least(int v);
+static void capture_lists(lighting *L) {
+  int m = CW_MIN(L->n_tex, 255), texels = CW_MAX((m + 1) / 2, 1), iw = pow2_at_least(texels);
+  if (!L->cap_rec) L->cap_rec = t3_data_texture_new_format(1, 1, NULL, T3_RED_INTEGER_FORMAT, T3_UNSIGNED_INT_TYPE);
+  ((uint32_t *)L->cap_rec->pixels)[0] = (uint32_t)m; /* first item 0, count m */
+  L->cap_rec->version++;
+  if (!L->cap_items || L->cap_items->width != iw) {
+    if (L->cap_items) t3_release(L->cap_items);
+    L->cap_items = t3_data_texture_new_format(iw, 1, NULL, T3_RED_INTEGER_FORMAT, T3_UNSIGNED_INT_TYPE);
+  }
+  uint16_t *it = (uint16_t *)L->cap_items->pixels;
+  memset(it, 0, (size_t)iw * 4);
+  for (int k = 0; k < m; k++) it[k] = (uint16_t)k; /* (two a texel, the even one in the low half) */
+  L->cap_items->version++;
+  L->cap_items_w = iw;
+}
+/* light_tex as seen from cam: the view-space rows (position; spot direction or an IES profile's axes) again */
+static t3_texture *capture_lights(lighting *L, const t3_camera *cam) {
+  if (L->cap_src != L->light_tex || L->cap_ver != L->light_tex->version) {
+    L->capv_n = 0;
+    L->cap_src = L->light_tex;
+    L->cap_ver = L->light_tex->version;
+    capture_lists(L);
+  }
+  const t3_mat4 *v = &cam->matrix_world_inverse;
+  for (int i = 0; i < L->capv_n; i++)
+    if (!memcmp(L->capv[i].view, v->e, sizeof L->capv[i].view)) return L->capv[i].tex;
+  if (L->capv_n == L->capv_cap) {
+    int cap = L->capv_cap ? L->capv_cap * 2 : 8;
+    L->capv = cw_realloc(L->capv, (size_t)cap * sizeof *L->capv, CW_MEM_RENDER);
+    memset(L->capv + L->capv_cap, 0, (size_t)(cap - L->capv_cap) * sizeof *L->capv);
+    L->capv_cap = cap;
+  }
+  struct capv *e = &L->capv[L->capv_n++];
+  memcpy(e->view, v->e, sizeof e->view);
+  int w = L->light_tex->width, h = L->light_tex->height;
+  if (!e->tex || e->tex->width != w || e->tex->height != h) {
+    if (e->tex) t3_release(e->tex);
+    e->tex = t3_data_texture_new_typed(w, h, NULL, T3_FLOAT_TYPE);
+  }
+  float *px = (float *)e->tex->pixels;
+  memcpy(px, L->light_tex->pixels, (size_t)w * h * 4 * sizeof(float));
+  for (int i = 0; i < L->n_tex && i < L->lights.count; i++) {
+    const t3_light *l = L->lights.data[i].l;
+    t3_vec3 wp = t3_mat4_get_position(&l->base.matrix_world), vp = t3_vec3_apply_mat4(wp, v);
+    float *t0 = px + 4 * (size_t)i, *t2 = t0 + 8 * (size_t)w, *t10 = t0 + 40 * (size_t)w;
+    t0[0] = vp.x, t0[1] = vp.y, t0[2] = vp.z;
+    if (t2[3] == -3) { /* an IES profile: the light's -Z and +Y axes */
+      const float *m = l->base.matrix_world.e;
+      t3_vec3 z = t3_vec3_normalize(t3_vec3_transform_direction(t3_v3(m[8], m[9], m[10]), v));
+      t3_vec3 y = t3_vec3_normalize(t3_vec3_transform_direction(t3_v3(m[4], m[5], m[6]), v));
+      t2[0] = z.x, t2[1] = z.y, t2[2] = z.z;
+      t10[0] = y.x, t10[1] = y.y, t10[2] = y.z;
+    } else if (t2[3] >= -1.5f && l->target) { /* a spot light: from its target to it */
+      t3_vec3 tp = t3_mat4_get_position(&l->target->matrix_world);
+      t3_vec3 d = t3_vec3_normalize(t3_vec3_transform_direction(t3_vec3_sub(wp, tp), v));
+      t2[0] = d.x, t2[1] = d.y, t2[2] = d.z;
+    }
+  }
+  e->tex->version++;
+  return e->tex;
+}
 static void fill_cluster(t3_extension_ctx *c, void *user) {
   lighting *L = user;
+  const t3_camera *cam = L->capture && L->light_tex ? t3_extension_camera(c) : NULL;
+  if (cam) {
+    /* a capture's camera: its own view space, every light in one cluster */
+    static const float grid1[4] = { 1, 1, 1, 1 };
+    t3_texture *lt = capture_lights(L, cam);
+    float depth1[4] = { 0, 0, (float)L->cap_items_w, L->atlas_px };
+    t3_extension_set_uniform(c, "clusterGrid", grid1, 4);
+    t3_extension_set_uniform(c, "clusterDepth", depth1, 4);
+    t3_extension_set_texture(c, "clusterLights", lt);
+    t3_extension_set_texture(c, "clusterRecords", L->cap_rec);
+    t3_extension_set_texture(c, "clusterItems", L->cap_items);
+    t3_extension_set_texture(c, "clusterShadows", L->shadow_tex);
+    return;
+  }
   t3_extension_set_uniform(c, "clusterGrid", L->grid_u, 4);
   t3_extension_set_uniform(c, "clusterDepth", L->depth_u, 4);
   t3_extension_set_texture(c, "clusterLights", L->light_tex);
@@ -308,7 +409,7 @@ static void fill_plain(t3_extension_ctx *c, void *user) {
 }
 static void fill_csm(t3_extension_ctx *c, void *user) {
   lighting *L = user;
-  if (L->csm) cw__csm_fill(L->csm, c);
+  if (L->csm) cw__csm_fill(L->csm, c, L->capture ? t3_extension_camera(c) : NULL);
 }
 
 void cw__lighting_csm_light(cw_tree *t, t3_light *sun, const cw__csm_cfg *cfg) {
@@ -703,6 +804,7 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
     c->vz = t3_vec3_apply_mat4(t3_mat4_get_position(&c->l->base.matrix_world), view).z;
   }
   qsort(L->lights.data, (size_t)n, sizeof *L->lights.data, cmp_light);
+  L->n_tex = n;
   /* the light texture: view-space data, one column a light */
   /* (never narrower than it was: split screen views differ in light counts, and a
    * texture made again each view would cost WebGPU every bind group that samples it) */

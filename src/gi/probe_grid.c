@@ -11,6 +11,7 @@
 #include "cartwheel/quality.h"
 #include "cartwheel/shading.h"
 #include "gi_internal.h"
+#include "render/lighting_internal.h"
 #include "render/quality_internal.h"
 
 static const char *const grid_update_names[] = { "BAKED", "INCREMENTAL", NULL };
@@ -210,6 +211,7 @@ void cw__gi_grids_exec(gi_tree *g, cw_pass_ctx *ctx) {
   bool wgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
   if (wgpu) cw__gi_wgpu_order(), t3_renderer_set_external_encoder(r, 0);
   else t3_renderer_reset_bindings(r);
+  cw__lighting_capture(ctx->tree, true);
   shared_ready(g, face_size(p));
   if (g->proj_hook != r) {
     cw_shading_part(r, "giproj", proj_fill, g);
@@ -239,6 +241,7 @@ void cw__gi_grids_exec(gi_tree *g, cw_pass_ctx *ctx) {
       }
     }
   }
+  cw__lighting_capture(ctx->tree, false);
   if (!wgpu) t3_renderer_reset_bindings(r);
 }
 

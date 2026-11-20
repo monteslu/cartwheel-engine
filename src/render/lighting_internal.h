@@ -36,7 +36,15 @@ void cw__csm_free(cw__csm *c);
  * matrix or casters changed; false (nothing to sample) when it cannot */
 bool cw__csm_update(cw__csm *c, cw_pass_ctx *ctx, t3_light *sun, const cw__csm_cfg *cfg);
 /* the "csm" part's values for a draw (csm_part.mjs names them) */
-void cw__csm_fill(cw__csm *c, t3_extension_ctx *x);
+/* cam: a capture's camera (a probe's cube face), which the sun's direction is given in and every point of which reads
+ * the widest cascade; NULL: the view's */
+void cw__csm_fill(cw__csm *c, t3_extension_ctx *x, const t3_camera *cam);
+/* Capture mode: while on, a draw the lighting parts fill for a camera other than the view's (a reflection probe's or
+ * the probe grid's cube faces) gets light data of that camera: the clustered lights in its view space, all of them
+ * in one cluster, and the sun's direction in its view space with every point in the widest cascade. r187 lights a
+ * render with its own camera's light data; the view's froxels and view space are wrong in any other camera.
+ * CW_TEST_LIGHTING_NO_CAPTURE_MODE=1: the view's data everywhere, as before (a test's control). */
+void cw__lighting_capture(cw_tree *t, bool on);
 typedef struct cw__csm_info { int cascades, rendered, size; } cw__csm_info;
 void cw__csm_stats(const cw__csm *c, cw__csm_info *out);
 

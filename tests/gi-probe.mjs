@@ -26,10 +26,12 @@
 //      tints the ceiling by the coloured walls;
 //      off (the control) it does not.
 //   4. GL and WebGPU draw the same gi_room (pixels over 16 levels apart < 0.5 %).
-//   5. A probe captured once in the first frame under clustered lighting and a
-//      cascaded sun (GI_ONCE=1) is no further apart between GL and WebGPU than
-//      one captured every other frame; control: CW_TEST_GI_NO_FLUSH=1 (the
-//      capture submitted ahead of the frame's cascades and atlas) is.
+//   5. Probe captures under clustered lighting and a cascaded sun (GI_ONCE)
+//      are lit with their own camera's light data: GL and WebGPU agree as
+//      forward+sky does, captured every other frame and once, and the
+//      reflections' light matches FORWARD lighting's; controls: the view's
+//      light data in the captures (CW_TEST_LIGHTING_NO_CAPTURE_MODE=1), and
+//      the ONCE capture submitted before the frame's cascades (CW_TEST_GI_NO_FLUSH=1).
 //
 //   node tests/gi-probe.mjs
 import { spawnSync } from 'node:child_process';
@@ -166,25 +168,46 @@ if (rooms.gl && rooms.webgpu) {
   report(d.comparable && d.gt16 < 0.005, `gi_room GL vs WebGPU: ${(d.gt16 * 100).toFixed(3)}% of pixels over 16 levels apart`);
 }
 
-// ── 5. a probe captured once, in the first frame, under clustered lighting and cascades ──
-// GI_ONCE=1: RoomProbe captures once, in the frame the sun's cascades and the clustered shadow atlas are first
-// drawn. On WebGPU those are recorded into the frame's encoder while the capture draws with command buffers of its
-// own, so the capture must be submitted after them, or it samples maps not drawn yet (a darker room in the
-// reflections). GL against WebGPU must then be no further apart than the same scene with the probe captured every
-// other frame (GI_ONCE=every). Control: CW_TEST_GI_NO_FLUSH=1, the old ordering, must be further apart.
+// ── 5. probe captures under clustered lighting and a cascaded sun ──
+// gi_room with GI_ONCE (CLUSTERED, the sun in three cascades, no sky). A capture is lit with its own camera's light
+// data (capture mode: the clustered lights in the cube face's view space, all in one cluster; the sun's direction in
+// it, every point in the widest cascade), as r187 lights any render with its own camera's: GL and WebGPU then draw
+// the same reflections, captured every other frame (GI_ONCE=every) and once in the first frame (GI_ONCE=1, which
+// also needs the capture submitted after that frame's cascades and atlas on WebGPU). And the reflections' light
+// (the frame minus the same frame with the probes off, around the chrome ball and the floor) matches FORWARD
+// lighting's (GI_ONCE=forward: the lamp three.c's own light), whose captures were always right. Controls:
+// CW_TEST_LIGHTING_NO_CAPTURE_MODE=1 (the view's light data in the captures, as before) is apart on both counts, and
+// CW_TEST_GI_NO_FLUSH=1 (the ONCE capture submitted first) is apart between GL and WebGPU.
 {
   const cmds = 'set Room/Post ssgi false;set Room/Post ssr false';
-  const shot = (gpu, tag, env) => run('gi_room', gpu, 30, `room.once.${tag}.${gpu}`, env, cmds);
-  const legs = {};
-  for (const [tag, env] of [['every', { GI_ONCE: 'every' }], ['once', { GI_ONCE: '1' }], ['old', { GI_ONCE: '1', CW_TEST_GI_NO_FLUSH: '1' }]]) {
+  const shot = (gpu, tag, env) => run('gi_room', gpu, 30, `room.cap.${tag}.${gpu}`, env, cmds);
+  const legs = {}, img = {};
+  const off = { CW_TEST_LIGHTING_NO_CAPTURE_MODE: '1' };
+  for (const [tag, env] of [['every', { GI_ONCE: 'every' }], ['once', { GI_ONCE: '1' }], ['every.off', { GI_ONCE: 'every', ...off }],
+    ['once.off', { GI_ONCE: '1', ...off }], ['once.noflush', { GI_ONCE: '1', CW_TEST_GI_NO_FLUSH: '1' }],
+    ['every.noprobe', { GI_ONCE: 'every', GI_PROBES: '0' }], ['forward', { GI_ONCE: 'forward' }], ['forward.noprobe', { GI_ONCE: 'forward', GI_PROBES: '0' }]]) {
     const g = shot('gl', tag, env), w = shot('webgpu', tag, env);
     if (g.err || w.err) { report(false, `gi_room ${tag}: ${g.err || w.err}`); continue; }
     legs[tag] = diffImages(g.img, w.img).gt16;
+    img[tag] = { gl: g.img, webgpu: w.img };
   }
-  if (legs.every !== undefined && legs.once !== undefined && legs.old !== undefined) {
-    const pc = (v) => (v * 100).toFixed(3) + '%';
-    report(legs.once <= legs.every, `a ONCE probe under clustered lighting and cascades: GL vs WebGPU ${pc(legs.once)}, within the ${pc(legs.every)} of one captured every other frame`);
-    report(legs.old > legs.every, `control (the capture submitted before the frame's cascades and atlas) is further apart: ${pc(legs.old)}`);
+  const pc = (v) => (v === undefined ? '?' : (v * 100).toFixed(3) + '%');
+  const BOUND = 0.0005; // forward with the sky draws gi_room 0.000-0.003% apart (section 4)
+  report(legs.every < BOUND && legs.once < BOUND,
+    `clustered lights and cascades in the captures: GL vs WebGPU ${pc(legs.every)} captured every other frame, ${pc(legs.once)} once (bound ${pc(BOUND)})`);
+  report(legs['every.off'] >= BOUND && legs['once.off'] >= BOUND,
+    `control (the view's light data in the captures) is apart: ${pc(legs['every.off'])} and ${pc(legs['once.off'])}`);
+  report(legs['once.noflush'] >= BOUND, `control (the ONCE capture submitted before the frame's cascades and atlas) is apart: ${pc(legs['once.noflush'])}`);
+  // the reflections' light against FORWARD lighting's, around the chrome ball and the floor in front of it
+  const R = [640, 300, 640, 560];
+  const contrib = (a, b) => { const [x0, y0, w, h] = R, o = new Int16Array(w * h * 3); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) for (let c = 0; c < 3; c++) { const i = ((y0 + y) * a.w + x0 + x) * 4 + c; o[(y * w + x) * 3 + c] = a.rgba[i] - b.rgba[i]; } return o; };
+  const apart = (p, q) => { let n = 0; for (let i = 0; i < p.length; i += 3) if (Math.abs(p[i] - q[i]) > 16 || Math.abs(p[i + 1] - q[i + 1]) > 16 || Math.abs(p[i + 2] - q[i + 2]) > 16) n++; return n / (p.length / 3); };
+  for (const gpu of ['gl', 'webgpu']) {
+    if (!img.every || !img['every.off'] || !img['every.noprobe'] || !img.forward || !img['forward.noprobe']) break;
+    const ref = contrib(img.forward[gpu], img['forward.noprobe'][gpu]);
+    const on = apart(contrib(img.every[gpu], img['every.noprobe'][gpu]), ref), was = apart(contrib(img['every.off'][gpu], img['every.noprobe'][gpu]), ref);
+    report(on < 0.005, `${gpu}: the clustered captures' reflections match FORWARD lighting's: ${pc(on)} of the ball and floor over 16 levels apart`);
+    report(was >= 0.005, `${gpu}: control (the view's light data in the captures) does not: ${pc(was)}`);
   }
 }
 process.exit(failed ? 1 : 0);
