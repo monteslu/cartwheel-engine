@@ -143,6 +143,8 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/anim_ik/assets/RobotExpressive.LICENS
 cw_add_app(skeleton_attach SOURCES skeleton_attach/main.c ASSETS ${CW_SKELETON_ASSETS})
 # pictures rendered into textures (cartwheel/subviewport.h): a camera of the scene, a world of its own, on 3D, 2D and UI
 cw_add_app(subviewport SOURCES subviewport/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/subviewport/assets)
+# many instances of one mesh from a buffer (cartwheel/multimesh.h): cells culled one by one, a swarm rewritten each tick
+cw_add_app(multimesh SOURCES multimesh/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/multimesh/assets)
 cw_add_app(project_edit SOURCES project_edit/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/scene3d/assets)
 # play-in-editor: the game tests/remote.mjs drives through cartwheel/remote.h
 cw_add_app(remote_target SOURCES remote_target/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/remote_target/assets)

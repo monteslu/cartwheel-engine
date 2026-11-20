@@ -74,6 +74,8 @@ cw_add_app(unit_ik SOURCES test_ik.c)
 cw_add_app(unit_skeleton SOURCES test_skeleton.c)
 # SubViewport: names, update modes, a world of its own, camera views behind the frame, textures, scene files
 cw_add_app(unit_subviewport SOURCES test_subviewport.c)
+# MultiMeshInstance3D: the buffer, the stamp, cells and bounds, rebuilds, the one-draw path, cells in view, scene files
+cw_add_app(unit_multimesh SOURCES test_multimesh.c)
 cw_add_app(unit_ui SOURCES test_ui.c)
 # project.cwproj editing and settings (cartwheel/project.h), child processes (cartwheel/process.h)
 cw_add_app(unit_project SOURCES test_project.c)
