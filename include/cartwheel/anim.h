@@ -68,6 +68,45 @@
  * sub-scene belong to that scene's file; animations made from glTF clips are
  * not stored (cw_anim_set_stored). Saving a loaded scene reproduces the file
  * byte for byte.
+ *
+ * An AnimationTree's blend graph is stored the same way, one statement per
+ * line (a keyword, then key=value attributes), after the animations:
+ *
+ *   [animtree tree="Tree"]
+ *   param name="speed" value=0
+ *   clip name="idle" anim="idle"
+ *   clip name="walk" anim="walk"
+ *   clip name="run" anim="run" speed=1.1
+ *   blend1d name="move" param="speed" sync=true
+ *   point of="move" node="idle" x=0
+ *   point of="move" node="walk" x=1.5
+ *   point of="move" node="run" x=5
+ *   clip name="jump" anim="jump"
+ *   machine name="body"
+ *   state of="body" name="ground" node="move"
+ *   state of="body" name="jump" node="jump"
+ *   transition of="body" from="ground" to="jump" xfade=0.06 if="jumping"
+ *   transition of="body" from="jump" to="ground" xfade=0.1 switch=AT_END
+ *   clip name="aim" anim="aim"
+ *   layer name="upper" base="body" over="aim" param="aiming" bones="Spine+"
+ *   clip name="swing" anim="attack"
+ *   oneshot name="top" base="upper" shot="swing" param="attack" fadein=0.08 fadeout=0.15 bones="Spine+"
+ *   root node="top"
+ *
+ * Statements: param (a named parameter and its starting value), the node
+ * kinds clip, blend1d, blend2d, blend2 (a= b= param=), add (base= add=
+ * param=), layer (base= over= [param=] [bones=]), oneshot (base= shot= param=
+ * [fadein=] [fadeout=] [bones=]), timescale (node= param=) and machine, then
+ * point (a blend space's child at x= [y=]), state, transition ([xfade=]
+ * [if="condition"] [advance=AUTO|ENABLED|DISABLED] [switch=IMMEDIATE|AT_END]
+ * [sync=true]), filter (node= bones="a|b": a bone mask on any node) and root.
+ * A node may be named before the line that defines it. bones= is a list
+ * separated by |; "Spine+" is the bone Spine and every bone below it.
+ * `tree` is the AnimationTree's path from the scene root. A section that
+ * names a tree inside an instanced sub-scene replaces that scene's graph for
+ * this instance (an override), and is saved only while it differs from it. A
+ * graph built in C is not stored unless cw_animtree_set_stored says so.
+ * An attribute a statement does not know is an error with the file and line.
  */
 #ifndef CW_ANIM_H
 #define CW_ANIM_H
@@ -267,8 +306,34 @@ cw_blend_id cw_animtree_blend2(cw_node tree, cw_blend_id a, cw_blend_id b, const
  * from the binding's rest value (the value it had when first animated: for
  * glTF bones, the bind pose); quaternions compose rest^-1 * sample. */
 cw_blend_id cw_animtree_add(cw_node tree, cw_blend_id base, cw_blend_id additive, const char *param);
+/* A layer: `base` plays in full, and `over` replaces it on the bones and
+ * properties `over` writes, by param (0 none .. 1 all; NULL: always 1). With a
+ * bone mask (cw_animtree_set_filter on the layer: it applies to `over` only)
+ * the upper body can aim while the legs keep running. Bones the overlay does
+ * not write keep the base's pose exactly, unlike blend2, which fades every
+ * bone. Exact wherever the layer has the node's whole weight (at the root,
+ * in a state that is not cross-fading); inside a blend with other nodes the
+ * overlay takes its share of what is there. */
+cw_blend_id cw_animtree_layer(cw_node tree, cw_blend_id base, cw_blend_id over, const char *param);
+/* A one-shot: `base` plays; setting `param` above 0 fires `shot` from its
+ * start, layered over the base as cw_animtree_layer does (mask it with
+ * cw_animtree_set_filter), fading in over `fadein` seconds and out over the
+ * last `fadeout` seconds of a clip that ends (or, for anything else, after
+ * it reports its end). The node sets the parameter back to 0 when it takes
+ * the request, so one set is one shot; firing again restarts it; a negative
+ * value fades it out from where it is. Event keys of the shot fire. */
+cw_blend_id cw_animtree_oneshot(cw_node tree, cw_blend_id base, cw_blend_id shot, const char *param, float fadein, float fadeout);
+bool cw_animtree_oneshot_active(cw_node tree, cw_blend_id oneshot); /* the shot is playing (fades included) */
+/* Its child runs at `param` times the tree's speed (0 holds it, negative runs it backwards). */
+cw_blend_id cw_animtree_time_scale(cw_node tree, cw_blend_id child, const char *param);
+/* Sync a blend space: its clip children run through their cycles together, each
+ * in the weighted mean of the cycle lengths, so clips of different lengths
+ * (a walk and a run) keep their feet in step while they blend. Off by default. */
+void cw_animtree_set_sync(cw_node tree, cw_blend_id space, bool sync);
 /* Restrict a subtree to these bones / node paths (a bone mask). Bone tracks
- * match by bone name, value tracks by their node path. */
+ * match by bone name, value tracks by their node path. A name ending in +
+ * ("Spine+") is that bone and every bone below it in the skeleton. On a layer
+ * or one-shot node the mask applies to its overlay input only. */
 void cw_animtree_set_filter(cw_node tree, cw_blend_id node, const char *const *names, int count);
 void cw_animtree_set_root(cw_node tree, cw_blend_id node); /* default: the first node created, or what adopted it */
 
@@ -289,6 +354,9 @@ typedef struct cw_transition {
                               * wrapping) */
   const char *condition;     /* "speed > 0.5", "grounded", "!grounded", "dir == 2";
                               * ops == != < <= > >=; NULL = always */
+  bool sync;                 /* the new state starts at the old one's place in
+                              * its cycle (walk to run without a foot skip);
+                              * both states must be a clip or a blend space */
 } cw_transition;
 cw_blend_id cw_animtree_state_machine(cw_node tree); /* an empty state machine node */
 /* A state plays a graph node; the first state added is the start state. */
@@ -305,6 +373,9 @@ const char *cw_animtree_sm_current(cw_node tree, cw_blend_id sm); /* interned */
 const char *cw_animtree_sm_next(cw_node tree, cw_blend_id sm);    /* in a transition, else NULL */
 
 void cw_animtree_set_param(cw_node tree, const char *name, float value); /* created on first set */
+/* A parameter with its starting value as part of the graph: written to scene files (`param` lines) and
+ * dropped when the graph is replaced. Sets the value too. */
+void cw_animtree_declare_param(cw_node tree, const char *name, float value);
 float cw_animtree_get_param(cw_node tree, const char *name); /* 0 when never set */
 /* Advance by dt now (any process mode). */
 void cw_animtree_advance(cw_node tree, double dt);
@@ -312,6 +383,21 @@ uint32_t cw_animtree_hash(cw_node tree); /* running hash of every value the tree
 t3_vec3 cw_animtree_root_motion(cw_node tree); /* last tick's motion, target parent space */
 /* the weight the last evaluation gave a clip node (0..1, after all blends) */
 float cw_animtree_clip_weight(cw_node tree, cw_blend_id clip);
+
+/* The graph as text (the body of an [animtree] section, see the top of this
+ * file). Graph nodes have names there: cw_animtree_find gives a node's id (a
+ * state machine to travel in, a clip to read the weight of), -1 when absent. */
+char *cw_animtree_to_text(cw_node tree); /* cw_alloc'd; "" for an empty graph */
+/* Replace the tree's graph with the one in `text`, stored in scene files from then on. false (logged
+ * with the line, the graph left empty) on an error. Parameters set from code keep their values. */
+bool cw_animtree_load_text(cw_node tree, const char *text);
+void cw_animtree_clear(cw_node tree); /* removes every graph node and declared parameter */
+cw_blend_id cw_animtree_find(cw_node tree, const char *name); /* a graph node by name; unnamed ones answer to "n<id>" */
+void cw_animtree_set_name(cw_node tree, cw_blend_id node, const char *name); /* its name in graph text (unique in the tree) */
+const char *cw_animtree_name(cw_node tree, cw_blend_id node); /* interned; "n<id>" when it was never named */
+cw_blend_id cw_animtree_root(cw_node tree); /* the node the tree evaluates; -1 for an empty graph */
+int cw_animtree_node_count(cw_node tree); /* graph nodes; ids are 0 .. count-1 */
+void cw_animtree_set_stored(cw_node tree, bool stored); /* write a graph built in C to scene files too */
 
 /* ── Tweens (handles, not nodes) ───────────────────────────────────────
  * A tween is a sequence of steps; steps added after cw_tween_parallel()

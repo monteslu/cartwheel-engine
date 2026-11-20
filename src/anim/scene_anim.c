@@ -245,6 +245,7 @@ void cw__register_anim_types(void) {
   cw__register_ik_types();
   cw__register_skeleton_types();
   cw__register_anim_scene_section();
+  cw__register_animtree_scene_section();
   cw__register_player_debug_commands();
   cw__register_tree_debug_commands();
 }

@@ -36,6 +36,7 @@ typedef struct game {
   /* debug fields (exposed by name in main.c) */
   int32_t state, level, score, coins, gems, lives, deaths, checkpoint, timer, level_ticks;
   int32_t jumps, double_jumps, dashes, anim_state, floor, pickups_left, ticks;
+  uint32_t anim_hash; /* the hero's animated poses, folded every tick */
   float player_pos[3], player_vel[3], cam_pos[3];
   uint32_t state_hash, props_hash, phys_hash;
   /* flow */

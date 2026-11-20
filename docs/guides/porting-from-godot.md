@@ -87,7 +87,7 @@ See [Physics](guide:physics) and [Navigation](guide:navigation).
 | Godot | {{name}} | Notes |
 |---|---|---|
 | `AnimationPlayer` | [AnimationPlayer](node:AnimationPlayer) | value, bone, method and event tracks; signals `animation_started`, `animation_finished`, ... |
-| `AnimationTree`, state machines, blend spaces | `AnimationTree` with `cw_animtree_*` graphs | built in C; no scene-file form yet |
+| `AnimationTree`, state machines, blend spaces, `Blend2` with a filter, `OneShot`, `TimeScale` | [AnimationTree](node:AnimationTree): an `[animtree]` section in the scene file, or `cw_animtree_*` calls | the graph is text an agent or a person writes; there is no graph editor. A filtered `Blend2` is a `layer`, `sync` is per blend space and per transition |
 | `Skeleton3D`, `BoneAttachment3D` | [Skeleton3D](node:Skeleton3D), [BoneAttachment3D](node:BoneAttachment3D) | a Skeleton3D is a view of a glTF model's bones (it goes under the model's node, or holds the model); `cw_skeleton3d_bone_pose` / `set_bone_pose` / `bone_rest` / `bone_global_transform`; `show_rest_only`; no `bones/<i>/...` properties in scene files |
 | `SkeletonIK3D`, `SkeletonModifier3D`, `LookAtModifier3D` | `TwoBoneIK3D`, `CCDIK3D`, `FABRIK3D`, `LookAtModifier3D`, `FootPlacement3D` | children of the model's node or of its Skeleton3D |
 | `Tween` | `cw_tween_new`, `cw_tween_property`, ... | a handle, not a node, like Godot 4's |

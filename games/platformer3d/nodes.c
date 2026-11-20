@@ -86,28 +86,13 @@ static void hero_ready(cw_node n, void *d) {
     cw_error("Hero: needs an AnimationTree child named Tree");
     return;
   }
-  /* ground: idle..run blended by horizontal speed */
-  cw_blend_id ground = cw_animtree_blend1d(tree, "speed");
-  cw_animtree_blend1d_add(tree, ground, cw_animtree_clip(tree, "idle"), 0);
-  cw_animtree_blend1d_add(tree, ground, cw_animtree_clip(tree, "run"), h->speed);
-  h->sm = cw_animtree_state_machine(tree);
-  cw_animtree_sm_add_state(tree, h->sm, "ground", ground);
-  cw_animtree_sm_add_state(tree, h->sm, "jump", cw_animtree_clip(tree, "jump"));
-  cw_animtree_sm_add_state(tree, h->sm, "fall", cw_animtree_clip(tree, "fall"));
-  cw_animtree_sm_add_state(tree, h->sm, "dash", cw_animtree_clip(tree, "dash"));
-  cw_animtree_sm_add_state(tree, h->sm, "cheer", cw_animtree_clip(tree, "cheer"));
-  struct { const char *from, *to, *cond; float fade; } tr[] = {
-    { "ground", "cheer", "cheering", 0.15f }, { "jump", "cheer", "cheering", 0.15f }, { "fall", "cheer", "cheering", 0.15f },
-    { "ground", "dash", "dashing", 0.04f },   { "jump", "dash", "dashing", 0.04f },   { "fall", "dash", "dashing", 0.04f },
-    { "ground", "jump", "jumping", 0.06f },   { "ground", "fall", "falling", 0.12f },
-    { "jump", "ground", "floor", 0.08f },     { "jump", "fall", "falling", 0.18f },
-    { "fall", "ground", "floor", 0.08f },     { "fall", "jump", "jumping", 0.06f },
-    { "dash", "fall", "!dashing", 0.1f },     { "cheer", "ground", "!cheering", 0.2f },
-  };
-  for (size_t i = 0; i < CW_ARRAY_LEN(tr); i++)
-    cw_animtree_sm_add_transition(tree, h->sm, tr[i].from, tr[i].to,
-                                  &(cw_transition){ .xfade = tr[i].fade, .condition = tr[i].cond });
-  cw_animtree_set_root(tree, h->sm);
+  /* the hero's blend graph is scene data: the [animtree] section of scenes/player.cwscene (a ground blend of
+   * idle and run by speed, and jump, fall, dash and cheer states). The code only sets its parameters. */
+  h->sm = cw_animtree_find(tree, "body");
+  if (h->sm < 0) {
+    cw_error("Hero: its AnimationTree needs a state machine named body (scenes/player.cwscene)");
+    return;
+  }
   h->facing = CW_PI; /* away from a camera at yaw 0 */
   h->dash_ready = true;
 }
@@ -261,15 +246,20 @@ static void hero_fixed(cw_node n, void *d, double dtd) {
     hs = sqrtf((vel.x - pv.x) * (vel.x - pv.x) + (vel.z - pv.z) * (vel.z - pv.z));
   }
   hs = floorf(hs * 64 + 0.5f) / 64; /* the blend weight need not see the last bits of the slide */
+  /* #region tree-params */
   cw_animtree_set_param(tree, "speed", hs);
   cw_animtree_set_param(tree, "floor", on_floor ? 1 : 0);
   cw_animtree_set_param(tree, "jumping", !on_floor && vel.y > 0.5f ? 1 : 0);
   cw_animtree_set_param(tree, "falling", !on_floor && vel.y < -1.0f && h->air_time > 0.08f ? 1 : 0);
   cw_animtree_set_param(tree, "dashing", h->dash_t > 0 ? 1 : 0);
   cw_animtree_set_param(tree, "cheering", h->cheering ? 1 : 0);
-  const char *st = cw_animtree_sm_current(tree, h->sm);
+  const char *st = cw_animtree_sm_current(tree, h->sm); /* h->sm = cw_animtree_find(tree, "body"), once */
+  /* #endregion */
   for (int i = 0; i < (int)CW_ARRAY_LEN(sm_states); i++)
     if (st && !strcmp(st, sm_states[i])) G.anim_state = i;
+  /* every pose the hero's tree has written, folded each tick (the gate compares it across hosts) */
+  uint32_t pose = cw_animtree_hash(tree);
+  G.anim_hash = cw_hash32(&pose, sizeof pose, G.anim_hash);
   G.floor = on_floor;
 
   /* fell off the world */

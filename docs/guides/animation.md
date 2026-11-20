@@ -70,7 +70,7 @@ A crowd of skinned characters does not need one glTF parse each. Load the model 
 
 ## AnimationTree
 
-An AnimationTree points at a player (its `player` property; stop the player's own playback) and evaluates a graph of blend nodes into the same mixer. Graph nodes are created in code and addressed by `cw_blend_id`; each has at most one parent, and the first one created is the root unless [cw_animtree_set_root](api:cw_animtree_set_root) says otherwise.
+An AnimationTree points at a player (its `player` property; stop the player's own playback) and evaluates a graph of blend nodes into the same mixer. The graph is written as text in the scene file (below) or built in code; either way its nodes are addressed by `cw_blend_id`, each has at most one parent, and the first one created is the root unless [cw_animtree_set_root](api:cw_animtree_set_root) (or a `root` line) says otherwise.
 
 | Node | Built with | Does |
 |---|---|---|
@@ -79,9 +79,12 @@ An AnimationTree points at a player (its `player` property; stop the player's ow
 | 2D blend space | [cw_animtree_blend2d](api:cw_animtree_blend2d) | children at points on two parameters, gradient-band weights (no triangulation) |
 | blend2 | [cw_animtree_blend2](api:cw_animtree_blend2) | `lerp(a, b, param)` |
 | add | [cw_animtree_add](api:cw_animtree_add) | base plus an additive branch scaled by a parameter, relative to rest values |
+| layer | [cw_animtree_layer](api:cw_animtree_layer) | the base in full, with an overlay replacing it on the bones the overlay writes (an upper body that aims while the legs run) |
+| one-shot | [cw_animtree_oneshot](api:cw_animtree_oneshot) | a layer that plays its overlay once each time a parameter is set, with a fade in and a fade out (an attack, a hit reaction, a wave) |
+| time scale | [cw_animtree_time_scale](api:cw_animtree_time_scale) | runs its child at a parameter times the tree's speed |
 | state machine | [cw_animtree_state_machine](api:cw_animtree_state_machine) | states playing graph nodes, transitions with fades, conditions and switch modes |
 
-Any subtree can be restricted to a set of bones or node paths with [cw_animtree_set_filter](api:cw_animtree_set_filter) (a bone mask). Parameters are named floats set with [cw_animtree_set_param](api:cw_animtree_set_param); transition conditions read them (`"speed > 0.5"`, `"!grounded"`). Every node evaluated in a tick advances its time even at weight 0, so the children of a blend space stay in phase.
+Any subtree can be restricted to a set of bones or node paths with [cw_animtree_set_filter](api:cw_animtree_set_filter) (a bone mask). A name ending in `+` is that bone and every bone below it, so `Spine+` is the whole upper body of most rigs. Parameters are named floats set with [cw_animtree_set_param](api:cw_animtree_set_param); transition conditions read them (`"speed > 0.5"`, `"!grounded"`). Every node evaluated in a tick advances its time even at weight 0, so the children of a blend space stay in phase.
 
 Transitions are `AUTO` (taken when the condition holds), `ENABLED` (only by travel) or `DISABLED`, and switch `IMMEDIATE` or `AT_END` (when the current state finishes or wraps). [cw_animtree_sm_travel](api:cw_animtree_sm_travel) walks to a state along the shortest chain of transitions, taking each with its fade. While a cross-fade runs no other transition is evaluated, so keep fades short where transitions chain.
 
@@ -95,7 +98,64 @@ Each fixed tick the game only sets parameters and asks for travel; the tree does
 
 Note the comment in the sample: the app's `fixed_update` runs after the tree, so input applied there takes effect on the next tick. The sample also snaps stick values to 1/64, because hosts quantize analog axes slightly differently and the gate compares poses exactly.
 
-> The blend graph is built in code. AnimationTree's properties (player, process, root motion) are stored in scene files, its graph is not, and the editor has no animation timeline or graph editor yet.
+### Blend graphs in scene files
+
+A tree's graph is text in the `.cwscene` that owns the tree, after the animations: an `[animtree tree="..."]` section with one statement per line. No tool is needed to write one. This is the whole animation logic of the 3D platformer's hero, from `games/platformer3d/assets/scenes/player.cwscene`:
+
+@include games/platformer3d/assets/scenes/player.cwscene#animtree:Tree
+
+The game's code builds nothing. It finds the state machine by name once and sets parameters every tick:
+
+@include games/platformer3d/nodes.c#tree-params
+
+A statement is a keyword and `key=value` attributes (quote a value that holds spaces). Every graph node has a `name`, and other lines refer to it by that name; a node may be used before the line that defines it.
+
+| Statement | Attributes | Meaning |
+|---|---|---|
+| `param` | `name`, `value` | a parameter and the value it starts with |
+| `clip` | `name`, `anim`, `speed` (1) | plays the player's clip `anim` |
+| `blend1d` | `name`, `param`, `sync` (false) | a 1D blend space; its children are `point` lines |
+| `blend2d` | `name`, `param`, `param_y`, `sync` | a 2D blend space |
+| `point` | `of`, `node`, `x`, `y` (2D only) | puts the node `node` at a position in the blend space `of` |
+| `blend2` | `name`, `a`, `b`, `param` | `lerp(a, b, param)` on every bone |
+| `add` | `name`, `base`, `add`, `param` | the base plus `param` times the additive input |
+| `layer` | `name`, `base`, `over`, `param` (always 1), `bones` | the overlay replaces the base, by `param`, on the bones in `bones` that it writes |
+| `oneshot` | `name`, `base`, `shot`, `param`, `fadein`, `fadeout`, `bones` | setting `param` above 0 plays `shot` once over the base |
+| `timescale` | `name`, `node`, `param` | `node` at `param` times the speed |
+| `machine` | `name` | a state machine; `state` and `transition` lines fill it |
+| `state` | `of`, `name`, `node` | a state of the machine `of` that plays `node`; the first is the start state |
+| `transition` | `of`, `from`, `to`, `xfade` (0), `if`, `advance` (AUTO), `switch` (IMMEDIATE), `sync` (false) | see below |
+| `filter` | `node`, `bones` | a bone mask on any node: `bones="Head\|Neck"`, `bones="Spine+"` |
+| `root` | `node` | the node the tree evaluates (default: the one nothing else uses first) |
+
+A transition's `if` is a condition on one parameter: `"speed > 0.5"`, `"grounded"`, `"!grounded"`, `"dir == 2"`. `xfade` is the cross-fade in seconds. `advance=AUTO` takes the transition by itself when the condition holds (with no `if` and `switch=AT_END` that is "go on when this clip ends"), `ENABLED` only when code travels through it, `DISABLED` never. `sync=true` starts the new state at the old state's place in its cycle, so a walk becomes a run without a skipped step.
+
+An attribute a statement does not know, a name that matches no node, a node used twice or a machine without states is an error that names the file and the line; nothing is silently ignored. Saving a loaded scene writes the section back byte for byte (defaults left out), which `unit-anim` checks.
+
+**Layers and one-shots.** This graph runs the legs from a speed blend, lets the upper body aim by a parameter, and plays an attack once on top whenever the game sets `attack`:
+
+```text
+[animtree tree="Tree"]
+param name="speed" value=0
+clip name="idle" anim="idle"
+clip name="walk" anim="walk"
+clip name="run" anim="run"
+blend1d name="move" param="speed" sync=true
+point of="move" node="idle" x=0
+point of="move" node="walk" x=1.6
+point of="move" node="run" x=5
+clip name="aim" anim="aim"
+layer name="upper" base="move" over="aim" param="aiming" bones="Spine+"
+clip name="swing" anim="attack"
+oneshot name="top" base="upper" shot="swing" param="attack" fadein=0.08 fadeout=0.15 bones="Spine+"
+root node="top"
+```
+
+A layer is not a `blend2`: bones outside the mask, and bones the overlay has no track for, keep the base's pose exactly, where `blend2` would fade every bone. `sync=true` on the blend space makes the walk and the run step together although their clips have different lengths. `cw_animtree_set_param(tree, "attack", 1)` fires the one-shot; the node sets the parameter back to 0 as it takes the request, a new request restarts the shot, a negative value fades it out early, and [cw_animtree_oneshot_active](api:cw_animtree_oneshot_active) says whether it is still playing. A layer is exact where it has the whole weight of its place in the graph (at the root, or in a state that is not cross-fading); under a blend with other nodes its overlay takes its share of what is there.
+
+**Instances.** A scene that instances another may carry an `[animtree]` section for a tree inside the instance (`tree="Enemy3/Tree"`). It replaces that instance's graph and leaves the other instances alone; it is saved only while it differs from the instanced scene's own graph.
+
+**From C and from the debug channel.** [cw_animtree_find](api:cw_animtree_find) gives a node's id by name, [cw_animtree_set_param](api:cw_animtree_set_param) and [cw_animtree_get_param](api:cw_animtree_get_param) use parameter names, and [cw_animtree_load_text](api:cw_animtree_load_text) and [cw_animtree_to_text](api:cw_animtree_to_text) read and write the body of a section, so a tool or a test can swap a graph at run time. A graph built with the C calls is not stored unless [cw_animtree_set_stored](api:cw_animtree_set_stored) asks for it. On a running game, `animtree_text <tree>` prints the graph, `animtree <tree>` its parameters, machines, one-shots and clip weights, `animtree_param <tree> <name> <value>` sets a parameter and `animtree_travel <tree> <machine> <state>` travels.
 
 ## Root motion
 
@@ -296,4 +356,4 @@ Animation that runs in the fixed step is bit-identical across hosts: time is a d
 node tests/gate.mjs anim-props anim-tween anim-skinned unit-anim
 ```
 
-A running app answers animation questions over the [debug channel](guide:debug-channel): `anim <player>` (current clip, position, library, hash), `anim_play`, `anim_stop`, `anim_seek`, `anim_text <player> <clip>` (the clip as scene text), and `animtree <tree>` (parameters, state machines, clip weights), `animtree_param`, `animtree_travel`.
+A running app answers animation questions over the [debug channel](guide:debug-channel): `anim <player>` (current clip, position, library, hash), `anim_play`, `anim_stop`, `anim_seek`, `anim_text <player> <clip>` (the clip as scene text), and `animtree <tree>` (parameters, state machines, one-shots, clip weights), `animtree_text <tree>` (the graph as scene text), `animtree_param`, `animtree_travel`.

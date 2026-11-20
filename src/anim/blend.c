@@ -27,6 +27,10 @@ void cw__amix_free(cw__amix *m) {
   cw_array_free(&m->caches);
   cw_array_free(&m->b);
   cw_map_free(&m->index);
+  for (int i = 0; i < CW__AMIX_MAX_LEVELS; i++) {
+    cw_array_free(&m->lv[i].s);
+    cw_array_free(&m->lv[i].touched);
+  }
 }
 
 void cw__amix_set_root(cw__amix *m, cw_node root) {
@@ -265,6 +269,82 @@ static void root_motion_sample(cw__amix *m, const anim_track *t, const anim_curs
   m->rm_weight += w;
 }
 
+/* ── overlay levels ─────────────────────────────────────────────────── */
+
+static mix_scratch *scratch_at(cw__amix *m, int level, int bi) {
+  mix_level *l = &m->lv[level];
+  if (l->s.count <= bi) {
+    cw_array_reserve(&l->s, m->b.count > bi ? m->b.count : bi + 1);
+    int n = m->b.count > bi ? m->b.count : bi + 1;
+    memset(l->s.data + l->s.count, 0, sizeof *l->s.data * (size_t)(n - l->s.count));
+    l->s.count = n;
+  }
+  return &l->s.data[bi];
+}
+
+/* weighted running average into (acc, weight, touched), as the main level does */
+static void accumulate(cw_value *acc, float *weight, bool *touched, const cw_value *v, float w, cw_rot_mode rot) {
+  if (!*touched) {
+    *acc = *v;
+    *weight = w;
+    *touched = true;
+  } else {
+    *weight += w;
+    cw__value_mix(acc, v, w / *weight, rot);
+  }
+}
+
+bool cw__amix_layer_begin(cw__amix *m) {
+  if (m->depth >= CW__AMIX_MAX_LEVELS) {
+    static bool warned;
+    if (!warned) cw_warn("AnimationTree: layers nest at most %d deep inside an overlay input; the deeper one is skipped", CW__AMIX_MAX_LEVELS);
+    warned = true;
+    return false;
+  }
+  m->depth++;
+  return true;
+}
+
+void cw__amix_layer_end(cw__amix *m, float amount, float w) {
+  if (m->depth <= 0) return;
+  int d = --m->depth;
+  mix_level *l = &m->lv[d];
+  amount = amount < 0 ? 0 : amount > 1 ? 1 : amount;
+  for (int i = 0; i < l->touched.count; i++) {
+    int bi = l->touched.data[i];
+    mix_scratch *s = &l->s.data[bi];
+    mix_binding *b = &m->b.data[bi];
+    cw_value v = s->acc;
+    if (s->weight < 1) { /* part of the overlay's own weight: the rest is the rest value */
+      cw_value tmp = b->base;
+      cw__value_mix(&tmp, &v, s->weight, b->rot);
+      v = tmp;
+    }
+    s->touched = false;
+    s->weight = 0;
+    if (amount <= 0) continue;
+    cw_value *acc;
+    float *weight;
+    bool *touched;
+    if (d == 0) { acc = &b->acc; weight = &b->weight; touched = &b->touched; }
+    else {
+      mix_scratch *o = scratch_at(m, d - 1, bi);
+      if (!o->touched) cw_array_push(&m->lv[d - 1].touched, bi);
+      acc = &o->acc; weight = &o->weight; touched = &o->touched;
+    }
+    if (!*touched) {
+      *acc = v;
+      *weight = w * amount;
+      *touched = true;
+    } else {
+      /* the base input put w of the *weight below; the overlay replaces amount of that share */
+      float share = *weight > w && *weight > 0 ? w / *weight : 1;
+      cw__value_mix(acc, &v, amount * share, b->rot);
+    }
+  }
+  cw_array_clear(&l->touched);
+}
+
 void cw__amix_sample(cw__amix *m, cw_anim anim, float time, float w, const cw_map *filter, bool additive,
                       const anim_cursor *cursor) {
   anim_rec *a = cw__anim(anim);
@@ -281,17 +361,17 @@ void cw__amix_sample(cw__amix *m, cw_anim anim, float time, float w, const cw_ma
       b->root_motion = true;
       m->rm_binding = bi;
       if (additive) continue;
-      root_motion_sample(m, t, cursor, w, b->type, &v);
+      /* an overlay keeps the locked axes off the bone but moves nothing: the base layer owns the motion */
+      root_motion_sample(m, t, m->depth ? NULL : cursor, w, b->type, &v);
     }
     if (additive) { accumulate_additive(b, &v, w); continue; }
-    if (!b->touched) {
-      b->acc = v;
-      b->weight = w;
-      b->touched = true;
-    } else {
-      b->weight += w;
-      cw__value_mix(&b->acc, &v, w / b->weight, b->rot);
+    if (m->depth) {
+      mix_scratch *s = scratch_at(m, m->depth - 1, bi);
+      if (!s->touched) cw_array_push(&m->lv[m->depth - 1].touched, bi);
+      accumulate(&s->acc, &s->weight, &s->touched, &v, w, b->rot);
+      continue;
     }
+    accumulate(&b->acc, &b->weight, &b->touched, &v, w, b->rot);
   }
 }
 

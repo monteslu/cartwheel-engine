@@ -155,7 +155,8 @@ const langOf = (path) => ({ '.c': 'c', '.h': 'c', '.mjs': 'js', '.js': 'js', '.j
  * A .cwscene selector -> [from, to) line range. "ext_scene" = the ext_scene
  * lines; "Node" = that node's section and its whole subtree (Node is a path
  * from the scene root, "Goal/Lamp", or a name that is unique in the file;
- * [animation name=...] and other named sections match by name too);
+ * [animation name=...] and other named sections match by name too, and an
+ * [animtree tree="Tree"] section is "animtree:Tree");
  * "A..B" = from A's section through the end of B's selection.
  * @param {string[]} lines
  * @param {string} sel
@@ -167,7 +168,7 @@ function sceneRange(lines, sel) {
   const heads = [];
   lines.forEach((l, i) => {
     if (!/^\[/.test(l)) return;
-    const name = attr(l, 'name');
+    const name = /^\[animtree\b/.test(l) ? `animtree:${attr(l, 'tree')}` : attr(l, 'name');
     if (name == null && !/^\[(connection|ext_scene|scene)\b/.test(l)) return; // a subsection ([track ...])
     const parent = attr(l, 'parent');
     const isNode = /^\[node\b/.test(l);

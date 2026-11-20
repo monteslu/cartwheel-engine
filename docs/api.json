@@ -187,7 +187,7 @@
   },
   {
    "header": "cartwheel/anim.h",
-   "summary": "cartwheel animation: Animation resources, the AnimationPlayer and\nAnimationTree node types, skeletal clips from glTF, root motion, tweens.\n\nDETERMINISM. Everything here that runs in fixed_update (the default) is\nbit-identical on every host: times are doubles advanced by the fixed dt,\ninterpolation uses only + - * / sqrt and cartwheel/math.h (slerp uses\ncw_atan2/cw_sin, never libm), blending accumulates in insertion order, and\nvalues are written through the reflection path (cw_node_set). Players and\ntrees keep a running FNV hash of every value they write\n(cw_anim_player_hash / cw_animtree_hash) so a test can compare sampled\nposes across hosts. three.c's own AnimationMixer is NOT used for sampling:\nits slerp calls libm's sinf/atan2f. cartwheel samples three.c's keyframe\ntracks itself and writes the bones; three.c's SkinnedMesh/Skeleton render.\n\n── Animation (resource) ─────────────────────────────────────────────\nA named clip: a length, a loop mode and tracks.\n  value track   a node property by path relative to the player's root\n                node: \"Arm:rotation\", \"Sun:energy\", \":position\" (the root\n                itself), \"Arm:position.y\" (one component of a vector or\n                colour: .x .y .z .w / .r .g .b .a). Any reflected property:\n                float, int, bool, vec2/3/4, quat, color, enum, string, node,\n                res. float/int/vec/quat/color interpolate; the rest step.\n  bone track    \"Model@bone_name:position|quaternion|scale\": a three.c\n                object (a glTF bone) found by name under the Node3D\n                \"Model\"'s three.c object.\n  method track  \"Counter\": at each key, call a method on that node: the C\n                callback registered under the method's name\n                (cw_anim_register_method), else emit the node's signal of\n                that name with the key's arguments.\n  event track   keys carry a name; the player emits\n                animation_event(name, animation).\nInterpolation (value and bone tracks): NEAREST holds each key until the\nnext (a step), LINEAR, CUBIC (uniform Catmull-Rom through the neighbour\nkeys), HERMITE (explicit in/out tangents per key, glTF CUBICSPLINE\nsemantics). Quaternions slerp (default) or nlerp; CUBIC/HERMITE quaternions\nare interpolated per component and normalized. ints interpolate and round\nhalf up; bool/string/node/res/enum always step.\n\nKey firing (method / event): a sweep from the old time to the new one fires\nkeys in (old, new] in the direction of motion, so every key fires exactly\nonce per pass. A play() from a stopped player also fires keys exactly at the\nstart time. LOOP: reaching the end fires keys at `length`, then wraps and\nfires keys at 0 (both, at the same instant, every cycle). PING_PONG: keys at\nthe turning points fire once per turn. seek() never fires keys.\nTime exactly at the loop end: LOOP wraps to 0, PING_PONG turns around,\nNONE stops there and finishes.\n\n── Scene files ──────────────────────────────────────────────────────\nAnimations of the players in a scene are stored after its nodes:\n\n  [animation name=\"bob\" player=\"Anim\" length=2 loop=PING_PONG]\n  [track type=value path=\"Cube:position\" interp=CUBIC]\n  0 = vec3(0, 1, 0)\n  1 = vec3(0, 2, 0)\n  [track type=value path=\"Cube:quaternion\" rot=NLERP]\n  0 = quat(0, 0, 0, 1)\n  [track type=value path=\"Cube:scale\" interp=HERMITE]\n  0 = vec3(1, 1, 1) in=vec3(0, 0, 0) out=vec3(1, 0, 0)\n  [track type=method path=\"Counter\"]\n  0.5 = count(1, \"a\")\n  [track type=event]\n  0.25 = \"step\"\n\nOne key per line: `time = value` (values as cw_value_format writes them;\nenums as integers). `player` is the AnimationPlayer's path from the scene\nroot (\".\" = the root). Defaults are omitted: loop=NONE, interp=LINEAR,\nrot=SLERP, enabled=true. Animations of players inside an instanced\nsub-scene belong to that scene's file; animations made from glTF clips are\nnot stored (cw_anim_set_stored). Saving a loaded scene reproduces the file\nbyte for byte.",
+   "summary": "cartwheel animation: Animation resources, the AnimationPlayer and\nAnimationTree node types, skeletal clips from glTF, root motion, tweens.\n\nDETERMINISM. Everything here that runs in fixed_update (the default) is\nbit-identical on every host: times are doubles advanced by the fixed dt,\ninterpolation uses only + - * / sqrt and cartwheel/math.h (slerp uses\ncw_atan2/cw_sin, never libm), blending accumulates in insertion order, and\nvalues are written through the reflection path (cw_node_set). Players and\ntrees keep a running FNV hash of every value they write\n(cw_anim_player_hash / cw_animtree_hash) so a test can compare sampled\nposes across hosts. three.c's own AnimationMixer is NOT used for sampling:\nits slerp calls libm's sinf/atan2f. cartwheel samples three.c's keyframe\ntracks itself and writes the bones; three.c's SkinnedMesh/Skeleton render.\n\n── Animation (resource) ─────────────────────────────────────────────\nA named clip: a length, a loop mode and tracks.\n  value track   a node property by path relative to the player's root\n                node: \"Arm:rotation\", \"Sun:energy\", \":position\" (the root\n                itself), \"Arm:position.y\" (one component of a vector or\n                colour: .x .y .z .w / .r .g .b .a). Any reflected property:\n                float, int, bool, vec2/3/4, quat, color, enum, string, node,\n                res. float/int/vec/quat/color interpolate; the rest step.\n  bone track    \"Model@bone_name:position|quaternion|scale\": a three.c\n                object (a glTF bone) found by name under the Node3D\n                \"Model\"'s three.c object.\n  method track  \"Counter\": at each key, call a method on that node: the C\n                callback registered under the method's name\n                (cw_anim_register_method), else emit the node's signal of\n                that name with the key's arguments.\n  event track   keys carry a name; the player emits\n                animation_event(name, animation).\nInterpolation (value and bone tracks): NEAREST holds each key until the\nnext (a step), LINEAR, CUBIC (uniform Catmull-Rom through the neighbour\nkeys), HERMITE (explicit in/out tangents per key, glTF CUBICSPLINE\nsemantics). Quaternions slerp (default) or nlerp; CUBIC/HERMITE quaternions\nare interpolated per component and normalized. ints interpolate and round\nhalf up; bool/string/node/res/enum always step.\n\nKey firing (method / event): a sweep from the old time to the new one fires\nkeys in (old, new] in the direction of motion, so every key fires exactly\nonce per pass. A play() from a stopped player also fires keys exactly at the\nstart time. LOOP: reaching the end fires keys at `length`, then wraps and\nfires keys at 0 (both, at the same instant, every cycle). PING_PONG: keys at\nthe turning points fire once per turn. seek() never fires keys.\nTime exactly at the loop end: LOOP wraps to 0, PING_PONG turns around,\nNONE stops there and finishes.\n\n── Scene files ──────────────────────────────────────────────────────\nAnimations of the players in a scene are stored after its nodes:\n\n  [animation name=\"bob\" player=\"Anim\" length=2 loop=PING_PONG]\n  [track type=value path=\"Cube:position\" interp=CUBIC]\n  0 = vec3(0, 1, 0)\n  1 = vec3(0, 2, 0)\n  [track type=value path=\"Cube:quaternion\" rot=NLERP]\n  0 = quat(0, 0, 0, 1)\n  [track type=value path=\"Cube:scale\" interp=HERMITE]\n  0 = vec3(1, 1, 1) in=vec3(0, 0, 0) out=vec3(1, 0, 0)\n  [track type=method path=\"Counter\"]\n  0.5 = count(1, \"a\")\n  [track type=event]\n  0.25 = \"step\"\n\nOne key per line: `time = value` (values as cw_value_format writes them;\nenums as integers). `player` is the AnimationPlayer's path from the scene\nroot (\".\" = the root). Defaults are omitted: loop=NONE, interp=LINEAR,\nrot=SLERP, enabled=true. Animations of players inside an instanced\nsub-scene belong to that scene's file; animations made from glTF clips are\nnot stored (cw_anim_set_stored). Saving a loaded scene reproduces the file\nbyte for byte.\n\nAn AnimationTree's blend graph is stored the same way, one statement per\nline (a keyword, then key=value attributes), after the animations:\n\n  [animtree tree=\"Tree\"]\n  param name=\"speed\" value=0\n  clip name=\"idle\" anim=\"idle\"\n  clip name=\"walk\" anim=\"walk\"\n  clip name=\"run\" anim=\"run\" speed=1.1\n  blend1d name=\"move\" param=\"speed\" sync=true\n  point of=\"move\" node=\"idle\" x=0\n  point of=\"move\" node=\"walk\" x=1.5\n  point of=\"move\" node=\"run\" x=5\n  clip name=\"jump\" anim=\"jump\"\n  machine name=\"body\"\n  state of=\"body\" name=\"ground\" node=\"move\"\n  state of=\"body\" name=\"jump\" node=\"jump\"\n  transition of=\"body\" from=\"ground\" to=\"jump\" xfade=0.06 if=\"jumping\"\n  transition of=\"body\" from=\"jump\" to=\"ground\" xfade=0.1 switch=AT_END\n  clip name=\"aim\" anim=\"aim\"\n  layer name=\"upper\" base=\"body\" over=\"aim\" param=\"aiming\" bones=\"Spine+\"\n  clip name=\"swing\" anim=\"attack\"\n  oneshot name=\"top\" base=\"upper\" shot=\"swing\" param=\"attack\" fadein=0.08 fadeout=0.15 bones=\"Spine+\"\n  root node=\"top\"\n\nStatements: param (a named parameter and its starting value), the node\nkinds clip, blend1d, blend2d, blend2 (a= b= param=), add (base= add=\nparam=), layer (base= over= [param=] [bones=]), oneshot (base= shot= param=\n[fadein=] [fadeout=] [bones=]), timescale (node= param=) and machine, then\npoint (a blend space's child at x= [y=]), state, transition ([xfade=]\n[if=\"condition\"] [advance=AUTO|ENABLED|DISABLED] [switch=IMMEDIATE|AT_END]\n[sync=true]), filter (node= bones=\"a|b\": a bone mask on any node) and root.\nA node may be named before the line that defines it. bones= is a list\nseparated by |; \"Spine+\" is the bone Spine and every bone below it.\n`tree` is the AnimationTree's path from the scene root. A section that\nnames a tree inside an instanced sub-scene replaces that scene's graph for\nthis instance (an override), and is saved only while it differs from it. A\ngraph built in C is not stored unless cw_animtree_set_stored says so.\nAn attribute a statement does not know is an error with the file and line.",
    "functions": [
     {
      "name": "cw_anim_new",
@@ -586,9 +586,39 @@
      "inline": false
     },
     {
+     "name": "cw_animtree_layer",
+     "signature": "cw_blend_id cw_animtree_layer(cw_node tree, cw_blend_id base, cw_blend_id over, const char *param)",
+     "doc": "A layer: `base` plays in full, and `over` replaces it on the bones and\nproperties `over` writes, by param (0 none .. 1 all; NULL: always 1). With a\nbone mask (cw_animtree_set_filter on the layer: it applies to `over` only)\nthe upper body can aim while the legs keep running. Bones the overlay does\nnot write keep the base's pose exactly, unlike blend2, which fades every\nbone. Exact wherever the layer has the node's whole weight (at the root,\nin a state that is not cross-fading); inside a blend with other nodes the\noverlay takes its share of what is there.",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_oneshot",
+     "signature": "cw_blend_id cw_animtree_oneshot(cw_node tree, cw_blend_id base, cw_blend_id shot, const char *param, float fadein, float fadeout)",
+     "doc": "A one-shot: `base` plays; setting `param` above 0 fires `shot` from its\nstart, layered over the base as cw_animtree_layer does (mask it with\ncw_animtree_set_filter), fading in over `fadein` seconds and out over the\nlast `fadeout` seconds of a clip that ends (or, for anything else, after\nit reports its end). The node sets the parameter back to 0 when it takes\nthe request, so one set is one shot; firing again restarts it; a negative\nvalue fades it out from where it is. Event keys of the shot fire.",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_oneshot_active",
+     "signature": "bool cw_animtree_oneshot_active(cw_node tree, cw_blend_id oneshot)",
+     "doc": "the shot is playing (fades included)",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_time_scale",
+     "signature": "cw_blend_id cw_animtree_time_scale(cw_node tree, cw_blend_id child, const char *param)",
+     "doc": "Its child runs at `param` times the tree's speed (0 holds it, negative runs it backwards).",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_set_sync",
+     "signature": "void cw_animtree_set_sync(cw_node tree, cw_blend_id space, bool sync)",
+     "doc": "Sync a blend space: its clip children run through their cycles together, each\nin the weighted mean of the cycle lengths, so clips of different lengths\n(a walk and a run) keep their feet in step while they blend. Off by default.",
+     "inline": false
+    },
+    {
      "name": "cw_animtree_set_filter",
      "signature": "void cw_animtree_set_filter(cw_node tree, cw_blend_id node, const char *const *names, int count)",
-     "doc": "Restrict a subtree to these bones / node paths (a bone mask). Bone tracks\nmatch by bone name, value tracks by their node path.",
+     "doc": "Restrict a subtree to these bones / node paths (a bone mask). Bone tracks\nmatch by bone name, value tracks by their node path. A name ending in +\n(\"Spine+\") is that bone and every bone below it in the skeleton. On a layer\nor one-shot node the mask applies to its overlay input only.",
      "inline": false
     },
     {
@@ -652,6 +682,12 @@
      "inline": false
     },
     {
+     "name": "cw_animtree_declare_param",
+     "signature": "void cw_animtree_declare_param(cw_node tree, const char *name, float value)",
+     "doc": "A parameter with its starting value as part of the graph: written to scene files (`param` lines) and\ndropped when the graph is replaced. Sets the value too.",
+     "inline": false
+    },
+    {
      "name": "cw_animtree_get_param",
      "signature": "float cw_animtree_get_param(cw_node tree, const char *name)",
      "doc": "0 when never set",
@@ -679,6 +715,60 @@
      "name": "cw_animtree_clip_weight",
      "signature": "float cw_animtree_clip_weight(cw_node tree, cw_blend_id clip)",
      "doc": "the weight the last evaluation gave a clip node (0..1, after all blends)",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_to_text",
+     "signature": "char *cw_animtree_to_text(cw_node tree)",
+     "doc": "The graph as text (the body of an [animtree] section, see the top of this\nfile). Graph nodes have names there: cw_animtree_find gives a node's id (a\nstate machine to travel in, a clip to read the weight of), -1 when absent.\ncw_alloc'd; \"\" for an empty graph",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_load_text",
+     "signature": "bool cw_animtree_load_text(cw_node tree, const char *text)",
+     "doc": "Replace the tree's graph with the one in `text`, stored in scene files from then on. false (logged\nwith the line, the graph left empty) on an error. Parameters set from code keep their values.",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_clear",
+     "signature": "void cw_animtree_clear(cw_node tree)",
+     "doc": "removes every graph node and declared parameter",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_find",
+     "signature": "cw_blend_id cw_animtree_find(cw_node tree, const char *name)",
+     "doc": "a graph node by name; unnamed ones answer to \"n<id>\"",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_set_name",
+     "signature": "void cw_animtree_set_name(cw_node tree, cw_blend_id node, const char *name)",
+     "doc": "its name in graph text (unique in the tree)",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_name",
+     "signature": "const char *cw_animtree_name(cw_node tree, cw_blend_id node)",
+     "doc": "interned; \"n<id>\" when it was never named",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_root",
+     "signature": "cw_blend_id cw_animtree_root(cw_node tree)",
+     "doc": "the node the tree evaluates; -1 for an empty graph",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_node_count",
+     "signature": "int cw_animtree_node_count(cw_node tree)",
+     "doc": "graph nodes; ids are 0 .. count-1",
+     "inline": false
+    },
+    {
+     "name": "cw_animtree_set_stored",
+     "signature": "void cw_animtree_set_stored(cw_node tree, bool stored)",
+     "doc": "write a graph built in C to scene files too",
      "inline": false
     },
     {
@@ -862,7 +952,7 @@
     {
      "name": "cw_transition",
      "doc": "",
-     "decl": "typedef struct cw_transition {\n  float xfade;               /* cross-fade seconds; while a cross-fade runs no\n                              * other transition is evaluated, so keep fades\n                              * short where chains of transitions matter */\n  cw_advance_mode advance;   /* AUTO: taken by itself when the condition holds;\n                              * ENABLED: only by travel; DISABLED: never */\n  cw_switch_mode switch_mode;/* AT_END: waits for the current state's end\n                              * (a non-looping clip finishing, a looping one\n                              * wrapping) */\n  const char *condition;     /* \"speed > 0.5\", \"grounded\", \"!grounded\", \"dir == 2\";\n                              * ops == != < <= > >=; NULL = always */\n} cw_transition;"
+     "decl": "typedef struct cw_transition {\n  float xfade;               /* cross-fade seconds; while a cross-fade runs no\n                              * other transition is evaluated, so keep fades\n                              * short where chains of transitions matter */\n  cw_advance_mode advance;   /* AUTO: taken by itself when the condition holds;\n                              * ENABLED: only by travel; DISABLED: never */\n  cw_switch_mode switch_mode;/* AT_END: waits for the current state's end\n                              * (a non-looping clip finishing, a looping one\n                              * wrapping) */\n  const char *condition;     /* \"speed > 0.5\", \"grounded\", \"!grounded\", \"dir == 2\";\n                              * ops == != < <= > >=; NULL = always */\n  bool sync;                 /* the new state starts at the old one's place in\n                              * its cycle (walk to run without a foot skip);\n                              * both states must be a clip or a blend space */\n} cw_transition;"
     },
     {
      "name": "cw_tween_fn",

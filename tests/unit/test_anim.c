@@ -8,6 +8,7 @@
 #include <stdlib.h>
 
 #include "cartwheel/anim.h"
+#include "cartwheel/vfs.h"
 #include "cartwheel/scene_file.h"
 #include "test.h"
 
@@ -737,6 +738,336 @@ static void test_tree(void) {
   free_scene();
 }
 
+/* ── AnimationTree graphs as text and in scene files ─────────────────── */
+
+static const char *graph_text =
+  "param name=\"speed\" value=0\n"
+  "param name=\"aiming\" value=0.25\n"
+  "clip name=\"idle\" anim=\"a\"\n"
+  "clip name=\"walk\" anim=\"b\" speed=1.5\n"
+  "blend1d name=\"move\" param=\"speed\" sync=true\n"
+  "point of=\"move\" node=\"idle\" x=0\n"
+  "point of=\"move\" node=\"walk\" x=2.5\n"
+  "clip name=\"jump\" anim=\"c\"\n"
+  "machine name=\"body\"\n"
+  "state of=\"body\" name=\"ground\" node=\"move\"\n"
+  "state of=\"body\" name=\"jump\" node=\"jump\"\n"
+  "transition of=\"body\" from=\"ground\" to=\"jump\" xfade=0.06 if=\"jumping\"\n"
+  "transition of=\"body\" from=\"jump\" to=\"ground\" xfade=0.1 advance=ENABLED switch=AT_END sync=true\n"
+  "clip name=\"l\" anim=\"a\"\n"
+  "clip name=\"r\" anim=\"b\"\n"
+  "clip name=\"u\" anim=\"c\"\n"
+  "blend2d name=\"look\" param=\"lx\" param_y=\"ly\"\n"
+  "point of=\"look\" node=\"l\" x=-1 y=0\n"
+  "point of=\"look\" node=\"r\" x=1 y=0\n"
+  "point of=\"look\" node=\"u\" x=0 y=1\n"
+  "filter node=\"look\" bones=\"Head|Neck\"\n"
+  "add name=\"looked\" base=\"body\" add=\"look\" param=\"look_amount\"\n"
+  "clip name=\"aim\" anim=\"b\"\n"
+  "layer name=\"upper\" base=\"looked\" over=\"aim\" param=\"aiming\" bones=\"Spine+|Other\"\n"
+  "clip name=\"swing\" anim=\"c\"\n"
+  "oneshot name=\"hit\" base=\"upper\" shot=\"swing\" param=\"attack\" fadein=0.08 fadeout=0.15 bones=\"Box\"\n"
+  "clip name=\"alt\" anim=\"a\"\n"
+  "blend2 name=\"mix\" a=\"hit\" b=\"alt\" param=\"alt_amount\"\n"
+  "timescale name=\"top\" node=\"mix\" param=\"rate\"\n"
+  "root node=\"top\"\n";
+
+/* a scene whose tree carries a graph, and one that instances it twice: once as it is, once with its own graph */
+static const char *tree_scene_text =
+  "[scene format=1]\n"
+  "\n"
+  "[node name=\"Root\" type=\"Node3D\"]\n"
+  "\n"
+  "[node name=\"Box\" parent=\".\" type=\"MeshInstance3D\"]\n"
+  "\n"
+  "[node name=\"Anim\" parent=\".\" type=\"AnimationPlayer\"]\n"
+  "\n"
+  "[node name=\"Tree\" parent=\".\" type=\"AnimationTree\"]\n"
+  "player = \"../Anim\"\n"
+  "process = MANUAL\n"
+  "\n"
+  "[animation name=\"a\" player=\"Anim\" length=1 loop=LOOP]\n"
+  "[track type=value path=\"Box:position.x\"]\n"
+  "0 = 0\n"
+  "\n"
+  "[animation name=\"b\" player=\"Anim\" length=2 loop=LOOP]\n"
+  "[track type=value path=\"Box:position.x\"]\n"
+  "0 = 10\n"
+  "\n"
+  "[animtree tree=\"Tree\"]\n"
+  "param name=\"s\" value=0.5\n"
+  "clip name=\"a\" anim=\"a\"\n"
+  "clip name=\"b\" anim=\"b\"\n"
+  "blend1d name=\"mix\" param=\"s\"\n"
+  "point of=\"mix\" node=\"a\" x=0\n"
+  "point of=\"mix\" node=\"b\" x=1\n"
+  "root node=\"mix\"\n";
+
+static const char *outer_scene_text =
+  "[scene format=1]\n"
+  "[ext_scene id=1 path=\"tree_inner.cwscene\"]\n"
+  "\n"
+  "[node name=\"World\" type=\"Node3D\"]\n"
+  "\n"
+  "[node name=\"Plain\" parent=\".\" instance=1]\n"
+  "\n"
+  "[node name=\"Changed\" parent=\".\" instance=1]\n"
+  "\n"
+  "[animtree tree=\"Changed/Tree\"]\n"
+  "clip name=\"only\" anim=\"b\"\n"
+  "root node=\"only\"\n";
+
+static void test_tree_text(void) {
+  make_scene();
+  cw_node other = cw_node_new("Node3D", "Other");
+  cw_node_add_child(root, other);
+  cw_anim xs[3] = { const_x("a", 0, 1, CW_LOOP_LINEAR), const_x("b", 10, 2, CW_LOOP_LINEAR), const_x("c", 20, 0.5f, CW_LOOP_NONE) };
+  /* b also moves Other, so a mask can tell the two apart */
+  int ot = cw_anim_add_value_track(xs[1], "Other:position.x", CW_INTERP_LINEAR);
+  cw_anim_add_key(xs[1], ot, 0, cw_val_float(7));
+  int ot0 = cw_anim_add_value_track(xs[0], "Other:position.x", CW_INTERP_LINEAR);
+  cw_anim_add_key(xs[0], ot0, 0, cw_val_float(1));
+  for (int i = 0; i < 3; i++) { cw_anim_player_add(anim, NULL, xs[i]); cw_anim_release(xs[i]); }
+#define NEW_TREE(var, name) \
+  cw_node var = cw_node_new("AnimationTree", name); \
+  cw_node_add_child(root, var); \
+  cw_node_set(var, "player", cw_val_string("../Anim")); \
+  cw_node_set(var, "process", cw_val_int(CW_ANIM_PROCESS_MANUAL))
+
+  /* every statement loads, and the graph writes back byte for byte */
+  NEW_TREE(tr, "T1");
+  CHECK(cw_animtree_load_text(tr, graph_text));
+  char *out = cw_animtree_to_text(tr);
+  CHECK(out && !strcmp(out, graph_text));
+  if (out && strcmp(out, graph_text)) cw_error("graph round trip differs:\n%s", out);
+  { uint32_t hh = cw_hash32(out, strlen(out), CW_HASH32_INIT); FOLD(hh); }
+  cw_free(out);
+  CHECK_EQ_INT(cw_animtree_node_count(tr), 17);
+  CHECK_EQ_INT(cw_animtree_root(tr), cw_animtree_find(tr, "top"));
+  CHECK(cw_animtree_find(tr, "nope") == -1);
+  NEAR(cw_animtree_get_param(tr, "aiming"), 0.25, 0);
+  cw_blend_id body = cw_animtree_find(tr, "body");
+  CHECK(!strcmp(cw_animtree_sm_current(tr, body), "ground"));
+  /* forward references: the same graph with its lines reversed (root first) loads to the same evaluation order
+   * of names, and a graph written top down is accepted */
+  NEW_TREE(fw, "T1b");
+  CHECK(cw_animtree_load_text(fw, "root node=\"m\"\nmachine name=\"m\"\nstate of=\"m\" name=\"s\" node=\"c\"\nclip name=\"c\" anim=\"a\"\n"));
+  CHECK_EQ_INT(cw_animtree_root(fw), cw_animtree_find(fw, "m"));
+  cw_animtree_advance(fw, 0.1);
+  NEAR(box_x(), 0, 0);
+
+  /* mistakes are errors, not silence: each leaves the graph empty */
+  static const char *const bad[] = {
+    "clip name=\"x\" anim=\"a\" sped=2\n",                         /* a mistyped attribute */
+    "clip name=\"x\"\n",                                            /* no anim */
+    "blend1d name=\"m\" param=\"s\"\npoint of=\"m\" node=\"zz\" x=0\n", /* an undefined node */
+    "clip name=\"x\" anim=\"a\"\nclip name=\"x\" anim=\"b\"\n",     /* a name twice */
+    "clip name=\"x\" anim=\"a\"\nblend2 name=\"m\" a=\"x\" b=\"x\" param=\"p\"\n", /* a node with two parents */
+    "machine name=\"m\"\n",                                         /* no states */
+    "wobble name=\"x\"\n",                                          /* an unknown statement */
+    "clip name=\"x\" anim=\"a\"\nmachine name=\"m\"\nstate of=\"m\" name=\"s\" node=\"x\"\ntransition of=\"m\" from=\"s\" to=\"s\" if=\"a >\"\n",
+    "clip name=\"x\" anim=\"a\" speed=fast\n",
+  };
+  for (size_t i = 0; i < CW_ARRAY_LEN(bad); i++) {
+    CHECK(!cw_animtree_load_text(fw, bad[i]));
+    CHECK_EQ_INT(cw_animtree_node_count(fw), 0);
+  }
+  /* the worked examples of docs/guides/animation.md and AGENTS.md load as written */
+  static const char *const doc_graphs[] = {
+    "param name=\"speed\" value=0\n"
+    "clip name=\"idle\" anim=\"idle\"\n"
+    "clip name=\"walk\" anim=\"walk\"\n"
+    "clip name=\"run\" anim=\"run\"\n"
+    "blend1d name=\"move\" param=\"speed\" sync=true\n"
+    "point of=\"move\" node=\"idle\" x=0\n"
+    "point of=\"move\" node=\"walk\" x=1.6\n"
+    "point of=\"move\" node=\"run\" x=5\n"
+    "clip name=\"aim\" anim=\"aim\"\n"
+    "layer name=\"upper\" base=\"move\" over=\"aim\" param=\"aiming\" bones=\"Spine+\"\n"
+    "clip name=\"swing\" anim=\"attack\"\n"
+    "oneshot name=\"top\" base=\"upper\" shot=\"swing\" param=\"attack\" fadein=0.08 fadeout=0.15 bones=\"Spine+\"\n"
+    "root node=\"top\"\n",
+    "clip name=\"idle\" anim=\"idle\"\n"
+    "clip name=\"run\" anim=\"run\"\n"
+    "blend1d name=\"move\" param=\"speed\" sync=true\n"
+    "point of=\"move\" node=\"idle\" x=0\n"
+    "point of=\"move\" node=\"run\" x=6\n"
+    "clip name=\"jump\" anim=\"jump\"\n"
+    "machine name=\"body\"\n"
+    "state of=\"body\" name=\"ground\" node=\"move\"\n"
+    "state of=\"body\" name=\"jump\" node=\"jump\"\n"
+    "transition of=\"body\" from=\"ground\" to=\"jump\" xfade=0.06 if=\"!floor\"\n"
+    "transition of=\"body\" from=\"jump\" to=\"ground\" xfade=0.1 if=\"floor\"\n"
+    "clip name=\"swing\" anim=\"attack\"\n"
+    "oneshot name=\"top\" base=\"body\" shot=\"swing\" param=\"attack\" fadein=0.08 fadeout=0.15 bones=\"Spine+\"\n"
+    "root node=\"top\"\n",
+  };
+  for (size_t i = 0; i < CW_ARRAY_LEN(doc_graphs); i++) {
+    CHECK(cw_animtree_load_text(fw, doc_graphs[i]));
+    char *back = cw_animtree_to_text(fw);
+    CHECK(back && !strcmp(back, doc_graphs[i]));
+    cw_free(back);
+  }
+  cw_animtree_clear(fw);
+  cw_node_set(fw, "active", cw_val_bool(false));
+  cw_node_set(tr, "active", cw_val_bool(false));
+
+  /* a layer: the overlay replaces the base only where it writes (and its mask lets it). Box is masked out, so
+   * Box keeps the base's value exactly while Other takes the overlay's */
+  NEW_TREE(ly, "T2");
+  CHECK(cw_animtree_load_text(ly, "clip name=\"base\" anim=\"a\"\nclip name=\"over\" anim=\"b\"\n"
+                                  "layer name=\"top\" base=\"base\" over=\"over\" param=\"amount\" bones=\"Other\"\n"));
+  cw_animtree_set_param(ly, "amount", 1);
+  cw_animtree_advance(ly, 0.1);
+  CHECK(box_x() == 0);
+  CHECK(cw_node3d_position(other).x == 7);
+  cw_animtree_set_param(ly, "amount", 0.5f);
+  cw_animtree_advance(ly, 0.1);
+  CHECK(box_x() == 0);
+  NEAR(cw_node3d_position(other).x, 4, 1e-6);
+  cw_animtree_set_param(ly, "amount", 0);
+  cw_animtree_advance(ly, 0.1);
+  CHECK(cw_node3d_position(other).x == 1);
+  { uint32_t hh = cw_animtree_hash(ly); FOLD(hh); }
+  /* the control for the layer: blend2 with the same mask drags the unmasked Box toward its rest value */
+  cw_node_set(ly, "active", cw_val_bool(false));
+  cw_node3d_set_position(box, (t3_vec3){ 3, 0, 0 });
+  NEW_TREE(b2, "T2b");
+  CHECK(cw_animtree_load_text(b2, "clip name=\"base\" anim=\"a\"\nclip name=\"over\" anim=\"b\"\nfilter node=\"over\" bones=\"Other\"\n"
+                                  "blend2 name=\"top\" a=\"base\" b=\"over\" param=\"amount\"\n"));
+  cw_animtree_set_param(b2, "amount", 0.5f);
+  cw_animtree_advance(b2, 0.1);
+  CHECK(box_x() != 0); /* half the base, half the rest value */
+  cw_node_set(b2, "active", cw_val_bool(false));
+
+  /* a one-shot: one set of the parameter is one shot; it fades in, plays the clip once, fades out, and is gone */
+  NEW_TREE(os, "T3");
+  CHECK(cw_animtree_load_text(os, "clip name=\"base\" anim=\"a\"\nclip name=\"shot\" anim=\"c\"\n"
+                                  "oneshot name=\"top\" base=\"base\" shot=\"shot\" param=\"fire\" fadein=0.1 fadeout=0.2\n"));
+  cw_blend_id top = cw_animtree_find(os, "top");
+  cw_animtree_advance(os, 0.05);
+  CHECK(!cw_animtree_oneshot_active(os, top));
+  CHECK(box_x() == 0);
+  cw_animtree_set_param(os, "fire", 1);
+  cw_animtree_advance(os, 0.05); /* fired this tick: amount 0 at its first instant */
+  CHECK(cw_animtree_oneshot_active(os, top));
+  CHECK(cw_animtree_get_param(os, "fire") == 0);
+  NEAR(box_x(), 0, 1e-6);
+  cw_animtree_advance(os, 0.05); /* 0.05 s in: half way up the fade in */
+  NEAR(box_x(), 10, 1e-4);
+  cw_animtree_advance(os, 0.05);
+  cw_animtree_advance(os, 0.05);
+  NEAR(box_x(), 20, 1e-4); /* full */
+  float seen[8];
+  for (int i = 0; i < 8; i++) { cw_animtree_advance(os, 0.05); seen[i] = box_x(); FOLD(seen[i]); }
+  CHECK(seen[2] == 20); /* then down over the clip's last 0.2 s */
+  NEAR(seen[3], 15, 1e-4);
+  NEAR(seen[5], 5, 1e-4);
+  NEAR(seen[6], 0, 1e-3);
+  CHECK(seen[7] == 0);
+  CHECK(!cw_animtree_oneshot_active(os, top));
+  CHECK(box_x() == 0);
+  cw_node_set(os, "active", cw_val_bool(false));
+
+  /* time scale and a synced blend space: a (1 s) and b (2 s) at equal weight share a 1.5 s cycle */
+  NEW_TREE(sy, "T4");
+  CHECK(cw_animtree_load_text(sy, "clip name=\"a\" anim=\"a\"\nclip name=\"b\" anim=\"b\"\nblend1d name=\"m\" param=\"s\" sync=true\n"
+                                  "point of=\"m\" node=\"a\" x=0\npoint of=\"m\" node=\"b\" x=1\ntimescale name=\"top\" node=\"m\" param=\"rate\"\n"));
+  cw_animtree_set_param(sy, "s", 0.5f);
+  cw_animtree_set_param(sy, "rate", 2);
+  cw_animtree_advance(sy, 0.15); /* 0.3 s of tree time: a fifth of the cycle */
+  NEAR(cw_animtree_clip_weight(sy, cw_animtree_find(sy, "a")), 0.5, 1e-6);
+  NEAR(box_x(), 5, 1e-5);
+  cw_node_set(sy, "active", cw_val_bool(false));
+  /* two ramps whose value is their place in the cycle: ra takes 1 s, rb 2 s */
+  for (int i = 0; i < 2; i++) {
+    cw_anim ramp = cw_anim_new(i ? "rb" : "ra", i ? 2 : 1, CW_LOOP_LINEAR);
+    int rt = cw_anim_add_value_track(ramp, "Box:position.x", CW_INTERP_LINEAR);
+    cw_anim_add_key(ramp, rt, 0, cw_val_float(0));
+    cw_anim_add_key(ramp, rt, i ? 2 : 1, cw_val_float(1));
+    cw_anim_player_add(anim, NULL, ramp);
+    cw_anim_release(ramp);
+  }
+  static const char ramps[] = "clip name=\"a\" anim=\"ra\"\nclip name=\"b\" anim=\"rb\"\nblend1d name=\"m\" param=\"s\"%s\n"
+                              "point of=\"m\" node=\"a\" x=0\npoint of=\"m\" node=\"b\" x=1\n";
+  char gtext[512];
+  NEW_TREE(s1, "T5");
+  snprintf(gtext, sizeof gtext, ramps, " sync=true");
+  CHECK(cw_animtree_load_text(s1, gtext));
+  cw_animtree_set_param(s1, "s", 0.5f);
+  for (int i = 0; i < 3; i++) cw_animtree_advance(s1, 0.1);
+  NEAR(box_x(), 0.2, 1e-5); /* both a fifth of the way through the shared 1.5 s cycle */
+  cw_node_set(s1, "active", cw_val_bool(false));
+  /* the control: without sync each runs at its own length (0.3 and 0.15 of the way) */
+  NEW_TREE(s2, "T5b");
+  snprintf(gtext, sizeof gtext, ramps, "");
+  CHECK(cw_animtree_load_text(s2, gtext));
+  cw_animtree_set_param(s2, "s", 0.5f);
+  for (int i = 0; i < 3; i++) cw_animtree_advance(s2, 0.1);
+  NEAR(box_x(), 0.225, 1e-5);
+  cw_node_set(s2, "active", cw_val_bool(false));
+  /* a synced transition: the new state starts where the old one was in its cycle */
+  static const char machine[] = "clip name=\"a\" anim=\"ra\"\nclip name=\"b\" anim=\"rb\"\nmachine name=\"m\"\n"
+                                "state of=\"m\" name=\"a\" node=\"a\"\nstate of=\"m\" name=\"b\" node=\"b\"\n"
+                                "transition of=\"m\" from=\"a\" to=\"b\" if=\"go\"%s\n";
+  for (int pass = 0; pass < 2; pass++) {
+    NEW_TREE(m1, pass ? "T6b" : "T6");
+    snprintf(gtext, sizeof gtext, machine, pass ? "" : " sync=true");
+    CHECK(cw_animtree_load_text(m1, gtext));
+    for (int i = 0; i < 4; i++) cw_animtree_advance(m1, 0.1);
+    NEAR(box_x(), 0.4, 1e-5);
+    cw_animtree_set_param(m1, "go", 1);
+    cw_animtree_advance(m1, 0.1); /* b from 0.4 of its cycle, plus this tick's 0.05; without sync from 0 */
+    NEAR(box_x(), pass ? 0.05 : 0.45, 1e-5);
+    cw_node_set(m1, "active", cw_val_bool(false));
+  }
+#undef NEW_TREE
+  free_scene();
+
+  /* scene files: the graph loads with its scene, saves byte for byte, and an enclosing scene can replace it */
+  cw_packed_scene *inner = cw_scene_parse(tree_scene_text, "tree_inner.cwscene");
+  CHECK(inner != NULL);
+  cw_node r = cw_scene_instance(inner);
+  cw_node t1 = cw_node_get(r, "Tree");
+  CHECK_EQ_INT(cw_animtree_node_count(t1), 3);
+  NEAR(cw_animtree_get_param(t1, "s"), 0.5, 0);
+  cw_animtree_set_param(t1, "s", 1); /* a parameter's current value is play state, not content */
+  char *saved = cw_scene_save(r);
+  CHECK(saved && !strcmp(saved, tree_scene_text));
+  if (saved && strcmp(saved, tree_scene_text)) cw_error("tree scene round trip differs:\n%s", saved);
+  { uint32_t hh = cw_hash32(saved, strlen(saved), CW_HASH32_INIT); FOLD(hh); }
+  cw_free(saved);
+  cw_animtree_set_param(t1, "s", 0.5f);
+  cw_animtree_advance(t1, 0.1);
+  NEAR(cw_node3d_position(cw_node_get(r, "Box")).x, 5, 1e-6);
+  cw_node_free(r);
+
+  CHECK(cw_vfs_write("tree_inner.cwscene", tree_scene_text, strlen(tree_scene_text)));
+  cw_scene_cache_forget("tree_inner.cwscene");
+  cw_packed_scene *outer = cw_scene_parse(outer_scene_text, "tree_outer.cwscene");
+  CHECK(outer != NULL);
+  cw_node w = cw_scene_instance(outer);
+  cw_node plain = cw_node_get(w, "Plain/Tree"), changed = cw_node_get(w, "Changed/Tree");
+  CHECK_EQ_INT(cw_animtree_node_count(plain), 3);
+  CHECK_EQ_INT(cw_animtree_node_count(changed), 1);
+  saved = cw_scene_save(w);
+  /* the instance's own graph is not copied into the outer file; the override is */
+  CHECK(saved && !strcmp(saved, outer_scene_text));
+  if (saved && strcmp(saved, outer_scene_text)) cw_error("override round trip differs:\n%s", saved);
+  cw_free(saved);
+  /* a graph edited on the plain instance becomes an override of its own */
+  CHECK(cw_animtree_load_text(plain, "clip name=\"x\" anim=\"a\"\n"));
+  saved = cw_scene_save(w);
+  CHECK(saved && strstr(saved, "[animtree tree=\"Plain/Tree\"]\nclip name=\"x\" anim=\"a\"\nroot node=\"x\"\n") != NULL);
+  cw_free(saved);
+  cw_animtree_advance(changed, 0.1);
+  NEAR(cw_node3d_position(cw_node_get(w, "Changed/Box")).x, 10, 0);
+  cw_node_free(w);
+  /* a section that names no tree, and a statement the format does not have, fail the parse or the instance */
+  CHECK(cw_scene_parse("[scene format=1]\n[node name=\"A\" type=\"Node\"]\n[animtree]\n", "bad3.cwscene") == NULL);
+  CHECK(cw_scene_parse("[scene format=1]\n[node name=\"A\" type=\"AnimationTree\"]\n[animtree tree=\".\"]\nwobble name=\"x\"\n", "bad4.cwscene") == NULL);
+}
+
 /* ── root motion (node tracks) ──────────────────────────────────────── */
 
 static void test_root_motion(void) {
@@ -933,5 +1264,5 @@ static void test_events_and_lod(void) {
 
 CW_TEST_SUITE("anim", { "interpolation", test_interpolation }, { "loop_edges", test_loop_edges },
               { "player_values", test_player_values }, { "scene_format", test_scene_format }, { "tweens", test_tweens },
-              { "tree", test_tree }, { "root_motion", test_root_motion }, { "skeletal", test_skeletal },
+              { "tree", test_tree }, { "tree_text", test_tree_text }, { "root_motion", test_root_motion }, { "skeletal", test_skeletal },
               { "events_and_lod", test_events_and_lod })
