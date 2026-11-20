@@ -4,7 +4,18 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## NEXT (fixes2): TAA on fast movers no worse than no TAA
+## v0.53.0 (2026-11-20)
+
+### Added
+
+- **Gate `csm-specular`: the sun's highlight under cascades.** gi_room's chrome ball, the ceiling taken away, lit
+  by the sun through three cascades and by the same sun with three.c's one shadow map fitted over the room, on GL
+  and WebGPU: the highlight is there under cascades (brightest pixel 255 on both) and matches the one map's (mean
+  3.3 levels on GL, 2.5 on WebGPU, bound 12). Control: with the ceiling in place the ball's highlight point lies
+  in the ceiling's shadow, under cascades and under the fitted map alike (peak 193 and 199), and the presence check
+  fails there. The room's default one map starts at the light and leaves the ceiling out of it, which is why that
+  map showed a highlight the cascades did not: the cascades were right. gi_room takes `GI_SUN_CASCADES`,
+  `GI_SUN_FIT` and `GI_NO_CEILING` for it.
 
 ### Fixed
 
@@ -22,7 +33,6 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   `CW_TEST_TAA_STILL_ONLY=1`, fails it) and the still yard as sharp as before (`MV_REF=3`; control: every pixel
   taken as moving fails it). The TAA pass costs 0.04 to 0.07 ms more at post_stack's size on a Radeon 890M
   (GL 0.42 to 0.49 ms, WebGPU 0.41 to 0.45 ms on a still frame; 0.44 to 0.50 and 0.46 to 0.50 on the spinning bar).
-## NEXT (fixes2): the retargeting sample's people are athletic
 
 ### Changed
 
@@ -177,18 +187,6 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - The tonemap programs take their exposure as `u_tm_exposure` times the automatic exposure's state (a texture
   of zero stops when it is off): the same picture as before with automatic exposure off (`tests/post-fusion.mjs`
   and `tests/quality-verylow-post.mjs` pass unchanged).
-## NEXT (fixes2): a gate that the cascaded sun keeps its specular highlight
-
-### Added
-
-- **Gate `csm-specular`: the sun's highlight under cascades.** gi_room's chrome ball, the ceiling taken away, lit
-  by the sun through three cascades and by the same sun with three.c's one shadow map fitted over the room, on GL
-  and WebGPU: the highlight is there under cascades (brightest pixel 255 on both) and matches the one map's (mean
-  3.3 levels on GL, 2.5 on WebGPU, bound 12). Control: with the ceiling in place the ball's highlight point lies
-  in the ceiling's shadow, under cascades and under the fitted map alike (peak 193 and 199), and the presence check
-  fails there. The room's default one map starts at the light and leaves the ceiling out of it, which is why that
-  map showed a highlight the cascades did not: the cascades were right. gi_room takes `GI_SUN_CASCADES`,
-  `GI_SUN_FIT` and `GI_NO_CEILING` for it.
 
 ## v0.51.0 (2026-11-19)
 
