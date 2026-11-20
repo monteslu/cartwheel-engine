@@ -5,6 +5,40 @@ prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
 ## v0.51.0 (2026-11-19)
+## NEXT (post stack): automatic exposure and motion blur
+
+### Added
+- **Automatic exposure (eye adaptation).** `PostProcess` `auto_exposure` makes the picture follow what it shows:
+  step out of a cave and it is bright for a moment, then settles; step back in and the dark comes up more slowly.
+  The frame's average log luminance is brought to `auto_exposure_key` (0.18), within `auto_exposure_min_ev` and
+  `auto_exposure_max_ev` stops of the exposure you set (`exposure_ev` stays the compensation), at
+  `auto_exposure_speed_up` toward a brighter picture and `auto_exposure_speed_down` toward a darker one. It
+  always moves by a share of the way, never in a step: over a 30 times jump of the lamps in `samples/post_stack`
+  the mean brightness never moves more than 6% a frame and never turns back, and `tools/flash-check.mjs` passes
+  on GL and WebGPU. The adapted value stays on the GPU and the tonemap pass reads it there, so nothing is read
+  back (no stall) and its clock is the frame clock: a deterministic run adapts the same on every host, and GL
+  and WebGPU agree within 0.01% on every frame's mean. `cw_pipeline_exposure_reset` starts over at a cut. It
+  runs on every graphics preset (a preset must not change how bright the picture is) and costs 0.09 to 0.15 ms
+  of GPU time at 1920 x 1080 on a Radeon 890M. Guide: docs/guides/rendering-3d.md, "Automatic exposure". Gates
+  `post-auto-exposure`, `post-auto-exposure-swell`, `post-auto-exposure-return` and the scripted
+  `auto-exposure` (control: no adaptation must fail).
+- **Motion blur.** `PostProcess` `motion_blur` smears what moved while the shutter was open, from the velocity
+  target, so a fast pan, a spinning wheel, a swung arm and each box of an instanced swarm blur alike
+  (`motion_blur_shutter` 0.5, `motion_blur_samples` 10, `motion_blur_max` 32 pixels at 1080 lines). A moving
+  thing blurs past its outline over what stands still behind it; nothing still is blurred by what moves behind
+  it. The UI and a first person viewmodel stay sharp: under a fast camera turn the viewmodel's pixels are within
+  1 level of the unblurred frame (`tests/viewmodel-blur.mjs`, with a control that smears it). Off on the Very
+  Low and Low presets, 0.6 of the samples on Medium, 1.5 times on Ultra, and off while the player's reduced
+  motion setting is on (`cw_ui_set_reduced_motion`). 0.6 to 0.9 ms of GPU time at 1920 x 1080 on a Radeon 890M
+  with a bar sweeping the frame. Guide: "Motion blur". Gates `post-motion-blur`, `post-motion-blur-reduced`,
+  `viewmodel-blur`.
+
+### Changed
+- The tonemap programs take their exposure as `u_tm_exposure` times the automatic exposure's state (a texture
+  of zero stops when it is off): the same picture as before with automatic exposure off (`tests/post-fusion.mjs`
+  and `tests/quality-verylow-post.mjs` pass unchanged).
+
+## NEXT (post stack): moving things carry their own motion vectors, so TAA no longer smears them
 
 ### Added
 
