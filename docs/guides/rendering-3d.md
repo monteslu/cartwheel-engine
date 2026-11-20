@@ -55,7 +55,7 @@ Texture filtering is the same on GL and WebGPU. A texture's `anisotropy` (1 by d
 | Node | What it configures |
 |---|---|
 | `Camera3D` | fov, near, far; the first `current` camera renders |
-| `MeshInstance3D` | a primitive (BOX, SPHERE, PLANE, CYLINDER) scaled to `size`, or a `mesh` resource; material colour, metalness, roughness, emissive; shadows; visibility and baking properties |
+| `MeshInstance3D` | a primitive (BOX, SPHERE, PLANE, CYLINDER) scaled to `size`, or a `mesh` resource; material colour, metalness, roughness, emissive; `shading` STANDARD or TOON; shadows; visibility and baking properties |
 | `DirectionalLight3D`, `OmniLight3D`, `SpotLight3D` | colour, energy, range, decay, cone, shadows, strength in volumetric fog |
 | `WorldEnvironment` | background, ambient and hemisphere light, three.c fog |
 | `PostProcess` | the pipeline's mode and post settings |
@@ -530,6 +530,29 @@ cw_rim_light_remove_tree(model_root);            /* before releasing the model: 
 The rim is per material: glTF instances share their file's materials, so clone one per character for a per-character colour (MeshInstance3D primitives of one look share one material in a tree too). It works with every other part (clustered lights, the cascaded sun, skin shading, GI) and costs a few instructions per pixel of the material; shadow casters are untouched and every preset draws it. Measured on a Radeon 890M in a split-screen shooter at 1920 x 1080, High preset, four to eight rimmed skinned characters (scene pass GPU ms, rims on against off, two interleaved runs each): GL one view 5.26 to 5.66 against 5.15 to 5.33, four views 5.2 to 5.5 against 5.21 to 5.34; WebGPU one view 4.08 to 4.7 against 4.36 to 4.75, four views 4.68 to 4.71 against 4.23. That is under the run-to-run noise on one view and about 0.45 ms on WebGPU with four views; a Vega 8 (about a quarter of an 890M) should stay under 1 ms. `samples/rim_light` shows two lines of figures from 3 m to 40 m with red and blue rims and a pulsing one; its gate is `rim-light`.
 
 **Vertex cache order.** `cw_geometry_optimize_vertex_cache` reorders an indexed geometry's triangles for the GPU's post-transform cache (meshoptimizer's optimizeVertexCache) and reports the vertices shaded per triangle before and after. Meshes exported in modelling order can shade each vertex two or three times; already ordered ones (most of a character exporter's) gain little. Opaque meshes draw the same picture.
+
+### Toon shading
+
+A toon (cel) shaded surface is lit in flat tones with hard edges between them instead of a smooth falloff: three.js r187's MeshToonMaterial ([toon.h](header:toon.h)). The light a surface gets is read from a ramp with one tone a texel, so three bands paint shadow, mid tone and light. In a scene it is one property of a `MeshInstance3D`:
+
+```
+[node name="Hero" parent="." type="MeshInstance3D"]
+mesh = res(0x1234)
+shading = TOON
+toon_bands = 3
+```
+
+`shading = TOON` applies to the node's primitive or to every material of its mesh resource or glTF scene (two nodes showing the same file still share materials). `toon_bands` is the number of tones, 2 to 16; below 2 the surface has three.js's own two soft-edged tones (0.7 and 1 of the light). Both can change in play. From code, for a model instantiated with `cw_gltf_instantiate`:
+
+```c
+cw_toon_apply_tree(model_root, 3);            /* every lit material under the model, three tones */
+cw_toon_restore_tree(model_root);             /* back to the file's materials */
+t3_material *m = cw_toon_material(src, 4);    /* one material; yours to release */
+```
+
+A toon material keeps the surface's colour and colour map, emissive colour, map and intensity (a glow that ignores the light: fuses, eyes, signs), normal map, ambient occlusion, light map, alpha map and cutout, vertex colours, transparency and sides. It has no roughness, metalness, reflections or highlights. Every light lights it, with shadows: ambient and hemisphere light, three.c's lights, the clustered omni and spot lights and the cascaded sun. Each light is banded on its own, so two lights give two sets of bands, and a lamp's falloff with distance stays smooth inside a band. For a ramp of your own (uneven steps), set `gradient_map` on the material: a DataTexture with both filters nearest, as three.js asks; its red channel scales the light.
+
+It is cheaper than the physically based materials (no highlight, no environment lookup; one texture read per light). The plain lighting model of the Very Low preset, rim lights and skin shading are for the physically based materials and leave a toon one as it is. `samples/toon_shading` shows banded spheres, an emissive cylinder and two toon trees from one glTF beside their physically based twins; its gate is `toon-shading`.
 
 ## Visibility: culling, LOD and impostors
 

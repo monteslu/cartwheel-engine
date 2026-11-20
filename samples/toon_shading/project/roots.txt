@@ -1,0 +1,5 @@
+# toon_shading: what cwpack packs. The trees are the visibility samples'
+# generated tree (CC0, samples/vis_city/project/gen.mjs): a glTF with two
+# materials, drawn toon shaded by MeshInstance3D shading = TOON.
+main.cwscene
+models/tree.glb = @engine/samples/vis_city/project/models/tree.glb

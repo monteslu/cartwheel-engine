@@ -18,6 +18,7 @@
 #include "render/bake_internal.h"
 #include "cartwheel/gpu.h"
 #include "cartwheel/shading.h"
+#include "cartwheel/toon.h"
 #include "cartwheel/gl.h"
 #if CW_WGPU
 #include "platform/wgpu.h"
@@ -63,6 +64,7 @@ typedef struct render3d_state {
 
 typedef struct mesh_look {
   int physical;
+  int toon, bands; /* shading TOON: a MeshToonMaterial with the ramp of that many tones */
   t3_color color, emissive, sheen_color;
   float metalness, roughness, ior, specular_intensity, clearcoat, clearcoat_roughness, sheen, sheen_roughness, iridescence,
       iridescence_ior, anisotropy, diffuse_roughness;
@@ -232,6 +234,8 @@ typedef struct mesh3d {
   float iridescence, iridescence_ior;
   float anisotropy;
   float diffuse_roughness;
+  int shading;    /* STANDARD, TOON (cartwheel/toon.h) */
+  int toon_bands; /* TOON: tones of the light ramp (below 2: three.js's two) */
   bool cast_shadow, receive_shadow;
   uint64_t mesh; /* resource uid (resource.h); 0 = use the primitive */
   cw__mesh_vis vis; /* culling, LOD, impostors (visibility.h) */
@@ -244,6 +248,7 @@ typedef struct mesh3d {
   /* the mesh resource drawn instead of the primitive */
   uint64_t built_mesh;
   uint32_t built_version;
+  int built_shading, built_bands; /* what the resource's materials were last made for */
   cw_res res;
   t3_object *res_obj;
   /* baked lighting (cartwheel/lightmap.h) */
@@ -257,6 +262,8 @@ typedef struct mesh3d {
   bool lightmapped;         /* its geometry is the lightmap's uv2 copy: no LOD switching */
 } mesh3d;
 static const char *const gi_names[] = { "DYNAMIC", "STATIC", NULL };
+enum { SHADING_STANDARD, SHADING_TOON };
+static const char *const shading_names[] = { "STANDARD", "TOON", NULL };
 static const char *const lmuv_names[] = { "GENERATED", "UV0", NULL };
 static const cw_node_type *mesh3d_t;
 
@@ -311,6 +318,7 @@ static void mesh_init(cw_node n, void *data) {
   m->vis.impostor_distance = 50;
   m->vis.impostor_fade = 5;
   m->lightmap_scale = 1;
+  m->toon_bands = 3;
 }
 
 /* A mesh resource by UID: a glTF scene (instanced: geometry, materials and
@@ -325,7 +333,16 @@ static bool mesh_res_rebuild(cw_node n, mesh3d *m) {
     m->built_mesh = 0;
     return false;
   }
-  if (m->built_mesh == m->mesh && m->built_version == cw_res_version(m->res)) return true;
+  if (m->built_mesh == m->mesh && m->built_version == cw_res_version(m->res)) {
+    /* shading or toon_bands changed: the instance's materials are made again from the resource's */
+    if (m->res_obj && (m->built_shading != m->shading || m->built_bands != m->toon_bands)) {
+      cw_toon_restore_tree(m->res_obj);
+      if (m->shading == SHADING_TOON) cw_toon_apply_tree(m->res_obj, m->toon_bands);
+      m->built_shading = m->shading;
+      m->built_bands = m->toon_bands;
+    }
+    return true;
+  }
   if (m->built_mesh != m->mesh) {
     cw_res_release(m->res);
     m->res = cw_res_load_uid(m->mesh, 0);
@@ -343,6 +360,9 @@ static bool mesh_res_rebuild(cw_node n, mesh3d *m) {
   else if (cw_res_get_state(m->res) != CW_RES_STATE_LOADING)
     cw_warn("MeshInstance3D: resource %016llx is not a mesh or glTF scene", (unsigned long long)m->mesh);
   if (o) {
+    if (m->shading == SHADING_TOON) cw_toon_apply_tree(o, m->toon_bands);
+    m->built_shading = m->shading;
+    m->built_bands = m->toon_bands;
     t3_object_add(group, o);
     t3_release(o);
     m->res_obj = o;
@@ -370,11 +390,14 @@ static bool mesh_physical(const mesh3d *m);
 static mesh_look look_of(const mesh3d *m) {
   mesh_look k;
   memset(&k, 0, sizeof k); /* padding too: looks compare with memcmp */
-  k.physical = mesh_physical(m);
+  k.toon = m->shading == SHADING_TOON;
+  k.bands = k.toon ? (m->toon_bands < 2 ? 0 : CW_MIN(m->toon_bands, CW_TOON_MAX_BANDS)) : 0;
+  k.physical = !k.toon && mesh_physical(m);
   k.color = m->color;
+  k.emissive = m->emissive;
+  if (k.toon) return k; /* a toon surface has no roughness, metalness or lobes */
   k.metalness = m->metalness;
   k.roughness = m->roughness;
-  k.emissive = m->emissive;
   if (k.physical) {
     k.ior = m->ior;
     k.specular_intensity = m->specular_intensity;
@@ -393,6 +416,10 @@ static mesh_look look_of(const mesh3d *m) {
 
 static void look_apply(t3_material *t, const mesh_look *k) {
   t->color = k->color;
+  if (t->type == T3_MESH_TOON_MATERIAL) {
+    t->emissive = k->emissive;
+    return;
+  }
   t->metalness = k->metalness;
   t->roughness = k->roughness;
   t->emissive = k->emissive;
@@ -412,7 +439,8 @@ static void look_apply(t3_material *t, const mesh_look *k) {
 }
 
 static t3_material *look_new(const mesh_look *k) {
-  t3_material *t = k->physical ? t3_mesh_physical_material_new(0xffffff) : t3_mesh_standard_material_new(0xffffff);
+  t3_material *t = k->toon ? cw_toon_material(NULL, k->bands)
+                   : k->physical ? t3_mesh_physical_material_new(0xffffff) : t3_mesh_standard_material_new(0xffffff);
   look_apply(t, k);
   return t;
 }
@@ -542,6 +570,11 @@ static const cw_prop mesh_props[] = {
   CW_PROP_FIELD_RANGE(mesh3d, anisotropy, CW_T_FLOAT, 0, 1, "Physical: stretched highlights, brushed metal (0 = none)."),
   CW_PROP_FIELD_RANGE(mesh3d, diffuse_roughness, CW_T_FLOAT, 0, 1, "Physical: rough diffuse, dusty or chalky surfaces that look flat at grazing angles (0 = smooth, plastic-like)."),
   CW_PROP_FIELD(mesh3d, emissive, CW_T_COLOR, CW_PROP_DEFAULT, "Emitted light colour."),
+  { .name = "shading", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(mesh3d, shading), .size = sizeof(int),
+    .enum_names = shading_names,
+    .doc = "STANDARD: physically based. TOON: flat tones with hard edges between them (three.js MeshToonMaterial); the primitive, "
+           "or every material of the mesh resource, keeps its colour, maps and emissive and loses roughness, metalness and reflections." },
+  CW_PROP_FIELD_RANGE(mesh3d, toon_bands, CW_T_INT, 0, 16, "TOON: tones of the light ramp, 2 to 16 (below 2: two soft-edged tones, 0.7 and 1 of the light)."),
   CW_PROP_FIELD(mesh3d, cast_shadow, CW_T_BOOL, CW_PROP_DEFAULT, "Casts shadows."),
   CW_PROP_FIELD(mesh3d, receive_shadow, CW_T_BOOL, CW_PROP_DEFAULT, "Receives shadows."),
   CW_PROP_FIELD(mesh3d, mesh, CW_T_RES, CW_PROP_DEFAULT, "Mesh resource (overrides the primitive)."),
@@ -646,6 +679,7 @@ bool cw__mesh3d_info(cw_node n, cw__mesh_info *out) {
     out->lod_levels = m->lightmapped ? 1 : cm ? CW_MAX(cm->lod_count, 1) : gl ? CW_MAX(gl->lod_levels, 1) : 1;
     k = mix_key(k, m->mesh);
     k = mix_key(k, 7);
+    if (m->shading) k = mix_key(k, (uint64_t)(m->shading * 32 + m->toon_bands));
   } else if (m->t3) {
     out->obj = &m->t3->base;
     out->kind = CW__MESH_PRIMITIVE;
@@ -663,6 +697,7 @@ bool cw__mesh3d_info(cw_node n, cw__mesh_info *out) {
     k = mix_key(k, float_bits(m->emissive.r));
     k = mix_key(k, float_bits(m->emissive.g));
     k = mix_key(k, float_bits(m->emissive.b));
+    if (m->shading) k = mix_key(k, (uint64_t)(m->shading * 32 + m->toon_bands));
   }
   out->look_key = k;
   return true;

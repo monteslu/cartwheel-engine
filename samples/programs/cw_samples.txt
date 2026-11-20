@@ -159,3 +159,5 @@ physical+cc+l1000+xplain
 standard+instbig+senv+l1000+xplain
 standard+l0001+xcsm_gi
 standard+l0001+xcsm_plain_gi
+toon+l0001+xcluster_csm
+toon+gmap+l0001+xcluster_csm
