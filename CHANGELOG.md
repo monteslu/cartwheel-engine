@@ -4,6 +4,17 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.53.1 (2026-11-20)
+
+### Fixed
+- **The first frame on GL is drawn again (it came out black since v0.52.0).** The tonemap pass made its neutral
+  exposure state (the 1x1 texture it reads when automatic exposure is off) the first time it ran, after it had
+  bound the frame to unit 0, and `cw_pass_texture_new` left unit 0 with no texture: the first frame tone mapped
+  black, in every app on GL. The state is made before anything is bound, and `cw_pass_texture_new` now puts back
+  the texture the active unit had, so a pass that makes a texture in the middle of its draw keeps its inputs. Found
+  by `vis-city-check` (its culled frame against a reference drawn the same frame: the whole first frame apart,
+  2073600 pixels; now 83 pixels at most, on one frame, as on v0.51.0).
+
 ## v0.53.0 (2026-11-20)
 
 ### Added
