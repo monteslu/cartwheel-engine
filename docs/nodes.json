@@ -476,6 +476,26 @@
      "doc": "TOON: tones of the light ramp, 2 to 16 (below 2: two soft-edged tones, 0.7 and 1 of the light)."
     },
     {
+     "name": "viewport_texture",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "A SubViewport's picture on the primitive (\"viewport://Name\" or Name; cartwheel/subviewport.h)."
+    },
+    {
+     "name": "viewport_slot",
+     "type": "enum",
+     "default": "EMISSIVE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "EMISSIVE",
+      "COLOR"
+     ],
+     "doc": "Where viewport_texture goes: EMISSIVE, a screen that glows by itself (times `emissive`, white when that is black), or COLOR, the surface colour the scene's lights shade."
+    },
+    {
      "name": "cast_shadow",
      "type": "bool",
      "default": "false",
@@ -13552,6 +13572,202 @@
      "stored": false,
      "readonly": true,
      "doc": "The bake's sweeps are done."
+    }
+   ]
+  },
+  {
+   "name": "MultiMeshInstance3D",
+   "parent": "Node3D",
+   "doc": "Many instances of the meshes under a source node, from an instance buffer the game fills; culled by cell, lit and shadowed like any mesh.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "source",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Node3D (path from this node) whose meshes are drawn per instance; empty: the first MeshInstance3D child. It is hidden."
+    },
+    {
+     "name": "instance_count",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 4000000,
+     "doc": "Instances in the buffer (new ones are identity, white)."
+    },
+    {
+     "name": "visible_instance_count",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "min": -1,
+     "max": 4000000,
+     "doc": "Draw only the first N instances (-1: all)."
+    },
+    {
+     "name": "chunk_size",
+     "type": "float",
+     "default": "16",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100000,
+     "doc": "Cell size in metres: each cell is culled as one draw (0: one draw for everything)."
+    },
+    {
+     "name": "cast_shadow",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Instances cast shadows."
+    },
+    {
+     "name": "receive_shadow",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Instances receive shadows."
+    },
+    {
+     "name": "use_colors",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Multiply each instance's colour (cw_multimesh_set_color) into the material's."
+    },
+    {
+     "name": "fill",
+     "type": "enum",
+     "default": "NONE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "NONE",
+      "GRID"
+     ],
+     "doc": "GRID fills the buffer with fill_count instances fill_spacing apart, centred in x and z (no code needed); NONE leaves it to the game."
+    },
+    {
+     "name": "fill_count",
+     "type": "vec3",
+     "default": "vec3(1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "GRID: instances along x, y and z."
+    },
+    {
+     "name": "fill_spacing",
+     "type": "vec3",
+     "default": "vec3(1, 1, 1)",
+     "stored": true,
+     "readonly": false,
+     "doc": "GRID: metres between instances along x, y and z."
+    },
+    {
+     "name": "visible_instances",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Instances in the cells the main camera saw last frame."
+    },
+    {
+     "name": "chunks",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Cells holding instances."
+    },
+    {
+     "name": "visible_chunks",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Cells inside the main camera's view last frame."
+    }
+   ]
+  },
+  {
+   "name": "SubViewport",
+   "parent": "Node",
+   "doc": "Renders a camera of this scene, or a scene of its own, into a texture that 2D nodes, UI controls (\"viewport://Name\") and 3D materials (MeshInstance3D.viewport_texture) show.",
+   "signals": [
+    "rendered"
+   ],
+   "properties": [
+    {
+     "name": "size",
+     "type": "vec2",
+     "default": "vec2(512, 512)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The texture's size in pixels (1 to 4096 each way)."
+    },
+    {
+     "name": "update_mode",
+     "type": "enum",
+     "default": "ALWAYS",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "DISABLED",
+      "ONCE",
+      "ALWAYS",
+      "WHEN_VISIBLE"
+     ],
+     "doc": "When it renders: ALWAYS each frame, WHEN_VISIBLE each frame something showed its texture, ONCE one render then it holds the picture, DISABLED never."
+    },
+    {
+     "name": "update_every",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 600,
+     "doc": "Frames between renders (ALWAYS, WHEN_VISIBLE); the Low and Very Low effects presets double and triple it."
+    },
+    {
+     "name": "camera",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Camera3D of this scene (path from this node) whose view it renders: a monitor, a mirror, a minimap."
+    },
+    {
+     "name": "scene",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "A .cwscene asset instanced into a world of its own (its own cameras, lights, environment and 2D canvas); wins over `camera`."
+    },
+    {
+     "name": "texture_name",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The name in \"viewport://Name\" texture references; empty: this node's name."
+    },
+    {
+     "name": "renders",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Renders so far."
     }
    ]
   },
