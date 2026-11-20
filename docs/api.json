@@ -9236,6 +9236,18 @@
      "inline": false
     },
     {
+     "name": "cw_pipeline_set_views_array",
+     "signature": "void cw_pipeline_set_views_array(cw_pipeline *p, bool on)",
+     "doc": "Split screen in one pass (needs the shared post chain): the views are drawn into one target, the scene in one\nthree.c render with a t3_array_camera (each view culled and sorted by its own camera, one render pass, the\nframe's uploads once) and every other pass that reads a view's camera once per view inside its rectangle. The\npicture is the per-view one. A frame where an active pass cannot draws each view on its own, as without it: a pass\nwith CW_PASS_VIEWS_NONE (a game's own pass that does not say), a view hook, the sun's cascades, a planar water\nreflection or refraction, the view under water. On by default. Geometry the engine draws for one view only (a\nterrain's patches and scatter) sits on layers 28 to 31 in such a frame: keep a game's own objects off them.\ncw_pipeline_views_array_used says what the last frame did.",
+     "inline": false
+    },
+    {
+     "name": "cw_pipeline_views_array_used",
+     "signature": "bool cw_pipeline_views_array_used(cw_pipeline *p, const char **why_not)",
+     "doc": "The last frame's split screen ran in one pass (false: each view on its own, or no split); why not names the\nfirst pass that could not (NULL when it ran, or for a view hook / no split).",
+     "inline": false
+    },
+    {
      "name": "cw_rt_new",
      "signature": "cw_rt *cw_rt_new(int w, int h, cw_rt_format f, bool with_depth)",
      "doc": "A target of your own (a sub-viewport, a render-to-texture output for\ncw_pipeline_set_output): colour of format f, plus a DEPTH_COMPONENT24\ntexture when with_depth. NULL (logged) when the host cannot render that\nformat. Needs the GL context.",
@@ -9299,6 +9311,18 @@
      "name": "cw_pass_clear",
      "signature": "void cw_pass_clear(float r, float g, float b, float a, bool depth)",
      "doc": "Clear the bound target's colour (and depth to 1).",
+     "inline": false
+    },
+    {
+     "name": "cw_pass_view_uv",
+     "signature": "void cw_pass_view_uv(const cw_pass_ctx *ctx, float out[4])",
+     "doc": "Split screen in one pass (cw_pass_ctx.view_count > 0): the view's rectangle as a uv transform of the target,\n(x, y, w, h) with local = (v_uv - xy) / wh, for a shader that rebuilds a position from its uv; (0, 0, 1, 1) in\nany other run.",
+     "inline": false
+    },
+    {
+     "name": "cw_pass_view_viewport",
+     "signature": "void cw_pass_view_viewport(const cw_pass_ctx *ctx)",
+     "doc": "Geometry a pass draws itself (not cw_pass_fullscreen) into the bound target, from the view's camera: the\nviewport and scissor to the view's rectangle. Does nothing outside a one-pass split screen run.",
      "inline": false
     },
     {
@@ -9483,7 +9507,7 @@
     {
      "name": "cw_pass_desc",
      "doc": "",
-     "decl": "typedef struct cw_pass_desc {\n  const char *name;         /* unique in the pipeline (copied); \"bloom\" */\n  cw_pass_phase phase;\n  int order;                /* within the phase, ascending */\n  uint32_t reads, writes;   /* CW_RES_* */\n  bool disabled;            /* start disabled (cw_pipeline_set_pass_enabled turns it on) */\n  /* POST writers: dst has the format of src unless the pass turns HDR into\n   * display values (the tonemap pass): then dst is RGBA8 */\n  bool ldr_output;\n  /* optional: called each frame before scheduling; false skips the pass this\n   * frame (and its reads do not count). For passes driven by settings. */\n  bool (*active)(const cw_pass_ctx *ctx, void *user);\n  void (*execute)(cw_pass_ctx *ctx, void *user);\n  void (*destroy)(void *user); /* when removed or the pipeline is freed */\n  void *user;\n  /* execute works on WebGPU (cartwheel/gpu.h): it draws through the\n   * backend-neutral helpers below (cw_pass_use, cw_pass_fullscreen, ...) with\n   * a WGSL program on WebGPU, or records its own WebGPU passes. On a WebGPU\n   * run a pass without it is skipped (logged once): GL calls there would\n   * trap. Ignored on GL. */\n  bool webgpu;\n} cw_pass_desc;"
+     "decl": "typedef struct cw_pass_desc {\n  const char *name;         /* unique in the pipeline (copied); \"bloom\" */\n  cw_pass_phase phase;\n  int order;                /* within the phase, ascending */\n  uint32_t reads, writes;   /* CW_RES_* */\n  bool disabled;            /* start disabled (cw_pipeline_set_pass_enabled turns it on) */\n  /* POST writers: dst has the format of src unless the pass turns HDR into\n   * display values (the tonemap pass): then dst is RGBA8 */\n  bool ldr_output;\n  /* optional: called each frame before scheduling; false skips the pass this\n   * frame (and its reads do not count). For passes driven by settings. */\n  bool (*active)(const cw_pass_ctx *ctx, void *user);\n  void (*execute)(cw_pass_ctx *ctx, void *user);\n  void (*destroy)(void *user); /* when removed or the pipeline is freed */\n  void *user;\n  /* execute works on WebGPU (cartwheel/gpu.h): it draws through the\n   * backend-neutral helpers below (cw_pass_use, cw_pass_fullscreen, ...) with\n   * a WGSL program on WebGPU, or records its own WebGPU passes. On a WebGPU\n   * run a pass without it is skipped (logged once): GL calls there would\n   * trap. Ignored on GL. */\n  bool webgpu;\n  /* Split screen in one pass: how the pass takes several views over one target (cw_pipeline_set_views_array).\n   * NONE (the default): it cannot, and a frame with it active draws each view on its own as before. EACH: it runs\n   * once per view and draws only in that view's rectangle (cw_pass_ctx.view_rect). ONCE: it runs once for every\n   * view (camera independent work, or the scene pass, which draws through a t3_array_camera). */\n  uint8_t views;\n} cw_pass_desc;"
     },
     {
      "name": "cw_view",

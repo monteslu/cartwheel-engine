@@ -582,7 +582,6 @@ void cw_pass_set_blend(cw_pass_blend b);
 void cw_pass_set_depth(bool test, bool write);
 /* Clear the bound target's colour (and depth to 1). */
 void cw_pass_clear(float r, float g, float b, float a, bool depth);
-/* One full-screen triangle (no buffers; needs a bound program). */
 /* Split screen in one pass (cw_pass_ctx.view_count > 0): the view's rectangle as a uv transform of the target,
  * (x, y, w, h) with local = (v_uv - xy) / wh, for a shader that rebuilds a position from its uv; (0, 0, 1, 1) in
  * any other run. */
@@ -590,6 +589,7 @@ void cw_pass_view_uv(const cw_pass_ctx *ctx, float out[4]);
 /* Geometry a pass draws itself (not cw_pass_fullscreen) into the bound target, from the view's camera: the
  * viewport and scissor to the view's rectangle. Does nothing outside a one-pass split screen run. */
 void cw_pass_view_viewport(const cw_pass_ctx *ctx);
+/* One full-screen triangle (no buffers; needs a bound program). */
 void cw_pass_fullscreen(void);
 /* Procedural geometry without buffers: `vertices` vertices as a triangle
  * list, positioned by the program's own vertex stage from the vertex index
