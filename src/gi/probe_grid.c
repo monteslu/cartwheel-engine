@@ -315,6 +315,7 @@ static void grid_exit(cw_node n, void *data) {
         g->grids.count--;
         break;
       }
+  if (g) cw__gi_untag_if_idle(g);
   grid_free_gpu(p);
 }
 

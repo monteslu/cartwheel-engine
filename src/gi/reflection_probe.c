@@ -22,12 +22,28 @@ static const cw_node_type *probe_t;
 
 /* ── per tree ─────────────────────────────────────────────────────────── */
 
-static void gtree_free(void *p) {
-  gi_tree *g = p;
+static void untag_all(gi_tree *g) {
   for (int i = 0; i < g->mats.count; i++) {
     cw_shading_remove(g->mats.data[i], "gi");
     t3_release(g->mats.data[i]);
   }
+  g->mats.count = 0;
+  g->warned_mats = 0;
+}
+/* with no probe and no grid left the part has nothing to bind: it comes off, so the materials batch (auto-instance)
+ * again as they did before the first one entered. A probe or grid entering later tags them again (cw__gi_tag, each
+ * frame of the gi pass); SSR and SSGI, which also read the part, tag them again too.
+ * CW_TEST_GI_KEEP_PART=1 leaves it on, as before (the control of tests/gi-probe.mjs's leave check) */
+void cw__gi_untag_if_idle(gi_tree *g) {
+  if (g->probes.count || g->grids.count || !g->mats.count) return;
+  const char *keep = getenv("CW_TEST_GI_KEEP_PART");
+  if (keep && atoi(keep)) return;
+  untag_all(g);
+}
+
+static void gtree_free(void *p) {
+  gi_tree *g = p;
+  untag_all(g);
   cw_array_free(&g->mats);
   cw_array_free(&g->probes);
   cw_array_free(&g->grids);
@@ -237,14 +253,14 @@ void cw__gi_tag(gi_tree *g, t3_object *o) {
       /* a surface extension of its own (terrain) stays alone: only bare
        * materials, the lighting parts (clustered lights, the forward sun's
        * cascades), a lit mesh decal and skin shading compose with gi.
-       * CW_TEST_GI_SKIP_CSM=1: the cascaded sun's part kept gi off, as before
-       * (the control of tests/gi-probe.mjs's forward-cascades check) */
+       * CW_TEST_GI_NO_PART=1: no material gets the part (the control of tests/gi-probe.mjs's forward-cascades
+       * check: the probe then reaches nothing) */
       /* (getenv, not cw_test_env: the switch must hold from the first frame, when the materials are first tagged;
        * the control runs natively) */
-      const char *skip_env = getenv("CW_TEST_GI_SKIP_CSM");
-      bool skip_csm = skip_env && atoi(skip_env);
+      const char *no_part = getenv("CW_TEST_GI_NO_PART");
+      if (no_part && atoi(no_part)) continue;
       const char *ext = t3_material_get_extension(mat);
-      if (ext && !cw_shading_has(mat, "cluster") && !cw_shading_has(mat, "clusteries") && !(cw_shading_has(mat, "csm") && !skip_csm) &&
+      if (ext && !cw_shading_has(mat, "cluster") && !cw_shading_has(mat, "clusteries") && !cw_shading_has(mat, "csm") &&
           !cw_shading_has(mat, "meshdecal") && !cw_shading_has(mat, "skinshade") && !surface_only(ext)) {
         /* said once per material: reflection probes and the probe grid have no effect on it */
         if ((g->probes.count || g->grids.count) && g->warned_mats < 8 && !cw_shading_has(mat, "terrain") &&
@@ -563,6 +579,7 @@ static void probe_exit(cw_node n, void *data) {
         g->probes.count--;
         break;
       }
+  if (g) cw__gi_untag_if_idle(g);
   probe_free_targets(p);
   p->size_now = 0;
 }

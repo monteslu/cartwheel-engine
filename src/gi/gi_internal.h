@@ -77,6 +77,8 @@ void cw__gi_grids_sky_changed(gi_tree *g);
 void cw__register_probe_grid(void);
 /* give every Standard / Physical material under o the gi part */
 void cw__gi_tag(gi_tree *g, t3_object *o);
+/* the last probe and grid left the tree: the gi part comes off every material it was put on (reflection_probe.c) */
+void cw__gi_untag_if_idle(gi_tree *g);
 void cw__gi_add_post_passes(cw_pipeline *p);
 void cw__gi_add_shadow_pass(cw_pipeline *p);
 bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, int w, int h, int mode);
