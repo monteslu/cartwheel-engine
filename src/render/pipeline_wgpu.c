@@ -129,6 +129,13 @@ void cw__pw_release(unsigned id) {
   memset(o, 0, sizeof *o);
 }
 void cw__pw_tex_free(unsigned id) { cw__pw_release(id); }
+/* a texture someone else owns, registered to be sampled (cw__pw_register): drop the id and the view, keep the texture */
+void cw__pw_unregister(unsigned id) {
+  pw_obj *o = obj(id);
+  if (!o) return;
+  o->tex = NULL;
+  cw__pw_release(id);
+}
 
 static WGPUTextureFormat rt_format(cw_rt_format f) {
   switch ((int)f) {

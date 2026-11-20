@@ -16,8 +16,12 @@ static const char *const filter_names[] = { "LINEAR", "NEAREST", NULL };
 
 static cw_map tex_cache, font_cache;
 
+cw_texture cw__subviewport_texture_by_ref(const char *ref); /* src/render/subviewport.c */
+
 cw_texture cw__tex_get(const char *path, int filter) {
   if (!path || !*path) return (cw_texture){ 0 };
+  /* "viewport://Name": a SubViewport's picture (cartwheel/subviewport.h); never cached here, the viewport owns it */
+  if (!strncmp(path, "viewport://", 11)) return cw__subviewport_texture_by_ref(path);
   if (!tex_cache.slot_cap && !tex_cache.count) cw_map_init(&tex_cache, CW_MEM_RENDER2D);
   uint64_t key = ((uint64_t)(uintptr_t)path << 1) | (uint64_t)(filter & 1), v;
   if (cw_map_get(&tex_cache, key, &v)) return (cw_texture){ v };

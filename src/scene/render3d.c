@@ -66,6 +66,8 @@ typedef struct render3d_state {
 typedef struct mesh_look {
   int physical;
   int toon, bands; /* shading TOON: a MeshToonMaterial with the ramp of that many tones */
+  t3_texture *vp_tex; /* a SubViewport's picture (viewport_texture), NULL: none */
+  int vp_slot;        /* 0 emissive map, 1 colour map */
   t3_color color, emissive, sheen_color;
   float metalness, roughness, ior, specular_intensity, clearcoat, clearcoat_roughness, sheen, sheen_roughness, iridescence,
       iridescence_ior, anisotropy, diffuse_roughness;
@@ -100,6 +102,11 @@ t3_renderer *cw_render3d_renderer(cw_tree *t) {
   return s ? s->renderer : NULL;
 }
 void cw_render3d_set_camera(cw_tree *t, cw_node c) { state(t)->camera = c; }
+/* the camera set with cw_render3d_set_camera (a null handle when the tree searches for its current one) */
+cw_node cw__render3d_explicit_camera(cw_tree *t) {
+  render3d_state *s = cw_tree_slot(t, "render3d");
+  return s ? s->camera : (cw_node){ 0 };
+}
 
 t3_renderer *cw_render3d_window_renderer(int w, int h) {
   cw__programs_register();
@@ -258,6 +265,8 @@ typedef struct mesh3d {
   float lightmap_scale;
   int lightmap_uv;          /* GENERATED, UV0 */
   mesh_look look;           /* what m->mat draws (a primitive's material, shared by look) */
+  const char *viewport_texture; /* "viewport://Name" or Name: a SubViewport's picture on the primitive */
+  int viewport_slot;        /* EMISSIVE, COLOR */
   t3_material *lm_mat;      /* the mesh's material, cloned to carry its own lightmap */
   t3_material *lm_src;      /* the material lm_mat was made from (a LightmapGI shading change remakes it from this) */
   bool lm_baked;            /* lm_mat is the unlit BAKED form */
@@ -266,6 +275,7 @@ typedef struct mesh3d {
 static const char *const gi_names[] = { "DYNAMIC", "STATIC", NULL };
 enum { SHADING_STANDARD, SHADING_TOON };
 static const char *const shading_names[] = { "STANDARD", "TOON", NULL };
+static const char *const vp_slot_names[] = { "EMISSIVE", "COLOR", NULL };
 static const char *const lmuv_names[] = { "GENERATED", "UV0", NULL };
 static const cw_node_type *mesh3d_t;
 
@@ -425,6 +435,12 @@ static void look_apply(t3_material *t, const mesh_look *k) {
   t->metalness = k->metalness;
   t->roughness = k->roughness;
   t->emissive = k->emissive;
+  /* a SubViewport's picture: the emissive map of a screen that glows by itself (emissive white unless the node
+   * sets a tint or a brightness), or the colour map of a surface the scene's lights shade */
+  t3_texture *em = k->vp_tex && k->vp_slot == 0 ? k->vp_tex : NULL, *cm = k->vp_tex && k->vp_slot == 1 ? k->vp_tex : NULL;
+  if (t->emissive_map != em) t3_material_set_texture(t, T3_EMISSIVE_MAP, em);
+  if (t->map != cm) t3_material_set_texture(t, T3_MAP, cm);
+  if (em && k->emissive.r == 0 && k->emissive.g == 0 && k->emissive.b == 0) t->emissive = (t3_color){ 1, 1, 1 };
   if (t->type == T3_MESH_PHYSICAL_MATERIAL) {
     t->ior = k->ior;
     t->specular_intensity = k->specular_intensity;
@@ -486,6 +502,19 @@ static void mesh_set_look(cw_node n, mesh3d *m, const mesh_look *k) {
   m->look = *k;
 }
 
+t3_texture *cw__subviewport_t3_by_ref(const char *ref, cw_node user, float radius); /* src/render/subviewport.c */
+
+/* look_of plus what needs the node: the viewport texture its property names (and that this mesh shows it) */
+static mesh_look look_of_node(cw_node n, const mesh3d *m) {
+  mesh_look k = look_of(m);
+  if (m->viewport_texture && m->viewport_texture[0]) {
+    float r = 0.5f * sqrtf(m->size.x * m->size.x + m->size.y * m->size.y + m->size.z * m->size.z);
+    k.vp_tex = cw__subviewport_t3_by_ref(m->viewport_texture, n, r);
+    k.vp_slot = k.vp_tex ? m->viewport_slot : 0;
+  }
+  return k;
+}
+
 static void mesh_rebuild(cw_node n, mesh3d *m) {
   if (m->procedural) return;
   if (mesh_res_rebuild(n, m)) return;
@@ -494,7 +523,7 @@ static void mesh_rebuild(cw_node n, mesh3d *m) {
     m->lod = 0;
     t3_geometry *g = prim_geometry(cw_node_tree(n), m->primitive, 0);
     if (!m->mat) {
-      mesh_look k = look_of(m);
+      mesh_look k = look_of_node(n, m);
       mesh_set_look(n, m, &k);
     }
     t3_object *group = cw_node3d_object(n);
@@ -525,7 +554,7 @@ static void mesh_pre_render(cw_node n, void *data, double alpha) {
   if (m->procedural) return;
   mesh_rebuild(n, m);
   if (m->mat) {
-    mesh_look k = look_of(m);
+    mesh_look k = look_of_node(n, m);
     /* a lightmapped primitive draws with a material of its own (it carries
      * the mesh's lightmap): the properties go straight to it */
     if (m->lm_mat && !m->res_obj && m->t3 && m->t3->material_count && m->t3->materials[0] == m->lm_mat) {
@@ -577,6 +606,10 @@ static const cw_prop mesh_props[] = {
     .doc = "STANDARD: physically based. TOON: flat tones with hard edges between them (three.js MeshToonMaterial); the primitive, "
            "or every material of the mesh resource, keeps its colour, maps and emissive and loses roughness, metalness and reflections." },
   CW_PROP_FIELD_RANGE(mesh3d, toon_bands, CW_T_INT, 0, 16, "TOON: tones of the light ramp, 2 to 16 (below 2: two soft-edged tones, 0.7 and 1 of the light)."),
+  CW_PROP_FIELD(mesh3d, viewport_texture, CW_T_STRING, CW_PROP_DEFAULT, "A SubViewport's picture on the primitive (\"viewport://Name\" or Name; cartwheel/subviewport.h)."),
+  { .name = "viewport_slot", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(mesh3d, viewport_slot), .size = sizeof(int),
+    .enum_names = vp_slot_names,
+    .doc = "Where viewport_texture goes: EMISSIVE, a screen that glows by itself (times `emissive`, white when that is black), or COLOR, the surface colour the scene's lights shade." },
   CW_PROP_FIELD(mesh3d, cast_shadow, CW_T_BOOL, CW_PROP_DEFAULT, "Casts shadows."),
   CW_PROP_FIELD(mesh3d, receive_shadow, CW_T_BOOL, CW_PROP_DEFAULT, "Receives shadows."),
   CW_PROP_FIELD(mesh3d, mesh, CW_T_RES, CW_PROP_DEFAULT, "Mesh resource (overrides the primitive)."),

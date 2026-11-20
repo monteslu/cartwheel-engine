@@ -92,6 +92,7 @@ See [Physics](guide:physics) and [Navigation](guide:navigation).
 | `Environment` effects (glow, SSAO, tonemap) | `PostProcess` | one per tree |
 | TAA with motion vectors (`use_taa`) | `PostProcess` `taa` | moving, skinned and instanced meshes carry their own motion, with no per-mesh setting |
 | sky, fog | `ProceduralSky`, `HeightFog` | |
+| `SubViewport`, `ViewportTexture`, `SubViewportContainer` | [SubViewport](node:SubViewport); `"viewport://Name"` in any 2D or UI `texture`, `viewport_texture` on a MeshInstance3D | renders a `camera` of the scene, or a `scene` in a world of its own (its children are not the world: the scene file is); `update_mode` as in Godot; no transparent background yet; see "Rendering to a texture" in [3D rendering](guide:rendering-3d) |
 | `GPUParticles2D` / `3D`, `Decal` | `GPUParticles2D` / `GPUParticles3D`, `Decal3D`, plus `Trail3D` | |
 | occlusion culling | `VisibilityManager`, `Room3D`, `Portal3D` | |
 | `VisibleOnScreenNotifier2D` / `3D` | [VisibleOnScreenNotifier2D](node:VisibleOnScreenNotifier2D) / [VisibleOnScreenNotifier3D](node:VisibleOnScreenNotifier3D) | `screen_entered`, `screen_exited`; the box is `center` and `size` (Godot: `aabb`, `rect`); tested once per fixed tick against the view volume, occluders do not count |
@@ -128,4 +129,4 @@ See [Animation](guide:animation), [Audio](guide:audio), [Networking](guide:netwo
 
 ## Not there yet
 
-No equivalent today: `MultiMeshInstance3D`, `SubViewport` and render-to-texture nodes, autoload nodes (global state lives in the app or in tree slots), stream resources with their own loop points (`AudioStreamRandomizer`, `AudioStreamInteractive`), and any scripting language.
+No equivalent today: `MultiMeshInstance3D`, autoload nodes (global state lives in the app or in tree slots), stream resources with their own loop points (`AudioStreamRandomizer`, `AudioStreamInteractive`), and any scripting language.

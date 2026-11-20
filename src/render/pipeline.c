@@ -461,8 +461,16 @@ void cw_pass_rt_release(cw_pass_ctx *ctx, const cw_rt *rt) {
     if (&p->pool.data[i]->rt == rt) p->pool.data[i]->used = false;
 }
 
+/* an extra view keeps targets of its own under each name: its size and history never disturb the frame's */
+static const char *scoped_key(const cw_pipeline *p, const char *key) {
+  if (!p->rt_scope) return cw_intern(key);
+  char k[96];
+  snprintf(k, sizeof k, "%s@%s", key, p->rt_scope);
+  return cw_intern(k);
+}
+
 const cw_rt *cw_pipeline_rt_persistent(cw_pipeline *p, const char *key, int w, int h, cw_rt_format f, bool *fresh) {
-  const char *k = cw_intern(key);
+  const char *k = scoped_key(p, key);
   persist_rt *e = NULL;
   for (int i = 0; i < p->persist.count; i++)
     if (p->persist.data[i]->key == k) e = p->persist.data[i];
@@ -484,14 +492,14 @@ const cw_rt *cw_pipeline_rt_persistent(cw_pipeline *p, const char *key, int w, i
 }
 
 const cw_rt *cw__pipeline_rt_find(cw_pipeline *p, const char *key) {
-  const char *k = cw_intern(key);
+  const char *k = scoped_key(p, key);
   for (int i = 0; i < p->persist.count; i++)
     if (p->persist.data[i]->key == k) return p->persist.data[i]->rt.fbo ? &p->persist.data[i]->rt : NULL;
   return NULL;
 }
 
 static const cw_rt *persistent_depth(cw_pipeline *p, const char *key, int w, int h, cw_rt_format f) {
-  const char *k = cw_intern(key);
+  const char *k = scoped_key(p, key);
   persist_rt *e = NULL;
   for (int i = 0; i < p->persist.count; i++)
     if (p->persist.data[i]->key == k) e = p->persist.data[i];
@@ -916,6 +924,58 @@ static void views_composite(cw_pipeline *p, cw_tree *t, const cw_rt *output, con
   step_end(ts);
 }
 
+/* ── extra views ─────────────────────────────────────────────────────── */
+
+bool cw__pipeline_queue_view(cw_pipeline *p, cw_node camera, const cw_rt *rt, int slot, void (*done)(void *user, float cpu_ms), void *user) {
+  if (p->nextra >= (int)CW_ARRAY_LEN(p->extra)) return false;
+  p->extra[p->nextra++] = (struct cw__extra_view){ camera, rt, slot, done, user };
+  return true;
+}
+
+/* The queued views, after the frame's own: each through its camera into its target with the whole pipeline but
+ * the overlays, as a later splitscreen view is drawn (the frame's shadow maps, light clusters and probe captures
+ * are reused, TAA is off: its history is the main camera's). What the frame's own views drew and will draw next
+ * frame is untouched: the output, the camera, the previous view-projection and every persistent target. */
+static void extra_views_run(cw_tree *t, cw_pipeline *p, double alpha) {
+  if (!p->nextra) return;
+  bool wgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
+  const cw_rt *keep_out = p->output_user;
+  bool keep_taa = p->s.taa, keep_have = p->have_prev, keep_split = p->view_post_split;
+  cw_node keep_cam = cw__render3d_explicit_camera(t);
+  int base = p->nviews >= 2 ? p->nviews : 1;
+  p->s.taa = false;
+  p->view_post_split = false;
+  if (wgpu) cw__pw_timing_hold(true);
+  int n = p->nextra;
+  p->nextra = 0; /* a view queued while these run waits for the next frame */
+  for (int i = 0; i < n; i++) {
+    struct cw__extra_view e = p->extra[i];
+    double t0 = cw__render3d_now_ms();
+    if (e.rt && cw_node_valid(e.camera)) {
+      char scope[16];
+      snprintf(scope, sizeof scope, "x%d", e.slot);
+      p->rt_scope = cw_intern(scope);
+      p->output_user = e.rt;
+      cw_render3d_set_camera(t, e.camera);
+      cw__render3d_keep_shadows(t, true);
+      p->view_i = base + i; /* a later view: past CW_MAX_VIEWS it has no per-view slot (volumetric fog skips it) */
+      p->view_pic = NULL;
+      render_run(t, p, e.rt->w, e.rt->h, alpha, RUN_VIEW);
+      cw__visibility_end_view(t);
+    }
+    if (e.done) e.done(e.user, (float)(cw__render3d_now_ms() - t0));
+  }
+  if (wgpu) cw__pw_timing_hold(false);
+  p->rt_scope = NULL;
+  p->view_i = -1;
+  cw__render3d_keep_shadows(t, false);
+  cw_render3d_set_camera(t, keep_cam);
+  p->output_user = keep_out;
+  p->s.taa = keep_taa;
+  p->have_prev = keep_have;
+  p->view_post_split = keep_split;
+}
+
 void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   CW_PROFILE_SCOPE("pipeline.render");
   cw_pipeline *p = cw_pipeline_of(t);
@@ -935,6 +995,7 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   cw__render3d_frame_begin(t); /* the frame's draw counts start over */
   if (p->nviews < 2) {
     render_run(t, p, w, h, alpha, RUN_FULL);
+    extra_views_run(t, p, alpha);
     frame_stats(p);
     p->frame++;
     return;
@@ -985,6 +1046,7 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   render_run(t, p, w, h, alpha, RUN_OVERLAY);
   p->post_src = NULL;
   p->view_post_split = false;
+  extra_views_run(t, p, alpha);
   frame_stats(p);
   p->frame++;
 }
@@ -1087,7 +1149,8 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   bool taa = offscreen && s->taa && !post_run;
   if (offscreen && !post_run) {
     mat4_from_camera(&ctx);
-    if (mode == RUN_VIEW && p->view_i >= 0) {
+    if (mode == RUN_VIEW && p->view_i >= CW_MAX_VIEWS) ctx.prev_view_proj = ctx.view_proj; /* an extra view past the view slots: no history */
+    else if (mode == RUN_VIEW && p->view_i >= 0) {
       const struct cw__view_prev *vp = &p->view_prev[p->view_i];
       ctx.prev_view_proj = vp->have && vp->w == w && vp->h == h ? vp->vp : ctx.view_proj;
     } else if (!p->have_prev || p->prev_w != w || p->prev_h != h) ctx.prev_view_proj = ctx.view_proj;
@@ -1453,6 +1516,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   /* undo the jitter so game code sees the camera's real projection */
   if (taa) t3_camera_update_projection_matrix(ctx.camera);
   if (mode == RUN_OVERLAY) return; /* the views' history stands */
+  if (mode == RUN_VIEW && p->view_i >= CW_MAX_VIEWS) return;
   if (mode == RUN_VIEW && p->view_i >= 0) {
     p->view_prev[p->view_i].vp = ctx.view_proj;
     p->view_prev[p->view_i].have = offscreen;

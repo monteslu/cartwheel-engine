@@ -141,6 +141,8 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/skeleton_attach/assets/main.cwscene $
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/anim_ik/assets/RobotExpressive.glb ${CW_SKELETON_ASSETS}/RobotExpressive.glb COPYONLY)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/anim_ik/assets/RobotExpressive.LICENSE.md ${CW_SKELETON_ASSETS}/RobotExpressive.LICENSE.md COPYONLY)
 cw_add_app(skeleton_attach SOURCES skeleton_attach/main.c ASSETS ${CW_SKELETON_ASSETS})
+# pictures rendered into textures (cartwheel/subviewport.h): a camera of the scene, a world of its own, on 3D, 2D and UI
+cw_add_app(subviewport SOURCES subviewport/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/subviewport/assets)
 cw_add_app(project_edit SOURCES project_edit/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/scene3d/assets)
 # play-in-editor: the game tests/remote.mjs drives through cartwheel/remote.h
 cw_add_app(remote_target SOURCES remote_target/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/remote_target/assets)

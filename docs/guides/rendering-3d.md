@@ -756,6 +756,71 @@ After the scene, the `viewmodel` pass draws those layers with a second camera at
 
 In a split screen, hide the other players' weapons for each view with the pipeline's view hook (`cw_pipeline_set_view_hook`): each view draws every object on its layers.
 
+## Rendering to a texture: SubViewport
+
+A [SubViewport](node:SubViewport) renders a picture into a texture, and that texture goes wherever a texture goes: on a mesh in the world, on a sprite, in a UI panel. It is how a security monitor, a rear-view mirror, a minimap, a portal's far side, a character portrait in a menu and a 3D model turning inside a UI panel are made. The module is `cartwheel/subviewport.h` ([reference](header:subviewport.h)).
+
+A SubViewport renders one of two things.
+
+**A camera of this world.** Set `camera` to a Camera3D of the same scene (one with `current = false`, so it is not the screen's camera). The whole pipeline draws the view: lights and shadows, sky, fog, particles, decals, the post chain and tone mapping, without the 2D canvas and the HUD.
+
+```text
+[node name="SecurityCam" parent="Level" type="Camera3D"]
+position = vec3(0, 7, 0.3)
+rotation = vec3(-1.5708, 0, 0)
+current = false
+
+[node name="Monitor" parent="." type="SubViewport"]
+size = vec2(512, 288)
+camera = "../Level/SecurityCam"
+
+[node name="Screen" parent="Level" type="MeshInstance3D"]
+size = vec3(2.4, 1.35, 0.06)
+color = color(0, 0, 0, 1)
+viewport_texture = "viewport://Monitor"
+```
+
+**A world of its own.** Set `scene` to a .cwscene asset. It is instanced into a tree the SubViewport owns, with its own cameras, lights, [WorldEnvironment](node:WorldEnvironment), [PostProcess](node:PostProcess) and 2D canvas. Nothing in it shows in the main picture and no light crosses, so a portrait is lit the way the portrait scene says wherever the player stands. A scene of 2D nodes makes it an off-screen 2D canvas. The world ticks with the main tree; game code reaches into it through the viewport, because node paths do not cross between the two trees:
+
+@include samples/subviewport/main.c#own_world
+
+Showing the texture:
+
+| Where | How |
+|---|---|
+| a 2D node or a UI control, in a scene file | any `texture` property takes `"viewport://Name"` ([Sprite2D](node:Sprite2D), [TextureRect](node:TextureRect), [NinePatchRect](node:NinePatchRect), Polygon2D ...). Name is the SubViewport's `texture_name`, or its node name |
+| a mesh, in a scene file | [MeshInstance3D](node:MeshInstance3D) `viewport_texture`. `viewport_slot = EMISSIVE` (the default) makes a screen that glows by itself: give the mesh a black `color`, and `emissive` tints or dims it. `COLOR` makes it the surface colour, lit and shadowed like paint |
+| 2D and UI, from C | [cw_subviewport_texture](api:cw_subviewport_texture) is a `cw_texture` |
+| any three.c material, from C | [cw_subviewport_t3_texture](api:cw_subviewport_t3_texture), with `t3_material_set_texture` |
+
+`update_mode` says when it renders: `ALWAYS`, `WHEN_VISIBLE` (only in frames after something showed the texture: a 2D node or control drew it, or a mesh wearing it was inside a camera's view), `ONCE` (one render, then the picture holds; [cw_subviewport_request_update](api:cw_subviewport_request_update) asks for another) and `DISABLED`. `update_every = 2` renders every other frame. A monitor nobody is looking at should be `WHEN_VISIBLE`; a portrait that does not move should be `ONCE`.
+
+Timing: a world of its own is rendered just before the frame that shows it. A camera of this world is rendered right after the frame's own picture and reuses that frame's shadow maps, light clusters and probe captures, the way a splitscreen view does, so its texture is one frame behind. That is invisible on a monitor or a minimap; a portal seen while the player's camera turns fast trails by that frame. The main picture is exactly what it would be without the SubViewport, apart from the surfaces showing the texture.
+
+Things to know:
+
+- The texture holds display colours (tone mapped, sRGB). On a mesh it is decoded and goes through the main picture's tone curve again, as a photograph of a screen does. So a camera view shown on a mesh is close to the world it shows but not identical in contrast: fine for a monitor, visible on a portal that should match the world beyond it seamlessly.
+- A camera view runs every pass again at the viewport's size. Passes that keep one set of targets per tree for the view size (water reflections and refractions) re-allocate each frame when a camera view and the screen both draw them at different sizes: keep water out of a camera view's sight, or put the water scene in a world of its own.
+- Volumetric fog keeps a grid for up to three camera views besides the screen's (fewer in splitscreen); a view past that is drawn without it. TAA never runs in a SubViewport.
+- A mesh that wears a viewport's texture and is seen by that viewport's own camera shows the previous frame's picture: a monitor inside a monitor, which is what a real one does.
+- A world of its own draws with the app's program table like everything else: run `tools/programs.mjs` after adding one, as after any new material.
+
+`samples/subviewport` has all of it in one scene: a monitor showing a camera that looks straight down, a still photo taken once, a 2D canvas as the colour of a sign the sun lights, a portrait from a world of its own in a UI panel and as a sprite, and a `WHEN_VISIBLE` panel that starts behind the camera. The gate `subviewport` holds the pictures across hosts and GL against WebGPU and checks each mode's render count; its control stops the monitor and fails. `unit-subviewport` covers names, modes, sizes, worlds, camera views (the frame's own camera, output and history are untouched) and the scene-file round trip.
+
+Cost. A camera view costs about what the screen's own 3D picture costs at the same pixel count, without the shadow maps (they are the frame's), and scales with its size; a world of its own costs its own content. Measured on the 890M (Ryzen AI 9 HX 370) through romdev, `samples/subviewport` at 1920 x 1080 (a light scene: three shapes, one shadowed sun, HDR and tone mapping), GPU milliseconds a frame added by one `ALWAYS` camera view, GL / WebGPU. The machine was shared while measuring (load average 40 to 50, other GPU work running), so read the figures to about 0.1 ms:
+
+| Effects preset | whole frame without the view | + a 512 x 288 view | + a 1920 x 1080 view |
+|---|---|---|---|
+| Very Low (renders every third frame) | 0.91 / 0.91 | under 0.1 / under 0.1 | +0.43 / +0.35 |
+| Low (every second frame) | 0.98 / 1.03 | under 0.1 / under 0.1 | +0.71 / +0.61 |
+| Medium | 1.16 / 1.08 | +0.07 / under 0.1 | +1.34 / +1.22 |
+| High | 1.13 / 1.05 | +0.11 / +0.12 | +1.41 / +1.33 |
+| Ultra | 1.17 / 1.10 | +0.10 / +0.08 | +1.40 / +1.28 |
+
+The CPU side of a camera view (the pipeline recorded once more) was 0.3 to 0.6 ms a frame in the cart on this scene; a 3D world of its own 0.4 to 0.6 ms; a 2D canvas world 0.3 to 0.5 ms. A view the size of the screen costs a little more than the screen's own picture here because the screen's figure includes no second post chain; in a heavy scene expect a camera view to cost the scene pass and post chain of a splitscreen view of that size. On a Vega 8 (about a third of the 890M) a 512 x 288 monitor in a scene this light is about 0.3 ms; size the texture to what the screen shows of it, and use `WHEN_VISIBLE`.
+
+The Low and Very Low effects presets render `ALWAYS` and `WHEN_VISIBLE` viewports every second and every third frame they are due, so a monitor costs half and a third there. The debug command `subviewport` lists every viewport with its size, mode, render count, last CPU milliseconds and whether its texture was shown last frame.
+
 ## Particles and decals
 
 **Burst slots.** A game that fires the same one-shot effect from many places (sparks on every hit, a flash at every barrel) used to pool a GPUParticles3D per concurrent burst, and every pooled system with a particle alive cost a simulation pass and a draw. Set `bursts` (1 to 32) on one system instead: its `amount` splits into that many slots of amount / bursts particles, and `cw_particles_burst(node, at, dir)` fires the oldest slot once at world position `at`, its particles thrown along `dir` (zero: the system's `direction`), each firing with a new seed. Every slot plays as a one-shot of the system's settings would (lifetime, explosiveness, shape, speeds, forces, colour and size over life, blending), and the effects preset thins each slot's particles, so a slot is never left out. `samples/fx_bursts` fires eight slots of sparks round a ring from one system.

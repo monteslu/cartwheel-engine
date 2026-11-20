@@ -707,6 +707,19 @@ void *cw__r2d_target_three_view(cw_texture h, int *w, int *hh) {
   return t->wview;
 }
 
+/* subviewport.c: a target's WebGPU texture, for three.c to SAMPLE through a view of its own (rows stay the 2D
+ * renderer's: nothing about the target changes); NULL on GL or for a handle that is not a target */
+void *cw__r2d_target_wgpu_texture(cw_texture h);
+unsigned cw__r2d_target_gl_array(cw_texture h); /* GL: the target's GL_TEXTURE_2D_ARRAY (one layer), 0 on WebGPU */
+unsigned cw__r2d_target_gl_array(cw_texture h) {
+  r2d_tex *t = r2d_tex_get(h);
+  return t && t->target && !r2d_wg() ? R.arrays.data[t->array].tex : 0;
+}
+void *cw__r2d_target_wgpu_texture(cw_texture h) {
+  r2d_tex *t = r2d_tex_get(h);
+  return t && t->target && r2d_wg() ? R.arrays.data[t->array].wtex : NULL;
+}
+
 void cw_target_resize(cw_texture h, int w, int hh) {
   r2d_tex *t = r2d_tex_get(h);
   if (!t || !t->target || (t->w == w && t->h == hh)) return;
