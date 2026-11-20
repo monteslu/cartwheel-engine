@@ -353,6 +353,39 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   (`patches/box2d/0004`): it zeroed each of those arrays with `memset` even when empty, on a null pointer, which
   UBSan stops on (unit_net, under the sanitizer build). unit_net passes under ASan and UBSan with the patch (66
   checks) and stops at `snapshot.c:713` without it.
+## NEXT (render-skeleton): SubViewport, a node that renders into a texture
+
+### Added
+- **SubViewport: render a camera of the scene, or a scene of its own, into a texture, and show it on a mesh, a sprite
+  or a UI control.** Security monitors, mirrors, minimaps, a portal's far side (`camera`: a Camera3D of the same
+  scene, drawn by the whole pipeline after the frame's own picture, the way a later splitscreen view is); character
+  portraits, a 3D model turning in a menu panel, an off-screen 2D canvas (`scene`: a .cwscene instanced into a world
+  of its own, with its own cameras, lights, environment and canvas). `update_mode` is ALWAYS, WHEN_VISIBLE (only
+  while something shows the texture), ONCE or DISABLED; `update_every` spreads the cost, and the Low and Very Low
+  effects presets render every second and third due frame. Scenes name the texture as `"viewport://Name"` in any
+  2D node's or UI control's `texture`, and as `viewport_texture` on a MeshInstance3D (emissive by default, or
+  the colour map with `viewport_slot = COLOR`); C has `cw_subviewport_texture` and `cw_subviewport_t3_texture`.
+  The main picture is what it was without the node. Cost on the 890M at 1080p in `samples/subviewport`: a
+  512 x 288 camera view adds about 0.1 ms of GPU a frame, a 1920 x 1080 one about 1.4 ms (a light scene; the table
+  per preset is in the guide). Guide: rendering-3d, "Rendering to a texture: SubViewport". Gates `subviewport`
+  (five viewports, every mode, GL against WebGPU; its control freezes the monitor and fails) and
+  `unit-subviewport`. Games add the new material states with `tools/programs.mjs` as for any new material.
+
+## NEXT (render-skeleton): MultiMeshInstance3D, many instances from a buffer
+
+### Added
+- **MultiMeshInstance3D: many instances of one mesh from a buffer the game fills.** A forest, a field of rocks, a
+  swarm: one node, with a MeshInstance3D child as the stamp (a primitive, a mesh resource or a glTF scene of several
+  meshes). Fill it with `cw_multimesh_set_instance_count`, `cw_multimesh_set_transform` / `_set_color` /
+  `_set_custom`, or write `cw_multimesh_transforms` in a loop and `cw_multimesh_touch`; `fill = GRID` fills a
+  grid from the scene file alone. Instances are sorted into `chunk_size` cells, each culled as one draw against
+  the camera and every shadow light; `chunk_size = 0` is one draw rewritten in place for a buffer that changes
+  every tick. They take the scene's lights (forward and clustered), single-map, atlas and cascaded shadows and
+  probes like any mesh. `visible_instance_count`, per-instance colour (`use_colors`), and
+  `cw_multimesh_get_stats` (cells and instances in view, draws, rebuild time). 100000 boxes, 56000 in view, with
+  sun shadows at 1080p on the 890M: about 0.7 ms (GL) and 1.0 ms (WebGPU) of GPU a frame. Guide: rendering-3d,
+  "Many copies of one mesh". Gates `multimesh` (its control draws none of the field and fails) and
+  `unit-multimesh`.
 
 ## v0.50.4 (2026-11-18)
 
