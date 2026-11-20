@@ -64,6 +64,10 @@ Connections saved in scene files name a *method* instead of a function pointer. 
 
 Types can also expose named methods ([cw_node_type_add_method](api:cw_node_type_add_method)) that the editor and the debug channel invoke with `call <node> <method> [args]`; [Triggers](guide:triggers) uses them as actions.
 
+## Ready-made gameplay nodes
+
+Before writing a node type, look at what exists: [Timer](node:Timer), [Path3D](node:Path3D) and [PathFollow3D](node:PathFollow3D) (and the 2D pair), [SpringArm3D](node:SpringArm3D), [VisibleOnScreenNotifier3D](node:VisibleOnScreenNotifier3D) and its 2D twin are in [Gameplay nodes](guide:gameplay-nodes); sound players are in [Audio](guide:audio); areas that list what is inside them are in [Physics](guide:physics).
+
 ## Custom node types
 
 Gameplay code is a node type: a data struct, a static [cw_node_type](api:cw_node_type) with callbacks, and properties declared with the `CW_PROP_FIELD` / `CW_PROP_ACCESSOR` macros so they show in the inspector and save in scenes. `hot_demo`'s Spinner extends a 3D node and turns it every tick:

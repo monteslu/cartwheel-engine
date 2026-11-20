@@ -29,6 +29,7 @@ typedef struct p3w {
 static p3w *live_worlds;
 
 static const cw_node_type *co_t, *pb_t, *rigid_t, *char_t, *area_t, *shape_t, *joint_t, *ray_t, *scast_t, *node3d_t;
+static void register_overlap_methods(void);
 
 static void p3w_free(void *p) {
   p3w *W = p;
@@ -1304,6 +1305,7 @@ void cw__register_physics3d_types(void) {
   ray_t = &ray_type;
   cw_node_type_register(&scast_type);
   scast_t = &scast_type;
+  register_overlap_methods();
 }
 
 cw_body3d cw_collision_object3d_body(cw_node n) {
@@ -1319,6 +1321,50 @@ cw_node cw_physics3d_body_node(cw_body3d b) {
     for (p3w *W = live_worlds; W; W = W->next_live)
       if (cw_map_get(&W->body_owner, b.id, &v)) return node_by_id(v);
   return (cw_node){ 0 };
+}
+
+int cw_area3d_overlapping_bodies(cw_node area, cw_node *out, int cap) {
+  co3d *c = cw_node_data_t(area, area_t) ? cw_node_data_t(area, co_t) : NULL;
+  return c ? cw__pairs_list(&c->pairs, area_t, 0, out, cap) : 0;
+}
+int cw_area3d_overlapping_areas(cw_node area, cw_node *out, int cap) {
+  co3d *c = cw_node_data_t(area, area_t) ? cw_node_data_t(area, co_t) : NULL;
+  return c ? cw__pairs_list(&c->pairs, area_t, 1, out, cap) : 0;
+}
+bool cw_area3d_overlaps(cw_node area, cw_node other) {
+  co3d *c = cw_node_data_t(area, area_t) ? cw_node_data_t(area, co_t) : NULL;
+  return c && c->pairs.slot_cap && cw_node_valid(other) && cw_map_get(&c->pairs, other.id, NULL);
+}
+int cw_physics_body3d_colliding_bodies(cw_node body, cw_node *out, int cap) {
+  co3d *c = cw_node_data_t(body, pb_t) ? cw_node_data_t(body, co_t) : NULL;
+  return c ? cw__pairs_list(&c->pairs, area_t, 0, out, cap) : 0;
+}
+static bool m_overlaps(cw_node self, const cw_value *args, int argc, cw_value *ret, void *user) {
+  (void)user;
+  if (argc != 1 || args[0].type != CW_T_NODE) return false;
+  if (ret) *ret = cw_val_bool(cw_area3d_overlaps(self, args[0].node));
+  return true;
+}
+static bool m_overlapping(cw_node self, const cw_value *args, int argc, cw_value *ret, void *user) {
+  (void)args, (void)argc;
+  co3d *c = cw_node_data_t(self, co_t);
+  if (!c) return false;
+  if (ret) {
+    ret->type = CW_T_STRING;
+    ret->s = cw__pairs_names(&c->pairs, area_t, user ? 1 : 0);
+  }
+  return true;
+}
+/* called by the type registration above */
+static void register_overlap_methods(void) {
+  static int tag;
+  cw_node_type_add_method("Area3D", "overlaps", "node", m_overlaps, NULL, "true while that body or area is inside this area.");
+  cw_node_type_add_method("Area3D", "get_overlapping_bodies", NULL, m_overlapping, NULL,
+                          "Names of the bodies inside now, oldest first, comma separated.");
+  cw_node_type_add_method("Area3D", "get_overlapping_areas", NULL, m_overlapping, &tag,
+                          "Names of the areas inside now, oldest first, comma separated.");
+  cw_node_type_add_method("PhysicsBody3D", "get_colliding_bodies", NULL, m_overlapping, NULL,
+                          "Names of the bodies touching this one (contact_monitor on), oldest first, comma separated.");
 }
 
 /* ── rollback (cartwheel/net.h tree snapshots): see phys2d_nodes.c ───── */

@@ -11116,6 +11116,467 @@
    ]
   },
   {
+   "name": "Timer",
+   "parent": "Node",
+   "doc": "A countdown in fixed ticks that emits timeout: the same tick on every host, in replays and under rollback.",
+   "signals": [
+    "timeout"
+   ],
+   "properties": [
+    {
+     "name": "wait_time",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.001,
+     "max": 86400,
+     "doc": "Seconds between timeouts, counted as whole fixed ticks (at least one)."
+    },
+    {
+     "name": "one_shot",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Stop after the first timeout instead of repeating."
+    },
+    {
+     "name": "autostart",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Start when the node becomes ready."
+    },
+    {
+     "name": "paused",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hold the count without stopping."
+    },
+    {
+     "name": "time_left",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Seconds until the next timeout; 0 when stopped."
+    },
+    {
+     "name": "running",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": false,
+     "doc": "Counting now (not saved in scenes; start and stop set it)."
+    },
+    {
+     "name": "elapsed_ticks",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": false,
+     "doc": "Fixed ticks counted since the last start or timeout (not saved in scenes)."
+    }
+   ]
+  },
+  {
+   "name": "Path3D",
+   "parent": "Node3D",
+   "doc": "A Bezier curve in 3D that PathFollow3D children ride (cartwheel/curve.h).",
+   "signals": [
+    "curve_changed"
+   ],
+   "properties": [
+    {
+     "name": "points",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The curve: points separated by commas, each \"x y z\", \"x y z  ix iy iz  ox oy oz\" (in and out handles, relative) or that plus a tilt in radians."
+    },
+    {
+     "name": "closed",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Join the last point back to the first."
+    },
+    {
+     "name": "bake_interval",
+     "type": "float",
+     "default": "0.2",
+     "stored": true,
+     "readonly": false,
+     "min": 0.0001,
+     "max": 1000000,
+     "doc": "Length of a baked piece, meters (smaller follows bends closer)."
+    },
+    {
+     "name": "up",
+     "type": "vec3",
+     "default": "vec3(0, 1, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The reference up the curve's frames start from."
+    },
+    {
+     "name": "length",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "The curve's length."
+    }
+   ]
+  },
+  {
+   "name": "Path2D",
+   "parent": "Node2D",
+   "doc": "A Bezier curve in 2D that PathFollow2D children ride (cartwheel/curve.h).",
+   "signals": [
+    "curve_changed"
+   ],
+   "properties": [
+    {
+     "name": "points",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The curve: points separated by commas, each \"x y\" or \"x y  ix iy  ox oy\" (in and out handles, relative)."
+    },
+    {
+     "name": "closed",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Join the last point back to the first."
+    },
+    {
+     "name": "bake_interval",
+     "type": "float",
+     "default": "5",
+     "stored": true,
+     "readonly": false,
+     "min": 0.0001,
+     "max": 1000000,
+     "doc": "Length of a baked piece, pixels (smaller follows bends closer)."
+    },
+    {
+     "name": "length",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "The curve's length."
+    }
+   ]
+  },
+  {
+   "name": "PathFollow3D",
+   "parent": "Node3D",
+   "doc": "A child of a Path3D that sits on its curve at `progress` (cartwheel/curve.h).",
+   "signals": [
+    "end_reached"
+   ],
+   "properties": [
+    {
+     "name": "progress",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Distance along the curve."
+    },
+    {
+     "name": "progress_ratio",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": false,
+     "doc": "progress as 0..1 of the curve's length (not saved: progress is)."
+    },
+    {
+     "name": "loop",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Wrap progress around the length instead of stopping at the ends."
+    },
+    {
+     "name": "speed",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Units a second added to progress every fixed tick (0 = the game moves it)."
+    },
+    {
+     "name": "h_offset",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Sideways offset from the curve (along the frame's right)."
+    },
+    {
+     "name": "v_offset",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Offset from the curve along the frame's up."
+    },
+    {
+     "name": "rotation_mode",
+     "type": "enum",
+     "default": "XYZ",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "NONE",
+      "Y",
+      "XY",
+      "XYZ",
+      "ORIENTED"
+     ],
+     "doc": "NONE keeps the node's rotation; Y faces along the curve, level; XY also pitches; XYZ also rolls by the curve's tilt; ORIENTED uses the curve's own carried frame (loops and corkscrews)."
+    },
+    {
+     "name": "tilt_enabled",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Apply the curve's tilt (XYZ and ORIENTED)."
+    },
+    {
+     "name": "use_model_front",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "The node's +Z faces along the curve instead of its -Z."
+    }
+   ]
+  },
+  {
+   "name": "PathFollow2D",
+   "parent": "Node2D",
+   "doc": "A child of a Path2D that sits on its curve at `progress` (cartwheel/curve.h).",
+   "signals": [
+    "end_reached"
+   ],
+   "properties": [
+    {
+     "name": "progress",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Distance along the curve."
+    },
+    {
+     "name": "progress_ratio",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": false,
+     "doc": "progress as 0..1 of the curve's length (not saved: progress is)."
+    },
+    {
+     "name": "loop",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Wrap progress around the length instead of stopping at the ends."
+    },
+    {
+     "name": "speed",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Units a second added to progress every fixed tick (0 = the game moves it)."
+    },
+    {
+     "name": "h_offset",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Offset along the curve's direction."
+    },
+    {
+     "name": "v_offset",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Offset across the curve."
+    },
+    {
+     "name": "rotates",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Turn the node along the curve."
+    }
+   ]
+  },
+  {
+   "name": "VisibleOnScreenNotifier3D",
+   "parent": "Node3D",
+   "doc": "Emits screen_entered / screen_exited as its box enters and leaves the current camera's view (cartwheel/gameplay.h).",
+   "signals": [
+    "screen_entered",
+    "screen_exited"
+   ],
+   "properties": [
+    {
+     "name": "center",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The box's centre in the node's space."
+    },
+    {
+     "name": "size",
+     "type": "vec3",
+     "default": "vec3(2, 2, 2)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The box's full size in the node's space."
+    },
+    {
+     "name": "on_screen",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Inside the current camera's view as of the last fixed tick."
+    }
+   ]
+  },
+  {
+   "name": "VisibleOnScreenNotifier2D",
+   "parent": "Node2D",
+   "doc": "Emits screen_entered / screen_exited as its rectangle enters and leaves the 2D view (cartwheel/gameplay.h).",
+   "signals": [
+    "screen_entered",
+    "screen_exited"
+   ],
+   "properties": [
+    {
+     "name": "center",
+     "type": "vec2",
+     "default": "vec2(0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The rectangle's centre in the node's space."
+    },
+    {
+     "name": "size",
+     "type": "vec2",
+     "default": "vec2(20, 20)",
+     "stored": true,
+     "readonly": false,
+     "doc": "The rectangle's full size in the node's space."
+    },
+    {
+     "name": "on_screen",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": true,
+     "doc": "Inside the view the last frame drew, as of the last fixed tick."
+    }
+   ]
+  },
+  {
+   "name": "SpringArm3D",
+   "parent": "Node3D",
+   "doc": "A camera boom: its Node3D children sit at the end of an arm along +Z that shortens when the 3D physics world is in the way (cartwheel/gameplay.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "spring_length",
+     "type": "float",
+     "default": "4",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10000,
+     "doc": "The arm's full length, along the node's +Z."
+    },
+    {
+     "name": "margin",
+     "type": "float",
+     "default": "0.05",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "How far short of what it hit the arm stops."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "0.2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Radius of the sphere swept along the arm (0 = a ray): keep it near the camera's near plane."
+    },
+    {
+     "name": "extend_speed",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10000,
+     "doc": "Meters a second the arm grows back at once the way is clear (0 = at once). It always shortens at once."
+    },
+    {
+     "name": "collision_mask",
+     "type": "int",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layers that shorten the arm (bits)."
+    },
+    {
+     "name": "exclude_parent",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "Ignore the nearest body above the arm in the tree (the character it follows)."
+    },
+    {
+     "name": "hit_length",
+     "type": "float",
+     "default": "4",
+     "stored": false,
+     "readonly": true,
+     "doc": "The arm's length now."
+    }
+   ]
+  },
+  {
    "name": "NavigationRegion3D",
    "parent": "Node3D",
    "doc": "A navmesh baked from the meshes and static colliders under it (or loaded), and its crowd.",
@@ -11754,6 +12215,438 @@
      "stored": true,
      "readonly": false,
      "doc": "Audio bus the reverb plays into (0 = master)."
+    }
+   ]
+  },
+  {
+   "name": "AudioStreamPlayer",
+   "parent": "Node",
+   "doc": "Plays a sound with no place: music, UI (cartwheel/audio_nodes.h).",
+   "signals": [
+    "finished"
+   ],
+   "properties": [
+    {
+     "name": "stream",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The sound: an asset path. Loaded on first play, shared by every player naming it."
+    },
+    {
+     "name": "volume_db",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": -80,
+     "max": 24,
+     "doc": "Gain in decibels: 0 as recorded, -6 half the amplitude, -80 and below silent."
+    },
+    {
+     "name": "pitch_scale",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 4,
+     "doc": "Playback rate (1 = as recorded)."
+    },
+    {
+     "name": "autoplay",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Start on the first fixed tick after the node is ready."
+    },
+    {
+     "name": "loop",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Repeat until stopped."
+    },
+    {
+     "name": "bus",
+     "type": "string",
+     "default": "\"Master\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The mixer bus by name (\"Master\", or a name given to cw_bus_create)."
+    },
+    {
+     "name": "max_polyphony",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 8,
+     "doc": "Copies that may sound at once; one more stops the oldest."
+    },
+    {
+     "name": "stream_paused",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hold every voice where it is."
+    },
+    {
+     "name": "playing",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": false,
+     "doc": "true while a voice sounds or is held; set true to play, false to stop (not saved)."
+    }
+   ]
+  },
+  {
+   "name": "AudioStreamPlayer2D",
+   "parent": "Node2D",
+   "doc": "Plays a sound panned and faded by where the node is on the 2D view (cartwheel/audio_nodes.h).",
+   "signals": [
+    "finished"
+   ],
+   "properties": [
+    {
+     "name": "stream",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The sound: an asset path. Loaded on first play, shared by every player naming it."
+    },
+    {
+     "name": "volume_db",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": -80,
+     "max": 24,
+     "doc": "Gain in decibels: 0 as recorded, -6 half the amplitude, -80 and below silent."
+    },
+    {
+     "name": "pitch_scale",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 4,
+     "doc": "Playback rate (1 = as recorded)."
+    },
+    {
+     "name": "autoplay",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Start on the first fixed tick after the node is ready."
+    },
+    {
+     "name": "loop",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Repeat until stopped."
+    },
+    {
+     "name": "bus",
+     "type": "string",
+     "default": "\"Master\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The mixer bus by name (\"Master\", or a name given to cw_bus_create)."
+    },
+    {
+     "name": "max_polyphony",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 8,
+     "doc": "Copies that may sound at once; one more stops the oldest."
+    },
+    {
+     "name": "stream_paused",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hold every voice where it is."
+    },
+    {
+     "name": "playing",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": false,
+     "doc": "true while a voice sounds or is held; set true to play, false to stop (not saved)."
+    },
+    {
+     "name": "max_distance",
+     "type": "float",
+     "default": "2000",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000,
+     "doc": "Pixels from the middle of the view at which the sound is silent (0 = never fades)."
+    },
+    {
+     "name": "attenuation",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 16,
+     "doc": "The fade's exponent: gain = (1 - distance / max_distance) ^ attenuation."
+    },
+    {
+     "name": "panning_strength",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "How far a sound at the edge of the view is panned (0 none, 1 hard)."
+    }
+   ]
+  },
+  {
+   "name": "AudioStreamPlayer3D",
+   "parent": "Node3D",
+   "doc": "Plays a sound at the node: distance, cone, doppler, reverb zones (cartwheel/audio_nodes.h).",
+   "signals": [
+    "finished"
+   ],
+   "properties": [
+    {
+     "name": "stream",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The sound: an asset path. Loaded on first play, shared by every player naming it."
+    },
+    {
+     "name": "volume_db",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": -80,
+     "max": 24,
+     "doc": "Gain in decibels: 0 as recorded, -6 half the amplitude, -80 and below silent."
+    },
+    {
+     "name": "pitch_scale",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0.01,
+     "max": 4,
+     "doc": "Playback rate (1 = as recorded)."
+    },
+    {
+     "name": "autoplay",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Start on the first fixed tick after the node is ready."
+    },
+    {
+     "name": "loop",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Repeat until stopped."
+    },
+    {
+     "name": "bus",
+     "type": "string",
+     "default": "\"Master\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The mixer bus by name (\"Master\", or a name given to cw_bus_create)."
+    },
+    {
+     "name": "max_polyphony",
+     "type": "int",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 8,
+     "doc": "Copies that may sound at once; one more stops the oldest."
+    },
+    {
+     "name": "stream_paused",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Hold every voice where it is."
+    },
+    {
+     "name": "playing",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": false,
+     "doc": "true while a voice sounds or is held; set true to play, false to stop (not saved)."
+    },
+    {
+     "name": "attenuation_model",
+     "type": "enum",
+     "default": "INVERSE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "NONE",
+      "INVERSE",
+      "LINEAR",
+      "EXPONENTIAL"
+     ],
+     "doc": "How the sound fades with distance (cw_atten_model)."
+    },
+    {
+     "name": "unit_size",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000,
+     "doc": "Distance at which the sound is at full volume."
+    },
+    {
+     "name": "max_distance",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000000000,
+     "doc": "Beyond this it gets no quieter (0 = 1000)."
+    },
+    {
+     "name": "rolloff",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "How fast it fades with distance."
+    },
+    {
+     "name": "cone_inner_angle",
+     "type": "float",
+     "default": "360",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 360,
+     "doc": "Degrees (full width) about the node's -Z at full volume; 360 = every direction."
+    },
+    {
+     "name": "cone_outer_angle",
+     "type": "float",
+     "default": "360",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 360,
+     "doc": "Degrees (full width) beyond which the gain is cone_outer_gain."
+    },
+    {
+     "name": "cone_outer_gain",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Gain outside the outer cone."
+    },
+    {
+     "name": "doppler",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Doppler factor: 0 none, 1 physical."
+    },
+    {
+     "name": "air_absorption",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Distance low-pass (cw_voice_3d.air_absorption); 0 = none."
+    },
+    {
+     "name": "reverb_send",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Level into the reverb zones (0 = none)."
+    },
+    {
+     "name": "occlusion",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "0 clear .. 1 blocked: a low-pass the game sets."
+    },
+    {
+     "name": "panning_only",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Always pan left/right, never the head-related filter."
+    }
+   ]
+  },
+  {
+   "name": "AudioListener3D",
+   "parent": "Node3D",
+   "doc": "The ears of 3D sound; without one the current Camera3D listens (cartwheel/audio_nodes.h).",
+   "signals": [],
+   "properties": [
+    {
+     "name": "current",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "This node is a listener (several: split screen, each voice heard by the nearest)."
     }
    ]
   },

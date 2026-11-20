@@ -41,10 +41,17 @@ static shell_save SAVE;
 void *cw_shell_save_region(void) { return &SAVE; }
 size_t cw_shell_save_region_size(void) { return sizeof SAVE; }
 
+/* game_version of a save whose game data is a slot store (cw_shell_desc.game_save_slots) */
+#define SLOTS_VERSION 0xC5A7u
+
+/* The checksum covers the settings and the game's struct. A slot store is left out of it: every slot has its
+ * own checksum (cartwheel/save.h), so a block the host captured between a slot write and the next
+ * cw_shell_save_commit still loads, settings and slots both. */
 static uint32_t save_sum(void) {
   const uint8_t *b = (const uint8_t *)&SAVE + offsetof(shell_save, quality);
+  size_t end = SAVE.game_version == SLOTS_VERSION ? offsetof(shell_save, game) : sizeof SAVE;
   uint32_t h = 2166136261u;
-  for (size_t i = 0; i < sizeof SAVE - offsetof(shell_save, quality); i++) h = (h ^ b[i]) * 16777619u;
+  for (size_t i = 0; i < end - offsetof(shell_save, quality); i++) h = (h ^ b[i]) * 16777619u;
   return h;
 }
 
@@ -101,15 +108,67 @@ static void apply_volumes(void) {
   cw_bus_set_volume(S.sfx, SAVE.sfx / 10.0f);
 }
 
+static cw_save_store STORE;
+static uint16_t want_game_version(void) { return S.d.game_save_slots ? SLOTS_VERSION : S.d.game_save_version; }
+static uint32_t want_game_size(void) {
+  if (S.d.game_save_slots) return CW_SHELL_GAME_SAVE_MAX;
+  return (uint32_t)(S.d.game_save_size > CW_SHELL_GAME_SAVE_MAX ? CW_SHELL_GAME_SAVE_MAX : S.d.game_save_size);
+}
+
 static void save_reset(void) {
   memset(&SAVE, 0, sizeof SAVE);
   SAVE.magic = SHELL_MAGIC;
   SAVE.version = SHELL_VERSION;
-  SAVE.game_version = S.d.game_save_version;
-  SAVE.game_size = (uint32_t)S.d.game_save_size;
+  SAVE.game_version = want_game_version();
+  SAVE.game_size = want_game_size();
   SAVE.music = 8;
   SAVE.sfx = 8;
   SAVE.checksum = save_sum();
+}
+
+/* The settings loaded; make the game's part of the save what this build of the game expects, keeping what it
+ * can: a struct of another size keeps the bytes both have, another version goes through the game's hook, a
+ * struct becomes slots through its import hook. */
+static void game_save_adopt(void) {
+  uint16_t old_version = SAVE.game_version, version = want_game_version();
+  uint32_t old_size = SAVE.game_size > CW_SHELL_GAME_SAVE_MAX ? CW_SHELL_GAME_SAVE_MAX : SAVE.game_size, size = want_game_size();
+  if (S.d.game_save_slots) {
+    if (old_version != SLOTS_VERSION) {
+      uint8_t *old = cw_alloc(old_size ? old_size : 1, CW_MEM_CORE);
+      memcpy(old, SAVE.game, old_size);
+      memset(SAVE.game, 0, sizeof SAVE.game);
+      cw_save_open(&STORE, SAVE.game, sizeof SAVE.game, NULL, NULL);
+      if (old_size && S.d.game_save_import) S.d.game_save_import(&STORE, old_version, old, old_size, S.d.user);
+      else if (old_size) cw_warn("shell: the save holds game data from before the game used slots and there is no game_save_import: starting over");
+      cw_free(old);
+    } else cw_save_open(&STORE, SAVE.game, sizeof SAVE.game, NULL, NULL);
+  } else if (old_version != version) {
+    uint8_t *old = cw_alloc(old_size ? old_size : 1, CW_MEM_CORE);
+    memcpy(old, SAVE.game, old_size);
+    memset(SAVE.game, 0, sizeof SAVE.game);
+    bool kept = old_size && S.d.game_save_migrate && S.d.game_save_migrate(old_version, old, old_size, SAVE.game, size, S.d.user);
+    if (!kept) {
+      memset(SAVE.game, 0, sizeof SAVE.game);
+      if (old_size) cw_warn("shell: the game's save data is version %u, the game wants %u and %s: the game starts over (settings kept)",
+                            old_version, version, S.d.game_save_migrate ? "its game_save_migrate refused it" : "has no game_save_migrate");
+    }
+    cw_free(old);
+  } else if (old_size != size) {
+    /* the same version, another size: the shared bytes stay, the rest is zeros */
+    uint32_t keep = old_size < size ? old_size : size;
+    memset(SAVE.game + keep, 0, sizeof SAVE.game - keep);
+  }
+  SAVE.game_version = version;
+  SAVE.game_size = size;
+  SAVE.checksum = save_sum();
+}
+
+cw_save_store *cw_shell_save_store(void) {
+  if (!S.d.game_save_slots || !STORE.base) {
+    cw_error("shell: cw_shell_save_store needs cw_shell_desc.game_save_slots = true (and cw_shell_init first)");
+    return NULL;
+  }
+  return &STORE;
 }
 
 void cw_shell_save_commit(void) {
@@ -146,11 +205,12 @@ void cw_shell_init(const cw_shell_desc *d) {
   if (S.d.game_save_size > CW_SHELL_GAME_SAVE_MAX)
     cw_error("shell: game_save_size %zu is over CW_SHELL_GAME_SAVE_MAX (%d): the save keeps the first %d bytes",
              S.d.game_save_size, CW_SHELL_GAME_SAVE_MAX, CW_SHELL_GAME_SAVE_MAX);
-  if (SAVE.magic != SHELL_MAGIC || SAVE.version != SHELL_VERSION || SAVE.game_version != S.d.game_save_version ||
-      SAVE.game_size != (uint32_t)S.d.game_save_size || SAVE.checksum != save_sum()) {
-    if (SAVE.magic) cw_warn("shell: the save is from another version or damaged: starting with defaults");
+  STORE = (cw_save_store){ 0 };
+  if (SAVE.magic != SHELL_MAGIC || SAVE.version != SHELL_VERSION || SAVE.checksum != save_sum()) {
+    if (SAVE.magic) cw_warn("shell: the save is from another shell version or damaged: starting with defaults");
     save_reset();
   }
+  game_save_adopt();
   uint32_t gfx = (uint32_t)SAVE.gfx[0] | (uint32_t)SAVE.gfx[1] << 8 | (uint32_t)SAVE.gfx[2] << 16 | (uint32_t)SAVE.gfx[3] << 24;
   cw_quality_restore(gfx ? gfx : SAVE.quality);
   cw_crisp_ui_restore(SAVE.crisp);

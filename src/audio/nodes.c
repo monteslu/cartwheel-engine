@@ -113,4 +113,8 @@ static cw_node_type zone_type = {
   .prop_changed = zone_changed,
 };
 
-void cw__register_audio_types(void) { cw_node_type_register(&zone_type); }
+void cw__register_audio_player_types(void); /* players.c: AudioStreamPlayer, 2D, 3D, AudioListener3D */
+void cw__register_audio_types(void) {
+  cw_node_type_register(&zone_type);
+  cw__register_audio_player_types();
+}

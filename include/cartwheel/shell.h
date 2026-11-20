@@ -73,6 +73,7 @@
 #include "audio.h"
 #include "render2d.h"
 #include "pipeline.h"
+#include "save.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -97,8 +98,21 @@ typedef struct cw_shell_desc {
                            * platformer): cw_shell_split draws a single view and cw_shell_player_rect gives each
                            * player the whole canvas */
   bool loading;           /* start on the loading screen until cw_shell_loaded */
-  size_t game_save_size;  /* bytes of the game's own save data (cw_shell_game_save) */
-  uint16_t game_save_version; /* change it when that layout changes: an older save starts over */
+  size_t game_save_size;  /* bytes of the game's own save data (cw_shell_game_save). A save from a build where it
+                           * was another size (same version) keeps the bytes both have, zeros after them: a
+                           * struct that only grows at its end loses nothing. */
+  uint16_t game_save_version; /* change it when the layout changes in a way that cannot follow (a field removed or
+                               * moved): game_save_migrate then converts an older save, or it starts over */
+  /* Convert the game's save data from an older game_save_version: old/old_size are the stored bytes, out (zeroed,
+   * out_size = game_save_size) the data to fill. Return false to start over. NULL: an older version starts over.
+   * The settings (volumes, graphics, text size) are kept either way. */
+  bool (*game_save_migrate)(uint16_t old_version, const void *old, size_t old_size, void *out, size_t out_size, void *user);
+  /* The game keeps its save data as named, versioned slots (cartwheel/save.h) instead of one struct: use
+   * cw_shell_save_store, and leave game_save_size / game_save_version / game_save_migrate unset. The first run
+   * over a save from before the game used slots calls game_save_import with the old struct (its version and
+   * bytes) and the empty store to write slots into. */
+  bool game_save_slots;
+  void (*game_save_import)(cw_save_store *store, uint16_t old_version, const void *old, size_t old_size, void *user);
   void (*start)(int players, void *user);   /* Play: the players joined; set the match up */
   void (*quit)(void *user);                 /* Quit to title, from the pause menu */
   void (*sound)(cw_shell_sound s, void *user);
@@ -126,9 +140,12 @@ size_t cw_shell_save_region_size(void); /* its size in bytes */
  * the saved settings, defines the ui actions and the audio buses. */
 void cw_shell_init(const cw_shell_desc *d);
 /* The game's save data: game_save_size bytes, zeroed when the save was
- * missing or from another version. Write it, then cw_shell_save_commit. */
+ * missing or from another version with no migration (see cw_shell_desc). Write it, then cw_shell_save_commit. */
 void *cw_shell_game_save(void);
 void cw_shell_save_commit(void); /* write the settings and the game's save data now */
+/* The game's save data as a slot store (cw_shell_desc.game_save_slots): CW_SHELL_GAME_SAVE_MAX bytes of named,
+ * versioned slots. NULL (logged) when the game did not ask for slots. cw_save_write, then cw_shell_save_commit. */
+cw_save_store *cw_shell_save_store(void);
 
 /* fixed_update, first: runs the menus; true when gameplay runs this tick. */
 bool cw_shell_update(void);

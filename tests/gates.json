@@ -2580,6 +2580,140 @@
     "note": "node layer: body lifecycle (enter/exit/reparent/free mid-step), runtime property changes (shape size, mask, freeze, teleport, live velocity), area signal order and the frame order (signals after fixed_update, seen next tick), characters (floor, wall, proxy seen by areas and rays), joints (rebuild, drop, break), the 3D mirror (TRIMESH from a mesh, areas, kinematic, pin), canvas data paths (animation stepping, tile cells text, save/load round trip)"
   },
   {
+    "name": "unit-gameplay",
+    "app": "unit_gameplay",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "gameplay nodes: Timer in fixed ticks (repeat, one shot, pause, a paused tree, rounding of wait times, restart and free from a handler, scene text round trip, a tree snapshot restoring a timer mid-count), the lists of what is inside an Area2D / Area3D in entry order (leave and return, short buffers, a snapshot restore, a freed body) and of the bodies touching a monitored body"
+  },
+  {
+    "name": "unit-curve",
+    "app": "unit_curve",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "curves and paths: Bezier points baked into a polyline, exact lengths of straight runs, sampling by distance on a circle, the nearest point, corners baked twice, carried frames (a vertical loop upside down at its top, a closed curve out of every plane whose seam meets, with the open curve as the control), tilt, the text form and its round trip, Path3D / Path2D with followers (progress, ratio, loop, speed, end_reached, rotation modes, offsets, scene text). Every baked curve folds into the checksum each host must reproduce"
+  },
+  {
+    "name": "unit-audio-nodes",
+    "app": "unit_audio_nodes",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "audio player and listener nodes over the offline mixer: play, stop, a start offset, finished on the tick the length and pitch give, decibels, polyphony, loop, pause by property and by a paused tree, buses by name, a 3D player heard by an AudioListener3D and by the current camera (side, distance, unit size, cone), scene text with autoplay. The rendered audio of every tick folds into the checksum each host must reproduce"
+  },
+  {
+    "name": "unit-save",
+    "app": "unit_save",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "the save store: slots by name, in-place and resized writes, a write that does not fit, a slot that grew or shrank, a version change with a migrate hook, without one and with one that gives up, a newer version, one damaged slot dropped and a damaged tail cut (the undamaged block as the control), a raw block imported through the legacy hook, the app's own store; the game shell's save: a game struct that grows keeps progress and settings, a version change through game_save_migrate, a struct moved to slots through game_save_import, a slot written with no commit still loading (a struct written the same way does not: the control)"
+  },
+  {
+    "name": "gameplay-nodes",
+    "app": "gameplay_nodes",
+    "webgpu": true,
+    "frames": 360,
+    "maxGt16": 0.003,
+    "fields": [
+      "tick",
+      "off",
+      "cart.pos",
+      "cart.progress",
+      "cart.laps",
+      "arm.len",
+      "arm.min",
+      "beacon.seen",
+      "beacon.in",
+      "beacon.out",
+      "zone.n",
+      "zone.max",
+      "zone.order_ok",
+      "timer.blinks",
+      "chime.finished",
+      "dot.x",
+      "dot.turns",
+      "dot.in",
+      "dot.out",
+      "audio.hash",
+      "audio.peak_l",
+      "audio.peak_r",
+      "tree.nodes"
+    ],
+    "expect": {
+      "off": 0,
+      "cart.laps": 1,
+      "zone.max": 2,
+      "zone.order_ok": 1,
+      "timer.blinks": 12,
+      "chime.finished": 11,
+      "beacon.in": 2,
+      "beacon.out": 2,
+      "dot.turns": 2,
+      "dot.in": 2,
+      "dot.out": 1
+    },
+    "controlFrames": 360,
+    "controlEnv": {
+      "CW_GAMEPLAY_OFF": "1"
+    },
+    "note": "the gameplay nodes from one scene file: a cart on a closed Path3D (PathFollow3D, speed), a SpringArm3D camera behind it that shortens at a wall (arm.min), a VisibleOnScreenNotifier3D in and out of that camera's view, an Area3D listing a buoy and the cart's hull in entry order, a Timer ringing an AudioStreamPlayer through a Trigger (finished counted in ticks), a looping AudioStreamPlayer3D heard from the camera, and on the 2D layer a PathFollow2D patrol turned at end_reached that leaves the screen (VisibleOnScreenNotifier2D) with an AudioStreamPlayer2D panning with it. The mixer runs offline and audio.hash folds every tick's samples: each host must reproduce them. Control: the cart, the dot and the timer stopped from tick 1"
+  },
+  {
     "name": "ui-gallery",
     "webgpu": true,
     "app": "ui_gallery",

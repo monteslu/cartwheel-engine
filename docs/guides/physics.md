@@ -146,7 +146,7 @@ The 8-wide contact solver (for CPUs with the AVX2 vector instructions) is picked
 | [KinematicBody3D](node:KinematicBody3D) | follows its node: each tick the body gets the velocity that reaches it, so it pushes and carries |
 | [RigidBody3D](node:RigidBody3D) | simulated; its transform is written into the node after every step |
 | [CharacterBody3D](node:CharacterBody3D) | the mover as a node: moves only through `cw_character3d_move_and_slide` |
-| [Area3D](node:Area3D) | sensor shapes; signals `body_entered`, `body_exited`, `area_entered`, `area_exited` |
+| [Area3D](node:Area3D) | sensor shapes; signals `body_entered`, `body_exited`, `area_entered`, `area_exited`; lists what is inside |
 | [CollisionShape3D](node:CollisionShape3D) | a shape for its parent body or area (`TRIMESH` and `CONVEX` can take a mesh node's geometry) |
 | [Joint3D](node:Joint3D), [RayCast3D](node:RayCast3D), [ShapeCast3D](node:ShapeCast3D) | joints between two body nodes; casts refreshed after every step |
 
@@ -161,6 +161,18 @@ Gameplay goes in node types. The walker is a `CharacterBody3D` that sets `veloci
 A moving platform is a `KinematicBody3D` that only moves its node; the body follows and carries what stands on it:
 
 @include samples/physics3d_nodes/main.c#oscillator
+
+### What is inside an area
+
+An area keeps the list of the bodies and areas inside it. `cw_area3d_overlapping_bodies` and `cw_area3d_overlapping_areas` (and the `cw_area2d_` pair) fill an array and return how many there are; `cw_area3d_overlaps` asks about one node:
+
+```c
+cw_node inside[16];
+int n = cw_area3d_overlapping_bodies(zone, inside, 16);
+for (int i = 0; i < n && i < 16; i++) hurt(inside[i]);
+```
+
+The order is the order they came in, oldest first, and it is the same on every host and after a tree snapshot is restored; one that leaves and returns goes to the end. The list is as of the last physics step, so a body is in it when its `body_entered` arrives. An area lists another area only while that one is `monitorable`. A body with `contact_monitor` on lists the bodies touching it the same way: `cw_physics_body3d_colliding_bodies`. Over the debug channel the methods `get_overlapping_bodies`, `get_overlapping_areas`, `overlaps` and `get_colliding_bodies` answer with node names.
 
 ### The tick, in order
 

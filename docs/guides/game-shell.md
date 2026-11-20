@@ -92,6 +92,8 @@ static void render(void *user, double alpha) {
 }
 ```
 
+The game's own save data rides in the same block as the settings. A struct that grows at its end keeps old saves; a changed layout takes `game_save_version` and `game_save_migrate`; `game_save_slots` gives named slots instead. See [Saves](guide:saves).
+
 The game's HUD goes away under the shell's menus: `cw_shell_hud_shown()` is true only in play, and false under the pause menu, the settings opened from it, the join screen opened during play and on the title and loading screens. The menus are drawn over the game's frame and dim it only lightly, so a HUD left on screen sits under the menu's lines, and at a large text size (150% and 200%) they overlap. Keep drawing the world and the views; leave out the HUD, the hint lines and the banners.
 
 In a scene app (`cw_scene_app`) the tree is paused outside play, so its

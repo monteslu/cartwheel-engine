@@ -38,6 +38,8 @@
         "networking",
         "l10n-a11y",
         "triggers",
+        "gameplay-nodes",
+        "saves",
         "debug-channel",
         "plugins"
       ]
