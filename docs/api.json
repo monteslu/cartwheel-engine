@@ -1049,6 +1049,18 @@
      "inline": false
     },
     {
+     "name": "cw_sound_set_loop",
+     "signature": "void cw_sound_set_loop(cw_sound s, bool loop, int64_t loop_start, int64_t loop_end)",
+     "doc": "The sound's own loop, set after load (see cw_sound_desc.loop); loop false: one pass unless a play loops it.",
+     "inline": false
+    },
+    {
+     "name": "cw_sound_get_loop",
+     "signature": "bool cw_sound_get_loop(cw_sound s, int64_t *loop_start, int64_t *loop_end)",
+     "doc": "Whether it loops by itself, and its points (source frames at the file's rate; end 0 = the end).",
+     "inline": false
+    },
+    {
      "name": "cw_sound_length_frames",
      "signature": "int64_t cw_sound_length_frames(cw_sound s)",
      "doc": "Length in frames at cw_sound_source_rate (-1 when unknown: modules).",
@@ -1148,6 +1160,180 @@
      "name": "cw_audio_mixed_frames",
      "signature": "int64_t cw_audio_mixed_frames(void)",
      "doc": "Mixer frames produced so far: the clock start_frame is scheduled on.",
+     "inline": false
+    },
+    {
+     "name": "cw_voice_started_at",
+     "signature": "int64_t cw_voice_started_at(cw_voice v)",
+     "doc": "The mixer frame the voice started on (its start_frame when scheduled, else the start of the block that took it),\nas of the last mixed block; -1 while it waits, or for a stale handle.",
+     "inline": false
+    },
+    {
+     "name": "cw_voice_stop_at",
+     "signature": "void cw_voice_stop_at(cw_voice v, int64_t mixer_frame, float fade)",
+     "doc": "End the voice on mixer frame `mixer_frame`, to the sample (fade 0), or fade it out over `fade` seconds from\nthe block (CW_AUDIO_BLOCK frames) that holds that frame. A frame already past ends it at once; a negative\nframe cancels an end set before.",
+     "inline": false
+    },
+    {
+     "name": "cw_randomizer_new",
+     "signature": "cw_randomizer cw_randomizer_new(const cw_randomizer_desc *desc)",
+     "doc": "empty; NULL desc = defaults (no repeats, no variation, seed 0)",
+     "inline": false
+    },
+    {
+     "name": "cw_randomizer_free",
+     "signature": "void cw_randomizer_free(cw_randomizer r)",
+     "doc": "its sounds are the caller's",
+     "inline": false
+    },
+    {
+     "name": "cw_randomizer_add",
+     "signature": "int cw_randomizer_add(cw_randomizer r, cw_sound s, float weight)",
+     "doc": "Adds a sound with a weight (0 = 1). Returns its index, -1 when full or stale.",
+     "inline": false
+    },
+    {
+     "name": "cw_randomizer_count",
+     "signature": "int cw_randomizer_count(cw_randomizer r)",
+     "doc": "sounds added (0 for a stale handle)",
+     "inline": false
+    },
+    {
+     "name": "cw_randomizer_next",
+     "signature": "cw_sound cw_randomizer_next(cw_randomizer r, float *pitch, float *volume)",
+     "doc": "The next pick: the sound, and the pitch and volume factors for it (NULL ignored). The null sound when empty.",
+     "inline": false
+    },
+    {
+     "name": "cw_randomizer_play",
+     "signature": "cw_voice cw_randomizer_play(cw_randomizer r, const cw_play_desc *desc)",
+     "doc": "Picks and plays: desc's pitch and volume (0 = 1) are multiplied by the pick's.",
+     "inline": false
+    },
+    {
+     "name": "cw_randomizer_last",
+     "signature": "int cw_randomizer_last(cw_randomizer r)",
+     "doc": "index of the last pick, -1 before any",
+     "inline": false
+    },
+    {
+     "name": "cw_music_new",
+     "signature": "cw_music cw_music_new(const cw_music_desc *desc)",
+     "doc": "no clips yet; NULL desc = the master bus at volume 1",
+     "inline": false
+    },
+    {
+     "name": "cw_music_free",
+     "signature": "void cw_music_free(cw_music m)",
+     "doc": "stops it at once; its sounds are the caller's",
+     "inline": false
+    },
+    {
+     "name": "cw_music_add_clip",
+     "signature": "int cw_music_add_clip(cw_music m, const char *name, const cw_music_clip *clip)",
+     "doc": "Adds a clip under a name (copied). Returns its index, -1 when full, a duplicate name, or a null sound.",
+     "inline": false
+    },
+    {
+     "name": "cw_music_add_transition",
+     "signature": "bool cw_music_add_transition(cw_music m, const char *from, const char *to, const cw_music_transition *t)",
+     "doc": "How a switch from `from` to `to` goes (names; NULL = any). The most specific rule wins: from and to, then any\nto `to`, then `from` to any, then any to any. With none: on the next bar of a clip with a beat grid (else at\nonce), a cross fade over one beat. Returns false when a name is unknown or the table is full.",
+     "inline": false
+    },
+    {
+     "name": "cw_music_play",
+     "signature": "bool cw_music_play(cw_music m, const char *clip)",
+     "doc": "Start a clip, or switch to it from the one playing by the transition table. Asking for the clip already playing\n(or already on its way) does nothing. False when the name is unknown.",
+     "inline": false
+    },
+    {
+     "name": "cw_music_stop",
+     "signature": "void cw_music_stop(cw_music m, float fade)",
+     "doc": "Stops over `fade` seconds (0 = at once).",
+     "inline": false
+    },
+    {
+     "name": "cw_music_set_volume",
+     "signature": "void cw_music_set_volume(cw_music m, float volume)",
+     "doc": "linear gain of every voice it plays, now and later",
+     "inline": false
+    },
+    {
+     "name": "cw_music_set_3d",
+     "signature": "void cw_music_set_3d(cw_music m, const cw_voice_3d *space)",
+     "doc": "Spatial music (an AudioStreamPlayer3D): every voice of it placed as space says; NULL plays it flat again.",
+     "inline": false
+    },
+    {
+     "name": "cw_music_set_paused",
+     "signature": "void cw_music_set_paused(cw_music m, bool paused)",
+     "doc": "Holds every voice where it is; on resume the beat grid follows the current clip's own clock (to the block).",
+     "inline": false
+    },
+    {
+     "name": "cw_music_current",
+     "signature": "const char *cw_music_current(cw_music m)",
+     "doc": "The clip sounding now (NULL when stopped).",
+     "inline": false
+    },
+    {
+     "name": "cw_music_pending",
+     "signature": "const char *cw_music_pending(cw_music m)",
+     "doc": "the clip a switch is on its way to (NULL when none)",
+     "inline": false
+    },
+    {
+     "name": "cw_music_switch_frame",
+     "signature": "int64_t cw_music_switch_frame(cw_music m)",
+     "doc": "the mixer frame that switch happens on (-1 when none or not yet scheduled)",
+     "inline": false
+    },
+    {
+     "name": "cw_music_voice",
+     "signature": "cw_voice cw_music_voice(cw_music m)",
+     "doc": "The current clip's voice (to read its clock).",
+     "inline": false
+    },
+    {
+     "name": "cw_music_clip_start",
+     "signature": "int64_t cw_music_clip_start(cw_music m)",
+     "doc": "the mixer frame of the current clip's beat 0 (-1 before its voice starts)",
+     "inline": false
+    },
+    {
+     "name": "cw_music_is_playing",
+     "signature": "bool cw_music_is_playing(cw_music m)",
+     "doc": "a clip sounds or one is about to start",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_stream_load",
+     "signature": "const cw_audio_stream_res *cw_audio_stream_load(const char *asset_path)",
+     "doc": "Loads and parses (its sounds too, through cw_sound_load). NULL (logged with the line) on an error. Cached by\npath: a second load returns the same resource.",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_stream_is_interactive",
+     "signature": "bool cw_audio_stream_is_interactive(const cw_audio_stream_res *res)",
+     "doc": "an interactive music (else a randomizer)",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_stream_randomizer",
+     "signature": "cw_randomizer cw_audio_stream_randomizer(const cw_audio_stream_res *res)",
+     "doc": "A randomizer resource's randomizer (shared by every player of it); the null handle for an interactive one.",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_stream_music",
+     "signature": "cw_music cw_audio_stream_music(const cw_audio_stream_res *res, const cw_music_desc *desc)",
+     "doc": "A new music from an interactive resource (each player has its own), its initial clip not yet started.",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_stream_initial",
+     "signature": "const char *cw_audio_stream_initial(const cw_audio_stream_res *res)",
+     "doc": "the interactive resource's initial clip",
      "inline": false
     },
     {
@@ -1319,7 +1505,7 @@
     {
      "name": "cw_sound_desc",
      "doc": "",
-     "decl": "typedef struct cw_sound_desc {\n  cw_sound_mode mode;\n  int max_voices;    /* simultaneous voices of this sound; 0 = unlimited.\n                        Playing past the limit steals this sound's oldest voice */\n  int priority;      /* default voice priority (higher wins a full mixer); 0 = 0 */\n  float volume;      /* default voice volume; 0 = 1 */\n  cw_bus bus;        /* default bus; 0 = master */\n} cw_sound_desc;"
+     "decl": "typedef struct cw_sound_desc {\n  cw_sound_mode mode;\n  int max_voices;    /* simultaneous voices of this sound; 0 = unlimited.\n                        Playing past the limit steals this sound's oldest voice */\n  int priority;      /* default voice priority (higher wins a full mixer); 0 = 0 */\n  float volume;      /* default voice volume; 0 = 1 */\n  cw_bus bus;        /* default bus; 0 = master */\n  /* The sound's own loop (Godot's loop on a stream resource): every voice of it loops, from loop_start to loop_end\n   * (source frames at the file's own rate; loop_end 0 = the end) after its first pass, unless a play asks for one\n   * pass (cw_play_desc.once) or gives points of its own. Set loop or either point. Left unset, a WAV file's sampler\n   * chunk (\"smpl\", its first loop) gives it; other formats get theirs from cw_sound_set_loop or a .cwaudio clip's\n   * loop_start / loop_end. Samples and streams alike. */\n  bool loop;\n  int64_t loop_start, loop_end;\n} cw_sound_desc;"
     },
     {
      "name": "cw_spatial_mode",
@@ -1334,7 +1520,52 @@
     {
      "name": "cw_play_desc",
      "doc": "",
-     "decl": "typedef struct cw_play_desc {\n  float volume;        /* 0 = the sound's default (use cw_voice_set_volume(v, 0) for silence) */\n  float pitch;         /* playback rate multiplier; 0 = 1 */\n  float pan;           /* -1 left .. 1 right (2D voices) */\n  bool loop;\n  int64_t loop_start, loop_end; /* samples only, source frames; loop_end 0 = end */\n  float fade_in;       /* seconds */\n  cw_bus bus;          /* 0 = the sound's default bus (master unless set) */\n  int priority;        /* 0 = the sound's default */\n  int64_t start_frame; /* absolute mixer frame to start on (sample-accurate scheduling,\n                          see cw_audio_mixed_frames); 0 = as soon as possible */\n  int64_t offset;      /* source frame to start from (samples and seekable streams) */\n  bool paused;         /* start paused */\n  bool spatial;        /* use `space` */\n  cw_voice_3d space;\n} cw_play_desc;"
+     "decl": "typedef struct cw_play_desc {\n  float volume;        /* 0 = the sound's default (use cw_voice_set_volume(v, 0) for silence) */\n  float pitch;         /* playback rate multiplier; 0 = 1 */\n  float pan;           /* -1 left .. 1 right (2D voices) */\n  bool loop;\n  int64_t loop_start, loop_end; /* samples only, source frames; loop_end 0 = end */\n  float fade_in;       /* seconds */\n  cw_bus bus;          /* 0 = the sound's default bus (master unless set) */\n  int priority;        /* 0 = the sound's default */\n  int64_t start_frame; /* absolute mixer frame to start on (sample-accurate scheduling,\n                          see cw_audio_mixed_frames); 0 = as soon as possible */\n  int64_t offset;      /* source frame to start from (samples and seekable streams) */\n  bool paused;         /* start paused */\n  bool spatial;        /* use `space` */\n  cw_voice_3d space;\n  bool once;           /* one pass of a sound that loops by itself (cw_sound_desc.loop) */\n} cw_play_desc;"
+    },
+    {
+     "name": "cw_random_mode",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_RANDOM_NO_REPEAT, /* weighted, never the one played last (Godot's PLAYBACK_RANDOM_NO_REPEATS) */\n  CW_RANDOM_ANY,       /* weighted, repeats allowed (PLAYBACK_RANDOM) */\n  CW_RANDOM_SEQUENCE,  /* in the order added, round and round (PLAYBACK_SEQUENTIAL) */\n} cw_random_mode;"
+    },
+    {
+     "name": "cw_randomizer_desc",
+     "doc": "",
+     "decl": "typedef struct cw_randomizer_desc {\n  cw_random_mode mode;\n  float random_pitch;     /* >= 1: each play's pitch scaled by a value in [1 / random_pitch, random_pitch]; 0 = 1 */\n  float random_volume_db; /* each play's volume moved by up to this many decibels either way; 0 = none */\n  uint64_t seed;\n} cw_randomizer_desc;"
+    },
+    {
+     "name": "cw_music_advance",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_MUSIC_ADVANCE_NONE,   /* plays to its end (or loops) */\n  CW_MUSIC_ADVANCE_NEXT,   /* at its end, the clip named in next (Godot's AUTO_ADVANCE_ENABLED) */\n  CW_MUSIC_ADVANCE_RETURN, /* at its end, back to the clip a transition held (AUTO_ADVANCE_RETURN_TO_HOLD) */\n} cw_music_advance;"
+    },
+    {
+     "name": "cw_music_clip",
+     "doc": "",
+     "decl": "typedef struct cw_music_clip {\n  cw_sound sound;\n  float bpm;           /* the beat grid; 0 = none (beats and bars then switch at once) */\n  int bar_beats;       /* beats in a bar; 0 = 4 */\n  int beats;           /* the clip's length in beats (its loop length too); 0 = the sound's own length */\n  bool loop;           /* repeats (from the sound's loop start when it has one) */\n  cw_music_advance advance;\n  const char *next;    /* ADVANCE_NEXT: the clip after this one */\n} cw_music_clip;"
+    },
+    {
+     "name": "cw_music_at",
+     "doc": "",
+     "decl": "typedef enum { CW_MUSIC_AT_NOW, CW_MUSIC_AT_BEAT, CW_MUSIC_AT_BAR, CW_MUSIC_AT_END } cw_music_at;"
+    },
+    {
+     "name": "cw_music_fade",
+     "doc": "",
+     "decl": "typedef enum { CW_MUSIC_FADE_CROSS, CW_MUSIC_FADE_NONE, CW_MUSIC_FADE_IN, CW_MUSIC_FADE_OUT } cw_music_fade;"
+    },
+    {
+     "name": "cw_music_transition",
+     "doc": "",
+     "decl": "typedef struct cw_music_transition {\n  cw_music_at at;        /* where in the playing clip the switch happens */\n  bool same_position;    /* the new clip starts where the old one is (its time in the clip), else from its start */\n  cw_music_fade fade;    /* 0 = a cross fade */\n  float fade_beats;      /* the fade's length in the playing clip's beats (a clip with no grid: half seconds); 0 = 1 */\n  const char *filler;    /* a clip played between the two (to its end), or NULL */\n  bool hold_previous;    /* remember the clip left, for a clip with ADVANCE_RETURN */\n} cw_music_transition;"
+    },
+    {
+     "name": "cw_music_desc",
+     "doc": "",
+     "decl": "typedef struct cw_music_desc {\n  cw_bus bus;            /* 0 = master */\n  float volume;          /* 0 = 1 */\n} cw_music_desc;"
+    },
+    {
+     "name": "cw_audio_stream_res",
+     "doc": "── stream resources (.cwaudio files) ──────────────────────────────\nA randomizer or an interactive music as a text asset, so a scene's player can name it as its stream\n(AudioStreamPlayer stream = \"music/match.cwaudio\"). One statement a line, key=value pairs, # comments:\n\n  random mode=no_repeat pitch=1.1 volume_db=2 seed=7\n  sound path=\"sfx/step1.wav\" weight=2\n  sound path=\"sfx/step2.wav\"\n\n  interactive initial=\"calm\"\n  clip name=\"calm\" path=\"music/calm.ogg\" bpm=120 bar_beats=4 beats=32 loop=true\n  clip name=\"sting\" path=\"music/sting.ogg\" bpm=120 beats=4 advance=next next=\"battle\"\n  clip name=\"battle\" path=\"music/battle.ogg\" bpm=120 beats=16 loop=true\n  transition from=\"calm\" to=\"battle\" at=bar fade=cross fade_beats=1 filler=\"sting\"\n  transition to=\"calm\" at=end fade=cross fade_beats=2 same_position=false\n\nrandom's mode: no_repeat, any, sequence. clip advance: none, next, return. transition at: now, beat, bar, end;\nfade: cross, none, in, out; from / to absent = any; hold_previous=true. A clip's path may carry its own loop\n(cw_sound_desc.loop); a clip's loop_start= and loop_end= (source frames) set its sound's own points. A\nstatement the format does not know is a load error naming the line.",
+     "decl": "typedef struct cw_audio_stream_res cw_audio_stream_res;"
     },
     {
      "name": "cw_audio_output",
@@ -1394,6 +1625,22 @@
      "doc": ""
     },
     {
+     "name": "CW_RANDOMIZER_MAX",
+     "doc": ""
+    },
+    {
+     "name": "CW_MUSIC_MAX_CLIPS",
+     "doc": ""
+    },
+    {
+     "name": "CW_MUSIC_MAX_TRANSITIONS",
+     "doc": ""
+    },
+    {
+     "name": "CW_MUSIC_LEAD",
+     "doc": ""
+    },
+    {
      "name": "CW_AUDIO_MAX_LISTENERS",
      "doc": ""
     },
@@ -1405,7 +1652,7 @@
   },
   {
    "header": "cartwheel/audio_nodes.h",
-   "summary": "Audio nodes: sounds placed in a scene, over the mixer of cartwheel/audio.h.\n\n  AudioStreamPlayer    (Node)   plays a sound as it is: music, UI, anything without a place\n  AudioStreamPlayer2D  (Node2D) pans and fades it by where the node is on the 2D view\n  AudioStreamPlayer3D  (Node3D) a spatial voice at the node: distance, cone, doppler, reverb zones\n  AudioListener3D      (Node3D) the ears. With none in the tree, the current Camera3D is the listener.\n\n── every player ─────────────────────────────────────────────────────\n  stream         the sound: an asset path (WAV, FLAC, MP3, Ogg Vorbis, Ogg Opus, modules). Loaded on first\n                 play and shared by every player that names it.\n  volume_db      gain in decibels (0 = as recorded, -6 halves the amplitude, -80 and below is silence)\n  pitch_scale    playback rate (1 = as recorded)\n  autoplay       start on the first fixed tick after the node is ready\n  loop           repeat until stopped\n  bus            the mixer bus by name (\"Master\", or a name given to cw_bus_create); an unknown name plays\n                 into the master\n  max_polyphony  how many copies may sound at once (1..8). play while that many are sounding stops the\n                 oldest first. Default 1: play restarts the sound.\n  stream_paused  hold every voice where it is\n  playing        true while a voice is sounding or held; set it true to play, false to stop (not saved)\n  signal finished()   a voice played to its end (never for a looping, stopped or stolen one)\n  methods play (an optional float: seconds into the sound to start from), stop\n\n── AudioStreamPlayer2D ──────────────────────────────────────────────\n  max_distance      pixels from the middle of the view at which the sound is silent (2000)\n  attenuation       the fade's exponent: gain = (1 - distance / max_distance) ^ attenuation (1 = linear)\n  panning_strength  how far a sound at the edge of the view is panned: 0 none, 1 hard left/right (1)\nThe view is the one the last frame drew (the current Camera2D); before a frame is drawn the sound plays\ncentred at full volume.\n\n── AudioStreamPlayer3D ──────────────────────────────────────────────\n  attenuation_model  NONE, INVERSE (default), LINEAR, EXPONENTIAL (cw_atten_model)\n  unit_size          the distance at which the sound is at full volume (cw_voice_3d.ref_distance; 1)\n  max_distance       beyond this it gets no quieter (0 = 1000)\n  rolloff            how fast it fades with distance (1)\n  cone_inner_angle, cone_outer_angle, cone_outer_gain   a directional sound along the node's -Z: full\n                     volume inside the inner angle (degrees, full width), cone_outer_gain outside the\n                     outer one. 360 / 360 (the default) is every direction.\n  doppler            0 = none, 1 = physical. The node's velocity is its movement between fixed ticks.\n  air_absorption     distance low-pass (cw_voice_3d.air_absorption; 0 = none)\n  reverb_send        level into the reverb zones (1; 0 = none)\n  occlusion          0 clear .. 1 blocked: a low-pass the game sets (a ray cast to the listener)\n  panning_only       always pan, never the head-related filter (cw_spatial_mode PAN)\nEvery fixed tick the player gives its voices the node's world position, its velocity and its facing.\n\n── AudioListener3D ──────────────────────────────────────────────────\n  current        this node is a listener (true). Several current listeners (split screen, up to\n                 CW_AUDIO_MAX_LISTENERS) become listeners 0.. in the order they entered the tree; each\n                 spatial voice is heard by the nearest.\nA tree with a 3D player or a listener node sets the mixer's listeners every fixed tick: from its current\nAudioListener3D nodes, else from the current Camera3D. cw_audio_nodes_set_auto_listener(tree, false) leaves\nthe listener to the game (cw_audio_set_listener).\n\n── the mixer ────────────────────────────────────────────────────────\nPlayers need the mixer running. A game that calls cw_audio_init (or uses the game shell, which does) owns it\nas before. If nothing has started it when a player first plays, the player starts it with the defaults and\nthe tree then calls cw_audio_update each frame.\n\n── timing ───────────────────────────────────────────────────────────\nPlayers are stepped once per fixed tick, after the physics step, in the order they entered the tree. For a\nsound whose length is known, `finished` is counted in fixed ticks from the sound's length and the pitch, not\nread back from the mixer: it is emitted on the same tick on every host and in a replay, with or without an\naudio device. A sound of unknown length (a tracker module) finishes when the mixer says its voice ended.\nA paused tree holds the voices of players it pauses (their pause mode) and their count.",
+   "summary": "Audio nodes: sounds placed in a scene, over the mixer of cartwheel/audio.h.\n\n  AudioStreamPlayer    (Node)   plays a sound as it is: music, UI, anything without a place\n  AudioStreamPlayer2D  (Node2D) pans and fades it by where the node is on the 2D view\n  AudioStreamPlayer3D  (Node3D) a spatial voice at the node: distance, cone, doppler, reverb zones\n  AudioListener3D      (Node3D) the ears. With none in the tree, the current Camera3D is the listener.\n\n── every player ─────────────────────────────────────────────────────\n  stream         the sound: an asset path (WAV, FLAC, MP3, Ogg Vorbis, Ogg Opus, modules). Loaded on first\n                 play and shared by every player that names it.\n  volume_db      gain in decibels (0 = as recorded, -6 halves the amplitude, -80 and below is silence)\n  pitch_scale    playback rate (1 = as recorded)\n  autoplay       start on the first fixed tick after the node is ready\n  loop           repeat until stopped\n  bus            the mixer bus by name (\"Master\", or a name given to cw_bus_create); an unknown name plays\n                 into the master\n  max_polyphony  how many copies may sound at once (1..8). play while that many are sounding stops the\n                 oldest first. Default 1: play restarts the sound.\n  stream_paused  hold every voice where it is\n  playing        true while a voice is sounding or held; set it true to play, false to stop (not saved)\n  signal finished()   a voice played to its end (never for a looping, stopped or stolen one)\n  methods play (an optional float: seconds into the sound to start from), stop\n\n── AudioStreamPlayer2D ──────────────────────────────────────────────\n  max_distance      pixels from the middle of the view at which the sound is silent (2000)\n  attenuation       the fade's exponent: gain = (1 - distance / max_distance) ^ attenuation (1 = linear)\n  panning_strength  how far a sound at the edge of the view is panned: 0 none, 1 hard left/right (1)\nThe view is the one the last frame drew (the current Camera2D); before a frame is drawn the sound plays\ncentred at full volume.\n\n── AudioStreamPlayer3D ──────────────────────────────────────────────\n  attenuation_model  NONE, INVERSE (default), LINEAR, EXPONENTIAL (cw_atten_model)\n  unit_size          the distance at which the sound is at full volume (cw_voice_3d.ref_distance; 1)\n  max_distance       beyond this it gets no quieter (0 = 1000)\n  rolloff            how fast it fades with distance (1)\n  cone_inner_angle, cone_outer_angle, cone_outer_gain   a directional sound along the node's -Z: full\n                     volume inside the inner angle (degrees, full width), cone_outer_gain outside the\n                     outer one. 360 / 360 (the default) is every direction.\n  doppler            0 = none, 1 = physical. The node's velocity is its movement between fixed ticks.\n  air_absorption     distance low-pass (cw_voice_3d.air_absorption; 0 = none)\n  reverb_send        level into the reverb zones (1; 0 = none)\n  occlusion          0 clear .. 1 blocked: a low-pass the game sets (a ray cast to the listener)\n  panning_only       always pan, never the head-related filter (cw_spatial_mode PAN)\nEvery fixed tick the player gives its voices the node's world position, its velocity and its facing.\n\n── AudioListener3D ──────────────────────────────────────────────────\n  current        this node is a listener (true). Several current listeners (split screen, up to\n                 CW_AUDIO_MAX_LISTENERS) become listeners 0.. in the order they entered the tree; each\n                 spatial voice is heard by the nearest.\nA tree with a 3D player or a listener node sets the mixer's listeners every fixed tick: from its current\nAudioListener3D nodes, else from the current Camera3D. cw_audio_nodes_set_auto_listener(tree, false) leaves\nthe listener to the game (cw_audio_set_listener).\n\n── the mixer ────────────────────────────────────────────────────────\nPlayers need the mixer running. A game that calls cw_audio_init (or uses the game shell, which does) owns it\nas before. If nothing has started it when a player first plays, the player starts it with the defaults and\nthe tree then calls cw_audio_update each frame.\n\n── timing ───────────────────────────────────────────────────────────\nPlayers are stepped once per fixed tick, after the physics step, in the order they entered the tree. For a\nsound whose length is known, `finished` is counted in fixed ticks from the sound's length and the pitch, not\nread back from the mixer: it is emitted on the same tick on every host and in a replay, with or without an\naudio device. A sound of unknown length (a tracker module) finishes when the mixer says its voice ended.\nA paused tree holds the voices of players it pauses (their pause mode) and their count.\n\nA stream that is a .cwaudio resource (cartwheel/audio.h, \"stream resources\"): a randomizer picks a sound per play;\nan interactive music is the player's own, started on its `clip` (or the resource's initial clip), and setting\n`clip` while it plays switches by the resource's transitions; `current_clip` reads the clip sounding now. A\nsound that loops by itself (its own loop points) never counts as finished; an interactive stream emits `finished`\nwhen its music stops by itself (a last clip that does not loop or advance).",
    "functions": [
     {
      "name": "cw_audio_player_play",
@@ -1441,6 +1688,12 @@
      "name": "cw_audio_player_voice",
      "signature": "cw_voice cw_audio_player_voice(cw_node player)",
      "doc": "The player's newest voice, for anything the node has no property for (cw_voice_fade, ...); null when none.",
+     "inline": false
+    },
+    {
+     "name": "cw_audio_player_music",
+     "signature": "cw_music cw_audio_player_music(cw_node player)",
+     "doc": "A player whose stream is an interactive .cwaudio resource: its music (cw_music_play to switch clips by the\nresource's transitions, as setting the node's clip property does; cw_music_current, cw_music_switch_frame). Null\nbefore its first play, or for any other stream. A randomizer resource needs nothing: each play (and each copy up to\nmax_polyphony) picks its sound, pitch and volume.",
      "inline": false
     },
     {

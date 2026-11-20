@@ -12888,7 +12888,23 @@
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "The sound: an asset path. Loaded on first play, shared by every player naming it."
+     "doc": "The sound: an asset path, or a .cwaudio stream resource (a randomizer or an interactive music, cartwheel/audio.h). Loaded on first play, shared by every player naming it."
+    },
+    {
+     "name": "clip",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "An interactive stream: the clip to play; set while it plays to switch by its transitions (empty = its initial clip)."
+    },
+    {
+     "name": "current_clip",
+     "type": "string",
+     "default": "\"\"",
+     "stored": false,
+     "readonly": false,
+     "doc": "An interactive stream: the clip sounding now (not saved)."
     },
     {
      "name": "volume_db",
@@ -12976,7 +12992,23 @@
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "The sound: an asset path. Loaded on first play, shared by every player naming it."
+     "doc": "The sound: an asset path, or a .cwaudio stream resource (a randomizer or an interactive music, cartwheel/audio.h). Loaded on first play, shared by every player naming it."
+    },
+    {
+     "name": "clip",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "An interactive stream: the clip to play; set while it plays to switch by its transitions (empty = its initial clip)."
+    },
+    {
+     "name": "current_clip",
+     "type": "string",
+     "default": "\"\"",
+     "stored": false,
+     "readonly": false,
+     "doc": "An interactive stream: the clip sounding now (not saved)."
     },
     {
      "name": "volume_db",
@@ -13094,7 +13126,23 @@
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "The sound: an asset path. Loaded on first play, shared by every player naming it."
+     "doc": "The sound: an asset path, or a .cwaudio stream resource (a randomizer or an interactive music, cartwheel/audio.h). Loaded on first play, shared by every player naming it."
+    },
+    {
+     "name": "clip",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "An interactive stream: the clip to play; set while it plays to switch by its transitions (empty = its initial clip)."
+    },
+    {
+     "name": "current_clip",
+     "type": "string",
+     "default": "\"\"",
+     "stored": false,
+     "readonly": false,
+     "doc": "An interactive stream: the clip sounding now (not saved)."
     },
     {
      "name": "volume_db",

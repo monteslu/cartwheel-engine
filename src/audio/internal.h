@@ -54,6 +54,8 @@ uint32_t cw__spsc_free_slots(cw__spsc *q); /* as seen by the producer */
 typedef struct cw__stream {
   cw__decoder dec;         /* [prod] */
   bool loop;               /* [prod] */
+  int64_t pos;             /* [prod] the decoder's position, source frames */
+  int64_t loop_start, loop_end; /* [prod] source frames; loop_end 0 = the end */
   int channels;            /* ring frame width (1|2), fixed while in use */
   float *ring;             /* cap * channels floats, allocated at init */
   uint32_t cap;            /* frames, power of two */
@@ -163,7 +165,7 @@ typedef enum {
   CW__CMD_FADE, CW__CMD_3D, CW__CMD_POSITION, CW__CMD_OCCLUSION, CW__CMD_LISTENER, CW__CMD_SPEED_OF_SOUND,
   CW__CMD_BUS_SETUP, CW__CMD_BUS_VOLUME, CW__CMD_BUS_AUDIBLE, CW__CMD_BUS_SEND, CW__CMD_FX_ADD,
   CW__CMD_FX_SET, CW__CMD_FX_BYPASS, CW__CMD_FX_REMOVE, CW__CMD_HRTF, CW__CMD_OUTPUT, CW__CMD_HRTF_LIMIT,
-  CW__CMD_ZONE_ADD, CW__CMD_ZONE_SET, CW__CMD_ZONE_REMOVE,
+  CW__CMD_ZONE_ADD, CW__CMD_ZONE_SET, CW__CMD_ZONE_REMOVE, CW__CMD_STOP_AT,
 } cw__cmd_type;
 
 typedef struct cw__play {
@@ -192,6 +194,7 @@ typedef struct cw__cmd {
     cw__hrtf *hrtf;
     int ival;
     struct { cw__fx *fx; cw_reverb_zone_desc desc; } zone;
+    struct { float fade; int64_t frame; } stop_at;
   };
 } cw__cmd;
 
@@ -235,6 +238,8 @@ typedef struct cw__mvoice {
   float air;         /* distance low-pass factor for this block (1 = none) */
   bool gains_valid;
   int64_t start_frame;
+  int64_t stop_frame; /* mixer frame it ends (or starts fading out) on; -1 = none (cw__voice_stop_at) */
+  float stop_fade;
   uint64_t played;   /* the music clock */
 } cw__mvoice;
 
@@ -284,6 +289,7 @@ typedef struct cw__mixer {
   _Atomic int32_t pub_voices, pub_streams, pub_hrtf;
   _Atomic uint32_t *clock_gen; /* per voice slot: generation the clock belongs to */
   _Atomic uint64_t *clock;     /* per voice slot: frames played */
+  _Atomic int64_t *started;    /* per voice slot: the mixer frame it started on (-1: waiting), for clock_gen's voice */
 } cw__mixer;
 
 /* ── the whole system ────────────────────────────────────────────────── */
@@ -298,6 +304,9 @@ typedef struct cw__sound {
   int max_voices, priority;
   float volume;
   cw_bus bus;
+  bool loop;           /* its own loop (cw_sound_set_loop, a WAV smpl chunk) */
+  int64_t loop_start, loop_end; /* source frames at src_rate; loop_end 0 = the end */
+  int src_rate;        /* the file's rate (samples are resampled to the mix rate) */
   int live;            /* voices playing it (logical) */
   int refs;            /* voices the mixer may still read it through */
 } cw__sound;

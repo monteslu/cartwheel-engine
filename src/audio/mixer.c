@@ -25,6 +25,7 @@ void cw__mixer_init(cw__mixer *m, int rate, int max_voices) {
   m->voices = cw_calloc((size_t)max_voices, sizeof *m->voices, CW_MEM_AUDIO);
   m->clock_gen = cw_calloc((size_t)max_voices, sizeof *m->clock_gen, CW_MEM_AUDIO);
   m->clock = cw_calloc((size_t)max_voices, sizeof *m->clock, CW_MEM_AUDIO);
+  m->started = cw_calloc((size_t)max_voices, sizeof *m->started, CW_MEM_AUDIO);
   m->scratch = cw_calloc(CW_AUDIO_BLOCK * 2, sizeof(float), CW_MEM_AUDIO);
   m->hstate = cw_calloc((size_t)max_voices, sizeof *m->hstate, CW_MEM_AUDIO);
   m->mono = cw_calloc(CW_AUDIO_BLOCK * 2, sizeof(float), CW_MEM_AUDIO);
@@ -51,6 +52,7 @@ void cw__mixer_free(cw__mixer *m) {
   cw_free(m->voices);
   cw_free((void *)m->clock_gen);
   cw_free((void *)m->clock);
+  cw_free((void *)m->started);
   cw_free(m->scratch);
   cw_free(m->hstate);
   cw_free(m->mono);
@@ -113,6 +115,7 @@ static void start_voice(const cw__cmd *c) {
   v->spatial = p->d.spatial;
   v->sp = p->d.space;
   v->start_frame = p->d.start_frame;
+  v->stop_frame = -1;
   v->priming = p->stream >= 0;
   v->air = 1.0f;
   if (p->d.fade_in > 0) {
@@ -130,6 +133,7 @@ static void start_voice(const cw__cmd *c) {
     v->played = (uint64_t)p->d.offset;
   }
   atomic_store_explicit(&m->clock[c->slot], v->played, memory_order_release);
+  atomic_store_explicit(&m->started[c->slot], -1, memory_order_release);
   atomic_store_explicit(&m->clock_gen[c->slot], v->gen, memory_order_release);
   cw__hrtf_reset(&m->hstate[c->slot]);
 }
@@ -147,6 +151,11 @@ static void apply(const cw__cmd *c) {
       v->fade_step = 1.0f / (c->f.a * (float)m->rate);
       v->stop_at_fade_end = true;
     }
+    break;
+  case CW__CMD_STOP_AT:
+    if (!(v = live_voice(c))) break;
+    v->stop_frame = c->stop_at.frame < 0 ? 0 : c->stop_at.frame;
+    v->stop_fade = c->stop_at.fade;
     break;
   case CW__CMD_PAUSE: if ((v = live_voice(c))) v->paused = c->f.flag; break;
   case CW__CMD_VOLUME: if ((v = live_voice(c))) v->volume = c->f.a; break;
@@ -552,6 +561,7 @@ static void mix_block(float *out, int n) {
       if (v->start_frame >= (int64_t)(F + (uint64_t)n)) continue;
       if (v->start_frame > (int64_t)F) off = (int)(v->start_frame - (int64_t)F);
       v->state = CW__V_PLAYING;
+      atomic_store_explicit(&m->started[s], (int64_t)F + off, memory_order_release);
     }
     if (v->paused) continue;
     if (v->priming) {
@@ -562,6 +572,22 @@ static void mix_block(float *out, int n) {
       v->priming = false;
     }
     int cnt = n - off;
+    /* an end on a given frame (music switching on a beat): a hard stop renders up to it and ends; a fading one starts
+     * its fade in the block that holds the frame */
+    bool stop_here = false;
+    if (v->stop_frame >= 0 && v->stop_frame < (int64_t)(F + (uint64_t)n)) {
+      if (v->stop_fade > 0) {
+        v->fade_target = 0;
+        v->fade_step = 1.0f / (v->stop_fade * (float)m->rate);
+        v->stop_at_fade_end = true;
+        v->stop_frame = -1;
+      } else {
+        int64_t lim = v->stop_frame - (int64_t)F - off;
+        if (lim <= 0) { end_voice(s); continue; }
+        if (lim < cnt) cnt = (int)lim;
+        stop_here = true;
+      }
+    }
     /* fade across this block */
     float fade_end = v->fade;
     if (v->fade_step > 0) {
@@ -635,7 +661,7 @@ static void mix_block(float *out, int n) {
     v->fade = fade_end;
     if (v->fade == v->fade_target) v->fade_step = 0;
     atomic_store_explicit(&m->clock[s], v->played, memory_order_release);
-    if (ended || (v->stop_at_fade_end && v->fade <= 0)) end_voice(s);
+    if (ended || stop_here || (v->stop_at_fade_end && v->fade <= 0)) end_voice(s);
   }
   for (int s = 0; s < m->max_voices; s++) {
     const cw__mvoice *v = &m->voices[s];

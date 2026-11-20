@@ -1434,6 +1434,123 @@
     "note": "an MPEG-1 cutscene (pl_mpeg; 320x180, 30 fps, MP2 sound) played from the tick count: to the end, held past it (ended), then a jump back to 1 s (rewind and decode forward). Frame picked from tick time, decoded planes hashed per tick, the YUV to RGB shader on GL and WebGPU drawn as a sprite (frames compared), its sound mixed offline through a stream voice (hash). Control: 31 frames early (mid playback after the rewind) must differ."
   },
   {
+    "name": "audio-streams",
+    "app": "audio_streams",
+    "webgpu": true,
+    "frames": 370,
+    "fields": [
+      "loop.exact",
+      "loop.stream_same",
+      "loop.points",
+      "rnd.no_repeat",
+      "rnd.ranges",
+      "rnd.picks",
+      "steps.picks",
+      "music.grid_ok",
+      "music.filler_ok",
+      "music.order_ok",
+      "music.frames",
+      "streams.hash",
+      "streams.done",
+      "audio.mixed_frames",
+      "audio.underruns"
+    ],
+    "expect": {
+      "loop.exact": 1,
+      "loop.stream_same": 1,
+      "rnd.no_repeat": 1,
+      "rnd.ranges": 1,
+      "music.grid_ok": 1,
+      "music.filler_ok": 1,
+      "music.order_ok": 1,
+      "streams.done": 1,
+      "audio.underruns": 0
+    },
+    "controlFrames": 370,
+    "controlEnv": {
+      "CW_TEST_MUSIC_NOW": "1"
+    },
+    "note": "randomized sounds, a sound's own loop points and interactive music, mixed offline (the same samples on every host): loop.wav's sampler chunk loops 24000..71999 as a sample and as a stream (identical, every frame past 72000 repeats the one 48000 before), a no-repeat randomizer's 24 picks with pitch and volume in range, an AudioStreamPlayer of steps.cwaudio picking per play, and an AudioStreamPlayer of match.cwaudio switching calm to battle on calm's next bar through a one-beat sting (battle starts exactly a beat later) and back to calm on battle's next beat, each switch no sooner than CW_MUSIC_LEAD after its request and every voice starting on its frame. Control: CW_TEST_MUSIC_NOW=1 (match_now.cwaudio, every switch at once) fails music.grid_ok"
+  },
+  {
+    "name": "audio-streams-random",
+    "app": "audio_streams",
+    "webgpu": true,
+    "frames": 370,
+    "fields": [
+      "loop.exact",
+      "loop.stream_same",
+      "loop.points",
+      "rnd.no_repeat",
+      "rnd.ranges",
+      "rnd.picks",
+      "steps.picks",
+      "music.grid_ok",
+      "music.filler_ok",
+      "music.order_ok",
+      "music.frames",
+      "streams.hash",
+      "streams.done",
+      "audio.mixed_frames",
+      "audio.underruns"
+    ],
+    "expect": {
+      "loop.exact": 1,
+      "loop.stream_same": 1,
+      "rnd.no_repeat": 1,
+      "rnd.ranges": 1,
+      "music.grid_ok": 1,
+      "music.filler_ok": 1,
+      "music.order_ok": 1,
+      "streams.done": 1,
+      "audio.underruns": 0
+    },
+    "controlFrames": 370,
+    "controlEnv": {
+      "CW_TEST_RANDOM_ANY": "1"
+    },
+    "note": "audio_streams' randomizer: control CW_TEST_RANDOM_ANY=1 (repeats allowed) repeats a pick and fails rnd.no_repeat"
+  },
+  {
+    "name": "audio-streams-loop",
+    "app": "audio_streams",
+    "webgpu": true,
+    "frames": 370,
+    "fields": [
+      "loop.exact",
+      "loop.stream_same",
+      "loop.points",
+      "rnd.no_repeat",
+      "rnd.ranges",
+      "rnd.picks",
+      "steps.picks",
+      "music.grid_ok",
+      "music.filler_ok",
+      "music.order_ok",
+      "music.frames",
+      "streams.hash",
+      "streams.done",
+      "audio.mixed_frames",
+      "audio.underruns"
+    ],
+    "expect": {
+      "loop.exact": 1,
+      "loop.stream_same": 1,
+      "rnd.no_repeat": 1,
+      "rnd.ranges": 1,
+      "music.grid_ok": 1,
+      "music.filler_ok": 1,
+      "music.order_ok": 1,
+      "streams.done": 1,
+      "audio.underruns": 0
+    },
+    "controlFrames": 370,
+    "controlEnv": {
+      "CW_TEST_LOOP_WHOLE": "1"
+    },
+    "note": "audio_streams' loop points: control CW_TEST_LOOP_WHOLE=1 (the whole file loops, not the sampler chunk's points) fails loop.exact"
+  },
+  {
     "name": "audio-play",
     "app": "audio_play",
     "webgpu": true,

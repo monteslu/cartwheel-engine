@@ -1,0 +1,5 @@
+# footsteps: never the same step twice in a row, a little pitch and volume variation
+random mode=no_repeat pitch=1.2 volume_db=3 seed=7
+sound path="step1.wav"
+sound path="step2.wav" weight=2
+sound path="step3.wav"
