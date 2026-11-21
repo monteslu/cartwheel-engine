@@ -58,26 +58,28 @@ const CASES = [
   { tag: 'v4', env: { SA_VIEWS: '4', CW_QUALITY: 'high' } },
   { tag: 'v4-verylow', env: { SA_VIEWS: '4', CW_QUALITY: 'verylow' } },
   { tag: 'v2-vfog', env: { SA_VIEWS: '2', CW_QUALITY: 'ultra', SA_VFOG: '1' } },
-  { tag: 'v2-gi', env: { SA_VIEWS: '2', CW_QUALITY: 'ultra', SA_GI: '1' }, local: true },
-  { tag: 'v4-gi', env: { SA_VIEWS: '4', CW_QUALITY: 'ultra', SA_GI: '1' }, local: true },
+  { tag: 'v2-gi', env: { SA_VIEWS: '2', CW_QUALITY: 'ultra', SA_GI: '1' } },
+  { tag: 'v4-gi', env: { SA_VIEWS: '4', CW_QUALITY: 'ultra', SA_GI: '1' } },
   { tag: 'v2-prepass', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_PREPASS: '1' } },
-  { tag: 'v4-prepass', env: { SA_VIEWS: '4', CW_QUALITY: 'high', SA_PREPASS: '1' }, local: true },
+  { tag: 'v4-prepass', env: { SA_VIEWS: '4', CW_QUALITY: 'high', SA_PREPASS: '1' } },
   { tag: 'v2-water', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_WATER: '1' } },
-  { tag: 'v4-water', env: { SA_VIEWS: '4', CW_QUALITY: 'high', SA_WATER: '1' }, local: true },
-  { tag: 'v2-water-gi', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_WATER: '1', SA_GI: '1' }, local: true },
-  { tag: 'v2-distort', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_DISTORT: '1' }, local: true },
-  { tag: 'v4-distort', env: { SA_VIEWS: '4', CW_QUALITY: 'high', SA_DISTORT: '1' }, local: true },
+  { tag: 'v4-water', env: { SA_VIEWS: '4', CW_QUALITY: 'high', SA_WATER: '1' } },
+  { tag: 'v2-water-gi', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_WATER: '1', SA_GI: '1' } },
+  { tag: 'v2-distort', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_DISTORT: '1' } },
+  { tag: 'v4-distort', env: { SA_VIEWS: '4', CW_QUALITY: 'high', SA_DISTORT: '1' } },
   { tag: 'v2-msaa', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_MSAA: '1' } },
   { tag: 'v4-msaa', env: { SA_VIEWS: '4', CW_QUALITY: 'high', SA_MSAA: '1' } },
   { tag: 'v2-csm', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_CSM: '1' }, fallback: true },
 ];
-/* CI renders these on a software GPU (llvmpipe), where the whole set took over an hour of one shard and timed it out
- * (v0.57.0): the cases marked local (Ultra GI, four views with water or distortion or a prepass) run on a real GPU only */
-const LOCAL_ONLY = !!process.env.CI;
+/* CI renders these on a software GPU (llvmpipe and lavapipe), where the set took over an hour of one shard and timed it
+ * out (v0.57.0, and v0.57.1 with only the Ultra GI and four-view water, distortion and prepass cases left out): CI runs
+ * the two- and four-view frames and the four views over 4x MSAA, with their controls; every case runs on a real GPU */
+const CI_CASES = new Set(['v2', 'v4', 'v4-msaa']);
+const LOCAL_ONLY = process.env.CW_TEST_GPU === 'software' || !!process.env.CI; // (CI's software GPU: tests/ci.mjs)
 for (const gpu of GPUS) {
   console.log(`-- ${gpu}`);
   for (const c of CASES) {
-    if (c.local && LOCAL_ONLY) { console.log(`skip ${c.tag}: local only (a real GPU; CI's software GPU takes too long)`); continue; }
+    if (LOCAL_ONLY && !CI_CASES.has(c.tag)) { console.log(`skip ${c.tag}: local only (a real GPU; CI's software GPU takes too long)`); continue; }
     const one = run(gpu, `${c.tag}-onepass`, { ...c.env, CW_TEST_VIEWS_ARRAY: '1' });
     const each = run(gpu, `${c.tag}-perview`, { ...c.env, CW_TEST_VIEWS_ARRAY: '0' });
     const d = share(one, each);
