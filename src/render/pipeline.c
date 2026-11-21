@@ -201,8 +201,10 @@ static void cmd_pipeline(int argc, const char **argv, cw_reply *r) {
   }
   /* pipeline views_array 0|1: split screen in one pass or view by view (cw_pipeline_set_views_array; A/B timing) */
   if (argc >= 3 && !strcmp(argv[1], "views_array")) cw_pipeline_set_views_array(p, atoi(argv[2]) != 0);
-  /* pipeline views_submit 0|1: WebGPU, a one-pass split screen's views drawn and submitted one by one, or all recorded first (A/B timing) */
+  /* pipeline views_submit 0|1: a one-pass split screen's views drawn and sent to the GPU one by one (WebGPU: submitted, GL: flushed), or all recorded first (A/B timing) */
   if (argc >= 3 && !strcmp(argv[1], "views_submit")) p->views_submit = atoi(argv[2]) != 0;
+  /* pipeline shared_post 0|1: split screen, one post chain over the laid-out views or a chain of each view's own (A/B timing) */
+  if (argc >= 3 && !strcmp(argv[1], "shared_post")) p->views_shared_post = atoi(argv[2]) != 0;
   static const char *const phases[] = { "shadow", "prepass", "opaque", "sky", "effects", "post", "overlay", "present" };
   cw_reply_printf(r, "{\"hdr_format\":\"%s\",\"timer_query\":%s,\"max_samples\":%d,\"gpu_ms\":%.4f,\"passes\":[",
                   cw__caps.hdr_format ? cw__caps.hdr_format : "?",
@@ -243,8 +245,8 @@ cw_pipeline *cw_pipeline_of(cw_tree *t) {
   static bool cmd_done;
   if (!cmd_done) {
     cmd_done = true;
-    cw_debug_i32("cw.views_submits", &views_submits_dbg); /* WebGPU: the last frame's one-pass views submitted one by one (0: none) */
-    cw_debug_command("pipeline", "pipeline [views_array 0|1] [views_submit 0|1]: render passes (phase, ran, GPU ms), HDR format, timer support, missing three.c states; views_array sets split screen in one pass on or off first, views_submit (WebGPU) its views submitted one by one or together", cmd_pipeline);
+    cw_debug_i32("cw.views_submits", &views_submits_dbg); /* the last frame's one-pass views sent to the GPU one by one (WebGPU: submitted, GL: flushed; 0: none) */
+    cw_debug_command("pipeline", "pipeline [views_array 0|1] [views_submit 0|1] [shared_post 0|1]: render passes (phase, ran, GPU ms), HDR format, timer support, missing three.c states; views_array sets split screen in one pass on or off first, views_submit its views sent to the GPU one by one or together, shared_post one post chain over the views or one a view", cmd_pipeline);
     cw_debug_command("pipeline_test", "pipeline_test gl_msaa_on_webgpu | views_stall <ms>: test controls: puts back a GL call on WebGPU runs that the dual-cart check must catch; a one-pass split screen slowed by ms a view",
                      cmd_pipeline_test);
   }
@@ -1203,7 +1205,7 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   bool want_array = p->views_array;
   const char *va = cw_test_env("CW_TEST_VIEWS_ARRAY"); /* 1 / 0: one pass or per view whatever the app set (gates) */
   if (va && *va) want_array = atoi(va) != 0;
-  const char *vs = cw_test_env("CW_TEST_VIEWS_SUBMIT"); /* 0: WebGPU, the views recorded first, then submitted (gates) */
+  const char *vs = cw_test_env("CW_TEST_VIEWS_SUBMIT"); /* 0: the views recorded first, then sent to the GPU (gates) */
   if (vs && *vs) p->views_submit = atoi(vs) != 0;
   if (want_array && p->view_post_split && !p->view_hook) {
     arr_pic = array_run(t, p, &out_copy, alpha, vf);
@@ -1558,7 +1560,8 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   }
 
   const cw_rt *chain = scene; /* POST: the current image */
-  bool view_major = wgpu && mode == RUN_ARRAY && p->arr_n >= 2 && p->views_submit && !p->arr_refused;
+  /* (GL too: each view's commands flushed as the view ends, so the GPU starts it while the CPU records the next) */
+  bool view_major = mode == RUN_ARRAY && p->arr_n >= 2 && p->views_submit && !p->arr_refused;
   for (int ph = 0; ph < CW_PHASE_COUNT; ph++) {
     if (ph <= CW_PHASE_POST && !has_scene && !(post_run && ph == CW_PHASE_POST)) continue;
     /* WebGPU, one-pass split screen: every view's scene goes to the GPU before the views' effects are recorded, so
@@ -1567,9 +1570,14 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
      * scene (an array camera of that one view, inside its rectangle of the one target) submitted as soon as it is
      * recorded, so the GPU draws a view while the CPU prepares the next. A host that waits for each frame otherwise saw
      * no GPU work until every view was prepared (the views drawn on their own each went to the GPU as they ended). */
+    /* (GL: each view flushed to the GPU as it ends, glFlush: the GPU starts its work while the CPU records the next) */
     if (view_major && ph == CW_PHASE_SHADOW) {
+      /* the scene's world matrices are brought up to date by the first view's renders; the later views draw them as
+       * they stand (a walk of the whole scene a view saved: 3 ms of CPU a frame in a four-player race on GL) */
+      bool keep_auto = ctx.scene3d && ctx.scene3d->auto_update;
       for (int k = 0; k < p->arr_n && !p->arr_refused; k++) {
         p->arr_part = k + 1;
+        if (k == 1 && keep_auto) ctx.scene3d->auto_update = false;
         for (int ph2 = CW_PHASE_SHADOW; ph2 <= CW_PHASE_OPAQUE && !p->arr_refused; ph2++) {
           for (int i = 0; i < p->passes.count && !p->arr_refused; i++) {
             pass_rec *r = p->passes.data[i];
@@ -1598,9 +1606,14 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
           }
         }
         /* this view to the GPU */
-        cw__pw_flush();
-        if (ctx.renderer) t3_renderer_wgpu_submit(ctx.renderer);
+        if (wgpu) {
+          cw__pw_flush();
+          if (ctx.renderer) t3_renderer_wgpu_submit(ctx.renderer);
+        } else {
+          glFlush();
+        }
       }
+      if (keep_auto) ctx.scene3d->auto_update = true;
       views_submits_dbg = p->arr_n;
       p->arr_part = 0;
       if (p->arr_refused) return; /* (a later view's pass could not: the views are drawn on their own; this target is not used) */

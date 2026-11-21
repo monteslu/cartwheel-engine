@@ -92,10 +92,10 @@ for (const gpu of GPUS) {
     const d1 = share(one, hook), d2 = share(each, hook);
     check(`${c.tag}: one pass with masks draws the hook's picture (<= ${BOUND * 100}%)`, d1 <= BOUND, pct(d1));
     check(`${c.tag}: masks drawn view by view draw the hook's picture`, d2 <= BOUND, pct(d2));
-    if (gpu === 'webgpu' && c.tag === 'v4') { // the views drawn and submitted one by one against all recorded first
+    if (c.tag === 'v4') { // the views drawn and sent to the GPU one by one (WebGPU: submitted, GL: flushed) against all recorded first
       const b = run(gpu, `${c.tag}-batch`, { ...c.env, CW_TEST_VIEWS_ARRAY: '1', CW_TEST_VIEWS_SUBMIT: '0' });
       const db = share(one, b);
-      check(`${c.tag}: the views submitted one by one draw what they draw recorded together`, b.f['sv.array'] === 1 && one.f['cw.views_submits'] === 4 && b.f['cw.views_submits'] === 0 && db <= BOUND, `${pct(db)}, submits ${one.f['cw.views_submits']} / ${b.f['cw.views_submits']}`);
+      check(`${c.tag}: the views sent to the GPU one by one draw what they draw recorded together`, b.f['sv.array'] === 1 && one.f['cw.views_submits'] === 4 && b.f['cw.views_submits'] === 0 && db <= BOUND, `${pct(db)}, submits ${one.f['cw.views_submits']} / ${b.f['cw.views_submits']}`);
     }
     if (c.tag === 'v4') {
       const w = run(gpu, `${c.tag}-wrong`, { ...c.env, CW_TEST_VIEWS_ARRAY: '1', SV_WRONG: '1' });
@@ -110,10 +110,10 @@ for (const gpu of GPUS) {
     check(`${c.tag}: the views drawn in one pass`, one.f['sv.array'] === 1 && each.f['sv.array'] === 0, `sv.array ${one.f['sv.array']} / ${each.f['sv.array']}${text(one.f['sv.why']) ? ' (' + text(one.f['sv.why']) + ')' : ''}`);
     const d = share(one, each);
     check(`${c.tag}: one pass draws the per-view picture (<= ${BOUND * 100}%)`, d <= BOUND, pct(d));
-    if (gpu === 'webgpu') {
+    {
       const b = run(gpu, `${c.tag}-batch`, { ...c.env, CW_TEST_VIEWS_ARRAY: '1', CW_TEST_VIEWS_SUBMIT: '0' });
       const db = share(b, each);
-      check(`${c.tag}: recorded together, then submitted, too`, b.f['sv.array'] === 1 && db <= BOUND, pct(db));
+      check(`${c.tag}: recorded together, then sent to the GPU, too`, b.f['sv.array'] === 1 && db <= BOUND, pct(db));
     }
     if (c.tag === 'vm' || c.tag === 'water') {
       const s = run(gpu, `${c.tag}-shifted`, { ...c.env, CW_TEST_VIEWS_ARRAY: '1', CW_TEST_VIEWS_ARRAY_SHIFT: '1' });

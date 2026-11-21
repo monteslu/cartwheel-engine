@@ -8,8 +8,8 @@
  * view by view), SA_GI=1 (a polished metal slab in a reflection probe's box and a light probe grid, with screen-space
  * reflections and bounce light: each view's G-buffer, reflections and bounce light over its own rectangle),
  * SA_PREPASS=1 (a depth prepass before the scene), SA_WATER=1 (the pond with its planar reflection and refraction),
- * SA_DISTORT=1 (a shockwave ring and a heat haze bending the picture),
- * SA_MODE=v4|vfog|csm|gi|prepass|water|distort (one of those by one name), SA_ONEPASS=0 (each view on its own; CW_TEST_VIEWS_ARRAY overrides either for the gates).
+ * SA_DISTORT=1 (a shockwave ring and a heat haze bending the picture), SA_MSAA=1 (the scene multisampled 4x),
+ * SA_MODE=v4|vfog|csm|gi|prepass|water|distort|msaa (one of those by one name), SA_ONEPASS=0 (each view on its own; CW_TEST_VIEWS_ARRAY overrides either for the gates).
  *
  * Debug state: sa.views, sa.array (the last frame drew the views in one pass), sa.tick. */
 #include <stdlib.h>
@@ -78,6 +78,7 @@ static void init(void *u) {
     cw_node_set(grid, "bounces", cw_val_int(1));
   }
   if (((e = getenv("SA_PREPASS")) && atoi(e)) || !strcmp(mode, "prepass")) cw_node_set(cw_node_get(world, "Post"), "depth_prepass", cw_val_bool(true));
+  if (((e = getenv("SA_MSAA")) && atoi(e)) || !strcmp(mode, "msaa")) cw_node_set(cw_node_get(world, "Post"), "msaa", cw_val_int(4));
   if (((e = getenv("SA_WATER")) && atoi(e)) || !strcmp(mode, "water")) {
     cw_node pond = cw_node_get(world, "Pond");
     cw_node_set(pond, "reflection", cw_val_bool(true));
