@@ -4,6 +4,11 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.56.2 (2026-11-21)
+
+### Fixed
+- CI no longer runs the `views-wall` gate: it times a release cart on romdev against the test GPU, which the CI runners do not have (it stays a local gate, like the other timing gates). v0.56.1 failed CI on it and published no SDK. Same engine as v0.56.0.
+
 ## v0.56.1 (2026-11-21)
 
 ### Fixed

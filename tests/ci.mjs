@@ -66,6 +66,7 @@ export const LOCAL_ONLY = {
   'editor-import': 'romdev, Chromium and wasmcart-native',
   'a11y-channel': 'romdev',
   'profile-cart': 'romdev',
+  'views-wall': 'wall-time timings of a release cart on romdev against the test GPU',
   'cart-audio-ring': 'romdev',
   'sdk-rebuild': 'an unpacked linux-x64 SDK from a game repository (CW_TEST_SDK)',
   'project-export': 'romdev, wasmcart-native and the export toolchains',
