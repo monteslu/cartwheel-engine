@@ -2313,6 +2313,7 @@ static void app_exec(cw_pass_ctx *ctx, void *u) {
 void cw__pipeline_add_builtin_passes(cw_pipeline *p) {
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "depth_prepass", .phase = CW_PHASE_PREPASS, .order = 0,
                                            .active = prepass_active, .execute = prepass_exec,
+                                           .views = CW_PASS_VIEWS_ONCE /* through the array camera, as the scene pass */,
 #if defined(T3_WGPU_DEPTH_PREPASS)
                                            .webgpu = true
 #endif

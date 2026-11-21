@@ -523,9 +523,10 @@ void cw_pipeline_set_views_shared_post(cw_pipeline *p, bool shared);
  * three.c render with a t3_array_camera (on WebGPU one such render a view, below; each view culled and sorted by its
  * own camera, one render pass, the frame's uploads once) and every other pass that reads a view's camera once per
  * view inside its rectangle. The picture is the per-view one. A frame where an active pass cannot draws each view on
- * its own, as without it: a pass with CW_PASS_VIEWS_NONE (a game's own pass that does not say), a view hook, the
- * sun's cascades, a VisibilityManager with occlusion culling, impostors or a level of detail per mesh, a light drawn
- * in some views only, on GL the views on both sides of a water surface. What a hook showed and hid per view,
+ * its own, as without it: a pass with CW_PASS_VIEWS_NONE (a game's own pass that does not say; of the built-in
+ * ones the velocity, TAA, motion blur, depth of field, exposure, underwater and TerrainSet3D passes), a view hook,
+ * the sun's cascades, a VisibilityManager with occlusion culling, impostors or a level of detail per mesh, a light
+ * drawn in some views only, on GL the views on both sides of a water surface. What a hook showed and hid per view,
  * cw_object_set_views says without one. On by default. Geometry drawn for one view only (a terrain's patches and
  * scatter, an object drawn in some views) sits on layers 28 to 31 in such a frame: keep a game's own objects off
  * them. On WebGPU each view is drawn up to its opaque passes and submitted in turn (the GPU starts on a view while

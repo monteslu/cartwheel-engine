@@ -56,8 +56,7 @@ static void gtree_free(void *p) {
   cw_array_free(&g->probes);
   cw_array_free(&g->grids);
   cw__gi_grid_tree_free(g);
-  cw__rt_destroy(&g->gbuf);
-  cw__rt_destroy(&g->albedo);
+  for (int k = 0; k < CW_MAX_VIEWS; k++) cw__rt_destroy(&g->gbuf[k]), cw__rt_destroy(&g->albedo[k]);
   if (g->dummy) t3_release(g->dummy);
   if (g->dummy_cube) t3_release(g->dummy_cube);
   if (g->pmrem) t3_pmrem_generator_destroy(g->pmrem);
@@ -304,7 +303,7 @@ static void probes_exec(cw_pass_ctx *ctx, void *user) {
   /* a splitscreen frame runs this once per view: the probe grid and the probe captures are the world's, not a
    * view's, so only the frame's first view updates them (the others would spend the frame's budget again and age
    * EVERY_N_FRAMES probes once per view); the G-buffer below is each view's own */
-  bool later_view = ctx->pipeline && ctx->pipeline->view_i > 0;
+  bool later_view = ctx->view_count > 0 ? ctx->view_index > 0 : ctx->pipeline && ctx->pipeline->view_i > 0;
   if (!later_view) {
     g->stats.captures = 0;
     g->faces_drawn = false;
@@ -335,15 +334,15 @@ static void probes_exec(cw_pass_ctx *ctx, void *user) {
     captures(g, ctx);
   }
   /* the screen-space passes' G-buffer, after this frame's captures (ssr.c) */
-  int hw = (ctx->width + 1) / 2, hh = (ctx->height + 1) / 2;
+  gi_view v = cw__gi_view(ctx);
   bool want = ctx->settings->ssr || ctx->settings->ssgi;
-  g->gbuf_ok = want && cw__gi_gbuffer(ctx, g, hw, hh, 1);
-  g->albedo_ok = ctx->settings->ssgi && g->gbuf_ok && cw__gi_gbuffer(ctx, g, hw, hh, 2);
+  g->gbuf_ok[v.k] = want && cw__gi_gbuffer(ctx, g, &v, 1);
+  g->albedo_ok[v.k] = ctx->settings->ssgi && g->gbuf_ok[v.k] && cw__gi_gbuffer(ctx, g, &v, 2);
   /* The first render of a frame draws the sun's shadow maps (the view armed them). The probe faces and the G-buffer
    * hold them (their renders draw only a map never drawn before, the first frame's, with the objects a probe's cull_mask
    * hides or the surfaces the G-buffer leaves out missing): arm them again, so the frame's own render draws them with
    * everything in. (A later view of a split screen keeps the first view's maps.) */
-  if (((!later_view && (g->faces_drawn || g->stats.grid_updates)) || g->gbuf_ok) && !cw__render3d_shadows_kept(ctx->tree))
+  if (((!later_view && (g->faces_drawn || g->stats.grid_updates)) || g->gbuf_ok[v.k]) && !cw__render3d_shadows_kept(ctx->tree))
     t3_renderer_shadow_needs_update(ctx->renderer);
 }
 
@@ -643,7 +642,10 @@ static bool gi_active(const cw_pass_ctx *ctx, void *user) {
 
 void cw__gi_add_shadow_pass(cw_pipeline *p) {
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "gi", .phase = CW_PHASE_SHADOW, .order = 150,
-                                           .writes = CW_RES_SHADOW, .active = gi_active, .execute = probes_exec, .webgpu = true });
+                                           .writes = CW_RES_SHADOW, .active = gi_active, .execute = probes_exec, .webgpu = true,
+                                           /* a split screen in one pass: the probes and the grid once (the first view's
+                                            * run, as a frame drawn view by view does), each view's G-buffer in its own */
+                                           .views = CW_PASS_VIEWS_EACH });
 }
 
 void cw__register_gi_types(void);

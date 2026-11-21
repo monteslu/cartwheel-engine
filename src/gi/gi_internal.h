@@ -56,8 +56,9 @@ typedef struct gi_tree {
   const t3_texture *env_seen; /* scene.environment at the last frame */
   t3_renderer *hook_renderer, *gbuf_hook;
   /* the screen-space passes' G-buffer (ssr.c) and the mode the gi part draws in: 0 lit, 1 G-buffer */
-  cw_rt gbuf, albedo; /* the G-buffer: normal + roughness + metalness; diffuse colour (SSGI) */
-  bool gbuf_ok, albedo_ok; /* drawn this frame */
+  cw_rt gbuf[CW_MAX_VIEWS], albedo[CW_MAX_VIEWS]; /* the G-buffer: normal + roughness + metalness; diffuse colour (SSGI); one a
+                                                  * view of a split screen drawn in one pass (cw__gi_view), [0] otherwise */
+  bool gbuf_ok[CW_MAX_VIEWS], albedo_ok[CW_MAX_VIEWS]; /* drawn this frame */
   int mode;
   int bound_max;
   bool faces_drawn; /* this frame drew scene faces for a probe (a capture or a job's step) */
@@ -86,7 +87,18 @@ void cw__gi_untag_if_idle(gi_tree *g);
 void cw__gi_wgpu_order(void);
 void cw__gi_add_post_passes(cw_pipeline *p);
 void cw__gi_add_shadow_pass(cw_pipeline *p);
-bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, int w, int h, int mode);
+/* The view a screen-space pass (the G-buffer, SSR, SSGI) works on. In a split screen drawn in one pass
+ * (ctx->view_count > 0) the passes run once per view (CW_PASS_VIEWS_EACH) over one full-size target: k is the view,
+ * rect its rectangle there (pixels, x and y from the bottom left), and its half-resolution targets are its own, at
+ * half the view's size, as a view drawn on its own has them. Otherwise view 0 and the whole target. The shaders read
+ * the full-resolution depth and colour through rect (u_vr) and work in the view's own coordinates everywhere else,
+ * so one view gives the same numbers as before. */
+typedef struct gi_view { int k; int rect[4]; int hw, hh; } gi_view;
+gi_view cw__gi_view(const cw_pass_ctx *ctx);
+/* a persistent target's name for view k (k > 0 gets ".k") */
+const char *cw__gi_rt_name(const char *base, int k, char out[40]);
+/* draw view v's G-buffer (mode 1) or diffuse colour (mode 2) */
+bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, const gi_view *v, int mode);
 void cw__gi_add_ssgi_pass(cw_pipeline *p);
 
 #endif

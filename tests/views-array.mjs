@@ -3,10 +3,16 @@
 // (CW_TEST_VIEWS_ARRAY=0), within 0.003 of its pixels over 16 levels, with every per-view pass in the run: terrain and
 // its scatter (each view's own patches), the sky's sun disk, height fog, a pond, clustered lamps (one with a shadow
 // atlas tile), a sorted particle fountain colliding with the depth, a decal, SSAO and bloom; at two and four views, at
-// Very Low (the fog drawn per view, not fused into the shared tonemap) and with volumetric fog (Ultra). The one-pass
+// Very Low (the fog drawn per view, not fused into the shared tonemap), with volumetric fog (Ultra), with a reflection
+// probe, a light probe grid, screen-space reflections and bounce light over a polished slab at Ultra (SA_GI: each view's G-buffer,
+// reflections and bounce light in its own rectangle), with a depth prepass (SA_PREPASS), and with a shockwave ring and a
+// heat haze bending the picture (SA_DISTORT: one distortion buffer, each view's part in its rectangle). The one-pass
 // runs must have run in one pass (sa.array 1), the per-view runs not.
 //   - the cascaded sun is drawn view by view: with it the frame falls back (sa.array 0) and the picture is the same
 //   - at Very Low the height fog is drawn in split screen (it was fused into the shared tonemap, which drew none)
+//   - with SA_GI the reflections and the bounce light are in the picture (a per-view run without the ssr pass, and one
+//     without the ssgi pass, must each differ from it)
+//   - with SA_DISTORT the distortion is in the picture (a per-view run without the distort pass must differ from it)
 // Control: CW_TEST_VIEWS_ARRAY_SHIFT=1 draws each view's passes a view over (wrapped round the target) and must fail
 // the bound; a Very Low run without the fog pass must differ from one with it.
 //   node tests/views-array.mjs [--gpu gl,webgpu]
@@ -51,6 +57,15 @@ const CASES = [
   { tag: 'v4', env: { SA_VIEWS: '4', CW_QUALITY: 'high' } },
   { tag: 'v4-verylow', env: { SA_VIEWS: '4', CW_QUALITY: 'verylow' } },
   { tag: 'v2-vfog', env: { SA_VIEWS: '2', CW_QUALITY: 'ultra', SA_VFOG: '1' } },
+  { tag: 'v2-gi', env: { SA_VIEWS: '2', CW_QUALITY: 'ultra', SA_GI: '1' } },
+  { tag: 'v4-gi', env: { SA_VIEWS: '4', CW_QUALITY: 'ultra', SA_GI: '1' } },
+  { tag: 'v2-prepass', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_PREPASS: '1' } },
+  { tag: 'v4-prepass', env: { SA_VIEWS: '4', CW_QUALITY: 'high', SA_PREPASS: '1' } },
+  { tag: 'v2-water', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_WATER: '1' } },
+  { tag: 'v4-water', env: { SA_VIEWS: '4', CW_QUALITY: 'high', SA_WATER: '1' } },
+  { tag: 'v2-water-gi', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_WATER: '1', SA_GI: '1' } },
+  { tag: 'v2-distort', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_DISTORT: '1' } },
+  { tag: 'v4-distort', env: { SA_VIEWS: '4', CW_QUALITY: 'high', SA_DISTORT: '1' } },
   { tag: 'v2-csm', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_CSM: '1' }, fallback: true },
 ];
 for (const gpu of GPUS) {
@@ -59,13 +74,26 @@ for (const gpu of GPUS) {
     const one = run(gpu, `${c.tag}-onepass`, { ...c.env, CW_TEST_VIEWS_ARRAY: '1' });
     const each = run(gpu, `${c.tag}-perview`, { ...c.env, CW_TEST_VIEWS_ARRAY: '0' });
     const d = share(one, each);
+    check(`${c.tag}: every draw has its program (cw.three.missing 0)`, !one.f["cw.three.missing"] && !each.f["cw.three.missing"], `${one.f["cw.three.missing"]} / ${each.f["cw.three.missing"]}`);
     if (c.fallback) check(`${c.tag}: the cascaded sun's frame is drawn view by view`, one.f['sa.array'] === 0, `sa.array ${one.f['sa.array']}`);
     else check(`${c.tag}: the views drawn in one pass`, one.f['sa.array'] === 1 && each.f['sa.array'] === 0, `sa.array ${one.f['sa.array']} / ${each.f['sa.array']}`);
     check(`${c.tag}: one pass draws the per-view picture (pixels over 16 levels <= ${BOUND * 100}%)`, d <= BOUND, pct(d));
-    if (c.tag === 'v4') {
+    if (c.tag === 'v4' || c.tag === 'v4-gi' || c.tag === 'v4-distort') {
       const shifted = run(gpu, `${c.tag}-shifted`, { ...c.env, CW_TEST_VIEWS_ARRAY: '1', CW_TEST_VIEWS_ARRAY_SHIFT: '1' });
       const ds = share(shifted, each);
       check(`control: each view's passes a view over must fail the bound`, ds > BOUND, pct(ds));
+    }
+    if (c.tag === 'v2-gi') {
+      for (const pass of ['ssr', 'ssgi']) {
+        const without = run(gpu, `${c.tag}-no-${pass}`, { ...c.env, CW_TEST_VIEWS_ARRAY: '0', CW_TEST_SKIP_PASS: pass });
+        const dw = share(without, each);
+        check(`${c.tag}: the ${pass} pass is in the picture (control: the frame without it must differ)`, dw > BOUND, pct(dw));
+      }
+    }
+    if (c.tag === 'v2-distort') {
+      const without = run(gpu, `${c.tag}-no-distort`, { ...c.env, CW_TEST_VIEWS_ARRAY: '0', CW_TEST_SKIP_PASS: 'distort' });
+      const dw = share(without, each);
+      check(`${c.tag}: the distortion is in the picture (control: the frame without the distort pass must differ)`, dw > BOUND, pct(dw));
     }
     if (c.tag === 'v4-verylow') {
       const nofog = run(gpu, `${c.tag}-nofog`, { ...c.env, CW_TEST_VIEWS_ARRAY: '0', CW_TEST_SKIP_PASS: 'height_fog' });
