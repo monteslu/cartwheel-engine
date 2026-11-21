@@ -1568,6 +1568,14 @@
      "doc": "Vignette falloff width."
     },
     {
+     "name": "vignette_per_view",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Split screen with a shared post chain: the vignette, aberration and grain in each view, not once over the screen."
+    },
+    {
      "name": "grain",
      "type": "bool",
      "default": "false",
