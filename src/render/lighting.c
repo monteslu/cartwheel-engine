@@ -415,8 +415,13 @@ static void fill_cluster(t3_extension_ctx *c, void *user) {
   }
   if (L->lv_n > 1) { /* one-pass split screen: the draw's view */
     const t3_camera *dc = t3_extension_camera(c);
+    /* (a render of a view's own pass with a camera of its own, a planar water's, say: that view's, as a view drawn on its
+     * own lights it) */
+    int cur = cw__array_view_now;
+    bool own = dc && dc != L->lv0_cam && cur > 0 && cur < L->lv_n;
+    for (int k = 1; k < L->lv_n && own; k++) own = dc != L->lv[k].cam;
     for (int k = 1; k < L->lv_n; k++)
-      if (dc && dc == L->lv[k].cam && L->lv[k].light_tex) {
+      if (((dc && dc == L->lv[k].cam) || (own && k == cur)) && L->lv[k].light_tex) {
         const struct lview *v = &L->lv[k];
         t3_extension_set_uniform(c, "clusterGrid", v->grid_u, 4);
         t3_extension_set_uniform(c, "clusterDepth", v->depth_u, 4);
@@ -787,7 +792,8 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
     /* the atlas this view left is the one every view samples: the earlier views' rows follow it */
     cw__atlas_info ai = { 0 };
     if (L->atlas) cw__atlas_get_info(L->atlas, &ai);
-    if (k > 0 && (ai.faces_rendered > 0 || cw__atlas_layout_key(L->atlas) != layout0))
+    /* (drawn view by view, ctx->pipeline->arr_part, each view's scene samples the atlas as its own pass left it) */
+    if (k > 0 && !ctx->pipeline->arr_part && (ai.faces_rendered > 0 || cw__atlas_layout_key(L->atlas) != layout0))
       for (int j = 0; j < k; j++)
         if (!vshadow_follow(L, j)) {
           cw__pipeline_array_refuse(ctx, "lights");

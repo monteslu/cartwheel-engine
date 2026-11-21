@@ -310,6 +310,7 @@ cw_add_app(fog_valley SOURCES fog_valley/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DI
 # split screen in one pass (cw_pipeline_set_views_array): terrain, scatter, sky, fog, water, lamps, particles, a
 # decal and SSAO in two or four views over one target (tests/views-array.mjs).
 cw_add_app(split_array SOURCES split_array/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/split_array/assets)
+cw_add_app(split_views SOURCES split_views/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/split_views/assets)
 # clustered lighting: a night street with 214 clustered lights and shadowed floodlights (cartwheel/lighting.h).
 cw_add_app(night_street SOURCES night_street/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/night_street/assets)
 cw_add_app(night_street_perf SOURCES night_street/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/night_street/assets)

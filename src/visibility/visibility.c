@@ -13,6 +13,7 @@
 #include "cartwheel/resource.h"
 #include "render/pipeline_internal.h"
 #include "render/quality_internal.h"
+#include "render/view_mask.h"
 #include "scene/scene_internal.h"
 #include "vis_internal.h"
 #if CW_WGPU
@@ -72,6 +73,7 @@ typedef struct vrec {
   uint32_t rooms;         /* bit 0: reaches outside; bit i: overlaps room i - 1 (all bits past 31 rooms) */
   /* this frame */
   uint8_t cand, was_cand, drawn, reason;
+  uint8_t vdrawn; /* one-pass split screen: the views that drew it this frame (bit k: view k) */
   int lod;
   float imp_alpha;
   bool want_query;
@@ -821,6 +823,33 @@ static bool box_on_edge(const vis_frustum *f, const vrec *r, float m) {
   return cw__vis_box_test(f, mn, mx, NULL) != 2;
 }
 
+/* one-pass split screen, after view k's culling: what it drew noted and every mesh shown again for the next view; after
+ * the last view, a mesh no view drew is hidden (put back after the run, as a view's are) and one some views drew is drawn
+ * in those only */
+static void array_view_done(vis_state *s, cw_pass_ctx *ctx) {
+  int k = ctx->view_index, n = ctx->view_count;
+  for (int i = 0; i < s->recs.count; i++) {
+    vrec *r = &s->recs.data[i];
+    if (k == 0) r->vdrawn = 0;
+    if (r->obj && r->drawn) r->vdrawn |= (uint8_t)(1u << k);
+  }
+  for (int i = 0; i < s->hidden.count; i++) s->hidden.data[i]->visible = true;
+  cw_array_clear(&s->hidden);
+  if (k != n - 1) return;
+  uint32_t all = (1u << n) - 1;
+  for (int i = 0; i < s->recs.count; i++) {
+    vrec *r = &s->recs.data[i];
+    if (!r->obj || r->vdrawn == all) continue;
+    if (!r->vdrawn) {
+      r->obj->visible = false;
+      cw_array_push(&s->hidden, r->obj);
+    } else if (!cw__view_masks_draw_in(r->obj, r->vdrawn)) {
+      cw__pipeline_array_refuse(ctx, "visibility");
+      return;
+    }
+  }
+}
+
 static void vis_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
   CW_PROFILE_SCOPE("visibility.cull");
@@ -836,6 +865,17 @@ static void vis_exec(cw_pass_ctx *ctx, void *u) {
   s->frame++;
   memset(&s->stats, 0, sizeof s->stats);
   if (!s->have_records || s->structure_version != ctx->tree->structure_version) rebuild_records(s);
+  /* one-pass split screen: culling to each view's frustum, distance and rooms are per view (a mesh hidden in some views
+   * is drawn in the others only, cw__view_masks_draw_in). Occlusion queries, impostors and a level of detail chosen per
+   * view are not: such a frame is drawn view by view */
+  if (ctx->view_count > 0) {
+    bool lods = false;
+    for (int i = 0; i < s->recs.count && mg->lod && !lods; i++) lods = s->recs.data[i].lod_levels > 1;
+    if (mg->occlusion_cull || mg->impostors || lods) {
+      cw__pipeline_array_refuse(ctx, "visibility");
+      return;
+    }
+  }
   /* world matrices: the camera and every moving mesh now (static meshes keep
    * the ones three.c's last render computed: a static mesh that moves is
    * seen, and refitted, a frame late) */
@@ -1007,6 +1047,9 @@ static void vis_exec(cw_pass_ctx *ctx, void *u) {
   cc.keep_casters = keep_casters;
   cw_parallel_for(s->recs.count, 128, classify_range, &cc);
 
+  /* (a one-pass split screen drawn view by view: the last view's hiding undone, as between views drawn on their own) */
+  if (ctx->view_count > 0 && ctx->pipeline->arr_part)
+    for (int i = 0; i < s->hidden.count; i++) s->hidden.data[i]->visible = true;
   /* serial: glTF LODs, occlusion, impostors, hiding */
   cw__vis_impostors_begin_frame(s->imp);
   cw_array_clear(&s->hidden);
@@ -1095,6 +1138,7 @@ static void vis_exec(cw_pass_ctx *ctx, void *u) {
   s->stats.impostor_atlases = cw__vis_impostor_atlas_count(s->imp);
   s->stats.rooms = s->rooms.count;
   s->stats.cull_ms = (float)(now_ms() - t0);
+  if (ctx->view_count > 0 && ctx->view_index >= 0 && !ctx->pipeline->arr_part) array_view_done(s, ctx);
 }
 
 /* ── occlusion queries ──────────────────────────────────────────────── */
@@ -1510,7 +1554,7 @@ static void add_passes(cw_tree *t) {
   s->passes_added = true;
   cw_pipeline *p = cw_pipeline_of(t);
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "visibility", .phase = CW_PHASE_SHADOW, .order = 2000,
-                                           .execute = vis_exec });
+                                           .execute = vis_exec, .views = CW_PASS_VIEWS_EACH /* each view culled for itself */ });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "impostors", .phase = CW_PHASE_OPAQUE, .order = 100,
                                            .writes = CW_RES_COLOR | CW_RES_DEPTH, .active = imp_active,
                                            .execute = imp_exec });

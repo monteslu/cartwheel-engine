@@ -63,6 +63,9 @@ typedef struct persist_rt {
   bool depth;
 } persist_rt;
 
+/* one-pass split screen: the view whose pass runs now (-1: none; src/render/pipeline.c array_view) */
+extern int cw__array_view_now;
+
 struct cw_pipeline {
   cw_tree *tree;
   CW_ARRAY(pass_rec *) passes;
@@ -130,12 +133,19 @@ struct cw_pipeline {
   bool view_post_split;   /* this frame: the views run the depth-reading post passes, the overlay run the rest */
   /* split screen in one pass (cw_pipeline_set_views_array) */
   bool views_array, arr_used;
+  bool views_submit; /* WebGPU: each view of a one-pass run submitted as it is drawn (arr_part; "pipeline views_submit 0|1") */
   const char *arr_why;      /* the first active pass that could not (interned), last frame */
   t3_array_camera *arr_cam;
   t3_camera *arr_cams[CW_MAX_VIEWS];
   cw_node arr_nodes[CW_MAX_VIEWS];
   int arr_rect[CW_MAX_VIEWS][4]; /* pixels from the bottom left */
   int arr_n;
+  /* WebGPU, one-pass split screen: the views' shadow-phase passes and scene drawn view by view in the one target, each
+   * view's scene submitted as it is recorded (the GPU starts on view 0 while the CPU prepares view 1): the view being
+   * drawn so plus one (0: not so), the array camera of that one view, and each view's viewport as the array camera has it */
+  int arr_part;
+  t3_array_camera *arr_cam1;
+  int arr_vp[CW_MAX_VIEWS][4];
   const char *arr_refused;  /* set by a RUN_ARRAY run that found such a pass (nothing drawn) */
   const cw_rt *post_src;  /* the overlay run's input: the views laid out (shared post) */
   int taa_frames;     /* frames accumulated in the TAA history */

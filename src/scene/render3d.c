@@ -1179,8 +1179,8 @@ static void check_light_cap(cw_tree *t, render3d_state *s, const t3_camera *cam)
 
 /* The camera of the viewmodel pass, posed as the main camera with its own field of view, or NULL when the
  * current camera has no viewmodel layers. Call after cw_render3d_prepare (the main camera's matrices). */
-t3_camera *cw__render3d_viewmodel_camera(cw_tree *t) {
-  cw_node cam = cw_render3d_camera(t);
+t3_camera *cw__render3d_viewmodel_camera(cw_tree *t) { return cw__render3d_viewmodel_camera_of(cw_render3d_camera(t)); }
+t3_camera *cw__render3d_viewmodel_camera_of(cw_node cam) {
   camera3d *c = cw_node_data_t(cam, camera3d_t);
   if (!c || !c->viewmodel_layers) return NULL;
   if (!c->vm) c->vm = t3_perspective_camera_new(c->viewmodel_fov, 1, c->near, c->far);

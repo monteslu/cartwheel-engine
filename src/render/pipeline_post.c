@@ -124,6 +124,8 @@ static void prepass_exec(cw_pass_ctx *ctx, void *u) {
       .load_color = false, .load_depth = false, .clear_rgba = { c.r, c.g, c.b, a }, .clear_depth = cw_gpu_reversed_depth() ? 0.0f : 1.0f,
       .x = 0, .y = 0, .w = pt->w, .h = pt->h, .flip_y = pt->flip_y, .keep_multisampled = true,
     };
+    /* (a one-pass split screen drawn view by view: the views before this one kept) */
+    if (ctx->pipeline->arr_part > 1) et.load_color = et.load_depth = true;
     if (prepass_shift()) et.depth_min = cw_gpu_reversed_depth() ? 0.5f : 0, et.depth_max = cw_gpu_reversed_depth() ? 1 : 0.5f;
     t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
     t3_renderer_set_external_target(r, &et);
@@ -173,6 +175,13 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
       .keep_multisampled = ctx->pipeline->msaa_keep, /* the viewmodel pass resolves (pipeline.c) */
 #endif
     };
+    /* a one-pass split screen drawn view by view (pipeline.c arr_part): the views before this one kept, and the
+     * samples kept for the next view (the last view's opaque passes resolve) */
+    const cw_pipeline *pl = ctx->pipeline;
+    if (pl->arr_part > 1) et.load_color = et.load_depth = true;
+#ifdef T3_EXTERNAL_TARGET_KEEP_MULTISAMPLED
+    if (pl->arr_part && pl->arr_part < pl->arr_n) et.keep_multisampled = true;
+#endif
     t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
     t3_renderer_set_external_target(r, &et);
     cw__pw_timing_span((void *)pt->enc, false); /* three.c's passes: timed as one span */
@@ -215,14 +224,34 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
 
 static bool viewmodel_active(const cw_pass_ctx *ctx, void *u) {
   (void)u;
-  return ctx->camera && ctx->scene3d && cw__render3d_viewmodel_camera(ctx->tree) != NULL;
+  if (!ctx->camera || !ctx->scene3d) return false;
+  if (ctx->view_count > 0) { /* one-pass split screen: any view with viewmodel layers */
+    for (int k = 0; k < ctx->view_count && k < ctx->pipeline->nviews; k++)
+      if (cw__render3d_viewmodel_camera_of(ctx->pipeline->views[k].camera)) return true;
+    return false;
+  }
+  return cw__render3d_viewmodel_camera(ctx->tree) != NULL;
+}
+
+/* one-pass split screen: the view's viewmodel camera drawn inside its rectangle, through an array camera of one
+ * (its viewport placed as the scene pass places the view's) */
+static t3_array_camera *vm_arr;
+static t3_camera *viewmodel_view_camera(cw_pass_ctx *ctx, t3_camera *vc) {
+  if (ctx->view_count <= 0) return vc;
+  if (!vm_arr) vm_arr = t3_array_camera_new();
+  for (int i = 0; i < vm_arr->count; i++) t3_release(vm_arr->cameras[i]);
+  vm_arr->count = 0;
+  const int *r = ctx->view_rect;
+  t3_array_camera_add(vm_arr, vc, r[0], cw_gpu_backend() == CW_GPU_WEBGPU ? r[1] : ctx->height - r[1] - r[3], r[2], r[3]);
+  return &vm_arr->base;
 }
 
 static void viewmodel_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
   t3_renderer *r = ctx->renderer;
-  t3_camera *vc = cw__render3d_viewmodel_camera(ctx->tree);
+  t3_camera *vc = ctx->view_count > 0 ? cw__render3d_viewmodel_camera_of(ctx->camera_node) : cw__render3d_viewmodel_camera(ctx->tree);
   if (!vc || !r) return;
+  vc = viewmodel_view_camera(ctx, vc);
   /* the scene's background (a clear colour, or a sky cube / texture drawn without a depth test) would cover the
    * whole picture the scene pass drew: the viewmodel pass draws none of it */
   bool had_bg = ctx->scene3d->has_background;
@@ -244,6 +273,10 @@ static void viewmodel_exec(cw_pass_ctx *ctx, void *u) {
       .x = 0, .y = 0, .w = pt->w, .h = pt->h, .flip_y = pt->flip_y,
       .depth_min = cw_gpu_reversed_depth() ? 1 - VIEWMODEL_DEPTH : 0, .depth_max = cw_gpu_reversed_depth() ? 1 : VIEWMODEL_DEPTH,
     };
+#ifdef T3_EXTERNAL_TARGET_KEEP_MULTISAMPLED
+    /* one-pass split screen: the samples kept for the next view's gun, the last view's pass resolves */
+    et.keep_multisampled = ctx->view_count > 0 && ctx->view_index < ctx->view_count - 1;
+#endif
     t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
     t3_renderer_set_external_target(r, &et);
     cw__pw_timing_span((void *)pt->enc, false);
@@ -2120,22 +2153,35 @@ static const char *LENS_FS = S(
   uniform vec4 u_on;      /* ca, vignette, grain, aspect */
   uniform vec4 u_amt;     /* ca, vignette, vignette smoothness, grain */
   uniform int u_frame;
+  uniform vec4 u_vr0, u_vr1, u_vr2, u_vr3; /* split screen, a lens per view: the views' rectangles (uv, from the bottom left) */
+  uniform vec4 u_vrn;     /* their count (0: one lens over the target), the target's width and height */
   out vec4 o;
+  bool inr(vec4 r, vec2 q) { return q.x >= r.x && q.y >= r.y && q.x < r.x + r.z && q.y < r.y + r.w; }
   void main() {
-    vec2 d = v_uv - 0.5;
     vec4 c = texture(u_src, v_uv);
-    if (u_on.x > 0.5) {
-      vec2 off = d * (u_amt.x * 2.0);
+    vec4 vr = vec4(0.0, 0.0, 1.0, 1.0);
+    vec4 on = u_on;
+    if (u_vrn.x > 0.5) {
+      if (inr(u_vr0, v_uv)) vr = u_vr0;
+      else if (u_vrn.x > 1.5 && inr(u_vr1, v_uv)) vr = u_vr1;
+      else if (u_vrn.x > 2.5 && inr(u_vr2, v_uv)) vr = u_vr2;
+      else if (u_vrn.x > 3.5 && inr(u_vr3, v_uv)) vr = u_vr3;
+      else { o = c; return; } /* no view: as the layout drew it */
+      on.w = vr.z * u_vrn.y / max(vr.w * u_vrn.z, 1.0);
+    }
+    vec2 d = (v_uv - vr.xy) / vr.zw - 0.5;
+    if (on.x > 0.5) {
+      vec2 off = d * (u_amt.x * 2.0) * vr.zw;
       c.r = texture(u_src, v_uv - off).r;
       c.b = texture(u_src, v_uv + off).b;
     }
-    if (u_on.y > 0.5) {
-      float r = length(d * vec2(u_on.w, 1.0)) / length(vec2(0.5 * u_on.w, 0.5));
+    if (on.y > 0.5) {
+      float r = length(d * vec2(on.w, 1.0)) / length(vec2(0.5 * on.w, 0.5));
       float f = smoothstep(1.0 - u_amt.z, 1.0 + u_amt.z * 0.25, r * (1.0 + 0.5 * u_amt.z));
       c.rgb *= 1.0 - u_amt.y * f;
     }
     if (u_on.z > 0.5) {
-      float n = hash01(uvec3(uvec2(gl_FragCoord.xy), uint(u_frame))) - 0.5;
+      float n = hash01(uvec3(uvec2(max(gl_FragCoord.xy - (u_vrn.x > 0.5 ? floor(vr.xy * u_vrn.yz + 0.5) : vec2(0.0)), vec2(0.0))), uint(u_frame))) - 0.5;
       float l = luma(c.rgb);
       c.rgb = max(c.rgb + n * u_amt.w * (1.0 - 0.5 * l), vec3(0.0));
     }
@@ -2156,6 +2202,15 @@ static void lens_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_bind_texture(0, ctx->src->tex);
   cw_pass_uniform1i(lens_prog, "u_src", 0);
   cw__lens_uniforms(ctx, lens_prog, true);
+  /* split screen with a shared chain and a lens per view (vignette_per_view): each view's rectangle */
+  const cw_pipeline *p = ctx->pipeline;
+  int n = ctx->settings->vignette_per_view && p->nviews >= 2 && p->view_post_split ? p->nviews : 0;
+  static const char *const R[4] = { "u_vr0", "u_vr1", "u_vr2", "u_vr3" };
+  for (int i = 0; i < 4; i++) {
+    const cw_view *v = &p->views[i < n ? i : 0];
+    cw_pass_uniform4f(lens_prog, R[i], v->x, 1 - v->y - v->h, v->w, v->h);
+  }
+  cw_pass_uniform4f(lens_prog, "u_vrn", (float)n, (float)ctx->width, (float)ctx->height, 0);
   cw_pass_fullscreen();
 }
 
@@ -2267,7 +2322,8 @@ void cw__pipeline_add_builtin_passes(cw_pipeline *p) {
                                            .views = CW_PASS_VIEWS_ONCE /* a t3_array_camera: every view in one render */ });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "viewmodel", .phase = CW_PHASE_OPAQUE, .order = 10,
                                            .writes = CW_RES_COLOR | CW_RES_DEPTH,
-                                           .active = viewmodel_active, .execute = viewmodel_exec, .webgpu = true });
+                                           .active = viewmodel_active, .execute = viewmodel_exec, .webgpu = true,
+                                           .views = CW_PASS_VIEWS_EACH /* each view's own, in its rectangle */ });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "velocity", .phase = CW_PHASE_POST, .order = 0,
                                            .reads = CW_RES_DEPTH, .writes = CW_RES_VELOCITY, .execute = velocity_exec, .webgpu = true });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "ssao", .phase = CW_PHASE_POST, .order = 100,

@@ -1,0 +1,36 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+ambient_energy = 0.25
+hemi_energy = 0.35
+
+[node name="Post" parent="." type="PostProcess"]
+bloom = true
+bloom_intensity = 0.03
+
+[node name="Lighting" parent="." type="LightingSettings"]
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 15.5
+latitude = 40
+declination = 15
+north = 30
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+shadow_extent = 30
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+primitive = PLANE
+size = vec3(60, 1, 60)
+color = color(0.30, 0.28, 0.24, 1)
+receive_shadow = true
+
+[node name="Lamp" parent="." type="OmniLight3D"]
+position = vec3(-4, 3, 3)
+color = color(1, 0.7, 0.4, 1)
+energy = 30
+range = 12
