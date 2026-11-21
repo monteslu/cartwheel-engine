@@ -5,7 +5,7 @@
 // atlas tile), a sorted particle fountain colliding with the depth, a decal, SSAO and bloom; at two and four views, at
 // Very Low (the fog drawn per view, not fused into the shared tonemap), with volumetric fog (Ultra), with a reflection
 // probe, a light probe grid, screen-space reflections and bounce light over a polished slab at Ultra (SA_GI: each view's G-buffer,
-// reflections and bounce light in its own rectangle), with a depth prepass (SA_PREPASS), and with a shockwave ring and a
+// reflections and bounce light in its own rectangle), with a depth prepass (SA_PREPASS), with the scene multisampled 4x (SA_MSAA: on GL each view is drawn and flushed in turn), and with a shockwave ring and a
 // heat haze bending the picture (SA_DISTORT: one distortion buffer, each view's part in its rectangle). The one-pass
 // runs must have run in one pass (sa.array 1), the per-view runs not.
 //   - the cascaded sun is drawn view by view: with it the frame falls back (sa.array 0) and the picture is the same
@@ -13,7 +13,8 @@
 //   - with SA_GI the reflections and the bounce light are in the picture (a per-view run without the ssr pass, and one
 //     without the ssgi pass, must each differ from it)
 //   - with SA_DISTORT the distortion is in the picture (a per-view run without the distort pass must differ from it)
-// Control: CW_TEST_VIEWS_ARRAY_SHIFT=1 draws each view's passes a view over (wrapped round the target) and must fail
+// Control: CW_TEST_GL_VIEW_SCISSOR=1 (GL, four views with MSAA) leaves the last view's scissor on for the passes after the
+// views and must fail the bound. Control: CW_TEST_VIEWS_ARRAY_SHIFT=1 draws each view's passes a view over (wrapped round the target) and must fail
 // the bound; a Very Low run without the fog pass must differ from one with it.
 //   node tests/views-array.mjs [--gpu gl,webgpu]
 import { spawnSync } from 'node:child_process';
@@ -66,6 +67,8 @@ const CASES = [
   { tag: 'v2-water-gi', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_WATER: '1', SA_GI: '1' } },
   { tag: 'v2-distort', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_DISTORT: '1' } },
   { tag: 'v4-distort', env: { SA_VIEWS: '4', CW_QUALITY: 'high', SA_DISTORT: '1' } },
+  { tag: 'v2-msaa', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_MSAA: '1' } },
+  { tag: 'v4-msaa', env: { SA_VIEWS: '4', CW_QUALITY: 'high', SA_MSAA: '1' } },
   { tag: 'v2-csm', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_CSM: '1' }, fallback: true },
 ];
 for (const gpu of GPUS) {
@@ -94,6 +97,13 @@ for (const gpu of GPUS) {
       const without = run(gpu, `${c.tag}-no-distort`, { ...c.env, CW_TEST_VIEWS_ARRAY: '0', CW_TEST_SKIP_PASS: 'distort' });
       const dw = share(without, each);
       check(`${c.tag}: the distortion is in the picture (control: the frame without the distort pass must differ)`, dw > BOUND, pct(dw));
+    }
+    if (c.tag === 'v4-msaa' && gpu === 'gl') {
+      /* GL draws each view of the one pass on its own and flushes it: the scissor its rectangle set must be off for the
+         passes after the views (the multisampled scene's resolve is a blit, which the scissor clips) */
+      const kept = run(gpu, `${c.tag}-scissor`, { ...c.env, CW_TEST_VIEWS_ARRAY: '1', CW_TEST_GL_VIEW_SCISSOR: '1' });
+      const dk = share(kept, each);
+      check(`control: the last view's scissor left on after the views must fail the bound`, dk > BOUND, pct(dk));
     }
     if (c.tag === 'v4-verylow') {
       const nofog = run(gpu, `${c.tag}-nofog`, { ...c.env, CW_TEST_VIEWS_ARRAY: '0', CW_TEST_SKIP_PASS: 'height_fog' });

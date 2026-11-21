@@ -107,6 +107,36 @@ static unsigned prepass_depth_fbo(const cw_pipeline *p) {
   return fbo;
 }
 
+/* GL, a one-pass split screen drawn view by view (pipeline.c arr_part > 1): the renderer's clears and draws held to
+ * this view's rectangle, so the views drawn before it stay (the first view clears the whole target, as the one
+ * render through every view does). Returns whether it set the scissor; sc keeps the renderer's own for gl_view_end. */
+static bool gl_view_begin(cw_pass_ctx *ctx, int sc[5]) {
+  const cw_pipeline *pl = ctx->pipeline;
+  if (pl->arr_part <= 1) return false;
+  t3_renderer *r = ctx->renderer;
+  sc[4] = t3_renderer_get_scissor(r, &sc[0], &sc[1], &sc[2], &sc[3]);
+  const int *vp = pl->arr_vp[pl->arr_part - 1];
+  t3_renderer_set_scissor(r, vp[0], vp[1], vp[2], vp[3]);
+  t3_renderer_set_scissor_test(r, true);
+  return true;
+}
+static void gl_view_end(cw_pass_ctx *ctx, const int sc[5]) {
+  t3_renderer_set_scissor(ctx->renderer, sc[0], sc[1], sc[2], sc[3]);
+  t3_renderer_set_scissor_test(ctx->renderer, sc[4] != 0);
+  /* the GL scissor off again now, not at the renderer's next bind: the passes after the views (the MSAA resolve and
+   * depth copies are blits, which the scissor clips) would otherwise act on the last view's rectangle only
+   * (CW_TEST_GL_VIEW_SCISSOR=1, a gate control: left on) */
+  static int keep = -1;
+  if (keep < 0) {
+    const char *e = cw_test_env("CW_TEST_GL_VIEW_SCISSOR");
+    keep = e && *e ? atoi(e) != 0 : 0;
+    if (!e) keep = -1; /* (not read yet on a cart's first frame: ask again) */
+  }
+  if (keep > 0) return;
+  glDisable(GL_SCISSOR_TEST);
+  t3_renderer_reset_bindings(ctx->renderer);
+}
+
 static void prepass_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
   t3_renderer *r = ctx->renderer;
@@ -139,11 +169,14 @@ static void prepass_exec(cw_pass_ctx *ctx, void *u) {
 #endif
   t3_renderer_reset_bindings(r);
   t3_renderer_set_framebuffer(r, prepass_depth_fbo(ctx->pipeline));
+  int sc[5];
+  bool part = gl_view_begin(ctx, sc);
   /* Blended/transmissive surfaces must not occlude their backgrounds before
    * the colour pass. Opaque alpha-tested cutouts retain their normal discard. */
   if (prepass_shift()) glDepthRangef(0, 0.5f);
   t3_renderer_render_prepass(r, ctx->scene3d, ctx->camera);
   if (prepass_shift()) glDepthRangef(0, 1);
+  if (part) gl_view_end(ctx, sc);
   cw__render3d_count(ctx->tree);
 }
 
@@ -195,14 +228,23 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
 #endif
   t3_renderer_reset_bindings(r);
   t3_renderer_set_framebuffer(r, ctx->pipeline->bound_fbo);
+  int sc[5];
+  bool part = gl_view_begin(ctx, sc);
   if (ctx->pipeline->prepass_ran) {
-    /* keep the prepass depth: clear colour only, to what three.c would */
+    /* keep the prepass depth: clear colour only, to what three.c would (a later view of a one-pass split screen
+     * drawn view by view: inside its rectangle only) */
     bool auto_clear = t3_renderer_get_auto_clear(r);
     float a = 1;
     t3_color c = t3_renderer_get_clear_color(r, &a);
     if (ctx->scene3d->has_background && !ctx->scene3d->background_texture) c = ctx->scene3d->background, a = 1;
     glClearColor(c.r, c.g, c.b, a);
+    if (part) {
+      const int *rc = ctx->pipeline->arr_rect[ctx->pipeline->arr_part - 1];
+      glEnable(GL_SCISSOR_TEST);
+      glScissor(rc[0], rc[1], rc[2], rc[3]);
+    }
     glClear(GL_COLOR_BUFFER_BIT);
+    if (part) glDisable(GL_SCISSOR_TEST), t3_renderer_reset_state(r); /* (the renderer's cached scissor state) */
     t3_renderer_set_auto_clear(r, false);
     t3_renderer_reset_bindings(r);
     t3_renderer_render(r, ctx->scene3d, ctx->camera);
@@ -210,6 +252,7 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
   } else {
     t3_renderer_render(r, ctx->scene3d, ctx->camera);
   }
+  if (part) gl_view_end(ctx, sc);
   cw__render3d_count(ctx->tree);
   ctx->pipeline->drew3d = true;
 }

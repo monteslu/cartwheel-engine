@@ -4,6 +4,27 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## vNEXT (2026-11-21)
+
+### Fixed
+- **GL: a split screen in one pass is no longer slower than the views drawn on their own** on a host that waits for
+  each frame (a wasmcart host under a libretro frontend, romdev). GL recorded every view before any reached the GPU,
+  so the CPU and the GPU ran one after the other: the frame took longer than the per-view frame it replaced even when
+  it cost less CPU and the same GPU time. GL now draws each view up to its opaque passes in turn and flushes it, as
+  WebGPU submits it, so the GPU draws a view while the CPU records the next. The later views clear and draw inside
+  their own rectangle (a scissor, turned off again before the passes after the views, whose MSAA resolve and depth
+  copies are blits). The later views also no longer walk the scene's world matrices again (the first view's renders
+  bring them up to date), on WebGPU too. `pipeline views_submit 0` records every view first, as before.
+- The `views-wall` gate runs at two and four views, and on GL each view flushed as it ends must beat every view
+  recorded first; its control is now 0.5 ms of CPU a view. The `views-array` gate adds the scene multisampled 4x
+  at two and four views (`SA_MSAA`), with a control that leaves the last view's scissor on
+  (`CW_TEST_GL_VIEW_SCISSOR=1`, fails at 70% of the pixels). The `views-masks` gate compares the views sent to the
+  GPU one by one with the views recorded together on GL as well as WebGPU.
+
+### Added
+- `pipeline shared_post 0|1`: the debug request switches a split screen between one post chain over the views and a
+  chain of each view's own (for A/B timing).
+
 ## v0.57.0 (2026-11-21)
 
 ### Added

@@ -529,8 +529,9 @@ void cw_pipeline_set_views_shared_post(cw_pipeline *p, bool shared);
  * drawn in some views only, on GL the views on both sides of a water surface. What a hook showed and hid per view,
  * cw_object_set_views says without one. On by default. Geometry drawn for one view only (a terrain's patches and
  * scatter, an object drawn in some views) sits on layers 28 to 31 in such a frame: keep a game's own objects off
- * them. On WebGPU each view is drawn up to its opaque passes and submitted in turn (the GPU starts on a view while
- * the CPU prepares the next; the debug request "pipeline views_submit 0" records every view first).
+ * them. Each view is drawn up to its opaque passes and sent to the GPU in turn (submitted on WebGPU, flushed on GL:
+ * the GPU starts on a view while the CPU prepares the next; the debug request "pipeline views_submit 0" records
+ * every view first).
  * cw_pipeline_views_array_used says what the last frame did. */
 void cw_pipeline_set_views_array(cw_pipeline *p, bool on);
 /* The last frame's split screen ran in one pass (false: each view on its own, or no split); why not names the
