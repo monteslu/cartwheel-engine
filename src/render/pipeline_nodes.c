@@ -171,6 +171,7 @@ static const cw_prop post_props[] = {
   FB(vignette, "Darken toward the corners."),
   FR(vignette_intensity, 0, 1, "Vignette strength."),
   FR(vignette_smoothness, 0.01, 1, "Vignette falloff width."),
+  FB(vignette_per_view, "Split screen with a shared post chain: the vignette, aberration and grain in each view, not once over the screen."),
   FB(grain, "Film grain (integer hash noise, new every frame)."),
   FR(grain_intensity, 0, 1, "Grain strength."),
   FB(chromatic_aberration, "Radial red / blue channel offset."),

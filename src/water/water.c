@@ -16,6 +16,7 @@
 #include "cartwheel/physics_nodes.h"
 #include "cartwheel/pipeline.h"
 #include "render/pipeline_internal.h"
+#include "render/view_layers.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/quality.h"
 #include "cartwheel/render3d.h"
@@ -608,9 +609,32 @@ static void build(cw_node n, water3d *d) {
   d->built_min_cell = d->grid_min_cell;
 }
 
+/* one-pass split screen: view k's planar targets and values in the fields the pass and the fill hook use, and back (k 0:
+ * nothing, view 0's are those fields) */
+static void pv_swap(water3d *d, int k) {
+  if (k <= 0 || k >= 4) return;
+  struct water_planar *p = &d->pv[k], t = *p;
+  p->refl = d->refl, p->refr = d->refr, p->wg_col = d->wg_col, p->wg_dep = d->wg_dep;
+  p->wg_col_tex = d->wg_col_tex, p->wg_dep_tex = d->wg_dep_tex, p->wg_fresh = d->wg_fresh;
+  p->refr_depth_ok = d->refr_depth_ok, p->refr_above = d->refr_above;
+  memcpy(p->refr_inv, d->refr_inv, sizeof p->refr_inv);
+  d->refl = t.refl, d->refr = t.refr, d->wg_col = t.wg_col, d->wg_dep = t.wg_dep;
+  d->wg_col_tex = t.wg_col_tex, d->wg_dep_tex = t.wg_dep_tex, d->wg_fresh = t.wg_fresh;
+  d->refr_depth_ok = t.refr_depth_ok, d->refr_above = t.refr_above;
+  memcpy(d->refr_inv, t.refr_inv, sizeof d->refr_inv);
+}
+
 static void water_destroy(cw_node n, void *data) {
   (void)n;
   water3d *d = data;
+  for (int k = 1; k < 4; k++) { /* the other views' targets */
+    pv_swap(d, k);
+    if (d->refl) t3_release(d->refl);
+    if (d->refr) t3_release(d->refr);
+    cw__water_refr_wgpu_free(d);
+    d->refl = d->refr = NULL;
+    pv_swap(d, k);
+  }
   if (d->mesh) t3_release(d->mesh);
   if (d->mat) t3_release(d->mat);
   if (d->refl) t3_release(d->refl);
@@ -804,7 +828,9 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   if (d->mesh) d->mesh->base.receive_shadow = !low;
   d->refl_on = d->reflection && q >= CW_QUALITY_MEDIUM;
   d->refr_on = d->refraction && q >= CW_QUALITY_HIGH;
-  int w = (int)lroundf((float)ctx->width * sc), h = (int)lroundf((float)ctx->height * sc);
+  /* (one-pass split screen: the view's own size, as a view drawn on its own has) */
+  int vw = ctx->view_count > 0 ? ctx->view_rect[2] : ctx->width, vh = ctx->view_count > 0 ? ctx->view_rect[3] : ctx->height;
+  int w = (int)lroundf((float)vw * sc), h = (int)lroundf((float)vh * sc);
   t3_camera *cam = ctx->camera;
   const t3_mat4 *m = cw_node3d_global_transform(n);
   t3_vec3 wpos = { m->e[12], m->e[13], m->e[14] };
@@ -821,6 +847,8 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   if (!d->vcam) d->vcam = t3_perspective_camera_new(cam->fov, cam->aspect, cam->near, cam->far);
   t3_camera *v = d->vcam;
   v->fov = cam->fov, v->aspect = cam->aspect, v->near = cam->near, v->far = cam->far, v->zoom = cam->zoom;
+  /* one-pass split screen: the view's own geometry too (its layer: a terrain's patches, what is drawn in some views only) */
+  v->base.layers = 1u | (ctx->view_count > 0 ? (cam->base.layers & CW__VIEW_LAYERS) : 0);
   if (d->refl_on && !below) {
     /* r187 ReflectorNode.updateBefore, with the water's up as the normal */
     t3_vec3 view = v3add(v3neg(v3reflect(v3sub(wpos, cpos), up)), wpos);
@@ -887,6 +915,7 @@ static void wv_put(water3d *d, int k) {
   memcpy(d->cam, v->cam, sizeof d->cam);
   memcpy(d->grid_off, v->grid_off, sizeof d->grid_off);
   d->cam_tan2 = v->cam_tan2;
+  memcpy(d->view_rect, v->rect, sizeof d->view_rect);
   memcpy(d->cam_world, v->cam_world, sizeof d->cam_world);
   d->cam_under = v->cam_under;
 }
@@ -896,13 +925,16 @@ static void fill(t3_extension_ctx *c, void *user) {
   const t3_object *o = t3_extension_object(c);
   water3d *d = o ? o->user_data : NULL;
   if (!d) return;
+  int pk = 0; /* (and its planar targets) */
   if (d->wv_n > 0) { /* a one-pass split screen: the draw's view's camera (the shadow maps and others: the first view's) */
     const void *cam = t3_extension_camera(c);
     int k = 0;
     for (int i = 1; i < d->wv_n; i++)
       if (cam == d->wv[i].camera) k = i;
     wv_put(d, k);
+    pk = k;
   }
+  pv_swap(d, pk);
   float v[4];
   static const char *const wn[4] = { "waterWave0", "waterWave1", "waterWave2", "waterWave3" };
   for (int i = 0; i < 4; i++) {
@@ -931,6 +963,10 @@ static void fill(t3_extension_ctx *c, void *user) {
   v[0] = (float)d->debug_view, v[1] = d->debug_range[0], v[2] = d->debug_range[1], v[3] = d->murk;
   t3_extension_set_uniform(c, "waterDebug", v, 4);
   t3_extension_set_uniform(c, "waterCam", d->cam, 4);
+  {
+    static const float whole[4] = { 0, 0, 1, 1 };
+    t3_extension_set_uniform(c, "waterView", d->wv_n > 0 ? d->view_rect : whole, 4);
+  }
   /* shore: floor map on, foam width, 1 / clarity, crest foam; shallow colour; the map's rectangle; foam clock */
   v[0] = d->floor_tex ? 1.0f : 0.0f, v[1] = d->shore_foam, v[2] = 1.0f / (d->clarity > 0.01f ? d->clarity : 0.01f), v[3] = d->crest_foam;
   t3_extension_set_uniform(c, "waterShore", v, 4);
@@ -994,6 +1030,7 @@ static void fill(t3_extension_ctx *c, void *user) {
     }
     t3_extension_set_texture(c, "waterCaustic", d->caus_tex ? d->caus_tex : nm0);
   }
+  pv_swap(d, pk);
 }
 
 /* ── the pass (SHADOW phase: before the scene) ─────────────────────── */
@@ -1008,7 +1045,6 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     wt->bound = ctx->renderer;
   }
   int tri = 0;
-  bool planar_any = false;
   wt->stats.surfaces = 0;
   t3_object_update_matrix_world(ctx->camera, true);
   for (int i = 0; i < wt->nodes.count; i++) {
@@ -1094,17 +1130,19 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     d->mat->roughness = d->roughness;
     /* the environment's specular is the reflection when no planar one is drawn (this intensity is only a material's own
      * env map's: a ProceduralSky is the scene's environment, and its specular stays on top of the planar reflection) */
+    int vk = ctx->view_count > 0 && ctx->view_index < 4 ? ctx->view_index : 0;
+    pv_swap(d, vk); /* (one-pass split screen: this view's planar targets) */
     planar(ctx, wt, n, d);
+    pv_swap(d, vk);
     /* (and none from under the surface: what the surface mirrors there is the water itself, which the shader draws;
      * the environment's lower half is not that) */
     d->mat->env_map_intensity = d->refl_on || d->cam_under ? 0.0f : 1.0f;
     tri += d->triangles;
     wt->stats.surfaces++;
     wt->stats.see_light = d->see_light;
-    /* one-pass split screen: this view's camera values kept for the draws; a planar reflection or refraction is a
-     * render of each view's own, which this frame and the next are drawn view by view for; a surface one view sees
-     * from below and another from above (its material's environment term is the frame's) is too */
-    planar_any |= d->refl_on || d->refr_on;
+    /* one-pass split screen: this view's camera values kept for the draws (its planar reflection and refraction are
+     * its own targets, pv); a surface one view sees from below and another from above (its material's environment term
+     * is the frame's, and the view from under the water a full-screen pass of its own) is drawn view by view */
     if (ctx->view_count > 0 && ctx->view_index < 4) {
       int k = ctx->view_index;
       struct water_view *v = &d->wv[k];
@@ -1114,14 +1152,20 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
       v->cam_tan2 = d->cam_tan2;
       memcpy(v->cam_world, d->cam_world, sizeof v->cam_world);
       v->cam_under = d->cam_under;
+      {
+        /* its rectangle in screen uv (three.js's, from the top left: GL's rows are bottom-up, the WebGPU scene target's are
+         * drawn flipped, so the view's bottom-up rows are its top-down ones there) */
+        const int *r = ctx->view_rect;
+        float W = (float)CW_MAX(ctx->width, 1), H = (float)CW_MAX(ctx->height, 1);
+        int y = cw_gpu_backend() == CW_GPU_WEBGPU ? r[1] : ctx->height - r[1] - r[3];
+        v->rect[0] = (float)r[0] / W, v->rect[1] = (float)y / H, v->rect[2] = (float)r[2] / W, v->rect[3] = (float)r[3] / H;
+      }
       d->wv_n = ctx->view_count;
-      if (k > 0 && v->cam_under != d->wv[0].cam_under) cw__pipeline_array_refuse(ctx, "water");
+      if (k > 0 && v->cam_under != d->wv[0].cam_under && !ctx->pipeline->arr_part) cw__pipeline_array_refuse(ctx, "water"); /* (view by view: each scene its own) */
       if (k == ctx->view_count - 1) wv_put(d, 0); /* (what a draw with no view's camera gets: the first view's) */
     } else d->wv_n = 0;
   }
   wt->stats.triangles = tri;
-  if (planar_any) cw__pipeline_array_refuse(ctx, "water");
-  cw__pipeline_set_pass_views(ctx->pipeline, "water", planar_any ? CW_PASS_VIEWS_NONE : CW_PASS_VIEWS_EACH);
 }
 
 static void water_fixed(cw_node n, void *data, double dt) {

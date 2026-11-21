@@ -260,6 +260,10 @@ typedef struct cw_post_settings {
   bool vignette;
   float vignette_intensity; /* 0.35 */
   float vignette_smoothness; /* 0.5 */
+  /* split screen with a shared post chain (cw_pipeline_set_views_shared_post): the vignette, the chromatic
+   * aberration and the grain in each view's rectangle, as a post chain of each view's own draws them (off: once over
+   * the whole screen) */
+  bool vignette_per_view;
   bool grain;
   float grain_intensity;    /* 0.04 */
   bool chromatic_aberration;
@@ -488,6 +492,23 @@ int cw_pipeline_split(cw_pipeline *p, const cw_node *cameras, int n);
  * scene's world matrices (what a hook moves for a later view, it updates
  * itself, t3_object_update_world_matrix). */
 void cw_pipeline_set_view_hook(cw_pipeline *p, void (*hook)(int view, void *user), void *user);
+/* Per-view visibility: draw o, and everything below it, only in the split screen views whose bit is set in views
+ * (bit k = view k of cw_pipeline_set_views). CW_VIEWS_ALL (every object's default) takes o out again. A mask under
+ * a masked object narrows it (both must allow a view). It is the declarative form of a view hook that shows and
+ * hides: a player's own model near up only in its view, the others' far ones, a level of detail chosen per view, an
+ * object a player has collected gone from that player's view. Unlike a hook it keeps a frame in one pass
+ * (cw_pipeline_set_views_array). The object's own visible still hides it everywhere. The shadow maps are drawn once
+ * a frame from what view 0 draws (as a frame drawn view by view draws them in view 0's run): an object outside view
+ * 0 casts no shadow. Masks apply only with two views or more; a single view and a SubViewport's camera draw
+ * everything. A light can carry a mask only for every view (a frame with a light drawn in
+ * some views only is drawn view by view). The object is held until its mask is cleared or it leaves every scene.
+ * Set masks before the frame renders (in the update or a render callback), never from a view hook. */
+#define CW_VIEWS_ALL 0xFFFFFFFFu
+void cw_object_set_views(t3_object *o, uint32_t views);
+/* o's mask (CW_VIEWS_ALL when it has none) */
+uint32_t cw_object_views(const t3_object *o);
+/* cw_object_set_views on a Node3D's object (cw_node3d_object): a node that changes its object later loses it */
+void cw_node3d_set_views(cw_node n, uint32_t views);
 /* Splitscreen's post chain, shared: each view runs only the post passes that
  * read its depth or motion (SSAO, say) and keeps its picture in HDR; the
  * views are laid out first and the rest of the chain (bloom, tone mapping,

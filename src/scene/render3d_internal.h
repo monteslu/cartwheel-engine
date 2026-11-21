@@ -47,6 +47,8 @@ void cw__render3d_frame_begin(cw_tree *t);
 void cw__render3d_count(cw_tree *t);
 /* the viewmodel pass's camera (see Camera3D viewmodel_layers); NULL when none. After cw_render3d_prepare. */
 t3_camera *cw__render3d_viewmodel_camera(cw_tree *t);
+/* the same for a given Camera3D (a split screen view's, posed as it was prepared): NULL without viewmodel layers */
+t3_camera *cw__render3d_viewmodel_camera_of(cw_node cam);
 /* cw_render3d_prepare without the renderer: the camera's matrices only */
 t3_camera *cw__render3d_camera_prepare(cw_tree *t, int w, int h); /* monotonic clock, milliseconds */
 /* Fill info for a MeshInstance3D (builds what is pending first); false when

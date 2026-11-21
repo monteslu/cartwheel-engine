@@ -47,7 +47,17 @@ static bool ensure(water3d *d, int w, int h) {
   return d->wg_col_tex && d->wg_dep_tex;
 }
 
+static bool refr_wgpu(cw_pass_ctx *ctx, water3d *d, t3_camera *cam, int w, int h);
+/* (one-pass split screen: the refraction's targets are the view's own, drawn whole, not clipped to the view's rectangle of
+ * the scene target) */
 bool cw__water_refr_wgpu(cw_pass_ctx *ctx, water3d *d, t3_camera *cam, int w, int h) {
+  bool clip = cw__vclip.on;
+  cw__vclip.on = false;
+  bool ok = refr_wgpu(ctx, d, cam, w, h);
+  cw__vclip.on = clip;
+  return ok;
+}
+static bool refr_wgpu(cw_pass_ctx *ctx, water3d *d, t3_camera *cam, int w, int h) {
   if (!cw__wgpu_on()) return false;
   if (w < 1) w = 1;
   if (h < 1) h = 1;

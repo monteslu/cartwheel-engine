@@ -902,24 +902,37 @@ WGSL_DECL WGSL_DOF = S(
   });
 
 WGSL_DECL WGSL_LENS = S(
-  struct U { u_on: vec4f, u_amt: vec4f, u_frame: i32 };
+  struct U { u_on: vec4f, u_amt: vec4f, u_frame: i32, u_vr0: vec4f, u_vr1: vec4f, u_vr2: vec4f, u_vr3: vec4f, u_vrn: vec4f };
   @group(0) @binding(0) var<uniform> u: U;
   @group(0) @binding(1) var u_src: texture_2d<f32>;
+  fn inr(r: vec4f, q: vec2f) -> bool { return q.x >= r.x && q.y >= r.y && q.x < r.x + r.z && q.y < r.y + r.w; }
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
-    let d = uv - 0.5;
     var c = textureSampleLevel(u_src, cw_linear, uv, 0.0);
-    if (u.u_on.x > 0.5) {
-      let off = d * (u.u_amt.x * 2.0);
+    var vr = vec4f(0.0, 0.0, 1.0, 1.0);
+    var on = u.u_on;
+    var org = vec2f(0.0);
+    if (u.u_vrn.x > 0.5) {
+      if (inr(u.u_vr0, uv)) { vr = u.u_vr0; }
+      else if (u.u_vrn.x > 1.5 && inr(u.u_vr1, uv)) { vr = u.u_vr1; }
+      else if (u.u_vrn.x > 2.5 && inr(u.u_vr2, uv)) { vr = u.u_vr2; }
+      else if (u.u_vrn.x > 3.5 && inr(u.u_vr3, uv)) { vr = u.u_vr3; }
+      else { return c; }
+      on.w = vr.z * u.u_vrn.y / max(vr.w * u.u_vrn.z, 1.0);
+      org = floor(vr.xy * u.u_vrn.yz + 0.5);
+    }
+    let d = (uv - vr.xy) / vr.zw - 0.5;
+    if (on.x > 0.5) {
+      let off = d * (u.u_amt.x * 2.0) * vr.zw;
       c.r = textureSampleLevel(u_src, cw_linear, uv - off, 0.0).r;
       c.b = textureSampleLevel(u_src, cw_linear, uv + off, 0.0).b;
     }
-    if (u.u_on.y > 0.5) {
-      let r = length(d * vec2f(u.u_on.w, 1.0)) / length(vec2f(0.5 * u.u_on.w, 0.5));
+    if (on.y > 0.5) {
+      let r = length(d * vec2f(on.w, 1.0)) / length(vec2f(0.5 * on.w, 0.5));
       let f = smoothstep(1.0 - u.u_amt.z, 1.0 + u.u_amt.z * 0.25, r * (1.0 + 0.5 * u.u_amt.z));
       c = vec4f(c.rgb * (1.0 - u.u_amt.y * f), c.a);
     }
     if (u.u_on.z > 0.5) {
-      let n = hash01(vec3u(vec2u(cw_frag_coord(pos)), u32(u.u_frame))) - 0.5;
+      let n = hash01(vec3u(vec2u(max(cw_frag_coord(pos) - org, vec2f(0.0))), u32(u.u_frame))) - 0.5;
       let l = luma(c.rgb);
       c = vec4f(max(c.rgb + n * u.u_amt.w * (1.0 - 0.5 * l), vec3f(0.0)), c.a);
     }

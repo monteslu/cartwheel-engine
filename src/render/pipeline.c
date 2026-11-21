@@ -18,6 +18,7 @@
 #include "pipeline_wgpu.h"
 #include "scene/render3d_internal.h"
 #include "lighting_internal.h"
+#include "view_mask.h"
 
 #ifdef T3_MISSING_HOOK
 /* A draw whose program state no table has (three.c skips it): say which node, mesh and material it is, once per
@@ -177,6 +178,7 @@ static void cmd_pipeline_test(int argc, const char **argv, cw_reply *r) {
   } else cw_reply_error(r, "usage: pipeline_test gl_msaa_on_webgpu");
 }
 
+static int32_t views_submits_dbg;
 static void cmd_pipeline(int argc, const char **argv, cw_reply *r) {
   gpu_timing = 1;
   cw_tree *t = cw_current_tree();
@@ -187,6 +189,8 @@ static void cmd_pipeline(int argc, const char **argv, cw_reply *r) {
   }
   /* pipeline views_array 0|1: split screen in one pass or view by view (cw_pipeline_set_views_array; A/B timing) */
   if (argc >= 3 && !strcmp(argv[1], "views_array")) cw_pipeline_set_views_array(p, atoi(argv[2]) != 0);
+  /* pipeline views_submit 0|1: WebGPU, a one-pass split screen's views drawn and submitted one by one, or all recorded first (A/B timing) */
+  if (argc >= 3 && !strcmp(argv[1], "views_submit")) p->views_submit = atoi(argv[2]) != 0;
   static const char *const phases[] = { "shadow", "prepass", "opaque", "sky", "effects", "post", "overlay", "present" };
   cw_reply_printf(r, "{\"hdr_format\":\"%s\",\"timer_query\":%s,\"max_samples\":%d,\"gpu_ms\":%.4f,\"passes\":[",
                   cw__caps.hdr_format ? cw__caps.hdr_format : "?",
@@ -200,6 +204,7 @@ static void cmd_pipeline(int argc, const char **argv, cw_reply *r) {
   cw_reply_raw(r, "]");
   cw_reply_printf(r, ",\"views_array\":%s,\"views_array_why\":\"%s\"", p->arr_used ? "true" : "false",
                   !p->arr_used && p->arr_why ? p->arr_why : "");
+  cw_reply_printf(r, ",\"view_hook\":%s,\"view_masks\":%d", p->view_hook ? "true" : "false", cw__view_masks_count());
   {
     /* the states three.c's generated table lacked (a JSON string, one per line) */
     cw_reply_raw(r, ",\"missing_states\":\"");
@@ -220,12 +225,14 @@ cw_pipeline *cw_pipeline_of(cw_tree *t) {
   p->tree = t;
   settings_default(&p->s);
   p->views_array = true; /* split screen with a shared post chain: one pass when every per-view pass can */
+  p->views_submit = true;
   cw_tree_set_slot(t, "pipeline", p, pipeline_free);
   cw__pipeline_add_builtin_passes(p);
   static bool cmd_done;
   if (!cmd_done) {
     cmd_done = true;
-    cw_debug_command("pipeline", "pipeline [views_array 0|1]: render passes (phase, ran, GPU ms), HDR format, timer support, missing three.c states; views_array sets split screen in one pass on or off first", cmd_pipeline);
+    cw_debug_i32("cw.views_submits", &views_submits_dbg); /* WebGPU: the last frame's one-pass views submitted one by one (0: none) */
+    cw_debug_command("pipeline", "pipeline [views_array 0|1] [views_submit 0|1]: render passes (phase, ran, GPU ms), HDR format, timer support, missing three.c states; views_array sets split screen in one pass on or off first, views_submit (WebGPU) its views submitted one by one or together", cmd_pipeline);
     cw_debug_command("pipeline_test", "pipeline_test gl_msaa_on_webgpu: a test control: puts back a GL call on WebGPU runs that the dual-cart check must catch",
                      cmd_pipeline_test);
   }
@@ -388,7 +395,8 @@ static void plan_fusion(cw_pipeline *p, const cw_post_settings *s, bool post, bo
     aa = -1;
   }
   /* the lens reads only its own pixel unless chromatic aberration is on */
-  if (ln >= 0 && !s->chromatic_aberration) {
+  /* (and with a lens per view of a shared split screen chain: the lens pass finds each pixel's view) */
+  if (ln >= 0 && !s->chromatic_aberration && !(s->vignette_per_view && p->nviews >= 2 && p->view_post_split)) {
     if (aa >= 0 && post_adjacent(p, aa, ln)) p->fuse_lens = true;
     else if (aa < 0 && tm >= 0 && (gr < 0 || p->fuse_grade) && post_adjacent(p, tm, ln)) p->fuse_lens_tm = true;
     if (p->fuse_lens || p->fuse_lens_tm) fuse_off(p, ln);
@@ -1034,6 +1042,8 @@ static const cw_rt *array_run(cw_tree *t, cw_pipeline *p, const cw_rt *out, doub
   cw__render3d_keep_shadows(t, false);
   if (!cw_render3d_prepare(t, W, H)) return NULL; /* the renderer at the whole target's size; the shadow maps once */
   if (!p->arr_cam) p->arr_cam = t3_array_camera_new();
+  uint32_t arr_cam_layers[CW_MAX_VIEWS];
+  bool arr_cam_vl[CW_MAX_VIEWS];
   for (int i = 0; i < p->arr_cam->count; i++) t3_release(p->arr_cam->cameras[i]);
   p->arr_cam->count = 0;
   for (int k = 0; k < n; k++) {
@@ -1047,11 +1057,15 @@ static const cw_rt *array_run(cw_tree *t, cw_pipeline *p, const cw_rt *out, doub
      * layer 0 (the camera's other layers as they are) */
     uint32_t L = p->arr_cams[k]->base.layers & ~CW__VIEW_LAYERS;
     p->arr_cams[k]->base.layers = L | ((p->arr_cams[k]->base.layers & 1u) ? cw__view_layer(k) : 0);
+    arr_cam_layers[k] = L;
+    arr_cam_vl[k] = (L & 1u) != 0;
     int r[4] = { x0, H - ytop - vh, vw, vh };
     memcpy(p->arr_rect[k], r, sizeof r);
     /* (three.c places a viewport from the target's top row; the WebGPU scene target is drawn flipped, its rows
      * bottom-up as GL's, so there the top row of the picture is the target's last) */
-    t3_array_camera_add(p->arr_cam, p->arr_cams[k], x0, cw_gpu_backend() == CW_GPU_WEBGPU ? r[1] : ytop, vw, vh);
+    int vp[4] = { x0, cw_gpu_backend() == CW_GPU_WEBGPU ? r[1] : ytop, vw, vh };
+    memcpy(p->arr_vp[k], vp, sizeof vp);
+    t3_array_camera_add(p->arr_cam, p->arr_cams[k], vp[0], vp[1], vp[2], vp[3]);
   }
   p->arr_n = n;
   const cw_rt *pic = cw_pipeline_rt_persistent(p, "views.arr", W, H, vf, NULL);
@@ -1061,8 +1075,16 @@ static const cw_rt *array_run(cw_tree *t, cw_pipeline *p, const cw_rt *out, doub
   p->view_i = -1;
   p->view_pic = NULL;
   p->arr_refused = NULL;
+  /* the objects drawn in some views only (cw_object_set_views): on those views' layers for the run */
+  const char *mask_why = cw__view_masks_apply_layers(n, arr_cam_layers, arr_cam_vl);
+  if (mask_why) {
+    p->output_user = keep_out;
+    p->arr_why = cw_intern(mask_why);
+    return NULL;
+  }
   render_run(t, p, W, H, alpha, RUN_ARRAY);
   cw__visibility_end_view(t);
+  cw__view_masks_restore_layers();
   p->output_user = keep_out;
   if (p->arr_refused) {
     p->arr_why = p->arr_refused;
@@ -1140,6 +1162,8 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   p->run = 0;
   p->msaa_resolves = 0;
   cw__render3d_frame_begin(t); /* the frame's draw counts start over */
+  cw__view_masks_frame();
+  views_submits_dbg = 0;
   if (p->nviews < 2) {
     render_run(t, p, w, h, alpha, RUN_FULL);
     extra_views_run(t, p, alpha);
@@ -1167,6 +1191,8 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   bool want_array = p->views_array;
   const char *va = cw_test_env("CW_TEST_VIEWS_ARRAY"); /* 1 / 0: one pass or per view whatever the app set (gates) */
   if (va && *va) want_array = atoi(va) != 0;
+  const char *vs = cw_test_env("CW_TEST_VIEWS_SUBMIT"); /* 0: WebGPU, the views recorded first, then submitted (gates) */
+  if (vs && *vs) p->views_submit = atoi(vs) != 0;
   if (want_array && p->view_post_split && !p->view_hook) {
     arr_pic = array_run(t, p, &out_copy, alpha, vf);
     p->arr_used = arr_pic != NULL;
@@ -1181,6 +1207,7 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
     p->output_user = rt;
     cw_render3d_set_camera(t, v->camera);
     if (p->view_hook) p->view_hook(i, p->view_hook_user);
+    cw__view_masks_apply_visible(i); /* (cw_object_set_views) */
     cw__render3d_keep_shadows(t, n > 0); /* the shadow maps once a frame: the first view draws them */
     p->view_i = i;
     p->view_pic = NULL;
@@ -1188,6 +1215,7 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
     cw__visibility_end_view(t);
     rts[n++] = p->view_pic ? p->view_pic : rt;
   }
+  cw__view_masks_restore_visible();
   p->view_i = -1;
   cw__render3d_keep_shadows(t, false);
   cw_render3d_set_camera(t, (cw_node){ 0 });
@@ -1212,7 +1240,9 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
 static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, int mode);
 /* one-pass split screen: the context of view k (its camera, matrices, history and rectangle; the pass helpers
  * scissor to it), and back to the run's own after the views */
+int cw__array_view_now = -1;
 static void array_view(cw_pass_ctx *ctx, cw_pipeline *p, int k) {
+  cw__array_view_now = k;
   ctx->camera = p->arr_cams[k];
   ctx->camera_node = p->arr_nodes[k];
   mat4_from_camera(ctx);
@@ -1240,6 +1270,7 @@ static void array_view(cw_pass_ctx *ctx, cw_pipeline *p, int k) {
   }
 }
 static void array_view_end(cw_pass_ctx *ctx, cw_pipeline *p) {
+  cw__array_view_now = -1;
   cw__vclip.on = false;
   if (cw_gpu_backend() != CW_GPU_WEBGPU) {
     glViewport(0, 0, cw__vclip.bound_w, cw__vclip.bound_h);
@@ -1515,11 +1546,55 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   }
 
   const cw_rt *chain = scene; /* POST: the current image */
+  bool view_major = wgpu && mode == RUN_ARRAY && p->arr_n >= 2 && p->views_submit && !p->arr_refused;
   for (int ph = 0; ph < CW_PHASE_COUNT; ph++) {
     if (ph <= CW_PHASE_POST && !has_scene && !(post_run && ph == CW_PHASE_POST)) continue;
     /* WebGPU, one-pass split screen: every view's scene goes to the GPU before the views' effects are recorded, so
      * the GPU starts on it while the CPU records the rest (the per-view runs submitted each view's run as it ended) */
-    if (wgpu && mode == RUN_ARRAY && ph == CW_PHASE_SKY && !p->arr_refused) {
+    /* WebGPU, one-pass split screen: each view's shadow-phase passes, depth prepass and opaque passes in turn, its
+     * scene (an array camera of that one view, inside its rectangle of the one target) submitted as soon as it is
+     * recorded, so the GPU draws a view while the CPU prepares the next. A host that waits for each frame otherwise saw
+     * no GPU work until every view was prepared (the views drawn on their own each went to the GPU as they ended). */
+    if (view_major && ph == CW_PHASE_SHADOW) {
+      for (int k = 0; k < p->arr_n && !p->arr_refused; k++) {
+        p->arr_part = k + 1;
+        for (int ph2 = CW_PHASE_SHADOW; ph2 <= CW_PHASE_OPAQUE && !p->arr_refused; ph2++) {
+          for (int i = 0; i < p->passes.count && !p->arr_refused; i++) {
+            pass_rec *r = p->passes.data[i];
+            if (!r->active || (int)r->d.phase != ph2 || !post_in_run(p, r, mode)) continue;
+            ctx.src = ctx.dst = NULL;
+            ctx.result = NULL;
+            if (ph2 != CW_PHASE_SHADOW) bind_phase_target(&ctx, scene ? scene_draw : output);
+            if (r->d.views == CW_PASS_VIEWS_EACH) {
+              array_view(&ctx, p, k);
+              run_pass(p, r, &ctx);
+              array_view_end(&ctx, p);
+            } else if (r->name == cw_intern("scene") || r->name == cw_intern("depth_prepass")) {
+              if (!p->arr_cam1) p->arr_cam1 = t3_array_camera_new();
+              for (int c = 0; c < p->arr_cam1->count; c++) t3_release(p->arr_cam1->cameras[c]);
+              p->arr_cam1->count = 0;
+              t3_array_camera_add(p->arr_cam1, p->arr_cams[k], p->arr_vp[k][0], p->arr_vp[k][1], p->arr_vp[k][2], p->arr_vp[k][3]);
+              ctx.camera = &p->arr_cam1->base;
+              run_pass(p, r, &ctx);
+              ctx.camera = p->arr_cams[0];
+            } else if (k == 0) {
+              run_pass(p, r, &ctx); /* (once for every view: the sky's cube) */
+            }
+            if (ph2 == CW_PHASE_PREPASS) p->prepass_ran = true;
+            if (ph2 == CW_PHASE_OPAQUE) p->drew3d = true;
+          }
+        }
+        /* this view to the GPU */
+        cw__pw_flush();
+        if (ctx.renderer) t3_renderer_wgpu_submit(ctx.renderer);
+      }
+      views_submits_dbg = p->arr_n;
+      p->arr_part = 0;
+      if (p->arr_refused) return; /* (a later view's pass could not: the views are drawn on their own; this target is not used) */
+      ph = CW_PHASE_OPAQUE;
+      continue;
+    }
+    if (wgpu && mode == RUN_ARRAY && ph == CW_PHASE_SKY && !p->arr_refused && !view_major) {
       cw__pw_flush();
       if (ctx.renderer) t3_renderer_wgpu_submit(ctx.renderer);
     }

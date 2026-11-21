@@ -59,6 +59,7 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   const ripR = v4('waterRippleRect'); // x, y: the grid's centre (water-local x, z); z, w: 1 / cells along x, z
   const refrInfo = low ? null : v4('waterRefr'); // x: the refraction's depth is valid (1); y: caustic strength; z: 1 / caustic tile (m); w: camera under the water (the refraction target holds the view up through the surface)
   const refrSize = low ? null : v4('waterRefrSize'); // x, y: the refraction depth texture's size in texels; z: the foam's lace; w: soft foam
+  const viewRect = low ? null : v4('waterView'); // split screen in one pass: the view's rectangle in screen uv (x, y from the top left, width, height); 0, 0, 1, 1 otherwise
   const grid = v4('waterGrid');     // x, y: the grid's centre (water-local; the camera's foot on a VIEW grid); z: VIEW grid on; w: the foam pattern's scale
   const shelter = v4('waterShelter'); // per wave: how much the wave mask holds it down
   const crestLight = v4('waterCrest'); // x: how much lighter crests are (0: as before); y: see_through (m, 0: off); z: the light reaching the water (0..1); w: 2 x tan(half the view's height angle)
@@ -240,7 +241,9 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   }
   // the swell's own tilt moves the refraction less than the ripples do
   const offset = n.xz.sub(wn.xz.mul(0.6)).mul(look.y).mul(shoreDistortion);
-  const suv = vec2(screenUV.x, mix(screenUV.y, float(1).sub(screenUV.y), cam.w));
+  // (the view's own screen uv: its planar targets are its own, as a view drawn alone has them)
+  const vuv = screenUV.sub(viewRect.xy).div(viewRect.zw);
+  const suv = vec2(vuv.x, mix(vuv.y, float(1).sub(vuv.y), cam.w));
   // (the reflection is moved by the ripples only: the swell bending it reaches the ground under the mirrored horizon)
   const refl = texture(reflectMap, vec2(float(1).sub(suv.x), suv.y).add(n.xz.sub(wn.xz).mul(look.y)).add(wn.xz.mul(floorRect.w))).rgb.mul(tint.w);
   // the refraction's own depth: the water between the surface and whatever is under it, along the view ray, then
