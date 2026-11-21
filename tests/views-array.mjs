@@ -15,7 +15,7 @@
 //   - with SA_DISTORT the distortion is in the picture (a per-view run without the distort pass must differ from it)
 // Control: CW_TEST_VIEWS_ARRAY_SHIFT=1 draws each view's passes a view over (wrapped round the target) and must fail
 // the bound; a Very Low run without the fog pass must differ from one with it.
-//   node tests/views-array.mjs [--gpu gl,webgpu]
+//   node tests/views-array.mjs [--gpu gl,webgpu] [--cases <tag,...>]
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -68,9 +68,11 @@ const CASES = [
   { tag: 'v4-distort', env: { SA_VIEWS: '4', CW_QUALITY: 'high', SA_DISTORT: '1' } },
   { tag: 'v2-csm', env: { SA_VIEWS: '2', CW_QUALITY: 'high', SA_CSM: '1' }, fallback: true },
 ];
+const ONLY = argv.includes("--cases") ? argv[argv.indexOf("--cases") + 1].split(",") : null; // --cases v2-water,v4-water: only these
 for (const gpu of GPUS) {
   console.log(`-- ${gpu}`);
   for (const c of CASES) {
+    if (ONLY && !ONLY.includes(c.tag)) continue;
     const one = run(gpu, `${c.tag}-onepass`, { ...c.env, CW_TEST_VIEWS_ARRAY: '1' });
     const each = run(gpu, `${c.tag}-perview`, { ...c.env, CW_TEST_VIEWS_ARRAY: '0' });
     const d = share(one, each);

@@ -309,7 +309,15 @@ cw_add_app(physical_materials SOURCES physical_materials/main.c ASSETS ${CMAKE_C
 cw_add_app(fog_valley SOURCES fog_valley/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fog_valley/assets)
 # split screen in one pass (cw_pipeline_set_views_array): terrain, scatter, sky, fog, water, lamps, particles, a
 # decal and SSAO in two or four views over one target (tests/views-array.mjs).
-cw_add_app(split_array SOURCES split_array/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/split_array/assets)
+# (with SA_WATER, CesiumMan walkers beside the pond: Khronos glTF sample, CC-BY-4.0, staged with its license as
+# anim_skinned does)
+set(CW_SPLIT_ARRAY_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/split_array_assets)
+file(MAKE_DIRECTORY ${CW_SPLIT_ARRAY_ASSETS}/decals)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/split_array/assets/main.cwscene ${CW_SPLIT_ARRAY_ASSETS}/main.cwscene COPYONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/split_array/assets/decals/scorch.png ${CW_SPLIT_ARRAY_ASSETS}/decals/scorch.png COPYONLY)
+configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.glb ${CW_SPLIT_ARRAY_ASSETS}/CesiumMan.glb COPYONLY)
+configure_file(${CW_THREE_DIR}/test/assets/CesiumMan.LICENSE.md ${CW_SPLIT_ARRAY_ASSETS}/CesiumMan.LICENSE.md COPYONLY)
+cw_add_app(split_array SOURCES split_array/main.c ASSETS ${CW_SPLIT_ARRAY_ASSETS})
 cw_add_app(split_views SOURCES split_views/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/split_views/assets)
 # clustered lighting: a night street with 214 clustered lights and shadowed floodlights (cartwheel/lighting.h).
 cw_add_app(night_street SOURCES night_street/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/night_street/assets)
