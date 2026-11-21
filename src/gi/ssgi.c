@@ -44,7 +44,8 @@ static const char *TRACE_GLSL =
       uniform sampler2D u_alb;
       uniform sampler2D u_color;
       uniform mat4 u_inv_proj;
-      uniform vec4 u_size;     /* full w, h; trace w, h */
+      uniform vec4 u_size;     /* the view's full w, h; trace w, h */
+      uniform vec4 u_vr;       /* the view's corner in the full-resolution depth, and its size (cw__gi_view) */
       uniform vec4 u_params;   /* radius, gi intensity, ao intensity, thickness */
       uniform vec4 u_counts;   /* slices, steps, temporal direction, temporal offset */
       out vec4 o;
@@ -53,7 +54,7 @@ static const char *TRACE_GLSL =
         v = (v & 0x33333333u) + ((v >> 2u) & 0x33333333u);
         return (((v + (v >> 4u)) & 0x0F0F0F0Fu) * 0x01010101u) >> 24u;
       }
-      float depth_at(vec2 uv) { return texelFetch(u_depth, clamp(ivec2(uv * u_size.xy), ivec2(0), ivec2(u_size.xy) - 1), 0).r; }
+      float depth_at(vec2 uv) { return texelFetch(u_depth, ivec2(u_vr.xy) + clamp(ivec2(uv * u_size.xy), ivec2(0), ivec2(u_size.xy) - 1), 0).r; }
       vec3 view_pos(vec2 uv, float d) {
         vec4 p = u_inv_proj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
         return p.xyz / p.w;
@@ -157,8 +158,9 @@ static const char *TRACE_GLSL =
  * the bytes at that scatter is what its light fetches cost */
 static const char *DOWN_GLSL = S(
   uniform sampler2D u_src;
+  uniform vec4 u_view; /* the view's rectangle in the colour's uv (cw_pass_view_uv): the target is the view's own */
   out vec4 o;
-  void main() { o = vec4(texture(u_src, v_uv).rgb, 1.0); });
+  void main() { o = vec4(texture(u_src, u_view.xy + v_uv * u_view.zw).rgb, 1.0); });
 
 /* the G-buffer's normals alone, in a two-channel half-float target (4 bytes a texel, the same
  * values): the trace and the denoise read them at scattered positions */
@@ -171,11 +173,12 @@ static const char *DENOISE_GLSL = S(
   uniform sampler2D u_gi;
   uniform sampler2D u_gbuf;
   uniform sampler2D u_depth;
-  uniform vec4 u_size;   /* full w, h; trace w, h */
+  uniform vec4 u_size;   /* the view's full w, h; trace w, h */
   uniform vec4 u_cam;    /* near, far */
+  uniform vec4 u_vr;       /* the view's corner in the full-resolution depth, and its size (cw__gi_view) */
   out vec4 o;
   float lin_at(ivec2 p) {
-    float d = texelFetch(u_depth, clamp(p, ivec2(0), ivec2(u_size.xy) - 1), 0).r;
+    float d = texelFetch(u_depth, ivec2(u_vr.xy) + clamp(p, ivec2(0), ivec2(u_size.xy) - 1), 0).r;
     return (u_cam.x * u_cam.y) / (u_cam.y - (u_cam.y - u_cam.x) * d);
   }
   void main() {
@@ -206,18 +209,20 @@ static const char *COMP_GLSL = S(
   uniform sampler2D u_depth;
   uniform vec4 u_size;
   uniform vec4 u_cam;
+  uniform vec4 u_vr;       /* the view's corner in the full-resolution depth, and its size (cw__gi_view) */
+  uniform vec4 u_view;   /* the view's rectangle in uv (cw_pass_view_uv) */
   out vec4 o;
   float lin_at(ivec2 p) {
-    float d = texelFetch(u_depth, clamp(p, ivec2(0), ivec2(u_size.xy) - 1), 0).r;
+    float d = texelFetch(u_depth, ivec2(u_vr.xy) + clamp(p, ivec2(0), ivec2(u_size.xy) - 1), 0).r;
     return (u_cam.x * u_cam.y) / (u_cam.y - (u_cam.y - u_cam.x) * d);
   }
   void main() {
     vec4 c = texture(u_src, v_uv);
-    vec2 hp = v_uv * u_size.zw - 0.5;
+    vec2 hp = (v_uv - u_view.xy) / u_view.zw * u_size.zw - 0.5;
     vec2 base = floor(hp), fr = hp - base;
     vec4 alb = texelFetch(u_alb, clamp(ivec2(floor(hp + 0.5)), ivec2(0), ivec2(u_size.zw) - 1), 0);
     if (alb.a < 0.5) { o = c; return; }
-    float z0 = lin_at(ivec2(gl_FragCoord.xy));
+    float z0 = lin_at(ivec2(gl_FragCoord.xy) - ivec2(u_vr.xy));
     vec4 sum = vec4(0.0);
     float wsum = 0.0;
     for (int j = 0; j < 2; j++)
@@ -235,7 +240,7 @@ static const char *COMP_GLSL = S(
 #if CW_WGPU
 static const char *TRACE_WGSL =
     "const MAX_RAY = 32u;\n"
-    S(struct U { u_inv_proj: mat4x4f, u_size: vec4f, u_params: vec4f, u_counts: vec4f, u_pz: vec4f };
+    S(struct U { u_inv_proj: mat4x4f, u_size: vec4f, u_params: vec4f, u_counts: vec4f, u_pz: vec4f, u_vr: vec4f };
       @group(0) @binding(0) var<uniform> u: U;
       @group(0) @binding(1) var u_depth: texture_2d<f32>;
       @group(0) @binding(2) var u_gbuf: texture_2d<f32>;
@@ -244,7 +249,7 @@ static const char *TRACE_WGSL =
       var<private> occluded: u32;
       fn depth_at(uv: vec2f) -> f32 {
         let q = clamp(vec2i(uv * u.u_size.xy), vec2i(0), vec2i(u.u_size.xy) - 1);
-        return win_depth(textureLoad(u_depth, q, 0).r, u.u_pz);
+        return win_depth(textureLoad(u_depth, vec2i(u.u_vr.xy) + q, 0).r, u.u_pz);
       }
       fn view_pos(uv: vec2f, d: f32) -> vec3f {
         let p = u.u_inv_proj * vec4f(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
@@ -347,11 +352,11 @@ static const char *TRACE_WGSL =
       });
 
 static const char *DOWN_WGSL = S(
-  struct U { u_pad: vec4f };
+  struct U { u_view: vec4f };
   @group(0) @binding(0) var<uniform> u: U;
   @group(0) @binding(1) var u_src: texture_2d<f32>;
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
-    return vec4f(textureSampleLevel(u_src, cw_linear, uv, 0.0).rgb, 1.0);
+    return vec4f(textureSampleLevel(u_src, cw_linear, u.u_view.xy + uv * u.u_view.zw, 0.0).rgb, 1.0);
   });
 
 static const char *NORM_WGSL = S(
@@ -363,12 +368,12 @@ static const char *NORM_WGSL = S(
   });
 
 static const char *DENOISE_WGSL = S(
-  struct U { u_size: vec4f, u_cam: vec4f };
+  struct U { u_size: vec4f, u_cam: vec4f, u_vr: vec4f };
   @group(0) @binding(0) var<uniform> u: U;
   @group(0) @binding(1) var u_gi: texture_2d<f32>;
   @group(0) @binding(2) var u_gbuf: texture_2d<f32>;
   @group(0) @binding(3) var u_depth: texture_2d<f32>;
-  fn lin_at(p: vec2i) -> f32 { return textureLoad(u_depth, clamp(p, vec2i(0), vec2i(u.u_size.xy) - 1), 0).r; }
+  fn lin_at(p: vec2i) -> f32 { return textureLoad(u_depth, vec2i(u.u_vr.xy) + clamp(p, vec2i(0), vec2i(u.u_size.xy) - 1), 0).r; }
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
     let b = vec2i(cw_frag_coord(pos));
     let z0 = lin_at(b * 2);
@@ -391,21 +396,21 @@ static const char *DENOISE_WGSL = S(
   });
 
 static const char *COMP_WGSL = S(
-  struct U { u_size: vec4f, u_cam: vec4f };
+  struct U { u_size: vec4f, u_cam: vec4f, u_vr: vec4f, u_view: vec4f };
   @group(0) @binding(0) var<uniform> u: U;
   @group(0) @binding(1) var u_src: texture_2d<f32>;
   @group(0) @binding(2) var u_gi: texture_2d<f32>;
   @group(0) @binding(3) var u_alb: texture_2d<f32>;
   @group(0) @binding(4) var u_depth: texture_2d<f32>;
-  fn lin_at(p: vec2i) -> f32 { return textureLoad(u_depth, clamp(p, vec2i(0), vec2i(u.u_size.xy) - 1), 0).r; }
+  fn lin_at(p: vec2i) -> f32 { return textureLoad(u_depth, vec2i(u.u_vr.xy) + clamp(p, vec2i(0), vec2i(u.u_size.xy) - 1), 0).r; }
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
     let c = textureSampleLevel(u_src, cw_linear, uv, 0.0);
-    let hp = uv * u.u_size.zw - 0.5;
+    let hp = (uv - u.u_view.xy) / u.u_view.zw * u.u_size.zw - 0.5;
     let base = floor(hp);
     let fr = hp - base;
     let alb = textureLoad(u_alb, clamp(vec2i(floor(hp + 0.5)), vec2i(0), vec2i(u.u_size.zw) - 1), 0);
     if (alb.a < 0.5) { return c; }
-    let z0 = lin_at(vec2i(cw_frag_coord(pos)));
+    let z0 = lin_at(vec2i(cw_frag_coord(pos)) - vec2i(u.u_vr.xy));
     var sum = vec4f(0.0);
     var wsum = 0.0;
     for (var j = 0; j < 2; j++) {
@@ -481,13 +486,21 @@ static void ssgi_exec(cw_pass_ctx *ctx, void *u) {
   trace_prog = trace_for(wg, CW_CLAMP(s->ssgi_slices, 1, 8), CW_CLAMP(s->ssgi_steps, 1, 64));
   if (!trace_prog || !down_prog || !norm_prog || !denoise_prog || !comp_prog || !ctx->depth_tex) return;
   gi_tree *g = cw__gi_tree(ctx->tree);
-  int hw = (ctx->width + 1) / 2, hh = (ctx->height + 1) / 2;
-  if (!g->gbuf_ok || !g->albedo_ok || g->gbuf.w != hw || g->gbuf.h != hh) return; /* (drawn by the gi pass) */
-  const cw_rt *tr = cw_pipeline_rt_persistent(ctx->pipeline, "ssgi.trace", hw, hh, CW_RT_RGBA16F, NULL);
-  const cw_rt *dn = cw_pipeline_rt_persistent(ctx->pipeline, "ssgi.denoised", hw, hh, CW_RT_RGBA16F, NULL);
-  const cw_rt *lt = cw_pipeline_rt_persistent(ctx->pipeline, "ssgi.light", hw, hh, CW_RT_RGBA16F, NULL);
-  const cw_rt *nm = cw_pipeline_rt_persistent(ctx->pipeline, "ssgi.normal", hw, hh, CW_RT_RG16F, NULL);
+  gi_view v = cw__gi_view(ctx);
+  int hw = v.hw, hh = v.hh, k = v.k;
+  if (!g->gbuf_ok[k] || !g->albedo_ok[k] || g->gbuf[k].w != hw || g->gbuf[k].h != hh) return; /* (drawn by the gi pass) */
+  char n0[40], n1[40], n2[40], n3[40];
+  const cw_rt *tr = cw_pipeline_rt_persistent(ctx->pipeline, cw__gi_rt_name("ssgi.trace", k, n0), hw, hh, CW_RT_RGBA16F, NULL);
+  const cw_rt *dn = cw_pipeline_rt_persistent(ctx->pipeline, cw__gi_rt_name("ssgi.denoised", k, n1), hw, hh, CW_RT_RGBA16F, NULL);
+  const cw_rt *lt = cw_pipeline_rt_persistent(ctx->pipeline, cw__gi_rt_name("ssgi.light", k, n2), hw, hh, CW_RT_RGBA16F, NULL);
+  const cw_rt *nm = cw_pipeline_rt_persistent(ctx->pipeline, cw__gi_rt_name("ssgi.normal", k, n3), hw, hh, CW_RT_RG16F, NULL);
   if (!tr || !dn || !lt || !nm) return;
+  const t3_mat4 *ip = ctx->view_count > 0 ? &ctx->inv_proj : &ctx->pipeline->inv_proj_jittered;
+  float vr[4] = { (float)v.rect[0], (float)v.rect[1], (float)ctx->width, (float)ctx->height }, vu[4];
+  cw_pass_view_uv(ctx, vu);
+  /* the half-resolution targets are the view's own: no rectangle of the whole target to keep to */
+  bool clip = cw__vclip.on;
+  cw__vclip.on = false;
   const t3_camera *cam = ctx->camera;
   /* r187's temporal sequence (rotation, offset) when the pipeline's TAA accumulates */
   static const float ROT[6] = { 60, 300, 180, 240, 120, 0 }, OFF[4] = { 0, 0.5f, 0.25f, 0.75f };
@@ -496,17 +509,18 @@ static void ssgi_exec(cw_pass_ctx *ctx, void *u) {
   cw_pass_use(down_prog);
   cw_pass_bind_texture(0, ctx->src->tex);
   if (!wg) cw_pass_uniform1i(down_prog, "u_src", 0);
+  cw_pass_uniform4f(down_prog, "u_view", vu[0], vu[1], vu[2], vu[3]);
   cw_pass_fullscreen();
   cw_pass_bind_target(ctx, nm);
   cw_pass_use(norm_prog);
-  cw_pass_bind_texture(0, g->gbuf.tex);
+  cw_pass_bind_texture(0, g->gbuf[k].tex);
   if (!wg) cw_pass_uniform1i(norm_prog, "u_src", 0);
   cw_pass_fullscreen();
   cw_pass_bind_target(ctx, tr);
   cw_pass_use(trace_prog);
   cw_pass_bind_texture(0, ctx->depth_tex);
   cw_pass_bind_texture(1, nm->tex);
-  cw_pass_bind_texture(2, g->albedo.tex);
+  cw_pass_bind_texture(2, g->albedo[k].tex);
   cw_pass_bind_texture(3, lt->tex);
   if (!wg) {
     cw_pass_uniform1i(trace_prog, "u_depth", 0);
@@ -514,8 +528,9 @@ static void ssgi_exec(cw_pass_ctx *ctx, void *u) {
     cw_pass_uniform1i(trace_prog, "u_alb", 2);
     cw_pass_uniform1i(trace_prog, "u_color", 3);
   }
-  cw_pass_uniform_mat4(trace_prog, "u_inv_proj", &ctx->pipeline->inv_proj_jittered);
-  cw_pass_uniform4f(trace_prog, "u_size", (float)ctx->width, (float)ctx->height, (float)hw, (float)hh);
+  cw_pass_uniform_mat4(trace_prog, "u_inv_proj", ip);
+  cw_pass_uniform4f(trace_prog, "u_size", (float)v.rect[2], (float)v.rect[3], (float)hw, (float)hh);
+  cw_pass_uniform4f(trace_prog, "u_vr", vr[0], vr[1], vr[2], vr[3]);
   cw_pass_uniform4f(trace_prog, "u_params", s->ssgi_radius, s->ssgi_intensity, s->ssgi_ao_intensity, s->ssgi_thickness);
   cw_pass_uniform4f(trace_prog, "u_counts", (float)CW_CLAMP(s->ssgi_slices, 1, 8), (float)CW_CLAMP(s->ssgi_steps, 1, 64), tdir, toff);
   {
@@ -533,14 +548,16 @@ static void ssgi_exec(cw_pass_ctx *ctx, void *u) {
     cw_pass_uniform1i(denoise_prog, "u_gbuf", 1);
     cw_pass_uniform1i(denoise_prog, "u_depth", 2);
   }
-  cw_pass_uniform4f(denoise_prog, "u_size", (float)ctx->width, (float)ctx->height, (float)hw, (float)hh);
+  cw_pass_uniform4f(denoise_prog, "u_size", (float)v.rect[2], (float)v.rect[3], (float)hw, (float)hh);
   cw_pass_uniform4f(denoise_prog, "u_cam", cam->near, cam->far, 0, 0);
+  cw_pass_uniform4f(denoise_prog, "u_vr", vr[0], vr[1], vr[2], vr[3]);
   cw_pass_fullscreen();
+  cw__vclip.on = clip;
   cw_pass_bind_target(ctx, ctx->dst);
   cw_pass_use(comp_prog);
   cw_pass_bind_texture(0, ctx->src->tex);
   cw_pass_bind_texture(1, dn->tex);
-  cw_pass_bind_texture(2, g->albedo.tex);
+  cw_pass_bind_texture(2, g->albedo[k].tex);
   cw_pass_bind_texture(3, ctx->depth_tex);
   if (!wg) {
     cw_pass_uniform1i(comp_prog, "u_src", 0);
@@ -548,13 +565,15 @@ static void ssgi_exec(cw_pass_ctx *ctx, void *u) {
     cw_pass_uniform1i(comp_prog, "u_alb", 2);
     cw_pass_uniform1i(comp_prog, "u_depth", 3);
   }
-  cw_pass_uniform4f(comp_prog, "u_size", (float)ctx->width, (float)ctx->height, (float)hw, (float)hh);
+  cw_pass_uniform4f(comp_prog, "u_size", (float)v.rect[2], (float)v.rect[3], (float)hw, (float)hh);
   cw_pass_uniform4f(comp_prog, "u_cam", cam->near, cam->far, 0, 0);
+  cw_pass_uniform4f(comp_prog, "u_vr", vr[0], vr[1], vr[2], vr[3]);
+  cw_pass_uniform4f(comp_prog, "u_view", vu[0], vu[1], vu[2], vu[3]);
   cw_pass_fullscreen();
 }
 
 void cw__gi_add_ssgi_pass(cw_pipeline *p) {
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "ssgi", .phase = CW_PHASE_POST, .order = 120,
                                            .reads = CW_RES_COLOR | CW_RES_DEPTH, .writes = CW_RES_COLOR,
-                                           .active = ssgi_active, .execute = ssgi_exec, .webgpu = true });
+                                           .active = ssgi_active, .execute = ssgi_exec, .webgpu = true, .views = CW_PASS_VIEWS_EACH });
 }

@@ -1592,7 +1592,7 @@ static void gi_node_pre_render(cw_node n, void *data, double alpha) {
   if (!g->done && !g->pass_name[0]) {
     snprintf(g->pass_name, sizeof g->pass_name, "lightmap_bake.%llx", (unsigned long long)n.id);
     cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = g->pass_name, .phase = CW_PHASE_SHADOW, .order = -100,
-                                             .execute = gi_bake_pass, .user = g });
+                                             .execute = gi_bake_pass, .user = g, .views = CW_PASS_VIEWS_ONCE /* a bake: no view's */ });
   }
 }
 

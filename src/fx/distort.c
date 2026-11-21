@@ -29,6 +29,7 @@
 #include "cartwheel/gpu.h"
 #include "cartwheel/quality.h"
 #include "fx_internal.h"
+#include "render/pipeline_internal.h"
 
 /* ── Shockwave3D data ─────────────────────────────────────────────────── */
 
@@ -233,6 +234,7 @@ static const char APPLY_GLSL[] =
     "uniform sampler2D u_src, u_dist, u_depth;\n"
     "uniform vec4 u_p;    /* (unused), how much nearer than the haze a sample may be, max shift */\n"
     "uniform vec4 u_soft; /* near, far, ortho */\n"
+    "uniform vec4 u_view; /* x0, y0, x1, y1: the view's rectangle in uv less half a texel (the shifted sample stays in it) */\n"
     "out vec4 o;\n"
     "float lin(float d) { return u_soft.z > 0.5 ? u_soft.x + d * (u_soft.y - u_soft.x) : u_soft.x * u_soft.y / (u_soft.y - d * (u_soft.y - u_soft.x)); }\n"
     "void main() {\n"
@@ -242,14 +244,14 @@ static const char APPLY_GLSL[] =
     "  float hz = d.b / d.a;\n"
     "  if (lin(texture(u_depth, v_uv).r) < hz - u_p.y) { o = s0; return; }\n"
     "  vec2 off = clamp(d.rg, vec2(-u_p.z), vec2(u_p.z));\n"
-    "  vec2 uv2 = v_uv + off;\n"
+    "  vec2 uv2 = clamp(v_uv + off, u_view.xy, u_view.zw);\n"
     "  if (lin(texture(u_depth, uv2).r) < hz - u_p.y) { o = s0; return; }\n"
     "  vec3 c = texture(u_src, uv2).rgb;\n"
     "  o = vec4(c, s0.a);\n"
     "}\n";
 
 static const char APPLY_WGSL[] =
-    "struct U { u_p: vec4f, u_soft: vec4f };\n"
+    "struct U { u_p: vec4f, u_soft: vec4f, u_view: vec4f };\n"
     "@group(0) @binding(0) var<uniform> u: U;\n"
     "@group(0) @binding(1) var u_src: texture_2d<f32>;\n"
     "@group(0) @binding(2) var u_dist: texture_2d<f32>;\n"
@@ -261,7 +263,7 @@ static const char APPLY_WGSL[] =
     "  let hz = d.b / d.a;\n"
     "  if (cw_load(u_depth, uv).r < hz - u.u_p.y) { return s0; }\n"
     "  let off = clamp(d.rg, vec2f(-u.u_p.z), vec2f(u.u_p.z));\n"
-    "  let uv2 = uv + off;\n"
+    "  let uv2 = clamp(uv + off, u.u_view.xy, u.u_view.zw);\n"
     "  if (cw_load(u_depth, uv2).r < hz - u.u_p.y) { return s0; }\n"
     "  let c = textureSampleLevel(u_src, cw_linear, uv2, 0.0).rgb;\n"
     "  return vec4f(c, s0.a);\n"
@@ -278,6 +280,9 @@ static const char COPY_WGSL[] =
 static bool wg(void) { return cw_gpu_backend() == CW_GPU_WEBGPU; }
 
 /* ── the sources pass ─────────────────────────────────────────────────── */
+
+/* the view's rectangle in the target's uv (cw_pass_view_uv): (0, 0, 1, 1) outside a one-pass split screen */
+static void view_uv(const cw_pass_ctx *ctx, float vu[4]) { cw_pass_view_uv(ctx, vu); }
 
 static void ring_draw(cw_pass_ctx *ctx, cw_node n, const shock *s, const cw_rt *rt) {
   static unsigned prog;
@@ -315,7 +320,10 @@ static void ring_draw(cw_pass_ctx *ctx, cw_node n, const shock *s, const cw_rt *
   cw_pass_uniform4f(prog, "u_up", up.x, up.y, up.z, 0);
   cw_pass_uniform4f(prog, "u_a", s->radius, s->thickness, s->strength, vzc);
   cw_pass_uniform4f(prog, "u_b", s->amplitude, ortho ? 1.0f : 0.0f, s->ground ? 1.0f : 0.0f, ext);
-  cw_pass_uniform4f(prog, "u_uvc", cx / cw * 0.5f + 0.5f, cy / cw * 0.5f + 0.5f, p[0] * 0.5f, p[5] * 0.5f);
+  /* the centre and the shift in the whole buffer's uv: a one-pass split screen's view is part of it */
+  float vu[4];
+  view_uv(ctx, vu);
+  cw_pass_uniform4f(prog, "u_uvc", vu[0] + (cx / cw * 0.5f + 0.5f) * vu[2], vu[1] + (cy / cw * 0.5f + 0.5f) * vu[3], p[0] * 0.5f * vu[2], p[5] * 0.5f * vu[3]);
   cw_pass_uniform4f(prog, "u_soft", lp[0], lp[1], lp[2], 0);
   cw_pass_uniform4f(prog, "u_size", (float)rt->w, (float)rt->h, 0, 0);
   cw_pass_set_blend(CW_PASS_BLEND_ADD);
@@ -331,15 +339,26 @@ static bool sources_active(const cw_pass_ctx *ctx, void *user) {
 static void sources_exec(cw_pass_ctx *ctx, void *user) {
   (void)user;
   cw__fx_tree *ft = cw__fx_tree_of(ctx->tree);
-  ft->dist = NULL;
-  if (!ctx->depth_tex) return;
-  float sc = CW_CLAMP(cw_quality_scale("distortion"), 0.25f, 1.0f);
-  int w = CW_MAX((int)((float)ctx->width * sc + 0.5f), 1), h = CW_MAX((int)((float)ctx->height * sc + 0.5f), 1);
-  const cw_rt *rt = cw_pass_rt(ctx, w, h, CW_RT_RGBA16F, false);
-  if (!rt) return;
-  cw_pass_bind_target(ctx, rt);
-  cw_pass_clear(0, 0, 0, 0, false);
-  ft->dist = rt;
+  /* a one-pass split screen: one buffer over the whole target, made and cleared in the first view's run, each view
+   * drawing in its own rectangle (its offsets in the whole buffer's uv) */
+  bool later = ctx->view_count > 0 && ctx->view_index > 0;
+  const cw_rt *rt = later ? ft->dist : NULL;
+  if (!later) {
+    ft->dist = NULL;
+    if (!ctx->depth_tex) return;
+    float sc = CW_CLAMP(cw_quality_scale("distortion"), 0.25f, 1.0f);
+    int w = CW_MAX((int)((float)ctx->width * sc + 0.5f), 1), h = CW_MAX((int)((float)ctx->height * sc + 0.5f), 1);
+    rt = cw_pass_rt(ctx, w, h, CW_RT_RGBA16F, false);
+    if (!rt) return;
+    cw_pass_bind_target(ctx, rt);
+    cw__pass_state_reset(); /* (the whole buffer: no scissor left from a view) */
+    cw_pass_clear(0, 0, 0, 0, false);
+    ft->dist = rt;
+  } else {
+    if (!rt || !ctx->depth_tex) return;
+    cw_pass_bind_target(ctx, rt);
+  }
+  cw_pass_view_viewport(ctx); /* (a one-pass split screen's view: its rectangle) */
   for (int i = 0; i < ft->shockwaves.count; i++) {
     shock *s = cw_node_data_t(ft->shockwaves.data[i], shock_t);
     if (s && s->playing) ring_draw(ctx, ft->shockwaves.data[i], s, rt);
@@ -354,7 +373,7 @@ static void apply_exec(cw_pass_ctx *ctx, void *user) {
   static unsigned prog, cprog;
   cw__fx_tree *ft = cw__fx_tree_of(ctx->tree);
   const cw_rt *dist = ft->dist;
-  ft->dist = NULL;
+  if (!(ctx->view_count > 0 && ctx->view_index < ctx->view_count - 1)) ft->dist = NULL; /* (every view's: the last takes it) */
   if (!prog) prog = wg() ? cw_pass_program_wgsl("distort", APPLY_WGSL) : cw_pass_program("distort", APPLY_GLSL);
   if (!prog) return;
   if (!dist) { /* a writer must write dst: pass the image through */
@@ -377,6 +396,12 @@ static void apply_exec(cw_pass_ctx *ctx, void *user) {
   cw_pass_uniform1i(prog, "u_depth", 2);
   cw_pass_uniform4f(prog, "u_p", 0, 0.25f, 0.08f, 0);
   cw_pass_uniform4f(prog, "u_soft", lp[0], lp[1], lp[2], 0);
+  {
+    float vu[4];
+    view_uv(ctx, vu);
+    float hx = 0.5f / (float)ctx->src->w, hy = 0.5f / (float)ctx->src->h;
+    cw_pass_uniform4f(prog, "u_view", vu[0] + hx, vu[1] + hy, vu[0] + vu[2] - hx, vu[1] + vu[3] - hy);
+  }
   cw_pass_fullscreen();
 }
 
@@ -400,11 +425,11 @@ void cw__fx_ensure_distort(cw_tree *t) {
   cw_pipeline *p = cw_pipeline_of(t);
   if (!cw_pipeline_has_pass(p, "distort_sources"))
     cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "distort_sources", .phase = CW_PHASE_EFFECTS, .order = 150,
-                                             .reads = CW_RES_DEPTH, .active = sources_active, .execute = sources_exec });
+                                             .reads = CW_RES_DEPTH, .active = sources_active, .execute = sources_exec, .views = CW_PASS_VIEWS_EACH });
   if (!cw_pipeline_has_pass(p, "distort"))
     cw_pipeline_add_pass(p, &(cw_pass_desc){ .webgpu = true, .name = "distort", .phase = CW_PHASE_POST, .order = 150,
                                              .reads = CW_RES_COLOR | CW_RES_DEPTH, .writes = CW_RES_COLOR,
-                                             .active = sources_active, .execute = apply_exec });
+                                             .active = sources_active, .execute = apply_exec, .views = CW_PASS_VIEWS_EACH });
   ft->distort_added = true;
 }
 

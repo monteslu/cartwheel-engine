@@ -1247,8 +1247,12 @@ void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx
   du[67] = 1.0f / (float)tg->h;
   du[80] = d->distort_strength;
   du[81] = d->texture && *d->texture ? 1.0f : 0.0f;
-  du[82] = ctx->camera->projection_matrix.e[0] * 0.5f;
-  du[83] = ctx->camera->projection_matrix.e[5] * 0.5f;
+  {
+    float vu[4]; /* the shift in the whole target's uv: a one-pass split screen's view is part of it */
+    cw_pass_view_uv(ctx, vu);
+    du[82] = ctx->camera->projection_matrix.e[0] * 0.5f * vu[2];
+    du[83] = ctx->camera->projection_matrix.e[5] * 0.5f * vu[3];
+  }
   WGPUTextureView mvv = d->motion_texture && *d->motion_texture ? cw__fx_wg_texture_asset(d->motion_texture) : NULL;
   du[84] = mvv ? 1.0f : 0.0f;
   du[85] = d->motion_strength;

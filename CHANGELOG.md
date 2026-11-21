@@ -4,6 +4,35 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.57.0 (2026-11-21)
+
+### Added
+- More passes take part in a split screen drawn in one pass (`cw_pipeline_set_views_array`), so a frame with them
+  no longer goes back to drawing each view on its own:
+  - reflection probes and the light probe grid (the `gi` pass): captured and updated once a frame, in the first
+    view's run, as a frame drawn view by view does;
+  - screen-space reflections and bounce light (`ssr`, `ssgi`): each view's G-buffer and half-resolution
+    targets are its own, at half its size, and the passes read the frame's depth and colour through the view's
+    rectangle, so one view draws the numbers it drew before;
+  - the depth prepass (`depth_prepass`), through the same array camera as the scene;
+  - distortion (`distort_sources`, `distort`): one buffer over the whole frame, each view's shockwave rings and
+    heat haze particles drawn in its own rectangle, the shifted samples kept inside the view;
+  - a lightmap bake (once, no view's).
+- The `views-array` gate covers them: `samples/split_array` with a polished slab in a reflection probe's box and a
+  light probe grid under SSR and SSGI (Ultra), with a depth prepass, with the pond's planar reflection and
+  refraction (alone and under the probes), and with a shockwave and a heat haze, at two and four views on GL and WebGPU, one pass against each view drawn on its own within 0.3% of the pixels over 16 levels.
+  Controls: each view's passes a view over (fails at 31% to 41%), and the frame without the `ssr`, `ssgi` or
+  `distort` pass must differ from it. Every run must also draw every draw (no state missing from the program table).
+
+### Changed
+- Every built-in pass now says how it takes part in a one-pass split screen. Those that still send the frame back to
+  each view on its own, and why, are listed in the rendering guide's "Split screen in one pass": `velocity`,
+  `taa`, `motion_blur` and `dof` (each view's previous frame and history), `exposure` (each view adapts on its
+  own), `water_under`, `terrainset` (a TerrainSet3D chooses its tiles from one camera), and a VisibilityManager's
+  `impostors` and `occlusion_queries`.
+- Apps whose programs include the SSR, SSGI or distortion programs need no new program states; `samples/split_array`'s
+  table (`cw_samples`) gained the states of its new scenes.
+
 ## v0.56.2 (2026-11-21)
 
 ### Fixed

@@ -1646,7 +1646,9 @@ static void psys_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, const psys_p
   cw__fx_u1i(dp, "u_blend", d->blend);
   {
     const float *pm = ctx->camera->projection_matrix.e;
-    cw__fx_u4f(dp, "u_dstr", d->distort_strength, d->texture && *d->texture ? 1.0f : 0.0f, pm[0] * 0.5f, pm[5] * 0.5f);
+    float vu[4]; /* the shift in the whole target's uv: a one-pass split screen's view is part of it */
+    cw_pass_view_uv(ctx, vu);
+    cw__fx_u4f(dp, "u_dstr", d->distort_strength, d->texture && *d->texture ? 1.0f : 0.0f, pm[0] * 0.5f * vu[2], pm[5] * 0.5f * vu[3]);
     cw__fx_bind_tex(6, GL_TEXTURE_2D, ft->copy ? ft->copy->tex : cw__fx_dot_texture());
     cw__fx_u1i(dp, "u_scene", 6);
     GLuint mvt = d->motion_texture && *d->motion_texture ? cw__fx_texture_asset(d->motion_texture, NULL, NULL) : 0;

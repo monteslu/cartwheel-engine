@@ -50,7 +50,8 @@ static const char *TRACE_GLSL = S(
   uniform sampler2D u_color;   /* the lit scene, full resolution */
   uniform mat4 u_proj;
   uniform mat4 u_inv_proj;
-  uniform vec4 u_size;         /* full w, h; trace w, h */
+  uniform vec4 u_size;         /* the view's full w, h; trace w, h */
+  uniform vec4 u_vr;           /* the view's corner in the full-resolution depth and colour, and their size (cw__gi_view) */
   uniform vec4 u_params;       /* max distance, thickness, quality, intensity */
   uniform vec4 u_cam;          /* near, far, max steps, 0 */
   out vec4 o;
@@ -59,7 +60,7 @@ static const char *TRACE_GLSL = S(
     return p.xyz / p.w;
   }
   float view_z(float d) { return (u_cam.x * u_cam.y) / ((u_cam.y - u_cam.x) * d - u_cam.y); }
-  float depth_at(vec2 uv) { return texelFetch(u_depth, clamp(ivec2(uv * u_size.xy), ivec2(0), ivec2(u_size.xy) - 1), 0).r; }
+  float depth_at(vec2 uv) { return texelFetch(u_depth, ivec2(u_vr.xy) + clamp(ivec2(uv * u_size.xy), ivec2(0), ivec2(u_size.xy) - 1), 0).r; }
   vec3 oct_decode(vec2 e) {
     vec3 n = vec3(e, 1.0 - abs(e.x) - abs(e.y));
     if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * vec2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);
@@ -133,7 +134,7 @@ static const char *TRACE_GLSL = S(
     vec3 vp = view_pos(hit_uv, hit_d);
     float dist = plane_dist(vp, P, N);
     if (dist > maxd) return;
-    vec3 col = texture(u_color, hit_uv).rgb * metal;
+    vec3 col = texture(u_color, (u_vr.xy + hit_uv * u_size.xy) / u_vr.zw).rgb * metal;
     float ratio = 1.0 - dist / maxd;
     col *= ratio * ratio * (dot(I, R) + 1.0) * 0.5;
     float lum = max(dot(col, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
@@ -149,18 +150,20 @@ static const char *COMP_GLSL = S(
   uniform sampler2D u_src;
   uniform sampler2D u_ssr;
   uniform sampler2D u_depth;
-  uniform vec4 u_size;   /* full w, h; trace w, h */
+  uniform vec4 u_size;   /* the view's full w, h; trace w, h */
   uniform vec4 u_cam;    /* near, far */
+  uniform vec4 u_vr;           /* the view's corner in the full-resolution depth and colour, and their size (cw__gi_view) */
+  uniform vec4 u_view;   /* the view's rectangle in uv (cw_pass_view_uv) */
   out vec4 o;
   float lin_at(ivec2 p) {
-    float d = texelFetch(u_depth, clamp(p, ivec2(0), ivec2(u_size.xy) - 1), 0).r;
+    float d = texelFetch(u_depth, ivec2(u_vr.xy) + clamp(p, ivec2(0), ivec2(u_size.xy) - 1), 0).r;
     return (u_cam.x * u_cam.y) / (u_cam.y - (u_cam.y - u_cam.x) * d);
   }
   void main() {
     vec4 c = texture(u_src, v_uv);
-    ivec2 fp = ivec2(gl_FragCoord.xy);
+    ivec2 fp = ivec2(gl_FragCoord.xy) - ivec2(u_vr.xy);
     float z0 = lin_at(fp);
-    vec2 hp = v_uv * u_size.zw - 0.5;
+    vec2 hp = (v_uv - u_view.xy) / u_view.zw * u_size.zw - 0.5;
     vec2 base = floor(hp), fr = hp - base;
     vec3 sum = vec3(0.0);
     float wsum = 0.0, rough = 0.0;
@@ -193,7 +196,7 @@ static const char *COMP_GLSL = S(
 
 #if CW_WGPU
 static const char *TRACE_WGSL = S(
-  struct U { u_proj: mat4x4f, u_inv_proj: mat4x4f, u_size: vec4f, u_params: vec4f, u_cam: vec4f, u_pz: vec4f };
+  struct U { u_proj: mat4x4f, u_inv_proj: mat4x4f, u_size: vec4f, u_params: vec4f, u_cam: vec4f, u_pz: vec4f, u_vr: vec4f };
   @group(0) @binding(0) var<uniform> u: U;
   @group(0) @binding(1) var u_depth: texture_2d<f32>;
   @group(0) @binding(2) var u_gbuf: texture_2d<f32>;
@@ -205,7 +208,7 @@ static const char *TRACE_WGSL = S(
   fn view_z(d: f32) -> f32 { return (u.u_cam.x * u.u_cam.y) / ((u.u_cam.y - u.u_cam.x) * d - u.u_cam.y); }
   fn depth_at(uv: vec2f) -> f32 {
     let q = clamp(vec2i(uv * u.u_size.xy), vec2i(0), vec2i(u.u_size.xy) - 1);
-    return win_depth(textureLoad(u_depth, q, 0).r, u.u_pz);
+    return win_depth(textureLoad(u_depth, vec2i(u.u_vr.xy) + q, 0).r, u.u_pz);
   }
   fn oct_decode(e: vec2f) -> vec3f {
     var n = vec3f(e, 1.0 - abs(e.x) - abs(e.y));
@@ -288,7 +291,7 @@ static const char *TRACE_WGSL = S(
     let vp = view_pos(hit_uv, hit_d);
     let dist = plane_dist(vp, P, N);
     if (dist > maxd) { return vec4f(0.0, 0.0, 0.0, gb.b); }
-    var col = textureSampleLevel(u_color, cw_linear, hit_uv, 0.0).rgb * metal;
+    var col = textureSampleLevel(u_color, cw_linear, (u.u_vr.xy + hit_uv * u.u_size.xy) / u.u_vr.zw, 0.0).rgb * metal;
     let ratio = 1.0 - dist / maxd;
     col = col * (ratio * ratio * (dot(I, R) + 1.0) * 0.5);
     let lum = max(dot(col, vec3f(0.2126, 0.7152, 0.0722)), 1e-4);
@@ -297,18 +300,18 @@ static const char *TRACE_WGSL = S(
   });
 
 static const char *COMP_WGSL = S(
-  struct U { u_size: vec4f, u_cam: vec4f };
+  struct U { u_size: vec4f, u_cam: vec4f, u_vr: vec4f, u_view: vec4f };
   @group(0) @binding(0) var<uniform> u: U;
   @group(0) @binding(1) var u_src: texture_2d<f32>;
   @group(0) @binding(2) var u_ssr: texture_2d<f32>;
   @group(0) @binding(3) var u_depth: texture_2d<f32>;
   /* the R32F linear depth: view distance (3e38 where nothing was drawn) */
-  fn lin_at(p: vec2i) -> f32 { return textureLoad(u_depth, clamp(p, vec2i(0), vec2i(u.u_size.xy) - 1), 0).r; }
+  fn lin_at(p: vec2i) -> f32 { return textureLoad(u_depth, vec2i(u.u_vr.xy) + clamp(p, vec2i(0), vec2i(u.u_size.xy) - 1), 0).r; }
   @fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
     let c = textureSampleLevel(u_src, cw_linear, uv, 0.0);
-    let fp = vec2i(cw_frag_coord(pos));
+    let fp = vec2i(cw_frag_coord(pos)) - vec2i(u.u_vr.xy);
     let z0 = lin_at(fp);
-    let hp = uv * u.u_size.zw - 0.5;
+    let hp = (uv - u.u_view.xy) / u.u_view.zw * u.u_size.zw - 0.5;
     let base = floor(hp);
     let fr = hp - base;
     var sum = vec3f(0.0);
@@ -368,9 +371,26 @@ static void gb_walk(t3_object *o, gb_list *out) {
   for (int i = 0; i < o->child_count; i++) gb_walk(o->children[i], out);
 }
 
-bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, int w, int h, int mode) {
+gi_view cw__gi_view(const cw_pass_ctx *ctx) {
+  gi_view v = { 0, { 0, 0, ctx->width, ctx->height }, 0, 0 };
+  if (ctx->view_count > 0) {
+    v.k = CW_CLAMP(ctx->view_index, 0, CW_MAX_VIEWS - 1);
+    memcpy(v.rect, ctx->view_rect, sizeof v.rect);
+  }
+  v.hw = (v.rect[2] + 1) / 2, v.hh = (v.rect[3] + 1) / 2;
+  return v;
+}
+
+const char *cw__gi_rt_name(const char *base, int k, char out[40]) {
+  if (k <= 0) return base;
+  snprintf(out, 40, "%s.%d", base, k);
+  return out;
+}
+
+bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, const gi_view *v, int mode) {
   t3_renderer *r = ctx->renderer;
-  cw_rt *rt = mode == 2 ? &g->albedo : &g->gbuf;
+  int w = v->hw, h = v->hh;
+  cw_rt *rt = mode == 2 ? &g->albedo[v->k] : &g->gbuf[v->k];
   if (!rt->fbo || rt->w != w || rt->h != h) {
     cw__rt_destroy(rt);
     if (!cw__rt_create(rt, w, h, CW_RT_RGBA16F, true)) return false;
@@ -437,6 +457,7 @@ bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, int w, int h, int mode) {
      * from one with NULL leaves three.c 0.186.13 believing it still draws
      * into it.) */
     cw_pass_bind_target(ctx, rt);
+    cw__pass_state_reset(); /* (no scissor left from a split screen view's pass: the whole target is cleared) */
     cw_pass_clear(0, 0, 0, 0, true);
     int bw, bh, vx, vy, vw, vh, sx, sy, sw, sh;
     t3_renderer_get_size(r, &bw, &bh);
@@ -497,15 +518,23 @@ static void ssr_exec(cw_pass_ctx *ctx, void *u) {
   }
   if (!trace_prog || !comp_prog || !ctx->depth_tex) return;
   gi_tree *g = cw__gi_tree(ctx->tree);
-  int hw = (ctx->width + 1) / 2, hh = (ctx->height + 1) / 2;
-  if (!g->gbuf_ok || g->gbuf.w != hw || g->gbuf.h != hh) return; /* (drawn by the gi pass, reflection_probe.c) */
-  const cw_rt *tr = cw_pipeline_rt_persistent(ctx->pipeline, "ssr.trace", hw, hh, CW_RT_RGBA16F, NULL);
+  gi_view v = cw__gi_view(ctx);
+  int hw = v.hw, hh = v.hh;
+  if (!g->gbuf_ok[v.k] || g->gbuf[v.k].w != hw || g->gbuf[v.k].h != hh) return; /* (drawn by the gi pass, reflection_probe.c) */
+  char nm[40];
+  const cw_rt *tr = cw_pipeline_rt_persistent(ctx->pipeline, cw__gi_rt_name("ssr.trace", v.k, nm), hw, hh, CW_RT_RGBA16F, NULL);
   if (!tr) return;
   const t3_camera *cam = ctx->camera;
+  const t3_mat4 *ip = ctx->view_count > 0 ? &ctx->inv_proj : &ctx->pipeline->inv_proj_jittered;
+  float vr[4] = { (float)v.rect[0], (float)v.rect[1], (float)ctx->width, (float)ctx->height }, vu[4];
+  cw_pass_view_uv(ctx, vu);
+  /* the trace target is the view's own: no rectangle of the whole target to keep to */
+  bool clip = cw__vclip.on;
+  cw__vclip.on = false;
   cw_pass_bind_target(ctx, tr);
   cw_pass_use(trace_prog);
   cw_pass_bind_texture(0, ctx->depth_tex);
-  cw_pass_bind_texture(1, g->gbuf.tex);
+  cw_pass_bind_texture(1, g->gbuf[v.k].tex);
   cw_pass_bind_texture(2, ctx->src->tex);
   if (!wg) {
     cw_pass_uniform1i(trace_prog, "u_depth", 0);
@@ -513,8 +542,9 @@ static void ssr_exec(cw_pass_ctx *ctx, void *u) {
     cw_pass_uniform1i(trace_prog, "u_color", 2);
   }
   cw_pass_uniform_mat4(trace_prog, "u_proj", &cam->projection_matrix);
-  cw_pass_uniform_mat4(trace_prog, "u_inv_proj", &ctx->pipeline->inv_proj_jittered);
-  cw_pass_uniform4f(trace_prog, "u_size", (float)ctx->width, (float)ctx->height, (float)hw, (float)hh);
+  cw_pass_uniform_mat4(trace_prog, "u_inv_proj", ip);
+  cw_pass_uniform4f(trace_prog, "u_size", (float)v.rect[2], (float)v.rect[3], (float)hw, (float)hh);
+  cw_pass_uniform4f(trace_prog, "u_vr", vr[0], vr[1], vr[2], vr[3]);
   cw_pass_uniform4f(trace_prog, "u_params", s->ssr_max_distance, s->ssr_thickness, s->ssr_quality, s->ssr_intensity);
   cw_pass_uniform4f(trace_prog, "u_cam", cam->near, cam->far, 512, 0);
   {
@@ -522,6 +552,7 @@ static void ssr_exec(cw_pass_ctx *ctx, void *u) {
     cw_pass_uniform4f(trace_prog, "u_pz", e[10], e[14], e[11], e[15]);
   }
   cw_pass_fullscreen();
+  cw__vclip.on = clip;
   cw_pass_bind_target(ctx, ctx->dst);
   cw_pass_use(comp_prog);
   cw_pass_bind_texture(0, ctx->src->tex);
@@ -532,8 +563,10 @@ static void ssr_exec(cw_pass_ctx *ctx, void *u) {
     cw_pass_uniform1i(comp_prog, "u_ssr", 1);
     cw_pass_uniform1i(comp_prog, "u_depth", 2);
   }
-  cw_pass_uniform4f(comp_prog, "u_size", (float)ctx->width, (float)ctx->height, (float)hw, (float)hh);
+  cw_pass_uniform4f(comp_prog, "u_size", (float)v.rect[2], (float)v.rect[3], (float)hw, (float)hh);
   cw_pass_uniform4f(comp_prog, "u_cam", cam->near, cam->far, 0, 0);
+  cw_pass_uniform4f(comp_prog, "u_vr", vr[0], vr[1], vr[2], vr[3]);
+  cw_pass_uniform4f(comp_prog, "u_view", vu[0], vu[1], vu[2], vu[3]);
   cw_pass_fullscreen();
 }
 
@@ -542,5 +575,5 @@ void cw__gi_add_post_passes(cw_pipeline *p) {
   cw__gi_add_ssgi_pass(p);
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "ssr", .phase = CW_PHASE_POST, .order = 150,
                                            .reads = CW_RES_COLOR | CW_RES_DEPTH, .writes = CW_RES_COLOR,
-                                           .active = ssr_active, .execute = ssr_exec, .webgpu = true });
+                                           .active = ssr_active, .execute = ssr_exec, .webgpu = true, .views = CW_PASS_VIEWS_EACH });
 }
