@@ -4,7 +4,10 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## vNEXT (2026-11-21)
+## v0.57.1 (2026-11-21)
+
+v0.57.0 published no SDK (its release job timed out waiting on a CI shard that ran over an hour): this release carries
+all of v0.57.0's changes, below, with these.
 
 ### Fixed
 - **GL: a split screen in one pass is no longer slower than the views drawn on their own** on a host that waits for
@@ -23,6 +26,9 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   at two and four views (`SA_MSAA`), with a control that leaves the last view's scissor on
   (`CW_TEST_GL_VIEW_SCISSOR=1`, fails at 70% of the pixels). The `views-masks` gate compares the views sent to the
   GPU one by one with the views recorded together on GL as well as WebGPU.
+- CI no longer times out on `views-array`: on CI's software GPU the whole set took 71 minutes of one shard, so the
+  Ultra GI cases and the four-view water, distortion and prepass cases run on a real GPU only (they stay in the local
+  gate run).
 
 ### Added
 - `pipeline shared_post 0|1`: the debug request switches a split screen between one post chain over the views and a
