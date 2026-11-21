@@ -4,6 +4,18 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.57.6 (2026-11-21)
+
+Carries v0.57.5, v0.57.4 and v0.57.3, none of which published an SDK (their CI runs stopped on a flaky control or a share over its time limit).
+
+### Fixed
+- CI's GL gates are split over nine jobs instead of seven, from gate times measured again on the latest runs
+  (`tests/ci-times.json`). Two gates new since the last measurement weighed only the 30 second default
+  (`program-tables`, 36 minutes on the runner) or had grown (`views-masks`, 30 minutes with its spots cases), so one
+  share ran past the job's 90 minute limit and was cancelled, stopping v0.57.3's and v0.57.5's runs. Each GL share now
+  holds about 45 minutes of measured gates (it was up to 84 minutes); the WebGPU shares stay at six, the longest about
+  40 minutes. Every gate is in exactly one share, before and after.
+
 ## v0.57.5 (2026-11-21)
 
 Carries v0.57.4 and v0.57.3, which published no SDK (their CI runs stopped on this control).
