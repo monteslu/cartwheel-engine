@@ -1,5 +1,5 @@
 // Split screen in one pass is never slower in wall time than the views drawn on their own, on a host that waits for
-// each frame (romdev's wasmcart host: one frame, then the next): the split_views RELEASE cart at two and four views on
+// each frame (romdev's wasmcart host: one frame, then the next): the split_views RELEASE cart at two and four views, and four with a gun a view (the viewmodel pass) over 4x MSAA, on
 // the server's test GPU, frame({op:'timing'}) with the variants interleaved over rounds, GL and WebGPU. The bound is the
 // median of the rounds' mean wall time: one pass <= per view x 1.05. Each view of the one pass goes to the GPU as it is
 // recorded (pipeline views_submit 1, the default: submitted on WebGPU, flushed on GL), and on GL that must beat every view
@@ -48,9 +48,10 @@ const check = (what, ok, detail) => {
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}: ${detail}`);
 };
 const pin = wgpuPin();
-for (const gpu of GPUS) for (const views of [2, 4]) {
-  const session = `views-wall-${process.pid}-${gpu}-${views}`;
-  const loaded = await post('loadMedia', { platform: 'wasmcart', path: CART, firstCommand: `env SV_VIEWS=${views}`, gpuPower: pin.power,
+const CASES = [{ views: 2, env: '' }, { views: 4, env: '' }, { views: 4, env: 'SV_VM=1', tag: ', a gun a view over 4x MSAA' }];
+for (const gpu of GPUS) for (const { views, env, tag = '' } of CASES) {
+  const session = `views-wall-${process.pid}-${gpu}-${views}${env ? '-vm' : ''}`;
+  const loaded = await post('loadMedia', { platform: 'wasmcart', path: CART, firstCommand: `env SV_VIEWS=${views} ${env}`, gpuPower: pin.power,
     wgpu: gpu === 'webgpu', ...(gpu === 'webgpu' ? { gpuTiming: true } : {}) }, session);
   try {
     if (loaded.gpu !== gpu) throw new Error(`the cart runs on ${loaded.gpu}, not ${gpu}`);
@@ -63,15 +64,15 @@ for (const gpu of GPUS) for (const views of [2, 4]) {
     const t = await post('frame', { op: 'timing', frames: 180, warmup: 120, window: 60, rounds: 7, variants, maxSeconds: 900 }, session);
     const by = Object.fromEntries(t.variants.map((v) => [v.name, v]));
     const clock = t.gpu && t.gpu.clockMhz ? `${Math.round(t.gpu.clockMhz.mean)} MHz` : '?';
-    console.log(`-- ${gpu}, ${views} views (${t.gpu?.adapter?.device || t.gpu?.glRenderer || '?'}, GPU clock ${clock}, contention ${t.contention?.noisy ? 'NOISY' : 'quiet'})`);
+    console.log(`-- ${gpu}, ${views} views${tag} (${t.gpu?.adapter?.device || t.gpu?.glRenderer || '?'}, GPU clock ${clock}, contention ${t.contention?.noisy ? 'NOISY' : 'quiet'})`);
     for (const v of t.variants) console.log(`     ${v.name.padEnd(34)} wall ${roundWall(v).toFixed(2)} ms (rounds ${v.rounds.map((r) => (typeof r.wallMs === 'number' ? r.wallMs : r.wallMs.mean).toFixed(2)).join('/')}), cpu ${v.cpuMs.mean.toFixed(2)}, gpu ${v.gpuMs ? v.gpuMs.mean.toFixed(2) : '-'}`);
     const pv = roundWall(by['per view']), op = roundWall(by['one pass']), tg = roundWall(by['one pass, recorded together']), ctl = roundWall(by['control: one pass + 0.5 ms a view']);
-    check(`${gpu}, ${views} views: one pass no slower than per view (<= x${BOUND})`, op <= pv * BOUND, `${op.toFixed(2)} vs ${pv.toFixed(2)} ms`);
+    check(`${gpu}, ${views} views${tag}: one pass no slower than per view (<= x${BOUND})`, op <= pv * BOUND, `${op.toFixed(2)} vs ${pv.toFixed(2)} ms`);
     /* each view sent to the GPU as it ends (WebGPU submitted, GL flushed) must beat every view recorded first: the
        overlap it is for. GL only: there every view recorded first runs the CPU and the GPU one after the other (the
        frame v0.57.0 drew); this small scene submits as fast together on WebGPU, where racing scenes gain (v0.56.0) */
-    if (gpu === 'gl') check(`${gpu}, ${views} views: each view flushed as it ends is faster than every view recorded first`, op < tg, `${op.toFixed(2)} vs ${tg.toFixed(2)} ms`);
-    check(`${gpu}, ${views} views: control (0.5 ms a view more) must fail the bound`, ctl > pv * BOUND, `${ctl.toFixed(2)} vs ${pv.toFixed(2)} ms`);
+    if (gpu === 'gl') check(`${gpu}, ${views} views${tag}: each view flushed as it ends is faster than every view recorded first`, op < tg, `${op.toFixed(2)} vs ${tg.toFixed(2)} ms`);
+    check(`${gpu}, ${views} views${tag}: control (0.5 ms a view more) must fail the bound`, ctl > pv * BOUND, `${ctl.toFixed(2)} vs ${pv.toFixed(2)} ms`);
   } finally {
     await post('host', { op: 'shutdown' }, session).catch(() => {});
   }

@@ -15,8 +15,11 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   their own rectangle (a scissor, turned off again before the passes after the views, whose MSAA resolve and depth
   copies are blits). The later views also no longer walk the scene's world matrices again (the first view's renders
   bring them up to date), on WebGPU too. `pipeline views_submit 0` records every view first, as before.
-- The `views-wall` gate runs at two and four views, and on GL each view flushed as it ends must beat every view
-  recorded first; its control is now 0.5 ms of CPU a view. The `views-array` gate adds the scene multisampled 4x
+- The `views-wall` gate runs at two and four views and at four with a gun a view over 4x MSAA (the viewmodel pass),
+  and on GL each view flushed as it ends must beat every view recorded first; its control is now 0.5 ms of CPU a view.
+  v0.57.0 fails it (GL at four views: recorded together is the frame it drew; WebGPU with the guns: 3.43 against
+  3.15 ms view by view); this release passes every case on GL and WebGPU (a Steam Machine: GL four views with the
+  guns 2.65 against 4.25 ms). The `views-array` gate adds the scene multisampled 4x
   at two and four views (`SA_MSAA`), with a control that leaves the last view's scissor on
   (`CW_TEST_GL_VIEW_SCISSOR=1`, fails at 70% of the pixels). The `views-masks` gate compares the views sent to the
   GPU one by one with the views recorded together on GL as well as WebGPU.
