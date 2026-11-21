@@ -4,6 +4,17 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.57.5 (2026-11-21)
+
+Carries v0.57.4 and v0.57.3, which published no SDK (their CI runs stopped on this control).
+
+### Fixed
+- Gate `cart-version-order`'s control no longer depends on timing. It rewrote an asset under a cart repack and needed
+  the rewrite to land mid-read, which CI missed (0 of 5 runs), failing v0.57.3's run and holding its release. The
+  control now runs the gate's graph check over a generated cart tree shaped as before the fix (the version target with
+  no edge to the asset pack), which it must name, and over the same tree with the edge, which it must pass: the same
+  result on every run (ten local runs of each). The check of the real tree and the repack check are unchanged.
+
 ## v0.57.4 (2026-11-21)
 
 ### Fixed
