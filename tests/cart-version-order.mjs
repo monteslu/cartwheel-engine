@@ -8,11 +8,12 @@
 //      (ninja's inputs of the version target name the pack target);
 //   2. the repack itself is sound when its inputs hold still: an update with a new version repacks the cart, and its
 //      manifest carries the new version.
-// CONTROL that must fail: the same repack while another process rewrites an asset in place (what an unordered
-// cwpack did) stops with the packer's error.
+// CONTROL that must fail, every run: the graph check over a cart tree shaped as before the fix (a small generated
+// build.ninja whose <app>_version does not depend on <app>_pack, beside one whose does) names the unordered app. It
+// reads the graph, not a race: an earlier control rewrote an asset under the repack and needed the timing to land.
 //
 //   node tests/cart-version-order.mjs [--tree <cart build tree>]
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,23 +29,49 @@ const PACKER = join(ROOT, 'deps', 'wasmcart-wgpu', 'bin', 'wasmcart-pack.js');
 let failed = 0;
 const say = (ok, m) => { if (!ok) failed++; console.log(`${ok ? 'ok  ' : 'FAIL'} ${m}`); };
 
-// 1. the graph
-if (!existsSync(join(TREE, 'build.ninja'))) {
-  say(false, `no cart tree at ${TREE} (scripts/build.sh builds it)`);
-} else {
-  const targets = spawnSync('ninja', ['-C', TREE, '-t', 'targets', 'all'], { encoding: 'utf8', maxBuffer: 1 << 28 }).stdout;
+/** the apps of a ninja tree that have an asset pack, and those whose version repack does not run after it */
+function order(tree) {
+  const targets = spawnSync('ninja', ['-C', tree, '-t', 'targets', 'all'], { encoding: 'utf8', maxBuffer: 1 << 28 }).stdout;
   const packs = [...targets.matchAll(/^(\S+)\/([A-Za-z0-9_]+)_pack: phony$/gm)].filter((m) => !m[1].includes('CMakeFiles') && !m[1].startsWith('/'));
   let checked = 0;
   const unordered = [];
   for (const [, dir, app] of packs) {
-    const q = spawnSync('ninja', ['-C', TREE, '-t', 'query', `${dir}/${app}_version`], { encoding: 'utf8' });
+    const q = spawnSync('ninja', ['-C', tree, '-t', 'query', `${dir}/${app}_version`], { encoding: 'utf8' });
     if (q.status !== 0) continue; // an app with a pack and no cart
     checked++;
     if (!q.stdout.split('outputs:')[0].includes(`${app}_pack`)) unordered.push(app);
   }
+  return { checked, unordered };
+}
+
+// 1. the graph
+if (!existsSync(join(TREE, 'build.ninja'))) {
+  say(false, `no cart tree at ${TREE} (scripts/build.sh builds it)`);
+} else {
+  const { checked, unordered } = order(TREE);
   say(checked > 0 && unordered.length === 0,
     `${checked} apps with an asset pack: each one's version repack runs after its pack${unordered.length ? ` (not: ${unordered.slice(0, 8).join(', ')}${unordered.length > 8 ? ', ...' : ''})` : ''}`);
 }
+
+// the control: the same check over a tree shaped as before the fix (old: no edge from the version target to the pack)
+// and as after it (new), so the check is shown to tell them apart on every run
+const GRAPH = join(ROOT, 'out', 'cart-version-order-graph');
+for (const shape of ['old', 'new']) {
+  const dir = join(GRAPH, shape);
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'build.ninja'), [
+    'rule touch', '  command = touch $out', '',
+    'build games/demo/packs.stamp: touch', 'build games/demo/demo_pack: phony games/demo/packs.stamp',
+    'build games/demo/version.stamp: touch',
+    `build games/demo/demo_version: phony games/demo/version.stamp${shape === 'new' ? ' || games/demo/demo_pack' : ''}`,
+    'build all: phony games/demo/demo_version', 'default all', ''].join('\n'));
+}
+const old = order(join(GRAPH, 'old')), fixed = order(join(GRAPH, 'new'));
+rmSync(GRAPH, { recursive: true, force: true });
+say(fixed.checked === 1 && fixed.unordered.length === 0, 'the check passes a generated graph whose version target depends on its pack');
+say(old.checked === 1 && old.unordered.join() === 'demo',
+  `CONTROL: the check names the app of a generated graph shaped as before the fix (unordered: ${old.unordered.join(', ') || 'none'})`);
 
 // 2. and the control: a repack with still inputs, and one with an asset rewritten under it
 rmSync(OUT, { recursive: true, force: true });
@@ -64,12 +91,6 @@ const version = () => JSON.parse(readNamedEntries(WASC, ['manifest.json']).get('
 const u = update('1.0.1');
 say(u.status === 0 && version() === '1.0.1', `a version change repacks the cart when its assets hold still (manifest ${version()})`);
 
-// the control: an asset rewritten in place while the repack reads it
-const writer = spawn('node', ['-e', `const fs=require('fs');let k=0;const end=Date.now()+30000;while(Date.now()<end)fs.writeFileSync(${JSON.stringify(BIG)},Buffer.alloc((k++%2?8:4)<<20,k&255));`]);
-let broke = 0;
-for (let i = 2; i <= 6; i++) if (update(`1.0.${i}`).status !== 0) broke++;
-writer.kill();
-say(broke > 0, `CONTROL: the repack with an asset rewritten under it fails (${broke}/5 runs), as an unordered cwpack made it`);
 rmSync(OUT, { recursive: true, force: true });
 console.log(failed ? `cart-version-order: ${failed} failures` : 'ok   cart-version-order');
 process.exit(failed ? 1 : 0);
