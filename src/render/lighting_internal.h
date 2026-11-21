@@ -73,7 +73,9 @@ typedef struct cw__shadow_out {
   float near, far;
   float rect[4];            /* texels, rows top-down: x, y, face size */
 } cw__shadow_out;
-typedef struct cw__atlas_info { int shadowed, faces_rendered, faces_cached; } cw__atlas_info;
+/* casters: every shadow caster of the scene as the update found them, folded (one-pass split screen: whether a view's
+ * casters are another's) */
+typedef struct cw__atlas_info { int shadowed, faces_rendered, faces_cached; uint64_t casters; } cw__atlas_info;
 typedef struct cw__atlas cw__atlas;
 cw__atlas *cw__atlas_new(void);
 void cw__atlas_free(cw__atlas *a);

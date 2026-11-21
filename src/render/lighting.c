@@ -117,7 +117,7 @@ typedef struct lighting {
   /* one-pass split screen: each view's shadowed lights and their columns in its light texture, so an earlier view's
    * rows follow the shadow atlas when a later view's update moves or redraws its tiles (every view draws after all
    * of them) */
-  struct vshadow { int n, cap; const t3_light **l; int *col; } vsh[CW_MAX_VIEWS];
+  struct vshadow { int n, cap; const t3_light **l; int *col; uint64_t casters; } vsh[CW_MAX_VIEWS];
   int cur_view;
   /* capture mode (cw__lighting_capture): a light texture per capture camera, made from light_tex for the version it
    * had (cap_src, cap_ver); the one record and the item list every capture draw reads */
@@ -793,7 +793,13 @@ static void pass_lights(cw_pass_ctx *ctx, void *user) {
     cw__atlas_info ai = { 0 };
     if (L->atlas) cw__atlas_get_info(L->atlas, &ai);
     /* (drawn view by view, ctx->pipeline->arr_part, each view's scene samples the atlas as its own pass left it) */
-    if (k > 0 && !ctx->pipeline->arr_part && (ai.faces_rendered > 0 || cw__atlas_layout_key(L->atlas) != layout0))
+    L->vsh[k].casters = L->vsh[k].n ? ai.casters : 0;
+    /* (recorded together, one atlas for every view: a view whose shadow casters are not the first view's, its own
+     * masked objects or small casters culled from its camera, cannot share it; drawn and sent view by view, each view's
+     * scene samples the tiles its own casters drew) */
+    if (k > 0 && !ctx->pipeline->arr_part && L->vsh[k].n && L->vsh[0].n && L->vsh[k].casters != L->vsh[0].casters)
+      cw__pipeline_array_refuse(ctx, "lights");
+    else if (k > 0 && !ctx->pipeline->arr_part && (ai.faces_rendered > 0 || cw__atlas_layout_key(L->atlas) != layout0))
       for (int j = 0; j < k; j++)
         if (!vshadow_follow(L, j)) {
           cw__pipeline_array_refuse(ctx, "lights");

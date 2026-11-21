@@ -6,8 +6,9 @@
  * gets back the visibility the game gave it. A frame drawn in one pass (src/render/pipeline.c, array_run) cannot
  * hide an object for one view of one render, so there the masks become layers: every object of a masked subtree is
  * put on the view layers (src/render/view_layers.h) of the views that draw it, which only those views' cameras see,
- * and its cast_shadow follows view 0 (the shadow maps are drawn once a frame, as view 0 left the scene in a frame
- * drawn view by view). Both are put back after the run. Render only. */
+ * and its cast_shadow follows the view whose shadow maps are being drawn (cw__view_masks_cast_for_view: each view's
+ * lights pass draws the shadows a frame drawn view by view draws for it, view 0's until then). Both are put back after
+ * the run. Render only. */
 #include <stdlib.h>
 #include <string.h>
 
@@ -28,6 +29,7 @@ typedef struct vm_saved {
   t3_object *o;
   uint32_t layers;
   bool cast;
+  uint32_t cast_views; /* the views it casts in after this entry (if it cast before it) */
 } vm_saved;
 
 static struct {
@@ -123,12 +125,12 @@ static bool has_masked_ancestor(const t3_object *o) {
   return false;
 }
 
-static void save(t3_object *o) {
+static void save(t3_object *o, uint32_t cast_views) {
   if (V.sn == V.scap) {
     V.scap = V.scap ? V.scap * 2 : 256;
     V.s = cw_realloc(V.s, sizeof *V.s * (size_t)V.scap, CW_MEM_RENDER);
   }
-  V.s[V.sn++] = (vm_saved){ o, o->layers, o->cast_shadow };
+  V.s[V.sn++] = (vm_saved){ o, o->layers, o->cast_shadow, cast_views };
 }
 
 static bool is_light(const t3_object *o) { return o->type >= T3_AMBIENT_LIGHT && o->type <= T3_SPOT_LIGHT; }
@@ -142,14 +144,14 @@ static const char *walk(t3_object *o, uint32_t views, int n, const uint32_t *cam
   if (is_light(o) && (views & all) != all) return "a light drawn in only some views";
   uint32_t base = o->layers & ~CW__VIEW_LAYERS;
   if (base) { /* (engine geometry already on the view layers alone is the engine's) */
-    save(o);
-    uint32_t L = 0;
+    uint32_t L = 0, cv = 0;
     for (int k = 0; k < n; k++)
-      if ((views >> k & 1) && (base & cam_layers[k])) L |= cw__view_layer(k);
+      if ((views >> k & 1) && (base & cam_layers[k])) L |= cw__view_layer(k), cv |= 1u << k;
+    save(o, cv);
     o->layers = L;
-    o->cast_shadow = o->cast_shadow && (views & 1) && (base & cam_layers[0]);
+    o->cast_shadow = o->cast_shadow && (cv & 1);
   } else if (narrow && (o->layers & CW__VIEW_LAYERS)) { /* already on view layers (a mask): fewer of them */
-    save(o);
+    save(o, views);
     uint32_t L = 0;
     for (int k = 0; k < n; k++)
       if (views >> k & 1) L |= cw__view_layer(k);
@@ -187,6 +189,13 @@ bool cw__view_masks_draw_in(t3_object *o, uint32_t views) {
   for (int k = 0; k < V.views_n; k++)
     if (!(V.cam_layers[k] & 1u)) return false;
   return walk(o, views, V.views_n, V.cam_layers, true) == NULL;
+}
+
+void cw__view_masks_cast_for_view(int view) {
+  uint32_t bit = view >= 0 && view < 32 ? 1u << view : 0;
+  /* each object's own cast_shadow (its first entry's, the last one put back), then every entry's views */
+  for (int i = V.sn - 1; i >= 0; i--) V.s[i].o->cast_shadow = V.s[i].cast;
+  for (int i = 0; i < V.sn; i++) V.s[i].o->cast_shadow = V.s[i].o->cast_shadow && (V.s[i].cast_views & bit);
 }
 
 void cw__view_masks_restore_layers(void) {
