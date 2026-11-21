@@ -7,7 +7,9 @@
  * Natively: SA_VIEWS=2|4, SA_VFOG=1 (the fog volumetric), SA_CSM=1 (the sun's shadow in four cascades, which is drawn
  * view by view), SA_GI=1 (a polished metal slab in a reflection probe's box and a light probe grid, with screen-space
  * reflections and bounce light: each view's G-buffer, reflections and bounce light over its own rectangle),
- * SA_PREPASS=1 (a depth prepass before the scene), SA_WATER=1 (the pond with its planar reflection and refraction),
+ * SA_PREPASS=1 (a depth prepass before the scene), SA_WATER=1 (the pond with its planar reflection and refraction, and
+ * four walking skinned characters at its edge under the sun's shadow, each drawn in some views only (a mask): what a
+ * split screen game's players and bots are),
  * SA_DISTORT=1 (a shockwave ring and a heat haze bending the picture),
  * SA_MODE=v4|vfog|csm|gi|prepass|water|distort (one of those by one name), SA_ONEPASS=0 (each view on its own; CW_TEST_VIEWS_ARRAY overrides either for the gates).
  *
@@ -15,14 +17,23 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cartwheel/anim.h"
 #include "cartwheel/debug.h"
 #include "cartwheel/environment.h"
+#include "cartwheel/math.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/scene_file.h"
+#include "three.h"
 
 static int32_t views = 2, array_used, tick;
 static cw_node cams[CW_MAX_VIEWS];
+static cw_node walkers[4];
+static t3_gltf *walker_gltf[4];
+static uint32_t walker_mask(int i) { /* walker i: every view but view i (as a player's own body), walker 3 in every view */
+  uint32_t all = (1u << views) - 1;
+  return i < views && i < 3 ? all & ~(1u << i) : CW_VIEWS_ALL;
+}
 
 static cw_node cam_at(cw_node world, const char *name, t3_vec3 at, t3_vec3 look) {
   cw_node c = cw_node_new("Camera3D", name);
@@ -82,6 +93,39 @@ static void init(void *u) {
     cw_node pond = cw_node_get(world, "Pond");
     cw_node_set(pond, "reflection", cw_val_bool(true));
     cw_node_set(pond, "refraction", cw_val_bool(true));
+    size_t len;
+    void *glb = cw_asset_load("CesiumMan.glb", &len);
+    for (int i = 0; glb && i < 4; i++) {
+      walker_gltf[i] = t3_gltf_parse(glb, len, NULL, NULL); /* (one parse a walker: a glTF's objects belong to one scene) */
+      if (!walker_gltf[i]) break;
+      cw_node root = cw_node_new("Node3D", "Walker");
+      cw_node_add_child(world, root);
+      cw_node3d_set_position(root, (t3_vec3){ -2.0f + 1.6f * (float)i, 0.35f, -6.5f - 0.7f * (float)(i & 1) });
+      cw_node3d_set_scale(root, (t3_vec3){ 1.6f, 1.6f, 1.6f });
+      cw_node model = cw_node_new("Node3D", "Model");
+      cw_node_add_child(root, model);
+      cw_node3d_set_object(model, walker_gltf[i]->scene);
+      cw_node player = cw_node_new("AnimationPlayer", "Anim");
+      cw_node_add_child(root, player);
+      cw_anim walk = cw_anim_from_t3_clip(walker_gltf[i]->animations[0], "Model");
+      cw_anim_set_loop(walk, CW_LOOP_LINEAR);
+      cw_anim_player_add(player, "walk", walk);
+      cw_anim_release(walk);
+      cw_anim_player_play(player, "walk", 0);
+      cw_node_set(player, "speed_scale", cw_val_float(0.7f + 0.2f * (float)i));
+      walkers[i] = root;
+    }
+    free(glb);
+    for (int i = 0; i < 6; i++) { /* shadowed lamps over the pond and the walkers (their shadows in the atlas, seen through the water) */
+      cw_node l = cw_node_new("OmniLight3D", "PondLamp");
+      cw_node_add_child(world, l);
+      cw_node3d_set_position(l, (t3_vec3){ -2.0f + 2.5f * (float)i, 2.6f, -9.0f + 1.5f * (float)(i % 2) });
+      cw_node_set(l, "color", cw_val_color(1, 0.75f, 0.5f, 1));
+      cw_node_set(l, "energy", cw_val_float(25));
+      cw_node_set(l, "range", cw_val_float(7));
+      cw_node_set(l, "shadow", cw_val_bool(true));
+    }
+    cw_node_set(cw_node_get(world, "Sky"), "time_of_day", cw_val_float(20.6f)); /* dusk: the lamps show */
   }
   if (((e = getenv("SA_DISTORT")) && atoi(e)) || !strcmp(mode, "distort")) {
     cw_node wave = cw_node_new("Shockwave3D", "Wave");
@@ -120,10 +164,24 @@ static void init(void *u) {
   cw_pipeline_set_views_array(p, !(e && *e == '0'));
 }
 
+static void cast_all(t3_object *o) {
+  if (o->type == T3_SKINNED_MESH || o->type == T3_MESH) o->cast_shadow = true, o->receive_shadow = true, o->frustum_culled = false;
+  for (int i = 0; i < o->child_count; i++) cast_all(o->children[i]);
+}
+
 static void fixed_update(void *u, double dt) {
   (void)u;
   (void)dt;
   tick++;
+  for (int i = 0; i < 4; i++)
+    if (cw_node_valid(walkers[i])) {
+      if (tick == 1) cast_all(walker_gltf[i]->scene);
+      float a = (float)tick * 0.01f + (float)i * 1.57f; /* each walks round its own small circle */
+      t3_vec3 p = cw_node3d_position(walkers[i]);
+      cw_node3d_set_position(walkers[i], (t3_vec3){ p.x + 0.012f * cw_cos(a), p.y, p.z + 0.012f * cw_sin(a) });
+      cw_node3d_set_rotation(walkers[i], (t3_vec3){ 0, -a, 0 });
+      cw_node3d_set_views(walkers[i], walker_mask(i));
+    }
   /* the last view toward the sun (its disk and the fog's sun lobe), the second view drifting */
   cw_tree *t = cw_scene_app_tree();
   cw_sky_state sk;

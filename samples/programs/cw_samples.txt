@@ -248,3 +248,7 @@ depth+instbig+xterrainmin_cluster_gi
 standard+vcol+instbig+shadow+senv+l1001+xgi
 standard+vcol+instbig+shadow+senv+ds+l1001+xgi
 depth+instbig+xgi
+depth+skin+xcluster_plain
+standard+map+rep+shadow+skin+senv+l1001+xcluster_plain
+depth+skin+xcluster
+standard+map+rep+shadow+skin+senv+l1001+xcluster
