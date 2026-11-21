@@ -54,6 +54,47 @@ static void missing_hook(void *user, const char *state, const t3_object *o, cons
 }
 #endif
 
+/* Values an extension hook set that the draw's program lacks (three.c's miss hook): an app program table generated
+ * before the extension gained the value draws without it, silently. Each program state and name is warned about once,
+ * listed in the debug fields cw.three.dropped and cw.three.dropped_values (the gates fail on any) and, with
+ * CW_PROGRAMS_LOG_DIR (tools/programs.mjs), written to <dir>/<app>.dropped (the program survey fails on any). */
+static char dropped_text[8192] = "\n"; /* "\n<state> <uniform|texture> <name>\n..." */
+static int32_t dropped_count;
+bool cw__ext_miss_quiet;
+#ifdef T3_EXTENSION_MISS_HOOK
+static void ext_miss_hook(void *user, const char *state, const char *name, bool texture) {
+  (void)user;
+  /* a hook setting what one variant of its part lacks on purpose (cw__ext_miss_quiet around those sets); and a caster's
+   * depth program, which keeps only what shapes the geometry (a part's hook fills it as it fills the colour program;
+   * a table out of date there is the build's stamp check's to catch) */
+  if (cw__ext_miss_quiet || !strncmp(state, "depth", 5)) return;
+  char line[400];
+  snprintf(line, sizeof line, "\n%s %s %s\n", state, texture ? "texture" : "uniform", name);
+  if (strstr(dropped_text, line)) return;
+  size_t n = strlen(dropped_text), l = strlen(line);
+  if (n + l - 1 < sizeof dropped_text) memcpy(dropped_text + n, line + 1, l); /* (the line's leading newline is the text's last) */
+  dropped_count++;
+  static bool field;
+  if (!field) {
+    field = true;
+    cw_debug_i32("cw.three.dropped", &dropped_count);
+    cw_debug_bytes("cw.three.dropped_values", dropped_text + 1, sizeof dropped_text - 1);
+  }
+  cw_error("render: the %s ext.%s set for program %s is DROPPED: the program has no such %s. Its program table was "
+           "generated before the extension gained it; regenerate it: %s",
+           texture ? "texture" : "uniform", name, state, texture ? "texture" : "uniform", cw__programs_fix_command());
+#if !CW_CART
+  const char *dir = getenv("CW_PROGRAMS_LOG_DIR");
+  if (dir && *dir) {
+    char path[1024];
+    snprintf(path, sizeof path, "%s/%s.dropped", dir, cw__app_target_name());
+    FILE *fp = fopen(path, "a");
+    if (fp) fprintf(fp, "%s %s %s\n", state, texture ? "texture" : "uniform", name), fclose(fp);
+  }
+#endif
+}
+#endif
+
 /* ── settings ───────────────────────────────────────────────────────── */
 
 static void settings_default(cw_post_settings *s) {
@@ -223,6 +264,14 @@ static void cmd_pipeline(int argc, const char **argv, cw_reply *r) {
     /* the states three.c's generated table lacked (a JSON string, one per line) */
     cw_reply_raw(r, ",\"missing_states\":\"");
     for (const char *c = p->missing_states ? p->missing_states : ""; *c; c++) {
+      if (*c == '\n') cw_reply_raw(r, "\\n");
+      else if (*c == '"' || *c == '\\') cw_reply_printf(r, "\\%c", *c);
+      else if ((unsigned char)*c >= 0x20) cw_reply_printf(r, "%c", *c);
+    }
+    cw_reply_raw(r, "\"");
+    /* the values extension hooks set that their programs lack (ext_miss_hook), one per line */
+    cw_reply_raw(r, ",\"dropped_values\":\"");
+    for (const char *c = dropped_text + 1; *c; c++) {
       if (*c == '\n') cw_reply_raw(r, "\\n");
       else if (*c == '"' || *c == '\\') cw_reply_printf(r, "\\%c", *c);
       else if ((unsigned char)*c >= 0x20) cw_reply_printf(r, "%c", *c);
@@ -1340,6 +1389,9 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
     ctx.renderer = cw_render3d_renderer(t);
 #ifdef T3_MISSING_HOOK
     if (ctx.renderer) t3_renderer_set_missing_hook(ctx.renderer, missing_hook, t); /* names a draw with no program */
+#endif
+#ifdef T3_EXTENSION_MISS_HOOK
+    if (ctx.renderer) t3_renderer_set_extension_miss_hook(ctx.renderer, ext_miss_hook, NULL); /* names a value a program lacks */
 #endif
     if (ctx.scene3d) cw__shadow_cull_begin(ctx.scene3d, ctx.camera); /* the Shadows setting: small casters off for this run */
   }

@@ -34,6 +34,7 @@
 #include "cartwheel/quality.h"
 #include "cartwheel/shading.h"
 #include "terrain_internal.h"
+#include "../render/pipeline_internal.h"
 #include "../render/view_layers.h"
 
 
@@ -564,6 +565,11 @@ static void fill(t3_extension_ctx *c, void *user) {
   t3_extension_set_uniform(c, "terrainLod", v, 4);
   v[0] = far - fade, v[1] = 1.0f / fade, v[2] = 0.12f, v[3] = q >= CW_QUALITY_HIGH ? 2.0f : q == CW_QUALITY_MEDIUM ? 1.0f : 0.0f;
   t3_extension_set_uniform(c, "terrainFar", v, 4);
+  t3_extension_set_texture(c, "terrainHeights", g->heights);
+  t3_extension_set_texture(c, "terrainMacro", g->macro);
+  t3_extension_set_texture(c, "terrainNormals", g->normals);
+  /* the layers (the far shading reads the macro colour instead: its program has none of these) */
+  cw__ext_miss_quiet = t3_extension_material(c) == g->mat_far;
   for (int k = 0; k < 4; k++) v[k] = t->layer[k].uv_scale;
   t3_extension_set_uniform(c, "terrainUv0", v, 4);
   for (int k = 0; k < 4; k++) v[k] = t->layer[4 + k].uv_scale;
@@ -571,13 +577,11 @@ static void fill(t3_extension_ctx *c, void *user) {
   /* triplanar from normal.y 0.75 down over 0.2; height-blend sharpness */
   v[0] = 0.75f, v[1] = 0.2f, v[2] = t->def.side_detile, v[3] = 0.15f;
   t3_extension_set_uniform(c, "terrainSlope", v, 4);
-  t3_extension_set_texture(c, "terrainHeights", g->heights);
-  t3_extension_set_texture(c, "terrainMacro", g->macro);
   t3_extension_set_texture(c, "terrainControl", g->control);
   t3_extension_set_texture(c, "terrainPair", g->pair);
-  t3_extension_set_texture(c, "terrainNormals", g->normals);
   t3_extension_set_texture(c, "terrainAlbedo", g->albedo);
   t3_extension_set_texture(c, "terrainLayerNormals", g->lnormal);
+  cw__ext_miss_quiet = false;
 }
 
 void cw_terrain_bind_renderer(cw_terrain *t, t3_renderer *r) {

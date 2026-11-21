@@ -93,6 +93,22 @@ function run(args, env = {}) {
   });
 }
 
+// The values an extension hook set that a program lacked (cw.three.dropped_values: "<state> uniform|texture <name>"
+// lines; src/render/pipeline.c ext_miss_hook). A table generated before an extension gained the value draws without
+// it: a gate fails on any, with the regenerate command.
+function checkDropped(problems, app, runs) {
+  const seen = new Set();
+  for (const [h, file] of runs) {
+    let st;
+    try { st = JSON.parse(readFileSync(file, 'utf8')); } catch { continue; }
+    const m = missingStates({ 'cw.three.missing_states': st['cw.three.dropped_values'] }).filter((x) => !seen.has(x));
+    if (!m.length) continue;
+    m.forEach((x) => seen.add(x));
+    problems.push(`${h}: ${m.length} value(s) set for programs that lack them (dropped: the program table predates the extension ` +
+      `change; regenerate it, node tools/programs.mjs --table <its manifest>):\n    ${m.join('\n    ')}`);
+  }
+}
+
 // The program states a run drew without a program (cw.three.missing_states: three.c skipped those draws).
 // A gate fails on any, with the lines to add to the app's program table (cmake/programs.cmake).
 function missingStates(st) {
@@ -103,6 +119,7 @@ function missingStates(st) {
   return text.split('\n').map((l) => l.trim()).filter(Boolean);
 }
 function checkMissing(problems, app, runs) {
+  checkDropped(problems, app, runs);
   const seen = new Set();
   for (const [h, file] of runs) {
     let st;

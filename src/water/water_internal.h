@@ -85,6 +85,9 @@ typedef struct water3d {
   float *rip_h, *rip_v, *rip_f; /* ripple height, velocity, foam: rip_nx x rip_nz, row z, col x */
   int rip_nx, rip_nz, rip_cells_built, rip_quality;
   bool ext_low; /* the material draws with "waterlow" (effects Very Low) */
+  /* the surface program takes the view rectangle (waterView): 0 not drawn yet, 1 yes, 2 no (a program table generated
+   * before split screen in one pass: its water samples the planar targets at the whole picture's uv) */
+  uint8_t view_uniform;
   float rip_ax, rip_az, rain_acc;
   bool rip_awake, rip_upload;
   uint32_t fx_next;

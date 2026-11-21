@@ -4,6 +4,47 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.57.3 (2026-11-21)
+
+### Fixed
+- A game whose program table was generated before v0.57.0 drew its water wrong in a split screen drawn in one pass.
+  Its water program has no view rectangle, so every view sampled its planar reflection and refraction at the uv of the
+  whole picture (6.5% of a two-player frame differed from the per-view picture). A Water3D whose program lacks the view
+  rectangle now draws the split screen view by view, and an error names the command that regenerates the table.
+  Regenerated, the same frame matches the per-view picture within 0.002% on GL and WebGPU.
+
+### Added
+- Program tables are stamped with the extension sources they were generated from. `tools/programs.mjs` writes one hash
+  per extension directory the table's states use into the generated C. The configure compares the stamp with the
+  sources the build has: the engine tree's files, or an SDK's new `cmake/program-sources.txt`. It stops, with the
+  regenerate command, when they differ or when a table has no stamp. Every later shader change to an extension is
+  caught for every game that uses it. The configure names every out-of-date table at once, with one command for them
+  all, which `tools/programs.mjs` runs a few tables at a time (several `--table`).
+- A value an extension hook sets on a program that lacks it is no longer lost without a word (three.c 0.187.19's
+  extension miss hook). It is reported once per program state and name: an error, the debug fields
+  `cw.three.dropped` and `cw.three.dropped_values`, and `dropped_values` in the `pipeline` reply. Every gate fails on
+  it, and so does a `tools/programs.mjs` survey.
+- Gate `program-tables`: every table's stamp matches. Natively on GL and WebGPU, water, terrain and clustered lights drop
+  no value at any preset, and a stale water program draws split screen view by view within 0.3% of the per-view
+  picture. Controls: a changed water helper, a changed SDK hash and an unstamped table each fail the check, and a configure with two stale tables names both
+  with one command for both; a value
+  the program lacks is reported; the stale program drawn in one pass misses the bound.
+
+### Changed
+- Every program table in the engine (samples, tests, the editor's templates and tutorial project, the engine's own)
+  is regenerated and stamped. The editor templates, the tutorial project and the agent test project had been
+  generated before recent extension changes.
+- three.c 0.187.19.
+
+### Upgrading
+- A game repository's configure stops on this version until each of its program tables is regenerated against it.
+  The configure names every out-of-date or unstamped table in one run and prints one command that regenerates them
+  all: `node deps/cartwheel-engine/tools/programs.mjs --table <manifest> --table <manifest> ...`. That command needs
+  Node only, no GPU, and runs a few tables at once; each table takes about ten minutes, so a repository with a dozen
+  tables takes about half an hour. Commit the regenerated `_gl.c` and `_wgpu.c`.
+- `-DCW_PROGRAM_TABLE_CHECK=OFF` turns the check off. It is for an emergency build only, never the fix: a table it
+  lets through still draws with programs older than the engine's shaders.
+
 ## v0.57.2 (2026-11-21)
 
 v0.57.1 published no SDK either: `views-array` still took 69 minutes of a CI shard with only the heavy cases left
