@@ -1301,6 +1301,27 @@
     "note": "shell shared_screen: one view and the whole canvas for every player, against the same call without the option (the control leaves the option off, so the shared checks fail); no screen shake: cw_shell_screen_shake is 0 at every stored level, reduced motion or not, and the stored level survives an init for older saves (CW_TEST_SHAKE_IGNORED=1 is its own control, the old Full answer of 1: 1 failed)"
   },
   {
+    "name": "unit-shell-seats",
+    "app": "unit_shell",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_OLD_SEATS": "1"
+    },
+    "note": "the join screen's seat boxes (cw_shell_join_seat_rect, what cw_shell_draw draws) centred about the heading for 2, 3 and 4 seats, four seats exactly where they always were. The control puts the boxes where the old shell drew them (from the left edge) before the centring checks: 2 and 3 seats fail (unit.failed 2), 4 does not"
+  },
+  {
     "name": "perf-nodes",
     "app": "perf_nodes",
     "webgpu": true,

@@ -4,6 +4,21 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.57.7 (2026-11-21)
+
+### Fixed
+- The join screen centres its row of seats for any `max_players`. It spaced the seats a quarter of the canvas apart
+  from the left edge whatever their number, so a two or three player game showed its seats bunched on the left under
+  a centred "Join" heading and hints. Each seat keeps its quarter-canvas width; two or three now sit in the middle and
+  four are drawn exactly as before (the same pixels on GL and WebGPU).
+
+### Added
+- `cw_shell_join_seat_rect(seat)` returns a seat's box on the join screen in 2D pass units, so a game's
+  `draw_background` can put its own art where the seats are.
+- The `shell_join` sample takes `SHELL_JOIN_SEATS=1` to `4` from the environment to show another seat count.
+- Gate `unit-shell-seats`: the seat boxes are centred under the heading for two, three and four seats, and four are
+  where they always were; its control puts them where the old layout did and must fail for two and three seats.
+
 ## v0.57.6 (2026-11-21)
 
 Carries v0.57.5, v0.57.4 and v0.57.3, none of which published an SDK (their CI runs stopped on a flaky control or a share over its time limit).

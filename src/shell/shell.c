@@ -859,6 +859,20 @@ static const char *const HINT_TITLE = "{ui_up|ui_down} choose    {ui_accept} sel
 static const char *const HINT_PAUSE = "{ui_up|ui_down} choose    {ui_accept} select    {ui_back} resume";
 static const char *const HINT_SETTINGS = "{ui_up|ui_down} choose    {ui_left|ui_right} change    {ui_back} back";
 
+/* a seat's box on the join screen: a quarter of the canvas wide whatever the seat count, the row centred under the
+ * heading (four seats fill the width, as they always did) */
+static float join_seat_x(int seat, cw_vec2 sz) { /* the seat's centre */
+  return sz.x * 0.5f + ((float)seat - (float)(S.d.max_players - 1) * 0.5f) * (sz.x / 4.0f);
+}
+static cw_rect join_seat_rect(int seat, cw_vec2 sz) {
+  float u = sz.y / 20.0f, w = sz.x / 4.0f;
+  return cw_rect_make(join_seat_x(seat, sz) - w * 0.5f + u * 0.4f, sz.y * 0.3f, w - u * 0.8f, sz.y * 0.4f);
+}
+cw_rect cw_shell_join_seat_rect(int seat) {
+  if (!S.inited || seat < 0 || seat >= S.d.max_players) return cw_rect_make(0, 0, 0, 0);
+  return join_seat_rect(seat, cw_r2d_canvas_size());
+}
+
 void cw_shell_draw(void) {
   if (S.own_audio) cw_audio_update();
   if (S.inited && cw_quality_is_auto()) { /* the level Auto holds now outlives the run */
@@ -924,11 +938,11 @@ void cw_shell_draw(void) {
   }
   case CW_SHELL_JOIN: {
     text("Join", cx, sz.y * 0.12f, u * 1.6f, cw_rgba(1, 1, 1, 1), 1);
-    float w = sz.x / 4.0f;
     for (int s = 0; s < S.d.max_players; s++) {
-      float x = w * s + w * 0.5f, inner = w - u * 0.8f;
+      cw_rect r = join_seat_rect(s, sz);
+      float x = join_seat_x(s, sz), inner = r.w;
       bool in = S.joined_pad[s] >= 0;
-      cw_r2d_rect(cw_rect_make(w * s + u * 0.4f, sz.y * 0.3f, inner, sz.y * 0.4f),
+      cw_r2d_rect(r,
                   in ? cw_rgba(S.d.accent.r, S.d.accent.g, S.d.accent.b, 0.25f) : cw_rgba(1, 1, 1, 0.06f));
       char p[16];
       snprintf(p, sizeof p, "P%d", s + 1);

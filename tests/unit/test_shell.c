@@ -6,6 +6,7 @@
 #include "cartwheel/render3d.h"
 #include "cartwheel/shell.h"
 #include "cartwheel/ui.h"
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include "test.h"
@@ -139,7 +140,39 @@ static void test_text_settings(void) {
   FOLD(fold);
 }
 
-/* reads the gate's switch (CW_TEST_NO_SHARED): runs at frame 2, when every host has it */
-void cw_test_late(void) { test_shared_and_split(); }
+/* The join screen's seats (cw_shell_join_seat_rect, the boxes cw_shell_draw draws): for 2, 3 and 4 seats the row is
+ * centred about the canvas middle, where the "Join" heading and the hints are centred, each box a quarter of the canvas
+ * less the gap, one quarter apart; four seats are exactly where the shell always put them (w * s + u * 0.4). An unheld
+ * seat number is an empty rect. CW_TEST_OLD_SEATS (the gate control) puts the boxes where the old shell drew them
+ * (from the left edge whatever the seat count) before the centring checks: 2 and 3 seats must fail, 4 must not. */
+static void test_join_seats(void) {
+  bool old = cw_test_env("CW_TEST_OLD_SEATS") != NULL;
+  for (int n = 2; n <= 4; n++) {
+    cw_shell_init(&(cw_shell_desc){ .title = "t", .max_players = n });
+    cw_r2d_begin(NULL);
+    cw_vec2 sz = cw_r2d_canvas_size();
+    cw_r2d_end();
+    float u = sz.y / 20.0f, w = sz.x / 4.0f;
+    cw_rect r[4];
+    for (int i = 0; i < n; i++) {
+      r[i] = cw_shell_join_seat_rect(i);
+      cw_rect was = cw_rect_make(w * (float)i + u * 0.4f, sz.y * 0.3f, w - u * 0.8f, sz.y * 0.4f); /* the old layout */
+      if (n == 4) CHECK(same_rect(r[i], was)); /* four seats: unchanged */
+      if (old) r[i] = was;
+      CHECK(fabsf(r[i].w - (w - u * 0.8f)) < 0.01f && r[i].y == sz.y * 0.3f && r[i].h == sz.y * 0.4f);
+      if (i) CHECK(fabsf(r[i].x - r[i - 1].x - w) < 0.01f);
+      FOLD(r[i]);
+    }
+    float mid = (r[0].x + r[n - 1].x + r[n - 1].w) * 0.5f;
+    CHECK(fabsf(mid - sz.x * 0.5f) < 0.5f); /* the row's middle is the heading's */
+    CHECK(cw_shell_join_seat_rect(n).w == 0 && cw_shell_join_seat_rect(-1).w == 0);
+  }
+}
+
+/* reads the gate's switches (CW_TEST_NO_SHARED, CW_TEST_OLD_SEATS): runs at frame 2, when every host has them */
+void cw_test_late(void) {
+  test_shared_and_split();
+  test_join_seats();
+}
 CW_TEST_SUITE("shell", { "one player", test_one_player },
               { "screen shake setting", test_screen_shake }, { "text settings", test_text_settings });

@@ -60,7 +60,10 @@ static void init(void *user) {
   /* SHELL_JOIN_FONT=mono: the shell in the wide monospaced font, as a game with a wide font of its own (the graphics page
    * at 200% is laid out from its measured text: the quality-menu-wide gate) */
   const char *font = getenv("SHELL_JOIN_FONT");
-  cw_shell_init(&(cw_shell_desc){ .title = "Join Demo", .max_players = SHELL_JOIN_SEATS, .start = start, .players_changed = players_changed,
+  /* SHELL_JOIN_SEATS=1..4: this many seats instead of the build's (the join screen centres its row for any count) */
+  const char *seats = getenv("SHELL_JOIN_SEATS");
+  int max_players = seats && *seats >= '1' && *seats <= '4' ? *seats - '0' : SHELL_JOIN_SEATS;
+  cw_shell_init(&(cw_shell_desc){ .title = "Join Demo", .max_players = max_players, .start = start, .players_changed = players_changed,
                                   .font = font && !strcmp(font, "mono") ? cw_ui_font_mono() : (cw_font){ 0 } });
   G.left = cw_action_add("left", 0.2f);
   G.right = cw_action_add("right", 0.2f);

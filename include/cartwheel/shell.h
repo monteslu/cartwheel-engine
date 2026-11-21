@@ -210,6 +210,10 @@ cw_rect cw_shell_player_rect(int player);
 /* Three players: the fourth quadrant, for a shared HUD (a map, the scores);
  * otherwise an empty rect. */
 cw_rect cw_shell_shared_rect(void);
+/* A seat's box on the join screen (2D pass units), seat 0 .. max_players - 1: a quarter of the canvas wide
+ * whatever the seat count, the row centred under the "Join" heading, so a draw_background can put its own art
+ * where the seats are. An empty rect for a seat the game does not have (or before cw_shell_init). */
+cw_rect cw_shell_join_seat_rect(int seat);
 
 #ifdef __cplusplus
 }
