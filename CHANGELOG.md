@@ -4,6 +4,36 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.56.0 (2026-11-20)
+
+### Added
+- **What each split screen view draws** (`cw_object_set_views`, `cw_node3d_set_views`, `cw_object_views`,
+  `CW_VIEWS_ALL`): an object and everything below it drawn only in the views whose bit is set. It says once a
+  frame what a view hook that shows and hides did view by view (a player's own model close up only in its view, a
+  level of detail chosen from each view's camera, an item one player collected gone from that player's view), and
+  keeps the frame in one pass. Drawn view by view the masks hide and show each object before its view; the shadow
+  maps are drawn from what view 0 draws, as before. Sample `split_views`, gate `views-masks` (the masks in one pass
+  draw the picture the sample's view hook draws, GL and WebGPU, two and four views, High and Very Low; control: each
+  mask the next view's).
+- More passes take part in a split screen drawn in one pass: the viewmodel pass (each camera's `viewmodel_layers`
+  in its view, 4x MSAA samples kept from view to view), a water surface's planar reflection and refraction (each
+  view's own targets at its own size), a VisibilityManager culling to each view's frustum, distance and rooms. A view
+  under a water surface that another view sees from above no longer sends a WebGPU frame back to the per-view runs.
+- `vignette_per_view` (PostProcess, `cw_post_settings`): with a shared post chain the vignette, chromatic aberration
+  and grain in each view's rectangle, as a chain of each view's own draws them, so a game whose look has a vignette
+  per view can share its post chain.
+- Gate `views-wall`: a split screen in one pass is never slower in wall time than the views drawn on their own on a
+  host that waits for each frame (romdev's wasmcart host, GL and WebGPU; control: 0.15 ms of CPU a view more).
+
+### Changed
+- WebGPU: a split screen in one pass draws each view's shadow-phase passes, depth prepass and scene in turn and
+  submits each view as it is recorded, so the GPU draws a view while the CPU prepares the next (before, nothing
+  reached the GPU until every view was prepared). On a host that waits for each frame (a race at High on a Radeon 890M, wall ms a frame), two players 27.4 per view, 25.6 in one pass recorded together, 21.7 submitted view by view; four players 36.4, 34.5, 29.7 (`pipeline views_submit 0|1` switches it; the debug field
+  `cw.views_submits` says how many views a frame submitted so).
+- The water surface's program reads the view's rectangle (`waterView`): apps with water regenerate their program
+  tables (tools/programs.mjs) when they take this release.
+- The `pipeline` debug request reports `view_hook` and `view_masks`.
+
 ## v0.55.0 (2026-11-20)
 
 ### Added
