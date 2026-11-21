@@ -1346,6 +1346,25 @@ static void array_view_end(cw_pass_ctx *ctx, cw_pipeline *p) {
   ctx->prev_view_proj = ctx->view_proj;
 }
 
+/* one-pass split screen: before view k's shadow maps, the shadow casters a frame drawn view by view has for view k (its
+ * masked objects, cw_object_set_views, and the Shadows setting's small casters culled from its camera) for the
+ * clustered lights' shadow atlas; view 0's from the run's start and for three.c's own shadow maps, which a frame drawn
+ * view by view draws once, in its first view. CW_TEST_VIEWS_SHARED_CASTERS=1 (a gate's control): view 0's for every view, as before v0.57.4. */
+static int arr_casters_view;
+static void array_casters(cw_pass_ctx *ctx, cw_pipeline *p, int k) {
+  static int shared = -1;
+  if (shared < 0) {
+    const char *e = cw_test_env("CW_TEST_VIEWS_SHARED_CASTERS");
+    shared = e && *e ? atoi(e) != 0 : 0;
+    if (!e) shared = -1; /* (not read yet on a cart's first frame: ask again) */
+  }
+  if (shared > 0 || arr_casters_view == k) return;
+  arr_casters_view = k;
+  cw__shadow_cull_end();
+  cw__view_masks_cast_for_view(k);
+  if (ctx->scene3d) cw__shadow_cull_begin(ctx->scene3d, p->arr_cams[k]);
+}
+
 /* a view's run, its shadow caster culling (src/render/shadow_cull.c) undone after it */
 static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, int mode) {
   render_run_inner(t, p, w, h, alpha, mode);
@@ -1394,6 +1413,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
     if (ctx.renderer) t3_renderer_set_extension_miss_hook(ctx.renderer, ext_miss_hook, NULL); /* names a value a program lacks */
 #endif
     if (ctx.scene3d) cw__shadow_cull_begin(ctx.scene3d, ctx.camera); /* the Shadows setting: small casters off for this run */
+    arr_casters_view = 0;
   }
   ctx.hdr = s->hdr && cw__caps.float_render;
 
@@ -1630,6 +1650,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
       for (int k = 0; k < p->arr_n && !p->arr_refused; k++) {
         p->arr_part = k + 1;
         if (k == 1 && keep_auto) ctx.scene3d->auto_update = false;
+        array_casters(&ctx, p, k);
         for (int ph2 = CW_PHASE_SHADOW; ph2 <= CW_PHASE_OPAQUE && !p->arr_refused; ph2++) {
           for (int i = 0; i < p->passes.count && !p->arr_refused; i++) {
             pass_rec *r = p->passes.data[i];
@@ -1666,6 +1687,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
         }
       }
       if (keep_auto) ctx.scene3d->auto_update = true;
+      array_casters(&ctx, p, 0);
       views_submits_dbg = p->arr_n;
       p->arr_part = 0;
       if (p->arr_refused) return; /* (a later view's pass could not: the views are drawn on their own; this target is not used) */
@@ -1825,9 +1847,11 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
       }
       if (mode == RUN_ARRAY && r->d.views == CW_PASS_VIEWS_EACH && ph < CW_PHASE_OVERLAY) {
         for (int k = 0; k < p->arr_n && !p->arr_refused; k++) {
+          if (ph == CW_PHASE_SHADOW) array_casters(&ctx, p, k);
           array_view(&ctx, p, k);
           run_pass(p, r, &ctx);
         }
+        if (ph == CW_PHASE_SHADOW) array_casters(&ctx, p, 0); /* (three.c's own shadow maps: view 0's, as drawn view by view) */
         array_view_end(&ctx, p);
         /* a pass found it cannot this frame (cw__pipeline_array_refuse): nothing is drawn yet, the views go one at a
          * time instead */

@@ -17,6 +17,9 @@ void cw__view_masks_restore_visible(void);
  * changed then), NULL when applied. */
 const char *cw__view_masks_apply_layers(int n, const uint32_t *cam_layers, const bool *cam_view_layer);
 void cw__view_masks_restore_layers(void);
+/* inside a one-pass run: the masked objects cast the shadows view k's casts in a frame drawn view by view (before view
+ * k's shadow maps are drawn; view 0's from cw__view_masks_apply_layers on) */
+void cw__view_masks_cast_for_view(int view);
 /* inside a one-pass run (after cw__view_masks_apply_layers): o and its subtree drawn only in the views of views as well,
  * until the run ends (the VisibilityManager's per-view culling). False when it cannot be (the frame must not stay in
  * one pass) */

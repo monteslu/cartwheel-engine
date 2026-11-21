@@ -7,14 +7,18 @@
  *     in the others (chosen per view from each camera's distance, as the cameras move);
  *   - a group drawn in views 0 and 1 holding a crystal drawn in views 1 and 2 (so only in view 1) and a block drawn
  *     wherever its group is;
- *   - a pillar drawn in every view but view 0: it casts no shadow (the shadow maps are drawn from what view 0 draws).
+ *   - a pillar drawn in every view but view 0: it casts no sun shadow (the sun's shadow map is drawn once a frame, from
+ *     what view 0 draws).
  * The frame stays in one pass (sv.array 1). SV_HOOK=1 does the same with a view hook that shows and hides each
  * object before its view draws (the frame is then drawn view by view): the gate holds the two pictures equal.
  * SV_WRONG=1 gives every object the next view's mask (the gate's control: the picture differs).
  * The other cases, each also by SV_MODE=<name>: SV_VM=1 (vm) a first person gun per camera, each on its own layer and its
  * camera's viewmodel_layers, over 4x MSAA; SV_WATER=1 (water) a pond with planar reflection and refraction;
  * SV_VIS=1 (vis) a VisibilityManager culling a ring of posts to each view's frustum; SV_VIGNETTE=1 (vignette) a
- * vignette in each view (vignette_per_view; 2: once over the screen); SV_OWN_POST=1 a post chain of each view's own.
+ * vignette in each view (vignette_per_view; 2: once over the screen); SV_OWN_POST=1 a post chain of each view's own;
+ * SV_SPOTS=1 (spots) clustered spot lights with shadows (the shadow atlas) over the statues, a depth prepass, a scorch
+ * decal and a plume of particles beside them: each view's spots cast the shadows of the statues that view draws, its
+ * own level of detail, and of the casters the Shadows setting keeps from its own camera.
  *
  * Debug state: sv.views, sv.array (the last frame drew its views in one pass), sv.why (why not), sv.masks (objects with a mask),
  * sv.tick. */
@@ -117,9 +121,52 @@ static bool sv(const char *name, const char *mode) {
   return (e && atoi(e)) || (m && !strcmp(m, mode));
 }
 
-/* the gate's other cases: a viewmodel per camera, a pond with planar water, a VisibilityManager, a vignette */
+/* the gate's other cases: a viewmodel per camera, a pond with planar water, a VisibilityManager, a vignette, spots */
 static void features(cw_node world) {
   const char *e;
+  if (sv("SV_SPOTS", "spots")) {
+    cw_node_set(cw_node_get(world, "Lighting"), "mode", cw_val_enum("CLUSTERED"));
+    cw_node_set(cw_node_get(world, "Post"), "depth_prepass", cw_val_bool(true));
+    cw_node_set(cw_node_get(world, "Sun"), "energy", cw_val_float(0.15f)); /* (dusk: the spots light the yard) */
+    for (int i = 0; i < STATUES; i++) { /* a spot over each statue, aimed past it so its shadow falls on the yard */
+      float a = (float)i * 2.0943951f;
+      char name[16];
+      snprintf(name, sizeof name, "Spot%d", i);
+      cw_node sp = cw_node_new("SpotLight3D", name);
+      cw_node_add_child(world, sp);
+      cw_node3d_set_position(sp, (t3_vec3){ 10.5f * cw_sin(a + 0.5f), 6.5f, 10.5f * cw_cos(a + 0.5f) });
+      cw_node3d_look_at(sp, (t3_vec3){ 5 * cw_sin(a - 0.2f), 0, 5 * cw_cos(a - 0.2f) }, (t3_vec3){ 0, 1, 0 });
+      cw_node_set(sp, "color", cw_val_color(1, 0.9f, 0.75f, 1));
+      cw_node_set(sp, "energy", cw_val_float(420));
+      cw_node_set(sp, "range", cw_val_float(30));
+      cw_node_set(sp, "angle", cw_val_float(0.7f));
+      cw_node_set(sp, "penumbra", cw_val_float(0.3f));
+      cw_node_set(sp, "shadow", cw_val_bool(true));
+      cw_node_set(sp, "shadow_size", cw_val_int(1024));
+      cw_node_set(sp, "shadow_bias", cw_val_float(-0.0005f));
+    }
+    cw_node d = cw_node_new("Decal3D", "Scorch");
+    cw_node_add_child(world, d);
+    cw_node3d_set_position(d, (t3_vec3){ 4.5f, 0, 2.5f });
+    cw_node3d_set_rotation(d, (t3_vec3){ -CW_PI / 2, 0, 0.4f });
+    cw_node_set(d, "size", cw_val_vec3(4, 4, 1.2f));
+    cw_node_set(d, "texture", cw_val_string("decals/scorch.png"));
+    cw_node_set(d, "blend", cw_val_enum("MULTIPLY"));
+    cw_node_set(d, "normal_fade", cw_val_float(0));
+    cw_node plume = cw_node_new("GPUParticles3D", "Plume");
+    cw_node_add_child(world, plume);
+    cw_node3d_set_position(plume, (t3_vec3){ -4.5f, 0.3f, 3 });
+    cw_node_set(plume, "amount", cw_val_int(200));
+    cw_node_set(plume, "lifetime", cw_val_float(1.6f));
+    cw_node_set(plume, "emission_shape", cw_val_enum("SPHERE"));
+    cw_node_set(plume, "emission_radius", cw_val_float(0.6f));
+    cw_node_set(plume, "speed_min", cw_val_float(0.6f));
+    cw_node_set(plume, "speed_max", cw_val_float(1.4f));
+    cw_node_set(plume, "gravity", cw_val_vec3(0, 0.8f, 0));
+    cw_node_set(plume, "size", cw_val_float(0.9f));
+    cw_node_set(plume, "color", cw_val_color(0.55f, 0.5f, 0.45f, 0.5f));
+    cw_node_set(plume, "seed", cw_val_int(3));
+  }
   if (sv("SV_VM", "vm")) cw_node_set(cw_node_get(world, "Post"), "msaa", cw_val_int(4)); /* (the guns over a multisampled scene) */
   if (sv("SV_VM", "vm"))
     for (int k = 0; k < CW_MAX_VIEWS; k++) {

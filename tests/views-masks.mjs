@@ -8,8 +8,13 @@
 //   - vis: a VisibilityManager culling to the frustum, per view in one pass
 //   - vignette: the shared post chain's vignette in each view's rectangle (vignette_per_view) draws the vignette a
 //     post chain of each view's own draws (cw_pipeline_set_views_shared_post off)
+//   - spots, spots4: clustered spot lights with shadows (the shadow atlas) over the statues whose level of detail is
+//     chosen per view, a depth prepass, a decal and particles beside them, the cameras moving: each view's spots cast
+//     what that view draws (and the small casters the Shadows setting keeps from its own camera), at frames 90 and 91;
+//     recorded together (views_submit 0) such a frame goes view by view
 // Controls that must fail: SV_WRONG=1 (every mask the next view's) against the hook's picture; CW_TEST_VIEWS_ARRAY_SHIFT=1
-// (each view's passes a view over) against the per-view picture; vignette_per_view off against the per-view chain.
+// (each view's passes a view over) against the per-view picture; vignette_per_view off against the per-view chain;
+// CW_TEST_VIEWS_SHARED_CASTERS=1 (every view's shadow casters view 0's, as before v0.57.4) against spots' per-view picture.
 //   node tests/views-masks.mjs [--gpu gl,webgpu] [--only v2,vm,...]
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
@@ -78,7 +83,11 @@ const FEATURES = [
   { tag: 'water', env: { SV_VIEWS: '2', CW_QUALITY: 'high', SV_WATER: '1' } },
   { tag: 'water4', env: { SV_VIEWS: '4', CW_QUALITY: 'high', SV_WATER: '1' } },
   { tag: 'vis', env: { SV_VIEWS: '4', CW_QUALITY: 'high', SV_VIS: '1' } },
+  { tag: 'spots', env: { SV_VIEWS: '2', CW_QUALITY: 'high', SV_SPOTS: '1' } },
+  { tag: 'spots4', env: { SV_VIEWS: '4', CW_QUALITY: 'high', SV_SPOTS: '1' } },
+  { tag: 'spots-f91', env: { SV_VIEWS: '2', CW_QUALITY: 'high', SV_SPOTS: '1', CW_FRAMES: '91' } },
 ];
+const SPOTS = (t) => t.startsWith('spots');
 const want = (t) => !ONLY || ONLY.includes(t);
 for (const gpu of GPUS) {
   console.log(`-- ${gpu}`);
@@ -113,7 +122,14 @@ for (const gpu of GPUS) {
     {
       const b = run(gpu, `${c.tag}-batch`, { ...c.env, CW_TEST_VIEWS_ARRAY: '1', CW_TEST_VIEWS_SUBMIT: '0' });
       const db = share(b, each);
-      check(`${c.tag}: recorded together, then sent to the GPU, too`, b.f['sv.array'] === 1 && db <= BOUND, pct(db));
+      // (spots: one atlas for every view cannot hold each view's casters, so that frame goes view by view)
+      const how = SPOTS(c.tag) ? b.f['sv.array'] === 0 && text(b.f['sv.why']) === 'lights' : b.f['sv.array'] === 1;
+      check(`${c.tag}: recorded together, then sent to the GPU, too`, how && db <= BOUND, `${pct(db)}, sv.array ${b.f['sv.array']} ${text(b.f['sv.why'])}`);
+    }
+    if (SPOTS(c.tag) && c.tag !== 'spots-f91') {
+      const s = run(gpu, `${c.tag}-shared`, { ...c.env, CW_TEST_VIEWS_ARRAY: '1', CW_TEST_VIEWS_SHARED_CASTERS: '1' });
+      const ds = share(s, each);
+      check(`control (${c.tag}): every view's shadow casters view 0's must fail the bound`, ds > BOUND, pct(ds));
     }
     if (c.tag === 'vm' || c.tag === 'water') {
       const s = run(gpu, `${c.tag}-shifted`, { ...c.env, CW_TEST_VIEWS_ARRAY: '1', CW_TEST_VIEWS_ARRAY_SHIFT: '1' });

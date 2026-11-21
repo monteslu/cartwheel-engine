@@ -456,6 +456,8 @@ void cw__atlas_update(cw__atlas *a, cw_pass_ctx *ctx, const cw__shadow_req *req,
   if (!n) return;
   cw_array_clear(&a->casters);
   gather_casters(a, &ctx->scene3d->base);
+  a->info.casters = 1469598103934665603ull;
+  for (int i = 0; i < a->casters.count; i++) a->info.casters = mix64(a->info.casters, a->casters.data[i].key);
   /* the layout follows the set of lights and their sizes */
   uint64_t lk = mix64(1469598103934665603ull, (uint64_t)a->size);
   for (int i = 0; i < n; i++) lk = mix64(mix64(mix64(lk, (uint64_t)(uintptr_t)req[i].light), (uint64_t)req[i].size), req[i].omni);

@@ -499,9 +499,10 @@ void cw_pipeline_set_view_hook(cw_pipeline *p, void (*hook)(int view, void *user
  * a masked object narrows it (both must allow a view). It is the declarative form of a view hook that shows and
  * hides: a player's own model near up only in its view, the others' far ones, a level of detail chosen per view, an
  * object a player has collected gone from that player's view. Unlike a hook it keeps a frame in one pass
- * (cw_pipeline_set_views_array). The object's own visible still hides it everywhere. The shadow maps are drawn once
- * a frame from what view 0 draws (as a frame drawn view by view draws them in view 0's run): an object outside view
- * 0 casts no shadow. Masks apply only with two views or more; a single view and a SubViewport's camera draw
+ * (cw_pipeline_set_views_array). The object's own visible still hides it everywhere. Shadows: each view's clustered
+ * spot and omni lights (the shadow atlas) cast what that view draws, as in a frame drawn view by view; the other
+ * shadow maps (the sun's, three.c's own lights') are drawn once a frame from what view 0 draws (as a frame drawn view
+ * by view draws them in view 0's run): an object outside view 0 casts none of those. Masks apply only with two views or more; a single view and a SubViewport's camera draw
  * everything. A light can carry a mask only for every view (a frame with a light drawn in
  * some views only is drawn view by view). The object is held until its mask is cleared or it leaves every scene.
  * Set masks before the frame renders (in the update or a render callback), never from a view hook. */

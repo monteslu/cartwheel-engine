@@ -4,6 +4,27 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.57.4 (2026-11-21)
+
+### Fixed
+- A split screen drawn in one pass cast the clustered spot and omni lights' shadows (the shadow atlas) from what view 0
+  draws in every view: a view whose level of detail differs from view 0's (cw_object_set_views), and a caster the
+  Shadows setting culls as small from view 0's camera but not from that view's, showed view 0's shadows. A
+  two-player demolition derby under four shadowed floodlights differed from its per-view picture in up to 0.57% of a
+  frame, all of it in the second view (a car's shadow and the dirt round it). Each view's lights pass now draws the
+  atlas from that view's casters, as a frame drawn view by view does, and the tiles they change are drawn again for it;
+  the sun's and three.c's own shadow maps stay drawn once a frame from view 0, as before. Recorded together
+  (`pipeline views_submit 0`, one atlas for every view) a frame whose views cast differently is drawn view by view.
+  The derby now differs from its per-view picture in at most 0.008% (arenas 1 and 2, two and four players, GL and
+  WebGPU, 240 frames in play). Cost: each view whose casters differ draws the tiles again, as a frame drawn view by
+  view does. On a Radeon 890M (GL, release cart, romdev, five interleaved rounds) the four-player derby's one pass
+  went from 11.68 to 13.49 ms wall a frame (CPU 8.12 to 10.88, GPU 8.56 to 9.30), the same as its views drawn one by
+  one (13.78); two players 11.53 to 11.94. The guide says how a game keeps one tile for every view (one unmasked
+  caster standing in for its levels of detail).
+- Gate `views-masks` gains spots: clustered spot lights with shadows over statues whose level of detail is chosen per
+  view, a depth prepass, a decal and particles beside them, at two and four views; the per-view picture within 0.3%.
+  Control: every view casting view 0's casters (CW_TEST_VIEWS_SHARED_CASTERS=1) fails it.
+
 ## v0.57.3 (2026-11-21)
 
 ### Fixed
