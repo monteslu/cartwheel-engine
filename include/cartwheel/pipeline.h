@@ -492,6 +492,8 @@ int cw_pipeline_split(cw_pipeline *p, const cw_node *cameras, int n);
  * scene's world matrices (what a hook moves for a later view, it updates
  * itself, t3_object_update_world_matrix). */
 void cw_pipeline_set_view_hook(cw_pipeline *p, void (*hook)(int view, void *user), void *user);
+/* every view: an object's mask when it has none (cw_object_set_views) */
+#define CW_VIEWS_ALL 0xFFFFFFFFu
 /* Per-view visibility: draw o, and everything below it, only in the split screen views whose bit is set in views
  * (bit k = view k of cw_pipeline_set_views). CW_VIEWS_ALL (every object's default) takes o out again. A mask under
  * a masked object narrows it (both must allow a view). It is the declarative form of a view hook that shows and
@@ -503,7 +505,6 @@ void cw_pipeline_set_view_hook(cw_pipeline *p, void (*hook)(int view, void *user
  * everything. A light can carry a mask only for every view (a frame with a light drawn in
  * some views only is drawn view by view). The object is held until its mask is cleared or it leaves every scene.
  * Set masks before the frame renders (in the update or a render callback), never from a view hook. */
-#define CW_VIEWS_ALL 0xFFFFFFFFu
 void cw_object_set_views(t3_object *o, uint32_t views);
 /* o's mask (CW_VIEWS_ALL when it has none) */
 uint32_t cw_object_views(const t3_object *o);

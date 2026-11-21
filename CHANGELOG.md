@@ -4,6 +4,11 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.56.1 (2026-11-21)
+
+### Fixed
+- `CW_VIEWS_ALL` has a comment of its own, so `cw_object_set_views` keeps the comment above it and the API check (`tools/gen-api.mjs --check`) passes again; v0.56.0 failed that check in CI and published no SDK. Same engine as v0.56.0.
+
 ## v0.56.0 (2026-11-20)
 
 ### Added
