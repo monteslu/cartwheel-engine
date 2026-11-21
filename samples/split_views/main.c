@@ -11,11 +11,16 @@
  * The frame stays in one pass (sv.array 1). SV_HOOK=1 does the same with a view hook that shows and hides each
  * object before its view draws (the frame is then drawn view by view): the gate holds the two pictures equal.
  * SV_WRONG=1 gives every object the next view's mask (the gate's control: the picture differs).
+ * The other cases, each also by SV_MODE=<name>: SV_VM=1 (vm) a first person gun per camera, each on its own layer and its
+ * camera's viewmodel_layers, over 4x MSAA; SV_WATER=1 (water) a pond with planar reflection and refraction;
+ * SV_VIS=1 (vis) a VisibilityManager culling a ring of posts to each view's frustum; SV_VIGNETTE=1 (vignette) a
+ * vignette in each view (vignette_per_view; 2: once over the screen); SV_OWN_POST=1 a post chain of each view's own.
  *
- * Debug state: sv.views, sv.array (the last frame drew its views in one pass), sv.masks (objects with a mask),
+ * Debug state: sv.views, sv.array (the last frame drew its views in one pass), sv.why (why not), sv.masks (objects with a mask),
  * sv.tick. */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "cartwheel/debug.h"
 #include "cartwheel/math.h"
@@ -106,11 +111,17 @@ static cw_node cam_new(cw_node world, int k) {
   return c;
 }
 
+/* a switch: its own variable, or SV_MODE naming it (one variable for the program survey: SV_MODE=vm|water|vis|vignette|v4) */
+static bool sv(const char *name, const char *mode) {
+  const char *e = getenv(name), *m = getenv("SV_MODE");
+  return (e && atoi(e)) || (m && !strcmp(m, mode));
+}
+
 /* the gate's other cases: a viewmodel per camera, a pond with planar water, a VisibilityManager, a vignette */
 static void features(cw_node world) {
   const char *e;
-  if ((e = getenv("SV_VM")) && atoi(e)) cw_node_set(cw_node_get(world, "Post"), "msaa", cw_val_int(4)); /* (the guns over a multisampled scene) */
-  if ((e = getenv("SV_VM")) && atoi(e))
+  if (sv("SV_VM", "vm")) cw_node_set(cw_node_get(world, "Post"), "msaa", cw_val_int(4)); /* (the guns over a multisampled scene) */
+  if (sv("SV_VM", "vm"))
     for (int k = 0; k < CW_MAX_VIEWS; k++) {
       /* each view's gun on a layer of its own, which only its camera's viewmodel pass draws */
       cw_node_set(cams[k], "viewmodel_layers", cw_val_int(1 << (4 + k)));
@@ -119,7 +130,7 @@ static void features(cw_node world) {
       cw_node_set(gun, "layers", cw_val_int(1 << (4 + k)));
       cw_node_set(gun, "cast_shadow", cw_val_bool(false));
     }
-  if ((e = getenv("SV_WATER")) && atoi(e)) {
+  if (sv("SV_WATER", "water")) {
     cw_node w = cw_node_new("Water3D", "Pond");
     cw_node_add_child(world, w);
     cw_node3d_set_position(w, (t3_vec3){ 0, 0.15f, 0 });
@@ -128,7 +139,7 @@ static void features(cw_node world) {
     cw_node_set(w, "reflection", cw_val_bool(true));
     cw_node_set(w, "refraction", cw_val_bool(true));
   }
-  if ((e = getenv("SV_VIS")) && atoi(e)) {
+  if (sv("SV_VIS", "vis")) {
     cw_node vis = cw_node_new("VisibilityManager", "Visibility");
     cw_node_set(vis, "frustum_cull", cw_val_bool(true));
     cw_node_set(vis, "occlusion_cull", cw_val_bool(false));
@@ -142,13 +153,14 @@ static void features(cw_node world) {
       prim(world, name, "BOX", (t3_vec3){ 20 * cw_sin(a), 1, 20 * cw_cos(a) }, (t3_vec3){ 0.6f, 2, 0.6f }, 0.6f, 0.4f, 0.3f);
     }
   }
-  if ((e = getenv("SV_VIGNETTE")) && atoi(e)) {
+  if (sv("SV_VIGNETTE", "vignette")) {
+    e = getenv("SV_VIGNETTE");
     cw_node post = cw_node_get(world, "Post");
     cw_node_set(post, "bloom", cw_val_bool(false));
     cw_node_set(post, "vignette", cw_val_bool(true));
     cw_node_set(post, "vignette_intensity", cw_val_float(0.45f));
     cw_node_set(post, "vignette_smoothness", cw_val_float(0.5f));
-    cw_node_set(post, "vignette_per_view", cw_val_bool(atoi(e) == 1));
+    cw_node_set(post, "vignette_per_view", cw_val_bool(!e || atoi(e) == 1));
   }
 }
 
@@ -160,7 +172,7 @@ static void init(void *u) {
   cw_debug_i32("sv.tick", &tick);
   cw_debug_bytes("sv.why", why, sizeof why);
   const char *e = getenv("SV_VIEWS");
-  views = e && atoi(e) == 4 ? 4 : 2;
+  views = (e && atoi(e) == 4) || sv("SV_V4", "v4") ? 4 : 2;
   hook_mode = (e = getenv("SV_HOOK")) && atoi(e);
   wrong = (e = getenv("SV_WRONG")) && atoi(e);
   cw_node world = cw_node_get(cw_tree_root(cw_scene_app_tree()), "World");

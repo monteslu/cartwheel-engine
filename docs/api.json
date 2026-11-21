@@ -9230,6 +9230,24 @@
      "inline": false
     },
     {
+     "name": "cw_object_set_views",
+     "signature": "void cw_object_set_views(t3_object *o, uint32_t views)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw_object_views",
+     "signature": "uint32_t cw_object_views(const t3_object *o)",
+     "doc": "o's mask (CW_VIEWS_ALL when it has none)",
+     "inline": false
+    },
+    {
+     "name": "cw_node3d_set_views",
+     "signature": "void cw_node3d_set_views(cw_node n, uint32_t views)",
+     "doc": "cw_object_set_views on a Node3D's object (cw_node3d_object): a node that changes its object later loses it",
+     "inline": false
+    },
+    {
      "name": "cw_pipeline_set_views_shared_post",
      "signature": "void cw_pipeline_set_views_shared_post(cw_pipeline *p, bool shared)",
      "doc": "Splitscreen's post chain, shared: each view runs only the post passes that\nread its depth or motion (SSAO, say) and keeps its picture in HDR; the\nviews are laid out first and the rest of the chain (bloom, tone mapping,\nthe grade, anti-aliasing, lens effects) runs once over the whole output.\nA view then costs its 3D and those passes, not a whole chain (the CPU\nrecords each pass once a frame instead of once a view). The vignette and\nthe bloom are the screen's then, not each view's: a glow can cross a seam.\nOff by default.",
@@ -9534,6 +9552,10 @@
     {
      "name": "CW_MAX_VIEWS",
      "doc": "A view: a Camera3D drawn into a rectangle of the output (fractions of\nit, x / y from the top left). With two or more views the pipeline renders\nthe 3D scene once per view (each through its own camera, at its own size,\nwith the post chain minus TAA, whose history one camera owns; the shadow\nmaps are drawn once, for the first view, and the others reuse them), lays the\npictures into their rectangles, then runs the overlays (the app's HUD,\ndebug draw) once over the whole output: a HUD reads the rectangles back\nwith cw_pipeline_views."
+    },
+    {
+     "name": "CW_VIEWS_ALL",
+     "doc": "Per-view visibility: draw o, and everything below it, only in the split screen views whose bit is set in views\n(bit k = view k of cw_pipeline_set_views). CW_VIEWS_ALL (every object's default) takes o out again. A mask under\na masked object narrows it (both must allow a view). It is the declarative form of a view hook that shows and\nhides: a player's own model near up only in its view, the others' far ones, a level of detail chosen per view, an\nobject a player has collected gone from that player's view. Unlike a hook it keeps a frame in one pass\n(cw_pipeline_set_views_array). The object's own visible still hides it everywhere. The shadow maps are drawn once\na frame from what view 0 draws (as a frame drawn view by view draws them in view 0's run): an object outside view\n0 casts no shadow. Masks apply only with two views or more; a single view and a SubViewport's camera draw\neverything. A light can carry a mask only for every view (a frame with a light drawn in\nsome views only is drawn view by view). The object is held until its mask is cleared or it leaves every scene.\nSet masks before the frame renders (in the update or a render callback), never from a view hook."
     }
    ]
   },
