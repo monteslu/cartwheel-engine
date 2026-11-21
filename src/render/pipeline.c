@@ -171,11 +171,23 @@ void cw__gpu_timing_request(void) { gpu_timing = 1; }
  * the device could multisample the scene (a core WebGPU device, wasmcart
  * 0.37.0 on), so the control still runs the GL call there. Its control only. */
 static bool test_gl_msaa_on_webgpu;
+/* pipeline_test views_stall <ms>: a one-pass split screen spends that much CPU time a view before its scene (the wall time
+ * gate's control: a one pass that is slower than the views drawn on their own must fail it) */
+static double test_views_stall_ms;
+static void views_stall(void) {
+  if (test_views_stall_ms <= 0) return;
+  double t0 = cw__render3d_now_ms();
+  while (cw__render3d_now_ms() - t0 < test_views_stall_ms) {
+  }
+}
 static void cmd_pipeline_test(int argc, const char **argv, cw_reply *r) {
   if (argc == 2 && !strcmp(argv[1], "gl_msaa_on_webgpu")) {
     test_gl_msaa_on_webgpu = true;
     cw_reply_raw(r, "{\"ok\":true}");
-  } else cw_reply_error(r, "usage: pipeline_test gl_msaa_on_webgpu");
+  } else if (argc == 3 && !strcmp(argv[1], "views_stall")) {
+    test_views_stall_ms = atof(argv[2]);
+    cw_reply_printf(r, "{\"views_stall\":%g}", test_views_stall_ms);
+  } else cw_reply_error(r, "usage: pipeline_test gl_msaa_on_webgpu | views_stall <ms>");
 }
 
 static int32_t views_submits_dbg;
@@ -233,7 +245,7 @@ cw_pipeline *cw_pipeline_of(cw_tree *t) {
     cmd_done = true;
     cw_debug_i32("cw.views_submits", &views_submits_dbg); /* WebGPU: the last frame's one-pass views submitted one by one (0: none) */
     cw_debug_command("pipeline", "pipeline [views_array 0|1] [views_submit 0|1]: render passes (phase, ran, GPU ms), HDR format, timer support, missing three.c states; views_array sets split screen in one pass on or off first, views_submit (WebGPU) its views submitted one by one or together", cmd_pipeline);
-    cw_debug_command("pipeline_test", "pipeline_test gl_msaa_on_webgpu: a test control: puts back a GL call on WebGPU runs that the dual-cart check must catch",
+    cw_debug_command("pipeline_test", "pipeline_test gl_msaa_on_webgpu | views_stall <ms>: test controls: puts back a GL call on WebGPU runs that the dual-cart check must catch; a one-pass split screen slowed by ms a view",
                      cmd_pipeline_test);
   }
   return p;
@@ -1570,6 +1582,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
               run_pass(p, r, &ctx);
               array_view_end(&ctx, p);
             } else if (r->name == cw_intern("scene") || r->name == cw_intern("depth_prepass")) {
+              if (r->name == cw_intern("scene")) views_stall();
               if (!p->arr_cam1) p->arr_cam1 = t3_array_camera_new();
               for (int c = 0; c < p->arr_cam1->count; c++) t3_release(p->arr_cam1->cameras[c]);
               p->arr_cam1->count = 0;
@@ -1759,6 +1772,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
         }
       } else if (mode == RUN_ARRAY && ph < CW_PHASE_OVERLAY) {
         if (r->name == cw_intern("scene") || r->name == cw_intern("depth_prepass")) ctx.camera = &p->arr_cam->base; /* every view in one render */
+        if (r->name == cw_intern("scene")) for (int k = 0; k < p->arr_n; k++) views_stall();
         run_pass(p, r, &ctx);
         ctx.camera = p->arr_cams[0];
       } else run_pass(p, r, &ctx);
