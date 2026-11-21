@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cartwheel/debug.h"
 #include "cartwheel/environment.h"
 #include "cartwheel/gpu.h"
 #include "cartwheel/math.h"
@@ -935,6 +936,8 @@ static void fill(t3_extension_ctx *c, void *user) {
     pk = k;
   }
   pv_swap(d, pk);
+  /* (the Very Low program reads a few of these: the rest are set for it as for the full one, on purpose) */
+  cw__ext_miss_quiet = d->ext_low;
   float v[4];
   static const char *const wn[4] = { "waterWave0", "waterWave1", "waterWave2", "waterWave3" };
   for (int i = 0; i < 4; i++) {
@@ -965,7 +968,14 @@ static void fill(t3_extension_ctx *c, void *user) {
   t3_extension_set_uniform(c, "waterCam", d->cam, 4);
   {
     static const float whole[4] = { 0, 0, 1, 1 };
-    t3_extension_set_uniform(c, "waterView", d->wv_n > 0 ? d->view_rect : whole, 4);
+    /* CW_TEST_WATER_STALE (tests/program-tables.mjs): 1, the program behaves as a table made before the view rectangle
+     * (the whole picture's uv, and the program said to lack it); 2, the same drawn in one pass all the same (the control) */
+    const char *stale = cw_test_env("CW_TEST_WATER_STALE");
+    int st = stale ? atoi(stale) : 0;
+    bool has = t3_extension_set_uniform(c, "waterView", d->wv_n > 0 && !st ? d->view_rect : whole, 4) && st != 1;
+    if (!d->ext_low) d->view_uniform = has ? 1 : 2; /* (the Very Low program reads no planar target) */
+    /* CW_TEST_EXT_MISS=1 (tests/program-tables.mjs): a value the program lacks, which the pipeline must report */
+    if (cw_test_env("CW_TEST_EXT_MISS")) t3_extension_set_uniform(c, "waterNoSuchValue", whole, 4);
   }
   /* shore: floor map on, foam width, 1 / clarity, crest foam; shallow colour; the map's rectangle; foam clock */
   v[0] = d->floor_tex ? 1.0f : 0.0f, v[1] = d->shore_foam, v[2] = 1.0f / (d->clarity > 0.01f ? d->clarity : 0.01f), v[3] = d->crest_foam;
@@ -1030,6 +1040,7 @@ static void fill(t3_extension_ctx *c, void *user) {
     }
     t3_extension_set_texture(c, "waterCaustic", d->caus_tex ? d->caus_tex : nm0);
   }
+  cw__ext_miss_quiet = false;
   pv_swap(d, pk);
 }
 
@@ -1162,6 +1173,17 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
       }
       d->wv_n = ctx->view_count;
       if (k > 0 && v->cam_under != d->wv[0].cam_under && !ctx->pipeline->arr_part) cw__pipeline_array_refuse(ctx, "water"); /* (view by view: each scene its own) */
+      /* a surface program without the view rectangle (an app table generated before split screen in one pass) samples
+       * every view's planar targets at the whole picture's uv: drawn view by view, where that uv is the view's own */
+      if (!d->ext_low && d->view_uniform == 2) {
+        static bool warned;
+        if (!warned)
+          cw_warn("Water3D: the water program in %s's program table has no view rectangle (the table was generated before split "
+                  "screen in one pass): split screen is drawn view by view. Regenerate the table: %s",
+                  cw__app_target_name(), cw__programs_fix_command());
+        warned = true;
+        cw__pipeline_array_refuse(ctx, "water (program table out of date)");
+      }
       if (k == ctx->view_count - 1) wv_put(d, 0); /* (what a draw with no view's camera gets: the first view's) */
     } else d->wv_n = 0;
   }

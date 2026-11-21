@@ -11,6 +11,7 @@
 #include "cartwheel/scene.h"
 #include "cartwheel/shading.h"
 #include "cartwheel/surface.h"
+#include "pipeline_internal.h"
 
 enum { MAX_PARAMS = 32, MAX_COUNT = 32, NAME_MAX_ = 11 };
 
@@ -109,7 +110,10 @@ static void fill(t3_extension_ctx *c, void *u) {
     const t3_object *o = t3_extension_object(c);
     t3_mat4 inv;
     t3_mat4_invert(&inv, &o->matrix_world);
+    /* (an instanced program has none: its instances are placed in the mesh's space already; tools/lib/surface-part.mjs) */
+    cw__ext_miss_quiet = true;
     t3_extension_set_uniform(c, s->inv_name, inv.e, 16);
+    cw__ext_miss_quiet = false;
   }
 }
 

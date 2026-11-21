@@ -14,6 +14,9 @@ extern int32_t cw__missing_programs;
  * (the probe grid's bake, reflection probes) would keep a partial scene's light for good: it waits for a full render. */
 extern bool cw__warm_partial;
 const char *cw__programs_fix_command(void);
+/* an extension hook setting a value one variant of its part lacks on purpose: on around those sets, the pipeline's
+ * report of values a program lacks (a table older than its extension) leaves them out */
+extern bool cw__ext_miss_quiet;
 const char *cw__app_target_name(void); /* the app's target (its generated <app>_programs.c), src/render/programs.c */
 
 #define CW__QUERY_RING 64 /* a pass's queries in flight: up to four views a frame, many frames deep (a run flat out queues a lot) */

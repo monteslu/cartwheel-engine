@@ -43,6 +43,8 @@ function(cw__write_if_changed path content)
   endif()
 endfunction()
 
+include(${CMAKE_CURRENT_LIST_DIR}/program-stamp.cmake) # cw__check_table_stamp
+
 # cw_program_table(<manifest> <out-var>): the table library cwprog_<name> for
 # a manifest (made once), its name in <out-var>
 function(cw_program_table manifest out_name)
@@ -63,6 +65,7 @@ function(cw_program_table manifest out_name)
   if(NOT EXISTS ${manifest})
     message(FATAL_ERROR "program table ${manifest} does not exist")
   endif()
+  cw__check_table_stamp(${manifest} ${tdir} ${tname})
   set(_srcs "")
   foreach(be gl wgpu)
     if(be STREQUAL "wgpu" AND NOT CW_WGPU)

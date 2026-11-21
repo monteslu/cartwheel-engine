@@ -45,7 +45,8 @@
 //       default): built with tools/cwproject.mjs, run natively, their states
 //       into <project>/programs/<app>.txt
 //   node tools/programs.mjs --table <manifest.txt> [--missing <log> ...]
-//       regenerates one table (what `ninja <table>_programs` runs)
+//       regenerates one table (what `ninja <table>_programs` runs); several --table regenerate each in its own
+//       process, a few at once (the command the configure prints for out-of-date tables)
 //   node tools/programs.mjs --all-tables
 //       regenerates every table the build knows (`ninja programs`)
 //   Every regeneration then compiles the table's WebGPU programs with Dawn's WGSL compiler (Tint) on
@@ -75,6 +76,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { enterGpuSandbox } from './lib/gpu-sandbox.mjs';
 import { testEnv, wgpuPin } from './lib/wgpu-pin.mjs';
 import { checkWgsl } from './lib/wgsl-check.mjs';
+import { tableStamp } from './lib/program-sources.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -256,6 +258,27 @@ function regenerate(manifest, logs = []) {
   }
   // the capture cache sits in the build tree; the generated C beside the manifest, checked in
   rmSync(join(dirname(manifest), '.t3-captures'), { recursive: true, force: true });
+  stamp(manifest, extensions);
+}
+
+/** the generated C stamped with the extension sources its states were made from (tools/lib/program-sources.mjs; the
+ * build compares it, cmake/programs.cmake) */
+function stamp(manifest, extensions) {
+  const name = basename(manifest, '.txt'), dir = dirname(manifest);
+  const parts = new Set();
+  for (const st of statesOf(manifest)) for (const t of st.split('+')) if (/^x[a-z0-9_]+$/.test(t)) t.slice(1).split('_').forEach((p) => parts.add(p));
+  const modules = [...parts].map((p) => {
+    const m = extensions.find((e) => basename(e) === p + '.mjs');
+    if (!m) throw new Error(`${manifest}: a state uses the extension part ${p}, and no module ${p}.mjs was given`);
+    return m;
+  });
+  const st = tableStamp(modules, ROOT, dir);
+  for (const be of ['gl', 'wgpu']) {
+    const c = join(dir, `${name}_${be}.c`);
+    if (!existsSync(c)) continue;
+    const text = readFileSync(c, 'utf8').replace(/^\/\* cw-source[^\n]*\n/gm, '');
+    writeFileSync(c, st + text);
+  }
 }
 
 const apps = () => {
@@ -264,6 +287,24 @@ const apps = () => {
   return readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(readFileSync(join(dir, f), 'utf8')));
 };
 
+if (all('--table').length > 1) {
+  // several tables (the list the configure prints for out-of-date tables): each in its own process, a few at once
+  const { spawn } = await import('node:child_process');
+  const { availableParallelism } = await import('node:os');
+  const pass = argv.filter((a, i) => a !== '--table' && argv[i - 1] !== '--table');
+  const queue = all('--table').map((m) => resolve(m));
+  const jobs = Math.max(1, Math.min(queue.length, Math.floor(availableParallelism() / 4) || 1));
+  const failed = [];
+  console.log(`programs: regenerating ${queue.length} tables, ${jobs} at a time`);
+  await Promise.all(Array.from({ length: jobs }, async () => {
+    for (let m; (m = queue.shift()); ) {
+      const code = await new Promise((res) => spawn(process.execPath, [fileURLToPath(import.meta.url), ...pass, '--table', m], { stdio: 'inherit' }).on('close', res));
+      if (code !== 0) failed.push(m);
+    }
+  }));
+  if (failed.length) { console.error(`programs: ${failed.length} table(s) failed:\n  ${failed.join('\n  ')}`); process.exit(1); }
+  process.exit(0);
+}
 if (one('--table')) {
   regenerate(resolve(one('--table')), all('--missing').map((l) => resolve(l)));
   process.exit(0);
@@ -320,6 +361,7 @@ const switchAt = Math.max(3, Math.floor(+frames / 2));
 const switches = (presets) => argv.includes('--no-switch') ? [] :
   presets.filter((p) => p !== 'high').flatMap((p) => [['high', p], [p, 'high']]);
 const runDir = join(BUILD, 'programs-logs');
+const droppedSeen = new Set(); // "<app>: <state> uniform|texture <name>"
 const CARTS = argv.includes('--carts');
 const logDirs = all('--logs').map((d) => resolve(d));
 // a tree says in its cache; a game built on an SDK has the engine's choice in the SDK's manifest
@@ -352,7 +394,8 @@ const cartSurvey = (replyFile) => {
   if (!Array.isArray(rep.passes) || !rep.passes.some((p) => p.ran))
     return { states: [], why: 'no render pass ran: the cart never reached a rendered frame' };
   if (typeof rep.missing_states !== 'string') return { states: [], why: 'the pipeline reply has no missing_states field' };
-  return { states: rep.missing_states.split('\n').map((l) => l.trim()).filter(Boolean), why: null };
+  const dropped = typeof rep.dropped_values === 'string' ? rep.dropped_values.split('\n').map((l) => l.trim()).filter(Boolean) : [];
+  return { states: rep.missing_states.split('\n').map((l) => l.trim()).filter(Boolean), dropped, why: null };
 };
 if (CARTS && !argv.includes('--no-run')) {
   rmSync(runDir, { recursive: true, force: true });
@@ -393,6 +436,7 @@ if (CARTS && !argv.includes('--no-run')) {
       if (why) { failed.push(`${run.tag} on the ${leg} host: ${why}`); console.log(`cart ${run.tag} (${leg}): FAILED: ${why}`); continue; }
       surveyed++;
       for (const st of got.states) seen.add(st);
+      for (const d of got.dropped) droppedSeen.add(`${app}: ${d}`);
     }
     if (seen.size) writeFileSync(join(runDir, `${app}.log`), [...seen].join('\n') + '\n');
     console.log(`cart ${app}: ${seen.size} state(s) no table has (${surveyed} of ${runs.length * legs.length} run(s) surveyed)`);
@@ -469,6 +513,19 @@ if (!CARTS && !argv.includes('--no-run')) {
     process.exit(1);
   }
   logDirs.push(runDir);
+}
+
+// values extension hooks set that their programs lacked (src/render/pipeline.c ext_miss_hook: <app>.dropped natively, the
+// pipeline reply's dropped_values on carts): a table generated before an extension changed. The survey fails on any.
+for (const d of logDirs) {
+  if (!existsSync(d)) continue;
+  for (const f of readdirSync(d).filter((x) => x.endsWith('.dropped')))
+    for (const l of statesOf(join(d, f))) droppedSeen.add(`${basename(f, '.dropped')}: ${l}`);
+}
+if (droppedSeen.size) {
+  console.error(`programs: ${droppedSeen.size} value(s) set for programs that lack them (the tables predate an extension change; ` +
+    `regenerate each with node tools/programs.mjs --table <its manifest>):\n  ${[...droppedSeen].sort().join('\n  ')}`);
+  process.exit(1);
 }
 
 // --dry: report what each app misses (out/programs-survey.json), change nothing

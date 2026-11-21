@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, chmodSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dirHash, engineExtensionDirs } from './lib/program-sources.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -143,9 +144,12 @@ function setProps(name, props) {
 const engineFile = (rel) => copyFile(join(SRC, rel), join(OUT, rel));
 const engineTree = (rel, filter) => copyTree(join(SRC, rel), join(OUT, rel), filter);
 // AGENTS.md: the page a coding agent reads first (it links into docs/ and include/, both shipped)
-for (const f of ['cmake/flags.cmake', 'cmake/app.cmake', 'cmake/programs.cmake', 'cmake/plugins.cmake', 'LICENSE', 'NOTICE', 'AGENTS.md'])
+for (const f of ['cmake/flags.cmake', 'cmake/app.cmake', 'cmake/programs.cmake', 'cmake/program-stamp.cmake', 'cmake/plugins.cmake', 'LICENSE', 'NOTICE', 'AGENTS.md'])
   engineFile(f);
 engineTree('include');
+// the extension sources this engine's program tables are generated from, for a game's build to compare its tables'
+// stamps with (cmake/programs.cmake cw__check_table_stamp; the SDK ships no extension modules)
+writeFileSync(join(OUT, 'cmake/program-sources.txt'), engineExtensionDirs(SRC).map((d) => `${d} ${dirHash(join(SRC, d))}\n`).join(''));
 engineTree('docs', (r, dir) => dir ? !r.startsWith('tutorials') : /\.md$/.test(r) && !r.includes('/'));
 // three.c: its headers (program tables compile against src/gen/programs.h) and
 // the program-table generator (tools/, Node only)
