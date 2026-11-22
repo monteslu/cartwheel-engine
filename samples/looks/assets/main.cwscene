@@ -1,0 +1,83 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+ambient_energy = 0.25
+hemi_energy = 0.35
+
+[node name="Post" parent="." type="PostProcess"]
+bloom = true
+bloom_intensity = 0.06
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 16.5
+latitude = 40
+declination = 15
+north = 30
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+shadow_extent = 40
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.1, 0)
+size = vec3(40, 0.2, 40)
+color = color(0.32, 0.3, 0.34, 1)
+roughness = 0.9
+receive_shadow = true
+
+[node name="Tower" parent="." type="MeshInstance3D"]
+position = vec3(-4, 2.5, -4)
+size = vec3(2, 5, 2)
+color = color(0.75, 0.2, 0.25, 1)
+roughness = 0.6
+cast_shadow = true
+receive_shadow = true
+
+[node name="Crate" parent="." type="MeshInstance3D"]
+position = vec3(3.5, 1, -2)
+rotation = vec3(0, 0.6, 0)
+size = vec3(2, 2, 2)
+color = color(0.2, 0.45, 0.85, 1)
+roughness = 0.5
+cast_shadow = true
+receive_shadow = true
+
+[node name="Ball" parent="." type="MeshInstance3D"]
+position = vec3(0, 1.4, 0)
+primitive = SPHERE
+size = vec3(2.8, 2.8, 2.8)
+color = color(0.95, 0.75, 0.2, 1)
+roughness = 0.35
+cast_shadow = true
+receive_shadow = true
+
+[node name="Ring" parent="." type="MeshInstance3D"]
+position = vec3(-1.5, 0.6, 3)
+primitive = CYLINDER
+size = vec3(1.6, 1.2, 1.6)
+color = color(0.1, 0.9, 0.5, 1)
+roughness = 0.4
+cast_shadow = true
+receive_shadow = true
+
+[node name="Strip" parent="." type="MeshInstance3D"]
+position = vec3(0, 0.05, -7)
+size = vec3(12, 0.1, 0.4)
+color = color(0, 0, 0, 1)
+emissive = color(6, 1.2, 5.4, 1)
+
+[node name="Pillar" parent="." type="MeshInstance3D"]
+position = vec3(6, 1.5, -6)
+primitive = CYLINDER
+size = vec3(0.5, 3, 0.5)
+color = color(0, 0, 0, 1)
+emissive = color(1, 4.5, 5, 1)
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 4.5, 11)
+fov = 55
+near = 0.1
+far = 300

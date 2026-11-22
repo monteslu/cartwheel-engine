@@ -4,6 +4,36 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.62.0 (2026-11-22)
+
+### Added
+- Looks (`cartwheel/look.h`): post passes that restyle the 3D picture, two at a time, blended by weight.
+  `cw_look_new(&desc)` (start from `cw_look_default(kind)`) makes a look of one of these kinds: `CW_LOOK_ASCII`
+  (character cells matched to the shapes in them, glyph set, ramp and font of your own, neon push, a halo, a glyph
+  hold), `CW_LOOK_HALFBLOCK` (upper half block cells: a top and a bottom colour per cell, each the scene's mean over its
+  square, optionally quantised to levels or a palette), `CW_LOOK_DITHER_ORDERED` (one bit a pixel against 8x8 Bayer
+  or blue noise) and `CW_LOOK_DITHER_DIFFUSE` (one bit a pixel by a few parallel direct binary search sweeps from a
+  blue noise start: error diffusion's look without its scan-line shuffle), both in two colours of your choice, and
+  `CW_LOOK_CUSTOM` (a GLSL and WGSL `look()` of your own with helpers and 16 parameters). `cw_look_set` changes one
+  live, `cw_look_free` frees it.
+- `cw_pipeline_set_looks(p, a, b, t, &how)`: the pair a pipeline draws and the weight from a to b, blended as a cross
+  fade, a dissolve through a noise mask or a wipe along a direction with a soft edge (`cw_look_mix`); a null look is
+  the plain scene. Both looks read the same scene colour (one "looks" POST pass at order 295, after automatic exposure,
+  before bloom, so the looks glow); weight 0 and 1 draw one look alone. With no look set the pass does not run and the
+  frame is byte for byte the one without looks.
+- Grids are anchored to each view's pixels and every look is a function of the frame (plus the ASCII hold), so a
+  still camera's frames do not change. Looks work per view in split screen and in the one-pass split screen.
+- `cw_pipeline_set_look_boxes`: up to 16 HUD rectangles where the looks are dimmed or left out (the plain scene
+  shows), so HUD text reads.
+- `cw_pipeline_measure_looks` and `cw_pipeline_look_luminance`: each drawn look's mean luminance, reduced on the GPU and
+  read back a frame later, to match brightness across a blend.
+- Cost at 1920x1080 on a Radeon 890M, any preset: ASCII 0.24 to 0.41 ms on GL and 0.48 to 0.67 ms on WebGPU, half block
+  0.12 to 0.21 / 0.40 to 0.52, the ordered dither 0.11 to 0.18 / 0.24 to 0.51, the diffused dither 0.61 to 0.77 / 0.82
+  to 0.94, a custom look 0.09 to 0.18 / 0.17 to 0.23, a fade between two looks their sum and about 0.3 ms more.
+- Sample `looks` (and `looks_perf` at 1920x1080); gates `looks` (each look against what it promises, both ends and the
+  middle of every blend, still frames, split screen one pass against view by view, the flash check over a half-second
+  blend, each with a control that must fail), `look-ascii`, `look-halfblock`, `look-dither`, `look-split`.
+
 ## v0.61.0 (2026-11-22)
 
 ### Added

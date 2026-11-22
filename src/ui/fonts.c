@@ -37,3 +37,9 @@ cw_font cw_ui_font_mono(void) {
     mono = cw_font_from_memory(fira_mono, sizeof fira_mono, &(cw_font_desc){ .mode = CW_FONT_SDF, .bake_size = 48 });
   return mono;
 }
+
+/* the built-in Fira Mono's bytes (src/render/look_font.c rasterizes ASCII looks' glyphs from them) */
+const unsigned char *cw__ui_mono_ttf(size_t *len) {
+  *len = sizeof fira_mono;
+  return fira_mono;
+}

@@ -216,6 +216,60 @@ The pass runs only when something reads the velocity target (TAA, the VELOCITY d
 
 `samples/post_stack` steps one static room through every effect in turn, one schedule segment each (its gates are `post-bloom`, `post-ssao`, `post-taa` and so on, each against the plain AgX segment), and measures TAA convergence over one jitter cycle. Its last segments spin a bar in front of the camera: plain, under TAA, and as the velocity buffer.
 
+### Looks: restyling the picture
+
+A look turns the 3D picture into another kind of picture (`cartwheel/look.h`): glowing characters, terminal half blocks, one-bit dithering in two colours, or a fragment shader of your own ([look.h](header:look.h)). A pipeline draws up to two looks and blends them by a weight, so a game can move from one style to another on a beat, a menu or a level change:
+
+```c
+cw_look_desc d = cw_look_default(CW_LOOK_ASCII);
+d.ascii.rows = 40;                                   /* bigger characters */
+cw_look ascii = cw_look_new(&d);
+cw_look_desc dd = cw_look_default(CW_LOOK_DITHER_DIFFUSE);
+dd.dither.dark[2] = 0.12f;                           /* a navy and amber two-colour print */
+dd.dither.light[0] = 1, dd.dither.light[1] = 0.62f, dd.dither.light[2] = 0.18f;
+cw_look print = cw_look_new(&dd);
+
+cw_pipeline *p = cw_pipeline_of(tree);
+cw_pipeline_set_looks(p, (cw_look){ 0 }, ascii, t, NULL);    /* the plain scene fading into ASCII, t 0..1 */
+cw_pipeline_set_looks(p, ascii, print, t, &(cw_look_mix){ .blend = CW_LOOK_WIPE, .softness = 0.1f, .angle = 0.3f });
+cw_pipeline_set_looks(p, (cw_look){ 0 }, (cw_look){ 0 }, 0, NULL);   /* no look: the pass does not run */
+```
+
+| kind | what it draws |
+|---|---|
+| `CW_LOOK_ASCII` | each character cell is measured in six regions (and the depth edges on its near side) and drawn as the glyph of `glyphs` whose shape fits best, or, when the cell is flat, the glyph of `ramp` for its brightness. The character takes the scene's own hue pushed toward neon (`saturation`, `neon` over 1 blooms) with a soft halo (`glow`). `font` is any TrueType asset (the built-in Fira Mono by default); `rows` is the character rows over the output's height |
+| `CW_LOOK_HALFBLOCK` | the upper half block character: every cell a pair of square pixels, top and bottom, each the mean of the scene over its square. `levels` quantises each channel, or `palette` (up to 64 linear colours) picks the nearest |
+| `CW_LOOK_DITHER_ORDERED` | one bit a pixel against the 8 x 8 Bayer matrix or a 64 x 64 blue noise tile (`pattern`), in `dark` and `light` |
+| `CW_LOOK_DITHER_DIFFUSE` | one bit a pixel with the error spread over the neighbours, done the way a GPU can and a still picture holds: a blue noise start, then `sweeps` passes of a direct binary search (a pixel turns on or off when that brings the picture, blurred as an eye sees it, closer to the scene). Serial error diffusion carries the error along each scan line, so a small change in one place reshuffles the dots across the screen; here a change moves only the dots near it |
+| `CW_LOOK_CUSTOM` | your `vec3 look(vec2 px)` in GLSL and `fn look(px: vec2f) -> vec3f` in WGSL, with `cw_look_scene(px)`, `cw_look_size()`, `cw_look_scale()`, `cw_look_param(i)` (16 floats of `params`) and `cw_look_time()` defined for you |
+
+**Blends.** `CW_LOOK_FADE` mixes every pixel; `CW_LOOK_DISSOLVE` turns each pixel over as a smooth noise mask passes it (`scale` is the grain in pixels of a 1080 line picture, `seed` another mask); `CW_LOOK_WIPE` sweeps a straight edge along `angle`. `softness` widens the edge. Both looks read the same scene colour, so a blend costs the two looks and one full-screen mix, never a second scene. A weight of exactly 0 or 1 draws one look alone, the same pixels as that look set by itself. A null look is the plain scene. Change a look's settings from frame to frame with `cw_look_set` (the glow pulsing to a beat, the rows growing); blend over half a second or more so a change of brightness swells rather than flashes (`tools/flash-check.mjs` passes a half-second blend into a black and white dither).
+
+**Where it runs.** The "looks" POST pass sits at order 295: after automatic exposure has measured the scene, before bloom, so a look's bright strokes glow. A look reads the scene as it will be exposed and writes its colours divided by that exposure, so a look's colours are what an emissive surface of that colour shows at exposure 1, whatever the scene's exposure: the dither's white is the tone curve's white. The HUD draws after the post chain and is never restyled. With no look set the pass does not run: the frame is byte for byte the one drawn without looks.
+
+**Still pictures stay still.** Every grid (character cells, half block pixels, dither pixels) is anchored to the view's own pixels from its top left, and every look is a function of the frame alone, so a still camera gives the same frame every frame: nothing crawls. The ASCII look also holds: a cell keeps last frame's glyph unless a new one fits `hold` times better, and its six measures ease toward small changes (noise, grain, TAA's jitter) instead of jumping. Under TAA a few cells on hard edges, where the anti-aliased picture itself still moves with the jitter, can change.
+
+**HUD boxes.** `cw_pipeline_set_look_boxes` takes up to 16 rectangles of the output (fractions from the top left, like `cw_view`) where the looks are drawn darker (`dim`) or not at all (`clean`: the plain scene shows), so text over a panel reads. ASCII dims every cell a box touches.
+
+**Split screen.** The pass runs in each view, inside its rectangle, with its own glyph history; sizes are shares of the whole output's height, so characters are the same size in every view. It reads the view's depth, so with the shared post chain it is one of the per-view passes, and it runs in the one-pass split screen (`cw_pipeline_set_views_array`), where the picture is the same as the views drawn one by one.
+
+**Brightness.** ASCII is far darker on average than the scene it draws. `cw_pipeline_measure_looks(p, true)` reduces each drawn look's output to its mean luminance on the GPU and reads it back a frame later (`cw_pipeline_look_luminance`), so a game can match the two sides of a blend (a brighter `neon` for the ASCII side, say). It costs four tiny draws a look and one 1 x 1 read a frame; on GL the read waits for the previous frame's GPU work.
+
+**Cost.** Looks are art direction, not quality: every preset draws them the same, and Auto quality never changes one. GPU time of the "looks" pass at 1920 x 1080 on a Radeon 890M (RELEASE cart, WebGPU and GL):
+
+| look | GL (native) | WebGPU (cart on romdev) |
+|---|---|---|
+| ASCII (`rows` 54) | 0.24 to 0.41 ms | 0.48 to 0.67 ms |
+| half block (`rows` 45, a 16 colour palette) | 0.12 to 0.21 ms | 0.40 to 0.52 ms |
+| ordered dither (Bayer, 2 pixel squares) | 0.11 to 0.18 ms | 0.24 to 0.51 ms |
+| diffused dither (2 sweeps, 2 pixel squares) | 0.61 to 0.77 ms | 0.82 to 0.94 ms |
+| the sample's own shader (CUSTOM) | 0.09 to 0.18 ms | 0.17 to 0.23 ms |
+| a fade from ASCII to the diffused dither (both looks and the mix) | 1.07 to 1.44 ms | 1.65 to 1.79 ms |
+
+The ranges are the five presets, Very Low to Ultra (a look costs the same on each; the spread is the GPU's clock and a busy machine, load average 13 to 16). WebGPU pays more per pass: a pass of a few thousand texels (the ASCII cells, the dither sweeps) costs about 0.05 to 0.1 ms there whatever its size, which is why the diffused dither, at ten passes, is the dearest. A Vega 8 (about a quarter of an 890M) should expect two to four times these.
+
+`samples/looks` tours every kind and blend; its switches pick a pair for the gates. The gates are `looks` (each look against what it promises, the ends and the middle of every blend, still frames, split screen, the flash check, each with a control that must fail) and `look-ascii`, `look-halfblock`, `look-dither`, `look-split` (the same pictures on every host, GL and WebGPU).
+
 ## Lights and shadows
 
 Lights are three.js r187 lights: directional, omni (point), spot, ambient and hemisphere, with r187 shadow maps for every light that casts them (`shadow`, `shadow_size`, biases; a mesh needs `cast_shadow` and `receive_shadow`). How many of them a surface sees depends on the tree's lighting mode ([cartwheel/lighting.h](header:lighting.h)).

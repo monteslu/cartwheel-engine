@@ -230,6 +230,12 @@ five presets (Very Low to Ultra) plus Auto. `cw_quality_auto(true, 16.6f)` holds
 **Effects** (`explosions.h`, `particles.h`, `decals.h`, [explosions](docs/guides/explosions.md)):
 `cw_explosion_fire(node)`; drive rumble with `cw_explosion_shake(tree, at)`.
 
+**Looks** (`look.h`, [Looks](docs/guides/rendering-3d.md#looks-restyling-the-picture)): restyle the 3D picture as
+glowing ASCII, half blocks, one-bit dithering or a shader of your own, two at a time blended by weight:
+`cw_look a = cw_look_new(&d)` (from `cw_look_default(CW_LOOK_ASCII)`), then
+`cw_pipeline_set_looks(cw_pipeline_of(tree), a, b, t, &(cw_look_mix){ .blend = CW_LOOK_WIPE })`; HUD panels stay
+readable with `cw_pipeline_set_look_boxes`.
+
 **Debug channel** (`debug.h`, [debug-channel](docs/guides/debug-channel.md)): publish what a test reads, and
 answer requests:
 

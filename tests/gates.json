@@ -4688,6 +4688,128 @@
     "note": "star rays on the lamp, the light strip and the ball's highlight (glints, threshold 3, four rays). Control: the base segment, no rays"
   },
   {
+    "name": "looks",
+    "script": "tests/looks.mjs",
+    "note": "the post looks held to what each promises, natively on GL and WebGPU: no look draws the frame without looks byte for byte; ASCII cells hold glyphs only from the set; dithers are exactly two colours; half block pixels are the scene's mean over their square; a blend at 0 and 1 is each look; FADE, WIPE and DISSOLVE middles are what they promise; a still camera's frames do not change (TAA too, for the glyph hold); one-pass split screen equals view by view; a half-second blend passes the flash check. Each with a control that must fail"
+  },
+  {
+    "name": "look-ascii",
+    "app": "looks",
+    "frames": 60,
+    "webgpu": true,
+    "maxGt16": 0.005,
+    "env": {
+      "LOOK_A": "ascii",
+      "LOOK_BOXES": "1"
+    },
+    "controlEnv": {
+      "LOOK_A": "none",
+      "LOOK_BOXES": "1"
+    },
+    "fields": [
+      "look.ran",
+      "look.kind_a",
+      "look.cells",
+      "look.pass_ran"
+    ],
+    "expect": {
+      "look.ran": 1,
+      "look.kind_a": 1,
+      "look.pass_ran": 1
+    },
+    "note": "the ASCII look with a dimmed and a clean HUD box on every host. Control: no look"
+  },
+  {
+    "name": "look-halfblock",
+    "app": "looks",
+    "frames": 60,
+    "webgpu": true,
+    "maxGt16": 0.003,
+    "env": {
+      "LOOK_A": "palette"
+    },
+    "controlEnv": {
+      "LOOK_A": "levels"
+    },
+    "fields": [
+      "look.ran",
+      "look.kind_a",
+      "look.cells"
+    ],
+    "expect": {
+      "look.kind_a": 2
+    },
+    "note": "the half block look quantised to a 16 colour palette. Control: four levels a channel instead"
+  },
+  {
+    "name": "look-dither",
+    "app": "looks",
+    "frames": 60,
+    "webgpu": true,
+    "maxGt16": 0.01,
+    "env": {
+      "LOOK_A": "duotone",
+      "LOOK_B": "bayer",
+      "LOOK_T": "0.5",
+      "LOOK_HOW": "dissolve"
+    },
+    "controlEnv": {
+      "LOOK_A": "duotone",
+      "LOOK_B": "bayer",
+      "LOOK_T": "0.5",
+      "LOOK_HOW": "fade"
+    },
+    "fields": [
+      "look.ran",
+      "look.kind_a",
+      "look.kind_b"
+    ],
+    "expect": {
+      "look.ran": 7,
+      "look.kind_a": 4,
+      "look.kind_b": 3
+    },
+    "note": "a dissolve from the two-colour diffused dither to the Bayer dither, half way. Control: a fade instead"
+  },
+  {
+    "name": "look-split",
+    "app": "looks",
+    "frames": 60,
+    "webgpu": true,
+    "maxGt16": 0.005,
+    "env": {
+      "LOOK_A": "ascii",
+      "LOOK_B": "custom",
+      "LOOK_T": "0.5",
+      "LOOK_HOW": "wipe",
+      "LOOK_SOFT": "0.1",
+      "LOOK_SPLIT": "1",
+      "LOOK_BOXES": "1"
+    },
+    "controlEnv": {
+      "LOOK_A": "ascii",
+      "LOOK_B": "custom",
+      "LOOK_T": "0.5",
+      "LOOK_HOW": "wipe",
+      "LOOK_SOFT": "0.1",
+      "LOOK_SPLIT": "1",
+      "LOOK_BOXES": "1",
+      "CW_TEST_VIEWS_ARRAY_SHIFT": "1"
+    },
+    "fields": [
+      "look.ran",
+      "look.views",
+      "look.array",
+      "look.split"
+    ],
+    "expect": {
+      "look.views": 2,
+      "look.array": 1,
+      "look.split": 1
+    },
+    "note": "a wipe from the ASCII look to the sample's own shader in two split screen views drawn in one pass, with HUD boxes. Control: each view's passes a view off"
+  },
+  {
     "name": "pipeline-perf",
     "script": "tests/pipeline-perf.mjs",
     "note": "per-pass GPU ms at 1280x720 full quality (reported, not compared); every running pass timed natively, idle passes untimed"

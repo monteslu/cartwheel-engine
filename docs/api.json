@@ -4981,6 +4981,134 @@
    "macros": []
   },
   {
+   "header": "cartwheel/look.h",
+   "summary": "Looks: post passes that restyle the 3D picture, two at a time, blended by weight.\n\nA look turns the scene into another kind of picture: glowing characters (ASCII), terminal half blocks (each\ncharacter cell a pair of square pixels, top and bottom), one-bit dithering with two colours (an ordered pattern or\nan error-diffusion approximation), or a fragment shader of your own. Make looks once, then pick the pair a\npipeline draws and how far it is from the first to the second:\n\n  cw_look_desc d = cw_look_default(CW_LOOK_ASCII);\n  d.ascii.rows = 40;\n  cw_look ascii = cw_look_new(&d);\n  cw_look_desc dd = cw_look_default(CW_LOOK_DITHER_ORDERED);\n  cw_look dots = cw_look_new(&dd);\n  cw_pipeline *p = cw_pipeline_of(tree);\n  cw_pipeline_set_looks(p, ascii, (cw_look){ 0 }, 0, NULL);          // ASCII alone\n  cw_pipeline_set_looks(p, ascii, dots, t, &(cw_look_mix){ .blend = CW_LOOK_WIPE, .softness = 0.1f }); // a wipe, t 0..1\n  cw_pipeline_set_looks(p, (cw_look){ 0 }, (cw_look){ 0 }, 0, NULL); // the plain scene again\n\nA null look is the plain scene, so a fade from the scene into a look is (null, look, t). The pair is drawn by one\nPOST pass, \"looks\" (order 295: after automatic exposure has measured the scene, before bloom, so a look's bright\nstrokes glow). Both looks read the same scene colour: a blend costs the two looks and one blend draw, never a\nsecond scene. A blend weight of exactly 0 draws the first look alone and 1 the second alone, the same pixels as\nthat look set by itself. With no look set the pass does not run at all: the frame is the one drawn without looks,\nat no cost.\n\nColours: a look reads the scene as it will be exposed (the PostProcess exposure, exposure_ev and the automatic\nexposure) and writes scene-linear colour divided by that exposure, so the tone curve and the bloom after it treat\na look's colours as emissive surfaces of those values seen at exposure 1: a dither's white (1, 1, 1) shows as the\ntone curve's white of 1 whatever the scene's exposure, and a value over 1 blooms.\n\nGrids (characters, half blocks, dither pixels) are anchored to the pixels of each view, from its top left: a still\ncamera gives a still picture, frame after frame (nothing crawls), and every pattern is a function of the frame\nalone except the ASCII glyph hold, which keeps last frame's character where a new one fits only a little better.\nSizes are in pixels of a 1080 line picture (ASCII and half block rows over the output's height), scaled with the\noutput: the same look keeps its proportions at every resolution and in every split screen view.\n\nSplit screen: the pass runs in each view, inside its rectangle, and in the one-pass split screen too\n(cw_pipeline_set_views_array; it reads the view's depth, so with the shared post chain it is one of the per-view\npasses). Each view keeps its own glyph history.\n\nHUD boxes: rectangles of the output (a game's HUD panels) where the looks are dimmed, or left out so the plain scene\nshows, so text drawn over them reads (cw_pipeline_set_look_boxes). The HUD itself draws after the post chain\n(OVERLAY), untouched by any look.\n\nLooks are art direction, not quality: every graphics preset draws them the same (Auto quality never changes one).\nThey run on GL and WebGPU alike.",
+   "functions": [
+    {
+     "name": "cw_look_default",
+     "signature": "cw_look_desc cw_look_default(cw_look_kind kind)",
+     "doc": "A desc of that kind with every setting at the default noted above.",
+     "inline": false
+    },
+    {
+     "name": "cw_look_new",
+     "signature": "cw_look cw_look_new(const cw_look_desc *d)",
+     "doc": "Make a look (programs and glyph atlases are made on the first frame that draws it). A null look on a bad desc (a\nCUSTOM without the backend's shader, an unknown kind; logged). Looks belong to no pipeline: any pipeline (a\nSubViewport's too) can draw any look. Needs the GPU (init or later).",
+     "inline": false
+    },
+    {
+     "name": "cw_look_set",
+     "signature": "bool cw_look_set(cw_look l, const cw_look_desc *d)",
+     "doc": "Change a look's settings (its kind too) from the next frame: a beat pulsing the glow, the rows growing. false on a\nbad desc (the look keeps its old settings) or a dead handle.",
+     "inline": false
+    },
+    {
+     "name": "cw_look_get",
+     "signature": "bool cw_look_get(cw_look l, cw_look_desc *out)",
+     "doc": "The look's settings now (false for a dead handle).",
+     "inline": false
+    },
+    {
+     "name": "cw_look_free",
+     "signature": "void cw_look_free(cw_look l)",
+     "doc": "Free a look; pipelines drawing it draw the plain scene in its place.",
+     "inline": false
+    },
+    {
+     "name": "cw_pipeline_set_looks",
+     "signature": "void cw_pipeline_set_looks(cw_pipeline *p, cw_look a, cw_look b, float t, const cw_look_mix *how)",
+     "doc": "The looks this pipeline draws from the next frame: a, b, and t from a (0) to b (1), blended as `how` says (NULL: a\ncross fade). A null handle is the plain scene; a and b both null (or the same look and t of 0) draw no look and run\nnothing. t is clamped to 0..1. A blend is the game's to time: a fade over half a second or more swells rather than\nflashes (a full-screen change of brightness back and forth more than three times a second is a strobe).",
+     "inline": false
+    },
+    {
+     "name": "cw_pipeline_looks",
+     "signature": "void cw_pipeline_looks(cw_pipeline *p, cw_look *a, cw_look *b, float *t, cw_look_mix *how)",
+     "doc": "What cw_pipeline_set_looks set (any pointer may be NULL).",
+     "inline": false
+    },
+    {
+     "name": "cw_pipeline_set_look_boxes",
+     "signature": "void cw_pipeline_set_look_boxes(cw_pipeline *p, const cw_look_box *boxes, int n)",
+     "doc": "The boxes from the next frame (copied; n 0 clears them, past CW_LOOK_MAX_BOXES are dropped). A game sets them every\nframe its HUD moves; they stay until set again.",
+     "inline": false
+    },
+    {
+     "name": "cw_pipeline_measure_looks",
+     "signature": "void cw_pipeline_measure_looks(cw_pipeline *p, bool on)",
+     "doc": "Measure the looks' brightness: each frame the pass also reduces each look's output to its mean luminance (in the\nexposed space, the first view's) on the GPU and reads it back a frame later. Off by default; on, it costs four tiny\ndraws a look and a 1x1 read a frame (on GL a short wait for the previous frame's GPU work).",
+     "inline": false
+    },
+    {
+     "name": "cw_pipeline_look_luminance",
+     "signature": "bool cw_pipeline_look_luminance(cw_pipeline *p, float out[2])",
+     "doc": "The latest measured mean luminance of the first and the second look's output (the plain scene's for a null look),\nas of a frame or two ago: out[i] is -1 for a look that was not drawn then (b while t is 0). false while nothing\nhas arrived. A game matches two looks' brightness across a blend with it (ASCII is darker than the scene).",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_look_kind",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_LOOK_NONE,            /* the plain scene (as a null look) */\n  CW_LOOK_ASCII,           /* glowing characters matched to the shapes in each cell */\n  CW_LOOK_HALFBLOCK,       /* half block cells: a top and a bottom colour per character cell */\n  CW_LOOK_DITHER_ORDERED,  /* one bit a pixel against a threshold pattern (8x8 Bayer or blue noise) */\n  CW_LOOK_DITHER_DIFFUSE,  /* one bit a pixel, the error spread over the neighbours (see cw_look_dither) */\n  CW_LOOK_CUSTOM,          /* a fragment shader pair of your own (cw_look_custom) */\n  CW_LOOK_KIND_COUNT\n} cw_look_kind;"
+    },
+    {
+     "name": "cw_look_ascii",
+     "doc": "ASCII: each character cell of the view is measured in six regions (3 rows x 2 columns, plus the depth edges on its\nnear side) and drawn as the character of `glyphs` whose shape fits best, or, when the cell is flat, as the\ncharacter of `ramp` for its brightness. The character takes the scene's own hue pushed toward neon (`saturation`);\ncells with little hue of their own take `tint`. A soft halo of each bright character's colour (`glow`) lies under\nit; `neon` over 1 makes the strokes bloom. Only printable ASCII (32 to 126) can be drawn.",
+     "decl": "typedef struct cw_look_ascii {\n  int rows;                /* character rows over the output's height (54); a cell is as wide as the font's advance */\n  const char *glyphs;      /* the characters shape matching may pick (NULL: lines, corners, brackets and marks) */\n  const char *ramp;        /* the characters flat cells take by brightness, darkest first (NULL: \" .:-=+*#%@\") */\n  const char *font;        /* a TrueType / OpenType asset path (NULL: the built-in Fira Mono) */\n  float neon;              /* the characters' brightness (scene-linear at exposure 1; over 1 blooms): 1.6 */\n  float saturation;        /* the push toward the cell's own hue: 1.8 */\n  float tint[3];           /* the colour of cells without a hue of their own (grey and white): (0.2, 1, 0.45) */\n  float glow;              /* the halo's strength under bright characters (0: none): 0.5 */\n  float glow_from;         /* the brightness a character starts to glow at (0..1): 0.5 */\n  float hold;              /* a cell keeps last frame's character unless a new one fits this many times better (1: no\n                            * hold): 1.35. Holds a still picture's characters against noise, TAA jitter and grain */\n  float exposure;          /* the scene's gain before measuring: 1 */\n  float floor;             /* cells darker than this stay blank (0..1): 0.05 */\n  float contrast;          /* sharpens the six regions before matching: 2 */\n  float edges;             /* depth edges drawn as strokes (0: brightness alone): 1.5 */\n  float flat;              /* a cell whose darkest region is within this share of its brightest is flat: 0.45 */\n  float ramp_gain;         /* brightness to ramp position: 1 */\n  float flat_bright;       /* the brightness of flat cells: 0.75 */\n  float dim_bright;        /* the brightness of cells without a hue (grey world): 0.3 */\n  float bright_floor;      /* the dimmest a drawn character gets: 0.35 */\n  float peak;              /* 0..1 between a region's mean and its brightest read (thin  ..."
+    },
+    {
+     "name": "cw_look_halfblock",
+     "doc": "HALFBLOCK: character cells `rows` to the output's height, each a pair of square pixels (the upper half block\ncharacter's top and bottom): each pixel is the mean of the scene over its square. Optionally quantised: `levels`\nper channel, or the nearest colour of a palette.",
+     "decl": "typedef struct cw_look_halfblock {\n  int rows;                /* character rows over the output's height (54): 108 pixels down */\n  int levels;              /* per channel, in display steps (0: none; 6 is a 216 colour cube) */\n  const float *palette;    /* linear RGB triples, nearest in display steps (NULL: none; copied); wins over levels */\n  int palette_count;       /* up to CW_LOOK_MAX_PALETTE */\n} cw_look_halfblock;"
+    },
+    {
+     "name": "cw_dither_pattern",
+     "doc": "",
+     "decl": "typedef enum {\n  CW_DITHER_BAYER,         /* the 8x8 Bayer matrix (the classic cross hatch) */\n  CW_DITHER_BLUE_NOISE,    /* a 64x64 blue noise tile (no visible pattern) */\n} cw_dither_pattern;"
+    },
+    {
+     "name": "cw_look_dither",
+     "doc": "DITHER (both kinds): every dither pixel is one of two colours. Its brightness is the scene's luminance over its\nsquare, through a display-like curve (scene 0.18 is about 0.42), then `contrast` and `bias`.\nORDERED compares it with `pattern` at the pixel.\nDIFFUSE approximates error diffusion in a way a GPU does in parallel and that holds still: it starts from the blue\nnoise threshold and makes `sweeps` passes of a direct binary search (each pixel turns on or off when that brings\nthe picture, blurred as an eye sees it, closer to the scene; in four interleaved phases). Error never travels along\na scan line as in serial error diffusion, so a change in one place does not shuffle the dots across the screen.",
+     "decl": "typedef struct cw_look_dither {\n  float pixel;             /* a dither pixel's size in pixels of a 1080 line picture (at least one pixel): 2 */\n  float dark[3];           /* the colour of the off pixels (scene-linear, at exposure 1): black */\n  float light[3];          /* the colour of the on pixels: white (1, 1, 1) */\n  cw_dither_pattern pattern; /* ORDERED: the threshold pattern; BAYER */\n  float contrast;          /* about the middle: 1 */\n  float bias;              /* added to the brightness (-1..1): 0 */\n  int sweeps;              /* DIFFUSE: refinement sweeps (0..8; each is four passes over the dither pixels): 2 */\n} cw_look_dither;"
+    },
+    {
+     "name": "cw_look_custom",
+     "doc": "CUSTOM: your look as a GLSL ES 3.00 function and its WGSL twin (a cart runs whichever backend the host gives it, so\ngive both). Write\n  GLSL: vec3 look(vec2 px)          WGSL: fn look(px: vec2f) -> vec3f\nreturning the colour at view pixel px (from the view's top left, pixel centres at .5), in the exposed space the\nlook reads (see \"Colours\" above). The engine defines, in both languages:\n  cw_look_size()        the view's size in pixels (vec2)\n  cw_look_scene(px)     the exposed scene colour at view pixel px (bilinear), vec3\n  cw_look_scale()       pixels per pixel of a 1080 line picture (float)\n  cw_look_param(i)      params[4 i .. 4 i + 3] as a vec4 (i 0..3)\n  cw_look_time()        cw_time seconds (float); the frame index is cw_look_frame()\nHUD boxes are applied after it.",
+     "decl": "typedef struct cw_look_custom {\n  const char *glsl;        /* copied */\n  const char *wgsl;        /* copied */\n  float params[16];\n} cw_look_custom;"
+    },
+    {
+     "name": "cw_look_desc",
+     "doc": "",
+     "decl": "typedef struct cw_look_desc {\n  cw_look_kind kind;\n  /* the kind's own settings (only that member is read; start from cw_look_default(kind)) */\n  cw_look_ascii ascii;\n  cw_look_halfblock halfblock;\n  cw_look_dither dither;   /* both dither kinds */\n  cw_look_custom custom;\n} cw_look_desc;"
+    },
+    {
+     "name": "cw_look_blend",
+     "doc": "How the second look comes in.",
+     "decl": "typedef enum {\n  CW_LOOK_FADE,            /* a cross fade: every pixel mix(a, b, t) */\n  CW_LOOK_DISSOLVE,        /* each pixel turns over when a smooth noise mask passes it (anchored to the view's pixels) */\n  CW_LOOK_WIPE,            /* a straight edge sweeps across the view along `angle` */\n} cw_look_blend;"
+    },
+    {
+     "name": "cw_look_mix",
+     "doc": "",
+     "decl": "typedef struct cw_look_mix {\n  cw_look_blend blend;     /* FADE */\n  float softness;          /* DISSOLVE / WIPE: the edge's width, a share of the sweep (0: hard): 0 */\n  float angle;             /* WIPE: the direction the edge moves, radians (0: left to right, pi/2: bottom to top) */\n  float scale;             /* DISSOLVE: the noise's grain, pixels of a 1080 line picture (0: 24) */\n  uint32_t seed;           /* DISSOLVE: another noise */\n} cw_look_mix;"
+    },
+    {
+     "name": "cw_look_box",
+     "doc": "A HUD box: a rectangle of the whole output (fractions, x / y from the top left, as cw_view's), where the looks are\ndrawn darker by `dim` (0..1: 1 is black), or, with `clean`, not drawn at all (the plain scene shows). ASCII dims\nevery character cell the box touches.",
+     "decl": "typedef struct cw_look_box {\n  float x, y, w, h;\n  float dim;\n  bool clean;\n} cw_look_box;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_LOOK_MAX_PALETTE",
+     "doc": ""
+    },
+    {
+     "name": "CW_LOOK_MAX_BOXES",
+     "doc": ""
+    }
+   ]
+  },
+  {
    "header": "cartwheel/math.h",
    "summary": "cartwheel math: 2D vectors, scalar helpers, and DETERMINISTIC\ntranscendentals.\n\n3D math is three.c's (t3_vec3, t3_quat, t3_mat4 and their functions).\n\nDeterminism rule: libm's sinf/cosf/atan2f/expf/logf/powf differ between\nglibc, musl (wasi-libc), Apple's libm and MSVC's CRT, so simulation code\n(anything that feeds game state, physics, replays) uses the cw_ versions\nbelow. They use only + - * / and sqrt, which IEEE 754 makes identical on\nevery target given -ffp-contract=off (set engine-wide). Rendering code may\nuse libm freely: pixels are compared with tolerance, state is not.",
    "functions": [
