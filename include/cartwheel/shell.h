@@ -7,7 +7,7 @@
  * Settings: graphics (cartwheel/quality.h; left / right step the preset,
  * accept opens the graphics page of cartwheel/quality_menu.h with every
  * setting), music and effects volume, text size and background, and the
- * controls (each action's bindings). There is no screen shake setting: no camera
+ * controls (each action's bindings), then the game's own rows (cw_shell_desc.settings_items), then Back. There is no screen shake setting: no camera
  * shakes (a hit or a blast is felt in the pads, cw_input_rumble). They are saved, with the game's own save data, in one
  * versioned, checksummed block the shell keeps in cw_app_desc.save.
  *
@@ -65,7 +65,7 @@
  * Determinism: menus run in fixed_update from the input snapshot, so a
  * replay drives them like gameplay. A test or an autopilot build skips them
  * with cw_shell_start. Debug fields: shell.screen, shell.hud (cw_shell_hud_shown), shell.players, shell.item,
- * shell.shake, shell.starting (1 a press to play was answered, 2 "Starting..." has been drawn). */
+ * shell.shake, shell.settings (the game's Settings rows shown), shell.starting (1 a press to play was answered, 2 "Starting..." has been drawn). */
 #ifndef CW_SHELL_H
 #define CW_SHELL_H
 
@@ -87,6 +87,25 @@ typedef enum {
   CW_SHELL_PAUSE,
   CW_SHELL_SETTINGS, /* from the title or the pause menu */
 } cw_shell_screen;
+
+/* A row of the game's own on the Settings screen: a named choice, such as "Visual style: All / Neon / Paper". It draws
+ * after the shell's rows (after Controls, before Back) like them: the label, then the chosen choice. Left / right
+ * step the choice and stop at the ends, accept (South, Enter, a tap or a click on the row) steps it forward and goes
+ * round, as on the shell's Music, Text size and Text background rows. */
+typedef struct cw_shell_setting {
+  const char *label;           /* the row's name */
+  /* The name the choice is saved under, in the shell's save block (see cw_shell_desc.settings_items): 1 ..
+   * CW_SHELL_SETTING_KEY_MAX bytes, unique among the game's rows. NULL: the row is not saved. */
+  const char *key;
+  int *value;                  /* the game's own int: the chosen index into choices. Its value at cw_shell_init is the default */
+  const char *const *choices;  /* count labels, what the row shows for each value */
+  int count;                   /* how many choices (at least 1) */
+} cw_shell_setting;
+#define CW_SHELL_SETTINGS_MAX 8     /* rows a game can add */
+#define CW_SHELL_SETTING_KEY_MAX 56 /* bytes in a row's key */
+/* Bytes at the end of the game's save area (CW_SHELL_GAME_SAVE_MAX) that hold the game's rows when the game keeps its
+ * save as a struct (game_save_size) and has a saved row: that struct can be at most CW_SHELL_GAME_SAVE_MAX minus this. */
+#define CW_SHELL_SETTINGS_SAVE_BYTES 1024
 
 typedef enum { CW_SHELL_SND_MOVE, CW_SHELL_SND_SELECT, CW_SHELL_SND_BACK, CW_SHELL_SND_JOIN, CW_SHELL_SND_PAUSE } cw_shell_sound;
 
@@ -124,6 +143,21 @@ typedef struct cw_shell_desc {
    * kept from the game's first tick), then this runs with the item's index in pause_items (0 or 1). The game
    * switches its own screen (restart the level, open its song list). */
   void (*pause_item)(int index, void *user);
+  /* Rows of the game's own on the Settings screen (cw_shell_setting), up to CW_SHELL_SETTINGS_MAX, from the title and
+   * from the pause menu. The shell copies the array at init (the strings and the ints it points at must stay valid;
+   * cw_shell_set_settings_items replaces it) and puts each row's saved choice into *value before the game's first
+   * frame. Saved: each row with a key is a slot "shell:<key>" of the save store (cartwheel/save.h), committed with the
+   * shell's own settings (cw_shell_save_commit, which also saves a *value the game changed itself). With
+   * game_save_slots the slot is in the game's store (cw_shell_save_store); with a game struct the shell keeps a store
+   * of its own in the last CW_SHELL_SETTINGS_SAVE_BYTES of the save area. A slot holds the choice's index and its
+   * label: loading takes the choice with that label, else the index, else (the index out of range) the default. So a
+   * new row starts at its default, a removed row's slot stays unread, and a choice added, removed or moved keeps the
+   * player's pick by its label. */
+  const cw_shell_setting *settings_items;
+  int settings_item_count;
+  /* A player changed a row: index is the row's index in settings_items, value its new *value (already set). Not
+   * called when a step at an end leaves the value as it was. */
+  void (*settings_changed)(int index, int value, void *user);
   void (*sound)(cw_shell_sound s, void *user);
   void (*screen_changed)(cw_shell_screen from, cw_shell_screen to, void *user);
   /* Draws behind the title, join, settings and loading screens and the pause menu (in the shell's own 2D pass,
@@ -194,6 +228,10 @@ bool cw_shell_join_press(void);
 /* The game's pause menu items (as cw_shell_desc.pause_items, NULL items or NULL for none), from the next time the
  * pause menu opens. The pointers are kept: the strings must outlive the menu showing them. */
 void cw_shell_set_pause_items(const char *const items[2]);
+/* Replace the game's Settings rows (as cw_shell_desc.settings_items; NULL or 0 for none), say to rename a row or its
+ * choices in another language, or to offer a row only in some modes. Shown from the next frame the Settings screen
+ * draws. A row whose key was not in the rows before loads its saved choice into *value now; the others keep *value. */
+void cw_shell_set_settings_items(const cw_shell_setting *items, int count);
 void cw_shell_to_title(void); /* end the match and show the title (every pad drives the menus again) */
 /* Loading: progress 0..1 shown on the loading screen; loaded goes on to the title. */
 void cw_shell_loading(float progress);

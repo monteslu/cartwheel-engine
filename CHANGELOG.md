@@ -4,6 +4,25 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.60.0 (2026-11-22)
+
+### Added
+- The Settings screen takes rows of the game's own, after the shell's rows (after Controls, before Back), from the
+  title and from the pause menu: `cw_shell_desc` gains `settings_items` (up to `CW_SHELL_SETTINGS_MAX`, eight,
+  `cw_shell_setting` rows: `label`, `key`, `value` (the game's int, its value at init the default), `choices`,
+  `count`), `settings_item_count` and `settings_changed(index, value, user)`. They draw, scroll, size with the
+  text and take pads, keys, mouse and touch like the shell's rows: left and right step a choice and stop at the ends,
+  accept or a tap steps it forward and goes round. `cw_shell_set_settings_items` replaces the rows at runtime.
+- The rows are saved under their keys (slots `shell:<key>`, cartwheel/save.h) and loaded into the game's ints before
+  its first frame: in the game's slot store with `game_save_slots`, else in a store of the shell's in the last
+  `CW_SHELL_SETTINGS_SAVE_BYTES` (1024) of the save area. A saved choice is found by its label, else its index, else
+  the row's default: new rows, removed rows and added, moved or renamed choices keep what they can.
+- Sample `shell_settings` and gates `shell-settings-rows` (its control has no rows), `shell-settings-change` (its
+  control picks the other row), `shell-settings-pause`, `shell-settings-none` (no rows: the old page), `shell-settings-touch`
+  (its control taps an empty corner) and `shell-settings-save` (a restart keeps the choice and an out-of-range save
+  falls back; its controls never save the rows, and leave the save unpatched); `unit-save` covers the migrations.
+  A game with no rows gets the same Settings page, pixel for pixel.
+
 ## v0.59.1 (2026-11-22)
 
 ### Fixed

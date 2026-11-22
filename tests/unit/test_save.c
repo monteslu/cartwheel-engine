@@ -1,7 +1,9 @@
 /* The save store (cartwheel/save.h) and the game shell's use of it: slots by name, growing and shrinking a
  * slot, versions and the migrate hook, damage (one slot, the tail), a block from before the store, the app's own
  * store, and the shell's save: a game struct that grows, a version change with and without a hook, a struct
- * turned into slots, a slot written without a commit. The store's bytes fold into the checksum (the format is
+ * turned into slots, a slot written without a commit, and the game's own Settings rows (cw_shell_setting): saved
+ * under their keys beside a struct and in a slot store, a new row, a removed row, choices added, moved, renamed and
+ * cut, an out-of-range save, a struct that changes size or version, a row the game changed itself. The store's bytes fold into the checksum (the format is
  * the same on every host). */
 #include <string.h>
 
@@ -336,5 +338,125 @@ static void t_shell(void) {
   fresh_shell_save();
 }
 
+/* ── the game's Settings rows ──────────────────────────────────────── */
+
+static const char *const STYLE3[3] = { "All", "Neon", "Paper" };
+static const char *const STYLE_MOVED[4] = { "Chalk", "All", "Paper", "Neon" }; /* a choice added in front, two swapped */
+static const char *const STYLE_RENAMED[3] = { "Every", "Neon glow", "Paper only" };
+static const char *const STYLE_CUT[2] = { "All", "Neon" };
+static const char *const ONOFF[2] = { "Off", "On" };
+
+/* a run of a game with these rows (its defaults in the ints), as the shell sees it at init */
+static int sv_style, sv_hits, sv_new;
+static void sv_init(const cw_shell_desc *base, const char *const *styles, int n_styles, bool hits, bool extra) {
+  cw_shell_setting rows[3];
+  int n = 0;
+  rows[n++] = (cw_shell_setting){ .label = "Visual style", .key = "style", .value = &sv_style, .choices = styles, .count = n_styles };
+  if (hits) rows[n++] = (cw_shell_setting){ .label = "Hit sounds", .key = "hits", .value = &sv_hits, .choices = ONOFF, .count = 2 };
+  if (extra) rows[n++] = (cw_shell_setting){ .label = "New", .key = "new", .value = &sv_new, .choices = ONOFF, .count = 2 };
+  cw_shell_desc d = *base;
+  d.settings_items = rows;
+  d.settings_item_count = n;
+  cw_shell_init(&d);
+}
+
+static void t_shell_settings(void) {
+  static const cw_shell_desc as_struct = { .title = "t", .game_save_size = sizeof(game_v1), .game_save_version = 1 };
+  static const cw_shell_desc as_slots = { .title = "t", .game_save_slots = true };
+  const cw_shell_desc *modes[2] = { &as_struct, &as_slots };
+  for (int m = 0; m < 2; m++) {
+    const cw_shell_desc *b = modes[m];
+    fresh_shell_save();
+    /* a first run: the defaults stay; the player picks Paper and Off */
+    sv_style = 1, sv_hits = 1;
+    sv_init(b, STYLE3, 3, true, false);
+    CHECK(sv_style == 1 && sv_hits == 1);
+    sv_style = 2, sv_hits = 0; /* as the menu (or the game itself) sets them */
+    cw_shell_save_commit();
+    /* the next run, defaults back in the ints: the saved choices come in at init */
+    sv_style = 1, sv_hits = 1;
+    sv_init(b, STYLE3, 3, true, false);
+    CHECK_EQ_INT(sv_style, 2);
+    CHECK_EQ_INT(sv_hits, 0);
+    /* a new row starts at its default; the others keep theirs */
+    sv_style = 0, sv_hits = 1, sv_new = 1;
+    sv_init(b, STYLE3, 3, true, true);
+    CHECK(sv_style == 2 && sv_hits == 0 && sv_new == 1);
+    /* a removed row: the rest still load; the removed row's slot stays and comes back with it */
+    sv_style = 0, sv_hits = 1;
+    sv_init(b, STYLE3, 3, false, false);
+    CHECK_EQ_INT(sv_style, 2);
+    cw_shell_save_commit();
+    sv_init(b, STYLE3, 3, true, false);
+    CHECK_EQ_INT(sv_hits, 0);
+    /* choices added and moved: the pick follows its label */
+    sv_style = 1; /* Neon */
+    cw_shell_save_commit();
+    sv_style = 0;
+    sv_init(b, STYLE_MOVED, 4, true, false);
+    CHECK_EQ_INT(sv_style, 3); /* Neon moved to the end */
+    /* choices renamed (another language): no label matches, the saved index (Neon's 1) holds */
+    sv_style = 0;
+    sv_init(b, STYLE_RENAMED, 3, true, false);
+    CHECK_EQ_INT(sv_style, 1);
+    /* a saved index past the choices with no label match: the default */
+    sv_style = 2; /* Paper only */
+    cw_shell_save_commit();
+    sv_style = 1;
+    cw_info("the shell warning below is expected");
+    sv_init(b, STYLE_CUT, 2, true, false);
+    CHECK_EQ_INT(sv_style, 1);
+    /* a default out of range is set to 0 */
+    sv_style = 7;
+    cw_info("the shell error below is expected");
+    sv_init(b, STYLE3, 3, true, false);
+    CHECK(sv_style >= 0 && sv_style < 3);
+    /* the setter: a renamed row (same key) keeps the game's int; a row with a new key loads its save */
+    sv_style = 0, sv_hits = 1;
+    cw_shell_set_settings_items((cw_shell_setting[]){ { .label = "Look", .key = "style", .value = &sv_style, .choices = STYLE3, .count = 3 } }, 1);
+    CHECK_EQ_INT(sv_style, 0);
+    cw_shell_set_settings_items((cw_shell_setting[]){ { .label = "Look", .key = "style", .value = &sv_style, .choices = STYLE3, .count = 3 },
+                                                      { .label = "Hits", .key = "hits", .value = &sv_hits, .choices = ONOFF, .count = 2 } }, 2);
+    CHECK_EQ_INT(sv_hits, 0);
+    fold_block((const uint8_t *)cw_shell_save_region(), 32);
+  }
+  /* a struct game: its struct changes size, then version with no hook, and the rows stay */
+  fresh_shell_save();
+  sv_style = 0, sv_hits = 1;
+  sv_init(&as_struct, STYLE3, 3, true, false);
+  sv_style = 2, sv_hits = 0;
+  cw_shell_save_commit();
+  sv_style = 0, sv_hits = 1;
+  sv_init(&(cw_shell_desc){ .title = "t", .game_save_size = sizeof(game_v1_grown), .game_save_version = 1 }, STYLE3, 3, true, false);
+  CHECK(sv_style == 2 && sv_hits == 0);
+  cw_info("the shell warning below is expected");
+  sv_style = 0, sv_hits = 1;
+  sv_init(&(cw_shell_desc){ .title = "t", .game_save_size = sizeof(game_v2), .game_save_version = 9 }, STYLE3, 3, true, false);
+  CHECK(sv_style == 2 && sv_hits == 0);
+  /* no commit after a change: the next run has the old choice (the control for every load above) */
+  sv_style = 1;
+  sv_init(&(cw_shell_desc){ .title = "t", .game_save_size = sizeof(game_v2), .game_save_version = 9 }, STYLE3, 3, true, false);
+  CHECK_EQ_INT(sv_style, 2);
+  /* a struct too big for the rows' space: told, not saved, the defaults hold */
+  fresh_shell_save();
+  cw_info("the shell error below is expected");
+  sv_style = 1;
+  sv_init(&(cw_shell_desc){ .title = "t", .game_save_size = CW_SHELL_GAME_SAVE_MAX }, STYLE3, 3, true, false);
+  sv_style = 2;
+  cw_shell_save_commit();
+  sv_style = 1;
+  sv_init(&(cw_shell_desc){ .title = "t", .game_save_size = CW_SHELL_GAME_SAVE_MAX }, STYLE3, 3, true, false);
+  CHECK_EQ_INT(sv_style, 1);
+  /* a game with no rows writes nothing past its struct (the tail stays zeros) */
+  fresh_shell_save();
+  cw_shell_init(&as_struct);
+  cw_shell_save_commit();
+  const uint8_t *tail = (const uint8_t *)cw_shell_game_save() + CW_SHELL_GAME_SAVE_MAX - CW_SHELL_SETTINGS_SAVE_BYTES;
+  bool zeros = true;
+  for (int i = 0; i < CW_SHELL_SETTINGS_SAVE_BYTES; i++) zeros &= tail[i] == 0;
+  CHECK(zeros);
+  fresh_shell_save();
+}
+
 CW_TEST_SUITE("save", { "slots", t_slots }, { "grow_and_migrate", t_grow_and_migrate }, { "damage_and_legacy", t_damage_and_legacy },
-              { "app_store", t_app_store }, { "shell", t_shell })
+              { "app_store", t_app_store }, { "shell", t_shell }, { "shell_settings", t_shell_settings })

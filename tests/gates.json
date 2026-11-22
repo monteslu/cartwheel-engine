@@ -3,6 +3,7 @@
   { "name": "programs-switch", "script": "tests/programs-switch.mjs", "note": "a graphics preset changed in play draws everything: tools/programs.mjs surveys each preset and the preset switched half way through a run, so unit_programs_switch (High's omni lights drawn on Very Low) has 0 missing states natively and as the dual cart through romdev on GL and WebGPU; control: the same scene with its table surveyed --no-switch misses standard+instbig+shadow+l1200+s100+xplain" },
   { "name": "cart-repack", "script": "tests/cart-repack.mjs", "note": "a dev cart's pack after a code change splices the new cart.wasm into the last archive: the same entries and bytes as a fresh wasmcart-pack (stored and deflated wasm), a changed or added asset or a new version packs in full; controls: a splice past a changed asset and a splice of the old wasm are caught" },
   { "name": "cart-version-order", "script": "tests/cart-version-order.mjs", "note": "a version change's repack of a cart (the <app>_version target) runs after the app's asset pack in the cart tree's graph, and repacks with the new version; control (deterministic, no race): the same graph check over a generated tree shaped as before the fix (<app>_version with no edge to <app>_pack) names the app, and passes the same tree with the edge" },
+  { "name": "shell-settings-save", "script": "tests/shell-settings-save.mjs", "note": "the game's Settings rows survive a restart: shell_settings natively with a save file steps Visual style to 2, a new process on the file starts with 2 (Hit sounds at its default), and a saved 9 of 4 choices falls back to the default with the shell's warning. Controls: CW_TEST_SHELL_SETTINGS_NO_SAVE (the rows never reach the save) reads the default; the unpatched save reads 2" },
   { "name": "cart-toolchain", "script": "tests/cart-toolchain.mjs", "note": "cmake/cart.cmake gives the same flags on a tree's first and second configure, so the first rebuild after a clean build does not recompile every cart object; control: wasi-sdk's own toolchain file changes them" },
   { "name": "env-romdev", "script": "tests/env-romdev.mjs", "note": "every gate's env, controlEnv and webgpu.controls env reaches its cart on romdev (the debug channel's env request at frame 2): no sample, unit suite or engine test switch reads its variable in init or the first frame; control: unit_core given CW_TEST_EARLY_READ, which test.h reads in init on purpose, is refused" },
   { "name": "gate-cpu", "script": "tests/gate-cpu.mjs", "note": "gate.mjs --cpu runs without the GPU suite lock (control: the plain gate queues on the same held lock)" },
@@ -276,6 +277,150 @@
       "game.color": 1
     },
     "note": "a game's pause item by touch: a pad plays and pauses, a finger taps the second game item. Control: the tap lands in an empty corner, so the pause menu stays"
+  },
+  {
+    "name": "shell-settings-rows",
+    "app": "shell_settings",
+    "frames": 100,
+    "input": "shell-settings-rows.json",
+    "controlEnv": {
+      "SHELL_SETTINGS_ITEMS": "0"
+    },
+    "fields": [
+      "shell.screen",
+      "shell.item",
+      "shell.settings",
+      "game.calls",
+      "game.index",
+      "game.value",
+      "game.style",
+      "game.hits",
+      "game.hints"
+    ],
+    "expect": {
+      "shell.screen": 5,
+      "shell.item": 6,
+      "shell.settings": 3,
+      "game.calls": 3,
+      "game.index": 0,
+      "game.value": 1,
+      "game.style": 1
+    },
+    "note": "the game's Settings rows come after the shell's: from the title, six downs reach the first game row (Visual style, index 0), right twice and left once step it 0, 1, 2, 1 with a settings_changed call each (index 0, last value 1). Control: the game keeps no rows, so the same presses land on Back and nothing changes"
+  },
+  {
+    "name": "shell-settings-change",
+    "app": "shell_settings",
+    "frames": 90,
+    "input": "shell-settings-change.json",
+    "controlInput": "shell-settings-change-control.json",
+    "fields": [
+      "shell.screen",
+      "shell.item",
+      "shell.settings",
+      "game.calls",
+      "game.index",
+      "game.value",
+      "game.style",
+      "game.hits",
+      "game.hints"
+    ],
+    "expect": {
+      "shell.screen": 5,
+      "game.calls": 1,
+      "game.index": 1,
+      "game.value": 0,
+      "game.hits": 0,
+      "game.style": 0
+    },
+    "note": "accept on the second game row (Hit sounds, On) steps it forward round to Off: *value 0 and settings_changed(1, 0). Control: one down fewer, the first row (index 0, Visual style to 1), so a mis-indexed hook or row fails"
+  },
+  {
+    "name": "shell-settings-pause",
+    "app": "shell_settings",
+    "frames": 120,
+    "input": "shell-settings-pause.json",
+    "controlInput": "shell-settings-pause-control.json",
+    "fields": [
+      "shell.screen",
+      "shell.item",
+      "shell.settings",
+      "game.calls",
+      "game.index",
+      "game.value",
+      "game.style",
+      "game.hits",
+      "game.hints"
+    ],
+    "expect": {
+      "shell.screen": 5,
+      "shell.item": 6,
+      "game.calls": 1,
+      "game.index": 0,
+      "game.style": 1
+    },
+    "note": "the game's rows from the pause menu: play, pause, Settings, six downs and right step Visual style to 1. Control: five downs (Controls), so right changes nothing"
+  },
+  {
+    "name": "shell-settings-none",
+    "app": "shell_settings",
+    "frames": 90,
+    "input": "shell-settings-none.json",
+    "env": {
+      "SHELL_SETTINGS_ITEMS": "0"
+    },
+    "controlEnv": {
+      "SHELL_SETTINGS_ITEMS": "3"
+    },
+    "fields": [
+      "shell.screen",
+      "shell.item",
+      "shell.settings",
+      "game.calls",
+      "game.index",
+      "game.value",
+      "game.style",
+      "game.hits",
+      "game.hints"
+    ],
+    "expect": {
+      "shell.screen": 1,
+      "shell.settings": 0,
+      "game.calls": 0
+    },
+    "note": "a game with no rows keeps the shell's Settings: six downs and South are Back, to the title (shell.screen 1). Control: the same presses with three rows land on Visual style and stay on Settings"
+  },
+  {
+    "name": "shell-settings-touch",
+    "app": "shell_settings",
+    "frames": 70,
+    "input": "shell-settings-touch.json",
+    "controlInput": "shell-settings-touch-control.json",
+    "hosts": [
+      "native",
+      "romdev"
+    ],
+    "webgpu": true,
+    "fields": [
+      "shell.screen",
+      "shell.item",
+      "shell.settings",
+      "game.calls",
+      "game.index",
+      "game.value",
+      "game.style",
+      "game.hits",
+      "game.hints"
+    ],
+    "expect": {
+      "shell.screen": 5,
+      "shell.item": 7,
+      "game.calls": 1,
+      "game.index": 1,
+      "game.value": 0,
+      "game.hits": 0
+    },
+    "note": "a game row by touch: a finger taps Hit sounds on the Settings page, which steps it (On to Off) as accept does, settings_changed(1, 0). Control: the tap lands in an empty corner, so nothing changes"
   },
   {
     "name": "shell-mouse",

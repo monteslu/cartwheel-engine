@@ -19,7 +19,7 @@ writes only its gameplay and art:
   game's own settings from `cw_quality_lever_add`), music and effects volume, Text size (100%, 125%, 150%, 200%: every piece of 2D text, the
   game's HUD included, see [localization and accessibility](guide:l10n-a11y)), Text
   background (Off, Outline, Panel: contrast for text over the scene) and the controls (each action and its bindings, from
-  (header:input.h)); saved with the game's own save data in one versioned,
+  (header:input.h)), then up to eight rows of the game's own (see below); saved with the game's own save data in one versioned,
   checksummed block;
 - no screen shake: no camera shakes, at any setting, so there is no Screen
   shake row. A big landing, a boss hit or an explosion is felt in the pads
@@ -109,6 +109,32 @@ cw_shell_init(&(cw_shell_desc){ .title = "My Game", .start = start,
 ```
 
 The shell reads the labels when the pause menu opens. `cw_shell_set_pause_items` changes them (or adds or removes one) from the next pause, say a "Restart level" offered only inside a level; a label can also point at a buffer of the game's whose text it rewrites between pauses. The strings must stay valid while the menu is open. The `shell_pause` sample has two items, and renames one each time it is chosen; gates `shell-pause-items`, `shell-pause-items-wired`, `shell-pause-leak`, `shell-pause-none` and `shell-pause-touch` check the order, the index, the return to play, that the choosing press never reaches the game, that a game without items keeps the three-item menu, and touch.
+
+A game can add rows of its own to the Settings screen, such as a visual style, hit sounds or a difficulty: up to `CW_SHELL_SETTINGS_MAX` (eight) `cw_shell_setting` rows in `settings_items` of `cw_shell_desc`, with their count in `settings_item_count`. Each row has a `label`, the `choices` it shows (`count` of them), `value` (a pointer to the game's own int, the chosen index; what it holds at `cw_shell_init` is the default) and a `key` it is saved under. The rows show after the shell's own (after Controls, before Back), on the page opened from the title and from the pause menu, drawn, highlighted, scrolled and sized with the text like the shell's rows, under the same hint line. They change like the shell's Music, Text size and Text background rows: left and right step the choice and stop at the ends, accept (South, Enter, a tap or a click on the row) steps it forward and goes round. Each change sets `*value` and then calls `settings_changed(index, value, user)` with the row's index in `settings_items`; a step at an end that changes nothing calls nothing.
+
+```c
+static int style = 0; /* the default: All */
+static const char *const STYLES[] = { "All", "Fixed: Neon", "Fixed: Paper" };
+static const cw_shell_setting ROWS[] = {
+  { .label = "Visual style", .key = "style", .value = &style, .choices = STYLES, .count = 3 },
+};
+static void settings_changed(int index, int value, void *user) {
+  if (index == 0) apply_style(value);
+}
+cw_shell_init(&(cw_shell_desc){ .title = "My Game", .start = start, .settings_items = ROWS, .settings_item_count = 1,
+                                .settings_changed = settings_changed });
+/* style holds the player's saved choice from here on */
+```
+
+The rows are saved with the shell's own settings: `cw_shell_save_commit` (which every change on the Settings screen runs) writes each row with a key as a slot named `shell:<key>` of a save store ((header:save.h)), and `cw_shell_init` reads them back into the ints before the game's first frame. A game with `game_save_slots` has them in its own store (`cw_shell_save_store`, where it sees them among its slots); a game with a save struct has them in a store of the shell's in the last `CW_SHELL_SETTINGS_SAVE_BYTES` (1024) of the save area, so with saved rows the struct can be up to `CW_SHELL_GAME_SAVE_MAX - CW_SHELL_SETTINGS_SAVE_BYTES` (5120) bytes; a larger one is told so and its rows are not saved. A struct that changes size or version keeps them. A slot holds the chosen index and the choice's label, and loading takes the choice with that label, else the index, else the default:
+
+- a new row starts at its default;
+- a removed row is no longer read; its slot stays, so it comes back if the row does;
+- choices added, removed or moved keep the player's pick by its label; renamed choices (another language) keep it by its index;
+- a saved index past the choices, with no label that matches, gives the default (logged);
+- a value the game sets itself is saved at the next `cw_shell_save_commit`.
+
+The shell copies the rows at init, so the strings and the ints must outlive it. `cw_shell_set_settings_items` replaces them (rename a row, translate its choices, show a row only in some modes): the page shows the new rows from its next frame, a row whose key is new loads its saved choice, and the others keep their ints. A game with no rows gets the shell's Settings page, the same pixels as before. The `shell_settings` sample has three rows; gates `shell-settings-rows`, `shell-settings-change`, `shell-settings-pause`, `shell-settings-none`, `shell-settings-touch` and `shell-settings-save` check the order, the index and value given to the hook, the path from the pause menu, the page without rows, a tap, and a restart through the save (with an out-of-range save falling back), and `unit-save` the migrations.
 
 The game's HUD goes away under the shell's menus: `cw_shell_hud_shown()` is true only in play, and false under the pause menu, the settings opened from it, the join screen opened during play and on the title and loading screens. The menus are drawn over the game's frame and dim it only lightly, so a HUD left on screen sits under the menu's lines, and at a large text size (150% and 200%) they overlap. Keep drawing the world and the views; leave out the HUD, the hint lines and the banners.
 

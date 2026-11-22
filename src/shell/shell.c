@@ -3,6 +3,7 @@
  * split screen views. */
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "cartwheel/shell.h"
@@ -88,6 +89,8 @@ static struct {
   const char *pause_label[2]; /* the game's pause items, read from the desc when the pause menu opens */
   int pause_index[2];  /* each shown item's index in cw_shell_desc.pause_items */
   int n_pause;         /* how many are shown (0..2), between Resume and Settings */
+  cw_shell_setting set[CW_SHELL_SETTINGS_MAX]; /* the game's Settings rows (copied from the desc, or the setter) */
+  int n_set, dbg_settings;
 } S;
 
 static void sound(cw_shell_sound s) {
@@ -183,7 +186,133 @@ cw_save_store *cw_shell_save_store(void) {
   return &STORE;
 }
 
+/* ── the game's Settings rows in the save ─────────────────────────── */
+
+/* With a game struct the rows have a store of their own, in the last CW_SHELL_SETTINGS_SAVE_BYTES of the game area
+ * (the struct stops before it); with slots they are slots of the game's store. */
+static cw_save_store SET_STORE;
+#define SET_TAIL (sizeof SAVE.game - CW_SHELL_SETTINGS_SAVE_BYTES)
+static bool set_saved_any(const cw_shell_setting *items, int n) {
+  for (int i = 0; i < n; i++)
+    if (items[i].key && items[i].key[0]) return true;
+  return false;
+}
+static cw_save_store *set_store(void) {
+  if (S.d.game_save_slots) return STORE.base ? &STORE : NULL;
+  if (!SET_STORE.base && set_saved_any(S.set, S.n_set)) {
+    if (S.d.game_save_size > SET_TAIL) {
+      static bool told;
+      if (!told) cw_error("shell: game_save_size %zu leaves no room for the Settings rows' save (at most %d bytes with saved rows): "
+                          "they are not saved", S.d.game_save_size, (int)SET_TAIL);
+      told = true;
+      return NULL;
+    }
+    cw_save_open(&SET_STORE, SAVE.game + SET_TAIL, CW_SHELL_SETTINGS_SAVE_BYTES, NULL, NULL);
+  }
+  return SET_STORE.base ? &SET_STORE : NULL;
+}
+static bool set_slot_name(const cw_shell_setting *it, char *name, size_t cap) {
+  size_t n = it->key ? strlen(it->key) : 0;
+  if (!n) return false;
+  if (n > CW_SHELL_SETTING_KEY_MAX) {
+    cw_error("shell: the Settings row key \"%s\" is over %d bytes: not saved", it->key, CW_SHELL_SETTING_KEY_MAX);
+    return false;
+  }
+  snprintf(name, cap, "shell:%s", it->key);
+  return true;
+}
+enum { SET_SLOT_VERSION = 1, SET_SLOT_MAX = 4 + 64 }; /* a slot: the index (int32 little-endian), then the choice's label */
+static size_t set_slot_bytes(const cw_shell_setting *it, uint8_t *b) {
+  int32_t v = *it->value;
+  for (int k = 0; k < 4; k++) b[k] = (uint8_t)((uint32_t)v >> (8 * k));
+  size_t n = 4;
+  if (v >= 0 && v < it->count && it->choices && it->choices[v]) {
+    size_t l = strlen(it->choices[v]);
+    if (l > SET_SLOT_MAX - 4) l = SET_SLOT_MAX - 4;
+    memcpy(b + 4, it->choices[v], l);
+    n += l;
+  }
+  return n;
+}
+/* the saved choice into *value: by its label, else its index, else the default stays */
+static void set_load(int i) {
+  cw_shell_setting *it = &S.set[i];
+  char name[72];
+  cw_save_store *st = set_store();
+  if (!st || !set_slot_name(it, name, sizeof name)) return;
+  uint16_t ver;
+  size_t size;
+  if (!cw_save_info(st, name, &ver, &size)) return; /* a new row: its default */
+  uint8_t b[SET_SLOT_MAX] = { 0 };
+  if (size > sizeof b) size = sizeof b;
+  if (size < 4 || cw_save_read(st, name, SET_SLOT_VERSION, b, size, NULL, NULL) != CW_SAVE_OK) {
+    cw_warn("shell: the saved Settings row \"%s\" is unreadable: its default", it->key);
+    return;
+  }
+  int32_t v = (int32_t)((uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24);
+  size_t l = size - 4;
+  for (int c = 0; l && c < it->count; c++)
+    if (it->choices[c] && strlen(it->choices[c]) == l && !memcmp(it->choices[c], b + 4, l)) {
+      *it->value = c;
+      return;
+    }
+  if (v >= 0 && v < it->count) *it->value = v;
+  else cw_warn("shell: the saved Settings row \"%s\" holds %d, out of its %d choices: its default", it->key, (int)v, it->count);
+}
+/* each saved row whose slot differs from *value (unchanged slots are not rewritten) */
+static void set_save_all(void) {
+  if (!S.n_set) return;
+  static int test_no_save = -1;
+  if (test_no_save < 0) test_no_save = getenv("CW_TEST_SHELL_SETTINGS_NO_SAVE") && atoi(getenv("CW_TEST_SHELL_SETTINGS_NO_SAVE")) > 0;
+  if (test_no_save) return; /* the persistence test's control: the rows never reach the save */
+  cw_save_store *st = set_store();
+  if (!st) return;
+  for (int i = 0; i < S.n_set; i++) {
+    char name[72];
+    if (!set_slot_name(&S.set[i], name, sizeof name)) continue;
+    uint8_t now[SET_SLOT_MAX], was[SET_SLOT_MAX];
+    size_t n = set_slot_bytes(&S.set[i], now), size;
+    uint16_t ver;
+    if (cw_save_info(st, name, &ver, &size) && ver == SET_SLOT_VERSION && size == n &&
+        cw_save_read(st, name, SET_SLOT_VERSION, was, n, NULL, NULL) == CW_SAVE_OK && !memcmp(was, now, n)) continue;
+    cw_save_write(st, name, SET_SLOT_VERSION, now, n);
+  }
+}
+/* the rows (copied), each *value checked against its choices */
+static void set_items(const cw_shell_setting *items, int count, bool load_all) {
+  if (count < 0 || !items) count = 0;
+  if (count > CW_SHELL_SETTINGS_MAX) {
+    cw_error("shell: %d Settings rows, at most %d: the first %d are kept", count, CW_SHELL_SETTINGS_MAX, CW_SHELL_SETTINGS_MAX);
+    count = CW_SHELL_SETTINGS_MAX;
+  }
+  cw_shell_setting old[CW_SHELL_SETTINGS_MAX];
+  int n_old = S.n_set;
+  memcpy(old, S.set, sizeof old);
+  S.n_set = 0;
+  for (int i = 0; i < count; i++) {
+    const cw_shell_setting *it = &items[i];
+    if (!it->value || !it->choices || it->count < 1) {
+      cw_error("shell: Settings row %d (\"%s\") needs value, choices and a count of at least 1: left out", i, it->label ? it->label : "");
+      continue;
+    }
+    if (*it->value < 0 || *it->value >= it->count) {
+      cw_error("shell: Settings row \"%s\" starts at %d, out of its %d choices: 0", it->label ? it->label : "", *it->value, it->count);
+      *it->value = 0;
+    }
+    S.set[S.n_set++] = *it;
+  }
+  S.dbg_settings = S.n_set;
+  for (int i = 0; i < S.n_set; i++) {
+    bool known = false;
+    for (int k = 0; k < n_old && !load_all; k++)
+      known |= old[k].key && S.set[i].key && !strcmp(old[k].key, S.set[i].key);
+    if (!known) set_load(i);
+  }
+}
+void cw_shell_set_settings_items(const cw_shell_setting *items, int count) { set_items(items, count, false); }
+
 void cw_shell_save_commit(void) {
+  set_save_all();
   uint32_t q = cw_quality_saved();
   SAVE.quality = 0; /* the old preset byte: an older engine reading this save sees no choice (the word is in gfx) */
   for (int i = 0; i < 4; i++) SAVE.gfx[i] = (uint8_t)(q >> (8 * i));
@@ -222,7 +351,21 @@ void cw_shell_init(const cw_shell_desc *d) {
     if (SAVE.magic) cw_warn("shell: the save is from another shell version or damaged: starting with defaults");
     save_reset();
   }
-  game_save_adopt();
+  {
+    /* the game's Settings rows ride in the last bytes of the game area when the game keeps a struct: a struct of
+     * another size or version (zeros after it, or a migration) keeps them, unless the old struct reached into them.
+     * A game that never had rows has zeros there, which stay zeros. */
+    static uint8_t tail[CW_SHELL_SETTINGS_SAVE_BYTES];
+    bool keep = !S.d.game_save_slots && SAVE.game_version != SLOTS_VERSION && SAVE.game_size <= SET_TAIL;
+    if (keep) memcpy(tail, SAVE.game + SET_TAIL, sizeof tail);
+    game_save_adopt();
+    if (keep && S.d.game_save_size <= SET_TAIL && memcmp(tail, SAVE.game + SET_TAIL, sizeof tail)) {
+      memcpy(SAVE.game + SET_TAIL, tail, sizeof tail);
+      SAVE.checksum = save_sum();
+    }
+  }
+  SET_STORE = (cw_save_store){ 0 };
+  set_items(S.d.settings_items, S.d.settings_items ? S.d.settings_item_count : 0, true);
   uint32_t gfx = (uint32_t)SAVE.gfx[0] | (uint32_t)SAVE.gfx[1] << 8 | (uint32_t)SAVE.gfx[2] << 16 | (uint32_t)SAVE.gfx[3] << 24;
   cw_quality_restore(gfx ? gfx : SAVE.quality);
   cw_crisp_ui_restore(SAVE.crisp);
@@ -249,6 +392,7 @@ void cw_shell_init(const cw_shell_desc *d) {
   cw_debug_field("shell.shake", &S.dbg_shake, CW_DBG_I32, 1);
   cw_debug_field("shell.starting", &S.dbg_starting, CW_DBG_I32, 1);
   cw_debug_field("shell.hud", &S.dbg_hud, CW_DBG_I32, 1);
+  cw_debug_field("shell.settings", &S.dbg_settings, CW_DBG_I32, 1);
   S.inited = true;
   S.screen = S.d.loading ? CW_SHELL_LOADING : CW_SHELL_TITLE;
   S.dbg_screen = (int)S.screen;
@@ -381,7 +525,7 @@ static bool any_pad_start(void) {
 }
 
 typedef struct { const char *label; char value[48]; } item;
-enum { MAX_ITEMS = 12 };
+enum { MAX_ITEMS = 16 }; /* the settings page: the shell's seven rows and CW_SHELL_SETTINGS_MAX of the game's */
 static item items[MAX_ITEMS];
 static int n_items;
 static cw_rect item_rects[MAX_ITEMS];
@@ -401,7 +545,9 @@ static void pause_items(void) {
   items[n_items++] = (item){ "Settings", "" };
   items[n_items++] = (item){ "Quit to title", "" };
 }
-enum { SET_GRAPHICS, SET_MUSIC, SET_SFX, SET_TEXT, SET_TEXT_BG, SET_CONTROLS, SET_BACK }; /* no Screen shake row: nothing shakes */
+/* no Screen shake row: nothing shakes. The game's rows (S.set) follow Controls, then Back */
+enum { SET_GRAPHICS, SET_MUSIC, SET_SFX, SET_TEXT, SET_TEXT_BG, SET_CONTROLS, SET_GAME };
+static int set_back(void) { return SET_GAME + S.n_set; }
 static void settings_items(void) {
   n_items = 0;
   items[n_items] = (item){ "Graphics", "" };
@@ -415,6 +561,12 @@ static void settings_items(void) {
   items[n_items] = (item){ "Text background", "" };
   snprintf(items[n_items++].value, sizeof items[0].value, "%s", cw_text_backdrop_label());
   items[n_items++] = (item){ "Controls", "" };
+  for (int i = 0; i < S.n_set; i++) {
+    const cw_shell_setting *it = &S.set[i];
+    int v = *it->value;
+    items[n_items] = (item){ it->label ? it->label : "", "" };
+    snprintf(items[n_items++].value, sizeof items[0].value, "%s", v >= 0 && v < it->count && it->choices[v] ? it->choices[v] : "?");
+  }
   items[n_items++] = (item){ "Back", "" };
 }
 static void build_items(void) {
@@ -465,7 +617,17 @@ static void settings_change(int dir) { /* dir -1 / +1: left / right; 0: accept *
     cw_text_backdrop_set((cw_text_backdrop)(!dir ? (b + 1) % 3 : CW_CLAMP(b + dir, 0, 2)));
     break;
   }
-  default: return;
+  default: {
+    int g = S.item - SET_GAME;
+    if (g < 0 || g >= S.n_set) return;
+    /* the game's row: left / right step and stop at the ends, accept steps forward and goes round (as Text size) */
+    cw_shell_setting *it = &S.set[g];
+    int was = CW_CLAMP(*it->value, 0, it->count - 1), now = !dir ? (was + 1) % it->count : CW_CLAMP(was + dir, 0, it->count - 1);
+    bool changed = now != *it->value;
+    *it->value = now;
+    if (changed && S.d.settings_changed) S.d.settings_changed(g, now, S.d.user);
+    break;
+  }
   }
   apply_volumes();
   S.dbg_shake = SAVE.shake;
@@ -507,7 +669,7 @@ static void accept(int i) {
     }
     break;
   case CW_SHELL_SETTINGS:
-    if (i == SET_BACK) {
+    if (i == set_back()) {
       sound(CW_SHELL_SND_BACK);
       cw_shell_screen back = S.settings_from;
       go(back);
@@ -721,6 +883,7 @@ static void menu_tick(void) {
     return;
   }
   build_items();
+  if (S.item >= n_items) S.item = n_items - 1; /* the game's rows went away under the selection (cw_shell_set_settings_items) */
   if (any_pressed(A_UP)) { S.item = (S.item + n_items - 1) % n_items; sound(CW_SHELL_SND_MOVE); }
   if (any_pressed(A_DOWN)) { S.item = (S.item + 1) % n_items; sound(CW_SHELL_SND_MOVE); }
   if (S.screen == CW_SHELL_SETTINGS) {
@@ -732,7 +895,7 @@ static void menu_tick(void) {
   else if (any_pressed(A_ACCEPT) || (S.screen == CW_SHELL_TITLE && any_pad_start())) accept(S.item);
   else if (any_pressed(A_BACK) || (S.screen == CW_SHELL_PAUSE && any_pressed(A_PAUSE))) {
     if (S.screen == CW_SHELL_PAUSE) accept(0);
-    else if (S.screen == CW_SHELL_SETTINGS) accept(SET_BACK);
+    else if (S.screen == CW_SHELL_SETTINGS) accept(set_back());
   }
   S.dbg_item = S.item;
 }
