@@ -488,6 +488,8 @@ void cw_scene_register_builtin_types(void) {
   cw__register_multimesh_types();
   void cw__register_subviewport_types(void); /* src/render/subviewport.c: SubViewport (cartwheel/subviewport.h) */
   cw__register_subviewport_types();
+  void cw__register_backdrop_types(void); /* src/render/backdrop.c: Backdrop (cartwheel/backdrop.h) */
+  cw__register_backdrop_types();
   void cw__register_csg_types(void); /* src/scene/csg.c: CSG block-out shapes (cartwheel/csg.h) */
   cw__register_csg_types();
 }

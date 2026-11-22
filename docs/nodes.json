@@ -13828,6 +13828,56 @@
    ]
   },
   {
+   "name": "Backdrop",
+   "parent": "Node",
+   "doc": "A 3D world of its own (its own camera, lights, sky and fog) drawn behind the scene in place of its background, with an opacity: cross-fade backdrops while the scene stays on top.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "scene",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "A .cwscene asset instanced into the world it draws (its own camera, lights, environment, fog)."
+    },
+    {
+     "name": "camera",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "The world's Camera3D it is seen through (a path from the root of its scene, e.g. \"Camera\"); empty: the world's current camera."
+    },
+    {
+     "name": "opacity",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "0: not drawn and free; 1: covers what is below it. Cross-fade two backdrops by their opacities."
+    },
+    {
+     "name": "order",
+     "type": "int",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Draw order among the backdrops: lower is further back."
+    },
+    {
+     "name": "renders",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Pictures rendered so far."
+    }
+   ]
+  },
+  {
    "name": "CSGShape3D",
    "parent": "Node3D",
    "doc": "Base of the CSG block-out shapes: combines with its CSG parent by `operation`; the topmost one is the root and draws the baked result (cartwheel/csg.h).",

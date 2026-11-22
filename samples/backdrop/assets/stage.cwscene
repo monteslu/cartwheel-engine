@@ -1,0 +1,183 @@
+[scene format=1]
+
+[node name="Stage" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.004, 0.004, 0.008, 1)
+use_background = true
+ambient_energy = 0.06
+hemi_energy = 0
+
+[node name="Post" parent="." type="PostProcess"]
+exposure_ev = 0.5
+
+[node name="Haze" parent="." type="HeightFog"]
+volumetric = true
+density = 0.07
+height_falloff = 0
+use_sky_color = false
+color = color(0.01, 0.01, 0.015, 1)
+sun_g = 0.55
+volumetric_distance = 40
+sky_distance = 0
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 1.2, 13)
+rotation = vec3(-0.12, 0, 0)
+fov = 60
+near = 0.1
+far = 200
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.1, -2)
+size = vec3(30, 0.2, 24)
+color = color(0.12, 0.11, 0.1, 1)
+roughness = 0.6
+receive_shadow = true
+
+[node name="BackWall" parent="." type="MeshInstance3D"]
+position = vec3(0, 6, -12)
+size = vec3(30, 12, 0.4)
+color = color(0.1, 0.09, 0.09, 1)
+roughness = 0.9
+receive_shadow = true
+
+[node name="Riser" parent="." type="MeshInstance3D"]
+position = vec3(0, 0.4, -6)
+size = vec3(12, 0.8, 5)
+color = color(0.16, 0.14, 0.13, 1)
+roughness = 0.8
+cast_shadow = true
+receive_shadow = true
+
+[node name="TowerL" parent="." type="MeshInstance3D"]
+position = vec3(-4.5, 2.6, -6)
+size = vec3(0.6, 3.6, 0.6)
+color = color(0.3, 0.3, 0.32, 1)
+metalness = 0.6
+roughness = 0.4
+cast_shadow = true
+receive_shadow = true
+
+[node name="TowerR" parent="." type="MeshInstance3D"]
+position = vec3(4.5, 2.6, -6)
+size = vec3(0.6, 3.6, 0.6)
+color = color(0.3, 0.3, 0.32, 1)
+metalness = 0.6
+roughness = 0.4
+cast_shadow = true
+receive_shadow = true
+
+[node name="Truss" parent="." type="MeshInstance3D"]
+position = vec3(0, 9, -4)
+size = vec3(18, 0.4, 0.4)
+color = color(0.25, 0.25, 0.27, 1)
+metalness = 0.7
+roughness = 0.4
+cast_shadow = true
+
+[node name="SpotA" parent="." type="SpotLight3D"]
+position = vec3(-5, 8.8, -4)
+rotation = vec3(-1.2, 0.3, 0)
+color = color(1, 0.45, 0.15, 1)
+energy = 520
+range = 22
+angle = 0.22
+penumbra = 0.3
+shadow = true
+shadow_size = 1024
+fog_energy = 2
+
+[node name="SpotB" parent="." type="SpotLight3D"]
+position = vec3(0, 8.8, -4)
+rotation = vec3(-1.35, 0, 0)
+color = color(0.35, 0.5, 1, 1)
+energy = 520
+range = 22
+angle = 0.22
+penumbra = 0.3
+shadow = true
+shadow_size = 1024
+fog_energy = 2
+
+[node name="SpotC" parent="." type="SpotLight3D"]
+position = vec3(5, 8.8, -4)
+rotation = vec3(-1.2, -0.3, 0)
+color = color(1, 0.3, 0.6, 1)
+energy = 520
+range = 22
+angle = 0.22
+penumbra = 0.3
+shadow = true
+shadow_size = 1024
+fog_energy = 2
+
+[node name="Glow" parent="." type="OmniLight3D"]
+position = vec3(0, 5.5, -5)
+color = color(1, 0.4, 0.1, 1)
+energy = 30
+range = 10
+
+[node name="FireL" parent="." type="GPUParticles3D"]
+position = vec3(-4.5, 4.9, -6)
+amount = 48
+lifetime = 1.4
+lifetime_random = 0.3
+emission_shape = SPHERE
+emission_radius = 0.35
+direction = vec3(0, 1, 0)
+spread = 20
+speed_min = 0.8
+speed_max = 1.8
+gravity = vec3(0, 1.2, 0)
+damping = 1.2
+size = 1.6
+size_random = 0.35
+size_curve = "0 0.5, 0.3 1, 1 0.7"
+color_ramp = "0 1 1 1 0, 0.1 1 1 1 1, 0.8 1 0.85 0.8 0.8, 1 1 0.7 0.6 0"
+energy = 2
+texture = "fire.png"
+motion_texture = "fire_mv.png"
+hframes = 8
+vframes = 8
+spin = 0.3
+soft_distance = 0.4
+seed = 11
+
+[node name="FireR" parent="." type="GPUParticles3D"]
+position = vec3(4.5, 4.9, -6)
+amount = 48
+lifetime = 1.4
+lifetime_random = 0.3
+emission_shape = SPHERE
+emission_radius = 0.35
+direction = vec3(0, 1, 0)
+spread = 20
+speed_min = 0.8
+speed_max = 1.8
+gravity = vec3(0, 1.2, 0)
+damping = 1.2
+size = 1.6
+size_random = 0.35
+size_curve = "0 0.5, 0.3 1, 1 0.7"
+color_ramp = "0 1 1 1 0, 0.1 1 1 1 1, 0.8 1 0.85 0.8 0.8, 1 1 0.7 0.6 0"
+energy = 2
+texture = "fire.png"
+motion_texture = "fire_mv.png"
+hframes = 8
+vframes = 8
+spin = 0.3
+soft_distance = 0.4
+seed = 12
+
+[node name="Wall" parent="." type="MeshInstance3D"]
+position = vec3(0, 5.2, -11.7)
+size = vec3(14, 3.2, 0.1)
+color = color(0, 0, 0, 1)
+emissive = color(0.9, 0.12, 0.05, 1)
+
+[node name="WallTop" parent="." type="MeshInstance3D"]
+position = vec3(0, 7.2, -11.7)
+size = vec3(14, 0.25, 0.1)
+color = color(0, 0, 0, 1)
+emissive = color(1.6, 0.7, 0.2, 1)

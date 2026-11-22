@@ -164,7 +164,25 @@ struct cw_pipeline {
   bool fuse_fog_tm; /* the height fog inside the tonemap pass (effects detail Very Low) */
   const cw_rt *bloom_glow;   /* fuse_bloom: bloom's glow, released by the tonemap pass */
   float bloom_texel[2], bloom_norm;
+  /* backdrops (src/render/backdrop.c, cartwheel/backdrop.h): bd_frame renders this frame's pictures at the start of
+   * cw_pipeline_render (set while the tree has Backdrop nodes); bd the pictures in draw order, bd_bg_weight the share
+   * of the tree's own background left under them; bd_drawn: this run's "backdrop" pass drew them, so the scene pass
+   * keeps the colour and draws no background */
+  void (*bd_frame)(cw_tree *t, cw_pipeline *p, int w, int h, double alpha);
+  struct cw__backdrop_pic { unsigned tex; float opacity, scale; } bd[8];
+  int bd_n;
+  float bd_bg_weight;
+  bool bd_drawn;
+  /* this pipeline is drawing a backdrop's picture (cw__pipeline_render_backdrop): the passes up to the colour-only
+   * post chain, the picture left in bd_pic */
+  bool backdrop_run;
+  const cw_rt *bd_pic;
 };
+/* a backdrop's world into its picture at w x h through camera (null: the world's own), its HDR scene target or the
+ * last depth-reading post pass's; NULL when the world has nothing to draw (pipeline.c) */
+const cw_rt *cw__pipeline_render_backdrop(cw_tree *world, cw_node camera, int w, int h, double alpha);
+/* the share of the tree's own background its backdrops leave this frame (1: none drawn; backdrop.c) */
+float cw__backdrop_bg_weight(const cw_pipeline *p);
 
 /* CW_TEST_FUSION_RAW=1 (native test control): the fused post passes skip
  * the rounding that keeps them equal to the separate passes */

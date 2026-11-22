@@ -244,7 +244,8 @@ static void pass_sky_sun(cw_pass_ctx *ctx, void *user);
 static bool sky_sun_active(const cw_pass_ctx *ctx, void *user) {
   (void)ctx;
   sky_rt *s = user;
-  return s->present && s->params.sun_disk && s->params.background && s->sun.y > -0.02f;
+  /* (backdrops covering the background hide its sun disk with it: cartwheel/backdrop.h) */
+  return s->present && s->params.sun_disk && s->params.background && s->sun.y > -0.02f && cw__backdrop_bg_weight(ctx->pipeline) > 0;
 }
 static bool sky_env_active(const cw_pass_ctx *ctx, void *user) {
   (void)ctx;
@@ -655,7 +656,7 @@ static void pass_sky_sun(cw_pass_ctx *ctx, void *user) {
   float r = CW_MAX(k->sun_size, 0.01f) * 0.5f * CW_PI / 180.0f;
   /* physical disk radiance: the irradiance it gives over its solid angle */
   float solid = CW_PI * r * r;
-  float scale = k->sun_disk_intensity * s->sun_light / solid;
+  float scale = k->sun_disk_intensity * s->sun_light / solid * cw__backdrop_bg_weight(ctx->pipeline);
   float box[4];
   if (!sun_ndc_box(ctx, s->sun, r, box)) return;
   int vp[4], sc[4];
@@ -922,7 +923,7 @@ static void pass_sky_sun_wgpu(cw_pass_ctx *ctx, sky_rt *s) {
   u[18] = s->sun.z;
   u[20] = cosf(r);
   u[21] = cosf(r * 0.7f);
-  u[22] = k->sun_disk_intensity * s->sun_light / solid;
+  u[22] = k->sun_disk_intensity * s->sun_light / solid * cw__backdrop_bg_weight(ctx->pipeline);
   u[24] = s->sun_color.r;
   u[25] = s->sun_color.g;
   u[26] = s->sun_color.b;

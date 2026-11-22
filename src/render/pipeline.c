@@ -1156,6 +1156,27 @@ static const cw_rt *array_run(cw_tree *t, cw_pipeline *p, const cw_rt *out, doub
   return p->view_pic ? p->view_pic : pic;
 }
 
+/* ── backdrops (cartwheel/backdrop.h) ────────────────────────────────── */
+
+const cw_rt *cw__pipeline_render_backdrop(cw_tree *world, cw_node camera, int w, int h, double alpha) {
+  cw_pipeline *p = cw_pipeline_of(world);
+  bool keep_taa = p->s.taa, keep_split = p->view_post_split;
+  cw_node keep_cam = cw__render3d_explicit_camera(world);
+  p->s.taa = false;          /* (its history would be its camera's; the main tree's TAA runs over the composite) */
+  p->view_post_split = true; /* the depth-reading post passes here, the rest in the main tree's chain */
+  p->view_i = -1;
+  p->view_pic = NULL;
+  p->bd_pic = NULL;
+  p->backdrop_run = true;
+  if (cw_node_valid(camera)) cw_render3d_set_camera(world, camera);
+  cw_pipeline_render(world, w, h, alpha);
+  if (cw_node_valid(camera)) cw_render3d_set_camera(world, keep_cam);
+  p->backdrop_run = false;
+  p->s.taa = keep_taa;
+  p->view_post_split = keep_split;
+  return p->bd_pic;
+}
+
 /* ── extra views ─────────────────────────────────────────────────────── */
 
 bool cw__pipeline_queue_view(cw_pipeline *p, cw_node camera, const cw_rt *rt, int slot, void (*done)(void *user, float cpu_ms), void *user) {
@@ -1213,6 +1234,9 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   cw_pipeline *p = cw_pipeline_of(t);
   bool wgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
   cw__pipeline_probe_caps();
+  /* backdrops (cartwheel/backdrop.h): their worlds drawn into their pictures first, each through its own pipeline */
+  p->bd_n = 0;
+  if (p->bd_frame && !p->backdrop_run) p->bd_frame(t, p, w, h, alpha);
   if (wgpu) {
     cw__pw_frame_begin();
     cw__pw_timing_poll();
@@ -1227,6 +1251,13 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   cw__render3d_frame_begin(t); /* the frame's draw counts start over */
   cw__view_masks_frame();
   views_submits_dbg = 0;
+  if (p->backdrop_run) { /* a backdrop's picture: one view of a shared post chain's kind, the chain the main tree's */
+    render_run(t, p, w, h, alpha, RUN_VIEW);
+    cw__visibility_end_view(t);
+    frame_stats(p);
+    p->frame++;
+    return;
+  }
   if (p->nviews < 2) {
     render_run(t, p, w, h, alpha, RUN_FULL);
     extra_views_run(t, p, alpha);
@@ -1374,6 +1405,7 @@ static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, i
 static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, int mode) {
   double t_start = cw__render3d_now_ms(); /* cw_render3d_stats.cpu_ms: up to the overlay phase */
   bool wgpu = cw_gpu_backend() == CW_GPU_WEBGPU;
+  p->bd_drawn = false;
   /* the frame's settings: the pipeline's, capped or raised by the quality
    * preset (cartwheel/quality.h; High = as authored) */
   cw_post_settings eff = p->s;
@@ -1467,7 +1499,8 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   p->drew3d = mode == RUN_OVERLAY; /* the views' pictures are already there: the overlays keep them */
   /* WebGPU always renders the scene offscreen: the window texture has no
    * depth */
-  bool offscreen = has_scene && (wgpu || post_or_fx || s->hdr || s->msaa > 1 || any_prepass || (reads & (CW_RES_DEPTH | CW_RES_VELOCITY)));
+  bool offscreen = has_scene && (wgpu || post_or_fx || s->hdr || s->msaa > 1 || any_prepass || p->backdrop_run ||
+                                 (reads & (CW_RES_DEPTH | CW_RES_VELOCITY)));
   /* splitscreen's shared post: the overlay run starts from the laid-out views */
   bool post_run = mode == RUN_OVERLAY && p->post_src;
   if (post_run) offscreen = true;
@@ -1623,6 +1656,15 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
     pass_rec *r = p->passes.data[i];
     if (r->active && r->d.phase == CW_PHASE_POST && (r->d.writes & CW_RES_COLOR) && post_in_run(p, r, mode)) last_writer = i;
   }
+  /* a backdrop's picture: the scene target, or a target of its own when a depth-reading post pass writes colour */
+  if (p->backdrop_run && scene) {
+    if (last_writer >= 0) {
+      const cw_rt *bo = cw_pipeline_rt_persistent(p, "backdrop.out", w, h, scene->format, NULL);
+      if (bo) output = ctx.output = bo;
+      else last_writer = -1;
+    }
+    p->bd_pic = last_writer >= 0 ? output : scene;
+  }
   /* a depth copy for SKY / EFFECTS passes that sample depth */
   bool fx_reads_depth = false;
   for (int i = 0; i < p->passes.count; i++) {
@@ -1700,7 +1742,8 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
     }
     if ((mode == RUN_VIEW || mode == RUN_ARRAY) && ph >= CW_PHASE_OVERLAY) { /* a view draws no overlays: just its picture into its target */
       if (ph == CW_PHASE_OVERLAY && offscreen && last_writer < 0) {
-        if (p->view_post_split && (p->view_i >= 0 || mode == RUN_ARRAY) && scene->format == output->format) p->view_pic = scene; /* (no copy) */
+        if (p->backdrop_run) {} /* (its picture is the scene target: bd_pic) */
+        else if (p->view_post_split && (p->view_i >= 0 || mode == RUN_ARRAY) && scene->format == output->format) p->view_pic = scene; /* (no copy) */
         else cw__pass_copy(&ctx, scene->tex, output);
       }
       if (ph == CW_PHASE_OVERLAY && has_scene) {

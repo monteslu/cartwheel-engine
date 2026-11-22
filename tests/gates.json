@@ -3344,7 +3344,74 @@
     "expect": { "unit.failed": 0, "unit.done": 1 },
     "controlEnv": { "CW_TEST_INJECT_FAIL": "1" },
     "note": "SubViewport: names and viewport:// references, the update modes (ALWAYS, ONCE and its request, DISABLED, WHEN_VISIBLE by asking for the texture, update_every), size changes and clamping, one three.c texture across a resize, worlds of their own ticking with the owner and never taking the current-tree seat, camera views drawn after the frame (the tree's camera restored, one extra pass run per view, none when disabled, a wrong camera path never rendered), the scene-file round trip of SubViewport, viewport_texture and viewport:// texture properties"
+  },  {
+    "name": "backdrop",
+    "app": "backdrop",
+    "frames": 240,
+    "env": {
+      "BD_MODE": "mix"
+    },
+    "controlEnv": {
+      "BD_MODE": "mix",
+      "CW_TEST_BACKDROP_ON_TOP": "1"
+    },
+    "maxGt16": 0.004,
+    "webgpu": {
+      "vsGl": 0.03
+    },
+    "fields": [
+      "tree.tick",
+      "bd.mode",
+      "bd.stage_renders",
+      "bd.sea_renders",
+      "bd.pass_ran",
+      "bd.fog_active",
+      "bd.fog_shadowed",
+      "bd.stage_op",
+      "bd.sea_op"
+    ],
+    "expect": {
+      "bd.mode": 3,
+      "bd.pass_ran": 1,
+      "bd.fog_active": 1,
+      "bd.fog_shadowed": 3,
+      "bd.stage_op": 1000,
+      "bd.sea_op": 500
+    },
+    "note": "two Backdrop worlds (cartwheel/backdrop.h) behind a note highway: a stage in volumetric haze with three shadowed spot lights sweeping, at 1, and a sea under a ProceduralSky at 0.5 over it; the highway (opaque, emissive and additive particles) drawn over the composite with its own depth, the post chain over all of it. Held: the backdrop pass ran, the stage's fog grid built with three shadowed lights, the picture across hosts and GL against WebGPU. The control draws the backdrops over the finished scene (CW_TEST_BACKDROP_ON_TOP=1): the highway vanishes"
   },
+  {
+    "name": "backdrop-split",
+    "app": "backdrop",
+    "frames": 180,
+    "env": {
+      "BD_MODE": "split"
+    },
+    "controlEnv": {
+      "BD_MODE": "fire"
+    },
+    "maxGt16": 0.004,
+    "webgpu": {
+      "vsGl": 0.03
+    },
+    "fields": [
+      "tree.tick",
+      "bd.mode",
+      "bd.pass_ran",
+      "bd.stage_renders"
+    ],
+    "expect": {
+      "bd.mode": 9,
+      "bd.pass_ran": 1
+    },
+    "note": "the stage backdrop behind a two-view split screen: one picture behind the whole screen, each view showing its half of it, rendered once a frame. The control is one view"
+  },
+  {
+    "name": "backdrop-checks",
+    "script": "tests/backdrop.mjs",
+    "note": "backdrops on GL and WebGPU, native: the highway pixels over the stage are the ones over its own background (control: drawn on top), the sea at 0.5 over the stage is the 50/50 linear blend of each alone (control: opacity ignored), both at 0 is byte for byte no backdrops with no pass of theirs run and no picture (control: 0.001), the stage volumetric fog built with three shadowed lights"
+  },
+
   {
     "name": "multimesh",
     "app": "multimesh",

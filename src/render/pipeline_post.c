@@ -215,12 +215,24 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
 #ifdef T3_EXTERNAL_TARGET_KEEP_MULTISAMPLED
     if (pl->arr_part && pl->arr_part < pl->arr_n) et.keep_multisampled = true;
 #endif
+    /* backdrops (cartwheel/backdrop.h) were blended in: keep that colour, draw no background over it */
+    bool had_bg = ctx->scene3d->has_background;
+    struct t3_texture *bg_tex = ctx->scene3d->background_texture;
+    if (pl->bd_drawn) {
+      et.load_color = true;
+      ctx->scene3d->has_background = false;
+      ctx->scene3d->background_texture = NULL;
+    }
     t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
     t3_renderer_set_external_target(r, &et);
     cw__pw_timing_span((void *)pt->enc, false); /* three.c's passes: timed as one span */
     t3_renderer_render(r, ctx->scene3d, ctx->camera);
     cw__pw_timing_span((void *)pt->enc, true);
     t3_renderer_set_external_target(r, NULL);
+    if (pl->bd_drawn) {
+      ctx->scene3d->has_background = had_bg;
+      ctx->scene3d->background_texture = bg_tex;
+    }
     cw__render3d_count(ctx->tree);
     ctx->pipeline->drew3d = true;
     return;
@@ -230,7 +242,33 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
   t3_renderer_set_framebuffer(r, ctx->pipeline->bound_fbo);
   int sc[5];
   bool part = gl_view_begin(ctx, sc);
-  if (ctx->pipeline->prepass_ran) {
+  if (ctx->pipeline->bd_drawn) {
+    /* backdrops (cartwheel/backdrop.h) were blended in: keep that colour and draw no background over it; the depth
+     * is cleared (inside the view's rectangle for a later view of a one-pass split screen) unless a prepass drew it */
+    bool had_bg = ctx->scene3d->has_background;
+    struct t3_texture *bg_tex = ctx->scene3d->background_texture;
+    ctx->scene3d->has_background = false;
+    ctx->scene3d->background_texture = NULL;
+    bool auto_clear = t3_renderer_get_auto_clear(r);
+    if (!ctx->pipeline->prepass_ran) {
+      if (part) {
+        const int *rc = ctx->pipeline->arr_rect[ctx->pipeline->arr_part - 1];
+        glEnable(GL_SCISSOR_TEST);
+        glScissor(rc[0], rc[1], rc[2], rc[3]);
+      }
+      glDepthMask(GL_TRUE);
+      glClearDepthf(cw_gpu_reversed_depth() ? 0.0f : 1.0f);
+      glClear(GL_DEPTH_BUFFER_BIT);
+      if (part) glDisable(GL_SCISSOR_TEST);
+      t3_renderer_reset_state(r); /* (the renderer's cached depth mask and scissor) */
+    }
+    t3_renderer_set_auto_clear(r, false);
+    t3_renderer_reset_bindings(r);
+    t3_renderer_render(r, ctx->scene3d, ctx->camera);
+    t3_renderer_set_auto_clear(r, auto_clear);
+    ctx->scene3d->has_background = had_bg;
+    ctx->scene3d->background_texture = bg_tex;
+  } else if (ctx->pipeline->prepass_ran) {
     /* keep the prepass depth: clear colour only, to what three.c would (a later view of a one-pass split screen
      * drawn view by view: inside its rectangle only) */
     bool auto_clear = t3_renderer_get_auto_clear(r);

@@ -1,0 +1,102 @@
+[scene format=1]
+
+[node name="Game" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.22, 0.02, 0.18, 1)
+use_background = true
+ambient_energy = 0.15
+hemi_energy = 0.2
+
+[node name="Post" parent="." type="PostProcess"]
+bloom = true
+bloom_intensity = 0.05
+
+[node name="Key" parent="." type="DirectionalLight3D"]
+rotation = vec3(-0.9, 0.35, 0)
+energy = 3
+shadow = true
+shadow_extent = 14
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 3.2, 6.5)
+rotation = vec3(-0.32, 0, 0)
+fov = 55
+near = 0.1
+far = 120
+
+[node name="Lane" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.1, -10)
+size = vec3(4.2, 0.2, 30)
+color = color(0.05, 0.05, 0.07, 1)
+roughness = 0.35
+metalness = 0.2
+receive_shadow = true
+
+[node name="RailL" parent="." type="MeshInstance3D"]
+position = vec3(-2.2, 0.05, -10)
+size = vec3(0.12, 0.12, 30)
+color = color(0, 0, 0, 1)
+emissive = color(0.2, 1.4, 2.4, 1)
+
+[node name="RailR" parent="." type="MeshInstance3D"]
+position = vec3(2.2, 0.05, -10)
+size = vec3(0.12, 0.12, 30)
+color = color(0, 0, 0, 1)
+emissive = color(0.2, 1.4, 2.4, 1)
+
+[node name="Target" parent="." type="MeshInstance3D"]
+position = vec3(-1.2, 0.6, 1.2)
+size = vec3(1.1, 1.1, 1.1)
+color = color(0.7, 0.06, 0.04, 1)
+roughness = 0.5
+cast_shadow = true
+receive_shadow = true
+
+[node name="Note0" parent="." type="MeshInstance3D"]
+position = vec3(-1.0, 0.25, -6)
+size = vec3(0.9, 0.3, 0.5)
+color = color(0.02, 0.02, 0.02, 1)
+emissive = color(0.1, 1.6, 0.6, 1)
+cast_shadow = true
+
+[node name="Note1" parent="." type="MeshInstance3D"]
+position = vec3(0.0, 0.25, -12)
+size = vec3(0.9, 0.3, 0.5)
+color = color(0.02, 0.02, 0.02, 1)
+emissive = color(1.6, 1.2, 0.1, 1)
+cast_shadow = true
+
+[node name="Note2" parent="." type="MeshInstance3D"]
+position = vec3(1.0, 0.25, -18)
+size = vec3(0.9, 0.3, 0.5)
+color = color(0.02, 0.02, 0.02, 1)
+emissive = color(0.2, 0.6, 1.8, 1)
+cast_shadow = true
+
+[node name="Sparks" parent="." type="GPUParticles3D"]
+position = vec3(0.6, 0.3, -1)
+amount = 400
+lifetime = 1.2
+emission_shape = SPHERE
+emission_radius = 0.3
+direction = vec3(0, 1, 0)
+spread = 20
+speed_min = 1.2
+speed_max = 2.2
+gravity = vec3(0, -4, 0)
+size = 0.06
+color = color(1, 0.6, 0.2, 1)
+energy = 3
+blend = ADD
+seed = 7
+
+[node name="Stage" parent="." type="Backdrop"]
+scene = "stage.cwscene"
+order = 0
+
+[node name="Sea" parent="." type="Backdrop"]
+scene = "sea.cwscene"
+camera = "Camera"
+order = 1
+opacity = 0

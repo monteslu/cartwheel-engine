@@ -413,3 +413,5 @@ cw_add_app(custom_surface SOURCES custom_surface/main.c ASSETS ${CMAKE_CURRENT_S
 cw_add_app(custom_surface_field SOURCES custom_surface/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/custom_surface/assets
   PROGRAMS custom_surface/programs/custom_surface.txt)
 target_compile_definitions(custom_surface_field PRIVATE CS_FIELD=1)
+# worlds of their own behind the scene (cartwheel/backdrop.h): a stage in haze and a sea cross-fading behind a note highway
+cw_add_app(backdrop SOURCES backdrop/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/backdrop/assets)

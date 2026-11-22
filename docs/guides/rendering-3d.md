@@ -88,7 +88,7 @@ A frame runs the tree's active passes phase by phase, and inside a phase by `ord
 |---|---|
 | SHADOW | "sky_env" (100: sky cube), "visibility" (2000: culling, LOD, impostor bakes) |
 | PREPASS | "depth_prepass" when `depth_prepass` is on (depth of the opaque queue, alpha-tested cutouts still discarding; transparent and transmissive surfaces, colour and the sky are left out; on GL it draws into a framebuffer holding only the scene's depth, so no driver runs colour work for it) |
-| OPAQUE | "scene" (0: three.c renders the tree), "impostors" (100), "occlusion_queries" (900) |
+| OPAQUE | "backdrop" (-1000: the [backdrops](#backdrops-worlds-behind-the-scene) blended in, when there are any), "scene" (0: three.c renders the tree), "impostors" (100), "occlusion_queries" (900) |
 | SKY | "sky_sun" (0: the sun disk) |
 | EFFECTS | "decals" (100), "particles" (200), "height_fog" (300) |
 | POST | "velocity", "ssao" (100), "taa" (200), "exposure" (290), "bloom" (300), "glints" (320), "tonemap" (500), "grade" (550), "aa" (600), "lens" (700), "debug_view" (10000) |
@@ -957,6 +957,63 @@ Cost. A camera view costs about what the screen's own 3D picture costs at the sa
 The CPU side of a camera view (the pipeline recorded once more) was 0.3 to 0.6 ms a frame in the cart on this scene; a 3D world of its own 0.4 to 0.6 ms; a 2D canvas world 0.3 to 0.5 ms. A view the size of the screen costs a little more than the screen's own picture here because the screen's figure includes no second post chain; in a heavy scene expect a camera view to cost the scene pass and post chain of a splitscreen view of that size. On a Vega 8 (about a third of the 890M) a 512 x 288 monitor in a scene this light is about 0.3 ms; size the texture to what the screen shows of it, and use `WHEN_VISIBLE`.
 
 The Low and Very Low effects presets render `ALWAYS` and `WHEN_VISIBLE` viewports every second and every third frame they are due, so a monitor costs half and a third there. The debug command `subviewport` lists every viewport with its size, mode, render count, last CPU milliseconds and whether its texture was shown last frame.
+
+## Backdrops: worlds behind the scene
+
+A [Backdrop](node:Backdrop) draws a whole 3D world of its own behind the scene, in place of the scene's background: a concert stage behind a rhythm game's note highway, a wall of fire, a sea at sunset. Each backdrop has its own camera, lights and shadows, sky, fog (volumetric fog too), particles and water, and an opacity, so two backdrops cross-fade while the game's own scene stays on top, drawn with its own depth exactly as it is over its own background. The module is `cartwheel/backdrop.h` ([reference](header:backdrop.h)).
+
+```text
+[node name="Stage" parent="." type="Backdrop"]
+scene = "stage.cwscene"
+order = 0
+
+[node name="Sea" parent="." type="Backdrop"]
+scene = "sea.cwscene"
+order = 1
+opacity = 0
+```
+
+`scene` is instanced into a tree the node owns, as a SubViewport's world of its own is: nothing in it lights the main scene and nothing of the main scene shows in it, and it ticks with the main tree. `camera` names the world's Camera3D (a path from the root of its scene, `"Camera"` for a child of it; empty: its current camera). `order` stacks them: lower is further back. Game code reaches into the world through the node:
+
+@include samples/backdrop/main.c#reach_world
+
+A cross-fade is two opacities: the one in front goes from 0 to 1 over the one behind (at 1). In `samples/backdrop` the sea swells in over the stage and back:
+
+@include samples/backdrop/main.c#crossfade
+
+How a frame is put together:
+
+1. Every backdrop with an opacity above 0 renders its world through its own pipeline at the main scene's size (the full resolution, never a lower one) into a linear HDR picture: its shadow maps, sky, scene, decals, particles, height fog and volumetric fog, and the post passes that read its own depth (ambient occlusion, depth of field, motion blur).
+2. The main scene's "backdrop" pass (OPAQUE phase, before the scene pass) blends the pictures into the scene target in order, each over what is below by its opacity, over the main scene's own background (its clear colour, or its sky) where the opacities leave some of it.
+3. The scene pass keeps that colour and draws no background. Opaque, transparent and additive surfaces, particles and decals land on the backdrop exactly as on the scene's own background.
+4. The main post chain (exposure, bloom, tone curve, grade, antialiasing, lens) runs over the composite: a stage light in the backdrop blooms, and the whole picture is tone mapped once. A backdrop's PostProcess counts for its exposure (its picture is scaled by its exposure over the main scene's, so a world authored at `exposure_ev = -2` looks as it does alone) and for its depth-reading passes; bloom, tone curve, grade and lens are the main chain's. TAA does not run inside a backdrop (the main scene's runs over the composite).
+
+Things to know:
+
+- **Opacity 0 costs nothing.** A backdrop at 0 is not culled, drawn or blended, and nothing is allocated; with every backdrop at 0 the frame is byte for byte the frame without them. Its world keeps ticking (a CPU cost of its own nodes), so it is where it should be when it fades in.
+- **Volumetric fog works in a backdrop**, as in any scene: a HeightFog with `volumetric = true` and up to three shadowed spot lights draws beams through haze (`samples/backdrop`'s stage sweeps three). The grid follows the backdrop's camera and the Effects detail setting, as in the main scene.
+- **The main scene's fog** covers the backdrop as it covers its own sky (HeightFog `sky_distance`; 0 keeps it off the backdrop). The main sun disk belongs to the main background and fades with it.
+- **Split screen:** a backdrop is one picture behind the whole screen, from its own camera, and each view shows its part of it: one stage behind every player's lane, drawn once however many views there are. A backdrop's camera is not a player's, so a picture per view would be the same world from the same camera at a narrower aspect, as many renders for no gain. A world that must follow each player's camera belongs in the main scene.
+- **SubViewport camera views** of the main scene (a monitor, a minimap) draw without the backdrop.
+- At most 8 backdrops with an opacity above 0 are drawn in a frame. A backdrop renders every frame on every preset (it is the background); its world's effects follow the presets as the main scene's do.
+- A backdrop's world draws with the app's program table: run `tools/programs.mjs` after adding one.
+- The debug command `backdrop` lists each backdrop's opacity, order, renders, the passes its world ran last frame and its CPU milliseconds.
+
+**Why not a SubViewport on a background quad.** A SubViewport's world of its own renders the same world, but its texture is display colours (its own post chain and tone curve, RGBA8): shown behind the scene, the backdrop would be tone mapped and bloomed twice and lose its HDR range, a 3D material reads it through a decoded copy (a full-screen pass more), and a quad blended in by opacity would be a transparent surface sorted with the scene's own. A Backdrop's picture is the world's linear HDR scene target itself, blended in once before the scene draws.
+
+A backdrop costs what its world costs to draw at the screen's size, plus one full-screen blend into the scene target (two with the scene's own sky under a partial opacity). Measured on the 890M (Ryzen AI 9 HX 370) at 1920 x 1080, release build, native, `samples/backdrop` with the stage (volumetric haze, three shadowed spot lights, two fires) at 1 and the sea (sky, Water3D) at 0.5 over it, GPU milliseconds a frame, GL / WebGPU (the median of three or two runs on a shared machine; read them to about 0.1 ms):
+
+| Effects preset | the scene alone | the scene with both backdrops | the stage's world | the sea's world | whole frame, cross-fade |
+|---|---|---|---|---|---|
+| Very Low | 0.22 / 0.30 | 0.39 / 0.33 | 0.35 / 0.39 | 0.45 / 0.55 | 1.2 / 1.3 |
+| Low | 0.44 / 0.52 | 0.62 / 0.59 | 0.53 / 0.59 | 0.90 / 0.85 | 2.1 / 2.0 |
+| Medium | 0.60 / 0.66 | 1.06 / 0.92 | 1.11 / 1.0 | 1.04 / 0.95 | 3.2 / 2.9 |
+| High | 0.61 / 0.70 | 1.09 / 0.92 | 1.54 / 1.31 | 1.21 / 1.25 | 3.8 / 3.5 |
+| Ultra | 0.62 / 0.70 | 1.02 / 0.98 | 2.94 / 2.9 | 1.36 / 1.6 | 5.3 / 5.5 |
+
+The blend pass itself is about 0.2 ms a picture on GL and 0.07 to 0.2 ms on WebGPU at 1080p (0.43 / 0.13 for the two at High); everything else is the worlds' own drawing, so a backdrop of a few lights and an unlit sky card costs little and one with its own volumetric fog costs about what that fog costs in a scene. On a Vega 8 (about a third of the 890M's fill and shader rate) expect about three times these: the High cross-fade about 11 ms, Very Low about 3.5. While one backdrop sits at opacity 0 between cross-fades it costs nothing, so a game pays for two worlds only during the fade.
+
+`samples/backdrop` has it all: the note highway (lane, rails, notes, a block, additive sparks) over the stage in haze (three shadowed spot lights sweeping beams, two fires, a lit wall) and the sea (ProceduralSky, Water3D), cross-fading. `tests/backdrop.mjs` (the `backdrop-checks` gate) holds, on GL and WebGPU: the highway's pixels over the stage are the ones over its own background (control: the stage drawn over the finished scene), the sea at 0.5 over the stage is the 50/50 blend of each alone in linear light (control: the opacity ignored), both at opacity 0 is byte for byte no backdrops with neither the pass nor any pass of their worlds run (control: opacity 0.001), and the stage's volumetric fog is built with its three shadowed lights. The `backdrop` and `backdrop-split` gates hold the cross-fade and the split screen across hosts and GL against WebGPU.
 
 ## Particles and decals
 

@@ -4,6 +4,31 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.61.0 (2026-11-22)
+
+### Added
+- Backdrops (`cartwheel/backdrop.h`): a `Backdrop` node draws a whole 3D world of its own (`scene = "stage.cwscene"`:
+  its own camera, lights and shadows, sky, height fog and volumetric fog, particles, water) behind the scene, in place
+  of the scene's background, with an `opacity` (0 to 1) and an `order` (lower is further back), so two backdrops
+  cross-fade while the scene stays on top. `cw_backdrop_set_opacity`, `cw_backdrop_opacity`, `cw_backdrop_set_order`,
+  `cw_backdrop_tree`, `cw_backdrop_root`, `cw_backdrop_renders`, `cw_backdrop_last_cpu_ms`; the debug command
+  `backdrop`.
+- Each backdrop renders its world at the scene's full size into a linear HDR picture through its own pipeline (its
+  shadows, sky, scene, effects, fog and its depth-reading post passes). The new "backdrop" pass (OPAQUE, before the
+  scene pass) blends the pictures into the scene target over the scene's own background, and the scene pass keeps that
+  colour and draws no background, so the scene's opaque, transparent and additive surfaces are exactly what they are
+  over their own background, and the main post chain (bloom, exposure, tone curve, grade, antialiasing, lens) runs
+  over the composite. A backdrop's exposure is kept (its picture scaled by its exposure over the scene's).
+- Opacity 0 costs nothing: no culling, drawing, blending or allocation, and with every backdrop at 0 the frame is byte
+  for byte the frame without them. In split screen a backdrop is one picture behind the whole screen, drawn once,
+  each view showing its part (one-pass and view-by-view frames alike).
+- Sample `backdrop` (a note highway over a stage in volumetric haze with three sweeping shadowed spot lights and
+  fires, and a sea, cross-fading); gates `backdrop`, `backdrop-split` and `backdrop-checks` (`tests/backdrop.mjs`:
+  the scene's pixels unchanged over a backdrop, the 50/50 blend at opacity 0.5 in linear light, opacity 0 free and
+  byte-identical, the backdrop's volumetric fog built; each with a control that must fail). GPU cost at 1080p on a
+  Radeon 890M for the stage and the sea cross-fading: 3.8 ms GL, 3.5 ms WebGPU at High for the whole frame (the
+  scene alone 0.6), 1.2 / 1.3 at Very Low; the guide's "Backdrops" section has every preset.
+
 ## v0.60.0 (2026-11-22)
 
 ### Added

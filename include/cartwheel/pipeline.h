@@ -20,7 +20,10 @@
  *                      transparent, as three.c orders them) into the scene
  *                      FBO (HDR colour + depth texture, or the MSAA
  *                      renderbuffers). Passes after it here draw more
- *                      geometry with the same depth. Module passes:
+ *                      geometry with the same depth. "backdrop" (-1000,
+ *                      cartwheel/backdrop.h) blends the backdrops' pictures in
+ *                      first; the scene pass then keeps that colour and draws
+ *                      no background. Module passes:
  *                      "impostors" (100) and "occlusion_queries" (900:
  *                      bounding boxes against the finished depth),
  *                      visibility.h.
