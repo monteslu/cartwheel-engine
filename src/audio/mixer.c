@@ -27,6 +27,9 @@ void cw__mixer_init(cw__mixer *m, int rate, int max_voices) {
   m->clock = cw_calloc((size_t)max_voices, sizeof *m->clock, CW_MEM_AUDIO);
   m->started = cw_calloc((size_t)max_voices, sizeof *m->started, CW_MEM_AUDIO);
   m->scratch = cw_calloc(CW_AUDIO_BLOCK * 2, sizeof(float), CW_MEM_AUDIO);
+  m->xa = cw_calloc(CW_AUDIO_BLOCK * 2, sizeof(float), CW_MEM_AUDIO);
+  m->xb = cw_calloc(CW_AUDIO_BLOCK * 2, sizeof(float), CW_MEM_AUDIO);
+  m->tres = cw_calloc((size_t)max_voices, sizeof *m->tres, CW_MEM_AUDIO);
   m->hstate = cw_calloc((size_t)max_voices, sizeof *m->hstate, CW_MEM_AUDIO);
   m->mono = cw_calloc(CW_AUDIO_BLOCK * 2, sizeof(float), CW_MEM_AUDIO);
   m->zone_in = cw_calloc(CW_AUDIO_BLOCK, sizeof(float), CW_MEM_AUDIO);
@@ -54,6 +57,9 @@ void cw__mixer_free(cw__mixer *m) {
   cw_free((void *)m->clock);
   cw_free((void *)m->started);
   cw_free(m->scratch);
+  cw_free(m->xa);
+  cw_free(m->xb);
+  cw_free(m->tres);
   cw_free(m->hstate);
   cw_free(m->mono);
   cw_free(m->zone_in);
@@ -125,9 +131,11 @@ static void start_voice(const cw__cmd *c) {
   } else {
     v->fade = v->fade_target = 1;
   }
+  v->tempo = p->d.tempo;
   if (p->stream >= 0) {
-    v->ipos = atomic_load_explicit(&cw__au.streams[p->stream].read, memory_order_acquire);
+    v->ipos = atomic_load_explicit(&cw__au.streams[p->stream].head, memory_order_acquire);
     v->played = (uint64_t)p->d.offset;
+    v->udelta = (int64_t)v->played - (int64_t)v->ipos;
   } else {
     v->ipos = (uint64_t)p->d.offset;
     v->played = (uint64_t)p->d.offset;
@@ -160,6 +168,14 @@ static void apply(const cw__cmd *c) {
   case CW__CMD_PAUSE: if ((v = live_voice(c))) v->paused = c->f.flag; break;
   case CW__CMD_VOLUME: if ((v = live_voice(c))) v->volume = c->f.a; break;
   case CW__CMD_PITCH: if ((v = live_voice(c))) v->pitch = c->f.a; break;
+  case CW__CMD_TEMPO:
+  case CW__CMD_TEMPO_GROUP:
+    for (int i = 0; i < c->tempo.n; i++) {
+      cw__cmd one = { .slot = c->tempo.slot[i], .gen = c->tempo.gen[i] };
+      if ((v = live_voice(&one))) v->tempo = c->tempo.tempo;
+    }
+    break;
+  case CW__CMD_STRETCH: m->tres[c->slot] = c->tres; break;
   case CW__CMD_PAN: if ((v = live_voice(c))) v->pan = c->f.a; break;
   case CW__CMD_BUS: if ((v = live_voice(c))) v->bus = (int)c->f.a; break;
   case CW__CMD_FADE:
@@ -369,6 +385,15 @@ static void voice_params_x(cw__mixer *m, cw__mvoice *v, float fade_end, float *g
   *ratio = cw_clampf(v->ratio * v->pitch * dop, 1.0f / 256.0f, 8.0f);
 }
 
+/* What the mixer still needs of a stream's ring: it reads on from `next`; `oldest` is the oldest frame it may
+ * read again (what plays), kept with CW__STREAM_KEEP frames of history before it. */
+static void stream_publish(cw__stream *st, uint64_t oldest, uint64_t next) {
+  uint64_t r = oldest > CW__STREAM_KEEP ? oldest - CW__STREAM_KEEP : 0;
+  if (r > atomic_load_explicit(&st->read, memory_order_relaxed)) /* never back: the producer may have written over it */
+    atomic_store_explicit(&st->read, r, memory_order_release);
+  atomic_store_explicit(&st->head, next, memory_order_release);
+}
+
 /* Renders up to n frames of source into out (stereo, ramped gains). Returns
  * true when the source ended inside. */
 static bool render_voice(cw__mixer *m, cw__mvoice *v, float *out, int n, float gl0, float gr0, float gl1, float gr1,
@@ -393,7 +418,7 @@ static bool render_voice(cw__mixer *m, cw__mvoice *v, float *out, int n, float g
   if (st) {
     write = atomic_load_explicit(&st->write, memory_order_acquire);
     end = atomic_load_explicit(&st->end, memory_order_acquire);
-    mask = st->cap - 1;
+    mask = st->ring_frames - 1;
   }
   bool ended = false;
   int i = 0;
@@ -457,8 +482,330 @@ static bool render_voice(cw__mixer *m, cw__mvoice *v, float *out, int n, float g
         while ((int64_t)v->ipos >= le) v->ipos -= (uint64_t)len;
     }
   }
-  if (st) atomic_store_explicit(&st->read, v->ipos < write ? v->ipos : write, memory_order_release);
+  if (st) stream_publish(st, v->ipos < write ? v->ipos : write, v->ipos < write ? v->ipos : write);
   return ended;
+}
+
+/* ── tempo ──────────────────────────────────────────────────────────────
+ * A voice whose tempo is not 1 plays through its slot's stretcher (stretch.cpp): the source goes in, a signal at the
+ * source's rate with the pitch kept comes out into the slot's ring of stretched frames, and the usual resampler
+ * (pitch, the source rate, doppler) reads that ring as it reads a sample. Positions are integers and 32.32 fixed
+ * point throughout, so every host takes the same source frames on the same blocks.
+ *
+ * Positions: u counts source frames as the clock does (unrolled through loops; for a stream, ring frames plus
+ * udelta). The stretcher processes at tp, advancing exactly `tempo` source frames per stretched frame, and is fed
+ * CW__STRETCH_IN_LAT frames past tp. Stretched frame q is heard as the source position the stretcher processed
+ * CW__STRETCH_OUT_LAT stretched frames earlier: heard32(q), kept exact across tempo changes by the segment list. */
+
+int cw__tempo_test;
+
+static inline uint64_t tempo_step(float t) { return (uint64_t)((double)t * 4294967296.0 + 0.5); }
+
+static void tseg_push(cw__mvoice *v, int64_t q0, int64_t p0, uint64_t step) {
+  if (v->nseg == CW__TSEGS) { /* the oldest is long past what is heard */
+    memmove(v->seg, v->seg + 1, (CW__TSEGS - 1) * sizeof *v->seg);
+    v->nseg--;
+  }
+  v->seg[v->nseg++] = (cw__tseg){ q0, p0, step };
+}
+
+/* The source position (32.32) stretched frame q is heard as. */
+static int64_t heard32(const cw__mvoice *v, int64_t q) {
+  int64_t qh = q - CW__STRETCH_OUT_LAT;
+  int i = v->nseg - 1;
+  while (i > 0 && v->seg[i].q0 > qh) i--;
+  const cw__tseg *g = &v->seg[i];
+  return g->p0 + (qh - g->q0) * (int64_t)g->step;
+}
+
+/* The source frame a non-looping source ends on (unrolled), or -1 (it loops, or a stream not yet decoded to its end). */
+static int64_t tempo_end(const cw__mvoice *v) {
+  if (v->stream >= 0) {
+    uint64_t end = atomic_load_explicit(&cw__au.streams[v->stream].end, memory_order_acquire);
+    return end == UINT64_MAX ? -1 : (int64_t)end + v->udelta;
+  }
+  if (v->loop) return -1;
+  return v->loop_end > 0 && v->loop_end <= v->frames ? v->loop_end : v->frames;
+}
+
+/* The bypass's own index (sample frame or ring frame) of unrolled source frame u. */
+static uint64_t bypass_index(const cw__mvoice *v, int64_t u) {
+  if (v->stream >= 0) return (uint64_t)(u - v->udelta);
+  int64_t le = v->loop_end > 0 && v->loop_end <= v->frames ? v->loop_end : v->frames, len = le - v->loop_start;
+  if (v->loop && u >= le && len > 0) u = v->loop_start + (u - le) % len;
+  return (uint64_t)u;
+}
+
+/* Source frames [u, u + n) into the stretcher's input (planar; a mono source fills both channels). Before the start
+ * or past the end: silence. False, reading nothing, when a stream's ring does not hold them yet. */
+static bool src_read(const cw__mvoice *v, int64_t u, int n, float *L, float *R) {
+  int ch = v->channels;
+  if (v->stream >= 0) {
+    cw__stream *st = &cw__au.streams[v->stream];
+    uint64_t write = atomic_load_explicit(&st->write, memory_order_acquire);
+    uint64_t end = atomic_load_explicit(&st->end, memory_order_acquire);
+    int64_t i0 = u - v->udelta;
+    if (end == UINT64_MAX && i0 + n > (int64_t)write) return false;
+    int64_t oldest = (int64_t)write - (int64_t)st->ring_frames;
+    uint32_t mask = st->ring_frames - 1;
+    for (int k = 0; k < n; k++) {
+      int64_t i = i0 + k;
+      if (i < 0 || i < oldest || (uint64_t)i >= end) {
+        L[k] = R[k] = 0;
+        continue;
+      }
+      const float *p = st->ring + ((uint64_t)i & mask) * (uint32_t)ch;
+      L[k] = p[0];
+      R[k] = ch == 2 ? p[1] : p[0];
+    }
+    return true;
+  }
+  int64_t le = v->loop_end > 0 && v->loop_end <= v->frames ? v->loop_end : v->frames, len = le - v->loop_start;
+  for (int k = 0; k < n; k++) {
+    int64_t x = u + k;
+    if (x >= le) x = v->loop && len > 0 ? v->loop_start + (x - le) % len : -1;
+    if (x < 0) {
+      L[k] = R[k] = 0;
+      continue;
+    }
+    const float *p = v->pcm + x * ch;
+    L[k] = p[0];
+    R[k] = ch == 2 ? p[1] : p[0];
+  }
+  return true;
+}
+
+/* Runs the stretcher until the stretched frames before qto exist: at tempo 1 up to stretched frame
+ * -CW__STRETCH_OUT_LAT (a warm up's lead-in), at the voice's tempo after it. A stream ring that does not hold the input
+ * yet stops it (false) unless `silence` (a voice that is heard: the input is silence, counted as an underrun). */
+static bool produce(cw__mixer *m, int slot, cw__mvoice *v, int64_t qto, bool silence) {
+  cw__tres *tr = &m->tres[slot];
+  float *L = cw__stretch_in(tr->st, 0), *R = cw__stretch_in(tr->st, 1);
+  const float *oL = cw__stretch_out(tr->st, 0), *oR = cw__stretch_out(tr->st, 1);
+  while (v->tq < qto) {
+    int64_t k = CW_MIN(qto - v->tq, (int64_t)CW__STRETCH_CHUNK);
+    uint64_t step = 1ull << 32;
+    if (v->tq < -CW__STRETCH_OUT_LAT) k = CW_MIN(k, -CW__STRETCH_OUT_LAT - v->tq);
+    else step = tempo_step(v->tempo);
+    if (step != v->seg[v->nseg - 1].step) tseg_push(v, v->tq, v->tp, step);
+    int64_t pe = v->tp + k * (int64_t)step;
+    int64_t fe = (pe >> 32) + CW__STRETCH_IN_LAT;
+    int nin = (int)(fe - v->tfed);
+    if (!src_read(v, v->tfed, nin, L, R)) {
+      if (!silence) return false;
+      memset(L, 0, (size_t)nin * sizeof(float));
+      memset(R, 0, (size_t)nin * sizeof(float));
+      atomic_fetch_add_explicit(&m->pub_underruns, 1, memory_order_relaxed);
+      atomic_fetch_add_explicit(&m->pub_underrun_frames, (uint32_t)k, memory_order_relaxed);
+    }
+    cw__stretch_process(tr->st, nin, (int)k);
+    for (int64_t i = 0; i < k; i++) {
+      uint32_t at = (uint32_t)((uint64_t)(v->tq + i) & (CW__TRING - 1));
+      tr->ring[2 * at] = oL[i];
+      tr->ring[2 * at + 1] = oR[i];
+    }
+    v->tq += k;
+    v->tp = pe;
+    v->tfed = fe;
+  }
+  return true;
+}
+
+/* Starts the stretcher so that stretched frame 0 is heard as source frame P: its history is the CW__STRETCH_SEEK
+ * frames before P, and it then processes from P - CW__STRETCH_IN_LAT (stretched frame -(in + out latency)). False when
+ * a stream's ring does not hold that history yet. */
+static bool tempo_begin(cw__mixer *m, int slot, cw__mvoice *v, int64_t P) {
+  cw__stretch *st = m->tres[slot].st;
+  if (!src_read(v, P - CW__STRETCH_SEEK, CW__STRETCH_SEEK, cw__stretch_in(st, 0), cw__stretch_in(st, 1))) return false;
+  cw__stretch_reset(st);
+  cw__stretch_seek(st, CW__STRETCH_SEEK);
+  v->tp = (P - CW__STRETCH_IN_LAT) * (int64_t)(1ll << 32);
+  v->tfed = P;
+  v->tq = -(CW__STRETCH_IN_LAT + CW__STRETCH_OUT_LAT);
+  v->nseg = 0;
+  tseg_push(v, v->tq, v->tp, 1ull << 32);
+  v->tpe = P;
+  return true;
+}
+
+/* Before a playing voice's block: moves it between the bypass and the stretched sound (see CW__T_*). */
+static void tempo_prepare(cw__mixer *m, int slot, cw__mvoice *v, int n, float ratio) {
+  bool want = (v->tempo != 1.0f || (cw__tempo_test & CW__TEMPO_TEST_FORCE)) && m->tres[slot].st;
+  bool naive = cw__tempo_test & CW__TEMPO_TEST_NAIVE;
+  switch (v->tmode) {
+  case CW__T_OFF:
+    if (!want) break;
+    if (!v->begun) { /* its first block: stretched from its first frame, pre-fed */
+      if (tempo_begin(m, slot, v, (int64_t)v->played)) {
+        produce(m, slot, v, 0, true);
+        v->sidx = 0;
+        v->sfrac = v->frac;
+        v->tlp[0] = v->lp[0];
+        v->tlp[1] = v->lp[1];
+        v->tmode = CW__T_ON;
+      }
+      break;
+    } else if (naive) { /* the control: started where it is, its pre-roll heard, no cross-fade */
+      if (!tempo_begin(m, slot, v, (int64_t)v->played)) break;
+      v->tq = 0;
+      v->sidx = 0;
+      v->sfrac = v->frac;
+      v->tmode = CW__T_ON;
+      break;
+    } else { /* playing at tempo 1: warm up for where it will be CW__TEMPO_ENTER mixer frames from now */
+      uint64_t step = (uint64_t)((double)ratio * 4294967296.0);
+      int64_t P = (int64_t)v->played + (int64_t)(((uint64_t)v->frac + (uint64_t)CW__TEMPO_ENTER * step) >> 32);
+      if (!tempo_begin(m, slot, v, P)) break;
+      v->twarm = 0;
+      v->tmode = CW__T_WARM;
+    }
+    /* fallthrough */
+  case CW__T_WARM: {
+    if (!want) {
+      v->tmode = CW__T_OFF;
+      break;
+    }
+    if (v->twarm < CW__TEMPO_ENTER || v->tq < 0) { /* the warm up, spread over CW__TEMPO_ENTER mixer frames */
+      v->twarm = (uint32_t)CW_MIN((int64_t)v->twarm + n, (int64_t)CW__TEMPO_ENTER);
+      const int64_t total = CW__STRETCH_IN_LAT + CW__STRETCH_OUT_LAT;
+      produce(m, slot, v, -total + total * (int64_t)v->twarm / CW__TEMPO_ENTER, false);
+      break;
+    }
+    /* warm, and the bypass has reached the stretched sound's frame 0: cross-fade in on the stretched frame heard as
+     * where the bypass is now */
+    int64_t x = (int64_t)v->played * (int64_t)(1ll << 32) + (int64_t)v->frac;
+    int i = v->nseg - 1;
+    double q = 0;
+    for (; i >= 0; i--) {
+      const cw__tseg *g = &v->seg[i];
+      q = (double)(x - g->p0) / (double)g->step + (double)g->q0 + CW__STRETCH_OUT_LAT;
+      if (q - CW__STRETCH_OUT_LAT >= (double)g->q0 || i == 0) break;
+    }
+    if (q < 0) q = 0; /* the bypass is behind (its pitch fell): start at frame 0 */
+    v->sidx = (int64_t)q;
+    v->sfrac = (uint32_t)((q - (double)v->sidx) * 4294967296.0);
+    v->tlp[0] = v->lp[0];
+    v->tlp[1] = v->lp[1];
+    v->tmode = CW__T_IN;
+    break;
+  }
+  case CW__T_ON: {
+    while (v->nseg > 1 && v->seg[1].q0 <= v->sidx - CW__STRETCH_OUT_LAT) { /* only the segment heard now matters */
+      memmove(v->seg, v->seg + 1, (size_t)(v->nseg - 1) * sizeof *v->seg);
+      v->nseg--;
+    }
+    const cw__tseg *g = &v->seg[v->nseg - 1];
+    if (!want && g->step == 1ull << 32 && v->sidx - CW__STRETCH_OUT_LAT >= g->q0) {
+      /* tempo 1 is what is heard now: cross-fade back to the source itself, at the same place */
+      int64_t x = heard32(v, v->sidx) + (int64_t)v->sfrac;
+      if (x < 0) x = 0;
+      v->played = (uint64_t)(x >> 32);
+      v->frac = (uint32_t)x;
+      v->ipos = bypass_index(v, (int64_t)v->played);
+      v->lp[0] = v->tlp[0];
+      v->lp[1] = v->tlp[1];
+      v->tmode = naive ? CW__T_OFF : CW__T_OUT;
+    }
+    break;
+  }
+  default: break;
+  }
+}
+
+/* The stretched path: like render_voice, reading the slot's ring of stretched frames. Returns true when the source
+ * (not looping) ended inside; the clock becomes the source position heard. */
+static bool render_stretched(cw__mixer *m, int slot, cw__mvoice *v, float *out, int n, float gl0, float gr0, float gl1,
+                             float gr1, float ratio) {
+  uint64_t step = (uint64_t)((double)ratio * 4294967296.0);
+  uint32_t step_lo = (uint32_t)step;
+  uint64_t step_hi = step >> 32;
+  bool mono_mix = v->spatial && v->channels == 2;
+  float dgl = (gl1 - gl0) / (float)n, dgr = (gr1 - gr0) / (float)n;
+  float gl = gl0, gr = gr0;
+  bool lp = v->occlusion > 0 || v->air < 1.0f;
+  float lpa = 1.0f;
+  if (lp) {
+    float fc = 20000.0f * (v->occlusion > 0 ? cw_pow(0.015f, v->occlusion) : 1.0f);
+    if (v->air < 1.0f) fc *= v->air;
+    lpa = 1.0f - cw_exp(-CW_TAU * fc / (float)m->rate);
+  }
+  int64_t last = v->sidx + (int64_t)(((uint64_t)v->sfrac + (uint64_t)n * step) >> 32);
+  produce(m, slot, v, last + 2, true);
+  int64_t end = tempo_end(v), qend = INT64_MAX;
+  if (end >= 0 && (heard32(v, last + 1) >> 32) >= end) { /* it ends in this block: on the frame heard as its end */
+    qend = v->sidx;
+    while (qend <= last + 1 && (heard32(v, qend) >> 32) < end) qend++;
+  }
+  const float *ring = m->tres[slot].ring;
+  const uint32_t mask = CW__TRING - 1;
+  bool ended = false;
+  for (int i = 0; i < n; i++) {
+    if (v->sidx >= qend) {
+      ended = true;
+      break;
+    }
+    const float *pa = ring + 2 * ((uint64_t)v->sidx & mask), *pb = ring + 2 * ((uint64_t)(v->sidx + 1) & mask);
+    float t = (float)(v->sfrac >> 8) * (1.0f / 16777216.0f);
+    float s0 = pa[0] + (pb[0] - pa[0]) * t, s1 = pa[1] + (pb[1] - pa[1]) * t;
+    if (mono_mix) s0 = s1 = (s0 + s1) * 0.5f;
+    if (lp) {
+      v->tlp[0] += lpa * (s0 - v->tlp[0]);
+      v->tlp[1] += lpa * (s1 - v->tlp[1]);
+      s0 = v->tlp[0];
+      s1 = v->tlp[1];
+    } else {
+      v->tlp[0] = s0;
+      v->tlp[1] = s1;
+    }
+    gl += dgl;
+    gr += dgr;
+    out[2 * i] += s0 * gl;
+    out[2 * i + 1] += s1 * gr;
+    uint32_t f = v->sfrac + step_lo;
+    v->sidx += (int64_t)(step_hi + (f < v->sfrac ? 1 : 0));
+    v->sfrac = f;
+  }
+  int64_t h = heard32(v, v->sidx) >> 32;
+  v->played = h > 0 ? (uint64_t)h : 0;
+  if (v->stream >= 0) { /* the ring holds what is heard (with its history) up to what is fed */
+    int64_t oldest = (int64_t)v->played - v->udelta, next = v->tfed - v->udelta;
+    stream_publish(&cw__au.streams[v->stream], oldest > 0 ? (uint64_t)oldest : 0, next > 0 ? (uint64_t)next : 0);
+  }
+  return ended;
+}
+
+/* One voice's block, through the bypass, the stretcher, or (IN, OUT) both cross-faded over the block. */
+static bool render_any(cw__mixer *m, int slot, cw__mvoice *v, float *out, int n, float gl0, float gr0, float gl1,
+                       float gr1, float ratio) {
+  switch (v->tmode) {
+  case CW__T_ON: return render_stretched(m, slot, v, out, n, gl0, gr0, gl1, gr1, ratio);
+  case CW__T_IN:
+  case CW__T_OUT: {
+    float *a = m->xa, *b = m->xb;
+    memset(a, 0, (size_t)n * 2 * sizeof(float));
+    memset(b, 0, (size_t)n * 2 * sizeof(float));
+    bool in = v->tmode == CW__T_IN;
+    bool ea = render_voice(m, v, a, n, gl0, gr0, gl1, gr1, ratio);
+    uint64_t played = v->played;
+    bool eb = render_stretched(m, slot, v, b, n, gl0, gr0, gl1, gr1, ratio);
+    float inv = 1.0f / (float)n;
+    for (int i = 0; i < n; i++) {
+      float w = (float)(i + 1) * inv; /* the stretched share: rising in, falling out */
+      if (!in) w = 1.0f - w;
+      out[2 * i] += a[2 * i] + (b[2 * i] - a[2 * i]) * w;
+      out[2 * i + 1] += a[2 * i + 1] + (b[2 * i + 1] - a[2 * i + 1]) * w;
+    }
+    if (in) {
+      v->tmode = CW__T_ON;
+      return eb;
+    }
+    v->played = played; /* the bypass from here */
+    v->tmode = CW__T_OFF;
+    if (v->stream >= 0) stream_publish(&cw__au.streams[v->stream], v->ipos, v->ipos);
+    return ea;
+  }
+  default: return render_voice(m, v, out, n, gl0, gr0, gl1, gr1, ratio);
+  }
 }
 
 /* ── HRTF selection ─────────────────────────────────────────────────── */
@@ -568,7 +915,10 @@ static void mix_block(float *out, int n) {
       cw__stream *st = &cw__au.streams[v->stream];
       uint64_t have = atomic_load_explicit(&st->write, memory_order_acquire) - v->ipos;
       bool ended = atomic_load_explicit(&st->end, memory_order_acquire) != UINT64_MAX;
-      if (!ended && have < CW_MIN((uint64_t)st->cap / 2, (uint64_t)2048)) continue; /* ~43 ms buffered */
+      uint64_t want = CW_MIN((uint64_t)st->cap / 2, (uint64_t)2048); /* ~43 ms buffered */
+      if (v->tempo != 1.0f) /* a stretched start reads its look-ahead at once */
+        want = CW_MIN((uint64_t)st->cap * 3 / 4, (uint64_t)(CW__STRETCH_IN_LAT + 2 * CW__STRETCH_OUT_LAT + 2048));
+      if (!ended && have < want) continue;
       v->priming = false;
     }
     int cnt = n - off;
@@ -618,14 +968,15 @@ static void mix_block(float *out, int n) {
     float h1 = v->spatial && m->hrtf_on[s] ? 1.0f : 0.0f;
     float h0 = v->gains_valid ? hs->mix : h1;
     bool ended;
+    if (v->tempo != 1.0f || v->tmode != CW__T_OFF || cw__tempo_test) tempo_prepare(m, s, v, cnt, ratio);
     float send = zones_feed ? voice_send(v) : 0.0f;
     if (h0 == 0 && h1 == 0 && send == 0) {
-      ended = render_voice(m, v, dst, cnt, gl0, gr0, gl1, gr1, ratio);
+      ended = render_any(m, s, v, dst, cnt, gl0, gr0, gl1, gr1, ratio);
     } else {
       /* the gained mono signal, then the HRTF and (while crossfading) the pan */
       float *mono = m->mono;
       memset(mono, 0, (size_t)cnt * 2 * sizeof(float));
-      ended = render_voice(m, v, mono, cnt, x0.g, x0.g, x1.g, x1.g, ratio);
+      ended = render_any(m, s, v, mono, cnt, x0.g, x0.g, x1.g, x1.g, ratio);
       if (send > 0) {
         float *zi = m->zone_in + off;
         for (int i = 0; i < cnt; i++) zi[i] += mono[2 * i] * send;
@@ -658,6 +1009,7 @@ static void mix_block(float *out, int n) {
     v->pl = x1.pl;
     v->pr = x1.pr;
     v->gains_valid = true;
+    v->begun = true;
     v->fade = fade_end;
     if (v->fade == v->fade_target) v->fade_step = 0;
     atomic_store_explicit(&m->clock[s], v->played, memory_order_release);

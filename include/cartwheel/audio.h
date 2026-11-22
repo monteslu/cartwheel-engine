@@ -27,7 +27,7 @@
  * cartwheel/video.h plays the picture). Sources may be mono or stereo at any
  * sample rate; more channels are reduced to the first two. Samples are
  * resampled to the mix rate once at load (miniaudio's linear resampler); streams and pitch use per-voice linear
- * interpolation.
+ * interpolation. Tempo (cw_voice_set_tempo) changes speed with the pitch kept.
  *
  * Stream decoding runs on the engine job pool (cartwheel/jobs.h) into a ring
  * per playing stream; the mixer only reads the ring. When a ring is nearly
@@ -235,6 +235,7 @@ typedef struct cw_play_desc {
   bool spatial;        /* use `space` */
   cw_voice_3d space;
   bool once;           /* one pass of a sound that loops by itself (cw_sound_desc.loop) */
+  float tempo;         /* playback speed with the pitch kept (see Tempo below), 0.5 .. 2; 0 = 1 */
 } cw_play_desc;
 
 /* Starts a voice. NULL desc = defaults. Returns the null handle when the
@@ -262,6 +263,36 @@ bool cw_voice_is_playing(cw_voice v);
  * exact to the sample as of the last mixed block. Divide by
  * cw_sound_source_rate for seconds. -1 for a stale handle. */
 int64_t cw_voice_frames_played(cw_voice v);
+/* ── tempo ────────────────────────────────────────────────────────────
+ * A voice's tempo changes how fast it plays without changing its pitch (a time stretch): 1.25 plays a song a quarter
+ * faster in the same key, 0.8 slower. Range 0.5 .. 2 (clamped). Samples and streams alike, any number of voices.
+ *
+ * Exact to the sample: a voice at tempo t takes exactly t source frames per frame it plays (t times its pitch and
+ * resampling ratio), counted in 32.32 fixed point, and cw_voice_frames_played stays the SOURCE position (the song
+ * position, what a chart or a lyric is timed in) at any tempo. Voices started on the same frame and given the same
+ * tempo changes on the same mixer block stay locked to the sample: the stems of one song stay together.
+ *
+ * Latency: the stretcher (Signalsmith Stretch, a phase vocoder) looks 2880 frames ahead and its output is 4320
+ * frames behind what it processes; both are hidden. A voice started with a tempo is pre-fed on its first block (it
+ * starts on its frame, from its offset, with nothing missing), and its clock counts what is heard: a tempo change on a
+ * stretching voice is heard, and moves the clock, about 90 ms (4320 frames) after the block that takes it. A voice
+ * playing at tempo 1 that is given another tempo keeps playing as it was while its stretcher warms up for 2048 mixer
+ * frames (43 ms), then cross-fades into the stretched sound over one block at the new tempo; given exactly 1 again it
+ * cross-fades back once the tempo 1 is heard, and costs nothing from then on.
+ *
+ * Cost: a voice at tempo 1 never runs the stretcher (the mix is bit for bit what it is without this feature). A
+ * stretching voice costs about 0.1 ms of a Ryzen AI 9 HX 370 core per 10 ms of sound (docs/guides/audio.md), the
+ * first time a voice slot stretches it allocates about 1 MB on the calling thread, and the slot keeps it.
+ *
+ * Interactive music (cw_music) plays its clips at tempo 1: its beat grid is in mixer frames. */
+#define CW_AUDIO_TEMPO_GROUP 16 /* voices cw_voices_set_tempo changes in one command */
+/* Queued like every voice setter: applied at the start of the next mixed block. */
+void cw_voice_set_tempo(cw_voice v, float tempo);
+/* The same tempo for several voices on the same mixer block, guaranteed (the stems of one song): one command, so the
+ * mixer applies all of them or none before a block. Up to CW_AUDIO_TEMPO_GROUP voices; more is an error (logged,
+ * nothing changed). Stale handles are skipped. */
+void cw_voices_set_tempo(const cw_voice *voices, int count, float tempo);
+
 /* Mixer frames produced so far: the clock start_frame is scheduled on. */
 int64_t cw_audio_mixed_frames(void);
 /* The mixer frame the voice started on (its start_frame when scheduled, else the start of the block that took it),

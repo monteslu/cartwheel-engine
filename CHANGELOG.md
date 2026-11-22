@@ -4,6 +4,40 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.59.0 (2026-11-22)
+
+### Added
+- Tempo with the pitch kept: `cw_voice_set_tempo(v, tempo)` plays a voice faster or slower in the same key (a time
+  stretch), from 0.5 to 2; `cw_play_desc.tempo` starts a voice at a tempo. Samples and streams alike, with pitch
+  still working on top. A voice at tempo `t` takes exactly `t` source frames per frame it plays (32.32 fixed point)
+  and `cw_voice_frames_played` keeps counting source frames, so the song position (what a chart or a cue is timed in)
+  stays right at any tempo.
+- `cw_voices_set_tempo(voices, count, tempo)` changes up to `CW_AUDIO_TEMPO_GROUP` (16) voices on the same mixer
+  block, one command, so the stems of one song started on the same frame stay locked to the sample.
+- The stretcher is Signalsmith Stretch 1.4.0 (MIT, header-only C++, on Signalsmith Linear 0.6.4), vendored through
+  `scripts/deps.lock` and listed in NOTICE. Its latency is hidden: a voice started with a tempo is pre-fed on its first
+  block (it starts on its frame, from its offset), the clock counts what is heard (a change on a stretching voice is
+  heard, and moves the clock, about 90 ms after the block that takes it), and a voice playing at tempo 1 that gets
+  another tempo warms its stretcher up for 2048 mixer frames before cross-fading into it over one block (and back when
+  it returns to exactly 1). About 0.1 ms of one core per 10 ms of sound per stretching stereo voice (five stems: 0.50
+  ms native and 0.53 ms in a cart on a Ryzen AI 9 HX 370, 0.57 ms on a Steam Machine), spread evenly over the blocks;
+  about 1 MB per voice slot the first time it stretches, allocated on the calling thread.
+- Sample `audio_tempo`: five generated stems as streams, the tempo on left and right (or the shoulders) in 5% steps,
+  beat lights from the stems' clock. Guide section "Tempo" in docs/guides/audio.md.
+- Gates `unit-audio-tempo` (pitch within 2 cents at 0.75 and 1.5 while the length scales; control: the same speeds
+  as pitch), `-lock` (five stems mix to exactly one voice's sound with equal clocks; control: changes a block apart),
+  `-clock` (a click track heard within 128 source frames of the clock; control: frames played out), `-bypass` (tempo 1
+  is bit for bit the old mix; control: the stretcher run at 1), `-clicks` (no step past 0.05 on a 440 Hz tone over nine
+  changes; control: no warm up or cross-fade), and `audio-tempo` (the sample with a pad, GL and WebGPU).
+
+### Changed
+- A voice at tempo 1 (every voice before this release) mixes bit for bit as before: the existing audio gates'
+  hashes are unchanged. Stream rings hold 7200 frames of history behind what plays (so a playing stream can start
+  stretching), doubling each ring's memory (`stream_ring_frames` still sets how far ahead it decodes); decoding reads
+  the same chunks as before.
+- Interactive music (`cw_music`) plays its clips at tempo 1. A stretching voice's clock is exact on every host; its
+  stretched samples are the same on every run of one build but not bit for bit across hosts.
+
 ## v0.58.0 (2026-11-21)
 
 ### Added

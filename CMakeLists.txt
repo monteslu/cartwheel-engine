@@ -47,6 +47,11 @@ list(APPEND CW_CORE_SRCS ${CW_STREAM_SRCS})
 # FastNoiseLite hashes with signed int overflow: -fwrapv defines it as the wrap it expects
 set_source_files_properties(src/noise/noise.c PROPERTIES COMPILE_OPTIONS "-fwrapv")
 list(APPEND CW_CORE_SRCS src/resource/basis_glue.cpp) # the KTX2 transcoder's C side
+# tempo with the pitch kept: Signalsmith Stretch (header-only, deps/signalsmith-stretch and deps/signalsmith-linear,
+# MIT) behind a C face; optimized in every build (a debug build of it runs ten times slower in the mixer)
+list(APPEND CW_CORE_SRCS src/audio/stretch.cpp)
+set_source_files_properties(src/audio/stretch.cpp PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-fno-rtti;-O2;-w"
+  INCLUDE_DIRECTORIES "${DEPS}/signalsmith-stretch;${DEPS}/signalsmith-linear/include")
 set_source_files_properties(src/resource/basis_glue.cpp PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-fno-rtti")
 # navigation: Recast, Detour and DetourTileCache compiled into the engine (cmake/deps.cmake: CW_RECAST_SRCS)
 # with the navmesh shim; their math and allocator hooks are src/nav/recast_hooks.h, which calls the engine

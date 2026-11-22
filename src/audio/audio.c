@@ -63,11 +63,15 @@ void cw__stream_fill(cw__stream *st) {
   uint64_t w = atomic_load_explicit(&st->write, memory_order_relaxed);
   bool restarted = false;
   for (;;) {
+    /* cap frames ahead of what the mixer reads next, never over what it may still read (its history) */
+    uint64_t h = atomic_load_explicit(&st->head, memory_order_acquire);
     uint64_t r = atomic_load_explicit(&st->read, memory_order_acquire);
-    uint64_t space = st->cap - (w - r);
-    if (space == 0) break;
-    uint32_t at = (uint32_t)(w & (st->cap - 1));
-    int n = (int)CW_MIN(space, (uint64_t)(st->cap - at));
+    int64_t ahead = (int64_t)(h + st->cap) - (int64_t)w, room = (int64_t)st->ring_frames - (int64_t)(w - r);
+    int64_t space = CW_MIN(ahead, room);
+    if (space <= 0) break;
+    /* chunks end where a cap-sized ring would wrap, as they always have: the decoder sees the same reads */
+    uint32_t at = (uint32_t)(w & (st->ring_frames - 1));
+    int n = (int)CW_MIN(space, (int64_t)(st->cap - (uint32_t)(w & (st->cap - 1))));
     n = CW_MIN(n, 4096);
     /* a loop end before the source's: read up to it */
     bool at_loop_end = st->loop && st->loop_end > 0 && st->pos >= st->loop_end;
@@ -118,13 +122,13 @@ static void pump_streams(void) {
   for (int i = 0; i < cw__au.max_streams; i++) {
     cw__stream *st = &cw__au.streams[i];
     if (!st->in_use) continue;
-    uint64_t used = atomic_load(&st->write) - atomic_load(&st->read);
+    uint64_t used = atomic_load(&st->write) - atomic_load(&st->head);
     /* finished jobs are collected; a job still out while the ring is nearly
      * dry is waited for (cw_job_wait runs it right here if no worker has
      * picked it up: workers may be busy, or in a cart not started yet) */
     if (st->job && (!atomic_load_explicit(&st->job_busy, memory_order_acquire) || used < st->cap / 8)) stream_wait(st);
     if (st->job || atomic_load_explicit(&st->end, memory_order_relaxed) != UINT64_MAX) continue;
-    used = atomic_load(&st->write) - atomic_load(&st->read);
+    used = atomic_load(&st->write) - atomic_load(&st->head);
     if (st->cap - used < st->cap / 4) continue;
     if (inline_decode) cw__stream_fill(st);
     else {
@@ -141,7 +145,7 @@ void cw__offline_prepare_streams(void) {
   for (int i = 0; i < cw__au.max_streams; i++) {
     cw__stream *st = &cw__au.streams[i];
     if (!st->in_use || atomic_load(&st->end) != UINT64_MAX) continue;
-    uint64_t used = atomic_load(&st->write) - atomic_load(&st->read);
+    uint64_t used = atomic_load(&st->write) - atomic_load(&st->head);
     if (st->cap - used < st->cap / 4) continue;
     atomic_store(&st->job_busy, 1);
     st->job = cw_job_single(stream_job, st);
@@ -381,6 +385,7 @@ bool cw_sound_get_loop(cw_sound s, int64_t *loop_start, int64_t *loop_end) {
 }
 
 static int voice_slot(cw_voice v);
+static bool stretch_ready(int slot);
 static void send(const cw__cmd *c);
 /* the mixer frame a voice started on (-1: not yet, or a stale handle) */
 int64_t cw_voice_started_at(cw_voice v) {
@@ -473,6 +478,7 @@ cw_voice cw_audio_play(cw_sound s, const cw_play_desc *desc) {
   if (d.bus <= 0) d.bus = snd->bus;
   if (d.priority == 0) d.priority = snd->priority;
   if (d.offset < 0) d.offset = 0;
+  d.tempo = d.tempo <= 0 ? 1.0f : cw_clampf(d.tempo, 0.5f, 2.0f);
   int stream = -1;
   if (snd->stream) {
     for (int i = 0; i < cw__au.max_streams; i++)
@@ -501,6 +507,7 @@ cw_voice cw_audio_play(cw_sound s, const cw_play_desc *desc) {
     st->loop_end = d.loop_end > st->loop_start ? d.loop_end : 0;
     st->channels = st->dec.channels;
     atomic_store(&st->write, 0);
+    atomic_store(&st->head, 0);
     atomic_store(&st->read, 0);
     atomic_store(&st->end, UINT64_MAX);
     if (!cw__au.offline) pump_streams(); /* start decoding now */
@@ -512,6 +519,7 @@ cw_voice cw_audio_play(cw_sound s, const cw_play_desc *desc) {
   g->order = ++cw__au.play_order;
   snd->live++;
   snd->refs++;
+  if (d.tempo != 1.0f && !stretch_ready(slot)) d.tempo = 1.0f;
   cw__cmd c = { .type = CW__CMD_PLAY, .slot = (int16_t)slot, .gen = g->gen };
   c.play.sound_id = s.id;
   c.play.pcm = snd->pcm;
@@ -522,6 +530,58 @@ cw_voice cw_audio_play(cw_sound s, const cw_play_desc *desc) {
   c.play.d = d;
   send(&c);
   return CW_HANDLE_MAKE(cw_voice, slot, g->gen);
+}
+
+/* ── tempo ──────────────────────────────────────────────────────────── */
+
+/* The slot's stretcher, made the first time a voice in it changes tempo and handed to the mixer ahead of the command
+ * that needs it (the queue keeps their order). False (logged once) when it cannot be made: the voice plays at 1. */
+static bool stretch_ready(int slot) {
+  cw__audio *a = &cw__au;
+  if (a->tres[slot].st) return true;
+  cw__tres t = { cw__stretch_new(), cw_calloc(CW__TRING * 2, sizeof(float), CW_MEM_AUDIO) };
+  if (!t.st || !t.ring) {
+    cw__stretch_free(t.st);
+    cw_free(t.ring);
+    cw_error("audio: no memory for a tempo stretcher (voice slot %d): it plays at tempo 1", slot);
+    return false;
+  }
+  cw__cmd c = { .type = CW__CMD_STRETCH, .slot = (int16_t)slot };
+  c.tres = t;
+  if (!cw__spsc_push(&a->cmds, &c)) { /* never lose it: the mixer could not have it */
+    a->dropped++;
+    cw__stretch_free(t.st);
+    cw_free(t.ring);
+    return false;
+  }
+  a->tres[slot] = t;
+  return true;
+}
+
+static void tempo_cmd(const cw_voice *voices, int count, float tempo) {
+  tempo = tempo <= 0 ? 1.0f : cw_clampf(tempo, 0.5f, 2.0f);
+  cw__cmd c = { .type = (uint8_t)(count == 1 ? CW__CMD_TEMPO : CW__CMD_TEMPO_GROUP) };
+  c.tempo.tempo = tempo;
+  for (int i = 0; i < count; i++) {
+    int slot = voice_slot(voices[i]);
+    if (slot < 0) continue;
+    if ((tempo != 1.0f || (cw__tempo_test & CW__TEMPO_TEST_FORCE)) && !stretch_ready(slot)) continue;
+    c.tempo.slot[c.tempo.n] = (int16_t)slot;
+    c.tempo.gen[c.tempo.n] = cw__au.gvoices[slot].gen;
+    c.tempo.n++;
+  }
+  if (c.tempo.n > 0) send(&c);
+}
+
+void cw_voice_set_tempo(cw_voice v, float tempo) { tempo_cmd(&v, 1, tempo); }
+
+void cw_voices_set_tempo(const cw_voice *voices, int count, float tempo) {
+  if (!voices || count <= 0) return;
+  if (count > CW_AUDIO_TEMPO_GROUP) {
+    cw_error("audio: cw_voices_set_tempo takes up to %d voices (got %d); nothing changed", CW_AUDIO_TEMPO_GROUP, count);
+    return;
+  }
+  tempo_cmd(voices, count, tempo);
 }
 
 static void voice_cmd(cw_voice v, cw__cmd_type type, float a, float b, bool flag) {
@@ -893,13 +953,17 @@ bool cw_audio_init(const cw_audio_desc *desc) {
   cw__spsc_init(&a->events, sizeof(cw__event), (uint32_t)(d.max_voices * 2 + 64));
   cw_pool_init(&a->sounds, sizeof(cw__sound), CW_MEM_AUDIO);
   a->gvoices = cw_calloc((size_t)d.max_voices, sizeof *a->gvoices, CW_MEM_AUDIO);
+  a->tres = cw_calloc((size_t)d.max_voices, sizeof *a->tres, CW_MEM_AUDIO);
   a->max_streams = d.max_streams;
   a->streams = cw_calloc((size_t)d.max_streams, sizeof *a->streams, CW_MEM_AUDIO);
-  uint32_t cap = 1;
+  uint32_t cap = 1, ring = 1;
   while (cap < (uint32_t)d.stream_ring_frames) cap <<= 1;
+  /* room behind (history a voice starting to change tempo needs) and a tempo voice's look-ahead */
+  while (ring < cap + 16384) ring <<= 1;
   for (int i = 0; i < d.max_streams; i++) {
     a->streams[i].cap = cap;
-    a->streams[i].ring = cw_calloc((size_t)cap * 2, sizeof(float), CW_MEM_AUDIO);
+    a->streams[i].ring_frames = ring;
+    a->streams[i].ring = cw_calloc((size_t)ring * 2, sizeof(float), CW_MEM_AUDIO);
     a->streams[i].voice_slot = -1;
     atomic_store(&a->streams[i].end, UINT64_MAX);
   }
@@ -937,6 +1001,12 @@ void cw_audio_shutdown(void) {
     if (e.type == CW__EV_FX_FREED) cw__fx_destroy(e.fx);
     if (e.type == CW__EV_HRTF_FREED) cw__hrtf_free(e.hrtf);
   }
+  /* stretchers: the game side made every one (handed to the mixer or still queued) */
+  for (int i = 0; i < a->desc.max_voices; i++) {
+    cw__stretch_free(a->tres[i].st);
+    cw_free(a->tres[i].ring);
+  }
+  cw_free(a->tres);
   cw__cmd c; /* commands never applied may own an effect or a table */
   while (cw__spsc_pop(&a->cmds, &c)) {
     if (c.type == CW__CMD_FX_ADD) cw__fx_destroy(c.fx.fx);

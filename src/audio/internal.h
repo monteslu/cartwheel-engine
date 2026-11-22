@@ -57,10 +57,13 @@ typedef struct cw__stream {
   int64_t pos;             /* [prod] the decoder's position, source frames */
   int64_t loop_start, loop_end; /* [prod] source frames; loop_end 0 = the end */
   int channels;            /* ring frame width (1|2), fixed while in use */
-  float *ring;             /* cap * channels floats, allocated at init */
-  uint32_t cap;            /* frames, power of two */
+  float *ring;             /* ring_frames * channels floats, allocated at init */
+  uint32_t cap;            /* frames decoded ahead of the mixer (stream_ring_frames rounded to a power of two) */
+  uint32_t ring_frames;    /* the ring itself: cap plus CW__STREAM_KEEP and a tempo voice's look-ahead, a power of two */
   _Atomic uint64_t write;  /* [prod] frames written */
-  _Atomic uint64_t read;   /* [mix] frames the mixer no longer needs */
+  _Atomic uint64_t head;   /* [mix] the frame the mixer reads next: the producer decodes up to cap past it */
+  _Atomic uint64_t read;   /* [mix] the oldest frame the mixer may still read (CW__STREAM_KEEP behind what plays,
+                              so a voice can start changing tempo with the history its stretcher needs) */
   _Atomic uint64_t end;    /* [prod] total frames once the decoder finished; UINT64_MAX before */
   _Atomic int job_busy;    /* [prod] a decode job is running */
   cw_job *job;             /* [game] */
@@ -68,8 +71,32 @@ typedef struct cw__stream {
   int voice_slot;          /* [game] */
 } cw__stream;
 
-/* Decode into the ring until it is full or the source ended. [prod] */
+/* Decode into the ring until cap frames are ahead of head (or the ring is full, or the source ended). [prod] */
 void cw__stream_fill(cw__stream *st);
+
+/* ── tempo with the pitch kept (stretch.cpp: Signalsmith Stretch) ───── */
+
+#include "stretch.h"
+#define CW__STREAM_KEEP CW__STRETCH_SEEK
+#define CW__TEMPO_GROUP CW_AUDIO_TEMPO_GROUP
+/* Test switches (tests/unit/test_audio_tempo.c, its gate controls; 0 in every game): CW__TEMPO_TEST_FORCE runs the
+ * stretcher at tempo 1 too, CW__TEMPO_TEST_NAIVE switches in and out of it with no warm up and no cross-fade. */
+enum { CW__TEMPO_TEST_FORCE = 1, CW__TEMPO_TEST_NAIVE = 2 };
+extern int cw__tempo_test;
+
+/* A stretch of time at one tempo: stretched frame q (q >= q0) was processed at source position
+ * p0 + (q - q0) * step (32.32), so it is heard as source position p(q - CW__STRETCH_OUT_LAT). */
+typedef struct cw__tseg {
+  int64_t q0, p0;
+  uint64_t step;
+} cw__tseg;
+
+/* Per voice slot: made on the game thread the first time a voice in the slot changes tempo, kept for the slot's
+ * later voices, freed at shutdown. */
+typedef struct cw__tres {
+  cw__stretch *st;
+  float *ring; /* CW__TRING stereo stretched frames */
+} cw__tres;
 
 /* ── FDN reverb (fdn.c) ──────────────────────────────────────────────── */
 
@@ -165,7 +192,8 @@ typedef enum {
   CW__CMD_FADE, CW__CMD_3D, CW__CMD_POSITION, CW__CMD_OCCLUSION, CW__CMD_LISTENER, CW__CMD_SPEED_OF_SOUND,
   CW__CMD_BUS_SETUP, CW__CMD_BUS_VOLUME, CW__CMD_BUS_AUDIBLE, CW__CMD_BUS_SEND, CW__CMD_FX_ADD,
   CW__CMD_FX_SET, CW__CMD_FX_BYPASS, CW__CMD_FX_REMOVE, CW__CMD_HRTF, CW__CMD_OUTPUT, CW__CMD_HRTF_LIMIT,
-  CW__CMD_ZONE_ADD, CW__CMD_ZONE_SET, CW__CMD_ZONE_REMOVE, CW__CMD_STOP_AT,
+  CW__CMD_ZONE_ADD, CW__CMD_ZONE_SET, CW__CMD_ZONE_REMOVE, CW__CMD_STOP_AT, CW__CMD_TEMPO, CW__CMD_TEMPO_GROUP,
+  CW__CMD_STRETCH,
 } cw__cmd_type;
 
 typedef struct cw__play {
@@ -195,6 +223,8 @@ typedef struct cw__cmd {
     int ival;
     struct { cw__fx *fx; cw_reverb_zone_desc desc; } zone;
     struct { float fade; int64_t frame; } stop_at;
+    struct { float tempo; int n; int16_t slot[CW__TEMPO_GROUP]; uint32_t gen[CW__TEMPO_GROUP]; } tempo;
+    cw__tres tres;
   };
 } cw__cmd;
 
@@ -212,6 +242,9 @@ typedef struct cw__event {
 /* ── the mixer (mixer.c) ─────────────────────────────────────────────── */
 
 enum { CW__V_FREE, CW__V_WAITING, CW__V_PLAYING, CW__V_ZOMBIE };
+/* a voice's tempo stage: OFF plays the source straight (tempo 1, the bypass); WARM still does while its stretcher
+ * warms up; IN cross-fades into the stretched signal over one block, ON plays it, OUT cross-fades back */
+enum { CW__T_OFF, CW__T_WARM, CW__T_IN, CW__T_ON, CW__T_OUT };
 
 typedef struct cw__mvoice {
   uint8_t state;
@@ -241,6 +274,21 @@ typedef struct cw__mvoice {
   int64_t stop_frame; /* mixer frame it ends (or starts fading out) on; -1 = none (cw__voice_stop_at) */
   float stop_fade;
   uint64_t played;   /* the music clock */
+  bool begun;        /* rendered at least one block */
+  /* tempo (see the tempo section of mixer.c) */
+  float tempo;       /* asked for; 1 = the bypass */
+  uint8_t tmode;     /* CW__T_* */
+  int64_t tp;        /* the stretcher's processing position, source frames (unrolled through loops), 32.32 */
+  int64_t tfed;      /* source frames fed to it so far end here (unrolled) */
+  int64_t tq;        /* stretched frames produced: the next one's index */
+  int64_t sidx;      /* the resampler's position in stretched frames */
+  uint32_t sfrac;
+  int64_t tpe;       /* WARM: the source position stretched frame 0 plays */
+  uint32_t twarm;    /* WARM: mixer frames since the warm up began */
+  int64_t udelta;    /* streams: source frames counted by the clock minus ring frames */
+  float tlp[2];      /* the stretched path's low-pass state */
+  int nseg;
+  cw__tseg seg[CW__TSEGS];
 } cw__mvoice;
 
 typedef struct cw__mbus {
@@ -267,6 +315,8 @@ typedef struct cw__mixer {
   cw__mvoice *voices;
   cw__mbus buses[CW_AUDIO_MAX_BUSES];
   float *scratch;          /* CW_AUDIO_BLOCK * 2 */
+  float *xa, *xb;          /* CW_AUDIO_BLOCK * 2 each: the two signals of a tempo cross-fade */
+  cw__tres *tres;          /* per voice slot (cw__tres) */
   /* the listeners (splitscreen: one per view); listener 0 is cw_audio_set_listener's */
   t3_vec3 lpos[CW_AUDIO_MAX_LISTENERS], lvel[CW_AUDIO_MAX_LISTENERS], lfwd[CW_AUDIO_MAX_LISTENERS], lup[CW_AUDIO_MAX_LISTENERS];
   int nlisteners;
@@ -333,6 +383,7 @@ typedef struct cw__audio {
   cw__spsc cmds, events;
   cw_pool sounds;
   cw__gvoice *gvoices;
+  cw__tres *tres;          /* [game] per voice slot: the stretchers made (the mixer has its own copy of each) */
   uint64_t play_order;
   cw__stream *streams;
   int max_streams;

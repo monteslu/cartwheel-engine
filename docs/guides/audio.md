@@ -51,6 +51,30 @@ Two clocks make audio timing exact:
 
 Stopping takes a fade time ([cw_voice_stop](api:cw_voice_stop)); [cw_voice_fade](api:cw_voice_fade) ramps to any level. [cw_voice_stop_at](api:cw_voice_stop_at) ends a voice on a given mixer frame, to the sample, or starts its fade in the block that holds that frame, and [cw_voice_started_at](api:cw_voice_started_at) says which mixer frame a voice really started on: together they make a seam with nothing missing and nothing doubled.
 
+## Tempo: faster or slower in the same key
+
+A voice's tempo changes how fast it plays without changing its pitch: [cw_voice_set_tempo](api:cw_voice_set_tempo)`(v, 1.25f)` plays a song a quarter faster in the same key, `0.8f` a fifth slower (a time stretch, what music software calls keylock). The range is 0.5 to 2. `cw_play_desc.tempo` starts a voice at a tempo; pitch still works on top of it (pitch changes speed and key together, tempo only speed). Samples and streams both stretch.
+
+The song stays the clock. A voice at tempo `t` takes exactly `t` source frames for every frame it plays, counted in 32.32 fixed point, and [cw_voice_frames_played](api:cw_voice_frames_played) keeps counting **source** frames: the song position, what a chart, a lyric or a cue is timed in, at any tempo. A rhythm game reads it as before and its notes ride faster or slower with the music.
+
+Several voices that make up one song (stems: drums, bass, the rest) stay together to the sample when they start on the same frame (`start_frame`) and change tempo on the same mixer block. [cw_voices_set_tempo](api:cw_voices_set_tempo) guarantees that: one command for up to `CW_AUDIO_TEMPO_GROUP` (16) voices, applied to all of them before the same block. `samples/audio_tempo` plays five generated stems that way, the tempo on left and right in 5% steps, the beat lights driven by the stems' clock:
+
+@include samples/audio_tempo/main.c#tempo
+
+**What is heard when.** The stretcher is a phase vocoder ([Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch), MIT): it looks 2880 frames ahead of what it processes and its output trails that by 4320 frames. Both are hidden, and the clock counts what is heard:
+
+- A voice started with a tempo is fed its first 7200 frames on its first block, so it starts on its frame, from its offset, with nothing missing.
+- A tempo change on a voice that is already stretching is heard about 90 ms (4320 frames at 48 kHz) after the block that takes it, and the clock follows the change at that moment, not before.
+- A voice playing at tempo 1 that gets another tempo keeps playing untouched while its stretcher warms up for 2048 mixer frames (43 ms), then cross-fades into the stretched sound over one block (256 frames). Given exactly 1 again, it cross-fades back once tempo 1 is what is heard.
+
+So a game can leave its music at 1 and only touch the tempo when the player asks: at 1 a voice never runs the stretcher, and the mix is bit for bit what it is without the feature.
+
+**Cost.** About 0.1 ms of one core per 10 ms of sound for each stretching stereo voice: five stems together took 0.50 ms per 10 ms on a Ryzen AI 9 HX 370 core natively, 0.53 ms in a cart (wasm), and 0.57 ms on a Steam Machine, about the same at every tempo (0.5 to 2). The work is spread evenly over the blocks (no block computes a whole spectrum alone). The first time a voice slot stretches, the engine allocates about 1 MB for it on the calling thread and keeps it for the slot's later voices. Stream rings keep 7200 frames of history (so a playing stream can start stretching) on top of `stream_ring_frames`.
+
+**Limits.** Interactive music (`cw_music`) plays its clips at tempo 1, since its beat grid is in mixer frames. Very short sounds gain little from a stretch (it needs about 0.1 s of sound to settle). The stretched samples of a voice are the same on every run of one build but not bit for bit across hosts (the stretcher uses the platform's math library); every clock is.
+
+Checked by the `unit-audio-tempo` gates (the `unit_audio_tempo` suite, offline): a tone and a chord keep their pitch within 2 cents at tempo 0.75 and 1.5 while their length scales (control: the same speeds as pitch); five stems, three samples and two streams, mix to exactly one voice's sound through changes from 0.5 to 2 with every clock equal (control: each stem changed a block apart); a click track's clicks are heard within 3 ms of where the clock says, through a pre-fed start, changes while stretching and the way in and out of tempo 1 (control: the frames played out); tempo 1 mixes bit for bit what no tempo does (control: the stretcher run at 1); and no step between samples of a 440 Hz tone grows past 0.05 across nine tempo changes (control: switching with no warm up or cross-fade). The `audio-tempo` gate runs `samples/audio_tempo` with a pad.
+
 ## A sound's own loop
 
 A sound can carry its loop: set `loop`, `loop_start` and `loop_end` in its `cw_sound_desc` (source frames at the file's own rate; end 0 is the end of the file), or call [cw_sound_set_loop](api:cw_sound_set_loop) after loading. Every voice of it then loops: the first pass plays from the start (an intro), and each pass after it from `loop_start` to `loop_end`. A play that gives its own points uses those, and `cw_play_desc.once` plays it through once. A WAV file's sampler chunk (`smpl`, written by most audio editors) gives a sound its points with no code. Samples and streams loop alike: a stream's decoder seeks back to `loop_start`, a sample's points are moved to the mix rate it was resampled to.
@@ -201,6 +225,8 @@ After four seconds it publishes a hash of all 192000 stereo frames, per-second h
 node tests/gate.mjs audio-mix audio-play unit-audio
 CW_FRAMES=240 CW_AUDIO_MIX_WAV=out/mix.wav build/native/samples/audio_mix   # write the mix as a WAV
 ```
+
+A voice whose tempo is not 1 is the exception: its clock is exact on every host, its stretched samples are not (see [Tempo](#tempo-faster-or-slower-in-the-same-key)).
 
 Real-time output is the same mix, but how many frames get mixed by a given game frame depends on the host's audio clock, and natively the device chooses the rate (carts mix at the rate the wasmcart audio ring declares, 48 kHz). So the `audio-play` gate checks only what must hold everywhere: a device is open, the mixer produces non-silent frames, the stream plays and its clock moves.
 

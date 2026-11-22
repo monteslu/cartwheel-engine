@@ -203,6 +203,8 @@ cw_input_rumble(player, 0.8f, 0.4f, 120);             /* hits and blasts: the pa
 `cw_audio_play(s, &(cw_play_desc){ .bus = cw_shell_sfx_bus() });` music on `cw_shell_music_bus()`; 3D sound and
 reverb zones in the guide. In a scene: `AudioStreamPlayer`, `AudioStreamPlayer2D`, `AudioStreamPlayer3D` nodes
 (`stream`, `autoplay`, `loop`, `bus`, signal `finished`; `audio_nodes.h`).
+Tempo with the pitch kept (music faster or slower in the same key): `cw_voice_set_tempo(v, 1.25f)`, stems together with
+`cw_voices_set_tempo(stems, 5, t)`; `cw_voice_frames_played` stays the song position at any tempo.
 
 **Gameplay nodes** (`gameplay.h`, `curve.h`, [gameplay nodes](docs/guides/gameplay-nodes.md)): do not hand-roll these.
 `Timer` (`wait_time`, `one_shot`, `autostart`, signal `timeout`; counts fixed ticks). `Path3D` / `Path2D` with a

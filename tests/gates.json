@@ -1759,6 +1759,192 @@
     "note": "audio unit suite (offline mixer): scheduling to the sample, pan law, load resampling, loop clock, pitch, pause, fades, voice limits/priority/stealing, deferred sound free, buses (volume, mute, solo, sends, DAG rule), 3D attenuation models, cone, doppler, occlusion, every effect, stream == sample through the ring, queue overflow, no leaked audio memory"
   },
   {
+    "name": "unit-audio-tempo",
+    "app": "unit_audio_tempo",
+    "frames": 3,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done",
+      "tempo.pitch_ok",
+      "tempo.lock_ok",
+      "tempo.clock_ok",
+      "tempo.bypass_ok",
+      "tempo.click_ok",
+      "tempo.clock_hash"
+    ],
+    "controlFrames": 3,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1,
+      "tempo.pitch_ok": 1,
+      "tempo.lock_ok": 1,
+      "tempo.clock_ok": 1,
+      "tempo.bypass_ok": 1,
+      "tempo.click_ok": 1
+    },
+    "controlEnv": {
+      "CW_TEST_TEMPO_AS_PITCH": "1"
+    },
+    "note": "tempo with the pitch kept (cw_voice_set_tempo, offline mixer): a tone and a chord keep their pitch within 2 cents at tempo 0.75 and 1.5 while their length scales; five stems (three samples, two streams) stay locked to the sample through group tempo changes; the clock (cw_voice_frames_played) is the source position heard; tempo 1 is the bypass bit for bit; no clicks across tempo changes. Every clock folds into tempo.clock_hash, which every host must reproduce (the stretched samples themselves differ across hosts). Control: the same speeds as pitch fail tempo.pitch_ok"
+  },
+  {
+    "name": "unit-audio-tempo-lock",
+    "app": "unit_audio_tempo",
+    "frames": 3,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done",
+      "tempo.pitch_ok",
+      "tempo.lock_ok",
+      "tempo.clock_ok",
+      "tempo.bypass_ok",
+      "tempo.click_ok",
+      "tempo.clock_hash"
+    ],
+    "controlFrames": 3,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1,
+      "tempo.pitch_ok": 1,
+      "tempo.lock_ok": 1,
+      "tempo.clock_ok": 1,
+      "tempo.bypass_ok": 1,
+      "tempo.click_ok": 1
+    },
+    "controlEnv": {
+      "CW_TEST_TEMPO_SPLIT": "1"
+    },
+    "note": "unit_audio_tempo's stems: control CW_TEST_TEMPO_SPLIT gives each stem the tempo changes a block after the one before, and fails tempo.lock_ok (their mix no longer matches one voice's, their clocks differ)"
+  },
+  {
+    "name": "unit-audio-tempo-clock",
+    "app": "unit_audio_tempo",
+    "frames": 3,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done",
+      "tempo.pitch_ok",
+      "tempo.lock_ok",
+      "tempo.clock_ok",
+      "tempo.bypass_ok",
+      "tempo.click_ok",
+      "tempo.clock_hash"
+    ],
+    "controlFrames": 3,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1,
+      "tempo.pitch_ok": 1,
+      "tempo.lock_ok": 1,
+      "tempo.clock_ok": 1,
+      "tempo.bypass_ok": 1,
+      "tempo.click_ok": 1
+    },
+    "controlEnv": {
+      "CW_TEST_TEMPO_CLOCK_OUTPUT": "1"
+    },
+    "note": "unit_audio_tempo's clock: a click track's clicks are heard within 128 source frames of where cw_voice_frames_played says (pre-fed starts from the top and from an offset, changes while stretching, in and out of tempo 1); control CW_TEST_TEMPO_CLOCK_OUTPUT reads the frames played out instead and fails tempo.clock_ok"
+  },
+  {
+    "name": "unit-audio-tempo-bypass",
+    "app": "unit_audio_tempo",
+    "frames": 3,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done",
+      "tempo.pitch_ok",
+      "tempo.lock_ok",
+      "tempo.clock_ok",
+      "tempo.bypass_ok",
+      "tempo.click_ok",
+      "tempo.clock_hash"
+    ],
+    "controlFrames": 3,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1,
+      "tempo.pitch_ok": 1,
+      "tempo.lock_ok": 1,
+      "tempo.clock_ok": 1,
+      "tempo.bypass_ok": 1,
+      "tempo.click_ok": 1
+    },
+    "controlEnv": {
+      "CW_TEST_TEMPO_FORCE": "1"
+    },
+    "note": "unit_audio_tempo's bypass: tempo never set, set to 1 in the play, and set to 1 later mix the same samples; control CW_TEST_TEMPO_FORCE runs the stretcher at tempo 1 and fails tempo.bypass_ok"
+  },
+  {
+    "name": "unit-audio-tempo-clicks",
+    "app": "unit_audio_tempo",
+    "frames": 3,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done",
+      "tempo.pitch_ok",
+      "tempo.lock_ok",
+      "tempo.clock_ok",
+      "tempo.bypass_ok",
+      "tempo.click_ok",
+      "tempo.clock_hash"
+    ],
+    "controlFrames": 3,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1,
+      "tempo.pitch_ok": 1,
+      "tempo.lock_ok": 1,
+      "tempo.clock_ok": 1,
+      "tempo.bypass_ok": 1,
+      "tempo.click_ok": 1
+    },
+    "controlEnv": {
+      "CW_TEST_TEMPO_NAIVE": "1"
+    },
+    "note": "unit_audio_tempo's tempo changes: a looped 440 Hz tone through nine changes in and out of tempo 1 never steps more than 0.05 between samples; control CW_TEST_TEMPO_NAIVE switches with no warm up and no cross-fade and fails tempo.click_ok"
+  },
+  {
+    "name": "audio-tempo",
+    "app": "audio_tempo",
+    "webgpu": true,
+    "frames": 240,
+    "input": "audio-tempo.json",
+    "env": {
+      "CW_TEMPO_OFFLINE": "1"
+    },
+    "fields": [
+      "tempo.percent",
+      "tempo.position",
+      "tempo.locked",
+      "tempo.beat",
+      "audio.underruns",
+      "audio.dropped_commands"
+    ],
+    "expect": {
+      "tempo.percent": 110,
+      "tempo.locked": 1,
+      "audio.underruns": 0,
+      "audio.dropped_commands": 0
+    },
+    "controlInput": "audio-tempo-control.json",
+    "note": "samples/audio_tempo mixed offline: five generated stems started on one frame, the pad's right and shoulder buttons step the tempo up three times and down once (110%) through cw_voices_set_tempo; the stems' clocks stay equal and the song position is the same on every host. Control: no presses (100%) must differ"
+  },
+  {
     "name": "unit-physics",
     "app": "unit_physics",
     "frames": 2,
