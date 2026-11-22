@@ -34,6 +34,7 @@ typedef struct mesh_decal {
   t3_material *mat; /* unlit: premultiplied output (MULTIPLY, ADD, and decals on unlit surfaces) */
   t3_material *lit; /* lit: a MIX decal on a surface with a lighting model; straight alpha */
   bool built, dirty, in_order;
+  bool hidden; /* the decal hidden in the tree (cw_node_visible_in_tree): its pieces hidden, nothing rebuilt */
   int tris, sources;
   bool truncated;
   uint32_t hash;
@@ -454,6 +455,7 @@ void cw_decals_get_stats(cw_tree *t, cw_decal_stats *out) {
   uint32_t h = 2166136261u;
   for (int i = 0; i < dt->decals.count; i++) {
     const decal3d *d = cw_node_data_t(dt->decals.data[i], decal_t);
+    if (d && !cw_node_visible_in_tree(dt->decals.data[i])) out->hidden++;
     if (!d || d->mode != DM_MESH || !d->mesh.tris) continue;
     out->mesh_decals++;
     out->mesh_triangles += d->mesh.tris;
@@ -627,7 +629,7 @@ static void decals_exec(cw_pass_ctx *ctx, void *user) {
     decal3d *d = cw_node_data_t(n, decal_t);
     if (!d || d->color[3] <= 0 || d->mode == DM_MESH) continue;
     t3_object *o = cw_node3d_object(n);
-    if (!o || !o->visible) continue;
+    if (!o || !cw_node_visible_in_tree(n)) continue;
     t3_object_update_world_matrix(o, true, false);
     t3_mat4 s, w;
     t3_mat4_identity(&s);
@@ -1299,6 +1301,14 @@ static void mesh_hook(cw_tree *t, double unused, void *user) {
       }
       continue;
     }
+    /* hidden by itself or an ancestor: its pieces (children of the surfaces, not of the decal) hide with it, and
+     * nothing is clipped while it stays hidden; shown again it rebuilds if it moved or changed meanwhile */
+    bool shown = cw_node_visible_in_tree(n);
+    if (shown == d->mesh.hidden) {
+      d->mesh.hidden = !shown;
+      for (int k = 0; k < d->mesh.pieces.count; k++) d->mesh.pieces.data[k]->visible = shown;
+    }
+    if (!shown) continue;
     if (!d->mesh.dirty && d->mesh.built && mesh_moved(n, d)) d->mesh.dirty = true;
     if (!d->mesh.dirty && d->mesh.built) continue;
     mesh_build(t, dt, n, d);

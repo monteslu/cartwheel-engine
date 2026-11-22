@@ -112,6 +112,7 @@ typedef struct cw_gi_stats {
   int materials;           /* materials carrying the gi part */
   int probes_bound_max;    /* the most probes one draw had bound in the last frame (0..2) */
   int grid_updates;        /* light probe grid probes captured in the last frame */
+  int hidden;              /* ReflectionProbe3D and LightProbeGrid3D nodes hidden by themselves or an ancestor (they shade and capture nothing) */
 } cw_gi_stats;
 /* The tree's GI counters (zeros for a tree without GI nodes). */
 void cw_gi_get_stats(cw_tree *t, cw_gi_stats *out);

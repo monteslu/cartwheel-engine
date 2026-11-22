@@ -143,6 +143,7 @@ typedef struct cw_particles_stats {
   int sim_steps;      /* transform feedback steps run last frame */
   int draw_calls;     /* particle + trail draws last frame */
   int sort_passes;    /* bitonic passes last frame */
+  int hidden;         /* of `systems`, hidden by themselves or an ancestor (cw_node_visible_in_tree): no simulation, no draw */
 } cw_particles_stats;
 /* last frame's counts; zeroed when the tree has no particles or t is NULL */
 void cw_particles_get_stats(cw_tree *t, cw_particles_stats *out);

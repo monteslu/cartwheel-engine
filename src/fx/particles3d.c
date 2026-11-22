@@ -1106,6 +1106,7 @@ int cw__psys_attractors(const cw__fx_tree *ft, float attr[MAX_ATTR * 8]) {
   int na = 0;
   for (int i = 0; i < ft->attractors.count && na < MAX_ATTR; i++) {
     cw_node an = ft->attractors.data[i];
+    if (!cw_node_visible_in_tree(an)) continue; /* a hidden attractor pulls nothing */
     cw_value s, rad, att;
     if (!cw_node_get_prop(an, "strength", &s) || !cw_node_get_prop(an, "radius", &rad) ||
         !cw_node_get_prop(an, "attenuation", &att))
@@ -1127,6 +1128,7 @@ int cw__psys_colliders(const cw__fx_tree *ft, float cinv[MAX_COLL * 16], float c
   int nc = 0;
   for (int i = 0; i < ft->colliders.count && nc < MAX_COLL; i++) {
     cw_node cn = ft->colliders.data[i];
+    if (!cw_node_visible_in_tree(cn)) continue; /* a hidden collider stops nothing */
     cw_value sh, ex, rad;
     if (!cw_node_get_prop(cn, "shape", &sh) || !cw_node_get_prop(cn, "extents", &ex) ||
         !cw_node_get_prop(cn, "radius", &rad))
@@ -1402,11 +1404,21 @@ static void set_blend(int blend) {
  * loads and stores the scene's targets: once a view, not once a system) */
 bool cw__psys_distort_active(cw_node n) {
   p3d *d = cw_node_data_t(n, p3d_t);
-  return d && d->blend == BLEND_DISTORT && d->rt && d->amount > 0 && d->lifetime > 0 && d->alive > 0 && d->distort_strength > 0;
+  return d && d->blend == BLEND_DISTORT && d->rt && d->amount > 0 && d->lifetime > 0 && d->alive > 0 && d->distort_strength > 0 &&
+         cw_node_visible_in_tree(n);
 }
 bool cw__psys_refract_active(cw_node n) {
   p3d *d = cw_node_data_t(n, p3d_t);
-  return d && d->blend == BLEND_REFRACT && d->rt && d->amount > 0 && d->lifetime > 0 && d->alive > 0;
+  return d && d->blend == BLEND_REFRACT && d->rt && d->amount > 0 && d->lifetime > 0 && d->alive > 0 && cw_node_visible_in_tree(n);
+}
+
+/* a system hidden by itself or an ancestor: counted, not simulated, not drawn (its clock stopped in p3d_fixed) */
+static bool psys_hidden(cw_node n, const p3d *d, cw__fx_tree *ft) {
+  if (cw_node_visible_in_tree(n)) return false;
+  ft->stats.systems++;
+  ft->stats.capacity += d->amount;
+  ft->stats.hidden++;
+  return true;
 }
 
 typedef struct psys_prep { bool ok, sorted, have_state, want_trail, distort; t3_mat4 model; } psys_prep;
@@ -1439,14 +1451,16 @@ void cw__psys_frames(cw_pass_ctx *ctx, cw__fx_tree *ft) {
       size_t need = 0;
       for (int i = 0; i < n; i++) {
         p3d *d = cw_node_data_t(ft->systems.data[i], p3d_t);
-        if (d && d->rt && !(d->rt->idle && d->rt->nsteps == 0 && !d->gpu_stats)) need += cw__psys_arena_need(d->rt->nsteps);
+        if (d && d->rt && !(d->rt->idle && d->rt->nsteps == 0 && !d->gpu_stats) && cw_node_visible_in_tree(ft->systems.data[i]))
+          need += cw__psys_arena_need(d->rt->nsteps);
       }
       cw__psys_arena_begin(ctx->frame, need);
     }
     bool any = false;
     for (int i = 0; i < n; i++) {
       p3d *d = cw_node_data_t(ft->systems.data[i], p3d_t);
-      draws[i] = d && d->rt && d->amount > 0 && d->lifetime > 0 && cw__psys_frame_wgpu(ft->systems.data[i], d, ctx, ft, &cp);
+      draws[i] = d && d->rt && d->amount > 0 && d->lifetime > 0 && !psys_hidden(ft->systems.data[i], d, ft) &&
+                 cw__psys_frame_wgpu(ft->systems.data[i], d, ctx, ft, &cp);
       any |= draws[i];
     }
     if (cp) {
@@ -1528,7 +1542,7 @@ void cw__psys_frame(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
 static void psys_prepare(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, psys_prep *out) {
   memset(out, 0, sizeof *out);
   p3d *d = cw_node_data_t(n, p3d_t);
-  if (!d || !d->rt || d->amount <= 0 || d->lifetime <= 0) return;
+  if (!d || !d->rt || d->amount <= 0 || d->lifetime <= 0 || psys_hidden(n, d, ft)) return;
   cw__psys *r = d->rt;
   if (r->idle && r->nsteps == 0 && !d->gpu_stats) { /* nothing alive, nothing to simulate (p3d_fixed) */
     ft->stats.systems++;
@@ -1835,6 +1849,16 @@ static void p3d_fixed(cw_node n, void *data, double dt) {
   p3d *d = data;
   cw__psys *r = d->rt;
   if (!r) return;
+  if (!cw_node_visible_in_tree(n)) {
+    /* hidden by itself or an ancestor: the simulation clock stops (no steps, no alive count, no GPU work), so
+     * shown again it goes on from the particles it had; the emitter's pose is kept current, so a system moved
+     * while hidden does not smear its next spawns along the way it went */
+    t3_mat4 hm;
+    cw__psys_spawn_frame(n, d, &hm);
+    r->last_m = hm;
+    r->have_last_m = true;
+    return;
+  }
   double step = dt * (double)d->speed_scale;
   t3_mat4 m;
   cw__psys_spawn_frame(n, d, &m);
@@ -1944,6 +1968,7 @@ void cw_particles_restart(cw_node n) {
 void cw_particles_burst(cw_node n, t3_vec3 at, t3_vec3 dir) {
   p3d *d = cw_node_data_t(n, p3d_t);
   if (!d || !d->rt || d->bursts <= 0) return;
+  if (!cw_node_visible_in_tree(n)) return; /* a hidden system fires nothing (shown later, it does not play it late) */
   cw__psys *r = d->rt;
   int nb = CW_MIN(d->bursts, MAX_BURSTS);
   if (!r->has_emitted) { /* the first burst opens the system's clock; every slot is unfired */

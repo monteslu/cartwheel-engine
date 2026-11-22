@@ -1142,12 +1142,18 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
   }
   int tri = 0;
   wt->stats.surfaces = 0;
+  wt->stats.hidden = 0;
   t3_object_update_matrix_world(ctx->camera, true);
   for (int i = 0; i < wt->nodes.count; i++) {
     cw_node n = wt->nodes.data[i];
     water3d *d = cw_node_data_t(n, water_t);
     if (!d) continue;
     d->under_drawn = false; /* the full-screen pass (POST) sets it again when it draws this frame from under the water */
+    /* hidden by itself or an ancestor: none of its work (its mesh is hidden with its node) */
+    if ((d->hidden = !cw_node_visible_in_tree(n))) {
+      wt->stats.hidden++;
+      continue;
+    }
     build(n, d);
     textures(d);
     if (d->floor_dirty || (!d->floor_done && cw_tree_tick(ctx->tree) >= 1 && d->floor_map_size >= 2)) bake_floor(n, d);
@@ -1298,6 +1304,7 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
 static void water_fixed(cw_node n, void *data, double dt) {
   (void)dt;
   water3d *d = data;
+  if (!cw_node_visible_in_tree(n)) return; /* hidden: the ripples pause, shown again they go on as they were */
   cw__ripples_step(n, d, cw_tree_tick(cw_node_tree(n)));
 }
 

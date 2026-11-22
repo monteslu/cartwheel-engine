@@ -172,6 +172,13 @@ static void p2_fixed(cw_node n, void *data, double dt) {
   state_alloc(s, d->amount);
   float m[6];
   frame_of(n, d, m);
+  if (!cw_node_visible_in_tree(n)) {
+    /* hidden by itself or an ancestor: the clock stops and nothing is stepped (the canvas does not draw it);
+     * shown again it goes on from the particles it had, from where the emitter is then */
+    memcpy(s->m1, m, sizeof m);
+    s->have_m = true;
+    return;
+  }
   if (!s->have_m) {
     memcpy(s->m1, m, sizeof m);
     s->have_m = true;

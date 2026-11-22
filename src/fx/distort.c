@@ -77,8 +77,8 @@ static void shock_exit(cw_node n, void *data) {
 }
 
 static void shock_fixed(cw_node n, void *data, double dt) {
-  (void)n;
   shock *s = data;
+  if (!cw_node_visible_in_tree(n)) return; /* hidden: the ring pauses (autostart waits), shown again it goes on */
   if (s->autostart && !s->started) {
     s->started = true;
     s->playing = true;
@@ -99,7 +99,7 @@ static void shock_fixed(cw_node n, void *data, double dt) {
 
 void cw_shockwave_fire(cw_node n) {
   shock *s = cw_node_data_t(n, shock_t);
-  if (!s) return;
+  if (!s || !cw_node_visible_in_tree(n)) return; /* a hidden ring fires nothing */
   s->started = true;
   s->playing = true;
   s->age = 0;
@@ -142,7 +142,7 @@ static cw_node_type shock_type = {
 
 static bool distort_wanted(cw__fx_tree *ft) {
   for (int i = 0; i < ft->shockwaves.count; i++)
-    if (cw_shockwave_active(ft->shockwaves.data[i])) return true;
+    if (cw_shockwave_active(ft->shockwaves.data[i]) && cw_node_visible_in_tree(ft->shockwaves.data[i])) return true;
   for (int i = 0; i < ft->systems.count; i++)
     if (cw__psys_distort_active(ft->systems.data[i])) return true;
   return false;
@@ -361,7 +361,7 @@ static void sources_exec(cw_pass_ctx *ctx, void *user) {
   cw_pass_view_viewport(ctx); /* (a one-pass split screen's view: its rectangle) */
   for (int i = 0; i < ft->shockwaves.count; i++) {
     shock *s = cw_node_data_t(ft->shockwaves.data[i], shock_t);
-    if (s && s->playing) ring_draw(ctx, ft->shockwaves.data[i], s, rt);
+    if (s && s->playing && cw_node_visible_in_tree(ft->shockwaves.data[i])) ring_draw(ctx, ft->shockwaves.data[i], s, rt);
   }
   cw_pass_bind_target(ctx, ctx->scene);
 }

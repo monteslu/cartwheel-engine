@@ -228,7 +228,7 @@ static bool pick(const cw_pass_ctx *ctx, cw_node *out, water3d **dout, bool *cau
     cw_node n = cw__water_at(ctx->tree, i);
     if (!cw_node_valid(n)) break;
     water3d *d = cw__water_data(n);
-    if (!d || !d->mesh) continue;
+    if (!d || !d->mesh || d->hidden) continue;
     const t3_mat4 *m = cw_node3d_global_transform(n);
     t3_mat4 inv;
     t3_mat4_invert(&inv, m);

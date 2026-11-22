@@ -104,6 +104,12 @@ static void trail_fixed(cw_node n, void *data, double dt) {
     t->cap = len;
     t->head = t->count = 0;
   }
+  if (!cw_node_visible_in_tree(n)) {
+    /* hidden by itself or an ancestor: no samples are kept (shown again, the ribbon grows from where the node is
+     * then, never a streak across the way it went while hidden) */
+    t->count = 0;
+    return;
+  }
   if (!t->emitting) {
     /* the tail catches up: drop the oldest sample each tick */
     if (t->count > 0) t->count--;
@@ -207,7 +213,7 @@ static void draw_wgpu(trail3d *t, cw_pass_ctx *ctx, const float *v, int nv) {
 
 void cw__trail3d_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
   trail3d *t = cw_node_data_t(n, trail_t);
-  if (!t || t->count < 2 || !ctx->camera) return;
+  if (!t || t->count < 2 || !ctx->camera || !cw_node_visible_in_tree(n)) return;
   if (!prog && !cw__fx_wgpu_on()) {
     prog = cw__fx_program("trail3d", vs, fs, NULL, 0);
     if (!prog) return;

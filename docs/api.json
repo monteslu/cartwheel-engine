@@ -2998,7 +2998,7 @@
     {
      "name": "cw_decal_stats",
      "doc": "",
-     "decl": "typedef struct cw_decal_stats {\n  int decals;      /* Decal3D nodes in the tree */\n  int visible;     /* drawn last frame (in the frustum, opacity > 0) */\n  int culled;      /* outside the frustum */\n  int draw_calls;  /* instanced draws */\n  int atlas_images; /* images in the shared atlas */\n  float atlas_load_ms;   /* CPU ms the last image into the atlas took: decode, cell, mips, upload */\n  float atlas_decode_ms; /* of which decoding it (PNG / JPEG) */\n  /* mesh mode */\n  int mesh_decals;    /* mesh decals with geometry, now */\n  int mesh_triangles; /* their triangles */\n  int mesh_pieces;    /* their meshes (one per source mesh) */\n  int mesh_recycled;  /* pooled decals freed by max_mesh_decals so far */\n  int mesh_builds;    /* clips run so far */\n  uint32_t mesh_hash; /* FNV of every mesh decal's geometry hash, in the order they entered the tree */\n} cw_decal_stats;"
+     "decl": "typedef struct cw_decal_stats {\n  int decals;      /* Decal3D nodes in the tree */\n  int visible;     /* drawn last frame (in the frustum, opacity > 0) */\n  int culled;      /* outside the frustum */\n  int draw_calls;  /* instanced draws */\n  int atlas_images; /* images in the shared atlas */\n  float atlas_load_ms;   /* CPU ms the last image into the atlas took: decode, cell, mips, upload */\n  float atlas_decode_ms; /* of which decoding it (PNG / JPEG) */\n  /* mesh mode */\n  int mesh_decals;    /* mesh decals with geometry, now */\n  int mesh_triangles; /* their triangles */\n  int mesh_pieces;    /* their meshes (one per source mesh) */\n  int mesh_recycled;  /* pooled decals freed by max_mesh_decals so far */\n  int mesh_builds;    /* clips run so far */\n  uint32_t mesh_hash; /* FNV of every mesh decal's geometry hash, in the order they entered the tree */\n  int hidden;         /* Decal3D nodes hidden by themselves or an ancestor now (cw_node_visible_in_tree): not drawn, not clipped */\n} cw_decal_stats;"
     },
     {
      "name": "cw_decal_mesh_info",
@@ -3360,7 +3360,7 @@
     {
      "name": "cw_gi_stats",
      "doc": "",
-     "decl": "typedef struct cw_gi_stats {\n  int reflection_probes;   /* ReflectionProbe3D nodes in the tree */\n  int captures;            /* captures made in the last frame */\n  int captures_total;      /* since the tree started */\n  int materials;           /* materials carrying the gi part */\n  int probes_bound_max;    /* the most probes one draw had bound in the last frame (0..2) */\n  int grid_updates;        /* light probe grid probes captured in the last frame */\n} cw_gi_stats;"
+     "decl": "typedef struct cw_gi_stats {\n  int reflection_probes;   /* ReflectionProbe3D nodes in the tree */\n  int captures;            /* captures made in the last frame */\n  int captures_total;      /* since the tree started */\n  int materials;           /* materials carrying the gi part */\n  int probes_bound_max;    /* the most probes one draw had bound in the last frame (0..2) */\n  int grid_updates;        /* light probe grid probes captured in the last frame */\n  int hidden;              /* ReflectionProbe3D and LightProbeGrid3D nodes hidden by themselves or an ancestor (they shade and capture nothing) */\n} cw_gi_stats;"
     }
    ],
    "macros": []
@@ -7109,7 +7109,7 @@
     {
      "name": "cw_particles_stats",
      "doc": "Tree totals, for profilers and debug fields.",
-     "decl": "typedef struct cw_particles_stats {\n  int systems;        /* GPUParticles3D nodes in the tree */\n  int alive;          /* sum of their `alive` */\n  int capacity;       /* sum of their `amount` */\n  int sim_steps;      /* transform feedback steps run last frame */\n  int draw_calls;     /* particle + trail draws last frame */\n  int sort_passes;    /* bitonic passes last frame */\n} cw_particles_stats;"
+     "decl": "typedef struct cw_particles_stats {\n  int systems;        /* GPUParticles3D nodes in the tree */\n  int alive;          /* sum of their `alive` */\n  int capacity;       /* sum of their `amount` */\n  int sim_steps;      /* transform feedback steps run last frame */\n  int draw_calls;     /* particle + trail draws last frame */\n  int sort_passes;    /* bitonic passes last frame */\n  int hidden;         /* of `systems`, hidden by themselves or an ancestor (cw_node_visible_in_tree): no simulation, no draw */\n} cw_particles_stats;"
     }
    ],
    "macros": []
@@ -13963,6 +13963,12 @@
      "inline": false
     },
     {
+     "name": "cw_node_visible_in_tree",
+     "signature": "bool cw_node_visible_in_tree(cw_node n)",
+     "doc": "The visibility rule, for every node type: a node is shown when it and every Node3D, Node2D and CanvasLayer above\nit have `visible` on. A node hidden by itself or by any ancestor draws nothing, lights nothing, casts no shadow,\nis seen by no reflection probe and runs no per-frame simulation; shown again it resumes (each type's doc says\nwith what state). O(depth), read from the nodes (it holds during fixed_update, before pre_render writes the\nthree.c objects). Controls follow cw_control_visible_in_tree (cartwheel/ui.h).",
+     "inline": false
+    },
+    {
      "name": "cw_node2d_set_position",
      "signature": "void cw_node2d_set_position(cw_node n, cw_vec2 p)",
      "doc": "local, parent space; no-op unless Node2D",
@@ -17764,7 +17770,7 @@
     {
      "name": "cw_water_stats",
      "doc": "Last frame's numbers for a tree's water.",
-     "decl": "typedef struct cw_water_stats {\n  int surfaces;           /* Water3D nodes drawn */\n  int reflection_w, reflection_h; /* reflection target (0 when off) */\n  int refraction_w, refraction_h; /* refraction target (0 when off) */\n  int triangles;          /* of the surfaces' grids */\n  int buoyant;            /* Buoyancy3D nodes that pushed last tick */\n  int underwater;         /* 1 when the last frame was drawn from under a Water3D's surface (its fog, caustics, waterline) */\n  float see_light;        /* 0..1: the light reaching the last surface drawn, which scales what shows through it (see_through) */\n  int sun_light;          /* 1 when the last surface drawn was lit by a scene light (Water3D sun, else the first DirectionalLight3D): no ProceduralSky */\n} cw_water_stats;"
+     "decl": "typedef struct cw_water_stats {\n  int surfaces;           /* Water3D nodes drawn */\n  int reflection_w, reflection_h; /* reflection target (0 when off) */\n  int refraction_w, refraction_h; /* refraction target (0 when off) */\n  int triangles;          /* of the surfaces' grids */\n  int buoyant;            /* Buoyancy3D nodes that pushed last tick */\n  int underwater;         /* 1 when the last frame was drawn from under a Water3D's surface (its fog, caustics, waterline) */\n  float see_light;        /* 0..1: the light reaching the last surface drawn, which scales what shows through it (see_through) */\n  int sun_light;          /* 1 when the last surface drawn was lit by a scene light (Water3D sun, else the first DirectionalLight3D): no ProceduralSky */\n  int hidden;             /* Water3D nodes hidden by themselves or an ancestor: no surface, reflection, refraction, underwater pass or ripples */\n} cw_water_stats;"
     }
    ],
    "macros": [

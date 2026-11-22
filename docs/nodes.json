@@ -84,7 +84,7 @@
      "default": "true",
      "stored": true,
      "readonly": false,
-     "doc": "Hidden nodes hide their children."
+     "doc": "Off: this node and everything under it is hidden (cw_node_visible_in_tree): it draws nothing, lights nothing, casts no shadow, shows in no reflection, SubViewport or fog, and its effects (particles, trails, cloth, water ripples, shockwaves, explosions, probe captures) do not run; turned on again, each goes on as its type documents. Physics, audio and animation are not affected."
     },
     {
      "name": "interpolate",
@@ -172,7 +172,7 @@
      "default": "true",
      "stored": true,
      "readonly": false,
-     "doc": "Hidden nodes hide their children."
+     "doc": "Off: this node and everything under it is hidden (cw_node_visible_in_tree): nothing under it draws, and 2D particles under it do not step (they go on when shown). Physics, audio and animation are not affected."
     },
     {
      "name": "interpolate",

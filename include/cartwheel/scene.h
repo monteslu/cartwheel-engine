@@ -393,6 +393,13 @@ void cw_node3d_look_at(cw_node n, t3_vec3 target, t3_vec3 up);
  * moves the node in fixed_update: physics sync, character code). */
 void cw_node3d_snapshot(cw_node n);
 
+/* The visibility rule, for every node type: a node is shown when it and every Node3D, Node2D and CanvasLayer above
+ * it have `visible` on. A node hidden by itself or by any ancestor draws nothing, lights nothing, casts no shadow,
+ * is seen by no reflection probe and runs no per-frame simulation; shown again it resumes (each type's doc says
+ * with what state). O(depth), read from the nodes (it holds during fixed_update, before pre_render writes the
+ * three.c objects). Controls follow cw_control_visible_in_tree (cartwheel/ui.h). */
+bool cw_node_visible_in_tree(cw_node n);
+
 /* ── Node2D ──────────────────────────────────────────────────────────── */
 
 typedef struct cw_node2d {

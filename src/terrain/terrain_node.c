@@ -410,15 +410,6 @@ static bool find_dirty_scatter(cw_node c, void *u) {
   return false;
 }
 
-/* the node and every Node3D above it visible (as three.c draws a mesh under a hidden group: not at all) */
-static bool visible_in_tree(cw_node n) {
-  for (cw_node p = n; cw_node_valid(p); p = cw_node_parent(p)) {
-    const cw_node3d *nd = cw_node_data(p, "Node3D");
-    if (nd && !nd->visible) return false;
-  }
-  return true;
-}
-
 static bool same_point(t3_vec3 a, t3_vec3 b) { return a.x == b.x && a.y == b.y && a.z == b.z; }
 
 static void terrain_sync(cw_node n, terrain3d *d) {
@@ -431,7 +422,7 @@ static void terrain_sync(cw_node n, terrain3d *d) {
   }
   d->origin = node_origin(n, d);
   cw_terrain_set_origin(d->t, d->origin);
-  d->shown = visible_in_tree(n);
+  d->shown = cw_node_visible_in_tree(n);
   cw__terrain_set_shown(d->t, d->shown);
   for (int i = 0; i < cw_node_child_count(n); i++) find_dirty_scatter(cw_node_child(n, i), d);
 }

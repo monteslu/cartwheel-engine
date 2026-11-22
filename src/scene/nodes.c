@@ -1,5 +1,10 @@
 /* Node, Node3D, Node2D: the base types. */
-#include "scene_internal.h"
+#include <stdint.h>
+#include <stdlib.h>
+
+#include "scene2d_internal.h"
+#include "cartwheel/debug.h"
+#include "cartwheel/platform.h"
 #include "cartwheel/ui.h"
 #include "cartwheel/render3d.h"
 
@@ -193,7 +198,7 @@ static const cw_prop node3d_props[] = {
   CW_PROP_ACCESSOR("rotation", CW_T_VEC3, CW_PROP_DEFAULT, rot_get, rot_set, "Euler angles XYZ, radians."),
   CW_PROP_ACCESSOR("quaternion", CW_T_QUAT, CW_PROP_ANIMATABLE, quat_get, quat_set, "Rotation as a quaternion."),
   CW_PROP_FIELD(cw_node3d, scale, CW_T_VEC3, CW_PROP_DEFAULT, "Scale relative to the parent."),
-  CW_PROP_FIELD(cw_node3d, visible, CW_T_BOOL, CW_PROP_DEFAULT, "Hidden nodes hide their children."),
+  CW_PROP_FIELD(cw_node3d, visible, CW_T_BOOL, CW_PROP_DEFAULT, "Off: this node and everything under it is hidden (cw_node_visible_in_tree): it draws nothing, lights nothing, casts no shadow, shows in no reflection, SubViewport or fog, and its effects (particles, trails, cloth, water ripples, shockwaves, explosions, probe captures) do not run; turned on again, each goes on as its type documents. Physics, audio and animation are not affected."),
   CW_PROP_FIELD(cw_node3d, interpolate, CW_T_BOOL, CW_PROP_DEFAULT, "Render between the last two fixed ticks."),
   CW_PROP_FIELD(cw_node3d, layers, CW_T_INT, CW_PROP_DEFAULT, "Render layers (bit n = layer n; 1 = the default layer; -1 = all). A camera draws the layers in its `cull_layers`; its `viewmodel_layers` are drawn after, on top, with `viewmodel_fov`. Applies to the node and everything below it."),
   CW_PROP_ACCESSOR("global_position", CW_T_VEC3, CW_PROP_READONLY | CW_PROP_EDITOR, gpos_get, NULL, "World position."),
@@ -337,7 +342,7 @@ static const cw_prop node2d_props[] = {
   CW_PROP_FIELD(cw_node2d, skew, CW_T_FLOAT, CW_PROP_DEFAULT, "Skew in radians."),
   CW_PROP_FIELD(cw_node2d, z_index, CW_T_INT, CW_PROP_DEFAULT, "Draw order within the layer."),
   CW_PROP_FIELD(cw_node2d, z_relative, CW_T_BOOL, CW_PROP_DEFAULT, "z_index adds to the parent's."),
-  CW_PROP_FIELD(cw_node2d, visible, CW_T_BOOL, CW_PROP_DEFAULT, "Hidden nodes hide their children."),
+  CW_PROP_FIELD(cw_node2d, visible, CW_T_BOOL, CW_PROP_DEFAULT, "Off: this node and everything under it is hidden (cw_node_visible_in_tree): nothing under it draws, and 2D particles under it do not step (they go on when shown). Physics, audio and animation are not affected."),
   CW_PROP_FIELD(cw_node2d, interpolate, CW_T_BOOL, CW_PROP_DEFAULT, "Render between the last two fixed ticks."),
   CW_PROP_FIELD(cw_node2d, modulate, CW_T_COLOR, CW_PROP_DEFAULT, "Tint multiplied into this node and its children."),
   CW_PROP_FIELD(cw_node2d, self_modulate, CW_T_COLOR, CW_PROP_DEFAULT, "Tint multiplied into this node only."),
@@ -367,6 +372,44 @@ void cw_node2d_snapshot(cw_node n) {
   if (!d) return;
   d->prev_position = d->position;
   d->prev_rotation = d->rotation;
+}
+
+/* ── visibility in the tree ──────────────────────────────────────────── */
+
+/* Test switches (read once a frame), the controls of tests/hidden-vis.mjs, which must then fail:
+ * CW_TEST_HIDDEN_SELF_ONLY=1     only the node's own `visible` counts (ancestors ignored);
+ * CW_TEST_HIDDEN_PARENTS_ONLY=1  only its ancestors count (its own `visible` ignored). */
+enum { VIS_ALL, VIS_SELF, VIS_PARENTS };
+static int vis_mode(void) {
+  static uint64_t frame = UINT64_MAX;
+  static int mode;
+  uint64_t f = cw_frame_index();
+  if (f != frame) {
+    frame = f;
+    const char *s = cw_test_env("CW_TEST_HIDDEN_SELF_ONLY"), *p = cw_test_env("CW_TEST_HIDDEN_PARENTS_ONLY");
+    mode = s && atoi(s) > 0 ? VIS_SELF : p && atoi(p) > 0 ? VIS_PARENTS : VIS_ALL;
+  }
+  return mode;
+}
+
+bool cw_node_visible_in_tree(cw_node n) {
+  int mode = vis_mode();
+  for (cw_node p = mode == VIS_PARENTS ? cw_node_parent(n) : n; cw_node_valid(p); p = cw_node_parent(p)) {
+    const cw_node3d *d3 = cw_node_data_t(p, node3d_t);
+    if (d3) {
+      if (!d3->visible) return false;
+    } else {
+      const cw_node2d *d2 = cw_node_data_t(p, node2d_t);
+      if (d2) {
+        if (!d2->visible) return false;
+      } else if (cw__canvas_layer_t) {
+        const cw__canvas_layer *cl = cw_node_data_t(p, cw__canvas_layer_t);
+        if (cl && !cl->visible) return false;
+      }
+    }
+    if (mode == VIS_SELF) break;
+  }
+  return true;
 }
 
 const float *cw_node2d_global_transform(cw_node n) {

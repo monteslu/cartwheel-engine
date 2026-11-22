@@ -114,6 +114,7 @@ typedef struct cw_decal_stats {
   int mesh_recycled;  /* pooled decals freed by max_mesh_decals so far */
   int mesh_builds;    /* clips run so far */
   uint32_t mesh_hash; /* FNV of every mesh decal's geometry hash, in the order they entered the tree */
+  int hidden;         /* Decal3D nodes hidden by themselves or an ancestor now (cw_node_visible_in_tree): not drawn, not clipped */
 } cw_decal_stats;
 /* last frame's counts; zeroed when the tree has no decals or t is NULL */
 void cw_decals_get_stats(cw_tree *t, cw_decal_stats *out);

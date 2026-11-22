@@ -103,7 +103,7 @@ static void fire_children(cw_node n) {
 
 void cw_explosion_fire(cw_node n) {
   explo *e = cw_node_data_t(n, explo_t);
-  if (!e) return;
+  if (!e || !cw_node_visible_in_tree(n)) return; /* a hidden explosion fires nothing */
   e->started = true;
   e->playing = true;
   e->age = 0;
@@ -235,7 +235,7 @@ static void explosions_hook(cw_tree *t, double dt, void *user) {
   for (int i = 0; i < ft->explosions.count; i++) {
     cw_node n = ft->explosions.data[i];
     explo *e = cw_node_data_t(n, explo_t);
-    if (!e) continue;
+    if (!e || !cw_node_visible_in_tree(n)) continue; /* hidden: paused, autostart waits; its scorch mark (a pooled decal on the ground) stays as it is, its flash light fades on its own */
     if (e->autostart && !e->started) cw_explosion_fire(n);
     if (e->playing) {
       if (e->pending) { /* just fired: take a light, a scorch and shake slot */

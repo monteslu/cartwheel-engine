@@ -4,6 +4,44 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.64.1 (2026-11-22)
+
+### Fixed
+- A node hidden by an ancestor, or by its own `visible`, drew and ran anyway when its type draws outside the mesh path: a
+  GPUParticles3D under a hidden Node3D, or with `visible` off itself, simulated and drew its flames. One rule now holds for every type, `cw_node_visible_in_tree`
+  (cartwheel/scene.h): a node is shown when it and every Node3D, Node2D and CanvasLayer above it are visible. Hidden,
+  it draws nothing and its per-frame work stops; shown again it goes on (the table in the scenes guide, "Visibility"):
+  - GPUParticles3D: its clock stops (no step, GPU work or draw, `cw_particles_burst` ignored) and it resumes from the
+    particles it had, spawning where the emitter is then; a hidden ParticleAttractor3D or ParticleCollider3D acts on
+    nothing. GPUParticles2D: not stepped while hidden (the canvas already did not draw it), resumes as it was.
+  - Trail3D keeps no samples while hidden and grows again from the node when shown.
+  - Decal3D: a screen decal under a hidden parent drew (only its own `visible` was read); a mesh decal's pieces, which
+    are children of the surfaces it was clipped onto, drew whatever the decal's parents said. Both hide now, and a
+    hidden mesh decal is not clipped again until shown.
+  - Lights: a hidden light already lit nothing (three.c and the clustered lights walk the hierarchy), but a light hidden
+    by a parent still made its shadow map or cascades and lit the volumetric fog. It does neither now.
+  - FogVolume3D, Shockwave3D (paused; `cw_shockwave_fire` ignored) and Explosion3D (paused; `cw_explosion_fire` and
+    autostart wait) under a hidden parent no longer draw or run.
+  - Water3D under a hidden parent made its reflection and refraction renders and its underwater pass, and stepped its
+    ripples: none of it runs now (its waves still answer `cw_water_height_at`, Buoyancy3D still floats).
+  - ReflectionProbe3D and LightProbeGrid3D under a hidden parent captured and shaded: they bind to no draw and capture
+    nothing now, and go on where they were when shown.
+  - Cloth3D and Rope3D meshes live in the scene's root, so a hidden parent never hid them: they hide now, are not
+    stepped, and are rebuilt at rest in their frame when shown (a LINKS rope's bodies are physics and go on).
+  - A SubViewport under a hidden parent rendered and ticked its own world: it does neither now, keeping its last picture.
+  - A Backdrop under a hidden parent drew its world behind the scene and ticked it: it does neither now.
+  - VisibleOnScreenNotifier3D / 2D under a hidden parent reported on screen: it is off screen now.
+  - A MeshInstance3D under a hidden parent took part in the VisibilityManager's culling, queries and impostors (an
+    impostor could draw it): it is left out now. Terrain3D already followed the rule; it uses the shared function now.
+- The stats count what is hidden: `cw_particles_stats.hidden`, `cw_decal_stats.hidden`, `cw_water_stats.hidden`,
+  `cw_gi_stats.hidden`. The `visible` property docs of Node3D and Node2D state the rule.
+- Sample `hidden_vis` and gate `hidden-vis`: each type under a hidden Node3D (and a Node2D), natively and as the dual
+  cart through romdev, GL and WebGPU: hidden draws the picture of the same scene without them, pixel for pixel, and
+  moves none of their counters, and so does each node hidden by its own `visible` under shown parents; shown again
+  they draw and run, the particles' and the shockwave's clocks resumed where they stopped. Its controls,
+  `CW_TEST_HIDDEN_SELF_ONLY=1` (a node's own `visible` only) and `CW_TEST_HIDDEN_PARENTS_ONLY=1` (its ancestors
+  only), each fail the picture and every type's counter. A visible tree draws as before, pixel for pixel.
+
 ## v0.64.0 (2026-11-22)
 
 ### Added
@@ -74,6 +112,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - WebGPU split screen in one pass drawn view by view: a scene with a background colour (a WorldEnvironment, no sky
   texture) cleared the whole target for each view, so every view but the last was black. The first view clears to it
   and the later ones keep the views before them, as on GL.
+
 ## v0.62.0 (2026-11-22)
 
 ### Added

@@ -159,7 +159,7 @@ static bool light_fn(cw_node n, void *user) {
   lights_ctx *c = user;
   if (!cw_node_is(n, "OmniLight3D")) return true;
   cw_value v;
-  if (cw_node_get_prop(n, "visible", &v) && v.type == CW_T_BOOL && !v.b) return true;
+  if (!cw_node_visible_in_tree(n)) return true;
   if (cw_node_get_prop(n, "bake_direct", &v) && v.b) return true;
   float e = cw_node_get_prop(n, "energy", &v) ? (float)v.f : 0;
   if (e <= 0) return true;

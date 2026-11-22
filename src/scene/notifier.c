@@ -137,14 +137,13 @@ static void n3_fixed(cw_node n, void *d, double dt) {
   (void)dt;
   notifier3d *a = d;
   cw_tree *t = cw_node_tree(n);
-  const cw_node3d *d3 = cw_node_data_t(n, node3d_t);
-  change(n, &a->on_screen, t && d3 && d3->visible && view3d_sees(tree_view3d(t), cw_node3d_global_transform(n), a->center, a->size));
+  /* hidden by itself or an ancestor: off screen (cw_node_visible_in_tree) */
+  change(n, &a->on_screen, t && cw_node_visible_in_tree(n) && view3d_sees(tree_view3d(t), cw_node3d_global_transform(n), a->center, a->size));
 }
 static void n2_fixed(cw_node n, void *d, double dt) {
   (void)dt;
   notifier2d *a = d;
-  const cw_node2d *d2 = cw_node_data_t(n, node2d_t);
-  change(n, &a->on_screen, d2 && d2->visible && cw_view2d_sees_rect(cw_node_tree(n), cw_node2d_global_transform(n), a->center, a->size));
+  change(n, &a->on_screen, cw_node_visible_in_tree(n) && cw_view2d_sees_rect(cw_node_tree(n), cw_node2d_global_transform(n), a->center, a->size));
 }
 static void n3_exit(cw_node n, void *d) {
   change(n, &((notifier3d *)d)->on_screen, false); /* leaving the tree leaves the screen */

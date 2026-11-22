@@ -713,6 +713,7 @@ bool cw__mesh3d_info(cw_node n, cw__mesh_info *out) {
   mesh3d *m = cw_node_data_t(n, mesh3d_t);
   if (!m) return false;
   if (m->batch_rec) return false; /* a static batch draws it: no LOD, occlusion or impostor of its own */
+  if (!cw_node_visible_in_tree(n)) return false; /* hidden by itself or an ancestor: no culling, query or impostor */
   mesh_rebuild(n, m);
   memset(out, 0, sizeof *out);
   out->vis = &m->vis;
@@ -939,7 +940,10 @@ static void light_pre_render(cw_node n, void *data, double alpha) {
 #else
   const int no_shadows = 0;
 #endif
-  l->light->base.cast_shadow = l->shadow && l->light->base.visible && (l->kind == 0 || cw__quality_local_shadows()) && !no_shadows;
+  /* hidden by itself or an ancestor: three.c and the clustered lights skip it (they walk the hierarchy); no shadow
+   * map, no cascades and no fog light either */
+  bool shown = cw_node_visible_in_tree(n);
+  l->light->base.cast_shadow = l->shadow && shown && (l->kind == 0 || cw__quality_local_shadows()) && !no_shadows;
   if (l->light->shadow) {
     t3_light_shadow *sh = l->light->shadow;
     sh->map_width = sh->map_height = cw__quality_shadow_size(l->shadow_size); /* cartwheel/quality.h */
@@ -954,7 +958,7 @@ static void light_pre_render(cw_node n, void *data, double alpha) {
       t3_camera_update_projection_matrix(sc);
     }
   }
-  if (l->shadow && l->light->base.visible && !no_shadows) {
+  if (l->shadow && shown && !no_shadows) {
     cw_tree *t = cw_node_tree(n);
     if (t) state(t)->shadows_enabled = true;
     /* a cascaded sun (cartwheel/lighting.h): the lighting pass draws its
@@ -966,7 +970,7 @@ static void light_pre_render(cw_node n, void *data, double alpha) {
       cw__lighting_csm_light(t, l->light, &cfg);
     }
   }
-  if (l->light->base.visible && l->fog_energy > 0) {
+  if (shown && l->fog_energy > 0) {
     void cw__vfog_push_light(cw_tree *t, const t3_light *l, int kind, bool shadow, float fog_energy); /* src/render/volumetric_fog.c */
     cw_tree *t = cw_node_tree(n);
     if (t) cw__vfog_push_light(t, l->light, l->kind, l->shadow, l->fog_energy);
@@ -1486,8 +1490,7 @@ void cw__mesh3d_set_lightmap(cw_node n, t3_geometry *g, t3_texture *lm, float in
 bool cw__light3d_bake_info(cw_node n, cw__light *out) {
   light3d *l = cw_node_data_t(n, light3d_t);
   if (!l || !l->bake || l->energy <= 0) return false;
-  cw_node3d *nd = cw_node_data(n, "Node3D");
-  if (!nd || !nd->visible) return false;
+  if (!cw_node_visible_in_tree(n)) return false;
   for (t3_object *o = l->light->base.parent; o; o = o->parent)
     if (!o->visible) return false;
   const t3_mat4 *m = &l->light->base.matrix_world;

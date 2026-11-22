@@ -157,7 +157,8 @@ static void frame_hook(cw_tree *t, cw_pipeline *p, int w, int h, double alpha) {
     if (!d || cw_node_tree(nd) != t) { cw_array_remove_swap(&W->nodes, i); i--; continue; }
     d->ran_passes = 0; /* (this frame: none unless it renders below) */
     bool have = world_sync(nd, d);
-    if (!have || !(d->opacity > 0) || n >= (int)CW_ARRAY_LEN(list)) continue; /* opacity 0: nothing at all */
+    /* opacity 0, or hidden by itself or a Node3D, Node2D or CanvasLayer above it (cw_node_visible_in_tree): nothing at all */
+    if (!have || !(d->opacity > 0) || !cw_node_visible_in_tree(nd) || n >= (int)CW_ARRAY_LEN(list)) continue;
     list[n++] = d;
   }
   if (!n) return;
@@ -386,7 +387,7 @@ static void fixed_hook(cw_tree *t, double dt, void *u) {
   for (int i = 0; i < W->nodes.count; i++) {
     cw_node n = W->nodes.data[i];
     backdrop *d = BD(n);
-    if (d && cw_node_tree(n) == t && world_sync(n, d) && d->world) cw_tree_fixed_update(d->world, dt);
+    if (d && cw_node_tree(n) == t && world_sync(n, d) && d->world && cw_node_visible_in_tree(n)) cw_tree_fixed_update(d->world, dt); /* (hidden: its world pauses) */
   }
 }
 static void update_hook(cw_tree *t, double dt, void *u) {
@@ -396,7 +397,7 @@ static void update_hook(cw_tree *t, double dt, void *u) {
   for (int i = 0; i < W->nodes.count; i++) {
     cw_node n = W->nodes.data[i];
     backdrop *d = BD(n);
-    if (d && cw_node_tree(n) == t && d->world) cw_tree_update(d->world, dt);
+    if (d && cw_node_tree(n) == t && d->world && cw_node_visible_in_tree(n)) cw_tree_update(d->world, dt);
   }
 }
 

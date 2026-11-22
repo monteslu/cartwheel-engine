@@ -247,6 +247,7 @@ typedef struct cw_water_stats {
   int underwater;         /* 1 when the last frame was drawn from under a Water3D's surface (its fog, caustics, waterline) */
   float see_light;        /* 0..1: the light reaching the last surface drawn, which scales what shows through it (see_through) */
   int sun_light;          /* 1 when the last surface drawn was lit by a scene light (Water3D sun, else the first DirectionalLight3D): no ProceduralSky */
+  int hidden;             /* Water3D nodes hidden by themselves or an ancestor: no surface, reflection, refraction, underwater pass or ripples */
 } cw_water_stats;
 /* Zeroed when t is NULL or has no water. */
 void cw_water_get_stats(cw_tree *t, cw_water_stats *out);

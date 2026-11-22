@@ -169,6 +169,7 @@ typedef struct cloth3d {
   /* runtime */
   int32_t hash;
   bool dirty;
+  bool hidden; /* hidden by itself or an ancestor at the last tick: not stepped; rebuilt at rest when shown again */
   cw_cloth cloth;
   frame fr;
   V *rest_local;           /* rest positions in the follow frame (node frames only) */
@@ -331,6 +332,13 @@ static void cloth_build(cw_node n, cloth3d *d) {
 static cw_cloth cloth_before(cw_node n, void *data, float dt) {
   (void)dt;
   cloth3d *d = data;
+  /* hidden by itself or an ancestor: not stepped (its mesh hides in pre_render); shown again it starts over at rest in
+   * its frame as it is then, rather than from a pose the frame left long ago */
+  if (!cw_node_visible_in_tree(n)) {
+    d->hidden = true;
+    return (cw_cloth){ 0 };
+  }
+  if (d->hidden) d->hidden = false, d->dirty = true;
   if (d->dirty || !cw_cloth_valid(d->cloth)) cloth_build(n, d);
   if (!cw_cloth_valid(d->cloth)) return (cw_cloth){ 0 };
   int cnt = cw_cloth_vertex_count(d->cloth);
@@ -353,9 +361,11 @@ static void cloth_after(void *data) {
 }
 
 static void cloth_pre_render(cw_node n, void *data, double alpha) {
-  (void)n;
   cloth3d *d = data;
-  if (d->geo && cw_cloth_valid(d->cloth)) cw_cloth_update_geometry(d->cloth, d->geo, (float)alpha);
+  /* its mesh is in the scene's root (world space), not under the node: it hides with the node here */
+  bool shown = cw_node_visible_in_tree(n);
+  if (d->mesh) d->mesh->base.visible = shown;
+  if (shown && d->geo && cw_cloth_valid(d->cloth)) cw_cloth_update_geometry(d->cloth, d->geo, (float)alpha);
 }
 
 static void cloth_enter(cw_node n, void *data) {
@@ -460,6 +470,7 @@ typedef struct rope3d {
   int32_t hash;
   float tension;
   bool dirty;
+  bool hidden; /* as Cloth3D's (a LINKS rope's bodies are physics and go on; only its meshes hide) */
   cw_cloth rope;
   frame fs, fe;
   V start_local, end_local; /* the ends in their frames' nodes (node frames) */
@@ -592,6 +603,13 @@ static void rope_build(cw_node n, rope3d *d) {
 static cw_cloth rope_before(cw_node n, void *data, float dt) {
   (void)dt;
   rope3d *d = data;
+  if (d->mode != MODE_LINKS) { /* (as Cloth3D: paused while hidden, rebuilt when shown) */
+    if (!cw_node_visible_in_tree(n)) {
+      d->hidden = true;
+      return (cw_cloth){ 0 };
+    }
+    if (d->hidden) d->hidden = false, d->dirty = true;
+  }
   bool built = d->mode == MODE_LINKS ? d->nlinks > 0 : cw_cloth_valid(d->rope);
   if (d->dirty || !built) rope_build(n, d);
   if (d->mode == MODE_LINKS) {
@@ -621,10 +639,13 @@ static void rope_after(void *data) {
 }
 
 static void rope_pre_render(cw_node n, void *data, double alpha) {
-  (void)n;
   rope3d *d = data;
+  /* its meshes are in the scene's root (world space), not under the node: they hide with the node here */
+  bool shown = cw_node_visible_in_tree(n);
+  if (d->mesh) d->mesh->base.visible = shown;
   if (d->mode == MODE_LINKS) {
     for (int i = 0; i < d->nlinks; i++) {
+      if (d->link_meshes[i]) d->link_meshes[i]->base.visible = shown;
       if (!d->link_meshes[i] || !cw_body3d_valid(d->links[i])) continue;
       cw_xform3 x = cw_body3d_interpolated(d->links[i], (float)alpha);
       t3_object *o = &d->link_meshes[i]->base;
@@ -633,7 +654,7 @@ static void rope_pre_render(cw_node n, void *data, double alpha) {
     }
     return;
   }
-  if (d->geo && cw_cloth_valid(d->rope)) cw_cloth_update_geometry(d->rope, d->geo, (float)alpha);
+  if (shown && d->geo && cw_cloth_valid(d->rope)) cw_cloth_update_geometry(d->rope, d->geo, (float)alpha);
 }
 
 static void rope_enter(cw_node n, void *data) {

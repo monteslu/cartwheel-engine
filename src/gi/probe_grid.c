@@ -188,7 +188,7 @@ void cw__gi_grids_exec(gi_tree *g, cw_pass_ctx *ctx) {
   t3_renderer *r = ctx->renderer;
   cw_node n = g->grids.data[0]; /* one grid shades a tree (gi.h) */
   probe_grid *p = cw_node_data_t(n, grid_t);
-  if (!p) return;
+  if (!p || p->hidden) return; /* hidden: no captures; shown again its sweep goes on where it was */
   int res[3];
   grid_res(p, res);
   int total = res[0] * res[1] * res[2];
@@ -245,6 +245,15 @@ void cw__gi_grids_exec(gi_tree *g, cw_pass_ctx *ctx) {
   if (!wgpu) t3_renderer_reset_bindings(r);
 }
 
+int cw__gi_grids_visibility(gi_tree *g) {
+  int n = 0;
+  for (int i = 0; i < g->grids.count; i++) {
+    probe_grid *p = cw_node_data_t(g->grids.data[i], grid_t);
+    if (p && (p->hidden = !cw_node_visible_in_tree(g->grids.data[i]))) n++;
+  }
+  return n;
+}
+
 /* a new sky: a baked grid sweeps again (it holds the old sky's light) */
 void cw__gi_grids_sky_changed(gi_tree *g) {
   for (int i = 0; i < g->grids.count; i++) {
@@ -256,7 +265,7 @@ void cw__gi_grids_sky_changed(gi_tree *g) {
 void cw__gi_fill_grid(t3_extension_ctx *c, gi_tree *g) {
   float v[4] = { 0, 0, 0, 0 };
   probe_grid *p = g->grids.count ? cw_node_data_t(g->grids.data[0], grid_t) : NULL;
-  if (!p || !p->atlas || (!p->baked && p->sweeps == 0)) {
+  if (!p || p->hidden || !p->atlas || (!p->baked && p->sweeps == 0)) {
     t3_extension_set_uniform(c, "giGridMin", v, 4);
     t3_extension_set_uniform(c, "giGridMax", v, 4);
     t3_extension_set_uniform(c, "giGridRes", v, 4);

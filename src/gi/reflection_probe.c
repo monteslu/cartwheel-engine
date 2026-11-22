@@ -310,6 +310,13 @@ static void probes_exec(cw_pass_ctx *ctx, void *user) {
     g->stats.probes_bound_max = g->bound_max;
     g->bound_max = 0;
   }
+  /* the visibility rule (cw_node_visible_in_tree), read once a view: the fill hook runs for every draw */
+  g->stats.hidden = 0;
+  for (int i = 0; i < g->probes.count; i++) {
+    refl_probe *p = cw_node_data_t(g->probes.data[i], probe_t);
+    if (p && (p->hidden = !cw_node_visible_in_tree(g->probes.data[i]))) g->stats.hidden++;
+  }
+  g->stats.hidden += cw__gi_grids_visibility(g);
   if (!ctx->renderer || !ctx->scene3d) return;
   if (g->hook_renderer != ctx->renderer) {
     cw_shading_part(ctx->renderer, "gi", cw__gi_fill, g);
@@ -353,7 +360,7 @@ static void captures(gi_tree *g, cw_pass_ctx *ctx) {
   /* captures in flight go on first, each one of the frame's budget */
   for (int i = 0; i < g->probes.count; i++) {
     refl_probe *p = cw_node_data_t(g->probes.data[i], probe_t);
-    if (!p || !p->job || !t3_pmrem_scene_job_steps_left(p->job)) continue;
+    if (!p || !p->job || !t3_pmrem_scene_job_steps_left(p->job) || p->hidden) continue; /* (a hidden probe's capture waits) */
     /* the quality preset moved the probe's size: what was drawn is the wrong size, start again */
     if (p->job_size != probe_size(p)) {
       job_free(p);
@@ -370,7 +377,7 @@ static void captures(gi_tree *g, cw_pass_ctx *ctx) {
   for (int i = 0; i < g->probes.count && nd < 64; i++) {
     cw_node n = g->probes.data[i];
     refl_probe *p = cw_node_data_t(n, probe_t);
-    if (!p) continue;
+    if (!p || p->hidden) continue; /* hidden: not aged, not due; shown again it goes on as it was */
     p->age++;
     if (p->job && t3_pmrem_scene_job_steps_left(p->job)) continue;
     int over = 0;
@@ -502,7 +509,7 @@ void cw__gi_fill(t3_extension_ctx *c, void *user) {
     for (int i = 0; i < g->probes.count; i++) {
       cw_node n = g->probes.data[i];
       refl_probe *p = cw_node_data_t(n, probe_t);
-      if (!p || !p->rt[p->front] || p->intensity <= 0) continue;
+      if (!p || p->hidden || !p->rt[p->front] || p->intensity <= 0) continue;
       cand q = { .p = p, .id = n.id };
       probe_box(n, p, q.c, q.h, q.o);
       /* the sphere reaches the box */

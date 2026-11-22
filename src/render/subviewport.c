@@ -405,6 +405,9 @@ static void render_hook(cw_tree *t, double alpha, void *u) {
       d->warned = true;
       continue;
     }
+    /* hidden by itself or an ancestor (a Node3D, Node2D or CanvasLayer above it): no render; what it drew last stays
+     * in its texture, and its world (below) pauses */
+    if (!cw_node_visible_in_tree(n)) continue;
     if (!ensure_rt(d) || !due(d)) continue;
     if (own) {
       double t0 = now_ms();
@@ -434,7 +437,7 @@ static void fixed_hook(cw_tree *t, double dt, void *u) {
   if (!W || cw_tree_paused(t)) return;
   for (int i = 0; i < W->nodes.count; i++) {
     subvp *d = SV(W->nodes.data[i]);
-    if (d && d->world) cw_tree_fixed_update(d->world, dt);
+    if (d && d->world && cw_node_visible_in_tree(W->nodes.data[i])) cw_tree_fixed_update(d->world, dt);
   }
 }
 static void update_hook(cw_tree *t, double dt, void *u) {
@@ -443,7 +446,7 @@ static void update_hook(cw_tree *t, double dt, void *u) {
   if (!W) return;
   for (int i = 0; i < W->nodes.count; i++) {
     subvp *d = SV(W->nodes.data[i]);
-    if (d && d->world) cw_tree_update(d->world, dt);
+    if (d && d->world && cw_node_visible_in_tree(W->nodes.data[i])) cw_tree_update(d->world, dt);
   }
 }
 

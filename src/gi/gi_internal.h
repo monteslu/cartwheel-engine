@@ -25,6 +25,7 @@ typedef struct refl_probe {
   /* a capture spread over frames (EVERY_N_FRAMES): three.c's scene job, drawing into rt[front ^ 1] */
   t3_pmrem_scene_job *job;
   int job_size, job_per_frame; /* its cube size, steps a frame */
+  bool hidden;             /* hidden by itself or an ancestor (cw_node_visible_in_tree, read once a view): binds to no draw, captures nothing */
 } refl_probe;
 
 typedef struct probe_grid {
@@ -36,6 +37,7 @@ typedef struct probe_grid {
   int atlas_w, atlas_h, res_now[3];
   int next, sweeps, updates;
   bool baked, requested, clear_atlas;
+  bool hidden;             /* hidden by itself or an ancestor (once a view): shades nothing, captures nothing */
 } probe_grid;
 
 typedef struct gi_tree {
@@ -75,6 +77,8 @@ void cw__gi_fill_grid(t3_extension_ctx *c, gi_tree *g);
 void cw__gi_grids_exec(gi_tree *g, cw_pass_ctx *ctx);
 void cw__gi_grid_tree_free(gi_tree *g);
 void cw__gi_grids_sky_changed(gi_tree *g);
+/* each grid's `hidden` from the visibility rule (once a view); the count hidden */
+int cw__gi_grids_visibility(gi_tree *g);
 void cw__register_probe_grid(void);
 /* give every Standard / Physical material under o the gi part */
 void cw__gi_tag(gi_tree *g, t3_object *o);

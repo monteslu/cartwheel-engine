@@ -1147,7 +1147,7 @@ static void vol_pre_render(cw_node n, void *data, double alpha) {
   (void)alpha;
   cw_tree *t = cw_node_tree(n);
   t3_object *o = cw_node3d_object(n);
-  if (!t || !o || !o->visible) return;
+  if (!t || !o || !cw_node_visible_in_tree(n)) return;
   push_volume(t, o, data);
 }
 

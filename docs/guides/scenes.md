@@ -12,6 +12,31 @@ Paths find nodes: `"Arm/Hand"`, `"../Sibling"`, `"/root/Level/Player"` (absolute
 
 Types inherit: `MeshInstance3D` extends `Node3D`, which extends `Node`. A node carries one data block per type in its chain; [cw_node_data](api:cw_node_data) returns the block for one type (or `NULL` when the node is not of that type). [Node3D](node:Node3D) owns a three.c object and a transform; [Node2D](node:Node2D) has a 2D transform, z order and modulate. Both can render between the last two fixed ticks (`interpolate`); code that moves such a node in `fixed_update` calls `cw_node3d_snapshot` / `cw_node2d_snapshot` first, as `scene3d` does for its orbiting ball.
 
+## Visibility
+
+One rule holds for every node type: a node is shown when it and every [Node3D](node:Node3D), [Node2D](node:Node2D) and `CanvasLayer` above it have `visible` on ([cw_node_visible_in_tree](api:cw_node_visible_in_tree) answers it, from the nodes' properties, so it holds in `fixed_update` too). A node hidden by itself or by any ancestor draws nothing, lights nothing, casts no shadow and shows in no reflection, SubViewport or fog, and its per-frame work stops. Physics, audio and animation are not visibility: a hidden body still collides, a hidden player still plays. Controls follow their own `visible` chain ([cw_control_visible_in_tree](api:cw_control_visible_in_tree)).
+
+What each type does while hidden, and what it goes on with when shown again:
+
+| Type | Hidden | Shown again |
+|---|---|---|
+| MeshInstance3D, CSG, MultiMeshInstance3D, Terrain3D, nav debug lines | not drawn, cast or culled; no occlusion query or impostor | as it is now |
+| GPUParticles3D | its clock stops: no step, no GPU work, no draw; `cw_particles_burst` does nothing; attractors and colliders hidden act on nothing | goes on from the particles it had; the emitter's pose is current, so a system moved while hidden spawns where it is |
+| GPUParticles2D | not stepped (and not drawn) | goes on from the particles it had |
+| Trail3D | keeps no samples | grows again from where the node is |
+| Decal3D | not drawn; a mesh decal's pieces (children of the surfaces it was clipped onto) hide with it and nothing is clipped | a mesh decal moved or changed meanwhile clips again |
+| OmniLight3D, SpotLight3D, DirectionalLight3D | lights nothing (forward or clustered), no shadow map or cascades, nothing in the volumetric fog, not baked | lights as it is now |
+| FogVolume3D | not in the volumetric fog | as it is now |
+| Shockwave3D, Explosion3D | paused; firing (`cw_shockwave_fire`, `cw_explosion_fire`, autostart) does nothing; an explosion's scorch mark keeps its look | goes on from where it was |
+| Water3D | no surface, reflection, refraction, underwater pass or ripples (its waves still answer `cw_water_height_at`, and Buoyancy3D still floats) | the ripples go on as they were |
+| ReflectionProbe3D, LightProbeGrid3D | bound to no draw; no capture (a capture under way waits) | its last capture shades again; captures go on where they were |
+| Cloth3D, Rope3D | not drawn or stepped (a LINKS rope's bodies are physics and go on; only its meshes hide) | rebuilt at rest in its frame as it is then |
+| SubViewport | not rendered; its texture keeps its last picture; its own world does not tick | renders and ticks again |
+| Backdrop | not drawn behind the scene; its world does not tick | drawn and ticks again |
+| VisibleOnScreenNotifier3D / 2D | off screen (`screen_exited` when it was on) | tested again |
+
+Two test switches break the rule on purpose, the controls of the `hidden-vis` gate (`samples/hidden_vis`: one of each type, hidden by a Node3D above it and then by its own `visible`), which must then fail every check: `CW_TEST_HIDDEN_SELF_ONLY=1` reads only a node's own `visible`, `CW_TEST_HIDDEN_PARENTS_ONLY=1` only its ancestors.
+
 ## Lifecycle and processing order
 
 A type's callbacks, all optional:
