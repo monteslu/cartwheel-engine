@@ -4,6 +4,12 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.59.1 (2026-11-22)
+
+### Fixed
+- The native SDK builds (Linux, Windows, macOS, Android) fetch Signalsmith Stretch and Signalsmith Linear, the headers
+  the tempo stretcher (`cw_voice_set_tempo`) compiles against; the SDK workflow's dependency list lacked them.
+
 ## v0.59.0 (2026-11-22)
 
 ### Added
