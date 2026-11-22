@@ -137,6 +137,147 @@
     "note": "the pause menu by touch: a pad plays and pauses, then a finger taps Settings, which opens. Control: the tap lands in an empty corner, so the pause menu stays"
   },
   {
+    "name": "shell-pause-items",
+    "app": "shell_pause",
+    "frames": 90,
+    "input": "shell-pause-items.json",
+    "controlInput": "shell-pause-items-control.json",
+    "fields": [
+      "shell.screen",
+      "shell.item",
+      "game.calls",
+      "game.index",
+      "game.hook_screen",
+      "game.hops",
+      "game.first_hop",
+      "game.color",
+      "game.items"
+    ],
+    "expect": {
+      "shell.screen": 3,
+      "game.calls": 1,
+      "game.index": 1,
+      "game.hook_screen": 3,
+      "game.first_hop": 0,
+      "game.hops": 0,
+      "game.color": 1,
+      "game.items": 2
+    },
+    "note": "the game's own pause items: the menu is Resume, Restart, Color, Settings, Quit to title; two downs and South choose the second game item, the shell is back in play when pause_item runs with index 1 and the game changes the colour. Control: one down, the first item (index 0, the colour stays), so a mis-indexed hook fails"
+  },
+  {
+    "name": "shell-pause-items-wired",
+    "app": "shell_pause",
+    "frames": 90,
+    "input": "shell-pause-items.json",
+    "controlEnv": {
+      "SHELL_PAUSE_NOHOOK": "1"
+    },
+    "fields": [
+      "shell.screen",
+      "shell.item",
+      "game.calls",
+      "game.index",
+      "game.hook_screen",
+      "game.hops",
+      "game.first_hop",
+      "game.color",
+      "game.items"
+    ],
+    "expect": {
+      "shell.screen": 3,
+      "game.calls": 1,
+      "game.index": 1,
+      "game.color": 1
+    },
+    "note": "shell-pause-items, the hook wired. Control: the game's hook ignores the call (an item drawn but not wired): no call, the colour stays"
+  },
+  {
+    "name": "shell-pause-leak",
+    "app": "shell_pause",
+    "frames": 110,
+    "input": "shell-pause-leak.json",
+    "controlInput": "shell-pause-leak-control.json",
+    "fields": [
+      "shell.screen",
+      "shell.item",
+      "game.calls",
+      "game.index",
+      "game.hook_screen",
+      "game.hops",
+      "game.first_hop",
+      "game.color",
+      "game.items"
+    ],
+    "expect": {
+      "shell.screen": 3,
+      "game.calls": 1,
+      "game.index": 0,
+      "game.first_hop": 0,
+      "game.hops": 0
+    },
+    "note": "the pause menu's press stays the menu's: Start resumes once, then South on Restart returns to play, and the game's first tick after each sees no new South (game.first_hop 0, no hop). Control: South pressed again on the frame after Start resumed, a real press on the game's first tick, which the game must see (game.first_hop 1)"
+  },
+  {
+    "name": "shell-pause-none",
+    "app": "shell_pause",
+    "frames": 90,
+    "input": "shell-pause-items.json",
+    "env": {
+      "SHELL_PAUSE_ITEMS": "0"
+    },
+    "controlEnv": {
+      "SHELL_PAUSE_ITEMS": "2"
+    },
+    "fields": [
+      "shell.screen",
+      "shell.item",
+      "game.calls",
+      "game.index",
+      "game.hook_screen",
+      "game.hops",
+      "game.first_hop",
+      "game.color",
+      "game.items"
+    ],
+    "expect": {
+      "shell.screen": 1,
+      "game.calls": 0,
+      "game.items": 0
+    },
+    "note": "a game with no pause items keeps the shell's three: two downs and South are Quit to title (shell.screen 1). Control: the same presses with two items land on a game item and stay in play"
+  },
+  {
+    "name": "shell-pause-touch",
+    "app": "shell_pause",
+    "frames": 80,
+    "input": "shell-pause-touch.json",
+    "controlInput": "shell-pause-touch-control.json",
+    "hosts": [
+      "native",
+      "romdev"
+    ],
+    "webgpu": true,
+    "fields": [
+      "shell.screen",
+      "shell.item",
+      "game.calls",
+      "game.index",
+      "game.hook_screen",
+      "game.hops",
+      "game.first_hop",
+      "game.color",
+      "game.items"
+    ],
+    "expect": {
+      "shell.screen": 3,
+      "game.calls": 1,
+      "game.index": 1,
+      "game.color": 1
+    },
+    "note": "a game's pause item by touch: a pad plays and pauses, a finger taps the second game item. Control: the tap lands in an empty corner, so the pause menu stays"
+  },
+  {
     "name": "shell-mouse",
     "app": "shell_join",
     "frames": 90,

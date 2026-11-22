@@ -30,6 +30,8 @@ cw_add_app(shell_join SOURCES shell_join/main.c)
 # the same with two seats and a start that takes about 300 ms
 cw_add_app(shell_join_slow SOURCES shell_join/main.c)
 target_compile_definitions(shell_join_slow PRIVATE SHELL_JOIN_SEATS=2 SHELL_JOIN_START_WORK=300000000u)
+# the game's own items in the pause menu (restart, change colour) between Resume and Settings
+cw_add_app(shell_pause SOURCES shell_pause/main.c)
 
 # button prompts (cartwheel/prompt.h): every glyph on dark and light, the diamond's size ladder, a player's prompts on
 # the device they used last, a shared prompt, each device, lanes by position, hint markup from catalogs (Arabic too)

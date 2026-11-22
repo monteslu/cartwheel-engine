@@ -4,6 +4,24 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.58.0 (2026-11-21)
+
+### Added
+- The pause menu takes up to two items of the game's own, after Resume and before Settings: `cw_shell_desc` gains
+  `pause_items[2]` (labels, NULL for none) and `pause_item(index, user)`. Choosing one returns to play as Resume does
+  and then calls the hook with the item's index; the game switches its own screen (restart a level, pick another song).
+  Gamepad, keyboard, mouse and touch all choose them. A game that sets none gets the same three-item menu, pixel for
+  pixel. `cw_shell_set_pause_items` changes the items from the next time the menu opens.
+- Sample `shell_pause` and gates `shell-pause-items` (order and index; its control chooses the other item),
+  `shell-pause-items-wired` (its control leaves the hook unanswered), `shell-pause-leak` (the choosing press does not
+  reach the game; its control presses again on the game's first tick), `shell-pause-none` (no items: the old menu; its
+  control adds two) and `shell-pause-touch` (a tap on a game item; its control taps an empty corner).
+
+### Fixed
+- Resume no longer hands its press to the game. The tick Resume (or Back, or
+  Start) left the pause menu on also ran gameplay, which saw the South or Start press as just pressed: a jump on South
+  fired on resume. Gameplay now starts on the next tick, as it already did for the press that opened the menu.
+
 ## v0.57.7 (2026-11-21)
 
 ### Fixed

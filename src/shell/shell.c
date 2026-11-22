@@ -84,6 +84,10 @@ static struct {
   cw_bus music, sfx;
   int dbg_screen, dbg_hud, dbg_players, dbg_item, dbg_shake, dbg_starting;
   bool inited, own_audio, hooked, just_resumed;
+  bool resume_quiet;   /* the pause menu went back to play this tick: gameplay waits for the next tick, so the press is not the game's */
+  const char *pause_label[2]; /* the game's pause items, read from the desc when the pause menu opens */
+  int pause_index[2];  /* each shown item's index in cw_shell_desc.pause_items */
+  int n_pause;         /* how many are shown (0..2), between Resume and Settings */
 } S;
 
 static void sound(cw_shell_sound s) {
@@ -93,6 +97,14 @@ static void go(cw_shell_screen to) {
   cw_shell_screen from = S.screen;
   S.screen = to;
   S.item = 0;
+  if (to == CW_SHELL_PAUSE) { /* the game's items as the desc names them now (cw_shell_set_pause_items changes them) */
+    S.n_pause = 0;
+    for (int i = 0; i < 2; i++)
+      if (S.d.pause_items[i] && S.d.pause_items[i][0]) {
+        S.pause_label[S.n_pause] = S.d.pause_items[i];
+        S.pause_index[S.n_pause++] = i;
+      }
+  }
   if (to != CW_SHELL_JOIN) S.mid_join = false;
   if (to != CW_SHELL_SETTINGS) cw_quality_menu_close();
   S.dbg_screen = (int)to;
@@ -343,6 +355,10 @@ bool cw_shell_join_press(void) {
   return false;
 }
 
+void cw_shell_set_pause_items(const char *const items[2]) {
+  for (int i = 0; i < 2; i++) S.d.pause_items[i] = items ? items[i] : NULL;
+}
+
 void cw_shell_to_title(void) {
   assign_default(4); /* menus answer every pad again */
   for (int i = 0; i < 4; i++) S.joined_pad[i] = -1;
@@ -381,6 +397,7 @@ static void title_items(void) {
 static void pause_items(void) {
   n_items = 0;
   items[n_items++] = (item){ "Resume", "" };
+  for (int i = 0; i < S.n_pause; i++) items[n_items++] = (item){ S.pause_label[i], "" };
   items[n_items++] = (item){ "Settings", "" };
   items[n_items++] = (item){ "Quit to title", "" };
 }
@@ -475,9 +492,13 @@ static void accept(int i) {
     } else cw_quit();
     break;
   case CW_SHELL_PAUSE:
-    sound(i == 0 ? CW_SHELL_SND_BACK : CW_SHELL_SND_SELECT);
-    if (i == 0) go(CW_SHELL_PLAY);
-    else if (i == 1) {
+    /* Resume, the game's items (1 .. n_pause), Settings, Quit to title */
+    sound(i <= S.n_pause ? CW_SHELL_SND_BACK : CW_SHELL_SND_SELECT);
+    if (i <= S.n_pause) { /* back to play, as Resume; a game item then tells the game, which switches its own screen */
+      go(CW_SHELL_PLAY);
+      S.resume_quiet = true;
+      if (i > 0 && S.d.pause_item) S.d.pause_item(S.pause_index[i - 1], S.d.user);
+    } else if (i == S.n_pause + 1) {
       S.settings_from = CW_SHELL_PAUSE;
       go(CW_SHELL_SETTINGS);
     } else {
@@ -490,7 +511,7 @@ static void accept(int i) {
       sound(CW_SHELL_SND_BACK);
       cw_shell_screen back = S.settings_from;
       go(back);
-      S.item = 1; /* Settings, in the title and pause menus */
+      S.item = back == CW_SHELL_PAUSE ? S.n_pause + 1 : 1; /* Settings, in the title and pause menus */
     } else if (i == SET_CONTROLS) {
       sound(CW_SHELL_SND_SELECT); /* the list shows beside the menu while Controls is highlighted */
     } else settings_change(0);
@@ -620,9 +641,17 @@ bool cw_shell_update(void) {
   if (S.screen != CW_SHELL_PLAY && S.hooked) return false; /* the tree's hook runs the menus */
   if (S.just_resumed) { /* resumed by the hook this tick: that press is not a new pause */
     S.just_resumed = false;
+    if (S.resume_quiet) { /* nor, from the pause menu, the game's: its first tick is the next */
+      S.resume_quiet = false;
+      return false;
+    }
     return true;
   }
   menu_tick();
+  if (S.resume_quiet) { /* the pause menu's press (Resume, a game item, Back) stays the menu's: gameplay runs from the next tick */
+    S.resume_quiet = false;
+    return false;
+  }
   return S.screen == CW_SHELL_PLAY;
 }
 

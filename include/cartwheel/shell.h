@@ -2,7 +2,7 @@
  * its gameplay and art.
  *
  *   loading screen -> title (Play, Settings, Quit) -> join (1-4 players) ->
- *   play <-> pause (Resume, Settings, Quit to title)
+ *   play <-> pause (Resume, the game's own items if any, Settings, Quit to title)
  *
  * Settings: graphics (cartwheel/quality.h; left / right step the preset,
  * accept opens the graphics page of cartwheel/quality_menu.h with every
@@ -115,6 +115,15 @@ typedef struct cw_shell_desc {
   void (*game_save_import)(cw_save_store *store, uint16_t old_version, const void *old, size_t old_size, void *user);
   void (*start)(int players, void *user);   /* Play: the players joined; set the match up */
   void (*quit)(void *user);                 /* Quit to title, from the pause menu */
+  /* Up to two items of the game's own in the pause menu, after Resume and before Settings, drawn like the others
+   * ("Restart level", "Change song"). NULL (or empty) leaves a slot out; with none the menu is Resume, Settings,
+   * Quit to title. The shell reads them when the pause menu opens, so cw_shell_set_pause_items, or new text in a
+   * buffer a label points at, shows from the next pause; a label's text must stay valid while the menu is open. */
+  const char *pause_items[2];
+  /* An item of pause_items was chosen: the shell is back in play (as Resume leaves it: the Back sound, the press
+   * kept from the game's first tick), then this runs with the item's index in pause_items (0 or 1). The game
+   * switches its own screen (restart the level, open its song list). */
+  void (*pause_item)(int index, void *user);
   void (*sound)(cw_shell_sound s, void *user);
   void (*screen_changed)(cw_shell_screen from, cw_shell_screen to, void *user);
   /* Draws behind the title, join, settings and loading screens and the pause menu (in the shell's own 2D pass,
@@ -182,6 +191,9 @@ bool cw_shell_join_requested(void);
  * when no seat is free, or when nobody without a seat pressed A. Call it in fixed_update after cw_shell_update;
  * cw_shell_join_open stays the way to leave a seat or rearrange. Pads only: the keyboard already drives a player. */
 bool cw_shell_join_press(void);
+/* The game's pause menu items (as cw_shell_desc.pause_items, NULL items or NULL for none), from the next time the
+ * pause menu opens. The pointers are kept: the strings must outlive the menu showing them. */
+void cw_shell_set_pause_items(const char *const items[2]);
 void cw_shell_to_title(void); /* end the match and show the title (every pad drives the menus again) */
 /* Loading: progress 0..1 shown on the loading screen; loaded goes on to the title. */
 void cw_shell_loading(float progress);

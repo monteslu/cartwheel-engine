@@ -9,7 +9,8 @@ writes only its gameplay and art:
 - screens: loading, title (Play, Settings, Quit; South or Start on the
   highlighted item), join (one to four players: a pad joins with South and
   leaves with East, the keyboard joins with Enter; Start on any pad plays, see
-  below), play, pause (Resume, Settings, Quit to title) and settings;
+  below), play, pause (Resume, up to two items of the game's own, Settings,
+  Quit to title; see below) and settings;
 - settings: graphics ((header:quality.h): left and right step the preset
   through Very Low, Low, Medium, High, Ultra and Auto, accept opens the
   graphics page of (header:quality_menu.h) with every setting, the render
@@ -95,6 +96,19 @@ static void render(void *user, double alpha) {
 ```
 
 The game's own save data rides in the same block as the settings. A struct that grows at its end keeps old saves; a changed layout takes `game_save_version` and `game_save_migrate`; `game_save_slots` gives named slots instead. See [Saves](guide:saves).
+
+A game can put up to two items of its own in the pause menu, such as restarting the level, picking another song or changing car. Name them in `pause_items` of `cw_shell_desc` (a NULL or empty label leaves its slot out) and set the `pause_item` hook: the items show after Resume and before Settings, drawn, highlighted, tapped and clicked like the shell's own, under the same hint line. Choosing one does what Resume does (the Back sound, the shell is in play again, and the press stays the menu's: the game's first tick after it sees no new press), then calls `pause_item(index, user)` with the item's index in `pause_items` (0 or 1). The game switches its own screen from there. Back and Start still resume. A game that names no items gets the shell's three, the same pixels as before.
+
+```c
+static void pause_item(int index, void *user) {
+  if (index == 0) restart_level();
+  else open_song_list();
+}
+cw_shell_init(&(cw_shell_desc){ .title = "My Game", .start = start,
+                                .pause_items = { "Restart level", "Change song" }, .pause_item = pause_item });
+```
+
+The shell reads the labels when the pause menu opens. `cw_shell_set_pause_items` changes them (or adds or removes one) from the next pause, say a "Restart level" offered only inside a level; a label can also point at a buffer of the game's whose text it rewrites between pauses. The strings must stay valid while the menu is open. The `shell_pause` sample has two items, and renames one each time it is chosen; gates `shell-pause-items`, `shell-pause-items-wired`, `shell-pause-leak`, `shell-pause-none` and `shell-pause-touch` check the order, the index, the return to play, that the choosing press never reaches the game, that a game without items keeps the three-item menu, and touch.
 
 The game's HUD goes away under the shell's menus: `cw_shell_hud_shown()` is true only in play, and false under the pause menu, the settings opened from it, the join screen opened during play and on the title and loading screens. The menus are drawn over the game's frame and dim it only lightly, so a HUD left on screen sits under the menu's lines, and at a large text size (150% and 200%) they overlap. Keep drawing the world and the views; leave out the HUD, the hint lines and the banners.
 
