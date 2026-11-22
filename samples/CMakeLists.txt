@@ -422,3 +422,8 @@ cw_add_app(backdrop SOURCES backdrop/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/b
 cw_add_app(looks SOURCES looks/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/looks/assets)
 cw_add_app(looks_perf SOURCES looks/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/looks/assets)
 target_compile_definitions(looks_perf PRIVATE LOOKS_PERF=1)
+# a one-bit look of the finished frame (DITHER at the DISPLAY stage, the tone options, one dither pixel per screen
+# pixel) beside the game pass it reproduces (looks_onebit), and at 1280x720 for the output pixel gate (looks_onebit_720)
+cw_add_app(looks_onebit SOURCES looks_onebit/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/looks/assets)
+cw_add_app(looks_onebit_720 SOURCES looks_onebit/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/looks/assets)
+target_compile_definitions(looks_onebit_720 PRIVATE ONEBIT_H=720)

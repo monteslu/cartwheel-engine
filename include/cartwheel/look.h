@@ -17,8 +17,8 @@
  *
  * A null look is the plain scene, so a fade from the scene into a look is (null, look, t). The pair is drawn by one
  * POST pass, "looks" (order 295: after automatic exposure has measured the scene, before bloom, so a look's bright
- * strokes glow). Both looks read the same scene colour: a blend costs the two looks and one blend draw, never a
- * second scene. A blend weight of exactly 0 draws the first look alone and 1 the second alone, the same pixels as
+ * strokes glow), or with a look of the pair at CW_LOOK_STAGE_DISPLAY by "looks_display" (see "Stages"). Both looks
+ * read the same scene colour: a blend costs the two looks and one blend draw, never a second scene. A blend weight of exactly 0 draws the first look alone and 1 the second alone, the same pixels as
  * that look set by itself. With no look set the pass does not run at all: the frame is the one drawn without looks,
  * at no cost.
  *
@@ -26,6 +26,18 @@
  * exposure) and writes scene-linear colour divided by that exposure, so the tone curve and the bloom after it treat
  * a look's colours as emissive surfaces of those values seen at exposure 1: a dither's white (1, 1, 1) shows as the
  * tone curve's white of 1 whatever the scene's exposure, and a value over 1 blooms.
+ *
+ * Stages (cw_look_desc.stage): SCENE (the default) draws a look before bloom, the tone curve, the grade, anti-aliasing
+ * and the lens, in the colours above, so bloom glows on its strokes and the tone curve shapes them. DISPLAY draws it
+ * last, in the POST pass "looks_display" (order 9900, after the lens and every POST pass of the game's own before it,
+ * before the HUD), on the finished picture: what the look writes is what the screen shows, so every pixel of a dither
+ * look there is its dark or its light colour (each shown as that linear colour is on screen, sRGB) and nothing after
+ * it (bloom, grain, the vignette, the tone curve) adds a third. A look at DISPLAY reads the finished picture in
+ * linear light (0..1, no exposure: the tone curve has done it) and its colours are clipped to 0..1 (they do not
+ * bloom); a dither's brightness there is the luminance of the displayed colour itself, not the display-like curve.
+ * A pair is drawn at one stage: DISPLAY when either look of the pair asks for it, whatever the weight, so a blend
+ * never changes stage halfway; the plain scene of a null look is then the finished picture. HUD boxes and the
+ * brightness measurement work the same at both stages (measured in linear light at DISPLAY).
  *
  * Grids (characters, half blocks, dither pixels) are anchored to the pixels of each view, from its top left: a still
  * camera gives a still picture, frame after frame (nothing crawls), and every pattern is a function of the frame
@@ -110,7 +122,22 @@ typedef enum {
 } cw_dither_pattern;
 
 /* DITHER (both kinds): every dither pixel is one of two colours. Its brightness is the scene's luminance over its
- * square, through a display-like curve (scene 0.18 is about 0.42), then `contrast` and `bias`.
+ * square, through a display-like curve (scene 0.18 is about 0.42; at the DISPLAY stage the displayed colour's own
+ * luminance), then `contrast` and `bias`.
+ * The tone options (all off in cw_look_default, which keeps the brightness above exactly) shape it further, in this
+ * order: saturated colours by their value (`hue_value`), grey by its luminance times a gain with the highlights kept
+ * (`grey_gain`), an unsharp mask (`sharpen`), `gamma`, then `contrast` and `bias`, then outlines from the depth
+ * (`outline`) taken as the brighter of the two. A setting left at 0 is its default (as cw_look_default sets it), so
+ * a desc of zeros is today's dither. A bright, crisp one-bit picture from a game's finished frame:
+ *
+ *   cw_look_desc d = cw_look_default(CW_LOOK_DITHER_ORDERED);
+ *   d.stage = CW_LOOK_STAGE_DISPLAY;
+ *   d.dither.pattern = CW_DITHER_BLUE_NOISE;
+ *   d.dither.pixel = 1, d.dither.output_pixels = true;     // one dither pixel per screen pixel at any resolution
+ *   d.dither.hue_value = 1.15f, d.dither.grey_gain = 0.8f;  // neon hues read bright, the grey world a little darker
+ *   d.dither.sharpen = 0.9f, d.dither.outline = 1;          // crisp edges, silhouettes and creases drawn light
+ *   d.dither.gamma = 1.3f, d.dither.contrast = 1.3f;
+ *
  * ORDERED compares it with `pattern` at the pixel.
  * DIFFUSE approximates error diffusion in a way a GPU does in parallel and that holds still: it starts from the blue
  * noise threshold and makes `sweeps` passes of a direct binary search (each pixel turns on or off when that brings
@@ -124,24 +151,52 @@ typedef struct cw_look_dither {
   float contrast;          /* about the middle: 1 */
   float bias;              /* added to the brightness (-1..1): 0 */
   int sweeps;              /* DIFFUSE: refinement sweeps (0..8; each is four passes over the dither pixels): 2 */
+  /* pixel counts pixels of the output, not of a 1080 line picture: 1 is one dither pixel a screen pixel at every
+   * resolution (and in every split screen view): false */
+  bool output_pixels;
+  /* the tone options (see above). The colours they read are the scene's through the display-like curve (at DISPLAY
+   * the displayed colour), each channel 0..1, over the dither pixel's square */
+  float hue_value;         /* a saturated colour's brightness is its value (brightest channel) times this (0: off): 0 */
+  float hue_from, hue_to;  /* the saturation ((max - min) / max) over which a colour goes from grey to hue: 0.22, 0.5 */
+  float grey_gain;         /* the luminance times this (1: as it is): 1. Highlights keep their own brightness: */
+  float keep_from, keep_to; /* the gain fades out over this luminance (a blast's white core stays white): 0.6, 0.95 */
+  float sharpen;           /* the unsharp mask's gain (0: off): 0. The blur it sharpens against is four dither pixels */
+  float sharpen_radius;    /* `sharpen_radius` straight out (each 0.15) and four diagonal at half of it (0.1): 2 */
+  float outline;           /* the brightness of depth outlines (0: off): 0. An outline is where 1 / linear depth */
+  float outline_from, outline_to; /* bends (its Laplacian over itself) from this to this, smoothly: 0.02, 0.08 */
+  float gamma;             /* the brightness to this power before the contrast (1: none): 1 */
 } cw_look_dither;
 
 /* CUSTOM: your look as a GLSL ES 3.00 function and its WGSL twin (a cart runs whichever backend the host gives it, so
  * give both). Write
  *   GLSL: vec3 look(vec2 px)          WGSL: fn look(px: vec2f) -> vec3f
  * returning the colour at view pixel px (from the view's top left, pixel centres at .5), in the exposed space the
- * look reads (see "Colours" above). The engine defines, in both languages:
+ * look reads (see "Colours" above; at the DISPLAY stage linear light, shown as it is). The engine defines, in both
+ * languages:
  *   cw_look_size()        the view's size in pixels (vec2)
- *   cw_look_scene(px)     the exposed scene colour at view pixel px (bilinear), vec3
+ *   cw_look_scene(px)     the exposed scene colour at view pixel px (bilinear), vec3; at DISPLAY the finished picture
  *   cw_look_scale()       pixels per pixel of a 1080 line picture (float)
  *   cw_look_param(i)      params[4 i .. 4 i + 3] as a vec4 (i 0..3)
  *   cw_look_time()        cw_time seconds (float); the frame index is cw_look_frame()
+ *   cw_look_stage()       0 at the SCENE stage, 1 at DISPLAY (float)
+ *   cw_look_depth(px)     the depth at view pixel px as the depth buffer holds it (0 near .. 1 far; 1 where nothing
+ *                         was drawn), the same on GL and WebGPU (float)
+ *   cw_look_linear_depth(px) the view-space distance there (float; over 1e30 where nothing was drawn)
+ *   cw_look_bayer(px)     the 8x8 Bayer threshold at view pixel px (0..1, as the ORDERED dither's) (float)
+ *   cw_look_blue_noise(px) the 64x64 blue noise threshold there (0..1, as BLUE_NOISE's), anchored to the view (float)
+ *   cw_look_to_display(c), cw_look_from_display(d) linear light to sRGB display values and back (vec3, clipped 0..1)
  * HUD boxes are applied after it. */
 typedef struct cw_look_custom {
   const char *glsl;        /* copied */
   const char *wgsl;        /* copied */
   float params[16];
 } cw_look_custom;
+
+/* Where in the post chain a look is drawn (see "Stages" above). */
+typedef enum {
+  CW_LOOK_STAGE_SCENE,     /* before bloom and the tone curve (order 295) */
+  CW_LOOK_STAGE_DISPLAY,   /* last, on the finished picture (order 9900): what the look writes is on screen */
+} cw_look_stage;
 
 typedef struct cw_look_desc {
   cw_look_kind kind;
@@ -150,6 +205,7 @@ typedef struct cw_look_desc {
   cw_look_halfblock halfblock;
   cw_look_dither dither;   /* both dither kinds */
   cw_look_custom custom;
+  cw_look_stage stage;     /* SCENE */
 } cw_look_desc;
 
 /* A desc of that kind with every setting at the default noted above. */

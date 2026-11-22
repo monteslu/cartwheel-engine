@@ -54,9 +54,9 @@ typedef struct look {
   /* HALFBLOCK: the palette as a texture (display steps in rgb, then linear) */
   unsigned pal_tex;
   int pal_ver;
-  /* CUSTOM */
-  unsigned prog;
-  int prog_ver;
+  /* CUSTOM: its program at each stage */
+  unsigned prog[2];
+  int prog_ver[2];
 } look;
 static look LOOKS[MAX_LOOKS];
 
@@ -79,7 +79,9 @@ cw_look_desc cw_look_default(cw_look_kind kind) {
                              .flat = 0.45f, .ramp_gain = 1, .flat_bright = 0.75f, .dim_bright = 0.3f, .bright_floor = 0.35f,
                              .peak = 0.5f };
   d.halfblock = (cw_look_halfblock){ .rows = 54 };
-  d.dither = (cw_look_dither){ .pixel = 2, .light = { 1, 1, 1 }, .pattern = CW_DITHER_BAYER, .contrast = 1, .sweeps = 2 };
+  d.dither = (cw_look_dither){ .pixel = 2, .light = { 1, 1, 1 }, .pattern = CW_DITHER_BAYER, .contrast = 1, .sweeps = 2,
+                               .hue_from = 0.22f, .hue_to = 0.5f, .grey_gain = 1, .keep_from = 0.6f, .keep_to = 0.95f,
+                               .sharpen_radius = 2, .outline_from = 0.02f, .outline_to = 0.08f, .gamma = 1 };
   return d;
 }
 
@@ -90,7 +92,7 @@ static void look_release_gpu(look *l) {
   cw_pass_texture_free(l->gv_tex), l->gv_tex = 0;
   cw_pass_texture_free(l->pal_tex), l->pal_tex = 0;
   cw__look_font_free(l->fnt), l->fnt = NULL;
-  l->ascii_ver = l->pal_ver = l->prog_ver = 0;
+  l->ascii_ver = l->pal_ver = l->prog_ver[0] = l->prog_ver[1] = 0;
 }
 
 static void look_free_strings(look *l) {
@@ -214,11 +216,13 @@ static looks_state *state_find(cw_pipeline *p) {
 }
 
 /* debug fields (the pipeline drawn last) */
-static int32_t dbg_ran, dbg_cells, dbg_views, dbg_kind_a, dbg_kind_b;
+static int32_t dbg_ran, dbg_cells, dbg_views, dbg_kind_a, dbg_kind_b, dbg_stage, dbg_tone;
 static float dbg_t;
 
 static bool looks_active(const cw_pass_ctx *ctx, void *u);
 static void looks_exec(cw_pass_ctx *ctx, void *u);
+static bool looks_display_active(const cw_pass_ctx *ctx, void *u);
+static void looks_display_exec(cw_pass_ctx *ctx, void *u);
 
 static looks_state *state_of(cw_pipeline *p) {
   looks_state *s = state_find(p);
@@ -240,11 +244,18 @@ static looks_state *state_of(cw_pipeline *p) {
     cw_debug_i32("look.kind_a", &dbg_kind_a);
     cw_debug_i32("look.kind_b", &dbg_kind_b);
     cw_debug_f32("look.t", &dbg_t);
+    cw_debug_i32("look.stage", &dbg_stage);
+    cw_debug_i32("look.tone", &dbg_tone);
   }
   /* after automatic exposure measured the scene (290), before bloom (300) */
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "looks", .phase = CW_PHASE_POST, .order = 295,
                                            .reads = CW_RES_COLOR | CW_RES_DEPTH, .writes = CW_RES_COLOR,
                                            .active = looks_active, .execute = looks_exec, .destroy = state_destroy, .user = s,
+                                           .webgpu = true, .views = CW_PASS_VIEWS_EACH });
+  /* the DISPLAY stage: last, after the lens and the game's own POST passes (debug views at 10000 still show over it) */
+  cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "looks_display", .phase = CW_PHASE_POST, .order = 9900,
+                                           .reads = CW_RES_COLOR | CW_RES_DEPTH, .writes = CW_RES_COLOR,
+                                           .active = looks_display_active, .execute = looks_display_exec, .user = s,
                                            .webgpu = true, .views = CW_PASS_VIEWS_EACH });
   return s;
 }
@@ -303,14 +314,31 @@ static void plan(const looks_state *s, look **la, look **lb, bool *need_a, bool 
   if (*la == *lb && *need_a && *need_b) *need_b = false, *need_a = true; /* (a blend of a look with itself is that look) */
 }
 
-static bool looks_active(const cw_pass_ctx *ctx, void *u) {
-  (void)ctx;
-  const looks_state *s = u;
+/* the pair's stage: DISPLAY when either look of it asks for it (whatever the weight) */
+static int pair_stage(const looks_state *s) {
+  const look *la = drawable(s->a), *lb = drawable(s->b);
+  return (la && la->d.stage == CW_LOOK_STAGE_DISPLAY) || (lb && lb->d.stage == CW_LOOK_STAGE_DISPLAY) ? 1 : 0;
+}
+
+static bool pair_draws(const looks_state *s) {
   look *la, *lb;
   bool na, nb;
   plan(s, &la, &lb, &na, &nb);
   if (la == lb && la) return true;
   return (na && la) || (nb && lb);
+}
+static bool looks_active(const cw_pass_ctx *ctx, void *u) {
+  (void)ctx;
+  return pair_stage(u) == 0 && pair_draws(u);
+}
+static bool looks_display_active(const cw_pass_ctx *ctx, void *u) {
+  /* split screen with the shared post chain: the views' pictures go through one chain after they are laid out, so
+   * the DISPLAY stage runs once over them, after it (a pass reading the depth would run in each view's run, before
+   * the chain); the views' depth is not there (no outlines, cw_look_depth reads nothing drawn) */
+  const cw_pipeline *p = ctx->pipeline;
+  bool shared = p->views_shared_post && p->nviews >= 2;
+  cw__pipeline_set_pass_reads((cw_pipeline *)p, "looks_display", shared ? CW_RES_COLOR : CW_RES_COLOR | CW_RES_DEPTH);
+  return pair_stage(u) == 1 && pair_draws(u);
 }
 
 /* ── shaders ─────────────────────────────────────────────────────────── */
@@ -330,18 +358,20 @@ static const char *G_COMMON =
     "out vec4 o;\n"
     "vec2 FC;\n";
 static const char *G_FUNCS =
+    "vec3 look_in(vec3 c); vec3 look_out(vec3 c); vec3 look_tsrc(vec2 tl); float look_tv(float y); vec4 look_tone4(vec3 c);\n"
     "float lum(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }\n"
     "float look_E() { return u_ex.x * exp2(dot(texelFetch(u_auto, ivec2(0), 0).rg, vec2(1.0, 1.0 / 1024.0))); }\n"
     "vec2 look_tl() { return vec2(FC.x - u_rect.x, u_rect.y + u_rect.w - FC.y); }\n"
     "vec2 look_global(vec2 tl) { return vec2(u_rect.x + tl.x, u_rect.y + u_rect.w - tl.y); }\n"
     "vec3 look_src(vec2 tl) {\n"
     "  vec2 g = clamp(look_global(tl), u_rect.xy + 0.5, u_rect.xy + u_rect.zw - 0.5);\n"
-    "  return texture(u_src, g / vec2(textureSize(u_src, 0))).rgb;\n"
+    "  return look_in(texture(u_src, g / vec2(textureSize(u_src, 0))).rgb);\n"
     "}\n"
-    "vec3 look_src_px(vec2 tl) {\n"
+    "vec3 look_src_raw(vec2 tl) {\n"
     "  ivec2 q = clamp(ivec2(floor(look_global(tl))), ivec2(u_rect.xy), ivec2(u_rect.xy + u_rect.zw) - 1);\n"
     "  return texelFetch(u_src, q, 0).rgb;\n"
     "}\n"
+    "vec3 look_src_px(vec2 tl) { return look_in(look_src_raw(tl)); }\n"
     "float look_box(vec2 lo, vec2 hi) {\n"
     "  vec4 b[16] = vec4[16](u_b0, u_b1, u_b2, u_b3, u_b4, u_b5, u_b6, u_b7, u_b8, u_b9, u_b10, u_b11, u_b12, u_b13, u_b14, u_b15);\n"
     "  float k[16] = float[16](u_k0.x, u_k0.y, u_k0.z, u_k0.w, u_k1.x, u_k1.y, u_k1.z, u_k1.w, u_k2.x, u_k2.y, u_k2.z, u_k2.w,\n"
@@ -375,12 +405,13 @@ static const char *W_FUNCS =
     "fn look_global(tl: vec2f) -> vec2f { return vec2f(u.u_rect.x + tl.x, u.u_rect.y + u.u_rect.w - tl.y); }\n"
     "fn look_src(tl: vec2f) -> vec3f {\n"
     "  let g = clamp(look_global(tl), u.u_rect.xy + 0.5, u.u_rect.xy + u.u_rect.zw - 0.5);\n"
-    "  return textureSampleLevel(u_src, cw_linear, g / vec2f(textureDimensions(u_src)), 0.0).rgb;\n"
+    "  return look_in(textureSampleLevel(u_src, cw_linear, g / vec2f(textureDimensions(u_src)), 0.0).rgb);\n"
     "}\n"
-    "fn look_src_px(tl: vec2f) -> vec3f {\n"
+    "fn look_src_raw(tl: vec2f) -> vec3f {\n"
     "  let q = clamp(vec2i(floor(look_global(tl))), vec2i(u.u_rect.xy), vec2i(u.u_rect.xy + u.u_rect.zw) - 1);\n"
     "  return textureLoad(u_src, q, 0).rgb;\n"
     "}\n"
+    "fn look_src_px(tl: vec2f) -> vec3f { return look_in(look_src_raw(tl)); }\n"
     "fn look_box(lo: vec2f, hi: vec2f) -> f32 {\n"
     "  let b = array<vec4f, 16>(" BOXES_16("u.u_b", ",") ");\n"
     "  let k = array<f32, 16>(u.u_k0.x, u.u_k0.y, u.u_k0.z, u.u_k0.w, u.u_k1.x, u.u_k1.y, u.u_k1.z, u.u_k1.w, u.u_k2.x, u.u_k2.y,\n"
@@ -403,9 +434,44 @@ static const char *W_FUNCS =
     "  return (f32(v) + 0.5) / 64.0;\n"
     "}\n";
 
-static unsigned build(const char *name, const char *g_decl, const char *g_body, const char *w_fields, const char *w_decl,
+/* The stage's colour spaces (cw_look_stage). look_in: a colour of the image as the look reads it; look_out: the
+ * look's colour as the image holds it; look_tsrc / look_tv: a pixel for the dither's brightness and that
+ * brightness from its luminance; look_tone4: the tone options' colour (rgb) and brightness (a) from a mean colour.
+ * SCENE: the scene-linear image times the exposure, the display-like curve for the dither (as before stages).
+ * DISPLAY: the finished picture (sRGB values): read in linear light, written back as display values; the dither
+ * takes the displayed colour itself. */
+static const char *G_STAGE[2] = {
+    "vec3 look_in(vec3 c) { return c; }\n"
+    "vec3 look_out(vec3 c) { return c / look_E(); }\n"
+    "vec3 look_tsrc(vec2 tl) { return look_src_px(tl); }\n"
+    "float look_tv(float y) { return look_disp(y * look_E()); }\n"
+    "vec4 look_tone4(vec3 c) { return vec4(look_disp3(c * look_E()), look_disp(lum(c) * look_E())); }\n",
+    "vec3 look_in(vec3 c) { vec3 x = clamp(c, 0.0, 1.0); return mix(pow((x + 0.055) / 1.055, vec3(2.4)), x / 12.92, vec3(lessThanEqual(x, vec3(0.04045)))); }\n"
+    "vec3 look_out(vec3 c) { vec3 x = clamp(c, 0.0, 1.0); return mix(pow(x, vec3(0.41666)) * 1.055 - vec3(0.055), x * 12.92, vec3(lessThanEqual(x, vec3(0.0031308)))); }\n"
+    "vec3 look_tsrc(vec2 tl) { return look_src_raw(tl); }\n"
+    "float look_tv(float y) { return clamp(y, 0.0, 1.0); }\n"
+    "vec4 look_tone4(vec3 c) { vec3 d = clamp(c, vec3(0.0), vec3(1.0)); return vec4(d, lum(d)); }\n",
+};
+static const char *W_STAGE[2] = {
+    "fn look_in(c: vec3f) -> vec3f { return c; }\n"
+    "fn look_out(c: vec3f) -> vec3f { return c / look_E(); }\n"
+    "fn look_tsrc(tl: vec2f) -> vec3f { return look_src_px(tl); }\n"
+    "fn look_tv(y: f32) -> f32 { return look_disp(y * look_E()); }\n"
+    "fn look_tone4(c: vec3f) -> vec4f { return vec4f(look_disp3(c * look_E()), look_disp(lum(c) * look_E())); }\n",
+    "fn look_in(c: vec3f) -> vec3f { let x = clamp(c, vec3f(0.0), vec3f(1.0)); return select(pow((x + 0.055) / 1.055, vec3f(2.4)), x / 12.92, x <= vec3f(0.04045)); }\n"
+    "fn look_out(c: vec3f) -> vec3f { let x = clamp(c, vec3f(0.0), vec3f(1.0)); return select(pow(x, vec3f(0.41666)) * 1.055 - vec3f(0.055), x * 12.92, x <= vec3f(0.0031308)); }\n"
+    "fn look_tsrc(tl: vec2f) -> vec3f { return look_src_raw(tl); }\n"
+    "fn look_tv(y: f32) -> f32 { return clamp(y, 0.0, 1.0); }\n"
+    "fn look_tone4(c: vec3f) -> vec4f { let d = clamp(c, vec3f(0.0), vec3f(1.0)); return vec4f(d, lum(d)); }\n",
+};
+static int g_stage; /* the stage being drawn (programs are built for it) */
+static const char *const STAGE_SUFFIX[2] = { "", ".display" };
+
+static unsigned build(const char *name0, const char *g_decl, const char *g_body, const char *w_fields, const char *w_decl,
                       const char *w_body) {
   static char buf[65536];
+  char name[64];
+  snprintf(name, sizeof name, "%s%s", name0, STAGE_SUFFIX[g_stage]);
   int n;
   if (wg())
     n = snprintf(buf, sizeof buf,
@@ -413,10 +479,10 @@ static unsigned build(const char *name, const char *g_decl, const char *g_body, 
                  "@group(0) @binding(0) var<uniform> u: U;\n"
                  "@group(0) @binding(1) var u_src: texture_2d<f32>;\n"
                  "@group(0) @binding(2) var u_auto: texture_2d<f32>;\n"
-                 "%s%s%s",
-                 w_fields ? w_fields : "", w_decl ? w_decl : "", W_FUNCS, w_body);
+                 "%s%s%s%s",
+                 w_fields ? w_fields : "", w_decl ? w_decl : "", W_FUNCS, W_STAGE[g_stage], w_body);
   else
-    n = snprintf(buf, sizeof buf, "%s%s%s%s", G_COMMON, g_decl ? g_decl : "", G_FUNCS, g_body);
+    n = snprintf(buf, sizeof buf, "%s%s%s%s%s", G_COMMON, g_decl ? g_decl : "", G_FUNCS, G_STAGE[g_stage], g_body);
   if (n >= (int)sizeof buf) {
     cw_error("looks: program '%s' is too long", name);
     return 0;
@@ -707,11 +773,11 @@ static const char *ASCII_DRAW_G =
     "  vec4 cell = texelFetch(u_cells, ivec2(c), 0);\n"
     "  int g = int(cell.a + 0.5);\n"
     "  float E = look_E();\n"
-    "  if (u_glow.w > 0.5) { o = vec4(vec3(srgb_lin(float(g) / 255.0)) / E, 1.0); return; }\n"
+    "  if (u_glow.w > 0.5) { o = vec4(look_out(vec3(srgb_lin(float(g) / 255.0))), 1.0); return; }\n"
     "  ivec2 l = ivec2(tl - c * u_cell.xy);\n"
     "  float cov = texelFetch(u_atlas, ivec2(g * int(u_cell.x) + l.x, l.y), 0).r;\n"
     "  vec3 col = texture(u_gl, tl / u_cell.xy / u_cell.zw).rgb + cell.rgb * cov * u_glow.z;\n"
-    "  o = vec4(col / E, 1.0);\n"
+    "  o = vec4(look_out(col), 1.0);\n"
     "}\n";
 static const char *ASCII_DRAW_W_FIELDS = "u_cell: vec4f, u_glow: vec4f, ";
 static const char *ASCII_DRAW_W_DECL =
@@ -728,11 +794,11 @@ static const char *ASCII_DRAW_W =
     "  let cell = textureLoad(u_cells, vec2i(c), 0);\n"
     "  let g = i32(cell.a + 0.5);\n"
     "  let E = look_E();\n"
-    "  if (u.u_glow.w > 0.5) { return vec4f(vec3f(srgb_lin(f32(g) / 255.0)) / E, 1.0); }\n"
+    "  if (u.u_glow.w > 0.5) { return vec4f(look_out(vec3f(srgb_lin(f32(g) / 255.0))), 1.0); }\n"
     "  let l = vec2i(tl - c * u.u_cell.xy);\n"
     "  let cov = textureLoad(u_atlas, vec2i(g * i32(u.u_cell.x) + l.x, l.y), 0).r;\n"
     "  let col = textureSampleLevel(u_gl, cw_linear, tl / u.u_cell.xy / u.u_cell.zw, 0.0).rgb + cell.rgb * cov * u.u_glow.z;\n"
-    "  return vec4f(col / E, 1.0);\n"
+    "  return vec4f(look_out(col), 1.0);\n"
     "}\n";
 
 /* ── HALFBLOCK ──
@@ -796,7 +862,7 @@ static const char *HB_DRAW_G =
     "  float bk = look_box(tl, tl);\n"
     "  if (bk > 1.5) { o = vec4(texelFetch(u_src, ivec2(FC), 0).rgb, 1.0); return; }\n"
     "  vec3 c = texelFetch(u_cells, ivec2(floor(tl / u_hb.x)), 0).rgb;\n"
-    "  o = vec4(c * look_dim(bk) / look_E(), 1.0);\n"
+    "  o = vec4(look_out(c * look_dim(bk)), 1.0);\n"
     "}\n";
 static const char *HB_DRAW_W_FIELDS = "u_hb: vec4f, ";
 static const char *HB_DRAW_W_DECL = "@group(0) @binding(3) var u_cells: texture_2d<f32>;\n";
@@ -807,7 +873,7 @@ static const char *HB_DRAW_W =
     "  let bk = look_box(tl, tl);\n"
     "  if (bk > 1.5) { return vec4f(textureLoad(u_src, vec2i(FC), 0).rgb, 1.0); }\n"
     "  let c = textureLoad(u_cells, vec2i(floor(tl / u.u_hb.x)), 0).rgb;\n"
-    "  return vec4f(c * look_dim(bk) / look_E(), 1.0);\n"
+    "  return vec4f(look_out(c * look_dim(bk)), 1.0);\n"
     "}\n";
 
 /* ── DITHER ──
@@ -817,8 +883,8 @@ static const char *HB_DRAW_W =
   "float dither_v(vec2 b) {\n"                                                                                                \
   "  vec2 lo = b * u_d.x; int n = int(u_d.x); int st = max(1, (n + 7) / 8);\n"                                                 \
   "  float sum = 0.0; float cnt = 0.0;\n"                                                                                     \
-  "  for (int j = 0; j < n; j += st) for (int i = 0; i < n; i += st) { sum += lum(look_src_px(lo + vec2(float(i), float(j)) + 0.5)); cnt += 1.0; }\n" \
-  "  float v = look_disp(sum / cnt * look_E());\n"                                                                            \
+  "  for (int j = 0; j < n; j += st) for (int i = 0; i < n; i += st) { sum += lum(look_tsrc(lo + vec2(float(i), float(j)) + 0.5)); cnt += 1.0; }\n" \
+  "  float v = look_tv(sum / cnt);\n"                                                                            \
   "  return clamp((v - 0.5) * u_d.y + 0.5 + u_d.z, 0.0, 1.0);\n"                                                              \
   "}\n"                                                                                                                       \
   "float dither_t(vec2 b) {\n"                                                                                                \
@@ -830,8 +896,8 @@ static const char *HB_DRAW_W =
   "fn dither_v(b: vec2f) -> f32 {\n"                                                                                          \
   "  let lo = b * u.u_d.x; let n = i32(u.u_d.x); let st = max(1, (n + 7) / 8);\n"                                              \
   "  var sum = 0.0; var cnt = 0.0;\n"                                                                                         \
-  "  for (var j = 0; j < n; j += st) { for (var i = 0; i < n; i += st) { sum += lum(look_src_px(lo + vec2f(f32(i), f32(j)) + 0.5)); cnt += 1.0; } }\n" \
-  "  let v = look_disp(sum / cnt * look_E());\n"                                                                              \
+  "  for (var j = 0; j < n; j += st) { for (var i = 0; i < n; i += st) { sum += lum(look_tsrc(lo + vec2f(f32(i), f32(j)) + 0.5)); cnt += 1.0; } }\n" \
+  "  let v = look_tv(sum / cnt);\n"                                                                              \
   "  return clamp((v - 0.5) * u.u_d.y + 0.5 + u.u_d.z, 0.0, 1.0);\n"                                                          \
   "}\n"                                                                                                                       \
   "fn dither_t(b: vec2f) -> f32 {\n"                                                                                          \
@@ -850,7 +916,7 @@ static const char *DITH_ORD_G =
     "  if (bk > 1.5) { o = vec4(texelFetch(u_src, ivec2(FC), 0).rgb, 1.0); return; }\n"
     "  vec2 b = floor(tl / u_d.x);\n"
     "  vec3 c = dither_v(b) > dither_t(b) ? u_light.rgb : u_dark.rgb;\n"
-    "  o = vec4(c * look_dim(bk) / look_E(), 1.0);\n"
+    "  o = vec4(look_out(c * look_dim(bk)), 1.0);\n"
     "}\n";
 static const char *DITH_W_FIELDS = "u_d: vec4f, u_dark: vec4f, u_light: vec4f, ";
 static const char *DITH_ORD_W_DECL = "@group(0) @binding(3) var u_noise: texture_2d<f32>;\n";
@@ -863,7 +929,7 @@ static const char *DITH_ORD_W =
     "  if (bk > 1.5) { return vec4f(textureLoad(u_src, vec2i(FC), 0).rgb, 1.0); }\n"
     "  let b = floor(tl / u.u_d.x);\n"
     "  let c = select(u.u_dark.rgb, u.u_light.rgb, dither_v(b) > dither_t(b));\n"
-    "  return vec4f(c * look_dim(bk) / look_E(), 1.0);\n"
+    "  return vec4f(look_out(c * look_dim(bk)), 1.0);\n"
     "}\n";
 /* diffuse, 1: the state, one texel a dither pixel: r its brightness, g its bit from the blue noise threshold */
 static const char *DITH_INIT_G =
@@ -935,7 +1001,7 @@ static const char *DITH_DRAW_G =
     "  if (bk > 1.5) { o = vec4(texelFetch(u_src, ivec2(FC), 0).rgb, 1.0); return; }\n"
     "  float bit = texelFetch(u_state, ivec2(floor(tl / u_d.x)), 0).g;\n"
     "  vec3 c = bit > 0.5 ? u_light.rgb : u_dark.rgb;\n"
-    "  o = vec4(c * look_dim(bk) / look_E(), 1.0);\n"
+    "  o = vec4(look_out(c * look_dim(bk)), 1.0);\n"
     "}\n";
 static const char *DITH_DRAW_W_DECL = "@group(0) @binding(3) var u_state: texture_2d<f32>;\n";
 static const char *DITH_DRAW_W =
@@ -946,41 +1012,216 @@ static const char *DITH_DRAW_W =
     "  if (bk > 1.5) { return vec4f(textureLoad(u_src, vec2i(FC), 0).rgb, 1.0); }\n"
     "  let bit = textureLoad(u_state, vec2i(floor(tl / u.u_d.x)), 0).g;\n"
     "  let c = select(u.u_dark.rgb, u.u_light.rgb, bit > 0.5);\n"
-    "  return vec4f(c * look_dim(bk) / look_E(), 1.0);\n"
+    "  return vec4f(look_out(c * look_dim(bk)), 1.0);\n"
     "}\n";
 
-/* ── CUSTOM ── the game's look() wrapped: its parameters (u_p0..3), the boxes, the exposure */
-static const char *CUSTOM_G_DECL = "uniform vec4 u_p0; uniform vec4 u_p1; uniform vec4 u_p2; uniform vec4 u_p3;\n";
+
+/* the tone options (cw_look_dither: hue_value onward): dither_L is a dither pixel's brightness from its mean colour
+ * (look_tone4: rgb and the plain brightness at this stage), saturated colours by their value (u_t0.x gain; u_t0.yz
+ * the saturation's smoothstep), grey by its brightness times u_t0.w with the highlights (u_t1.xy) kept; dither_tone
+ * adds the unsharp mask (u_t1.z gain, u_t1.w radius in dither pixels), gamma (u_t2.x), contrast and bias (u_d.yz) and
+ * the depth outlines (u_t2.y brightness, u_t2.zw the relative Laplacian of 1 / depth's smoothstep), from the depth
+ * at each dither pixel's middle (u_lin: near, far, orthographic, depth bound). Neighbours are taken in the order
+ * a bottom-left anchored pass takes them (+x, -x, up, down), so a pixel's sums come out the same. */
+#define DITHER_TONE_G                                                                                                       \
+  "float dither_L(vec2 b) {\n"                                                                                               \
+  "  vec2 lo = b * u_d.x; int n = int(u_d.x); int st = max(1, (n + 7) / 8);\n"                                               \
+  "  vec3 sum = vec3(0.0); float cnt = 0.0;\n"                                                                              \
+  "  for (int j = 0; j < n; j += st) for (int i = 0; i < n; i += st) { sum += look_tsrc(lo + vec2(float(i), float(j)) + 0.5); cnt += 1.0; }\n" \
+  "  vec4 t = look_tone4(sum / cnt);\n"                                                                                     \
+  "  float mx = max(max(t.r, t.g), t.b), mn = min(min(t.r, t.g), t.b);\n"                                                  \
+  "  float key = u_t0.x > 0.0 ? smoothstep(u_t0.y, u_t0.z, (mx - mn) / max(mx, 1e-4)) : 0.0;\n"                            \
+  "  float l = t.a;\n"                                                                                                       \
+  "  float g = u_t0.w != 1.0 ? mix(l * u_t0.w, l, smoothstep(u_t1.x, u_t1.y, l)) : l;\n"                                    \
+  "  return clamp(mix(g, mx * u_t0.x, key), 0.0, 1.0);\n"                                                                  \
+  "}\n"                                                                                                                      \
+  "float dither_W(vec2 b) {\n"                                                                                               \
+  "  if (u_lin.w < 0.5) return 0.0;\n"                                                                                      \
+  "  vec2 tl = b * u_d.x + floor(u_d.x * 0.5) + 0.5;\n"                                                                     \
+  "  ivec2 q = clamp(ivec2(floor(look_global(tl))), ivec2(u_rect.xy), ivec2(u_rect.xy + u_rect.zw) - 1);\n"                 \
+  "  float d = texelFetch(u_depth, q, 0).r;\n"                                                                              \
+  "  if (d >= 0.999999) return 0.0;\n"                                                                                      \
+  "  float z = u_lin.z > 0.5 ? u_lin.x + d * (u_lin.y - u_lin.x) : u_lin.x * u_lin.y / (u_lin.y - d * (u_lin.y - u_lin.x));\n" \
+  "  return 1.0 / max(z, 1e-4);\n"                                                                                          \
+  "}\n"                                                                                                                      \
+  "float dither_tone(vec2 b) {\n"                                                                                            \
+  "  float c = dither_L(b);\n"                                                                                              \
+  "  if (u_t1.z > 0.0) {\n"                                                                                                 \
+  "    float r = u_t1.w; float h = max(1.0, floor(r * 0.5 + 0.5));\n"                                                      \
+  "    float bl = (dither_L(b + vec2(r, 0.0)) + dither_L(b - vec2(r, 0.0)) + dither_L(b - vec2(0.0, r)) + dither_L(b + vec2(0.0, r))) * 0.15\n" \
+  "             + (dither_L(b + vec2(h, -h)) + dither_L(b - vec2(h, -h)) + dither_L(b + vec2(h, h)) + dither_L(b - vec2(h, h))) * 0.1;\n" \
+  "    c = clamp(c + u_t1.z * (c - bl), 0.0, 1.0);\n"                                                                      \
+  "  }\n"                                                                                                                    \
+  "  float v = u_t2.x != 1.0 ? pow(c, u_t2.x) : c;\n"                                                                      \
+  "  v = clamp((v - 0.5) * u_d.y + 0.5 + u_d.z, 0.0, 1.0);\n"                                                               \
+  "  if (u_t2.y > 0.0) {\n"                                                                                                 \
+  "    float w = dither_W(b);\n"                                                                                            \
+  "    if (w > 0.0) {\n"                                                                                                    \
+  "      float lap = 4.0 * w - dither_W(b + vec2(1.0, 0.0)) - dither_W(b - vec2(1.0, 0.0)) - dither_W(b - vec2(0.0, 1.0)) - dither_W(b + vec2(0.0, 1.0));\n" \
+  "      v = max(v, smoothstep(u_t2.z, u_t2.w, lap / w) * u_t2.y);\n"                                                      \
+  "    }\n"                                                                                                                  \
+  "  }\n"                                                                                                                    \
+  "  return v;\n"                                                                                                            \
+  "}\n"
+#define DITHER_TONE_W                                                                                                       \
+  "fn dither_L(b: vec2f) -> f32 {\n"                                                                                         \
+  "  let lo = b * u.u_d.x; let n = i32(u.u_d.x); let st = max(1, (n + 7) / 8);\n"                                            \
+  "  var sum = vec3f(0.0); var cnt = 0.0;\n"                                                                                \
+  "  for (var j = 0; j < n; j += st) { for (var i = 0; i < n; i += st) { sum += look_tsrc(lo + vec2f(f32(i), f32(j)) + 0.5); cnt += 1.0; } }\n" \
+  "  let t = look_tone4(sum / cnt);\n"                                                                                      \
+  "  let mx = max(max(t.r, t.g), t.b); let mn = min(min(t.r, t.g), t.b);\n"                                                \
+  "  var key = 0.0;\n"                                                                                                       \
+  "  if (u.u_t0.x > 0.0) { key = smoothstep(u.u_t0.y, u.u_t0.z, (mx - mn) / max(mx, 1e-4)); }\n"                          \
+  "  let l = t.a;\n"                                                                                                         \
+  "  var g = l;\n"                                                                                                           \
+  "  if (u.u_t0.w != 1.0) { g = mix(l * u.u_t0.w, l, smoothstep(u.u_t1.x, u.u_t1.y, l)); }\n"                              \
+  "  return clamp(mix(g, mx * u.u_t0.x, key), 0.0, 1.0);\n"                                                                \
+  "}\n"                                                                                                                      \
+  "fn dither_W(b: vec2f) -> f32 {\n"                                                                                         \
+  "  if (u.u_lin.w < 0.5) { return 0.0; }\n"                                                                                \
+  "  let tl = b * u.u_d.x + floor(u.u_d.x * 0.5) + 0.5;\n"                                                                  \
+  "  let q = clamp(vec2i(floor(look_global(tl))), vec2i(u.u_rect.xy), vec2i(u.u_rect.xy + u.u_rect.zw) - 1);\n"             \
+  "  let z = textureLoad(u_depth, q, 0).r;\n"                                                                               \
+  "  if (z > 1e30) { return 0.0; }\n"                                                                                       \
+  "  return 1.0 / max(z, 1e-4);\n"                                                                                          \
+  "}\n"                                                                                                                      \
+  "fn dither_tone(b: vec2f) -> f32 {\n"                                                                                      \
+  "  var c = dither_L(b);\n"                                                                                                \
+  "  if (u.u_t1.z > 0.0) {\n"                                                                                               \
+  "    let r = u.u_t1.w; let h = max(1.0, floor(r * 0.5 + 0.5));\n"                                                        \
+  "    let bl = (dither_L(b + vec2f(r, 0.0)) + dither_L(b - vec2f(r, 0.0)) + dither_L(b - vec2f(0.0, r)) + dither_L(b + vec2f(0.0, r))) * 0.15\n" \
+  "           + (dither_L(b + vec2f(h, -h)) + dither_L(b - vec2f(h, -h)) + dither_L(b + vec2f(h, h)) + dither_L(b - vec2f(h, h))) * 0.1;\n" \
+  "    c = clamp(c + u.u_t1.z * (c - bl), 0.0, 1.0);\n"                                                                    \
+  "  }\n"                                                                                                                    \
+  "  var v = c;\n"                                                                                                           \
+  "  if (u.u_t2.x != 1.0) { v = pow(c, u.u_t2.x); }\n"                                                                     \
+  "  v = clamp((v - 0.5) * u.u_d.y + 0.5 + u.u_d.z, 0.0, 1.0);\n"                                                           \
+  "  if (u.u_t2.y > 0.0) {\n"                                                                                               \
+  "    let w = dither_W(b);\n"                                                                                              \
+  "    if (w > 0.0) {\n"                                                                                                    \
+  "      let lap = 4.0 * w - dither_W(b + vec2f(1.0, 0.0)) - dither_W(b - vec2f(1.0, 0.0)) - dither_W(b - vec2f(0.0, 1.0)) - dither_W(b + vec2f(0.0, 1.0));\n" \
+  "      v = max(v, smoothstep(u.u_t2.z, u.u_t2.w, lap / w) * u.u_t2.y);\n"                                              \
+  "    }\n"                                                                                                                  \
+  "  }\n"                                                                                                                    \
+  "  return v;\n"                                                                                                            \
+  "}\n"
+/* the ordered and the diffused start with the tone options (their own programs: without them the ones above run) */
+static const char *DITH_T_G_DECL =
+    "uniform sampler2D u_noise; uniform sampler2D u_depth; uniform vec4 u_d; uniform vec4 u_dark; uniform vec4 u_light;\n"
+    "uniform vec4 u_t0; uniform vec4 u_t1; uniform vec4 u_t2; uniform vec4 u_lin;\n";
+static const char *DITH_ORD_T_G =
+    DITHER_V_G DITHER_TONE_G
+    "void main() {\n"
+    "  FC = gl_FragCoord.xy;\n"
+    "  vec2 tl = look_tl();\n"
+    "  float bk = look_box(tl, tl);\n"
+    "  if (bk > 1.5) { o = vec4(texelFetch(u_src, ivec2(FC), 0).rgb, 1.0); return; }\n"
+    "  vec2 b = floor(tl / u_d.x);\n"
+    "  vec3 c = dither_tone(b) > dither_t(b) ? u_light.rgb : u_dark.rgb;\n"
+    "  o = vec4(look_out(c * look_dim(bk)), 1.0);\n"
+    "}\n";
+static const char *DITH_INIT_T_G =
+    DITHER_V_G DITHER_TONE_G
+    "void main() {\n"
+    "  FC = gl_FragCoord.xy;\n"
+    "  vec2 b = floor(FC);\n"
+    "  float v = dither_tone(b);\n"
+    "  o = vec4(v, v > dither_t(b) ? 1.0 : 0.0, 0.0, 1.0);\n"
+    "}\n";
+static const char *DITH_T_W_FIELDS = "u_d: vec4f, u_dark: vec4f, u_light: vec4f, u_t0: vec4f, u_t1: vec4f, u_t2: vec4f, u_lin: vec4f, ";
+static const char *DITH_T_W_DECL =
+    "@group(0) @binding(3) var u_noise: texture_2d<f32>;\n"
+    "@group(0) @binding(4) var u_depth: texture_2d<f32>;\n";
+static const char *DITH_ORD_T_W =
+    DITHER_V_W DITHER_TONE_W
+    "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
+    "  FC = cw_frag_coord(pos);\n"
+    "  let tl = look_tl();\n"
+    "  let bk = look_box(tl, tl);\n"
+    "  if (bk > 1.5) { return vec4f(textureLoad(u_src, vec2i(FC), 0).rgb, 1.0); }\n"
+    "  let b = floor(tl / u.u_d.x);\n"
+    "  let c = select(u.u_dark.rgb, u.u_light.rgb, dither_tone(b) > dither_t(b));\n"
+    "  return vec4f(look_out(c * look_dim(bk)), 1.0);\n"
+    "}\n";
+static const char *DITH_INIT_T_W =
+    DITHER_V_W DITHER_TONE_W
+    "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
+    "  FC = cw_frag_coord(pos);\n"
+    "  let b = floor(FC);\n"
+    "  let v = dither_tone(b);\n"
+    "  return vec4f(v, select(0.0, 1.0, v > dither_t(b)), 0.0, 1.0);\n"
+    "}\n";
+
+/* ── CUSTOM ── the game's look() wrapped: its parameters (u_p0..3), the boxes, the exposure; the depth (unit 2, u_lin:
+ * near, far, orthographic, depth bound) and the blue noise (unit 3) for the accessors */
+static const char *CUSTOM_G_DECL = "uniform vec4 u_p0; uniform vec4 u_p1; uniform vec4 u_p2; uniform vec4 u_p3; uniform vec4 u_lin;\n"
+                                   "uniform sampler2D u_depth; uniform sampler2D u_noise;\n";
 static const char *CUSTOM_G_HELP =
     "vec2 cw_look_size() { return u_rect.zw; }\n"
     "vec3 cw_look_scene(vec2 px) { return look_src(px) * look_E(); }\n"
     "float cw_look_scale() { return u_ex.z; }\n"
     "float cw_look_time() { return u_ex.w; }\n"
     "float cw_look_frame() { return u_bn.y; }\n"
-    "vec4 cw_look_param(int i) { return i == 0 ? u_p0 : i == 1 ? u_p1 : i == 2 ? u_p2 : u_p3; }\n";
+    "vec4 cw_look_param(int i) { return i == 0 ? u_p0 : i == 1 ? u_p1 : i == 2 ? u_p2 : u_p3; }\n"
+    "float cw_look_stage() { return u_bn.z; }\n"
+    "float cw_look_depth(vec2 px) {\n"
+    "  if (u_lin.w < 0.5) return 1.0;\n"
+    "  ivec2 q = clamp(ivec2(floor(look_global(px))), ivec2(u_rect.xy), ivec2(u_rect.xy + u_rect.zw) - 1);\n"
+    "  return texelFetch(u_depth, q, 0).r;\n"
+    "}\n"
+    "float cw_look_linear_depth(vec2 px) {\n"
+    "  float d = cw_look_depth(px);\n"
+    "  if (d >= 0.999999) return 3.0e38;\n"
+    "  return u_lin.z > 0.5 ? u_lin.x + d * (u_lin.y - u_lin.x) : u_lin.x * u_lin.y / (u_lin.y - d * (u_lin.y - u_lin.x));\n"
+    "}\n"
+    "float cw_look_bayer(vec2 px) { return bayer8(ivec2(floor(px))); }\n"
+    "float cw_look_blue_noise(vec2 px) { return (texelFetch(u_noise, ivec2(floor(px)) & 63, 0).r * 255.0 + 0.5) / 256.0; }\n"
+    "vec3 cw_look_from_display(vec3 d) { vec3 x = clamp(d, 0.0, 1.0); return mix(pow((x + 0.055) / 1.055, vec3(2.4)), x / 12.92, vec3(lessThanEqual(x, vec3(0.04045)))); }\n"
+    "vec3 cw_look_to_display(vec3 c) { vec3 x = clamp(c, 0.0, 1.0); return mix(pow(x, vec3(0.41666)) * 1.055 - vec3(0.055), x * 12.92, vec3(lessThanEqual(x, vec3(0.0031308)))); }\n";
 static const char *CUSTOM_G_MAIN =
     "void main() {\n"
     "  FC = gl_FragCoord.xy;\n"
     "  vec2 tl = look_tl();\n"
     "  float bk = look_box(tl, tl);\n"
     "  if (bk > 1.5) { o = vec4(texelFetch(u_src, ivec2(FC), 0).rgb, 1.0); return; }\n"
-    "  o = vec4(max(look(tl), vec3(0.0)) * look_dim(bk) / look_E(), 1.0);\n"
+    "  o = vec4(look_out(max(look(tl), vec3(0.0)) * look_dim(bk)), 1.0);\n"
     "}\n";
-static const char *CUSTOM_W_FIELDS = "u_p0: vec4f, u_p1: vec4f, u_p2: vec4f, u_p3: vec4f, ";
+static const char *CUSTOM_W_FIELDS = "u_p0: vec4f, u_p1: vec4f, u_p2: vec4f, u_p3: vec4f, u_lin: vec4f, ";
+static const char *CUSTOM_W_DECL =
+    "@group(0) @binding(3) var u_depth: texture_2d<f32>;\n"
+    "@group(0) @binding(4) var u_noise: texture_2d<f32>;\n";
 static const char *CUSTOM_W_HELP =
     "fn cw_look_size() -> vec2f { return u.u_rect.zw; }\n"
     "fn cw_look_scene(px: vec2f) -> vec3f { return look_src(px) * look_E(); }\n"
     "fn cw_look_scale() -> f32 { return u.u_ex.z; }\n"
     "fn cw_look_time() -> f32 { return u.u_ex.w; }\n"
     "fn cw_look_frame() -> f32 { return u.u_bn.y; }\n"
-    "fn cw_look_param(i: i32) -> vec4f { if (i == 0) { return u.u_p0; } if (i == 1) { return u.u_p1; } if (i == 2) { return u.u_p2; } return u.u_p3; }\n";
+    "fn cw_look_param(i: i32) -> vec4f { if (i == 0) { return u.u_p0; } if (i == 1) { return u.u_p1; } if (i == 2) { return u.u_p2; } return u.u_p3; }\n"
+    "fn cw_look_stage() -> f32 { return u.u_bn.z; }\n"
+    "fn cw_look_linear_depth(px: vec2f) -> f32 {\n"
+    "  if (u.u_lin.w < 0.5) { return 3.0e38; }\n"
+    "  let q = clamp(vec2i(floor(look_global(px))), vec2i(u.u_rect.xy), vec2i(u.u_rect.xy + u.u_rect.zw) - 1);\n"
+    "  let z = textureLoad(u_depth, q, 0).r;\n"
+    "  if (z > 1e30) { return 3.0e38; }\n"
+    "  return z;\n"
+    "}\n"
+    "fn cw_look_depth(px: vec2f) -> f32 {\n"
+    "  let z = cw_look_linear_depth(px);\n"
+    "  if (z > 1e30) { return 1.0; }\n"
+    "  if (u.u_lin.z > 0.5) { return (z - u.u_lin.x) / (u.u_lin.y - u.u_lin.x); }\n"
+    "  return u.u_lin.y * (z - u.u_lin.x) / (z * (u.u_lin.y - u.u_lin.x));\n"
+    "}\n"
+    "fn cw_look_bayer(px: vec2f) -> f32 { return bayer8(vec2i(floor(px))); }\n"
+    "fn cw_look_blue_noise(px: vec2f) -> f32 { return (textureLoad(u_noise, vec2i(floor(px)) & vec2i(63), 0).r * 255.0 + 0.5) / 256.0; }\n"
+    "fn cw_look_from_display(d: vec3f) -> vec3f { let x = clamp(d, vec3f(0.0), vec3f(1.0)); return select(pow((x + 0.055) / 1.055, vec3f(2.4)), x / 12.92, x <= vec3f(0.04045)); }\n"
+    "fn cw_look_to_display(c: vec3f) -> vec3f { let x = clamp(c, vec3f(0.0), vec3f(1.0)); return select(pow(x, vec3f(0.41666)) * 1.055 - vec3f(0.055), x * 12.92, x <= vec3f(0.0031308)); }\n";
 static const char *CUSTOM_W_MAIN =
     "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
     "  FC = cw_frag_coord(pos);\n"
     "  let tl = look_tl();\n"
     "  let bk = look_box(tl, tl);\n"
     "  if (bk > 1.5) { return vec4f(textureLoad(u_src, vec2i(FC), 0).rgb, 1.0); }\n"
-    "  return vec4f(max(look(tl), vec3f(0.0)) * look_dim(bk) / look_E(), 1.0);\n"
+    "  return vec4f(look_out(max(look(tl), vec3f(0.0)) * look_dim(bk)), 1.0);\n"
     "}\n";
 
 /* ── the blend of two looks' pictures (units 2 and 3) ──
@@ -1067,7 +1308,7 @@ static const char *LUM_G =
     "    ivec2 q = p + ivec2(i, j);\n"
     "    if (q.x >= hi.x - lo.x || q.y >= hi.y - lo.y) continue;\n"
     "    vec4 c = texelFetch(u_img, q + lo, 0);\n"
-    "    s += u_lf.x > 0.5 ? lum(c.rgb) * look_E() * c.a : c.r * c.a; n += c.a;\n"
+    "    s += u_lf.x > 0.5 ? lum(look_in(c.rgb)) * look_E() * c.a : c.r * c.a; n += c.a;\n"
     "  }\n"
     "  float m = n > 0.0 ? s / n : 0.0;\n"
     "  if (u_lf.y > 0.5) { float v = clamp(m / 64.0, 0.0, 1.0) * 65535.0; float hi8 = floor(v / 256.0); o = vec4(hi8 / 255.0, (v - hi8 * 256.0) / 255.0, 0.0, 1.0); }\n"
@@ -1084,21 +1325,22 @@ static const char *LUM_W =
     "    let q = p + vec2i(i, j);\n"
     "    if (q.x >= hi.x - lo.x || q.y >= hi.y - lo.y) { continue; }\n"
     "    let c = textureLoad(u_img, q + lo, 0);\n"
-    "    s += select(c.r * c.a, lum(c.rgb) * look_E() * c.a, u.u_lf.x > 0.5); n += c.a;\n"
+    "    s += select(c.r * c.a, lum(look_in(c.rgb)) * look_E() * c.a, u.u_lf.x > 0.5); n += c.a;\n"
     "  } }\n"
     "  let m = select(0.0, s / n, n > 0.0);\n"
     "  if (u.u_lf.y > 0.5) { let v = clamp(m / 64.0, 0.0, 1.0) * 65535.0; let hi8 = floor(v / 256.0); return vec4f(hi8 / 255.0, (v - hi8 * 256.0) / 255.0, 0.0, 1.0); }\n"
     "  return vec4f(m, 0.0, 0.0, select(0.0, 1.0, n > 0.0));\n"
     "}\n";
 
-enum { P_ASCII_REG, P_ASCII_CELLS, P_ASCII_GLOW, P_ASCII_DRAW, P_HB_PX, P_HB_DRAW, P_DITH_ORD, P_DITH_INIT, P_DITH_DBS, P_DITH_DRAW, P_MIX, P_LUM, P_COUNT };
-static unsigned PROG[2][P_COUNT]; /* [backend][program] */
-static bool PROG_TRIED[2][P_COUNT]; /* (a program that failed to build is not tried again every frame) */
+enum { P_ASCII_REG, P_ASCII_CELLS, P_ASCII_GLOW, P_ASCII_DRAW, P_HB_PX, P_HB_DRAW, P_DITH_ORD, P_DITH_INIT, P_DITH_DBS, P_DITH_DRAW, P_MIX, P_LUM,
+       P_DITH_ORD_T, P_DITH_INIT_T, P_COUNT };
+static unsigned PROG[2][2][P_COUNT]; /* [backend][stage][program] */
+static bool PROG_TRIED[2][2][P_COUNT]; /* (a program that failed to build is not tried again every frame) */
 
 static unsigned prog(int k) {
   int b = wg() ? 1 : 0;
-  if (PROG[b][k] || PROG_TRIED[b][k]) return PROG[b][k];
-  PROG_TRIED[b][k] = true;
+  if (PROG[b][g_stage][k] || PROG_TRIED[b][g_stage][k]) return PROG[b][g_stage][k];
+  PROG_TRIED[b][g_stage][k] = true;
   unsigned p = 0;
   switch (k) {
   case P_ASCII_REG: p = build("look.ascii_regions", ASCII_REG_G_DECL, ASCII_REG_G, ASCII_REG_W_FIELDS, ASCII_REG_W_DECL, ASCII_REG_W); break;
@@ -1113,9 +1355,11 @@ static unsigned prog(int k) {
   case P_DITH_DRAW: p = build("look.dither_draw", DITH_DRAW_G_DECL, DITH_DRAW_G, DITH_W_FIELDS, DITH_DRAW_W_DECL, DITH_DRAW_W); break;
   case P_MIX: p = build("look.mix", MIX_G_DECL, MIX_G, MIX_W_FIELDS, MIX_W_DECL, MIX_W); break;
   case P_LUM: p = build("look.luminance", LUM_G_DECL, LUM_G, LUM_W_FIELDS, LUM_W_DECL, LUM_W); break;
+  case P_DITH_ORD_T: p = build("look.dither_ordered_tone", DITH_T_G_DECL, DITH_ORD_T_G, DITH_T_W_FIELDS, DITH_T_W_DECL, DITH_ORD_T_W); break;
+  case P_DITH_INIT_T: p = build("look.dither_init_tone", DITH_T_G_DECL, DITH_INIT_T_G, DITH_T_W_FIELDS, DITH_T_W_DECL, DITH_INIT_T_W); break;
   default: break;
   }
-  PROG[b][k] = p;
+  PROG[b][g_stage][k] = p;
   return p;
 }
 
@@ -1365,6 +1609,7 @@ static int test_int(const char *name) {
 /* the frame's exposure parts and the automatic exposure's state */
 static unsigned g_auto_tex;
 static float g_exposure;
+static unsigned g_depth; /* the depth the looks read (ctx->depth_tex; none in the shared split screen chain) */
 
 static void common(cw_pass_ctx *ctx, unsigned pr, const vinfo *v) {
   cw_pass_bind_texture(0, ctx->src->tex);
@@ -1375,7 +1620,7 @@ static void common(cw_pass_ctx *ctx, unsigned pr, const vinfo *v) {
    * the screen would */
   float crawl = test_int("CW_TEST_LOOK_CRAWL") ? (float)(ctx->frame % 64) : 0.0f;
   cw_pass_uniform4f(pr, "u_ex", g_exposure, crawl, v->scale, (float)ctx->time);
-  cw_pass_uniform4f(pr, "u_bn", (float)v->nbox, (float)(ctx->frame % 16777216), 0, 0);
+  cw_pass_uniform4f(pr, "u_bn", (float)v->nbox, (float)(ctx->frame % 16777216), (float)g_stage, 0);
   static const char *const B[16] = { "u_b0", "u_b1", "u_b2", "u_b3", "u_b4", "u_b5", "u_b6", "u_b7",
                                      "u_b8", "u_b9", "u_b10", "u_b11", "u_b12", "u_b13", "u_b14", "u_b15" };
   for (int i = 0; i < 16; i++) {
@@ -1450,20 +1695,20 @@ static void draw_ascii(cw_pass_ctx *ctx, looks_state *s, look *l, const vinfo *v
   bool have_prev = !fresh && last == ctx->frame && ctx->frame > 0 && a->hold > 1.0f; /* (last = previous frame + 1) */
   float hold = CW_MAX(a->hold, 1.0f);
   float lin[3] = { 0, 0, 0 };
-  if (ctx->depth_tex) cw_pass_linear_depth_params(ctx, lin);
+  if (g_depth) cw_pass_linear_depth_params(ctx, lin);
   small_begin();
   /* the measures */
   cw_pass_bind_target(ctx, H[1][ci]);
   cw_pass_use(pr);
   common(ctx, pr, v);
-  cw_pass_bind_texture(2, ctx->depth_tex ? ctx->depth_tex : ctx->src->tex);
+  cw_pass_bind_texture(2, g_depth ? g_depth : ctx->src->tex);
   cw_pass_bind_texture(3, H[1][pi]->tex);
   cw_pass_bind_texture(4, H[1][pi]->tex);
   cw_pass_bind_texture(5, H[1][pi]->tex);
   if (!wg())
     cw_pass_uniform1i(pr, "u_depth", 2), cw_pass_uniform1i(pr, "u_pr", 3), cw_pass_uniform1i(pr, "u_ps", 4), cw_pass_uniform1i(pr, "u_pc", 5);
   cw_pass_uniform4f(pr, "u_cell", (float)cw, (float)ch, (float)cols, (float)rows);
-  cw_pass_uniform4f(pr, "u_lin", ctx->depth_tex ? lin[0] : -1.0f, lin[1], lin[2], 0);
+  cw_pass_uniform4f(pr, "u_lin", g_depth ? lin[0] : -1.0f, lin[1], lin[2], 0);
   cw_pass_uniform4f(pr, "u_par", a->floor, a->contrast, a->edges, hold);
   cw_pass_uniform4f(pr, "u_col", a->exposure, a->saturation, (float)NGLYPH, a->bright_floor);
   cw_pass_uniform4f(pr, "u_ex2", a->flat_bright, a->dim_bright, a->peak, 0);
@@ -1557,12 +1802,34 @@ static void dither_uniforms(unsigned pr, const cw_look_dither *d, int n, bool bl
   cw_pass_uniform4f(pr, "u_light", d->light[0], d->light[1], d->light[2], 0);
 }
 
+/* a setting at 0 is its default */
+static float or_def(float v, float def) { return v == 0.0f || v != v ? def : v; }
+/* any tone option on: the tone programs (otherwise the plain ones, the frame as before the options) */
+static bool dither_tone_on(const cw_look_dither *d) {
+  return d->hue_value > 0 || or_def(d->grey_gain, 1) != 1 || d->sharpen > 0 || d->outline > 0 || or_def(d->gamma, 1) != 1;
+}
+/* the tone programs' own uniforms and the depth (unit 3) */
+static void dither_tone_uniforms(cw_pass_ctx *ctx, unsigned pr, const cw_look_dither *d) {
+  float lin[3] = { 0, 0, 0 };
+  if (g_depth) cw_pass_linear_depth_params(ctx, lin);
+  cw_pass_bind_texture(3, g_depth ? g_depth : ctx->src->tex);
+  if (!wg()) cw_pass_uniform1i(pr, "u_depth", 3);
+  float hf = or_def(d->hue_from, 0.22f), ht = or_def(d->hue_to, 0.5f), kf = or_def(d->keep_from, 0.6f), kt = or_def(d->keep_to, 0.95f);
+  float of = or_def(d->outline_from, 0.02f), ot = or_def(d->outline_to, 0.08f);
+  cw_pass_uniform4f(pr, "u_t0", CW_MAX(d->hue_value, 0.0f), hf, CW_MAX(ht, hf + 1e-4f), or_def(d->grey_gain, 1));
+  cw_pass_uniform4f(pr, "u_t1", kf, CW_MAX(kt, kf + 1e-4f), CW_MAX(d->sharpen, 0.0f), (float)CW_CLAMP((int)lrintf(or_def(d->sharpen_radius, 2)), 1, 16));
+  cw_pass_uniform4f(pr, "u_t2", CW_MAX(or_def(d->gamma, 1), 0.01f), CW_MAX(d->outline, 0.0f), of, CW_MAX(ot, of + 1e-4f));
+  cw_pass_uniform4f(pr, "u_lin", lin[0], lin[1], lin[2], g_depth ? 1.0f : 0.0f);
+}
+
 static void draw_dither(cw_pass_ctx *ctx, look *l, const vinfo *v, const cw_rt *out) {
   const cw_look_dither *d = &l->d.dither;
-  int n = CW_CLAMP((int)lrintf(d->pixel * v->scale), 1, 64);
+  int n = CW_CLAMP((int)lrintf(d->pixel * (d->output_pixels ? 1.0f : v->scale)), 1, 64);
   unsigned noise = blue_noise_tex();
+  bool tone = dither_tone_on(d);
+  dbg_tone = tone ? 1 : 0;
   if (l->d.kind == CW_LOOK_DITHER_ORDERED) {
-    unsigned po = prog(P_DITH_ORD);
+    unsigned po = prog(tone ? P_DITH_ORD_T : P_DITH_ORD);
     if (!po) return;
     cw_pass_bind_target(ctx, out);
     cw_pass_use(po);
@@ -1570,10 +1837,11 @@ static void draw_dither(cw_pass_ctx *ctx, look *l, const vinfo *v, const cw_rt *
     cw_pass_bind_texture(2, noise);
     if (!wg()) cw_pass_uniform1i(po, "u_noise", 2);
     dither_uniforms(po, d, n, d->pattern == CW_DITHER_BLUE_NOISE);
+    if (tone) dither_tone_uniforms(ctx, po, d);
     cw_pass_fullscreen();
     return;
   }
-  unsigned pi = prog(P_DITH_INIT), pb = prog(P_DITH_DBS), pd = prog(P_DITH_DRAW);
+  unsigned pi = prog(tone ? P_DITH_INIT_T : P_DITH_INIT), pb = prog(P_DITH_DBS), pd = prog(P_DITH_DRAW);
   if (!pi || !pb || !pd) return;
   int bw = (v->rect[2] + n - 1) / n, bh = (v->rect[3] + n - 1) / n;
   const cw_rt *st[2] = { cw_pass_rt(ctx, bw, bh, CW_RT_RGBA8, false), cw_pass_rt(ctx, bw, bh, CW_RT_RGBA8, false) };
@@ -1585,6 +1853,7 @@ static void draw_dither(cw_pass_ctx *ctx, look *l, const vinfo *v, const cw_rt *
   cw_pass_bind_texture(2, noise);
   if (!wg()) cw_pass_uniform1i(pi, "u_noise", 2);
   dither_uniforms(pi, d, n, true);
+  if (tone) dither_tone_uniforms(ctx, pi, d);
   cw_pass_fullscreen();
   int cur = 0, sweeps = CW_CLAMP(d->sweeps, 0, 8);
   for (int sw = 0; sw < sweeps; sw++)
@@ -1612,27 +1881,35 @@ static void draw_dither(cw_pass_ctx *ctx, look *l, const vinfo *v, const cw_rt *
 }
 
 static void draw_custom(cw_pass_ctx *ctx, look *l, const vinfo *v, const cw_rt *out) {
-  if (!l->prog || l->prog_ver != l->ver) {
+  unsigned *pr = &l->prog[g_stage];
+  if (!*pr || l->prog_ver[g_stage] != l->ver) {
     char name[48], body[32768];
     snprintf(name, sizeof name, "look.custom.%d.%d", (int)(l - LOOKS), l->ver);
     if (wg()) snprintf(body, sizeof body, "%s%s%s", CUSTOM_W_HELP, l->wgsl ? l->wgsl : "", CUSTOM_W_MAIN);
     else snprintf(body, sizeof body, "%s%s%s", CUSTOM_G_HELP, l->glsl ? l->glsl : "", CUSTOM_G_MAIN);
-    l->prog = (wg() ? l->wgsl : l->glsl) ? build(name, CUSTOM_G_DECL, body, CUSTOM_W_FIELDS, "", body) : 0;
-    l->prog_ver = l->ver;
-    if (!l->prog) cw_error("cw_look: the CUSTOM look's shader did not build: it draws the plain scene");
+    *pr = (wg() ? l->wgsl : l->glsl) ? build(name, CUSTOM_G_DECL, body, CUSTOM_W_FIELDS, CUSTOM_W_DECL, body) : 0;
+    l->prog_ver[g_stage] = l->ver;
+    if (!*pr) cw_error("cw_look: the CUSTOM look's shader did not build: it draws the plain scene");
   }
-  if (!l->prog) {
+  if (!*pr) {
     cw__pass_copy(ctx, ctx->src->tex, out);
     return;
   }
+  unsigned noise = blue_noise_tex();
+  float lin[3] = { 0, 0, 0 };
+  if (g_depth) cw_pass_linear_depth_params(ctx, lin);
   cw_pass_bind_target(ctx, out);
-  cw_pass_use(l->prog);
-  common(ctx, l->prog, v);
+  cw_pass_use(*pr);
+  common(ctx, *pr, v);
+  cw_pass_bind_texture(2, g_depth ? g_depth : ctx->src->tex);
+  cw_pass_bind_texture(3, noise);
+  if (!wg()) cw_pass_uniform1i(*pr, "u_depth", 2), cw_pass_uniform1i(*pr, "u_noise", 3);
   const float *p = l->d.custom.params;
-  cw_pass_uniform4f(l->prog, "u_p0", p[0], p[1], p[2], p[3]);
-  cw_pass_uniform4f(l->prog, "u_p1", p[4], p[5], p[6], p[7]);
-  cw_pass_uniform4f(l->prog, "u_p2", p[8], p[9], p[10], p[11]);
-  cw_pass_uniform4f(l->prog, "u_p3", p[12], p[13], p[14], p[15]);
+  cw_pass_uniform4f(*pr, "u_p0", p[0], p[1], p[2], p[3]);
+  cw_pass_uniform4f(*pr, "u_p1", p[4], p[5], p[6], p[7]);
+  cw_pass_uniform4f(*pr, "u_p2", p[8], p[9], p[10], p[11]);
+  cw_pass_uniform4f(*pr, "u_p3", p[12], p[13], p[14], p[15]);
+  cw_pass_uniform4f(*pr, "u_lin", lin[0], lin[1], lin[2], g_depth ? 1.0f : 0.0f);
   cw_pass_fullscreen();
 }
 
@@ -1706,22 +1983,35 @@ static void measure(cw_pass_ctx *ctx, looks_state *s, const vinfo *v, const cw_r
   }
 }
 
+static void looks_run(cw_pass_ctx *ctx, looks_state *s);
 static void looks_exec(cw_pass_ctx *ctx, void *u) {
-  looks_state *s = u;
+  g_stage = 0;
+  looks_run(ctx, u);
+}
+static void looks_display_exec(cw_pass_ctx *ctx, void *u) {
+  g_stage = 1;
+  looks_run(ctx, u);
+  g_stage = 0;
+}
+static void looks_run(cw_pass_ctx *ctx, looks_state *s) {
   look *la, *lb;
   bool na, nb;
   plan(s, &la, &lb, &na, &nb);
   if (!ctx->src || !ctx->dst) return;
   /* the textures first: making one binds it, which would replace a unit already bound */
   unsigned neutral = neutral_tex();
-  if ((la && (la->d.kind == CW_LOOK_DITHER_ORDERED || la->d.kind == CW_LOOK_DITHER_DIFFUSE)) ||
-      (lb && (lb->d.kind == CW_LOOK_DITHER_ORDERED || lb->d.kind == CW_LOOK_DITHER_DIFFUSE)))
+  if ((la && (la->d.kind == CW_LOOK_DITHER_ORDERED || la->d.kind == CW_LOOK_DITHER_DIFFUSE || la->d.kind == CW_LOOK_CUSTOM)) ||
+      (lb && (lb->d.kind == CW_LOOK_DITHER_ORDERED || lb->d.kind == CW_LOOK_DITHER_DIFFUSE || lb->d.kind == CW_LOOK_CUSTOM)))
     blue_noise_tex();
   if (la && la->d.kind == CW_LOOK_ASCII) ascii_prepare(la);
   if (lb && lb->d.kind == CW_LOOK_ASCII) ascii_prepare(lb);
   const cw_post_settings *st = ctx->settings;
   g_auto_tex = st->auto_exposure && ctx->pipeline->auto_exposure_tex ? ctx->pipeline->auto_exposure_tex : neutral;
   g_exposure = st->exposure * exp2f(st->exposure_ev);
+  if (g_stage == 1) g_auto_tex = neutral, g_exposure = 1; /* the finished picture: the tone curve took the exposure */
+  g_depth = ctx->depth_tex;
+  if (g_stage == 1 && ctx->pipeline->views_shared_post && ctx->pipeline->nviews >= 2 && ctx->view_count == 0) g_depth = 0;
+  dbg_stage = g_stage;
   vinfo v;
   view_info(ctx, s, &v);
   if (v.slot < 8) dbg_views = v.slot == 0 ? 1 : dbg_views + 1; /* (not an extra view: a SubViewport) */

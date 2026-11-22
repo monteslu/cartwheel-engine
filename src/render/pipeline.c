@@ -938,6 +938,10 @@ static bool post_in_run(const cw_pipeline *p, const pass_rec *r, int mode) {
   return mode == RUN_VIEW ? per_view : !per_view;
 }
 void cw_pipeline_set_views_array(cw_pipeline *p, bool on) { p->views_array = on; }
+void cw__pipeline_set_pass_reads(cw_pipeline *p, const char *name, uint32_t reads) {
+  pass_rec *r = find_pass(p, cw_intern(name));
+  if (r) r->d.reads = reads;
+}
 void cw__pipeline_set_pass_views(cw_pipeline *p, const char *name, uint8_t views) {
   pass_rec *r = find_pass(p, cw_intern(name));
   if (r) r->d.views = views;

@@ -109,6 +109,17 @@ typedef struct cw_shell_setting {
 
 typedef enum { CW_SHELL_SND_MOVE, CW_SHELL_SND_SELECT, CW_SHELL_SND_BACK, CW_SHELL_SND_JOIN, CW_SHELL_SND_PAUSE } cw_shell_sound;
 
+/* How the menus show the selected row: the title, pause and Settings lists, the Graphics page, and the join screen's
+ * taken seats. A game whose picture has only two colours (a one-bit look) shows the selection by shape: MARKER,
+ * UNDERLINE or INVERSE with an accent of its light colour. */
+typedef enum {
+  CW_SHELL_SELECT_COLOUR,    /* the row's text in the accent (the default; as before the styles) */
+  CW_SHELL_SELECT_MARKER,    /* the accent text and a caret in the accent before the row */
+  CW_SHELL_SELECT_UNDERLINE, /* the accent text and a bar in the accent under it */
+  CW_SHELL_SELECT_INVERSE,   /* the row on a plate of the accent, its text in selection_text */
+  CW_SHELL_SELECT_COUNT
+} cw_shell_selection;
+
 typedef struct cw_shell_desc {
   const char *title;      /* the title screen's heading (default "cartwheel") */
   const char *subtitle;   /* a line under it (optional) */
@@ -171,6 +182,8 @@ typedef struct cw_shell_desc {
   cw_font font;           /* default: the built-in sans (cw_ui_font_sans) */
   cw_color accent;        /* the selected item's colour (default a warm yellow) */
   void *user;
+  cw_shell_selection selection; /* how the selected row shows (COLOUR); cw_shell_set_selection changes it */
+  cw_color selection_text; /* INVERSE: the selected row's text (alpha 0: the menus' dark background, 0.02 0.02 0.05) */
 } cw_shell_desc;
 
 /* The save region for cw_app_desc.save / save_size: the shell's settings and
@@ -232,6 +245,10 @@ void cw_shell_set_pause_items(const char *const items[2]);
  * choices in another language, or to offer a row only in some modes. Shown from the next frame the Settings screen
  * draws. A row whose key was not in the rows before loads its saved choice into *value now; the others keep *value. */
 void cw_shell_set_settings_items(const cw_shell_setting *items, int count);
+/* The menus' selection style from the next frame they draw (as cw_shell_desc.selection; out of range: COLOUR), say
+ * when the game switches to a one-bit look. */
+void cw_shell_set_selection(cw_shell_selection style);
+cw_shell_selection cw_shell_selection_style(void); /* the style in use */
 void cw_shell_to_title(void); /* end the match and show the title (every pad drives the menus again) */
 /* Loading: progress 0..1 shown on the loading screen; loaded goes on to the title. */
 void cw_shell_loading(float progress);

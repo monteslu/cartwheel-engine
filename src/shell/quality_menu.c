@@ -134,8 +134,10 @@ static float text_w(cw_font f, const char *s, float size) {
   cw_text_style st = text_style(size, cw_rgba(1, 1, 1, 1));
   return cw_font_measure(f, s, &st).width;
 }
+static bool text_plain; /* the next text() without its outline (the highlighted row on its INVERSE plate) */
 static void text(cw_font f, const char *s, float x, float y, float size, cw_color c, int align /* 0 left 1 center 2 right */) {
   cw_text_style st = text_style(size, c);
+  if (text_plain) st.outline_width = 0, text_plain = false;
   if (align) {
     cw_text_metrics m = cw_font_measure(f, s, &st);
     x -= align == 1 ? m.width * 0.5f : m.width;
@@ -175,6 +177,8 @@ void cw_quality_menu_draw(const cw_quality_menu_style *style) {
   cw_quality_menu_style st = style ? *style : (cw_quality_menu_style){ 0 };
   if (!st.font.id) st.font = cw_ui_font_sans();
   if (st.accent.a == 0) st.accent = cw_rgba(1.0f, 0.78f, 0.25f, 1);
+  int sel_style = st.selection >= 0 && st.selection <= 3 ? st.selection : 0;
+  cw_color sel_text = st.selection_text.a > 0 ? st.selection_text : cw_rgba(0.02f, 0.02f, 0.05f, 1);
   if (!st.set_backdrop) st.backdrop = cw_rgba(0.02f, 0.02f, 0.05f, 0.92f);
   if (!st.title) st.title = "Graphics";
   cw_vec2 sz = cw_r2d_canvas_size();
@@ -227,19 +231,31 @@ void cw_quality_menu_draw(const cw_quality_menu_style *style) {
   for (int i = 0; i < M.n_rects; i++) M.rects[i] = cw_rect_make(0, 0, 0, 0);
   for (int i = first; i < first + count && i < MAX_ROWS; i++) {
     bool sel = i == M.row;
-    cw_color c = sel ? st.accent : cw_rgba(1, 1, 1, 0.88f);
+    cw_color c = sel ? (sel_style == 3 ? sel_text : st.accent) : cw_rgba(1, 1, 1, 0.88f);
     if (i == back_row() && first == 0 && count == n) y += d * 0.3f;
     cw_rect r = cw_rect_make(cx - rw * 0.5f, y - d * 0.2f, rw, step * 0.92f);
-    if (sel) cw_r2d_rect(r, cw_rgba(1, 1, 1, 0.08f));
-    if (i == back_row()) text(st.font, "Back", cx, y, u, c, 1);
-    else {
+    if (sel) cw_r2d_rect(r, sel_style == 3 ? st.accent : cw_rgba(1, 1, 1, 0.08f));
+    float x0 = cx, x1 = cx; /* the row's text from x0 to x1 (the selection's mark) */
+    if (i == back_row()) {
+      float bw = text_w(st.font, "Back", u);
+      text_plain = sel && sel_style == 3;
+      text(st.font, "Back", cx, y, u, c, 1);
+      x0 = cx - bw * 0.5f, x1 = cx + bw * 0.5f;
+    } else {
       const char *name = i == 0 ? "Preset" : cw_gfx_name(i - 1);
       char val[64];
       if (i == 0) snprintf(val, sizeof val, "<  %s  >", cw_quality_label());
       else snprintf(val, sizeof val, "<  %s  >", cw_gfx_value_label(i - 1));
+      text_plain = sel && sel_style == 3;
       text(st.font, name, split - gap, y, ru, c, 2);
+      text_plain = sel && sel_style == 3;
       text(st.font, val, split + gap, y, ru, c, 0);
+      if (sel && (sel_style == 1 || sel_style == 2)) x0 = split - gap - text_w(st.font, name, ru), x1 = split + gap + text_w(st.font, val, ru);
     }
+    if (sel && sel_style == 1) {
+      cw_vec2 p[3] = { { x0 - d * 0.95f, y + d * 0.2f }, { x0 - d * 0.95f, y + d * 0.95f }, { x0 - d * 0.4f, y + d * 0.575f } };
+      cw_r2d_polygon(p, 3, st.accent);
+    } else if (sel && sel_style == 2) cw_r2d_rect(cw_rect_make(x0, y + d * 1.18f, x1 - x0, fmaxf(2.0f, d * 0.09f)), st.accent);
     M.rects[i] = r;
     y += step;
     if (i == 0 && count == n) y += d * 0.35f; /* the preset apart from the settings it sets */

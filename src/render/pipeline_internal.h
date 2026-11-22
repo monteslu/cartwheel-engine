@@ -281,6 +281,8 @@ void cw__view_fb_rect(const cw_pass_ctx *ctx, int w, int h, bool top_down, int o
 void cw__pw_set_scissor(const int *rect); /* WebGPU: NULL = the whole target */
 /* a pass's split screen capability, from the next frame (cw_pass_desc.views: a pass that can only sometimes) */
 void cw__pipeline_set_pass_views(cw_pipeline *p, const char *name, uint8_t views);
+/* change a pass's reads (looks.c: the DISPLAY stage under the shared split screen post chain) */
+void cw__pipeline_set_pass_reads(cw_pipeline *p, const char *name, uint32_t reads);
 /* a one-pass split screen's pass that finds it cannot do this frame (in the SHADOW phase, before anything is drawn):
  * the frame is drawn view by view instead. Does nothing outside such a run. */
 void cw__pipeline_array_refuse(cw_pass_ctx *ctx, const char *why);

@@ -4,6 +4,44 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.64.0 (2026-11-22)
+
+### Added
+- Look stages (`cartwheel/look.h`): `cw_look_desc.stage`, `CW_LOOK_STAGE_SCENE` (the default, before bloom and the
+  tone curve, as before) or `CW_LOOK_STAGE_DISPLAY`: the look drawn last, in the POST pass "looks_display" at order
+  9900 (after the tone curve, the grade, anti-aliasing, the lens and a game's own POST passes; the HUD still after),
+  on the finished picture in linear light, its colours shown as they are. A dither there puts exactly its two colours
+  on screen. A pair is drawn at DISPLAY when either look of it asks for it, whatever the weight. In split screen it
+  runs in each view, or once over the laid-out views after a shared post chain (without the views' depth there).
+- Dither tone options (`cw_look_dither`), all off by default: `hue_value` (saturated colours by their value, keyed
+  by a saturation smoothstep `hue_from`..`hue_to`), `grey_gain` (luminance times a gain, the highlights kept from
+  `keep_from` to `keep_to`), `sharpen` and `sharpen_radius` (an unsharp mask), `outline`, `outline_from`,
+  `outline_to` (depth outlines: the relative Laplacian of 1 / linear depth, taken as the brighter), `gamma` (before
+  the contrast). A setting left at 0 is its default.
+- `cw_look_dither.output_pixels`: `pixel` counts screen pixels instead of pixels of a 1080 line picture (1: one
+  dither pixel per screen pixel at any resolution).
+- CUSTOM looks get `cw_look_stage()`, `cw_look_depth(px)` (as the depth buffer holds it) and
+  `cw_look_linear_depth(px)` (view-space distance), the same on GL and WebGPU, the engine's thresholds
+  `cw_look_bayer(px)` and `cw_look_blue_noise(px)`, and `cw_look_to_display` / `cw_look_from_display`, in GLSL and WGSL.
+- Shell selection styles (`cartwheel/shell.h`): `cw_shell_desc.selection`, `CW_SHELL_SELECT_COLOUR` (the default, as
+  before), `_MARKER` (a caret before the row), `_UNDERLINE` (a bar under it), `_INVERSE` (a plate of the accent behind
+  it, its text in `selection_text`), on the title, pause, Settings and Graphics lists and the join screen's taken
+  seats; `cw_shell_set_selection` and `cw_shell_selection_style` at runtime; debug field `shell.selection`.
+  `cw_quality_menu_style` gains `selection` and `selection_text` for the Graphics page drawn on its own.
+- Sample `looks_onebit` (and `looks_onebit_720`): a one-bit look of the finished frame (DISPLAY, blue noise, every
+  tone option, one dither pixel per screen pixel) beside the game pass it reproduces; on the same frame and
+  thresholds the two differ in 0.05% of the pixels (the pass rounds its tone to a half float). It costs about 0.31 ms
+  on GL and 0.50 ms on WebGPU at 1920x1080 on a Radeon 890M. `shell_settings` and `shell_join` take
+  `SHELL_SELECTION`.
+- Gates `looks-display` (the look against the reference pass within 0.2% of the pixels, two colours on screen, each
+  tone option alone, output pixels, the stage rule, split screen, still frames, the flash check, each with a control
+  that must fail), `shell-selection` (each style on every list, nothing else changed, COLOUR byte for byte the
+  default), `look-onebit`, `shell-select-inverse`.
+
+### Unchanged
+- Without the new settings every frame is byte for byte the one before them: the `looks` sample (every kind, blends,
+  split screen, the tour) and the shell samples on GL and WebGPU.
+
 ## v0.63.0 (2026-11-22)
 
 ### Added

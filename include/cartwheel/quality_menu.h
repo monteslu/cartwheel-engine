@@ -41,6 +41,11 @@ typedef struct cw_quality_menu_style {
   bool set_backdrop;
   float size;        /* text size in canvas units (default: the canvas height / 24) */
   const char *title; /* default "Graphics" */
+  /* how the highlighted row shows, as cw_shell_selection (cartwheel/shell.h): 0 its text in the accent over a faint
+   * plate (the default), 1 a caret before it too, 2 a bar under it too, 3 a plate of the accent with the text in
+   * selection_text (alpha 0: the backdrop's colour, opaque) */
+  int selection;
+  cw_color selection_text;
 } cw_quality_menu_style;
 
 void cw_quality_menu_open(void);     /* show it, the preset row highlighted */

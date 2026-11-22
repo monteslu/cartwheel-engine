@@ -36,6 +36,8 @@ export const LOCAL_ONLY = {
   'auto-exposure': 'reads every frame of native runs on the test GPU, GL against WebGPU',
   'viewmodel-blur': 'reads pixels of native runs on the test GPU, blurred against plain',
   'looks': 'reads pixels of about sixty native runs on the test GPU (GL and WebGPU), and runs the flash check on romdev',
+  'looks-display': 'reads pixels of about eighty native runs on the test GPU (GL and WebGPU) against a reference pass, and runs the flash check on romdev',
+  'shell-selection': 'reads pixels of native runs on the test GPU (GL and WebGPU), each selection style against the default',
   'motion-vectors': 'reads pixels of native runs on the test GPU against a frame rendered at 36 times the pixels',
   'gi-probe': 'reads pixels of native runs on the test GPU (GL and WebGPU) against known answers',
   'reversed-depth': 'reads pixels of WebGPU runs on the test GPU, forward depth against reversed',

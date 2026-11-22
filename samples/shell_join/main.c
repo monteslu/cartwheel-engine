@@ -6,7 +6,9 @@
  *
  * Start on any pad at the title or on the join screen plays: a pad with no seat takes a free one first. shell_join_slow is
  * this game with two seats (so a third pad finds them taken) and a start that takes about 300 ms, a game loading its world:
- * "Starting..." is on screen before that work begins. */
+ * "Starting..." is on screen before that work begins.
+ *
+ * SHELL_SELECTION=0..3 (cw_test_env): the menus' selection style, COLOUR, MARKER, UNDERLINE or INVERSE. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -82,6 +84,8 @@ static void init(void *user) {
 
 static void fixed_update(void *user, double dt) {
   (void)user;
+  const char *sel = cw_test_env("SHELL_SELECTION"); /* 0..3: the menus' selection style (cw_shell_set_selection) */
+  if (sel && *sel) cw_shell_set_selection((cw_shell_selection)atoi(sel));
   if (!cw_shell_update()) return; /* a menu, or the join screen, owns this tick */
   if (cw_shell_join_press()) G.pressed++; /* a pad without a seat pressed A: seated already */
   bool ask = cw_shell_join_requested();   /* Start on a pad without a seat: offer the join screen */

@@ -4693,6 +4693,62 @@
     "note": "the post looks held to what each promises, natively on GL and WebGPU: no look draws the frame without looks byte for byte; ASCII cells hold glyphs only from the set; dithers are exactly two colours; half block pixels are the scene's mean over their square; a blend at 0 and 1 is each look; FADE, WIPE and DISSOLVE middles are what they promise; a still camera's frames do not change (TAA too, for the glyph hold); one-pass split screen equals view by view; a half-second blend passes the flash check. Each with a control that must fail"
   },
   {
+    "name": "looks-display",
+    "script": "tests/looks-display.mjs",
+    "note": "the DISPLAY stage and the dither tone options, natively on GL and WebGPU at 1080p: the one-bit look (blue noise, every tone option, one dither pixel per screen pixel) and a game's own one-bit pass on the same frame and thresholds differ in at most 0.2% of the pixels (the reference rounds its tone to a half float), the CUSTOM look version too, and against the pass's own blue noise every 32x32 tile's tone is within 0.03; exactly black and white over bloom, AgX and a vignette; each tone option alone matches the reference with it alone; output pixels at 720p; a SCENE look paired with a DISPLAY one draws at DISPLAY; split screen per view and over the shared chain; still frames hold; a half-second fade passes the flash check. Each with a control that must fail"
+  },
+  {
+    "name": "shell-selection",
+    "script": "tests/shell-selection.mjs",
+    "note": "the shell selection styles natively on GL and WebGPU on the title, Settings, Graphics and join screens: COLOUR by the switch is the default frame byte for byte; MARKER puts a caret left of the selected row, UNDERLINE a bar under it, INVERSE a plate behind it, and none changes another row. Control: the COLOUR frame judged as each style fails"
+  },
+  {
+    "name": "look-onebit",
+    "app": "looks_onebit",
+    "frames": 60,
+    "webgpu": true,
+    "maxGt16": 0.01,
+    "env": {
+      "ONEBIT": "look"
+    },
+    "controlEnv": {
+      "ONEBIT": "scene"
+    },
+    "fields": [
+      "look.ran",
+      "look.stage",
+      "look.tone",
+      "onebit.ran"
+    ],
+    "expect": {
+      "look.stage": 1,
+      "look.tone": 1,
+      "onebit.ran": 1
+    },
+    "note": "the one-bit look at the DISPLAY stage with every tone option, one dither pixel per screen pixel, on every host. Control: the same look at the SCENE stage"
+  },
+  {
+    "name": "shell-select-inverse",
+    "app": "shell_settings",
+    "frames": 44,
+    "input": "shell-graphics-page.json",
+    "env": {
+      "SHELL_SELECTION": "3"
+    },
+    "controlEnv": {
+      "SHELL_SELECTION": "0"
+    },
+    "fields": [
+      "shell.screen",
+      "shell.selection"
+    ],
+    "expect": {
+      "shell.screen": 5,
+      "shell.selection": 3
+    },
+    "note": "the Graphics page with the INVERSE selection (a plate of the accent behind the highlighted row) on every host. Control: COLOUR"
+  },
+  {
     "name": "look-ascii",
     "app": "looks",
     "frames": 60,

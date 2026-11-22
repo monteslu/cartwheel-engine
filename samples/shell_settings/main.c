@@ -13,7 +13,9 @@
  * at runtime, the values stay).
  *
  * Debug fields: game.calls (settings_changed calls), game.index (the last index, -1 none), game.value (its value),
- * game.style, game.hits, game.hints (the three values), game.items (rows kept). */
+ * game.style, game.hits, game.hints (the three values), game.items (rows kept).
+ *
+ * SHELL_SELECTION=0..3 (cw_test_env): the menus' selection style, COLOUR, MARKER, UNDERLINE or INVERSE. */
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -75,6 +77,8 @@ static void init(void *user) {
 
 static void fixed_update(void *user, double dt) {
   (void)user;
+  const char *sel = cw_test_env("SHELL_SELECTION"); /* 0..3: the menus' selection style (cw_shell_set_selection) */
+  if (sel && *sel) cw_shell_set_selection((cw_shell_selection)atoi(sel));
   if (!G.configured && cw_frame_index() >= 2) {
     const char *n = getenv("SHELL_SETTINGS_ITEMS"), *rn = getenv("SHELL_SETTINGS_RENAME");
     G.items = n && *n >= '0' && *n <= '3' ? *n - '0' : 3;
