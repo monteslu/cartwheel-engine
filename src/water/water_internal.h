@@ -47,6 +47,7 @@ typedef struct water3d {
   float shallow_color[4];
   /* the look */
   float scatter, glint;
+  const char *sun_path; /* property `sun`: the DirectionalLight3D that lights it without a ProceduralSky (NULL / "": the tree's first) */
   /* the interactive ripple layer (ripples.c) */
   int ripple_cells;
   float ripple_size[2], ripple_center[2], ripple_speed, ripple_damping, ripple_strength, foam_fade, foam_spread;
@@ -74,6 +75,7 @@ typedef struct water3d {
   unsigned under_mask; /* the wave mask for the underwater pass (0: to make) */
   float built_size[2], built_amp, built_horizon;
   bool refl_on, refr_on;
+  bool refl_bg; /* no planar reflection and no environment: the reflection target holds the scene's background colour */
   wave_eval ev;      /* this frame's waves, as drawn */
   float flow_off[3]; /* Water2's flow offsets 0, 1 and the half cycle */
   float cam[4];      /* the camera world position this frame */
@@ -93,6 +95,7 @@ typedef struct water3d {
   uint32_t fx_next;
   t3_texture *rip_tex;
   float sun[4], sun_col[4];
+  bool lit_by_light; /* this frame's sun is a scene light (no ProceduralSky) */
   float cam_world[16]; /* the view's camera world matrix this frame (the refraction's points back to the world) */
   float refr_inv[16]; /* the refraction camera's inverse projection (its depth texture reads back to view space) */
   bool refr_depth_ok;
@@ -114,7 +117,7 @@ typedef struct water3d {
     t3_render_target *refl, *refr;
     cw_rt *wg_col, *wg_dep;
     t3_texture *wg_col_tex, *wg_dep_tex;
-    bool wg_fresh, refr_depth_ok, refr_above;
+    bool wg_fresh, refr_depth_ok, refr_above, refl_bg;
     float refr_inv[16];
   } pv[4];
 } water3d;

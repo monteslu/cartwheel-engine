@@ -259,3 +259,6 @@ standard+instbig+senv+l2001+xplain
 standard+shadow+senv+l2001+s100
 standard+senv+l2001
 standard+instbig+senv+l2001
+standard+ds+l1001+xwaterlow
+basic+trans
+standard+ds+l1001+xwater

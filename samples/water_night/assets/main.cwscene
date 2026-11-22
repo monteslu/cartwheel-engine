@@ -1,0 +1,28 @@
+[scene format=1]
+
+[node name="Root" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0, 0, 0, 1)
+ambient_energy = 0
+
+[node name="Post" parent="." type="PostProcess"]
+
+[node name="Moon" parent="." type="DirectionalLight3D"]
+color = color(0.75, 0.82, 1, 1)
+energy = 1.5
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 0, 30)
+rotation = vec3(-0.02, 0, 0)
+fov = 55
+far = 3000
+cull_layers = 3
+
+[node name="Water" parent="." type="Water3D"]
+position = vec3(0, -6.5, 0)
+size = vec2(500, 320)
+horizon_distance = 1400
+refraction = false
+
+[node name="Sky" parent="." type="Node3D"]

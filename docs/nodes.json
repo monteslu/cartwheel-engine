@@ -11067,7 +11067,15 @@
      "readonly": false,
      "min": 0,
      "max": 4,
-     "doc": "Light the sun sends through wave crests toward the eye (the turquoise glow; needs a ProceduralSky)."
+     "doc": "Light the sun sends through wave crests toward the eye (the turquoise glow): a ProceduralSky's sun, else the scene light (sun)."
+    },
+    {
+     "name": "sun",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Path of the DirectionalLight3D that lights the water when the tree has no ProceduralSky (a moon over a night sea): its colour, energy and direction give the glint, the light through the crests and what shows through the surface. Empty: the tree's first DirectionalLight3D. With a ProceduralSky its sun lights the water and this is not read."
     },
     {
      "name": "glint",

@@ -5145,6 +5145,11 @@
     "note": "what lies just under the water shows through the surface cloudy and fades with depth, by day and much less by night, on GL and WebGPU through romdev (water_see_through: slabs 0.05 to 2 m down read against the open water beside them, no shore foam over a slab, a bright float not blown out, the light reaching the water smooth through dusk); controls: refraction off (opaque), see_through 0 (the old look) and see_night 1 (the light ignored) must each break their check"
   },
   {
+    "name": "water-night",
+    "script": "tests/water-night.mjs",
+    "note": "a night sea with no ProceduralSky (water_night: black background, no ambient, a low DirectionalLight3D moon, an additive backdrop of disc, halo, horizon glow and shore lights on a layer the camera draws), reflectivity 1, native and romdev, GL and WebGPU: the water takes the moon as its sun (water.sun_lit, the moon path's bright pixels), its planar reflection mirrors the backdrop's layer (the reflected halo and shore lights), with reflection off it mirrors the background colour, and the same holds in a split screen of two views in one pass; a ProceduralSky scene (water_see_through) draws byte-identical with the old paths forced. Controls: CW_TEST_WATER_SKY_ONLY=1 (only a sky lights the water, no background stand-in), CW_TEST_WATER_REFL_LAYER0=1 (the reflection draws layer 0 only, in split screen too), CW_TEST_VIEWS_BG_CLEAR=1 on WebGPU (each view of the one pass clears the background over the views before it) must each break their check, and the night sea with the old paths must differ from its own frame"
+  },
+  {
     "name": "water-surface",
     "script": "tests/water-surface.mjs",
     "note": "the drawn water is where cw_water_height_at says, on every host and backend (debug_view HEIGHT read back at 48 probes, 1.5 cm); control: the water drawn 0.25 s late"

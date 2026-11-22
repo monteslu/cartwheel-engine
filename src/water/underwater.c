@@ -336,7 +336,7 @@ static void uw_exec(cw_pass_ctx *ctx, void *user) {
   if (sx == 0 && sy == 0 && sz == 0) sy = 1;
   float cs = d->caustic_size > 0.05f ? d->caustic_size : 0.05f;
   cw_pass_uniform4f(prog, "u_sun", sx, sy, sz, d->caustics);
-  /* without a sky the scene's light is unknown: a plain white sun for the water's colour */
+  /* no sun (no ProceduralSky and no DirectionalLight3D): a plain white sun for the water's colour */
   float sr = d->sun_col[0], sg = d->sun_col[1], sb = d->sun_col[2];
   if (sr + sg + sb <= 0) sr = sg = sb = 3.0f;
   cw_pass_uniform4f(prog, "u_sun_col", sr, sg, sb, 1.0f / cs);

@@ -18,6 +18,7 @@
 #include "cartwheel/pipeline.h"
 #include "render/pipeline_internal.h"
 #include "render/view_layers.h"
+#include "scene/scene_internal.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/quality.h"
 #include "cartwheel/render3d.h"
@@ -219,12 +220,71 @@ typedef struct water_tree {
   CW_ARRAY(cw_node) nodes;
   cw_water_stats stats;
   t3_renderer *bound;
+  cw_node first_dir;     /* the tree's first DirectionalLight3D (found again when the tree changes) */
+  uint64_t first_dir_ver; /* the tree's structure version it was found at (0: not looked for) */
+  t3_scene *bg_scene;     /* empty, its background the scene's: what the water mirrors with no planar reflection and no environment */
 } water_tree;
 
 static void wtree_free(void *p) {
   water_tree *wt = p;
+  if (wt->bg_scene) t3_release(wt->bg_scene);
   cw_array_free(&wt->nodes);
   cw_free(wt);
+}
+
+/* ── the light without a sky ─────────────────────────────────────────── */
+
+/* CW_TEST_WATER_SKY_ONLY=1: only a ProceduralSky lights the water, as before v0.63.0 (the gates' control) */
+static bool water_sky_only(void) {
+  const char *e = cw_test_env("CW_TEST_WATER_SKY_ONLY");
+  return e && atoi(e) > 0;
+}
+
+static cw_node first_dir_light(cw_node n) {
+  if (cw_node_is(n, "DirectionalLight3D")) return n;
+  int c = cw_node_child_count(n);
+  for (int i = 0; i < c; i++) {
+    cw_node f = first_dir_light(cw_node_child(n, i));
+    if (!CW_HANDLE_IS_NULL(f)) return f;
+  }
+  return (cw_node){ 0 };
+}
+
+/* the light that lights a Water3D when no ProceduralSky does: its `sun`, else the tree's first DirectionalLight3D
+ * (in tree order). dir: toward the light (world); col: its colour x energy, black while it or a parent is hidden.
+ * False: none. */
+static bool water_light(cw_tree *t, water_tree *wt, cw_node n, const water3d *d, t3_vec3 *dir, t3_color *col) {
+  cw_node l = { 0 };
+  if (d->sun_path && d->sun_path[0]) {
+    l = cw_node_get(n, d->sun_path);
+    if (!cw_node_is(l, "DirectionalLight3D")) {
+      static bool warned;
+      if (!warned) cw_warn("Water3D: `sun` (%s) is not a DirectionalLight3D: the water takes no light from it", d->sun_path);
+      warned = true;
+      return false;
+    }
+  } else {
+    if (wt->first_dir_ver != t->structure_version || !cw_node_valid(wt->first_dir)) {
+      wt->first_dir = first_dir_light(cw_tree_root(t));
+      wt->first_dir_ver = t->structure_version;
+    }
+    l = wt->first_dir;
+    if (!cw_node_valid(l)) return false;
+  }
+  t3_object *o = cw_node3d_object(l);
+  if (!o || o->type != T3_DIRECTIONAL_LIGHT) return false;
+  const t3_light *L = (const t3_light *)o;
+  bool shown = true;
+  for (const t3_object *p = o; p; p = p->parent) shown = shown && p->visible;
+  /* cartwheel's lights shine along their -Z: toward the light is +Z */
+  const float *m = cw_node3d_global_transform(l)->e;
+  t3_vec3 z = { m[8], m[9], m[10] };
+  float len = sqrtf(z.x * z.x + z.y * z.y + z.z * z.z);
+  if (!(len > 0)) return false;
+  *dir = (t3_vec3){ z.x / len, z.y / len, z.z / len };
+  float e = shown ? L->intensity : 0.0f;
+  *col = (t3_color){ L->color.r * e, L->color.g * e, L->color.b * e };
+  return true;
 }
 
 cw_node cw__water_at(cw_tree *t, int i) {
@@ -617,11 +677,11 @@ static void pv_swap(water3d *d, int k) {
   struct water_planar *p = &d->pv[k], t = *p;
   p->refl = d->refl, p->refr = d->refr, p->wg_col = d->wg_col, p->wg_dep = d->wg_dep;
   p->wg_col_tex = d->wg_col_tex, p->wg_dep_tex = d->wg_dep_tex, p->wg_fresh = d->wg_fresh;
-  p->refr_depth_ok = d->refr_depth_ok, p->refr_above = d->refr_above;
+  p->refr_depth_ok = d->refr_depth_ok, p->refr_above = d->refr_above, p->refl_bg = d->refl_bg;
   memcpy(p->refr_inv, d->refr_inv, sizeof p->refr_inv);
   d->refl = t.refl, d->refr = t.refr, d->wg_col = t.wg_col, d->wg_dep = t.wg_dep;
   d->wg_col_tex = t.wg_col_tex, d->wg_dep_tex = t.wg_dep_tex, d->wg_fresh = t.wg_fresh;
-  d->refr_depth_ok = t.refr_depth_ok, d->refr_above = t.refr_above;
+  d->refr_depth_ok = t.refr_depth_ok, d->refr_above = t.refr_above, d->refl_bg = t.refl_bg;
   memcpy(d->refr_inv, t.refr_inv, sizeof d->refr_inv);
 }
 
@@ -757,7 +817,7 @@ static void oblique(t3_mat4 *proj, const t3_mat4 *view, t3_vec3 n, t3_vec3 p) {
 /* render the scene into rt from cam (the water hidden), as the pipeline's
  * passes that render with three.c must: bindings reset, the renderer's
  * target put back */
-static void render_into(cw_pass_ctx *ctx, water_tree *wt, t3_render_target *rt, t3_camera *cam) {
+static void render_scene_into(cw_pass_ctx *ctx, water_tree *wt, t3_render_target *rt, t3_camera *cam, t3_scene *scene) {
   t3_renderer *r = ctx->renderer;
   for (int i = 0; i < wt->nodes.count; i++) {
     water3d *o = cw_node_data_t(wt->nodes.data[i], water_t);
@@ -773,7 +833,7 @@ static void render_into(cw_pass_ctx *ctx, water_tree *wt, t3_render_target *rt, 
   bool auto_clear = t3_renderer_get_auto_clear(r);
   t3_renderer_set_auto_clear(r, true);
   t3_renderer_set_render_target(r, rt);
-  if (cam) t3_renderer_render(r, ctx->scene3d, cam);
+  if (cam) t3_renderer_render(r, scene, cam);
   else t3_renderer_clear(r, true, true, false);
   t3_renderer_set_render_target(r, prev);
   t3_renderer_set_auto_clear(r, auto_clear);
@@ -782,6 +842,10 @@ static void render_into(cw_pass_ctx *ctx, water_tree *wt, t3_render_target *rt, 
     water3d *o = cw_node_data_t(wt->nodes.data[i], water_t);
     if (o && o->mesh) o->mesh->base.visible = true;
   }
+}
+
+static void render_into(cw_pass_ctx *ctx, water_tree *wt, t3_render_target *rt, t3_camera *cam) {
+  render_scene_into(ctx, wt, rt, cam, ctx->scene3d);
 }
 
 /* the refraction: three.c's render target on GL; on WebGPU a target of the engine's own whose depth is copied for
@@ -848,8 +912,14 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   if (!d->vcam) d->vcam = t3_perspective_camera_new(cam->fov, cam->aspect, cam->near, cam->far);
   t3_camera *v = d->vcam;
   v->fov = cam->fov, v->aspect = cam->aspect, v->near = cam->near, v->far = cam->far, v->zoom = cam->zoom;
-  /* one-pass split screen: the view's own geometry too (its layer: a terrain's patches, what is drawn in some views only) */
-  v->base.layers = 1u | (ctx->view_count > 0 ? (cam->base.layers & CW__VIEW_LAYERS) : 0);
+  /* the layers the view draws (its Camera3D cull_layers: a backdrop of moon and sky on a layer of its own is mirrored
+   * too), and in a one-pass split screen the view's own geometry (its layer: a terrain's patches, what is drawn in some
+   * views only). CW_TEST_WATER_REFL_LAYER0=1: layer 0 only, as before v0.63.0 (the gates' control) */
+  {
+    const char *l0 = cw_test_env("CW_TEST_WATER_REFL_LAYER0");
+    uint32_t own = l0 && atoi(l0) > 0 ? 1u : cam->base.layers & ~CW__VIEW_LAYERS;
+    v->base.layers = own | (ctx->view_count > 0 ? (cam->base.layers & CW__VIEW_LAYERS) : 0);
+  }
   if (d->refl_on && !below) {
     /* r187 ReflectorNode.updateBefore, with the water's up as the normal */
     t3_vec3 view = v3add(v3neg(v3reflect(v3sub(wpos, cpos), up)), wpos);
@@ -866,6 +936,21 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
     render_into(ctx, wt, d->refl, v);
   } else if (first || d->refl_on) {
     render_into(ctx, wt, d->refl, NULL); /* cleared: never sampled garbage */
+  }
+  /* No planar reflection drawn (reflection off, or Low) and nothing standing in for it: no environment for the
+   * material's specular (a ProceduralSky's, or the scene's own) and no background texture. The water then mirrors what
+   * the scene shows behind everything, its background colour (else the clear colour), as an even reflection: a night
+   * sea under a dark blue sky stays dark blue, not black. The 1 x 1 target is drawn by an empty scene whose background
+   * is that colour (exact, in the scene's linear HDR, on both backends). */
+  t3_scene *s3 = ctx->scene3d;
+  d->refl_bg = !d->refl_on && !below && s3 && !s3->environment && !s3->background_texture && !water_sky_only();
+  if (d->refl_bg) {
+    if (!wt->bg_scene) wt->bg_scene = t3_scene_new();
+    float a = 1;
+    t3_color c = t3_renderer_get_clear_color(ctx->renderer, &a);
+    wt->bg_scene->has_background = true;
+    wt->bg_scene->background = s3->has_background ? s3->background : c;
+    render_scene_into(ctx, wt, d->refl, v, wt->bg_scene);
   }
   if (d->refr_on && !below) {
     /* r187 Refractor: the view's own camera, clipped to below the rest level */
@@ -954,7 +1039,7 @@ static void fill(t3_extension_ctx *c, void *user) {
   t3_extension_set_texture(c, "waterWaveMask", d->mask_tex ? d->mask_tex : d->mask_white);
   v[0] = d->reflectivity, v[1] = d->distortion, v[2] = d->detail, v[3] = d->normal_scale;
   t3_extension_set_uniform(c, "waterLook", v, 4);
-  v[0] = d->color[0], v[1] = d->color[1], v[2] = d->color[2], v[3] = d->refl_on ? 1.0f : 0.0f;
+  v[0] = d->color[0], v[1] = d->color[1], v[2] = d->color[2], v[3] = d->refl_on || d->refl_bg ? 1.0f : 0.0f;
   t3_extension_set_uniform(c, "waterTint", v, 4);
   v[0] = d->deep_color[0], v[1] = d->deep_color[1], v[2] = d->deep_color[2], v[3] = d->refr_on ? 1.0f : 0.0f;
   t3_extension_set_uniform(c, "waterDeep", v, 4);
@@ -1114,6 +1199,22 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
       cw_sky_get_state(ctx->tree, &sk);
       float amp = 0;
       for (int k = 0; k < 4; k++) amp += fabsf(d->ev.a[k]);
+      /* no ProceduralSky: the scene's own light (`sun`, else the tree's first DirectionalLight3D) is the sun, so a sea
+       * under a moon has its glint, crest light and see-through light from the moon (CW_TEST_WATER_SKY_ONLY=1: the
+       * sky alone, as before, the gates' control) */
+      bool lit_by_light = false;
+      if (!sk.active && !water_sky_only()) {
+        t3_vec3 ld;
+        t3_color lc;
+        if (water_light(ctx->tree, wt, n, d, &ld, &lc)) {
+          sk.sun_direction = ld, sk.sun_color = lc, sk.sun_energy = 1;
+          sk.sun_elevation = asinf(CW_CLAMP(ld.y, -1.0f, 1.0f)) * 57.2957795f;
+          sk.horizon = (t3_color){ 0, 0, 0 };
+          sk.active = true;
+          lit_by_light = true;
+        }
+      }
+      d->lit_by_light = lit_by_light;
       d->sun[0] = sk.sun_direction.x, d->sun[1] = sk.sun_direction.y, d->sun[2] = sk.sun_direction.z, d->sun[3] = amp;
       float on = sk.active ? 1.0f : 0.0f;
       d->sun_col[0] = sk.sun_color.r * sk.sun_energy * on, d->sun_col[1] = sk.sun_color.g * sk.sun_energy * on;
@@ -1126,6 +1227,9 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
         float s = CW_CLAMP((e + 4.0f) / 16.0f, 0.0f, 1.0f);
         s = s * s * (3.0f - 2.0f * s);
         if (sk.sun_energy <= 0.0f) s = 0.0f;
+        /* a scene light: its share of a ProceduralSky's full sun (energy 4 through clear air), so a moon lets far less
+         * show through than a noon sun */
+        if (lit_by_light) s *= CW_CLAMP((0.2126f * sk.sun_color.r + 0.7152f * sk.sun_color.g + 0.0722f * sk.sun_color.b) / 4.0f, 0.0f, 1.0f);
         float hl = 0.2126f * sk.horizon.r + 0.7152f * sk.horizon.g + 0.0722f * sk.horizon.b;
         float resid = CW_MIN(1.0f, d->see_night + CW_CLAMP(hl * 2.0f, 0.0f, 0.15f));
         d->see_light = resid + (1.0f - resid) * s;
@@ -1151,6 +1255,7 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     tri += d->triangles;
     wt->stats.surfaces++;
     wt->stats.see_light = d->see_light;
+    wt->stats.sun_light = d->lit_by_light;
     /* one-pass split screen: this view's camera values kept for the draws (its planar reflection and refraction are
      * its own targets, pv); a surface one view sees from below and another from above (its material's environment term
      * is the frame's, and the view from under the water a full-screen pass of its own) is drawn view by view */
@@ -1276,7 +1381,8 @@ static const cw_prop water_props[] = {
   CW_PROP_FIELD_RANGE(water3d, foam_lace, CW_T_FLOAT, 0, 4, "How much of the foam's lace pattern cuts holes in it (1.4; 0: solid foam)."),
   CW_PROP_FIELD_RANGE(water3d, foam_soft, CW_T_FLOAT, 0, 1, "0: foam cut out by its lace. 1: thick foam solid and churned, thinning through soft patches to nothing, for water seen close up."),
   CW_PROP_FIELD_RANGE(water3d, crest_light, CW_T_FLOAT, 0, 1, "How much light comes through the thin top of a wave: lighter water over what the refraction shows, and foam at the very top (0: none)."),
-  CW_PROP_FIELD_RANGE(water3d, scatter, CW_T_FLOAT, 0, 4, "Light the sun sends through wave crests toward the eye (the turquoise glow; needs a ProceduralSky)."),
+  CW_PROP_FIELD_RANGE(water3d, scatter, CW_T_FLOAT, 0, 4, "Light the sun sends through wave crests toward the eye (the turquoise glow): a ProceduralSky's sun, else the scene light (sun)."),
+  { .name = "sun", .type = CW_T_STRING, .flags = CW_PROP_DEFAULT, .offset = (int)offsetof(water3d, sun_path), .size = (int)sizeof(const char *), .doc = "Path of the DirectionalLight3D that lights the water when the tree has no ProceduralSky (a moon over a night sea): its colour, energy and direction give the glint, the light through the crests and what shows through the surface. Empty: the tree's first DirectionalLight3D. With a ProceduralSky its sun lights the water and this is not read." },
   CW_PROP_FIELD_RANGE(water3d, glint, CW_T_FLOAT, 0, 8, "Strength of the fine sparkle the sun makes on the small ripples."),
   CW_PROP_FIELD_RANGE(water3d, ripple_cells, CW_T_INT, 0, 512, "Cells along the longer side of the interactive ripple grid (0: no ripples; quality scales it)."),
   CW_PROP_FIELD(water3d, ripple_size, CW_T_VEC2, CW_PROP_DEFAULT, "The rectangle the ripple grid covers, metres (0: the whole water)."),

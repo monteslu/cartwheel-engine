@@ -4,6 +4,38 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.63.0 (2026-11-22)
+
+### Added
+- Water3D is lit by the scene's own light when the tree has no ProceduralSky: its new `sun` property (the path of a
+  DirectionalLight3D), else the tree's first DirectionalLight3D. That light's colour times energy and its direction
+  drive the glint, the light through the crests (`scatter`), the body's light, the caustics, the view from under the
+  surface and how much shows through it (`see_light`, a scene light counting by its share of a ProceduralSky's full
+  sun), so a night sea under a moon has its moon path and moonlit crests. A hidden light lights nothing.
+  `cw_water_stats` gains `sun_light` (1: the last surface was lit this way). With a ProceduralSky the sky's sun lights
+  the water as before, byte for byte.
+- Sample `water_night` (a black background, no ambient light, a low moon, an additive backdrop of disc, halo, horizon
+  glow and shore lights on a layer of its own) and gate `water-night`: native and romdev, GL and WebGPU, the moon path
+  and the reflected backdrop at reflectivity 1, the background mirrored with reflection off, a split screen of two
+  views in one pass, and a ProceduralSky scene byte-identical with the old paths forced. Its controls force each old
+  path (`CW_TEST_WATER_SKY_ONLY=1`, `CW_TEST_WATER_REFL_LAYER0=1`, `CW_TEST_VIEWS_BG_CLEAR=1`) and must fail.
+
+### Changed
+- A Water3D in a scene with no ProceduralSky and a DirectionalLight3D now takes its look from that light (above):
+  the body is lit by it instead of drawn at full light, and its glint and crest light show. Set the light's energy,
+  or the water's `scatter` and `glint`, to tune it.
+
+### Fixed
+- Water3D's planar reflection and refraction draw what the view's camera draws: its `cull_layers`. They drew layer 0
+  only, so a backdrop on a layer of its own (a moon disc, a sky gradient, horizon lights) was missing from the
+  reflection and water at a high reflectivity drew black. Transparent and additive meshes were never skipped: they
+  reflect, sorted as the main picture sorts them.
+- Water3D with no planar reflection drawn (reflection off, or Low) and no environment to stand in for it (no
+  ProceduralSky and no environment map) mirrors the scene's background colour (else the clear colour) instead of
+  black.
+- WebGPU split screen in one pass drawn view by view: a scene with a background colour (a WorldEnvironment, no sky
+  texture) cleared the whole target for each view, so every view but the last was black. The first view clears to it
+  and the later ones keep the views before them, as on GL.
 ## v0.62.0 (2026-11-22)
 
 ### Added

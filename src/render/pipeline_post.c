@@ -155,12 +155,15 @@ static void prepass_exec(cw_pass_ctx *ctx, void *u) {
       .x = 0, .y = 0, .w = pt->w, .h = pt->h, .flip_y = pt->flip_y, .keep_multisampled = true,
     };
     /* (a one-pass split screen drawn view by view: the views before this one kept) */
+    bool bg_hold = ctx->pipeline->arr_part > 1 && ctx->scene3d->has_background && !ctx->scene3d->background_texture;
+    if (bg_hold) ctx->scene3d->has_background = false; /* (as the scene pass: a later view keeps the views before it) */
     if (ctx->pipeline->arr_part > 1) et.load_color = et.load_depth = true;
     if (prepass_shift()) et.depth_min = cw_gpu_reversed_depth() ? 0.5f : 0, et.depth_max = cw_gpu_reversed_depth() ? 1 : 0.5f;
     t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
     t3_renderer_set_external_target(r, &et);
     cw__pw_timing_span((void *)pt->enc, false);
     t3_renderer_render_prepass(r, ctx->scene3d, ctx->camera);
+    if (bg_hold) ctx->scene3d->has_background = true;
     cw__pw_timing_span((void *)pt->enc, true);
     t3_renderer_set_external_target(r, NULL);
     cw__render3d_count(ctx->tree);
@@ -212,12 +215,17 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
      * samples kept for the next view (the last view's opaque passes resolve) */
     const cw_pipeline *pl = ctx->pipeline;
     if (pl->arr_part > 1) et.load_color = et.load_depth = true;
+    /* (a background colour is a clear of the whole attachment to three.c, which wins over the load: the first view
+     * cleared to it, a later one keeps the views before it. A background texture is drawn, not cleared.) */
+    /* CW_TEST_VIEWS_BG_CLEAR=1: cleared all the same (each later view wiped the ones before it: tests/water-night.mjs's control) */
+    bool bg_hold = et.load_color && ctx->scene3d->has_background && !ctx->scene3d->background_texture && !cw_test_env("CW_TEST_VIEWS_BG_CLEAR");
 #ifdef T3_EXTERNAL_TARGET_KEEP_MULTISAMPLED
     if (pl->arr_part && pl->arr_part < pl->arr_n) et.keep_multisampled = true;
 #endif
     /* backdrops (cartwheel/backdrop.h) were blended in: keep that colour, draw no background over it */
     bool had_bg = ctx->scene3d->has_background;
     struct t3_texture *bg_tex = ctx->scene3d->background_texture;
+    if (bg_hold) ctx->scene3d->has_background = false;
     if (pl->bd_drawn) {
       et.load_color = true;
       ctx->scene3d->has_background = false;
@@ -229,7 +237,7 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
     t3_renderer_render(r, ctx->scene3d, ctx->camera);
     cw__pw_timing_span((void *)pt->enc, true);
     t3_renderer_set_external_target(r, NULL);
-    if (pl->bd_drawn) {
+    if (pl->bd_drawn || bg_hold) {
       ctx->scene3d->has_background = had_bg;
       ctx->scene3d->background_texture = bg_tex;
     }

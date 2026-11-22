@@ -77,8 +77,14 @@
  *     foam_spread          m/s a wake's foam spreads as it fades (0)
  *
  *     scatter, glint       the turquoise light the sun sends through crests
- *                          toward the eye (needs a ProceduralSky); the fine
- *                          sparkle of the sun on small ripples
+ *                          toward the eye; the fine sparkle of the sun on
+ *                          small ripples
+ *     sun                  the DirectionalLight3D that is the sun without a
+ *                          ProceduralSky (empty: the tree's first): its
+ *                          colour x energy and direction give the glint, the
+ *                          crest light, the body's light, caustics and what
+ *                          shows through (a moon over a night sea). With a
+ *                          ProceduralSky the sky's sun is used, as before
  *     ripple_cells, ripple_size, ripple_center, ripple_speed, ripple_damping,
  *     ripple_strength, foam_fade, rain, rain_size, rain_strength, splash_fx,
  *     splash_fx_min        the interactive ripple layer (see cw_water_splash)
@@ -240,6 +246,7 @@ typedef struct cw_water_stats {
   int buoyant;            /* Buoyancy3D nodes that pushed last tick */
   int underwater;         /* 1 when the last frame was drawn from under a Water3D's surface (its fog, caustics, waterline) */
   float see_light;        /* 0..1: the light reaching the last surface drawn, which scales what shows through it (see_through) */
+  int sun_light;          /* 1 when the last surface drawn was lit by a scene light (Water3D sun, else the first DirectionalLight3D): no ProceduralSky */
 } cw_water_stats;
 /* Zeroed when t is NULL or has no water. */
 void cw_water_get_stats(cw_tree *t, cw_water_stats *out);
