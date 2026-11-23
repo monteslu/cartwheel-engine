@@ -254,7 +254,7 @@ cw_vec2 cw_r2d_layer_world_to_screen(int layer, cw_vec2 w) {
 /* ── draw state ────────────────────────────────────────────────────────── */
 
 void cw_r2d_set_blend(cw_blend b) { R.blend = b; }
-/* CW_TEST_R2D_HARD_OFF=1: cw__r2d_set_hard does nothing (a gate's reference: the same text with blended edges) */
+/* CW_TEST_R2D_HARD_OFF=1: cw__r2d_set_hard and cw_r2d_set_one_bit do nothing (a gate's reference: the same text with blended edges) */
 static bool hard_off(void) {
   static int v = -1;
   if (v < 0) {
@@ -263,7 +263,17 @@ static bool hard_off(void) {
   }
   return v;
 }
-void cw__r2d_set_hard(bool on) { R.hard = on && !hard_off(); }
+void cw__r2d_set_hard(bool on) { R.hard = on; }
+bool cw__r2d_hard(void) { return R.hard; }
+void cw_r2d_set_one_bit(bool on) { R.one_bit = on; }
+bool cw_r2d_one_bit(void) { return R.one_bit; }
+void cw_r2d_set_one_bit_paper(cw_color paper) { R.one_bit_paper = paper.a > 0 ? cw_rgba(paper.r, paper.g, paper.b, 1) : (cw_color){ 0 }; }
+bool r2d_one_bit_on(void) { return (R.hard || R.one_bit) && !hard_off(); }
+bool r2d_one_bit_paper(cw_color *out) {
+  if (!r2d_one_bit_on() || R.one_bit_paper.a <= 0) return false;
+  *out = R.one_bit_paper;
+  return true;
+}
 void cw_r2d_set_intensity(float k) {
   float x = (CW_CLAMP(k, 1.0f, 16.0f) - 1.0f) / 15.0f * 255.0f;
   R.intensity_b = (uint8_t)(x + 0.5f);
@@ -471,7 +481,7 @@ static uint8_t hard_thin(void) {
 }
 /* mode bits for a submission: solid / additive / one-bit */
 uint8_t r2d_mode(bool solid) {
-  return (uint8_t)((solid ? R2D_MODE_SOLID : 0) | (R.blend == CW_BLEND_ADD ? R2D_MODE_ADD : 0) | (R.hard ? R2D_MODE_HARD | hard_thin() : 0));
+  return (uint8_t)((solid ? R2D_MODE_SOLID : 0) | (R.blend == CW_BLEND_ADD ? R2D_MODE_ADD : 0) | (r2d_one_bit_on() ? R2D_MODE_HARD | hard_thin() : 0));
 }
 
 /* ── the scratch quad (lights, composite, blit) ───────────────────────── */
@@ -587,7 +597,8 @@ void cw_r2d_begin(const cw_r2d_pass_desc *desc) {
   R.intensity_b = R.emissive_b = R.sway_b = R.flash_b = 0;
   R.occluder_on = false;
   R.blend = CW_BLEND_ALPHA;
-  R.hard = false;
+  R.hard = R.one_bit = false;
+  R.one_bit_paper = (cw_color){ 0 };
   R.has_xform = false;
   R.xform = cw_xform2d_identity();
   R.clip_depth = 0;

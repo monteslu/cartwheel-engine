@@ -1274,16 +1274,19 @@ cw_text_metrics cw__r2d_text_raw(cw_font h, const char *text, cw_vec2 pos, const
   text_copy cp[3];
   int ncp = 0;
   float grow_max = 0;
+  cw_color paper; /* cw_r2d_set_one_bit_paper: the shadow and the outline in paper, opaque */
+  bool to_paper = r2d_one_bit_paper(&paper);
   if (st && st->shadow_color.a > 0) {
     cp[ncp] = (text_copy){ .dx = st->shadow_offset.x, .dy = st->shadow_offset.y, .grow = CW_MAX(st->shadow_spread, 0),
                            .soft = CW_MAX(st->shadow_softness, 0) };
-    r2d_pack_color(cp[ncp].c, st->shadow_color);
+    r2d_pack_color(cp[ncp].c, to_paper ? paper : st->shadow_color);
     grow_max = CW_MAX(grow_max, cp[ncp].grow + cp[ncp].soft);
     ncp++;
   }
   if (st && st->outline_width > 0) {
     cw_color oc = st->outline_color;
     if (oc.r == 0 && oc.g == 0 && oc.b == 0 && oc.a == 0) oc = (cw_color){ 0, 0, 0, 1 };
+    if (to_paper) oc = paper;
     cp[ncp] = (text_copy){ .grow = st->outline_width };
     r2d_pack_color(cp[ncp].c, oc);
     grow_max = CW_MAX(grow_max, cp[ncp].grow);
@@ -1492,8 +1495,9 @@ cw_text_metrics cw_r2d_text(cw_font h, const char *text, cw_vec2 pos, const cw_t
 
 static void text_panel(cw_vec2 pos, float box_w, const cw_text_metrics *m, float size) {
   float pad = size * 0.28f;
-  cw_r2d_round_rect(cw_rect_make(pos.x - pad, pos.y - pad * 0.45f, box_w + 2 * pad, m->height + pad * 0.9f), pad, 0,
-                    cw_rgba(0.02f, 0.02f, 0.04f, 0.64f));
+  cw_color c = cw_rgba(0.02f, 0.02f, 0.04f, 0.64f);
+  r2d_one_bit_paper(&c); /* one-bit with a paper: the panel is paper */
+  cw_r2d_round_rect(cw_rect_make(pos.x - pad, pos.y - pad * 0.45f, box_w + 2 * pad, m->height + pad * 0.9f), pad, 0, c);
 }
 
 /* the first characters of a string, printable, cut on a character boundary */

@@ -4841,6 +4841,34 @@
     "note": "the Graphics page in the shell's two-colour mode on every host, GL and WebGPU. Control: the mode off"
   },
   {
+    "name": "r2d-onebit",
+    "app": "r2d_onebit",
+    "frames": 6,
+    "webgpu": true,
+    "startCmds": [
+      "prompt device all pad"
+    ],
+    "controlEnv": {
+      "ONEBIT": "none"
+    },
+    "fields": [
+      "onebit.on",
+      "onebit.prompt",
+      "onebit.lines"
+    ],
+    "expect": {
+      "onebit.on": 1,
+      "onebit.prompt": 1,
+      "onebit.lines": 3
+    },
+    "note": "a game HUD in two colours (cw_r2d_set_one_bit, cw_r2d_set_one_bit_paper, cw_prompt_set_two_colour) on every host, GL and WebGPU. Control: the setters not called"
+  },
+  {
+    "name": "r2d-one-bit",
+    "script": "tests/r2d-one-bit.mjs",
+    "note": "a game HUD in two colours natively and on romdev, GL and WebGPU, at 100% and 200% text: every pixel ink or paper with the Text background off, Outline and Panel; each line's ink within 8% of the blended picture's coverage; the setters called off is the frame drawn without them byte for byte. Controls: the setters not called (other values), a cut at 0.95 coverage (lines lose ink)"
+  },
+  {
     "name": "shell-two-colour",
     "script": "tests/shell-two-colour.mjs",
     "note": "the shell's two-colour mode natively on GL and WebGPU at 100% and 200% text on the title, pause, Settings, Graphics and join screens: every pixel ink or paper, on paper and over a one-bit picture; each line's ink within 8% of the blended text's coverage; colours switched by cw_shell_set_colours on the frame they change; the mode off by the setters is the plain frame byte for byte. Controls: the shell's mode off (other values), a cut at 0.95 coverage (lines lose ink), the picture switched without the setter"

@@ -33,6 +33,9 @@
 
 /* vertex mode bits (a_info.y) */
 /* HARD: one-bit coverage (cw__r2d_set_hard): a pixel half covered or more is the colour at full alpha, else nothing */
+/* one-bit edges are on (the game's or the engine's switch), and the paper text outlines take (false: their own colours) */
+bool r2d_one_bit_on(void);
+bool r2d_one_bit_paper(cw_color *out);
 enum { R2D_MODE_SOLID = 1, R2D_MODE_SDF = 2, R2D_MODE_ADD = 4, R2D_MODE_YUP = 8, R2D_MODE_HARD = 16,
        R2D_MODE_HARD_THIN = 32 /* HARD cut at 0.95 coverage instead of half (CW_TEST_R2D_HARD_THIN=1: a gate's control, thin text) */ };
 
@@ -219,7 +222,9 @@ typedef struct r2d_state {
   /* draw state */
   int cur_layer, cur_z;
   cw_blend blend;
-  bool hard;                   /* cw__r2d_set_hard: later sprite-stream submissions draw with one-bit coverage */
+  bool hard;                   /* cw__r2d_set_hard (the shell, the prompts): later sprite-stream submissions draw with one-bit coverage */
+  bool one_bit;                /* cw_r2d_set_one_bit (the game): the same, the game's own switch (either one is one-bit) */
+  cw_color one_bit_paper;      /* cw_r2d_set_one_bit_paper: text outlines, shadows and backdrops while one-bit (alpha 0: their own) */
   bool has_xform;
   cw_xform2d xform;
   int clip_stack[32], clip_depth, cur_clip;

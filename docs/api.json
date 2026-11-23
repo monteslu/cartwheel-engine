@@ -10700,6 +10700,18 @@
      "inline": false
     },
     {
+     "name": "cw_prompt_set_two_colour",
+     "signature": "void cw_prompt_set_two_colour(bool on, cw_color ink, cw_color paper)",
+     "doc": "Prompts in two colours, for a game drawn in ink and paper: every glyph's\nfill, legend and the words of cw_prompt_text in ink, the glyph's dark\nbacking and the words' outline in paper, both opaque (each colour's alpha\nis dropped, and the color argument of the draw calls is not used), with\none-bit edges (cw_r2d_set_one_bit) on the prompt's own draws: every pixel a\nprompt draws is ink or paper. The in-between tones (a dimmer stick, a touch\ntint) go. Stays until changed; off by default. The game shell's two-colour\nmenus draw their prompts in their own ink and paper and give this setting\nback when they close.",
+     "inline": false
+    },
+    {
+     "name": "cw_prompt_two_colour",
+     "signature": "bool cw_prompt_two_colour(void)",
+     "doc": "the game's setting is on",
+     "inline": false
+    },
+    {
      "name": "cw_prompt_glyph_code",
      "signature": "uint32_t cw_prompt_glyph_code(cw_binding b)",
      "doc": "What a glyph is, as the debug field prompt.glyphs records each one drawn:\nkind << 16 | lit. Kinds: 1 face buttons (lit: bit 0 south, 1 east, 2 west,\n3 north), 2 shoulders and 3 triggers (bit 0 left, 1 right), 4 stick (bit 0\nthe right stick, bits 4..7 directions left, right, up, down, bit 8 press),\n5 d-pad (bits 0..3 left, right, up, down), 6 Start, 7 Back, 8 Guide, 9\nkeycap (lit: the scancode), 10 mouse (bit 0 left, 1 right, 2 middle, 4..7\nwheel up, down, left, right), 11 touch button (lit: control id), 12 touch\nstick (control id | directions << 8). 0 when the binding draws nothing.",
@@ -11749,6 +11761,24 @@
      "name": "cw_r2d_set_blend",
      "signature": "void cw_r2d_set_blend(cw_blend b)",
      "doc": "for later submissions until the pass ends (cw_r2d_begin resets to ALPHA)",
+     "inline": false
+    },
+    {
+     "name": "cw_r2d_set_one_bit",
+     "signature": "void cw_r2d_set_one_bit(bool on)",
+     "doc": "One-bit edges, for a game drawn in two colours (ink and paper): later text,\nsprites and shapes of this pass (not tilemaps) draw each pixel that is half\ncovered or more in its colour at full alpha, and nothing elsewhere, so no\nedge blends (the anti-aliased rim of a glyph, a circle or a scaled sprite).\nA colour's own alpha is dropped too: a pixel is the colour or untouched.\nPair it with ink and paper colours and every pixel drawn is one of the two.\nOff by default; cw_r2d_begin turns it off. The game shell's two-colour menus\n(cw_shell_desc.two_colour) use the same edges.",
+     "inline": false
+    },
+    {
+     "name": "cw_r2d_one_bit",
+     "signature": "bool cw_r2d_one_bit(void)",
+     "doc": "set for this pass",
+     "inline": false
+    },
+    {
+     "name": "cw_r2d_set_one_bit_paper",
+     "signature": "void cw_r2d_set_one_bit_paper(cw_color paper)",
+     "doc": "While one-bit is on, text outlines and shadows (the style's own and the\nplayer's Text background outline or panel, below) draw in this colour,\nopaque, in place of theirs: the paper round the ink letters. {0,0,0,0} (the\ndefault; cw_r2d_begin resets it) leaves their colours. Nothing changes\nwhile one-bit is off.",
      "inline": false
     },
     {

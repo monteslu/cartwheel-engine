@@ -204,6 +204,18 @@ cw_vec2 cw_prompt_text_size(cw_font f, const char *text, int player, float size)
  * Default: the UI's sans (cw_ui_font_sans). */
 void cw_prompt_set_font(cw_font f);
 
+/* Prompts in two colours, for a game drawn in ink and paper: every glyph's
+ * fill, legend and the words of cw_prompt_text in ink, the glyph's dark
+ * backing and the words' outline in paper, both opaque (each colour's alpha
+ * is dropped, and the color argument of the draw calls is not used), with
+ * one-bit edges (cw_r2d_set_one_bit) on the prompt's own draws: every pixel a
+ * prompt draws is ink or paper. The in-between tones (a dimmer stick, a touch
+ * tint) go. Stays until changed; off by default. The game shell's two-colour
+ * menus draw their prompts in their own ink and paper and give this setting
+ * back when they close. */
+void cw_prompt_set_two_colour(bool on, cw_color ink, cw_color paper);
+bool cw_prompt_two_colour(void); /* the game's setting is on */
+
 /* What a glyph is, as the debug field prompt.glyphs records each one drawn:
  * kind << 16 | lit. Kinds: 1 face buttons (lit: bit 0 south, 1 east, 2 west,
  * 3 north), 2 shoulders and 3 triggers (bit 0 left, 1 right), 4 stick (bit 0

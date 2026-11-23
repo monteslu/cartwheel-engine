@@ -602,6 +602,22 @@ typedef enum {
   CW_BLEND_OPAQUE,   /* replace (own batch) */
 } cw_blend;
 void cw_r2d_set_blend(cw_blend b); /* for later submissions until the pass ends (cw_r2d_begin resets to ALPHA) */
+/* One-bit edges, for a game drawn in two colours (ink and paper): later text,
+ * sprites and shapes of this pass (not tilemaps) draw each pixel that is half
+ * covered or more in its colour at full alpha, and nothing elsewhere, so no
+ * edge blends (the anti-aliased rim of a glyph, a circle or a scaled sprite).
+ * A colour's own alpha is dropped too: a pixel is the colour or untouched.
+ * Pair it with ink and paper colours and every pixel drawn is one of the two.
+ * Off by default; cw_r2d_begin turns it off. The game shell's two-colour menus
+ * (cw_shell_desc.two_colour) use the same edges. */
+void cw_r2d_set_one_bit(bool on);
+bool cw_r2d_one_bit(void); /* set for this pass */
+/* While one-bit is on, text outlines and shadows (the style's own and the
+ * player's Text background outline or panel, below) draw in this colour,
+ * opaque, in place of theirs: the paper round the ink letters. {0,0,0,0} (the
+ * default; cw_r2d_begin resets it) leaves their colours. Nothing changes
+ * while one-bit is off. */
+void cw_r2d_set_one_bit_paper(cw_color paper);
 /* z within a layer (higher draws later); sprites add their own z. -32768..32767 */
 void cw_r2d_set_z(int z);
 /* Local transform applied before the layer camera to everything submitted

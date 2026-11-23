@@ -453,13 +453,30 @@ typedef struct pen {
   float s, w; /* size, stroke width */
 } pen;
 
-/* two colours (cw__prompt_two_colour, the shell's two-colour mode): every glyph in ink on paper, opaque */
-static struct { bool on; cw_color ink, paper; } TWO;
-void cw__prompt_two_colour(bool on, cw_color ink, cw_color paper) {
-  TWO.on = on;
-  TWO.ink = cw_rgba(ink.r, ink.g, ink.b, 1);
-  TWO.paper = cw_rgba(paper.r, paper.g, paper.b, 1);
+/* two colours: every glyph in ink on paper, opaque, with one-bit edges. The game's switch (cw_prompt_set_two_colour)
+ * and the engine's (cw__prompt_two_colour, the shell's two-colour mode, which wins while it is on); TWO is the one in
+ * force. */
+typedef struct two_colour { bool on; cw_color ink, paper; } two_colour;
+static two_colour TWO, TWO_GAME, TWO_ENGINE;
+static two_colour two_of(bool on, cw_color ink, cw_color paper) {
+  return (two_colour){ on, cw_rgba(ink.r, ink.g, ink.b, 1), cw_rgba(paper.r, paper.g, paper.b, 1) };
 }
+void cw__prompt_two_colour(bool on, cw_color ink, cw_color paper) {
+  TWO_ENGINE = two_of(on, ink, paper);
+  TWO = TWO_ENGINE.on ? TWO_ENGINE : TWO_GAME;
+}
+void cw_prompt_set_two_colour(bool on, cw_color ink, cw_color paper) {
+  TWO_GAME = two_of(on, ink, paper);
+  TWO = TWO_ENGINE.on ? TWO_ENGINE : TWO_GAME;
+}
+bool cw_prompt_two_colour(void) { return TWO_GAME.on; }
+/* a prompt's draws in two colours have one-bit edges (round one public draw call; the state before comes back) */
+static bool hard_begin(void) {
+  bool was = cw__r2d_hard();
+  if (TWO.on) cw__r2d_set_hard(true);
+  return was;
+}
+static void hard_end(bool was) { cw__r2d_set_hard(was); }
 static pen pen_of(float size, cw_color c) {
   if (c.r == 0 && c.g == 0 && c.b == 0 && c.a == 0) c = cw_rgba(1, 1, 1, 1);
   pen p = { .fill = c, .dark = cw_rgba(0.03f, 0.03f, 0.06f, 0.82f * c.a), .s = size };
@@ -826,7 +843,10 @@ cw_vec2 cw_prompt_actions(const cw_action *acts, int n, int player, cw_vec2 pos,
   size = scaled((cw_font){ 0 }, size);
   gset s;
   action_set(acts, n, player, &s);
-  return set_draw(&s, pos, size, color);
+  bool was = hard_begin();
+  cw_vec2 r = set_draw(&s, pos, size, color);
+  hard_end(was);
+  return r;
 }
 int cw_prompt_action_codes(const cw_action *acts, int n, int player, uint32_t *out, int cap) {
   check_context();
@@ -852,7 +872,9 @@ cw_vec2 cw_prompt_binding(cw_binding b, cw_vec2 pos, float size, cw_color color)
   glyph g = glyph_of(b);
   if (!g.kind) return (cw_vec2){ 0, 0 };
   size = scaled((cw_font){ 0 }, size);
+  bool was = hard_begin();
   draw_glyph(&g, pos, size, color);
+  hard_end(was);
   return (cw_vec2){ glyph_width(&g, size), size };
 }
 
@@ -1051,7 +1073,10 @@ static cw_vec2 prompt_text(cw_font f, const char *text, int player, cw_vec2 pos,
 }
 
 cw_vec2 cw_prompt_text(cw_font f, const char *text, int player, cw_vec2 pos, float size, cw_color color, cw_text_align align) {
-  return prompt_text(f, text, player, pos, scaled(f, size), color, align, true);
+  bool was = hard_begin();
+  cw_vec2 r = prompt_text(f, text, player, pos, scaled(f, size), color, align, true);
+  hard_end(was);
+  return r;
 }
 cw_vec2 cw_prompt_text_size(cw_font f, const char *text, int player, float size) {
   return prompt_text(f, text, player, (cw_vec2){ 0, 0 }, scaled(f, size), cw_rgba(1, 1, 1, 1), CW_ALIGN_LEFT, false);

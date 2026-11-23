@@ -4,6 +4,29 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.67.0 (2026-11-23)
+
+### Added
+- One-bit edges for a game's own 2D drawing (cartwheel/render2d.h), the edges the game shell's two-colour menus use:
+  - `cw_r2d_set_one_bit(on)`: later text, sprites and shapes of the pass draw each pixel half covered or more in its
+    colour at full alpha and leave the rest untouched (no blended glyph rim, circle edge or scaled sprite edge; a
+    colour's own alpha is dropped too; tilemaps unchanged). `cw_r2d_one_bit()` reads it. Off by default, off at
+    `cw_r2d_begin`.
+  - `cw_r2d_set_one_bit_paper(paper)`: while one-bit is on, every text outline and shadow (the style's own, and the
+    player's Text background outline or panel) draws in the paper, opaque. {0,0,0,0} (the default, and at
+    `cw_r2d_begin`) leaves their colours.
+- `cw_prompt_set_two_colour(on, ink, paper)` (cartwheel/prompt.h): button prompts in two colours, every glyph's fill,
+  legend and words in ink, its backing and the words' outline in paper, opaque, with one-bit edges on the prompt's
+  own draws; stays until changed. `cw_prompt_two_colour()` reads it. The shell's two-colour menus use their own ink
+  and paper and give the game's setting back when they close.
+- Sample `r2d_onebit` (a HUD in two colours over paper and a one-bit picture: text with an outline and a shadow, plain
+  text, text with prompts, prompt glyphs, shapes and a rotated sprite) and gates `r2d-one-bit` (natively and on romdev,
+  GL and WebGPU, at 100% and 200% text: every pixel ink or paper with the Text background off, Outline and Panel;
+  each line's ink within 8% of the blended picture's coverage; controls: the setters not called, a cut at 0.95
+  coverage; the setters called off is the frame drawn without them byte for byte) and `r2d-onebit` (every host).
+  Without the new calls every frame is byte for byte as before (`r2d_text`, `prompts` and the shell's two-colour
+  screens checked against v0.65.1 on GL and WebGPU).
+
 ## v0.66.1 (2026-11-23)
 
 ### Fixed

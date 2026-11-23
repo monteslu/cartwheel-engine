@@ -20,8 +20,10 @@ float cw__text_scale_for(cw_font f, float size);
  * or more draws its colour at full alpha, the rest draws nothing, so text and glyph edges have no blend. Off at
  * cw_r2d_begin. */
 void cw__r2d_set_hard(bool on);
+bool cw__r2d_hard(void); /* the engine switch above (the game's own is cw_r2d_set_one_bit) */
 /* ui/prompt.c: button prompts in two colours (the shell's two-colour mode): every glyph's fill and its words in ink, its
- * dark backing and the words' outline in paper, both opaque; the in-between tones (a dimmer stick, a touch tint) go. */
+ * dark backing and the words' outline in paper, both opaque; the in-between tones (a dimmer stick, a touch tint) go.
+ * The engine's switch: while on it wins over the game's cw_prompt_set_two_colour, and off gives the game's back. */
 void cw__prompt_two_colour(bool on, cw_color ink, cw_color paper);
 
 #endif
