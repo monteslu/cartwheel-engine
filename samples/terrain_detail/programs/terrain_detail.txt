@@ -1,0 +1,11 @@
+# r187 program states terrain_detail draws (cmake/programs.cmake, tools/programs.mjs)
+depth+instbig+xterrain
+depth+instbig+xterrainlow
+depth+instbig+xterrainmin_plain
+standard+instbig+senv+l1001+xterrain
+standard+instbig+senv+l1001+xterrainlow
+standard+instbig+senv+l1001+xterrainfar
+standard+instbig+senv+l1001+xterrainmin_plain
+standard+instbig+senv+l1001+xterrainfxmin_plain
+standard+instbig+senv+l1001+xterrainfxlow
+standard+instbig+senv+l1001+xterrainfx

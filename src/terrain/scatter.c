@@ -25,7 +25,7 @@
 #include "terrain_internal.h"
 #include "../render/view_layers.h"
 
-#define INST_F 9 /* x y z scale qx qy qz qw rank */
+#define INST_F 12 /* x y z scale qx qy qz qw rank r g b (the instance colour, when the layer has one) */
 #define CELL_MAX 8192
 
 /* a cell as one view draws it: its GPU copies posed for that view's camera (a one-pass split screen's later views
@@ -62,13 +62,23 @@ struct tr_scatter {
   cw_job *gen;
   struct gen_job *gen_ctx;
   bool view_used[TR_VIEWS];       /* a later view has GPU copies of some cells (freed when the views draw one at a time) */
+  bool icol;                      /* instances carry a colour (tint_jitter, root_from_terrain) */
+  bool foliage;                   /* the materials are the layer's own copies with the foliage parts */
+  float tint[3];                  /* the terrain material's colour when cells were last placed (root_from_terrain) */
 };
 
 static bool gen_collect(tr_scatter *s, bool wait);
 
 cw_scatter_def cw_scatter_default_def(void) {
+  cw_wind w = cw_wind_default();
+  w.strength = 0;
   return (cw_scatter_def){ .density = 0.5f, .scale_min = 0.8f, .scale_max = 1.2f, .visible_range = 60, .fade = 10,
-                           .density_knob = "grass", .align_to_normal = true };
+                           .density_knob = "grass", .align_to_normal = true, .wind = w, .lod_blend = 6 };
+}
+
+static bool foliage_wanted(const cw_scatter_def *d) {
+  return d->wind.strength > 0 || d->smooth_alpha || d->two_sided_lighting || d->fade_mode == CW_SCATTER_FADE_DITHER ||
+         d->root_from_terrain;
 }
 
 static uint32_t mix32(uint32_t h) {
@@ -158,6 +168,19 @@ static int place(const cw_terrain *t, const tr_scatter *s, int cx, int cz, float
       o[3] = scale;
       orient(yaw, nrm, d->align_to_normal, &o[4]);
       o[8] = unit(mix32(h5 ^ 0x2545F491u)); /* rank */
+      o[9] = o[10] = o[11] = 1;
+      if (s->icol) {
+        /* (hashes of their own: the placement above is what it was) */
+        uint32_t h6 = mix32(h5 ^ 0x7F4A7C15u), h7 = mix32(h6 ^ 0x94D049BBu);
+        float j = cw_clampf(d->tint_jitter, 0, 1);
+        float b = 1 + j * (unit(h6) - 0.5f) * 1.2f, y = j * (unit(h7) - 0.5f) * 2; /* brightness; + a dry yellow, - a deep green */
+        float col[3] = { b * (1 + 0.45f * y), b * (1 + 0.1f * y), b * (1 - 0.6f * y) };
+        if (d->root_from_terrain) {
+          t3_vec3 a = cw__terrain_albedo_fast(t, fx, fz);
+          col[0] *= a.x * s->tint[0], col[1] *= a.y * s->tint[1], col[2] *= a.z * s->tint[2];
+        }
+        o[9] = col[0], o[10] = col[1], o[11] = col[2];
+      }
     }
   return n;
 }
@@ -175,6 +198,21 @@ int cw_terrain_scatter_cell(cw_terrain *t, int layer, int cx, int cz, float *out
     /* the yaw back from the quaternion's y / w (cw_atan2: the same bits on every host) */
     out[5 * i + 4] = 2 * cw_atan2(tmp[INST_F * i + 5], tmp[INST_F * i + 7]);
   }
+  cw_free(tmp);
+  return m;
+}
+
+int cw_terrain_scatter_cell_colors(cw_terrain *t, int layer, int cx, int cz, float *out, int cap) {
+  if (!t || layer < 0 || layer >= TR_MAX_SCATTER || !t->scatter[layer]) return 0;
+  tr_scatter *s = t->scatter[layer];
+  if (s->def.root_from_terrain) {
+    t3_material *tm = cw_terrain_material(t); /* (the tint the next placement takes) */
+    if (tm) s->tint[0] = tm->color.r, s->tint[1] = tm->color.g, s->tint[2] = tm->color.b;
+  }
+  float *tmp = cw_alloc(sizeof(float) * INST_F * CELL_MAX, CW_MEM_RENDER);
+  int n = place(t, s, cx, cz, tmp, CELL_MAX);
+  int m = CW_MIN(n, cap);
+  for (int i = 0; i < m; i++) memcpy(&out[3 * i], &tmp[INST_F * i + 9], sizeof(float) * 3);
   cw_free(tmp);
   return m;
 }
@@ -214,7 +252,10 @@ void cw__scatter_free(tr_scatter *s) {
   for (int l = 0; l < CW_SCATTER_LODS; l++)
     for (int p = 0; p < CW_SCATTER_PARTS; p++) {
       if (s->def.geometry[l][p]) t3_release(s->def.geometry[l][p]);
-      if (s->def.material[l][p]) t3_release(s->def.material[l][p]);
+      if (s->def.material[l][p]) {
+        if (s->foliage) cw_foliage_remove(s->def.material[l][p]); /* (the layer's own copy) */
+        t3_release(s->def.material[l][p]);
+      }
     }
   cw_free(s->cells);
   cw_free(s->dm);
@@ -273,6 +314,44 @@ int cw_terrain_scatter_add(cw_terrain *t, const cw_scatter_def *def) {
   }
   for (int l = s->nlod; l < CW_SCATTER_LODS; l++)
     for (int p = 0; p < CW_SCATTER_PARTS; p++) s->def.geometry[l][p] = NULL, s->def.material[l][p] = NULL;
+  s->icol = s->def.tint_jitter > 0 || s->def.root_from_terrain;
+  s->tint[0] = s->tint[1] = s->tint[2] = 1;
+  if (!(s->def.lod_blend >= 0)) s->def.lod_blend = 0;
+  if (foliage_wanted(&s->def)) {
+    /* the layer's own copy of each LOD's part materials, with the foliage parts: the wind and the fades are this
+     * layer's (a glTF's materials are shared with every other user of the file) */
+    float top = 0.05f;
+    for (int p = 0; p < s->nparts[0]; p++) {
+      t3_geometry *g = s->def.geometry[0][p];
+      if (!g->has_bounding_box) t3_geometry_compute_bounding_box(g);
+      top = CW_MAX(top, g->bounding_box.max.y);
+    }
+    const cw_scatter_def *d = &s->def;
+    bool dither = d->fade_mode == CW_SCATTER_FADE_DITHER;
+    float vr = d->visible_range, hw = d->lod_blend * 0.5f, end0 = vr - d->fade;
+    for (int l = 0; l < s->nlod; l++) {
+      cw_foliage_desc fd = cw_foliage_default();
+      fd.wind = d->wind;
+      fd.height = top;
+      fd.smooth_alpha = d->smooth_alpha;
+      fd.two_sided_lighting = d->two_sided_lighting;
+      fd.root_color = d->root_from_terrain;
+      fd.root_height = d->root_height;
+      fd.tip_jitter = d->root_from_terrain ? d->tint_jitter : 0;
+      if (dither) {
+        if (l > 0) fd.fade_in_from = d->lod_distance[l - 1] - hw, fd.fade_in_to = d->lod_distance[l - 1] + hw;
+        if (l + 1 < s->nlod && d->lod_distance[l] - hw < end0) fd.fade_out_from = d->lod_distance[l] - hw, fd.fade_out_to = d->lod_distance[l] + hw;
+        else fd.fade_out_from = end0, fd.fade_out_to = vr;
+      }
+      for (int p = 0; p < s->nparts[l]; p++) {
+        t3_material *c = t3_material_clone(s->def.material[l][p]);
+        if (!cw_foliage_apply(c, &fd)) cw_warn("terrain: a scatter layer's material takes no foliage (wind, fades): drawn without");
+        t3_release(s->def.material[l][p]);
+        s->def.material[l][p] = c;
+      }
+    }
+    s->foliage = true;
+  }
   /* the bounding radius over LOD 0's parts */
   for (int p = 0; p < s->nparts[0]; p++) {
     t3_geometry *g = s->def.geometry[0][p];
@@ -390,12 +469,17 @@ static void pose_cells(int begin, int end, int worker, void *u) {
   const cw_scatter_def *d = &j->s->def;
   int nl = j->s->nlod;
   float vr = d->visible_range, fs = vr - d->fade;
+  bool dither = d->fade_mode == CW_SCATTER_FADE_DITHER;
+  float hw = d->lod_blend * 0.5f, rr = j->s->radius * d->scale_max + d->wind.strength;
   for (int ci = begin; ci < end; ci++) {
     sc_cell *c = j->list[ci];
-    float *dst[CW_SCATTER_LODS] = { 0 };
+    float *dst[CW_SCATTER_LODS] = { 0 }, *col[CW_SCATTER_LODS] = { 0 };
     int cnt[CW_SCATTER_LODS] = { 0 };
     sc_view *cv = &c->v[j->view];
-    for (int l = 0; l < nl; l++) dst[l] = t3_attribute_f32(cv->im[l][0]->instance_matrix);
+    for (int l = 0; l < nl; l++) {
+      dst[l] = t3_attribute_f32(cv->im[l][0]->instance_matrix);
+      if (j->s->icol) col[l] = t3_attribute_f32(cv->im[l][0]->instance_color);
+    }
     tr_v4f cx = { j->cam[0], j->cam[0], j->cam[0], j->cam[0] }, cy = { j->cam[1], j->cam[1], j->cam[1], j->cam[1] },
            cz = { j->cam[2], j->cam[2], j->cam[2], j->cam[2] };
     for (int i = 0; i < c->n; i += 4) {
@@ -411,10 +495,23 @@ static void pose_cells(int begin, int end, int worker, void *u) {
         const float *in = &c->inst[INST_F * (i + k)];
         if (in[8] >= j->density) continue;
         float dist = sqrtf(d2[k]);
+        if (dither) {
+          /* whole instances; the shaders dissolve them over the fade and crossfade each LOD band (foliage.h): an
+           * instance within its reach (rr) of a band is drawn by both LODs */
+          if (dist >= vr + rr) continue;
+          for (int l = 0; l < nl; l++) {
+            if (l > 0 && dist < d->lod_distance[l - 1] - hw - rr) continue;
+            if (l + 1 < nl && dist >= d->lod_distance[l] + hw + rr) continue;
+            if (col[l]) memcpy(col[l] + 3 * cnt[l], &in[9], sizeof(float) * 3);
+            write_matrix(dst[l] + 16 * cnt[l]++, in, 1, j->origin[0], j->origin[1]);
+          }
+          continue;
+        }
         if (dist >= vr) continue;
         float f = dist > fs ? 1 - cw_smoothstep(fs, vr, dist) : 1;
         int l = 0;
         while (l + 1 < nl && dist >= d->lod_distance[l]) l++;
+        if (col[l]) memcpy(col[l] + 3 * cnt[l], &in[9], sizeof(float) * 3);
         write_matrix(dst[l] + 16 * cnt[l]++, in, f, j->origin[0], j->origin[1]);
       }
     }
@@ -437,6 +534,18 @@ static float cell_dist2(const float cam[3], const float mn[3], const float mx[3]
     d += v * v;
   }
   return d;
+}
+
+/* DITHER: 2 l inside LOD l alone, 2 l + 1 in the band where LODs l and l + 1 both draw */
+static int dither_region(const tr_scatter *s, float dist) {
+  float hw = s->def.lod_blend * 0.5f, rr = s->radius * s->def.scale_max + s->def.wind.strength;
+  int r = 0;
+  for (int l = 0; l + 1 < s->nlod; l++) {
+    if (dist < s->def.lod_distance[l] - hw - rr) return r;
+    if (dist < s->def.lod_distance[l] + hw + rr) return r + 1;
+    r += 2;
+  }
+  return r;
 }
 
 static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frustum *fr, int view, int views) {
@@ -476,6 +585,11 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
    * after it comes into range, where it is still faded to nothing (the last `fade` metres) */
   gen_collect(s, false);
   if (ng && !s->gen) {
+    if (d->root_from_terrain) {
+      /* the terrain's tint, as cw_terrain_albedo_at gives it (read here, on the main thread) */
+      t3_material *tm = cw_terrain_material(t);
+      if (tm) s->tint[0] = tm->color.r, s->tint[1] = tm->color.g, s->tint[2] = tm->color.b;
+    }
     gen_job *gj = cw_alloc(sizeof *gj, CW_MEM_RENDER);
     gj->t = t, gj->s = s, gj->n = ng;
     gj->list = cw_alloc(sizeof(sc_cell *) * (size_t)ng, CW_MEM_RENDER);
@@ -488,7 +602,7 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
     for (int x = x0; x <= x1; x++) {
       sc_cell *c = &s->cells[z * s->cnx + x];
       if (!c->generated || !c->n) continue;
-      float r = s->radius * d->scale_max;
+      float r = s->radius * d->scale_max + d->wind.strength; /* (the wind leans the tops out by up to its strength) */
       float mn[3] = { t->def.origin.x + (float)x * s->cell - r, c->ymin - r, t->def.origin.z + (float)z * s->cell - r };
       float mx[3] = { mn[0] + s->cell + 2 * r, c->ymax + r, mn[2] + s->cell + 2 * r };
       float d2 = cell_dist2(camv, mn, mx);
@@ -513,6 +627,11 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
               im->instance_matrix = t3_retain(c->v[view].im[l][0]->instance_matrix);
             }
             im->instance_matrix->usage = T3_DYNAMIC_DRAW;
+            if (s->icol) {
+              if (p) im->instance_color = t3_retain(c->v[view].im[l][0]->instance_color);
+              else t3_instanced_mesh_set_color_at(im, 0, (t3_color){ 1, 1, 1 });
+              im->instance_color->usage = T3_DYNAMIC_DRAW;
+            }
             im->mesh.base.cast_shadow = l == 0 && d->cast_shadow && view == 0; /* (the first view's draw the shadow maps) */
             im->mesh.base.receive_shadow = true;
             t3_sphere sph = { { (mn[0] + mx[0]) * 0.5f, (mn[1] + mx[1]) * 0.5f, (mn[2] + mx[2]) * 0.5f }, 0 };
@@ -543,10 +662,16 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
         float fz = camv[2] - mn[2] > mx[2] - camv[2] ? camv[2] - mn[2] : mx[2] - camv[2];
         dmax = sqrtf(fx * fx + fy * fy + fz * fz);
       }
-      int la = 0, lb = 0;
-      while (la + 1 < s->nlod && dmin >= d->lod_distance[la]) la++;
-      while (lb + 1 < s->nlod && dmax >= d->lod_distance[lb]) lb++;
-      int state = la == lb && dmax < vr - d->fade ? la : -1;
+      int la = 0, lb = 0, state;
+      if (d->fade_mode == CW_SCATTER_FADE_DITHER) {
+        /* which LODs draw an instance changes only at a band's edges, pushed out by an instance's reach */
+        la = dither_region(s, dmin), lb = dither_region(s, dmax);
+        state = la == lb && !(la & 1) && dmax < vr - d->fade ? la / 2 : -1;
+      } else {
+        while (la + 1 < s->nlod && dmin >= d->lod_distance[la]) la++;
+        while (lb + 1 < s->nlod && dmax >= d->lod_distance[lb]) lb++;
+        state = la == lb && dmax < vr - d->fade ? la : -1;
+      }
       if (state >= 0 && state == c->v[view].posed_state && c->v[view].posed_density == density) continue;
       c->v[view].posed_state = state;
       c->v[view].posed_density = density;
@@ -561,6 +686,10 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
         if (im->count) {
           im->instance_matrix->version++;
           t3_attribute_add_update_range(im->instance_matrix, 0, im->count);
+          if (s->icol) {
+            im->instance_color->version++;
+            t3_attribute_add_update_range(im->instance_color, 0, im->count);
+          }
         }
       }
   }
@@ -638,4 +767,15 @@ void cw__scatter_shift(cw_terrain *t, t3_vec3 d) {
 void cw__scatter_sync(cw_terrain *t) {
   for (int i = 0; i < TR_MAX_SCATTER; i++)
     if (t->scatter[i]) gen_collect(t->scatter[i], true);
+}
+
+/* The layers' colours changed (cw_terrain_set_layer): the layers whose roots take the terrain's colour place
+ * their cells again (their colours are made with the placement). */
+void cw__scatter_colors_dirty(cw_terrain *t) {
+  for (int i = 0; i < TR_MAX_SCATTER; i++) {
+    tr_scatter *s = t->scatter[i];
+    if (!s || !s->def.root_from_terrain) continue;
+    gen_collect(s, true);
+    for (int k = 0; k < s->cnx * s->cnz; k++) cell_reset(s, &s->cells[k]);
+  }
 }

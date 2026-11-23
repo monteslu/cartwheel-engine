@@ -31,9 +31,9 @@
 //
 // Names after "ext." are what the C fill hook sets (terrain_render.c).
 
-export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
+export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode, detail = false) {
   const {
-    Fn, If, uniform, texture, textureLoad, sharedUniformGroup, positionLocal, positionWorld, cameraViewMatrix,
+    Fn, If, Loop, uniform, texture, textureLoad, sharedUniformGroup, positionLocal, positionWorld, cameraViewMatrix,
     vec2, vec3, vec4, float, ivec2, clamp, fract, floor, round, exp2, mix, max, min, abs, sqrt, length, normalize,
     smoothstep, dFdx, dFdy, dot, select, sin, cos, pow, property, uint, int, materialColor, materialRoughness, materialMetalness, sRGBTransferEOTF,
   } = TSL;
@@ -174,13 +174,24 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   const albedoArr = arrayTex('terrainAlbedo'), normalArr = arrayTex('terrainLayerNormals');
   const uvs0 = v4('terrainUv0');      // uv scale of layers 0..3 (repeats per metre)
   const uvs1 = v4('terrainUv1');      // 4..7
-  const slope = v4('terrainSlope');   // triplanar from normal.y = x down to x - y; side_detile; height blend sharpness
+  const slope = v4('terrainSlope');   // triplanar from normal.y = x down to x - y; side_detile; (unused)
+  const sharp0 = v4('terrainSharp0'); // height blend sharpness of layers 0..3
+  const sharp1 = v4('terrainSharp1'); // 4..7
+  // (the near-ground options' values: only the fx programs have them)
+  const pom0 = detail ? v4('terrainPom0') : null;     // parallax depth (metres) of layers 0..3 (0: none)
+  const pom1 = detail ? v4('terrainPom1') : null;     // 4..7
+  const mnear = !detail ? null : v4('terrainMacroNear'); // macro tint strength (0: off), 1 / its scale (metres); large read: tile factor, amount (0: off)
+  const mdist = !detail ? null : v4('terrainMacroDist'); // large read from x metres, 1 / its ramp; parallax distance; parallax steps (0: off)
 
-  const layerScale = (id) => {
-    const a = select(id.lessThan(0.5), uvs0.x, select(id.lessThan(1.5), uvs0.y, select(id.lessThan(2.5), uvs0.z, uvs0.w)));
-    const b = select(id.lessThan(4.5), uvs1.x, select(id.lessThan(5.5), uvs1.y, select(id.lessThan(6.5), uvs1.z, uvs1.w)));
+  // a per-layer value from two vec4s
+  const perLayer = (lo, hi) => (id) => {
+    const a = select(id.lessThan(0.5), lo.x, select(id.lessThan(1.5), lo.y, select(id.lessThan(2.5), lo.z, lo.w)));
+    const b = select(id.lessThan(4.5), hi.x, select(id.lessThan(5.5), hi.y, select(id.lessThan(6.5), hi.z, hi.w)));
     return select(id.lessThan(3.5), a, b);
   };
+  const layerScale = perLayer(uvs0, uvs1);
+  const layerSharp = perLayer(sharp0, sharp1);
+  const layerPom = detail ? perLayer(pom0, pom1) : null;
   // Terrain3D control bits from an RGBA8 texel (byte 0 = bits 31..24)
   const decode = (word) => {
     const c = word.r; // the control word (uint)
@@ -289,10 +300,60 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
     const toZ = (t) => vec4(t.x.mul(2).sub(1), float(1).sub(t.y.mul(2)), 0, t.w);
     const alb = vec4(0, 0, 0, 0.5).toVar();
     const nrm = vec4(0, 0, 0, 0.9).toVar();
+    // the top-down projection's uv: parallax moves it (where on)
+    const uvT = detail ? uv.toVar() : uv;
     // the top-down projection, unless the ground is steep enough that the sides carry it all
-    const topNrm = () => toTop(sampleLayer(true, id, uv, gx, gy, mode === 'min'));
+    const topNrm = () => toTop(sampleLayer(true, id, uvT, gx, gy, mode === 'min'));
     If(g.tri.lessThan(0.999), () => {
-      alb.assign(sampleLayer(false, id, uv, gx, gy, mode === 'min'));
+      if (detail) {
+        // parallax occlusion: the ray from the eye marched down into the layer's height (its albedo's alpha) to where
+        // it meets it, and the layer read there. Within the parallax distance, on layers with a depth, at the steps the
+        // quality allows (mdist.w, 0 below Medium)
+        const depth = layerPom(id).mul(float(1).sub(smoothstep(mdist.z.mul(0.7), mdist.z, dist))).toVar();
+        If(mdist.w.greaterThan(0.5).and(depth.greaterThan(1e-4)), () => {
+          const v = normalize(cam.xyz.sub(wp));
+          // world metres the ray moves sideways for each metre it goes down, then into the layer's uv
+          const along = v.xz.negate().div(max(dot(v, worldNormal), 0.2));
+          const duv = rot(along.mul(sc), ctl.angle).mul(depth).toVar();
+          const steps = mdist.w.toVar();
+          const prevD = float(0).toVar(), prevGap = float(0).toVar(), hit = float(1).toVar(), found = float(0).toVar();
+          Loop({ start: int(0), end: int(steps).add(1), type: 'int', condition: '<', name: 'pi' }, ({ pi: i }) => {
+            If(found.lessThan(0.5), () => {
+              const d = float(i).div(steps); // depth along the ray, 0 (the top) .. 1 (the layer's bottom)
+              const h = sampleLayer(false, id, uv.add(duv.mul(d)), gx, gy, mode === 'min').a;
+              const gap = float(1).sub(h).sub(d).toVar(); // > 0: the ray is still above the layer's surface
+              If(gap.lessThanEqual(0), () => {
+                // between the last step above and this one, where the gap crosses 0
+                const k = select(i.greaterThan(0), prevGap.div(max(prevGap.sub(gap), 1e-5)), float(0));
+                hit.assign(prevD.add(d.sub(prevD).mul(k)));
+                found.assign(1);
+              });
+              prevD.assign(d);
+              prevGap.assign(gap);
+            });
+          });
+          uvT.assign(uv.add(duv.mul(hit)));
+        });
+      }
+      alb.assign(sampleLayer(false, id, uvT, gx, gy, mode === 'min'));
+      if (detail) {
+        // the same layer read again with a larger tile, blended in by distance: the repeat of the tile at its own size
+        // fades where a camera sees many of them at once
+        If(mnear.w.greaterThan(0), () => {
+          const wl = clamp(dist.sub(mdist.x).mul(mdist.y), 0, 1).mul(mnear.w).toVar();
+          If(wl.greaterThan(0.001), () => {
+            const k = mnear.z;
+            const big = sampleLayer(false, id, uvT.mul(k).add(vec2(0.31, 0.67)), gx.mul(k), gy.mul(k), mode === 'min');
+            // by height, as two layers blend (a plain mix drew both at once, a ghost of the larger stones over the
+            // smaller): what stands higher in either read shows, the two sizes side by side. Each share times its
+            // weight, so the larger read's share still starts at nothing where its weight does
+            const ha = alb.a.mul(float(1).sub(wl)), hb = big.a.mul(wl);
+            const m = max(ha, hb).sub(layerSharp(id));
+            const wa = max(ha.sub(m), 0).mul(float(1).sub(wl)), wb = max(hb.sub(m), 0).mul(wl);
+            alb.assign(mix(alb, big, wb.div(max(wa.add(wb), 1e-5))));
+          });
+        });
+      }
       if (!deferTop) nrm.assign(topNrm());
     });
     const sideNrm = deferTop ? vec4(0).toVar() : null;
@@ -339,9 +400,10 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
   };
 
   // height blend (Terrain3D's): the layer whose height (albedo alpha) stands out wins the blend
-  const heightBlend = (a, b, t) => {
+  // (sharp: the band of height over which the two share: the two layers' sharpness, averaged)
+  const heightBlend = (a, b, t, sharp) => {
     const ha = a.alb.a.mul(float(1).sub(t)), hb = b.alb.a.mul(t);
-    const m = max(ha, hb).sub(slope.w);
+    const m = max(ha, hb).sub(sharp);
     const wa = max(ha.sub(m), 0), wb = max(hb.sub(m), 0);
     return wb.div(max(wa.add(wb), 1e-4));
   };
@@ -375,6 +437,12 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
       const nx = select(fx.greaterThan(0.5), float(1), float(0)), nz = select(fz.greaterThan(0.5), float(1), float(0));
       const nc = decode(textureLoad(ctlMap, ivec2(clamp(i0.x.add(nx), 0, hgt.z), clamp(i0.y.add(nz), 0, hgt.w))));
       const near = { base: nc.base, angle: nc.angle, scl: nc.scl };
+      // the four texels' uv rotation and scale (w4's order), and whether they all agree (the nearest texel's is then
+      // every texel's). terrainCam.w set (a test's control): the nearest texel's everywhere, as before the blend
+      const corner = (dx, dz) => decode(textureLoad(ctlMap, ivec2(clamp(i0.x.add(dx), 0, hgt.z), clamp(i0.y.add(dz), 0, hgt.w))));
+      const c4 = detail ? [corner(0, 0), corner(1, 0), corner(0, 1), corner(1, 1)] : null;
+      const key = detail ? c4.map((c) => c.angle.mul(8).add(c.scl).toVar()) : null;
+      const oneUv = detail ? key[0].equal(key[1]).and(key[0].equal(key[2])).and(key[0].equal(key[3])).or(cam.w.greaterThan(0.5)) : null;
       // every layer's share at the cell's four texels, made on the CPU (terrain_render.c, pair_rows): up to three
       // layers, each with its share at the four corners (a byte each, the texels in w4's order), so a layer's weight
       // is one dot product. The cell of i0 is texel i0 + 1 (the one past the edge, i0 = -1, has its own)
@@ -396,29 +464,115 @@ export async function applyTerrain({ TSL, THREE, mat, props, sentinel }, mode) {
         B.assign(select(better, L, B));
         wB.assign(select(better, wl, wB));
       });
-      const a = layerAt(A, near, g);
-      pAlb.assign(a.alb);
-      pNrm.assign(a.nrm);
-      // the second layer only where it has a share (away from transitions the four texels agree)
-      // Its top-down normal is read only where the height blend gives it a share: across much of a transition
-      // one layer's height stands out by more than the blend's sharpness, and there the other has none (tb is exactly
-      // 0, where the mix gave the first layer's normal anyway): half its top-down reads skipped there.
-      // And the second layer is not read at all where the height blend cannot give it a share whatever its height:
-      // a layer's height (its albedo's alpha) is at most 1, so its weighted height is at most its share t, and
-      // where the first layer's weighted height stands out over t by more than the sharpness the blend gives the
-      // second exactly 0 (the 1e-3 margin is far above the rounding of either). There the old mix with a weight of
-      // 0 gave the first layer itself: the same picture, without its three to six texture reads.
-      If(wB.greaterThan(0.004), () => {
-        const t = wB.div(max(wA.add(wB), 1e-4)).toVar();
-        If(a.alb.a.mul(float(1).sub(t)).sub(slope.w).sub(t).lessThan(1e-3), () => {
-          const b = layerAt(B, near, g, true);
-          const tb = heightBlend(a, b, t).toVar();
-          pAlb.assign(mix(a.alb, b.alb, tb));
-          If(tb.greaterThan(0), () => {
-            pNrm.assign(mix(a.nrm, b.finishNrm(), tb));
+      // the two layers' blend sharpness, averaged (the same for every pair while no layer sets its own)
+      const sharp = layerSharp(A).add(layerSharp(B)).mul(0.5).toVar();
+      const nearestUv = () => {
+        const a = layerAt(A, near, g);
+        pAlb.assign(a.alb);
+        pNrm.assign(a.nrm);
+        // the second layer only where it has a share (away from transitions the four texels agree)
+        // Its top-down normal is read only where the height blend gives it a share: across much of a transition
+        // one layer's height stands out by more than the blend's sharpness, and there the other has none (tb is exactly
+        // 0, where the mix gave the first layer's normal anyway): half its top-down reads skipped there.
+        // And the second layer is not read at all where the height blend cannot give it a share whatever its height:
+        // a layer's height (its albedo's alpha) is at most 1, so its weighted height is at most its share t, and
+        // where the first layer's weighted height stands out over t by more than the sharpness the blend gives the
+        // second exactly 0 (the 1e-3 margin is far above the rounding of either). There the old mix with a weight of
+        // 0 gave the first layer itself: the same picture, without its three to six texture reads.
+        If(wB.greaterThan(0.004), () => {
+          const t = wB.div(max(wA.add(wB), 1e-4)).toVar();
+          If(a.alb.a.mul(float(1).sub(t)).sub(sharp).sub(t).lessThan(1e-3), () => {
+            const b = layerAt(B, near, g, true);
+            const tb = heightBlend(a, b, t, sharp).toVar();
+            pAlb.assign(mix(a.alb, b.alb, tb));
+            If(tb.greaterThan(0), () => {
+              pNrm.assign(mix(a.nrm, b.finishNrm(), tb));
+            });
           });
         });
-      });
+      };
+      const blendUv = () => {
+        // the texels round the point disagree on rotation or scale: each layer is read once for each different rotation
+        // and scale among them and blended by the same bilinear weights (times the layer's share at each texel), so a
+        // change of rotation from one texel to the next fades over the texel instead of drawing a straight seam on
+        // the half-texel line. Gradients stay the analytic ones (rotated and scaled per read): no mip seam
+        const lv = (word) => vec4(float(word.bitAnd(uint(255))), float(word.shiftRight(uint(8)).bitAnd(uint(255))),
+          float(word.shiftRight(uint(16)).bitAnd(uint(255))), float(word.shiftRight(uint(24)))).div(255);
+        const shares = (L0) => {
+          let s = vec4(0);
+          [pc.y, pc.z, pc.w].forEach((word, j) => {
+            s = s.add(select(count.greaterThan(j + 0.5).and(lid(j).equal(L0)), lv(word), vec4(0)));
+          });
+          return s;
+        };
+        const same = (p, q) => select(key[p].equal(key[q]), float(1), float(0));
+        const e01 = same(0, 1), e02 = same(0, 2), e03 = same(0, 3), e12 = same(1, 2), e13 = same(1, 3), e23 = same(2, 3);
+        const blended = (L0) => {
+          // each texel's weight for this layer (a hair of every texel's, so a layer some texel lacks entirely still
+          // has a weight), gathered on the first texel of each different rotation and scale
+          const e = w4.mul(shares(L0).add(1e-3)).toVar();
+          const W = vec4(
+            e.x.add(e.y.mul(e01)).add(e.z.mul(e02)).add(e.w.mul(e03)),
+            float(1).sub(e01).mul(e.y.add(e.z.mul(e12)).add(e.w.mul(e13))),
+            float(1).sub(e02).mul(float(1).sub(e12)).mul(e.z.add(e.w.mul(e23))),
+            float(1).sub(e03).mul(float(1).sub(e13)).mul(float(1).sub(e23)).mul(e.w)).toVar();
+          W.assign(W.div(max(W.x.add(W.y).add(W.z).add(W.w), 1e-6)));
+          // each different rotation's read (a slot each; a slot with no weight is left unread)
+          const sa = [0, 1, 2, 3].map(() => vec4(0).toVar()), sn = [0, 1, 2, 3].map(() => vec4(0).toVar());
+          const Wk = [W.x, W.y, W.z, W.w];
+          Loop({ start: int(0), end: int(4), type: 'int', condition: '<', name: 'ti' }, ({ ti: i }) => {
+            const pick = (v) => select(i.equal(0), v[0], select(i.equal(1), v[1], select(i.equal(2), v[2], v[3])));
+            If(pick(Wk).greaterThan(0.002), () => {
+              const l = layerAt(L0, { angle: pick(c4.map((c) => c.angle)), scl: pick(c4.map((c) => c.scl)) }, g);
+              for (let k = 0; k < 4; k++) {
+                sa[k].assign(select(i.equal(k), l.alb, sa[k]));
+                sn[k].assign(select(i.equal(k), l.nrm, sn[k]));
+              }
+            });
+          });
+          // blended by height as two layers are (the stones of one rotation stand over the joints of the other, with
+          // the layer's own sharpness), not averaged: an average showed both rotations at once, a ghost, across the
+          // texel between them
+          const sc4 = Wk.map((w, k) => w.mul(sa[k].a));
+          const m = max(max(sc4[0], sc4[1]), max(sc4[2], sc4[3])).sub(layerSharp(L0));
+          // (times the weight itself, so a rotation's share still ends where its texel's weight does: in a joint, where
+          // every height is low, the plain height blend gives even a weight of 0 a share)
+          const hw = sc4.map((s, k) => select(Wk[k].greaterThan(0.002), max(s.sub(m), 0).mul(Wk[k]), float(0)).toVar());
+          const tot = max(hw[0].add(hw[1]).add(hw[2]).add(hw[3]), 1e-6);
+          const sum = (v) => v[0].mul(hw[0]).add(v[1].mul(hw[1])).add(v[2].mul(hw[2])).add(v[3].mul(hw[3])).div(tot);
+          return { alb: sum(sa).toVar(), nrm: sum(sn).toVar() };
+        };
+        const a = blended(A);
+        pAlb.assign(a.alb);
+        pNrm.assign(a.nrm);
+        If(wB.greaterThan(0.004), () => {
+          const t = wB.div(max(wA.add(wB), 1e-4)).toVar();
+          If(a.alb.a.mul(float(1).sub(t)).sub(sharp).sub(t).lessThan(1e-3), () => {
+            const b = blended(B);
+            const tb = heightBlend(a, b, t, sharp).toVar();
+            pAlb.assign(mix(a.alb, b.alb, tb));
+            pNrm.assign(mix(a.nrm, b.nrm, tb));
+          });
+        });
+      };
+      if (detail) If(oneUv, nearestUv).Else(blendUv);
+      else nearestUv();
+      // a tint over tens of metres on the near ground (brightness and a little hue, from world-space noise), so one
+      // layer over a wide field stops reading as wallpaper
+      if (detail) {
+        If(mnear.x.greaterThan(0), () => {
+          const q = wp.xz.mul(mnear.y);
+          const oblique = vec2(q.x.mul(0.8).sub(q.y.mul(0.6)), q.x.mul(0.6).add(q.y.mul(0.8)));
+          // (two octaves of value noise sit mostly within 0.3 of the middle: spread to the full range, so the strength is
+          // how far the tint goes either way)
+          const n = clamp(valueNoise(q).mul(0.6).add(valueNoise(oblique.mul(2.07).add(vec2(5.3, 11.9))).mul(0.4)).sub(0.5).mul(2.5), -1, 1);
+          const hue = valueNoise(q.mul(0.73).add(vec2(41.3, 13.7))).mul(2).sub(1);
+          const s = mnear.x;
+          const tint = vec3(float(1).add(hue.mul(s).mul(0.25)), 1, float(1).sub(hue.mul(s).mul(0.25)))
+            .mul(float(1).add(n.mul(s)));
+          pAlb.assign(vec4(pAlb.rgb.mul(tint), pAlb.a));
+        });
+      }
     });
     return fade;
   }).once()();

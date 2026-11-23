@@ -24,3 +24,6 @@ standard+senv+l1001+xplain
 standard+instbig+senv+l1001+xplain
 standard+vcol+instbig+shadow+senv+l1001+xplain
 standard+vcol+instbig+shadow+senv+ds+l1001+xplain
+standard+vcol+instbig+shadow+senv+icol+l1001
+standard+vcol+instbig+shadow+senv+icol+l1001+xplain
+standard+vcol+instbig+shadow+icol+l1001

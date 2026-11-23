@@ -29,8 +29,10 @@
 #include <math.h>
 #include <string.h>
 
+#include "cartwheel/debug.h"
 #include "cartwheel/jobs.h"
 #include "cartwheel/math.h"
+#include "cartwheel/platform.h"
 #include "cartwheel/quality.h"
 #include "cartwheel/shading.h"
 #include "terrain_internal.h"
@@ -74,7 +76,22 @@ float cw__terrain_far(const cw_terrain *t) {
   return t->def.far_distance * mul[cw__terrain_quality(t)];
 }
 
-static const char *near_ext(int q) { return q >= CW_QUALITY_HIGH ? "terrain" : q > CW_QUALITY_VERY_LOW ? "terrainlow" : "terrainmin"; }
+/* the near program: the quality's, with the near-ground options (rotation blend, macro variation, parallax) only while
+ * the terrain uses one, so a terrain that uses none draws the program it always drew */
+static const char *near_ext(int q, bool fx) {
+  if (fx) return q >= CW_QUALITY_HIGH ? "terrainfx" : q > CW_QUALITY_VERY_LOW ? "terrainfxlow" : "terrainfxmin";
+  return q >= CW_QUALITY_HIGH ? "terrain" : q > CW_QUALITY_VERY_LOW ? "terrainlow" : "terrainmin";
+}
+/* parallax steps per pixel at each quality (Very Low .. Ultra) */
+static const float POM_STEPS[CW_QUALITY_COUNT] = { 0, 0, 4, 8, 16 };
+static bool wants_fx(const cw_terrain *t, int q) {
+  const tr_gpu *g = t->gpu;
+  if ((g && g->uvdiff > 0) || t->def.macro_tint > 0 || t->def.macro_layer > 0) return true;
+  if (POM_STEPS[CW_CLAMP(q, 0, CW_QUALITY_COUNT - 1)] > 0)
+    for (int i = 0; i < CW_TERRAIN_LAYERS; i++)
+      if (t->layer[i].parallax > 0) return true;
+  return false;
+}
 
 /* ── textures ───────────────────────────────────────────────────────── */
 
@@ -158,9 +175,14 @@ static void pair_rows(int begin, int end, int worker, void *u) {
   for (int pz = j->z0 + begin; pz < j->z0 + end; pz++)
     for (int px = j->x0; px <= j->x1; px++) {
       int lay[8], nl = 0, sh[8][4], tot[8];
+      uint32_t uv0 = 0;
+      bool uvdiff = false;
       for (int k = 0; k < 4; k++) {
         int x = CW_CLAMP(px - 1 + (k & 1), 0, t->nx - 1), z = CW_CLAMP(pz - 1 + (k >> 1), 0, t->nz - 1);
         uint32_t c = t->ctl[tr_idx(t, x, z)];
+        /* uv rotation and scale (bits 13..7): do the four agree? */
+        if (k == 0) uv0 = (c >> 7) & 127;
+        else uvdiff |= ((c >> 7) & 127) != uv0;
         int base = CW_MIN((int)(c >> 27) & 31, 7), over = CW_MIN((int)(c >> 22) & 31, 7), blend = (int)(c >> 14) & 255;
         int ids[2] = { base, over }, s[2] = { 255 - blend, blend };
         for (int q = 0; q < 2; q++) {
@@ -181,7 +203,8 @@ static void pair_rows(int begin, int end, int worker, void *u) {
         }
       if (nl > 3) nl = 3;
       uint32_t *p = &out[4 * ((size_t)pz * pw + px)];
-      p[0] = (uint32_t)nl;
+      g->uvdiff_rows[pz] += (int)uvdiff - (int)(p[0] >> 31); /* (a row is one job's) */
+      p[0] = (uint32_t)nl | (uvdiff ? 1u << 31 : 0);
       for (int i = 0; i < 3; i++) {
         p[1 + i] = 0;
         if (i >= nl) continue;
@@ -195,6 +218,9 @@ static void rect_parallel(cw_terrain *t, const int *r, cw_range_fn fn);
 static void pair_update(cw_terrain *t, const int *r) {
   int q[4] = { r[0], r[1], CW_MIN(r[2] + 1, t->nx), CW_MIN(r[3] + 1, t->nz) };
   rect_parallel(t, q, pair_rows);
+  tr_gpu *g = t->gpu;
+  g->uvdiff = 0;
+  for (int z = 0; z <= t->nz; z++) g->uvdiff += g->uvdiff_rows[z];
 }
 
 static float linear_to_srgb(float c) {
@@ -347,7 +373,8 @@ static void ensure_gpu(cw_terrain *t) {
   g->mat_near->roughness = 1;
   g->mat_near->metalness = 0;
   g->near_q = cw__terrain_quality(t);
-  t3_material_set_extension(g->mat_near, near_ext(g->near_q));
+  g->near_fx = false;
+  t3_material_set_extension(g->mat_near, near_ext(g->near_q, false));
   g->mat_far = t3_mesh_standard_material_new(0xffffff);
   g->mat_far->roughness = 1;
   g->mat_far->metalness = 0;
@@ -356,6 +383,9 @@ static void ensure_gpu(cw_terrain *t) {
   g->normals = data_tex(t->nx, t->nz, true, false);
   g->control = t3_data_texture_new_format(t->nx, t->nz, NULL, T3_RED_INTEGER_FORMAT, T3_UNSIGNED_INT_TYPE);
   g->pair = t3_data_texture_new_format(t->nx + 1, t->nz + 1, NULL, T3_RGBA_INTEGER_FORMAT, T3_UNSIGNED_INT_TYPE);
+  memset(g->pair->pixels, 0, (size_t)(t->nx + 1) * (size_t)(t->nz + 1) * 16); /* (word 0 bit 31 is read back: pair_rows) */
+  g->uvdiff_rows = cw_calloc((size_t)t->nz + 1, sizeof(int), CW_MEM_RENDER);
+  g->uvdiff = 0;
   g->mdiv = 1;
   while ((t->nx - 1) / g->mdiv + 1 > 1025 || (t->nz - 1) / g->mdiv + 1 > 1025) g->mdiv *= 2;
   g->mw = (t->nx - 1) / g->mdiv + 1;
@@ -388,6 +418,7 @@ void cw__terrain_gpu_free(cw_terrain *t) {
   if (g->mat_far) t3_release(g->mat_far);
   if (g->scene) t3_object_remove(&g->scene->base, g->root);
   t3_release(g->root);
+  cw_free(g->uvdiff_rows);
   cw_free(g);
   t->gpu = NULL;
 }
@@ -472,11 +503,12 @@ void cw__terrain_gpu_update(cw_terrain *t) {
     t->layers_dirty = false;
   }
   int q = cw__terrain_quality(t);
-  if (q != g->near_q) {
+  bool fx = wants_fx(t, q);
+  if (q != g->near_q || fx != g->near_fx) {
     /* swap the surface part only: parts a game added (cartwheel/shading.h) and the lighting's stay */
-    cw_shading_remove(g->mat_near, near_ext(g->near_q));
-    g->near_q = q;
-    cw_shading_add(g->mat_near, near_ext(q));
+    cw_shading_remove(g->mat_near, near_ext(g->near_q, g->near_fx));
+    g->near_q = q, g->near_fx = fx;
+    cw_shading_add(g->mat_near, near_ext(q, fx));
   }
   t->stats.upload_ms = (float)(tr_now_ms() - t0);
 }
@@ -554,7 +586,11 @@ static void fill(t3_extension_ctx *c, void *user) {
     for (int m = 0; m < 4; m++)
       if (obj == g->view[k].im[m >> 1][m & 1]) cam = g->view[k].cam;
   float v[4];
-  v[0] = cam.x, v[1] = cam.y, v[2] = cam.z, v[3] = 0;
+  /* w: 1 reads every point's uv rotation and scale from its nearest control texel (a gate's control, the seams
+   * the blend across texels removes: CW_TEST_TERRAIN_NEAREST_UV) */
+  static int nearest_uv = -1;
+  if (nearest_uv < 0 && cw_frame_index() > 0) nearest_uv = cw_test_env("CW_TEST_TERRAIN_NEAREST_UV") != NULL;
+  v[0] = cam.x, v[1] = cam.y, v[2] = cam.z, v[3] = nearest_uv > 0 ? 1.0f : 0.0f;
   t3_extension_set_uniform(c, "terrainCam", v, 4);
   v[0] = d->origin.x, v[1] = d->origin.z, v[2] = 1.0f / d->vertex_spacing, v[3] = d->vertex_spacing;
   t3_extension_set_uniform(c, "terrainGrid", v, 4);
@@ -574,9 +610,28 @@ static void fill(t3_extension_ctx *c, void *user) {
   t3_extension_set_uniform(c, "terrainUv0", v, 4);
   for (int k = 0; k < 4; k++) v[k] = t->layer[4 + k].uv_scale;
   t3_extension_set_uniform(c, "terrainUv1", v, 4);
-  /* triplanar from normal.y 0.75 down over 0.2; height-blend sharpness */
+  /* triplanar from normal.y 0.75 down over 0.2; side_detile */
   v[0] = 0.75f, v[1] = 0.2f, v[2] = t->def.side_detile, v[3] = 0.15f;
   t3_extension_set_uniform(c, "terrainSlope", v, 4);
+  /* each layer's height-blend sharpness (its own, or the def's) and parallax depth */
+  float s8[8], p8[8];
+  for (int k = 0; k < 8; k++)
+    s8[k] = t->layer[k].sharpness > 0 ? t->layer[k].sharpness : d->blend_sharpness, p8[k] = t->layer[k].parallax;
+  t3_extension_set_uniform(c, "terrainSharp0", s8, 4);
+  t3_extension_set_uniform(c, "terrainSharp1", s8 + 4, 4);
+  /* the near-ground options' values: only the fx programs have them (near_ext) */
+  bool far_mat = t3_extension_material(c) == g->mat_far;
+  cw__ext_miss_quiet = far_mat || !g->near_fx;
+  t3_extension_set_uniform(c, "terrainPom0", p8, 4);
+  t3_extension_set_uniform(c, "terrainPom1", p8 + 4, 4);
+  /* macro variation: tint strength and frequency; the second read's tile factor and share */
+  v[0] = d->macro_tint, v[1] = 1.0f / d->macro_tint_scale, v[2] = 1.0f / d->macro_layer_scale, v[3] = d->macro_layer;
+  t3_extension_set_uniform(c, "terrainMacroNear", v, 4);
+  /* the second read's ramp; parallax distance and steps (the quality's cap) */
+  v[0] = d->macro_layer_near, v[1] = 1.0f / CW_MAX(d->macro_layer_far - d->macro_layer_near, 0.01f);
+  v[2] = d->parallax_distance, v[3] = POM_STEPS[CW_CLAMP(q, 0, CW_QUALITY_COUNT - 1)];
+  t3_extension_set_uniform(c, "terrainMacroDist", v, 4);
+  cw__ext_miss_quiet = far_mat;
   t3_extension_set_texture(c, "terrainControl", g->control);
   t3_extension_set_texture(c, "terrainPair", g->pair);
   t3_extension_set_texture(c, "terrainAlbedo", g->albedo);
@@ -586,8 +641,8 @@ static void fill(t3_extension_ctx *c, void *user) {
 
 void cw_terrain_bind_renderer(cw_terrain *t, t3_renderer *r) {
   if (!r) return;
-  static const char *names[] = { "terrain", "terrainlow", "terrainmin", "terrainfar" };
-  for (int i = 0; i < 4; i++) cw_shading_part(r, names[i], fill, t); /* (parts: they compose with others, cartwheel/shading.h) */
+  static const char *names[] = { "terrain", "terrainlow", "terrainmin", "terrainfx", "terrainfxlow", "terrainfxmin", "terrainfar" };
+  for (int i = 0; i < (int)CW_ARRAY_LEN(names); i++) cw_shading_part(r, names[i], fill, t); /* (parts: they compose with others, cartwheel/shading.h) */
 }
 
 void cw_terrain_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp) {

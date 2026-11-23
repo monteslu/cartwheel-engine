@@ -1,0 +1,35 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+ambient_energy = 0.3
+hemi_energy = 0.6
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 10.5
+latitude = 40
+declination = 15
+north = 30
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 8, 20)
+fov = 60
+near = 0.1
+far = 2000
+
+[node name="Terrain" parent="." type="Terrain3D"]
+size_x = 256
+size_z = 256
+region_size = 256
+vertex_spacing = 1
+min_height = 0
+max_height = 10
+grid_quads = 32
+far_distance = 1000
+physics = false
+layer0_uv_scale = 0.25
+layer1_uv_scale = 0.25

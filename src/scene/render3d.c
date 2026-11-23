@@ -31,6 +31,7 @@ void cw__decals_renderer_init(t3_renderer *r); /* src/fx/decals.c: mesh decals' 
 void cw__skin_shading_renderer_init(t3_renderer *r); /* src/render/skin_shading.c: the skin part's hook */
 void cw__skin_shading_frame(void);                   /* follow the quality setting */
 void cw__rim_light_renderer_init(t3_renderer *r);   /* src/render/rim_light.c: the rim part's hook */
+void cw__foliage_renderer_init(t3_renderer *r);     /* src/render/foliage.c: the foliage parts' hooks */
 void cw__shading_renderer_init(t3_renderer *r);     /* src/render/shading.c: the parts registered for every renderer */
 void cw__fog_renderer_init(t3_renderer *r);         /* src/render/fog.c: the hfog part's hook */
 
@@ -120,6 +121,7 @@ t3_renderer *cw_render3d_window_renderer(int w, int h) {
   cw__decals_renderer_init(r);
   cw__skin_shading_renderer_init(r);
   cw__rim_light_renderer_init(r);
+  cw__foliage_renderer_init(r);
   cw__shading_renderer_init(r);
   cw__fog_renderer_init(r);
 #if CW_WGPU
@@ -1220,6 +1222,7 @@ t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
     cw__decals_renderer_init(s->renderer);
     cw__skin_shading_renderer_init(s->renderer);
     cw__rim_light_renderer_init(s->renderer);
+    cw__foliage_renderer_init(s->renderer);
     cw__shading_renderer_init(s->renderer);
     cw__fog_renderer_init(s->renderer);
 #if CW_WGPU

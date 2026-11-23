@@ -89,6 +89,10 @@ cw_add_app(terrain_demo SOURCES terrain_demo/main.c PACK ${CMAKE_CURRENT_SOURCE_
 cw_add_app(terrain_lights SOURCES terrain_demo/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/terrain_demo/project/roots.txt
   PROGRAMS terrain_demo/programs/terrain_demo.txt)
 target_compile_definitions(terrain_lights PRIVATE TERRAIN_DEFAULT_MODE="lights")
+# terrain near-ground shading (tests/terrain-detail.mjs): uv rotation blended across control texels, macro variation,
+# height-blend sharpness, parallax occlusion
+cw_add_app(terrain_detail SOURCES terrain_detail/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/terrain_detail/project/roots.txt
+  PROGRAMS terrain_detail/programs/terrain_detail.txt)
 cw_add_app(perf_nodes SOURCES perf_nodes/main.c)
 # big open worlds (cartwheel/stream.h): a 16.4 km world in 512 m cells, streamed in
 # around a car or a flight; the world (45 MB of zstd cell files) is generated
@@ -446,3 +450,7 @@ target_compile_definitions(looks_perf PRIVATE LOOKS_PERF=1)
 cw_add_app(looks_onebit SOURCES looks_onebit/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/looks/assets)
 cw_add_app(looks_onebit_720 SOURCES looks_onebit/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/looks/assets)
 target_compile_definitions(looks_onebit_720 PRIVATE ONEBIT_H=720)
+# grass and leaf cards that look like plants: wind, smooth cut-out edges, two-sided lighting, dithered LOD fades,
+# root colours from the terrain (cartwheel/foliage.h; gates foliage and foliage-field)
+cw_add_app(foliage_field SOURCES foliage_field/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/foliage_field/assets
+  PROGRAMS foliage_field/programs/foliage_field.txt)

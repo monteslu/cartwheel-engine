@@ -360,7 +360,7 @@ IES lights are drawn by the clustered lights (`LightingSettings` `mode = CLUSTER
 
 ### Terrain under lamps and cascades
 
-A Terrain3D's materials carry their own surface part (`terrain`, `terrainlow`, `terrainfar`), and the cluster and csm parts compose with it (`terrain_cluster_csm`), so lamps light the ground and the sun's cascades fall on it. The terrain also casts into the cascades with its own vertex displacement. A game's own surfaces and parts compose the same way ([Writing your own surface](#writing-your-own-surface)). `terrain_lights` (terrain_demo's `lights` run) drives the car at dusk past seven clustered lamps with the sun casting four cascades. Its `terrain-lights-parity` gate checks on GL and WebGPU that the clustered lamps light the ground exactly as three.c's own lights do, and that the cascades put the terrain's shadows where one wide shadow map puts them.
+A Terrain3D's materials carry their own surface part (`terrain`, `terrainlow`, `terrainfar`; `terrainfx` and `terrainfxlow` while the near ground's options are on), and the cluster and csm parts compose with it (`terrain_cluster_csm`), so lamps light the ground and the sun's cascades fall on it. The terrain also casts into the cascades with its own vertex displacement. A game's own surfaces and parts compose the same way ([Writing your own surface](#writing-your-own-surface)). `terrain_lights` (terrain_demo's `lights` run) drives the car at dusk past seven clustered lamps with the sun casting four cascades. Its `terrain-lights-parity` gate checks on GL and WebGPU that the clustered lamps light the ground exactly as three.c's own lights do, and that the cascades put the terrain's shadows where one wide shadow map puts them.
 
 The two parts share one uniform group (`lightingFrame`), so a terrain under both still fits WebGPU's four bind groups.
 
@@ -704,6 +704,28 @@ cw_rim_light_remove_tree(model_root);            /* before releasing the model: 
 The rim is per material: glTF instances share their file's materials, so clone one per character for a per-character colour (MeshInstance3D primitives of one look share one material in a tree too). It works with every other part (clustered lights, the cascaded sun, skin shading, GI) and costs a few instructions per pixel of the material; shadow casters are untouched and every preset draws it. Measured on a Radeon 890M in a split-screen shooter at 1920 x 1080, High preset, four to eight rimmed skinned characters (scene pass GPU ms, rims on against off, two interleaved runs each): GL one view 5.26 to 5.66 against 5.15 to 5.33, four views 5.2 to 5.5 against 5.21 to 5.34; WebGPU one view 4.08 to 4.7 against 4.36 to 4.75, four views 4.68 to 4.71 against 4.23. That is under the run-to-run noise on one view and about 0.45 ms on WebGPU with four views; a Vega 8 (about a quarter of an 890M) should stay under 1 ms. `samples/rim_light` shows two lines of figures from 3 m to 40 m with red and blue rims and a pulsing one; its gate is `rim-light`.
 
 **Vertex cache order.** `cw_geometry_optimize_vertex_cache` reorders an indexed geometry's triangles for the GPU's post-transform cache (meshoptimizer's optimizeVertexCache) and reports the vertices shaded per triangle before and after. Meshes exported in modelling order can shade each vertex two or three times; already ordered ones (most of a character exporter's) gain little. Opaque meshes draw the same picture.
+
+### Foliage: wind, smooth cut-outs, leaves lit from both sides
+
+Grass, leaf cards, reeds and bushes need four things a plain material does not give them ([foliage.h](header:foliage.h)), as shading parts on the material, each switched by its values:
+
+- **Wind.** Each vertex leans downwind by its height on the mesh: none at the root (y = 0), `strength` metres at `height`, growing with the square of the height so a stem bends rather than tilts. The lean sways at `frequency` with a phase taken from the vertex's world position (a smooth noise about a metre across), so neighbouring plants never sway together, and `gust`, a share of the strength, comes in fronts `gust_scale` metres apart that travel over the field along the wind. The clock is the engine's frame clock, so every host and every view of a split screen draws the same leaves; the shadow moves with them. `cw_wind_lean` is the same on the CPU, for gameplay.
+- **Smooth cut-out edges** (`smooth_alpha`, for alpha-tested materials: a glTF material with alphaMode MASK). A plain alpha test stair-steps a card's edge and, as the texture's mip levels average its alpha, drops the thin parts under the cutoff so they flicker as the camera moves. Under MSAA the alpha becomes the pixel's sample coverage (three.js r187's alpha to coverage, on GL and WebGPU); without MSAA each pixel is kept with a probability that rises with its alpha against noise moved every frame under TAA (hashed alpha), which TAA averages into a soft edge. The engine picks the mode each frame from the scene pass's sample count.
+- **Two-sided lighting** (`two_sided_lighting`). A double-sided material flips its normal on back faces, so a leaf whose normals are bent up for soft lighting goes dark on its back. With this set the back face is lit with the front face's normal (and normal map): one thin sheet, lit the same from both sides.
+- **Dithered fades** (`fade_in_*`, `fade_out_*`): pixels vanish over a band of distance by a screen-door dither TAA resolves. Two LODs given the same band, one fading out and one fading in, crossfade with no pop.
+
+```c
+cw_foliage_desc d = cw_foliage_default();
+d.wind = cw_wind_default();                 /* 8 cm at the top, half a sway a second, gusts */
+d.smooth_alpha = true;                      /* the leaf cards' alpha test */
+d.two_sided_lighting = true;
+cw_foliage_apply_tree(bush_root, &d);       /* every material under a glTF model, each mesh's height from its bounds */
+...
+d.wind.strength = 0.2f;                     /* a storm: change it any frame, it is a uniform */
+cw_foliage_apply(leaf_material, &d);
+```
+
+Terrain scatter takes all of it as layer settings (TerrainScatter3D `wind_*`, `smooth_alpha`, `two_sided_lighting`, `fade_mode`; [Terrain, Scatter](guide:terrain#scatter)) on the layer's own copies of its materials. The values are per material: glTF instances share their file's materials, so clone one for a different wind. A material with all of it off draws as before; one with foliage draws a composed program state with `foliage` (and `folalpha` for smooth edges) in its extension, which `tools/programs.mjs` finds like any other. `samples/foliage_field` shows each one and measures it from the picture; its gate is `foliage`.
 
 ### Toon shading
 

@@ -23,6 +23,9 @@ typedef struct tr_gpu {
   t3_texture *pair; /* (nx + 1) x (nz + 1) RGBA32UI: each control cell's layers and their shares (terrain_render.c, pair_rows) */
   int mw, mh, mdiv;
   int near_q;                  /* the quality the near material's program is for */
+  bool near_fx;                /* and whether it is the program with the near-ground options (terrainfx*) */
+  int *uvdiff_rows;            /* per pair row: cells whose four texels differ in uv rotation or scale (pair word 0 bit 31) */
+  int uvdiff;                  /* their sum: the near-ground program is needed while it is not 0 */
   /* one-pass split screen (src/render/view_layers.h): views after the first draw their own selection with meshes of
    * their own, each on its view's layer (the first view's are im above); cam is the camera the view's patches morph
    * for. views: how many views the last frame drew this way (0: none, im on layer 0) */
@@ -93,6 +96,8 @@ struct cw_terrain {
   struct {
     uint8_t *albedo, *normal; /* TR_TILE^2 RGBA8, NULL = default */
     float uv_scale;
+    float sharpness;          /* height-blend sharpness (0 = the def's) */
+    float parallax;           /* parallax depth, metres (0 = flat) */
     float mean[3];            /* linear mean albedo, for the macro bake */
     bool set;
   } layer[CW_TERRAIN_LAYERS];
@@ -115,6 +120,8 @@ void cw__terrain_mark(cw_terrain *t, int x0, int z0, int x1, int z1, bool height
 /* the height of the drawn / collided triangles at sample-space (fx, fz), metres (render use: scatter) */
 float cw__terrain_height_fast(const cw_terrain *t, float fx, float fz);
 t3_vec3 cw__terrain_normal_fast(const cw_terrain *t, float fx, float fz);
+/* the layers' mean albedo there, weighted by the control words (linear, no tint) */
+t3_vec3 cw__terrain_albedo_fast(const cw_terrain *t, float fx, float fz);
 
 /* cdlod.c */
 void cw__terrain_tree_init(cw_terrain *t);
@@ -148,6 +155,7 @@ void cw__scatter_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp, int view,
 void cw__scatter_attach(cw_terrain *t, tr_scatter *s);
 void cw__scatter_shift(cw_terrain *t, t3_vec3 d);
 void cw__scatter_sync(cw_terrain *t); /* placement in flight done (before heights, control or origin change) */
+void cw__scatter_colors_dirty(cw_terrain *t); /* the layers' colours changed: layers with root_from_terrain place again */
 
 /* ── SIMD (GCC / clang vector extensions: SSE natively, simd128 in carts) ── */
 typedef float tr_v4f __attribute__((vector_size(16)));

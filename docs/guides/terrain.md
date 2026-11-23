@@ -2,7 +2,7 @@
 
 {{name}} draws heightmap terrain with CDLOD, collides it through Box3D's height field, paints it with Terrain3D's control-map layout and covers it with deterministic scatter: grass, rocks and trees. One header, one node type for the terrain and one for each scatter layer.
 
-Header: [cartwheel/terrain.h](header:terrain.h). Node types: [Terrain3D](node:Terrain3D) and [TerrainScatter3D](node:TerrainScatter3D). The height field on its own is in [cartwheel/physics3d.h](header:physics3d.h) ([cw_heightfield3d_create](api:cw_heightfield3d_create), [cw_shape3d_heightfield](api:cw_shape3d_heightfield)). Sample: `terrain_demo`, a car driving a dirt track cut into a 2 km generated landscape. Gates: `unit-terrain` and `terrain-drive`.
+Header: [cartwheel/terrain.h](header:terrain.h). Node types: [Terrain3D](node:Terrain3D) and [TerrainScatter3D](node:TerrainScatter3D). The height field on its own is in [cartwheel/physics3d.h](header:physics3d.h) ([cw_heightfield3d_create](api:cw_heightfield3d_create), [cw_shape3d_heightfield](api:cw_shape3d_heightfield)). Samples: `terrain_demo`, a car driving a dirt track cut into a 2 km generated landscape, and `terrain_detail`, a flat field of flagstones for the near ground's options. Gates: `unit-terrain`, `terrain-drive` and `terrain-detail`.
 
 ## The data
 
@@ -65,16 +65,49 @@ A side projection repeats, and on a big cliff that repeat shows as a grid. Set `
 
 The near patches cast shadows with the same extension's caster program, morphed for the viewing camera.
 
+## The near ground
+
+Four things decide how painted ground holds up from a play camera 2 to 60 m away. Every one is off or at its old value by default, and a terrain that sets none of them draws exactly as before, pixel for pixel. `samples/terrain_detail` shows each on a flat field of flagstones, and the `terrain-detail` gate measures each from the picture.
+
+**Rotation and scale per texel.** A control word's uv rotation and scale (bits 13..7) can change from one texel to the next: paint a different turn on every block of ground and the same tile stops lining up into rows. Where the texels round a point disagree, each layer is read once for each different rotation and scale among them, and the reads are blended by the same bilinear weights, by height (the stones of one rotation stand over the joints of the other, at the layer's blend sharpness), so the change fades across one texel instead of drawing a straight seam where the nearest texel changes. The gradients are rotated and scaled with each read, so there is no mip seam either. Where the four texels agree (all ground painted with one rotation, the usual case), the shading is the single read it always was.
+
+Each read costs what the layer costs, so ground where neighbouring texels differ pays up to four times the layer reads (two where only two rotations meet, along a block's edge). Painting a rotation per block of a few metres leaves most texels agreeing; painting a random rotation into every texel makes the whole field pay.
+
+**Blend sharpness.** Where two layers meet, the one whose height (the albedo's alpha) stands out wins, and the two share only where their weighted heights are within `blend_sharpness` of each other (0..1 of the height range; 0.15 by default, Terrain3D's value). Smaller is a crisper edge that follows the higher layer's shapes (sand only in a cobble road's joints), larger a softer one. A layer can set its own with [cw_terrain_set_layer_blend_sharpness](api:cw_terrain_set_layer_blend_sharpness) (node property `layer<i>_blend_sharpness`); a pair uses the mean of its two.
+
+**Macro variation.** A single layer over a wide field reads as wallpaper from a play camera: every few metres of ground looks like every other. Two options break it up, both off by default:
+
+- `macro_tint` (0..1): the near ground's brightness, and a little of its hue, varied by world-space noise this much either way, over features `macro_tint_scale` metres across (40 by default). It costs a few arithmetic instructions a pixel and no texture reads.
+- `macro_layer` (0..1): a second read of each layer with a tile `macro_layer_scale` times larger (4 by default), blended in by height from `macro_layer_near` metres to its full share at `macro_layer_far` (0 and 60 by default). The ground shows the layer's own stones at two sizes side by side, so the small tile's repeat stops lining up into a grid at a distance. It costs a second set of layer reads where it is drawn.
+
+**Parallax.** A layer with a parallax depth ([cw_terrain_set_layer_parallax](api:cw_terrain_set_layer_parallax), node property `layer<i>_parallax`, metres from the top of its height to the bottom) is drawn with parallax occlusion within `parallax_distance` metres (30 by default, fading out over the last 30% of it): the eye's ray is marched into the layer's height and the layer is read where it meets it, so stones stand up from their joints and shift against each other as the view turns. A few centimetres suits gravel and cobbles. It applies to the top-down projection (cliffs' side projections stay flat). The steps per pixel are the quality's: none at Very Low and Low, 4 at Medium, 8 at High and 16 at Ultra; each step is one read of the layer.
+
+What they cost on the Radeon 890M at 1920 x 1080 (`tests/terrain-detail-perf.mjs`: `terrain_detail` from its play camera, flagstones over two thirds of the frame, release build, GPU ms of the frame over the same frame without the option, the least of 3 interleaved rounds):
+
+| option | GL ms | WebGPU ms |
+|---|---|---|
+| rotation blend (a quarter turn on every other 4 m block, against the same field's nearest-texel rotation) | 0.62 | 0.80 |
+| macro_tint 0.35 | 0.63 | 0.72 |
+| macro_layer 0.6 | 1.00 | 0.89 |
+| both macro options | 1.04 | 0.94 |
+| parallax 0.08 m, Medium (4 steps) | 1.03 | 0.90 |
+| parallax 0.08 m, High (8 steps) | 1.20 | 1.13 |
+| parallax 0.08 m, Ultra (16 steps) | 1.77 | 1.66 |
+
+The frame without them took 1.7 to 1.9 ms on either backend. Most of a single option's cost is the program that carries the options, about 0.6 ms in that frame whichever option asks for it: a terrain draws with it (the `terrainfx` surface parts) only while it uses one of them, and with the program it always had otherwise, so a terrain that uses none pays nothing. Everything on at once as a release cart on romdev (WebGPU, the 890M) took the same frame from 1.75 to 4.59 ms.
+
+Every option's settings live: [cw_terrain_set_shading](api:cw_terrain_set_shading) takes them from a definition, and a Terrain3D node applies a change of its properties at once.
+
 ## Quality
 
 The terrain follows [cartwheel/quality.h](header:quality.h) (effects detail):
 
-| preset | shading | far distance | ranges |
-|---|---|---|---|
-| Low | two layers, smoothly weighted from the four control texels around the pixel; no triplanar | x0.5 | x1 |
-| Medium | Low, plus triplanar on steep slopes | x0.75 | x1 |
-| High | Medium's shading | x1 | x1 |
-| Ultra | High | x1.5 | x1.25 |
+| preset | shading | far distance | ranges | parallax steps |
+|---|---|---|---|---|
+| Low | two layers, smoothly weighted from the four control texels around the pixel; no triplanar | x0.5 | x1 | none |
+| Medium | Low, plus triplanar on steep slopes | x0.75 | x1 | 4 |
+| High | Medium's shading | x1 | x1 | 8 |
+| Ultra | High | x1.5 | x1.25 | 16 |
 
 The painted layers tile without repeats: the top-down projection is cut into small triangular cells, each reading the layer at an offset of its own, blended across the joins. Each map is read twice, not once a cell: a cell's share is its barycentric weight less a floor (a fifth, or the least of the three weights where that is more), so the least-weighted cell has no share and is never read, and the two reads go out together. Away from a triangle's middle that is the three-cell blend with each cell fading a little sooner; round the middle the other two carry it. The cells and their offsets are those of the three-read blend it replaced, and in Ember Throne's regions the ground looks the same at native scale (a pebbled path is a little crisper, with no ghost of a second offset under it).
 
@@ -106,10 +139,27 @@ A scatter layer ([cw_terrain_scatter_add](api:cw_terrain_scatter_add), or a [Ter
 - **Cells.** 32 m, doubled while that stays within a quarter of the layer's visible range, so a long-range layer stays a few dozen draws.
 - **Placement.** A pure function of the cell and the layer's seed by integer hashing. A candidate is kept by density, the density map, the control layers it may grow on, holes and slope. The same instances land on every host at any worker count.
 - **Drawing.** Each cell is one InstancedMesh per mesh LOD with its own bounds. Cells are generated, culled and posed on the job pool.
-- **LOD and fade.** Instances switch LOD by distance and shrink away over the end of the visible range, so nothing pops.
+- **LOD and fade.** Instances switch LOD by distance and shrink away over the end of the visible range (`fade_mode = SHRINK`), or dissolve there and crossfade between LODs (`DITHER`, below).
 - **Quality thinning.** Each instance has a rank, and quality thins a layer by rank, so thinning never reshuffles.
 
 A glTF mesh's primitives (a trunk and a crown) draw as parts that share one instance buffer, and a cwpack LOD chain gives the LODs. A part with fewer LODs than the first (leaf cards that do not simplify) keeps drawing its coarsest one at the coarser levels.
+
+### Grass and foliage
+
+The built-in `GRASS` shape is a tuft of 12 curved blades of three segments each, tapering from 3 cm at the root to a point and leaning out by a fifth to three fifths of their height, drawn both ways round with one normal bent toward the sky, so a blade is lit the same from either side. Its vertex colours run from a dark root to a lighter tip, a few blades drier than the rest; its far LOD has 6 wider straight blades that cover the same ground. Each instance's colour varies (`tint_jitter`, 0.25 for GRASS: brightness, and a dry yellow or a deep green), so no two tufts match.
+
+A layer takes the foliage of [foliage.h](header:foliage.h) ([Foliage](guide:rendering-3d#foliage-wind-smooth-cut-outs-leaves-lit-from-both-sides)) on its own copies of its materials. All off (the defaults), a layer draws as before.
+
+| Setting | What |
+|---|---|
+| `wind_strength`, `wind_frequency`, `wind_direction`, `wind_gust`, `wind_gust_scale` | wind: the top of the mesh leans up to `wind_strength` metres, with a phase from each instance's place, so neighbours never sway together |
+| `smooth_alpha` | leaf and grass cards (alpha-tested meshes): alpha to coverage under MSAA, hashed alpha that TAA resolves without it |
+| `two_sided_lighting` | double-sided meshes lit with the front face's normal on the back |
+| `fade_mode = DITHER`, `lod_blend` | instances dissolve over the last `fade` metres instead of shrinking, and each LOD crossfades with the next over `lod_blend` metres round `lod_distance` (an instance in the band is drawn by both, by complementary dithers): no pop |
+| `tint_jitter` | per-instance colour variation (an instance colour) |
+| `root_from_terrain`, `root_height` | each instance's lower part takes the terrain's colour under it ([cw_terrain_albedo_at](api:cw_terrain_albedo_at): its layers' mean albedo by the control map, times the terrain's colour), blending into the mesh's own colour above `root_height` |
+
+Wind is deterministic (the engine's frame clock), the same in every view of a split screen and in the shadows. `cw_terrain_scatter_cell_colors` gives a cell's instance colours, as `cw_terrain_scatter_cell` gives their places. Measured on the Radeon 890M with `samples/foliage_field` (gate `foliage`, on every host and both backends): wind 0.1 moves the tips of 1 m stems 0.07 m and 0.2 moves them 0.14 m, with neighbouring stems uncorrelated (-0.12; 0.99 when forced into one phase); `smooth_alpha` cuts the shimmer of a field of alpha-tested cards under a slow pan by 46% under MSAA 4x and by 31% under TAA; `two_sided_lighting` lights a card's back within 0.001 of its front (0.38 darker without); `root_from_terrain` puts every root within the jitter of the terrain's colour; DITHER cuts the largest single-frame change at a LOD switch from 22/255 to 8/255. What each costs on a 1920 x 1080 frame of a dense field (`tests/foliage-perf.mjs`, a busy machine, so read them as about): wind 0.5 ms on GL and WebGPU over 30 000 tufts (the part's per-pixel work included), `smooth_alpha` 0.4 to 0.7 ms, DITHER 0.5 to 0.9 ms, `root_from_terrain` 0.5 ms on GL and within the noise on WebGPU.
 
 ## Performance
 

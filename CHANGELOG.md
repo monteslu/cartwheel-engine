@@ -4,6 +4,84 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.71.0 (2026-11-23)
+
+### Added
+- Foliage (`cartwheel/foliage.h`): wind, smooth cut-out edges, two-sided lighting and dithered fades for grass, leaf
+  cards and bushes, as shading parts on a material (`foliage`, and `folalpha` for smooth edges), each switched by its
+  values. `cw_foliage_apply`, `cw_foliage_apply_mesh`, `cw_foliage_apply_tree`, `cw_foliage_remove`,
+  `cw_foliage_get`, `cw_foliage_count`, `cw_foliage_default`, `cw_wind_default`, `cw_wind_lean` (the wind on the
+  CPU, for gameplay), `cw_foliage_time`.
+  - Wind (`cw_wind`: `strength`, `frequency`, `direction`, `gust`, `gust_scale`): each vertex leans downwind by the
+    square of its height on the mesh, with a phase from its world position (a smooth noise about a metre across) so
+    neighbouring plants never sway together, and gusts travelling over the field. The engine's frame clock drives
+    it: the same leaves on every host and in every view of a split screen; the shadows move with them.
+  - Smooth cut-out edges (`smooth_alpha`, alpha-tested materials such as a glTF MASK): alpha to coverage under MSAA
+    (three.js r187's alphaToCoverage program; on WebGPU through three.c v0.187.21), hashed alpha on noise moved every
+    frame under TAA without it. The engine picks the mode each frame from the scene pass's sample count.
+  - Two-sided lighting (`two_sided_lighting`): a double-sided material's back faces lit with the front face's normal
+    and normal map instead of the flipped one, so leaves with up-bent normals no longer go dark on the back.
+  - Dithered fades (`fade_in_*`, `fade_out_*`): a screen-door that TAA resolves; two LODs given the same band
+    crossfade.
+  - Root colour (`root_color`, `root_height`, `tip_jitter`): the lower part of an instanced mesh takes its instance
+    colour.
+- TerrainScatter3D and `cw_scatter_def`: `wind_strength`, `wind_frequency`, `wind_direction`, `wind_gust`,
+  `wind_gust_scale` (`wind`), `smooth_alpha`, `two_sided_lighting`, `fade_mode` (SHRINK, the default, or DITHER:
+  instances dissolve over the fade and each LOD crossfades with the next over `lod_blend` metres round its switch,
+  an instance in the band drawn by both), `tint_jitter` (a per-instance colour: brightness and a dry yellow or deep
+  green), `root_from_terrain` and `root_height` (each instance's root in the terrain's colour under it). Any of them
+  on gives the layer its own copies of its materials with the foliage parts; all off, a layer draws as before.
+- `cw_terrain_albedo_at`: the terrain's colour at a point (its layers' mean albedo weighted by the control map, times
+  the terrain's colour); `cw_terrain_scatter_cell_colors`: a cell's instance colours.
+- Sample `foliage_field`: the GRASS tuft over two terrain layers from a play camera, and the scenes the gate
+  measures from the picture. Gates `foliage` (native and romdev, GL and WebGPU, each check with a control that must
+  fail) and `foliage-field`; `tests/foliage-perf.mjs` reports what each option costs. Measured from the picture, the same on every host and backend: wind 0.1 moves 1 m stems' tips 0.07 m (0.2: 0.14 m), neighbours uncorrelated (-0.12; control in one phase 0.99); `smooth_alpha` cuts card shimmer under a pan by 46% (MSAA 4x) and 31% (TAA); a card's back lit within 0.001 of its front (control: 0.38 darker); DITHER cuts the largest single-frame change at a LOD switch from 22/255 to 8/255; strength 0 with the part on draws the no-wind picture byte for byte, and scenes with none of it (terrain_demo's rocks and trees) byte for byte as v0.70.0. GPU on the 890M at 1920 x 1080 over a dense field: wind about 0.5 ms, `smooth_alpha` 0.4 to 0.7 ms, DITHER 0.5 to 0.9 ms.
+
+- Terrain3D near-ground options (cartwheel/terrain.h, [Terrain](docs/guides/terrain.md#the-near-ground)). A terrain
+  that uses none of them draws exactly as before, pixel for pixel, with the program it always had (`terrain_demo` and
+  `open_world` at every preset, GL and WebGPU, byte for byte against v0.70.0; GPU time the same within the noise):
+  - `blend_sharpness` on `cw_terrain_def` and the Terrain3D node (0.15 by default, the value the height blend always
+    used): smaller is a crisper edge along the higher layer's shapes, larger a softer one; per layer with
+    `cw_terrain_set_layer_blend_sharpness` and `layer<i>_blend_sharpness` (a pair uses the mean of its two).
+  - Macro variation against a single layer reading as wallpaper from a play camera, both off by default:
+    `macro_tint` (brightness and a little hue varied by world-space noise over `macro_tint_scale` metres, 40 by
+    default) and `macro_layer` (a second read of each layer with a tile `macro_layer_scale` times larger, 4 by
+    default, blended in by height from `macro_layer_near` to `macro_layer_far` metres, 0 and 60 by default).
+  - Parallax occlusion on a layer's top-down projection: `cw_terrain_set_layer_parallax` and `layer<i>_parallax` (the
+    depth in metres from the top of the layer's height to the bottom), within `parallax_distance` metres (30 by
+    default). Steps per pixel follow the quality: none at Very Low and Low, 4 at Medium, 8 at High, 16 at Ultra.
+  - `cw_terrain_set_shading`: the def's shading fields, live; the node applies a change of any of these properties at
+    once.
+
+  Costs on a Radeon 890M at 1920 x 1080 (`samples/terrain_detail` from its play camera, flagstones over two thirds of
+  the frame, release build, the least of 3 interleaved rounds, the frame without the option 1.7 to 1.9 ms): rotation
+  blend 0.62 ms GL / 0.80 WebGPU (against the same field drawn with the nearest texel's rotation), macro tint 0.63 /
+  0.72, macro layer 1.00 / 0.89, parallax 1.03 / 0.90 at Medium, 1.20 / 1.13 at High, 1.77 / 1.66 at Ultra. About 0.6
+  ms of any of them is the larger program that carries the options (the `terrainfx`, `terrainfxlow` and
+  `terrainfxmin` surface parts), which a terrain draws with only while it uses one.
+- Sample `terrain_detail` (a flat field of flagstones and sand, test switches `TD_*`). Gate `terrain-detail` (native
+  and romdev, GL and WebGPU: each option measured from the picture, with controls, among them
+  `CW_TEST_TERRAIN_NEAREST_UV=1`, each point's rotation from its nearest texel). Timing report
+  `terrain-detail-perf`.
+
+### Changed
+- The built-in GRASS tuft (TerrainScatter3D `shape = GRASS`, `cw_scatter_def_builtin`) reads as grass from a play
+  camera: 12 curved blades of three segments tapering from 3 cm to a point (6 wider straight ones in the far LOD)
+  instead of five flat 10 cm triangles, a dark root to a lighter tip, a few dry blades, normals bent up, every
+  triangle drawn both ways round with one normal so a blade is lit the same from either side, and a per-instance
+  colour (`tint_jitter` 0.25 for GRASS, also set by `cw_scatter_def_builtin`). A GRASS layer draws new program
+  states (`+icol`, and no `+ds`): a game with GRASS scatter regenerates its program table (`./programs.sh`).
+- three.c v0.187.21: `alpha_to_coverage` reaches WebGPU pipelines (it was GL only).
+
+### Fixed
+- A control map whose uv rotation or scale changes from one texel to the next drew a straight seam on the line where
+  the nearest texel changes: a point took its rotation and scale from its nearest texel alone. Where the texels round
+  a point disagree, each layer is now read once for each rotation and scale among them and the reads are blended by
+  the bilinear weights, by height (the stones of one rotation stand over the joints of the other), across one texel,
+  with the gradients rotated and scaled per read (no mip seam). Measured on a quarter turn every other 4 m block: the
+  brightness step across a block's edge went from 3.5 times the step inside the blocks (2.4 from a play camera) to
+  0.74 (0.77), and at most 1.06 anywhere across the blend.
+
 ## v0.70.1 (2026-11-23)
 
 ### Added

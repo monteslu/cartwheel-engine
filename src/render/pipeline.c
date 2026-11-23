@@ -801,6 +801,7 @@ static void mat4_from_camera(cw_pass_ctx *c) {
   t3_mat4_invert(&c->inv_view_proj, &c->view_proj);
 }
 
+void cw__foliage_frame(bool msaa, bool taa, uint64_t frame); /* src/render/foliage.c */
 static float halton(int i, int b) {
   float f = 1, r = 0;
   while (i > 0) {
@@ -1645,6 +1646,9 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
     }
   }
   ctx.scene = scene;
+  /* foliage (cartwheel/foliage.h): smooth cut-out edges by coverage when the scene pass is multisampled, hashed
+   * otherwise; the hashed noise moves every frame under TAA */
+  cw__foliage_frame(scene_draw && scene_draw != scene, taa, p->frame);
   p->prepass_ran = false;
   /* WebGPU MSAA: every render pass into the multisampled scene resolves its colour at its end. When the viewmodel
    * pass draws into it after the scene pass (the last opaque pass), the scene pass stores the samples only and the

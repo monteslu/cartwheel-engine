@@ -25,7 +25,7 @@
  *     (cw_shading_part); a composed extension's hook calls every part's hook
  *     in order on the same draw.
  *
- * Order (fixed, global): the engine's surface parts (terrain, terrainlow,
+ * Order (fixed, global): the engine's surface parts (terrain, terrainlow, terrainfx,
  * terrainfar, water), then lighting (cluster), then indirect light (gi, and
  * gibuf for the screen-space passes' G-buffer); any other part, a game's own
  * surfaces among them (cartwheel/surface.h), between lighting and indirect,

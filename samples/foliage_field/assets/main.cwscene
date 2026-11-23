@@ -1,0 +1,52 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+ambient_energy = 0.3
+hemi_energy = 0.6
+
+[node name="Post" parent="." type="PostProcess"]
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 10
+latitude = 40
+declination = 15
+north = 20
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+shadow_extent = 40
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 2.2, -4)
+fov = 60
+near = 0.1
+far = 600
+
+[node name="Terrain" parent="." type="Terrain3D"]
+size_x = 256
+size_z = 256
+region_size = 128
+vertex_spacing = 1
+min_height = 0
+max_height = 20
+grid_quads = 32
+generate_seed = 71
+generate_feature = 160
+generate_amplitude = 0.08
+generate_octaves = 4
+far_distance = 300
+physics = false
+
+[node name="Grass" parent="Terrain" type="TerrainScatter3D"]
+shape = GRASS
+density = 7
+min_slope = 40
+scale_min = 0.8
+scale_max = 1.25
+visible_range = 45
+fade = 10
+lod_distance = 14
+seed = 1

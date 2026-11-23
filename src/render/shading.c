@@ -11,7 +11,7 @@ enum { NAME_MAX_ = 64, PART_MAX_ = 16 };
 
 /* the fixed order: surface, lighting, (others by name), indirect */
 static int rank_of(const char *p) {
-  static const char *const surface[] = { "terrain", "terrainlow", "terrainmin", "terrainfar", "water", "waterlow" };
+  static const char *const surface[] = { "terrain", "terrainlow", "terrainmin", "terrainfx", "terrainfxlow", "terrainfxmin", "terrainfar", "water", "waterlow" };
   for (size_t i = 0; i < sizeof surface / sizeof surface[0]; i++)
     if (!strcmp(p, surface[i])) return 0;
   if (!strcmp(p, "cluster") || !strcmp(p, "clusteries")) return 1;

@@ -46,6 +46,13 @@ typedef struct scatter3d {
   bool cast_shadow;
   int knob;                  /* GRASS (cw_quality_scale("grass")) or SCATTER */
   int seed;
+  float wind_strength, wind_frequency, wind_direction[2], wind_gust, wind_gust_scale;
+  bool smooth_alpha, two_sided_lighting;
+  int fade_mode;             /* SHRINK, DITHER */
+  float lod_blend;
+  float tint_jitter;         /* -1: the shape's own (GRASS 0.25, the rest 0) */
+  bool root_from_terrain;
+  float root_height;
   /* runtime */
   int layer;                 /* in the parent's terrain, -1 none */
   bool dirty;
@@ -54,6 +61,7 @@ typedef struct scatter3d {
 
 static const char *const shape_names[] = { "GRASS", "ROCK", "TREE", NULL };
 static const char *const knob_names[] = { "GRASS", "SCATTER", NULL };
+static const char *const fade_names[] = { "SHRINK", "DITHER", NULL };
 static const cw_node_type *scatter_t, *terrain_t;
 
 /* a mesh of rings: (radius, y, colour) per ring, `seg` around; closed at both ends by the first and last ring */
@@ -92,31 +100,81 @@ static t3_geometry *rings(const float (*ring)[5], int nr, int seg, float sx, flo
   return g;
 }
 
-/* a grass tuft: `blades` thin triangles fanned around the centre, dark at the root, light at the tip */
-static t3_geometry *tuft(int blades) {
-  int nv = blades * 3;
+/* a grass tuft: `blades` curved blades fanned round the centre, each `seg` segments up its length, `width` metres
+ * wide at the root and tapering to a point, leaning out and curving over by a share of its height. Every triangle
+ * is in the index twice, once each way round, with one normal bent up toward the sky: a blade is lit the same from
+ * both sides (a front-side material, no flipped back face). Vertex colours run from a dark root to a lighter tip,
+ * a few blades drier than the rest. Deterministic (a hash of the blade's number). */
+static float tuft_u(int b, int k) {
+  uint32_t h = (uint32_t)b * 0x9E3779B1u ^ (uint32_t)k * 0x85EBCA77u;
+  h ^= h >> 15, h *= 0x2C1B3C6Du, h ^= h >> 12, h *= 0x297A2D39u, h ^= h >> 15;
+  return (float)(h >> 8) * (1.0f / 16777216.0f);
+}
+static t3_geometry *tuft(int blades, int seg, float width) {
+  int per = 2 * seg + 1, nv = blades * per, tris = 2 * seg - 1;
   float *pos = cw_alloc(sizeof(float) * 3 * (size_t)nv, CW_MEM_RENDER), *nrm = cw_alloc(sizeof(float) * 3 * (size_t)nv, CW_MEM_RENDER);
   float *col = cw_alloc(sizeof(float) * 3 * (size_t)nv, CW_MEM_RENDER);
+  int ni = blades * tris * 6;
+  uint16_t *idx = cw_alloc(sizeof(uint16_t) * (size_t)ni, CW_MEM_RENDER);
+  int k = 0;
   for (int b = 0; b < blades; b++) {
-    float a = (float)b / (float)blades * 3.14159265f, c = cosf(a), s = sinf(a);
-    float lean = 0.12f * (float)((b * 7) % 5 - 2), h = 0.45f + 0.08f * (float)((b * 3) % 4);
-    float ox = 0.06f * cosf(a * 3), oz = 0.06f * sinf(a * 5);
-    float p[3][3] = { { ox - c * 0.05f, 0, oz - s * 0.05f }, { ox + c * 0.05f, 0, oz + s * 0.05f },
-                      { ox - s * lean, h, oz + c * lean } };
-    for (int v = 0; v < 3; v++) {
-      int i = b * 3 + v;
-      memcpy(&pos[3 * i], p[v], sizeof p[v]);
-      /* normals mostly up: lit like the ground under them */
-      nrm[3 * i] = -s * 0.3f, nrm[3 * i + 1] = 0.95f, nrm[3 * i + 2] = c * 0.3f;
-      float tip = v == 2 ? 1.0f : 0.0f;
-      col[3 * i] = 0.10f + 0.25f * tip, col[3 * i + 1] = 0.22f + 0.33f * tip, col[3 * i + 2] = 0.05f + 0.08f * tip;
+    /* where it grows (spread over a disc of 9 cm), which way it leans (mostly outward), how tall and how far over */
+    float r0 = 0.09f * sqrtf(tuft_u(b, 1)), a0 = 6.2831853f * ((float)b + tuft_u(b, 2) * 0.6f) / (float)blades;
+    float ox = r0 * cosf(a0), oz = r0 * sinf(a0);
+    float la = a0 + (tuft_u(b, 3) - 0.5f) * 1.6f, ldx = cosf(la), ldz = sinf(la);
+    float sx = -ldz, sz = ldx; /* across the blade */
+    float hgt = 0.30f + 0.30f * tuft_u(b, 4), over = hgt * (0.18f + 0.42f * tuft_u(b, 5));
+    float w = width * (0.75f + 0.5f * tuft_u(b, 6));
+    bool dry = tuft_u(b, 7) < 0.18f;
+    float root[3] = { 0.040f, 0.075f, 0.018f };
+    float tip[3] = { dry ? 0.28f : 0.14f, dry ? 0.27f : 0.27f, dry ? 0.08f : 0.05f };
+    float v = 0.85f + 0.3f * tuft_u(b, 8); /* each blade a little lighter or darker */
+    int base = b * per;
+    for (int i = 0; i <= seg; i++) {
+      float t = (float)i / (float)seg;
+      /* the spine: up, curving out (the lean grows with the square of the height), and its tangent */
+      float px = ox + ldx * over * t * t, pz = oz + ldz * over * t * t, py = hgt * (t - 0.22f * (over / hgt) * (over / hgt) * t * t);
+      float tx = ldx * over * 2 * t, tz = ldz * over * 2 * t, ty = hgt * (1 - 0.44f * (over / hgt) * (over / hgt) * t);
+      /* the face normal (tangent x across, the side facing up), bent most of the way up */
+      float fnx = ty * sz, fny = tz * sx - tx * sz, fnz = -ty * sx;
+      if (fny < 0) fnx = -fnx, fny = -fny, fnz = -fnz;
+      float fl = sqrtf(fnx * fnx + fny * fny + fnz * fnz);
+      if (fl < 1e-6f) fnx = 0, fny = 1, fnz = 0, fl = 1;
+      float nx = fnx / fl * 0.45f, ny = fny / fl * 0.45f + 0.8f, nz = fnz / fl * 0.45f;
+      float nl = sqrtf(nx * nx + ny * ny + nz * nz);
+      nx /= nl, ny /= nl, nz /= nl;
+      float g = powf(t, 0.8f), c[3];
+      for (int q = 0; q < 3; q++) c[q] = (root[q] + (tip[q] - root[q]) * g) * v;
+      float hw = i == seg ? 0 : w * 0.5f * powf(1 - t, 0.7f);
+      for (int sidei = 0; sidei < (i == seg ? 1 : 2); sidei++) {
+        int vi = i == seg ? base + 2 * seg : base + 2 * i + sidei;
+        float sg = sidei ? 1.0f : -1.0f;
+        pos[3 * vi] = px + sx * hw * sg, pos[3 * vi + 1] = py, pos[3 * vi + 2] = pz + sz * hw * sg;
+        nrm[3 * vi] = nx, nrm[3 * vi + 1] = ny, nrm[3 * vi + 2] = nz;
+        memcpy(&col[3 * vi], c, sizeof c);
+      }
+    }
+    /* each triangle both ways round */
+    for (int i = 0; i < seg; i++) {
+      uint16_t l0 = (uint16_t)(base + 2 * i), r0i = (uint16_t)(l0 + 1);
+      if (i + 1 < seg) {
+        uint16_t l1 = (uint16_t)(l0 + 2), r1 = (uint16_t)(l0 + 3);
+        uint16_t q[6] = { l0, r0i, r1, l0, r1, l1 };
+        for (int e = 0; e < 6; e++) idx[k++] = q[e];
+        for (int e = 0; e < 6; e += 3) idx[k++] = q[e], idx[k++] = q[e + 2], idx[k++] = q[e + 1];
+      } else {
+        uint16_t tp = (uint16_t)(base + 2 * seg);
+        idx[k++] = l0, idx[k++] = r0i, idx[k++] = tp;
+        idx[k++] = l0, idx[k++] = tp, idx[k++] = r0i;
+      }
     }
   }
   t3_geometry *g = t3_geometry_new();
   { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, pos, nv, 3); t3_geometry_set_attribute(g, T3_ATTR_POSITION, a_); t3_release(a_); }
   { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, nrm, nv, 3); t3_geometry_set_attribute(g, T3_ATTR_NORMAL, a_); t3_release(a_); }
   { t3_attribute *a_ = t3_attribute_new(T3_FLOAT32, col, nv, 3); t3_geometry_set_attribute(g, T3_ATTR_COLOR, a_); t3_release(a_); }
-  cw_free(pos), cw_free(nrm), cw_free(col);
+  { t3_attribute *a_ = t3_attribute_new(T3_UINT16, idx, k, 1); t3_geometry_set_index(g, a_); t3_release(a_); }
+  cw_free(pos), cw_free(nrm), cw_free(col), cw_free(idx);
   return g;
 }
 
@@ -127,8 +185,9 @@ static void builtin_mesh(int shape, int lod, const float color[4], t3_geometry *
   mat->roughness = 0.9f;
   mat->metalness = 0;
   if (shape == 0) {
-    *g = tuft(lod ? 2 : 5);
-    mat->side = T3_DOUBLE_SIDE;
+    /* 12 curved blades of three segments near, 6 straight wider ones far (the same cover at a distance) */
+    *g = lod ? tuft(6, 1, 0.05f) : tuft(12, 3, 0.03f);
+    mat->roughness = 0.8f;
   } else if (shape == 1) {
     static const float rock[][5] = { { 0.0f, -0.1f, 0.30f, 0.29f, 0.27f }, { 0.55f, 0.05f, 0.38f, 0.36f, 0.33f },
                                      { 0.50f, 0.35f, 0.45f, 0.43f, 0.40f }, { 0.25f, 0.55f, 0.50f, 0.48f, 0.45f },
@@ -157,6 +216,11 @@ static void scatter_init(cw_node n, void *data) {
   s->visible_range = 60;
   s->fade = 10;
   s->lod_distance = 25;
+  cw_wind w = cw_wind_default();
+  s->wind_frequency = w.frequency, s->wind_direction[0] = w.direction[0], s->wind_direction[1] = w.direction[1];
+  s->wind_gust = w.gust, s->wind_gust_scale = w.gust_scale;
+  s->lod_blend = 6;
+  s->tint_jitter = -1;
   s->layer = -1;
   s->dirty = true;
 }
@@ -236,6 +300,15 @@ static void scatter_apply(cw_node n, scatter3d *s, cw_terrain *t) {
   d.fade = s->fade;
   d.cast_shadow = s->cast_shadow;
   d.density_knob = s->knob ? "scatter" : "grass";
+  d.wind = (cw_wind){ .strength = s->wind_strength, .frequency = s->wind_frequency, .direction = { s->wind_direction[0], s->wind_direction[1] },
+                      .gust = s->wind_gust, .gust_scale = s->wind_gust_scale };
+  d.smooth_alpha = s->smooth_alpha;
+  d.two_sided_lighting = s->two_sided_lighting;
+  d.fade_mode = s->fade_mode ? CW_SCATTER_FADE_DITHER : CW_SCATTER_FADE_SHRINK;
+  d.lod_blend = s->lod_blend;
+  d.tint_jitter = s->tint_jitter >= 0 ? s->tint_jitter : own && s->shape == 0 ? 0.25f : 0;
+  d.root_from_terrain = s->root_from_terrain;
+  d.root_height = s->root_height;
   d.seed = (uint32_t)s->seed ^ (uint32_t)cw_hash_str(cw_node_name(n));
   uint8_t *grey = NULL;
   if (s->density_map && *s->density_map) {
@@ -290,6 +363,20 @@ static const cw_prop scatter_props[] = {
   { .name = "knob", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(scatter3d, knob), .size = sizeof(int),
     .enum_names = knob_names, .doc = "Which quality density thins it: GRASS or SCATTER (cartwheel/quality.h)." },
   CW_PROP_FIELD(scatter3d, seed, CW_T_INT, CW_PROP_DEFAULT, "Placement seed (mixed with the node's name)."),
+  CW_PROP_FIELD_RANGE(scatter3d, wind_strength, CW_T_FLOAT, 0, 10, "Wind: metres the top of the mesh leans at most (0: no wind). Sways with a phase from each instance's place, so neighbours never move together (foliage.h)."),
+  CW_PROP_FIELD_RANGE(scatter3d, wind_frequency, CW_T_FLOAT, 0, 20, "Wind: sways a second."),
+  { .name = "wind_direction", .type = CW_T_VEC2, .flags = CW_PROP_DEFAULT, .offset = offsetof(scatter3d, wind_direction), .size = sizeof(float) * 2,
+    .doc = "Wind: world x, z it blows toward." },
+  CW_PROP_FIELD_RANGE(scatter3d, wind_gust, CW_T_FLOAT, 0, 1, "Wind: share of the strength that comes in gusts travelling over the field."),
+  CW_PROP_FIELD_RANGE(scatter3d, wind_gust_scale, CW_T_FLOAT, 0.5, 1000, "Wind: metres between gust fronts."),
+  CW_PROP_FIELD(scatter3d, smooth_alpha, CW_T_BOOL, CW_PROP_DEFAULT, "Alpha-tested meshes (leaf and grass cards): alpha to coverage under MSAA, hashed alpha TAA resolves without it: no stair-stepped or flickering edges."),
+  CW_PROP_FIELD(scatter3d, two_sided_lighting, CW_T_BOOL, CW_PROP_DEFAULT, "Double-sided meshes: back faces lit with the front face's normal (no dark backs on leaves with up-bent normals)."),
+  { .name = "fade_mode", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(scatter3d, fade_mode), .size = sizeof(int),
+    .enum_names = fade_names, .doc = "SHRINK: instances shrink over the fade and LODs switch at lod_distance. DITHER: they dissolve over the fade and each LOD crossfades with the next over lod_blend metres (a dither TAA resolves): no pop." },
+  CW_PROP_FIELD_RANGE(scatter3d, lod_blend, CW_T_FLOAT, 0, 1000, "DITHER: metres over which each LOD crossfades with the next, centred on its switch distance."),
+  CW_PROP_FIELD_RANGE(scatter3d, tint_jitter, CW_T_FLOAT, -1, 1, "Per-instance colour variation 0..1 (brightness and a dry yellow); -1: the shape's own (GRASS 0.25, the rest none)."),
+  CW_PROP_FIELD(scatter3d, root_from_terrain, CW_T_BOOL, CW_PROP_DEFAULT, "Each instance's lower part takes the terrain's colour under it (cw_terrain_albedo_at), blending into its own colour above."),
+  CW_PROP_FIELD_RANGE(scatter3d, root_height, CW_T_FLOAT, 0, 100, "Metres the root colour reaches (0: 0.6 of the mesh's height)."),
   CW_PROP_END,
 };
 
@@ -304,12 +391,14 @@ static cw_node_type scatter_type = {
 typedef struct terrain3d {
   int size_x, size_z, region_size, grid_quads, lod_count;
   float vertex_spacing, min_height, max_height, lod0_range, far_distance, visible_range, side_detile;
+  float blend_sharpness, macro_tint, macro_tint_scale, macro_layer, macro_layer_scale, macro_layer_near, macro_layer_far;
+  float parallax_distance;
   const char *heightmap, *control, *splat;
   int generate_seed;
   float generate_feature, generate_amplitude;
   int generate_octaves;
   const char *albedo[CW_TERRAIN_LAYERS], *normal[CW_TERRAIN_LAYERS];
-  float uv_scale[CW_TERRAIN_LAYERS];
+  float uv_scale[CW_TERRAIN_LAYERS], sharpness[CW_TERRAIN_LAYERS], parallax[CW_TERRAIN_LAYERS];
   float color[4];
   float roughness;
   bool physics, cast_shadow;
@@ -330,7 +419,9 @@ typedef struct terrain3d {
 #define LAYER_PROPS(i)                                                                                     \
   LAYER_FIELD(i, albedo, "albedo", CW_T_STRING, "Layer " #i ": albedo RGB + height A image."),             \
     LAYER_FIELD(i, normal, "normal", CW_T_STRING, "Layer " #i ": normal RGB (+Y) + roughness A image."),   \
-    LAYER_FIELD(i, uv_scale, "uv_scale", CW_T_FLOAT, "Layer " #i ": texture repeats per metre.")
+    LAYER_FIELD(i, uv_scale, "uv_scale", CW_T_FLOAT, "Layer " #i ": texture repeats per metre."),             \
+    LAYER_FIELD(i, sharpness, "blend_sharpness", CW_T_FLOAT, "Layer " #i ": its own height-blend sharpness (0 = blend_sharpness)."), \
+    LAYER_FIELD(i, parallax, "parallax", CW_T_FLOAT, "Layer " #i ": parallax depth, metres (0 = flat).")
 
 static void terrain_init(cw_node n, void *data) {
   (void)n;
@@ -339,6 +430,9 @@ static void terrain_init(cw_node n, void *data) {
   d->size_x = def.size_x, d->size_z = def.size_z, d->region_size = def.region_size, d->grid_quads = def.grid_quads;
   d->vertex_spacing = def.vertex_spacing, d->min_height = def.min_height, d->max_height = def.max_height;
   d->far_distance = def.far_distance;
+  d->blend_sharpness = def.blend_sharpness, d->macro_tint_scale = def.macro_tint_scale;
+  d->macro_layer_scale = def.macro_layer_scale, d->macro_layer_far = def.macro_layer_far;
+  d->parallax_distance = def.parallax_distance;
   d->heightmap = d->control = d->splat = cw_intern("");
   d->generate_feature = 200, d->generate_amplitude = 1, d->generate_octaves = 6;
   for (int i = 0; i < CW_TERRAIN_LAYERS; i++) d->albedo[i] = d->normal[i] = cw_intern(""), d->uv_scale[i] = 0.25f;
@@ -367,6 +461,15 @@ static bool add_scatter_child(cw_node c, void *u) {
   return false;
 }
 
+/* the node's shading properties into a def (cw_terrain_set_shading takes them live) */
+static void shading_def(const terrain3d *d, cw_terrain_def *def) {
+  def->side_detile = d->side_detile, def->blend_sharpness = d->blend_sharpness;
+  def->macro_tint = d->macro_tint, def->macro_tint_scale = d->macro_tint_scale;
+  def->macro_layer = d->macro_layer, def->macro_layer_scale = d->macro_layer_scale;
+  def->macro_layer_near = d->macro_layer_near, def->macro_layer_far = d->macro_layer_far;
+  def->parallax_distance = d->parallax_distance;
+}
+
 static void build(cw_node n, terrain3d *d) {
   d->dirty = false;
   if (d->t) cw_terrain_destroy(d->t);
@@ -377,7 +480,7 @@ static void build(cw_node n, terrain3d *d) {
   def.lod_count = d->lod_count, def.vertex_spacing = d->vertex_spacing, def.min_height = d->min_height;
   def.max_height = d->max_height, def.lod0_range = d->lod0_range, def.far_distance = d->far_distance;
   def.visible_range = d->visible_range;
-  def.side_detile = d->side_detile;
+  shading_def(d, &def);
   def.no_shadow_cast = !d->cast_shadow;
   def.origin = node_origin(n, d);
   cw_terrain *t = cw_terrain_create(&def);
@@ -391,6 +494,8 @@ static void build(cw_node n, terrain3d *d) {
   for (int i = 0; i < CW_TERRAIN_LAYERS; i++)
     if ((d->albedo[i] && *d->albedo[i]) || (d->normal[i] && *d->normal[i])) cw_terrain_set_layer(t, i, d->albedo[i], d->normal[i], d->uv_scale[i]);
     else t->layer[i].uv_scale = d->uv_scale[i];
+  for (int i = 0; i < CW_TERRAIN_LAYERS; i++)
+    cw_terrain_set_layer_blend_sharpness(t, i, d->sharpness[i]), cw_terrain_set_layer_parallax(t, i, d->parallax[i]);
   cw_terrain_set_quality(t, d->quality);
   cw_tree *tree = cw_node_tree(n);
   if (tree) {
@@ -438,6 +543,23 @@ static void terrain_changed(cw_node n, void *data, const cw_prop *p) {
   terrain3d *d = data;
   if (d->t && !strcmp(p->name, "quality")) {
     cw_terrain_set_quality(d->t, d->quality);
+    return;
+  }
+  static const char *const shading_props[] = { "side_detile", "blend_sharpness", "macro_tint", "macro_tint_scale",
+                                               "macro_layer", "macro_layer_scale", "macro_layer_near",
+                                               "macro_layer_far", "parallax_distance" };
+  for (int i = 0; d->t && i < (int)CW_ARRAY_LEN(shading_props); i++)
+    if (!strcmp(p->name, shading_props[i])) {
+      cw_terrain_def def = *cw_terrain_get_def(d->t);
+      shading_def(d, &def);
+      cw_terrain_set_shading(d->t, &def);
+      return;
+    }
+  if (d->t && !strncmp(p->name, "layer", 5) && p->name[5] >= '0' && p->name[5] < '0' + CW_TERRAIN_LAYERS && p->name[6] == '_' &&
+      (!strcmp(p->name + 7, "blend_sharpness") || !strcmp(p->name + 7, "parallax"))) {
+    int i = p->name[5] - '0';
+    cw_terrain_set_layer_blend_sharpness(d->t, i, d->sharpness[i]);
+    cw_terrain_set_layer_parallax(d->t, i, d->parallax[i]);
     return;
   }
   if (d->t && (!strcmp(p->name, "color") || !strcmp(p->name, "roughness"))) {
@@ -538,6 +660,14 @@ static const cw_prop terrain_props[] = {
   CW_PROP_FIELD_RANGE(terrain3d, lod_count, CW_T_INT, 0, CW_TERRAIN_MAX_LODS, "Levels (0 = as many as the size allows)."),
   CW_PROP_FIELD_RANGE(terrain3d, lod0_range, CW_T_FLOAT, 0, 100000, "Metres the finest level reaches (0 = the least that stays crack-free)."),
   CW_PROP_FIELD_RANGE(terrain3d, side_detile, CW_T_FLOAT, 0, 1, "Cliffs hide the layer's repeat: each small cell reads the layer at its own offset, with colour and strata by world position (0: off)."),
+  CW_PROP_FIELD_RANGE(terrain3d, blend_sharpness, CW_T_FLOAT, 0, 1, "Height blend: two layers share where their weighted heights are within this (smaller: crisper edges along the higher layer's shapes; 0 = 0.15)."),
+  CW_PROP_FIELD_RANGE(terrain3d, macro_tint, CW_T_FLOAT, 0, 1, "Near ground's brightness and hue varied by world-space noise, this much either way, so one layer stops reading as wallpaper (0: off)."),
+  CW_PROP_FIELD_RANGE(terrain3d, macro_tint_scale, CW_T_FLOAT, 0, 100000, "Metres across a feature of the macro tint (0 = 40)."),
+  CW_PROP_FIELD_RANGE(terrain3d, macro_layer, CW_T_FLOAT, 0, 1, "Share of a second read of each layer with a larger tile, blended in by distance (0: off)."),
+  CW_PROP_FIELD_RANGE(terrain3d, macro_layer_scale, CW_T_FLOAT, 0, 1000, "The second read's tile, times the layer's own (0 = 4)."),
+  CW_PROP_FIELD_RANGE(terrain3d, macro_layer_near, CW_T_FLOAT, 0, 100000, "Metres where the second read starts fading in."),
+  CW_PROP_FIELD_RANGE(terrain3d, macro_layer_far, CW_T_FLOAT, 0, 100000, "Metres where the second read has its full share (0 = 60)."),
+  CW_PROP_FIELD_RANGE(terrain3d, parallax_distance, CW_T_FLOAT, 0, 100000, "Metres within which layers with a parallax depth are drawn with parallax occlusion (0 = 30)."),
   CW_PROP_FIELD_RANGE(terrain3d, far_distance, CW_T_FLOAT, 1, 100000, "Metres past which only the macro colour is drawn (x quality)."),
   CW_PROP_FIELD_RANGE(terrain3d, visible_range, CW_T_FLOAT, 0, 1e7, "Patches farther are not drawn (0 = unlimited)."),
   CW_PROP_FIELD(terrain3d, heightmap, CW_T_STRING, CW_PROP_DEFAULT, "16-bit grey PNG or .r16 heightmap (resized to the samples)."),
@@ -586,6 +716,7 @@ void cw_scatter_def_builtin(cw_scatter_def *d, cw_scatter_shape shape, float r, 
   float c[4] = { r, g, b, 1 };
   int s = shape == CW_SCATTER_ROCK ? 1 : shape == CW_SCATTER_TREE ? 2 : 0;
   for (int l = 0; l < 2; l++) builtin_mesh(s, l, c, &d->geometry[l][0], &d->material[l][0]);
+  if (s == 0 && !(d->tint_jitter > 0)) d->tint_jitter = 0.25f; /* grass varies from tuft to tuft */
 }
 
 void cw_scatter_def_release(cw_scatter_def *d) {

@@ -42,6 +42,8 @@ export const LOCAL_ONLY = {
   'looks-tone-perf': 'GPU timings on the test GPU',
   'shell-selection': 'reads pixels of native runs on the test GPU (GL and WebGPU), each selection style against the default',
   'r2d-one-bit': 'reads pixels of about sixty native and romdev runs on the test GPU (GL and WebGPU), each against its two colours and a blended reference',
+  'terrain-detail': 'reads pixels of about eighty native and romdev runs at 1080p on the test GPU (GL and WebGPU), each against its control',
+  'terrain-detail-perf': 'GPU timings on the test GPU',
   'shell-two-colour': 'reads pixels of about a hundred and forty native runs on the test GPU (GL and WebGPU), each against its two colours and a blended reference',
   'motion-vectors': 'reads pixels of native runs on the test GPU against a frame rendered at 36 times the pixels',
   'gi-probe': 'reads pixels of native runs on the test GPU (GL and WebGPU) against known answers',

@@ -25,7 +25,39 @@ void stbi_image_free(void *p);
 cw_terrain_def cw_terrain_default_def(void) {
   return (cw_terrain_def){ .size_x = 512, .size_z = 512, .region_size = 256, .vertex_spacing = 1, .min_height = 0,
                            .max_height = 100, .grid_quads = 32, .lod_ratio = 2, .morph_start = 0.66f,
-                           .far_distance = 400 };
+                           .far_distance = 400, .blend_sharpness = 0.15f, .macro_tint_scale = 40,
+                           .macro_layer_scale = 4, .macro_layer_far = 60, .parallax_distance = 30 };
+}
+
+/* the shading fields' defaults where 0 (or out of range) */
+static void shading_defaults(cw_terrain_def *d) {
+  if (!(d->blend_sharpness > 0)) d->blend_sharpness = 0.15f;
+  if (!(d->macro_tint_scale > 0)) d->macro_tint_scale = 40;
+  if (!(d->macro_layer_scale > 0)) d->macro_layer_scale = 4;
+  if (!(d->macro_layer_near >= 0)) d->macro_layer_near = 0;
+  if (!(d->macro_layer_far > 0)) d->macro_layer_far = 60;
+  if (!(d->parallax_distance > 0)) d->parallax_distance = 30;
+  d->macro_tint = cw_clampf(d->macro_tint, 0, 1);
+  d->macro_layer = cw_clampf(d->macro_layer, 0, 1);
+}
+
+void cw_terrain_set_shading(cw_terrain *t, const cw_terrain_def *d) {
+  if (!t || !d) return;
+  cw_terrain_def *o = &t->def;
+  o->side_detile = d->side_detile, o->blend_sharpness = d->blend_sharpness;
+  o->macro_tint = d->macro_tint, o->macro_tint_scale = d->macro_tint_scale;
+  o->macro_layer = d->macro_layer, o->macro_layer_scale = d->macro_layer_scale;
+  o->macro_layer_near = d->macro_layer_near, o->macro_layer_far = d->macro_layer_far;
+  o->parallax_distance = d->parallax_distance;
+  shading_defaults(o);
+}
+
+void cw_terrain_set_layer_blend_sharpness(cw_terrain *t, int i, float sharpness) {
+  if (t && i >= 0 && i < CW_TERRAIN_LAYERS) t->layer[i].sharpness = sharpness > 0 ? sharpness : 0;
+}
+
+void cw_terrain_set_layer_parallax(cw_terrain *t, int i, float depth) {
+  if (t && i >= 0 && i < CW_TERRAIN_LAYERS) t->layer[i].parallax = depth > 0 ? depth : 0;
 }
 
 static bool pow2(int v) { return v > 0 && (v & (v - 1)) == 0; }
@@ -39,6 +71,7 @@ cw_terrain *cw_terrain_create(const cw_terrain_def *def_in) {
   if (!(d.morph_start >= 0 && d.morph_start < 1)) d.morph_start = 0.66f;
   if (!(d.far_distance > 0)) d.far_distance = 400;
   if (!(d.far_fade > 0)) d.far_fade = d.far_distance * 0.25f;
+  shading_defaults(&d);
   if (!pow2(d.grid_quads) || d.grid_quads < 8 || d.grid_quads > 64) {
     cw_error("terrain: grid_quads %d must be a power of two in 8..64", d.grid_quads);
     return NULL;
@@ -464,6 +497,7 @@ void cw_terrain_set_layer_pixels(cw_terrain *t, int i, const uint8_t *albedo, co
     for (int k = 0; k < 3; k++) t->layer[i].mean[k] = srgb_to_linear(0.5f);
   }
   t->layers_dirty = t->macro_dirty = true;
+  cw__scatter_colors_dirty(t);
 }
 
 void cw_terrain_share_layers(cw_terrain *t, cw_terrain *src) {
@@ -473,6 +507,8 @@ void cw_terrain_share_layers(cw_terrain *t, cw_terrain *src) {
     cw_free(t->layer[i].normal);
     t->layer[i].albedo = t->layer[i].normal = NULL; /* the pixels stay with src */
     t->layer[i].uv_scale = src->layer[i].uv_scale;
+    t->layer[i].sharpness = src->layer[i].sharpness;
+    t->layer[i].parallax = src->layer[i].parallax;
     t->layer[i].set = src->layer[i].set;
     memcpy(t->layer[i].mean, src->layer[i].mean, sizeof t->layer[i].mean);
   }
@@ -480,6 +516,7 @@ void cw_terrain_share_layers(cw_terrain *t, cw_terrain *src) {
   t->layers_shared = true;
   t->layers_dirty = false;
   t->macro_dirty = true;
+  cw__scatter_colors_dirty(t);
 }
 
 bool cw_terrain_set_layer(cw_terrain *t, int i, const char *albedo_height, const char *normal_rough, float uv_scale) {
@@ -697,6 +734,35 @@ t3_vec3 cw_terrain_normal_at(const cw_terrain *t, float x, float z) {
   clamp_xz(t, &x, &z);
   float sp = t->def.vertex_spacing;
   return cw__terrain_normal_fast(t, (x - t->def.origin.x) / sp, (z - t->def.origin.z) / sp);
+}
+
+/* the control-weighted mean albedo of the layers (linear) at sample-space (fx, fz), bilinear over the four samples
+ * round it: what the macro colour bakes, at one point (scatter.c root colours) */
+t3_vec3 cw__terrain_albedo_fast(const cw_terrain *t, float fx, float fz) {
+  fx = cw_clampf(fx, 0, (float)(t->nx - 1));
+  fz = cw_clampf(fz, 0, (float)(t->nz - 1));
+  int x = CW_MIN((int)fx, t->nx - 2), z = CW_MIN((int)fz, t->nz - 2);
+  float u = fx - (float)x, v = fz - (float)z;
+  float w4[4] = { (1 - u) * (1 - v), u * (1 - v), (1 - u) * v, u * v };
+  int idx[4] = { tr_idx(t, x, z), tr_idx(t, x + 1, z), tr_idx(t, x, z + 1), tr_idx(t, x + 1, z + 1) };
+  float acc[3] = { 0, 0, 0 };
+  for (int k = 0; k < 4; k++) {
+    uint32_t c = t->ctl[idx[k]];
+    int a = CW_MIN((int)(c >> 27), CW_TERRAIN_LAYERS - 1), b = CW_MIN((int)((c >> 22) & 31), CW_TERRAIN_LAYERS - 1);
+    float bw = (float)((c >> 14) & 255) / 255.0f;
+    for (int i = 0; i < 3; i++) acc[i] += w4[k] * (t->layer[a].mean[i] + (t->layer[b].mean[i] - t->layer[a].mean[i]) * bw);
+  }
+  return (t3_vec3){ acc[0], acc[1], acc[2] };
+}
+
+t3_color cw_terrain_albedo_at(cw_terrain *t, float x, float z) {
+  if (!t) return (t3_color){ 0, 0, 0 };
+  clamp_xz(t, &x, &z);
+  float sp = t->def.vertex_spacing;
+  t3_vec3 a = cw__terrain_albedo_fast(t, (x - t->def.origin.x) / sp, (z - t->def.origin.z) / sp);
+  t3_material *m = cw_terrain_material(t);
+  t3_color tint = m ? m->color : (t3_color){ 1, 1, 1 };
+  return (t3_color){ a.x * tint.r, a.y * tint.g, a.z * tint.b };
 }
 
 bool cw_terrain_is_hole(const cw_terrain *t, float x, float z) {

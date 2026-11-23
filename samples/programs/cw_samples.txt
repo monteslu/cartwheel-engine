@@ -281,3 +281,13 @@ standard+trans+ds+l1001+xhfog
 standard+trans+ds+l1001
 basic+trans+ds
 standard+trans+ds+l1001+xplain
+standard+vcol+instbig+shadow+senv+icol+l1001
+standard+vcol+instbig+shadow+senv+icol+l1001+xcluster
+standard+vcol+instbig+shadow+senv+icol+l1001+xcluster_plain
+standard+vcol+instbig+senv+icol+l0001
+standard+vcol+instbig+senv+icol+l0001+xcluster_csm_plain
+standard+vcol+instbig+senv+icol+l0001+xcluster_csm
+standard+vcol+instbig+shadow+senv+icol+l1001+xcluster_plain_gi
+standard+vcol+instbig+shadow+senv+icol+l1001+xcluster_gi
+standard+vcol+instbig+shadow+senv+icol+l1001+xgibuf
+standard+vcol+instbig+shadow+senv+icol+l1001+xgi

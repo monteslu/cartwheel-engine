@@ -9865,6 +9865,86 @@
      "doc": "Cliffs hide the layer's repeat: each small cell reads the layer at its own offset, with colour and strata by world position (0: off)."
     },
     {
+     "name": "blend_sharpness",
+     "type": "float",
+     "default": "0.15",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Height blend: two layers share where their weighted heights are within this (smaller: crisper edges along the higher layer's shapes; 0 = 0.15)."
+    },
+    {
+     "name": "macro_tint",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Near ground's brightness and hue varied by world-space noise, this much either way, so one layer stops reading as wallpaper (0: off)."
+    },
+    {
+     "name": "macro_tint_scale",
+     "type": "float",
+     "default": "40",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100000,
+     "doc": "Metres across a feature of the macro tint (0 = 40)."
+    },
+    {
+     "name": "macro_layer",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Share of a second read of each layer with a larger tile, blended in by distance (0: off)."
+    },
+    {
+     "name": "macro_layer_scale",
+     "type": "float",
+     "default": "4",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "The second read's tile, times the layer's own (0 = 4)."
+    },
+    {
+     "name": "macro_layer_near",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100000,
+     "doc": "Metres where the second read starts fading in."
+    },
+    {
+     "name": "macro_layer_far",
+     "type": "float",
+     "default": "60",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100000,
+     "doc": "Metres where the second read has its full share (0 = 60)."
+    },
+    {
+     "name": "parallax_distance",
+     "type": "float",
+     "default": "30",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100000,
+     "doc": "Metres within which layers with a parallax depth are drawn with parallax occlusion (0 = 30)."
+    },
+    {
      "name": "far_distance",
      "type": "float",
      "default": "400",
@@ -9971,6 +10051,22 @@
      "doc": "Layer 0: texture repeats per metre."
     },
     {
+     "name": "layer0_blend_sharpness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 0: its own height-blend sharpness (0 = blend_sharpness)."
+    },
+    {
+     "name": "layer0_parallax",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 0: parallax depth, metres (0 = flat)."
+    },
+    {
      "name": "layer1_albedo",
      "type": "string",
      "default": "\"\"",
@@ -9993,6 +10089,22 @@
      "stored": true,
      "readonly": false,
      "doc": "Layer 1: texture repeats per metre."
+    },
+    {
+     "name": "layer1_blend_sharpness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 1: its own height-blend sharpness (0 = blend_sharpness)."
+    },
+    {
+     "name": "layer1_parallax",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 1: parallax depth, metres (0 = flat)."
     },
     {
      "name": "layer2_albedo",
@@ -10019,6 +10131,22 @@
      "doc": "Layer 2: texture repeats per metre."
     },
     {
+     "name": "layer2_blend_sharpness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 2: its own height-blend sharpness (0 = blend_sharpness)."
+    },
+    {
+     "name": "layer2_parallax",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 2: parallax depth, metres (0 = flat)."
+    },
+    {
      "name": "layer3_albedo",
      "type": "string",
      "default": "\"\"",
@@ -10041,6 +10169,22 @@
      "stored": true,
      "readonly": false,
      "doc": "Layer 3: texture repeats per metre."
+    },
+    {
+     "name": "layer3_blend_sharpness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 3: its own height-blend sharpness (0 = blend_sharpness)."
+    },
+    {
+     "name": "layer3_parallax",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 3: parallax depth, metres (0 = flat)."
     },
     {
      "name": "layer4_albedo",
@@ -10067,6 +10211,22 @@
      "doc": "Layer 4: texture repeats per metre."
     },
     {
+     "name": "layer4_blend_sharpness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 4: its own height-blend sharpness (0 = blend_sharpness)."
+    },
+    {
+     "name": "layer4_parallax",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 4: parallax depth, metres (0 = flat)."
+    },
+    {
      "name": "layer5_albedo",
      "type": "string",
      "default": "\"\"",
@@ -10089,6 +10249,22 @@
      "stored": true,
      "readonly": false,
      "doc": "Layer 5: texture repeats per metre."
+    },
+    {
+     "name": "layer5_blend_sharpness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 5: its own height-blend sharpness (0 = blend_sharpness)."
+    },
+    {
+     "name": "layer5_parallax",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 5: parallax depth, metres (0 = flat)."
     },
     {
      "name": "layer6_albedo",
@@ -10115,6 +10291,22 @@
      "doc": "Layer 6: texture repeats per metre."
     },
     {
+     "name": "layer6_blend_sharpness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 6: its own height-blend sharpness (0 = blend_sharpness)."
+    },
+    {
+     "name": "layer6_parallax",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 6: parallax depth, metres (0 = flat)."
+    },
+    {
      "name": "layer7_albedo",
      "type": "string",
      "default": "\"\"",
@@ -10137,6 +10329,22 @@
      "stored": true,
      "readonly": false,
      "doc": "Layer 7: texture repeats per metre."
+    },
+    {
+     "name": "layer7_blend_sharpness",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 7: its own height-blend sharpness (0 = blend_sharpness)."
+    },
+    {
+     "name": "layer7_parallax",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Layer 7: parallax depth, metres (0 = flat)."
     },
     {
      "name": "color",
@@ -10350,6 +10558,120 @@
      "stored": true,
      "readonly": false,
      "doc": "Placement seed (mixed with the node's name)."
+    },
+    {
+     "name": "wind_strength",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Wind: metres the top of the mesh leans at most (0: no wind). Sways with a phase from each instance's place, so neighbours never move together (foliage.h)."
+    },
+    {
+     "name": "wind_frequency",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 20,
+     "doc": "Wind: sways a second."
+    },
+    {
+     "name": "wind_direction",
+     "type": "vec2",
+     "default": "vec2(1, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Wind: world x, z it blows toward."
+    },
+    {
+     "name": "wind_gust",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Wind: share of the strength that comes in gusts travelling over the field."
+    },
+    {
+     "name": "wind_gust_scale",
+     "type": "float",
+     "default": "14",
+     "stored": true,
+     "readonly": false,
+     "min": 0.5,
+     "max": 1000,
+     "doc": "Wind: metres between gust fronts."
+    },
+    {
+     "name": "smooth_alpha",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Alpha-tested meshes (leaf and grass cards): alpha to coverage under MSAA, hashed alpha TAA resolves without it: no stair-stepped or flickering edges."
+    },
+    {
+     "name": "two_sided_lighting",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Double-sided meshes: back faces lit with the front face's normal (no dark backs on leaves with up-bent normals)."
+    },
+    {
+     "name": "fade_mode",
+     "type": "enum",
+     "default": "SHRINK",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "SHRINK",
+      "DITHER"
+     ],
+     "doc": "SHRINK: instances shrink over the fade and LODs switch at lod_distance. DITHER: they dissolve over the fade and each LOD crossfades with the next over lod_blend metres (a dither TAA resolves): no pop."
+    },
+    {
+     "name": "lod_blend",
+     "type": "float",
+     "default": "6",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "DITHER: metres over which each LOD crossfades with the next, centred on its switch distance."
+    },
+    {
+     "name": "tint_jitter",
+     "type": "float",
+     "default": "-1",
+     "stored": true,
+     "readonly": false,
+     "min": -1,
+     "max": 1,
+     "doc": "Per-instance colour variation 0..1 (brightness and a dry yellow); -1: the shape's own (GRASS 0.25, the rest none)."
+    },
+    {
+     "name": "root_from_terrain",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Each instance's lower part takes the terrain's colour under it (cw_terrain_albedo_at), blending into its own colour above."
+    },
+    {
+     "name": "root_height",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Metres the root colour reaches (0: 0.6 of the mesh's height)."
     }
    ]
   },

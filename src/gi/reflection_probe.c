@@ -273,7 +273,8 @@ void cw__gi_tag(gi_tree *g, t3_object *o) {
           !cw_shading_has(mat, "meshdecal") && !cw_shading_has(mat, "skinshade") && !surface_only(ext)) {
         /* said once per material: reflection probes and the probe grid have no effect on it */
         if ((g->probes.count || g->grids.count) && g->warned_mats < 8 && !cw_shading_has(mat, "terrain") &&
-            !cw_shading_has(mat, "terrainlow") && !cw_shading_has(mat, "terrainfar") && !cw_shading_has(mat, "water")) {
+            !cw_shading_has(mat, "terrainlow") && !cw_shading_has(mat, "terrainfx") && !cw_shading_has(mat, "terrainfxlow") &&
+            !cw_shading_has(mat, "terrainfar") && !cw_shading_has(mat, "water")) {
           bool said = false;
           for (int k = 0; k < g->warned_mats; k++) said |= g->warned[k] == mat;
           if (!said) {
