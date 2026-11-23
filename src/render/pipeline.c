@@ -1400,6 +1400,32 @@ static void array_casters(cw_pass_ctx *ctx, cw_pipeline *p, int k) {
   if (ctx->scene3d) cw__shadow_cull_begin(ctx->scene3d, p->arr_cams[k]);
 }
 
+/* adds the lines of add (one program state a line) not yet in text; returns the lines text holds. text keeps every
+ * tree's states for the run: each is a state the app's tables lack */
+static int32_t missing_union(char *text, size_t cap, const char *add) {
+  for (const char *a = add; a && *a;) {
+    const char *e = strchr(a, '\n');
+    size_t l = e ? (size_t)(e - a) : strlen(a);
+    bool have = false;
+    for (const char *t = text; *t && !have;) {
+      const char *te = strchr(t, '\n');
+      size_t tl = te ? (size_t)(te - t) : strlen(t);
+      have = tl == l && !memcmp(t, a, l);
+      t += tl + (te ? 1 : 0);
+    }
+    size_t n = strlen(text);
+    if (!have && l && n + l + 1 < cap) {
+      memcpy(text + n, a, l);
+      text[n + l] = '\n';
+      text[n + l + 1] = 0;
+    }
+    a += l + (e ? 1 : 0);
+  }
+  int32_t c = 0;
+  for (const char *t = text; *t; t++) c += *t == '\n' || !t[1];
+  return c;
+}
+
 /* a view's run, its shadow caster culling (src/render/shadow_cull.c) undone after it */
 static void render_run(cw_tree *t, cw_pipeline *p, int w, int h, double alpha, int mode) {
   render_run_inner(t, p, w, h, alpha, mode);
@@ -1967,7 +1993,6 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
       int32_t n = 0;
       for (const char *c = p->missing_states; *c; c++)
         if (*c == '\n' || !c[1]) n++;
-      cw__missing_programs = n;
       if (n) {
         cw_error("render pipeline: %d draw state(s) have no program, so those draws are NOT DRAWN (the errors above name "
                  "each node and material). A material, light count or shadow setup the app's program table was not "
@@ -1984,9 +2009,18 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
           exit(4);
         }
       }
-      missing_count = n;
-      memset(missing_text, 0, sizeof missing_text);
-      snprintf(missing_text, sizeof missing_text, "%s", p->missing_states);
+      /* the debug fields and the banner: every tree's states, not the last tree's to change (a Backdrop's or a
+       * SubViewport's world renders with a renderer of its own, and its skipped draws went unreported to the gates and
+       * the cart survey as soon as another tree's list changed; CW_TEST_MISSING_LAST_TREE=1: as before, a control) */
+      const char *last = cw_test_env("CW_TEST_MISSING_LAST_TREE");
+      if (last && atoi(last)) {
+        memset(missing_text, 0, sizeof missing_text);
+        snprintf(missing_text, sizeof missing_text, "%s", p->missing_states);
+        missing_count = n;
+      } else {
+        missing_count = missing_union(missing_text, sizeof missing_text, p->missing_states);
+      }
+      cw__missing_programs = missing_count;
     }
   }
 

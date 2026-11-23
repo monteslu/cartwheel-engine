@@ -1,0 +1,149 @@
+[scene format=1]
+
+; what samples/runtime_nodes adds to its world (world.cwscene): a node of every type that owns render passes or
+; per-frame GPU work, declared (world_decl.cwscene) or built from code by copying these nodes property by property
+
+[node name="Group" type="Node3D"]
+
+[node name="Fog" parent="." type="HeightFog"]
+volumetric = true
+density = 0.01
+height_falloff = 0
+use_sky_color = false
+color = color(0.04, 0.05, 0.07, 1)
+volumetric_distance = 30
+sky_distance = 0
+
+[node name="Flames" parent="." type="GPUParticles3D"]
+position = vec3(-1.5, 0.1, 0)
+amount = 800
+lifetime = 1.2
+emission_shape = SPHERE
+emission_radius = 0.3
+direction = vec3(0, 1, 0)
+spread = 20
+speed_min = 1.5
+speed_max = 2.5
+gravity = vec3(0, 1, 0)
+size = 0.25
+color = color(1, 0.5, 0.15, 1)
+color_ramp = "0 1 0.8 0.4 0, 0.1 1 0.6 0.2 1, 1 0.6 0.1 0.05 0"
+energy = 3
+seed = 3
+
+[node name="Haze" parent="." type="GPUParticles3D"]
+position = vec3(1.5, 0.1, -1)
+amount = 120
+lifetime = 1.6
+emission_shape = SPHERE
+emission_radius = 0.25
+direction = vec3(0, 1, 0)
+spread = 12
+speed_min = 1.2
+speed_max = 1.8
+gravity = vec3(0, 0, 0)
+size = 0.6
+blend = DISTORT
+distort_strength = 0.4
+seed = 5
+
+[node name="Pull" parent="." type="ParticleAttractor3D"]
+position = vec3(-1.5, 2, 0)
+strength = 3
+radius = 2
+
+[node name="Mover" parent="." type="Node3D"]
+position = vec3(2, 1.5, 1)
+
+[node name="Ribbon" parent="Mover" type="Trail3D"]
+length = 40
+width = 0.2
+color = color(0.3, 0.9, 1, 1)
+energy = 2
+
+[node name="Spot" parent="." type="Decal3D"]
+position = vec3(0, 0, 2.5)
+rotation = vec3(-1.5707963, 0, 0)
+size = vec3(2, 2, 1)
+color = color(0.9, 0.1, 0.6, 1)
+
+[node name="Paint" parent="." type="Decal3D"]
+position = vec3(-3.5, 0.6, 1.7)
+size = vec3(0.8, 0.8, 0.6)
+color = color(0.1, 0.9, 0.2, 1)
+mode = MESH
+target = "../../Crate"
+
+[node name="Lamp" parent="." type="OmniLight3D"]
+position = vec3(0.5, 1, 1.5)
+color = color(1, 0.2, 0.1, 1)
+energy = 12
+range = 6
+
+[node name="Torch" parent="." type="SpotLight3D"]
+position = vec3(3, 3, 3)
+rotation = vec3(-0.9, 0.6, 0)
+color = color(0.2, 0.4, 1, 1)
+energy = 30
+range = 12
+angle = 0.5
+shadow = true
+
+[node name="Sun2" parent="." type="DirectionalLight3D"]
+rotation = vec3(-0.6, -0.8, 0)
+color = color(0.6, 1, 0.5, 1)
+energy = 1
+shadow = true
+shadow_cascades = 2
+shadow_distance = 30
+
+[node name="Mist" parent="." type="FogVolume3D"]
+shape = ELLIPSOID
+position = vec3(-0.5, 1, -2)
+size = vec3(4, 2, 2)
+density = 0.6
+albedo = color(0.9, 0.95, 1, 1)
+emission = color(0.3, 0.6, 1, 1)
+emission_energy = 2
+
+[node name="Wave" parent="." type="Shockwave3D"]
+position = vec3(3, 1.4, -1.5)
+max_radius = 2
+duration = 1.5
+thickness = 0.4
+strength = 0.5
+loop = true
+
+[node name="Boom" parent="." type="Explosion3D"]
+position = vec3(-5, 0, -2)
+duration = 1.5
+loop = true
+flash_energy = 40
+scorch_size = 0
+shake_amount = 0
+
+[node name="Pool" parent="." type="Water3D"]
+position = vec3(4.5, 0.05, 2)
+size = vec2(3, 3)
+subdivisions = 32
+floor_map_size = 0
+
+[node name="Probe" parent="." type="ReflectionProbe3D"]
+size = vec3(6, 4, 6)
+resolution = 64
+
+[node name="Grid" parent="." type="LightProbeGrid3D"]
+position = vec3(0, 1, 0)
+size = vec3(6, 2, 6)
+probes = vec3(2, 2, 2)
+
+[node name="Flag" parent="." type="Cloth3D"]
+position = vec3(-2.5, 3, -1)
+width = 1.4
+height = 0.9
+columns = 12
+rows = 8
+pin = LEFT
+wind = vec3(4, 0, 1)
+turbulence = 0.5
+color = color(0.8, 0.1, 0.1, 1)

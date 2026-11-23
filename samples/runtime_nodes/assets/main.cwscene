@@ -1,0 +1,19 @@
+[scene format=1]
+
+; samples/runtime_nodes: the world (world.cwscene) goes in on the first tick the test switches are seen, into this
+; tree, a Backdrop's or a SubViewport's (main.c)
+
+[node name="Main" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0, 0, 0, 1)
+use_background = true
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 4.5, 10)
+rotation = vec3(-0.38, 0, 0)
+fov = 55
+near = 0.1
+far = 100
+
+[node name="HUD" parent="." type="CanvasLayer"]

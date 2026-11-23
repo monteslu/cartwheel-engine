@@ -1,0 +1,11 @@
+[scene format=1]
+
+; world.cwscene with content.cwscene declared in it (the reference runtime_nodes' code-built content must match)
+
+[ext_scene id=1 path="world.cwscene"]
+[ext_scene id=2 path="content.cwscene"]
+
+[node name="World" instance=1]
+
+[node name="Group" parent="." instance=2]
+visible = false

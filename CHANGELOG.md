@@ -4,6 +4,25 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.65.1 (2026-11-23)
+
+### Fixed
+- A Backdrop's or a SubViewport's world whose draws had no program in the app's tables went unreported as soon as
+  another tree's list changed: the debug fields `cw.three.missing_states` and `cw.three.missing`, and the red banner,
+  held only the last tree to change, so the gates and the cart survey (`tools/programs.mjs --carts`) never saw a
+  world's skipped draws (water, particles or a mesh added to a world from code while the game runs, say) and the cart
+  shipped drawing nothing there. They now hold every tree's states for the run; `cw_pipeline_missing_states` is still
+  one tree's. A table that lacked such states gets them on the next survey.
+
+### Added
+- Sample `runtime_nodes` and gate `runtime-nodes`: a node of every type that owns render passes or per-frame GPU work
+  (GPU particles with an attractor, a trail, screen and mesh decals, omni, spot and cascaded sun lights, height fog with
+  a fog volume, a shockwave, an explosion, water, a reflection probe, a light probe grid, cloth) made with
+  `cw_node_new` and added while the game runs draws the declared nodes' picture in the main tree, a Backdrop's world
+  and a SubViewport's world (natively and as the dual cart on romdev, GL and WebGPU: no pixel more than 16/255 apart,
+  every type's counter equal; control: nothing added); a world's skipped states are reported with the main tree's
+  (control: `CW_TEST_MISSING_LAST_TREE=1`, the old last-tree list, loses them).
+
 ## v0.65.0 (2026-11-22)
 
 ### Added

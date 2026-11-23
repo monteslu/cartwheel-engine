@@ -1,0 +1,37 @@
+[scene format=1]
+
+; the world every mode draws (samples/runtime_nodes): its pass-owning nodes are content.cwscene, declared
+; (world_decl.cwscene) or added from code
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.04, 0.05, 0.07, 1)
+ambient_energy = 0.15
+sky_color = color(0.6, 0.7, 0.9, 1)
+ground_color = color(0.35, 0.3, 0.25, 1)
+hemi_energy = 0.4
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+rotation = vec3(-0.9, 0.5, 0)
+energy = 2
+shadow = true
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 4.5, 10)
+rotation = vec3(-0.38, 0, 0)
+fov = 55
+near = 0.1
+far = 100
+
+[node name="Ground" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.1, 0)
+size = vec3(16, 0.2, 12)
+color = color(0.3, 0.29, 0.27, 1)
+roughness = 0.9
+
+[node name="Crate" parent="." type="MeshInstance3D"]
+position = vec3(-3.5, 0.6, 1)
+size = vec3(1.2, 1.2, 1.2)
+color = color(0.55, 0.45, 0.3, 1)
+

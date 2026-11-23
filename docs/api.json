@@ -9382,7 +9382,7 @@
     {
      "name": "cw_pipeline_missing_states",
      "signature": "const char *cw_pipeline_missing_states(cw_tree *t)",
-     "doc": "The program states the tree's last frame needed and none of the app's\nprogram tables has, one per line (\"\" when none). A cart skips those draws;\na native build with CW_THREE_BUILDER builds them at run time. Either way\neach line belongs in the app's table (cmake/programs.cmake: run\ntools/programs.mjs). Also the debug fields \"cw.three.missing\" (the count)\nand \"cw.three.missing_states\" (the lines; the gates fail on them), and the\n\"pipeline\" command.",
+     "doc": "The program states the tree's last frame needed and none of the app's\nprogram tables has, one per line (\"\" when none). A cart skips those draws;\na native build with CW_THREE_BUILDER builds them at run time. Either way\neach line belongs in the app's table (cmake/programs.cmake: run\ntools/programs.mjs). Also the debug fields \"cw.three.missing\" (the count)\nand \"cw.three.missing_states\" (the lines of every tree, a Backdrop's or a\nSubViewport's world included, kept for the run; the gates fail on them), and the\n\"pipeline\" command.",
      "inline": false
     },
     {

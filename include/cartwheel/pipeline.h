@@ -436,7 +436,8 @@ cw_post_settings *cw_pipeline_settings(cw_pipeline *p);
  * a native build with CW_THREE_BUILDER builds them at run time. Either way
  * each line belongs in the app's table (cmake/programs.cmake: run
  * tools/programs.mjs). Also the debug fields "cw.three.missing" (the count)
- * and "cw.three.missing_states" (the lines; the gates fail on them), and the
+ * and "cw.three.missing_states" (the lines of every tree, a Backdrop's or a
+ * SubViewport's world included, kept for the run; the gates fail on them), and the
  * "pipeline" command. */
 const char *cw_pipeline_missing_states(cw_tree *t);
 

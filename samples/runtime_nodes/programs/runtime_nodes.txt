@@ -1,0 +1,19 @@
+# r187 program states runtime_nodes draws (cmake/programs.cmake, tools/programs.mjs)
+standard+l1801+xgi
+standard+l1801+xplain_gi
+standard+ds+l1811+xwaterlow
+depth+xcsm_plain
+depth+xcsm_plain_gi
+depth+xcsm
+depth+xcsm_gi
+standard+l1811+xcsm_gi
+standard+map+trans+l1811+xcsm_meshdecal_gi
+standard+shadow+ds+l1811+s101+xwater
+physical+shadow+ds+sheen+l1811+s101+xcsm_gi
+standard+l1811+xcsm_plain_gi
+standard+shadow+ds+l1811+s100+xwater
+physical+shadow+ds+sheen+l1811+s100+xcsm_plain_gi
+standard+map+trans+l1811+xcsm_meshdecal_plain_gi
+standard+l1801
+standard+l1801+xplain
+physical+shadow+ds+sheen+l1801+s100+xcsm_gi
