@@ -801,6 +801,68 @@ static void skel_free(skel *s) {
   cw_free(s);
 }
 
+/* The rest pose the modifiers measure against (LookAtModifier3D's forward_axis and offset, SpringBoneCollision3D's
+ * offsets): the skin's bind pose, from its inverse bind matrices, whatever the bones hold when the modifiers bind
+ * (a game that advances its AnimationTree before the first modifier phase would otherwise give its first animated
+ * frame as rest). A bone no skin lists keeps its local transform from the bind under its parent's bind pose.
+ * CW_TEST_IK_REST_CURRENT=1 (a gate's control): the transforms at bind time, as before. */
+static void collect_skins(t3_object *o, t3_mat4 m, t3_object *root, t3_skinned_mesh **out, t3_mat4 *mm, int *n, int cap) {
+  if (o != root) {
+    t3_mat4 l;
+    t3_mat4_compose(&l, o->position, o->quaternion, o->scale);
+    t3_mat4_multiply(&m, &m, &l);
+  }
+  if (o->type == T3_SKINNED_MESH && *n < cap) {
+    out[*n] = (t3_skinned_mesh *)o;
+    mm[(*n)++] = m;
+  }
+  for (int i = 0; i < o->child_count; i++) collect_skins(o->children[i], m, root, out, mm, n, cap);
+}
+static void bind_rest(cw_pose *p, t3_object *root) {
+  if (getenv("CW_TEST_IK_REST_CURRENT")) return; /* (native: the unit suite binds in its first frame) */
+  enum { MAXSK = 16 };
+  t3_skinned_mesh *sk[MAXSK];
+  t3_mat4 skm[MAXSK], id;
+  t3_mat4_identity(&id);
+  int nsk = 0;
+  collect_skins(root, id, root, sk, skm, &nsk, MAXSK);
+  if (!nsk) return;
+  t3_mat4 *bind = cw_calloc((size_t)p->count, sizeof(t3_mat4), CW_MEM_ANIM);
+  bool *have = cw_calloc((size_t)p->count, sizeof(bool), CW_MEM_ANIM);
+  for (int k = 0; k < nsk; k++) {
+    const t3_skeleton *s = sk[k]->skeleton;
+    if (!s || !s->bone_inverses) continue;
+    /* bind world -> model: the mesh's model transform after the inverse of its bind matrix (the mesh's world when it
+     * was bound; bind_matrix_inverse follows the mesh's current world in ATTACHED mode, so it is not used) */
+    t3_mat4 to_model, binv;
+    t3_mat4_invert(&binv, &sk[k]->bind_matrix);
+    t3_mat4_multiply(&to_model, &skm[k], &binv);
+    for (int j = 0; j < s->bone_count; j++)
+      for (int b = 0; b < p->count; b++)
+        if (p->bone[b] == s->bones[j] && !have[b]) {
+          t3_mat4 inv;
+          t3_mat4_invert(&inv, &s->bone_inverses[j]);
+          t3_mat4_multiply(&bind[b], &to_model, &inv);
+          have[b] = true;
+        }
+  }
+  for (int b = 0; b < p->count; b++) {
+    const t3_mat4 *pm = p->parent[b] >= 0 ? &bind[p->parent[b]] : &p->base[b];
+    if (!have[b]) { /* the bind-time local transform under the parent's bind pose */
+      t3_mat4 l;
+      t3_mat4_compose(&l, p->rest_pos[b], p->rest_rot[b], p->rest_scl[b]);
+      t3_mat4_multiply(&bind[b], pm, &l);
+      continue;
+    }
+    t3_mat4 pinv, l;
+    t3_mat4_invert(&pinv, pm);
+    t3_mat4_multiply(&l, &pinv, &bind[b]);
+    t3_mat4_decompose(&l, &p->rest_pos[b], &p->rest_rot[b], &p->rest_scl[b]);
+  }
+  cw_free(bind);
+  cw_free(have);
+}
+
 static bool skel_bind(skel *s) {
   /* a Skeleton3D holder: the bones of its model (cartwheel/skeleton.h); any other Node3D: its own object */
   t3_object *obj = cw__skeleton_bone_root(s->model, &s->frame);
@@ -809,6 +871,7 @@ static bool skel_bind(skel *s) {
   skel_unbind(s);
   s->obj = obj;
   if (!obj || !cw_pose_bind(&s->pose, obj)) { s->bind_failed = true; return false; }
+  bind_rest(&s->pose, obj);
   s->bind_failed = false;
   s->bound = true;
   s->gen++;
@@ -1270,7 +1333,7 @@ static const cw_prop shape_props[] = {
   { .name = "shape", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(spring_shape, shape), .size = sizeof(int32_t),
     .enum_names = shape_names, .doc = "SPHERE at offset, or CAPSULE from offset to tail." },
   CW_PROP_FIELD_RANGE(spring_shape, radius, CW_T_FLOAT, 0, 10, "Radius (m)."),
-  CW_PROP_FIELD(spring_shape, offset, CW_T_VEC3, CW_PROP_DEFAULT, "Centre (a capsule's first end) from the bone's origin, in the model's rest orientation (m)."),
+  CW_PROP_FIELD(spring_shape, offset, CW_T_VEC3, CW_PROP_DEFAULT, "Centre (a capsule's first end) from the bone's origin, in the model's rest (bind) orientation (m)."),
   CW_PROP_FIELD(spring_shape, tail, CW_T_VEC3, CW_PROP_DEFAULT, "A capsule's other end, like offset (m)."),
   CW_PROP_END,
 };

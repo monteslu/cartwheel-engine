@@ -756,6 +756,19 @@ void cw__wgpu_frame_end(bool present) {
   static WGPUFuture fut[3];
   static bool pending[3];
   static int slot;
+  /* CW_TEST_WGPU_SYNC_LAVAPIPE=1 (a test switch, runtime-nodes' SubViewport leg): on Mesa's lavapipe only, no frame in
+   * flight, each frame waited for at its end. Lavapipe (Mesa 26.0.8 here, and CI's) faults in its own JIT rasterizer
+   * reading past a resource when runtime_nodes' SubViewport made from code runs with frames in flight: 50-75% of runs
+   * alone and 20 of 20 under load, from v0.67.0 on, the same offset every time, while SwiftShader and the 890M run it
+   * 0 of 20 each and lavapipe with this wait 0 of 20 (2026-11-23). The gate reports the unsynced lavapipe run, so a
+   * Mesa that fixes it is noticed. */
+  static int sync_lvp = -1;
+  if (sync_lvp < 0) {
+    const char *e = getenv("CW_TEST_WGPU_SYNC_LAVAPIPE");
+    sync_lvp = e && *e == '1' && (strstr(adapter_info.device, "llvmpipe") || strstr(adapter_info.description, "llvmpipe") ||
+                                  strstr(adapter_info.vendor, "llvmpipe"));
+  }
+  if (sync_lvp) cw__wgpu_wait_idle();
   fut[slot] = wgpuQueueOnSubmittedWorkDone(G.queue, (WGPUQueueWorkDoneCallbackInfo){
     .mode = WGPUCallbackMode_WaitAnyOnly, .callback = on_work_done, .userdata1 = (void *)&pending[slot] });
   pending[slot] = true;

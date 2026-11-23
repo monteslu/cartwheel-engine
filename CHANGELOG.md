@@ -4,7 +4,7 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## v0.70.0 (2026-11-23)
+## v0.70.1 (2026-11-23)
 
 ### Added
 - SpringBone3D, a skeleton modifier for secondary motion (`cartwheel/ik.h`): hair, braids, ponytails, beards,
@@ -100,6 +100,16 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   turns every arrow by the same amount from its start angle (control: no spin turns none), and STRETCHED sparks at
   a set angle draw the default picture (control: a billboard system at that angle changes it).
 ### Fixed
+- The skeleton modifiers' rest pose (LookAtModifier3D's `forward_axis` and `offset`, SpringBoneCollision3D's
+  offsets) is the skin's bind pose, read from its inverse bind matrices, and no longer whatever the bones held when
+  the modifiers first ran. A game that built a model, its AnimationTree and its modifiers and advanced the tree before
+  the first modifier phase got its first animated frame as rest, and a look-at aimed 13 degrees of yaw and 15 of
+  pitch off. Gate `ik-bind-rest`: a skinned head turned and pitched before the modifiers bind still aims at its
+  target (0.000 rad; control `CW_TEST_IK_REST_CURRENT=1`, the old rest: 0.345 rad).
+- runtime-nodes' SubViewport leg waits for each frame on Mesa's lavapipe alone (`CW_TEST_WGPU_SYNC_LAVAPIPE`, matched
+  by the adapter's name): lavapipe faults in its own rasterizer there with frames in flight (from v0.67.0 on, never
+  on SwiftShader or a GPU, never with the wait), and failed CI. An unsynced lavapipe run is still reported, not
+  gated, so a Mesa that fixes it shows.
 - The first frame any dither look drew (the Bayer pattern too) cost 46 ms of CPU in a cart: the looks' 64 x 64 blue
   noise tile was computed there (void and cluster). It is now a table the engine ships
   (`src/render/look_blue_noise.h`, made by `tools/gen-look-blue-noise.c`): the same bytes, so every dither and

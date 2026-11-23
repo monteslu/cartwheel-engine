@@ -246,7 +246,11 @@ int cw_ik_fabrik(cw_pose *p, const int *chain, int n, t3_vec3 target, const cw_c
  *                             blend in and out
  * Bone properties are bone names; targets are node paths relative to the
  * modifier (a Node3D: its global transform), else the world-space
- * *_position property.
+ * *_position property. "Rest" below is the skin's bind pose (from its
+ * inverse bind matrices; a bone no skin lists keeps its transform at bind
+ * under its parent's bind pose), whatever the bones hold when the
+ * modifiers first run: a game may build the model, its AnimationTree and
+ * its modifiers and advance the tree before the first modifier phase.
  *
  * TwoBoneIK3D        root_bone, middle_bone, end_bone, target,
  *                    target_position (vec3 world), pole (node path),

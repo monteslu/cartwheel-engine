@@ -33,6 +33,12 @@ if (HOSTS.includes('native')) {
   testEnv(process.env);
 }
 
+// Lavapipe (Mesa's software Vulkan, CI's WebGPU) faults in its own JIT rasterizer on the SubViewport tree's native runs
+// with frames in flight (50-75% of runs alone, 20 of 20 under load, from v0.67.0 on, the same offset each time;
+// SwiftShader and the 890M 0 of 20 each, lavapipe waiting each frame 0 of 20; 2026-11-23). Those runs wait for each frame on lavapipe alone
+// (CW_TEST_WGPU_SYNC_LAVAPIPE, src/platform/gpu.c: a no-op on any other adapter); one unsynced run is reported, never
+// gated, so a Mesa that fixes it shows here.
+const lvpSync = (host, tree) => (host === 'native' && tree === 'subviewport' ? { CW_TEST_WGPU_SYNC_LAVAPIPE: '1' } : {});
 function run(host, gpu, name, env, extra = []) {
   const png = join(OUT, `${name}.${host}.${gpu}.png`), st = join(OUT, `${name}.${host}.${gpu}.json`);
   const r = spawnSync('node', [join(ROOT, 'tools', 'run-cart.mjs'), '--host', host, '--app', 'runtime_nodes', '--frames', String(FRAMES),
@@ -66,9 +72,9 @@ for (const host of HOSTS)
     for (const tree of TREES) {
       let decl, code, none;
       try {
-        decl = run(host, gpu, `${tree}-scene`, { RT_TREE: tree, RT_ADD: 'scene' });
-        code = run(host, gpu, `${tree}-code`, { RT_TREE: tree, RT_ADD: 'code' });
-        none = run(host, gpu, `${tree}-none`, { RT_TREE: tree, RT_ADD: 'none' });
+        decl = run(host, gpu, `${tree}-scene`, { RT_TREE: tree, RT_ADD: 'scene', ...lvpSync(host, tree) });
+        code = run(host, gpu, `${tree}-code`, { RT_TREE: tree, RT_ADD: 'code', ...lvpSync(host, tree) });
+        none = run(host, gpu, `${tree}-none`, { RT_TREE: tree, RT_ADD: 'none', ...lvpSync(host, tree) });
       } catch (e) {
         check(false, `${tag} ${tree}: ${e.message}`);
         continue;
@@ -83,8 +89,8 @@ for (const host of HOSTS)
       // a world's skipped states reported with the main tree's
       let miss, ctl;
       try {
-        miss = run(host, gpu, `${tree}-missing`, { RT_TREE: tree, RT_MISSING: '1' }, ['--allow-skipped']);
-        ctl = run(host, gpu, `${tree}-missing-control`, { RT_TREE: tree, RT_MISSING: '1', CW_TEST_MISSING_LAST_TREE: '1' }, ['--allow-skipped']);
+        miss = run(host, gpu, `${tree}-missing`, { RT_TREE: tree, RT_MISSING: '1', ...lvpSync(host, tree) }, ['--allow-skipped']);
+        ctl = run(host, gpu, `${tree}-missing-control`, { RT_TREE: tree, RT_MISSING: '1', CW_TEST_MISSING_LAST_TREE: '1', ...lvpSync(host, tree) }, ['--allow-skipped']);
       } catch (e) {
         check(false, `${tag} ${tree}: ${e.message}`);
         continue;
@@ -102,6 +108,14 @@ for (const host of HOSTS)
         `${tag} ${tree}: the world's and the main tree's skipped states both reported (${m.join(', ')}; count ${v(miss, 'cw.three.missing')})`);
       check(!k.some(world), `${tag} ${tree}: CONTROL, the last tree's list only, loses the world's (${k.join(', ')})`);
     }
+  }
+// the lavapipe fault, reported (not gated): the SubViewport tree's code run with frames in flight
+if (HOSTS.includes('native') && GPUS.includes('webgpu') && process.env.CW_TEST_GPU === 'software')
+  try {
+    run('native', 'webgpu', 'subviewport-code-unsynced', { RT_TREE: 'subviewport', RT_ADD: 'code' });
+    console.log('note lavapipe without the per-frame wait: the SubViewport run passed this time (if it keeps passing, Mesa may have fixed the fault: CW_TEST_WGPU_SYNC_LAVAPIPE can go)');
+  } catch (e) {
+    console.log(`note lavapipe without the per-frame wait: the known fault (${e.message.slice(-160)}); not gated`);
   }
 console.log(fail ? `runtime-nodes: ${fail} failures` : 'ok   runtime-nodes');
 process.exit(fail ? 1 : 0);

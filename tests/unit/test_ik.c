@@ -604,5 +604,74 @@ static void test_spring(void) {
   cw_tree_free(t);
 }
 
-CW_TEST_SUITE("ik", { "crowd", test_crowd }, { "spring", test_spring }, { "pose", test_pose }, { "two_bone", test_two_bone }, { "aim", test_aim }, { "ccd_r186", test_ccd_r186 },
+/* ── the rest pose is the skin's bind pose ───────────────────────────── */
+
+static t3_quat qmul_t(t3_quat a, t3_quat b) {
+  return (t3_quat){ a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y, a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+                    a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w, a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z };
+}
+
+/* Hips -> Neck -> Head, skinned (inverse bind matrices from this pose), the head facing +Z at bind */
+static t3_object *make_skinned_head(t3_object **head_out) {
+  t3_object *root = t3_group_new();
+  t3_object *hips = t3_bone_new(), *neck = t3_bone_new(), *head = t3_bone_new();
+  hips->name = "Hips"; neck->name = "Neck"; head->name = "Head";
+  hips->position = v3(0, 1, 0);
+  neck->position = v3(0, 0.5f, 0);
+  head->position = v3(0, 0.15f, 0);
+  t3_object_add(root, hips);
+  t3_object_add(hips, neck);
+  t3_object_add(neck, head);
+  t3_object_update_world_matrix(root, false, true);
+  t3_object *bones[3] = { hips, neck, head };
+  t3_skeleton *sk = t3_skeleton_new(bones, 3, NULL);
+  t3_geometry *g = t3_box_geometry_new(0.2f, 0.2f, 0.2f, 1, 1, 1);
+  t3_material *m = t3_mesh_basic_material_new(0xffffff);
+  t3_skinned_mesh *sm = t3_skinned_mesh_new(g, m);
+  t3_skinned_mesh_bind(sm, sk, NULL);
+  t3_object_add(root, (t3_object *)sm);
+  t3_release(sm);
+  t3_release(sk);
+  t3_release(g);
+  t3_release(m);
+  *head_out = head;
+  return root;
+}
+
+/* the head's model-space +Z after the modifiers, against the way to the target (radians) */
+static float look_error(cw_node model, t3_vec3 target_model) {
+  const cw_pose *p = cw_skeleton_pose(model);
+  int h = cw_pose_find(p, "Head");
+  t3_quat q = cw_pose_model_rotation(p, h);
+  /* q applied to (0, 0, 1) */
+  t3_vec3 f = v3(2 * (q.x * q.z + q.w * q.y), 2 * (q.y * q.z - q.w * q.x), 1 - 2 * (q.x * q.x + q.y * q.y));
+  t3_vec3 d = vnorm(vsub(target_model, cw_pose_model_position(p, h)));
+  float c = vdot(vnorm(f), d);
+  return cw_acos(c > 1 ? 1 : c);
+}
+
+/* A game that poses (or animates) the head before the modifiers first bind: the look-at still measures its forward
+ * axis from the bind pose (CW_TEST_IK_REST_CURRENT=1, the transforms at bind time, is the control the gate runs). */
+static void test_bind_rest(void) {
+  cw_tree *t = cw_tree_new();
+  cw_node model = add(cw_tree_root(t), "Node3D", "Model");
+  t3_object *head;
+  t3_object *rig = make_skinned_head(&head);
+  cw_node3d_set_object(model, rig);
+  t3_release(rig);
+  /* the first animated frame: the head turned 13 degrees and pitched 15, before any modifier phase */
+  t3_object_set_quaternion(head, qmul_t(cw_quat_axis_angle_det(v3(0, 1, 0), 0.2269f), cw_quat_axis_angle_det(v3(1, 0, 0), 0.2618f)));
+  cw_node look = add(model, "LookAtModifier3D", "Look");
+  cw_node_set(look, "bone", cw_val_string("Head"));
+  cw_node_set(look, "forward_axis", cw_val_vec3(0, 0, 1));
+  t3_vec3 target = v3(0.6f, 1.9f, 4);
+  cw_node_set(look, "target_position", cw_val_vec3(target.x, target.y, target.z));
+  for (int k = 0; k < 3; k++) cw_tree_fixed_update(t, DT);
+  float err = look_error(model, target);
+  cw_info("bind rest: look-at error %.6f rad (the head bound turned 13 and pitched 15 degrees)", err);
+  CHECK(err < 1e-3f); /* (the control, CW_TEST_IK_REST_CURRENT=1, is off by about the turn: this fails) */
+  cw_tree_free(t);
+}
+
+CW_TEST_SUITE("ik", { "crowd", test_crowd }, { "spring", test_spring }, { "bind_rest", test_bind_rest }, { "pose", test_pose }, { "two_bone", test_two_bone }, { "aim", test_aim }, { "ccd_r186", test_ccd_r186 },
               { "fabrik", test_fabrik }, { "nodes", test_nodes }, { "foot_placement", test_foot_placement })

@@ -7984,7 +7984,7 @@
      "default": "vec3(0, 0, 0)",
      "stored": true,
      "readonly": false,
-     "doc": "Centre (a capsule's first end) from the bone's origin, in the model's rest orientation (m)."
+     "doc": "Centre (a capsule's first end) from the bone's origin, in the model's rest (bind) orientation (m)."
     },
     {
      "name": "tail",

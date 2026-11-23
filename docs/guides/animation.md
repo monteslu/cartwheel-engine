@@ -118,7 +118,7 @@ A statement is a keyword and `key=value` attributes (quote a value that holds sp
 | `blend2d` | `name`, `param`, `param_y`, `sync` | a 2D blend space |
 | `point` | `of`, `node`, `x`, `y` (2D only) | puts the node `node` at a position in the blend space `of` |
 | `blend2` | `name`, `a`, `b`, `param` | `lerp(a, b, param)` on every bone |
-| `add` | `name`, `base`, `add`, `param` | the base plus `param` times the additive input |
+| `add` | `name`, `base`, `add`, `param` | the base plus `param` times the additive input; a `param` below 0 adds nothing (it does not subtract), so a look or lean that goes both ways is one clip per direction, each on its own `add` |
 | `layer` | `name`, `base`, `over`, `param` (always 1), `bones` | the overlay replaces the base, by `param`, on the bones in `bones` that it writes |
 | `oneshot` | `name`, `base`, `shot`, `param`, `fadein`, `fadeout`, `bones` | setting `param` above 0 plays `shot` once over the base |
 | `timescale` | `name`, `node`, `param` | `node` at `param` times the speed |
@@ -273,6 +273,8 @@ Every tick starts again from the animated pose, never from the last tick's solut
 | [FABRIK3D](node:FABRIK3D) | FABRIK over a chain (tails, spines, cables), with cone and hinge limits per joint ([cw_fabrik3d_set_joint](api:cw_fabrik3d_set_joint)) |
 | [FootPlacement3D](node:FootPlacement3D) | plants feet on the physics ground. Each leg casts a ray down through its animated ankle, the ankle is lifted or lowered by the ground's height (keeping the animation's own swing), the pelvis drops when a foot has to reach down, each leg is solved as two-bone IK, and the foot turns onto the ground normal while it is near the ground |
 | [SpringBone3D](node:SpringBone3D) | secondary motion: hair, braids, ponytails, beards, tails, coat tails and robe panels lag behind the body, sway and settle back to the animated pose, kept out of the body by spheres and capsules on its bones (below) |
+
+"Rest" (a look-at's `forward_axis` and `offset`, a spring collision shape's offsets) is the skin's bind pose, read from its inverse bind matrices, not whatever the bones hold when the modifiers first run: a game can build a model, its AnimationTree and its modifiers and advance the tree in the same tick.
 
 Every modifier has `active` and `influence` (0 to 1: the blend between the pose it was given and its result). Animate or tween `influence` to blend a modifier in and out. Bones are named as in the glTF, with the same sanitizing three.js applies (`UpperLeg.L` becomes `UpperLegL`). Targets are Node3D paths relative to the modifier, or a world position in `target_position`.
 

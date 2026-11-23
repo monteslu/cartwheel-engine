@@ -3324,6 +3324,18 @@
     "note": "four skinned robots (RobotExpressive, CC0) walk over stairs and a slope with FootPlacement3D, a TwoBoneIK3D hand grabbing a handle and neck/head LookAtModifier3D following a firefly; the probe holds every planted ankle's height above the ground under it to its animated height above flat ground within 1 cm (feet_ok) and the hand within 1 mm of the handle (reach_ok); pose hashes per 60-tick window for the front robot and the crowd. The control turns foot placement off at frame 10. tests/ik-determinism.mjs runs it at CW_WORKERS 0, 3 and 7"
   },
   {
+    "name": "ik-bind-rest",
+    "app": "unit_ik",
+    "frames": 2,
+    "controlFrames": 2,
+    "hosts": ["native"],
+    "controlEnv": { "CW_TEST_IK_REST_CURRENT": "1" },
+    "minColors": 1,
+    "fields": ["unit.passed", "unit.failed", "unit.done"],
+    "expect": { "unit.failed": 0, "unit.done": 1 },
+    "note": "the skeleton modifiers' rest pose is the skin's bind pose: unit_ik's bind_rest turns a skinned head 13 degrees and pitches it 15 before the modifiers first bind, and a LookAtModifier3D with forward_axis (0, 0, 1) still aims the head's bind-pose forward at its target (0.000 rad). Control: CW_TEST_IK_REST_CURRENT=1 takes the transforms at bind time as rest, as before: 0.345 rad off, unit.failed 1 (native only: a cart reads a test switch from frame 2, and the suite runs in frame 1)"
+  },
+  {
     "name": "anim-spring",
     "app": "anim_spring",
     "frames": 600,
