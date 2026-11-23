@@ -46,6 +46,12 @@ typedef struct cw_quality_menu_style {
    * selection_text (alpha 0: the backdrop's colour, opaque) */
   int selection;
   cw_color selection_text;
+  /* Two colours (a game with a one-bit look): every pixel the page draws is ink or paper, opaque. Text, marks, the
+   * hint's button prompts and the highlighted row's plate in ink, the backdrop (when one is drawn) and the outline
+   * round text and prompts in paper; edges one bit (no blended pixel); accent and selection_text unused; selection 0
+   * shows as 3 (a plate), 1 and 2 in ink. ink alpha 0: white; paper alpha 0: the backdrop's colour (0.02 0.02 0.05). */
+  bool two_colour;
+  cw_color ink, paper;
 } cw_quality_menu_style;
 
 void cw_quality_menu_open(void);     /* show it, the preset row highlighted */

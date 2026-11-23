@@ -4,6 +4,31 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.65.0 (2026-11-22)
+
+### Added
+- Two-colour menus for a game whose picture has two colours (a one-bit dither): `cw_shell_desc.two_colour` with `ink`
+  and `paper` (cartwheel/shell.h). Every pixel the shell draws on the loading, title, pause, Settings, Graphics and
+  join screens, their hint rows' button prompts and "Starting..." is then the ink or the paper, opaque:
+  - no see-through dimming layer: the screens are a sheet of paper, or over a picture (`draw_background`, or the pause
+    menu over play) the picture stays as it is and each line of text sits on a paper plate;
+  - text has one-bit edges (a pixel is ink when the glyph covers half of it or more, which keeps every stroke at 100%
+    and 200% text) and a thin paper outline in place of the dark one; marks, frames and button prompts are one-bit too,
+    and a prompt's in-between tones (the dimmer second stick, a touch button's tint) go;
+  - the selection shows by shape in ink: COLOUR draws as INVERSE (an ink plate, its text in paper), MARKER and
+    UNDERLINE draw their mark in ink; the join screen's seats are paper in an ink frame, a taken seat's frame heavier.
+- `cw_shell_set_colours(accent, selection_text, ink, paper)` and `cw_shell_set_two_colour(on)` change the menus from the
+  next frame they draw (a game whose player picks another look in Settings); `cw_shell_two_colour()` reads the mode.
+  Debug fields `shell.two_colour`, `shell.ink` and `shell.paper` (0xRRGGBB).
+- `cw_quality_menu_style.two_colour`, `ink` and `paper` (cartwheel/quality_menu.h): the Graphics page in two colours
+  for a game that draws it itself.
+- Samples `shell_settings` and `shell_join` take `SHELL_TWO_COLOUR=1` (with `SHELL_INK`, `SHELL_PAPER`, `SHELL_TWO_BG=1`
+  and `SHELL_SWITCH_AT`, `samples/common/shell_two_colour.h`); gates `shell-two-colour` (natively on GL and WebGPU at
+  100% and 200% text: every pixel ink or paper on all five screens, on paper and over a one-bit picture; each line's
+  ink within 8% of the blended text's coverage; a colour switch on the frame it is made; controls: the mode off, a cut
+  at 0.95 coverage, the switch without the setter), `shell-two-colour-title` and `shell-two-colour-graphics` (every host).
+  Without the mode the shell's frames are byte for byte as before.
+
 ## v0.64.1 (2026-11-22)
 
 ### Fixed

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "cartwheel/quality_menu.h"
+#include "../render2d/text_raw.h"
 #include "cartwheel/prompt.h"
 #include "cartwheel/core.h"
 #include "cartwheel/debug.h"
@@ -127,8 +128,10 @@ bool cw_quality_menu_update(void) {
   return true;
 }
 
+/* two colours (cw_quality_menu_style.two_colour): this draw's ink and paper, every element one or the other */
+static struct { bool on; cw_color ink, paper; } Q2;
 static cw_text_style text_style(float size, cw_color c) {
-  return (cw_text_style){ .size = size, .color = c, .outline_width = size * 0.06f, .outline_color = cw_rgba(0, 0, 0, 0.8f) };
+  return (cw_text_style){ .size = size, .color = c, .outline_width = size * 0.06f, .outline_color = Q2.on ? Q2.paper : cw_rgba(0, 0, 0, 0.8f) };
 }
 static float text_w(cw_font f, const char *s, float size) {
   cw_text_style st = text_style(size, cw_rgba(1, 1, 1, 1));
@@ -181,11 +184,25 @@ void cw_quality_menu_draw(const cw_quality_menu_style *style) {
   cw_color sel_text = st.selection_text.a > 0 ? st.selection_text : cw_rgba(0.02f, 0.02f, 0.05f, 1);
   if (!st.set_backdrop) st.backdrop = cw_rgba(0.02f, 0.02f, 0.05f, 0.92f);
   if (!st.title) st.title = "Graphics";
+  /* two colours: ink for text, marks and the INVERSE plate (COLOUR cannot show: INVERSE), paper behind and round them;
+   * every edge one bit (cw__r2d_set_hard), the backdrop opaque paper, no faint plate */
+  Q2.on = st.two_colour;
+  cw_color white = cw_rgba(1, 1, 1, 1), row_c = cw_rgba(1, 1, 1, 0.88f), mark = cw_rgba(1, 1, 1, 0.7f);
+  if (Q2.on) {
+    Q2.ink = st.ink.a > 0 ? cw_rgba(st.ink.r, st.ink.g, st.ink.b, 1) : white;
+    Q2.paper = st.paper.a > 0 ? cw_rgba(st.paper.r, st.paper.g, st.paper.b, 1) : cw_rgba(0.02f, 0.02f, 0.05f, 1);
+    st.accent = white = row_c = mark = Q2.ink;
+    sel_text = Q2.paper;
+    if (sel_style == 0) sel_style = 3;
+    if (st.backdrop.a > 0) st.backdrop = Q2.paper;
+    cw__r2d_set_hard(true);
+    cw__prompt_two_colour(true, Q2.ink, Q2.paper);
+  }
   cw_vec2 sz = cw_r2d_canvas_size();
   float u = st.size > 0 ? st.size : sz.y / 24.0f, d = cw_text_drawn_size(st.font, u);
   if (st.backdrop.a > 0) cw_r2d_rect(cw_rect_make(0, 0, sz.x, sz.y), st.backdrop);
   float cx = sz.x * 0.5f;
-  text(st.font, st.title, cx, sz.y * 0.08f, u * 1.6f, cw_rgba(1, 1, 1, 1), 1);
+  text(st.font, st.title, cx, sz.y * 0.08f, u * 1.6f, white, 1);
   /* the hint first: the rows stop above it */
   const char *hint = NULL;
   float hs = u * 0.75f, foot = sz.y - u * 1.0f, hint_h = 0;
@@ -231,10 +248,10 @@ void cw_quality_menu_draw(const cw_quality_menu_style *style) {
   for (int i = 0; i < M.n_rects; i++) M.rects[i] = cw_rect_make(0, 0, 0, 0);
   for (int i = first; i < first + count && i < MAX_ROWS; i++) {
     bool sel = i == M.row;
-    cw_color c = sel ? (sel_style == 3 ? sel_text : st.accent) : cw_rgba(1, 1, 1, 0.88f);
+    cw_color c = sel ? (sel_style == 3 ? sel_text : st.accent) : row_c;
     if (i == back_row() && first == 0 && count == n) y += d * 0.3f;
     cw_rect r = cw_rect_make(cx - rw * 0.5f, y - d * 0.2f, rw, step * 0.92f);
-    if (sel) cw_r2d_rect(r, sel_style == 3 ? st.accent : cw_rgba(1, 1, 1, 0.08f));
+    if (sel && (sel_style == 3 || !Q2.on)) cw_r2d_rect(r, sel_style == 3 ? st.accent : cw_rgba(1, 1, 1, 0.08f));
     float x0 = cx, x1 = cx; /* the row's text from x0 to x1 (the selection's mark) */
     if (i == back_row()) {
       float bw = text_w(st.font, "Back", u);
@@ -260,12 +277,17 @@ void cw_quality_menu_draw(const cw_quality_menu_style *style) {
     y += step;
     if (i == 0 && count == n) y += d * 0.35f; /* the preset apart from the settings it sets */
   }
-  cw_color mark = cw_rgba(1, 1, 1, 0.7f);
   float ms = d * 0.28f;
   if (first > 0) cw_r2d_polygon((cw_vec2[3]){ { cx - ms, y_top - d * 0.3f + ms * 0.5f }, { cx + ms, y_top - d * 0.3f + ms * 0.5f }, { cx, y_top - d * 0.3f - ms * 0.5f } }, 3, mark);
   if (first + count < n) cw_r2d_polygon((cw_vec2[3]){ { cx - ms, y + d * 0.05f - ms * 0.5f }, { cx + ms, y + d * 0.05f - ms * 0.5f }, { cx, y + d * 0.05f + ms * 0.5f } }, 3, mark);
-  if (prompts) cw_prompt_text(st.font, hint, -1, cw_v2(cx, foot - hint_h), hs, cw_rgba(1, 1, 1, 0.75f), CW_ALIGN_CENTER);
+  if (prompts) cw_prompt_text(st.font, hint, -1, cw_v2(cx, foot - hint_h), hs, Q2.on ? Q2.ink : cw_rgba(1, 1, 1, 0.75f), CW_ALIGN_CENTER);
   else cw_r2d_text(st.font, hint, cw_v2(cx - sz.x * 0.47f, foot - hint_h),
-                   &(cw_text_style){ .size = u * 0.7f, .wrap_width = sz.x * 0.94f, .align = CW_ALIGN_CENTER, .color = cw_rgba(1, 1, 1, 0.6f),
-                                     .outline_width = u * 0.042f, .outline_color = cw_rgba(0, 0, 0, 0.8f) });
+                   &(cw_text_style){ .size = u * 0.7f, .wrap_width = sz.x * 0.94f, .align = CW_ALIGN_CENTER,
+                                     .color = Q2.on ? Q2.ink : cw_rgba(1, 1, 1, 0.6f), .outline_width = u * 0.042f,
+                                     .outline_color = Q2.on ? Q2.paper : cw_rgba(0, 0, 0, 0.8f) });
+  if (Q2.on) {
+    cw__r2d_set_hard(false);
+    cw__prompt_two_colour(false, Q2.ink, Q2.paper);
+    Q2.on = false;
+  }
 }

@@ -65,7 +65,8 @@
  * Determinism: menus run in fixed_update from the input snapshot, so a
  * replay drives them like gameplay. A test or an autopilot build skips them
  * with cw_shell_start. Debug fields: shell.screen, shell.hud (cw_shell_hud_shown), shell.players, shell.item,
- * shell.shake, shell.settings (the game's Settings rows shown), shell.starting (1 a press to play was answered, 2 "Starting..." has been drawn). */
+ * shell.shake, shell.settings (the game's Settings rows shown), shell.starting (1 a press to play was answered, 2 "Starting..." has been drawn),
+ * shell.selection, shell.two_colour, shell.ink and shell.paper (0xRRGGBB). */
 #ifndef CW_SHELL_H
 #define CW_SHELL_H
 
@@ -184,6 +185,15 @@ typedef struct cw_shell_desc {
   void *user;
   cw_shell_selection selection; /* how the selected row shows (COLOUR); cw_shell_set_selection changes it */
   cw_color selection_text; /* INVERSE: the selected row's text (alpha 0: the menus' dark background, 0.02 0.02 0.05) */
+  /* Two colours, for a game whose picture has two (a one-bit look): every pixel the shell draws (the loading, title,
+   * pause, Settings, Graphics and join screens, their hint prompts, "Starting...") is ink or paper, opaque, with one-bit
+   * edges (no blended pixel at a glyph's or a shape's edge). Text, marks, prompts and frames in ink; the screen a
+   * sheet of paper, or over a picture (draw_background, or the pause menu over play) the picture with each line of
+   * text on a paper plate; the selection by shape (COLOUR shows as INVERSE: an ink plate, its text in paper); accent
+   * and selection_text unused. cw_shell_set_two_colour and cw_shell_set_colours change them from the next frame. */
+  bool two_colour;
+  cw_color ink;   /* alpha 0: white */
+  cw_color paper; /* alpha 0: the menus' dark background (0.02 0.02 0.05) */
 } cw_shell_desc;
 
 /* The save region for cw_app_desc.save / save_size: the shell's settings and
@@ -249,6 +259,13 @@ void cw_shell_set_settings_items(const cw_shell_setting *items, int count);
  * when the game switches to a one-bit look. */
 void cw_shell_set_selection(cw_shell_selection style);
 cw_shell_selection cw_shell_selection_style(void); /* the style in use */
+/* The menus' colours from the next frame they draw, when the game changes its look (say a Settings row that picks
+ * another palette): as cw_shell_desc's accent, selection_text, ink and paper; a colour with alpha 0 takes its default.
+ * ink and paper are drawn opaque. The debug fields shell.ink and shell.paper publish them as 0xRRGGBB. */
+void cw_shell_set_colours(cw_color accent, cw_color selection_text, cw_color ink, cw_color paper);
+/* Two-colour mode on or off from the next frame (as cw_shell_desc.two_colour; debug field shell.two_colour). */
+void cw_shell_set_two_colour(bool on);
+bool cw_shell_two_colour(void); /* the mode is on */
 void cw_shell_to_title(void); /* end the match and show the title (every pad drives the menus again) */
 /* Loading: progress 0..1 shown on the loading screen; loaded goes on to the title. */
 void cw_shell_loading(float progress);

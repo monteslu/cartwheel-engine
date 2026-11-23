@@ -1,9 +1,11 @@
 /* render2d core: module state, passes, canvas layers, the submission stream,
  * the stable sort, batching and drawing. */
+#include <stdlib.h>
 #include <string.h>
 
 #include "internal.h"
 #include "fx.h"
+#include "text_raw.h"
 #include "cartwheel/debug.h"
 #include "cartwheel/jobs.h"
 #include "cartwheel/platform.h"
@@ -252,6 +254,16 @@ cw_vec2 cw_r2d_layer_world_to_screen(int layer, cw_vec2 w) {
 /* ── draw state ────────────────────────────────────────────────────────── */
 
 void cw_r2d_set_blend(cw_blend b) { R.blend = b; }
+/* CW_TEST_R2D_HARD_OFF=1: cw__r2d_set_hard does nothing (a gate's reference: the same text with blended edges) */
+static bool hard_off(void) {
+  static int v = -1;
+  if (v < 0) {
+    const char *e = getenv("CW_TEST_R2D_HARD_OFF");
+    v = e && *e == '1';
+  }
+  return v;
+}
+void cw__r2d_set_hard(bool on) { R.hard = on && !hard_off(); }
 void cw_r2d_set_intensity(float k) {
   float x = (CW_CLAMP(k, 1.0f, 16.0f) - 1.0f) / 15.0f * 255.0f;
   R.intensity_b = (uint8_t)(x + 0.5f);
@@ -448,9 +460,18 @@ void r2d_push_special_kind(uint32_t array, float sort_y, uint32_t payload, int k
   R.stats.commands++;
 }
 
-/* mode bits for a submission: solid / additive */
+/* CW_TEST_R2D_HARD_THIN=1: one-bit edges cut at 0.95 coverage (a gate's control: text too thin to read) */
+static uint8_t hard_thin(void) {
+  static int v = -1;
+  if (v < 0) {
+    const char *e = getenv("CW_TEST_R2D_HARD_THIN");
+    v = e && *e == '1' ? R2D_MODE_HARD_THIN : 0;
+  }
+  return (uint8_t)v;
+}
+/* mode bits for a submission: solid / additive / one-bit */
 uint8_t r2d_mode(bool solid) {
-  return (uint8_t)((solid ? R2D_MODE_SOLID : 0) | (R.blend == CW_BLEND_ADD ? R2D_MODE_ADD : 0));
+  return (uint8_t)((solid ? R2D_MODE_SOLID : 0) | (R.blend == CW_BLEND_ADD ? R2D_MODE_ADD : 0) | (R.hard ? R2D_MODE_HARD | hard_thin() : 0));
 }
 
 /* ── the scratch quad (lights, composite, blit) ───────────────────────── */
@@ -566,6 +587,7 @@ void cw_r2d_begin(const cw_r2d_pass_desc *desc) {
   R.intensity_b = R.emissive_b = R.sway_b = R.flash_b = 0;
   R.occluder_on = false;
   R.blend = CW_BLEND_ALPHA;
+  R.hard = false;
   R.has_xform = false;
   R.xform = cw_xform2d_identity();
   R.clip_depth = 0;

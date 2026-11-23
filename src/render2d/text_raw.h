@@ -16,5 +16,12 @@ float cw__font_advance_raw(cw_font f, uint32_t codepoint, float size);
 float cw__font_caret_x_raw(cw_font f, const char *utf8, int byte, float size);
 /* the factor the text scale applies to text of this size now (1 outside a window pass's reach, for fixed_size) */
 float cw__text_scale_for(cw_font f, float size);
+/* One-bit coverage for later text, shapes and sprites of this pass (the shell's two-colour mode): a pixel half covered
+ * or more draws its colour at full alpha, the rest draws nothing, so text and glyph edges have no blend. Off at
+ * cw_r2d_begin. */
+void cw__r2d_set_hard(bool on);
+/* ui/prompt.c: button prompts in two colours (the shell's two-colour mode): every glyph's fill and its words in ink, its
+ * dark backing and the words' outline in paper, both opaque; the in-between tones (a dimmer stick, a touch tint) go. */
+void cw__prompt_two_colour(bool on, cw_color ink, cw_color paper);
 
 #endif

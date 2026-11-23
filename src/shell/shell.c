@@ -18,6 +18,7 @@
 #include "cartwheel/scene_file.h"
 #include "cartwheel/ui.h"
 #include "../input/input_internal.h"
+#include "../render2d/text_raw.h"
 
 /* ── the save block ────────────────────────────────────────────────── */
 
@@ -83,7 +84,9 @@ static struct {
   float progress;
   cw_action act[A_COUNT];
   cw_bus music, sfx;
-  int dbg_screen, dbg_hud, dbg_players, dbg_item, dbg_shake, dbg_starting, dbg_selection;
+  int dbg_screen, dbg_hud, dbg_players, dbg_item, dbg_shake, dbg_starting, dbg_selection, dbg_two_colour;
+  uint32_t dbg_ink, dbg_paper; /* 0xRRGGBB, the colours two-colour mode draws in (shell.ink, shell.paper) */
+  bool plates;         /* cw_shell_draw, two colours over a picture (draw_background, or the pause menu over play): text sits on paper plates */
   bool inited, own_audio, hooked, just_resumed;
   bool resume_quiet;   /* the pause menu went back to play this tick: gameplay waits for the next tick, so the press is not the game's */
   const char *pause_label[2]; /* the game's pause items, read from the desc when the pause menu opens */
@@ -345,6 +348,8 @@ void cw_shell_init(const cw_shell_desc *d) {
   if (S.d.accent.a == 0) S.d.accent = cw_rgba(1.0f, 0.78f, 0.25f, 1);
   cw_shell_set_selection(S.d.selection);
   if (S.d.selection_text.a == 0) S.d.selection_text = cw_rgba(0.02f, 0.02f, 0.05f, 1);
+  cw_shell_set_colours(S.d.accent, S.d.selection_text, S.d.ink, S.d.paper);
+  cw_shell_set_two_colour(S.d.two_colour);
   if (S.d.game_save_size > CW_SHELL_GAME_SAVE_MAX)
     cw_error("shell: game_save_size %zu is over CW_SHELL_GAME_SAVE_MAX (%d): the save keeps the first %d bytes",
              S.d.game_save_size, CW_SHELL_GAME_SAVE_MAX, CW_SHELL_GAME_SAVE_MAX);
@@ -389,6 +394,9 @@ void cw_shell_init(const cw_shell_desc *d) {
   for (int i = 0; i < 4; i++) S.joined_pad[i] = -1;
   cw_debug_field("shell.screen", &S.dbg_screen, CW_DBG_I32, 1);
   cw_debug_field("shell.selection", &S.dbg_selection, CW_DBG_I32, 1);
+  cw_debug_field("shell.two_colour", &S.dbg_two_colour, CW_DBG_I32, 1);
+  cw_debug_field("shell.ink", &S.dbg_ink, CW_DBG_U32, 1);
+  cw_debug_field("shell.paper", &S.dbg_paper, CW_DBG_U32, 1);
   cw_debug_field("shell.players", &S.dbg_players, CW_DBG_I32, 1);
   cw_debug_field("shell.item", &S.dbg_item, CW_DBG_I32, 1);
   S.dbg_shake = cw_shell_shake_level();
@@ -507,6 +515,23 @@ void cw_shell_set_selection(cw_shell_selection style) {
   S.dbg_selection = (int)S.d.selection;
 }
 cw_shell_selection cw_shell_selection_style(void) { return S.d.selection; }
+
+static uint32_t rgb24(cw_color c) {
+  int r = (int)lroundf(CW_CLAMP(c.r, 0.0f, 1.0f) * 255), g = (int)lroundf(CW_CLAMP(c.g, 0.0f, 1.0f) * 255), b = (int)lroundf(CW_CLAMP(c.b, 0.0f, 1.0f) * 255);
+  return (uint32_t)(r << 16 | g << 8 | b);
+}
+void cw_shell_set_colours(cw_color accent, cw_color selection_text, cw_color ink, cw_color paper) {
+  S.d.accent = accent.a > 0 ? accent : cw_rgba(1.0f, 0.78f, 0.25f, 1);
+  S.d.selection_text = selection_text.a > 0 ? selection_text : cw_rgba(0.02f, 0.02f, 0.05f, 1);
+  S.d.ink = ink.a > 0 ? cw_rgba(ink.r, ink.g, ink.b, 1) : cw_rgba(1, 1, 1, 1);
+  S.d.paper = paper.a > 0 ? cw_rgba(paper.r, paper.g, paper.b, 1) : cw_rgba(0.02f, 0.02f, 0.05f, 1);
+  S.dbg_ink = rgb24(S.d.ink), S.dbg_paper = rgb24(S.d.paper);
+}
+void cw_shell_set_two_colour(bool on) {
+  S.d.two_colour = on;
+  S.dbg_two_colour = on;
+}
+bool cw_shell_two_colour(void) { return S.d.two_colour; }
 
 void cw_shell_set_pause_items(const char *const items[2]) {
   for (int i = 0; i < 2; i++) S.d.pause_items[i] = items ? items[i] : NULL;
@@ -917,7 +942,18 @@ static void menu_tick(void) {
  * line too wide for the canvas breaks into lines. */
 static float drawn(float size) { return cw_text_drawn_size(S.d.font, size); }
 static cw_text_style tstyle(float size, cw_color c) {
-  return (cw_text_style){ .size = size, .color = c, .outline_width = size * 0.06f, .outline_color = cw_rgba(0, 0, 0, 0.8f) };
+  return (cw_text_style){ .size = size, .color = c, .outline_width = size * 0.06f, .outline_color = S.d.two_colour ? S.d.paper : cw_rgba(0, 0, 0, 0.8f) };
+}
+/* Two colours (cw_shell_desc.two_colour): every element in ink or paper. fg is light text and marks of this alpha
+ * (ink), acc the accent (ink); the selection shows by shape (COLOUR cannot: INVERSE) */
+static cw_color fg(float a) { return S.d.two_colour ? S.d.ink : cw_rgba(1, 1, 1, a); }
+static cw_color acc(void) { return S.d.two_colour ? S.d.ink : S.d.accent; }
+static cw_shell_selection sel_style(void) {
+  return S.d.two_colour && S.d.selection == CW_SHELL_SELECT_COLOUR ? CW_SHELL_SELECT_INVERSE : S.d.selection;
+}
+/* a paper plate under text over a picture (two colours: S.plates), d the text's drawn size */
+static void plate(float x, float y, float w, float h, float d) {
+  if (S.plates) cw_r2d_rect(cw_rect_make(x - d * 0.3f, y - d * 0.15f, w + d * 0.6f, h + d * 0.3f), S.d.paper);
 }
 static float text_w(const char *s, float size) {
   cw_text_style st = tstyle(size, CW_WHITE);
@@ -926,10 +962,12 @@ static float text_w(const char *s, float size) {
 static bool text_plain; /* the next text() without its outline (a selected row on its INVERSE plate) */
 static void text(const char *s, float x, float y, float size, cw_color c, int align /* 0 left 1 center 2 right */) {
   cw_text_style st = tstyle(size, c);
+  bool plain = text_plain;
   if (text_plain) st.outline_width = 0, text_plain = false;
-  if (align) {
+  if (align || (S.plates && !plain)) {
     cw_text_metrics m = cw_font_measure(S.d.font, s, &st);
-    x -= align == 1 ? m.width * 0.5f : m.width;
+    if (align) x -= align == 1 ? m.width * 0.5f : m.width;
+    if (!plain) plate(x, y, m.width, m.height, drawn(size));
   }
   cw_r2d_text(S.d.font, s, cw_v2(x, y), &st);
 }
@@ -974,29 +1012,39 @@ static float hint_top(const char *markup, float cx, float bottom, float size) {
 static void hint(const char *markup, float cx, float bottom, float size) {
   if (!hints_wanted()) return;
   const char *m = fit_markup(markup, size, cw_r2d_canvas_size().x * 0.94f);
-  float h = cw_prompt_text_size(S.d.font, m, -1, size).y;
-  cw_prompt_text(S.d.font, m, -1, cw_v2(cx, bottom - h), size, cw_rgba(1, 1, 1, 0.75f), CW_ALIGN_CENTER);
+  cw_vec2 b = cw_prompt_text_size(S.d.font, m, -1, size);
+  float h = b.y;
+  plate(cx - b.x * 0.5f, bottom - h, b.x, h, drawn(size));
+  cw_prompt_text(S.d.font, m, -1, cw_v2(cx, bottom - h), size, fg(0.75f), CW_ALIGN_CENTER);
 }
 
 /* the selected row (selection style): its text's colour, the plate under it (INVERSE, before the text) and the mark
  * on it (MARKER, UNDERLINE, after), for text drawn from x0 to x0 + w at y, d its drawn size */
-static cw_color sel_text_colour(void) { return S.d.selection == CW_SHELL_SELECT_INVERSE ? S.d.selection_text : S.d.accent; }
+static cw_color sel_text_colour(void) {
+  return sel_style() == CW_SHELL_SELECT_INVERSE ? (S.d.two_colour ? S.d.paper : S.d.selection_text) : acc();
+}
 static void sel_plate(float x0, float y, float w, float d) {
-  if (S.d.selection == CW_SHELL_SELECT_INVERSE) cw_r2d_rect(cw_rect_make(x0 - d * 0.45f, y - d * 0.12f, w + d * 0.9f, d * 1.34f), S.d.accent);
+  if (sel_style() != CW_SHELL_SELECT_INVERSE) return;
+  if (S.plates) cw_r2d_rect(cw_rect_make(x0 - d * 0.6f, y - d * 0.27f, w + d * 1.2f, d * 1.64f), S.d.paper); /* apart from the picture */
+  cw_r2d_rect(cw_rect_make(x0 - d * 0.45f, y - d * 0.12f, w + d * 0.9f, d * 1.34f), acc());
 }
 static void sel_mark(float x0, float y, float w, float d) {
-  if (S.d.selection == CW_SHELL_SELECT_MARKER) {
+  if (sel_style() == CW_SHELL_SELECT_MARKER) {
     cw_vec2 p[3] = { { x0 - d * 0.95f, y + d * 0.2f }, { x0 - d * 0.95f, y + d * 0.95f }, { x0 - d * 0.4f, y + d * 0.575f } };
-    cw_r2d_polygon(p, 3, S.d.accent);
-  } else if (S.d.selection == CW_SHELL_SELECT_UNDERLINE)
-    cw_r2d_rect(cw_rect_make(x0, y + d * 1.18f, w, fmaxf(2.0f, d * 0.09f)), S.d.accent);
+    plate(x0 - d * 0.95f, y + d * 0.2f, d * 0.55f, d * 0.75f, d * 0.5f);
+    cw_r2d_polygon(p, 3, acc());
+  } else if (sel_style() == CW_SHELL_SELECT_UNDERLINE) {
+    plate(x0, y + d * 1.18f, w, fmaxf(2.0f, d * 0.09f), d * 0.5f);
+    cw_r2d_rect(cw_rect_make(x0, y + d * 1.18f, w, fmaxf(2.0f, d * 0.09f)), acc());
+  }
 }
 
 /* a small triangle: more rows above (up) or below */
 static void more_mark(float cx, float y, float d, bool up) {
   float s = d * 0.28f;
   cw_vec2 p[3] = { { cx - s, up ? y + s * 0.5f : y - s * 0.5f }, { cx + s, up ? y + s * 0.5f : y - s * 0.5f }, { cx, up ? y - s * 0.5f : y + s * 0.5f } };
-  cw_r2d_polygon(p, 3, cw_rgba(1, 1, 1, 0.7f));
+  plate(cx - s, y - s * 0.5f, s * 2, s, d * 0.5f);
+  cw_r2d_polygon(p, 3, fg(0.7f));
 }
 
 static void item_line(int i, char *line, size_t cap) {
@@ -1026,12 +1074,12 @@ static void draw_menu(float cx, float y0, float y1, float size) {
   float y = y0;
   for (int i = first; i < first + count && i < n_items; i++) {
     bool sel = i == S.item;
-    cw_color c = sel ? sel_text_colour() : cw_rgba(1, 1, 1, 0.85f);
+    cw_color c = sel ? sel_text_colour() : fg(0.85f);
     char line[96];
     item_line(i, line, sizeof line);
     float tw = text_w(line, size);
     if (sel) sel_plate(cx - tw * 0.5f, y, tw, d);
-    text_plain = sel && S.d.selection == CW_SHELL_SELECT_INVERSE;
+    text_plain = sel && sel_style() == CW_SHELL_SELECT_INVERSE;
     text(line, cx, y, size, c, 1);
     if (sel) sel_mark(cx - tw * 0.5f, y, tw, d);
     float w = fmaxf(tw + d * 2, d * 8);
@@ -1045,7 +1093,7 @@ static void draw_menu(float cx, float y0, float y1, float size) {
 /* each action and its bindings, in [x, right] from y down to bottom: names in one column, bindings wrapped in the
  * next */
 static void draw_controls(float x, float y, float right, float bottom, float size) {
-  text("Controls", x, y, size, S.d.accent, 0);
+  text("Controls", x, y, size, acc(), 0);
   y += drawn(size) * 1.5f;
   float s2 = size * 0.8f, d2 = drawn(s2), name_w = 0;
   for (int a = 0; a < cw_action_count(); a++) {
@@ -1063,14 +1111,15 @@ static void draw_controls(float x, float y, float right, float bottom, float siz
       cw_binding_format(b[i], one, sizeof one);
       snprintf(line + strlen(line), sizeof line - strlen(line), "%s%s", i ? ", " : "", one);
     }
-    cw_text_style st = tstyle(s2, cw_rgba(1, 1, 1, 0.7f));
+    cw_text_style st = tstyle(s2, fg(0.7f));
     st.wrap_width = wrap;
     float h = cw_font_measure(S.d.font, line, &st).height;
     if (y + h > bottom - d2 * 1.25f) { /* no room for this row and a mark under it: the mark says there is more */
-      text("...", x, y, s2, cw_rgba(1, 1, 1, 0.7f), 0);
+      text("...", x, y, s2, fg(0.7f), 0);
       break;
     }
-    text(name, x, y, s2, cw_rgba(1, 1, 1, 0.9f), 0);
+    text(name, x, y, s2, fg(0.9f), 0);
+    plate(col, y, cw_font_measure(S.d.font, line, &st).width, h, d2);
     cw_r2d_text(S.d.font, line, cw_v2(col, y), &st);
     y += h + d2 * 0.25f;
   }
@@ -1106,22 +1155,32 @@ void cw_shell_draw(void) {
   float u = sz.y / 20.0f; /* the menus scale with the canvas height */
   float cx = sz.x * 0.5f, margin = sz.x * 0.04f, foot = sz.y - u; /* the hint line's bottom */
   if (S.d.draw_background) S.d.draw_background(S.screen, sz, S.d.user);
-  cw_r2d_rect(cw_rect_make(0, 0, sz.x, sz.y), cw_rgba(0.02f, 0.02f, 0.05f, S.d.draw_background ? 0.3f : S.screen == CW_SHELL_PAUSE ? 0.55f : 0.85f));
+  bool two = S.d.two_colour;
+  S.plates = two && (S.d.draw_background || S.screen == CW_SHELL_PAUSE);
+  if (two) { /* the picture behind stays as it is (its text on paper plates), else a sheet of paper; every edge one bit */
+    if (!S.plates) cw_r2d_rect(cw_rect_make(0, 0, sz.x, sz.y), S.d.paper);
+    cw__r2d_set_hard(true);
+    cw__prompt_two_colour(true, S.d.ink, S.d.paper);
+  } else
+    cw_r2d_rect(cw_rect_make(0, 0, sz.x, sz.y), cw_rgba(0.02f, 0.02f, 0.05f, S.d.draw_background ? 0.3f : S.screen == CW_SHELL_PAUSE ? 0.55f : 0.85f));
   build_items();
   switch (S.screen) {
   case CW_SHELL_LOADING: {
     float y = sz.y * 0.42f, bar = fmaxf(sz.y * 0.55f, y + drawn(u * 1.2f) * 1.3f);
-    text("Loading", cx, y, u * 1.2f, cw_rgba(1, 1, 1, 1), 1);
-    cw_r2d_rect(cw_rect_make(sz.x * 0.3f, bar, sz.x * 0.4f, u * 0.4f), cw_rgba(1, 1, 1, 0.2f));
-    cw_r2d_rect(cw_rect_make(sz.x * 0.3f, bar, sz.x * 0.4f * S.progress, u * 0.4f), S.d.accent);
+    text("Loading", cx, y, u * 1.2f, fg(1), 1);
+    if (two) { /* the bar's track an ink outline */
+      plate(sz.x * 0.3f, bar, sz.x * 0.4f, u * 0.4f, u * 0.3f);
+      cw_r2d_rect_lines(cw_rect_make(sz.x * 0.3f, bar, sz.x * 0.4f, u * 0.4f), fmaxf(2.0f, u * 0.06f), S.d.ink);
+    } else cw_r2d_rect(cw_rect_make(sz.x * 0.3f, bar, sz.x * 0.4f, u * 0.4f), cw_rgba(1, 1, 1, 0.2f));
+    cw_r2d_rect(cw_rect_make(sz.x * 0.3f, bar, sz.x * 0.4f * S.progress, u * 0.4f), acc());
     break;
   }
   case CW_SHELL_TITLE: {
     float y = sz.y * 0.2f;
-    text(S.d.title, cx, y, u * 2.4f, cw_rgba(1, 1, 1, 1), 1);
+    text(S.d.title, cx, y, u * 2.4f, fg(1), 1);
     y += drawn(u * 2.4f) * 1.17f;
     if (S.d.subtitle) {
-      text(S.d.subtitle, cx, y, u * 0.9f, cw_rgba(1, 1, 1, 0.75f), 1);
+      text(S.d.subtitle, cx, y, u * 0.9f, fg(0.75f), 1);
       y += drawn(u * 0.9f) * 1.4f;
     }
     float hs = u * 0.75f, top = hint_top(HINT_TITLE, cx, foot, hs);
@@ -1130,7 +1189,7 @@ void cw_shell_draw(void) {
     break;
   }
   case CW_SHELL_PAUSE: {
-    text("Paused", cx, sz.y * 0.22f, u * 1.8f, cw_rgba(1, 1, 1, 1), 1);
+    text("Paused", cx, sz.y * 0.22f, u * 1.8f, fg(1), 1);
     float hs = u * 0.75f, top = hint_top(HINT_PAUSE, cx, foot, hs);
     draw_menu(cx, fmaxf(sz.y * 0.45f, sz.y * 0.22f + drawn(u * 1.8f) * 1.3f), top - drawn(hs) * 0.4f, u * 1.1f);
     hint(HINT_PAUSE, cx, foot, hs);
@@ -1139,10 +1198,12 @@ void cw_shell_draw(void) {
   case CW_SHELL_SETTINGS: {
     if (cw_quality_menu_is_open()) {
       cw_quality_menu_draw(&(cw_quality_menu_style){ .font = S.d.font, .accent = S.d.accent, .set_backdrop = true, .selection = (int)S.d.selection,
-                                                     .selection_text = S.d.selection_text });
+                                                     .selection_text = S.d.selection_text, .two_colour = two, .ink = S.d.ink,
+                                                     .paper = S.d.paper, .backdrop = S.plates ? S.d.paper : (cw_color){ 0 } });
+      if (two) cw__r2d_set_hard(true), cw__prompt_two_colour(true, S.d.ink, S.d.paper); /* the page turns them off when it is done */
       break;
     }
-    text("Settings", cx, sz.y * 0.1f, u * 1.6f, cw_rgba(1, 1, 1, 1), 1);
+    text("Settings", cx, sz.y * 0.1f, u * 1.6f, fg(1), 1);
     float hs = u * 0.75f, rs = u * 0.85f, top = hint_top(HINT_SETTINGS, cx, foot, hs);
     float y0 = fmaxf(sz.y * 0.26f, sz.y * 0.1f + drawn(u * 1.6f) * 1.35f), y1 = top - drawn(hs) * 0.4f;
     if (S.item == SET_CONTROLS) { /* the list beside the menu, or in its place when there is no room beside it */
@@ -1159,18 +1220,22 @@ void cw_shell_draw(void) {
     break;
   }
   case CW_SHELL_JOIN: {
-    text("Join", cx, sz.y * 0.12f, u * 1.6f, cw_rgba(1, 1, 1, 1), 1);
+    text("Join", cx, sz.y * 0.12f, u * 1.6f, fg(1), 1);
     for (int s = 0; s < S.d.max_players; s++) {
       cw_rect r = join_seat_rect(s, sz);
       float x = join_seat_x(s, sz), inner = r.w;
-      bool in = S.joined_pad[s] >= 0, inv = in && S.d.selection == CW_SHELL_SELECT_INVERSE;
-      cw_r2d_rect(r,
-                  inv ? S.d.accent : in ? cw_rgba(S.d.accent.r, S.d.accent.g, S.d.accent.b, 0.25f) : cw_rgba(1, 1, 1, 0.06f));
+      bool in = S.joined_pad[s] >= 0, inv = in && sel_style() == CW_SHELL_SELECT_INVERSE;
+      if (two) { /* a sheet of paper in an ink frame, a taken seat's frame heavier (INVERSE: all ink) */
+        cw_r2d_rect(r, inv ? S.d.ink : S.d.paper);
+        cw_r2d_rect_lines(r, fmaxf(2.0f, u * (in ? 0.16f : 0.06f)), S.d.ink);
+      } else
+        cw_r2d_rect(r,
+                    inv ? S.d.accent : in ? cw_rgba(S.d.accent.r, S.d.accent.g, S.d.accent.b, 0.25f) : cw_rgba(1, 1, 1, 0.06f));
       char p[16];
       snprintf(p, sizeof p, "P%d", s + 1);
       float py = sz.y * 0.36f, ly = fmaxf(sz.y * 0.5f, py + drawn(u * 1.4f) * 1.25f);
       text_plain = inv;
-      text(p, x, py, u * 1.4f, in ? sel_text_colour() : cw_rgba(1, 1, 1, 0.4f), 1);
+      text(p, x, py, u * 1.4f, in ? sel_text_colour() : fg(0.4f), 1);
       if (in) {
         float pw = text_w(p, u * 1.4f);
         sel_mark(x - pw * 0.5f, py, pw, drawn(u * 1.4f));
@@ -1178,30 +1243,35 @@ void cw_shell_draw(void) {
       char dev[24];
       if (!in) {
         const char *m = fit_markup("{ui_accept} join", u, inner * 0.92f);
-        cw_prompt_text(S.d.font, m, -1, cw_v2(x, ly - u * 0.1f), u, cw_rgba(1, 1, 1, 0.7f), CW_ALIGN_CENTER);
+        cw_prompt_text(S.d.font, m, -1, cw_v2(x, ly - u * 0.1f), u, fg(0.7f), CW_ALIGN_CENTER);
       } else {
         if (S.joined_pad[s] == CW_MAX_PADS) snprintf(dev, sizeof dev, "keyboard");
         else snprintf(dev, sizeof dev, "pad %d", S.joined_pad[s] + 1);
         text_plain = inv;
-        text(dev, x, ly, u * 0.8f, inv ? S.d.selection_text : cw_rgba(1, 1, 1, 0.9f), 1);
+        text(dev, x, ly, u * 0.8f, inv ? sel_text_colour() : fg(0.9f), 1);
       }
     }
     hint(S.mid_join ? "{ui_accept} join    {ui_back} leave    {ui_start} back to the game" : "{ui_accept} join    {ui_back} leave    {ui_start} play",
          cx, sz.y - u * 1.2f, u * 0.8f);
     /* a touch screen has no buttons to name: a tap plays (join_update) */
-    if (!hints_wanted()) text(S.mid_join ? "tap to go back to the game" : "tap to play", cx, sz.y - u * 1.2f - drawn(u * 0.9f), u * 0.9f, cw_rgba(1, 1, 1, 0.8f), 1);
+    if (!hints_wanted()) text(S.mid_join ? "tap to go back to the game" : "tap to play", cx, sz.y - u * 1.2f - drawn(u * 0.9f), u * 0.9f, fg(0.8f), 1);
     break;
   }
   default: break;
   }
   if (S.starting) {
     float d = drawn(u * 1.8f);
-    cw_r2d_rect(cw_rect_make(0, 0, sz.x, sz.y), cw_rgba(0.02f, 0.02f, 0.05f, 0.6f));
-    cw_r2d_rect(cw_rect_make(0, sz.y * 0.5f - d * 0.95f, sz.x, d * 1.9f), cw_rgba(0.02f, 0.02f, 0.05f, 0.9f));
-    text("Starting...", cx, sz.y * 0.5f - d * 0.5f, u * 1.8f, S.d.accent, 1);
+    if (two) cw_r2d_rect(cw_rect_make(0, sz.y * 0.5f - d * 0.95f, sz.x, d * 1.9f), S.d.paper);
+    else {
+      cw_r2d_rect(cw_rect_make(0, 0, sz.x, sz.y), cw_rgba(0.02f, 0.02f, 0.05f, 0.6f));
+      cw_r2d_rect(cw_rect_make(0, sz.y * 0.5f - d * 0.95f, sz.x, d * 1.9f), cw_rgba(0.02f, 0.02f, 0.05f, 0.9f));
+    }
+    text("Starting...", cx, sz.y * 0.5f - d * 0.5f, u * 1.8f, acc(), 1);
     S.starting_shown = true;
     S.dbg_starting = 2;
   }
+  if (two) cw__r2d_set_hard(false), cw__prompt_two_colour(false, S.d.ink, S.d.paper);
+  S.plates = false;
   cw_r2d_end();
 }
 

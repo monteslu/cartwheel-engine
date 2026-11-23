@@ -8,8 +8,10 @@
  * this game with two seats (so a third pad finds them taken) and a start that takes about 300 ms, a game loading its world:
  * "Starting..." is on screen before that work begins.
  *
- * SHELL_SELECTION=0..3 (cw_test_env): the menus' selection style, COLOUR, MARKER, UNDERLINE or INVERSE. */
+ * SHELL_SELECTION=0..3 (cw_test_env): the menus' selection style, COLOUR, MARKER, UNDERLINE or INVERSE.
+ * SHELL_TWO_COLOUR=1 and its companions (samples/common/shell_two_colour.h): the shell in two colours, the game's picture too. */
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -19,6 +21,7 @@
 #include "cartwheel/render2d.h"
 #include "cartwheel/shell.h"
 #include "cartwheel/ui.h"
+#include "../common/shell_two_colour.h"
 
 #ifndef SHELL_JOIN_SEATS
 #define SHELL_JOIN_SEATS 4
@@ -65,7 +68,7 @@ static void init(void *user) {
   /* SHELL_JOIN_SEATS=1..4: this many seats instead of the build's (the join screen centres its row for any count) */
   const char *seats = getenv("SHELL_JOIN_SEATS");
   int max_players = seats && *seats >= '1' && *seats <= '4' ? *seats - '0' : SHELL_JOIN_SEATS;
-  cw_shell_init(&(cw_shell_desc){ .title = "Join Demo", .max_players = max_players, .start = start, .players_changed = players_changed,
+  cw_shell_init(&(cw_shell_desc){ .title = "Join Demo", .max_players = max_players, .start = start, .players_changed = players_changed, .draw_background = two_background_wanted(),
                                   .font = font && !strcmp(font, "mono") ? cw_ui_font_mono() : (cw_font){ 0 } });
   G.left = cw_action_add("left", 0.2f);
   G.right = cw_action_add("right", 0.2f);
@@ -86,6 +89,7 @@ static void fixed_update(void *user, double dt) {
   (void)user;
   const char *sel = cw_test_env("SHELL_SELECTION"); /* 0..3: the menus' selection style (cw_shell_set_selection) */
   if (sel && *sel) cw_shell_set_selection((cw_shell_selection)atoi(sel));
+  two_colour_tick();
   if (!cw_shell_update()) return; /* a menu, or the join screen, owns this tick */
   if (cw_shell_join_press()) G.pressed++; /* a pad without a seat pressed A: seated already */
   bool ask = cw_shell_join_requested();   /* Start on a pad without a seat: offer the join screen */
@@ -101,10 +105,11 @@ static void fixed_update(void *user, double dt) {
 static void render(void *user, double alpha) {
   (void)user, (void)alpha;
   static const uint32_t col[4] = { 0xe05050ff, 0x50a0e0ff, 0x60d070ff, 0xe0c040ff };
-  cw_r2d_begin(&(cw_r2d_pass_desc){ .clear = true, .clear_color = cw_hex(0x1c1e26ff) });
+  bool two = two_on(); /* the game's picture in the shell's two colours */
+  cw_r2d_begin(&(cw_r2d_pass_desc){ .clear = true, .clear_color = two ? two_paper() : cw_hex(0x1c1e26ff) });
   if (cw_shell_screen_now() == CW_SHELL_PLAY || cw_shell_screen_now() == CW_SHELL_JOIN)
     for (int p = 0; p < G.players; p++)
-      if ((G.seats >> p) & 1) cw_r2d_rect(cw_rect_make(G.x[p], 60.0f + 70.0f * (float)p, 50, 50), cw_hex(col[p]));
+      if ((G.seats >> p) & 1) cw_r2d_rect(cw_rect_make(two ? floorf(G.x[p]) : G.x[p], 60.0f + 70.0f * (float)p, 50, 50), two ? two_ink() : cw_hex(col[p]));
   /* the HUD: only in play, never under the menus (cw_shell_hud_shown) */
   if (cw_shell_hud_shown()) {
     char line[32];

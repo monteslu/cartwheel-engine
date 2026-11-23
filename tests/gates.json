@@ -4749,6 +4749,62 @@
     "note": "the Graphics page with the INVERSE selection (a plate of the accent behind the highlighted row) on every host. Control: COLOUR"
   },
   {
+    "name": "shell-two-colour-title",
+    "app": "shell_settings",
+    "frames": 8,
+    "webgpu": true,
+    "env": {
+      "SHELL_TWO_COLOUR": "1"
+    },
+    "controlEnv": {
+      "SHELL_TWO_COLOUR": "0"
+    },
+    "fields": [
+      "shell.screen",
+      "shell.two_colour",
+      "shell.ink",
+      "shell.paper"
+    ],
+    "expect": {
+      "shell.screen": 1,
+      "shell.two_colour": 1,
+      "shell.ink": 15788232,
+      "shell.paper": 1581096
+    },
+    "note": "the title in the shell's two-colour mode (ink f0e8c8 on paper 182028, the selection an ink plate) on every host, GL and WebGPU. Control: the mode off"
+  },
+  {
+    "name": "shell-two-colour-graphics",
+    "app": "shell_settings",
+    "frames": 44,
+    "input": "shell-graphics-page.json",
+    "webgpu": true,
+    "env": {
+      "SHELL_TWO_COLOUR": "1"
+    },
+    "controlEnv": {
+      "SHELL_TWO_COLOUR": "0"
+    },
+    "fields": [
+      "shell.screen",
+      "shell.two_colour",
+      "shell.ink",
+      "shell.paper"
+    ],
+    "expect": {
+      "shell.screen": 5,
+      "shell.two_colour": 1,
+      "shell.ink": 15788232,
+      "shell.paper": 1581096
+    },
+    "note": "the Graphics page in the shell's two-colour mode on every host, GL and WebGPU. Control: the mode off"
+  },
+  {
+    "name": "shell-two-colour",
+    "script": "tests/shell-two-colour.mjs",
+    "note": "the shell's two-colour mode natively on GL and WebGPU at 100% and 200% text on the title, pause, Settings, Graphics and join screens: every pixel ink or paper, on paper and over a one-bit picture; each line's ink within 8% of the blended text's coverage; colours switched by cw_shell_set_colours on the frame they change; the mode off by the setters is the plain frame byte for byte. Controls: the shell's mode off (other values), a cut at 0.95 coverage (lines lose ink), the picture switched without the setter"
+  },
+  {
     "name": "look-ascii",
     "app": "looks",
     "frames": 60,

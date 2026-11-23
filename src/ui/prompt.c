@@ -453,9 +453,17 @@ typedef struct pen {
   float s, w; /* size, stroke width */
 } pen;
 
+/* two colours (cw__prompt_two_colour, the shell's two-colour mode): every glyph in ink on paper, opaque */
+static struct { bool on; cw_color ink, paper; } TWO;
+void cw__prompt_two_colour(bool on, cw_color ink, cw_color paper) {
+  TWO.on = on;
+  TWO.ink = cw_rgba(ink.r, ink.g, ink.b, 1);
+  TWO.paper = cw_rgba(paper.r, paper.g, paper.b, 1);
+}
 static pen pen_of(float size, cw_color c) {
   if (c.r == 0 && c.g == 0 && c.b == 0 && c.a == 0) c = cw_rgba(1, 1, 1, 1);
   pen p = { .fill = c, .dark = cw_rgba(0.03f, 0.03f, 0.06f, 0.82f * c.a), .s = size };
+  if (TWO.on) p.fill = TWO.ink, p.dark = TWO.paper;
   p.w = fmaxf(size * 0.075f, 1.25f);
   return p;
 }
@@ -586,7 +594,7 @@ static void stick_parts(const pen *p, cw_vec2 o, float W, bool right, uint32_t d
   float s = p->s, m = dark ? fmaxf(p->w * 0.8f, 1.0f) : 0;
   /* dim: the ink a little over half way to the backing, opaque (overlapping parts must not show through) */
   cw_color ink = dark ? p->dark : p->fill;
-  cw_color dim = dark ? p->dark : cw_rgba(p->fill.r * 0.55f + 0.014f, p->fill.g * 0.55f + 0.014f, p->fill.b * 0.55f + 0.027f, p->fill.a);
+  cw_color dim = dark ? p->dark : TWO.on ? p->fill : cw_rgba(p->fill.r * 0.55f + 0.014f, p->fill.g * 0.55f + 0.014f, p->fill.b * 0.55f + 0.027f, p->fill.a);
   float cx = right ? o.x + W - s * 0.52f : o.x + s * 0.52f; /* the stick in use */
   float ox = right ? o.x + s * 0.2f : o.x + W - s * 0.2f;   /* the other one */
   float sy = o.y + s * 0.72f;
@@ -720,7 +728,7 @@ static void draw_touch_button(const pen *p, cw_vec2 o, const glyph *g) {
   float s = p->s;
   cw_vec2 c = { o.x + s * 0.5f, o.y + s * 0.5f };
   dot(c, s * 0.5f, p->dark);
-  dot(c, s * 0.44f, cw_rgba(g->tint.r, g->tint.g, g->tint.b, 0.45f * p->fill.a));
+  if (!TWO.on) dot(c, s * 0.44f, cw_rgba(g->tint.r, g->tint.g, g->tint.b, 0.45f * p->fill.a));
   ring(p, c, s * 0.5f - p->w * 0.5f, p->fill);
   if (g->label[0]) {
     cw_text_style st = { .size = s * 0.36f, .color = p->fill, .outline_width = s * 0.03f, .outline_color = p->dark };
@@ -739,7 +747,7 @@ static void draw_touch_stick(const pen *p, cw_vec2 o, uint32_t lit) {
   cw_vec2 c = { o.x + s * 0.5f, o.y + s * 0.5f };
   uint32_t dirs = (lit >> 8) & 15;
   dot(c, s * 0.5f, p->dark);
-  cw_color base = cw_rgba(p->fill.r * 0.5f + 0.02f, p->fill.g * 0.5f + 0.02f, p->fill.b * 0.5f + 0.03f, p->fill.a);
+  cw_color base = TWO.on ? p->fill : cw_rgba(p->fill.r * 0.5f + 0.02f, p->fill.g * 0.5f + 0.02f, p->fill.b * 0.5f + 0.03f, p->fill.a);
   dot(c, s * 0.5f - fmaxf(p->w * 0.6f, 1.0f), base);
   int nd = 0, one = 0;
   for (int i = 0; i < 4; i++)
@@ -896,6 +904,7 @@ static void text_style(cw_text_style *st, float size, cw_color color, bool rtl) 
   *st = (cw_text_style){ .size = size, .color = color, .outline_width = size * 0.07f,
                          .outline_color = cw_rgba(0.03f, 0.03f, 0.06f, 0.85f * color.a),
                          .direction = rtl ? CW_TEXT_DIR_RTL : CW_TEXT_DIR_LTR };
+  if (TWO.on) st->color = TWO.ink, st->outline_color = TWO.paper;
 }
 
 /* the glyph height in a line of text at this size */

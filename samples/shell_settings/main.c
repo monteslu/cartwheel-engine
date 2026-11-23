@@ -15,8 +15,10 @@
  * Debug fields: game.calls (settings_changed calls), game.index (the last index, -1 none), game.value (its value),
  * game.style, game.hits, game.hints (the three values), game.items (rows kept).
  *
- * SHELL_SELECTION=0..3 (cw_test_env): the menus' selection style, COLOUR, MARKER, UNDERLINE or INVERSE. */
+ * SHELL_SELECTION=0..3 (cw_test_env): the menus' selection style, COLOUR, MARKER, UNDERLINE or INVERSE.
+ * SHELL_TWO_COLOUR=1 and its companions (samples/common/shell_two_colour.h): the shell in two colours, the game's picture too. */
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 
 #include "cartwheel/debug.h"
@@ -25,6 +27,7 @@
 #include "cartwheel/render2d.h"
 #include "cartwheel/shell.h"
 #include "cartwheel/ui.h"
+#include "../common/shell_two_colour.h"
 
 static struct {
   int32_t calls, index, value, items;
@@ -58,7 +61,7 @@ static void init(void *user) {
   (void)user;
   /* the values above are the defaults; the shell puts the saved ones in before the first frame */
   cw_shell_init(&(cw_shell_desc){ .title = "Settings Demo", .start = start, .settings_items = ITEMS, .settings_item_count = 3,
-                                  .settings_changed = settings_changed });
+                                  .settings_changed = settings_changed, .draw_background = two_background_wanted() });
   G.left = cw_action_add("left", 0.2f);
   G.right = cw_action_add("right", 0.2f);
   cw_action_bind_text(G.left, "key:left, axis:lx-");
@@ -79,6 +82,7 @@ static void fixed_update(void *user, double dt) {
   (void)user;
   const char *sel = cw_test_env("SHELL_SELECTION"); /* 0..3: the menus' selection style (cw_shell_set_selection) */
   if (sel && *sel) cw_shell_set_selection((cw_shell_selection)atoi(sel));
+  two_colour_tick();
   if (!G.configured && cw_frame_index() >= 2) {
     const char *n = getenv("SHELL_SETTINGS_ITEMS"), *rn = getenv("SHELL_SETTINGS_RENAME");
     G.items = n && *n >= '0' && *n <= '3' ? *n - '0' : 3;
@@ -92,9 +96,11 @@ static void fixed_update(void *user, double dt) {
 
 static void render(void *user, double alpha) {
   (void)user, (void)alpha;
-  cw_r2d_begin(&(cw_r2d_pass_desc){ .clear = true, .clear_color = cw_hex(0x1c1e26ff) });
-  cw_r2d_rect(cw_rect_make(0, 300, 640, 60), cw_hex(0x30343eff));
-  if (cw_shell_screen_now() != CW_SHELL_TITLE) cw_r2d_rect(cw_rect_make(G.x, 250, 50, 50), cw_hex(STYLE_COLORS[G.style & 3]));
+  bool two = two_on(); /* the game's picture in the shell's two colours */
+  cw_r2d_begin(&(cw_r2d_pass_desc){ .clear = true, .clear_color = two ? two_paper() : cw_hex(0x1c1e26ff) });
+  cw_r2d_rect(cw_rect_make(0, 300, 640, 60), two ? two_ink() : cw_hex(0x30343eff));
+  if (cw_shell_screen_now() != CW_SHELL_TITLE)
+    cw_r2d_rect(cw_rect_make(two ? floorf(G.x) : G.x, 250, 50, 50), two ? two_ink() : cw_hex(STYLE_COLORS[G.style & 3]));
   if (cw_shell_hud_shown())
     cw_r2d_text(cw_ui_font_sans(), "Start: pause", cw_v2(16, 16), &(cw_text_style){ .size = 360.0f * 0.03f, .color = CW_WHITE });
   cw_r2d_end();

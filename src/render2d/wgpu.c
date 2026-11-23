@@ -245,6 +245,8 @@ static const char *WGSL_SPRITE =
     "    c = i.color * smoothstep(lo, e + w, t.a);\n"
     "  } else { c = t * i.color; }\n"
     "  if ((i.mode & 2u) == 0u && i.sdf.x > 0.0) { c = vec4f(mix(c.rgb, i.color.rgb / max(i.color.a, 1e-4) * c.a, i.sdf.x), c.a); }\n"
+    /* one-bit coverage (HARD, gl.c SPRITE_FS) */
+    "  if ((i.mode & 16u) != 0u) { c = select(vec4f(0.0), vec4f(c.rgb / c.a, 1.0), c.a >= select(0.5, 0.95, (i.mode & 32u) != 0u)); }\n"
     "  return c;\n"
     "}\n"
     "fn fogged(i: VO, c: vec4f) -> vec4f {\n"

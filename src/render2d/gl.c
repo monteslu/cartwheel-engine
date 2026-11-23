@@ -93,6 +93,8 @@ static const char *SPRITE_FS =
     "  } else c = t * v_color;\n"
     /* flash (sprites, shapes: sdf.x): toward the vertex colour, keeping the shape's alpha */
     "  if ((v_mode & 2) == 0 && v_sdf.x > 0.0) c.rgb = mix(c.rgb, v_color.rgb / max(v_color.a, 1e-4) * c.a, v_sdf.x);\n"
+    /* one-bit coverage (HARD): half covered or more is the colour at full alpha, else nothing */
+    "  if ((v_mode & 16) != 0) c = c.a >= ((v_mode & 32) != 0 ? 0.95 : 0.5) ? vec4(c.rgb / c.a, 1.0) : vec4(0.0);\n"
     "#ifdef PREPASS\n" /* depth culling: only texels that replace what is under them */
     "  if ((v_mode & 4) != 0 || c.a < 1.0) discard;\n"
     "  o_col = vec4(0.0);\n"

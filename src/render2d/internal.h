@@ -32,7 +32,9 @@
 #define R2D_MIP_PAD 8    /* gutter of mipmapped atlas images: 1 texel at the smallest level */
 
 /* vertex mode bits (a_info.y) */
-enum { R2D_MODE_SOLID = 1, R2D_MODE_SDF = 2, R2D_MODE_ADD = 4, R2D_MODE_YUP = 8 };
+/* HARD: one-bit coverage (cw__r2d_set_hard): a pixel half covered or more is the colour at full alpha, else nothing */
+enum { R2D_MODE_SOLID = 1, R2D_MODE_SDF = 2, R2D_MODE_ADD = 4, R2D_MODE_YUP = 8, R2D_MODE_HARD = 16,
+       R2D_MODE_HARD_THIN = 32 /* HARD cut at 0.95 coverage instead of half (CW_TEST_R2D_HARD_THIN=1: a gate's control, thin text) */ };
 
 /* the stream vertex: 28 bytes */
 typedef struct r2d_vertex {
@@ -217,6 +219,7 @@ typedef struct r2d_state {
   /* draw state */
   int cur_layer, cur_z;
   cw_blend blend;
+  bool hard;                   /* cw__r2d_set_hard: later sprite-stream submissions draw with one-bit coverage */
   bool has_xform;
   cw_xform2d xform;
   int clip_stack[32], clip_depth, cur_clip;

@@ -94,7 +94,7 @@ void cw_r2d_sprite(const cw_sprite *s) {
   R.next_opq = (!t || t->opaque) && r2d_default_white(s->color).a >= 1.0f; /* depth culling's hint (cull.c) */
   r2d_vertex *v = r2d_alloc(4, 6, &idx, &base, t ? t->array : R2D_NO_ARRAY, xf_y(s->pos.x, s->pos.y), s->z);
   R.next_opq = false;
-  sprite_fill(s, v, idx, base, r2d_mode(false) & R2D_MODE_ADD, (uint8_t)R.cur_layer);
+  sprite_fill(s, v, idx, base, r2d_mode(false) & (R2D_MODE_ADD | R2D_MODE_HARD | R2D_MODE_HARD_THIN), (uint8_t)R.cur_layer);
 }
 
 static void sprites_range(int begin, int end, int worker, void *p) {
@@ -143,7 +143,7 @@ void cw_r2d_sprites(const cw_sprite *s, int n) {
     bool opq = tex_opq && r2d_default_white(s[i].color).a >= 1.0f; /* depth culling's hint (cull.c) */
     r2d_push_cmd(key, opq ? state | R2D_ST_OPQ : state, (uint32_t)(i0 + 6 * i), 6);
   }
-  sprite_ctx c = { s, R.verts.data + v0, R.idx.data + i0, (uint32_t)v0, (uint8_t)(r2d_mode(false) & R2D_MODE_ADD),
+  sprite_ctx c = { s, R.verts.data + v0, R.idx.data + i0, (uint32_t)v0, (uint8_t)(r2d_mode(false) & (R2D_MODE_ADD | R2D_MODE_HARD | R2D_MODE_HARD_THIN)),
                    (uint8_t)R.cur_layer };
   cw_parallel_for(n, 2048, sprites_range, &c);
 }
