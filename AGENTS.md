@@ -126,7 +126,7 @@ t3_release(hero);                               /* the parent holds it */
 
 **Render to a texture** (`subviewport.h`, [SubViewport](docs/guides/rendering-3d.md#rendering-to-a-texture-subviewport)): a `SubViewport` node with `camera = "../Level/SecurityCam"` (a view of this world) or `scene = "portrait.cwscene"` (a world of its own); show it with `texture = "viewport://Name"` on any 2D node or UI control, or `viewport_texture` on a MeshInstance3D. `update_mode = WHEN_VISIBLE` for a monitor, `ONCE` for a still.
 
-**A world behind the scene** (`backdrop.h`, [Backdrops](docs/guides/rendering-3d.md#backdrops-worlds-behind-the-scene)): a `Backdrop` node with `scene = "stage.cwscene"` draws that world (its own camera, lights, sky, volumetric fog) behind the scene in place of its background; `opacity` cross-fades two (`cw_backdrop_set_opacity`), `order` stacks them; 0 costs nothing; the post chain runs over the composite.
+**A world behind the scene** (`backdrop.h`, [Backdrops](docs/guides/rendering-3d.md#backdrops-worlds-behind-the-scene)): a `Backdrop` node with `scene = "stage.cwscene"` draws that world (its own camera, lights, sky, volumetric fog) behind the scene in place of its background; `opacity` cross-fades two (`cw_backdrop_set_opacity`), `order` stacks them; 0 costs nothing; the post chain runs over the composite. `environment = true` makes its world the scene's reflections (glossy roads, water); PostProcess `ssr_backdrop` adds sharp screen-space reflections of it.
 
 **Physics** (`physics_nodes.h`, [physics](docs/guides/physics.md)): `StaticBody3D`, `RigidBody3D`,
 `CharacterBody3D` and `Area3D` nodes with collision shapes in the scene. A player:

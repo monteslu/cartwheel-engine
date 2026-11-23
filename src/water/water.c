@@ -933,7 +933,24 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
     v->projection_matrix = ctx->proj;
     oblique(&v->projection_matrix, &v->matrix_world_inverse, up, wpos);
     t3_mat4_invert(&v->projection_matrix_inverse, &v->projection_matrix);
-    render_into(ctx, wt, d->refl, v);
+    /* backdrops lighting the scene (cartwheel/backdrop.h environment): where the mirrored view finds nothing of the
+     * scene it shows their worlds, the environment's sharpest level drawn as its background (the backdrops are as far
+     * as a sky), so a sea in front of a stage mirrors the stage's lights. Without them the scene's own background */
+    t3_scene *s3r = ctx->scene3d;
+    t3_texture *bde = s3r ? cw__backdrop_env_texture(ctx->tree) : NULL;
+    if (bde) {
+      t3_texture *bg = s3r->background_texture;
+      float bi = s3r->background_intensity, bb = s3r->background_blurriness;
+      t3_euler br = s3r->background_rotation;
+      if (bg) t3_retain(bg);
+      t3_scene_set_background_texture(s3r, bde);
+      s3r->background_intensity = s3r->environment_intensity, s3r->background_blurriness = 0, s3r->background_rotation = (t3_euler){ 0 };
+      render_into(ctx, wt, d->refl, v);
+      t3_scene_set_background_texture(s3r, bg);
+      if (bg) t3_release(bg);
+      s3r->background_intensity = bi, s3r->background_blurriness = bb, s3r->background_rotation = br;
+    } else
+      render_into(ctx, wt, d->refl, v);
   } else if (first || d->refl_on) {
     render_into(ctx, wt, d->refl, NULL); /* cleared: never sampled garbage */
   }

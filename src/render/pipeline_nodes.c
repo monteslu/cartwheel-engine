@@ -139,6 +139,7 @@ static const cw_prop post_props[] = {
   FR(ssr_thickness, 0.001, 100, "How deep a surface counts as hit behind the depth."),
   FR(ssr_quality, 0, 1, "March steps per pixel of the ray's screen length."),
   FR(ssr_intensity, 0, 10, "Screen-space reflection strength."),
+  FB(ssr_backdrop, "A screen-space reflection ray that leaves the scene on screen takes the backdrops the way it points (backdrop.h)."),
   FB(ssgi, "Screen-space bounce light and AO (half resolution) of surfaces with the GI shading part (gi.h)."),
   FR(ssgi_radius, 0.1, 100, "SSGI sampling radius (r187's, screen space)."),
   FR(ssgi_intensity, 0, 100, "Bounce light strength."),

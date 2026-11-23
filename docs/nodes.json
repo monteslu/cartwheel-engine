@@ -1261,6 +1261,14 @@
      "doc": "Screen-space reflection strength."
     },
     {
+     "name": "ssr_backdrop",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "A screen-space reflection ray that leaves the scene on screen takes the backdrops the way it points (backdrop.h)."
+    },
+    {
      "name": "ssgi",
      "type": "bool",
      "default": "false",
@@ -13882,6 +13890,42 @@
      "stored": false,
      "readonly": true,
      "doc": "Pictures rendered so far."
+    },
+    {
+     "name": "environment",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Its world lights the scene: captured as a cube from its camera, it is the scene's environment (image-based light: reflections on glossy and rough surfaces), blended with the other backdrops' by their opacities."
+    },
+    {
+     "name": "env_resolution",
+     "type": "int",
+     "default": "128",
+     "stored": true,
+     "readonly": false,
+     "min": 16,
+     "max": 512,
+     "doc": "The capture's face size in texels (a power of two: rounded down)."
+    },
+    {
+     "name": "env_every",
+     "type": "int",
+     "default": "4",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 600,
+     "doc": "Frames a capture's six faces are spread over (1: all six every frame); the lower effects presets spread them wider."
+    },
+    {
+     "name": "env_captures",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Environment captures finished so far."
     }
    ]
   },

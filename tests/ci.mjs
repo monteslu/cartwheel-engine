@@ -33,6 +33,7 @@ export const LOCAL_ONLY = {
   'quality-grounding': 'reads pixels of native runs at 1080p on the test GPU, High against Very Low',
   'quality-verylow-post': 'reads pixels of native runs on the test GPU, the passes fused against apart',
   'backdrop-checks': 'reads pixels of native runs on the test GPU (GL and WebGPU), one backdrop mode against another',
+  'backdrop-env-checks': 'reads pixels of native runs on the test GPU (GL and WebGPU), a mirror lit by backdrops against one that is not',
   'auto-exposure': 'reads every frame of native runs on the test GPU, GL against WebGPU',
   'viewmodel-blur': 'reads pixels of native runs on the test GPU, blurred against plain',
   'looks': 'reads pixels of about sixty native runs on the test GPU (GL and WebGPU), and runs the flash check on romdev',

@@ -173,6 +173,16 @@ struct cw_pipeline {
   int bd_n;
   float bd_bg_weight;
   bool bd_drawn;
+  int bd_w, bd_h; /* the frame's size, which the pictures have */
+  /* the backdrops whose worlds light the tree (backdrop.h environment): the backdrop, its world and camera, its picture
+   * in bd[]; then (the "backdrop_env" pass, which captures them) its last whole capture (six faces of size x size, as
+   * cube faces; NULL before the first) and whether it finished this frame */
+  struct cw__backdrop_env { void *bd; cw_tree *world; cw_node camera; int pic; const cw_rt *faces; int size; bool fresh; } bd_env[8];
+  int bd_env_n;
+  /* the screen-space reflections' view of the backdrops (cw_post_settings.ssr_backdrop): the pictures blended at half
+   * size, made this frame when bd_ssr_frame is the frame */
+  const cw_rt *bd_ssr;
+  uint64_t bd_ssr_frame;
   /* this pipeline is drawing a backdrop's picture (cw__pipeline_render_backdrop): the passes up to the colour-only
    * post chain, the picture left in bd_pic */
   bool backdrop_run;
@@ -183,6 +193,12 @@ struct cw_pipeline {
 const cw_rt *cw__pipeline_render_backdrop(cw_tree *world, cw_node camera, int w, int h, double alpha);
 /* the share of the tree's own background its backdrops leave this frame (1: none drawn; backdrop.c) */
 float cw__backdrop_bg_weight(const cw_pipeline *p);
+/* the backdrops as screen-space reflections see them this frame (backdrop.c): the half-size composite (premultiplied,
+ * alpha their coverage) and the rectangle of this run's view in it (uv, from the bottom left); false when there is none */
+bool cw__backdrop_ssr(const cw_pass_ctx *ctx, unsigned *tex, float rect[4]);
+/* the tree's environment while its backdrops light it (their blended captures, prefiltered), NULL otherwise: what a
+ * planar reflection (Water3D) draws where its mirrored view finds nothing of the scene (backdrop.c) */
+struct t3_texture *cw__backdrop_env_texture(cw_tree *t);
 
 /* CW_TEST_FUSION_RAW=1 (native test control): the fused post passes skip
  * the rounding that keeps them equal to the separate passes */

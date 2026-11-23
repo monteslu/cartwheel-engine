@@ -4,6 +4,47 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.66.0 (2026-11-23)
+
+### Added
+- Backdrop reflections (`cartwheel/backdrop.h`): a Backdrop's `environment` (off by default) makes its world the
+  scene's image-based light, so glossy and rough surfaces reflect it. The world is captured as a cube from its
+  camera's position by its own renderer after its picture (`env_resolution`, 128 texels a face, linear HDR;
+  `env_every`, 4: the six faces over the first frames of the cycle, the filter in the last; the lower effects presets
+  spread it wider), and the captures of every lighting backdrop are blended by the share of the picture each has (its
+  opacity, what the backdrops in front of it leave, its exposure over the scene's) over the scene's own environment by
+  the share of the background left, then prefiltered (three.js r187's PMREMGenerator) into the scene's environment when
+  a capture finishes. A cross-fade fades the reflections with the pictures; with no backdrop lighting it the scene's
+  own environment is back. Read-only `env_captures`; the `backdrop` debug command reports the captures and the tree's
+  environment.
+- `cw_post_settings.ssr_backdrop` (PostProcess `ssr_backdrop`, off by default): a screen-space reflection ray that
+  finds nothing of the scene on screen goes on toward where its direction lands on screen and, when nothing of the
+  scene stands in the way, takes the backdrops' pictures there (blended at half size, linear HDR), so a near mirror
+  shows a backdrop's lasers and spots sharp. Weighted as a hit is, faded at the screen's edges; a hit takes the scene,
+  else the backdrop, else only the environment's reflection in the lit image remains. Its own trace program: with it
+  off the trace is the one it was.
+- Water3D's planar reflection shows the backdrops where its mirrored view finds nothing of the scene (the backdrops'
+  environment at its sharpest level as the reflection's background), so a sea in front of a stage backdrop mirrors the
+  stage's lights.
+- samples/backdrop: the lane a glossy dark road reflecting the stage's lamps (new emissive lamp heads) and laser and, as
+  the sea fades in, the sunset; modes mirror, mirrorsea, mirrormix, mirrorsplit and water; switches BD_ENV, BD_SSR,
+  BD_EVERY, BD_ARRAY, BD_HIDELANE.
+- Gates backdrop-env, backdrop-env-split (one pass), backdrop-env-water and backdrop-env-checks
+  (`tests/backdrop-env.mjs`, GL and WebGPU: the reflection, the cross-fade's 50/50 blend, the screen-space fallback,
+  the water, split screen per view and in one pass, each with a control; with `--baseline` the frames with both off
+  byte for byte the build before them); backdrop-checks also holds opacity 0 byte-identical to no backdrops with
+  environment and ssr_backdrop on.
+
+### Fixed
+- GL: a backdrop whose world drew spot shadow tiles (volumetric fog's lights) left the viewport and scissor of the last
+  tile behind, and the scene's first render of the frame, the G-buffer of its screen-space reflections, drew into that
+  rectangle: the scene showed no screen-space reflections at all. The frame's viewport and scissor are put back after
+  the worlds draw.
+
+### Changed
+- With environment and ssr_backdrop off (the defaults) frames are byte for byte as before (neither new pass runs), but
+  for the GL fix above.
+
 ## v0.65.1 (2026-11-23)
 
 ### Fixed

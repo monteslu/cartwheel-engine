@@ -3407,6 +3407,47 @@
     "note": "the stage backdrop behind a two-view split screen: one picture behind the whole screen, each view showing its half of it, rendered once a frame. The control is one view"
   },
   {
+    "name": "backdrop-env",
+    "app": "backdrop",
+    "frames": 180,
+    "env": { "BD_MODE": "mirrormix" },
+    "controlEnv": { "BD_MODE": "mirrormix", "BD_ENV": "0" },
+    "maxGt16": 0.004,
+    "webgpu": { "vsGl": 0.03 },
+    "fields": ["tree.tick", "bd.mode", "bd.env_ran", "bd.ssrc_ran", "bd.stage_op", "bd.sea_op"],
+    "expect": { "bd.mode": 12, "bd.env_ran": 1, "bd.ssrc_ran": 1, "bd.stage_op": 1000, "bd.sea_op": 500 },
+    "note": "backdrop environments (cartwheel/backdrop.h environment) and the screen-space reflections' backdrop fallback (ssr_backdrop): the lane a mirror over the sea at 0.5 over the stage, both worlds captured as cubes, blended by their shares into the scene's environment, and the reflection rays that leave the scene taking the pictures. Held: both passes ran, the picture across hosts and GL against WebGPU. The control turns environment and ssr_backdrop off: the mirror goes dark"
+  },
+  {
+    "name": "backdrop-env-split",
+    "app": "backdrop",
+    "frames": 150,
+    "env": { "BD_MODE": "mirrorsplit", "BD_ARRAY": "1" },
+    "controlEnv": { "BD_MODE": "mirrorsplit", "BD_ARRAY": "1", "BD_ENV": "0" },
+    "maxGt16": 0.004,
+    "webgpu": { "vsGl": 0.03 },
+    "fields": ["tree.tick", "bd.mode", "bd.env_ran", "bd.ssrc_ran"],
+    "expect": { "bd.mode": 13, "bd.env_ran": 1, "bd.ssrc_ran": 1 },
+    "note": "the mirror in a two-view split screen drawn in one pass: one environment for the tree reflected in both views, the reflections' backdrop fallback taking each view's part of the pictures. The control turns environment and ssr_backdrop off"
+  },
+  {
+    "name": "backdrop-env-water",
+    "app": "backdrop",
+    "frames": 150,
+    "env": { "BD_MODE": "water" },
+    "controlEnv": { "BD_MODE": "water", "CW_TEST_WATER_BACKDROP_OFF": "1" },
+    "maxGt16": 0.004,
+    "webgpu": { "vsGl": 0.03 },
+    "fields": ["tree.tick", "bd.mode", "bd.env_ran", "bd.stage_op"],
+    "expect": { "bd.mode": 14, "bd.env_ran": 1, "bd.stage_op": 1000 },
+    "note": "a Water3D sea in front of the stage backdrop (environment on): where its planar reflection finds nothing of the scene it mirrors the stage (the backdrops' environment as the reflection's background), not the scene's own background colour. The control turns the reflection's backdrop fallback off (CW_TEST_WATER_BACKDROP_OFF=1): the sea mirrors the magenta background"
+  },
+  {
+    "name": "backdrop-env-checks",
+    "script": "tests/backdrop-env.mjs",
+    "note": "backdrop environments on GL and WebGPU, native: the mirror shows the stage's lamps and laser (control: environment off), the sea at 0.5 over the stage reflects the 50/50 linear blend of each alone's reflection (control: opacity ignored), the reflections' backdrop fallback shows the laser with environment off (control: the trace ignoring the pictures), both views of a split screen reflect and one pass draws the per-view frame (control: environment off), and with both off neither pass runs"
+  },
+  {
     "name": "backdrop-checks",
     "script": "tests/backdrop.mjs",
     "note": "backdrops on GL and WebGPU, native: the highway pixels over the stage are the ones over its own background (control: drawn on top), the sea at 0.5 over the stage is the 50/50 linear blend of each alone (control: opacity ignored), both at 0 is byte for byte no backdrops with no pass of theirs run and no picture (control: 0.001), the stage volumetric fog built with three shadowed lights"

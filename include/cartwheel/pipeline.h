@@ -282,6 +282,10 @@ typedef struct cw_post_settings {
   float ssr_thickness;      /* 0.1: how deep a surface counts as hit behind the depth */
   float ssr_quality;        /* 0.5: march steps per pixel of the ray's screen length (0..1) */
   float ssr_intensity;      /* 1 */
+  /* where a reflection ray leaves what the screen holds of the scene, it takes the backdrops (cartwheel/backdrop.h)
+   * the way it points: their pictures blended at half size, so a mirror shows a backdrop's lasers and spots sharp.
+   * Off: such a ray adds nothing (the environment's reflection in the lit image stays, as with every ray) */
+  bool ssr_backdrop;
   /* screen-space bounce light and AO: three.js r187's SSGINode (SSILVB) at
    * half resolution over the same G-buffer plus the surfaces' diffuse
    * colour; composited as r187's example does (colour x AO + diffuse x GI);

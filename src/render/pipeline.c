@@ -1240,6 +1240,7 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   cw__pipeline_probe_caps();
   /* backdrops (cartwheel/backdrop.h): their worlds drawn into their pictures first, each through its own pipeline */
   p->bd_n = 0;
+  p->bd_env_n = 0;
   if (p->bd_frame && !p->backdrop_run) p->bd_frame(t, p, w, h, alpha);
   if (wgpu) {
     cw__pw_frame_begin();

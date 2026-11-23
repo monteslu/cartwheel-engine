@@ -29,7 +29,7 @@ both bent by the surface's normal (`distortion`). The water itself is hidden whi
 
 With no planar reflection drawn (`reflection` off, or Low) the environment's specular stands in: a ProceduralSky's, or the scene's own environment map. A scene with neither mirrors its background colour (the WorldEnvironment's `background`, else the clear colour) as an even reflection, so the water is never black where the sky is not (effects Very Low draws the cheaper surface, which reads no reflection target: there only an environment stands in).
 
-A Backdrop (cartwheel/backdrop.h) is a world of its own composited behind the main scene: the main scene's water does not mirror it. A backdrop meant to show in the sea goes on a layer of the main scene the camera draws instead (as `samples/water_night` does).
+A Backdrop (cartwheel/backdrop.h) is a world of its own composited behind the main scene. With its `environment` on, the planar reflection shows it where the mirrored view finds nothing of the main scene (the backdrops' environment at its sharpest level, drawn as the reflection's background: the backdrops are as far away as a sky), and with no planar reflection the environment's specular is the backdrops' anyway: a sea in front of a stage backdrop mirrors the stage's lights (`samples/backdrop`'s BD_MODE=water; the `backdrop-env-checks` gate). The capture is a cube from the backdrop camera's position, so it is soft at its 128 texels a face; a backdrop that must be mirrored sharply, or one with environment off, goes on a layer of the main scene the camera draws instead (as `samples/water_night` does).
 
 ### The sun with no sky
 

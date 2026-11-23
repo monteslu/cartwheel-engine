@@ -1070,7 +1070,50 @@ Things to know:
 - **SubViewport camera views** of the main scene (a monitor, a minimap) draw without the backdrop.
 - At most 8 backdrops with an opacity above 0 are drawn in a frame. A backdrop renders every frame on every preset (it is the background); its world's effects follow the presets as the main scene's do.
 - A backdrop's world draws with the app's program table: run `tools/programs.mjs` after adding one. Nodes added to its world from code while the game runs (`cw_node_new` under `cw_backdrop_root`, water, particles, decals, fog volumes, probes) draw as declared ones do; their states belong in the table like any others, and a state it lacks is reported with the main tree's (`samples/runtime_nodes`, gate `runtime-nodes`).
-- The debug command `backdrop` lists each backdrop's opacity, order, renders, the passes its world ran last frame and its CPU milliseconds.
+- The debug command `backdrop` lists each backdrop's opacity, order, renders, the passes its world ran last frame and its CPU milliseconds, its environment capture (face size, frames a capture takes, captures) and whether the tree's environment is the backdrops'.
+
+### Reflections of a backdrop
+
+The scene's glossy surfaces can reflect a backdrop: a dark glass road shows the stage's lamps and lasers behind it, and a wet floor the sunset. Two switches do it, one for soft and rough reflections and one for sharp ones.
+
+**`environment`** on a Backdrop makes its world the scene's image-based light, as a ProceduralSky with `environment` is: every Standard and Physical surface of the scene reflects it, the rough ones blurred by their roughness.
+
+```text
+[node name="Stage" parent="." type="Backdrop"]
+scene = "stage.cwscene"
+environment = true
+```
+
+- The world is captured as a cube from the backdrop camera's position, by the world's own renderer, after its picture each frame (the world's lights and shadow maps as the picture has them). `env_resolution` is the face size (128 texels by default; linear HDR), `env_every` the frames a capture is spread over (4 by default: the six faces in the first three, two a frame, and the filter in the fourth; 1 does all of it every frame). The lower effects presets spread them wider (Very Low x8, Low x4, Medium x2), as reflection probes are. The scene reflects the last whole capture.
+- Every backdrop with `environment` on is blended by the share of the picture it has (its opacity times what the backdrops in front of it leave, times its exposure over the scene's), over the scene's own environment (a ProceduralSky's, or one set with `t3_scene_set_environment`) by the share of the background they leave. So a cross-fade fades the reflections with the pictures, and a backdrop at 0.5 over the scene's sky reflects half of each. The blend is prefiltered with the engine's environment filter (three.js r187's PMREMGenerator) into the scene's environment when a capture finishes; a share that moves (a cross-fade) is taken up then, so the reflections follow a fade every `env_every` frames and the filter runs at most once in that many frames. When no backdrop lights the scene, its own environment is back as it was.
+- The capture draws the world's surfaces, sky, lights and shadows. What the world's pipeline adds as post passes (volumetric fog's beams, particles and decals drawn as passes) is in its picture, not in its reflection: give a spot lamp an emissive lens (`samples/backdrop`'s stage does) and it shows in the reflection.
+- A backdrop with `environment` off (the default) or at opacity 0 adds nothing: no capture, no pass, the frame exactly as without it. Turning it on gives the scene an environment, so run `tools/programs.mjs` for the new program states.
+- The scene's `environment_intensity` scales the whole blend; its `environment_rotation` is drawn into its own environment's share (the rotation reads 0 while backdrops light the scene).
+
+**`ssr_backdrop`** (PostProcess, with `ssr`) gives near mirrors sharp reflections of what the backdrop shows on screen. A screen-space reflection ray that finds nothing of the scene on screen goes on toward where its direction lands on the screen (the backdrop is drawn behind everything, as far away as a sky); if that point is on screen and nothing of the scene stands in the way, the ray takes the backdrops' pictures there (blended at half size, in linear HDR). Weighted like a hit (metalness, Fresnel, roughness blur), with no fade by distance, it fades out at the screen's edges. The order is: a ray that hits the scene takes the scene, else a ray toward the backdrop takes the picture, else only the environment's reflection in the lit image is there. As with every screen-space reflection (three.js r187's SSR adds over the lit image), it adds over the environment's reflection rather than replacing it, so a mirror lit by both `environment` and `ssr_backdrop` shows the backdrop's reflection a little brighter than one of them alone; a road that only needs the lasers sharp can leave `environment` off. Screen-space reflections only weigh metallic surfaces, so give a mirror road some metalness.
+
+```text
+[node name="Post" parent="." type="PostProcess"]
+ssr = true
+ssr_backdrop = true
+ssr_max_distance = 6
+```
+
+Split screen: there is one environment for the tree (the backdrop's camera is not a player's), so every view reflects the same capture; the screen-space fallback takes each view's part of the pictures, per view and in one pass alike.
+
+What it costs, measured on the 890M (Ryzen AI 9 HX 370) at 1920 x 1080, the release cart on romdev, `samples/backdrop` with `BD_MODE=mirror` (the stage world in volumetric haze with three shadowed spot lights, the lane a mirror), GPU milliseconds a frame over 720 frames, GL / WebGPU (read them to about 0.1 ms):
+
+| | GPU ms a frame | the frame with the filter |
+|---|---|---|
+| both off | 3.70 / 3.22 | |
+| `environment`, `env_every` 4 (the default) | 4.38 / 3.71 | about 7 / 5 |
+| `environment`, `env_every` 1 | 5.68 / 4.85 | |
+| `ssr_backdrop` (environment off) | 3.85 / 3.39 | |
+
+The capture's faces cost what the world costs to draw at 128 x 128 (six draws of it, two a frame at `env_every` 4), and they are CPU too: about 0.8 ms of CPU a frame at `env_every` 4 and 2.3 at 1 for this world. The filter is three.js r187's GGX filter of a cube of at least 256 texels (the 128 capture is filtered at 256), about 1.5 ms on WebGPU and 3 on GL, once in `env_every` frames, in a frame that draws no faces; a larger `env_every` spaces it out. The screen-space fallback costs its half-size composite (0.08 to 0.09 ms) and the rays' walk to the backdrop (about 0.1 ms more in the trace).
+
+
+`tests/backdrop-env.mjs` (the `backdrop-env-checks` gate) holds, on GL and WebGPU, with the lane made a mirror and nothing else of the highway drawn: the mirror shows the stage's lamps and laser (control: `environment` off), the sea at 0.5 over the stage reflects the 50/50 linear blend of each alone's reflection (control: the opacity ignored), the screen-space fallback shows the laser with `environment` off (control: the trace ignoring the pictures), both views of a split screen reflect the stage and the one-pass split screen draws the per-view frame (control: `environment` off), and with both off neither pass runs.
 
 **Why not a SubViewport on a background quad.** A SubViewport's world of its own renders the same world, but its texture is display colours (its own post chain and tone curve, RGBA8): shown behind the scene, the backdrop would be tone mapped and bloomed twice and lose its HDR range, a 3D material reads it through a decoded copy (a full-screen pass more), and a quad blended in by opacity would be a transparent surface sorted with the scene's own. A Backdrop's picture is the world's linear HDR scene target itself, blended in once before the scene draws.
 

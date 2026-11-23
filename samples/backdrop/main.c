@@ -1,12 +1,19 @@
 /* backdrop: worlds of their own drawn behind the scene (cartwheel/backdrop.h).
- * The scene (main.cwscene) is a rhythm game's note highway: a lane with
- * glowing rails, notes coming down it, a red block and additive sparks. Two
- * Backdrop nodes draw behind it, each a whole world with its own camera,
+ * The scene (main.cwscene) is a rhythm game's note highway: a glossy dark lane
+ * with glowing rails, notes coming down it, a red block and additive sparks.
+ * Two Backdrop nodes draw behind it, each a whole world with its own camera,
  * lights and environment:
  *
  *   Stage  stage.cwscene: a dark stage in haze (volumetric HeightFog), three
- *          shadowed spot lights sweeping beams through it, two fires
+ *          shadowed spot lights sweeping beams through it, their lamps, a
+ *          laser across it, two fires
  *   Sea    sea.cwscene: open water under a low sun (ProceduralSky, Water3D)
+ *
+ * Both have environment on: their worlds are the highway's image-based light,
+ * so the lane reflects the stage's lamps and laser and, as the sea fades in,
+ * the sunset; the reflections cross-fade with the pictures. The PostProcess
+ * has ssr with ssr_backdrop: where the lane's reflection rays leave the scene
+ * on screen they take the backdrops' pictures, sharp.
  *
  * With no test switch the two cross-fade over and over (a smooth swell, 4
  * seconds each way) while the highway plays on top.
@@ -19,6 +26,15 @@
  *   hidemain  Stage at 1 and the highway's nodes hidden (a mask of what the highway covers)
  *   skyhalf   a ProceduralSky in the scene, Stage at 0.5 over it
  *   split     two views side by side over Stage at 1
+ *   mirror    Stage at 1, the lane a mirror and nothing else of the highway drawn
+ *   mirrorsea / mirrormix   the same over Sea at 1 / Sea at 0.5 over Stage at 1
+ *   mirrorsplit  mirror in two views side by side (BD_ARRAY=1: in one pass)
+ *   water     Stage at 1, a Water3D sea in front of it instead of the highway
+ * BD_ENV=0    environment off on both backdrops and ssr_backdrop off (the
+ *             frame is the one an engine without either draws); BD_ENV=2 only
+ *             environment off
+ * BD_HIDELANE=1  the mirror modes without the lane
+ * BD_SSR=0    ssr_backdrop off, BD_SSR=2 ssr off       BD_EVERY=<n>  env_every on both
  * BD_MSAA=1   the scene multisampled (4x)        BD_PREPASS=1  the scene's depth prepass on
  * BD_LINEAR=1 the scene's post chain plain (LINEAR tone curve, no bloom), so
  *             pictures add up in linear light for the cross-fade check.
@@ -27,9 +43,13 @@
  * scene's "backdrop" pass ran last frame), bd.world_passes (passes the
  * backdrops' worlds ran last frame), bd.fog_active / bd.fog_shadowed (the
  * stage's volumetric fog: built, and its lights with shadow tiles), and the
- * opacities (bd.stage_op, bd.sea_op x 1000), and bd.gpu_ms (with CW_GPU_TIMERS=1:
- * the GPU ms of the scene's pipeline, the stage's and the sea's, and of the
- * backdrop blend pass alone; host timers, never compared). */
+ * opacities (bd.stage_op, bd.sea_op x 1000), bd.env_ran / bd.ssrc_ran (the
+ * scene's "backdrop_env" and "backdrop_ssr" passes ran last frame),
+ * bd.stage_caps / bd.sea_caps (environment captures finished), and bd.gpu_ms
+ * (with CW_GPU_TIMERS=1: the GPU ms of the scene's pipeline, the stage's and
+ * the sea's, of the backdrop blend pass, of the environment pass (the faces
+ * captured this frame, the blend and the filter), of the reflections'
+ * composite and of the ssr pass; host timers, never compared). */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,16 +60,19 @@
 #include "cartwheel/pipeline.h"
 #include "cartwheel/render3d.h"
 #include "cartwheel/scene_file.h"
+#include "cartwheel/water.h"
 
 static cw_node game, stage, sea, notes[3], spots[3];
 static float clock_s;
 static int32_t mode, stage_renders, sea_renders, pass_ran, world_passes, fog_active, fog_shadowed, stage_op, sea_op;
+static int32_t env_ran, ssrc_ran, stage_caps, sea_caps;
 static bool applied;
-static float gpu_ms[4]; /* GPU ms of the scene's pipeline, the stage's, the sea's, and the backdrop pass (CW_GPU_TIMERS=1, native) */
+static float gpu_ms[7]; /* GPU ms of the scene's pipeline, the stage's, the sea's, and the backdrop pass (CW_GPU_TIMERS=1, native) */
 static int32_t base_renders[2], last_renders[2];
 
-enum { M_DEMO, M_FIRE, M_SEA, M_MIX, M_ZERO, M_TINY, M_REMOVED, M_HIDEMAIN, M_SKYHALF, M_SPLIT };
-static const char *const mode_names[] = { "demo", "fire", "sea", "mix", "zero", "tiny", "removed", "hidemain", "skyhalf", "split", NULL };
+enum { M_DEMO, M_FIRE, M_SEA, M_MIX, M_ZERO, M_TINY, M_REMOVED, M_HIDEMAIN, M_SKYHALF, M_SPLIT, M_MIRROR, M_MIRRORSEA, M_MIRRORMIX, M_MIRRORSPLIT, M_WATER };
+static const char *const mode_names[] = { "demo", "fire", "sea", "mix", "zero", "tiny", "removed", "hidemain", "skyhalf", "split",
+                                          "mirror", "mirrorsea", "mirrormix", "mirrorsplit", "water", NULL };
 
 static void init(void *u) {
   (void)u;
@@ -71,7 +94,11 @@ static void init(void *u) {
   cw_debug_i32("bd.fog_shadowed", &fog_shadowed);
   cw_debug_i32("bd.stage_op", &stage_op);
   cw_debug_i32("bd.sea_op", &sea_op);
-  cw_debug_f32_array("bd.gpu_ms", gpu_ms, 4); /* host timers: never compared */
+  cw_debug_i32("bd.env_ran", &env_ran);
+  cw_debug_i32("bd.ssrc_ran", &ssrc_ran);
+  cw_debug_i32("bd.stage_caps", &stage_caps);
+  cw_debug_i32("bd.sea_caps", &sea_caps);
+  cw_debug_f32_array("bd.gpu_ms", gpu_ms, 7); /* host timers: never compared */
 }
 
 static void apply_mode(void) {
@@ -91,6 +118,66 @@ static void apply_mode(void) {
   const char *ms = cw_test_env("BD_MSAA"), *pp = cw_test_env("BD_PREPASS");
   if (ms && atoi(ms)) cw_node_set(post, "msaa", cw_val_int(4));
   if (pp && atoi(pp)) cw_node_set(post, "depth_prepass", cw_val_bool(true));
+  /* #region environment_switches */
+  const char *env = cw_test_env("BD_ENV"), *ssr = cw_test_env("BD_SSR"), *every = cw_test_env("BD_EVERY");
+  if (env && atoi(env) != 1) {
+    cw_node_set(stage, "environment", cw_val_bool(false));
+    cw_node_set(sea, "environment", cw_val_bool(false));
+    if (!atoi(env)) cw_node_set(post, "ssr_backdrop", cw_val_bool(false)); /* (2: environment off, ssr_backdrop kept) */
+  }
+  if (ssr && atoi(ssr) == 0) cw_node_set(post, "ssr_backdrop", cw_val_bool(false));
+  if (ssr && atoi(ssr) == 2) cw_node_set(post, "ssr", cw_val_bool(false));
+  if (every && atoi(every) > 0) {
+    cw_node_set(stage, "env_every", cw_val_int(atoi(every)));
+    cw_node_set(sea, "env_every", cw_val_int(atoi(every)));
+  }
+  /* #endregion */
+  if (mode == M_WATER) {
+    /* a calm sea in front of the stage instead of the highway: its planar reflection mirrors the stage where it finds
+     * nothing of the scene */
+    static const char *const hide[] = { "Lane", "RailL", "RailR", "Target", "Note0", "Note1", "Note2", "Sparks" };
+    for (int i = 0; i < 8; i++) cw_node_set(cw_node_get(game, hide[i]), "visible", cw_val_bool(false));
+    cw_node w = cw_node_new("Water3D", "Sea");
+    cw_node_set(w, "size", cw_val_vec2(80, 80));
+    cw_node_set(w, "refraction", cw_val_bool(false));
+    cw_node_add_child(game, w);
+    cw_node3d_set_position(w, (t3_vec3){ 0, -0.3f, -20 });
+    cw_backdrop_set_opacity(stage, 1), cw_backdrop_set_opacity(sea, 0);
+  } else if (mode >= M_MIRROR) {
+    /* the lane a mirror, alone: what it reflects is the backdrops */
+    static const char *const hide[] = { "RailL", "RailR", "Target", "Note0", "Note1", "Note2", "Sparks" };
+    for (int i = 0; i < 7; i++) cw_node_set(cw_node_get(game, hide[i]), "visible", cw_val_bool(false));
+    cw_node lane = cw_node_get(game, "Lane");
+    cw_node_set(lane, "color", cw_val_color(0.95f, 0.95f, 0.95f, 1));
+    cw_node_set(lane, "metalness", cw_val_float(1));
+    cw_node_set(lane, "roughness", cw_val_float(0.02f));
+    const char *hl = cw_test_env("BD_HIDELANE");
+    if (hl && atoi(hl)) cw_node_set(lane, "visible", cw_val_bool(false)); /* (a mask of what the lane covers) */
+    if (mode != M_MIRRORSPLIT) {
+      /* a lower, flatter camera: the lane's reflection rays then point at what is on screen (the stage), as a
+       * driving game's camera low over a glass road does */
+      cw_node cam = cw_node_get(game, "Camera");
+      cw_node3d_set_position(cam, (t3_vec3){ 0, 1.4f, 6.5f });
+      cw_node3d_set_rotation(cam, (t3_vec3){ -0.1f, 0, 0 });
+    }
+    cw_backdrop_set_opacity(stage, mode == M_MIRRORSEA ? 0 : 1);
+    cw_backdrop_set_opacity(sea, mode == M_MIRRORSEA ? 1 : mode == M_MIRRORMIX ? 0.5f : 0);
+  }
+  if (mode == M_MIRRORSPLIT) {
+    cw_node cam = cw_node_get(game, "Camera");
+    cw_node cam2 = cw_node_new("Camera3D", "Camera2");
+    cw_node_set(cam2, "current", cw_val_bool(false));
+    cw_node_set(cam2, "fov", cw_val_float(55));
+    cw_node_add_child(game, cam2);
+    cw_node3d_set_position(cam2, (t3_vec3){ 1.2f, 2.4f, 6.5f });
+    cw_node3d_look_at(cam2, (t3_vec3){ 0, 0, -14 }, (t3_vec3){ 0, 1, 0 });
+    cw_node cams[2] = { cam, cam2 };
+    cw_pipeline *mp = cw_pipeline_of(cw_scene_app_tree());
+    cw_pipeline_split(mp, cams, 2);
+    cw_pipeline_set_views_shared_post(mp, true);
+    const char *arr = cw_test_env("BD_ARRAY");
+    if (arr && atoi(arr)) cw_pipeline_set_views_array(mp, true);
+  }
   switch (mode) {
   case M_FIRE: cw_backdrop_set_opacity(stage, 1), cw_backdrop_set_opacity(sea, 0); break;
   case M_SEA: cw_backdrop_set_opacity(stage, 0), cw_backdrop_set_opacity(sea, 1); break;
@@ -177,8 +264,15 @@ static void fixed(void *u, double dt) {
   const cw_pass_stat *st;
   int n = cw_pipeline_pass_stats(cw_pipeline_of(cw_scene_app_tree()), &st);
   pass_ran = 0;
-  for (int i = 0; i < n; i++)
+  env_ran = ssrc_ran = 0;
+  for (int i = 0; i < n; i++) {
     if (!strcmp(st[i].name, "backdrop")) pass_ran = st[i].ran;
+    if (!strcmp(st[i].name, "backdrop_env")) env_ran = st[i].ran;
+    if (!strcmp(st[i].name, "backdrop_ssr")) ssrc_ran = st[i].ran;
+  }
+  cw_value cv;
+  stage_caps = cw_node_valid(stage) && cw_node_get_prop(stage, "env_captures", &cv) ? cv.i : 0;
+  sea_caps = cw_node_valid(sea) && cw_node_get_prop(sea, "env_captures", &cv) ? cv.i : 0;
   world_passes = 0;
   cw_node both[2] = { stage, sea };
   for (int i = 0; i < 2; i++) {
@@ -192,8 +286,12 @@ static void fixed(void *u, double dt) {
   gpu_ms[0] = cw_pipeline_gpu_ms(mp);
   for (int i = 0; i < 2; i++) gpu_ms[1 + i] = cw_node_valid(both[i]) ? cw_pipeline_gpu_ms(cw_pipeline_of(cw_backdrop_tree(both[i]))) : 0;
   n = cw_pipeline_pass_stats(mp, &st);
-  for (int i = 0; i < n; i++)
+  for (int i = 0; i < n; i++) {
     if (!strcmp(st[i].name, "backdrop")) gpu_ms[3] = st[i].gpu_ms_avg;
+    if (!strcmp(st[i].name, "backdrop_env")) gpu_ms[4] = st[i].gpu_ms_avg;
+    if (!strcmp(st[i].name, "backdrop_ssr")) gpu_ms[5] = st[i].gpu_ms_avg;
+    if (!strcmp(st[i].name, "ssr")) gpu_ms[6] = st[i].gpu_ms_avg;
+  }
   cw_volumetric_fog_state fs = { 0 };
   if (cw_node_valid(stage)) cw_volumetric_fog_get_state(cw_backdrop_tree(stage), &fs);
   fog_active = fs.active;

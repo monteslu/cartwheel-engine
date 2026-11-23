@@ -11,6 +11,9 @@ hemi_energy = 0.2
 [node name="Post" parent="." type="PostProcess"]
 bloom = true
 bloom_intensity = 0.05
+ssr = true
+ssr_backdrop = true
+ssr_max_distance = 6
 
 [node name="Key" parent="." type="DirectionalLight3D"]
 rotation = vec3(-0.9, 0.35, 0)
@@ -28,9 +31,9 @@ far = 120
 [node name="Lane" parent="." type="MeshInstance3D"]
 position = vec3(0, -0.1, -10)
 size = vec3(4.2, 0.2, 30)
-color = color(0.05, 0.05, 0.07, 1)
-roughness = 0.35
-metalness = 0.2
+color = color(0.03, 0.03, 0.045, 1)
+roughness = 0.1
+metalness = 0.6
 receive_shadow = true
 
 [node name="RailL" parent="." type="MeshInstance3D"]
@@ -94,9 +97,11 @@ seed = 7
 [node name="Stage" parent="." type="Backdrop"]
 scene = "stage.cwscene"
 order = 0
+environment = true
 
 [node name="Sea" parent="." type="Backdrop"]
 scene = "sea.cwscene"
 camera = "Camera"
 order = 1
 opacity = 0
+environment = true

@@ -346,6 +346,76 @@ static const char *COMP_WGSL = S(
   });
 #endif
 
+/* The trace with the backdrop fallback (cw_post_settings.ssr_backdrop): a ray that finds nothing on screen goes on
+ * to infinity, toward the point where its direction lands on screen (its vanishing point: the backdrops are drawn
+ * behind everything, as far as a sky). If that point is on screen and nothing of the scene stands in front of the ray
+ * on the way there (the screen path from the pixel to it, the ray's depth along it 1/z linear, any surface the ray
+ * passes behind counts as in the way), the backdrops' half-size composite is taken there, weighted as a hit is
+ * (metalness, r187's Fresnel term, the luminance cap) but with no fade by distance, and faded off the screen's edge.
+ * Its own program: the trace without it is the program it always was. */
+static const char *BD_GLSL = S(
+  uniform sampler2D u_bd;
+  uniform vec4 u_bd_rect;
+  vec3 bd_miss(vec3 P, vec3 R, vec3 I, vec2 uv, float metal) {
+    vec4 c = u_proj * vec4(R, 0.0);
+    if (c.w <= 1e-5) return vec3(0.0);
+    vec2 vuv = c.xy / c.w * 0.5 + 0.5;
+    vec2 e = min(vuv, 1.0 - vuv);
+    float edge = smoothstep(0.0, 0.03, min(e.x, e.y));
+    if (edge <= 0.0) return vec3(0.0);
+    for (int k = 1; k <= 48; k++) {
+      float s = float(k) / 49.0;
+      float ds = depth_at(mix(uv, vuv, s));
+      if (ds >= 1.0) continue;
+      float vz = view_z(ds);
+      if (P.z / (1.0 - s) < vz * 1.02 - 0.02) return vec3(0.0);
+    }
+    vec3 col = textureLod(u_bd, u_bd_rect.xy + vuv * u_bd_rect.zw, 0.0).rgb * metal * ((dot(I, R) + 1.0) * 0.5 * edge);
+    float lum = max(dot(col, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
+    return max(col * (min(10.0 / lum, 1.0) * u_params.w), vec3(0.0));
+  });
+#if CW_WGPU
+static const char *BD_WGSL = S(
+  @group(0) @binding(4) var u_bd: texture_2d<f32>;
+  fn bd_miss(P: vec3f, R: vec3f, I: vec3f, uv: vec2f, metal: f32) -> vec3f {
+    let c = u.u_proj * vec4f(R, 0.0);
+    if (c.w <= 1e-5) { return vec3f(0.0); }
+    let vuv = c.xy / c.w * 0.5 + 0.5;
+    let e = min(vuv, 1.0 - vuv);
+    let edge = smoothstep(0.0, 0.03, min(e.x, e.y));
+    if (edge <= 0.0) { return vec3f(0.0); }
+    for (var k = 1; k <= 48; k++) {
+      let s = f32(k) / 49.0;
+      let ds = depth_at(mix(uv, vuv, s));
+      if (ds >= 1.0) { continue; }
+      let vz = view_z(ds);
+      if (P.z / (1.0 - s) < vz * 1.02 - 0.02) { return vec3f(0.0); }
+    }
+    let col = textureSampleLevel(u_bd, cw_linear, u.u_bd_rect.xy + vuv * u.u_bd_rect.zw, 0.0).rgb * metal * ((dot(I, R) + 1.0) * 0.5 * edge);
+    let lum = max(dot(col, vec3f(0.2126, 0.7152, 0.0722)), 1e-4);
+    return max(col * (min(10.0 / lum, 1.0) * u.u_params.w), vec3f(0.0));
+  });
+#endif
+
+/* src with `find` replaced by `with` (each must be there once); into a buffer of the caller's */
+static bool splice(char *out, size_t cap, const char *src, const char *const *find, const char *const *with, int n) {
+  size_t o = 0;
+  const char *p = src;
+  for (int i = 0; i < n; i++) {
+    const char *at = strstr(p, find[i]);
+    if (!at) return false;
+    size_t a = (size_t)(at - p), b = strlen(with[i]);
+    if (o + a + b + 1 > cap) return false;
+    memcpy(out + o, p, a), o += a;
+    memcpy(out + o, with[i], b), o += b;
+    p = at + strlen(find[i]);
+  }
+  size_t rest = strlen(p);
+  if (o + rest + 1 > cap) return false;
+  memcpy(out + o, p, rest + 1);
+  return true;
+}
+
 /* ── the G-buffer draw ──────────────────────────────────────────────── */
 
 /* hide every drawable whose materials do not all carry the gi part (or that
@@ -491,7 +561,42 @@ bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, const gi_view *v, int mode) {
 
 /* ── the pass ───────────────────────────────────────────────────────── */
 
-static unsigned trace_prog, comp_prog;
+static unsigned trace_prog, comp_prog, trace_bd_prog;
+static bool trace_bd_failed;
+
+/* the trace with the backdrop fallback (made on first use) */
+static unsigned trace_bd_program(bool wg) {
+  if (trace_bd_prog || trace_bd_failed) return trace_bd_prog;
+  static char buf[24576];
+  bool ok;
+#if CW_WGPU
+  if (wg) {
+    char tr[16384];
+    const char *find[] = { "u_vr: vec4f };", "@fragment fn fs", "if (!found) { return vec4f(0.0, 0.0, 0.0, gb.b); }" };
+    const char *with[] = { "u_vr: vec4f, u_bd_rect: vec4f };", NULL, "if (!found) { return vec4f(bd_miss(P, R, I, uv, metal), gb.b); }" };
+    char head[8192];
+    snprintf(head, sizeof head, "%s@fragment fn fs", BD_WGSL);
+    with[1] = head;
+    ok = splice(tr, sizeof tr, TRACE_WGSL, find, with, 3);
+    if (ok) snprintf(buf, sizeof buf, "%s%s", WGSL_COMMON, tr);
+    trace_bd_prog = ok ? cw_pass_program_wgsl("ssr.trace_backdrop", buf) : 0;
+  } else
+#endif
+  {
+    (void)wg;
+    char head[8192];
+    snprintf(head, sizeof head, "%svoid main() {", BD_GLSL);
+    const char *find[] = { "void main() {", "if (!found) return;" };
+    const char *with[] = { head, "if (!found) { o = vec4(bd_miss(P, R, I, uv, metal), gb.b); return; }" };
+    ok = splice(buf, sizeof buf, TRACE_GLSL, find, with, 2);
+    trace_bd_prog = ok ? cw_pass_program("ssr.trace_backdrop", buf) : 0;
+  }
+  if (!trace_bd_prog) {
+    trace_bd_failed = true;
+    cw_error("ssr: the trace with the backdrop fallback did not build; reflections fall back to the plain trace");
+  }
+  return trace_bd_prog;
+}
 
 static bool ssr_active(const cw_pass_ctx *ctx, void *u) {
   (void)u;
@@ -531,25 +636,37 @@ static void ssr_exec(cw_pass_ctx *ctx, void *u) {
   /* the trace target is the view's own: no rectangle of the whole target to keep to */
   bool clip = cw__vclip.on;
   cw__vclip.on = false;
+  /* the backdrops where a ray leaves the screen's scene (cw_post_settings.ssr_backdrop; backdrop.c makes the composite) */
+  unsigned bd_tex = 0, tp = trace_prog;
+  float bd_rect[4];
+  if (s->ssr_backdrop && cw__backdrop_ssr(ctx, &bd_tex, bd_rect)) {
+    unsigned bp = trace_bd_program(wg);
+    if (bp) tp = bp;
+  }
   cw_pass_bind_target(ctx, tr);
-  cw_pass_use(trace_prog);
+  cw_pass_use(tp);
   cw_pass_bind_texture(0, ctx->depth_tex);
   cw_pass_bind_texture(1, g->gbuf[v.k].tex);
   cw_pass_bind_texture(2, ctx->src->tex);
-  if (!wg) {
-    cw_pass_uniform1i(trace_prog, "u_depth", 0);
-    cw_pass_uniform1i(trace_prog, "u_gbuf", 1);
-    cw_pass_uniform1i(trace_prog, "u_color", 2);
+  if (tp != trace_prog) {
+    cw_pass_bind_texture(3, bd_tex);
+    cw_pass_uniform4f(tp, "u_bd_rect", bd_rect[0], bd_rect[1], bd_rect[2], bd_rect[3]);
+    if (!wg) cw_pass_uniform1i(tp, "u_bd", 3);
   }
-  cw_pass_uniform_mat4(trace_prog, "u_proj", &cam->projection_matrix);
-  cw_pass_uniform_mat4(trace_prog, "u_inv_proj", ip);
-  cw_pass_uniform4f(trace_prog, "u_size", (float)v.rect[2], (float)v.rect[3], (float)hw, (float)hh);
-  cw_pass_uniform4f(trace_prog, "u_vr", vr[0], vr[1], vr[2], vr[3]);
-  cw_pass_uniform4f(trace_prog, "u_params", s->ssr_max_distance, s->ssr_thickness, s->ssr_quality, s->ssr_intensity);
-  cw_pass_uniform4f(trace_prog, "u_cam", cam->near, cam->far, 512, 0);
+  if (!wg) {
+    cw_pass_uniform1i(tp, "u_depth", 0);
+    cw_pass_uniform1i(tp, "u_gbuf", 1);
+    cw_pass_uniform1i(tp, "u_color", 2);
+  }
+  cw_pass_uniform_mat4(tp, "u_proj", &cam->projection_matrix);
+  cw_pass_uniform_mat4(tp, "u_inv_proj", ip);
+  cw_pass_uniform4f(tp, "u_size", (float)v.rect[2], (float)v.rect[3], (float)hw, (float)hh);
+  cw_pass_uniform4f(tp, "u_vr", vr[0], vr[1], vr[2], vr[3]);
+  cw_pass_uniform4f(tp, "u_params", s->ssr_max_distance, s->ssr_thickness, s->ssr_quality, s->ssr_intensity);
+  cw_pass_uniform4f(tp, "u_cam", cam->near, cam->far, 512, 0);
   {
     const float *e = cam->projection_matrix.e;
-    cw_pass_uniform4f(trace_prog, "u_pz", e[10], e[14], e[11], e[15]);
+    cw_pass_uniform4f(tp, "u_pz", e[10], e[14], e[11], e[15]);
   }
   cw_pass_fullscreen();
   cw__vclip.on = clip;

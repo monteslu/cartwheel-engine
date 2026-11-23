@@ -262,3 +262,16 @@ standard+instbig+senv+l2001
 standard+ds+l1001+xwaterlow
 basic+trans
 standard+ds+l1001+xwater
+depth+xgibuf
+standard+senv+l1001+xgibuf
+depth+xgi
+standard+shadow+senv+l1001+xgi
+standard+senv+l1001+xgi
+depth+xplain_gi
+standard+shadow+senv+l1001+xplain_gi
+standard+senv+l1001+xplain_gi
+standard+shadow+l1001+xgibuf
+standard+shadow+l1001+xgi
+standard+shadow+ds+l1001+xwater
+standard+l1001+xgibuf
+standard+l1001+xgi

@@ -55,6 +55,54 @@
  * from the same camera at a narrower aspect: as many renders for no gain.)
  * A world that must follow each player's camera belongs in the main scene.
  *
+ * REFLECTIONS. With `environment` on, a backdrop's world is the main
+ * scene's image-based light, as a ProceduralSky with `environment` is: every
+ * glossy and rough Standard / Physical surface of the scene reflects it (a
+ * dark glass road shows the stage's lamps and lasers). Its world is captured
+ * as a cube from its camera's position (`env_resolution` texels a face, 128
+ * by default; linear HDR), by its world's renderer, after its picture each
+ * frame (the world's lights and shadow maps as the picture has them); the six
+ * faces of a capture are spread over `env_every` frames (4 by default; the
+ * lower effects presets spread them wider: Very Low x8, Low x4, Medium x2),
+ * the faces in all but the last of them and the filter in the last, and the
+ * scene reflects the last whole capture. The captures of every backdrop
+ * with environment on are blended, each by the share of the picture it has
+ * (its opacity times what the backdrops in front of it leave, times its
+ * exposure over the main scene's), over the main scene's own environment by
+ * the share of the background they leave (so a cross-fade fades the
+ * reflections as it fades the pictures, and a backdrop at 0.5 over the
+ * scene's own sky reflects half of each); the blend is prefiltered with the
+ * engine's environment filter (three.js r187's PMREMGenerator) into the
+ * scene's environment when a capture finishes (a share that moves, in a
+ * cross-fade, is taken up then: the reflections follow a fade every
+ * env_every frames).
+ * While no backdrop lights the scene its own environment is back as it was.
+ * The capture draws the world's surfaces, sky, lights and shadows; what its
+ * pipeline adds as post passes (volumetric fog's beams, decals and particles
+ * drawn as passes) is in its picture but not in its reflection. A backdrop
+ * with environment off (the default), or at opacity 0, adds nothing: no
+ * capture, no pass, the frame as it was. The main scene's
+ * environment_intensity scales the whole blend; its environment_rotation is
+ * drawn into its own environment's share (the scene's rotation reads 0 while
+ * backdrops light it).
+ *
+ * Sharp reflections of what the backdrop shows on screen come from the
+ * screen-space reflections (cw_post_settings.ssr with ssr_backdrop): a ray
+ * that finds nothing of the scene on screen goes on toward where its
+ * direction lands on screen and, when nothing of the scene stands in the
+ * way, takes the backdrops' pictures there (blended at half size). So a near
+ * mirror shows a laser or a spot lamp sharp where the environment's cube is
+ * soft. As with every screen-space reflection (three.js r187's SSR adds over
+ * the lit image) it adds over the environment's reflection: a hit takes the
+ * scene, else a ray to the backdrop takes the picture, else only the
+ * environment's reflection in the lit image is there.
+ *
+ * COST of an environment (docs/guides/rendering-3d.md has the 890M's figures):
+ * the faces of a capture cost what the world costs to draw at 128 x 128, six
+ * times over env_every frames; each finished capture costs a blend (with
+ * several sources) and the prefilter (three.js r187's GGX filter, which makes
+ * a 256 cube at least), in a frame of its own.
+ *
  * WHAT DOES NOT SEE IT. A SubViewport's camera view of the main scene (a
  * monitor, a minimap) draws the world without the backdrop. The main
  * scene's own fog covers the backdrop as it covers its sky (HeightFog
@@ -62,7 +110,8 @@
  * part of the main background and fades with it.
  *
  * Debug command: `backdrop` (every backdrop: opacity, order, renders, the
- * passes its world ran last frame, CPU ms). Program tables: a backdrop's
+ * passes its world ran last frame, CPU ms, its environment's face size, frames
+ * a capture takes and captures; the tree's environment: set, updates). Program tables: a backdrop's
  * world draws with the app's tables like everything else; run
  * tools/programs.mjs after adding one. */
 #ifndef CW_BACKDROP_H
@@ -80,6 +129,10 @@ extern "C" {
  *   opacity (float, 1)          0 (not drawn, free) to 1 (covers what is below it)
  *   order (int, 0)              draw order among the backdrops: lower is further back
  *   renders (int, read-only)    pictures rendered so far
+ *   environment (bool, false)   its world lights the scene (REFLECTIONS above)
+ *   env_resolution (int, 128)   the capture's face size in texels (16 to 512, a power of two)
+ *   env_every (int, 4)          frames a capture's six faces are spread over (1: all six every frame)
+ *   env_captures (int, read-only) environment captures finished so far
  * At most CW_BACKDROP_MAX backdrops with an opacity above 0 are drawn in a
  * frame (the first by order; the rest are skipped, logged once). */
 #define CW_BACKDROP_MAX 8

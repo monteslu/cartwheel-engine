@@ -1,6 +1,7 @@
 // Backdrops (cartwheel/backdrop.h, src/render/backdrop.c), GL and WebGPU, native: samples/backdrop's note highway
 // over its two worlds (a stage in volumetric haze, a sea), its post chain plain (BD_LINEAR=1: LINEAR tone curve, no
-// bloom) so the pictures add up in linear light. One frame per mode (BD_MODE), each the same frame of the same
+// bloom) so the pictures add up in linear light, the backdrops' environments and ssr_backdrop off (BD_ENV=0: the
+// highway reflects nothing of them; tests/backdrop-env.mjs holds those). One frame per mode (BD_MODE), each the same frame of the same
 // deterministic run:
 //   behind     the highway's own pixels (where hiding the highway changes the picture, eroded 3 px off its edges)
 //              are the ones it has over its own background: at most 0.5% of them more than 2/255 apart between the
@@ -40,7 +41,7 @@ if (!existsSync(exe)) throw new Error('no native build of backdrop (scripts/buil
 function run(gpu, tag, env) {
   const shot = join(OUT, `${gpu}-${tag}.png`), dump = join(OUT, `${gpu}-${tag}.json`);
   const e = { ...process.env, CW_GPU: gpu, CW_FRAMES: String(FRAMES), CW_SCREENSHOT: shot, CW_DEBUG_DUMP: dump, SDL_AUDIODRIVER: 'dummy',
-    CW_RENDER_SCALE: '1', BD_LINEAR: '1', ...(gpu === 'webgpu' ? wgpuPin().env : {}), ...env };
+    CW_RENDER_SCALE: '1', BD_LINEAR: '1', BD_ENV: '0', ...(gpu === 'webgpu' ? wgpuPin().env : {}), ...env };
   return new Promise((res, rej) => {
     const p = spawn('timeout', ['-s', 'KILL', '300', exe], { env: e, stdio: ['ignore', 'ignore', 'pipe'] });
     let err = '';
@@ -127,6 +128,7 @@ const report = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if 
 for (const gpu of GPUS) {
   const R = {};
   for (const m of ['removed', 'zero', 'tiny', 'fire', 'sea', 'mix', 'hidemain']) R[m] = await run(gpu, m, { BD_MODE: m });
+  R.zeroenv = await run(gpu, 'zero-env', { BD_MODE: 'zero', BD_ENV: '1' });
   R.ontop = await run(gpu, 'ontop', { BD_MODE: 'fire', CW_TEST_BACKDROP_ON_TOP: '1' });
   R.ignored = await run(gpu, 'ignored', { BD_MODE: 'mix', CW_TEST_BACKDROP_OPACITY_IGNORED: '1' });
   const { w, h } = R.fire.img;
@@ -141,8 +143,9 @@ for (const gpu of GPUS) {
   report(c.n > 100000 && c.share <= 0.01, `${gpu} crossfade 0.5: ${c.n} background pixels, ${(c.share * 100).toFixed(3)}% over 2/255 from the 50/50 linear blend, mean ${c.mean.toFixed(3)}`);
   report(cc.share > 0.01, `${gpu} crossfade CONTROL (opacity ignored): ${(cc.share * 100).toFixed(1)}% over 2/255, mean ${cc.mean.toFixed(2)}`);
 
-  const f = freeCheck(R.zero, R.removed), fc = freeCheck(R.tiny, R.removed);
+  const f = freeCheck(R.zero, R.removed), fc = freeCheck(R.tiny, R.removed), fe = freeCheck(R.zeroenv, R.removed);
   report(!f.length, `${gpu} opacity 0 free: ${f.length ? f.join('; ') : 'byte-identical to no backdrops, no pass, no world pass, no picture'}`);
+  report(!fe.length, `${gpu} opacity 0 free with environment and ssr_backdrop on: ${fe.length ? fe.join('; ') : 'byte-identical to no backdrops'}`);
   report(fc.length >= 2, `${gpu} free CONTROL (opacity 0.001): ${fc.join('; ') || 'nothing ran'}`);
 
   const s = R.fire.st;
