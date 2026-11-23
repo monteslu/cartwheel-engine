@@ -4736,7 +4736,12 @@
   {
     "name": "looks-display",
     "script": "tests/looks-display.mjs",
-    "note": "the DISPLAY stage and the dither tone options, natively on GL and WebGPU at 1080p: the one-bit look (blue noise, every tone option, one dither pixel per screen pixel) and a game's own one-bit pass on the same frame and thresholds differ in at most 0.2% of the pixels (the reference rounds its tone to a half float), the CUSTOM look version too, and against the pass's own blue noise every 32x32 tile's tone is within 0.03; exactly black and white over bloom, AgX and a vignette; each tone option alone matches the reference with it alone; output pixels at 720p; a SCENE look paired with a DISPLAY one draws at DISPLAY; split screen per view and over the shared chain; still frames hold; a half-second fade passes the flash check. Each with a control that must fail"
+    "note": "the DISPLAY stage and the dither tone options, natively on GL and WebGPU at 1080p: the one-bit look (blue noise, every tone option, one dither pixel per screen pixel) and a game's own one-bit pass on the same frame and thresholds differ in at most 0.2% of the pixels (the reference rounds its tone to a half float), the CUSTOM look version too, and against the pass's own blue noise every 32x32 tile's tone is within 0.03; exactly black and white over bloom, AgX and a vignette; each tone option alone matches the reference with it alone; output pixels at 720p; a SCENE look paired with a DISPLAY one draws each at its own stage; split screen per view and over the shared chain; the tone once a dither pixel draws the picture of the tone in every screen pixel; a fade across stages has no step at either end; still frames hold; a half-second fade and fades across stages pass the flash check. Each with a control that must fail"
+  },
+  {
+    "name": "looks-tone-perf",
+    "script": "tests/looks-tone-perf.mjs",
+    "note": "GPU ms of the one-bit look at DISPLAY with every tone option (the unsharp mask at 0.9, outlines) at 1080p natively on GL and WebGPU, the tone once a dither pixel against the tone in every screen pixel (CW_TEST_LOOK_TONE_EACH_PIXEL=1, the look to v0.65.1), interleaved rounds with the load and the GPU clock: at 2 and 6 dither pixels the mask costs at most a quarter of what it did and the pass no more; at 1 within 15%"
   },
   {
     "name": "shell-selection",

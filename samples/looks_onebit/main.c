@@ -20,6 +20,7 @@
  *   ONEBIT_SHARPEN=k  the unsharp mask's gain (0.9)
  *   ONEBIT_PATTERN=bayer   the 8x8 Bayer matrix instead of blue noise (the look and the reference)
  *   ONEBIT_PIXEL=n, ONEBIT_OUTPX=0|1   the dither pixel's size, in output pixels (1, the default) or 1080 line ones (0)
+ *   ONEBIT_KIND=diffuse   the engine's look as a DIFFUSE dither (the same tone options)
  *   ONEBIT_RAMP=N     a fade from the plain picture into the look over N frames from frame 60 (the flash check)
  *   ONEBIT_FLICKER=N  the weight jumping between 0 and 1 every N frames from frame 60 (its control)
  *   ONEBIT_ORBIT=1    the camera orbits
@@ -27,6 +28,10 @@
  *   ONEBIT_PAIR=1     the pair (the engine's look, the CUSTOM look) at weight ONEBIT_T (0.5), blended by ONEBIT_HOW
  *                     (wipe | fade | dissolve; wipe): with ONEBIT=scene the first is a SCENE stage look, and the pair
  *                     is still drawn at DISPLAY (the stage rule)
+ *   ONEBIT_XFADE=N    a fade over N frames from frame 60 from the look (DISPLAY) into half blocks (SCENE stage),
+ *                     then the half blocks alone (ONEBIT_XREV=1: the other way); ONEBIT_HOW picks the blend
+ *                     (dissolve, the default, fade or wipe); ONEBIT_XT=t holds the pair at weight t (0 and 1: the
+ *                     end look alone)
  *   ONEBIT_SPLIT=1    two views side by side with the shared post chain (one pass unless CW_TEST_VIEWS_ARRAY=0);
  *                     2: each view with its own chain
  *
@@ -393,7 +398,7 @@ static const char *CUSTOM_WGSL =
     "  return vec3f(select(0.0, 1.0, v > cw_look_blue_noise(px)));\n"
     "}\n";
 
-static cw_look look_eng, look_custom;
+static cw_look look_eng, look_custom, look_hb;
 static cw_node cams[2];
 static int split_applied;
 static char last_key[160];
@@ -401,7 +406,8 @@ static char last_key[160];
 /* the engine look's desc for the switches now */
 static cw_look_desc onebit_desc(int stage) {
   tone t = tone_now();
-  cw_look_desc d = cw_look_default(CW_LOOK_DITHER_ORDERED);
+  const char *kind = env("ONEBIT_KIND");
+  cw_look_desc d = cw_look_default(kind && !strcmp(kind, "diffuse") ? CW_LOOK_DITHER_DIFFUSE : CW_LOOK_DITHER_ORDERED);
   d.stage = stage ? CW_LOOK_STAGE_DISPLAY : CW_LOOK_STAGE_SCENE;
   const char *pat = env("ONEBIT_PATTERN");
   d.dither.pattern = pat && !strcmp(pat, "bayer") ? CW_DITHER_BAYER : CW_DITHER_BLUE_NOISE;
@@ -428,7 +434,7 @@ static void apply(void) {
   /* the looks again when a switch changed */
   char key[160];
 #define E_(n) (env(n) ? env(n) : "")
-  snprintf(key, sizeof key, "%d|%s|%s|%s|%s|%s", mode, E_("ONEBIT_ONLY"), E_("ONEBIT_PATTERN"), E_("ONEBIT_PIXEL"), E_("ONEBIT_OUTPX"), E_("ONEBIT_SHARPEN"));
+  snprintf(key, sizeof key, "%d|%s|%s|%s|%s|%s|%s", mode, E_("ONEBIT_ONLY"), E_("ONEBIT_PATTERN"), E_("ONEBIT_PIXEL"), E_("ONEBIT_OUTPX"), E_("ONEBIT_SHARPEN"), E_("ONEBIT_KIND"));
 #undef E_
   if (strcmp(key, last_key)) {
     snprintf(last_key, sizeof last_key, "%s", key);
@@ -454,6 +460,26 @@ static void apply(void) {
       cw_pipeline_split(p, cams, 2);
       cw_pipeline_set_views_shared_post(p, split == 1);
     } else cw_pipeline_set_views(p, NULL, 0);
+  }
+  /* a fade between the look (DISPLAY) and half blocks (SCENE), then the end look alone, as a game changes looks */
+  int xf = envi("ONEBIT_XFADE", 0);
+  if (xf > 0) {
+    if (CW_HANDLE_IS_NULL(look_hb)) {
+      cw_look_desc h = cw_look_default(CW_LOOK_HALFBLOCK);
+      h.halfblock.rows = 120, h.halfblock.levels = 0;
+      look_hb = cw_look_new(&h);
+    }
+    bool rev = envi("ONEBIT_XREV", 0) != 0;
+    cw_look from = rev ? look_hb : look_eng, to = rev ? look_eng : look_hb;
+    const char *hw = env("ONEBIT_HOW");
+    cw_look_mix how = { .blend = hw && !strcmp(hw, "fade") ? CW_LOOK_FADE : hw && !strcmp(hw, "wipe") ? CW_LOOK_WIPE : CW_LOOK_DISSOLVE,
+                        .softness = 0.35f, .scale = 28 };
+    float t = env("ONEBIT_XT") ? envf("ONEBIT_XT", 0) : CW_CLAMP((float)(tick - 60) / (float)xf, 0.0f, 1.0f);
+    weight = t;
+    if (t >= 1) cw_pipeline_set_looks(p, to, (cw_look){ 0 }, 0, NULL);
+    else if (t <= 0) cw_pipeline_set_looks(p, from, (cw_look){ 0 }, 0, NULL);
+    else cw_pipeline_set_looks(p, from, to, t, &how);
+    return;
   }
   if (envi("ONEBIT_PAIR", 0)) {
     const char *hw = env("ONEBIT_HOW");

@@ -21,7 +21,9 @@
 //   still      a still camera: the dithers' and the ASCII look's frames N and N + 1 are the same. CONTROL: CW_TEST_LOOK_CRAWL (the
 //              pattern moves a pixel a frame, as one not anchored to the screen) changes. Under TAA the ASCII look's
 //              glyphs change on under 0.3% of the pixels (a few cells on hard edges, where TAA's own output still
-//              moves with its jitter). CONTROL: no hold (LOOK_HOLD=1) changes 1.3 times as many.
+//              moves with its jitter). CONTROL: no hold (LOOK_HOLD=1) changes 1.3 times as many. Half blocks on a
+//              palette at DISPLAY under TAA: frames 60 to 77 the same (a square on a palette boundary keeps its
+//              colour). CONTROL: no hold (CW_TEST_HALFBLOCK_NO_HOLD=1) flips some.
 //   flash      a blend from the plain scene into the two-colour dither over half a second, the camera orbiting, on romdev
 //              (tools/flash-check.mjs, its own 8 Hz strobe control must fail): passes. CONTROL: the weight jumping
 //              between 0 and 1 every 4 frames (LOOK_FLICKER) fails.
@@ -280,6 +282,22 @@ for (const gpu of GPUS) {
     const held = await flips('still-taa', {}), loose = await flips('still-taa-control', { LOOK_HOLD: '1' });
     check(held < 0.003, `${gpu} still ascii under TAA: the glyphs of ${(held * 100).toFixed(3)}% of the pixels change between frames 60 and 61`);
     check(loose > held * 1.3, `${gpu} still ascii under TAA: control (no hold) changes ${(loose * 100).toFixed(3)}%`);
+    /* half blocks on a palette at DISPLAY under TAA: the finished picture moves with the jitter, and a square whose
+     * mean sits on a palette boundary would flip (in the sample: two frames in eight). Frames 60 to 77, each against
+     * the one before */
+    const steps = async (tag, extra) => {
+      const env = { LOOK_A: 'palette', LOOK_STAGE: 'display', LOOK_TAA: '1', ...extra };
+      let prev = null, moved = 0, worst = 0;
+      for (let fr = 60; fr < 78; fr++) {
+        const img = (await run(gpu, `${tag}-${fr}`, env, fr)).img;
+        if (prev) { const d = diffCount(prev, img).n; worst = Math.max(worst, d); if (d) moved++; }
+        prev = img;
+      }
+      return { moved, worst };
+    };
+    const ph = await steps('still-palette', {}), pc = await steps('still-palette-control', { CW_TEST_HALFBLOCK_NO_HOLD: '1' });
+    check(ph.moved === 0, `${gpu} still palette at DISPLAY under TAA: ${ph.moved} of 17 frames change (up to ${ph.worst} pixels)`);
+    check(pc.moved > 0, `${gpu} still palette at DISPLAY under TAA: control (no hold) changes ${pc.moved} of 17 frames (up to ${pc.worst} pixels)`);
   }
 
   if (want('split')) {

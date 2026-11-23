@@ -15,6 +15,7 @@
  *   LOOK_BOXES=1     a HUD panel over a dimmed box, a hint over a clean one
  *   LOOK_ORBIT=1     the camera orbits (still otherwise)
  *   LOOK_TAA=1       TAA on
+ *   LOOK_STAGE=display   the looks at the DISPLAY stage (read when a look is made: set it from the start)
  *   LOOK_GLYPHS=s    the ASCII look's glyph set
  *   LOOK_MEASURE=1   cw_pipeline_measure_looks (look.lum_a, look.lum_b, look.lum_ok)
  *
@@ -138,6 +139,8 @@ static cw_look_desc desc_of(int k) {
     break;
   default: break;
   }
+  const char *st = cw_test_env("LOOK_STAGE");
+  if (st && !strcmp(st, "display")) d.stage = CW_LOOK_STAGE_DISPLAY;
   return d;
 }
 

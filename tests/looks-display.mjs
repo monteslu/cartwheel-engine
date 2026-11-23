@@ -20,11 +20,26 @@
 //              (look.tone 0) while any option runs the tone programs (look.tone 1).
 //   pixel      looks_onebit_720 (1280x720): pixel 2 in output pixels makes every 2x2 block one colour. CONTROL: pixel 2
 //              in 1080 line pixels is 1 output pixel there (blocks of two colours).
-//   pair       a wipe between the look (SCENE stage) and the CUSTOM look (DISPLAY) is drawn at DISPLAY (the stage
-//              rule): exactly two colours. CONTROL: a fade between them (grey between ink and paper) has more.
+//   pair       a wipe between the look (SCENE stage) and the CUSTOM look (DISPLAY) draws each at its own stage:
+//              about half the picture is the SCENE look alone's and half the DISPLAY look alone's. CONTROL: the old
+//              rule (CW_TEST_LOOK_ONE_STAGE=1, the pair at DISPLAY whatever the weight) is not the SCENE look's.
 //   split      two views each with its own post chain: inside each view (off the darkened seams) exactly two
 //              colours; the shared chain (the look once over the laid-out views): two colours, one pass and view by
 //              view within the bound. CONTROLS: the SCENE stage has more colours in both.
+//   once       the tone options are worked out once a dither pixel (small targets: the brightness, the unsharp mask
+//              and outlines, then the threshold): the picture is the one the tone in every screen pixel draws
+//              (CW_TEST_LOOK_TONE_EACH_PIXEL=1, how the look worked to v0.65.1) within 0.02% of the pixels (a tone
+//              on its threshold the compiler rounds differently in the two programs; 0.007% measured), for the
+//              ordered dither at 2 (output and 1080 line) and 6 pixels with blue noise and Bayer, and the diffused at
+//              2 and 3. One dither pixel a screen pixel keeps the tone in the screen pixels (nothing to share).
+//              CONTROL: the brightness target without the unsharp mask's margin (CW_TEST_LOOK_TONE_NO_MARGIN=1)
+//              differs along the view's edges.
+//   xfade      a fade between looks of two stages (the one-bit look at DISPLAY and half blocks at SCENE, a
+//              dissolve, either way) has no step at either end: the pair at weight 0.02 and 0.98 and the end look
+//              alone (what a game sets when the fade is over) differ in no 32x32 tile by more than 2/255 on average
+//              (the blend's own 2% is about 0.7). The fade over half a second with the camera orbiting passes the
+//              flash check, both ways. CONTROL: the old rule (CW_TEST_LOOK_ONE_STAGE=1: the pair at DISPLAY
+//              whatever the weight) steps at the SCENE look's end (over 4/255 in a tile).
 //   still      a still camera: frames 60 and 61 are the same. CONTROL: CW_TEST_LOOK_CRAWL changes them.
 //   flash      a fade from the finished picture into the one-bit look over half a second, the camera orbiting
 //              (tools/flash-check.mjs): passes. CONTROL: the weight jumping every 4 frames fails.
@@ -48,6 +63,7 @@ const GPUS = opt('--gpus', 'gl,webgpu').split(',');
 const ONLY = opt('--only', '').split(',').filter(Boolean);
 const FRAMES = 40;
 const BOUND = 0.002; /* the share of pixels the look and the reference may differ in (see reproduce) */
+const ONCE_BOUND = 0.0002; /* once: a tone the compiler rounds differently (fused multiply-adds in one program, not the other) on its threshold */
 
 function run(gpu, tag, env, { frames = FRAMES, app = 'looks_onebit' } = {}) {
   const shot = join(OUT, `${gpu}-${tag}.png`), state = join(OUT, `${gpu}-${tag}.json`);
@@ -172,13 +188,22 @@ for (const gpu of GPUS) {
   }
 
   if (want('pair')) {
+    /* the share of pixels within 3/255 of another picture's */
+    const near = (a, b) => {
+      let n = 0;
+      for (let i = 0; i < a.w * a.h; i++)
+        if (Math.abs(a.rgba[i * 4] - b.rgba[i * 4]) <= 3 && Math.abs(a.rgba[i * 4 + 1] - b.rgba[i * 4 + 1]) <= 3 && Math.abs(a.rgba[i * 4 + 2] - b.rgba[i * 4 + 2]) <= 3) n++;
+      return n / (a.w * a.h);
+    };
     const env = { ONEBIT: 'scene', ONEBIT_PAIR: '1', ONEBIT_T: '0.5', ONEBIT_HOW: 'wipe' };
     const w = await run(gpu, 'pair-wipe', env);
-    const m = colours(w.img);
-    check(m.size === 2 && w.state['look.stage'] === 1 && w.state['look.ran'] === 7,
-      `${gpu} pair: a SCENE look wiped into a DISPLAY one is drawn at DISPLAY (stage ${w.state['look.stage']}, ran ${w.state['look.ran']}): ${showColours(m)}`);
-    const c = colours((await run(gpu, 'pair-fade', { ...env, ONEBIT_HOW: 'fade' })).img);
-    check(c.size > 2, `${gpu} pair: control (a fade between them, grey half way): ${showColours(c)}`);
+    const sceneAlone = (await run(gpu, 'pair-scene-alone', { ONEBIT: 'scene' })).img, dispAlone = (await run(gpu, 'pair-display-alone', { ONEBIT: 'custom' })).img;
+    const ns = near(w.img, sceneAlone), nd = near(w.img, dispAlone);
+    check(ns >= 0.45 && nd >= 0.45 && w.state['look.stage'] === 2 && w.state['look.ran'] === 7,
+      `${gpu} pair: a SCENE look wiped into a DISPLAY one draws each at its own stage (look.stage ${w.state['look.stage']}, ran ${w.state['look.ran']}): ${pc(ns)} of the pixels are the SCENE look alone's, ${pc(nd)} the DISPLAY look alone's (each at least 45%)`);
+    const c = await run(gpu, 'pair-wipe-one-stage', { ...env, CW_TEST_LOOK_ONE_STAGE: '1' });
+    const cs = near(c.img, sceneAlone);
+    check(cs < 0.45, `${gpu} pair: control (the pair at DISPLAY whatever the weight, the old rule): ${pc(cs)} of the pixels are the SCENE look alone's`);
   }
 
   if (want('split')) {
@@ -208,6 +233,62 @@ for (const gpu of GPUS) {
     check(c.size > 2, `${gpu} split: control (the SCENE stage under the shared chain): ${showColours(c)}`);
   }
 
+  if (want('once')) {
+    const cases = [
+      ['ord-2', { ONEBIT_PIXEL: '2' }],
+      ['ord-2-bayer', { ONEBIT_PIXEL: '2', ONEBIT_OUTPX: '0', ONEBIT_PATTERN: 'bayer' }],
+      ['ord-6', { ONEBIT_PIXEL: '6', ONEBIT_OUTPX: '0', ONEBIT_SHARPEN: '2.7' }],
+      ['dif-2', { ONEBIT_KIND: 'diffuse', ONEBIT_PIXEL: '2' }],
+      ['dif-3', { ONEBIT_KIND: 'diffuse', ONEBIT_PIXEL: '3', ONEBIT_OUTPX: '0' }],
+    ];
+    for (const [tag, env] of cases) {
+      const once = await run(gpu, `once-${tag}`, { ONEBIT: 'look', ...env });
+      const each = await run(gpu, `once-${tag}-each`, { ONEBIT: 'look', ...env, CW_TEST_LOOK_TONE_EACH_PIXEL: '1' });
+      const d = differ(once.img, each.img), m = colours(once.img);
+      check(d <= ONCE_BOUND && m.size === 2 && once.state['look.tone_small'] === 1 && each.state['look.tone_small'] === 0,
+        `${gpu} once ${tag}: the tone once a dither pixel and in every screen pixel differ in ${pc(d)} (bound ${pc(ONCE_BOUND)}); ${showColours(m)}; small targets ${once.state['look.tone_small']} / ${each.state['look.tone_small']}`);
+    }
+    {
+      const one = await run(gpu, 'once-1', { ONEBIT: 'look' });
+      check(one.state['look.tone'] === 1 && one.state['look.tone_small'] === 0, `${gpu} once: one dither pixel a screen pixel works the tone out in the screen pixels (small targets ${one.state['look.tone_small']})`);
+    }
+    const env = { ONEBIT: 'look', ONEBIT_PIXEL: '6', ONEBIT_OUTPX: '0', ONEBIT_SHARPEN: '2.7' };
+    const a = (await run(gpu, 'once-margin', { ...env, CW_TEST_LOOK_TONE_NO_MARGIN: '1' })).img;
+    const b = (await run(gpu, 'once-margin-each', { ...env, CW_TEST_LOOK_TONE_EACH_PIXEL: '1' })).img;
+    const c = differ(a, b);
+    check(c > 0, `${gpu} once: control (the brightness target without the unsharp mask's margin) differs in ${pc(c)}`);
+  }
+
+  if (want('xfade')) {
+    /* the worst 32x32 tile's mean difference, 0..255 */
+    const tileStep = (a, b, T = 32) => {
+      let w = 0;
+      for (let ty = 0; ty + T <= a.h; ty += T)
+        for (let tx = 0; tx + T <= a.w; tx += T) {
+          let s = 0;
+          for (let y = ty; y < ty + T; y++)
+            for (let x = tx; x < tx + T; x++) {
+              const i = (y * a.w + x) * 4;
+              s += Math.abs(a.rgba[i] - b.rgba[i]) + Math.abs(a.rgba[i + 1] - b.rgba[i + 1]) + Math.abs(a.rgba[i + 2] - b.rgba[i + 2]);
+            }
+          w = Math.max(w, s / (3 * T * T));
+        }
+      return w;
+    };
+    for (const rev of ['0', '1']) {
+      const name = rev === '0' ? 'DISPLAY to SCENE' : 'SCENE to DISPLAY';
+      const base = { ONEBIT: 'look', ONEBIT_XFADE: '30', ONEBIT_XREV: rev };
+      const start = (await run(gpu, `xf${rev}-start`, { ...base, ONEBIT_XT: '0' })).img, end = (await run(gpu, `xf${rev}-end`, { ...base, ONEBIT_XT: '1' })).img;
+      const near0 = await run(gpu, `xf${rev}-t02`, { ...base, ONEBIT_XT: '0.02' }), near1 = await run(gpu, `xf${rev}-t98`, { ...base, ONEBIT_XT: '0.98' });
+      const s0 = tileStep(near0.img, start), s1 = tileStep(near1.img, end);
+      check(s0 <= 2 && s1 <= 2 && near1.state['look.stage'] === 2,
+        `${gpu} xfade ${name}: at weight 0.02 the start look alone differs by up to ${s0.toFixed(2)}/255 in a 32x32 tile, at 0.98 the end look alone by up to ${s1.toFixed(2)} (bound 2); both stages ran (look.stage ${near1.state['look.stage']})`);
+      const ctl = await run(gpu, `xf${rev}-ctl`, { ...base, ONEBIT_XT: rev === '0' ? '0.98' : '0.02', CW_TEST_LOOK_ONE_STAGE: '1' });
+      const cs = tileStep(ctl.img, rev === '0' ? end : start);
+      check(cs > 4, `${gpu} xfade ${name}: control (the pair at DISPLAY whatever the weight) steps by ${cs.toFixed(2)}/255 at the half blocks' end`);
+    }
+  }
+
   if (want('still')) {
     const a = (await run(gpu, 'still-a', { ONEBIT: 'look' }, { frames: 60 })).img, b = (await run(gpu, 'still-b', { ONEBIT: 'look' }, { frames: 61 })).img;
     const d = differ(a, b);
@@ -231,6 +312,10 @@ if (want('flash')) {
     });
     const ramp = await flash({ ONEBIT: 'look', ONEBIT_RAMP: '30', ONEBIT_ORBIT: '1' });
     check(ramp.code === 0, `${gpu} flash: a half-second fade into the one-bit look passes the flash check (${ramp.out.trim().split('\n').slice(-1)[0]})`);
+    for (const rev of ['0', '1']) {
+      const x = await flash({ ONEBIT: 'look', ONEBIT_XFADE: '30', ONEBIT_XREV: rev, ONEBIT_ORBIT: '1' });
+      check(x.code === 0, `${gpu} flash: a half-second dissolve ${rev === '0' ? 'from the one-bit look (DISPLAY) into half blocks (SCENE)' : 'from half blocks (SCENE) into the one-bit look (DISPLAY)'} passes the flash check (${x.out.trim().split('\n').slice(-1)[0]})`);
+    }
     const strobe = await flash({ ONEBIT: 'look', ONEBIT_FLICKER: '4', ONEBIT_ORBIT: '1' });
     check(strobe.code !== 0, `${gpu} flash: control (the weight jumping every 4 frames) fails it (${strobe.out.trim().split('\n').slice(-1)[0]})`);
   }

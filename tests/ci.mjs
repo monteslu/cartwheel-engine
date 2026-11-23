@@ -38,6 +38,7 @@ export const LOCAL_ONLY = {
   'viewmodel-blur': 'reads pixels of native runs on the test GPU, blurred against plain',
   'looks': 'reads pixels of about sixty native runs on the test GPU (GL and WebGPU), and runs the flash check on romdev',
   'looks-display': 'reads pixels of about eighty native runs on the test GPU (GL and WebGPU) against a reference pass, and runs the flash check on romdev',
+  'looks-tone-perf': 'GPU timings on the test GPU',
   'shell-selection': 'reads pixels of native runs on the test GPU (GL and WebGPU), each selection style against the default',
   'r2d-one-bit': 'reads pixels of about sixty native and romdev runs on the test GPU (GL and WebGPU), each against its two colours and a blended reference',
   'shell-two-colour': 'reads pixels of about a hundred and forty native runs on the test GPU (GL and WebGPU), each against its two colours and a blended reference',

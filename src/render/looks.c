@@ -216,7 +216,7 @@ static looks_state *state_find(cw_pipeline *p) {
 }
 
 /* debug fields (the pipeline drawn last) */
-static int32_t dbg_ran, dbg_cells, dbg_views, dbg_kind_a, dbg_kind_b, dbg_stage, dbg_tone;
+static int32_t dbg_ran, dbg_cells, dbg_views, dbg_kind_a, dbg_kind_b, dbg_stage, dbg_tone, dbg_tone_small;
 static float dbg_t;
 
 static bool looks_active(const cw_pass_ctx *ctx, void *u);
@@ -246,6 +246,7 @@ static looks_state *state_of(cw_pipeline *p) {
     cw_debug_f32("look.t", &dbg_t);
     cw_debug_i32("look.stage", &dbg_stage);
     cw_debug_i32("look.tone", &dbg_tone);
+    cw_debug_i32("look.tone_small", &dbg_tone_small);
   }
   /* after automatic exposure measured the scene (290), before bloom (300) */
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "looks", .phase = CW_PHASE_POST, .order = 295,
@@ -314,22 +315,31 @@ static void plan(const looks_state *s, look **la, look **lb, bool *need_a, bool 
   if (*la == *lb && *need_a && *need_b) *need_b = false, *need_a = true; /* (a blend of a look with itself is that look) */
 }
 
-/* the pair's stage: DISPLAY when either look of it asks for it (whatever the weight) */
-static int pair_stage(const looks_state *s) {
-  const look *la = drawable(s->a), *lb = drawable(s->b);
-  return (la && la->d.stage == CW_LOOK_STAGE_DISPLAY) || (lb && lb->d.stage == CW_LOOK_STAGE_DISPLAY) ? 1 : 0;
-}
-
-static bool pair_draws(const looks_state *s) {
+/* the stages the frame draws at (bit 0 SCENE, bit 1 DISPLAY): each look drawn at its own stage, only a look with
+ * weight counts. A blend of looks of two stages (0 < t < 1) runs at both, each stage blending its own look with the
+ * picture it gets by the pair's weight and mask (the other look the plain picture there), so the blend starts on
+ * the first look's own picture and ends on the second's with nothing to jump to when it is over (a pair drawn at
+ * one stage the whole way ended on the second look at the other stage and jumped there in a frame).
+ * CW_TEST_LOOK_ONE_STAGE=1 (a gate's control): the old rule, the pair at DISPLAY when either look asks for it,
+ * whatever the weight. */
+static int test_int(const char *name);
+static int pair_stages(const looks_state *s) {
   look *la, *lb;
   bool na, nb;
   plan(s, &la, &lb, &na, &nb);
-  if (la == lb && la) return true;
-  return (na && la) || (nb && lb);
+  if (test_int("CW_TEST_LOOK_ONE_STAGE")) {
+    const look *a = drawable(s->a), *b = drawable(s->b);
+    bool d = (a && a->d.stage == CW_LOOK_STAGE_DISPLAY) || (b && b->d.stage == CW_LOOK_STAGE_DISPLAY);
+    return ((la && (na || la == lb)) || (nb && lb)) ? (d ? 2 : 1) : 0;
+  }
+  int m = 0;
+  if (la && (na || la == lb)) m |= la->d.stage == CW_LOOK_STAGE_DISPLAY ? 2 : 1;
+  if (lb && nb && lb != la) m |= lb->d.stage == CW_LOOK_STAGE_DISPLAY ? 2 : 1;
+  return m;
 }
 static bool looks_active(const cw_pass_ctx *ctx, void *u) {
   (void)ctx;
-  return pair_stage(u) == 0 && pair_draws(u);
+  return (pair_stages(u) & 1) != 0;
 }
 static bool looks_display_active(const cw_pass_ctx *ctx, void *u) {
   /* split screen with the shared post chain: the views' pictures go through one chain after they are laid out, so
@@ -338,7 +348,7 @@ static bool looks_display_active(const cw_pass_ctx *ctx, void *u) {
   const cw_pipeline *p = ctx->pipeline;
   bool shared = p->views_shared_post && p->nviews >= 2;
   cw__pipeline_set_pass_reads((cw_pipeline *)p, "looks_display", shared ? CW_RES_COLOR : CW_RES_COLOR | CW_RES_DEPTH);
-  return pair_stage(u) == 1 && pair_draws(u);
+  return (pair_stages(u) & 2) != 0;
 }
 
 /* ── shaders ─────────────────────────────────────────────────────────── */
@@ -804,8 +814,11 @@ static const char *ASCII_DRAW_W =
 /* ── HALFBLOCK ──
  * pixels: one texel a pixel of the pair (u_hb.x view pixels square, rows from the top): the exposed scene's mean over
  * the square, quantised to u_hb.y levels per channel in display steps, or to the nearest of u_hb.z palette colours
- * (u_pal: rgb in display steps at x, its linear colour at x on row 1) */
-static const char *HB_PX_G_DECL = "uniform sampler2D u_pal; uniform vec4 u_hb;\n";
+ * (u_pal: rgb in display steps at x, its linear colour at x on row 1); alpha keeps the palette colour's index.
+ * The hold (u_hp.x: last frame's pixels in u_prev): a pixel keeps last frame's palette colour while it is within
+ * u_hp.y (display steps) of the nearest, and each channel its level while within u_hp.z of a step past its middle,
+ * so a mean hovering on a boundary (TAA's jitter, grain, noise in the finished picture) holds still */
+static const char *HB_PX_G_DECL = "uniform sampler2D u_pal; uniform sampler2D u_prev; uniform vec4 u_hb; uniform vec4 u_hp;\n";
 static const char *HB_PX_G =
     "void main() {\n"
     "  FC = gl_FragCoord.xy;\n"
@@ -822,15 +835,25 @@ static const char *HB_PX_G =
     "      vec3 e = texelFetch(u_pal, ivec2(i, 0), 0).rgb - d; float dd = dot(e, e);\n"
     "      if (dd < best) { best = dd; bi = i; }\n"
     "    }\n"
-    "    c = texelFetch(u_pal, ivec2(bi, 1), 0).rgb;\n"
+    "    if (u_hp.x > 0.5) {\n"
+    "      int pi = int(texelFetch(u_prev, ivec2(FC), 0).a * 255.0 + 0.5) - 1;\n"
+    "      if (pi >= 0 && float(pi) < u_hb.z) { vec3 e = texelFetch(u_pal, ivec2(pi, 0), 0).rgb - d; if (sqrt(dot(e, e)) <= sqrt(best) + u_hp.y) bi = pi; }\n"
+    "    }\n"
+    "    o = vec4(texelFetch(u_pal, ivec2(bi, 1), 0).rgb, float(bi + 1) / 255.0);\n"
+    "    return;\n"
     "  } else if (u_hb.y > 1.5) {\n"
     "    float L = u_hb.y - 1.0;\n"
-    "    c = look_undisp3(floor(look_disp3(c) * L + 0.5) / L);\n"
+    "    vec3 x = look_disp3(c) * L, k = floor(x + 0.5);\n"
+    "    if (u_hp.x > 0.5) {\n"
+    "      vec3 pk = floor(look_disp3(texelFetch(u_prev, ivec2(FC), 0).rgb) * L + 0.5);\n"
+    "      k = mix(k, pk, vec3(lessThanEqual(abs(x - pk), vec3(0.5 + u_hp.z))));\n"
+    "    }\n"
+    "    c = look_undisp3(k / L);\n"
     "  }\n"
-    "  o = vec4(c, 1.0);\n"
+    "  o = vec4(c, 0.0);\n"
     "}\n";
-static const char *HB_PX_W_FIELDS = "u_hb: vec4f, ";
-static const char *HB_PX_W_DECL = "@group(0) @binding(3) var u_pal: texture_2d<f32>;\n";
+static const char *HB_PX_W_FIELDS = "u_hb: vec4f, u_hp: vec4f, ";
+static const char *HB_PX_W_DECL = "@group(0) @binding(3) var u_pal: texture_2d<f32>;\n@group(0) @binding(4) var u_prev: texture_2d<f32>;\n";
 static const char *HB_PX_W =
     "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
     "  FC = cw_frag_coord(pos);\n"
@@ -846,12 +869,21 @@ static const char *HB_PX_W =
     "      let e = textureLoad(u_pal, vec2i(i, 0), 0).rgb - d; let dd = dot(e, e);\n"
     "      if (dd < best) { best = dd; bi = i; }\n"
     "    }\n"
-    "    c = textureLoad(u_pal, vec2i(bi, 1), 0).rgb;\n"
+    "    if (u.u_hp.x > 0.5) {\n"
+    "      let pi = i32(textureLoad(u_prev, vec2i(FC), 0).a * 255.0 + 0.5) - 1;\n"
+    "      if (pi >= 0 && f32(pi) < u.u_hb.z) { let e = textureLoad(u_pal, vec2i(pi, 0), 0).rgb - d; if (sqrt(dot(e, e)) <= sqrt(best) + u.u_hp.y) { bi = pi; } }\n"
+    "    }\n"
+    "    return vec4f(textureLoad(u_pal, vec2i(bi, 1), 0).rgb, f32(bi + 1) / 255.0);\n"
     "  } else if (u.u_hb.y > 1.5) {\n"
     "    let L = u.u_hb.y - 1.0;\n"
-    "    c = look_undisp3(floor(look_disp3(c) * L + 0.5) / L);\n"
+    "    let x = look_disp3(c) * L; var k = floor(x + 0.5);\n"
+    "    if (u.u_hp.x > 0.5) {\n"
+    "      let pk = floor(look_disp3(textureLoad(u_prev, vec2i(FC), 0).rgb) * L + 0.5);\n"
+    "      k = select(k, pk, abs(x - pk) <= vec3f(0.5 + u.u_hp.z));\n"
+    "    }\n"
+    "    c = look_undisp3(k / L);\n"
     "  }\n"
-    "  return vec4f(c, 1.0);\n"
+    "  return vec4f(c, 0.0);\n"
     "}\n";
 /* draw: each view pixel takes its pixel pair texel (top half of a cell the upper one) */
 static const char *HB_DRAW_G_DECL = "uniform sampler2D u_cells; uniform vec4 u_hb;\n";
@@ -1023,7 +1055,7 @@ static const char *DITH_DRAW_W =
  * the depth outlines (u_t2.y brightness, u_t2.zw the relative Laplacian of 1 / depth's smoothstep), from the depth
  * at each dither pixel's middle (u_lin: near, far, orthographic, depth bound). Neighbours are taken in the order
  * a bottom-left anchored pass takes them (+x, -x, up, down), so a pixel's sums come out the same. */
-#define DITHER_TONE_G                                                                                                       \
+#define DITHER_L_G                                                                                                         \
   "float dither_L(vec2 b) {\n"                                                                                               \
   "  vec2 lo = b * u_d.x; int n = int(u_d.x); int st = max(1, (n + 7) / 8);\n"                                               \
   "  vec3 sum = vec3(0.0); float cnt = 0.0;\n"                                                                              \
@@ -1034,7 +1066,8 @@ static const char *DITH_DRAW_W =
   "  float l = t.a;\n"                                                                                                       \
   "  float g = u_t0.w != 1.0 ? mix(l * u_t0.w, l, smoothstep(u_t1.x, u_t1.y, l)) : l;\n"                                    \
   "  return clamp(mix(g, mx * u_t0.x, key), 0.0, 1.0);\n"                                                                  \
-  "}\n"                                                                                                                      \
+  "}\n"
+#define DITHER_SHAPE_G(L)                                                                                                    \
   "float dither_W(vec2 b) {\n"                                                                                               \
   "  if (u_lin.w < 0.5) return 0.0;\n"                                                                                      \
   "  vec2 tl = b * u_d.x + floor(u_d.x * 0.5) + 0.5;\n"                                                                     \
@@ -1045,11 +1078,11 @@ static const char *DITH_DRAW_W =
   "  return 1.0 / max(z, 1e-4);\n"                                                                                          \
   "}\n"                                                                                                                      \
   "float dither_tone(vec2 b) {\n"                                                                                            \
-  "  float c = dither_L(b);\n"                                                                                              \
+  "  float c = " L "(b);\n"                                                                                              \
   "  if (u_t1.z > 0.0) {\n"                                                                                                 \
   "    float r = u_t1.w; float h = max(1.0, floor(r * 0.5 + 0.5));\n"                                                      \
-  "    float bl = (dither_L(b + vec2(r, 0.0)) + dither_L(b - vec2(r, 0.0)) + dither_L(b - vec2(0.0, r)) + dither_L(b + vec2(0.0, r))) * 0.15\n" \
-  "             + (dither_L(b + vec2(h, -h)) + dither_L(b - vec2(h, -h)) + dither_L(b + vec2(h, h)) + dither_L(b - vec2(h, h))) * 0.1;\n" \
+  "    float bl = (" L "(b + vec2(r, 0.0)) + " L "(b - vec2(r, 0.0)) + " L "(b - vec2(0.0, r)) + " L "(b + vec2(0.0, r))) * 0.15\n" \
+  "             + (" L "(b + vec2(h, -h)) + " L "(b - vec2(h, -h)) + " L "(b + vec2(h, h)) + " L "(b - vec2(h, h))) * 0.1;\n" \
   "    c = clamp(c + u_t1.z * (c - bl), 0.0, 1.0);\n"                                                                      \
   "  }\n"                                                                                                                    \
   "  float v = u_t2.x != 1.0 ? pow(c, u_t2.x) : c;\n"                                                                      \
@@ -1063,7 +1096,8 @@ static const char *DITH_DRAW_W =
   "  }\n"                                                                                                                    \
   "  return v;\n"                                                                                                            \
   "}\n"
-#define DITHER_TONE_W                                                                                                       \
+#define DITHER_TONE_G DITHER_L_G DITHER_SHAPE_G("dither_L")
+#define DITHER_L_W                                                                                                         \
   "fn dither_L(b: vec2f) -> f32 {\n"                                                                                         \
   "  let lo = b * u.u_d.x; let n = i32(u.u_d.x); let st = max(1, (n + 7) / 8);\n"                                            \
   "  var sum = vec3f(0.0); var cnt = 0.0;\n"                                                                                \
@@ -1076,7 +1110,8 @@ static const char *DITH_DRAW_W =
   "  var g = l;\n"                                                                                                           \
   "  if (u.u_t0.w != 1.0) { g = mix(l * u.u_t0.w, l, smoothstep(u.u_t1.x, u.u_t1.y, l)); }\n"                              \
   "  return clamp(mix(g, mx * u.u_t0.x, key), 0.0, 1.0);\n"                                                                \
-  "}\n"                                                                                                                      \
+  "}\n"
+#define DITHER_SHAPE_W(L)                                                                                                    \
   "fn dither_W(b: vec2f) -> f32 {\n"                                                                                         \
   "  if (u.u_lin.w < 0.5) { return 0.0; }\n"                                                                                \
   "  let tl = b * u.u_d.x + floor(u.u_d.x * 0.5) + 0.5;\n"                                                                  \
@@ -1086,11 +1121,11 @@ static const char *DITH_DRAW_W =
   "  return 1.0 / max(z, 1e-4);\n"                                                                                          \
   "}\n"                                                                                                                      \
   "fn dither_tone(b: vec2f) -> f32 {\n"                                                                                      \
-  "  var c = dither_L(b);\n"                                                                                                \
+  "  var c = " L "(b);\n"                                                                                                \
   "  if (u.u_t1.z > 0.0) {\n"                                                                                               \
   "    let r = u.u_t1.w; let h = max(1.0, floor(r * 0.5 + 0.5));\n"                                                        \
-  "    let bl = (dither_L(b + vec2f(r, 0.0)) + dither_L(b - vec2f(r, 0.0)) + dither_L(b - vec2f(0.0, r)) + dither_L(b + vec2f(0.0, r))) * 0.15\n" \
-  "           + (dither_L(b + vec2f(h, -h)) + dither_L(b - vec2f(h, -h)) + dither_L(b + vec2f(h, h)) + dither_L(b - vec2f(h, h))) * 0.1;\n" \
+  "    let bl = (" L "(b + vec2f(r, 0.0)) + " L "(b - vec2f(r, 0.0)) + " L "(b - vec2f(0.0, r)) + " L "(b + vec2f(0.0, r))) * 0.15\n" \
+  "           + (" L "(b + vec2f(h, -h)) + " L "(b - vec2f(h, -h)) + " L "(b + vec2f(h, h)) + " L "(b - vec2f(h, h))) * 0.1;\n" \
   "    c = clamp(c + u.u_t1.z * (c - bl), 0.0, 1.0);\n"                                                                    \
   "  }\n"                                                                                                                    \
   "  var v = c;\n"                                                                                                           \
@@ -1105,6 +1140,7 @@ static const char *DITH_DRAW_W =
   "  }\n"                                                                                                                    \
   "  return v;\n"                                                                                                            \
   "}\n"
+#define DITHER_TONE_W DITHER_L_W DITHER_SHAPE_W("dither_L")
 /* the ordered and the diffused start with the tone options (their own programs: without them the ones above run) */
 static const char *DITH_T_G_DECL =
     "uniform sampler2D u_noise; uniform sampler2D u_depth; uniform vec4 u_d; uniform vec4 u_dark; uniform vec4 u_light;\n"
@@ -1145,6 +1181,99 @@ static const char *DITH_ORD_T_W =
     "}\n";
 static const char *DITH_INIT_T_W =
     DITHER_V_W DITHER_TONE_W
+    "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
+    "  FC = cw_frag_coord(pos);\n"
+    "  let b = floor(FC);\n"
+    "  let v = dither_tone(b);\n"
+    "  return vec4f(v, select(0.0, 1.0, v > dither_t(b)), 0.0, 1.0);\n"
+    "}\n";
+
+/* The tone options once a dither pixel, in small targets (the programs above evaluate dither_tone in every screen
+ * pixel, so a dither pixel of n x n screen pixels took its mean colour n^2 times and the unsharp mask nine times
+ * that). 1: dither_L of every dither pixel the mask reaches, into a target u_lp.x dither pixels larger on each side
+ * (texel = dither pixel + u_lp.x); 2: dither_tone from those (the ordered: into a target of a texel a dither pixel;
+ * the diffused: its state directly); 3 (ordered): the threshold in each screen pixel. Values travel as 24 bit fixed
+ * point in RGBA8 (2^-24: below any threshold step), so the picture is the one the per-pixel programs draw. */
+#define DITHER_PACK_G                                                                                                       \
+  "vec4 pack24(float v) {\n"                                                                                                 \
+  "  float x = floor(clamp(v, 0.0, 1.0) * 16777215.0 + 0.5); float r = floor(x / 65536.0); x -= r * 65536.0;\n"              \
+  "  float g = floor(x / 256.0); return vec4(r, g, x - g * 256.0, 255.0) / 255.0;\n"                                         \
+  "}\n"                                                                                                                      \
+  "float unpack24(vec4 c) { vec3 b = floor(c.rgb * 255.0 + 0.5); return (b.r * 65536.0 + b.g * 256.0 + b.b) / 16777215.0; }\n" \
+  "float dither_Lt(vec2 b) { return unpack24(texelFetch(u_ltex, ivec2(b + u_lp.x), 0)); }\n"
+#define DITHER_PACK_W                                                                                                       \
+  "fn pack24(v: f32) -> vec4f {\n"                                                                                           \
+  "  var x = floor(clamp(v, 0.0, 1.0) * 16777215.0 + 0.5); let r = floor(x / 65536.0); x -= r * 65536.0;\n"                  \
+  "  let g = floor(x / 256.0); return vec4f(r, g, x - g * 256.0, 255.0) / 255.0;\n"                                          \
+  "}\n"                                                                                                                      \
+  "fn unpack24(c: vec4f) -> f32 { let b = floor(c.rgb * 255.0 + 0.5); return (b.r * 65536.0 + b.g * 256.0 + b.b) / 16777215.0; }\n" \
+  "fn dither_Lt(b: vec2f) -> f32 { return unpack24(textureLoad(u_ltex, vec2i(b + u.u_lp.x), 0)); }\n"
+static const char *DITH_S_G_DECL =
+    "uniform sampler2D u_noise; uniform sampler2D u_depth; uniform sampler2D u_ltex; uniform vec4 u_d; uniform vec4 u_dark;\n"
+    "uniform vec4 u_light; uniform vec4 u_t0; uniform vec4 u_t1; uniform vec4 u_t2; uniform vec4 u_lin; uniform vec4 u_lp;\n";
+static const char *DITH_S_W_FIELDS = "u_d: vec4f, u_dark: vec4f, u_light: vec4f, u_t0: vec4f, u_t1: vec4f, u_t2: vec4f, u_lin: vec4f, u_lp: vec4f, ";
+static const char *DITH_S_W_DECL =
+    "@group(0) @binding(3) var u_noise: texture_2d<f32>;\n"
+    "@group(0) @binding(4) var u_depth: texture_2d<f32>;\n"
+    "@group(0) @binding(5) var u_ltex: texture_2d<f32>;\n";
+static const char *DITH_SL_G =
+    DITHER_PACK_G DITHER_L_G
+    "void main() {\n"
+    "  FC = gl_FragCoord.xy;\n"
+    "  o = pack24(dither_L(floor(FC) - u_lp.x));\n"
+    "}\n";
+static const char *DITH_SL_W =
+    DITHER_PACK_W DITHER_L_W
+    "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
+    "  FC = cw_frag_coord(pos);\n"
+    "  return pack24(dither_L(floor(FC) - u.u_lp.x));\n"
+    "}\n";
+static const char *DITH_ST_G =
+    DITHER_PACK_G DITHER_SHAPE_G("dither_Lt")
+    "void main() {\n"
+    "  FC = gl_FragCoord.xy;\n"
+    "  o = pack24(dither_tone(floor(FC)));\n"
+    "}\n";
+static const char *DITH_ST_W =
+    DITHER_PACK_W DITHER_SHAPE_W("dither_Lt")
+    "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
+    "  FC = cw_frag_coord(pos);\n"
+    "  return pack24(dither_tone(floor(FC)));\n"
+    "}\n";
+/* the ordered's screen pixels: u_ltex the tone a dither pixel */
+static const char *DITH_SO_G =
+    DITHER_V_G DITHER_PACK_G
+    "void main() {\n"
+    "  FC = gl_FragCoord.xy;\n"
+    "  vec2 tl = look_tl();\n"
+    "  float bk = look_box(tl, tl);\n"
+    "  if (bk > 1.5) { o = vec4(texelFetch(u_src, ivec2(FC), 0).rgb, 1.0); return; }\n"
+    "  vec2 b = floor(tl / u_d.x);\n"
+    "  vec3 c = unpack24(texelFetch(u_ltex, ivec2(b), 0)) > dither_t(b) ? u_light.rgb : u_dark.rgb;\n"
+    "  o = vec4(look_out(c * look_dim(bk)), 1.0);\n"
+    "}\n";
+static const char *DITH_SO_W =
+    DITHER_V_W DITHER_PACK_W
+    "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
+    "  FC = cw_frag_coord(pos);\n"
+    "  let tl = look_tl();\n"
+    "  let bk = look_box(tl, tl);\n"
+    "  if (bk > 1.5) { return vec4f(textureLoad(u_src, vec2i(FC), 0).rgb, 1.0); }\n"
+    "  let b = floor(tl / u.u_d.x);\n"
+    "  let c = select(u.u_dark.rgb, u.u_light.rgb, unpack24(textureLoad(u_ltex, vec2i(b), 0)) > dither_t(b));\n"
+    "  return vec4f(look_out(c * look_dim(bk)), 1.0);\n"
+    "}\n";
+/* the diffused's state from the dither pixels' brightness (u_ltex as in 2) */
+static const char *DITH_SI_G =
+    DITHER_V_G DITHER_PACK_G DITHER_SHAPE_G("dither_Lt")
+    "void main() {\n"
+    "  FC = gl_FragCoord.xy;\n"
+    "  vec2 b = floor(FC);\n"
+    "  float v = dither_tone(b);\n"
+    "  o = vec4(v, v > dither_t(b) ? 1.0 : 0.0, 0.0, 1.0);\n"
+    "}\n";
+static const char *DITH_SI_W =
+    DITHER_V_W DITHER_PACK_W DITHER_SHAPE_W("dither_Lt")
     "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
     "  FC = cw_frag_coord(pos);\n"
     "  let b = floor(FC);\n"
@@ -1333,7 +1462,7 @@ static const char *LUM_W =
     "}\n";
 
 enum { P_ASCII_REG, P_ASCII_CELLS, P_ASCII_GLOW, P_ASCII_DRAW, P_HB_PX, P_HB_DRAW, P_DITH_ORD, P_DITH_INIT, P_DITH_DBS, P_DITH_DRAW, P_MIX, P_LUM,
-       P_DITH_ORD_T, P_DITH_INIT_T, P_COUNT };
+       P_DITH_ORD_T, P_DITH_INIT_T, P_DITH_SL, P_DITH_ST, P_DITH_SO, P_DITH_SI, P_COUNT };
 static unsigned PROG[2][2][P_COUNT]; /* [backend][stage][program] */
 static bool PROG_TRIED[2][2][P_COUNT]; /* (a program that failed to build is not tried again every frame) */
 
@@ -1357,6 +1486,10 @@ static unsigned prog(int k) {
   case P_LUM: p = build("look.luminance", LUM_G_DECL, LUM_G, LUM_W_FIELDS, LUM_W_DECL, LUM_W); break;
   case P_DITH_ORD_T: p = build("look.dither_ordered_tone", DITH_T_G_DECL, DITH_ORD_T_G, DITH_T_W_FIELDS, DITH_T_W_DECL, DITH_ORD_T_W); break;
   case P_DITH_INIT_T: p = build("look.dither_init_tone", DITH_T_G_DECL, DITH_INIT_T_G, DITH_T_W_FIELDS, DITH_T_W_DECL, DITH_INIT_T_W); break;
+  case P_DITH_SL: p = build("look.dither_tone_l", DITH_S_G_DECL, DITH_SL_G, DITH_S_W_FIELDS, DITH_S_W_DECL, DITH_SL_W); break;
+  case P_DITH_ST: p = build("look.dither_tone", DITH_S_G_DECL, DITH_ST_G, DITH_S_W_FIELDS, DITH_S_W_DECL, DITH_ST_W); break;
+  case P_DITH_SO: p = build("look.dither_ordered_toned", DITH_S_G_DECL, DITH_SO_G, DITH_S_W_FIELDS, DITH_S_W_DECL, DITH_SO_W); break;
+  case P_DITH_SI: p = build("look.dither_init_toned", DITH_S_G_DECL, DITH_SI_G, DITH_S_W_FIELDS, DITH_S_W_DECL, DITH_SI_W); break;
   default: break;
   }
   PROG[b][g_stage][k] = p;
@@ -1766,7 +1899,7 @@ static void draw_ascii(cw_pass_ctx *ctx, looks_state *s, look *l, const vinfo *v
   cw_pass_rt_release(ctx, glow);
 }
 
-static void draw_halfblock(cw_pass_ctx *ctx, look *l, const vinfo *v, const cw_rt *out) {
+static void draw_halfblock(cw_pass_ctx *ctx, looks_state *s, look *l, const vinfo *v, const cw_rt *out) {
   const cw_look_halfblock *h = &l->d.halfblock;
   int ch = CW_MAX(2, (int)lrintf(v->out_h / (float)CW_MAX(h->rows, 2)));
   int half = CW_MAX(1, ch / 2);
@@ -1775,15 +1908,32 @@ static void draw_halfblock(cw_pass_ctx *ctx, look *l, const vinfo *v, const cw_r
   unsigned pal = palette_tex(l);
   unsigned pp = prog(P_HB_PX), pd = prog(P_HB_DRAW);
   if (!pp || !pd) return;
-  const cw_rt *px = cw_pass_rt(ctx, cols, prow, cw__caps.float_render ? CW_RT_RGBA16F : CW_RT_RGBA8, false);
-  if (!px) return;
+  /* quantised (a palette or levels): this frame's pixels and last frame's, for the hold; otherwise one target */
+  bool quant = h->palette_count > 0 || h->levels > 1;
+  cw_rt_format f = cw__caps.float_render ? CW_RT_RGBA16F : CW_RT_RGBA8;
+  const cw_rt *px, *prev = NULL;
+  bool have_prev = false;
+  if (quant) {
+    bool f0 = false, f1 = false;
+    const cw_rt *H[2] = { hist_rt(ctx, l, "hb0", v->slot, cols, prow, f, &f0), hist_rt(ctx, l, "hb1", v->slot, cols, prow, f, &f1) };
+    if (!H[0] || !H[1]) return;
+    int ci = (ctx->frame & 1) ? 1 : 0;
+    px = H[ci], prev = H[ci ^ 1];
+    uint64_t last = seen_swap(s, l, v->slot, ctx->frame);
+    /* CW_TEST_HALFBLOCK_NO_HOLD=1 (a gate's control): no hold */
+    have_prev = !f0 && !f1 && last == ctx->frame && ctx->frame > 0 && !test_int("CW_TEST_HALFBLOCK_NO_HOLD");
+  } else if (!(px = cw_pass_rt(ctx, cols, prow, f, false))) return;
   small_begin();
   cw_pass_bind_target(ctx, px);
   cw_pass_use(pp);
   common(ctx, pp, v);
   cw_pass_bind_texture(2, pal);
-  if (!wg()) cw_pass_uniform1i(pp, "u_pal", 2);
+  cw_pass_bind_texture(3, prev ? prev->tex : pal);
+  if (!wg()) cw_pass_uniform1i(pp, "u_pal", 2), cw_pass_uniform1i(pp, "u_prev", 3);
   cw_pass_uniform4f(pp, "u_hb", (float)half, (float)CW_CLAMP(h->levels, 0, 256), (float)h->palette_count, 0);
+  /* the hold: last frame's palette colour while within 0.03 display steps of the nearest; a level while within 0.15
+   * of a step past its middle */
+  cw_pass_uniform4f(pp, "u_hp", have_prev ? 1.0f : 0.0f, 0.03f, 0.15f, 0);
   cw_pass_fullscreen();
   small_end();
   cw_pass_bind_target(ctx, out);
@@ -1793,7 +1943,7 @@ static void draw_halfblock(cw_pass_ctx *ctx, look *l, const vinfo *v, const cw_r
   if (!wg()) cw_pass_uniform1i(pd, "u_cells", 2);
   cw_pass_uniform4f(pd, "u_hb", (float)half, 0, 0, 0);
   cw_pass_fullscreen();
-  cw_pass_rt_release(ctx, px);
+  if (!quant) cw_pass_rt_release(ctx, px);
 }
 
 static void dither_uniforms(unsigned pr, const cw_look_dither *d, int n, bool blue) {
@@ -1822,13 +1972,73 @@ static void dither_tone_uniforms(cw_pass_ctx *ctx, unsigned pr, const cw_look_di
   cw_pass_uniform4f(pr, "u_lin", lin[0], lin[1], lin[2], g_depth ? 1.0f : 0.0f);
 }
 
+/* a tone program's uniforms and textures (the small programs and the ordered's last: u_ltex on unit 4, u_lp.x the
+ * brightness target's margin in dither pixels); a program that reads no depth gets the noise on its unit (WebGPU
+ * binds the depth, R32F, only where a program loads it) */
+static void dither_set(cw_pass_ctx *ctx, unsigned pr, const cw_look_dither *d, const vinfo *v, int n, bool blue, unsigned noise,
+                       unsigned ltex, int margin, bool depth) {
+  cw_pass_use(pr);
+  common(ctx, pr, v);
+  cw_pass_bind_texture(2, noise);
+  if (!wg()) cw_pass_uniform1i(pr, "u_noise", 2);
+  dither_uniforms(pr, d, n, blue);
+  dither_tone_uniforms(ctx, pr, d);
+  if (!depth) cw_pass_bind_texture(3, noise);
+  cw_pass_bind_texture(4, ltex);
+  if (!wg()) cw_pass_uniform1i(pr, "u_ltex", 4);
+  cw_pass_uniform4f(pr, "u_lp", (float)margin, 0, 0, 0);
+}
+
+/* the tone options' brightness of every dither pixel the unsharp mask reaches (the view's bw x bh and the mask's
+ * radius more on each side), into a small target (released by the caller); NULL when it could not be made */
+static const cw_rt *dither_brightness(cw_pass_ctx *ctx, const cw_look_dither *d, const vinfo *v, int n, int bw, int bh,
+                                      unsigned noise, int *margin) {
+  unsigned pl = prog(P_DITH_SL);
+  *margin = d->sharpen > 0 ? CW_CLAMP((int)lrintf(or_def(d->sharpen_radius, 2)), 1, 16) : 0;
+  if (test_int("CW_TEST_LOOK_TONE_NO_MARGIN")) *margin = 0; /* (a gate's control: the mask reads past the target) */
+  const cw_rt *lt = pl ? cw_pass_rt(ctx, bw + 2 * *margin, bh + 2 * *margin, CW_RT_RGBA8, false) : NULL;
+  if (!lt) return NULL;
+  cw_pass_bind_target(ctx, lt);
+  dither_set(ctx, pl, d, v, n, false, noise, ctx->src->tex, *margin, false);
+  cw_pass_fullscreen();
+  return lt;
+}
+
 static void draw_dither(cw_pass_ctx *ctx, look *l, const vinfo *v, const cw_rt *out) {
   const cw_look_dither *d = &l->d.dither;
   int n = CW_CLAMP((int)lrintf(d->pixel * (d->output_pixels ? 1.0f : v->scale)), 1, 64);
+  int bw = (v->rect[2] + n - 1) / n, bh = (v->rect[3] + n - 1) / n;
   unsigned noise = blue_noise_tex();
   bool tone = dither_tone_on(d);
+  /* the tone in small targets from 2 x 2 screen pixels a dither pixel up; one a screen pixel repeats no work, and
+   * the targets' writes and reads cost more than the eight extra mean colours (0.43 against 0.32 ms at 1080p on a
+   * Radeon 890M). CW_TEST_LOOK_TONE_EACH_PIXEL=1 (the gates' before): the tone in every screen pixel at any size. */
+  bool each = tone && (n == 1 || test_int("CW_TEST_LOOK_TONE_EACH_PIXEL"));
   dbg_tone = tone ? 1 : 0;
+  dbg_tone_small = tone && !each ? 1 : 0;
   if (l->d.kind == CW_LOOK_DITHER_ORDERED) {
+    if (tone && !each) {
+      unsigned pt = prog(P_DITH_ST), ps = prog(P_DITH_SO);
+      if (!pt || !ps) return;
+      int margin;
+      small_begin();
+      const cw_rt *lt = dither_brightness(ctx, d, v, n, bw, bh, noise, &margin);
+      const cw_rt *tt = lt ? cw_pass_rt(ctx, bw, bh, CW_RT_RGBA8, false) : NULL;
+      if (tt) {
+        cw_pass_bind_target(ctx, tt);
+        dither_set(ctx, pt, d, v, n, false, noise, lt->tex, margin, true);
+        cw_pass_fullscreen();
+      }
+      small_end();
+      if (tt) {
+        cw_pass_bind_target(ctx, out);
+        dither_set(ctx, ps, d, v, n, d->pattern == CW_DITHER_BLUE_NOISE, noise, tt->tex, margin, false);
+        cw_pass_fullscreen();
+        cw_pass_rt_release(ctx, tt);
+      }
+      if (lt) cw_pass_rt_release(ctx, lt);
+      return;
+    }
     unsigned po = prog(tone ? P_DITH_ORD_T : P_DITH_ORD);
     if (!po) return;
     cw_pass_bind_target(ctx, out);
@@ -1841,20 +2051,31 @@ static void draw_dither(cw_pass_ctx *ctx, look *l, const vinfo *v, const cw_rt *
     cw_pass_fullscreen();
     return;
   }
-  unsigned pi = prog(tone ? P_DITH_INIT_T : P_DITH_INIT), pb = prog(P_DITH_DBS), pd = prog(P_DITH_DRAW);
+  unsigned pi = prog(!tone ? P_DITH_INIT : each ? P_DITH_INIT_T : P_DITH_SI), pb = prog(P_DITH_DBS), pd = prog(P_DITH_DRAW);
   if (!pi || !pb || !pd) return;
-  int bw = (v->rect[2] + n - 1) / n, bh = (v->rect[3] + n - 1) / n;
   const cw_rt *st[2] = { cw_pass_rt(ctx, bw, bh, CW_RT_RGBA8, false), cw_pass_rt(ctx, bw, bh, CW_RT_RGBA8, false) };
   if (!st[0] || !st[1]) return;
   small_begin();
+  const cw_rt *lt = NULL;
+  int margin = 0;
+  if (tone && !each && !(lt = dither_brightness(ctx, d, v, n, bw, bh, noise, &margin))) {
+    small_end();
+    cw_pass_rt_release(ctx, st[0]);
+    cw_pass_rt_release(ctx, st[1]);
+    return;
+  }
   cw_pass_bind_target(ctx, st[0]);
-  cw_pass_use(pi);
-  common(ctx, pi, v);
-  cw_pass_bind_texture(2, noise);
-  if (!wg()) cw_pass_uniform1i(pi, "u_noise", 2);
-  dither_uniforms(pi, d, n, true);
-  if (tone) dither_tone_uniforms(ctx, pi, d);
+  if (lt) dither_set(ctx, pi, d, v, n, true, noise, lt->tex, margin, true);
+  else {
+    cw_pass_use(pi);
+    common(ctx, pi, v);
+    cw_pass_bind_texture(2, noise);
+    if (!wg()) cw_pass_uniform1i(pi, "u_noise", 2);
+    dither_uniforms(pi, d, n, true);
+    if (tone) dither_tone_uniforms(ctx, pi, d);
+  }
   cw_pass_fullscreen();
+  if (lt) cw_pass_rt_release(ctx, lt);
   int cur = 0, sweeps = CW_CLAMP(d->sweeps, 0, 8);
   for (int sw = 0; sw < sweeps; sw++)
     for (int ph = 0; ph < 4; ph++) {
@@ -1916,7 +2137,7 @@ static void draw_custom(cw_pass_ctx *ctx, look *l, const vinfo *v, const cw_rt *
 static void draw_look(cw_pass_ctx *ctx, looks_state *s, look *l, const vinfo *v, const cw_rt *out) {
   switch (l->d.kind) {
   case CW_LOOK_ASCII: draw_ascii(ctx, s, l, v, out); break;
-  case CW_LOOK_HALFBLOCK: draw_halfblock(ctx, l, v, out); break;
+  case CW_LOOK_HALFBLOCK: draw_halfblock(ctx, s, l, v, out); break;
   case CW_LOOK_DITHER_ORDERED:
   case CW_LOOK_DITHER_DIFFUSE: draw_dither(ctx, l, v, out); break;
   case CW_LOOK_CUSTOM: draw_custom(ctx, l, v, out); break;
@@ -2011,13 +2232,19 @@ static void looks_run(cw_pass_ctx *ctx, looks_state *s) {
   if (g_stage == 1) g_auto_tex = neutral, g_exposure = 1; /* the finished picture: the tone curve took the exposure */
   g_depth = ctx->depth_tex;
   if (g_stage == 1 && ctx->pipeline->views_shared_post && ctx->pipeline->nviews >= 2 && ctx->view_count == 0) g_depth = 0;
-  dbg_stage = g_stage;
+  /* a blend of looks of two stages (pair_stages): each stage blends its own look with the plain picture it gets */
+  bool cross = la && lb && la != lb && na && nb && la->d.stage != lb->d.stage && !test_int("CW_TEST_LOOK_ONE_STAGE");
+  dbg_stage = cross ? 2 : g_stage;
   vinfo v;
   view_info(ctx, s, &v);
   if (v.slot < 8) dbg_views = v.slot == 0 ? 1 : dbg_views + 1; /* (not an extra view: a SubViewport) */
   dbg_kind_a = la ? (int32_t)la->d.kind : 0, dbg_kind_b = lb ? (int32_t)lb->d.kind : 0, dbg_t = s->t;
+  if (cross) {
+    if ((la->d.stage == CW_LOOK_STAGE_DISPLAY) != (g_stage == 1)) la = NULL;
+    else lb = NULL;
+  }
   bool want_measure = s->measure && v.first;
-  if (want_measure) s->drawn = 0;
+  if (want_measure && !(cross && g_stage == 1)) s->drawn = 0; /* (a blend across stages: the SCENE stage ran first) */
   /* a look alone (t 0 or 1, or the other side is the plain scene at that end) straight into dst */
   bool blend = na && nb && la != lb;
   look *only = !blend ? (na ? la : lb) : NULL;
@@ -2038,8 +2265,8 @@ static void looks_run(cw_pass_ctx *ctx, looks_state *s) {
   if (la) draw_look(ctx, s, la, &v, ia);
   if (lb) draw_look(ctx, s, lb, &v, ib);
   if (want_measure) {
-    measure(ctx, s, &v, ia, 0);
-    measure(ctx, s, &v, ib, 1);
+    if (la || !cross) measure(ctx, s, &v, ia, 0);
+    if (lb || !cross) measure(ctx, s, &v, ib, 1);
   }
   unsigned pm = prog(P_MIX);
   if (pm) {

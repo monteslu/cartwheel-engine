@@ -35,13 +35,18 @@
  * it (bloom, grain, the vignette, the tone curve) adds a third. A look at DISPLAY reads the finished picture in
  * linear light (0..1, no exposure: the tone curve has done it) and its colours are clipped to 0..1 (they do not
  * bloom); a dither's brightness there is the luminance of the displayed colour itself, not the display-like curve.
- * A pair is drawn at one stage: DISPLAY when either look of the pair asks for it, whatever the weight, so a blend
- * never changes stage halfway; the plain scene of a null look is then the finished picture. HUD boxes and the
+ * Each look of a pair is drawn at its own stage; the plain scene of a null look is the picture at the other look's
+ * stage. A blend between looks of two stages runs at both: each stage blends its own look with the picture it gets
+ * by the pair's weight and mask (so at the DISPLAY stage the picture under the dither is the finished picture of the
+ * SCENE look's share), and the blend starts on the first look's own picture and ends on the second's, with no step
+ * when the pair is replaced by the end look alone. HUD boxes and the
  * brightness measurement work the same at both stages (measured in linear light at DISPLAY).
  *
  * Grids (characters, half blocks, dither pixels) are anchored to the pixels of each view, from its top left: a still
  * camera gives a still picture, frame after frame (nothing crawls), and every pattern is a function of the frame
- * alone except the ASCII glyph hold, which keeps last frame's character where a new one fits only a little better.
+ * alone except the holds: the ASCII glyph hold, which keeps last frame's character where a new one fits only a little
+ * better, and the half blocks' quantising hold, which keeps last frame's palette colour or level where the new one
+ * wins only by a little (a mean on a boundary, under TAA's jitter or grain, holds still).
  * Sizes are in pixels of a 1080 line picture (ASCII and half block rows over the output's height), scaled with the
  * output: the same look keeps its proportions at every resolution and in every split screen view.
  *
@@ -107,7 +112,8 @@ typedef struct cw_look_ascii {
 
 /* HALFBLOCK: character cells `rows` to the output's height, each a pair of square pixels (the upper half block
  * character's top and bottom): each pixel is the mean of the scene over its square. Optionally quantised: `levels`
- * per channel, or the nearest colour of a palette. */
+ * per channel, or the nearest colour of a palette; a pixel keeps last frame's colour while it stays within 0.03 display
+ * steps of the nearest (a level: 0.15 of a step past the middle), so a still picture holds still at either stage. */
 typedef struct cw_look_halfblock {
   int rows;                /* character rows over the output's height (54): 108 pixels down */
   int levels;              /* per channel, in display steps (0: none; 6 is a 216 colour cube) */

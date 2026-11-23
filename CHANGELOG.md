@@ -4,6 +4,50 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.68.1 (2026-11-23)
+
+### Fixed
+- A dither look's tone options cost many times what they should when a dither pixel is larger than a screen pixel:
+  each screen pixel worked its dither pixel's tone out again, so a dither pixel of n x n screen pixels took its mean
+  colour n^2 times and the unsharp mask (`sharpen`) nine times that. The tone is now worked out once a dither pixel,
+  in small targets (the brightness of every dither pixel the mask reaches, then the mask, gamma, contrast and the
+  depth outlines, then the threshold in each screen pixel), for the ordered and the diffused dither; one dither pixel
+  a screen pixel keeps the single pass (nothing to share there). GPU ms of the one-bit look at DISPLAY with every
+  tone option at 1920 x 1080 on a Radeon 890M (`tests/looks-tone-perf.mjs`, release build, the median of 5
+  interleaved rounds; clock 1650 MHz mean, never at the floor; load 3.5 to 4.3):
+
+  | dither pixel (1080 line) | GL before | GL after | WebGPU before | WebGPU after | the mask's own cost, GL / WebGPU before -> after |
+  |---|---|---|---|---|---|
+  | 1 (output pixels) | 0.31 | 0.32 | 0.55 | 0.53 | unchanged (the same program) |
+  | 2, Bayer | 0.48 | 0.19 | 1.22 | 0.25 | 0.22 / 0.93 -> under 0.01 |
+  | 6 | 2.99 | 0.13 | 7.45 | 0.47 | 2.25 / 6.42 -> under 0.01 |
+
+  The picture is the one the tone in every screen pixel drew: 0 to 0.007% of the pixels differ (a tone on its
+  threshold the compiler rounds differently), and the look still matches the reference pass within 0.051% (bound
+  0.2%). The look as a cart on romdev (GL, 890M) went from 0.62 to 0.27 ms over the plain frame.
+- A blend between looks of two stages (`cw_pipeline_set_looks`: a dither at DISPLAY and half blocks at SCENE, say)
+  was drawn at DISPLAY the whole way, so when it was over the SCENE look alone was drawn at SCENE (bloom and the tone
+  curve after it) and the picture stepped in one frame (by up to 5/255 in a 32x32 tile in `looks_onebit`). Each look of a pair is now drawn at its own stage: a blend across stages runs at
+  both, each stage blending its own look with the picture it gets by the pair's weight and mask, so it starts on the
+  first look's own picture and ends on the second's, and setting the end look alone changes nothing on screen. The
+  rule "a pair is drawn at DISPLAY when either look asks for it, whatever the weight" is gone; a pair of looks of one
+  stage, and a look with the plain scene, draw as before. Debug field `look.stage` is 2 when both stages ran.
+- Half blocks quantised to a palette or to levels flickered at the DISPLAY stage under TAA: the finished picture moves
+  a little with the jitter, and a square whose mean sat on a palette boundary flipped colour (in `samples/looks`:
+  up to 144 pixels in 4 frames of 17 at 1080p; at SCENE, TAA after the look smoothed it). A pixel now keeps last
+  frame's palette colour while it stays within 0.03 display steps of the nearest, and a level while within 0.15 of a
+  step past its middle, at either stage (history per view, as the ASCII glyph hold): a still camera holds still.
+
+### Added
+- Debug field `look.tone_small` (1 when the tone options ran in small targets). Sample `looks_onebit` takes
+  `ONEBIT_KIND=diffuse` and `ONEBIT_XFADE=N` (a fade from the one-bit look into half blocks at SCENE and back with
+  `ONEBIT_XREV=1`, `ONEBIT_XT=t` to hold it). Gate `looks-display` checks the tone once a dither pixel against the
+  tone in every screen pixel (`CW_TEST_LOOK_TONE_EACH_PIXEL=1`; control `CW_TEST_LOOK_TONE_NO_MARGIN=1`), a fade
+  across stages both ways with no step at either end (within 2/255 in every 32x32 tile; control
+  `CW_TEST_LOOK_ONE_STAGE=1`, the old rule, steps by 5/255) and through the flash check, and the pair rule. Gate `looks` checks half blocks on a palette at DISPLAY under TAA over 17 frames (control
+  `CW_TEST_HALFBLOCK_NO_HOLD=1`); sample `looks` takes `LOOK_STAGE=display`. Timing
+  report `looks-tone-perf` (GPU ms before and after, GL and WebGPU, with the load and the GPU clock).
+
 ## v0.68.0 (2026-11-23)
 
 ### Added
