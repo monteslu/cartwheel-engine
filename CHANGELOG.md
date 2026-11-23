@@ -4,6 +4,25 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.68.0 (2026-11-23)
+
+### Added
+- A start angle for particles: `angle` (radians) and `angle_random` (0..1, a share of a full turn centred on
+  `angle`) on GPUParticles3D and GPUParticles2D. Billboards used to start at a random turn every time, so an upright
+  flipbook (flame tongues, a rising wisp) came out tilted every way; with `angle_random 0` every particle starts at
+  `angle`, and a camera-facing billboard at angle 0 stays upright on screen however the camera circles or tilts.
+  GPUParticles3D turns counter-clockwise as the camera sees it (MESH: about each particle's own random axis;
+  STRETCHED ignores it, its velocity sets the turn); GPUParticles2D turns clockwise with y down, as Node2D rotation.
+  `spin` still adds on top. The defaults (`angle 0`, `angle_random 1`) draw exactly what they drew before, pixel
+  for pixel (fx_particles, fx_particles2d, fx_explosion and fx_bursts, natively and on romdev, GL and WebGPU).
+  Guide: Explosions and distortion, "Upright flames: the start angle".
+- Sample `fx_particle_angle` (upright arrows from both node types while the camera circles) with gates
+  `fx-particle-angle` (every host and both backends) and `particle-angle`: each arrow's turn measured from the
+  picture, natively and on romdev, GL and WebGPU: `angle_random 0` keeps every arrow upright at three points of the
+  camera's circle (control: `angle_random 1` fails it, 3D and 2D), `angle 0.7` turns every arrow by 0.7, `spin`
+  turns every arrow by the same amount from its start angle (control: no spin turns none), and STRETCHED sparks at
+  a set angle draw the default picture (control: a billboard system at that angle changes it).
+
 ## v0.67.0 (2026-11-23)
 
 ### Added

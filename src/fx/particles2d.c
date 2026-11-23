@@ -30,6 +30,7 @@ typedef struct p2d {
   const char *color_ramp, *size_curve, *texture;
   int blend;
   float spin;
+  float angle, angle_random;
   bool local_coords;
   int alive;
   /* runtime */
@@ -251,6 +252,8 @@ static void p2_draw(cw_node n, void *data, const cw_canvas_item *item) {
   }
   cw_r2d_set_blend(d->blend == B2_ADD ? CW_BLEND_ADD : CW_BLEND_ALPHA);
   cw_sprite *sp = cw_frame_alloc(sizeof(cw_sprite) * (size_t)d->alive);
+  float a_base, a_range;
+  cw__fx_start_angle(d->angle, d->angle_random, &a_base, &a_range);
   int k = 0;
   for (int i = 0; i < s->cap && k < d->alive; i++) {
     if (s->age[i] < 0) continue;
@@ -263,7 +266,7 @@ static void p2_draw(cw_node n, void *data, const cw_canvas_item *item) {
     float sz = d->size * s->sizes[ci] * (1.0f - d->size_random * r1);
     const float *c = s->ramp + 4 * ci;
     sp[k] = (cw_sprite){ .texture = tex, .pos = { s->px[i], s->py[i] }, .size = { sz, sz }, .pivot = { 0.5f, 0.5f },
-                         .rotation = r2 * CW_TAU + d->spin * (r3 < 0.5f ? -1.0f : 1.0f) * s->age[i],
+                         .rotation = r2 * a_range + (d->spin * (r3 < 0.5f ? -1.0f : 1.0f) * s->age[i] + a_base),
                          .color = { c[0] * d->color[0] * item->modulate.r, c[1] * d->color[1] * item->modulate.g,
                                     c[2] * d->color[2] * item->modulate.b, c[3] * d->color[3] * item->modulate.a } };
     if (sp[k].color.a <= 0) sp[k].color.a = 1e-6f; /* zero-init colour means white to render2d */
@@ -288,6 +291,7 @@ static void p2_init(cw_node n, void *data) {
   d->speed_max = 120;
   d->gravity = cw_v2(0, 98);
   d->size = 8;
+  d->angle_random = 1;
   d->color[0] = d->color[1] = d->color[2] = d->color[3] = 1;
   d->color_ramp = cw_intern("");
   d->size_curve = cw_intern("");
@@ -355,7 +359,9 @@ static const cw_prop p2d_props[] = {
   F2(size_curve, CW_T_STRING, "Size over life: \"t s, ...\"."),
   F2(texture, CW_T_STRING, "Sprite image (asset path; empty = a soft dot)."),
   E2(blend, blend2_names, "ALPHA or ADD."),
-  F2(spin, CW_T_FLOAT, "Rotation speed, rad/s (random direction)."),
+  F2(angle, CW_T_FLOAT, "Start angle, radians, clockwise (y down, as Node2D rotation; 0 = the texture upright)."),
+  CW_PROP_FIELD_RANGE(p2d, angle_random, CW_T_FLOAT, 0, 1, "Spread of the start angle, a share of a full turn centred on angle: 1 = any angle (the default), 0 = every particle starts at angle."),
+  F2(spin, CW_T_FLOAT, "Rotation speed, rad/s (random direction), added to the start angle."),
   F2(local_coords, CW_T_BOOL, "Particles follow the node."),
   CW_PROP_FIELD(p2d, alive, CW_T_INT, CW_PROP_EDITOR | CW_PROP_READONLY, "Particles alive now."),
   CW_PROP_END,

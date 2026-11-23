@@ -273,5 +273,6 @@ Natively, `CW_R2D_TIMERS=1` times each part of `cw_r2d_end` on the GPU (GL time 
 | `r2d_interop` | three.c into a render target, 2D over 3D |
 | `r2d_bench` | 100,000 sprites, bulk vs single submission |
 | `fx_particles2d` | `GPUParticles2D` |
+| `fx_particle_angle` | `GPUParticles2D` and `GPUParticles3D` start angles (`angle`, `angle_random`): upright arrows |
 
 The reference pages: [render2d.h](header:render2d.h), [scene2d.h](header:scene2d.h), and the node pages from `Node2D` down.

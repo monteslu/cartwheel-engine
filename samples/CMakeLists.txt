@@ -248,6 +248,7 @@ cw_add_app(fx_sub_emitters SOURCES fx_sub_emitters/main.c ASSETS ${CMAKE_CURRENT
 cw_add_app(fx_boom_water SOURCES fx_boom_water/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_boom_water/assets)
 cw_add_app(fx_collide SOURCES fx_collide/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_collide/assets)
 cw_add_app(fx_perf SOURCES fx_perf/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_perf/assets)
+cw_add_app(fx_particle_angle SOURCES fx_particle_angle/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_particle_angle/assets)
 cw_add_app(fx_particles2d SOURCES fx_particles2d/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fx_particles2d/assets)
 # the visibility rule: every node type that draws or runs outside the mesh path, under a hidden Node3D (and a hidden Node2D), draws and runs nothing; shown, it goes on (gate hidden-vis)
 cw_add_app(hidden_vis SOURCES hidden_vis/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/hidden_vis/assets PROGRAMS hidden_vis/programs/hidden_vis.txt)

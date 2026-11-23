@@ -344,6 +344,7 @@ static const char *const draw_vs =
     "uniform sampler2D u_curve;\n"
     "uniform vec4 u_color;\n"
     "uniform float u_energy, u_size, u_size_rand, u_stretch, u_spin;\n"
+    "uniform vec2 u_angle;\n" /* start angle: base, range (r2 * range + base) */
     "uniform vec2 u_frames;\n"
     "uniform int u_mode;\n"
     "out vec4 v_color;\n"
@@ -381,7 +382,7 @@ static const char *const draw_vs =
     "  uint s = pseed(i, k) ^ 0x5bd1e995u;\n"
     "  float r1 = prnd(s), r2 = prnd(s), r3 = prnd(s);\n"
     "  sz *= 1.0 - u_size_rand * r1;\n"
-    "  float ang = r2 * 6.2831853 + u_spin * (r3 < 0.5 ? -1.0 : 1.0) * pa.w;\n"
+    "  float ang = r2 * u_angle.y + (u_spin * (r3 < 0.5 ? -1.0 : 1.0) * pa.w + u_angle.x);\n"
     "  vec3 wp = (u_model * vec4(pa.xyz, 1.0)).xyz;\n"
     "  vec3 wv = mat3(u_model) * vc.xyz;\n"
     "  vec3 right = vec3(u_view[0][0], u_view[1][0], u_view[2][0]);\n"
@@ -1655,6 +1656,11 @@ static void psys_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, const psys_p
   cw__fx_u1f(dp, "u_size_rand", CW_CLAMP(d->size_random, 0, 1));
   cw__fx_u1f(dp, "u_stretch", d->stretch);
   cw__fx_u1f(dp, "u_spin", d->spin);
+  {
+    float ab, ar;
+    cw__fx_start_angle(d->angle, d->angle_random, &ab, &ar);
+    cw__fx_u2f(dp, "u_angle", ab, ar);
+  }
   cw__fx_u2f(dp, "u_frames", (float)CW_MAX(d->hframes, 1), (float)CW_MAX(d->vframes, 1));
   cw__fx_u1i(dp, "u_mode", d->draw_mode);
   cw__fx_u1i(dp, "u_blend", d->blend);
@@ -1791,6 +1797,7 @@ static void p3d_init(cw_node n, void *data) {
   d->motion_strength = 1;
   d->mesh_node = cw_intern("");
   d->hframes = d->vframes = 1;
+  d->angle_random = 1;
   d->blend = BLEND_ADD;
   d->distort_strength = 0.3f;
   d->trail_width = 0.05f;
@@ -2047,7 +2054,9 @@ static const cw_prop p3d_props[] = {
   F(texture, CW_T_STRING, "Billboard image (asset path; empty = a soft dot)."),
   F(hframes, CW_T_INT, "Flipbook columns (frames play over life)."),
   F(vframes, CW_T_INT, "Flipbook rows."),
-  F(spin, CW_T_FLOAT, "Rotation speed, rad/s (random direction per particle)."),
+  F(angle, CW_T_FLOAT, "Start angle, radians: BILLBOARD turns counter-clockwise as the camera sees it (0 = the texture's top toward the screen's top), MESH about each particle's own random axis. STRETCHED ignores it (velocity sets the turn)."),
+  R(angle_random, CW_T_FLOAT, 0, 1, "Spread of the start angle, a share of a full turn centred on angle: 1 = any angle (the default), 0 = every particle starts at angle (an upright flame flipbook)."),
+  F(spin, CW_T_FLOAT, "Rotation speed, rad/s (random direction per particle), added to the start angle."),
   E(blend, blend_names, "ADD (glow), ALPHA (premultiplied, sortable), OPAQUE (alpha tested, writes depth), DISTORT (bends the picture behind it, draws no colour: heat haze) or REFRACT (shows the scene through it: glass, drops; explosions.h)."),
   R(soft_distance, CW_T_FLOAT, 0, 1e6, "Fade over this distance in front of geometry (0 = hard)."),
   R(camera_fade, CW_T_FLOAT, 0, 1e6, "Fade out as a particle comes within this distance of the camera (0 = off): smoke a chase camera drives into thins instead of filling the screen."),

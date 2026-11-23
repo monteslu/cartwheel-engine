@@ -55,6 +55,16 @@ unsigned cw__fx_texture_asset(const char *path, int *w, int *h);
  * error, logging `what`. */
 bool cw__fx_curve_bake(const char *text, int comps, float def, int n, float *out, const char *what);
 
+/* A particle's start angle is r * range + base for its hashed r in [0, 1): angle_random (clamped
+ * to 0..1) of a full turn centred on angle, and for a full turn (1, the default) angle + r * TAU,
+ * the same per-particle angles as before the start angle could be set (any offset of a full turn
+ * is the same spread). angle_random 0: every particle starts at angle exactly. */
+static inline void cw__fx_start_angle(float angle, float angle_random, float *base, float *range) {
+  float ar = angle_random < 0 ? 0 : angle_random > 1 ? 1 : angle_random;
+  *range = ar * 6.28318530717958647692f;
+  *base = ar >= 1 ? angle : angle - 0.5f * *range;
+}
+
 /* this run draws with WebGPU (false in builds without it) */
 bool cw__fx_wgpu_on(void);
 

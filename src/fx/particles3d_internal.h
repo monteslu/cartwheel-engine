@@ -110,6 +110,7 @@ typedef struct p3d {
   const char *color_ramp, *size_curve, *texture;
   int hframes, vframes;
   float spin;
+  float angle, angle_random; /* start angle (radians) and its spread (share of a full turn) */
   int blend;
   float soft_distance;
   float camera_fade; /* alpha fades to 0 as a particle comes this close to the camera (0 = off) */

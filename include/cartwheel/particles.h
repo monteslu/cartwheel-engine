@@ -41,8 +41,17 @@
  *                        color (tint), energy (x colour: HDR glow),
  *                        color_ramp and size_curve (over life, strings below),
  *                        texture (asset path; default a soft dot), hframes /
- *                        vframes (flipbook played over life), spin (rad/s,
- *                        random sign), blend ADD / ALPHA / OPAQUE, soft_distance
+ *                        vframes (flipbook played over life), angle (start
+ *                        angle, radians: counter-clockwise as the camera sees
+ *                        a billboard, 0 = the texture upright on screen
+ *                        however the camera turns; MESH turns about each
+ *                        particle's random axis; STRETCHED ignores it),
+ *                        angle_random (the start angle's spread, a share of a
+ *                        full turn centred on angle: 1 = any angle, the
+ *                        default; 0 = every particle starts at angle, as an
+ *                        upright flame flipbook wants), spin (rad/s, random
+ *                        sign, added to the start angle), blend ADD / ALPHA /
+ *                        OPAQUE, soft_distance
  *                        (fade where particles meet geometry), camera_fade
  *                        (fade out within this distance of the camera: smoke a
  *                        chase camera drives into thins instead of filling the
@@ -74,7 +83,9 @@
  *                        direction (degrees, 0 = +x), spread, speed_min/max,
  *                        gravity, damping, size, size_random, color,
  *                        color_ramp, size_curve, texture, blend (ALPHA, ADD),
- *                        spin, local_coords, alive (read-only)
+ *                        angle (radians, clockwise with y down, as Node2D
+ *                        rotation), angle_random (as GPUParticles3D's), spin,
+ *                        local_coords, alive (read-only)
  *   Trail3D              (Node3D) a ribbon that follows the node: the last
  *                        `length` positions (one per fixed tick) as a camera
  *                        facing strip of `width`, color_ramp along its length

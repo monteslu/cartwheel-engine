@@ -1,0 +1,48 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.02, 0.02, 0.03, 1)
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 0, 12)
+fov = 40
+near = 0.1
+far = 100
+
+[node name="Arrows" parent="." type="GPUParticles3D"]
+amount = 8
+lifetime = 1000
+explosiveness = 1
+emission_shape = SPHERE
+emission_radius = 3.4
+speed_min = 0
+speed_max = 0
+spread = 0
+gravity = vec3(0, 0, 0)
+size = 0.8
+texture = "arrow.png"
+blend = ALPHA
+angle = 0
+angle_random = 0
+seed = 7
+
+[node name="HUD" parent="." type="CanvasLayer"]
+
+[node name="Arrows2D" parent="HUD" type="GPUParticles2D"]
+position = vec2(320, 322)
+amount = 8
+lifetime = 1000
+explosiveness = 1
+emission_shape = RECT
+emission_extents = vec2(290, 0)
+speed_min = 0
+speed_max = 0
+spread = 0
+gravity = vec2(0, 0)
+size = 28
+texture = "arrow.png"
+angle = 0
+angle_random = 0
+seed = 11

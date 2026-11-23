@@ -36,7 +36,7 @@
 #define SYS_SIZE 2832 /* 1792, then the burst count (16) and 32 + 32 burst slots (1024) */
 #define SYS_BASE 1808
 #define STEP_STRIDE 256
-#define DRAW_SIZE 352
+#define DRAW_SIZE 368
 #define PASS_STRIDE 256
 
 /* ── WGSL ─────────────────────────────────────────────────────────────── */
@@ -345,7 +345,7 @@ static const char WGSL_REDUCE[] =
 static const char WGSL_DRAW[] =
     "struct Draw {\n"
     "  view: mat4x4f, proj: mat4x4f, model: mat4x4f,\n"
-    "  campos: vec4f, color: vec4f, p0: vec4f, p1: vec4f, p2: vec4f, life: vec4f, ia: vec4u, ib: vec4u, p3: vec4f, p4: vec4f,\n"
+    "  campos: vec4f, color: vec4f, p0: vec4f, p1: vec4f, p2: vec4f, life: vec4f, ia: vec4u, ib: vec4u, p3: vec4f, p4: vec4f, p5: vec4f,\n"
     "}\n"
     "@group(0) @binding(0) var<uniform> D: Draw;\n"
     "@group(0) @binding(1) var curve: texture_2d<f32>;\n"
@@ -378,7 +378,7 @@ static const char WGSL_DRAW[] =
     "  var s = pseed(D.ia.x, i, k) ^ 0x5bd1e995u;\n"
     "  let r1 = prnd(&s); let r2 = prnd(&s); let r3 = prnd(&s);\n"
     "  sz *= 1.0 - D.p0.y * r1;\n"
-    "  let ang = r2 * 6.2831853 + D.p0.w * select(1.0, -1.0, r3 < 0.5) * pa.w;\n"
+    "  let ang = r2 * D.p5.y + (D.p0.w * select(1.0, -1.0, r3 < 0.5) * pa.w + D.p5.x);\n"
     "  let wp = (D.model * vec4f(pa.xyz, 1.0)).xyz;\n"
     "  let wv = m3(D.model) * vc.xyz;\n"
     "  let right = vec3f(D.view[0][0], D.view[1][0], D.view[2][0]);\n"
@@ -1257,6 +1257,7 @@ void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx
   du[84] = mvv ? 1.0f : 0.0f;
   du[85] = d->motion_strength;
   du[86] = d->camera_fade;
+  cw__fx_start_angle(d->angle, d->angle_random, &du[88], &du[89]); /* p5.xy: start angle base, range */
   du[68] = d->lifetime;
   du[69] = CW_CLAMP(d->lifetime_random, 0, 1);
   du[70] = d->trail_width;

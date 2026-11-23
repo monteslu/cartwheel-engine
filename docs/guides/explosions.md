@@ -44,6 +44,12 @@ A flipbook is a sheet of frames played over a particle's life (`texture`, `hfram
 
 @include samples/fx_explosion/assets/main.cwscene#Fire
 
+## Upright flames: the start angle
+
+Every billboard particle starts at a random turn by default, which suits smoke and sparks but tilts a flipbook drawn upright (flame tongues, a rising wisp, an arrow) to every angle. `angle` sets the start angle in radians (counter-clockwise as the camera sees it on a [GPUParticles3D](node:GPUParticles3D), clockwise with y down on a [GPUParticles2D](node:GPUParticles2D), as a Node2D's rotation) and `angle_random` how far each particle may stray from it, as a share of a full turn centred on `angle`: 1 (the default) is any angle, exactly as before the properties existed, and 0 starts every particle at `angle`. With both at 0 a camera-facing flame stays upright on screen however the camera circles or tilts above it. A small `angle_random` (0.05 is about 9 degrees either way) keeps a fire from looking stamped. `spin` still turns each particle from its start angle, either way at random. STRETCHED particles ignore the start angle (their velocity sets the turn) and MESH particles take it as a turn about each one's own random axis.
+
+`samples/fx_particle_angle` draws upright arrows from both node types while the camera circles; its gate (`tests/particle-angle.mjs`) measures every arrow's turn from the picture on GL and WebGPU, natively and as a cart.
+
 ## Smoke near the camera
 
 A blast on the thing a chase camera follows puts its smoke and flash a few metres from the lens, where one big billboard covers the whole view. `camera_fade` on a [GPUParticles3D](node:GPUParticles3D) fades its particles out as they come within that distance of the camera (smoothly, to nothing at the camera): set it to about the camera's distance from its target and the cloud thins as it reaches the lens instead of whiting out the screen. Particles farther away are untouched. It works with every blend mode and on both renderers.
