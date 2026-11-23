@@ -534,7 +534,10 @@ static void save_rec(save_ctx *c, cw_node n, cw_node ref, bool inside_instance, 
   /* an instance the scene itself placed; a nested instance INSIDE an instanced
    * scene is that scene's node (an override at most), not a new instance */
   bool instance_root = r->scene_root && r->scene_source && n.id != c->root.id && !inside_instance;
-  if (instance_root) {
+  /* the saved scene's root is itself an instance (a scene that instances another at its top): its children are that
+   * scene's, compared against a fresh instance and written only as overrides, as an instance's below the root are */
+  bool root_instanced = r->scene_root && r->scene_source && n.id == c->root.id && !inside_instance;
+  if (instance_root || root_instanced) {
     fresh = cw_scene_instance((cw_packed_scene *)(uintptr_t)r->scene_source);
     ref = fresh;
   } else if (!inside_instance) {
@@ -544,7 +547,7 @@ static void save_rec(save_ctx *c, cw_node n, cw_node ref, bool inside_instance, 
   write_node(c, n, ref, inside_instance && !instance_root, body, NULL);
   for (int i = 0; i < r->children.count; i++) {
     cw_node ch = r->children.data[i];
-    bool child_inside = inside_instance || instance_root;
+    bool child_inside = inside_instance || instance_root || root_instanced;
     cw_node child_ref = { 0 };
     if (child_inside) {
       child_ref = cw_node_get(ref, cw_node_name(ch));

@@ -4,6 +4,15 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.66.1 (2026-11-23)
+
+### Fixed
+- Saving a scene whose root is itself an instance of another scene (`[node name="World" instance=1]` at the top, as
+  samples/runtime_nodes' world_decl.cwscene) wrote the instanced scene's own children again as plain nodes, so the
+  saved file loaded with them twice (the editor's lossless check: "6 children became 11"). They are now compared
+  against a fresh instance and written only where they differ, as below any other instance; the editor-scenes gate
+  passes again.
+
 ## v0.66.0 (2026-11-23)
 
 ### Added
