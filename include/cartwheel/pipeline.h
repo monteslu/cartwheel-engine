@@ -17,7 +17,9 @@
  *                      clears colour only.
  *   CW_PHASE_OPAQUE    the scene: the built-in "scene" pass (order 0) renders
  *                      the tree's three.c scene (opaque, background,
- *                      transparent, as three.c orders them) into the scene
+ *                      transparent, as three.c orders them; while a fog
+ *                      draws, the transparent queue waits for it: the
+ *                      "transparents" EFFECTS pass) into the scene
  *                      FBO (HDR colour + depth texture, or the MSAA
  *                      renderbuffers). Passes after it here draw more
  *                      geometry with the same depth. "backdrop" (-1000,
@@ -33,9 +35,13 @@
  *                      depth attached for testing; ctx->depth_tex is a copy
  *                      to SAMPLE. (With MSAA the scene is resolved before
  *                      SKY, so these phases draw single-sampled.) Module
- *                      passes: "decals" (100, decals.h), "particles" (200,
- *                      particles.h: GPU particle simulation and drawing,
- *                      trails).
+ *                      passes: "decals" (100, decals.h), "volumetric_fog.grid"
+ *                      (110), "height_fog" or "volumetric_fog" (120,
+ *                      environment.h), "transparents" (130: while a fog
+ *                      draws, three.c's transparent queue, which the scene
+ *                      pass then leaves out, fogged at its own distance),
+ *                      "particles" (200, particles.h: GPU particle
+ *                      simulation and drawing, trails).
  *   CW_PHASE_POST      the full-screen chain. A pass that WRITES CW_RES_COLOR
  *                      reads ctx->src and writes ctx->dst; the pipeline
  *                      ping-pongs pooled targets and hands the last writer

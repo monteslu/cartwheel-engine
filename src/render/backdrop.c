@@ -16,6 +16,7 @@
 #include "cartwheel/debug.h"
 #include "cartwheel/gl.h"
 #include "cartwheel/gpu.h"
+#include "cartwheel/profile.h"
 #include "cartwheel/quality.h"
 #include "cartwheel/render3d.h"
 #include "cartwheel/scene_file.h"
@@ -42,6 +43,9 @@ typedef struct backdrop {
   int32_t renders;
   float cpu_ms;
   int ran_passes; /* passes its world's pipeline ran last frame it rendered */
+  cw_node env_cam; /* the camera its world was drawn through this frame */
+  bool prewarm;   /* cw_backdrop_prewarm: its world drawn once at the next frame, whatever its opacity */
+  int32_t prewarms; /* prewarm renders so far */
   /* environment (the world as the tree's image-based light): properties */
   bool environment;
   int32_t env_resolution, env_every;
@@ -126,6 +130,16 @@ int cw_backdrop_renders(cw_node n) {
 float cw_backdrop_last_cpu_ms(cw_node n) {
   backdrop *d = BD(n);
   return d ? d->cpu_ms : 0;
+}
+bool cw_backdrop_prewarm(cw_node n) {
+  backdrop *d = BD(n);
+  if (!d) return false;
+  d->prewarm = true;
+  return true;
+}
+int cw_backdrop_prewarms(cw_node n) {
+  backdrop *d = BD(n);
+  return d ? d->prewarms : 0;
 }
 
 /* ── test switches (native env, a cart's env request) ──────────────── */
@@ -312,6 +326,14 @@ static void bdw_free(void *p) {
   cw_free(W);
 }
 
+/* every Backdrop of the tree prewarmed at its next frame (the scene runner, at the end of a warm-up) */
+int cw__backdrops_prewarm_tree(cw_tree *t) {
+  bdw *W = t ? cw_tree_slot(t, "backdrop") : NULL;
+  int k = 0;
+  for (int i = 0; W && i < W->nodes.count; i++) k += cw_backdrop_prewarm(W->nodes.data[i]);
+  return k;
+}
+
 static bool find_cam(cw_node n, void *user) {
   cw_node *found = user;
   if (!cw_node_valid(*found) && cw_node_is(n, "Camera3D")) *found = n;
@@ -325,6 +347,96 @@ static int order_cmp(const void *a, const void *b) {
   return 0;
 }
 
+/* a t3 object's culling flag, kept while a prewarm draws everything */
+typedef struct cull_keep { t3_object **o; bool *was; int n, cap; } cull_keep;
+static void cull_off(t3_object *o, void *ctx) {
+  cull_keep *k = ctx;
+  if (k->n == k->cap) {
+    k->cap = k->cap ? k->cap * 2 : 64;
+    k->o = realloc(k->o, sizeof *k->o * (size_t)k->cap);
+    k->was = realloc(k->was, sizeof *k->was * (size_t)k->cap);
+  }
+  k->o[k->n] = o, k->was[k->n++] = o->frustum_culled;
+  o->frustum_culled = false;
+}
+
+/* the hidden roots of a world (its scene's root, or the nodes at its tree's root for a world built in code): shown for a
+ * prewarm render, then hidden again; returns how many it showed */
+static int roots_show(backdrop *d, cw_node *shown, int cap) {
+  int k = 0;
+  cw_node r = cw_tree_root(d->world);
+  int nc = cw_node_valid(d->world_root) ? 1 : cw_node_child_count(r);
+  for (int i = 0; i < nc && k < cap; i++) {
+    cw_node c = cw_node_valid(d->world_root) ? d->world_root : cw_node_child(r, i);
+    cw_value v;
+    if (cw_node_get_prop(c, "visible", &v) && v.type == CW_T_BOOL && !v.b) {
+      cw_node_set(c, "visible", cw_val_bool(true));
+      shown[k++] = c;
+    }
+  }
+  return k;
+}
+
+/* a backdrop's world rendered into its picture (NULL when it has no camera or draws nothing); warm: a prewarm (its hidden
+ * roots shown for it, nothing culled, no statistics kept) */
+static const cw_rt *world_render(backdrop *d, int w, int h, double alpha, bool warm, cw_pipeline **wp_out) {
+  cw_tree *wt = d->world;
+  cw_node cam = { 0 };
+  d->env_cam = (cw_node){ 0 };
+  if (d->camera && d->camera[0]) {
+    cam = cw_node_get(cw_node_valid(d->world_root) ? d->world_root : cw_tree_root(wt), d->camera);
+    if (!cw_node_is(cam, "Camera3D")) {
+      if (!d->warned) cw_warn("Backdrop '%s': camera '%s' is not a Camera3D of its world (a path from the root of its scene)", cw_node_name(d->self), d->camera);
+      d->warned = true;
+      return NULL;
+    }
+  }
+  double t0 = cw__render3d_now_ms();
+  CW_PROFILE_BEGIN(warm ? "backdrop.prewarm" : "backdrop.world");
+  cw_tree *prev = cw_current_tree();
+  cw_set_current_tree(wt);
+  cw_node shown[16];
+  int nshown = warm ? roots_show(d, shown, (int)CW_ARRAY_LEN(shown)) : 0;
+  cw_tree_pre_render(wt, alpha);
+  if (!cw_node_valid(cam) && !cw_node_valid(cw_render3d_camera(wt))) {
+    cw_node walk = { 0 };
+    cw_node_walk(cw_tree_root(wt), find_cam, &walk);
+    if (!cw_node_valid(walk)) {
+      if (!d->warned) cw_warn("Backdrop '%s': its world has no Camera3D; nothing is drawn", cw_node_name(d->self));
+      d->warned = true;
+      for (int i = 0; i < nshown; i++) cw_node_set(shown[i], "visible", cw_val_bool(false));
+      cw_set_current_tree(prev);
+      CW_PROFILE_END();
+      return NULL;
+    }
+  }
+  cull_keep keep = { 0 };
+  t3_scene *wsc = warm ? cw_render3d_scene(wt) : NULL;
+  if (wsc) t3_object_traverse(wsc, cull_off, &keep);
+  cw_pipeline *wp = cw_pipeline_of(wt);
+  t3_renderer *r = cw_render3d_renderer(wt);
+  if (r) t3_renderer_reset_bindings(r);
+  const cw_rt *pic = cw__pipeline_render_backdrop(wt, cam, w, h, alpha);
+  r = cw_render3d_renderer(wt);
+  if (r) t3_renderer_reset_bindings(r);
+  for (int i = 0; i < keep.n; i++) keep.o[i]->frustum_culled = keep.was[i];
+  free(keep.o), free(keep.was);
+  for (int i = 0; i < nshown; i++) cw_node_set(shown[i], "visible", cw_val_bool(false));
+  if (!warm && !d->environment) cap_free(d);
+  cw_set_current_tree(prev);
+  CW_PROFILE_END();
+  if (!warm) {
+    d->cpu_ms = (float)(cw__render3d_now_ms() - t0);
+    const cw_pass_stat *st;
+    int ns = cw_pipeline_pass_stats(wp, &st), ran = 0;
+    for (int k = 0; k < ns; k++) ran += st[k].ran;
+    d->ran_passes = ran;
+  }
+  d->env_cam = cw_node_valid(cam) ? cam : cw_render3d_camera(wt);
+  *wp_out = wp;
+  return pic;
+}
+
 /* pipeline.c calls this at the start of the tree's cw_pipeline_render, with the frame's size */
 static void frame_hook(cw_tree *t, cw_pipeline *p, int w, int h, double alpha) {
   p->bd_n = 0;
@@ -333,8 +445,8 @@ static void frame_hook(cw_tree *t, cw_pipeline *p, int w, int h, double alpha) {
   p->bd_w = w, p->bd_h = h;
   bdw *W = cw_tree_slot(t, "backdrop");
   if (!W) return;
-  backdrop *list[64];
-  int n = 0;
+  backdrop *list[64], *warm[CW_BACKDROP_MAX];
+  int n = 0, nw = 0;
   for (int i = 0; i < W->nodes.count; i++) {
     cw_node nd = W->nodes.data[i];
     backdrop *d = BD(nd);
@@ -342,10 +454,13 @@ static void frame_hook(cw_tree *t, cw_pipeline *p, int w, int h, double alpha) {
     d->ran_passes = 0; /* (this frame: none unless it renders below) */
     bool have = world_sync(nd, d);
     /* opacity 0, or hidden by itself or a Node3D, Node2D or CanvasLayer above it (cw_node_visible_in_tree): nothing at all */
-    if (!have || !(d->opacity > 0) || !cw_node_visible_in_tree(nd) || n >= (int)CW_ARRAY_LEN(list)) continue;
+    bool shown = have && d->opacity > 0 && cw_node_visible_in_tree(nd) && n < (int)CW_ARRAY_LEN(list);
+    if (d->prewarm && !shown && have && nw < (int)CW_ARRAY_LEN(warm)) warm[nw++] = d; /* (shown: it renders anyway) */
+    else if (d->prewarm && (shown || !have)) d->prewarm = false;
+    if (!shown) continue;
     list[n++] = d;
   }
-  if (!n) return;
+  if (!n && !nw) return;
   /* stable by order (insertion sort keeps the tree order of ties) */
   for (int i = 1; i < n; i++)
     for (int j = i; j > 0 && order_cmp(&list[j - 1], &list[j]) > 0; j--) {
@@ -361,52 +476,33 @@ static void frame_hook(cw_tree *t, cw_pipeline *p, int w, int h, double alpha) {
   n = CW_MIN(n, CW_BACKDROP_MAX);
   bool ignore_opacity = test_flag("CW_TEST_BACKDROP_OPACITY_IGNORED"); /* a gate control: every backdrop drawn at 1 */
   float main_exp = exposure_of(p);
-  cw_tree *prev = cw_current_tree();
   for (int i = 0; i < n; i++) {
     backdrop *d = list[i];
-    cw_tree *wt = d->world;
-    cw_node cam = { 0 };
-    if (d->camera && d->camera[0]) {
-      cam = cw_node_get(cw_node_valid(d->world_root) ? d->world_root : cw_tree_root(wt), d->camera);
-      if (!cw_node_is(cam, "Camera3D")) {
-        if (!d->warned) cw_warn("Backdrop '%s': camera '%s' is not a Camera3D of its world (a path from the root of its scene)", cw_node_name(d->self), d->camera);
-        d->warned = true;
-        continue;
-      }
-    }
-    double t0 = cw__render3d_now_ms();
-    cw_set_current_tree(wt);
-    cw_tree_pre_render(wt, alpha);
-    if (!cw_node_valid(cam) && !cw_node_valid(cw_render3d_camera(wt))) {
-      cw_node walk = { 0 };
-      cw_node_walk(cw_tree_root(wt), find_cam, &walk);
-      if (!cw_node_valid(walk)) {
-        if (!d->warned) cw_warn("Backdrop '%s': its world has no Camera3D; nothing is drawn", cw_node_name(d->self));
-        d->warned = true;
-        cw_set_current_tree(prev);
-        continue;
-      }
-    }
-    cw_pipeline *wp = cw_pipeline_of(wt);
-    t3_renderer *r = cw_render3d_renderer(wt);
-    if (r) t3_renderer_reset_bindings(r);
-    const cw_rt *pic = cw__pipeline_render_backdrop(wt, cam, w, h, alpha);
-    r = cw_render3d_renderer(wt);
-    if (r) t3_renderer_reset_bindings(r);
-    if (!d->environment) cap_free(d);
-    cw_set_current_tree(prev);
-    d->cpu_ms = (float)(cw__render3d_now_ms() - t0);
-    const cw_pass_stat *st;
-    int ns = cw_pipeline_pass_stats(wp, &st), ran = 0;
-    for (int k = 0; k < ns; k++) ran += st[k].ran;
-    d->ran_passes = ran;
+    cw_pipeline *wp = NULL;
+    const cw_rt *pic = world_render(d, w, h, alpha, false, &wp);
     if (!pic) continue;
     d->renders++;
     float o = ignore_opacity ? 1 : CW_CLAMP(d->opacity, 0.0f, 1.0f);
     p->bd[p->bd_n++] = (struct cw__backdrop_pic){ .tex = pic->tex, .opacity = o, .scale = main_exp > 0 ? exposure_of(wp) / main_exp : 1 };
     /* its world as the tree's environment: captured in the tree's "backdrop_env" pass (cartwheel/backdrop.h environment) */
     if (d->environment)
-      p->bd_env[p->bd_env_n++] = (struct cw__backdrop_env){ .bd = d, .world = wt, .camera = cw_node_valid(cam) ? cam : cw_render3d_camera(wt), .pic = p->bd_n - 1 };
+      p->bd_env[p->bd_env_n++] = (struct cw__backdrop_env){ .bd = d, .world = d->world, .camera = d->env_cam, .pic = p->bd_n - 1 };
+  }
+  /* the prewarms (cw_backdrop_prewarm, and every backdrop at the end of a scene app's warm-up): each world drawn once as
+   * it would be shown (its hidden root shown for the render, nothing culled), its picture blended at opacity 0 (so the
+   * tree's backdrop pass and its reflections' composite are built too) and nothing changed on screen */
+  for (int i = 0; i < nw; i++) {
+    backdrop *d = warm[i];
+    d->prewarm = false;
+    cw_pipeline *wp = NULL;
+    const cw_rt *pic = world_render(d, w, h, alpha, true, &wp);
+    if (!pic) continue;
+    d->prewarms++;
+    /* CW_TEST_PREWARM_SHOW=1: the picture blended at 1 (the control of gate backdrop-look-prewarm's invisible check; read
+     * with getenv: a prewarm runs in a test's first frame, where cw_test_env answers nothing yet) */
+    const char *show = getenv("CW_TEST_PREWARM_SHOW");
+    float o = show && atoi(show) ? 1.0f : 0.0f;
+    if (p->bd_n < CW_BACKDROP_MAX) p->bd[p->bd_n++] = (struct cw__backdrop_pic){ .tex = pic->tex, .opacity = o, .scale = 1 };
   }
   /* the main tree's renderer draws next: its cached GL state is stale (the bindings, and its draw state) */
   if (!on_wgpu()) gl_frame_state(w, h);
@@ -995,6 +1091,10 @@ static void renders_get(cw_node n, void *data, cw_value *o) {
   (void)n;
   *o = cw_val_int(((backdrop *)data)->renders);
 }
+static void prewarms_get(cw_node n, void *data, cw_value *o) {
+  (void)n;
+  *o = cw_val_int(((backdrop *)data)->prewarms);
+}
 static void env_captures_get(cw_node n, void *data, cw_value *o) {
   (void)n;
   *o = cw_val_int(((backdrop *)data)->env_captures);
@@ -1006,6 +1106,7 @@ static const cw_prop bd_props[] = {
   CW_PROP_FIELD_RANGE(backdrop, opacity, CW_T_FLOAT, 0, 1, "0: not drawn and free; 1: covers what is below it. Cross-fade two backdrops by their opacities."),
   CW_PROP_FIELD(backdrop, order, CW_T_INT, CW_PROP_DEFAULT, "Draw order among the backdrops: lower is further back."),
   CW_PROP_ACCESSOR("renders", CW_T_INT, CW_PROP_READONLY, renders_get, NULL, "Pictures rendered so far."),
+  CW_PROP_ACCESSOR("prewarms", CW_T_INT, CW_PROP_READONLY, prewarms_get, NULL, "Prewarm renders so far (cw_backdrop_prewarm, and the warm-up's): its world drawn once while not shown, so its first frame shown builds nothing."),
   CW_PROP_FIELD(backdrop, environment, CW_T_BOOL, CW_PROP_DEFAULT, "Its world lights the scene: captured as a cube from its camera, it is the scene's environment (image-based light: reflections on glossy and rough surfaces), blended with the other backdrops' by their opacities."),
   CW_PROP_FIELD_RANGE(backdrop, env_resolution, CW_T_INT, 16, 512, "The capture's face size in texels (a power of two: rounded down)."),
   CW_PROP_FIELD_RANGE(backdrop, env_every, CW_T_INT, 1, 600, "Frames a capture's six faces are spread over (1: all six every frame); the lower effects presets spread them wider."),
@@ -1035,8 +1136,8 @@ static void cmd_backdrop(int argc, const char **argv, cw_reply *r) {
     cw_reply_str(r, cw_node_name(n));
     cw_reply_raw(r, ",\"scene\":");
     cw_reply_str(r, d->scene ? d->scene : "");
-    cw_reply_printf(r, ",\"opacity\":%.4f,\"order\":%d,\"renders\":%d,\"passes\":%d,\"cpu_ms\":%.3f", (double)d->opacity, (int)d->order,
-                    (int)d->renders, d->ran_passes, (double)d->cpu_ms);
+    cw_reply_printf(r, ",\"opacity\":%.4f,\"order\":%d,\"renders\":%d,\"prewarms\":%d,\"passes\":%d,\"cpu_ms\":%.3f", (double)d->opacity, (int)d->order,
+                    (int)d->renders, (int)d->prewarms, d->ran_passes, (double)d->cpu_ms);
     cw_reply_printf(r, ",\"environment\":%s,\"env_size\":%d,\"env_every\":%d,\"env_captures\":%d,\"env_cpu_ms\":%.3f}", d->environment ? "true" : "false",
                     d->cap_size, d->environment ? env_every_now(d) : 0, (int)d->env_captures, (double)d->env_cpu_ms);
   }

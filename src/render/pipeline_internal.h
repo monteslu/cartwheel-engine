@@ -105,6 +105,9 @@ struct cw_pipeline {
    * reprojection follow that view's camera, not the view drawn before it) */
   struct cw__view_prev { t3_mat4 vp; bool have; int w, h; } view_prev[CW_MAX_VIEWS];
   bool velocity_wanted, depth_copy_wanted, prepass_ran;
+  /* this run's "transparents" pass draws the transparent queue after the fog (environment_internal.h): the scene
+   * pass draws the opaque queue only */
+  bool defer_trans;
   bool drew3d; /* the scene pass ran this frame (the canvas pass clears when not) */
   /* stats for cw_pipeline_pass_stats, in run order */
   CW_ARRAY(cw_pass_stat) stats;

@@ -358,15 +358,23 @@ async function runRomdev() {
   // "@N cmd": romdev answers a request with the frame it runs, so the frames before N are stepped first and the
   // request runs frame N (a mid-run change such as a graphics preset, as natively)
   const timed = startPlan.filter((_, i) => startCmds[i].startsWith('@')).map(([k, text]) => [k + 1, text]).sort((a, b) => a[0] - b[0]);
+  // frames stepped in calls of at most STEP_MAX: on GL a cart's loading screen waits on the driver's parallel shader
+  // compile, which finishes in real time, and one fast call over the whole run never lets those completions land (an
+  // unseeded run, --warmup-spread, sat at "Compiling shaders" for good, where a player's host and 150-frame calls reach
+  // the title). CW_TEST_RUNCART_ONE_STEP=1: the whole range in one call, as before (the check's control)
+  const STEP_MAX = process.env.CW_TEST_RUNCART_ONE_STEP === '1' ? Infinity : 150;
+  const step = async (n) => {
+    for (let left = n; left > 0; left -= STEP_MAX) await romdevCall('frame', { op: 'step', frames: Math.min(left, STEP_MAX) }, session);
+  };
   const stepTo = async (target) => { // run frames until `at` is target, posting each timed request on its frame
     while (timed.length && timed[0][0] - 1 < target) {
       const [n, text] = timed.shift();
       if (n - 1 < at) throw new Error(`romdev: --start-cmds "@${n} ${text}": frame ${n} already ran (the start requests run frames 2 to ${at})`);
-      if (n - 1 > at) { await romdevCall('frame', { op: 'step', frames: n - 1 - at }, session); at = n - 1; }
+      if (n - 1 > at) { await step(n - 1 - at); at = n - 1; }
       cmdReplies.push({ text, reply: await romdevCall('wasm', { op: 'command', text }, session) });
       at++;
     }
-    if (target > at) { await romdevCall('frame', { op: 'step', frames: target - at }, session); at = target; }
+    if (target > at) { await step(target - at); at = target; }
   };
   if (args['cmd-out']) writeFileSync(resolve(args['cmd-out']), JSON.stringify(cmdReplies, null, 1));
   const romdevPad = (s) => {
@@ -398,7 +406,7 @@ async function runRomdev() {
   let mouse = null, touches = new Map();
   const live = script.filter((s) => s.frame <= end); // entries after the last frame never apply (as natively)
   if (live.length && !timed.length && !live.some((s) => s.mouse || (s.touches || []).length || s.wheel != null)) {
-    // the whole schedule in one call: entry i is held from frame s.frame (frames 1..s.frame-1 run before it) until the
+    // the whole schedule as one sequence: entry i is held from frame s.frame (frames 1..s.frame-1 run before it) until the
     // next entry, the last until the run's end; an entry a later one replaces in the same frame is never held
     const steps = [];
     if (live[0].frame - 1 > at) steps.push({ input: { ports: [{}] }, frames: live[0].frame - 1 - at });
@@ -406,9 +414,20 @@ async function runRomdev() {
       const from = Math.max(s.frame - 1, at), to = i + 1 < live.length ? Math.max(live[i + 1].frame - 1, at) : end;
       if (to > from) steps.push({ input: { ports: romdevPad(s), ...romdevKeys(s) }, frames: to - from });
     });
-    if (steps.length) {
-      const r = await romdevCall('input', { op: 'sequence', steps }, session);
-      if (steps.some((st) => st.input.keys) && r.keyboard === undefined) throw new Error('romdev: the input sequence dropped its keys (keys on romdev need romdev 0.155.0 or later)');
+    // (in calls of at most STEP_MAX frames, a step that crosses a call's end held on in the next)
+    const calls = [];
+    let cur = [], n = 0;
+    for (const st of steps)
+      for (let left = st.frames; left > 0;) {
+        const k = Math.min(left, STEP_MAX - n);
+        cur.push({ ...st, frames: k });
+        left -= k, n += k;
+        if (n >= STEP_MAX) calls.push(cur), (cur = []), (n = 0);
+      }
+    if (cur.length) calls.push(cur);
+    for (const part of calls) {
+      const r = await romdevCall('input', { op: 'sequence', steps: part }, session);
+      if (part.some((st) => st.input.keys) && r.keyboard === undefined) throw new Error('romdev: the input sequence dropped its keys (keys on romdev need romdev 0.155.0 or later)');
       keysLanded(r, 'the input sequence');
     }
     at = Math.max(at, end);
@@ -434,7 +453,7 @@ async function runRomdev() {
     if (romdevKeys(s).keys && setR.keyboard === undefined) throw new Error(`romdev: the pad set at frame ${s.frame} dropped its keys (keys on romdev need romdev 0.155.0 or later)`);
     keysLanded(setR, `the pad set at frame ${s.frame}`);
   }
-  // One call for the rest of the run. romdev gives a WebGPU cart an event-loop
+  // The rest of the run in calls of at most STEP_MAX frames. romdev gives a WebGPU cart an event-loop
   // turn between every two stepped frames, so asynchronous results (buffer
   // maps, error scopes) arrive between frames as on every other host; stepping
   // one frame per call for that cost thousands of calls a run

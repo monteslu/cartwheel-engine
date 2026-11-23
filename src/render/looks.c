@@ -15,7 +15,9 @@
 #include "cartwheel/look.h"
 #include "cartwheel/math.h"
 #include "cartwheel/platform.h"
+#include "cartwheel/profile.h"
 #include "cartwheel/vfs.h"
+#include "look_blue_noise.h"
 #include "look_internal.h"
 #include "pipeline_internal.h"
 
@@ -195,6 +197,11 @@ typedef struct looks_state {
   uint32_t ticket[2];
   bool pend[2];       /* look.lum<i> holds a reduction not read yet */
   uint8_t drawn;      /* the looks drawn this frame (bit i) */
+  /* prewarms (cw_look_prewarm): looks drawn once at the next frame, each at the stages it can be drawn at (bit 0
+   * SCENE, bit 1 DISPLAY), into the pass's own target before its real run writes it */
+  struct { cw_look l; uint8_t stages; } warm[MAX_LOOKS];
+  int nwarm;
+  int32_t prewarms;
 } looks_state;
 
 static looks_state *STATES[16];
@@ -337,9 +344,15 @@ static int pair_stages(const looks_state *s) {
   if (lb && nb && lb != la) m |= lb->d.stage == CW_LOOK_STAGE_DISPLAY ? 2 : 1;
   return m;
 }
+/* a prewarm waiting for this stage */
+static bool warm_wants(const looks_state *s, int stage) {
+  for (int i = 0; i < s->nwarm; i++)
+    if (s->warm[i].stages & (1u << stage)) return true;
+  return false;
+}
 static bool looks_active(const cw_pass_ctx *ctx, void *u) {
   (void)ctx;
-  return (pair_stages(u) & 1) != 0;
+  return (pair_stages(u) & 1) != 0 || warm_wants(u, 0);
 }
 static bool looks_display_active(const cw_pass_ctx *ctx, void *u) {
   /* split screen with the shared post chain: the views' pictures go through one chain after they are laid out, so
@@ -348,7 +361,7 @@ static bool looks_display_active(const cw_pass_ctx *ctx, void *u) {
   const cw_pipeline *p = ctx->pipeline;
   bool shared = p->views_shared_post && p->nviews >= 2;
   cw__pipeline_set_pass_reads((cw_pipeline *)p, "looks_display", shared ? CW_RES_COLOR : CW_RES_COLOR | CW_RES_DEPTH);
-  return (pair_stages(u) & 2) != 0;
+  return (pair_stages(u) & 2) != 0 || warm_wants(u, 1);
 }
 
 /* ── shaders ─────────────────────────────────────────────────────────── */
@@ -1470,6 +1483,7 @@ static unsigned prog(int k) {
   int b = wg() ? 1 : 0;
   if (PROG[b][g_stage][k] || PROG_TRIED[b][g_stage][k]) return PROG[b][g_stage][k];
   PROG_TRIED[b][g_stage][k] = true;
+  CW_PROFILE_SCOPE("look.program");
   unsigned p = 0;
   switch (k) {
   case P_ASCII_REG: p = build("look.ascii_regions", ASCII_REG_G_DECL, ASCII_REG_G, ASCII_REG_W_FIELDS, ASCII_REG_W_DECL, ASCII_REG_W); break;
@@ -1509,67 +1523,13 @@ static unsigned neutral_tex(void) {
 }
 
 /* 64 x 64 blue noise by void and cluster (Ulichney 1993; a Gaussian of sigma 1.5 on the torus), as ranks scaled to
- * 0..255: made once, the same on every host (integer seed, float energies summed in one order) */
+ * 0..255: a table (look_blue_noise.h, made by tools/gen-look-blue-noise.c and held to the void and cluster on every
+ * host by unit_looks), uploaded the first time a look needs it. Up to v0.66.0 it was computed here, which cost 46 ms of
+ * CPU in a cart on the first frame a dither look drew. */
 #define BN 64
-static void bn_add(float *e, const float *g, int pos, float sgn) {
-  int px = pos % BN, py = pos / BN;
-  for (int y = 0; y < BN; y++)
-    for (int x = 0; x < BN; x++) e[y * BN + x] += sgn * g[((y - py + BN) % BN) * BN + ((x - px + BN) % BN)];
-}
 static unsigned blue_noise_tex(void) {
   static unsigned tex;
-  if (tex) return tex;
-  enum { N = BN * BN };
-  float *g = cw_alloc(sizeof(float) * N, CW_MEM_RENDER), *e = cw_calloc(N, sizeof(float), CW_MEM_RENDER);
-  uint8_t *on = cw_calloc(N, 1, CW_MEM_RENDER), *proto = cw_calloc(N, 1, CW_MEM_RENDER);
-  int *rank = cw_alloc(sizeof(int) * N, CW_MEM_RENDER);
-  for (int y = 0; y < BN; y++)
-    for (int x = 0; x < BN; x++) {
-      int dx = x > BN / 2 ? x - BN : x, dy = y > BN / 2 ? y - BN : y;
-      g[y * BN + x] = expf(-(float)(dx * dx + dy * dy) / (2.0f * 1.5f * 1.5f));
-    }
-  /* the prototype: a tenth of the cells on, from a fixed LCG, then the tightest cluster moved into the largest void
-   * until that is the same cell */
-  uint32_t r = 12345u;
-  int ones = 0;
-  while (ones < N / 10) {
-    r = r * 1664525u + 1013904223u;
-    int pos = (int)((r >> 8) % N);
-    if (!on[pos]) on[pos] = 1, ones++, bn_add(e, g, pos, 1.0f);
-  }
-  for (int guard = 0; guard < 4 * N; guard++) {
-    int tc = -1, lv = -1;
-    for (int i = 0; i < N; i++)
-      if (on[i] && (tc < 0 || e[i] > e[tc])) tc = i;
-    on[tc] = 0, bn_add(e, g, tc, -1.0f);
-    for (int i = 0; i < N; i++)
-      if (!on[i] && (lv < 0 || e[i] < e[lv])) lv = i;
-    on[lv] = 1, bn_add(e, g, lv, 1.0f);
-    if (lv == tc) break;
-  }
-  memcpy(proto, on, N);
-  float *e0 = cw_alloc(sizeof(float) * N, CW_MEM_RENDER);
-  memcpy(e0, e, sizeof(float) * N);
-  /* ranks below the prototype's count: its tightest clusters taken out one by one */
-  for (int k = ones - 1; k >= 0; k--) {
-    int tc = -1;
-    for (int i = 0; i < N; i++)
-      if (on[i] && (tc < 0 || e[i] > e[tc])) tc = i;
-    on[tc] = 0, bn_add(e, g, tc, -1.0f), rank[tc] = k;
-  }
-  /* the rest: the largest void filled, one by one */
-  memcpy(on, proto, N);
-  memcpy(e, e0, sizeof(float) * N);
-  for (int k = ones; k < N; k++) {
-    int lv = -1;
-    for (int i = 0; i < N; i++)
-      if (!on[i] && (lv < 0 || e[i] < e[lv])) lv = i;
-    on[lv] = 1, bn_add(e, g, lv, 1.0f), rank[lv] = k;
-  }
-  uint8_t *tx = cw_alloc(N, CW_MEM_RENDER);
-  for (int i = 0; i < N; i++) tx[i] = (uint8_t)(rank[i] * 256 / N);
-  tex = cw_pass_texture_new(BN, BN, CW_RT_R8, tx);
-  cw_free(g), cw_free(e), cw_free(e0), cw_free(on), cw_free(proto), cw_free(rank), cw_free(tx);
+  if (!tex) tex = cw_pass_texture_new(BN, BN, CW_RT_R8, cw__look_blue_noise);
   return tex;
 }
 
@@ -1577,6 +1537,7 @@ static unsigned blue_noise_tex(void) {
 
 static bool ascii_prepare(look *l) {
   if (l->ascii_ver == l->ver && l->gv_tex) return l->fnt != NULL;
+  CW_PROFILE_SCOPE("look.ascii_prepare");
   if (!l->fnt) {
     if (l->font) {
       size_t len = 0;
@@ -1644,6 +1605,7 @@ static unsigned ascii_atlas(look *l, int cw, int ch) {
     }
     if (l->atlas[i].used < l->atlas[lru].used) lru = i;
   }
+  CW_PROFILE_SCOPE("look.ascii_atlas");
   unsigned char *cell = cw_alloc((size_t)cw * ch, CW_MEM_RENDER), *tex = cw_calloc((size_t)cw * NGLYPH * ch, 1, CW_MEM_RENDER);
   for (int i = 0; i < NGLYPH; i++) {
     cw__look_font_raster(l->fnt, FIRST_CP + i, cw, ch, cell);
@@ -2205,13 +2167,26 @@ static void measure(cw_pass_ctx *ctx, looks_state *s, const vinfo *v, const cw_r
 }
 
 static void looks_run(cw_pass_ctx *ctx, looks_state *s);
+static void looks_prewarm_run(cw_pass_ctx *ctx, looks_state *s);
+/* CW_TEST_PREWARM_SHOW=1: the prewarm drawn after the pass's real run, so it is what dst holds (the control of gate
+ * backdrop-look-prewarm's invisible check; getenv: a prewarm runs in a test's first frame, before cw_test_env answers) */
+static bool prewarm_show(void) {
+  const char *v = getenv("CW_TEST_PREWARM_SHOW");
+  return v && atoi(v);
+}
 static void looks_exec(cw_pass_ctx *ctx, void *u) {
   g_stage = 0;
+  bool show = prewarm_show();
+  if (!show) looks_prewarm_run(ctx, u);
   looks_run(ctx, u);
+  if (show) looks_prewarm_run(ctx, u);
 }
 static void looks_display_exec(cw_pass_ctx *ctx, void *u) {
   g_stage = 1;
+  bool show = prewarm_show();
+  if (!show) looks_prewarm_run(ctx, u);
   looks_run(ctx, u);
+  if (show) looks_prewarm_run(ctx, u);
   g_stage = 0;
 }
 static void looks_run(cw_pass_ctx *ctx, looks_state *s) {
@@ -2286,4 +2261,85 @@ static void looks_run(cw_pass_ctx *ctx, looks_state *s) {
   }
   if (la) cw_pass_rt_release(ctx, ia);
   if (lb) cw_pass_rt_release(ctx, ib);
+}
+
+/* ── prewarm ─────────────────────────────────────────────────────────── */
+
+/* The prewarms waiting for this stage, in the pass's first run of the frame: each look drawn twice into this run's
+ * own target (dst, which the pass's real run then writes over whole), with the pipeline's real frame (size, formats,
+ * depth, views): alone (its last draw into dst's format, the screen's at the DISPLAY stage) and in a blend with the
+ * plain scene at weight 0.5 (the look into a pooled target, then the mix into dst). So every program, WebGPU pipeline
+ * (keyed on the target's format too), glyph atlas, palette and target its first shown frame needs is made here. What
+ * it leaves (a glyph history, the debug fields) is put back. */
+static void looks_prewarm_run(cw_pass_ctx *ctx, looks_state *s) {
+  if (!s->nwarm || !ctx->src || !ctx->dst || !warm_wants(s, g_stage)) return;
+  if (ctx->view_count > 0 ? ctx->view_index != 0 : (ctx->pipeline->nviews >= 2 && ctx->pipeline->view_i > 0)) return; /* (the first view) */
+  CW_PROFILE_SCOPE("look.prewarm");
+  cw_look ka = s->a, kb = s->b;
+  float kt = s->t;
+  cw_look_mix kh = s->how;
+  bool km = s->measure;
+  int knseen = s->nseen;
+  __typeof__(s->seen) kseen;
+  memcpy(kseen, s->seen, sizeof kseen);
+  int32_t d0 = dbg_ran, d1 = dbg_cells, d2 = dbg_views, d3 = dbg_kind_a, d4 = dbg_kind_b, d5 = dbg_stage, d6 = dbg_tone;
+  float d7 = dbg_t;
+  for (int i = 0; i < s->nwarm; i++) {
+    if (!(s->warm[i].stages & (1u << g_stage))) continue;
+    s->warm[i].stages &= (uint8_t)~(1u << g_stage);
+    if (!drawable(s->warm[i].l)) continue;
+    s->how = (cw_look_mix){ 0 }, s->measure = false;
+    s->a = s->warm[i].l, s->b = (cw_look){ 0 }, s->t = 0;
+    looks_run(ctx, s); /* alone */
+    s->t = 0.5f;
+    looks_run(ctx, s); /* in a blend */
+    s->prewarms++;
+  }
+  /* the entries done at every stage leave the list */
+  int k = 0;
+  for (int i = 0; i < s->nwarm; i++)
+    if (s->warm[i].stages) s->warm[k++] = s->warm[i];
+  s->nwarm = k;
+  s->a = ka, s->b = kb, s->t = kt, s->how = kh, s->measure = km;
+  s->nseen = knseen;
+  memcpy(s->seen, kseen, sizeof kseen);
+  dbg_ran = d0, dbg_cells = d1, dbg_views = d2, dbg_kind_a = d3, dbg_kind_b = d4, dbg_stage = d5, dbg_tone = d6, dbg_t = d7;
+  /* (a pass that runs only for the prewarm leaves the picture as it was: looks_run copies src to dst with no look) */
+}
+
+/* the stage a look is drawn at: its own (each look of a pair is drawn at its own stage, a blend across stages at both;
+ * CW_TEST_LOOK_ONE_STAGE, a gate's control, draws the pair at DISPLAY, the SCENE look too) */
+static uint8_t look_stages(const look *l) {
+  uint8_t st = l->d.stage == CW_LOOK_STAGE_DISPLAY ? 2u : 1u;
+  if (test_int("CW_TEST_LOOK_ONE_STAGE")) st |= 2u;
+  return st;
+}
+
+bool cw_look_prewarm(cw_pipeline *p, cw_look h) {
+  look *l = drawable(h);
+  if (!p || !l) return false;
+  looks_state *s = state_of(p);
+  if (!s) return false;
+  uint8_t st = look_stages(l);
+  for (int i = 0; i < s->nwarm; i++)
+    if (s->warm[i].l.id == h.id) {
+      s->warm[i].stages |= st;
+      return true;
+    }
+  if (s->nwarm >= (int)CW_ARRAY_LEN(s->warm)) return false;
+  s->warm[s->nwarm].l = h, s->warm[s->nwarm].stages = st;
+  s->nwarm++;
+  return true;
+}
+
+int cw_look_prewarm_all(cw_pipeline *p) {
+  int k = 0;
+  for (int i = 1; i < MAX_LOOKS; i++)
+    if (LOOKS[i].live && LOOKS[i].d.kind != CW_LOOK_NONE) k += cw_look_prewarm(p, CW_HANDLE_MAKE(cw_look, i, LOOKS[i].gen));
+  return k;
+}
+
+int cw_pipeline_look_prewarms(cw_pipeline *p) {
+  looks_state *s = p ? state_find(p) : NULL;
+  return s ? s->prewarms : 0;
 }

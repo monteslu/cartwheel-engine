@@ -36,7 +36,7 @@
 #define SYS_SIZE 2832 /* 1792, then the burst count (16) and 32 + 32 burst slots (1024) */
 #define SYS_BASE 1808
 #define STEP_STRIDE 256
-#define DRAW_SIZE 368
+#define DRAW_SIZE 512 /* (the fog at a particle's distance from 368: environment_internal.h) */
 #define PASS_STRIDE 256
 
 /* ── WGSL ─────────────────────────────────────────────────────────────── */
@@ -346,6 +346,7 @@ static const char WGSL_DRAW[] =
     "struct Draw {\n"
     "  view: mat4x4f, proj: mat4x4f, model: mat4x4f,\n"
     "  campos: vec4f, color: vec4f, p0: vec4f, p1: vec4f, p2: vec4f, life: vec4f, ia: vec4u, ib: vec4u, p3: vec4f, p4: vec4f, p5: vec4f,\n"
+    "  ff: array<vec4f, 9>,\n"
     "}\n"
     "@group(0) @binding(0) var<uniform> D: Draw;\n"
     "@group(0) @binding(1) var curve: texture_2d<f32>;\n"
@@ -356,8 +357,17 @@ static const char WGSL_DRAW[] =
     "@group(0) @binding(6) var htex: texture_2d<f32>;\n"
     "@group(0) @binding(7) var scene: texture_2d<f32>;\n"
     "@group(0) @binding(8) var mvtex: texture_2d<f32>;\n"
+    "@group(0) @binding(9) var ffvol: texture_3d<f32>;\n"
+    "@group(0) @binding(10) var ffsamp: sampler;\n"
     "struct VO { @builtin(position) pos: vec4f, @location(0) color: vec4f, @location(1) uv: vec2f,\n"
-    "  @location(2) vz: f32, @location(3) n: vec3f, @location(4) t: f32, @location(5) id: f32, @location(6) luv: vec2f, @location(7) fr: vec2f }\n"
+    "  @location(2) vz: f32, @location(3) n: vec3f, @location(4) t: f32, @location(5) id: f32, @location(6) luv: vec2f, @location(7) fr: vec2f,\n"
+    "  @location(8) wp: vec3f }\n"
+    /* the fog at the particle's own distance (environment_internal.h): premultiplied colour x transmittance, plus the
+     * fog's light by coverage (none for additive: alpha 0) */
+    "fn fogged(p: vec4f, in: VO) -> vec4f {\n"
+    "  let f = cw_ffog(D.ff, ffvol, ffsamp, in.pos.xy, in.wp, in.vz);\n"
+    "  return vec4f(p.rgb * f.a + f.rgb * p.a, p.a);\n"
+    "}\n"
     "fn curve_at(t: f32, row: i32) -> vec4f {\n"
     "  let x = t * 255.0; let i0 = i32(floor(x)); let i1 = min(i0 + 1, 255);\n"
     "  return mix(textureLoad(curve, vec2i(i0, row), 0), textureLoad(curve, vec2i(i1, row), 0), x - f32(i0));\n"
@@ -415,6 +425,7 @@ static const char WGSL_DRAW[] =
     "  }\n"
     "  let vp = D.view * vec4f(world, 1.0);\n"
     "  o.vz = -vp.z;\n"
+    "  o.wp = world;\n"
     "  o.t = t; o.id = f32(i);\n"
     "  o.color = col;\n"
     "  o.pos = cw_clip(D.proj * vp, D.p2.y);\n"
@@ -467,10 +478,10 @@ static const char WGSL_DRAW[] =
     "    }\n"
     "    var uv2 = uv0 + off;\n"
     "    if (textureLoad(depth, vec2i(uv2 * vec2f(textureDimensions(depth))), 0).r < in.vz - 0.02) { uv2 = uv0; }\n"
-    "    return vec4f(textureSampleLevel(scene, samp, uv2, 0.0).rgb * in.color.rgb * c.a, c.a);\n"
+    "    return fogged(vec4f(textureSampleLevel(scene, samp, uv2, 0.0).rgb * in.color.rgb * c.a, c.a), in);\n"
     "  }\n"
-    "  if (blend == 2) { if (c.a < 0.5) { discard; } return vec4f(c.rgb, 1.0); }\n"
-    "  return vec4f(c.rgb * c.a, select(0.0, c.a, blend == 1));\n"
+    "  if (blend == 2) { if (c.a < 0.5) { discard; } return fogged(vec4f(c.rgb, 1.0), in); }\n"
+    "  return fogged(vec4f(c.rgb * c.a, select(0.0, c.a, blend == 1)), in);\n"
     "}\n"
     "fn hist_at(i: i32, j: i32) -> vec4f {\n"
     "  let hlen = i32(D.ia.w); let tw = i32(D.ia.z);\n"
@@ -510,6 +521,7 @@ static const char WGSL_DRAW[] =
     "  let world = P + sd * (side * D.life.z * 0.5 * (1.0 - u));\n"
     "  let vp = D.view * vec4f(world, 1.0);\n"
     "  o.vz = -vp.z;\n"
+    "  o.wp = world;\n"
     "  o.color = col;\n"
     "  o.uv = vec2f(side * 0.5 + 0.5, u);\n"
     "  o.pos = cw_clip(D.proj * vp, D.p2.y);\n"
@@ -519,7 +531,7 @@ static const char WGSL_DRAW[] =
     "  var c = in.color;\n"
     "  let e = 1.0 - abs(in.uv.x * 2.0 - 1.0);\n"
     "  c.a *= smoothstep(0.0, 0.35, e);\n"
-    "  return vec4f(c.rgb * c.a, select(0.0, c.a, i32(D.life.w) == 1));\n"
+    "  return fogged(vec4f(c.rgb * c.a, select(0.0, c.a, i32(D.life.w) == 1)), in);\n"
     "}\n";
 
 /* ── shared pipelines ─────────────────────────────────────────────────── */
@@ -599,15 +611,17 @@ static bool init_pipes(void) {
   const cw__wg_slot sort[5] = { { CW_WB_UNIFORM, C, 0, 80 }, { CW_WB_UNIFORM_DYN, C, 0, 16 }, { CW_WB_STORAGE, C, 0, 0 },
                                 { CW_WB_STORAGE_RO, C, 0, 0 }, { CW_WB_STORAGE, C, 0, 0 } };
   const cw__wg_slot red[3] = { { CW_WB_UNIFORM, C, 0, 16 }, { CW_WB_STORAGE_RO, C, 0, 0 }, { CW_WB_STORAGE, C, 0, 0 } };
-  const cw__wg_slot draw[9] = { { CW_WB_UNIFORM_DYN, VF, 0, DRAW_SIZE }, { CW_WB_TEX_UNFILT, VF, 0, 0 },
+  const cw__wg_slot draw[11] = { { CW_WB_UNIFORM_DYN, VF, 0, DRAW_SIZE }, { CW_WB_TEX_UNFILT, VF, 0, 0 },
                                 { CW_WB_TEX, WGPUShaderStage_Fragment, 0, 0 }, { CW_WB_SAMPLER, WGPUShaderStage_Fragment, 0, 0 },
                                 { CW_WB_TEX_UNFILT, WGPUShaderStage_Fragment, 0, 0 }, { CW_WB_TEX_UNFILT, WGPUShaderStage_Vertex, 0, 0 },
                                 { CW_WB_TEX_UNFILT, WGPUShaderStage_Vertex, 0, 0 }, { CW_WB_TEX, WGPUShaderStage_Fragment, 0, 0 },
-                                { CW_WB_TEX, WGPUShaderStage_Fragment, 0, 0 } };
+                                { CW_WB_TEX, WGPUShaderStage_Fragment, 0, 0 },
+                                { CW_WB_TEX, WGPUShaderStage_Fragment, WGPUTextureViewDimension_3D, 0 },
+                                { CW_WB_SAMPLER, WGPUShaderStage_Fragment, 0, 0 } };
   G.sim_bgl = cw__wg_layout(sim, 9);
   G.sort_bgl = cw__wg_layout(sort, 5);
   G.red_bgl = cw__wg_layout(red, 3);
-  G.draw_bgl = cw__wg_layout(draw, 9);
+  G.draw_bgl = cw__wg_layout(draw, 11);
   G.sim_pl = cw__wg_pipeline_layout(&G.sim_bgl, 1);
   G.sort_pl = cw__wg_pipeline_layout(&G.sort_bgl, 1);
   G.red_pl = cw__wg_pipeline_layout(&G.red_bgl, 1);
@@ -615,7 +629,7 @@ static bool init_pipes(void) {
   const char *const sim_parts[] = { WGSL_SYS, WGSL_SIM, G.fault == 1 ? "fn broken( {\n" : "", NULL };
   const char *const sort_parts[] = { WGSL_SYS, WGSL_SORT, NULL };
   const char *const red_parts[] = { WGSL_SYS, WGSL_REDUCE, NULL };
-  const char *const draw_parts[] = { WGSL_DRAW, NULL };
+  const char *const draw_parts[] = { CW__FFOG_WGSL, WGSL_DRAW, NULL };
   WGPUShaderModule sm_sim = cw__wg_module("particles.sim", sim_parts);
   WGPUShaderModule sm_sort = cw__wg_module("particles.sort", sort_parts);
   WGPUShaderModule sm_red = cw__wg_module("particles.reduce", red_parts);
@@ -1269,18 +1283,21 @@ void cw__psys_draw_wgpu(WGPURenderPassEncoder rp, cw_node n, p3d *d, cw_pass_ctx
   dw[76] = (uint32_t)r->hist_head;
   dw[77] = (uint32_t)r->hist_count;
   dw[78] = (uint32_t)w->trows;
+  memcpy(du + 92, ft->ffog.u, sizeof ft->ffog.u);
   uint32_t draw_off = arena_put(du, sizeof du);
   WGPUTextureView tex = d->texture && *d->texture ? cw__fx_wg_texture_asset(d->texture) : NULL;
   if (!tex) tex = cw__fx_wg_dot();
-  cw__wg_entry e[9] = {
+  cw__wg_entry e[11] = {
     { .buffer = A.buf, .size = DRAW_SIZE }, { .view = w->curve_v }, { .view = tex }, { .sampler = cw__wg_sampler(true, false, true) },
     { .view = tg->linear_depth ? tg->linear_depth : cw__fx_wg_dummy_r32f() },
     { .view = w->stex_v ? w->stex_v : cw__fx_wg_dummy_rgba32f() },
     { .view = w->htex_v ? w->htex_v : cw__fx_wg_dummy_rgba32f() },
     { .view = ft->copy ? cw__pw_view(ft->copy->tex) : cw__fx_wg_dot() },
     { .view = mvv ? mvv : cw__fx_wg_dot() },
+    { .view = ft->ffog.mode == 2 && ft->ffog.vol ? cw__pw_view(ft->ffog.vol) : cw__pw_dummy3d_view() },
+    { .sampler = cw__wg_sampler(true, false, false) },
   };
-  WGPUBindGroup bg = cw__wg_group_cached(&w->draw_bg, G.draw_bgl, e, 9);
+  WGPUBindGroup bg = cw__wg_group_cached(&w->draw_bg, G.draw_bgl, e, 11);
   wgpuRenderPassEncoderSetBindGroup(rp, 0, bg, 1, &draw_off);
   if (want_trail) {
     wgpuRenderPassEncoderSetPipeline(rp, draw_pipe_for(V_TRAIL, d->blend == BLEND_OPAQUE ? BLEND_ALPHA : d->blend, tg));

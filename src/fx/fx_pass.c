@@ -18,6 +18,7 @@ static void particles_exec(cw_pass_ctx *ctx, void *user) {
   (void)user;
   cw__fx_tree *ft = cw__fx_tree_of(ctx->tree);
   memset(&ft->stats, 0, sizeof ft->stats);
+  cw__fog_forward(ctx, &ft->ffog); /* (the fog passes drew before this one: each particle takes the fog at its own distance) */
 #if CW_WGPU
   /* the particles pass records its own compute and render passes: time them as one span */
   if (cw__wgpu_on()) cw__pw_timing_span((void *)cw__pw_encoder(), false);

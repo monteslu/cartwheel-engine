@@ -40,18 +40,29 @@ static GLuint prog;
 static const char *const vs =
     "layout(location = 0) in vec3 a_pos;\n"
     "layout(location = 1) in vec4 a_col;\n"
-    "uniform mat4 u_vp;\n"
+    "uniform mat4 u_vp, u_view;\n"
     "out vec4 v_col;\n"
     "out float v_side;\n"
-    "void main() { v_col = a_col; v_side = float(gl_VertexID & 1) * 2.0 - 1.0; gl_Position = u_vp * vec4(a_pos, 1.0); }\n";
-static const char *const fs =
+    "out vec3 v_wp;\n"
+    "out float v_vz;\n"
+    "void main() {\n"
+    "  v_col = a_col; v_side = float(gl_VertexID & 1) * 2.0 - 1.0; v_wp = a_pos; v_vz = -(u_view * vec4(a_pos, 1.0)).z;\n"
+    "  gl_Position = u_vp * vec4(a_pos, 1.0);\n"
+    "}\n";
+static const char *const fs_body =
     "in vec4 v_col;\n"
     "in float v_side;\n"
+    "in vec3 v_wp;\n"
+    "in float v_vz;\n"
     "uniform int u_blend;\n"
     "out vec4 frag;\n"
     "void main() {\n"
     "  vec4 c = v_col; c.a *= smoothstep(0.0, 0.35, 1.0 - abs(v_side));\n"
-    "  frag = vec4(c.rgb * c.a, u_blend == 1 ? c.a : 0.0);\n"
+    "  vec4 p = vec4(c.rgb * c.a, u_blend == 1 ? c.a : 0.0);\n"
+    /* the fog at the ribbon's own distance (environment_internal.h): an additive one's light fades, an alpha one
+     * turns into the fog */
+    "  vec4 f = cw_ffog(v_wp, v_vz);\n"
+    "  frag = vec4(p.rgb * f.a + f.rgb * p.a, p.a);\n"
     "}\n";
 
 static void trail_init(cw_node n, void *data) {
@@ -121,15 +132,21 @@ static void trail_fixed(cw_node n, void *data, double dt) {
 }
 
 #if CW_WGPU
+#define TRAIL_U_SIZE 288
 static const char WGSL_TRAIL3D[] =
-    "struct U { vp: mat4x4f, p: vec4f }\n"
+    "struct U { vp: mat4x4f, p: vec4f, view: mat4x4f, ff: array<vec4f, 9> }\n"
     "@group(0) @binding(0) var<uniform> u: U;\n"
-    "struct VO { @builtin(position) pos: vec4f, @location(0) col: vec4f, @location(1) side: f32 }\n"
+    "@group(0) @binding(1) var ffvol: texture_3d<f32>;\n"
+    "@group(0) @binding(2) var ffsamp: sampler;\n"
+    "struct VO { @builtin(position) pos: vec4f, @location(0) col: vec4f, @location(1) side: f32, @location(2) wp: vec3f, @location(3) vz: f32 }\n"
     "@vertex fn vs(@builtin(vertex_index) vid: u32, @location(0) p: vec3f, @location(1) c: vec4f) -> VO {\n"
-    "  var o: VO; o.col = c; o.side = f32(vid & 1u) * 2.0 - 1.0; o.pos = cw_clip(u.vp * vec4f(p, 1.0), u.p.y); return o; }\n"
+    "  var o: VO; o.col = c; o.side = f32(vid & 1u) * 2.0 - 1.0; o.wp = p; o.vz = -(u.view * vec4f(p, 1.0)).z;\n"
+    "  o.pos = cw_clip(u.vp * vec4f(p, 1.0), u.p.y); return o; }\n"
     "@fragment fn fs(in: VO) -> @location(0) vec4f {\n"
     "  var c = in.col; c.a *= smoothstep(0.0, 0.35, 1.0 - abs(in.side));\n"
-    "  return vec4f(c.rgb * c.a, select(0.0, c.a, i32(u.p.x) == 1)); }\n";
+    "  let q = vec4f(c.rgb * c.a, select(0.0, c.a, i32(u.p.x) == 1));\n"
+    "  let f = cw_ffog(u.ff, ffvol, ffsamp, in.pos.xy, in.wp, in.vz);\n"
+    "  return vec4f(q.rgb * f.a + f.rgb * q.a, q.a); }\n";
 
 typedef struct tpipe { uint32_t key; WGPURenderPipeline p; } tpipe;
 static CW_ARRAY(tpipe) tpipes;
@@ -142,10 +159,12 @@ static WGPURenderPipeline trail_pipe(int blend, const cw__wgpu_pass_targets *tg)
   for (int i = 0; i < tpipes.count; i++)
     if (tpipes.data[i].key == key) return tpipes.data[i].p;
   if (!tsm) {
-    const char *const parts[] = { WGSL_TRAIL3D, NULL };
+    const char *const parts[] = { CW__FFOG_WGSL, WGSL_TRAIL3D, NULL };
     tsm = cw__wg_module("trail3d", parts);
-    const cw__wg_slot sl = { CW_WB_UNIFORM, WGPUShaderStage_Vertex | WGPUShaderStage_Fragment, 0, 80 };
-    tbgl = cw__wg_layout(&sl, 1);
+    const cw__wg_slot sl[3] = { { CW_WB_UNIFORM, WGPUShaderStage_Vertex | WGPUShaderStage_Fragment, 0, TRAIL_U_SIZE },
+                                { CW_WB_TEX, WGPUShaderStage_Fragment, WGPUTextureViewDimension_3D, 0 },
+                                { CW_WB_SAMPLER, WGPUShaderStage_Fragment, 0, 0 } };
+    tbgl = cw__wg_layout(sl, 3);
   }
   WGPUVertexAttribute at[2] = { { .format = WGPUVertexFormat_Float32x3, .offset = 0, .shaderLocation = 0 },
                                 { .format = WGPUVertexFormat_Float32x4, .offset = 12, .shaderLocation = 1 } };
@@ -171,7 +190,7 @@ static WGPURenderPipeline trail_pipe(int blend, const cw__wgpu_pass_targets *tg)
   return p;
 }
 
-static void draw_wgpu(trail3d *t, cw_pass_ctx *ctx, const float *v, int nv) {
+static void draw_wgpu(trail3d *t, cw_pass_ctx *ctx, const cw__fx_tree *ft, const float *v, int nv) {
   const cw__wgpu_pass_targets *tg = cw__fx_pass_targets(ctx);
   if (!tg || !tg->enc) return;
   WGPURenderPipeline pipe = trail_pipe(t->blend, tg);
@@ -183,17 +202,21 @@ static void draw_wgpu(trail3d *t, cw_pass_ctx *ctx, const float *v, int nv) {
     t->wvbo_cap_v[vk] = nv + 64;
     *wvbo = cw__wg_buffer(sizeof(float) * 7 * (size_t)t->wvbo_cap_v[vk], WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst, "trail3d");
   }
-  if (!*wubo) *wubo = cw__wg_buffer(80, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst, "trail3d u");
+  if (!*wubo) *wubo = cw__wg_buffer(TRAIL_U_SIZE, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst, "trail3d u");
   cw__wg_write(*wvbo, 0, v, sizeof(float) * 7 * (size_t)nv);
-  float u[20] = { 0 };
+  float u[TRAIL_U_SIZE / 4] = { 0 };
   t3_mat4 vp;
   t3_mat4_multiply(&vp, &ctx->camera->projection_matrix, &ctx->view);
   memcpy(u, vp.e, 64);
   u[16] = (float)t->blend;
   u[17] = tg->flip_y ? -1.0f : 1.0f;
+  memcpy(u + 20, ctx->view.e, 64);
+  memcpy(u + 36, ft->ffog.u, sizeof ft->ffog.u);
   cw__wg_write(*wubo, 0, u, sizeof u);
-  cw__wg_entry e = { .buffer = *wubo };
-  WGPUBindGroup bg = cw__wg_group(tbgl, &e, 1);
+  cw__wg_entry e[3] = { { .buffer = *wubo },
+                        { .view = ft->ffog.mode == 2 && ft->ffog.vol ? cw__pw_view(ft->ffog.vol) : cw__pw_dummy3d_view() },
+                        { .sampler = cw__wg_sampler(true, false, false) } };
+  WGPUBindGroup bg = cw__wg_group(tbgl, e, 3);
   WGPURenderPassEncoder rp = cw__wg_scene_pass(tg, true, "trail3d");
   if (ctx->view_count > 0) { /* a one-pass split screen's view: its rectangle */
     int vr[4];
@@ -215,7 +238,11 @@ void cw__trail3d_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
   trail3d *t = cw_node_data_t(n, trail_t);
   if (!t || t->count < 2 || !ctx->camera || !cw_node_visible_in_tree(n)) return;
   if (!prog && !cw__fx_wgpu_on()) {
-    prog = cw__fx_program("trail3d", vs, fs, NULL, 0);
+    char *fsrc = cw_alloc(strlen(CW__FFOG_GLSL) + strlen(fs_body) + 1, CW_MEM_RENDER);
+    strcpy(fsrc, CW__FFOG_GLSL);
+    strcat(fsrc, fs_body);
+    prog = cw__fx_program("trail3d", vs, fsrc, NULL, 0);
+    cw_free(fsrc);
     if (!prog) return;
   }
   if (t->baked != t->color_ramp) {
@@ -256,7 +283,7 @@ void cw__trail3d_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
   }
 #if CW_WGPU
   if (cw__wgpu_on()) {
-    draw_wgpu(t, ctx, v, nv);
+    draw_wgpu(t, ctx, ft, v, nv);
     ft->stats.draw_calls++;
     return;
   }
@@ -280,6 +307,8 @@ void cw__trail3d_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft) {
   t3_mat4_multiply(&vp, &ctx->camera->projection_matrix, &ctx->view);
   cw__fx_mat4(prog, "u_vp", vp.e);
   cw__fx_u1i(prog, "u_blend", t->blend);
+  cw__fx_mat4(prog, "u_view", ctx->view.e);
+  cw__fx_fog_uniforms(prog, ft, 0);
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LEQUAL);
   glDepthMask(GL_FALSE);

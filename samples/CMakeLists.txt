@@ -319,6 +319,7 @@ cw_add_app(sky_day SOURCES sky_day/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/sky
 cw_add_app(physical_materials SOURCES physical_materials/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/physical_materials/assets)
 # height fog: analytic, with the sun lobe; dense ground fog.
 cw_add_app(fog_valley SOURCES fog_valley/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fog_valley/assets)
+cw_add_app(fog_transparents SOURCES fog_transparents/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/fog_transparents/assets)
 # split screen in one pass (cw_pipeline_set_views_array): terrain, scatter, sky, fog, water, lamps, particles, a
 # decal and SSAO in two or four views over one target (tests/views-array.mjs).
 cw_add_app(split_array SOURCES split_array/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/split_array/assets)
@@ -422,6 +423,16 @@ cw_add_app(custom_surface_field SOURCES custom_surface/main.c ASSETS ${CMAKE_CUR
 target_compile_definitions(custom_surface_field PRIVATE CS_FIELD=1)
 # worlds of their own behind the scene (cartwheel/backdrop.h): a stage in haze and a sea cross-fading behind a note highway
 cw_add_app(backdrop SOURCES backdrop/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/backdrop/assets)
+# a rhythm game's style changes timed: two backdrop worlds and three looks shown for the first time after the warm-up,
+# then again (gate backdrop-look-prewarm); the stage and the fire art are the backdrop sample's
+set(CW_STYLE_SWITCH_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/style_switch_assets)
+foreach(f main.cwscene fire.cwscene)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/style_switch/assets/${f} ${CW_STYLE_SWITCH_ASSETS}/${f} COPYONLY)
+endforeach()
+foreach(f stage.cwscene fire.png fire_mv.png)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/backdrop/assets/${f} ${CW_STYLE_SWITCH_ASSETS}/${f} COPYONLY)
+endforeach()
+cw_add_app(style_switch SOURCES style_switch/main.c ASSETS ${CW_STYLE_SWITCH_ASSETS})
 
 # the post looks (cartwheel/look.h): characters, half blocks, dithering, a custom shader and blends between them
 # (looks), and at 1920x1080 for the GPU timing report (looks_perf)

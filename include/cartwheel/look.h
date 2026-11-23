@@ -216,7 +216,8 @@ typedef struct cw_look_desc {
 
 /* A desc of that kind with every setting at the default noted above. */
 cw_look_desc cw_look_default(cw_look_kind kind);
-/* Make a look (programs and glyph atlases are made on the first frame that draws it). A null look on a bad desc (a
+/* Make a look (programs and glyph atlases are made on the first frame that draws it, or at its prewarm: see
+ * cw_look_prewarm). A null look on a bad desc (a
  * CUSTOM without the backend's shader, an unknown kind; logged). Looks belong to no pipeline: any pipeline (a
  * SubViewport's too) can draw any look. Needs the GPU (init or later). */
 cw_look cw_look_new(const cw_look_desc *d);
@@ -227,6 +228,23 @@ bool cw_look_set(cw_look l, const cw_look_desc *d);
 bool cw_look_get(cw_look l, cw_look_desc *out);
 /* Free a look; pipelines drawing it draw the plain scene in its place. */
 void cw_look_free(cw_look l);
+
+/* Prewarm: draw the look once at the next frame of the pipeline (into its pass's own target, which the pass then
+ * draws over: nothing of it reaches the screen and the looks set on the pipeline are drawn as they are), at its own
+ * stage, alone and in a blend (a blend across stages draws each look at its own). In split screen the first view's
+ * targets are made then; the other views' history targets on their first frame. Everything its first frame on screen would build is built then: its
+ * programs and WebGPU pipelines, its glyph atlas at the pipeline's cell size, its palette, the dither patterns and
+ * the targets it draws through. That first frame then costs what any later frame does. A scene app (cw_scene_app)
+ * prewarms every look made so far on its tree's pipeline by itself at the end of its warm-up, under the loading
+ * screen (make looks in init or the warm-up), and at the end of each loading phase (cw_loading_begin); call this for
+ * a look made later, or drawn by another pipeline (a SubViewport's), a frame or more before it is set. A look's
+ * settings changed afterwards (cw_look_set: a new font, rows of another size) build what they change on the frame
+ * they are drawn. false for a null or dead handle. */
+bool cw_look_prewarm(cw_pipeline *p, cw_look l);
+/* Every live look prewarmed on the pipeline (cw_look_prewarm); returns how many. */
+int cw_look_prewarm_all(cw_pipeline *p);
+/* Looks drawn by prewarms on the pipeline so far (one per look and stage). */
+int cw_pipeline_look_prewarms(cw_pipeline *p);
 
 /* How the second look comes in. */
 typedef enum {

@@ -8295,30 +8295,12 @@
      "doc": "Flipbook rows."
     },
     {
-     "name": "angle",
-     "type": "float",
-     "default": "0",
-     "stored": true,
-     "readonly": false,
-     "doc": "Start angle, radians: BILLBOARD turns counter-clockwise as the camera sees it (0 = the texture's top toward the screen's top), MESH about each particle's own random axis. STRETCHED ignores it (velocity sets the turn)."
-    },
-    {
-     "name": "angle_random",
-     "type": "float",
-     "default": "1",
-     "stored": true,
-     "readonly": false,
-     "min": 0,
-     "max": 1,
-     "doc": "Spread of the start angle, a share of a full turn centred on angle: 1 = any angle (the default), 0 = every particle starts at angle (an upright flame flipbook)."
-    },
-    {
      "name": "spin",
      "type": "float",
      "default": "0",
      "stored": true,
      "readonly": false,
-     "doc": "Rotation speed, rad/s (random direction per particle), added to the start angle."
+     "doc": "Rotation speed, rad/s (random direction per particle)."
     },
     {
      "name": "blend",
@@ -8744,30 +8726,12 @@
      "doc": "ALPHA or ADD."
     },
     {
-     "name": "angle",
-     "type": "float",
-     "default": "0",
-     "stored": true,
-     "readonly": false,
-     "doc": "Start angle, radians, clockwise (y down, as Node2D rotation; 0 = the texture upright)."
-    },
-    {
-     "name": "angle_random",
-     "type": "float",
-     "default": "1",
-     "stored": true,
-     "readonly": false,
-     "min": 0,
-     "max": 1,
-     "doc": "Spread of the start angle, a share of a full turn centred on angle: 1 = any angle (the default), 0 = every particle starts at angle."
-    },
-    {
      "name": "spin",
      "type": "float",
      "default": "0",
      "stored": true,
      "readonly": false,
-     "doc": "Rotation speed, rad/s (random direction), added to the start angle."
+     "doc": "Rotation speed, rad/s (random direction)."
     },
     {
      "name": "local_coords",
@@ -13926,6 +13890,14 @@
      "stored": false,
      "readonly": true,
      "doc": "Pictures rendered so far."
+    },
+    {
+     "name": "prewarms",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Prewarm renders so far (cw_backdrop_prewarm, and the warm-up's): its world drawn once while not shown, so its first frame shown builds nothing."
     },
     {
      "name": "environment",

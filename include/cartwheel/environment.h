@@ -31,6 +31,15 @@
  *                     (sun_scatter, sun_g) for the glow around it. Sky
  *                     pixels are fogged up to
  *                     sky_distance.
+ *                     Transparent and additive surfaces (three.c's
+ *                     transparent queue, GPUParticles3D, trails) are
+ *                     drawn after the fog and fogged in their own shaders
+ *                     at their own distance (alpha blended: toward the
+ *                     fog's light; additive: toward nothing), never by the
+ *                     depth of what is behind them; three.c materials take
+ *                     it through the "hfog" shading part (program states
+ *                     x...hfog). The volumetric mode's particles look the
+ *                     grid up at their own distance.
  *                     volumetric = true: the fog within volumetric_distance
  *                     of the camera is lit per cell of a 3D grid that
  *                     follows the view (froxels): each light lights it

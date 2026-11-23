@@ -2,7 +2,8 @@
 // effects detail Low and Very Low the height fog and FXAA run inside the tonemap pass, on Low with bloom's composite
 // too. Per preset, app and backend (native, a gameplay frame at CW_QUALITY=verylow and =low): the passes run apart
 // (CW_TEST_NO_FUSION=1) against the fused frame. The fused run must report the fog, the anti-aliasing (and on Low the
-// bloom) as fused where the separate run ran them, and the picture must be the separate passes'
+// bloom) as fused where the separate run ran them (the fog only when nothing transparent draws after it: particles and
+// transparent surfaces take the fog at their own distance after the fog pass), and the picture must be the separate passes'
 // but for FXAA's edges: at most MAX_GT16 of the pixels may differ by more than 16/255 (the console variant against the
 // quality preset), the mean difference stays under MAX_MEAN, and where FXAA ran fused it smoothed the frame: against the
 // same frame with FXAA left out of the fused pass (CW_TEST_VERYLOW_POST=aa, the reference), at least MIN_AA of the pixels
@@ -91,7 +92,11 @@ for (const gpu of GPUS)
     const problems = [];
     for (const k of Object.keys(STEPS)) {
       if (sep.fused[k]) problems.push(`CW_TEST_NO_FUSION=1 still fused ${k}`);
-      if (sep.ran[k] && !fused.fused[k]) problems.push(`${k} ran as its own pass on ${q}`);
+      // (the fog stays its own pass when transparent surfaces or particles draw after it, each fogged at its own
+      // distance: environment_internal.h)
+      const after = k === 'height_fog' && (fused.ran.transparents || fused.ran.particles);
+      if (sep.ran[k] && !fused.fused[k] && !after) problems.push(`${k} ran as its own pass on ${q}`);
+      if (fused.fused[k] && after) problems.push(`${k} fused into the tone mapping pass while transparent surfaces draw after it`);
       if (fused.fused[k]) ((ctl[q] ||= {})[gpu] ||= {})[STEPS[k]] ||= c;
     }
     /* the glow's control: a frame whose bloom composite went into the tonemap pass with FXAA (the cheap pass, Low) */

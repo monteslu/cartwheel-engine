@@ -1169,7 +1169,9 @@ static WGPURenderPipeline pipeline(unsigned prog, const att *a, int blend, int d
     .multisample = { .count = (uint32_t)a->samples, .mask = 0xffffffffu },
     .fragment = &fs,
   };
+  CW_PROFILE_BEGIN("pass.pipeline_wgpu"); /* a pass program for a new target, blend or sample count: built on its first draw */
   WGPURenderPipeline p = wgpuDeviceCreateRenderPipeline(W.dev, &d);
+  CW_PROFILE_END();
   cw_array_push(&pipes, ((pipe_rec){ key, p }));
   return p;
 }
@@ -1446,4 +1448,9 @@ void cw__pw_probe_caps(cw_pipeline_caps *caps) {
   caps->hdr_format = "RGBA16F";
   cw__small_hdr_render = wgpuDeviceHasFeature(W.dev, WGPUFeatureName_RG11B10UfloatRenderable);
 }
+WGPUTextureView cw__pw_dummy3d_view(void) {
+  init();
+  return cw__pw_view(W.dummy3d);
+}
+
 #endif

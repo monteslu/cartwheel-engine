@@ -275,3 +275,9 @@ standard+shadow+l1001+xgi
 standard+shadow+ds+l1001+xwater
 standard+l1001+xgibuf
 standard+l1001+xgi
+standard+trans+ds+l1001+xhfog_plain
+basic+trans+ds+xhfog
+standard+trans+ds+l1001+xhfog
+standard+trans+ds+l1001
+basic+trans+ds
+standard+trans+ds+l1001+xplain

@@ -129,6 +129,7 @@ extern "C" {
  *   opacity (float, 1)          0 (not drawn, free) to 1 (covers what is below it)
  *   order (int, 0)              draw order among the backdrops: lower is further back
  *   renders (int, read-only)    pictures rendered so far
+ *   prewarms (int, read-only)   prewarm renders so far (cw_backdrop_prewarm)
  *   environment (bool, false)   its world lights the scene (REFLECTIONS above)
  *   env_resolution (int, 128)   the capture's face size in texels (16 to 512, a power of two)
  *   env_every (int, 4)          frames a capture's six faces are spread over (1: all six every frame)
@@ -154,6 +155,19 @@ int cw_backdrop_renders(cw_node backdrop);
 /* CPU milliseconds its last render took to issue (a profiling figure from
  * the host clock: never feed it into game state). */
 float cw_backdrop_last_cpu_ms(cw_node backdrop);
+/* Prewarm: draw the backdrop's world once at the next frame of its tree, whatever its opacity and with its hidden root
+ * shown for that render (nothing of it reaches the screen: its picture is blended at opacity 0), so everything its
+ * first shown frame would build is built then: its world's programs and pipelines (shadows, sky, fog, particles,
+ * decals), its picture and the targets of its passes, its particle buffers and fog grids, and the tree's backdrop
+ * pass. Its first frame shown then costs what any later frame does. A scene app (cw_scene_app) prewarms every
+ * Backdrop of its tree by itself at the end of its warm-up, under the loading screen (and at the end of each loading
+ * phase, cw_loading_begin); call this for a backdrop added, or a world built, after that (behind a loading screen of
+ * the game's own, or a frame before it fades in). What it built is kept while the backdrop is at opacity 0, which
+ * costs nothing per frame. An environment capture (environment true) is still made on its first shown frame. false
+ * for a node that is not a Backdrop. */
+bool cw_backdrop_prewarm(cw_node backdrop);
+/* Prewarm renders made so far (0 for a node that is not a Backdrop). */
+int cw_backdrop_prewarms(cw_node backdrop);
 
 #ifdef __cplusplus
 }

@@ -4,9 +4,112 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## v0.68.1 (2026-11-23)
+## v0.69.0 (2026-11-23)
 
+### Added
+- Prewarm of backdrops and looks: a style change (a Backdrop world fading in from opacity 0, a look pair set) no
+  longer builds what it draws on the frame it first appears. A scene app (`cw_scene_app`) prewarms every Backdrop of
+  its tree and every look made so far at the end of its warm-up, in its last render under the loading screen (a run
+  with no warm-up render, a test, in its first frame), and again at the end of each loading phase
+  (`cw_loading_begin`): each world drawn once with its hidden root shown for that render and its picture blended at
+  opacity 0, each look drawn alone and in a blend into the pass's own target at its own stage (with the dither tone
+  options' small targets and programs, the half blocks' history). Nothing of it reaches the screen,
+  and nothing costs anything a frame after it: opacity 0 and an unset look are still free. Measured on the 890M with
+  a release cart through romdev, the worst frame of each first showing over the usual frame (4.3 ms), GL / WebGPU:
+  a fire canyon fading in +40 / +61 ms of CPU before, +1.0 / +0.5 ms now; ASCII +9 / +35 before, +0.6 / +0.7 now;
+  half blocks with a palette +3 / +7 before, +0.9 / +1.1 now; a one-bit Bayer dither at the DISPLAY stage +46 / +134
+  before, +1.5 / +0.3 now; a stage in volumetric haze +16 / +44 before, +0.7 / +1.0 now.
+- `cw_backdrop_prewarm(node)` and `cw_backdrop_prewarms` (Backdrop `prewarms`, read-only; the `backdrop` debug
+  command reports it): a backdrop added, or a world built in code, after the warm-up is drawn once at the next frame
+  whatever its opacity. An `environment` capture is still made on its first shown frame.
+- `cw_look_prewarm(pipeline, look)`, `cw_look_prewarm_all(pipeline)` and `cw_pipeline_look_prewarms`
+  (`cartwheel/look.h`): a look made later, or drawn by another pipeline (a SubViewport's), is drawn once at the next
+  frame without being set.
+- samples/style_switch: a note highway over two backdrop worlds (a fire canyon with flames, embers and haze; the
+  backdrop sample's stage of volumetric spots) hidden at opacity 0, and three looks (ASCII, half blocks with a
+  palette, a one-bit Bayer dither with the tone options at the DISPLAY stage), each shown on a schedule the first time
+  and again; debug fields `sw.tick`, `sw.event`, `sw.fire_renders`, `sw.stage_renders`.
+- Profiler zones for first-use work (`cartwheel/profile.h`): `pass.program_gl` (a pass program compiled and
+  linked), `pass.pipeline_wgpu` (a pass's WebGPU pipeline made for a new target, blend or sample count),
+  `look.program`, `look.ascii_prepare`, `look.ascii_atlas`, `look.prewarm`, `backdrop.world` and
+  `backdrop.prewarm`.
+- Gates `backdrop-look-prewarm` (style_switch's cart through romdev on GL and WebGPU, every frame timed: each change's
+  frames at most 3 ms of CPU over the usual frame, a first showing's first two frames (on a quiet GPU) at most 1.5x
+  the usual frame, or its second showing's worst or the three frames before it + 1.5 ms, of wall time; control
+  `CW_TEST_NO_PREWARM=1`, the warm-up without the prewarm, must cost a first showing at least 8 ms of CPU; nothing of
+  a prewarm is seen: a test's first frame, where it runs, is the same picture without it (control
+  `CW_TEST_PREWARM_SHOW=1`: the worlds at opacity 1, the looks drawn after the pass's real run), and unseeded the
+  frame whose render ran it shows the loading screen alone (control: a frame of play)) and `unit-looks` (the
+  blue noise table, below).
+
+- `CW_TEST_WARM_SLICES=N` (test switch, `src/scene/runner.c`): the warm-up's shader phase renders at least N slices a
+  frame whatever the clock says; gate `warm-states` runs with 4, so a loaded machine (one slice spending the frame's
+  12 ms budget) no longer leaves it with no later slice to check.
+- Sample `fog_transparents` (a lit alpha-blended panel, an additive panel, additive flames and alpha-blended smoke on
+  a plain in height fog, crossing the horizon) and gates `fog-transparents`, `fog-transparents-vfog`,
+  `fog-transparents-split`, `fog-transparents-backdrop`, `fog-transparents-nofog` and `fog-transparents-checks`: every
+  preset, volumetric fog, a split screen and a Backdrop, natively and as the dual cart on romdev, GL and WebGPU; an
+  additive surface's light is its unfogged light times the fog's transmittance at its own distance, above and below
+  the horizon alike, and an alpha-blended one is the background blended with its colour fogged at its distance.
+  Controls: `CW_TEST_FOG_OVER_TRANSPARENTS=1` (the fog over everything by the depth behind it, as before) and
+  `CW_TEST_FOG_NO_HFOG=1` (three.c materials without their own fog). The `hidden_vis` and `runtime_nodes` tables
+  gained their transparent materials' fog states.
+- Debug field `look.tone_small` (1 when the tone options ran in small targets). Sample `looks_onebit` takes
+  `ONEBIT_KIND=diffuse` and `ONEBIT_XFADE=N` (a fade from the one-bit look into half blocks at SCENE and back with
+  `ONEBIT_XREV=1`, `ONEBIT_XT=t` to hold it). Gate `looks-display` checks the tone once a dither pixel against the
+  tone in every screen pixel (`CW_TEST_LOOK_TONE_EACH_PIXEL=1`; control `CW_TEST_LOOK_TONE_NO_MARGIN=1`), a fade
+  across stages both ways with no step at either end (within 2/255 in every 32x32 tile; control
+  `CW_TEST_LOOK_ONE_STAGE=1`, the old rule, steps by 5/255) and through the flash check, and the pair rule. Gate `looks` checks half blocks on a palette at DISPLAY under TAA over 17 frames (control
+  `CW_TEST_HALFBLOCK_NO_HOLD=1`); sample `looks` takes `LOOK_STAGE=display`. Timing
+  report `looks-tone-perf` (GPU ms before and after, GL and WebGPU, with the load and the GPU clock).- A start angle for particles: `angle` (radians) and `angle_random` (0..1, a share of a full turn centred on
+  `angle`) on GPUParticles3D and GPUParticles2D. Billboards used to start at a random turn every time, so an upright
+  flipbook (flame tongues, a rising wisp) came out tilted every way; with `angle_random 0` every particle starts at
+  `angle`, and a camera-facing billboard at angle 0 stays upright on screen however the camera circles or tilts.
+  GPUParticles3D turns counter-clockwise as the camera sees it (MESH: about each particle's own random axis;
+  STRETCHED ignores it, its velocity sets the turn); GPUParticles2D turns clockwise with y down, as Node2D rotation.
+  `spin` still adds on top. The defaults (`angle 0`, `angle_random 1`) draw exactly what they drew before, pixel
+  for pixel (fx_particles, fx_particles2d, fx_explosion and fx_bursts, natively and on romdev, GL and WebGPU).
+  Guide: Explosions and distortion, "Upright flames: the start angle".
+- Sample `fx_particle_angle` (upright arrows from both node types while the camera circles) with gates
+  `fx-particle-angle` (every host and both backends) and `particle-angle`: each arrow's turn measured from the
+  picture, natively and on romdev, GL and WebGPU: `angle_random 0` keeps every arrow upright at three points of the
+  camera's circle (control: `angle_random 1` fails it, 3D and 2D), `angle 0.7` turns every arrow by 0.7, `spin`
+  turns every arrow by the same amount from its start angle (control: no spin turns none), and STRETCHED sparks at
+  a set angle draw the default picture (control: a billboard system at that angle changes it).
 ### Fixed
+- The first frame any dither look drew (the Bayer pattern too) cost 46 ms of CPU in a cart: the looks' 64 x 64 blue
+  noise tile was computed there (void and cluster). It is now a table the engine ships
+  (`src/render/look_blue_noise.h`, made by `tools/gen-look-blue-noise.c`): the same bytes, so every dither and
+  `cw_look_blue_noise()` draws what it drew; `unit_looks` runs the void and cluster again on every host (native, the
+  cart on GL and WebGPU) and holds the table to it.
+- Height fog fogged transparent and additive surfaces by the depth of the opaque scene behind them, not their own
+  distance: the fog is a pass over the finished scene that reads the depth buffer, and a transparent surface writes no
+  depth, so each of its pixels took the fog of whatever lay behind it. Flames standing on a plain 38 m away were crisp
+  over the sky and washed into blurred blobs below the horizon, with a hard line along it, because each pixel there
+  took the fog of ground 80 m and more away; lowering the density, moving the ground or turning soft particles off
+  only moved the line. Now, while a fog draws (height fog or volumetric, in the main scene, a split screen's views or
+  a Backdrop's world), the scene pass draws the opaque queue, the fog draws over the opaque picture, and the
+  transparent queue (every transparent and transmissive three.c material, as the new EFFECTS pass `transparents`),
+  the GPU particles and the trails draw after it, each fogged in its own shader at its own distance: an
+  alpha-blended surface turns into the fog's light, an additive one fades toward nothing (light added through thick
+  fog adds nothing), a multiplied one toward white. three.c materials take it through the new `hfog` shading part,
+  which the engine puts on every transparent material of a scene with fog: new program states (`x...hfog`), so run
+  `tools/programs.mjs` on a game with transparent materials in fog (a missing state is reported as always). In
+  volumetric fog the particles and trails look the froxel grid up at their own distance; three.c's transparent
+  materials take the fog's analytic medium lit by the grid's ambient light and its sun. A scene with fog and nothing
+  transparent draws as before, byte for byte (fog_valley, fog_shafts and open_world at every preset, GL and WebGPU),
+  and so does a scene with transparent surfaces and no fog. On Very Low and Low the fog runs as a pass of its own,
+  rather than inside the tone mapping pass, while anything draws after it. Transparent surfaces drawn after the fog
+  go into the resolved scene, so with MSAA their edges are smoothed by the antialiasing pass. GPU time on the
+  Radeon 890M at 1280 x 720 (`samples/fog_transparents`, every pass, against the old order): GL +0.01 to +0.03 ms a
+  frame, WebGPU within its noise.
+- `tools/run-cart.mjs --host romdev` stepped a whole run in one call, so a cart loaded unseeded (`--warmup-spread`, as
+  the cart survey's player runs load it) never got past its loading screen on GL: the shader phase waits on the
+  driver's parallel shader compile, which finishes in real time, and one fast call never let those completions land
+  (destructo and detexto sat at "Compiling shaders", `cw.loading` 21 of 200, for good). It now steps in calls of at
+  most 150 frames (frame steps and pad-only input sequences alike, a held pad carried across calls), as a player's host
+  and 150-frame steps reach the title; a seeded run's frames are byte for byte the same. Control
+  `CW_TEST_RUNCART_ONE_STEP=1` (the one call, as before) stays at the loading screen.
 - A dither look's tone options cost many times what they should when a dither pixel is larger than a screen pixel:
   each screen pixel worked its dither pixel's tone out again, so a dither pixel of n x n screen pixels took its mean
   colour n^2 times and the unsharp mask (`sharpen`) nine times that. The tone is now worked out once a dither pixel,
@@ -38,34 +141,8 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   frame's palette colour while it stays within 0.03 display steps of the nearest, and a level while within 0.15 of a
   step past its middle, at either stage (history per view, as the ASCII glyph hold): a still camera holds still.
 
-### Added
-- Debug field `look.tone_small` (1 when the tone options ran in small targets). Sample `looks_onebit` takes
-  `ONEBIT_KIND=diffuse` and `ONEBIT_XFADE=N` (a fade from the one-bit look into half blocks at SCENE and back with
-  `ONEBIT_XREV=1`, `ONEBIT_XT=t` to hold it). Gate `looks-display` checks the tone once a dither pixel against the
-  tone in every screen pixel (`CW_TEST_LOOK_TONE_EACH_PIXEL=1`; control `CW_TEST_LOOK_TONE_NO_MARGIN=1`), a fade
-  across stages both ways with no step at either end (within 2/255 in every 32x32 tile; control
-  `CW_TEST_LOOK_ONE_STAGE=1`, the old rule, steps by 5/255) and through the flash check, and the pair rule. Gate `looks` checks half blocks on a palette at DISPLAY under TAA over 17 frames (control
-  `CW_TEST_HALFBLOCK_NO_HOLD=1`); sample `looks` takes `LOOK_STAGE=display`. Timing
-  report `looks-tone-perf` (GPU ms before and after, GL and WebGPU, with the load and the GPU clock).
-
-## v0.68.0 (2026-11-23)
-
-### Added
-- A start angle for particles: `angle` (radians) and `angle_random` (0..1, a share of a full turn centred on
-  `angle`) on GPUParticles3D and GPUParticles2D. Billboards used to start at a random turn every time, so an upright
-  flipbook (flame tongues, a rising wisp) came out tilted every way; with `angle_random 0` every particle starts at
-  `angle`, and a camera-facing billboard at angle 0 stays upright on screen however the camera circles or tilts.
-  GPUParticles3D turns counter-clockwise as the camera sees it (MESH: about each particle's own random axis;
-  STRETCHED ignores it, its velocity sets the turn); GPUParticles2D turns clockwise with y down, as Node2D rotation.
-  `spin` still adds on top. The defaults (`angle 0`, `angle_random 1`) draw exactly what they drew before, pixel
-  for pixel (fx_particles, fx_particles2d, fx_explosion and fx_bursts, natively and on romdev, GL and WebGPU).
-  Guide: Explosions and distortion, "Upright flames: the start angle".
-- Sample `fx_particle_angle` (upright arrows from both node types while the camera circles) with gates
-  `fx-particle-angle` (every host and both backends) and `particle-angle`: each arrow's turn measured from the
-  picture, natively and on romdev, GL and WebGPU: `angle_random 0` keeps every arrow upright at three points of the
-  camera's circle (control: `angle_random 1` fails it, 3D and 2D), `angle 0.7` turns every arrow by 0.7, `spin`
-  turns every arrow by the same amount from its start angle (control: no spin turns none), and STRETCHED sparks at
-  a set angle draw the default picture (control: a billboard system at that angle changes it).
+### Changed
+- three.c v0.187.20 (`t3_renderer_render_transparent`: the transparent queue alone, over what the target holds).
 
 ## v0.67.0 (2026-11-23)
 

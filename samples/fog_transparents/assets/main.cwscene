@@ -1,0 +1,3 @@
+[scene format=1]
+
+[node name="Root" type="Node3D"]

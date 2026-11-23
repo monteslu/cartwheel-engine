@@ -1511,6 +1511,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
     if (r->d.phase == CW_PHASE_PREPASS) any_prepass = true;
   }
   if (s->debug_view == CW_VIEW_VELOCITY) reads |= CW_RES_VELOCITY;
+  p->defer_trans = active_index(p, "transparents") >= 0; /* (the scene pass draws the opaque queue alone) */
   if (velocity) velocity->active = velocity->enabled && !test_skipped(velocity->name) && (reads & CW_RES_VELOCITY) != 0;
   /* one-pass split screen: every pass that draws a view's part must take the views over one target; the first that
    * cannot sends the frame back to the per-view runs (nothing drawn yet) */
@@ -1934,7 +1935,8 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
           return;
         }
       } else if (mode == RUN_ARRAY && ph < CW_PHASE_OVERLAY) {
-        if (r->name == cw_intern("scene") || r->name == cw_intern("depth_prepass")) ctx.camera = &p->arr_cam->base; /* every view in one render */
+        if (r->name == cw_intern("scene") || r->name == cw_intern("depth_prepass") || r->name == cw_intern("transparents"))
+          ctx.camera = &p->arr_cam->base; /* every view in one render */
         if (r->name == cw_intern("scene")) for (int k = 0; k < p->arr_n; k++) views_stall();
         run_pass(p, r, &ctx);
         ctx.camera = p->arr_cams[0];

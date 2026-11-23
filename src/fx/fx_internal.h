@@ -8,6 +8,7 @@
 #include "cartwheel/particles.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/scene.h"
+#include "render/environment_internal.h"
 
 /* ── GL helpers (fx_gl.c) ─────────────────────────────────────────── */
 
@@ -27,6 +28,9 @@ void cw__fx_u3f(unsigned prog, const char *name, float x, float y, float z);
 void cw__fx_u4f(unsigned prog, const char *name, float x, float y, float z, float w);
 void cw__fx_u4fv(unsigned prog, const char *name, const float *v, int count);
 void cw__fx_mat4(unsigned prog, const char *name, const float *m16);
+/* the fog's uniforms (CW__FFOG_GLSL: u_ff, and u_ffvol on texture unit `unit`) from ft->ffog */
+struct cw__fx_tree;
+void cw__fx_fog_uniforms(unsigned prog, const struct cw__fx_tree *ft, int unit);
 /* textures */
 unsigned cw__fx_tex2d(int w, int h, unsigned ifmt, unsigned fmt, unsigned type, bool linear, const void *data);
 void cw__fx_bind_tex(int unit, unsigned target, unsigned tex);
@@ -88,6 +92,7 @@ typedef struct cw__fx_tree {
   CW_ARRAY(cw_node) explosions; /* Explosion3D (explosion.c) */
   bool explosion_hook;
   cw_particles_stats stats, last_stats;
+  cw__fog_fwd ffog;             /* this run's fog at a particle's own distance (environment_internal.h) */
 } cw__fx_tree;
 
 cw__fx_tree *cw__fx_tree_of(cw_tree *t);

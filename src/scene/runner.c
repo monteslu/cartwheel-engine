@@ -7,6 +7,7 @@
 #include "scene_internal.h"
 #include "cartwheel/debug.h"
 #include "cartwheel/gl.h"
+#include "cartwheel/look.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
 #include "cartwheel/render3d.h"
@@ -145,6 +146,25 @@ static void r_update(void *u, double dt) {
 
 static void warm_render(int w, int h, double alpha);
 
+/* ── the prewarm of what the scene shows later ───────────────────────
+ * Backdrops at opacity 0 (or with their world hidden) and looks not set yet are drawn by no render of the warm-up, so
+ * their programs, pipelines, targets, particle buffers, fog grids and glyph atlases would be built on the frame they
+ * first appear: a frame of 10 to 60 ms in a style change. At the end of the warm-up (its last slice, under the loading
+ * screen; or, when no warm-up rendered (a deterministic run, a test), the first frame) every Backdrop of the tree and
+ * every look made so far are prewarmed (cw_backdrop_prewarm, cw_look_prewarm): drawn once in that render, nothing of
+ * them on screen. A loading phase (cw_loading_begin) prewarms again at its end. CW_TEST_NO_PREWARM=1 leaves it out
+ * (the control of gate backdrop-look-prewarm); it is read when it acts, in the first frame of a test, where
+ * cw_test_env answers nothing yet: the host's env request is answered at the start of that frame, before the init. */
+int cw__backdrops_prewarm_tree(cw_tree *t);
+static bool prewarm_done;
+static void prewarm_queue(void) {
+  prewarm_done = true;
+  const char *off = getenv("CW_TEST_NO_PREWARM");
+  if (off && atoi(off)) return;
+  cw__backdrops_prewarm_tree(run.tree);
+  cw_look_prewarm_all(cw_pipeline_of(run.tree));
+}
+
 static void r_render(void *u, double alpha) {
   /* A paused scene holds still: its tick is frozen but the platform's accumulator keeps cycling, and an alpha that
    * changes frame to frame would move everything interpolated between its last two ticks. Show the frozen tick. */
@@ -163,6 +183,7 @@ static void r_render(void *u, double alpha) {
    * chain, then the overlay phase: the "canvas" pass (the tree's 2D pass and
    * its UI overlay passes, cartwheel/scene2d.h), then the app's render as
    * the "app" pass, so HUDs land on top of everything */
+  if (!prewarm_done) prewarm_queue(); /* (no warm-up render did it) */
   cw_pipeline_set_app_render(cw_pipeline_of(run.tree), run.base.render, run.base.user);
   cw_pipeline_render(run.tree, w, h, alpha);
   cw_render3d_stats st;
@@ -201,6 +222,7 @@ bool cw__loading_mid_has_step(void);
 void cw__loading_set_restart_hook(void (*fn)(void));
 /* cw_loading_begin: the phase starts over (the step, then the new scene's programs) */
 static void warm_restart(void) {
+  prewarm_done = false; /* the new content: prewarmed at the phase's end */
   free(warm.objs);
   memset(&warm, 0, sizeof warm);
   warm.mid = true;
@@ -360,6 +382,7 @@ static void warm_slice(int w, int h) {
   }
   /* (what a slice of the scene would capture into the probe grid or a reflection probe stays out until the full render) */
   cw__warm_partial = show < warm.n;
+  if (last && !prewarm_done) prewarm_queue(); /* the full render: the backdrops and looks not shown yet are drawn in it too */
   cw_pipeline_render(run.tree, w, h, 0);
   cw__warm_partial = false;
   for (int i = 0; i < warm.n; i++) warm.objs[i]->visible = was[i * 2], warm.objs[i]->frustum_culled = was[i * 2 + 1];
@@ -373,6 +396,10 @@ static void warm_render(int w, int h, double alpha) {
    * sun, fog lights): a later slice of the frame without its pre-render drew the sun as a plain shadowed light, program
    * states play never draws, and a table surveyed in play (or in a deterministic run, which has no slices) lacked them */
   bool first = true;
+  /* CW_TEST_WARM_SLICES=N: at least N slices a frame whatever the clock says (gate warm-states: a frame's later slices
+   * are what it checks, and on a loaded machine one slice can spend the whole budget, so a frame had only its first) */
+  const char *ms = cw_test_env("CW_TEST_WARM_SLICES");
+  int min_slices = ms ? atoi(ms) : 1, slices = 0;
   do {
     /* CW_TEST_WARM_NO_PRERENDER=1: a later slice without it, as before (the control of gate warm-states) */
     if (!first && !cw_test_env("CW_TEST_WARM_NO_PRERENDER")) cw_tree_pre_render(run.tree, alpha);
@@ -380,7 +407,8 @@ static void warm_render(int w, int h, double alpha) {
     double s0 = warm_now_ms();
     warm_slice(w, h);
     warm.last_ms = warm_now_ms() - s0;
-  } while (!warm.final && warm_now_ms() - t0 < WARM_BUDGET_MS);
+    slices++;
+  } while (!warm.final && (slices < min_slices || warm_now_ms() - t0 < WARM_BUDGET_MS));
   /* the bar: the objects shown so far */
   cw_load_stage st;
   int done, total;

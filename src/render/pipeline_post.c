@@ -15,6 +15,7 @@
 #include "cartwheel/scene2d.h"
 #include "cartwheel/ui.h"
 #include "pipeline_internal.h"
+#include "environment_internal.h"
 #include "quality_internal.h"
 #include "scene/render3d_internal.h"
 #if CW_WGPU
@@ -185,6 +186,13 @@ static void prepass_exec(cw_pass_ctx *ctx, void *u) {
 
 /* ── scene ──────────────────────────────────────────────────────────── */
 
+/* the scene pass's render: the opaque queue alone when the transparent one draws after the fog (the
+ * "transparents" pass, environment_internal.h) */
+static void scene_render(cw_pass_ctx *ctx, t3_renderer *r) {
+  if (ctx->pipeline->defer_trans) t3_renderer_render_opaque(r, ctx->scene3d, ctx->camera);
+  else t3_renderer_render(r, ctx->scene3d, ctx->camera);
+}
+
 static void scene_exec(cw_pass_ctx *ctx, void *u) {
   (void)u;
   t3_renderer *r = ctx->renderer;
@@ -234,7 +242,7 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
     t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
     t3_renderer_set_external_target(r, &et);
     cw__pw_timing_span((void *)pt->enc, false); /* three.c's passes: timed as one span */
-    t3_renderer_render(r, ctx->scene3d, ctx->camera);
+    scene_render(ctx, r);
     cw__pw_timing_span((void *)pt->enc, true);
     t3_renderer_set_external_target(r, NULL);
     if (pl->bd_drawn || bg_hold) {
@@ -272,7 +280,7 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
     }
     t3_renderer_set_auto_clear(r, false);
     t3_renderer_reset_bindings(r);
-    t3_renderer_render(r, ctx->scene3d, ctx->camera);
+    scene_render(ctx, r);
     t3_renderer_set_auto_clear(r, auto_clear);
     ctx->scene3d->has_background = had_bg;
     ctx->scene3d->background_texture = bg_tex;
@@ -293,14 +301,56 @@ static void scene_exec(cw_pass_ctx *ctx, void *u) {
     if (part) glDisable(GL_SCISSOR_TEST), t3_renderer_reset_state(r); /* (the renderer's cached scissor state) */
     t3_renderer_set_auto_clear(r, false);
     t3_renderer_reset_bindings(r);
-    t3_renderer_render(r, ctx->scene3d, ctx->camera);
+    scene_render(ctx, r);
     t3_renderer_set_auto_clear(r, auto_clear);
   } else {
-    t3_renderer_render(r, ctx->scene3d, ctx->camera);
+    scene_render(ctx, r);
   }
   if (part) gl_view_end(ctx, sc);
   cw__render3d_count(ctx->tree);
   ctx->pipeline->drew3d = true;
+}
+
+/* ── transparents (the transparent queue after the fog: environment_internal.h) ── */
+
+static bool trans_active(const cw_pass_ctx *ctx, void *u) {
+  (void)u;
+  return ctx->camera && ctx->scene3d && ctx->renderer && cw__fog_transparents_wanted(ctx);
+}
+
+static void trans_exec(cw_pass_ctx *ctx, void *u) {
+  (void)u;
+  t3_renderer *r = ctx->renderer;
+  cw__fog_transparents_begin(ctx);
+#if CW_WGPU
+  if (cw_gpu_backend() == CW_GPU_WEBGPU) {
+    /* over the scene target as the effects see it (resolved, its depth attached for testing) */
+    const cw__wgpu_pass_targets *pt = cw__pass_wgpu_targets(ctx);
+    if (!pt || !pt->color) return;
+    t3_external_target et = {
+      .color = (uintptr_t)pt->color, .color_resolve = (uintptr_t)pt->resolve, .depth = (uintptr_t)pt->depth,
+      .color_format = (int)pt->color_format, .depth_format = (int)pt->depth_format, .samples = pt->samples,
+      .load_color = true, .load_depth = true, .clear_depth = cw_gpu_reversed_depth() ? 0.0f : 1.0f,
+      .x = 0, .y = 0, .w = pt->w, .h = pt->h, .flip_y = pt->flip_y,
+    };
+    t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
+    t3_renderer_set_external_target(r, &et);
+    cw__pw_timing_span((void *)pt->enc, false);
+    t3_renderer_render_transparent(r, ctx->scene3d, ctx->camera);
+    cw__pw_timing_span((void *)pt->enc, true);
+    t3_renderer_set_external_target(r, NULL);
+    cw__render3d_count(ctx->tree);
+    return;
+  }
+#endif
+  t3_renderer_reset_bindings(r);
+  t3_renderer_set_framebuffer(r, ctx->pipeline->bound_fbo);
+  bool auto_clear = t3_renderer_get_auto_clear(r);
+  t3_renderer_set_auto_clear(r, false);
+  t3_renderer_render_transparent(r, ctx->scene3d, ctx->camera);
+  t3_renderer_set_auto_clear(r, auto_clear);
+  t3_renderer_reset_bindings(r);
+  cw__render3d_count(ctx->tree);
 }
 
 /* ── viewmodel (a first person weapon: its own lens, over the scene) ──────
@@ -2414,6 +2464,11 @@ void cw__pipeline_add_builtin_passes(cw_pipeline *p) {
                                            .writes = CW_RES_COLOR | CW_RES_DEPTH,
                                            .active = viewmodel_active, .execute = viewmodel_exec, .webgpu = true,
                                            .views = CW_PASS_VIEWS_EACH /* each view's own, in its rectangle */ });
+  /* the transparent queue after the fog passes (EFFECTS 110 and 120) and before the particles (200): it draws only
+   * while a fog draws (environment_internal.h), so it is one render with the scene's otherwise */
+  cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "transparents", .phase = CW_PHASE_EFFECTS, .order = 130,
+                                           .writes = CW_RES_COLOR, .active = trans_active, .execute = trans_exec, .webgpu = true,
+                                           .views = CW_PASS_VIEWS_ONCE /* a t3_array_camera: every view in one render */ });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "velocity", .phase = CW_PHASE_POST, .order = 0,
                                            .reads = CW_RES_DEPTH, .writes = CW_RES_VELOCITY, .execute = velocity_exec, .webgpu = true });
   cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "ssao", .phase = CW_PHASE_POST, .order = 100,

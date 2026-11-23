@@ -1008,6 +1008,28 @@
     "note": "cw_noise (FastNoiseLite): every pattern, fractal, cellular mode and domain warp, the job-pool fill, gen://noise textures; the checksum is pinned, so the noise is the same bits on every host and a library change shows"
   },
   {
+    "name": "unit-looks",
+    "app": "unit_looks",
+    "frames": 2,
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1,
+      "unit.checksum": 3452491258
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "the looks' blue noise tile is a table the engine ships (src/render/look_blue_noise.h): the void and cluster that made it at run time up to v0.66.0 runs again and the table must be its bytes on every host (native, the cart on GL and WebGPU), every rank 16 times, a changed texel told apart; the checksum is pinned; the prewarm API refuses a null pipeline or look"
+  },
+  {
     "name": "unit-water",
     "app": "unit_water",
     "frames": 2,
@@ -5628,6 +5650,71 @@
     "note": "volumetric fog heals from a broken cell: an infinity put into a quarter of the grid for three frames (CW_TEST_VFOG_POISON) fades out with the temporal blend (143 frames later the picture matches the clean run, GL and WebGPU) and shows while it lasts; a spot light flaring to 100000 and a light at a NaN position leave no trace. Control: CW_TEST_VFOG_UNBOUNDED=1 (no bound) stays broken and must fail"
   },
   {
+    "name": "fog-transparents",
+    "app": "fog_transparents",
+    "frames": 90,
+    "env": {},
+    "controlEnv": {"CW_TEST_FOG_OVER_TRANSPARENTS":"1"},
+    "maxGt16": 0.004,
+    "webgpu": { "vsGl": 0.01 },
+    "fields": ["ft.mode", "ft.trans", "ft.fog", "ft.applied"],
+    "expect": { "ft.mode": 0, "ft.trans": 1, "ft.fog": 1, "ft.applied": 1 },
+    "note": "transparent and additive surfaces in height fog (samples/fog_transparents: a lit alpha-blended panel, an additive panel, additive flames and alpha-blended smoke as GPU particles, standing on a plain 38 m away and crossing the horizon, ground to 400 m behind them): the fog draws over the opaque picture, then the transparent queue and the particles over it, each fogged at its own distance in its own shader. Held: the fog and the transparents pass ran, the picture across hosts and GL against WebGPU. Control CW_TEST_FOG_OVER_TRANSPARENTS=1 draws the fog over everything by the depth behind it, as before: the transparents pass does not run, and the panels and flames turn into washed blobs below the horizon with a hard line along it"
+  },
+  {
+    "name": "fog-transparents-vfog",
+    "app": "fog_transparents",
+    "frames": 90,
+    "env": {"FT_VFOG":"1"},
+    "controlEnv": {"FT_VFOG":"1","CW_TEST_FOG_OVER_TRANSPARENTS":"1"},
+    "maxGt16": 0.004,
+    "webgpu": { "vsGl": 0.01 },
+    "fields": ["ft.mode", "ft.trans", "ft.fog", "ft.applied"],
+    "expect": { "ft.mode": 0, "ft.trans": 1, "ft.fog": 1, "ft.applied": 1 },
+    "note": "the same in volumetric fog: the particles look the froxel grid up at their own distance, the panels take the fog's analytic medium. Control: the fog over everything, as before"
+  },
+  {
+    "name": "fog-transparents-split",
+    "app": "fog_transparents",
+    "frames": 90,
+    "env": {"FT_MODE":"split"},
+    "controlEnv": {"FT_MODE":"split","CW_TEST_FOG_OVER_TRANSPARENTS":"1"},
+    "maxGt16": 0.004,
+    "webgpu": { "vsGl": 0.01 },
+    "fields": ["ft.mode", "ft.trans", "ft.fog", "ft.applied"],
+    "expect": { "ft.mode": 1, "ft.trans": 1, "ft.fog": 1, "ft.applied": 1 },
+    "note": "the same in a split screen of two views (one pass): each view's transparent queue after its fog. Control: the fog over everything, as before"
+  },
+  {
+    "name": "fog-transparents-backdrop",
+    "app": "fog_transparents",
+    "frames": 90,
+    "env": {"FT_MODE":"backdrop"},
+    "controlEnv": {"FT_MODE":"backdrop","CW_TEST_FOG_OVER_TRANSPARENTS":"1"},
+    "maxGt16": 0.004,
+    "webgpu": { "vsGl": 0.01 },
+    "fields": ["ft.mode", "ft.trans", "ft.fog", "ft.applied"],
+    "expect": { "ft.mode": 2, "ft.trans": 1, "ft.fog": 1, "ft.applied": 1 },
+    "note": "the same world as a Backdrop of an empty scene: its own pipeline runs its own fog before its own transparent queue and particles. Control: the fog over everything, as before"
+  },
+  {
+    "name": "fog-transparents-nofog",
+    "app": "fog_transparents",
+    "frames": 90,
+    "env": {"FT_FOG": "0"},
+    "controlEnv": {"FT_FOG": "1"},
+    "maxGt16": 0.004,
+    "webgpu": { "vsGl": 0.01 },
+    "fields": ["ft.mode", "ft.trans", "ft.fog", "ft.applied"],
+    "expect": { "ft.mode": 0, "ft.trans": 0, "ft.fog": 0, "ft.applied": 1 },
+    "note": "the same scene with the fog's density 0: no fog pass, so the transparent queue draws inside the scene pass as one render (the transparents pass does not run). Control: the fog on (the transparents pass runs)"
+  },
+  {
+    "name": "fog-transparents-checks",
+    "script": "tests/fog-transparents.mjs",
+    "note": "transparent surfaces fogged at their own distance, measured in linear light (samples/fog_transparents, natively and as the dual cart on romdev, GL and WebGPU): an additive panel's and additive particles' light is their unfogged light times the fog's transmittance at their distance, above and below the horizon alike (within 6%, 12% for the particles, 30% for the particles on Very Low and Low, whose RG11B10 scene rounds each faint additive particle as it blends); a lit alpha-blended panel and alpha-blended particles are the background blended with their colour fogged at their distance (within 3/255); every preset (Very Low and Low too, where the fog otherwise runs inside the tonemap pass), volumetric fog (the same transmittance above and below the horizon), a split screen of two views and the world as a Backdrop. Controls: CW_TEST_FOG_OVER_TRANSPARENTS=1 (the fog over everything by the depth behind it, as before) and CW_TEST_FOG_NO_HFOG=1 (three.c materials without their own fog) must each break it"
+  },
+  {
     "name": "lightmap-bake",
     "app": "lightmap_room",
     "frames": 30,
@@ -6519,6 +6606,11 @@
     "name": "decal-first-image",
     "script": "tests/decal-first-image.mjs",
     "note": "the first image into the decal atlas mid-run costs no frame: samples/decal_late through romdev on GL and WebGPU, every frame timed (frame({op:'timing'}), window 1; a frame's cost is its least over three runs, which drops a shared machine's noise); with the image preloaded (DECAL_PRELOAD=1, cw_decal_preload at tick 1) the frame that stamps two decals with it at tick 60 costs at most 1.5 ms of CPU (and wall, when no other process used the GPU) over the run's usual frame, and no other frame does; not preloaded, that frame costs the image's decode and no more (4 ms); stamped at the start instead (DECAL_AT_LOAD=1) the last frame is the same picture; the far mark samples mip 2 (far_ok). Controls: CW_TEST_DECAL_FULL_MIPS=1 (the engine's path before v0.46.2: the image loads at its first draw and every mip of the whole atlas is rebuilt then) must cost that frame at least 4 ms (GL) / 6 ms (WebGPU) more; CW_TEST_DECAL_NO_MIPS=1 must fail far_ok"
+  },
+  {
+    "name": "backdrop-look-prewarm",
+    "script": "tests/backdrop-look-prewarm.mjs",
+    "note": "a Backdrop world or a look shown the first time costs no frame: samples/style_switch's cart through romdev on GL and WebGPU, every frame timed (frame({op:'timing'}), window 1; a frame's cost is its least over three runs), two worlds (a fire canyon with flames, embers and haze; a stage of volumetric spots in haze) faded in from opacity 0 with their worlds hidden, and ASCII, half blocks with a palette and a one-bit Bayer dither at the DISPLAY stage with the tone options (sharpen, outline: a fade from half blocks into it runs at both stages) blended in, each the first time and again; each change's frames at most 3 ms of CPU over the usual frame, and a first showing's first two frames at most 1.5x the usual frame, or its second showing's worst or the three frames before it + 1.5 ms, of wall time (judged when no other process used the GPU during the runs; CPU always); no program state missing. Control: CW_TEST_NO_PREWARM=1 (the warm-up without the prewarm of backdrops and looks) must cost a first showing at least 8 ms of CPU. Nothing of a prewarm is seen: a test's first frame (where it runs) is the same picture, pixel for pixel, as without it (control CW_TEST_PREWARM_SHOW=1, the worlds at opacity 1 and the looks drawn after the pass's real run, must change it), and loaded with no seed the frame whose render ran the prewarms shows the loading screen alone, 97% of its pixels its background (control: a frame of play fails it)"
   },
   {
     "name": "msaa-hdr",

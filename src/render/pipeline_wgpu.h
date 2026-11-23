@@ -47,6 +47,7 @@ const cw__wgpu_pass_targets *cw__pass_wgpu_targets(cw_pass_ctx *ctx);
 /* the registry */
 WGPUTexture cw__pw_texture(unsigned id);
 WGPUTextureView cw__pw_view(unsigned id);   /* sampled view */
+WGPUTextureView cw__pw_dummy3d_view(void); /* a 1x1x1 3D texture (0, 0, 0, 1) for a binding with nothing to sample */
 WGPUTextureView cw__pw_attach(unsigned id); /* render-attachment view */
 WGPUTextureFormat cw__pw_format(unsigned id);
 /* a sampled texture of your own in the registry (cw_pass_bind_texture takes

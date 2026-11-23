@@ -156,6 +156,9 @@ static void vf_build_exec(cw_pass_ctx *ctx, void *user);
 static bool vf_apply_active(const cw_pass_ctx *ctx, void *user);
 static void vf_apply_exec(cw_pass_ctx *ctx, void *user);
 
+static bool vf_apply_now_active(const cw_pass_ctx *ctx, void *user) { return !cw__fog_over_transparents() && vf_apply_active(ctx, user); }
+static bool vf_apply_old_active(const cw_pass_ctx *ctx, void *user) { return cw__fog_over_transparents() && vf_apply_active(ctx, user); }
+
 static vfog_rt *vfog_of(cw_tree *t, bool make) {
   vfog_rt *v = cw_tree_slot(t, "vfog");
   if (v || !make) return v;
@@ -163,12 +166,18 @@ static vfog_rt *vfog_of(cw_tree *t, bool make) {
   cw_tree_set_slot(t, "vfog", v, vfog_free);
   cw_pipeline *p = cw_pipeline_of(t);
   /* the grid first (shadow maps, inject, integrate: targets of its own), then
-   * the apply over the scene, where the analytic height fog would draw */
-  cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "volumetric_fog.grid", .phase = CW_PHASE_EFFECTS, .order = 290,
+   * the apply over the scene, where the analytic height fog would draw: over the
+   * opaque picture, before the transparent queue (130) and the particles (200),
+   * which look the grid up at their own distance (environment_internal.h) */
+  cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "volumetric_fog.grid", .phase = CW_PHASE_EFFECTS, .order = 110,
                                            .active = vf_build_active, .execute = vf_build_exec, .user = v, .webgpu = true,
                                            .views = CW_PASS_VIEWS_EACH });
-  cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "volumetric_fog", .phase = CW_PHASE_EFFECTS, .order = 300,
-                                           .reads = CW_RES_DEPTH, .writes = CW_RES_COLOR, .active = vf_apply_active,
+  cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "volumetric_fog", .phase = CW_PHASE_EFFECTS, .order = 120,
+                                           .reads = CW_RES_DEPTH, .writes = CW_RES_COLOR, .active = vf_apply_now_active,
+                                           .execute = vf_apply_exec, .user = v, .webgpu = true, .views = CW_PASS_VIEWS_EACH });
+  /* CW_TEST_FOG_OVER_TRANSPARENTS=1 (a gate control): the apply after the transparent queue and the particles */
+  cw_pipeline_add_pass(p, &(cw_pass_desc){ .name = "volumetric_fog.over", .phase = CW_PHASE_EFFECTS, .order = 300,
+                                           .reads = CW_RES_DEPTH, .writes = CW_RES_COLOR, .active = vf_apply_old_active,
                                            .execute = vf_apply_exec, .user = v, .webgpu = true, .views = CW_PASS_VIEWS_EACH });
   return v;
 }
@@ -1127,6 +1136,40 @@ static void vf_apply_exec(cw_pass_ctx *ctx, void *user) {
   cw_pass_set_blend(CW_PASS_BLEND_PREMUL);
   cw_pass_fullscreen();
   cw_pass_set_blend(CW_PASS_BLEND_NONE);
+}
+
+/* ── transparent surfaces (environment_internal.h) ─────────────────── */
+
+bool cw__vfog_draws(const cw_pass_ctx *ctx);
+bool cw__vfog_draws(const cw_pass_ctx *ctx) {
+  vfog_rt *v = cw_tree_slot(ctx->tree, "vfog");
+  return v && vf_apply_active(ctx, v);
+}
+
+/* the apply's values for a surface at its own distance: the grid of this run's view (built this frame) and the
+ * analytic tail past it, as vf_apply_exec sets them */
+bool cw__vfog_forward(cw_pass_ctx *ctx, cw__fog_fwd *o) {
+  vfog_rt *v = cw_tree_slot(ctx->tree, "vfog");
+  if (!v || !ctx->camera) return false;
+  vf_slot *S = slot_of(v, ctx);
+  if (!S->built) return false;
+  const cw__height_fog *hf = cw__height_fog_of(ctx->tree), *med = medium_of(ctx->tree);
+  float *u = o->u;
+  memset(u, 0, sizeof o->u);
+  o->mode = 2;
+  if (med) {
+    u[0] = med->density, u[1] = CW_MAX(med->height_falloff, 0.0f), u[2] = med->base_height, u[3] = CW_CLAMP(med->max_opacity, 0.0f, 1.0f);
+  }
+  u[4] = 0, u[5] = 2, u[6] = S->u.medium[3], u[7] = med ? 1.0f : 0.0f;
+  t3_color alb = hf ? hf->volumetric_albedo : (t3_color){ 1, 1, 1 };
+  u[8] = S->u.ambient[0] * alb.r, u[9] = S->u.ambient[1] * alb.g, u[10] = S->u.ambient[2] * alb.b;
+  u[12] = S->apply_sun[0], u[13] = S->apply_sun[1], u[14] = S->apply_sun[2];
+  u[16] = S->apply_sun[3], u[17] = S->apply_sun[4], u[18] = S->apply_sun[5];
+  const float *iv = S->u.inv_view;
+  u[20] = iv[12], u[21] = iv[13], u[22] = iv[14];
+  u[24] = S->u.grid[2], u[25] = S->u.slices[0], u[26] = S->u.slices[2];
+  o->vol = wgpu() ? cw__vf_wg_integrated(S->wg) : S->gl.integ;
+  return true;
 }
 
 /* ── the FogVolume3D node ───────────────────────────────────────────── */

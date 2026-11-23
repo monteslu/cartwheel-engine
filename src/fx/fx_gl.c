@@ -116,6 +116,25 @@ void cw__fx_mat4(unsigned p, const char *n, const float *m) {
 }
 #undef HELD
 
+void cw__fx_fog_uniforms(unsigned p, const cw__fx_tree *ft, int unit) {
+  static GLuint dummy;
+  cw__fx_u4fv(p, "u_ff", ft->ffog.u, CW__FFOG_VEC4);
+  GLuint vol = ft->ffog.mode == 2 ? ft->ffog.vol : 0;
+  if (!vol) {
+    if (!dummy) {
+      static const uint16_t px[4] = { 0, 0, 0, 0x3c00 }; /* (0, 0, 0, 1) in half floats: no fog */
+      glGenTextures(1, &dummy);
+      glBindTexture(GL_TEXTURE_3D, dummy);
+      glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA16F, 1, 1, 1, 0, GL_RGBA, GL_HALF_FLOAT, px);
+      glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+      glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    }
+    vol = dummy;
+  }
+  cw__fx_bind_tex(unit, GL_TEXTURE_3D, vol);
+  cw__fx_u1i(p, "u_ffvol", unit);
+}
+
 /* ── textures and targets ───────────────────────────────────────────── */
 
 unsigned cw__fx_tex2d(int w, int h, unsigned ifmt, unsigned fmt, unsigned type, bool linear, const void *data) {

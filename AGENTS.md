@@ -126,7 +126,7 @@ t3_release(hero);                               /* the parent holds it */
 
 **Render to a texture** (`subviewport.h`, [SubViewport](docs/guides/rendering-3d.md#rendering-to-a-texture-subviewport)): a `SubViewport` node with `camera = "../Level/SecurityCam"` (a view of this world) or `scene = "portrait.cwscene"` (a world of its own); show it with `texture = "viewport://Name"` on any 2D node or UI control, or `viewport_texture` on a MeshInstance3D. `update_mode = WHEN_VISIBLE` for a monitor, `ONCE` for a still.
 
-**A world behind the scene** (`backdrop.h`, [Backdrops](docs/guides/rendering-3d.md#backdrops-worlds-behind-the-scene)): a `Backdrop` node with `scene = "stage.cwscene"` draws that world (its own camera, lights, sky, volumetric fog) behind the scene in place of its background; `opacity` cross-fades two (`cw_backdrop_set_opacity`), `order` stacks them; 0 costs nothing; the post chain runs over the composite. `environment = true` makes its world the scene's reflections (glossy roads, water); PostProcess `ssr_backdrop` adds sharp screen-space reflections of it.
+**A world behind the scene** (`backdrop.h`, [Backdrops](docs/guides/rendering-3d.md#backdrops-worlds-behind-the-scene)): a `Backdrop` node with `scene = "stage.cwscene"` draws that world (its own camera, lights, sky, volumetric fog) behind the scene in place of its background; `opacity` cross-fades two (`cw_backdrop_set_opacity`), `order` stacks them; 0 costs nothing; the post chain runs over the composite. `environment = true` makes its world the scene's reflections (glossy roads, water); PostProcess `ssr_backdrop` adds sharp screen-space reflections of it. Every Backdrop is prewarmed at the end of the warm-up, so its first fade-in builds nothing; one added later takes `cw_backdrop_prewarm`.
 
 **Physics** (`physics_nodes.h`, [physics](docs/guides/physics.md)): `StaticBody3D`, `RigidBody3D`,
 `CharacterBody3D` and `Area3D` nodes with collision shapes in the scene. A player:
@@ -237,7 +237,7 @@ glowing ASCII, half blocks, one-bit dithering or a shader of your own, two at a 
 readable with `cw_pipeline_set_look_boxes`. A look with `stage = CW_LOOK_STAGE_DISPLAY` is drawn last on the finished
 frame (a dither there is exactly two colours on screen); the dither's tone options (`hue_value`, `grey_gain`,
 `sharpen`, `outline`, `gamma`) and `output_pixels` make a crisp one-bit picture (`samples/looks_onebit`). Shell menus
-show the selection by shape for such a game: `cw_shell_desc.selection = CW_SHELL_SELECT_INVERSE`.
+show the selection by shape for such a game: `cw_shell_desc.selection = CW_SHELL_SELECT_INVERSE`. Make looks in `init`: the warm-up prewarms them, so a style change into one costs no frame (a look made later: `cw_look_prewarm`).
 
 **Debug channel** (`debug.h`, [debug-channel](docs/guides/debug-channel.md)): publish what a test reads, and
 answer requests:

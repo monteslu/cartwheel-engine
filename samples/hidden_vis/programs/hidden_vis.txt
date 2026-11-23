@@ -17,3 +17,4 @@ standard+map+trans+l1811+xcsm_meshdecal_plain_gi
 standard+l1801
 standard+l1801+xplain
 physical+shadow+ds+sheen+l1801+s100+xcsm_gi
+standard+map+trans+l1811+xcsm_hfog_meshdecal_gi

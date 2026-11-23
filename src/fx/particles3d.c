@@ -353,6 +353,7 @@ static const char *const draw_vs =
     "out vec2 v_luv, v_fr;\n"
     "out float v_vz;\n"
     "out vec3 v_n;\n"
+    "out vec3 v_wp;\n"
     "vec4 curve(float t, int row) {\n"
     "  float x = t * 255.0; int i0 = int(floor(x)); int i1 = min(i0 + 1, 255);\n"
     "  return mix(texelFetch(u_curve, ivec2(i0, row), 0), texelFetch(u_curve, ivec2(i1, row), 0), x - float(i0));\n"
@@ -418,6 +419,7 @@ static const char *const draw_vs =
     "  }\n"
     "  vec4 vp = u_view * vec4(world, 1.0);\n"
     "  v_vz = -vp.z;\n"
+    "  v_wp = world;\n"
     "  v_t = t; v_id = float(i);\n"
     "  v_color = col;\n"
     "  gl_Position = u_proj * vp;\n"
@@ -441,7 +443,11 @@ static const char *const draw_fs =
     "uniform vec4 u_soft;\n" /* soft distance, near, far, ortho */
     "uniform vec2 u_inv_size;\n"
     "uniform float u_camfade;\n"
+    "in vec3 v_wp;\n"
     "out vec4 frag;\n"
+    /* the fog at the particle's own distance (environment_internal.h): premultiplied colour x transmittance, plus
+     * the fog's light by coverage (none for additive: alpha 0) */
+    "vec4 fogged(vec4 p) { vec4 f = cw_ffog(v_wp, v_vz); return vec4(p.rgb * f.a + f.rgb * p.a, p.a); }\n"
     "float lin(float d) { return u_soft.w > 0.5 ? u_soft.y + d * (u_soft.z - u_soft.y) : u_soft.y * u_soft.z / (u_soft.z - d * (u_soft.z - u_soft.y)); }\n"
     "void main() {\n"
     "  vec4 c = v_color;\n"
@@ -476,11 +482,11 @@ static const char *const draw_fs =
     "    }\n"
     "    vec2 uv2 = uv0 + off;\n"
     "    if (lin(texture(u_depth, uv2).r) < v_vz - 0.02) uv2 = uv0;\n"
-    "    frag = vec4(texture(u_scene, uv2).rgb * v_color.rgb * c.a, c.a);\n"
+    "    frag = fogged(vec4(texture(u_scene, uv2).rgb * v_color.rgb * c.a, c.a));\n"
     "    return;\n"
     "  }\n"
-    "  if (u_blend == 2) { if (c.a < 0.5) discard; frag = vec4(c.rgb, 1.0); return; }\n"
-    "  frag = vec4(c.rgb * c.a, u_blend == 1 ? c.a : 0.0);\n"
+    "  if (u_blend == 2) { if (c.a < 0.5) discard; frag = fogged(vec4(c.rgb, 1.0)); return; }\n"
+    "  frag = fogged(vec4(c.rgb * c.a, u_blend == 1 ? c.a : 0.0));\n"
     "}\n";
 
 /* writes particle state (or a history slot) into float textures, one point
@@ -603,6 +609,7 @@ static const char *const trail_vs =
     "out vec4 v_color;\n"
     "out vec2 v_uv;\n"
     "out float v_vz;\n"
+    "out vec3 v_wp;\n"
     "vec4 curve(float t, int row) {\n"
     "  float x = t * 255.0; int i0 = int(floor(x)); int i1 = min(i0 + 1, 255);\n"
     "  return mix(texelFetch(u_curve, ivec2(i0, row), 0), texelFetch(u_curve, ivec2(i1, row), 0), x - float(i0));\n"
@@ -645,6 +652,7 @@ static const char *const trail_vs =
     "  vec3 world = P + sd * (side * u_width * 0.5 * (1.0 - u));\n"
     "  vec4 vp = u_view * vec4(world, 1.0);\n"
     "  v_vz = -vp.z;\n"
+    "  v_wp = world;\n"
     "  v_color = col;\n"
     "  v_uv = vec2(side * 0.5 + 0.5, u);\n"
     "  gl_Position = u_proj * vp;\n"
@@ -653,13 +661,16 @@ static const char *const trail_fs =
     "in vec4 v_color;\n"
     "in vec2 v_uv;\n"
     "in float v_vz;\n"
+    "in vec3 v_wp;\n"
     "uniform int u_blend;\n"
     "out vec4 frag;\n"
     "void main() {\n"
     "  vec4 c = v_color;\n"
     "  float e = 1.0 - abs(v_uv.x * 2.0 - 1.0);\n"
     "  c.a *= smoothstep(0.0, 0.35, e);\n"
-    "  frag = vec4(c.rgb * c.a, u_blend == 1 ? c.a : 0.0);\n"
+    "  vec4 p = vec4(c.rgb * c.a, u_blend == 1 ? c.a : 0.0);\n"
+    "  vec4 f = cw_ffog(v_wp, v_vz);\n"
+    "  frag = vec4(p.rgb * f.a + f.rgb * p.a, p.a);\n"
     "}\n";
 
 /* ── programs ───────────────────────────────────────────────────────── */
@@ -683,7 +694,7 @@ static bool build_programs(void) {
   cw_free(vs);
   for (int v = 0; v < 2; v++) {
     char *dvs = cat3(v ? "#define SRC_TEX 1\n" : "", glsl_common, draw_vs);
-    char *dfs = cat3(glsl_common, draw_fs, "");
+    char *dfs = cat3(glsl_common, CW__FFOG_GLSL, draw_fs);
     prog_draw[v] = cw__fx_program(v ? "particles.draw_sorted" : "particles.draw", dvs, dfs, NULL, 0);
     cw_free(dvs);
     cw_free(dfs);
@@ -698,8 +709,10 @@ static bool build_programs(void) {
   prog_rank_select = cw_pass_program("particles.rank_select", rank_select_fs);
   prog_reduce = cw_pass_program("particles.reduce", reduce_fs);
   char *tvs = cat3(glsl_common, trail_vs, "");
-  prog_trail = cw__fx_program("particles.trail", tvs, trail_fs, NULL, 0);
+  char *tfs = cat3(glsl_common, CW__FFOG_GLSL, trail_fs);
+  prog_trail = cw__fx_program("particles.trail", tvs, tfs, NULL, 0);
   cw_free(tvs);
+  cw_free(tfs);
   if (!prog_sim || !prog_draw[0] || !prog_draw[1] || !prog_scatter || !prog_hist || !prog_key || !prog_bitonic || !prog_rank || !prog_rank_select ||
       !prog_reduce || !prog_trail) {
     progs_failed = true;
@@ -1636,6 +1649,7 @@ static void psys_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, const psys_p
     cw__fx_u1f(prog_trail, "u_energy", d->energy);
     cw__fx_u1f(prog_trail, "u_width", d->trail_width);
     cw__fx_u1i(prog_trail, "u_blend", d->blend == BLEND_OPAQUE ? BLEND_ALPHA : d->blend);
+    cw__fx_fog_uniforms(prog_trail, ft, 8);
     if (d->blend == BLEND_OPAQUE) set_blend(BLEND_ALPHA);
     glBindVertexArray(cw__fx_empty_vao());
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 2 * r->hist_len, cw__psys_draw_count(d));
@@ -1664,6 +1678,7 @@ static void psys_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, const psys_p
   cw__fx_u2f(dp, "u_frames", (float)CW_MAX(d->hframes, 1), (float)CW_MAX(d->vframes, 1));
   cw__fx_u1i(dp, "u_mode", d->draw_mode);
   cw__fx_u1i(dp, "u_blend", d->blend);
+  cw__fx_fog_uniforms(dp, ft, 8);
   {
     const float *pm = ctx->camera->projection_matrix.e;
     float vu[4]; /* the shift in the whole target's uv: a one-pass split screen's view is part of it */

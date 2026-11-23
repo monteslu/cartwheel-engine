@@ -2,7 +2,10 @@
 // runs it (run-cart --warmup-spread: no seed, the warm-up's shader phase spread over frames, several slices a frame)
 // reports no program state its table lacks, on GL and WebGPU, after the warm-up and into play. Control:
 // CW_TEST_WARM_NO_PRERENDER=1 drops the pre-render of a frame's later slices (as before the fix): they draw the cascaded
-// sun as a plain shadowed light, and states no table has must show up.
+// sun as a plain shadowed light, and states no table has must show up. Both runs render at least 4 slices a frame
+// (CW_TEST_WARM_SLICES=4): a frame renders slices until its 12 ms budget is spent, so on a loaded machine (another
+// process on the GPU, a slow host) one slice could take the whole budget and no frame had a later slice: the check
+// then measured nothing and its control passed. The slice count no longer depends on the clock.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -13,7 +16,8 @@ const gpus = process.argv.includes('--gpu') ? [process.argv[process.argv.indexOf
 function run(gpu, control) {
   const state = join(OUT, `${gpu}${control ? '-control' : ''}.json`);
   const r = spawnSync('node', [join(ROOT, 'tools/run-cart.mjs'), '--host', 'romdev', '--gpu', gpu, '--app', 'warm_states', '--frames', '180',
-    '--warmup-spread', ...(control ? ['--allow-skipped', '--env', JSON.stringify({ CW_TEST_WARM_NO_PRERENDER: '1' })] : []), '--state', state, '--shot', state.replace(/json$/, 'png')],
+    '--warmup-spread', ...(control ? ['--allow-skipped'] : []),
+    '--env', JSON.stringify({ CW_TEST_WARM_SLICES: '4', ...(control ? { CW_TEST_WARM_NO_PRERENDER: '1' } : {}) }), '--state', state, '--shot', state.replace(/json$/, 'png')],
   { encoding: 'utf8', cwd: ROOT, maxBuffer: 1 << 26 });
   if (r.status !== 0) { console.error(r.stdout.slice(-400), r.stderr.slice(-400)); process.exit(3); }
   return JSON.parse(readFileSync(state, 'utf8'));
