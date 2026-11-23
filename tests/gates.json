@@ -3324,6 +3324,17 @@
     "note": "four skinned robots (RobotExpressive, CC0) walk over stairs and a slope with FootPlacement3D, a TwoBoneIK3D hand grabbing a handle and neck/head LookAtModifier3D following a firefly; the probe holds every planted ankle's height above the ground under it to its animated height above flat ground within 1 cm (feet_ok) and the hand within 1 mm of the handle (reach_ok); pose hashes per 60-tick window for the front robot and the crowd. The control turns foot placement off at frame 10. tests/ik-determinism.mjs runs it at CW_WORKERS 0, 3 and 7"
   },
   {
+    "name": "anim-spring",
+    "app": "anim_spring",
+    "frames": 600,
+    "controlEnv": { "SPRING_OFF": "1" },
+    "maxGt16": 0.003,
+    "webgpu": { "vsGl": 0.02 },
+    "fields": ["sb.tick", "sb.lag", "sb.settle", "sb.pen", "sb.pen_spin", "sb.spin_lag", "sb.whip", "sb.resets", "sb.reset_ok", "sb.motion_ok", "sb.collide_ok", "sb.teleport_ok", "sb.hash_win"],
+    "expect": { "sb.motion_ok": 1, "sb.collide_ok": 1, "sb.teleport_ok": 1, "sb.reset_ok": 1 },
+    "note": "SpringBone3D (cartwheel/ik.h): a generated person in a coat (samples/anim_spring/make-character.mjs) with a ponytail and two coat tails on bone chains, a body capsule, shoulder and thigh capsules and a head sphere; walks, stops, spins three turns, stands, teleports 6 m and walks back. The probe: every tip lags more than 3 cm while walking and settles within 1 cm inside 75 ticks of the stop (motion_ok), no simulated joint enters a collision shape during the spin while the tips fly out (collide_ok), the teleported person's tips match an identical twin's within 1 mm and the reset call puts them on the animated pose (teleport_ok, reset_ok); pose hashes per 60-tick window across hosts. The control turns the modifier off: no lag, motion_ok fails. tests/spring-bone.mjs runs each check with its own control"
+  },
+  {
     "name": "ragdoll",
     "app": "ragdoll",
     "frames": 480,
@@ -5228,6 +5239,7 @@
   { "name": "pass-timing", "script": "tests/pass-timing.mjs", "note": "WebGPU pass timestamps time every pass GL's timer queries do: fx_pipeline with 600 draws in its scene pass, and post_stack's full segment (velocity, taa, tonemap), and post_stack's passes that start late (dof, exposure, motion_blur) timed on GL a few frames in, as on WebGPU; controls: CW_TEST_TIMING_SPLIT=1 (a render pass and timestamp pair per draw) runs the frame out of timestamps and leaves passes untimed, CW_TEST_GL_FRAMES_AHEAD=0 (the native GL queue unbounded) leaves exposure untimed" },
   { "name": "r2d-big-stream", "script": "tests/r2d-big-stream.mjs", "note": "a 22 MB 2D stream (r2d_stress sprites200k) uploads in pieces and draws on WebGPU as on GL; a stream over the device's largest buffer (CW_TEST_R2D_STREAM_MAX) is not drawn, logs one clear error and keeps the device; control: that undrawn frame fails the GL bound the drawn one meets" },
   {"name":"fx-camera-fade","app":"fx_explosion","frames":70,"startCmds":["set World/Boom/Smoke camera_fade 20","set World/Boom/Fire camera_fade 20"],"fields":["fxe.tick"],"controlFrames":70,"note":"camera_fade on the blast's smoke and fire (20 m, the camera stands about 11 m off): both thin out toward the lens on every host and both backends, GL and WebGPU alike; control: the same frame without it must differ","webgpu":{"hosts":["native","romdev","chromium","wcnative"],"vsGl":0.01}},
+  { "name": "spring-bone", "script": "tests/spring-bone.mjs", "note": "SpringBone3D on samples/anim_spring, natively and on romdev, GL and WebGPU: (a) tips lag while walking and settle within 75 ticks of the stop (CONTROL: the modifier off leaves no lag); (b) no joint enters the body, shoulder, thigh or head shape during a three-turn spin (CONTROL: collisions off puts joints 8 cm inside); (c) a 6 m teleport leaves every tip within 1 mm of an identical twin's and the reset call puts them on the animated pose (CONTROL: the jump check off whips them half a metre); (d) the pose hash per 60-tick window is the same bits on every host and backend" },
   { "name": "particle-angle", "script": "tests/particle-angle.mjs", "note": "the start angle of GPUParticles3D and GPUParticles2D (angle, angle_random), measured from the picture of upright arrows (samples/fx_particle_angle): angle_random 0 keeps every billboard upright on screen while the camera circles and bobs, and every 2D sprite upright (CONTROL: angle_random 1 fails it, 3D and 2D); angle 0.7 turns every 3D arrow 0.7 counter-clockwise and every 2D arrow 0.7 clockwise; spin still adds (every arrow turned by the same amount, some each way; CONTROL: no spin turns none); STRETCHED particles ignore it pixel for pixel (CONTROL: a billboard system at the same angle changes the picture); native and romdev, GL and WebGPU" },
   {
     "name": "fx-particle-angle",

@@ -503,5 +503,106 @@ static void test_crowd(void) {
   cw_tree_free(t);
 }
 
-CW_TEST_SUITE("ik", { "crowd", test_crowd }, { "pose", test_pose }, { "two_bone", test_two_bone }, { "aim", test_aim }, { "ccd_r186", test_ccd_r186 },
+/* ── SpringBone3D ──────────────────────────────────────────────────── */
+
+/* a head bone at y 1.5 with a four-bone tail hanging down behind it (0.1 m segments) and an end marker */
+static t3_object *make_tail_rig(void) {
+  t3_object *root = t3_group_new();
+  t3_object *head = t3_bone_new();
+  head->name = "Head";
+  head->position = v3(0, 1.5f, 0);
+  t3_object_add(root, head);
+  t3_object *parent = head;
+  static const char *names[5] = { "T0", "T1", "T2", "T3", "T_end" };
+  for (int i = 0; i < 5; i++) {
+    t3_object *b = t3_bone_new();
+    b->name = names[i];
+    b->position = i ? v3(0, -0.1f, -0.01f) : v3(0, 0, -0.1f);
+    t3_object_add(parent, b);
+    parent = b;
+  }
+  return root;
+}
+
+static float tip_dist(cw_node chain) {
+  cw_value v;
+  return cw_node_get_prop(chain, "tip_distance", &v) ? (float)v.f : -1;
+}
+
+static void test_spring(void) {
+  cw_tree *t = cw_tree_new();
+  cw_node root = cw_tree_root(t);
+  cw_node model = add(root, "Node3D", "Model");
+  t3_object *rig = make_tail_rig();
+  cw_node3d_set_object(model, rig);
+  t3_release(rig);
+  cw_node sb = add(model, "SpringBone3D", "Springs");
+  cw_node ch = add(sb, "SpringBoneChain3D", "Tail");
+  cw_node_set(ch, "root_bone", cw_val_string("T0"));
+  cw_node_set(ch, "end_bone", cw_val_string("T3"));
+  /* still: the tail stays on its animated pose */
+  for (int k = 0; k < 30; k++) cw_tree_fixed_update(t, DT);
+  NEAR(tip_dist(ch), 0, 1e-5);
+  t3_vec3 j;
+  CHECK(cw_spring_chain3d_joint_world(ch, 3, &j) && !cw_spring_chain3d_joint_world(ch, 4, &j));
+  /* a steady walk: the tail trails at the start, then settles back onto the animated pose */
+  float peak = 0, x = 0;
+  for (int k = 0; k < 240; k++) {
+    x += 1.4f * (float)DT;
+    cw_node3d_set_position(model, v3(x, 0, 0));
+    cw_tree_fixed_update(t, DT);
+    if (tip_dist(ch) > peak) peak = tip_dist(ch);
+  }
+  CHECK(peak > 0.02f);
+  CHECK(tip_dist(ch) < 0.002f);
+  fprintf(stderr, "spring walk: peak %.4f end %.5f\n", peak, tip_dist(ch));
+  /* a stop: it swings forward, then settles within two and a half seconds */
+  peak = 0;
+  for (int k = 0; k < 150; k++) {
+    cw_tree_fixed_update(t, DT);
+    if (tip_dist(ch) > peak) peak = tip_dist(ch);
+  }
+  fprintf(stderr, "spring stop: peak %.4f end %.5f\n", peak, tip_dist(ch));
+  CHECK(peak > 0.02f);
+  CHECK(tip_dist(ch) < 0.005f);
+  /* gravity sags it, by about strength / stiffness per joint */
+  cw_node_set(ch, "gravity_strength", cw_val_float(1.2));
+  for (int k = 0; k < 120; k++) cw_tree_fixed_update(t, DT);
+  float sag = tip_dist(ch);
+  fprintf(stderr, "spring sag: %.4f\n", sag);
+  CHECK(sag > 0.005f && sag < 0.1f);
+  cw_node_set(ch, "gravity_strength", cw_val_float(0));
+  for (int k = 0; k < 120; k++) cw_tree_fixed_update(t, DT);
+  /* a teleport: the tail moves with the model, no whip; with the check off it whips */
+  cw_node3d_set_position(model, v3(x + 5, 0, 0));
+  cw_tree_fixed_update(t, DT);
+  NEAR(tip_dist(ch), 0, 1e-3);
+  cw_node_set(sb, "teleport_distance", cw_val_float(0));
+  cw_node3d_set_position(model, v3(x, 0, 0));
+  cw_tree_fixed_update(t, DT);
+  CHECK(tip_dist(ch) > 0.05f);
+  /* reset: back on the animated pose at once */
+  cw_spring_bone3d_reset(sb);
+  cw_tree_fixed_update(t, DT);
+  NEAR(tip_dist(ch), 0, 1e-6);
+  cw_value rv;
+  CHECK(cw_node_get_prop(sb, "resets", &rv) && rv.i == 2);
+  /* a sphere where the tail hangs pushes it out of the sphere (and its radius) */
+  cw_node sh = add(sb, "SpringBoneCollision3D", "Ball");
+  cw_node_set(sh, "bone", cw_val_string("Head"));
+  cw_node_set(sh, "radius", cw_val_float(0.08));
+  cw_node_set(sh, "offset", cw_val_vec3(0, -0.25f, -0.06f));
+  for (int k = 0; k < 60; k++) cw_tree_fixed_update(t, DT);
+  t3_vec3 a, b;
+  float r;
+  CHECK(cw_spring_collision3d_world(sh, &a, &b, &r));
+  NEAR(r, 0.08, 1e-6);
+  for (int i = 0; cw_spring_chain3d_joint_world(ch, i, &j); i++) CHECK(vlen(vsub(j, a)) >= 0.08f + 0.02f - 1e-4f);
+  CHECK(tip_dist(ch) > 0.01f);
+  uint32_t h = cw_skeleton_hash(model);
+  FOLD(h);
+  cw_tree_free(t);
+}
+
+CW_TEST_SUITE("ik", { "crowd", test_crowd }, { "spring", test_spring }, { "pose", test_pose }, { "two_bone", test_two_bone }, { "aim", test_aim }, { "ccd_r186", test_ccd_r186 },
               { "fabrik", test_fabrik }, { "nodes", test_nodes }, { "foot_placement", test_foot_placement })

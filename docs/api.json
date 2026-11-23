@@ -3661,7 +3661,7 @@
   },
   {
    "header": "cartwheel/ik.h",
-   "summary": "cartwheel inverse kinematics: a pose layer between animation and\nskinning, deterministic solvers, and skeleton modifier nodes that adjust\nthe animated pose before it is drawn (limbs that reach and plant).\n\nPIPELINE (each fixed tick, for every model with modifier nodes):\n  1. AnimationPlayer / AnimationTree write the animated pose onto the\n     model's bones (cartwheel/anim.h), in the nodes' fixed_update.\n  2. The pose layer captures the bones' local translation, rotation and\n     scale into a cw_pose (the animated pose), after every node's\n     fixed_update and after the physics step.\n  3. The model's modifier nodes (its children: TwoBoneIK3D,\n     LookAtModifier3D, CCDIK3D, FABRIK3D, FootPlacement3D) run in child\n     order, each adjusting the pose the previous one left.\n  4. The pose is written back to the bones once; three.c skins from them.\nEvery tick starts again from the animated pose, never from the last\ntick's solution: a bone the animation did not write this tick (a static\nmodel, a bone no track drives) gets its last animated value back before\nthe modifiers run, so solutions never accumulate. A bone written by\nanything else after the last flush (a player in UPDATE mode, game code)\nkeeps that value as its animated value. The app's own fixed_update runs\nafter the modifiers: targets it moves apply on the next tick.\n\nMODEL SPACE. A pose works in its model's space: the space of the three.c\nobject the pose was bound to (a Node3D's object holding a glTF scene).\nBones whose parent is not a bone are placed by the objects between them\nand that root (a glTF armature node and its scale). Solvers take targets\nin model space; nodes convert world targets with the model's global\ntransform. Rotations are composed as quaternions, so scale along the chain\nmust be uniform (glTF armatures are).\n\nDETERMINISM. Solvers use + - * / and sqrt, cartwheel/math.h's cw_acos /\ncw_sincos where an angle is needed (r187 CCD, angle limits), fixed\niteration counts and exact 1/sqrt: the same input pose gives the same\noutput bits on every host. Each model's pose hash (cw_skeleton_hash)\nfolds every flushed value, so tests compare poses across hosts.\n\nTHREADING. Captures, target resolution and FootPlacement3D's raycasts\n(one cw_world3d_raycast_batch for every leg of every model) run on the\nmain thread; the solves run per model through cw_parallel_for. Each\nmodel's work touches only its own pose, so the result does not depend on\nthe worker count.\n\nCOST (890M laptop, native, one character with feet, a hand and a head\nlook-at): see docs/guides/animation.md \"Inverse kinematics\". A two-bone\nsolve is about 0.1 us; a pose capture and flush is O(bones).",
+   "summary": "cartwheel inverse kinematics: a pose layer between animation and\nskinning, deterministic solvers, and skeleton modifier nodes that adjust\nthe animated pose before it is drawn (limbs that reach and plant, hair\nand coat tails that swing).\n\nPIPELINE (each fixed tick, for every model with modifier nodes):\n  1. AnimationPlayer / AnimationTree write the animated pose onto the\n     model's bones (cartwheel/anim.h), in the nodes' fixed_update.\n  2. The pose layer captures the bones' local translation, rotation and\n     scale into a cw_pose (the animated pose), after every node's\n     fixed_update and after the physics step.\n  3. The model's modifier nodes (its children: TwoBoneIK3D,\n     LookAtModifier3D, CCDIK3D, FABRIK3D, FootPlacement3D, SpringBone3D)\n     run in child order, each adjusting the pose the previous one left.\n  4. The pose is written back to the bones once; three.c skins from them.\nEvery tick starts again from the animated pose, never from the last\ntick's solution: a bone the animation did not write this tick (a static\nmodel, a bone no track drives) gets its last animated value back before\nthe modifiers run, so solutions never accumulate. A bone written by\nanything else after the last flush (a player in UPDATE mode, game code)\nkeeps that value as its animated value. The app's own fixed_update runs\nafter the modifiers: targets it moves apply on the next tick.\nSpringBone3D is the one modifier with state of its own: its simulated\ntails carry over from tick to tick (that is the lag), but it too starts\neach tick from the animated pose and pulls its chains back toward it.\n\nMODEL SPACE. A pose works in its model's space: the space of the three.c\nobject the pose was bound to (a Node3D's object holding a glTF scene).\nBones whose parent is not a bone are placed by the objects between them\nand that root (a glTF armature node and its scale). Solvers take targets\nin model space; nodes convert world targets with the model's global\ntransform. Rotations are composed as quaternions, so scale along the chain\nmust be uniform (glTF armatures are).\n\nDETERMINISM. Solvers use + - * / and sqrt, cartwheel/math.h's cw_acos /\ncw_sincos where an angle is needed (r187 CCD, angle limits), fixed\niteration counts and exact 1/sqrt: the same input pose gives the same\noutput bits on every host. Each model's pose hash (cw_skeleton_hash)\nfolds every flushed value, so tests compare poses across hosts.\n\nTHREADING. Captures, target resolution and FootPlacement3D's raycasts\n(one cw_world3d_raycast_batch for every leg of every model) run on the\nmain thread; the solves run per model through cw_parallel_for. Each\nmodel's work touches only its own pose, so the result does not depend on\nthe worker count.\n\nCOST (890M laptop, native, one character with feet, a hand and a head\nlook-at): see docs/guides/animation.md \"Inverse kinematics\". A two-bone\nsolve is about 0.1 us; a pose capture and flush is O(bones).\nSpringBone3D: about 3 us a chain in a release cart (3 to 4 joints, five\nshapes; \"Hair, tails and coats\" in the same guide).",
    "functions": [
     {
      "name": "cw_pose_init",
@@ -3854,6 +3854,24 @@
      "signature": "float cw_foot_placement_pelvis_offset(cw_node n)",
      "doc": "FootPlacement3D: the pelvis offset applied last tick (metres, <= 0)",
      "inline": false
+    },
+    {
+     "name": "cw_spring_bone3d_reset",
+     "signature": "void cw_spring_bone3d_reset(cw_node n)",
+     "doc": "SpringBone3D: its chains start again from the animated pose on the next\ntick (a respawn, a cut to another scene); the same as setting `reset`. A\nplain teleport needs no call: see teleport_distance.",
+     "inline": false
+    },
+    {
+     "name": "cw_spring_chain3d_joint_world",
+     "signature": "bool cw_spring_chain3d_joint_world(cw_node chain, int joint, t3_vec3 *out)",
+     "doc": "SpringBoneChain3D: world position of simulated joint `joint` (0: the\nroot bone's tail, the last: the tip) after the last tick; false past the\nlast joint or before the chain first ran.",
+     "inline": false
+    },
+    {
+     "name": "cw_spring_collision3d_world",
+     "signature": "bool cw_spring_collision3d_world(cw_node shape, t3_vec3 *a, t3_vec3 *b, float *radius)",
+     "doc": "SpringBoneCollision3D: where the shape was last tick, in the world: a\ncapsule from *a to *b, a sphere at *a (== *b), and its radius (m). false\nbefore it first ran or when its bone is unknown.",
+     "inline": false
     }
    ],
    "types": [
@@ -3918,6 +3936,10 @@
     },
     {
      "name": "CW_IK_MAX_CHAIN",
+     "doc": ""
+    },
+    {
+     "name": "CW_SPRING_MAX_JOINTS",
      "doc": ""
     }
    ]

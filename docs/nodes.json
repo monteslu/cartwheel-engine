@@ -7803,6 +7803,200 @@
    ]
   },
   {
+   "name": "SpringBone3D",
+   "parent": "SkeletonModifier3D",
+   "doc": "Secondary motion: hair, braids, tails and coat panels lag, sway and settle back to the animated pose (its SpringBoneChain3D children), kept out of the body by its SpringBoneCollision3D children.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "reset",
+     "type": "bool",
+     "default": "false",
+     "stored": false,
+     "readonly": false,
+     "doc": "Set true: the chains start again from the animated pose next tick (clears itself)."
+    },
+    {
+     "name": "teleport_distance",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "A model moving further than this in one tick teleported: the chains move with it, no whip (m, 0 = off)."
+    },
+    {
+     "name": "teleport_angle",
+     "type": "float",
+     "default": "1.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 3.14159,
+     "doc": "A model turning further than this in one tick teleported (radians, 0 = off)."
+    },
+    {
+     "name": "collisions",
+     "type": "bool",
+     "default": "true",
+     "stored": true,
+     "readonly": false,
+     "doc": "The SpringBoneCollision3D children push the chains out of the body."
+    },
+    {
+     "name": "resets",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Resets and teleports so far (each starts the chains again)."
+    }
+   ]
+  },
+  {
+   "name": "SpringBoneChain3D",
+   "parent": "Node",
+   "doc": "One chain of a SpringBone3D (a ponytail, a braid, a coat tail): root_bone to end_bone with its own spring.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "root_bone",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "First bone that swings (its origin stays on its parent)."
+    },
+    {
+     "name": "end_bone",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Last bone of the chain (below root_bone); its child, or its own length again, is the tip."
+    },
+    {
+     "name": "stiffness",
+     "type": "float",
+     "default": "120",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 3600,
+     "doc": "Pull back toward the animated pose (1/s^2: 120 sways about 1.7 times a second; 3600 holds it)."
+    },
+    {
+     "name": "damping",
+     "type": "float",
+     "default": "8",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1000,
+     "doc": "Drag: how fast the swing dies away (1/s)."
+    },
+    {
+     "name": "gravity",
+     "type": "vec3",
+     "default": "vec3(0, -1, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Direction gravity pulls the chain (world)."
+    },
+    {
+     "name": "gravity_strength",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 100,
+     "doc": "Gravity's pull (m/s^2; 0 = none): the chain sags by about strength / stiffness metres."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "0.02",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Hit radius of each joint and the tip against the collision shapes (m)."
+    },
+    {
+     "name": "tip_offset",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": false,
+     "readonly": true,
+     "doc": "The tip from where the animated pose puts it, last tick (world, m)."
+    },
+    {
+     "name": "tip_distance",
+     "type": "float",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Length of tip_offset (m)."
+    }
+   ]
+  },
+  {
+   "name": "SpringBoneCollision3D",
+   "parent": "Node",
+   "doc": "A sphere or capsule on a bone that keeps its SpringBone3D's chains out of the body.",
+   "signals": [],
+   "properties": [
+    {
+     "name": "bone",
+     "type": "string",
+     "default": "\"\"",
+     "stored": true,
+     "readonly": false,
+     "doc": "Bone the shape rides (head, chest, thigh)."
+    },
+    {
+     "name": "shape",
+     "type": "enum",
+     "default": "SPHERE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "SPHERE",
+      "CAPSULE"
+     ],
+     "doc": "SPHERE at offset, or CAPSULE from offset to tail."
+    },
+    {
+     "name": "radius",
+     "type": "float",
+     "default": "0.1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Radius (m)."
+    },
+    {
+     "name": "offset",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "Centre (a capsule's first end) from the bone's origin, in the model's rest orientation (m)."
+    },
+    {
+     "name": "tail",
+     "type": "vec3",
+     "default": "vec3(0, 0, 0)",
+     "stored": true,
+     "readonly": false,
+     "doc": "A capsule's other end, like offset (m)."
+    }
+   ]
+  },
+  {
    "name": "Skeleton3D",
    "parent": "Node3D",
    "doc": "The bones of a skinned glTF model as a node: names, parents, rest and pose transforms to read and set. Skeleton modifiers and BoneAttachment3D nodes go under it.",
@@ -8295,12 +8489,30 @@
      "doc": "Flipbook rows."
     },
     {
+     "name": "angle",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Start angle, radians: BILLBOARD turns counter-clockwise as the camera sees it (0 = the texture's top toward the screen's top), MESH about each particle's own random axis. STRETCHED ignores it (velocity sets the turn)."
+    },
+    {
+     "name": "angle_random",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Spread of the start angle, a share of a full turn centred on angle: 1 = any angle (the default), 0 = every particle starts at angle (an upright flame flipbook)."
+    },
+    {
      "name": "spin",
      "type": "float",
      "default": "0",
      "stored": true,
      "readonly": false,
-     "doc": "Rotation speed, rad/s (random direction per particle)."
+     "doc": "Rotation speed, rad/s (random direction per particle), added to the start angle."
     },
     {
      "name": "blend",
@@ -8726,12 +8938,30 @@
      "doc": "ALPHA or ADD."
     },
     {
+     "name": "angle",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "doc": "Start angle, radians, clockwise (y down, as Node2D rotation; 0 = the texture upright)."
+    },
+    {
+     "name": "angle_random",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Spread of the start angle, a share of a full turn centred on angle: 1 = any angle (the default), 0 = every particle starts at angle."
+    },
+    {
      "name": "spin",
      "type": "float",
      "default": "0",
      "stored": true,
      "readonly": false,
-     "doc": "Rotation speed, rad/s (random direction)."
+     "doc": "Rotation speed, rad/s (random direction), added to the start angle."
     },
     {
      "name": "local_coords",

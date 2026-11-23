@@ -4,9 +4,32 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## v0.69.0 (2026-11-23)
+## v0.70.0 (2026-11-23)
 
 ### Added
+- SpringBone3D, a skeleton modifier for secondary motion (`cartwheel/ik.h`): hair, braids, ponytails, beards,
+  tails, coat tails and robe panels on bone chains lag behind the body, sway and settle back to the animated pose.
+  A child of the model like the other modifiers, run in child order after the animation. Under it,
+  SpringBoneChain3D nodes (`root_bone`, `end_bone`, `stiffness`, `damping`, `gravity`, `gravity_strength`,
+  `radius`; read-only `tip_offset` and `tip_distance`) and SpringBoneCollision3D spheres and capsules on bones
+  (`bone`, `shape`, `radius`, `offset`, `tail`) that keep every chain out of the body. Each joint's tail is a
+  Verlet point kept in world space from tick to tick; drag acts only on the motion apart from the animation, so a
+  steady walk leaves no lag. `active`, `influence`, `collisions`; `teleport_distance` and `teleport_angle`: a
+  model that jumps further in one tick carries its chains along as they hang, with no whip; `reset` and
+  `cw_spring_bone3d_reset` start them again from the animated pose; read-only `resets`.
+  `cw_spring_chain3d_joint_world` and `cw_spring_collision3d_world` for drawing and tests; the `ik` debug
+  request lists each chain's tip offset. Arithmetic, sqrt and the `cartwheel/math.h` functions only, so the
+  pose hash is the same bits on every host. About 3 us a chain in a release cart on the 890M laptop.
+  Guide: Animation, "Hair, tails and coats: SpringBone3D".
+- Sample `anim_spring`: a generated person in a coat with a ponytail and two coat tails
+  (`samples/anim_spring/make-character.mjs`), body, shoulder, thigh and head shapes, walking, stopping, spinning
+  three turns, teleporting and walking back. Gates `anim-spring` (every host and both backends) and
+  `spring-bone`, natively and on romdev, GL and WebGPU, each check with a control that must fail: the tips lag
+  12 to 20 cm while walking and settle within 1 cm 18 to 62 ticks after the stop (control: the modifier off, no
+  lag); no joint enters a shape during the spin (control: collisions off, 8.5 cm inside); after a 6 m teleport
+  every tip matches an identical twin's to the bit (control: the jump check off, 55 cm of whip); pose hashes per
+  60-tick window equal across hosts and backends. `unit-ik` covers the node's settle, sag, teleport, reset and
+  collision. Scenes without SpringBone3D (anim_ik, skeleton_attach, ragdoll) draw and hash byte for byte as before.
 - Prewarm of backdrops and looks: a style change (a Backdrop world fading in from opacity 0, a look pair set) no
   longer builds what it draws on the frame it first appears. A scene app (`cw_scene_app`) prewarms every Backdrop of
   its tree and every look made so far at the end of its warm-up, in its last render under the loading screen (a run

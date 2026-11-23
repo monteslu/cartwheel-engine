@@ -1,6 +1,7 @@
 /* cartwheel inverse kinematics: a pose layer between animation and
  * skinning, deterministic solvers, and skeleton modifier nodes that adjust
- * the animated pose before it is drawn (limbs that reach and plant).
+ * the animated pose before it is drawn (limbs that reach and plant, hair
+ * and coat tails that swing).
  *
  * PIPELINE (each fixed tick, for every model with modifier nodes):
  *   1. AnimationPlayer / AnimationTree write the animated pose onto the
@@ -9,8 +10,8 @@
  *      scale into a cw_pose (the animated pose), after every node's
  *      fixed_update and after the physics step.
  *   3. The model's modifier nodes (its children: TwoBoneIK3D,
- *      LookAtModifier3D, CCDIK3D, FABRIK3D, FootPlacement3D) run in child
- *      order, each adjusting the pose the previous one left.
+ *      LookAtModifier3D, CCDIK3D, FABRIK3D, FootPlacement3D, SpringBone3D)
+ *      run in child order, each adjusting the pose the previous one left.
  *   4. The pose is written back to the bones once; three.c skins from them.
  * Every tick starts again from the animated pose, never from the last
  * tick's solution: a bone the animation did not write this tick (a static
@@ -19,6 +20,9 @@
  * anything else after the last flush (a player in UPDATE mode, game code)
  * keeps that value as its animated value. The app's own fixed_update runs
  * after the modifiers: targets it moves apply on the next tick.
+ * SpringBone3D is the one modifier with state of its own: its simulated
+ * tails carry over from tick to tick (that is the lag), but it too starts
+ * each tick from the animated pose and pulls its chains back toward it.
  *
  * MODEL SPACE. A pose works in its model's space: the space of the three.c
  * object the pose was bound to (a Node3D's object holding a glTF scene).
@@ -43,6 +47,8 @@
  * COST (890M laptop, native, one character with feet, a hand and a head
  * look-at): see docs/guides/animation.md "Inverse kinematics". A two-bone
  * solve is about 0.1 us; a pose capture and flush is O(bones).
+ * SpringBone3D: about 3 us a chain in a release cart (3 to 4 joints, five
+ * shapes; "Hair, tails and coats" in the same guide).
  */
 #ifndef CW_IK_H
 #define CW_IK_H
@@ -282,8 +288,50 @@ int cw_ik_fabrik(cw_pose *p, const int *chain, int n, t3_vec3 target, const cw_c
  *                    ankle, and turns the foot onto the ground normal
  *                    while it is near the ground. A leg whose ray misses
  *                    blends back to its animation.
+ * SpringBone3D       secondary motion for hair, braids, ponytails, beards,
+ *                    tails, coat tails and robe panels: skinned parts that
+ *                    lag behind the body, sway and settle back to the
+ *                    animated pose. Its children say what swings and what
+ *                    it must not go through:
+ *                    SpringBoneChain3D children, one per chain: root_bone,
+ *                      end_bone (below root_bone; its child bone, a glTF
+ *                      "_end" marker, or else its own length again along
+ *                      the incoming direction is the tip), stiffness (1/s^2,
+ *                      120: the pull back toward the animated pose; a
+ *                      chain sways at about sqrt(stiffness) / 2 pi Hz),
+ *                      damping (1/s, 8: drag on the swing), gravity (vec3 world
+ *                      direction, down) and gravity_strength (m/s^2, 0:
+ *                      the chain sags about strength / stiffness metres),
+ *                      radius (m, 0.02: each joint's and the tip's hit
+ *                      radius); tip_offset (vec3 world m) and tip_distance
+ *                      read-only: the tip from where the animated pose
+ *                      puts it, last tick.
+ *                    SpringBoneCollision3D children: bone, shape (SPHERE,
+ *                      CAPSULE), radius (m), offset and tail (vec3 m from
+ *                      the bone's origin in the model's rest orientation:
+ *                      a sphere's centre, a capsule's two ends). Every
+ *                      chain of the node is kept out of every shape.
+ *                    Properties: collisions (bool, true), reset (bool: set
+ *                    true and the chains start again from the animated
+ *                    pose next tick; it clears itself; also
+ *                    cw_spring_bone3d_reset), teleport_distance (m, 1) and
+ *                    teleport_angle (radians, 1.5): a model that moves or
+ *                    turns further than this in one tick teleported, and
+ *                    the chains move with it as they hang, with no whip (0
+ *                    turns the check off); resets (int, read-only).
+ *                    Each joint's tail is a Verlet point kept in world
+ *                    space from tick to tick: the model's motion leaves it
+ *                    behind, the spring pulls it toward where the
+ *                    animation puts it below the already simulated parent,
+ *                    gravity sags it, the bone's length holds it and the
+ *                    shapes push it out (twice), then the bone turns by the
+ *                    shortest rotation onto it. A node that missed a tick
+ *                    (inactive, just added) starts again from the animated
+ *                    pose. Arithmetic, sqrt and cw_exp / cw_cos only, so
+ *                    every host gives the same bits.
  * The model's Node3D must not be scaled non-uniformly. Debug command:
- * `ik <model path>` (bones, modifiers, last solve results, pose hash). */
+ * `ik <model path>` (bones, modifiers, last solve results, each spring
+ * chain's tip offset, pose hash). */
 
 /* The pose the modifiers of `model` (a Node3D) left this tick, or NULL when
  * it has none. Valid until the next fixed tick. */
@@ -317,6 +365,20 @@ typedef struct cw_foot_state {
 bool cw_foot_placement_leg(cw_node n, int leg, cw_foot_state *out);
 /* FootPlacement3D: the pelvis offset applied last tick (metres, <= 0) */
 float cw_foot_placement_pelvis_offset(cw_node n);
+
+#define CW_SPRING_MAX_JOINTS 32 /* longest SpringBoneChain3D (bones) */
+/* SpringBone3D: its chains start again from the animated pose on the next
+ * tick (a respawn, a cut to another scene); the same as setting `reset`. A
+ * plain teleport needs no call: see teleport_distance. */
+void cw_spring_bone3d_reset(cw_node n);
+/* SpringBoneChain3D: world position of simulated joint `joint` (0: the
+ * root bone's tail, the last: the tip) after the last tick; false past the
+ * last joint or before the chain first ran. */
+bool cw_spring_chain3d_joint_world(cw_node chain, int joint, t3_vec3 *out);
+/* SpringBoneCollision3D: where the shape was last tick, in the world: a
+ * capsule from *a to *b, a sphere at *a (== *b), and its radius (m). false
+ * before it first ran or when its bone is unknown. */
+bool cw_spring_collision3d_world(cw_node shape, t3_vec3 *a, t3_vec3 *b, float *radius);
 
 #ifdef __cplusplus
 }

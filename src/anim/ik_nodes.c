@@ -486,6 +486,297 @@ static void foot_solve(cw_node n, foot_node *d, skel *s) {
   }
 }
 
+/* ── SpringBone3D ──────────────────────────────────────────────────────
+ * Verlet on each joint's tail, kept in world space across ticks: the model
+ * moving or turning leaves the tails behind, a spring pulls each one back
+ * toward where the animated pose (below the already simulated parent) puts
+ * it, gravity sags it, the bone length holds it, and collision shapes on
+ * the body push it out. Each bone then turns by the shortest rotation onto
+ * its simulated tail. */
+
+#define SPRING_MAX_CHAINS 16
+#define SPRING_MAX_SHAPES 16
+#define SPRING_J CW_SPRING_MAX_JOINTS
+
+typedef struct spring_chain {
+  const char *root_bone, *end_bone;
+  float stiffness, damping;
+  t3_vec3 gravity;
+  float gravity_strength, radius;
+  t3_vec3 tip_offset;           /* read-only: the tip from its animated place (world, m) */
+  float tip_distance;           /* read-only: its length */
+  /* resolved */
+  uint32_t gen;
+  const char *r_root, *r_end;
+  int n;                        /* simulated joints: bone[i] turns, its tail is tail[i] (or the extension) */
+  int bone[SPRING_J], tail[SPRING_J];
+  t3_vec3 ext_dir;              /* the end bone's tail when it has no child: in its frame, unit */
+  float ext_len;                /* model units */
+  /* state across ticks (world): each tail now and a tick ago, and where the animation put it a tick ago */
+  t3_vec3 cur[SPRING_J], prev[SPRING_J], aprev[SPRING_J];
+  bool primed;
+  /* this tick (model space) */
+  bool snap, step;
+  t3_vec3 mcur[SPRING_J], mprev[SPRING_J], maprev[SPRING_J];
+  t3_vec3 g;                    /* gravity times dt^2, model units */
+  float keep, pull, r;
+} spring_chain;
+
+typedef struct spring_shape {
+  const char *bone;
+  int32_t shape;                /* 0 SPHERE, 1 CAPSULE */
+  float radius;
+  t3_vec3 offset, tail;         /* from the bone's origin, the model's rest orientation, metres */
+  /* resolved */
+  uint32_t gen;
+  const char *r_bone;
+  int idx;
+  t3_vec3 off_local, tail_local; /* in the bone's frame, metres */
+  /* this tick */
+  t3_vec3 a, b;                 /* model space */
+  float r;
+  t3_vec3 wa, wb;               /* world, for cw_spring_collision3d_world */
+  float wr;
+  bool placed;
+} spring_shape;
+
+typedef struct spring_node {
+  bool reset;                   /* set: start again from the animated pose next tick (clears itself) */
+  float teleport_distance, teleport_angle;
+  bool collisions;
+  int32_t resets;               /* read-only */
+  /* this tick */
+  int nch, nsh;
+  spring_chain *ch[SPRING_MAX_CHAINS];
+  spring_shape *sh[SPRING_MAX_SHAPES];
+  /* the model's world transform last tick */
+  bool primed;
+  uint64_t last_tick;
+  t3_vec3 last_org;
+  t3_quat last_rot;
+  float last_scale;
+} spring_node;
+
+static const cw_node_type *spring_t, *chain_t, *shape_t;
+
+static t3_vec3 to_model_with(t3_vec3 org, t3_quat rot, float scale, t3_vec3 w) {
+  return vmul(qrot(qconj(rot), vsub(w, org)), 1 / scale);
+}
+
+static void chain_resolve(cw_node n, spring_chain *c, skel *s) {
+  c->gen = s->gen;
+  c->r_root = c->root_bone;
+  c->r_end = c->end_bone;
+  c->n = 0;
+  c->primed = false;
+  int root = bone_or_warn(s, n, "root_bone", c->root_bone);
+  int end = bone_or_warn(s, n, "end_bone", c->end_bone);
+  if (root < 0 || end < 0) return;
+  const cw_pose *p = &s->pose;
+  int tmp[SPRING_J], k = 0, b = end;
+  for (; b >= 0 && k < SPRING_J; b = p->parent[b]) {
+    tmp[k++] = b;
+    if (b == root) break;
+  }
+  if (b != root) {
+    cw_warn("SpringBoneChain3D '%s': end_bone '%s' is not below root_bone '%s' (or the chain is longer than %d bones)", cw_node_name(n),
+            c->end_bone, c->root_bone, SPRING_J);
+    return;
+  }
+  for (int i = 0; i < k; i++) c->bone[i] = tmp[k - 1 - i];
+  for (int i = 0; i + 1 < k; i++) c->tail[i] = c->bone[i + 1];
+  /* the end bone's tail: its first child (a glTF "_end" marker, the next bone), else its own length
+   * again along the incoming direction, fixed in its frame */
+  c->tail[k - 1] = -1;
+  for (int j = end + 1; j < p->count; j++)
+    if (p->parent[j] == end) { c->tail[k - 1] = j; break; }
+  c->ext_len = 0;
+  if (c->tail[k - 1] < 0) {
+    int pa = p->parent[end];
+    if (pa < 0) {
+      cw_warn("SpringBoneChain3D '%s': end_bone '%s' has no child and no parent to give it a length", cw_node_name(n), c->end_bone);
+      return;
+    }
+    t3_vec3 d = vsub(cw_pose_model_position(p, end), cw_pose_model_position(p, pa));
+    c->ext_len = vlen(d);
+    c->ext_dir = vnorm(qrot(qconj(p->mrot[end]), d));
+  }
+  c->n = k;
+}
+
+static void shape_resolve(cw_node n, spring_shape *h, skel *s) {
+  h->gen = s->gen;
+  h->r_bone = h->bone;
+  h->idx = bone_or_warn(s, n, "bone", h->bone);
+  if (h->idx < 0) return;
+  t3_quat rr = qconj(rest_mrot(&s->pose, h->idx));
+  h->off_local = qrot(rr, h->offset);
+  h->tail_local = qrot(rr, h->tail);
+}
+
+/* the tail of joint i where the pose puts it now (model space) */
+static t3_vec3 chain_tail(const cw_pose *p, const spring_chain *c, int i) {
+  if (c->tail[i] >= 0) return cw_pose_model_position(p, c->tail[i]);
+  int b = c->bone[i];
+  return vadd(cw_pose_model_position(p, b), vmul(qrot(p->mrot[b], c->ext_dir), c->ext_len));
+}
+
+/* serial: gather the chains and shapes, resolve bones, carry the state into model space */
+static void spring_prepare(cw_node n, spring_node *d, skel *s, cw_tree *tree, double dt) {
+  d->nch = d->nsh = 0;
+  for (int i = 0; i < cw_node_child_count(n); i++) {
+    cw_node c = cw_node_child(n, i);
+    spring_chain *ch = cw_node_data_t(c, chain_t);
+    if (ch) {
+      if (d->nch >= SPRING_MAX_CHAINS) continue;
+      if (ch->gen != s->gen || ch->r_root != ch->root_bone || ch->r_end != ch->end_bone) chain_resolve(c, ch, s);
+      d->ch[d->nch++] = ch;
+      continue;
+    }
+    spring_shape *sh = cw_node_data_t(c, shape_t);
+    if (sh && d->nsh < SPRING_MAX_SHAPES) {
+      if (sh->gen != s->gen || sh->r_bone != sh->bone) shape_resolve(c, sh, s);
+      d->sh[d->nsh++] = sh;
+    }
+  }
+  uint64_t tick = cw_tree_tick(tree);
+  t3_vec3 org = v3(s->world.e[12], s->world.e[13], s->world.e[14]);
+  /* a tick or more without this node (inactive, just added), or a reset: start from the animated pose */
+  bool snap = d->reset || !d->primed || (tick != d->last_tick && tick != d->last_tick + 1);
+  bool step = tick != d->last_tick;
+  /* a jump: the tails move with the model (no whip) */
+  bool carry = false;
+  if (!snap && step) {
+    if (d->teleport_distance > 0 && vlen(vsub(org, d->last_org)) > d->teleport_distance) carry = true;
+    if (d->teleport_angle > 0) {
+      t3_quat a = d->last_rot, b = s->world_rot;
+      float c = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+      if (c < 0) c = -c;
+      if (c < cw_cos(d->teleport_angle * 0.5f)) carry = true;
+    }
+  }
+  if ((snap && d->primed) || carry) d->resets++; /* (the first tick is a start, not a reset) */
+  float fdt = (float)dt;
+  for (int k = 0; k < d->nch; k++) {
+    spring_chain *c = d->ch[k];
+    c->snap = snap || !c->primed;
+    c->step = step;
+    if (!c->snap)
+      for (int i = 0; i < c->n; i++) {
+        if (carry) {
+          c->mcur[i] = to_model_with(d->last_org, d->last_rot, d->last_scale, c->cur[i]);
+          c->mprev[i] = to_model_with(d->last_org, d->last_rot, d->last_scale, c->prev[i]);
+          c->maprev[i] = to_model_with(d->last_org, d->last_rot, d->last_scale, c->aprev[i]);
+        } else {
+          c->mcur[i] = to_model(s, c->cur[i]);
+          c->mprev[i] = to_model(s, c->prev[i]);
+          c->maprev[i] = to_model(s, c->aprev[i]);
+        }
+      }
+    c->keep = c->damping > 0 ? cw_exp(-c->damping * fdt) : 1;
+    c->pull = c->stiffness * fdt * fdt;
+    if (c->pull > 1) c->pull = 1;
+    if (c->pull < 0) c->pull = 0;
+    t3_vec3 gd = vnorm(c->gravity);
+    c->g = vmul(dir_to_model(s, gd), c->gravity_strength * fdt * fdt / s->world_scale);
+    c->r = c->radius / s->world_scale;
+  }
+  d->primed = true;
+  d->reset = false;
+  d->last_tick = tick;
+  d->last_org = org;
+  d->last_rot = s->world_rot;
+  d->last_scale = s->world_scale;
+}
+
+/* push x out of every shape by its radius plus r */
+static t3_vec3 spring_collide(const spring_node *d, t3_vec3 x, float r) {
+  for (int k = 0; k < d->nsh; k++) {
+    const spring_shape *h = d->sh[k];
+    if (!h->placed) continue;
+    t3_vec3 c = h->a, ab = vsub(h->b, h->a);
+    float ll = vdot(ab, ab);
+    if (ll > 0) {
+      float t = vdot(vsub(x, h->a), ab) / ll;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      c = vadd(h->a, vmul(ab, t));
+    }
+    t3_vec3 dv = vsub(x, c);
+    float R = h->r + r, dd = vdot(dv, dv);
+    if (dd >= R * R || dd <= 0) continue;
+    x = vadd(c, vmul(dv, R / sqrtf(dd)));
+  }
+  return x;
+}
+
+static void spring_solve(cw_node n, spring_node *d, skel *s) {
+  (void)n;
+  cw_pose *p = &s->pose;
+  for (int k = 0; k < d->nsh; k++) {
+    spring_shape *h = d->sh[k];
+    h->placed = h->idx >= 0;
+    if (!h->placed) continue;
+    t3_vec3 o = cw_pose_model_position(p, h->idx);
+    t3_quat q = p->mrot[h->idx];
+    float inv = 1 / s->world_scale;
+    h->a = vadd(o, vmul(qrot(q, h->off_local), inv));
+    h->b = h->shape == 1 ? vadd(o, vmul(qrot(q, h->tail_local), inv)) : h->a;
+    h->r = h->radius * inv;
+    h->wa = to_world(s, h->a);
+    h->wb = to_world(s, h->b);
+    h->wr = h->radius;
+  }
+  for (int k = 0; k < d->nch; k++) {
+    spring_chain *c = d->ch[k];
+    if (c->n <= 0) continue;
+    t3_vec3 tip_in = chain_tail(p, c, c->n - 1);
+    for (int i = 0; i < c->n; i++) {
+      int b = c->bone[i];
+      t3_vec3 head = cw_pose_model_position(p, b);
+      t3_vec3 at = chain_tail(p, c, i); /* where the animation puts the tail below the simulated parent */
+      t3_vec3 ad = vsub(at, head);
+      float L = vlen(ad);
+      if (L <= 1e-7f) { c->mcur[i] = c->mprev[i] = c->maprev[i] = at; continue; }
+      t3_vec3 x;
+      if (c->snap) {
+        x = at;
+        c->mprev[i] = at;
+      } else if (c->step) {
+        /* the tail keeps its velocity, less the drag on what it moves apart from where the animation
+         * moves it (so a steady walk leaves no lag, a start, stop or turn does) */
+        t3_vec3 cur = c->mcur[i], v = vsub(cur, c->mprev[i]), va = vsub(at, c->maprev[i]);
+        t3_vec3 pred = vadd(cur, vadd(va, vmul(vsub(v, va), c->keep)));
+        x = vadd(vadd(pred, vmul(vsub(at, pred), c->pull)), c->g);
+        c->mprev[i] = cur;
+      } else {
+        x = c->mcur[i];
+      }
+      c->maprev[i] = at;
+      for (int it = 0; it < 2; it++) {
+        t3_vec3 dx = vsub(x, head);
+        float l = vlen(dx);
+        x = l > 0 ? vadd(head, vmul(dx, L / l)) : at;
+        if (d->collisions && d->nsh) x = spring_collide(d, x, c->r);
+      }
+      t3_vec3 dx = vsub(x, head);
+      float l = vlen(dx);
+      x = l > 0 ? vadd(head, vmul(dx, L / l)) : at;
+      c->mcur[i] = x;
+      cw_pose_rotate_model(p, b, cw_quat_from_to(vmul(ad, 1 / L), vmul(vsub(x, head), 1 / L)));
+    }
+    t3_vec3 tip = c->mcur[c->n - 1];
+    c->tip_offset = qrot(s->world_rot, vmul(vsub(tip, tip_in), s->world_scale));
+    c->tip_distance = vlen(c->tip_offset);
+    for (int i = 0; i < c->n; i++) {
+      c->cur[i] = to_world(s, c->mcur[i]);
+      c->prev[i] = to_world(s, c->mprev[i]);
+      c->aprev[i] = to_world(s, c->maprev[i]);
+    }
+    c->snap = false;
+    c->primed = true;
+  }
+}
+
 /* ── the phase ─────────────────────────────────────────────────────── */
 
 static void skel_arrays_free(skel *s) {
@@ -574,6 +865,7 @@ static void mod_solve(cw_node n, skel *s) {
   else if (cw_node_type_is(t, "CCDIK3D")) ccd_solve(n, cw_node_data_t(n, ccd_t), s);
   else if (cw_node_type_is(t, "FABRIK3D")) fab_solve(n, cw_node_data_t(n, fab_t), s);
   else if (cw_node_type_is(t, "FootPlacement3D")) foot_solve(n, cw_node_data_t(n, foot_t), s);
+  else if (cw_node_type_is(t, "SpringBone3D")) spring_solve(n, cw_node_data_t(n, spring_t), s);
 }
 
 static void solve_skel(skel *s) {
@@ -645,6 +937,7 @@ static void phase_hook(cw_tree *tree, double dt, void *u) {
       else if (cw_node_type_is(t, "CCDIK3D")) ccd_prepare(n, cw_node_data_t(n, ccd_t), s);
       else if (cw_node_type_is(t, "FABRIK3D")) fab_prepare(n, cw_node_data_t(n, fab_t), s);
       else if (cw_node_type_is(t, "FootPlacement3D")) foot_prepare(n, cw_node_data_t(n, foot_t), s, tree, dt);
+      else if (cw_node_type_is(t, "SpringBone3D")) spring_prepare(n, cw_node_data_t(n, spring_t), s, tree, dt);
     }
     if (nrun < 256) run[nrun++] = s;
     else solve_skel(s);
@@ -734,6 +1027,26 @@ bool cw_foot_placement_leg(cw_node n, int i, cw_foot_state *out) {
 float cw_foot_placement_pelvis_offset(cw_node n) {
   foot_node *d = cw_node_data_t(n, foot_t);
   return d ? d->pelvis_off : 0;
+}
+
+void cw_spring_bone3d_reset(cw_node n) {
+  spring_node *d = cw_node_data_t(n, spring_t);
+  if (!d) { cw_warn("cw_spring_bone3d_reset: not a SpringBone3D"); return; }
+  d->reset = true;
+}
+bool cw_spring_chain3d_joint_world(cw_node chain, int joint, t3_vec3 *out) {
+  spring_chain *c = cw_node_data_t(chain, chain_t);
+  if (!c || !c->primed || joint < 0 || joint >= c->n) return false;
+  if (out) *out = c->cur[joint];
+  return true;
+}
+bool cw_spring_collision3d_world(cw_node shape, t3_vec3 *a, t3_vec3 *b, float *radius) {
+  spring_shape *h = cw_node_data_t(shape, shape_t);
+  if (!h || !h->placed) return false;
+  if (a) *a = h->wa;
+  if (b) *b = h->wb;
+  if (radius) *radius = h->wr;
+  return true;
 }
 
 /* ── node types ────────────────────────────────────────────────────── */
@@ -887,6 +1200,86 @@ static cw_node_type foot_type = {
   .init = foot_init,
 };
 
+static void spring_init(cw_node n, void *data) {
+  (void)n;
+  spring_node *d = data;
+  d->teleport_distance = 1;
+  d->teleport_angle = 1.5f;
+  d->collisions = true;
+}
+static const cw_prop spring_props[] = {
+  CW_PROP_FIELD(spring_node, reset, CW_T_BOOL, CW_PROP_EDITOR, "Set true: the chains start again from the animated pose next tick (clears itself)."),
+  CW_PROP_FIELD_RANGE(spring_node, teleport_distance, CW_T_FLOAT, 0, 1000, "A model moving further than this in one tick teleported: the chains move with it, no whip (m, 0 = off)."),
+  CW_PROP_FIELD_RANGE(spring_node, teleport_angle, CW_T_FLOAT, 0, 3.14159265, "A model turning further than this in one tick teleported (radians, 0 = off)."),
+  CW_PROP_FIELD(spring_node, collisions, CW_T_BOOL, CW_PROP_DEFAULT, "The SpringBoneCollision3D children push the chains out of the body."),
+  { .name = "resets", .type = CW_T_INT, .flags = RO, .offset = offsetof(spring_node, resets), .size = sizeof(int32_t),
+    .doc = "Resets and teleports so far (each starts the chains again)." },
+  CW_PROP_END,
+};
+static cw_node_type spring_type = {
+  .name = "SpringBone3D", .parent = "SkeletonModifier3D", .data_size = sizeof(spring_node), .props = spring_props,
+  .doc = "Secondary motion: hair, braids, tails and coat panels lag, sway and settle back to the animated pose (its SpringBoneChain3D children), kept out of the body by its SpringBoneCollision3D children.",
+  .init = spring_init,
+};
+
+static void chain_init(cw_node n, void *data) {
+  (void)n;
+  spring_chain *c = data;
+  c->stiffness = 120;
+  c->damping = 8;
+  c->gravity = v3(0, -1, 0);
+  c->radius = 0.02f;
+  c->gen = (uint32_t)-1;
+}
+static void child_enter(cw_node n, void *data) {
+  (void)data;
+  cw_node p = cw_node_parent(n);
+  if (CW_HANDLE_IS_NULL(p) || !cw_node_is(p, "SpringBone3D"))
+    cw_warn("%s '%s': a child of a SpringBone3D", cw_node_get_type(n)->name, cw_node_name(n));
+}
+static const cw_prop chain_props[] = {
+  CW_PROP_FIELD(spring_chain, root_bone, CW_T_STRING, CW_PROP_DEFAULT, "First bone that swings (its origin stays on its parent)."),
+  CW_PROP_FIELD(spring_chain, end_bone, CW_T_STRING, CW_PROP_DEFAULT, "Last bone of the chain (below root_bone); its child, or its own length again, is the tip."),
+  CW_PROP_FIELD_RANGE(spring_chain, stiffness, CW_T_FLOAT, 0, 3600, "Pull back toward the animated pose (1/s^2: 120 sways about 1.7 times a second; 3600 holds it)."),
+  CW_PROP_FIELD_RANGE(spring_chain, damping, CW_T_FLOAT, 0, 1000, "Drag: how fast the swing dies away (1/s)."),
+  CW_PROP_FIELD(spring_chain, gravity, CW_T_VEC3, CW_PROP_DEFAULT, "Direction gravity pulls the chain (world)."),
+  CW_PROP_FIELD_RANGE(spring_chain, gravity_strength, CW_T_FLOAT, 0, 100, "Gravity's pull (m/s^2; 0 = none): the chain sags by about strength / stiffness metres."),
+  CW_PROP_FIELD_RANGE(spring_chain, radius, CW_T_FLOAT, 0, 10, "Hit radius of each joint and the tip against the collision shapes (m)."),
+  { .name = "tip_offset", .type = CW_T_VEC3, .flags = RO, .offset = offsetof(spring_chain, tip_offset), .size = sizeof(t3_vec3),
+    .doc = "The tip from where the animated pose puts it, last tick (world, m)." },
+  { .name = "tip_distance", .type = CW_T_FLOAT, .flags = RO, .offset = offsetof(spring_chain, tip_distance), .size = sizeof(float),
+    .doc = "Length of tip_offset (m)." },
+  CW_PROP_END,
+};
+static cw_node_type chain_type = {
+  .name = "SpringBoneChain3D", .parent = "Node", .data_size = sizeof(spring_chain), .props = chain_props,
+  .doc = "One chain of a SpringBone3D (a ponytail, a braid, a coat tail): root_bone to end_bone with its own spring.",
+  .init = chain_init, .enter_tree = child_enter,
+};
+
+static void shape_init(cw_node n, void *data) {
+  (void)n;
+  spring_shape *h = data;
+  h->radius = 0.1f;
+  h->gen = (uint32_t)-1;
+  h->idx = -1;
+}
+static const char *const shape_names[] = { "SPHERE", "CAPSULE", NULL };
+static const cw_prop shape_props[] = {
+  CW_PROP_FIELD(spring_shape, bone, CW_T_STRING, CW_PROP_DEFAULT, "Bone the shape rides (head, chest, thigh)."),
+  { .name = "shape", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(spring_shape, shape), .size = sizeof(int32_t),
+    .enum_names = shape_names, .doc = "SPHERE at offset, or CAPSULE from offset to tail." },
+  CW_PROP_FIELD_RANGE(spring_shape, radius, CW_T_FLOAT, 0, 10, "Radius (m)."),
+  CW_PROP_FIELD(spring_shape, offset, CW_T_VEC3, CW_PROP_DEFAULT, "Centre (a capsule's first end) from the bone's origin, in the model's rest orientation (m)."),
+  CW_PROP_FIELD(spring_shape, tail, CW_T_VEC3, CW_PROP_DEFAULT, "A capsule's other end, like offset (m)."),
+  CW_PROP_END,
+};
+static cw_node_type shape_type = {
+  .name = "SpringBoneCollision3D", .parent = "Node", .data_size = sizeof(spring_shape), .props = shape_props,
+  .doc = "A sphere or capsule on a bone that keeps its SpringBone3D's chains out of the body.",
+  .init = shape_init, .enter_tree = child_enter,
+};
+
 /* ── debug channel ─────────────────────────────────────────────────── */
 
 static void cmd_ik(int argc, const char **argv, cw_reply *r) {
@@ -914,6 +1307,16 @@ static void cmd_ik(int argc, const char **argv, cw_reply *r) {
         cw_reply_printf(r, "%s{\"hit\":%s,\"offset\":%.6g}", i ? "," : "", d->L[i].st.hit ? "true" : "false", d->L[i].dy);
       cw_reply_raw(r, "]");
     }
+    if (cw_node_is(c, "SpringBone3D")) {
+      spring_node *d = cw_node_data_t(c, spring_t);
+      cw_reply_printf(r, ",\"resets\":%d,\"chains\":[", d->resets);
+      for (int i = 0; i < d->nch; i++) {
+        const spring_chain *ch = d->ch[i];
+        cw_reply_printf(r, "%s{\"joints\":%d,\"tip_offset\":[%.6g,%.6g,%.6g],\"tip_distance\":%.6g}", i ? "," : "", ch->n,
+                        ch->tip_offset.x, ch->tip_offset.y, ch->tip_offset.z, ch->tip_distance);
+      }
+      cw_reply_raw(r, "]");
+    }
     cw_reply_raw(r, "}");
   }
   cw_reply_raw(r, "]}");
@@ -932,5 +1335,11 @@ void cw__register_ik_types(void) {
   fab_t = &fab_type;
   cw_node_type_register(&foot_type);
   foot_t = &foot_type;
+  cw_node_type_register(&spring_type);
+  spring_t = &spring_type;
+  cw_node_type_register(&chain_type);
+  chain_t = &chain_type;
+  cw_node_type_register(&shape_type);
+  shape_t = &shape_type;
   cw_debug_command("ik", "ik <model path>: skeleton modifiers, last results, pose hash", cmd_ik);
 }

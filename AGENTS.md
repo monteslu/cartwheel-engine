@@ -120,7 +120,7 @@ t3_object_add(cw_node3d_object(level), hero);
 t3_release(hero);                               /* the parent holds it */
 ```
 
-**Bones** (`skeleton.h`, [Skeleton3D and BoneAttachment3D](docs/guides/animation.md#skeleton3d-and-boneattachment3d)): a `Skeleton3D` node under the model's node gives bone names, rest and pose (`cw_skeleton3d_find_bone`, `cw_skeleton3d_set_bone_pose`, `cw_skeleton3d_bone_global_transform`); a `BoneAttachment3D` under it with `bone_name = "Hand"` carries a sword or a hat with no lag.
+**Bones** (`skeleton.h`, [Skeleton3D and BoneAttachment3D](docs/guides/animation.md#skeleton3d-and-boneattachment3d)): a `Skeleton3D` node under the model's node gives bone names, rest and pose (`cw_skeleton3d_find_bone`, `cw_skeleton3d_set_bone_pose`, `cw_skeleton3d_bone_global_transform`); a `BoneAttachment3D` under it with `bone_name = "Hand"` carries a sword or a hat with no lag. Hair, braids, beards, tails and coat tails that swing: a `SpringBone3D` under the model with a `SpringBoneChain3D` per chain and `SpringBoneCollision3D` spheres and capsules on the body ([Hair, tails and coats](docs/guides/animation.md#hair-tails-and-coats-springbone3d)); feet, reaches and look-ats are the other skeleton modifiers (`ik.h`).
 
 **Thousands of copies** (`multimesh.h`, [MultiMeshInstance3D](docs/guides/rendering-3d.md#many-copies-of-one-mesh-multimeshinstance3d)): a `MultiMeshInstance3D` with a MeshInstance3D child as the stamp; `cw_multimesh_set_instance_count`, then write `cw_multimesh_transforms` and `cw_multimesh_touch`; `chunk_size` metres per culled cell (0 for a swarm rewritten every tick).
 

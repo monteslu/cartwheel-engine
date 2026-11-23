@@ -1,0 +1,92 @@
+[scene format=1]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.0181, 0.0232, 0.0382, 1)
+ambient_energy = 0.7
+hemi_energy = 1.1
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(-3.4, 1.35, 3.3)
+rotation = vec3(-0.09, 0, 0)
+fov = 40
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(3, 7, 5)
+rotation = vec3(-0.95, 0.5, 0)
+energy = 4.0
+shadow = true
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.5, -2)
+size = vec3(30, 1, 12)
+color = color(0.0637, 0.0835, 0.0732, 1)
+receive_shadow = true
+
+[node name="Mover" parent="." type="Node3D"]
+position = vec3(-3, 0, 0)
+rotation = vec3(0, 1.5708, 0)
+
+[node name="Model" parent="Mover" type="Node3D"]
+
+[node name="Springs" parent="Mover/Model" type="SpringBone3D"]
+
+[node name="Ponytail" parent="Mover/Model/Springs" type="SpringBoneChain3D"]
+root_bone = "Hair0"
+end_bone = "Hair3"
+stiffness = 250
+damping = 12
+gravity_strength = 1
+radius = 0.02
+
+[node name="CoatL" parent="Mover/Model/Springs" type="SpringBoneChain3D"]
+root_bone = "CoatL0"
+end_bone = "CoatL2"
+stiffness = 300
+damping = 14
+gravity_strength = 1.5
+radius = 0.03
+
+[node name="CoatR" parent="Mover/Model/Springs" type="SpringBoneChain3D"]
+root_bone = "CoatR0"
+end_bone = "CoatR2"
+stiffness = 300
+damping = 14
+gravity_strength = 1.5
+radius = 0.03
+
+[node name="Head" parent="Mover/Model/Springs" type="SpringBoneCollision3D"]
+bone = "Head"
+radius = 0.105
+offset = vec3(0, 0.08, 0.014)
+
+[node name="Body" parent="Mover/Model/Springs" type="SpringBoneCollision3D"]
+bone = "Spine"
+shape = CAPSULE
+radius = 0.11
+offset = vec3(0, -0.07, 0)
+tail = vec3(0, 0.29, -0.005)
+
+[node name="Shoulders" parent="Mover/Model/Springs" type="SpringBoneCollision3D"]
+bone = "UpperChest"
+shape = CAPSULE
+radius = 0.06
+offset = vec3(0.15, 0.1, -0.01)
+tail = vec3(-0.15, 0.1, -0.01)
+
+[node name="ThighL" parent="Mover/Model/Springs" type="SpringBoneCollision3D"]
+bone = "UpperLegL"
+shape = CAPSULE
+radius = 0.075
+offset = vec3(0, -0.02, 0)
+tail = vec3(0, -0.36, 0.008)
+
+[node name="ThighR" parent="Mover/Model/Springs" type="SpringBoneCollision3D"]
+bone = "UpperLegR"
+shape = CAPSULE
+radius = 0.075
+offset = vec3(0, -0.02, 0)
+tail = vec3(0, -0.36, 0.008)
+
+[node name="Anim" parent="." type="AnimationPlayer"]
