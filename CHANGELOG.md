@@ -4,6 +4,12 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.77.2 (2026-11-24)
+
+### Fixed
+- `docs/api.json` carries the HeightFog header comment v0.77.1 changed (a material with `fog = false` takes no fog):
+  v0.77.1 shipped it stale and its CI stopped at the API check before any gate ran. The engine is v0.77.1's.
+
 ## v0.77.1 (2026-11-24)
 
 ### Fixed
