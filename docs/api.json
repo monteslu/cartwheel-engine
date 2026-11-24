@@ -14846,6 +14846,12 @@
      "inline": false
     },
     {
+     "name": "cw_shading_part_engine_owned",
+     "signature": "bool cw_shading_part_engine_owned(const char *name)",
+     "doc": "The part names the engine owns (its modules' src/<module>/extensions/<part>.mjs): cluster, clusteries, csm, plain,\nhfog, gi, gibuf, giproj, foliage, folalpha, rim, skinshade, meshdecal, velbuf, terrain, terrainlow, terrainmin,\nterrainfx, terrainfxlow, terrainfxmin, terrainfar, water, waterlow. A game's cw_shading_part,\ncw_shading_part_everywhere, cw_shading_part_traits or cw_shading_part_batching with one of them (or a surface,\ncartwheel/surface.h, of that name) is refused with an error naming the part and its engine module: two parts of one\nname share one program state and one hook, so the engine's or the game's shading silently replaced the other. Name\nthe game's part something else.",
+     "inline": false
+    },
+    {
      "name": "cw_shading_forget",
      "signature": "void cw_shading_forget(t3_renderer *r)",
      "doc": "Forget a renderer (before t3_renderer_destroy).",
@@ -14874,6 +14880,24 @@
      "signature": "bool cw_shading_set(t3_material *m, const char *const *parts, int n)",
      "doc": "Replace m's parts by the composed name of `parts` (n of them, any order):\nwhat cw_shading_add gives, from scratch.",
      "inline": false
+    },
+    {
+     "name": "cw__shading_part_own",
+     "signature": "void cw__shading_part_own(t3_renderer *r, const char *name, t3_extension_fill fill, void *user)",
+     "doc": "(the engine's own sources register its parts through these, which skip the guard: CW_ENGINE_SOURCE is set for\nthe engine library only, CMakeLists.txt)",
+     "inline": false
+    },
+    {
+     "name": "cw__shading_part_batching_own",
+     "signature": "void cw__shading_part_batching_own(t3_renderer *r, const char *name, bool on)",
+     "doc": "",
+     "inline": false
+    },
+    {
+     "name": "cw__shading_part_traits_own",
+     "signature": "void cw__shading_part_traits_own(const char *name, unsigned traits)",
+     "doc": "",
+     "inline": false
     }
    ],
    "types": [
@@ -14883,7 +14907,20 @@
      "decl": "typedef enum cw_part_traits {\n  /* a surface of the game's own (cartwheel/surface.h): it decides what the\n   * lighting shades (colour, normal, roughness, emissive, cut-outs, vertex\n   * positions) and leaves the lighting to the engine. Reflection probes and\n   * the light probe grid compose with it (gi), the screen-space passes'\n   * G-buffer keeps it, and a mesh decal is clipped from its meshes. */\n  CW_PART_SURFACE = 1 << 0,\n  /* it moves vertices on the GPU: the CPU cannot see where the surface is,\n   * so no mesh decal is clipped from it (a screen decal still lands on it) */\n  CW_PART_MOVES_VERTICES = 1 << 1,\n} cw_part_traits;"
     }
    ],
-   "macros": []
+   "macros": [
+    {
+     "name": "cw_shading_part",
+     "doc": ""
+    },
+    {
+     "name": "cw_shading_part_batching",
+     "doc": ""
+    },
+    {
+     "name": "cw_shading_part_traits",
+     "doc": ""
+    }
+   ]
   },
   {
    "header": "cartwheel/shell.h",

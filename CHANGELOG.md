@@ -4,6 +4,12 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.78.1 (2026-11-24)
+
+### Fixed
+
+- docs/api.json regenerated for the shading part name guard v0.78.0 added (cw_shading_part_engine_owned and the engine's own registration path); v0.78.0's CI stopped at the API check. The engine is v0.78.0's.
+
 ## v0.78.0 (2026-11-24)
 
 ### Added
