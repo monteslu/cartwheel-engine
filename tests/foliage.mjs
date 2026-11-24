@@ -32,7 +32,15 @@ mkdirSync(join(ROOT, 'out', 'foliage'), { recursive: true });
 const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d; };
 const HOSTS = arg('--hosts', process.env.CW_TEST_GPU === 'software' ? 'native' : 'native,romdev').split(',');
 const GPUS = arg('--gpu', 'gl,webgpu').split(',');
-const ONLY = arg('--only', 'wind,alpha,twosided,tuft,lod').split(',');
+/* CI renders on a software GPU (llvmpipe and lavapipe, CW_TEST_GPU=software), where the whole set ran past a CI
+ * share's 90 minutes (v0.71.1): the alpha and lod checks draw a dense field of alpha-tested cards (4 a square metre
+ * out to 40 m) at 1080p, 2,600 frames a backend. There the pan runs ALPHA_FRAMES frames instead of 200 (the same checks
+ * and controls over fewer frames) and the LOD dolly (1,800 frames a backend) runs on a real GPU only (--only lod runs
+ * it on software too) */
+const SOFTWARE = process.env.CW_TEST_GPU === 'software';
+const ALPHA_FRAMES = +arg('--alpha-frames', SOFTWARE ? 110 : 200);
+const ONLY = arg('--only', SOFTWARE ? 'wind,alpha,twosided,tuft' : 'wind,alpha,twosided,tuft,lod').split(',');
+if (SOFTWARE && !ONLY.includes('lod')) console.log('skip lod: local only (a real GPU; the software GPU takes too long)');
 if (HOSTS.includes('native')) {
   const { enterGpuSandbox } = await import('../tools/lib/gpu-sandbox.mjs');
   const { testEnv } = await import('../tools/lib/wgpu-pin.mjs');
@@ -73,8 +81,8 @@ for (const host of HOSTS)
       step('alpha', () => {
         const C = { FOL_SCENE: 'cards', FOL_CAM: 'pan' };
         for (const [mode, env] of [['MSAA 4x (alpha to coverage)', { FOL_MSAA: '4' }], ['TAA (hashed alpha)', { FOL_TAA: '1' }]]) {
-          const plain = run(200, { ...C, ...env }, 'alpha-plain', { shot: false }).fields['fol.shimmer'];
-          const smooth = run(200, { ...C, ...env, FOL_ALPHA: 'smooth' }, 'alpha-smooth', { shot: false }).fields['fol.shimmer'];
+          const plain = run(ALPHA_FRAMES, { ...C, ...env }, 'alpha-plain', { shot: false }).fields['fol.shimmer'];
+          const smooth = run(ALPHA_FRAMES, { ...C, ...env, FOL_ALPHA: 'smooth' }, 'alpha-smooth', { shot: false }).fields['fol.shimmer'];
           check(plain > 0.005, `${tag}: CONTROL: ${mode}: the plain alpha test shimmers (${f3(plain)})`);
           check(smooth < plain * 0.8, `${tag}: ${mode}: smooth_alpha shimmer ${f3(smooth)} vs plain ${f3(plain)} (${((1 - smooth / plain) * 100).toFixed(0)}% less, 20% at least)`);
         }

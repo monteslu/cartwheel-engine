@@ -70,7 +70,7 @@ jobs:
       matrix:
         # shares balanced by measured CI time (tests/ci-times.json, tools/ci-times.mjs); each share about 45 min of
         # gates under the 90 min limit (at least 25% headroom for a slower runner)
-        part: [gl-1of9, gl-2of9, gl-3of9, gl-4of9, gl-5of9, gl-6of9, gl-7of9, gl-8of9, gl-9of9, webgpu-1of6, webgpu-2of6, webgpu-3of6, webgpu-4of6, webgpu-5of6, webgpu-6of6]
+        part: [gl-1of10, gl-2of10, gl-3of10, gl-4of10, gl-5of10, gl-6of10, gl-7of10, gl-8of10, gl-9of10, gl-10of10, webgpu-1of6, webgpu-2of6, webgpu-3of6, webgpu-4of6, webgpu-5of6, webgpu-6of6]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

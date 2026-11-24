@@ -4,6 +4,24 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.71.2 (2026-11-24)
+
+### Fixed
+- CI: the GL share that holds gate `foliage` (new in v0.71.0) ran past its 90-minute limit and was cancelled, so v0.71.0
+  and v0.71.1 published no SDKs. The gate's alpha and LOD checks draw a dense field of alpha-tested cards at 1080p,
+  2,600 frames a backend on GL and WebGPU, which on CI's software GPU took well over 50 minutes (not a hang: every
+  check passes, measured locally on llvmpipe and lavapipe in 840 s on 24 threads). On a software GPU
+  (`CW_TEST_GPU=software`) the pan of the alpha check now runs 110 frames instead of 200, with the same checks and
+  controls (smooth_alpha 46% less shimmer under MSAA 4x and 31 to 35% under TAA, as at 200 frames), and the LOD
+  dolly runs on a real GPU only; wind, two-sided lighting and the tuft run in full. The gate takes 755 s on 4 software
+  threads, about 20 minutes on a CI runner. Every check still runs on a real GPU.
+- CI: `tests/ci-times.json` measured again from the latest runs (gates added since v0.66.0 counted as 30 s, some of
+  them over 10 minutes, so one share ran 71 minutes), and the GL gates are split over ten jobs instead of nine: each
+  share holds about 47 minutes of gates under its 90-minute limit.
+- SDK release: the wait for a green CI run on main is 6 hours instead of 3 (5 h 50 min of looks inside the job's
+  6-hour limit). A CI run can sit over an hour in the runner queue before its shares start, which took v0.71.1 past
+  the old wait even before its share timed out.
+
 ## v0.71.1 (2026-11-24)
 
 ### Fixed
