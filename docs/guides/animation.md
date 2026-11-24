@@ -281,7 +281,7 @@ static void fixed_update(void *u, double dt) {
 | [LookAtModifier3D](node:LookAtModifier3D) | turns a `bone` toward a target by the shortest rotation, at most `limit_angle` from where the animation points it. `forward_axis` is the way the bone faces at rest, in model space (`(0, 0, 1)` for a glTF character's head). Chain two, a neck at `influence = 0.4` and then the head, to spread the turn |
 | [CCDIK3D](node:CCDIK3D) | cyclic coordinate descent from `end_bone` up to `root_bone`, the same algorithm and limits as three.js r187's `CCDIKSolver`. Per-joint limits come from [cw_ccdik3d_set_joint](api:cw_ccdik3d_set_joint) |
 | [FABRIK3D](node:FABRIK3D) | FABRIK over a chain (tails, spines, cables), with cone and hinge limits per joint ([cw_fabrik3d_set_joint](api:cw_fabrik3d_set_joint)) |
-| [FootPlacement3D](node:FootPlacement3D) | plants feet on the physics ground. Each leg casts a ray down through its animated ankle, the ankle is lifted or lowered by the ground's height (keeping the animation's own swing), the pelvis drops when a foot has to reach down, each leg is solved as two-bone IK (the knee bends to the side the animation bends it; a leg the animation holds straight bends to the side it last bent to, so a high or straight leg never flips round), and the foot turns onto the ground normal while it is near the ground |
+| [FootPlacement3D](node:FootPlacement3D) | plants feet on the physics ground. Each leg casts a ray down through its animated ankle, the ankle is lifted or lowered by the ground's height (keeping the animation's own swing), the pelvis drops when a foot has to reach down, each leg is solved as two-bone IK (the knee bends to the side the animation bends it; a leg the animation holds straight bends to the side it last bent to, so a high or straight leg never flips round), and the foot turns onto the ground normal while it is near the ground. A raised ankle stays well below its hip, and no leg bone turns more than 8 degrees in a tick past what the animation turns it, at any pace (below) |
 | [SpringBone3D](node:SpringBone3D) | secondary motion: hair, braids, ponytails, beards, tails, coat tails and robe panels lag behind the body, sway and settle back to the animated pose, kept out of the body by spheres and capsules on its bones (below) |
 
 "Rest" (a look-at's `forward_axis` and `offset`, a spring collision shape's offsets) is the skin's bind pose, read from its inverse bind matrices, not whatever the bones hold when the modifiers first run: a game can build a model, its AnimationTree and its modifiers and advance the tree in the same tick.
@@ -311,6 +311,26 @@ limit_angle = 1.1
 A leg is `"upper,lower,end[,foot]"`. The robot's rig keeps its foot bones outside the leg chain (it was rigged for IK in Blender), so FootPlacement3D carries a foot bone that is not below `end` along with the ankle. The app code only moves each robot along the course, sets its height from a ray at its centre, and blends the reach's `influence` by distance to the handle:
 
 @include samples/anim_ik/main.c#reach
+
+#### Feet at a run
+
+A run is where foot placement is hardest: the feet cross stone edges between one tick and the next, a swinging foot is already high when the ground under it rises, and a leg near straight turns tens of degrees for a few centimetres of reach. FootPlacement3D holds three things at every pace, turn and stop:
+
+- **No leg turns round in a tick.** What the solve does to each thigh, shin and foot (its turn off the incoming, animated rotation) changes by at most 8 degrees a tick (480 a second), from the hip down. A target that jumps (a ray landing on another surface under a planted foot, a swinging foot's ground snapped as it touches down) is followed over a few ticks; a target that moves smoothly is met exactly. A planted foot crossing a step's edge reaches its new ground a few ticks later instead of in one.
+- **No foot is pulled up over its hip.** A raised ankle keeps at least half the height the animation gives it below the hip (along up), or a quarter of the leg's length when that is less; a foot the animation holds at or above the hip (a kick, a high knee) moves with the pelvis alone. Without it, a swinging foot already 0.35 m up over a 0.45 m stone beside a run was pulled above the hip and the thigh turned from down and back to up and forward in one tick (162 degrees).
+- **The hips move at most three leg lengths a second** when they drop for a low foot or come back up, since they carry both legs.
+
+These ease only with `blend_speed` above 0: at 0 (at once) the feet, legs and pelvis take their targets in the tick. A model that moves more than a metre in one tick (a respawn, a teleport) takes its new ground and solve at once too.
+
+`samples/anim_feet` runs a person (the coat figure of `anim_robe`) at 5.4 m/s over stones 5 to 50 cm high with its feet placed at full influence, through a turn at speed, a sharp turn, a stop, a turn on the spot, a platform and another stop; a twin runs the same clips with rays that hit nothing, so its legs are the animation's. The probe measures every leg bone's turn in a tick against the twin's, how far each ankle stays under its hip, and whether planted feet sit on raised ground:
+
+@include samples/anim_feet/main.c#probe
+
+```sh
+node tests/foot-run-turn.mjs     # each check with its control, native and romdev, GL and WebGPU
+```
+
+The worst leg bone turns 8 degrees past the animation in a tick; with the turn limit off (`CW_TEST_FOOT_NO_RATE=1`) one turns 67. With the reach guard off (`CW_TEST_FOOT_NO_REACH=1`) an ankle keeps only 0.71 of the height under its hip the guard leaves it.
 
 ### Hair, tails and coats: SpringBone3D
 
@@ -450,7 +470,7 @@ node tests/ik-determinism.mjs
 
 `unit-ik` checks the solvers (reach accuracy, the pole plane, limits, FABRIK constraints) and compares CCD against three.js r187 run in Node (`tools/gen-ccdik-fixture.mjs` writes the reference). It also runs the nodes in a tree (no accumulation across ticks, influence, foot placement on Box3D ground, a 12-rig crowd through the job pool).
 
-`ik-manual-refresh` and `ik-manual-advance` hold the same-tick solve of a manual advance: in `unit_ik` a look-at 70 degrees to the side turns the head drawn each tick by 1.2217 rad off the animated head (worst error 0.0005 rad), and foot placement refreshed every tick ends bit for bit as without a refresh; in `anim_ik` with `IK_MANUAL=1` the front robot's player is `MANUAL`, advanced in the app's `fixed_update`, and the head drawn every frame turns toward a firefly held 70 degrees to its side, on GL and WebGPU. Their control, `CW_TEST_IK_NO_REFRESH=1`, draws the advanced pose without the modifiers: 0 rad. `foot-high-sweep` swings a leg through a high kick with the leg near straight, a heel drawn up to the hip and back, over ground off the model's origin: the upper leg never turns more than 12 degrees a tick past the animation (3.5 at most); its control, `CW_TEST_IK2_OLD_BEND=1` (the bend side from the thigh's direction off the new reach line, as before 0.72.0), flips the knee 69 degrees in a tick.
+`ik-manual-refresh` and `ik-manual-advance` hold the same-tick solve of a manual advance: in `unit_ik` a look-at 70 degrees to the side turns the head drawn each tick by 1.2217 rad off the animated head (worst error 0.0005 rad), and foot placement refreshed every tick ends bit for bit as without a refresh; in `anim_ik` with `IK_MANUAL=1` the front robot's player is `MANUAL`, advanced in the app's `fixed_update`, and the head drawn every frame turns toward a firefly held 70 degrees to its side, on GL and WebGPU. Their control, `CW_TEST_IK_NO_REFRESH=1`, draws the advanced pose without the modifiers: 0 rad. `foot-high-sweep` swings a leg through a high kick with the leg near straight, a heel drawn up to the hip and back, over ground off the model's origin: the upper leg never turns more than 12 degrees a tick past the animation (3.5 at most); its control, `CW_TEST_IK2_OLD_BEND=1` (the bend side from the thigh's direction off the new reach line, as before 0.72.0) with `CW_TEST_FOOT_NO_RATE=1` (no limit on how fast the solve turns a leg, which would spread the flip over several ticks), flips the knee 69 degrees in a tick.
 
 The debug command `ik <model path>` lists a model's modifiers with their last results (`reached`, `in_limit`, foot offsets, pelvis offset), the pose hash and the microseconds the last tick took.
 

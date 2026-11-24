@@ -1,0 +1,55 @@
+[scene format=1]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.0181, 0.0232, 0.0382, 1)
+ambient_energy = 0.7
+hemi_energy = 1.1
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(-4, 2.2, 4)
+rotation = vec3(-0.2, 0, 0)
+fov = 45
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(3, 7, 5)
+rotation = vec3(-0.95, 0.5, 0)
+energy = 4.0
+shadow = true
+
+[node name="Floor" parent="." type="StaticBody3D"]
+position = vec3(0, -0.5, 0)
+
+[node name="Shape" parent="Floor" type="CollisionShape3D"]
+shape = BOX
+size = vec3(80, 1, 80)
+
+[node name="Mesh" parent="Floor" type="MeshInstance3D"]
+size = vec3(80, 1, 80)
+color = color(0.0637, 0.0835, 0.0732, 1)
+receive_shadow = true
+
+[node name="Runner" parent="." type="Node3D"]
+
+[node name="Model" parent="Runner" type="Node3D"]
+
+[node name="Feet" parent="Runner/Model" type="FootPlacement3D"]
+legs = "UpperLegL,LowerLegL,FootL;UpperLegR,LowerLegR,FootR"
+pelvis = "Hips"
+foot_height = 0.0835
+ray_up = 0.6
+max_step_down = 0.55
+
+[node name="Twin" parent="." type="Node3D"]
+position = vec3(30, 0, 0)
+
+[node name="Model" parent="Twin" type="Node3D"]
+
+[node name="Feet" parent="Twin/Model" type="FootPlacement3D"]
+legs = "UpperLegL,LowerLegL,FootL;UpperLegR,LowerLegR,FootR"
+pelvis = "Hips"
+foot_height = 0.0835
+ray_up = 0.6
+max_step_down = 0.55
+collision_mask = 0

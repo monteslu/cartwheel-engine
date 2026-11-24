@@ -895,7 +895,9 @@ static void test_refresh_once_a_tick(void) {
  * drawn up behind to the hip's height with the knee folded, then down, over ground 0.2 m higher than the model's
  * origin under one foot (so the targets move off the animated ankles and the pelvis drops). Each tick the upper
  * leg's drawn rotation may move at most 12 degrees more than the animation moved it. Control:
- * CW_TEST_IK2_OLD_BEND=1, the bend side from the upper bone's direction off the new reach line: the knee flips. */
+ * CW_TEST_IK2_OLD_BEND=1, the bend side from the upper bone's direction off the new reach line, with
+ * CW_TEST_FOOT_NO_RATE=1 (no limit on how fast the solve may turn a leg, which would spread the flip over ticks): the
+ * knee flips. */
 static void test_foot_high_sweep(void) {
   cw_tree *t = cw_tree_new();
   cw_node root = cw_tree_root(t);
@@ -942,7 +944,7 @@ static void test_foot_high_sweep(void) {
   }
   cw_info("foot high sweep: the upper leg turns at most %.2f deg a tick past the animation (at %.2f of the sweep)",
           worst * 57.29578f, worst_at);
-  CHECK(worst < 0.2094f); /* 12 degrees (control CW_TEST_IK2_OLD_BEND=1: the knee flips, this fails) */
+  CHECK(worst < 0.2094f); /* 12 degrees (control CW_TEST_IK2_OLD_BEND=1 CW_TEST_FOOT_NO_RATE=1: the knee flips, this fails) */
   FOLD(worst);
   cw_tree_free(t);
 }

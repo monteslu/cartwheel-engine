@@ -47,6 +47,15 @@ static inline t3_quat qmul(t3_quat a, t3_quat b) {
                     a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w, a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z };
 }
 static inline t3_quat qconj(t3_quat q) { return (t3_quat){ -q.x, -q.y, -q.z, q.w }; }
+static inline t3_quat qnorm(t3_quat q) {
+  float l = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+  return l > 0 ? (t3_quat){ q.x / l, q.y / l, q.z / l, q.w / l } : (t3_quat){ 0, 0, 0, 1 };
+}
+static t3_quat qslerp(t3_quat a, t3_quat b, float t) {
+  float o[4], fa[4] = { a.x, a.y, a.z, a.w }, fb[4] = { b.x, b.y, b.z, b.w };
+  cw_quat_slerp_det(o, fa, fb, t);
+  return (t3_quat){ o[0], o[1], o[2], o[3] };
+}
 static inline t3_vec3 qrot(t3_quat q, t3_vec3 v) {
   float tx = 2 * (q.y * v.z - q.z * v.y), ty = 2 * (q.z * v.x - q.x * v.z), tz = 2 * (q.x * v.y - q.y * v.x);
   return v3(v.x + q.w * tx + q.y * tz - q.z * ty, v.y + q.w * ty + q.z * tx - q.x * tz, v.z + q.w * tz + q.x * ty - q.y * tx);
@@ -162,6 +171,13 @@ typedef struct leg {
   float h_anim;         /* animated ankle height above the model's ground plane (m) */
   t3_vec3 bend_local;   /* the knee's side off the hip-ankle line, in the upper bone's frame, from the last bent pose */
   bool has_bend;
+  float len_w;          /* the leg's length, hip to knee to ankle (world m) */
+  float gap_w;          /* the animated hip above the animated ankle, along world up (m) */
+  /* what the solve did to each bone (upper, lower, end, a foot outside the chain): the drawn model rotation times
+   * the inverse of the incoming one, this tick (corr), as the tick found it (corr0, has0) and the last tick's the
+   * solve starts from (prev, has_prev: false when the node did not solve last tick, then the animation's) */
+  t3_quat corr[4], corr0[4], prev[4];
+  bool has_corr, has0, has_prev;
   cw_ray3d ray;
 } leg;
 
@@ -182,6 +198,13 @@ typedef struct foot_node {
   uint64_t last_tick;
   float gh0[MAX_LEGS], pelvis0;
   bool primed0[MAX_LEGS], pelvis_primed0;
+  /* the model's origin (world) at the last tick, and as the tick found it: a jump further than any step is a
+   * teleport, and the ground is taken at once */
+  t3_vec3 origin_last, origin0;
+  bool has_origin, has_origin0;
+  bool teleport;          /* this tick: the feet take the new ground, the legs their solve, at once */
+  float dt;
+  uint64_t solved_tick;   /* the last tick solved */
 } foot_node;
 
 static modbase *MB(cw_node n) { return cw_node_data_t(n, mod_t); }
@@ -410,6 +433,27 @@ static void foot_parse(cw_node n, foot_node *d, skel *s) {
   }
 }
 
+/* How fast what the solve does to a leg may change: each leg bone's turn off its incoming (animated) rotation moves
+ * at most FOOT_TURN radians a second (8 degrees a tick at 60), so a leg never turns more than that in a tick past
+ * what the animation turns it. A target that jumps (a ray landing on another surface: a stone's edge under a
+ * planted foot, a swinging foot's eased ground snapped as it touches down; a leg near straight, where a few
+ * centimetres of reach are tens of degrees of knee) is followed over a few ticks instead of in one. A slow target
+ * (a planted foot on its ground, a swing eased onto a step) is met exactly. */
+#define FOOT_TURN 8.37758f
+/* how fast the pelvis may move, in the shortest leg's lengths a second (3: 2.6 m/s for a 0.86 m leg): the hips
+ * carry both legs, a drop in one tick would bend both knees in it */
+#define FOOT_RATE 3.0f
+/* A raised ankle keeps at least half the height the animation gives it below the hip (along up), or a quarter of the
+ * leg's length when that is less; a foot the animation holds at or above the hip moves with the pelvis alone. A
+ * foot over ground near the hip's height (a 0.45 m stone beside a run, under a swinging foot already 0.35 m up)
+ * would otherwise be pulled up past the hip, the leg folding over it, the thigh turned from down and back to up and
+ * forward in one tick (162 degrees), and a target that passes close by the hip turns the leg round it. */
+#define FOOT_REACH 0.5f
+#define FOOT_REACH_LEG 0.25f
+/* CW_TEST_FOOT_NO_RATE (the turn and pelvis limits), CW_TEST_FOOT_NO_REACH (gate foot-run-turn's controls): each
+ * guard off, set by the phase */
+static bool foot_no_rate, foot_no_reach;
+
 /* serial: rays from the animated pose, one batch per node */
 static void foot_prepare(cw_node n, foot_node *d, skel *s, cw_tree *tree, double dt, uint64_t tick) {
   if (d->gen != s->gen || d->parsed_legs != d->legs) {
@@ -421,20 +465,47 @@ static void foot_prepare(cw_node n, foot_node *d, skel *s, cw_tree *tree, double
   if (d->ticked && tick == d->last_tick) { /* again this tick: from the state the tick found */
     for (int i = 0; i < d->nlegs; i++) d->L[i].gh = d->gh0[i], d->L[i].primed = d->primed0[i];
     d->pelvis_off = d->pelvis0, d->pelvis_primed = d->pelvis_primed0;
+    for (int i = 0; i < d->nlegs; i++) {
+      leg *l = &d->L[i];
+      memcpy(l->corr, l->corr0, sizeof l->corr);
+      l->has_corr = l->has0;
+    }
   } else {
+    for (int i = 0; i < d->nlegs; i++) {
+      leg *l = &d->L[i];
+      l->has0 = l->has_corr && d->solved_tick + 1 == tick;
+      memcpy(l->corr0, l->corr, sizeof l->corr);
+    }
     for (int i = 0; i < d->nlegs; i++) d->gh0[i] = d->L[i].gh, d->primed0[i] = d->L[i].primed;
     d->pelvis0 = d->pelvis_off, d->pelvis_primed0 = d->pelvis_primed;
+    d->origin0 = d->origin_last, d->has_origin0 = d->has_origin;
     d->ticked = true;
     d->last_tick = tick;
   }
   t3_vec3 up = v3(0, 1, 0);
   d->up_model = vnorm(dir_to_model(s, up));
   t3_vec3 origin = to_world(s, v3(0, 0, 0));
+  /* a model moved further than a metre in a tick (a teleport, a respawn): its feet take the new ground at once */
+  t3_vec3 moved = vsub(origin, d->origin0);
+  bool teleport = d->has_origin0 && vdot(moved, moved) > 1;
+  d->origin_last = origin, d->has_origin = true;
+  d->teleport = teleport;
+  d->dt = (float)dt;
+  for (int i = 0; i < d->nlegs; i++) {
+    leg *l = &d->L[i];
+    memcpy(l->prev, l->corr0, sizeof l->prev);
+    l->has_prev = l->has0;
+  }
   cw_ray3d rays[MAX_LEGS];
+  float len_min = 0;
   for (int i = 0; i < d->nlegs; i++) {
     leg *l = &d->L[i];
     l->ankle_model = cw_pose_model_position(&s->pose, l->end);
     t3_vec3 aw = to_world(s, l->ankle_model);
+    t3_vec3 hw = to_world(s, cw_pose_model_position(&s->pose, l->upper)), kw = to_world(s, cw_pose_model_position(&s->pose, l->lower));
+    l->len_w = vlen(vsub(kw, hw)) + vlen(vsub(aw, kw));
+    l->gap_w = vdot(vsub(hw, aw), up);
+    if (!i || l->len_w < len_min) len_min = l->len_w;
     l->h_anim = vdot(vsub(aw, origin), up);
     float above = l->h_anim > 0 ? l->h_anim : 0;
     rays[i].origin = vadd(aw, vmul(up, d->ray_up));
@@ -458,7 +529,7 @@ static void foot_prepare(cw_node n, foot_node *d, skel *s, cw_tree *tree, double
      * foot eases toward the ground under it, so it does not pop mid-air */
     float swing = cw_smoothstep(d->foot_height, d->foot_height * 3, l->h_anim);
     float kl = 1 + (k - 1) * swing;
-    if (!l->primed) { l->gh = want; l->primed = true; }
+    if (!l->primed || teleport) { l->gh = want; l->primed = true; }
     else l->gh += (want - l->gh) * kl;
     l->dy = l->gh - base;
     if (l->dy < -d->max_step_down) l->dy = -d->max_step_down;
@@ -471,11 +542,14 @@ static void foot_prepare(cw_node n, foot_node *d, skel *s, cw_tree *tree, double
     if (l->dy < lowest) lowest = l->dy;
   }
   /* the pelvis eases (it carries the whole body) */
-  if (!d->pelvis_primed) { d->pelvis_off = lowest; d->pelvis_primed = true; }
+  if (!d->pelvis_primed || teleport) { d->pelvis_off = lowest; d->pelvis_primed = true; }
   else {
-    /* down six times as fast as up: a leg must not run out of reach */
+    /* down six times as fast as up: a leg must not run out of reach (at most FOOT_RATE either way: the hips carry
+     * both legs, a drop in one tick bends both knees in it) */
     float kp = lowest < d->pelvis_off && d->blend_speed > 0 ? 1 - cw_exp(-6 * d->blend_speed * (float)dt) : k;
-    d->pelvis_off += (lowest - d->pelvis_off) * kp;
+    float step = (lowest - d->pelvis_off) * kp, cap = FOOT_RATE * len_min * (float)dt;
+    if (!foot_no_rate && d->blend_speed > 0) step = step > cap ? cap : step < -cap ? -cap : step;
+    d->pelvis_off += step;
   }
 }
 
@@ -484,12 +558,25 @@ static void foot_solve(cw_node n, foot_node *d, skel *s) {
   if (!d->nlegs) return;
   cw_pose *p = &s->pose;
   float inv_scale = 1 / s->world_scale;
-  if (d->pelvis_idx >= 0 && d->pelvis_off < 0) cw_pose_translate_model(p, d->pelvis_idx, vmul(d->up_model, d->pelvis_off * inv_scale));
+  float lowered = d->pelvis_idx >= 0 && d->pelvis_off < 0 ? d->pelvis_off : 0;
+  if (lowered < 0) cw_pose_translate_model(p, d->pelvis_idx, vmul(d->up_model, lowered * inv_scale));
   float cos_max, sin_max;
   cw_sincos(d->max_slope > 0 ? d->max_slope : 0, &sin_max, &cos_max);
   for (int i = 0; i < d->nlegs; i++) {
     leg *l = &d->L[i];
-    t3_vec3 target = vadd(l->ankle_model, vmul(d->up_model, l->dy * inv_scale));
+    /* the raise keeps the ankle FOOT_REACH of the leg below the (lowered) hip, or where the animation has it against
+     * the hip when that is higher: the reach never folds the leg over a target at or above the hip */
+    float dy = l->dy;
+    if (!foot_no_reach) {
+      float keep = FOOT_REACH * l->gap_w;
+      if (keep > FOOT_REACH_LEG * l->len_w) keep = FOOT_REACH_LEG * l->len_w;
+      float room = l->gap_w - keep, most = lowered + (room > 0 ? room : 0);
+      if (dy > most) dy = most;
+    }
+    t3_vec3 target = vadd(l->ankle_model, vmul(d->up_model, dy * inv_scale));
+    int lb[4] = { l->upper, l->lower, l->end, l->foot >= 0 && l->foot != l->end ? l->foot : -1 };
+    t3_quat in[4];
+    for (int k = 0; k < 4; k++) in[k] = lb[k] >= 0 ? p->mrot[lb[k]] : (t3_quat){ 0, 0, 0, 1 };
     /* The side the knee bends to: the solver takes it from the incoming knee's offset off the hip-ankle line. A leg
      * the animation holds straight has no side; it bends to the side it last bent to (kept in the thigh's frame, so
      * it turns with the thigh), never to whichever side the target's small move picks, which flips the knee round
@@ -520,24 +607,50 @@ static void foot_solve(cw_node n, foot_node *d, skel *s) {
     }
     if (foot < 0) foot = l->end;
     /* align to the ground normal while the foot is near the ground */
-    if (!l->st.hit || d->max_slope <= 0) continue;
     float h = l->h_anim;
-    float w = 1 - cw_smoothstep(d->foot_height, d->foot_height * 2.5f, h);
-    if (w <= 0) continue;
-    t3_vec3 nm = vnorm(dir_to_model(s, l->st.normal));
-    float c = vdot(nm, d->up_model);
-    if (c < cos_max) {
-      t3_vec3 side = vnorm(vsub(nm, vmul(d->up_model, c)));
-      nm = vnorm(vadd(vmul(d->up_model, cos_max), vmul(side, sin_max)));
+    float w = l->st.hit && d->max_slope > 0 ? 1 - cw_smoothstep(d->foot_height, d->foot_height * 2.5f, h) : 0;
+    if (w > 0) {
+      t3_vec3 nm = vnorm(dir_to_model(s, l->st.normal));
+      float c = vdot(nm, d->up_model);
+      if (c < cos_max) {
+        t3_vec3 side = vnorm(vsub(nm, vmul(d->up_model, c)));
+        nm = vnorm(vadd(vmul(d->up_model, cos_max), vmul(side, sin_max)));
+      }
+      t3_quat r = cw_quat_from_to(d->up_model, nm);
+      if (w < 1) {
+        float o4[4], id[4] = { 0, 0, 0, 1 }, rq[4] = { r.x, r.y, r.z, r.w };
+        cw_quat_slerp_det(o4, id, rq, w);
+        r = (t3_quat){ o4[0], o4[1], o4[2], o4[3] };
+      }
+      cw_pose_rotate_model(p, foot, r);
     }
-    t3_quat r = cw_quat_from_to(d->up_model, nm);
-    if (w < 1) {
-      float o4[4], id[4] = { 0, 0, 0, 1 }, rq[4] = { r.x, r.y, r.z, r.w };
-      cw_quat_slerp_det(o4, id, rq, w);
-      r = (t3_quat){ o4[0], o4[1], o4[2], o4[3] };
+    /* each bone's turn off its incoming rotation moves at most FOOT_TURN a second from the last tick's, top down (a
+     * bone's limit moves its children, which are then limited against their own incoming rotations); none on the
+     * first tick after a teleport, or with blend_speed 0 (at once) */
+    bool limit = !foot_no_rate && !d->teleport && d->blend_speed > 0;
+    float most = FOOT_TURN * d->dt;
+    t3_vec3 end_before = cw_pose_model_position(p, l->end);
+    for (int k = 0; k < 4; k++) {
+      if (lb[k] < 0) { l->corr[k] = (t3_quat){ 0, 0, 0, 1 }; continue; }
+      if (k == 3) { /* a foot outside the chain rides the limited ankle */
+        t3_vec3 end_after = cw_pose_model_position(p, l->end);
+        cw_pose_translate_model(p, lb[k], vsub(end_after, end_before));
+      }
+      t3_quat cq = qnorm(qmul(p->mrot[lb[k]], qconj(in[k])));
+      if (limit) {
+        t3_quat from = l->has_prev ? l->prev[k] : (t3_quat){ 0, 0, 0, 1 };
+        t3_quat r = qmul(cq, qconj(from));
+        float ang = 2 * cw_atan2(sqrtf(r.x * r.x + r.y * r.y + r.z * r.z), r.w < 0 ? -r.w : r.w);
+        if (ang > most) {
+          cq = qnorm(qslerp(from, cq, most / ang));
+          cw_pose_set_model_rotation(p, lb[k], qmul(cq, in[k]));
+        }
+      }
+      l->corr[k] = cq;
     }
-    cw_pose_rotate_model(p, foot, r);
+    l->has_corr = true;
   }
+  d->solved_tick = d->last_tick;
 }
 
 /* ── SpringBone3D ──────────────────────────────────────────────────────
@@ -1396,6 +1509,10 @@ static void phase_hook(cw_tree *tree, double dt, void *u) {
     cw__ik2_old_bend = e && atoi(e);
     e = test_switch("CW_TEST_SPRING_OLD_COLLIDE");
     spring_old_collide = e && atoi(e);
+    e = test_switch("CW_TEST_FOOT_NO_RATE");
+    foot_no_rate = e && atoi(e);
+    e = test_switch("CW_TEST_FOOT_NO_REACH");
+    foot_no_reach = e && atoi(e);
   }
   ikw *W = cw_tree_slot(tree, "ik");
   if (!W || !W->skels.count) return;

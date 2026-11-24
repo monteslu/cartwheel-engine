@@ -4,6 +4,42 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.76.1 (2026-11-24)
+
+### Fixed
+- FootPlacement3D no longer turns a leg round its knee in one tick at a run. A swinging foot already 0.35 m up over
+  ground near the hip's height (a 0.45 m stone beside a run turning at 5.4 m/s) was lifted by the full height of
+  that ground, its target pulled up past the hip: the leg folded over it, the thigh turning 162 degrees in a tick and
+  the shin and foot 146 four ticks later as the target passed by the hip. A planted foot whose ray crossed a stone's
+  edge, or a swinging foot whose eased ground snapped as it touched down, moved its target 0.3 m in a tick (30 to 40
+  degrees of leg). Three guards, at every pace, turn and stop:
+  - a raised ankle keeps at least half the height the animation gives it below the hip (along up), or a quarter of
+    the leg's length when that is less; a foot the animation holds at or above the hip moves with the pelvis alone
+    (control `CW_TEST_FOOT_NO_REACH=1`);
+  - what the solve does to each thigh, shin and foot (its turn off the incoming rotation) changes by at most 8
+    degrees a tick, from the hip down, so a jumping target is followed over a few ticks and a smooth one is met
+    exactly (control `CW_TEST_FOOT_NO_RATE=1`, which also lifts the next);
+  - the pelvis moves at most three leg lengths a second as it drops for a low foot or comes back.
+  None of them applies with `blend_speed` 0 (at once), or on a tick the model moved over a metre (a respawn takes
+  its new ground at once). A planted foot crossing a step's edge now reaches its new ground a few ticks later
+  instead of in one. In a third-person game's scripted run (feet at full influence at every pace, run turning right
+  at 5.4 m/s, stops, rolls, fights) the worst leg jump in one tick past its neighbours went from 159 degrees to 39,
+  the largest left being a one-tick pose change of the game's own at a scene load, the same with foot placement off.
+
+### Added
+- Sample `anim_feet`: a person runs at 5.4 m/s over stones 5 to 50 cm high with its feet placed at full influence,
+  turns at speed, turns sharply, stops, turns on the spot, crosses a platform and stops; a twin whose rays hit
+  nothing gives the animation's legs. Gates `anim-feet` (every host, GL and WebGPU) and `foot-run-turn` (native
+  and romdev, GL and WebGPU, CI on software rendering): no leg bone turns more than 12 degrees in a tick past the
+  animation (8.0; control `CW_TEST_FOOT_NO_RATE=1`, 67), ankles keep the height under the hip the reach must leave
+  (control `CW_TEST_FOOT_NO_REACH=1`, 0.71 of it), planted feet on raised steady ground sit within 2 cm (all 216
+  foot-ticks; control `FP_OFF=1`, none).
+
+### Changed
+- Gate `anim-ik` holds planted ankles to their ground within 1 cm where the ground under them has not changed for 8
+  ticks (a foot crossing a step's edge is followed over a few ticks); `foot-high-sweep`'s control adds
+  `CW_TEST_FOOT_NO_RATE=1` so the old bend side's flip shows in one tick.
+
 ## v0.76.0 (2026-11-24)
 
 ### Fixed

@@ -301,7 +301,14 @@ int cw_ik_fabrik(cw_pose *p, const int *chain, int n, t3_vec3 target, const cw_c
  *                    bone that is not below the chain along with the
  *                    ankle, and turns the foot onto the ground normal
  *                    while it is near the ground. A leg whose ray misses
- *                    blends back to its animation.
+ *                    blends back to its animation. At any pace: a raised
+ *                    ankle keeps at least half its animated height below
+ *                    the hip (or a quarter of the leg, if less), what the
+ *                    solve does to each leg bone changes by at most 8
+ *                    degrees a tick (a jumping target is followed over a
+ *                    few ticks), and the pelvis moves at most three leg
+ *                    lengths a second; none of these with blend_speed 0,
+ *                    or on a tick the model moved over a metre.
  * SpringBone3D       secondary motion for hair, braids, ponytails, beards,
  *                    tails, coat tails and robe panels: skinned parts that
  *                    lag behind the body, sway and settle back to the

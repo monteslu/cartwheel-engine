@@ -16,7 +16,10 @@
  * robot comes from a ray at its centre. Pad south toggles foot placement (the
  * gate's control). Debug fields: tick, the front robot's position, per-foot
  * ground error in stance (the probe: the ankle's height above the ground
- * under it against its animated height above flat ground), the largest
+ * under it against its animated height above flat ground, where the ground
+ * under the animated ankle has not changed for 8 ticks: a foot whose ray
+ * crosses a step's edge is followed over a few ticks, never in one), the
+ * largest
  * per-tick pelvis move, the hand's distance to the handle while fully
  * reaching, look-at ticks in limit, pose hashes per 60-tick window (the front
  * robot, and every robot folded), and microseconds per character.
@@ -34,6 +37,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "cartwheel/anim.h"
 #include "cartwheel/debug.h"
@@ -212,12 +216,19 @@ static void manual_render(void *u, double alpha) {
 /* #endregion */
 
 /* #region probe */
-/* in stance, the ankle sits above the ground under it by its animated lift */
+/* in stance on steady ground, the ankle sits above the ground under it by its animated lift */
 static void probe_feet(uint64_t tick) {
   static const char *ankles[2] = { "LowerLegL_end", "LowerLegR_end" };
+  static float hist[2][8];
   for (int i = 0; i < 2; i++) {
     cw_foot_state st;
-    if (!cw_foot_placement_leg(R[0].feet, i, &st) || !st.hit) continue;
+    if (!cw_foot_placement_leg(R[0].feet, i, &st)) continue;
+    float gy = st.hit ? st.ground.y : -1;
+    bool steady = st.hit;
+    for (int k = 0; k < 8; k++) steady = steady && fabsf(hist[i][k] - gy) < 0.005f;
+    memmove(&hist[i][1], &hist[i][0], sizeof(float) * 7);
+    hist[i][0] = gy;
+    if (!steady) continue; /* the ground under it changed in the last 8 ticks (a step's edge) */
     if (st.lift > 0.03f || tick < 30 || R[0].turning) continue; /* swing, warm-up, turning on the spot */
     t3_vec3 a = cw_skeleton_bone_world(R[0].model, ankles[i]);
     float g = ground_at(a.x, a.z, a.y + 0.5f);
