@@ -14575,6 +14575,22 @@
      "stored": false,
      "readonly": true,
      "doc": "Environment captures made whole (all six faces in one frame) while shown: the first one of a backdrop not prewarmed. Turning environment off and on again keeps the capture and makes none."
+    },
+    {
+     "name": "env_filters",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Environment prefilters run while it lit the scene (a finished capture, or a change of what lights the scene)."
+    },
+    {
+     "name": "env_kept_uses",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Times the scene took its kept prefilter back instead of filtering: its world lighting the scene alone again (environment turned on at a cross-fade's end) with no capture finished since."
     }
    ]
   },

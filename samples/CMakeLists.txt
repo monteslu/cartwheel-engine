@@ -442,6 +442,16 @@ foreach(f stage.cwscene fire.png fire_mv.png)
   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/backdrop/assets/${f} ${CW_STYLE_SWITCH_ASSETS}/${f} COPYONLY)
 endforeach()
 cw_add_app(style_switch SOURCES style_switch/main.c ASSETS ${CW_STYLE_SWITCH_ASSETS})
+# the end of a style change into a world that lights the scene: half blocks (SCENE) and a one-bit dither (DISPLAY)
+# across a cross-fade from the fire into the stage, whose environment turns on at the fade's end (gates look-env-end,
+# look-env-end-timing); the worlds are style_switch's and the backdrop sample's
+set(CW_LOOK_ENV_END_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/look_env_end_assets)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/look_env_end/assets/main.cwscene ${CW_LOOK_ENV_END_ASSETS}/main.cwscene COPYONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/style_switch/assets/fire.cwscene ${CW_LOOK_ENV_END_ASSETS}/fire.cwscene COPYONLY)
+foreach(f stage.cwscene fire.png fire_mv.png)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/backdrop/assets/${f} ${CW_LOOK_ENV_END_ASSETS}/${f} COPYONLY)
+endforeach()
+cw_add_app(look_env_end SOURCES look_env_end/main.c ASSETS ${CW_LOOK_ENV_END_ASSETS})
 
 # the post looks (cartwheel/look.h): characters, half blocks, dithering, a custom shader and blends between them
 # (looks), and at 1920x1080 for the GPU timing report (looks_perf)

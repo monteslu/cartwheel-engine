@@ -199,8 +199,12 @@ static GLuint compile(GLenum kind, const char *a, const char *b, const char *nam
   return s;
 }
 
+int32_t cw__pass_builds;
+int cw_pipeline_pass_builds(void) { return cw__pass_builds; }
+
 static unsigned program_glsl(const char *name, const char *vsrc, const char *fs) {
   CW_PROFILE_SCOPE("pass.program_gl");
+  cw__pass_builds++;
   if (wg()) {
     cw_error("pipeline pass '%s': cw_pass_program is GLSL (GL); this run renders with WebGPU: use cw_pass_program_wgsl", name);
     return 0;

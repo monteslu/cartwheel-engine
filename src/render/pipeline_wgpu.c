@@ -1015,6 +1015,7 @@ static pw_prog *prog_of(unsigned id) {
 
 unsigned cw__pw_program(const char *name, const char *wgsl) {
   init();
+  cw__pass_builds++;
   pw_prog *pr = cw_calloc(1, sizeof *pr, CW_MEM_RENDER);
   snprintf(pr->name, sizeof pr->name, "%s", name);
   bool brk = broken(name);
@@ -1172,6 +1173,7 @@ static WGPURenderPipeline pipeline(unsigned prog, const att *a, int blend, int d
   CW_PROFILE_BEGIN("pass.pipeline_wgpu"); /* a pass program for a new target, blend or sample count: built on its first draw */
   WGPURenderPipeline p = wgpuDeviceCreateRenderPipeline(W.dev, &d);
   CW_PROFILE_END();
+  cw__pass_builds++;
   cw_array_push(&pipes, ((pipe_rec){ key, p }));
   return p;
 }

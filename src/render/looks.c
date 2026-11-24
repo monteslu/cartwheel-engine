@@ -1990,6 +1990,10 @@ static const cw_rt *dither_brightness(cw_pass_ctx *ctx, const cw_look_dither *d,
   return lt;
 }
 
+/* a prewarm's choice of the tone's path (-1: by the dither pixel's size, as a frame draws it; 0 the small targets, 1 every
+ * screen pixel), so it makes both: the picture's size at the prewarm (the warm-up's first frames, a smaller canvas) is
+ * not the one a dither is shown at */
+static int g_warm_each = -1;
 static void draw_dither(cw_pass_ctx *ctx, look *l, const vinfo *v, const cw_rt *out) {
   const cw_look_dither *d = &l->d.dither;
   int n = CW_CLAMP((int)lrintf(d->pixel * (d->output_pixels ? 1.0f : v->scale)), 1, 64);
@@ -1999,7 +2003,7 @@ static void draw_dither(cw_pass_ctx *ctx, look *l, const vinfo *v, const cw_rt *
   /* the tone in small targets from 2 x 2 screen pixels a dither pixel up; one a screen pixel repeats no work, and
    * the targets' writes and reads cost more than the eight extra mean colours (0.43 against 0.32 ms at 1080p on a
    * Radeon 890M). CW_TEST_LOOK_TONE_EACH_PIXEL=1 (the gates' before): the tone in every screen pixel at any size. */
-  bool each = tone && (n == 1 || test_int("CW_TEST_LOOK_TONE_EACH_PIXEL"));
+  bool each = tone && (g_warm_each >= 0 ? g_warm_each != 0 : (n == 1 || test_int("CW_TEST_LOOK_TONE_EACH_PIXEL")));
   dbg_tone = tone ? 1 : 0;
   dbg_tone_small = tone && !each ? 1 : 0;
   if (l->d.kind == CW_LOOK_DITHER_ORDERED) {
@@ -2319,10 +2323,20 @@ static void looks_prewarm_run(cw_pass_ctx *ctx, looks_state *s) {
     s->warm[i].stages &= (uint8_t)~(1u << g_stage);
     if (!drawable(s->warm[i].l)) continue;
     s->how = (cw_look_mix){ 0 }, s->measure = false;
-    s->a = s->warm[i].l, s->b = (cw_look){ 0 }, s->t = 0;
-    looks_run(ctx, s); /* alone */
-    s->t = 0.5f;
-    looks_run(ctx, s); /* in a blend */
+    /* a dither with tone options: drawn by both of the tone's paths (draw_dither: the one a frame takes depends on the
+     * dither pixel's size on screen). CW_TEST_LOOK_WARM_ONE_TONE=1: the path of the prewarm's own frame only, as before
+     * (a gate's control; getenv: a prewarm runs in a test's first frame) */
+    const look *wl = drawable(s->warm[i].l);
+    const char *one = getenv("CW_TEST_LOOK_WARM_ONE_TONE");
+    bool both = wl && (wl->d.kind == CW_LOOK_DITHER_ORDERED || wl->d.kind == CW_LOOK_DITHER_DIFFUSE) && dither_tone_on(&wl->d.dither) && !(one && atoi(one));
+    for (int path = 0; path < (both ? 2 : 1); path++) {
+      g_warm_each = both ? path : -1;
+      s->a = s->warm[i].l, s->b = (cw_look){ 0 }, s->t = 0;
+      looks_run(ctx, s); /* alone */
+      s->t = 0.5f;
+      looks_run(ctx, s); /* in a blend */
+    }
+    g_warm_each = -1;
     s->prewarms++;
   }
   /* the entries done at every stage leave the list */

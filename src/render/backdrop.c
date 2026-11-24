@@ -57,6 +57,12 @@ typedef struct backdrop {
   int32_t env_captures, env_prewarms;
   int32_t env_whole; /* captures made whole (six faces in one frame) while shown: none had been kept */
   float env_cpu_ms;
+  /* its kept filter: the last prefilter of its capture alone (the scene lit by its world and nothing else), at the share
+   * env_kept_w; the scene takes it back when the world lights it alone again with no capture finished since that
+   * frame's (environment turned on again at a cross-fade's end), instead of filtering again */
+  t3_render_target *env_kept;
+  float env_kept_w;
+  int32_t env_filters, env_kept_uses;
 } backdrop;
 
 _Static_assert(sizeof(((cw_pipeline *)0)->bd) / sizeof(((cw_pipeline *)0)->bd[0]) == CW_BACKDROP_MAX, "the pipeline holds CW_BACKDROP_MAX pictures");
@@ -507,7 +513,7 @@ static void frame_hook(cw_tree *t, cw_pipeline *p, int w, int h, double alpha) {
      * with getenv: a prewarm runs in a test's first frame, where cw_test_env answers nothing yet) */
     const char *show = getenv("CW_TEST_PREWARM_SHOW");
     float o = show && atoi(show) ? 1.0f : 0.0f;
-    if (p->bd_n < CW_BACKDROP_MAX) p->bd[p->bd_n++] = (struct cw__backdrop_pic){ .tex = pic->tex, .opacity = o, .scale = 1 };
+    if (p->bd_n < CW_BACKDROP_MAX) p->bd[p->bd_n++] = (struct cw__backdrop_pic){ .tex = pic->tex, .opacity = o, .scale = 1, .warm = true };
     /* a world that lights the tree: its first capture made now too, by the tree's "backdrop_env" pass (env_prewarm).
      * CW_TEST_NO_ENV_PREWARM=1: left to its first shown frame, as before (a gate's control; getenv: a test's first frame) */
     const char *no_env = getenv("CW_TEST_NO_ENV_PREWARM");
@@ -650,6 +656,27 @@ static void pass_exec(cw_pass_ctx *ctx, void *u) {
   cw_pipeline *p = ctx->pipeline;
   if (p->bd_n <= 0) return;
   if (p->bd[0].opacity < 1) {
+    /* a prewarm's picture drawn once more as a world cut in at opacity 1 draws it (written as it is, no blend: the
+     * pass's other pipeline on WebGPU), before the background covers the whole target: nothing of it is seen.
+     * CW_TEST_BACKDROP_WARM_BLEND_ONLY=1: not drawn, as before (a gate's control; getenv: a test's first frame) */
+    const char *bo = getenv("CW_TEST_BACKDROP_WARM_BLEND_ONLY");
+    for (int i = 0; i < p->bd_n && !(bo && atoi(bo)); i++)
+      if (p->bd[i].warm) {
+        unsigned prog = program();
+        float rc[4];
+        if (!prog) break;
+        run_rect(ctx, rc);
+        cw__pass_state_reset();
+        cw_pass_use(prog);
+        cw_pass_uniform4f(prog, "u_rect", rc[0], rc[1], rc[2], rc[3]);
+        cw_pass_uniform1i(prog, "u_src", 0);
+        cw_pass_set_blend(CW_PASS_BLEND_NONE);
+        cw_pass_uniform4f(prog, "u_k", p->bd[i].scale, 1, 0, 0);
+        cw_pass_bind_texture(0, p->bd[i].tex);
+        cw_pass_fullscreen();
+        cw__pass_state_reset();
+        break;
+      }
     main_background(ctx);
     cw__pass_state_reset();
   }
@@ -680,7 +707,8 @@ typedef struct bd_env {
 #endif
   t3_texture *cube_tex;
   t3_pmrem_generator *pmrem;
-  t3_render_target *env;
+  t3_render_target *mix; /* the tree's filter target (a blend of sources, the prewarm's); a lone backdrop's goes into its env_kept */
+  t3_render_target *env; /* the filtered environment the scene has (mix or a backdrop's env_kept; retained) */
   t3_texture *own_env; /* retained */
   t3_euler own_rot;
   bool set, built;
@@ -708,6 +736,7 @@ static void env_gpu_free(bd_env *E) {
   if (E->blend_size) faces_free(E->blend), E->blend_size = 0;
   if (E->own_size) faces_free(E->own), E->own_size = 0;
   if (E->env) t3_release(E->env), E->env = NULL;
+  if (E->mix) t3_release(E->mix), E->mix = NULL;
   env_cube_free(E);
   if (E->pmrem) t3_pmrem_generator_destroy(E->pmrem), E->pmrem = NULL;
   E->built = false;
@@ -729,6 +758,27 @@ static bd_env *env_of(cw_tree *t, bool make) {
   return E;
 }
 static bool euler_zero(t3_euler e) { return e.x == 0 && e.y == 0 && e.z == 0; }
+/* the filtered environment the tree uses from now on (a reference of its own) */
+static void env_use(bd_env *E, t3_render_target *rt) {
+  if (rt) t3_retain(rt);
+  if (E->env) t3_release(E->env);
+  E->env = rt;
+}
+/* the cube (filled) prefiltered into *slot (made or remade there: the filter's reference replaces the slot's) and
+ * used as the tree's environment; false when the filter made nothing */
+static bool env_filter_into(bd_env *E, t3_renderer *r, unsigned bound_fbo, t3_render_target **slot) {
+  bool wg = on_wgpu();
+  if (!E->pmrem) E->pmrem = t3_pmrem_generator_new(r);
+  if (wg) t3_renderer_set_external_encoder(r, 0);
+  else t3_renderer_reset_bindings(r);
+  t3_render_target *next = t3_pmrem_from_cubemap_into(E->pmrem, E->cube_tex, *slot);
+  if (!wg) t3_renderer_reset_bindings(r), glBindFramebuffer(GL_FRAMEBUFFER, bound_fbo);
+  if (!next) return false;
+  if (*slot) t3_release(*slot); /* (into the same target: the reference the call returned stands for it) */
+  *slot = next;
+  env_use(E, next);
+  return true;
+}
 
 /* the tree's own environment back in the scene, and what stood in for it freed */
 static void env_restore(bd_env *E, t3_scene *sc) {
@@ -830,7 +880,13 @@ static bool env_cube_fill(bd_env *E, const cw_rt *faces, int size, unsigned boun
   return true;
 }
 
-typedef struct env_src { const cw_rt *faces; int size; float w; } env_src;
+/* the tree's own environment's least share in the blend, and how far a lone backdrop's share may be from its kept
+ * filter's for the scene to take that back: 1/256, under a step of an 8-bit reflection */
+#define ENV_OWN_MIN (1.0f / 256)
+#define ENV_KEPT_W (1.0f / 256)
+/* a source: its faces, their size, its share; bd the backdrop (NULL: the tree's own), full its share at opacity 1 with
+ * nothing in front (its exposure over the tree's), fresh: its capture finished this frame */
+typedef struct env_src { const cw_rt *faces; int size; float w; backdrop *bd; float full; bool fresh; } env_src;
 
 /* this frame's sources: each lighting backdrop's capture by the share of the picture it has (its opacity times what
  * the backdrops in front of it leave, times its exposure over the tree's), and the tree's own environment by the share
@@ -843,7 +899,7 @@ static int env_sources(const cw_pipeline *p, env_src *out, int *size, float *res
     if (!e->faces) continue;
     float w = p->bd[e->pic].opacity * p->bd[e->pic].scale;
     for (int j = e->pic + 1; j < p->bd_n; j++) w *= 1 - p->bd[j].opacity;
-    out[n++] = (env_src){ e->faces, e->size, w };
+    out[n++] = (env_src){ e->faces, e->size, w, e->bd, p->bd[e->pic].scale, e->fresh };
     *size = CW_MAX(*size, e->size);
   }
   *rest = p->bd_bg_weight;
@@ -872,6 +928,27 @@ static void env_scene_warm(cw_pass_ctx *ctx, t3_texture *env) {
   if (gi) cw__scene_warm_draw(ctx, env, true), cw__gi_gbuffer_prewarm(ctx, env, ws->ssgi);
 }
 
+/* faces times w, into the tree's blend faces (made at this size); the faces themselves at w 1; NULL when they could not be made */
+static const cw_rt *env_scaled(cw_pass_ctx *ctx, bd_env *E, const cw_rt *faces, int size, float w) {
+  if (fabsf(w - 1) <= 1e-6f) return faces;
+  unsigned prog = blend_program();
+  if (!prog || !(E->blend_size == size || (E->blend_size = faces_make(E->blend, size) ? size : 0))) return NULL;
+  bool clip = cw__vclip.on;
+  cw__vclip.on = false;
+  for (int fc = 0; fc < 6; fc++) {
+    cw_pass_bind_target(ctx, &E->blend[fc]);
+    cw__pass_state_reset();
+    cw_pass_use(prog);
+    cw_pass_uniform1i(prog, "u_src", 0);
+    cw_pass_set_blend(CW_PASS_BLEND_NONE);
+    cw_pass_uniform4f(prog, "u_k", w, 1.0f, 0, 0);
+    cw_pass_bind_texture(0, faces[fc].tex);
+    cw_pass_fullscreen();
+  }
+  cw__vclip.on = clip;
+  return E->blend;
+}
+
 /* The prewarm of the backdrops that light the tree (cw_backdrop_prewarm of one with environment on, in its world's
  * prewarm render): its first capture, the six faces whole, made now from its camera, so its first shown frame draws only
  * its share of the next one (as any later frame does) and the field is lit from this capture until that one is done;
@@ -885,6 +962,8 @@ static void env_prewarm(cw_pass_ctx *ctx, bd_env *E) {
   cw_tree *prev = cw_current_tree();
   const cw_rt *faces = NULL;
   int size = 0;
+  backdrop *warmed[CW_ARRAY_LEN(p->bd_env_warm)];
+  int nwarmed = 0;
   for (int i = 0; i < p->bd_env_warm_n; i++) {
     struct cw__backdrop_env *e = &p->bd_env_warm[i];
     backdrop *d = e->bd;
@@ -898,12 +977,31 @@ static void env_prewarm(cw_pass_ctx *ctx, bd_env *E) {
     for (int k = 0; k < nshown; k++) cw_node_set(shown[k], "visible", cw_val_bool(false));
     d->env_captures = caps, d->env_whole = whole; /* (these count the captures made while it is shown) */
     d->env_prewarms++;
-    if (d->cap_have) faces = d->cap[d->cap_front], size = d->cap_size;
+    if (d->cap_have) faces = d->cap[d->cap_front], size = d->cap_size, warmed[nwarmed++] = d;
   }
   p->bd_env_warm_n = 0;
   cw_set_current_tree(prev);
   if (!on_wgpu()) gl_frame_state(p->bd_w, p->bd_h), t3_renderer_reset_bindings(r), t3_renderer_reset_state(r), glBindFramebuffer(GL_FRAMEBUFFER, p->bound_fbo);
-  if (!faces || E->set) return;
+  if (!faces) return;
+  /* each one's kept filter: its whole capture alone at its whole share (its exposure over the tree's), prefiltered into
+   * a target of its own, so the first time its world lights the scene alone with that capture (a cross-fade into it
+   * that turns environment on at its end) takes it instead of a filter. Into its own target only: the tree's
+   * environment, if one is set, is left as it is. CW_TEST_ENV_NO_KEEP=1: none (a gate's control; getenv: a test's
+   * first frame) */
+  const char *nk = getenv("CW_TEST_ENV_NO_KEEP");
+  float main_exp = exposure_of(p);
+  for (int i = 0; i < nwarmed && !(nk && atoi(nk)); i++) {
+    backdrop *d = warmed[i];
+    float full = main_exp > 0 ? exposure_of(cw_pipeline_of(d->world)) / main_exp : 1;
+    const cw_rt *kf = env_scaled(ctx, E, d->cap[d->cap_front], d->cap_size, full);
+    if (!kf || !env_cube_fill(E, kf, d->cap_size, p->bound_fbo)) continue;
+    t3_render_target *keep = E->env ? t3_retain(E->env) : NULL;
+    if (env_filter_into(E, r, p->bound_fbo, &d->env_kept)) d->env_kept_w = full;
+    env_use(E, keep);
+    if (keep) t3_release(keep);
+  }
+  if (!on_wgpu()) gl_frame_state(p->bd_w, p->bd_h), glBindFramebuffer(GL_FRAMEBUFFER, p->bound_fbo);
+  if (E->set) return;
   /* the tree's part, as its first shown frame would do it: the faces blended by a share (all six, then an add of none:
    * both of the blend's states), the cube filled and filtered into the tree's environment target, which the scene
    * does not get until a backdrop lights it. With no environment of the scene's own to blend under, what is filtered
@@ -934,15 +1032,8 @@ static void env_prewarm(cw_pass_ctx *ctx, bd_env *E) {
     src = E->blend;
   }
   if (env_cube_fill(E, src, size, p->bound_fbo)) {
-    bool wg = on_wgpu();
-    if (!E->pmrem) E->pmrem = t3_pmrem_generator_new(r);
-    if (wg) t3_renderer_set_external_encoder(r, 0);
-    else t3_renderer_reset_bindings(r);
-    t3_render_target *next = t3_pmrem_from_cubemap_into(E->pmrem, E->cube_tex, E->env);
-    if (!wg) t3_renderer_reset_bindings(r), glBindFramebuffer(GL_FRAMEBUFFER, p->bound_fbo);
-    if (next) {
-      if (E->env) t3_release(E->env);
-      E->env = next;
+    if (env_filter_into(E, r, p->bound_fbo, &E->mix)) {
+      t3_render_target *next = E->mix;
       /* CW_TEST_NO_ENV_SCENE_WARM=1: the scene not drawn lit by it (a gate's control; getenv: a test's first frame) */
       const char *nw = getenv("CW_TEST_NO_ENV_SCENE_WARM");
       if (!(nw && atoi(nw))) env_scene_warm(ctx, next->texture);
@@ -999,7 +1090,10 @@ static void env_exec(cw_pass_ctx *ctx, void *u) {
   int n = env_sources(p, src, &size, &rest);
   bool fresh = false;
   for (int i = 0; i < p->bd_env_n; i++) fresh |= p->bd_env[i].fresh;
-  bool with_own = E->own_env && rest > 1e-4f;
+  /* the tree's own environment under them by a share that shows: one under ENV_OWN_MIN (the last frames of a fade into a
+   * world that lights the scene) would bring it in and take it out again a frame later, a filter each time for a
+   * change no reflection shows. CW_TEST_ENV_OWN_TINY=1: any share above 1e-4, as before (a gate's control) */
+  bool with_own = E->own_env && rest > (test_flag("CW_TEST_ENV_OWN_TINY") ? 1e-4f : ENV_OWN_MIN);
   /* the tree's own environment as a cube of faces like the captures', its rotation drawn in */
   if (with_own) {
     if (E->own_size != size) {
@@ -1023,6 +1117,20 @@ static void env_exec(cw_pass_ctx *ctx, void *u) {
    * the next capture to finish (every env_every frames), so the filter runs at most once in that many frames */
   bool dirty = !E->built || fresh || n != E->last_n || E->last_own != (with_own ? E->own_env : NULL);
   for (int i = 0; i < n && !dirty; i++) dirty = (src[i].faces != E->last_src[i] && src[i].faces != E->own) || (fabsf(src[i].w - E->last_w[i]) > 1e-5f && !E->last_w[i] != !src[i].w);
+  /* one backdrop lighting the scene alone at the share of its kept filter, with no capture of it finished this frame:
+   * the scene takes its kept filter back (the same capture, or the one it was showing when it last lit the scene alone or
+   * was prewarmed: the next capture to finish, env_every frames on, refreshes it as any capture does) instead of filtering.
+   * CW_TEST_ENV_NO_KEEP=1: filtered again every time, as before (a gate's control) */
+  backdrop *solo = n == 1 && src[0].bd ? src[0].bd : NULL;
+  if (dirty && solo && solo->env_kept && !src[0].fresh && fabsf(src[0].w - solo->env_kept_w) <= ENV_KEPT_W && !test_flag("CW_TEST_ENV_NO_KEEP")) {
+    env_use(E, solo->env_kept);
+    E->built = true;
+    solo->env_kept_uses++;
+    E->last_n = n;
+    E->last_own = NULL;
+    E->last_src[0] = src[0].faces, E->last_w[0] = src[0].w;
+    dirty = false;
+  }
   if (dirty) {
     const cw_rt *faces = NULL;
     if (n == 1 && src[0].w == 1 && src[0].size == size) faces = src[0].faces; /* one source, whole: its faces as they are */
@@ -1053,19 +1161,15 @@ static void env_exec(cw_pass_ctx *ctx, void *u) {
         faces = E->blend;
       }
     }
-    if (faces && env_cube_fill(E, faces, size, p->bound_fbo)) {
-      bool wg = on_wgpu();
-      if (!E->pmrem) E->pmrem = t3_pmrem_generator_new(r);
-      if (wg) t3_renderer_set_external_encoder(r, 0);
-      else t3_renderer_reset_bindings(r);
-      t3_render_target *next = t3_pmrem_from_cubemap_into(E->pmrem, E->cube_tex, E->env);
-      if (!wg) t3_renderer_reset_bindings(r), glBindFramebuffer(GL_FRAMEBUFFER, p->bound_fbo);
-      if (next) {
-        if (E->env) t3_release(E->env); /* (into the same target: the reference the call returned stands for it) */
-        E->env = next;
-        E->built = true;
-        E->updates++;
-      }
+    /* a backdrop alone at its whole share: into its own target, kept for its return (above); a blend, or a backdrop
+     * alone at part of its share (fading in over the clear colour): into the tree's */
+    bool keep = solo && fabsf(src[0].w - src[0].full) <= ENV_KEPT_W && !test_flag("CW_TEST_ENV_NO_KEEP");
+    if (faces && env_cube_fill(E, faces, size, p->bound_fbo) && env_filter_into(E, r, p->bound_fbo, keep ? &solo->env_kept : &E->mix)) {
+      if (keep) solo->env_kept_w = src[0].w;
+      for (int i = 0; i < n; i++)
+        if (src[i].bd) src[i].bd->env_filters++;
+      E->built = true;
+      E->updates++;
     }
     E->last_n = n;
     E->last_own = with_own ? E->own_env : NULL;
@@ -1195,8 +1299,10 @@ static void bd_enter(cw_node n, void *data) {
 }
 static void bd_destroy(cw_node n, void *data) {
   (void)n;
-  cap_free(data);
-  world_free(data);
+  backdrop *d = data;
+  cap_free(d);
+  if (d->env_kept) t3_release(d->env_kept), d->env_kept = NULL;
+  world_free(d);
 }
 static void bd_prop_changed(cw_node n, void *data, const cw_prop *prop) {
   (void)n, (void)prop;
@@ -1217,6 +1323,14 @@ static void env_captures_get(cw_node n, void *data, cw_value *o) {
   *o = cw_val_int(((backdrop *)data)->env_captures);
 }
 
+static void env_filters_get(cw_node n, void *data, cw_value *o) {
+  (void)n;
+  *o = cw_val_int(((backdrop *)data)->env_filters);
+}
+static void env_kept_uses_get(cw_node n, void *data, cw_value *o) {
+  (void)n;
+  *o = cw_val_int(((backdrop *)data)->env_kept_uses);
+}
 static void env_whole_get(cw_node n, void *data, cw_value *o) {
   (void)n;
   *o = cw_val_int(((backdrop *)data)->env_whole);
@@ -1234,6 +1348,8 @@ static const cw_prop bd_props[] = {
   CW_PROP_FIELD_RANGE(backdrop, env_every, CW_T_INT, 1, 600, "Frames a capture's six faces are spread over (1: all six every frame); the lower effects presets spread them wider."),
   CW_PROP_ACCESSOR("env_captures", CW_T_INT, CW_PROP_READONLY, env_captures_get, NULL, "Environment captures finished so far."),
   CW_PROP_ACCESSOR("env_whole", CW_T_INT, CW_PROP_READONLY, env_whole_get, NULL, "Environment captures made whole (all six faces in one frame) while shown: the first one of a backdrop not prewarmed. Turning environment off and on again keeps the capture and makes none."),
+  CW_PROP_ACCESSOR("env_filters", CW_T_INT, CW_PROP_READONLY, env_filters_get, NULL, "Environment prefilters run while it lit the scene (a finished capture, or a change of what lights the scene)."),
+  CW_PROP_ACCESSOR("env_kept_uses", CW_T_INT, CW_PROP_READONLY, env_kept_uses_get, NULL, "Times the scene took its kept prefilter back instead of filtering: its world lighting the scene alone again (environment turned on at a cross-fade's end) with no capture finished since."),
   CW_PROP_END,
 };
 static cw_node_type bd_type = {
@@ -1261,8 +1377,9 @@ static void cmd_backdrop(int argc, const char **argv, cw_reply *r) {
     cw_reply_str(r, d->scene ? d->scene : "");
     cw_reply_printf(r, ",\"opacity\":%.4f,\"order\":%d,\"renders\":%d,\"prewarms\":%d,\"passes\":%d,\"cpu_ms\":%.3f", (double)d->opacity, (int)d->order,
                     (int)d->renders, (int)d->prewarms, d->ran_passes, (double)d->cpu_ms);
-    cw_reply_printf(r, ",\"environment\":%s,\"env_size\":%d,\"env_every\":%d,\"env_captures\":%d,\"env_prewarms\":%d,\"env_cpu_ms\":%.3f}", d->environment ? "true" : "false",
-                    d->cap_size, d->environment ? env_every_now(d) : 0, (int)d->env_captures, (int)d->env_prewarms, (double)d->env_cpu_ms);
+    cw_reply_printf(r, ",\"environment\":%s,\"env_size\":%d,\"env_every\":%d,\"env_captures\":%d,\"env_prewarms\":%d,\"env_filters\":%d,\"env_kept\":%s,\"env_kept_uses\":%d,\"env_cpu_ms\":%.3f}",
+                    d->environment ? "true" : "false", d->cap_size, d->environment ? env_every_now(d) : 0, (int)d->env_captures, (int)d->env_prewarms,
+                    (int)d->env_filters, d->env_kept ? "true" : "false", (int)d->env_kept_uses, (double)d->env_cpu_ms);
   }
   bd_env *E = t ? env_of(t, false) : NULL;
   cw_reply_printf(r, "],\"environment\":{\"set\":%s,\"updates\":%d,\"cube\":%d,\"cpu_ms\":%.3f}}", E && E->set ? "true" : "false",

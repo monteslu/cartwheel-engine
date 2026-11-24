@@ -10,6 +10,8 @@
 
 /* program states no table had (src/render/programs.c) */
 extern int32_t cw__missing_programs;
+/* pass programs compiled and WebGPU pass pipelines made so far (cw_pipeline_pass_builds) */
+extern int32_t cw__pass_builds;
 /* A warm-up slice is rendering (src/scene/runner.c): only part of the scene is shown, so what the gi pass would capture
  * (the probe grid's bake, reflection probes) would keep a partial scene's light for good: it waits for a full render. */
 extern bool cw__warm_partial;
@@ -175,7 +177,7 @@ struct cw_pipeline {
    * of the tree's own background left under them; bd_drawn: this run's "backdrop" pass drew them, so the scene pass
    * keeps the colour and draws no background */
   void (*bd_frame)(cw_tree *t, cw_pipeline *p, int w, int h, double alpha);
-  struct cw__backdrop_pic { unsigned tex; float opacity, scale; } bd[8];
+  struct cw__backdrop_pic { unsigned tex; float opacity, scale; bool warm; } bd[8]; /* (warm: a prewarm's picture, at opacity 0) */
   int bd_n;
   float bd_bg_weight;
   bool bd_drawn;

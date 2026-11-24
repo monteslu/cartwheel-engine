@@ -2202,6 +2202,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   if (!missing_field) {
     missing_field = true;
     cw_debug_i32("cw.three.missing", &missing_count);
+    cw_debug_i32("cw.pass_builds", &cw__pass_builds);
     cw_debug_bytes("cw.three.missing_states", missing_text, sizeof missing_text);
   }
   if (ctx.renderer) {

@@ -237,7 +237,9 @@ void cw_look_free(cw_look l);
  * stage, alone and in a blend (a blend across stages draws each look at its own). In split screen the first view's
  * targets are made then; the other views' history targets on their first frame. Everything its first frame on screen would build is built then: its
  * programs and WebGPU pipelines, its glyph atlas at the pipeline's cell size, its palette, the dither patterns and
- * the targets it draws through. That first frame then costs what any later frame does. A scene app (cw_scene_app)
+ * the targets it draws through, and for a dither with tone options the programs of both ways of working out the tone
+ * (in small targets, or in every screen pixel when a dither pixel is one screen pixel), so a later Resolution or
+ * size change builds none. That first frame then costs what any later frame does. A scene app (cw_scene_app)
  * prewarms every look made so far on its tree's pipeline by itself at the end of its warm-up, under the loading
  * screen (make looks in init or the warm-up), and at the end of each loading phase (cw_loading_begin); call this for
  * a look made later, or drawn by another pipeline (a SubViewport's), a frame or more before it is set. A look's

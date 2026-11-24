@@ -4,6 +4,47 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.76.0 (2026-11-24)
+
+### Fixed
+- The end of a cross-fade into a world that lights the scene no longer costs two environment filters in a row. A
+  game that turns a Backdrop's `environment` off while it fades in and on again the frame the other world is out
+  (its share then just under 1) left the scene's own environment a share near 0.0002: it was brought into the
+  blend on that frame and taken out the next, a filter each (the last fade frame and the first held frame spiked
+  together). The scene's own environment now joins the blend only at a share of 1/256 or more, under a step of an
+  8-bit reflection. Control `CW_TEST_ENV_OWN_TINY=1` (any share above 1e-4, as before).
+- A dither look with tone options draws with no program or pipeline built in play when it is shown at another size
+  than the warm-up's prewarm saw (a Resolution change, an Auto preset raised after the warm-up): the tone is worked
+  out in small targets, or in every screen pixel when a dither pixel is one screen pixel, and the prewarm now makes
+  both (a one-bit dither shown alone after a fade built its WebGPU pipeline that frame, about 4 to 5 ms of CPU on the
+  890M). Control `CW_TEST_LOOK_WARM_ONE_TONE=1`.
+- A Backdrop cut in at opacity 1 (no fade) builds nothing in play: the backdrop pass writes the first picture as it is
+  when it covers everything, a pipeline of its own on WebGPU that the prewarm (which blends its picture at opacity
+  0) never made; the prewarm now also draws it that way, before the frame's background covers it. Control
+  `CW_TEST_BACKDROP_WARM_BLEND_ONLY=1`.
+
+### Added
+- A Backdrop keeps the environment filter of its capture alone at its whole share (a target of its own, about 4 MB
+  at the filter's 256 cube; its prewarm makes the first): when its world lights the scene alone again with no
+  capture of it finished since (environment turned on at a cross-fade's end), the scene takes that back and filters
+  nothing that frame; the next capture to finish refreshes it. Read-only properties `env_filters` (filters run while
+  it lit the scene) and `env_kept_uses`; the `backdrop` debug request reports both and whether a filter is kept.
+  Control `CW_TEST_ENV_NO_KEEP=1`.
+- `cw_pipeline_pass_builds` (cartwheel/pipeline.h) and debug field `cw.pass_builds`: the engine's pass programs
+  compiled and, on WebGPU, their pipelines made so far, so a test can hold what play builds after the warm-up to 0.
+- Sample `look_env_end`: the note highway over the fire (half blocks on a palette, SCENE) fading into the stage (a
+  one-bit dither with tone options, DISPLAY), whose environment (64 texels, a capture over 12 frames, over the
+  scene's own sky) is off during the fade and on the frame the fire is out; twice. `LE_RES=50` sets Resolution to 50%
+  after the warm-up.
+- Gates `look-env-end` (no environment filter on the return frame or the next, both rounds; before: 2 each),
+  `look-env-end-keep` (the kept filter taken back in both rounds; control: 1 filter each) and `look-env-end-tone`
+  (no pass program or pipeline made after the warm-up at 50% Resolution; control: 1, and a native WebGPU control
+  for the backdrop pass's unblended pipeline), on every host, GL and WebGPU,
+  at 50% Resolution so CI's software renderer draws them in minutes; and `look-env-end-timing` (romdev, the test
+  GPU): the return frame and the next at most 1 ms of CPU and of GPU over the frames round them. On the 890M: GL CPU
+  +0.1 to +0.2 ms and GPU below them, WebGPU CPU +0.5 ms at most and GPU below them; the engine before (the three
+  controls together) GL +1.7 ms CPU and +2.6 to +3.6 GPU, WebGPU +7.2 to +11.3 CPU and +2.5 GPU.
+
 ## v0.75.0 (2026-11-24)
 
 ### Added

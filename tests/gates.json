@@ -3681,6 +3681,45 @@
     "note": "a Backdrop whose environment is turned off and on again (the stage at 1, its environment off at frame 100 for 30 frames, again at 160 for 30) keeps its capture while off: turning it on draws only its share of the next capture, as any frame does, never six faces at once (bd.stage_whole stays at the one whole capture of its first frame). Measured on the 890M through romdev, the frame it turns on: GL 4.7 ms CPU, 11.5 GPU (the old way 7.6 and 11.5; a capture frame around it 1.2 and 10.7 to 11.6), WebGPU 3.8 to 5.4 CPU, 8.0 to 10.1 GPU (the old way 7.8 and 9.9 to 11.9; a capture frame 6.4 and 9.3). Control: CW_TEST_BACKDROP_ENV_FREE=1 frees the capture while off, as before: a whole capture each time it comes back (bd.stage_whole 3)"
   },
   {
+    "name": "look-env-end",
+    "app": "look_env_end",
+    "frames": 440,
+    "controlFrames": 440,
+    "env": {"LE_RES":"50"},
+    "controlEnv": {"LE_RES":"50","CW_TEST_ENV_OWN_TINY":"1"},
+    "maxGt16": 0.004,
+    "webgpu": { "hosts": ["native", "romdev"], "vsGl": 0.03 },
+    "fields": ["le.tick","le.round","le.phase","le.env","le.ret_frame0","le.ret_frame1","le.ret_filters0","le.ret_filters1","le.filters","le.kept_uses","le.late_builds"],
+    "expect": {"le.tick":440,"le.ret_frame0":188,"le.ret_frame1":388,"le.ret_filters0":0,"le.ret_filters1":0,"le.kept_uses":2,"le.late_builds":0},
+    "note": "the end of a style change into a world that lights the scene (samples/look_env_end at a Resolution of 50%, LE_RES=50, which CI draws on a software renderer: the fire with half blocks on a palette at SCENE fading into the stage with a one-bit dither at DISPLAY, the stage's environment off while the fire shows and on the frame the fire's weight is under 0.0005, the stage then at 0.9998; twice): the frame the environment comes back and the next run no environment filter (le.ret_filters 0 both rounds; before 2 each: the scene's own sky brought into the blend at a share of 0.0002 and out again a frame later, a filter each). Measured on the 890M through romdev (tests/look-env-end-timing.mjs): GL CPU +0.1 to +0.2 ms and GPU under the frames round it (the old way +1.7 and +2.6 to +3.6), WebGPU CPU +0.5 at most and GPU under them (+7.2 to +11.3 and +2.5). Control: CW_TEST_ENV_OWN_TINY=1 (the own environment at any share above 1e-4, as before) runs a filter on each return"
+  },
+  {
+    "name": "look-env-end-keep",
+    "app": "look_env_end",
+    "frames": 440,
+    "controlFrames": 440,
+    "env": {"LE_RES":"50"},
+    "controlEnv": {"LE_RES":"50","CW_TEST_ENV_NO_KEEP":"1"},
+    "maxGt16": 0.004,
+    "webgpu": { "hosts": ["native", "romdev"], "vsGl": 0.03 },
+    "fields": ["le.tick","le.round","le.phase","le.env","le.ret_frame0","le.ret_frame1","le.ret_filters0","le.ret_filters1","le.filters","le.kept_uses","le.late_builds"],
+    "expect": {"le.tick":440,"le.ret_frame0":188,"le.ret_frame1":388,"le.ret_filters0":0,"le.ret_filters1":0,"le.kept_uses":2,"le.late_builds":0},
+    "note": "a Backdrop's kept filter (samples/look_env_end, LE_RES=50): its capture alone at its whole share is prefiltered into a target of its own (at the warm-up's prewarm, and each time a capture of it finishes while it lights the scene alone), and its world lighting the scene alone again with no capture finished since takes that back instead of filtering (le.kept_uses 2, le.ret_filters 0 in both rounds: the first from the prewarm's, the second from its last capture of the first round). Control: CW_TEST_ENV_NO_KEEP=1 (nothing kept, as before) filters on each return (le.ret_filters 1)"
+  },
+  {
+    "name": "look-env-end-tone",
+    "app": "look_env_end",
+    "frames": 440,
+    "controlFrames": 440,
+    "env": {"LE_RES":"50"},
+    "controlEnv": {"LE_RES":"50","CW_TEST_LOOK_WARM_ONE_TONE":"1"},
+    "maxGt16": 0.004,
+    "webgpu": { "hosts": ["native", "romdev"], "vsGl": 0.03, "controls": [{ "env": { "LE_RES": "50", "CW_TEST_BACKDROP_WARM_BLEND_ONLY": "1" }, "fields": ["le.late_builds"] }] },
+    "fields": ["le.tick","le.round","le.phase","le.env","le.ret_frame0","le.ret_frame1","le.ret_filters0","le.ret_filters1","le.filters","le.kept_uses","le.late_builds"],
+    "expect": {"le.tick":440,"le.ret_frame0":188,"le.ret_frame1":388,"le.ret_filters0":0,"le.ret_filters1":0,"le.kept_uses":2,"le.late_builds":0},
+    "note": "a look's prewarm makes every program its first shown frame can draw with at another size (samples/look_env_end with LE_RES=50: the Resolution setting at 50% after the warm-up, so the one-bit dither with tone options is drawn at a dither pixel of one screen pixel, the tone worked out in every pixel, where the warm-up's prewarm drew it at two, the tone in small targets): no pass program or pipeline is made after the warm-up (le.late_builds 0, cw_pipeline_pass_builds). Control: CW_TEST_LOOK_WARM_ONE_TONE=1 (the prewarm draws the tone's path of its own frame only, as before) makes one when the dither is first shown alone (le.late_builds 1). A Backdrop's prewarm draws its picture both ways the pass can (blended at opacity 0, and written as it is before the background covers it, as a world cut in at opacity 1 draws it): native WebGPU control CW_TEST_BACKDROP_WARM_BLEND_ONLY=1 (blended only, as before) makes the backdrop pass's unblended pipeline when the fire is cut in (le.late_builds 1)"
+  },
+  {
     "name": "backdrop-env-split",
     "app": "backdrop",
     "frames": 150,
@@ -6866,6 +6905,11 @@
     "name": "look-fade-end",
     "script": "tests/look-fade-end.mjs",
     "note": "the start and the end of a blend between looks cost no frame: samples/style_switch's cart through romdev on GL and WebGPU, every frame timed (a frame's cost its least over three runs); every look blend (plain to ASCII, ASCII to half blocks, half blocks to a one-bit dither at DISPLAY across the stages, the dither to no look; both rounds), its first two frames and its end frame and the next at most 3 ms of CPU and 1.5 ms of GPU over the larger median of the 5 frames before and the 5 after. Control: CW_TEST_LOOK_END_REBUILD=1 with CW_TEST_NO_PREWARM=1 (the stage's programs made again on the frame a blend ends, and no prewarm) must put a start or an end over the bound on each backend"
+  },
+  {
+    "name": "look-env-end-timing",
+    "script": "tests/look-env-end-timing.mjs",
+    "note": "the end of a style change into a world that lights the scene costs no frame: samples/look_env_end's cart (LE_RES=50) through romdev on GL and WebGPU, every frame timed (a frame's cost its least over three runs); each round's environment-return frame (the fire out, the stage's environment on, the looks at 0.9998) and the frame after it (the dither alone) at most 1 ms of CPU and 1 ms of GPU over the larger median of the 5 frames before and the 5 after. On the 890M (two sessions): GL CPU +0.11 to +0.21 ms and GPU 0.8 under; WebGPU CPU -0.25 to +0.52 and GPU 0.95 under. Control: CW_TEST_ENV_OWN_TINY=1 CW_TEST_ENV_NO_KEEP=1 CW_TEST_LOOK_WARM_ONE_TONE=1 (the engine before) must put a return over the bound on each backend (GL CPU +1.7 to +1.8, GPU +2.6 to +3.6; WebGPU CPU +7.2 to +11.3, GPU +2.5)"
   },
   {
     "name": "backdrop-look-prewarm",

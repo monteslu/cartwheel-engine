@@ -753,6 +753,12 @@ typedef struct cw_pass_stat {
 int cw_pipeline_pass_stats(cw_pipeline *p, const cw_pass_stat **out);
 /* Total GPU ms of the passes that ran in the latest timed frame. */
 float cw_pipeline_gpu_ms(cw_pipeline *p);
+/* Programs of the engine's own passes (post, looks, backdrops, ...) compiled so far, and on WebGPU their render
+ * pipelines (one for each target format, blend and sample count a program draws with) made so far, every tree. Each
+ * costs milliseconds of CPU the frame it is made; a game's warm-up makes the ones its styles use (cw_look_prewarm,
+ * cw_backdrop_prewarm, cw_post_prewarm), so a test reads it after the warm-up and holds what play adds to 0. Debug
+ * field "cw.pass_builds". */
+int cw_pipeline_pass_builds(void);
 
 #ifdef __cplusplus
 }

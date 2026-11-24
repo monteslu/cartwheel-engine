@@ -75,7 +75,15 @@
  * engine's environment filter (three.js r187's PMREMGenerator) into the
  * scene's environment when a capture finishes (a share that moves, in a
  * cross-fade, is taken up then: the reflections follow a fade every
- * env_every frames).
+ * env_every frames). The scene's own environment joins the blend only at a
+ * share of 1/256 or more (the last frames of a fade into a world that lights
+ * the scene leave it a share no reflection shows, and bringing it in and out
+ * cost a filter each). A backdrop lighting the scene alone at its whole share
+ * keeps the filter of its capture (its own filtered target, about 4 MB at the
+ * filter's 256 cube; the prewarm makes the first): when its world lights the
+ * scene alone again with no capture of it finished since (environment turned
+ * off for a cross-fade into it and on again at its end), the scene takes that
+ * back instead of filtering, and the next capture to finish refreshes it.
  * While no backdrop lights the scene its own environment is back as it was.
  * The capture draws the world's surfaces, sky, lights and shadows; what its
  * pipeline adds as post passes (volumetric fog's beams, decals and particles
@@ -137,6 +145,9 @@ extern "C" {
  *   env_whole (int, read-only)  captures made whole (six faces in one frame)
  *                               while shown; environment turned off keeps
  *                               the capture, so turning it on makes none
+ *   env_filters (int, read-only) environment filters run while it lit the scene
+ *   env_kept_uses (int, read-only) times the scene took its kept filter back
+ *                               instead of filtering (REFLECTIONS above)
  * At most CW_BACKDROP_MAX backdrops with an opacity above 0 are drawn in a
  * frame (the first by order; the rest are skipped, logged once). */
 #define CW_BACKDROP_MAX 8
@@ -159,7 +170,8 @@ int cw_backdrop_renders(cw_node backdrop);
  * the host clock: never feed it into game state). */
 float cw_backdrop_last_cpu_ms(cw_node backdrop);
 /* Prewarm: draw the backdrop's world once at the next frame of its tree, whatever its opacity and with its hidden root
- * shown for that render (nothing of it reaches the screen: its picture is blended at opacity 0), so everything its
+ * shown for that render (nothing of it reaches the screen: its picture is blended at opacity 0, and drawn once as a world cut in at
+ * opacity 1 draws it before the frame's background covers it), so everything its
  * first shown frame would build is built then: its world's programs and pipelines (shadows, sky, fog, particles,
  * decals), its picture and the targets of its passes, its particle buffers and fog grids, and the tree's backdrop
  * pass. Its first frame shown then costs what any later frame does. A scene app (cw_scene_app) prewarms every
@@ -167,7 +179,8 @@ float cw_backdrop_last_cpu_ms(cw_node backdrop);
  * phase, cw_loading_begin); call this for a backdrop added, or a world built, after that (behind a loading screen of
  * the game's own, or a frame before it fades in). What it built is kept while the backdrop is at opacity 0, which
  * costs nothing per frame. With `environment` on, the prewarm also makes a whole capture of its world (the six
- * faces), blends and filters it as the tree's environment would be (into targets nothing reads) and draws the tree's
+ * faces), blends and filters it as the tree's environment would be (into targets nothing reads), filters it alone into
+ * the backdrop's kept filter (REFLECTIONS above) and draws the tree's
  * scene once lit by it, every object shown, into small targets of its own: its first shown frame then draws only its
  * share of the next capture, as any later frame does, and lights the scene from the prewarm's capture until that one
  * is done (env_every frames). The scene's environment is not touched. false for a node that is not a Backdrop. */
