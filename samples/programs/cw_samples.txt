@@ -295,3 +295,11 @@ physical+senv+l1001+xplain
 physical+senv+l1001
 standard+skin+ds+l1001+xplain
 standard+skin+ds+l1001
+physical+skin+sheen+l1001+xplain
+physical+skin+cc+l1001+xplain
+physical+skin+ds+sheen+l1001+xplain
+physical+skin+sheen+l1001
+physical+skin+cc+l1001
+physical+skin+ds+sheen+l1001
+depth+skin+xskinshade
+physical+skin+sheen+l1001+xskinshade

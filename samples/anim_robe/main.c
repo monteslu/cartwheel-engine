@@ -44,6 +44,7 @@
 #include "cartwheel/ik.h"
 #include "cartwheel/physics3d.h"
 #include "cartwheel/profile.h"
+#include "cartwheel/resource.h"
 #include "cartwheel/scene_file.h"
 
 #define MAXC 16
@@ -56,7 +57,7 @@
 
 typedef struct person {
   cw_node mover, model, anim, springs;
-  t3_gltf *gltf;
+  t3_object *inst;
   int kind; /* 0 robe, 1 coat */
   float x, z, yaw;
   bool running;
@@ -76,11 +77,15 @@ static person P[MAXC];
 static garment GA[NG];
 static int crowd = 2;
 static bool cloth_mode;
+static bool figures; /* ROBE_FIGURES: the copied figures (tidecaller.glb at 1.5, lancer.glb at 1.08) */
+static const float FIG_SCALE[2] = { 1.5f, 1.08f };
 static cw_world3d cloth_world;
 static cw_node level, camera;
 
 /* debug state */
 static int32_t tick_i, settle[NG * 3], legs_ok, settle_ok, rest_ok, flip_ok;
+static int32_t settle_osc[NG * 3];
+static float lift_run[NG] = { -9, -9 }, chain_len[NG][MAXCH];
 static float pen[NG], pen_run[NG], pen_stand[NG], pen_turn[NG], swing_run[NG], jit_max[NG * 3], jit_rms[NG * 3];
 static float us, us_min = 1e9f, cloth_us;
 static uint32_t hash_win[16];
@@ -123,18 +128,22 @@ static void set_shadows(t3_object *o) {
   for (int i = 0; i < o->child_count; i++) set_shadows(o->children[i]);
 }
 
-static void load_person(int i, const void *glb, size_t len) {
+static void load_person(int i, cw_res res) {
   person *p = &P[i];
   char path[32];
   snprintf(path, sizeof path, "%s/Model", cw_node_name(p->mover));
-  p->gltf = t3_gltf_parse(glb, len, NULL, NULL);
-  cw_node3d_set_object(p->model, p->gltf->scene);
-  set_shadows(p->gltf->scene);
-  for (int k = 0; k < p->gltf->animation_count; k++) {
-    const char *name = p->gltf->animations[k]->name;
-    cw_anim a = cw_anim_from_t3_clip(p->gltf->animations[k], path);
+  const t3_gltf *gl = cw_res_gltf(res)->gltf;
+  p->inst = cw_gltf_instantiate(res);
+  cw_node3d_set_object(p->model, p->inst);
+  set_shadows(p->inst);
+  /* the generated people's Idle and Run; the copied figures' stance and run with a weapon */
+  for (int k = 0; k < gl->animation_count; k++) {
+    const char *name = gl->animations[k]->name;
+    const char *as = !strcmp(name, "Run") || !strcmp(name, "run_w") ? "run" : !strcmp(name, "Idle") || !strcmp(name, "idle_w") ? "idle" : NULL;
+    if (!as) continue;
+    cw_anim a = cw_anim_from_t3_clip(gl->animations[k], path);
     cw_anim_set_loop(a, CW_LOOP_LINEAR);
-    cw_anim_player_add(p->anim, !strcmp(name, "Run") ? "run" : "idle", a);
+    cw_anim_player_add(p->anim, as, a);
     cw_anim_release(a);
   }
   p->x = -8;
@@ -142,6 +151,32 @@ static void load_person(int i, const void *glb, size_t len) {
   p->yaw = 1.5707963f;
   cw_anim_player_play(p->anim, "idle", 0);
   if (i >= 2) cw_anim_player_seek(p->anim, 0.29f * (float)i, false); /* the crowd out of step */
+}
+
+/* the copied figures' leg shapes, as their game sets them: the sample's sizes times the figure's scale, a thigh from a
+ * little below the hip to the knee, a shin to the ankle, a foot to the toes, measured on the figure at rest */
+static void figure_shapes(person *p) {
+  float g = FIG_SCALE[p->kind];
+  cw_pose pz = { 0 };
+  if (!cw_pose_bind(&pz, p->inst)) return;
+  cw_pose_update_model(&pz);
+  for (int i = 0; i < cw_node_child_count(p->springs); i++) {
+    cw_node c = cw_node_child(p->springs, i);
+    if (!cw_node_is(c, "SpringBoneCollision3D")) continue;
+    const char *n = cw_node_name(c), side = n[strlen(n) - 1];
+    char from[16], to[16];
+    t3_vec3 off;
+    float r;
+    if (!strncmp(n, "Thigh", 5)) snprintf(from, sizeof from, "UpperLeg%c", side), snprintf(to, sizeof to, "LowerLeg%c", side), off = v3(0, -0.06f, 0), r = 0.085f;
+    else if (!strncmp(n, "Shin", 4)) snprintf(from, sizeof from, "LowerLeg%c", side), snprintf(to, sizeof to, "Foot%c", side), off = v3(0, -0.02f, 0), r = 0.07f;
+    else snprintf(from, sizeof from, "Foot%c", side), snprintf(to, sizeof to, "Toes%c", side), off = v3(0, -0.01f, -0.02f), r = 0.05f;
+    t3_vec3 a = cw_pose_model_position(&pz, cw_pose_find(&pz, from)), b = cw_pose_model_position(&pz, cw_pose_find(&pz, to));
+    cw_node_set(c, "bone", cw_val_string(from));
+    cw_node_set(c, "radius", cw_val_float(r * g));
+    cw_node_set(c, "offset", cw_val_vec3(off.x * g, off.y * g, off.z * g));
+    cw_node_set(c, "tail", cw_val_vec3(b.x - a.x, b.y - a.y, b.z - a.z));
+  }
+  cw_pose_free(&pz);
 }
 
 static void make_person(int i) {
@@ -194,6 +229,8 @@ static void init(void *u) {
   cw_debug_f32("rb.us", &us);         /* host clock: never compared */
   cw_debug_f32("rb.us_min", &us_min); /* the quietest tick */
   cw_debug_f32("rb.cloth_us", &cloth_us);
+  cw_debug_field("rb.settle_osc", settle_osc, CW_DBG_I32, NG * 3);
+  cw_debug_f32_array("rb.lift_run", lift_run, NG);
   cw_debug_i32("rb.legs_ok", &legs_ok);
   cw_debug_i32("rb.settle_ok", &settle_ok);
   cw_debug_i32("rb.rest_ok", &rest_ok);
@@ -210,6 +247,8 @@ static void leg_capsule(int person_i, int leg, t3_vec3 *a, t3_vec3 *b, float *r)
                     *toe[2] = { "ToesL", "ToesR" };
   cw_node m = P[person_i].model;
   int side = leg & 1;
+  /* the copied figures: each leg's own mesh, the median distance of its skin from the bone (thigh, shin, foot) */
+  static const float FIG_LEG[2][3] = { { 0.074f, 0.078f, 0.081f }, { 0.088f, 0.074f, 0.056f } };
   t3_vec3 hip = cw_skeleton_bone_world(m, up[side]), knee = cw_skeleton_bone_world(m, lo[side]), ankle = cw_skeleton_bone_world(m, ft[side]);
   if (leg < 2) {
     *a = vlerp(hip, knee, 0.15f);
@@ -224,6 +263,7 @@ static void leg_capsule(int person_i, int leg, t3_vec3 *a, t3_vec3 *b, float *r)
     *b = cw_skeleton_bone_world(m, toe[side]);
     *r = 0.045f;
   }
+  if (figures) *r = FIG_LEG[P[person_i].kind][leg / 2];
 }
 
 static cw_xform3 capsule_xform(t3_vec3 a, t3_vec3 b) {
@@ -334,8 +374,10 @@ static float penetration(int g) {
     for (int r = 0; r < G->rows; r++) X[k][r] = row_point(g, k, r);
   float worst = -1;
   int ncol = G->closed ? G->nch : G->nch - 1;
+  /* (the copied robe's cloth starts below its chains' first joint: the band above it is no cloth) */
+  int r0 = figures && g == 0 ? 1 : 0;
   for (int k = 0; k < ncol; k++)
-    for (int r = 0; r + 1 < G->rows; r++)
+    for (int r = r0; r + 1 < G->rows; r++)
       for (int iu = 0; iu <= 4; iu++)
         for (int iv = 0; iv <= 4; iv++) {
           float u = (float)iu / 4, v = (float)iv / 4;
@@ -379,6 +421,16 @@ static void stand_stats(int g, int w, int s0, int s1) {
     for (int k = 0; k < G->nch; k++)
       if (vlen(vsub(tips[g][k][t], hang[k])) > 0.01f) last_far = t;
   settle[g * 3 + w] = last_far >= s1 - 30 ? 999 : last_far + 1 - s0;
+  /* the swing alone: each tip from its own 31-tick running mean (a figure whose stance sways drags the cloth it
+   * touches along with it; that is not a swing) */
+  last_far = s0 - 1;
+  for (int t = s0; t <= s1 - 15; t++)
+    for (int k = 0; k < G->nch; k++) {
+      t3_vec3 m = v3(0, 0, 0);
+      for (int j = -15; j <= 15; j++) m = vadd(m, tips[g][k][t + j < 0 ? 0 : t + j]);
+      if (vlen(vsub(tips[g][k][t], vmul(m, 1.0f / 31))) > (figures ? 0.02f : 0.01f)) last_far = t;
+    }
+  settle_osc[g * 3 + w] = last_far >= s1 - 30 ? 999 : last_far + 1 - s0;
   float mx = 0;
   double ss = 0;
   int n = 0;
@@ -404,6 +456,11 @@ static void probe(int t) {
     if (((t >= 404 && t < 560) || (t >= 590 && t < 720) || t >= 824) && d > pen_stand[g]) pen_stand[g] = d;
     if (t >= 560 && t < 620 && d > pen_turn[g]) pen_turn[g] = d;
     for (int k = 0; k < GA[g].nch; k++) {
+      /* how high the tip rose against its root, a share of the chain's length (hanging straight down: -1) */
+      t3_vec3 rt = row_point(g, k, 0), tp = row_point(g, k, GA[g].rows - 1);
+      if (t == 4) chain_len[g][k] = vlen(vsub(tp, rt));
+      float lift = chain_len[g][k] > 0 ? (tp.y - rt.y) / chain_len[g][k] : -1;
+      if (((t >= 90 && t <= 403) || (t >= 720 && t <= 823)) && lift > lift_run[g]) lift_run[g] = lift;
       t3_vec3 o = tip_offset(g, k);
       if (t < TICKS) tips[g][k][t] = o;
       float s = vlen(o);
@@ -416,13 +473,19 @@ static void probe(int t) {
   /* the bounds the gates hold (tests/robe-skirt.mjs): legs at most 1 cm through, settled within 60 ticks of each stop
    * with at most 1 mm of rest jitter, tips at most 0.6 m off their animated places in the runs */
   if (t == 959) {
+    /* the copied figures (2.6 m and 1.9 m tall, a lunging stance that sways, a seam within reach of the thighs):
+     * legs at most 5 cm through, the swing gone within 90 ticks (each tip within 2 cm of its own running mean: the
+     * swaying stance drags what it touches), 1.5 mm of rest jitter, no tip above its root */
+    const float pen_max = figures ? 0.05f : 0.01f, jit_bar = figures ? 1.5f : 1;
+    const int settle_bar = figures ? 90 : 60;
     legs_ok = settle_ok = rest_ok = flip_ok = 1;
     for (int g = 0; g < NG; g++) {
-      if (!(pen_run[g] <= 0.01f && pen_stand[g] <= 0.01f && pen_turn[g] <= 0.01f)) legs_ok = 0;
-      if (!(swing_run[g] <= 0.6f)) flip_ok = 0;
+      if (!(pen_run[g] <= pen_max && pen_stand[g] <= pen_max && pen_turn[g] <= pen_max)) legs_ok = 0;
+      if (!(lift_run[g] <= 0) || (!figures && !(swing_run[g] <= 0.6f))) flip_ok = 0;
       for (int w = 0; w < 3; w++) {
-        if (settle[g * 3 + w] < 0 || settle[g * 3 + w] > 60) settle_ok = 0;
-        if (!(jit_max[g * 3 + w] <= 1)) rest_ok = 0;
+        int st = figures ? settle_osc[g * 3 + w] : settle[g * 3 + w];
+        if (st < 0 || st > settle_bar) settle_ok = 0;
+        if (!(jit_max[g * 3 + w] <= jit_bar)) rest_ok = 0;
       }
     }
   }
@@ -434,18 +497,24 @@ static void start(void) {
   if (crowd < 2) crowd = 2;
   if (crowd > MAXC) crowd = MAXC;
   for (int i = 2; i < crowd; i++) make_person(i);
-  static const char *files[2] = { "robed.glb", "coated.glb" };
+  const char *fe = cw_test_env("ROBE_FIGURES");
+  figures = fe && atoi(fe);
+  static const char *files[2][2] = { { "res://robed.glb", "res://coated.glb" }, { "res://models/tidecaller.glb", "res://models/lancer.glb" } };
   for (int kind = 0; kind < 2; kind++) {
-    size_t len;
-    void *glb = cw_asset_load(files[kind], &len);
-    if (!glb) { cw_error("anim_robe: %s missing from the assets", files[kind]); return; }
+    cw_res res = cw_res_load(files[figures][kind], 0);
+    if (!cw_res_gltf(res)) { cw_error("anim_robe: %s did not load", files[figures][kind]); return; }
     for (int i = 0; i < crowd; i++)
-      if (P[i].kind == kind) load_person(i, glb, len);
-    free(glb);
+      if (P[i].kind == kind) load_person(i, res);
   }
+  if (figures)
+    for (int i = 0; i < crowd; i++) figure_shapes(&P[i]);
   cloth_mode = cw_test_env("ROBE_CLOTH") != NULL;
   const char *sk = cw_test_env("ROBE_SKIRT");
   for (int i = 0; i < crowd; i++) {
+    /* the copied figures' wide stance and long stride spread their garments: the links may double their length */
+    if (figures) cw_node_set(P[i].springs, "skirt_stretch", cw_val_float(1));
+    const char *st = cw_test_env("ROBE_STRETCH");
+    if (st) cw_node_set(P[i].springs, "skirt_stretch", cw_val_float(atof(st)));
     if (sk) cw_node_set(P[i].springs, "skirt", cw_val_enum(sk));
     if (cw_test_env("ROBE_NO_COLLIDE")) cw_node_set(P[i].springs, "collisions", cw_val_bool(false));
     if (cloth_mode) { /* the spring bones only report the animated joints: held on the pose, no collisions */
@@ -484,7 +553,7 @@ static void fixed(void *u, double dt) {
   int t = (int)cw_tree_tick(cw_scene_app_tree());
   tick_i = t;
   if (t == 2) start();
-  if (!P[0].gltf) return;
+  if (!P[0].inst) return;
   /* this tick's modifiers already ran (after the nodes, before this callback) */
   if (cloth_mode) {
     if (t == 3)
@@ -518,9 +587,9 @@ static void shutdown(void *u) {
     if (GA[g].cloth.id) cw_cloth_destroy(GA[g].cloth);
   if (cloth_world.id) cw_world3d_destroy(cloth_world);
   for (int i = 0; i < crowd; i++)
-    if (P[i].gltf) {
-      t3_release(P[i].gltf);
-      P[i].gltf = NULL;
+    if (P[i].inst) {
+      t3_release(P[i].inst);
+      P[i].inst = NULL;
     }
 }
 

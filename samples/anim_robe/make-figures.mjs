@@ -1,4 +1,4 @@
-// Writes samples/anim_robe/assets/robed.glb and coated.glb: the robe sample's two figures, generated (no source art).
+// Writes samples/anim_robe/project/robed.glb and coated.glb: the robe sample's two figures, generated (no source art).
 // Two 1.74 m people (plain bone names, bones unrotated at rest) whose garments hang on bone chains for SpringBone3D
 // in skirt mode (cartwheel/ik.h):
 //   robed   a long robe from the waist to the ankles: eight chains of four bones round the waist, front first and
@@ -14,7 +14,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const OUT = process.argv[2] || join(dirname(fileURLToPath(import.meta.url)), 'assets');
+const OUT = process.argv[2] || join(dirname(fileURLToPath(import.meta.url)), 'project');
 
 // ── small math ───────────────────────────────────────────────────────────
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];

@@ -143,12 +143,12 @@ cw_add_app(anim_ik SOURCES anim_ik/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/ani
 # hair and coat tails that swing (SpringBone3D, cartwheel/ik.h): a generated person (anim_spring/make-character.mjs)
 cw_add_app(anim_spring SOURCES anim_spring/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/anim_spring/assets)
 # robes and long coats on SpringBone3D skirt mode: two generated people running, turning, stopping (anim_robe/make-figures.mjs)
-cw_add_app(anim_robe SOURCES anim_robe/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/anim_robe/assets)
+cw_add_app(anim_robe SOURCES anim_robe/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/anim_robe/project/roots.txt)
 # feet placed on stones at a run: a generated person (anim_robe's coat figure, staged) running, turning, stopping
 set(CW_FEET_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/anim_feet_assets)
 file(MAKE_DIRECTORY ${CW_FEET_ASSETS})
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/anim_feet/assets/main.cwscene ${CW_FEET_ASSETS}/main.cwscene COPYONLY)
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/anim_robe/assets/coated.glb ${CW_FEET_ASSETS}/coated.glb COPYONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/anim_robe/project/coated.glb ${CW_FEET_ASSETS}/coated.glb COPYONLY)
 cw_add_app(anim_feet SOURCES anim_feet/main.c ASSETS ${CW_FEET_ASSETS})
 # one walk and one punch on three skeletons (cartwheel/retarget.h): the robot's clips baked onto generated
 # people by cwpack and retargeted at load from C; an AnimationTree from scene text layers the punch over the walk

@@ -1,0 +1,9 @@
+# the stance, the walk and the run with a weapon, retargeted onto this figure's own skeleton when it is packed (the
+# figure's game does the same with more clips)
+retarget.source = anim/ual.glb
+retarget.fps = 30
+retarget.plant = walk_w run_w
+retarget.map.spine = Spine
+retarget.map.chest = Spine2
+retarget.map.upper_chest = Chest
+retarget.clips = idle_w walk_w run_w

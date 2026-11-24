@@ -721,6 +721,8 @@ typedef struct spring_node {
   float skirt_stretch;          /* how far a link may stretch past its animated length (share: 0.05) */
   float skirt_squeeze;          /* how far a link may shorten (share: 0.5) */
   int32_t skirt_iterations;     /* constraint passes a tick (4) */
+  float skirt_hang;             /* how far the garment hangs plumb instead of turning with its bone (1) */
+  t3_vec3 down;                 /* this tick: gravity's direction in model space (the first chain's) */
   int32_t resets;               /* read-only */
   /* this tick */
   int nch, nsh;
@@ -856,6 +858,7 @@ static void spring_prepare(cw_node n, spring_node *d, skel *s, uint64_t tick, do
     t3_vec3 gd = vnorm(c->gravity);
     c->g = vmul(dir_to_model(s, gd), c->gravity_strength * fdt * fdt / s->world_scale);
     c->r = c->radius / s->world_scale;
+    if (k == 0) d->down = vlen(c->gravity) > 0 ? dir_to_model(s, vnorm(c->gravity)) : dir_to_model(s, v3(0, -1, 0));
     if (c->max_angle > 0 && c->max_angle < 3.14159265f) cw_sincos(c->max_angle, &c->sin_max, &c->cos_max);
     else c->cos_max = -2, c->sin_max = 0;
   }
@@ -950,6 +953,11 @@ static t3_vec3 spring_keep_out(const spring_node *d, t3_vec3 head, t3_vec3 u, fl
  * pushed keeps none of its velocity away from the shape (apart from the animation's): a thigh swinging into a panel
  * moves it without throwing it. The bones then turn onto the tails. */
 
+/* CW_TEST_SKIRT_074 (gate robe-figures' control): skirt mode as 0.74.0 solved it (each push along the shape's own
+ * normal, out through its outer side; the axis through the roots' mean; no plumb hang, no line down each panel, no
+ * seam or free-edge rule), set by the phase */
+static bool skirt_074;
+
 /* closest points between segments p0..p1 and q0..q1: parameters s on p, t on q (Ericson 5.1.9) */
 static void seg_closest(t3_vec3 p0, t3_vec3 p1, t3_vec3 q0, t3_vec3 q1, float *so, float *to) {
   t3_vec3 d1 = vsub(p1, p0), d2 = vsub(q1, q0), r = vsub(p0, q0);
@@ -1003,7 +1011,30 @@ static t3_vec3 skirt_at(const skirt_ref *r, int n) {
 
 /* the segment from the point of e0 (n0 joints) to the point of e1 (n1 joints), radius r, kept out of every shape;
  * a push moves each joint by its share of the contact point (position based, a fixed joint takes none) */
-static void skirt_collide(const spring_node *d, const skirt_axis *ax, skirt_ref *e0, int n0, skirt_ref *e1, int n1, float r) {
+/* where the ray o + t u leaves the capsule a..b of radius R last (its far exit), or -1 when it misses */
+static float ray_capsule_exit(t3_vec3 o, t3_vec3 u, t3_vec3 a, t3_vec3 b, float R) {
+  float best = -1;
+  t3_vec3 d = vsub(b, a), m = vsub(o, a);
+  float dd = vdot(d, d), nd = vdot(u, d), md = vdot(m, d), mn = vdot(m, u), mm = vdot(m, m);
+  float A = dd - nd * nd;
+  if (dd > 1e-12f && A > 1e-9f) { /* the side: the infinite cylinder, within the segment */
+    float B = dd * mn - nd * md, C = dd * (mm - R * R) - md * md, disc = B * B - A * C;
+    if (disc >= 0) {
+      float t = (-B + sqrtf(disc)) / A, sp = md + t * nd;
+      if (sp >= 0 && sp <= dd) best = t;
+    }
+  }
+  for (int e = 0; e < 2; e++) { /* the end caps */
+    t3_vec3 q = e ? vsub(o, b) : m;
+    float qb = vdot(q, u), qc = vdot(q, q) - R * R, disc = qb * qb - qc;
+    if (disc < 0) continue;
+    float t = -qb + sqrtf(disc);
+    if (t > best) best = t;
+  }
+  return best;
+}
+
+static void skirt_collide(const spring_node *d, const skirt_axis *ax, skirt_ref *e0, int n0, skirt_ref *e1, int n1, float r, bool edge) {
   t3_vec3 x0 = skirt_at(e0, n0), x1 = skirt_at(e1, n1);
   t3_vec3 sm = vmul(vadd(x0, x1), 0.5f);
   float sr = 0.5f * vlen(vsub(x1, x0)) + r;
@@ -1020,15 +1051,31 @@ static void skirt_collide(const spring_node *d, const skirt_axis *ax, skirt_ref 
     seg_closest(x0, x1, h->a, h->b, &s, &t);
     t3_vec3 P = vadd(x0, vmul(vsub(x1, x0), s)), C = vadd(h->a, vmul(vsub(h->b, h->a), t));
     t3_vec3 dv = vsub(P, C);
-    float R = h->r + r, dd = vdot(dv, dv);
-    if (dd >= R * R) continue;
+    float R = h->r + r;
+    if (vdot(dv, dv) >= R * R) continue;
+    /* straight out from the garment's axis, to where that ray leaves the shape: the shapes are inside the garment, so
+     * a segment on a shape's inner side goes out past its far side, and a leg moves the cloth outward, never up or
+     * down it or round it (pushed along the shape's own normal a hem rode up a shin, a tick at a time, and a ring too
+     * small for a stance slid off to one side of the legs) */
+    t3_vec3 delta;
+    if (skirt_074) {
+      t3_vec3 out = skirt_out(ax, P), nrm = vdot(dv, dv) > 1e-14f ? vnorm(dv) : out;
+      float side = vdot(nrm, out);
+      if (side < 0) nrm = vnorm(vsub(nrm, vmul(out, 2 * side)));
+      if (vdot(nrm, nrm) <= 0) continue;
+      delta = vsub(vadd(C, vmul(nrm, R)), P);
+    } else if (edge) { /* an open garment's free edge: a leg may pass outside it, out of the shape the nearest way */
+      float dl = vlen(dv);
+      if (dl <= 1e-7f) continue;
+      delta = vmul(dv, (R - dl) / dl);
+    } else {
     t3_vec3 out = skirt_out(ax, P);
-    t3_vec3 nrm = dd > 1e-14f ? vmul(dv, 1 / sqrtf(dd)) : out;
-    float side = vdot(nrm, out);
-    /* on the inner side of the shape (toward the skirt's axis): out through its outer side instead */
-    if (side < 0) nrm = vnorm(vsub(nrm, vmul(out, 2 * side)));
-    if (vdot(nrm, nrm) <= 0) continue;
-    t3_vec3 delta = vsub(vadd(C, vmul(nrm, R)), P);
+    if (vdot(out, out) <= 0) continue;
+    t3_vec3 o = vadd(ax->top, vmul(ax->dir, vdot(vsub(P, ax->top), ax->dir)));
+    float rho = vdot(vsub(P, o), out), te = ray_capsule_exit(o, out, h->a, h->b, R);
+    if (te <= rho) continue;
+    delta = vmul(out, te - rho);
+    }
     /* each joint's share of P, and the sum of the squares of the moving ones */
     float w[4], den = 0;
     skirt_ref *j[4];
@@ -1037,6 +1084,12 @@ static void skirt_collide(const spring_node *d, const skirt_axis *ax, skirt_ref 
     for (int i = 0; i < n1; i++, nj++) j[nj] = &e1[i], w[nj] = s / (float)n1;
     for (int i = 0; i < nj; i++) if (j[i]->push) den += w[i] * w[i];
     if (den <= 1e-6f) continue;
+    float fmax = 0;
+    for (int i = 0; i < nj; i++) if (j[i]->push && w[i] / den > fmax) fmax = w[i] / den;
+    /* a contact so near a fixed root that undoing it would swing the next joint more than three times the push: the
+     * shape is at the garment's seam, where nothing can move (left alone; pushed, the joint swung out and back each
+     * tick, a shake of millimetres at rest) */
+    if (fmax > 3 && !skirt_074) continue;
     for (int i = 0; i < nj; i++) {
       if (!j[i]->push) continue;
       /* a joint next to a fixed one moves at most twice the push (a contact at the fixed end cannot be undone by it) */
@@ -1089,6 +1142,33 @@ static void spring_solve_skirt(spring_node *d, skel *s) {
   ax.top = vmul(ax.top, 1.0f / (float)live);
   bot = vmul(bot, 1.0f / (float)live);
   if (vlen(vsub(bot, ax.top)) > 1e-6f) ax.dir = vnorm(vsub(bot, ax.top));
+  /* the axis runs through the bone the chains hang from (the hips) when they share one: an open coat's roots go
+   * round the back only, and their mean sits behind the body, which would turn the front edges' way out sideways */
+  {
+    int pb = d->ch[0]->n > 0 ? p->parent[d->ch[0]->bone[0]] : -1;
+    for (int k = 1; k < d->nch && pb >= 0; k++)
+      if (d->ch[k]->n > 0 && p->parent[d->ch[k]->bone[0]] != pb) pb = -1;
+    if (pb >= 0 && !skirt_074) {
+      t3_vec3 c = cw_pose_model_position(p, pb), dt = vsub(c, ax.top);
+      ax.top = vadd(ax.top, vsub(dt, vmul(ax.dir, vdot(dt, ax.dir)))); /* (moved across the axis only) */
+      bot = vadd(bot, vsub(dt, vmul(ax.dir, vdot(dt, ax.dir))));
+    }
+  }
+  /* hang plumb: the animated garment turned about its waist so that its axis points down, by skirt_hang. A robe
+   * hangs from the hips but does not tilt with them: in a lunge the hips pitch forward and a garment that followed
+   * them would stand out in front of the legs (the roots' heads stay where the bone puts them) */
+  if (d->skirt_hang > 0 && !skirt_074) {
+    t3_quat q = cw_quat_from_to(ax.dir, d->down);
+    float h = d->skirt_hang > 1 ? 1 : d->skirt_hang;
+    q = (t3_quat){ q.x * h, q.y * h, q.z * h, 1 - h + q.w * h };
+    float ql = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+    q = (t3_quat){ q.x / ql, q.y / ql, q.z / ql, q.w / ql };
+    for (int k = 0; k < d->nch; k++) {
+      spring_chain *c = d->ch[k];
+      for (int i = 1; i <= c->n; i++) c->anim[i] = vadd(ax.top, qrot(q, vsub(c->anim[i], ax.top)));
+    }
+    ax.dir = qrot(q, ax.dir);
+  }
   /* predict: as chain mode, but the spring pulls each tail toward where the animation puts it in the model, not
    * below its simulated parent (hung from each parent the lags of the levels add up: a robe settled in 60 to 98
    * ticks after a stop instead of about 30) */
@@ -1140,7 +1220,7 @@ static void spring_solve_skirt(spring_node *d, skel *s) {
       skirt_ref head = { &c->anim[0], NULL };
       for (int i = 0; i < c->n; i++) {
         skirt_ref e0 = i ? (skirt_ref){ &c->mcur[i - 1], &c->push[i - 1] } : head, e1 = { &c->mcur[i], &c->push[i] };
-        skirt_collide(d, &ax, &e0, 1, &e1, 1, c->r);
+        skirt_collide(d, &ax, &e0, 1, &e1, 1, c->r, !skirt_074 && !ring && (k == 0 || k == d->nch - 1));
       }
     }
     for (int k = 0; k < npairs; k++) {
@@ -1151,9 +1231,10 @@ static void spring_solve_skirt(spring_node *d, skel *s) {
         skirt_ref ta = i ? (skirt_ref){ &a->mcur[i - 1], &a->push[i - 1] } : (skirt_ref){ &a->anim[0], NULL };
         skirt_ref tb = i ? (skirt_ref){ &b->mcur[i - 1], &b->push[i - 1] } : (skirt_ref){ &b->anim[0], NULL };
         skirt_ref ba = { &a->mcur[i], &a->push[i] }, bb = { &b->mcur[i], &b->push[i] };
-        skirt_ref la[2] = { ta, ba }, lb[2] = { tb, bb };
-        skirt_collide(d, &ax, &ba, 1, &bb, 1, r);   /* the bottom link */
-        skirt_collide(d, &ax, la, 2, lb, 2, r);     /* across the middle */
+        skirt_ref la[2] = { ta, ba }, lb[2] = { tb, bb }, top[2] = { ta, tb }, bot[2] = { ba, bb };
+        skirt_collide(d, &ax, &ba, 1, &bb, 1, r, false);   /* the bottom link */
+        skirt_collide(d, &ax, la, 2, lb, 2, r, false);     /* across the middle */
+        if (!skirt_074) skirt_collide(d, &ax, top, 2, bot, 2, r, false); /* down the middle */
       }
     }
   }
@@ -1162,7 +1243,7 @@ static void spring_solve_skirt(spring_node *d, skel *s) {
     spring_chain *c = d->ch[k];
     if (c->n <= 0) continue;
     skirt_lengths(c, len[k]);
-    t3_vec3 tip_in = c->anim[c->n];
+    t3_vec3 tip_in = c->anim[c->n]; /* (where it hangs: the animated tip turned plumb) */
     for (int i = 0; i < c->n; i++) {
       int b = c->bone[i];
       t3_vec3 head = cw_pose_model_position(p, b);
@@ -1507,6 +1588,8 @@ static void phase_hook(cw_tree *tree, double dt, void *u) {
   {
     const char *e = test_switch("CW_TEST_IK2_OLD_BEND");
     cw__ik2_old_bend = e && atoi(e);
+    e = test_switch("CW_TEST_SKIRT_074");
+    skirt_074 = e && atoi(e);
     e = test_switch("CW_TEST_SPRING_OLD_COLLIDE");
     spring_old_collide = e && atoi(e);
     e = test_switch("CW_TEST_FOOT_NO_RATE");
@@ -1849,6 +1932,7 @@ static void spring_init(cw_node n, void *data) {
   d->skirt_stretch = 0.05f;
   d->skirt_squeeze = 0.5f;
   d->skirt_iterations = 4;
+  d->skirt_hang = 1;
 }
 static const char *const skirt_names[] = { "OFF", "RING", "OPEN", NULL };
 static const cw_prop spring_props[] = {
@@ -1861,6 +1945,7 @@ static const cw_prop spring_props[] = {
   CW_PROP_FIELD_RANGE(spring_node, skirt_stretch, CW_T_FLOAT, 0, 10, "Skirt: how far a link between neighbouring chains may stretch past its animated length (share, 0.05)."),
   CW_PROP_FIELD_RANGE(spring_node, skirt_squeeze, CW_T_FLOAT, 0, 1, "Skirt: how far a link may shorten from its animated length (share, 0.5: panels bunch up to half)."),
   CW_PROP_FIELD_RANGE(spring_node, skirt_iterations, CW_T_INT, 1, 16, "Skirt: constraint passes a tick (4)."),
+  CW_PROP_FIELD_RANGE(spring_node, skirt_hang, CW_T_FLOAT, 0, 1, "Skirt: how far the garment hangs plumb instead of tilting with the bone it hangs from (1: straight down, as cloth hangs; 0: as animated)."),
   { .name = "resets", .type = CW_T_INT, .flags = RO, .offset = offsetof(spring_node, resets), .size = sizeof(int32_t),
     .doc = "Resets and teleports so far (each starts the chains again)." },
   CW_PROP_END,

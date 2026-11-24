@@ -4,6 +4,61 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.77.0 (2026-11-24)
+
+### Added
+- SpringBone3D `skirt_hang` (0 to 1, default 1) for skirt mode on real game figures: it turns the
+  animated garment about its waist to hang plumb, so a figure that pitches its hips into a lunge no longer stands its
+  robe out in front of its legs.
+- Sample `anim_robe` with `ROBE_FIGURES=1` runs two figures copied from even-more-cartwheel-examples' emberthrone
+  (`samples/anim_robe/take-figures.mjs`; the sample is now a packed project): a robed caster built at 1.5 times a
+  person's size through a scaled Hips bone, and a coated spearman at 1.08, their weapon stance, walk and run
+  retargeted onto them when packed. Gates `anim-robe-figures` and `robe-figures` with three controls.
+
+### Fixed
+- Skirt mode tangled, rode up and shook on figures whose stance or stride does not fit the garment's rest shape:
+  on the two game figures with the setup the guide gave, tips swung 0.7 to 1.4 m, no stop settled, rest jitter
+  reached 36 mm and legs went 5 to 9 cm through. Now a segment inside a leg moves straight out from the garment's
+  axis past the leg's far side (it was pushed along the leg's own normal, which slid a ring too small for a stance
+  off to one side of the legs and lifted a hem up a shin a tick at a time); the axis runs through the bone the chains
+  hang from (an open coat's roots go round the back only, and their mean turned its front edges' pushes sideways);
+  an open garment's free edges move out of a leg the nearest way (a leg may pass through the opening); a contact at
+  a chain's root, which no joint can undo, is left alone (pushed, the next joint swung out and back each tick); and
+  each panel's line down its middle is tested again (a knee went through a panel's quarter). On the figures, with
+  the seam moved clear of the thighs and `skirt_stretch` 1: legs at most 4.4 cm through (the coat, a few ticks; the robe 1.8), every swing gone 31 to
+  58 ticks after a stop, rest jitter at most 1.2 mm, no tip above its root; control `CW_TEST_SKIRT_074=1` (the old
+  solve, same setup) fails the legs, the settling and the rest.## v0.76.2 (2026-11-24)
+
+### Fixed
+- Grass fading under TAA no longer shows a stippled dot pattern when the camera moves. TerrainScatter3D's
+  `fade_mode = DITHER` dropped pixels by a screen-door (interleaved gradient noise moved every frame) over the LOD
+  crossfade and the last `fade` metres. TAA resolves a screen-door only while the picture holds still: a pixel that
+  moves a pixel a frame or more keeps a quarter of its history, so in a run or a pan the dots stayed on the grass,
+  worst where lit blades cross a dark shadow (the rim of a character's shadow in a meadow). `shadow_at_root` and
+  `smooth_alpha` were not the cause (the built-in GRASS has no alpha test, so `smooth_alpha` does nothing on it):
+  the dots went with `fade_mode = SHRINK` and stayed with either shadow mode. DITHER now works on whole instances
+  on the CPU, like SHRINK, each over its own 0.3 of a band (by its own number): over the LOD crossfade the next LOD
+  grows in inside it and then it shrinks away, and over the fade it shrinks away. The LOD dolly's largest
+  single-frame block change stays 8/255 (SHRINK 22/255). An InstancedMesh's own foliage fades (`fade_in_*`, `fade_out_*` in cartwheel/foliage.h) keep or drop each
+  instance whole too, by a hash of its root against the band at its root's distance (a large instance changes at
+  once where it crosses); a lone mesh keeps the screen-door. Gate `foliage-grain` (samples/foliage_field's new `grain` scene: a meadow's grass, lod_distance 7,
+  lod_blend 3, fade 6, under TAA, a wall's shadow edge running out from the camera, the camera running forward
+  4 m/s while turning 10 degrees a second, or turning alone; every host, GL and WebGPU, CI on software rendering):
+  the spatial high frequency and its change from frame to frame on the shadow's edge, in the shadow and in the
+  light, 5.5 to 8.5 m and 10 to 15 m away, against the same run with SHRINK; on the Radeon 890M the screen-door
+  added 0.0012 to 0.0035 (brightness 0..1) to every measure and the per-instance fades add -0.0002 to 0.0003.
+  Control `CW_TEST_FOLIAGE_PIXEL_DITHER=1` (the screen-door of 0.76.1 and before; `=instance` draws the scatter's bands with
+  the material's per-instance fade).
+- A TerrainScatter3D density map the game writes in its init now reaches the layer. The scene is ready before the
+  app's init, so a `density_map` naming a file not written yet failed for good ("cannot read density map"); and a
+  `density_map` set from code was applied only at the terrain's next fixed tick, since `cw_terrain_of` synced a
+  Terrain3D only when the node itself had changed, so `cw_terrain_scatter_cell` the same tick read the layer without
+  its map. `cw_terrain_of` now applies any changed TerrainScatter3D child first, and a `density_map` path that
+  does not exist yet leaves its layer empty (its index kept) until the file system changes and the file is there.
+  Unit check `terrain.density_map_late` (a map written after the scene is ready, one set from code, both read the
+  same tick: no instance on the map's black half), with the old lazy sync as its control.
+
+
 ## v0.76.2 (2026-11-24)
 
 ### Fixed

@@ -7888,6 +7888,16 @@
      "doc": "Skirt: constraint passes a tick (4)."
     },
     {
+     "name": "skirt_hang",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Skirt: how far the garment hangs plumb instead of tilting with the bone it hangs from (1: straight down, as cloth hangs; 0: as animated)."
+    },
+    {
      "name": "resets",
      "type": "int",
      "default": "0",

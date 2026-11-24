@@ -362,22 +362,29 @@ int cw_ik_fabrik(cw_pose *p, const int *chain, int n, t3_vec3 target, const cw_c
  *                      side at every joint and solves them together: RING
  *                      also links the last to the first (a robe), OPEN
  *                      leaves the front open (a coat from one front edge
- *                      round the back to the other). Each tail is pulled
- *                      toward where the animation puts it in the model
- *                      (not below its simulated parent), then
- *                      skirt_iterations passes (int, 4) hold each bone's
- *                      length, keep each link between (1 - skirt_squeeze)
- *                      and (1 + skirt_stretch) times its animated length
- *                      (0.5 and 0.05), and keep every bone, every link and
- *                      the line across the middle of every panel out of
- *                      every shape, capsule against capsule. The shapes
- *                      are inside the garment: a segment found on a
- *                      shape's inner side is pushed out through its outer
- *                      side, so a leg never ends up outside the cloth. A
- *                      pushed tail keeps none of its velocity away from
- *                      the shape; max_angle holds as in chain mode. The
- *                      chains should hang from the same bone (the hips)
- *                      and have the same number of bones.
+ *                      round the back to the other). The animated garment
+ *                      is turned about its waist to hang plumb by
+ *                      skirt_hang (float, 1); each tail is pulled toward
+ *                      its place there (not below its simulated parent),
+ *                      then skirt_iterations passes (int, 4) hold each
+ *                      bone's length, keep each link between
+ *                      (1 - skirt_squeeze) and (1 + skirt_stretch) times
+ *                      its animated length (0.5 and 0.05), and keep every
+ *                      bone, every link and the lines across and down the
+ *                      middle of every panel out of every shape, capsule
+ *                      against capsule. The shapes are inside the
+ *                      garment: a segment inside one moves straight out
+ *                      from the garment's axis (through the bone the
+ *                      chains hang from) past the shape's far side; an
+ *                      open garment's free edges move out the nearest
+ *                      way. A contact at a chain's root that would swing
+ *                      the next joint by more than three times the push
+ *                      is left alone (the seam). A pushed tail keeps none
+ *                      of its velocity away from the shape; max_angle
+ *                      holds as in chain mode. The chains should hang
+ *                      from the same bone (the hips), clear of the legs,
+ *                      and have the same number of bones; tip_offset is
+ *                      then measured from the plumb place.
  * The model's Node3D must not be scaled non-uniformly. Debug command:
  * `ik <model path>` (bones, modifiers, last solve results, each spring
  * chain's tip offset, pose hash). */
