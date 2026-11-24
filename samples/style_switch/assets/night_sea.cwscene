@@ -1,0 +1,44 @@
+[scene format=1]
+
+; A night sea for the style switch: Water3D under a low moon with no ProceduralSky (the water takes the world's first
+; DirectionalLight3D), a dark sky colour, a rock on the horizon. Its backdrop lights the highway (environment) and
+; comes in with the highway's screen-space reflections turned on (SSR and ssr_backdrop), as a style change does.
+
+[node name="Sea" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.004, 0.008, 0.02, 1)
+use_background = true
+ambient_energy = 0.03
+hemi_energy = 0
+
+[node name="Moon" parent="." type="DirectionalLight3D"]
+rotation = vec3(-0.25, 2.9, 0)
+color = color(0.75, 0.85, 1, 1)
+energy = 1.6
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 6, 10)
+rotation = vec3(-0.1, 0, 0)
+fov = 60
+far = 3000
+
+[node name="Water" parent="." type="Water3D"]
+size = vec2(600, 600)
+grid = VIEW
+subdivisions = 256
+grid_min_cell = 0.25
+horizon_distance = 2500
+wave_count = 4
+wave0 = vec4(20, 40, 0.8, 0.5)
+wave1 = vec4(35, 31, 0.5, 0.5)
+wave2 = vec4(-30, 11, 0.12, 0.5)
+wave3 = vec4(100, 5.5, 0.04, 0.4)
+floor_map_size = 0
+
+[node name="Rock" parent="." type="MeshInstance3D"]
+primitive = SPHERE
+position = vec3(-14, 0, -40)
+size = vec3(10, 6, 9)
+color = color(0.2, 0.18, 0.16, 1)
+roughness = 0.9

@@ -72,6 +72,31 @@ gi_tree *cw__gi_tree(cw_tree *t) {
   return g;
 }
 
+/* the post prewarm (pipeline.c): the materials it tagged taken off again when nothing the frame runs keeps them */
+int cw__gi_tagged(cw_tree *t) {
+  gi_tree *g = t ? cw_tree_slot(t, "gi") : NULL;
+  return g ? g->mats.count : 0;
+}
+int cw__gi_tag_scene(cw_tree *t, t3_renderer *r, t3_scene *sc) {
+  gi_tree *g = cw__gi_tree(t);
+  int n0 = g->mats.count;
+  if (g->hook_renderer != r) {
+    cw_shading_part(r, "gi", cw__gi_fill, g);
+    g->hook_renderer = r;
+  }
+  cw__gi_tag(g, &sc->base);
+  return n0;
+}
+void cw__gi_untag_from(cw_tree *t, int n0) {
+  gi_tree *g = t ? cw_tree_slot(t, "gi") : NULL;
+  if (!g || n0 < 0) return;
+  for (int i = n0; i < g->mats.count; i++) {
+    cw_shading_remove(g->mats.data[i], "gi");
+    t3_release(g->mats.data[i]);
+  }
+  if (g->mats.count > n0) g->mats.count = n0;
+}
+
 void cw_gi_get_stats(cw_tree *t, cw_gi_stats *out) {
   gi_tree *g = t ? cw_tree_slot(t, "gi") : NULL;
   memset(out, 0, sizeof *out);

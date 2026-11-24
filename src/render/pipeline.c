@@ -173,6 +173,7 @@ static void pipeline_free(void *ptr) {
   }
   cw_array_free(&p->persist);
   if (p->msaa_rt.fbo) cw__rt_destroy(&p->msaa_rt);
+  cw__rt_destroy(&p->warm_m), cw__rt_destroy(&p->warm_c);
   if (p->arr_cam) t3_release(p->arr_cam);
   cw__pw_forget(p);
   if (p->msaa_fbo) {
@@ -260,6 +261,8 @@ static void cmd_pipeline(int argc, const char **argv, cw_reply *r) {
   cw_reply_printf(r, ",\"views_array\":%s,\"views_array_why\":\"%s\"", p->arr_used ? "true" : "false",
                   !p->arr_used && p->arr_why ? p->arr_why : "");
   cw_reply_printf(r, ",\"view_hook\":%s,\"view_masks\":%d", p->view_hook ? "true" : "false", cw__view_masks_count());
+  cw_reply_printf(r, ",\"post_prewarms\":%d,\"post_prewarm_armed\":%s,\"scene_prewarms\":%d", (int)p->post_prewarms,
+                  p->post_warm_armed ? "true" : "false", (int)p->scene_prewarms);
   {
     /* the states three.c's generated table lacked (a JSON string, one per line) */
     cw_reply_raw(r, ",\"missing_states\":\"");
@@ -303,6 +306,132 @@ cw_pipeline *cw_pipeline_of(cw_tree *t) {
 }
 
 cw_post_settings *cw_pipeline_settings(cw_pipeline *p) { return &p->s; }
+
+void cw_post_prewarm(cw_pipeline *p, const cw_post_settings *later) {
+  if (!p) return;
+  p->post_warm_have = later != NULL;
+  p->post_warm_armed = later != NULL;
+  if (later) p->post_warm_s = *later;
+  p->scene_warm_armed = true;
+}
+int cw_pipeline_post_prewarms(cw_pipeline *p) { return p ? p->post_prewarms : 0; }
+void cw__post_prewarm_again(cw_pipeline *p, bool on) {
+  if (!p) return;
+  p->post_warm_armed = on && p->post_warm_have;
+  p->scene_warm_armed = on;
+}
+
+/* ── the scene drawn once with everything in it (the prewarms) ──────── */
+
+enum { SHOW_VISIBLE = 1, SHOW_CULLED = 2, SHOW_COUNT0 = 4 };
+static void show_one(t3_object *o, void *ctx) {
+  cw__show_keep *k = ctx;
+  uint8_t f = (uint8_t)((o->visible ? SHOW_VISIBLE : 0) | (o->frustum_culled ? SHOW_CULLED : 0));
+  if (o->type == T3_INSTANCED_MESH) {
+    t3_instanced_mesh *im = (t3_instanced_mesh *)o;
+    if (im->count == 0 && im->instance_matrix && im->instance_matrix->count >= 1) f |= SHOW_COUNT0, im->count = 1;
+  }
+  if (o->visible && !o->frustum_culled && !(f & SHOW_COUNT0)) return;
+  if (k->n == k->cap) {
+    k->cap = k->cap ? k->cap * 2 : 256;
+    k->o = realloc(k->o, sizeof *k->o * (size_t)k->cap);
+    k->flags = realloc(k->flags, (size_t)k->cap);
+  }
+  k->o[k->n] = o, k->flags[k->n++] = f;
+  o->visible = true;
+  o->frustum_culled = false;
+}
+/* (t3_object_traverse skips nothing: a hidden object's children are reached too) */
+void cw__scene_show_all(t3_scene *sc, cw__show_keep *k) {
+  memset(k, 0, sizeof *k);
+  if (sc) t3_object_traverse(sc, show_one, k);
+}
+void cw__scene_show_restore(cw__show_keep *k) {
+  for (int i = 0; i < k->n; i++) {
+    t3_object *o = k->o[i];
+    o->visible = (k->flags[i] & SHOW_VISIBLE) != 0;
+    o->frustum_culled = (k->flags[i] & SHOW_CULLED) != 0;
+    if (k->flags[i] & SHOW_COUNT0) ((t3_instanced_mesh *)o)->count = 0;
+  }
+  free(k->o), free(k->flags);
+  memset(k, 0, sizeof *k);
+}
+
+void cw__scene_warm_draw(cw_pass_ctx *ctx, t3_texture *env, bool gi) {
+  cw_pipeline *p = ctx->pipeline;
+  t3_renderer *r = ctx->renderer;
+  t3_scene *sc = ctx->scene3d;
+  const cw_rt *scene = p->scene_rt, *draw = p->scene_draw_rt;
+  bool wg = cw_gpu_backend() == CW_GPU_WEBGPU;
+  /* (GL: a program is the same whatever it draws into, so the scene drawn straight to the window has one too) */
+  if (!r || !sc || !ctx->camera || (wg && (!scene || !draw))) return;
+  CW_PROFILE_SCOPE("pipeline.scene_warm");
+  bool ms = scene && draw && draw != scene;
+  cw_rt_format fmt = scene ? scene->format : CW_RT_RGBA8;
+  enum { WS = 16 }; /* (a program or a pipeline is the same at any size) */
+  if (!p->warm_c.fbo || p->warm_c.format != fmt) {
+    cw__rt_destroy(&p->warm_m), cw__rt_destroy(&p->warm_c);
+    if (!cw__rt_create(&p->warm_c, WS, WS, fmt, true)) return;
+  }
+  if (wg && ms && !p->warm_m.fbo && !cw__pw_msaa_create(&p->warm_m, &p->warm_c)) return;
+  t3_texture *own = sc->environment;
+  if (env) {
+    if (own) t3_retain(own);
+    t3_scene_set_environment(sc, env);
+  }
+  int n0 = gi ? cw__gi_tag_scene(ctx->tree, r, sc) : -1;
+  /* every object shown only for an app that said what it turns on later (cw_post_prewarm): an object hidden for good
+   * would otherwise be drawn in a state no program table was surveyed with (a missing state reported) */
+  cw__show_keep keep = { 0 };
+  if (p->post_warm_have) cw__scene_show_all(sc, &keep);
+  t3_renderer_set_shadow_hold(r, true);
+  if (wg) {
+    cw__pw_bind_target(ms ? &p->warm_m : &p->warm_c);
+    const cw__wgpu_pass_targets *pt = cw__pass_wgpu_targets(ctx);
+    if (pt && pt->color) {
+      t3_external_target et = {
+        .color = (uintptr_t)pt->color, .color_resolve = (uintptr_t)pt->resolve, .depth = (uintptr_t)pt->depth,
+        .color_format = (int)pt->color_format, .depth_format = (int)pt->depth_format, .samples = pt->samples,
+        .load_color = false, .load_depth = false, .clear_rgba = { 0, 0, 0, 1 }, .clear_depth = cw_gpu_reversed_depth() ? 0.0f : 1.0f,
+        .x = 0, .y = 0, .w = pt->w, .h = pt->h, .flip_y = pt->flip_y,
+      };
+      t3_renderer_set_external_encoder(r, (uintptr_t)pt->enc);
+      t3_renderer_set_external_target(r, &et);
+      t3_renderer_render(r, sc, ctx->camera);
+      t3_renderer_set_external_target(r, NULL);
+    }
+  } else {
+    int bw, bh, vx, vy, vw, vh, sx, sy, sw, sh;
+    t3_renderer_get_size(r, &bw, &bh);
+    t3_renderer_get_viewport(r, &vx, &vy, &vw, &vh);
+    bool st = t3_renderer_get_scissor(r, &sx, &sy, &sw, &sh);
+    bool auto_clear = t3_renderer_get_auto_clear(r);
+    t3_renderer_reset_bindings(r);
+    glBindFramebuffer(GL_FRAMEBUFFER, p->warm_c.fbo);
+    t3_renderer_set_framebuffer(r, p->warm_c.fbo);
+    t3_renderer_set_viewport(r, 0, bh - WS, WS, WS);
+    t3_renderer_set_scissor(r, 0, bh - WS, WS, WS);
+    t3_renderer_set_scissor_test(r, true);
+    t3_renderer_set_auto_clear(r, true);
+    t3_renderer_render(r, sc, ctx->camera);
+    t3_renderer_set_auto_clear(r, auto_clear);
+    t3_renderer_set_viewport(r, vx, vy, vw, vh);
+    t3_renderer_set_scissor(r, sx, sy, sw, sh);
+    t3_renderer_set_scissor_test(r, st);
+    t3_renderer_set_framebuffer(r, p->bound_fbo);
+    t3_renderer_reset_bindings(r);
+    t3_renderer_reset_state(r);
+    glBindFramebuffer(GL_FRAMEBUFFER, p->bound_fbo);
+  }
+  t3_renderer_set_shadow_hold(r, false);
+  cw__scene_show_restore(&keep);
+  if (n0 >= 0) cw__gi_untag_from(ctx->tree, n0);
+  if (env) {
+    t3_scene_set_environment(sc, own);
+    if (own) t3_release(own);
+  }
+  if (!cw__render3d_shadows_kept(ctx->tree)) t3_renderer_shadow_needs_update(r);
+}
 
 void cw_pipeline_exposure_reset(cw_pipeline *p) {
   if (p) p->auto_exposure_reset = true;
@@ -1242,6 +1371,8 @@ void cw_pipeline_render(cw_tree *t, int w, int h, double alpha) {
   /* backdrops (cartwheel/backdrop.h): their worlds drawn into their pictures first, each through its own pipeline */
   p->bd_n = 0;
   p->bd_env_n = 0;
+  p->bd_env_warm_n = 0;
+  p->post_warm_ran = false;
   if (p->bd_frame && !p->backdrop_run) p->bd_frame(t, p, w, h, alpha);
   if (wgpu) {
     cw__pw_frame_begin();
@@ -1481,8 +1612,21 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   }
   ctx.hdr = s->hdr && cw__caps.float_render;
 
+  /* the post prewarm (cw_post_prewarm): in a render of the whole scene (not a warm-up slice, a backdrop's world or an
+   * extra view), the passes its settings turn on and these do not run once each, in the shadow and post phases, with
+   * those settings and their picture kept out of the frame: what the frame shows is what it shows without them */
+  bool whole = ctx.camera && !p->backdrop_run && !p->rt_scope && !cw__warm_partial &&
+               (mode == RUN_FULL || mode == RUN_ARRAY || (mode == RUN_VIEW && p->view_i == 0));
+  bool post_warm = whole && p->post_warm_armed && p->post_warm_have, scene_warm = whole && p->scene_warm_armed && p->post_warm_have;
+  cw_post_settings warm_s;
+  if (post_warm) {
+    warm_s = p->post_warm_s;
+    cw__quality_post(&warm_s);
+  }
+  int gi_tagged0 = post_warm ? cw__gi_tagged(t) : 0;
+  bool any_warm = false;
   /* which passes run: settings-driven ones decide in active() */
-  uint32_t reads = 0;
+  uint32_t reads = 0, warm_reads = 0;
   bool post_or_fx = false, any_prepass = false, wgpu_opaque = false;
   pass_rec *velocity = NULL;
   for (int i = 0; i < p->passes.count; i++) {
@@ -1491,11 +1635,19 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
       r->stat.ran = r->stat.fused = false;
       r->frame_cpu = 0;
     }
+    r->warm_only = false;
     if (r->name == cw_intern("velocity")) {
       velocity = r;
       continue;
     }
     r->active = r->enabled && !test_skipped(r->name) && (!r->d.active || r->d.active(&ctx, r->d.user));
+    if (!r->active && post_warm && r->enabled && r->d.active && !test_skipped(r->name) && (!wgpu || r->d.webgpu) &&
+        (r->d.phase == CW_PHASE_SHADOW || r->d.phase == CW_PHASE_POST)) {
+      ctx.settings = &warm_s;
+      r->warm_only = r->d.active(&ctx, r->d.user);
+      ctx.settings = s;
+      if (r->warm_only) warm_reads |= r->d.reads, any_warm = true;
+    }
     if (r->active && wgpu && !r->d.webgpu) {
       r->active = false;
       if (!r->wgpu_warned) {
@@ -1584,6 +1736,9 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
     if (r->active && r->d.phase >= CW_PHASE_SKY && r->d.phase <= CW_PHASE_POST && (r->d.reads & (CW_RES_DEPTH | CW_RES_VELOCITY)))
       wgpu_depth = true;
   }
+  /* a post prewarm's pass that samples it gets the linear depth too (drawn into a target of its own: nothing else the
+   * frame decides changes, its multisampling included) */
+  bool warm_depth = wgpu && any_warm && (warm_reads & (CW_RES_DEPTH | CW_RES_VELOCITY));
   bool fx_any = false;
   for (int i = 0; i < p->passes.count; i++) {
     pass_rec *r = p->passes.data[i];
@@ -1649,6 +1804,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   /* foliage (cartwheel/foliage.h): smooth cut-out edges by coverage when the scene pass is multisampled, hashed
    * otherwise; the hashed noise moves every frame under TAA */
   cw__foliage_frame(scene_draw && scene_draw != scene, taa, p->frame);
+  p->scene_rt = scene, p->scene_draw_rt = scene_draw;
   p->prepass_ran = false;
   /* WebGPU MSAA: every render pass into the multisampled scene resolves its colour at its end. When the viewmodel
    * pass draws into it after the scene pass (the last opaque pass), the scene pass stores the samples only and the
@@ -1802,7 +1958,7 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
 #endif
       int ts = step_begin(p, "resolve");
       if (resolve_depth) cw__pw_depth_resolve(scene_draw, scene);
-      if (wgpu_depth) {
+      if (wgpu_depth || warm_depth) {
         const cw_rt *lin = cw_pipeline_rt_persistent(p, "scene.depth_linear", w, h, CW__RT_R32F, NULL);
         const float *e = ctx.camera->projection_matrix.e;
         float pz[4] = { e[10], e[14], e[11], e[15] };
@@ -1896,11 +2052,57 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
       }
     }
+    /* the post prewarm's gi part (put on the lit materials by a prewarm run of the gi pass): the scene drawn with it once,
+     * everything shown, into targets of its own; then taken off, so the frame's scene is drawn as it is without it */
+    if (post_warm && ph == CW_PHASE_PREPASS && cw__gi_tagged(t) > gi_tagged0) {
+      cw__scene_warm_draw(&ctx, NULL, false);
+      cw__gi_untag_from(t, gi_tagged0);
+    }
+    /* the scene prewarm: everything in the scene drawn once as it is (hidden objects, instanced meshes of no instances),
+     * into those targets. CW_TEST_NO_SCENE_PREWARM=1 leaves it out (a gate's control; getenv: a test's first frame) */
+    if (scene_warm && ph == CW_PHASE_PREPASS) {
+      const char *ns = getenv("CW_TEST_NO_SCENE_PREWARM");
+      if (!(ns && atoi(ns))) cw__scene_warm_draw(&ctx, NULL, false), p->scene_prewarms++;
+      p->scene_warm_armed = false;
+    }
     if (!offscreen && (ph == CW_PHASE_PREPASS || ph == CW_PHASE_SKY || ph == CW_PHASE_EFFECTS || ph == CW_PHASE_POST))
       continue;
     for (int i = 0; i < p->passes.count; i++) {
       pass_rec *r = p->passes.data[i];
-      if (!r->active || (int)r->d.phase != ph || !post_in_run(p, r, mode)) continue;
+      if (!(r->active || r->warm_only) || (int)r->d.phase != ph || !post_in_run(p, r, mode)) continue;
+      if (r->warm_only) { /* the post prewarm's run of a pass the frame has off: its picture into a target of its own */
+        ctx.src = ph == CW_PHASE_POST ? chain : NULL;
+        ctx.dst = ctx.result = NULL;
+        ctx.settings = &warm_s;
+        if (ph == CW_PHASE_POST && (r->d.writes & CW_RES_COLOR)) {
+          ctx.dst = cw_pass_rt(&ctx, w, h, r->d.ldr_output ? CW_RT_RGBA8 : chain->format, false);
+          if (ctx.dst) bind_phase_target(&ctx, ctx.dst);
+          for (int k = 0; ctx.dst && k < p->pool.count; k++)
+            if (&p->pool.data[k]->rt == ctx.dst) p->pool.data[k]->keep = true;
+        }
+        if (ph == CW_PHASE_SHADOW || ctx.dst || !(r->d.writes & CW_RES_COLOR)) {
+          CW_PROFILE_BEGIN("pipeline.post_prewarm");
+          /* a shadow-phase pass (the gi pass's G-buffers) draws every object of the scene: what is hidden now too */
+          cw__show_keep keep = { 0 };
+          if (ph == CW_PHASE_SHADOW) cw__scene_show_all(ctx.scene3d, &keep);
+          if (mode == RUN_ARRAY && r->d.views == CW_PASS_VIEWS_EACH) {
+            for (int k = 0; k < p->arr_n; k++) {
+              if (ph == CW_PHASE_SHADOW) array_casters(&ctx, p, k);
+              array_view(&ctx, p, k);
+              run_pass(p, r, &ctx);
+            }
+            if (ph == CW_PHASE_SHADOW) array_casters(&ctx, p, 0);
+            array_view_end(&ctx, p);
+          } else run_pass(p, r, &ctx);
+          cw__scene_show_restore(&keep);
+          CW_PROFILE_END();
+          p->post_warm_ran = true;
+        }
+        if (ctx.dst) cw_pass_rt_release(&ctx, ctx.dst);
+        ctx.settings = s;
+        ctx.src = ctx.dst = ctx.result = NULL;
+        continue;
+      }
       if (ph == CW_PHASE_OVERLAY) { /* layers: app = UI (HUDs), order >= 500 = DEBUG draw */
         if (r->d.order >= 500 ? !(layers & CW_LAYER_DEBUG) : !(layers & CW_LAYER_UI) && r->name == cw_intern("app")) continue;
       }
@@ -1960,11 +2162,21 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
     }
   }
 
+  /* the post prewarm done: once (the views of a split screen after the first draw as they always do); the gi part it
+   * put on the scene's materials taken off again unless a pass the frame runs reads it (it stays on once SSR or SSGI
+   * first runs, as it does without a prewarm) */
+  if (post_warm) {
+    pass_rec *gi = find_pass(p, "gi");
+    if (!(gi && gi->active)) cw__gi_untag_from(t, gi_tagged0);
+    p->post_warm_armed = false;
+    if (p->post_warm_ran) p->post_prewarms++;
+  }
+
   /* pooled targets idle for a while are freed */
   for (int i = 0; i < p->pool.count; i++) {
     pool_rt *e = p->pool.data[i];
     e->used = false;
-    if (p->frame - e->last_frame > 120) {
+    if (p->frame - e->last_frame > 120 && !(e->keep && p->post_warm_have)) {
       cw__rt_destroy(&e->rt);
       cw_free(e);
       cw_array_remove_swap(&p->pool, i);

@@ -63,6 +63,28 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   and romdev, GL and WebGPU: each option measured from the picture, with controls, among them
   `CW_TEST_TERRAIN_NEAREST_UV=1`, each point's rotation from its nearest texel). Timing report
   `terrain-detail-perf`.
+- `cw_post_prewarm(pipeline, &settings)` and `cw_pipeline_post_prewarms` (`cartwheel/pipeline.h`): the post passes a
+  game turns on later (SSR, `ssr_backdrop`, SSGI, ...) prewarmed. Turning SSR on puts the gi part on every lit
+  material of the scene, so the frame a style first turned it on built every material's programs and WebGPU pipelines
+  for the scene and the SSR G-buffer, and the SSR passes' own: a night sea world fading in with SSR cost 213 to 304 ms
+  of CPU on WebGPU and 138 to 172 ms on GL on the 890M (80 ms on the Steam Machine in a rhythm game). Given in
+  `init`, the settings are kept; at the scene app's prewarm (the end of its warm-up, and of each loading phase) each
+  pass they turn on and the current settings do not runs once with them in the shadow and post phases, its picture
+  drawn into a pooled target of its own (kept while the settings are, so the chain has it when the pass comes on), and
+  the scene is drawn once more with the gi part on, every object shown, into small targets of the scene target's
+  format and samples; the part then comes off before the frame's own scene pass. Nothing of it reaches the frame.
+- The scene prewarm, for an app that gives `cw_post_prewarm` settings: the same prewarm draws the scene once more with
+  every object shown (hidden ones, instanced meshes of no instances), so what a style shows later builds nothing then
+  (an app that does not keeps its warm-up as it was: an object hidden for good would be drawn in a state its program
+  table was never surveyed with). The `pipeline` debug command reports
+  `post_prewarms` and `scene_prewarms`.
+- A Backdrop with `environment` on is captured whole by its prewarm, its faces blended and filtered as the tree's
+  environment (into the tree's own targets, the scene's environment untouched), and the scene drawn lit by it (every object
+  shown, the gi part and the SSR G-buffers too, when the post prewarm turns SSR or SSGI on). Its first shown frame then draws
+  only its share of the next capture and filters nothing, lighting the scene from the prewarm's capture at a share of
+  0.001 until the next one finishes (`env_every` frames). The `backdrop` debug command reports `env_prewarms`.
+- samples/style_switch: a third world, a night sea (Water3D, environment on) that fades in with the highway's SSR and
+  `ssr_backdrop` turned on (given to `cw_post_prewarm` in init); debug field `sw.sea_renders`.
 
 ### Changed
 - The built-in GRASS tuft (TerrainScatter3D `shape = GRASS`, `cw_scatter_def_builtin`) reads as grass from a play
@@ -72,6 +94,9 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   colour (`tint_jitter` 0.25 for GRASS, also set by `cw_scatter_def_builtin`). A GRASS layer draws new program
   states (`+icol`, and no `+ds`): a game with GRASS scatter regenerates its program table (`./programs.sh`).
 - three.c v0.187.21: `alpha_to_coverage` reaches WebGPU pipelines (it was GL only).
+- The tree's environment targets of its backdrops (cube, blend faces, filter and filtered target) are kept when no
+  backdrop lights the scene any more, so the next one's first frame makes none (`CW_TEST_ENV_FREE_ON_RESTORE=1` frees
+  them as before).
 
 ### Fixed
 - A control map whose uv rotation or scale changes from one texel to the next drew a straight seam on the line where
@@ -81,6 +106,13 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   with the gradients rotated and scaled per read (no mip seam). Measured on a quarter turn every other 4 m block: the
   brightness step across a block's edge went from 3.5 times the step inside the blocks (2.4 from a play camera) to
   0.74 (0.77), and at most 1.06 anywhere across the blend.
+- A style change that first shows a world lighting the scene and turns SSR on no longer hitches: gate
+  `backdrop-look-prewarm` holds the sea's first showing with SSR to 3 ms of CPU over the usual frame (890M through
+  romdev: GL +1.3 ms, WebGPU +1.6 ms; control `CW_TEST_NO_PREWARM=1`: +138 to +172 ms GL, +213 to +304 ms WebGPU) and its
+  first two frames' GPU time to its second showing's plus 0.25 ms (GL 4.61 vs 6.88 ms, WebGPU 4.55 vs 6.18; control
+  `CW_TEST_NO_ENV_PREWARM=1`, the first capture on the first shown frame: +0.91 ms GL, +1.57 ms WebGPU over it). A
+  test's first frame, where every prewarm runs, is still the same picture pixel for pixel as without them. Test
+  switches `CW_TEST_NO_ENV_PREWARM`, `CW_TEST_NO_ENV_SCENE_WARM`, `CW_TEST_NO_SCENE_PREWARM`.
 
 ## v0.70.1 (2026-11-23)
 

@@ -36,6 +36,7 @@ typedef struct pass_rec {
   bool enabled;     /* user switch */
   bool active;      /* this frame */
   bool wgpu_warned; /* skipped on WebGPU (no webgpu flag): logged once */
+  bool warm_only;   /* this run: off, but on under the post prewarm settings (cw_post_prewarm): run once, its picture kept out */
   /* timing */
   unsigned q[CW__QUERY_RING];
   bool q_busy[CW__QUERY_RING];
@@ -57,6 +58,8 @@ typedef struct pool_rt {
   cw_rt rt;
   bool depth;
   bool used;
+  bool keep; /* made for a post prewarm's pass: kept while the pipeline has post prewarm settings, as the chain will
+              * need it once that pass is on (an idle target is freed otherwise; making one again cost 3 ms of CPU on GL) */
   uint64_t last_frame;
 } pool_rt;
 
@@ -182,6 +185,10 @@ struct cw_pipeline {
    * cube faces; NULL before the first) and whether it finished this frame */
   struct cw__backdrop_env { void *bd; cw_tree *world; cw_node camera; int pic; const cw_rt *faces; int size; bool fresh; } bd_env[8];
   int bd_env_n;
+  /* the prewarms of the backdrops that light the tree: a first capture each, made by the "backdrop_env" pass with
+   * nothing of it reaching the scene's environment (bd_env_warm[].pic unused) */
+  struct cw__backdrop_env bd_env_warm[8];
+  int bd_env_warm_n;
   /* the screen-space reflections' view of the backdrops (cw_post_settings.ssr_backdrop): the pictures blended at half
    * size, made this frame when bd_ssr_frame is the frame */
   const cw_rt *bd_ssr;
@@ -190,7 +197,42 @@ struct cw_pipeline {
    * post chain, the picture left in bd_pic */
   bool backdrop_run;
   const cw_rt *bd_pic;
+  /* this run's scene target and the one its opaque passes draw into (the multisampled one with MSAA); NULL off screen */
+  const cw_rt *scene_rt, *scene_draw_rt;
+  cw_rt warm_c, warm_m; /* cw__scene_warm_draw's small targets: the scene target's format, and its multisampled one */
+  /* the post prewarm (cw_post_prewarm): the settings a game turns on later, kept (post_warm_have) and armed for the
+   * next render that draws the whole scene (not a warm-up slice of it), where each pass they turn on and the frame does
+   * not runs once with its picture kept out (pass_rec.warm_only); post_warm_ran: this frame's render did */
+  cw_post_settings post_warm_s;
+  bool post_warm_have, post_warm_armed, post_warm_ran;
+  /* the scene prewarm (the scene runner's prewarm, cw_post_prewarm; for an app that gave post prewarm settings): at the next render of the whole scene, the scene
+   * drawn once more with every object shown (hidden ones, instanced meshes of no instances) into targets of its own
+   * (cw__scene_warm_draw), so what is shown later builds nothing then */
+  bool scene_warm_armed;
+  int32_t scene_prewarms;
+  int32_t post_prewarms;
 };
+/* every object of a scene drawable for one render (prewarms): hidden ones shown, an instanced mesh of no instances
+ * drawn with one, culling off; restored after */
+typedef struct cw__show_keep { t3_object **o; uint8_t *flags; int n, cap; } cw__show_keep;
+void cw__scene_show_all(t3_scene *sc, cw__show_keep *k);
+void cw__scene_show_restore(cw__show_keep *k);
+/* The tree's scene drawn once (every object of it shown, cw__scene_show_all, when the app gave post prewarm settings) into small targets of this run's scene
+ * target's format and samples, with env as its environment (NULL: its own) and, gi, the gi part on its lit materials
+ * (taken off again after): the programs and WebGPU pipelines the scene pass draws it with in that state are built, and
+ * nothing of the frame changes (the shadow maps are held, and armed again for the frame's render). */
+void cw__scene_warm_draw(cw_pass_ctx *ctx, t3_texture *env, bool gi);
+/* the screen-space passes' G-buffers drawn once as a frame with env (NULL: its own) draws them (src/gi/ssr.c) */
+void cw__gi_gbuffer_prewarm(cw_pass_ctx *ctx, t3_texture *env, bool albedo);
+/* the scene runner's prewarm: the post prewarm settings kept on the pipeline armed again for its next render (on), or
+ * held (off: CW_TEST_NO_PREWARM) */
+void cw__post_prewarm_again(cw_pipeline *p, bool on);
+/* the gi part on the scene's materials (src/gi): how many carry it, and those tagged from the n0-th on taken off again
+ * (what a post prewarm tagged, when nothing the frame runs keeps it) */
+int cw__gi_tagged(cw_tree *t);
+/* the gi part put on every lit material of the scene now (its hook on the renderer); returns the count before */
+int cw__gi_tag_scene(cw_tree *t, t3_renderer *r, t3_scene *sc);
+void cw__gi_untag_from(cw_tree *t, int n0);
 /* a backdrop's world into its picture at w x h through camera (null: the world's own), its HDR scene target or the
  * last depth-reading post pass's; NULL when the world has nothing to draw (pipeline.c) */
 const cw_rt *cw__pipeline_render_backdrop(cw_tree *world, cw_node camera, int w, int h, double alpha);

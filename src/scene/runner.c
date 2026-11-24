@@ -160,6 +160,8 @@ static bool prewarm_done;
 static void prewarm_queue(void) {
   prewarm_done = true;
   const char *off = getenv("CW_TEST_NO_PREWARM");
+  /* the post prewarm (cw_post_prewarm): the settings the app gave, run in this render too, the scene whole */
+  cw__post_prewarm_again(cw_pipeline_of(run.tree), !(off && atoi(off)));
   if (off && atoi(off)) return;
   cw__backdrops_prewarm_tree(run.tree);
   cw_look_prewarm_all(cw_pipeline_of(run.tree));

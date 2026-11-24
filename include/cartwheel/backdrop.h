@@ -163,8 +163,11 @@ float cw_backdrop_last_cpu_ms(cw_node backdrop);
  * Backdrop of its tree by itself at the end of its warm-up, under the loading screen (and at the end of each loading
  * phase, cw_loading_begin); call this for a backdrop added, or a world built, after that (behind a loading screen of
  * the game's own, or a frame before it fades in). What it built is kept while the backdrop is at opacity 0, which
- * costs nothing per frame. An environment capture (environment true) is still made on its first shown frame. false
- * for a node that is not a Backdrop. */
+ * costs nothing per frame. With `environment` on, the prewarm also makes a whole capture of its world (the six
+ * faces), blends and filters it as the tree's environment would be (into targets nothing reads) and draws the tree's
+ * scene once lit by it, every object shown, into small targets of its own: its first shown frame then draws only its
+ * share of the next capture, as any later frame does, and lights the scene from the prewarm's capture until that one
+ * is done (env_every frames). The scene's environment is not touched. false for a node that is not a Backdrop. */
 bool cw_backdrop_prewarm(cw_node backdrop);
 /* Prewarm renders made so far (0 for a node that is not a Backdrop). */
 int cw_backdrop_prewarms(cw_node backdrop);

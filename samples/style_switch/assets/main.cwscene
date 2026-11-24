@@ -11,8 +11,8 @@ hemi_energy = 0.2
 [node name="Post" parent="." type="PostProcess"]
 bloom = true
 bloom_intensity = 0.05
-ssr = true
-ssr_backdrop = true
+ssr = false
+ssr_backdrop = false
 ssr_max_distance = 6
 
 [node name="Key" parent="." type="DirectionalLight3D"]
@@ -105,3 +105,12 @@ scene = "stage.cwscene"
 camera = "Camera"
 order = 1
 opacity = 0
+
+[node name="Sea" parent="." type="Backdrop"]
+scene = "night_sea.cwscene"
+camera = "Camera"
+order = 2
+opacity = 0
+environment = true
+env_resolution = 256
+env_every = 12

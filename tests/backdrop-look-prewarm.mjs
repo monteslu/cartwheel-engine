@@ -23,6 +23,11 @@
 // are the loading screen's background colour; control: a frame of play judged the same way must fail.
 // Control: CW_TEST_NO_PREWARM=1 (the warm-up without the prewarm of backdrops and looks, the engine before it) must
 // show a first-showing change at least CONTROL_MS of CPU over the usual frame, on each backend.
+// The sea (sw.event 6 and 13): a night sea world (Water3D) that lights the scene (environment) fades in while SSR and
+// ssr_backdrop turn on, the passes the sample gives cw_post_prewarm. Its first showing is held as the others are, and the
+// control without the prewarm must cost it at least CONTROL_MS too. Its environment's first capture and filter are the
+// prewarm's: its first two frames cost the GPU at most GPU_SLACK_MS over its second showing's; control
+// CW_TEST_NO_ENV_PREWARM=1 (the capture left to its first shown frame, as before) must cost more.
 // Run: node tests/backdrop-look-prewarm.mjs [--gpu gl|webgpu] [--dump]   (127.0.0.1:7331; ROMDEV_URL overrides)
 import { request as httpRequest } from 'node:http';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -34,15 +39,22 @@ import { wgpuPin } from '../tools/lib/wgpu-pin.mjs';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..'), OUT = join(ROOT, 'out/gate/backdrop-look-prewarm');
 const CART = process.env.SW_CART || join(ROOT, 'build/cart-wgpu/carts/style_switch.wasc');
 const BASE = new URL(process.env.ROMDEV_URL || 'http://127.0.0.1:7331');
-const FRAMES = 790;
+const FRAMES = 960;
+const EV = 7; // changes a round (sw.event 0..6, then 7..13 the same again)
 const LIMIT_MS = 3; // a change's frames over the usual frame, CPU ms
 const RATIO = 1.5; // a first showing's wall time over the usual frame's, times
 const SLACK_MS = 1.5; // or over its second showing's, ms
 const CONTROL_MS = 8; // without the prewarm a first showing costs at least this much CPU over the usual frame
 const RUNS = 3;
 const AFTER = 4; // frames after a change's first frame that are its frames too (with the first: frames +0 .. +5)
-const NAMES = ['fire in', 'ASCII', 'half blocks', 'one bit (DISPLAY)', 'stage in', 'plain'];
-const FIELDS = ['sw.tick', 'sw.event', 'sw.fire_renders', 'sw.stage_renders', 'cw.three.missing'];
+const NAMES = ['fire in', 'ASCII', 'half blocks', 'one bit (DISPLAY)', 'stage in', 'plain', 'sea in + SSR'];
+const SEA = 6; // the sea's change: a world that lights the scene, shown with SSR and ssr_backdrop turned on
+// a world that lights the scene filters its environment on the first frame of every showing (the filter of a finished
+// capture, as every env_every frames of a fade: a usual cost, about 2.5 ms of CPU on WebGPU on the 890M): its second
+// showing may cost that much more than the usual frame (its first showing is held to LIMIT_MS: the prewarm filtered it)
+const ENV_FILTER_MS = 2;
+const GPU_SLACK_MS = 0.25; // the sea's first showing's GPU time over its second showing's (frames +0, +1): with the prewarm about 1.5 ms under it (its first frame filters nothing), the old path 0.6 to 1.6 ms over
+const FIELDS = ['sw.tick', 'sw.event', 'sw.fire_renders', 'sw.stage_renders', 'sw.sea_renders', 'cw.three.missing'];
 mkdirSync(OUT, { recursive: true });
 const arg = (n) => (process.argv.includes(n) ? process.argv[process.argv.indexOf(n) + 1] : undefined);
 const gpus = arg('--gpu') ? [arg('--gpu')] : ['gl', 'webgpu'];
@@ -136,11 +148,12 @@ function analyse(runs, label, gpu) {
     const worst = fr.reduce((m, i) => (cpu[i] > cpu[m] ? i : m), fr[0]);
     const worstWall = fr.slice(0, 2).reduce((m, i) => (wall[i] > wall[m] ? i : m), fr[0]);
     const before = Math.max(...[1, 2, 3].map((k) => s.i - k).filter((i) => i >= 0).map((i) => wall[i]));
-    return { e: s.e, frame: w[s.i].from, cpu: cpu[worst] - base.cpu, cpuAt: worst - s.i, wall: wall[worstWall], wallAt: worstWall - s.i, wallAll: Math.max(...fr.map((i) => wall[i])), before, gpu: Math.max(...fr.map((i) => gpuMs[i])) };
+    return { e: s.e, frame: w[s.i].from, cpu: cpu[worst] - base.cpu, cpuAt: worst - s.i, wall: wall[worstWall], wallAt: worstWall - s.i, wallAll: Math.max(...fr.map((i) => wall[i])), before, gpu: Math.max(...fr.map((i) => gpuMs[i])),
+      gpu01: Math.max(...fr.slice(0, 2).map((i) => gpuMs[i])) };
   });
   const missing = last(w[n - 1], 'cw.three.missing');
   if (dump) writeFileSync(join(OUT, `${label}.${gpu}.json`), JSON.stringify({ base, changes, frames: w.map((x, i) => ({ f: x.from, e: ev[i], wall: wall[i], cpu: cpu[i], gpu: gpuMs[i] })) }, null, 1));
-  return { base, changes, missing, noisy: runs.some((t) => t.noisy), fire: last(w[n - 1], 'sw.fire_renders'), stage: last(w[n - 1], 'sw.stage_renders') };
+  return { base, changes, missing, noisy: runs.some((t) => t.noisy), fire: last(w[n - 1], 'sw.fire_renders'), stage: last(w[n - 1], 'sw.stage_renders'), sea: last(w[n - 1], 'sw.sea_renders') };
 }
 
 /** a deterministic load's first frame (where a test's prewarm runs): the load runs it (its first request is answered
@@ -190,19 +203,26 @@ function loadingShare(path) {
 let fail = 0;
 const check = (ok, msg) => { if (!ok) fail++; console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); };
 const note = (msg) => console.log(`     ${msg}`);
-const table = (a) => a.changes.map((c) => `${String(c.e).padStart(2)} ${(NAMES[c.e % 6] + (c.e >= 6 ? ' (again)' : '')).padEnd(26)} +${f2(c.cpu).padStart(6)} ms CPU (frame +${c.cpuAt}), ${f2(c.wall).padStart(6)} ms wall (frame +${c.wallAt}), GPU ${f2(c.gpu)} ms`).join('\n     ');
+const table = (a) => a.changes.map((c) => `${String(c.e).padStart(2)} ${(NAMES[c.e % EV] + (c.e >= EV ? ' (again)' : '')).padEnd(26)} +${f2(c.cpu).padStart(6)} ms CPU (frame +${c.cpuAt}), ${f2(c.wall).padStart(6)} ms wall (frame +${c.wallAt}), GPU ${f2(c.gpu)} ms (+0/+1 ${f2(c.gpu01)})`).join('\n     ');
+// the sea's first showing's GPU time on its first two frames over its second showing's (its environment's first capture
+// is the prewarm's: the first shown frame draws only its share of the next capture, as the second showing's does)
+const seaGpu = (a) => {
+  const c1 = a.changes.find((x) => x.e === SEA), c2 = a.changes.find((x) => x.e === SEA + EV);
+  return c1 && c2 ? { first: c1.gpu01, again: c2.gpu01, over: c1.gpu01 - c2.gpu01 } : null;
+};
 for (const gpu of gpus) {
   const runs = [];
   for (let i = 0; i < RUNS; i++) runs.push(await runRetry(gpu, `prewarm${i ? i + 1 : ''}`, {}));
   const a = analyse(runs, 'prewarm', gpu);
   note(`${gpu}: usual frame ${f2(a.base.wall)} ms wall / ${f2(a.base.cpu)} ms CPU / ${f2(a.base.gpu)} ms GPU (the least of ${RUNS} runs per frame); each change's worst frame over it:\n     ${table(a)}`);
-  check(a.changes.length === 12, `${gpu}: the run made all 12 changes (${a.changes.length}; fire ${a.fire} pictures, stage ${a.stage})`);
+  check(a.changes.length === 2 * EV, `${gpu}: the run made all ${2 * EV} changes (${a.changes.length}; fire ${a.fire} pictures, stage ${a.stage}, sea ${a.sea})`);
   check(!a.missing, `${gpu}: no program state missing (${a.missing || 0})`);
   for (const c of a.changes) {
-    const name = `${NAMES[c.e % 6]}${c.e >= 6 ? ' again' : ' first'}`;
-    check(c.cpu <= LIMIT_MS, `${gpu}: ${name}: at most ${LIMIT_MS} ms of CPU over the usual frame (+${f2(c.cpu)} ms)`);
-    if (c.e >= 6) continue;
-    const again = a.changes.find((x) => x.e === c.e + 6);
+    const name = `${NAMES[c.e % EV]}${c.e >= EV ? ' again' : ' first'}`;
+    const lim = LIMIT_MS + (c.e === SEA + EV ? ENV_FILTER_MS : 0);
+    check(c.cpu <= lim, `${gpu}: ${name}: at most ${lim} ms of CPU over the usual frame (+${f2(c.cpu)} ms)`);
+    if (c.e >= EV) continue;
+    const again = a.changes.find((x) => x.e === c.e + EV);
     const bound = Math.max(RATIO * a.base.wall, (again ? again.wallAll : 0) + SLACK_MS, c.before + SLACK_MS);
     if (a.noisy || busy[gpu]) note(`${gpu}: ${name}: wall not judged (another process used the GPU during these runs): ${f2(c.wall)} ms, bound ${f2(bound)}`);
     else check(c.wall <= bound, `${gpu}: ${name}: its first two frames at most ${RATIO}x the usual frame or its second showing or the 3 frames before it + ${SLACK_MS} ms of wall time (${f2(c.wall)} ms; usual ${f2(a.base.wall)}, second showing ${again ? f2(again.wallAll) : '-'}, before ${f2(c.before)})`);
@@ -221,8 +241,19 @@ for (const gpu of gpus) {
   check(sharePlay < 0.97, `${gpu} CONTROL: a frame of play judged the same way fails (${(sharePlay * 100).toFixed(2)}%)`);
   const ctl = analyse([await runRetry(gpu, 'control-no-prewarm', { CW_TEST_NO_PREWARM: '1' })], 'control', gpu);
   note(`${gpu} control (no prewarm): usual frame ${f2(ctl.base.cpu)} ms CPU:\n     ${table(ctl)}`);
-  const worstFirst = Math.max(...ctl.changes.filter((c) => c.e < 6).map((c) => c.cpu));
+  const worstFirst = Math.max(...ctl.changes.filter((c) => c.e < EV).map((c) => c.cpu));
   check(worstFirst >= CONTROL_MS, `${gpu} CONTROL: without the prewarm a first showing costs at least ${CONTROL_MS} ms of CPU over the usual frame (+${f2(worstFirst)} ms)`);
+  const ctlSea = ctl.changes.find((c) => c.e === SEA);
+  check(ctlSea && ctlSea.cpu >= CONTROL_MS, `${gpu} CONTROL: without the prewarm the sea's first showing with SSR costs at least ${CONTROL_MS} ms of CPU over the usual frame (+${ctlSea ? f2(ctlSea.cpu) : '-'} ms)`);
+  // the environment's first capture made in the warm-up: the sea's first shown frames cost the GPU what its second
+  // showing's do (control CW_TEST_NO_ENV_PREWARM=1: the capture left to its first shown frame, as before)
+  const sg = seaGpu(a);
+  if (a.noisy || busy[gpu]) note(`${gpu}: the sea's GPU not judged (another process used the GPU): first ${sg ? f2(sg.first) : '-'} ms, again ${sg ? f2(sg.again) : '-'}`);
+  else check(sg && sg.over <= GPU_SLACK_MS, `${gpu}: the sea's first two frames cost the GPU at most ${GPU_SLACK_MS} ms over its second showing's (${sg ? `${f2(sg.first)} vs ${f2(sg.again)} ms` : 'no change'})`);
+  const envRuns = [];
+  for (let i = 0; i < RUNS; i++) envRuns.push(await runRetry(gpu, `control-no-env-prewarm${i ? i + 1 : ''}`, { CW_TEST_NO_ENV_PREWARM: '1' }));
+  const ce = seaGpu(analyse(envRuns, 'control-env', gpu));
+  check(ce && ce.over > GPU_SLACK_MS, `${gpu} CONTROL: with the first capture on its first shown frame (CW_TEST_NO_ENV_PREWARM=1) the sea's first two frames cost the GPU more than ${GPU_SLACK_MS} ms over its second showing's (${ce ? `${f2(ce.first)} vs ${f2(ce.again)} ms, +${f2(ce.over)}` : 'no change'})`);
 }
 console.log(fail ? `backdrop-look-prewarm: ${fail} failure(s)` : 'ok   backdrop-look-prewarm');
 process.exit(fail ? 1 : 0);

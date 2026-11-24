@@ -441,6 +441,25 @@ bool cw_pipeline_has_pass(cw_pipeline *p, const char *name);
 /* Settings (read/write). A PostProcess node in the tree overwrites them every
  * frame: set its properties instead when there is one. */
 cw_post_settings *cw_pipeline_settings(cw_pipeline *p);
+/* Prewarm of post passes turned on later. A pass the settings switch on (ssr, ssr_backdrop, ssgi, ssao, dof, motion
+ * blur, ...) builds its programs, WebGPU pipelines and targets on the first frame it runs, and SSR or SSGI also put the
+ * gi part on every lit material of the scene, whose programs are then built for the scene and its G-buffer: on
+ * WebGPU 80 to 190 ms in one frame of a style change that first turns SSR on. Pass the settings the game will turn on
+ * (a copy of cw_pipeline_settings with those passes on, or a PostProcess node's settings as they will be): at the next
+ * render of the whole scene, each pass they turn on and the current settings do not runs once with them, in the shadow
+ * and post phases, its picture drawn into a target of its own, and every material it touches (the gi part's
+ * programs, in the scene and the G-buffer) drawn once; nothing of it reaches the frame. Its first frame on then costs
+ * what any later frame does. The settings are kept: a scene app (cw_scene_app) runs the prewarm again at the end of
+ * its warm-up, under the loading screen (call this in init or the warm-up), and at the end of each loading phase
+ * (cw_loading_begin), when the scene is whole; call it again after building more of the scene to prewarm that too.
+ * Only passes off now run (one already on keeps its settings), and only what a pass draws by itself: a setting that
+ * changes the scene target (msaa, hdr) is not prewarmed. Given settings, the prewarm also draws the scene once more
+ * with every object shown (hidden ones, instanced meshes of no instances), so what a style shows later builds nothing
+ * either. A material property a style
+ * changes (a clear coat, a blend mode) still builds its program when it changes. NULL forgets the settings. */
+void cw_post_prewarm(cw_pipeline *p, const cw_post_settings *later);
+/* Post prewarm renders made on the pipeline so far (renders in which a pass ran for cw_post_prewarm). */
+int cw_pipeline_post_prewarms(cw_pipeline *p);
 /* The program states the tree's last frame needed and none of the app's
  * program tables has, one per line ("" when none). A cart skips those draws;
  * a native build with CW_THREE_BUILDER builds them at run time. Either way

@@ -35,6 +35,7 @@
 #include "gi_internal.h"
 void cw__shading_gbuf_name(const char *ext, char out[64]); /* src/render/shading.c */
 #include "render/pipeline_internal.h"
+#include "scene/render3d_internal.h"
 #if CW_WGPU
 #include "render/pipeline_wgpu.h"
 #endif
@@ -557,6 +558,34 @@ bool cw__gi_gbuffer(cw_pass_ctx *ctx, gi_tree *g, const gi_view *v, int mode) {
   for (int i = 0; i < hidden.count; i++) hidden.data[i].o->visible = true;
   cw_array_free(&hidden);
   return ok;
+}
+
+/* the prewarm of the G-buffers as a frame with env as the scene's environment draws them (backdrop.c: a backdrop that
+ * lights the scene coming in with SSR or SSGI): every object shown, the gi part put on and taken off again, the scene's
+ * environment put back; the G-buffers' contents are the next gi pass's to draw again */
+void cw__gi_gbuffer_prewarm(cw_pass_ctx *ctx, t3_texture *env, bool albedo) {
+  t3_scene *sc = ctx->scene3d;
+  if (!sc || !ctx->renderer || !ctx->camera) return;
+  gi_tree *g = cw__gi_tree(ctx->tree);
+  gi_view v = cw__gi_view(ctx);
+  int n0 = g->mats.count;
+  t3_texture *own = sc->environment;
+  if (env) {
+    if (own) t3_retain(own);
+    t3_scene_set_environment(sc, env);
+  }
+  cw__show_keep keep;
+  cw__scene_show_all(sc, &keep);
+  bool ok = g->gbuf_ok[v.k], ok2 = g->albedo_ok[v.k];
+  if (cw__gi_gbuffer(ctx, g, &v, 1) && albedo) cw__gi_gbuffer(ctx, g, &v, 2);
+  g->gbuf_ok[v.k] = ok, g->albedo_ok[v.k] = ok2;
+  cw__scene_show_restore(&keep);
+  cw__gi_untag_from(ctx->tree, n0);
+  if (env) {
+    t3_scene_set_environment(sc, own);
+    if (own) t3_release(own);
+  }
+  if (!cw__render3d_shadows_kept(ctx->tree)) t3_renderer_shadow_needs_update(ctx->renderer);
 }
 
 /* ── the pass ───────────────────────────────────────────────────────── */

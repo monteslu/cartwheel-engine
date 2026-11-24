@@ -1771,7 +1771,7 @@
     {
      "name": "cw_backdrop_prewarm",
      "signature": "bool cw_backdrop_prewarm(cw_node backdrop)",
-     "doc": "Prewarm: draw the backdrop's world once at the next frame of its tree, whatever its opacity and with its hidden root\nshown for that render (nothing of it reaches the screen: its picture is blended at opacity 0), so everything its\nfirst shown frame would build is built then: its world's programs and pipelines (shadows, sky, fog, particles,\ndecals), its picture and the targets of its passes, its particle buffers and fog grids, and the tree's backdrop\npass. Its first frame shown then costs what any later frame does. A scene app (cw_scene_app) prewarms every\nBackdrop of its tree by itself at the end of its warm-up, under the loading screen (and at the end of each loading\nphase, cw_loading_begin); call this for a backdrop added, or a world built, after that (behind a loading screen of\nthe game's own, or a frame before it fades in). What it built is kept while the backdrop is at opacity 0, which\ncosts nothing per frame. An environment capture (environment true) is still made on its first shown frame. false\nfor a node that is not a Backdrop.",
+     "doc": "Prewarm: draw the backdrop's world once at the next frame of its tree, whatever its opacity and with its hidden root\nshown for that render (nothing of it reaches the screen: its picture is blended at opacity 0), so everything its\nfirst shown frame would build is built then: its world's programs and pipelines (shadows, sky, fog, particles,\ndecals), its picture and the targets of its passes, its particle buffers and fog grids, and the tree's backdrop\npass. Its first frame shown then costs what any later frame does. A scene app (cw_scene_app) prewarms every\nBackdrop of its tree by itself at the end of its warm-up, under the loading screen (and at the end of each loading\nphase, cw_loading_begin); call this for a backdrop added, or a world built, after that (behind a loading screen of\nthe game's own, or a frame before it fades in). What it built is kept while the backdrop is at opacity 0, which\ncosts nothing per frame. With `environment` on, the prewarm also makes a whole capture of its world (the six\nfaces), blends and filters it as the tree's environment would be (into targets nothing reads) and draws the tree's\nscene once lit by it, every object shown, into small targets of its own: its first shown frame then draws only its\nshare of the next capture, as any later frame does, and lights the scene from the prewarm's capture until that one\nis done (env_every frames). The scene's environment is not touched. false for a node that is not a Backdrop.",
      "inline": false
     },
     {
@@ -9508,6 +9508,18 @@
      "name": "cw_pipeline_settings",
      "signature": "cw_post_settings *cw_pipeline_settings(cw_pipeline *p)",
      "doc": "Settings (read/write). A PostProcess node in the tree overwrites them every\nframe: set its properties instead when there is one.",
+     "inline": false
+    },
+    {
+     "name": "cw_post_prewarm",
+     "signature": "void cw_post_prewarm(cw_pipeline *p, const cw_post_settings *later)",
+     "doc": "Prewarm of post passes turned on later. A pass the settings switch on (ssr, ssr_backdrop, ssgi, ssao, dof, motion\nblur, ...) builds its programs, WebGPU pipelines and targets on the first frame it runs, and SSR or SSGI also put the\ngi part on every lit material of the scene, whose programs are then built for the scene and its G-buffer: on\nWebGPU 80 to 190 ms in one frame of a style change that first turns SSR on. Pass the settings the game will turn on\n(a copy of cw_pipeline_settings with those passes on, or a PostProcess node's settings as they will be): at the next\nrender of the whole scene, each pass they turn on and the current settings do not runs once with them, in the shadow\nand post phases, its picture drawn into a target of its own, and every material it touches (the gi part's\nprograms, in the scene and the G-buffer) drawn once; nothing of it reaches the frame. Its first frame on then costs\nwhat any later frame does. The settings are kept: a scene app (cw_scene_app) runs the prewarm again at the end of\nits warm-up, under the loading screen (call this in init or the warm-up), and at the end of each loading phase\n(cw_loading_begin), when the scene is whole; call it again after building more of the scene to prewarm that too.\nOnly passes off now run (one already on keeps its settings), and only what a pass draws by itself: a setting that\nchanges the scene target (msaa, hdr) is not prewarmed. Given settings, the prewarm also draws the scene once more\nwith every object shown (hidden ones, instanced meshes of no instances), so what a style shows later builds nothing\neither. A material property a style\nchanges (a clear coat, a blend mode) still builds its program when it changes. NULL forgets the settings.",
+     "inline": false
+    },
+    {
+     "name": "cw_pipeline_post_prewarms",
+     "signature": "int cw_pipeline_post_prewarms(cw_pipeline *p)",
+     "doc": "Post prewarm renders made on the pipeline so far (renders in which a pass ran for cw_post_prewarm).",
      "inline": false
     },
     {
