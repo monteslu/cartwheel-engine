@@ -417,6 +417,7 @@ typedef struct terrain3d {
   float vertex_spacing, min_height, max_height, lod0_range, far_distance, visible_range, side_detile;
   float blend_sharpness, macro_tint, macro_tint_scale, macro_layer, macro_layer_scale, macro_layer_near, macro_layer_far;
   float parallax_distance;
+  bool uv_blend;
   const char *heightmap, *control, *splat;
   int generate_seed;
   float generate_feature, generate_amplitude;
@@ -491,7 +492,7 @@ static void shading_def(const terrain3d *d, cw_terrain_def *def) {
   def->macro_tint = d->macro_tint, def->macro_tint_scale = d->macro_tint_scale;
   def->macro_layer = d->macro_layer, def->macro_layer_scale = d->macro_layer_scale;
   def->macro_layer_near = d->macro_layer_near, def->macro_layer_far = d->macro_layer_far;
-  def->parallax_distance = d->parallax_distance;
+  def->uv_blend = d->uv_blend, def->parallax_distance = d->parallax_distance;
 }
 
 static void build(cw_node n, terrain3d *d) {
@@ -579,7 +580,7 @@ static void terrain_changed(cw_node n, void *data, const cw_prop *p) {
   }
   static const char *const shading_props[] = { "side_detile", "blend_sharpness", "macro_tint", "macro_tint_scale",
                                                "macro_layer", "macro_layer_scale", "macro_layer_near",
-                                               "macro_layer_far", "parallax_distance" };
+                                               "macro_layer_far", "parallax_distance", "uv_blend" };
   for (int i = 0; d->t && i < (int)CW_ARRAY_LEN(shading_props); i++)
     if (!strcmp(p->name, shading_props[i])) {
       cw_terrain_def def = *cw_terrain_get_def(d->t);
@@ -699,6 +700,7 @@ static const cw_prop terrain_props[] = {
   CW_PROP_FIELD_RANGE(terrain3d, macro_layer_scale, CW_T_FLOAT, 0, 1000, "The second read's tile, times the layer's own (0 = 4)."),
   CW_PROP_FIELD_RANGE(terrain3d, macro_layer_near, CW_T_FLOAT, 0, 100000, "Metres where the second read starts fading in."),
   CW_PROP_FIELD_RANGE(terrain3d, macro_layer_far, CW_T_FLOAT, 0, 100000, "Metres where the second read has its full share (0 = 60)."),
+  CW_PROP_FIELD(terrain3d, uv_blend, CW_T_BOOL, CW_PROP_DEFAULT, "Control texels of different uv rotation or scale blended across the texel by height, so a change of rotation draws no seam (off: each point takes its nearest texel's, a cheaper program)."),
   CW_PROP_FIELD_RANGE(terrain3d, parallax_distance, CW_T_FLOAT, 0, 100000, "Metres within which layers with a parallax depth are drawn with parallax occlusion (0 = 30)."),
   CW_PROP_FIELD_RANGE(terrain3d, far_distance, CW_T_FLOAT, 1, 100000, "Metres past which only the macro colour is drawn (x quality)."),
   CW_PROP_FIELD_RANGE(terrain3d, visible_range, CW_T_FLOAT, 0, 1e7, "Patches farther are not drawn (0 = unlimited)."),

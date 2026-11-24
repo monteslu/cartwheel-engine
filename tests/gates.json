@@ -2497,6 +2497,11 @@
     "note": "Terrain3D near-ground shading measured from the picture (samples/terrain_detail, 1080p), native and romdev, GL and WebGPU: uv rotation alternating per 4 m block draws no seam (brightness step across block edges and the blend band within 1.15x the step inside the blocks, top-down and from a play camera; CONTROL CW_TEST_TERRAIN_NEAREST_UV=1 shows the seams, over 1.3x); macro_tint and macro_layer cut the 4 m tile repeat at Very Low (autocorrelation peak down a third) and at least double the spread of 2 m patches at High (CONTROL: off); blend_sharpness widens and narrows the flagstone-sand transition and 0.15 is the default pixel for pixel (CONTROL: a sharpness on an unpainted layer changes nothing); parallax shifts texels 2 px or more from a low camera and under half that from above, depth 0 pixel for pixel (CONTROL: Low, no steps, shifts nothing)"
   },
   {
+    "name": "terrain-fx-cost",
+    "script": "tests/terrain-fx-cost.mjs",
+    "note": "a terrain using none of Terrain3D's near-ground options draws with the program it always had (samples/terrain_detail: a random uv rotation on every control texel, side_detile 1, uv_blend off), native and romdev, GL and WebGPU: no terrainfx part (td.fx 0; CONTROL CW_TEST_TERRAIN_FX=1 has one, uv_blend on over a rotation per block has one, uv_blend on over one rotation has none); natively on a real GPU, GPU ms at 1080p in interleaved rounds within the noise of the same field with one rotation (CONTROL: the fx program forced costs more than the noise)"
+  },
+  {
     "name": "terrain-detail-perf",
     "script": "tests/terrain-detail-perf.mjs",
     "note": "GPU ms of each Terrain3D near-ground option over the same frame without it (rotation blend, macro tint, macro layer, parallax at Medium, High and Ultra), samples/terrain_detail at 1080p natively on GL and WebGPU, interleaved rounds with the load and the GPU clock; a report"

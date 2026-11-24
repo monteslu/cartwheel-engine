@@ -151,13 +151,18 @@ typedef struct cw_terrain_def {
   float macro_layer_scale;  /* that read's tile, times the layer's own: 0 = 4 */
   float macro_layer_near;   /* metres: the second read starts fading in here (0 = from the camera) */
   float macro_layer_far;    /* metres: and has its full share from here: 0 = 60 */
+  /* Control texels of different uv rotation or scale read and blended across the texel by height, so a change of
+   * rotation draws no seam. Off by default: each point takes its nearest texel's rotation and scale, as before the
+   * option (a control map with a random rotation on every texel blends everywhere, and costs that everywhere). */
+  bool uv_blend;
   /* Parallax occlusion on layers with a depth (cw_terrain_set_layer_parallax): within this many metres of the
    * camera the eye's ray is marched into the layer's height, so stones and cracks stand up from the ground as the
    * view turns. 0 = 30. Steps per pixel follow the quality: none at Very Low and Low, 4 at Medium, 8 at High, 16
    * at Ultra.
-   * While a macro option is on, a layer has a parallax depth the quality draws, or the control map has
-   * neighbouring texels of different uv rotation or scale, the near terrain draws with a larger program (the
-   * terrainfx surface parts: about 0.6 ms more at 1080p on a Radeon 890M); otherwise with the one it always had. */
+   * While a macro option is on, a layer has a parallax depth the quality draws, or uv_blend is on and the control
+   * map has neighbouring texels of different uv rotation or scale, the near terrain draws with a larger program
+   * (the terrainfx surface parts: about 0.6 ms more at 1080p on a Radeon 890M); otherwise with the one it always
+   * had. */
   float parallax_distance;
   float far_distance;       /* metres: past it only the macro colour is drawn (0 = 400) */
   float far_fade;           /* metres over which splat fades into macro: 0 = far_distance / 4 */
@@ -173,7 +178,7 @@ cw_terrain *cw_terrain_create(const cw_terrain_def *def);
 /* The def's side_detile, live. */
 void cw_terrain_set_side_detile(cw_terrain *t, float amount);
 /* The def's shading fields, live: side_detile, blend_sharpness, macro_tint, macro_tint_scale, macro_layer,
- * macro_layer_scale, macro_layer_near, macro_layer_far and parallax_distance (0 meaning their defaults as at
+ * macro_layer_scale, macro_layer_near, macro_layer_far, uv_blend and parallax_distance (0 meaning their defaults as at
  * cw_terrain_create). The other fields of d are ignored. */
 void cw_terrain_set_shading(cw_terrain *t, const cw_terrain_def *d);
 /* Frees the terrain, its scatter, its physics and its scene objects. */

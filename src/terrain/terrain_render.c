@@ -60,8 +60,13 @@ static cw_terrain *terrain_of_obj(const void *obj) {
   return g_objs_init && cw_map_get(&g_objs, (uint64_t)(uintptr_t)obj, &v) ? (cw_terrain *)(uintptr_t)v : NULL;
 }
 
+/* terrains drawing their near patches with the near-ground options' program (debug field cw.terrain.fx) */
+static int32_t g_fx_terrains;
+
 static tr_gpu *gpu(cw_terrain *t) {
   if (!t->gpu) {
+    static bool reg;
+    if (!reg) reg = true, cw_debug_i32("cw.terrain.fx", &g_fx_terrains);
     tr_gpu *g = cw_calloc(1, sizeof(tr_gpu), CW_MEM_RENDER);
     g->root = t3_group_new();
     t->gpu = g;
@@ -86,7 +91,14 @@ static const char *near_ext(int q, bool fx) {
 static const float POM_STEPS[CW_QUALITY_COUNT] = { 0, 0, 4, 8, 16 };
 static bool wants_fx(const cw_terrain *t, int q) {
   const tr_gpu *g = t->gpu;
-  if ((g && g->uvdiff > 0) || t->def.macro_tint > 0 || t->def.macro_layer > 0) return true;
+  /* CW_TEST_TERRAIN_FX=1: the fx program whatever the terrain uses (a gate's control: what it costs a terrain
+   * that uses none) */
+  static int force = -1;
+  if (force < 0 && cw_frame_index() > 0) force = cw_test_env("CW_TEST_TERRAIN_FX") != NULL;
+  if (force > 0) return true;
+  /* a control map whose texels differ in uv rotation or scale needs the fx program only to blend them (uv_blend):
+   * without it the plain program reads the nearest texel's, as it always did */
+  if ((t->def.uv_blend && g && g->uvdiff > 0) || t->def.macro_tint > 0 || t->def.macro_layer > 0) return true;
   if (POM_STEPS[CW_CLAMP(q, 0, CW_QUALITY_COUNT - 1)] > 0)
     for (int i = 0; i < CW_TERRAIN_LAYERS; i++)
       if (t->layer[i].parallax > 0) return true;
@@ -419,6 +431,7 @@ void cw__terrain_gpu_free(cw_terrain *t) {
   if (g->scene) t3_object_remove(&g->scene->base, g->root);
   t3_release(g->root);
   cw_free(g->uvdiff_rows);
+  if (g->near_fx) g_fx_terrains--;
   cw_free(g);
   t->gpu = NULL;
 }
@@ -507,6 +520,7 @@ void cw__terrain_gpu_update(cw_terrain *t) {
   if (q != g->near_q || fx != g->near_fx) {
     /* swap the surface part only: parts a game added (cartwheel/shading.h) and the lighting's stay */
     cw_shading_remove(g->mat_near, near_ext(g->near_q, g->near_fx));
+    g_fx_terrains += (int)fx - (int)g->near_fx;
     g->near_q = q, g->near_fx = fx;
     cw_shading_add(g->mat_near, near_ext(q, fx));
   }
@@ -586,11 +600,12 @@ static void fill(t3_extension_ctx *c, void *user) {
     for (int m = 0; m < 4; m++)
       if (obj == g->view[k].im[m >> 1][m & 1]) cam = g->view[k].cam;
   float v[4];
-  /* w: 1 reads every point's uv rotation and scale from its nearest control texel (a gate's control, the seams
-   * the blend across texels removes: CW_TEST_TERRAIN_NEAREST_UV) */
+  /* w: 1 reads every point's uv rotation and scale from its nearest control texel: uv_blend off (an fx program
+   * drawn for another option), or a gate's control, the seams the blend across texels removes
+   * (CW_TEST_TERRAIN_NEAREST_UV) */
   static int nearest_uv = -1;
   if (nearest_uv < 0 && cw_frame_index() > 0) nearest_uv = cw_test_env("CW_TEST_TERRAIN_NEAREST_UV") != NULL;
-  v[0] = cam.x, v[1] = cam.y, v[2] = cam.z, v[3] = nearest_uv > 0 ? 1.0f : 0.0f;
+  v[0] = cam.x, v[1] = cam.y, v[2] = cam.z, v[3] = nearest_uv > 0 || !d->uv_blend ? 1.0f : 0.0f;
   t3_extension_set_uniform(c, "terrainCam", v, 4);
   v[0] = d->origin.x, v[1] = d->origin.z, v[2] = 1.0f / d->vertex_spacing, v[3] = d->vertex_spacing;
   t3_extension_set_uniform(c, "terrainGrid", v, 4);

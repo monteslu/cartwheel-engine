@@ -11,7 +11,11 @@
  * Test switches (cw_test_env, applied the first frame they can be read):
  *   TD_PAINT   plain (flagstones, rotation 0: the default), rot (flagstones,
  *              a quarter turn on every other 4 m block, a checkerboard), pair
- *              (flagstones for x < 0, sand from x = 8, a blend between)
+ *              (flagstones for x < 0, sand from x = 8, a blend between),
+ *              jumble (flagstones, a random rotation on every texel, as a
+ *              game breaks a layer's repeat with its control map)
+ *   TD_UV_BLEND  cw_terrain_def.uv_blend (1, the default: on; 0: off)
+ *   TD_DETILE  cw_terrain_def.side_detile (default 0)
  *   TD_VIEW    play (default: from 8 m up and 20 m back, ground from 10 to
  *              80 m away), top (straight down from 34.64 m: 40 m of ground
  *              top to bottom), graze (1.6 m up, looking 10 m ahead), graze2
@@ -24,7 +28,8 @@
  *
  * Debug fields: td.applied (1 once the switches are in), td.gpu_ms (the
  * pipeline's GPU ms averaged from frame 60, with CW_GPU_TIMERS=1), td.frames
- * (frames in that average). */
+ * (frames in that average), td.fx (1 while the near terrain draws with the
+ * near-ground options' program, a terrainfx part). */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,6 +41,7 @@
 #include "cartwheel/platform.h"
 #include "cartwheel/quality.h"
 #include "cartwheel/scene_file.h"
+#include "cartwheel/shading.h"
 #include "cartwheel/terrain.h"
 
 #define TILE 512
@@ -44,6 +50,7 @@ static cw_tree *tree;
 static cw_node cam, terrain_node;
 static int32_t applied, frames;
 static float gpu_ms, gpu_sum, ground_y;
+static int32_t fx;
 
 /* ── tileable noise ──────────────────────────────────────────────────── */
 
@@ -158,10 +165,11 @@ static void paint(cw_terrain *t, const char *mode) {
   const cw_terrain_def *d = cw_terrain_get_def(t);
   int nx = d->size_x + 1, nz = d->size_z + 1;
   uint32_t *ctl = malloc(sizeof(uint32_t) * (size_t)nx * nz);
-  bool rot = mode && !strcmp(mode, "rot"), pair = mode && !strcmp(mode, "pair");
+  bool rot = mode && !strcmp(mode, "rot"), pair = mode && !strcmp(mode, "pair"), jumble = mode && !strcmp(mode, "jumble");
   for (int z = 0; z < nz; z++)
     for (int x = 0; x < nx; x++) {
       int angle = rot && (((x >> 2) + (z >> 2)) & 1) ? 4 : 0;
+      if (jumble) angle = (int)((((uint32_t)x * 73856093u) ^ ((uint32_t)z * 19349663u)) * 2654435761u >> 28);
       int blend = 0;
       if (pair) {
         /* sample x at world x - 128: flagstones to world x 0, sand from 8 */
@@ -190,11 +198,13 @@ static void apply(void) {
     if (!strcasecmp(qs, qn[q])) cw_quality_set((cw_quality)q, false);
   paint(t, cw_test_env("TD_PAINT"));
   cw_terrain_def sd = *cw_terrain_get_def(t);
-  bool shading = false;
-  if (cw_test_env("TD_MACRO_TINT")) sd.macro_tint = envf("TD_MACRO_TINT", 0), shading = true;
-  if (cw_test_env("TD_MACRO_LAYER")) sd.macro_layer = envf("TD_MACRO_LAYER", 0), shading = true;
-  if (cw_test_env("TD_SHARP")) sd.blend_sharpness = envf("TD_SHARP", 0.15f), shading = true;
-  if (shading) cw_terrain_set_shading(t, &sd);
+  /* uv_blend on unless TD_UV_BLEND=0 (the rotation blend's scenes need it; without it the plain program) */
+  sd.uv_blend = envf("TD_UV_BLEND", 1) > 0;
+  sd.side_detile = envf("TD_DETILE", 0);
+  if (cw_test_env("TD_MACRO_TINT")) sd.macro_tint = envf("TD_MACRO_TINT", 0);
+  if (cw_test_env("TD_MACRO_LAYER")) sd.macro_layer = envf("TD_MACRO_LAYER", 0);
+  if (cw_test_env("TD_SHARP")) sd.blend_sharpness = envf("TD_SHARP", 0.15f);
+  cw_terrain_set_shading(t, &sd);
   if (cw_test_env("TD_SHARP5")) cw_terrain_set_layer_blend_sharpness(t, 5, envf("TD_SHARP5", 0));
   float pd = envf("TD_PARALLAX", 0);
   cw_terrain_set_layer_parallax(t, 0, pd);
@@ -233,6 +243,7 @@ static void init(void *u) {
   cw_debug_i32("td.frames", &frames);
   cw_debug_f32("td.gpu_ms", &gpu_ms);
   cw_debug_f32("td.ground", &ground_y);
+  cw_debug_i32("td.fx", &fx);
 }
 
 static void fixed_update(void *u, double dt) {
@@ -244,6 +255,8 @@ static void fixed_update(void *u, double dt) {
 static void render(void *u, double alpha) {
   (void)u;
   (void)alpha;
+  const t3_material *m = cw_terrain_material(cw_terrain_of(terrain_node));
+  fx = m && (cw_shading_has(m, "terrainfx") || cw_shading_has(m, "terrainfxlow") || cw_shading_has(m, "terrainfxmin"));
   if (cw_frame_index() < 60) return;
   float g = cw_pipeline_gpu_ms(cw_pipeline_of(tree));
   if (g > 0) gpu_sum += g, frames++, gpu_ms = gpu_sum / (float)frames;

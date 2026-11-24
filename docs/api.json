@@ -15768,7 +15768,7 @@
     {
      "name": "cw_terrain_set_shading",
      "signature": "void cw_terrain_set_shading(cw_terrain *t, const cw_terrain_def *d)",
-     "doc": "The def's shading fields, live: side_detile, blend_sharpness, macro_tint, macro_tint_scale, macro_layer,\nmacro_layer_scale, macro_layer_near, macro_layer_far and parallax_distance (0 meaning their defaults as at\ncw_terrain_create). The other fields of d are ignored.",
+     "doc": "The def's shading fields, live: side_detile, blend_sharpness, macro_tint, macro_tint_scale, macro_layer,\nmacro_layer_scale, macro_layer_near, macro_layer_far, uv_blend and parallax_distance (0 meaning their defaults as at\ncw_terrain_create). The other fields of d are ignored.",
      "inline": false
     },
     {

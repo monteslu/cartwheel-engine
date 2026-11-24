@@ -9998,6 +9998,14 @@
      "doc": "Metres where the second read has its full share (0 = 60)."
     },
     {
+     "name": "uv_blend",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "Control texels of different uv rotation or scale blended across the texel by height, so a change of rotation draws no seam (off: each point takes its nearest texel's, a cheaper program)."
+    },
+    {
      "name": "parallax_distance",
      "type": "float",
      "default": "30",

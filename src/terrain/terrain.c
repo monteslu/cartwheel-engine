@@ -48,7 +48,7 @@ void cw_terrain_set_shading(cw_terrain *t, const cw_terrain_def *d) {
   o->macro_tint = d->macro_tint, o->macro_tint_scale = d->macro_tint_scale;
   o->macro_layer = d->macro_layer, o->macro_layer_scale = d->macro_layer_scale;
   o->macro_layer_near = d->macro_layer_near, o->macro_layer_far = d->macro_layer_far;
-  o->parallax_distance = d->parallax_distance;
+  o->uv_blend = d->uv_blend, o->parallax_distance = d->parallax_distance;
   shading_defaults(o);
 }
 

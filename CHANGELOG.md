@@ -4,6 +4,26 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.77.3 (2026-11-24)
+
+### Fixed
+- A terrain whose control map gives neighbouring texels different uv rotations or scales (a random rotation painted
+  into every texel to break a layer's repeat) drew from v0.71.0 on with the near-ground options' larger program and
+  blended the rotations across every texel, though it set none of the new options: a race course 896 quads across,
+  painted that way, took 4.5 ms of GPU a frame at v0.57.2 and 7.1 ms at v0.77.0 (GL; WebGPU 4.5 and 6.9) on a
+  Radeon RX 7600-class GPU. Blending rotations across texels is now the option `uv_blend` (`cw_terrain_def`,
+  `cw_terrain_set_shading` and the Terrain3D node's `uv_blend`), off by default: without it each point takes its
+  nearest texel's rotation and scale, as before v0.71.0, with the program it always had. The same course now takes
+  4.49 / 4.75 ms on GL (choppy / storm weather; v0.57.2 4.48 / 4.72) and 4.49 / 4.69 on WebGPU (4.46 / 4.62),
+  three interleaved rounds of 300 frames each. A terrain that draws the larger program for another option takes
+  the nearest texel's rotation there too unless `uv_blend` is on. Debug field `cw.terrain.fx` counts the terrains
+  drawing with the larger program; `CW_TEST_TERRAIN_FX=1` forces it (a control). Sample terrain_detail gains
+  `TD_PAINT=jumble` (a random rotation on every texel), `TD_UV_BLEND` (on by default there), `TD_DETILE` and the
+  field `td.fx`. Gate `terrain-fx-cost` (native and romdev, GL and WebGPU, CI on software rendering): the jumbled
+  map with no options has no terrainfx part (control `CW_TEST_TERRAIN_FX=1` has one; `uv_blend` over a rotation
+  per block has one); on a real GPU its time is within the noise of the same field with one rotation (GL +0.02 ms,
+  WebGPU +0.01) and the forced program costs 0.43 to 0.46 ms more.
+
 ## v0.77.2 (2026-11-24)
 
 ### Fixed
