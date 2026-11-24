@@ -303,3 +303,4 @@ physical+skin+cc+l1001
 physical+skin+ds+sheen+l1001
 depth+skin+xskinshade
 physical+skin+sheen+l1001+xskinshade
+basic+trans+xhfog

@@ -50,3 +50,5 @@ visible_range = 45
 fade = 10
 lod_distance = 14
 seed = 1
+fade_mode = DITHER
+lod_blend = 6

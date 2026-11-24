@@ -236,6 +236,27 @@ static const t3_gen_attribute a_basic_trans_ds_xhfog[] = {
   { "position", "vec3", 0, false },
 };
 
+/* ── basic+trans+xhfog ── */
+static const t3_bk_group_layout g_basic_trans_xhfog_render = { "render", 0, 192, 0, NULL, 0, NULL, 0 };
+static const t3_bk_group_layout g_basic_trans_xhfog_object = { "object", 1, 160, 0, NULL, 0, NULL, 0 };
+static const t3_bk_group_layout *const groups_basic_trans_xhfog[] = { &g_basic_trans_xhfog_render, &g_basic_trans_xhfog_object };
+static const t3_gen_property p_basic_trans_xhfog[] = {
+  { "material.color", 1, 0, 12, false },
+  { "material.opacity", 1, 12, 4, false },
+  { "camera.matrixWorldInverse", 0, 64, 64, false },
+  { "object.matrixWorld", 1, 32, 64, false },
+  { "camera.worldMatrix", 0, 128, 64, false },
+  { "ext.hfogA", 1, 16, 16, false },
+  { "ext.hfogB", 1, 96, 16, false },
+  { "ext.hfogC", 1, 112, 16, false },
+  { "ext.hfogD", 1, 144, 16, false },
+  { "ext.hfogE", 1, 128, 16, false },
+  { "camera.projectionMatrix", 0, 0, 64, false },
+};
+static const t3_gen_attribute a_basic_trans_xhfog[] = {
+  { "position", "vec3", 0, false },
+};
+
 /* ── basic+vcol ── */
 static const t3_bk_group_layout g_basic_vcol_render = { "render", 0, 128, 0, NULL, 0, NULL, 0 };
 static const t3_bk_group_layout g_basic_vcol_object = { "object", 1, 80, 0, NULL, 0, NULL, 0 };
@@ -32811,6 +32832,7 @@ static const t3_gen_program programs[] = {
   { "basic+trans+cenv+add", T3_GEN_BASIC, 2473901162512ull, { 0, 0, 0, 0 }, NULL, T3_GEN_GL, groups_basic_trans_cenv_add, 2, p_basic_trans_cenv_add, 9, a_basic_trans_cenv_add, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 14, 15, 0 },
   { "basic+trans+ds", T3_GEN_BASIC, 4398046511120ull, { 0, 0, 0, 0 }, NULL, T3_GEN_GL, groups_basic_trans_ds, 2, p_basic_trans_ds, 5, a_basic_trans_ds, 1, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 0, 13, 0 },
   { "basic+trans+ds+xhfog", T3_GEN_BASIC, 4398046511120ull, { 0, 0, 0, 0 }, "hfog", T3_GEN_GL, groups_basic_trans_ds_xhfog, 2, p_basic_trans_ds_xhfog, 11, a_basic_trans_ds_xhfog, 1, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 16, 17, 0 },
+  { "basic+trans+xhfog", T3_GEN_BASIC, 16ull, { 0, 0, 0, 0 }, "hfog", T3_GEN_GL, groups_basic_trans_xhfog, 2, p_basic_trans_xhfog, 11, a_basic_trans_xhfog, 1, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 16, 17, 0 },
   { "basic+vcol", T3_GEN_BASIC, 2ull, { 0, 0, 0, 0 }, NULL, T3_GEN_GL, groups_basic_vcol, 2, p_basic_vcol, 5, a_basic_vcol, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 18, 19, 0 },
   { "depth+batch+xcluster_csm", T3_GEN_DEPTH, 4294967296ull, { 1, 0, 0, 0 }, "cluster_csm", T3_GEN_GL, groups_depth_batch_xcluster_csm, 2, p_depth_batch_xcluster_csm, 3, a_depth_batch_xcluster_csm, 3, k_depth_batch_xcluster_csm, 6, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 20, 21, 0 },
   { "depth+batch+xcluster_csm_gi", T3_GEN_DEPTH, 4294967296ull, { 1, 0, 0, 0 }, "cluster_csm_gi", T3_GEN_GL, groups_depth_batch_xcluster_csm_gi, 2, p_depth_batch_xcluster_csm_gi, 3, a_depth_batch_xcluster_csm_gi, 3, k_depth_batch_xcluster_csm_gi, 6, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 20, 21, 0 },
@@ -33105,4 +33127,4 @@ static const t3_gen_program programs[] = {
   { "toon+gmap+l0001+xcluster_csm", T3_GEN_TOON, 4611686018427387904ull, { 0, 0, 0, 1 }, "cluster_csm", T3_GEN_GL, groups_toon_gmap_l0001_xcluster_csm, 3, p_toon_gmap_l0001_xcluster_csm, 58, a_toon_gmap_l0001_xcluster_csm, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 476, 477, 0 },
   { "toon+l0001+xcluster_csm", T3_GEN_TOON, 0ull, { 0, 0, 0, 1 }, "cluster_csm", T3_GEN_GL, groups_toon_l0001_xcluster_csm, 3, p_toon_l0001_xcluster_csm, 54, a_toon_l0001_xcluster_csm, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 478, 479, 0 },
 };
-const t3_gen_table cw_samples_gl = { programs, 304 };
+const t3_gen_table cw_samples_gl = { programs, 305 };

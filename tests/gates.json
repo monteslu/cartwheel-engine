@@ -6036,6 +6036,11 @@
     "note": "transparent surfaces fogged at their own distance, measured in linear light (samples/fog_transparents, natively and as the dual cart on romdev, GL and WebGPU): an additive panel's and additive particles' light is their unfogged light times the fog's transmittance at their distance, above and below the horizon alike (within 6%, 12% for the particles, 30% for the particles on Very Low and Low, whose RG11B10 scene rounds each faint additive particle as it blends); a lit alpha-blended panel and alpha-blended particles are the background blended with their colour fogged at their distance (within 3/255); every preset (Very Low and Low too, where the fog otherwise runs inside the tonemap pass), volumetric fog (the same transmittance above and below the horizon), a split screen of two views and the world as a Backdrop. Controls: CW_TEST_FOG_OVER_TRANSPARENTS=1 (the fog over everything by the depth behind it, as before) and CW_TEST_FOG_NO_HFOG=1 (three.c materials without their own fog) must each break it"
   },
   {
+    "name": "fog-transparents-optout",
+    "script": "tests/fog-optout.mjs",
+    "note": "a transparent material with fog = false takes no fog (samples/fog_transparents FT_OPTOUT=1: unlit transparent panels that write no depth, 38 m and 900 m away over the sky, in height fog with max_opacity 0.9 and sky_distance 0; natively and as the dual cart on romdev, GL and WebGPU, analytic fog on High and Very Low and volumetric on High): a fog = false panel keeps its colour (within 2/255 of the run without fog) while a fog = true one beside it is fogged at its own distance (within 3/255 of its colour blended toward the fog; volumetric: at least 20/255 from its colour). Control CW_TEST_FOG_IGNORE_OPTOUT=1 (v0.70.1 to v0.77.0: every transparent material fogged) must break it"
+  },
+  {
     "name": "lightmap-bake",
     "app": "lightmap_room",
     "frames": 30,

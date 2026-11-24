@@ -14,6 +14,10 @@
  *   FT_HIDE=1      the four subjects hidden (the background alone)
  *   FT_VFOG=1      the fog volumetric (the froxel grid)
  *   FT_NOPANELS=1  no Glass and Add panels (the particles alone)
+ *   FT_OPTOUT=1    the fog opt-out: the four subjects hidden, the fog's max_opacity 0.9, and four unlit
+ *                  transparent panels writing no depth (MeshBasicMaterial, opacity 1, colour 0.7 0.12 0.06): NearOff
+ *                  (fog = false) and NearOn (fog = true) 38 m away from 0 to 4 m high, FarOff and FarOn 900 m away
+ *                  from 30 to 130 m high over the sky (a sky ring's mountains). A fog = false one takes no fog.
  *   FT_MODE=split     two views side by side, the same camera in each
  *          backdrop  the world drawn as a Backdrop of an empty scene (cartwheel/backdrop.h), its fog its own
  *
@@ -48,6 +52,21 @@ static void init(void *u) {
 }
 
 /* the two panels: three.c meshes under the world's Glass and Add nodes */
+static void optout_panel(cw_node w, bool fog, float x, float y, float z, float size) {
+  t3_geometry *g = t3_plane_geometry_new(size, size, 1, 1);
+  t3_material *m = t3_mesh_basic_material_new(0x000000);
+  m->color = (t3_color){ 0.7f, 0.12f, 0.06f };
+  m->transparent = true;
+  m->depth_write = false;
+  m->fog = fog;
+  t3_mesh *me = t3_mesh_new(g, m);
+  t3_object_set_position(me, x, y, z);
+  t3_object_add(cw_node3d_object(w), me);
+  t3_release(me);
+  t3_release(g);
+  t3_release(m);
+}
+
 static void add_panels(cw_node w) {
   t3_geometry *g = t3_plane_geometry_new(4, 4, 1, 1);
   t3_material *glass = t3_mesh_standard_material_new(0x3080c0);
@@ -80,7 +99,7 @@ static bool on(const char *name) {
 }
 
 static void apply(void) {
-  if (!cw_test_env("FT_MODE") && !cw_test_env("FT_FOG") && !cw_test_env("FT_HIDE") && !cw_test_env("FT_VFOG") && cw_frame_index() < 2)
+  if (!cw_test_env("FT_MODE") && !cw_test_env("FT_FOG") && !cw_test_env("FT_HIDE") && !cw_test_env("FT_VFOG") && !cw_test_env("FT_OPTOUT") && cw_frame_index() < 2)
     return; /* (a test switch lands from frame 2: a native run has them from the start) */
   applied = 1;
   const char *m = cw_test_env("FT_MODE");
@@ -106,7 +125,16 @@ static void apply(void) {
 static void setup_world(void) {
   cw_node w = mode == 2 ? cw_backdrop_root(backdrop) : world;
   if (!cw_node_valid(w)) return;
-  if (!on("FT_NOPANELS")) add_panels(w);
+  if (!on("FT_NOPANELS") && !on("FT_OPTOUT")) add_panels(w);
+  if (on("FT_OPTOUT")) {
+    static const char *const hide[] = { "Glass", "Add", "Fire", "Smoke" };
+    for (int i = 0; i < 4; i++) cw_node_set(cw_node_get(w, hide[i]), "visible", cw_val_bool(false));
+    cw_node_set(cw_node_get(w, "Fog"), "max_opacity", cw_val_float(0.9f));
+    optout_panel(w, false, -6, 2, -38, 4);
+    optout_panel(w, true, 6, 2, -38, 4);
+    optout_panel(w, false, -300, 80, -900, 100);
+    optout_panel(w, true, 300, 80, -900, 100);
+  }
   quads_done = 1;
   if (cw_test_env("FT_FOG") && !on("FT_FOG")) cw_node_set(cw_node_get(w, "Fog"), "density", cw_val_float(0));
   if (on("FT_VFOG")) cw_node_set(cw_node_get(w, "Fog"), "volumetric", cw_val_bool(true));

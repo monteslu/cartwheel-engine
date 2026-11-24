@@ -383,14 +383,28 @@ static int ext_info(const t3_material *m) {
   return v;
 }
 
-static bool test_no_hfog(void) { /* CW_TEST_FOG_NO_HFOG=1: transparent materials take no fog of their own (a gate control) */
-  static int v = -1;
-  if (v < 0) { const char *e = cw_test_env("CW_TEST_FOG_NO_HFOG"); v = e && atoi(e) ? 1 : 0; }
-  return v == 1;
+/* CW_TEST_FOG_IGNORE_OPTOUT=1 (a gate control): a material with fog = false takes the fog of its own anyway, as v0.70.1
+ * to v0.77.0 did */
+static bool test_env_on(const char *name) { const char *e = cw_test_env(name); return e && atoi(e); }
+/* (read once a frame, never cached from frame 0: cw_test_env answers nothing there, before a cart host delivers the env) */
+static bool test_ignore_optout(void) {
+  static uint64_t at = UINT64_MAX;
+  static bool v;
+  if (at != cw_frame_index()) at = cw_frame_index(), v = test_env_on("CW_TEST_FOG_IGNORE_OPTOUT");
+  return v;
 }
 
-/* every transparent material of the scene carries the hfog part, no other material does; the count of transparent
- * draws of visible drawables */
+static bool test_no_hfog(void) { /* CW_TEST_FOG_NO_HFOG=1: transparent materials take no fog of their own (a gate control) */
+  static uint64_t at = UINT64_MAX;
+  static bool v;
+  if (at != cw_frame_index()) at = cw_frame_index(), v = test_env_on("CW_TEST_FOG_NO_HFOG");
+  return v;
+}
+
+/* every transparent material of the scene that takes fog (fog = true, three.js's Material.fog) carries the hfog part, no
+ * other material does (a fog = false one, a sky ring or a backdrop card, draws as it is: before v0.70.1 the fog pass
+ * fogged it by the depth behind it, the sky, which sky_distance 0 leaves alone); the count of transparent draws of
+ * visible drawables (every one, fogged or not, draws after the fog) */
 static int mark_transparents(fog_trans *t, t3_scene *sc) {
   uint32_t ver = t3_graph_version();
   if (!t->have || t->scene != sc || t->ver != ver) {
@@ -407,17 +421,16 @@ static int mark_transparents(fog_trans *t, t3_scene *sc) {
       if (!mt) continue;
       bool tr = mt->transparent || (mt->type == T3_MESH_PHYSICAL_MATERIAL && mt->transmission > 0);
       int info = ext_info(mt);
-      if (tr) {
-        n += m->base.visible;
-        if (!(info & 2) && !test_no_hfog()) {
-          if (info & 4) cw_shading_add(mt, "hfog");
-          else if (!warned) {
-            warned = true;
-            cw_warn("fog: transparent material \"%s\" (extension x%s) cannot take the fog's shading part: it draws unfogged "
-                    "over the fogged scene", mt->name ? mt->name : "", t3_material_get_extension(mt));
-          }
+      bool want = tr && (mt->fog || test_ignore_optout()) && !test_no_hfog();
+      if (tr) n += m->base.visible;
+      if (want && !(info & 2)) {
+        if (info & 4) cw_shading_add(mt, "hfog");
+        else if (!warned) {
+          warned = true;
+          cw_warn("fog: transparent material \"%s\" (extension x%s) cannot take the fog's shading part: it draws unfogged "
+                  "over the fogged scene", mt->name ? mt->name : "", t3_material_get_extension(mt));
         }
-      } else if (info & 2) cw_shading_remove(mt, "hfog");
+      } else if (!want && (info & 2)) cw_shading_remove(mt, "hfog");
     }
   }
   return n;

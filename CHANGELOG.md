@@ -4,6 +4,39 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.77.1 (2026-11-24)
+
+### Fixed
+- A transparent material with `fog = false` was fogged anyway while a HeightFog drew (from v0.70.1 on): the engine put
+  the `hfog` shading part on every transparent material of a scene with fog, whatever its `fog` said. A sky ring of
+  far mountains or a cloud deck (unlit, transparent, writing no depth, `fog = false`) in dense fog (`max_opacity`
+  0.9) turned flat grey, where before v0.70.1 it showed through a sky that `sky_distance = 0` leaves alone. Now a
+  material with `fog = false` takes no fog of its own: it still draws after the fog, as it is, and a material whose
+  `fog` changes gains or loses the part on the next frame. GPU particles and trails have no such switch and take the
+  fog at their own distance as before. A game whose only transparent materials in fog are `fog = false` asks for no
+  `x...hfog` state for them any more.
+- The test switches `CW_TEST_FOG_NO_HFOG` and the new `CW_TEST_FOG_IGNORE_OPTOUT` are read each frame, and a
+  material takes the `hfog` part off when one says so; they were read once, so a first read on frame 0 (where
+  `cw_test_env` answers nothing) kept them off for good.
+- The control switch `CW_TEST_FOLIAGE_PIXEL_DITHER=1` never reached a TerrainScatter3D a scene file holds: the layer
+  read it once when it was made, on frame 0, where `cw_test_env` answers nothing, so a cart drew the same picture with
+  and without it. The layer now reads it each update, sets its materials' fades again and poses its cells again when
+  it changes.
+
+### Tests
+- Sample `fog_transparents` takes `FT_OPTOUT=1`: four unlit transparent panels writing no depth, `fog = false` and
+  `fog = true` side by side, 38 m away and 900 m away over the sky, in its height fog with `max_opacity` 0.9. Gate
+  `fog-transparents-optout` (`tests/fog-optout.mjs`; natively and as the dual cart on romdev, GL and WebGPU, analytic
+  fog on High and Very Low and volumetric on High; in CI on software rendering): a `fog = false` panel keeps its
+  colour (0.00/255 from the run without fog) while the `fog = true` one beside it is fogged at its own distance
+  (within 0.8/255 of the analytic blend; volumetric 52 and 79/255 from its colour). Control
+  `CW_TEST_FOG_IGNORE_OPTOUT=1` (every transparent material fogged, as v0.70.1 to v0.77.0): the `fog = false`
+  panels 49 to 52/255 off.
+- Sample `foliage_field` takes `FOL_FILE=1` (its GRASS layer as main.cwscene makes it on frame 0, now with DITHER
+  fades, no option set on it later), and gate `foliage-grain` checks that `CW_TEST_FOLIAGE_PIXEL_DITHER=1` changes
+  that picture (0.6% of the pixels, GL and WebGPU; v0.77.0: 0.000%).
+- `samples/programs/cw_samples` gained `basic+trans+xhfog`.
+
 ## v0.77.0 (2026-11-24)
 
 ### Added

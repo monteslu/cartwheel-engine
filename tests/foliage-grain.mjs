@@ -12,13 +12,18 @@
 //   bands drawn by the material). CONTROL: CW_TEST_FOLIAGE_PIXEL_DITHER=1, the screen-door of 0.76.1 and before, must add grain
 //   (edge spatial over 0.0006, edge temporal over 0.0008, light spatial over 0.001).
 //   node tests/foliage-grain.mjs [--hosts native,romdev] [--gpu gl,webgpu] [--cams run,pan] [--frames N]
+//   A layer a scene file holds (FOL_FILE=1: the field scene's GRASS layer with DITHER fades as main.cwscene makes it
+//   on frame 0, where cw_test_env answers nothing, no option set on it later): the control switch must still reach it,
+//   so CW_TEST_FOLIAGE_PIXEL_DITHER=1 changes the picture (over 0.2% of its pixels by more than 8/255; 0.77.0 read the
+//   switch once when the layer was made and drew the two byte for byte alike).
+import { readImage } from '../tools/lib/png.mjs';
 import { runField } from './foliage-runs.mjs';
 
 const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d; };
 const SOFTWARE = process.env.CW_TEST_GPU === 'software';
 const HOSTS = arg('--hosts', SOFTWARE ? 'native' : 'native,romdev').split(',');
 const GPUS = arg('--gpu', 'gl,webgpu').split(',');
-const CAMS = arg('--cams', 'run,pan').split(',');
+const CAMS = arg('--cams', 'run,pan').split(',').filter((c) => c && c !== '-'); // (--cams - : the file leg alone)
 const FRAMES = +arg('--frames', SOFTWARE ? 90 : 120);
 if (HOSTS.includes('native')) {
   const { enterGpuSandbox } = await import('../tools/lib/gpu-sandbox.mjs');
@@ -53,5 +58,25 @@ for (const host of HOSTS)
           }
       } catch (e) { check(false, `${tag}: ${e.message}`); }
     }
+/** the share of pixels two pictures differ in by more than 8/255 on some channel */
+function changed(a, b) {
+  const A = readImage(a), B = readImage(b);
+  if (A.w !== B.w || A.h !== B.h) return 1;
+  let n = 0;
+  for (let i = 0; i < A.w * A.h; i++)
+    for (let k = 0; k < 3; k++) if (Math.abs(A.rgba[4 * i + k] - B.rgba[4 * i + k]) > 8) { n++; break; }
+  return n / (A.w * A.h);
+}
+for (const host of HOSTS)
+  for (const gpu of GPUS) {
+    const tag = `${host} ${gpu} file`;
+    try {
+      const env = { FOL_FILE: '1', FOL_TAA: '1' };
+      const fix = runField(host, gpu, 60, env, 'grain-file-fix'), ctl = runField(host, gpu, 60, { ...env, CW_TEST_FOLIAGE_PIXEL_DITHER: '1' }, 'grain-file-control');
+      check(fix.fields['render.skipped'] === 0 && ctl.fields['render.skipped'] === 0, `${tag}: nothing skipped`);
+      const c = changed(fix.png, ctl.png);
+      check(c > 0.002, `${tag}: a layer from the scene file takes the control switch: CW_TEST_FOLIAGE_PIXEL_DITHER=1 changes ${(100 * c).toFixed(3)}% of the pixels (over 0.2%)`);
+    } catch (e) { check(false, `${tag}: ${e.message}`); }
+  }
 console.log(fail ? `foliage-grain: ${fail} failures` : 'ok   foliage-grain');
 process.exit(fail ? 1 : 0);

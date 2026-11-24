@@ -28,6 +28,8 @@
  *   FOL_SHROOT=1 shadow_at_root (FOL_SOFTEN=<0..1>)     FOL_CSM=<n> the sun's shadow in n cascades over 40 m (the shadow scene: 2; 0 one map)
  *   FOL_MSAA=<n> PostProcess msaa (kept on every anti-aliasing value)     FOL_TAA=1 PostProcess taa
  *   FOL_FROM=<frame> where the measurements start (default 30)
+ *   FOL_FILE=1   the field scene's GRASS layer left as main.cwscene makes it on frame 0 (DITHER fades, lod_blend 6):
+ *                no option above reaches it (a layer a game's scene file holds, where test switches arrive later)
  *
  * Measurements, from the picture (a window read every frame, cartwheel/gpu.h), as debug fields:
  *   fol.frames        pictures measured
@@ -367,6 +369,7 @@ static void apply(void) {
     cw_node_set(post, "msaa", cw_val_int((int)envf("FOL_MSAA", 4)));
   }
   if (env("FOL_TAA")) cw_node_set(post, "taa", cw_val_bool(true));
+  if (env("FOL_FILE")) return; /* the GRASS layer as the scene file made it on frame 0 (fade_mode DITHER), untouched */
   /* the GRASS layer's options, through the node's properties */
   cw_scatter_def o = cw_scatter_default_def();
   layer_options(&o);

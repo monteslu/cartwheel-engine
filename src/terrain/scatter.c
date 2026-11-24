@@ -65,8 +65,9 @@ struct tr_scatter {
   bool view_used[TR_VIEWS];       /* a later view has GPU copies of some cells (freed when the views draw one at a time) */
   bool icol;                      /* instances carry a colour (tint_jitter, root_from_terrain) */
   bool foliage;                   /* the materials are the layer's own copies with the foliage parts */
-  bool pixel_dither;              /* DITHER drawn as the screen-door control (CW_TEST_FOLIAGE_PIXEL_DITHER), read once
-                                   * when the layer was made: its materials and its posing agree */
+  bool pixel_dither;              /* DITHER drawn as the screen-door control (CW_TEST_FOLIAGE_PIXEL_DITHER), read each
+                                   * update (pixel_dither_tick): its materials and its posing change together */
+  float foliage_top;              /* LOD 0's top (the foliage parts' height) */
   float tint[3];                  /* the terrain material's colour when cells were last placed (root_from_terrain) */
 };
 
@@ -104,6 +105,50 @@ static float unit(uint32_t h) { return (float)(h >> 8) * (1.0f / 16777216.0f); }
 static bool pixel_dither(void) {
   const char *e = cw_test_env("CW_TEST_FOLIAGE_PIXEL_DITHER");
   return e && *e && *e != '0';
+}
+
+/* a layer's foliage description, without the fades */
+static cw_foliage_desc layer_desc(const tr_scatter *s) {
+  const cw_scatter_def *d = &s->def;
+  cw_foliage_desc fd = cw_foliage_default();
+  fd.wind = d->wind;
+  fd.height = s->foliage_top;
+  fd.smooth_alpha = d->smooth_alpha;
+  fd.two_sided_lighting = d->two_sided_lighting;
+  fd.root_color = d->root_from_terrain;
+  fd.root_height = d->root_height;
+  fd.tip_jitter = d->root_from_terrain ? d->tint_jitter : 0;
+  fd.bend = d->bend;
+  fd.shadow_at_root = d->shadow_at_root;
+  fd.shadow_soften = d->shadow_soften;
+  return fd;
+}
+
+/* LOD l's fades in its material: the screen-door control's alone (per instance, the posing drops instances) */
+static void layer_fades(const tr_scatter *s, int l, cw_foliage_desc *fd) {
+  const cw_scatter_def *d = &s->def;
+  if (d->fade_mode != CW_SCATTER_FADE_DITHER || !s->pixel_dither) return;
+  float vr = d->visible_range, hw = d->lod_blend * 0.5f, end0 = vr - d->fade;
+  if (l > 0) fd->fade_in_from = d->lod_distance[l - 1] - hw, fd->fade_in_to = d->lod_distance[l - 1] + hw;
+  if (l + 1 < s->nlod && d->lod_distance[l] - hw < end0) fd->fade_out_from = d->lod_distance[l] - hw, fd->fade_out_to = d->lod_distance[l] + hw;
+  else fd->fade_out_from = end0, fd->fade_out_to = vr;
+}
+
+/* the control switch, read each update rather than once when the layer is made: a layer a scene file holds is made
+ * on frame 0, where cw_test_env answers nothing (no cart host has delivered the env yet), so it never saw it. A
+ * change sets the layer's materials' fades again and poses every cell again. */
+static void pixel_dither_tick(tr_scatter *s) {
+  bool pd = pixel_dither();
+  if (pd == s->pixel_dither) return;
+  s->pixel_dither = pd;
+  if (s->foliage)
+    for (int l = 0; l < s->nlod; l++) {
+      cw_foliage_desc fd = layer_desc(s);
+      layer_fades(s, l, &fd);
+      for (int p = 0; p < s->nparts[l]; p++) cw_foliage_apply(s->def.material[l][p], &fd);
+    }
+  for (int i = 0; i < s->cnx * s->cnz; i++)
+    for (int v = 0; v < TR_VIEWS; v++) s->cells[i].v[v].posed_state = -2;
 }
 
 /* an instance's own number in [0, 1), from its rank's bits (independent of the rank itself, which the density
@@ -352,26 +397,10 @@ int cw_terrain_scatter_add(cw_terrain *t, const cw_scatter_def *def) {
       if (!g->has_bounding_box) t3_geometry_compute_bounding_box(g);
       top = CW_MAX(top, g->bounding_box.max.y);
     }
-    const cw_scatter_def *d = &s->def;
-    bool dither = d->fade_mode == CW_SCATTER_FADE_DITHER;
-    float vr = d->visible_range, hw = d->lod_blend * 0.5f, end0 = vr - d->fade;
+    s->foliage_top = top;
     for (int l = 0; l < s->nlod; l++) {
-      cw_foliage_desc fd = cw_foliage_default();
-      fd.wind = d->wind;
-      fd.height = top;
-      fd.smooth_alpha = d->smooth_alpha;
-      fd.two_sided_lighting = d->two_sided_lighting;
-      fd.root_color = d->root_from_terrain;
-      fd.root_height = d->root_height;
-      fd.tip_jitter = d->root_from_terrain ? d->tint_jitter : 0;
-      fd.bend = d->bend;
-      fd.shadow_at_root = d->shadow_at_root;
-      fd.shadow_soften = d->shadow_soften;
-      if (dither && s->pixel_dither) {
-        if (l > 0) fd.fade_in_from = d->lod_distance[l - 1] - hw, fd.fade_in_to = d->lod_distance[l - 1] + hw;
-        if (l + 1 < s->nlod && d->lod_distance[l] - hw < end0) fd.fade_out_from = d->lod_distance[l] - hw, fd.fade_out_to = d->lod_distance[l] + hw;
-        else fd.fade_out_from = end0, fd.fade_out_to = vr;
-      }
+      cw_foliage_desc fd = layer_desc(s);
+      layer_fades(s, l, &fd);
       for (int p = 0; p < s->nparts[l]; p++) {
         t3_material *c = t3_material_clone(s->def.material[l][p]);
         if (!cw_foliage_apply(c, &fd)) cw_warn("terrain: a scatter layer's material takes no foliage (wind, fades): drawn without");
@@ -789,6 +818,7 @@ void cw__scatter_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp, int view,
   for (int i = 0; i < TR_MAX_SCATTER; i++)
     if (t->scatter[i]) {
       cw__scatter_attach(t, t->scatter[i]);
+      if (view == 0) pixel_dither_tick(t->scatter[i]);
       scatter_one(t, t->scatter[i], cam, vp ? &fr : NULL, view, views);
     }
   t->stats.scatter_ms = (float)(tr_now_ms() - t0);

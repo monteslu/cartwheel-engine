@@ -38,7 +38,8 @@
  *                     fog's light; additive: toward nothing), never by the
  *                     depth of what is behind them; three.c materials take
  *                     it through the "hfog" shading part (program states
- *                     x...hfog). The volumetric mode's particles look the
+ *                     x...hfog); a material with fog = false takes none
+ *                     (drawn after the fog, as it is). The volumetric mode's particles look the
  *                     grid up at their own distance.
  *                     volumetric = true: the fog within volumetric_distance
  *                     of the camera is lit per cell of a 3D grid that
