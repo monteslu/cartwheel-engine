@@ -14,9 +14,13 @@
  *                     then removed; the camera 0.3 m up at z = -3: the stems it passed bend away from it and stand up again behind it
  *               shadow: the GRASS layer on flat ground with the sun low from +x behind a wall 6 m high at x = 6, so
  *                     the wall's shadow edge runs along x = 0, under the middle of the picture, from the camera on
+ *               grain: the shadow scene with the grass as a third-person game's meadow (visible_range 16, fade 6,
+ *                     lod_distance 7, lod_blend 3, shadow_at_root): the grain of lit blades over the shadowed ground
+ *                     where the fades and the LOD crossfade fall (FOL_CAM pan or run)
  *               (<scene>_all: every option below on, for the program survey)
- *   FOL_CAM     play (default), pan (the play camera turning 2 degrees a second), dolly (looking level, moving
- *               forward 1 m a second through the LOD distance)
+ *   FOL_CAM     play (default), pan (the play camera turning 2 degrees a second; FOL_PAN=<degrees a second>), dolly
+ *               (looking level, moving forward 1 m a second through the LOD distance), run (the shadow and grain
+ *               scenes: forward 4 m a second, turning as the pan)
  *   FOL_WIND=<m> wind strength (FOL_FREQ, FOL_GUST)      FOL_ALPHA=smooth      FOL_FADE=dither (FOL_BLEND=<m>)
  *   FOL_ROOT=1 root_from_terrain     FOL_TWOSIDED=1     FOL_JITTER=<0..1>     FOL_NOGRASS=1 (no scatter drawn)
  *   FOL_BEND=<rad> bend around movers (FOL_RECOVER=<s> the mover's recover, 1; FOL_RADIUS=<m> its radius, 0.8)
@@ -57,7 +61,13 @@
  *   shadow.edge, shadow.lit, shadow.dark   shadow: the mean temporal standard deviation of brightness (0..1) of the
  *                     pixels within 0.6 m of the shadow edge (x = 0) on the ground 5 to 12 m ahead, of those 1.4 to 2.6 m
  *                     into the lit side and of those as far into the shadow, over the measured frames (the camera holds
- *                     still: the jitter's flicker, and the wind's); shadow.n frames in it */
+ *                     still: the jitter's flicker, and the wind's); shadow.n frames in it
+ *   grain.dark_hf, grain.lit_hf   grain: the mean high frequency (|brightness - its 3 x 3 mean|, 0..1) of the ground 1 to
+ *                     3.5 m into the shadow and as far into the light, 5.5 to 8.5 m (the LOD crossfade) and 10 to 15 m
+ *                     (the fade) from the camera, each picture's pixels found by casting them onto the ground with the
+ *                     camera that drew it; grain.dark_t, grain.lit_t the same pixels' change of that high frequency
+ *                     from the picture before (the grain's flicker); grain.edge_hf, grain.edge_t the same within 0.75 m
+ *                     of the shadow's edge (lit blades against shadowed ground); grain.n pictures measured */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -113,6 +123,9 @@ static float shadow_edge, shadow_lit, shadow_dark;
 static int32_t shadow_n;
 
 static bool all_on; /* FOL_SCENE <scene>_all: every option on (the program survey) */
+static bool grain;  /* FOL_SCENE grain: the shadow scene as a meadow (its grass and the grain.* measurement) */
+static float grain_dark_hf, grain_lit_hf, grain_edge_hf, grain_dark_t, grain_lit_t, grain_edge_t;
+static int32_t grain_n;
 static const char *env(const char *n) {
   const char *v = cw_test_env(n);
   if (v || !all_on) return v;
@@ -193,7 +206,7 @@ static void layer_options(cw_scatter_def *d) {
   d->smooth_alpha = env("FOL_ALPHA") && !strcmp(env("FOL_ALPHA"), "smooth");
   d->two_sided_lighting = env("FOL_TWOSIDED") != NULL;
   d->fade_mode = env("FOL_FADE") && !strcmp(env("FOL_FADE"), "dither") ? CW_SCATTER_FADE_DITHER : CW_SCATTER_FADE_SHRINK;
-  d->lod_blend = envf("FOL_BLEND", 6);
+  d->lod_blend = envf("FOL_BLEND", grain ? 3 : 6);
   d->root_from_terrain = env("FOL_ROOT") != NULL;
   d->bend = envf("FOL_BEND", 0);
   d->shadow_at_root = env("FOL_SHROOT") != NULL;
@@ -339,6 +352,13 @@ static void apply(void) {
   char *all = strstr(scene, "_all");
   if (all) *all = 0, all_on = true;
   if (c) snprintf(camm, sizeof camm, "%s", c);
+  if (!strcmp(scene, "grain")) {
+    grain = true;
+    snprintf(scene, sizeof scene, "shadow");
+    cw_node_set(grass_node, "visible_range", cw_val_float(16));
+    cw_node_set(grass_node, "fade", cw_val_float(6));
+    cw_node_set(grass_node, "lod_distance", cw_val_float(7));
+  }
   from = (int)envf("FOL_FROM", 30);
   cw_node root = cw_tree_root(tree), world = cw_node_get(root, "World");
   cw_node post = cw_node_get(root, "World/Post");
@@ -462,11 +482,11 @@ static t3_vec3 cam_pos, cam_fwd;
 static void place_camera(float tt) {
   float yaw = 0, pitch = -0.2f;
   t3_vec3 p = { 0, cam_h, -4 };
-  if (!strcmp(camm, "pan")) yaw = tt * (2.0f * 3.14159265f / 180.0f);
+  if (!strcmp(camm, "pan") || !strcmp(camm, "run")) yaw = tt * (envf("FOL_PAN", 2) * 3.14159265f / 180.0f);
   if (!strcmp(camm, "dolly")) pitch = 0, p.z = -4 + tt * 1.0f;
   if (!strcmp(scene, "wind") || !strcmp(scene, "twosided")) pitch = 0, p = (t3_vec3){ 0, cam_h, 0 };
   if (!strcmp(scene, "bend")) pitch = 0, p = (t3_vec3){ 0, cam_h, -3 };
-  if (!strcmp(scene, "shadow")) pitch = -0.25f, p = (t3_vec3){ 0, cam_h, 0 };
+  if (!strcmp(scene, "shadow")) pitch = -0.25f, p = (t3_vec3){ 0, cam_h, !strcmp(camm, "run") ? 4 * tt : 0 };
   if (!strcmp(scene, "root")) {
     p = (t3_vec3){ 0, 12, 0 };
     cw_terrain *t = cw_terrain_of(terrain_node);
@@ -646,6 +666,62 @@ static bool project_cam(t3_vec3 q, float *sx, float *sy) {
   *sy = H * 0.5f - (d.x * u.x + d.y * u.y + d.z * u.z) / dz / th * H * 0.5f;
   return true;
 }
+/* grain: the camera each picture was drawn with (the pictures arrive a few frames late) */
+static float cam_tt[64];
+static void grain_measure(int frame) {
+  static float *res_prev;
+  static uint8_t *cat_prev;
+  if (!res_prev) res_prev = calloc((size_t)RW * RH, sizeof(float)), cat_prev = calloc((size_t)RW * RH, 1);
+  float tt = cam_tt[frame & 63];
+  float yaw = (!strcmp(camm, "pan") || !strcmp(camm, "run")) ? tt * (envf("FOL_PAN", 2) * 3.14159265f / 180.0f) : 0, pitch = -0.25f;
+  t3_vec3 p = { 0, cam_h, !strcmp(camm, "run") ? 4 * tt : 0 };
+  float sy_, cy_, sp_, cp_;
+  cw_sincos(yaw, &sy_, &cy_);
+  cw_sincos(pitch, &sp_, &cp_);
+  t3_vec3 f = { sy_ * cp_, sp_, cy_ * cp_ };
+  t3_vec3 r = { -f.z, 0, f.x };
+  float rl = sqrtf(r.x * r.x + r.z * r.z);
+  r.x /= rl, r.z /= rl;
+  t3_vec3 u = { r.y * f.z - r.z * f.y, r.z * f.x - r.x * f.z, r.x * f.y - r.y * f.x };
+  float th = tanf(FOV * 0.5f * 3.14159265f / 180.0f), asp = (float)W / H;
+  double s[4] = { 0, 0, 0, 0 }, st[4] = { 0, 0, 0, 0 };
+  int n[4] = { 0, 0, 0, 0 }, nt_[4] = { 0, 0, 0, 0 };
+  for (int y = 1; y < RH - 1; y++)
+    for (int x = 1; x < RW - 1; x++) {
+      int i = y * RW + x;
+      float a = ((float)(x + RX) + 0.5f - W * 0.5f) / (W * 0.5f) * th * asp, b = (H * 0.5f - ((float)(y + RY) + 0.5f)) / (H * 0.5f) * th;
+      t3_vec3 d = { f.x + r.x * a + u.x * b, f.y + r.y * a + u.y * b, f.z + r.z * a + u.z * b };
+      uint8_t c = 0;
+      if (d.y < -1e-4f) {
+        float k = -p.y / d.y, gx = p.x + d.x * k, dist = k * sqrtf(d.x * d.x + d.y * d.y + d.z * d.z);
+        bool band = (dist >= 5.5f && dist <= 8.5f) || (dist >= 10 && dist <= 15);
+        if (band) c = gx >= 1 && gx <= 3.5f ? 1 : gx <= -1 && gx >= -3.5f ? 2 : fabsf(gx) < 0.75f ? 3 : 0;
+      }
+      float res = 0;
+      if (c) {
+        float m = 0;
+        for (int j = -1; j <= 1; j++)
+          for (int q = -1; q <= 1; q++) m += luma(&cur[4 * (i + j * RW + q)]);
+        res = luma(&cur[4 * i]) - m / 9;
+        s[c] += fabsf(res), n[c]++;
+        if (cat_prev[i] == c && grain_n > 0) st[c] += fabsf(res - res_prev[i]), nt_[c]++;
+      }
+      res_prev[i] = res, cat_prev[i] = c;
+    }
+  grain_n++;
+  float k1 = 1.0f / (float)grain_n;
+  if (n[1] && n[2] && n[3]) {
+    grain_dark_hf += ((float)(s[1] / n[1]) - grain_dark_hf) * k1;
+    grain_lit_hf += ((float)(s[2] / n[2]) - grain_lit_hf) * k1;
+    grain_edge_hf += ((float)(s[3] / n[3]) - grain_edge_hf) * k1;
+  }
+  if (nt_[1] && nt_[2] && nt_[3]) {
+    grain_dark_t += ((float)(st[1] / nt_[1]) - grain_dark_t) * k1;
+    grain_lit_t += ((float)(st[2] / nt_[2]) - grain_lit_t) * k1;
+    grain_edge_t += ((float)(st[3] / nt_[3]) - grain_edge_t) * k1;
+  }
+}
+
 static void shadow_measure(void) {
   if (!sh_mask) {
     sh_mask = calloc((size_t)RW * RH, 1);
@@ -792,7 +868,8 @@ static void measure(int frame) {
     if (bend) bend_stats();
     else wind_stats();
   }
-  if (!strcmp(scene, "shadow")) shadow_measure();
+  if (!strcmp(scene, "shadow") && grain) grain_measure(frame);
+  else if (!strcmp(scene, "shadow")) shadow_measure();
   if (!strcmp(scene, "twosided")) {
     for (int k = 0; k < 2; k++) {
       float sx, sy;
@@ -885,6 +962,13 @@ static void init(void *u) {
   cw_debug_f32("shadow.lit", &shadow_lit);
   cw_debug_f32("shadow.dark", &shadow_dark);
   cw_debug_i32("shadow.n", &shadow_n);
+  cw_debug_f32("grain.dark_hf", &grain_dark_hf);
+  cw_debug_f32("grain.lit_hf", &grain_lit_hf);
+  cw_debug_f32("grain.dark_t", &grain_dark_t);
+  cw_debug_f32("grain.lit_t", &grain_lit_t);
+  cw_debug_f32("grain.edge_hf", &grain_edge_hf);
+  cw_debug_f32("grain.edge_t", &grain_edge_t);
+  cw_debug_i32("grain.n", &grain_n);
   place_camera(0);
 }
 
@@ -922,6 +1006,7 @@ static void render(void *u, double alpha) {
   (void)u;
   int f = (int)cw_frame_index();
   place_camera((float)(tick - 1 + alpha) / 60.0f);
+  cam_tt[f & 63] = (float)(tick - 1 + alpha) / 60.0f;
   if (!applied) return;
   cw_terrain *t = cw_terrain_of(terrain_node);
   if ((!strcmp(scene, "wind") || !strcmp(scene, "bend")) && t && !tips_n && f == from - 2) pick_tips(t);

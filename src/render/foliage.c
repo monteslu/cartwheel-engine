@@ -31,6 +31,7 @@ static struct {
   uint64_t frame;  /* cw_frame_index() the clock last advanced at (+1: 0 = never) */
   double time;
   bool msaa, taa;
+  bool pixel_dither; /* CW_TEST_FOLIAGE_PIXEL_DITHER=1: an instanced mesh's fades dither every pixel, as before (a control) */
   uint32_t taa_frame;
   float slots[CW_FOLIAGE_MOVER_SLOTS][4]; /* this frame's mover discs: x, z, radius, weight */
   int nslots;
@@ -56,6 +57,8 @@ static void clock_tick(void) {
   F.frame = f;
   const char *lock = cw_test_env("CW_TEST_FOLIAGE_LOCKSTEP");
   F.lockstep = lock && atoi(lock);
+  const char *pd = cw_test_env("CW_TEST_FOLIAGE_PIXEL_DITHER");
+  F.pixel_dither = pd && atoi(pd);
   if (F.time >= 3600.0) F.time -= 3600.0; /* (float precision in the shaders: a jump once an hour) */
 }
 
@@ -388,7 +391,7 @@ static float band_lo(float a) { return a > 0 ? a : 0; }
 static void fill(t3_extension_ctx *c, void *u) {
   (void)u;
   int i = find(t3_extension_material(c));
-  float frame[4] = { cw_foliage_time(), (float)F.taa_frame * 5.588238f, F.msaa ? 1.0f : 2.0f, F.lockstep ? 0.0f : 2.0f };
+  float frame[4] = { cw_foliage_time(), (float)F.taa_frame * 5.588238f, F.pixel_dither ? 1.0f : 0.0f, F.lockstep ? 0.0f : 2.0f };
   float wind[4] = { 0, 0.5f, 1, 0 }, wind2[4] = { 0, 14, 1, 0 }, mode[4] = { 0, 0, 0, 0 }, fade[4] = { 0, 0, 0, 0 },
         root[4] = { 0.36f, 0, 0, 0 }, bend[4] = { 0, 0, 0, 0 };
   if (i >= 0) { /* (a material copied with the part on it draws as with none of it) */

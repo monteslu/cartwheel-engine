@@ -21,7 +21,13 @@
  *   scene file       a Terrain3D with a TerrainScatter3D child from .cwscene
  *                    text: imported heights, physics in the tree's world,
  *                    the scatter layer, the properties saved back, and the
- *                    layer gone with its node.
+ *                    layer gone with its node;
+ *   density map late a density_map the game writes in its init (after the
+ *                    scene is ready) and one set from code the same tick:
+ *                    cw_terrain_of applies them at once, so the instances
+ *                    read that tick follow the map (none on its black half);
+ *                    the control (the old lazy sync) must still read the
+ *                    layer without the map.
  * Every result folds into unit.checksum, compared across hosts. */
 #include <math.h>
 #include <string.h>
@@ -30,6 +36,7 @@
 #include "cartwheel/scene_file.h"
 #include "cartwheel/terrain.h"
 #include "cartwheel/vehicle3d.h"
+#include "cartwheel/vfs.h"
 #include "terrain/terrain_internal.h"
 #include "test.h"
 
@@ -523,6 +530,140 @@ static void test_scene_file(void) {
   cw_tree_free(tree);
 }
 
+/* ── density map written late ── */
+extern bool cw__terrain_lazy_scatter_test; /* src/terrain/terrain_node.c: the old lazy sync (the control) */
+
+/* a grey 8-bit PNG (stored deflate blocks): the test writes its own density map */
+static uint32_t png_crc(const uint8_t *p, size_t n, uint32_t c) {
+  c = ~c;
+  for (size_t i = 0; i < n; i++) {
+    c ^= p[i];
+    for (int k = 0; k < 8; k++) c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1)));
+  }
+  return ~c;
+}
+static void be32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)(v >> 24), p[1] = (uint8_t)(v >> 16), p[2] = (uint8_t)(v >> 8), p[3] = (uint8_t)v; }
+static size_t png_chunk(uint8_t *o, const char *type, const uint8_t *data, uint32_t n) {
+  be32(o, n);
+  memcpy(o + 4, type, 4);
+  if (n) memcpy(o + 8, data, n);
+  be32(o + 8 + n, png_crc(o + 4, n + 4, 0));
+  return 12 + n;
+}
+static size_t grey_png(uint8_t *o, const uint8_t *px, int w, int h) {
+  static const uint8_t sig[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
+  size_t k = 0;
+  memcpy(o, sig, 8), k = 8;
+  uint8_t ihdr[13] = { 0 };
+  be32(ihdr, (uint32_t)w), be32(ihdr + 4, (uint32_t)h), ihdr[8] = 8, ihdr[9] = 0;
+  k += png_chunk(o + k, "IHDR", ihdr, 13);
+  /* raw rows (filter 0) in one stored block, zlib wrapped */
+  uint32_t raw = (uint32_t)(h * (w + 1));
+  uint8_t z[2 + 5 + 4096 + 4];
+  size_t zn = 0;
+  z[zn++] = 0x78, z[zn++] = 0x01;
+  z[zn++] = 1, z[zn++] = (uint8_t)raw, z[zn++] = (uint8_t)(raw >> 8), z[zn++] = (uint8_t)~raw, z[zn++] = (uint8_t)(~raw >> 8);
+  uint32_t a = 1, b = 0;
+  for (int y = 0; y < h; y++)
+    for (int x = -1; x < w; x++) {
+      uint8_t v = x < 0 ? 0 : px[y * w + x];
+      z[zn++] = v;
+      a = (a + v) % 65521u, b = (b + a) % 65521u;
+    }
+  be32(z + zn, (b << 16) | a), zn += 4;
+  k += png_chunk(o + k, "IDAT", z, (uint32_t)zn);
+  k += png_chunk(o + k, "IEND", NULL, 0);
+  return k;
+}
+
+/* instances of a layer over the whole terrain on the map's black (west) half and on its white half */
+static void halves(cw_terrain *t, int layer, int *west, int *east) {
+  static float p[5 * 8192];
+  *west = *east = 0;
+  float mid = t->def.origin.x + 0.5f * (float)(t->nx - 1) * t->def.vertex_spacing;
+  /* (cells are 32 m and up: the 64 m terrain is within 4 x 4; a cell past it holds none) */
+  for (int cz = 0; cz < 4; cz++)
+    for (int cx = 0; cx < 4; cx++) {
+      int n = cw_terrain_scatter_cell(t, layer, cx, cz, p, 8192);
+      for (int i = 0; i < n; i++) {
+        /* (a metre's margin either side of the map's middle) */
+        if (p[5 * i] < mid - 1) (*west)++;
+        else if (p[5 * i] > mid + 1) (*east)++;
+      }
+    }
+}
+
+static const char late_scene[] =
+  "[scene format=1]\n\n"
+  "[node name=\"Root\" type=\"Node3D\"]\n\n"
+  "[node name=\"Ground\" parent=\".\" type=\"Terrain3D\"]\n"
+  "size_x = 64\nsize_z = 64\nregion_size = 32\n"
+  "min_height = 0\nmax_height = 40\n"
+  "heightmap = \"heights.r16\"\n\n"
+  "[node name=\"Late\" parent=\"Ground\" type=\"TerrainScatter3D\"]\n"
+  "shape = ROCK\ndensity = 0.5\nmin_slope = 90\nseed = 3\ndensity_map = \"late_density.png\"\n\n"
+  "[node name=\"Set\" parent=\"Ground\" type=\"TerrainScatter3D\"]\n"
+  "shape = ROCK\ndensity = 0.5\nmin_slope = 90\nseed = 4\n\n"
+  "[node name=\"Lazy\" parent=\"Ground\" type=\"TerrainScatter3D\"]\n"
+  "shape = ROCK\ndensity = 0.5\nmin_slope = 90\nseed = 5\n";
+
+static void test_density_map_late(void) {
+  cw_vfs_remove("late_density.png");
+  cw_packed_scene *ps = cw_scene_parse(late_scene, "terrain_late.cwscene");
+  CHECK(ps != NULL);
+  if (!ps) return;
+  cw_tree *tree = cw_tree_new();
+  cw_node root = cw_scene_instance(ps);
+  cw_node_add_child(cw_tree_root(tree), root); /* ready: the map is not there yet */
+  cw_node ground = cw_node_get(root, "Ground");
+  cw_terrain *t = cw_terrain_of(ground);
+  CHECK(t != NULL);
+  if (!t) {
+    cw_tree_free(tree);
+    return;
+  }
+  /* layers in child order: Late 0, Set 1, Lazy 2 (the waiting layer keeps its index, with no instances) */
+  CHECK(t->scatter[0] && t->scatter[1] && t->scatter[2]);
+  int w = 0, e = 0;
+  halves(t, 0, &w, &e);
+  CHECK_EQ_INT(w + e, 0);
+  /* the game's init: write the map (west half black, east half white), read the layer the same tick */
+  uint8_t px[16 * 16], png[4096];
+  for (int y = 0; y < 16; y++)
+    for (int x = 0; x < 16; x++) px[y * 16 + x] = x < 8 ? 0 : 255;
+  size_t n = grey_png(png, px, 16, 16);
+  CHECK(cw_vfs_write("late_density.png", png, n));
+  t = cw_terrain_of(ground);
+  halves(t, 0, &w, &e);
+  CHECK_EQ_INT(w, 0);
+  CHECK(e > 100);
+  FOLD(e);
+  /* a density_map set from code: applied by cw_terrain_of the same tick */
+  int sw0 = 0, se0 = 0;
+  halves(t, 1, &sw0, &se0);
+  CHECK(sw0 > 100 && se0 > 100);
+  cw_node_set(cw_node_get(ground, "Set"), "density_map", cw_val_string("late_density.png"));
+  t = cw_terrain_of(ground);
+  int sw = 0, se = 0;
+  halves(t, 1, &sw, &se);
+  CHECK_EQ_INT(sw, 0);
+  CHECK(se > 100);
+  FOLD(se);
+  /* CONTROL: the old lazy sync reads the layer without its map until the next tick */
+  cw__terrain_lazy_scatter_test = true;
+  cw_node_set(cw_node_get(ground, "Lazy"), "density_map", cw_val_string("late_density.png"));
+  t = cw_terrain_of(ground);
+  int lw = 0, le = 0;
+  halves(t, 2, &lw, &le);
+  CHECK(lw > 100); /* the control must show the bug */
+  cw_tree_fixed_update(tree, 1.0 / 60);
+  halves(t, 2, &lw, &le);
+  CHECK_EQ_INT(lw, 0);
+  cw__terrain_lazy_scatter_test = false;
+  cw_tree_free(tree);
+  cw_vfs_remove("late_density.png");
+}
+
 /* Editing one height changes neighboring surface normals. Both texture
  * uploads must be invalidated, while unrelated control data stays cached. */
 static void test_height_texture_invalidation(void) {
@@ -553,4 +694,5 @@ static void test_height_texture_invalidation(void) {
 
 CW_TEST_SUITE("terrain", { "height_texture_invalidation", test_height_texture_invalidation }, { "height_exact", test_height_exact }, { "cdlod", test_cdlod }, { "physics", test_physics },
               { "vehicle", test_vehicle }, { "scatter", test_scatter }, { "scatter_part_lods", test_scatter_part_lods }, { "control", test_control },
-              { "import", test_import }, { "scene_file", test_scene_file })
+              { "import", test_import }, { "scene_file", test_scene_file },
+              { "density_map_late", test_density_map_late })

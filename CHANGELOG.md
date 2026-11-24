@@ -4,6 +4,37 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.76.2 (2026-11-24)
+
+### Fixed
+- Grass fading under TAA no longer shows a stippled dot pattern when the camera moves. TerrainScatter3D's
+  `fade_mode = DITHER` dropped pixels by a screen-door (interleaved gradient noise moved every frame) over the LOD
+  crossfade and the last `fade` metres. TAA resolves a screen-door only while the picture holds still: a pixel that
+  moves a pixel a frame or more keeps a quarter of its history, so in a run or a pan the dots stayed on the grass,
+  worst where lit blades cross a dark shadow (the rim of a character's shadow in a meadow). `shadow_at_root` and
+  `smooth_alpha` were not the cause (the built-in GRASS has no alpha test, so `smooth_alpha` does nothing on it):
+  the dots went with `fade_mode = SHRINK` and stayed with either shadow mode. DITHER now works on whole instances
+  on the CPU, like SHRINK, each over its own 0.3 of a band (by its own number): over the LOD crossfade the next LOD
+  grows in inside it and then it shrinks away, and over the fade it shrinks away. The LOD dolly's largest
+  single-frame block change stays 8/255 (SHRINK 22/255). An InstancedMesh's own foliage fades (`fade_in_*`, `fade_out_*` in cartwheel/foliage.h) keep or drop each
+  instance whole too, by a hash of its root against the band at its root's distance (a large instance changes at
+  once where it crosses); a lone mesh keeps the screen-door. Gate `foliage-grain` (samples/foliage_field's new `grain` scene: a meadow's grass, lod_distance 7,
+  lod_blend 3, fade 6, under TAA, a wall's shadow edge running out from the camera, the camera running forward
+  4 m/s while turning 10 degrees a second, or turning alone; every host, GL and WebGPU, CI on software rendering):
+  the spatial high frequency and its change from frame to frame on the shadow's edge, in the shadow and in the
+  light, 5.5 to 8.5 m and 10 to 15 m away, against the same run with SHRINK; on the Radeon 890M the screen-door
+  added 0.0012 to 0.0035 (brightness 0..1) to every measure and the per-instance fades add -0.0002 to 0.0003.
+  Control `CW_TEST_FOLIAGE_PIXEL_DITHER=1` (the screen-door of 0.76.1 and before; `=instance` draws the scatter's bands with
+  the material's per-instance fade).
+- A TerrainScatter3D density map the game writes in its init now reaches the layer. The scene is ready before the
+  app's init, so a `density_map` naming a file not written yet failed for good ("cannot read density map"); and a
+  `density_map` set from code was applied only at the terrain's next fixed tick, since `cw_terrain_of` synced a
+  Terrain3D only when the node itself had changed, so `cw_terrain_scatter_cell` the same tick read the layer without
+  its map. `cw_terrain_of` now applies any changed TerrainScatter3D child first, and a `density_map` path that
+  does not exist yet leaves its layer empty (its index kept) until the file system changes and the file is there.
+  Unit check `terrain.density_map_late` (a map written after the scene is ready, one set from code, both read the
+  same tick: no instance on the map's black half), with the old lazy sync as its control.
+
 ## v0.76.1 (2026-11-24)
 
 ### Fixed

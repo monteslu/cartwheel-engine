@@ -59,8 +59,15 @@ typedef struct scatter3d {
   /* runtime */
   int layer;                 /* in the parent's terrain, -1 none */
   bool dirty;
+  bool map_wait;             /* density_map names a file not there yet: the layer holds its index with no instances and
+                              * is applied again once the file system changes (cw_vfs_generation past map_gen) */
+  uint32_t map_gen;
   cw_res res[CW_SCATTER_PARTS];
 } scatter3d;
+
+/* the test seam for tests/unit/test_terrain.c's control: true brings back the old lazy sync (cw_terrain_of applies a
+ * changed scatter child only when the Terrain3D itself is dirty, and a missing density map is read once) */
+bool cw__terrain_lazy_scatter_test;
 
 static const char *const shape_names[] = { "GRASS", "ROCK", "TREE", NULL };
 static const char *const knob_names[] = { "GRASS", "SCATTER", NULL };
@@ -317,7 +324,15 @@ static void scatter_apply(cw_node n, scatter3d *s, cw_terrain *t) {
   d.shadow_soften = s->shadow_soften;
   d.seed = (uint32_t)s->seed ^ (uint32_t)cw_hash_str(cw_node_name(n));
   uint8_t *grey = NULL;
-  if (s->density_map && *s->density_map) {
+  static const uint8_t none = 0;
+  s->map_wait = false;
+  if (s->density_map && *s->density_map && !cw__terrain_lazy_scatter_test && !cw_vfs_exists(s->density_map)) {
+    /* not written yet (a map the game makes in its init, after the scene is ready): the layer takes its index with
+     * no instances (a 1 x 1 map of 0), and is applied again when the file system changes */
+    s->map_wait = true;
+    s->map_gen = cw_vfs_generation();
+    d.density_map = &none, d.dm_w = d.dm_h = 1;
+  } else if (s->density_map && *s->density_map) {
     extern unsigned char *stbi_load_from_memory(const unsigned char *, int, int *, int *, int *, int);
     extern void stbi_image_free(void *);
     size_t len = 0;
@@ -355,7 +370,7 @@ static const cw_prop scatter_props[] = {
   CW_PROP_FIELD(scatter3d, mesh, CW_T_STRING, CW_PROP_DEFAULT, "A glTF mesh: \"file.glb#mesh/m/p\" one primitive, or \"file.glb\" (one mesh) its primitives as parts (a trunk and a crown); its LOD chains give the LODs."),
   CW_PROP_FIELD(scatter3d, color, CW_T_COLOR, CW_PROP_DEFAULT, "Tint of the built-in meshes."),
   CW_PROP_FIELD_RANGE(scatter3d, density, CW_T_FLOAT, 0, 16, "Instances per square metre at full density."),
-  CW_PROP_FIELD(scatter3d, density_map, CW_T_STRING, CW_PROP_DEFAULT, "Grey image over the whole terrain scaling the density (empty = 1)."),
+  CW_PROP_FIELD(scatter3d, density_map, CW_T_STRING, CW_PROP_DEFAULT, "Grey image over the whole terrain scaling the density (empty = 1). A path not written yet (a map the game makes in its init) leaves the layer empty until the file is written; set from code, cw_terrain_of applies it at once."),
   CW_PROP_FIELD(scatter3d, layers, CW_T_INT, CW_PROP_DEFAULT, "Control layers it grows on (bit i = layer i; 0 = all)."),
   CW_PROP_FIELD_RANGE(scatter3d, min_slope, CW_T_FLOAT, 0, 90, "Steepest ground it grows on, degrees."),
   CW_PROP_FIELD_RANGE(scatter3d, scale_min, CW_T_FLOAT, 0.01, 100, "Smallest uniform scale."),
@@ -378,7 +393,7 @@ static const cw_prop scatter_props[] = {
   CW_PROP_FIELD(scatter3d, smooth_alpha, CW_T_BOOL, CW_PROP_DEFAULT, "Alpha-tested meshes (leaf and grass cards): alpha to coverage under MSAA, hashed alpha TAA resolves without it: no stair-stepped or flickering edges."),
   CW_PROP_FIELD(scatter3d, two_sided_lighting, CW_T_BOOL, CW_PROP_DEFAULT, "Double-sided meshes: back faces lit with the front face's normal (no dark backs on leaves with up-bent normals)."),
   { .name = "fade_mode", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(scatter3d, fade_mode), .size = sizeof(int),
-    .enum_names = fade_names, .doc = "SHRINK: instances shrink over the fade and LODs switch at lod_distance. DITHER: they dissolve over the fade and each LOD crossfades with the next over lod_blend metres (a dither TAA resolves): no pop." },
+    .enum_names = fade_names, .doc = "SHRINK: instances shrink over the fade and LODs switch at lod_distance. DITHER: each instance at its own distance: it shrinks away over its own share of the fade, and over the lod_blend metres the next LOD grows in inside it before it shrinks away (whole instances: no grain under TAA in motion, no pop)." },
   CW_PROP_FIELD_RANGE(scatter3d, lod_blend, CW_T_FLOAT, 0, 1000, "DITHER: metres over which each LOD crossfades with the next, centred on its switch distance."),
   CW_PROP_FIELD_RANGE(scatter3d, tint_jitter, CW_T_FLOAT, -1, 1, "Per-instance colour variation 0..1 (brightness and a dry yellow); -1: the shape's own (GRASS 0.25, the rest none)."),
   CW_PROP_FIELD(scatter3d, root_from_terrain, CW_T_BOOL, CW_PROP_DEFAULT, "Each instance's lower part takes the terrain's colour under it (cw_terrain_albedo_at), blending into its own colour above."),
@@ -517,10 +532,18 @@ static void build(cw_node n, terrain3d *d) {
   for (int i = 0; i < cw_node_child_count(n); i++) add_scatter_child(cw_node_child(n, i), &n);
 }
 
+/* a scatter child to apply: changed, not yet added, or waiting for a density map the file system may now hold */
+static bool scatter_pending(const scatter3d *s) {
+  return s && (s->dirty || s->layer < 0 || (s->map_wait && cw_vfs_generation() != s->map_gen));
+}
+
 static bool find_dirty_scatter(cw_node c, void *u) {
   terrain3d *d = u;
   scatter3d *s = cw_node_data_t(c, scatter_t);
-  if (s && (s->dirty || s->layer < 0) && d->t) scatter_apply(c, s, d->t);
+  if (s && d->t && scatter_pending(s)) {
+    if (s->map_wait && !s->dirty && s->layer >= 0 && !cw_vfs_exists(s->density_map)) s->map_gen = cw_vfs_generation();
+    else scatter_apply(c, s, d->t);
+  }
   return false;
 }
 
@@ -708,7 +731,13 @@ static cw_terrain *terrain_of_data(void *data) { return data ? ((terrain3d *)dat
 cw_terrain *cw_terrain_of(cw_node n) {
   terrain3d *d = terrain_t ? cw_node_data_t(n, terrain_t) : NULL;
   if (!d) return NULL;
-  if (d->dirty && cw_node_tree(n)) terrain_sync(n, d);
+  if (!cw_node_tree(n)) return d->t;
+  /* a changed TerrainScatter3D child (a density_map set from code, a map just written) is applied at once, so the
+   * game reads its new instances the same tick (cw_terrain_scatter_cell) */
+  bool pending = d->dirty;
+  for (int i = 0; !pending && !cw__terrain_lazy_scatter_test && i < cw_node_child_count(n); i++)
+    pending = scatter_pending(cw_node_data_t(cw_node_child(n, i), scatter_t));
+  if (pending) terrain_sync(n, d);
   return d->t;
 }
 

@@ -10496,7 +10496,7 @@
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "Grey image over the whole terrain scaling the density (empty = 1)."
+     "doc": "Grey image over the whole terrain scaling the density (empty = 1). A path not written yet (a map the game makes in its init) leaves the layer empty until the file is written; set from code, cw_terrain_of applies it at once."
     },
     {
      "name": "layers",
@@ -10686,7 +10686,7 @@
       "SHRINK",
       "DITHER"
      ],
-     "doc": "SHRINK: instances shrink over the fade and LODs switch at lod_distance. DITHER: they dissolve over the fade and each LOD crossfades with the next over lod_blend metres (a dither TAA resolves): no pop."
+     "doc": "SHRINK: instances shrink over the fade and LODs switch at lod_distance. DITHER: each instance at its own distance: it shrinks away over its own share of the fade, and over the lod_blend metres the next LOD grows in inside it before it shrinks away (whole instances: no grain under TAA in motion, no pop)."
     },
     {
      "name": "lod_blend",

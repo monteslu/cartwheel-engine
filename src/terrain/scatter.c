@@ -19,6 +19,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "cartwheel/debug.h"
 #include "cartwheel/jobs.h"
 #include "cartwheel/math.h"
 #include "cartwheel/quality.h"
@@ -64,6 +65,8 @@ struct tr_scatter {
   bool view_used[TR_VIEWS];       /* a later view has GPU copies of some cells (freed when the views draw one at a time) */
   bool icol;                      /* instances carry a colour (tint_jitter, root_from_terrain) */
   bool foliage;                   /* the materials are the layer's own copies with the foliage parts */
+  bool pixel_dither;              /* DITHER drawn as the screen-door control (CW_TEST_FOLIAGE_PIXEL_DITHER), read once
+                                   * when the layer was made: its materials and its posing agree */
   float tint[3];                  /* the terrain material's colour when cells were last placed (root_from_terrain) */
 };
 
@@ -93,6 +96,28 @@ static uint32_t hash4(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
   return mix32(mix32(mix32(mix32(a) ^ b) ^ c) ^ d);
 }
 static float unit(uint32_t h) { return (float)(h >> 8) * (1.0f / 16777216.0f); }
+
+/* DITHER as a screen-door on every pixel (0.76.1 and before): CW_TEST_FOLIAGE_PIXEL_DITHER=1, the grain gate's control.
+ * A screen-door is a fixed pattern of dropped pixels each frame; TAA resolves it only where the picture holds still
+ * (a moving pixel keeps a quarter of its history), so in a run or a pan the dots of the LOD crossfade and the fade
+ * stayed on the grass, worst where lit blades cross a dark shadow. */
+static bool pixel_dither(void) {
+  const char *e = cw_test_env("CW_TEST_FOLIAGE_PIXEL_DITHER");
+  return e && *e && *e != '0';
+}
+
+/* an instance's own number in [0, 1), from its rank's bits (independent of the rank itself, which the density
+ * thins by): where in a band the instance crosses */
+static float inst_hash(const float *in) {
+  uint32_t h;
+  memcpy(&h, &in[8], 4);
+  h ^= h >> 16, h *= 0x7FEB352Du, h ^= h >> 15, h *= 0x846CA68Bu, h ^= h >> 16;
+  return (float)(h >> 8) * (1.0f / 16777216.0f);
+}
+
+/* DITHER per instance: the share of a band (a LOD crossfade, the fade) each instance takes to cross it (each starts at its
+ * own point) */
+#define FADE_SHARE 0.3f
 
 /* ── placement ──────────────────────────────────────────────────────── */
 
@@ -317,6 +342,7 @@ int cw_terrain_scatter_add(cw_terrain *t, const cw_scatter_def *def) {
   s->icol = s->def.tint_jitter > 0 || s->def.root_from_terrain;
   s->tint[0] = s->tint[1] = s->tint[2] = 1;
   if (!(s->def.lod_blend >= 0)) s->def.lod_blend = 0;
+  s->pixel_dither = pixel_dither();
   if (foliage_wanted(&s->def)) {
     /* the layer's own copy of each LOD's part materials, with the foliage parts: the wind and the fades are this
      * layer's (a glTF's materials are shared with every other user of the file) */
@@ -341,7 +367,7 @@ int cw_terrain_scatter_add(cw_terrain *t, const cw_scatter_def *def) {
       fd.bend = d->bend;
       fd.shadow_at_root = d->shadow_at_root;
       fd.shadow_soften = d->shadow_soften;
-      if (dither) {
+      if (dither && s->pixel_dither) {
         if (l > 0) fd.fade_in_from = d->lod_distance[l - 1] - hw, fd.fade_in_to = d->lod_distance[l - 1] + hw;
         if (l + 1 < s->nlod && d->lod_distance[l] - hw < end0) fd.fade_out_from = d->lod_distance[l] - hw, fd.fade_out_to = d->lod_distance[l] + hw;
         else fd.fade_out_from = end0, fd.fade_out_to = vr;
@@ -472,7 +498,7 @@ static void pose_cells(int begin, int end, int worker, void *u) {
   const cw_scatter_def *d = &j->s->def;
   int nl = j->s->nlod;
   float vr = d->visible_range, fs = vr - d->fade;
-  bool dither = d->fade_mode == CW_SCATTER_FADE_DITHER;
+  bool dither = d->fade_mode == CW_SCATTER_FADE_DITHER, per_pixel = dither && j->s->pixel_dither;
   float hw = d->lod_blend * 0.5f, rr = j->s->radius * d->scale_max + d->wind.strength;
   for (int ci = begin; ci < end; ci++) {
     sc_cell *c = j->list[ci];
@@ -498,6 +524,38 @@ static void pose_cells(int begin, int end, int worker, void *u) {
         const float *in = &c->inst[INST_F * (i + k)];
         if (in[8] >= j->density) continue;
         float dist = sqrtf(d2[k]);
+        if (dither && !per_pixel) {
+          /* each instance crosses each band at its own point (inst_hash), over its own share of the band: at a LOD
+           * crossfade the next LOD grows in inside it over the first half of that share and then it shrinks away
+           * over the second, and over the fade it shrinks away. Whole instances that change size smoothly: no
+           * pattern of dropped pixels for TAA to resolve (no dots in motion), no pop */
+          if (dist >= vr) continue;
+          float h = inst_hash(in), st = h * (1 - FADE_SHARE);
+          float k = 1;
+          if (dist > fs && vr > fs) {
+            k = 1 - cw_smoothstep(st, st + FADE_SHARE, (dist - fs) / (vr - fs));
+            if (k < 0.02f) continue;
+          }
+          float grow = 1; /* the share this LOD has grown in (from the band before it) */
+          for (int l = 0; l < nl; l++) {
+            float shrink = 1, next_grow = 0;
+            if (l + 1 < nl && d->lod_distance[l] - hw < fs) {
+              float a = d->lod_distance[l];
+              float u = hw > 0 ? cw_clampf((dist - (a - hw)) / (2 * hw), 0, 1) : dist >= a ? 1.0f : 0.0f;
+              float w = hw > 0 ? cw_clampf((u - st) / FADE_SHARE, 0, 1) : u;
+              next_grow = cw_smoothstep(0, 0.5f, w);
+              shrink = 1 - cw_smoothstep(0.5f, 1, w);
+            }
+            float kl = k * grow * shrink;
+            if (kl >= 0.02f) {
+              if (col[l]) memcpy(col[l] + 3 * cnt[l], &in[9], sizeof(float) * 3);
+              write_matrix(dst[l] + 16 * cnt[l]++, in, kl, j->origin[0], j->origin[1]);
+            }
+            if (next_grow <= 0) break;
+            grow = next_grow;
+          }
+          continue;
+        }
         if (dither) {
           /* whole instances; the shaders dissolve them over the fade and crossfade each LOD band (foliage.h): an
            * instance within its reach (rr) of a band is drawn by both LODs */

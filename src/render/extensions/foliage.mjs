@@ -25,7 +25,8 @@
 // soften * share: soften 0 takes one shadow sample per instance, so a tuft is wholly lit or wholly shadowed.
 //
 // Values (filled per material by src/render/foliage.c):
-//   ext.folFrame  vec4 (frame group): foliage clock (s), dither offset (IGN frame step, 0 without TAA), unused, phase
+//   ext.folFrame  vec4 (frame group): foliage clock (s), dither offset (IGN frame step, 0 without TAA), fades per pixel on an
+//                 instanced mesh (1: the CW_TEST_FOLIAGE_PIXEL_DITHER control; 0: per instance), phase
 //                 spread (2: the noise turns a sway two whole cycles across its range; 0 under CW_TEST_FOLIAGE_LOCKSTEP)
 //   ext.folWind   vec4: strength (m), frequency (Hz), direction x, z (unit)
 //   ext.folWind2  vec4: gust share, gust scale (m), 1 / height, height (m)
@@ -63,7 +64,7 @@ export async function apply(ctx, next) {
   if (kind !== 'depth' && !LIT.has(kind)) return next ? next(ctx) : undefined;
   const {
     Fn, If, uniform, sharedUniformGroup, varying, referenceAttribute, cos, positionLocal, positionGeometry, normalLocal, normalGeometry,
-    modelWorldMatrix, positionView, positionWorld, screenCoordinate, interleavedGradientNoise, faceDirection,
+    modelWorldMatrix, positionView, positionWorld, modelViewMatrix, screenCoordinate, interleavedGradientNoise, faceDirection,
     materialColor, materialNormal, mat3, transpose, vertexColor, instanceColor, vec2, vec3, vec4, float, sin, floor, fract, dot, clamp,
     max, min, mix, select, smoothstep, length,
   } = TSL;
@@ -172,12 +173,20 @@ export async function apply(ctx, next) {
     mat.colorNode = vec4(mix(base.xyz, rooted, mode.y), base.w);
   }
 
-  // ── dithered fades: a screen-door on interleaved gradient noise, moved every frame under TAA ────
-  const d = length(positionView);
+  // ── dithered fades. An instanced mesh's are per instance: each instance is kept or dropped whole, by its own number
+  // (a hash of its root) against the band at its root's distance, so the picture holds no pattern of dropped pixels
+  // (a screen-door TAA resolves only while the picture holds still: in motion it keeps a quarter of its history, and
+  // the dots showed, worst where lit blades cross a shadow). A lone mesh's stay a screen-door on interleaved gradient
+  // noise moved every frame under TAA.
+  const pixFade = instanced ? frame.z.greaterThan(0.5) : null;
+  const dInst = instanced ? varying(length(modelViewMatrix.mul(vec4(rootLocal, 1)).xyz), 'vFolRootDist') : null;
+  const hInst = instanced ? varying(fract(sin(dot(rootWorld.xz, vec2(12.9898, 78.233))).mul(43758.5453)), 'vFolRootHash') : null;
+  const d = instanced ? select(pixFade, length(positionView), dInst) : length(positionView);
   const band = (a, b) => select(b.greaterThan(a), clamp(d.sub(a).div(max(b.sub(a), 1e-4)), 0, 1), float(0));
   const tOut = band(fade.z, fade.w);
   const tIn = select(fade.y.greaterThan(fade.x), clamp(d.sub(fade.x).div(max(fade.y.sub(fade.x), 1e-4)), 0, 1), float(1));
-  const noise = interleavedGradientNoise(screenCoordinate.xy.add(vec2(frame.y)));
+  const ign = interleavedGradientNoise(screenCoordinate.xy.add(vec2(frame.y)));
+  const noise = instanced ? select(pixFade, ign, hInst) : ign;
   const keep = mode.w.lessThan(0.5).or(noise.greaterThanEqual(tOut).and(noise.lessThan(tIn)));
   mat.maskNode = mat.maskNode ? mat.maskNode.and(keep) : keep;
   return next ? next(ctx) : undefined;

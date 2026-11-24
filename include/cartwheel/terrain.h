@@ -77,8 +77,10 @@
  * sphere; cells are generated on the job pool when the camera comes within
  * range, frustum culled, and posed each frame on the job pool: instances
  * shrink to nothing over the last `fade` metres of visible_range (no pop),
- * and switch mesh LOD by distance; with fade_mode DITHER they dissolve over
- * the fade instead and each LOD crossfades with the next (cartwheel/foliage.h).
+ * and switch mesh LOD by distance; with fade_mode DITHER each instance
+ * crosses each band at its own distance instead: it shrinks away over its
+ * own share of the fade, and at a LOD crossfade the next LOD grows in inside
+ * it over its own share of the band before it shrinks away.
  * A layer can also sway in the wind, smooth its cut-out edges, light its
  * leaves from both sides, vary or ground-colour each instance, bend around
  * movers and take one shadow sample per instance (cw_scatter_def's foliage
@@ -352,9 +354,10 @@ typedef struct cw_scatter_def {
                                that TAA resolves without it: false */
   bool two_sided_lighting;  /* back faces lit with the front's normal (no flip): false */
   int fade_mode;            /* CW_SCATTER_FADE_SHRINK (instances shrink over the last `fade` metres, LODs switch at
-                               lod_distance: the default) or CW_SCATTER_FADE_DITHER (they dissolve over it, and each
-                               LOD crossfades with the next over lod_blend metres round lod_distance, by a screen-door
-                               dither TAA resolves: no pop) */
+                               lod_distance: the default) or CW_SCATTER_FADE_DITHER (each instance by its own number,
+                               over its own 0.3 of a band: it shrinks away over the fade, and over the lod_blend metres
+                               round lod_distance the next LOD grows in inside it, then it shrinks away; whole instances,
+                               no pattern of dropped pixels for TAA to resolve, so no grain in motion and no pop) */
   float lod_blend;          /* DITHER: metres of each LOD crossfade: 6 */
   float tint_jitter;        /* 0..1: each instance's colour varied by up to this (brightness and a dry yellow), an
                                instance colour: 0 */
@@ -448,7 +451,11 @@ void cw_terrain_set_get_stats(const cw_terrain_set *s, cw_terrain_set_stats *out
 
 /* The Terrain3D node's terrain (NULL before it entered a tree or for
  * another node). The node keeps its origin and its visibility: move or hide
- * the node, not the terrain. */
+ * the node, not the terrain. A change waiting on the node or on its
+ * TerrainScatter3D children (a property set from code, a density_map written
+ * since) is applied first, so cw_terrain_scatter_cell the same tick reads
+ * the layer as set. A density_map path that does not exist yet leaves its
+ * layer empty (its index kept) until the file is written (cw_vfs_write). */
 cw_terrain *cw_terrain_of(cw_node terrain3d);
 
 #ifdef __cplusplus

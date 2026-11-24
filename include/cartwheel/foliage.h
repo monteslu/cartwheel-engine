@@ -43,12 +43,19 @@
  * leaf reads as one thin sheet lit the same from both sides.
  *
  * Dithered fades (fade_out_from / fade_out_to and fade_in_from / fade_in_to,
- * metres from the camera): pixels are dropped with a probability that rises
- * across the band (a screen-door dither on the engine's interleaved gradient
- * noise, moved every frame under TAA so it resolves to a fade). Two LODs
- * given the same band, one fading out and one fading in, draw complementary
- * pixels: a crossfade with no pop. TerrainScatter3D's DITHER fade mode sets
- * these on its own copies of the layer's materials.
+ * metres from the camera). On an InstancedMesh each instance is kept or
+ * dropped whole: its own number (a hash of its root) against how far into
+ * the band its root is, so the share of instances drawn falls across the
+ * band and the picture holds no pattern of dropped pixels. On a lone mesh
+ * pixels are dropped with a probability that rises across the band (a
+ * screen-door on the engine's interleaved gradient noise, moved every frame
+ * under TAA). A screen-door resolves only while the picture holds still: TAA
+ * keeps a quarter of a moving pixel's history, so in a run or a pan its dots
+ * stay, worst where lit blades cross a dark shadow. Two LODs given the same
+ * band, one fading out and one fading in, draw complementary instances (or
+ * pixels). A large instance (a tree) changes at once where it crosses;
+ * TerrainScatter3D's DITHER fade mode works per instance on the CPU instead
+ * and changes each one's size smoothly (cartwheel/terrain.h).
  *
  * Root colour (root_color): the lower part of the mesh (to root_height
  * metres) takes the instance colour of an InstancedMesh (t3_instanced_mesh's

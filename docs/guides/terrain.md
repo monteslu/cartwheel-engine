@@ -139,7 +139,7 @@ A scatter layer ([cw_terrain_scatter_add](api:cw_terrain_scatter_add), or a [Ter
 - **Cells.** 32 m, doubled while that stays within a quarter of the layer's visible range, so a long-range layer stays a few dozen draws.
 - **Placement.** A pure function of the cell and the layer's seed by integer hashing. A candidate is kept by density, the density map, the control layers it may grow on, holes and slope. The same instances land on every host at any worker count.
 - **Drawing.** Each cell is one InstancedMesh per mesh LOD with its own bounds. Cells are generated, culled and posed on the job pool.
-- **LOD and fade.** Instances switch LOD by distance and shrink away over the end of the visible range (`fade_mode = SHRINK`), or dissolve there and crossfade between LODs (`DITHER`, below).
+- **LOD and fade.** Instances switch LOD by distance and shrink away over the end of the visible range (`fade_mode = SHRINK`), or cross each band at their own distance (`DITHER`, below).
 - **Quality thinning.** Each instance has a rank, and quality thins a layer by rank, so thinning never reshuffles.
 
 A glTF mesh's primitives (a trunk and a crown) draw as parts that share one instance buffer, and a cwpack LOD chain gives the LODs. A part with fewer LODs than the first (leaf cards that do not simplify) keeps drawing its coarsest one at the coarser levels.
@@ -155,7 +155,7 @@ A layer takes the foliage of [foliage.h](header:foliage.h) ([Foliage](guide:rend
 | `wind_strength`, `wind_frequency`, `wind_direction`, `wind_gust`, `wind_gust_scale` | wind: the top of the mesh leans up to `wind_strength` metres, with a phase from each instance's place, so neighbours never sway together |
 | `smooth_alpha` | leaf and grass cards (alpha-tested meshes): alpha to coverage under MSAA, hashed alpha that TAA resolves without it |
 | `two_sided_lighting` | double-sided meshes lit with the front face's normal on the back |
-| `fade_mode = DITHER`, `lod_blend` | instances dissolve over the last `fade` metres instead of shrinking, and each LOD crossfades with the next over `lod_blend` metres round `lod_distance` (an instance in the band is drawn by both, by complementary dithers): no pop |
+| `fade_mode = DITHER`, `lod_blend` | each instance crosses each band at its own distance (its own number): over its own 0.3 of a band: over the last `fade` metres it shrinks away, and over `lod_blend` metres round `lod_distance` the next LOD grows in inside it and then it shrinks away. Whole instances, so no pop and no pattern of dropped pixels: a screen-door dither (0.76.1 and before) showed its dots under TAA whenever the camera moved, worst where lit blades crossed a shadow |
 | `tint_jitter` | per-instance colour variation (an instance colour) |
 | `root_from_terrain`, `root_height` | each instance's lower part takes the terrain's colour under it ([cw_terrain_albedo_at](api:cw_terrain_albedo_at): its layers' mean albedo by the control map, times the terrain's colour), blending into the mesh's own colour above `root_height` |
 | `bend` | radians the tops turn over at a mover's full push: the layer bends around everything registered with [cw_foliage_mover_add](api:cw_foliage_mover_add) and moved with [cw_foliage_mover_update](api:cw_foliage_mover_update), and stands up again behind it over the mover's `recover` seconds (0: movers ignored, the work skipped; 1.1 lays grass well over) |
