@@ -830,8 +830,140 @@ static void test_foot_high_sweep(void) {
   cw_tree_free(t);
 }
 
+/* ── SpringBone3D: collisions that hold, no flip at resonance, a step-up that does not fling ──────── */
+
+/* the swing of the tail's first bone off its animated (rest) direction, radians */
+static float swing0(cw_node model) {
+  const cw_pose *p = cw_skeleton_pose(model);
+  int b = cw_pose_find(p, "T0");
+  return qangle(p->rot[b], (t3_quat){ 0, 0, 0, 1 });
+}
+/* the deepest any joint of the chain is inside the shape (m; negative: outside) */
+static float chain_pen(cw_node ch, cw_node shape) {
+  float worst = -1;
+  t3_vec3 j, a, b;
+  float r;
+  if (!cw_spring_collision3d_world(shape, &a, &b, &r)) return worst;
+  for (int i = 0; cw_spring_chain3d_joint_world(ch, i, &j); i++) {
+    t3_vec3 ab = vsub(b, a), aj = vsub(j, a);
+    float ll = vdot(ab, ab), t = ll > 0 ? vdot(aj, ab) / ll : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    t3_vec3 q = v3(a.x + ab.x * t, a.y + ab.y * t, a.z + ab.z * t);
+    float d = r - vlen(vsub(j, q));
+    if (d > worst) worst = d;
+  }
+  return worst;
+}
+static cw_node spring_model(cw_tree *t, cw_node *sb, cw_node *ch) {
+  cw_node model = add(cw_tree_root(t), "Node3D", "Model");
+  t3_object *rig = make_tail_rig();
+  cw_node3d_set_object(model, rig);
+  t3_release(rig);
+  *sb = add(model, "SpringBone3D", "Springs");
+  *ch = add(*sb, "SpringBoneChain3D", "Hair");
+  cw_node_set(*ch, "root_bone", cw_val_string("T0"));
+  cw_node_set(*ch, "end_bone", cw_val_string("T2"));
+  return model;
+}
+
+/* A short hair chain (6 mm joints) against a neck capsule right under it, the head bobbing as a run does: no joint
+ * ever goes more than 1 mm into the capsule. Control: CW_TEST_SPRING_OLD_COLLIDE=1, the old order (two rounds of
+ * length then push, then the length again): the last length pass pulls joints back in. */
+static void test_spring_collide(void) {
+  cw_tree *t = cw_tree_new();
+  cw_node sb, ch;
+  cw_node model = spring_model(t, &sb, &ch);
+  cw_node_set(ch, "radius", cw_val_float(0.006f));
+  cw_node_set(ch, "stiffness", cw_val_float(40));
+  cw_node_set(ch, "damping", cw_val_float(2));
+  cw_node_set(ch, "gravity_strength", cw_val_float(9.8f));
+  cw_node neck = add(sb, "SpringBoneCollision3D", "Neck");
+  cw_node_set(neck, "bone", cw_val_string("Head"));
+  cw_node_set(neck, "shape", cw_val_enum("CAPSULE"));
+  cw_node_set(neck, "radius", cw_val_float(0.05f));
+  cw_node_set(neck, "offset", cw_val_vec3(0, -0.3f, -0.06f));
+  cw_node_set(neck, "tail", cw_val_vec3(0, 0.02f, -0.06f));
+  float worst = -1, x = 0;
+  for (int k = 0; k < 300; k++) {
+    float sy, cy;
+    cw_sincos((float)k * 0.85f, &sy, &cy); /* about 8 bobs a second at 60 ticks: a run */
+    x += 5.4f * (float)DT;
+    cw_node3d_set_position(model, v3(x, 0.06f * sy, 0));
+    cw_tree_fixed_update(t, DT);
+    float p = chain_pen(ch, neck);
+    if (k > 2 && p > worst) worst = p;
+  }
+  cw_info("spring collide: deepest joint %.4f m into the neck capsule (head bob at a run)", worst);
+  CHECK(worst <= 0.001f); /* (control CW_TEST_SPRING_OLD_COLLIDE=1: centimetres in, this fails) */
+  FOLD(worst);
+  cw_tree_free(t);
+}
+
+/* A stiff short chain (stiffness 300, damping 8: well under critical, 2 sqrt(300) = 35) driven by a bob at its own
+ * sway rate: it never swings more than max_angle (2 rad, the default) off the animated direction, so never over its
+ * bone. Control in the same case: max_angle 0 (no limit) swings past it. */
+static float resonance_swing(float max_angle, float damping) {
+  cw_tree *t = cw_tree_new();
+  cw_node sb, ch;
+  cw_node model = spring_model(t, &sb, &ch);
+  cw_node_set(ch, "stiffness", cw_val_float(300));
+  cw_node_set(ch, "damping", cw_val_float(damping));
+  cw_node_set(ch, "max_angle", cw_val_float(max_angle));
+  float worst = 0, x = 0;
+  for (int k = 0; k < 400; k++) {
+    float sy, cy;
+    cw_sincos((float)k * 0.2887f, &sy, &cy); /* sqrt(300) rad/s at 60 ticks: the chain's own rate */
+    x += 5.4f * (float)DT;
+    cw_node3d_set_position(model, v3(x, 0.16f * sy, 0.16f * cy));
+    cw_tree_fixed_update(t, DT);
+    float a = swing0(model);
+    if (a > worst) worst = a;
+  }
+  cw_tree_free(t);
+  return worst;
+}
+static void test_spring_resonance(void) {
+  float held = resonance_swing(2.0f, 8), free_ = resonance_swing(0, 8), crit = resonance_swing(0, 35);
+  cw_info("spring resonance: the first bone swings at most %.3f rad off its animated direction with max_angle 2 "
+          "(no limit: %.3f; no limit at damping 35, near critical: %.3f)", held, free_, crit);
+  CHECK(held <= 2.0f + 1e-3f);
+  CHECK(free_ > 2.0f); /* (the case drives the chain past the limit: what max_angle holds) */
+  CHECK(crit < 2.0f);  /* damping near critical (2 sqrt(stiffness)) keeps it from flipping on its own */
+  FOLD(held);
+}
+
+/* A controller stepping up a 0.41 m ledge in one tick: with the default teleport_distance (0.25 m) the chains move
+ * with the model (no fling); the old default (1 m, and no max_angle) flings the tail over its bone. */
+static float step_swing(float teleport, float max_angle) {
+  cw_tree *t = cw_tree_new();
+  cw_node sb, ch;
+  cw_node model = spring_model(t, &sb, &ch);
+  if (teleport >= 0) cw_node_set(sb, "teleport_distance", cw_val_float(teleport));
+  if (max_angle >= 0) cw_node_set(ch, "max_angle", cw_val_float(max_angle));
+  for (int k = 0; k < 30; k++) cw_tree_fixed_update(t, DT);
+  cw_node3d_set_position(model, v3(0, 0.41f, 0));
+  float worst = 0;
+  for (int k = 0; k < 60; k++) {
+    cw_tree_fixed_update(t, DT);
+    float a = swing0(model);
+    if (a > worst) worst = a;
+  }
+  cw_tree_free(t);
+  return worst;
+}
+static void test_spring_step_up(void) {
+  float now = step_swing(-1, -1), old = step_swing(1, 0);
+  cw_info("spring step-up 0.41 m: the first bone swings at most %.3f rad (defaults); the old defaults %.3f rad", now, old);
+  CHECK(now < 0.05f);
+  CHECK(old > 1.0f); /* (the old defaults fling it: what the new ones prevent) */
+  FOLD(now);
+}
+
 /* the cases a gate's control switch reaches (cw_test_env: frame 2 in a cart) */
 void cw_test_late(void) {
+  test_spring_collide();
+  test_spring_resonance();
+  test_spring_step_up();
   test_manual_refresh();
   test_refresh_once_a_tick();
   test_foot_high_sweep();

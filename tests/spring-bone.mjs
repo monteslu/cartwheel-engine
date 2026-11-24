@@ -1,6 +1,7 @@
 // SpringBone3D (cartwheel/ik.h) on samples/anim_spring: a person with a ponytail and two coat tails walks, stops,
 // spins three turns, stands, teleports and walks back (600 ticks). Per host and backend:
-//   (a) motion: every tip trails its animated place by more than 3 cm while walking and is back within 1 cm of where
+//   (a) motion: every tip trails its animated place by more than 3 cm while walking (the walk's start and its bob:
+//       motion at a steady velocity alone leaves none, unit_ik's spring case) and is back within 1 cm of where
 //       it hung before the walk, for good, within 75 ticks of the stop (sb.motion_ok); CONTROL: the modifier off
 //       (SPRING_OFF) leaves no lag;
 //   (b) collision: during the spin every simulated joint of every chain stays outside every collision shape (the

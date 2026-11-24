@@ -18,6 +18,8 @@
  *
  * Debug fields (sb.*), per chain (ponytail, left tail, right tail):
  *   lag        the most the tip trailed its animated place while walking (m)
+ *   lag_steady the same over ticks 140 to 189, the walk at its pace (the
+ *              start over: what the walk's own bob leaves)
  *   settle     ticks after the walk until the tip is back within 1 cm of
  *              where it hung before the walk, for good
  *   pen        the deepest any simulated joint of any chain went inside any
@@ -60,6 +62,7 @@ static int nshapes;
 
 /* debug state */
 static int32_t tick_i, settle[NCH], motion_ok, collide_ok, teleport_ok, reset_ok, resets;
+static float lag_steady[NCH];
 static float lag[NCH], pen_all, pen_spin, spin_lag[NCH], whip[NCH], rest_dev[NCH], us, us_min = 1e9f;
 static uint32_t hash_win[10];
 static t3_vec3 rest_off[NCH];
@@ -146,6 +149,7 @@ static void init(void *u) {
 
   cw_debug_i32("sb.tick", &tick_i);
   cw_debug_f32_array("sb.lag", lag, NCH);
+  cw_debug_f32_array("sb.lag_steady", lag_steady, NCH);
   cw_debug_field("sb.settle", settle, CW_DBG_I32, NCH);
   cw_debug_f32_array("sb.rest_dev", rest_dev, NCH);
   cw_debug_f32("sb.pen", &pen_all);
@@ -224,6 +228,7 @@ static void probe(int t) {
     float d = vlen3(o);
     if (t == 89) rest_off[c] = o;
     if (t >= 90 && t < 210 && d > lag[c]) lag[c] = d;
+    if (t >= 140 && t < 190 && d > lag_steady[c]) lag_steady[c] = d; /* the walk at its pace: its bob alone */
     if (t >= 210 && t < 300) {
       float dev = vlen3(vsub3(o, rest_off[c]));
       if (dev >= 0.01f) last_far[c] = t;

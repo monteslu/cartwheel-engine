@@ -324,9 +324,10 @@ Skinned parts that should swing on their own (a ponytail, braids, a beard, a tai
 |---|---|
 | `root_bone`, `end_bone` | the chain, from the first bone that swings down to the last (below it). The end bone's tip is its child bone (an `_end` marker, the next bone), or else its own length again along the incoming direction |
 | `stiffness` | 1/s², default 120: the pull of each joint back toward where the animation puts it (below its already simulated parent). One joint alone sways at about √stiffness / 2π times a second; a chain of several is looser, so a four-bone ponytail wants about 250 |
-| `damping` | 1/s, default 8: drag on the swing. Only the motion apart from the animation is damped, so a steady walk leaves no lag; starts, stops, turns and the animation's own bob do |
+| `damping` | 1/s, default 8: drag on the swing. Only the motion apart from the animation is damped, so motion at a steady velocity (a glide, a slide) leaves no lag; starts, stops, turns and the bob of a walk or a run do: `anim_spring`'s tips trail 9 to 12 cm at the walk's pace and 12 to 20 cm as it starts. Damping well under critical (about `2 * sqrt(stiffness)`: 22 at the default stiffness, 35 at 300) lets a short stiff chain build up when a run's bob comes near its own sway rate, until it swings over its bone; give such chains damping near critical (in `unit_ik`, a chain of stiffness 300 driven at its own rate swings 3.14 rad at damping 8, with no limit, and 0.69 rad at 35) |
 | `gravity`, `gravity_strength` | a world direction (down) and m/s² (default 0). Each joint sags about `gravity_strength / stiffness` metres from its animated place |
 | `radius` | m, default 0.02: each joint's and the tip's hit radius against the shapes |
+| `max_angle` | radians, default 2 (115 degrees): the most a joint swings off the way the animation points it, so a chain never flips over its bone (a run's bob at the chain's sway rate, a step-up, a hard turn); 0 is no limit |
 | `tip_offset`, `tip_distance` | read-only: the tip from where the animated pose puts it, last tick (world, metres) |
 
 | SpringBoneCollision3D | |
@@ -338,10 +339,10 @@ Skinned parts that should swing on their own (a ponytail, braids, a beard, a tai
 
 The SpringBone3D itself has `active`, `influence`, `collisions` (default true) and:
 
-- `teleport_distance` (m, default 1) and `teleport_angle` (radians, default 1.5): a model that moves or turns further than this in one tick has teleported, and the chains move with it just as they hang. A respawn, a cut or a warp needs no call. 0 turns a check off.
+- `teleport_distance` (m, default 0.25) and `teleport_angle` (radians, default 1.5): a model that moves or turns further than this in one tick has teleported, and the chains move with it just as they hang. A respawn, a cut or a warp needs no call, and neither does a character controller stepping up a ledge in one tick (a step-up of 0.41 m with the old default of 1 m flung every chain over the head). Keep it under the tallest step your controller climbs in a tick and over the farthest a character moves in one at its fastest (0.25 m is 15 m/s; raise it for a character riding something faster). 0 turns a check off.
 - `reset`, or [cw_spring_bone3d_reset](api:cw_spring_bone3d_reset): the chains start again from the animated pose on the next tick (a new character in a pool, a cut to a pose that has nothing to do with the last one). A SpringBone3D that misses a tick (inactive, just added) starts again the same way. `resets` counts both.
 
-How it works: each joint's tail is a Verlet point kept in world space from one tick to the next, so moving or turning the model leaves it behind. Each tick, from the root down, the tail keeps its velocity less the drag, the spring pulls it toward where the animation puts it below the simulated parent, gravity sags it, the bone's length holds it, the shapes push it out (twice, with the length held after each), and the bone turns by the shortest rotation onto it. Every tick starts from the animated pose, as for every modifier; only the tails carry over.
+How it works: each joint's tail is a Verlet point kept in world space from one tick to the next, so moving or turning the model leaves it behind. Each tick, from the root down, the tail keeps its velocity less the drag, the spring pulls it toward where the animation puts it below the simulated parent, gravity sags it, the bone turns at most `max_angle` off its animated direction, the shapes turn it out of them along the sphere of the bone's length (so the length and the shapes hold together: no last length pass pulls a joint back inside a shape), and the bone turns by the shortest rotation onto it. Every tick starts from the animated pose, as for every modifier; only the tails carry over.
 
 [cw_spring_chain3d_joint_world](api:cw_spring_chain3d_joint_world) gives each simulated joint and [cw_spring_collision3d_world](api:cw_spring_collision3d_world) each shape, in the world, for a debug drawing or a test; the `ik <model path>` debug request lists each chain's tip offset.
 
@@ -354,7 +355,9 @@ node tests/gate.mjs unit-ik anim-spring
 node tests/spring-bone.mjs        # each check with its control, native and romdev, GL and WebGPU
 ```
 
-- Motion: the tips trail their animated places by 12 to 20 cm as the walk starts and are back within 1 cm, for good, 18 to 62 ticks after the stop. Control: the modifier off, no lag.
+- Motion: the tips trail their animated places by 12 to 20 cm as the walk starts (9 to 12 cm at its pace, from its bob: `sb.lag_steady`) and are back within 1 cm, for good, 18 to 62 ticks after the stop. Control: the modifier off, no lag.
+
+`unit_ik` adds three cases (gate `spring-collide`, on GL and WebGPU as a cart): a short hair chain (6 mm joints) against a neck capsule with the head bobbing at a run stays outside it (6 mm clear; control `CW_TEST_SPRING_OLD_COLLIDE=1`, the old order of length and push, 5.3 mm inside); a stiff chain driven at its own sway rate swings at most `max_angle` (with no limit it flips, 3.14 rad); a 0.41 m step-up in one tick leaves the chain hanging (the old defaults, 1 m and no limit, fling it 3.06 rad).
 - Collision: through the spin the tips fly out 40 to 43 cm and every joint stays at least 1.9 cm outside every shape. Control: collisions off, joints go 8.5 cm inside.
 - Teleport: after the 6 m jump every tip's offset matches an identical twin's that did not jump, to the bit, and the reset call puts every tip on its animated place. Control: the jump check off, the tips whip 55 to 58 cm.
 - Determinism: the pose hash per 60-tick window is the same bits natively and in the cart, on GL and WebGPU.

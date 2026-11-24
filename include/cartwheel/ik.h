@@ -315,7 +315,11 @@ int cw_ik_fabrik(cw_pose *p, const int *chain, int n, t3_vec3 target, const cw_c
  *                      direction, down) and gravity_strength (m/s^2, 0:
  *                      the chain sags about strength / stiffness metres),
  *                      radius (m, 0.02: each joint's and the tip's hit
- *                      radius); tip_offset (vec3 world m) and tip_distance
+ *                      radius), max_angle (radians, 2: the most a joint
+ *                      swings off its animated direction, so a chain never
+ *                      flips over its bone; 0 no limit); damping near
+ *                      critical, about 2 sqrt(stiffness), keeps a short
+ *                      stiff chain from building up on a run's bob; tip_offset (vec3 world m) and tip_distance
  *                      read-only: the tip from where the animated pose
  *                      puts it, last tick.
  *                    SpringBoneCollision3D children: bone, shape (SPHERE,
@@ -326,7 +330,8 @@ int cw_ik_fabrik(cw_pose *p, const int *chain, int n, t3_vec3 target, const cw_c
  *                    Properties: collisions (bool, true), reset (bool: set
  *                    true and the chains start again from the animated
  *                    pose next tick; it clears itself; also
- *                    cw_spring_bone3d_reset), teleport_distance (m, 1) and
+ *                    cw_spring_bone3d_reset), teleport_distance (m, 0.25:
+ *                    under a controller's step-up, over a tick's run) and
  *                    teleport_angle (radians, 1.5): a model that moves or
  *                    turns further than this in one tick teleported, and
  *                    the chains move with it as they hang, with no whip (0
@@ -335,9 +340,11 @@ int cw_ik_fabrik(cw_pose *p, const int *chain, int n, t3_vec3 target, const cw_c
  *                    space from tick to tick: the model's motion leaves it
  *                    behind, the spring pulls it toward where the
  *                    animation puts it below the already simulated parent,
- *                    gravity sags it, the bone's length holds it and the
- *                    shapes push it out (twice), then the bone turns by the
- *                    shortest rotation onto it. A node that missed a tick
+ *                    gravity sags it, the bone turns at most max_angle off
+ *                    its animated direction and out of the shapes along
+ *                    the sphere of its length (length and shapes both
+ *                    hold), then the bone turns by the shortest rotation
+ *                    onto it. A node that missed a tick
  *                    (inactive, just added) starts again from the animated
  *                    pose. Arithmetic, sqrt and cw_exp / cw_cos only, so
  *                    every host gives the same bits.

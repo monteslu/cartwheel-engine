@@ -3487,6 +3487,26 @@
     }
   },
   {
+    "name": "spring-collide",
+    "app": "unit_ik",
+    "frames": 3,
+    "controlFrames": 3,
+    "controlEnv": {
+      "CW_TEST_SPRING_OLD_COLLIDE": "1"
+    },
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.done"
+    ],
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "note": "SpringBone3D: unit_ik's spring_collide drives a short hair chain (6 mm joints, gravity) against a neck capsule (r 0.05) with the head bobbing at a run for 300 ticks: no joint goes more than 1 mm into it (6 mm clear); spring_resonance: a stiff chain (300) driven at its own sway rate swings at most max_angle (2 rad; with no limit 3.14, at damping near critical 0.69); spring_step_up: a 0.41 m step-up in one tick leaves the chain hanging with the defaults (teleport_distance 0.25), the old defaults fling it 3.06 rad. Control: CW_TEST_SPRING_OLD_COLLIDE=1, the old order (two rounds of length and push, then the length again): 5.3 mm inside (and no max_angle), unit.failed 2"
+  },
+  {
     "name": "anim-spring",
     "app": "anim_spring",
     "frames": 600,

@@ -557,6 +557,7 @@ typedef struct spring_chain {
   float stiffness, damping;
   t3_vec3 gravity;
   float gravity_strength, radius;
+  float max_angle;              /* radians off the animated direction a joint may swing (0: no limit) */
   t3_vec3 tip_offset;           /* read-only: the tip from its animated place (world, m) */
   float tip_distance;           /* read-only: its length */
   /* resolved */
@@ -573,7 +574,7 @@ typedef struct spring_chain {
   bool snap, step;
   t3_vec3 mcur[SPRING_J], mprev[SPRING_J], maprev[SPRING_J];
   t3_vec3 g;                    /* gravity times dt^2, model units */
-  float keep, pull, r;
+  float keep, pull, r, cos_max, sin_max;
 } spring_chain;
 
 typedef struct spring_shape {
@@ -733,6 +734,8 @@ static void spring_prepare(cw_node n, spring_node *d, skel *s, uint64_t tick, do
     t3_vec3 gd = vnorm(c->gravity);
     c->g = vmul(dir_to_model(s, gd), c->gravity_strength * fdt * fdt / s->world_scale);
     c->r = c->radius / s->world_scale;
+    if (c->max_angle > 0 && c->max_angle < 3.14159265f) cw_sincos(c->max_angle, &c->sin_max, &c->cos_max);
+    else c->cos_max = -2, c->sin_max = 0;
   }
   d->primed = true;
   d->reset = false;
@@ -760,6 +763,58 @@ static t3_vec3 spring_collide(const spring_node *d, t3_vec3 x, float r) {
     x = vadd(c, vmul(dv, R / sqrtf(dd)));
   }
   return x;
+}
+
+/* CW_TEST_SPRING_OLD_COLLIDE (gate spring-collide's control), set by the phase */
+static bool spring_old_collide;
+
+/* u (unit) turned in the plane of u and w (unit) so that its angle to w is at least acos(cos_max): the nearest
+ * direction on that cone */
+static t3_vec3 cone_out(t3_vec3 u, t3_vec3 w, float cos_max) {
+  float c = vdot(u, w);
+  if (c <= cos_max) return u;
+  t3_vec3 side = vsub(u, vmul(w, c));
+  float sl = vlen(side);
+  if (sl < 1e-7f) { /* straight at it: any side */
+    t3_vec3 a = fabsf(w.x) < 0.9f ? v3(1, 0, 0) : v3(0, 1, 0);
+    side = vsub(a, vmul(w, vdot(a, w)));
+    sl = vlen(side);
+  }
+  side = vmul(side, 1 / sl);
+  float sn = sqrtf(1 - cos_max * cos_max);
+  return vadd(vmul(w, cos_max), vmul(side, sn));
+}
+/* the joint's tail on the sphere of its bone's length round the head (head + L u), turned out of every shape: for
+ * each shape the closest point c on it (a capsule's segment, a sphere's centre), the tail must keep R from c, which on
+ * that sphere is a cone round the direction to c (law of cosines). The length always holds, so no final length pass
+ * can pull the tail back inside (the old order: two rounds of length then push, then the length again, which could). */
+static t3_vec3 spring_keep_out(const spring_node *d, t3_vec3 head, t3_vec3 u, float L, float r) {
+  for (int it = 0; it < 3; it++) {
+    bool moved = false;
+    for (int k = 0; k < d->nsh; k++) {
+      const spring_shape *h = d->sh[k];
+      if (!h->placed) continue;
+      t3_vec3 x = vadd(head, vmul(u, L));
+      t3_vec3 c = h->a, ab = vsub(h->b, h->a);
+      float ll = vdot(ab, ab);
+      if (ll > 0) {
+        float t = vdot(vsub(x, h->a), ab) / ll;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        c = vadd(h->a, vmul(ab, t));
+      }
+      float R = h->r + r;
+      t3_vec3 w = vsub(c, head);
+      float dd = vlen(w);
+      if (dd < 1e-7f || vlen(vsub(x, c)) >= R) continue;
+      float cos_max = (L * L + dd * dd - R * R) / (2 * L * dd);
+      if (cos_max <= -1) continue;   /* no direction on the sphere reaches it */
+      if (cos_max >= 1) cos_max = 1; /* (the head inside: as far from it as the sphere goes) */
+      u = cone_out(u, vmul(w, 1 / dd), cos_max < 1 ? cos_max : -1);
+      moved = true;
+    }
+    if (!moved) break;
+  }
+  return u;
 }
 
 static void spring_solve(cw_node n, spring_node *d, skel *s) {
@@ -805,15 +860,29 @@ static void spring_solve(cw_node n, spring_node *d, skel *s) {
         x = c->mcur[i];
       }
       c->maprev[i] = at;
-      for (int it = 0; it < 2; it++) {
+      if (spring_old_collide) {
+        for (int it = 0; it < 2; it++) {
+          t3_vec3 dx = vsub(x, head);
+          float l = vlen(dx);
+          x = l > 0 ? vadd(head, vmul(dx, L / l)) : at;
+          if (d->collisions && d->nsh) x = spring_collide(d, x, c->r);
+        }
         t3_vec3 dx = vsub(x, head);
         float l = vlen(dx);
         x = l > 0 ? vadd(head, vmul(dx, L / l)) : at;
-        if (d->collisions && d->nsh) x = spring_collide(d, x, c->r);
+      } else {
+        /* the direction: at most max_angle off the animated one (a chain never swings over its bone), then out of
+         * the shapes on the sphere of its length */
+        t3_vec3 dx = vsub(x, head);
+        float l = vlen(dx);
+        t3_vec3 u = l > 0 ? vmul(dx, 1 / l) : vmul(ad, 1 / L);
+        if (c->cos_max > -1) {
+          t3_vec3 a = vmul(ad, 1 / L);
+          u = cone_out(u, vmul(a, -1), -c->cos_max); /* (the angle to -a at least pi - max_angle) */
+        }
+        if (d->collisions && d->nsh) u = spring_keep_out(d, head, u, L, c->r);
+        x = vadd(head, vmul(u, L));
       }
-      t3_vec3 dx = vsub(x, head);
-      float l = vlen(dx);
-      x = l > 0 ? vadd(head, vmul(dx, L / l)) : at;
       c->mcur[i] = x;
       cw_pose_rotate_model(p, b, cw_quat_from_to(vmul(ad, 1 / L), vmul(vsub(x, head), 1 / L)));
     }
@@ -1051,6 +1120,8 @@ static void phase_hook(cw_tree *tree, double dt, void *u) {
   {
     const char *e = test_switch("CW_TEST_IK2_OLD_BEND");
     cw__ik2_old_bend = e && atoi(e);
+    e = test_switch("CW_TEST_SPRING_OLD_COLLIDE");
+    spring_old_collide = e && atoi(e);
   }
   ikw *W = cw_tree_slot(tree, "ik");
   if (!W || !W->skels.count) return;
@@ -1381,7 +1452,7 @@ static cw_node_type foot_type = {
 static void spring_init(cw_node n, void *data) {
   (void)n;
   spring_node *d = data;
-  d->teleport_distance = 1;
+  d->teleport_distance = 0.25f;
   d->teleport_angle = 1.5f;
   d->collisions = true;
 }
@@ -1407,6 +1478,7 @@ static void chain_init(cw_node n, void *data) {
   c->damping = 8;
   c->gravity = v3(0, -1, 0);
   c->radius = 0.02f;
+  c->max_angle = 2.0f;
   c->gen = (uint32_t)-1;
 }
 static void child_enter(cw_node n, void *data) {
@@ -1423,6 +1495,7 @@ static const cw_prop chain_props[] = {
   CW_PROP_FIELD(spring_chain, gravity, CW_T_VEC3, CW_PROP_DEFAULT, "Direction gravity pulls the chain (world)."),
   CW_PROP_FIELD_RANGE(spring_chain, gravity_strength, CW_T_FLOAT, 0, 100, "Gravity's pull (m/s^2; 0 = none): the chain sags by about strength / stiffness metres."),
   CW_PROP_FIELD_RANGE(spring_chain, radius, CW_T_FLOAT, 0, 10, "Hit radius of each joint and the tip against the collision shapes (m)."),
+  CW_PROP_FIELD_RANGE(spring_chain, max_angle, CW_T_FLOAT, 0, 3.14159265f, "The most a joint swings off the way the animation points it (radians; 2 = 115 degrees, 0 = no limit): a chain never flips over its bone."),
   { .name = "tip_offset", .type = CW_T_VEC3, .flags = RO, .offset = offsetof(spring_chain, tip_offset), .size = sizeof(t3_vec3),
     .doc = "The tip from where the animated pose puts it, last tick (world, m)." },
   { .name = "tip_distance", .type = CW_T_FLOAT, .flags = RO, .offset = offsetof(spring_chain, tip_distance), .size = sizeof(float),

@@ -4,6 +4,32 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.73.0 (2026-11-24)
+
+### Added
+- SpringBoneChain3D `max_angle` (radians, default 2, 115 degrees; 0 no limit): the most a joint swings off the way
+  the animation points it, so a chain never flips over its bone. A short stiff chain (stiffness 120 to 500) on a
+  character running at 5.4 m/s flipped over when the run's bob came near its own sway rate; in `unit_ik` a chain of
+  stiffness 300 driven at its own rate swings 3.14 rad with no limit and at most 2 with the default.
+
+### Changed
+- SpringBone3D `teleport_distance` defaults to 0.25 m (was 1 m): a character controller stepping up a 0.41 m ledge in
+  one tick flung every chain over the head. 0.25 m is 15 m/s; raise it for a character riding something faster. The
+  guide names step-ups as the reason.
+
+### Fixed
+- SpringBone3D collisions could leave a joint inside a shape: each joint held its bone's length, pushed out of the
+  shapes, twice, then held the length once more, and that last length pass could pull it back in (a hair chain with
+  6 mm joints sat up to 35 mm inside a neck capsule through a run's head bob). Each joint now turns out of the shapes
+  along the sphere of its bone's length, so length and shapes hold together. Gate `spring-collide` (`unit_ik`: a hair
+  chain against a neck capsule with the head bobbing at a run stays 6 mm clear, bound 1 mm in; the resonance and
+  step-up cases above; control `CW_TEST_SPRING_OLD_COLLIDE=1`, the old order: 5.3 mm inside).
+- The animation guide said a steady walk leaves SpringBone3D no lag; what the solver leaves no lag for is motion at a
+  steady velocity. A walk's bob does: `anim_spring`'s tips trail 9 to 12 cm at the walk's pace (new debug field
+  `sb.lag_steady`) and 12 to 20 cm as it starts, as `tests/spring-bone.mjs` checks. The guide also says to give a short
+  stiff chain damping near critical, about `2 * sqrt(stiffness)` (0.69 rad of swing at 35 against 3.14 at the default 8
+  for stiffness 300).
+
 ## v0.72.0 (2026-11-24)
 
 ### Added

@@ -7819,7 +7819,7 @@
     {
      "name": "teleport_distance",
      "type": "float",
-     "default": "1",
+     "default": "0.25",
      "stored": true,
      "readonly": false,
      "min": 0,
@@ -7923,6 +7923,16 @@
      "min": 0,
      "max": 10,
      "doc": "Hit radius of each joint and the tip against the collision shapes (m)."
+    },
+    {
+     "name": "max_angle",
+     "type": "float",
+     "default": "2",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 3.14159,
+     "doc": "The most a joint swings off the way the animation points it (radians; 2 = 115 degrees, 0 = no limit): a chain never flips over its bone."
     },
     {
      "name": "tip_offset",
