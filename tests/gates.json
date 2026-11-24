@@ -4786,7 +4786,7 @@
   {
     "name": "looks",
     "script": "tests/looks.mjs",
-    "note": "the post looks held to what each promises, natively on GL and WebGPU: no look draws the frame without looks byte for byte; ASCII cells hold glyphs only from the set; dithers are exactly two colours; half block pixels are the scene's mean over their square; a blend at 0 and 1 is each look; FADE, WIPE and DISSOLVE middles are what they promise; a still camera's frames do not change (TAA too, for the glyph hold); one-pass split screen equals view by view; a half-second blend passes the flash check. Each with a control that must fail"
+    "note": "the post looks held to what each promises, natively on GL and WebGPU: no look draws the frame without looks byte for byte; ASCII cells hold glyphs only from the set; dithers are exactly two colours; half block pixels are the scene's mean over their square; a blend at 0 and 1 is each look; FADE, WIPE and DISSOLVE middles are what they promise; a still camera's frames do not change (TAA too, for the glyph hold and the palette hold); a flat colour between two palette colours sliding under TAA is one palette colour in every square inside it (control CW_TEST_HALFBLOCK_OLD_HOLD=1, the hold of 0.68.1 to 0.71.0, leaves squares on the other colour); one-pass split screen equals view by view; a half-second blend passes the flash check. Each with a control that must fail"
   },
   {
     "name": "looks-display",
@@ -6651,6 +6651,11 @@
     "name": "decal-first-image",
     "script": "tests/decal-first-image.mjs",
     "note": "the first image into the decal atlas mid-run costs no frame: samples/decal_late through romdev on GL and WebGPU, every frame timed (frame({op:'timing'}), window 1; a frame's cost is its least over three runs, which drops a shared machine's noise); with the image preloaded (DECAL_PRELOAD=1, cw_decal_preload at tick 1) the frame that stamps two decals with it at tick 60 costs at most 1.5 ms of CPU (and wall, when no other process used the GPU) over the run's usual frame, and no other frame does; not preloaded, that frame costs the image's decode and no more (4 ms); stamped at the start instead (DECAL_AT_LOAD=1) the last frame is the same picture; the far mark samples mip 2 (far_ok). Controls: CW_TEST_DECAL_FULL_MIPS=1 (the engine's path before v0.46.2: the image loads at its first draw and every mip of the whole atlas is rebuilt then) must cost that frame at least 4 ms (GL) / 6 ms (WebGPU) more; CW_TEST_DECAL_NO_MIPS=1 must fail far_ok"
+  },
+  {
+    "name": "look-fade-end",
+    "script": "tests/look-fade-end.mjs",
+    "note": "the start and the end of a blend between looks cost no frame: samples/style_switch's cart through romdev on GL and WebGPU, every frame timed (a frame's cost its least over three runs); every look blend (plain to ASCII, ASCII to half blocks, half blocks to a one-bit dither at DISPLAY across the stages, the dither to no look; both rounds), its first two frames and its end frame and the next at most 3 ms of CPU and 1.5 ms of GPU over the larger median of the 5 frames before and the 5 after. Control: CW_TEST_LOOK_END_REBUILD=1 with CW_TEST_NO_PREWARM=1 (the stage's programs made again on the frame a blend ends, and no prewarm) must put a start or an end over the bound on each backend"
   },
   {
     "name": "backdrop-look-prewarm",

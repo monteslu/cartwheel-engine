@@ -18,6 +18,10 @@
  *   LOOK_STAGE=display   the looks at the DISPLAY stage (read when a look is made: set it from the start)
  *   LOOK_GLYPHS=s    the ASCII look's glyph set
  *   LOOK_MEASURE=1   cw_pipeline_measure_looks (look.lum_a, look.lum_b, look.lum_ok)
+ *   LOOK_FLAT=S      a flat card (black, no specular, emissive: one colour) in front of a bright one, sliding right S
+ *                    world units a tick (0: still); its colour LOOK_FLAT_GREY display steps (0.53: between the
+ *                    palette's grey and silver, nearer the grey), the bright card's 0.8 (read when the cards are made:
+ *                    set them from the start)
  *
  * The debug request "look A [B [T]]" sets the pair and weight over the switches.
  *
@@ -173,6 +177,26 @@ static const stop TOUR[] = {
 };
 
 static bool plain_applied, taa_applied, split_applied, measure_applied;
+static cw_node flat_card;
+
+/* a grey of display steps d (look.h's display curve: d = (c / (1 + c))^(1 / 2.2)) in linear light */
+static float undisp(float d) {
+  float y = powf(d, 2.2f);
+  return y / (1.0f - y);
+}
+static cw_node add_card(cw_node world, const char *name, float x, float y, float z, float w, float h, float grey) {
+  cw_node n = cw_node_new("MeshInstance3D", name);
+  cw_node_add_child(world, n);
+  cw_node_set(n, "size", cw_val_vec3(w, h, 0.05f));
+  cw_node_set(n, "color", cw_val_color(0, 0, 0, 1));
+  cw_node_set(n, "roughness", cw_val_float(1));
+  cw_node_set(n, "specular_intensity", cw_val_float(0)); /* (no highlight, no reflection: the emissive alone) */
+  cw_node_set(n, "emissive", cw_val_color(grey, grey, grey, 1));
+  cw_node_set(n, "cast_shadow", cw_val_bool(false));
+  cw_node_set(n, "receive_shadow", cw_val_bool(false));
+  cw_node3d_set_position(n, (t3_vec3){ x, y, z });
+  return n;
+}
 
 static void apply(void) {
   cw_tree *tree = cw_scene_app_tree();
@@ -196,6 +220,11 @@ static void apply(void) {
       cw_pipeline_set_views_shared_post(p, true);
     } else cw_pipeline_set_views(p, NULL, 0);
   }
+  if (cw_test_env("LOOK_FLAT") && CW_HANDLE_IS_NULL(flat_card)) {
+    add_card(world, "FlatBack", 0, 1.8f, 2, 14, 6, undisp(0.8f));
+    flat_card = add_card(world, "Flat", -3, 1.8f, 4, 4, 2.5f, undisp(envf("LOOK_FLAT_GREY", 0.53f)));
+  }
+  if (!CW_HANDLE_IS_NULL(flat_card)) cw_node3d_set_position(flat_card, (t3_vec3){ -3 + envf("LOOK_FLAT", 0) * (float)tick, 1.8f, 4 });
   bool meas = envi("LOOK_MEASURE", 0) != 0;
   if (meas != measure_applied) measure_applied = meas, cw_pipeline_measure_looks(p, meas);
   const char *gl = cw_test_env("LOOK_GLYPHS");

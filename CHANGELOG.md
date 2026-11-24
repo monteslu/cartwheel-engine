@@ -4,6 +4,32 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.71.1 (2026-11-24)
+
+### Fixed
+- Half blocks on a palette (and on levels) under TAA drew a flat colour that lies between two palette colours as a
+  checkerboard of both: the hold against TAA's jitter (v0.68.1) kept each square's colour from last frame while it
+  stayed within 0.03 display steps of the nearest, so a square kept whichever colour it had when the colour reached it
+  (a lit note in a game's arcade maze style: orange and near-black squares in turns instead of gold, its contrast
+  against the lane from 7.9:1 to 3.6:1). The colour is now picked from a held mean: each square's mean eases toward
+  the new one by a quarter a frame while it moves less than 0.03 display steps (a bigger change is taken at once), and
+  a square keeps last frame's colour only within 0.002 of the nearest. A flat colour is the same mean in every square
+  of it, so one palette colour or level; a still picture still holds still under TAA. The cells keep the mean and the
+  colour's index (levels: one bit a channel), the draw looks the colour up. Gate `looks` checks `flat`: a flat card
+  between the palette's grey and silver sliding under TAA (sample `looks`, `LOOK_FLAT`) is grey in every square inside
+  it over 8 frames, GL and WebGPU: 0 of 9455 squares off (control `CW_TEST_HALFBLOCK_OLD_HOLD=1`, the old hold: 2266
+  off); the still palette check under TAA at DISPLAY holds (0 of 17 frames change; control 4). That game's maze reads
+  7.88:1 again on GL and WebGPU.
+
+### Added
+- Gate `look-fade-end`: the start and the end of every look blend in `samples/style_switch` (both rounds; a blend
+  across the stages and a blend to no look included), the blend's first two frames and its end frame and the next held
+  to the frames round them through romdev on GL and WebGPU, at most 3 ms of CPU and 1.5 ms of GPU over (measured on the
+  890M: GL +1.09 ms CPU and +0.11 GPU at worst, WebGPU +0.56 and +0.19). Control `CW_TEST_LOOK_END_REBUILD=1` with
+  `CW_TEST_NO_PREWARM=1` (programs made again at a blend's end, no prewarm): GL +11.7 ms, WebGPU +24.3 ms of CPU. A blend's own cost over its two looks is one target of the frame's size and a mix a stage: half
+  blocks to the one-bit dither across the stages, GL 3.2 ms against 2.7 for either look alone and 2.5 for the plain
+  scene on the 890M.
+
 ## v0.71.0 (2026-11-23)
 
 ### Added

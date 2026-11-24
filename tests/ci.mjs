@@ -102,6 +102,7 @@ export const LOCAL_ONLY = {
   'touch-host-pad': 'romdev (input_demo\'s cart on GL and WebGPU)',
   'decal-first-image': 'romdev (frame timing of decal_late\'s cart on the test GPU, GL and WebGPU)',
   'backdrop-look-prewarm': 'romdev (frame timing of style_switch\'s cart on the test GPU, GL and WebGPU)',
+  'look-fade-end': 'romdev (frame timing of style_switch\'s cart on the test GPU, GL and WebGPU)',
   'pass-timing': 'WebGPU timestamp queries on the test GPU',
   'r2d-normal-turn': 'the pinned GPU sandbox (renders on GL and WebGPU and compares them)',
   'custom-surface-lighting': 'reads pixels of native runs at 1080p on the test GPU (GL and WebGPU), plain materials against surfaces, and romdev and Chromium legs',

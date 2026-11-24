@@ -112,8 +112,11 @@ typedef struct cw_look_ascii {
 
 /* HALFBLOCK: character cells `rows` to the output's height, each a pair of square pixels (the upper half block
  * character's top and bottom): each pixel is the mean of the scene over its square. Optionally quantised: `levels`
- * per channel, or the nearest colour of a palette; a pixel keeps last frame's colour while it stays within 0.03 display
- * steps of the nearest (a level: 0.15 of a step past the middle), so a still picture holds still at either stage. */
+ * per channel, or the nearest colour of a palette. Against TAA's jitter, grain and noise the colour is picked from a
+ * held mean: each pixel's mean eases toward the new one by a quarter a frame while it moves less than 0.03 display
+ * steps (a bigger change is taken at once), and a pixel keeps last frame's colour while it is within 0.002 display
+ * steps of the nearest (a level: 0.012 of a step past the middle). So a still picture holds still at either stage,
+ * and a flat colour is one palette colour or level in every pixel of it, wherever it sits between two. */
 typedef struct cw_look_halfblock {
   int rows;                /* character rows over the output's height (54): 108 pixels down */
   int levels;              /* per channel, in display steps (0: none; 6 is a 216 colour cube) */

@@ -291,3 +291,5 @@ standard+vcol+instbig+shadow+senv+icol+l1001+xcluster_plain_gi
 standard+vcol+instbig+shadow+senv+icol+l1001+xcluster_gi
 standard+vcol+instbig+shadow+senv+icol+l1001+xgibuf
 standard+vcol+instbig+shadow+senv+icol+l1001+xgi
+physical+senv+l1001+xplain
+physical+senv+l1001

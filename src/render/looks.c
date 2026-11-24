@@ -831,7 +831,7 @@ static const char *ASCII_DRAW_W =
  * The hold (u_hp.x: last frame's pixels in u_prev): a pixel keeps last frame's palette colour while it is within
  * u_hp.y (display steps) of the nearest, and each channel its level while within u_hp.z of a step past its middle,
  * so a mean hovering on a boundary (TAA's jitter, grain, noise in the finished picture) holds still */
-static const char *HB_PX_G_DECL = "uniform sampler2D u_pal; uniform sampler2D u_prev; uniform vec4 u_hb; uniform vec4 u_hp;\n";
+static const char *HB_PX_G_DECL = "uniform sampler2D u_pal; uniform sampler2D u_prev; uniform vec4 u_hb; uniform vec4 u_hp; uniform vec4 u_hq;\n";
 static const char *HB_PX_G =
     "void main() {\n"
     "  FC = gl_FragCoord.xy;\n"
@@ -841,31 +841,36 @@ static const char *HB_PX_G =
     "  if (n % 2 == 0 && n <= 32) { for (int j = 0; j < n; j += 2) for (int i = 0; i < n; i += 2) { sum += look_src(lo + vec2(float(i), float(j)) + 1.0); cnt += 1.0; } }\n"
     "  else { for (int j = 0; j < n; j += st) for (int i = 0; i < n; i += st) { sum += look_src_px(lo + vec2(float(i), float(j)) + 0.5); cnt += 1.0; } }\n"
     "  vec3 c = sum / cnt * look_E();\n"
+    "  if (u_hb.z < 0.5 && u_hb.y < 1.5) { o = vec4(c, 0.0); return; }\n"
+    /* the held mean: last frame's (rgb) eased toward this one while within u_hp.w of it, else this one */
+    "  vec3 m = look_disp3(c); vec4 pv = vec4(0.0); int pa = 0;\n"
+    "  if (u_hp.x > 0.5) { pv = texelFetch(u_prev, ivec2(FC), 0); pa = int(pv.a * 255.0 + 0.5); }\n"
+    "  bool held = pa > 0 && length(m - pv.rgb) <= u_hp.w;\n"
+    "  if (held) m = mix(pv.rgb, m, u_hq.x);\n"
+    "  m = floor(m * u_hq.y + 0.5) / u_hq.y;\n"
     "  if (u_hb.z > 0.5) {\n"
-    "    vec3 d = look_disp3(c); float best = 1e9; int bi = 0;\n"
+    "    float best = 1e9; int bi = 0;\n"
     "    for (int i = 0; i < 64; i++) {\n"
     "      if (float(i) >= u_hb.z) break;\n"
-    "      vec3 e = texelFetch(u_pal, ivec2(i, 0), 0).rgb - d; float dd = dot(e, e);\n"
+    "      vec3 e = texelFetch(u_pal, ivec2(i, 0), 0).rgb - m; float dd = dot(e, e);\n"
     "      if (dd < best) { best = dd; bi = i; }\n"
     "    }\n"
-    "    if (u_hp.x > 0.5) {\n"
-    "      int pi = int(texelFetch(u_prev, ivec2(FC), 0).a * 255.0 + 0.5) - 1;\n"
-    "      if (pi >= 0 && float(pi) < u_hb.z) { vec3 e = texelFetch(u_pal, ivec2(pi, 0), 0).rgb - d; if (sqrt(dot(e, e)) <= sqrt(best) + u_hp.y) bi = pi; }\n"
-    "    }\n"
-    "    o = vec4(texelFetch(u_pal, ivec2(bi, 1), 0).rgb, float(bi + 1) / 255.0);\n"
+    "    int pi = pa - 1;\n"
+    "    if (held && float(pi) < u_hb.z) { vec3 e = texelFetch(u_pal, ivec2(pi, 0), 0).rgb - m; if (sqrt(dot(e, e)) <= sqrt(best) + u_hp.y) bi = pi; }\n"
+    "    o = vec4(m, float(bi + 1) / 255.0);\n"
     "    return;\n"
-    "  } else if (u_hb.y > 1.5) {\n"
-    "    float L = u_hb.y - 1.0;\n"
-    "    vec3 x = look_disp3(c) * L, k = floor(x + 0.5);\n"
-    "    if (u_hp.x > 0.5) {\n"
-    "      vec3 pk = floor(look_disp3(texelFetch(u_prev, ivec2(FC), 0).rgb) * L + 0.5);\n"
-    "      k = mix(k, pk, vec3(lessThanEqual(abs(x - pk), vec3(0.5 + u_hp.z))));\n"
-    "    }\n"
-    "    c = look_undisp3(k / L);\n"
     "  }\n"
-    "  o = vec4(c, 0.0);\n"
+    /* levels: alpha 8 + one bit a channel, the level floor(m * L) or the one above */
+    "  float L = u_hb.y - 1.0;\n"
+    "  vec3 x = m * L, k = floor(x + 0.5);\n"
+    "  if (held && pa >= 8) {\n"
+    "    vec3 pk = floor(pv.rgb * L) + vec3(float(pa & 1), float((pa >> 1) & 1), float((pa >> 2) & 1));\n"
+    "    k = mix(k, pk, vec3(lessThanEqual(abs(x - pk), vec3(0.5 + u_hp.z))));\n"
+    "  }\n"
+    "  vec3 b = clamp(k - floor(x), 0.0, 1.0);\n"
+    "  o = vec4(m, (8.0 + b.x + b.y * 2.0 + b.z * 4.0) / 255.0);\n"
     "}\n";
-static const char *HB_PX_W_FIELDS = "u_hb: vec4f, u_hp: vec4f, ";
+static const char *HB_PX_W_FIELDS = "u_hb: vec4f, u_hp: vec4f, u_hq: vec4f, ";
 static const char *HB_PX_W_DECL = "@group(0) @binding(3) var u_pal: texture_2d<f32>;\n@group(0) @binding(4) var u_prev: texture_2d<f32>;\n";
 static const char *HB_PX_W =
     "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
@@ -875,49 +880,56 @@ static const char *HB_PX_W =
     "  if (n % 2 == 0 && n <= 32) { for (var j = 0; j < n; j += 2) { for (var i = 0; i < n; i += 2) { sum += look_src(lo + vec2f(f32(i), f32(j)) + 1.0); cnt += 1.0; } } }\n"
     "  else { for (var j = 0; j < n; j += st) { for (var i = 0; i < n; i += st) { sum += look_src_px(lo + vec2f(f32(i), f32(j)) + 0.5); cnt += 1.0; } } }\n"
     "  var c = sum / cnt * look_E();\n"
+    "  if (u.u_hb.z < 0.5 && u.u_hb.y < 1.5) { return vec4f(c, 0.0); }\n"
+    "  var m = look_disp3(c); var pv = vec4f(0.0); var pa = 0;\n"
+    "  if (u.u_hp.x > 0.5) { pv = textureLoad(u_prev, vec2i(FC), 0); pa = i32(pv.a * 255.0 + 0.5); }\n"
+    "  let held = pa > 0 && length(m - pv.rgb) <= u.u_hp.w;\n"
+    "  if (held) { m = mix(pv.rgb, m, u.u_hq.x); }\n"
+    "  m = floor(m * u.u_hq.y + 0.5) / u.u_hq.y;\n"
     "  if (u.u_hb.z > 0.5) {\n"
-    "    let d = look_disp3(c); var best = 1e9; var bi = 0;\n"
+    "    var best = 1e9; var bi = 0;\n"
     "    for (var i = 0; i < 64; i++) {\n"
     "      if (f32(i) >= u.u_hb.z) { break; }\n"
-    "      let e = textureLoad(u_pal, vec2i(i, 0), 0).rgb - d; let dd = dot(e, e);\n"
+    "      let e = textureLoad(u_pal, vec2i(i, 0), 0).rgb - m; let dd = dot(e, e);\n"
     "      if (dd < best) { best = dd; bi = i; }\n"
     "    }\n"
-    "    if (u.u_hp.x > 0.5) {\n"
-    "      let pi = i32(textureLoad(u_prev, vec2i(FC), 0).a * 255.0 + 0.5) - 1;\n"
-    "      if (pi >= 0 && f32(pi) < u.u_hb.z) { let e = textureLoad(u_pal, vec2i(pi, 0), 0).rgb - d; if (sqrt(dot(e, e)) <= sqrt(best) + u.u_hp.y) { bi = pi; } }\n"
-    "    }\n"
-    "    return vec4f(textureLoad(u_pal, vec2i(bi, 1), 0).rgb, f32(bi + 1) / 255.0);\n"
-    "  } else if (u.u_hb.y > 1.5) {\n"
-    "    let L = u.u_hb.y - 1.0;\n"
-    "    let x = look_disp3(c) * L; var k = floor(x + 0.5);\n"
-    "    if (u.u_hp.x > 0.5) {\n"
-    "      let pk = floor(look_disp3(textureLoad(u_prev, vec2i(FC), 0).rgb) * L + 0.5);\n"
-    "      k = select(k, pk, abs(x - pk) <= vec3f(0.5 + u.u_hp.z));\n"
-    "    }\n"
-    "    c = look_undisp3(k / L);\n"
+    "    let pi = pa - 1;\n"
+    "    if (held && f32(pi) < u.u_hb.z) { let e = textureLoad(u_pal, vec2i(pi, 0), 0).rgb - m; if (sqrt(dot(e, e)) <= sqrt(best) + u.u_hp.y) { bi = pi; } }\n"
+    "    return vec4f(m, f32(bi + 1) / 255.0);\n"
     "  }\n"
-    "  return vec4f(c, 0.0);\n"
+    "  let L = u.u_hb.y - 1.0;\n"
+    "  let x = m * L; var k = floor(x + 0.5);\n"
+    "  if (held && pa >= 8) {\n"
+    "    let pk = floor(pv.rgb * L) + vec3f(f32(pa & 1), f32((pa >> 1) & 1), f32((pa >> 2) & 1));\n"
+    "    k = select(k, pk, abs(x - pk) <= vec3f(0.5 + u.u_hp.z));\n"
+    "  }\n"
+    "  let b = clamp(k - floor(x), vec3f(0.0), vec3f(1.0));\n"
+    "  return vec4f(m, (8.0 + b.x + b.y * 2.0 + b.z * 4.0) / 255.0);\n"
     "}\n";
 /* draw: each view pixel takes its pixel pair texel (top half of a cell the upper one) */
-static const char *HB_DRAW_G_DECL = "uniform sampler2D u_cells; uniform vec4 u_hb;\n";
+static const char *HB_DRAW_G_DECL = "uniform sampler2D u_cells; uniform sampler2D u_pal; uniform vec4 u_hb;\n";
 static const char *HB_DRAW_G =
     "void main() {\n"
     "  FC = gl_FragCoord.xy;\n"
     "  vec2 tl = look_tl();\n"
     "  float bk = look_box(tl, tl);\n"
     "  if (bk > 1.5) { o = vec4(texelFetch(u_src, ivec2(FC), 0).rgb, 1.0); return; }\n"
-    "  vec3 c = texelFetch(u_cells, ivec2(floor(tl / u_hb.x)), 0).rgb;\n"
+    "  vec4 t = texelFetch(u_cells, ivec2(floor(tl / u_hb.x)), 0); vec3 c = t.rgb; int a = int(t.a * 255.0 + 0.5);\n"
+    "  if (u_hb.z > 0.5) c = texelFetch(u_pal, ivec2(max(a - 1, 0), 1), 0).rgb;\n"
+    "  else if (u_hb.y > 1.5) { float L = u_hb.y - 1.0; c = look_undisp3((floor(t.rgb * L) + vec3(float(a & 1), float((a >> 1) & 1), float((a >> 2) & 1))) / L); }\n"
     "  o = vec4(look_out(c * look_dim(bk)), 1.0);\n"
     "}\n";
 static const char *HB_DRAW_W_FIELDS = "u_hb: vec4f, ";
-static const char *HB_DRAW_W_DECL = "@group(0) @binding(3) var u_cells: texture_2d<f32>;\n";
+static const char *HB_DRAW_W_DECL = "@group(0) @binding(3) var u_cells: texture_2d<f32>;\n@group(0) @binding(4) var u_pal: texture_2d<f32>;\n";
 static const char *HB_DRAW_W =
     "@fragment fn fs(@builtin(position) pos: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {\n"
     "  FC = cw_frag_coord(pos);\n"
     "  let tl = look_tl();\n"
     "  let bk = look_box(tl, tl);\n"
     "  if (bk > 1.5) { return vec4f(textureLoad(u_src, vec2i(FC), 0).rgb, 1.0); }\n"
-    "  let c = textureLoad(u_cells, vec2i(floor(tl / u.u_hb.x)), 0).rgb;\n"
+    "  let t = textureLoad(u_cells, vec2i(floor(tl / u.u_hb.x)), 0); var c = t.rgb; let a = i32(t.a * 255.0 + 0.5);\n"
+    "  if (u.u_hb.z > 0.5) { c = textureLoad(u_pal, vec2i(max(a - 1, 0), 1), 0).rgb; }\n"
+    "  else if (u.u_hb.y > 1.5) { let L = u.u_hb.y - 1.0; c = look_undisp3((floor(t.rgb * L) + vec3f(f32(a & 1), f32((a >> 1) & 1), f32((a >> 2) & 1))) / L); }\n"
     "  return vec4f(look_out(c * look_dim(bk)), 1.0);\n"
     "}\n";
 
@@ -1893,17 +1905,29 @@ static void draw_halfblock(cw_pass_ctx *ctx, looks_state *s, look *l, const vinf
   cw_pass_bind_texture(3, prev ? prev->tex : pal);
   if (!wg()) cw_pass_uniform1i(pp, "u_pal", 2), cw_pass_uniform1i(pp, "u_prev", 3);
   cw_pass_uniform4f(pp, "u_hb", (float)half, (float)CW_CLAMP(h->levels, 0, 256), (float)h->palette_count, 0);
-  /* the hold: last frame's palette colour while within 0.03 display steps of the nearest; a level while within 0.15
-   * of a step past its middle */
-  cw_pass_uniform4f(pp, "u_hp", have_prev ? 1.0f : 0.0f, 0.03f, 0.15f, 0);
+  /* the hold. A square's mean (display steps) eases toward this frame's by a quarter a frame while it stays within
+   * 0.03 of last frame's (TAA's jitter, grain, noise; a bigger change is taken at once), and the colour is picked
+   * from that mean: a flat colour is the same mean in every square of it, so one palette colour or level whatever
+   * the frame each square came to it, and a still square's jitter is a quarter as large. A square keeps last frame's
+   * palette colour while it is within 0.002 display steps of the nearest (a level: 0.012 of a step past the
+   * middle), which a still square's eased mean does not cross.
+   * CW_TEST_HALFBLOCK_OLD_HOLD=1 (a gate's control): the hold of 0.68.1 to 0.71.0, the colour kept while within 0.03
+   * of the nearest (a level 0.15) with no eased mean, so a square kept the colour it first had in a flat colour near
+   * a boundary (a flat note became a checkerboard of two colours) */
+  bool old_hold = test_int("CW_TEST_HALFBLOCK_OLD_HOLD") != 0;
+  cw_pass_uniform4f(pp, "u_hp", have_prev ? 1.0f : 0.0f, old_hold ? 0.03f : 0.002f, old_hold ? 0.15f : 0.012f, old_hold ? 1e9f : 0.03f);
+  /* the ease, and the grid the mean is kept on (exact in the target: half floats, or bytes) */
+  cw_pass_uniform4f(pp, "u_hq", old_hold ? 1.0f : 0.25f, f == CW_RT_RGBA16F ? 1024.0f : 255.0f, 0, 0);
   cw_pass_fullscreen();
   small_end();
   cw_pass_bind_target(ctx, out);
   cw_pass_use(pd);
   common(ctx, pd, v);
   cw_pass_bind_texture(2, px->tex);
-  if (!wg()) cw_pass_uniform1i(pd, "u_cells", 2);
-  cw_pass_uniform4f(pd, "u_hb", (float)half, 0, 0, 0);
+  cw_pass_bind_texture(3, pal);
+  if (!wg()) cw_pass_uniform1i(pd, "u_cells", 2), cw_pass_uniform1i(pd, "u_pal", 3);
+  /* (the cells of a palette: the mean and the colour's index; of levels: the mean and the level of each channel) */
+  cw_pass_uniform4f(pd, "u_hb", (float)half, quant ? (float)CW_CLAMP(h->levels, 0, 256) : 0, quant ? (float)h->palette_count : 0, 0);
   cw_pass_fullscreen();
   if (!quant) cw_pass_rt_release(ctx, px);
 }
@@ -2223,6 +2247,12 @@ static void looks_run(cw_pass_ctx *ctx, looks_state *s) {
   /* a look alone (t 0 or 1, or the other side is the plain scene at that end) straight into dst */
   bool blend = na && nb && la != lb;
   look *only = !blend ? (na ? la : lb) : NULL;
+  /* CW_TEST_LOOK_END_REBUILD=1 (gate look-fade-end's control): on the frame a blend ends in one look, this stage's
+   * programs are made again, as a first use there would make them (a hitch the gate must see) */
+  static bool was_blend[2];
+  if (!blend && was_blend[g_stage] && test_int("CW_TEST_LOOK_END_REBUILD"))
+    for (int k = 0; k < P_COUNT; k++) PROG[wg() ? 1 : 0][g_stage][k] = 0, PROG_TRIED[wg() ? 1 : 0][g_stage][k] = false;
+  if (v.first) was_blend[g_stage] = blend;
   if (!blend) {
     dbg_ran = only == la ? 1 : 2;
     if (only) draw_look(ctx, s, only, &v, ctx->dst);

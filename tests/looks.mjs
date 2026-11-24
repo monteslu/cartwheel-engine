@@ -24,6 +24,11 @@
 //              moves with its jitter). CONTROL: no hold (LOOK_HOLD=1) changes 1.3 times as many. Half blocks on a
 //              palette at DISPLAY under TAA: frames 60 to 77 the same (a square on a palette boundary keeps its
 //              colour). CONTROL: no hold (CW_TEST_HALFBLOCK_NO_HOLD=1) flips some.
+//   flat       half blocks on a palette under TAA, a flat card (one colour, between the palette's grey and silver and
+//              nearer the grey) sliding over a bright one (LOOK_FLAT): on frames 120 to 127 every square wholly inside
+//              the card is the grey, whatever the frame the card reached it. CONTROL: the hold before 0.71.0
+//              (CW_TEST_HALFBLOCK_OLD_HOLD=1: last frame's colour kept within 0.03 of the nearest, no eased mean)
+//              leaves squares the card's edge brought in on the silver.
 //   flash      a blend from the plain scene into the two-colour dither over half a second, the camera orbiting, on romdev
 //              (tools/flash-check.mjs, its own 8 Hz strobe control must fail): passes. CONTROL: the weight jumping
 //              between 0 and 1 every 4 frames (LOOK_FLICKER) fails.
@@ -298,6 +303,41 @@ for (const gpu of GPUS) {
     const ph = await steps('still-palette', {}), pc = await steps('still-palette-control', { CW_TEST_HALFBLOCK_NO_HOLD: '1' });
     check(ph.moved === 0, `${gpu} still palette at DISPLAY under TAA: ${ph.moved} of 17 frames change (up to ${ph.worst} pixels)`);
     check(pc.moved > 0, `${gpu} still palette at DISPLAY under TAA: control (no hold) changes ${pc.moved} of 17 frames (up to ${pc.worst} pixels)`);
+  }
+
+  if (want('flat')) {
+    /* the card's colour as the plain frame shows it (display 0.53: linear 0.53^2.2 / (1 - 0.53^2.2)), and the
+     * palette's grey (sRGB 128) */
+    const y = 0.53 ** 2.2, card = enc(y / (1 - y)), GREY = 128;
+    const env = { ...PLAIN, LOOK_TAA: '1', LOOK_FLAT: '0.01' };
+    const flat = async (tag, extra) => {
+      let inside = 0, wrong = 0, other = new Map();
+      for (let fr = 120; fr < 128; fr++) {
+        const plain = (await run(gpu, `flat-plain-${fr}`, env, fr)).img;
+        const pal = (await run(gpu, `${tag}-${fr}`, { ...env, LOOK_A: 'palette', ...extra }, fr)).img;
+        const half = Math.round(Math.round(pal.h / 45) / 2); /* the sample's palette look: rows 45 */
+        for (let y0 = 0; y0 + half <= pal.h; y0 += half)
+          for (let x0 = 0; x0 + half <= pal.w; x0 += half) {
+            let all = true;
+            for (let yy = y0; yy < y0 + half && all; yy++)
+              for (let xx = x0; xx < x0 + half; xx++) {
+                const i = (yy * pal.w + xx) * 4;
+                if (Math.abs(plain.rgba[i] - card) > 2 || Math.abs(plain.rgba[i + 1] - card) > 2 || Math.abs(plain.rgba[i + 2] - card) > 2) { all = false; break; }
+              }
+            if (!all) continue;
+            inside++;
+            const i = ((y0 + (half >> 1)) * pal.w + x0 + (half >> 1)) * 4;
+            const c = `${pal.rgba[i]},${pal.rgba[i + 1]},${pal.rgba[i + 2]}`;
+            if (c !== `${GREY},${GREY},${GREY}`) { wrong++; other.set(c, (other.get(c) || 0) + 1); }
+          }
+      }
+      return { inside, wrong, other: [...other].map(([c, n]) => `${c} x${n}`).join(', ') };
+    };
+    const h = await flat('flat', {});
+    check(h.inside > 1000 && h.wrong === 0,
+      `${gpu} flat under TAA: of ${h.inside} squares inside the sliding card over 8 frames, ${h.wrong} not the palette's grey${h.other ? ` (${h.other})` : ''}`);
+    const c = await flat('flat-control', { CW_TEST_HALFBLOCK_OLD_HOLD: '1' });
+    check(c.wrong > 50, `${gpu} flat under TAA: control (the old hold) leaves ${c.wrong} of ${c.inside} squares inside the card off the grey (${c.other})`);
   }
 
   if (want('split')) {
