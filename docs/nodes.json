@@ -7845,6 +7845,49 @@
      "doc": "The SpringBoneCollision3D children push the chains out of the body."
     },
     {
+     "name": "skirt",
+     "type": "enum",
+     "default": "OFF",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "OFF",
+      "RING",
+      "OPEN"
+     ],
+     "doc": "Robes and coats: the chains, in child order, linked side to side and solved together (RING closes the last to the first; OPEN leaves a front open). OFF: each chain on its own."
+    },
+    {
+     "name": "skirt_stretch",
+     "type": "float",
+     "default": "0.05",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 10,
+     "doc": "Skirt: how far a link between neighbouring chains may stretch past its animated length (share, 0.05)."
+    },
+    {
+     "name": "skirt_squeeze",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "Skirt: how far a link may shorten from its animated length (share, 0.5: panels bunch up to half)."
+    },
+    {
+     "name": "skirt_iterations",
+     "type": "int",
+     "default": "4",
+     "stored": true,
+     "readonly": false,
+     "min": 1,
+     "max": 16,
+     "doc": "Skirt: constraint passes a tick (4)."
+    },
+    {
      "name": "resets",
      "type": "int",
      "default": "0",

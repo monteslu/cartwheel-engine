@@ -4,6 +4,33 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.74.0 (2026-11-24)
+
+### Added
+- SpringBone3D skirt mode (cartwheel/ik.h) for robes, skirts and long coats on bone chains: `skirt = RING` links the
+  chains, in child order, side to side at every joint and the last to the first; `skirt = OPEN` leaves a coat's
+  front open. The chains are solved together, `skirt_iterations` passes a tick (4): each bone's length, each link
+  between `(1 - skirt_squeeze)` and `(1 + skirt_stretch)` times its animated length (0.5 and 0.05), and every bone,
+  link and the line across the middle of every panel kept out of every shape, capsule against capsule. The shapes are
+  inside the garment: a segment on a shape's inner side is pushed out through its outer side. Each tail is pulled
+  toward where the animation puts it in the model, and a pushed tail keeps none of its velocity away from the shape.
+  On chains alone a running figure's legs passed between two chains and threw them: a robe of eight four-bone chains
+  and a coat of five three-bone chains running at 5.4 m/s had legs 8.3 cm through them, tips thrown 1.04 m, no
+  settling after a stop and up to 7.6 mm of rest jitter. In skirt mode every thigh, shin and foot stays outside
+  (6.5 mm clear at the closest), the tips stray at most 0.39 m, every tip settles 28 to 34 ticks after a stop and
+  rest jitter is 0.018 mm at most. Cost on the 890M laptop, release cart through romdev, the modifier phase per
+  character with the 62-bone pose's capture and write-back: 23 us with two people, 18.5 us with eight (chains alone
+  13.7 and 11.1). An XPBD cloth on the same joints (cartwheel/cloth.h) against kinematic capsules was measured as the
+  alternative: legs 8.5 cm through it, the robe never settled, and the cloth alone cost more.
+- Sample `anim_robe` (samples/anim_robe/make-figures.mjs generates the robed and coated figures and their run and
+  idle clips): a robe and a long coat running, turning at speed, stopping and turning on the spot, with a probe of
+  the legs against each garment's surface, settling, rest jitter and tip swing. `ROBE_CLOTH=1` runs the cloth
+  alternative.
+- Gates `anim-robe` (both garments within bounds on every host, GL and WebGPU; control: skirt `OFF`) and
+  `robe-skirt` (each check with its control natively and on romdev, GL and WebGPU, the same pose hashes everywhere,
+  the cost with eight people). unit-ik `skirt`: a leg kicked through a ring of chains stays 2 cm clear of every joint
+  and link in `RING` and `OPEN` (control `OFF`: 7.5 cm inside).
+
 ## v0.73.0 (2026-11-24)
 
 ### Added

@@ -293,3 +293,5 @@ standard+vcol+instbig+shadow+senv+icol+l1001+xgibuf
 standard+vcol+instbig+shadow+senv+icol+l1001+xgi
 physical+senv+l1001+xplain
 physical+senv+l1001
+standard+skin+ds+l1001+xplain
+standard+skin+ds+l1001

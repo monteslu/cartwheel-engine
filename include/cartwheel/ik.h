@@ -56,7 +56,9 @@
  * look-at): see docs/guides/animation.md "Inverse kinematics". A two-bone
  * solve is about 0.1 us; a pose capture and flush is O(bones).
  * SpringBone3D: about 3 us a chain in a release cart (3 to 4 joints, five
- * shapes; "Hair, tails and coats" in the same guide).
+ * shapes; "Hair, tails and coats" in the same guide); a robe in skirt mode
+ * (eight chains of four bones, six shapes) is measured in "Robes, skirts and
+ * long coats" there.
  */
 #ifndef CW_IK_H
 #define CW_IK_H
@@ -348,6 +350,27 @@ int cw_ik_fabrik(cw_pose *p, const int *chain, int n, t3_vec3 target, const cw_c
  *                    (inactive, just added) starts again from the animated
  *                    pose. Arithmetic, sqrt and cw_exp / cw_cos only, so
  *                    every host gives the same bits.
+ *                    Robes, skirts and long coats: skirt (enum OFF, RING,
+ *                      OPEN) links the chains, in child order, side to
+ *                      side at every joint and solves them together: RING
+ *                      also links the last to the first (a robe), OPEN
+ *                      leaves the front open (a coat from one front edge
+ *                      round the back to the other). Each tail is pulled
+ *                      toward where the animation puts it in the model
+ *                      (not below its simulated parent), then
+ *                      skirt_iterations passes (int, 4) hold each bone's
+ *                      length, keep each link between (1 - skirt_squeeze)
+ *                      and (1 + skirt_stretch) times its animated length
+ *                      (0.5 and 0.05), and keep every bone, every link and
+ *                      the line across the middle of every panel out of
+ *                      every shape, capsule against capsule. The shapes
+ *                      are inside the garment: a segment found on a
+ *                      shape's inner side is pushed out through its outer
+ *                      side, so a leg never ends up outside the cloth. A
+ *                      pushed tail keeps none of its velocity away from
+ *                      the shape; max_angle holds as in chain mode. The
+ *                      chains should hang from the same bone (the hips)
+ *                      and have the same number of bones.
  * The model's Node3D must not be scaled non-uniformly. Debug command:
  * `ik <model path>` (bones, modifiers, last solve results, each spring
  * chain's tip offset, pose hash). */

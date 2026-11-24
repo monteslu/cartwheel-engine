@@ -142,6 +142,8 @@ cw_add_app(motion_vectors SOURCES motion_vectors/main.c ASSETS ${CW_MV_ASSETS})
 cw_add_app(anim_ik SOURCES anim_ik/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/anim_ik/assets)
 # hair and coat tails that swing (SpringBone3D, cartwheel/ik.h): a generated person (anim_spring/make-character.mjs)
 cw_add_app(anim_spring SOURCES anim_spring/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/anim_spring/assets)
+# robes and long coats on SpringBone3D skirt mode: two generated people running, turning, stopping (anim_robe/make-figures.mjs)
+cw_add_app(anim_robe SOURCES anim_robe/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/anim_robe/assets)
 # one walk and one punch on three skeletons (cartwheel/retarget.h): the robot's clips baked onto generated
 # people by cwpack and retargeted at load from C; an AnimationTree from scene text layers the punch over the walk
 cw_add_app(anim_retarget SOURCES anim_retarget/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/anim_retarget/project/roots.txt)

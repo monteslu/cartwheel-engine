@@ -1,0 +1,233 @@
+[scene format=1]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.0181, 0.0232, 0.0382, 1)
+ambient_energy = 0.7
+hemi_energy = 1.1
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(-3, 1.6, 6.2)
+rotation = vec3(-0.12, 0, 0)
+fov = 45
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+position = vec3(3, 7, 5)
+rotation = vec3(-0.95, 0.5, 0)
+energy = 4.0
+shadow = true
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+position = vec3(0, -0.5, 0)
+size = vec3(80, 1, 40)
+color = color(0.0637, 0.0835, 0.0732, 1)
+receive_shadow = true
+
+[node name="Robed" parent="." type="Node3D"]
+position = vec3(-8, 0, 0)
+rotation = vec3(0, 1.5708, 0)
+
+[node name="Model" parent="Robed" type="Node3D"]
+
+[node name="Robe" parent="Robed/Model" type="SpringBone3D"]
+skirt = RING
+skirt_stretch = 0.3
+
+[node name="RobeF" parent="Robed/Model/Robe" type="SpringBoneChain3D"]
+root_bone = "RobeF0"
+end_bone = "RobeF3"
+stiffness = 220
+damping = 6
+gravity_strength = 2
+radius = 0.025
+
+[node name="RobeFL" parent="Robed/Model/Robe" type="SpringBoneChain3D"]
+root_bone = "RobeFL0"
+end_bone = "RobeFL3"
+stiffness = 220
+damping = 6
+gravity_strength = 2
+radius = 0.025
+
+[node name="RobeL" parent="Robed/Model/Robe" type="SpringBoneChain3D"]
+root_bone = "RobeL0"
+end_bone = "RobeL3"
+stiffness = 220
+damping = 6
+gravity_strength = 2
+radius = 0.025
+
+[node name="RobeBL" parent="Robed/Model/Robe" type="SpringBoneChain3D"]
+root_bone = "RobeBL0"
+end_bone = "RobeBL3"
+stiffness = 220
+damping = 6
+gravity_strength = 2
+radius = 0.025
+
+[node name="RobeB" parent="Robed/Model/Robe" type="SpringBoneChain3D"]
+root_bone = "RobeB0"
+end_bone = "RobeB3"
+stiffness = 220
+damping = 6
+gravity_strength = 2
+radius = 0.025
+
+[node name="RobeBR" parent="Robed/Model/Robe" type="SpringBoneChain3D"]
+root_bone = "RobeBR0"
+end_bone = "RobeBR3"
+stiffness = 220
+damping = 6
+gravity_strength = 2
+radius = 0.025
+
+[node name="RobeR" parent="Robed/Model/Robe" type="SpringBoneChain3D"]
+root_bone = "RobeR0"
+end_bone = "RobeR3"
+stiffness = 220
+damping = 6
+gravity_strength = 2
+radius = 0.025
+
+[node name="RobeFR" parent="Robed/Model/Robe" type="SpringBoneChain3D"]
+root_bone = "RobeFR0"
+end_bone = "RobeFR3"
+stiffness = 220
+damping = 6
+gravity_strength = 2
+radius = 0.025
+
+[node name="ThighL" parent="Robed/Model/Robe" type="SpringBoneCollision3D"]
+bone = "UpperLegL"
+shape = CAPSULE
+radius = 0.085
+offset = vec3(0, -0.06, 0)
+tail = vec3(0, -0.398, 0.01)
+
+[node name="ShinL" parent="Robed/Model/Robe" type="SpringBoneCollision3D"]
+bone = "LowerLegL"
+shape = CAPSULE
+radius = 0.07
+offset = vec3(0, -0.02, 0)
+tail = vec3(0, -0.4, -0.017)
+
+[node name="FootL" parent="Robed/Model/Robe" type="SpringBoneCollision3D"]
+bone = "FootL"
+shape = CAPSULE
+radius = 0.05
+offset = vec3(0, -0.01, -0.02)
+tail = vec3(0, -0.055, 0.155)
+
+[node name="ThighR" parent="Robed/Model/Robe" type="SpringBoneCollision3D"]
+bone = "UpperLegR"
+shape = CAPSULE
+radius = 0.085
+offset = vec3(0, -0.06, 0)
+tail = vec3(0, -0.398, 0.01)
+
+[node name="ShinR" parent="Robed/Model/Robe" type="SpringBoneCollision3D"]
+bone = "LowerLegR"
+shape = CAPSULE
+radius = 0.07
+offset = vec3(0, -0.02, 0)
+tail = vec3(0, -0.4, -0.017)
+
+[node name="FootR" parent="Robed/Model/Robe" type="SpringBoneCollision3D"]
+bone = "FootR"
+shape = CAPSULE
+radius = 0.05
+offset = vec3(0, -0.01, -0.02)
+tail = vec3(0, -0.055, 0.155)
+
+[node name="Coated" parent="." type="Node3D"]
+position = vec3(-8, 0, -1.8)
+rotation = vec3(0, 1.5708, 0)
+
+[node name="Model" parent="Coated" type="Node3D"]
+
+[node name="Coat" parent="Coated/Model" type="SpringBone3D"]
+skirt = OPEN
+skirt_stretch = 0.3
+
+[node name="CoatL" parent="Coated/Model/Coat" type="SpringBoneChain3D"]
+root_bone = "CoatL0"
+end_bone = "CoatL2"
+stiffness = 240
+damping = 6
+gravity_strength = 2
+radius = 0.025
+
+[node name="CoatBL" parent="Coated/Model/Coat" type="SpringBoneChain3D"]
+root_bone = "CoatBL0"
+end_bone = "CoatBL2"
+stiffness = 240
+damping = 6
+gravity_strength = 2
+radius = 0.025
+
+[node name="CoatB" parent="Coated/Model/Coat" type="SpringBoneChain3D"]
+root_bone = "CoatB0"
+end_bone = "CoatB2"
+stiffness = 240
+damping = 6
+gravity_strength = 2
+radius = 0.025
+
+[node name="CoatBR" parent="Coated/Model/Coat" type="SpringBoneChain3D"]
+root_bone = "CoatBR0"
+end_bone = "CoatBR2"
+stiffness = 240
+damping = 6
+gravity_strength = 2
+radius = 0.025
+
+[node name="CoatR" parent="Coated/Model/Coat" type="SpringBoneChain3D"]
+root_bone = "CoatR0"
+end_bone = "CoatR2"
+stiffness = 240
+damping = 6
+gravity_strength = 2
+radius = 0.025
+
+[node name="ThighL" parent="Coated/Model/Coat" type="SpringBoneCollision3D"]
+bone = "UpperLegL"
+shape = CAPSULE
+radius = 0.085
+offset = vec3(0, -0.06, 0)
+tail = vec3(0, -0.398, 0.01)
+
+[node name="ShinL" parent="Coated/Model/Coat" type="SpringBoneCollision3D"]
+bone = "LowerLegL"
+shape = CAPSULE
+radius = 0.07
+offset = vec3(0, -0.02, 0)
+tail = vec3(0, -0.4, -0.017)
+
+[node name="FootL" parent="Coated/Model/Coat" type="SpringBoneCollision3D"]
+bone = "FootL"
+shape = CAPSULE
+radius = 0.05
+offset = vec3(0, -0.01, -0.02)
+tail = vec3(0, -0.055, 0.155)
+
+[node name="ThighR" parent="Coated/Model/Coat" type="SpringBoneCollision3D"]
+bone = "UpperLegR"
+shape = CAPSULE
+radius = 0.085
+offset = vec3(0, -0.06, 0)
+tail = vec3(0, -0.398, 0.01)
+
+[node name="ShinR" parent="Coated/Model/Coat" type="SpringBoneCollision3D"]
+bone = "LowerLegR"
+shape = CAPSULE
+radius = 0.07
+offset = vec3(0, -0.02, 0)
+tail = vec3(0, -0.4, -0.017)
+
+[node name="FootR" parent="Coated/Model/Coat" type="SpringBoneCollision3D"]
+bone = "FootR"
+shape = CAPSULE
+radius = 0.05
+offset = vec3(0, -0.01, -0.02)
+tail = vec3(0, -0.055, 0.155)

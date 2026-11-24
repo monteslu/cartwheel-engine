@@ -604,6 +604,123 @@ static void test_spring(void) {
   cw_tree_free(t);
 }
 
+/* ── SpringBone3D skirt mode ───────────────────────────────────────── */
+
+/* hips at y 1 with a leg (a capsule shape's bone) hanging from x 0.1, and eight chains of three bones round the
+ * hips flaring from a 0.2 m ring to 0.34 m at the hem (0.75 m down) */
+static t3_object *make_skirt_rig(t3_object **leg) {
+  t3_object *root = t3_group_new();
+  t3_object *hips = t3_bone_new();
+  hips->name = "Hips";
+  hips->position = v3(0, 1, 0);
+  t3_object_add(root, hips);
+  *leg = t3_bone_new();
+  (*leg)->name = "Leg";
+  (*leg)->position = v3(0.1f, -0.05f, 0);
+  t3_object_add(hips, *leg);
+  static char names[8][4][8];
+  for (int k = 0; k < 8; k++) {
+    float a = (float)k * 0.7853982f, s = sinf(a), c = cosf(a);
+    t3_object *parent = hips;
+    t3_vec3 prev = v3(0, 1, 0);
+    for (int i = 0; i < 4; i++) {
+      float r = 0.2f + 0.045f * (float)i, y = 1 - 0.25f * (float)i;
+      t3_vec3 at = v3(r * s, y, r * c);
+      t3_object *b = t3_bone_new();
+      snprintf(names[k][i], sizeof names[k][i], i < 3 ? "S%d_%d" : "S%d_e", k, i);
+      b->name = names[k][i];
+      b->position = vsub(at, prev);
+      t3_object_add(parent, b);
+      parent = b;
+      prev = at;
+    }
+  }
+  return root;
+}
+
+/* the deepest any joint or link midpoint of the skirt sits inside the leg's capsule (m) */
+static float skirt_pen(cw_node *ch, cw_node shape) {
+  t3_vec3 a, b, j[8][3];
+  float r, worst = -1;
+  CHECK(cw_spring_collision3d_world(shape, &a, &b, &r));
+  for (int k = 0; k < 8; k++)
+    for (int i = 0; i < 3; i++) cw_spring_chain3d_joint_world(ch[k], i, &j[k][i]);
+  for (int k = 0; k < 8; k++)
+    for (int i = 0; i < 3; i++)
+      for (int m = 0; m < 2; m++) {
+        t3_vec3 q = m ? v3((j[k][i].x + j[(k + 1) % 8][i].x) / 2, (j[k][i].y + j[(k + 1) % 8][i].y) / 2, (j[k][i].z + j[(k + 1) % 8][i].z) / 2) : j[k][i];
+        t3_vec3 ab = vsub(b, a);
+        float t = vdot(vsub(q, a), ab) / vdot(ab, ab);
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        float d = r - vlen(vsub(q, v3(a.x + ab.x * t, a.y + ab.y * t, a.z + ab.z * t)));
+        if (d > worst) worst = d;
+      }
+  return worst;
+}
+
+/* a leg kicks forward through the front of the skirt and back: in skirt mode the panels go round it (nothing of the
+ * skirt inside it); chains on their own (OFF, the control) let it through between two of them */
+static float skirt_kick(const char *mode, uint32_t *hash) {
+  cw_tree *t = cw_tree_new();
+  cw_node model = add(cw_tree_root(t), "Node3D", "Model");
+  t3_object *leg;
+  t3_object *rig = make_skirt_rig(&leg);
+  cw_node3d_set_object(model, rig);
+  t3_release(rig);
+  cw_node sb = add(model, "SpringBone3D", "Skirt");
+  cw_node_set(sb, "skirt", cw_val_enum(mode));
+  cw_node ch[8];
+  for (int k = 0; k < 8; k++) {
+    char nm[8], r0[8], e[8];
+    snprintf(nm, sizeof nm, "C%d", k);
+    snprintf(r0, sizeof r0, "S%d_0", k);
+    snprintf(e, sizeof e, "S%d_2", k);
+    ch[k] = add(sb, "SpringBoneChain3D", nm);
+    cw_node_set(ch[k], "root_bone", cw_val_string(r0));
+    cw_node_set(ch[k], "end_bone", cw_val_string(e));
+    cw_node_set(ch[k], "stiffness", cw_val_float(200));
+    cw_node_set(ch[k], "damping", cw_val_float(6));
+  }
+  cw_node sh = add(sb, "SpringBoneCollision3D", "LegShape");
+  cw_node_set(sh, "bone", cw_val_string("Leg"));
+  cw_node_set(sh, "shape", cw_val_enum("CAPSULE"));
+  cw_node_set(sh, "radius", cw_val_float(0.08));
+  cw_node_set(sh, "tail", cw_val_vec3(0, -0.85f, 0));
+  /* still, with nothing touching: the skirt stays on its animated pose */
+  for (int k = 0; k < 30; k++) cw_tree_fixed_update(t, DT);
+  for (int k = 0; k < 8; k++) NEAR(tip_dist(ch[k]), 0, 1e-5);
+  float worst = -1;
+  for (int k = 0; k < 120; k++) {
+    /* the leg swings 0.6 rad forward and back in two seconds (the bone written by the game: its animated pose) */
+    float ang = 0.6f * sinf(3.1415927f * (float)k / 60);
+    ang = ang > 0 ? ang : 0;
+    leg->quaternion = cw_quat_axis_angle_det(v3(1, 0, 0), -ang);
+    cw_tree_fixed_update(t, DT);
+    float p = skirt_pen(ch, sh);
+    if (p > worst) worst = p;
+  }
+  /* then still: back on the pose */
+  for (int k = 0; k < 240; k++) cw_tree_fixed_update(t, DT);
+  float rest = 0;
+  for (int k = 0; k < 8; k++) rest = tip_dist(ch[k]) > rest ? tip_dist(ch[k]) : rest;
+  fprintf(stderr, "skirt %s: deepest %.4f m, rest %.5f m\n", mode, worst, rest);
+  CHECK(rest < 0.01f);
+  *hash = cw_skeleton_hash(model);
+  cw_tree_free(t);
+  return worst;
+}
+
+static void test_skirt(void) {
+  uint32_t h_ring, h_off, h_open;
+  float ring = skirt_kick("RING", &h_ring), open = skirt_kick("OPEN", &h_open), off = skirt_kick("OFF", &h_off);
+  CHECK(ring <= 0.002f);  /* a joint or link of the skirt at most 2 mm inside the leg */
+  CHECK(open <= 0.002f);  /* (OPEN leaves C7 to C0 unlinked: the leg kicks between C0 and C1) */
+  CHECK(off > 0.03f);     /* control: on their own the chains let the leg through */
+  FOLD(h_ring);
+  FOLD(h_open);
+  FOLD(h_off);
+}
+
 /* ── the rest pose is the skin's bind pose ───────────────────────────── */
 
 static t3_quat qmul_t(t3_quat a, t3_quat b) {
@@ -969,5 +1086,5 @@ void cw_test_late(void) {
   test_foot_high_sweep();
 }
 
-CW_TEST_SUITE("ik", { "crowd", test_crowd }, { "spring", test_spring }, { "bind_rest", test_bind_rest }, { "pose", test_pose }, { "two_bone", test_two_bone }, { "aim", test_aim }, { "ccd_r186", test_ccd_r186 },
+CW_TEST_SUITE("ik", { "crowd", test_crowd }, { "spring", test_spring }, { "skirt", test_skirt }, { "bind_rest", test_bind_rest }, { "pose", test_pose }, { "two_bone", test_two_bone }, { "aim", test_aim }, { "ccd_r186", test_ccd_r186 },
               { "fabrik", test_fabrik }, { "nodes", test_nodes }, { "foot_placement", test_foot_placement })
