@@ -1,6 +1,7 @@
 /* Shading parts (cartwheel/shading.h): several three.c generator extensions
  * on one material, by a composed extension name and a hook that calls each
  * part's hook in order. */
+#define CW_SHADING_GUARDED 1 /* (the public names here are the guarded ones; cartwheel/shading.h) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -148,7 +149,50 @@ static void reinstall(t3_renderer *r, const char *name) {
   }
 }
 
+/* ── the engine's part names (cw_shading_part_engine_owned) ─────────────
+ * Each is a module of the engine's (src/<module>/extensions/<part>.mjs; tests/shading-names.mjs holds the list to
+ * those files). A game's registration of one is refused, loudly: one name is one program state and one hook, so the
+ * game's part and the engine's replaced each other's shading without a word (two games named a part "foliage" before
+ * the engine had one). */
+static const struct { const char *part, *module; } ENGINE_PARTS[] = {
+  { "cluster", "render" }, { "clusteries", "render" }, { "csm", "render" }, { "plain", "render" }, { "foliage", "render" },
+  { "folalpha", "render" }, { "rim", "render" }, { "skinshade", "render" }, { "velbuf", "render" }, { "hfog", "fog" },
+  { "meshdecal", "fx" }, { "gi", "gi" }, { "gibuf", "gi" }, { "giproj", "gi" }, { "terrain", "terrain" },
+  { "terrainlow", "terrain" }, { "terrainmin", "terrain" }, { "terrainfx", "terrain" }, { "terrainfxlow", "terrain" },
+  { "terrainfxmin", "terrain" }, { "terrainfar", "terrain" }, { "water", "water" }, { "waterlow", "water" },
+};
+static const char *engine_module(const char *name) {
+  for (size_t i = 0; name && i < sizeof ENGINE_PARTS / sizeof ENGINE_PARTS[0]; i++)
+    if (!strcmp(ENGINE_PARTS[i].part, name)) return ENGINE_PARTS[i].module;
+  return NULL;
+}
+bool cw_shading_part_engine_owned(const char *name) { return engine_module(name) != NULL; }
+/* a game's call naming an engine part: an error once per name and function, and the call is refused */
+bool cw__shading_name_collides(const char *fn, const char *name);
+#define collides cw__shading_name_collides
+bool cw__shading_name_collides(const char *fn, const char *name) {
+  const char *mod = engine_module(name);
+  if (!mod) return false;
+  static char said[16][48];
+  static int nsaid;
+  char key[48];
+  snprintf(key, sizeof key, "%s %s", fn, name);
+  for (int i = 0; i < nsaid; i++)
+    if (!strcmp(said[i], key)) return true;
+  if (nsaid < 16) snprintf(said[nsaid++], sizeof said[0], "%s", key);
+  cw_error("shading: %s(\"%s\") REFUSED: \"%s\" is a shading part the engine owns (src/%s/extensions/%s.mjs). One name is one "
+           "program state and one hook, so the game's part and the engine's would replace each other's shading. Name the "
+           "game's part something else (its module, its manifest's \"# extend:\" line and its cw_shading_add calls) and "
+           "regenerate its program table (cartwheel/shading.h)",
+           fn, name, name, mod, name);
+  return true;
+}
+
 void cw_shading_part_batching(t3_renderer *r, const char *name, bool on) {
+  if (collides("cw_shading_part_batching", name)) return;
+  cw__shading_part_batching_own(r, name, on);
+}
+void cw__shading_part_batching_own(t3_renderer *r, const char *name, bool on) {
   if (!r || !part_name_ok("cw_shading_part_batching", name)) return;
   part_reg *p = (part_reg *)find_part(r, name);
   if (!p) p = add_part(r, name);
@@ -158,6 +202,10 @@ void cw_shading_part_batching(t3_renderer *r, const char *name, bool on) {
 }
 
 void cw_shading_part(t3_renderer *r, const char *name, t3_extension_fill fill, void *user) {
+  if (collides("cw_shading_part", name)) return;
+  cw__shading_part_own(r, name, fill, user);
+}
+void cw__shading_part_own(t3_renderer *r, const char *name, t3_extension_fill fill, void *user) {
   if (!r || !part_name_ok("cw_shading_part", name)) return;
   part_reg *p = (part_reg *)find_part(r, name);
   if (!p && fill) {
@@ -210,6 +258,10 @@ static bool surfaces_alone(void) {
 static int max_parts(void) { return surfaces_alone() ? 4 : CW_SHADING_MAX_PARTS; }
 
 void cw_shading_part_traits(const char *name, unsigned traits) {
+  if (collides("cw_shading_part_traits", name)) return;
+  cw__shading_part_traits_own(name, traits);
+}
+void cw__shading_part_traits_own(const char *name, unsigned traits) {
   if (!part_name_ok("cw_shading_part_traits", name)) return;
   global_of(name, true)->traits = traits;
 }
@@ -219,6 +271,7 @@ unsigned cw_shading_part_traits_of(const char *name) {
 }
 
 void cw_shading_part_everywhere(const char *name, t3_extension_fill fill, void *user, bool batching) {
+  if (collides("cw_shading_part_everywhere", name)) return;
   if (!part_name_ok("cw_shading_part_everywhere", name)) return;
   global_part *g = global_of(name, true);
   g->fill = fill, g->user = user, g->batching = batching, g->everywhere = fill != NULL;
@@ -394,4 +447,61 @@ void cw_shading_remove(t3_material *m, const char *name) {
   for (int i = 0; i < n; i++)
     if (strcmp(p[i], name)) p[k++] = p[i];
   if (k != n) cw_shading_set(m, p, k);
+}
+
+/* ── covering a state no table has (three.c's t3_renderer_set_cover; src/render/pipeline.c) ──────────
+ * A draw whose state is in none of the app's tables may draw with a program whose extension has fewer parts: the
+ * parts it lacks must be ones the picture can do without. Exact (0) when nothing it lacks shows: a caster's depth
+ * program keeps only what shapes the geometry, so a lighting part dropped from a caster is the same shadow. Otherwise
+ * a cost a part (the lighting model, clustered lights, the sun's cascades, probe light, the height fog's part on a
+ * blended surface, a rim or skin term): those draws lose that much of their look, never their geometry. A part that
+ * decides the surface or moves vertices (terrain, water, foliage, a game's surface) is never dropped from a colour
+ * program; from a caster, only when it moves nothing. A program with a part the material lacks is never taken. */
+static int drop_cost(const char *p, bool caster) {
+  static const struct { const char *part; int cost; } LOOK[] = {
+    { "plain", 1 }, { "rim", 1 }, { "skinshade", 1 }, { "cluster", 2 }, { "clusteries", 2 }, { "csm", 2 }, { "gi", 2 }, { "hfog", 2 },
+  };
+  for (size_t i = 0; i < sizeof LOOK / sizeof LOOK[0]; i++)
+    if (!strcmp(LOOK[i].part, p)) return caster ? 0 : LOOK[i].cost;
+  if (!caster) return -1;
+  /* a caster: what does not move vertices or cut the shape keeps the same shadow */
+  static const char *const SHAPE[] = { "foliage", "folalpha", "water", "waterlow", "terrain", "terrainlow", "terrainmin",
+                                       "terrainfx", "terrainfxlow", "terrainfxmin", "terrainfar", "meshdecal" };
+  for (size_t i = 0; i < sizeof SHAPE / sizeof SHAPE[0]; i++)
+    if (!strcmp(SHAPE[i], p)) return -1;
+  unsigned tr = cw_shading_part_traits_of(p);
+  if (tr & CW_PART_MOVES_VERTICES) return -1;
+  return tr & CW_PART_SURFACE ? 1 : -1; /* (a game's surface may cut its shape with alpha: approximate) */
+}
+int cw__shading_cover_ext(void *user, const char *want, const char *have, bool caster);
+int cw__shading_cover_ext(void *user, const char *want, const char *have, bool caster) {
+  (void)user;
+  char w[CW_SHADING_MAX_PARTS + 1][PART_MAX_], h[CW_SHADING_MAX_PARTS + 1][PART_MAX_];
+  int nw = split(want, w), nh = split(have, h), cost = 0;
+  for (int i = 0; i < nh; i++) {
+    bool in = false;
+    for (int j = 0; j < nw && !in; j++) in = !strcmp(h[i], w[j]);
+    if (!in) return -1;
+  }
+  for (int j = 0; j < nw; j++) {
+    bool in = false;
+    for (int i = 0; i < nh && !in; i++) in = !strcmp(h[i], w[j]);
+    if (in) continue;
+    int c = drop_cost(w[j], caster);
+    if (c < 0) return -1;
+    cost += c;
+  }
+  return cost;
+}
+/* the program a cover took runs its extension's hook: install the composed one (a single part's is its own) */
+void cw__shading_cover_install(t3_renderer *r, const char *program_state);
+void cw__shading_cover_install(t3_renderer *r, const char *program_state) {
+  const char *x = program_state ? strstr(program_state, "+x") : NULL;
+  if (!r || !x) return;
+  char name[NAME_MAX_];
+  snprintf(name, sizeof name, "%s", x + 2);
+  if (strchr(name, '_')) {
+    note_name(name);
+    install(r, name);
+  }
 }

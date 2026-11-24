@@ -33,8 +33,8 @@ static bool missing_visit(cw_node n, void *user) {
     if (f->chain[i] == o) { f->best = n, f->best_depth = i; break; }
   return true;
 }
-static void missing_hook(void *user, const char *state, const t3_object *o, const t3_material *m) {
-  cw_tree *t = user;
+/* "node \"/root/Level/Crate\" (mesh \"Crate_LOD0\"), MeshStandardMaterial \"Painted wood\"": what a draw is */
+static void draw_name(cw_tree *t, const t3_object *o, const t3_material *m, char *out, size_t cap) {
   struct missing_find f = { .best_depth = 1 << 30 };
   for (const t3_object *p = o; p && f.n < 32; p = p->parent) f.chain[f.n++] = p;
   if (t && f.n) cw_node_walk(cw_tree_root(t), missing_visit, &f);
@@ -45,12 +45,39 @@ static void missing_hook(void *user, const char *state, const t3_object *o, cons
     [T3_MESH_PHYSICAL_MATERIAL] = "MeshPhysicalMaterial", [T3_MESH_NORMAL_MATERIAL] = "MeshNormalMaterial",
     [T3_POINTS_MATERIAL] = "PointsMaterial", [T3_LINE_BASIC_MATERIAL] = "LineBasicMaterial", [T3_SPRITE_MATERIAL] = "SpriteMaterial" };
   const char *kind = m && (int)m->type >= 0 && (size_t)m->type < sizeof kinds / sizeof kinds[0] && kinds[m->type] ? kinds[m->type] : "material";
-  cw_error("render: NOT DRAWN: %s%s%s%s%s%s, %s%s%s%s: its program state %s is in none of the app's program tables "
-           "(the fix is in the next error)",
-           path[0] ? "node \"" : "an object", path, path[0] ? "\"" : "", o && o->name && *o->name ? " (mesh \"" : "",
-           o && o->name && *o->name ? o->name : "", o && o->name && *o->name ? "\")" : "", kind,
-           m && m->name && *m->name ? " \"" : "", m && m->name && *m->name ? m->name : "", m && m->name && *m->name ? "\"" : "",
-           state);
+  snprintf(out, cap, "%s%s%s%s%s%s, %s%s%s%s", path[0] ? "node \"" : "an object", path, path[0] ? "\"" : "",
+           o && o->name && *o->name ? " (mesh \"" : "", o && o->name && *o->name ? o->name : "", o && o->name && *o->name ? "\")" : "",
+           kind, m && m->name && *m->name ? " \"" : "", m && m->name && *m->name ? m->name : "", m && m->name && *m->name ? "\"" : "");
+}
+static void missing_hook(void *user, const char *state, const t3_object *o, const t3_material *m) {
+  char what[640];
+  draw_name(user, o, m, what, sizeof what);
+  cw_error("render: NOT DRAWN: %s: its program state %s is in none of the app's program tables, and no program in them "
+           "covers it (the fix is in the next error)", what, state);
+}
+#endif
+
+#ifdef T3_COVER
+/* src/render/shading.c: which program may stand in for a material's extension, and the hook of the one taken */
+int cw__shading_cover_ext(void *user, const char *want, const char *have, bool caster);
+void cw__shading_cover_install(t3_renderer *r, const char *program_state);
+/* A draw whose state no table has, drawn with the nearest program that covers it (three.c's t3_renderer_set_cover,
+ * the engine's cover rules in src/render/shading.c): drawn, so no banner, but said as loudly as a missing state (the
+ * state is listed in cw.three.missing_states with the others, every gate fails on it and the survey adds it), naming
+ * the draw, the program it took and whether the picture is the same. CW_TEST_NO_COVER=1: no cover (the draws are
+ * skipped as before), the control of tests/programs-cover.mjs. */
+static void cover_hook(void *user, const char *state, const char *used, bool exact, const t3_object *o, const t3_material *m) {
+  cw_tree *t = user;
+  cw__shading_cover_install(cw_render3d_renderer(t), used);
+  char what[640];
+  draw_name(t, o, m, what, sizeof what);
+  cw_error("render: DRAWN WITH A NEAR PROGRAM: %s: its program state %s is in none of the app's program tables; it is "
+           "drawn with %s, %s (the fix is in the next error)", what, state, used,
+           exact ? "which draws the same picture" : "which draws it without what that program lacks (fog, shadows, a lighting part)");
+}
+static bool no_cover(void) {
+  const char *e = cw_test_env("CW_TEST_NO_COVER");
+  return e && atoi(e);
 }
 #endif
 
@@ -272,6 +299,17 @@ static void cmd_pipeline(int argc, const char **argv, cw_reply *r) {
       else if ((unsigned char)*c >= 0x20) cw_reply_printf(r, "%c", *c);
     }
     cw_reply_raw(r, "\"");
+#ifdef T3_COVER
+    /* of those, the ones drawn with a program that covers them ("<state> <program state>" a line) */
+    cw_reply_raw(r, ",\"covered_states\":\"");
+    t3_renderer *rr = cw_render3d_renderer(t);
+    for (const char *c = rr ? t3_renderer_generated_covered(rr) : ""; *c; c++) {
+      if (*c == '\n') cw_reply_raw(r, "\\n");
+      else if (*c == '"' || *c == '\\') cw_reply_printf(r, "\\%c", *c);
+      else if ((unsigned char)*c >= 0x20) cw_reply_printf(r, "%c", *c);
+    }
+    cw_reply_raw(r, "\"");
+#endif
     /* the values extension hooks set that their programs lack (ext_miss_hook), one per line */
     cw_reply_raw(r, ",\"dropped_values\":\"");
     for (const char *c = dropped_text + 1; *c; c++) {
@@ -1604,6 +1642,10 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
 #ifdef T3_MISSING_HOOK
     if (ctx.renderer) t3_renderer_set_missing_hook(ctx.renderer, missing_hook, t); /* names a draw with no program */
 #endif
+#ifdef T3_COVER
+    /* a state no table has draws with the nearest program that covers it (said loudly, never a silent skip) */
+    if (ctx.renderer) t3_renderer_set_cover(ctx.renderer, !no_cover(), cw__shading_cover_ext, cover_hook, t);
+#endif
 #ifdef T3_EXTENSION_MISS_HOOK
     if (ctx.renderer) t3_renderer_set_extension_miss_hook(ctx.renderer, ext_miss_hook, NULL); /* names a value a program lacks */
 #endif
@@ -2196,24 +2238,63 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
   /* the program states no table had (those draws were skipped): add them to
    * the app's program table (cmake/programs.cmake, tools/programs.mjs). The
    * gates fail on a non-empty list and print the lines. */
-  static int32_t missing_count;
+  static int32_t missing_count, covered_count;
   static char missing_text[16384]; /* the states, one per line (a list cut short hid states from the checks that read it) */
+  static char undrawn_text[16384]; /* those of them no program covered: their draws were skipped (the banner) */
+  static char covered_text[16384]; /* "<state> <program state>" a line: drawn with a program that covers them */
   static bool missing_field;
   if (!missing_field) {
     missing_field = true;
     cw_debug_i32("cw.three.missing", &missing_count);
     cw_debug_i32("cw.pass_builds", &cw__pass_builds);
     cw_debug_bytes("cw.three.missing_states", missing_text, sizeof missing_text);
+    cw_debug_i32("cw.three.covered", &covered_count);
+    cw_debug_i32("cw.three.undrawn", &cw__missing_programs); /* the states no program covered: their draws skipped (the banner) */
+    cw_debug_bytes("cw.three.covered_states", covered_text, sizeof covered_text);
   }
   if (ctx.renderer) {
-    const char *m = t3_renderer_generated_missing(ctx.renderer);
-    if (!p->missing_states || strcmp(p->missing_states, m ? m : "") != 0) {
+    /* every state no table has: the skipped ones, then the covered ones (the first word of each covered line) */
+    const char *skipped = t3_renderer_generated_missing(ctx.renderer);
+    const char *cov = "";
+#ifdef T3_COVER
+    cov = t3_renderer_generated_covered(ctx.renderer);
+#endif
+    char *m = NULL;
+    {
+      size_t a = strlen(skipped), b = strlen(cov);
+      m = cw_alloc(a + b + 2, CW_MEM_RENDER);
+      memcpy(m, skipped, a + 1);
+      for (const char *c = cov; *c;) {
+        const char *e = strchr(c, '\n'), *sp = strchr(c, ' ');
+        size_t l = sp && (!e || sp < e) ? (size_t)(sp - c) : e ? (size_t)(e - c) : strlen(c);
+        memcpy(m + a, c, l);
+        a += l;
+        m[a++] = '\n';
+        m[a] = 0;
+        c = e ? e + 1 : c + strlen(c);
+      }
+    }
+    if (!p->missing_states || strcmp(p->missing_states, m) != 0) {
       cw_free(p->missing_states);
-      p->missing_states = cw_strdup(m ? m : "", CW_MEM_RENDER);
-      int32_t n = 0;
+      p->missing_states = m;
+      m = NULL;
+      int32_t n = 0, ns = 0, nc = 0;
       for (const char *c = p->missing_states; *c; c++)
         if (*c == '\n' || !c[1]) n++;
-      if (n) {
+      for (const char *c = skipped; *c; c++)
+        if (*c == '\n' || !c[1]) ns++;
+      nc = n - ns;
+      if (nc) {
+        cw_error("render pipeline: %d draw state(s) are in none of the app's program tables; their draws are drawn with "
+                 "the nearest program that covers them (the errors above name each node, material and program), which "
+                 "may lack fog, shadows or a lighting part. Fix: run\n"
+                 "    %s\n"
+                 "(a game built against the SDK: node <sdk>/tools/programs.mjs %s --build build/native, or its programs "
+                 "script; add --carts for the cart's own states), then rebuild and commit the programs/ manifest and its "
+                 "generated C. Guide: docs/guides/rendering-3d.md, \"Program tables\". Drawn with another program:\n%s",
+                 (int)nc, cw__programs_fix_command(), cw__app_target_name(), cov);
+      }
+      if (ns) {
         cw_error("render pipeline: %d draw state(s) have no program, so those draws are NOT DRAWN (the errors above name "
                  "each node and material). A material, light count or shadow setup the app's program table was not "
                  "surveyed with needs its program; so does content built on one graphics preset and drawn on another "
@@ -2222,7 +2303,9 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
                  "(a game built against the SDK: node <sdk>/tools/programs.mjs %s --build build/native, or its programs "
                  "script; add --carts for the cart's own states), then rebuild and commit the programs/ manifest and its "
                  "generated C. Guide: docs/guides/rendering-3d.md, \"Program tables\". Missing:\n%s",
-                 (int)n, cw__programs_fix_command(), cw__app_target_name(), p->missing_states);
+                 (int)ns, cw__programs_fix_command(), cw__app_target_name(), skipped);
+      }
+      if (n) {
         const char *strict = getenv("CW_PROGRAMS_STRICT");
         if (strict && *strict && atoi(strict)) { /* CI and authors: an incomplete table is an exit (4), not a blank screen */
           fprintf(stderr, "CW_PROGRAMS_STRICT: exiting, the program table is incomplete\n");
@@ -2237,11 +2320,16 @@ static void render_run_inner(cw_tree *t, cw_pipeline *p, int w, int h, double al
         memset(missing_text, 0, sizeof missing_text);
         snprintf(missing_text, sizeof missing_text, "%s", p->missing_states);
         missing_count = n;
+        memset(undrawn_text, 0, sizeof undrawn_text);
+        snprintf(undrawn_text, sizeof undrawn_text, "%s", skipped);
+        cw__missing_programs = ns;
       } else {
         missing_count = missing_union(missing_text, sizeof missing_text, p->missing_states);
+        cw__missing_programs = missing_union(undrawn_text, sizeof undrawn_text, skipped);
       }
-      cw__missing_programs = missing_count;
+      covered_count = missing_union(covered_text, sizeof covered_text, cov);
     }
+    cw_free(m);
   }
 
   /* undo the jitter so game code sees the camera's real projection */

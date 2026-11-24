@@ -1,4 +1,5 @@
 # r187 program states for cw_tests (cmake/programs.cmake; tools/programs.mjs adds what runs lack)
+# closure: off (the unit tests draw exactly what they list; tools/programs.mjs)
 standard+l0001
 standard+l1000
 depth+xcluster_csm

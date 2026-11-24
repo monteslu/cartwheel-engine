@@ -1,4 +1,5 @@
 # unit_programs_switch (tests/programs-switch.mjs): tools/programs.mjs unit_programs_switch
+# closure: off (the control of tests/programs-closure.mjs: the switch's state comes from the survey alone)
 depth+xplain
 standard+instbig+shadow+l1000
 standard+instbig+shadow+l1200

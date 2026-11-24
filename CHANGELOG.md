@@ -4,6 +4,56 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.78.0 (2026-11-24)
+
+### Added
+- A program table's **variant closure**: regenerating a table (`tools/programs.mjs`, every way it regenerates) adds
+  each surveyed material in every environment surveyed for its class: fog, received shadows, the scene's environment
+  map, the lighting parts a preset puts on lit materials (cluster, clusteries, csm, plain, hfog, gi), at the most
+  lights seen with that environment and at the most its class reached anywhere, and each near terrain material at every
+  terrain quality (`tools/lib/program-closure.mjs`). Most states a survey missed were a surveyed material in such an
+  environment: of the 2,614 states the example games' and the engine's tables gained after their first survey, 56 %
+  differed from a state the table had only in those flags, 6 % only in light counts, 3 % only in the terrain's or
+  water's quality part, and 34 % were materials no table had (1 % renamed by an engine change). The states go into
+  the manifest under a `# closure` line; the closure is idempotent, and a table with one is not minimized, so a draw
+  keeps the smallest program that covers its lights. `# closure: off` leaves it out (the shared samples table and
+  the unit tests' tables say so), `# closure-max: N` bounds it (default 3000; more fails naming the counts). On the
+  example games' current tables it adds 0 (towers, already closed) to 1,805 (racer: 277 states). Measured on release
+  carts: derby 208 to 612 states (the generated C 2.5 + 1.7 MB to 7.4 + 5.3 MB, GL + WebGPU), its cart 10.0 to 11.0 MB;
+  arenafps 52 to 130 states, its cart 11.8 to 12.0 MB. Through their gameplay gate on romdev (GL and WebGPU, every preset
+  from the start and every switch to and from High), derby went from 16 states no table had (the old table, as v0.77
+  regenerates it) to 0, one of them a switch's state no run from a start asked for, which the closure supplied, and
+  arenafps from 1 to 0. Gate `programs-closure`: a High to Very Low switch no survey
+  ran draws from the closure alone, natively and as the dual cart through romdev on GL and WebGPU; control: the same
+  surveyed states without it miss `standard+instbig+shadow+l1200+s100+xplain`.
+- A draw whose state is in none of the app's tables is **drawn with the nearest program that covers it**, never
+  skipped (three.c 0.187.22's `t3_renderer_set_cover`, with the engine's rules for its shading parts): the same
+  picture for more lights, for fog the draw has none of (made inert) and for a lighting part dropped from a shadow
+  caster; without it for fog, received shadows or the scene environment the program lacks and for a lighting part
+  dropped from a colour program (plain, rim, skinshade, cluster, clusteries, csm, gi, hfog); never for anything else
+  (maps, deformations, alpha test, side, blending, a surface part). It is reported as loudly as a skipped one: an
+  error naming the node, the mesh, the material, the program taken and whether the picture is the same, the state in
+  `cw.three.missing_states` (every gate and survey fails on it and adds it to the table), and the new debug fields
+  `cw.three.covered`, `cw.three.covered_states` and the `pipeline` reply's `covered_states`. The red banner and
+  the new `cw.three.undrawn` count only states no program covered, whose draws are still skipped. `CW_TEST_NO_COVER=1`
+  turns it off. Gate `programs-cover` (unit_programs_cover, a table incomplete on purpose): High's state drawn by its
+  fog twin is byte-identical to the frame of a complete table, and High then Very Low draws everything with 0 skipped
+  draws, natively and through romdev on GL and WebGPU; control: no cover skips those draws.
+
+### Fixed
+- A game's shading part named like one of the engine's own (cluster, csm, plain, foliage, gi, terrain, water and the
+  rest: `cw_shading_part_engine_owned`) replaced the engine's shading, or the engine's replaced the game's, without a
+  word (two games' tree parts were named "foliage" when the engine gained its own). `cw_shading_part`,
+  `cw_shading_part_everywhere`, `cw_shading_part_traits`, `cw_shading_part_batching` and `cw_surface_register`
+  now refuse such a name from a game with an error naming the part and its engine module; the engine's own sources
+  register through internal names (`CW_ENGINE_SOURCE`). Gate `shading-names` (unit_shading_names: "foliage" refused
+  every way, "forest" registers; control: registering "forest" and expecting a refusal fails) and
+  `shading-names-list` (the refused names are exactly the engine's extension modules; control: the list less one).
+- The v0.77.0 section of this changelog carried v0.76.2's text after its Fixed list.
+
+### Changed
+- three.c 0.187.22 (`t3_renderer_set_cover`). A game repository's CI should regenerate its tables and survey its
+  release carts when its engine pin moves (rendering-3d.md, "A game repository's CI when its engine pin moves").
 ## v0.77.3 (2026-11-24)
 
 ### Fixed
@@ -86,37 +136,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   each panel's line down its middle is tested again (a knee went through a panel's quarter). On the figures, with
   the seam moved clear of the thighs and `skirt_stretch` 1: legs at most 4.4 cm through (the coat, a few ticks; the robe 1.8), every swing gone 31 to
   58 ticks after a stop, rest jitter at most 1.2 mm, no tip above its root; control `CW_TEST_SKIRT_074=1` (the old
-  solve, same setup) fails the legs, the settling and the rest.## v0.76.2 (2026-11-24)
-
-### Fixed
-- Grass fading under TAA no longer shows a stippled dot pattern when the camera moves. TerrainScatter3D's
-  `fade_mode = DITHER` dropped pixels by a screen-door (interleaved gradient noise moved every frame) over the LOD
-  crossfade and the last `fade` metres. TAA resolves a screen-door only while the picture holds still: a pixel that
-  moves a pixel a frame or more keeps a quarter of its history, so in a run or a pan the dots stayed on the grass,
-  worst where lit blades cross a dark shadow (the rim of a character's shadow in a meadow). `shadow_at_root` and
-  `smooth_alpha` were not the cause (the built-in GRASS has no alpha test, so `smooth_alpha` does nothing on it):
-  the dots went with `fade_mode = SHRINK` and stayed with either shadow mode. DITHER now works on whole instances
-  on the CPU, like SHRINK, each over its own 0.3 of a band (by its own number): over the LOD crossfade the next LOD
-  grows in inside it and then it shrinks away, and over the fade it shrinks away. The LOD dolly's largest
-  single-frame block change stays 8/255 (SHRINK 22/255). An InstancedMesh's own foliage fades (`fade_in_*`, `fade_out_*` in cartwheel/foliage.h) keep or drop each
-  instance whole too, by a hash of its root against the band at its root's distance (a large instance changes at
-  once where it crosses); a lone mesh keeps the screen-door. Gate `foliage-grain` (samples/foliage_field's new `grain` scene: a meadow's grass, lod_distance 7,
-  lod_blend 3, fade 6, under TAA, a wall's shadow edge running out from the camera, the camera running forward
-  4 m/s while turning 10 degrees a second, or turning alone; every host, GL and WebGPU, CI on software rendering):
-  the spatial high frequency and its change from frame to frame on the shadow's edge, in the shadow and in the
-  light, 5.5 to 8.5 m and 10 to 15 m away, against the same run with SHRINK; on the Radeon 890M the screen-door
-  added 0.0012 to 0.0035 (brightness 0..1) to every measure and the per-instance fades add -0.0002 to 0.0003.
-  Control `CW_TEST_FOLIAGE_PIXEL_DITHER=1` (the screen-door of 0.76.1 and before; `=instance` draws the scatter's bands with
-  the material's per-instance fade).
-- A TerrainScatter3D density map the game writes in its init now reaches the layer. The scene is ready before the
-  app's init, so a `density_map` naming a file not written yet failed for good ("cannot read density map"); and a
-  `density_map` set from code was applied only at the terrain's next fixed tick, since `cw_terrain_of` synced a
-  Terrain3D only when the node itself had changed, so `cw_terrain_scatter_cell` the same tick read the layer without
-  its map. `cw_terrain_of` now applies any changed TerrainScatter3D child first, and a `density_map` path that
-  does not exist yet leaves its layer empty (its index kept) until the file system changes and the file is there.
-  Unit check `terrain.density_map_late` (a map written after the scene is ready, one set from code, both read the
-  same tick: no instance on the map's black half), with the old lazy sync as its control.
-
+  solve, same setup) fails the legs, the settling and the rest.
 
 ## v0.76.2 (2026-11-24)
 

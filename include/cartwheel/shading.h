@@ -90,6 +90,14 @@ bool cw_shading_part_known(const char *name);
 void cw_shading_part_traits(const char *name, unsigned traits);
 /* The traits given to part `name` (0 for none, or an unknown part). */
 unsigned cw_shading_part_traits_of(const char *name);
+/* The part names the engine owns (its modules' src/<module>/extensions/<part>.mjs): cluster, clusteries, csm, plain,
+ * hfog, gi, gibuf, giproj, foliage, folalpha, rim, skinshade, meshdecal, velbuf, terrain, terrainlow, terrainmin,
+ * terrainfx, terrainfxlow, terrainfxmin, terrainfar, water, waterlow. A game's cw_shading_part,
+ * cw_shading_part_everywhere, cw_shading_part_traits or cw_shading_part_batching with one of them (or a surface,
+ * cartwheel/surface.h, of that name) is refused with an error naming the part and its engine module: two parts of one
+ * name share one program state and one hook, so the engine's or the game's shading silently replaced the other. Name
+ * the game's part something else. */
+bool cw_shading_part_engine_owned(const char *name);
 /* Forget a renderer (before t3_renderer_destroy). */
 void cw_shading_forget(t3_renderer *r);
 
@@ -105,6 +113,17 @@ bool cw_shading_has(const t3_material *m, const char *name);
 /* Replace m's parts by the composed name of `parts` (n of them, any order):
  * what cw_shading_add gives, from scratch. */
 bool cw_shading_set(t3_material *m, const char *const *parts, int n);
+
+/* (the engine's own sources register its parts through these, which skip the guard: CW_ENGINE_SOURCE is set for
+ * the engine library only, CMakeLists.txt) */
+void cw__shading_part_own(t3_renderer *r, const char *name, t3_extension_fill fill, void *user);
+void cw__shading_part_batching_own(t3_renderer *r, const char *name, bool on);
+void cw__shading_part_traits_own(const char *name, unsigned traits);
+#if defined(CW_ENGINE_SOURCE) && !defined(CW_SHADING_GUARDED)
+#define cw_shading_part cw__shading_part_own
+#define cw_shading_part_batching cw__shading_part_batching_own
+#define cw_shading_part_traits cw__shading_part_traits_own
+#endif
 
 #ifdef __cplusplus
 }

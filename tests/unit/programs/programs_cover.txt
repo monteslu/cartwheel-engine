@@ -1,0 +1,6 @@
+# unit_programs_cover (tests/programs-cover.mjs): incomplete on purpose. High's standard+instbig+shadow+l1200 is drawn
+# by its fog twin (inert fog: the same picture), Very Low's plain states by the program without the plain part, and
+# the plain caster depth+xplain by the plain caster: three.c's cover (t3_renderer_set_cover) with the engine's rules
+# closure: off (the gate needs the table to stay incomplete)
+standard+fog+instbig+shadow+l1200
+standard+instbig+shadow+l1200+s100

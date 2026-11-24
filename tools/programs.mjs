@@ -59,7 +59,14 @@
 // states, without copying project code into the engine. The module filename
 // must match its exported extension name. Duplicate names are rejected.
 //
-// Regenerating minimizes the manifest (states another listed state covers
+// Regenerating adds the manifest's variant closure (tools/lib/program-closure.mjs): every surveyed material in every
+// environment surveyed for its class (fog, shadows, the scene's environment, each preset's lighting parts, the most
+// lights seen), so a preset switched in play, a level or a weather that only some materials were surveyed in draws
+// with programs the table has. The states go to the manifest under a "# closure" line. A manifest line
+// "# closure: off" leaves it out (a table several apps share, a test's table that must stay incomplete);
+// "# closure-max: N" bounds it (default 3000: more fails, naming the counts). With the closure, the manifest is
+// not minimized: three.c draws each light count with the smallest program that covers it.
+// Without it, regenerating minimizes the manifest (states another listed state covers
 // are dropped: more lights of each kind, the same casters), captures what the
 // capture cache (<build>/programs-cache/<table>) lacks twice to check it
 // (--check off with --fast), and writes <table>_gl.c and <table>_wgpu.c beside
@@ -77,6 +84,7 @@ import { enterGpuSandbox } from './lib/gpu-sandbox.mjs';
 import { testEnv, wgpuPin } from './lib/wgpu-pin.mjs';
 import { checkWgsl } from './lib/wgsl-check.mjs';
 import { tableStamp } from './lib/program-sources.mjs';
+import { closure, featureOrder } from './lib/program-closure.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -219,11 +227,43 @@ function addVeryLowWaterStates(manifest, logs) {
   writeFileSync(manifest, text.replace(/\n?$/, '\n') + add.join('\n') + '\n');
   console.log(`${basename(manifest)}: added ${add.length} Very Low water state(s) (xwaterlow, no shadow)`);
 }
+const CLOSURE_MAX = 3000;
+/** the manifest's closure directives: { on, max } */
+function closureOf(manifest) {
+  const text = existsSync(manifest) ? readFileSync(manifest, 'utf8') : '';
+  const max = /^#\s*closure-max:\s*(\d+)\s*$/m.exec(text);
+  return { on: !/^#\s*closure:\s*off\s*$/m.test(text), max: max ? +max[1] : CLOSURE_MAX };
+}
+// The variant closure (tools/lib/program-closure.mjs): the logs' states merged into the manifest first (as
+// gen-project-table would), then every state the closure adds, under one "# closure" line per regeneration that adds
+// any. Over the bound it fails, naming the counts: an app with that many materials and environments sets its own.
+function addClosureStates(manifest, logs) {
+  const { on, max } = closureOf(manifest);
+  if (!on) return false;
+  const text = existsSync(manifest) ? readFileSync(manifest, 'utf8') : '';
+  const have = statesOf(manifest);
+  const fromLogs = [...new Set(logs.flatMap((l) => statesOf(l)))].filter((s) => !have.includes(s));
+  const states = [...have, ...fromLogs];
+  if (!states.length) return true;
+  const order = featureOrder(readFileSync(join(THREE, 'src', 'gen', 'programs.h'), 'utf8'));
+  const c = closure(states, order);
+  if (c.add.length > max)
+    throw new Error(`${manifest}: the variant closure adds ${c.add.length} states (${c.materials} materials, ${c.environments} environments), ` +
+      `over its bound of ${max}: set "# closure-max: <n>" in the manifest to allow it, or "# closure: off"`);
+  if (fromLogs.length || c.add.length) {
+    let out = text.replace(/\n?$/, '\n') + fromLogs.join('\n') + (fromLogs.length ? '\n' : '');
+    if (c.add.length) out += `# closure (tools/programs.mjs): ${c.add.length} state(s), the surveyed materials in the environments surveyed for their class\n` + c.add.join('\n') + '\n';
+    writeFileSync(manifest, out);
+  }
+  console.log(`${basename(manifest)}: variant closure of ${c.materials} materials in ${c.environments} environments: +${c.add.length} state(s)`);
+  return true;
+}
 /** regenerate one table from its manifest (plus missing logs) */
 function regenerate(manifest, logs = []) {
   const name = basename(manifest, '.txt');
   addLightmapChannelStates(manifest);
   addVeryLowWaterStates(manifest, logs);
+  const closed = addClosureStates(manifest, logs);
   const own = manifestExtensions(manifest).filter((e) => !EXTENSIONS.includes(e));
   for (const e of own) {
     const previous = EXTENSIONS.find((x) => basename(x) === basename(e));
@@ -242,7 +282,7 @@ function regenerate(manifest, logs = []) {
   if (extensions.some(isSurface)) extHash.update(readFileSync(SURFACE_PART));
   const parts = extensions.map(asPart); // what the generator loads: a surface module through its wrapper
   const cache = join(BUILD, 'programs-cache', extensions.length ? `${name}-${extHash.digest('hex').slice(0, 12)}` : name);
-  const args = [GEN, '--name', name, '--out', dirname(manifest), '--states', manifest, '--cache', cache, '--minimize',
+  const args = [GEN, '--name', name, '--out', dirname(manifest), '--states', manifest, '--cache', cache, ...(closed ? [] : ['--minimize']),
     ...logs.flatMap((l) => ['--missing', l]), ...parts.flatMap((e) => ['--extend', e]),
     ...composedModules([manifest, ...logs], parts).flatMap((e) => ['--extend', e]),
     ...(argv.includes('--fast') ? [] : ['--check'])];

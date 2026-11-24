@@ -133,6 +133,14 @@ cw_add_app(unit_programs_switch SOURCES test_programs_switch.c ASSETS ${CMAKE_CU
            PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/programs/programs_switch.txt)
 cw_add_app(unit_programs_switch_start SOURCES test_programs_switch.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/programs_switch_assets
            PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/programs/programs_switch_start.txt)
+# the same scene with a table left incomplete on purpose, drawn through three.c's cover (tests/programs-cover.mjs)
+cw_add_app(unit_programs_cover SOURCES test_programs_switch.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/programs_switch_assets
+           PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/programs/programs_cover.txt)
+# the same scene with unit_programs_switch_start's surveyed states and their variant closure (tests/programs-closure.mjs)
+cw_add_app(unit_programs_closure SOURCES test_programs_switch.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/programs_switch_assets
+           PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/programs/programs_closure.txt)
+# a game's shading part may not take a name the engine owns (cartwheel/shading.h; gate shading-names)
+cw_add_app(unit_shading_names SOURCES test_shading_names.c)
 # clustered lighting over a changing scene: lights added, reparented, hidden, removed, a material swapped, in
 # two-view split screen with a cascaded sun (the pass's scene index and material marking, cartwheel/lighting.h)
 cw_add_app(lighting_changes SOURCES lighting_changes.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/lighting_changes_assets)

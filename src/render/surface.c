@@ -2,6 +2,7 @@
  * material's values, the fill hook that sends them with a draw, and the node
  * type a surface can be. The generator side is tools/lib/surface-part.mjs,
  * which turns a module's `params` and `surface()` into a shading part. */
+#define CW_SHADING_GUARDED 1 /* (cw_surface_register registers a game's part: the guarded names, cartwheel/shading.h) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -127,11 +128,13 @@ static bool ident_ok(const char *s, bool lower_only, size_t max) {
 
 static void node_type_make(surface *s, const char *type_name);
 
+bool cw__shading_name_collides(const char *fn, const char *name); /* src/render/shading.c */
 bool cw_surface_register(const cw_surface_desc *d) {
   if (!d || !ident_ok(d->name, true, NAME_MAX_ - 1)) {
     cw_error("cw_surface_register: '%s' is not a surface name ([a-z0-9], at most %d characters)", d && d->name ? d->name : "(null)", NAME_MAX_ - 1);
     return false;
   }
+  if (cw__shading_name_collides("cw_surface_register", d->name)) return false; /* a part name the engine owns: refused, loudly */
   if (d->param_count < 0 || d->param_count > MAX_PARAMS || (d->param_count && !d->params)) {
     cw_error("cw_surface_register: surface %s: %d parameters (at most %d)", d->name, d->param_count, MAX_PARAMS);
     return false;

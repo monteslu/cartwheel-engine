@@ -1,0 +1,9 @@
+# unit_programs_closure (tests/programs-closure.mjs): the states unit_programs_switch_start's survey found (each preset
+# from the start, no switch), and their variant closure, which tools/programs.mjs adds below
+depth+xplain
+standard+instbig+shadow+l1000+xplain
+standard+instbig+shadow+l1000
+standard+instbig+shadow+l1200
+# closure (tools/programs.mjs): 2 state(s), the surveyed materials in the environments surveyed for their class
+standard+instbig+shadow+l1200+s100
+standard+instbig+shadow+l1200+s100+xplain

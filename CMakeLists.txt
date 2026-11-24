@@ -73,6 +73,9 @@ target_include_directories(cartwheel PUBLIC include ${CW_THREE_DIR}/include PRIV
 target_compile_options(cartwheel PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
 # the engine's own text calls carry no caller for the `text` debug request (cartwheel/render2d.h)
 target_compile_definitions(cartwheel PRIVATE CW_TEXT_NO_CALLER=1)
+# the engine's own shading parts register unguarded; a game that registers a part name the engine owns is refused
+# loudly (cartwheel/shading.h)
+target_compile_definitions(cartwheel PRIVATE CW_ENGINE_SOURCE=1)
 # the profiler's zones (cartwheel/profile.h): OFF compiles every CW_PROFILE_* macro out, the engine's and the game's
 option(CW_PROFILER "compile the profiler's zones in (off at run time until asked for)" ON)
 if(NOT CW_PROFILER)
