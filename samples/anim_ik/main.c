@@ -19,7 +19,19 @@
  * under it against its animated height above flat ground), the largest
  * per-tick pelvis move, the hand's distance to the handle while fully
  * reaching, look-at ticks in limit, pose hashes per 60-tick window (the front
- * robot, and every robot folded), and microseconds per character. */
+ * robot, and every robot folded), and microseconds per character.
+ *
+ * IK_MANUAL=1 (gate ik-manual-advance): the front robot's AnimationPlayer is
+ * MANUAL and advanced in this app's fixed_update, after the tick's modifier
+ * phase, as a game that drives its animation from its own simulation does;
+ * the firefly holds 70 degrees to the robot's left at head height. The
+ * engine solves the modifiers again after fixed_update
+ * (cw_skeleton_modifiers_refresh), so the head drawn each frame is turned
+ * toward it. Debug fields ikm.turn (the head's drawn turn off the animated
+ * head this frame, radians), ikm.turn_min (the least over the run after
+ * warm-up) and ikm.ok (turn_min above 0.6 rad). Its control,
+ * CW_TEST_IK_NO_REFRESH=1, draws the advanced pose with no modifiers: 0. */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -56,6 +68,12 @@ static int32_t feet_on = 1, feet_ok, reach_ok, stance_ticks, reach_ticks, look_i
 static uint32_t hash_win[8], crowd_win[8];
 static double us_sum;
 static int us_n;
+/* IK_MANUAL (above) */
+static int manual = -1;
+static t3_quat head_anim;
+static bool head_anim_set;
+static float ikm_turn, ikm_turn_min = 10;
+static int32_t ikm_ok, ikm_frames;
 
 static void set_shadows(t3_object *o) {
   if (o->type == T3_SKINNED_MESH || o->type == T3_MESH) o->cast_shadow = true;
@@ -160,7 +178,38 @@ static void init(void *u) {
   cw_debug_field("crowd_win", crowd_win, CW_DBG_U32, 8);
   cw_debug_f32("ik_us", &ik_us); /* host clock: never compared */
   cw_debug_f32("ik_us_min", &ik_us_min); /* the quietest tick (a loaded machine inflates the mean) */
+  cw_debug_f32("ikm.turn", &ikm_turn);
+  cw_debug_f32("ikm.turn_min", &ikm_turn_min);
+  cw_debug_i32("ikm.ok", &ikm_ok);
+  cw_debug_i32("ikm.frames", &ikm_frames);
 }
+
+/* #region manual */
+/* the head bone's rotation in the glTF scene's space (its local rotations up to the scene root) */
+static t3_quat head_in_model(void) {
+  t3_quat q = { 0, 0, 0, 1 };
+  t3_object *root = R[0].gltf->scene;
+  for (t3_object *o = t3_object_get_by_name(root, "Head"); o && o != root; o = o->parent) {
+    t3_quat a = o->quaternion;
+    q = (t3_quat){ a.w * q.x + a.x * q.w + a.y * q.z - a.z * q.y, a.w * q.y - a.x * q.z + a.y * q.w + a.z * q.x,
+                   a.w * q.z + a.x * q.y - a.y * q.x + a.z * q.w, a.w * q.w - a.x * q.x - a.y * q.y - a.z * q.z };
+  }
+  return q;
+}
+/* what is drawn: the head's turn off the animated head of this tick */
+static void manual_render(void *u, double alpha) {
+  (void)u, (void)alpha;
+  if (manual != 1 || !head_anim_set) return;
+  t3_quat d = head_in_model();
+  float c = fabsf(d.x * head_anim.x + d.y * head_anim.y + d.z * head_anim.z + d.w * head_anim.w);
+  ikm_turn = 2 * cw_acos(c > 1 ? 1 : c);
+  if (cw_tree_tick(cw_scene_app_tree()) > 30) {
+    if (ikm_turn < ikm_turn_min) ikm_turn_min = ikm_turn;
+    ikm_frames++;
+  }
+  ikm_ok = ikm_frames > 0 && ikm_turn_min > 0.6f;
+}
+/* #endregion */
 
 /* #region probe */
 /* in stance, the ankle sits above the ground under it by its animated lift */
@@ -244,6 +293,10 @@ static void fixed(void *u, double dt) {
     if (tick > 30 && now < ik_us_min) ik_us_min = now;
   }
 
+  if (manual < 0 && tick >= 2) { /* (a test switch reads from frame 2) */
+    manual = cw_test_env("IK_MANUAL") ? 1 : 0;
+    if (manual) cw_node_set(R[0].anim, "process", cw_val_enum("MANUAL"));
+  }
   if (cw_action_just_pressed(0, toggle_action)) {
     feet_on = !feet_on;
     for (int i = 0; i < ROBOTS; i++) cw_node_set(R[i].feet, "active", cw_val_bool(feet_on));
@@ -251,6 +304,12 @@ static void fixed(void *u, double dt) {
   if (tick <= 1)
     for (int i = 0; i < ROBOTS; i++) R[i].root_y = ground_at(R[i].x, cw_node3d_position(R[i].mover).z, 2);
   for (int i = 0; i < ROBOTS; i++) walk(&R[i], fdt);
+  if (manual == 1) {
+    /* the game's own animation step, after this tick's modifier phase; the head as the animation alone puts it */
+    cw_anim_player_advance(R[0].anim, dt);
+    head_anim = head_in_model();
+    head_anim_set = true;
+  }
 
   /* #region reach */
   /* the right hand reaches for the handle while walking past it (+x only) */
@@ -265,7 +324,13 @@ static void fixed(void *u, double dt) {
   float s1, c1, s2, c2;
   cw_sincos(clock_s * 0.8f, &s1, &c1);
   cw_sincos(clock_s * 1.7f, &s2, &c2);
-  cw_node3d_set_position(firefly, (t3_vec3){ R[0].x + 1.6f * s1, R[0].root_y + 1.25f + 0.35f * s2, 1.6f * c1 });
+  if (manual == 1) { /* 70 degrees to the robot's left, at head height, 2 m out */
+    float sy, cy;
+    cw_sincos(R[0].yaw + 1.2217305f, &sy, &cy);
+    t3_vec3 mp = cw_node3d_position(R[0].mover);
+    cw_node3d_set_position(firefly, (t3_vec3){ mp.x + 2 * sy, R[0].root_y + 1.25f, mp.z + 2 * cy });
+  } else
+    cw_node3d_set_position(firefly, (t3_vec3){ R[0].x + 1.6f * s1, R[0].root_y + 1.25f + 0.35f * s2, 1.6f * c1 });
   /* the camera follows along the course */
   t3_vec3 cp = cw_node3d_position(camera);
   cw_node3d_set_position(camera, (t3_vec3){ cp.x + (R[0].x - cp.x) * (1 - cw_exp(-3 * fdt)), cp.y, cp.z });
@@ -288,6 +353,6 @@ cw_app_desc cw_main(int argc, char **argv) {
   (void)argc;
   (void)argv;
   static cw_app_desc base = { .title = "anim_ik", .width = 640, .height = 360, .debug = true, .init = init,
-                              .fixed_update = fixed, .shutdown = shutdown };
+.fixed_update = fixed, .render = manual_render, .shutdown = shutdown };
   return cw_scene_app("main.cwscene", &base);
 }

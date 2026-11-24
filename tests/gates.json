@@ -3163,7 +3163,7 @@
   {
     "name": "unit-ik",
     "app": "unit_ik",
-    "frames": 2,
+    "frames": 3,
     "minColors": 1,
     "fields": [
       "unit.passed",
@@ -3346,6 +3346,147 @@
     "note": "the skeleton modifiers' rest pose is the skin's bind pose: unit_ik's bind_rest turns a skinned head 13 degrees and pitches it 15 before the modifiers first bind, and a LookAtModifier3D with forward_axis (0, 0, 1) still aims the head's bind-pose forward at its target (0.000 rad). Control: CW_TEST_IK_REST_CURRENT=1 takes the transforms at bind time as rest, as before: 0.345 rad off, unit.failed 1 (native only: a cart reads a test switch from frame 2, and the suite runs in frame 1)"
   },
   {
+    "name": "ik-manual-refresh",
+    "app": "unit_ik",
+    "frames": 3,
+    "controlFrames": 3,
+    "controlEnv": {
+      "CW_TEST_IK_NO_REFRESH": "1"
+    },
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.done"
+    ],
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "note": "a MANUAL animation advanced in the app's fixed_update (after the tick's modifier phase) is solved again the same tick (cw_skeleton_modifiers_refresh, which the scene runner calls after fixed_update): unit_ik's manual_refresh turns a skinned head by a look-at 70 degrees to its side every tick (1.2217 rad off the animated head, worst error 0.0005), solves once a phase and not at all on a tick the app writes no bone; refresh_once_a_tick: foot placement eased with a refresh every tick ends bit for bit as without one. Control: CW_TEST_IK_NO_REFRESH=1, the head drawn as the app left it (0 rad): unit.failed 4"
+  },
+  {
+    "name": "foot-high-sweep",
+    "app": "unit_ik",
+    "frames": 3,
+    "controlFrames": 3,
+    "controlEnv": {
+      "CW_TEST_IK2_OLD_BEND": "1"
+    },
+    "minColors": 1,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.done"
+    ],
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "note": "a leg's knee never flips round: unit_ik's foot_high_sweep kicks the right foot forward and up with the leg near straight, draws the heel up behind to the hip with the knee folded and swings it back, over ground 0.2 m off the model's origin (the targets off the animated ankles, the pelvis lowered); the upper leg's drawn rotation moves at most 3.5 degrees a tick past the animation (bound 12). Control: CW_TEST_IK2_OLD_BEND=1 takes the bend side from the thigh's direction off the new reach line, as before: the knee flips, 69 degrees in a tick, unit.failed 1"
+  },
+  {
+    "name": "ik-manual-advance",
+    "app": "anim_ik",
+    "frames": 240,
+    "controlFrames": 240,
+    "env": {
+      "IK_MANUAL": "1"
+    },
+    "controlEnv": {
+      "IK_MANUAL": "1",
+      "CW_TEST_IK_NO_REFRESH": "1"
+    },
+    "maxGt16": 0.003,
+    "fields": [
+      "ikm.turn_min",
+      "ikm.ok",
+      "ikm.frames",
+      "hash_win"
+    ],
+    "tol": 0.0005,
+    "expect": {
+      "ikm.ok": 1
+    },
+    "note": "anim_ik with IK_MANUAL=1: the front robot's AnimationPlayer is MANUAL and advanced in the app's fixed_update, after the modifier phase, with the firefly 70 degrees to its side; the head drawn every frame is turned toward it (ikm.turn_min, the least turn off the animated head over the run, above 0.6 rad: ikm.ok) on GL and WebGPU. Control: CW_TEST_IK_NO_REFRESH=1 draws the advanced pose without the modifiers: ikm.turn_min 0",
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev"
+      ],
+      "vsGl": 0.01
+    }
+  },
+  {
+    "name": "vfs-gen-resources",
+    "app": "water_shore",
+    "frames": 90,
+    "controlFrames": 90,
+    "startCmds": [
+      "@20 vfs write gen/probe.bin eA==",
+      "@21 vfs write world/probe.bin eA==",
+      "@22 set Root/Water normal_map \"\\\"gen://noise?size=128&type=perlin&fractal=fbm&octaves=4&freq=0.035&out=normal&strength=3&seamless=1\\\"\""
+    ],
+    "controlStartCmds": [
+      "@20 vfs write gen/probe.bin eA==",
+      "@21 vfs write world/probe.bin eA==",
+      "@22 set Root/Water normal_map \"\\\"gen://noise?size=128&type=perlin&fractal=fbm&octaves=4&freq=0.035&out=normal&strength=3&seamless=1\\\"\""
+    ],
+    "controlEnv": {
+      "CW_TEST_VFS_GEN_HIDDEN": "1"
+    },
+    "fields": [
+      "water.surfaces",
+      "water.flat_normal"
+    ],
+    "expect": {
+      "water.surfaces": 1,
+      "water.flat_normal": 0
+    },
+    "note": "a write to the project's memory layer (cw_vfs_write gen/... and world/..., through the vfs debug request) never hides a generated res://gen: resource: the beach scene's water then takes a new gen://noise normal map and draws with it (water.flat_normal 0). Control: CW_TEST_VFS_GEN_HIDDEN=1 asks the layers for the generated path as before: 'not found', the water drawn with its flat stand-in (water.flat_normal 1)",
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev"
+      ],
+      "vsGl": 0.002
+    }
+  },
+  {
+    "name": "water-normal-missing",
+    "app": "water_shore",
+    "frames": 90,
+    "controlFrames": 90,
+    "startCmds": [
+      "@20 set Root/Water normal_map \"\\\"textures/no_such_normal.png\\\"\""
+    ],
+    "controlStartCmds": [
+      "@20 set Root/Water normal_map \"\\\"textures/no_such_normal.png\\\"\""
+    ],
+    "controlEnv": {
+      "CW_TEST_WATER_NO_FLAT_NORMAL": "1"
+    },
+    "controlAllowSkipped": true,
+    "fields": [
+      "water.surfaces",
+      "water.flat_normal",
+      "render.skipped"
+    ],
+    "expect": {
+      "water.surfaces": 1,
+      "water.flat_normal": 1,
+      "render.skipped": 0
+    },
+    "note": "a Water3D whose normal_map does not load still draws: the fill hook binds a flat normal map in its place (and for every map it stands in for, waterFloorMap among them), logged once; render.skipped 0 (run-cart fails a run with skipped draws). Control: CW_TEST_WATER_NO_FLAT_NORMAL=1 binds nothing, as before: three.c skips the water's draws and the run fails",
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev"
+      ],
+      "vsGl": 0.002
+    }
+  },
+  {
     "name": "anim-spring",
     "app": "anim_spring",
     "frames": 600,
@@ -3472,6 +3613,41 @@
     "fields": ["tree.tick", "bd.mode", "bd.env_ran", "bd.ssrc_ran", "bd.stage_op", "bd.sea_op"],
     "expect": { "bd.mode": 12, "bd.env_ran": 1, "bd.ssrc_ran": 1, "bd.stage_op": 1000, "bd.sea_op": 500 },
     "note": "backdrop environments (cartwheel/backdrop.h environment) and the screen-space reflections' backdrop fallback (ssr_backdrop): the lane a mirror over the sea at 0.5 over the stage, both worlds captured as cubes, blended by their shares into the scene's environment, and the reflection rays that leave the scene taking the pictures. Held: both passes ran, the picture across hosts and GL against WebGPU. The control turns environment and ssr_backdrop off: the mirror goes dark"
+  },
+  {
+    "name": "backdrop-env-return",
+    "app": "backdrop",
+    "frames": 200,
+    "controlFrames": 200,
+    "env": {
+      "BD_MODE": "fire",
+      "BD_ENV_OFF": "100"
+    },
+    "controlEnv": {
+      "BD_MODE": "fire",
+      "BD_ENV_OFF": "100",
+      "CW_TEST_BACKDROP_ENV_FREE": "1"
+    },
+    "maxGt16": 0.004,
+    "webgpu": {
+      "hosts": [
+        "native",
+        "romdev"
+      ],
+      "vsGl": 0.03
+    },
+    "fields": [
+      "bd.mode",
+      "bd.stage_whole",
+      "bd.stage_caps",
+      "bd.stage_op"
+    ],
+    "expect": {
+      "bd.mode": 1,
+      "bd.stage_whole": 1,
+      "bd.stage_op": 1000
+    },
+    "note": "a Backdrop whose environment is turned off and on again (the stage at 1, its environment off at frame 100 for 30 frames, again at 160 for 30) keeps its capture while off: turning it on draws only its share of the next capture, as any frame does, never six faces at once (bd.stage_whole stays at the one whole capture of its first frame). Measured on the 890M through romdev, the frame it turns on: GL 4.7 ms CPU, 11.5 GPU (the old way 7.6 and 11.5; a capture frame around it 1.2 and 10.7 to 11.6), WebGPU 3.8 to 5.4 CPU, 8.0 to 10.1 GPU (the old way 7.8 and 9.9 to 11.9; a capture frame 6.4 and 9.3). Control: CW_TEST_BACKDROP_ENV_FREE=1 frees the capture while off, as before: a whole capture each time it comes back (bd.stage_whole 3)"
   },
   {
     "name": "backdrop-env-split",

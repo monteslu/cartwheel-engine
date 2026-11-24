@@ -72,6 +72,8 @@ typedef struct water3d {
   float *mask;       /* mask_nx x mask_nz, row z, col x; NULL: none */
   int mask_nx, mask_nz;
   t3_texture *mask_tex, *mask_white;
+  t3_texture *flat_normal; /* stands in for a normal map that did not load (or is loading): the draw needs one */
+  bool normal_flat, normal_warned;
   unsigned under_mask; /* the wave mask for the underwater pass (0: to make) */
   float built_size[2], built_amp, built_horizon;
   bool refl_on, refr_on;

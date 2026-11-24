@@ -17,6 +17,9 @@
 // runs its control, which must fail. Gates without `expect` are listed as skipped, never counted as passing.
 //
 // --gpu webgpu runs the gates that have a "webgpu" entry on the WebGPU backend instead (see wgpuGates).
+//
+// controlAllowSkipped: the gate's control skips draws on purpose (what the gate guards against): its runs pass
+// --allow-skipped to run-cart, so the control is judged by its state (render.skipped) like any other, not refused.
 import { spawn } from 'node:child_process';
 import { readFileSync, mkdirSync, existsSync, copyFileSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
@@ -294,7 +297,7 @@ async function wgpuGates(list) {
       const ctl = p('control');
       const ctlFrames = g.controlFrames ?? (g.controlInput ? g.frames : g.frames - 1);
       const ctlArgs = ['--host', 'native', '--gpu', 'webgpu', '--app', g.app, '--frames', String(ctlFrames), '--shot', ctl.shot, '--state', ctl.state,
-        ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : [])];
+        ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : []), ...(g.controlAllowSkipped ? ['--allow-skipped'] : [])];
       if (g.assets) ctlArgs.push('--assets', join(PROJ, g.assets));
       if (g.controlStartCmds) ctlArgs.push('--start-cmds', g.controlStartCmds.join(';'));
       if (g.controlInput) ctlArgs.push('--input', join(PROJ, 'tests', g.controlInput));
@@ -377,7 +380,7 @@ async function romdevGates(list) {
     const problems = [], notes = [];
     if (Object.values(ctlEnvObj).some((v) => typeof v === 'string' && v.startsWith('repo:'))) problems.push('controlEnv names a repository file (repo:): a cart cannot read the host\'s files');
     const ctlArgs = ['--frames', String(ctlFrames), ...(ctlInput ? ['--input', join(PROJ, 'tests', ctlInput)] : []),
-      ...(ctlCmds ? ['--start-cmds', ctlCmds.join(';')] : []), ...envArg(ctlEnvObj)];
+      ...(ctlCmds ? ['--start-cmds', ctlCmds.join(';')] : []), ...envArg(ctlEnvObj), ...(g.controlAllowSkipped ? ['--allow-skipped'] : [])];
     if (w.controls && w.controls.length) notes.push(`${w.controls.length} webgpu.controls not run (native fault injections)`);
     const leg = {};
     for (const gpu of legs) {
@@ -523,7 +526,7 @@ for (const g of gates) {
     // control: a run that must NOT match (one frame short, or the control input)
     const ctl = { shot: join(OUT, `${g.name}.control.png`), state: join(OUT, `${g.name}.control.json`) };
     const ctlFrames = g.controlFrames ?? (g.controlInput ? g.frames : g.frames - 1);
-    const ctlArgs = ['--host', 'native', '--app', g.app, '--frames', String(ctlFrames), '--shot', ctl.shot, '--state', ctl.state, ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : [])];
+    const ctlArgs = ['--host', 'native', '--app', g.app, '--frames', String(ctlFrames), '--shot', ctl.shot, '--state', ctl.state, ...(g.frameHz ? ['--frame-hz', String(g.frameHz)] : []), ...(g.controlAllowSkipped ? ['--allow-skipped'] : [])];
     if (g.assets) ctlArgs.push('--assets', join(PROJ, g.assets));
     if (g.controlStartCmds) ctlArgs.push('--start-cmds', g.controlStartCmds.join(';'));
     if (g.controlInput) ctlArgs.push('--input', join(PROJ, 'tests', g.controlInput));

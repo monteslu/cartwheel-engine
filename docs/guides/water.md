@@ -18,7 +18,7 @@ rectangular grid. Increase subdivisions if close waves become too coarse.
 Distant ripple normals and broad wave glints fade before they alias at flight
 viewing distances.
 
-Small ripples come from a normal map (by default a seamless noise normal map, see [Procedural noise](guide:noise)), sampled twice and scrolled along the flow so it never visibly repeats or resets (Water2's two-phase flow). `flow_direction` and `flow_speed` set the flow; a `flow_map` image (red and green = the direction, 0.5 = still) makes a river bend or an eddy.
+Small ripples come from a normal map (by default a seamless noise normal map, see [Procedural noise](guide:noise)), sampled twice and scrolled along the flow so it never visibly repeats or resets (Water2's two-phase flow). `flow_direction` and `flow_speed` set the flow; a `flow_map` image (red and green = the direction, 0.5 = still) makes a river bend or an eddy. A `normal_map` that does not load (a wrong path) draws as a flat normal map, logged once, so a missing image costs the ripples, never the whole surface; [cw_water_stats](api:cw_water_stats) `flat_normal` counts the surfaces drawn that way (gate `water-normal-missing`).
 
 The surface is drawn with the scene's lights: the sun's glints and the shadows of what stands over it are the renderer's own. What the water shows is mixed by a Fresnel term (`reflectivity` is the reflectance looking straight down, 0.02 for water):
 

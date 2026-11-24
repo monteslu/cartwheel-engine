@@ -15,6 +15,18 @@
 #include "cartwheel/physics_nodes.h"
 
 #define MAX_LEGS 8
+
+extern bool cw__ik2_old_bend; /* ik.c */
+
+/* A gate's test switch: natively the environment (the unit suite runs inside the first frame, where cw_test_env
+ * answers nothing yet), in a cart cw_test_env (a cart's getenv in its first frame would refuse the switch later). */
+static const char *test_switch(const char *name) {
+#if CW_CART
+  return cw_test_env(name);
+#else
+  return getenv(name);
+#endif
+}
 #define MAX_MODS 32
 #define PARALLEL_MIN 8 /* models before the solves go to the job pool */
 
@@ -62,12 +74,15 @@ typedef struct skel {
   float last_us;
   cw_node mods[MAX_MODS];
   int nmods;
+  bool solved;             /* solved in the last phase (a refresh looks at these only) */
 } skel;
 
 typedef struct ikw {
   cw_tree *tree;
   CW_ARRAY(skel *) skels;
-  double dt;
+  double dt;          /* the last modifier phase's */
+  uint64_t tick;      /* its tick (cw_tree_tick then: a refresh after it is the same tick) */
+  bool refresh_due;   /* a phase ran and cw_skeleton_modifiers_refresh has not looked since */
 } ikw;
 
 static const cw_node_type *mod_t, *two_t, *look_t, *ccd_t, *fab_t, *foot_t;
@@ -145,6 +160,8 @@ typedef struct leg {
   /* this tick */
   t3_vec3 ankle_model;  /* animated */
   float h_anim;         /* animated ankle height above the model's ground plane (m) */
+  t3_vec3 bend_local;   /* the knee's side off the hip-ankle line, in the upper bone's frame, from the last bent pose */
+  bool has_bend;
   cw_ray3d ray;
 } leg;
 
@@ -159,6 +176,12 @@ typedef struct foot_node {
   float pelvis_off;
   bool pelvis_primed;
   t3_vec3 up_model;   /* world up in model space (unit) */
+  /* the smoothing state as the tick found it: a second prepare in the same tick (a refresh after the app's
+   * fixed_update) starts from it again, so the ease advances once a tick */
+  bool ticked;
+  uint64_t last_tick;
+  float gh0[MAX_LEGS], pelvis0;
+  bool primed0[MAX_LEGS], pelvis_primed0;
 } foot_node;
 
 static modbase *MB(cw_node n) { return cw_node_data_t(n, mod_t); }
@@ -388,12 +411,22 @@ static void foot_parse(cw_node n, foot_node *d, skel *s) {
 }
 
 /* serial: rays from the animated pose, one batch per node */
-static void foot_prepare(cw_node n, foot_node *d, skel *s, cw_tree *tree, double dt) {
+static void foot_prepare(cw_node n, foot_node *d, skel *s, cw_tree *tree, double dt, uint64_t tick) {
   if (d->gen != s->gen || d->parsed_legs != d->legs) {
     d->gen = s->gen;
     foot_parse(n, d, s);
+    d->ticked = false;
   }
   if (!d->nlegs) return;
+  if (d->ticked && tick == d->last_tick) { /* again this tick: from the state the tick found */
+    for (int i = 0; i < d->nlegs; i++) d->L[i].gh = d->gh0[i], d->L[i].primed = d->primed0[i];
+    d->pelvis_off = d->pelvis0, d->pelvis_primed = d->pelvis_primed0;
+  } else {
+    for (int i = 0; i < d->nlegs; i++) d->gh0[i] = d->L[i].gh, d->primed0[i] = d->L[i].primed;
+    d->pelvis0 = d->pelvis_off, d->pelvis_primed0 = d->pelvis_primed;
+    d->ticked = true;
+    d->last_tick = tick;
+  }
   t3_vec3 up = v3(0, 1, 0);
   d->up_model = vnorm(dir_to_model(s, up));
   t3_vec3 origin = to_world(s, v3(0, 0, 0));
@@ -457,7 +490,28 @@ static void foot_solve(cw_node n, foot_node *d, skel *s) {
   for (int i = 0; i < d->nlegs; i++) {
     leg *l = &d->L[i];
     t3_vec3 target = vadd(l->ankle_model, vmul(d->up_model, l->dy * inv_scale));
-    cw_ik_two_bone(p, l->upper, l->lower, l->end, target, NULL);
+    /* The side the knee bends to: the solver takes it from the incoming knee's offset off the hip-ankle line. A leg
+     * the animation holds straight has no side; it bends to the side it last bent to (kept in the thigh's frame, so
+     * it turns with the thigh), never to whichever side the target's small move picks, which flips the knee round
+     * from one tick to the next. */
+    cw_ik2_opts o = CW_IK2_OPTS_DEFAULT;
+    {
+      t3_vec3 pa = cw_pose_model_position(p, l->upper), pb = cw_pose_model_position(p, l->lower);
+      t3_vec3 pc = cw_pose_model_position(p, l->end);
+      t3_vec3 ac = vsub(pc, pa), ab = vsub(pb, pa);
+      float acl = vdot(ac, ac), lab = vlen(ab);
+      t3_vec3 bend = acl > 0 ? vsub(ab, vmul(ac, vdot(ab, ac) / acl)) : v3(0, 0, 0);
+      float bl = vlen(bend);
+      if (bl > 0.02f * lab) {
+        l->bend_local = qrot(qconj(p->mrot[l->upper]), vmul(bend, 1 / bl));
+        l->has_bend = true;
+      } else if (l->has_bend && !cw__ik2_old_bend) {
+        float lbc = vlen(vsub(pc, pb));
+        o.use_pole = true;
+        o.pole = vadd(pb, vmul(qrot(p->mrot[l->upper], l->bend_local), lab + lbc));
+      }
+    }
+    cw_ik_two_bone(p, l->upper, l->lower, l->end, target, &o);
     t3_vec3 end_now = cw_pose_model_position(p, l->end);
     int foot = l->foot;
     if (foot >= 0 && !cw_pose_is_descendant(p, foot, l->end)) {
@@ -622,7 +676,7 @@ static t3_vec3 chain_tail(const cw_pose *p, const spring_chain *c, int i) {
 }
 
 /* serial: gather the chains and shapes, resolve bones, carry the state into model space */
-static void spring_prepare(cw_node n, spring_node *d, skel *s, cw_tree *tree, double dt) {
+static void spring_prepare(cw_node n, spring_node *d, skel *s, uint64_t tick, double dt) {
   d->nch = d->nsh = 0;
   for (int i = 0; i < cw_node_child_count(n); i++) {
     cw_node c = cw_node_child(n, i);
@@ -639,7 +693,6 @@ static void spring_prepare(cw_node n, spring_node *d, skel *s, cw_tree *tree, do
       d->sh[d->nsh++] = sh;
     }
   }
-  uint64_t tick = cw_tree_tick(tree);
   t3_vec3 org = v3(s->world.e[12], s->world.e[13], s->world.e[14]);
   /* a tick or more without this node (inactive, just added), or a reset: start from the animated pose */
   bool snap = d->reset || !d->primed || (tick != d->last_tick && tick != d->last_tick + 1);
@@ -957,16 +1010,59 @@ static double now_us(void) {
   return (double)ts.tv_sec * 1e6 + (double)ts.tv_nsec * 1e-3;
 }
 
+/* the model's active modifiers, in child order */
+static void collect_mods(skel *s) {
+  s->nmods = 0;
+  for (int c = 0; c < cw_node_child_count(s->model) && s->nmods < MAX_MODS; c++) {
+    cw_node ch = cw_node_child(s->model, c);
+    modbase *b = cw_node_data_t(ch, mod_t);
+    if (b && b->active && cw_node_can_process(ch)) s->mods[s->nmods++] = ch;
+  }
+}
+
+/* serial: the animated pose captured, each modifier's targets and rays */
+static void prepare_skel(cw_tree *tree, skel *s, double dt, uint64_t tick) {
+  model_frame(s);
+  skel_capture(s);
+  for (int m = 0; m < s->nmods; m++) {
+    cw_node n = s->mods[m];
+    const cw_node_type *t = cw_node_get_type(n);
+    if (cw_node_type_is(t, "TwoBoneIK3D")) two_prepare(n, cw_node_data_t(n, two_t), s);
+    else if (cw_node_type_is(t, "LookAtModifier3D")) look_prepare(n, cw_node_data_t(n, look_t), s);
+    else if (cw_node_type_is(t, "CCDIK3D")) ccd_prepare(n, cw_node_data_t(n, ccd_t), s);
+    else if (cw_node_type_is(t, "FABRIK3D")) fab_prepare(n, cw_node_data_t(n, fab_t), s);
+    else if (cw_node_type_is(t, "FootPlacement3D")) foot_prepare(n, cw_node_data_t(n, foot_t), s, tree, dt, tick);
+    else if (cw_node_type_is(t, "SpringBone3D")) spring_prepare(n, cw_node_data_t(n, spring_t), s, tick, dt);
+  }
+}
+
+/* solve a batch: a job per model only pays off for a crowd: waking the pool costs more than a few models' solves
+ * (measured: 4 robots in a cart, 44 us serial against 147 us through 7 workers). Same results either way. */
+static void solve_batch(skel **run, int nrun, double t0, bool add) {
+  if (nrun >= PARALLEL_MIN) cw_parallel_for(nrun, 1, solve_range, run);
+  else solve_range(0, nrun, 0, run);
+  float us = (float)(now_us() - t0);
+  for (int i = 0; i < nrun; i++) run[i]->last_us = (add ? run[i]->last_us : 0) + us / (float)nrun;
+}
+
 static void phase_hook(cw_tree *tree, double dt, void *u) {
   CW_PROFILE_SCOPE("anim.ik");
   (void)u;
+  {
+    const char *e = test_switch("CW_TEST_IK2_OLD_BEND");
+    cw__ik2_old_bend = e && atoi(e);
+  }
   ikw *W = cw_tree_slot(tree, "ik");
   if (!W || !W->skels.count) return;
   double t0 = now_us();
+  W->dt = dt;
+  W->tick = cw_tree_tick(tree);
+  W->refresh_due = true;
   skel *run[256];
   int nrun = 0;
   for (int i = 0; i < W->skels.count; i++) {
     skel *s = W->skels.data[i];
+    s->solved = false;
     if (!cw_node_valid(s->model)) {
       skel_free(s);
       memmove(W->skels.data + i, W->skels.data + i + 1, sizeof(skel *) * (size_t)(W->skels.count - i - 1));
@@ -974,12 +1070,7 @@ static void phase_hook(cw_tree *tree, double dt, void *u) {
       i--;
       continue;
     }
-    s->nmods = 0;
-    for (int c = 0; c < cw_node_child_count(s->model) && s->nmods < MAX_MODS; c++) {
-      cw_node ch = cw_node_child(s->model, c);
-      modbase *b = cw_node_data_t(ch, mod_t);
-      if (b && b->active && cw_node_can_process(ch)) s->mods[s->nmods++] = ch;
-    }
+    collect_mods(s);
     if (!s->nmods) {
       /* every modifier off: give the bones their animated pose back once */
       if (s->bound && s->flushed && cw__skeleton_bone_root(s->model, NULL) == s->obj) {
@@ -990,28 +1081,52 @@ static void phase_hook(cw_tree *tree, double dt, void *u) {
       continue;
     }
     if (!skel_bind(s)) continue;
-    model_frame(s);
-    skel_capture(s);
-    for (int m = 0; m < s->nmods; m++) {
-      cw_node n = s->mods[m];
-      const cw_node_type *t = cw_node_get_type(n);
-      if (cw_node_type_is(t, "TwoBoneIK3D")) two_prepare(n, cw_node_data_t(n, two_t), s);
-      else if (cw_node_type_is(t, "LookAtModifier3D")) look_prepare(n, cw_node_data_t(n, look_t), s);
-      else if (cw_node_type_is(t, "CCDIK3D")) ccd_prepare(n, cw_node_data_t(n, ccd_t), s);
-      else if (cw_node_type_is(t, "FABRIK3D")) fab_prepare(n, cw_node_data_t(n, fab_t), s);
-      else if (cw_node_type_is(t, "FootPlacement3D")) foot_prepare(n, cw_node_data_t(n, foot_t), s, tree, dt);
-      else if (cw_node_type_is(t, "SpringBone3D")) spring_prepare(n, cw_node_data_t(n, spring_t), s, tree, dt);
-    }
+    prepare_skel(tree, s, dt, W->tick);
+    s->solved = true;
     if (nrun < 256) run[nrun++] = s;
     else solve_skel(s);
   }
-  /* a job per model only pays off for a crowd: waking the pool costs more
-   * than a few models' solves (measured: 4 robots in a cart, 44 us serial
-   * against 147 us through 7 workers). Same results either way. */
-  if (nrun >= PARALLEL_MIN) cw_parallel_for(nrun, 1, solve_range, run);
-  else solve_range(0, nrun, 0, run);
-  float us = (float)(now_us() - t0);
-  for (int i = 0; i < nrun; i++) run[i]->last_us = us / (float)nrun;
+  solve_batch(run, nrun, t0, false);
+}
+
+/* A bone that holds something other than what the last flush wrote: written since the modifiers ran (a manual
+ * advance, a player in UPDATE mode, game code) */
+static bool bones_written(const skel *s) {
+  const cw_pose *p = &s->pose;
+  for (int i = 0; i < p->count; i++) {
+    const t3_object *o = p->bone[i];
+    if (memcmp(&o->quaternion, &s->fl_rot[i], sizeof(t3_quat)) || memcmp(&o->position, &s->fl_pos[i], sizeof(t3_vec3)) ||
+        memcmp(&o->scale, &s->fl_scl[i], sizeof(t3_vec3)))
+      return true;
+  }
+  return false;
+}
+
+int cw_skeleton_modifiers_refresh(cw_tree *tree) {
+  cw_tree *t = tree ? tree : cw_current_tree();
+  ikw *W = t ? cw_tree_slot(t, "ik") : NULL;
+  if (!W || !W->refresh_due) return 0;
+  W->refresh_due = false;
+  /* CW_TEST_IK_NO_REFRESH=1: no second solve, as before (gate ik-manual-advance's control) */
+  if (test_switch("CW_TEST_IK_NO_REFRESH")) return 0;
+  CW_PROFILE_SCOPE("anim.ik.refresh");
+  double t0 = now_us();
+  skel *run[256];
+  int nrun = 0;
+  for (int i = 0; i < W->skels.count; i++) {
+    skel *s = W->skels.data[i];
+    if (!s->solved || !s->bound || !s->flushed || !cw_node_valid(s->model)) continue;
+    if (cw__skeleton_bone_root(s->model, NULL) != s->obj || !bones_written(s)) continue;
+    /* what the app left: its bones as the animated pose, its targets where it moved them, the same tick's smoothing
+     * and spring state (each advances once a tick) */
+    collect_mods(s);
+    if (!s->nmods) continue;
+    prepare_skel(W->tree, s, W->dt, W->tick);
+    if (nrun < 256) run[nrun++] = s;
+    else solve_skel(s);
+  }
+  if (nrun) solve_batch(run, nrun, t0, true);
+  return nrun;
 }
 
 static void ikw_free(void *p) {

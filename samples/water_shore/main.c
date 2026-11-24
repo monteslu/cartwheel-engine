@@ -3,7 +3,9 @@
  * meets the shore and on the crests (cartwheel/water.h). A boat and two
  * crates float on the waves. Debug state: tick, bodies.hash, floor.depth
  * (cw_water_floor_depth_at at four fixed points: out in the open,
- * mid slope, near the shore, on land). */
+ * mid slope, near the shore, on land), water.surfaces and water.flat_normal
+ * (surfaces drawn, and drawn with the flat stand-in for a normal map that did
+ * not load: gates water-normal-missing and vfs-gen-resources). */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +20,7 @@
 static uint32_t tick, bodies_hash;
 static float floor_depth[4];
 static float frame_ms;
+static uint32_t surfaces, flat_normal;
 static uint32_t under; /* the frame was drawn from under the water (cw_water_stats.underwater) */ /* the pipeline's GPU ms per frame (0 where the host cannot time it) */
 
 static cw_node node(const char *path) {
@@ -33,6 +36,8 @@ static void init(void *u) {
   cw_debug_f32_array("floor.depth", floor_depth, 4);
   cw_debug_f32("water.gpu_ms", &frame_ms);
   cw_debug_u32("water.under", &under);
+  cw_debug_u32("water.surfaces", &surfaces);
+  cw_debug_u32("water.flat_normal", &flat_normal);
 }
 
 /* WATER_SHORE_OFF=1: the shore and foam features off (the cost's baseline);
@@ -58,6 +63,8 @@ static void render(void *u, double alpha) {
   cw_water_stats st;
   cw_water_get_stats(cw_scene_app_tree(), &st);
   under = (uint32_t)st.underwater;
+  surfaces = (uint32_t)st.surfaces;
+  flat_normal = (uint32_t)st.flat_normal;
 }
 
 static void update(void *u, double dt) {

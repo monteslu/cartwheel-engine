@@ -55,6 +55,7 @@ typedef struct backdrop {
   int cap_size, cap_front, cap_k;
   bool cap_have, cap_fresh;
   int32_t env_captures, env_prewarms;
+  int32_t env_whole; /* captures made whole (six faces in one frame) while shown: none had been kept */
   float env_cpu_ms;
 } backdrop;
 
@@ -307,6 +308,7 @@ static void env_capture(backdrop *d, cw_tree *wt, cw_node camn) {
   int f0 = d->cap_have ? CW_MIN(6, 6 * d->cap_k / spread) : 0, f1 = d->cap_have ? CW_MIN(6, 6 * (d->cap_k + 1) / spread) : 6;
   t3_vec3 at = t3_mat4_get_position(&vc->base.matrix_world);
   render_faces(r, wt, sc, at, vc->near, vc->far, d->cap[back], f0, f1, 0);
+  if (!d->cap_have) d->env_whole++;
   d->cap_k++;
   if (!d->cap_have || d->cap_k >= every) {
     d->cap_front = back;
@@ -422,7 +424,10 @@ static const cw_rt *world_render(backdrop *d, int w, int h, double alpha, bool w
   for (int i = 0; i < keep.n; i++) keep.o[i]->frustum_culled = keep.was[i];
   free(keep.o), free(keep.was);
   for (int i = 0; i < nshown; i++) cw_node_set(shown[i], "visible", cw_val_bool(false));
-  if (!warm && !d->environment) cap_free(d);
+  /* Environment off: the capture is kept (freed with the node, or remade when env_resolution changes), so turning it
+   * on again (at the end of a cross-fade, say) draws only its share of the next capture, as any frame does, instead of
+   * six faces at once. CW_TEST_BACKDROP_ENV_FREE=1 frees it, as before (gate backdrop-env-return's control). */
+  if (!warm && !d->environment && test_flag("CW_TEST_BACKDROP_ENV_FREE")) cap_free(d);
   cw_set_current_tree(prev);
   CW_PROFILE_END();
   if (!warm) {
@@ -887,11 +892,11 @@ static void env_prewarm(cw_pass_ctx *ctx, bd_env *E) {
     cw_set_current_tree(e->world);
     cw_node shown[16];
     int nshown = roots_show(d, shown, (int)CW_ARRAY_LEN(shown)); /* (its hidden root shown, as for its picture) */
-    int32_t caps = d->env_captures;
+    int32_t caps = d->env_captures, whole = d->env_whole;
     d->cap_have = false, d->cap_k = 0; /* (a whole capture: its world as it is now, everything in it drawn) */
     env_capture(d, e->world, e->camera);
     for (int k = 0; k < nshown; k++) cw_node_set(shown[k], "visible", cw_val_bool(false));
-    d->env_captures = caps; /* (env_captures counts the captures made while it is shown) */
+    d->env_captures = caps, d->env_whole = whole; /* (these count the captures made while it is shown) */
     d->env_prewarms++;
     if (d->cap_have) faces = d->cap[d->cap_front], size = d->cap_size;
   }
@@ -1212,6 +1217,11 @@ static void env_captures_get(cw_node n, void *data, cw_value *o) {
   *o = cw_val_int(((backdrop *)data)->env_captures);
 }
 
+static void env_whole_get(cw_node n, void *data, cw_value *o) {
+  (void)n;
+  *o = cw_val_int(((backdrop *)data)->env_whole);
+}
+
 static const cw_prop bd_props[] = {
   CW_PROP_FIELD(backdrop, scene, CW_T_STRING, CW_PROP_DEFAULT, "A .cwscene asset instanced into the world it draws (its own camera, lights, environment, fog)."),
   CW_PROP_FIELD(backdrop, camera, CW_T_STRING, CW_PROP_DEFAULT, "The world's Camera3D it is seen through (a path from the root of its scene, e.g. \"Camera\"); empty: the world's current camera."),
@@ -1223,6 +1233,7 @@ static const cw_prop bd_props[] = {
   CW_PROP_FIELD_RANGE(backdrop, env_resolution, CW_T_INT, 16, 512, "The capture's face size in texels (a power of two: rounded down)."),
   CW_PROP_FIELD_RANGE(backdrop, env_every, CW_T_INT, 1, 600, "Frames a capture's six faces are spread over (1: all six every frame); the lower effects presets spread them wider."),
   CW_PROP_ACCESSOR("env_captures", CW_T_INT, CW_PROP_READONLY, env_captures_get, NULL, "Environment captures finished so far."),
+  CW_PROP_ACCESSOR("env_whole", CW_T_INT, CW_PROP_READONLY, env_whole_get, NULL, "Environment captures made whole (all six faces in one frame) while shown: the first one of a backdrop not prewarmed. Turning environment off and on again keeps the capture and makes none."),
   CW_PROP_END,
 };
 static cw_node_type bd_type = {

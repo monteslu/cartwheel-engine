@@ -350,6 +350,11 @@ static void free_slot(uint64_t id, res_slot *s) {
  * project directory, files written or imported into memory, removal marks),
  * then the assets. */
 static cw_vfs_layer layer_of(const char *path) {
+  /* a generated resource ("gen:/noise?...") is no file in any layer: read_file makes its bytes from the path, so the
+   * project layer never hides it (a write to the memory layer used to make every one read as missing: the project
+   * layer was asked first and has no such file). CW_TEST_VFS_GEN_HIDDEN=1 asks the layers as before (gate
+   * vfs-gen-resources' control). */
+  if (!strncmp(path, "gen:/", 5) && !cw_test_env("CW_TEST_VFS_GEN_HIDDEN")) return CW_VFS_ASSET;
   return cw_vfs_root() || cw_vfs_changed_count() ? cw_vfs_where(path) : CW_VFS_ASSET; /* a plain game: assets only */
 }
 

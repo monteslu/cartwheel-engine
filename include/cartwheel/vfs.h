@@ -18,7 +18,10 @@
  * removed while a lower, read-only layer still has it (a cart's bundle, an
  * asset root that is not the project) is hidden by a REMOVAL mark in the
  * memory layer: it reads as missing, lists as absent and exports as a
- * removal, so the change travels with the archive.
+ * removal, so the change travels with the archive. Generated resources
+ * (res://gen:/noise?..., cartwheel/noise.h) are no files in any layer: the
+ * resource loader makes them from their path, and no write, removal mark or
+ * project directory hides them.
  *
  * Paths are relative, '/'-separated, no "..". */
 #ifndef CW_VFS_H

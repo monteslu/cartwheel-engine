@@ -4,6 +4,58 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.72.0 (2026-11-24)
+
+### Added
+- `cw_skeleton_modifiers_refresh(tree)` (cartwheel/ik.h): solve again, the same tick, every model whose bones were
+  written after the tick's modifier phase. The scene runner calls it after the app's `fixed_update`, so a `MANUAL`
+  AnimationTree or AnimationPlayer advanced there (`cw_animtree_advance`, `cw_anim_player_advance`) gets its
+  look-at, reaches and planted feet in the frame it is drawn. Before, the advance overwrote the modifiers' result: a
+  look-at at 70 degrees drew the head straight ahead, and a game had to advance its tree in a tree hook of its own
+  before the modifier phase, a tick behind its simulation. The refresh starts from the bones the app left and the
+  targets where it moved them; foot placement's easing and SpringBone3D's tails still advance once a tick. A model
+  whose bones the app leaves alone is not solved again. Gates `ik-manual-refresh` (unit_ik: the head drawn 1.2217 rad
+  off the animated head every tick, worst error 0.0005 rad; foot placement refreshed every tick ends bit for bit as
+  without; control `CW_TEST_IK_NO_REFRESH=1`: 0 rad) and `ik-manual-advance` (anim_ik with `IK_MANUAL=1`, the front
+  robot's player advanced in `fixed_update` with a firefly 70 degrees to its side: the least head turn drawn over
+  the run 1.16 rad on GL and WebGPU; control: 0).
+- `cw_water_stats.flat_normal`: Water3D surfaces drawn with a flat normal map because their `normal_map` did not
+  load (or is still loading).
+- Backdrop `env_whole` (read-only): environment captures made whole (six faces in one frame) while shown.
+- Gate option `controlAllowSkipped` (tests/gate.mjs): a control that skips draws on purpose is judged by its state
+  instead of refused.
+
+### Fixed
+- FootPlacement3D flipped a leg round its knee in one tick (an upper leg turning about 120 degrees between two ticks
+  at a run's stop). The two-bone solve took the side the knee bends to from the upper bone's direction off the new
+  hip-to-target line; when the leg was near straight (a high kick, the leg coming back down from it) and the target
+  moved off the animated ankle (ground higher or lower than the model's origin, the pelvis lowered), that side was
+  noise and switched from one tick to the next. `cw_ik_two_bone` without a pole now takes the side from the middle
+  joint's offset off the incoming root-to-end line (the same result when the target is the animated end), and
+  FootPlacement3D bends a leg the animation holds straight to the side it last bent to, kept in the thigh's frame.
+  Gate `foot-high-sweep` (unit_ik: a foot kicked forward and up, the heel drawn to the hip, over ground 0.2 m off the
+  model's origin): the upper leg turns at most 3.5 degrees a tick past the animation, bound 12; control
+  `CW_TEST_IK2_OLD_BEND=1`, the old side: 69 degrees in a tick.
+- A write to the project's memory layer (`cw_vfs_write` of any path, `gen/...` and `world/...` among them) made every
+  generated resource read as missing: `res://gen:/noise?...: not found (pack ...)`, so a Water3D with its default
+  normal map drew nothing. The loader asked the project layers for the generated path, which no layer has; a
+  generated path is now never looked up in a layer. Gate `vfs-gen-resources` (water_shore: two writes through the
+  `vfs` debug request, then a new gen://noise normal map: drawn with it on GL and WebGPU; control
+  `CW_TEST_VFS_GEN_HIDDEN=1`, the old lookup: not found).
+- A Backdrop drawn for even one frame with `environment` off freed its environment capture, so turning environment
+  on again (the end of a cross-fade) made a whole six-face capture that frame on top of the filter. The capture is
+  kept while environment is off (freed with the node, remade when `env_resolution` changes); turning it on draws only
+  its share of the next capture, as any frame does. Measured on the 890M through romdev (samples/backdrop, the stage's
+  environment off for 30 frames and on again): the frame it comes back costs GL 4.7 ms CPU and 11.5 ms GPU (before:
+  7.6 and 11.5; a capture frame around it 1.2 and 10.7 to 11.6), WebGPU 3.8 to 5.4 ms CPU and 8.0 to 10.1 GPU
+  (before: 7.8 and 9.9 to 11.9; a capture frame 6.4 and 9.3). Gate `backdrop-env-return` (no whole capture when it
+  comes back, GL and WebGPU; control `CW_TEST_BACKDROP_ENV_FREE=1`, freed as before: a whole capture each time).
+- A Water3D whose normal map did not load was not drawn at all: its fill hook bound the missing texture as the normal
+  map and as the stand-in for every map a feature that is off does not read (waterFloorMap among them), and three.c
+  skips a draw with a texture unset. It binds a flat normal map in its place now, and says once which map did not
+  load. Gate `water-normal-missing` (water_shore with `normal_map` naming no file: the water drawn, render.skipped 0,
+  on GL and WebGPU; control `CW_TEST_WATER_NO_FLAT_NORMAL=1`: 71 draws skipped).
+
 ## v0.71.2 (2026-11-24)
 
 ### Fixed

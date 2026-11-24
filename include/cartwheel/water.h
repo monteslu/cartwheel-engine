@@ -37,7 +37,9 @@
  *     swell_reflect        how far the swell's own tilt moves the reflection (0)
  *     normal_map           a tangent-space normal map image (empty: a
  *                          seamless gen://noise normal map), scrolled twice
- *                          along the flow (Water2's two-phase flow)
+ *                          along the flow (Water2's two-phase flow); one
+ *                          that does not load (or is still loading) draws
+ *                          as a flat normal map, logged once, never no water
  *     normal_scale         normal map repeats per metre
  *     flow_direction       vec2, the flow without a flow map
  *     flow_speed           how fast the normal maps scroll (Water2's 0.03)
@@ -248,6 +250,7 @@ typedef struct cw_water_stats {
   float see_light;        /* 0..1: the light reaching the last surface drawn, which scales what shows through it (see_through) */
   int sun_light;          /* 1 when the last surface drawn was lit by a scene light (Water3D sun, else the first DirectionalLight3D): no ProceduralSky */
   int hidden;             /* Water3D nodes hidden by themselves or an ancestor: no surface, reflection, refraction, underwater pass or ripples */
+  int flat_normal;        /* Water3D nodes drawn with a flat normal map: their normal_map is still loading or did not load (logged once) */
 } cw_water_stats;
 /* Zeroed when t is NULL or has no water. */
 void cw_water_get_stats(cw_tree *t, cw_water_stats *out);

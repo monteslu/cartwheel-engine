@@ -14486,6 +14486,14 @@
      "stored": false,
      "readonly": true,
      "doc": "Environment captures finished so far."
+    },
+    {
+     "name": "env_whole",
+     "type": "int",
+     "default": "0",
+     "stored": false,
+     "readonly": true,
+     "doc": "Environment captures made whole (all six faces in one frame) while shown: the first one of a backdrop not prewarmed. Turning environment off and on again keeps the capture and makes none."
     }
    ]
   },

@@ -46,7 +46,7 @@ A player holds a library of named clips and plays one at a time, with cross-fade
 
 - `FIXED` (default): advanced in the fixed step. Deterministic; use it for anything gameplay reads.
 - `UPDATE`: advanced once per rendered frame. Smoother for purely cosmetic animation at high refresh rates, but not part of the deterministic state.
-- `MANUAL`: only [cw_anim_player_advance](api:cw_anim_player_advance) moves it.
+- `MANUAL`: only [cw_anim_player_advance](api:cw_anim_player_advance) moves it. Advance it in your app's `fixed_update` (a game that steps its animation with its own simulation, or holds it through a hit stop); skeleton modifiers on the model still adjust that pose the same tick (see [Inverse kinematics](#inverse-kinematics)).
 
 [cw_anim_player_play](api:cw_anim_player_play) starts a clip with a blend time (a negative blend uses the pair's time from [cw_anim_player_set_blend](api:cw_anim_player_set_blend), else `default_blend`). [cw_anim_player_queue](api:cw_anim_player_queue) plays the next clip when a non-looping one finishes. A clip that is fading out keeps advancing but fires no keys. Signals: `animation_started`, `animation_finished`, `animation_changed`, `animation_looped`, `animation_event`.
 
@@ -96,7 +96,7 @@ Each fixed tick the game only sets parameters and asks for travel; the tree does
 
 @include samples/anim_skinned/main.c#params
 
-Note the comment in the sample: the app's `fixed_update` runs after the tree, so input applied there takes effect on the next tick. The sample also snaps stick values to 1/64, because hosts quantize analog axes slightly differently and the gate compares poses exactly.
+Note the comment in the sample: the app's `fixed_update` runs after the tree, so input applied there takes effect on the next tick. A game that wants the tree stepped by its own simulation instead sets the tree's `process` to `MANUAL` and calls [cw_animtree_advance](api:cw_animtree_advance) in its `fixed_update`; the model's skeleton modifiers still adjust that pose in the same tick ([Inverse kinematics](#inverse-kinematics)). The sample also snaps stick values to 1/64, because hosts quantize analog axes slightly differently and the gate compares poses exactly.
 
 ### Blend graphs in scene files
 
@@ -263,15 +263,25 @@ Modifiers are nodes, children of the Node3D that holds a skinned model (or of it
 3. Each active modifier adjusts the pose the previous one left.
 4. The pose is written back to the bones once, and the skin draws from it.
 
-Every tick starts again from the animated pose, never from the last tick's solution. A bone the animation does not write (a static model, a bone no track drives) gets its last animated value back first, so results never pile up. A bone that game code or an `UPDATE`-mode player writes keeps that value as its animated value. Your app's `fixed_update` runs after the modifiers, so a target it moves applies on the next tick.
+Every tick starts again from the animated pose, never from the last tick's solution. A bone the animation does not write (a static model, a bone no track drives) gets its last animated value back first, so results never pile up. A bone that game code or an `UPDATE`-mode player writes keeps that value as its animated value.
+
+Your app's `fixed_update` runs after the modifiers. When it writes a model's bones there, most often by advancing a `MANUAL` AnimationTree or AnimationPlayer ([cw_animtree_advance](api:cw_animtree_advance), [cw_anim_player_advance](api:cw_anim_player_advance)) or by posing bones from code, the scene runner solves that model's modifiers again right after your `fixed_update`, the same tick ([cw_skeleton_modifiers_refresh](api:cw_skeleton_modifiers_refresh)). They start from the pose you left and from their targets where you moved them, so a manual advance gets its look-at, reaches and planted feet in the frame it is drawn, with no tick of lag and no hook of your own. Foot placement's easing and SpringBone3D's tails advance once a tick however often a model solves in it. A model whose bones you do not write in `fixed_update` is not solved again: a target you move there applies on the next tick. An app that runs [cw_tree_fixed_update](api:cw_tree_fixed_update) itself calls [cw_skeleton_modifiers_refresh](api:cw_skeleton_modifiers_refresh) after its own tick code.
+
+```c
+static void fixed_update(void *u, double dt) {
+  cw_animtree_set_param(hero_tree, "speed", speed);
+  cw_animtree_advance(hero_tree, hitstop ? 0 : dt);   /* a MANUAL tree, stepped by the game */
+  /* the look-at and the feet on this model adjust the advanced pose this tick, before it is drawn */
+}
+```
 
 | Node | What it does |
 |---|---|
-| [TwoBoneIK3D](node:TwoBoneIK3D) | an arm or a leg (`root_bone`, `middle_bone`, `end_bone`) reaches a `target`. The middle joint bends toward a `pole` (`use_pole`), or keeps the animation's own bend plane. `soften` eases the last stretch so a straight limb does not snap. `use_target_rotation` gives the hand or foot the target's rotation (grip a handle, hold a wheel). `reached` reports whether the target was in reach |
+| [TwoBoneIK3D](node:TwoBoneIK3D) | an arm or a leg (`root_bone`, `middle_bone`, `end_bone`) reaches a `target`. The middle joint bends toward a `pole` (`use_pole`), or to the side the animation bends it (its offset from the line from the root to the end bone), so a target moving across the upper bone never flips the joint round. `soften` eases the last stretch so a straight limb does not snap. `use_target_rotation` gives the hand or foot the target's rotation (grip a handle, hold a wheel). `reached` reports whether the target was in reach |
 | [LookAtModifier3D](node:LookAtModifier3D) | turns a `bone` toward a target by the shortest rotation, at most `limit_angle` from where the animation points it. `forward_axis` is the way the bone faces at rest, in model space (`(0, 0, 1)` for a glTF character's head). Chain two, a neck at `influence = 0.4` and then the head, to spread the turn |
 | [CCDIK3D](node:CCDIK3D) | cyclic coordinate descent from `end_bone` up to `root_bone`, the same algorithm and limits as three.js r187's `CCDIKSolver`. Per-joint limits come from [cw_ccdik3d_set_joint](api:cw_ccdik3d_set_joint) |
 | [FABRIK3D](node:FABRIK3D) | FABRIK over a chain (tails, spines, cables), with cone and hinge limits per joint ([cw_fabrik3d_set_joint](api:cw_fabrik3d_set_joint)) |
-| [FootPlacement3D](node:FootPlacement3D) | plants feet on the physics ground. Each leg casts a ray down through its animated ankle, the ankle is lifted or lowered by the ground's height (keeping the animation's own swing), the pelvis drops when a foot has to reach down, each leg is solved as two-bone IK, and the foot turns onto the ground normal while it is near the ground |
+| [FootPlacement3D](node:FootPlacement3D) | plants feet on the physics ground. Each leg casts a ray down through its animated ankle, the ankle is lifted or lowered by the ground's height (keeping the animation's own swing), the pelvis drops when a foot has to reach down, each leg is solved as two-bone IK (the knee bends to the side the animation bends it; a leg the animation holds straight bends to the side it last bent to, so a high or straight leg never flips round), and the foot turns onto the ground normal while it is near the ground |
 | [SpringBone3D](node:SpringBone3D) | secondary motion: hair, braids, ponytails, beards, tails, coat tails and robe panels lag behind the body, sway and settle back to the animated pose, kept out of the body by spheres and capsules on its bones (below) |
 
 "Rest" (a look-at's `forward_axis` and `offset`, a spring collision shape's offsets) is the skin's bind pose, read from its inverse bind matrices, not whatever the bones hold when the modifiers first run: a game can build a model, its AnimationTree and its modifiers and advance the tree in the same tick.
@@ -378,11 +388,13 @@ There is no GPU cost: modifiers only change bone transforms the skin already rea
 The gates compare solver results against three.js r187. They plant the robot's feet on the stairs: the ankle's height above the ground under it must match its animated height above flat ground, within 1 cm through every stance (worst 3.8 mm). They keep the hand within 1 mm of the handle (0.1 mm), and they compare pose hashes across hosts and worker counts:
 
 ```sh
-node tests/gate.mjs unit-ik anim-ik
+node tests/gate.mjs unit-ik anim-ik ik-manual-refresh ik-manual-advance foot-high-sweep
 node tests/ik-determinism.mjs
 ```
 
 `unit-ik` checks the solvers (reach accuracy, the pole plane, limits, FABRIK constraints) and compares CCD against three.js r187 run in Node (`tools/gen-ccdik-fixture.mjs` writes the reference). It also runs the nodes in a tree (no accumulation across ticks, influence, foot placement on Box3D ground, a 12-rig crowd through the job pool).
+
+`ik-manual-refresh` and `ik-manual-advance` hold the same-tick solve of a manual advance: in `unit_ik` a look-at 70 degrees to the side turns the head drawn each tick by 1.2217 rad off the animated head (worst error 0.0005 rad), and foot placement refreshed every tick ends bit for bit as without a refresh; in `anim_ik` with `IK_MANUAL=1` the front robot's player is `MANUAL`, advanced in the app's `fixed_update`, and the head drawn every frame turns toward a firefly held 70 degrees to its side, on GL and WebGPU. Their control, `CW_TEST_IK_NO_REFRESH=1`, draws the advanced pose without the modifiers: 0 rad. `foot-high-sweep` swings a leg through a high kick with the leg near straight, a heel drawn up to the hip and back, over ground off the model's origin: the upper leg never turns more than 12 degrees a tick past the animation (3.5 at most); its control, `CW_TEST_IK2_OLD_BEND=1` (the bend side from the thigh's direction off the new reach line, as before 0.72.0), flips the knee 69 degrees in a tick.
 
 The debug command `ik <model path>` lists a model's modifiers with their last results (`reached`, `in_limit`, foot offsets, pelvis offset), the pose hash and the microseconds the last tick took.
 

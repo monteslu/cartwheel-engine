@@ -134,6 +134,9 @@ extern "C" {
  *   env_resolution (int, 128)   the capture's face size in texels (16 to 512, a power of two)
  *   env_every (int, 4)          frames a capture's six faces are spread over (1: all six every frame)
  *   env_captures (int, read-only) environment captures finished so far
+ *   env_whole (int, read-only)  captures made whole (six faces in one frame)
+ *                               while shown; environment turned off keeps
+ *                               the capture, so turning it on makes none
  * At most CW_BACKDROP_MAX backdrops with an opacity above 0 are drawn in a
  * frame (the first by order; the rest are skipped, logged once). */
 #define CW_BACKDROP_MAX 8

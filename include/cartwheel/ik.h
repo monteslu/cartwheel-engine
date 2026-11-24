@@ -18,8 +18,16 @@
  * model, a bone no track drives) gets its last animated value back before
  * the modifiers run, so solutions never accumulate. A bone written by
  * anything else after the last flush (a player in UPDATE mode, game code)
- * keeps that value as its animated value. The app's own fixed_update runs
- * after the modifiers: targets it moves apply on the next tick.
+ * keeps that value as its animated value.
+ *   5. The app's own fixed_update runs after the modifiers. A model whose
+ *      bones it writes there (cw_animtree_advance or cw_anim_player_advance
+ *      of a MANUAL tree or player, bones posed by code) is solved again
+ *      right after it, the same tick (cw_skeleton_modifiers_refresh, which
+ *      the scene runner calls): the modifiers adjust the pose the app left,
+ *      with its targets where it moved them. Foot placement's easing and
+ *      SpringBone3D's tails advance once a tick however often a model
+ *      solves in it. A model whose bones the app leaves alone is not solved
+ *      again: targets moved there apply on the next tick.
  * SpringBone3D is the one modifier with state of its own: its simulated
  * tails carry over from tick to tick (that is the lag), but it too starts
  * each tick from the animated pose and pulls its chains back toward it.
@@ -348,6 +356,17 @@ t3_vec3 cw_skeleton_bone_world(cw_node model, const char *bone);
 /* Microseconds the modifier phase spent on the model's last tick (a
  * profiling figure from the host clock: never feed it into game state). */
 float cw_skeleton_last_us(cw_node model);
+/* Solve again, this tick, every model of `tree` (NULL: the current tree) whose
+ * bones were written since this tick's modifier phase: an AnimationTree or
+ * AnimationPlayer advanced by hand after the phase, bones posed by code.
+ * Each starts from the bones as they are now (its new animated pose) and
+ * its targets as they are now; foot placement and spring bones do not
+ * advance a second time. Returns the models solved. The scene runner
+ * (cw_scene_app) calls it after the app's fixed_update, so a MANUAL tree
+ * advanced there gets its look-at, reaches and feet the same tick; an app
+ * that runs cw_tree_fixed_update itself calls it after its own tick code.
+ * Once per phase: a second call before the next phase does nothing. */
+int cw_skeleton_modifiers_refresh(cw_tree *tree);
 
 /* Per-joint limits for CCDIK3D: joint 0 is the link nearest the end bone
  * (r187 link order). Stored on the node (not in scene files). */

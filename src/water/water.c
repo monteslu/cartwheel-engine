@@ -711,6 +711,7 @@ static void water_destroy(cw_node n, void *data) {
   cw_free(d->mask);
   if (d->mask_tex) t3_release(d->mask_tex);
   if (d->mask_white) t3_release(d->mask_white);
+  if (d->flat_normal) t3_release(d->flat_normal);
   memset(&d->mesh, 0, sizeof *d - offsetof(water3d, mesh));
 }
 
@@ -722,6 +723,7 @@ static void textures(water3d *d) {
     cw_res_release(d->normal_res);
     d->normal_res = cw_res_load(nm, CW_RES_TEXTURE);
     d->loaded_normal = nm;
+    d->normal_warned = false;
   }
   if (!d->caus_tex) {
     /* the caustic tile (caustics.c) as RGBA8, repeating, mipmapped */
@@ -738,6 +740,25 @@ static void textures(water3d *d) {
     d->caus_tex->min_filter = T3_LINEAR_MIPMAP_LINEAR;
     d->caus_tex->generate_mipmaps = true;
     d->caus_tex->version++;
+  }
+  /* The normal map the draw samples: a map that did not load (a missing file, a generated one a project layer hid) or
+   * is still loading draws as a flat normal map instead of leaving waterNormal (and the maps it stands in for) unset,
+   * which three.c answers by skipping the whole surface. Said once per node when the map failed.
+   * CW_TEST_WATER_NO_FLAT_NORMAL=1 binds nothing in its place, as before (gate water-normal-missing's control). */
+  d->normal_flat = !cw_res_texture(d->normal_res) && !cw_test_env("CW_TEST_WATER_NO_FLAT_NORMAL");
+  if (d->normal_flat && !d->flat_normal) {
+    uint8_t px[4 * 4 * 4];
+    for (int k = 0; k < 16; k++) px[k * 4] = 128, px[k * 4 + 1] = 128, px[k * 4 + 2] = 255, px[k * 4 + 3] = 128;
+    d->flat_normal = t3_data_texture_new(4, 4, px);
+    d->flat_normal->wrap_s = d->flat_normal->wrap_t = T3_REPEAT;
+    d->flat_normal->mag_filter = T3_LINEAR;
+    d->flat_normal->min_filter = T3_LINEAR_MIPMAP_LINEAR;
+    d->flat_normal->generate_mipmaps = true;
+    d->flat_normal->version++;
+  }
+  if (d->normal_flat && !d->normal_warned && cw_res_get_state(d->normal_res) == CW_RES_STATE_FAILED) {
+    d->normal_warned = true;
+    cw_warn("Water3D: normal_map '%s' did not load (the log above says why): the water draws with a flat normal map", nm);
   }
   const char *fm = d->flow_map && *d->flow_map ? d->flow_map : NULL;
   if (fm != d->loaded_flow) {
@@ -1089,6 +1110,7 @@ static void fill(t3_extension_ctx *c, void *user) {
   /* every texture the program declares is bound in every state (a draw with one unset is skipped): the
    * normal map stands in for maps a feature that is off never reads */
   t3_texture *nm0 = cw_res_texture(d->normal_res);
+  if (!nm0 && d->normal_flat) nm0 = d->flat_normal;
   t3_extension_set_texture(c, "waterFloorMap", d->floor_tex ? d->floor_tex : nm0);
   t3_extension_set_uniform(c, "waterSun", d->sun, 4);
   t3_extension_set_uniform(c, "waterSunCol", d->sun_col, 4);
@@ -1100,7 +1122,7 @@ static void fill(t3_extension_ctx *c, void *user) {
     t3_extension_set_uniform(c, "waterRippleRect", v, 4);
     t3_extension_set_texture(c, "waterRippleMap", on ? d->rip_tex : nm0);
   }
-  t3_texture *nm = cw_res_texture(d->normal_res);
+  t3_texture *nm = nm0;
   t3_extension_set_texture(c, "waterNormal", nm);
   t3_extension_set_texture(c, "waterFlowMap", flow ? flow : nm);
   if (d->refl) t3_extension_set_texture(c, "waterReflection", d->refl->texture);
@@ -1160,6 +1182,7 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
   int tri = 0;
   wt->stats.surfaces = 0;
   wt->stats.hidden = 0;
+  wt->stats.flat_normal = 0;
   t3_object_update_matrix_world(ctx->camera, true);
   for (int i = 0; i < wt->nodes.count; i++) {
     cw_node n = wt->nodes.data[i];
@@ -1277,6 +1300,7 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     d->mat->env_map_intensity = d->refl_on || d->cam_under ? 0.0f : 1.0f;
     tri += d->triangles;
     wt->stats.surfaces++;
+    if (d->normal_flat) wt->stats.flat_normal++;
     wt->stats.see_light = d->see_light;
     wt->stats.sun_light = d->lit_by_light;
     /* one-pass split screen: this view's camera values kept for the draws (its planar reflection and refraction are

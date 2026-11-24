@@ -37,7 +37,7 @@ The noise code uses only additions, multiplications, divisions, integer hashing 
 
 ## Noise textures
 
-`gen://noise?...` is a texture resource made on the fly. Load it like any image, by path; the path is the cache key, so the same path is generated once and shared:
+`gen://noise?...` is a texture resource made on the fly. Load it like any image, by path; the path is the cache key, so the same path is generated once and shared. It is no file: a project layer (files a game or the editor writes with [cw_vfs_write](api:cw_vfs_write), a project directory) never hides it (gate `vfs-gen-resources`):
 
 ```c
 cw_res clouds = cw_res_load("gen://noise?size=512&fractal=fbm&octaves=6&freq=0.004&seamless=1", CW_RES_TEXTURE);

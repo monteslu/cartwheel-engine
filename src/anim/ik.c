@@ -368,6 +368,11 @@ static void aim_dir(cw_pose *p, int i, t3_vec3 from_dir, t3_vec3 to_dir) {
 
 static t3_quat local_rot_of(const cw_pose *p, int i) { return p->rot[i]; }
 
+/* CW_TEST_IK2_OLD_BEND (a gate's control), set by the modifier phase from cw_test_env (ik_nodes.c: this file is in
+ * the tools' core too, which has no frame clock) */
+bool cw__ik2_old_bend;
+static bool ik2_old_bend(void) { return cw__ik2_old_bend; }
+
 bool cw_ik_two_bone(cw_pose *p, int a, int b, int c, t3_vec3 target, const cw_ik2_opts *o) {
   cw_ik2_opts def = CW_IK2_OPTS_DEFAULT;
   if (!o) o = &def;
@@ -395,8 +400,23 @@ bool cw_ik_two_bone(cw_pose *p, int a, int b, int c, t3_vec3 target, const cw_ik
   float eps = maxr * 1e-6f;
   if (d > maxr - eps) d = maxr - eps;
   if (d < minr + eps) d = minr + eps;
-  /* the bend plane: the pole, else the incoming middle joint */
-  t3_vec3 pole = o->use_pole ? vsub(o->pole, pa) : vsub(pb, pa);
+  /* the bend plane: the pole, else the side the incoming middle joint bends to. That side is the middle joint's
+   * offset from the incoming a-to-c line, not the upper bone's direction off the new reach line: a target that moves
+   * across the upper bone (a high foot pulled toward or above the hip, a leg nearly straight) would otherwise turn
+   * the bend to the other side of the line, the joint flipping round in one tick (120 degrees, a run's stop).
+   * CW_TEST_IK2_OLD_BEND=1: the upper bone's direction, as before (gate foot-high-sweep's control). */
+  t3_vec3 pole;
+  if (o->use_pole) pole = vsub(o->pole, pa);
+  else {
+    pole = vsub(pb, pa);
+    t3_vec3 ac = vsub(pc, pa);
+    float acl = vdot(ac, ac);
+    if (acl > 1e-12f && !ik2_old_bend()) {
+      t3_vec3 bend = vsub(pole, vmul(ac, vdot(pole, ac) / acl));
+      /* (a chain bent by more than about half a degree: below that the side is noise, the old choice stands) */
+      if (vdot(bend, bend) > lab * lab * 1e-4f) pole = bend;
+    }
+  }
   t3_vec3 v = vsub(pole, vmul(u, vdot(pole, u)));
   if (vdot(v, v) < 1e-12f) {
     /* pole on the reach line: the incoming bend, then any perpendicular */

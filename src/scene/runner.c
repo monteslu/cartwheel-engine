@@ -7,6 +7,7 @@
 #include "scene_internal.h"
 #include "cartwheel/debug.h"
 #include "cartwheel/gl.h"
+#include "cartwheel/ik.h"
 #include "cartwheel/look.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/platform.h"
@@ -133,7 +134,11 @@ static void r_fixed(void *u, double dt) {
   (void)u;
   cw_tree_fixed_update(run.tree, dt);
   /* the app callback is game simulation too: it pauses with the tree */
-  if (run.base.fixed_update && !cw_tree_paused(run.tree)) run.base.fixed_update(run.base.user, dt);
+  if (run.base.fixed_update && !cw_tree_paused(run.tree)) {
+    run.base.fixed_update(run.base.user, dt);
+    /* bones the app wrote (a MANUAL AnimationTree advanced here): the skeleton modifiers solve them this tick */
+    cw_skeleton_modifiers_refresh(run.tree);
+  }
   run.tick = (uint32_t)cw_tree_tick(run.tree);
 }
 

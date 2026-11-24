@@ -33,6 +33,7 @@
  * BD_ENV=0    environment off on both backdrops and ssr_backdrop off (the
  *             frame is the one an engine without either draws); BD_ENV=2 only
  *             environment off
+ * BD_ENV_OFF=<n> the stage's environment off at frame n, on again 30 frames later, every 60
  * BD_HIDELANE=1  the mirror modes without the lane
  * BD_SSR=0    ssr_backdrop off, BD_SSR=2 ssr off       BD_EVERY=<n>  env_every on both
  * BD_MSAA=1   the scene multisampled (4x)        BD_PREPASS=1  the scene's depth prepass on
@@ -45,7 +46,8 @@
  * stage's volumetric fog: built, and its lights with shadow tiles), and the
  * opacities (bd.stage_op, bd.sea_op x 1000), bd.env_ran / bd.ssrc_ran (the
  * scene's "backdrop_env" and "backdrop_ssr" passes ran last frame),
- * bd.stage_caps / bd.sea_caps (environment captures finished), and bd.gpu_ms
+ * bd.stage_caps / bd.sea_caps (environment captures finished), bd.stage_whole
+ * (the stage's captures made whole while shown), and bd.gpu_ms
  * (with CW_GPU_TIMERS=1: the GPU ms of the scene's pipeline, the stage's and
  * the sea's, of the backdrop blend pass, of the environment pass (the faces
  * captured this frame, the blend and the filter), of the reflections'
@@ -65,7 +67,7 @@
 static cw_node game, stage, sea, notes[3], spots[3];
 static float clock_s;
 static int32_t mode, stage_renders, sea_renders, pass_ran, world_passes, fog_active, fog_shadowed, stage_op, sea_op;
-static int32_t env_ran, ssrc_ran, stage_caps, sea_caps;
+static int32_t env_ran, ssrc_ran, stage_caps, sea_caps, stage_whole;
 static bool applied;
 static float gpu_ms[7]; /* GPU ms of the scene's pipeline, the stage's, the sea's, and the backdrop pass (CW_GPU_TIMERS=1, native) */
 static int32_t base_renders[2], last_renders[2];
@@ -98,6 +100,7 @@ static void init(void *u) {
   cw_debug_i32("bd.ssrc_ran", &ssrc_ran);
   cw_debug_i32("bd.stage_caps", &stage_caps);
   cw_debug_i32("bd.sea_caps", &sea_caps);
+  cw_debug_i32("bd.stage_whole", &stage_whole);
   cw_debug_f32_array("bd.gpu_ms", gpu_ms, 7); /* host timers: never compared */
 }
 
@@ -256,6 +259,18 @@ static void fixed(void *u, double dt) {
     cw_backdrop_set_opacity(sea, smooth01(k));
   }
   /* #endregion */
+  /* BD_ENV_OFF=<n> (gate backdrop-env-return): the stage's environment off from frame n for 30 frames, then on again,
+   * and the same every 60 frames */
+  {
+    static int frame_n, off_at = -1;
+    frame_n++;
+    if (off_at < 0 && frame_n >= 2) {
+      const char *o = cw_test_env("BD_ENV_OFF");
+      off_at = o ? atoi(o) : 0;
+    }
+    int ph = off_at > 0 && frame_n >= off_at ? (frame_n - off_at) % 60 : -1; /* (and again every 60 frames) */
+    if (cw_node_valid(stage) && (ph == 0 || ph == 30)) cw_node_set(stage, "environment", cw_val_bool(ph == 30));
+  }
   /* pictures since the test switch took effect (frame 1 draws the scene file's opacities) */
   stage_renders = cw_backdrop_renders(stage) - base_renders[0];
   sea_renders = cw_backdrop_renders(sea) - base_renders[1];
@@ -273,6 +288,7 @@ static void fixed(void *u, double dt) {
   cw_value cv;
   stage_caps = cw_node_valid(stage) && cw_node_get_prop(stage, "env_captures", &cv) ? cv.i : 0;
   sea_caps = cw_node_valid(sea) && cw_node_get_prop(sea, "env_captures", &cv) ? cv.i : 0;
+  stage_whole = cw_node_valid(stage) && cw_node_get_prop(stage, "env_whole", &cv) ? cv.i : 0;
   world_passes = 0;
   cw_node both[2] = { stage, sea };
   for (int i = 0; i < 2; i++) {

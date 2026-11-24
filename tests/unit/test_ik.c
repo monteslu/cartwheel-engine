@@ -673,5 +673,169 @@ static void test_bind_rest(void) {
   cw_tree_free(t);
 }
 
+/* ── a manual advance in the app's fixed_update: the modifiers solve it the same tick ─────────────── */
+
+/* the rotation between two quaternions (radians) */
+static float qangle(t3_quat a, t3_quat b) {
+  float c = fabsf(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+  return 2 * cw_acos(c > 1 ? 1 : c);
+}
+
+/* The scene runner's order: the tree's fixed tick (nodes, physics, the modifier phase), then the app's fixed_update,
+ * which advances a MANUAL animation (here: writes the head's animated rotation), then cw_skeleton_modifiers_refresh.
+ * A look-at 70 degrees to the side turns the head drawn that tick by 70 degrees off the animated head. Control:
+ * CW_TEST_IK_NO_REFRESH=1, the head drawn as the app left it: 0. */
+static void test_manual_refresh(void) {
+  cw_tree *t = cw_tree_new();
+  cw_node model = add(cw_tree_root(t), "Node3D", "Model");
+  t3_object *head;
+  t3_object *rig = make_skinned_head(&head);
+  cw_node3d_set_object(model, rig);
+  t3_release(rig);
+  cw_node look = add(model, "LookAtModifier3D", "Look");
+  cw_node_set(look, "bone", cw_val_string("Head"));
+  cw_node_set(look, "forward_axis", cw_val_vec3(0, 0, 1));
+  /* the head at (0, 1.65, 0): the target 70 degrees to its left, level */
+  float s70, c70;
+  cw_sincos(1.2217305f, &s70, &c70);
+  cw_node_set(look, "target_position", cw_val_vec3(3 * s70, 1.65f, 3 * c70));
+  float worst = 10, worst_err = 0;
+  int solved = 0;
+  for (int k = 0; k < 30; k++) {
+    cw_tree_fixed_update(t, DT);
+    /* the app's fixed_update: the animation steps (a small nod that changes every tick) */
+    t3_quat anim = cw_quat_axis_angle_det(v3(1, 0, 0), 0.05f * cw_sin(0.2f * (float)k));
+    t3_object_set_quaternion(head, anim);
+    solved += cw_skeleton_modifiers_refresh(t);
+    CHECK_EQ_INT(cw_skeleton_modifiers_refresh(t), 0); /* once a phase */
+    float turn = qangle(head->quaternion, anim); /* what is drawn against what the animation gave */
+    if (turn < worst) worst = turn;
+    float e = fabsf(turn - 1.2217305f);
+    if (k > 0 && e > worst_err) worst_err = e;
+  }
+  cw_info("manual refresh: the head drawn turns %.4f rad (least over 30 ticks) off the animated head, worst error "
+          "%.5f against 70 deg, %d refreshes", worst, worst_err, solved);
+  CHECK(worst > 1.1f); /* (control CW_TEST_IK_NO_REFRESH=1: 0, this fails) */
+  CHECK(worst_err < 0.06f);
+  CHECK_EQ_INT(solved, 30);
+  /* a tick where the app writes nothing: no second solve */
+  cw_tree_fixed_update(t, DT);
+  CHECK_EQ_INT(cw_skeleton_modifiers_refresh(t), 0);
+  FOLD(worst);
+  cw_tree_free(t);
+}
+
+/* Foot placement eases once a tick however often a model solves in it: a tree whose app rewrites the animated pose
+ * after every phase (a refresh each tick) ends with the same legs, bit for bit, as one that never refreshes. */
+static void foot_run(bool rewrite, t3_quat *out, float *pel) {
+  cw_tree *t = cw_tree_new();
+  cw_node root = cw_tree_root(t);
+  cw_node floor = add(root, "StaticBody3D", "Floor");
+  cw_node fs = add(floor, "CollisionShape3D", "Shape");
+  cw_node_set(fs, "size", cw_val_vec3(10, 1, 10));
+  cw_node3d_set_position(floor, v3(0, -0.5f, 0));
+  cw_node step = add(root, "StaticBody3D", "Step");
+  cw_node ss = add(step, "CollisionShape3D", "Shape");
+  cw_node_set(ss, "size", cw_val_vec3(1, 0.2f, 2));
+  cw_node3d_set_position(step, v3(0.6f, 0.1f, 0));
+  cw_node model = add(root, "Node3D", "Model");
+  cw_node3d_set_position(model, v3(0, 0.12f, 0));
+  t3_object *rig = make_rig();
+  cw_node3d_set_object(model, rig);
+  t3_release(rig);
+  cw_node feet = add(model, "FootPlacement3D", "Feet");
+  cw_node_set(feet, "legs", cw_val_string("UpL,LoL,AnkL;UpR,LoR,AnkR"));
+  cw_node_set(feet, "pelvis", cw_val_string("Hips"));
+  cw_node_set(feet, "foot_height", cw_val_float(0.02f));
+  cw_node_set(feet, "blend_speed", cw_val_float(6));
+  t3_object *bones[2] = { t3_object_get_by_name(rig, "LoL"), t3_object_get_by_name(rig, "LoR") };
+  for (int k = 0; k < 20; k++) {
+    /* the animation: the knees bend a little more each tick (written before the phase, as a FIXED player does) */
+    for (int b = 0; b < 2; b++) t3_object_set_quaternion(bones[b], cw_quat_axis_angle_det(v3(1, 0, 0), 0.2f + 0.01f * (float)k));
+    cw_tree_fixed_update(t, DT);
+    if (rewrite) {
+      for (int b = 0; b < 2; b++) t3_object_set_quaternion(bones[b], cw_quat_axis_angle_det(v3(1, 0, 0), 0.2f + 0.01f * (float)k));
+      cw_skeleton_modifiers_refresh(t);
+    }
+  }
+  static const char *const names[4] = { "UpL", "LoL", "UpR", "LoR" };
+  for (int i = 0; i < 4; i++) out[i] = t3_object_get_by_name(rig, names[i])->quaternion;
+  *pel = cw_foot_placement_pelvis_offset(feet);
+  cw_tree_free(t);
+}
+static void test_refresh_once_a_tick(void) {
+  t3_quat a[4], b[4];
+  float pa, pb;
+  foot_run(false, a, &pa);
+  foot_run(true, b, &pb);
+  CHECK(pa < -0.01f);
+  CHECK(!memcmp(&pa, &pb, sizeof pa));
+  CHECK(!memcmp(a, b, sizeof a));
+}
+
+/* ── a high foot never flips the leg round ─────────────────────────────
+ * The right leg's animation sweeps the foot high: a kick forward and up with the leg near straight, then the heel
+ * drawn up behind to the hip's height with the knee folded, then down, over ground 0.2 m higher than the model's
+ * origin under one foot (so the targets move off the animated ankles and the pelvis drops). Each tick the upper
+ * leg's drawn rotation may move at most 12 degrees more than the animation moved it. Control:
+ * CW_TEST_IK2_OLD_BEND=1, the bend side from the upper bone's direction off the new reach line: the knee flips. */
+static void test_foot_high_sweep(void) {
+  cw_tree *t = cw_tree_new();
+  cw_node root = cw_tree_root(t);
+  cw_node floor = add(root, "StaticBody3D", "Floor");
+  cw_node fs = add(floor, "CollisionShape3D", "Shape");
+  cw_node_set(fs, "size", cw_val_vec3(10, 1, 10));
+  cw_node3d_set_position(floor, v3(0, -0.5f, 0));
+  cw_node step = add(root, "StaticBody3D", "Step");
+  cw_node ss = add(step, "CollisionShape3D", "Shape");
+  cw_node_set(ss, "size", cw_val_vec3(1, 0.4f, 4));
+  cw_node3d_set_position(step, v3(-0.6f, 0.0f, 0));
+  cw_node model = add(root, "Node3D", "Model");
+  cw_node3d_set_position(model, v3(0, 0.25f, 0));
+  t3_object *rig = make_rig();
+  cw_node3d_set_object(model, rig);
+  t3_release(rig);
+  cw_node feet = add(model, "FootPlacement3D", "Feet");
+  cw_node_set(feet, "legs", cw_val_string("UpL,LoL,AnkL;UpR,LoR,AnkR"));
+  cw_node_set(feet, "pelvis", cw_val_string("Hips"));
+  cw_node_set(feet, "foot_height", cw_val_float(0.03f));
+  cw_node_set(feet, "max_step_down", cw_val_float(0.6f));
+  cw_node_set(feet, "ray_up", cw_val_float(0.6f));
+  cw_node_set(feet, "blend_speed", cw_val_float(4));
+  t3_object *up = t3_object_get_by_name(rig, "UpR"), *lo = t3_object_get_by_name(rig, "LoR");
+  const int N = 360;
+  float worst = 0, worst_at = 0;
+  t3_quat prev_drawn = { 0, 0, 0, 1 }, prev_anim = { 0, 0, 0, 1 };
+  for (int k = 0; k < N; k++) {
+    /* the thigh's angle about x (pi - 0.1: down, the knee forward; less: forward and up) and the knee's bend */
+    float u = (float)k / (float)(N - 1), th, kn;
+    if (u < 0.33f) { float w = cw_sin(3.14159265f * u / 0.33f); th = 3.04159f - 1.9f * w; kn = 0.02f + 0.03f * w; }
+    else if (u < 0.66f) { float w = cw_sin(3.14159265f * (u - 0.33f) / 0.33f); th = 3.04159f - 0.5f * w; kn = 0.02f + 2.7f * w; }
+    else { float w = cw_sin(3.14159265f * (u - 0.66f) / 0.34f); th = 3.04159f + 0.6f * w; kn = 0.02f + 2.2f * w; }
+    t3_quat qa = cw_quat_axis_angle_det(v3(1, 0, 0), th);
+    t3_object_set_quaternion(up, qa);
+    t3_object_set_quaternion(lo, cw_quat_axis_angle_det(v3(1, 0, 0), kn));
+    cw_tree_fixed_update(t, DT);
+    t3_quat qd = up->quaternion;
+    if (k > 3) {
+      float jump = qangle(qd, prev_drawn) - qangle(qa, prev_anim);
+      if (jump > worst) worst = jump, worst_at = u;
+    }
+    prev_drawn = qd, prev_anim = qa;
+  }
+  cw_info("foot high sweep: the upper leg turns at most %.2f deg a tick past the animation (at %.2f of the sweep)",
+          worst * 57.29578f, worst_at);
+  CHECK(worst < 0.2094f); /* 12 degrees (control CW_TEST_IK2_OLD_BEND=1: the knee flips, this fails) */
+  FOLD(worst);
+  cw_tree_free(t);
+}
+
+/* the cases a gate's control switch reaches (cw_test_env: frame 2 in a cart) */
+void cw_test_late(void) {
+  test_manual_refresh();
+  test_refresh_once_a_tick();
+  test_foot_high_sweep();
+}
+
 CW_TEST_SUITE("ik", { "crowd", test_crowd }, { "spring", test_spring }, { "bind_rest", test_bind_rest }, { "pose", test_pose }, { "two_bone", test_two_bone }, { "aim", test_aim }, { "ccd_r186", test_ccd_r186 },
               { "fabrik", test_fabrik }, { "nodes", test_nodes }, { "foot_placement", test_foot_placement })
