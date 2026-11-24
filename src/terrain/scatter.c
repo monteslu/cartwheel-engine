@@ -78,7 +78,7 @@ cw_scatter_def cw_scatter_default_def(void) {
 
 static bool foliage_wanted(const cw_scatter_def *d) {
   return d->wind.strength > 0 || d->smooth_alpha || d->two_sided_lighting || d->fade_mode == CW_SCATTER_FADE_DITHER ||
-         d->root_from_terrain;
+         d->root_from_terrain || d->bend > 0 || d->shadow_at_root;
 }
 
 static uint32_t mix32(uint32_t h) {
@@ -338,6 +338,9 @@ int cw_terrain_scatter_add(cw_terrain *t, const cw_scatter_def *def) {
       fd.root_color = d->root_from_terrain;
       fd.root_height = d->root_height;
       fd.tip_jitter = d->root_from_terrain ? d->tint_jitter : 0;
+      fd.bend = d->bend;
+      fd.shadow_at_root = d->shadow_at_root;
+      fd.shadow_soften = d->shadow_soften;
       if (dither) {
         if (l > 0) fd.fade_in_from = d->lod_distance[l - 1] - hw, fd.fade_in_to = d->lod_distance[l - 1] + hw;
         if (l + 1 < s->nlod && d->lod_distance[l] - hw < end0) fd.fade_out_from = d->lod_distance[l] - hw, fd.fade_out_to = d->lod_distance[l] + hw;

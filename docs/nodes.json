@@ -10725,6 +10725,34 @@
      "min": 0,
      "max": 100,
      "doc": "Metres the root colour reaches (0: 0.6 of the mesh's height)."
+    },
+    {
+     "name": "bend",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1.5,
+     "doc": "Radians the tops turn over at a mover's full push (cw_foliage_mover_add: characters pushing through grass; 0: movers ignored, 1.1 lays grass well over)."
+    },
+    {
+     "name": "shadow_at_root",
+     "type": "bool",
+     "default": "false",
+     "stored": true,
+     "readonly": false,
+     "doc": "One shadow sample per instance, at its root: a tuft is wholly lit or wholly shadowed (no speckled shadow edge through grass under TAA)."
+    },
+    {
+     "name": "shadow_soften",
+     "type": "float",
+     "default": "0",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "With shadow_at_root: each fragment's shadow sample moves from the root toward its own point by this times its height share (0: one sample per instance)."
     }
    ]
   },

@@ -5,6 +5,8 @@
 //   - smooth_alpha: the alpha-tested card field, under MSAA 4x (alpha to coverage) and under TAA (hashed alpha),
 //     against the plain alpha test
 //   - DITHER: the GRASS field with dithered fades and LOD crossfades against SHRINK
+//   - bend: the windy GRASS field with bend 1.1 against bend 0, with no mover and with one standing 6 m ahead
+//   - shadow_at_root: the windy shadow scene (two cascades, TAA) with it against without
 //   node tools/with-gpu-suite.mjs foliage-perf node tests/foliage-perf.mjs [--rounds 3] [--frames 240]
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
@@ -38,6 +40,9 @@ const CASES = [
   ['smooth_alpha, TAA', { FOL_SCENE: 'cards', FOL_TAA: '1' }, { FOL_SCENE: 'cards', FOL_TAA: '1', FOL_ALPHA: 'smooth' }],
   ['fade_mode DITHER', { FOL_SCENE: 'field', FOL_TAA: '1' }, { FOL_SCENE: 'field', FOL_TAA: '1', FOL_FADE: 'dither' }],
   ['root_from_terrain', { FOL_SCENE: 'field' }, { FOL_SCENE: 'field', FOL_ROOT: '1' }],
+  ['bend, no mover near', { FOL_SCENE: 'field', FOL_WIND: '0.08' }, { FOL_SCENE: 'field', FOL_WIND: '0.08', FOL_BEND: '1.1' }],
+  ['bend, a mover in view', { FOL_SCENE: 'field', FOL_WIND: '0.08', FOL_MOVER: '1' }, { FOL_SCENE: 'field', FOL_WIND: '0.08', FOL_MOVER: '1', FOL_BEND: '1.1' }],
+  ['shadow_at_root', { FOL_SCENE: 'shadow', FOL_TAA: '1', FOL_WIND: '0.08' }, { FOL_SCENE: 'shadow', FOL_TAA: '1', FOL_WIND: '0.08', FOL_SHROOT: '1' }],
 ];
 const clk = gpuClock();
 console.log(`foliage_field, 1920 x 1080, GPU ms a frame (median of ${rounds} interleaved rounds); load ${loadavg().map((v) => v.toFixed(1)).join(' ')}`);

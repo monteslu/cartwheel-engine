@@ -32,6 +32,9 @@ static struct {
   double time;
   bool msaa, taa;
   uint32_t taa_frame;
+  float slots[CW_FOLIAGE_MOVER_SLOTS][4]; /* this frame's mover discs: x, z, radius, weight */
+  int nslots;
+  uint64_t slots_frame;  /* the clock frame the slots were packed at (+1) */
   bool lockstep;   /* CW_TEST_FOLIAGE_LOCKSTEP=1 (a gate's control): every plant sways in the same phase */
 } F;
 
@@ -59,6 +62,164 @@ static void clock_tick(void) {
 float cw_foliage_time(void) {
   clock_tick();
   return (float)F.time;
+}
+
+/* ── movers ─────────────────────────────────────────────────────────── */
+
+#define MOVERS 64
+#define TRAIL 128
+static struct {
+  bool live;
+  cw_foliage_mover m;
+  float tx, tz;  /* where its trail last took a point */
+  bool placed;   /* it has a position */
+} mv[MOVERS];
+static struct { float x, z, radius, strength, recover, t; } trail[TRAIL]; /* t: foliage time it was left */
+static int trail_next;
+
+cw_foliage_mover cw_foliage_mover_default(void) {
+  return (cw_foliage_mover){ .radius = 0.5f, .strength = 1, .recover = 1.5f };
+}
+
+static void trail_drop(int id, float x, float z) {
+  const cw_foliage_mover *m = &mv[id].m;
+  if (!(m->recover > 0) || !(m->strength > 0)) return;
+  trail[trail_next].x = x, trail[trail_next].z = z, trail[trail_next].radius = m->radius;
+  trail[trail_next].strength = m->strength, trail[trail_next].recover = m->recover, trail[trail_next].t = cw_foliage_time();
+  trail_next = (trail_next + 1) % TRAIL;
+  F.slots_frame = 0;
+}
+
+int cw_foliage_mover_add(const cw_foliage_mover *m) {
+  for (int i = 0; i < MOVERS; i++)
+    if (!mv[i].live) {
+      mv[i].live = true;
+      mv[i].m = m ? *m : cw_foliage_mover_default();
+      mv[i].placed = true;
+      mv[i].tx = mv[i].m.x, mv[i].tz = mv[i].m.z;
+      F.slots_frame = 0;
+      return i;
+    }
+  cw_warn("cw_foliage_mover_add: %d movers in use", MOVERS);
+  return -1;
+}
+
+void cw_foliage_mover_update(int id, float x, float z) {
+  if (id < 0 || id >= MOVERS || !mv[id].live) return;
+  mv[id].m.x = x, mv[id].m.z = z;
+  /* a trail point every three quarters of its radius it moves: the plants it left stand up again over recover seconds */
+  float dx = x - mv[id].tx, dz = z - mv[id].tz, step = CW_MAX(mv[id].m.radius * 0.75f, 0.05f);
+  if (dx * dx + dz * dz >= step * step) {
+    trail_drop(id, mv[id].tx, mv[id].tz);
+    mv[id].tx = x, mv[id].tz = z;
+  }
+  F.slots_frame = 0;
+}
+
+void cw_foliage_mover_set(int id, const cw_foliage_mover *m) {
+  if (id < 0 || id >= MOVERS || !mv[id].live || !m) return;
+  mv[id].m = *m;
+  mv[id].tx = m->x, mv[id].tz = m->z;
+  F.slots_frame = 0;
+}
+
+bool cw_foliage_mover_get(int id, cw_foliage_mover *out) {
+  if (id < 0 || id >= MOVERS || !mv[id].live) return false;
+  if (out) *out = mv[id].m;
+  return true;
+}
+
+void cw_foliage_mover_remove(int id) {
+  if (id < 0 || id >= MOVERS || !mv[id].live) return;
+  trail_drop(id, mv[id].m.x, mv[id].m.z); /* where it stood fades like its trail */
+  if (mv[id].tx != mv[id].m.x || mv[id].tz != mv[id].m.z) trail_drop(id, mv[id].tx, mv[id].tz);
+  mv[id].live = false;
+  F.slots_frame = 0;
+}
+
+int cw_foliage_mover_count(void) {
+  int n = 0;
+  for (int i = 0; i < MOVERS; i++) n += mv[i].live;
+  return n;
+}
+
+void cw_foliage_movers_clear(void) {
+  memset(mv, 0, sizeof mv);
+  memset(trail, 0, sizeof trail);
+  trail_next = 0;
+  F.slots_frame = 0;
+}
+
+/* the weight of a trail point now: its strength easing to 0 over recover seconds */
+static float trail_weight(int i, float now) {
+  if (!(trail[i].recover > 0) || !(trail[i].strength > 0)) return 0;
+  float left = 1 - (now - trail[i].t) / trail[i].recover;
+  if (left <= 0) return 0;
+  left = cw_clampf(left, 0, 1);
+  return trail[i].strength * left * left * (3 - 2 * left);
+}
+
+/* this frame's discs: every live mover where it is (at most the slots), then the trail points that still weigh most */
+static void pack_slots(void) {
+  uint64_t f = cw_frame_index() + 1;
+  if (F.slots_frame == f) return;
+  F.slots_frame = f;
+  float now = cw_foliage_time();
+  int n = 0;
+  for (int i = 0; i < MOVERS && n < CW_FOLIAGE_MOVER_SLOTS; i++) {
+    if (!mv[i].live || !(mv[i].m.strength > 0) || !(mv[i].m.radius > 0)) continue;
+    F.slots[n][0] = mv[i].m.x, F.slots[n][1] = mv[i].m.z, F.slots[n][2] = mv[i].m.radius;
+    F.slots[n][3] = cw_clampf(mv[i].m.strength, 0, 1);
+    n++;
+  }
+  int first_trail = n;
+  static bool used[TRAIL];
+  memset(used, 0, sizeof used);
+  while (n < CW_FOLIAGE_MOVER_SLOTS) {
+    int best = -1;
+    float bw = 0;
+    for (int i = 0; i < TRAIL; i++) {
+      float w = used[i] ? 0 : trail_weight(i, now);
+      if (w > bw) best = i, bw = w;
+    }
+    if (best < 0) break;
+    used[best] = true;
+    F.slots[n][0] = trail[best].x, F.slots[n][1] = trail[best].z, F.slots[n][2] = trail[best].radius;
+    F.slots[n][3] = cw_clampf(bw, 0, 1);
+    n++;
+  }
+  /* more trail than slots: every trail disc less the heaviest one left out, so a point leaving the slots (or taking
+   * one) does so at weight 0: the plants never jump */
+  float cut = 0;
+  for (int i = 0; i < TRAIL; i++)
+    if (!used[i]) cut = CW_MAX(cut, trail_weight(i, now));
+  if (cut > 0)
+    for (int k = first_trail; k < n; k++) F.slots[k][3] = CW_MAX(F.slots[k][3] - cut, 0);
+  F.nslots = n;
+}
+
+int cw_foliage_mover_slots(float *out, int cap) {
+  pack_slots();
+  int n = CW_MIN(F.nslots, cap);
+  if (out) memcpy(out, F.slots, sizeof(float) * 4 * (size_t)n);
+  return n;
+}
+
+float cw_foliage_push_at(float x, float z, float *dir_x, float *dir_z) {
+  pack_slots();
+  float px = 0, pz = 0;
+  for (int i = 0; i < F.nslots; i++) {
+    const float *m = F.slots[i];
+    float ox = x - m[0], oz = z - m[1], d = sqrtf(ox * ox + oz * oz);
+    float a = m[2] * 0.5f, t = cw_clampf((d - a) / CW_MAX(m[2] - a, 1e-6f), 0, 1);
+    float f = m[3] * (1 - t * t * (3 - 2 * t));
+    if (d > 1e-3f) px += ox / d * f, pz += oz / d * f;
+    else px += f; /* (the shaders push a root on the centre along the wind: the material's; here +x) */
+  }
+  float l = sqrtf(px * px + pz * pz);
+  if (dir_x) *dir_x = l > 1e-6f ? px / l : 0;
+  if (dir_z) *dir_z = l > 1e-6f ? pz / l : 0;
+  return l < 1 ? l : 1;
 }
 
 void cw__foliage_frame(bool msaa, bool taa, uint64_t frame);
@@ -229,7 +390,7 @@ static void fill(t3_extension_ctx *c, void *u) {
   int i = find(t3_extension_material(c));
   float frame[4] = { cw_foliage_time(), (float)F.taa_frame * 5.588238f, F.msaa ? 1.0f : 2.0f, F.lockstep ? 0.0f : 2.0f };
   float wind[4] = { 0, 0.5f, 1, 0 }, wind2[4] = { 0, 14, 1, 0 }, mode[4] = { 0, 0, 0, 0 }, fade[4] = { 0, 0, 0, 0 },
-        root[4] = { 0.36f, 0, 0, 0 };
+        root[4] = { 0.36f, 0, 0, 0 }, bend[4] = { 0, 0, 0, 0 };
   if (i >= 0) { /* (a material copied with the part on it draws as with none of it) */
     const cw_foliage_desc *d = &recs.data[i].d;
     const cw_wind *w = &d->wind;
@@ -251,6 +412,21 @@ static void fill(t3_extension_ctx *c, void *u) {
     fade[2] = out0, fade[3] = out1 > out0 ? out1 : out0;
     mode[3] = (fade[1] > fade[0] || fade[3] > fade[2]) ? 1.0f : 0.0f;
     root[0] = d->root_height > 0 ? d->root_height : 0.6f * h;
+    if (d->bend > 0) {
+      pack_slots();
+      bend[0] = cw_clampf(d->bend, 0, 1.5f);
+      bend[1] = (float)F.nslots;
+    }
+    bend[2] = d->shadow_at_root ? 1.0f : 0.0f;
+    bend[3] = cw_clampf(d->shadow_soften, 0, 1);
+  }
+  t3_extension_set_uniform(c, "folBend", bend, 4);
+  static const char *const slot_names[CW_FOLIAGE_MOVER_SLOTS] = { "folMover0", "folMover1", "folMover2", "folMover3", "folMover4", "folMover5",
+                                                                  "folMover6", "folMover7", "folMover8", "folMover9", "folMover10", "folMover11",
+                                                                  "folMover12", "folMover13", "folMover14", "folMover15" };
+  for (int k = 0; k < CW_FOLIAGE_MOVER_SLOTS; k++) {
+    static const float none[4] = { 0, 0, 1, 0 };
+    t3_extension_set_uniform(c, slot_names[k], k < (int)bend[1] ? F.slots[k] : none, 4);
   }
   t3_extension_set_uniform(c, "folFrame", frame, 4);
   t3_extension_set_uniform(c, "folWind", wind, 4);
@@ -286,6 +462,7 @@ void cw__foliage_shutdown(void) {
   for (int i = 0; i < recs.count; i++) t3_release(recs.data[i].m);
   cw_array_free(&recs);
   if (index_init) cw_map_free(&index_of);
+  cw_foliage_movers_clear();
   index_init = false;
   memset(&F, 0, sizeof F);
 }

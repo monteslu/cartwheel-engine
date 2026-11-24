@@ -80,8 +80,9 @@
  * and switch mesh LOD by distance; with fade_mode DITHER they dissolve over
  * the fade instead and each LOD crossfades with the next (cartwheel/foliage.h).
  * A layer can also sway in the wind, smooth its cut-out edges, light its
- * leaves from both sides and vary or ground-colour each instance
- * (cw_scatter_def's foliage fields).
+ * leaves from both sides, vary or ground-colour each instance, bend around
+ * movers and take one shadow sample per instance (cw_scatter_def's foliage
+ * fields).
  *
  * ── threads ────────────────────────────────────────────────────────────
  * Main thread, outside physics steps, like the rest of the scene. The
@@ -105,7 +106,8 @@
  *                     slope, scale range, visible_range, fade, LOD meshes,
  *                     cast_shadow, seed; wind, smooth_alpha,
  *                     two_sided_lighting, fade_mode, lod_blend, tint_jitter,
- *                     root_from_terrain. */
+ *                     root_from_terrain, bend (around movers),
+ *                     shadow_at_root, shadow_soften. */
 #ifndef CW_TERRAIN_H
 #define CW_TERRAIN_H
 
@@ -359,6 +361,10 @@ typedef struct cw_scatter_def {
   bool root_from_terrain;   /* each instance's lower part (to root_height) in the terrain's colour under it
                                (cw_terrain_albedo_at), blending into the mesh's own colour above: false */
   float root_height;        /* metres the root colour reaches: 0 = 0.6 of the mesh's height */
+  float bend;               /* radians the tops turn over at a mover's full push (cw_foliage_mover_add): 0 = movers
+                               ignored */
+  bool shadow_at_root;      /* one shadow sample per instance, at its root: no speckled shadow edges under TAA: false */
+  float shadow_soften;      /* 0..1: shadow_at_root's sample moves toward each fragment's own point with height: 0 */
 } cw_scatter_def;
 enum { CW_SCATTER_FADE_SHRINK = 0, CW_SCATTER_FADE_DITHER = 1 };
 /* The defaults noted above, no meshes. */

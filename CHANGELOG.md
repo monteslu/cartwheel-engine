@@ -4,6 +4,42 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.75.0 (2026-11-24)
+
+### Added
+- Grass that bends around movers (cartwheel/foliage.h): `cw_foliage_mover_add`, `cw_foliage_mover_update`,
+  `cw_foliage_mover_set`, `cw_foliage_mover_get`, `cw_foliage_mover_remove`, `cw_foliage_movers_clear`, with
+  `cw_foliage_mover` (x, z, radius 0.5 m, strength 1, recover 1.5 s), and `cw_foliage_desc.bend`, the radians a
+  plant's top turns over at a full push (TerrainScatter3D `bend`, `cw_scatter_def.bend`). A plant whose root (its
+  instance's origin) is within a mover's radius is pushed away from its centre, fully inside half the radius and
+  easing to nothing at the radius, and curves over by up to `bend` at its top. Each mover leaves a trail point every
+  three quarters of its radius that eases to nothing over its `recover` seconds, so the grass behind it stands up
+  again; a removed mover's last place recovers too. Each frame the movers where they stand and the trail points that
+  weigh most are packed into 16 discs the shaders read (`CW_FOLIAGE_MOVER_SLOTS`); a trail disc enters and leaves the
+  set at weight 0, so no plant jumps. The bend is on the vertices, so shadows bend too and wind, DITHER fades,
+  `smooth_alpha` and TAA work with it; `bend` 0 skips the work and draws byte for byte as before.
+  `cw_foliage_mover_slots` and `cw_foliage_push_at` are the CPU side, for gameplay and tests.
+- One shadow sample per instance (`cw_foliage_desc.shadow_at_root`, `shadow_soften`; TerrainScatter3D
+  `shadow_at_root`, `shadow_soften`): the sun's shadow (one map or cascades) and the clustered lights' shadows are
+  taken at the instance's root, lifted a quarter of its height, instead of at each fragment, so a tuft is wholly lit
+  or wholly shadowed. Under TAA each sub-pixel blade sampling at its own height flipped between lit and shadowed with
+  the jitter: a stippled, speckled shadow edge through grass. `shadow_soften` moves each fragment's sample toward its
+  own point with its height. The csm and cluster parts take the shadow position from r187's
+  `material.receivedShadowPositionNode` when a part sets it (no change to any program that does not).
+- Sample `foliage_field` scenes `bend` (stems tracked from the picture as a mover walks past) and `shadow` (a wall's
+  shadow edge through the GRASS field under TAA, two cascades), switches `FOL_BEND`, `FOL_RECOVER`, `FOL_RADIUS`,
+  `FOL_MOVER`, `FOL_SHROOT`, `FOL_SOFTEN`, `FOL_CSM`; `tests/foliage-perf.mjs` reports both options' cost.
+- Gates `foliage-bend` and `foliage-shadow-root` (native and romdev, GL and WebGPU, each check with a control that
+  must fail), and `foliage-field` runs with a mover, `bend` and `shadow_at_root` on. Measured: 1 m stems a mover
+  passes at 4 m/s leave their tip windows (presence 0; control `bend` 0: 1.0), stems 1 m past its radius never move,
+  the passed ones are still fully down 0.25 s later and stand again 1.17 s after it passed with `recover` 1 s (2.10 s
+  with 2 s); the same with wind 0.08, TAA and DITHER; `bend` 0 with a mover draws byte for byte as with none. The
+  flicker a shadow edge adds to grass under TAA (the edge band's temporal noise less the lit and shadowed grass's)
+  falls from 0.0056 to none with wind 0.08 and from 0.00077 to 0.00006 without wind (control: off). Cost over the
+  foliage part on a dense windy field at 1920 x 1080 (Radeon 890M, GL): `bend` 0.02 ms with no mover near and 0.01 ms
+  with one in view, `shadow_at_root` -0.04 ms (within the noise; WebGPU within its round-to-round spread). Every other
+  program table is regenerated with only its stamp changed: no program without these options differs.
+
 ## v0.74.0 (2026-11-24)
 
 ### Added

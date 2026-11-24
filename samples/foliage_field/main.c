@@ -9,11 +9,19 @@
  *               twosided: two upright double-sided cards with straight-up normals, one showing the camera its
  *                     front face and one its back
  *               root: a disc of dirt in the grass seen from 12 m straight above
+ *               bend: the wind scene's stems in a band 4.4 to 5.6 m ahead (1 a square metre), and a mover
+ *                     (cw_foliage_mover_add) walking along it at 4 m/s, z = 5 from x = -9 to 0, from frame FOL_FROM + 10,
+ *                     then removed; the camera 0.3 m up at z = -3: the stems it passed bend away from it and stand up again behind it
+ *               shadow: the GRASS layer on flat ground with the sun low from +x behind a wall 6 m high at x = 6, so
+ *                     the wall's shadow edge runs along x = 0, under the middle of the picture, from the camera on
  *               (<scene>_all: every option below on, for the program survey)
  *   FOL_CAM     play (default), pan (the play camera turning 2 degrees a second), dolly (looking level, moving
  *               forward 1 m a second through the LOD distance)
  *   FOL_WIND=<m> wind strength (FOL_FREQ, FOL_GUST)      FOL_ALPHA=smooth      FOL_FADE=dither (FOL_BLEND=<m>)
  *   FOL_ROOT=1 root_from_terrain     FOL_TWOSIDED=1     FOL_JITTER=<0..1>     FOL_NOGRASS=1 (no scatter drawn)
+ *   FOL_BEND=<rad> bend around movers (FOL_RECOVER=<s> the mover's recover, 1; FOL_RADIUS=<m> its radius, 0.8)
+ *   FOL_MOVER=1  (scenes but bend) a mover standing at (-0.5, 2), 6 m ahead of the play camera
+ *   FOL_SHROOT=1 shadow_at_root (FOL_SOFTEN=<0..1>)     FOL_CSM=<n> the sun's shadow in n cascades over 40 m (the shadow scene: 2; 0 one map)
  *   FOL_MSAA=<n> PostProcess msaa (kept on every anti-aliasing value)     FOL_TAA=1 PostProcess taa
  *   FOL_FROM=<frame> where the measurements start (default 30)
  *
@@ -36,7 +44,20 @@
  *                     away that is grass; a run less its reference is what the LOD switch changes, frame by frame
  *   fol.band          the dolly: those rows as 96 x 8 blocks of mean brightness per frame (bytes), for the same
  *                     difference block by block
- *   fol.gpu_ms        the pipeline's GPU time, averaged over the measured frames */
+ *   fol.gpu_ms        the pipeline's GPU time, averaged over the measured frames
+ *   bend.near_n, bend.far_n   bend: stems tracked that the mover passed (x under -0.4) and that it never came near
+ *                     (x over 1.8: 1 m past its radius); each stem's presence:
+ *                     the share of its tip window's rows that hold stem, over the same before the mover set off (1: standing
+ *                     as before, 0: its tip gone from the window)
+ *   bend.near_min     the largest of the near stems' lowest presence (all of them bent: small)
+ *   bend.far_dev      the largest of the far stems' 1 - lowest presence (none of them bent: small)
+ *   bend.held         the smallest of the near stems' 1 - presence 0.25 s after the mover passed them (still down)
+ *   bend.ret          the longest a near stem took, from the mover passing it, to stand at presence 0.9 and above for
+ *                     good (seconds; 99 never)
+ *   shadow.edge, shadow.lit, shadow.dark   shadow: the mean temporal standard deviation of brightness (0..1) of the
+ *                     pixels within 0.6 m of the shadow edge (x = 0) on the ground 5 to 12 m ahead, of those 1.4 to 2.6 m
+ *                     into the lit side and of those as far into the shadow, over the measured frames (the camera holds
+ *                     still: the jitter's flicker, and the wind's); shadow.n frames in it */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -84,6 +105,12 @@ static int from = 30;
 static float cam_h = 2.2f;
 static int card_layer = -1, wind_layer = -1;
 static cw_node card_nodes[2];
+static int mover = -1, mover_start;
+static float bend_near_min, bend_far_dev, bend_held, bend_ret;
+static float bend_tip[4 * 32]; /* per stem: x, z, lowest presence, base pixels */
+static int32_t bend_near_n, bend_far_n;
+static float shadow_edge, shadow_lit, shadow_dark;
+static int32_t shadow_n;
 
 static bool all_on; /* FOL_SCENE <scene>_all: every option on (the program survey) */
 static const char *env(const char *n) {
@@ -92,7 +119,8 @@ static const char *env(const char *n) {
   if (!strcmp(n, "FOL_WIND")) return "0.08";
   if (!strcmp(n, "FOL_ALPHA")) return "smooth";
   if (!strcmp(n, "FOL_FADE")) return "dither";
-  if (!strcmp(n, "FOL_ROOT") || !strcmp(n, "FOL_TWOSIDED")) return "1";
+  if (!strcmp(n, "FOL_ROOT") || !strcmp(n, "FOL_TWOSIDED") || !strcmp(n, "FOL_SHROOT")) return "1";
+  if (!strcmp(n, "FOL_BEND")) return "1.1";
   return NULL;
 }
 static float envf(const char *n, float d) { const char *v = env(n); return v ? (float)atof(v) : d; }
@@ -167,6 +195,9 @@ static void layer_options(cw_scatter_def *d) {
   d->fade_mode = env("FOL_FADE") && !strcmp(env("FOL_FADE"), "dither") ? CW_SCATTER_FADE_DITHER : CW_SCATTER_FADE_SHRINK;
   d->lod_blend = envf("FOL_BLEND", 6);
   d->root_from_terrain = env("FOL_ROOT") != NULL;
+  d->bend = envf("FOL_BEND", 0);
+  d->shadow_at_root = env("FOL_SHROOT") != NULL;
+  d->shadow_soften = envf("FOL_SOFTEN", 0);
 }
 
 static void add_cards(cw_terrain *t) {
@@ -227,7 +258,7 @@ static void add_wind_layer(cw_terrain *t) {
   m->roughness = 0.9f;
   d.material[0][0] = m;
   d.align_to_normal = false;
-  d.density = 0.25f;
+  d.density = !strcmp(scene, "bend") ? 1.0f : 0.25f;
   d.layers = 2; /* the dirt band (apply): nothing in front of it */
   d.scale_min = 0.9f, d.scale_max = 1.1f;
   d.visible_range = 30;
@@ -327,13 +358,24 @@ static void apply(void) {
   cw_node_set(grass_node, "fade_mode", cw_val_enum(o.fade_mode ? "DITHER" : "SHRINK"));
   cw_node_set(grass_node, "lod_blend", cw_val_float(o.lod_blend));
   cw_node_set(grass_node, "root_from_terrain", cw_val_bool(o.root_from_terrain));
+  cw_node_set(grass_node, "bend", cw_val_float(o.bend));
+  cw_node_set(grass_node, "shadow_at_root", cw_val_bool(o.shadow_at_root));
+  cw_node_set(grass_node, "shadow_soften", cw_val_float(o.shadow_soften));
+  /* the shadow scene's sun in two cascades over 40 m by default (as a game's open world) */
+  int csm = (int)envf("FOL_CSM", !strcmp(scene, "shadow") ? 2 : 0);
+  if (csm > 0) {
+    cw_node sun = cw_node_get(root, "World/Sun");
+    cw_node_set(sun, "shadow_cascades", cw_val_int(csm));
+    cw_node_set(sun, "shadow_distance", cw_val_float(40));
+  }
   if (env("FOL_JITTER")) cw_node_set(grass_node, "tint_jitter", cw_val_float(envf("FOL_JITTER", 0.25f)));
   cw_terrain *t = cw_terrain_of(terrain_node);
   bool magenta = false;
   if (!strcmp(scene, "cards")) {
     cw_node_free(grass_node);
     if (t) add_cards(t);
-  } else if (!strcmp(scene, "wind")) {
+  } else if (!strcmp(scene, "wind") || !strcmp(scene, "bend")) {
+    bool bend = !strcmp(scene, "bend");
     cw_node_free(grass_node);
     magenta = true;
     cam_h = 0.3f;
@@ -347,12 +389,40 @@ static void apply(void) {
       for (int z = 0; z < 257; z++)
         for (int x = 0; x < 257; x++) {
           float wz = td->origin.z + (float)z * td->vertex_spacing;
-          ctl[z * 257 + x] = cw_terrain_control(wz > 3.5f && wz < 6.5f ? 1 : 0, 0, 0, 0, 0, false);
+          bool on = bend ? wz > 4.4f && wz < 5.6f : wz > 3.5f && wz < 6.5f;
+          ctl[z * 257 + x] = cw_terrain_control(on ? 1 : 0, 0, 0, 0, 0, false);
         }
       cw_terrain_set_control(t, 0, 0, 257, 257, ctl);
       cw_terrain_scatter_invalidate(t);
       add_wind_layer(t);
     }
+  } else if (!strcmp(scene, "shadow")) {
+    /* flat ground, the sun low from +x (45 degrees) behind a wall 6 m high at x = 6: its shadow's edge on the ground
+     * is the line x = 0, under the middle of the picture from the camera on; the terrain casts nothing (as in a
+     * game's open field: no ground self-shadow at the roots) */
+    cam_h = 1.6f;
+    if (t) {
+      static uint16_t zero[257 * 257];
+      cw_terrain_set_heights(t, 0, 0, 257, 257, zero);
+      cw_terrain_scatter_invalidate(t);
+    }
+    cw_node_set(terrain_node, "cast_shadow", cw_val_bool(false));
+    cw_node_free(cw_node_get(root, "World/Sky"));
+    cw_node e = cw_node_get(root, "World/Env");
+    cw_node_set(e, "background", cw_val_color(0.55f, 0.7f, 0.9f, 1));
+    cw_node_set(e, "use_background", cw_val_bool(true));
+    cw_node sun = cw_node_get(root, "World/Sun");
+    cw_node_set(sun, "energy", cw_val_float(3));
+    cw_node3d_set_position(sun, (t3_vec3){ 0, 10, 0 });
+    cw_node3d_look_at(sun, (t3_vec3){ -1, 9, 0 }, (t3_vec3){ 0, 1, 0 });
+    cw_node wall = cw_node_new("MeshInstance3D", "Wall");
+    cw_node_add_child(world, wall);
+    cw_node_set(wall, "primitive", cw_val_enum("BOX"));
+    cw_node_set(wall, "size", cw_val_vec3(0.4f, 12, 80));
+    cw_node_set(wall, "color", cw_val_color(0.5f, 0.45f, 0.4f, 1));
+    cw_node_set(wall, "cast_shadow", cw_val_bool(true));
+    /* top edge at x = 6, y = 6 (the box's +x top edge) */
+    cw_node3d_set_position(wall, (t3_vec3){ 5.8f, 0, 30 });
   } else if (!strcmp(scene, "twosided")) {
     cw_node_free(grass_node);
     magenta = true;
@@ -395,6 +465,8 @@ static void place_camera(float tt) {
   if (!strcmp(camm, "pan")) yaw = tt * (2.0f * 3.14159265f / 180.0f);
   if (!strcmp(camm, "dolly")) pitch = 0, p.z = -4 + tt * 1.0f;
   if (!strcmp(scene, "wind") || !strcmp(scene, "twosided")) pitch = 0, p = (t3_vec3){ 0, cam_h, 0 };
+  if (!strcmp(scene, "bend")) pitch = 0, p = (t3_vec3){ 0, cam_h, -3 };
+  if (!strcmp(scene, "shadow")) pitch = -0.25f, p = (t3_vec3){ 0, cam_h, 0 };
   if (!strcmp(scene, "root")) {
     p = (t3_vec3){ 0, 12, 0 };
     cw_terrain *t = cw_terrain_of(terrain_node);
@@ -438,9 +510,9 @@ static bool have_prev;
 static float luma(const uint8_t *p) { return (0.2126f * p[0] + 0.7152f * p[1] + 0.0722f * p[2]) / 255.0f; }
 
 /* wind: the tracked tufts */
-#define MAXT 16
+#define MAXT 32
 #define MAXS 900
-static struct { float x, z, h, ppm; float wx0, wx1, wy0, wy1; float s[MAXS]; } tip[MAXT];
+static struct { float x, z, h, ppm; float wx0, wx1, wy0, wy1; bool near; float s[MAXS]; int f[MAXS]; } tip[MAXT];
 static int nser;
 
 static void pick_tips(cw_terrain *t) {
@@ -453,12 +525,14 @@ static void pick_tips(cw_terrain *t) {
   int dbg[2] = { 0, 0 };
   for (int i = 0; i < n && tips_n < MAXT; i++) {
     float x = buf[5 * i], y = buf[5 * i + 1], z = buf[5 * i + 2], s = buf[5 * i + 3];
-    if (z < 3 || z > 6) continue;
+    bool bend = !strcmp(scene, "bend");
+    bool near = x < -0.4f;
+    if (bend ? (z < 4.4f || z > 5.6f || (x >= -0.4f && x <= 1.8f)) : (z < 3 || z > 6)) continue;
     dbg[0]++;
     float hh = 1.0f * s, ppm = H * 0.5f / ((z - cam_pos.z) * th);
     float sx, sy;
     if (!project_level((t3_vec3){ x, y + hh, z }, &sx, &sy)) continue;
-    float hw = 0.3f * ppm, x0 = sx - hw, x1 = sx + hw, y0 = sy - 0.06f * ppm, y1 = sy + 0.25f * hh * ppm;
+    float hw = (bend ? 0.15f : 0.3f) * ppm, x0 = sx - hw, x1 = sx + hw, y0 = sy - 0.06f * ppm, y1 = sy + 0.25f * hh * ppm;
     if (x0 < RX + 4 || x1 > RX + RW - 4 || y0 < RY + 4 || y1 > RY + RH - 4) continue;
     dbg[1]++;
     /* a window no other nearby tuft's tip reaches into */
@@ -469,13 +543,14 @@ static void pick_tips(cw_terrain *t) {
       if (kz < 0.5f || kz > 25) continue;
       if (!project_level((t3_vec3){ kx, ky + 1.0f * ks, kz }, &qx, &qy)) continue;
       /* a stem leans up to its wind strength either way of its root, from its root up to its tip */
-      float kw = 0.3f * (H * 0.5f / ((kz - cam_pos.z) * th)), rx, ry;
+      float kw = (bend ? 0.15f : 0.3f) * (H * 0.5f / ((kz - cam_pos.z) * th)), rx, ry;
       project_level((t3_vec3){ kx, ky, kz }, &rx, &ry);
       if (qx + kw > x0 && qx - kw < x1 && qy < y1 && ry > y0) clear = false;
     }
     if (!clear) continue;
     tip[tips_n].x = x, tip[tips_n].z = z, tip[tips_n].h = hh, tip[tips_n].ppm = ppm;
     tip[tips_n].wx0 = x0, tip[tips_n].wx1 = x1, tip[tips_n].wy0 = y0, tip[tips_n].wy1 = y1;
+    tip[tips_n].near = near;
     tips_n++;
   }
   cw_info("foliage_field: tips: %d instances, %d at 3-6 m, %d in the window, %d clear; cam %.2f %.2f %.2f", n, dbg[0], dbg[1], tips_n, cam_pos.x, cam_pos.y, cam_pos.z);
@@ -514,6 +589,94 @@ static void wind_stats(void) {
     if (saa > 0 && sbb > 0) csum += sab / sqrt(saa * sbb), cn++;
   }
   tip_corr = cn ? (float)(csum / cn) : 0;
+}
+
+/* bend: each stem's presence against its first frames (the mover sets off 10 frames after the measuring starts) */
+#define BEND_SPEED 4.0f
+static float mover_x_at(int frame) { return -9 + BEND_SPEED * (float)(frame - mover_start) / 60.0f; }
+static void bend_stats(void) {
+  if (nser < 8 || !tips_n) return;
+  float near_min = 0, far_dev = 0, held = 1e9f, ret = 0;
+  int nn = 0, nf = 0;
+  for (int k = 0; k < tips_n; k++) {
+    float base = 0;
+    for (int i = 0; i < 4; i++) base += tip[k].s[i];
+    base /= 4;
+    float lo = 1e9f;
+    for (int i = 0; i < nser; i++) lo = CW_MIN(lo, tip[k].s[i] / CW_MAX(base, 1e-3f));
+    bend_tip[4 * k] = tip[k].x, bend_tip[4 * k + 1] = tip[k].z, bend_tip[4 * k + 2] = lo, bend_tip[4 * k + 3] = base;
+    if (base < 4) continue; /* (a window with hardly any stem in it says nothing) */
+    if (!tip[k].near) {
+      far_dev = CW_MAX(far_dev, 1 - lo), nf++;
+      continue;
+    }
+    nn++;
+    near_min = CW_MAX(near_min, lo);
+    /* the frame the mover passed it, then how long until it stood (0.9) for good, and how far down 0.25 s after */
+    int pass = mover_start + (int)ceilf((tip[k].x + 9) / BEND_SPEED * 60.0f);
+    float h = -1, r = -1;
+    for (int i = 0; i < nser; i++) {
+      if (tip[k].f[i] < pass) continue;
+      float p = tip[k].s[i] / base;
+      if (h < 0 && tip[k].f[i] >= pass + 15) h = 1 - p;
+      if (p < 0.9f) r = -1;
+      else if (r < 0) r = (float)(tip[k].f[i] - pass) / 60.0f;
+    }
+    held = CW_MIN(held, h < 0 ? 0 : h);
+    ret = CW_MAX(ret, r < 0 ? 99 : r);
+  }
+  bend_near_n = nn, bend_far_n = nf;
+  bend_near_min = near_min, bend_far_dev = far_dev, bend_held = nn ? held : 0, bend_ret = ret;
+}
+
+/* shadow: the pixels of the ground within 0.6 m of the edge (x = 0) and 1.4 to 2.6 m into the lit side (x < 0), 5 to 12 m
+ * ahead (masks made once), their brightness summed per pixel over the measured frames */
+static uint8_t *sh_mask;
+static float *sh_sum, *sh_sq;
+static bool project_cam(t3_vec3 q, float *sx, float *sy) {
+  t3_vec3 d = { q.x - cam_pos.x, q.y - cam_pos.y, q.z - cam_pos.z }, f = cam_fwd;
+  t3_vec3 r = { f.y * 0 - f.z * 1, f.z * 0 - f.x * 0, f.x * 1 - f.y * 0 }; /* f x up */
+  float rl = sqrtf(r.x * r.x + r.y * r.y + r.z * r.z);
+  r.x /= rl, r.y /= rl, r.z /= rl;
+  t3_vec3 u = { r.y * f.z - r.z * f.y, r.z * f.x - r.x * f.z, r.x * f.y - r.y * f.x };
+  float dz = d.x * f.x + d.y * f.y + d.z * f.z;
+  if (dz < 0.1f) return false;
+  float th = tanf(FOV * 0.5f * 3.14159265f / 180.0f), asp = (float)W / H;
+  *sx = W * 0.5f + (d.x * r.x + d.y * r.y + d.z * r.z) / dz / (th * asp) * W * 0.5f;
+  *sy = H * 0.5f - (d.x * u.x + d.y * u.y + d.z * u.z) / dz / th * H * 0.5f;
+  return true;
+}
+static void shadow_measure(void) {
+  if (!sh_mask) {
+    sh_mask = calloc((size_t)RW * RH, 1);
+    sh_sum = calloc((size_t)RW * RH, sizeof(float));
+    sh_sq = calloc((size_t)RW * RH, sizeof(float));
+    for (float z = 5; z <= 12; z += 0.02f)
+      for (float x = -2.6f; x <= 2.6f; x += 0.01f) {
+        uint8_t m = fabsf(x) < 0.6f ? 1 : x < -1.4f ? 2 : x > 1.4f ? 3 : 0;
+        float sx, sy;
+        if (!m || !project_cam((t3_vec3){ x, 0, z }, &sx, &sy)) continue;
+        int px = (int)sx - RX, py = (int)sy - RY;
+        if (px >= 0 && py >= 0 && px < RW && py < RH) sh_mask[py * RW + px] = m;
+      }
+  }
+  for (int i = 0; i < RW * RH; i++) {
+    if (!sh_mask[i]) continue;
+    float l = luma(&cur[4 * i]);
+    sh_sum[i] += l, sh_sq[i] += l * l;
+  }
+  shadow_n++;
+  double s[4] = { 0, 0, 0, 0 };
+  int n[4] = { 0, 0, 0, 0 };
+  for (int i = 0; i < RW * RH; i++) {
+    int m = sh_mask[i];
+    if (!m) continue;
+    float mean = sh_sum[i] / (float)shadow_n, var = sh_sq[i] / (float)shadow_n - mean * mean;
+    s[m] += sqrtf(CW_MAX(var, 0)), n[m]++;
+  }
+  shadow_edge = n[1] ? (float)(s[1] / n[1]) : 0;
+  shadow_lit = n[2] ? (float)(s[2] / n[2]) : 0;
+  shadow_dark = n[3] ? (float)(s[3] / n[3]) : 0;
 }
 
 static float region_mean(const uint8_t *img, float cx, float cy, float r, int ch) {
@@ -608,20 +771,28 @@ static void measure(int frame) {
     }
     hist_n++;
   }
-  if (!strcmp(scene, "wind") && tips_n && nser < MAXS) {
+  if ((!strcmp(scene, "wind") || !strcmp(scene, "bend")) && tips_n && nser < MAXS) {
+    bool bend = !strcmp(scene, "bend");
     for (int k = 0; k < tips_n; k++) {
       double sx = 0;
-      int n = 0;
-      for (int y = (int)tip[k].wy0; y < (int)tip[k].wy1; y++)
+      int n = 0, rows = 0;
+      for (int y = (int)tip[k].wy0; y < (int)tip[k].wy1; y++) {
+        int r = 0;
         for (int x = (int)tip[k].wx0; x < (int)tip[k].wx1; x++) {
           const uint8_t *p = &cur[4 * ((y - RY) * RW + (x - RX))];
-          if (!background(p)) sx += x, n++;
+          if (!background(p)) sx += x, n++, r = 1;
         }
-      tip[k].s[nser] = n ? (float)(sx / n) : (tip[k].wx0 + tip[k].wx1) * 0.5f;
+        rows += r;
+      }
+      /* wind: the tip band's centroid; bend: how many of its rows hold stem */
+      tip[k].s[nser] = bend ? (float)rows : n ? (float)(sx / n) : (tip[k].wx0 + tip[k].wx1) * 0.5f;
+      tip[k].f[nser] = frame;
     }
     nser++;
-    wind_stats();
+    if (bend) bend_stats();
+    else wind_stats();
   }
+  if (!strcmp(scene, "shadow")) shadow_measure();
   if (!strcmp(scene, "twosided")) {
     for (int k = 0; k < 2; k++) {
       float sx, sy;
@@ -703,6 +874,17 @@ static void init(void *u) {
   cw_debug_f32("fol.color_var", &color_var);
   cw_debug_f32("fol.root_err", &root_err);
   cw_debug_f32("fol.gpu_ms", &gpu_ms);
+  cw_debug_i32("bend.near_n", &bend_near_n);
+  cw_debug_i32("bend.far_n", &bend_far_n);
+  cw_debug_f32("bend.near_min", &bend_near_min);
+  cw_debug_f32("bend.far_dev", &bend_far_dev);
+  cw_debug_f32("bend.held", &bend_held);
+  cw_debug_f32("bend.ret", &bend_ret);
+  cw_debug_f32_array("bend.tip", bend_tip, 4 * 32);
+  cw_debug_f32("shadow.edge", &shadow_edge);
+  cw_debug_f32("shadow.lit", &shadow_lit);
+  cw_debug_f32("shadow.dark", &shadow_dark);
+  cw_debug_i32("shadow.n", &shadow_n);
   place_camera(0);
 }
 
@@ -711,6 +893,29 @@ static void fixed_update(void *u, double dt) {
   (void)dt;
   tick++;
   if (!applied && tick >= 2) apply();
+  /* FOL_MOVER=1 (other scenes): a mover standing 0.5 m right of the view's middle, 6 m ahead of the camera */
+  if (applied && strcmp(scene, "bend") && env("FOL_MOVER") && mover == -1) {
+    cw_foliage_mover m = cw_foliage_mover_default();
+    m.x = -0.5f, m.z = 2;
+    m.radius = envf("FOL_RADIUS", 0.8f);
+    mover = cw_foliage_mover_add(&m);
+  }
+  /* bend: the mover walks across from FOL_FROM + 10 (the frame index runs a frame ahead of the tick: its own clock) */
+  if (applied && !strcmp(scene, "bend")) {
+    int f = (int)cw_frame_index();
+    if (mover == -1 && f >= from + 10) {
+      cw_foliage_mover m = cw_foliage_mover_default();
+      m.x = -9, m.z = 5;
+      m.radius = envf("FOL_RADIUS", 0.8f);
+      m.recover = envf("FOL_RECOVER", 1);
+      mover = cw_foliage_mover_add(&m);
+      mover_start = f;
+    }
+    if (mover >= 0) {
+      cw_foliage_mover_update(mover, CW_MIN(mover_x_at(f), 0.0f), 5);
+      if (mover_x_at(f) >= 0) cw_foliage_mover_remove(mover), mover = -2;
+    }
+  }
 }
 
 static void render(void *u, double alpha) {
@@ -719,7 +924,7 @@ static void render(void *u, double alpha) {
   place_camera((float)(tick - 1 + alpha) / 60.0f);
   if (!applied) return;
   cw_terrain *t = cw_terrain_of(terrain_node);
-  if (!strcmp(scene, "wind") && t && !tips_n && f == from - 2) pick_tips(t);
+  if ((!strcmp(scene, "wind") || !strcmp(scene, "bend")) && t && !tips_n && f == from - 2) pick_tips(t);
   if (f == from) colour_stats();
   /* the pictures that have arrived, in order */
   while (nt) {

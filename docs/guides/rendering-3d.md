@@ -713,6 +713,8 @@ Grass, leaf cards, reeds and bushes need four things a plain material does not g
 - **Smooth cut-out edges** (`smooth_alpha`, for alpha-tested materials: a glTF material with alphaMode MASK). A plain alpha test stair-steps a card's edge and, as the texture's mip levels average its alpha, drops the thin parts under the cutoff so they flicker as the camera moves. Under MSAA the alpha becomes the pixel's sample coverage (three.js r187's alpha to coverage, on GL and WebGPU); without MSAA each pixel is kept with a probability that rises with its alpha against noise moved every frame under TAA (hashed alpha), which TAA averages into a soft edge. The engine picks the mode each frame from the scene pass's sample count.
 - **Two-sided lighting** (`two_sided_lighting`). A double-sided material flips its normal on back faces, so a leaf whose normals are bent up for soft lighting goes dark on its back. With this set the back face is lit with the front face's normal (and normal map): one thin sheet, lit the same from both sides.
 - **Dithered fades** (`fade_in_*`, `fade_out_*`): pixels vanish over a band of distance by a screen-door dither TAA resolves. Two LODs given the same band, one fading out and one fading in, crossfade with no pop.
+- **Bending around movers** (`bend`). A character, a cart or a boar walking through grass pushes it aside. Register each mover once and move it every tick; a plant whose root is within the mover's radius is pushed away from its centre (fully inside half the radius, easing to nothing at the radius) and its top turns over by up to `bend` radians, the stem curving. Behind the mover its trail keeps the plants down and lets them stand up again over the mover's `recover` seconds, and a mover removed leaves its last place to recover too. The bend is on the vertices, so shadows bend with it and wind, the fades, `smooth_alpha` and TAA work as before; a material with `bend` 0 skips the work.
+- **Shadow at the root** (`shadow_at_root`). A blade is thinner than a pixel at a distance, so under TAA each blade taking the sun's shadow at its own height and place flips between lit and shadowed with the jitter: a stippled, speckled shadow edge through the grass. With this set each instance takes one shadow sample, at its root (lifted a quarter of its height), so a tuft is wholly lit or wholly shadowed and the edge through the grass reads as the ground's. `shadow_soften` (0 to 1) moves each fragment's sample toward its own point with its height, for a softer edge across a tall plant. It works with one shadow map, cascades and the clustered lights' shadows.
 
 ```c
 cw_foliage_desc d = cw_foliage_default();
@@ -723,9 +725,20 @@ cw_foliage_apply_tree(bush_root, &d);       /* every material under a glTF model
 ...
 d.wind.strength = 0.2f;                     /* a storm: change it any frame, it is a uniform */
 cw_foliage_apply(leaf_material, &d);
+
+/* grass that bends around the player and takes one shadow sample a tuft */
+d.bend = 1.1f;                              /* the top turns over 63 degrees at a full push */
+d.shadow_at_root = true;
+cw_foliage_apply(grass_material, &d);
+cw_foliage_mover hero = cw_foliage_mover_default(); /* radius 0.5 m, strength 1, recover 1.5 s */
+hero.radius = 0.6f;
+int id = cw_foliage_mover_add(&hero);
+...
+cw_foliage_mover_update(id, pos.x, pos.z);  /* every tick it moves */
+cw_foliage_mover_remove(id);                /* gone: where it stood stands up again */
 ```
 
-Terrain scatter takes all of it as layer settings (TerrainScatter3D `wind_*`, `smooth_alpha`, `two_sided_lighting`, `fade_mode`; [Terrain, Scatter](guide:terrain#scatter)) on the layer's own copies of its materials. The values are per material: glTF instances share their file's materials, so clone one for a different wind. A material with all of it off draws as before; one with foliage draws a composed program state with `foliage` (and `folalpha` for smooth edges) in its extension, which `tools/programs.mjs` finds like any other. `samples/foliage_field` shows each one and measures it from the picture; its gate is `foliage`.
+Terrain scatter takes all of it as layer settings (TerrainScatter3D `wind_*`, `smooth_alpha`, `two_sided_lighting`, `fade_mode`, `bend`, `shadow_at_root`, `shadow_soften`; [Terrain, Scatter](guide:terrain#scatter)) on the layer's own copies of its materials. The values are per material: glTF instances share their file's materials, so clone one for a different wind. A material with all of it off draws as before; one with foliage draws a composed program state with `foliage` (and `folalpha` for smooth edges) in its extension, which `tools/programs.mjs` finds like any other. `samples/foliage_field` shows each one and measures it from the picture; its gates are `foliage`, `foliage-bend` and `foliage-shadow-root`.
 
 ### Toon shading
 

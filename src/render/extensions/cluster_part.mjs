@@ -156,7 +156,8 @@ export async function apply(ctx, next, opts = {}) {
     const r8 = textureLoad(lights, ivec2(li, 8)).toVar();
     const r9 = textureLoad(lights, ivec2(li, 9));
     const n = depth.w;
-    const wp = positionWorld.add(normalWorld.mul(d.w)).toVar();
+    // (a part may move where the shadow is taken: r187 material.receivedShadowPositionNode, the foliage part's root)
+    const wp = (mat.receivedShadowPositionNode ?? positionWorld).add(normalWorld.mul(d.w)).toVar();
     const coord = vec3(0).toVar(); // atlas texel x, y (rows top-down) and depth
     const tile = vec4(0).toVar();  // the face's texels: x0, y0, x1, y1
     If(d.y.lessThan(1.5), () => {

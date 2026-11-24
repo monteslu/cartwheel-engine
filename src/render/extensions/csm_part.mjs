@@ -92,7 +92,8 @@ export async function apply(ctx, next) {
   // r187 ShadowNode for cascade c: the shadow position with the normal bias, y flipped, the depth
   // bias added; w = 1 inside the cascade's map (r187's frustum test), else 0
   const cascadeCoord = (c) => {
-    const p = mats[c].mul(vec4(positionWorld.add(normalWorld.mul(bias.y)), 1));
+    // (a part may move where the shadow is taken: r187 material.receivedShadowPositionNode, the foliage part's root)
+    const p = mats[c].mul(vec4((mat.receivedShadowPositionNode ?? positionWorld).add(normalWorld.mul(bias.y)), 1));
     const xyz = p.xyz.div(p.w);
     const qx = (c % 2) * 0.5, qy = (1 - Math.floor(c / 2)) * 0.5;
     const lx = xyz.x.sub(qx).mul(2), ly = xyz.y.sub(qy).mul(2);

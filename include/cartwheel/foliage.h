@@ -58,6 +58,38 @@
  * colour under each instance there, so grass grows out of the ground in its
  * colour.
  *
+ * Movers (bend): plants bend around characters, vehicles and anything else
+ * that walks through them. A game registers each mover (cw_foliage_mover_add)
+ * and moves it every tick (cw_foliage_mover_update with its world x, z); a
+ * plant whose root (an InstancedMesh's instance origin, else its mesh's) is
+ * within the mover's radius is pushed away from its centre, fully inside half
+ * the radius and easing to nothing at the radius, and turns over by up to
+ * `bend` radians at its top (the stem curves: the lean grows with the height
+ * share). Behind a mover its trail keeps the plants down and lets them stand
+ * up again over the mover's `recover` seconds (a smooth ease to nothing, on
+ * the foliage clock); a mover removed leaves its last place to recover too.
+ * Pushes of several movers add as vectors, capped at a full push. Each frame
+ * the engine packs the movers where they stand, then the trail points that
+ * still weigh most, into CW_FOLIAGE_MOVER_SLOTS discs the shaders read (more
+ * movers than that: the first ones registered); a trail disc enters and
+ * leaves the set at weight 0, so no plant jumps. The bend is on the vertices,
+ * so the caster programs bend the shadows too and TAA, the fades and
+ * smooth_alpha work as with the wind; like the wind, the velocity pass does
+ * not see it. A material with bend 0 ignores movers (its programs skip the
+ * work); movers cost nothing when none is near (a branch a vertex).
+ *
+ * Shadow at the root (shadow_at_root): the sun's (and clustered lights')
+ * shadow is taken at one point per instance, its root lifted a quarter of
+ * the height, instead of at each fragment. A blade is thinner than a pixel at
+ * a distance, so under TAA each blade sampling the shadow map at its own
+ * height and position flips between lit and shadowed with the jitter: a
+ * stippled, speckled shadow edge through the grass. With one sample per
+ * tuft a tuft is wholly lit or wholly shadowed and the edge through the grass
+ * reads as the ground's. shadow_soften (0..1) moves each fragment's sample
+ * from the root toward its own point by soften times its height share: the
+ * upper part of a tuft crossing an edge shades gradually (0: one sample per
+ * instance).
+ *
  * Per material: every mesh drawing the material gets the same values (clone
  * a material for different ones, t3_material_clone). Changing them is free
  * (uniforms per draw); the parts are added once. Works on
@@ -98,6 +130,11 @@ typedef struct cw_foliage_desc {
   bool root_color;          /* the lower part takes the instance colour (an InstancedMesh's instance_color) */
   float root_height;        /* metres the root colour reaches (0.6 of height when 0) */
   float tip_jitter;         /* 0..1: per-instance variation of the upper colour under root_color (0) */
+  float bend;               /* radians the top turns over at a mover's full push (0: movers ignored; 1.1 lays grass well
+                             * over; at most 1.5) */
+  bool shadow_at_root;      /* one shadow sample per instance, at its root (no speckled shadow edges in grass) */
+  float shadow_soften;      /* 0..1: with shadow_at_root, each fragment's sample moves toward its own point by this times
+                             * its height share (0: one sample per instance) */
 } cw_foliage_desc;
 
 /* No wind, nothing on: a desc that changes nothing. */
@@ -131,6 +168,37 @@ int cw_foliage_count(void);
 t3_vec3 cw_wind_lean(const cw_wind *w, float x, float z, float share, float h, float s, float t);
 /* The foliage clock: seconds the shaders' wind is at this frame. */
 float cw_foliage_time(void);
+
+/* ── movers ── */
+#define CW_FOLIAGE_MOVER_SLOTS 16 /* discs the shaders read a frame (movers, then their trails) */
+typedef struct cw_foliage_mover {
+  float x, z;       /* world position, metres */
+  float radius;     /* metres around it the plants bend (0.5) */
+  float strength;   /* 0..1: its push at its centre (1: the material's full bend) */
+  float recover;    /* seconds the plants it left take to stand up again (1.5; 0: no trail) */
+} cw_foliage_mover;
+/* radius 0.5, strength 1, recover 1.5, at (0, 0). */
+cw_foliage_mover cw_foliage_mover_default(void);
+/* Registers a mover (m NULL: cw_foliage_mover_default); returns its id, -1 when 64 are registered. */
+int cw_foliage_mover_add(const cw_foliage_mover *m);
+/* Moves mover id to world (x, z): call it every tick it moves. It leaves a trail point every three quarters of its
+ * radius. */
+void cw_foliage_mover_update(int id, float x, float z);
+/* Changes every value of mover id (a jump to m's place leaves no trail between). */
+void cw_foliage_mover_set(int id, const cw_foliage_mover *m);
+/* Mover id's values into *out (out may be NULL); false for an id not registered. */
+bool cw_foliage_mover_get(int id, cw_foliage_mover *out);
+/* Unregisters mover id; the plants where it stood stand up again over its recover. */
+void cw_foliage_mover_remove(int id);
+/* How many movers are registered. */
+int cw_foliage_mover_count(void);
+/* Forgets every mover and trail at once (a level change). */
+void cw_foliage_movers_clear(void);
+/* The discs the shaders get this frame, x, z, radius, weight quadruples into out (up to cap); returns how many. */
+int cw_foliage_mover_slots(float *out, int cap);
+/* The CPU copy of the push a plant rooted at world (x, z) gets this frame: 0..1 (times the material's bend is the
+ * angle its top turns over), the direction it is pushed into *dir_x, *dir_z (either may be NULL). */
+float cw_foliage_push_at(float x, float z, float *dir_x, float *dir_z);
 
 #ifdef __cplusplus
 }

@@ -53,6 +53,9 @@ typedef struct scatter3d {
   float tint_jitter;         /* -1: the shape's own (GRASS 0.25, the rest 0) */
   bool root_from_terrain;
   float root_height;
+  float bend;
+  bool shadow_at_root;
+  float shadow_soften;
   /* runtime */
   int layer;                 /* in the parent's terrain, -1 none */
   bool dirty;
@@ -309,6 +312,9 @@ static void scatter_apply(cw_node n, scatter3d *s, cw_terrain *t) {
   d.tint_jitter = s->tint_jitter >= 0 ? s->tint_jitter : own && s->shape == 0 ? 0.25f : 0;
   d.root_from_terrain = s->root_from_terrain;
   d.root_height = s->root_height;
+  d.bend = s->bend;
+  d.shadow_at_root = s->shadow_at_root;
+  d.shadow_soften = s->shadow_soften;
   d.seed = (uint32_t)s->seed ^ (uint32_t)cw_hash_str(cw_node_name(n));
   uint8_t *grey = NULL;
   if (s->density_map && *s->density_map) {
@@ -377,6 +383,9 @@ static const cw_prop scatter_props[] = {
   CW_PROP_FIELD_RANGE(scatter3d, tint_jitter, CW_T_FLOAT, -1, 1, "Per-instance colour variation 0..1 (brightness and a dry yellow); -1: the shape's own (GRASS 0.25, the rest none)."),
   CW_PROP_FIELD(scatter3d, root_from_terrain, CW_T_BOOL, CW_PROP_DEFAULT, "Each instance's lower part takes the terrain's colour under it (cw_terrain_albedo_at), blending into its own colour above."),
   CW_PROP_FIELD_RANGE(scatter3d, root_height, CW_T_FLOAT, 0, 100, "Metres the root colour reaches (0: 0.6 of the mesh's height)."),
+  CW_PROP_FIELD_RANGE(scatter3d, bend, CW_T_FLOAT, 0, 1.5, "Radians the tops turn over at a mover's full push (cw_foliage_mover_add: characters pushing through grass; 0: movers ignored, 1.1 lays grass well over)."),
+  CW_PROP_FIELD(scatter3d, shadow_at_root, CW_T_BOOL, CW_PROP_DEFAULT, "One shadow sample per instance, at its root: a tuft is wholly lit or wholly shadowed (no speckled shadow edge through grass under TAA)."),
+  CW_PROP_FIELD_RANGE(scatter3d, shadow_soften, CW_T_FLOAT, 0, 1, "With shadow_at_root: each fragment's shadow sample moves from the root toward its own point by this times its height share (0: one sample per instance)."),
   CW_PROP_END,
 };
 

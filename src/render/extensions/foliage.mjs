@@ -14,6 +14,16 @@
 // src/render/foliage.c cw_wind_lean is the same on the CPU. The instance scale is read back from r187's instance
 // normal transform (an InstancedMesh's normal comes out divided by its scale).
 //
+// Movers (vertex stage, the caster's program too): up to sixteen discs (x, z, radius, weight) the CPU packs each frame
+// from the movers and their fading trails (src/render/foliage.c). Each pushes a plant whose root (the instance's
+// origin, or the mesh's) is within its radius away from its centre: f = weight (1 - smoothstep(radius / 2, radius, d)),
+// summed as vectors, the length capped at 1. The plant turns over by a = bend * f * share (radians, more toward the
+// top: the stem curves), its vertex moved by y (sin a) along the push and dropped by y (1 - cos a), y = share * height.
+//
+// Shadow at the root (fragment stage): r187's receivedShadowPositionNode (and the csm and cluster parts' shadow
+// position, which read it) becomes the root lifted a quarter of the height, moved toward the fragment's own point by
+// soften * share: soften 0 takes one shadow sample per instance, so a tuft is wholly lit or wholly shadowed.
+//
 // Values (filled per material by src/render/foliage.c):
 //   ext.folFrame  vec4 (frame group): foliage clock (s), dither offset (IGN frame step, 0 without TAA), unused, phase
 //                 spread (2: the noise turns a sway two whole cycles across its range; 0 under CW_TEST_FOLIAGE_LOCKSTEP)
@@ -22,19 +32,40 @@
 //   ext.folMode   vec4: two-sided lighting (0/1), root colour (0/1), tip jitter (0..1), fades on (0/1)
 //   ext.folFade   vec4: fade in from, to; fade out from, to (metres from the camera; to <= from: no band)
 //   ext.folRoot   vec4: root colour height (m), unused x3 (states with an instance colour only)
+//   ext.folBend   vec4: bend (radians at full push, 0: movers ignored), movers in use (0..16), shadow at the root (0/1),
+//                 shadow soften (0..1)
+//   ext.folMover0..15  vec4 (frame group): x, z, radius (m), weight (0..1)
 export const name = 'foliage';
 export const part = 'foliage';
 
 const LIT = new Set(['lambert', 'phong', 'standard', 'physical', 'toon']);
+// mover discs a frame (cartwheel/foliage.h CW_FOLIAGE_MOVER_SLOTS)
+const SLOTS = 16;
+
+// r187 binds an InstancedMesh's matrices through referenceAttribute('instanceMatrix'), whose every node becomes four
+// vertex attributes of its own: the root's reference shares the instancing's (one set of columns a program, as three.c
+// reads them), by handing every 'instanceMatrix' reference of one build the first one's matrix
+function shareInstanceMatrix(THREE) {
+  const proto = THREE.ReferenceAttributeNode.prototype;
+  if (proto.folShared) return;
+  const setup = proto.setup, built = new WeakMap();
+  proto.setup = function (builder) {
+    if (this.property !== 'instanceMatrix' || this.object !== null) return setup.call(this, builder);
+    let m = built.get(builder);
+    if (!m) built.set(builder, (m = setup.call(this, builder)));
+    return m;
+  };
+  proto.folShared = true;
+}
 
 export async function apply(ctx, next) {
   const { TSL, THREE, mat, props, sentinel, kind, features } = ctx;
   if (kind !== 'depth' && !LIT.has(kind)) return next ? next(ctx) : undefined;
   const {
-    Fn, uniform, sharedUniformGroup, positionLocal, positionGeometry, normalLocal, normalGeometry,
-    modelWorldMatrix, positionView, screenCoordinate, interleavedGradientNoise, faceDirection,
+    Fn, If, uniform, sharedUniformGroup, varying, referenceAttribute, cos, positionLocal, positionGeometry, normalLocal, normalGeometry,
+    modelWorldMatrix, positionView, positionWorld, screenCoordinate, interleavedGradientNoise, faceDirection,
     materialColor, materialNormal, mat3, transpose, vertexColor, instanceColor, vec2, vec3, vec4, float, sin, floor, fract, dot, clamp,
-    max, mix, select, smoothstep, length,
+    max, min, mix, select, smoothstep, length,
   } = TSL;
   const frameGroup = sharedUniformGroup('foliageFrame', 0, THREE.NodeUpdateType.RENDER);
   const v4 = (n, group) => {
@@ -45,7 +76,8 @@ export async function apply(ctx, next) {
     return u;
   };
   const frame = v4('folFrame', frameGroup);
-  const wind = v4('folWind'), wind2 = v4('folWind2');
+  const wind = v4('folWind'), wind2 = v4('folWind2'), bendU = v4('folBend');
+  const movers = Array.from({ length: SLOTS }, (_, i) => v4('folMover' + i, frameGroup));
   const TAU = 6.283185307;
 
   // ── wind ─────────────────────────────────────────────────────────────
@@ -57,6 +89,11 @@ export async function apply(ctx, next) {
     return a.add(b.sub(a).mul(u.x)).add(c.sub(a).mul(u.y)).add(a.sub(b).sub(c).add(d).mul(u.x).mul(u.y));
   };
   const instanced = features.includes('instbig') || features.includes('inst');
+  if (instanced) shareInstanceMatrix(THREE);
+  // the plant's root in the world: the instance's origin (r187 binds an InstancedMesh's matrices as the attribute
+  // instanceMatrix), else the mesh's
+  const rootLocal = instanced ? referenceAttribute('instanceMatrix', 'mat4').element(3).xyz : vec3(0);
+  const rootWorld = modelWorldMatrix.mul(vec4(rootLocal, 1)).xyz;
   const prevPosition = mat.positionNode ?? positionLocal;
   mat.positionNode = Fn(() => {
     const p = prevPosition;
@@ -75,7 +112,30 @@ export async function apply(ctx, next) {
     const along = k.mul(float(1).sub(g).mul(s1.mul(0.5).add(0.5)).add(g.mul(gw).mul(s1.mul(0.25).add(0.75)))).toVar();
     const across = k.mul(0.125).mul(sin(th.mul(2.3).add(1.7))).toVar();
     const drop = along.mul(along).add(across.mul(across)).div(max(wind2.w.mul(s), 0.05).mul(2)).mul(share);
-    const lean = vec3(dx.mul(along).sub(dz.mul(across)), drop.negate(), dz.mul(along).add(dx.mul(across)));
+    const lean = vec3(dx.mul(along).sub(dz.mul(across)), drop.negate(), dz.mul(along).add(dx.mul(across))).toVar();
+    // movers: pushed away from each disc over its root, turned over by up to bend radians
+    If(bendU.x.greaterThan(0).and(bendU.y.greaterThan(0.5)), () => {
+      const r = rootWorld.xz.toVar();
+      const push = vec2(0).toVar();
+      for (let i = 0; i < SLOTS; i++) {
+        const m = movers[i];
+        If(bendU.y.greaterThan(i + 0.5), () => {
+          const off = r.sub(m.xy).toVar();
+          const dist = length(off);
+          const f = m.w.mul(float(1).sub(smoothstep(m.z.mul(0.5), m.z, dist)));
+          // (a root on the centre is pushed along the wind's direction)
+          const dir = select(dist.greaterThan(1e-3), off.div(max(dist, 1e-3)), vec2(dx, dz));
+          push.addAssign(dir.mul(f));
+        });
+      }
+      const pl = length(push).toVar();
+      If(pl.greaterThan(1e-4), () => {
+        const a = bendU.x.mul(min(pl, 1)).mul(share).toVar();
+        const y = share.mul(wind2.w).mul(s);
+        const pd = push.div(pl);
+        lean.addAssign(vec3(pd.x.mul(y).mul(sin(a)), y.mul(cos(a)).sub(y), pd.y.mul(y).mul(sin(a))));
+      });
+    });
     // back into the mesh's space (the identity for the terrain's scatter): the transpose over the squared scale undoes
     // a rotation and a uniform scale (r187 gives no inverse world matrix three.c fills)
     const m3 = mat3(modelWorldMatrix);
@@ -86,6 +146,12 @@ export async function apply(ctx, next) {
   if (kind === 'depth') return next ? next(ctx) : undefined;
 
   const mode = v4('folMode'), fade = v4('folFade');
+
+  // ── shadow at the root: one shadow sample per instance (softened toward the fragment's own by soften * share) ──
+  const rootV = varying(rootWorld.add(vec3(0, wind2.w.mul(0.25), 0)), 'vFolRoot');
+  const shareF = clamp(positionGeometry.y.mul(wind2.z), 0, 1);
+  const prevShadowPos = mat.receivedShadowPositionNode ?? positionWorld;
+  mat.receivedShadowPositionNode = select(bendU.z.greaterThan(0.5), mix(rootV, prevShadowPos, bendU.w.mul(shareF)), prevShadowPos);
 
   // ── two-sided lighting: the back face keeps the front face's normal ──
   const nrm = mat.normalNode ?? materialNormal;
